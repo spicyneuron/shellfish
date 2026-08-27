@@ -119,7 +119,6 @@ class Session:
                 COLUMNS=str(COLUMNS),
                 LINES=str(ROWS),
                 SF_TEST_BACKEND_DELAY="0.02",
-                SF_TEST_BACKEND_README=str(ROOT / "README.md"),
                 XDG_STATE_HOME=self.state_home.name,
                 XDG_CONFIG_HOME=str(self.config_home),
             )

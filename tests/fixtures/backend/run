@@ -4,7 +4,8 @@ emulate -R zsh
 setopt err_exit no_aliases no_multios pipe_fail
 
 typeset request decoded user_text text tool_command tool_bypass keyword_mode=false
-typeset tool_mode tool_name tool_input fixture_path fixture_readme old_string new_string
+typeset tool_mode tool_name tool_input fixture_dir fixture_path old_string new_string
+typeset cleanup_path cleanup_dir temp_root
 typeset -a parts deltas
 integer keyword_count delay_match think error_count lorem delta_index input_tokens cached_tokens
 integer text_tokens output_tokens reasoning_tokens
@@ -195,6 +196,18 @@ if (( delay_match )) && ! jq -e '.messages[-1].role == "tool_result"' <<<"$reque
 fi
 if [[ ${SF_TEST_BACKEND_TOOL_CALL:-0} == 1 || -n $tool_mode ]] || (( keyword_count )); then
   if jq -e '.messages[-1].role == "tool_result"' <<<"$request" >/dev/null; then
+    cleanup_path=$(jq -r '
+      .messages[-1].call_id as $call_id |
+      [.messages[] | select(.role == "assistant") | .content[]? |
+        select(.type == "tool_call" and .id == $call_id) |
+        .input.file_path? | select(type == "string")] | last // ""
+    ' <<<"$request")
+    cleanup_dir=${cleanup_path:h}
+    temp_root=${TMPDIR:-/tmp}
+    if [[ $cleanup_path == /* && ${cleanup_dir:h:A} == ${temp_root:A} &&
+      ${cleanup_dir:t} =~ '^shellfish-test-fixture\.[[:alnum:]]{6}$' ]]; then
+      rm -rf -- "$cleanup_dir"
+    fi
     build_deltas $'Tool complete.\n'
     text="${(j::)deltas}"
     text_tokens=$(( (${#text} + 3) / 4 ))
@@ -211,40 +224,38 @@ if [[ ${SF_TEST_BACKEND_TOOL_CALL:-0} == 1 || -n $tool_mode ]] || (( keyword_cou
     tool_input='{}'
     tool_bypass=${SF_TEST_BACKEND_TOOL_BYPASS:-false}
     tool_bypass_reason=${SF_TEST_BACKEND_TOOL_BYPASS_REASON:-Required by the test fixture}
-    fixture_path=README.md
-    fixture_readme=${SF_TEST_BACKEND_README:-${0:A:h:h:h:h}/README.md}
+    if [[ -n $tool_mode ]]; then
+      tool_bypass=${SF_TEST_BACKEND_TOOL_BYPASS:-true}
+      temp_root=${${TMPDIR:-/tmp}%/}
+      fixture_dir=$(mktemp -d "$temp_root/shellfish-test-fixture.XXXXXX")
+      fixture_path=$fixture_dir/LICENSE
+      cp -- "${0:A:h:h:h:h}/LICENSE" "$fixture_path"
+    fi
     case $tool_mode in
       write)
-        if [[ -e $fixture_path ]]; then
-          tool_name=read_file
-          tool_input=$(jq -cn --arg path "$fixture_path" '{file_path:$path}')
-        else
-          tool_name=write_file
-          tool_input=$(jq -cn --arg path "$fixture_path" \
-            --rawfile content "$fixture_readme" \
-            '{file_path:$path,content:$content}')
-        fi
+        tool_name=write_file
+        tool_input=$(jq -cn --arg path "$fixture_dir/LICENSE-copy" \
+          --rawfile content "$fixture_path" \
+          '{file_path:$path,content:$content}')
         ;;
       edit)
-        if [[ -e $fixture_path ]]; then
-          tool_name=edit_file
-          old_string=$(sed -n '1,5p' "$fixture_path")
-          new_string=$(printf '%s\n' "${(@f)old_string}" |
-            awk '{line[NR]=$0} END {for (i=NR; i>=1; i--) print line[i]}')
-          tool_input=$(jq -cn --arg path "$fixture_path" --arg old "$old_string" \
-            --arg new "$new_string" '{file_path:$path,old_string:$old,new_string:$new}')
-        else
-          tool_name=write_file
-          tool_input=$(jq -cn --arg path "$fixture_path" \
-            --rawfile content "$fixture_readme" \
-            '{file_path:$path,content:$content}')
-        fi
+        tool_name=edit_file
+        old_string=$(sed -n '15,17p' "$fixture_path")
+        new_string=$(printf '%s\n' "${(@f)old_string}" |
+          awk '{line[NR]=$0} END {for (i=NR; i>=1; i--) print line[i]}')
+        tool_input=$(jq -cn --arg path "$fixture_path" --arg old "$old_string" \
+          --arg new "$new_string" '{file_path:$path,old_string:$old,new_string:$new}')
         ;;
       read)
         tool_name=read_file
         tool_input=$(jq -cn --arg path "$fixture_path" '{file_path:$path}')
         ;;
     esac
+    if [[ -n $tool_mode && $tool_bypass == true ]]; then
+      tool_input=$(jq -c --arg reason "$tool_bypass_reason" '
+        . + {request_sandbox_bypass:true,sandbox_bypass_reason:$reason}
+      ' <<<"$tool_input")
+    fi
     if [[ ${SF_TEST_BACKEND_TOOL_CALL:-0} != 1 && -z $tool_mode ]]; then
       keyword_mode=true
     fi
