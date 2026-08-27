@@ -2,7 +2,8 @@ emulate -R zsh
 setopt no_aliases no_bg_nice no_multios pipe_fail
 
 typeset -g SF_TOOL_ERROR=''
-typeset -g SF_TOOL_TEMP_DIR=''
+typeset -g SF_TOOL_STATE_DIR=''
+typeset -g SF_TOOL_RUNTIME_DIR=''
 typeset -g SF_TOOL_ACTIVE_PID=''
 
 sf_tools_fail() {
@@ -102,8 +103,10 @@ sf_tool_result() {
 }
 
 sf_tools_cleanup() {
-  [[ -z $SF_TOOL_TEMP_DIR ]] || rm -rf -- "$SF_TOOL_TEMP_DIR" 2>/dev/null || true
-  SF_TOOL_TEMP_DIR=''
+  [[ -z $SF_TOOL_STATE_DIR ]] || rm -rf -- "$SF_TOOL_STATE_DIR" 2>/dev/null || true
+  [[ -z $SF_TOOL_RUNTIME_DIR ]] || rm -rf -- "$SF_TOOL_RUNTIME_DIR" 2>/dev/null || true
+  SF_TOOL_STATE_DIR=''
+  SF_TOOL_RUNTIME_DIR=''
 }
 
 sf_tool_bound_capture() {
@@ -165,7 +168,7 @@ sf_tool_execute() {
   local tools=$5 cwd=$6 max_capture=$7 fence=$8
   local sandbox_read_paths=$9 sandbox_write_paths=${10}
   local id name execution_input bypass sandboxed result_type tool_sandbox tool_bypass tool_settings
-  local state_dir captured bounded status_file home temp command_path settings diff_field result_path original decoded
+  local state_dir runtime_dir captured bounded status_file temp command_path settings diff_field result_path original decoded
   local -a fields read_paths write_paths
   local -a command locale_env
   integer exit_code tail_status process_status read_count
@@ -244,7 +247,7 @@ sf_tool_execute() {
     sf_tools_fail 'cannot prepare tool capture'
     return
   }
-  SF_TOOL_TEMP_DIR=$state_dir
+  SF_TOOL_STATE_DIR=$state_dir
   {
     captured="$state_dir/captured"
     bounded="$state_dir/result"
@@ -276,21 +279,23 @@ sf_tool_execute() {
         integer result_existed=0
       fi
     fi
-    # env -i drops TMPDIR, so every tool needs an explicit writable temp;
-    # zsh here-documents use TMPPREFIX, which ignores TMPDIR.
-    temp="$state_dir/tmp"
-    mkdir "$temp" || return 1
     if (( harness_sandbox )) && [[ $tool_sandbox == true && $bypass != true ]]; then
-      home="$state_dir/home"
-      mkdir "$home" || return 1
+      # Bundled policies deny host temp locations such as macOS /var/folders.
+      runtime_dir=$(mktemp -d /tmp/shellfish-tool-runtime.XXXXXX) || {
+        sf_tools_fail 'cannot prepare tool runtime'
+        return
+      }
+      SF_TOOL_RUNTIME_DIR=$runtime_dir
+      temp="$runtime_dir/tmp"
+      mkdir "$temp" || return 1
       settings="$state_dir/fence.jsonc"
       print -r -- "$tool_settings" >"$settings" || return 1
-      command=(/usr/bin/env -i HOME="$home" "${locale_env[@]}" PATH="$PATH" TERM="${TERM:-dumb}"
+      command=(/usr/bin/env -i HOME="$runtime_dir" "${locale_env[@]}" PATH="$PATH" TERM="${TERM:-dumb}"
         TMPDIR="$temp" TMPPREFIX="$temp/zsh"
         SHELLFISH_MAX_CAPTURE_BYTES="$max_capture"
         "$fence" --settings "$settings"
         --expose-host-path "$settings" --expose-host-path "$command_path"
-        --expose-host-path-rw "$home" --expose-host-path-rw "$temp")
+        --expose-host-path-rw "$runtime_dir")
       for decoded in "${read_paths[@]}"; do
         command+=( --expose-host-path "$decoded" )
       done
@@ -300,6 +305,9 @@ sf_tool_execute() {
       command+=(
         -- "$command_path")
     else
+      # env -i drops TMPDIR; TMPPREFIX separately controls Zsh here-documents.
+      temp="$state_dir/tmp"
+      mkdir "$temp" || return 1
       command=(/usr/bin/env -i HOME="$cwd" "${locale_env[@]}" PATH="$PATH" TERM="${TERM:-dumb}"
         TMPDIR="$temp" TMPPREFIX="$temp/zsh"
         SHELLFISH_MAX_CAPTURE_BYTES="$max_capture" "$command_path")

@@ -2,18 +2,24 @@
 set -euo pipefail
 
 (($# == 0)) || { printf 'Usage: read_file\n' >&2; exit 2; }
-input=$(cat)
-prepared=$(jq -ejr '
+decoded=$(jq -ejr '
+  def field: ., "\u0000";
   def string: type == "string" and length > 0 and index("\u0000") == null;
   select(type == "object" and (.file_path | string) and
     ((.offset // 1) | type == "number" and floor == . and . >= 1) and
     ((.limit // 500) | type == "number" and floor == . and . >= 1) and
     (keys - ["file_path", "limit", "offset"] | length == 0)) |
-  [.file_path, ((.offset // 1) | tostring), ((.limit // 500) | tostring)] |
-  join("\u001c")
-' <<<"$input") || { printf 'read_file: invalid input\n' >&2; exit 2; }
-limit=${prepared##*$'\034'}; prepared=${prepared%$'\034'*}
-offset=${prepared##*$'\034'}; file_path=${prepared%$'\034'*}
+  (.file_path | field), ((.offset // 1) | tostring | field),
+  ((.limit // 500) | tostring | field), ("ok" | field)
+') || { printf 'read_file: invalid input\n' >&2; exit 2; }
+fields=( "${(@0)${decoded%$'\0'}}" )
+(( ${#fields} == 4 )) && [[ $fields[4] == ok ]] || {
+  printf 'read_file: invalid input\n' >&2
+  exit 2
+}
+file_path=$fields[1]
+offset=$fields[2]
+limit=$fields[3]
 
 [[ -e $file_path ]] || { printf 'read_file: no such file: %s\n' "$file_path" >&2; exit 2; }
 [[ ! -d $file_path ]] || { printf 'read_file: %s is a directory\n' "$file_path" >&2; exit 2; }

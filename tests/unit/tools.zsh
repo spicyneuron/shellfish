@@ -143,6 +143,7 @@ print -rl -- "$@" >"${0:A:h:h}/fence.args"
 print -r -- "$LANG" >"${0:A:h:h}/fence.lang"
 print -r -- "$LC_ALL" >"${0:A:h:h}/fence.lc_all"
 print -r -- "$LC_CTYPE" >"${0:A:h:h}/fence.lc_ctype"
+print -r -- "$HOME" >"${0:A:h:h}/fence.home"
 print -r -- "$TMPDIR" >"${0:A:h:h}/fence.tmpdir"
 print -r -- "$TMPPREFIX" >"${0:A:h:h}/fence.tmpprefix"
 while (( $# )) && [[ $1 != -- ]]; do shift; done
@@ -156,14 +157,16 @@ load_tools "$(jq -c --arg fence "$tmp/bin/fence" \
   '.harness.sandbox=true | .harness.fence=$fence' <<<"$stored_runtime")"
 sf_test_tool_execute "$(jq -cn --arg command 'printf fenced' \
   '{id:"fence_empty",name:"shell",input:{command:$command}}')" 1
-(( $(grep -Fxc -- '--expose-host-path-rw' "$tmp/fence.args") == 2 ))
+(( $(grep -Fxc -- '--expose-host-path-rw' "$tmp/fence.args") == 1 ))
 assert_equal "${LANG:-C}" "$(<"$tmp/fence.lang")"
 assert_equal "$LC_ALL" "$(<"$tmp/fence.lc_all")"
 assert_equal "$LC_CTYPE" "$(<"$tmp/fence.lc_ctype")"
 typeset fence_tmpdir=$(<"$tmp/fence.tmpdir")
 assert_equal "$fence_tmpdir/zsh" "$(<"$tmp/fence.tmpprefix")"
-grep -Fx -- "$fence_tmpdir" "$tmp/fence.args" >/dev/null
-grep -Fx -- "${fence_tmpdir:h}/home" "$tmp/fence.args" >/dev/null
+assert_equal "${fence_tmpdir:h}" "$(<"$tmp/fence.home")"
+[[ ${fence_tmpdir:h} == /tmp/shellfish-tool-runtime.* ]]
+grep -Fx -- "${fence_tmpdir:h}" "$tmp/fence.args" >/dev/null
+[[ ! -e ${fence_tmpdir:h} ]]
 mkdir "$tmp/read dir" "$tmp/write dir"
 touch "$tmp/read file" "$tmp/write file"
 load_tools "$(jq -c --arg fence "$tmp/bin/fence" --arg read_dir "$tmp/read dir" \
@@ -182,7 +185,7 @@ jq -e '. == {}' "$tmp/fence.settings" >/dev/null
 grep -Fx -- "$tool_dir/run" "$tmp/fence.args" >/dev/null
 grep -Fx -- "$tmp/read dir" "$tmp/fence.args" >/dev/null
 grep -Fx -- "$tmp/read file" "$tmp/fence.args" >/dev/null
-(( $(grep -Fxc -- '--expose-host-path-rw' "$tmp/fence.args") == 4 ))
+(( $(grep -Fxc -- '--expose-host-path-rw' "$tmp/fence.args") == 3 ))
 grep -Fx -- "$tmp/write dir" "$tmp/fence.args" >/dev/null
 grep -Fx -- "$tmp/write file" "$tmp/fence.args" >/dev/null
 load_tools "$(jq -c --arg fence "$tmp/bin/fence" \

@@ -2,14 +2,20 @@
 set -euo pipefail
 
 (($# == 0)) || { printf 'Usage: write_file\n' >&2; exit 2; }
-input=$(cat)
-parsed=$(jq -ec '
+decoded=$(jq -ejr '
+  def field: ., "\u0000";
   def string: type == "string" and index("\u0000") == null;
   select(type == "object" and (.file_path | string and length > 0) and
-    (.content | string) and (keys - ["content", "file_path"] | length == 0))
-' <<<"$input") || { printf 'write_file: invalid input\n' >&2; exit 2; }
-file_path=$(jq -jr '.file_path, "\u001f"' <<<"$parsed"); file_path=${file_path%$'\u001f'}
-content=$(jq -jr '.content, "\u001f"' <<<"$parsed"); content=${content%$'\u001f'}
+    (.content | string) and (keys - ["content", "file_path"] | length == 0)) |
+  (.file_path | field), (.content | field), ("ok" | field)
+') || { printf 'write_file: invalid input\n' >&2; exit 2; }
+fields=( "${(@0)${decoded%$'\0'}}" )
+(( ${#fields} == 3 )) && [[ $fields[3] == ok ]] || {
+  printf 'write_file: invalid input\n' >&2
+  exit 2
+}
+file_path=$fields[1]
+content=$fields[2]
 [[ ! -e $file_path && ! -L $file_path ]] || {
   printf 'write_file: file already exists: %s\n' "$file_path" >&2
   exit 2

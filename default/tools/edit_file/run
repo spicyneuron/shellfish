@@ -2,18 +2,25 @@
 set -euo pipefail
 
 (($# == 0)) || { printf 'Usage: edit_file\n' >&2; exit 2; }
-input=$(cat)
-parsed=$(jq -ec '
+decoded=$(jq -ejr '
+  def field: ., "\u0000";
   def string: type == "string" and index("\u0000") == null;
   select(type == "object" and (.file_path | string and length > 0) and
     (.old_string | string and length > 0) and (.new_string | string) and
     ((has("replace_all") | not) or (.replace_all | type == "boolean")) and
-    (keys - ["file_path", "new_string", "old_string", "replace_all"] | length == 0))
-' <<<"$input") || { printf 'edit_file: invalid input\n' >&2; exit 2; }
-file_path=$(jq -jr '.file_path, "\u001f"' <<<"$parsed"); file_path=${file_path%$'\u001f'}
-old_string=$(jq -jr '.old_string, "\u001f"' <<<"$parsed"); old_string=${old_string%$'\u001f'}
-new_string=$(jq -jr '.new_string, "\u001f"' <<<"$parsed"); new_string=${new_string%$'\u001f'}
-replace_all=$(jq -r '.replace_all // false' <<<"$parsed")
+    (keys - ["file_path", "new_string", "old_string", "replace_all"] | length == 0)) |
+  (.file_path | field), (.old_string | field), (.new_string | field),
+  ((.replace_all // false) | tostring | field), ("ok" | field)
+') || { printf 'edit_file: invalid input\n' >&2; exit 2; }
+fields=( "${(@0)${decoded%$'\0'}}" )
+(( ${#fields} == 5 )) && [[ $fields[5] == ok ]] || {
+  printf 'edit_file: invalid input\n' >&2
+  exit 2
+}
+file_path=$fields[1]
+old_string=$fields[2]
+new_string=$fields[3]
+replace_all=$fields[4]
 
 [[ -e $file_path || -L $file_path ]] || { printf 'edit_file: no such file: %s\n' "$file_path" >&2; exit 2; }
 [[ ! -d $file_path ]] || { printf 'edit_file: %s is a directory\n' "$file_path" >&2; exit 2; }
