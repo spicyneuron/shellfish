@@ -1,15 +1,30 @@
+// Shellfish: https://github.com/spicyneuron/shellfish
+//
+// Default configuration. $XDG_CONFIG_HOME/shellfish/config.jsonc is merged over
+// this file.
 {
   "$schema": "https://raw.githubusercontent.com/spicyneuron/shellfish/refs/heads/main/config.schema.json",
+
+  // Profile selected when --profile is not given on the command line.
   "default_profile": "default",
-  "theme_mode": "auto",
-  "theme_light": "light",
-  "theme_dark": "dark",
+
+  // Profiles compose a backend, a harness, and request overrides. "extend"
+  // inherits from another profile and later keys override. "request" holds
+  // model and other parameters passed through to backend adapters. "max_tokens"
+  // and "reasoning.effort" are normalized in default backends.
   "profiles": {
     "default": {
       "harness": "default",
       "request": {"max_tokens": 16384, "reasoning": {"effort": "medium"}}
     }
   },
+
+  // Backends are API adapters. "adapter" names the run script under
+  // backends/<adapter>/; "endpoint" and "api_key_env" override the adapter's
+  // built-in backend.json. An empty api_key_env means no key is sent (codex
+  // relies on an existing CLI login). The "openai" adapter works with any
+  // OpenAI-compatible endpoint. Optional transport knobs not shown here:
+  // insecure_tls, http_timeout, http_stall.
   "backends": {
     "anthropic": {"adapter": "anthropic"},
     "codex": {"adapter": "codex"},
@@ -21,44 +36,87 @@
       "api_key_env": "OPENROUTER_API_KEY"
     }
   },
+
+  // Harnesses wrap the shared turn loop with context, capabilities, sandboxing,
+  // and limits. Files resolve
   "harnesses": {
     "default": {
+      // Files concatenated into the system prompt.
       "system": ["general.md", "tools.md"],
+
+      // Tools available to the model.
       "tools": ["read_file", "edit_file", "write_file", "shell"],
+
+      // Hooks run executables in order. See docs/HOOKS.md for payloads, exit
+      // statuses, and environment guarantees.
       "session_start": ["add_environment", "add_command_availability", "add_project_instructions"],
-      // Each command hook appends its /help row to $SHELLFISH_STATE_DIR/help.tsv;
-      // the help hook (last) sorts and formats the accumulated rows.
       "user_prompt_submit": ["refresh", "verbose", "new", "fork", "user_shell", "server", "help"],
+      "permission_request": [],
+      "pre_tool_use": [],
+      "post_tool_use": [],
+      "stop": [],
+
+      // "sandbox" enables fence for tools that opt in via their tool.json.
+      // sandbox_read_paths/sandbox_write_paths grant extra paths beyond the
+      // project directory while keeping the tool's other restrictions.
       "sandbox": true,
       "sandbox_read_paths": [],
       "sandbox_write_paths": [],
+
+      // Caps for requests, tool calls, and bytes from a single tool result.
       "max_requests_per_turn": 50,
       "max_tool_calls_per_request": 20,
       "max_capture_bytes": 32768
     }
   },
+
+  // Themes are hex color palettes for the TUI. "auto" follows the terminal
+  // background; "light"/"dark" force a mode. theme_light/theme_dark name which
+  // entry under "themes" is used for each mode.
+  "theme_mode": "auto",
+  "theme_light": "light",
+  "theme_dark": "dark",
   "themes": {
     "light": {
-      "muted_color":"#848d97","divider_color":"#d6dde3",
-      "footer_color":"#7d8590","prompt_color":"#0969da",
-      "system_heading_color":"#8250df","context_color":"#6e7781",
-      "user_heading_color":"#0969da","agent_heading_color":"#d06b18",
-      "tool_color":"#6e7781","reasoning_color":"#6e7781",
-      "error_color":"#cf222e","added_color":"#1a7f37",
-      "added_background_color":"#d7ffd7","removed_color":"#cf222e",
-      "removed_background_color":"#ffd7d7","permission_color":"#0969da"
+      "muted_color": "#848d97",
+      "divider_color": "#d6dde3",
+      "footer_color": "#7d8590",
+      "prompt_color": "#0969da",
+      "system_heading_color": "#8250df",
+      "context_color": "#6e7781",
+      "user_heading_color": "#0969da",
+      "agent_heading_color": "#d06b18",
+      "tool_color": "#6e7781",
+      "reasoning_color": "#6e7781",
+      "error_color": "#cf222e",
+      "added_color": "#1a7f37",
+      "added_background_color": "#d7ffd7",
+      "removed_color": "#cf222e",
+      "removed_background_color": "#ffd7d7",
+      "permission_color": "#0969da"
     },
     "dark": {
-      "muted_color":"#8b949e","divider_color":"#3d444d",
-      "footer_color":"#8b949e","prompt_color":"#58a6ff",
-      "system_heading_color":"#d2a8ff","context_color":"#8b949e",
-      "user_heading_color":"#58a6ff","agent_heading_color":"#ffb77a",
-      "tool_color":"#8b949e","reasoning_color":"#8b949e",
-      "error_color":"#ff7b72","added_color":"#7ee787",
-      "added_background_color":"#12261e","removed_color":"#ffa198",
-      "removed_background_color":"#2d1519","permission_color":"#58a6ff"
+      "muted_color": "#8b949e",
+      "divider_color": "#3d444d",
+      "footer_color": "#8b949e",
+      "prompt_color": "#58a6ff",
+      "system_heading_color": "#d2a8ff",
+      "context_color": "#8b949e",
+      "user_heading_color": "#58a6ff",
+      "agent_heading_color": "#ffb77a",
+      "tool_color": "#8b949e",
+      "reasoning_color": "#8b949e",
+      "error_color": "#ff7b72",
+      "added_color": "#7ee787",
+      "added_background_color": "#12261e",
+      "removed_color": "#ffa198",
+      "removed_background_color": "#2d1519",
+      "permission_color": "#58a6ff"
     }
   },
+
+  // TUI preview settings: how many lines of each record type to show in the
+  // collapsed view. "full" shows the whole record. Disabled by --verbose.
   "tui": {
     "preview_lines_reasoning": 0,
     "preview_lines_context": 2,
