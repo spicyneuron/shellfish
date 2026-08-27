@@ -60,13 +60,20 @@ func newSession(t *testing.T, records string) string {
 func newTestServer(t *testing.T, sessionPath, script string) string {
 	t.Helper()
 	binary := fakeShellfish(t, script)
+	turns, cancelTurns := context.WithCancel(context.Background())
 	service, err := New(sessionPath, testAccessCode,
-		NewExec(context.Background(), binary, sessionPath))
+		NewExec(turns, binary, sessionPath))
 	if err != nil {
+		cancelTurns()
 		t.Fatal(err)
 	}
 	server := httptest.NewServer(service)
-	t.Cleanup(server.Close)
+	t.Cleanup(func() {
+		turnDone := service.beginDrain()
+		cancelTurns()
+		<-turnDone
+		server.Close()
+	})
 	return server.URL
 }
 
