@@ -106,13 +106,13 @@ sf_chat_preview_tail() {
   esac
 }
 
-# Appends a row with its base style span, resolving "type.role" before falling
-# back to "type". The caller appends the matching row cursor separately: its
-# value depends on the transition taken after the row is emitted.
+# Appends a row with semantic style spans, resolving "type.role" before falling
+# back to "type". The caller appends the matching row cursor separately.
 sf_chat_row_append() {
-  local text=$1 kind=$2 syntax=${5-} style highlight=''
-  integer settled=$3 node=$4 source_end=${6:--1}
-  style=${SF_PRESENT_STYLE[$kind]:-$SF_PRESENT_STYLE[${kind%%.*}]}
+  local text=$1 kind=$2 syntax=${5-} style_kind=${7:-$2} style highlight=''
+  integer settled=$3 node=$4 source_end=${6:--1} title=${8:-0}
+  style=${SF_PRESENT_STYLE[$style_kind]:-$SF_PRESENT_STYLE[${style_kind%%.*}]}
+  (( ! title )) || style+="${style:+,}bold"
   [[ -z $style || -z $text ]] || highlight="0 ${#text} $style"
   [[ -z $syntax ]] || highlight+="${highlight:+ }$syntax"
   SF_PRESENT_ROW_TEXT+=( "$text" )
@@ -155,12 +155,14 @@ sf_chat_rows() {
   integer withhold_separator
   integer decorated previewed collapsed body_start=-1 body_end=0 preview_used=0 hidden=0
   integer content_start=-1 content_end=-1 source_base=0 source_end=0 frontier=-1
-  integer separator_row transition tail_phase=0 complete_row
+  integer separator_row transition tail_phase=0 complete_row title_row
   integer display_start map_start map_end run_start break_run map span span_index=1
   integer span_start span_end row_start row_end highlight_start highlight_end
+  integer section_start section_end section_row_start section_row_end
   local cursor=${3:-1:0} text part state type heading body spans character run activity_text
   local leading
   local break_text display prefix preview=full head tail exact cursor_value row_highlight
+  local style_kind divider_style title_style
   local -a cursor_parts row_map break_map source_spans projected
 
   (( columns > 0 && budget > 0 )) || return 1
@@ -232,6 +234,8 @@ sf_chat_rows() {
           ;;
         section)
           text="─ $SF_PRESENT_NODE_ROLE[node] "
+          section_start=2
+          section_end=${#text}
           (( ${#text} < columns )) && text+=${(l:$(( columns - ${#text} ))::─:)""}
           ;;
         message)
@@ -644,8 +648,30 @@ sf_chat_rows() {
           (( span += 3 ))
         done
       fi
+      style_kind=$spans
+      if [[ $type == section ]]; then
+        style_kind=separator
+        divider_style=$SF_PRESENT_STYLE[divider]
+        title_style=${SF_PRESENT_STYLE[$spans]:-$SF_PRESENT_STYLE[section]}
+        section_row_start=$(( section_start > start ? section_start - start : 0 ))
+        section_row_end=$(( section_end - start < ${#part} ? section_end - start : ${#part} ))
+        (( section_row_end > 0 )) || section_row_end=0
+        (( section_row_start < ${#part} )) || section_row_start=${#part}
+        [[ -z $divider_style ]] || (( section_row_start == 0 )) ||
+          projected+=( 0 $section_row_start "$divider_style" )
+        [[ -z $title_style ]] || (( section_row_end <= section_row_start )) ||
+          projected+=( $section_row_start $section_row_end "$title_style" )
+        [[ -z $divider_style ]] || (( section_row_end == ${#part} )) ||
+          projected+=( $section_row_end ${#part} "$divider_style" )
+      fi
       row_highlight="${(j: :)projected}"
-      sf_chat_row_append "$part" "$spans" $settled $node "$row_highlight" $source_end
+      title_row=0
+      if [[ $type == (tool_call|injection|notice) ]] && (( ! tail_phase &&
+          (collapsed || body_start < 0 || start < body_start) )); then
+        title_row=1
+      fi
+      sf_chat_row_append "$part" "$spans" $settled $node "$row_highlight" $source_end \
+        "$style_kind" $title_row
 
       if (( previewed && ! collapsed && ! tail_phase && ! transition )) &&
           [[ -z $text ]] && (( ! activity )); then

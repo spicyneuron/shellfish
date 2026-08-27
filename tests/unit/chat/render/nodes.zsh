@@ -168,6 +168,7 @@ typeset -g theme_config='{"theme_mode":"dark","theme_light":"l","theme_dark":"d"
 
 sf_chat_theme_config "$theme_config" || fail "theme setup failed: $SF_PRESENT_HIGHLIGHT_ERROR"
 assert_equal 'fg=#555555,bold' "$SF_PRESENT_STYLE[section.user]"
+assert_equal 'fg=#333333' "$SF_PRESENT_STYLE[divider]"
 assert_equal 'fg=#666666' "$SF_PRESENT_STYLE[notice.error]"
 assert_equal 'fg=#444444' "$SF_PRESENT_STYLE[prompt]"
 assert_equal 'fg=#555555' "$SF_PRESENT_STYLE[syntax.string]"

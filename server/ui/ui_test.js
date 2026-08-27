@@ -390,6 +390,19 @@ test("does not strand a divider before a delayed user record", async () => {
   );
 });
 
+test("separates notice titles from their bodies", async () => {
+  const page = await idle();
+  await page.send(
+    { type: "_hook_display", event: "stop", hook: "/tmp/\u0001check", text: "done" },
+    { type: "_exec_error", message: "recoverable" },
+  );
+  const notes = find(page.output, "note");
+  assert.equal(findTag(notes[0], "h2")[0].textContent, "stop: /tmp/\ufffdcheck");
+  assert.equal(findTag(notes[0], "pre")[0].textContent, "done");
+  assert.equal(findTag(notes[1], "h2")[0].textContent, "Exec error");
+  assert.equal(findTag(notes[1], "pre")[0].textContent, "recoverable");
+});
+
 test("reopens the stream when it ends", async () => {
   const page = await idle();
   await page.endStream();

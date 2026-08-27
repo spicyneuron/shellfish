@@ -325,18 +325,37 @@ fi
 
 # Semantic row styling resolves "type.role" before falling back to "type", and
 # leaves generated separators unstyled.
-SF_PRESENT_STYLE=( section.user 'fg=1,bold' message 'fg=2' reasoning 'fg=3' )
+SF_PRESENT_STYLE=( divider 'fg=8' section.user 'fg=1,bold' message 'fg=2'
+  reasoning 'fg=3' tool_call 'fg=4' injection 'fg=5' notice 'fg=6' )
 sf_chat_reset
 sf_chat_event user hello
 sf_chat_rows 8 20
 assert_equal 'section.user,separator,message.user' "${(j:,:)SF_PRESENT_ROW_KIND}"
-assert_equal '0 8 fg=1,bold||0 5 fg=2' "${(j:|:)SF_PRESENT_ROW_HIGHLIGHTS}"
+assert_equal '0 2 fg=8 2 7 fg=1,bold 7 8 fg=8||0 5 fg=2' \
+  "${(j:|:)SF_PRESENT_ROW_HIGHLIGHTS}"
+
+sf_chat_rows 3 20
+assert_equal '0 1 fg=8|0 3 fg=1,bold|0 2 fg=1,bold||0 3 fg=2|0 2 fg=2' \
+  "${(j:|:)SF_PRESENT_ROW_HIGHLIGHTS}"
 
 sf_chat_reset
 sf_chat_event assistant_reasoning_delta thinking
 sf_chat_rows 20 20
 assert_equal 'reasoning.agent' "$SF_PRESENT_ROW_KIND[3]"
 assert_equal '0 11 fg=3' "$SF_PRESENT_ROW_HIGHLIGHTS[3]"
+
+sf_chat_reset
+sf_chat_event context project hook body
+sf_chat_event tool_call call shell command
+sf_chat_event tool_result call hidden result
+sf_chat_add notice notice Warning detail
+sf_chat_rows 80 20
+assert_equal '0 14 fg=5,bold' \
+  "$SF_PRESENT_ROW_HIGHLIGHTS[${SF_PRESENT_ROW_KIND[(i)injection.system]}]"
+assert_equal '0 7 fg=4,bold' \
+  "$SF_PRESENT_ROW_HIGHLIGHTS[${SF_PRESENT_ROW_KIND[(i)tool_call.agent]}]"
+assert_equal '0 9 fg=6,bold' \
+  "$SF_PRESENT_ROW_HIGHLIGHTS[${SF_PRESENT_ROW_KIND[(i)notice.notice]}]"
 
 # An unstyled kind produces no span, and every row keeps a highlight slot.
 SF_PRESENT_STYLE=()

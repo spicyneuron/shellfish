@@ -110,6 +110,7 @@ body:has(#code:not([hidden])) #prompt {
 .record h2 {
   margin: 0;
   font-size: 1em;
+  font-weight: bold;
   color: var(--muted);
 }
 
@@ -128,13 +129,13 @@ body:has(#code:not([hidden])) #prompt {
 .section::before {
   content: "";
   width: 0.75rem;
-  border-top: 1px solid currentColor;
+  border-top: 1px solid var(--edge);
 }
 
 .section::after {
   content: "";
   flex: 1;
-  border-top: 1px solid currentColor;
+  border-top: 1px solid var(--edge);
 }
 
 .section-user {
@@ -216,6 +217,10 @@ summary {
   color: var(--muted);
 }
 
+.record.context summary {
+  font-weight: bold;
+}
+
 details > pre,
 .result {
   margin-top: 0;
@@ -228,6 +233,7 @@ details > pre,
 
 details.call > summary {
   color: var(--muted);
+  font-weight: bold;
 }
 
 .result.failed {

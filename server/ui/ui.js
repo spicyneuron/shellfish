@@ -120,9 +120,9 @@ function collapsible(parent, summary, text) {
   el(details, "pre", null, safe(text));
 }
 
-function note(text, kind) {
+function note(text, kind, heading) {
   hideIndicator();
-  const article = record(kind ? "note " + kind : "note", null);
+  const article = record(kind ? "note " + kind : "note", heading ? safe(heading) : null);
   el(article, "pre", null, safe(text));
   place(article);
   if (working) showIndicator();
@@ -323,9 +323,9 @@ function apply(frame) {
     case "_tool_permission_request":
       return askPermission(frame);
     case "_hook_display":
-      return note(frame.hook + ": " + frame.text);
+      return note(frame.text, null, frame.event + ": " + frame.hook);
     case "_exec_error":
-      return note(frame.message, "error");
+      return note(frame.message, "error", "Exec error");
     case "_handoff":
       // A hook asked to replace the process, which only a terminal can honour.
       return note("the turn requested a handoff, which a served session cannot run", "error");
