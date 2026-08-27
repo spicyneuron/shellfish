@@ -4,7 +4,7 @@ setopt no_aliases no_bg_nice no_multios pipe_fail
 typeset -ga SF_PRESENT_HIGHLIGHT_SPANS=()
 typeset -g SF_PRESENT_HIGHLIGHT_ERROR=''
 # Set when a scan ends on an inline construct that a later row may still close.
-# Block modes are carried in the scan state instead and never withhold a row:
+# Other modes are carried in the scan state instead and never withhold a row:
 # they change which rules apply until something closes them.
 typeset -gi SF_PRESENT_HIGHLIGHT_INLINE_OPEN=0 SF_PRESENT_HIGHLIGHT_BLOCK_OPEN=0
 # Semantic styles keyed by row kind and by transient chrome name. Row kinds fall
@@ -16,10 +16,10 @@ typeset -gi SF_PRESENT_HIGHLIGHT_ENABLED=0
 # deliberately outside them: nodes stay semantic, these are colors.
 typeset -ga SF_PRESENT_HIGHLIGHT_CACHE=()
 typeset -ga SF_PRESENT_HIGHLIGHT_CACHE_LANGUAGE=() SF_PRESENT_HIGHLIGHT_CACHE_STATE=()
-# START is the first retained source offset. STATE is the block mode in force at
+# START is the first retained source offset. STATE is the scan mode in force at
 # the node's frontier, which is where the next scan resumes.
 typeset -ga SF_PRESENT_HIGHLIGHT_CACHE_START=()
-# The block mode a pending scan would leave behind, and whether the last release
+# The scan mode a pending scan would leave behind, and whether the last release
 # moved a frontier and so needs the rows projected again.
 typeset -g SF_PRESENT_HIGHLIGHT_NEXT_STATE=''
 typeset -gi SF_PRESENT_HIGHLIGHT_ADVANCED=0
@@ -177,7 +177,7 @@ sf_chat_highlight_prune() {
 }
 
 # Scans one bounded segment, resuming at the node's frontier. Committed source
-# is never revisited, so the block mode is carried across the boundary instead
+# is never revisited, so the scan mode is carried across the boundary instead
 # of being recovered by rescanning the line that produced it.
 sf_chat_highlight_scan() {
   integer node=$1 target=$2 frontier continuation=0
@@ -185,7 +185,7 @@ sf_chat_highlight_scan() {
   SF_PRESENT_HIGHLIGHT_SPANS=()
   SF_PRESENT_HIGHLIGHT_INLINE_OPEN=0
   # Cleared before the early return: a node that scans nothing must not leave
-  # the previous node's block mode standing for its own commit to store.
+  # the previous node's scan mode standing for its own commit to store.
   SF_PRESENT_HIGHLIGHT_NEXT_STATE=''
   frontier=${SF_PRESENT_NODE_FRONTIER[node]:--1}
   (( frontier >= 0 )) || frontier=0
@@ -408,20 +408,22 @@ sf_chat_code_highlight() {
   done
 }
 
-# Scans Markdown from a boundary that may fall mid-line. $3 carries the block
+# Scans Markdown from a boundary that may fall mid-line. $3 carries the scan
 # mode across that boundary and $4 marks the source as the continuation of a line
 # already scanned, so line-leading syntax is not matched against a fragment.
-# Returns the block mode in REPLY. An unclosed inline construct is reported
-# separately: it is the only state a caller should withhold a row for.
+# Returns the scan mode in REPLY. An unclosed inline construct is reported
+# separately because it is the only state for which a caller withholds a row.
 sf_chat_markdown_highlight() {
   local source=$1 state=${3-} line fence='' delimiter='' language='' close
   local character suffix rest kind boundary=$state
   integer base_offset=${2:-0} continuation=${4:-0}
   integer length=${#source} index=1 end base close_start
   integer cursor inline_end count content match_end inline complete_line starts_line
-  integer comment=0
+  integer comment=0 heading=0
   local -a fields lines
-  if [[ -n $state ]]; then
+  if [[ $state == heading ]]; then
+    heading=1
+  elif [[ -n $state ]]; then
     fields=( "${(@ps:\t:)state}" )
     fence=${fields[1]-}
     language=${fields[2]-}
@@ -464,10 +466,17 @@ sf_chat_markdown_highlight() {
       inline=0
     fi
     if (( inline )); then
-      if (( starts_line )) &&
+      if (( heading )); then
+        sf_chat_highlight_span $base $(( base + ${#line} )) strong
+      elif (( starts_line )) &&
           [[ $line =~ '^( {0,3})(#{1,6}|>|[-*+]|[0-9]{1,9}[.)])([[:space:]]+)' ]]; then
         match_end=$MEND
         sf_chat_highlight_span $(( base + ${#match[1]} )) $(( base + match_end )) markup
+        if [[ $match[2] == \#* ]]; then
+          heading=1
+          boundary=heading
+          sf_chat_highlight_span $(( base + match_end )) $(( base + ${#line} )) strong
+        fi
         line=${line[match_end + 1,-1]}
         (( base += match_end ))
       fi
@@ -535,7 +544,7 @@ sf_chat_markdown_highlight() {
         (( ++cursor ))
       done
     fi
-    # The block mode is reported for the last complete line, which is where a
+    # The scan mode is reported for the last complete line, which is where a
     # caller resumes. A completed line also closes any inline construct left
     # dangling on it.
     if (( complete_line )); then
@@ -544,6 +553,7 @@ sf_chat_markdown_highlight() {
       else
         boundary=''
       fi
+      heading=0
       SF_PRESENT_HIGHLIGHT_INLINE_OPEN=0
     fi
     index=$(( end + 1 ))

@@ -247,7 +247,14 @@ typeset markdown=$'# Head\n**bold** [link](url) `code`\n```js\nconst x = 3;\n```
 SF_PRESENT_HIGHLIGHT_SPANS=()
 sf_chat_markdown_highlight "$markdown"
 span_texts "$markdown"
-assert_equal '# ,**,bold,**,[link](url),`,code,`,```js,const,3,```' "$REPLY"
+assert_equal '# ,Head,**,bold,**,[link](url),`,code,`,```js,const,3,```' "$REPLY"
+assert_equal '0,2,fg=#222222,2,6,bold' \
+  "${(j:,:)SF_PRESENT_HIGHLIGHT_SPANS[1,6]}"
+
+SF_PRESENT_HIGHLIGHT_SPANS=()
+sf_chat_markdown_highlight '- item'
+span_texts '- item'
+assert_equal '- ' "$REPLY"
 
 markdown=$'```js\n\nconst value\n\t```'
 SF_PRESENT_HIGHLIGHT_SPANS=()
@@ -263,6 +270,15 @@ assert_equal 0 "${#SF_PRESENT_HIGHLIGHT_SPANS}"
 SF_PRESENT_HIGHLIGHT_SPANS=()
 sf_chat_markdown_highlight '# not a heading' 0 '' 0
 (( ${#SF_PRESENT_HIGHLIGHT_SPANS} )) || fail 'a real line start lost its leader'
+typeset -a heading_spans
+SF_PRESENT_HIGHLIGHT_SPANS=()
+sf_chat_markdown_highlight '# Heading'
+heading_spans=( "${SF_PRESENT_HIGHLIGHT_SPANS[@]}" )
+assert_equal heading "$REPLY"
+SF_PRESENT_HIGHLIGHT_SPANS=()
+sf_chat_markdown_highlight $' continues\n' 9 heading 1
+heading_spans+=( "${SF_PRESENT_HIGHLIGHT_SPANS[@]}" )
+assert_equal '0 2 fg=#222222 2 9 bold 9 19 bold' "${(j: :)heading_spans}"
 SF_PRESENT_HIGHLIGHT_SPANS=()
 sf_chat_markdown_highlight 'const x = 3;' 0 $'```\tjs' 1
 span_texts 'const x = 3;'
