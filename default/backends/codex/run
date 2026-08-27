@@ -1,0 +1,90 @@
+#!/usr/bin/env zsh
+
+emulate -R zsh
+setopt err_exit no_aliases no_multios pipe_fail
+umask 077
+
+typeset -gr ROOT=${0:A:h:h:h:h}
+typeset -gr ENDPOINT=https://chatgpt.com/backend-api/codex/responses
+unset SHELLFISH_API_KEY SHELLFISH_RESPONSES_ACCOUNT_ID
+
+die() {
+  print -u2 -r -- "codex: $*"
+  exit 1
+}
+
+typeset temp_dir request_file prepared_file request_status codex_home auth_file credentials
+typeset access_token='' account_id=''
+temp_dir=$(mktemp -d "${TMPDIR:-/tmp}/shellfish-codex.XXXXXX") ||
+  die 'cannot create temporary directory'
+trap 'rm -rf -- "$temp_dir"' EXIT
+request_file="$temp_dir/request.json"
+prepared_file="$temp_dir/prepared.json"
+cat >"$request_file"
+
+request_status=$(jq -L "$ROOT/lib" -er --arg endpoint "$ENDPOINT" '
+  include "runtime/schema";
+  # The request body contains backend-neutral fields as well as Codex options.
+  # Codex accepts only reasoning; the Responses adapter owns the generated body.
+  if (canonical_request and
+      ((.options.request | has("reasoning") | not) or
+       (.options.request.reasoning | type == "object"))) | not
+  then "invalid"
+  elif .transport.endpoint != $endpoint or .transport.insecure_tls != false
+  then "transport"
+  else "valid" end
+' "$request_file") || die "invalid canonical request"
+case $request_status in
+  invalid) die "invalid canonical request" ;;
+  transport) die "Codex transport must use the built-in secure endpoint" ;;
+  valid) ;;
+  *) die "invalid canonical request" ;;
+esac
+
+# Reasoning comes back encrypted, so a summary is its only readable trace. Asked
+# for here rather than in the shared Responses backend, which points at whatever
+# model a provider configures; this transport is pinned to one Codex endpoint.
+# The summary is forced after raw options are applied; effort stays the caller's.
+jq -c '.options.request |=
+  (. + {reasoning:((.reasoning // {} | if . == {effort:""} then {} else . end) * {summary:"auto"})})' \
+  "$request_file" >"$prepared_file" || die "cannot prepare canonical request"
+
+command -v codex >/dev/null 2>&1 || die "Codex CLI is not installed"
+
+if [[ -n ${CODEX_HOME-} ]]; then
+  codex_home=$CODEX_HOME
+elif [[ -n ${HOME-} ]]; then
+  codex_home=$HOME/.codex
+else
+  die "cannot locate Codex credentials without CODEX_HOME or HOME"
+fi
+auth_file=$codex_home/auth.json
+[[ -f $auth_file && -r $auth_file ]] || \
+  die "Codex credentials are unavailable; authenticate using Codex and retry"
+credentials=$(jq -er '
+  select(
+    .auth_mode == "chatgpt" and
+    (.tokens.access_token | type == "string" and length > 0 and
+      (test("[[:cntrl:]]") | not)) and
+    (.tokens.account_id | type == "string" and length > 0 and
+      (test("[[:cntrl:]]") | not))
+  ) |
+  [["access_token",.tokens.access_token],
+   ["account_id",.tokens.account_id]][] |
+  join("\u001c")
+' "$auth_file" 2>/dev/null) || \
+  die "Codex ChatGPT credentials are unavailable; authenticate using Codex and retry"
+while IFS=$'\034' read -r name value; do
+  case $name in
+    access_token) access_token=$value ;;
+    account_id) account_id=$value ;;
+    *) die "Codex ChatGPT credentials are unavailable; authenticate using Codex and retry" ;;
+  esac
+done <<<"$credentials"
+[[ -n $access_token && -n $account_id ]] || \
+  die "Codex ChatGPT credentials are unavailable; authenticate using Codex and retry"
+
+SHELLFISH_API_KEY=$access_token SHELLFISH_RESPONSES_ACCOUNT_ID=$account_id \
+  SHELLFISH_API_KEY_SOURCE='Codex CLI login' \
+  "$ROOT/default/backends/openai-responses/run" <"$prepared_file"
+unset access_token account_id credentials

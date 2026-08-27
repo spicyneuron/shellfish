@@ -1,0 +1,182 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Shellfish Code configuration",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {"type": "string"},
+    "default_profile": {"$ref": "#/$defs/name"},
+    "theme_mode": {"enum": ["auto", "light", "dark"]},
+    "theme_light": {"$ref": "#/$defs/name"},
+    "theme_dark": {"$ref": "#/$defs/name"},
+    "backends": {"$ref": "#/$defs/named_backends"},
+    "harnesses": {"$ref": "#/$defs/named_harnesses"},
+    "themes": {"$ref": "#/$defs/named_themes"},
+    "tui": {"$ref": "#/$defs/tui"},
+    "profiles": {
+      "type": "object",
+      "propertyNames": {"$ref": "#/$defs/name"},
+      "additionalProperties": {"$ref": "#/$defs/profile"}
+    }
+  },
+  "$defs": {
+    "name": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+    },
+    "reference": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[^\u0000-\u001f\u007f-]+$"
+    },
+    "nonempty_control_free_string": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[^\u0000-\u001f\u007f-]+$"
+    },
+    "positive_integer": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 2147483647
+    },
+    "preview_lines": {
+      "oneOf": [
+        {"type": "integer", "minimum": 0, "maximum": 2147483647},
+        {"const": "full"}
+      ]
+    },
+    "capture_bytes": {
+      "type": "integer",
+      "minimum": 64,
+      "maximum": 2147483647
+    },
+    "api_key_env": {
+      "type": "string",
+      "pattern": "^$|^[A-Za-z_][A-Za-z0-9_]*$",
+      "not": {
+        "pattern": "^_SHELLFISH_"
+      }
+    },
+    "endpoint": {
+      "type": "string",
+      "pattern": "^https?://[^\\s\u0000-\u001f\u007f-]+$"
+    },
+    "component_list": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/reference"}
+    },
+    "sandbox_path_list": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "pattern": "^/[^\u0000]*$"
+      }
+    },
+    "color": {
+      "type": "string",
+      "pattern": "^#[0-9A-Fa-f]{6}$"
+    },
+    "theme": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "text_color": {"$ref": "#/$defs/color"},
+        "muted_color": {"$ref": "#/$defs/color"},
+        "divider_color": {"$ref": "#/$defs/color"},
+        "footer_color": {"$ref": "#/$defs/color"},
+        "prompt_color": {"$ref": "#/$defs/color"},
+        "system_heading_color": {"$ref": "#/$defs/color"},
+        "context_color": {"$ref": "#/$defs/color"},
+        "user_heading_color": {"$ref": "#/$defs/color"},
+        "agent_heading_color": {"$ref": "#/$defs/color"},
+        "tool_color": {"$ref": "#/$defs/color"},
+        "reasoning_color": {"$ref": "#/$defs/color"},
+        "error_color": {"$ref": "#/$defs/color"},
+        "added_color": {"$ref": "#/$defs/color"},
+        "added_background_color": {"$ref": "#/$defs/color"},
+        "removed_color": {"$ref": "#/$defs/color"},
+        "removed_background_color": {"$ref": "#/$defs/color"},
+        "permission_color": {"$ref": "#/$defs/color"}
+      }
+    },
+    "named_themes": {
+      "type": "object",
+      "propertyNames": {"$ref": "#/$defs/name"},
+      "additionalProperties": {"$ref": "#/$defs/theme"}
+    },
+    "backend": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "adapter": {"$ref": "#/$defs/reference"},
+        "endpoint": {"$ref": "#/$defs/endpoint"},
+        "api_key_env": {"$ref": "#/$defs/api_key_env"},
+        "insecure_tls": {"type": "boolean"},
+        "http_timeout": {"$ref": "#/$defs/positive_integer"},
+        "http_stall": {"$ref": "#/$defs/positive_integer"}
+      }
+    },
+    "named_backends": {
+      "type": "object",
+      "propertyNames": {"$ref": "#/$defs/name"},
+      "additionalProperties": {"$ref": "#/$defs/backend"}
+    },
+    "harness": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "system": {"$ref": "#/$defs/component_list"},
+        "tools": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/reference"},
+          "uniqueItems": true
+        },
+        "sandbox": {"type": "boolean"},
+        "sandbox_read_paths": {"$ref": "#/$defs/sandbox_path_list"},
+        "sandbox_write_paths": {"$ref": "#/$defs/sandbox_path_list"},
+        "session_start": {"$ref": "#/$defs/component_list"},
+        "user_prompt_submit": {"$ref": "#/$defs/component_list"},
+        "permission_request": {"$ref": "#/$defs/component_list"},
+        "pre_tool_use": {"$ref": "#/$defs/component_list"},
+        "post_tool_use": {"$ref": "#/$defs/component_list"},
+        "stop": {"$ref": "#/$defs/component_list"},
+        "max_requests_per_turn": {"$ref": "#/$defs/positive_integer"},
+        "max_tool_calls_per_request": {"$ref": "#/$defs/positive_integer"},
+        "max_capture_bytes": {"$ref": "#/$defs/capture_bytes"}
+      }
+    },
+    "named_harnesses": {
+      "type": "object",
+      "propertyNames": {"$ref": "#/$defs/name"},
+      "additionalProperties": {"$ref": "#/$defs/harness"}
+    },
+    "request": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "model": {"type": "string", "minLength": 1, "pattern": "^[^\u0000-\u001f\u007f-]+$"}
+      }
+    },
+    "tui": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "preview_lines_reasoning": {"$ref": "#/$defs/preview_lines"},
+        "preview_lines_context": {"$ref": "#/$defs/preview_lines"},
+        "preview_lines_tool_call": {"$ref": "#/$defs/preview_lines"},
+        "preview_lines_tool_result": {"$ref": "#/$defs/preview_lines"}
+      }
+    },
+    "profile": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "extend": {"$ref": "#/$defs/name"},
+        "backend": {"$ref": "#/$defs/name"},
+        "harness": {"$ref": "#/$defs/name"},
+        "request": {"$ref": "#/$defs/request"}
+      }
+    }
+  }
+}

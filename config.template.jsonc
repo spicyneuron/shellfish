@@ -1,0 +1,25 @@
+// Shellfish: https://github.com/spicyneuron/shellfish
+{
+  "$schema": "https://raw.githubusercontent.com/spicyneuron/shellfish/refs/heads/main/config.schema.json",
+
+  "default_profile": "agent",
+
+  "profiles": {
+    "agent": {
+      "extend": "default",
+      "backend": "openrouter",
+      "request": {
+        // "model": "MODEL",
+        // "reasoning": { "effort": "high" },
+        // "temperature": 0.5
+      }
+    }
+  },
+
+  "harnesses": {
+    "default": {
+      "sandbox_read_paths": [],
+      "sandbox_write_paths": []
+    }
+  }
+}

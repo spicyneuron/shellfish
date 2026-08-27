@@ -1,0 +1,406 @@
+#!/usr/bin/env zsh
+
+emulate -R zsh
+setopt no_aliases no_multios pipe_fail
+
+typeset -gr SF_ENTRY=${0:A}
+typeset -gr SF_ROOT=${SF_ENTRY:h:h}
+
+sf_usage() {
+  cat -- "$SF_ROOT/help.txt"
+}
+
+sf_die() {
+  print -u2 -r -- "shellfish: $*"
+  return 1
+}
+
+sf_read_prompt() {
+  local required=$1 stdin_input=''
+  shift
+  if [[ ! -t 0 ]]; then stdin_input=$(<&0); fi
+  if (( $# )); then
+    [[ -z $stdin_input ]] || {
+      sf_die 'cannot use a message argument and standard input together'
+      return 2
+    }
+    stdin_input=${(j: :)@}
+  fi
+  if (( required )) && [[ -z $stdin_input ]]; then
+    sf_die 'a message is required for a new turn'
+    return 2
+  fi
+  REPLY=$stdin_input
+}
+
+sf_main() {
+  local requested_session='' requested_config='' requested_profile=''
+  local requested_backend='' requested_model='' requested_request='{}'
+  local command='' input=''
+  local sandbox_flag sandbox_path resolved_path
+  local -a positional=() sandbox_read_paths=() sandbox_write_paths=()
+  local -a original_args=("$@")
+  integer session_explicit=0 config_explicit=0 request_explicit=0 runtime_override=0
+  integer continue_requested=0 resume_requested=0 clear_requested=0 new_requested=0 resume_status=0
+  integer jsonl_requested=0 verbose_requested=0
+  case ${1-} in
+    chat)
+      shift
+      ;;
+    config)
+      command=config
+      shift
+      ;;
+    exec)
+      command=exec
+      shift
+      ;;
+    -h|--help)
+      sf_usage
+      return
+      ;;
+    *) ;;
+  esac
+
+  while (( $# )); do
+    case $1 in
+      --session)
+        (( $# >= 2 )) || {
+          sf_usage >&2
+          sf_die '--session requires a path'
+          return 2
+        }
+        (( ! session_explicit )) || {
+          sf_usage >&2
+          sf_die '--session may only be specified once'
+          return 2
+        }
+        [[ -n $2 ]] || {
+          sf_usage >&2
+          sf_die '--session requires a nonempty path'
+          return 2
+        }
+        session_explicit=1
+        requested_session=$2
+        shift 2
+        ;;
+      -c|--continue)
+        continue_requested=1
+        shift
+        ;;
+      -r|--resume)
+        resume_requested=1
+        shift
+        ;;
+      --clear)
+        clear_requested=1
+        shift
+        ;;
+      --new)
+        new_requested=1
+        shift
+        ;;
+      --verbose)
+        verbose_requested=1
+        shift
+        ;;
+      --jsonl)
+        (( ! jsonl_requested )) || {
+          sf_die '--jsonl may only be specified once'
+          return 2
+        }
+        jsonl_requested=1
+        shift
+        ;;
+      --config)
+        (( $# >= 2 )) || {
+          sf_usage >&2
+          sf_die '--config requires a path'
+          return 2
+        }
+        (( ! config_explicit )) || {
+          sf_die '--config may only be specified once'
+          return 2
+        }
+        [[ -n $2 && $2 != - ]] || {
+          sf_die '--config requires a nonempty file path other than -'
+          return 2
+        }
+        config_explicit=1
+        requested_config=$2
+        shift 2
+        ;;
+      -p|--profile)
+        (( $# >= 2 )) || {
+          sf_die "$1 requires a profile name"
+          return 2
+        }
+        [[ $2 =~ ^[A-Za-z0-9][A-Za-z0-9_-]*$ ]] || {
+          sf_die '--profile must match [A-Za-z0-9][A-Za-z0-9_-]*'
+          return 2
+        }
+        requested_profile=$2
+        runtime_override=1
+        shift 2
+        ;;
+      -m|--model)
+        (( $# >= 2 )) || {
+          sf_die "$1 requires a model"
+          return 2
+        }
+        [[ -n $2 && ! $2 =~ '[[:cntrl:]]' ]] || {
+          sf_die '--model requires a nonempty value without control characters'
+          return 2
+        }
+        requested_model=$2
+        runtime_override=1
+        shift 2
+        ;;
+      -b|--backend)
+        (( $# >= 2 )) || {
+          sf_die "$1 requires a backend name or path"
+          return 2
+        }
+        [[ -n $2 && ! $2 =~ '[[:cntrl:]]' ]] || {
+          sf_die '--backend requires a nonempty value without control characters'
+          return 2
+        }
+        requested_backend=$2
+        runtime_override=1
+        shift 2
+        ;;
+      --request)
+        (( $# >= 2 )) || {
+          sf_die '--request requires a JSON object'
+          return 2
+        }
+        (( ! request_explicit )) || {
+          sf_die '--request may only be specified once'
+          return 2
+        }
+        requested_request=$(jq -ce 'select(type == "object")' <<<"$2" 2>/dev/null) || {
+          sf_die '--request requires a JSON object'
+          return 2
+        }
+        request_explicit=1
+        runtime_override=1
+        shift 2
+        ;;
+      --sandbox-read|--sandbox-write)
+        sandbox_flag=$1
+        (( $# >= 2 )) || {
+          sf_die "$sandbox_flag requires a path"
+          return 2
+        }
+        [[ -n $2 ]] || {
+          sf_die "$sandbox_flag requires a nonempty path"
+          return 2
+        }
+        sandbox_path=$2
+        if [[ $sandbox_path == '~/'* ]]; then
+          [[ -n ${HOME-} ]] || {
+            sf_die "$sandbox_flag cannot expand ~ without HOME"
+            return 2
+          }
+          sandbox_path="$HOME/${sandbox_path#\~/}"
+        elif [[ $sandbox_path != /* ]]; then
+          sandbox_path="$PWD/$sandbox_path"
+        fi
+        resolved_path=${sandbox_path:A}
+        [[ -e $resolved_path ]] || {
+          sf_die "$sandbox_flag path does not exist: $2"
+          return 2
+        }
+        if [[ $sandbox_flag == --sandbox-read ]]; then
+          sandbox_read_paths+=( "$resolved_path" )
+        else
+          sandbox_write_paths+=( "$resolved_path" )
+        fi
+        runtime_override=1
+        shift 2
+        ;;
+      --)
+        shift
+        positional+=( "$@" )
+        break
+        ;;
+      -*)
+        sf_usage >&2
+        sf_die "unknown argument: $1"
+        return 2
+        ;;
+      *)
+        positional+=( "$1" )
+        shift
+        ;;
+    esac
+  done
+
+  if (( continue_requested && resume_requested )); then
+    sf_usage >&2
+    sf_die '--continue and --resume are mutually exclusive'
+    return 2
+  fi
+  if (( (continue_requested || resume_requested) && session_explicit )); then
+    sf_usage >&2
+    sf_die '--continue and --resume cannot be combined with --session'
+    return 2
+  fi
+  if [[ $command != exec ]] && (( jsonl_requested )); then
+    sf_die '--jsonl requires shellfish exec'
+    return 2
+  fi
+  if [[ $command == exec ]] && (( resume_requested )); then
+    sf_die 'shellfish exec does not support --resume; use --continue or --session'
+    return 2
+  fi
+  if [[ $command == exec ]] && (( clear_requested )); then
+    sf_die 'shellfish exec does not support --clear'
+    return 2
+  fi
+  if [[ $command == exec ]] && (( verbose_requested )); then
+    sf_die 'shellfish exec does not support --verbose'
+    return 2
+  fi
+  if (( new_requested )); then
+    [[ $command == exec ]] || {
+      sf_die '--new requires shellfish exec'
+      return 2
+    }
+    (( ! session_explicit && ! continue_requested && ! resume_requested && ! clear_requested &&
+      ! jsonl_requested && ! ${#positional} )) || {
+      sf_die 'shellfish exec --new does not accept a session, prompt, or turn option'
+      return 2
+    }
+  fi
+
+  (( $+commands[jq] )) || { sf_die 'shellfish requires jq'; return 2; }
+  typeset -gx _SHELLFISH_SANDBOX_READ_PATHS _SHELLFISH_SANDBOX_WRITE_PATHS
+  _SHELLFISH_SANDBOX_READ_PATHS=$(jq -cn '$ARGS.positional' --args -- \
+    "${sandbox_read_paths[@]}") || return 1
+  _SHELLFISH_SANDBOX_WRITE_PATHS=$(jq -cn '$ARGS.positional' --args -- \
+    "${sandbox_write_paths[@]}") || return 1
+  source "$SF_ROOT/lib/runtime/main.zsh"
+  source "$SF_ROOT/lib/session/main.zsh"
+  SF_RUNTIME_VERBOSE=$verbose_requested
+
+  # Config needs no session, provider, stdin, or interactive terminal setup.
+  if [[ $command == config ]]; then
+    (( ! ${#positional} )) || {
+      sf_die 'shellfish config does not accept a prompt'
+      return 2
+    }
+    (( ! continue_requested && ! resume_requested && ! clear_requested )) || {
+      sf_usage >&2
+      sf_die 'shellfish config does not support --continue, --resume, or --clear'
+      return 2
+    }
+    local runtime
+    sf_runtime_resolve "$requested_session" "$requested_config" \
+      "$requested_profile" "$requested_model" "$requested_request" \
+      "$requested_backend" "$runtime_override" || {
+      local resolve_status=$?
+      (( resolve_status != 2 )) || sf_usage >&2
+      sf_die "$SF_RUNTIME_ERROR"
+      return $resolve_status
+    }
+    runtime=$REPLY
+    if [[ -n $requested_session ]]; then
+      sf_runtime_restore_presentation "$requested_config" || {
+        sf_die "$SF_RUNTIME_ERROR"
+        return 1
+      }
+    fi
+    sf_runtime_report "$runtime"
+    return $?
+  fi
+
+  if [[ $command == exec ]]; then
+    if (( new_requested )); then
+      input=''
+    elif (( jsonl_requested )); then
+      (( ! ${#positional} )) || {
+        sf_die '--jsonl does not accept a prompt'
+        return 2
+      }
+      IFS= read -r input || [[ -n $input ]] || input=''
+      [[ -n $input ]] || {
+        sf_die '--jsonl requires a canonical user message on stdin'
+        return 2
+      }
+      input=$(jq -L "$SF_ROOT/lib" -ce '
+        include "runtime/schema";
+        select(canonical_user_message)
+      ' <<<"$input" 2>/dev/null) || {
+        sf_die '--jsonl requires a canonical user message on stdin'
+        return 2
+      }
+    else
+      sf_read_prompt 1 "${positional[@]}" || return
+      input=$(jq -cn --arg text "$REPLY" \
+        '{type:"message",role:"user",content:[{type:"text",text:$text}]}') || return 1
+    fi
+    source "$SF_ROOT/lib/exec.zsh"
+    sf_exec_run "$input" "$requested_session" "$requested_config" \
+      "$requested_profile" "$requested_model" "$requested_request" "$requested_backend" \
+      "$runtime_override" "$continue_requested" "$jsonl_requested" "$new_requested"
+    local exit_status=$?
+    [[ -z $SF_EXEC[error] ]] || sf_die "$SF_EXEC[error]"
+    return $exit_status
+  fi
+
+  sf_read_prompt 0 "${positional[@]}" || return
+  input=$REPLY
+  if [[ ! -o interactive ]]; then
+    if [[ -t 1 && ( -t 0 || -r /dev/tty ) ]]; then
+      if [[ -n $input && ! ${#positional} ]]; then
+        exec zsh -f -i "$SF_ENTRY" "${original_args[@]}" <<<"$input"
+      fi
+      exec zsh -f -i "$SF_ENTRY" "${original_args[@]}"
+    fi
+    sf_die 'development chat requires an interactive terminal'
+    return 2
+  fi
+  if [[ ! -t 0 ]]; then
+    exec </dev/tty || {
+      sf_die 'development chat requires an interactive terminal'
+      return 2
+    }
+  fi
+  if [[ ! -t 1 ]]; then
+    sf_die 'development chat requires an interactive terminal'
+    return 2
+  fi
+
+  if (( resume_requested )); then
+    zmodload zsh/terminfo && echoti clear || {
+      sf_die 'cannot clear terminal'
+      return 1
+    }
+    source "$SF_ROOT/lib/resume.zsh"
+    sf_session_find 0 || {
+      sf_die "$SF_SESSION_ERROR"
+      return 1
+    }
+    sf_resume_run "$SF_RESUME_LIMIT" "${SF_SESSION_MATCHES[@]}" || {
+      resume_status=$?
+      (( resume_status == 130 )) || sf_die "$SF_RESUME_ERROR"
+      return $resume_status
+    }
+    exec -- "$SF_ENTRY" --clear --session "$REPLY"
+    sf_die 'cannot resume selected session'
+    return 1
+  fi
+
+  source "$SF_ROOT/lib/chat/main.zsh"
+  sf_chat_run "$requested_session" "$requested_config" "$requested_profile" \
+    "$requested_model" "$requested_request" "$requested_backend" \
+    "$runtime_override" "$continue_requested" "$clear_requested" "$input"
+  local exit_status=$?
+  [[ -z $SF_CHAT_ERROR ]] || sf_die "$SF_CHAT_ERROR"
+  return $exit_status
+}
+
+sf_main "$@"
+typeset exit_status=$?
+exit $exit_status

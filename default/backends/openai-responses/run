@@ -1,0 +1,267 @@
+#!/usr/bin/env zsh
+
+emulate -R zsh
+setopt err_exit no_aliases no_multios pipe_fail
+umask 077
+
+typeset -gr ROOT=${0:A:h:h:h:h}
+source "$ROOT/lib/backend.zsh"
+
+api_key=${SHELLFISH_API_KEY-}
+account_id=${SHELLFISH_RESPONSES_ACCOUNT_ID-}
+# The ChatGPT Codex transport rejects the Responses output-limit field.
+chatgpt_transport=false
+[[ -z $account_id ]] || chatgpt_transport=true
+unset SHELLFISH_API_KEY SHELLFISH_RESPONSES_ACCOUNT_ID
+
+sf_backend_setup openai-responses
+trap 'rm -rf -- "$SF_BACKEND_TEMP_DIR"' EXIT
+typeset request_file=$SF_BACKEND_REQUEST_FILE body_file=$SF_BACKEND_BODY_FILE
+typeset response_file=$SF_BACKEND_RESPONSE_FILE status_file=$SF_BACKEND_STATUS_FILE
+typeset normalizer_error_file=$SF_BACKEND_NORMALIZER_ERROR_FILE
+cat >$request_file
+
+typeset -a transport
+transport=( "${(@f)$(jq -L "$ROOT/lib" -er '
+  include "runtime/schema";
+  select(canonical_request and
+    (.options.request | all(keys[];
+      IN("include", "input", "instructions", "store") | not))) |
+  .transport.endpoint, (.transport.insecure_tls | tostring),
+  (.transport.http_timeout | tostring), (.transport.http_stall | tostring)
+' "$request_file")}" ) || sf_backend_die 'invalid canonical request'
+(( ${#transport} == 4 )) || sf_backend_die 'invalid canonical request'
+
+sf_backend_credential 'Authorization' "${api_key:+Bearer $api_key}"
+sf_backend_credential 'ChatGPT-Account-ID' "$account_id"
+unset api_key account_id
+
+jq -ce --argjson chatgpt_transport "$chatgpt_transport" '
+  def text_content:
+    [.content[] | select(.type == "text") | .text] | join("");
+  def items:
+    if .role == "user" then
+      [{type:"message",role:"user",content:[{type:"input_text",text:text_content}]}]
+    elif .role == "assistant" then
+      (text_content) as $text |
+      # Reasoning leads, as the API emits it, so each item still precedes the
+      # call it belongs to. With nothing stored server-side only an item holding
+      # its encrypted payload can be resolved, so a turn recorded before
+      # reasoning was configured is dropped rather than sent unresolvable.
+      [.content[] | select(.type == "reasoning") | .opaque |
+        select(type == "object" and has("encrypted_content"))] +
+      (if $text == "" then [] else
+        [{type:"message",role:"assistant",content:[{type:"output_text",text:$text}]}]
+       end) +
+      [.content[] | select(.type == "tool_call") |
+        {type:"function_call",call_id:.id,name:.name,arguments:(.input | tojson)}]
+    elif .role == "tool_result" then
+      [{type:"function_call_output",call_id:.call_id,output:.content}]
+    else
+      error("unsupported canonical role")
+    end;
+  (.options.request | if has("max_tokens") then
+      if has("max_output_tokens") then del(.max_tokens)
+      else .max_output_tokens = .max_tokens | del(.max_tokens) end
+    else . end |
+    if .reasoning == {effort:""} then del(.reasoning) else . end) as $request |
+  (($request * {
+    model: $request.model,
+    instructions: .system,
+    input: [.messages[] | items[]],
+    store: false,
+    stream: true
+  }) |
+  if $chatgpt_transport then del(.max_output_tokens) else . end) +
+  (if (.tools | length) == 0 then {} else {
+    tools: [.tools[] |
+      {type:"function",name:.name,description:.description,parameters:.input_schema}]
+  } end) as $body |
+  # Nothing is stored server-side, so an encrypted payload is the only way a
+  # reasoning item survives into the next request. A raw reasoning object also
+  # counts here because the Codex backend forces its summary through that layer.
+  $body + (if ($body | has("reasoning")) then
+    {include: ["reasoning.encrypted_content"]} else {} end)
+' "$request_file" >"$body_file" || sf_backend_die 'cannot translate canonical request'
+
+# The body streams to the normalizer rather than landing in a file first, so a
+# response is normalized while it is still arriving. It is copied aside on the
+# way past only so a failure has something to quote; nothing reads that copy when
+# the exchange succeeds. With the body on stdout the status travels on stderr,
+# written last, so the three characters it ends with are the code.
+set +e
+sf_backend_curl_args $transport[1] $transport[2] $transport[3] $transport[4]
+curl "${SF_BACKEND_CURL_ARGS[@]}" 2>"$status_file" | tee "$response_file" | \
+  jq -nRrc --unbuffered -L "$ROOT/lib" '
+  def transient($type;$text): {type:$type,text:$text};
+  def usage_event:
+    {type:"_turn_usage"} + .;
+
+  # Rebuilds the output a completed response should carry. Most backends send it
+  # whole, in which case nothing here applies; one that sends a thin completed
+  # event leaves the stream as the only record, so what passed by on the way fills
+  # what is missing. Reasoning leads and calls trail, the way the API emits them,
+  # so a rebuilt output keeps each reasoning item ahead of its call.
+  def merged($response; $items; $text; $added):
+    # The parts of a message item that actually say something, so an item left
+    # empty by the stream is not mistaken for text that arrived.
+    def texts: [.content[]? |
+      select(.type == "output_text" and (.text | type) == "string" and .text != "")];
+    ($response.output // []) as $existing |
+    ([$existing[] | select(.type == "message") | texts[]] | length > 0) as $has_text |
+    ([$existing[] | select(.type == "function_call") | .call_id]) as $call_ids |
+    ([$existing[] | select(.type == "reasoning") | .id]) as $reasoning_ids |
+    ([$items[] | select(.type == "message") | select(texts | length > 0)]) as $messages |
+    ([$items[] | select(.type == "function_call")]) as $calls |
+    ([$calls[] | .call_id]) as $completed_ids |
+    ([$items[] | select(.type == "reasoning")] +
+     (if ($messages | length) > 0 then $messages
+      elif $text != "" then
+        [{type:"message",role:"assistant",content:[{type:"output_text",text:$text}]}]
+      else [] end) +
+     $calls +
+     # A backend that never completes a call as an item still opens one and closes
+     # its arguments, which is enough to recover it.
+     [$added | to_entries | sort_by(.key | tonumber)[] | .value |
+       select(.call_id as $id | ($completed_ids | index($id)) == null)]) as $rebuilt |
+    $response + {output: ($existing + [$rebuilt[] |
+      if .type == "message" then select($has_text | not)
+      elif .type == "function_call" then
+        select(.call_id as $id | ($call_ids | index($id)) == null)
+      else select(.id as $id | ($reasoning_ids | index($id)) == null)
+      end])};
+
+  def normalized:
+    # A body carrying an error is not a response, however much of one it looks
+    # like. Nothing else here would reject it: an error object has no output and
+    # no status, which would otherwise normalize into an empty completed turn.
+    if .error? != null then error("API error") else . end |
+    (.usage // null) as $usage |
+    [(.output // [])[] |
+      if .type == "message" then
+        .content[]? |
+        select(.type == "output_text") |
+        if (.text | type) != "string" then error("unsupported text content")
+        else {type:"text",text:.text} end
+      # The whole item is the payload, so the encrypted content and the id the
+      # server resolves it by both survive. A summary is only produced when one is
+      # asked for, so the displayed text is often empty while the item is not.
+      elif .type == "reasoning" then
+        {type:"reasoning",
+         text:([.summary[]? | select(.type == "summary_text") |
+           select(.text | type == "string") | .text] | join("\n\n")),
+         opaque:.}
+      elif .type == "function_call" then
+        (.arguments | fromjson) as $input |
+        if ($input | type) != "object" then error("unsupported tool input")
+        else {type:"tool_call",id:.call_id,name:.name,input:$input} end
+      else empty end
+    ] as $content |
+    ([$content[] | select(.type == "tool_call")] | length) as $calls |
+    ({
+      type: "message",
+        role: "assistant",
+        content: $content,
+        stop:
+          (if $calls > 0 then "tool_calls"
+           elif (.status // "completed") == "completed" then "end"
+           elif .status == "incomplete" then "length"
+           else error("unsupported response status") end)
+    } + if $usage == null then {} else {
+      usage: {
+        input_tokens: $usage.input_tokens,
+        output_tokens: $usage.output_tokens
+      } + if ($usage.input_tokens_details.cached_tokens // null) == null then {}
+          else {cached_tokens: $usage.input_tokens_details.cached_tokens}
+          end + if ($usage.output_tokens_details.reasoning_tokens // null) == null then {}
+          else {reasoning_tokens: $usage.output_tokens_details.reasoning_tokens}
+          end
+    } end);
+
+  # A null line ends the stream. A body that never announced itself as a stream
+  # is taken whole there, so a provider that ignores the requested streaming mode
+  # still normalizes; anything else that reaches the end unfinished is caught. A
+  # whole body already carries the output a stream has to be rebuilt into, so it
+  # normalizes directly.
+  foreach (inputs, null) as $line (
+    {items:[], added:{}, text:"", summary_item_id:null, summary_index:null,
+     mode:null, body:"", pending:"", mark:null, done:false, out:[]};
+    .out = [] |
+    if $line == null then
+      if .done then .
+      elif .mode != "json" then error("no completed response")
+      else (.body | try fromjson catch null) as $body |
+        if $body == null then error("no completed response")
+        else ($body | normalized) as $response |
+          .done = true |
+          .out += [
+            ($response.content[] | select(.type == "reasoning" and .text != "") |
+              transient("_assistant_reasoning_delta";.text)),
+            ($response.content[] | select(.type == "text" and .text != "") |
+              transient("_assistant_delta";.text)),
+            ($response.usage? | select(. != null) | usage_event),
+            $response]
+        end
+      end
+    else
+      ($line | sub("\r$"; "")) as $clean |
+      (if .mode == null and ($clean | test("\\S")) then
+         .mode = (if ($clean | test("^(data|event|id|retry):|^:"))
+                  then "sse" else "json" end)
+       else . end) |
+      (if .mode == "json" then .body += ($line + "\n") else . end) |
+      (if ($clean | startswith("data:")) then
+         ($clean | sub("^data:[ ]?"; "") | fromjson? // {type:"ignore"})
+       else {type:"ignore"}
+       end) as $event |
+      if .done then .
+      elif $event.type == "response.output_text.delta" then
+        ($event.delta // "") as $delta |
+        .text += $delta | .out += [transient("_assistant_delta";$delta)]
+      # Only the summary is streamed, since only the summary is what normalization
+      # keeps; raw reasoning deltas would show text the saved message never carries.
+      # Parts join the way that normalization joins them, and a part index only
+      # separates parts of the same item, so two reasoning items run together the
+      # way their texts do.
+      elif $event.type == "response.reasoning_summary_text.delta" then
+        ($event.item_id // "") as $item_id |
+        ($event.summary_index // 0) as $index |
+        (if .summary_item_id == $item_id and .summary_index != $index then "\n\n"
+         else "" end) as $gap |
+        .summary_item_id = $item_id |
+        .summary_index = $index |
+        .out += [transient("_assistant_reasoning_delta";$gap + ($event.delta // ""))]
+      elif $event.type == "response.output_item.done" then
+        ($event.item // {}) as $item |
+        if ($item.type | IN("message", "function_call", "reasoning")) then
+          .items += [$item]
+        else . end
+      elif $event.type == "response.output_item.added" and
+           ($event.item.type // "") == "function_call" then
+        (($event.output_index // 0) | tostring) as $key |
+        .added[$key] = {type:"function_call", call_id:$event.item.call_id,
+                        name:$event.item.name, arguments:"{}"}
+      # Ignored unless a call was opened at that index, so arguments cannot
+      # conjure a call the stream never announced.
+      elif $event.type == "response.function_call_arguments.done" then
+        (($event.output_index // 0) | tostring) as $key |
+        if .added[$key] == null then .
+        else .added[$key].arguments = ($event.arguments // "{}") end
+      # A response cut short by the output limit ends the stream just as a
+      # finished one does, and carries the same output; only its status differs,
+      # which normalization turns into the stop reason. Without this the turn is
+      # lost to "no completed response" rather than saved as far as it got.
+      elif $event.type == "response.completed" or
+           $event.type == "response.incomplete" then
+        (merged($event.response; .items; .text; .added) | normalized) as $response |
+        .done = true |
+        .out += [($response.usage? | select(. != null) | usage_event), $response]
+      else .
+      end
+    end;
+    .out[]
+  # Captured so sf_backend_finish can report a concise protocol/normalization reason.
+  )' 2>"$normalizer_error_file"
+typeset -a statuses=( $pipestatus )
+set -e
+sf_backend_finish "${statuses[@]}"

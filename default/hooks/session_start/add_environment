@@ -1,0 +1,22 @@
+#!/usr/bin/env zsh
+
+set -u
+
+[ "$#" -eq 1 ] && [ "$1" = session_start ] || exit 1
+
+printf 'Date: %s\n' "$(date '+%Y-%m-%d')"
+printf 'Platform: %s %s\n' "$(uname -s)" "$(uname -r)"
+printf 'PWD: %s\n' "$(pwd -P)"
+
+if ! tree -L 2 --gitignore --dirsfirst -F --noreport --prune \
+    --condense --compress 3 --filelimit 25 2>/dev/null; then
+  ls -F 2>/dev/null | head -100 || true
+fi
+
+if git rev-parse --git-dir >/dev/null 2>&1; then
+  printf '\nGit branch: %s\n' "$(git branch --show-current 2>/dev/null || true)"
+  printf '\nGit status:\n%s\n' "$(git status --short 2>/dev/null | head -10 || true)"
+  printf '\nRecent commits:\n%s\n' "$(git log --oneline -5 2>/dev/null || true)"
+else
+  printf '\nNot in git repo\n'
+fi

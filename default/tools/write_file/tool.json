@@ -1,0 +1,19 @@
+{
+  "description": "Create a new text file in the project and return a unified diff of what changed. Creates missing parent directories, but fails if the file already exists. Use edit_file to modify an existing file. Prefer this over shell commands such as tee or output redirection for creating files.",
+  "input_schema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["file_path", "content"],
+    "properties": {
+      "file_path": {"type": "string", "minLength": 1, "description": "File path, relative to the project directory"},
+      "content": {"type": "string", "description": "Complete contents for the new file"}
+    }
+  },
+  "display": {
+    "call": {"content": ["$file_path"]},
+    "result": {"always_full": true}
+  },
+  "sandbox": true,
+  "allow_sandbox_bypass": true,
+  "result": {"type": "file_diff", "path_field": "file_path"}
+}

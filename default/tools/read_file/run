@@ -1,0 +1,54 @@
+#!/usr/bin/env zsh
+set -euo pipefail
+
+(($# == 0)) || { printf 'Usage: read_file\n' >&2; exit 2; }
+input=$(cat)
+prepared=$(jq -ejr '
+  def string: type == "string" and length > 0 and index("\u0000") == null;
+  select(type == "object" and (.file_path | string) and
+    ((.offset // 1) | type == "number" and floor == . and . >= 1) and
+    ((.limit // 500) | type == "number" and floor == . and . >= 1) and
+    (keys - ["file_path", "limit", "offset"] | length == 0)) |
+  [.file_path, ((.offset // 1) | tostring), ((.limit // 500) | tostring)] |
+  join("\u001c")
+' <<<"$input") || { printf 'read_file: invalid input\n' >&2; exit 2; }
+limit=${prepared##*$'\034'}; prepared=${prepared%$'\034'*}
+offset=${prepared##*$'\034'}; file_path=${prepared%$'\034'*}
+
+[[ -e $file_path ]] || { printf 'read_file: no such file: %s\n' "$file_path" >&2; exit 2; }
+[[ ! -d $file_path ]] || { printf 'read_file: %s is a directory\n' "$file_path" >&2; exit 2; }
+[[ -f $file_path ]] || { printf 'read_file: not a regular file: %s\n' "$file_path" >&2; exit 2; }
+[[ -r $file_path ]] || { printf 'read_file: cannot read %s\n' "$file_path" >&2; exit 2; }
+budget=$((${SHELLFISH_MAX_CAPTURE_BYTES:-32768} - 512 - ${#file_path}))
+((budget > 0)) || { printf 'read_file: read budget is too small\n' >&2; exit 2; }
+probe_bytes=$(head -c 8000 -- "$file_path" | wc -c)
+text_bytes=$(head -c 8000 -- "$file_path" | tr -d '\0' | wc -c)
+((probe_bytes == text_bytes)) || { printf 'read_file: %s appears to be binary\n' "$file_path" >&2; exit 2; }
+
+READ_FILE_PATH=$file_path awk -v start="$offset" -v max="$limit" -v budget="$budget" '
+  BEGIN { path = ENVIRON["READ_FILE_PATH"] }
+  {
+    if (NR < start || stopped) next
+    if (emitted >= max) { reason = "limit"; stopped = 1; next }
+    line = sprintf("%d\t%s", NR, $0); size = length(line) + 1
+    if (used + size > budget) {
+      if (emitted == 0) { over_line = NR; over_size = length($0); stopped = 1; next }
+      reason = "the byte budget"; stopped = 1; next
+    }
+    buf[++emitted] = line; used += size
+  }
+  END {
+    if (over_line) {
+      printf "read_file: line %d of %s is %d bytes and does not fit the %d byte read budget; use shell to slice it\n", over_line, path, over_size, budget > "/dev/stderr"
+      exit 2
+    }
+    if (NR == 0) { print "(empty)"; exit }
+    if (start > NR) {
+      printf "read_file: %s has %d lines; offset %d is past the end\n", path, NR, start > "/dev/stderr"
+      exit 2
+    }
+    suffix = reason == "the byte budget" ? ", byte-limited" : ""
+    printf "L%d-%d of %d%s\n", start, start + emitted - 1, NR, suffix
+    for (i = 1; i <= emitted; i++) print buf[i]
+  }
+' <"$file_path"

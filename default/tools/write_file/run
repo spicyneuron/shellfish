@@ -1,0 +1,24 @@
+#!/usr/bin/env zsh
+set -euo pipefail
+
+(($# == 0)) || { printf 'Usage: write_file\n' >&2; exit 2; }
+input=$(cat)
+parsed=$(jq -ec '
+  def string: type == "string" and index("\u0000") == null;
+  select(type == "object" and (.file_path | string and length > 0) and
+    (.content | string) and (keys - ["content", "file_path"] | length == 0))
+' <<<"$input") || { printf 'write_file: invalid input\n' >&2; exit 2; }
+file_path=$(jq -jr '.file_path, "\u001f"' <<<"$parsed"); file_path=${file_path%$'\u001f'}
+content=$(jq -jr '.content, "\u001f"' <<<"$parsed"); content=${content%$'\u001f'}
+[[ ! -e $file_path && ! -L $file_path ]] || {
+  printf 'write_file: file already exists: %s\n' "$file_path" >&2
+  exit 2
+}
+mkdir -p -- "$(dirname -- "$file_path")" || {
+  printf 'write_file: cannot create the parent directory of %s\n' "$file_path" >&2
+  exit 2
+}
+if ! (set -C; printf '%s' "$content" >"$file_path"); then
+  printf 'write_file: cannot create %s\n' "$file_path" >&2
+  exit 2
+fi

@@ -1,0 +1,21 @@
+{
+  "description": "Edit a text file in the project and return a unified diff of what changed. old_string must match the file byte for byte; it is matched against the raw file, never against the line-number column that read_file displays. By default it must appear exactly once, so include enough surrounding context to be unambiguous. Set replace_all only to replace every occurrence deliberately. Use write_file to create a new file. Prefer this over shell commands such as sed, tee, or output redirection for changing files.",
+  "input_schema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["file_path", "old_string", "new_string"],
+    "properties": {
+      "file_path": {"type": "string", "minLength": 1, "description": "File path, relative to the project directory"},
+      "old_string": {"type": "string", "minLength": 1, "description": "Exact text to replace"},
+      "new_string": {"type": "string", "description": "Replacement text"},
+      "replace_all": {"type": "boolean", "default": false, "description": "Replace every occurrence of old_string; by default, exactly one occurrence is required"}
+    }
+  },
+  "display": {
+    "call": {"content": ["$file_path"]},
+    "result": {"always_full": true}
+  },
+  "sandbox": true,
+  "allow_sandbox_bypass": true,
+  "result": {"type": "file_diff", "path_field": "file_path"}
+}

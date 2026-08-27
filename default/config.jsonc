@@ -1,0 +1,68 @@
+{
+  "$schema": "https://raw.githubusercontent.com/spicyneuron/shellfish/refs/heads/main/config.schema.json",
+  "default_profile": "default",
+  "theme_mode": "auto",
+  "theme_light": "light",
+  "theme_dark": "dark",
+  "profiles": {
+    "default": {
+      "harness": "default",
+      "request": {"max_tokens": 16384, "reasoning": {"effort": "medium"}}
+    }
+  },
+  "backends": {
+    "anthropic": {"adapter": "anthropic"},
+    "codex": {"adapter": "codex"},
+    "openai": {"adapter": "openai"},
+    "openai-responses": {"adapter": "openai-responses"},
+    "openrouter": {
+      "adapter": "openai",
+      "endpoint": "https://openrouter.ai/api/v1/chat/completions",
+      "api_key_env": "OPENROUTER_API_KEY"
+    }
+  },
+  "harnesses": {
+    "default": {
+      "system": ["general.md", "tools.md"],
+      "tools": ["read_file", "edit_file", "write_file", "shell"],
+      "session_start": ["add_environment", "add_command_availability", "add_project_instructions"],
+      // Each command hook appends its /help row to $SHELLFISH_STATE_DIR/help.tsv;
+      // the help hook (last) sorts and formats the accumulated rows.
+      "user_prompt_submit": ["refresh", "verbose", "new", "fork", "user_shell", "server", "help"],
+      "sandbox": true,
+      "sandbox_read_paths": [],
+      "sandbox_write_paths": [],
+      "max_requests_per_turn": 50,
+      "max_tool_calls_per_request": 20,
+      "max_capture_bytes": 32768
+    }
+  },
+  "themes": {
+    "light": {
+      "muted_color":"#848d97","divider_color":"#d6dde3",
+      "footer_color":"#7d8590","prompt_color":"#0969da",
+      "system_heading_color":"#8250df","context_color":"#6e7781",
+      "user_heading_color":"#0969da","agent_heading_color":"#d06b18",
+      "tool_color":"#6e7781","reasoning_color":"#6e7781",
+      "error_color":"#cf222e","added_color":"#1a7f37",
+      "added_background_color":"#d7ffd7","removed_color":"#cf222e",
+      "removed_background_color":"#ffd7d7","permission_color":"#0969da"
+    },
+    "dark": {
+      "muted_color":"#8b949e","divider_color":"#3d444d",
+      "footer_color":"#8b949e","prompt_color":"#58a6ff",
+      "system_heading_color":"#d2a8ff","context_color":"#8b949e",
+      "user_heading_color":"#58a6ff","agent_heading_color":"#ffb77a",
+      "tool_color":"#8b949e","reasoning_color":"#8b949e",
+      "error_color":"#ff7b72","added_color":"#7ee787",
+      "added_background_color":"#12261e","removed_color":"#ffa198",
+      "removed_background_color":"#2d1519","permission_color":"#58a6ff"
+    }
+  },
+  "tui": {
+    "preview_lines_reasoning": 0,
+    "preview_lines_context": 2,
+    "preview_lines_tool_call": 1,
+    "preview_lines_tool_result": 2
+  }
+}

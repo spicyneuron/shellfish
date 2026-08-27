@@ -1,0 +1,24 @@
+{
+  "description": "Run one Zsh command in the session working directory and return its combined output.",
+  "input_schema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["command"],
+    "properties": {
+      "command": {"type": "string", "minLength": 1},
+      "timeout": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 3600,
+        "default": 120,
+        "description": "Timeout in seconds"
+      }
+    }
+  },
+  "display": {
+    "call": {"content": ["$command"]},
+    "result": {"exit_code": true}
+  },
+  "sandbox": true,
+  "allow_sandbox_bypass": true
+}

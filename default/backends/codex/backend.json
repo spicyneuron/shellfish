@@ -1,0 +1,4 @@
+{
+  "endpoint": "https://chatgpt.com/backend-api/codex/responses",
+  "api_key_env": ""
+}

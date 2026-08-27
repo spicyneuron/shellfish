@@ -1,0 +1,16 @@
+{
+  "description": "Read a text file from the project and return its contents with line numbers. Output starts with a header describing the line range shown. Each content line carries its line number followed by a tab; that prefix is display only and is not part of the file. A read stops early when it reaches the line limit or output byte budget. Prefer this over shell commands such as cat, sed, head, or tail for reading files.",
+  "input_schema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["file_path"],
+    "properties": {
+      "file_path": {"type": "string", "minLength": 1, "description": "File path, relative to the project directory"},
+      "offset": {"type": "integer", "minimum": 1, "default": 1, "description": "First line to read, counting from 1"},
+      "limit": {"type": "integer", "minimum": 1, "default": 500, "description": "Maximum number of lines to return"}
+    }
+  },
+  "display": {"call": {"content": ["$file_path"]}},
+  "sandbox": true,
+  "allow_sandbox_bypass": true
+}

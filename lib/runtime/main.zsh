@@ -1,0 +1,481 @@
+emulate -R zsh
+setopt no_aliases no_multios pipe_fail
+
+typeset -g SF_RUNTIME_ERROR=''
+typeset -g SF_RUNTIME_SYSTEM_RECORD=''
+typeset -g SF_PRESENTATION=''
+typeset -g SF_RUNTIME_VERBOSE=0
+
+sf_runtime_fail() {
+  SF_RUNTIME_ERROR=$1
+  return 1
+}
+
+sf_runtime_validation_error() {
+  local output=$1 fallback=$2 detail=''
+  [[ -z $output ]] || \
+    detail=$(print -rn -- "$output" | LC_ALL=C tr -s '[:cntrl:]' ' ' | cut -c 1-1000)
+  sf_runtime_fail "$fallback${detail:+: $detail}"
+}
+
+sf_runtime_read_jsonc() {
+  awk '
+    BEGIN { block = 0; string = 0; escaped = 0 }
+    {
+      for (i = 1; i <= length($0); i += 1) {
+        character = substr($0, i, 1)
+        next_character = substr($0, i + 1, 1)
+        if (block) {
+          if (character == "*" && next_character == "/") { block = 0; i += 1 }
+          continue
+        }
+        if (string) {
+          printf "%s", character
+          if (escaped) escaped = 0
+          else if (character == "\\") escaped = 1
+          else if (character == "\"") string = 0
+          continue
+        }
+        if (character == "\"") { string = 1; printf "%s", character }
+        else if (character == "/" && next_character == "/") break
+        else if (character == "/" && next_character == "*") { block = 1; i += 1; printf " " }
+        else printf "%s", character
+      }
+      printf "\n"
+    }
+    END {
+      if (block) { print "unterminated block comment" > "/dev/stderr"; exit 1 }
+      if (string) { print "unterminated string" > "/dev/stderr"; exit 1 }
+    }
+  ' "$1" | jq -c .
+}
+
+sf_runtime_config_path() {
+  local requested=${1-}
+  if [[ -n $requested ]]; then
+    [[ $requested == /* ]] || requested="$PWD/$requested"
+    REPLY=${requested:A}
+  elif [[ -n ${XDG_CONFIG_HOME-} ]]; then
+    REPLY="$XDG_CONFIG_HOME/shellfish/config.jsonc"
+  elif [[ -n ${HOME-} ]]; then
+    REPLY="$HOME/.config/shellfish/config.jsonc"
+  else
+    REPLY=''
+  fi
+}
+
+sf_runtime_read_config() {
+  local requested_config=$1 config_path=$2 raw='{}'
+  if [[ -n $config_path && ( -e $config_path || -L $config_path ) ]]; then
+    [[ -f $config_path && -r $config_path ]] || {
+      sf_runtime_fail "cannot read config: $config_path"
+      return
+    }
+    raw=$(sf_runtime_read_jsonc "$config_path" 2>&1) || {
+      sf_runtime_validation_error "$raw" "invalid config: $config_path"
+      return
+    }
+  elif [[ -n $requested_config ]]; then
+    sf_runtime_fail "cannot read config: $config_path"
+    return
+  fi
+  REPLY=$raw
+}
+
+# --verbose lifts every preview limit. Presentation is resolved on each start
+# rather than frozen, so this reaches stored sessions without touching a header.
+sf_runtime_apply_verbose() {
+  local updated
+  (( SF_RUNTIME_VERBOSE )) || return 0
+  updated=$(jq -c '.tui.preview_lines_reasoning = "full" |
+    .tui.preview_lines_context = "full" |
+    .tui.preview_lines_tool_call = "full" |
+    .tui.preview_lines_tool_result = "full"' <<<"$SF_PRESENTATION") || {
+    sf_runtime_fail 'cannot apply verbose preview limits'
+    return
+  }
+  SF_PRESENTATION=$updated
+}
+
+sf_runtime_reference() {
+  local reference=$1 base=$2 kind=$3 candidate
+  if [[ $reference == /* ]]; then
+    candidate=$reference
+  elif [[ $reference == '~/'* ]]; then
+    [[ -n ${HOME-} ]] || return 1
+    candidate="$HOME/${reference#\~/}"
+  elif [[ $reference == */* ]]; then
+    candidate="$base/$reference"
+  elif [[ -n $base && ( -e $base/$kind/$reference || -L $base/$kind/$reference ) ]]; then
+    candidate="$base/$kind/$reference"
+  else
+    candidate="$SF_ROOT/default/$kind/$reference"
+  fi
+  REPLY=${candidate:A}
+}
+
+sf_runtime_resolve() {
+  local session_path=$1 requested_config=$2 requested_profile=$3
+  local requested_model=$4 requested_request=$5 requested_backend=$6
+  integer runtime_override=${7:-0}
+
+  SF_RUNTIME_ERROR=''
+  SF_RUNTIME_SYSTEM_RECORD=''
+  SF_PRESENTATION=''
+  REPLY=''
+  if [[ -n $session_path ]]; then
+    if (( runtime_override )); then
+      sf_runtime_fail 'runtime overrides cannot be used with an existing session'
+      return 2
+    fi
+    sf_session_read_runtime "$session_path" || {
+      sf_runtime_fail "$SF_SESSION_ERROR"
+      return
+    }
+  else
+    sf_runtime_resolve_from_config "$requested_config" "$requested_profile" \
+      "$requested_model" "$requested_request" "$requested_backend" || return
+  fi
+  jq -e '[.harness | to_entries[] | select(.key | IN(
+    "session_start", "user_prompt_submit", "permission_request", "pre_tool_use",
+    "post_tool_use", "stop")) | .value[]] | length == 0' \
+    <<<"$REPLY" >/dev/null 2>&1 && return 0
+  [[ -n ${XDG_STATE_HOME-} || -n ${HOME-} ]] ||
+    sf_runtime_fail 'HOME or XDG_STATE_HOME is required for persistent hook data'
+}
+
+sf_runtime_resolve_from_config() {
+  local requested_config=$1 profile_override=$2 model_override=$3 request_override=$4
+  local backend_override=${5-}
+  local config_path config_dir='' raw='{}' defaults prepared presentation value
+  local backend_name backend_reference backend_dir backend_base manifest tool_manifest command
+  local reference resolved event external_name final system_content settings fence='' env_file=''
+  local theme_marker=': shellfish:unknown-theme:'
+  local -a fields system_parts tool_entries hook_entries resolved_args finalized
+  integer system_count tool_count hook_count index tool_index needs_fence=0 sandbox_enabled=1
+
+  SF_RUNTIME_ERROR=''
+  SF_RUNTIME_SYSTEM_RECORD=''
+  SF_PRESENTATION=''
+  REPLY=''
+  sf_runtime_config_path "$requested_config"
+  config_path=$REPLY
+  defaults=$(sf_runtime_read_jsonc "$SF_ROOT/default/config.jsonc" 2>/dev/null) || {
+    sf_runtime_fail 'invalid bundled config'
+    return
+  }
+  sf_runtime_read_config "$requested_config" "$config_path" || return
+  raw=$REPLY
+  [[ -z $config_path ]] || config_dir=${config_path:h}
+  [[ -z $config_path ]] || env_file=${config_dir:A}/.env
+
+  external_name=${backend_override%/}
+  external_name=${external_name:t}
+  prepared=$(jq -L "$SF_ROOT/lib" -cnce --argjson defaults "$defaults" \
+    --argjson raw "$raw" --arg profile_override "$profile_override" \
+    --arg model_override "$model_override" --argjson request_override "$request_override" \
+    --arg backend_override "$backend_override" \
+    --arg external_backend_name "$external_name" '
+      include "runtime/config";
+      {defaults:$defaults,raw:$raw,profile_override:$profile_override,
+       model_override:$model_override,request_override:$request_override,
+       backend_override:$backend_override,
+       external_backend_name:$external_backend_name} | runtime_prepare
+  ' 2>&1) || {
+    if [[ $prepared == *"$theme_marker"* ]]; then
+      sf_runtime_fail "unknown theme: ${prepared#*"$theme_marker"}"
+    else
+      sf_runtime_validation_error "$prepared" "cannot prepare runtime"
+    fi
+    return
+  }
+  presentation=$(jq -c '.presentation' <<<"$prepared" 2>/dev/null) || {
+    sf_runtime_fail 'cannot inspect prepared presentation'
+    return
+  }
+
+  while IFS= read -r -d '' value; do
+    fields+=( "$value" )
+  done < <(jq -jrn --argjson prepared "$prepared" '
+    def record: ., "\u0000";
+    ($prepared.backend_name | record),
+    ($prepared.backend_reference | record),
+    ($prepared.backend_external | tostring | record),
+    ($prepared.system_references | length | tostring | record),
+    ($prepared.tool_references | length | tostring | record),
+    ($prepared.hook_references | length | tostring | record),
+    ($prepared.system_references[] | record),
+    ($prepared.tool_references[] | record),
+    ($prepared.hook_references[] | .event, "\u0000", .reference, "\u0000"),
+    ("ok" | record)
+  ' 2>/dev/null)
+  (( ${#fields} >= 7 )) && [[ $fields[-1] == ok ]] || {
+    sf_runtime_fail 'cannot inspect prepared runtime'
+    return
+  }
+  backend_name=$fields[1]
+  backend_reference=$fields[2]
+  system_count=$fields[4]
+  tool_count=$fields[5]
+  hook_count=$fields[6]
+  index=7
+  jq -e '.profile.harness |
+    if has("sandbox") then .sandbox else true end' \
+    <<<"$prepared" >/dev/null 2>&1 || sandbox_enabled=0
+
+  backend_base=$config_dir
+  if [[ $fields[3] == true ]]; then
+    [[ $backend_name =~ ^[A-Za-z0-9][A-Za-z0-9_-]*$ ]] || {
+      sf_runtime_fail "invalid backend name: $backend_name"
+      return
+    }
+    backend_base=$PWD
+  fi
+  sf_runtime_reference "$backend_reference" "$backend_base" backends || {
+    sf_runtime_fail "cannot resolve backend: $backend_name"
+    return
+  }
+  backend_dir=$REPLY
+  [[ -d $backend_dir && -x $backend_dir/run && -f $backend_dir/backend.json && -r $backend_dir/backend.json ]] || {
+    sf_runtime_fail "invalid backend: $backend_dir"
+    return
+  }
+  command=$backend_dir/run
+  manifest=$(<"$backend_dir/backend.json")
+
+  while (( ${#system_parts} < system_count )); do
+    reference=$fields[index]
+    (( index += 1 ))
+    sf_runtime_reference "$reference" "$config_dir" system || {
+      sf_runtime_fail "cannot resolve system file: $reference"
+      return
+    }
+    resolved=$REPLY
+    [[ -f $resolved && -r $resolved ]] || {
+      sf_runtime_fail "cannot read system file: $reference"
+      return
+    }
+    system_content=$(<"$resolved") || {
+      sf_runtime_fail "cannot read system file: $reference"
+      return
+    }
+    system_parts+=( "$system_content" )
+  done
+  for (( tool_index = 0; tool_index < tool_count; tool_index++ )); do
+    reference=$fields[index]
+    (( index += 1 ))
+    sf_runtime_reference "$reference" "$config_dir" tools || {
+      sf_runtime_fail "cannot resolve tool directory: $reference"
+      return
+    }
+    resolved=$REPLY
+    [[ -d $resolved && -x $resolved/run && -f $resolved/tool.json && -r $resolved/tool.json ]] || {
+      sf_runtime_fail "invalid tool directory: $reference"
+      return
+    }
+    tool_manifest=$(<"$resolved/tool.json")
+    settings=null
+    if jq -e '.sandbox == true' <<<"$tool_manifest" >/dev/null 2>&1; then
+      settings=$(sf_runtime_read_jsonc "$resolved/fence.jsonc" 2>&1) || {
+        sf_runtime_fail "cannot read tool sandbox settings: $resolved/fence.jsonc"
+        return
+      }
+      (( sandbox_enabled )) && needs_fence=1
+    fi
+    tool_entries+=( "${${resolved%/}:t}" "$resolved/run" "$tool_manifest" "$settings" )
+  done
+  while (( ${#hook_entries} / 2 < hook_count )); do
+    event=$fields[index]
+    reference=$fields[index+1]
+    (( index += 2 ))
+    sf_runtime_reference "$reference" "$config_dir" "hooks/$event" || {
+      sf_runtime_fail "cannot resolve $event hook: $reference"
+      return
+    }
+    resolved=$REPLY
+    [[ -f $resolved && -x $resolved ]] || {
+      sf_runtime_fail "$event hook is not executable: $reference"
+      return
+    }
+    hook_entries+=( "$event" "$resolved" )
+  done
+  (( index == ${#fields} )) || {
+    sf_runtime_fail 'cannot inspect prepared runtime'
+    return
+  }
+  if (( needs_fence )); then
+    [[ -n ${commands[fence]-} ]] || {
+      sf_runtime_fail 'sandboxing requires fence'
+      return
+    }
+    fence=${commands[fence]:A}
+  fi
+
+  (( ${#system_parts} == system_count &&
+    ${#tool_entries} == tool_count * 4 &&
+    ${#hook_entries} == hook_count * 2 )) || {
+    sf_runtime_fail 'cannot assemble resolved runtime references'
+    return
+  }
+  resolved_args=( "${system_parts[@]}" "${tool_entries[@]}" "${hook_entries[@]}" )
+  final=$(jq -L "$SF_ROOT/lib" -cnce --argjson prepared "$prepared" \
+    --arg manifest "$manifest" --arg command "$command" --arg fence "$fence" \
+    --arg env_file "$env_file" \
+    --argjson sandbox_read_paths "${_SHELLFISH_SANDBOX_READ_PATHS:-[]}" \
+    --argjson sandbox_write_paths "${_SHELLFISH_SANDBOX_WRITE_PATHS:-[]}" --args '
+      include "runtime/config";
+      include "runtime/schema";
+      {prepared:$prepared,manifest:$manifest,command:$command,fence:$fence,
+       env_file:$env_file,sandbox_read_paths:$sandbox_read_paths,
+       sandbox_write_paths:$sandbox_write_paths,
+       resolved:$ARGS.positional} |
+      runtime_finalize as $result |
+      ({type:"session",format_version:1,cwd:"/",created:"1970-01-01T00:00:00Z"} +
+        $result.runtime) | select(canonical_session_header(1)) |
+      $result.runtime, ($result.system // "")
+    ' "${resolved_args[@]}" 2>&1) || {
+    sf_runtime_validation_error "$final" "cannot finalize runtime"
+    return
+  }
+  finalized=( "${(@f)final}" )
+  (( ${#finalized} == 2 )) || {
+    sf_runtime_fail 'cannot finalize runtime'
+    return
+  }
+  REPLY=$finalized[1]
+  system_content=$(jq -r . <<<"$finalized[2]") || {
+    sf_runtime_fail 'cannot inspect configured system prompt'
+    return
+  }
+  if [[ -n $system_content ]]; then
+    SF_RUNTIME_SYSTEM_RECORD=$(jq -cn --arg content "$system_content" \
+      '{type:"system",content:$content}') || {
+      sf_runtime_fail 'cannot prepare configured system prompt'
+      return
+    }
+  fi
+  SF_PRESENTATION=$presentation
+  sf_runtime_apply_verbose
+}
+
+sf_runtime_restore_presentation() {
+  local requested_config=$1 config_path raw='{}' defaults output
+  local invalid_marker=': shellfish:invalid-config'
+  local theme_marker=': shellfish:unknown-theme:'
+  SF_RUNTIME_ERROR=''
+  SF_PRESENTATION=''
+  sf_runtime_config_path "$requested_config"
+  config_path=$REPLY
+  defaults=$(sf_runtime_read_jsonc "$SF_ROOT/default/config.jsonc" 2>/dev/null) || {
+    sf_runtime_fail 'invalid bundled config'
+    return
+  }
+  sf_runtime_read_config "$requested_config" "$config_path" || return
+  raw=$REPLY
+  output=$(jq -L "$SF_ROOT/lib" -nce --argjson defaults "$defaults" \
+    --argjson raw "$raw" '
+      include "runtime/config";
+      {defaults:$defaults,raw:$raw} | presentation_resolve
+    ' 2>&1) || {
+    if [[ $output == *"$theme_marker"* ]]; then
+      sf_runtime_fail "unknown theme: ${output#*"$theme_marker"}"
+    elif [[ $output == *"$invalid_marker" ]]; then
+      sf_runtime_fail "invalid config: $config_path"
+    else
+      sf_runtime_validation_error "$output" \
+        "invalid presentation config: ${config_path:-<defaults>}"
+    fi
+    return
+  }
+  SF_PRESENTATION=$output
+  sf_runtime_apply_verbose
+}
+
+sf_runtime_resolve_api_key() {
+  local runtime=$1 name line key value candidate env_file projected
+  local -a credential_names
+  local -A credentials
+  SF_RUNTIME_ERROR=''
+  REPLY=''
+  reply=()
+  local -a locator
+  projected=$(jq -jr '
+    .backend.api_key_env, "\u0000", .backend.env_file, "\u0000", "ok", "\u0000"
+  ' <<<"$runtime" 2>/dev/null) || {
+    sf_runtime_fail 'cannot read runtime credentials'
+    return
+  }
+  locator=( "${(@0)${projected%$'\0'}}" )
+  (( ${#locator} == 3 )) && [[ $locator[3] == ok ]] || {
+    sf_runtime_fail 'cannot read runtime credentials'
+    return
+  }
+  name=$locator[1]
+  env_file=$locator[2]
+  credential_names=(SHELLFISH_API_KEY OPENAI_API_KEY ANTHROPIC_API_KEY OPENROUTER_API_KEY)
+  [[ -z $name || ${credential_names[(Ie)$name]} -gt 0 ]] || credential_names+=($name)
+  for candidate in $credential_names; do
+    if (( ${+parameters[$candidate]} )); then
+      credentials[$candidate]=${(P)candidate}
+      unset "$candidate"
+    fi
+  done
+  if [[ -n $env_file && ( -e $env_file || -L $env_file ) ]]; then
+    [[ -f $env_file && -r $env_file ]] || {
+      sf_runtime_fail "cannot read env file: $env_file"
+      return
+    }
+    while IFS= read -r line || [[ -n $line ]]; do
+      line=${line%$'\r'}
+      [[ $line =~ '[^[:space:]]' ]] || continue
+      [[ $line =~ '^[[:space:]]*#' ]] && continue
+      if [[ $line =~ '^[[:space:]]*export[[:space:]]+' ]]; then
+        line=${line#${MATCH}}
+      fi
+      [[ $line == *=* ]] || {
+        sf_runtime_fail "invalid env file line in $env_file"
+        return
+      }
+      key=${line%%=*}
+      key=${key%${key##*[![:space:]]}}
+      key=${key#${key%%[![:space:]]*}}
+      [[ $key =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || {
+        sf_runtime_fail "invalid env name in $env_file: $key"
+        return
+      }
+      (( ${credential_names[(Ie)$key]} )) || continue
+      (( ${+credentials[$key]} )) && continue
+      value=${line#*=}
+      value=${value#${value%%[![:space:]]*}}
+      value=${value%${value##*[![:space:]]}}
+      if (( ${#value} >= 2 )) && [[ $value == \"*\" || $value == \'*\' ]]; then
+        value=${value[2,-2]}
+      fi
+      credentials[$key]=$value
+    done <"$env_file"
+  fi
+  if (( ${+credentials[SHELLFISH_API_KEY]} )); then
+    REPLY=${credentials[SHELLFISH_API_KEY]}
+    reply=(SHELLFISH_API_KEY)
+  elif [[ -n $name ]] && (( ${+credentials[$name]} )); then
+    REPLY=${credentials[$name]}
+    reply=("$name")
+  fi
+}
+
+# Prints the resolved runtime with unfrozen theme palettes and TUI limits.
+sf_runtime_report() {
+  local runtime=$1
+  jq -ne --argjson runtime "$runtime" --argjson presentation "$SF_PRESENTATION" '
+    $runtime + {
+      theme: {
+        mode: $presentation.theme_mode,
+        light: {name: $presentation.theme_light,
+                palette: $presentation.themes[$presentation.theme_light]},
+        dark: {name: $presentation.theme_dark,
+               palette: $presentation.themes[$presentation.theme_dark]}
+      },
+      tui: $presentation.tui
+    }
+  '
+}

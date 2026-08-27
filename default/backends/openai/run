@@ -1,0 +1,165 @@
+#!/usr/bin/env zsh
+
+emulate -R zsh
+setopt err_exit no_aliases no_multios pipe_fail
+umask 077
+
+typeset -gr ROOT=${0:A:h:h:h:h}
+source "$ROOT/lib/backend.zsh"
+
+api_key=${SHELLFISH_API_KEY-}
+unset SHELLFISH_API_KEY
+
+sf_backend_setup openai
+trap 'rm -rf -- "$SF_BACKEND_TEMP_DIR"' EXIT
+typeset request_file=$SF_BACKEND_REQUEST_FILE body_file=$SF_BACKEND_BODY_FILE
+typeset response_file=$SF_BACKEND_RESPONSE_FILE status_file=$SF_BACKEND_STATUS_FILE
+typeset normalizer_error_file=$SF_BACKEND_NORMALIZER_ERROR_FILE
+cat >"$request_file"
+
+typeset -a transport
+transport=( "${(@f)$(jq -L "$ROOT/lib" -er '
+  include "runtime/schema";
+  select(canonical_request and (.options.request | has("stream_options") | not)) |
+  .transport.endpoint, (.transport.insecure_tls | tostring),
+  (.transport.http_timeout | tostring), (.transport.http_stall | tostring)
+' "$request_file")}" ) || sf_backend_die 'invalid canonical request'
+(( ${#transport} == 4 )) || sf_backend_die 'invalid canonical request'
+
+sf_backend_credential 'Authorization' "${api_key:+Bearer $api_key}"
+unset api_key
+
+jq -ce '
+  def text_content: [.content[] | select(.type == "text") | .text] | join("");
+  def tool_calls: [.content[] | select(.type == "tool_call") |
+    {type:"function",function:{name:.name,arguments:(.input|tojson)},id:.id}];
+  def message:
+    if .role == "user" then {role:"user",content:text_content}
+    elif .role == "assistant" then
+      (text_content) as $text | (tool_calls) as $calls |
+      {role:"assistant"} +
+      (if $text != "" then {content:$text} elif ($calls|length) > 0 then {content:null} else {content:""} end) +
+      (if ($calls|length)==0 then {} else {tool_calls:$calls} end)
+    elif .role == "tool_result" then
+      {role:"tool",tool_call_id:.call_id,content:.content}
+    else error("unsupported canonical role") end;
+  (.options.request |
+    if has("max_tokens") then
+      if has("max_completion_tokens") then del(.max_tokens)
+      else .max_completion_tokens=.max_tokens | del(.max_tokens) end
+    else . end |
+    if has("reasoning") then
+      if has("reasoning_effort") then del(.reasoning)
+      else .reasoning_effort=.reasoning.effort | del(.reasoning) end
+    else . end) as $options |
+  ($options | if has("stream") then .stream else true end) as $stream |
+  ([.messages[] | message]) as $messages |
+  $options * {model:$options.model,
+    messages:(if .system=="" then $messages else [{role:"system",content:.system}]+$messages end),
+    stream:$stream} +
+  (if $stream then {stream_options:{include_usage:true}} else {} end) +
+  (if (.tools|length)==0 then {} else {
+    tools:[.tools[] | {type:"function",function:{name:.name,
+      description:.description,parameters:.input_schema}}]
+  } end)
+' "$request_file" >"$body_file" || sf_backend_die 'cannot translate canonical request'
+
+sf_backend_curl_args $transport[1] $transport[2] $transport[3] $transport[4]
+set +e
+curl "${SF_BACKEND_CURL_ARGS[@]}" 2>"$status_file" | tee "$response_file" | \
+jq -nRrc --unbuffered '
+  def transient($type;$text): {type:$type,text:$text};
+  def usage:
+    {type:"_turn_usage",input_tokens:(.prompt_tokens // 0),output_tokens:(.completion_tokens // 0)} +
+    (if (.prompt_tokens_details.cached_tokens // null) == null then {}
+     else {cached_tokens:.prompt_tokens_details.cached_tokens} end) +
+    (if (.completion_tokens_details.reasoning_tokens // null) == null then {}
+     else {reasoning_tokens:.completion_tokens_details.reasoning_tokens} end);
+  def assistant:
+    ([.calls | to_entries | sort_by(.key|tonumber)[] | .key as $index | .value |
+      if .name == null or .name == "" then empty
+      else {
+        type: "tool_call",
+        id: (.id // ("call_" + $index)),
+        name: .name,
+        input: ((.arguments | if . == null or . == "" then "{}" else . end) | try fromjson catch {})
+      } end]) as $tool_calls |
+    {type:"message",role:"assistant",
+     stop:(if ($tool_calls | length) > 0 then "tool_calls"
+           elif .finish_reason == "length" or .finish_reason == "max_tokens" then "length"
+           else "end" end),
+     content:
+       (if .reasoning=="" then [] else [{type:"reasoning",text:.reasoning}] end) +
+       (if .text=="" then [] else [{type:"text",text:.text}] end) +
+       $tool_calls} +
+    (if .usage==null then {} else {usage:(.usage|usage|del(.type))} end);
+  def accept_body($body):
+    if $body.error? != null then error($body.error.message // "API error")
+    elif ($body.choices[0]? // null) == null then error("response has no choice")
+    else $body.choices[0] as $choice | ($choice.message // {}) as $message |
+      ($message.content // "") as $text |
+      (($message.reasoning_content // $message.reasoning // "") |
+        if type=="string" then . else "" end) as $reasoning |
+      .text=$text | .reasoning=$reasoning | .finish_reason=$choice.finish_reason |
+      .usage=($body.usage // null) |
+      .calls=reduce ($message.tool_calls // [])[] as $call ({};
+        ((length)|tostring) as $key |
+        .[$key]={type:($call.type // "function"),id:$call.id,name:$call.function.name,
+          arguments:$call.function.arguments}) |
+      .out +=
+        (if $reasoning=="" then [] else [transient("_assistant_reasoning_delta";$reasoning)] end) +
+        (if $text=="" then [] else [transient("_assistant_delta";$text)] end) +
+        (if .usage==null then [] else [(.usage|usage)] end) + [assistant] |
+      .done=true
+    end;
+  foreach (inputs, null) as $line
+    ({text:"",reasoning:"",calls:{},finish_reason:null,usage:null,
+      mode:null,body:"",done:false,out:[]};
+     .out=[] |
+     if $line==null then
+       if .done then .
+       elif .mode=="json" then (.body|fromjson) as $body | accept_body($body)
+       else error("no completed response") end
+     else ($line|sub("\\r$";"")) as $clean |
+       if .mode==null and ($clean|test("\\S")) then
+         .mode=(if ($clean|test("^(data|event|id|retry):|^:")) then "sse" else "json" end)
+       else . end |
+       if .mode=="json" then .body += ($line+"\n")
+       elif ($clean|startswith("data:")) then
+         ($clean|sub("^data:[ ]?";"")) as $data |
+         if $data=="[DONE]" then
+           .finish_reason = (.finish_reason // "stop") |
+           .done=true | .out += [assistant]
+         else ($data|fromjson) as $event |
+           if $event.error? != null then error($event.error.message // "API error")
+           elif ($event.choices[0]? // null) != null then
+             $event.choices[0] as $choice | ($choice.delta // {}) as $delta |
+             (($delta.reasoning_content // $delta.reasoning // "") |
+               if type=="string" then . else "" end) as $reasoning |
+             ($delta.content // "") as $text |
+             (if $reasoning=="" then . else .reasoning += $reasoning |
+                .out += [transient("_assistant_reasoning_delta";$reasoning)] end) |
+             (if $text=="" then . else .text += $text |
+                .out += [transient("_assistant_delta";$text)] end) |
+             reduce ($delta.tool_calls // [])[] as $call (.;
+               (($call.index // 0)|tostring) as $key |
+               if .calls[$key]==null then
+                 .calls[$key]={type:"function",id:null,name:null,arguments:""} else . end |
+               (if $call.type != null and $call.type != "" then .calls[$key].type=$call.type else . end) |
+               (if $call.id != null and $call.id != "" then .calls[$key].id=$call.id else . end) |
+               (if $call.function.name != null and $call.function.name != "" then .calls[$key].name=$call.function.name else . end) |
+               .calls[$key].arguments += ($call.function.arguments // "")) |
+             .finish_reason=($choice.finish_reason // .finish_reason) |
+             if ($event.usage // null)==null then . else .usage=$event.usage |
+               .out += [($event.usage|usage)] end
+           elif ($event.usage // null) != null then .usage=$event.usage |
+             .out += [($event.usage|usage)]
+           else . end
+         end
+       else . end
+     end; .out[])
+' 2>"$normalizer_error_file"
+typeset -a statuses=( $pipestatus )
+set -e
+
+sf_backend_finish "${statuses[@]}"

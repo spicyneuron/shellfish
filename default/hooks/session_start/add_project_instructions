@@ -1,0 +1,13 @@
+#!/usr/bin/env zsh
+
+set -u
+
+[ "$#" -eq 1 ] && [ "$1" = session_start ] || exit 1
+
+for name in AGENTS.md CLAUDE.md; do
+  [ -f "$name" ] && [ -r "$name" ] || continue
+  printf '%s: Follow these instructions for work in this directory. ' "$name"
+  printf 'A more deeply nested instruction file takes precedence.\n\n'
+  cat "$name" || exit 1
+  exit 0
+done

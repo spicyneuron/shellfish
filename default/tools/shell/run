@@ -1,0 +1,70 @@
+#!/usr/bin/env zsh
+
+emulate -R zsh
+setopt err_exit no_aliases no_bg_nice no_multios pipe_fail
+
+typeset input encoded command
+integer timeout command_pid=0 timed_out=0
+
+input=$(cat)
+encoded=$(print -rn -- "$input" | jq -jer '
+  select(type == "object" and
+    (.command | type == "string" and length > 0 and index("\u0000") == null) and
+    ((.timeout // 120) | type == "number" and floor == . and . >= 1 and . <= 3600) and
+    (keys - ["command", "timeout"] | length == 0)) |
+  [.command, (.timeout // 120)]
+') || {
+  print -u2 -r -- 'shell: invalid input'
+  exit 2
+}
+command=$(print -rn -- "$encoded" | jq -er '.[0]') || {
+  print -u2 -r -- 'shell: invalid input'
+  exit 2
+}
+timeout=$(print -rn -- "$encoded" | jq -er '.[1]') || {
+  print -u2 -r -- 'shell: invalid input'
+  exit 2
+}
+
+stop_process() {
+  local pid=$1
+  (( pid > 0 )) || return 0
+  kill -TERM -- "-$pid" 2>/dev/null || kill -TERM "$pid" 2>/dev/null || true
+  sleep 0.1
+  kill -KILL -- "-$pid" 2>/dev/null || kill -KILL "$pid" 2>/dev/null || true
+}
+
+cleanup() {
+  stop_process "$command_pid"
+}
+
+trap cleanup EXIT
+# Monitor mode gives the command its own process group so cancellation reaches
+# its descendants. The command shell ignores background-terminal stops because
+# the tool retains a controlling terminal without owning its foreground group.
+{
+  zsh -m -f -c 'exec zsh -f -c "$1" -- "$2"' -- \
+    'trap "" TTOU; exec zsh -f -c "$1"' "$command" 2>&1 &
+} 2>/dev/null
+command_pid=$!
+zmodload zsh/datetime
+typeset -F deadline=$(( EPOCHREALTIME + timeout ))
+while kill -0 "$command_pid" 2>/dev/null; do
+  if (( EPOCHREALTIME >= deadline )); then
+    timed_out=1
+    stop_process "$command_pid"
+    break
+  fi
+  sleep 0.05
+done
+
+set +e
+wait "$command_pid"
+integer result=$?
+set -e
+command_pid=0
+if (( timed_out )); then
+  print -u2 -r -- "shell: timed out after $timeout seconds"
+  exit 124
+fi
+exit "$result"

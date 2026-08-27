@@ -1,0 +1,223 @@
+#!/usr/bin/env zsh
+
+source "${0:A:h}/_hooks.zsh"
+
+# session_start runs during lock-free session creation, receives its event, and
+# commits one attributed context record after the complete chain succeeds.
+typeset start_session="$tmp/start-session.jsonl"
+make_hook start '[[ $# == 1 && $1 == session_start ]]; [[ ! -s /dev/stdin && -z ${SHELLFISH_TURN_ID-} ]]; [[ -z ${OPENAI_API_KEY-} && -z ${CUSTOM_API_KEY-} ]]; [[ -n $SHELLFISH_SESSION_ID && $SHELLFISH_MODEL == test && $PROJECT_DIR == $PWD ]]; print -n startup; print -n -u2 local; [[ -z $SKIP ]] || exit 10'
+typeset start_hook=$hook
+make_hook start_second 'print -n second'
+typeset start_second_hook=$hook
+SF_TEST_RUNTIME=$(jq -cn --arg hook "$start_hook" --arg second "$start_second_hook" '
+  {
+    profile:{request:{model:"test"}},
+    backend:{name:"test",command:"/usr/bin/false",endpoint:"https://example.invalid",
+      api_key_env:"CUSTOM_API_KEY",env_file:"",insecure_tls:false,http_timeout:1,http_stall:1},
+    harness:{sandbox_read_paths:[],sandbox_write_paths:[],fence:"",tools:[],sandbox:false,max_requests_per_turn:1,
+      max_tool_calls_per_request:1,max_capture_bytes:512,session_start:[$hook,$second]}
+  }
+')
+export OPENAI_API_KEY=standard-secret CUSTOM_API_KEY=custom-secret
+sf_hooks_state_create
+SF_SESSION_PATH=$start_session
+sf_session_prepare "$SF_TEST_RUNTIME"
+[[ ! -e ${start_session}.lock ]]
+sf_hooks_session_start "$start_session"
+[[ -z $REPLY && ${#reply} == 0 && $SF_HOOK_RESULTS[4] == local ]]
+[[ $OPENAI_API_KEY == standard-secret && $CUSTOM_API_KEY == custom-secret ]]
+unset OPENAI_API_KEY CUSTOM_API_KEY
+[[ ! -e $start_session ]]
+sf_session_create "${SF_HOOK_CONTEXT_RECORDS[@]}"
+jq -e -s '
+  length == 3 and
+  .[1] == {type:"context",tag:"session_start",hook:"start",content:"startup"} and
+  .[2] == {type:"context",tag:"session_start",hook:"start_second",content:"second"}
+' "$start_session" >/dev/null
+
+# Existing-session entry does not run creation hooks again.
+typeset resume_session="$tmp/resume-session.jsonl"
+make_hook resume 'print -n resumed'
+typeset resume_hook=$hook
+typeset startup_runtime=$SF_TEST_RUNTIME
+SF_TEST_RUNTIME=$(jq -c --arg hook "$resume_hook" \
+  '.harness.session_start = [$hook]' <<<"$SF_TEST_RUNTIME")
+sf_test_session "$resume_session"
+sf_session_open "$resume_session"
+sf_session_close
+jq -e -s 'length == 1' "$resume_session" >/dev/null
+SF_TEST_RUNTIME=$startup_runtime
+
+# Hook projection preserves a session working directory containing a newline.
+typeset newline_cwd="$tmp/"$'line\nbreak' previous_cwd=$PWD
+mkdir "$newline_cwd"
+cd "$newline_cwd"
+newline_cwd=$(pwd -P)
+typeset newline_session="$tmp/newline-session.jsonl"
+SF_SESSION_PATH=$newline_session
+sf_session_prepare "$SF_TEST_RUNTIME"
+sf_hooks_session_start "$newline_session"
+sf_session_create "${SF_HOOK_CONTEXT_RECORDS[@]}"
+cd "$previous_cwd"
+jq -e -s --arg cwd "$newline_cwd" '.[0].cwd == $cwd' "$newline_session" >/dev/null
+
+typeset skipped_session="$tmp/skipped-session.jsonl"
+SF_SESSION_PATH=$skipped_session
+sf_session_prepare "$SF_TEST_RUNTIME"
+if SKIP=1 sf_hooks_session_start "$skipped_session"; then
+  fail 'session_start skip status was accepted'
+fi
+[[ $SF_HOOK_ERROR == 'session_start hook returned unsupported skip status' ]]
+[[ ! -e $skipped_session ]]
+
+# Startup has no control vocabulary, including when a hook stops its chain.
+typeset control_session="$tmp/control-session.jsonl"
+make_hook start_control 'print -rn -u3 -- $'\''again\0'\''; exit 11'
+SF_TEST_RUNTIME=$(jq -c --arg hook "$hook" \
+  '.harness.session_start = [$hook]' <<<"$SF_TEST_RUNTIME")
+SF_SESSION_PATH=$control_session
+sf_session_prepare "$SF_TEST_RUNTIME"
+if sf_hooks_session_start "$control_session"; then
+  fail 'session_start control data was accepted'
+fi
+[[ $SF_HOOK_ERROR == "hook returned unexpected control data: $hook" ]]
+[[ ! -e $control_session ]]
+
+# Permission hooks receive a canonical envelope and may allow, deny with a reason,
+# deny by status alone, or defer. Their stdout is never committed.
+typeset permission_session="$tmp/permission-session.jsonl"
+typeset permission_hook="$hooks/permission"
+cat >"$permission_hook" <<'ZSH'
+#!/usr/bin/env zsh
+[[ $# == 1 && $1 == permission_request ]] || exit 1
+[[ $SHELLFISH_TURN_ID == 1 && $SHELLFISH_SESSION_ID == permission-session ]] || exit 1
+[[ $SHELLFISH_MODEL == test && $PROJECT_DIR == "$PWD" ]] || exit 1
+[[ -d $SHELLFISH_STATE_DIR && ${PLUGIN_ROOT:A} == "${0:A:h}" ]] || exit 1
+[[ ${PLUGIN_DATA:A} == "${XDG_STATE_HOME:A}/shellfish/hooks/permission_request/permission" ]] || exit 1
+jq -e '. == {turn_id:1,tool_name:"shell",tool_use_id:"call_7",
+  tool_input:{command:"true"}}' >/dev/null || exit 1
+print -rn -- ignored
+print -rn -u2 -- local
+decision=$(cat "$SHELLFISH_STATE_DIR/decision")
+case $decision in
+  allow) print -rn -u3 -- '{"action":"allow"}'; exit 11 ;;
+  deny) print -rn -u3 -- '{"action":"deny","reason":"not authorized\n"}'; exit 11 ;;
+  skip) exit 10 ;;
+  halt) exit 11 ;;
+  malformed) print -rn -u3 -- '{"action":"allow","extra":true}'; exit 11 ;;
+esac
+ZSH
+chmod +x "$permission_hook"
+SF_TEST_RUNTIME=$(jq -c --arg hook "$permission_hook" '
+  .harness.permission_request=[$hook] | del(.harness.session_start)
+' <<<"$SF_TEST_RUNTIME")
+sf_test_session "$permission_session"
+sf_session_open "$permission_session"
+sf_hooks_state_create
+typeset -gx SHELLFISH_TURN_ID=1
+print allow >"$SHELLFISH_STATE_DIR/decision"
+sf_hooks_permission_request "$permission_session" shell call_7 \
+  '{"command":"true"}'
+[[ $reply[1] == allow && -z $reply[2] && $SF_HOOK_RESULTS[4] == local ]]
+(( $(wc -l <"$permission_session") == 1 ))
+print deny >"$SHELLFISH_STATE_DIR/decision"
+sf_hooks_permission_request "$permission_session" shell call_7 \
+  '{"command":"true"}'
+[[ $reply[1] == deny && $reply[2] == $'not authorized\n' ]]
+print skip >"$SHELLFISH_STATE_DIR/decision"
+sf_hooks_permission_request "$permission_session" shell call_7 \
+  '{"command":"true"}'
+[[ $reply[1] == deny && -z $reply[2] ]]
+print defer >"$SHELLFISH_STATE_DIR/decision"
+sf_hooks_permission_request "$permission_session" shell call_7 \
+  '{"command":"true"}'
+[[ $reply[1] == defer && -z $reply[2] ]]
+print halt >"$SHELLFISH_STATE_DIR/decision"
+if sf_hooks_permission_request "$permission_session" shell call_7 \
+    '{"command":"true"}'; then
+  fail 'permission halt without a decision was accepted'
+fi
+[[ $SF_HOOK_ERROR == 'permission hook returned invalid decision' ]]
+print malformed >"$SHELLFISH_STATE_DIR/decision"
+if sf_hooks_permission_request "$permission_session" shell call_7 \
+    '{"command":"true"}'; then
+  fail 'malformed permission decision was accepted'
+fi
+[[ $SF_HOOK_ERROR == 'permission hook returned invalid decision' ]]
+sf_session_close
+sf_hooks_state_cleanup
+
+# Exit 10 continues the permission chain, so a later halting fd-3 decision wins.
+typeset permission_chain_session="$tmp/permission-chain-session.jsonl"
+make_hook permission_chain_skip 'exit 10'
+typeset permission_chain_skip=$hook
+make_hook permission_chain_decide \
+  'decision=$(<"$SHELLFISH_STATE_DIR/chain-decision"); if [[ $decision == allow ]]; then print -rn -u3 -- '\''{"action":"allow"}'\''; else print -rn -u3 -- '\''{"action":"deny","reason":"chain denied"}'\''; fi; exit 11'
+typeset permission_chain_decide=$hook
+typeset permission_runtime=$SF_TEST_RUNTIME
+SF_TEST_RUNTIME=$(jq -c \
+  --arg skip "$permission_chain_skip" --arg decide "$permission_chain_decide" \
+  '.harness.permission_request=[$skip,$decide]' <<<"$SF_TEST_RUNTIME")
+sf_test_session "$permission_chain_session"
+sf_session_open "$permission_chain_session"
+sf_hooks_state_create
+typeset -gx SHELLFISH_TURN_ID=1
+print allow >"$SHELLFISH_STATE_DIR/chain-decision"
+sf_hooks_permission_request "$permission_chain_session" shell call_8 \
+  '{"command":"true"}'
+[[ $reply[1] == allow && -z $reply[2] ]]
+print deny >"$SHELLFISH_STATE_DIR/chain-decision"
+sf_hooks_permission_request "$permission_chain_session" shell call_8 \
+  '{"command":"true"}'
+[[ $reply[1] == deny && $reply[2] == 'chain denied' ]]
+sf_session_close
+sf_hooks_state_cleanup
+SF_TEST_RUNTIME=$permission_runtime
+
+typeset plain_session="$tmp/plain-session.jsonl"
+SF_TEST_RUNTIME=$(jq 'del(.harness.user_prompt_submit)' <<<"$SF_TEST_RUNTIME")
+sf_test_session "$plain_session"
+sf_session_open "$plain_session"
+sf_session_close
+sf_hooks_state_create
+run_prompt_hook ordinary "$plain_session"
+[[ ${#reply} == 1 && $reply[1] == proceed && -z $SF_HOOK_ERROR ]]
+(( $(wc -l <"$plain_session") == 1 ))
+sf_hooks_state_cleanup
+
+# Stop hooks observe a completed assistant. A status-0 hook's stdout is
+# discarded; only a skipped completion commits stdout as continuation feedback,
+# and a skip without feedback is a contract error.
+make_hook stop '[[ $# == 2 && $1 == stop && $2 == "$STOP_ATTEMPT" && "$(cat)" == "$STOP_INPUT" ]] || exit 1; print -rn -u2 -- local; [[ -z $STOP_STDOUT ]] || print -rn -- feedback; [[ -z $STOP_SKIP ]] || exit 10'
+typeset stop_hook=$hook
+SF_TEST_RUNTIME=$(jq -c --arg hook "$stop_hook" \
+  '.harness.stop=[$hook]' <<<"$SF_TEST_RUNTIME")
+typeset stop_session="$tmp/stop-session.jsonl"
+sf_test_session "$stop_session"
+sf_session_open "$stop_session"
+sf_session_append '{"type":"message","role":"user","content":[{"type":"text","text":"hi"}]}'
+sf_session_append '{"type":"message","role":"assistant","stop":"end","content":[{"type":"text","text":"hi"}],"usage":{"input_tokens":1,"output_tokens":1}}'
+sf_session_close
+sf_hooks_state_create
+sf_session_open "$stop_session"
+STOP_ATTEMPT=1 STOP_INPUT=hi STOP_STDOUT=1 sf_hooks_stop "$stop_session" hi 1
+[[ $reply[1] == finish && $SF_HOOK_RESULTS[4] == local ]]
+sf_session_close
+(( $(wc -l <"$stop_session") == 3 ))
+
+sf_session_open "$stop_session"
+STOP_ATTEMPT=2 STOP_INPUT=hi STOP_SKIP=1 STOP_STDOUT=1 \
+  sf_hooks_stop "$stop_session" hi 2
+[[ $reply[1] == continue && $SF_HOOK_RESULTS[4] == local ]]
+sf_session_close
+jq -e -s '.[-1] == {type:"context",tag:"stop",hook:"stop",content:"feedback"}' \
+  "$stop_session" >/dev/null
+
+sf_session_open "$stop_session"
+if STOP_ATTEMPT=3 STOP_INPUT=hi STOP_SKIP=1 sf_hooks_stop "$stop_session" hi 3; then
+  fail 'stop skip without feedback was accepted'
+fi
+[[ $SF_HOOK_ERROR == 'stop hook skipped completion without feedback' ]]
+sf_session_close
+sf_hooks_state_cleanup
+assert_no_hook_captures

@@ -1,0 +1,50 @@
+#!/usr/bin/env zsh
+
+emulate -R zsh
+setopt no_aliases
+
+[[ $# == 1 && $1 == session_start ]] || exit 1
+
+command_version() {
+  local name=$1 output command_path
+
+  if [[ $name == find ]]; then
+    output=$(find --version 2>&1) || {
+      command -v what >/dev/null 2>&1 || return
+      command_path=$(command -v find) || return
+      output=$(what "$command_path" 2>/dev/null) || return
+      [[ $output == *'PROGRAM:find  PROJECT:'* ]] || return
+      output=${output#*'PROGRAM:find  PROJECT:'}
+      output=${output%%[[:space:]]*}
+    }
+  else
+    output=$("$name" --version 2>&1) || return
+  fi
+
+  output=${output%%$'\n'*}
+  [[ -n $output ]] || return
+  REPLY=$output
+}
+
+report_group() {
+  local label=$1 name
+  shift
+
+  for name; do
+    command -v "$name" >/dev/null 2>&1 || continue
+    command_version "$name" || continue
+    printf -- '- %s: %s (%s)\n' "$label" "$name" "$REPLY"
+    return
+  done
+}
+
+printf 'Host shell: zsh %s\nAvailable commands:\n' "$ZSH_VERSION"
+report_group search rg grep
+report_group files fd find
+report_group trees tree eza
+report_group JSON jq
+report_group YAML yq
+report_group Python uv python3 python
+report_group VCS git
+report_group GitHub gh
+exit 0

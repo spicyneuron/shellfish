@@ -1,0 +1,80 @@
+#!/usr/bin/env zsh
+
+emulate -R zsh
+setopt extended_glob no_aliases no_multios pipe_fail
+
+typeset submitted='' count total base candidate created
+integer read_status suffix=1
+[[ $1 == user_prompt_submit ]] || exit 1
+IFS= read -r submitted
+read_status=$?
+
+case "$read_status:$submitted" in
+  1:/help|1:/h)
+    print -r -- $'112\t/fork [N], /f [N]\tFork before the last N user turns (default: 0)' >>"$SHELLFISH_STATE_DIR/help.tsv"
+    exit 0
+    ;;
+  1:/fork|1:/f) count=0 ;;
+  1:'/fork '*|1:'/f '*)
+    count=${submitted#* }
+    count=${count##[[:space:]]#}
+    ;;
+  *) exit 0 ;;
+esac
+
+if [[ $count != <-> || ${#count} -gt 9 ]]; then
+  print -u2 -r -- 'usage: /fork [N]'
+  exit 10
+fi
+
+total=$(jq -s '[.[] | select(.type == "message" and .role == "user")] | length' \
+  "$SHELLFISH_SESSION") || exit 1
+if (( ! total )); then
+  print -u2 -r -- 'cannot fork yet; send your first message first'
+  exit 10
+fi
+if (( count > total )); then
+  print -u2 -r -- "cannot fork before $count user turns; session has $total"
+  exit 10
+fi
+
+base=${SHELLFISH_SESSION%.jsonl}
+base=${base%_fork(|_<->)}
+base="${base}_fork"
+candidate="${base}_${suffix}.jsonl"
+umask 077
+while ! (setopt no_clobber; : >"$candidate") 2>/dev/null; do
+  if [[ ! -e $candidate && ! -L $candidate ]]; then
+    print -u2 -r -- "cannot create fork: $candidate"
+    exit 10
+  fi
+  (( suffix++ ))
+  candidate="${base}_${suffix}.jsonl"
+done
+
+created=$(date -u '+%Y-%m-%dT%H:%M:%SZ') || {
+  rm -f -- "$candidate"
+  exit 1
+}
+if ! jq -ce -s --argjson count "$count" --arg created "$created" '
+  def fork_cutoff($records; $cutoff):
+    if $cutoff > 1 and $records[$cutoff - 1].type == "context" then
+      fork_cutoff($records; $cutoff - 1)
+    else $cutoff end;
+  . as $records |
+  [to_entries[] | select(.value.type == "message" and .value.role == "user") | .key] as $users |
+  (if $count == 0 then length else fork_cutoff($records; $users[-$count]) end) as $cutoff |
+  .[0:$cutoff] | .[0].created = $created | .[]
+' "$SHELLFISH_SESSION" >"$candidate"; then
+  rm -f -- "$candidate"
+  print -u2 -r -- 'cannot fork session'
+  exit 10
+fi
+chmod 600 "$candidate" || {
+  rm -f -- "$candidate"
+  exit 1
+}
+
+jq -cn --arg command "$SHELLFISH_EXECUTABLE" --arg path "$candidate" \
+  '{action:"handoff",argv:[$command,"--session",$path]}' >&3 || exit 1
+exit 11

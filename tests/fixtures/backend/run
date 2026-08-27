@@ -1,0 +1,324 @@
+#!/usr/bin/env zsh
+
+emulate -R zsh
+setopt err_exit no_aliases no_multios pipe_fail
+
+typeset request decoded user_text text tool_command tool_bypass keyword_mode=false
+typeset tool_mode tool_name tool_input fixture_path fixture_readme old_string new_string
+typeset -a parts deltas
+integer keyword_count delay_match think error_count lorem delta_index input_tokens cached_tokens
+integer text_tokens output_tokens reasoning_tokens
+# Words per echoed line. Zero keeps the prompt's own line breaks, which is what
+# every test but scrollback.py's tall-turn case wants.
+integer wrap=${SF_TEST_BACKEND_LINE_WORDS:-0}
+typeset delay=${SF_TEST_BACKEND_DELAY:-0.02}
+typeset delay_match_seconds=${SF_TEST_BACKEND_DELAY_MATCH_SECONDS:-5}
+request=$(cat)
+input_tokens=$(( (${#request} + 3) / 4 ))
+# Keep cache-hit presentation exercised in fixture-backed frontends.
+cached_tokens=$(( input_tokens * 85 / 100 ))
+[[ -z ${SF_TEST_BACKEND_REQUEST-} ]] || print -r -- "$request" >"$SF_TEST_BACKEND_REQUEST"
+# The system field is deliberately ignored. Session-start context is useful in
+# the captured request but noisy in the echo, so strip those generated blocks
+# before deriving the text and its keyword counts.
+decoded=$(jq -rj '
+  def echo_text:
+    gsub("(?:<system-reminder>[^<]*</system-reminder>\\n)?<session_start(?: [^>]*)?>\\n[^<]*\\n</session_start>(?:\\n\\n)?"; "");
+  ([.messages[] | select(.role == "user") |
+    [.content[] | select(.type == "text") | .text] | join("")] | last // "" | echo_text) as $text |
+  $text, "\u0000",
+  ([$text | scan("\\b(?:tool|TOOL)\\b")] | length | tostring), "\u0000",
+  (if ($text | test("\\b(?:delay|DELAY)\\b")) then "1" else "0" end), "\u0000",
+  (if ($text | contains("think")) then "1" else "0" end), "\u0000",
+  ([$text | scan("\\berror\\b")] | length | tostring), "\u0000",
+  (if ($text | test("\\bwrite\\b"; "i")) then "write"
+   elif ($text | test("\\bedit\\b"; "i")) then "edit"
+   elif ($text | test("\\bread\\b"; "i")) then "read"
+   else "" end), "\u0000",
+  (if ($text | test("\\blorem\\b"; "i")) then "1" else "0" end)
+' <<<"$request")
+parts=("${(@0)decoded}")
+user_text=${parts[1]}
+keyword_count=${parts[2]}
+delay_match=${parts[3]}
+think=${parts[4]}
+error_count=${parts[5]}
+tool_mode=${parts[6]}
+lorem=${parts[7]}
+
+if (( lorem )); then
+  user_text=$(cat <<'EOF'
+# Markdown sampler
+
+A paragraph with **bold**, *italic*, `inline code`, and a [link](https://example.invalid).
+
+> A quoted line with **nested emphasis**.
+
+- First unordered item
+- Second item with `code`
+
+1. First ordered item
+2. Second ordered item
+
+```json
+{"name":"shellfish","count":3,"ready":true}
+```
+
+```jsonc
+{"theme":"dark"} // JSONC line comment
+```
+
+```sh
+if [[ $count -gt 2 ]]; then
+  echo "hello $name" # shell comment
+fi
+```
+
+```javascript
+const message = `hello ${user.name}`;
+/* JavaScript block
+   comment */
+console.log(message ?? "fallback");
+```
+
+```typescript
+interface User {
+  readonly name: string;
+}
+const user: User = {name: "shellfish"};
+```
+
+```xml
+<?xml version="1.0"?>
+<shellfish enabled="true">
+  <!-- XML comment -->
+  <item id="1">first</item>
+</shellfish>
+```
+
+```html
+<!doctype html>
+<article class="sample">
+  <h1>Shellfish</h1>
+  <p data-ready="true">Hello <strong>world</strong>.</p>
+</article>
+```
+
+```python
+class Greeter:
+    """A multiline
+    docstring."""
+    def greet(self, name: str) -> str:
+        return f"hello {name}"  # Python comment
+```
+
+```go
+type Greeter struct {
+  Name string
+}
+const message = `hello
+from Go`
+/* Go block comment */
+```
+
+```yaml
+plain: fallback
+items:
+  - one
+  - two
+```
+EOF
+  )
+fi
+
+# Split $1 into one delta per word, honouring $wrap. The echo keeps the prompt's
+# own line structure, blank lines included, or a multi-line prompt comes back as
+# one run-on blob and nothing that depends on line breaks -- markdown blocks,
+# settling, the clamp -- can be judged by eye. SF_TEST_BACKEND_LINE_WORDS replaces
+# that structure with a fixed number of words per line. Every line ends with a
+# newline below, so a prompt that already ended with one splits to an empty final
+# field and would echo a blank line it never had.
+build_deltas() {
+  typeset in_line
+  typeset -a in_lines in_words
+  integer index
+  deltas=()
+  in_lines=( "${(@f)1}" )
+  if (( ${#in_lines} > 1 )) && [[ -z $in_lines[-1] ]]; then
+    in_lines=( "${(@)in_lines[1,-2]}" )
+  fi
+  for in_line in "${in_lines[@]}"; do
+    in_words=( ${=in_line} )
+    if (( ${#in_words} == 0 )); then
+      deltas+=( $'\n' )
+      continue
+    fi
+    for (( index = 1; index <= ${#in_words}; index++ )); do
+      if (( index == ${#in_words} || (wrap && index % wrap == 0) )); then
+        deltas+=( "$in_words[index]"$'\n' )
+      else
+        deltas+=( "$in_words[index] " )
+      fi
+    done
+  done
+}
+
+# Stream $deltas as $1-typed events, one per word with the configured delay, so
+# the streamed text and the final message content are the same string by
+# construction. Every assistant result streams -- tool calls and their follow-up
+# included -- not just reasoning.
+stream_deltas() {
+  typeset delta_type=$1
+  integer index
+  for (( index = 1; index <= ${#deltas}; index++ )); do
+    sleep "$delay"
+    jq -cn --arg text "$deltas[index]" --arg type "$delta_type" '{type:$type,text:$text}'
+  done
+}
+
+if (( lorem )); then
+  deltas=( "${(@f)user_text}" )
+  for (( delta_index = 1; delta_index <= ${#deltas}; delta_index++ )); do
+    deltas[delta_index]+=$'\n'
+  done
+else
+  build_deltas "$user_text"
+fi
+text="${(j::)deltas}"
+
+if (( error_count )); then
+  print -u2 -r -- 'test backend failure'
+  exit 7
+fi
+if (( delay_match )) && ! jq -e '.messages[-1].role == "tool_result"' <<<"$request" >/dev/null; then
+  sleep "$delay_match_seconds"
+fi
+if [[ ${SF_TEST_BACKEND_TOOL_CALL:-0} == 1 || -n $tool_mode ]] || (( keyword_count )); then
+  if jq -e '.messages[-1].role == "tool_result"' <<<"$request" >/dev/null; then
+    build_deltas $'Tool complete.\n'
+    text="${(j::)deltas}"
+    text_tokens=$(( (${#text} + 3) / 4 ))
+    stream_deltas _assistant_delta
+    jq -cn --arg text "$text" --argjson input "$input_tokens" \
+      --argjson cached "$cached_tokens" --argjson output "$text_tokens" '
+      {type:"_turn_usage",input_tokens:$input,cached_tokens:$cached,output_tokens:$output},
+      {type:"message",role:"assistant",stop:"end",content:[{type:"text",text:$text}],
+       usage:{input_tokens:$input,cached_tokens:$cached,output_tokens:$output}}
+    '
+  else
+    tool_command=${SF_TEST_BACKEND_TOOL_COMMAND:-true}
+    tool_name=${SF_TEST_BACKEND_TOOL_NAME:-shell}
+    tool_input='{}'
+    tool_bypass=${SF_TEST_BACKEND_TOOL_BYPASS:-false}
+    tool_bypass_reason=${SF_TEST_BACKEND_TOOL_BYPASS_REASON:-Required by the test fixture}
+    fixture_path=README.md
+    fixture_readme=${SF_TEST_BACKEND_README:-${0:A:h:h:h:h}/README.md}
+    case $tool_mode in
+      write)
+        if [[ -e $fixture_path ]]; then
+          tool_name=read_file
+          tool_input=$(jq -cn --arg path "$fixture_path" '{file_path:$path}')
+        else
+          tool_name=write_file
+          tool_input=$(jq -cn --arg path "$fixture_path" \
+            --rawfile content "$fixture_readme" \
+            '{file_path:$path,content:$content}')
+        fi
+        ;;
+      edit)
+        if [[ -e $fixture_path ]]; then
+          tool_name=edit_file
+          old_string=$(sed -n '1,5p' "$fixture_path")
+          new_string=$(printf '%s\n' "${(@f)old_string}" |
+            awk '{line[NR]=$0} END {for (i=NR; i>=1; i--) print line[i]}')
+          tool_input=$(jq -cn --arg path "$fixture_path" --arg old "$old_string" \
+            --arg new "$new_string" '{file_path:$path,old_string:$old,new_string:$new}')
+        else
+          tool_name=write_file
+          tool_input=$(jq -cn --arg path "$fixture_path" \
+            --rawfile content "$fixture_readme" \
+            '{file_path:$path,content:$content}')
+        fi
+        ;;
+      read)
+        tool_name=read_file
+        tool_input=$(jq -cn --arg path "$fixture_path" '{file_path:$path}')
+        ;;
+    esac
+    if [[ ${SF_TEST_BACKEND_TOOL_CALL:-0} != 1 && -z $tool_mode ]]; then
+      keyword_mode=true
+    fi
+    if (( think )); then
+      stream_deltas _assistant_reasoning_delta
+    fi
+    stream_deltas _assistant_delta
+    text_tokens=$(( (${#text} + 3) / 4 ))
+    reasoning_tokens=$(( think ? text_tokens : 0 ))
+    output_tokens=$(( text_tokens + reasoning_tokens ))
+    # Tool-call message shares $text and the tool params with the streamed deltas.
+    # Keyword-driven call n prints n indexed completion lines.
+    jq -cn --arg text "$text" --arg command "$tool_command" \
+      --arg name "$tool_name" \
+      --argjson tool_input "$tool_input" \
+      --argjson native "$([[ -n $tool_mode ]] && print true || print false)" \
+      --argjson bypass "$tool_bypass" \
+      --argjson count "${SF_TEST_BACKEND_TOOL_COUNT:-1}" \
+      --argjson think "$think" \
+      --argjson input "$input_tokens" \
+      --argjson cached "$cached_tokens" \
+      --argjson output "$output_tokens" \
+      --argjson reasoning "$reasoning_tokens" \
+      --argjson delay "$delay_match" \
+      --arg delay_seconds "$delay_match_seconds" \
+      --arg prompt "$user_text" \
+      --argjson keyword_mode "$keyword_mode" '
+      ((if $native then ["tool"] elif $keyword_mode then
+        [$prompt | scan("\\b(?:tool|TOOL)\\b")]
+      else [range(1; $count + 1) | if . == 1 and $bypass then "TOOL" else "tool" end]
+      end) as $calls |
+      {type:"_turn_usage",input_tokens:$input,cached_tokens:$cached,output_tokens:$output} +
+        (if $reasoning > 0 then {reasoning_tokens:$reasoning} else {} end),
+      {type:"message",role:"assistant",stop:"tool_calls",
+       content:((if $think > 0 then [{type:"reasoning",text:$text}] else [] end) +
+        [{type:"text",text:$text}] + ($calls | to_entries | map(
+         {type:"tool_call",id:("call_" + ((.key + 1) | tostring)),name:$name,
+         input:(if $native then $tool_input else
+           ({command:((if $delay > 0 then
+               "sleep " + ($delay_seconds | @sh) + "; "
+             else "" end) +
+             (if $keyword_mode then
+                "for ((i=0; i<" + ((.key + 1) | tostring) +
+                "; i++)); do print -r -- \"Test tool $i completed.\"; done"
+              else $command end))} +
+            (if .value == "TOOL" then {
+               request_sandbox_bypass:true,sandbox_bypass_reason:$bypass_reason
+             } else {} end))
+         end)}))),
+       usage:({input_tokens:$input,cached_tokens:$cached,output_tokens:$output} +
+         if $reasoning > 0 then {reasoning_tokens:$reasoning} else {} end)})
+    ' --arg bypass_reason "$tool_bypass_reason"
+  fi
+  exit
+fi
+
+# A "think" prompt echoes the whole message as reasoning before the text.
+if (( think )); then
+  stream_deltas _assistant_reasoning_delta
+fi
+stream_deltas _assistant_delta
+text_tokens=$(( (${#text} + 3) / 4 ))
+reasoning_tokens=$(( think ? text_tokens : 0 ))
+output_tokens=$(( text_tokens + reasoning_tokens ))
+# Usage and final assistant message share $text and the token counts, so one
+# jq call emits both: usage first, then the message (comma operator with -c).
+jq -cn --arg text "$text" --argjson input "$input_tokens" \
+  --argjson cached "$cached_tokens" --argjson output "$output_tokens" \
+  --argjson reasoning "$reasoning_tokens" --argjson think "$think" '
+  {type:"_turn_usage",input_tokens:$input,cached_tokens:$cached,output_tokens:$output} +
+    (if $reasoning > 0 then {reasoning_tokens:$reasoning} else {} end),
+  {type:"message",role:"assistant",stop:"end",
+   content:((if $think > 0 then [{type:"reasoning",text:$text}] else [] end) +
+     [{type:"text",text:$text}]),
+   usage:({input_tokens:$input,cached_tokens:$cached,output_tokens:$output} +
+     if $reasoning > 0 then {reasoning_tokens:$reasoning} else {} end)}
+'

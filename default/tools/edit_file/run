@@ -1,0 +1,53 @@
+#!/usr/bin/env zsh
+set -euo pipefail
+
+(($# == 0)) || { printf 'Usage: edit_file\n' >&2; exit 2; }
+input=$(cat)
+parsed=$(jq -ec '
+  def string: type == "string" and index("\u0000") == null;
+  select(type == "object" and (.file_path | string and length > 0) and
+    (.old_string | string and length > 0) and (.new_string | string) and
+    ((has("replace_all") | not) or (.replace_all | type == "boolean")) and
+    (keys - ["file_path", "new_string", "old_string", "replace_all"] | length == 0))
+' <<<"$input") || { printf 'edit_file: invalid input\n' >&2; exit 2; }
+file_path=$(jq -jr '.file_path, "\u001f"' <<<"$parsed"); file_path=${file_path%$'\u001f'}
+old_string=$(jq -jr '.old_string, "\u001f"' <<<"$parsed"); old_string=${old_string%$'\u001f'}
+new_string=$(jq -jr '.new_string, "\u001f"' <<<"$parsed"); new_string=${new_string%$'\u001f'}
+replace_all=$(jq -r '.replace_all // false' <<<"$parsed")
+
+[[ -e $file_path || -L $file_path ]] || { printf 'edit_file: no such file: %s\n' "$file_path" >&2; exit 2; }
+[[ ! -d $file_path ]] || { printf 'edit_file: %s is a directory\n' "$file_path" >&2; exit 2; }
+[[ -f $file_path ]] || { printf 'edit_file: not a regular file: %s\n' "$file_path" >&2; exit 2; }
+[[ -r $file_path && -w $file_path ]] || { printf 'edit_file: cannot write %s\n' "$file_path" >&2; exit 2; }
+probe_bytes=$(wc -c <"$file_path")
+text_bytes=$(tr -d '\0' <"$file_path" | wc -c)
+((probe_bytes == text_bytes)) || { printf 'edit_file: %s is not a text file\n' "$file_path" >&2; exit 2; }
+original=$(cat -- "$file_path"; printf X); original=${original%X}
+
+matches=0
+remainder=$original
+while [[ $remainder == *"$old_string"* ]]; do
+  remainder=${remainder#*"$old_string"}
+  ((matches += 1))
+done
+case $matches in
+  0) printf 'edit_file: old_string does not appear in %s\n' "$file_path" >&2; exit 2 ;;
+  1) updated=${original%%"$old_string"*}$new_string${original#*"$old_string"} ;;
+  *)
+    if [[ $replace_all == true ]]; then
+      updated=${original//"$old_string"/"$new_string"}
+    else
+      printf 'edit_file: old_string appears %d times in %s; include more surrounding context or set replace_all\n' \
+        "$matches" "$file_path" >&2
+      exit 2
+    fi
+    ;;
+esac
+if [[ $updated == "$original" ]]; then
+  printf 'edit_file: %s is already up to date\n' "$file_path"
+  exit 0
+fi
+printf '%s' "$updated" >"$file_path" || {
+  printf 'edit_file: cannot write %s\n' "$file_path" >&2
+  exit 2
+}

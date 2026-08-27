@@ -1,0 +1,37 @@
+#!/usr/bin/env zsh
+
+emulate -R zsh
+setopt extended_glob no_aliases no_multios pipe_fail
+
+typeset submitted='' command
+integer read_status command_status
+[[ $1 == user_prompt_submit ]] || exit 1
+IFS= read -r submitted
+read_status=$?
+
+case "$read_status:$submitted" in
+  1:/help|1:/h)
+    print -r -- $'40\t!COMMAND\tRun COMMAND and stage its output as context' >>"$SHELLFISH_STATE_DIR/help.tsv"
+    exit 0
+    ;;
+  1:\!*) ;;
+  *) exit 0 ;;
+esac
+
+command=${submitted#\!}
+command=${command##[[:space:]]#}
+if [[ -z $command ]]; then
+  print -u2 -r -- 'usage: !COMMAND'
+  exit 10
+fi
+
+print -r -- '$ '"$command"
+unset SHELLFISH_SESSION SHELLFISH_SESSION_ID SHELLFISH_STATE_DIR
+unset SHELLFISH_CAPTURE_LIMIT SHELLFISH_MODE SHELLFISH_MODEL SHELLFISH_TURN_ID
+unset PROJECT_DIR PLUGIN_ROOT PLUGIN_DATA
+command zsh -f -c "$command" </dev/null 2>&1
+command_status=$?
+(( ! command_status )) || print -r -- $'\n(exit '"$command_status"')'
+jq -cn --arg prompt "$command" --argjson status "$command_status" \
+  '{context:{prompt:$prompt,status:$status}}' >&3 || exit 1
+exit 10

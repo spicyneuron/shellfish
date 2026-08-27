@@ -1,0 +1,6 @@
+.DS_Store
+__pycache__
+
+_REFERENCE/
+_TODO/
+server/shellfish-server

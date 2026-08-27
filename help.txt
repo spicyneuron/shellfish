@@ -1,0 +1,97 @@
+Shellfish
+
+A tiny coding agent written in Zsh, awk, curl, and jq.
+
+Usage:
+  shellfish [chat] [OPTIONS] [PROMPT]   Start interactive chat
+  shellfish exec [OPTIONS] [PROMPT]     Run exactly one agent turn
+  shellfish config [OPTIONS]            Print resolved configuration as JSON
+  shellfish --help                      Print this help
+
+Options:
+  --session PATH        Override the generated session path
+  --new                 Create an idle session; exec only
+  -c, --continue        Open the most recent session for the current directory
+  -r, --resume          Pick a session for the current directory
+  --clear               Clear the terminal before the first chat render
+  --verbose             Lift every preview limit; not valid with exec
+  -p, --profile NAME    Select a configured profile
+  -b, --backend NAME    Override the backend name or path
+  -m, --model MODEL     Override the model
+  --request JSON        Merge raw backend request parameters
+  --sandbox-read PATH   Give sandboxed tools read-only access; repeatable
+  --sandbox-write PATH  Give sandboxed tools read-write access; repeatable
+  --config FILE         Use another configuration file
+  --jsonl               Exchange ordered JSONL records on stdin and stdout; exec only
+
+Environment:
+  NO_COLOR              Disable terminal styling
+
+Sessions:
+  `shellfish exec --new` creates an idle session and prints its path. `shellfish-server` starts one in the current directory when `--session` is omitted.
+
+  Sessions are append-only JSONL transcripts beneath $XDG_STATE_HOME/shellfish/sessions or ~/.local/state/shellfish/sessions. Each records its resolved runtime. Opening, resuming, continuing, and forking retain that runtime. Start a new session to change it.
+
+Resolved configuration:
+  `shellfish config` prints, as one JSON object, the runtime a new session would store together with the theme palettes and preview limits a session does not store. --session FILE reports a stored session instead: its runtime is used as recorded, while themes and limits come from the current configuration, so a redefined theme reaches an old session. Resolving has no effects — no hook runs, no tool loads, no provider is contacted, and no session is created — and no credential value is printed, only the name of the variable holding it. A profile that cannot resolve fails the same way starting a session would.
+
+Configuration: $XDG_CONFIG_HOME/shellfish/ or ~/.config/shellfish/
+  Create config.jsonc here to override the bundled default; see config.template.jsonc for a starting point and config.schema.json for the schema. Backends select an adapter and may override its endpoint, API-key variable, TLS, and timeout. Harnesses group system files, tools, hooks, sandbox policy, and limits. Profiles select a backend and harness, choose light and dark themes, and provide request defaults such as the model; `extend` inherits another profile. CLI scalars (--model, --backend, --request) override the resolved profile.
+
+  config.jsonc
+    {
+      "default_profile": "agent",
+      "backends": {
+        "work": {
+          "adapter": "openai",
+          "endpoint": "https://api.openai.com/v1/chat/completions",
+          "api_key_env": "OPENAI_API_KEY"
+        }
+      },
+      "profiles": {
+        "agent": {
+          "extend": "default",
+          "backend": "work",
+          "request": {"model": "MODEL"}
+        }
+      }
+    }
+
+  .env
+    Optional KEY=VALUE secrets file. Exported environment values take precedence.
+
+  ./backends
+  ./hooks
+  ./system
+  ./tools
+    Named adapter, hook, system, and tool directories override bundled definitions with the same name. A backend adapter directory contains an executable `run` and a `backend.json` declaring its endpoint and API-key environment variable; a backend target's `adapter` reference resolves here before the bundled adapter.
+
+Default profile:
+  Without --profile, Shellfish uses the built-in `default` profile. It includes:
+  - a general-purpose system prompt
+  - workspace files, git, and tools context
+  - workspace AGENTS.md/CLAUDE.md support
+  - sandboxed tools (shell, read_file, edit_file, write_file)
+  - inline !COMMAND shortcut for user shell commands
+
+  A backend and model are still required. Supply them through the configuration file or the --backend and --model options.
+
+Backends:
+  anthropic         ANTHROPIC_API_KEY
+  codex             Existing Codex CLI login
+  openai            OPENAI_API_KEY
+  openai-responses  OPENAI_API_KEY
+  openrouter        OPENROUTER_API_KEY
+
+  A backend defines the request and response format. Its endpoint and API key variable are set in config.jsonc or inherited from the adapter. The codex backend is the exception: it reuses the local token at $CODEX_HOME/auth.json.
+
+Lifecycle hooks:
+  session_start       Inject context when creating a session; may block
+  user_prompt_submit  Inspect a submitted prompt; may defer or block
+  permission_request  Gate sandbox bypass requests
+  pre_tool_use        Gate a tool call before it runs
+  post_tool_use       Append context after a tool runs
+  stop                Gate the agent stop
+
+Tools:
+  The default profile enables shell, read_file, edit_file, and write_file. Under the default harness they run sandboxed; their policies restrict access to the project directory, block network access, and deny common secret files. Harness `sandbox_read_paths` and `sandbox_write_paths` arrays grant additional absolute files or directories to sandboxed tools. The repeatable `--sandbox-read` and `--sandbox-write` flags add paths to those grants for a new session. An interactive tool may request a one-time sandbox bypass when its manifest allows it. Non-interactive runs cannot approve bypasses. Set `sandbox: false` on a harness to run its tools with full user permissions.

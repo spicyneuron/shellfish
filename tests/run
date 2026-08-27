@@ -1,0 +1,161 @@
+#!/usr/bin/env zsh
+
+emulate -R zsh
+setopt no_aliases no_multios pipe_fail extended_glob
+# Background jobs are the whole point here, so they must not be reniced.
+unsetopt bg_nice
+zmodload zsh/datetime
+
+typeset test_dir=${0:A:h} project_dir=${test_dir:h}
+typeset suite
+typeset -a tests
+typeset test_path test_file log_dir
+integer jobs=${TEST_JOBS:-4} timeout=${TEST_TIMEOUT:-15}
+integer passed=0 failed=0
+typeset start_all=$EPOCHREALTIME
+
+(( jobs > 0 && timeout > 0 )) || {
+  print -u2 -r -- 'TEST_JOBS and TEST_TIMEOUT must be positive integers.'
+  exit 2
+}
+
+# Tests inherit one namespaced root for their scratch, so whatever a killed
+# test leaks collects in a single place instead of the bare temp directory.
+export TMPDIR=${${TMPDIR:-/tmp}%/}/shellfish-tests
+mkdir -p -- "$TMPDIR" || exit 1
+
+if (( $# == 0 )); then
+  suite=unit
+elif (( $# == 1 )) && [[ $1 == (unit|pty|server|metrics) ]]; then
+  suite=$1
+else
+  for test_path in "$@"; do
+    [[ $test_path == /* ]] || test_path=$test_dir/${test_path#${test_dir:t}/}
+    tests+=( $test_path )
+  done
+fi
+
+if [[ -n $suite ]]; then
+  case $suite in
+    unit) tests=( $test_dir/unit/**/*.zsh(N.) ) ;;
+    pty)  tests=( $test_dir/pty/**/*.py(N.) ) ;;
+    server) tests=( "$project_dir/server/ui/ui_test.js" "$project_dir/server" ) ;;
+    metrics)
+      "$test_dir/metrics/exec.zsh" || exit
+      "$test_dir/metrics/rendering.zsh" || exit
+      "$test_dir/metrics/loc.zsh" || exit
+      exit
+      ;;
+  esac
+fi
+
+for test_file in $tests; do
+  [[ -d $test_file || ( -f $test_file && $test_file == *.(zsh|py|js|go) ) ]] || {
+    print -u2 -r -- "Invalid test path: $test_file"
+    print -u2 -r -- "Usage: $0 [unit|pty|server|metrics|TEST_PATH ...]"
+    exit 2
+  }
+done
+
+# An underscore prefix marks a shared helper rather than a test of its own.
+tests=( ${(@)tests:#*/_[^/]#} )
+(( ${#tests} )) || {
+  print -u2 -r -- "No ${suite:-requested} tests found."
+  exit 1
+}
+
+log_dir=$(mktemp -d "$TMPDIR/run.XXXXXX") || exit 1
+trap 'rm -rf -- "$log_dir"' EXIT
+# A signal handler that returns would carry on running against a deleted
+# log directory, so interruption has to leave through exit.
+trap 'exit 130' INT TERM
+
+# Runs one target to completion in the background, capturing its output and
+# recording "<status> <seconds>" for the parent to report. The watchdog polls
+# rather than sleeping out the full timeout so it cannot outlive its test and
+# kill an unrelated process that later reuses the pid.
+run_test() {
+  local file=$1 log=$2 result=$3 start=$EPOCHREALTIME directory=''
+  local -a runner
+  integer code=0 pid watchdog polls=0
+  if [[ -d $file ]]; then
+    directory=$file
+    runner=( go test ./... )
+  else
+    case $file in
+      *.zsh) runner=( zsh -f ) ;;
+      *.py)  runner=( python3 ) ;;
+      *.js)  runner=( node --test ) ;;
+      *.go)
+        directory=${file:h}
+        runner=( go test ./... )
+        ;;
+    esac
+  fi
+  (
+    [[ -z $directory ]] || cd -- "$directory"
+    if [[ -n $directory ]]; then
+      GOCACHE="$TMPDIR/gocache" GOMODCACHE="$TMPDIR/gomod" $runner
+    else
+      $runner "$file"
+    fi
+  ) >"$log" 2>&1 &
+  pid=$!
+  {
+    while (( polls++ < timeout * 5 )); do
+      kill -0 $pid 2>/dev/null || exit 0
+      sleep 0.2
+    done
+    kill -KILL $pid 2>/dev/null
+  } &
+  watchdog=$!
+  wait $pid || code=$?
+  kill -KILL $watchdog 2>/dev/null
+  wait $watchdog 2>/dev/null
+  (( code != 137 )) || print -r -- "timed out after ${timeout}s" >>"$log"
+  printf '%d %.1f\n' $code $(( EPOCHREALTIME - start )) >"$result"
+}
+
+# Files are independent, so they run concurrently but are reported in order.
+typeset -a pids names logs results
+integer index
+
+report() {
+  # Defaults stand in for a run_test that died without recording anything,
+  # which must not read as a pass. The file has to be tested for content rather
+  # than existence: the redirection creates it, and reading it empty would
+  # clobber the default back to a zero status.
+  integer slot=$1 code=1
+  typeset elapsed='?'
+  typeset -a lines
+  wait $pids[slot] 2>/dev/null
+  [[ ! -s $results[slot] ]] || read -r code elapsed <$results[slot]
+  if (( code == 0 )); then
+    (( ++passed ))
+    print -r -- "PASS $names[slot] (${elapsed}s)"
+    return
+  fi
+  (( ++failed ))
+  print -u2 -r -- "FAIL $names[slot] (${elapsed}s)"
+  [[ ! -s $logs[slot] ]] || {
+    # Quoted so blank lines in captured output survive the replay.
+    lines=( "${(@f)$(<$logs[slot])}" )
+    print -u2 -rl -- ${(@)lines/#/    }
+  }
+}
+
+for test_file in $tests; do
+  names+=( ${test_file#$test_dir/} )
+  [[ $names[-1] == "$test_file" ]] && names[-1]=${test_file#$project_dir/}
+  logs+=( "$log_dir/${#names}.log" )
+  results+=( "$log_dir/${#names}.result" )
+  run_test "$test_file" "$logs[-1]" "$results[-1]" &
+  pids+=( $! )
+  (( ${#pids} - index < jobs )) || report $(( ++index ))
+done
+
+while (( index < ${#pids} )); do report $(( ++index )); done
+
+printf '%d passed, %d failed in %.1fs\n' \
+  $passed $failed $(( EPOCHREALTIME - start_all ))
+(( ! failed ))

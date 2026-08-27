@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>shellfish</title>
+<link rel="stylesheet" href="/ui.css">
+</head>
+<body>
+<button id="detach" class="icon-button" type="button" title="detach session" aria-label="detach session" hidden>×</button>
+<main id="output" aria-live="polite"></main>
+<footer>
+  <form id="prompt" autocomplete="off">
+    <label id="label" for="code">access code</label>
+    <input id="code" type="password" inputmode="numeric" enterkeyhint="go"
+      autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"
+      aria-label="access code" autofocus>
+    <textarea id="entry" rows="1" enterkeyhint="send" autocomplete="off"
+      autocapitalize="off" autocorrect="off" spellcheck="false"
+      aria-label="message" hidden></textarea>
+  </form>
+  <div id="status">
+    <span id="message"><strong id="model"></strong><span id="usage"></span></span>
+    <button id="cancel" class="icon-button" type="button" title="cancel the turn (Esc)"
+      aria-label="cancel the turn" hidden>×</button>
+  </div>
+</footer>
+<script src="/ui.js"></script>
+</body>
+</html>

@@ -1,0 +1,42 @@
+#!/usr/bin/env zsh
+
+emulate -R zsh
+setopt no_aliases no_multios pipe_fail
+
+typeset submitted=''
+integer read_status
+[[ $1 == user_prompt_submit ]] || exit 1
+IFS= read -r submitted
+read_status=$?
+case "$read_status:$submitted" in
+  1:/help|1:/h) ;;
+  *) exit 0 ;;
+esac
+
+# Framework rows for commands that have no dedicated hook. Command hooks run
+# earlier in the chain and append their own rows to the same file.
+{
+  print -r -- $'10\tshift+enter, ctrl+j\tAdd a line instead of sending the message'
+  print -r -- $'20\tctrl+c\tCancel an active request; otherwise exit'
+  print -r -- $'30\t↑, ↓\tNavigate prompt history'
+  print -r -- $'100\t/queue drop <N>\tDiscard queued prompt'
+  print -r -- $'101\t/queue clear\tDiscard all queued prompts'
+  print -r -- $'999\t/resume, /r\tSwitch to a session for this directory'
+  print -r -- $'1000\t/quit, /q\tExit'
+} >>"$SHELLFISH_STATE_DIR/help.tsv"
+
+sort -s -t$'\t' -k1,1n "$SHELLFISH_STATE_DIR/help.tsv" |
+  LC_ALL=C awk -F'\t' '
+    function chars(text, copy) {
+      copy=text
+      gsub(/[\200-\277]/,"",copy)
+      return length(copy)
+    }
+    { key[NR]=$2; desc[NR]=$3 }
+    END {
+      max=0
+      for (i=1;i<=NR;i++) { l=chars(key[i]); if (l>max) max=l }
+      for (i=1;i<=NR;i++) printf "%s%*s  %s\n", key[i], max-chars(key[i]), "", desc[i]
+    }' >&2
+rm -f -- "$SHELLFISH_STATE_DIR/help.tsv"
+exit 10

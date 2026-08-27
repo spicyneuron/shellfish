@@ -1,0 +1,232 @@
+#!/usr/bin/env zsh
+
+emulate -R zsh
+setopt err_exit no_aliases no_multios pipe_fail
+umask 077
+
+typeset -gr ROOT=${0:A:h:h:h:h}
+source "$ROOT/lib/backend.zsh"
+
+api_key=${SHELLFISH_API_KEY-}
+unset SHELLFISH_API_KEY
+
+sf_backend_setup anthropic
+trap 'rm -rf -- "$SF_BACKEND_TEMP_DIR"' EXIT
+typeset request_file=$SF_BACKEND_REQUEST_FILE body_file=$SF_BACKEND_BODY_FILE
+typeset response_file=$SF_BACKEND_RESPONSE_FILE status_file=$SF_BACKEND_STATUS_FILE
+typeset normalizer_error_file=$SF_BACKEND_NORMALIZER_ERROR_FILE
+cat >$request_file
+
+typeset -a transport
+transport=( "${(@f)$(jq -L "$ROOT/lib" -er '
+  include "runtime/schema";
+  select(canonical_request) |
+  .transport.endpoint, (.transport.insecure_tls | tostring),
+  (.transport.http_timeout | tostring), (.transport.http_stall | tostring)
+' "$request_file")}" ) || sf_backend_die 'invalid canonical request'
+(( ${#transport} == 4 )) || sf_backend_die 'invalid canonical request'
+
+sf_backend_credential 'x-api-key' "$api_key"
+unset api_key
+
+jq -ce '
+  def flush_results:
+    if (.pending | length) == 0 then .
+    else .out += [{role:"user",content:.pending}] | .pending = []
+    end;
+  # The API refuses an empty text block and a message holding no content at all,
+  # and a transcript is free to contain both: a response cancelled before it said
+  # anything, or one whose only content was thinking that cannot be replayed.
+  # A record is permanent, so sending one the API rejects would break every later
+  # request too. A message that maps to nothing says so instead.
+  def blocks($mapped):
+    if ($mapped | length) == 0 then [{type:"text",text:"[no content]"}] else $mapped end;
+  def regular_message:
+    if .role == "user" then
+      {role:"user",content:blocks([.content[] |
+        select(.type == "text" and .text != "") | {type:"text",text:.text}])}
+    elif .role == "assistant" then
+      {role:"assistant",content:blocks([.content[] |
+        if .type == "text" then (select(.text != "") | {type:"text",text:.text})
+        # Thinking is only accepted back with the signature it was issued with,
+        # so a block that lost its payload is dropped rather than reconstructed
+        # unsigned. Order is preserved, which keeps thinking ahead of the text
+        # and tool calls the API expects it to precede.
+        elif .type == "reasoning" then (.opaque // empty)
+        elif .type == "tool_call" then {type:"tool_use",id:.id,name:.name,input:.input}
+        else error("unsupported assistant content") end])}
+    else
+      error("unsupported canonical role")
+    end;
+  (.options.request |
+    if has("reasoning") then
+      if has("thinking") then del(.reasoning)
+      else . + {thinking:{type:"adaptive"}} +
+        (if .reasoning.effort == null then {} else {output_config:{effort:.reasoning.effort}} end) |
+        del(.reasoning)
+      end
+    else . end |
+    if has("max_tokens") then . else . + {max_tokens:16384} end) as $request |
+  (reduce .messages[] as $message ({out:[],pending:[]};
+    if $message.role == "tool_result" then
+      .pending += [{
+        type:"tool_result",
+        tool_use_id:$message.call_id,
+        content:$message.content,
+        is_error:(($message.exit_code // 0) != 0)
+      }]
+    else
+      flush_results | .out += [($message | regular_message)]
+    end
+  ) | flush_results | .out) as $messages |
+  ($request * {model:$request.model,messages:$messages,stream:true} +
+   (if .system == "" then {} else {system:.system} end) +
+   (if (.tools | length) == 0 then {} else {
+      tools:[.tools[] | {name:.name,description:.description,input_schema:.input_schema}]
+    } end))
+' "$request_file" >"$body_file" || sf_backend_die 'cannot translate canonical request'
+
+# The body streams to the normalizer rather than landing in a file first, so a
+# response is normalized while it is still arriving. It is copied aside on the
+# way past only so a failure has something to quote; nothing reads that copy when
+# the exchange succeeds. With the body on stdout the status travels on stderr,
+# written last, so the three characters it ends with are the code.
+set +e
+sf_backend_curl_args $transport[1] $transport[2] $transport[3] $transport[4]
+SF_BACKEND_CURL_ARGS+=(--header 'anthropic-version: 2023-06-01')
+curl "${SF_BACKEND_CURL_ARGS[@]}" 2>"$status_file" | tee "$response_file" | \
+  jq -nRrc --unbuffered -L "$ROOT/lib" --arg control "$SF_BACKEND_CONTROL_PATTERN" '
+  def transient($type;$text): {type:$type,text:$text};
+  def usage_event:
+    {type:"_turn_usage",
+     input_tokens:((.input_tokens // 0) + (.cache_read_input_tokens // 0) +
+       (.cache_creation_input_tokens // 0)),
+     output_tokens:(.output_tokens // 0)} +
+    (if (.cache_read_input_tokens // null) == null then {}
+     else {cached_tokens:.cache_read_input_tokens} end) +
+    (if (.output_tokens_details.thinking_tokens // null) == null then {}
+     else {reasoning_tokens:.output_tokens_details.thinking_tokens} end);
+
+  # Blocks are rebuilt into the shapes a non-streaming response carries, so what
+  # follows is the normalization a buffered body would have gone through.
+  def rebuilt:
+    [.order[] as $index |
+      .blocks[$index] |
+      if .type == "tool_use" then
+        {type:"tool_use", id:.id, name:.name,
+         input:(if .partial == "" then {} else (.partial | fromjson) end)}
+      elif .type == "thinking" then
+        {type:"thinking", thinking:.thinking, signature:.signature}
+      elif .type == "redacted_thinking" then {type:"redacted_thinking", data:.data}
+      else {type:"text", text:.text}
+      end];
+  # Takes the content blocks rather than reaching for the stream state, so a body
+  # that arrived whole normalizes through exactly the same path.
+  def normalized($content):
+    .usage as $usage |
+    ({
+      type: "message",
+        role: "assistant",
+        # The whole block is kept as the opaque payload rather than just its
+        # signature, so the next request echoes back exactly what arrived.
+        # Redacted thinking has nothing to show but still has to make that trip.
+        content: [$content[] |
+          if .type == "text" then {type:"text",text:.text}
+          elif .type == "thinking" then {type:"reasoning",text:.thinking,opaque:.}
+          elif .type == "redacted_thinking" then {type:"reasoning",text:"",opaque:.}
+          elif .type == "tool_use" then {type:"tool_call",id:.id,name:.name,input:.input}
+          else error("unsupported content block") end],
+      stop:
+          (if .stop_reason == "tool_use" then "tool_calls"
+           elif .stop_reason == "max_tokens" then "length"
+           elif .stop_reason == "end_turn" or .stop_reason == "stop_sequence" then "end"
+           else error("unsupported stop reason") end)
+    } + if $usage == null then {} else {
+      usage: {
+        input_tokens:
+          (($usage.input_tokens // 0) +
+            ($usage.cache_read_input_tokens // 0) +
+            ($usage.cache_creation_input_tokens // 0)),
+        output_tokens: ($usage.output_tokens // 0)
+      } + if ($usage.cache_read_input_tokens // null) == null then {}
+          else {cached_tokens: $usage.cache_read_input_tokens}
+          end + if ($usage.output_tokens_details.thinking_tokens // null) == null then {}
+          else {reasoning_tokens: $usage.output_tokens_details.thinking_tokens} end
+    } end);
+
+  # A null line ends the stream. A body that never announced itself as a stream
+  # is taken whole there, so a provider that ignores the requested streaming mode
+  # still normalizes; anything else that reaches the end unfinished is caught.
+  foreach (inputs, null) as $line (
+    {blocks:{}, order:[], usage:null, stop_reason:null, mode:null, body:"",
+     pending:"", mark:null, done:false, out:[]};
+    .out = [] |
+    if $line == null then
+      if .done then .
+      elif .mode != "json" then error("no completed response")
+      else (.body | try fromjson catch null) as $body |
+        if $body == null then error("no completed response")
+        else ($body | normalized($body.content // [])) as $response |
+          .done = true |
+          .out += [
+            ($response.content[] | select(.type == "reasoning" and .text != "") |
+              transient("_assistant_reasoning_delta";.text)),
+            ($response.content[] | select(.type == "text" and .text != "") |
+              transient("_assistant_delta";.text)),
+            ($response.usage? | select(. != null) | {type:"_turn_usage"} + .),
+            $response]
+        end
+      end
+    else
+      ($line | sub("\r$"; "")) as $clean |
+      (if .mode == null and ($clean | test("\\S")) then
+         .mode = (if ($clean | test("^(data|event|id|retry):|^:"))
+                  then "sse" else "json" end)
+       else . end) |
+      (if .mode == "json" then .body += ($line + "\n") else . end) |
+      (if ($clean | startswith("data:")) then
+         ($clean | sub("^data:[ ]?"; "") | fromjson? // {type:"ignore"})
+       else {type:"ignore"}
+       end) as $event |
+      (($event.index // 0) | tostring) as $key |
+      if $event.type == "error" then
+        error(($event.error.message // "API error") | gsub($control; "�"))
+      elif $event.type == "message_start" then
+        .usage = ($event.message.usage // null)
+      elif $event.type == "content_block_start" then
+        .order += [$key] |
+        .blocks[$key] = ($event.content_block +
+          (if $event.content_block.type == "tool_use" then {partial:""} else {} end))
+      elif $event.type == "content_block_delta" then
+        $event.delta as $delta |
+        if $delta.type == "text_delta" then
+          .blocks[$key].text += $delta.text |
+          .out += [transient("_assistant_delta";$delta.text)]
+        elif $delta.type == "thinking_delta" then
+          .blocks[$key].thinking += $delta.thinking |
+          .out += [transient("_assistant_reasoning_delta";$delta.thinking)]
+        elif $delta.type == "signature_delta" then
+          .blocks[$key].signature += $delta.signature
+        elif $delta.type == "input_json_delta" then
+          .blocks[$key].partial += $delta.partial_json
+        else .
+        end
+      elif $event.type == "message_delta" then
+        .stop_reason = ($event.delta.stop_reason // .stop_reason) |
+        # Merged rather than assigned, since the input count arrived at the start
+        # and only the output count is settled here. Absent entirely, usage stays
+        # unset so the turn reports nothing rather than reporting zero.
+        (if ($event.usage // null) == null then .
+         else .usage = ((.usage // {}) + $event.usage) end)
+      elif $event.type == "message_stop" then
+        .done = true |
+        .out += [(.usage? | select(. != null) | usage_event), normalized(rebuilt)]
+      else .
+      end
+    end;
+    .out[]
+  # Captured so sf_backend_finish can report a concise protocol/normalization reason.
+  )' 2>"$normalizer_error_file"
+typeset -a statuses=( $pipestatus )
+set -e
+sf_backend_finish "${statuses[@]}"
