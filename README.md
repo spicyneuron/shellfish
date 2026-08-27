@@ -4,7 +4,7 @@
 ╰─╯╵ ╵╰─╴╰─╴╰─╴╵  ╵╰─╯╵ ╵      <<<<<   ⨇
 ```
 
-A tiny coding agent written in a few thousand lines of `zsh`, `curl`, and `jq`.
+A tiny coding agent written in a few thousand lines of `zsh`, `awk`, `curl`, and `jq`.
 
 Absurdly extensible (shell scripts!), familiar Claude Code and Codex TUI (distillation attack!), yet none of the bloat, telemetry, or supply chain surface area.
 
@@ -43,7 +43,7 @@ This entire codebase fits comfortably within the context window of any modern LL
 
 ## Install
 
-Shellfish requires `zsh` 5+, `curl`, and [`jq`](https://github.com/jqlang/jq). [`fence`](https://github.com/fencesandbox/fence) is a soft requirement tool sandboxing, but can be disabled.
+Shellfish requires `zsh` 5+, `awk`, `curl`, and [`jq`](https://github.com/jqlang/jq). [`fence`](https://github.com/fencesandbox/fence) is a soft requirement tool sandboxing, but can be disabled.
 
 ```sh
 # Ensure that ~/.local/bin is on your $PATH. Then:
