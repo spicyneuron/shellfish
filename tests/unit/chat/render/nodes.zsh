@@ -157,12 +157,18 @@ typeset -g theme_config='{"theme_mode":"dark","theme_light":"l","theme_dark":"d"
     "prompt_color":"#111111","system_heading_color":"#111111","context_color":"#111111",
     "user_heading_color":"#111111","agent_heading_color":"#111111","tool_color":"#111111",
     "reasoning_color":"#111111","error_color":"#111111","added_color":"#111111",
+    "syntax_comment_color":"#111112","syntax_keyword_color":"#111113",
+    "syntax_string_color":"#111114","syntax_number_color":"#111115",
+    "syntax_tag_color":"#111116",
     "added_background_color":"#111111","removed_color":"#111111",
     "removed_background_color":"#111111","permission_color":"#111111"},
   "d":{"muted_color":"#222222","divider_color":"#333333","footer_color":"#222222",
     "prompt_color":"#444444","system_heading_color":"#222222","context_color":"#222222",
     "user_heading_color":"#555555","agent_heading_color":"#222222","tool_color":"#222222",
     "reasoning_color":"#222222","error_color":"#666666","added_color":"#222222",
+    "syntax_comment_color":"#222223","syntax_keyword_color":"#222224",
+    "syntax_string_color":"#222225","syntax_number_color":"#222226",
+    "syntax_tag_color":"#222227",
     "added_background_color":"#222222","removed_color":"#222222",
     "removed_background_color":"#222222","permission_color":"#222222"}}}'
 
@@ -171,8 +177,11 @@ assert_equal 'fg=#555555,bold' "$SF_PRESENT_STYLE[section.user]"
 assert_equal 'fg=#333333' "$SF_PRESENT_STYLE[divider]"
 assert_equal 'fg=#666666' "$SF_PRESENT_STYLE[notice.error]"
 assert_equal 'fg=#444444' "$SF_PRESENT_STYLE[prompt]"
-assert_equal 'fg=#555555' "$SF_PRESENT_STYLE[syntax.string]"
-assert_equal 'fg=#222222,underline' "$SF_PRESENT_STYLE[syntax.comment]"
+assert_equal 'fg=#222225' "$SF_PRESENT_STYLE[syntax.string]"
+assert_equal 'fg=#222223,underline' "$SF_PRESENT_STYLE[syntax.comment]"
+assert_equal 'fg=#222224' "$SF_PRESENT_STYLE[syntax.keyword]"
+assert_equal 'fg=#222226' "$SF_PRESENT_STYLE[syntax.number]"
+assert_equal 'fg=#222227' "$SF_PRESENT_STYLE[syntax.tag]"
 
 if NO_COLOR=1 sf_chat_theme_config "$theme_config"; then
   assert_equal 0 "${#SF_PRESENT_STYLE}"
@@ -230,12 +239,17 @@ SF_PRESENT_HIGHLIGHT_SPANS=()
 sf_chat_code_highlight "$code" js
 span_texts "$code"
 assert_equal 'const,"text",// note' "$REPLY"
-assert_equal '2,7,fg=#222222' "${(j:,:)SF_PRESENT_HIGHLIGHT_SPANS[1,3]}"
+assert_equal '2,7,fg=#222224' "${(j:,:)SF_PRESENT_HIGHLIGHT_SPANS[1,3]}"
 
 SF_PRESENT_HIGHLIGHT_SPANS=()
 sf_chat_code_highlight 'true: 12 # note' yaml
 span_texts 'true: 12 # note'
 assert_equal 'true,12,# note' "$REPLY"
+SF_PRESENT_HIGHLIGHT_SPANS=()
+sf_chat_code_highlight '<main id="content">' html
+span_texts '<main id="content">'
+assert_equal '<main,"content"' "$REPLY"
+assert_equal '0,5,fg=#222227' "${(j:,:)SF_PRESENT_HIGHLIGHT_SPANS[1,3]}"
 SF_PRESENT_HIGHLIGHT_SPANS=()
 sf_chat_code_highlight anything rust
 assert_equal 0 "${#SF_PRESENT_HIGHLIGHT_SPANS}"

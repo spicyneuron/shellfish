@@ -7,7 +7,9 @@ def theme_palette:
     "system_heading_color",
     "context_color", "user_heading_color", "agent_heading_color", "tool_color",
     "reasoning_color",
-    "error_color", "added_color", "added_background_color", "removed_color",
+    "error_color", "syntax_comment_color", "syntax_keyword_color",
+    "syntax_string_color", "syntax_number_color", "syntax_tag_color",
+    "added_color", "added_background_color", "removed_color",
     "removed_background_color", "permission_color"] as $colors |
   ($colors - keys | length == 0) and
   ([$colors[] as $color | .[$color]] |

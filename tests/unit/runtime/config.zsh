@@ -26,6 +26,10 @@ if print -r -- '{"themes":{"dark":{"text_color":"red"}}}' |
     config_eval 'config_validate' >/dev/null 2>&1; then
   fail 'invalid theme color was accepted'
 fi
+if print -r -- '{"themes":{"dark":{"syntax_keyword_color":"red"}}}' |
+    config_eval 'config_validate' >/dev/null 2>&1; then
+  fail 'invalid syntax color was accepted'
+fi
 
 # Validation rejects invalid preview line options in tui settings.
 if print -r -- '{"tui":{"preview_lines_context":-1}}' |

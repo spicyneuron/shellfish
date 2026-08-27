@@ -89,10 +89,11 @@ sf_chat_theme_config() {
        permission:("fg=" + .permission_color + ",bold"),
        muted:("fg=" + .muted_color),
        "syntax.markup":("fg=" + .muted_color),
-       "syntax.comment":("fg=" + .muted_color + ",underline"),
-       "syntax.string":("fg=" + .user_heading_color),
-       "syntax.number":("fg=" + .permission_color),
-       "syntax.word":("fg=" + .agent_heading_color),
+       "syntax.comment":("fg=" + .syntax_comment_color + ",underline"),
+       "syntax.string":("fg=" + .syntax_string_color),
+       "syntax.number":("fg=" + .syntax_number_color),
+       "syntax.keyword":("fg=" + .syntax_keyword_color),
+       "syntax.tag":("fg=" + .syntax_tag_color),
        "syntax.link":("fg=" + .user_heading_color + ",underline"),
        "syntax.code":("fg=" + .user_heading_color),
        "syntax.strong":"bold", "syntax.em":"underline",
@@ -258,7 +259,7 @@ sf_chat_highlight_span() {
 }
 
 # Highlight enough of common languages to distinguish comments, strings,
-# numbers, and reserved words. Unknown languages remain plain text.
+# numbers, reserved words, and markup tags. Unknown languages remain plain text.
 sf_chat_code_highlight() {
   local source=$1 language=$2 quotes='"' line_comment='' block_start='' block_end=''
   local words='' character quote token
@@ -379,7 +380,7 @@ sf_chat_code_highlight() {
       while (( end <= length )) && [[ ${source[end]} == [A-Za-z0-9_:-] ]]; do
         (( ++end ))
       done
-      sf_chat_highlight_span $(( base + index - 1 )) $(( base + end - 1 )) word
+      sf_chat_highlight_span $(( base + index - 1 )) $(( base + end - 1 )) tag
       index=$end
       continue
     fi
@@ -399,7 +400,7 @@ sf_chat_code_highlight() {
       done
       token=${source[index,end - 1]}
       if [[ -n $words && "|$words|" == *"|$token|"* ]]; then
-        sf_chat_highlight_span $(( base + index - 1 )) $(( base + end - 1 )) word
+        sf_chat_highlight_span $(( base + index - 1 )) $(( base + end - 1 )) keyword
       fi
       index=$end
       continue
