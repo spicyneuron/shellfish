@@ -5,6 +5,7 @@ zmodload zsh/system
 (( $+functions[sf_runtime_resolve] )) || source "$SF_ROOT/lib/runtime/main.zsh"
 (( $+functions[sf_session_select_path] )) || source "$SF_ROOT/lib/session/main.zsh"
 (( $+functions[sf_hooks_session_start] )) || source "$SF_ROOT/lib/hooks.zsh"
+source "$SF_ROOT/lib/session/startup.zsh"
 source "$SF_ROOT/lib/chat/render/main.zsh"
 source "$SF_ROOT/lib/chat/transport.zsh"
 source "$SF_ROOT/lib/chat/editor.zsh"
@@ -15,7 +16,6 @@ sf_chat_run() {
   local requested_model=${4-} requested_request=${5:-\{\}} requested_backend=${6-}
   integer runtime_override=${7:-0} continue_requested=${8:-0} clear_requested=${9:-0}
   local initial_prompt=${10-} runtime session_mode=resume
-  local hook_error
   integer new_session=0
   integer controller_status=0 runtime_status=0
 
@@ -47,22 +47,11 @@ sf_chat_run() {
       return 1
     }
     runtime=$REPLY
-    SF_SESSION_PATH=$SF_SESSION_SELECTED
-    SHELLFISH_STATE_DIR=''
-    if ! sf_hooks_state_create; then
-      hook_error=$SF_HOOK_ERROR
-    elif ! sf_session_prepare "$runtime" "$SF_RUNTIME_SYSTEM_RECORD"; then
-      hook_error=$SF_SESSION_ERROR
-    elif ! sf_hooks_session_start "$SF_SESSION_SELECTED"; then
-      hook_error=$SF_HOOK_ERROR
-    elif ! sf_session_create "${SF_HOOK_CONTEXT_RECORDS[@]}"; then
-      hook_error=$SF_SESSION_ERROR
-    fi
-    sf_hooks_state_cleanup
-    if [[ -n $hook_error ]]; then
-      SF_CHAT_ERROR=$hook_error
+    sf_session_startup_create "$SF_SESSION_SELECTED" "$runtime" \
+      "$SF_RUNTIME_SYSTEM_RECORD" || {
+      SF_CHAT_ERROR=$SF_SESSION_STARTUP_ERROR
       return 1
-    fi
+    }
   else
     sf_runtime_resolve "$SF_SESSION_SELECTED" "$requested_config" "$requested_profile" \
       "$requested_model" "$requested_request" "$requested_backend" "$runtime_override" ||

@@ -7,6 +7,7 @@ setopt no_aliases no_bg_nice no_multios pipe_fail
 (( $+functions[sf_runtime_resolve] )) || source "$SF_ROOT/lib/runtime/main.zsh"
 source "$SF_ROOT/lib/hooks.zsh"
 source "$SF_ROOT/lib/tools.zsh"
+source "$SF_ROOT/lib/session/startup.zsh"
 
 typeset -gA SF_EXEC=(
   answer '' backend_error_file '' backend_pid '' error '' jsonl 0
@@ -501,7 +502,7 @@ sf_exec_run() {
   local requested_model=${5-} requested_request=${6:-\{\}} requested_backend=${7-}
   integer runtime_override=${8:-0} continue_requested=${9:-0} jsonl=${10:-0} new=${11:-0}
   integer rc=0 create=0
-  local selected runtime system_record hook_error record
+  local selected runtime system_record record
   local -a startup_records
 
   SF_EXEC[error]=''
@@ -554,26 +555,10 @@ sf_exec_run() {
   trap 'SF_EXEC[signal_status]=129; kill -TERM $$' HUP
   trap 'sf_exec_interrupt; exit $SF_EXEC[signal_status]' TERM
   if (( ! rc && create )); then
-    SF_SESSION_PATH=$selected
-    SHELLFISH_STATE_DIR=''
-    {
-      if ! sf_hooks_state_create; then
-        sf_exec_set_error "$SF_HOOK_ERROR"
-        rc=$?
-      elif ! sf_session_prepare "$runtime" "$system_record"; then
-        hook_error=$SF_SESSION_ERROR
-      elif ! sf_hooks_session_start "$selected"; then
-        hook_error=$SF_HOOK_ERROR
-      elif ! sf_session_create "${SF_HOOK_CONTEXT_RECORDS[@]}"; then
-        hook_error=$SF_SESSION_ERROR
-      else
-        startup_records=( "${SF_SESSION_RECORDS[@]}" )
-      fi
-    } always {
-      sf_hooks_state_cleanup
-    }
-    if [[ -n $hook_error ]]; then
-      sf_exec_set_error "$hook_error"
+    if sf_session_startup_create "$selected" "$runtime" "$system_record"; then
+      startup_records=( "${SF_SESSION_RECORDS[@]}" )
+    else
+      sf_exec_set_error "$SF_SESSION_STARTUP_ERROR"
       rc=1
     fi
   fi
