@@ -7,22 +7,22 @@ integer exit_code=0
 
 # A non-PTY launch reaches terminal validation only after parsing its prompt.
 error=$(zsh -f "$entry" chat positional 2>&1) || exit_code=$?
-[[ $error == *'development chat requires an interactive terminal'* && $exit_code == 2 ]] || \
+[[ $error == *'chat requires an interactive terminal'* && $exit_code == 2 ]] || \
   fail 'explicit chat rejected its positional prompt'
 
 exit_code=0
 error=$(zsh -f "$entry" positional 2>&1) || exit_code=$?
-[[ $error == *'development chat requires an interactive terminal'* && $exit_code == 2 ]] || \
+[[ $error == *'chat requires an interactive terminal'* && $exit_code == 2 ]] || \
   fail 'implicit chat rejected its leading positional prompt'
 
 exit_code=0
 error=$(zsh -f "$entry" --profile default positional 2>&1) || exit_code=$?
-[[ $error == *'development chat requires an interactive terminal'* && $exit_code == 2 ]] || \
+[[ $error == *'chat requires an interactive terminal'* && $exit_code == 2 ]] || \
   fail 'implicit chat rejected its positional prompt after options'
 
 exit_code=0
 error=$(print -rn piped | zsh -f "$entry" chat 2>&1) || exit_code=$?
-[[ $error == *'development chat requires an interactive terminal'* && $exit_code == 2 ]] || \
+[[ $error == *'chat requires an interactive terminal'* && $exit_code == 2 ]] || \
   fail 'chat rejected its standard input prompt'
 
 exit_code=0

@@ -352,17 +352,17 @@ sf_main() {
       fi
       exec zsh -f -i "$SF_ENTRY" "${original_args[@]}"
     fi
-    sf_die 'development chat requires an interactive terminal'
+    sf_die 'chat requires an interactive terminal'
     return 2
   fi
   if [[ ! -t 0 ]]; then
     exec </dev/tty || {
-      sf_die 'development chat requires an interactive terminal'
+      sf_die 'chat requires an interactive terminal'
       return 2
     }
   fi
   if [[ ! -t 1 ]]; then
-    sf_die 'development chat requires an interactive terminal'
+    sf_die 'chat requires an interactive terminal'
     return 2
   fi
 
