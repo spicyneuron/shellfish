@@ -89,6 +89,7 @@ sf_chat_theme_config() {
        footer:("fg=" + .footer),
        prompt:("fg=" + .prompt),
        permission:("fg=" + .permission + ",bold"),
+       "permission.divider":("fg=" + .permission),
        muted:("fg=" + .muted),
        "syntax.comment":("fg=" + .syntax_comment),
        "syntax.string":("fg=" + .syntax_string),

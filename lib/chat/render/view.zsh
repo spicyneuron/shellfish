@@ -99,6 +99,7 @@ sf_chat_repaint() {
   integer columns=${COLUMNS:-0} rows=${LINES:-0} budget reserve=6
   integer index queue_shown queue_limit start queue_head=0 history_item=0 history_label=0
   local divider footer_divider permission label queue_item queue_line queue_text=''
+  local bottom_style=divider
   local choices='[a]pprove  [d]eny (default)'
   SF_PRESENT_CHROME_HIGHLIGHTS=()
   (( columns > 0 )) || columns=80
@@ -139,6 +140,7 @@ sf_chat_repaint() {
   divider=${(l:columns::─:)""}
   footer_divider=$divider
   if [[ $SF_PRESENT_STATE == permission ]]; then
+    bottom_style=permission.divider
     permission="─ Allow $SF_PRESENT_PERMISSION_TOOL outside of sandbox? "
     if (( ${#permission} < columns )); then
       permission+=${(l:$(( columns - ${#permission} ))::─:)""}
@@ -155,7 +157,7 @@ sf_chat_repaint() {
     PREDISPLAY+=$'\n\n'"$SF_PRESENT_PERMISSION_TEXT"$'\n\n'
     start=${#PREDISPLAY}
     PREDISPLAY+="$choices"$'\n'
-    sf_chat_chrome $start ${#choices} muted
+    sf_chat_chrome $start ${#choices} permission
   else
     if (( queue_shown )); then
       queue_text='─ queue '
@@ -206,7 +208,7 @@ sf_chat_repaint() {
     sf_chat_chrome $start 2 prompt
   fi
   POSTDISPLAY=$'\n'"$footer_divider"
-  sf_chat_chrome $(( ${#PREDISPLAY} + ${#BUFFER} + 1 )) ${#footer_divider} divider
+  sf_chat_chrome $(( ${#PREDISPLAY} + ${#BUFFER} + 1 )) ${#footer_divider} $bottom_style
   if [[ -n $SF_PRESENT_FOOTER ]]; then
     start=$(( ${#PREDISPLAY} + ${#BUFFER} + ${#POSTDISPLAY} + 1 ))
     POSTDISPLAY+=$'\n'"$SF_PRESENT_FOOTER"
