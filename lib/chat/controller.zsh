@@ -12,6 +12,14 @@ typeset -gi SF_PRESENT_EXIT_STATUS=0 SF_PRESENT_EXIT_PENDING=0
 typeset -g SF_PRESENT_REASONING_TOKENS=''
 typeset -g SF_PRESENT_IDENTITY='' SF_PRESENT_FOOTER=''
 
+sf_chat_permission_reset() {
+  SF_PRESENT_PERMISSION_ID=''
+  SF_PRESENT_PERMISSION_TOOL=''
+  SF_PRESENT_PERMISSION_TEXT=''
+  SF_PRESENT_PERMISSION_LANGUAGE=''
+  SF_PRESENT_PERMISSION_PREVIEW_LENGTH=0
+}
+
 TRAPTERM() {
   sf_chat_terminal_sync_end force
   [[ $SF_PRESENT_STATE == idle ]] || sf_chat_transport_stop
@@ -177,11 +185,7 @@ sf_chat_recover() {
   local type role node_heading body meta state cursor=$SF_PRESENT_CURSOR
   integer visible=$SF_PRESENT_PREFIX_VISIBLE index match=0
   sf_chat_transport_reset
-  SF_PRESENT_PERMISSION_ID=''
-  SF_PRESENT_PERMISSION_TOOL=''
-  SF_PRESENT_PERMISSION_TEXT=''
-  SF_PRESENT_PERMISSION_LANGUAGE=''
-  SF_PRESENT_PERMISSION_PREVIEW_LENGTH=0
+  sf_chat_permission_reset
   sf_chat_editor_permission discard
   if (( visible && ${#SF_PRESENT_NODE_TYPE} )); then
     type=$SF_PRESENT_NODE_TYPE[1]
@@ -265,11 +269,7 @@ sf_chat_exec_finish() {
       sf_chat_event assistant_commit || return 1
     fi
     SF_PRESENT_STATE=idle
-    SF_PRESENT_PERMISSION_ID=''
-    SF_PRESENT_PERMISSION_TOOL=''
-    SF_PRESENT_PERMISSION_TEXT=''
-    SF_PRESENT_PERMISSION_LANGUAGE=''
-    SF_PRESENT_PERMISSION_PREVIEW_LENGTH=0
+    sf_chat_permission_reset
     if (( ${#SF_PRESENT_HANDOFF} )); then
       sf_chat_discard_queue
       SF_PRESENT_ACTION=handoff
@@ -315,11 +315,6 @@ sf_chat_answer_permission() {
   if ! sf_chat_transport_reply "$SF_PRESENT_PERMISSION_ID" "$decision"; then
     sf_chat_transport_stop
     sf_chat_editor_permission restore
-    SF_PRESENT_PERMISSION_ID=''
-    SF_PRESENT_PERMISSION_TOOL=''
-    SF_PRESENT_PERMISSION_TEXT=''
-    SF_PRESENT_PERMISSION_LANGUAGE=''
-    SF_PRESENT_PERMISSION_PREVIEW_LENGTH=0
     if sf_chat_recover 'Cannot answer permission.'; then
       SF_PRESENT_STATE=idle
     else
@@ -327,11 +322,7 @@ sf_chat_answer_permission() {
     fi
     return 1
   fi
-  SF_PRESENT_PERMISSION_ID=''
-  SF_PRESENT_PERMISSION_TOOL=''
-  SF_PRESENT_PERMISSION_TEXT=''
-  SF_PRESENT_PERMISSION_LANGUAGE=''
-  SF_PRESENT_PERMISSION_PREVIEW_LENGTH=0
+  sf_chat_permission_reset
   sf_chat_event tool_permission_clear || return 1
   sf_chat_editor_permission restore
   SF_PRESENT_STATE=working
