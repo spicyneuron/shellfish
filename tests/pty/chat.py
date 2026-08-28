@@ -29,6 +29,12 @@ print -u2 accepted
 exit 10
 """
 
+HOLD_PERMISSION_HOOK = r"""#!/usr/bin/env zsh
+[[ $1 == user_prompt_submit ]] || exit 1
+: >"${SHELLFISH_SESSION:h}/permission-ready"
+while [[ ! -e ${SHELLFISH_SESSION:h}/permission-release ]]; do sleep 0.02; done
+"""
+
 def test_zle_multiline_editing():
     session = Session(hooks={"echo": ECHO_HOOK})
     try:
@@ -167,6 +173,65 @@ def test_slow_tool_animates_status_row():
         session.wait_after(mark, "exit 0", timeout=7)
     finally:
         session.close()
+
+
+def test_permission_decisions_restore_draft():
+    cases = (
+        ("approve", b"a", 0, "approved"),
+        ("deny", b"d", 126, "sandbox bypass denied"),
+    )
+    for decision, key, exit_code, content in cases:
+        session = Session(
+            explicit_session=True,
+            hooks={"hold_permission": HOLD_PERMISSION_HOOK},
+            env={
+                "SF_TEST_BACKEND_TOOL_CALL": "1",
+                "SF_TEST_BACKEND_TOOL_BYPASS": "true",
+                "SF_TEST_BACKEND_TOOL_COMMAND": "printf approved",
+            },
+        )
+        directory = session.explicit_session.parent
+        ready = directory / "permission-ready"
+        release = directory / "permission-release"
+        try:
+            prompt = f"{decision} permission"
+            draft = f"draft after {decision}"
+            mark = len(session.output)
+            session.send(prompt.encode() + b"\r")
+            end = time.monotonic() + 3
+            while not ready.exists() and time.monotonic() < end:
+                session.pump()
+            assert ready.exists(), session.visible(mark)
+            draft_mark = len(session.output)
+            # Redraw so heartbeat bytes cannot split the buffer assertion.
+            session.send(draft.encode() + b"\x0c")
+            session.wait_after(draft_mark, draft, view=session.typed)
+            release.touch()
+            session.wait_after(mark, "Allow shell outside of sandbox?")
+            session.send(key)
+
+            _, records = session.wait_session_records(
+                5, path=session.explicit_session
+            )
+            session.wait_after(mark, "Tool complete.")
+            edit = len(session.output)
+            # Appending proves the restored cursor remains at the draft's end.
+            session.send(b"X\x0c")
+            session.wait_after(edit, draft + "X", view=session.typed)
+
+            results = [
+                record for record in records if record.get("role") == "tool_result"
+            ]
+            assert len(results) == 1
+            assert results[0]["exit_code"] == exit_code
+            assert results[0]["content"] == content
+            users = [record for record in records if record.get("role") == "user"]
+            assert len(users) == 1
+            assert users[0]["content"] == [{"type": "text", "text": prompt}]
+            assert draft not in session.explicit_session.read_text()
+        finally:
+            release.touch()
+            session.close()
 
 
 def test_permission_ctrl_c_cancels_pending_tools():
@@ -374,6 +439,7 @@ def main():
     test_startup_records_precede_two_turns()
     test_tool_uses_manifest_display()
     test_slow_tool_animates_status_row()
+    test_permission_decisions_restore_draft()
     test_permission_ctrl_c_cancels_pending_tools()
     test_repeated_permission_ctrl_c_exits_after_recovery()
     test_tool_result_preview_reports_total_tokens()
