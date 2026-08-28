@@ -5,11 +5,11 @@ zmodload zsh/system
 (( $+functions[sf_runtime_resolve] )) || source "$SF_ROOT/lib/runtime/main.zsh"
 (( $+functions[sf_session_select_path] )) || source "$SF_ROOT/lib/session/main.zsh"
 (( $+functions[sf_hooks_session_start] )) || source "$SF_ROOT/lib/hooks.zsh"
-source "$SF_ROOT/lib/session/startup.zsh"
-source "$SF_ROOT/lib/chat/render/main.zsh"
-source "$SF_ROOT/lib/chat/transport.zsh"
-source "$SF_ROOT/lib/chat/editor.zsh"
-source "$SF_ROOT/lib/chat/controller.zsh"
+(( $+functions[sf_session_startup_create] )) || source "$SF_ROOT/lib/session/startup.zsh"
+(( $+functions[sf_chat_repaint] )) || source "$SF_ROOT/lib/chat/render/main.zsh"
+(( $+functions[sf_chat_transport_start] )) || source "$SF_ROOT/lib/chat/transport.zsh"
+(( $+functions[sf_chat_bind] )) || source "$SF_ROOT/lib/chat/editor.zsh"
+(( $+functions[sf_chat_controller] )) || source "$SF_ROOT/lib/chat/controller.zsh"
 
 sf_chat_run() {
   local requested_session=${1-} requested_config=${2-} requested_profile=${3-}
