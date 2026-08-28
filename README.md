@@ -12,7 +12,7 @@ Under-the-hood, an AI agent is just a state machine, an append-only log, an HTTP
 
 This entire codebase fits comfortably within the context window of any modern LLM. It's small enough to run anywhere, and flexible enough to mold into any shape you need.
 
-## Core Promise
+## Core promise
 
 - Your **harness** is just markdown and shell scripts, bound to lifecycle hooks.
 - Your **tools** are just shell scripts, optionally sandboxed with [`fence`](https://github.com/fencesandbox/fence).
@@ -20,16 +20,16 @@ This entire codebase fits comfortably within the context window of any modern LL
 
 ## Default harness
 
-### tools
+### Tools
 - `read_file`, `edit_file`, `write_file` for simple text operations.
 - `shell` to run arbitrary commands within a `fence` sandbox.
 
-### session_start hook
+### `session_start` hook
 - `add_environment` to inject host, project tree, and Git context.
 - `add_command_availability` to report available shell command versions.
 - `add_project_instructions` to inject the project's `AGENTS.md` or, if absent, `CLAUDE.md`.
 
-### user_prompt_submit hook
+### `user_prompt_submit` hook
 - `/new` to create a new session in the same project.
 - `/fork [N]` to copy and trim the current transcript into a new session.
 - `/refresh` to rebuild the terminal presentation from the durable session.
