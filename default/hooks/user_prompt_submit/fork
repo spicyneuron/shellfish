@@ -11,11 +11,11 @@ read_status=$?
 
 case "$read_status:$submitted" in
   1:/help|1:/h)
-    print -r -- $'112\t/fork [N], /f [N]\tFork before the last N user turns (default: 0)' >>"$SHELLFISH_STATE_DIR/help.tsv"
+    print -r -- $'112\t/fork [N]\tFork before the last N user turns (default: 0)' >>"$SHELLFISH_STATE_DIR/help.tsv"
     exit 0
     ;;
-  1:/fork|1:/f) count=0 ;;
-  1:'/fork '*|1:'/f '*)
+  1:/fork) count=0 ;;
+  1:'/fork '*)
     count=${submitted#* }
     count=${count##[[:space:]]#}
     ;;

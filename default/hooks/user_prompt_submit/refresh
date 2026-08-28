@@ -11,10 +11,10 @@ read_status=$?
 
 case "$read_status:$submitted" in
   1:/help|1:/h)
-    print -r -- $'110\t/refresh\tRerender current session; fix layout' >>"$SHELLFISH_STATE_DIR/help.tsv"
+    print -r -- $'110\t/refresh, /r\tRerender current session; fix layout' >>"$SHELLFISH_STATE_DIR/help.tsv"
     exit 0
     ;;
-  1:/refresh)
+  1:/refresh|1:/r)
     jq -cn --arg command "$SHELLFISH_EXECUTABLE" --arg path "$SHELLFISH_SESSION" \
       '{action:"handoff",argv:[$command,"--clear","--session",$path]}' >&3 || exit 1
     exit 11

@@ -82,8 +82,8 @@ done
 [[ $help_display == 'shift+enter, ctrl+j'* ]]
 (( ${#help_display} > 20 ))
 # Every command key appears in the formatted output.
-for key in '↑, ↓' '/queue drop <N>' '/queue clear' '/new, /n' '/refresh' '/verbose, /v' \
-    '/fork [N], /f [N]' '!COMMAND' '/server' '/resume' '/quit, /q'; do
+for key in '↑, ↓' '/queue drop <N>' '/queue clear' '/new' '/refresh, /r' '/verbose, /v' \
+    '/fork [N]' '!COMMAND' '/server' '/resume' '/quit, /q'; do
   [[ $help_display == *"$key"* ]]
 done
 # Rows remain sorted by their configured order through /quit.
@@ -95,7 +95,7 @@ for (( i = 1; i <= ${#help_lines}; i++ )); do
   [[ $help_lines[i] == *'/queue drop <N>'* ]] && drop_idx=$i
   [[ $help_lines[i] == *'/queue clear'* ]] && queue_idx=$i
   [[ $help_lines[i] == *'!COMMAND'* ]] && bang_idx=$i
-  [[ $help_lines[i] == *'/new, /n'* ]] && new_idx=$i
+  [[ $help_lines[i] == *'/new'* ]] && new_idx=$i
   [[ $help_lines[i] == *'/quit, /q'* ]] && quit_idx=$i
 done
 (( control_idx > 0 && history_idx > 0 && drop_idx > 0 && queue_idx > 0 && bang_idx > 0 &&
@@ -124,7 +124,12 @@ run_prompt_hook /resume "$help_session"
 [[ $reply[1] == handoff && $reply[2] == "$ROOT/bin/shellfish" &&
    $reply[3] == --resume ]]
 run_prompt_hook /r "$help_session"
-[[ $reply[1] == proceed ]]
+[[ $reply[1] == handoff && $reply[2] == "$ROOT/bin/shellfish" &&
+   $reply[3] == --clear && $reply[4] == --session && $reply[5] == "${help_session:A}" ]]
+for former_alias in /n /f '/f 1'; do
+  run_prompt_hook "$former_alias" "$help_session"
+  [[ $reply[1] == proceed ]]
+done
 sf_hooks_state_cleanup
 
 # Forking a fork starts a numbered sequence instead of repeating the suffix.
