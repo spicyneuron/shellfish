@@ -185,7 +185,8 @@ function load(savedCode, initialSessionStatus = 200) {
         body: sessionStatus === 200 ? { getReader: () => reader } : null,
       };
     }
-    posts.push({ path: target, body: JSON.parse(options.body), authorization });
+    const body = options.body === undefined ? undefined : JSON.parse(options.body);
+    posts.push({ path: target, body, authorization });
     return { ok: actionStatus < 400, status: actionStatus };
   };
 
@@ -448,6 +449,7 @@ test("answers the pending permission request once", async () => {
   assert.match(request.textContent, /Run shell outside of sandbox\?/);
   assert.match(request.textContent, /ls/);
   assert.match(request.textContent, /Reason: not allowed by policy/);
+  assert.equal(page.cancel.hidden, false);
 
   const [approve] = find(page.output, "actions")[0].children;
   approve.dispatch("click");
@@ -475,7 +477,7 @@ test("keeps a tool call and its result together", async () => {
   });
   assert.equal(find(page.output, "call").length, 1);
   assert.equal(find(page.output, "activity").length, 1);
-  assert.equal(page.cancel.hidden, true);
+  assert.equal(page.cancel.hidden, false);
 
   await page.send({
     type: "message",
@@ -489,6 +491,7 @@ test("keeps a tool call and its result together", async () => {
   assert.equal(find(call, "result").length, 1);
   assert.equal(call.textContent, "shellpwd/project");
   assert.equal(find(page.output, "activity").length, 1);
+  assert.equal(page.cancel.hidden, false);
 });
 
 test("serializes turns and cancellation", async () => {
@@ -513,7 +516,7 @@ test("serializes turns and cancellation", async () => {
   });
   assert.equal(page.entry.style.height, "");
   assert.equal(find(page.output, "activity").length, 1);
-  assert.equal(page.cancel.hidden, true);
+  assert.equal(page.cancel.hidden, false);
   await page.send({
     type: "message",
     role: "user",
@@ -532,6 +535,7 @@ test("serializes turns and cancellation", async () => {
   page.cancel.dispatch("click");
   await page.settle();
   assert.deepEqual(page.posts.map((post) => post.path), ["/turn", "/cancel"]);
+  assert.equal(page.posts[1].body, undefined);
 
   await page.send({ type: "state", working: false });
   assert.equal(page.entry.disabled, false);

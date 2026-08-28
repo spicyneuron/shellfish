@@ -29,10 +29,8 @@ let code = null;
 // superseded reader stops touching the page.
 let reader = null;
 let generation = 0;
-// Whether a turn is running, as the last state frame reported it.
+// Whether a turn is active or a submitted turn is awaiting stream confirmation.
 let working = false;
-// Whether the backend is currently handling a request within the active turn.
-let requesting = false;
 // Set while an action is on its way to the service. Actions are serialized: the
 // service answers about whatever is current, so overlapping them is meaningless.
 let busy = false;
@@ -350,8 +348,6 @@ function apply(frame) {
     case "state":
       return applyState(frame);
     case "_backend_request_start":
-      requesting = true;
-      refresh();
       return showIndicator();
     case "_assistant_delta":
     case "_assistant_reasoning_delta":
@@ -400,8 +396,6 @@ function renderMessage(frame) {
     return;
   }
   if (frame.role === "tool_result") return renderResult(frame);
-  requesting = false;
-  refresh();
   hideIndicator();
   section("agent");
   const article = record("assistant", null);
@@ -442,7 +436,6 @@ function applyState(frame) {
   if (working) {
     showIndicator();
   } else {
-    requesting = false;
     hideIndicator();
     clearPermission();
   }
@@ -500,11 +493,12 @@ async function act(path, body) {
   busy = true;
   refresh();
   try {
-    const response = await fetch(path, {
+    const request = {
       method: "POST",
       headers: { Authorization: "Bearer " + code },
-      body: JSON.stringify(body),
-    });
+    };
+    if (body !== undefined) request.body = JSON.stringify(body);
+    const response = await fetch(path, request);
     if (response.status === 401) {
       deauthenticate("access code rejected");
       return false;
@@ -590,7 +584,6 @@ function reset() {
   lastRole = null;
   pending = null;
   working = false;
-  requesting = false;
   usage.textContent = "";
   refresh();
 }
@@ -598,7 +591,7 @@ function reset() {
 // ------------------------------------------------------------------ the page
 
 function refresh() {
-  cancelButton.hidden = !requesting;
+  cancelButton.hidden = !working;
   cancelButton.disabled = busy;
   detachButton.hidden = code === null;
 }
@@ -681,11 +674,11 @@ entry.addEventListener("keydown", (event) => {
 });
 
 cancelButton.addEventListener("click", () => {
-  if (requesting && !busy) act("/cancel", {});
+  if (working && !busy) act("/cancel");
 });
 
 document.addEventListener("keydown", (event) => {
-  if (event.key === "Escape" && requesting && !busy) act("/cancel", {});
+  if (event.key === "Escape" && working && !busy) act("/cancel");
 });
 
 const savedCode = sessionStorage.getItem(CODE_STORAGE_KEY);
