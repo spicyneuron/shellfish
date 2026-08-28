@@ -5,6 +5,7 @@ typeset -g SF_TOOL_ERROR=''
 typeset -g SF_TOOL_STATE_DIR=''
 typeset -g SF_TOOL_RUNTIME_DIR=''
 typeset -g SF_TOOL_ACTIVE_PID=''
+integer -g SF_TOOL_INTERRUPTED=0
 
 sf_tools_fail() {
   SF_TOOL_ERROR=$1
@@ -329,7 +330,7 @@ sf_tool_execute() {
       sf_tools_fail 'cannot inspect tool process status'
       return
     }
-    if (( exit_code >= 128 || tail_status >= 128 )); then
+    if (( SF_TOOL_INTERRUPTED )); then
       return 130
     fi
     (( tail_status == 0 )) || {

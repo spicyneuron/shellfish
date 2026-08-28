@@ -41,6 +41,7 @@ sf_exec_stop_process() {
 
 sf_exec_interrupt() {
   SF_EXEC[interrupted]=1
+  SF_TOOL_INTERRUPTED=1
   if [[ -n $SF_HOOK_ACTIVE_PID ]]; then
     sf_exec_stop_process "$SF_HOOK_ACTIVE_PID"
     SF_HOOK_ACTIVE_PID=''
@@ -506,6 +507,7 @@ sf_exec_run() {
   SF_EXEC[error]=''
   SF_EXEC[answer]=''
   SF_EXEC[interrupted]=0
+  SF_TOOL_INTERRUPTED=0
   SF_EXEC[signal_status]=143
   SF_EXEC[jsonl]=$jsonl
   typeset -gx SHELLFISH_MODE=exec

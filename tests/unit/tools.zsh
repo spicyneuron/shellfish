@@ -71,6 +71,11 @@ sf_test_tool_execute "$(jq -cn \
 jq -e '.exit_code == 124 and (.content | contains("timed out after 1 seconds"))' \
   <<<"$REPLY" >/dev/null
 
+# A tool terminated by a signal is a completed tool call, not an exec cancellation.
+sf_test_tool_execute "$(jq -cn \
+  '{id:"signal_1",name:"shell",input:{command:"kill -TERM $$"}}')" 0
+jq -e '.exit_code == 143 and .sandboxed == false' <<<"$REPLY" >/dev/null
+
 # A sandboxed bypass executes only with an approval decision from its caller.
 load_tools "$(jq -c --arg fence "${commands[fence]:A}" \
   '.harness.sandbox=true | .harness.fence=$fence' <<<"$stored_runtime")" 1
