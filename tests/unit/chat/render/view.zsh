@@ -205,8 +205,7 @@ LINES=10
 
 # Chrome offsets index PREDISPLAY + BUFFER + POSTDISPLAY, so confirm each span
 # actually covers the text it claims rather than trusting the arithmetic.
-SF_PRESENT_STYLE=( divider 'fg=8' prompt 'fg=4' footer 'fg=5'
-  footer.identity 'fg=5,bold' muted 'fg=7' )
+SF_PRESENT_STYLE=( divider 'fg=8' prompt 'fg=4' footer 'fg=5' muted 'fg=7' )
 sf_chat_reset
 SF_PRESENT_IDENTITY=test/model
 SF_PRESENT_FOOTER='test/model · 1 ↑ 2 ↓'
@@ -224,9 +223,9 @@ for (( index = 1; index <= ${#SF_PRESENT_CHROME_HIGHLIGHTS}; index += 3 )); do
   chrome_sliced+=( "${chrome_display[SF_PRESENT_CHROME_HIGHLIGHTS[index] + 1,SF_PRESENT_CHROME_HIGHLIGHTS[index + 1]]}" )
   chrome_styled+=( "$SF_PRESENT_CHROME_HIGHLIGHTS[index + 2]" )
 done
-assert_equal "${(l:79::─:)""}|❯ |${(l:79::─:)""}|test/model · 1 ↑ 2 ↓|test/model" \
+assert_equal "${(l:79::─:)""}|❯ |${(l:79::─:)""}|test/model · 1 ↑ 2 ↓" \
   "${(j:|:)chrome_sliced}"
-assert_equal 'fg=8,fg=4,fg=8,fg=5,fg=5,bold' "${(j:,:)chrome_styled}"
+assert_equal 'fg=8,fg=4,fg=8,fg=5' "${(j:,:)chrome_styled}"
 
 # The queue divider and its items carry distinct styles.
 SF_PRESENT_QUEUE=( $'first queued\ncontinued' )

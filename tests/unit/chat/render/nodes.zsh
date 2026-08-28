@@ -179,12 +179,12 @@ assert_equal 'fg=#333333' "$SF_PRESENT_STYLE[divider]"
 assert_equal 'fg=#222222' "$SF_PRESENT_STYLE[clamp]"
 assert_equal 'fg=#666666' "$SF_PRESENT_STYLE[notice.error]"
 assert_equal 'fg=#444444' "$SF_PRESENT_STYLE[prompt]"
-assert_equal 'fg=#222222,bold' "$SF_PRESENT_STYLE[footer.identity]"
 assert_equal 'fg=#222225' "$SF_PRESENT_STYLE[syntax.string]"
 assert_equal 'fg=#222223' "$SF_PRESENT_STYLE[syntax.comment]"
 assert_equal 'fg=#222224' "$SF_PRESENT_STYLE[syntax.keyword]"
 assert_equal 'fg=#222226' "$SF_PRESENT_STYLE[syntax.number]"
 assert_equal 'fg=#222227' "$SF_PRESENT_STYLE[syntax.tag]"
+assert_equal 'fg=#222222' "$SF_PRESENT_STYLE[syntax.fence]"
 
 if NO_COLOR=1 sf_chat_theme_config "$theme_config"; then
   assert_equal 0 "${#SF_PRESENT_STYLE}"
@@ -265,8 +265,16 @@ assert_equal $'def,"""First line\n    second line.""",return,1' "$REPLY"
 SF_PRESENT_HIGHLIGHT_SPANS=()
 sf_chat_code_highlight '<main id="content">' html
 span_texts '<main id="content">'
-assert_equal '<main,"content"' "$REPLY"
+assert_equal '<main,"content",>' "$REPLY"
 assert_equal '0,5,fg=#222227' "${(j:,:)SF_PRESENT_HIGHLIGHT_SPANS[1,3]}"
+SF_PRESENT_HIGHLIGHT_SPANS=()
+sf_chat_code_highlight '<item name="a > b" />' html
+span_texts '<item name="a > b" />'
+assert_equal '<item,"a > b",/>' "$REPLY"
+SF_PRESENT_HIGHLIGHT_SPANS=()
+sf_chat_code_highlight '</item>' xml
+span_texts '</item>'
+assert_equal '</item>' "$REPLY"
 SF_PRESENT_HIGHLIGHT_SPANS=()
 sf_chat_code_highlight anything rust
 assert_equal 0 "${#SF_PRESENT_HIGHLIGHT_SPANS}"
@@ -278,7 +286,7 @@ typeset markdown=$'# Head\n**bold** [link](url) `code`\n```js\nconst x = 3;\n```
 SF_PRESENT_HIGHLIGHT_SPANS=()
 sf_chat_markdown_highlight "$markdown"
 span_texts "$markdown"
-assert_equal 'Head,bold,[link](url),code,const,3' "$REPLY"
+assert_equal $'Head,bold,[link](url),code,```js,const,3,```' "$REPLY"
 assert_equal '2,6,bold,9,13,bold' \
   "${(j:,:)SF_PRESENT_HIGHLIGHT_SPANS[1,6]}"
 
@@ -291,7 +299,7 @@ markdown=$'```js\n\nconst value\n\t```'
 SF_PRESENT_HIGHLIGHT_SPANS=()
 sf_chat_markdown_highlight "$markdown"
 span_texts "$markdown"
-assert_equal 'const' "$REPLY"
+assert_equal $'```js,const,\t```' "$REPLY"
 
 # A continuation fragment is not a line, so line-leading syntax stays plain and
 # the block mode it inherited still applies.

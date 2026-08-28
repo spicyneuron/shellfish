@@ -211,8 +211,6 @@ sf_chat_repaint() {
     start=$(( ${#PREDISPLAY} + ${#BUFFER} + ${#POSTDISPLAY} + 1 ))
     POSTDISPLAY+=$'\n'"$SF_PRESENT_FOOTER"
     sf_chat_chrome $start ${#SF_PRESENT_FOOTER} footer
-    [[ -z $SF_PRESENT_IDENTITY ]] ||
-      sf_chat_chrome $start ${#SF_PRESENT_IDENTITY} footer.identity
   fi
   sf_chat_update_highlights view || return 1
 }

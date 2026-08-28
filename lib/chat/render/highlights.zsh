@@ -86,7 +86,7 @@ sf_chat_theme_config() {
        notice:("fg=" + .muted), "notice.error":("fg=" + .error),
        activity:("fg=" + .muted), divider:("fg=" + .divider),
        clamp:("fg=" + .muted),
-       footer:("fg=" + .footer), "footer.identity":("fg=" + .footer + ",bold"),
+       footer:("fg=" + .footer),
        prompt:("fg=" + .prompt),
        permission:("fg=" + .permission + ",bold"),
        muted:("fg=" + .muted),
@@ -95,6 +95,7 @@ sf_chat_theme_config() {
        "syntax.number":("fg=" + .syntax_number),
        "syntax.keyword":("fg=" + .syntax_keyword),
        "syntax.tag":("fg=" + .syntax_tag),
+       "syntax.fence":("fg=" + .muted),
        "syntax.link":("fg=" + .user_heading + ",underline"),
        "syntax.code":("fg=" + .user_heading),
        "syntax.strong":"bold", "syntax.em":"underline",
@@ -264,7 +265,7 @@ sf_chat_highlight_span() {
 sf_chat_code_highlight() {
   local source=$1 language=$2 quotes='"' line_comment='' block_start='' block_end=''
   local block_kind=comment words='' character quote token
-  integer base=${3:-0} state=${4:-0} length=${#source} index=1 end escaped closed
+  integer base=${3:-0} state=${4:-0} length=${#source} index=1 end escaped closed tag_open=0
 
   SF_PRESENT_HIGHLIGHT_BLOCK_OPEN=0
   case $language in
@@ -392,7 +393,21 @@ sf_chat_code_highlight() {
       while (( end <= length )) && [[ ${source[end]} == [A-Za-z0-9_:-] ]]; do
         (( ++end ))
       done
+      if [[ ${source[index + 1]} == / && ${source[end]} == '>' ]]; then
+        (( ++end ))
+      else
+        tag_open=1
+      fi
       sf_chat_highlight_span $(( base + index - 1 )) $(( base + end - 1 )) tag
+      index=$end
+      continue
+    fi
+    if [[ $language == html ]] && (( tag_open )) &&
+        [[ $character == '>' || ${source[index,index + 1]} == '/>' ]]; then
+      end=$(( index + 1 ))
+      [[ $character == / ]] && (( ++end ))
+      sf_chat_highlight_span $(( base + index - 1 )) $(( base + end - 1 )) tag
+      tag_open=0
       index=$end
       continue
     fi
@@ -464,7 +479,7 @@ sf_chat_markdown_highlight() {
         (( ++close_start ))
       done
       if (( starts_line )) && [[ ${close[close_start,-1]} == "$fence"* ]]; then
-        sf_chat_highlight_span $base $(( base + ${#line} )) markup
+        sf_chat_highlight_span $base $(( base + ${#line} )) fence
         fence=''
         language=''
         comment=0
@@ -475,7 +490,7 @@ sf_chat_markdown_highlight() {
     elif (( starts_line )) && [[ $line =~ '^ {0,3}(```+|~~~+)[[:space:]]*([^[:space:]]*)' ]]; then
       fence=$match[1]
       language=$match[2]
-      sf_chat_highlight_span $base $(( base + ${#line} )) markup
+      sf_chat_highlight_span $base $(( base + ${#line} )) fence
       inline=0
     fi
     if (( inline )); then
