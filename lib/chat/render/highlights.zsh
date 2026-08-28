@@ -553,6 +553,13 @@ sf_chat_markdown_highlight() {
           count=1
         fi
         if [[ -n $delimiter ]]; then
+          # Underscores inside a word are identifier characters, not emphasis.
+          if [[ $delimiter == _* ]] && (( cursor > 1 )) &&
+              [[ ${line[cursor - 1]} == [[:alnum:]] &&
+              ${line[cursor + count]-} == [[:alnum:]] ]]; then
+            (( cursor += count ))
+            continue
+          fi
           suffix=${line[cursor + count,-1]}
           if [[ $suffix == *"$delimiter"* ]]; then
             rest=${suffix#*"$delimiter"}

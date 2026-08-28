@@ -343,6 +343,12 @@ assert_equal 0 "$SF_PRESENT_HIGHLIGHT_INLINE_OPEN"
 # Multiplication is not emphasis: a delimiter followed by a space cannot open.
 sf_chat_markdown_highlight 'value * other'
 assert_equal 0 "$SF_PRESENT_HIGHLIGHT_INLINE_OPEN"
+# Identifier underscores do not open emphasis.
+SF_PRESENT_HIGHLIGHT_SPANS=()
+sf_chat_markdown_highlight 'user_prompt_submit and _italic_'
+span_texts 'user_prompt_submit and _italic_'
+assert_equal italic "$REPLY"
+assert_equal 0 "$SF_PRESENT_HIGHLIGHT_INLINE_OPEN"
 sf_chat_markdown_highlight $'```js\nconst x = 3;'
 assert_equal 0 "$SF_PRESENT_HIGHLIGHT_INLINE_OPEN"
 assert_equal $'```\tjs\t0' "$REPLY"

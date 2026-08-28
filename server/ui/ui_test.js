@@ -559,6 +559,7 @@ test("styles markdown without hiding its source", async () => {
           "## Heading",
           "",
           "A line with **bold**, *italic*, and `code`.",
+          "The user_prompt_submit hook keeps its underscores; _italic_ works.",
           "",
           "- first",
           "- second",
@@ -578,6 +579,7 @@ test("styles markdown without hiding its source", async () => {
     "## Heading",
     "",
     "A line with **bold**, *italic*, and `code`.",
+    "The user_prompt_submit hook keeps its underscores; _italic_ works.",
     "",
     "- first",
     "- second",
@@ -592,6 +594,8 @@ test("styles markdown without hiding its source", async () => {
   assert.equal(findTag(text, "strong")[0].textContent, "## Heading");
   assert.equal(findTag(text, "strong")[1].textContent, "**bold**");
   assert.equal(findTag(text, "em")[0].textContent, "*italic*");
+  assert.equal(findTag(text, "em")[1].textContent, "_italic_");
+  assert.equal(findTag(text, "em").length, 2);
   assert.equal(findTag(text, "code")[0].textContent, "`code`");
   assert.equal(find(text, "comment")[0].textContent, "# comment");
   assert.equal(find(text, "string")[0].textContent, '"hello"');

@@ -200,6 +200,14 @@ function inline(parent, text) {
     }
     const delimiter = match[1] || match[4] || match[6];
     const content = match[2] ?? match[5] ?? match[7];
+    const before = text[match.index - 1];
+    if (delimiter.startsWith("_") && /[\p{L}\p{N}]/u.test(before || "") &&
+        /[\p{L}\p{N}]/u.test(content[0])) {
+      const end = match.index + delimiter.length;
+      parent.append(document.createTextNode(text.slice(match.index, end)));
+      text = text.slice(end);
+      continue;
+    }
     const formatted = el(parent, match[1] ? "code" : match[4] ? "strong" : "em");
     markup(formatted, delimiter);
     inline(formatted, content);
