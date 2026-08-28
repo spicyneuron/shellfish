@@ -122,9 +122,8 @@ LBUFFER=first
 sf_chat_insert_newline
 assert_equal $'first\n' "$LBUFFER"
 
-# A real keystroke can consume the queued heartbeat while ZLE resolves the
-# prefix it shares, leaving nothing to drive the viewport. Pre-redraw runs after
-# every widget, so an empty queue there always earns a replacement.
+# Pre-redraw runs after every widget, so an empty heartbeat queue always earns
+# a replacement.
 SF_PRESENT_STATE=working
 KEYS_QUEUED_COUNT=0
 PENDING=0
@@ -268,6 +267,10 @@ sf_chat_bind
   fail 'permission keymap permits vertical navigation'
 [[ $(bindkey -M sf-present '^C') == *sf_chat_interrupt ]] ||
   fail 'chat keymap bypasses the interrupt widget'
+[[ $(bindkey -M sf-present $'\x18\x03') == *sf_chat_interrupt ]] ||
+  fail 'chat heartbeat prefix swallows interrupts'
+[[ $(bindkey -M sf-present $'\x18x') == *sf_chat_insert ]] ||
+  fail 'chat heartbeat prefix swallows printable input'
 [[ $(bindkey -M sf-permission '^C') == *sf_chat_interrupt ]] ||
   fail 'permission keymap bypasses the interrupt widget'
 

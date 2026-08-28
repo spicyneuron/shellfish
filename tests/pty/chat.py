@@ -148,6 +148,27 @@ def test_tool_uses_manifest_display():
         session.close()
 
 
+def test_activity_input_does_not_delay_interrupt():
+    session = Session(
+        explicit_session=True,
+        env={"SF_TEST_BACKEND_DELAY_MATCH_SECONDS": "2"},
+    )
+    try:
+        mark = len(session.output)
+        session.send(b"delay response\r")
+        session.wait_session_records(2, path=session.explicit_session)
+
+        # Keep ordinary input adjacent to the interrupt. The heartbeat prefix
+        # must forward both rather than consume either sequence.
+        session.send(b"draft\x03")
+        session.wait_after(mark, "Cancelled.", timeout=1.5)
+        edit = len(session.output)
+        session.send(b"X\x0c")
+        session.wait_after(edit, "draftX", view=session.typed)
+    finally:
+        session.close()
+
+
 def test_slow_tool_animates_status_row():
     session = Session(
         env={"SF_TEST_BACKEND_DELAY_MATCH_SECONDS": "0.5"}, sandbox=False
@@ -438,6 +459,7 @@ def test_sigterm_leaves_terminal_state():
 def main():
     test_startup_records_precede_two_turns()
     test_tool_uses_manifest_display()
+    test_activity_input_does_not_delay_interrupt()
     test_slow_tool_animates_status_row()
     test_permission_decisions_restore_draft()
     test_permission_ctrl_c_cancels_pending_tools()

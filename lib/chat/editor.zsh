@@ -11,8 +11,9 @@ typeset -gi SF_PRESENT_VERTICAL_COLUMN=-1
 KEYTIMEOUT=$SF_PRESENT_HEARTBEAT_TIMEOUT
 
 # Nothing wakes ZLE while a turn streams, so the view is driven by a synthetic
-# key that dispatches the tick. Pending input is the armed state: a queued key
-# is a tick that has not run yet, and real input wakes ZLE by itself.
+# key that dispatches the tick. Its prefix timeout yields to fd callbacks between
+# ticks. Real input can arrive behind that prefix, so the keymap must forward
+# those combined sequences to their ordinary widgets.
 sf_chat_heartbeat_arm() {
   [[ $SF_PRESENT_STATE == (working|cancelling) ]] || return 0
   (( ${KEYS_QUEUED_COUNT:-0} == 0 && ${PENDING:-0} == 0 )) || return 0
@@ -303,6 +304,8 @@ sf_chat_interrupt() {
 }
 
 sf_chat_bind() {
+  local heartbeat_key=$'\x18' key
+  integer code
   SF_PRESENT_LAST_PROMPT=''
   SF_PRESENT_PERMISSION_DRAFT=''
   SF_PRESENT_PERMISSION_CURSOR=0
@@ -338,6 +341,11 @@ sf_chat_bind() {
   bindkey -rpM sf-present $'\x18'
   bindkey -M sf-present $'\x18' sf_chat_heartbeat_tick
   bindkey -M sf-present $'\x18\x1f' sf_chat_heartbeat_tick
+  bindkey -M sf-present $'\x18\x03' sf_chat_interrupt
+  for code in {32..126}; do
+    key=$heartbeat_key${(#)code}
+    bindkey -M sf-present "$key" sf_chat_insert
+  done
   bindkey -M sf-present ' ' sf_chat_insert
   bindkey -M sf-present -R $'!-~' sf_chat_insert
   bindkey -D sf-permission 2>/dev/null || true
