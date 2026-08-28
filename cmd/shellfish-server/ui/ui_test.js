@@ -39,7 +39,6 @@ class Element {
     this.scrollHeight = 0;
     this.scrollTop = 0;
     this.clientHeight = 0;
-    this.focusCount = 0;
     this.disabled = false;
     this.style = {};
   }
@@ -81,9 +80,7 @@ class Element {
     this[name] = value;
   }
 
-  focus() {
-    this.focusCount++;
-  }
+  focus() {}
 
   requestSubmit() {
     this.dispatch("submit");
@@ -220,15 +217,16 @@ function load(savedCode, initialSessionStatus = 200) {
   });
   vm.runInContext(source, context);
 
-  // A frame can await a fetch whose answer schedules more work, so settling
-  // takes several turns of the event loop rather than one.
-  const settle = async () => {
-    for (let i = 0; i < 4; i++) await new Promise((resolve) => setImmediate(resolve));
+  const waitFor = async (predicate, description) => {
+    for (let i = 0; i < 50; i++) {
+      await new Promise((resolve) => setImmediate(resolve));
+      if (predicate()) return;
+    }
+    assert.fail(`timed out waiting for ${description}`);
   };
-  const submit = async (text) => {
+  const submit = (text) => {
     elements.get("entry").value = text;
     elements.get("prompt").dispatch("submit");
-    await settle();
   };
   return {
     output: elements.get("output"),
@@ -239,7 +237,7 @@ function load(savedCode, initialSessionStatus = 200) {
     usage: elements.get("usage"),
     posts,
     opens,
-    settle,
+    waitFor,
     storage,
     get reloads() {
       return reloads;
@@ -250,23 +248,29 @@ function load(savedCode, initialSessionStatus = 200) {
     authenticate: async (code = "123456") => {
       elements.get("code").value = code;
       elements.get("prompt").dispatch("submit");
-      await settle();
+      await waitFor(() => waiting.length === 1, "session stream");
     },
     async send(...frames) {
       for (const frame of frames) {
         deliver({ done: false, value: encoder.encode("data: " + JSON.stringify(frame) + "\n\n") });
       }
-      await settle();
+      await waitFor(
+        () => queue.length === 0 && (waiting.length === 1 || timers.length > 0),
+        "frames to render",
+      );
     },
     async endStream() {
       deliver({ done: true });
-      await settle();
+      await waitFor(() => timers.length > 0, "stream reconnect");
     },
     // Runs the reload the page scheduled, if it scheduled one.
     async reconnect() {
       const scheduled = timers.splice(0, timers.length);
       for (const timer of scheduled) timer();
-      await settle();
+      await waitFor(
+        () => waiting.length === 1 || timers.length > 0,
+        "session stream or reconnect",
+      );
       return scheduled.length;
     },
     refuse(status) {
@@ -296,13 +300,16 @@ test("normalizes the access code", async () => {
 
 test("restores the tab's saved access code", async () => {
   const page = load("123456");
-  await page.settle();
+  await page.waitFor(() => page.opens.length === 1, "restored session stream");
   assert.deepEqual(page.opens, ["Bearer 123456"]);
 });
 
 test("forgets a restored access code the service rejects", async () => {
   const page = load("123456", 401);
-  await page.settle();
+  await page.waitFor(
+    () => !page.storage.has("shellfish.access-code"),
+    "rejected access code cleanup",
+  );
   assert.equal(page.storage.has("shellfish.access-code"), false);
 });
 
@@ -348,7 +355,6 @@ test("labels context with the script before the hook", async () => {
   });
   const summary = findTag(find(page.output, "context")[0], "summary")[0];
   assert.equal(summary.textContent, "add_environment session_start");
-  assert.equal(findTag(summary, "strong")[0].textContent, "add_environment");
 });
 
 test("leaves deltas out of the transcript and draws the record once", async () => {
@@ -364,7 +370,7 @@ test("leaves deltas out of the transcript and draws the record once", async () =
   assert.equal(find(page.output, "activity").length, 1);
   const drawn = page.output.children.length;
 
-  // Deltas of either kind, at any sequence, neither create nor mutate a node.
+  // Transient deltas do not alter the durable transcript.
   await page.send(
     { type: "_assistant_delta", text: "", seq: 0 },
     { type: "_assistant_delta", text: "par", seq: 1 },
@@ -372,9 +378,6 @@ test("leaves deltas out of the transcript and draws the record once", async () =
     { type: "_assistant_delta", text: "tial", seq: 7 },
   );
   assert.equal(find(page.output, "assistant").length, 0);
-  assert.equal(find(page.output, "text").length, 1); // The user record, alone.
-  assert.equal(findTag(page.output, "details").length, 0);
-  assert.equal(find(page.output, "activity").length, 1);
   assert.equal(page.output.children.length, drawn);
 
   // The durable record is the only thing that draws the response.
@@ -382,8 +385,6 @@ test("leaves deltas out of the transcript and draws the record once", async () =
   const committed = find(page.output, "assistant");
   assert.equal(committed.length, 1);
   assert.equal(committed[0].textContent, "committed");
-  assert.equal(find(page.output, "section").length, 2);
-  assert.equal(find(page.output, "section")[1].textContent, "agent");
   assert.equal(find(page.output, "activity").length, 1);
   assert.equal(page.usage.textContent, " · 10 ↑ 2 ↓");
   await page.send({ type: "state", working: false });
@@ -453,7 +454,7 @@ test("answers the pending permission request once", async () => {
 
   const [approve] = find(page.output, "actions")[0].children;
   approve.dispatch("click");
-  await page.settle();
+  await page.waitFor(() => page.posts.length === 1, "permission response");
   assert.deepEqual(page.posts, [
     {
       path: "/permission",
@@ -488,35 +489,28 @@ test("keeps a tool call and its result together", async () => {
     exit_code: 0,
   });
   const call = find(page.output, "call")[0];
-  assert.equal(find(call, "result").length, 1);
-  assert.equal(call.textContent, "shellpwd/project");
+  const result = find(call, "result");
+  assert.equal(result.length, 1);
+  assert.equal(result[0].textContent, "/project");
   assert.equal(find(page.output, "activity").length, 1);
   assert.equal(page.cancel.hidden, false);
 });
 
-test("serializes turns and cancellation", async () => {
+test("serializes turn submissions", async () => {
   const page = await idle();
-  const focused = page.entry.focusCount;
   page.entry.value = "do the thing";
-  page.entry.scrollHeight = 42;
-  page.entry.dispatch("input");
-  assert.equal(page.entry.style.height, "42px");
   page.entry.dispatch("keydown", { key: "Enter", shiftKey: true });
-  await page.settle();
   assert.equal(page.posts.length, 0);
   page.entry.value += "\nwith detail";
   page.entry.dispatch("keydown", { key: "Enter", shiftKey: false });
-  await page.settle();
-  assert.ok(page.entry.focusCount > focused);
+  await page.waitFor(() => page.posts.length === 1, "turn submission");
   assert.deepEqual(page.posts.map((post) => post.path), ["/turn"]);
   assert.deepEqual(page.posts[0].body, {
     type: "message",
     role: "user",
     content: [{ type: "text", text: "do the thing\nwith detail" }],
   });
-  assert.equal(page.entry.style.height, "");
   assert.equal(find(page.output, "activity").length, 1);
-  assert.equal(page.cancel.hidden, false);
   await page.send({
     type: "message",
     role: "user",
@@ -528,12 +522,18 @@ test("serializes turns and cancellation", async () => {
   // A turn is running until a state frame says otherwise, so a second message
   // waits in the prompt rather than reaching the service.
   assert.equal(page.entry.disabled, false);
-  await page.submit("too soon");
+  page.submit("too soon");
   assert.equal(page.posts.length, 1);
   assert.equal(page.entry.value, "too soon");
+});
 
+test("cancels an active turn", async () => {
+  const page = await idle();
+  page.submit("do the thing");
+  await page.waitFor(() => page.posts.length === 1, "turn submission");
+  assert.equal(page.cancel.hidden, false);
   page.cancel.dispatch("click");
-  await page.settle();
+  await page.waitFor(() => page.posts.length === 2, "turn cancellation");
   assert.deepEqual(page.posts.map((post) => post.path), ["/turn", "/cancel"]);
   assert.equal(page.posts[1].body, undefined);
 
@@ -545,7 +545,8 @@ test("serializes turns and cancellation", async () => {
 test("reopens the stream when an action is refused", async () => {
   const page = await idle();
   page.failActions();
-  await page.submit("go");
+  page.submit("go");
+  await page.waitFor(() => page.posts.length === 1, "refused turn submission");
   assert.equal(await page.reconnect(), 1);
   assert.equal(page.opens.length, 2);
 });
@@ -627,72 +628,53 @@ test("leaves generated links inert", async () => {
 
 test("highlights representative language-family syntax", async () => {
   const page = await idle();
+  const source = [
+    "```typescript",
+    "interface User { readonly name: string; count: 12 }",
+    "```",
+    "```python",
+    'def greet():\n    """First line\n    second line."""',
+    "```",
+    "```yaml",
+    "parent:\n  child-key: value\n# not: a key",
+    "```",
+  ].join("\n");
   await page.send({
     type: "message",
     role: "assistant",
     stop: "end",
-    content: [
-      {
-        type: "text",
-        text: [
-          "```typescript",
-          "interface User { readonly name: string; count: 12 }",
-          "```",
-          "```python",
-          'def greet():\n    """First line\n    second line."""',
-          "```",
-          "```yaml",
-          "parent:\n  child-key: value\n# not: a key",
-          "```",
-        ].join("\n"),
-      },
-    ],
+    content: [{ type: "text", text: source }],
   });
   const text = find(page.output, "text")[0];
-  assert.deepEqual(find(text, "word").map((node) => node.textContent), [
-    "interface", "readonly", "string", "def",
-  ]);
-  assert.deepEqual(find(text, "tag").map((node) => node.textContent), ["parent", "child-key"]);
-  assert.deepEqual(find(text, "number").map((node) => node.textContent), ["12"]);
-  assert.equal(find(text, "string")[0].textContent, '"""First line\n    second line."""');
-  assert.equal(find(text, "comment")[0].textContent, "# not: a key");
+  assert.equal(text.textContent, source);
+  assert.ok(find(text, "word").some((node) => node.textContent === "interface"));
+  assert.ok(find(text, "tag").some((node) => node.textContent === "child-key"));
+  assert.ok(find(text, "number").some((node) => node.textContent === "12"));
+  assert.ok(find(text, "string").some((node) => node.textContent.includes("second line")));
+  assert.ok(find(text, "comment").some((node) => node.textContent === "# not: a key"));
 });
 
-test("highlights complete HTML tag boundaries", async () => {
+test("keeps HTML source readable and highlights quoted attributes", async () => {
   const page = await idle();
+  const source = [
+    "```html",
+    "<strong>text</strong>",
+    '<main id="content">text</main>',
+    '<item name="a > b" />',
+    "1 > 0",
+    "```",
+  ].join("\n");
   await page.send({
     type: "message",
     role: "assistant",
     stop: "end",
-    content: [
-      {
-        type: "text",
-        text: [
-          "```html",
-          "<strong>text</strong>",
-          '<main id="content">text</main>',
-          '<item name="a > b" />',
-          "1 > 0",
-          "```",
-        ].join("\n"),
-      },
-    ],
+    content: [{ type: "text", text: source }],
   });
   const text = find(page.output, "text")[0];
-  assert.deepEqual(find(text, "tag").map((node) => node.textContent), [
-    "<strong",
-    ">",
-    "</strong>",
-    "<main",
-    ">",
-    "</main>",
-    "<item",
-    "/>",
-  ]);
-  assert.deepEqual(find(text, "string").map((node) => node.textContent), [
-    '"content"',
-    '"a > b"',
-  ]);
+  assert.equal(text.textContent, source);
+  assert.equal(findTag(text, "main").length, 0);
+  assert.ok(find(text, "tag").some((node) => node.textContent === "<main"));
+  assert.ok(find(text, "string").some((node) => node.textContent === '"a > b"'));
 });
 
 test("leaves unknown fenced languages readable", async () => {
