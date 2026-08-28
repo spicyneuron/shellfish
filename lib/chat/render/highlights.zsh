@@ -76,29 +76,29 @@ sf_chat_theme_config() {
   done < <(jq -j '
     def styles($name):
       .themes[$name] |
-      {"section.user":("fg=" + .user_heading_color + ",bold"),
-       "section.agent":("fg=" + .agent_heading_color + ",bold"),
-       "section.system":("fg=" + .system_heading_color + ",bold"),
-       "message.system":("fg=" + .context_color),
-       reasoning:("fg=" + .reasoning_color),
-       tool_call:("fg=" + .tool_color), tool_result:("fg=" + .tool_color),
-       injection:("fg=" + .context_color),
-       notice:("fg=" + .muted_color), "notice.error":("fg=" + .error_color),
-       activity:("fg=" + .muted_color), divider:("fg=" + .divider_color),
-       footer:("fg=" + .footer_color), prompt:("fg=" + .prompt_color),
-       permission:("fg=" + .permission_color + ",bold"),
-       muted:("fg=" + .muted_color),
-       "syntax.markup":("fg=" + .muted_color),
-       "syntax.comment":("fg=" + .syntax_comment_color + ",underline"),
-       "syntax.string":("fg=" + .syntax_string_color),
-       "syntax.number":("fg=" + .syntax_number_color),
-       "syntax.keyword":("fg=" + .syntax_keyword_color),
-       "syntax.tag":("fg=" + .syntax_tag_color),
-       "syntax.link":("fg=" + .user_heading_color + ",underline"),
-       "syntax.code":("fg=" + .user_heading_color),
+      {message:(if .text then "fg=" + .text else "" end),
+       "section.user":("fg=" + .user_heading + ",bold"),
+       "section.agent":("fg=" + .agent_heading + ",bold"),
+       "section.system":("fg=" + .system_heading + ",bold"),
+       "message.system":("fg=" + .context),
+       reasoning:("fg=" + .reasoning),
+       tool_call:("fg=" + .tool), tool_result:("fg=" + .tool),
+       injection:("fg=" + .context),
+       notice:("fg=" + .muted), "notice.error":("fg=" + .error),
+       activity:("fg=" + .muted), divider:("fg=" + .divider),
+       footer:("fg=" + .footer), prompt:("fg=" + .prompt),
+       permission:("fg=" + .permission + ",bold"),
+       muted:("fg=" + .muted),
+       "syntax.comment":("fg=" + .syntax_comment),
+       "syntax.string":("fg=" + .syntax_string),
+       "syntax.number":("fg=" + .syntax_number),
+       "syntax.keyword":("fg=" + .syntax_keyword),
+       "syntax.tag":("fg=" + .syntax_tag),
+       "syntax.link":("fg=" + .user_heading + ",underline"),
+       "syntax.code":("fg=" + .user_heading),
        "syntax.strong":"bold", "syntax.em":"underline",
-       "syntax.added":("fg=" + .added_color + ",bg=" + .added_background_color),
-       "syntax.removed":("fg=" + .removed_color + ",bg=" + .removed_background_color)};
+       "syntax.added":("fg=" + .diff_added + ",bg=" + .diff_added_background),
+       "syntax.removed":("fg=" + .diff_removed + ",bg=" + .diff_removed_background)};
     def record($key; $value): $key, "\u0000", $value, "\u0000";
     record("mode"; .theme_mode),
     (styles(.theme_light) | to_entries[] | record("light." + .key; .value)),
@@ -262,8 +262,8 @@ sf_chat_highlight_span() {
 # numbers, reserved words, and markup tags. Unknown languages remain plain text.
 sf_chat_code_highlight() {
   local source=$1 language=$2 quotes='"' line_comment='' block_start='' block_end=''
-  local words='' character quote token
-  integer base=${3:-0} comment=${4:-0} length=${#source} index=1 end escaped closed
+  local block_kind=comment words='' character quote token
+  integer base=${3:-0} state=${4:-0} length=${#source} index=1 end escaped closed
 
   SF_PRESENT_HIGHLIGHT_BLOCK_OPEN=0
   case $language in
@@ -277,7 +277,7 @@ sf_chat_code_highlight() {
   case $language in
     js)
       line_comment=// block_start='/*' block_end='*/' quotes="\"'"; quotes+='`'
-      words='async|await|break|case|catch|class|const|continue|default|delete|do|else|export|extends|false|finally|for|from|function|if|import|in|instanceof|let|new|null|of|return|super|switch|this|throw|true|try|typeof|undefined|var|void|while|yield'
+      words='async|await|boolean|break|case|catch|class|const|continue|default|delete|do|else|enum|export|extends|false|finally|for|from|function|if|implements|import|in|instanceof|interface|let|new|null|number|of|private|protected|public|readonly|return|string|super|switch|this|throw|true|try|type|typeof|undefined|var|void|while|yield'
       ;;
     sh)
       line_comment='#' quotes="\"'"
@@ -288,7 +288,7 @@ sf_chat_code_highlight() {
       words='break|case|chan|const|continue|default|defer|else|fallthrough|false|for|func|go|goto|if|import|interface|map|nil|package|range|return|select|struct|switch|true|type|var'
       ;;
     python)
-      line_comment='#' quotes="\"'"
+      line_comment='#' block_start='"""' block_end='"""' block_kind=string quotes="\"'"
       words='and|as|assert|async|await|break|class|continue|def|del|elif|else|except|False|finally|for|from|global|if|import|in|is|lambda|None|nonlocal|not|or|pass|raise|return|True|try|while|with|yield'
       ;;
     json)
@@ -307,9 +307,7 @@ sf_chat_code_highlight() {
     *) return 0 ;;
   esac
 
-  # A block comment carries across the boundary that interrupted it, so the
-  # scan resumes looking only for its close.
-  if (( comment )) && [[ -n $block_end ]]; then
+  if (( state )) && [[ -n $block_end ]]; then
     end=1
     while (( end <= length )) &&
         [[ ${source[end,end + ${#block_end} - 1]} != $block_end ]]; do
@@ -321,11 +319,24 @@ sf_chat_code_highlight() {
       end=$(( length + 1 ))
       SF_PRESENT_HIGHLIGHT_BLOCK_OPEN=1
     fi
-    sf_chat_highlight_span $base $(( base + end - 1 )) comment
+    sf_chat_highlight_span $base $(( base + end - 1 )) $block_kind
     index=$end
   fi
   while (( index <= length )); do
     character=${source[index]}
+    if [[ $language == yaml ]] && { (( index == 1 )) || [[ ${source[index - 1]} == $'\n' ]]; }; then
+      end=$index
+      while (( end <= length )) && [[ ${source[end]} == [[:blank:]] ]]; do (( ++end )); done
+      integer key_start=$end
+      while (( end <= length )) && [[ ${source[end]} == [A-Za-z0-9_.-] ]]; do (( ++end )); done
+      integer key_end=$end
+      while (( end <= length )) && [[ ${source[end]} == [[:blank:]] ]]; do (( ++end )); done
+      if (( key_end > key_start )) && [[ ${source[end]} == : ]]; then
+        sf_chat_highlight_span $(( base + key_start - 1 )) $(( base + key_end - 1 )) tag
+        index=$key_end
+        continue
+      fi
+    fi
     if [[ -n $block_start && ${source[index,index + ${#block_start} - 1]} == $block_start ]]; then
       end=$(( index + ${#block_start} ))
       while (( end <= length )) &&
@@ -338,7 +349,7 @@ sf_chat_code_highlight() {
         end=$(( length + 1 ))
         SF_PRESENT_HIGHLIGHT_BLOCK_OPEN=1
       fi
-      sf_chat_highlight_span $(( base + index - 1 )) $(( base + end - 1 )) comment
+      sf_chat_highlight_span $(( base + index - 1 )) $(( base + end - 1 )) $block_kind
       index=$end
       continue
     fi

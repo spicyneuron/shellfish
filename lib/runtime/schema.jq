@@ -3,14 +3,10 @@ def profile_name:
 
 def theme_palette:
   type == "object" and
-  (["muted_color", "divider_color", "footer_color", "prompt_color",
-    "system_heading_color",
-    "context_color", "user_heading_color", "agent_heading_color", "tool_color",
-    "reasoning_color",
-    "error_color", "syntax_comment_color", "syntax_keyword_color",
-    "syntax_string_color", "syntax_number_color", "syntax_tag_color",
-    "added_color", "added_background_color", "removed_color",
-    "removed_background_color", "permission_color"] as $colors |
+  (["muted", "divider", "footer", "prompt", "system_heading", "context",
+    "user_heading", "agent_heading", "tool", "reasoning", "error", "syntax_comment",
+    "syntax_keyword", "syntax_string", "syntax_number", "syntax_tag", "diff_added",
+    "diff_added_background", "diff_removed", "diff_removed_background", "permission"] as $colors |
   ($colors - keys | length == 0) and
   ([$colors[] as $color | .[$color]] |
     all(.[]; type == "string" and test("^#[0-9A-Fa-f]{6}$"))));

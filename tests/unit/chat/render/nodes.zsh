@@ -153,32 +153,33 @@ fi
 unset NO_COLOR
 TERM=xterm-256color
 typeset -g theme_config='{"theme_mode":"dark","theme_light":"l","theme_dark":"d","themes":{
-  "l":{"muted_color":"#111111","divider_color":"#111111","footer_color":"#111111",
-    "prompt_color":"#111111","system_heading_color":"#111111","context_color":"#111111",
-    "user_heading_color":"#111111","agent_heading_color":"#111111","tool_color":"#111111",
-    "reasoning_color":"#111111","error_color":"#111111","added_color":"#111111",
-    "syntax_comment_color":"#111112","syntax_keyword_color":"#111113",
-    "syntax_string_color":"#111114","syntax_number_color":"#111115",
-    "syntax_tag_color":"#111116",
-    "added_background_color":"#111111","removed_color":"#111111",
-    "removed_background_color":"#111111","permission_color":"#111111"},
-  "d":{"muted_color":"#222222","divider_color":"#333333","footer_color":"#222222",
-    "prompt_color":"#444444","system_heading_color":"#222222","context_color":"#222222",
-    "user_heading_color":"#555555","agent_heading_color":"#222222","tool_color":"#222222",
-    "reasoning_color":"#222222","error_color":"#666666","added_color":"#222222",
-    "syntax_comment_color":"#222223","syntax_keyword_color":"#222224",
-    "syntax_string_color":"#222225","syntax_number_color":"#222226",
-    "syntax_tag_color":"#222227",
-    "added_background_color":"#222222","removed_color":"#222222",
-    "removed_background_color":"#222222","permission_color":"#222222"}}}'
+  "l":{"muted":"#111111","divider":"#111111","footer":"#111111",
+    "prompt":"#111111","system_heading":"#111111","context":"#111111",
+    "user_heading":"#111111","agent_heading":"#111111","tool":"#111111",
+    "reasoning":"#111111","error":"#111111","diff_added":"#111111",
+    "syntax_comment":"#111112","syntax_keyword":"#111113",
+    "syntax_string":"#111114","syntax_number":"#111115",
+    "syntax_tag":"#111116",
+    "diff_added_background":"#111111","diff_removed":"#111111",
+    "diff_removed_background":"#111111","permission":"#111111"},
+  "d":{"text":"#777777","muted":"#222222","divider":"#333333","footer":"#222222",
+    "prompt":"#444444","system_heading":"#222222","context":"#222222",
+    "user_heading":"#555555","agent_heading":"#222222","tool":"#222222",
+    "reasoning":"#222222","error":"#666666","diff_added":"#222222",
+    "syntax_comment":"#222223","syntax_keyword":"#222224",
+    "syntax_string":"#222225","syntax_number":"#222226",
+    "syntax_tag":"#222227",
+    "diff_added_background":"#222222","diff_removed":"#222222",
+    "diff_removed_background":"#222222","permission":"#222222"}}}'
 
 sf_chat_theme_config "$theme_config" || fail "theme setup failed: $SF_PRESENT_HIGHLIGHT_ERROR"
 assert_equal 'fg=#555555,bold' "$SF_PRESENT_STYLE[section.user]"
+assert_equal 'fg=#777777' "$SF_PRESENT_STYLE[message]"
 assert_equal 'fg=#333333' "$SF_PRESENT_STYLE[divider]"
 assert_equal 'fg=#666666' "$SF_PRESENT_STYLE[notice.error]"
 assert_equal 'fg=#444444' "$SF_PRESENT_STYLE[prompt]"
 assert_equal 'fg=#222225' "$SF_PRESENT_STYLE[syntax.string]"
-assert_equal 'fg=#222223,underline' "$SF_PRESENT_STYLE[syntax.comment]"
+assert_equal 'fg=#222223' "$SF_PRESENT_STYLE[syntax.comment]"
 assert_equal 'fg=#222224' "$SF_PRESENT_STYLE[syntax.keyword]"
 assert_equal 'fg=#222226' "$SF_PRESENT_STYLE[syntax.number]"
 assert_equal 'fg=#222227' "$SF_PRESENT_STYLE[syntax.tag]"
@@ -205,6 +206,7 @@ SF_PRESENT_BACKGROUND=''
 sf_chat_theme_config "$auto_config" || fail "auto theme setup failed: $SF_PRESENT_HIGHLIGHT_ERROR"
 assert_equal light "$SF_PRESENT_BACKGROUND"
 assert_equal 'fg=#111111,bold' "$SF_PRESENT_STYLE[section.user]"
+assert_equal '' "$SF_PRESENT_STYLE[message]"
 assert_equal 1 "$probe_calls"
 
 sf_chat_theme_config "$auto_config" || fail 'a cached background was rejected'
@@ -245,6 +247,19 @@ SF_PRESENT_HIGHLIGHT_SPANS=()
 sf_chat_code_highlight 'true: 12 # note' yaml
 span_texts 'true: 12 # note'
 assert_equal 'true,12,# note' "$REPLY"
+assert_equal '0,4,fg=#222227' "${(j:,:)SF_PRESENT_HIGHLIGHT_SPANS[1,3]}"
+SF_PRESENT_HIGHLIGHT_SPANS=()
+sf_chat_code_highlight $'parent:\n  child-key: value\n# not: a key' yaml
+span_texts $'parent:\n  child-key: value\n# not: a key'
+assert_equal 'parent,child-key,# not: a key' "$REPLY"
+SF_PRESENT_HIGHLIGHT_SPANS=()
+sf_chat_code_highlight 'interface User { readonly name: string; }' typescript
+span_texts 'interface User { readonly name: string; }'
+assert_equal 'interface,readonly,string' "$REPLY"
+SF_PRESENT_HIGHLIGHT_SPANS=()
+sf_chat_code_highlight $'def greet():\n    """First line\n    second line."""\n    return 1' python
+span_texts $'def greet():\n    """First line\n    second line."""\n    return 1'
+assert_equal $'def,"""First line\n    second line.""",return,1' "$REPLY"
 SF_PRESENT_HIGHLIGHT_SPANS=()
 sf_chat_code_highlight '<main id="content">' html
 span_texts '<main id="content">'
@@ -261,20 +276,20 @@ typeset markdown=$'# Head\n**bold** [link](url) `code`\n```js\nconst x = 3;\n```
 SF_PRESENT_HIGHLIGHT_SPANS=()
 sf_chat_markdown_highlight "$markdown"
 span_texts "$markdown"
-assert_equal '# ,Head,**,bold,**,[link](url),`,code,`,```js,const,3,```' "$REPLY"
-assert_equal '0,2,fg=#222222,2,6,bold' \
+assert_equal 'Head,bold,[link](url),code,const,3' "$REPLY"
+assert_equal '2,6,bold,9,13,bold' \
   "${(j:,:)SF_PRESENT_HIGHLIGHT_SPANS[1,6]}"
 
 SF_PRESENT_HIGHLIGHT_SPANS=()
 sf_chat_markdown_highlight '- item'
 span_texts '- item'
-assert_equal '- ' "$REPLY"
+assert_equal '' "$REPLY"
 
 markdown=$'```js\n\nconst value\n\t```'
 SF_PRESENT_HIGHLIGHT_SPANS=()
 sf_chat_markdown_highlight "$markdown"
 span_texts "$markdown"
-assert_equal $'```js,const,\t```' "$REPLY"
+assert_equal 'const' "$REPLY"
 
 # A continuation fragment is not a line, so line-leading syntax stays plain and
 # the block mode it inherited still applies.
@@ -283,7 +298,7 @@ sf_chat_markdown_highlight '- not a list marker' 0 '' 1
 assert_equal 0 "${#SF_PRESENT_HIGHLIGHT_SPANS}"
 SF_PRESENT_HIGHLIGHT_SPANS=()
 sf_chat_markdown_highlight '# not a heading' 0 '' 0
-(( ${#SF_PRESENT_HIGHLIGHT_SPANS} )) || fail 'a real line start lost its leader'
+(( ${#SF_PRESENT_HIGHLIGHT_SPANS} )) || fail 'a real line start lost its heading style'
 typeset -a heading_spans
 SF_PRESENT_HIGHLIGHT_SPANS=()
 sf_chat_markdown_highlight '# Heading'
@@ -292,7 +307,7 @@ assert_equal heading "$REPLY"
 SF_PRESENT_HIGHLIGHT_SPANS=()
 sf_chat_markdown_highlight $' continues\n' 9 heading 1
 heading_spans+=( "${SF_PRESENT_HIGHLIGHT_SPANS[@]}" )
-assert_equal '0 2 fg=#222222 2 9 bold 9 19 bold' "${(j: :)heading_spans}"
+assert_equal '2 9 bold 9 19 bold' "${(j: :)heading_spans}"
 SF_PRESENT_HIGHLIGHT_SPANS=()
 sf_chat_markdown_highlight 'const x = 3;' 0 $'```\tjs' 1
 span_texts 'const x = 3;'
@@ -334,6 +349,17 @@ sf_chat_code_highlight 'still inside */ const x = 3;' js 0 1
 assert_equal 0 "$SF_PRESENT_HIGHLIGHT_BLOCK_OPEN"
 span_texts 'still inside */ const x = 3;'
 assert_equal 'still inside */,const,3' "$REPLY"
+
+SF_PRESENT_HIGHLIGHT_SPANS=()
+sf_chat_code_highlight '"""opened' python
+assert_equal 1 "$SF_PRESENT_HIGHLIGHT_BLOCK_OPEN"
+span_texts '"""opened'
+assert_equal '"""opened' "$REPLY"
+SF_PRESENT_HIGHLIGHT_SPANS=()
+sf_chat_code_highlight 'still inside""" return 1' python 0 1
+assert_equal 0 "$SF_PRESENT_HIGHLIGHT_BLOCK_OPEN"
+span_texts 'still inside""" return 1'
+assert_equal 'still inside""",return,1' "$REPLY"
 # An open block never reports as an open inline construct, so it never waits.
 sf_chat_markdown_highlight $'```js\n/* opened\n'
 assert_equal 0 "$SF_PRESENT_HIGHLIGHT_INLINE_OPEN"
@@ -345,7 +371,7 @@ typeset diff=$'@@ -1 +1 @@\n-old\n+new\n--- a/file\n+++ b/file'
 SF_PRESENT_HIGHLIGHT_SPANS=()
 sf_chat_diff_highlight "$diff"
 span_texts "$diff"
-assert_equal '@@ -1 +1 @@,-old,+new' "$REPLY"
+assert_equal '-old,+new' "$REPLY"
 
 sf_chat_reset
 sf_chat_add message agent '' $'**bold** text\nsecond line' open

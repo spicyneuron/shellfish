@@ -597,6 +597,39 @@ test("leaves generated links inert", async () => {
   );
 });
 
+test("highlights representative language-family syntax", async () => {
+  const page = await idle();
+  await page.send({
+    type: "message",
+    role: "assistant",
+    stop: "end",
+    content: [
+      {
+        type: "text",
+        text: [
+          "```typescript",
+          "interface User { readonly name: string; count: 12 }",
+          "```",
+          "```python",
+          'def greet():\n    """First line\n    second line."""',
+          "```",
+          "```yaml",
+          "parent:\n  child-key: value\n# not: a key",
+          "```",
+        ].join("\n"),
+      },
+    ],
+  });
+  const text = find(page.output, "text")[0];
+  assert.deepEqual(find(text, "word").map((node) => node.textContent), [
+    "interface", "readonly", "string", "def",
+  ]);
+  assert.deepEqual(find(text, "tag").map((node) => node.textContent), ["parent", "child-key"]);
+  assert.deepEqual(find(text, "number").map((node) => node.textContent), ["12"]);
+  assert.equal(find(text, "string")[0].textContent, '"""First line\n    second line."""');
+  assert.equal(find(text, "comment")[0].textContent, "# not: a key");
+});
+
 test("leaves unknown fenced languages readable", async () => {
   const page = await idle();
   await page.send({

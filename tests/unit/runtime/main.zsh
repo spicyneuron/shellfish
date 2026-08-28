@@ -24,7 +24,7 @@ cat >"$config" <<'JSON'
     }
   },
   "themes": {
-    "light": {"text_color": "#123456"}
+    "light": {"text": "#123456"}
   }
 }
 JSON
@@ -47,7 +47,7 @@ jq -e --arg command "$ROOT/default/backends/openai/run" '
 ' <<<"$runtime" >/dev/null
 jq -e '
   .theme_mode == "light" and .theme_light == "light" and
-  .themes.light.text_color == "#123456" and
+  .themes.light.text == "#123456" and
   .tui.preview_lines_context == 2
 ' <<<"$SF_PRESENTATION" >/dev/null
 
@@ -65,7 +65,7 @@ jq -e --arg root "$ROOT/default/hooks/session_start" '
 # Runtime resolution gives new and existing sessions the same boundary.
 sf_runtime_resolve '' "$config" '' 'boundary-model' '{}' '' 1
 jq -e '.profile.request.model == "boundary-model"' <<<"$REPLY" >/dev/null
-jq -e '.theme_mode == "light" and .themes.light.text_color == "#123456"' \
+jq -e '.theme_mode == "light" and .themes.light.text == "#123456"' \
   <<<"$SF_PRESENTATION" >/dev/null
 
 typeset session="$tmp/session.jsonl"
@@ -106,13 +106,13 @@ cat >"$tmp/config/presentation.jsonc" <<'JSON'
   "theme_mode": "light",
   "theme_light": "light",
   "theme_dark": "dark",
-  "themes": {"light": {"text_color": "#abcdef"}},
+  "themes": {"light": {"text": "#abcdef"}},
   "tui": {"preview_lines_context": 9}
 }
 JSON
 sf_runtime_restore_presentation "$tmp/config/presentation.jsonc"
 jq -e '
-  .theme_mode == "light" and .themes.light.text_color == "#abcdef" and
+  .theme_mode == "light" and .themes.light.text == "#abcdef" and
   .tui.preview_lines_context == 9
 ' <<<"$SF_PRESENTATION" >/dev/null
 

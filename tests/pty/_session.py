@@ -28,15 +28,15 @@ OSC = re.compile(rb"\x1b\].*?(?:\x07|\x1b\\)", re.S)
 # unstyled one, and from the markdown around it. Without a theme the app leaves
 # every style empty and the whole highlighting path goes untested.
 THEME = {
-    "muted_color": "#8b949e", "divider_color": "#8b949e",
-    "footer_color": "#8b949e", "prompt_color": "#8b949e",
-    "system_heading_color": "#d2a8ff", "context_color": "#8b949e",
-    "user_heading_color": "#58a6ff", "agent_heading_color": "#ffb77a",
-    "tool_color": "#8b949e", "reasoning_color": "#8b949e",
-    "error_color": "#ff7b72",
-    "added_color": "#7ee787", "added_background_color": "#12261e",
-    "removed_color": "#ffa198", "removed_background_color": "#2d1519",
-    "permission_color": "#58a6ff",
+    "muted": "#8b949e", "divider": "#8b949e",
+    "footer": "#8b949e", "prompt": "#8b949e",
+    "system_heading": "#d2a8ff", "context": "#8b949e",
+    "user_heading": "#58a6ff", "agent_heading": "#ffb77a",
+    "tool": "#8b949e", "reasoning": "#8b949e",
+    "error": "#ff7b72",
+    "diff_added": "#7ee787", "diff_added_background": "#12261e",
+    "diff_removed": "#ffa198", "diff_removed_background": "#2d1519",
+    "permission": "#58a6ff",
 }
 
 

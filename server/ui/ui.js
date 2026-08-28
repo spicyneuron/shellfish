@@ -114,8 +114,8 @@ function hideIndicator() {
   indicator = null;
 }
 
-function collapsible(parent, summary, text) {
-  const details = el(parent, "details");
+function collapsible(parent, summary, text, kind) {
+  const details = el(parent, "details", kind);
   el(details, "summary", null, summary);
   el(details, "pre", null, safe(text));
 }
@@ -151,7 +151,7 @@ function markdown(parent, text) {
     const line = lines[index];
     const fence = FENCE.exec(line);
     if (fence) {
-      syntax(parent, line);
+      markup(parent, line);
       if (index < lines.length - 1) parent.append(document.createTextNode("\n"));
       const code = [];
       while (++index < lines.length && !lines[index].trimStart().startsWith(fence[1])) {
@@ -160,7 +160,7 @@ function markdown(parent, text) {
       highlight(parent, code.join("\n"), fence[2]);
       if (index < lines.length) {
         parent.append(document.createTextNode("\n"));
-        syntax(parent, lines[index]);
+        markup(parent, lines[index]);
       }
       if (index < lines.length - 1) parent.append(document.createTextNode("\n"));
       continue;
@@ -168,7 +168,7 @@ function markdown(parent, text) {
     const leader = LEADER.exec(line);
     if (leader) {
       parent.append(document.createTextNode(leader[1]));
-      syntax(parent, leader[2] + leader[3]);
+      markup(parent, leader[2] + leader[3]);
       inline(parent, leader[4]);
     } else {
       inline(parent, line);
@@ -177,8 +177,8 @@ function markdown(parent, text) {
   }
 }
 
-function syntax(parent, text) {
-  el(parent, "span", "syntax", text);
+function markup(parent, text) {
+  el(parent, "span", "markup", text);
 }
 
 function inline(parent, text) {
@@ -192,9 +192,9 @@ function inline(parent, text) {
     const delimiter = match[1] || match[4] || match[6];
     const content = match[2] ?? match[5] ?? match[7];
     const formatted = el(parent, match[1] ? "code" : match[4] ? "strong" : "em");
-    syntax(formatted, delimiter);
+    markup(formatted, delimiter);
     inline(formatted, content);
-    syntax(formatted, delimiter);
+    markup(formatted, delimiter);
     text = text.slice(match.index + match[0].length);
   }
   if (text) parent.append(document.createTextNode(text));
@@ -208,7 +208,7 @@ const LANGUAGES = {
   js: {
     comments: ["//.*", "/\\*[\\s\\S]*?\\*/"],
     quotes: "\"'`",
-    words: "async|await|break|case|catch|class|const|continue|default|delete|do|else|export|extends|false|finally|for|from|function|if|import|in|instanceof|let|new|null|of|return|super|switch|this|throw|true|try|typeof|undefined|var|void|while|yield",
+    words: "async|await|boolean|break|case|catch|class|const|continue|default|delete|do|else|enum|export|extends|false|finally|for|from|function|if|implements|import|in|instanceof|interface|let|new|null|number|of|private|protected|public|readonly|return|string|super|switch|this|throw|true|try|type|typeof|undefined|var|void|while|yield",
   },
   sh: {
     comments: ["#.*"],
@@ -222,11 +222,17 @@ const LANGUAGES = {
   },
   python: {
     comments: ["#.*"],
+    strings: ['"""[\\s\\S]*?"""'],
     quotes: "\"'",
     words: "and|as|assert|async|await|break|class|continue|def|del|elif|else|except|False|finally|for|from|global|if|import|in|is|lambda|None|nonlocal|not|or|pass|raise|return|True|try|while|with|yield",
   },
   json: { comments: ["//.*", "/\\*[\\s\\S]*?\\*/"], quotes: '"', words: "true|false|null" },
-  yaml: { comments: ["#.*"], quotes: "\"'", words: "true|false|null" },
+  yaml: {
+    comments: ["#.*"],
+    keys: "[A-Za-z0-9_.-]+",
+    quotes: "\"'",
+    words: "true|false|null",
+  },
   css: { comments: ["/\\*[\\s\\S]*?\\*/"], quotes: "\"'" },
   html: { comments: ["<!--[\\s\\S]*?-->"], quotes: "\"'", tags: ["</?[A-Za-z][\\w:-]*"] },
 };
@@ -247,7 +253,9 @@ function pattern(name) {
       name,
       new RegExp(
         [
+          language.keys ? "^[ \\t]*(" + language.keys + ")(?=[ \\t]*:)" : null,
           ...language.comments,
+          ...(language.strings || []),
           ...quotes.map((quote) => quote + "(?:\\\\.|[^" + quote + "\\\\])*" + quote),
           ...(language.tags || []),
           "\\b\\d[\\w.]*",
@@ -255,7 +263,7 @@ function pattern(name) {
         ]
           .filter(Boolean)
           .join("|"),
-        "g",
+        "gm",
       ),
     );
   }
@@ -266,7 +274,7 @@ function tokenKind(token, language) {
   if (language.quotes && language.quotes.includes(token[0])) return "string";
   if (/^\d/.test(token)) return "number";
   if (/^[A-Za-z_]/.test(token)) return "word";
-  if (token.startsWith("<") && !token.startsWith("<!--")) return "word";
+  if (token.startsWith("<") && !token.startsWith("<!--")) return "tag";
   return "comment";
 }
 
@@ -280,9 +288,11 @@ function highlight(parent, code, language) {
   }
   let last = 0;
   for (const match of code.matchAll(pattern(name))) {
-    if (match.index > last) parent.append(document.createTextNode(code.slice(last, match.index)));
-    el(parent, "span", tokenKind(match[0], LANGUAGES[name]), match[0]);
-    last = match.index + match[0].length;
+    const token = match[1] || match[0];
+    const index = match.index + match[0].length - token.length;
+    if (index > last) parent.append(document.createTextNode(code.slice(last, index)));
+    el(parent, "span", match[1] ? "tag" : tokenKind(token, LANGUAGES[name]), token);
+    last = index + token.length;
   }
   parent.append(document.createTextNode(code.slice(last)));
 }
@@ -363,7 +373,7 @@ function renderMessage(frame) {
   section("agent");
   const article = record("assistant", null);
   for (const part of frame.content || []) {
-    if (part.type === "reasoning") collapsible(article, "reasoning", part.text);
+    if (part.type === "reasoning") collapsible(article, "reasoning", part.text, "reasoning");
     else if (part.type === "text") markdown(el(article, "pre", "text"), part.text);
     else if (part.type === "tool_call") renderCall(article, part);
   }

@@ -55,7 +55,7 @@ assert_equal gpt-4o "$(jq -r '.profile.request.model' <<<"$report")" 'config rep
 [[ $(jq -r '.backend.command' <<<"$report") == */openai/run ]] || fail 'config reports the backend command'
 assert_equal auto "$(jq -r '.theme.mode' <<<"$report")" 'config reports the theme mode'
 assert_equal light "$(jq -r '.theme.light.name' <<<"$report")" 'config names the light theme'
-assert_equal true "$(jq -r '.theme.dark.palette | has("error_color")' <<<"$report")" \
+assert_equal true "$(jq -r '.theme.dark.palette | has("error")' <<<"$report")" \
   'config hydrates theme palettes'
 assert_equal 2 "$(jq -r '.tui.preview_lines_context' <<<"$report")" 'config reports TUI limits'
 

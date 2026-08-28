@@ -11,14 +11,10 @@ def config_assert($valid; $path; $message):
   if $valid then . else config_error($path; $message) end;
 
 def config_theme($path):
-  ["text_color", "muted_color", "divider_color", "footer_color", "prompt_color",
-   "system_heading_color",
-   "context_color", "user_heading_color", "agent_heading_color", "tool_color",
-   "reasoning_color",
-   "error_color", "syntax_comment_color", "syntax_keyword_color",
-   "syntax_string_color", "syntax_number_color", "syntax_tag_color",
-   "added_color", "added_background_color", "removed_color",
-   "removed_background_color", "permission_color"] as $colors |
+  ["text", "muted", "divider", "footer", "prompt", "system_heading", "context",
+   "user_heading", "agent_heading", "tool", "reasoning", "error", "syntax_comment",
+   "syntax_keyword", "syntax_string", "syntax_number", "syntax_tag", "diff_added",
+   "diff_added_background", "diff_removed", "diff_removed_background", "permission"] as $colors |
   config_object($path; $colors) |
   reduce $colors[] as $field (.;
     config_assert((has($field) | not) or (.[$field] | type == "string" and

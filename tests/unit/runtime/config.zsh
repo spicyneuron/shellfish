@@ -22,11 +22,11 @@ if print -r -- '{"profiles":{"work":{"legacy_backend":"test"}}}' |
 fi
 
 # Validation rejects invalid color formats in themes.
-if print -r -- '{"themes":{"dark":{"text_color":"red"}}}' |
+if print -r -- '{"themes":{"dark":{"text":"red"}}}' |
     config_eval 'config_validate' >/dev/null 2>&1; then
   fail 'invalid theme color was accepted'
 fi
-if print -r -- '{"themes":{"dark":{"syntax_keyword_color":"red"}}}' |
+if print -r -- '{"themes":{"dark":{"syntax_keyword":"red"}}}' |
     config_eval 'config_validate' >/dev/null 2>&1; then
   fail 'invalid syntax color was accepted'
 fi
