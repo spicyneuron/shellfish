@@ -213,6 +213,73 @@ func TestUnauthorized(t *testing.T) {
 	}
 }
 
+func TestPublicAssets(t *testing.T) {
+	handler := withUI(http.NotFoundHandler())
+	assets := []struct {
+		path        string
+		contentType string
+	}{
+		{"/", "text/html; charset=utf-8"},
+		{"/ui.css", "text/css; charset=utf-8"},
+		{"/ui.js", "text/javascript; charset=utf-8"},
+	}
+	wantHeaders := map[string]string{
+		"Content-Security-Policy": "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+		"X-Content-Type-Options":  "nosniff",
+		"Referrer-Policy":         "no-referrer",
+		"Cache-Control":           "no-store",
+	}
+	for _, asset := range assets {
+		t.Run(asset.path, func(t *testing.T) {
+			response := httptest.NewRecorder()
+			handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, asset.path, nil))
+			if response.Code != http.StatusOK {
+				t.Fatalf("status = %d, want %d", response.Code, http.StatusOK)
+			}
+			if got := response.Header().Get("Content-Type"); got != asset.contentType {
+				t.Errorf("Content-Type = %q, want %q", got, asset.contentType)
+			}
+			for name, want := range wantHeaders {
+				if got := response.Header().Get(name); got != want {
+					t.Errorf("%s = %q, want %q", name, got, want)
+				}
+			}
+			if response.Body.Len() == 0 {
+				t.Error("body is empty")
+			}
+		})
+	}
+}
+
+func TestNewRejectsInvalidSessionHeader(t *testing.T) {
+	cwd := workDir(t)
+	tests := []struct {
+		name      string
+		header    map[string]any
+		wantError string
+	}{
+		{"record type", map[string]any{"type": "message", "format_version": 1, "cwd": cwd}, "unsupported session header"},
+		{"format version", map[string]any{"type": "session", "format_version": 2, "cwd": cwd}, "unsupported session header"},
+		{"working directory", map[string]any{"type": "session", "format_version": 1, "cwd": t.TempDir()}, "session belongs to"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			record, err := json.Marshal(test.header)
+			if err != nil {
+				t.Fatal(err)
+			}
+			path := filepath.Join(t.TempDir(), "session.jsonl")
+			if err := os.WriteFile(path, append(record, '\n'), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			_, err = New(path, testAccessCode, nil)
+			if err == nil || !strings.Contains(err.Error(), test.wantError) {
+				t.Fatalf("error = %v, want containing %q", err, test.wantError)
+			}
+		})
+	}
+}
+
 // A connection replays the durable session, closes it with a state frame, then
 // forwards what the child emits. The client sees no other ordering.
 func TestReplayThenStateThenLive(t *testing.T) {
