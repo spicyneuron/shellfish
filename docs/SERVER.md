@@ -37,6 +37,8 @@ An existing session already contains its resolved runtime, so `--session` cannot
 | `--session PATH` | Serve an existing session instead of creating one. |
 | `--bind ADDRESS` | Set the listening address. Defaults to `127.0.0.1:9158`. |
 | `--shellfish PATH` | Select the Shellfish executable used to create sessions and run turns. |
+| `-h`, `--help` | Show server usage and exit. |
+| `--version` | Show the server version and exit. |
 
 The server refuses an existing session whose recorded working directory differs from the directory where the server was started.
 

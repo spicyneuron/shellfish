@@ -38,6 +38,10 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	if options.help {
+		printHelp(os.Stdout)
+		return
+	}
 	if options.session == "" {
 		options.session, err = createSession(options.binary, options.shellfishArgs)
 		if err != nil {
@@ -54,6 +58,24 @@ type serverOptions struct {
 	bind          string
 	binary        string
 	shellfishArgs []string
+	help          bool
+}
+
+func printHelp(w io.Writer) {
+	fmt.Fprint(w, `Usage: shellfish-server [SERVER OPTIONS] [SHELLFISH OPTIONS]
+
+Expose one Shellfish session to one browser. Without --session, the server
+creates a session by forwarding Shellfish options to shellfish exec --new.
+
+Server options:
+  --session PATH     Serve an existing session
+  --bind ADDRESS     Listen at ADDRESS (default 127.0.0.1:9158)
+  --shellfish PATH   Use PATH as the Shellfish executable
+  -h, --help         Show this help
+  --version          Show the version
+
+Use -- to stop parsing server options and forward all remaining arguments.
+`)
 }
 
 func parseServerArgs(args []string) (serverOptions, error) {
@@ -72,6 +94,9 @@ func parseServerArgs(args []string) (serverOptions, error) {
 		}
 		var target *string
 		switch arg {
+		case "--help", "-h":
+			options.help = true
+			continue
 		case "--session", "-session":
 			target = &options.session
 		case "--bind", "-bind":
@@ -88,7 +113,7 @@ func parseServerArgs(args []string) (serverOptions, error) {
 		index++
 		*target = args[index]
 	}
-	if options.session != "" && len(options.shellfishArgs) > 0 {
+	if !options.help && options.session != "" && len(options.shellfishArgs) > 0 {
 		return serverOptions{}, errors.New("Shellfish options require creating a new session")
 	}
 	return options, nil

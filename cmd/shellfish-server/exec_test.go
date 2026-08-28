@@ -89,6 +89,19 @@ func TestParseServerArgsRejectsExistingSessionOptions(t *testing.T) {
 	}
 }
 
+func TestParseServerArgsHandlesHelp(t *testing.T) {
+	for _, args := range [][]string{{"--help"}, {"-h"}} {
+		options, err := parseServerArgs(args)
+		if err != nil || !options.help {
+			t.Errorf("parseServerArgs(%q) help = %v, error = %v", args, options.help, err)
+		}
+	}
+	options, err := parseServerArgs([]string{"--", "--help"})
+	if err != nil || options.help || strings.Join(options.shellfishArgs, " ") != "-- --help" {
+		t.Errorf("forwarded help options = %#v, error = %v", options, err)
+	}
+}
+
 func TestExecWritesPermissionResponse(t *testing.T) {
 	recorded := filepath.Join(t.TempDir(), "input")
 	binary := fakeShellfish(t, `
