@@ -3,7 +3,7 @@
 source "${0:A:h:h:h}/_helpers.zsh"
 sf_test_source runtime/main.zsh session/main.zsh
 
-typeset config runtime tool_name
+typeset config runtime tool_name jsonc
 sf_test_tmp runtime
 mkdir -p "$tmp/config"
 config="$tmp/config/config.jsonc"
@@ -28,6 +28,25 @@ cat >"$config" <<'JSON'
   }
 }
 JSON
+
+cat >"$tmp/config/string-values.jsonc" <<'JSON'
+{
+  // line comment
+  "line": "https://example.invalid/a//b",
+  /* block comment */
+  "block": "literal /* comment */",
+  "quote": "escaped quote: \"// still text\" and \"/* too */\"",
+  // another comment
+  "path": "C:\\Users\\shellfish\\config.jsonc"
+}
+JSON
+jsonc=$(sf_runtime_read_jsonc "$tmp/config/string-values.jsonc")
+jq -e '. == {
+  line:"https://example.invalid/a//b",
+  block:"literal /* comment */",
+  quote:"escaped quote: \"// still text\" and \"/* too */\"",
+  path:"C:\\Users\\shellfish\\config.jsonc"
+}' <<<"$jsonc" >/dev/null
 
 sf_runtime_resolve_from_config "$config" '' 'cli-model' '{"temperature":0.7,"seed":4}'
 runtime=$REPLY
