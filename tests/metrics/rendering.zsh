@@ -89,11 +89,12 @@ measure_case() {
     "$label" ${#deltas} $(( total / iterations )) $minimum
 }
 
-printf '%-21s %7s %9s %9s\n' case deltas mean_ms min_ms
-measure_case 'prose lines' build_prose $size
-measure_case 'prose lines' build_prose $(( size * 2 ))
-measure_case 'long-line chunks' build_long_line $size
-measure_case 'long-line chunks' build_long_line $(( size * 2 ))
-measure_case 'up-to-10-line deltas' build_multi_line $size
-measure_case 'up-to-10-line deltas' build_multi_line $(( size * 2 ))
+printf '%-21s %7s %9s %9s\n' Case Deltas 'Mean (ms)' 'Min (ms)'
+printf '%-21s %7s %9s %9s\n' --------------------- ------- --------- ---------
+measure_case 'Prose lines' build_prose $size
+measure_case 'Prose lines' build_prose $(( size * 2 ))
+measure_case 'Long-line chunks' build_long_line $size
+measure_case 'Long-line chunks' build_long_line $(( size * 2 ))
+measure_case 'Up-to-10-line deltas' build_multi_line $size
+measure_case 'Up-to-10-line deltas' build_multi_line $(( size * 2 ))
 print

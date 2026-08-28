@@ -106,17 +106,20 @@ for (( iteration = 1; iteration <= iterations; iteration++ )); do
 done
 
 typeset -a phases=(end_to_end backend_tool_call backend_final tool_fixture remainder)
-printf '%-18s %7s %10s %10s %10s\n' phase samples average_ms minimum_ms maximum_ms
-typeset phase
+printf '%-18s %7s %12s %12s %12s\n' Phase Samples 'Average (ms)' 'Minimum (ms)' 'Maximum (ms)'
+printf '%-18s %7s %12s %12s %12s\n' ------------------ ------- ------------ ------------ ------------
+typeset phase label
 for phase in $phases; do
-  awk -F '\t' -v phase="$phase" -v expected="$iterations" '
+  label=${phase//_/ }
+  awk -F '\t' -v phase="$phase" -v label="$label" -v expected="$iterations" '
     $2 == phase {
       total += $3; if (!count || $3 < min) min = $3
       if (!count || $3 > max) max = $3; count++
     }
     END {
       if (count != expected) exit 1
-      printf "%-18s %7d %10.3f %10.3f %10.3f\n", phase, count, total/count, min, max
+      label = toupper(substr(label, 1, 1)) substr(label, 2)
+      printf "%-18s %7d %12.3f %12.3f %12.3f\n", label, count, total/count, min, max
     }
   ' "$metrics" || { print -u2 -r -- "incomplete timing phase: $phase"; exit 1; }
 done
