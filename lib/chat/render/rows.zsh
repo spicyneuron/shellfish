@@ -764,7 +764,11 @@ sf_chat_rows() {
         return 0
       fi
       spans=$type${SF_PRESENT_NODE_ROLE[node]:+.$SF_PRESENT_NODE_ROLE[node]}
-      sf_chat_row_append "$activity_text" "$spans" 0 $node
+      row_highlight=''
+      if [[ $type == tool_result && $activity_text == ╰* && -n $SF_PRESENT_STYLE[divider] ]]; then
+        row_highlight="0 1 $SF_PRESENT_STYLE[divider]"
+      fi
+      sf_chat_row_append "$activity_text" "$spans" 0 $node "$row_highlight"
       SF_PRESENT_ROW_CURSOR+=( "$node:$offset" )
     fi
     [[ $state == closed ]] || break

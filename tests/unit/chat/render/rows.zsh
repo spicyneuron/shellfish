@@ -368,6 +368,12 @@ assert_equal '0 9 fg=4 0 1 fg=8' \
 assert_equal '0 8 fg=4 0 1 fg=8' \
   "$SF_PRESENT_ROW_HIGHLIGHTS[${SF_PRESENT_ROW_TEXT[(i)╰ result]}]"
 
+sf_chat_reset
+sf_chat_event tool_call active shell command
+sf_chat_rows 80 20
+assert_equal '0 3 fg=4 0 1 fg=8' \
+  "$SF_PRESENT_ROW_HIGHLIGHTS[${SF_PRESENT_ROW_TEXT[(i)╰ ⠃]}]"
+
 SF_PRESENT_PREVIEW_CONTEXT=0
 sf_chat_reset
 sf_chat_event context 'hook name' project body
