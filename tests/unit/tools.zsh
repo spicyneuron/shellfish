@@ -32,6 +32,23 @@ sf_test_tool_execute() {
     "$tool_max_capture" "$tool_fence" "$tool_read_paths" "$tool_write_paths"
 }
 
+# File diffs compare snapshots directly; an empty snapshot represents a new file.
+typeset diff_state="$tmp/direct-diff"
+mkdir "$diff_state"
+print -r -- alpha >"$diff_state/original"
+print -r -- beta >"$diff_state/target"
+sf_tool_build_file_diff "$diff_state/target" "$diff_state/original" \
+  "$diff_state/result" "$diff_state"
+[[ $REPLY == file_diff ]]
+grep -Fqx -- '-alpha' "$diff_state/result"
+grep -Fqx -- '+beta' "$diff_state/result"
+: >"$diff_state/original"
+print -r -- created >"$diff_state/target"
+sf_tool_build_file_diff "$diff_state/target" "$diff_state/original" \
+  "$diff_state/result" "$diff_state"
+[[ $REPLY == file_diff ]]
+grep -Fqx -- '+created' "$diff_state/result"
+
 # Capture preserves trailing newlines and retains only the configured byte tail.
 load_tools "$stored_runtime"
 sf_test_tool_execute "$(jq -cn --arg command "printf 'line\\n\\n'" \

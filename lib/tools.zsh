@@ -123,13 +123,15 @@ sf_tool_bound_capture() {
 }
 
 sf_tool_build_file_diff() {
-  local target=$1 original=$2 existed=$3 result=$4 state_dir=$5
-  local before=/dev/null diff="$state_dir/file-diff"
+  local target=$1 original=$2 result=$3 state_dir=$4
+  local diff="$state_dir/file-diff"
   integer diff_status
   REPLY=''
-  (( existed == 0 )) || before=$target
-  diff -U1 -L '' -L '' -- "$original" "$target" >"$diff"
-  diff_status=$?
+  if diff -U1 -L '' -L '' -- "$original" "$target" >"$diff"; then
+    diff_status=0
+  else
+    diff_status=$?
+  fi
   case $diff_status in
     0) return ;;
     1) ;;
@@ -270,13 +272,11 @@ sf_tool_execute() {
             sf_tools_fail "cannot snapshot file result: $result_path"
             return
           }
-          integer result_existed=1
         else
           result_path=''
         fi
       else
         : >"$original" || return 1
-        integer result_existed=0
       fi
     fi
     if (( harness_sandbox )) && [[ $tool_sandbox == true && $bypass != true ]]; then
@@ -341,8 +341,7 @@ sf_tool_execute() {
       return
     }
     if [[ -n $result_path && $exit_code == 0 ]]; then
-      sf_tool_build_file_diff "$result_path" "$original" "$result_existed" "$bounded" \
-        "$state_dir" || return 1
+      sf_tool_build_file_diff "$result_path" "$original" "$bounded" "$state_dir" || return 1
       result_type=$REPLY
     fi
     sandboxed=''
