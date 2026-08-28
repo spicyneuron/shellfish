@@ -6,9 +6,9 @@
 
 A tiny coding agent written in a few thousand lines of `zsh`, `awk`, `curl`, and `jq`.
 
-Absurdly extensible (shell scripts!), familiar Claude Code and Codex TUI (distillation attack!), yet none of the bloat, telemetry, or supply chain surface area.
+Absurdly extensible (shell scripts!) with a familiar Claude Code and Codex TUI (distillation attack!), yet none of the bloat, telemetry, or supply chain surface area.
 
-Under-the-hood, an AI agent is just a state machine, an append-only log, an HTTP client, and some tools. It should not need 1000+ npm dependencies, a half-million lines of Rust, or, God-forbid, another Electron app.
+Under-the-hood, an AI agent is just a state machine, an append-only log, an HTTP client, and some tools. It should not need 1000+ npm dependencies, half a million lines of code, or, God-forbid, an Electron app.
 
 This entire codebase fits comfortably within the context window of any modern LLM. It's small enough to run anywhere, and flexible enough to mold into any shape you need.
 
@@ -16,7 +16,7 @@ This entire codebase fits comfortably within the context window of any modern LL
 
 - Your **harness** is just markdown and shell scripts, bound to lifecycle hooks.
 - Your **tools** are just shell scripts, optionally sandboxed with [`fence`](https://github.com/fencesandbox/fence).
-- Your **backend** is just a shell script that `curl`s out to APIs and returns JSON. Built-in support for OpenAI, Codex (ChatGPT subscription), Anthropic, OpenRouter, llama.cpp...
+- Your **backend** is just a shell script that `curl`s out to APIs and returns JSON. Built-in support for OpenAI, Codex (ChatGPT subscription), Anthropic, OpenRouter, llama.cpp.
 
 ## Default harness
 
@@ -24,25 +24,23 @@ This entire codebase fits comfortably within the context window of any modern LL
 - `read_file`, `edit_file`, `write_file` for simple text operations.
 - `shell` to run arbitrary commands within a `fence` sandbox.
 
-### session_start
+### session_start hook
 - `add_environment` to inject host, project tree, and Git context.
-- `add_command_availability` to report available command versions.
+- `add_command_availability` to report available shell command versions.
 - `add_project_instructions` to inject the project's `AGENTS.md` or, if absent, `CLAUDE.md`.
 
-### user_prompt_submit
+### user_prompt_submit hook
 - `/new` to create a new session in the same project.
 - `/fork [N]` to copy and trim the current transcript into a new session.
 - `/refresh` to rebuild the terminal presentation from the durable session.
 - `/server` to hand the current session to `shellfish-server`.
 - `! command` to run a shell command and inject its input and output as context.
 
-The chat controller handles local commands such as `/resume`, `/quit`, and queue editing without submitting an agent turn.
-
 Custom harnesses can attach additional policy or context scripts to any lifecycle event described in [`docs/HOOKS.md`](docs/HOOKS.md).
 
 ## Install
 
-Shellfish requires `zsh` 5+, `awk`, `curl`, and [`jq`](https://github.com/jqlang/jq). The default harness also requires [`fence`](https://github.com/fencesandbox/fence) to run its sandboxed tools; set `sandbox: false` on a harness only when those tools should run with your full user permissions.
+Shellfish requires `zsh` 5+, `awk`, `curl`, and [`jq`](https://github.com/jqlang/jq). The default harness needs [`fence`](https://github.com/fencesandbox/fence) to run sandboxed tools. Set `sandbox: false` on a harness only when those tools should run unsandboxed with full user permissions.
 
 ```sh
 # Ensure that ~/.local/bin is on your $PATH. Then:
@@ -52,6 +50,12 @@ ln -s "$HOME/.local/share/shellfish/bin/shellfish" "$HOME/.local/bin/shellfish"
 ```
 
 ## Quick start
+
+Shellfish has three modes:
+
+- `shellfish` opens the interactive terminal agent.
+- `shellfish exec` runs exactly one turn and prints the results.
+- `shellfish-server` runs a tiny, web-based terminal agent accessible at `127.0.0.1:9158`.
 
 ```sh
 # Provide keys via environment or ${XDG_CONFIG_HOME:-$HOME/.config}/shellfish/.env
@@ -71,12 +75,6 @@ shellfish exec -b openrouter -m MODEL "Explain this project"
 echo "Review the current changes" | shellfish exec -b openrouter -m MODEL
 ```
 
-Shellfish has three modes:
-
-- `shellfish` opens the interactive terminal agent.
-- `shellfish exec` runs exactly one turn and prints the results.
-- `shellfish-server` runs a tiny, web-based terminal agent accessible at `127.0.0.1:9158`.
-
 Built-in credentials:
 
 | Backend | Credential |
@@ -89,6 +87,14 @@ Built-in credentials:
 
 The `openai` backend also supports compatible services by setting `endpoint` in its backend config.
 
+## Documentation
+
+- [`docs/CONFIG.md`](docs/CONFIG.md) — configure profiles, backends, harnesses, components, and sandbox grants.
+- [`docs/EXEC.md`](docs/EXEC.md) — integrate with the bounded-exec JSONL interface.
+- [`docs/HOOKS.md`](docs/HOOKS.md) — write lifecycle hooks.
+- [`docs/SERVER.md`](docs/SERVER.md) — run or integrate with the browser server.
+- [`docs/CHAT.md`](docs/CHAT.md) — understand the interactive chat architecture.
+
 ## Configure
 
 Shellfish is built around backends, harnesses, and profiles.
@@ -99,18 +105,6 @@ Shellfish is built around backends, harnesses, and profiles.
 - Top-level theme and `tui` settings control presentation independently of profiles.
 
 Shellfish recursively merges user configuration over the bundled `default/config.jsonc`; arrays replace rather than extend their defaults. Component references resolve from the configuration directory before bundled defaults. Create `$XDG_CONFIG_HOME/shellfish/` (`~/.config/shellfish/` by default), and use `shellfish config` to inspect the resolved result. See `config.template.jsonc` for a starting point, `default/config.jsonc` for annotated defaults, and `config.schema.json` for all accepted fields.
-
-`./.env`
-
-`./config.jsonc`
-
-`./backends/`
-
-`./system/`
-
-`./tools/`
-
-`./hooks/`
 
 ## Sessions
 

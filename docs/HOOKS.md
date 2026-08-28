@@ -298,6 +298,8 @@ exit 10
 - Hook output is untrusted. stdout is escaped before it reaches the model; it cannot forge tags or inject provider roles.
 - Dispatch is sequential and preserves configured order. A failed chain does not commit partial output — candidate context is usable only after the whole chain succeeds.
 - Captures are private, bounded, and cleaned on every path.
+- Hooks have no independent timeout. They must terminate themselves; cancelling the enclosing operation terminates the active hook.
+- Hooks inherit the process environment, but Shellfish removes built-in provider credentials and the configured backend credential before invocation. Exec scopes that credential to the backend as `SHELLFISH_API_KEY`; the variables documented above are the Shellfish-specific hook guarantees.
+- `PLUGIN_DATA` may be shared by concurrent sessions or processes. Hooks must coordinate access when their persistent data requires it.
 - Hooks are not transformation middleware. Tool-use hooks cannot modify tool input or result content; they observe and gate. Coordinate policy through `SHELLFISH_STATE_DIR`, not by overloading stdout.
-- Credentials are not hook input. Exec receives the API key through its startup record and forwards it only to the backend as a scoped `SHELLFISH_API_KEY`; hooks never receive it.
 - Adding an event is an adapter change, not a dispatcher change. The dispatcher implements the status table, channel limits, and JSON framing; each event owns its control fields, default action, and the consequence of skipping it.
