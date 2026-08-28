@@ -46,6 +46,11 @@ def config_harness($path):
     $path + ["tools"]; "must be unique references") |
   config_assert((has("sandbox") | not) or (.sandbox | type == "boolean");
     $path + ["sandbox"]; "must be a boolean") |
+  reduce ["sandbox_read_paths", "sandbox_write_paths"][] as $field (.;
+    config_assert((has($field) | not) or (.[$field] | type == "array" and
+      all(.[]; type == "string" and length > 0 and
+        (startswith("/") or startswith("~/")) and (contains("\u0000") | not)));
+      $path + [$field]; "must contain absolute or ~/ paths")) |
   config_assert((has("max_requests_per_turn") | not) or
     (.max_requests_per_turn | positive_integer); $path + ["max_requests_per_turn"];
     "must be a positive integer") |
@@ -142,6 +147,13 @@ def runtime_prepare:
   (if $profile_override == "" then $config.default_profile else $profile_override end) as $name |
   ($config.profiles[$name] // error("unknown profile: " + $name)) as $selected |
   $selected |
+  .harness |= reduce ["sandbox_read_paths", "sandbox_write_paths"][] as $field (.;
+    if has($field) then .[$field] |= map(
+      if startswith("~/") then
+        if $input.home == "" then error("cannot expand ~ without HOME")
+        else $input.home + "/" + ltrimstr("~/") end
+      else . end)
+    else . end) |
   if $backend_override == "" then .
   elif $config.backends | has($backend_override) then
     .backend = ($config.backends[$backend_override] + {name:$backend_override})

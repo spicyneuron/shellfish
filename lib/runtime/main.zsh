@@ -153,6 +153,7 @@ sf_runtime_resolve_from_config() {
   local config_path config_dir='' raw='{}' defaults prepared presentation value
   local backend_name backend_reference backend_dir backend_base manifest tool_manifest command
   local reference resolved event external_name final system_content settings fence='' env_file=''
+  local home=${HOME-}
   local theme_marker=': shellfish:unknown-theme:'
   local -a fields system_parts tool_entries hook_entries resolved_args finalized
   integer system_count tool_count hook_count index tool_index needs_fence=0 sandbox_enabled=1
@@ -171,6 +172,7 @@ sf_runtime_resolve_from_config() {
   raw=$REPLY
   [[ -z $config_path ]] || config_dir=${config_path:h}
   [[ -z $config_path ]] || env_file=${config_dir:A}/.env
+  [[ -z $home ]] || home=${home:A}
 
   external_name=${backend_override%/}
   external_name=${external_name:t}
@@ -178,12 +180,12 @@ sf_runtime_resolve_from_config() {
     --argjson raw "$raw" --arg profile_override "$profile_override" \
     --arg model_override "$model_override" --argjson request_override "$request_override" \
     --arg backend_override "$backend_override" \
-    --arg external_backend_name "$external_name" '
+    --arg external_backend_name "$external_name" --arg home "$home" '
       include "runtime/config";
       {defaults:$defaults,raw:$raw,profile_override:$profile_override,
        model_override:$model_override,request_override:$request_override,
        backend_override:$backend_override,
-       external_backend_name:$external_backend_name} | runtime_prepare
+       external_backend_name:$external_backend_name,home:$home} | runtime_prepare
   ' 2>&1) || {
     if [[ $prepared == *"$theme_marker"* ]]; then
       sf_runtime_fail "unknown theme: ${prepared#*"$theme_marker"}"

@@ -88,7 +88,7 @@ The matching subdirectories are `system/`, `tools/`, `backends/`, and `hooks/<ev
 
 ## Sandbox grants
 
-The default harness runs its tools with `fence`. Add absolute paths outside the project with harness settings:
+The default harness runs its tools with `fence`. Add absolute paths or `~/...` paths outside the project with harness settings. Shellfish expands `~/` against `$HOME` before freezing the session runtime; other environment-variable interpolation is not supported.
 
 ```jsonc
 {

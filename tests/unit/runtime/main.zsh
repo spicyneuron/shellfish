@@ -215,6 +215,31 @@ if sf_runtime_resolve_from_config "$tmp/config/invalid-field.jsonc" '' '' '{}'; 
 fi
 [[ $SF_RUNTIME_ERROR == *'invalid config at $["profiles"]["work"]["legacy_backend"]: unknown field'* ]]
 
+cat >"$tmp/config/home-paths.jsonc" <<'JSON'
+{
+  "profiles":{"default":{"extend":"default","harness":"home"}},
+  "harnesses":{"home":{
+    "sandbox_read_paths":["~/reference"],
+    "sandbox_write_paths":["~/output"]
+  }}
+}
+JSON
+mkdir "$tmp/home"
+HOME="$tmp/home" sf_runtime_resolve_from_config "$tmp/config/home-paths.jsonc" '' \
+  test-model '{}' "$ROOT/tests/fixtures/backend"
+jq -e --arg read "${tmp:A}/home/reference" --arg write "${tmp:A}/home/output" '
+  .harness.sandbox_read_paths == [$read] and
+  .harness.sandbox_write_paths == [$write]
+' <<<"$REPLY" >/dev/null || fail 'home-relative sandbox paths were not expanded'
+(
+  unset HOME
+  if sf_runtime_resolve_from_config "$tmp/config/home-paths.jsonc" '' test-model '{}' \
+    "$ROOT/tests/fixtures/backend"; then
+    fail 'home-relative sandbox path resolved without HOME'
+  fi
+  [[ $SF_RUNTIME_ERROR == *'cannot expand ~ without HOME'* ]]
+)
+
 cat >"$tmp/config/invalid-presentation.jsonc" <<'JSON'
 {"tui":{"preview_lines_context":-1}}
 JSON
