@@ -18,70 +18,43 @@ This entire codebase fits comfortably within the context window of any modern LL
 - Your **tools** are just shell scripts, optionally sandboxed with [`fence`](https://github.com/fencesandbox/fence).
 - Your **backend** is just a shell script that `curl`s out to APIs and returns JSON. Built-in support for OpenAI, Codex (ChatGPT subscription), Anthropic, OpenRouter, llama.cpp.
 
-## Default harness
+## Highlights
 
-### Tools
+- **Context is just stdout.** Hooks turn ordinary command output into model context, making it easy to extend awareness of project state and changes.
+- **Extensible agent loop.** Hooks run in a pipeline, gating actions, modifying state, and even launching other services.
+- **Audit in one sitting.** Agent behavior is inspectable Markdown, shell, and JSON; full session state is just JSONL.
+- **Harnesses, plural.** Configure multiple purpose-built agents instead of forcing every workflow into one configuration.
+- **Take a session on the go.** The optional server exposes your agent through a lightweight browser client. Because what could go wrong?
 
-- `read_file`, `edit_file`, `write_file` for simple text operations.
-- `shell` to run arbitrary commands within a `fence` sandbox.
+The bundled harness is a minimal starting point. The [default harness guide](docs/HARNESS.md) explains how its pieces fit together.
 
-### `session_start` hooks
+## Get started
 
-- `add_environment` to inject host, project tree, and Git context.
-- `add_command_availability` to report available shell command versions.
-- `add_project_instructions` to inject the project's `AGENTS.md` or, if absent, `CLAUDE.md`.
+Shellfish requires `zsh` 5+, `awk`, `curl`, and [`jq`](https://github.com/jqlang/jq). The default harness needs [`fence`](https://github.com/fencesandbox/fence) for sandboxed tools.
 
-### `user_prompt_submit` hooks
-
-- `/help` to list available commands.
-- `/new` to create a new session in the same project.
-- `/fork [N]` to copy and trim the current transcript into a new session.
-- `/refresh` to rebuild the terminal presentation from the durable session.
-- `/verbose` to rebuild the presentation without preview limits.
-- `/resume` to switch to another session in the same project.
-- `/server` to hand the current session to `shellfish-server`.
-- `! command` to run a shell command and inject its input and output as context.
-
-Custom harnesses can attach additional policy or context scripts to any lifecycle event.
-
-## Install
-
-Shellfish requires `zsh` 5+, `awk`, `curl`, and [`jq`](https://github.com/jqlang/jq). The default harness needs [`fence`](https://github.com/fencesandbox/fence) to run sandboxed tools. Set `sandbox: false` on a harness only when those tools should run unsandboxed with full user permissions.
+Install via git:
 
 ```sh
-# Ensure that ~/.local/bin is on your $PATH. Then:
+# With `~/.local/bin` on `PATH`
 mkdir -p "$HOME/.local/share" "$HOME/.local/bin"
 git clone https://github.com/spicyneuron/shellfish.git "$HOME/.local/share/shellfish"
 ln -s "$HOME/.local/share/shellfish/bin/shellfish" "$HOME/.local/bin/shellfish"
 ```
 
-## Quick start
-
-Shellfish has two agent modes and an optional server:
-
-- `shellfish` opens the interactive terminal agent.
-- `shellfish exec` runs exactly one turn and prints the results.
-- `shellfish-server` runs a tiny, web-based terminal agent accessible at `127.0.0.1:9158`.
+Provide credentials through the environment or `${XDG_CONFIG_HOME:-$HOME/.config}/shellfish/.env`, then start an interactive chat:
 
 ```sh
-# Provide keys via environment or ${XDG_CONFIG_HOME:-$HOME/.config}/shellfish/.env
 export OPENROUTER_API_KEY=...
-
-# Start a chat
 shellfish --backend openrouter --model MODEL
-
-# Use your Codex subscription
-shellfish --backend codex --model MODEL
-
-# Continue a previous session
-shellfish --session path/to/session.jsonl
-
-# Run a single prompt and print final assistant message
-shellfish exec -b openrouter -m MODEL "Explain this project"
-echo "Review the current changes" | shellfish exec -b openrouter -m MODEL
 ```
 
-Built-in credentials:
+Or use your existing Codex subscription login:
+
+```sh
+shellfish --backend codex --model MODEL
+```
+
+Built-in backends and credentials:
 
 | Backend | Credential |
 | --- | --- |
@@ -96,42 +69,27 @@ The `openai` backend also supports compatible services by setting `endpoint` in 
 ## Documentation
 
 - [`docs/CONFIG.md`](docs/CONFIG.md): Configure profiles, backends, harnesses, components, and sandbox grants.
+- [`docs/HARNESS.md`](docs/HARNESS.md): Understand the harness role and the bundled defaults.
 - [`docs/CHAT.md`](docs/CHAT.md): Use interactive chat, slash commands, and keybindings.
 - [`docs/HOOKS.md`](docs/HOOKS.md): Write custom lifecycle hooks.
 - [`docs/EXEC.md`](docs/EXEC.md): Integrate with the single-turn JSONL interface.
 - [`docs/SERVER.md`](docs/SERVER.md): Serve a session for remote access.
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md): Design intent and opinionated boundaries.
-- [`docs/CURSED.md`](docs/CURSED.md): Hard-won lessons and workarounds.
-
-## Configure
-
-Shellfish is built around backends, harnesses, and profiles.
-
-- Backends select an API adapter and its transport settings.
-- Harnesses select system files, tools, hooks, sandbox policy, and turn limits.
-- Profiles compose a backend, a harness, and API request settings such as the model.
-- Top-level theme and `tui` settings control presentation independently of profiles.
-
-Shellfish recursively merges user configuration over the bundled `default/config.jsonc`; arrays replace rather than extend their defaults. Component references resolve from the configuration directory before bundled defaults. Create `$XDG_CONFIG_HOME/shellfish/` (`~/.config/shellfish/` by default), and use `shellfish config` to inspect the resolved result. See `config.template.jsonc` for a starting point, `default/config.jsonc` for annotated defaults, and `config.schema.json` for all accepted fields.
-
-## Sessions
-
-Sessions are append-only JSONL transcripts stored beneath `${XDG_STATE_HOME:-$HOME/.local/state}/shellfish/sessions`. A session retains its resolved backend, harness, model, request, and sandbox settings; create a new session to change them. Themes and TUI preview settings come from the current configuration, so they can change how an existing session is displayed.
-
-Use `--continue` to open the newest session for the current directory, `--resume` to pick one interactively, or `--session PATH` to name one directly. `shellfish exec --new` creates an idle session and prints its path without running a turn.
-
-## Safety
-
-Built-in `shell`, `read_file`, `edit_file`, and `write_file` tools run in `fence` by default. Their policies limit project access, block network access, and deny common secret files. Additional paths configured with `sandbox_read_paths` and `sandbox_write_paths` retain the tool's other restrictions. An interactive tool may request a one-time bypass when allowed by its manifest; headless runs deny requests that policy hooks do not decide.
-
-Hooks, backend adapters, and unsandboxed tools are trusted executables and run with the user's permissions. Disabling harness sandboxing removes the tool boundary; it does not provide an alternative isolation mechanism.
+- [`docs/CURSED.md`](docs/CURSED.md): Hard-won lessons and ~~hacks~~ clever workarounds.
 
 ## Server (experimental)
 
-To install the optional server binary (requires Go):
+`shellfish-server` accepts the same flags as `shellfish` and serves a web client at `127.0.0.1:9158`.
+
+Configure a VPN like Tailscale or Wireguard, and then control `shellfish` from your phone! For now, only one session at a time.
 
 ```sh
+# Install
 go install github.com/spicyneuron/shellfish/cmd/shellfish-server@latest
+
+# Serve a project with default profile
+cd my/project/
+shellfish-server
 ```
 
 ## Develop
@@ -143,5 +101,3 @@ go install github.com/spicyneuron/shellfish/cmd/shellfish-server@latest
 ./tests/run metrics  # performance and source size reports
 ./tests/run unit/session/main.zsh unit/runtime/main.zsh
 ```
-
-Tests use fake provider responses and do not require network access.
