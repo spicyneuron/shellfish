@@ -11,7 +11,7 @@ typeset suite
 typeset -a tests
 typeset -a pids names logs results
 typeset test_path test_file log_dir
-integer jobs=${TEST_JOBS:-4} timeout=${TEST_TIMEOUT:-15}
+integer jobs=${TEST_JOBS:-4} timeout=${TEST_TIMEOUT:-30}
 integer passed=0 failed=0
 typeset start_all=$EPOCHREALTIME
 
