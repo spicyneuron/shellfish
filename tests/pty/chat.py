@@ -212,7 +212,7 @@ def test_repeated_permission_ctrl_c_exits_after_recovery():
         session.send(b"cancel and exit\r")
         session.wait_after(mark, "Allow shell outside of sandbox?")
         session.send(b"\x03")
-        session.pump(0.05)
+        session.wait_session_records(7, path=session.explicit_session)
         session.send(b"\x03")
         session.wait_after(mark, "Saved:")
         records = [
@@ -251,6 +251,7 @@ def test_tool_result_preview_reports_total_tokens():
     ]
     session = Session(explicit_session=True, session_records=records)
     try:
+        session.wait_after(0, rows[1])
         visible = session.visible()
         assert rows[0] in visible and rows[1] in visible, visible
         assert not any(row in visible for row in rows[2:]), (

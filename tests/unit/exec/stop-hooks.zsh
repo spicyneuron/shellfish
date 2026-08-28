@@ -162,8 +162,7 @@ jq -L "$ROOT/lib" -e -s '
 
 # Cancellation after feedback commit stops the retry without rolling back the
 # completed assistant or stop context.
-typeset cancel_pipe="$tmp/cancel.pipe"
-mkfifo "$cancel_pipe"
+typeset cancel_ready="$tmp/cancel-ready"
 typeset cancel_backend="$tmp/cancel-backend"
 cat >"$cancel_backend" <<ZSH
 #!/usr/bin/env zsh
@@ -171,7 +170,7 @@ request=\$(cat)
 if jq -e '.messages[-1].role == "user" and
     (.messages[-1].content[0].text | contains("<stop hook=\\"stop-once\\">"))' \
     <<<"\$request" >/dev/null; then
-  print -r -- ready >"$cancel_pipe"
+  : >"$cancel_ready"
   sleep 10
 else
   print -r -- '{"type":"message","role":"assistant","stop":"end","content":[{"type":"text","text":"original\\n"}]}'
@@ -188,9 +187,15 @@ sf_test_session "$cancel_session"
 "$ROOT/bin/shellfish" exec --jsonl --session "$cancel_session" \
   < <(print -r -- '{"type":"message","role":"user","content":[{"type":"text","text":"wait for retry"}]}') \
   >"$cancel_stream" &
-integer cancel_pid=$! cancel_status=0
-typeset cancel_sync
-read -r cancel_sync <"$cancel_pipe"
+integer cancel_pid=$! cancel_status=0 cancel_polls=0
+while [[ ! -e $cancel_ready ]] && (( cancel_polls++ < 250 )); do
+  sleep 0.02
+done
+[[ -e $cancel_ready ]] || {
+  kill -TERM "$cancel_pid" 2>/dev/null
+  wait "$cancel_pid" 2>/dev/null || true
+  fail 'backend did not begin the stop-hook retry'
+}
 kill -TERM "$cancel_pid"
 wait "$cancel_pid" || cancel_status=$?
 (( cancel_status == 143 ))

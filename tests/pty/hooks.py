@@ -65,11 +65,12 @@ def test_slow_prompt_hook_keeps_ui_active():
         activity = ("⡀", "⡄", "⠆", "⠃", "⠁")
         end = time.monotonic() + 3
         while (
-            not any(frame in session.visible(mark) for frame in activity)
+            len({frame for frame in activity if frame in session.visible(mark)}) < 2
             and time.monotonic() < end
         ):
             session.pump()
-        assert any(frame in session.visible(mark) for frame in activity), session.visible(mark)
+        frames = {frame for frame in activity if frame in session.visible(mark)}
+        assert len(frames) >= 2, session.visible(mark)
         assert not completed.exists()
 
         release.touch()

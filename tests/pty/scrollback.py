@@ -202,10 +202,15 @@ def test_tall_turn_loses_neither_text_nor_draft():
         terminal.wait_for("the stream to progress after one typed key",
                           lambda: echoed_words() > before)
         for char in b"one":
+            before = echoed_words()
+            assert before < len(WORDS), (
+                "turn finished before typing probe" + terminal.dump()
+            )
             session.send(bytes([char]))
-            end = time.monotonic() + 0.1
-            while time.monotonic() < end:
-                terminal.pump()
+            terminal.wait_for(
+                "the stream to progress after a typed key",
+                lambda: echoed_words() > before,
+            )
         terminal.wait_for(
             "the turn to finish",
             lambda: terminal.turn_finished()
@@ -230,12 +235,14 @@ def test_tall_turn_loses_neither_text_nor_draft():
         # Text the clamp held back is not lost, only undisplayed: submitting
         # flushes what is left into scrollback a screen at a time.
         session.send(b"\r")
-        terminal.wait_for("the held text to flush",
-                          lambda: terminal.everything().count("done") >= 2)
-        # The last chunks commit over several epochs after the turn is visible.
-        end = time.monotonic() + 1
-        while time.monotonic() < end:
-            terminal.pump()
+        session.wait_session_records(5, path=session_path)
+        terminal.wait_for(
+            "the second turn to finish rendering",
+            lambda: terminal.turn_finished()
+            and terminal.everything().count("done") >= 2
+            and terminal.everything().lower().count("─ user ─") == 2
+            and terminal.everything().lower().count("─ agent ─") == 2,
+        )
 
         # Every word was committed twice, once in the user block and once in the
         # agent's echo of it, so a word seen only once means one of the two was
@@ -312,10 +319,19 @@ def test_tall_resume_drains_bounded_backlog():
 
 def test_queued_submits_keep_committed_history():
     """Queued submits execute in order without disturbing committed output."""
-    session = Session()
+    session = Session(env={"SF_TEST_BACKEND_DELAY": "0.5"})
     terminal = Terminal(session)
     try:
-        session.send(b"alpha\rtwo\rthree\r")
+        session.send(b"alpha\r")
+        _, records = session.wait_session_records(2)
+        assert len(records) == 2 and records[-1]["role"] == "user", records
+        assert records[-1]["content"][0]["text"] == "alpha", records
+        terminal.wait_for(
+            "the first turn to remain active",
+            lambda: "─ user" in terminal.everything().lower()
+            and not terminal.turn_finished(),
+        )
+        session.send(b"two\rthree\r")
         _, records = session.wait_session_records(7)
         messages = [
             record["content"][0]["text"]
