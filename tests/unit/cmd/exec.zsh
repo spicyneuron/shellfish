@@ -2,6 +2,9 @@
 
 source "${0:A:h:h:h}/_helpers.zsh"
 sf_test_tmp exec-command
+mkdir "$tmp/home"
+export HOME="${tmp:A}/home"
+unset XDG_CONFIG_HOME
 
 typeset config="$tmp/config.jsonc"
 cat >"$config" <<EOF

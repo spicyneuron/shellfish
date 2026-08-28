@@ -5,7 +5,9 @@ sf_test_source runtime/main.zsh session/main.zsh
 
 typeset config runtime tool_name jsonc
 sf_test_tmp runtime
-mkdir -p "$tmp/config"
+mkdir -p "$tmp/config" "$tmp/home"
+export HOME="${tmp:A}/home"
+unset XDG_CONFIG_HOME
 config="$tmp/config/config.jsonc"
 
 cat >"$config" <<'JSON'
@@ -69,6 +71,23 @@ jq -e '
   .themes.light.text == "#123456" and
   .tui.preview_lines_context == 2
 ' <<<"$SF_PRESENTATION" >/dev/null
+
+mkdir -p "$HOME/.config/git"
+touch "$HOME/.gitconfig"
+sf_runtime_resolve_from_config "$config" '' test-model '{}'
+jq -e --arg config "$HOME/.gitconfig" --arg dir "$HOME/.config/git" '
+  .harness.sandbox_read_paths == [$config,$dir]
+' <<<"$REPLY" >/dev/null || fail 'standard Git sandbox paths were not granted'
+(
+  export XDG_CONFIG_HOME="$tmp/xdg"
+  mkdir -p "$XDG_CONFIG_HOME/git"
+  sf_runtime_resolve_from_config "$config" '' test-model '{}'
+  jq -e --arg config "$HOME/.gitconfig" --arg dir "${tmp:A}/xdg/git" '
+    .harness.sandbox_read_paths == [$config,$dir]
+  ' <<<"$REPLY" >/dev/null || fail 'XDG Git sandbox path was not granted'
+)
+rm "$HOME/.gitconfig"
+rmdir "$HOME/.config/git" "$HOME/.config"
 
 print -r -- '{}' >"$tmp/config/empty.jsonc"
 sf_runtime_resolve_from_config "$tmp/config/empty.jsonc" '' 'default-model' '{}' \
@@ -224,7 +243,6 @@ cat >"$tmp/config/home-paths.jsonc" <<'JSON'
   }}
 }
 JSON
-mkdir "$tmp/home"
 HOME="$tmp/home" sf_runtime_resolve_from_config "$tmp/config/home-paths.jsonc" '' \
   test-model '{}' "$ROOT/tests/fixtures/backend"
 jq -e --arg read "${tmp:A}/home/reference" --arg write "${tmp:A}/home/output" '

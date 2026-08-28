@@ -54,6 +54,15 @@ load_tools "$stored_runtime"
 sf_test_tool_execute "$(jq -cn --arg command 'print -rn -- "$HOME"' \
   '{id:"home_1",name:"shell",input:{command:$command}}')" 0
 jq -e --arg home "$HOME" '.content == $home' <<<"$REPLY" >/dev/null
+typeset caller_home=$HOME
+mkdir "$tmp/home"
+export HOME="$tmp/home"
+export XDG_CONFIG_HOME="$tmp/xdg"
+sf_test_tool_execute "$(jq -cn --arg command 'print -rn -- "$XDG_CONFIG_HOME"' \
+  '{id:"xdg_config_1",name:"shell",input:{command:$command}}')" 0
+jq -e --arg config "$XDG_CONFIG_HOME" '.content == $config' <<<"$REPLY" >/dev/null
+export HOME=$caller_home
+unset XDG_CONFIG_HOME
 
 # Capture preserves trailing newlines and retains only the configured byte tail.
 sf_test_tool_execute "$(jq -cn --arg command "printf 'line\\n\\n'" \

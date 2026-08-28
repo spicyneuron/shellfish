@@ -90,6 +90,8 @@ The matching subdirectories are `system/`, `tools/`, `backends/`, and `hooks/<ev
 
 The default harness runs its tools with `fence`. Add absolute paths or `~/...` paths outside the project with harness settings. Shellfish expands `~/` against `$HOME` before freezing the session runtime; other environment-variable interpolation is not supported.
 
+New sessions automatically grant read-only access to `~/.gitconfig` and `${XDG_CONFIG_HOME:-~/.config}/git` when those paths exist. Git configuration can include arbitrary additional files; grant custom include locations explicitly. Fence continues to deny credential files such as `~/.git-credentials`.
+
 ```jsonc
 {
   "harnesses": {

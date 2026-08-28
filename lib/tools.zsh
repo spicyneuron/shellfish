@@ -179,6 +179,7 @@ sf_tool_execute() {
   locale_env=( LANG="${LANG:-C}" )
   [[ -z $LC_ALL ]] || locale_env+=( LC_ALL="$LC_ALL" )
   [[ -z $LC_CTYPE ]] || locale_env+=( LC_CTYPE="$LC_CTYPE" )
+  [[ -z ${XDG_CONFIG_HOME-} ]] || locale_env+=( XDG_CONFIG_HOME="$XDG_CONFIG_HOME" )
   decoded=$(jq -jrn --argjson reads "$sandbox_read_paths" \
     --argjson writes "$sandbox_write_paths" '
       def field: ., "\u0000";
