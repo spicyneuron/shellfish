@@ -4,6 +4,38 @@ source "${0:A:h}/_hooks.zsh"
 
 sf_test_runtime
 
+# A slow worktree status skips the remaining git context instead of blocking
+# session creation.
+typeset environment_hook="$ROOT/default/hooks/session_start/add_environment"
+typeset environment_bin="$tmp/environment-bin"
+typeset environment_output
+typeset -i environment_started environment_elapsed
+mkdir "$environment_bin"
+cat >"$environment_bin/git" <<'EOF'
+#!/bin/sh
+case "$1" in
+  rev-parse) printf '.git\n' ;;
+  status) exec sleep 10 ;;
+  *) printf 'unexpected git command\n' ;;
+esac
+EOF
+chmod +x "$environment_bin/git"
+environment_started=$SECONDS
+environment_output=$(PATH="$environment_bin:$PATH" zsh -f "$environment_hook" session_start)
+environment_elapsed=$(( SECONDS - environment_started ))
+(( environment_elapsed >= 3 && environment_elapsed < 7 )) ||
+  fail "environment git timeout took ${environment_elapsed}s"
+[[ $environment_output == *'Git information timed out'* ]]
+[[ $environment_output != *'Git status:'* ]]
+[[ $environment_output != *'Recent commits:'* ]]
+
+cat >"$environment_bin/git" <<'EOF'
+#!/bin/sh
+exit 1
+EOF
+environment_output=$(PATH="$environment_bin:$PATH" zsh -f "$environment_hook" session_start)
+[[ $environment_output == *'Not in git repo'* ]]
+
 # Command availability is best-effort, selects the first candidate with a
 # usable version, and emits one separately attributed creation context.
 typeset availability_hook="$ROOT/default/hooks/session_start/add_command_availability"

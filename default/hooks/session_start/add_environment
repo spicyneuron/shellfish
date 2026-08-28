@@ -1,6 +1,7 @@
 #!/usr/bin/env zsh
 
 set -u
+unsetopt BG_NICE
 
 [ "$#" -eq 1 ] && [ "$1" = session_start ] || exit 1
 
@@ -13,10 +14,35 @@ if ! tree -L 2 --gitignore --dirsfirst -F --noreport --prune \
   ls -F 2>/dev/null | head -100 || true
 fi
 
+git_status_with_timeout() {
+  git status --short &
+  local git_pid=$!
+  (
+    zmodload zsh/zselect
+    zselect -t 300 || true
+    kill -TERM "$git_pid" 2>/dev/null || true
+  ) </dev/null >/dev/null 2>&1 &
+  local timer_pid=$!
+  wait "$git_pid" 2>/dev/null
+  local git_status=$?
+  kill -TERM "$timer_pid" 2>/dev/null || true
+  wait "$timer_pid" 2>/dev/null || true
+  return "$git_status"
+}
+
 if git rev-parse --git-dir >/dev/null 2>&1; then
-  printf '\nGit branch: %s\n' "$(git branch --show-current 2>/dev/null || true)"
-  printf '\nGit status:\n%s\n' "$(git status --short 2>/dev/null | head -10 || true)"
-  printf '\nRecent commits:\n%s\n' "$(git log --oneline -5 2>/dev/null || true)"
+  typeset git_status_output git_status_code
+  git_status_output=$(git_status_with_timeout 2>/dev/null)
+  git_status_code=$?
+  if (( git_status_code == 143 )); then
+    printf '\nGit information timed out\n'
+  elif (( git_status_code != 0 )); then
+    printf '\nGit information unavailable\n'
+  else
+    printf '\nGit branch: %s\n' "$(git branch --show-current 2>/dev/null || true)"
+    printf '\nGit status:\n%s\n' "${(F)${(@f)git_status_output}[1,10]}"
+    printf '\nRecent commits:\n%s\n' "$(git log --oneline -5 2>/dev/null || true)"
+  fi
 else
   printf '\nNot in git repo\n'
 fi
