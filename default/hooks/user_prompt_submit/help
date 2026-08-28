@@ -21,7 +21,6 @@ esac
   print -r -- $'30\t↑, ↓\tNavigate prompt history'
   print -r -- $'100\t/queue drop <N>\tDiscard queued prompt'
   print -r -- $'101\t/queue clear\tDiscard all queued prompts'
-  print -r -- $'999\t/resume, /r\tSwitch to a session for this directory'
   print -r -- $'1000\t/quit, /q\tExit'
 } >>"$SHELLFISH_STATE_DIR/help.tsv"
 

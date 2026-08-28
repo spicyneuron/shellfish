@@ -65,7 +65,8 @@ SF_TEST_RUNTIME=$(jq -c \
   --arg fork "$ROOT/default/hooks/user_prompt_submit/fork" \
   --arg user_shell "$ROOT/default/hooks/user_prompt_submit/user_shell" \
   --arg server "$ROOT/default/hooks/user_prompt_submit/server" \
-  '.harness.user_prompt_submit=[$new,$refresh,$verbose,$fork,$user_shell,$server,$help]' \
+  --arg resume "$ROOT/default/hooks/user_prompt_submit/resume" \
+  '.harness.user_prompt_submit=[$new,$refresh,$verbose,$fork,$user_shell,$server,$resume,$help]' \
   <<<"$SF_TEST_RUNTIME")
 sf_test_session "$help_session"
 sf_session_open "$help_session"
@@ -82,7 +83,7 @@ done
 (( ${#help_display} > 20 ))
 # Every command key appears in the formatted output.
 for key in '↑, ↓' '/queue drop <N>' '/queue clear' '/new, /n' '/refresh' '/verbose, /v' \
-    '/fork [N], /f [N]' '!COMMAND' '/server' '/resume, /r' '/quit, /q'; do
+    '/fork [N], /f [N]' '!COMMAND' '/server' '/resume' '/quit, /q'; do
   [[ $help_display == *"$key"* ]]
 done
 # Rows remain sorted by their configured order through /quit.
@@ -118,6 +119,12 @@ run_prompt_hook /verbose "$help_session"
 run_prompt_hook /server "$help_session"
 [[ $reply[1] == handoff && $reply[2] == shellfish-server &&
    $reply[3] == --session && $reply[4] == "${help_session:A}" ]]
+
+run_prompt_hook /resume "$help_session"
+[[ $reply[1] == handoff && $reply[2] == "$ROOT/bin/shellfish" &&
+   $reply[3] == --resume ]]
+run_prompt_hook /r "$help_session"
+[[ $reply[1] == proceed ]]
 sf_hooks_state_cleanup
 
 # Forking a fork starts a numbered sequence instead of repeating the suffix.
