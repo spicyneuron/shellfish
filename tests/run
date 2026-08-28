@@ -40,7 +40,7 @@ if [[ -n $suite ]]; then
   case $suite in
     unit) tests=( $test_dir/unit/**/*.zsh(N.) ) ;;
     pty)  tests=( $test_dir/pty/**/*.py(N.) ) ;;
-    server) tests=( "$project_dir/server/ui/ui_test.js" "$project_dir/server" ) ;;
+    server) tests=( "$project_dir/cmd/shellfish-server/ui/ui_test.js" "$project_dir/cmd/shellfish-server" ) ;;
     metrics)
       "$test_dir/metrics/exec.zsh" || exit
       "$test_dir/metrics/rendering.zsh" || exit

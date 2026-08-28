@@ -14,7 +14,7 @@ typeset -a core terminal server sources
 core=( "$root/bin/shellfish" "$root"/lib/**/*.(zsh|jq)(N.) )
 core=( ${core:#$root/lib/chat/*} )
 terminal=( "$root"/lib/chat/**/*.(zsh|jq|awk)(N.) )
-server=( "$root"/server/**/*.(go|js|css|html)(N.) )
+server=( "$root"/cmd/shellfish-server/**/*.(go|js|css|html)(N.) )
 server=( ${server:#*_test.(go|js)} )
 
 sources=( $core $terminal $server )
@@ -38,7 +38,7 @@ tokei --compact --streaming simple -- $sources | awk -v root="$root" '
     path = $2
     for (field = 3; field <= NF - 4; field++) path = path " " $field
 
-    if (index(path, root "/server/") == 1) {
+    if (index(path, root "/cmd/shellfish-server/") == 1) {
       group = 3
     } else if (index(path, root "/lib/chat/") == 1) {
       group = 2
