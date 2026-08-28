@@ -116,7 +116,7 @@ sf_runtime_reference() {
 
 sf_runtime_resolve() {
   local session_path=$1 requested_config=$2 requested_profile=$3
-  local requested_model=$4 requested_request=$5 requested_backend=$6
+  local requested_model=$4 requested_request=$5 requested_backend=$6 runtime
   integer runtime_override=${7:-0}
 
   SF_RUNTIME_ERROR=''
@@ -132,6 +132,9 @@ sf_runtime_resolve() {
       sf_runtime_fail "$SF_SESSION_ERROR"
       return
     }
+    runtime=$REPLY
+    sf_runtime_restore_presentation "$requested_config" || return
+    REPLY=$runtime
   else
     sf_runtime_resolve_from_config "$requested_config" "$requested_profile" \
       "$requested_model" "$requested_request" "$requested_backend" || return

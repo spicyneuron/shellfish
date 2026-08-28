@@ -72,9 +72,10 @@ typeset session="$tmp/session.jsonl"
 jq -cn --argjson runtime "$runtime" '
   {type:"session",format_version:1,cwd:"/",created:"2026-08-18T00:00:00Z"} + $runtime
 ' >"$session"
-sf_runtime_resolve "$session" "$tmp/missing.jsonc" '' '' '{}' '' 0
+sf_runtime_resolve "$session" "$config" '' '' '{}' '' 0
 assert_equal "$runtime" "$REPLY" 'runtime resolution reads the frozen runtime'
-[[ -z $SF_PRESENTATION ]]
+jq -e '.theme_mode == "light" and .themes.light.text == "#123456"' \
+  <<<"$SF_PRESENTATION" >/dev/null
 integer resolve_status=0
 sf_runtime_resolve "$session" "$config" '' changed '{}' '' 1 || resolve_status=$?
 (( resolve_status == 2 ))

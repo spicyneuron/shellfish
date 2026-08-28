@@ -305,12 +305,6 @@ sf_main() {
       return $resolve_status
     }
     runtime=$REPLY
-    if [[ -n $requested_session ]]; then
-      sf_runtime_restore_presentation "$requested_config" || {
-        sf_die "$SF_RUNTIME_ERROR"
-        return 1
-      }
-    fi
     sf_runtime_report "$runtime"
     return $?
   fi

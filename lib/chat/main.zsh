@@ -17,7 +17,7 @@ sf_chat_run() {
   local initial_prompt=${10-} runtime session_mode=resume
   local hook_error
   integer new_session=0
-  integer controller_status=0
+  integer controller_status=0 runtime_status=0
 
   SF_CHAT_ERROR=''
   typeset -gx SHELLFISH_MODE=chat
@@ -31,12 +31,7 @@ sf_chat_run() {
     return 1
   }
   typeset -g SF_SESSION_SELECTED=$REPLY
-  if [[ -s $SF_SESSION_SELECTED ]]; then
-    (( ! runtime_override )) || {
-      SF_CHAT_ERROR='runtime overrides cannot be used with an existing session'
-      return 2
-    }
-  else
+  if [[ ! -s $SF_SESSION_SELECTED ]]; then
     [[ ! -e $SF_SESSION_SELECTED || ( -f $SF_SESSION_SELECTED && ! -L $SF_SESSION_SELECTED ) ]] || {
       SF_CHAT_ERROR="invalid session path: $SF_SESSION_SELECTED"
       return 1
@@ -69,10 +64,14 @@ sf_chat_run() {
       return 1
     fi
   else
-    sf_runtime_restore_presentation "$requested_config" || {
+    sf_runtime_resolve "$SF_SESSION_SELECTED" "$requested_config" "$requested_profile" \
+      "$requested_model" "$requested_request" "$requested_backend" "$runtime_override" ||
+      runtime_status=$?
+    if (( runtime_status )); then
       SF_CHAT_ERROR=$SF_RUNTIME_ERROR
-      return 1
-    }
+      return $runtime_status
+    fi
+    runtime=$REPLY
   fi
 
   SF_CHAT_TRANSPORT_COMMAND=(
@@ -81,12 +80,6 @@ sf_chat_run() {
   if (( clear_requested )); then
     zmodload zsh/terminfo && echoti clear || {
       SF_CHAT_ERROR='cannot clear terminal'
-      return 1
-    }
-  fi
-  if (( ! new_session )); then
-    runtime=$(head -n 1 "$SF_SESSION_SELECTED") || {
-      SF_CHAT_ERROR='cannot read session runtime'
       return 1
     }
   fi
