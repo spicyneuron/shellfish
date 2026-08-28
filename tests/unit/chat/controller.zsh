@@ -31,11 +31,13 @@ sf_chat_decoded assistant_reasoning_delta current
 sf_chat_decoded assistant_commit
 assert_equal 5 "$SF_PRESENT_NODE_META[-1]"
 
-sf_chat_decoded permission_request permission_1 shell $'pwd\n\n  Reason: host access'
+sf_chat_decoded permission_request permission_1 shell pwd 'host access' sh
 assert_equal permission "$SF_PRESENT_STATE"
 assert_equal permission_1 "$SF_PRESENT_PERMISSION_ID"
 assert_equal shell "$SF_PRESENT_PERMISSION_TOOL"
 assert_equal $'pwd\n\nReason: host access' "$SF_PRESENT_PERMISSION_TEXT"
+assert_equal sh "$SF_PRESENT_PERMISSION_LANGUAGE"
+assert_equal 3 "$SF_PRESENT_PERMISSION_PREVIEW_LENGTH"
 assert_equal notice "$SF_PRESENT_NODE_TYPE[-1]"
 assert_equal 'Permission: shell' "$SF_PRESENT_NODE_HEADING[-1]"
 

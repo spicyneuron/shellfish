@@ -7,6 +7,8 @@ sf_test_source chat/render/nodes.zsh chat/render/highlights.zsh chat/render/rows
 typeset -g BUFFER=draft CURSOR=3 PREDISPLAY='' POSTDISPLAY=''
 typeset -g SF_PRESENT_STATE=idle SF_PRESENT_FOOTER=test/model
 typeset -g SF_PRESENT_PERMISSION_TOOL='' SF_PRESENT_PERMISSION_TEXT=''
+typeset -g SF_PRESENT_PERMISSION_LANGUAGE=''
+typeset -gi SF_PRESENT_PERMISSION_PREVIEW_LENGTH=0
 typeset -ga SF_PRESENT_QUEUE=()
 typeset -gi COLUMNS=80 LINES=10
 
@@ -206,7 +208,7 @@ LINES=10
 # Chrome offsets index PREDISPLAY + BUFFER + POSTDISPLAY, so confirm each span
 # actually covers the text it claims rather than trusting the arithmetic.
 SF_PRESENT_STYLE=( divider 'fg=8' prompt 'fg=4' footer 'fg=5' muted 'fg=7'
-  permission 'fg=4,bold' permission.divider 'fg=4' )
+  permission 'fg=4,bold' permission.divider 'fg=4' syntax.string 'fg=6' )
 sf_chat_reset
 SF_PRESENT_IDENTITY=test/model
 SF_PRESENT_FOOTER='test/model · 1 ↑ 2 ↓'
@@ -230,7 +232,9 @@ assert_equal 'fg=8,fg=4,fg=8,fg=5' "${(j:,:)chrome_styled}"
 
 SF_PRESENT_STATE=permission
 SF_PRESENT_PERMISSION_TOOL=shell
-SF_PRESENT_PERMISSION_TEXT='pwd'
+SF_PRESENT_PERMISSION_TEXT=$'echo "hi"\n\nReason: "host"'
+SF_PRESENT_PERMISSION_LANGUAGE=sh
+SF_PRESENT_PERMISSION_PREVIEW_LENGTH=9
 sf_chat_repaint
 chrome_display="$PREDISPLAY$BUFFER$POSTDISPLAY"
 chrome_sliced=()
@@ -239,10 +243,13 @@ for (( index = 1; index <= ${#SF_PRESENT_CHROME_HIGHLIGHTS}; index += 3 )); do
   chrome_sliced+=( "${chrome_display[SF_PRESENT_CHROME_HIGHLIGHTS[index] + 1,SF_PRESENT_CHROME_HIGHLIGHTS[index + 1]]}" )
   chrome_styled+=( "$SF_PRESENT_CHROME_HIGHLIGHTS[index + 2]" )
 done
-assert_equal '[a]pprove  [d]eny (default)' "$chrome_sliced[2]"
-assert_equal 'fg=4,bold' "$chrome_styled[2]"
-assert_equal "${(l:79::─:)""}" "$chrome_sliced[3]"
-assert_equal 'fg=4' "$chrome_styled[3]"
+assert_equal '"hi"' "$chrome_sliced[2]"
+assert_equal 'fg=6' "$chrome_styled[2]"
+assert_equal '[a]pprove  [d]eny (default)' "$chrome_sliced[3]"
+assert_equal 'fg=4,bold' "$chrome_styled[3]"
+assert_equal "${(l:79::─:)""}" "$chrome_sliced[4]"
+assert_equal 'fg=4' "$chrome_styled[4]"
+[[ ${(j:,:)chrome_sliced} != *'"host"'* ]] || fail 'permission reason was syntax highlighted'
 SF_PRESENT_STATE=idle
 
 # The queue divider and its items carry distinct styles.

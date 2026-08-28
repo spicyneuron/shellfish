@@ -48,6 +48,20 @@ order=$(print -r -- \
   tr '\0' '\n' | sed '/^$/d' | paste -sd, -)
 assert_equal 'context,hook name,user_prompt_submit prompt,body,batch_ok' "$order"
 
+order=$(print -r -- \
+    '{"type":"_tool_permission_request","id":"permission_1","reason":"host access","tool":{"name":"shell","input":{"command":"echo hi","request_sandbox_bypass":true}}}' |
+  jq -jRs -L "$ROOT/lib" --argjson runtime null \
+    -f "$ROOT/lib/chat/event-decode.jq" |
+  tr '\0' '\n' | sed '/^$/d' | paste -sd, -)
+assert_equal 'permission_request,permission_1,shell,echo hi,host access,sh,batch_ok' "$order"
+
+order=$(print -r -- \
+    '{"type":"_tool_permission_request","id":"permission_2","reason":"host access","tool":{"name":"read_file","input":{"file_path":"outside.txt","request_sandbox_bypass":true,"sandbox_bypass_reason":"host access"}}}' |
+  jq -jRs -L "$ROOT/lib" --argjson runtime null \
+    -f "$ROOT/lib/chat/event-decode.jq" |
+  tr '\0' '\n' | sed '/^$/d' | paste -sd, -)
+assert_equal 'permission_request,permission_2,read_file,{"file_path":"outside.txt"},host access,json,batch_ok' "$order"
+
 typeset edit_runtime=$(jq -cn \
   --slurpfile edit "$ROOT/default/tools/edit_file/tool.json" '
   {harness:{tools:[{name:"edit_file",manifest:$edit[0]}]}}

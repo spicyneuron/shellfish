@@ -20,13 +20,12 @@ def event_fields:
   elif .type == "_hook_display" then
     ["hook_display", .event, .hook, .text, "", ""]
   elif .type == "_tool_permission_request" then
-    ["permission_request", .id, .tool.name,
-      ((if .tool.name == "shell" then .tool.input.command
-        else (.tool.input | del(.request_sandbox_bypass, .sandbox_bypass_reason) | tojson)
-        end) as $preview |
-       ((if ($preview | length) > 1000 then $preview[0:1000] + "…" else $preview end) |
-         gsub("\n"; "\n  ")) +
-       "\n\n  Reason: " + (.reason | gsub("\n"; "\n  "))), "", ""]
+    ((if .tool.name == "shell" then .tool.input.command
+      else (.tool.input | del(.request_sandbox_bypass, .sandbox_bypass_reason) | tojson)
+      end) as $preview |
+     ["permission_request", .id, .tool.name,
+      (if ($preview | length) > 1000 then $preview[0:1000] + "…" else $preview end),
+      .reason, (if .tool.name == "shell" then "sh" else "json" end)])
   elif .type == "_handoff" and
       (.argv | type == "array" and length > 0 and
        (.[0] | type == "string" and length > 0) and

@@ -6,6 +6,8 @@ typeset -g SF_PRESENT_SESSION='' SF_PRESENT_RUNTIME='null'
 typeset -g SF_PRESENT_ACTION='' SF_PRESENT_SUBMITTED=''
 typeset -g SF_PRESENT_STATE=idle SF_PRESENT_PERMISSION_ID=''
 typeset -g SF_PRESENT_PERMISSION_TOOL='' SF_PRESENT_PERMISSION_TEXT=''
+typeset -g SF_PRESENT_PERMISSION_LANGUAGE=''
+typeset -gi SF_PRESENT_PERMISSION_PREVIEW_LENGTH=0
 typeset -gi SF_PRESENT_EXIT_STATUS=0 SF_PRESENT_EXIT_PENDING=0
 typeset -g SF_PRESENT_REASONING_TOKENS=''
 typeset -g SF_PRESENT_IDENTITY='' SF_PRESENT_FOOTER=''
@@ -120,7 +122,7 @@ sf_chat_notice() {
 }
 
 sf_chat_decoded() {
-  local type=$1 first=${2-} second=${3-} third=${4-} fourth=${5-} fifth=${6-} encoded
+  local type=$1 first=${2-} second=${3-} third=${4-} fourth=${5-} fifth=${6-} encoded preview reason
   case $type in
       backend_request_start|assistant_delta|assistant_reasoning_delta|tool_call|tool_result|context)
         sf_chat_event "$type" "$first" "$second" "$third" "$fourth" "$fifth" || return 1
@@ -148,12 +150,17 @@ sf_chat_decoded() {
         sf_chat_safe "$second"
         SF_PRESENT_PERMISSION_TOOL=$REPLY
         sf_chat_safe "$third"
-        SF_PRESENT_PERMISSION_TEXT=${REPLY//$'\n  '/$'\n'}
+        preview=$REPLY
+        sf_chat_safe "$fourth"
+        reason=$REPLY
+        SF_PRESENT_PERMISSION_TEXT="$preview"$'\n\nReason: '"$reason"
+        SF_PRESENT_PERMISSION_LANGUAGE=$fifth
+        SF_PRESENT_PERMISSION_PREVIEW_LENGTH=${#preview}
         sf_chat_editor_permission open
         SF_PRESENT_STATE=permission
         sf_chat_event tool_permission || return 1
         if (( ! REPLY )); then
-          sf_chat_notice notice "Permission: $second" "$third" || return 1
+          sf_chat_notice notice "Permission: $second" "$SF_PRESENT_PERMISSION_TEXT" || return 1
         fi
         ;;
       handoff)
@@ -173,6 +180,8 @@ sf_chat_recover() {
   SF_PRESENT_PERMISSION_ID=''
   SF_PRESENT_PERMISSION_TOOL=''
   SF_PRESENT_PERMISSION_TEXT=''
+  SF_PRESENT_PERMISSION_LANGUAGE=''
+  SF_PRESENT_PERMISSION_PREVIEW_LENGTH=0
   sf_chat_editor_permission discard
   if (( visible && ${#SF_PRESENT_NODE_TYPE} )); then
     type=$SF_PRESENT_NODE_TYPE[1]
@@ -259,6 +268,8 @@ sf_chat_exec_finish() {
     SF_PRESENT_PERMISSION_ID=''
     SF_PRESENT_PERMISSION_TOOL=''
     SF_PRESENT_PERMISSION_TEXT=''
+    SF_PRESENT_PERMISSION_LANGUAGE=''
+    SF_PRESENT_PERMISSION_PREVIEW_LENGTH=0
     if (( ${#SF_PRESENT_HANDOFF} )); then
       sf_chat_discard_queue
       SF_PRESENT_ACTION=handoff
@@ -307,6 +318,8 @@ sf_chat_answer_permission() {
     SF_PRESENT_PERMISSION_ID=''
     SF_PRESENT_PERMISSION_TOOL=''
     SF_PRESENT_PERMISSION_TEXT=''
+    SF_PRESENT_PERMISSION_LANGUAGE=''
+    SF_PRESENT_PERMISSION_PREVIEW_LENGTH=0
     if sf_chat_recover 'Cannot answer permission.'; then
       SF_PRESENT_STATE=idle
     else
@@ -317,6 +330,8 @@ sf_chat_answer_permission() {
   SF_PRESENT_PERMISSION_ID=''
   SF_PRESENT_PERMISSION_TOOL=''
   SF_PRESENT_PERMISSION_TEXT=''
+  SF_PRESENT_PERMISSION_LANGUAGE=''
+  SF_PRESENT_PERMISSION_PREVIEW_LENGTH=0
   sf_chat_event tool_permission_clear || return 1
   sf_chat_editor_permission restore
   SF_PRESENT_STATE=working
