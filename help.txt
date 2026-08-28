@@ -1,4 +1,5 @@
 Shellfish
+https://github.com/spicyneuron/shellfish
 
 A tiny coding agent written in Zsh, awk, curl, and jq.
 
@@ -24,16 +25,15 @@ Options:
   --new                 Create an idle session; exec only
   --jsonl               Exchange ordered JSONL records on stdin and stdout; exec only
 
-Notes:
-  Sessions retain their resolved runtime. Start a new session to change it.
-  Configuration: $XDG_CONFIG_HOME/shellfish/config.jsonc
-
-Documentation:
-  The Shellfish installation includes docs/CONFIG.md, docs/EXEC.md, and docs/HOOKS.md.
-
 Backend credentials:
   anthropic         ANTHROPIC_API_KEY
   codex             Existing Codex CLI login
   openai            OPENAI_API_KEY
   openai-responses  OPENAI_API_KEY
   openrouter        OPENROUTER_API_KEY
+
+Notes:
+  Run /help to list available chat commands.
+  Sessions retain their resolved runtime. Start a new session to change it.
+  Configuration: $XDG_CONFIG_HOME/shellfish/config.jsonc
+  Check <install_directory>/docs/* for full documentation.
