@@ -3,7 +3,6 @@ setopt no_aliases no_bg_nice no_multios pipe_fail
 
 typeset -g SF_TOOL_ERROR=''
 typeset -g SF_TOOL_STATE_DIR=''
-typeset -g SF_TOOL_RUNTIME_DIR=''
 typeset -g SF_TOOL_ACTIVE_PID=''
 integer -g SF_TOOL_INTERRUPTED=0
 
@@ -105,9 +104,7 @@ sf_tool_result() {
 
 sf_tools_cleanup() {
   [[ -z $SF_TOOL_STATE_DIR ]] || rm -rf -- "$SF_TOOL_STATE_DIR" 2>/dev/null || true
-  [[ -z $SF_TOOL_RUNTIME_DIR ]] || rm -rf -- "$SF_TOOL_RUNTIME_DIR" 2>/dev/null || true
   SF_TOOL_STATE_DIR=''
-  SF_TOOL_RUNTIME_DIR=''
 }
 
 sf_tool_bound_capture() {
@@ -172,7 +169,7 @@ sf_tool_execute() {
   local sandbox_read_paths=$9 sandbox_write_paths=${10}
   local tool_home=${HOME:-$cwd}
   local id name execution_input bypass sandboxed result_type tool_sandbox tool_bypass tool_settings
-  local state_dir runtime_dir captured bounded status_file temp command_path settings diff_field result_path original decoded
+  local state_dir captured bounded status_file temp command_path settings diff_field result_path original decoded
   local -a fields read_paths write_paths
   local -a command locale_env
   integer exit_code tail_status process_status read_count
@@ -282,22 +279,12 @@ sf_tool_execute() {
       fi
     fi
     if (( harness_sandbox )) && [[ $tool_sandbox == true && $bypass != true ]]; then
-      # Bundled policies deny host temp locations such as macOS /var/folders.
-      runtime_dir=$(mktemp -d /tmp/shellfish-tool-runtime.XXXXXX) || {
-        sf_tools_fail 'cannot prepare tool runtime'
-        return
-      }
-      SF_TOOL_RUNTIME_DIR=$runtime_dir
-      temp="$runtime_dir/tmp"
-      mkdir "$temp" || return 1
       settings="$state_dir/fence.jsonc"
       print -r -- "$tool_settings" >"$settings" || return 1
       command=(/usr/bin/env -i HOME="$tool_home" "${locale_env[@]}" PATH="$PATH" TERM="${TERM:-dumb}"
-        TMPDIR="$temp" TMPPREFIX="$temp/zsh"
-        SHELLFISH_MAX_CAPTURE_BYTES="$max_capture"
+        TMPPREFIX=/tmp/fence/zsh SHELLFISH_MAX_CAPTURE_BYTES="$max_capture"
         "$fence" --settings "$settings"
-        --expose-host-path "$settings" --expose-host-path "$command_path"
-        --expose-host-path-rw "$runtime_dir")
+        --expose-host-path "$settings" --expose-host-path "$command_path")
       for decoded in "${read_paths[@]}"; do
         command+=( --expose-host-path "$decoded" )
       done
