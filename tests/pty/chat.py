@@ -34,10 +34,13 @@ def test_zle_multiline_editing():
     try:
         session.wait("─" * 13)
         mark = len(session.output)
-        session.send(b"first\x1b[13;2uquestion\r")
+        session.send(
+            b"abcdefghij\x1b[13;2uabc\x1b[13;2u0123456789"
+            b"\x1b[1;1A\x1b[1;1AX\x1b[1;1B\x1b[1;1BY\r"
+        )
         path, _ = session.wait_session_records(1)
         submitted = path.parent / "submitted"
-        expected = "first\nquestion"
+        expected = "abcdefghXij\nabc\n0123456789Y"
         end = time.monotonic() + 3
         while (
             (not submitted.exists() or submitted.read_text() != expected)
@@ -53,6 +56,25 @@ def test_zle_multiline_editing():
         # keystroke echo rather than rendered output, so it needs that view.
         session.send(b"draftX")
         session.wait_after(mark, "draftX", view=session.typed)
+    finally:
+        session.close()
+
+
+def test_zle_wrapped_line_navigation():
+    session = Session(hooks={"echo": ECHO_HOOK})
+    try:
+        draft = "0123456789" * 7
+        session.send(draft.encode() + b"\x1b[AX\r")
+        path, _ = session.wait_session_records(1)
+        submitted = path.parent / "submitted"
+        expected = draft[:20] + "X" + draft[20:]
+        end = time.monotonic() + 3
+        while (
+            (not submitted.exists() or submitted.read_text() != expected)
+            and time.monotonic() < end
+        ):
+            session.pump()
+        assert submitted.read_text() == expected
     finally:
         session.close()
 
@@ -359,6 +381,7 @@ def main():
     test_tool_result_preview_reports_total_tokens()
     test_chat_end()
     test_zle_multiline_editing()
+    test_zle_wrapped_line_navigation()
     test_sigterm_leaves_terminal_state()
     print("PASS terminal PTY scenarios")
 

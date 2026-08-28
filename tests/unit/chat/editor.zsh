@@ -247,14 +247,25 @@ fc -P
 unset HISTNO
 SF_PRESENT_LAST_PROMPT=''
 
+# Vertical movement follows displayed rows from the two-column prompt.
+COLUMNS=50
+BUFFER=${(l:70::x:)''}
+CURSOR=70
+sf_chat_up
+assert_equal 20 "$CURSOR"
+
 bindkey -e
 sf_chat_bind
-[[ $(bindkey -M sf-present '^P') == *up-line-or-history ]] ||
-  fail 'chat keymap does not bind history navigation'
-[[ $(bindkey -M sf-present $'\e[A') == *up-line-or-history ]] ||
-  fail 'chat keymap does not bind up-arrow history navigation'
+[[ $(bindkey -M sf-present '^P') == *sf_chat_up ]] ||
+  fail 'chat keymap does not bind vertical navigation'
+[[ $(bindkey -M sf-present $'\e[A') == *sf_chat_up ]] ||
+  fail 'chat keymap does not bind up-arrow navigation'
+[[ $(bindkey -M sf-present $'\e[1;1A') == *sf_chat_up ]] ||
+  fail 'chat keymap does not bind parameterized up-arrow navigation'
+[[ $(bindkey -M sf-present $'\e[1;1B') == *sf_chat_down ]] ||
+  fail 'chat keymap does not bind parameterized down-arrow navigation'
 [[ $(bindkey -M sf-permission '^P') == *undefined-key ]] ||
-  fail 'permission keymap permits history navigation'
+  fail 'permission keymap permits vertical navigation'
 [[ $(bindkey -M sf-present '^C') == *sf_chat_interrupt ]] ||
   fail 'chat keymap bypasses the interrupt widget'
 [[ $(bindkey -M sf-permission '^C') == *sf_chat_interrupt ]] ||

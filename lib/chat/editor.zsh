@@ -7,6 +7,7 @@ typeset -gi SF_PRESENT_PERMISSION_CURSOR=0
 typeset -gi SF_PRESENT_HEARTBEAT_TIMEOUT=1 SF_PRESENT_HEARTBEAT_EPOCHS=10
 typeset -gi SF_PRESENT_HEARTBEAT_REMAINING=0
 typeset -gi SF_PRESENT_ACTIVITY_FRAME=0 SF_PRESENT_ACTIVITY_TICKS=0
+typeset -gi SF_PRESENT_VERTICAL_COLUMN=-1
 KEYTIMEOUT=$SF_PRESENT_HEARTBEAT_TIMEOUT
 
 # Nothing wakes ZLE while a turn streams, so the view is driven by a synthetic
@@ -150,6 +151,7 @@ sf_chat_editor_permission() {
 }
 
 TRAPWINCH() {
+  SF_PRESENT_VERTICAL_COLUMN=-1
   zle reset-prompt 2>/dev/null || true
 }
 
@@ -195,6 +197,78 @@ sf_chat_insert_newline() {
   LBUFFER+=$'\n'
 }
 
+# Move by rendered rows, crossing into history only beyond the buffer edges.
+sf_chat_move_vertical() {
+  integer direction=$1 columns=${COLUMNS:-0} row column index width
+  integer current_row current_column target_row target_column best=-1 distance best_distance=-1
+  local character history=up-history
+  local -a rows columns_at
+  (( direction < 0 )) || history=down-history
+  (( columns > 0 )) || { zle ".$history"; return; }
+
+  # The sf-present buffer starts after the two-cell "❯ " prompt.
+  row=$(( 2 / columns ))
+  column=$(( 2 % columns ))
+  rows=( $row )
+  columns_at=( $column )
+  for (( index = 1; index <= ${#BUFFER}; ++index )); do
+    character=$BUFFER[index]
+    if [[ $character == $'\n' ]]; then
+      row=$(( row + 1 ))
+      column=0
+    else
+      sf_chat_cell_width "$character" $column
+      width=$REPLY
+      if (( width && column + width > columns )); then
+        row=$(( row + 1 ))
+        column=0
+      fi
+      column=$(( column + width ))
+      if (( column >= columns )); then
+        row=$(( row + column / columns ))
+        column=$(( column % columns ))
+      fi
+    fi
+    rows+=( $row )
+    columns_at+=( $column )
+  done
+
+  index=$(( CURSOR + 1 ))
+  current_row=$rows[index]
+  current_column=$columns_at[index]
+  target_row=$(( current_row + direction ))
+  if (( target_row < rows[1] || target_row > rows[-1] )); then
+    zle ".$history"
+    SF_PRESENT_VERTICAL_COLUMN=-1
+    return
+  fi
+  if [[ ${LASTWIDGET-} == (sf_chat_up|sf_chat_down) ]] &&
+      (( SF_PRESENT_VERTICAL_COLUMN >= 0 )); then
+    target_column=$SF_PRESENT_VERTICAL_COLUMN
+  else
+    target_column=$current_column
+  fi
+  for (( index = 1; index <= ${#rows}; ++index )); do
+    (( rows[index] == target_row )) || continue
+    distance=$(( columns_at[index] - target_column ))
+    (( distance >= 0 )) || distance=$(( -distance ))
+    if (( best < 0 || distance <= best_distance )); then
+      best=$(( index - 1 ))
+      best_distance=$distance
+    fi
+  done
+  CURSOR=$best
+  SF_PRESENT_VERTICAL_COLUMN=$target_column
+}
+
+sf_chat_up() {
+  sf_chat_move_vertical -1
+}
+
+sf_chat_down() {
+  sf_chat_move_vertical 1
+}
+
 sf_chat_insert() {
   local decision
   if [[ $SF_PRESENT_STATE == permission ]]; then
@@ -233,11 +307,14 @@ sf_chat_bind() {
   SF_PRESENT_PERMISSION_DRAFT=''
   SF_PRESENT_PERMISSION_CURSOR=0
   SF_PRESENT_HEARTBEAT_REMAINING=0
+  SF_PRESENT_VERTICAL_COLUMN=-1
   zle -N sf_chat_exec_ready
   zle -N sf_chat_heartbeat_tick
   zle -N sf_chat_accept
   zle -N sf_chat_insert
   zle -N sf_chat_insert_newline
+  zle -N sf_chat_up
+  zle -N sf_chat_down
   zle -N sf_chat_interrupt
   zle -N zle-line-init sf_chat_line_init
   zle -N zle-line-finish sf_chat_line_finish
@@ -249,12 +326,14 @@ sf_chat_bind() {
   bindkey '^C' sf_chat_interrupt
   bindkey -D sf-present 2>/dev/null || true
   bindkey -N sf-present emacs
-  bindkey -M sf-present '^P' up-line-or-history
-  bindkey -M sf-present '^N' down-line-or-history
-  bindkey -M sf-present $'\e[A' up-line-or-history
-  bindkey -M sf-present $'\e[B' down-line-or-history
-  bindkey -M sf-present $'\eOA' up-line-or-history
-  bindkey -M sf-present $'\eOB' down-line-or-history
+  bindkey -M sf-present '^P' sf_chat_up
+  bindkey -M sf-present '^N' sf_chat_down
+  bindkey -M sf-present $'\e[A' sf_chat_up
+  bindkey -M sf-present $'\e[B' sf_chat_down
+  bindkey -M sf-present $'\e[1;1A' sf_chat_up
+  bindkey -M sf-present $'\e[1;1B' sf_chat_down
+  bindkey -M sf-present $'\eOA' sf_chat_up
+  bindkey -M sf-present $'\eOB' sf_chat_down
   bindkey -M sf-present '^C' sf_chat_interrupt
   bindkey -rpM sf-present $'\x18'
   bindkey -M sf-present $'\x18' sf_chat_heartbeat_tick

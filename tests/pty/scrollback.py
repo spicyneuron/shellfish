@@ -131,7 +131,7 @@ class Terminal:
     def wait_for(self, what, predicate, timeout=10):
         """Poll until `predicate` holds, naming `what` if it never does.
 
-        The timeout stays under tests/run's own (15s by default), which would
+        The timeout stays under tests/run's own (30s by default), which would
         otherwise be free to kill the test part-way through writing its dump.
         """
         end = time.monotonic() + timeout
@@ -360,6 +360,17 @@ def test_history_counter_labels_prompt_divider():
         terminal.wait_for(
             "the unsubmitted draft",
             lambda: "history" not in terminal.frame() and "❯" in terminal.frame(),
+        )
+        draft = "0123456789" * 7
+        session.send(draft.encode() + b"\x1b[A\x1b[A")
+        terminal.wait_for(
+            "history beyond the wrapped draft",
+            lambda: "─ history 1/2 " in terminal.frame() and "❯ two" in terminal.frame(),
+        )
+        session.send(b"\x1b[B")
+        terminal.wait_for(
+            "the restored wrapped draft",
+            lambda: "history" not in terminal.frame() and draft in terminal.frame(),
         )
         print("PASS history: prompt divider counts browsed history")
     finally:
