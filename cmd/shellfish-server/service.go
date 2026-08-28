@@ -434,30 +434,21 @@ func readTranscript(path string) ([]json.RawMessage, error) {
 	if end := bytes.LastIndexByte(body, '\n'); end < 0 {
 		body = nil
 	} else {
-		body = body[:end+1]
+		body = body[:end]
 	}
-	decoder := json.NewDecoder(bytes.NewReader(body))
-	var records []json.RawMessage
-	for {
-		var record json.RawMessage
-		err := decoder.Decode(&record)
-		if errors.Is(err, io.EOF) {
-			break
-		}
-		if err != nil || !jsonObject(record) {
+	if len(body) == 0 {
+		return nil, errors.New("session transcript is empty")
+	}
+	lines := bytes.Split(body, []byte{'\n'})
+	records := make([]json.RawMessage, 0, len(lines))
+	for _, line := range lines {
+		record := bytes.Trim(line, " \t\r")
+		if len(record) <= 1 || record[0] != '{' || !json.Valid(record) {
 			return nil, errors.New("invalid session transcript")
 		}
 		records = append(records, bytes.Clone(record))
 	}
-	if len(records) == 0 {
-		return nil, errors.New("session transcript is empty")
-	}
 	return records, nil
-}
-
-func jsonObject(value []byte) bool {
-	value = bytes.TrimSpace(value)
-	return len(value) > 1 && value[0] == '{' && json.Valid(value)
 }
 
 // compactObject bounds one JSON object and reduces it to the single line an SSE

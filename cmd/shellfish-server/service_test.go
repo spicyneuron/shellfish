@@ -155,6 +155,32 @@ func waitFor(path string) string {
 	return "while [ ! -f '" + path + "' ]; do sleep 0.02; done\n"
 }
 
+func TestReadTranscriptRequiresJSONLines(t *testing.T) {
+	header := strings.TrimSuffix(headerLine(t), "\n")
+	path := filepath.Join(t.TempDir(), "session.jsonl")
+	read := func(content string) ([]json.RawMessage, error) {
+		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return readTranscript(path)
+	}
+	records, err := read(header + "\n" + userRecord + "\n" + `{"type":`)
+	if err != nil || len(records) != 2 {
+		t.Fatalf("complete records = %d, error = %v", len(records), err)
+	}
+	invalid := []string{
+		header + "\n \n" + userRecord + "\n",
+		header + "\n{\n}\n",
+		header + "\n[]\n",
+		"\u00a0" + header + "\n",
+	}
+	for _, content := range invalid {
+		if _, err := read(content); err == nil {
+			t.Fatalf("readTranscript accepted %q", content)
+		}
+	}
+}
+
 func TestUnauthorized(t *testing.T) {
 	base := newTestServer(t, newSession(t, ""), "")
 	for _, path := range []string{"/session", "/turn", "/cancel", "/permission"} {
