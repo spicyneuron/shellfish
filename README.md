@@ -1,3 +1,6 @@
+> [!NOTE]
+> This project is early days, and things may be a bit crabby. Stay tuned!
+
 ```
 ╭─╮╷ ╷╭─╴╷  ╷  ╭─╴╷╭─╮╷ ╷   ╭───────
 ╰─╮├─┤├╴ │  │  ├╴ │╰─╮├─┤   ╰𝆒 ◕ )]]]]]╮
