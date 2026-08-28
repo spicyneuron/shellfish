@@ -1,5 +1,6 @@
-# Bounded exec and JSONL
-`shellfish exec` runs one bounded agent turn. A turn begins with one user message and may contain multiple provider requests, tool calls, permission decisions, and stop-hook continuations.
+# Single-turn exec and JSONL
+
+`shellfish exec` runs a single agent turn. A turn begins with one user message and may contain multiple provider requests, tool calls, permission decisions, and stop-hook continuations.
 
 Ordinary exec accepts prompt text and prints the final assistant text:
 
@@ -16,13 +17,14 @@ printf '%s\n' '{"type":"message","role":"user","content":[{"type":"text","text":
 ```
 
 ## Input
+
 The first line on stdin must be exactly one canonical user message:
 
 ```json
 {"type":"message","role":"user","content":[{"type":"text","text":"Review these changes"}]}
 ```
 
-The object has exactly `type`, `role`, and `content`; `content` contains exactly one text block, and its text may not contain NUL. A prompt argument cannot be combined with `--jsonl`.
+The object has exactly `type`, `role`, and `content`. `content` contains exactly one text block, and its text may not contain NUL. A prompt argument cannot be combined with `--jsonl`.
 
 Stdin remains open for permission replies. When exec emits a permission request, a client may write one matching response line:
 
@@ -33,6 +35,7 @@ Stdin remains open for permission replies. When exec emits a permission request,
 `decision` is `approve` or `deny`, and `id` must match the pending request. A client must preserve line framing and send no unrelated input. If no interactive client or permission hook decides a sandbox bypass, exec denies it.
 
 ## Output
+
 Stdout contains one compact JSON object per line in source order. Objects fall into two classes:
 
 - Types without a leading underscore are durable session records. Exec appends each record to the session before emitting it.
@@ -58,7 +61,7 @@ Transient events currently include:
 | `_handoff` | A hook asks a capable client to run `argv` after exec exits cleanly. |
 | `_exec_error` | Exec cannot start or complete the operation. |
 
-Text and reasoning deltas have a zero-based `seq` shared by both types and restarted for each provider response. They are previews only; consumers should render committed assistant and reasoning content from the later durable assistant record. Clients should treat unknown transient types as unsupported protocol input and recover from the durable session rather than guessing their meaning.
+Text and reasoning deltas have a zero-based `seq` shared by both types and restarted for each provider response. They are previews only. Consumers should render committed assistant and reasoning content from the later durable assistant record. Clients should treat unknown transient types as unsupported protocol input and recover from the durable session rather than guessing their meaning.
 
 A permission request has this shape:
 
@@ -72,8 +75,9 @@ A permission request has this shape:
 ```
 
 ## Completion and recovery
-A successful process exit means the bounded operation completed cleanly; this includes a prompt hook that deliberately blocks submission or requests a handoff. Tool commands may return nonzero results without making exec itself fail.
+
+A successful process exit means the single-turn operation completed cleanly. This includes a prompt hook that deliberately blocks submission or requests a handoff. Tool commands may return nonzero results without making exec itself fail.
 
 A nonzero exec exit means the operation failed or was interrupted. Exec emits `_exec_error` when JSONL output is available. After malformed output, disconnection, cancellation, or process failure, discard uncertain live state and replay the durable session.
 
-Do not write presentation or lifecycle records into a session. Session JSONL is append-only and owned by Shellfish; custom clients submit turns through exec and use the transcript only for replay and recovery.
+Do not write presentation or lifecycle records into a session. Session JSONL is append-only and owned by Shellfish. Custom clients submit turns through exec and use the transcript only for replay and recovery.

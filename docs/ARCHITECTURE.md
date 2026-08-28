@@ -1,0 +1,36 @@
+# Architecture
+
+Shellfish is the brainchild of my grudge against bloated modern software, plus a large chunk of expiring AI subscription tokens. It leans into simplicity as a constraint: shell scripts, processes, and text. Just as Ken Thompson intended.
+
+## The transcript is the state
+
+A session is an append-only JSONL file and the authoritative state of the agent. Records in that file are durable. Provider deltas, permission prompts, hook display output, and other transient events are not.
+
+Clients attach to a session and consume the same event stream. Durable records provide history they can replay, while transient events provide live interaction around it. A client can use either without becoming another owner of the state.
+
+The session header consolidates the resolved settings required to run the agent: backend, harness, model request, tools, hooks, limits, sandbox policy. A session carries the runtime configuration needed to continue it instead of being reinterpreted through the current profile on every turn. Credentials and presentation settings remain external.
+
+## A turn is the unit of execution
+
+A turn is one transition of the agent state machine. It begins with a user message, then repeats a small loop:
+
+1. Turn the durable transcript into a provider request.
+2. Append the assistant response.
+3. If the response contains tool calls, run them and append their results.
+4. Send another provider request until there are no more tool calls.
+
+One `shellfish exec` process owns the entire transition, including the session lock and cleanup. There is no resident agent process and no ownership to coordinate across requests or tools.
+
+## Clients invoke turns
+
+Terminal chat, `shellfish-server`, and any other integrations all use the same boundary. A client submits one user message to `shellfish exec`, consumes its JSONL, and answers permission requests over stdin when it can. The process exits when the turn is complete.
+
+Clients do not embed the agent loop or maintain their own copy of session state. They invoke turns and present the results.
+
+## Harnesses bind scripts to the lifecycle
+
+The turn loop is deliberately generic. A harness combines system prompts, tools, limits, sandbox policy, and shell scripts bound to lifecycle hooks. The default coding behavior is assembled this way rather than built into `shellfish exec`.
+
+Project discovery, slash commands, permission policy, tool review, and stop-time continuation are all harness behavior. The core still owns event ordering, validation, locking, persistence, recovery, and cleanup. Hooks can influence a turn at defined points, but they do not redefine the state machine.
+
+Tools may run inside the configured sandbox. Hooks and backend adapters are trusted programs that run with the user's permissions. The scoped API key is passed only to the backend adapter.

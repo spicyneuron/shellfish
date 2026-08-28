@@ -38,7 +38,7 @@
   },
 
   // Harnesses wrap the shared turn loop with context, capabilities, sandboxing,
-  // and limits. Files resolve
+  // and limits.
   "harnesses": {
     "default": {
       // Files concatenated into the system prompt.

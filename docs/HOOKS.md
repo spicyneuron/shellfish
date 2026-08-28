@@ -1,6 +1,8 @@
 # Hooks
 
-Hooks are ordered executables attached to named lifecycle events. They supply policy and default behavior — startup context, prompt commands, permission policy, stop continuations — without changing the core agent loop. A hook is just a program run with a small, fixed contract: validated data in, validated data out.
+Hooks are ordered executables attached to named lifecycle events. They supply policy and default behavior (startup context, prompt commands, permission policy, stop continuations) without changing the core agent loop. A hook is just a program run with a small, fixed process contract.
+
+The lifecycle events may look familiar to users of Claude Code and Codex, but compatibility is not a goal. Shellfish hooks are designed around shell primitives: argv and stdin for input, stdout and stderr for output, fd 3 for structured control, and exit status for flow control. Any overlap is incidental and is not guaranteed.
 
 Built-in hooks and your own hooks use the same contract. The bundled hooks in `default/hooks/` are ordinary scripts and are the best reference.
 
@@ -30,7 +32,7 @@ repeat:
 
 Exec owns hooks. It runs `session_start` during lock-free session preparation and creates the durable session after those hooks succeed. It owns each complete locked turn through `user_prompt_submit`, provider requests, tools, permissions, cancellation, and recovery.
 
-Hooks in one creation or turn operation share an ephemeral coordination directory (see `SHELLFISH_STATE_DIR` below). A hook runs synchronously; if the operation is cancelled, in-flight hook work is terminated with it. Hooks must finish or terminate their own subprocesses before exiting — daemonizing is unsupported.
+Hooks in one creation or turn operation share an ephemeral coordination directory (see `SHELLFISH_STATE_DIR` below). A hook runs synchronously. If the operation is cancelled, in-flight hook work is terminated with it. Hooks must finish or terminate their own subprocesses before exiting. Daemonizing is unsupported.
 
 ## Configuring hooks
 
@@ -83,7 +85,7 @@ Turn-scoped hooks (`user_prompt_submit`, `permission_request`, `pre_tool_use`, `
 
 `$1` is always the event name. Remaining argv and stdin are event-specific (see [Events](#events)).
 
-`SHELLFISH_STATE_DIR` is private to one creation or turn operation and shared by its hooks. It is removed on teardown; do not store anything durable there. Use it to coordinate across hooks within a turn — for example, a `post_tool_use` hook marks a turn dirty and a `stop` hook consumes the marker.
+`SHELLFISH_STATE_DIR` is private to one creation or turn operation and shared by its hooks. It is removed on teardown. Do not store anything durable there. Use it to coordinate across hooks within a turn. For example, a `post_tool_use` hook marks a turn dirty and a `stop` hook consumes the marker.
 
 `PLUGIN_DATA` persists across invocations under `${XDG_STATE_HOME:-$HOME/.local/state}/shellfish/hooks/<event>/<hook-name>`. A bundled hook and a user hook shadowing it share persistent data when they have the same event and basename. Hooks should use `PLUGIN_DATA` for durable hook-owned data and `SHELLFISH_STATE_DIR` only for coordination within the current operation.
 
@@ -97,7 +99,7 @@ A hook communicates through three channels. They are captured separately, but th
 | stderr | Ephemeral display. Shown to the user, never committed, never sent to the model. |
 | fd 3 | One JSON control object on events that accept it. |
 
-fd 3 must contain exactly one JSON object. It is captured to a private file and byte-counted before decoding. The dispatcher validates the encoding; the event adapter validates the object's fields. Model-facing context remains raw stdout, so ordinary hooks can still use `cat` and pipelines without JSON-encoding their payloads.
+fd 3 must contain exactly one JSON object. It is captured to a private file and byte-counted before decoding. The dispatcher validates the encoding, and the event adapter validates the object's fields. Model-facing context remains raw stdout, so ordinary hooks can still use `cat` and pipelines without JSON-encoding their payloads.
 
 ### Exit statuses
 
@@ -117,7 +119,7 @@ Rules the dispatcher enforces for every event:
 - Successful stdout accumulates across the chain and becomes usable only after the whole chain succeeds. A later failure discards all candidate output.
 - When a hook exits with an unsupported status, its captured stderr is included in the failure message.
 
-Inner commands can return any status. `jq` exiting 1 would otherwise fail the operation, so translate explicitly — the bundled hooks always end with an explicit `exit 0`, `exit 10`, or `exit 11`.
+Inner commands can return any status. `jq` exiting 1 would otherwise fail the operation, so translate explicitly. The bundled hooks always end with an explicit `exit 0`, `exit 10`, or `exit 11`.
 
 ## Events
 
@@ -142,18 +144,18 @@ The request builder folds each run into an escaped XML block. The event is the e
 </user_prompt_submit>
 ```
 
-Trailing context — typically `stop` feedback — becomes a synthetic trailing user message so the transcript does not misattribute it to the human.
+Trailing context, typically `stop` feedback, becomes a synthetic trailing user message so the transcript does not misattribute it to the human.
 
 ### `session_start`
 
-Runs once during lock-free session preparation. It does not run when an existing session is resumed or exec restarts. The header and configured system record are prepared in memory, and hook input is constructed from that state and its frozen runtime. The session path does not exist until the complete initial prefix is written after all hooks succeed. stdin is empty and `$1` is `session_start`; there are no further arguments. The hook does not receive `SHELLFISH_TURN_ID` or credentials; the API key is scoped to the backend adapter only.
+Runs once during lock-free session preparation. It does not run when an existing session is resumed or exec restarts. The header and configured system record are prepared in memory, and hook input is constructed from that state and its frozen runtime. The session path does not exist until the complete initial prefix is written after all hooks succeed. stdin is empty and `$1` is `session_start`. There are no further arguments. The hook does not receive `SHELLFISH_TURN_ID` or credentials. The API key is scoped to the backend adapter only.
 
 - **stdout** becomes durable `session_start` context in the initial session prefix. Each hook's nonempty stdout is a separately attributed record.
 - **stderr** is shown and discarded.
 - **fd 3** is invalid; this event accepts no control.
 - **Default action** is finishing creation. Exit 10 or 11 is unsupported and fails exec entry without committing stdout.
 
-`add_environment` prints date, platform, working directory, a directory tree, and git state to stdout. `add_command_availability` reports the host Zsh version and the first available command and version in common command groups; missing commands and unsupported version flags are omitted. `add_project_instructions` prints `AGENTS.md` from the session working directory, or `CLAUDE.md` when `AGENTS.md` is absent. Creation-only execution prevents this durable context from being repeated on resume.
+`add_environment` prints date, platform, working directory, a directory tree, and git state to stdout. `add_command_availability` reports the host Zsh version and the first available command and version in common command groups. Missing commands and unsupported version flags are omitted. `add_project_instructions` prints `AGENTS.md` from the session working directory, or `CLAUDE.md` when `AGENTS.md` is absent. Creation-only execution prevents this durable context from being repeated on resume.
 
 If a creation hook fails or is interrupted by a handled signal, Shellfish reports the failure and does not create the session file. Hooks that perform external writes must provide their own idempotency if creation is retried.
 
@@ -169,7 +171,7 @@ exit 0
 
 ### `user_prompt_submit`
 
-Runs in exec before the ordinary user record is committed, with the exact submitted prompt on stdin, `$1` = `user_prompt_submit`, and the shared exports including the reserved `SHELLFISH_TURN_ID`. If submission proceeds, later turn hooks reuse that turn ID; if submission is blocked, Shellfish discards it. Hooks can use this event to implement prompt commands.
+Runs in exec before the ordinary user record is committed, with the exact submitted prompt on stdin, `$1` = `user_prompt_submit`, and the shared exports including the reserved `SHELLFISH_TURN_ID`. If submission proceeds, later turn hooks reuse that turn ID. If submission is blocked, Shellfish discards it. Hooks can use this event to implement prompt commands.
 
 - **stdout** becomes durable `user_prompt_submit` context, pending before the next committed user message.
 - **stderr** is shown and discarded.
@@ -188,7 +190,7 @@ The supported statuses are:
   ```
 - **Exit 11** — skip submission and hand control to a capable client. fd 3 must request `{"action":"handoff","argv":[...]}` with a complete, nonempty command array including the executable as `argv[0]`.
 
-Only exit 11 can request handoff. The hook only requests it; a capable client executes the command after exec completes cleanly. argv strings must not contain NUL bytes.
+Only exit 11 can request handoff. The hook only requests it. A capable client executes the command after exec completes cleanly. argv strings must not contain NUL bytes.
 
 A hook requesting a session switch writes a JSON action to fd 3:
 
@@ -200,7 +202,7 @@ exit 11
 
 ### `permission_request`
 
-Runs at exec's sandbox-bypass decision boundary, only when a tool requests a bypass it is allowed to ask for. It is separate from the `pre_tool_use` policy gate. `$1` is `permission_request`; stdin is a canonical tool request envelope, and the shared exports include the accepted turn's `SHELLFISH_TURN_ID`:
+Runs at exec's sandbox-bypass decision boundary, only when a tool requests a bypass it is allowed to ask for. It is separate from the `pre_tool_use` policy gate. `$1` is `permission_request`. stdin is a canonical tool request envelope, and the shared exports include the accepted turn's `SHELLFISH_TURN_ID`:
 
 ```json
 {
@@ -211,7 +213,7 @@ Runs at exec's sandbox-bypass decision boundary, only when a tool requests a byp
 }
 ```
 
-- **stdout** is captured but ignored — it is not committed.
+- **stdout** is captured but ignored. It is not committed.
 - **stderr** is shown and discarded.
 - **fd 3** is `{"action":"allow"}` or `{"action":"deny","reason":"..."}`. The reason must be nonempty and may not contain a NUL byte. Valid only with exit 11.
 - **Default action** (exit 0, default still enabled) is to defer: exec asks its interactive client, or denies headlessly if no reply is available.
@@ -237,18 +239,18 @@ exit 11
 
 ### `pre_tool_use`
 
-Runs immediately before a tool executes, with exec holding the session lock. `$1` is `pre_tool_use`; stdin is the same canonical tool request envelope used by `permission_request`.
+Runs immediately before a tool executes, with exec holding the session lock. `$1` is `pre_tool_use`. stdin is the same canonical tool request envelope used by `permission_request`.
 
 - **stdout** must be empty on exit 0. On exit 10 or 11, nonempty stdout is denial feedback for the model. Shellfish joins feedback from denying hooks with newlines in configured order and uses it as the denied `tool_result` content. When no denying hook writes feedback, the result retains the generic denial text naming the first denying hook. Stdout never rewrites tool input.
 - **stderr** is shown and discarded.
 - **fd 3** is invalid.
-- **Default action** is executing the tool. Exit 10 denies the call and continues the hook chain; exit 11 denies the call and halts the chain. Shellfish commits an ordinary `tool_result` with exit code 126, then proceeds to later tool calls in provider order. This policy gate cannot approve sandbox bypass; `permission_request` remains a separate boundary.
+- **Default action** is executing the tool. Exit 10 denies the call and continues the hook chain. Exit 11 denies the call and halts the chain. Shellfish commits an ordinary `tool_result` with exit code 126, then proceeds to later tool calls in provider order. This policy gate cannot approve sandbox bypass. `permission_request` remains a separate boundary.
 
 Coordinate state beyond denial feedback through `SHELLFISH_STATE_DIR`. For example, mark a file edit here and consume the marker in a `stop` hook.
 
 ### `post_tool_use`
 
-Runs after the canonical tool result is durably committed. `$1` is `post_tool_use`; stdin is a canonical tool response envelope containing the original input and the committed result:
+Runs after the canonical tool result is durably committed. `$1` is `post_tool_use`. stdin is a canonical tool response envelope containing the original input and the committed result:
 
 ```json
 {
@@ -268,19 +270,19 @@ Runs after the canonical tool result is durably committed. `$1` is `post_tool_us
 - **fd 3** is invalid.
 - **Default action** is continuing the tool loop. There is no coherent skipped action, so exit 10 or 11 **fails the event** (it does not skip anything).
 
-A nonzero tool exit is a normal canonical result, not a hook failure; this hook still runs. Hook failure is an orchestration failure and triggers ordinary turn recovery. Use `SHELLFISH_STATE_DIR` or `PLUGIN_DATA` to coordinate observations with `stop`; `post_tool_use` cannot replace results or add model context.
+A nonzero tool exit is a normal canonical result, not a hook failure, so this hook still runs. Hook failure is an orchestration failure and triggers ordinary turn recovery. Use `SHELLFISH_STATE_DIR` or `PLUGIN_DATA` to coordinate observations with `stop`. `post_tool_use` cannot replace results or add model context.
 
 ### `stop`
 
 Runs after the completed assistant record is committed, with exec holding the lock. `$1` is `stop`, `$2` is the one-based stop-attempt count for the current turn, and stdin is the last assistant message's text blocks concatenated in content order. Non-text blocks are omitted.
 
-- **stdout** is continuation feedback — but only when completion is skipped. Exit-0 stdout is **discarded**: permitting completion must not stage feedback.
+- **stdout** is continuation feedback, but only when completion is skipped. Exit-0 stdout is **discarded**: permitting completion must not stage feedback.
 - **stderr** is shown and discarded.
 - **fd 3** is invalid.
 - **Default action** (exit 0) is finishing the turn.
-- **Skipped** (exit 10 or 11) requires nonempty stdout. That stdout is committed as `stop`-tagged context and forces another provider request within the same turn. Repeated skipped completion is bounded by `harness.max_requests_per_turn`; hooks can use `$2` to avoid requesting accidental continuation loops.
+- **Skipped** (exit 10 or 11) requires nonempty stdout. That stdout is committed as `stop`-tagged context and forces another provider request within the same turn. Repeated skipped completion is bounded by `harness.max_requests_per_turn`. Hooks can use `$2` to avoid requesting accidental continuation loops.
 
-Exit 10 runs later stop hooks; exit 11 halts the chain. Both commit feedback and continue. Cancellation stops future work without undoing committed records.
+Exit 10 runs later stop hooks. Exit 11 halts the chain. Both commit feedback and continue. Cancellation stops future work without undoing committed records.
 
 ```sh
 #!/bin/sh
@@ -294,12 +296,12 @@ exit 10
 
 ## Guarantees and limits
 
-- The session JSONL is append-only and authoritative. Hooks are trusted user-provided programs; durable hook output must travel through stdout rather than direct transcript mutation.
-- Hook output is untrusted. stdout is escaped before it reaches the model; it cannot forge tags or inject provider roles.
-- Dispatch is sequential and preserves configured order. A failed chain does not commit partial output — candidate context is usable only after the whole chain succeeds.
+- The session JSONL is append-only and authoritative. Hooks are trusted user-provided programs, and durable hook output must travel through stdout rather than direct transcript mutation.
+- Hook output is untrusted. stdout is escaped before it reaches the model. It cannot forge tags or inject provider roles.
+- Dispatch is sequential and preserves configured order. A failed chain does not commit partial output. Candidate context is usable only after the whole chain succeeds.
 - Captures are private, bounded, and cleaned on every path.
-- Hooks have no independent timeout. They must terminate themselves; cancelling the enclosing operation terminates the active hook.
-- Hooks inherit the process environment, but Shellfish removes built-in provider credentials and the configured backend credential before invocation. Exec scopes that credential to the backend as `SHELLFISH_API_KEY`; the variables documented above are the Shellfish-specific hook guarantees.
+- Hooks have no independent timeout. They must terminate themselves. Cancelling the enclosing operation terminates the active hook.
+- Hooks inherit the process environment, but Shellfish removes built-in provider credentials and the configured backend credential before invocation. Exec scopes that credential to the backend as `SHELLFISH_API_KEY`. The variables documented above are the Shellfish-specific hook guarantees.
 - `PLUGIN_DATA` may be shared by concurrent sessions or processes. Hooks must coordinate access when their persistent data requires it.
-- Hooks are not transformation middleware. Tool-use hooks cannot modify tool input or result content; they observe and gate. Coordinate policy through `SHELLFISH_STATE_DIR`, not by overloading stdout.
-- Adding an event is an adapter change, not a dispatcher change. The dispatcher implements the status table, channel limits, and JSON framing; each event owns its control fields, default action, and the consequence of skipping it.
+- Hooks are not transformation middleware. Tool-use hooks cannot modify tool input or result content. They observe and gate. Coordinate policy through `SHELLFISH_STATE_DIR`, not by overloading stdout.
+- Adding an event is an adapter change, not a dispatcher change. The dispatcher implements the status table, channel limits, and JSON framing. Each event owns its control fields, default action, and the consequence of skipping it.

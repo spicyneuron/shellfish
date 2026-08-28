@@ -1,12 +1,8 @@
 # Configuration
 
-Shellfish reads JSONC from `$XDG_CONFIG_HOME/shellfish/config.jsonc`, or `~/.config/shellfish/config.jsonc` when `XDG_CONFIG_HOME` is unset. User configuration is merged over the bundled [`default/config.jsonc`](../default/config.jsonc); objects merge recursively and arrays replace their defaults.
+Shellfish reads JSONC from `$XDG_CONFIG_HOME/shellfish/config.jsonc`, or `~/.config/shellfish/config.jsonc` when `XDG_CONFIG_HOME` is unset. User configuration is merged over the bundled [`default/config.jsonc`](../default/config.jsonc). Objects merge recursively and arrays replace their defaults.
 
-Use [`config.template.jsonc`](../config.template.jsonc) as a starting point, [`config.schema.json`](../config.schema.json) for accepted fields, and this command to inspect what a new session would use:
-
-```sh
-shellfish config
-```
+Use [`config.template.jsonc`](../config.template.jsonc) as a starting point, and `shellfish config` to inspect what a new session would use.
 
 ## Choose a backend and model
 

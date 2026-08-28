@@ -6,11 +6,11 @@
 
 A tiny coding agent written in a few thousand lines of `zsh`, `awk`, `curl`, and `jq`.
 
-Absurdly extensible (shell scripts!) with a familiar Claude Code and Codex TUI (distillation attack!), yet none of the bloat, telemetry, or supply chain surface area.
+Absurdly extensible (shell scripts!) with a familiar Claude Code and Codex TUI (distillation attack!). No bloat, telemetry, or sprawling supply chain surface area.
 
 Under-the-hood, an AI agent is just a state machine, an append-only log, an HTTP client, and some tools. It should not need 1000+ npm dependencies, half a million lines of code, or, God-forbid, an Electron app.
 
-This entire codebase fits comfortably within the context window of any modern LLM. It's small enough to run anywhere, and flexible enough to mold into any shape you need.
+This entire codebase fits comfortably within the context window of any modern LLM. It's small enough to run anywhere and flexible enough to adapt to any workflow.
 
 ## Core promise
 
@@ -21,22 +21,28 @@ This entire codebase fits comfortably within the context window of any modern LL
 ## Default harness
 
 ### Tools
+
 - `read_file`, `edit_file`, `write_file` for simple text operations.
 - `shell` to run arbitrary commands within a `fence` sandbox.
 
-### `session_start` hook
+### `session_start` hooks
+
 - `add_environment` to inject host, project tree, and Git context.
 - `add_command_availability` to report available shell command versions.
 - `add_project_instructions` to inject the project's `AGENTS.md` or, if absent, `CLAUDE.md`.
 
-### `user_prompt_submit` hook
+### `user_prompt_submit` hooks
+
+- `/help` to list available commands.
 - `/new` to create a new session in the same project.
 - `/fork [N]` to copy and trim the current transcript into a new session.
 - `/refresh` to rebuild the terminal presentation from the durable session.
+- `/verbose` to rebuild the presentation without preview limits.
+- `/resume` to switch to another session in the same project.
 - `/server` to hand the current session to `shellfish-server`.
 - `! command` to run a shell command and inject its input and output as context.
 
-Custom harnesses can attach additional policy or context scripts to any lifecycle event described in [`docs/HOOKS.md`](docs/HOOKS.md).
+Custom harnesses can attach additional policy or context scripts to any lifecycle event.
 
 ## Install
 
@@ -51,7 +57,7 @@ ln -s "$HOME/.local/share/shellfish/bin/shellfish" "$HOME/.local/bin/shellfish"
 
 ## Quick start
 
-Shellfish has three modes:
+Shellfish has two agent modes and an optional server:
 
 - `shellfish` opens the interactive terminal agent.
 - `shellfish exec` runs exactly one turn and prints the results.
@@ -89,11 +95,13 @@ The `openai` backend also supports compatible services by setting `endpoint` in 
 
 ## Documentation
 
-- [`docs/CONFIG.md`](docs/CONFIG.md) — configure profiles, backends, harnesses, components, and sandbox grants.
-- [`docs/EXEC.md`](docs/EXEC.md) — integrate with the bounded-exec JSONL interface.
-- [`docs/HOOKS.md`](docs/HOOKS.md) — write lifecycle hooks.
-- [`docs/SERVER.md`](docs/SERVER.md) — run or integrate with the browser server.
-- [`docs/CHAT.md`](docs/CHAT.md) — understand the interactive chat architecture.
+- [`docs/CONFIG.md`](docs/CONFIG.md): Configure profiles, backends, harnesses, components, and sandbox grants.
+- [`docs/CHAT.md`](docs/CHAT.md): Use interactive chat, slash commands, and keybindings.
+- [`docs/HOOKS.md`](docs/HOOKS.md): Write custom lifecycle hooks.
+- [`docs/EXEC.md`](docs/EXEC.md): Integrate with the single-turn JSONL interface.
+- [`docs/SERVER.md`](docs/SERVER.md): Serve a session for remote access.
+- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md): Design intent and opinionated boundaries.
+- [`docs/CURSED.md`](docs/CURSED.md): Hard-won lessons and workarounds.
 
 ## Configure
 
@@ -112,8 +120,6 @@ Sessions are append-only JSONL transcripts stored beneath `${XDG_STATE_HOME:-$HO
 
 Use `--continue` to open the newest session for the current directory, `--resume` to pick one interactively, or `--session PATH` to name one directly. `shellfish exec --new` creates an idle session and prints its path without running a turn.
 
-See [`docs/EXEC.md`](docs/EXEC.md) for the bounded-exec JSONL interface used by chat and the server.
-
 ## Safety
 
 Built-in `shell`, `read_file`, `edit_file`, and `write_file` tools run in `fence` by default. Their policies limit project access, block network access, and deny common secret files. Additional paths configured with `sandbox_read_paths` and `sandbox_write_paths` retain the tool's other restrictions. An interactive tool may request a one-time bypass when allowed by its manifest; headless runs deny requests that policy hooks do not decide.
@@ -125,7 +131,7 @@ Hooks, backend adapters, and unsandboxed tools are trusted executables and run w
 To install the optional server binary (requires Go):
 
 ```sh
-go install github.com/spicyneuron/shellfish/server@latest
+go install github.com/spicyneuron/shellfish/cmd/shellfish-server@latest
 ```
 
 ## Develop
@@ -133,6 +139,7 @@ go install github.com/spicyneuron/shellfish/server@latest
 ```sh
 ./tests/run unit     # shell unit tests
 ./tests/run pty      # terminal integration tests
+./tests/run server   # browser and Go server tests
 ./tests/run metrics  # performance and source size reports
 ./tests/run unit/session/main.zsh unit/runtime/main.zsh
 ```
