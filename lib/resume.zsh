@@ -216,10 +216,8 @@ sf_resume_ignore() {
 # Runs resume in its own editor because ZLE widgets cannot reenter ZLE.
 # Returns 130 on cancellation; otherwise places the selected path in REPLY.
 sf_resume_run() {
-  local page_size=$1 choice='' saved_tty=''
-  shift
+  local choice='' saved_tty=''
   SF_RESUME_CANCELLED=0
-  SF_RESUME_LIMIT=$page_size
   SF_RESUME_ALL_PATHS=( "$@" )
   SF_RESUME_PAGE=0
   SF_RESUME_ERROR=''

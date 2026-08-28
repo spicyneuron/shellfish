@@ -140,7 +140,6 @@ sf_chat_decoded() {
           sf_chat_event reasoning_tokens "$SF_PRESENT_REASONING_TOKENS" || return 1
         sf_chat_event assistant_commit || return 1
         ;;
-      user_commit) ;;
       turn_usage)
         SF_PRESENT_REASONING_TOKENS=$second
         SF_PRESENT_FOOTER="${SF_PRESENT_IDENTITY} · $first"

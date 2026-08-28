@@ -376,7 +376,7 @@ sf_main() {
       sf_die "$SF_SESSION_ERROR"
       return 1
     }
-    sf_resume_run "$SF_RESUME_LIMIT" "${SF_SESSION_MATCHES[@]}" || {
+    sf_resume_run "${SF_SESSION_MATCHES[@]}" || {
       resume_status=$?
       (( resume_status == 130 )) || sf_die "$SF_RESUME_ERROR"
       return $resume_status

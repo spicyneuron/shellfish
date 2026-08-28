@@ -29,11 +29,6 @@
       "minLength": 1,
       "pattern": "^[^\u0000-\u001f\u007f-]+$"
     },
-    "nonempty_control_free_string": {
-      "type": "string",
-      "minLength": 1,
-      "pattern": "^[^\u0000-\u001f\u007f-]+$"
-    },
     "positive_integer": {
       "type": "integer",
       "minimum": 1,

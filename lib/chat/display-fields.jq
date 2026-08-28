@@ -31,8 +31,7 @@ def durable_display_fields($replay; $tools):
   if .type == "system" and $replay then
     ["system", .content, "", "", "", ""]
   elif canonical_user_message then
-    if $replay then ["user", .content[0].text, "", "", "", ""]
-    else ["user_commit", "", "", "", "", ""] end
+    if $replay then ["user", .content[0].text, "", "", "", ""] else empty end
   elif canonical_assistant_message then
     (if $replay then
       ([(.content[] | select(.type == "reasoning") | .text)] | join("\n")) as $reasoning |

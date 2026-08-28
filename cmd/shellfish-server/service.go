@@ -463,14 +463,18 @@ func jsonObject(value []byte) bool {
 // compactObject bounds one JSON object and reduces it to the single line an SSE
 // frame or a child's stdin can carry.
 func compactObject(data []byte, limit int) (json.RawMessage, bool) {
-	if len(data) > limit || !jsonObject(data) {
+	if len(data) > limit {
 		return nil, false
 	}
 	var compact bytes.Buffer
 	if err := json.Compact(&compact, data); err != nil {
 		return nil, false
 	}
-	return compact.Bytes(), true
+	value := compact.Bytes()
+	if len(value) <= 1 || value[0] != '{' {
+		return nil, false
+	}
+	return value, true
 }
 
 func sseFrame(frame json.RawMessage) []byte {

@@ -500,7 +500,6 @@ sf_chat_markdown_highlight() {
       elif (( starts_line )) &&
           [[ $line =~ '^( {0,3})(#{1,6}|>|[-*+]|[0-9]{1,9}[.)])([[:space:]]+)' ]]; then
         match_end=$MEND
-        sf_chat_highlight_span $(( base + ${#match[1]} )) $(( base + match_end )) markup
         if [[ $match[2] == \#* ]]; then
           heading=1
           boundary=heading
@@ -526,12 +525,8 @@ sf_chat_markdown_highlight() {
           if [[ $suffix == *"$delimiter"* ]]; then
             rest=${suffix#*"$delimiter"}
             content=$(( ${#line} - ${#rest} - ${#delimiter} + 1 ))
-            sf_chat_highlight_span $(( base + cursor - 1 )) \
-              $(( base + inline_end - 1 )) markup
             sf_chat_highlight_span $(( base + inline_end - 1 )) \
               $(( base + content - 1 )) code
-            sf_chat_highlight_span $(( base + content - 1 )) \
-              $(( base + content + ${#delimiter} - 1 )) markup
             cursor=$(( content + ${#delimiter} ))
             continue
           fi
@@ -565,13 +560,9 @@ sf_chat_markdown_highlight() {
           if [[ $suffix == *"$delimiter"* ]]; then
             rest=${suffix#*"$delimiter"}
             content=$(( ${#line} - ${#rest} - count + 1 ))
-            sf_chat_highlight_span $(( base + cursor - 1 )) \
-              $(( base + cursor + count - 1 )) markup
             (( count == 2 )) && kind=strong || kind=em
             sf_chat_highlight_span $(( base + cursor + count - 1 )) \
               $(( base + content - 1 )) $kind
-            sf_chat_highlight_span $(( base + content - 1 )) \
-              $(( base + content + count - 1 )) markup
             cursor=$(( content + count ))
             continue
           fi
@@ -607,7 +598,6 @@ sf_chat_diff_highlight() {
     kind=''
     if [[ $line == '+'* && $line != '+++'* ]]; then kind=added
     elif [[ $line == '-'* && $line != '---'* ]]; then kind=removed
-    elif [[ $line == '@@'* ]]; then kind=markup
     fi
     [[ -z $kind ]] || sf_chat_highlight_span $(( base + index - 1 )) $(( base + end - 1 )) $kind
     index=$(( end <= length ? end + 1 : length + 1 ))

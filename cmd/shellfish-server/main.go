@@ -35,11 +35,7 @@ func main() {
 		log.Fatal(err)
 	}
 	if options.session == "" {
-		binary, err := exec.LookPath(options.binary)
-		if err != nil {
-			log.Fatal(err)
-		}
-		options.session, err = createSession(binary, options.shellfishArgs)
+		options.session, err = createSession(options.binary, options.shellfishArgs)
 		if err != nil {
 			log.Fatal(err)
 		}

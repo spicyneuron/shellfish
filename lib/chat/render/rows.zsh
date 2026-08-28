@@ -6,7 +6,7 @@ typeset -ga SF_PRESENT_ROW_KIND=() SF_PRESENT_ROW_HIGHLIGHTS=()
 typeset -ga SF_PRESENT_ROW_SETTLED=()
 typeset -ga SF_PRESENT_ROW_NODE=()
 typeset -ga SF_PRESENT_ROW_SOURCE_END=()
-typeset -gi SF_PRESENT_ROWS_COMPLETE=1 SF_PRESENT_PREFIX_VISIBLE=0
+typeset -gi SF_PRESENT_PREFIX_VISIBLE=0
 # The furthest source offset an open node has filled a whole visual row to. This
 # is the only boundary at which a growing line may be highlighted.
 typeset -gi SF_PRESENT_ROW_BOUNDARY_NODE=0 SF_PRESENT_ROW_BOUNDARY=0
@@ -192,7 +192,6 @@ sf_chat_rows() {
   SF_PRESENT_ROW_SETTLED=()
   SF_PRESENT_ROW_NODE=()
   SF_PRESENT_ROW_SOURCE_END=()
-  SF_PRESENT_ROWS_COMPLETE=1
   SF_PRESENT_ROW_BOUNDARY_NODE=0
   SF_PRESENT_ROW_BOUNDARY=0
 
@@ -294,20 +293,9 @@ sf_chat_rows() {
         *) return 1 ;;
       esac
       if [[ $type == (tool_call|injection|notice) ]]; then
-        case $type in
-          tool_call)
-            value_start=2
-            title_value=${heading%% *}
-            ;;
-          injection)
-            value_start=2
-            title_value=$heading
-            ;;
-          notice)
-            value_start=2
-            title_value=$heading
-            ;;
-        esac
+        value_start=2
+        title_value=$heading
+        [[ $type != tool_call ]] || title_value=${heading%% *}
         value_stop=$(( value_start + ${#title_value} ))
       fi
       if (( decorated )); then
@@ -453,7 +441,6 @@ sf_chat_rows() {
 
     while [[ -n $text ]]; do
       if (( ${#SF_PRESENT_ROW_TEXT} >= budget )); then
-        SF_PRESENT_ROWS_COMPLETE=0
         return 0
       fi
       start=$offset
@@ -461,10 +448,8 @@ sf_chat_rows() {
       column=0
       row_map=()
       break_map=()
-      if [[ $type == tool_result ]] && (( tail_phase && offset > 0 && columns > 2 )); then
-        part='  '
-        column=2
-      elif [[ $type == tool_result ]] && (( collapsed && offset > 0 && columns > 2 )); then
+      if [[ $type == tool_result ]] &&
+          (( (tail_phase || collapsed) && offset > 0 && columns > 2 )); then
         part='  '
         column=2
       elif (( decorated && ! collapsed && ! tail_phase && body_start >= 0 &&
@@ -760,7 +745,6 @@ sf_chat_rows() {
     done
     if (( activity )); then
       if (( ${#SF_PRESENT_ROW_TEXT} >= budget )); then
-        SF_PRESENT_ROWS_COMPLETE=0
         return 0
       fi
       spans=$type${SF_PRESENT_NODE_ROLE[node]:+.$SF_PRESENT_NODE_ROLE[node]}

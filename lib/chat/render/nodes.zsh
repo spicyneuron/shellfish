@@ -30,18 +30,7 @@ sf_chat_safe() {
 }
 
 sf_chat_reset() {
-  # Cached highlight spans live outside the nodes but are indexed by them, so
-  # they follow every structural change made here.
-  sf_chat_highlight_drop ${#SF_PRESENT_NODE_TYPE}
-  SF_PRESENT_NODE_TYPE=()
-  SF_PRESENT_NODE_ROLE=()
-  SF_PRESENT_NODE_HEADING=()
-  SF_PRESENT_NODE_BODY=()
-  SF_PRESENT_NODE_META=()
-  SF_PRESENT_NODE_STATE=()
-  SF_PRESENT_NODE_STATUS=()
-  SF_PRESENT_NODE_FORMAT=()
-  SF_PRESENT_NODE_FRONTIER=()
+  sf_chat_drop ${#SF_PRESENT_NODE_TYPE}
   SF_PRESENT_TOOL_HEADING=()
   SF_PRESENT_TOOL_CONTENT=()
   SF_PRESENT_TOOL_POLICY=()

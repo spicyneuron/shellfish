@@ -3,8 +3,6 @@ setopt no_aliases no_bg_nice no_multios pipe_fail
 zmodload zsh/system
 
 (( $+functions[sf_runtime_resolve] )) || source "$SF_ROOT/lib/runtime/main.zsh"
-(( $+functions[sf_session_select_path] )) || source "$SF_ROOT/lib/session/main.zsh"
-(( $+functions[sf_hooks_session_start] )) || source "$SF_ROOT/lib/hooks.zsh"
 (( $+functions[sf_session_startup_create] )) || source "$SF_ROOT/lib/session/startup.zsh"
 (( $+functions[sf_chat_repaint] )) || source "$SF_ROOT/lib/chat/render/main.zsh"
 (( $+functions[sf_chat_transport_start] )) || source "$SF_ROOT/lib/chat/transport.zsh"

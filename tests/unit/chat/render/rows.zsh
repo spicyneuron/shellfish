@@ -21,7 +21,6 @@ assert_equal 'section.user,separator,message.user,separator,section.agent,separa
 
 sf_chat_rows 8 2
 assert_equal $'─ user ─\n' "${(F)SF_PRESENT_ROW_TEXT}"
-assert_equal 0 "$SF_PRESENT_ROWS_COMPLETE"
 
 sf_chat_rows 8 20 2:1
 assert_equal $'abcdef\n\n─ agent \n\n⠃' "${(F)SF_PRESENT_ROW_TEXT}"
