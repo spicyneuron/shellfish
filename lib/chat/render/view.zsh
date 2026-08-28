@@ -201,6 +201,7 @@ sf_chat_repaint() {
       start=${#PREDISPLAY}
       PREDISPLAY+="$queue_text"$'\n\n'
       sf_chat_chrome $start $queue_head divider
+      sf_chat_chrome $(( start + 2 )) $(( queue_head - 2 < 5 ? queue_head - 2 : 5 )) muted
       sf_chat_chrome $(( start + queue_head + 1 )) \
         $(( ${#queue_text} - queue_head - 1 )) muted
     fi

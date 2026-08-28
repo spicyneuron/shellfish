@@ -215,16 +215,22 @@ assert_equal 'fg=4' "$chrome_styled[4]"
 [[ ${(j:,:)chrome_sliced} != *'"host"'* ]] || fail 'permission reason was syntax highlighted'
 SF_PRESENT_STATE=idle
 
-# The queue divider and its items carry distinct styles.
+# The queue divider, title, and items carry their respective styles.
 SF_PRESENT_QUEUE=( $'first queued\ncontinued' )
 sf_chat_repaint
 chrome_display="$PREDISPLAY$BUFFER$POSTDISPLAY"
 chrome_sliced=()
+chrome_styled=()
 for (( index = 1; index <= ${#SF_PRESENT_CHROME_HIGHLIGHTS}; index += 3 )); do
   chrome_sliced+=( "${chrome_display[SF_PRESENT_CHROME_HIGHLIGHTS[index] + 1,SF_PRESENT_CHROME_HIGHLIGHTS[index + 1]]}" )
+  chrome_styled+=( "$SF_PRESENT_CHROME_HIGHLIGHTS[index + 2]" )
 done
 assert_equal "─ queue ${(l:71::─:)""}" "$chrome_sliced[1]"
-assert_equal '1. first queued continued' "$chrome_sliced[2]"
+assert_equal 'fg=8' "$chrome_styled[1]"
+assert_equal 'queue' "$chrome_sliced[2]"
+assert_equal 'fg=7' "$chrome_styled[2]"
+assert_equal '1. first queued continued' "$chrome_sliced[3]"
+assert_equal 'fg=7' "$chrome_styled[3]"
 SF_PRESENT_QUEUE=()
 sf_chat_repaint
 [[ $PREDISPLAY != *'─ queue '* ]] || fail 'cleared queue remained visible'
