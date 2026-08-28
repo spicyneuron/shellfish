@@ -23,6 +23,10 @@ import (
 	"time"
 )
 
+// A first shutdown signal lets an ordinary active turn finish before escalating
+// to the same cancellation path as a second signal.
+var shutdownDrainPeriod = 10 * time.Second
+
 func main() {
 	log.SetFlags(log.LstdFlags | log.LUTC)
 	log.SetPrefix("shellfish-server: ")
@@ -199,12 +203,18 @@ func serveHTTP(listener net.Listener, service *Service, killTurn context.CancelF
 		disconnectClients()
 		shutdown := make(chan error, 1)
 		go func() { shutdown <- httpServer.Shutdown(context.Background()) }()
+		timer := time.NewTimer(shutdownDrainPeriod)
+		defer timer.Stop()
 		select {
 		case <-signals:
 			log.Print("terminating the active turn")
 			killTurn()
 			<-turnDone
 		case <-turnDone:
+		case <-timer.C:
+			log.Print("active turn did not settle; terminating it")
+			killTurn()
+			<-turnDone
 		}
 		drained <- <-shutdown
 	}()

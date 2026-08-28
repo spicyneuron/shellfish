@@ -372,12 +372,18 @@ func (s *Service) postPermission(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// beginDrain prevents new turns and reports when the active turn has settled.
+// beginDrain prevents new turns and reports when the active turn has settled. A
+// pending permission cannot be answered after shutdown disconnects the client,
+// so that turn starts its normal cancellation immediately.
 func (s *Service) beginDrain() <-chan struct{} {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.draining = true
 	if s.turn != nil {
+		if s.pending != nil {
+			log.Print("cancelling active turn waiting for permission")
+			s.turn.cancel()
+		}
 		return s.turn.done
 	}
 	done := make(chan struct{})

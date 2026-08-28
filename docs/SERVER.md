@@ -55,6 +55,8 @@ A child appends a record to the session before it emits that record, so for an i
 
 Bodies are JSON objects, bounded in size, forwarded to the child unchanged. Whether a body is a canonical message or a canonical permission response is exec's judgement, not the server's. A cancelled turn is given time to commit what it has: `SIGTERM` to exec alone, then the process group, and the response waits for the child to settle.
 
+The first shutdown signal stops new work and gives an active turn ten seconds to commit before cancelling it. A turn waiting for permission is cancelled immediately because shutdown disconnects the browser that could answer it. A second signal skips the drain period.
+
 ## Tests
 
 `./server/test` runs the browser tests and then the Go tests. The browser tests load the page into a fresh realm over a small DOM stub, with no package manager and no dependencies.

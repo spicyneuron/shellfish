@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -268,6 +269,81 @@ printf '%s\n' "$response" >'`+recorded+`'
 	session.expect(t, `{"type":"state","working":false}`)
 	if got, err := os.ReadFile(recorded); err != nil || string(got) != decision+"\n" {
 		t.Fatalf("child decision = %q (%v)", got, err)
+	}
+}
+
+func TestDrainCancelsPendingPermission(t *testing.T) {
+	const permissionRequest = `{"type":"_tool_permission_request","id":"permission_1","tool":{"name":"shell","input":{}}}`
+	turns, cancelTurns := context.WithCancel(context.Background())
+	defer cancelTurns()
+	sessionPath := newSession(t, "")
+	service, err := New(sessionPath, testAccessCode, NewExec(turns,
+		fakeShellfish(t, "IFS= read -r input\nprintf '%s\\n' '"+permissionRequest+"'\nIFS= read -r response\n"),
+		sessionPath))
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(service)
+	defer server.Close()
+	session := openStream(t, server.URL, http.StatusOK)
+	defer session.body.Close()
+	session.expect(t, strings.TrimSuffix(headerLine(t), "\n"), `{"type":"state","working":false}`)
+	post(t, server.URL+"/turn", userRecord, http.StatusAccepted)
+	session.expect(t, `{"type":"state","working":true}`, permissionRequest)
+
+	select {
+	case <-service.beginDrain():
+	case <-time.After(2 * time.Second):
+		t.Fatal("drain did not cancel the pending permission")
+	}
+}
+
+func TestFirstSignalBoundsShutdownDrain(t *testing.T) {
+	previous := shutdownDrainPeriod
+	shutdownDrainPeriod = 50 * time.Millisecond
+	defer func() { shutdownDrainPeriod = previous }()
+
+	ready := filepath.Join(t.TempDir(), "ready")
+	turns, killTurn := context.WithCancel(context.Background())
+	defer killTurn()
+	sessionPath := newSession(t, "")
+	service, err := New(sessionPath, testAccessCode, NewExec(turns,
+		fakeShellfish(t, "trap 'exit 143' TERM\nIFS= read -r input\nprintf ready >'"+ready+"'\nwhile :; do sleep 0.05; done\n"),
+		sessionPath))
+	if err != nil {
+		t.Fatal(err)
+	}
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	signals := make(chan os.Signal, 1)
+	finished := make(chan error, 1)
+	go func() { finished <- serveHTTP(listener, service, killTurn, signals) }()
+	post(t, "http://"+listener.Addr().String()+"/turn", userRecord, http.StatusAccepted)
+	for deadline := time.Now().Add(2 * time.Second); ; {
+		if _, err := os.Stat(ready); err == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("turn did not start")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	started := time.Now()
+	signals <- os.Interrupt
+	select {
+	case err := <-finished:
+		if err != nil {
+			t.Fatal(err)
+		}
+		if time.Since(started) < shutdownDrainPeriod {
+			t.Fatal("shutdown skipped the drain period")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("first signal did not bound shutdown")
 	}
 }
 
