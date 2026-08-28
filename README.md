@@ -34,10 +34,10 @@ This entire codebase fits comfortably within the context window of any modern LL
 - `/resume` to exit and run a separate TUI to select and load another session.
 - `! command` to run arbitrary shell commands and inject stdin and stdout as context.
 
-## post_tool_use
+### post_tool_use
 - `mark_changed` to detect when files have been changed and create a sentinel file if so.
 
-## stop
+### stop
 - `remind_changes` to detect the `mark_changed` sentinel file and force the agent to recheck its work before completing.
 - `notify` to show a UI notification.
 
