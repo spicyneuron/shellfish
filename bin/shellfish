@@ -59,6 +59,12 @@ sf_main() {
       sf_usage
       return
       ;;
+    --version)
+      if (( $# == 1 )); then
+        print -r -- "shellfish $(<"$SF_ROOT/VERSION")"
+        return
+      fi
+      ;;
     *) ;;
   esac
 

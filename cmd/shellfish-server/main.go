@@ -28,6 +28,10 @@ import (
 var shutdownDrainPeriod = 10 * time.Second
 
 func main() {
+	if len(os.Args) == 2 && os.Args[1] == "--version" {
+		fmt.Printf("shellfish-server %s\n", version)
+		return
+	}
 	log.SetFlags(log.LstdFlags | log.LUTC)
 	log.SetPrefix("shellfish-server: ")
 	options, err := parseServerArgs(os.Args[1:])

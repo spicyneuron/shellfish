@@ -8,6 +8,7 @@ Usage:
   shellfish exec [OPTIONS] [PROMPT]     Run exactly one agent turn
   shellfish config [OPTIONS]            Print resolved configuration as JSON
   shellfish --help                      Print this help
+  shellfish --version                   Print the version
 
 Options:
   --session PATH        Use the session at PATH
