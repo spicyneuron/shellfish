@@ -153,7 +153,7 @@ sf_runtime_resolve_from_config() {
   local config_path config_dir='' raw='{}' defaults prepared presentation value
   local backend_name backend_reference backend_dir backend_base manifest tool_manifest command
   local reference resolved event external_name final system_content settings fence='' env_file=''
-  local home=${HOME-} git_config_home candidate sandbox_read_paths
+  local home=${HOME-} config_home candidate sandbox_read_paths
   local theme_marker=': shellfish:unknown-theme:'
   local -a fields system_parts tool_entries hook_entries resolved_args finalized default_read_paths
   integer system_count tool_count hook_count index tool_index needs_fence=0 sandbox_enabled=1
@@ -178,14 +178,15 @@ sf_runtime_resolve_from_config() {
     [[ -f $candidate && -r $candidate ]] && default_read_paths+=( "$candidate" )
   fi
   if [[ -n ${XDG_CONFIG_HOME-} ]]; then
-    git_config_home=${XDG_CONFIG_HOME:A}
+    config_home=${XDG_CONFIG_HOME:A}
   elif [[ -n $home ]]; then
-    git_config_home="$home/.config"
+    config_home="$home/.config"
   fi
-  if [[ -n $git_config_home ]]; then
-    candidate="$git_config_home/git"
-    [[ -d $candidate && -r $candidate && -x $candidate ]] &&
-      default_read_paths+=( "$candidate" )
+  if [[ -n $config_home ]]; then
+    for candidate in "$config_home/git/config" "$config_home/git/ignore" \
+      "$config_home/git/attributes"; do
+      [[ -f $candidate && -r $candidate ]] && default_read_paths+=( "$candidate" )
+    done
   fi
   sandbox_read_paths=$(jq -cn \
     --argjson grants "${_SHELLFISH_SANDBOX_READ_PATHS:-[]}" --args \

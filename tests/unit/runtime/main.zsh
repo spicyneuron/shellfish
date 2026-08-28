@@ -73,20 +73,28 @@ jq -e '
 ' <<<"$SF_PRESENTATION" >/dev/null
 
 mkdir -p "$HOME/.config/git"
-touch "$HOME/.gitconfig"
+touch "$HOME/.gitconfig" "$HOME/.config/git/config" "$HOME/.config/git/ignore" \
+  "$HOME/.config/git/attributes"
 sf_runtime_resolve_from_config "$config" '' test-model '{}'
-jq -e --arg config "$HOME/.gitconfig" --arg dir "$HOME/.config/git" '
-  .harness.sandbox_read_paths == [$config,$dir]
+jq -e --arg global "$HOME/.gitconfig" --arg dir "$HOME/.config/git" '
+  .harness.sandbox_read_paths == [
+    $global, ($dir + "/config"), ($dir + "/ignore"), ($dir + "/attributes")
+  ]
 ' <<<"$REPLY" >/dev/null || fail 'standard Git sandbox paths were not granted'
 (
   export XDG_CONFIG_HOME="$tmp/xdg"
   mkdir -p "$XDG_CONFIG_HOME/git"
+  touch "$XDG_CONFIG_HOME/git/config" "$XDG_CONFIG_HOME/git/ignore" \
+    "$XDG_CONFIG_HOME/git/attributes"
   sf_runtime_resolve_from_config "$config" '' test-model '{}'
-  jq -e --arg config "$HOME/.gitconfig" --arg dir "${tmp:A}/xdg/git" '
-    .harness.sandbox_read_paths == [$config,$dir]
-  ' <<<"$REPLY" >/dev/null || fail 'XDG Git sandbox path was not granted'
+  jq -e --arg global "$HOME/.gitconfig" --arg dir "${tmp:A}/xdg/git" '
+    .harness.sandbox_read_paths == [
+      $global, ($dir + "/config"), ($dir + "/ignore"), ($dir + "/attributes")
+    ]
+  ' <<<"$REPLY" >/dev/null || fail 'XDG Git sandbox paths were not granted'
 )
-rm "$HOME/.gitconfig"
+rm "$HOME/.gitconfig" "$HOME/.config/git/config" "$HOME/.config/git/ignore" \
+  "$HOME/.config/git/attributes"
 rmdir "$HOME/.config/git" "$HOME/.config"
 
 print -r -- '{}' >"$tmp/config/empty.jsonc"
