@@ -16,7 +16,7 @@ esac
 # Framework rows for commands that have no dedicated hook. Command hooks run
 # earlier in the chain and append their own rows to the same file.
 {
-  print -r -- $'10\tshift+enter, ctrl+j\tAdd a line instead of sending the message'
+  print -r -- $'10\tshift+enter\tAdd a line instead of sending the message'
   print -r -- $'20\tctrl+c\tCancel an active request; otherwise exit'
   print -r -- $'30\t↑, ↓\tNavigate prompt history'
   print -r -- $'100\t/queue drop <N>\tDiscard queued prompt'

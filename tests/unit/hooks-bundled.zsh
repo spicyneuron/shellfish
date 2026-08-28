@@ -79,7 +79,7 @@ integer result_index
 for (( result_index = 4; result_index <= ${#SF_HOOK_RESULTS}; result_index += 5 )); do
   [[ -z $SF_HOOK_RESULTS[result_index] ]] || help_display=$SF_HOOK_RESULTS[result_index]
 done
-[[ $help_display == 'shift+enter, ctrl+j'* ]]
+[[ $help_display == 'shift+enter'* ]]
 (( ${#help_display} > 20 ))
 # Every command key appears in the formatted output.
 for key in '↑, ↓' '/queue drop <N>' '/queue clear' '/new' '/refresh, /r' '/verbose, /v' \
