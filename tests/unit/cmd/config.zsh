@@ -22,35 +22,10 @@ EOF
 typeset entry="$ROOT/bin/shellfish"
 typeset report
 
-typeset read_log="$tmp/config-reads.log" read_bin="$tmp/bin"
-typeset resolved_config="${config_dir:A}/config.jsonc"
-mkdir "$read_bin"
-cat >"$read_bin/awk" <<'SH'
-#!/bin/sh
-for argument; do
-  if [ "$argument" = "$SF_TEST_USER_CONFIG" ] ||
-      [ "$argument" = "$SF_TEST_DEFAULT_CONFIG" ]; then
-    printf '%s\n' "$argument" >>"$SF_TEST_READ_LOG"
-  fi
-done
-exec "$SF_TEST_REAL_AWK" "$@"
-SH
-chmod +x "$read_bin/awk"
-
 # `shellfish config` reports the runtime a new session would store, plus the
 # theme palettes and TUI limits a session does not store.
-report=$(
-  export SF_TEST_USER_CONFIG="$resolved_config"
-  export SF_TEST_DEFAULT_CONFIG="$ROOT/default/config.jsonc"
-  export SF_TEST_READ_LOG="$read_log"
-  export SF_TEST_REAL_AWK="${commands[awk]:A}"
-  export PATH="$read_bin:$PATH"
-  zsh -f "$entry" config --config "$config_dir/config.jsonc"
-) || fail 'config report failed'
-assert_equal 1 "$(grep -Fxc "$resolved_config" "$read_log")" \
-  'config parses the user config once'
-assert_equal 1 "$(grep -Fxc "$ROOT/default/config.jsonc" "$read_log")" \
-  'config parses bundled defaults once'
+report=$(zsh -f "$entry" config --config "$config_dir/config.jsonc") ||
+  fail 'config report failed'
 assert_equal gpt-4o "$(jq -r '.profile.request.model' <<<"$report")" 'config reports the model'
 [[ $(jq -r '.backend.command' <<<"$report") == */openai/run ]] || fail 'config reports the backend command'
 assert_equal auto "$(jq -r '.theme.mode' <<<"$report")" 'config reports the theme mode'

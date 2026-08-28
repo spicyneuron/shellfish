@@ -8,7 +8,7 @@ sf_test_runtime
 # usable version, and emits one separately attributed creation context.
 typeset availability_hook="$ROOT/default/hooks/session_start/add_command_availability"
 typeset availability_bin="$tmp/availability-bin"
-typeset availability_output availability_expected availability_session="$tmp/availability-session.jsonl"
+typeset availability_output availability_rows availability_session="$tmp/availability-session.jsonl"
 mkdir "$availability_bin"
 ln -s "${commands[zsh]:A}" "$availability_bin/zsh"
 make_version_command() {
@@ -31,8 +31,23 @@ availability_output=$(
   /usr/bin/env PATH="$availability_bin" "$availability_bin/zsh" -f \
     "$availability_hook" session_start
 )
-availability_expected=$'Host shell: zsh '"$ZSH_VERSION"$'\nAvailable commands:\n- search: grep (grep 1.0)\n- files: find (find-2.1)\n- JSON: jq (jq-1.7)\n- Python: python3 (Python 3.13)\n- VCS: git (git version 2.48)'
-assert_equal "$availability_expected" "$availability_output"
+typeset -a availability_lines=( "${(@f)availability_output}" )
+assert_equal "Host shell: zsh $ZSH_VERSION" "$availability_lines[1]"
+assert_equal 'Available commands:' "$availability_lines[2]"
+availability_rows=$(jq -Rsc '
+  [split("\n")[] |
+    capture("^- (?<label>[^:]+): (?<command>[^ ]+) \\((?<version>.*)\\)$")?] |
+  INDEX(.label)
+' <<<"$availability_output") || fail 'cannot parse command availability output'
+jq -e '
+  length == 5 and
+  .search.command == "grep" and .search.version == "grep 1.0" and
+  .files.command == "find" and .files.version == "find-2.1" and
+  .JSON.command == "jq" and .JSON.version == "jq-1.7" and
+  .Python.command == "python3" and .Python.version == "Python 3.13" and
+  .VCS.command == "git" and .VCS.version == "git version 2.48" and
+  (has("trees") | not) and (has("YAML") | not) and (has("GitHub") | not)
+' <<<"$availability_rows" >/dev/null
 if zsh -f "$availability_hook" user_prompt_submit >/dev/null 2>&1; then
   fail 'command availability accepted the wrong hook event'
 fi

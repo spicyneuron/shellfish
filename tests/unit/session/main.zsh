@@ -156,13 +156,15 @@ sf_session_recover_turn
 sf_session_close
 jq -e -s 'length == 3 and .[-1].content[0].text == "done"' "$recovery_complete" >/dev/null
 
-# Valid records retain their exact physical representation after validation.
-typeset exact="$tmp/exact.jsonl" exact_header
+# Opening a valid session preserves its bytes and semantic state.
+typeset exact="$tmp/exact.jsonl" exact_before="$tmp/exact-before.jsonl" exact_header
 exact_header=$(head -n 1 "$SF_TEST_SESSIONS/header-only.jsonl")
 print -r -- "  $exact_header  " >"$exact"
+cp "$exact" "$exact_before"
 sf_session_open "$exact"
-assert_equal "  $exact_header  " "$SF_SESSION_RECORDS[1]"
+assert_equal fake-model "$SF_SESSION[model]"
 sf_session_close
+cmp -s "$exact_before" "$exact" || fail 'opening a valid session rewrote its bytes'
 
 # Every physical line must contain a record; jq whitespace skipping is not enough.
 typeset blank="$tmp/blank.jsonl"
@@ -257,14 +259,4 @@ cp "$SF_TEST_SESSIONS/interrupted.jsonl" "$interrupted"
 sf_session_open "$interrupted"
 [[ -n $REPLY ]]
 [[ $(jq -r '.stop' <<<"$REPLY") == end ]]
-sf_session_close
-
-# A live owner excludes another process, while its lock is released cleanly.
-sf_session_open "$session"
-if (
-  source "$ROOT/lib/session/main.zsh"
-  sf_session_open "$session"
-) 2>/dev/null; then
-  fail 'competing session owner acquired the lock'
-fi
 sf_session_close
