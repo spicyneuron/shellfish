@@ -289,6 +289,11 @@ sf_main() {
   source "$SF_ROOT/lib/runtime/main.zsh"
   source "$SF_ROOT/lib/session/main.zsh"
   SF_RUNTIME_VERBOSE=$verbose_requested
+  if [[ $command == exec && ${SHELLFISH_VERBOSE-0} == 1 ]]; then
+    typeset -gx SHELLFISH_VERBOSE=1
+  else
+    typeset -gx SHELLFISH_VERBOSE=$verbose_requested
+  fi
 
   # Config needs no session, provider, stdin, or interactive terminal setup.
   if [[ $command == config ]]; then

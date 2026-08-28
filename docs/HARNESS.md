@@ -48,7 +48,7 @@ The default harness implements most chat commands as `user_prompt_submit` hooks:
 - `/new` creates a new session in the same project.
 - `/fork [N]` copies the transcript into a new session, excluding the last `N` user turns when specified.
 - `/refresh` rebuilds the terminal presentation from the durable session.
-- `/verbose` rebuilds the presentation without preview limits.
+- `/verbose` toggles presentation preview limits.
 - `/resume` switches to another session in the same project.
 - `/server` hands the current session to the optional `shellfish-server` process.
 - `! command` runs a shell command and injects its input and output as context.

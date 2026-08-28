@@ -35,6 +35,24 @@ typeset entry="$ROOT/bin/shellfish"
 typeset output
 mkdir "$tmp/read" "$tmp/write"
 
+# Turn subprocesses preserve the chat's verbose override, but do not trust
+# arbitrary inherited values.
+typeset verbose_hook="$tmp/verbose-hook" verbose_config="$tmp/verbose-config.json"
+cat >"$verbose_hook" <<'EOF'
+#!/usr/bin/env zsh
+print -r -- "${SHELLFISH_VERBOSE-unset}" >"$SF_VERBOSE_MARKER"
+exit 10
+EOF
+chmod +x "$verbose_hook"
+jq --arg hook "$verbose_hook" '.harnesses.machine.user_prompt_submit=[$hook]' \
+  "$config" >"$verbose_config"
+SF_VERBOSE_MARKER="$tmp/verbose-one" SHELLFISH_VERBOSE=1 \
+  zsh -f "$entry" exec --config "$verbose_config" test || fail 'verbose exec failed'
+assert_equal 1 "$(<"$tmp/verbose-one")"
+SF_VERBOSE_MARKER="$tmp/verbose-invalid" SHELLFISH_VERBOSE=invalid \
+  zsh -f "$entry" exec --config "$verbose_config" test || fail 'normalized exec failed'
+assert_equal 0 "$(<"$tmp/verbose-invalid")"
+
 output=$(zsh -f "$entry" config --config "$config") || fail 'sandbox paths were rejected'
 jq -e --arg read "$tmp/read" --arg write "$tmp/write" '
   .harness.sandbox_read_paths == [$read] and

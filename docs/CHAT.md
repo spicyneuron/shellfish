@@ -23,7 +23,7 @@ Most slash commands are `user_prompt_submit` hooks from the default harness. Run
 | `/new` | Start a new session in the current directory. |
 | `/fork [N]` | Fork the current transcript into a new session, trimming before the last N user turns. Default N is 0, which forks at the current end. |
 | `/refresh`, `/r` | Rerender the current session from scratch. Fixes layout corruption. |
-| `/verbose`, `/v` | Rerender with all context and reasoning visible. |
+| `/verbose`, `/v` | Toggle full context, reasoning, and tool output display. |
 | `/server` | Hand the current session to `shellfish-server`. |
 | `!command` | Run a shell command and stage its output as context for the next turn. |
 | `/queue drop N` | Discard the Nth queued prompt. |

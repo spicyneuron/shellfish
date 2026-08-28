@@ -77,6 +77,7 @@ Every hook is invoked with the session working directory as its `PWD` and these 
 | `SHELLFISH_EXECUTABLE` | Absolute path of the invoked Shellfish executable |
 | `SHELLFISH_MODE` | Invocation mode: `chat` or `exec` |
 | `SHELLFISH_MODEL` | Active model frozen in the session header |
+| `SHELLFISH_VERBOSE` | `1` when the chat was started with the `--verbose` presentation override; otherwise `0` |
 | `PROJECT_DIR` | Working directory frozen in the session header |
 | `PLUGIN_ROOT` | Directory containing the resolved hook executable |
 | `PLUGIN_DATA` | Persistent, mode-0700 data directory for the event and hook name |

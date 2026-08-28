@@ -157,11 +157,15 @@ run_prompt_hook /refresh "$help_session"
 [[ $reply[1] == handoff && $reply[2] == "$ROOT/bin/shellfish" &&
    $reply[3] == --clear && $reply[4] == --session && $reply[5] == "${help_session:A}" ]]
 
-# /verbose reloads the same session with the preview limits lifted.
+# /verbose reloads the same session and toggles the preview limits.
+unset SHELLFISH_VERBOSE
 run_prompt_hook /verbose "$help_session"
 [[ $reply[1] == handoff && $reply[2] == "$ROOT/bin/shellfish" &&
    $reply[3] == --verbose && $reply[4] == --clear && $reply[5] == --session &&
    $reply[6] == "${help_session:A}" ]]
+SHELLFISH_VERBOSE=1 run_prompt_hook /verbose "$help_session"
+[[ $reply[1] == handoff && $reply[2] == "$ROOT/bin/shellfish" &&
+   $reply[3] == --clear && $reply[4] == --session && $reply[5] == "${help_session:A}" ]]
 
 run_prompt_hook /server "$help_session"
 [[ $reply[1] == handoff && $reply[2] == shellfish-server &&
@@ -204,9 +208,9 @@ sf_test_session "$shell_session"
 sf_session_open "$shell_session"
 sf_session_close
 sf_hooks_state_create
-typeset -gx SHELLFISH_MODE=test
+typeset -gx SHELLFISH_MODE=test SHELLFISH_VERBOSE=1
 typeset shell_state_dir=$SHELLFISH_STATE_DIR
-typeset shell_command='[[ -n $HOME ]] || exit 8; env | grep -Eq '\''^(SHELLFISH_(SESSION|SESSION_ID|STATE_DIR|CAPTURE_LIMIT|MODE|MODEL|TURN_ID)|PROJECT_DIR|PLUGIN_ROOT|PLUGIN_DATA)='\'' && exit 9; print output; exit 7'
+typeset shell_command='[[ -n $HOME ]] || exit 8; env | grep -Eq '\''^(SHELLFISH_(SESSION|SESSION_ID|STATE_DIR|CAPTURE_LIMIT|MODE|MODEL|TURN_ID|VERBOSE)|PROJECT_DIR|PLUGIN_ROOT|PLUGIN_DATA)='\'' && exit 9; print output; exit 7'
 run_prompt_hook "!$shell_command" "$shell_session"
 [[ $reply[1] == handled ]]
 [[ -d $shell_state_dir ]]
@@ -216,5 +220,5 @@ jq -e --arg prompt "$shell_command" '
     .status == 7 and (.content | contains("output")))
 ' < <(tail -n 1 "$shell_session") >/dev/null
 sf_hooks_state_cleanup
-unset SHELLFISH_MODE
+unset SHELLFISH_MODE SHELLFISH_VERBOSE
 assert_no_hook_captures
