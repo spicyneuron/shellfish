@@ -35,18 +35,36 @@ jq -e -s '
   .[2] == {type:"context",tag:"session_start",hook:"start_second",content:"second"}
 ' "$start_session" >/dev/null
 
-# Existing-session entry does not run creation hooks again.
+# CLI entry runs creation hooks once and does not rerun them for an existing session.
 typeset resume_session="$tmp/resume-session.jsonl"
-make_hook resume 'print -n resumed'
+typeset resume_marker="$tmp/resume-marker" resume_config="$tmp/resume-config.jsonc"
+make_hook resume 'print -r -- run >>"$RESUME_MARKER"'
 typeset resume_hook=$hook
-typeset startup_runtime=$SF_TEST_RUNTIME
-SF_TEST_RUNTIME=$(jq -c --arg hook "$resume_hook" \
-  '.harness.session_start = [$hook]' <<<"$SF_TEST_RUNTIME")
-sf_test_session "$resume_session"
-sf_session_open "$resume_session"
-sf_session_close
-jq -e -s 'length == 1' "$resume_session" >/dev/null
-SF_TEST_RUNTIME=$startup_runtime
+cat >"$resume_config" <<EOF
+{
+  "default_profile": "test",
+  "backends": {"fixture": {"adapter": "$ROOT/tests/fixtures/backend"}},
+  "harnesses": {
+    "test": {
+      "system": [], "tools": [], "sandbox": false,
+      "session_start": ["$resume_hook"], "user_prompt_submit": [],
+      "permission_request": [], "pre_tool_use": [], "post_tool_use": [], "stop": [],
+      "max_requests_per_turn": 1, "max_tool_calls_per_request": 1,
+      "max_capture_bytes": 512
+    }
+  },
+  "profiles": {
+    "test": {"backend": "fixture", "harness": "test", "request": {"model": "test"}}
+  }
+}
+EOF
+RESUME_MARKER=$resume_marker SF_TEST_BACKEND_DELAY=0 zsh -f "$SF_ENTRY" exec \
+  --config "$resume_config" --session "$resume_session" first >/dev/null ||
+  fail 'new-session CLI entry failed'
+RESUME_MARKER=$resume_marker SF_TEST_BACKEND_DELAY=0 zsh -f "$SF_ENTRY" exec \
+  --session "$resume_session" second >/dev/null ||
+  fail 'existing-session CLI entry failed'
+(( $(wc -l <"$resume_marker") == 1 )) || fail 'session_start hook ran more than once'
 
 # Hook projection preserves a session working directory containing a newline.
 typeset newline_cwd="$tmp/"$'line\nbreak' previous_cwd=$PWD

@@ -92,11 +92,18 @@ def test_startup_records_precede_two_turns():
         assert records[1] == {"type": "system", "content": "startup system prompt"}
         assert records[2]["type"] == "context"
         assert records[2]["tag"] == "session_start"
-        assert "Project:" in session.visible()
-        assert "Tools: read_file, write_file, edit_file, shell" in session.visible()
-        assert "startup system prompt" in session.visible()
-        assert "session_start add_environment" in session.visible()
-        assert "test/override-model" in session.visible()
+        banner = (
+            "Project:",
+            "Tools: read_file, write_file, edit_file, shell",
+            "test/override-model",
+        )
+        for token in banner:
+            session.wait_after(0, token)
+        transcript = ("startup system prompt", "add_environment session_start")
+        for token in transcript:
+            session.wait_after(0, token)
+        visible = session.visible()
+        assert visible.index(transcript[0]) < visible.index(transcript[1]), visible
 
         mark = len(session.output)
         session.send(b"one\r")
@@ -108,10 +115,10 @@ def test_startup_records_precede_two_turns():
         ):
             session.pump()
         assert re.search(r" · \d+ ↑", session.visible(mark))
-        end = time.monotonic() + 0.5
-        while time.monotonic() < end:
-            session.pump()
-        session.send(b"two\r")
+        draft_mark = len(session.output)
+        session.send(b"two")
+        session.wait_after(draft_mark, "two", view=session.typed)
+        session.send(b"\r")
         _, records = session.wait_session_records(7, path=path)
         assert [(record.get("role"), record.get("stop")) for record in records[3:]] == [
             ("user", None), ("assistant", "end"),

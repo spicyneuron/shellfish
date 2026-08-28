@@ -17,9 +17,11 @@ sf_backend_credential Authorization 'Bearer secret-token'
 assert_equal 'Authorization: Bearer secret-token' "$(<"$SF_BACKEND_HEADERS_FILE")"
 
 # Control characters in credentials are rejected.
+integer operation_status=0
 (
   sf_backend_credential Authorization $'Bearer bad\nnewline'
-) 2>"$tmp/cred-err" || true
+) 2>"$tmp/cred-err" || operation_status=$?
+(( operation_status != 0 )) || fail 'invalid authentication value was accepted'
 [[ "$(<"$tmp/cred-err")" == *"invalid authentication value"* ]]
 
 # Curl arguments construction includes headers, timeouts, and insecure flags.
@@ -36,9 +38,11 @@ for code expected in \
     7 'could not connect to the provider' \
     28 'request timed out' \
     35 'TLS connection failed'; do
+  operation_status=0
   (
     sf_backend_finish "$code" 0 0
-  ) 2>"$tmp/curl-err" || true
+  ) 2>"$tmp/curl-err" || operation_status=$?
+  (( operation_status != 0 )) || fail "curl status $code was accepted"
   [[ "$(<"$tmp/curl-err")" == *"$expected (curl status $code)"* ]]
 done
 
@@ -50,32 +54,40 @@ sf_backend_finish 0 0 0
 # HTTP 401 with headers reports credential rejection.
 print -r -- '401' >"$SF_BACKEND_STATUS_FILE"
 print -r -- '{"error":{"message":"invalid api key"}}' >"$SF_BACKEND_RESPONSE_FILE"
+operation_status=0
 (
   sf_backend_finish 0 0 0
-) 2>"$tmp/http-err" || true
+) 2>"$tmp/http-err" || operation_status=$?
+(( operation_status != 0 )) || fail 'HTTP 401 with credentials was accepted'
 [[ "$(<"$tmp/http-err")" == *"credentials rejected (HTTP 401): invalid api key"* ]]
 
 # HTTP 401 without headers reports missing API key.
 : >"$SF_BACKEND_HEADERS_FILE"
+operation_status=0
 (
   sf_backend_finish 0 0 0
-) 2>"$tmp/http-no-key" || true
+) 2>"$tmp/http-no-key" || operation_status=$?
+(( operation_status != 0 )) || fail 'HTTP 401 without credentials was accepted'
 [[ "$(<"$tmp/http-no-key")" == *"no API key was supplied"* ]]
 
 # HTTP 500 reports error status and message.
 print -r -- '500' >"$SF_BACKEND_STATUS_FILE"
 print -r -- '{"error":{"message":"internal error"}}' >"$SF_BACKEND_RESPONSE_FILE"
+operation_status=0
 (
   sf_backend_finish 0 0 0
-) 2>"$tmp/http-500" || true
+) 2>"$tmp/http-500" || operation_status=$?
+(( operation_status != 0 )) || fail 'HTTP 500 was accepted'
 [[ "$(<"$tmp/http-500")" == *"HTTP 500: internal error"* ]]
 
 # Normalizer failure reports normalizer error output.
 print -r -- '200' >"$SF_BACKEND_STATUS_FILE"
 print -r -- 'malformed stream chunk' >"$SF_BACKEND_NORMALIZER_ERROR_FILE"
+operation_status=0
 (
   sf_backend_finish 0 0 1
-) 2>"$tmp/norm-err" || true
+) 2>"$tmp/norm-err" || operation_status=$?
+(( operation_status != 0 )) || fail 'normalizer failure was accepted'
 [[ "$(<"$tmp/norm-err")" == *"cannot normalize API response: malformed stream chunk"* ]]
 
 rm -rf -- "$SF_BACKEND_TEMP_DIR"

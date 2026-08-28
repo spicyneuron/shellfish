@@ -77,7 +77,8 @@ assert_equal '0,' "${(j:,:)reply}"
 
 # A command that vanishes before the initial write cannot terminate chat with SIGPIPE.
 SF_CHAT_TRANSPORT_COMMAND=( "$tmp/missing" )
-if ! sf_chat_transport_start '{}' callback; then
-  assert_equal 'cannot write to exec process' "$SF_CHAT_TRANSPORT_ERROR"
+if sf_chat_transport_start '{}' callback; then
+  fail 'missing transport command unexpectedly started'
 fi
+assert_equal 'cannot write to exec process' "$SF_CHAT_TRANSPORT_ERROR"
 sf_chat_transport_stop

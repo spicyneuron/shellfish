@@ -87,7 +87,7 @@ assert_equal 'several prompt words' "$output" 'exec joins positional prompt word
 typeset new_session
 new_session=$(zsh -f "$entry" exec --new --config "$config") || fail 'new exec failed'
 [[ -f $new_session && $new_session == /* ]] || fail 'new exec did not return its session path'
-jq -s 'length == 2 and .[0].type == "session" and .[1].type == "system"' \
+jq -es 'length == 1 and .[0].type == "session"' \
   "$new_session" >/dev/null || fail 'new exec did not create the initial session prefix'
 
 # JSONL exposes the canonical exec stream through EOF and process status.

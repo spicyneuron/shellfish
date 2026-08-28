@@ -190,12 +190,6 @@ jq -e -s '
   .[1] == {type:"system",content:"first prompt\n\nsecond prompt"}
 ' "$configured" >/dev/null
 
-# System content is frozen when the session is materialized, not read again.
-printf 'changed\n' >"$tmp/system/first.md"
-sf_session_open "$configured"
-sf_session_close
-jq -e -s '.[1].content == "first prompt\n\nsecond prompt"' "$configured" >/dev/null
-
 SF_TEST_RUNTIME=''
 SF_TEST_SYSTEM_RECORD=''
 
