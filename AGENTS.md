@@ -31,9 +31,9 @@
 ## Configuration
 
 - User configuration is JSONC at `$XDG_CONFIG_HOME/shellfish/config.jsonc` or `~/.config/shellfish/config.jsonc`; comments are stripped before `jq` processing.
-- Profiles compose a backend, a harness, model/request overrides, and theme selections. Backends define provider adapters and transport; harnesses wrap the shared turn loop with system prompts, tools, hooks, sandboxing, and limits; themes and `tui` define presentation.
+- Profiles compose a backend, a harness, and model/request overrides. Backends define provider adapters and transport; harnesses wrap the shared turn loop with system prompts, tools, hooks, sandboxing, and limits; top-level themes and `tui` settings define presentation.
 - Resolution merges `default/config.jsonc` with user configuration, selects a profile (including its `extend` chain), and resolves referenced files from the config directory before bundled defaults.
-- The session header freezes runtime data. Current configuration supplies presentation, so old sessions use current themes and TUI settings, but their frozen theme names must still exist.
+- The session header freezes runtime data. Current configuration supplies presentation, so old sessions use the currently selected themes and TUI settings.
 - Resolve secrets from the adjacent `.env` or exported variables; exported values win.
 
 ## Hooks

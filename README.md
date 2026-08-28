@@ -18,32 +18,31 @@ This entire codebase fits comfortably within the context window of any modern LL
 - Your **tools** are just shell scripts, optionally sandboxed with [`fence`](https://github.com/fencesandbox/fence).
 - Your **backend** is just a shell script that `curl`s out to APIs and returns JSON. Built-in support for OpenAI, Codex (ChatGPT subscription), Anthropic, OpenRouter, llama.cpp...
 
-## Example harness scripts
+## Default harness
 
 ### tools
 - `read_file`, `edit_file`, `write_file` for simple text operations.
 - `shell` to run arbitrary commands within a `fence` sandbox.
 
 ### session_start
-- `add_project_environment` to inject context about the host system, `git` status, and available commands and versions.
-- `add_project_instructions` to `cat` AGENTS.md or CLAUDE.md into context.
+- `add_environment` to inject host, project tree, and Git context.
+- `add_command_availability` to report available command versions.
+- `add_project_instructions` to inject the project's `AGENTS.md` or, if absent, `CLAUDE.md`.
 
 ### user_prompt_submit
-- `/new` to exit and rerun `shellfish`, creating a new session in the same project.
-- `/fork [N]` to copy the current session's JSONL transcript, trim it with `jq`, and rerun with `shellfish --session`.
-- `/resume` to exit and run a separate TUI to select and load another session.
-- `! command` to run arbitrary shell commands and inject stdin and stdout as context.
+- `/new` to create a new session in the same project.
+- `/fork [N]` to copy and trim the current transcript into a new session.
+- `/refresh` to rebuild the terminal presentation from the durable session.
+- `/server` to hand the current session to `shellfish-server`.
+- `! command` to run a shell command and inject its input and output as context.
 
-### post_tool_use
-- `mark_changed` to detect when files have been changed and create a sentinel file if so.
+The chat controller handles local commands such as `/resume`, `/quit`, and queue editing without submitting an agent turn.
 
-### stop
-- `remind_changes` to detect the `mark_changed` sentinel file and force the agent to recheck its work before completing.
-- `notify` to show a UI notification.
+Custom harnesses can attach additional policy or context scripts to any lifecycle event described in [`docs/HOOKS.md`](docs/HOOKS.md).
 
 ## Install
 
-Shellfish requires `zsh` 5+, `awk`, `curl`, and [`jq`](https://github.com/jqlang/jq). [`fence`](https://github.com/fencesandbox/fence) is a soft requirement tool sandboxing, but can be disabled.
+Shellfish requires `zsh` 5+, `awk`, `curl`, and [`jq`](https://github.com/jqlang/jq). The default harness also requires [`fence`](https://github.com/fencesandbox/fence) to run its sandboxed tools; set `sandbox: false` on a harness only when those tools should run with your full user permissions.
 
 ```sh
 # Ensure that ~/.local/bin is on your $PATH. Then:
@@ -55,7 +54,7 @@ ln -s "$HOME/.local/share/shellfish/bin/shellfish" "$HOME/.local/bin/shellfish"
 ## Quick start
 
 ```sh
-# Provide keys via environment or $XDG_CONFIG/shellfish/.env
+# Provide keys via environment or ${XDG_CONFIG_HOME:-$HOME/.config}/shellfish/.env
 export OPENROUTER_API_KEY=...
 
 # Start a chat
@@ -94,11 +93,12 @@ The `openai` backend also supports compatible services by setting `endpoint` in 
 
 Shellfish is built around backends, harnesses, and profiles.
 
-- Backends are API adapters that build requests and return JSON.
-- Harnesses are collections of shell scripts attached to lifecycle hooks.
-- Profiles are shortcuts that configure a backend, a harness, a model, and API request settings.
+- Backends select an API adapter and its transport settings.
+- Harnesses select system files, tools, hooks, sandbox policy, and turn limits.
+- Profiles compose a backend, a harness, and API request settings such as the model.
+- Top-level theme and `tui` settings control presentation independently of profiles.
 
-Configure these by creating `$XDG_CONFIG_HOME/shellfish/` (`~/.config/shellfish/` by default).
+Shellfish recursively merges user configuration over the bundled `default/config.jsonc`; arrays replace rather than extend their defaults. Component references resolve from the configuration directory before bundled defaults. Create `$XDG_CONFIG_HOME/shellfish/` (`~/.config/shellfish/` by default), and use `shellfish config` to inspect the resolved result. See `config.template.jsonc` for a starting point, `default/config.jsonc` for annotated defaults, and `config.schema.json` for all accepted fields.
 
 `./.env`
 
@@ -114,13 +114,17 @@ Configure these by creating `$XDG_CONFIG_HOME/shellfish/` (`~/.config/shellfish/
 
 ## Sessions
 
-TODO
+Sessions are append-only JSONL transcripts stored beneath `${XDG_STATE_HOME:-$HOME/.local/state}/shellfish/sessions`. A session retains its resolved backend, harness, model, request, and sandbox settings; create a new session to change them. Themes and TUI preview settings come from the current configuration, so they can change how an existing session is displayed.
+
+Use `--continue` to open the newest session for the current directory, `--resume` to pick one interactively, or `--session PATH` to name one directly. `shellfish exec --new` creates an idle session and prints its path without running a turn.
+
+See [`docs/EXEC.md`](docs/EXEC.md) for the bounded-exec JSONL interface used by chat and the server.
 
 ## Safety
 
-Built-in `shell`, `read_file`, `edit_file`, and `write_file` tools run in `fence` by default. Their policies limit project access, block network access, and deny common secret files.
+Built-in `shell`, `read_file`, `edit_file`, and `write_file` tools run in `fence` by default. Their policies limit project access, block network access, and deny common secret files. Additional paths configured with `sandbox_read_paths` and `sandbox_write_paths` retain the tool's other restrictions. An interactive tool may request a one-time bypass when allowed by its manifest; headless runs deny requests that policy hooks do not decide.
 
-Additional paths configured with `sandbox_read_paths` and `sandbox_write_paths` retain the tool's other sandbox restrictions. An interactive tool may request a one-time bypass when allowed by its manifest.
+Hooks, backend adapters, and unsandboxed tools are trusted executables and run with the user's permissions. Disabling harness sandboxing removes the tool boundary; it does not provide an alternative isolation mechanism.
 
 ## Server (experimental)
 

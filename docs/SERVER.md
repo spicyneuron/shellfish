@@ -33,9 +33,11 @@ Without `--session`, the server forwards its non-server options to `shellfish ex
 
 ## Access
 
-Every request carries `Authorization: Bearer CODE`, where the code is the six digits printed at startup. The page itself is served without it. After it is entered, the page keeps the code only in `sessionStorage`, so reloads in that tab reconnect automatically and closing the tab clears it. `detach session` clears the stored code and reloads the page. Its content security policy allows only its own three assets, so a script injected into a transcript has nowhere to run and nowhere to report.
+Every API request carries `Authorization: Bearer CODE`, where `CODE` is the six startup digits without the display hyphen (`123456`, not `123-456`). The page itself and its static assets are served without authentication. After entry, the page keeps the code only in `sessionStorage`, so reloads in that tab reconnect automatically and closing the tab clears it. `detach session` clears the stored code and reloads the page.
 
-The bind address defaults to loopback. Anything else warns at startup and should sit behind TLS.
+The page escapes transcript content and its content security policy restricts resources to the bundled same-origin assets. These are defense-in-depth controls, not a substitute for keeping the bearer code and transport private.
+
+The bind address defaults to loopback. Anything else warns at startup and should sit behind TLS. A reverse proxy must preserve the `Authorization` header, disable buffering for `/session`, and allow long-lived SSE responses.
 
 ## The session stream
 
@@ -43,19 +45,35 @@ The bind address defaults to loopback. Anything else warns at startup and should
 
 Only one client may be attached. A second connection is refused with 409, and a client that cannot keep up with the stream is dropped so it reopens onto a fresh replay.
 
-Frames are SSE `data:` lines carrying one JSON object each, plus `: keepalive` comments. A type beginning with an underscore is ephemeral presentation; everything else is a record the session holds, byte for byte as it appears on disk. `state` is the server's own frame: `{"type":"state","working":true|false}`, with an `error` when a turn ended badly.
+Frames are SSE `data:` lines carrying one JSON object each, plus `: keepalive` comments. The stream uses bearer authentication, so clients need an SSE-capable `fetch` implementation rather than the browser's native `EventSource`, which cannot set this header. There are no SSE event IDs; reconnect by reopening the complete replay.
+
+A JSON object whose type begins with an underscore is an ephemeral exec event. Apart from the server-owned `state` boundary, every other JSON object is a durable record the session holds. The boundary is `{"type":"state","working":true|false}`, with an `error` when a turn ended badly. See [`EXEC.md`](EXEC.md) for exec records, transient events, and permission shapes.
 
 Text and reasoning deltas carry `seq`, a zero-based sequence shared by both kinds and restarted for each provider response. The server forwards them because the protocol is shared with the terminal, but a client owes them nothing: the page bundled here ignores deltas entirely and draws assistant text and reasoning only from the record that commits them.
 
-A child appends a record to the session before it emits that record, so for an instant the file can be ahead of the stream. A connection that lands in that instant is refused with 503 rather than reconciled, and succeeds when the client retries.
+`GET /session` may briefly return `503 Service Unavailable` while a live stream catches up with the session file; retry the connection.
 
 ## Actions
 
-`POST /turn` starts a turn from a canonical user message. `POST /cancel` stops whatever turn is running. `POST /permission` answers whatever request is pending. None of them name their target: there is one client, one turn, and one pending request, and the server refuses with 409 when the target does not exist.
+`POST /turn` starts a turn from a canonical user message and returns `202 Accepted`:
 
-Bodies are JSON objects, bounded in size, forwarded to the child unchanged. Whether a body is a canonical message or a canonical permission response is exec's judgement, not the server's. A cancelled turn is given time to commit what it has: `SIGTERM` to exec alone, then the process group, and the response waits for the child to settle.
+```json
+{"type":"message","role":"user","content":[{"type":"text","text":"Review these changes"}]}
+```
 
-The first shutdown signal stops new work and gives an active turn ten seconds to commit before cancelling it. A turn waiting for permission is cancelled immediately because shutdown disconnects the browser that could answer it. A second signal skips the drain period.
+`POST /permission` answers the one pending request and returns `204 No Content`:
+
+```json
+{"type":"_tool_permission_response","id":"permission_1","decision":"approve"}
+```
+
+`POST /cancel` has no body, stops the active turn, waits for it to settle, and returns `204 No Content`.
+
+Actions do not otherwise name their target: there is one client, one turn, and one pending permission. A conflicting or missing target returns `409 Conflict`. A malformed object returns `400 Bad Request`, a body over 1 MiB returns `413 Request Entity Too Large`, invalid authentication returns `401 Unauthorized`, and shutdown may return `503 Service Unavailable`. Error responses are JSON objects of the form `{"error":"message"}`.
+
+Action bodies are bounded JSON objects forwarded to exec unchanged. The server validates framing, while exec validates canonical message and permission fields. A turn outlives the `POST /turn` request and publishes all progress through `/session`.
+
+The first shutdown signal stops new work and waits for an active turn to finish. A second signal forces shutdown. A turn waiting for permission may require the second signal after its client disconnects.
 
 ## Tests
 

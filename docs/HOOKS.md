@@ -10,9 +10,11 @@ The agent loop, with hooks marked, is:
 
 ```text
 resolve runtime
-open session
-if session was created: run session_start hooks
-read prompt
+if creating a session:
+    prepare header and system record
+    run session_start hooks
+    create the complete initial prefix
+open and lock the session for a turn
 run user_prompt_submit hooks
 append user
 repeat:
@@ -151,7 +153,7 @@ Runs once during lock-free session preparation. It does not run when an existing
 - **fd 3** is invalid; this event accepts no control.
 - **Default action** is finishing creation. Exit 10 or 11 is unsupported and fails exec entry without committing stdout.
 
-`add_environment` prints date, platform, working directory, a directory tree, and git state to stdout. `add_command_availability` reports the host Zsh version and the first available command and version in common command groups; missing commands and unsupported version flags are omitted. `add_project_instructions` prints the nearest `AGENTS.md`/`CLAUDE.md`. Creation-only execution prevents this durable context from being repeated on resume.
+`add_environment` prints date, platform, working directory, a directory tree, and git state to stdout. `add_command_availability` reports the host Zsh version and the first available command and version in common command groups; missing commands and unsupported version flags are omitted. `add_project_instructions` prints `AGENTS.md` from the session working directory, or `CLAUDE.md` when `AGENTS.md` is absent. Creation-only execution prevents this durable context from being repeated on resume.
 
 If a creation hook fails or is interrupted by a handled signal, Shellfish reports the failure and does not create the session file. Hooks that perform external writes must provide their own idempotency if creation is retried.
 
