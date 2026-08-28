@@ -79,12 +79,13 @@ func TestParseServerArgsStripsServerOptions(t *testing.T) {
 	if got, want := strings.Join(options.shellfishArgs, " "), "--profile work --config config.jsonc"; got != want {
 		t.Fatalf("Shellfish options = %q, want %q", got, want)
 	}
-	options, err = parseServerArgs([]string{"--session", "session.jsonl", "--profile", "work"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := strings.Join(options.shellfishArgs, " "); got != "--profile work" {
-		t.Fatalf("existing session options = %q", got)
+
+}
+
+func TestParseServerArgsRejectsExistingSessionOptions(t *testing.T) {
+	_, err := parseServerArgs([]string{"--session", "session.jsonl", "--profile", "work"})
+	if err == nil || err.Error() != "Shellfish options require creating a new session" {
+		t.Fatalf("existing session options error = %v", err)
 	}
 }
 

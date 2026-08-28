@@ -39,8 +39,6 @@ func main() {
 		if err != nil {
 			log.Fatal(err)
 		}
-	} else if len(options.shellfishArgs) > 0 {
-		log.Fatal("Shellfish options require creating a new session")
 	}
 	if err := serve(options.session, options.bind, options.binary); err != nil {
 		log.Fatal(err)
@@ -85,6 +83,9 @@ func parseServerArgs(args []string) (serverOptions, error) {
 		}
 		index++
 		*target = args[index]
+	}
+	if options.session != "" && len(options.shellfishArgs) > 0 {
+		return serverOptions{}, errors.New("Shellfish options require creating a new session")
 	}
 	return options, nil
 }
