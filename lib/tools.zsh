@@ -170,6 +170,7 @@ sf_tool_execute() {
   local call=$1 harness_sandbox=$2 decision=${3-} denial_reason=${4-}
   local tools=$5 cwd=$6 max_capture=$7 fence=$8
   local sandbox_read_paths=$9 sandbox_write_paths=${10}
+  local tool_home=${HOME:-$cwd}
   local id name execution_input bypass sandboxed result_type tool_sandbox tool_bypass tool_settings
   local state_dir runtime_dir captured bounded status_file temp command_path settings diff_field result_path original decoded
   local -a fields read_paths write_paths
@@ -291,7 +292,7 @@ sf_tool_execute() {
       mkdir "$temp" || return 1
       settings="$state_dir/fence.jsonc"
       print -r -- "$tool_settings" >"$settings" || return 1
-      command=(/usr/bin/env -i HOME="$runtime_dir" "${locale_env[@]}" PATH="$PATH" TERM="${TERM:-dumb}"
+      command=(/usr/bin/env -i HOME="$tool_home" "${locale_env[@]}" PATH="$PATH" TERM="${TERM:-dumb}"
         TMPDIR="$temp" TMPPREFIX="$temp/zsh"
         SHELLFISH_MAX_CAPTURE_BYTES="$max_capture"
         "$fence" --settings "$settings"
@@ -309,7 +310,7 @@ sf_tool_execute() {
       # env -i drops TMPDIR; TMPPREFIX separately controls Zsh here-documents.
       temp="$state_dir/tmp"
       mkdir "$temp" || return 1
-      command=(/usr/bin/env -i HOME="$cwd" "${locale_env[@]}" PATH="$PATH" TERM="${TERM:-dumb}"
+      command=(/usr/bin/env -i HOME="$tool_home" "${locale_env[@]}" PATH="$PATH" TERM="${TERM:-dumb}"
         TMPDIR="$temp" TMPPREFIX="$temp/zsh"
         SHELLFISH_MAX_CAPTURE_BYTES="$max_capture" "$command_path")
     fi

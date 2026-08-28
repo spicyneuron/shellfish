@@ -49,8 +49,13 @@ sf_tool_build_file_diff "$diff_state/target" "$diff_state/original" \
 [[ $REPLY == file_diff ]]
 grep -Fqx -- '+created' "$diff_state/result"
 
-# Capture preserves trailing newlines and retains only the configured byte tail.
+# Tool execution preserves the caller's home in its otherwise clean environment.
 load_tools "$stored_runtime"
+sf_test_tool_execute "$(jq -cn --arg command 'print -rn -- "$HOME"' \
+  '{id:"home_1",name:"shell",input:{command:$command}}')" 0
+jq -e --arg home "$HOME" '.content == $home' <<<"$REPLY" >/dev/null
+
+# Capture preserves trailing newlines and retains only the configured byte tail.
 sf_test_tool_execute "$(jq -cn --arg command "printf 'line\\n\\n'" \
   '{id:"capture_1",name:"shell",input:{command:$command}}')" 0
 jq -e '.content == "line\n\n" and .sandboxed == false' \
@@ -185,7 +190,7 @@ assert_equal "$LC_ALL" "$(<"$tmp/fence.lc_all")"
 assert_equal "$LC_CTYPE" "$(<"$tmp/fence.lc_ctype")"
 typeset fence_tmpdir=$(<"$tmp/fence.tmpdir")
 assert_equal "$fence_tmpdir/zsh" "$(<"$tmp/fence.tmpprefix")"
-assert_equal "${fence_tmpdir:h}" "$(<"$tmp/fence.home")"
+assert_equal "$HOME" "$(<"$tmp/fence.home")"
 [[ ${fence_tmpdir:h} == /tmp/shellfish-tool-runtime.* ]]
 grep -Fx -- "${fence_tmpdir:h}" "$tmp/fence.args" >/dev/null
 [[ ! -e ${fence_tmpdir:h} ]]
