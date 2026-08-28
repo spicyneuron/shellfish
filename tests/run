@@ -9,6 +9,7 @@ zmodload zsh/datetime
 typeset test_dir=${0:A:h} project_dir=${test_dir:h}
 typeset suite
 typeset -a tests
+typeset -a pids names logs results
 typeset test_path test_file log_dir
 integer jobs=${TEST_JOBS:-4} timeout=${TEST_TIMEOUT:-15}
 integer passed=0 failed=0
@@ -63,12 +64,40 @@ tests=( ${(@)tests:#*/_[^/]#} )
   print -u2 -r -- "No ${suite:-requested} tests found."
   exit 1
 }
+(( $+commands[python3] )) || {
+  print -u2 -r -- 'python3 is required to run the test suite.'
+  exit 2
+}
 
 log_dir=$(mktemp -d "$TMPDIR/run.XXXXXX") || exit 1
-trap 'rm -rf -- "$log_dir"' EXIT
-# A signal handler that returns would carry on running against a deleted
-# log directory, so interruption has to leave through exit.
-trap 'exit 130' INT TERM
+# Signal traps exit through shared cleanup, which stops workers before removing
+# their logs. Each worker tears down its target's isolated process group.
+cleanup_runner() {
+  trap '' INT TERM
+  typeset -a active=( ${(@)pids:#0} )
+  if (( ${#active} )); then
+    kill -TERM -- $active 2>/dev/null
+    wait $active 2>/dev/null
+  fi
+  rm -rf -- "$log_dir"
+}
+trap cleanup_runner EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+cleanup_worker() {
+  trap '' INT TERM
+  if (( sf_watchdog_pid != 0 )); then
+    kill -KILL -- $sf_watchdog_pid 2>/dev/null
+    wait $sf_watchdog_pid 2>/dev/null
+    sf_watchdog_pid=0
+  fi
+  if (( sf_target_pid != 0 )); then
+    kill -KILL -- -$sf_target_pid $sf_target_pid 2>/dev/null
+    wait $sf_target_pid 2>/dev/null
+    sf_target_pid=0
+  fi
+}
 
 # Runs one target to completion in the background, capturing its output and
 # recording "<status> <seconds>" for the parent to report. The watchdog polls
@@ -77,15 +106,20 @@ trap 'exit 130' INT TERM
 run_test() {
   local file=$1 log=$2 result=$3 start=$EPOCHREALTIME directory=''
   local -a runner
-  integer code=0 pid watchdog polls=0
+  integer code=0 polls=0
+  # Each worker is a separate process; these outlive the function for EXIT cleanup.
+  integer -g sf_target_pid=0 sf_watchdog_pid=0
+  trap cleanup_worker EXIT
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
   if [[ -d $file ]]; then
     directory=$file
     runner=( go test ./... )
   else
     case $file in
-      *.zsh) runner=( zsh -f ) ;;
-      *.py)  runner=( python3 ) ;;
-      *.js)  runner=( node --test ) ;;
+      *.zsh) runner=( zsh -f "$file" ) ;;
+      *.py)  runner=( python3 "$file" ) ;;
+      *.js)  runner=( node --test "$file" ) ;;
       *.go)
         directory=${file:h}
         runner=( go test ./... )
@@ -95,29 +129,31 @@ run_test() {
   (
     [[ -z $directory ]] || cd -- "$directory"
     if [[ -n $directory ]]; then
-      GOCACHE="$TMPDIR/gocache" GOMODCACHE="$TMPDIR/gomod" $runner
-    else
-      $runner "$file"
+      export GOCACHE="$TMPDIR/gocache" GOMODCACHE="$TMPDIR/gomod"
     fi
+    # Non-interactive shells cannot use job control to isolate background jobs,
+    # so create a process group whose id is the target pid.
+    exec python3 -c 'import os, sys; os.setsid(); os.execvp(sys.argv[1], sys.argv[1:])' $runner
   ) >"$log" 2>&1 &
-  pid=$!
+  sf_target_pid=$!
   {
     while (( polls++ < timeout * 5 )); do
-      kill -0 $pid 2>/dev/null || exit 0
+      kill -0 $sf_target_pid 2>/dev/null || exit 0
       sleep 0.2
     done
-    kill -KILL $pid 2>/dev/null
+    kill -KILL -- -$sf_target_pid $sf_target_pid 2>/dev/null
   } &
-  watchdog=$!
-  wait $pid || code=$?
-  kill -KILL $watchdog 2>/dev/null
-  wait $watchdog 2>/dev/null
+  sf_watchdog_pid=$!
+  wait $sf_target_pid || code=$?
+  # A successful test can still leave background descendants behind.
+  kill -KILL -- -$sf_target_pid 2>/dev/null
+  sf_target_pid=0
+  cleanup_worker
   (( code != 137 )) || print -r -- "timed out after ${timeout}s" >>"$log"
   printf '%d %.1f\n' $code $(( EPOCHREALTIME - start )) >"$result"
 }
 
 # Files are independent, so they run concurrently but are reported in order.
-typeset -a pids names logs results
 integer index
 
 report() {
@@ -129,6 +165,7 @@ report() {
   typeset elapsed='?'
   typeset -a lines
   wait $pids[slot] 2>/dev/null
+  pids[slot]=0
   [[ ! -s $results[slot] ]] || read -r code elapsed <$results[slot]
   if (( code == 0 )); then
     (( ++passed ))
