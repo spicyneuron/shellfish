@@ -337,6 +337,19 @@ test("replays the durable session before live work", async () => {
   assert.equal(page.model.textContent, "test/test-model");
 });
 
+test("labels context with the script before the hook", async () => {
+  const page = await idle();
+  await page.send({
+    type: "context",
+    tag: "session_start",
+    hook: "add_environment",
+    content: "environment",
+  });
+  const summary = findTag(find(page.output, "context")[0], "summary")[0];
+  assert.equal(summary.textContent, "add_environment session_start");
+  assert.equal(findTag(summary, "strong")[0].textContent, "add_environment");
+});
+
 test("leaves deltas out of the transcript and draws the record once", async () => {
   const page = await idle();
   await page.send(
@@ -371,7 +384,7 @@ test("leaves deltas out of the transcript and draws the record once", async () =
   assert.equal(find(page.output, "section").length, 2);
   assert.equal(find(page.output, "section")[1].textContent, "agent");
   assert.equal(find(page.output, "activity").length, 1);
-  assert.equal(page.usage.textContent, "10 ↑ 2 ↓");
+  assert.equal(page.usage.textContent, " · 10 ↑ 2 ↓");
   await page.send({ type: "state", working: false });
   assert.equal(find(page.output, "activity").length, 0);
 });
@@ -432,9 +445,9 @@ test("answers the pending permission request once", async () => {
     },
   );
   const request = find(page.output, "permission")[0];
-  assert.match(request.textContent, /permission · shell/);
+  assert.match(request.textContent, /Run shell outside of sandbox\?/);
   assert.match(request.textContent, /ls/);
-  assert.match(request.textContent, /not allowed by policy/);
+  assert.match(request.textContent, /Reason: not allowed by policy/);
 
   const [approve] = find(page.output, "actions")[0].children;
   approve.dispatch("click");
@@ -452,7 +465,8 @@ test("answers the pending permission request once", async () => {
 
 test("keeps a tool call and its result together", async () => {
   const page = await idle();
-  await page.send({ type: "state", working: true });
+  await page.send({ type: "state", working: true }, { type: "_backend_request_start" });
+  assert.equal(page.cancel.hidden, false);
   await page.send({
     type: "message",
     role: "assistant",
@@ -461,6 +475,7 @@ test("keeps a tool call and its result together", async () => {
   });
   assert.equal(find(page.output, "call").length, 1);
   assert.equal(find(page.output, "activity").length, 1);
+  assert.equal(page.cancel.hidden, true);
 
   await page.send({
     type: "message",
@@ -498,12 +513,15 @@ test("serializes turns and cancellation", async () => {
   });
   assert.equal(page.entry.style.height, "");
   assert.equal(find(page.output, "activity").length, 1);
+  assert.equal(page.cancel.hidden, true);
   await page.send({
     type: "message",
     role: "user",
     content: [{ type: "text", text: "do the thing\nwith detail" }],
   });
   assert.equal(find(page.output, "activity").length, 1);
+  await page.send({ type: "_backend_request_start" });
+  assert.equal(page.cancel.hidden, false);
   // A turn is running until a state frame says otherwise, so a second message
   // waits in the prompt rather than reaching the service.
   assert.equal(page.entry.disabled, false);
@@ -571,11 +589,13 @@ test("styles markdown without hiding its source", async () => {
     'echo "hello"',
     "```",
   ].join("\n"));
-  assert.equal(findTag(text, "strong")[0].textContent, "**bold**");
+  assert.equal(findTag(text, "strong")[0].textContent, "## Heading");
+  assert.equal(findTag(text, "strong")[1].textContent, "**bold**");
   assert.equal(findTag(text, "em")[0].textContent, "*italic*");
   assert.equal(findTag(text, "code")[0].textContent, "`code`");
   assert.equal(find(text, "comment")[0].textContent, "# comment");
   assert.equal(find(text, "string")[0].textContent, '"hello"');
+  assert.deepEqual(find(text, "fence").map((node) => node.textContent), ["```sh", "```"]);
 });
 
 test("leaves generated links inert", async () => {
@@ -628,6 +648,43 @@ test("highlights representative language-family syntax", async () => {
   assert.deepEqual(find(text, "number").map((node) => node.textContent), ["12"]);
   assert.equal(find(text, "string")[0].textContent, '"""First line\n    second line."""');
   assert.equal(find(text, "comment")[0].textContent, "# not: a key");
+});
+
+test("highlights complete HTML tag boundaries", async () => {
+  const page = await idle();
+  await page.send({
+    type: "message",
+    role: "assistant",
+    stop: "end",
+    content: [
+      {
+        type: "text",
+        text: [
+          "```html",
+          "<strong>text</strong>",
+          '<main id="content">text</main>',
+          '<item name="a > b" />',
+          "1 > 0",
+          "```",
+        ].join("\n"),
+      },
+    ],
+  });
+  const text = find(page.output, "text")[0];
+  assert.deepEqual(find(text, "tag").map((node) => node.textContent), [
+    "<strong",
+    ">",
+    "</strong>",
+    "<main",
+    ">",
+    "</main>",
+    "<item",
+    "/>",
+  ]);
+  assert.deepEqual(find(text, "string").map((node) => node.textContent), [
+    '"content"',
+    '"a > b"',
+  ]);
 });
 
 test("leaves unknown fenced languages readable", async () => {

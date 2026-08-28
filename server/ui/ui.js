@@ -31,6 +31,8 @@ let reader = null;
 let generation = 0;
 // Whether a turn is running, as the last state frame reported it.
 let working = false;
+// Whether the backend is currently handling a request within the active turn.
+let requesting = false;
 // Set while an action is on its way to the service. Actions are serialized: the
 // service answers about whatever is current, so overlapping them is meaningless.
 let busy = false;
@@ -114,9 +116,15 @@ function hideIndicator() {
   indicator = null;
 }
 
-function collapsible(parent, summary, text, kind) {
+function collapsible(parent, summary, text, kind, secondary) {
   const details = el(parent, "details", kind);
-  el(details, "summary", null, summary);
+  const heading = el(details, "summary");
+  if (secondary !== undefined) {
+    el(heading, "strong", null, summary);
+    heading.append(document.createTextNode(" " + secondary));
+  } else {
+    heading.textContent = summary;
+  }
   el(details, "pre", null, safe(text));
 }
 
@@ -151,7 +159,7 @@ function markdown(parent, text) {
     const line = lines[index];
     const fence = FENCE.exec(line);
     if (fence) {
-      markup(parent, line);
+      markup(parent, line, "fence");
       if (index < lines.length - 1) parent.append(document.createTextNode("\n"));
       const code = [];
       while (++index < lines.length && !lines[index].trimStart().startsWith(fence[1])) {
@@ -160,7 +168,7 @@ function markdown(parent, text) {
       highlight(parent, code.join("\n"), fence[2]);
       if (index < lines.length) {
         parent.append(document.createTextNode("\n"));
-        markup(parent, lines[index]);
+        markup(parent, lines[index], "fence");
       }
       if (index < lines.length - 1) parent.append(document.createTextNode("\n"));
       continue;
@@ -168,8 +176,9 @@ function markdown(parent, text) {
     const leader = LEADER.exec(line);
     if (leader) {
       parent.append(document.createTextNode(leader[1]));
-      markup(parent, leader[2] + leader[3]);
-      inline(parent, leader[4]);
+      const content = leader[2].startsWith("#") ? el(parent, "strong") : parent;
+      markup(content, leader[2] + leader[3]);
+      inline(content, leader[4]);
     } else {
       inline(parent, line);
     }
@@ -177,8 +186,8 @@ function markdown(parent, text) {
   }
 }
 
-function markup(parent, text) {
-  el(parent, "span", "markup", text);
+function markup(parent, text, kind) {
+  el(parent, "span", kind ? "markup " + kind : "markup", text);
 }
 
 function inline(parent, text) {
@@ -234,7 +243,11 @@ const LANGUAGES = {
     words: "true|false|null",
   },
   css: { comments: ["/\\*[\\s\\S]*?\\*/"], quotes: "\"'" },
-  html: { comments: ["<!--[\\s\\S]*?-->"], quotes: "\"'", tags: ["</?[A-Za-z][\\w:-]*"] },
+  html: {
+    comments: ["<!--[\\s\\S]*?-->"],
+    quotes: "\"'",
+    tags: ["</[A-Za-z][\\w:-]*>", "</?[A-Za-z][\\w:-]*", "/?>"],
+  },
 };
 
 const ALIASES = {
@@ -287,11 +300,22 @@ function highlight(parent, code, language) {
     return;
   }
   let last = 0;
+  let tagOpen = false;
   for (const match of code.matchAll(pattern(name))) {
     const token = match[1] || match[0];
     const index = match.index + match[0].length - token.length;
     if (index > last) parent.append(document.createTextNode(code.slice(last, index)));
-    el(parent, "span", match[1] ? "tag" : tokenKind(token, LANGUAGES[name]), token);
+    let kind = match[1] ? "tag" : tokenKind(token, LANGUAGES[name]);
+    if (name === "html") {
+      if (token === ">" || token === "/>") {
+        kind = tagOpen ? "tag" : null;
+        tagOpen = false;
+      } else if (kind === "tag") {
+        tagOpen = !token.endsWith(">");
+      }
+    }
+    if (kind) el(parent, "span", kind, token);
+    else parent.append(document.createTextNode(token));
     last = index + token.length;
   }
   parent.append(document.createTextNode(code.slice(last)));
@@ -312,16 +336,14 @@ function apply(frame) {
       section("system");
       return renderCollapsed("system", "system prompt", frame.content);
     case "context":
-      return renderCollapsed(
-        "context",
-        frame.hook ? frame.tag + " · " + frame.hook : frame.tag,
-        frame.content,
-      );
+      return renderCollapsed("context", frame.hook, frame.content, frame.tag);
     case "message":
       return renderMessage(frame);
     case "state":
       return applyState(frame);
     case "_backend_request_start":
+      requesting = true;
+      refresh();
       return showIndicator();
     case "_assistant_delta":
     case "_assistant_reasoning_delta":
@@ -346,10 +368,11 @@ function apply(frame) {
 
 // A prompt and its injected context are reference material: present, but folded
 // away until a reader asks for them.
-function renderCollapsed(kind, heading, content) {
+function renderCollapsed(kind, heading, content, secondary) {
   hideIndicator();
   const article = record(kind, null);
-  collapsible(article, safe(heading), content);
+  const label = secondary === undefined ? undefined : safe(secondary);
+  collapsible(article, safe(heading), content, null, label);
   place(article);
   if (working) showIndicator();
 }
@@ -369,6 +392,8 @@ function renderMessage(frame) {
     return;
   }
   if (frame.role === "tool_result") return renderResult(frame);
+  requesting = false;
+  refresh();
   hideIndicator();
   section("agent");
   const article = record("assistant", null);
@@ -409,6 +434,7 @@ function applyState(frame) {
   if (working) {
     showIndicator();
   } else {
+    requesting = false;
     hideIndicator();
     clearPermission();
   }
@@ -422,7 +448,7 @@ function showUsage(tokens) {
     tokens.cached_tokens && tokens.input_tokens
       ? " " + Math.floor((tokens.cached_tokens * 100) / tokens.input_tokens) + "% ⦿"
       : "";
-  usage.textContent = tokens.input_tokens + " ↑" + cached + " " + tokens.output_tokens + " ↓";
+  usage.textContent = " · " + tokens.input_tokens + " ↑" + cached + " " + tokens.output_tokens + " ↓";
 }
 
 // ---------------------------------------------------------------- permissions
@@ -431,9 +457,9 @@ function askPermission(frame) {
   hideIndicator();
   pending = frame.id;
   const tool = frame.tool || {};
-  const article = record("permission", "permission · " + safe(tool.name));
+  const article = record("permission", "Run " + safe(tool.name) + " outside of sandbox?");
   el(article, "pre", "input", safe(inputText(tool.input)));
-  if (frame.reason) el(article, "pre", "reason", safe(frame.reason));
+  if (frame.reason) el(article, "pre", "reason", "Reason: " + safe(frame.reason));
   const actions = el(article, "div", "actions");
   for (const decision of ["approve", "deny"]) {
     el(actions, "button", null, decision).addEventListener("click", () => {
@@ -556,6 +582,7 @@ function reset() {
   lastRole = null;
   pending = null;
   working = false;
+  requesting = false;
   usage.textContent = "";
   refresh();
 }
@@ -563,7 +590,7 @@ function reset() {
 // ------------------------------------------------------------------ the page
 
 function refresh() {
-  cancelButton.hidden = !working;
+  cancelButton.hidden = !requesting;
   cancelButton.disabled = busy;
   detachButton.hidden = code === null;
 }
@@ -646,11 +673,11 @@ entry.addEventListener("keydown", (event) => {
 });
 
 cancelButton.addEventListener("click", () => {
-  if (working && !busy) act("/cancel", {});
+  if (requesting && !busy) act("/cancel", {});
 });
 
 document.addEventListener("keydown", (event) => {
-  if (event.key === "Escape" && working && !busy) act("/cancel", {});
+  if (event.key === "Escape" && requesting && !busy) act("/cancel", {});
 });
 
 const savedCode = sessionStorage.getItem(CODE_STORAGE_KEY);
