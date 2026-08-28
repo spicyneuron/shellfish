@@ -55,11 +55,14 @@ sf_chat_chat_end() {
   local session=$1 divider
   integer divider_width=13
   local -a messages=(
-    'Good-tide for now!'
+    'Good-tide for now.'
     'Thanks for scuttling by.'
     'Time to hit the sand.'
     'Until next tide.'
     'Sea you soon.'
+    'Sea you later.'
+    'Seas the day!'
+    'Just keep swimming.'
   )
   (( COLUMNS > 1 )) && divider_width=$(( COLUMNS - 1 ))
   divider=${(l:divider_width::─:)""}
