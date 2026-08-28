@@ -286,8 +286,8 @@ sf_chat_event() {
       fi
       ;;
     context)
-      sf_chat_add injection system "$second" "$third" || return 1
-      SF_PRESENT_NODE_META[REPLY]=$first
+      sf_chat_add injection system "$first" "$third" || return 1
+      SF_PRESENT_NODE_META[REPLY]=$second
       ;;
     *) return 1 ;;
   esac

@@ -91,7 +91,7 @@ sf_chat_reset
 sf_chat_terminal_reset
 sf_chat_rows_config '{"tui":{"preview_lines_context":1}}'
 sf_chat_section user
-sf_chat_event context project hook $'alpha beta\ngamma\ndelta'
+sf_chat_event context hook project $'alpha beta\ngamma\ndelta'
 sf_chat_viewport 16 4 "$SF_PRESENT_CURSOR"
 assert_equal '2:t:0:1' "$SF_PRESENT_FLUSH_CURSOR"
 sf_chat_terminal_stage

@@ -59,8 +59,8 @@ def durable_display_fields($replay; $tools):
       .content, (.result_type // ""),
       (if ($display.always_full // false) then "full" else "" end)]
   elif canonical_context then
-    ["context", .tag,
-      ([.hook?, .prompt?] |
+    ["context", .hook,
+      ([.tag, .prompt?] |
         map(select(. != null and . != "")) | join(" ")), .content, "", ""]
   else
     empty

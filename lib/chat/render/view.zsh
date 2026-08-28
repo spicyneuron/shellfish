@@ -97,7 +97,7 @@ sf_chat_update_highlights() {
 
 sf_chat_repaint() {
   integer columns=${COLUMNS:-0} rows=${LINES:-0} budget reserve=6
-  integer index queue_shown queue_limit start queue_head=0 history_item=0
+  integer index queue_shown queue_limit start queue_head=0 history_item=0 history_label=0
   local divider footer_divider permission label queue_item queue_line queue_text=''
   local choices='[a]pprove  [d]eny (default)'
   SF_PRESENT_CHROME_HIGHLIGHTS=()
@@ -192,11 +192,15 @@ sf_chat_repaint() {
       if (( ${#label} + 4 <= columns )); then
         divider="─ $label "
         divider+=${(l:$(( columns - ${#label} - 3 ))::─:)""}
+        history_label=1
       fi
     fi
     start=${#PREDISPLAY}
     PREDISPLAY+="$divider"$'\n'
     sf_chat_chrome $start ${#divider} divider
+    if (( history_label )); then
+      sf_chat_chrome $(( start + 2 )) ${#label} muted
+    fi
     start=${#PREDISPLAY}
     PREDISPLAY+='❯ '
     sf_chat_chrome $start 2 prompt
@@ -207,6 +211,8 @@ sf_chat_repaint() {
     start=$(( ${#PREDISPLAY} + ${#BUFFER} + ${#POSTDISPLAY} + 1 ))
     POSTDISPLAY+=$'\n'"$SF_PRESENT_FOOTER"
     sf_chat_chrome $start ${#SF_PRESENT_FOOTER} footer
+    [[ -z $SF_PRESENT_IDENTITY ]] ||
+      sf_chat_chrome $start ${#SF_PRESENT_IDENTITY} footer.identity
   fi
   sf_chat_update_highlights view || return 1
 }

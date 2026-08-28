@@ -41,6 +41,13 @@ order=$(print -r -- \
   tr '\0' '\n' | sed '/^$/d' | paste -sd, -)
 assert_equal 'assistant_commit,tool_call,call_2,read_file unsandboxed,{"file_path":"outside.txt"},json,batch_ok' "$order"
 
+order=$(print -r -- \
+    '{"type":"context","tag":"user_prompt_submit","hook":"hook name","prompt":"prompt","status":0,"content":"body"}' |
+  jq -jRs -L "$ROOT/lib" --argjson runtime null \
+    -f "$ROOT/lib/chat/event-decode.jq" |
+  tr '\0' '\n' | sed '/^$/d' | paste -sd, -)
+assert_equal 'context,hook name,user_prompt_submit prompt,body,batch_ok' "$order"
+
 typeset edit_runtime=$(jq -cn \
   --slurpfile edit "$ROOT/default/tools/edit_file/tool.json" '
   {harness:{tools:[{name:"edit_file",manifest:$edit[0]}]}}

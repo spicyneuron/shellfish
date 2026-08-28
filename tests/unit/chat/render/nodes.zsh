@@ -57,7 +57,7 @@ assert_equal plain "$SF_PRESENT_NODE_FORMAT[6]"
 assert_equal tool_result "$SF_PRESENT_NODE_TYPE[7]"
 
 sf_chat_reset
-sf_chat_event context session_start environment '<env>test</env>'
+sf_chat_event context environment session_start '<env>test</env>'
 sf_chat_event user ''
 assert_equal 'injection,section,message' "${(j:,:)SF_PRESENT_NODE_TYPE}"
 assert_equal session_start "$SF_PRESENT_NODE_META[1]"
@@ -66,7 +66,7 @@ assert_equal '' "$SF_PRESENT_NODE_BODY[3]"
 
 sf_chat_reset
 sf_chat_event user hello
-sf_chat_event context prompt hook injected
+sf_chat_event context hook prompt injected
 sf_chat_event user again
 assert_equal 'section,message,injection,message' "${(j:,:)SF_PRESENT_NODE_TYPE}"
 
@@ -176,8 +176,10 @@ sf_chat_theme_config "$theme_config" || fail "theme setup failed: $SF_PRESENT_HI
 assert_equal 'fg=#555555,bold' "$SF_PRESENT_STYLE[section.user]"
 assert_equal 'fg=#777777' "$SF_PRESENT_STYLE[message]"
 assert_equal 'fg=#333333' "$SF_PRESENT_STYLE[divider]"
+assert_equal 'fg=#222222' "$SF_PRESENT_STYLE[clamp]"
 assert_equal 'fg=#666666' "$SF_PRESENT_STYLE[notice.error]"
 assert_equal 'fg=#444444' "$SF_PRESENT_STYLE[prompt]"
+assert_equal 'fg=#222222,bold' "$SF_PRESENT_STYLE[footer.identity]"
 assert_equal 'fg=#222225' "$SF_PRESENT_STYLE[syntax.string]"
 assert_equal 'fg=#222223' "$SF_PRESENT_STYLE[syntax.comment]"
 assert_equal 'fg=#222224' "$SF_PRESENT_STYLE[syntax.keyword]"

@@ -110,9 +110,8 @@ sf_chat_preview_tail() {
 # back to "type". The caller appends the matching row cursor separately.
 sf_chat_row_append() {
   local text=$1 kind=$2 syntax=${5-} style_kind=${7:-$2} style highlight=''
-  integer settled=$3 node=$4 source_end=${6:--1} title=${8:-0}
+  integer settled=$3 node=$4 source_end=${6:--1}
   style=${SF_PRESENT_STYLE[$style_kind]:-$SF_PRESENT_STYLE[${style_kind%%.*}]}
-  (( ! title )) || style+="${style:+,}bold"
   [[ -z $style || -z $text ]] || highlight="0 ${#text} $style"
   [[ -z $syntax ]] || highlight+="${highlight:+ }$syntax"
   SF_PRESENT_ROW_TEXT+=( "$text" )
@@ -155,14 +154,16 @@ sf_chat_rows() {
   integer withhold_separator
   integer decorated previewed collapsed body_start=-1 body_end=0 preview_used=0 hidden=0
   integer content_start=-1 content_end=-1 source_base=0 source_end=0 frontier=-1
-  integer separator_row transition tail_phase=0 complete_row title_row
+  integer separator_row transition tail_phase=0 complete_row
   integer display_start map_start map_end run_start break_run map span span_index=1
   integer span_start span_end row_start row_end highlight_start highlight_end
   integer section_start section_end section_row_start section_row_end
+  integer value_start=-1 value_stop=-1
+  integer clamp_start=-1 clamp_stop=-1
   local cursor=${3:-1:0} text part state type heading body spans character run activity_text
   local leading
   local break_text display prefix preview=full head tail exact cursor_value row_highlight
-  local style_kind divider_style title_style
+  local style_kind divider_style title_style clamp_style title_value
   local -a cursor_parts row_map break_map source_spans projected
 
   (( columns > 0 && budget > 0 )) || return 1
@@ -216,6 +217,10 @@ sf_chat_rows() {
     content_start=-1
     content_end=-1
     source_base=0
+    value_start=-1
+    value_stop=-1
+    clamp_start=-1
+    clamp_stop=-1
     head=''
     preview=full
 
@@ -247,6 +252,8 @@ sf_chat_rows() {
               sf_chat_token_count "$body"
               text="… ~$REPLY tokens"
               collapsed=1
+              clamp_start=0
+              clamp_stop=${#text}
             fi
           fi
           if [[ $state == open ]]; then
@@ -273,8 +280,8 @@ sf_chat_rows() {
         injection)
           decorated=1
           preview=$SF_PRESENT_PREVIEW_CONTEXT
-          head="↪ $SF_PRESENT_NODE_META[node]"
-          [[ -z $heading ]] || head+="${SF_PRESENT_NODE_META[node]:+ }$heading"
+          head="↪ $heading"
+          [[ -z $SF_PRESENT_NODE_META[node] ]] || head+=" $SF_PRESENT_NODE_META[node]"
           ;;
         notice)
           decorated=1
@@ -286,6 +293,23 @@ sf_chat_rows() {
           ;;
         *) return 1 ;;
       esac
+      if [[ $type == (tool_call|injection|notice) ]]; then
+        case $type in
+          tool_call)
+            value_start=2
+            title_value=${heading%% *}
+            ;;
+          injection)
+            value_start=2
+            title_value=$heading
+            ;;
+          notice)
+            value_start=2
+            title_value=$heading
+            ;;
+        esac
+        value_stop=$(( value_start + ${#title_value} ))
+      fi
       if (( decorated )); then
         previewed=1
         leading=${body%%[!$'\n']*}
@@ -319,6 +343,14 @@ sf_chat_rows() {
           else
             text=$head
             [[ -z $body ]] || text+=" · ~$REPLY tokens"
+          fi
+          case $type in
+            reasoning) clamp_start=0 ;;
+            tool_result) [[ -z $body ]] || clamp_start=2 ;;
+            injection) [[ -z $body ]] || clamp_start=$(( ${#head} + 1 )) ;;
+          esac
+          if (( clamp_start >= 0 )); then
+            clamp_stop=${#text}
           fi
           [[ $state != open ]] || withhold_all=1
         else
@@ -358,6 +390,12 @@ sf_chat_rows() {
       if [[ $type != tool_result ]]; then
         if (( node != 1 || SF_PRESENT_PREFIX_VISIBLE )); then
           text=$'\n'$text
+          if (( value_start >= 0 )); then
+            (( value_start++, value_stop++ ))
+          fi
+          if (( clamp_start >= 0 )); then
+            (( clamp_start++, clamp_stop++ ))
+          fi
           if (( content_start >= 0 )); then
             (( content_start++, content_end++ ))
           fi
@@ -664,14 +702,28 @@ sf_chat_rows() {
         [[ -z $divider_style ]] || (( section_row_end == ${#part} )) ||
           projected+=( $section_row_end ${#part} "$divider_style" )
       fi
-      row_highlight="${(j: :)projected}"
-      title_row=0
-      if [[ $type == (tool_call|injection|notice) ]] && (( ! tail_phase &&
-          (collapsed || body_start < 0 || start < body_start) )); then
-        title_row=1
+      if (( ! tail_phase && value_start < offset && value_stop > start )); then
+        highlight_start=$(( value_start > start ? value_start - start : 0 ))
+        highlight_end=$(( value_stop < start + ${#part} ? value_stop - start : ${#part} ))
+        title_style=${SF_PRESENT_STYLE[$style_kind]:-$SF_PRESENT_STYLE[${style_kind%%.*}]}
+        [[ -z $title_style ]] || (( highlight_end <= highlight_start )) ||
+          projected+=( $highlight_start $highlight_end "$title_style,bold" )
       fi
+      clamp_style=$SF_PRESENT_STYLE[clamp]
+      if (( tail_phase )) && [[ $hidden == 1 || $type == reasoning ]]; then
+        [[ -z $clamp_style || -z $part ]] || projected+=( 0 ${#part} "$clamp_style" )
+      elif (( clamp_start < offset && clamp_stop > start )); then
+        highlight_start=$(( clamp_start > start ? clamp_start - start : 0 ))
+        highlight_end=$(( clamp_stop < start + ${#part} ? clamp_stop - start : ${#part} ))
+        [[ -z $clamp_style ]] || (( highlight_end <= highlight_start )) ||
+          projected+=( $highlight_start $highlight_end "$clamp_style" )
+      fi
+      if [[ $type == (tool_call|tool_result) && $part == (│|╰)* ]]; then
+        [[ -z $SF_PRESENT_STYLE[divider] ]] || projected+=( 0 1 "$SF_PRESENT_STYLE[divider]" )
+      fi
+      row_highlight="${(j: :)projected}"
       sf_chat_row_append "$part" "$spans" $settled $node "$row_highlight" $source_end \
-        "$style_kind" $title_row
+        "$style_kind"
 
       if (( previewed && ! collapsed && ! tail_phase && ! transition )) &&
           [[ -z $text ]] && (( ! activity )); then

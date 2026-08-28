@@ -59,10 +59,10 @@ sf_chat_rows 80 20
 assert_equal '1,1,0' "${(j:,:)SF_PRESENT_ROW_SETTLED[1,3]}"
 
 sf_chat_reset
-sf_chat_event context session_start environment '<env>test</env>'
+sf_chat_event context environment session_start '<env>test</env>'
 sf_chat_event user ''
 sf_chat_rows 80 20
-assert_equal $'↪ session_start environment\n  <env>test</env>' \
+assert_equal $'↪ environment session_start\n  <env>test</env>' \
   "${(F)SF_PRESENT_ROW_TEXT[1,2]}"
 assert_equal '─ user ─────────────────────────────────────────────────────────────────────────' "$SF_PRESENT_ROW_TEXT[-1]"
 
@@ -132,9 +132,9 @@ sf_chat_rows 80 20
 assert_equal $'⛭ read_file\n│ path\n╰' "${(F)SF_PRESENT_ROW_TEXT[-3,-1]}"
 
 sf_chat_reset
-sf_chat_event context session_start environment $'one\ntwo'
+sf_chat_event context environment session_start $'one\ntwo'
 sf_chat_rows 80 20
-assert_equal '↪ session_start environment · ~2 tokens' "${(F)SF_PRESENT_ROW_TEXT}"
+assert_equal '↪ environment session_start · ~2 tokens' "${(F)SF_PRESENT_ROW_TEXT}"
 
 sf_chat_reset
 sf_chat_event system $'one\ntwo'
@@ -160,9 +160,9 @@ assert_equal $'─ agent ──────────────────�
   "${(F)SF_PRESENT_ROW_TEXT}"
 
 sf_chat_reset
-sf_chat_event context project hook $'alpha beta\ngamma\ndelta'
+sf_chat_event context hook project $'alpha beta\ngamma\ndelta'
 sf_chat_rows 16 20
-assert_equal $'↪ project hook\n  alpha beta\n  … ~6 tokens' "${(F)SF_PRESENT_ROW_TEXT}"
+assert_equal $'↪ hook project\n  alpha beta\n  … ~6 tokens' "${(F)SF_PRESENT_ROW_TEXT}"
 
 sf_chat_rows 16 2
 assert_equal '1:t:0:1' "$SF_PRESENT_ROW_CURSOR[-1]"
@@ -216,9 +216,9 @@ assert_equal $'ℹ Heads up\n  detail\n\n✕ Failed\n  broken' "${(F)SF_PRESENT_
 
 sf_chat_rows_config '{"tui":{"preview_lines_context":"full"}}'
 sf_chat_reset
-sf_chat_event context h '' 'alpha beta gamma'
+sf_chat_event context hook h 'alpha beta gamma'
 sf_chat_rows 12 20
-assert_equal $'↪ h\n  alpha beta\n  gamma' "${(F)SF_PRESENT_ROW_TEXT}"
+assert_equal $'↪ hook h\n  alpha beta\n  gamma' "${(F)SF_PRESENT_ROW_TEXT}"
 
 sf_chat_reset
 sf_chat_add message user '' 'ab界c'
@@ -324,9 +324,10 @@ if sf_chat_rows 8 1 broken; then
 fi
 
 # Semantic row styling resolves "type.role" before falling back to "type", and
-# leaves generated separators unstyled.
+# leaves blank separator rows unstyled.
 SF_PRESENT_STYLE=( divider 'fg=8' section.user 'fg=1,bold' message 'fg=2'
-  reasoning 'fg=3' tool_call 'fg=4' injection 'fg=5' notice 'fg=6' )
+  reasoning 'fg=3' tool_call 'fg=4' tool_result 'fg=4' injection 'fg=5' notice 'fg=6'
+  clamp 'fg=7' )
 sf_chat_reset
 sf_chat_event user hello
 sf_chat_rows 8 20
@@ -339,23 +340,71 @@ assert_equal '0 1 fg=8|0 3 fg=1,bold|0 2 fg=1,bold||0 3 fg=2|0 2 fg=2' \
   "${(j:|:)SF_PRESENT_ROW_HIGHLIGHTS}"
 
 sf_chat_reset
+sf_chat_event system hello
+sf_chat_rows 80 20
+assert_equal '0 5 fg=2' \
+  "$SF_PRESENT_ROW_HIGHLIGHTS[${SF_PRESENT_ROW_KIND[(i)message.system]}]"
+
+sf_chat_reset
 sf_chat_event assistant_reasoning_delta thinking
 sf_chat_rows 20 20
 assert_equal 'reasoning.agent' "$SF_PRESENT_ROW_KIND[3]"
 assert_equal '0 11 fg=3' "$SF_PRESENT_ROW_HIGHLIGHTS[3]"
 
 sf_chat_reset
-sf_chat_event context project hook body
-sf_chat_event tool_call call shell command
+sf_chat_event context hook project body
+sf_chat_event tool_call call 'shell unsandboxed' command
 sf_chat_event tool_result call hidden result
-sf_chat_add notice notice Warning detail
+sf_chat_add notice notice 'Heads up' detail
 sf_chat_rows 80 20
-assert_equal '0 14 fg=5,bold' \
+assert_equal '0 14 fg=5 2 6 fg=5,bold' \
   "$SF_PRESENT_ROW_HIGHLIGHTS[${SF_PRESENT_ROW_KIND[(i)injection.system]}]"
-assert_equal '0 7 fg=4,bold' \
+assert_equal '0 19 fg=4 2 7 fg=4,bold' \
   "$SF_PRESENT_ROW_HIGHLIGHTS[${SF_PRESENT_ROW_KIND[(i)tool_call.agent]}]"
-assert_equal '0 9 fg=6,bold' \
+assert_equal '0 10 fg=6 2 10 fg=6,bold' \
   "$SF_PRESENT_ROW_HIGHLIGHTS[${SF_PRESENT_ROW_KIND[(i)notice.notice]}]"
+assert_equal '0 9 fg=4 0 1 fg=8' \
+  "$SF_PRESENT_ROW_HIGHLIGHTS[${SF_PRESENT_ROW_TEXT[(i)│ command]}]"
+assert_equal '0 8 fg=4 0 1 fg=8' \
+  "$SF_PRESENT_ROW_HIGHLIGHTS[${SF_PRESENT_ROW_TEXT[(i)╰ result]}]"
+
+SF_PRESENT_PREVIEW_CONTEXT=0
+sf_chat_reset
+sf_chat_event context 'hook name' project body
+sf_chat_rows 80 20
+assert_equal '↪ hook name project · ~1 tokens' "$SF_PRESENT_ROW_TEXT[1]"
+assert_equal '0 31 fg=5 2 11 fg=5,bold 20 31 fg=7' "$SF_PRESENT_ROW_HIGHLIGHTS[1]"
+SF_PRESENT_PREVIEW_CONTEXT=1
+sf_chat_reset
+sf_chat_event context 'hook name' project "${(l:400::x:)}"
+sf_chat_rows 80 20
+assert_equal '0 15 fg=5 0 15 fg=7' "$SF_PRESENT_ROW_HIGHLIGHTS[-1]"
+SF_PRESENT_PREVIEW_CONTEXT=0
+sf_chat_reset
+sf_chat_event system "${(l:1060::x:)}"
+sf_chat_rows 80 20
+assert_equal '… ~265 tokens' "$SF_PRESENT_ROW_TEXT[-1]"
+assert_equal '0 13 fg=2 0 13 fg=7' "$SF_PRESENT_ROW_HIGHLIGHTS[-1]"
+SF_PRESENT_PREVIEW_CONTEXT=full
+
+SF_PRESENT_PREVIEW_TOOL_RESULT=full
+sf_chat_reset
+sf_chat_event tool_call status shell body
+sf_chat_event tool_result status 1 result
+sf_chat_rows 80 20
+assert_equal '  exit 1' "$SF_PRESENT_ROW_TEXT[-1]"
+assert_equal '0 8 fg=4' \
+  "$SF_PRESENT_ROW_HIGHLIGHTS[-1]"
+
+sf_chat_reset
+sf_chat_event tool_call wrapped very_long_tool_name body
+sf_chat_event tool_result wrapped hidden result
+sf_chat_add notice notice 'Long notice heading' detail
+sf_chat_rows 8 20
+assert_equal '0 8 fg=4 0 8 fg=4,bold' \
+  "$SF_PRESENT_ROW_HIGHLIGHTS[${SF_PRESENT_ROW_TEXT[(i)very_lon]}]"
+assert_equal '0 6 fg=6 0 6 fg=6,bold' \
+  "$SF_PRESENT_ROW_HIGHLIGHTS[${SF_PRESENT_ROW_TEXT[(i)notice]}]"
 
 # An unstyled kind produces no span, and every row keeps a highlight slot.
 SF_PRESENT_STYLE=()
