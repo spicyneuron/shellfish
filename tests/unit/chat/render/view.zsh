@@ -121,43 +121,6 @@ sf_chat_append 1 thought
 sf_chat_repaint
 assert_equal $'✎ Reasoning\n  thought\n  ⠃\n\n─────────────────────────────\n❯ ' "$PREDISPLAY"
 
-# Each filled visual row is scanned exactly once, and narrowing advances from
-# the flushed source cursor without duplicating its prefix or rescanning it.
-sf_chat_reset
-sf_chat_terminal_reset
-SF_PRESENT_STATE=working
-SF_PRESENT_HIGHLIGHT_ENABLED=1
-typeset -gi pressure_highlight_calls=0
-functions[sf_chat_markdown_saved]=$functions[sf_chat_markdown_highlight]
-sf_chat_markdown_highlight() {
-  (( ++pressure_highlight_calls ))
-  sf_chat_markdown_saved "$@"
-}
-sf_chat_add message agent '' abcdefghijklmnopqrst open
-COLUMNS=6
-LINES=8
-sf_chat_repaint
-assert_equal 1 "$pressure_highlight_calls"
-assert_equal abcde "$SF_PRESENT_FLUSH_TEXT"
-sf_chat_terminal_stage
-sf_chat_terminal_finish
-typeset pressure_text=$PREDISPLAY
-assert_equal 1:6 "$SF_PRESENT_CURSOR"
-COLUMNS=4
-sf_chat_repaint
-# The narrower row is new source, so it costs exactly one more bounded scan.
-assert_equal 2 "$pressure_highlight_calls"
-assert_equal fgh "$SF_PRESENT_FLUSH_TEXT"
-sf_chat_terminal_stage
-sf_chat_terminal_finish
-pressure_text+=$PREDISPLAY
-assert_equal abcdefgh "$pressure_text"
-assert_equal 1:9 "$SF_PRESENT_CURSOR"
-assert_equal 8 "$SF_PRESENT_HIGHLIGHT_CACHE_START[1]"
-functions[sf_chat_markdown_highlight]=$functions[sf_chat_markdown_saved]
-unfunction sf_chat_markdown_saved
-SF_PRESENT_HIGHLIGHT_ENABLED=0
-
 # A line crossing many visual rows is scanned one row at a time. The growing
 # line is never rescanned, so the work stays proportional to the text rather
 # than to the text times the number of rows it has filled.

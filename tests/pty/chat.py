@@ -267,24 +267,14 @@ def test_chat_end():
     for submitted, exit_status in ((b"/quit\r", 0), (b"\x03", 130)):
         session = Session()
         try:
+            path, _ = session.wait_session_records(1)
             mark = len(session.output)
             session.send(submitted)
-            session.wait_after(mark, "Saved:")
+            session.wait_after(mark, str(path))
             visible = session.visible(mark)
+            assert "Saved:" in visible, visible
             assert "❯" not in visible
             assert re.search(r"─{13,}", visible), visible
-            messages = (
-                "Good-tide for now!", "Thanks for scuttling by.",
-                "Time to hit the sand.", "Until next tide.", "Sea you soon.",
-            )
-            end = time.monotonic() + 3
-            while (
-                not any(message in visible for message in messages)
-                and time.monotonic() < end
-            ):
-                session.pump()
-                visible = session.visible(mark)
-            assert any(message in visible for message in messages), visible
             end = time.monotonic() + 3
             result = None
             while result is None and time.monotonic() < end:

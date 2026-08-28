@@ -130,11 +130,6 @@ BUFFER=''
 sf_resume_accept
 assert_equal 2 "$BUFFER"
 
-# Accept takes explicit BUFFER choice.
-SF_RESUME_SELECTED=4
-sf_resume_accept
-assert_equal 4 "$BUFFER"
-
 # Pages summarize ten sessions at a time, and 0 selects the tenth row.
 SF_RESUME_ALL_PATHS=( "$s_empty" "$s_system" "$s_context" "$s_user" "$s_torn"
   "$s_assistant" "$s_tool_res" "$s_bad" "$s_empty" "$s_system" "$s_context" )

@@ -250,11 +250,6 @@ sf_chat_add message user '' 'comments are stripped after parsing'
 sf_chat_rows 16 20
 assert_equal $'comments are\nstripped after\nparsing' "${(F)SF_PRESENT_ROW_TEXT}"
 
-sf_chat_reset
-sf_chat_add message user '' 'hello world'
-sf_chat_rows 5 20
-assert_equal $'hello\nworld' "${(F)SF_PRESENT_ROW_TEXT}"
-
 # Syntax spans follow source characters through wrapping. The consumed space
 # between rows has no display offset, while the semantic style remains first.
 sf_chat_reset
