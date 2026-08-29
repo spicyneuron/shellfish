@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "Shellfish Code configuration",
+  "title": "Shellfish configuration",
   "type": "object",
   "additionalProperties": false,
   "properties": {
