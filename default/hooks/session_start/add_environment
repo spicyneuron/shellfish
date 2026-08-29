@@ -5,44 +5,50 @@ unsetopt BG_NICE
 
 [ "$#" -eq 1 ] && [ "$1" = session_start ] || exit 1
 
-printf 'Date: %s\n' "$(date '+%Y-%m-%d')"
-printf 'Platform: %s %s\n' "$(uname -s)" "$(uname -r)"
-printf 'PWD: %s\n' "$(pwd -P)"
-
-if ! tree -L 2 --gitignore --dirsfirst -F --noreport --prune \
-    --condense --compress 3 --filelimit 25 2>/dev/null; then
-  ls -F 2>/dev/null | head -100 || true
-fi
-
-git_status_with_timeout() {
-  git status --short &
-  local git_pid=$!
+capped() {
+  local pid timer exit_code=0
+  "$@" &
+  pid=$!
   (
     zmodload zsh/zselect
     zselect -t 300 || true
-    kill -TERM "$git_pid" 2>/dev/null || true
+    kill -TERM "$pid" 2>/dev/null || true
   ) </dev/null >/dev/null 2>&1 &
-  local timer_pid=$!
-  wait "$git_pid" 2>/dev/null
-  local git_status=$?
-  kill -TERM "$timer_pid" 2>/dev/null || true
-  wait "$timer_pid" 2>/dev/null || true
-  return "$git_status"
+  timer=$!
+  wait "$pid" || exit_code=$?
+  kill -TERM "$timer" 2>/dev/null || true
+  wait "$timer" 2>/dev/null || true
+  return "$exit_code"
 }
 
+printf 'Date: %s\n' "$(date '+%Y-%m-%d')"
+printf 'Platform: %s %s\n\n' "$(uname -s)" "$(uname -r)"
+
+printf 'PWD: %s\n' "$(pwd -P)"
+typeset -i slow_fs=0 tree_status=0
+typeset tree_output
+tree_output=$(capped tree -L 2 --gitignore --dirsfirst -F --noreport --prune \
+  --condense --compress 3 --filelimit 25 2>&1) || tree_status=$?
+if (( tree_status == 143 )); then
+  slow_fs=1
+  tree_output='tree: (skipped, slow file system)'
+elif (( tree_status != 0 )) || [[ $tree_output == *'[error opening dir]'* ]]; then
+  tree_output=$(ls -F 2>&1 | head -100 || true)
+fi
+printf '%s\n' "$tree_output"
+
 if git rev-parse --git-dir >/dev/null 2>&1; then
-  typeset git_status_output git_status_code
-  git_status_output=$(git_status_with_timeout 2>/dev/null)
-  git_status_code=$?
-  if (( git_status_code == 143 )); then
-    printf '\nGit information timed out\n'
-  elif (( git_status_code != 0 )); then
-    printf '\nGit information unavailable\n'
+  typeset git_status_output
+  if (( slow_fs )); then
+    git_status_output='(skipped, slow filesystem)'
   else
-    printf '\nGit branch: %s\n' "$(git branch --show-current 2>/dev/null || true)"
-    printf '\nGit status:\n%s\n' "${(F)${(@f)git_status_output}[1,10]}"
-    printf '\nRecent commits:\n%s\n' "$(git log --oneline -5 2>/dev/null || true)"
+    git_status_output=$(git status --short 2>/dev/null | head -10 || true)
   fi
+  printf '\nGit branch: %s\n' "$(git branch --show-current 2>/dev/null || true)"
+  printf '\nRecent commits:\n%s\n' "$(git log --oneline -5 2>/dev/null || true)"
+  printf '\nRecent files:\n%s\n' "$(git log --name-status --pretty=format: -5 2>/dev/null |
+    awk -F'\t' 'NF && !seen[$NF]++ {print "", $1, $NF}' | head -5 || true)"
+  printf '\nGit status:\n%s\n' "$git_status_output"
 else
   printf '\nNot in git repo\n'
 fi
