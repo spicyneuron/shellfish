@@ -360,8 +360,40 @@ function apply(frame) {
       return askPermission(frame);
     case "_hook_display":
       return note(frame.text, null, frame.event + ": " + frame.hook);
-    case "_exec_error":
-      return note(frame.message, "error", "Exec error");
+    case "_exec_error": {
+      let heading = "Turn failed";
+      let detail = safe(frame.message);
+      const limit = /^provider request limit reached: (\d+)$/.exec(detail);
+      if (limit) {
+        heading = "Turn limit reached";
+        detail = `This turn reached the maximum of ${limit[1]} provider requests.`;
+      } else if (detail.includes("no API key was supplied")) {
+        heading = "API key required";
+      } else if (detail.includes("credentials are unavailable; authenticate")) {
+        heading = "Authentication required";
+      } else if (detail.includes("credentials rejected")) {
+        heading = "Authentication failed";
+      } else if (detail.includes("request timed out")) {
+        heading = "Request timed out";
+      } else if (
+        detail.includes("could not resolve the provider host") ||
+        detail.includes("could not connect to the provider") ||
+        detail.includes("TLS connection failed")
+      ) {
+        heading = "Provider connection failed";
+      } else if (/: HTTP 429(:|$)/.test(detail)) {
+        heading = "Provider rate limit reached";
+      } else if (/: HTTP \d{3}(:|$)/.test(detail)) {
+        heading = "Provider request failed";
+      } else if (detail.startsWith("session is busy: ")) {
+        heading = "Session busy";
+      } else if (detail.startsWith("session working directory is unavailable: ")) {
+        heading = "Working directory unavailable";
+      } else if (/(^| )hooks?( |$)/.test(detail)) {
+        heading = "Hook failed";
+      }
+      return note(detail, "error", heading);
+    }
     case "_handoff":
       // A hook asked to replace the process, which only a terminal can honour.
       return note("the turn requested a handoff, which a served session cannot run", "error");

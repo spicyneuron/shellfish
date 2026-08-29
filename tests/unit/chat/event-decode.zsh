@@ -34,6 +34,28 @@ order=$(print -r -- \
   tr '\0' '\n' | sed '/^$/d' | paste -sd, -)
 assert_equal 'assistant_commit,tool_call,call_1,shell,{},json,batch_ok' "$order"
 
+typeset error expected
+for error expected in \
+    'provider request limit reached: 50' 'Turn limit reached,This turn reached the maximum of 50 provider requests.' \
+    'openai: credentials rejected (HTTP 401)' 'Authentication failed,openai: credentials rejected (HTTP 401)' \
+    'openai: credentials rejected (HTTP 401); no API key was supplied' 'API key required,openai: credentials rejected (HTTP 401); no API key was supplied' \
+    'openai: no API key was supplied' 'API key required,openai: no API key was supplied' \
+    'codex: Codex credentials are unavailable; authenticate using Codex and retry' 'Authentication required,codex: Codex credentials are unavailable; authenticate using Codex and retry' \
+    'openai: request timed out (curl status 28)' 'Request timed out,openai: request timed out (curl status 28)' \
+    'openai: TLS connection failed (curl status 60)' 'Provider connection failed,openai: TLS connection failed (curl status 60)' \
+    'openai: HTTP 429: slow down' 'Provider rate limit reached,openai: HTTP 429: slow down' \
+    'openai: HTTP 400: bad request' 'Provider request failed,openai: HTTP 400: bad request' \
+    'session is busy: /tmp/session.jsonl' 'Session busy,session is busy: /tmp/session.jsonl' \
+    'session working directory is unavailable: /tmp/gone' 'Working directory unavailable,session working directory is unavailable: /tmp/gone' \
+    'cannot prepare hook captures' 'Hook failed,cannot prepare hook captures' \
+    'cannot inspect frozen runtime' 'Turn failed,cannot inspect frozen runtime'; do
+  order=$(jq -cn --arg message "$error" '{type:"_exec_error",message:$message}' |
+    jq -jRs -L "$ROOT/lib" --argjson runtime null \
+      -f "$ROOT/lib/chat/event-decode.jq" |
+    tr '\0' '\n' | sed '/^$/d' | paste -sd, -)
+  assert_equal "exec_error,$expected,batch_ok" "$order"
+done
+
 order=$(print -r -- \
     '{"type":"message","role":"assistant","stop":"tool_calls","content":[{"type":"tool_call","id":"call_2","name":"read_file","input":{"file_path":"outside.txt","request_sandbox_bypass":true,"sandbox_bypass_reason":"test"}}]}' |
   jq -jRs -L "$ROOT/lib" --argjson runtime null \

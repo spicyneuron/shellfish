@@ -414,8 +414,41 @@ test("separates notice titles from their bodies", async () => {
   const notes = find(page.output, "note");
   assert.equal(findTag(notes[0], "h2")[0].textContent, "stop: /tmp/\ufffdcheck");
   assert.equal(findTag(notes[0], "pre")[0].textContent, "done");
-  assert.equal(findTag(notes[1], "h2")[0].textContent, "Exec error");
+  assert.equal(findTag(notes[1], "h2")[0].textContent, "Turn failed");
   assert.equal(findTag(notes[1], "pre")[0].textContent, "recoverable");
+});
+
+test("labels actionable exec errors", async () => {
+  const page = await idle();
+  const errors = [
+    [
+      "provider request limit reached: 50",
+      "Turn limit reached",
+      "This turn reached the maximum of 50 provider requests.",
+    ],
+    ["openai: credentials rejected (HTTP 401)", "Authentication failed"],
+    ["openai: credentials rejected (HTTP 401); no API key was supplied", "API key required"],
+    [
+      "codex: Codex credentials are unavailable; authenticate using Codex and retry",
+      "Authentication required",
+    ],
+    ["openai: request timed out (curl status 28)", "Request timed out"],
+    ["openai: could not connect to the provider (curl status 7)", "Provider connection failed"],
+    ["openai: HTTP 429: slow down", "Provider rate limit reached"],
+    ["openai: HTTP 400: bad request", "Provider request failed"],
+    ["session is busy: /tmp/session.jsonl", "Session busy"],
+    [
+      "session working directory is unavailable: /tmp/gone",
+      "Working directory unavailable",
+    ],
+    ["prompt hook halted without a handoff action", "Hook failed"],
+  ];
+  for (const [message, heading, body = message] of errors) {
+    await page.send({ type: "_exec_error", message });
+    const shown = find(page.output, "note").at(-1);
+    assert.equal(findTag(shown, "h2")[0].textContent, heading);
+    assert.equal(findTag(shown, "pre")[0].textContent, body);
+  }
 });
 
 test("reopens the stream when it ends", async () => {

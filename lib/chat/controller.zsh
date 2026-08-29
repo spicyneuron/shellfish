@@ -146,7 +146,7 @@ sf_chat_decoded() {
         [[ -z $second ]] || sf_chat_event reasoning_tokens "$second" || return 1
         ;;
       exec_error)
-        sf_chat_notice error 'Exec error' "$first" || return 1
+        sf_chat_notice error "$first" "$second" || return 1
         ;;
       hook_display)
         sf_chat_notice notice "$first: $second" "$third" || return 1

@@ -16,7 +16,35 @@ def event_fields:
         else "" end) + " " + (.output_tokens | tostring) + " ↓"),
      (if has("reasoning_tokens") then (.reasoning_tokens | tostring) else "" end), "", "", ""]
   elif .type == "_exec_error" then
-    ["exec_error", .message, "", "", "", ""]
+    .message as $message |
+    ["exec_error"] +
+    (if ($message | test("^provider request limit reached: [0-9]+$")) then
+       ($message | capture(": (?<limit>[0-9]+)$").limit) as $limit |
+       ["Turn limit reached", "This turn reached the maximum of \($limit) provider requests."]
+     elif ($message | contains("no API key was supplied")) then
+       ["API key required", $message]
+     elif ($message | contains("credentials are unavailable; authenticate")) then
+       ["Authentication required", $message]
+     elif ($message | contains("credentials rejected")) then
+       ["Authentication failed", $message]
+     elif ($message | contains("request timed out")) then
+       ["Request timed out", $message]
+     elif ($message | contains("could not resolve the provider host") or
+         contains("could not connect to the provider") or contains("TLS connection failed")) then
+       ["Provider connection failed", $message]
+     elif ($message | test(": HTTP 429(:|$)")) then
+       ["Provider rate limit reached", $message]
+     elif ($message | test(": HTTP [0-9]{3}(:|$)")) then
+       ["Provider request failed", $message]
+     elif ($message | startswith("session is busy: ")) then
+       ["Session busy", $message]
+     elif ($message | startswith("session working directory is unavailable: ")) then
+       ["Working directory unavailable", $message]
+     elif ($message | test("(^| )hooks?( |$)")) then
+       ["Hook failed", $message]
+     else
+       ["Turn failed", $message]
+     end) + ["", "", ""]
   elif .type == "_hook_display" then
     ["hook_display", .event, .hook, .text, "", ""]
   elif .type == "_tool_permission_request" then
