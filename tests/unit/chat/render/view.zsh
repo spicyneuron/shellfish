@@ -235,13 +235,8 @@ SF_PRESENT_QUEUE=()
 sf_chat_repaint
 [[ $PREDISPLAY != *'─ queue '* ]] || fail 'cleared queue remained visible'
 
-fc -p
-HISTSIZE=100
-print -s -r -- one
-print -s -r -- two
-# vared contributes the live editor event after the recallable prompts.
-print -s -r -- draft
-HISTNO=$(( HISTCMD - 1 ))
+SF_PRESENT_HISTORY=( one two )
+SF_PRESENT_HISTORY_NO=2
 SF_PRESENT_QUEUE=()
 sf_chat_repaint
 [[ $PREDISPLAY == *'─ history 1/2 '*$'\n❯ ' ]] ||
@@ -255,5 +250,5 @@ for (( index = 1; index <= ${#SF_PRESENT_CHROME_HIGHLIGHTS}; index += 3 )); do
 done
 assert_equal 'history 1/2' "$chrome_sliced[2]"
 assert_equal 'fg=7' "$chrome_styled[2]"
-fc -P
-unset HISTNO
+SF_PRESENT_HISTORY=()
+SF_PRESENT_HISTORY_NO=0

@@ -331,7 +331,7 @@ def test_queued_submits_keep_committed_history():
             lambda: "─ user" in terminal.everything().lower()
             and not terminal.turn_finished(),
         )
-        session.send(b"two\rthree\r")
+        session.send(b"two\rthree\rdraft")
         _, records = session.wait_session_records(7)
         messages = [
             record["content"][0]["text"]
@@ -341,7 +341,8 @@ def test_queued_submits_keep_committed_history():
         terminal.wait_for(
             "queued turns to render",
             lambda: all(terminal.everything().count(prompt) >= 2 for prompt in messages)
-            and "─ queue " not in terminal.frame(),
+            and "─ queue " not in terminal.frame()
+            and "❯ draft" in terminal.frame(),
         )
         text = terminal.everything()
         assert messages == ["alpha", "two", "three"], messages
@@ -383,12 +384,54 @@ def test_history_counter_labels_prompt_divider():
             "history beyond the wrapped draft",
             lambda: "─ history 1/2 " in terminal.frame() and "❯ two" in terminal.frame(),
         )
+        session.send("é".encode())
+        terminal.wait_for(
+            "editing history as a new draft",
+            lambda: "history" not in terminal.frame() and "❯ twoé" in terminal.frame(),
+        )
+        session.send(b"\x1b[A")
+        terminal.wait_for(
+            "the immutable history entry",
+            lambda: "─ history 1/2 " in terminal.frame() and "❯ two" in terminal.frame(),
+        )
         session.send(b"\x1b[B")
         terminal.wait_for(
-            "the restored wrapped draft",
-            lambda: "history" not in terminal.frame() and draft in terminal.frame(),
+            "the promoted current draft",
+            lambda: "history" not in terminal.frame() and "❯ twoé" in terminal.frame(),
         )
         print("PASS history: prompt divider counts browsed history")
+    finally:
+        session.close()
+
+
+def test_history_survives_turn_completion():
+    """Turn completion preserves the selected history entry and current draft."""
+    session = Session(env={"SF_TEST_BACKEND_DELAY_MATCH_SECONDS": "2"})
+    terminal = Terminal(session)
+    try:
+        session.send(b"one\r")
+        session.wait_session_records(3)
+        terminal.wait_for("the first turn", lambda: terminal.turn_finished())
+        session.send(b"delay response\r")
+        terminal.wait_for(
+            "the delayed turn",
+            lambda: not terminal.turn_finished() and "delay response" in terminal.frame(),
+        )
+        session.send(b"draft\x1b[A")
+        terminal.wait_for(
+            "history during the turn",
+            lambda: "─ history 1/2 " in terminal.frame()
+            and "❯ delay response" in terminal.frame(),
+        )
+        terminal.wait_for("the delayed turn to complete", terminal.turn_finished, timeout=4)
+        assert "─ history 1/2 " in terminal.frame(), terminal.dump()
+        session.send("é".encode())
+        terminal.wait_for(
+            "promoting history to the current draft",
+            lambda: "history" not in terminal.frame()
+            and "delay responseé" in terminal.frame(),
+        )
+        print("PASS history: turn completion preserved history and draft")
     finally:
         session.close()
 
@@ -399,6 +442,7 @@ def main():
     test_committed_headings_keep_style()
     test_queued_submits_keep_committed_history()
     test_history_counter_labels_prompt_divider()
+    test_history_survives_turn_completion()
 
 
 if __name__ == "__main__":

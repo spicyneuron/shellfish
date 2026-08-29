@@ -363,7 +363,6 @@ sf_chat_controller() {
   bindkey -e
   sf_chat_bind
   PROMPT=''
-  HISTSIZE=100
   saved_tty=$(stty -g 2>/dev/null) || return 1
   if [[ -n $initial ]]; then
     sf_chat_record_prompt "$initial"

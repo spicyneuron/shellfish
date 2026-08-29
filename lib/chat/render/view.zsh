@@ -1,7 +1,5 @@
 emulate -R zsh
 setopt no_aliases no_bg_nice no_multios pipe_fail
-# $history counts the prompts available to the private chat editor.
-zmodload zsh/parameter
 
 # Transient chrome spans are rebuilt by each repaint and indexed across the
 # whole displayed string, so they cover POSTDISPLAY as well as PREDISPLAY.
@@ -205,11 +203,11 @@ sf_chat_repaint() {
       sf_chat_chrome $(( start + queue_head + 1 )) \
         $(( ${#queue_text} - queue_head - 1 )) muted
     fi
-    if [[ -n ${HISTNO-} ]] && (( HISTCMD > HISTNO )); then
-      history_item=$(( HISTCMD - HISTNO ))
+    if (( SF_PRESENT_HISTORY_NO )); then
+      history_item=$(( ${#SF_PRESENT_HISTORY} - SF_PRESENT_HISTORY_NO + 1 ))
     fi
     if (( history_item )); then
-      label="history $history_item/${#history}"
+      label="history $history_item/${#SF_PRESENT_HISTORY}"
       if (( ${#label} + 4 <= columns )); then
         divider="─ $label "
         divider+=${(l:$(( columns - ${#label} - 3 ))::─:)""}

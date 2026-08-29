@@ -2,12 +2,16 @@ emulate -R zsh
 setopt no_aliases no_bg_nice no_multios pipe_fail
 zmodload zsh/zselect
 
-typeset -g SF_PRESENT_LAST_PROMPT='' SF_PRESENT_PERMISSION_DRAFT=''
+typeset -g SF_PRESENT_PERMISSION_DRAFT=''
 typeset -gi SF_PRESENT_PERMISSION_CURSOR=0
 typeset -gi SF_PRESENT_HEARTBEAT_TIMEOUT=1 SF_PRESENT_HEARTBEAT_EPOCHS=10
 typeset -gi SF_PRESENT_HEARTBEAT_REMAINING=0
 typeset -gi SF_PRESENT_ACTIVITY_FRAME=0 SF_PRESENT_ACTIVITY_TICKS=0
 typeset -gi SF_PRESENT_VERTICAL_COLUMN=-1
+typeset -g SF_PRESENT_HISTORY_DRAFT=''
+typeset -gi SF_PRESENT_HISTORY_CURSOR=0 SF_PRESENT_HISTORY_NO=0
+typeset -gi SF_PRESENT_HISTORY_LIMIT=100
+typeset -ga SF_PRESENT_HISTORY=()
 KEYTIMEOUT=$SF_PRESENT_HEARTBEAT_TIMEOUT
 
 # Nothing wakes ZLE while a turn streams, so the view is driven by a synthetic
@@ -92,6 +96,9 @@ sf_chat_line_init() {
     SF_PRESENT_ACTION=quit
     zle accept-line
   elif [[ $SF_PRESENT_STATE == queued ]]; then
+    SF_PRESENT_DRAFT=$BUFFER
+    SF_PRESENT_DRAFT_CURSOR=$CURSOR
+    SF_PRESENT_DRAFT_SAVED=1
     SF_PRESENT_ACTION=submit
     zle accept-line
   else
@@ -119,16 +126,18 @@ sf_chat_line_finish() {
 
 sf_chat_pre_redraw() {
   (( ! SF_PRESENT_PENDING_ROWS )) || return 0
+  if (( SF_PRESENT_HISTORY_NO )) && [[ $SF_PRESENT_STATE != permission &&
+      $BUFFER != $SF_PRESENT_HISTORY[$SF_PRESENT_HISTORY_NO] ]]; then
+    sf_chat_history_reset
+  fi
   sf_chat_repaint || return 1
   sf_chat_heartbeat_arm
 }
 
 sf_chat_record_prompt() {
-  if [[ $1 != $SF_PRESENT_LAST_PROMPT ]]; then
-    SF_PRESENT_LAST_PROMPT=$1
-    print -s -r -- "$1"
-  fi
-  [[ -z ${HISTNO-} ]] || HISTNO=$HISTCMD
+  [[ $1 != ${SF_PRESENT_HISTORY[-1]-} ]] || return 0
+  SF_PRESENT_HISTORY+=( "$1" )
+  (( ${#SF_PRESENT_HISTORY} <= SF_PRESENT_HISTORY_LIMIT )) || SF_PRESENT_HISTORY[1]=()
 }
 
 sf_chat_editor_permission() {
@@ -173,6 +182,7 @@ sf_chat_accept() {
   case $intent in
     ignore) return 0 ;;
     repaint)
+      sf_chat_history_reset
       BUFFER=''
       CURSOR=0
       sf_chat_repaint
@@ -183,6 +193,7 @@ sf_chat_accept() {
       SF_PRESENT_DRAFT=''
       SF_PRESENT_DRAFT_CURSOR=0
       SF_PRESENT_DRAFT_SAVED=0
+      sf_chat_history_reset
       BUFFER=''
       CURSOR=0
       sf_chat_repaint || return 1
@@ -198,14 +209,49 @@ sf_chat_insert_newline() {
   LBUFFER+=$'\n'
 }
 
+sf_chat_history_reset() {
+  SF_PRESENT_HISTORY_DRAFT=''
+  SF_PRESENT_HISTORY_CURSOR=0
+  SF_PRESENT_HISTORY_NO=0
+}
+
+sf_chat_history_move() {
+  integer direction=$1 newest=${#SF_PRESENT_HISTORY}
+  (( newest )) || return 0
+  if (( direction < 0 )); then
+    if (( SF_PRESENT_HISTORY_NO )); then
+      (( SF_PRESENT_HISTORY_NO > 1 )) || return 0
+      SF_PRESENT_HISTORY_NO=$(( SF_PRESENT_HISTORY_NO - 1 ))
+    else
+      SF_PRESENT_HISTORY_DRAFT=$BUFFER
+      SF_PRESENT_HISTORY_CURSOR=$CURSOR
+      SF_PRESENT_HISTORY_NO=$newest
+    fi
+    BUFFER=$SF_PRESENT_HISTORY[$SF_PRESENT_HISTORY_NO]
+    CURSOR=${#BUFFER}
+  elif (( ! SF_PRESENT_HISTORY_NO )); then
+    return 0
+  elif (( SF_PRESENT_HISTORY_NO < newest )); then
+    SF_PRESENT_HISTORY_NO=$(( SF_PRESENT_HISTORY_NO + 1 ))
+    BUFFER=$SF_PRESENT_HISTORY[$SF_PRESENT_HISTORY_NO]
+    CURSOR=${#BUFFER}
+  else
+    BUFFER=$SF_PRESENT_HISTORY_DRAFT
+    CURSOR=$SF_PRESENT_HISTORY_CURSOR
+    sf_chat_history_reset
+  fi
+}
+
 # Move by rendered rows, crossing into history only beyond the buffer edges.
 sf_chat_move_vertical() {
   integer direction=$1 columns=${COLUMNS:-0} row column index width
   integer current_row current_column target_row target_column best=-1 distance best_distance=-1
-  local character history=up-history
+  local character
   local -a rows columns_at
-  (( direction < 0 )) || history=down-history
-  (( columns > 0 )) || { zle ".$history"; return; }
+  if (( columns <= 0 )); then
+    sf_chat_history_move $direction
+    return
+  fi
 
   # The sf-present buffer starts after the two-cell "❯ " prompt.
   row=$(( 2 / columns ))
@@ -239,7 +285,7 @@ sf_chat_move_vertical() {
   current_column=$columns_at[index]
   target_row=$(( current_row + direction ))
   if (( target_row < rows[1] || target_row > rows[-1] )); then
-    zle ".$history"
+    sf_chat_history_move $direction
     SF_PRESENT_VERTICAL_COLUMN=-1
     return
   fi
@@ -306,11 +352,12 @@ sf_chat_interrupt() {
 sf_chat_bind() {
   local heartbeat_key=$'\x18' key
   integer code
-  SF_PRESENT_LAST_PROMPT=''
+  SF_PRESENT_HISTORY=()
   SF_PRESENT_PERMISSION_DRAFT=''
   SF_PRESENT_PERMISSION_CURSOR=0
   SF_PRESENT_HEARTBEAT_REMAINING=0
   SF_PRESENT_VERTICAL_COLUMN=-1
+  sf_chat_history_reset
   zle -N sf_chat_exec_ready
   zle -N sf_chat_heartbeat_tick
   zle -N sf_chat_accept

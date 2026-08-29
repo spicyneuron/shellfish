@@ -76,6 +76,19 @@ assert_equal queued "$SF_PRESENT_STATE"
 assert_equal '' "$SF_PRESENT_ACTION"
 assert_equal -R "$ZLE_CALLS[-1]"
 
+BUFFER=local
+CURSOR=3
+SF_PRESENT_DRAFT_SAVED=0
+sf_chat_line_init
+assert_equal submit "$SF_PRESENT_ACTION"
+assert_equal local "$SF_PRESENT_DRAFT"
+assert_equal 3 "$SF_PRESENT_DRAFT_CURSOR"
+assert_equal 1 "$SF_PRESENT_DRAFT_SAVED"
+assert_equal accept-line "$ZLE_CALLS[-1]"
+SF_PRESENT_DRAFT=''
+SF_PRESENT_DRAFT_CURSOR=0
+SF_PRESENT_DRAFT_SAVED=0
+
 SF_PRESENT_STATE=cancelling
 SF_PRESENT_ACTION=''
 BUFFER=draft
@@ -113,6 +126,18 @@ assert_equal 'approve,deny' "${(j:,:)permission_decisions}"
 assert_equal -R "$ZLE_CALL"
 
 SF_PRESENT_STATE=idle
+SF_PRESENT_HISTORY=( history )
+SF_PRESENT_HISTORY_DRAFT=current
+SF_PRESENT_HISTORY_CURSOR=2
+SF_PRESENT_HISTORY_NO=1
+BUFFER=history
+sf_chat_insert
+BUFFER=historyX
+sf_chat_pre_redraw
+assert_equal historyX "$BUFFER"
+assert_equal 0 "$SF_PRESENT_HISTORY_NO"
+assert_equal .self-insert "$ZLE_CALL"
+
 SF_PRESENT_ACTION=''
 BUFFER=/quit
 sf_chat_accept
@@ -210,7 +235,7 @@ sf_chat_reset
 sf_chat_terminal_reset
 SF_PRESENT_STATE=working
 SF_PRESENT_QUEUE=()
-SF_PRESENT_LAST_PROMPT=''
+SF_PRESENT_HISTORY=()
 COLUMNS=43
 LINES=15
 BUFFER=$'first queued\ncontinued'
@@ -232,22 +257,28 @@ CURSOR=${#BUFFER}
 sf_chat_accept
 assert_equal 0 "${#SF_PRESENT_QUEUE}"
 
-fc -p
-HISTSIZE=100
-integer history_start=$HISTCMD
-SF_PRESENT_LAST_PROMPT=''
-HISTNO=$HISTCMD
+SF_PRESENT_HISTORY=()
 sf_chat_record_prompt repeat
-assert_equal "$HISTCMD" "$HISTNO"
 sf_chat_record_prompt repeat
 sf_chat_record_prompt other
-assert_equal $(( history_start + 2 )) "$HISTCMD"
-fc -P
-unset HISTNO
-SF_PRESENT_LAST_PROMPT=''
+assert_equal 'repeat,other' "${(j:,:)SF_PRESENT_HISTORY}"
+integer history_index
+for history_index in {1..100}; do
+  sf_chat_record_prompt "prompt $history_index"
+done
+assert_equal 100 "${#SF_PRESENT_HISTORY}"
+assert_equal 'prompt 1' "$SF_PRESENT_HISTORY[1]"
+assert_equal 'prompt 100' "$SF_PRESENT_HISTORY[-1]"
+SF_PRESENT_HISTORY=()
 
 # Vertical movement follows displayed rows from the two-column prompt.
 COLUMNS=50
+BUFFER=draft
+CURSOR=5
+sf_chat_down
+assert_equal draft "$BUFFER"
+assert_equal 5 "$CURSOR"
+
 BUFFER=${(l:70::x:)''}
 CURSOR=70
 sf_chat_up
