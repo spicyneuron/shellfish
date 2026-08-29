@@ -37,12 +37,14 @@ sf_main() {
   local requested_session='' requested_config='' requested_profile=''
   local requested_backend='' requested_model='' requested_request='{}'
   local command='' input='' new_source=''
+  local sandbox_detected='{"sandbox_read_paths":[],"sandbox_write_paths":[]}'
   local sandbox_flag sandbox_path resolved_path
   local -a positional=() sandbox_read_paths=() sandbox_write_paths=()
   local -a original_args=("$@")
   integer session_explicit=0 config_explicit=0 request_explicit=0 runtime_override=0
   integer continue_requested=0 resume_requested=0 clear_requested=0 new_requested=0 resume_status=0
-  integer jsonl_requested=0 verbose_requested=0
+  integer chat_handoff=0 init_requested=0 jsonl_requested=0 sandbox_auto_requested=0
+  integer verbose_requested=0
   case ${1-} in
     chat)
       shift
@@ -108,6 +110,14 @@ sf_main() {
         ;;
       --verbose)
         verbose_requested=1
+        shift
+        ;;
+      --init)
+        init_requested=1
+        shift
+        ;;
+      --sandbox-auto)
+        sandbox_auto_requested=1
         shift
         ;;
       --jsonl)
@@ -256,6 +266,14 @@ sf_main() {
     sf_die '--jsonl requires shellfish exec'
     return 2
   fi
+  if (( init_requested )) && [[ $command != config ]]; then
+    sf_die '--init requires shellfish config'
+    return 2
+  fi
+  if (( resume_requested && sandbox_auto_requested )); then
+    sf_die '--sandbox-auto cannot be used with --resume'
+    return 2
+  fi
   if [[ $command == exec ]] && (( resume_requested )); then
     sf_die 'shellfish exec does not support --resume; use --continue or --session'
     return 2
@@ -288,18 +306,32 @@ sf_main() {
     if (( ${#positional} )); then
       new_source=$positional[1]
       positional=()
-      (( ! runtime_override )) || {
+      (( ! runtime_override && ! sandbox_auto_requested )) || {
         sf_die 'runtime overrides cannot be used with --new SESSION'
         return 2
       }
     fi
   fi
 
+  if [[ -z $command && ! -o interactive && -t 1 && ( -t 0 || -r /dev/tty ) ]]; then
+    chat_handoff=1
+  fi
   (( $+commands[jq] )) || { sf_die 'shellfish requires jq'; return 2; }
+  if (( init_requested || sandbox_auto_requested )); then
+    source "$SF_ROOT/lib/config.zsh"
+  fi
+  if (( sandbox_auto_requested && ! chat_handoff )); then
+    sandbox_detected=$(sf_config_detect_sandbox) || {
+      sf_die 'cannot detect sandbox paths'
+      return 1
+    }
+  fi
   typeset -gx _SHELLFISH_SANDBOX_READ_PATHS _SHELLFISH_SANDBOX_WRITE_PATHS
-  _SHELLFISH_SANDBOX_READ_PATHS=$(jq -cn '$ARGS.positional' --args -- \
+  _SHELLFISH_SANDBOX_READ_PATHS=$(jq -cn --argjson detected "$sandbox_detected" \
+    '$ARGS.positional + $detected.sandbox_read_paths' --args -- \
     "${sandbox_read_paths[@]}") || return 1
-  _SHELLFISH_SANDBOX_WRITE_PATHS=$(jq -cn '$ARGS.positional' --args -- \
+  _SHELLFISH_SANDBOX_WRITE_PATHS=$(jq -cn --argjson detected "$sandbox_detected" \
+    '$ARGS.positional + $detected.sandbox_write_paths' --args -- \
     "${sandbox_write_paths[@]}") || return 1
   source "$SF_ROOT/lib/runtime/main.zsh"
   source "$SF_ROOT/lib/session/main.zsh"
@@ -309,8 +341,8 @@ sf_main() {
   else
     typeset -gx SHELLFISH_VERBOSE=$verbose_requested
   fi
+  (( sandbox_auto_requested && ! init_requested )) && runtime_override=1
 
-  # Config needs no session, provider, stdin, or interactive terminal setup.
   if [[ $command == config ]]; then
     (( ! ${#positional} )) || {
       sf_die 'shellfish config does not accept a prompt'
@@ -321,6 +353,25 @@ sf_main() {
       sf_die 'shellfish config does not support --continue, --resume, or --clear'
       return 2
     }
+    if (( init_requested )); then
+      (( ! session_explicit && ! verbose_requested && ! request_explicit )) &&
+        [[ -z $requested_profile && -z $requested_backend && -z $requested_model ]] || {
+        sf_die '--init only supports --config and sandbox flags'
+        return 2
+      }
+      local init_sandbox=''
+      if (( sandbox_auto_requested || ${#sandbox_read_paths} || ${#sandbox_write_paths} )); then
+        init_sandbox=$(jq -cn --argjson read "$_SHELLFISH_SANDBOX_READ_PATHS" \
+          --argjson write "$_SHELLFISH_SANDBOX_WRITE_PATHS" \
+          '{sandbox_read_paths:$read,sandbox_write_paths:$write}') || return 1
+      fi
+      sf_config_init "$requested_config" "$init_sandbox" || {
+        sf_die "$SF_CONFIG_ERROR"
+        return 1
+      }
+      print -r -- "Initialized config: $REPLY"
+      return
+    fi
     local runtime
     sf_runtime_resolve "$requested_session" "$requested_config" \
       "$requested_profile" "$requested_model" "$requested_request" \
@@ -372,13 +423,13 @@ sf_main() {
 
   sf_read_prompt 0 "${positional[@]}" || return
   input=$REPLY
-  if [[ ! -o interactive ]]; then
-    if [[ -t 1 && ( -t 0 || -r /dev/tty ) ]]; then
-      if [[ -n $input && ! ${#positional} ]]; then
-        exec zsh -f -i "$SF_ENTRY" "${original_args[@]}" <<<"$input"
-      fi
-      exec zsh -f -i "$SF_ENTRY" "${original_args[@]}"
+  if (( chat_handoff )); then
+    if [[ -n $input && ! ${#positional} ]]; then
+      exec zsh -f -i "$SF_ENTRY" "${original_args[@]}" <<<"$input"
     fi
+    exec zsh -f -i "$SF_ENTRY" "${original_args[@]}"
+  fi
+  if [[ ! -o interactive ]]; then
     sf_die 'chat requires an interactive terminal'
     return 2
   fi

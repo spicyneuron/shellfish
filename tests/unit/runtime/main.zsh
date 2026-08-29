@@ -72,31 +72,6 @@ jq -e '
   .tui.preview_lines_context == 2
 ' <<<"$SF_PRESENTATION" >/dev/null
 
-mkdir -p "$HOME/.config/git"
-touch "$HOME/.gitconfig" "$HOME/.config/git/config" "$HOME/.config/git/ignore" \
-  "$HOME/.config/git/attributes"
-sf_runtime_resolve_from_config "$config" '' test-model '{}'
-jq -e --arg global "$HOME/.gitconfig" --arg dir "$HOME/.config/git" '
-  .harness.sandbox_read_paths == [
-    $global, ($dir + "/config"), ($dir + "/ignore"), ($dir + "/attributes")
-  ]
-' <<<"$REPLY" >/dev/null || fail 'standard Git sandbox paths were not granted'
-(
-  export XDG_CONFIG_HOME="$tmp/xdg"
-  mkdir -p "$XDG_CONFIG_HOME/git"
-  touch "$XDG_CONFIG_HOME/git/config" "$XDG_CONFIG_HOME/git/ignore" \
-    "$XDG_CONFIG_HOME/git/attributes"
-  sf_runtime_resolve_from_config "$config" '' test-model '{}'
-  jq -e --arg global "$HOME/.gitconfig" --arg dir "${tmp:A}/xdg/git" '
-    .harness.sandbox_read_paths == [
-      $global, ($dir + "/config"), ($dir + "/ignore"), ($dir + "/attributes")
-    ]
-  ' <<<"$REPLY" >/dev/null || fail 'XDG Git sandbox paths were not granted'
-)
-rm "$HOME/.gitconfig" "$HOME/.config/git/config" "$HOME/.config/git/ignore" \
-  "$HOME/.config/git/attributes"
-rmdir "$HOME/.config/git" "$HOME/.config"
-
 print -r -- '{}' >"$tmp/config/empty.jsonc"
 sf_runtime_resolve_from_config "$tmp/config/empty.jsonc" '' 'default-model' '{}' \
   "$ROOT/tests/fixtures/backend"
@@ -145,8 +120,8 @@ if (( had_home )); then export HOME=$saved_home; else unset HOME; fi
 if (( had_state_home )); then export XDG_STATE_HOME=$saved_state_home
 else unset XDG_STATE_HOME; fi
 
-# Reopening reads only current presentation keys; unrelated invalid profile data
-# does not prevent a stored runtime from being presented.
+# Reopening reads only current presentation keys. Unrelated invalid profile
+# data does not prevent a stored runtime from being presented.
 cat >"$tmp/config/presentation.jsonc" <<'JSON'
 {
   "profiles": "ignored while reopening",
@@ -359,7 +334,7 @@ if sf_runtime_resolve_from_config "$tmp/config/missing-hook.jsonc" '' '' '{}' \
 fi
 [[ $SF_RUNTIME_ERROR == 'stop hook is not executable: missing' ]]
 
-# A configured hook wins over a bundled hook with the same name; removing it
+# A configured hook wins over a bundled hook with the same name. Removing it
 # exercises bundled fallback. Use an isolated root so this adds no production
 # hook.
 mkdir -p "$tmp/root/default/hooks/stop"

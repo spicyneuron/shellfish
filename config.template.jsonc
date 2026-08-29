@@ -18,8 +18,12 @@
 
   "harnesses": {
     "default": {
-      "sandbox_read_paths": [],
-      "sandbox_write_paths": []
+      "sandbox_read_paths": [
+        // Paths outside the project that sandboxed tools may read
+      ],
+      "sandbox_write_paths": [
+        // Paths outside the project that sandboxed tools may read and write
+      ]
     }
   }
 }

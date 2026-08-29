@@ -22,6 +22,146 @@ EOF
 typeset entry="$ROOT/bin/shellfish"
 typeset report
 
+# Config initialization.
+typeset init_home="$tmp/init-home"
+typeset init_config="$init_home/config/shellfish/config.jsonc"
+HOME="$init_home" XDG_CONFIG_HOME="$init_home/config" \
+  zsh -f "$entry" config --init >/dev/null || fail 'config init failed'
+[[ -f $init_config ]] || fail 'config init did not create the default path'
+cmp -s "$ROOT/config.template.jsonc" "$init_config" || fail 'config init did not copy the template'
+if HOME="$init_home" XDG_CONFIG_HOME="$init_home/config" \
+  zsh -f "$entry" config --init >/dev/null 2>&1; then
+  fail 'config init overwrote an existing config'
+fi
+typeset custom_config="$tmp/custom/config.jsonc"
+zsh -f "$entry" config --init --config "$custom_config" >/dev/null || \
+  fail 'config init with an explicit path failed'
+cmp -s "$ROOT/config.template.jsonc" "$custom_config" || \
+  fail 'config init did not use the explicit path'
+
+# Automatic sandbox grants.
+typeset detector_bin="$tmp/detectors"
+typeset detector_root="$tmp/detected"
+typeset git_root="$detector_root/git-config"
+mkdir -p "$detector_bin" "$detector_root"/{go-mod,uv,python,npm,pnpm,rust,registry,git} \
+  "$git_root"
+touch "$detector_root"/{.package-cache,.package-cache-mutate,.global-cache}
+touch "$git_root"/{attributes,ignore}
+print -r -- '[user]' '  name = Test' >"$git_root/include.conf"
+print -r -- '[include]' "  path = $git_root/include.conf" >"$git_root/config"
+detector_root=${detector_root:A}
+git_root=${git_root:A}
+typeset go_cache="$init_home/Library/Caches/go-build"
+mkdir -p "$go_cache"
+cat >"$detector_bin/go" <<EOF
+#!/bin/sh
+printf '%s\n' '{"GOCACHE":"$go_cache","GOMODCACHE":"$detector_root/go-mod"}'
+EOF
+cat >"$detector_bin/uv" <<EOF
+#!/bin/sh
+printf '%s\n' '$detector_root/uv'
+EOF
+cat >"$detector_bin/python3" <<EOF
+#!/bin/sh
+printf '%s\n' '$detector_root/python'
+EOF
+cat >"$detector_bin/npm" <<EOF
+#!/bin/sh
+printf '%s\n' '$detector_root/npm'
+EOF
+cat >"$detector_bin/pnpm" <<EOF
+#!/bin/sh
+printf '%s\n' '$detector_root/pnpm'
+EOF
+cat >"$detector_bin/rustc" <<EOF
+#!/bin/sh
+printf '%s\n' '$detector_root/rust'
+EOF
+cat >"$detector_bin/cargo" <<'EOF'
+#!/bin/sh
+exit 0
+EOF
+cat >"$detector_bin/git" <<EOF
+#!/bin/sh
+last=''
+for arg in "\$@"; do last=\$arg; done
+if [ "\$1" = var ] && [ "\$2" = GIT_CONFIG_GLOBAL ]; then
+  printf '%s\n' '$git_root/config'
+elif [ "\$1" = var ] && [ "\$2" = GIT_ATTR_GLOBAL ]; then
+  printf '%s\n' '$git_root/attributes'
+elif [ "\$1" = config ] && [ "\$last" = core.excludesFile ]; then
+  printf '%s\n' '$git_root/ignore'
+elif [ "\$1" = config ]; then
+  printf 'file:%s\0user.name\nTest\0file:%s\0user.email\ntest@example.com\0' \
+    '$git_root/config' '$git_root/include.conf'
+else
+  exit 1
+fi
+EOF
+chmod +x "$detector_bin"/*
+typeset auto_config="$tmp/auto/config.jsonc"
+PATH="$detector_bin:$PATH" HOME="$init_home" CARGO_HOME="$detector_root" \
+  zsh -f "$entry" config --init --sandbox-auto --config "$auto_config" >/dev/null || \
+  fail 'automatic sandbox config init failed'
+jq -e --arg go_cache "~/Library/Caches/go-build" --arg go_mod "$detector_root/go-mod" \
+  --arg uv "$detector_root/uv" --arg python "$detector_root/python" \
+  --arg npm "$detector_root/npm" --arg pnpm "$detector_root/pnpm" \
+  --arg rust "$detector_root/rust" --arg registry "$detector_root/registry" \
+  --arg git "$detector_root/git" --arg package_cache "$detector_root/.package-cache" \
+  --arg package_mutate "$detector_root/.package-cache-mutate" \
+  --arg global_cache "$detector_root/.global-cache" --arg git_root "$git_root" '
+    (.harnesses.default.sandbox_read_paths | sort) ==
+      ([$rust,($git_root + "/config"),($git_root + "/attributes"),
+        ($git_root + "/ignore"),($git_root + "/include.conf")] | sort) and
+    (.harnesses.default.sandbox_write_paths | sort) ==
+      ([$go_cache,$go_mod,$uv,$python,$npm,$pnpm,$registry,$git,
+        $package_cache,$package_mutate,$global_cache] | sort)
+  ' < <(source "$ROOT/lib/runtime/main.zsh"; sf_runtime_read_jsonc "$auto_config") >/dev/null || \
+  fail 'config init did not write automatic sandbox grants'
+grep -q '^// Shellfish:' "$auto_config" || fail 'config init did not preserve template comments'
+
+mkdir "$tmp/explicit"
+report=$(PATH="$detector_bin:$PATH" HOME="$init_home" CARGO_HOME="$detector_root" \
+  zsh -f "$entry" config --config "$config_dir/config.jsonc" --sandbox-auto \
+    --sandbox-read "$tmp/explicit") || fail 'automatic sandbox config report failed'
+jq -e --arg explicit "${tmp:A}/explicit" --arg rust "$detector_root/rust" \
+  --arg go_mod "$detector_root/go-mod" '
+    (.harness.sandbox_read_paths | index($explicit)) != null and
+    (.harness.sandbox_read_paths | index($rust)) != null and
+    (.harness.sandbox_read_paths | index($explicit) < index($rust)) and
+    (.harness.sandbox_write_paths | index($go_mod)) != null
+  ' <<<"$report" >/dev/null || fail 'automatic and explicit sandbox grants were not additive'
+
+typeset empty_bin="$tmp/empty-bin"
+typeset zsh_bin="${commands[zsh]}"
+mkdir "$empty_bin"
+for utility in awk cp fence jq ln mkdir mktemp rm; do
+  ln -s "${commands[$utility]}" "$empty_bin/$utility"
+done
+mkdir "$tmp/empty-home"
+report=$(PATH="$empty_bin" HOME="$tmp/empty-home" XDG_CONFIG_HOME='' \
+  "$zsh_bin" -f "$entry" config \
+  --config "$config_dir/config.jsonc" --sandbox-auto) || fail 'empty sandbox detection failed'
+jq -e '.harness.sandbox_read_paths == [] and .harness.sandbox_write_paths == []' \
+  <<<"$report" >/dev/null || fail "empty sandbox detection added grants: \
+$(jq -c '.harness | {sandbox_read_paths,sandbox_write_paths}' <<<"$report")"
+typeset empty_auto_config="$tmp/empty-auto/config.jsonc"
+PATH="$empty_bin" HOME="$tmp/empty-home" XDG_CONFIG_HOME='' \
+  "$zsh_bin" -f "$entry" config --init --sandbox-auto --config "$empty_auto_config" \
+  >/dev/null || fail 'empty automatic sandbox config init failed'
+if grep -Eq '"sandbox_(read|write)_paths": \[\]' "$empty_auto_config"; then
+  fail 'config init collapsed an empty sandbox array'
+fi
+grep -qxF '        // Paths outside the project that sandboxed tools may read' \
+  "$empty_auto_config" || \
+  fail 'empty sandbox read config omitted path guidance'
+grep -qxF '        // Paths outside the project that sandboxed tools may read and write' \
+  "$empty_auto_config" || fail 'empty sandbox write config omitted path guidance'
+jq -e '.harnesses.default.sandbox_read_paths == [] and
+  .harnesses.default.sandbox_write_paths == []' \
+  < <(source "$ROOT/lib/runtime/main.zsh"; sf_runtime_read_jsonc "$empty_auto_config") \
+  >/dev/null || fail 'empty automatic sandbox config is invalid'
+
 # `shellfish config` reports the runtime a new session would store, plus the
 # theme palettes and TUI limits a session does not store.
 report=$(zsh -f "$entry" config --config "$config_dir/config.jsonc") ||
@@ -39,7 +179,7 @@ report=$(zsh -f "$entry" config --config "$config_dir/config.jsonc" -m claude-3)
   fail 'config report with override failed'
 assert_equal claude-3 "$(jq -r '.profile.request.model' <<<"$report")" 'config applies --model'
 
-# A stored session supplies its runtime; themes and limits come from current config.
+# A stored session supplies its runtime. Themes and limits come from current config.
 jq -cn '{
   type:"session",format_version:1,cwd:"/tmp",created:"2026-08-18T00:00:00Z",
   profile:{request:{model:"stored-model"}},

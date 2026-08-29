@@ -35,6 +35,29 @@ HOLD_PERMISSION_HOOK = r"""#!/usr/bin/env zsh
 while [[ ! -e ${SHELLFISH_SESSION:h}/permission-release ]]; do sleep 0.02; done
 """
 
+
+def test_sandbox_auto_runs_once_during_handoff():
+    with tempfile.TemporaryDirectory() as detector_dir:
+        count = Path(detector_dir) / "git-count"
+        git = Path(detector_dir) / "git"
+        git.write_text(
+            '#!/bin/sh\n'
+            '[ "$1 $2" != "var GIT_CONFIG_GLOBAL" ] || '
+            'echo x >>"$SF_TEST_GIT_COUNT"\n'
+            'exit 1\n'
+        )
+        git.chmod(0o755)
+        env = {
+            "PATH": f"{detector_dir}:{os.environ['PATH']}",
+            "SF_TEST_GIT_COUNT": str(count),
+        }
+        session = Session(args=["--sandbox-auto"], env=env)
+        try:
+            assert count.read_text().splitlines() == ["x"]
+        finally:
+            session.close()
+
+
 def test_zle_multiline_editing():
     session = Session(hooks={"echo": ECHO_HOOK})
     try:
@@ -467,6 +490,7 @@ def test_sigterm_leaves_terminal_state():
 
 
 def main():
+    test_sandbox_auto_runs_once_during_handoff()
     test_startup_records_precede_two_turns()
     test_tool_uses_manifest_display()
     test_activity_input_does_not_delay_interrupt()
