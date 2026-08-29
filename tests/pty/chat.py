@@ -169,7 +169,7 @@ def test_activity_input_does_not_delay_interrupt():
         session.close()
 
 
-def test_slow_tool_animates_status_row():
+def test_slow_tool_animates_until_escape():
     session = Session(
         env={"SF_TEST_BACKEND_DELAY_MATCH_SECONDS": "0.5"}, sandbox=False
     )
@@ -191,7 +191,17 @@ def test_slow_tool_animates_status_row():
                 break
             session.pump()
         assert tool >= 0 and len(seen) >= 2, visible
-        session.wait_after(mark, "exit 0", timeout=7)
+        before = seen.copy()
+        session.send(b"\x1b[C")
+        end = time.monotonic() + 1
+        while time.monotonic() < end and seen == before:
+            visible = session.visible(mark)
+            seen.update(frame for frame in activity if frame in visible[tool:])
+            session.pump()
+        visible = session.visible(mark)
+        assert seen != before and "Cancelled." not in visible, visible
+        session.send(b"\x1b")
+        session.wait_after(mark, "Cancelled.", timeout=1.5)
     finally:
         session.close()
 
@@ -460,7 +470,7 @@ def main():
     test_startup_records_precede_two_turns()
     test_tool_uses_manifest_display()
     test_activity_input_does_not_delay_interrupt()
-    test_slow_tool_animates_status_row()
+    test_slow_tool_animates_until_escape()
     test_permission_decisions_restore_draft()
     test_permission_ctrl_c_cancels_pending_tools()
     test_repeated_permission_ctrl_c_exits_after_recovery()

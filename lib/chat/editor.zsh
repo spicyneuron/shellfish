@@ -349,6 +349,18 @@ sf_chat_interrupt() {
   fi
 }
 
+sf_chat_escape() {
+  if [[ $KEYS == $'\x18\e' ]]; then
+    zle -U $'\e'
+    return
+  fi
+  if [[ $SF_PRESENT_STATE == (working|cancelling|permission) ]]; then
+    sf_chat_interrupt
+  else
+    zle -R
+  fi
+}
+
 sf_chat_bind() {
   local heartbeat_key=$'\x18' key
   integer code
@@ -366,6 +378,7 @@ sf_chat_bind() {
   zle -N sf_chat_up
   zle -N sf_chat_down
   zle -N sf_chat_interrupt
+  zle -N sf_chat_escape
   zle -N zle-line-init sf_chat_line_init
   zle -N zle-line-finish sf_chat_line_finish
   zle -N zle-line-pre-redraw sf_chat_pre_redraw
@@ -385,10 +398,12 @@ sf_chat_bind() {
   bindkey -M sf-present $'\eOA' sf_chat_up
   bindkey -M sf-present $'\eOB' sf_chat_down
   bindkey -M sf-present '^C' sf_chat_interrupt
+  bindkey -M sf-present $'\e' sf_chat_escape
   bindkey -rpM sf-present $'\x18'
   bindkey -M sf-present $'\x18' sf_chat_heartbeat_tick
   bindkey -M sf-present $'\x18\x1f' sf_chat_heartbeat_tick
   bindkey -M sf-present $'\x18\x03' sf_chat_interrupt
+  bindkey -M sf-present $'\x18\e' sf_chat_escape
   for code in {32..126}; do
     key=$heartbeat_key${(#)code}
     bindkey -M sf-present "$key" sf_chat_insert
@@ -400,6 +415,7 @@ sf_chat_bind() {
   bindkey -M sf-permission '^M' sf_chat_accept
   bindkey -M sf-permission '^J' sf_chat_accept
   bindkey -M sf-permission '^C' sf_chat_interrupt
+  bindkey -M sf-permission $'\e' sf_chat_escape
   bindkey -M sf-permission 'a' sf_chat_insert
   bindkey -M sf-permission 'd' sf_chat_insert
 }

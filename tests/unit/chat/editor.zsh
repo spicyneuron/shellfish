@@ -68,6 +68,21 @@ assert_equal quit "$SF_PRESENT_ACTION"
 assert_equal accept-line "$ZLE_CALL"
 assert_equal 130 "$SF_PRESENT_EXIT_STATUS"
 
+SF_PRESENT_STATE=idle
+SF_PRESENT_ACTION=''
+BUFFER=draft
+ZLE_CALL=''
+KEYS=$'\e'
+sf_chat_escape
+assert_equal draft "$BUFFER"
+assert_equal '' "$SF_PRESENT_ACTION"
+assert_equal -R "$ZLE_CALL"
+
+KEYS=$'\x18\e'
+ZLE_CALL=''
+sf_chat_escape
+assert_equal $'-U \e' "$ZLE_CALL"
+
 SF_PRESENT_STATE=queued
 SF_PRESENT_ACTION=''
 ZLE_CALLS=()
@@ -298,12 +313,18 @@ sf_chat_bind
   fail 'permission keymap permits vertical navigation'
 [[ $(bindkey -M sf-present '^C') == *sf_chat_interrupt ]] ||
   fail 'chat keymap bypasses the interrupt widget'
+[[ $(bindkey -M sf-present $'\e') == *sf_chat_escape ]] ||
+  fail 'chat keymap does not interrupt on escape'
 [[ $(bindkey -M sf-present $'\x18\x03') == *sf_chat_interrupt ]] ||
   fail 'chat heartbeat prefix swallows interrupts'
+[[ $(bindkey -M sf-present $'\x18\e') == *sf_chat_escape ]] ||
+  fail 'chat heartbeat prefix swallows escape interrupts'
 [[ $(bindkey -M sf-present $'\x18x') == *sf_chat_insert ]] ||
   fail 'chat heartbeat prefix swallows printable input'
 [[ $(bindkey -M sf-permission '^C') == *sf_chat_interrupt ]] ||
   fail 'permission keymap bypasses the interrupt widget'
+[[ $(bindkey -M sf-permission $'\e') == *sf_chat_escape ]] ||
+  fail 'permission keymap bypasses the escape widget'
 
 # A failed repaint cannot release the prompt as a submitted turn.
 typeset saved_repaint=$functions[sf_chat_repaint]
