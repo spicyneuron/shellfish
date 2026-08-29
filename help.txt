@@ -1,40 +1,45 @@
-Shellfish
-https://github.com/spicyneuron/shellfish
+Shellfish: https://github.com/spicyneuron/shellfish
 
 A tiny coding agent written in Zsh, awk, curl, and jq.
 
 Usage:
-  shellfish [chat] [OPTIONS] [PROMPT]   Start interactive chat
-  shellfish exec [OPTIONS] [PROMPT]     Run exactly one agent turn
-  shellfish config [OPTIONS]            Print resolved configuration as JSON
-  shellfish --help                      Print this help
-  shellfish --version                   Print the version
+  shellfish [OPTIONS] [PROMPT]       Start interactive chat
+  shellfish exec [OPTIONS] [PROMPT]  Run exactly one agent turn
+  shellfish config [OPTIONS]         Print resolved configuration as JSON
 
-Options:
-  --session PATH        Use the session at PATH
-  -c, --continue        Open the most recent session for the current directory
-  -r, --resume          Pick a session for the current directory
-  --clear               Clear the terminal before the first chat render
-  --verbose             Lift every preview limit; not valid with exec
+Global flags:
   -p, --profile NAME    Select a configured profile
   -b, --backend NAME    Override the backend name or path
   -m, --model MODEL     Override the model
   --request JSON        Merge raw backend request parameters
-  --sandbox-read PATH   Give sandboxed tools read-only access; repeatable
-  --sandbox-write PATH  Give sandboxed tools read-write access; repeatable
+  --sandbox-auto        Grant detected development-tool paths
+  --sandbox-read PATH   Give sandboxed tools read-only access (repeatable)
+  --sandbox-write PATH  Give sandboxed tools read-write access (repeatable)
+  --clear               Clear the terminal before the first chat render
+  --verbose             Lift every preview limit (not valid with exec)
   --config FILE         Use another configuration file
+  --session PATH        Use the session at PATH
+  -c, --continue        Open the most recent session for the current directory
+  -r, --resume          Pick a session for the current directory
   --new [SESSION]       Create new session, optionally with SESSION settings
-  --jsonl               Exchange ordered JSONL records on stdin and stdout; exec only
+
+Config flags:
+  --init                Create the user configuration template; combine with
+                        --sandbox-auto to generate sandbox grants
+
+Exec flags:
+  --jsonl               Exchange ordered JSONL records on stdin and stdout
 
 Backend credentials:
   anthropic         ANTHROPIC_API_KEY
-  codex             Existing Codex CLI login
+  codex             Uses $CODEX_HOME/auth.json
   openai            OPENAI_API_KEY
   openai-responses  OPENAI_API_KEY
   openrouter        OPENROUTER_API_KEY
 
 Notes:
-  Run /help to list available chat commands.
-  Sessions retain their resolved runtime. A fresh launch resolves current configuration.
-  Configuration: $XDG_CONFIG_HOME/shellfish/config.jsonc
-  Check <install_directory>/docs/* for full documentation.
+  Run /help in chat to list available commands.
+  Config is stored at $XDG_CONFIG_HOME/shellfish/config.jsonc
+
+Full documentation:
+  https://github.com/spicyneuron/shellfish/tree/main/docs
