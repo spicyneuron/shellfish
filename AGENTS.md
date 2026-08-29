@@ -1,5 +1,7 @@
 # Shellfish
 
+NOTE: This project is pre-release. Do not add deprecation noticies, backwards compatibility, or test asserting removed functionality.
+
 ## Project map
 
 - `bin/shellfish` parses the CLI and starts interactive chat or reports resolved configuration.
