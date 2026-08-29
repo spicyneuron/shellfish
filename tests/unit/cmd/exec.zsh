@@ -111,6 +111,20 @@ new_session=$(zsh -f "$entry" exec --new --config "$config") || fail 'new exec f
 jq -es 'length == 1 and .[0].type == "session"' \
   "$new_session" >/dev/null || fail 'new exec did not create the initial session prefix'
 
+# An optional source session reuses its frozen runtime and system record without
+# copying transcript records.
+print -r -- '{"type":"system","content":"source system"}' >>"$new_session"
+print -r -- '{"type":"message","role":"user","content":[{"type":"text","text":"old"}]}' \
+  >>"$new_session"
+print -r -- '{"type":"message","role":"assistant","stop":"end","content":[{"type":"text","text":"answer"}]}' \
+  >>"$new_session"
+typeset reused_session
+reused_session=$(zsh -f "$entry" exec --new "$new_session") || fail 'sourced new exec failed'
+jq -e -s --slurpfile source "$new_session" '
+  length == 2 and .[1] == {type:"system",content:"source system"} and
+  (.[0] | del(.created)) == ($source[0] | del(.created))
+' "$reused_session" >/dev/null || fail 'new exec did not reuse only source settings'
+
 # JSONL exposes the canonical exec stream through EOF and process status.
 typeset jsonl stream_session="$tmp/stream.jsonl"
 jsonl=$(print -r -- \
@@ -220,8 +234,8 @@ exit_code=0
 zsh -f "$entry" exec --verbose --config "$config" hi >/dev/null 2>&1 || exit_code=$?
 (( exit_code == 2 )) || fail 'exec accepted --verbose'
 exit_code=0
-zsh -f "$entry" exec --new --config "$config" prompt >/dev/null 2>&1 || exit_code=$?
-(( exit_code == 2 )) || fail 'new exec accepted a prompt'
+zsh -f "$entry" exec --new --config "$config" one two >/dev/null 2>&1 || exit_code=$?
+(( exit_code == 2 )) || fail 'new exec accepted more than one source session'
 exit_code=0
 zsh -f "$entry" exec --new --jsonl --config "$config" >/dev/null 2>&1 || exit_code=$?
 (( exit_code == 2 )) || fail 'new exec accepted JSONL mode'

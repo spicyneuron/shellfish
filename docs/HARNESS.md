@@ -45,7 +45,7 @@ This context becomes part of the durable initial session prefix. It is collected
 The default harness implements most chat commands as `user_prompt_submit` hooks:
 
 - `/help` lists available commands.
-- `/new` creates a new session in the same project.
+- `/new` creates a new session with the active session's settings.
 - `/fork [N]` copies the transcript into a new session, excluding the last `N` user turns when specified.
 - `/refresh` rebuilds the terminal presentation from the durable session.
 - `/verbose` toggles presentation preview limits.

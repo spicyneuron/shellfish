@@ -118,10 +118,13 @@ def test_prompt_hook_hands_off_to_another_session():
 
 
 def test_prompt_hook_hands_off_to_new_session():
-    # /new requests a handoff without --session. This starts from an explicit
-    # session outside the session directory, so its new file is unambiguous.
+    # /new hands off with the current session as its settings source. Start from
+    # an explicit path so the newly allocated session file is unambiguous.
     session = Session(explicit_session=True, hooks={"new": None})
     try:
+        config = json.loads(session.config_file.read_text())
+        config["profiles"]["development"]["request"]["model"] = "changed-model"
+        session.config_file.write_text(json.dumps(config))
         mark = len(session.output)
         session.send(b"/new\r")
         session.wait_ready(mark)
@@ -129,6 +132,7 @@ def test_prompt_hook_hands_off_to_new_session():
         path, records = session.wait_session_records(1)
         assert path != session.explicit_session, (path, session.explicit_session)
         assert len(records) >= 1, records
+        assert records[0]["profile"]["request"]["model"] == "fake-model", records[0]
     finally:
         session.close()
 

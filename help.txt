@@ -23,7 +23,7 @@ Options:
   --sandbox-read PATH   Give sandboxed tools read-only access; repeatable
   --sandbox-write PATH  Give sandboxed tools read-write access; repeatable
   --config FILE         Use another configuration file
-  --new                 Create an idle session; exec only
+  --new [SESSION]       Create new session, optionally with SESSION settings
   --jsonl               Exchange ordered JSONL records on stdin and stdout; exec only
 
 Backend credentials:
@@ -35,6 +35,6 @@ Backend credentials:
 
 Notes:
   Run /help to list available chat commands.
-  Sessions retain their resolved runtime. Start a new session to change it.
+  Sessions retain their resolved runtime. A fresh launch resolves current configuration.
   Configuration: $XDG_CONFIG_HOME/shellfish/config.jsonc
   Check <install_directory>/docs/* for full documentation.

@@ -4,14 +4,15 @@ Interactive chat is the default Shellfish mode. Run `shellfish` from your projec
 
 ## Starting a session
 
-- `shellfish` starts a new session for the current directory.
+- `shellfish` starts a new session using current configuration.
+- `shellfish --new [SESSION]` starts a new session using current configuration or the given session's settings.
 - `shellfish --continue` reopens the most recent session for this directory.
 - `shellfish --resume` opens a picker listing recent sessions for this directory.
 - `shellfish --session path/to/session.jsonl` opens a specific session directly.
 - `shellfish --clear` clears the terminal before the first render.
 - `shellfish --verbose` lifts all preview limits for the current chat, showing full reasoning, context, and tool output inline.
 
-Each session stores its resolved backend, harness, model, and sandbox settings. Start a new session to change them. Themes and TUI preview settings come from the current configuration, so they affect how existing sessions are displayed.
+Each session stores its resolved backend, harness, model, and sandbox settings. A fresh `shellfish` launch uses current configuration. `/new` starts a new session with the active session's settings. Themes and TUI preview settings come from current configuration, so they affect how existing sessions are displayed.
 
 ## Slash commands
 
@@ -20,7 +21,7 @@ Most slash commands are `user_prompt_submit` hooks from the default harness. Run
 | Command | Description |
 | --- | --- |
 | `/help`, `/h` | List available commands. |
-| `/new` | Start a new session in the current directory. |
+| `/new` | Start a new session with the active session's settings. |
 | `/fork [N]` | Fork the current transcript into a new session, trimming before the last N user turns. Default N is 0, which forks at the current end. |
 | `/refresh`, `/r` | Rerender the current session from scratch. Fixes layout corruption. |
 | `/verbose`, `/v` | Toggle full context, reasoning, and tool output display. |

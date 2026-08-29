@@ -36,7 +36,7 @@ sf_read_prompt() {
 sf_main() {
   local requested_session='' requested_config='' requested_profile=''
   local requested_backend='' requested_model='' requested_request='{}'
-  local command='' input=''
+  local command='' input='' new_source=''
   local sandbox_flag sandbox_path resolved_path
   local -a positional=() sandbox_read_paths=() sandbox_write_paths=()
   local -a original_args=("$@")
@@ -269,15 +269,30 @@ sf_main() {
     return 2
   fi
   if (( new_requested )); then
-    [[ $command == exec ]] || {
-      sf_die '--new requires shellfish exec'
+    [[ $command != config ]] || {
+      sf_die 'shellfish config does not support --new'
       return 2
     }
-    (( ! session_explicit && ! continue_requested && ! resume_requested && ! clear_requested &&
-      ! jsonl_requested && ! ${#positional} )) || {
-      sf_die 'shellfish exec --new does not accept a session, prompt, or turn option'
+    (( ! session_explicit && ! continue_requested && ! resume_requested )) || {
+      sf_die '--new cannot be combined with --session, --continue, or --resume'
       return 2
     }
+    (( ! jsonl_requested )) || {
+      sf_die '--new cannot be combined with --jsonl'
+      return 2
+    }
+    (( ${#positional} <= 1 )) || {
+      sf_die '--new accepts at most one session'
+      return 2
+    }
+    if (( ${#positional} )); then
+      new_source=$positional[1]
+      positional=()
+      (( ! runtime_override )) || {
+        sf_die 'runtime overrides cannot be used with --new SESSION'
+        return 2
+      }
+    fi
   fi
 
   (( $+commands[jq] )) || { sf_die 'shellfish requires jq'; return 2; }
@@ -348,7 +363,8 @@ sf_main() {
     source "$SF_ROOT/lib/exec.zsh"
     sf_exec_run "$input" "$requested_session" "$requested_config" \
       "$requested_profile" "$requested_model" "$requested_request" "$requested_backend" \
-      "$runtime_override" "$continue_requested" "$jsonl_requested" "$new_requested"
+      "$runtime_override" "$continue_requested" "$jsonl_requested" "$new_requested" \
+      "$new_source"
     local exit_status=$?
     [[ -z $SF_EXEC[error] ]] || sf_die "$SF_EXEC[error]"
     return $exit_status
@@ -400,7 +416,7 @@ sf_main() {
   source "$SF_ROOT/lib/chat/main.zsh"
   sf_chat_run "$requested_session" "$requested_config" "$requested_profile" \
     "$requested_model" "$requested_request" "$requested_backend" \
-    "$runtime_override" "$continue_requested" "$clear_requested" "$input"
+    "$runtime_override" "$continue_requested" "$clear_requested" "$input" "$new_source"
   local exit_status=$?
   [[ -z $SF_CHAT_ERROR ]] || sf_die "$SF_CHAT_ERROR"
   return $exit_status

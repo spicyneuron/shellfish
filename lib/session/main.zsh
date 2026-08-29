@@ -262,6 +262,47 @@ sf_session_create() {
   return 1
 }
 
+sf_session_read_settings() {
+  local session_path=$1 header second=null extracted record
+  local -a fields startup
+  integer count=0
+  SF_SESSION_ERROR=''
+  REPLY=''
+  reply=()
+  [[ -f $session_path && ! -L $session_path && -r $session_path ]] || {
+    sf_session_fail "invalid session path: $session_path"
+    return
+  }
+  while (( count < 2 )) && IFS= read -r record; do
+    startup+=( "$record" )
+    (( ++count ))
+  done <"$session_path"
+  (( count >= 1 )) || {
+    sf_session_fail "cannot read session settings: $session_path"
+    return
+  }
+  header=$startup[1]
+  (( count < 2 )) || second=$startup[2]
+  extracted=$(jq -L "$SF_ROOT/lib" -jcn --argjson header "$header" --argjson second "$second" '
+    include "runtime/schema";
+    def field: ., "\u0000";
+    select($header | canonical_session_header(1)) |
+    ($header | del(.type, .format_version, .cwd, .created) | tojson | field),
+    ((if $second.type? == "system" then $second else null end) | tojson | field),
+    ("ok" | field)
+  ' 2>/dev/null) || {
+    sf_session_fail "cannot read session settings: $session_path"
+    return
+  }
+  fields=( "${(@0)${extracted%$'\0'}}" )
+  (( ${#fields} == 3 )) && [[ $fields[3] == ok ]] || {
+    sf_session_fail "cannot read session settings: $session_path"
+    return
+  }
+  REPLY=$fields[1]
+  [[ $fields[2] == null ]] || reply=( "$fields[2]" )
+}
+
 sf_session_read_runtime() {
   local session_path=$1 header
   [[ -f $session_path && ! -L $session_path && -r $session_path ]] || {

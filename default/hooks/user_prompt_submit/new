@@ -11,12 +11,12 @@ read_status=$?
 
 case "$read_status:$submitted" in
   1:/help|1:/h)
-    print -r -- $'999\t/new\tStart a new session' >>"$SHELLFISH_STATE_DIR/help.tsv"
+    print -r -- $'999\t/new\tStart a new session with the same settings' >>"$SHELLFISH_STATE_DIR/help.tsv"
     exit 0
     ;;
   1:/new)
-    jq -cn --arg command "$SHELLFISH_EXECUTABLE" \
-      '{action:"handoff",argv:[$command]}' >&3 || exit 1
+    jq -cn --arg command "$SHELLFISH_EXECUTABLE" --arg source "$SHELLFISH_SESSION" \
+      '{action:"handoff",argv:[$command,"--new",$source]}' >&3 || exit 1
     exit 11
     ;;
   *)

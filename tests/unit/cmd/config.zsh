@@ -85,6 +85,9 @@ zsh -f "$entry" config --resume >/dev/null 2>&1 || exit_code=$?
 exit_code=0
 zsh -f "$entry" config --clear >/dev/null 2>&1 || exit_code=$?
 (( exit_code == 2 )) || fail '--clear not rejected for config'
+exit_code=0
+zsh -f "$entry" config --new >/dev/null 2>&1 || exit_code=$?
+(( exit_code == 2 )) || fail '--new not rejected for config'
 
 # Runtime overrides cannot be used with an existing session.
 exit_code=0

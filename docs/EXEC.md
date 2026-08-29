@@ -2,6 +2,15 @@
 
 `shellfish exec` runs a single agent turn. A turn begins with one user message and may contain multiple provider requests, tool calls, permission decisions, and stop-hook continuations.
 
+`exec --new [SESSION]` creates an idle session and prints its absolute path. Without `SESSION`, it uses current configuration. With `SESSION`, it copies that session's settings and system prompt. It does not copy messages or context. It runs `session_start` hooks for the new session.
+
+```sh
+shellfish exec --new
+shellfish exec --new path/to/session.jsonl
+```
+
+`shellfish --new [SESSION]` provides the same behavior and opens the new session in chat.
+
 Ordinary exec accepts prompt text and prints the final assistant text:
 
 ```sh

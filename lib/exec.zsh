@@ -501,6 +501,7 @@ sf_exec_run() {
   local message=$1 requested_session=${2-} requested_config=${3-} requested_profile=${4-}
   local requested_model=${5-} requested_request=${6:-\{\}} requested_backend=${7-}
   integer runtime_override=${8:-0} continue_requested=${9:-0} jsonl=${10:-0} new=${11:-0}
+  local new_source=${12-}
   integer rc=0 create=0
   local selected runtime system_record record
   local -a startup_records
@@ -539,15 +540,26 @@ sf_exec_run() {
       rc=$?
     else
       create=1
-      sf_runtime_resolve '' "$requested_config" "$requested_profile" \
-          "$requested_model" "$requested_request" "$requested_backend" \
-          "$runtime_override" || {
-        rc=$?
-        sf_exec_set_error "$SF_RUNTIME_ERROR"
-      }
-      if (( ! rc )); then
-        runtime=$REPLY
-        system_record=$SF_RUNTIME_SYSTEM_RECORD
+      if [[ -n $new_source ]]; then
+        sf_session_read_settings "$new_source" || {
+          rc=$?
+          sf_exec_set_error "$SF_SESSION_ERROR"
+        }
+        if (( ! rc )); then
+          runtime=$REPLY
+          (( ${#reply} )) && system_record=$reply[1]
+        fi
+      else
+        sf_runtime_resolve '' "$requested_config" "$requested_profile" \
+            "$requested_model" "$requested_request" "$requested_backend" \
+            "$runtime_override" || {
+          rc=$?
+          sf_exec_set_error "$SF_RUNTIME_ERROR"
+        }
+        if (( ! rc )); then
+          runtime=$REPLY
+          system_record=$SF_RUNTIME_SYSTEM_RECORD
+        fi
       fi
     fi
   fi
