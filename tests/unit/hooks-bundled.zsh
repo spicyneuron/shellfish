@@ -4,35 +4,55 @@ source "${0:A:h}/_hooks.zsh"
 
 sf_test_runtime
 
-# A slow worktree status skips the remaining git context instead of blocking
-# session creation.
+# A slow directory tree acts as a filesystem canary, preventing git status
+# from walking the worktree without blocking the remaining git context.
 typeset environment_hook="$ROOT/default/hooks/session_start/add_environment"
 typeset environment_bin="$tmp/environment-bin"
 typeset environment_output
 typeset -i environment_started environment_elapsed
 mkdir "$environment_bin"
+cat >"$environment_bin/tree" <<'EOF'
+#!/bin/sh
+exec sleep 10
+EOF
 cat >"$environment_bin/git" <<'EOF'
 #!/bin/sh
 case "$1" in
   rev-parse) printf '.git\n' ;;
-  status) exec sleep 10 ;;
-  *) printf 'unexpected git command\n' ;;
+  branch) printf 'main\n' ;;
+  status) printf 'status should have been skipped\n' ;;
+  log)
+    case "$2" in
+      --oneline) printf 'abc123 Test commit\n' ;;
+      --name-status) printf 'M\tchanged-file\n' ;;
+      *) exit 1 ;;
+    esac
+    ;;
+  *) exit 1 ;;
 esac
 EOF
-chmod +x "$environment_bin/git"
+chmod +x "$environment_bin/tree" "$environment_bin/git"
 environment_started=$SECONDS
 environment_output=$(PATH="$environment_bin:$PATH" zsh -f "$environment_hook" session_start)
 environment_elapsed=$(( SECONDS - environment_started ))
 (( environment_elapsed >= 3 && environment_elapsed < 7 )) ||
-  fail "environment git timeout took ${environment_elapsed}s"
-[[ $environment_output == *'Git information timed out'* ]]
-[[ $environment_output != *'Git status:'* ]]
-[[ $environment_output != *'Recent commits:'* ]]
+  fail "environment tree timeout took ${environment_elapsed}s"
+[[ $environment_output == *'tree: (skipped, slow file system)'* ]]
+[[ $environment_output == *$'Git branch: main'* ]]
+[[ $environment_output == *$'Git status:\n(skipped, slow filesystem)'* ]]
+[[ $environment_output == *$'Recent commits:\nabc123 Test commit'* ]]
+[[ $environment_output == *$'Recent files:\n M changed-file'* ]]
+[[ $environment_output != *'status should have been skipped'* ]]
 
 cat >"$environment_bin/git" <<'EOF'
 #!/bin/sh
 exit 1
 EOF
+cat >"$environment_bin/tree" <<'EOF'
+#!/bin/sh
+printf '.\n'
+EOF
+chmod +x "$environment_bin/tree" "$environment_bin/git"
 environment_output=$(PATH="$environment_bin:$PATH" zsh -f "$environment_hook" session_start)
 [[ $environment_output == *'Not in git repo'* ]]
 
