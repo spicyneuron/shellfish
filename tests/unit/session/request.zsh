@@ -70,11 +70,13 @@ print -r -- '[
   {"type":"message","role":"assistant","content":[]},
   {"type":"context","tag":"t","hook":"notes","content":"ctx"},
   {"type":"message","role":"tool_result","call_id":"c1","name":"shell",
-   "content":"out","exit_code":0,"result_type":"file_diff","sandboxed":false},
+   "content":"out","exit_code":0,"result_type":"file_diff","sandbox_blocked":true,
+   "sandboxed":true},
   {"type":"message","role":"user","content":[{"type":"text","text":"next"}]}
 ]' | fold | jq -e '
   [.[].role] == ["assistant","tool_result","user"] and
-  (.[1] | has("result_type", "sandboxed") | not) and
+  (.[1] | has("result_type", "sandbox_blocked", "sandboxed") | not) and
+  .[1].content == "out\n\nSandbox notice: The sandbox blocked one or more actions attempted by this tool." and
   .[2].content[0].text == "<t hook=\"notes\">\nctx\n</t>\n\nnext"
 ' >/dev/null
 

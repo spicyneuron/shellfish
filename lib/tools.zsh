@@ -169,7 +169,8 @@ sf_tool_execute() {
   local sandbox_read_paths=$9 sandbox_write_paths=${10}
   local tool_home=${HOME:-$cwd}
   local id name execution_input bypass sandboxed result_type tool_sandbox tool_bypass tool_settings
-  local state_dir captured bounded status_file temp command_path settings diff_field result_path original decoded
+  local state_dir captured bounded status_file temp command_path settings sandbox_log
+  local diff_field result_path original decoded sandbox_blocked=''
   local -a fields read_paths write_paths
   local -a command locale_env
   integer exit_code tail_status process_status read_count
@@ -281,10 +282,11 @@ sf_tool_execute() {
     fi
     if (( harness_sandbox )) && [[ $tool_sandbox == true && $bypass != true ]]; then
       settings="$state_dir/fence.jsonc"
+      sandbox_log="$state_dir/sandbox.log"
       print -r -- "$tool_settings" >"$settings" || return 1
       command=(/usr/bin/env -i HOME="$tool_home" "${locale_env[@]}" PATH="$PATH" TERM="${TERM:-dumb}"
         TMPPREFIX=/tmp/fence/zsh SHELLFISH_MAX_CAPTURE_BYTES="$max_capture"
-        "$fence" --settings "$settings"
+        "$fence" --monitor --fence-log-file "$sandbox_log" --settings "$settings"
         --expose-host-path "$settings" --expose-host-path "$command_path")
       for decoded in "${read_paths[@]}"; do
         command+=( --expose-host-path "$decoded" )
@@ -334,6 +336,9 @@ sf_tool_execute() {
       sf_tool_build_file_diff "$result_path" "$original" "$bounded" "$state_dir" || return 1
       result_type=$REPLY
     fi
+    if [[ -n $sandbox_log && -f $sandbox_log ]] && grep -Fq ' ✗ ' "$sandbox_log"; then
+      sandbox_blocked=true
+    fi
     sandboxed=''
     if [[ $name == shell ]]; then
       sandboxed=false
@@ -341,11 +346,12 @@ sf_tool_execute() {
     fi
     REPLY=$(jq -cn --arg call_id "$id" --arg name "$name" \
       --rawfile content "$bounded" --argjson exit_code "$exit_code" --arg result_type "$result_type" \
-      --arg sandboxed "$sandboxed" '
+      --arg sandboxed "$sandboxed" --arg sandbox_blocked "$sandbox_blocked" '
         {type:"message",role:"tool_result",call_id:$call_id,name:$name,
          content:$content,exit_code:$exit_code} +
         (if $result_type == "" then {} else {result_type:$result_type} end) +
-        (if $sandboxed == "" then {} else {sandboxed:($sandboxed == "true")} end)
+        (if $sandboxed == "" then {} else {sandboxed:($sandboxed == "true")} end) +
+        (if $sandbox_blocked == "" then {} else {sandbox_blocked:true} end)
     ') || return
   } always {
     sf_tools_cleanup

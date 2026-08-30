@@ -151,6 +151,9 @@ sf_chat_decoded() {
       hook_display)
         sf_chat_notice notice "$first: $second" "$third" || return 1
         ;;
+      sandbox_blocked)
+        sf_chat_notice notice 'Sandbox blocked an action' || return 1
+        ;;
       permission_request)
         [[ $SF_PRESENT_STATE == working && -z $SF_PRESENT_PERMISSION_ID ]] || return 1
         SF_PRESENT_PERMISSION_ID=$first

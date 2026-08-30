@@ -175,16 +175,26 @@ mkdir "$tmp/bin"
 cat >"$tmp/bin/fence" <<'ZSH'
 #!/usr/bin/env zsh
 print -rl -- "$@" >"${0:A:h:h}/fence.args"
-[[ $1 != --settings ]] || cp -- "$2" "${0:A:h:h}/fence.settings"
 print -r -- "$LANG" >"${0:A:h:h}/fence.lang"
 print -r -- "$LC_ALL" >"${0:A:h:h}/fence.lc_all"
 print -r -- "$LC_CTYPE" >"${0:A:h:h}/fence.lc_ctype"
 print -r -- "$HOME" >"${0:A:h:h}/fence.home"
 print -r -- "$TMPDIR" >"${0:A:h:h}/fence.tmpdir"
 print -r -- "$TMPPREFIX" >"${0:A:h:h}/fence.tmpprefix"
-while (( $# )) && [[ $1 != -- ]]; do shift; done
+typeset sandbox_log=''
+while (( $# )) && [[ $1 != -- ]]; do
+  case $1 in
+    --fence-log-file) sandbox_log=$2; shift 2 ;;
+    --settings) cp -- "$2" "${0:A:h:h}/fence.settings"; shift 2 ;;
+    *) shift ;;
+  esac
+done
 (( $# )) && shift
 TMPDIR=/tmp/fence "$@"
+integer code=$?
+[[ ! -f "${0:A:h:h}/fence.violate" ]] ||
+  print -r -- '[fence:test] 00:00:00 ✗ blocked' >"$sandbox_log"
+exit $code
 ZSH
 chmod +x "$tmp/bin/fence"
 PATH="$tmp/bin:$PATH"
@@ -215,6 +225,8 @@ sf_test_tool_execute "$(jq -cn --arg command 'printf fenced' \
   '{id:"fence_1",name:"shell",input:{command:$command}}')" 1
 jq -e '.content == "fenced" and .sandboxed == true' \
   <<<"$REPLY" >/dev/null
+grep -Fx -- '--monitor' "$tmp/fence.args" >/dev/null
+grep -Fx -- '--fence-log-file' "$tmp/fence.args" >/dev/null
 grep -Fx -- '--settings' "$tmp/fence.args" >/dev/null
 jq -e '. == {}' "$tmp/fence.settings" >/dev/null
 (( $(grep -Fxc -- '--expose-host-path' "$tmp/fence.args") == 4 ))
@@ -224,6 +236,12 @@ grep -Fx -- "$tmp/read file" "$tmp/fence.args" >/dev/null
 (( $(grep -Fxc -- '--expose-host-path-rw' "$tmp/fence.args") == 2 ))
 grep -Fx -- "$tmp/write dir" "$tmp/fence.args" >/dev/null
 grep -Fx -- "$tmp/write file" "$tmp/fence.args" >/dev/null
+touch "$tmp/fence.violate"
+sf_test_tool_execute "$(jq -cn --arg command 'printf blocked' \
+  '{id:"fence_blocked",name:"shell",input:{command:$command}}')" 1
+jq -e '.content == "blocked" and .sandboxed == true and .sandbox_blocked == true' \
+  <<<"$REPLY" >/dev/null
+rm "$tmp/fence.violate"
 load_tools "$(jq -c --arg fence "$tmp/bin/fence" \
   '.harness.sandbox=true | .harness.fence=$fence' <<<"$stored_runtime")"
 jq -e '.[0] |

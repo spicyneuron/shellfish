@@ -96,11 +96,11 @@ order=$(print -r -- \
 assert_equal 'assistant_commit,tool_call,call_3,edit_file,notes.json,plain,batch_ok' "$order"
 
 order=$(print -r -- \
-    '{"type":"message","role":"tool_result","call_id":"call_2","name":"edit_file","content":"@@ -1 +1 @@\n-old\n+new","exit_code":0,"result_type":"file_diff"}' |
+    '{"type":"message","role":"tool_result","call_id":"call_2","name":"edit_file","content":"@@ -1 +1 @@\n-old\n+new","exit_code":0,"result_type":"file_diff","sandbox_blocked":true}' |
   jq -jRs -L "$ROOT/lib" --argjson runtime "$edit_runtime" \
     -f "$ROOT/lib/chat/event-decode.jq" |
   tr '\0' '\n' | sed '/^$/d' | paste -sd, -)
-assert_equal 'tool_result,call_2,hidden,@@ -1 +1 @@,-old,+new,file_diff,full,batch_ok' "$order"
+assert_equal 'sandbox_blocked,tool_result,call_2,hidden,@@ -1 +1 @@,-old,+new,file_diff,full,batch_ok' "$order"
 
 typeset handoff
 handoff=$(print -r -- '{"type":"_handoff","argv":["/tmp/custom command","","arg"]}' |

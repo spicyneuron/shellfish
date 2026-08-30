@@ -29,7 +29,12 @@ def request_messages:
       if $record.role == "assistant" and (.context | length) > 0 then
         .messages += [context_message(.context; ""), ($record | del(.type, .usage))] |
         .context = []
-      else .messages += [$record | del(.type, .usage, .result_type, .sandboxed)] end
+      else .messages += [$record |
+        if .role == "tool_result" and .sandbox_blocked? == true then
+          .content += (if .content == "" then "" else "\n\n" end) +
+            "Sandbox notice: The sandbox blocked one or more actions attempted by this tool."
+        else . end |
+        del(.type, .usage, .result_type, .sandbox_blocked, .sandboxed)] end
     elif ($record.type | IN("system", "session")) then .
     else error("unrecognized session record: " + ($record.type | tostring)) end
   ) as $conversation |

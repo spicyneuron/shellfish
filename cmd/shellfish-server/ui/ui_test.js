@@ -499,7 +499,7 @@ test("answers the pending permission request once", async () => {
   assert.equal(find(page.output, "actions").length, 0);
 });
 
-test("keeps a tool call and its result together", async () => {
+test("keeps a tool result together with its sandbox notice", async () => {
   const page = await idle();
   await page.send({ type: "state", working: true }, { type: "_backend_request_start" });
   assert.equal(page.cancel.hidden, false);
@@ -520,11 +520,13 @@ test("keeps a tool call and its result together", async () => {
     name: "shell",
     content: "/project",
     exit_code: 0,
+    sandbox_blocked: true,
   });
   const call = find(page.output, "call")[0];
   const result = find(call, "result");
   assert.equal(result.length, 1);
   assert.equal(result[0].textContent, "/project");
+  assert.equal(find(page.output, "note")[0].textContent, "Sandbox blocked an action");
   assert.equal(find(page.output, "activity").length, 1);
   assert.equal(page.cancel.hidden, false);
 });

@@ -126,13 +126,14 @@ def canonical_tool_call:
 def canonical_tool_result:
   type == "object" and
   ((keys - ["call_id", "content", "exit_code", "name", "role",
-    "result_type", "sandboxed", "type"]) | length == 0) and
+    "result_type", "sandbox_blocked", "sandboxed", "type"]) | length == 0) and
   (["call_id", "content", "exit_code", "name", "role", "type"] - keys |
     length == 0) and
   .type == "message" and .role == "tool_result" and
   (.call_id | identifier) and (.name | tool_name) and (.content | type == "string") and
   (.exit_code | type == "number" and floor == . and . >= 0 and . <= 255) and
   ((has("result_type") | not) or .result_type == "file_diff") and
+  ((has("sandbox_blocked") | not) or .sandbox_blocked == true) and
   ((has("sandboxed") | not) or
     (.name == "shell" and (.sandboxed | type == "boolean")));
 

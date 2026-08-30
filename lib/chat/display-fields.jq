@@ -52,6 +52,9 @@ def durable_display_fields($replay; $tools):
     . as $result |
     ($tools | map(select(.name == $result.name))[0].manifest.display.result // {}) as $display |
     # An empty status denotes a pending call; hidden denotes a completed call without a footer.
+    (if .sandbox_blocked? == true then
+      ["sandbox_blocked", "", "", "", "", ""]
+    else empty end),
     ["tool_result", .call_id,
       (if ($display.exit_code // false) or .exit_code != 0
        then (.exit_code | tostring) else "hidden" end),

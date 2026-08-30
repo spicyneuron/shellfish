@@ -460,7 +460,8 @@ function renderResult(frame) {
   if (frame.exit_code) el(result, "span", "exit", "exit " + frame.exit_code);
   el(result, "pre", null, safe(frame.content));
   place(call);
-  if (working) showIndicator();
+  if (frame.sandbox_blocked === true) note("Sandbox blocked an action");
+  else if (working) showIndicator();
 }
 
 function applyState(frame) {

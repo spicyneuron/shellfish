@@ -26,7 +26,7 @@ These are ordinary component files under `default/prompts/`; a user configuratio
 - `write_file` creates new project text files.
 - `shell` runs one Zsh command in the session working directory.
 
-Tools are shell scripts with JSON manifests. The default harness enables sandboxing with [`fence`](https://github.com/fencesandbox/fence). Its policies constrain project access, block network access, and deny common secret files. Supported tool calls can request a one-time bypass in interactive clients; headless execution denies requests that hooks do not decide.
+Tools are shell scripts with JSON manifests. The default harness enables sandboxing with [`fence`](https://github.com/fencesandbox/fence). Its policies constrain project access, block network access, and deny common secret files. When sandbox monitoring reports a blocked action, the durable tool result records that fact for both the model and client presentation. Supported tool calls can request a one-time bypass in interactive clients; headless execution denies requests that hooks do not decide.
 
 Sandboxing applies to opted-in tools. Hooks and backend adapters are trusted executables and run with the user's permissions. See [Configuration](CONFIG.md#sandbox-grants) for persistent and one-off path grants.
 
