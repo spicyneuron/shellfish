@@ -74,7 +74,7 @@ sf_config_init() {
             ;;
           *) print -r -- "$line" ;;
         esac
-      done <"$SF_ROOT/config.template.jsonc"
+      done <"$SF_ROOT/shellfish.template.jsonc"
     } >"$temp" || replaced=0
     (( replaced == 2 )) || {
       rm -f -- "$temp"
@@ -82,7 +82,7 @@ sf_config_init() {
       return
     }
   else
-    cp -- "$SF_ROOT/config.template.jsonc" "$temp" || {
+    cp -- "$SF_ROOT/shellfish.template.jsonc" "$temp" || {
       rm -f -- "$temp"
       sf_config_fail "cannot create config: $config_path"
       return

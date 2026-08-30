@@ -1,13 +1,16 @@
-// Shellfish: https://github.com/spicyneuron/shellfish
+// Shellfish config
+//
+// Full reference:
+// https://github.com/spicyneuron/shellfish/blob/main/default/shellfish.jsonc
 {
-  "$schema": "https://raw.githubusercontent.com/spicyneuron/shellfish/refs/heads/main/config.schema.json",
+  "$schema": "https://raw.githubusercontent.com/spicyneuron/shellfish/refs/heads/main/shellfish.schema.json",
 
-  "default_profile": "agent",
+  "default_profile": "default",
 
   "profiles": {
-    "agent": {
-      "extend": "default",
+    "default": {
       "backend": "openrouter",
+      "harness": "default",
       "request": {
         // "model": "MODEL",
         // "reasoning": { "effort": "high" },

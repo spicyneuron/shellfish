@@ -8,7 +8,7 @@ sf_test_tmp runtime
 mkdir -p "$tmp/config" "$tmp/home"
 export HOME="${tmp:A}/home"
 unset XDG_CONFIG_HOME
-config="$tmp/config/config.jsonc"
+config="$tmp/config/shellfish.jsonc"
 
 cat >"$config" <<'JSON'
 {
@@ -39,7 +39,7 @@ cat >"$tmp/config/string-values.jsonc" <<'JSON'
   "block": "literal /* comment */",
   "quote": "escaped quote: \"// still text\" and \"/* too */\"",
   // another comment
-  "path": "C:\\Users\\shellfish\\config.jsonc"
+  "path": "C:\\Users\\shellfish\\shellfish.jsonc"
 }
 JSON
 jsonc=$(sf_runtime_read_jsonc "$tmp/config/string-values.jsonc")
@@ -47,7 +47,7 @@ jq -e '. == {
   line:"https://example.invalid/a//b",
   block:"literal /* comment */",
   quote:"escaped quote: \"// still text\" and \"/* too */\"",
-  path:"C:\\Users\\shellfish\\config.jsonc"
+  path:"C:\\Users\\shellfish\\shellfish.jsonc"
 }' <<<"$jsonc" >/dev/null
 
 sf_runtime_resolve_from_config "$config" '' 'cli-model' '{"temperature":0.7,"seed":4}'

@@ -5,7 +5,7 @@ sf_test_tmp config-command
 
 typeset config_dir="$tmp/config"
 mkdir -p "$config_dir"
-cat >"$config_dir/config.jsonc" <<'EOF'
+cat >"$config_dir/shellfish.jsonc" <<'EOF'
 {
   "default_profile": "agent",
   "backends": {"work": {"adapter": "openai", "api_key_env": "OPENAI_API_KEY"}},
@@ -28,15 +28,15 @@ typeset init_config="$init_home/config/shellfish/shellfish.jsonc"
 HOME="$init_home" XDG_CONFIG_HOME="$init_home/config" \
   zsh -f "$entry" config --init >/dev/null || fail 'config init failed'
 [[ -f $init_config ]] || fail 'config init did not create the default path'
-cmp -s "$ROOT/config.template.jsonc" "$init_config" || fail 'config init did not copy the template'
+cmp -s "$ROOT/shellfish.template.jsonc" "$init_config" || fail 'config init did not copy the template'
 if HOME="$init_home" XDG_CONFIG_HOME="$init_home/config" \
   zsh -f "$entry" config --init >/dev/null 2>&1; then
   fail 'config init overwrote an existing config'
 fi
-typeset custom_config="$tmp/custom/config.jsonc"
+typeset custom_config="$tmp/custom/shellfish.jsonc"
 zsh -f "$entry" config --init --config "$custom_config" >/dev/null || \
   fail 'config init with an explicit path failed'
-cmp -s "$ROOT/config.template.jsonc" "$custom_config" || \
+cmp -s "$ROOT/shellfish.template.jsonc" "$custom_config" || \
   fail 'config init did not use the explicit path'
 
 # Automatic sandbox grants.
@@ -99,7 +99,7 @@ else
 fi
 EOF
 chmod +x "$detector_bin"/*
-typeset auto_config="$tmp/auto/config.jsonc"
+typeset auto_config="$tmp/auto/shellfish.jsonc"
 PATH="$detector_bin:$PATH" HOME="$init_home" CARGO_HOME="$detector_root" \
   zsh -f "$entry" config --init --sandbox-auto --config "$auto_config" >/dev/null || \
   fail 'automatic sandbox config init failed'
@@ -118,11 +118,11 @@ jq -e --arg go_cache "~/Library/Caches/go-build" --arg go_mod "$detector_root/go
         $package_cache,$package_mutate,$global_cache] | sort)
   ' < <(source "$ROOT/lib/runtime/main.zsh"; sf_runtime_read_jsonc "$auto_config") >/dev/null || \
   fail 'config init did not write automatic sandbox grants'
-grep -q '^// Shellfish:' "$auto_config" || fail 'config init did not preserve template comments'
+grep -q '^// Shellfish config$' "$auto_config" || fail 'config init did not preserve template comments'
 
 mkdir "$tmp/explicit"
 report=$(PATH="$detector_bin:$PATH" HOME="$init_home" CARGO_HOME="$detector_root" \
-  zsh -f "$entry" config --config "$config_dir/config.jsonc" --sandbox-auto \
+  zsh -f "$entry" config --config "$config_dir/shellfish.jsonc" --sandbox-auto \
     --sandbox-read "$tmp/explicit") || fail 'automatic sandbox config report failed'
 jq -e --arg explicit "${tmp:A}/explicit" --arg rust "$detector_root/rust" \
   --arg go_mod "$detector_root/go-mod" '
@@ -141,11 +141,11 @@ done
 mkdir "$tmp/empty-home"
 report=$(PATH="$empty_bin" HOME="$tmp/empty-home" XDG_CONFIG_HOME='' \
   "$zsh_bin" -f "$entry" config \
-  --config "$config_dir/config.jsonc" --sandbox-auto) || fail 'empty sandbox detection failed'
+  --config "$config_dir/shellfish.jsonc" --sandbox-auto) || fail 'empty sandbox detection failed'
 jq -e '.harness.sandbox_read_paths == [] and .harness.sandbox_write_paths == []' \
   <<<"$report" >/dev/null || fail "empty sandbox detection added grants: \
 $(jq -c '.harness | {sandbox_read_paths,sandbox_write_paths}' <<<"$report")"
-typeset empty_auto_config="$tmp/empty-auto/config.jsonc"
+typeset empty_auto_config="$tmp/empty-auto/shellfish.jsonc"
 PATH="$empty_bin" HOME="$tmp/empty-home" XDG_CONFIG_HOME='' \
   "$zsh_bin" -f "$entry" config --init --sandbox-auto --config "$empty_auto_config" \
   >/dev/null || fail 'empty automatic sandbox config init failed'
@@ -164,7 +164,7 @@ jq -e '.harnesses.default.sandbox_read_paths == [] and
 
 # `shellfish config` reports the runtime a new session would store, plus the
 # theme palettes and TUI limits a session does not store.
-report=$(zsh -f "$entry" config --config "$config_dir/config.jsonc") ||
+report=$(zsh -f "$entry" config --config "$config_dir/shellfish.jsonc") ||
   fail 'config report failed'
 assert_equal gpt-4o "$(jq -r '.profile.request.model' <<<"$report")" 'config reports the model'
 [[ $(jq -r '.backend.command' <<<"$report") == */openai/run ]] || fail 'config reports the backend command'
@@ -175,7 +175,7 @@ assert_equal true "$(jq -r '.theme.dark.palette | has("error")' <<<"$report")" \
 assert_equal 2 "$(jq -r '.tui.preview_lines_context' <<<"$report")" 'config reports TUI limits'
 
 # Runtime overrides reach the report the same way they reach a new session.
-report=$(zsh -f "$entry" config --config "$config_dir/config.jsonc" -m claude-3) || \
+report=$(zsh -f "$entry" config --config "$config_dir/shellfish.jsonc" -m claude-3) || \
   fail 'config report with override failed'
 assert_equal claude-3 "$(jq -r '.profile.request.model' <<<"$report")" 'config applies --model'
 
@@ -190,25 +190,25 @@ jq -cn '{
     max_requests_per_turn:8,max_tool_calls_per_request:16,max_capture_bytes:65536}
 }' >"$tmp/stored.jsonl"
 echo '{"type":"message","role":"user","content":[{"type":"text","text":"hi"}]}' >>"$tmp/stored.jsonl"
-report=$(zsh -f "$entry" config --config "$config_dir/config.jsonc" --session "$tmp/stored.jsonl") || \
+report=$(zsh -f "$entry" config --config "$config_dir/shellfish.jsonc" --session "$tmp/stored.jsonl") || \
   fail 'config session report failed'
 assert_equal auto "$(jq -r '.theme.mode' <<<"$report")" 'config --session reports the current theme mode'
 assert_equal 2 "$(jq -r '.tui.preview_lines_context' <<<"$report")" \
   'config --session reports current TUI limits'
 mkdir "$tmp/extra"
-if zsh -f "$entry" config --config "$config_dir/config.jsonc" \
+if zsh -f "$entry" config --config "$config_dir/shellfish.jsonc" \
     --session "$tmp/stored.jsonl" --sandbox-write "$tmp/extra" >/dev/null 2>&1; then
   fail '--sandbox-write overrode an existing session'
 fi
 
 # --verbose lifts every preview limit without altering the stored runtime.
-report=$(zsh -f "$entry" config --config "$config_dir/config.jsonc" --verbose) || \
+report=$(zsh -f "$entry" config --config "$config_dir/shellfish.jsonc" --verbose) || \
   fail 'config verbose report failed'
 assert_equal 'full full full full' \
   "$(jq -r '[.tui.preview_lines_reasoning, .tui.preview_lines_context,
     .tui.preview_lines_tool_call, .tui.preview_lines_tool_result] | join(" ")' <<<"$report")" \
   '--verbose lifts every preview limit'
-report=$(zsh -f "$entry" config --config "$config_dir/config.jsonc" \
+report=$(zsh -f "$entry" config --config "$config_dir/shellfish.jsonc" \
   --session "$tmp/stored.jsonl" --verbose) || fail 'config verbose session report failed'
 assert_equal full "$(jq -r '.tui.preview_lines_context' <<<"$report")" \
   '--verbose reaches a stored session'
@@ -231,13 +231,13 @@ zsh -f "$entry" config --new >/dev/null 2>&1 || exit_code=$?
 
 # Runtime overrides cannot be used with an existing session.
 exit_code=0
-zsh -f "$entry" config --config "$config_dir/config.jsonc" --session "$tmp/stored.jsonl" -m other \
+zsh -f "$entry" config --config "$config_dir/shellfish.jsonc" --session "$tmp/stored.jsonl" -m other \
   >/dev/null 2>&1 || exit_code=$?
 (( exit_code == 2 )) || fail 'overrides not rejected with --session'
 
 # A profile that cannot resolve fails the same way starting a session would.
 exit_code=0
-zsh -f "$entry" config --config "$config_dir/config.jsonc" -p default >/dev/null 2>&1 || exit_code=$?
+zsh -f "$entry" config --config "$config_dir/shellfish.jsonc" -p default >/dev/null 2>&1 || exit_code=$?
 (( exit_code == 1 )) || fail 'unresolvable profile did not fail'
 
 print -r -- 'ok'

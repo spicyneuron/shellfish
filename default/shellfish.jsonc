@@ -3,7 +3,7 @@
 // Default configuration. $XDG_CONFIG_HOME/shellfish/shellfish.jsonc is merged over
 // this file.
 {
-  "$schema": "https://raw.githubusercontent.com/spicyneuron/shellfish/refs/heads/main/config.schema.json",
+  "$schema": "https://raw.githubusercontent.com/spicyneuron/shellfish/refs/heads/main/shellfish.schema.json",
 
   // Profile selected when --profile is not given on the command line.
   "default_profile": "default",

@@ -3,7 +3,7 @@
 source "${0:A:h:h:h}/_helpers.zsh"
 sf_test_tmp exec-command-signals
 
-typeset config="$tmp/config.jsonc"
+typeset config="$tmp/shellfish.jsonc"
 cat >"$config" <<EOF
 {
   "default_profile": "exec",

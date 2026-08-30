@@ -68,7 +68,7 @@ printf '%s\n' /sessions/new.jsonl
 func TestParseServerArgsStripsServerOptions(t *testing.T) {
 	options, err := parseServerArgs([]string{
 		"--bind", "127.0.0.1:0", "--shellfish", "/bin/shellfish",
-		"--profile", "work", "--config", "config.jsonc",
+		"--profile", "work", "--config", "shellfish.jsonc",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -76,7 +76,7 @@ func TestParseServerArgsStripsServerOptions(t *testing.T) {
 	if options.bind != "127.0.0.1:0" || options.binary != "/bin/shellfish" {
 		t.Fatalf("options = %#v", options)
 	}
-	if got, want := strings.Join(options.shellfishArgs, " "), "--profile work --config config.jsonc"; got != want {
+	if got, want := strings.Join(options.shellfishArgs, " "), "--profile work --config shellfish.jsonc"; got != want {
 		t.Fatalf("Shellfish options = %q, want %q", got, want)
 	}
 

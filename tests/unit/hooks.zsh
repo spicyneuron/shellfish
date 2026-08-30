@@ -37,7 +37,7 @@ jq -e -s '
 
 # CLI entry runs creation hooks once and does not rerun them for an existing session.
 typeset resume_session="$tmp/resume-session.jsonl"
-typeset resume_marker="$tmp/resume-marker" resume_config="$tmp/resume-config.jsonc"
+typeset resume_marker="$tmp/resume-marker" resume_config="$tmp/resume-shellfish.jsonc"
 make_hook resume 'print -r -- run >>"$RESUME_MARKER"'
 typeset resume_hook=$hook
 cat >"$resume_config" <<EOF

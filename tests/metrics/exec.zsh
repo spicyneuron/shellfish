@@ -59,7 +59,7 @@ print -rn -- 'tool result'
 EOF
 chmod +x "$tmp/bin/jq" "$tmp/config/backends/perf/run" "$tmp/config/tools/perf/run"
 
-cat >"$tmp/config/config.jsonc" <<'EOF'
+cat >"$tmp/config/shellfish.jsonc" <<'EOF'
 {
   "default_profile":"perf",
   "theme_mode":"dark","theme_light":"light","theme_dark":"dark",
@@ -88,7 +88,7 @@ for (( iteration = 1; iteration <= iterations; iteration++ )); do
     cd "$tmp/project"
     XDG_STATE_HOME="$tmp/state" PATH="$tmp/bin:$PATH" \
       zsh -f "$root/bin/shellfish" exec --session "$tmp/session-$iteration.jsonl" \
-      --config "$tmp/config/config.jsonc" perf >/dev/null 2>"$stderr"
+      --config "$tmp/config/shellfish.jsonc" perf >/dev/null 2>"$stderr"
   ) || { cat "$stderr" >&2; exit 1; }
   float elapsed=$(( (EPOCHREALTIME - start) * 1000 ))
   integer tool_count=$(wc -l <"$tool_metrics")

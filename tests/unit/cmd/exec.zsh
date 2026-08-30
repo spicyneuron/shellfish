@@ -6,7 +6,7 @@ mkdir "$tmp/home"
 export HOME="${tmp:A}/home"
 unset XDG_CONFIG_HOME
 
-typeset config="$tmp/config.jsonc"
+typeset config="$tmp/shellfish.jsonc"
 cat >"$config" <<EOF
 {
   "default_profile": "exec",

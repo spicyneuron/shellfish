@@ -412,7 +412,7 @@ def test_sigterm_leaves_terminal_state():
     fcntl.ioctl(master, termios.TIOCSWINSZ, struct.pack("HHHH", ROWS, COLUMNS, 0, 0))
     before = termios.tcgetattr(slave)
     config_dir = tempfile.TemporaryDirectory()
-    config = Path(config_dir.name) / "config.jsonc"
+    config = Path(config_dir.name) / "shellfish.jsonc"
     config.write_text(
         json.dumps(
             {
