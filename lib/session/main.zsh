@@ -386,6 +386,74 @@ sf_session_append() {
   SF_SESSION_RECORDS+=( "$record" )
 }
 
+sf_session_update() {
+  local update=$1 decoded header temp error
+  local -a fields
+  integer changed=0
+  [[ -n $SF_SESSION_LOCK && ${#SF_SESSION_RECORDS} -gt 0 ]] || {
+    sf_session_fail 'session is not open for mutation'
+    return
+  }
+  decoded=$(jq -L "$SF_ROOT/lib" -jnre --argjson header "$SF_SESSION_RECORDS[1]" \
+    --argjson update "$update" '
+      include "runtime/schema";
+      def field: ., "\u0000";
+      select($update | type == "object" and
+        (keys - ["backend", "harness", "profile"] | length) == 0) |
+      ($header | {type,format_version,cwd,created}) as $metadata |
+      (($header | del(.type,.format_version,.cwd,.created)) * $update) as $runtime |
+      ($runtime + $metadata) as $updated |
+      select($updated | canonical_session_header(1)) |
+      ($updated != $header | tostring | field),
+      ($updated | tojson | field),
+      ("ok" | field)
+    ' 2>/dev/null) || {
+    sf_session_fail 'invalid session update'
+    return
+  }
+  fields=( "${(@0)${decoded%$'\0'}}" )
+  (( ${#fields} == 3 )) && [[ $fields[3] == ok ]] || {
+    sf_session_fail 'invalid session update'
+    return
+  }
+  if [[ $fields[1] == false ]]; then
+    REPLY=0
+    return 0
+  fi
+  header=$fields[2]
+  temp=$(mktemp "${SF_SESSION_PATH:h}/.${SF_SESSION_PATH:t}.XXXXXX") || {
+    sf_session_fail "cannot prepare session update: $SF_SESSION_PATH"
+    return
+  }
+  repeat 1; do
+    chmod 600 "$temp" || {
+      error="cannot secure session update: $SF_SESSION_PATH"
+      break
+    }
+    {
+      print -r -- "$header"
+      (( ${#SF_SESSION_RECORDS} == 1 )) ||
+        printf '%s\n' "${SF_SESSION_RECORDS[@]:1}"
+    } >"$temp" || {
+      error="cannot write session update: $SF_SESSION_PATH"
+      break
+    }
+    mv -f -- "$temp" "$SF_SESSION_PATH" || {
+      error="cannot replace session: $SF_SESSION_PATH"
+      break
+    }
+    temp=''
+    changed=1
+  done
+  if (( ! changed )); then
+    rm -f -- "$temp" 2>/dev/null
+    sf_session_fail "$error"
+    return 1
+  fi
+  sf_session_load || return
+  REPLY=1
+}
+
 sf_session_recover_turn() {
   local recovery record recovered=''
   local -a pending fields

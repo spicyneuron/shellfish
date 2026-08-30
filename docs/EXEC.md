@@ -52,7 +52,7 @@ Stdout contains one compact JSON object per line in source order. Objects fall i
 
 Durable records are:
 
-- `session`: the frozen runtime header, emitted when a new session is created.
+- `session`: the resolved runtime header, emitted when a new session is created.
 - `system`: the configured system prompt.
 - `context`: model-visible hook output.
 - `message` with role `user`, `assistant`, or `tool_result`.
@@ -89,4 +89,4 @@ A successful process exit means the single-turn operation completed cleanly. Thi
 
 A nonzero exec exit means the operation failed or was interrupted. Exec emits `_exec_error` when JSONL output is available. After malformed output, disconnection, cancellation, or process failure, discard uncertain live state and replay the durable session.
 
-Do not write presentation or lifecycle records into a session. Session JSONL is append-only and owned by Shellfish. Custom clients submit turns through exec and use the transcript only for replay and recovery.
+Do not write presentation or lifecycle records into a session. Transcript records are append-only and owned by Shellfish. Custom clients submit turns through exec and use the transcript only for replay and recovery. The separate `--session-update` chat operation may atomically replace the runtime header under the session lock.

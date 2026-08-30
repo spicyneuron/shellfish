@@ -60,7 +60,7 @@ Reference resolution, most-specific first:
 3. a path with a slash, relative to the config directory;
 4. a bare name, resolved against `<config-dir>/hooks/<event>/` then the bundled `default/hooks/<event>/`.
 
-So `"add_environment"` resolves to `default/hooks/session_start/add_environment` unless you shadow it with `~/.config/shellfish/hooks/session_start/add_environment`. Each reference must resolve to an executable file, or runtime resolution fails. Resolved paths are frozen into the session header, so an existing session keeps the hooks it started with even if config changes.
+So `"add_environment"` resolves to `default/hooks/session_start/add_environment` unless you shadow it with `~/.config/shellfish/hooks/session_start/add_environment`. Each reference must resolve to an executable file, or runtime resolution fails. Resolved paths are stored in the session header, so later configuration changes do not reinterpret an existing session.
 
 ## The hook contract
 
@@ -149,7 +149,7 @@ Trailing context, typically `stop` feedback, becomes a synthetic trailing user m
 
 ### `session_start`
 
-Runs once during lock-free session preparation. It does not run when an existing session is resumed or exec restarts. The header and configured system record are prepared in memory, and hook input is constructed from that state and its frozen runtime. The session path does not exist until the complete initial prefix is written after all hooks succeed. stdin is empty and `$1` is `session_start`. There are no further arguments. The hook does not receive `SHELLFISH_TURN_ID` or credentials. The API key is scoped to the backend adapter only.
+Runs once during lock-free session preparation. It does not run when an existing session is resumed or exec restarts. The header and configured system record are prepared in memory, and hook input is constructed from that state and its resolved runtime. The session path does not exist until the complete initial prefix is written after all hooks succeed. stdin is empty and `$1` is `session_start`. There are no further arguments. The hook does not receive `SHELLFISH_TURN_ID` or credentials. The API key is scoped to the backend adapter only.
 
 - **stdout** becomes durable `session_start` context in the initial session prefix. Each hook's nonempty stdout is a separately attributed record.
 - **stderr** is shown and discarded.
@@ -297,7 +297,7 @@ exit 10
 
 ## Guarantees and limits
 
-- The session JSONL is append-only and authoritative. Hooks are trusted user-provided programs, and durable hook output must travel through stdout rather than direct transcript mutation.
+- Session transcript records are append-only and authoritative. Hooks are trusted user-provided programs, and durable hook output must travel through stdout rather than direct transcript mutation. Hooks may hand off to the locked `--session-update` operation but must not rewrite the header directly.
 - Hook output is untrusted. stdout is escaped before it reaches the model. It cannot forge tags or inject provider roles.
 - Dispatch is sequential and preserves configured order. A failed chain does not commit partial output. Candidate context is usable only after the whole chain succeeds.
 - Captures are private, bounded, and cleaned on every path.

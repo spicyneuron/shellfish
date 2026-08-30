@@ -1,0 +1,112 @@
+#!/usr/bin/env zsh
+
+emulate -R zsh
+setopt extended_glob no_aliases no_multios pipe_fail
+
+typeset submitted='' body operation candidate grant_path header grants updated patch field
+typeset action access
+typeset usage='usage: /sandbox {read|write|+read|+write|+r|+w|-read|-write|-r|-w} DIR'
+integer read_status
+[[ $1 == user_prompt_submit ]] || exit 1
+IFS= read -r submitted
+read_status=$?
+
+case "$read_status:$submitted" in
+  1:/help|1:/h)
+    print -r -- $'114\t/sandbox [OP DIR]\tList or update session sandbox grants' \
+      >>"$SHELLFISH_STATE_DIR/help.tsv"
+    exit 0
+    ;;
+  1:/sandbox)
+    IFS= read -r header <"$SHELLFISH_SESSION" || exit 1
+    jq -r '
+      "Sandbox: " + (if .harness.sandbox then "enabled" else "disabled" end),
+      "Read grants:",
+      (if .harness.sandbox_read_paths | length == 0 then "  (none)"
+       else .harness.sandbox_read_paths[] | "  " + . end),
+      "Write grants:",
+      (if .harness.sandbox_write_paths | length == 0 then "  (none)"
+       else .harness.sandbox_write_paths[] | "  " + . end)
+    ' <<<"$header" >&2 || exit 1
+    exit 10
+    ;;
+  1:'/sandbox '*) body=${submitted#'/sandbox '} ;;
+  *) exit 0 ;;
+esac
+
+body=${body##[[:space:]]#}
+body=${body%%[[:space:]]#}
+operation=${body%%[[:space:]]*}
+candidate=${body#"$operation"}
+candidate=${candidate##[[:space:]]#}
+candidate=${candidate%%[[:space:]]#}
+case $operation in
+  read|+read|+r) action=add; access=read ;;
+  write|+write|+w) action=add; access=write ;;
+  -read|-r) action=remove; access=read ;;
+  -write|-w) action=remove; access=write ;;
+  *)
+    print -u2 -r -- "$usage"
+    exit 10
+    ;;
+esac
+[[ -n $candidate ]] || {
+  print -u2 -r -- "$usage"
+  exit 10
+}
+
+IFS= read -r header <"$SHELLFISH_SESSION" || exit 1
+jq -e '.harness.sandbox == true' <<<"$header" >/dev/null || {
+  print -u2 -r -- 'session sandbox is disabled'
+  exit 10
+}
+field="sandbox_${access}_paths"
+grants=$(jq -ce --arg field "$field" '.harness[$field] | select(type == "array")' \
+  <<<"$header") || exit 1
+
+if [[ $candidate == '~/'* ]]; then
+  [[ -n ${HOME-} ]] || {
+    print -u2 -r -- 'cannot expand ~ without HOME'
+    exit 10
+  }
+  candidate="$HOME/${candidate#\~/}"
+elif [[ $candidate != /* ]]; then
+  candidate="$PROJECT_DIR/$candidate"
+fi
+
+if [[ $action == add ]]; then
+  grant_path=${candidate:A}
+  [[ -d $grant_path ]] || {
+    print -u2 -r -- "sandbox directory does not exist: $candidate"
+    exit 10
+  }
+else
+  if [[ $candidate == /* ]] && jq -e --arg path "$candidate" 'index($path) != null' \
+      <<<"$grants" >/dev/null; then
+    grant_path=$candidate
+  else
+    grant_path=${candidate:A}
+  fi
+fi
+
+if jq -e --arg path "$grant_path" 'index($path) != null' <<<"$grants" >/dev/null; then
+  if [[ $action == add ]]; then
+    print -u2 -r -- "sandbox $access grant already exists: $grant_path"
+    exit 10
+  fi
+elif [[ $action == remove ]]; then
+  print -u2 -r -- "sandbox $access grant is not set: $grant_path"
+  exit 10
+fi
+
+updated=$(jq -c --arg action "$action" --arg path "$grant_path" '
+  if $action == "add" then . + [$path] else map(select(. != $path)) end
+' <<<"$grants") || exit 1
+patch=$(jq -cn --arg field "$field" --argjson paths "$updated" \
+  '{harness:{($field):$paths}}') || exit 1
+
+typeset -a argv=( "$SHELLFISH_EXECUTABLE" )
+[[ ${SHELLFISH_VERBOSE-0} != 1 ]] || argv+=( --verbose )
+argv+=( --clear --session "$SHELLFISH_SESSION" --session-update "$patch" )
+jq -cn --args '$ARGS.positional | {action:"handoff",argv:.}' -- "${argv[@]}" >&3 || exit 1
+exit 11

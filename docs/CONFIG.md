@@ -115,7 +115,13 @@ For chat and `exec`, automatic grants are frozen into a new session like other r
 
 ## Existing sessions
 
-A session retains the resolved backend, harness, request, and sandbox settings with which it was created. Runtime overrides cannot be applied when opening an existing session. Themes and TUI preview settings come from the current configuration.
+A session retains the resolved backend, harness, request, and sandbox settings stored in its header. Ordinary runtime overrides cannot be applied when opening an existing session. Themes and TUI preview settings come from the current configuration.
+
+Use `--session-update JSON` with an explicit `--session` to update that resolved runtime before opening interactive chat. Objects merge recursively; arrays, scalars, and `null` replace the existing value, so an empty array clears a list. The result must still be a canonical session runtime. This is a low-level operation: changing hooks, tools, backend settings, or request settings can make the runtime disagree with the system record or earlier turns.
+
+Shellfish acquires the session lock and merges into the header it reads under that lock. Updates to different fields therefore compose, while concurrent updates that replace the same scalar or array are last-writer-wins. The handoff from `/sandbox` releases and reacquires the lock, so simultaneous sandbox changes are not guaranteed to compose.
+
+The default `/sandbox` command uses this operation to list, add, and remove read or write grants. Additions must name an existing directory. Paths beginning with `~/` use `HOME`, relative paths use the session working directory, and stored additions are canonical absolute paths. Read and write lists remain independent, and removing an exact child grant does not restrict access inherited from a granted parent.
 
 Use the session path to inspect that combination:
 

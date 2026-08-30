@@ -130,10 +130,12 @@ SF_TEST_RUNTIME=$(jq -c \
   --arg refresh "$ROOT/default/hooks/user_prompt_submit/refresh" \
   --arg verbose "$ROOT/default/hooks/user_prompt_submit/verbose" \
   --arg fork "$ROOT/default/hooks/user_prompt_submit/fork" \
+  --arg sandbox "$ROOT/default/hooks/user_prompt_submit/sandbox" \
   --arg user_shell "$ROOT/default/hooks/user_prompt_submit/user_shell" \
   --arg server "$ROOT/default/hooks/user_prompt_submit/server" \
   --arg resume "$ROOT/default/hooks/user_prompt_submit/resume" \
-  '.harness.user_prompt_submit=[$new,$refresh,$verbose,$fork,$user_shell,$server,$resume,$help]' \
+  '.harness.sandbox=true |
+   .harness.user_prompt_submit=[$new,$refresh,$verbose,$fork,$sandbox,$user_shell,$server,$resume,$help]' \
   <<<"$SF_TEST_RUNTIME")
 sf_test_session "$help_session"
 sf_session_open "$help_session"
@@ -150,7 +152,7 @@ done
 (( ${#help_display} > 20 ))
 # Every command key appears in the formatted output.
 for key in '↑, ↓' '/queue drop <N>' '/queue clear' '/new' '/refresh, /r' '/verbose, /v' \
-    '/fork [N]' '!COMMAND' '/server' '/resume' '/quit, /q'; do
+    '/fork [N]' '/sandbox [OP DIR]' '!COMMAND' '/server' '/resume' '/quit, /q'; do
   [[ $help_display == *"$key"* ]]
 done
 # Rows remain sorted by their configured order through /quit.
@@ -197,6 +199,47 @@ run_prompt_hook /resume "$help_session"
 run_prompt_hook /r "$help_session"
 [[ $reply[1] == handoff && $reply[2] == "$ROOT/bin/shellfish" &&
    $reply[3] == --clear && $reply[4] == --session && $reply[5] == "${help_session:A}" ]]
+
+# /sandbox lists grants without reloading and hands a minimal runtime patch to
+# the ordinary reload path for changes.
+typeset sandbox_display='' sandbox_patch sandbox_dir="$tmp/output with spaces"
+mkdir "$sandbox_dir"
+run_prompt_hook /sandbox "$help_session"
+[[ $reply[1] == handled ]]
+for (( result_index = 4; result_index <= ${#SF_HOOK_RESULTS}; result_index += 5 )); do
+  [[ -z $SF_HOOK_RESULTS[result_index] ]] || sandbox_display=$SF_HOOK_RESULTS[result_index]
+done
+[[ $sandbox_display == *'Sandbox: enabled'* && $sandbox_display == *'Read grants:'* &&
+   $sandbox_display == *'Write grants:'* ]]
+run_prompt_hook "/sandbox +w $sandbox_dir" "$help_session"
+[[ $reply[1] == handoff && $reply[2] == "$ROOT/bin/shellfish" &&
+   $reply[3] == --clear && $reply[4] == --session && $reply[5] == "${help_session:A}" &&
+   $reply[6] == --session-update ]]
+sandbox_patch=$reply[7]
+jq -e --arg path "${sandbox_dir:A}" \
+  '. == {harness:{sandbox_write_paths:[$path]}}' <<<"$sandbox_patch" >/dev/null ||
+  fail "unexpected sandbox patch: $sandbox_patch"
+sf_session_open "$help_session"
+sf_session_update "$sandbox_patch"
+sf_session_close
+run_prompt_hook "/sandbox write $sandbox_dir" "$help_session"
+[[ $reply[1] == handled ]]
+run_prompt_hook "/sandbox -w $sandbox_dir" "$help_session"
+[[ $reply[1] == handoff && $reply[6] == --session-update ]]
+jq -e '. == {harness:{sandbox_write_paths:[]}}' <<<"$reply[7]" >/dev/null
+
+typeset disabled_session="$tmp/disabled-session.jsonl" enabled_runtime=$SF_TEST_RUNTIME
+SF_TEST_RUNTIME=$(jq -c '.harness.sandbox=false' <<<"$SF_TEST_RUNTIME")
+sf_test_session "$disabled_session"
+SF_TEST_RUNTIME=$enabled_runtime
+run_prompt_hook "/sandbox +r $sandbox_dir" "$disabled_session"
+[[ $reply[1] == handled ]]
+for (( result_index = 4; result_index <= ${#SF_HOOK_RESULTS}; result_index += 5 )); do
+  [[ -z $SF_HOOK_RESULTS[result_index] ]] || sandbox_display=$SF_HOOK_RESULTS[result_index]
+done
+[[ $sandbox_display == 'session sandbox is disabled'* ]] ||
+  fail "unexpected disabled sandbox display: $sandbox_display"
+
 for former_alias in /n /f '/f 1'; do
   run_prompt_hook "$former_alias" "$help_session"
   [[ $reply[1] == proceed ]]

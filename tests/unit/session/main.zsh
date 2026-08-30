@@ -99,6 +99,54 @@ sf_session_close
 assert_session_unlocked "$session"
 (( $(wc -l <"$session") == 3 ))
 
+# Runtime updates replace only the header while retaining the lock, transcript,
+# restrictive file mode, and synchronized state.
+typeset transcript_before updated_before
+transcript_before=$(tail -n +2 "$session")
+sf_session_open "$session"
+sf_session_update '{"harness":{"sandbox_read_paths":["/tmp/reference"]}}' ||
+  fail "$SF_SESSION_ERROR"
+[[ $REPLY == 1 && -n $SF_SESSION_LOCK ]]
+typeset request_update='{"harness":{"sandbox_write_paths":["/tmp/reference"]},"profile":{"request":{"effort":null}}}'
+sf_session_update "$request_update" ||
+  fail "$SF_SESSION_ERROR"
+[[ $REPLY == 1 ]]
+jq -e '
+  .harness.sandbox_read_paths == ["/tmp/reference"] and
+  .harness.sandbox_write_paths == ["/tmp/reference"] and
+  .profile.request.effort == null
+' <<<"$SF_SESSION[runtime]" >/dev/null
+[[ $(tail -n +2 "$session") == "$transcript_before" ]]
+[[ $(stat -f '%Lp' "$session") == 600 ]]
+updated_before=$(cat "$session")
+sf_session_update '{"harness":{"sandbox_write_paths":["/tmp/reference"]}}'
+[[ $REPLY == 0 && $(cat "$session") == "$updated_before" ]]
+sf_session_update '{"harness":{"sandbox_write_paths":[]}}'
+[[ $REPLY == 1 ]]
+jq -e '
+  .harness.sandbox_read_paths == ["/tmp/reference"] and
+  .harness.sandbox_write_paths == []
+' <<<"$SF_SESSION[runtime]" >/dev/null
+sf_session_update '{"harness":{"sandbox_write_paths":[]}}'
+[[ $REPLY == 0 ]]
+updated_before=$(cat "$session")
+if sf_session_update '{"cwd":"/tmp"}'; then
+  fail 'session metadata update succeeded'
+fi
+if sf_session_update '{"harness":{"sandbox":null}}'; then
+  fail 'invalid runtime update succeeded'
+fi
+[[ $(cat "$session") == "$updated_before" ]]
+sf_session_close
+sf_session_read_runtime "$session"
+jq -e '
+  .harness.sandbox_read_paths == ["/tmp/reference"] and
+  .harness.sandbox_write_paths == []
+' <<<"$REPLY" >/dev/null
+if sf_session_update '{}'; then
+  fail 'session update without a lock succeeded'
+fi
+
 typeset broken="$tmp/broken.jsonl"
 ln -s "$tmp/missing.jsonl" "$broken"
 SF_SESSION_PATH=$broken

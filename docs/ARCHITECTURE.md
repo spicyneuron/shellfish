@@ -4,11 +4,11 @@ Shellfish is the brainchild of my grudge against bloated modern software, plus a
 
 ## The transcript is the state
 
-A session is an append-only JSONL file and the authoritative state of the agent. Records in that file are durable. Provider deltas, permission prompts, hook display output, and other transient events are not.
+A session JSONL file is the authoritative state of the agent. Transcript records after its header are append-only and durable. Provider deltas, permission prompts, hook display output, and other transient events are not.
 
 Clients attach to a session and consume the same event stream. Durable records provide history they can replay, while transient events provide live interaction around it. A client can use either without becoming another owner of the state.
 
-The session header consolidates the resolved settings required to run the agent: backend, harness, model request, tools, hooks, limits, sandbox policy. A session carries the runtime configuration needed to continue it instead of being reinterpreted through the current profile on every turn. Credentials and presentation settings remain external.
+The session header consolidates the resolved settings required to run the agent: backend, harness, model request, tools, hooks, limits, sandbox policy. A session carries the runtime configuration needed to continue it instead of being reinterpreted through the current profile on every turn. Credentials and presentation settings remain external. An explicit `--session-update` operation may atomically replace the header under the session lock; ordinary turns never rewrite it.
 
 ## A turn is the unit of execution
 

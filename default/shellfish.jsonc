@@ -50,7 +50,7 @@
       // Hooks run executables in order. See docs/HOOKS.md for payloads, exit
       // statuses, and environment guarantees.
       "session_start": ["add_environment", "add_command_availability", "add_project_instructions"],
-      "user_prompt_submit": ["refresh", "verbose", "new", "fork", "user_shell", "server", "resume", "help"],
+      "user_prompt_submit": ["refresh", "verbose", "new", "fork", "sandbox", "user_shell", "server", "resume", "help"],
       "permission_request": [],
       "pre_tool_use": [],
       "post_tool_use": [],
