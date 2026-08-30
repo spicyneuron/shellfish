@@ -29,6 +29,11 @@ sf_chat_safe() {
   done
 }
 
+sf_chat_trim_leading_newlines() {
+  local text=$1
+  REPLY=${text#"${text%%[!$'\n']*}"}
+}
+
 sf_chat_reset() {
   sf_chat_drop ${#SF_PRESENT_NODE_TYPE}
   SF_PRESENT_TOOL_HEADING=()
@@ -104,19 +109,28 @@ sf_chat_drop() {
 }
 
 sf_chat_close() {
-  integer index=$1
+  integer index=$1 end section
   [[ $index == ${#SF_PRESENT_NODE_TYPE} && $SF_PRESENT_NODE_STATE[index] == open ]] || return 1
   if [[ $SF_PRESENT_NODE_TYPE[index] == (activity|message|reasoning) &&
       -z $SF_PRESENT_NODE_HEADING[index] && -z $SF_PRESENT_NODE_BODY[index] ]]; then
-    SF_PRESENT_NODE_TYPE[index]=()
-    SF_PRESENT_NODE_ROLE[index]=()
-    SF_PRESENT_NODE_HEADING[index]=()
-    SF_PRESENT_NODE_BODY[index]=()
-    SF_PRESENT_NODE_META[index]=()
-    SF_PRESENT_NODE_STATE[index]=()
-    SF_PRESENT_NODE_STATUS[index]=()
-    SF_PRESENT_NODE_FORMAT[index]=()
-    SF_PRESENT_NODE_FRONTIER[index]=()
+    end=$(( index - 1 ))
+    if [[ ${2-} == orphan_section && $index -gt 1 &&
+        $SF_PRESENT_NODE_TYPE[index-1] == section ]]; then
+      end=$(( end - 1 ))
+    fi
+    SF_PRESENT_NODE_TYPE=( "${(@)SF_PRESENT_NODE_TYPE[1,end]}" )
+    SF_PRESENT_NODE_ROLE=( "${(@)SF_PRESENT_NODE_ROLE[1,end]}" )
+    SF_PRESENT_NODE_HEADING=( "${(@)SF_PRESENT_NODE_HEADING[1,end]}" )
+    SF_PRESENT_NODE_BODY=( "${(@)SF_PRESENT_NODE_BODY[1,end]}" )
+    SF_PRESENT_NODE_META=( "${(@)SF_PRESENT_NODE_META[1,end]}" )
+    SF_PRESENT_NODE_STATE=( "${(@)SF_PRESENT_NODE_STATE[1,end]}" )
+    SF_PRESENT_NODE_STATUS=( "${(@)SF_PRESENT_NODE_STATUS[1,end]}" )
+    SF_PRESENT_NODE_FORMAT=( "${(@)SF_PRESENT_NODE_FORMAT[1,end]}" )
+    SF_PRESENT_NODE_FRONTIER=( "${(@)SF_PRESENT_NODE_FRONTIER[1,end]}" )
+    if (( end < index - 1 )); then
+      section=${SF_PRESENT_NODE_TYPE[(I)section]}
+      SF_PRESENT_LAST_ROLE=${SF_PRESENT_NODE_ROLE[section]-}
+    fi
     return 0
   fi
   SF_PRESENT_NODE_STATE[index]=closed
@@ -135,9 +149,11 @@ sf_chat_stream() {
   local type=$1 text=${2-}
   integer index=${#SF_PRESENT_NODE_TYPE}
 
-  [[ -n $text ]] || return 0
   if (( ! index )) || [[ $SF_PRESENT_NODE_TYPE[index] != $type ||
       $SF_PRESENT_NODE_STATE[index] != open ]]; then
+    sf_chat_trim_leading_newlines "$text"
+    text=$REPLY
+    [[ -n $text ]] || return 0
     if (( index )) && [[ $SF_PRESENT_NODE_STATE[index] == open ]]; then
       [[ $SF_PRESENT_NODE_TYPE[index] == (activity|message|reasoning) ]] || return 1
       sf_chat_close $index || return 1
@@ -175,9 +191,15 @@ sf_chat_event() {
   local type=$1 first=${2-} second=${3-} third=${4-} fourth=${5-} fifth=${6-}
   integer index=${#SF_PRESENT_NODE_TYPE}
 
+  if [[ $type == assistant ]]; then
+    sf_chat_trim_leading_newlines "$first"; first=$REPLY
+    sf_chat_trim_leading_newlines "$second"; second=$REPLY
+    [[ -n $first || -n $second ]] || return 0
+  fi
+
   if (( index )) && [[ $SF_PRESENT_NODE_TYPE[index] == activity &&
       $SF_PRESENT_NODE_STATE[index] == open &&
-      $type == (system|user|backend_request_start|assistant|assistant_delta|assistant_reasoning_delta|tool_call|context) ]]; then
+      $type == (system|user|backend_request_start|assistant|tool_call|context) ]]; then
     sf_chat_close $index || return 1
     index=${#SF_PRESENT_NODE_TYPE}
   fi
@@ -192,13 +214,14 @@ sf_chat_event() {
       sf_chat_add activity agent '' '' open
       ;;
     assistant)
-      [[ -n $first || -n $second ]] || return 0
       sf_chat_section agent || return 1
       if [[ -n $second ]]; then
         sf_chat_add reasoning agent '' "$second" || return 1
         SF_PRESENT_NODE_META[REPLY]=$third
       fi
-      [[ -z $first ]] || sf_chat_add message agent '' "$first"
+      if [[ -n $first ]]; then
+        sf_chat_add message agent '' "$first"
+      fi
       ;;
     assistant_delta)
       sf_chat_stream message "$first"
@@ -215,7 +238,7 @@ sf_chat_event() {
     assistant_commit)
       (( index )) && [[ $SF_PRESENT_NODE_STATE[index] == open ]] || return 0
       [[ $SF_PRESENT_NODE_TYPE[index] == (activity|message|reasoning) ]] || return 1
-      sf_chat_close $index
+      sf_chat_close $index orphan_section
       ;;
     tool_call)
       SF_PRESENT_TOOL_HEADING[$first]=$second
