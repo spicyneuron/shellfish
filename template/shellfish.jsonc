@@ -19,6 +19,8 @@
     }
   },
 
+  // "default" modifies the built-in default harness. Other harnesses are
+  // standalone and do not inherit its system prompts, hooks, or settings.
   "harnesses": {
     "default": {
       "sandbox_read_paths": [
@@ -27,6 +29,12 @@
       "sandbox_write_paths": [
         // Paths outside the project that sandboxed tools may read and write
       ]
+    },
+    "readonly": {
+      "system": [],
+      "tools": ["read_file", "shell_readonly"],
+      "session_start": ["add_project_instructions"],
+      "sandbox": true
     }
   }
 }
