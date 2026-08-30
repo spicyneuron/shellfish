@@ -24,7 +24,7 @@ Global flags:
   --new [SESSION]       Create new session, optionally with SESSION settings
 
 Config flags:
-  --init                Create the user configuration template; combine with
+  --init                Create the user configuration directory; combine with
                         --sandbox-auto to generate sandbox grants
 
 Exec flags:

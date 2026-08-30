@@ -10,7 +10,8 @@ sf_config_fail() {
 
 sf_config_init() {
   local requested_config=$1 sandbox=${2-} config_path dir home=${HOME-} json_line line
-  local read_json temp write_json
+  local env_example="$SF_ROOT/template/.env.example"
+  local read_json template="$SF_ROOT/template/shellfish.jsonc" temp write_json
   integer replaced=0
 
   SF_CONFIG_ERROR=''
@@ -29,6 +30,16 @@ sf_config_init() {
     sf_config_fail "cannot create config directory: $dir"
     return
   }
+  mkdir -p -- "$dir/hooks" "$dir/backends" "$dir/prompts" "$dir/tools" || {
+    sf_config_fail "cannot create config component directories: $dir"
+    return
+  }
+  if [[ ! -e $dir/.env.example && ! -L $dir/.env.example ]]; then
+    cp -- "$env_example" "$dir/.env.example" || {
+      sf_config_fail "cannot create environment example: $dir/.env.example"
+      return
+    }
+  fi
   temp=$(mktemp "$dir/.shellfish.jsonc.XXXXXX") || {
     sf_config_fail "cannot create config: $config_path"
     return
@@ -74,7 +85,7 @@ sf_config_init() {
             ;;
           *) print -r -- "$line" ;;
         esac
-      done <"$SF_ROOT/shellfish.template.jsonc"
+      done <"$template"
     } >"$temp" || replaced=0
     (( replaced == 2 )) || {
       rm -f -- "$temp"
@@ -82,7 +93,7 @@ sf_config_init() {
       return
     }
   else
-    cp -- "$SF_ROOT/shellfish.template.jsonc" "$temp" || {
+    cp -- "$template" "$temp" || {
       rm -f -- "$temp"
       sf_config_fail "cannot create config: $config_path"
       return

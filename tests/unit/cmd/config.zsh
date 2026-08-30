@@ -28,16 +28,35 @@ typeset init_config="$init_home/config/shellfish/shellfish.jsonc"
 HOME="$init_home" XDG_CONFIG_HOME="$init_home/config" \
   zsh -f "$entry" config --init >/dev/null || fail 'config init failed'
 [[ -f $init_config ]] || fail 'config init did not create the default path'
-cmp -s "$ROOT/shellfish.template.jsonc" "$init_config" || fail 'config init did not copy the template'
+cmp -s "$ROOT/template/shellfish.jsonc" "$init_config" || fail 'config init did not copy the template'
+typeset init_dir=${init_config:h}
+cmp -s "$ROOT/template/.env.example" "$init_dir/.env.example" || \
+  fail 'config init did not copy the environment example'
+for component in hooks backends prompts tools; do
+  [[ -d $init_dir/$component ]] || fail "config init did not create $component directory"
+done
+grep -qxF 'ANTHROPIC_API_KEY=' "$init_dir/.env.example" || \
+  fail 'environment example omitted the Anthropic credential'
+grep -qxF 'OPENAI_API_KEY=' "$init_dir/.env.example" || \
+  fail 'environment example omitted the OpenAI credential'
+grep -qxF 'OPENROUTER_API_KEY=' "$init_dir/.env.example" || \
+  fail 'environment example omitted the OpenRouter credential'
 if HOME="$init_home" XDG_CONFIG_HOME="$init_home/config" \
   zsh -f "$entry" config --init >/dev/null 2>&1; then
   fail 'config init overwrote an existing config'
 fi
 typeset custom_config="$tmp/custom/shellfish.jsonc"
+mkdir -p "${custom_config:h}/prompts"
+print -r -- 'KEEP=1' >"${custom_config:h}/.env.example"
+print -r -- 'custom' >"${custom_config:h}/prompts/custom.md"
 zsh -f "$entry" config --init --config "$custom_config" >/dev/null || \
   fail 'config init with an explicit path failed'
-cmp -s "$ROOT/shellfish.template.jsonc" "$custom_config" || \
+cmp -s "$ROOT/template/shellfish.jsonc" "$custom_config" || \
   fail 'config init did not use the explicit path'
+grep -qxF 'KEEP=1' "${custom_config:h}/.env.example" || \
+  fail 'config init overwrote an existing environment example'
+grep -qxF 'custom' "${custom_config:h}/prompts/custom.md" || \
+  fail 'config init overwrote an existing component'
 
 # Automatic sandbox grants.
 typeset detector_bin="$tmp/detectors"
