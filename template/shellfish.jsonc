@@ -31,7 +31,7 @@
       ]
     },
     "readonly": {
-      "system": [],
+      "system": ["system/readonly.md"],
       "tools": ["read_file", "shell_readonly"],
       "session_start": ["add_project_instructions"],
       "sandbox": true

@@ -81,8 +81,7 @@ Prompt files, tools, hooks, and backend adapters accept these reference forms:
 
 1. Absolute paths.
 2. `~/...` paths relative to `$HOME`.
-3. Paths containing `/`, relative to the configuration directory.
-4. Bare names under the matching configuration subdirectory, falling back to bundled defaults.
+3. Relative paths under the matching configuration subdirectory, falling back to bundled defaults.
 
 The matching subdirectories are `prompts/`, `tools/`, `backends/`, and `hooks/<event>/`. This lets a local component shadow a bundled component with the same name.
 

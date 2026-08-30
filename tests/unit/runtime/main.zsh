@@ -155,6 +155,16 @@ jq -e '
   (.backend.command | endswith("/tests/fixtures/backend/run"))
 ' <<<"$REPLY" >/dev/null
 
+# Relative external backend paths remain relative to the working directory.
+mkdir -p "$tmp/fixtures"
+ln -s "$ROOT/tests/fixtures/backend" "$tmp/fixtures/backend"
+(
+  cd "$tmp"
+  sf_runtime_resolve_from_config "$config" work '' '{}' fixtures/backend
+  jq -e --arg command "$ROOT/tests/fixtures/backend/run" \
+    '.backend.command == $command' <<<"$REPLY" >/dev/null
+)
+
 cat >"$tmp/config/default-extend.jsonc" <<JSON
 {
   "profiles": {
@@ -302,13 +312,13 @@ fi
 [[ $SF_RUNTIME_ERROR == *'invalid config at $["harnesses"]["bad"]["before_prompt"]: unknown field'* ]]
 
 # System references resolve to one durable record and never enter the header.
-mkdir -p "$tmp/config/prompts"
-print -r -- 'first' >"$tmp/config/prompts/first.md"
+mkdir -p "$tmp/config/prompts/system"
+print -r -- 'first' >"$tmp/config/prompts/system/first.md"
 print -r -- 'second' >"$tmp/config/prompts/second.md"
 cat >"$tmp/config/system.jsonc" <<'JSON'
 {
   "profiles":{"default":{"harness":"system","request":{"model":"m"}}},
-  "harnesses":{"system":{"system":["first.md","second.md"]}}
+  "harnesses":{"system":{"system":["system/first.md","second.md"]}}
 }
 JSON
 sf_runtime_resolve_from_config "$tmp/config/system.jsonc" '' '' '{}' \
@@ -321,6 +331,14 @@ if sf_runtime_resolve_from_config "$tmp/config/system.jsonc" '' '' '{}' \
     "$ROOT/tests/fixtures/backend"; then
   fail 'missing prompt file was accepted'
 fi
+
+# The template's readonly harness resolves its bundled nested prompt.
+sf_runtime_read_jsonc "$ROOT/template/shellfish.jsonc" |
+  jq -c '.profiles.default.harness = "readonly"' >"$tmp/config/readonly.jsonc"
+sf_runtime_resolve_from_config "$tmp/config/readonly.jsonc" '' 'm' '{}' \
+  "$ROOT/tests/fixtures/backend"
+jq -e --arg content "$(<"$ROOT/default/prompts/system/readonly.md")" \
+  '. == {type:"system",content:$content}' <<<"$SF_RUNTIME_SYSTEM_RECORD" >/dev/null
 
 cat >"$tmp/config/missing-hook.jsonc" <<'JSON'
 {

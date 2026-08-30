@@ -104,8 +104,6 @@ sf_runtime_reference() {
   elif [[ $reference == '~/'* ]]; then
     [[ -n ${HOME-} ]] || return 1
     candidate="$HOME/${reference#\~/}"
-  elif [[ $reference == */* ]]; then
-    candidate="$base/$reference"
   elif [[ -n $base && ( -e $base/$kind/$reference || -L $base/$kind/$reference ) ]]; then
     candidate="$base/$kind/$reference"
   else
@@ -236,11 +234,17 @@ sf_runtime_resolve_from_config() {
     }
     backend_base=$PWD
   fi
-  sf_runtime_reference "$backend_reference" "$backend_base" backends || {
-    sf_runtime_fail "cannot resolve backend: $backend_name"
-    return
-  }
-  backend_dir=$REPLY
+  if [[ $fields[3] == true && $backend_reference == */* &&
+      $backend_reference != /* && $backend_reference != '~/'* ]]; then
+    backend_dir=${backend_base:A}/$backend_reference
+    backend_dir=${backend_dir:A}
+  else
+    sf_runtime_reference "$backend_reference" "$backend_base" backends || {
+      sf_runtime_fail "cannot resolve backend: $backend_name"
+      return
+    }
+    backend_dir=$REPLY
+  fi
   [[ -d $backend_dir && -x $backend_dir/run && -f $backend_dir/backend.json && -r $backend_dir/backend.json ]] || {
     sf_runtime_fail "invalid backend: $backend_dir"
     return

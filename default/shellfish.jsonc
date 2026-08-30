@@ -42,7 +42,7 @@
   "harnesses": {
     "default": {
       // Files concatenated into the system prompt.
-      "system": ["general.md", "tools.md"],
+      "system": ["system/general.md", "system/tools.md"],
 
       // Tools available to the model.
       "tools": ["read_file", "edit_file", "write_file", "shell"],
