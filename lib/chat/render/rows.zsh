@@ -53,7 +53,7 @@ sf_chat_preview_tail() {
   integer node=$1 hidden=$2
   local type=$SF_PRESENT_NODE_TYPE[node] state=$SF_PRESENT_NODE_STATE[node]
   local role=$SF_PRESENT_NODE_ROLE[node]
-  local exit_status=$SF_PRESENT_NODE_STATUS[node] body=$SF_PRESENT_NODE_BODY[node]
+  local body=$SF_PRESENT_NODE_BODY[node]
   local exact='' tokens notes
   body=${body#"${body%%[!$'\n']*}"}
   body=${body%"${body##*[!$'\n']}"}
@@ -88,7 +88,7 @@ sf_chat_preview_tail() {
       ;;
     tool_result)
       if [[ $state == open ]]; then
-        [[ $exit_status == permission ]] || {
+        [[ $SF_PRESENT_NODE_STATUS[node] == permission ]] || {
           if (( hidden )); then
             REPLY="  … ~$tokens tokens $SF_PRESENT_ACTIVITY"
           else

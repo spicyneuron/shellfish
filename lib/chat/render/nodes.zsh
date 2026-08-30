@@ -332,8 +332,9 @@ sf_chat_event() {
 }
 
 sf_chat_reload() {
-  local session_path=$1 events type first second third fourth fifth sixth
-  integer complete=0
+  local session_path=$1 events
+  local -a fields
+  integer complete=0 index
 
   SF_PRESENT_ERROR=''
   [[ -f $session_path && ! -L $session_path ]] || {
@@ -345,23 +346,18 @@ sf_chat_reload() {
     SF_PRESENT_ERROR="cannot read session: $session_path"
     return 1
   }
+  fields=( "${(@0)${events%$'\0'}}" )
   sf_chat_reset
-  while IFS= read -r -d '' type &&
-      IFS= read -r -d '' first &&
-      IFS= read -r -d '' second &&
-      IFS= read -r -d '' third &&
-      IFS= read -r -d '' fourth &&
-      IFS= read -r -d '' fifth &&
-      IFS= read -r -d '' sixth; do
-    if [[ $type == batch_ok ]]; then
+  for (( index = 1; index + 6 <= ${#fields}; index += 7 )); do
+    if [[ $fields[index] == batch_ok ]]; then
       complete=1
     else
-      sf_chat_event "$type" "$first" "$second" "$third" "$fourth" "$fifth" "$sixth" || {
+      sf_chat_event "${(@)fields[index,index + 6]}" || {
         SF_PRESENT_ERROR='cannot build presentation transcript'
         return 1
       }
     fi
-  done < <(print -rn -- "$events")
+  done
   (( complete )) || {
     SF_PRESENT_ERROR="cannot read session: $session_path"
     return 1

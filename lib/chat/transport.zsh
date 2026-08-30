@@ -147,9 +147,9 @@ sf_chat_transport_read() {
 
 # Returns 0 with one event in reply, 1 when empty, and 2 for malformed output.
 sf_chat_transport_next() {
-  local runtime=${1:-null} events type first second third fourth fifth sixth
-  local -a decoded
-  integer complete=0
+  local runtime=${1:-null} events
+  local -a decoded fields
+  integer complete=0 index
 
   if (( ! ${#SF_CHAT_TRANSPORT_EVENTS} )); then
     (( ${#SF_CHAT_TRANSPORT_LINES} )) || return 1
@@ -157,19 +157,14 @@ sf_chat_transport_next() {
       jq -jRs -L "$SF_ROOT/lib" --argjson runtime "$runtime" \
         -f "$SF_ROOT/lib/chat/event-decode.jq" 2>/dev/null) || events=''
     SF_CHAT_TRANSPORT_LINES=()
-    while IFS= read -r -d '' type &&
-        IFS= read -r -d '' first &&
-        IFS= read -r -d '' second &&
-        IFS= read -r -d '' third &&
-        IFS= read -r -d '' fourth &&
-        IFS= read -r -d '' fifth &&
-        IFS= read -r -d '' sixth; do
-      if [[ $type == batch_ok ]]; then
+    fields=( "${(@0)${events%$'\0'}}" )
+    for (( index = 1; index + 6 <= ${#fields}; index += 7 )); do
+      if [[ $fields[index] == batch_ok ]]; then
         complete=1
       else
-        decoded+=( "$type" "$first" "$second" "$third" "$fourth" "$fifth" "$sixth" )
+        decoded+=( "${(@)fields[index,index + 6]}" )
       fi
-    done < <(print -rn -- "$events")
+    done
     (( complete )) || return 2
     SF_CHAT_TRANSPORT_EVENTS+=( "${decoded[@]}" )
     (( ${#SF_CHAT_TRANSPORT_EVENTS} )) || return 1
