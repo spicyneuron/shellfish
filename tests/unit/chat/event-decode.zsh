@@ -65,14 +65,14 @@ order=$(print -r -- \
   jq -jRs -L "$ROOT/lib" --argjson runtime "$read_runtime" \
     -f "$ROOT/lib/chat/event-decode.jq" |
   tr '\0' '\n' | sed '/^$/d' | paste -sd, -)
-assert_equal 'assistant_commit,tool_call,call_2,read_file · outside.txt · unsandboxed,plain,batch_ok' "$order"
+assert_equal 'assistant_commit,tool_call,call_2,read_file,outside.txt · unsandboxed,plain,batch_ok' "$order"
 
 order=$(print -r -- \
     '{"type":"context","tag":"user_prompt_submit","hook":"hook name","prompt":"prompt","status":0,"content":"body"}' |
   jq -jRs -L "$ROOT/lib" --argjson runtime null \
     -f "$ROOT/lib/chat/event-decode.jq" |
   tr '\0' '\n' | sed '/^$/d' | paste -sd, -)
-assert_equal 'context,hook name,user_prompt_submit prompt,body,batch_ok' "$order"
+assert_equal 'context,hook name,user_prompt_submit · prompt,body,batch_ok' "$order"
 
 order=$(print -r -- \
     '{"type":"_tool_permission_request","id":"permission_1","reason":"host access","tool":{"name":"shell","input":{"command":"echo hi","request_sandbox_bypass":true}}}' |
@@ -97,7 +97,7 @@ order=$(print -r -- \
   jq -jRs -L "$ROOT/lib" --argjson runtime "$edit_runtime" \
     -f "$ROOT/lib/chat/event-decode.jq" |
   tr '\0' '\n' | sed '/^$/d' | paste -sd, -)
-assert_equal 'assistant_commit,tool_call,call_3,edit_file · notes.json,plain,batch_ok' "$order"
+assert_equal 'assistant_commit,tool_call,call_3,edit_file,notes.json,plain,batch_ok' "$order"
 
 order=$(print -r -- \
     '{"type":"message","role":"tool_result","call_id":"call_2","name":"edit_file","content":"@@ -1 +1 @@\n-old\n+new","exit_code":0,"result_type":"file_diff","sandbox_blocked":true}' |

@@ -143,7 +143,7 @@ def test_startup_records_precede_two_turns():
         )
         for token in banner:
             session.wait_after(0, token)
-        transcript = ("startup system prompt", "add_environment session_start")
+        transcript = ("startup system prompt", "add_environment · session_start")
         for token in transcript:
             session.wait_after(0, token)
         visible = session.visible()

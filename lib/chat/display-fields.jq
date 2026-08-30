@@ -3,6 +3,12 @@ include "runtime/schema";
 def display_nul_safe:
   gsub("\u0000"; "�");
 
+def display_summary:
+  map(select(. != null) |
+      gsub("[[:space:]]+"; " ") | sub("^ "; "") | sub(" $"; "") |
+      select(. != "")) |
+  join(" · ");
+
 # Each event is a leading type and up to six fields, padded to a fixed width so
 # readers can take them in fixed-size groups.
 def emit_display_batch:
@@ -29,8 +35,9 @@ def tool_call_display($tools):
   ($tools | map(select(.name == $call.name))[0].manifest // null) as $manifest |
   ($manifest.display.summary // []) as $summary |
   ($manifest.display.call // ["$input_json"]) as $content |
-  {summary:(tool_input_display($call; $summary) |
-      gsub("[[:space:]]+"; " ") | sub("^ "; "") | sub(" $"; "")),
+  {summary:([$summary[] | tool_input_display($call; [.])] +
+      [if $call.input.request_sandbox_bypass? == true then "unsandboxed" else "" end] |
+      display_summary),
    content:tool_input_display($call; $content),
    format:(if $content == ["$input_json"] then "json" else "plain" end)};
 
@@ -50,11 +57,9 @@ def durable_display_fields($replay; $tools):
     (.content[] | select(.type == "tool_call") | . as $call |
       tool_call_display($tools) as $call_display |
       ["tool_call", .id,
-       (.name + (if $call_display.summary == "" then ""
-                 else " · " + $call_display.summary end) +
-        (if .input.request_sandbox_bypass? == true then " · unsandboxed" else "" end)),
+       .name,
        $call_display.content,
-       "", $call_display.format])
+       $call_display.summary, $call_display.format])
   elif canonical_tool_result then
     . as $result |
     ($tools | map(select(.name == $result.name))[0].manifest.display.result //
@@ -69,8 +74,7 @@ def durable_display_fields($replay; $tools):
       (if .sandbox_blocked? == true then "blocked" else "" end)]
   elif canonical_context then
     ["context", .hook,
-      ([.tag, .prompt?] |
-        map(select(. != null and . != "")) | join(" ")), .content]
+      ([.tag, .prompt?] | display_summary), .content]
   else
     empty
   end;

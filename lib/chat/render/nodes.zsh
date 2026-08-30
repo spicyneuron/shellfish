@@ -12,7 +12,7 @@ typeset -ga SF_PRESENT_NODE_BLOCKED=()
 # frontier preserves ordinary row settlement.
 typeset -ga SF_PRESENT_NODE_FRONTIER=()
 typeset -gA SF_PRESENT_TOOL_HEADING=() SF_PRESENT_TOOL_CONTENT=()
-typeset -gA SF_PRESENT_TOOL_POLICY=() SF_PRESENT_TOOL_FORMAT=()
+typeset -gA SF_PRESENT_TOOL_SUMMARY=() SF_PRESENT_TOOL_FORMAT=()
 typeset -ga SF_PRESENT_TOOL_ORDER=()
 typeset -g SF_PRESENT_TOOL_CURRENT=''
 typeset -g SF_PRESENT_ERROR='' SF_PRESENT_LAST_ROLE=''
@@ -47,7 +47,7 @@ sf_chat_reset() {
   sf_chat_drop ${#SF_PRESENT_NODE_TYPE}
   SF_PRESENT_TOOL_HEADING=()
   SF_PRESENT_TOOL_CONTENT=()
-  SF_PRESENT_TOOL_POLICY=()
+  SF_PRESENT_TOOL_SUMMARY=()
   SF_PRESENT_TOOL_FORMAT=()
   SF_PRESENT_TOOL_ORDER=()
   SF_PRESENT_TOOL_CURRENT=''
@@ -209,7 +209,7 @@ sf_chat_tool_open() {
   if [[ -z $SF_PRESENT_TOOL_CURRENT ]]; then
     sf_chat_add tool_call agent "$SF_PRESENT_TOOL_HEADING[$id]" \
       "$SF_PRESENT_TOOL_CONTENT[$id]" || return 1
-    SF_PRESENT_NODE_META[REPLY]=$SF_PRESENT_TOOL_POLICY[$id]
+    SF_PRESENT_NODE_META[REPLY]=$SF_PRESENT_TOOL_SUMMARY[$id]
     SF_PRESENT_NODE_FORMAT[REPLY]=$SF_PRESENT_TOOL_FORMAT[$id]
   fi
   sf_chat_add tool_result agent '' '' open || return 1
@@ -297,7 +297,7 @@ sf_chat_event() {
       SF_PRESENT_TOOL_HEADING[$first]=$second
       sf_chat_safe "$third"
       SF_PRESENT_TOOL_CONTENT[$first]=$REPLY
-      SF_PRESENT_TOOL_POLICY[$first]=$fourth
+      SF_PRESENT_TOOL_SUMMARY[$first]=$fourth
       SF_PRESENT_TOOL_FORMAT[$first]=${fifth:-json}
       SF_PRESENT_TOOL_ORDER+=( "$first" )
       sf_chat_tool_open
@@ -314,7 +314,7 @@ sf_chat_event() {
       SF_PRESENT_NODE_BLOCKED[index]=$sixth
       sf_chat_close $index || return 1
       unset "SF_PRESENT_TOOL_HEADING[$first]" "SF_PRESENT_TOOL_CONTENT[$first]" \
-        "SF_PRESENT_TOOL_POLICY[$first]" "SF_PRESENT_TOOL_FORMAT[$first]"
+        "SF_PRESENT_TOOL_SUMMARY[$first]" "SF_PRESENT_TOOL_FORMAT[$first]"
       SF_PRESENT_TOOL_ORDER=( "${(@)SF_PRESENT_TOOL_ORDER[2,-1]}" )
       SF_PRESENT_TOOL_CURRENT=''
       sf_chat_tool_open
@@ -327,7 +327,7 @@ sf_chat_event() {
       if [[ $first == abandon ]]; then
         SF_PRESENT_TOOL_HEADING=()
         SF_PRESENT_TOOL_CONTENT=()
-        SF_PRESENT_TOOL_POLICY=()
+        SF_PRESENT_TOOL_SUMMARY=()
         SF_PRESENT_TOOL_FORMAT=()
         SF_PRESENT_TOOL_ORDER=()
         SF_PRESENT_TOOL_CURRENT=''

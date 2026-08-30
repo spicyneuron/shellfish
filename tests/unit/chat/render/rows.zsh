@@ -61,7 +61,7 @@ sf_chat_reset
 sf_chat_event context environment session_start '<env>test</env>'
 sf_chat_event user ''
 sf_chat_rows 80 20
-assert_equal $'↪ environment session_start\n  <env>test</env>' \
+assert_equal $'↪ environment · session_start\n  <env>test</env>' \
   "${(F)SF_PRESENT_ROW_TEXT[1,2]}"
 assert_equal '─ user ───────────────────────────────────────────────────────────────────── 1 ─' "$SF_PRESENT_ROW_TEXT[-1]"
 
@@ -131,22 +131,15 @@ sf_chat_rows 80 20
 assert_equal '╰ … · exit 1 · sandbox blocked' "$SF_PRESENT_ROW_TEXT[-1]"
 
 sf_chat_reset
-sf_chat_event tool_call call_call_full shell $'one\ntwo' full
-sf_chat_event tool_result call_call_full hidden result
-sf_chat_rows 80 20
-assert_equal $'⛭ shell\n│ one\n│ two\n╰ …' \
-  "${(F)SF_PRESENT_ROW_TEXT[-4,-1]}"
-
-sf_chat_reset
-sf_chat_event tool_call call_empty read_file path full
+sf_chat_event tool_call call_empty read_file path
 sf_chat_event tool_result call_empty hidden ''
 sf_chat_rows 80 20
-assert_equal $'⛭ read_file\n│ path\n╰' "${(F)SF_PRESENT_ROW_TEXT[-3,-1]}"
+assert_equal $'⛭ read_file\n╰' "${(F)SF_PRESENT_ROW_TEXT[-2,-1]}"
 
 sf_chat_reset
 sf_chat_event context environment session_start $'one\ntwo'
 sf_chat_rows 80 20
-assert_equal '↪ environment session_start · ~2 tokens' "${(F)SF_PRESENT_ROW_TEXT}"
+assert_equal '↪ environment · session_start · ~2 tokens' "${(F)SF_PRESENT_ROW_TEXT}"
 
 sf_chat_reset
 sf_chat_event system $'one\ntwo'
@@ -174,7 +167,7 @@ assert_equal $'─ agent ──────────────────�
 sf_chat_reset
 sf_chat_event context hook project $'alpha beta\ngamma\ndelta'
 sf_chat_rows 16 20
-assert_equal $'↪ hook project\n  alpha beta\n  … ~6 tokens' "${(F)SF_PRESENT_ROW_TEXT}"
+assert_equal $'↪ hook · project\n  alpha beta\n  … ~6 tokens' "${(F)SF_PRESENT_ROW_TEXT}"
 
 sf_chat_rows 16 2
 assert_equal '1:t:0:1' "$SF_PRESENT_ROW_CURSOR[-1]"
@@ -246,7 +239,7 @@ sf_chat_rows_config '{"tui":{"preview_lines_context":"full"}}'
 sf_chat_reset
 sf_chat_event context hook h 'alpha beta gamma'
 sf_chat_rows 12 20
-assert_equal $'↪ hook h\n  alpha beta\n  gamma' "${(F)SF_PRESENT_ROW_TEXT}"
+assert_equal $'↪ hook · h\n  alpha beta\n  gamma' "${(F)SF_PRESENT_ROW_TEXT}"
 
 sf_chat_reset
 sf_chat_add message user '' 'ab界c'
@@ -388,13 +381,13 @@ assert_equal '0 11 fg=3' "$SF_PRESENT_ROW_HIGHLIGHTS[3]"
 
 sf_chat_reset
 sf_chat_event context hook project body
-sf_chat_event tool_call call 'shell unsandboxed' command
+sf_chat_event tool_call call shell command unsandboxed
 sf_chat_event tool_result call hidden result
 sf_chat_add notice notice 'Heads up' detail
 sf_chat_rows 80 20
-assert_equal '0 14 fg=5 2 6 fg=5,bold' \
+assert_equal '0 16 fg=5 2 6 fg=5,bold' \
   "$SF_PRESENT_ROW_HIGHLIGHTS[${SF_PRESENT_ROW_KIND[(i)injection.system]}]"
-assert_equal '0 19 fg=4 2 7 fg=4,bold' \
+assert_equal '0 21 fg=4 2 7 fg=4,bold' \
   "$SF_PRESENT_ROW_HIGHLIGHTS[${SF_PRESENT_ROW_KIND[(i)tool_call.agent]}]"
 assert_equal '0 10 fg=6 2 10 fg=6,bold' \
   "$SF_PRESENT_ROW_HIGHLIGHTS[${SF_PRESENT_ROW_KIND[(i)notice.notice]}]"
@@ -413,8 +406,8 @@ SF_PRESENT_PREVIEW_CONTEXT=0
 sf_chat_reset
 sf_chat_event context 'hook name' project body
 sf_chat_rows 80 20
-assert_equal '↪ hook name project · ~1 tokens' "$SF_PRESENT_ROW_TEXT[1]"
-assert_equal '0 31 fg=5 2 11 fg=5,bold 20 31 fg=7' "$SF_PRESENT_ROW_HIGHLIGHTS[1]"
+assert_equal '↪ hook name · project · ~1 tokens' "$SF_PRESENT_ROW_TEXT[1]"
+assert_equal '0 33 fg=5 2 11 fg=5,bold 22 33 fg=7' "$SF_PRESENT_ROW_HIGHLIGHTS[1]"
 SF_PRESENT_PREVIEW_CONTEXT=1
 sf_chat_reset
 sf_chat_event context 'hook name' project "${(l:400::x:)}"

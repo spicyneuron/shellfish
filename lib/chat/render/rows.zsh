@@ -292,7 +292,6 @@ sf_chat_rows() {
         tool_call)
           decorated=1
           preview=$SF_PRESENT_PREVIEW_TOOL_CALL
-          [[ $SF_PRESENT_NODE_META[node] != full ]] || preview=full
           head="⛭ $heading"
           ;;
         tool_result)
@@ -304,7 +303,6 @@ sf_chat_rows() {
           decorated=1
           preview=$SF_PRESENT_PREVIEW_CONTEXT
           head="↪ $heading"
-          [[ -z $SF_PRESENT_NODE_META[node] ]] || head+=" $SF_PRESENT_NODE_META[node]"
           ;;
         notice)
           decorated=1
@@ -313,14 +311,13 @@ sf_chat_rows() {
           else
             head="ℹ $heading"
           fi
-          [[ -z $SF_PRESENT_NODE_META[node] ]] || head+=" $SF_PRESENT_NODE_META[node]"
           ;;
         *) return 1 ;;
       esac
       if [[ $type == (tool_call|injection|notice) ]]; then
+        [[ -z $SF_PRESENT_NODE_META[node] ]] || head+=" · $SF_PRESENT_NODE_META[node]"
         value_start=2
         title_value=$heading
-        [[ $type != tool_call ]] || title_value=${heading%% *}
         value_stop=$(( value_start + ${#title_value} ))
       fi
       if (( decorated )); then
