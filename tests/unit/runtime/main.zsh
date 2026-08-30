@@ -62,7 +62,7 @@ jq -e --arg command "$ROOT/default/backends/openai/run" '
   .harness == {
     sandbox_read_paths:[],sandbox_write_paths:[],
     fence:"",tools:[],sandbox:true,
-    max_requests_per_turn:50,max_tool_calls_per_request:20,
+    max_requests_per_turn:100,max_tool_calls_per_request:25,
     max_capture_bytes:32768
   }
 ' <<<"$runtime" >/dev/null

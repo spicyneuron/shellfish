@@ -239,8 +239,8 @@ def runtime_finalize:
       fence:$input.fence,tools:$tools,
       sandbox:(if $profile.harness | has("sandbox")
         then $profile.harness.sandbox else true end),
-      max_requests_per_turn:($profile.harness.max_requests_per_turn // 50),
-      max_tool_calls_per_request:($profile.harness.max_tool_calls_per_request // 20),
+      max_requests_per_turn:($profile.harness.max_requests_per_turn // 100),
+      max_tool_calls_per_request:($profile.harness.max_tool_calls_per_request // 25),
       max_capture_bytes:($profile.harness.max_capture_bytes // 32768)} + $hooks)
   }) as $runtime |
   {runtime:$runtime,system:($systems | map(select(. != "")) | join("\n\n"))};
