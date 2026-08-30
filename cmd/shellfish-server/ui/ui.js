@@ -189,7 +189,10 @@ function note(text, kind, heading, secondary) {
 // as its own arguments.
 function inputText(input) {
   if (input && typeof input.command === "string") return input.command;
-  return JSON.stringify(input, null, 2);
+  const shown = { ...input };
+  delete shown.request_sandbox_bypass;
+  delete shown.sandbox_bypass_reason;
+  return JSON.stringify(shown, null, 2);
 }
 
 // -------------------------------------------------------------------- markdown
@@ -523,11 +526,19 @@ function renderMessage(frame) {
 
 function renderCall(parent, call) {
   const details = el(parent, "details", "call");
-  summary(el(details, "summary"), "⛭", call.name);
-  // A shell command reads as the shell; anything else is its own arguments.
-  const command = call.input && typeof call.input.command === "string";
-  highlight(el(details, "pre", "input"), safe(inputText(call.input)), command ? "sh" : "json");
+  summary(
+    el(details, "summary"),
+    "⛭",
+    call.name,
+    call.input && call.input.request_sandbox_bypass === true ? "unsandboxed" : undefined,
+  );
+  renderInput(details, call.input);
   calls.set(call.id, details);
+}
+
+function renderInput(parent, input) {
+  const command = input && typeof input.command === "string";
+  highlight(el(parent, "pre", "input"), safe(inputText(input)), command ? "sh" : "json");
 }
 
 // A result belongs to the call it names.
@@ -536,8 +547,7 @@ function renderResult(frame) {
   if (!call) throw new Error("tool result has no call");
   hideIndicator();
   calls.delete(frame.call_id);
-  const result = el(call, "div", frame.exit_code ? "result failed" : "result");
-  // The notes trailing a result, matching the terminal's tail.
+  const result = el(call, "pre", frame.exit_code ? "result failed" : "result");
   const notes = [];
   if ((resultDisplay.get(frame.name) || {}).exit_code === true || frame.exit_code) {
     notes.push("exit " + frame.exit_code);
@@ -546,7 +556,7 @@ function renderResult(frame) {
   if (notes.length) {
     el(result, "span", frame.exit_code ? "notes failed" : "notes", notes.join(" · "));
   }
-  el(result, "pre", null, safe(frame.content));
+  result.append(document.createTextNode(safe(frame.content)));
   place(call);
   if (working) showIndicator();
 }
@@ -579,29 +589,29 @@ function askPermission(frame) {
   pending = frame.id;
   const tool = frame.tool || {};
   const article = record("permission", "Run " + safe(tool.name) + " outside of sandbox?");
-  el(article, "pre", "input", safe(inputText(tool.input)));
+  renderInput(article, tool.input);
   if (frame.reason) el(article, "pre", "reason", "Reason: " + safe(frame.reason));
   const actions = el(article, "div", "actions");
   for (const decision of ["approve", "deny"]) {
     el(actions, "button", null, decision).addEventListener("click", () => {
-      decide(decision, actions);
+      decide(decision, article);
     });
   }
   place(article);
   if (working) showIndicator();
 }
 
-async function decide(decision, actions) {
+async function decide(decision, article) {
   if (busy || pending === null) return;
   const id = pending;
-  // One decision per request: the buttons go before the answer is in flight.
-  actions.remove();
+  // One decision per request: the prompt goes before the answer is in flight.
+  article.remove();
   pending = null;
   await act("/permission", { type: "_tool_permission_response", id, decision });
 }
 
 function clearPermission() {
-  for (const actions of output.querySelectorAll(".permission .actions")) actions.remove();
+  for (const article of output.querySelectorAll(".permission")) article.remove();
   pending = null;
 }
 

@@ -277,8 +277,7 @@ details.reasoning > summary {
   color: inherit;
 }
 
-details > pre,
-.result {
+details > pre {
   margin-top: 0;
   max-height: 24rem;
   overflow: auto;
@@ -344,12 +343,6 @@ details.call {
 
 .record.permission {
   gap: 0.75rem;
-}
-
-.permission .input {
-  padding: 0.5rem 0.75rem;
-  background: var(--details);
-  border-radius: 4px;
 }
 
 .permission .reason {

@@ -433,10 +433,23 @@ test("decorates reasoning and tools like the terminal", async () => {
     content: [
       { type: "reasoning", text: "thinking" },
       { type: "tool_call", id: "call_1", name: "shell", input: { command: "pwd" } },
+      {
+        type: "tool_call",
+        id: "call_2",
+        name: "read_file",
+        input: {
+          file_path: "outside.txt",
+          request_sandbox_bypass: true,
+          sandbox_bypass_reason: "outside project",
+        },
+      },
     ],
   });
   assert.equal(findTag(find(page.output, "reasoning")[0], "summary")[0].textContent, "✎Reasoning");
-  assert.equal(findTag(find(page.output, "call")[0], "summary")[0].textContent, "⛭shell");
+  const calls = find(page.output, "call");
+  assert.equal(findTag(calls[0], "summary")[0].textContent, "⛭shell");
+  assert.equal(findTag(calls[1], "summary")[0].textContent, "⛭read_file · unsandboxed");
+  assert.equal(find(calls[1], "input")[0].textContent, '{\n  "file_path": "outside.txt"\n}');
 });
 
 test("leaves deltas out of the transcript and draws the record once", async () => {
@@ -554,35 +567,54 @@ test("retries a refused connection", async () => {
   assert.equal(page.opens.length, 3);
 });
 
-test("answers the pending permission request once", async () => {
-  const page = await idle();
-  await page.send(
-    { type: "state", working: true },
-    {
-      type: "_tool_permission_request",
-      id: "permission_1",
-      tool: { name: "shell", input: { command: "ls" } },
-      reason: "not allowed by policy",
-    },
-  );
-  const request = find(page.output, "permission")[0];
-  assert.match(request.textContent, /Run shell outside of sandbox\?/);
-  assert.match(request.textContent, /ls/);
-  assert.match(request.textContent, /Reason: not allowed by policy/);
-  assert.equal(page.cancel.hidden, false);
+test("answers and removes permission prompts", async () => {
+  for (const [decision, button] of [
+    ["approve", 0],
+    ["deny", 1],
+  ]) {
+    const page = await idle();
+    await page.send(
+      { type: "state", working: true },
+      {
+        type: "message",
+        role: "assistant",
+        stop: "tool_calls",
+        content: [
+          {
+            type: "tool_call",
+            id: "call_1",
+            name: "shell",
+            input: { command: "ls", request_sandbox_bypass: true },
+          },
+        ],
+      },
+      {
+        type: "_tool_permission_request",
+        id: "permission_1",
+        tool: { call_id: "call_1", name: "shell", input: { command: "ls" } },
+        reason: "not allowed by policy",
+      },
+    );
+    const request = find(page.output, "permission")[0];
+    assert.match(request.textContent, /Run shell outside of sandbox\?/);
+    assert.match(request.textContent, /ls/);
+    assert.match(request.textContent, /Reason: not allowed by policy/);
+    assert.equal(find(request, "input")[0].tagName, "pre");
+    assert.equal(findTag(find(page.output, "call")[0], "summary")[0].textContent, "⛭shell · unsandboxed");
+    assert.equal(page.cancel.hidden, false);
 
-  const [approve] = find(page.output, "actions")[0].children;
-  approve.dispatch("click");
-  await page.waitFor(() => page.posts.length === 1, "permission response");
-  assert.deepEqual(page.posts, [
-    {
-      path: "/permission",
-      body: { type: "_tool_permission_response", id: "permission_1", decision: "approve" },
-      authorization: "Bearer 123456",
-    },
-  ]);
-  // The buttons are gone, so a second decision cannot be sent.
-  assert.equal(find(page.output, "actions").length, 0);
+    find(page.output, "actions")[0].children[button].dispatch("click");
+    await page.waitFor(() => page.posts.length === 1, "permission response");
+    assert.deepEqual(page.posts, [
+      {
+        path: "/permission",
+        body: { type: "_tool_permission_response", id: "permission_1", decision },
+        authorization: "Bearer 123456",
+      },
+    ]);
+    // The prompt is gone, so a second decision cannot be sent.
+    assert.equal(find(page.output, "permission").length, 0);
+  }
 });
 
 test("keeps a tool result together with its sandbox notice", async () => {
@@ -611,7 +643,8 @@ test("keeps a tool result together with its sandbox notice", async () => {
   const call = find(page.output, "call")[0];
   const result = find(call, "result");
   assert.equal(result.length, 1);
-  assert.equal(findTag(result[0], "pre")[0].textContent, "/project");
+  assert.equal(result[0].tagName, "pre");
+  assert.match(result[0].textContent, /\/project$/);
   // The shell manifest asks for its exit code, so the tail mirrors the terminal.
   assert.equal(find(result[0], "notes")[0].textContent, "exit 0 · sandbox blocked");
   assert.equal(find(page.output, "note").length, 0);
