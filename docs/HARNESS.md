@@ -8,7 +8,7 @@ Harnesses are resolved when a session is created and stored in its header. Chang
 
 ## Default coding harness
 
-The bundled `default` harness is intentionally small. It provides project context, four general-purpose tools, interactive commands, sandboxing, and conservative turn limits. Its complete configuration lives in [`default/shellfish.jsonc`](../default/shellfish.jsonc).
+The bundled `default` harness is intentionally small. It provides project context, general-purpose tools, interactive commands, and conservative sandboxing. Its complete configuration lives in [`default/shellfish.jsonc`](../default/shellfish.jsonc).
 
 ### System prompt
 
@@ -24,9 +24,10 @@ These are ordinary component files under `default/prompts/system/`; a user confi
 - `read_file` reads project text files with line numbers.
 - `edit_file` makes targeted replacements in existing project text files.
 - `write_file` creates new project text files.
+- `fetch_url` uses Jina Reader to fetch an HTTP(S) website as Markdown.
 - `shell` runs one Zsh command in the session working directory.
 
-Tools are shell scripts with JSON manifests. The default harness enables sandboxing with [`fence`](https://github.com/fencesandbox/fence). Its policies constrain project access, block network access, and deny common secret files. When a tool fails and sandbox monitoring reports a blocked action, the durable tool result records that fact for both the model and client presentation. Supported tool calls can request a one-time bypass in interactive clients; headless execution denies requests that hooks do not decide.
+Tools are shell scripts with JSON manifests. The default harness enables sandboxing with [`fence`](https://github.com/fencesandbox/fence). Its policies constrain project and network access and deny common secret files. When a tool fails and sandbox monitoring reports a blocked action, the durable tool result records that fact for both the model and client presentation. Supported tool calls can request a one-time bypass in interactive clients; headless execution denies requests that hooks do not decide.
 
 Sandboxing applies to opted-in tools. Hooks and backend adapters are trusted executables and run with the user's permissions. See [Configuration](CONFIG.md#sandbox-grants) for persistent and one-off path grants.
 

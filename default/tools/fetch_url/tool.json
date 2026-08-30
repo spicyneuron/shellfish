@@ -1,0 +1,18 @@
+{
+  "description": "Fetch an HTTP(S) website through Jina Reader and return its content as Markdown. The requested URL is sent to Jina AI. Use this for website content that is not already available in the project.",
+  "input_schema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["url"],
+    "properties": {
+      "url": {"type": "string", "minLength": 1, "description": "HTTP(S) URL to fetch"}
+    }
+  },
+  "display": {
+    "summary": ["$url"],
+    "call": {"content": [], "format": "plain"},
+    "permission_preview": {"content": ["$url"], "format": "plain"},
+    "result": {"content": ["$result_preview"], "format": "md"}
+  },
+  "sandbox": true
+}

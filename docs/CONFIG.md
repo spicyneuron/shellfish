@@ -87,11 +87,11 @@ The matching subdirectories are `prompts/`, `tools/`, `backends/`, and `hooks/<e
 
 ## Sandbox grants
 
-The default harness runs its tools with [`fence`](https://github.com/fencesandbox/fence). Each bundled tool sees only the project directory, and network access is blocked entirely, including local ports. `shell`, `edit_file`, and `write_file` may also write inside the project, while `read_file` is read-only.
+The default harness runs its tools with [`fence`](https://github.com/fencesandbox/fence). Each tool has a policy scoped to the filesystem and network access its capability requires. Policies deny access outside those boundaries, including local network access unless explicitly allowed.
 
 Deny patterns take precedence over allows, so `.env` files, `.netrc`, `.npmrc`, and key material stay unreadable and unwritable even inside the project. Credential files such as `~/.git-credentials` are denied by name inside the project and denied by default outside it.
 
-Accessing any other path outside the project requires an approved sandbox bypass. A sandbox grant makes the path available inside the sandbox instead, so the model does not need to request a bypass. Grants do not override deny patterns.
+Accessing a path outside a tool's filesystem policy requires an approved sandbox bypass when that tool supports one. A sandbox grant makes the path available inside the sandbox instead, so the model does not need to request a bypass. Grants do not override deny patterns.
 
 Grant paths may be absolute or start with `~/`. Shellfish expands `~/` against `$HOME` before freezing the session runtime. Other environment-variable interpolation is not supported.
 

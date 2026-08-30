@@ -1,0 +1,24 @@
+#!/usr/bin/env zsh
+set -euo pipefail
+
+(($# == 0)) || { printf 'Usage: fetch_url\n' >&2; exit 2; }
+url=$(jq -ejr '
+  select(type == "object" and
+    (.url | type == "string" and length > 0 and
+      index("\u0000") == null and
+      (test("[[:space:][:cntrl:]]") | not) and
+      test("^https?://[^/?#[:space:]]+")) and
+    (keys == ["url"])) |
+  .url
+') || { printf 'fetch_url: invalid input\n' >&2; exit 2; }
+
+exec curl \
+  --disable \
+  --silent \
+  --show-error \
+  --fail-with-body \
+  --connect-timeout 10 \
+  --max-time 60 \
+  --header 'X-Return-Format: markdown' \
+  -- \
+  "https://r.jina.ai/$url"

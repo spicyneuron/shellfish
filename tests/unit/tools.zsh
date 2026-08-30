@@ -32,6 +32,44 @@ sf_test_tool_execute() {
     "$tool_max_capture" "$tool_fence" "$tool_read_paths" "$tool_write_paths"
 }
 
+# The web fetch tool validates its input and sends only fixed Reader options to curl.
+mkdir "$tmp/jina-bin"
+cat >"$tmp/jina-bin/curl" <<'ZSH'
+#!/usr/bin/env zsh
+print -rl -- "$@" >"$JINA_TEST_ARGS"
+print -r -- '# fetched markdown'
+exit "${JINA_TEST_STATUS:-0}"
+ZSH
+chmod +x "$tmp/jina-bin/curl"
+typeset jina_args="$tmp/jina.args" jina_output
+jina_output=$(PATH="$tmp/jina-bin:$PATH" JINA_TEST_ARGS="$jina_args" \
+  "$ROOT/default/tools/fetch_url/run" <<<'{"url":"https://example.com/docs?q=reader"}')
+assert_equal '# fetched markdown' "$jina_output"
+typeset -a expected_jina_args=(
+  --disable --silent --show-error --fail-with-body --connect-timeout 10 --max-time 60
+  --header 'X-Return-Format: markdown' --
+  'https://r.jina.ai/https://example.com/docs?q=reader'
+)
+assert_equal "${(F)expected_jina_args}" "$(<"$jina_args")"
+if PATH="$tmp/jina-bin:$PATH" JINA_TEST_ARGS="$jina_args" \
+    "$ROOT/default/tools/fetch_url/run" <<<'{"url":"file:///etc/passwd"}' >/dev/null 2>&1; then
+  fail 'fetch_url accepted a non-HTTP URL'
+fi
+if PATH="$tmp/jina-bin:$PATH" JINA_TEST_ARGS="$jina_args" \
+    "$ROOT/default/tools/fetch_url/run" <<<'{"url":"https://example.com","extra":true}' >/dev/null 2>&1; then
+  fail 'fetch_url accepted an unknown input field'
+fi
+if PATH="$tmp/jina-bin:$PATH" JINA_TEST_ARGS="$jina_args" JINA_TEST_STATUS=22 \
+    "$ROOT/default/tools/fetch_url/run" <<<'{"url":"https://example.com"}' >/dev/null 2>&1; then
+  fail 'fetch_url hid a curl failure'
+fi
+jq -e '
+  .network.allowedDomains == ["r.jina.ai"] and
+  .network.allowLocalBinding == false and
+  .network.allowLocalOutbound == false and
+  .filesystem.defaultDenyRead == true
+' "$ROOT/default/tools/fetch_url/fence.jsonc" >/dev/null
+
 # Tool execution preserves the caller's home in its otherwise clean environment.
 load_tools "$stored_runtime"
 sf_test_tool_execute "$(jq -cn --arg command 'print -rn -- "$HOME"' \
@@ -180,8 +218,29 @@ integer code=$?
 exit $code
 ZSH
 chmod +x "$tmp/bin/fence"
+cat >"$tmp/bin/curl" <<'ZSH'
+#!/usr/bin/env zsh
+print -r -- '# sandboxed markdown'
+ZSH
+chmod +x "$tmp/bin/curl"
 PATH="$tmp/bin:$PATH"
 rehash
+typeset fetch_runtime=$(jq -cn --argjson base "$stored_runtime" \
+  --arg root "$ROOT/default/tools/fetch_url" \
+  --slurpfile manifest "$ROOT/default/tools/fetch_url/tool.json" \
+  --slurpfile settings "$ROOT/default/tools/fetch_url/fence.jsonc" '
+    $base | .harness.tools = [{
+      name:"fetch_url",command:($root + "/run"),
+      settings:$settings[0],manifest:$manifest[0]
+    }]
+')
+load_tools "$(jq -c --arg fence "$tmp/bin/fence" \
+  '.harness.sandbox=true | .harness.fence=$fence' <<<"$fetch_runtime")"
+sf_test_tool_execute \
+  '{"id":"fetch_1","name":"fetch_url","input":{"url":"https://example.com"}}' 1
+jq -e '.exit_code == 0 and .content == "# sandboxed markdown\n"' <<<"$REPLY" >/dev/null
+jq -e '.network.allowedDomains == ["r.jina.ai"] and .filesystem.defaultDenyRead == true' \
+  "$tmp/fence.settings" >/dev/null
 load_tools "$(jq -c --arg fence "$tmp/bin/fence" \
   '.harness.sandbox=true | .harness.fence=$fence' <<<"$stored_runtime")"
 sf_test_tool_execute "$(jq -cn --arg command 'printf "%s|%s" "$TMPDIR" "$TMPPREFIX"' \

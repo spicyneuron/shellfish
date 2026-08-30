@@ -45,7 +45,7 @@
       "system": ["system/general.md", "system/tools.md"],
 
       // Tools available to the model.
-      "tools": ["read_file", "edit_file", "write_file", "shell"],
+      "tools": ["read_file", "edit_file", "write_file", "fetch_url", "shell"],
 
       // Hooks run executables in order. See docs/HOOKS.md for payloads, exit
       // statuses, and environment guarantees.
