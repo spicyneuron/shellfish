@@ -302,9 +302,9 @@ fi
 [[ $SF_RUNTIME_ERROR == *'invalid config at $["harnesses"]["bad"]["before_prompt"]: unknown field'* ]]
 
 # System references resolve to one durable record and never enter the header.
-mkdir -p "$tmp/config/system"
-print -r -- 'first' >"$tmp/config/system/first.md"
-print -r -- 'second' >"$tmp/config/system/second.md"
+mkdir -p "$tmp/config/prompts"
+print -r -- 'first' >"$tmp/config/prompts/first.md"
+print -r -- 'second' >"$tmp/config/prompts/second.md"
 cat >"$tmp/config/system.jsonc" <<'JSON'
 {
   "profiles":{"default":{"harness":"system","request":{"model":"m"}}},
@@ -316,10 +316,10 @@ sf_runtime_resolve_from_config "$tmp/config/system.jsonc" '' '' '{}' \
 jq -e '.harness | has("system") | not' <<<"$REPLY" >/dev/null
 jq -e '. == {type:"system",content:"first\n\nsecond"}' \
   <<<"$SF_RUNTIME_SYSTEM_RECORD" >/dev/null
-rm "$tmp/config/system/second.md"
+rm "$tmp/config/prompts/second.md"
 if sf_runtime_resolve_from_config "$tmp/config/system.jsonc" '' '' '{}' \
     "$ROOT/tests/fixtures/backend"; then
-  fail 'missing system file was accepted'
+  fail 'missing prompt file was accepted'
 fi
 
 cat >"$tmp/config/missing-hook.jsonc" <<'JSON'

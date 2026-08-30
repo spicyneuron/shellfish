@@ -49,7 +49,7 @@ Put credentials in the environment or in `.env` beside `shellfish.jsonc`. Export
 
 ## Customize a harness
 
-Harnesses choose system files, tools, hooks, sandbox policy, and turn limits. They do not have an inheritance field, so a named harness should list the capabilities it needs:
+Harnesses choose prompt files, tools, hooks, sandbox policy, and turn limits. They do not have an inheritance field, so a named harness should list the capabilities it needs:
 
 ```jsonc
 {
@@ -73,18 +73,18 @@ Harnesses choose system files, tools, hooks, sandbox policy, and turn limits. Th
 }
 ```
 
-This example reads its prompt from `system/review.md` under the configuration directory. Hook event names and behavior are defined in [`HOOKS.md`](HOOKS.md). Tool directories contain an executable `run` and a `tool.json` manifest. Sandboxed tools also contain `fence.jsonc`.
+This example reads its prompt from `prompts/review.md` under the configuration directory. Hook event names and behavior are defined in [`HOOKS.md`](HOOKS.md). Tool directories contain an executable `run` and a `tool.json` manifest. Sandboxed tools also contain `fence.jsonc`.
 
 ## Resolve component references
 
-System files, tools, hooks, and backend adapters accept these reference forms:
+Prompt files, tools, hooks, and backend adapters accept these reference forms:
 
 1. Absolute paths.
 2. `~/...` paths relative to `$HOME`.
 3. Paths containing `/`, relative to the configuration directory.
 4. Bare names under the matching configuration subdirectory, falling back to bundled defaults.
 
-The matching subdirectories are `system/`, `tools/`, `backends/`, and `hooks/<event>/`. This lets a local component shadow a bundled component with the same name.
+The matching subdirectories are `prompts/`, `tools/`, `backends/`, and `hooks/<event>/`. This lets a local component shadow a bundled component with the same name.
 
 ## Sandbox grants
 

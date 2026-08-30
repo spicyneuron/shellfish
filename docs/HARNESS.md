@@ -17,7 +17,7 @@ The harness builds its system prompt from two Markdown files:
 - `general.md` defines communication and context-handling conventions.
 - `tools.md` directs the agent to prefer native file tools over shell commands.
 
-These are ordinary component files under `default/system/`; a user configuration can select different files or shadow bundled files by name.
+These are ordinary component files under `default/prompts/`; a user configuration can select different files or shadow bundled files by name.
 
 ### Tools
 

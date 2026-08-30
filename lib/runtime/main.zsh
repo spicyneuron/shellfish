@@ -251,17 +251,17 @@ sf_runtime_resolve_from_config() {
   while (( ${#system_parts} < system_count )); do
     reference=$fields[index]
     (( index += 1 ))
-    sf_runtime_reference "$reference" "$config_dir" system || {
-      sf_runtime_fail "cannot resolve system file: $reference"
+    sf_runtime_reference "$reference" "$config_dir" prompts || {
+      sf_runtime_fail "cannot resolve prompt file: $reference"
       return
     }
     resolved=$REPLY
     [[ -f $resolved && -r $resolved ]] || {
-      sf_runtime_fail "cannot read system file: $reference"
+      sf_runtime_fail "cannot read prompt file: $reference"
       return
     }
     system_content=$(<"$resolved") || {
-      sf_runtime_fail "cannot read system file: $reference"
+      sf_runtime_fail "cannot read prompt file: $reference"
       return
     }
     system_parts+=( "$system_content" )
