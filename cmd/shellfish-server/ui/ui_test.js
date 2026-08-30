@@ -357,7 +357,7 @@ test("replays the durable session before live work", async () => {
 test("copies the latest or selected derived section locally", async () => {
   const page = await idle();
   await page.send(
-    { type: "message", role: "user", content: [{ type: "text", text: "question" }] },
+    { type: "message", role: "user", content: [{ type: "text", text: "\n  question\t\n" }] },
     {
       ...ASSISTANT,
       stop: "tool_calls",
@@ -371,14 +371,23 @@ test("copies the latest or selected derived section locally", async () => {
       content: "",
       exit_code: 0,
     },
-    { ...ASSISTANT, content: [{ type: "text", text: "answer" }, { type: "text", text: "continued" }] },
+    {
+      ...ASSISTANT,
+      content: [
+        { type: "text", text: "\n" },
+        { type: "text", text: "\tanswer" },
+        { type: "text", text: "continued\n\n" },
+      ],
+    },
     { type: "state", working: false },
   );
+  assert.equal(find(page.output, "user")[0].textContent, "  question\t");
+  assert.equal(find(page.output, "assistant")[1].textContent, "\tanswercontinued");
   page.submit("/copy 1");
   await page.waitFor(() => page.copied.length === 1, "selected clipboard write");
   page.submit("/copy");
   await page.waitFor(() => page.copied.length === 2, "latest clipboard write");
-  assert.deepEqual(page.copied, ["question", "answer\n\ncontinued"]);
+  assert.deepEqual(page.copied, ["\n  question\t\n", "\n\n\n\tanswer\n\ncontinued\n\n"]);
   assert.equal(page.posts.length, 0);
 });
 
@@ -424,6 +433,9 @@ test("leaves deltas out of the transcript and draws the record once", async () =
   assert.equal(committed[0].textContent, "committed");
   assert.equal(find(page.output, "activity").length, 1);
   assert.equal(page.usage.textContent, " · 10 ↑ 2 ↓");
+  await page.send({ ...ASSISTANT, content: [{ type: "text", text: "\n\n" }] });
+  assert.equal(find(page.output, "assistant").length, 2);
+  assert.equal(find(page.output, "assistant")[1].textContent, "");
   await page.send({ type: "state", working: false });
   assert.equal(find(page.output, "activity").length, 0);
 });

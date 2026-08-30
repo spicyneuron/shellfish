@@ -59,6 +59,37 @@ function safe(value) {
   );
 }
 
+// Message spacing belongs to the presentation. Preserve spaces, tabs, internal
+// newlines, and the durable chunks used by /copy.
+function trimBoundaryNewlines(text) {
+  return String(text ?? "").replace(/^\n+|\n+$/g, "");
+}
+
+function displayTextChunks(parts) {
+  const chunks = parts.map((part) => part.type === "text" ? String(part.text ?? "") : null);
+  let first = 0;
+  while (first < chunks.length) {
+    if (chunks[first] === null) {
+      first++;
+      continue;
+    }
+    chunks[first] = chunks[first].replace(/^\n+/, "");
+    if (chunks[first]) break;
+    first++;
+  }
+  let last = chunks.length - 1;
+  while (last >= 0) {
+    if (chunks[last] === null) {
+      last--;
+      continue;
+    }
+    chunks[last] = chunks[last].replace(/\n+$/, "");
+    if (chunks[last]) break;
+    last--;
+  }
+  return chunks;
+}
+
 function el(parent, tag, className, text) {
   const created = document.createElement(tag);
   if (className) created.className = className;
@@ -438,34 +469,40 @@ function renderCollapsed(kind, heading, content, secondary) {
 }
 
 function renderMessage(frame) {
+  if (frame.role === "tool_result") return renderResult(frame);
+  const parts = frame.content || [];
+  const displayChunks = displayTextChunks(parts);
   if (frame.role === "user") {
     hideIndicator();
     section("user");
     const article = record("user", null);
-    const text = (frame.content || [])
+    const text = parts
       .filter((part) => part.type === "text")
       .map((part) => part.text)
       .join("");
-    markdown(el(article, "pre", "text"), text);
+    markdown(el(article, "pre", "text"), displayChunks.filter((text) => text !== null).join(""));
     sectionChunks[sectionId - 1] = [text];
     place(article);
     if (working) showIndicator();
     return;
   }
-  if (frame.role === "tool_result") return renderResult(frame);
   hideIndicator();
   section("agent");
   const article = record("assistant", null);
-  const chunks = (frame.content || [])
-    .filter((part) => part.type === "text")
-    .map((part) => part.text);
+  const chunks = parts.filter((part) => part.type === "text").map((part) => part.text);
   const index = sectionId - 1;
   if (sectionChunks[index] === undefined) sectionChunks[index] = [];
   sectionChunks[index].push(...chunks);
-  for (const part of frame.content || []) {
-    if (part.type === "reasoning") collapsible(article, "reasoning", part.text, "reasoning");
-    else if (part.type === "text") markdown(el(article, "pre", "text"), part.text);
-    else if (part.type === "tool_call") renderCall(article, part);
+  for (let partIndex = 0; partIndex < parts.length; partIndex++) {
+    const part = parts[partIndex];
+    const reasoning = part.type === "reasoning" ? trimBoundaryNewlines(part.text) : "";
+    if (reasoning) {
+      collapsible(article, "reasoning", reasoning, "reasoning");
+    } else if (part.type === "text" && displayChunks[partIndex]) {
+      markdown(el(article, "pre", "text"), displayChunks[partIndex]);
+    } else if (part.type === "tool_call") {
+      renderCall(article, part);
+    }
   }
   if (frame.usage) showUsage(frame.usage);
   place(article);

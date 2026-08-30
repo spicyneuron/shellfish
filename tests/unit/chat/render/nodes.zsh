@@ -87,8 +87,10 @@ assert_equal 0 "$SF_PRESENT_SECTION_ID"
 
 sf_chat_event assistant_delta $'answer\n'
 sf_chat_event assistant_delta $'\n'
+sf_chat_set_frontier 2 8
 sf_chat_event assistant_commit
-assert_equal $'answer\n\n' "$SF_PRESENT_NODE_BODY[2]"
+assert_equal answer "$SF_PRESENT_NODE_BODY[2]"
+assert_equal 6 "$SF_PRESENT_NODE_FRONTIER[2]"
 
 sf_chat_event assistant_delta $'\nnext'
 sf_chat_event assistant_commit
@@ -121,10 +123,11 @@ sf_chat_section agent
 assert_equal section "$SF_PRESENT_NODE_TYPE[1]"
 
 sf_chat_reset
-sf_chat_event user $'unsafe\e[31m'
-sf_chat_event assistant_delta $'reply\rtext'
-assert_equal 'unsafe�[31m' "$SF_PRESENT_NODE_BODY[2]"
-assert_equal 'reply�text' "$SF_PRESENT_NODE_BODY[4]"
+sf_chat_event user $'\n\n  unsafe\e[31m\t\n'
+sf_chat_event assistant_delta $'\n\treply\rtext\n\n'
+sf_chat_event assistant_commit
+assert_equal $'  unsafe�[31m\t' "$SF_PRESENT_NODE_BODY[2]"
+assert_equal $'\treply�text' "$SF_PRESENT_NODE_BODY[4]"
 
 sf_chat_reset
 sf_chat_add activity '' '' '' open
