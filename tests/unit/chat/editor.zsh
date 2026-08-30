@@ -78,10 +78,15 @@ assert_equal draft "$BUFFER"
 assert_equal '' "$SF_PRESENT_ACTION"
 assert_equal -R "$ZLE_CALL"
 
-KEYS=$'\x18\e'
-ZLE_CALL=''
-sf_chat_escape
-assert_equal $'-U \e' "$ZLE_CALL"
+KEYS=$'\x18\t'
+sf_chat_undefined_key
+assert_equal $'-U \t' "$ZLE_CALL"
+KEYS=$'\x18\u00e9'
+sf_chat_undefined_key
+assert_equal $'-U \u00e9' "$ZLE_CALL"
+KEYS=$'\t'
+sf_chat_undefined_key
+assert_equal .undefined-key "$ZLE_CALL"
 
 SF_PRESENT_STATE=queued
 SF_PRESENT_ACTION=''
@@ -315,12 +320,8 @@ sf_chat_bind
   fail 'chat keymap bypasses the interrupt widget'
 [[ $(bindkey -M sf-present $'\e') == *sf_chat_escape ]] ||
   fail 'chat keymap does not interrupt on escape'
-[[ $(bindkey -M sf-present $'\x18\x03') == *sf_chat_interrupt ]] ||
-  fail 'chat heartbeat prefix swallows interrupts'
-[[ $(bindkey -M sf-present $'\x18\e') == *sf_chat_escape ]] ||
-  fail 'chat heartbeat prefix swallows escape interrupts'
-[[ $(bindkey -M sf-present $'\x18x') == *sf_chat_insert ]] ||
-  fail 'chat heartbeat prefix swallows printable input'
+[[ $(bindkey -M sf-present $'\x18x') == *undefined-key ]] ||
+  fail 'chat heartbeat suffix does not use the generic fallback'
 [[ $(bindkey -M sf-permission '^C') == *sf_chat_interrupt ]] ||
   fail 'permission keymap bypasses the interrupt widget'
 [[ $(bindkey -M sf-permission $'\e') == *sf_chat_escape ]] ||

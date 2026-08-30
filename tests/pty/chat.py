@@ -123,6 +123,62 @@ def test_zle_wrapped_line_navigation():
         session.close()
 
 
+def test_zle_replays_unknown_heartbeat_suffix():
+    editor = Path(__file__).resolve().parents[2] / "lib/chat/editor.zsh"
+    script = r'''
+zmodload zsh/zle || exit
+source "$1" || exit
+sf_test_init() { zle -U $'\x18x\r'; }
+zle -N sf-test-replay sf_chat_undefined_key
+zle -N zle-line-init sf_test_init
+bindkey -N sf-test emacs
+# Direct binding makes the combined-key dispatch deterministic.
+bindkey -M sf-test $'\x18x' sf-test-replay
+input=''
+vared -M sf-test input
+print -r -- "BUFFER=$input"
+'''
+    master, slave = pty.openpty()
+    process = subprocess.Popen(
+        ["zsh", "-f", "-c", script, "heartbeat-test", str(editor)],
+        stdin=slave, stdout=slave, stderr=slave, close_fds=True,
+    )
+    os.close(slave)
+    output = b""
+    try:
+        end = time.monotonic() + 3
+        while process.poll() is None and time.monotonic() < end:
+            if not select.select([master], [], [], 0.05)[0]:
+                continue
+            try:
+                chunk = os.read(master, 65536)
+            except OSError:
+                break
+            if not chunk:
+                break
+            output += chunk
+        try:
+            process.wait(timeout=1)
+        except subprocess.TimeoutExpired as error:
+            detail = output.decode("utf-8", "replace")
+            raise AssertionError(f"heartbeat replay ZLE did not exit: {detail}") from error
+        while select.select([master], [], [], 0)[0]:
+            try:
+                chunk = os.read(master, 65536)
+            except OSError:
+                break
+            if not chunk:
+                break
+            output += chunk
+        assert process.poll() == 0, output.decode("utf-8", "replace")
+        assert b"BUFFER=x" in output, output.decode("utf-8", "replace")
+    finally:
+        if process.poll() is None:
+            process.kill()
+            process.wait()
+        os.close(master)
+
+
 def test_startup_records_precede_two_turns():
     session = Session(
         explicit_session=True,
@@ -518,6 +574,7 @@ def main():
     test_chat_end()
     test_zle_multiline_editing()
     test_zle_wrapped_line_navigation()
+    test_zle_replays_unknown_heartbeat_suffix()
     test_sigterm_leaves_terminal_state()
     print("PASS terminal PTY scenarios")
 

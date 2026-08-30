@@ -16,8 +16,7 @@ KEYTIMEOUT=$SF_PRESENT_HEARTBEAT_TIMEOUT
 
 # Nothing wakes ZLE while a turn streams, so the view is driven by a synthetic
 # key that dispatches the tick. Its prefix timeout yields to fd callbacks between
-# ticks. Real input can arrive behind that prefix, so the keymap must forward
-# those combined sequences to their ordinary widgets.
+# ticks. The undefined-key widget replays real input that arrives behind it.
 sf_chat_heartbeat_arm() {
   [[ $SF_PRESENT_STATE == (working|cancelling) ]] || return 0
   (( ${KEYS_QUEUED_COUNT:-0} == 0 && ${PENDING:-0} == 0 )) || return 0
@@ -331,6 +330,14 @@ sf_chat_insert() {
   zle .self-insert
 }
 
+sf_chat_undefined_key() {
+  if [[ $KEYS == $'\x18'?* ]]; then
+    zle -U "${KEYS[2,-1]}"
+    return
+  fi
+  zle .undefined-key
+}
+
 sf_chat_interrupt() {
   local intent
   if [[ $SF_PRESENT_STATE == (idle|stopped) && -n $BUFFER ]]; then
@@ -350,10 +357,6 @@ sf_chat_interrupt() {
 }
 
 sf_chat_escape() {
-  if [[ $KEYS == $'\x18\e' ]]; then
-    zle -U $'\e'
-    return
-  fi
   if [[ $SF_PRESENT_STATE == (working|cancelling|permission) ]]; then
     sf_chat_interrupt
   else
@@ -362,8 +365,6 @@ sf_chat_escape() {
 }
 
 sf_chat_bind() {
-  local heartbeat_key=$'\x18' key
-  integer code
   SF_PRESENT_HISTORY=()
   SF_PRESENT_PERMISSION_DRAFT=''
   SF_PRESENT_PERMISSION_CURSOR=0
@@ -374,6 +375,7 @@ sf_chat_bind() {
   zle -N sf_chat_heartbeat_tick
   zle -N sf_chat_accept
   zle -N sf_chat_insert
+  zle -N undefined-key sf_chat_undefined_key
   zle -N sf_chat_insert_newline
   zle -N sf_chat_up
   zle -N sf_chat_down
@@ -402,12 +404,6 @@ sf_chat_bind() {
   bindkey -rpM sf-present $'\x18'
   bindkey -M sf-present $'\x18' sf_chat_heartbeat_tick
   bindkey -M sf-present $'\x18\x1f' sf_chat_heartbeat_tick
-  bindkey -M sf-present $'\x18\x03' sf_chat_interrupt
-  bindkey -M sf-present $'\x18\e' sf_chat_escape
-  for code in {32..126}; do
-    key=$heartbeat_key${(#)code}
-    bindkey -M sf-present "$key" sf_chat_insert
-  done
   bindkey -M sf-present ' ' sf_chat_insert
   bindkey -M sf-present -R $'!-~' sf_chat_insert
   bindkey -D sf-permission 2>/dev/null || true
