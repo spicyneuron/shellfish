@@ -123,20 +123,26 @@ def test_zle_wrapped_line_navigation():
         session.close()
 
 
-def test_zle_replays_unknown_heartbeat_suffix():
+def test_zle_preserves_heartbeat_through_input_collisions():
     editor = Path(__file__).resolve().parents[2] / "lib/chat/editor.zsh"
     script = r'''
 zmodload zsh/zle || exit
 source "$1" || exit
-sf_test_init() { zle -U $'\x18x\r'; }
+sf_test_init() { zle -U $'\x18xyz'; }
+sf_test_tick() { (( ++ticks )); zle accept-line; }
 zle -N sf-test-replay sf_chat_undefined_key
+zle -N sf-test-tick sf_test_tick
 zle -N zle-line-init sf_test_init
 bindkey -N sf-test emacs
-# Direct binding makes the combined-key dispatch deterministic.
+# Direct bindings make each combined-key dispatch deterministic.
 bindkey -M sf-test $'\x18x' sf-test-replay
+bindkey -M sf-test $'\x18y' sf-test-replay
+bindkey -M sf-test $'\x18z' sf-test-replay
+bindkey -M sf-test $'\x18' sf-test-tick
 input=''
+integer ticks=0
 vared -M sf-test input
-print -r -- "BUFFER=$input"
+print -r -- "BUFFER=$input TICKS=$ticks"
 '''
     master, slave = pty.openpty()
     process = subprocess.Popen(
@@ -171,7 +177,7 @@ print -r -- "BUFFER=$input"
                 break
             output += chunk
         assert process.poll() == 0, output.decode("utf-8", "replace")
-        assert b"BUFFER=x" in output, output.decode("utf-8", "replace")
+        assert b"BUFFER=xyz TICKS=1" in output, output.decode("utf-8", "replace")
     finally:
         if process.poll() is None:
             process.kill()
@@ -574,7 +580,7 @@ def main():
     test_chat_end()
     test_zle_multiline_editing()
     test_zle_wrapped_line_navigation()
-    test_zle_replays_unknown_heartbeat_suffix()
+    test_zle_preserves_heartbeat_through_input_collisions()
     test_sigterm_leaves_terminal_state()
     print("PASS terminal PTY scenarios")
 

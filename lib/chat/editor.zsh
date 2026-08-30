@@ -16,7 +16,7 @@ KEYTIMEOUT=$SF_PRESENT_HEARTBEAT_TIMEOUT
 
 # Nothing wakes ZLE while a turn streams, so the view is driven by a synthetic
 # key that dispatches the tick. Its prefix timeout yields to fd callbacks between
-# ticks. The undefined-key widget replays real input that arrives behind it.
+# ticks. The undefined-key widget preserves the heartbeat through collisions.
 sf_chat_heartbeat_arm() {
   [[ $SF_PRESENT_STATE == (working|cancelling) ]] || return 0
   (( ${KEYS_QUEUED_COUNT:-0} == 0 && ${PENDING:-0} == 0 )) || return 0
@@ -332,6 +332,8 @@ sf_chat_insert() {
 
 sf_chat_undefined_key() {
   if [[ $KEYS == $'\x18'?* ]]; then
+    # zle -U prepends, so enqueue the heartbeat first to replay input ahead of it.
+    zle -U $'\x18'
     zle -U "${KEYS[2,-1]}"
     return
   fi

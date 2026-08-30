@@ -79,11 +79,15 @@ assert_equal '' "$SF_PRESENT_ACTION"
 assert_equal -R "$ZLE_CALL"
 
 KEYS=$'\x18\t'
+ZLE_CALLS=()
 sf_chat_undefined_key
-assert_equal $'-U \t' "$ZLE_CALL"
+assert_equal $'-U \x18' "$ZLE_CALLS[-2]"
+assert_equal $'-U \t' "$ZLE_CALLS[-1]"
 KEYS=$'\x18\u00e9'
+ZLE_CALLS=()
 sf_chat_undefined_key
-assert_equal $'-U \u00e9' "$ZLE_CALL"
+assert_equal $'-U \x18' "$ZLE_CALLS[-2]"
+assert_equal $'-U \u00e9' "$ZLE_CALLS[-1]"
 KEYS=$'\t'
 sf_chat_undefined_key
 assert_equal .undefined-key "$ZLE_CALL"
