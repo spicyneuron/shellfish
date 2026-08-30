@@ -36,7 +36,7 @@ jq -e '
 typeset framed
 framed=$(jq -nj -L "$ROOT/lib" '
   include "chat/display-fields";
-  [["notice", "before\u0000after", "", "", "", ""]] | emit_display_batch
+  [["notice", "before\u0000after", "", "", "", "", ""]] | emit_display_batch
 ' | tr '\0' '\n' | sed '/^$/d' | paste -sd, -)
 assert_equal 'notice,before�after,batch_ok' "$framed"
 

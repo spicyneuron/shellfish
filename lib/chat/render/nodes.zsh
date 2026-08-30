@@ -6,6 +6,8 @@ typeset -ga SF_PRESENT_NODE_TYPE=() SF_PRESENT_NODE_ROLE=()
 typeset -ga SF_PRESENT_NODE_HEADING=() SF_PRESENT_NODE_BODY=()
 typeset -ga SF_PRESENT_NODE_META=() SF_PRESENT_NODE_STATE=()
 typeset -ga SF_PRESENT_NODE_STATUS=() SF_PRESENT_NODE_FORMAT=()
+# Marks a tool result whose sandbox blocked an action.
+typeset -ga SF_PRESENT_NODE_BLOCKED=()
 # A formatter enables the node frontier before body rows can flush. A negative
 # frontier preserves ordinary row settlement.
 typeset -ga SF_PRESENT_NODE_FRONTIER=()
@@ -94,6 +96,7 @@ sf_chat_drop() {
     SF_PRESENT_NODE_STATE=()
     SF_PRESENT_NODE_STATUS=()
     SF_PRESENT_NODE_FORMAT=()
+    SF_PRESENT_NODE_BLOCKED=()
     SF_PRESENT_NODE_FRONTIER=()
     return 0
   fi
@@ -105,6 +108,7 @@ sf_chat_drop() {
   SF_PRESENT_NODE_STATE=( "${(@)SF_PRESENT_NODE_STATE[count + 1,-1]}" )
   SF_PRESENT_NODE_STATUS=( "${(@)SF_PRESENT_NODE_STATUS[count + 1,-1]}" )
   SF_PRESENT_NODE_FORMAT=( "${(@)SF_PRESENT_NODE_FORMAT[count + 1,-1]}" )
+  SF_PRESENT_NODE_BLOCKED=( "${(@)SF_PRESENT_NODE_BLOCKED[count + 1,-1]}" )
   SF_PRESENT_NODE_FRONTIER=( "${(@)SF_PRESENT_NODE_FRONTIER[count + 1,-1]}" )
 }
 
@@ -126,6 +130,7 @@ sf_chat_close() {
     SF_PRESENT_NODE_STATE=( "${(@)SF_PRESENT_NODE_STATE[1,end]}" )
     SF_PRESENT_NODE_STATUS=( "${(@)SF_PRESENT_NODE_STATUS[1,end]}" )
     SF_PRESENT_NODE_FORMAT=( "${(@)SF_PRESENT_NODE_FORMAT[1,end]}" )
+    SF_PRESENT_NODE_BLOCKED=( "${(@)SF_PRESENT_NODE_BLOCKED[1,end]}" )
     SF_PRESENT_NODE_FRONTIER=( "${(@)SF_PRESENT_NODE_FRONTIER[1,end]}" )
     if (( end < index - 1 )); then
       section=${SF_PRESENT_NODE_TYPE[(I)section]}
@@ -187,8 +192,28 @@ sf_chat_tool_open() {
   SF_PRESENT_TOOL_CURRENT=$id
 }
 
+sf_chat_notice() {
+  local severity=$1 heading=$2 body=${3-}
+  integer index=${#SF_PRESENT_NODE_TYPE} resume_tool=0
+  if (( index )) && [[ $SF_PRESENT_NODE_STATE[index] == open ]]; then
+    if [[ $SF_PRESENT_NODE_TYPE[index] == tool_result ]]; then
+      if [[ $severity == error ]]; then
+        sf_chat_event tool_segment_close abandon || return 1
+      else
+        sf_chat_event tool_segment_close continue || return 1
+        resume_tool=1
+      fi
+    else
+      [[ $SF_PRESENT_NODE_TYPE[index] == (activity|message|reasoning) ]] || return 1
+      sf_chat_close $index || return 1
+    fi
+  fi
+  sf_chat_add notice "$severity" "$heading" "$body" || return 1
+  (( ! resume_tool )) || sf_chat_tool_open
+}
+
 sf_chat_event() {
-  local type=$1 first=${2-} second=${3-} third=${4-} fourth=${5-} fifth=${6-}
+  local type=$1 first=${2-} second=${3-} third=${4-} fourth=${5-} fifth=${6-} sixth=${7-}
   integer index=${#SF_PRESENT_NODE_TYPE}
 
   if [[ $type == assistant ]]; then
@@ -258,6 +283,7 @@ sf_chat_event() {
       SF_PRESENT_NODE_STATUS[index]=$second
       SF_PRESENT_NODE_FORMAT[index]=$fourth
       SF_PRESENT_NODE_META[index]=$fifth
+      SF_PRESENT_NODE_BLOCKED[index]=$sixth
       sf_chat_close $index || return 1
       unset "SF_PRESENT_TOOL_HEADING[$first]" "SF_PRESENT_TOOL_CONTENT[$first]" \
         "SF_PRESENT_TOOL_POLICY[$first]" "SF_PRESENT_TOOL_FORMAT[$first]"
@@ -306,7 +332,7 @@ sf_chat_event() {
 }
 
 sf_chat_reload() {
-  local session_path=$1 events type first second third fourth fifth
+  local session_path=$1 events type first second third fourth fifth sixth
   integer complete=0
 
   SF_PRESENT_ERROR=''
@@ -325,11 +351,12 @@ sf_chat_reload() {
       IFS= read -r -d '' second &&
       IFS= read -r -d '' third &&
       IFS= read -r -d '' fourth &&
-      IFS= read -r -d '' fifth; do
+      IFS= read -r -d '' fifth &&
+      IFS= read -r -d '' sixth; do
     if [[ $type == batch_ok ]]; then
       complete=1
     else
-      sf_chat_event "$type" "$first" "$second" "$third" "$fourth" "$fifth" || {
+      sf_chat_event "$type" "$first" "$second" "$third" "$fourth" "$fifth" "$sixth" || {
         SF_PRESENT_ERROR='cannot build presentation transcript'
         return 1
       }

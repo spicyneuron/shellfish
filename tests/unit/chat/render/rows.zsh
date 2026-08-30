@@ -84,6 +84,13 @@ sf_chat_event tool_result call_open 0 result
 sf_chat_rows 80 20 3:0
 assert_equal $'╰ result\n  exit 0' "${(F)SF_PRESENT_ROW_TEXT}"
 
+# A blocked sandbox joins the result footer rather than standing on its own.
+sf_chat_reset
+sf_chat_event tool_call call_blocked shell run
+sf_chat_event tool_result call_blocked 1 denied '' '' blocked
+sf_chat_rows 80 20
+assert_equal '  exit 1 · sandbox blocked' "$SF_PRESENT_ROW_TEXT[-1]"
+
 # A zero preview is a collapsed, single-row projection. Its open form remains
 # wholly active, then its completed form settles without wrapping the body.
 SF_PRESENTATION='{"tui":{"preview_lines_reasoning":0,"preview_lines_context":0,"preview_lines_tool_call":0,"preview_lines_tool_result":0}}'
@@ -116,6 +123,12 @@ assert_equal 0 "$SF_PRESENT_ROW_SETTLED[-1]"
 sf_chat_event tool_result call_zero 1 $'failure\ndetail'
 sf_chat_rows 80 20 3:0
 assert_equal '╰ … · exit 1' "${(F)SF_PRESENT_ROW_TEXT}"
+
+sf_chat_reset
+sf_chat_event tool_call call_zero_blocked shell 'make test'
+sf_chat_event tool_result call_zero_blocked 1 failure '' '' blocked
+sf_chat_rows 80 20
+assert_equal '╰ … · exit 1 · sandbox blocked' "$SF_PRESENT_ROW_TEXT[-1]"
 
 sf_chat_reset
 sf_chat_event tool_call call_call_full shell $'one\ntwo' full

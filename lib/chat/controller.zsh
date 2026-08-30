@@ -109,31 +109,11 @@ sf_chat_cancel() {
   esac
 }
 
-sf_chat_notice() {
-  local severity=$1 heading=$2 body=${3-}
-  integer index=${#SF_PRESENT_NODE_TYPE} resume_tool=0
-  if (( index )) && [[ $SF_PRESENT_NODE_STATE[index] == open ]]; then
-    if [[ $SF_PRESENT_NODE_TYPE[index] == tool_result ]]; then
-      if [[ $severity == error ]]; then
-        sf_chat_event tool_segment_close abandon || return 1
-      else
-        sf_chat_event tool_segment_close continue || return 1
-        resume_tool=1
-      fi
-    else
-      [[ $SF_PRESENT_NODE_TYPE[index] == (activity|message|reasoning) ]] || return 1
-      sf_chat_close $index || return 1
-    fi
-  fi
-  sf_chat_add notice "$severity" "$heading" "$body" || return 1
-  (( ! resume_tool )) || sf_chat_tool_open
-}
-
 sf_chat_decoded() {
-  local type=$1 first=${2-} second=${3-} third=${4-} fourth=${5-} fifth=${6-} encoded preview reason
+  local type=$1 first=${2-} second=${3-} third=${4-} fourth=${5-} fifth=${6-} sixth=${7-} encoded preview reason
   case $type in
       backend_request_start|assistant_delta|assistant_reasoning_delta|tool_call|tool_result|context)
-        sf_chat_event "$type" "$first" "$second" "$third" "$fourth" "$fifth" || return 1
+        sf_chat_event "$type" "$first" "$second" "$third" "$fourth" "$fifth" "$sixth" || return 1
         ;;
       assistant_commit)
         [[ -z $SF_PRESENT_REASONING_TOKENS ]] ||
@@ -150,9 +130,6 @@ sf_chat_decoded() {
         ;;
       hook_display)
         sf_chat_notice notice "$first: $second" "$third" || return 1
-        ;;
-      sandbox_blocked)
-        sf_chat_notice notice 'Sandbox blocked an action' || return 1
         ;;
       permission_request)
         [[ $SF_PRESENT_STATE == working && -z $SF_PRESENT_PERMISSION_ID ]] || return 1

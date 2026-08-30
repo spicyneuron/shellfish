@@ -12,10 +12,10 @@ SF_CHAT_TRANSPORT_LINES=(
   '{"type":"_turn_usage","input_tokens":2,"output_tokens":1}'
 )
 sf_chat_transport_next null
-assert_equal 'assistant_delta,one,,,,' "${(j:,:)reply}"
+assert_equal 'assistant_delta,one,,,,,' "${(j:,:)reply}"
 sf_chat_transport_has_pending || fail 'decoded transport tail was not pending'
 sf_chat_transport_next null
-assert_equal 'turn_usage,2 ↑ 1 ↓,,,,' "${(j:,:)reply}"
+assert_equal 'turn_usage,2 ↑ 1 ↓,,,,,' "${(j:,:)reply}"
 if sf_chat_transport_has_pending; then
   fail 'decoded transport batch remained pending'
 fi

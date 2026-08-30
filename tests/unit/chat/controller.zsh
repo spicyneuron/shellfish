@@ -89,15 +89,13 @@ sf_chat_event tool_result call_1 0 done
 assert_equal done "$SF_PRESENT_NODE_BODY[5]"
 assert_equal closed "$SF_PRESENT_NODE_STATE[5]"
 
-# A sandbox notice splits the affected tool before its durable result completes it.
+# A sandbox block rides its own result rather than interrupting the tool.
 sf_chat_reset
 sf_chat_event tool_call call_1 shell '{"command":"true"}'
-sf_chat_decoded sandbox_blocked
-sf_chat_event tool_result call_1 0 done
-assert_equal 'section,tool_call,tool_result,notice,tool_result' "${(j:,:)SF_PRESENT_NODE_TYPE}"
-assert_equal 'Sandbox blocked an action' "$SF_PRESENT_NODE_HEADING[4]"
-assert_equal done "$SF_PRESENT_NODE_BODY[5]"
-assert_equal closed "$SF_PRESENT_NODE_STATE[5]"
+sf_chat_decoded tool_result call_1 1 denied '' '' blocked
+assert_equal 'section,tool_call,tool_result' "${(j:,:)SF_PRESENT_NODE_TYPE}"
+assert_equal blocked "$SF_PRESENT_NODE_BLOCKED[3]"
+assert_equal denied "$SF_PRESENT_NODE_BODY[3]"
 
 # An execution error abandons rather than resumes the live tool.
 sf_chat_reset

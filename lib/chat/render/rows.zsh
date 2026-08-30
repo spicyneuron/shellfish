@@ -45,6 +45,7 @@ sf_chat_preview_tail() {
   local role=$SF_PRESENT_NODE_ROLE[node]
   local exit_status=$SF_PRESENT_NODE_STATUS[node] body=$SF_PRESENT_NODE_BODY[node]
   local exact='' tokens
+  local -a notes=()
   body=${body#"${body%%[!$'\n']*}"}
   body=${body%"${body##*[!$'\n']}"}
   if [[ $type == tool_call ]]; then
@@ -87,13 +88,15 @@ sf_chat_preview_tail() {
         }
       else
         (( ! hidden )) || REPLY="  … ~$tokens tokens"
-        if [[ -n $exit_status && $exit_status != hidden ]]; then
+        [[ -z $exit_status || $exit_status == hidden ]] || notes+=( "exit $exit_status" )
+        [[ -z $SF_PRESENT_NODE_BLOCKED[node] ]] || notes+=( 'sandbox blocked' )
+        if (( ${#notes} )); then
           if [[ -n $REPLY ]]; then
-            REPLY+=" · exit $exit_status"
+            REPLY+=" · ${(j: · :)notes}"
           elif [[ -z $body ]]; then
-            REPLY="╰ exit $exit_status"
+            REPLY="╰ ${(j: · :)notes}"
           else
-            REPLY="  exit $exit_status"
+            REPLY="  ${(j: · :)notes}"
           fi
         elif [[ -z $body ]]; then
           REPLY='╰'
@@ -327,6 +330,7 @@ sf_chat_rows() {
             else
               [[ -z $SF_PRESENT_NODE_STATUS[node] || $SF_PRESENT_NODE_STATUS[node] == hidden ]] ||
                 text+=" · exit $SF_PRESENT_NODE_STATUS[node]"
+              [[ -z $SF_PRESENT_NODE_BLOCKED[node] ]] || text+=' · sandbox blocked'
             fi
           else
             text=$head

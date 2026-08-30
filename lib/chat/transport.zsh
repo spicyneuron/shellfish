@@ -147,7 +147,7 @@ sf_chat_transport_read() {
 
 # Returns 0 with one event in reply, 1 when empty, and 2 for malformed output.
 sf_chat_transport_next() {
-  local runtime=${1:-null} events type first second third fourth fifth
+  local runtime=${1:-null} events type first second third fourth fifth sixth
   local -a decoded
   integer complete=0
 
@@ -162,19 +162,20 @@ sf_chat_transport_next() {
         IFS= read -r -d '' second &&
         IFS= read -r -d '' third &&
         IFS= read -r -d '' fourth &&
-        IFS= read -r -d '' fifth; do
+        IFS= read -r -d '' fifth &&
+        IFS= read -r -d '' sixth; do
       if [[ $type == batch_ok ]]; then
         complete=1
       else
-        decoded+=( "$type" "$first" "$second" "$third" "$fourth" "$fifth" )
+        decoded+=( "$type" "$first" "$second" "$third" "$fourth" "$fifth" "$sixth" )
       fi
     done < <(print -rn -- "$events")
     (( complete )) || return 2
     SF_CHAT_TRANSPORT_EVENTS+=( "${decoded[@]}" )
     (( ${#SF_CHAT_TRANSPORT_EVENTS} )) || return 1
   fi
-  reply=( "${(@)SF_CHAT_TRANSPORT_EVENTS[1,6]}" )
-  SF_CHAT_TRANSPORT_EVENTS=( "${(@)SF_CHAT_TRANSPORT_EVENTS[7,-1]}" )
+  reply=( "${(@)SF_CHAT_TRANSPORT_EVENTS[1,7]}" )
+  SF_CHAT_TRANSPORT_EVENTS=( "${(@)SF_CHAT_TRANSPORT_EVENTS[8,-1]}" )
 }
 
 sf_chat_transport_result() {
