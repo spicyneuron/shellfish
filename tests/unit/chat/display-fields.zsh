@@ -33,16 +33,24 @@ jq -e '
   .harness.tools[1].manifest.display.result.exit_code == true
 ' <<<"$summary_tools" >/dev/null || fail 'tool exit-code display policy was not loaded'
 
+# Short events are padded to the fixed width; the batch always ends in a marker.
 typeset framed
 framed=$(jq -nj -L "$ROOT/lib" '
   include "chat/display-fields";
-  [["notice", "before\u0000after", "", "", "", "", ""]] | emit_display_batch
-' | tr '\0' '\n' | sed '/^$/d' | paste -sd, -)
-assert_equal 'notice,before�after,batch_ok' "$framed"
+  [["notice", "before\u0000after"]] | emit_display_batch
+' | tr '\0' '\n' | paste -sd, -)
+assert_equal 'notice,before�after,,,,,,batch_ok,,,,,,' "$framed"
 
 if jq -nj -L "$ROOT/lib" '
     include "chat/display-fields";
-    [["notice", "missing fields"]] | emit_display_batch
+    [["notice", "a", "b", "c", "d", "e", "f", "g"]] | emit_display_batch
   ' >/dev/null 2>&1; then
-  fail 'malformed display fields were accepted'
+  fail 'an oversized display event was accepted'
+fi
+
+if jq -nj -L "$ROOT/lib" '
+    include "chat/display-fields";
+    [["notice", 1]] | emit_display_batch
+  ' >/dev/null 2>&1; then
+  fail 'a non-string display field was accepted'
 fi

@@ -3,11 +3,13 @@ include "runtime/schema";
 def display_nul_safe:
   gsub("\u0000"; "�");
 
+# Each event is a leading type and up to six fields, padded to a fixed width so
+# readers can take them in fixed-size groups.
 def emit_display_batch:
-  (.[], ["batch_ok", "", "", "", "", "", ""]) |
-  if length != 7 or any(.[]; type != "string") then
+  (.[], ["batch_ok"]) |
+  if length < 1 or length > 7 or any(.[]; type != "string") then
     error("invalid display fields")
-  else .[] | display_nul_safe, "\u0000" end;
+  else (. + ["", "", "", "", "", ""])[0:7][] | display_nul_safe, "\u0000" end;
 
 def tool_call_display($tools):
   . as $call |
@@ -29,17 +31,17 @@ def tool_call_display($tools):
 
 def durable_display_fields($replay; $tools):
   if .type == "system" and $replay then
-    ["system", .content, "", "", "", "", ""]
+    ["system", .content]
   elif canonical_user_message then
-    if $replay then ["user", .content[0].text, "", "", "", "", ""] else empty end
+    if $replay then ["user", .content[0].text] else empty end
   elif canonical_assistant_message then
     (if $replay then
       ([(.content[] | select(.type == "reasoning") | .text)] | join("\n")) as $reasoning |
       (if .usage | has("reasoning_tokens") then (.usage.reasoning_tokens | tostring) else "" end) as $reasoning_tokens |
       ["assistant", ([.content[] | select(.type == "text") | .text] | join("")),
-       $reasoning, $reasoning_tokens, "", "", ""]
+       $reasoning, $reasoning_tokens]
     else empty end),
-    ["assistant_commit", "", "", "", "", "", ""],
+    ["assistant_commit"],
     (.content[] | select(.type == "tool_call") | . as $call |
       tool_call_display($tools) as $call_display |
       ["tool_call", .id,
@@ -47,7 +49,7 @@ def durable_display_fields($replay; $tools):
                  then " unsandboxed" else "" end)),
        $call_display.content,
        (($tools | map(select(.name == $call.name))[0].manifest.display.call.always_full // false) |
-         if . then "full" else "" end), $call_display.format, ""])
+         if . then "full" else "" end), $call_display.format])
   elif canonical_tool_result then
     . as $result |
     ($tools | map(select(.name == $result.name))[0].manifest.display.result // {}) as $display |
@@ -61,7 +63,7 @@ def durable_display_fields($replay; $tools):
   elif canonical_context then
     ["context", .hook,
       ([.tag, .prompt?] |
-        map(select(. != null and . != "")) | join(" ")), .content, "", "", ""]
+        map(select(. != null and . != "")) | join(" ")), .content]
   else
     empty
   end;
