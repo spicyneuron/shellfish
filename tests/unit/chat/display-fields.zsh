@@ -8,16 +8,22 @@ typeset summary_tools=$(jq -cn \
     {harness:{tools:[
       {name:"edit_file",manifest:$edit[0]},
       {name:"shell",manifest:($shell[0] |
-        .display.call.content=["$command"," (","$timeout","s)"])}]}}
+        .display.summary=["$command"])}]}}
 ')
 assert_equal notes.txt "$(jq -nr -L "$ROOT/lib" --argjson tools "$summary_tools" '
   include "chat/display-fields";
   {name:"edit_file",input:{file_path:"notes.txt",old_string:"large",new_string:"secret"}} |
-  tool_call_display($tools.harness.tools).content
+  tool_call_display($tools.harness.tools).summary
 ')"
-assert_equal 'make test (120s)' "$(jq -nr -L "$ROOT/lib" --argjson tools "$summary_tools" '
+assert_equal 'make test' "$(jq -nr -L "$ROOT/lib" --argjson tools "$summary_tools" '
   include "chat/display-fields";
-  {name:"shell",input:{command:"make test"}} | tool_call_display($tools.harness.tools).content
+  {name:"shell",input:{command:"make test"}} | tool_call_display($tools.harness.tools).summary
+')"
+assert_equal '' "$(jq -nr -L "$ROOT/lib" --argjson tools "$summary_tools" '
+  include "chat/display-fields";
+  {name:"shell",input:{command:"make test"}} |
+  tool_call_display([$tools.harness.tools[1] |
+    .manifest.display.summary=["$timeout"]]).summary
 ')"
 assert_equal json "$(jq -nr -L "$ROOT/lib" --argjson tools "$summary_tools" '
   include "chat/display-fields";
@@ -28,10 +34,9 @@ assert_equal plain "$(jq -nr -L "$ROOT/lib" --argjson tools "$summary_tools" '
   {name:"shell",input:{command:"true"}} | tool_call_display($tools.harness.tools).format
 ')"
 jq -e '
-  .harness.tools[0].manifest.display.result.exit_code == null and
-  .harness.tools[0].manifest.display.result.always_full == true and
-  .harness.tools[1].manifest.display.result.exit_code == true
-' <<<"$summary_tools" >/dev/null || fail 'tool exit-code display policy was not loaded'
+  .harness.tools[0].manifest.display.result == ["$result_full"] and
+  .harness.tools[1].manifest.display.result == ["$result_preview", "$exit_code"]
+' <<<"$summary_tools" >/dev/null || fail 'tool result display variables were not loaded'
 
 # Short events are padded to the fixed width; the batch always ends in a marker.
 typeset framed

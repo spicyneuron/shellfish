@@ -11,23 +11,28 @@ def emit_display_batch:
     error("invalid display fields")
   else (. + ["", "", "", "", "", ""])[0:7][] | display_nul_safe, "\u0000" end;
 
+def tool_input_display($call; $content):
+  [$content[] |
+    if startswith("$") then
+      .[1:] as $field |
+      if $field == "input_json" then
+        ($call.input | del(.request_sandbox_bypass, .sandbox_bypass_reason) | tojson)
+      elif $call.input | has($field) then
+        $call.input[$field] |
+        if . == null then "" elif type == "string" then . else tojson end
+      else ""
+      end
+    else . end] | join("");
+
 def tool_call_display($tools):
   . as $call |
   ($tools | map(select(.name == $call.name))[0].manifest // null) as $manifest |
-  if $manifest == null or (($manifest.display.call.content // []) | length) == 0 then
-    {content:($call.input | del(.request_sandbox_bypass, .sandbox_bypass_reason) | tojson),
-     format:"json"}
-  else
-    ($manifest.input_schema.properties // {} |
-      with_entries(select(.value | has("default")) | .value = .value.default)) as $defaults |
-    {content:([$manifest.display.call.content[] |
-      if startswith("$") then
-        .[1:] as $field |
-        (if $call.input | has($field) then $call.input[$field]
-         else $defaults[$field] end) |
-        if . == null then "" elif type == "string" then . else tojson end
-      else . end] | join("")), format:"plain"}
-  end;
+  ($manifest.display.summary // []) as $summary |
+  ($manifest.display.call // ["$input_json"]) as $content |
+  {summary:(tool_input_display($call; $summary) |
+      gsub("[[:space:]]+"; " ") | sub("^ "; "") | sub(" $"; "")),
+   content:tool_input_display($call; $content),
+   format:(if $content == ["$input_json"] then "json" else "plain" end)};
 
 def durable_display_fields($replay; $tools):
   if .type == "system" and $replay then
@@ -45,20 +50,22 @@ def durable_display_fields($replay; $tools):
     (.content[] | select(.type == "tool_call") | . as $call |
       tool_call_display($tools) as $call_display |
       ["tool_call", .id,
-       (.name + (if .input.request_sandbox_bypass? == true
-                 then " unsandboxed" else "" end)),
+       (.name + (if $call_display.summary == "" then ""
+                 else " · " + $call_display.summary end) +
+        (if .input.request_sandbox_bypass? == true then " · unsandboxed" else "" end)),
        $call_display.content,
-       (($tools | map(select(.name == $call.name))[0].manifest.display.call.always_full // false) |
-         if . then "full" else "" end), $call_display.format])
+       "", $call_display.format])
   elif canonical_tool_result then
     . as $result |
-    ($tools | map(select(.name == $result.name))[0].manifest.display.result // {}) as $display |
+    ($tools | map(select(.name == $result.name))[0].manifest.display.result //
+      ["$result_preview"]) as $display |
     # An empty status denotes a pending call; hidden denotes a completed call without a footer.
     ["tool_result", .call_id,
-      (if ($display.exit_code // false) or .exit_code != 0
+      (if ($display | index("$exit_code")) != null or .exit_code != 0
        then (.exit_code | tostring) else "hidden" end),
-      .content, (.result_type // ""),
-      (if ($display.always_full // false) then "full" else "" end),
+      (if any($display[]; . == "$result_preview" or . == "$result_full")
+       then .content else "" end), (.result_type // ""),
+      (if ($display | index("$result_full")) != null then "full" else "" end),
       (if .sandbox_blocked? == true then "blocked" else "" end)]
   elif canonical_context then
     ["context", .hook,

@@ -12,8 +12,9 @@
     }
   },
   "display": {
-    "call": {"content": ["$file_path"]},
-    "result": {"always_full": true}
+    "summary": ["$file_path"],
+    "call": [],
+    "result": ["$result_full"]
   },
   "sandbox": true,
   "allow_sandbox_bypass": true,

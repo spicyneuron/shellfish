@@ -19,9 +19,16 @@ def nul_free_string:
 
 def tool_manifest:
   . as $manifest |
-  def display_phase($fields):
-    type == "object" and ((keys - $fields) | length) == 0 and
-    ((.always_full // false) | type == "boolean");
+  def input_display($properties):
+    type == "array" and all(.[]; nul_free_string) and
+    all(.[] | select(startswith("$"));
+      .[1:] as $field |
+      $field == "input_json" or ($field != "" and ($properties | has($field))));
+  def result_display:
+    type == "array" and
+    all(.[]; IN("$result_preview", "$result_full", "$exit_code")) and
+    length == (unique | length) and
+    ([.[] | select(. == "$result_preview" or . == "$result_full")] | length) <= 1;
   def valid_result:
     .result as $result |
     ($result | type == "object" and keys == ["path_field", "type"]) and
@@ -43,15 +50,16 @@ def tool_manifest:
       has("request_sandbox_bypass") or has("sandbox_bypass_reason") | not) and
     ((.required // []) |
       index("request_sandbox_bypass") == null and index("sandbox_bypass_reason") == null)) and
-  ((.display // {}) as $display | (.input_schema.properties // {}) as $properties |
+  ((if has("display") then .display else {} end) as $display |
+    (.input_schema.properties // {}) as $properties |
     ($display | type == "object" and
-      (keys - ["call", "result"] | length) == 0 and
-      ((.call // {}) | display_phase(["always_full", "content"]) and
-        ((.content // []) | type == "array" and all(.[]; nul_free_string))) and
-      ((.result // {}) | display_phase(["always_full", "exit_code"]) and
-        ((.exit_code // false) | type == "boolean"))) and
-    all(($display.call.content // [])[] | select(startswith("$"));
-      .[1:] as $field | $field != "" and ($properties | has($field)))) and
+      (keys - ["summary", "call", "result"] | length) == 0 and
+      ((if $display | has("summary") then $display.summary else [] end) |
+        input_display($properties)) and
+      ((if $display | has("call") then $display.call else ["$input_json"] end) |
+        input_display($properties)) and
+      ((if $display | has("result") then $display.result else ["$result_preview"] end) |
+        result_display))) and
   (.sandbox | type == "boolean") and
   ((.allow_sandbox_bypass // false) | type == "boolean") and
   (if (.allow_sandbox_bypass // false) then .sandbox else true end) and

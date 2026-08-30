@@ -16,8 +16,9 @@
     }
   },
   "display": {
-    "call": {"content": ["$command"]},
-    "result": {"exit_code": true}
+    "summary": [],
+    "call": ["$command"],
+    "result": ["$result_preview", "$exit_code"]
   },
   "sandbox": true,
   "allow_sandbox_bypass": true

@@ -10,7 +10,11 @@
       "limit": {"type": "integer", "minimum": 1, "default": 500, "description": "Maximum number of lines to return"}
     }
   },
-  "display": {"call": {"content": ["$file_path"]}},
+  "display": {
+    "summary": ["$file_path"],
+    "call": [],
+    "result": ["$result_preview"]
+  },
   "sandbox": true,
   "allow_sandbox_bypass": true
 }

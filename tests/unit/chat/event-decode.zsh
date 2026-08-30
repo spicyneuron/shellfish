@@ -56,12 +56,16 @@ for error expected in \
   assert_equal "exec_error,$expected,batch_ok" "$order"
 done
 
+typeset read_runtime=$(jq -cn \
+  --slurpfile read "$ROOT/default/tools/read_file/tool.json" '
+  {harness:{tools:[{name:"read_file",manifest:$read[0]}]}}
+')
 order=$(print -r -- \
     '{"type":"message","role":"assistant","stop":"tool_calls","content":[{"type":"tool_call","id":"call_2","name":"read_file","input":{"file_path":"outside.txt","request_sandbox_bypass":true,"sandbox_bypass_reason":"test"}}]}' |
-  jq -jRs -L "$ROOT/lib" --argjson runtime null \
+  jq -jRs -L "$ROOT/lib" --argjson runtime "$read_runtime" \
     -f "$ROOT/lib/chat/event-decode.jq" |
   tr '\0' '\n' | sed '/^$/d' | paste -sd, -)
-assert_equal 'assistant_commit,tool_call,call_2,read_file unsandboxed,{"file_path":"outside.txt"},json,batch_ok' "$order"
+assert_equal 'assistant_commit,tool_call,call_2,read_file · outside.txt · unsandboxed,plain,batch_ok' "$order"
 
 order=$(print -r -- \
     '{"type":"context","tag":"user_prompt_submit","hook":"hook name","prompt":"prompt","status":0,"content":"body"}' |
@@ -93,7 +97,7 @@ order=$(print -r -- \
   jq -jRs -L "$ROOT/lib" --argjson runtime "$edit_runtime" \
     -f "$ROOT/lib/chat/event-decode.jq" |
   tr '\0' '\n' | sed '/^$/d' | paste -sd, -)
-assert_equal 'assistant_commit,tool_call,call_3,edit_file,notes.json,plain,batch_ok' "$order"
+assert_equal 'assistant_commit,tool_call,call_3,edit_file · notes.json,plain,batch_ok' "$order"
 
 order=$(print -r -- \
     '{"type":"message","role":"tool_result","call_id":"call_2","name":"edit_file","content":"@@ -1 +1 @@\n-old\n+new","exit_code":0,"result_type":"file_diff","sandbox_blocked":true}' |
