@@ -273,8 +273,12 @@ details.call > summary {
   border-left: 2px solid var(--error);
 }
 
-.exit {
+.notes {
   display: block;
+  color: var(--muted);
+}
+
+.notes.failed {
   color: var(--error);
 }
 

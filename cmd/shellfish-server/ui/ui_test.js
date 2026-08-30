@@ -17,6 +17,12 @@ const HEADER = {
   cwd: "/project",
   backend: { name: "test" },
   profile: { request: { model: "test-model" } },
+  harness: {
+    tools: [
+      { name: "shell", manifest: { display: { result: { exit_code: true } } } },
+      { name: "read_file", manifest: {} },
+    ],
+  },
 };
 const ASSISTANT = {
   type: "message",
@@ -525,8 +531,10 @@ test("keeps a tool result together with its sandbox notice", async () => {
   const call = find(page.output, "call")[0];
   const result = find(call, "result");
   assert.equal(result.length, 1);
-  assert.equal(result[0].textContent, "/project");
-  assert.equal(find(page.output, "note")[0].textContent, "Sandbox blocked an action");
+  assert.equal(findTag(result[0], "pre")[0].textContent, "/project");
+  // The shell manifest asks for its exit code, so the tail mirrors the terminal.
+  assert.equal(find(result[0], "notes")[0].textContent, "exit 0 · sandbox blocked");
+  assert.equal(find(page.output, "note").length, 0);
   assert.equal(find(page.output, "activity").length, 1);
   assert.equal(page.cancel.hidden, false);
 });

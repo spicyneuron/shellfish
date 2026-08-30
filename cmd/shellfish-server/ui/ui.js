@@ -42,6 +42,8 @@ let indicator = null;
 let lastRole = null;
 // Tool calls waiting for their result, by call ID.
 const calls = new Map();
+// Each tool's result display policy from the session header, by tool name.
+const resultDisplay = new Map();
 
 // -------------------------------------------------------------------- the DOM
 
@@ -336,6 +338,10 @@ function apply(frame) {
       const backend = safe((frame.backend || {}).name);
       model.textContent = backend ? backend + "/" + name : name;
       document.title = "shellfish " + safe(frame.cwd);
+      resultDisplay.clear();
+      for (const tool of (frame.harness || {}).tools || []) {
+        resultDisplay.set(tool.name, ((tool.manifest || {}).display || {}).result || {});
+      }
       return;
     }
     case "system":
@@ -457,11 +463,18 @@ function renderResult(frame) {
   hideIndicator();
   calls.delete(frame.call_id);
   const result = el(call, "div", frame.exit_code ? "result failed" : "result");
-  if (frame.exit_code) el(result, "span", "exit", "exit " + frame.exit_code);
+  // The notes trailing a result, matching the terminal's tail.
+  const notes = [];
+  if ((resultDisplay.get(frame.name) || {}).exit_code === true || frame.exit_code) {
+    notes.push("exit " + frame.exit_code);
+  }
+  if (frame.sandbox_blocked === true) notes.push("sandbox blocked");
+  if (notes.length) {
+    el(result, "span", frame.exit_code ? "notes failed" : "notes", notes.join(" · "));
+  }
   el(result, "pre", null, safe(frame.content));
   place(call);
-  if (frame.sandbox_blocked === true) note("Sandbox blocked an action");
-  else if (working) showIndicator();
+  if (working) showIndicator();
 }
 
 function applyState(frame) {
