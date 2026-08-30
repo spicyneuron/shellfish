@@ -17,8 +17,9 @@
   },
   "display": {
     "summary": [],
-    "call": ["$command"],
-    "result": ["$result_preview", "$exit_code"]
+    "call": {"content": ["$command"], "format": "sh"},
+    "permission_preview": {"content": ["$command"], "format": "sh"},
+    "result": {"content": ["$result_preview", "$exit_code"], "format": "plain"}
   },
   "sandbox": true,
   "allow_sandbox_bypass": true

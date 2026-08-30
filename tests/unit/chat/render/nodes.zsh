@@ -514,16 +514,22 @@ assert_equal 6 "$SF_PRESENT_NODE_FRONTIER[1]"
 sf_chat_reset
 sf_chat_add tool_call agent shell '{"command":"true"}'
 SF_PRESENT_NODE_FORMAT[REPLY]=json
+sf_chat_add tool_call agent shell 'if true; then print yes; fi'
+SF_PRESENT_NODE_FORMAT[REPLY]=sh
 sf_chat_add tool_call agent edit_file notes.txt
 SF_PRESENT_NODE_FORMAT[REPLY]=plain
 sf_chat_add tool_result agent '' $'@@ -1 +1 @@\n-old\n+new'
 SF_PRESENT_NODE_FORMAT[REPLY]=file_diff
+sf_chat_add tool_result agent '' '**output**'
+SF_PRESENT_NODE_FORMAT[REPLY]=md
 sf_chat_add tool_result agent '' output
 sf_chat_highlight_update
 [[ -n $SF_PRESENT_HIGHLIGHT_CACHE[1] ]] || fail 'JSON tool call was not highlighted'
-[[ -n $SF_PRESENT_HIGHLIGHT_CACHE[3] ]] || fail 'diff tool result was not highlighted'
-assert_equal plain "$SF_PRESENT_HIGHLIGHT_CACHE_LANGUAGE[2]"
-assert_equal plain "$SF_PRESENT_HIGHLIGHT_CACHE_LANGUAGE[4]"
+[[ -n $SF_PRESENT_HIGHLIGHT_CACHE[2] ]] || fail 'shell tool call was not highlighted'
+[[ -n $SF_PRESENT_HIGHLIGHT_CACHE[4] ]] || fail 'diff tool result was not highlighted'
+[[ -n $SF_PRESENT_HIGHLIGHT_CACHE[5] ]] || fail 'Markdown tool result was not highlighted'
+assert_equal plain "$SF_PRESENT_HIGHLIGHT_CACHE_LANGUAGE[3]"
+assert_equal plain "$SF_PRESENT_HIGHLIGHT_CACHE_LANGUAGE[6]"
 
 # Pruning drops what scrolled away, and a later scan appends beyond it using
 # absolute source offsets rather than restarting from zero.

@@ -24,11 +24,19 @@ def tool_manifest:
     all(.[] | select(startswith("$"));
       .[1:] as $field |
       $field == "input_json" or ($field != "" and ($properties | has($field))));
+  def display_format:
+    type == "string" and test("^[A-Za-z][A-Za-z0-9_+-]*$");
+  def input_preview($properties):
+    type == "object" and keys == ["content", "format"] and
+    (.content | input_display($properties)) and (.format | display_format);
   def result_display:
     type == "array" and
     all(.[]; IN("$result_preview", "$result_full", "$exit_code")) and
     length == (unique | length) and
     ([.[] | select(. == "$result_preview" or . == "$result_full")] | length) <= 1;
+  def result_preview:
+    type == "object" and keys == ["content", "format"] and
+    (.content | result_display) and (.format | display_format);
   def valid_result:
     .result as $result |
     ($result | type == "object" and keys == ["path_field", "type"]) and
@@ -53,13 +61,18 @@ def tool_manifest:
   ((if has("display") then .display else {} end) as $display |
     (.input_schema.properties // {}) as $properties |
     ($display | type == "object" and
-      (keys - ["summary", "call", "result"] | length) == 0 and
+      (keys - ["summary", "call", "permission_preview", "result"] | length) == 0 and
       ((if $display | has("summary") then $display.summary else [] end) |
         input_display($properties)) and
-      ((if $display | has("call") then $display.call else ["$input_json"] end) |
-        input_display($properties)) and
-      ((if $display | has("result") then $display.result else ["$result_preview"] end) |
-        result_display))) and
+      ((if $display | has("call") then $display.call
+        else {content:["$input_json"],format:"json"} end) |
+        input_preview($properties)) and
+      ((if $display | has("permission_preview") then $display.permission_preview
+        else {content:["$input_json"],format:"json"} end) |
+        input_preview($properties)) and
+      ((if $display | has("result") then $display.result
+        else {content:["$result_preview"],format:"plain"} end) |
+        result_preview))) and
   (.sandbox | type == "boolean") and
   ((.allow_sandbox_bypass // false) | type == "boolean") and
   (if (.allow_sandbox_bypass // false) then .sandbox else true end) and

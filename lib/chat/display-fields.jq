@@ -34,12 +34,18 @@ def tool_call_display($tools):
   . as $call |
   ($tools | map(select(.name == $call.name))[0].manifest // null) as $manifest |
   ($manifest.display.summary // []) as $summary |
-  ($manifest.display.call // ["$input_json"]) as $content |
+  ($manifest.display.call // {content:["$input_json"],format:"json"}) as $preview |
   {summary:([$summary[] | tool_input_display($call; [.])] +
       [if $call.input.request_sandbox_bypass? == true then "unsandboxed" else "" end] |
       display_summary),
-   content:tool_input_display($call; $content),
-   format:(if $content == ["$input_json"] then "json" else "plain" end)};
+   content:tool_input_display($call; $preview.content),
+   format:$preview.format};
+
+def tool_permission_display($tools):
+  . as $call |
+  ($tools | map(select(.name == $call.name))[0].manifest.display.permission_preview //
+    {content:["$input_json"],format:"json"}) as $preview |
+  {content:tool_input_display($call; $preview.content), format:$preview.format};
 
 def durable_display_fields($replay; $tools):
   if .type == "system" and $replay then
@@ -63,14 +69,14 @@ def durable_display_fields($replay; $tools):
   elif canonical_tool_result then
     . as $result |
     ($tools | map(select(.name == $result.name))[0].manifest.display.result //
-      ["$result_preview"]) as $display |
+      {content:["$result_preview"],format:"plain"}) as $display |
     # An empty status denotes a pending call; hidden denotes a completed call without a footer.
     ["tool_result", .call_id,
-      (if ($display | index("$exit_code")) != null or .exit_code != 0
+      (if ($display.content | index("$exit_code")) != null or .exit_code != 0
        then (.exit_code | tostring) else "hidden" end),
-      (if any($display[]; . == "$result_preview" or . == "$result_full")
-       then .content else "" end), (.result_type // ""),
-      (if ($display | index("$result_full")) != null then "full" else "" end),
+      (if any($display.content[]; . == "$result_preview" or . == "$result_full")
+       then .content else "" end), (.result_type // $display.format),
+      (if ($display.content | index("$result_full")) != null then "full" else "" end),
       (if .sandbox_blocked? == true then "blocked" else "" end)]
   elif canonical_context then
     ["context", .hook,

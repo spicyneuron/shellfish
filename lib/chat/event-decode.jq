@@ -48,12 +48,11 @@ def event_fields:
   elif .type == "_hook_display" then
     ["hook_display", .event, .hook, .text]
   elif .type == "_tool_permission_request" then
-    ((if .tool.name == "shell" then [.tool.input.command, "sh"]
-      else [(.tool.input | del(.request_sandbox_bypass, .sandbox_bypass_reason) | tojson), "json"]
-      end) as [$preview, $language] |
+    (.tool | tool_permission_display($runtime.harness.tools // [])) as $preview |
      ["permission_request", .id, .tool.name,
-      (if ($preview | length) > 1000 then $preview[0:1000] + "…" else $preview end),
-      .reason, $language])
+      (if ($preview.content | length) > 1000
+       then $preview.content[0:1000] + "…" else $preview.content end),
+      .reason, $preview.format]
   elif .type == "_handoff" and
       (.argv | type == "array" and length > 0 and
        (.[0] | type == "string" and length > 0) and

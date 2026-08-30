@@ -29,13 +29,15 @@ assert_equal json "$(jq -nr -L "$ROOT/lib" --argjson tools "$summary_tools" '
   include "chat/display-fields";
   {name:"unknown",input:{value:1}} | tool_call_display($tools.harness.tools).format
 ')"
-assert_equal plain "$(jq -nr -L "$ROOT/lib" --argjson tools "$summary_tools" '
+assert_equal sh "$(jq -nr -L "$ROOT/lib" --argjson tools "$summary_tools" '
   include "chat/display-fields";
   {name:"shell",input:{command:"true"}} | tool_call_display($tools.harness.tools).format
 ')"
 jq -e '
-  .harness.tools[0].manifest.display.result == ["$result_full"] and
-  .harness.tools[1].manifest.display.result == ["$result_preview", "$exit_code"]
+  .harness.tools[0].manifest.display.result.content == ["$result_full"] and
+  .harness.tools[1].manifest.display.result.content == ["$result_preview", "$exit_code"] and
+  .harness.tools[1].manifest.display.permission_preview ==
+    {content:["$command"],format:"sh"}
 ' <<<"$summary_tools" >/dev/null || fail 'tool result display variables were not loaded'
 
 # Short events are padded to the fixed width; the batch always ends in a marker.

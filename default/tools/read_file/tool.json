@@ -12,8 +12,9 @@
   },
   "display": {
     "summary": ["$file_path"],
-    "call": [],
-    "result": ["$result_preview"]
+    "call": {"content": [], "format": "plain"},
+    "permission_preview": {"content": ["$file_path"], "format": "plain"},
+    "result": {"content": ["$result_preview"], "format": "plain"}
   },
   "sandbox": true,
   "allow_sandbox_bypass": true

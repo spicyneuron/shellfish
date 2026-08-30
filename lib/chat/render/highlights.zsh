@@ -616,11 +616,11 @@ sf_chat_highlight_update() {
     case $SF_PRESENT_NODE_TYPE[node] in
       message|reasoning|injection) language=markdown ;;
       tool_call) language=${SF_PRESENT_NODE_FORMAT[node]:-json} ;;
-      tool_result)
-        [[ $SF_PRESENT_NODE_FORMAT[node] == file_diff ]] && language=diff || language=plain
-        ;;
+      tool_result) language=${SF_PRESENT_NODE_FORMAT[node]:-plain} ;;
       *) continue ;;
     esac
+    [[ $language != file_diff ]] || language=diff
+    [[ $language != md ]] || language=markdown
     # A node's format is fixed when it is created, so this only ever runs the
     # first time a node is seen, when its frontier is still unset.
     if [[ ${SF_PRESENT_HIGHLIGHT_CACHE_LANGUAGE[node]-} != $language ]]; then

@@ -60,6 +60,10 @@ typeset read_runtime=$(jq -cn \
   --slurpfile read "$ROOT/default/tools/read_file/tool.json" '
   {harness:{tools:[{name:"read_file",manifest:$read[0]}]}}
 ')
+typeset shell_runtime=$(jq -cn \
+  --slurpfile shell "$ROOT/default/tools/shell/tool.json" '
+  {harness:{tools:[{name:"shell",manifest:$shell[0]}]}}
+')
 order=$(print -r -- \
     '{"type":"message","role":"assistant","stop":"tool_calls","content":[{"type":"tool_call","id":"call_2","name":"read_file","input":{"file_path":"outside.txt","request_sandbox_bypass":true,"sandbox_bypass_reason":"test"}}]}' |
   jq -jRs -L "$ROOT/lib" --argjson runtime "$read_runtime" \
@@ -76,17 +80,17 @@ assert_equal 'context,hook name,user_prompt_submit · prompt,body,batch_ok' "$or
 
 order=$(print -r -- \
     '{"type":"_tool_permission_request","id":"permission_1","reason":"host access","tool":{"name":"shell","input":{"command":"echo hi","request_sandbox_bypass":true}}}' |
-  jq -jRs -L "$ROOT/lib" --argjson runtime null \
+  jq -jRs -L "$ROOT/lib" --argjson runtime "$shell_runtime" \
     -f "$ROOT/lib/chat/event-decode.jq" |
   tr '\0' '\n' | sed '/^$/d' | paste -sd, -)
 assert_equal 'permission_request,permission_1,shell,echo hi,host access,sh,batch_ok' "$order"
 
 order=$(print -r -- \
     '{"type":"_tool_permission_request","id":"permission_2","reason":"host access","tool":{"name":"read_file","input":{"file_path":"outside.txt","request_sandbox_bypass":true,"sandbox_bypass_reason":"host access"}}}' |
-  jq -jRs -L "$ROOT/lib" --argjson runtime null \
+  jq -jRs -L "$ROOT/lib" --argjson runtime "$read_runtime" \
     -f "$ROOT/lib/chat/event-decode.jq" |
   tr '\0' '\n' | sed '/^$/d' | paste -sd, -)
-assert_equal 'permission_request,permission_2,read_file,{"file_path":"outside.txt"},host access,json,batch_ok' "$order"
+assert_equal 'permission_request,permission_2,read_file,outside.txt,host access,plain,batch_ok' "$order"
 
 typeset edit_runtime=$(jq -cn \
   --slurpfile edit "$ROOT/default/tools/edit_file/tool.json" '
