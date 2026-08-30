@@ -1,0 +1,19 @@
+{
+  "description": "Search the web through Exa and return text from the top results. The query is sent to Exa AI. Use semantically rich descriptions of the desired pages rather than short keyword lists.",
+  "input_schema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["query"],
+    "properties": {
+      "query": {"type": "string", "minLength": 1, "description": "Natural-language description of the information or pages to find"},
+      "num_results": {"type": "integer", "minimum": 1, "maximum": 10, "description": "Number of results to return (default: 10)"}
+    }
+  },
+  "display": {
+    "summary": ["$query"],
+    "call": {"content": [], "format": "plain"},
+    "permission_preview": {"content": ["$query"], "format": "plain"},
+    "result": {"content": ["$result_preview"], "format": "md"}
+  },
+  "sandbox": true
+}

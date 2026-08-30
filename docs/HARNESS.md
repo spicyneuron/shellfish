@@ -24,6 +24,7 @@ These are ordinary component files under `default/prompts/system/`; a user confi
 - `read_file` reads project text files with line numbers.
 - `edit_file` makes targeted replacements in existing project text files.
 - `write_file` creates new project text files.
+- `search_web` uses Exa's anonymous MCP endpoint to search the web.
 - `fetch_url` uses Jina Reader to fetch an HTTP(S) website as Markdown.
 - `shell` runs one Zsh command in the session working directory.
 

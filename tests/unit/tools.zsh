@@ -70,6 +70,64 @@ jq -e '
   .filesystem.defaultDenyRead == true
 ' "$ROOT/default/tools/fetch_url/fence.jsonc" >/dev/null
 
+# The web search tool makes one fixed anonymous MCP call and decodes its SSE result.
+mkdir "$tmp/exa-bin"
+cat >"$tmp/exa-bin/curl" <<'ZSH'
+#!/usr/bin/env zsh
+print -rl -- "$@" >"$EXA_TEST_ARGS"
+if [[ -n ${EXA_TEST_RESPONSE-} ]]; then
+  print -r -- "$EXA_TEST_RESPONSE"
+else
+  cat <<'EOF'
+event: message
+data: {"result":{"content":[{"type":"text","text":"# search result"}]},"jsonrpc":"2.0","id":1}
+EOF
+fi
+exit "${EXA_TEST_STATUS:-0}"
+ZSH
+chmod +x "$tmp/exa-bin/curl"
+typeset exa_args="$tmp/exa.args" exa_output
+exa_output=$(PATH="$tmp/exa-bin:$PATH" EXA_TEST_ARGS="$exa_args" \
+  "$ROOT/default/tools/search_web/run" \
+  <<<'{"query":"current shellfish CLI documentation","num_results":3}')
+assert_equal '# search result' "$exa_output"
+typeset -a expected_exa_args=(
+  --disable --silent --show-error --fail-with-body --connect-timeout 10 --max-time 60
+  --request POST
+  --header 'Content-Type: application/json'
+  --header 'Accept: application/json, text/event-stream'
+  --header 'MCP-Protocol-Version: 2025-06-18'
+  --header 'x-exa-source: shellfish'
+  --data-binary '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"web_search_exa","arguments":{"query":"current shellfish CLI documentation","numResults":3}}}'
+  -- 'https://mcp.exa.ai/mcp?tools=web_search_exa'
+)
+assert_equal "${(F)expected_exa_args}" "$(<"$exa_args")"
+if PATH="$tmp/exa-bin:$PATH" EXA_TEST_ARGS="$exa_args" \
+    "$ROOT/default/tools/search_web/run" \
+    <<<'{"query":"docs","num_results":1.5}' >/dev/null 2>&1; then
+  fail 'search_web accepted a fractional result count'
+fi
+if PATH="$tmp/exa-bin:$PATH" EXA_TEST_ARGS="$exa_args" \
+    "$ROOT/default/tools/search_web/run" \
+    <<<'{"query":"docs","extra":true}' >/dev/null 2>&1; then
+  fail 'search_web accepted an unknown input field'
+fi
+typeset exa_error='{"jsonrpc":"2.0","id":1,"error":{"code":-32000,"message":"rate limited"}}'
+if PATH="$tmp/exa-bin:$PATH" EXA_TEST_ARGS="$exa_args" EXA_TEST_RESPONSE="$exa_error" \
+    "$ROOT/default/tools/search_web/run" <<<'{"query":"docs"}' >/dev/null 2>&1; then
+  fail 'search_web accepted an MCP error response'
+fi
+if PATH="$tmp/exa-bin:$PATH" EXA_TEST_ARGS="$exa_args" EXA_TEST_STATUS=22 \
+    "$ROOT/default/tools/search_web/run" <<<'{"query":"docs"}' >/dev/null 2>&1; then
+  fail 'search_web hid a curl failure'
+fi
+jq -e '
+  .network.allowedDomains == ["mcp.exa.ai"] and
+  .network.allowLocalBinding == false and
+  .network.allowLocalOutbound == false and
+  .filesystem.defaultDenyRead == true
+' "$ROOT/default/tools/search_web/fence.jsonc" >/dev/null
+
 # Tool execution preserves the caller's home in its otherwise clean environment.
 load_tools "$stored_runtime"
 sf_test_tool_execute "$(jq -cn --arg command 'print -rn -- "$HOME"' \

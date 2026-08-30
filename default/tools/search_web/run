@@ -1,0 +1,51 @@
+#!/usr/bin/env zsh
+set -euo pipefail
+
+(($# == 0)) || { printf 'Usage: search_web\n' >&2; exit 2; }
+payload=$(jq -ec '
+  select(type == "object" and
+    (.query | type == "string" and length > 0 and index("\u0000") == null) and
+    ((has("num_results") | not) or
+      (.num_results | type == "number" and floor == . and . >= 1 and . <= 10)) and
+    ((keys - ["num_results", "query"]) | length == 0)) |
+  {
+    jsonrpc: "2.0",
+    id: 1,
+    method: "tools/call",
+    params: {
+      name: "web_search_exa",
+      arguments: ({query: .query} +
+        if has("num_results") then {numResults: .num_results} else {} end)
+    }
+  }
+') || { printf 'search_web: invalid input\n' >&2; exit 2; }
+
+curl \
+  --disable \
+  --silent \
+  --show-error \
+  --fail-with-body \
+  --connect-timeout 10 \
+  --max-time 60 \
+  --request POST \
+  --header 'Content-Type: application/json' \
+  --header 'Accept: application/json, text/event-stream' \
+  --header 'MCP-Protocol-Version: 2025-06-18' \
+  --header 'x-exa-source: shellfish' \
+  --data-binary "$payload" \
+  -- \
+  'https://mcp.exa.ai/mcp?tools=web_search_exa' |
+  jq -Rers '
+    . as $body |
+    [split("\n")[] |
+      select(startswith("data: ")) |
+      ltrimstr("data: ") |
+      fromjson] as $events |
+    (if ($events | length) > 0 then $events[-1] else ($body | fromjson) end) |
+    [.result.content[]? | select(.type == "text") | .text] as $text |
+    if .error then error(.error.message // "Exa returned an error")
+    elif .result.isError == true then error($text | join("\n"))
+    elif (.result.content | type) != "array" then error("invalid Exa response")
+    else $text | join("\n")
+    end
+  '

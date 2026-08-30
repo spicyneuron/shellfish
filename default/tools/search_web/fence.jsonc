@@ -1,0 +1,12 @@
+{
+  "network": {
+    "allowedDomains": ["mcp.exa.ai"],
+    "deniedDomains": [],
+    "allowLocalBinding": false,
+    "allowLocalOutbound": false
+  },
+  "filesystem": {
+    "defaultDenyRead": true
+  },
+  "command": {"useDefaults": true}
+}

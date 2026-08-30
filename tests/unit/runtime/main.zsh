@@ -83,7 +83,10 @@ jq -e --arg root "$ROOT/default/hooks/session_start" \
     ($root + "/add_project_instructions")
   ] and
   (.harness.tools | map(.name)) ==
-    ["read_file", "edit_file", "write_file", "fetch_url", "shell"] and
+    ["read_file", "edit_file", "write_file", "search_web", "fetch_url", "shell"] and
+  (.harness.tools[] | select(.name == "search_web") |
+    .command == ($tools + "/search_web/run") and
+    .settings.network.allowedDomains == ["mcp.exa.ai"]) and
   (.harness.tools[] | select(.name == "fetch_url") |
     .command == ($tools + "/fetch_url/run") and
     .settings.network.allowedDomains == ["r.jina.ai"])
