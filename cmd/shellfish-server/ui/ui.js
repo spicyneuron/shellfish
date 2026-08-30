@@ -128,6 +128,15 @@ function section(role) {
   return heading;
 }
 
+function summary(parent, sigil, heading, secondary) {
+  const line = el(parent, "span", "summary-line");
+  el(line, "span", "sigil", sigil);
+  el(line, "strong", null, safe(heading));
+  if (secondary !== undefined) {
+    line.append(document.createTextNode(" · " + safe(secondary)));
+  }
+}
+
 function showIndicator() {
   if (indicator) return;
   const previousRole = lastRole;
@@ -156,31 +165,22 @@ function hideIndicator() {
   indicator = null;
 }
 
-function collapsible(parent, summary, text, kind, secondary) {
+function collapsible(parent, sigil, heading, text, kind, secondary) {
   const details = el(parent, "details", kind);
-  const heading = el(details, "summary");
-  if (secondary !== undefined) {
-    el(heading, "strong", null, summary);
-    heading.append(document.createTextNode(" " + secondary));
-  } else {
-    heading.textContent = summary;
-  }
+  summary(el(details, "summary"), sigil, heading, secondary);
   el(details, "pre", null, safe(text));
 }
 
 function note(text, kind, heading, secondary) {
   hideIndicator();
   const article = record(kind ? "note " + kind : "note", null);
-  if (heading) {
-    const title = el(article, "h2");
-    if (secondary !== undefined) {
-      el(title, "strong", null, safe(heading));
-      title.append(document.createTextNode(" " + safe(secondary)));
-    } else {
-      title.textContent = safe(heading);
-    }
+  if (!heading) {
+    heading = text;
+    text = "";
   }
-  el(article, "pre", null, safe(text));
+  const title = el(article, "h2");
+  summary(title, kind === "error" ? "✕" : "ℹ", heading, secondary);
+  if (text) el(article, "pre", null, safe(text));
   place(article);
   if (working) showIndicator();
 }
@@ -397,7 +397,20 @@ function apply(frame) {
       section("system");
       return renderCollapsed("system", "system prompt", frame.content);
     case "context":
-      return renderCollapsed("context", frame.hook, frame.content, frame.tag);
+      if (frame.tag === "user_prompt_submit") {
+        hideIndicator();
+        section("user");
+      }
+      return renderCollapsed(
+        "context",
+        frame.hook,
+        frame.content,
+        [frame.tag, frame.prompt]
+          .filter((value) => value !== undefined)
+          .map((value) => safe(value).replace(/\s+/g, " ").trim())
+          .filter(Boolean)
+          .join(" · "),
+      );
     case "message":
       return renderMessage(frame);
     case "state":
@@ -462,8 +475,7 @@ function apply(frame) {
 function renderCollapsed(kind, heading, content, secondary) {
   hideIndicator();
   const article = record(kind, null);
-  const label = secondary === undefined ? undefined : safe(secondary);
-  collapsible(article, safe(heading), content, null, label);
+  collapsible(article, "↪", heading, content, null, secondary);
   place(article);
   if (working) showIndicator();
 }
@@ -497,7 +509,7 @@ function renderMessage(frame) {
     const part = parts[partIndex];
     const reasoning = part.type === "reasoning" ? trimBoundaryNewlines(part.text) : "";
     if (reasoning) {
-      collapsible(article, "reasoning", reasoning, "reasoning");
+      collapsible(article, "✎", "Reasoning", reasoning, "reasoning");
     } else if (part.type === "text" && displayChunks[partIndex]) {
       markdown(el(article, "pre", "text"), displayChunks[partIndex]);
     } else if (part.type === "tool_call") {
@@ -511,7 +523,7 @@ function renderMessage(frame) {
 
 function renderCall(parent, call) {
   const details = el(parent, "details", "call");
-  el(details, "summary", null, safe(call.name));
+  summary(el(details, "summary"), "⛭", call.name);
   // A shell command reads as the shell; anything else is its own arguments.
   const command = call.input && typeof call.input.command === "string";
   highlight(el(details, "pre", "input"), safe(inputText(call.input)), command ? "sh" : "json");

@@ -134,11 +134,12 @@ body:has(#code:not([hidden])) #prompt {
 .record h2 {
   margin: 0;
   font-size: 1em;
-  font-weight: bold;
+  font-weight: normal;
   color: var(--muted);
 }
 
 .record.permission h2 {
+  font-weight: bold;
   color: var(--permission);
 }
 
@@ -146,7 +147,11 @@ body:has(#code:not([hidden])) #prompt {
   display: flex;
   align-items: center;
   gap: 0.5rem;
+  margin: 0;
   font-size: 1em;
+}
+
+.section-role {
   font-weight: bold;
 }
 
@@ -251,6 +256,20 @@ details[open] > * + * {
 summary {
   cursor: pointer;
   color: var(--muted);
+  list-style: none;
+}
+
+summary::-webkit-details-marker {
+  display: none;
+}
+
+.summary-line {
+  display: inline-flex;
+  gap: 0.5em;
+}
+
+.sigil {
+  flex: none;
 }
 
 details.call > summary,
@@ -258,30 +277,15 @@ details.reasoning > summary {
   color: inherit;
 }
 
-.record.system summary {
-  font-weight: bold;
-}
-
 details > pre,
 .result {
   margin-top: 0;
-  padding: 0.35rem 0.5rem;
-  background: var(--details);
-  border-radius: 4px;
   max-height: 24rem;
   overflow: auto;
 }
 
 details.call {
   color: var(--tool);
-}
-
-details.call > summary {
-  font-weight: bold;
-}
-
-.result.failed {
-  border-left: 2px solid var(--error);
 }
 
 .notes {
@@ -297,6 +301,7 @@ details.call > summary {
   color: var(--muted);
 }
 
+.note.error h2,
 .note.error pre {
   color: var(--error);
 }

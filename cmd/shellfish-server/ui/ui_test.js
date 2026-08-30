@@ -388,19 +388,55 @@ test("copies the latest or selected derived section locally", async () => {
   page.submit("/copy");
   await page.waitFor(() => page.copied.length === 2, "latest clipboard write");
   assert.deepEqual(page.copied, ["\n  question\t\n", "\n\n\n\tanswer\n\ncontinued\n\n"]);
+  assert.equal(findTag(find(page.output, "note")[0], "h2")[0].textContent, "ℹCopied.");
   assert.equal(page.posts.length, 0);
 });
 
-test("labels context with the script before the hook", async () => {
+test("labels context with its hook, tag, and prompt", async () => {
   const page = await idle();
   await page.send({
     type: "context",
     tag: "session_start",
     hook: "add_environment",
+    prompt: "  project\n context ",
+    status: 0,
     content: "environment",
   });
   const summary = findTag(find(page.output, "context")[0], "summary")[0];
-  assert.equal(summary.textContent, "add_environment session_start");
+  assert.equal(summary.textContent, "↪add_environment · session_start · project context");
+});
+
+test("puts prompt context under a user heading", async () => {
+  const page = await idle();
+  await page.send(
+    { type: "state", working: true },
+    {
+      type: "context",
+      tag: "user_prompt_submit",
+      hook: "add_context",
+      content: "injected",
+    },
+    { type: "message", role: "user", content: [{ type: "text", text: "prompt" }] },
+  );
+  assert.deepEqual(
+    find(page.output, "section").map((heading) => heading.textContent),
+    ["user1", "agent2"],
+  );
+  assert.equal(find(page.output, "activity").length, 1);
+});
+
+test("decorates reasoning and tools like the terminal", async () => {
+  const page = await idle();
+  await page.send({
+    ...ASSISTANT,
+    stop: "tool_calls",
+    content: [
+      { type: "reasoning", text: "thinking" },
+      { type: "tool_call", id: "call_1", name: "shell", input: { command: "pwd" } },
+    ],
+  });
+  assert.equal(findTag(find(page.output, "reasoning")[0], "summary")[0].textContent, "✎Reasoning");
+  assert.equal(findTag(find(page.output, "call")[0], "summary")[0].textContent, "⛭shell");
 });
 
 test("leaves deltas out of the transcript and draws the record once", async () => {
@@ -461,10 +497,10 @@ test("separates notice titles from their bodies", async () => {
     { type: "_exec_error", message: "recoverable" },
   );
   const notes = find(page.output, "note");
-  assert.equal(findTag(notes[0], "h2")[0].textContent, "\ufffdcheck stop");
+  assert.equal(findTag(notes[0], "h2")[0].textContent, "ℹ\ufffdcheck · stop");
   assert.equal(findTag(findTag(notes[0], "h2")[0], "strong")[0].textContent, "\ufffdcheck");
   assert.equal(findTag(notes[0], "pre")[0].textContent, "done");
-  assert.equal(findTag(notes[1], "h2")[0].textContent, "Turn failed");
+  assert.equal(findTag(notes[1], "h2")[0].textContent, "✕Turn failed");
   assert.equal(findTag(notes[1], "pre")[0].textContent, "recoverable");
 });
 
@@ -496,7 +532,7 @@ test("labels actionable exec errors", async () => {
   for (const [message, heading, body = message] of errors) {
     await page.send({ type: "_exec_error", message });
     const shown = find(page.output, "note").at(-1);
-    assert.equal(findTag(shown, "h2")[0].textContent, heading);
+    assert.equal(findTag(findTag(shown, "h2")[0], "strong")[0].textContent, heading);
     assert.equal(findTag(shown, "pre")[0].textContent, body);
   }
 });
