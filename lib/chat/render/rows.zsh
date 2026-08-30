@@ -411,6 +411,12 @@ sf_chat_rows() {
           if (( content_start >= 0 )); then
             (( content_start++, content_end++ ))
           fi
+          if [[ $type == section ]]; then
+            (( section_start++, section_end++ ))
+            if (( section_id_start >= 0 )); then
+              (( section_id_start++, section_id_end++ ))
+            fi
+          fi
         fi
       fi
       if (( previewed && ! collapsed && ${#body} )); then

@@ -346,6 +346,14 @@ sf_chat_rows 20 20
 assert_equal '─ user ───────── 1 ─' "$SF_PRESENT_ROW_TEXT[1]"
 assert_equal '0 2 fg=8 2 7 fg=1,bold 7 20 fg=8 17 18 fg=9' "$SF_PRESENT_ROW_HIGHLIGHTS[1]"
 
+sf_chat_event assistant reply
+sf_chat_rows 20 20
+integer agent_section=${SF_PRESENT_ROW_KIND[(i)section.agent]}
+assert_equal '─ agent ──────── 2 ─' "$SF_PRESENT_ROW_TEXT[agent_section]"
+assert_equal '0 2 fg=8 8 20 fg=8 17 18 fg=9' "$SF_PRESENT_ROW_HIGHLIGHTS[agent_section]"
+
+sf_chat_reset
+sf_chat_event user hello
 sf_chat_rows 3 20
 assert_equal '0 1 fg=8|0 3 fg=1,bold|0 2 fg=1,bold||0 3 fg=2|0 2 fg=2' \
   "${(j:|:)SF_PRESENT_ROW_HIGHLIGHTS}"
