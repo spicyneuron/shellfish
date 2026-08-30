@@ -126,7 +126,7 @@ jq -e '.content == "L1-1 of 1\n1\talpha\n"' <<<"$REPLY" >/dev/null
 sf_test_tool_execute '{"id":"read_empty","name":"read_file","input":{"file_path":"empty.txt"}}' 0
 jq -e '.content == "(empty)\n"' <<<"$REPLY" >/dev/null
 sf_test_tool_execute '{"id":"edit_1","name":"edit_file","input":{"file_path":"file-tool.txt","old_string":"alpha","new_string":"beta"}}' 0
-jq -e '(has("result_type") | not) and (.content | startswith("@@ -1 +1 @@\n") and contains("-alpha") and contains("+beta"))' \
+jq -e '.content | startswith("@@ -1 +1 @@\n") and contains("-alpha") and contains("+beta")' \
   <<<"$REPLY" >/dev/null
 print -r -- $'one\ntwo\nthree\nfour\nfive\nsix\nseven' >"$tmp/context-diff.txt"
 sf_test_tool_execute '{"id":"edit_context","name":"edit_file","input":{"file_path":"context-diff.txt","old_string":"four","new_string":"changed"}}' 0
@@ -142,7 +142,7 @@ jq -e '.content | length == 64 and startswith("[output truncated]\n")' \
   <<<"$REPLY" >/dev/null
 tool_max_capture=$(jq -r '.harness.max_capture_bytes' <<<"$file_runtime")
 sf_test_tool_execute '{"id":"edit_2","name":"edit_file","input":{"file_path":"file-tool.txt","old_string":"beta","new_string":"beta"}}' 0
-jq -e '.content == "edit_file: file-tool.txt is already up to date\n" and (has("result_type") | not)' \
+jq -e '.content == "edit_file: file-tool.txt is already up to date\n"' \
   <<<"$REPLY" >/dev/null
 sf_test_tool_execute '{"id":"write_1","name":"write_file","input":{"file_path":"created.txt","content":"created\n"}}' 0
 jq -e '.content | startswith("@@ -0,0 +1 @@\n") and contains("+created")' \

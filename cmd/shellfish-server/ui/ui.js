@@ -594,7 +594,7 @@ function renderResult(frame) {
     el(result, "span", frame.exit_code ? "notes failed" : "notes", notes.join(" · "));
   }
   if (display.content.includes("$result_preview") || display.content.includes("$result_full")) {
-    renderFormatted(el(result, "span", "content"), safe(frame.content), frame.result_type || display.format);
+    renderFormatted(el(result, "span", "content"), safe(frame.content), display.format);
   }
   place(call);
   if (working) showIndicator();

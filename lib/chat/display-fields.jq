@@ -75,7 +75,7 @@ def durable_display_fields($replay; $tools):
       (if ($display.content | index("$exit_code")) != null or .exit_code != 0
        then (.exit_code | tostring) else "hidden" end),
       (if any($display.content[]; . == "$result_preview" or . == "$result_full")
-       then .content else "" end), (.result_type // $display.format),
+       then .content else "" end), $display.format,
       (if ($display.content | index("$result_full")) != null then "full" else "" end),
       (if .sandbox_blocked? == true then "blocked" else "" end)]
   elif canonical_context then

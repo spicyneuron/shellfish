@@ -41,6 +41,17 @@ const HEADER = {
           },
         },
       },
+      {
+        name: "edit_file",
+        manifest: {
+          display: {
+            summary: ["$file_path"],
+            call: { content: [], format: "plain" },
+            permission_preview: { content: ["$file_path"], format: "plain" },
+            result: { content: ["$result_full"], format: "file_diff" },
+          },
+        },
+      },
       { name: "fallback", manifest: {} },
     ],
   },
@@ -671,7 +682,14 @@ test("keeps a tool result together with its sandbox notice", async () => {
     type: "message",
     role: "assistant",
     stop: "tool_calls",
-    content: [{ type: "tool_call", id: "call_1", name: "shell", input: { command: "pwd" } }],
+    content: [
+      {
+        type: "tool_call",
+        id: "call_1",
+        name: "edit_file",
+        input: { file_path: "notes.txt", old_string: "old", new_string: "new" },
+      },
+    ],
   });
   assert.equal(find(page.output, "call").length, 1);
   assert.equal(find(page.output, "activity").length, 1);
@@ -681,10 +699,9 @@ test("keeps a tool result together with its sandbox notice", async () => {
     type: "message",
     role: "tool_result",
     call_id: "call_1",
-    name: "shell",
+    name: "edit_file",
     content: "@@ -1 +1 @@\n-old\n+new",
     exit_code: 0,
-    result_type: "file_diff",
     sandbox_blocked: true,
   });
   const call = find(page.output, "call")[0];
@@ -694,8 +711,7 @@ test("keeps a tool result together with its sandbox notice", async () => {
   assert.match(result[0].textContent, /\+new$/);
   assert.equal(find(result[0], "diff-removed").length, 1);
   assert.equal(find(result[0], "diff-added").length, 1);
-  // The shell manifest asks for its exit code, so the tail mirrors the terminal.
-  assert.equal(find(result[0], "notes")[0].textContent, "exit 0 · sandbox blocked");
+  assert.equal(find(result[0], "notes")[0].textContent, "sandbox blocked");
   assert.equal(find(page.output, "note").length, 0);
   assert.equal(find(page.output, "activity").length, 1);
   assert.equal(page.cancel.hidden, false);

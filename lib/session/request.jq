@@ -34,7 +34,7 @@ def request_messages:
           .content += (if .content == "" then "" else "\n\n" end) +
             "Sandbox notice: The sandbox blocked one or more actions attempted by this tool."
         else . end |
-        del(.type, .usage, .result_type, .sandbox_blocked, .sandboxed)] end
+        del(.type, .usage, .sandbox_blocked, .sandboxed)] end
     elif ($record.type | IN("system", "session")) then .
     else error("unrecognized session record: " + ($record.type | tostring)) end
   ) as $conversation |
