@@ -220,6 +220,22 @@ sf_chat_rows 80 20
 assert_equal $'⛭ edit_file\n│ path\n╰ one\n  two\n  three' \
   "${(F)SF_PRESENT_ROW_TEXT[-5,-1]}"
 
+SF_PRESENT_STYLE[syntax.added]='fg=#010101,bg=#eeeeee'
+SF_PRESENT_STYLE[syntax.removed]='fg=#020202,bg=#dddddd'
+SF_PRESENT_HIGHLIGHT_ENABLED=1
+sf_chat_reset
+sf_chat_event tool_call call_diff edit_file path
+sf_chat_event tool_result call_diff hidden $'-old\n+alpha beta' file_diff full
+sf_chat_highlight_update
+sf_chat_rows 12 20
+assert_equal $'╰ -old      \n  +alpha    \n  beta      ' "${(F)SF_PRESENT_ROW_TEXT[-3,-1]}"
+assert_equal '0 12 fg=#020202,bg=#dddddd' "$SF_PRESENT_ROW_HIGHLIGHTS[-3]"
+assert_equal '0 12 fg=#010101,bg=#eeeeee' "$SF_PRESENT_ROW_HIGHLIGHTS[-2]"
+assert_equal '0 12 fg=#010101,bg=#eeeeee' "$SF_PRESENT_ROW_HIGHLIGHTS[-1]"
+SF_PRESENT_STYLE[syntax.added]=''
+SF_PRESENT_STYLE[syntax.removed]=''
+SF_PRESENT_HIGHLIGHT_ENABLED=0
+
 sf_chat_reset
 sf_chat_add notice notice 'Heads up' detail
 sf_chat_add notice error Failed broken

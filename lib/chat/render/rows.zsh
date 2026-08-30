@@ -170,6 +170,7 @@ sf_chat_rows() {
   integer separator_row transition tail_phase=0 complete_row
   integer display_start map_start map_end run_start break_run map span span_index=1
   integer span_start span_end row_start row_end highlight_start highlight_end
+  integer diff_row diff_span part_column
   integer section_start section_end section_row_start section_row_end
   integer section_id_start section_id_end section_id_row_start section_id_row_end
   integer value_start=-1 value_stop=-1
@@ -178,7 +179,7 @@ sf_chat_rows() {
   local leading
   local break_text display prefix preview=full head tail exact cursor_value row_highlight
   local style_kind divider_style title_style clamp_style title_value
-  local -a cursor_parts row_map break_map source_spans projected
+  local -a cursor_parts row_map break_map source_spans projected characters
 
   (( columns > 0 && budget > 0 )) || return 1
   cursor_parts=( ${(s.:.)cursor} )
@@ -741,6 +742,29 @@ sf_chat_rows() {
       fi
       if [[ $type == (tool_call|tool_result) && $part == (│|╰)* ]]; then
         [[ -z $SF_PRESENT_STYLE[divider] ]] || projected+=( 0 1 "$SF_PRESENT_STYLE[divider]" )
+      fi
+      diff_row=0
+      if [[ $SF_PRESENT_NODE_FORMAT[node] == file_diff ]]; then
+        for (( span = 1; span <= ${#projected}; span += 3 )); do
+          if [[ (-n $SF_PRESENT_STYLE[syntax.added] &&
+                ${projected[span + 2]} == $SF_PRESENT_STYLE[syntax.added]) ||
+              (-n $SF_PRESENT_STYLE[syntax.removed] &&
+                ${projected[span + 2]} == $SF_PRESENT_STYLE[syntax.removed]) ]]; then
+            diff_row=1
+            diff_span=$span
+            break
+          fi
+        done
+      fi
+      if (( diff_row )); then
+        part_column=0
+        characters=( ${(s::)part} )
+        for character in $characters; do
+          sf_chat_cell_width "$character" $part_column
+          part_column=$(( part_column + REPLY ))
+        done
+        (( part_column >= columns )) || part+="${(l:$(( columns - part_column )):: :)}"
+        projected=( 0 ${#part} "${projected[diff_span + 2]}" )
       fi
       row_highlight="${(j: :)projected}"
       sf_chat_row_append "$part" "$spans" $settled $node "$row_highlight" $source_end \

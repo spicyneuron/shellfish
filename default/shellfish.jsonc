@@ -94,10 +94,10 @@
       "syntax_string": "#86b300",
       "syntax_number": "#a37acc",
       "syntax_tag": "#55b4d4",
-      "diff_added": "#6cbf43",
-      "diff_added_background": "#d7ffd7",
-      "diff_removed": "#ff7383",
-      "diff_removed_background": "#ffd7d7",
+      "diff_added": "#3f7f34",
+      "diff_added_background": "#e2f4df",
+      "diff_removed": "#b84f5b",
+      "diff_removed_background": "#f8e1e3",
       "permission": "#399ee6"
     },
     "dark": {
