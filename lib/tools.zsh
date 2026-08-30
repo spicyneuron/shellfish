@@ -336,7 +336,10 @@ sf_tool_execute() {
       sf_tool_build_file_diff "$result_path" "$original" "$bounded" "$state_dir" || return 1
       result_type=$REPLY
     fi
-    if [[ -n $sandbox_log && -f $sandbox_log ]] && grep -Fq ' ✗ ' "$sandbox_log"; then
+    # Process startup denials are logged even on success, so a violation only
+    # counts as a block when it accompanies a failure.
+    if [[ $exit_code != 0 && -n $sandbox_log && -f $sandbox_log ]] &&
+      grep -Fq ' ✗ ' "$sandbox_log"; then
       sandbox_blocked=true
     fi
     sandboxed=''

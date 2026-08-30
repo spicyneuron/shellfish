@@ -57,7 +57,7 @@ Durable records are:
 - `context`: model-visible hook output.
 - `message` with role `user`, `assistant`, or `tool_result`.
 
-A sandboxed tool result includes `sandbox_blocked:true` when sandbox monitoring reports that the tool attempted a blocked action. Request projection adds a generic sandbox notice for the model; clients can derive the same notice without exposing monitor-specific details.
+A sandboxed tool result includes `sandbox_blocked: true` when the tool exits non-zero and sandbox monitoring reports that it attempted a blocked action.
 
 Transient events currently include:
 

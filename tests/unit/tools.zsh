@@ -237,9 +237,13 @@ grep -Fx -- "$tmp/read file" "$tmp/fence.args" >/dev/null
 grep -Fx -- "$tmp/write dir" "$tmp/fence.args" >/dev/null
 grep -Fx -- "$tmp/write file" "$tmp/fence.args" >/dev/null
 touch "$tmp/fence.violate"
-sf_test_tool_execute "$(jq -cn --arg command 'printf blocked' \
+sf_test_tool_execute "$(jq -cn --arg command 'printf blocked; exit 3' \
   '{id:"fence_blocked",name:"shell",input:{command:$command}}')" 1
 jq -e '.content == "blocked" and .sandboxed == true and .sandbox_blocked == true' \
+  <<<"$REPLY" >/dev/null
+sf_test_tool_execute "$(jq -cn --arg command 'printf noisy' \
+  '{id:"fence_noise",name:"shell",input:{command:$command}}')" 1
+jq -e '.content == "noisy" and .sandboxed == true and (has("sandbox_blocked") | not)' \
   <<<"$REPLY" >/dev/null
 rm "$tmp/fence.violate"
 load_tools "$(jq -c --arg fence "$tmp/bin/fence" \
