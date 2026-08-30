@@ -16,6 +16,7 @@ Global flags:
   --sandbox-read PATH   Give sandboxed tools read-only access (repeatable)
   --sandbox-write PATH  Give sandboxed tools read-write access (repeatable)
   --clear               Clear the terminal before the first chat render
+  --draft TEXT          Prefill the chat editor without submitting
   --verbose             Lift every preview limit (not valid with exec)
   --config FILE         Use another configuration file
   --session PATH        Use the session at PATH

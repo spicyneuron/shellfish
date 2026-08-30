@@ -138,11 +138,28 @@ def test_prompt_hook_hands_off_to_new_session():
         session.close()
 
 
+def test_fork_restores_removed_user_prompt_as_draft():
+    session = Session(explicit_session=True, hooks={"fork": None})
+    fork = session.explicit_session.with_name("explicit_fork_1.jsonl")
+    try:
+        session.send(b"original prompt\r")
+        session.wait_session_records(3, path=session.explicit_session)
+        mark = len(session.output)
+        session.send(b"/fork 1\r")
+        session.wait_after(mark, "❯ original prompt", view=session.typed)
+        session.send(b" edited\r")
+        _, records = session.wait_session_records(3, path=fork)
+        assert records[-2]["content"][0]["text"] == "original prompt edited", records
+    finally:
+        session.close()
+
+
 def main():
     test_slow_prompt_hook_keeps_ui_active()
     test_prompt_hook_display_precedes_agent_section()
     test_prompt_hook_hands_off_to_another_session()
     test_prompt_hook_hands_off_to_new_session()
+    test_fork_restores_removed_user_prompt_as_draft()
     print("PASS prompt hook PTY scenarios")
 
 

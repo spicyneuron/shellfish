@@ -46,7 +46,7 @@ The default harness implements most chat commands as `user_prompt_submit` hooks:
 
 - `/help` lists available commands.
 - `/new` creates a new session with the active session's settings.
-- `/fork [N]` copies the transcript into a new session, excluding the last `N` user turns when specified.
+- `/fork [N]` copies the transcript into a new session, excluding the last `N` user turns when specified and restoring the first excluded prompt as an editable draft.
 - `/refresh` rebuilds the terminal presentation from the durable session.
 - `/verbose` toggles presentation preview limits.
 - `/resume` switches to another session in the same project.

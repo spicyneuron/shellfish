@@ -328,7 +328,8 @@ sf_chat_answer_permission() {
 }
 
 sf_chat_controller() {
-  local session=$1 runtime=$2 initial=${3-} session_mode=${4:-resume} input saved_tty identity
+  local session=$1 runtime=$2 initial=${3-} session_mode=${4:-resume} draft=${5-}
+  local input=$draft saved_tty identity
   integer exit_status=0
 
   SF_PRESENT_SESSION=$session
@@ -371,10 +372,10 @@ sf_chat_controller() {
   fi
 
   while (( ! exit_status )); do
-    input=''
     [[ $SF_PRESENT_ACTION == epoch ]] || SF_PRESENT_ACTION=''
     stty intr undef 2>/dev/null || { exit_status=1; break; }
     { vared -h -M sf-present -p "$PROMPT" input } always { stty "$saved_tty" 2>/dev/null || true }
+    [[ $SF_PRESENT_ACTION == epoch ]] || input=''
     case $SF_PRESENT_ACTION in
       epoch) SF_PRESENT_ACTION='' ;;
       submit)

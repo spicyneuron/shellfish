@@ -3,7 +3,8 @@
 emulate -R zsh
 setopt extended_glob no_aliases no_multios pipe_fail
 
-typeset submitted='' count total base candidate created
+typeset submitted='' count total base candidate created draft=''
+typeset -a argv
 integer read_status suffix=1
 [[ $1 == user_prompt_submit ]] || exit 1
 IFS= read -r submitted
@@ -36,6 +37,17 @@ fi
 if (( count > total )); then
   print -u2 -r -- "cannot fork before $count user turns; session has $total"
   exit 10
+fi
+if (( count )); then
+  IFS= read -r -d $'\0' draft < <(
+    jq -j -s --argjson count "$count" '
+      [.[] | select(.type == "message" and .role == "user")][- $count].content[0].text,
+      "\u0000"
+    ' "$SHELLFISH_SESSION"
+  ) || {
+    print -u2 -r -- 'cannot read fork draft'
+    exit 10
+  }
 fi
 
 base=${SHELLFISH_SESSION%.jsonl}
@@ -75,6 +87,7 @@ chmod 600 "$candidate" || {
   exit 1
 }
 
-jq -cn --arg command "$SHELLFISH_EXECUTABLE" --arg path "$candidate" \
-  '{action:"handoff",argv:[$command,"--session",$path]}' >&3 || exit 1
+argv=( "$SHELLFISH_EXECUTABLE" --session "$candidate" )
+(( ! count )) || argv+=( --draft "$draft" )
+jq -cn '$ARGS.positional | {action:"handoff",argv:.}' --args -- "${argv[@]}" >&3 || exit 1
 exit 11

@@ -13,7 +13,8 @@ sf_chat_run() {
   local requested_session=${1-} requested_config=${2-} requested_profile=${3-}
   local requested_model=${4-} requested_request=${5:-\{\}} requested_backend=${6-}
   integer runtime_override=${7:-0} continue_requested=${8:-0} clear_requested=${9:-0}
-  local initial_prompt=${10-} new_source=${11-} runtime system_record session_mode=resume
+  local initial_prompt=${10-} new_source=${11-} draft=${12-}
+  local runtime system_record session_mode=resume
   integer new_session=0
   integer controller_status=0 runtime_status=0
 
@@ -84,7 +85,7 @@ sf_chat_run() {
       return 1
     }
   fi
-  sf_chat_controller "$SF_SESSION_SELECTED" "$runtime" "$initial_prompt" "$session_mode" ||
+  sf_chat_controller "$SF_SESSION_SELECTED" "$runtime" "$initial_prompt" "$session_mode" "$draft" ||
     controller_status=$?
   if (( controller_status )); then
     SF_CHAT_ERROR=$SF_PRESENT_ERROR

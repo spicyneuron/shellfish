@@ -21,6 +21,26 @@ error=$(zsh -f "$entry" --profile default positional 2>&1) || exit_code=$?
   fail 'implicit chat rejected its positional prompt after options'
 
 exit_code=0
+error=$(zsh -f "$entry" chat --draft 'editable prompt' 2>&1) || exit_code=$?
+[[ $error == *'chat requires an interactive terminal'* && $exit_code == 2 ]] || \
+  fail 'chat rejected a draft'
+
+exit_code=0
+error=$(zsh -f "$entry" chat --draft '' 2>&1) || exit_code=$?
+[[ $error == *'chat requires an interactive terminal'* && $exit_code == 2 ]] || \
+  fail 'chat rejected an empty draft'
+
+exit_code=0
+error=$(zsh -f "$entry" chat --draft draft positional 2>&1) || exit_code=$?
+[[ $error == *'--draft cannot be combined with a prompt'* && $exit_code == 2 ]] || \
+  fail 'chat accepted a draft with a positional prompt'
+
+exit_code=0
+error=$(zsh -f "$entry" exec --draft draft prompt 2>&1) || exit_code=$?
+[[ $error == *'--draft requires interactive chat'* && $exit_code == 2 ]] || \
+  fail 'exec accepted a draft'
+
+exit_code=0
 error=$(print -rn piped | zsh -f "$entry" chat 2>&1) || exit_code=$?
 [[ $error == *'chat requires an interactive terminal'* && $exit_code == 2 ]] || \
   fail 'chat rejected its standard input prompt'

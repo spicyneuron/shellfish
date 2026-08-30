@@ -9,6 +9,7 @@ Interactive chat is the default Shellfish mode. Run `shellfish` from your projec
 - `shellfish --continue` reopens the most recent session for this directory.
 - `shellfish --resume` opens a picker listing recent sessions for this directory.
 - `shellfish --session path/to/session.jsonl` opens a specific session directly.
+- `shellfish --draft "prompt"` prefills the editor without submitting the prompt.
 - `shellfish --clear` clears the terminal before the first render.
 - `shellfish --verbose` lifts all preview limits for the current chat, showing full reasoning, context, and tool output inline.
 
@@ -22,7 +23,7 @@ Most slash commands are `user_prompt_submit` hooks from the default harness. Run
 | --- | --- |
 | `/help`, `/h` | List available commands. |
 | `/new` | Start a new session with the active session's settings. |
-| `/fork [N]` | Fork the current transcript into a new session, trimming before the last N user turns. Default N is 0, which forks at the current end. |
+| `/fork [N]` | Fork the current transcript into a new session, trimming before the last N user turns and restoring the first removed prompt as a draft. Default N is 0, which forks at the current end without a draft. |
 | `/refresh`, `/r` | Rerender the current session from scratch. Fixes layout corruption. |
 | `/verbose`, `/v` | Toggle full context, reasoning, and tool output display. |
 | `/server` | Hand the current session to `shellfish-server`. |

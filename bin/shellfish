@@ -36,14 +36,14 @@ sf_read_prompt() {
 sf_main() {
   local requested_session='' requested_config='' requested_profile=''
   local requested_backend='' requested_model='' requested_request='{}'
-  local command='' input='' new_source=''
+  local command='' input='' draft='' new_source=''
   local sandbox_detected='{"sandbox_read_paths":[],"sandbox_write_paths":[]}'
   local sandbox_flag sandbox_path resolved_path
   local -a positional=() sandbox_read_paths=() sandbox_write_paths=()
   local -a original_args=("$@")
   integer session_explicit=0 config_explicit=0 request_explicit=0 runtime_override=0
   integer continue_requested=0 resume_requested=0 clear_requested=0 new_requested=0 resume_status=0
-  integer chat_handoff=0 init_requested=0 jsonl_requested=0 sandbox_auto_requested=0
+  integer chat_handoff=0 draft_explicit=0 init_requested=0 jsonl_requested=0 sandbox_auto_requested=0
   integer verbose_requested=0
   case ${1-} in
     chat)
@@ -103,6 +103,19 @@ sf_main() {
       --clear)
         clear_requested=1
         shift
+        ;;
+      --draft)
+        (( $# >= 2 )) || {
+          sf_die '--draft requires text'
+          return 2
+        }
+        (( ! draft_explicit )) || {
+          sf_die '--draft may only be specified once'
+          return 2
+        }
+        draft_explicit=1
+        draft=$2
+        shift 2
         ;;
       --new)
         new_requested=1
@@ -266,6 +279,10 @@ sf_main() {
     sf_die '--jsonl requires shellfish exec'
     return 2
   fi
+  if [[ $command == (exec|config) ]] && (( draft_explicit )); then
+    sf_die '--draft requires interactive chat'
+    return 2
+  fi
   if (( init_requested )) && [[ $command != config ]]; then
     sf_die '--init requires shellfish config'
     return 2
@@ -423,6 +440,10 @@ sf_main() {
 
   sf_read_prompt 0 "${positional[@]}" || return
   input=$REPLY
+  if (( draft_explicit )) && { (( ${#positional} )) || [[ -n $input ]]; }; then
+    sf_die '--draft cannot be combined with a prompt'
+    return 2
+  fi
   if (( chat_handoff )); then
     if [[ -n $input && ! ${#positional} ]]; then
       exec zsh -f -i "$SF_ENTRY" "${original_args[@]}" <<<"$input"
@@ -445,6 +466,7 @@ sf_main() {
   fi
 
   if (( resume_requested )); then
+    local -a resume_args
     zmodload zsh/terminfo && echoti clear || {
       sf_die 'cannot clear terminal'
       return 1
@@ -459,7 +481,9 @@ sf_main() {
       (( resume_status == 130 )) || sf_die "$SF_RESUME_ERROR"
       return $resume_status
     }
-    exec -- "$SF_ENTRY" --clear --session "$REPLY"
+    resume_args=( "$SF_ENTRY" --clear --session "$REPLY" )
+    [[ -z $draft ]] || resume_args+=( --draft "$draft" )
+    exec -- "${resume_args[@]}"
     sf_die 'cannot resume selected session'
     return 1
   fi
@@ -467,7 +491,7 @@ sf_main() {
   source "$SF_ROOT/lib/chat/main.zsh"
   sf_chat_run "$requested_session" "$requested_config" "$requested_profile" \
     "$requested_model" "$requested_request" "$requested_backend" \
-    "$runtime_override" "$continue_requested" "$clear_requested" "$input" "$new_source"
+    "$runtime_override" "$continue_requested" "$clear_requested" "$input" "$new_source" "$draft"
   local exit_status=$?
   [[ -z $SF_CHAT_ERROR ]] || sf_die "$SF_CHAT_ERROR"
   return $exit_status

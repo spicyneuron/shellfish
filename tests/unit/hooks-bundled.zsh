@@ -207,16 +207,32 @@ sf_hooks_state_cleanup
 typeset fork_session="$tmp/fork-source_fork.jsonl"
 typeset fork_control="$tmp/fork-control.json"
 integer fork_status=0
-cp "$SF_TEST_SESSIONS/complete.jsonl" "$fork_session"
+jq -c '
+  if .type == "message" and .role == "user" then
+    .content[0].text = "Hello\n\n"
+  else . end
+' "$SF_TEST_SESSIONS/complete.jsonl" >"$fork_session"
+SHELLFISH_EXECUTABLE="$ROOT/bin/shellfish" \
+  SHELLFISH_SESSION="$fork_session" SHELLFISH_STATE_DIR="$tmp" \
+  zsh -f "$ROOT/default/hooks/user_prompt_submit/fork" user_prompt_submit \
+  3>"$fork_control" < <(print -n -- '/fork 1') || fork_status=$?
+(( fork_status == 11 ))
+jq -e --arg command "$ROOT/bin/shellfish" \
+  --arg path "$tmp/fork-source_fork_1.jsonl" \
+  --arg draft $'Hello\n\n' \
+  '. == {action:"handoff",argv:[$command,"--session",$path,"--draft",$draft]}' \
+  "$fork_control" >/dev/null
+[[ -s $tmp/fork-source_fork_1.jsonl ]]
+
+fork_status=0
 SHELLFISH_EXECUTABLE="$ROOT/bin/shellfish" \
   SHELLFISH_SESSION="$fork_session" SHELLFISH_STATE_DIR="$tmp" \
   zsh -f "$ROOT/default/hooks/user_prompt_submit/fork" user_prompt_submit \
   3>"$fork_control" < <(print -n -- /fork) || fork_status=$?
 (( fork_status == 11 ))
 jq -e --arg command "$ROOT/bin/shellfish" \
-  --arg path "$tmp/fork-source_fork_1.jsonl" \
+  --arg path "$tmp/fork-source_fork_2.jsonl" \
   '. == {action:"handoff",argv:[$command,"--session",$path]}' "$fork_control" >/dev/null
-[[ -s $tmp/fork-source_fork_1.jsonl ]]
 
 # The bundled shell shortcut records the normalized command and its nested exit
 # status separately from the hook's skip status.
