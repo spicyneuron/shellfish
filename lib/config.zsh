@@ -8,9 +8,9 @@ sf_config_fail() {
   return 1
 }
 
-sf_config_init() {
+sf_config_init_private() {
   local requested_config=$1 sandbox=${2-} config_path dir home=${HOME-} json_line line
-  local env_example="$SF_ROOT/template/.env.example"
+  local env_example="$SF_ROOT/template/example.env"
   local read_json template="$SF_ROOT/template/shellfish.jsonc" temp write_json
   integer replaced=0
 
@@ -34,9 +34,9 @@ sf_config_init() {
     sf_config_fail "cannot create config component directories: $dir"
     return
   }
-  if [[ ! -e $dir/.env.example && ! -L $dir/.env.example ]]; then
-    cp -- "$env_example" "$dir/.env.example" || {
-      sf_config_fail "cannot create environment example: $dir/.env.example"
+  if [[ ! -e $dir/example.env && ! -L $dir/example.env ]]; then
+    cp -- "$env_example" "$dir/example.env" || {
+      sf_config_fail "cannot create environment example: $dir/example.env"
       return
     }
   fi
@@ -106,6 +106,17 @@ sf_config_init() {
   fi
   rm -f -- "$temp"
   REPLY=$config_path
+}
+
+sf_config_init() {
+  local previous_umask=$(umask)
+  integer exit_status
+
+  umask 077
+  sf_config_init_private "$@"
+  exit_status=$?
+  umask "$previous_umask"
+  return exit_status
 }
 
 sf_config_detect_path() {

@@ -22,24 +22,40 @@ EOF
 typeset entry="$ROOT/bin/shellfish"
 typeset report
 
+zmodload zsh/stat
+file_mode() {
+  local -a stat_result
+  zstat -A stat_result +mode -- "$1" || return
+  printf '%03o' $(( stat_result[1] & 8#777 ))
+}
+
 # Config initialization.
 typeset init_home="$tmp/init-home"
 typeset init_config="$init_home/config/shellfish/shellfish.jsonc"
-HOME="$init_home" XDG_CONFIG_HOME="$init_home/config" \
-  zsh -f "$entry" config --init >/dev/null || fail 'config init failed'
+(
+  umask 000
+  HOME="$init_home" XDG_CONFIG_HOME="$init_home/config" \
+    zsh -f "$entry" config --init >/dev/null
+) || fail 'config init failed'
 [[ -f $init_config ]] || fail 'config init did not create the default path'
 cmp -s "$ROOT/template/shellfish.jsonc" "$init_config" || fail 'config init did not copy the template'
 typeset init_dir=${init_config:h}
-cmp -s "$ROOT/template/.env.example" "$init_dir/.env.example" || \
+cmp -s "$ROOT/template/example.env" "$init_dir/example.env" || \
   fail 'config init did not copy the environment example'
+assert_equal 700 "$(file_mode "$init_dir")" 'config init did not protect the config directory'
+assert_equal 600 "$(file_mode "$init_config")" 'config init did not protect the config file'
+assert_equal 600 "$(file_mode "$init_dir/example.env")" \
+  'config init did not protect the environment example'
 for component in hooks backends prompts tools; do
   [[ -d $init_dir/$component ]] || fail "config init did not create $component directory"
+  assert_equal 700 "$(file_mode "$init_dir/$component")" \
+    "config init did not protect the $component directory"
 done
-grep -qxF 'ANTHROPIC_API_KEY=' "$init_dir/.env.example" || \
+grep -qxF 'ANTHROPIC_API_KEY=' "$init_dir/example.env" || \
   fail 'environment example omitted the Anthropic credential'
-grep -qxF 'OPENAI_API_KEY=' "$init_dir/.env.example" || \
+grep -qxF 'OPENAI_API_KEY=' "$init_dir/example.env" || \
   fail 'environment example omitted the OpenAI credential'
-grep -qxF 'OPENROUTER_API_KEY=' "$init_dir/.env.example" || \
+grep -qxF 'OPENROUTER_API_KEY=' "$init_dir/example.env" || \
   fail 'environment example omitted the OpenRouter credential'
 if HOME="$init_home" XDG_CONFIG_HOME="$init_home/config" \
   zsh -f "$entry" config --init >/dev/null 2>&1; then
@@ -47,16 +63,22 @@ if HOME="$init_home" XDG_CONFIG_HOME="$init_home/config" \
 fi
 typeset custom_config="$tmp/custom/shellfish.jsonc"
 mkdir -p "${custom_config:h}/prompts"
-print -r -- 'KEEP=1' >"${custom_config:h}/.env.example"
+print -r -- 'KEEP=1' >"${custom_config:h}/example.env"
 print -r -- 'custom' >"${custom_config:h}/prompts/custom.md"
+chmod 750 "${custom_config:h}/prompts"
+chmod 640 "${custom_config:h}/example.env"
 zsh -f "$entry" config --init --config "$custom_config" >/dev/null || \
   fail 'config init with an explicit path failed'
 cmp -s "$ROOT/template/shellfish.jsonc" "$custom_config" || \
   fail 'config init did not use the explicit path'
-grep -qxF 'KEEP=1' "${custom_config:h}/.env.example" || \
+grep -qxF 'KEEP=1' "${custom_config:h}/example.env" || \
   fail 'config init overwrote an existing environment example'
 grep -qxF 'custom' "${custom_config:h}/prompts/custom.md" || \
   fail 'config init overwrote an existing component'
+assert_equal 640 "$(file_mode "${custom_config:h}/example.env")" \
+  'config init changed permissions on an existing environment example'
+assert_equal 750 "$(file_mode "${custom_config:h}/prompts")" \
+  'config init changed permissions on an existing component directory'
 
 # Automatic sandbox grants.
 typeset detector_bin="$tmp/detectors"
