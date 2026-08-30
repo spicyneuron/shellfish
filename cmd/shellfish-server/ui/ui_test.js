@@ -156,6 +156,7 @@ function load(savedCode, initialSessionStatus = 200) {
   const encoder = new TextEncoder();
   const posts = [];
   const opens = [];
+  const copied = [];
   const timers = [];
   const storage = new Map(savedCode === undefined ? [] : [["shellfish.access-code", savedCode]]);
   let reloads = 0;
@@ -214,6 +215,7 @@ function load(savedCode, initialSessionStatus = 200) {
     // noise here; the assertions cover what it did about it.
     console: { error() {} },
     setTimeout: (fn) => timers.push(fn),
+    navigator: { clipboard: { writeText: async (text) => copied.push(text) } },
     sessionStorage: {
       getItem: (key) => storage.get(key) ?? null,
       setItem: (key, value) => storage.set(key, String(value)),
@@ -243,6 +245,7 @@ function load(savedCode, initialSessionStatus = 200) {
     usage: elements.get("usage"),
     posts,
     opens,
+    copied,
     waitFor,
     storage,
     get reloads() {
@@ -343,12 +346,40 @@ test("replays the durable session before live work", async () => {
   );
   assert.deepEqual(
     find(page.output, "section").map((heading) => heading.textContent),
-    ["system", "user"],
+    ["system", "user1"],
   );
   assert.equal(find(page.output, "user").length, 1);
   assert.equal(find(page.output, "user")[0].textContent, "**hello**");
   assert.equal(findTag(find(page.output, "user")[0], "strong")[0].textContent, "**hello**");
   assert.equal(page.model.textContent, "test/test-model");
+});
+
+test("copies the latest or selected derived section locally", async () => {
+  const page = await idle();
+  await page.send(
+    { type: "message", role: "user", content: [{ type: "text", text: "question" }] },
+    {
+      ...ASSISTANT,
+      stop: "tool_calls",
+      content: [{ type: "tool_call", id: "copy_call", name: "shell", input: {} }],
+    },
+    {
+      type: "message",
+      role: "tool_result",
+      call_id: "copy_call",
+      name: "shell",
+      content: "",
+      exit_code: 0,
+    },
+    { ...ASSISTANT, content: [{ type: "text", text: "answer" }, { type: "text", text: "continued" }] },
+    { type: "state", working: false },
+  );
+  page.submit("/copy 1");
+  await page.waitFor(() => page.copied.length === 1, "selected clipboard write");
+  page.submit("/copy");
+  await page.waitFor(() => page.copied.length === 2, "latest clipboard write");
+  assert.deepEqual(page.copied, ["question", "answer\n\ncontinued"]);
+  assert.equal(page.posts.length, 0);
 });
 
 test("labels context with the script before the hook", async () => {
@@ -407,7 +438,7 @@ test("does not strand a divider before a delayed user record", async () => {
   await page.send(user, { type: "state", working: true }, user);
   assert.deepEqual(
     find(page.output, "section").map((heading) => heading.textContent),
-    ["user", "agent"],
+    ["user1", "agent2"],
   );
 });
 

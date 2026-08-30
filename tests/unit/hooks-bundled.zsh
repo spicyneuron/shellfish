@@ -129,13 +129,14 @@ SF_TEST_RUNTIME=$(jq -c \
   --arg new "$ROOT/default/hooks/user_prompt_submit/new" \
   --arg refresh "$ROOT/default/hooks/user_prompt_submit/refresh" \
   --arg verbose "$ROOT/default/hooks/user_prompt_submit/verbose" \
+  --arg copy "$ROOT/default/hooks/user_prompt_submit/copy" \
   --arg fork "$ROOT/default/hooks/user_prompt_submit/fork" \
   --arg sandbox "$ROOT/default/hooks/user_prompt_submit/sandbox" \
   --arg user_shell "$ROOT/default/hooks/user_prompt_submit/user_shell" \
   --arg server "$ROOT/default/hooks/user_prompt_submit/server" \
   --arg resume "$ROOT/default/hooks/user_prompt_submit/resume" \
   '.harness.sandbox=true |
-   .harness.user_prompt_submit=[$new,$refresh,$verbose,$fork,$sandbox,$user_shell,$server,$resume,$help]' \
+   .harness.user_prompt_submit=[$new,$refresh,$verbose,$copy,$fork,$sandbox,$user_shell,$server,$resume,$help]' \
   <<<"$SF_TEST_RUNTIME")
 sf_test_session "$help_session"
 sf_session_open "$help_session"
@@ -152,7 +153,7 @@ done
 (( ${#help_display} > 20 ))
 # Every command key appears in the formatted output.
 for key in '↑, ↓' '/queue drop <N>' '/queue clear' '/new' '/refresh, /r' '/verbose, /v' \
-    '/fork [N]' '/sandbox [OP DIR]' '!COMMAND' '/server' '/resume' '/quit, /q'; do
+    '/copy [N]' '/fork [N]' '/sandbox [OP DIR]' '!COMMAND' '/server' '/resume' '/quit, /q'; do
   [[ $help_display == *"$key"* ]]
 done
 # Rows remain sorted by their configured order through /quit.
@@ -276,6 +277,46 @@ SHELLFISH_EXECUTABLE="$ROOT/bin/shellfish" \
 jq -e --arg command "$ROOT/bin/shellfish" \
   --arg path "$tmp/fork-source_fork_2.jsonl" \
   '. == {action:"handoff",argv:[$command,"--session",$path]}' "$fork_control" >/dev/null
+
+# /copy addresses derived user/agent sections and defaults to the latest one.
+typeset copy_bin="$tmp/copy-bin" copy_output="$tmp/copied" copy_session="$tmp/copy-session.jsonl"
+mkdir "$copy_bin"
+cat >"$copy_bin/pbcopy" <<'EOF'
+#!/bin/sh
+cat >"$COPY_OUTPUT"
+EOF
+chmod +x "$copy_bin/pbcopy"
+cat "$SF_TEST_SESSIONS/complete.jsonl" >"$copy_session"
+print -r -- '{"type":"message","role":"user","content":[{"type":"text","text":"Second"}]}' >>"$copy_session"
+print -r -- '{"type":"message","role":"assistant","stop":"end","content":[{"type":"text","text":"Answer"},{"type":"text","text":"Continued\n\n"}],"usage":{"input_tokens":1,"output_tokens":1}}' >>"$copy_session"
+integer copy_status=0
+COPY_OUTPUT="$copy_output" PATH="$copy_bin:$PATH" SHELLFISH_SESSION="$copy_session" \
+  SHELLFISH_STATE_DIR="$tmp" zsh -f "$ROOT/default/hooks/user_prompt_submit/copy" \
+  user_prompt_submit < <(print -n -- '/copy 1') || copy_status=$?
+(( copy_status == 10 ))
+assert_equal Hello "$(<$copy_output)"
+copy_status=0
+COPY_OUTPUT="$copy_output" PATH="$copy_bin:$PATH" SHELLFISH_SESSION="$copy_session" \
+  SHELLFISH_STATE_DIR="$tmp" zsh -f "$ROOT/default/hooks/user_prompt_submit/copy" \
+  user_prompt_submit < <(print -n -- /copy) || copy_status=$?
+(( copy_status == 10 ))
+print -n -- $'Answer\n\nContinued\n\n' >"$tmp/copy-expected"
+cmp "$tmp/copy-expected" "$copy_output" >/dev/null || fail 'copy did not preserve assistant text'
+
+# Agent section 2 and following user section 3 resolve to the same fork boundary.
+integer fork_number=1
+for target in 2 3; do
+  fork_status=0
+  SHELLFISH_EXECUTABLE="$ROOT/bin/shellfish" SHELLFISH_SESSION="$copy_session" \
+    SHELLFISH_STATE_DIR="$tmp" zsh -f "$ROOT/default/hooks/user_prompt_submit/fork" \
+    user_prompt_submit 3>"$fork_control" < <(print -n -- "/fork $target") || fork_status=$?
+  (( fork_status == 11 ))
+  jq -e --arg draft Second \
+    '.argv[-2:] == ["--draft",$draft]' "$fork_control" >/dev/null
+  jq -e -s '[.[] | select(.type == "message" and .role == "user")] | length == 1' \
+    "$tmp/copy-session_fork_${fork_number}.jsonl" >/dev/null
+  (( fork_number++ ))
+done
 
 # The bundled shell shortcut records the normalized command and its nested exit
 # status separately from the hook's skip status.

@@ -6,8 +6,8 @@ sf_test_source chat/render/nodes.zsh chat/render/highlights.zsh chat/render/rows
 
 sf_chat_event user abcdef
 sf_chat_viewport 80 2
-assert_equal $'─ user ─────────────────────────────────────────────────────────────────────────\n' "$SF_PRESENT_VIEWPORT_TEXT"
-assert_equal '─ user ─────────────────────────────────────────────────────────────────────────' "$SF_PRESENT_FLUSH_TEXT"
+assert_equal $'─ user ───────────────────────────────────────────────────────────────────── 1 ─\n' "$SF_PRESENT_VIEWPORT_TEXT"
+assert_equal '─ user ───────────────────────────────────────────────────────────────────── 1 ─' "$SF_PRESENT_FLUSH_TEXT"
 assert_equal 2:0 "$SF_PRESENT_FLUSH_CURSOR"
 assert_equal 1 "$SF_PRESENT_FLUSH_ROWS"
 
@@ -18,8 +18,8 @@ assert_equal 1 "$SF_PRESENT_FLUSH_ROWS"
 
 sf_chat_event assistant_delta $'first\npartial'
 sf_chat_viewport 80 20 3:0
-assert_equal $'\n─ agent ────────────────────────────────────────────────────────────────────────\n\nfirst\n⠃' "$SF_PRESENT_VIEWPORT_TEXT"
-assert_equal $'\n─ agent ────────────────────────────────────────────────────────────────────────\n\nfirst' "$SF_PRESENT_FLUSH_TEXT"
+assert_equal $'\n─ agent ──────────────────────────────────────────────────────────────────── 2 ─\n\nfirst\n⠃' "$SF_PRESENT_VIEWPORT_TEXT"
+assert_equal $'\n─ agent ──────────────────────────────────────────────────────────────────── 2 ─\n\nfirst' "$SF_PRESENT_FLUSH_TEXT"
 assert_equal 4:7 "$SF_PRESENT_FLUSH_CURSOR"
 assert_equal 4 "$SF_PRESENT_FLUSH_ROWS"
 

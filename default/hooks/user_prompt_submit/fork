@@ -3,52 +3,54 @@
 emulate -R zsh
 setopt extended_glob no_aliases no_multios pipe_fail
 
-typeset submitted='' count total base candidate created draft=''
-typeset -a argv
-integer read_status suffix=1
+typeset submitted='' target=0 base candidate created draft='' resolved
+typeset -a argv fields
+integer read_status suffix=1 cutoff=0 explicit=0 has_draft=0
 [[ $1 == user_prompt_submit ]] || exit 1
 IFS= read -r submitted
 read_status=$?
 
 case "$read_status:$submitted" in
   1:/help|1:/h)
-    print -r -- $'112\t/fork [N]\tFork before the last N user turns (default: 0)' >>"$SHELLFISH_STATE_DIR/help.tsv"
+    print -r -- $'112\t/fork [N]\tFork at the following user section (default: current end)' >>"$SHELLFISH_STATE_DIR/help.tsv"
     exit 0
     ;;
-  1:/fork) count=0 ;;
+  1:/fork) ;;
   1:'/fork '*)
-    count=${submitted#* }
-    count=${count##[[:space:]]#}
+    explicit=1
+    target=${submitted#* }
+    target=${target##[[:space:]]#}
     ;;
   *) exit 0 ;;
 esac
 
-if [[ $count != <-> || ${#count} -gt 9 ]]; then
+if [[ $target != <-> || ${#target} -gt 9 ]] || (( explicit && target == 0 )); then
   print -u2 -r -- 'usage: /fork [N]'
   exit 10
 fi
 
-total=$(jq -s '[.[] | select(.type == "message" and .role == "user")] | length' \
-  "$SHELLFISH_SESSION") || exit 1
-if (( ! total )); then
-  print -u2 -r -- 'cannot fork yet; send your first message first'
+resolved=$(jq -j -s --argjson target "$target" '
+  . as $records |
+  [$records | to_entries[] | select(.value.type == "message" and .value.role == "user") | .key] as $users |
+  (reduce ($records[] | select(.type == "message" and
+      (.role == "user" or .role == "assistant")) | .role) as $role
+    ([]; if length == 0 or .[-1] != $role then . + [$role] else . end)) as $sections |
+  if ($users | length) == 0 then error("empty")
+  elif $target == 0 then [($records | length), "", 0]
+  elif $target > ($sections | length) then error("missing")
+  else ((($target + 1) / 2 | floor) + (if ($target % 2) == 0 then 1 else 0 end)) as $user |
+    if $user > ($users | length) then [($records | length), "", 0]
+    else [$users[$user - 1], $records[$users[$user - 1]].content[0].text, 1] end
+  end | "\(.[0])\u0000\(.[1])\u0000\(.[2])\u0000"
+' "$SHELLFISH_SESSION" 2>/dev/null) || {
+  print -u2 -r -- 'fork target does not exist'
   exit 10
-fi
-if (( count > total )); then
-  print -u2 -r -- "cannot fork before $count user turns; session has $total"
-  exit 10
-fi
-if (( count )); then
-  IFS= read -r -d $'\0' draft < <(
-    jq -j -s --argjson count "$count" '
-      [.[] | select(.type == "message" and .role == "user")][- $count].content[0].text,
-      "\u0000"
-    ' "$SHELLFISH_SESSION"
-  ) || {
-    print -u2 -r -- 'cannot read fork draft'
-    exit 10
-  }
-fi
+}
+fields=( "${(@0)${resolved%$'\0'}}" )
+(( ${#fields} == 3 )) || exit 1
+cutoff=$fields[1]
+draft=$fields[2]
+has_draft=$fields[3]
 
 base=${SHELLFISH_SESSION%.jsonl}
 base=${base%_fork(|_<->)}
@@ -68,15 +70,14 @@ created=$(date -u '+%Y-%m-%dT%H:%M:%SZ') || {
   rm -f -- "$candidate"
   exit 1
 }
-if ! jq -ce -s --argjson count "$count" --arg created "$created" '
-  def fork_cutoff($records; $cutoff):
-    if $cutoff > 1 and $records[$cutoff - 1].type == "context" then
-      fork_cutoff($records; $cutoff - 1)
-    else $cutoff end;
+if ! jq -ce -s --argjson cutoff "$cutoff" --arg created "$created" '
+  def fork_cutoff($records; $at):
+    if $at > 1 and $records[$at - 1].type == "context" then
+      fork_cutoff($records; $at - 1)
+    else $at end;
   . as $records |
-  [to_entries[] | select(.value.type == "message" and .value.role == "user") | .key] as $users |
-  (if $count == 0 then length else fork_cutoff($records; $users[-$count]) end) as $cutoff |
-  .[0:$cutoff] | .[0].created = $created | .[]
+  fork_cutoff($records; $cutoff) as $at |
+  .[0:$at] | .[0].created = $created | .[]
 ' "$SHELLFISH_SESSION" >"$candidate"; then
   rm -f -- "$candidate"
   print -u2 -r -- 'cannot fork session'
@@ -88,6 +89,6 @@ chmod 600 "$candidate" || {
 }
 
 argv=( "$SHELLFISH_EXECUTABLE" --session "$candidate" )
-(( ! count )) || argv+=( --draft "$draft" )
+(( ! has_draft )) || argv+=( --draft "$draft" )
 jq -cn '$ARGS.positional | {action:"handoff",argv:.}' --args -- "${argv[@]}" >&3 || exit 1
 exit 11

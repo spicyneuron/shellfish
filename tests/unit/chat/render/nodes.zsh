@@ -83,6 +83,7 @@ sf_chat_event assistant_reasoning_delta $'\n\n'
 assert_equal 'section,activity' "${(j:,:)SF_PRESENT_NODE_TYPE}"
 sf_chat_event assistant_commit
 assert_equal 0 "${#SF_PRESENT_NODE_TYPE}"
+assert_equal 0 "$SF_PRESENT_SECTION_ID"
 
 sf_chat_event assistant_delta $'answer\n'
 sf_chat_event assistant_delta $'\n'
@@ -104,6 +105,7 @@ sf_chat_event backend_request_start
 sf_chat_event assistant_commit
 sf_chat_event user again
 assert_equal 'section,message,message' "${(j:,:)SF_PRESENT_NODE_TYPE}"
+assert_equal 1 "$SF_PRESENT_SECTION_ID"
 
 sf_chat_reset
 sf_chat_add reasoning agent '' '' open

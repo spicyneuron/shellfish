@@ -22,10 +22,10 @@ sf_chat_line_init
 assert_equal epoch "$SF_PRESENT_ACTION"
 assert_equal accept-line "$ZLE_CALL"
 assert_equal draft "$SF_PRESENT_DRAFT"
-assert_equal $'─ user ────────────────────────────────────────────────────────────────────────\n\nhello\n\n───────────────────────────────────────────────────────────────────────────────\n❯ ' "$PREDISPLAY"
+assert_equal $'─ user ──────────────────────────────────────────────────────────────────── 1 ─\n\nhello\n\n───────────────────────────────────────────────────────────────────────────────\n❯ ' "$PREDISPLAY"
 
 sf_chat_line_finish
-assert_equal $'─ user ────────────────────────────────────────────────────────────────────────\n\nhello' "$PREDISPLAY"
+assert_equal $'─ user ──────────────────────────────────────────────────────────────────── 1 ─\n\nhello' "$PREDISPLAY"
 assert_equal '' "$POSTDISPLAY"
 assert_equal 1:0 "$SF_PRESENT_CURSOR"
 assert_equal 1 "$SF_PRESENT_SYNC_ACTIVE"
@@ -53,7 +53,7 @@ assert_equal prompt "$SF_PRESENT_SUBMITTED"
 assert_equal 1 "$SF_PRESENT_DRAFT_SAVED"
 assert_equal accept-line "$ZLE_CALL"
 sf_chat_line_finish
-assert_equal $'\n─ user ────────────────────────────────────────────────────────────────────────\n\nprompt' "$PREDISPLAY"
+assert_equal $'\n─ user ──────────────────────────────────────────────────────────────────── 2 ─\n\nprompt' "$PREDISPLAY"
 assert_equal '' "$BUFFER"
 assert_equal -R "$ZLE_CALL"
 

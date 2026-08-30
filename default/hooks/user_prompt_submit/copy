@@ -1,0 +1,72 @@
+#!/usr/bin/env zsh
+
+emulate -R zsh
+setopt no_aliases no_multios pipe_fail
+
+typeset submitted='' target text copier
+integer read_status explicit=0
+[[ $1 == user_prompt_submit ]] || exit 1
+IFS= read -r submitted
+read_status=$?
+
+case "$read_status:$submitted" in
+  1:/help|1:/h)
+    print -r -- $'111\t/copy [N]\tCopy the latest or selected user/agent section' >>"$SHELLFISH_STATE_DIR/help.tsv"
+    exit 0
+    ;;
+  1:/copy) target=0 ;;
+  1:'/copy '*)
+    explicit=1
+    target=${submitted#* }
+    target=${target##[[:space:]]#}
+    ;;
+  *) exit 0 ;;
+esac
+
+if [[ $target != <-> || ${#target} -gt 9 ]] || (( explicit && target == 0 )); then
+  print -u2 -r -- 'usage: /copy [N]'
+  exit 10
+fi
+
+text=$(jq -j -s --argjson target "$target" '
+  reduce .[] as $record
+    ({sections:[], current:null};
+     if $record.type == "message" and $record.role == "user" then
+       .sections += [{chunks:[([$record.content[] | select(.type == "text") | .text] | join(""))]}] |
+       .current = "user"
+     elif $record.type == "message" and $record.role == "assistant" then
+       [$record.content[] | select(.type == "text") | .text] as $chunks |
+       if .current == "agent" then
+         .sections[-1].chunks += $chunks
+       else
+         .sections += [{chunks:$chunks}] | .current = "agent"
+       end
+     else . end) |
+  . as $state |
+  (if $target == 0 then ($state.sections | length) else $target end) as $id |
+  if $id < 1 or $id > ($state.sections | length) then error("section does not exist")
+  else ($state.sections[$id - 1].chunks | join("\n\n")) + "\u0000" end
+' "$SHELLFISH_SESSION" 2>/dev/null) || {
+  print -u2 -r -- 'copy target does not exist'
+  exit 10
+}
+text=${text%$'\0'}
+
+if (( $+commands[pbcopy] )); then
+  copier=( pbcopy )
+elif (( $+commands[wl-copy] )); then
+  copier=( wl-copy )
+elif (( $+commands[xclip] )); then
+  copier=( xclip -selection clipboard )
+elif (( $+commands[xsel] )); then
+  copier=( xsel --clipboard --input )
+else
+  print -u2 -r -- 'cannot copy: no supported clipboard command found'
+  exit 10
+fi
+print -rn -- "$text" | "${copier[@]}" || {
+  print -u2 -r -- 'cannot copy to clipboard'
+  exit 10
+}
+print -u2 -r -- 'Copied.'
+exit 10

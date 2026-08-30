@@ -24,7 +24,8 @@ Most slash commands are `user_prompt_submit` hooks from the default harness. Run
 | --- | --- |
 | `/help`, `/h` | List available commands. |
 | `/new` | Start a new session with the active session's settings. |
-| `/fork [N]` | Fork the current transcript into a new session, trimming before the last N user turns and restoring the first removed prompt as a draft. Default N is 0, which forks at the current end without a draft. |
+| `/copy [N]` | Copy the text of the latest user/agent section, or section `N`, to the local clipboard. |
+| `/fork [N]` | Fork at section `N`, resolving an agent section to the following user section and restoring that prompt as a draft. With no index, fork at the current end without a draft. |
 | `/refresh`, `/r` | Rerender the current session from scratch. Fixes layout corruption. |
 | `/verbose`, `/v` | Toggle full context, reasoning, and tool output display. |
 | `/sandbox [OP DIR]` | List grants, or update and reload with `read` or `write`. Prefix with `-` to remove; `+` is accepted when adding, and signed forms may abbreviate the operation to `r` or `w`. |

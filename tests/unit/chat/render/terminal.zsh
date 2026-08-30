@@ -23,7 +23,7 @@ if sf_chat_terminal_stage; then
 fi
 
 sf_chat_terminal_finish
-assert_equal $'─ user ─────────────────────────────────────────────────────────────────────────\n\nhello' "$PREDISPLAY"
+assert_equal $'─ user ───────────────────────────────────────────────────────────────────── 1 ─\n\nhello' "$PREDISPLAY"
 assert_equal '' "$BUFFER"
 assert_equal '' "$POSTDISPLAY"
 assert_equal 1:0 "$SF_PRESENT_CURSOR"
@@ -36,7 +36,7 @@ assert_equal 0 "${#SF_PRESENT_PENDING_HIGHLIGHTS}"
 
 sf_chat_event assistant one
 sf_chat_viewport 80 20 "$SF_PRESENT_CURSOR"
-assert_equal $'\n─ agent ────────────────────────────────────────────────────────────────────────\n\none' "$SF_PRESENT_VIEWPORT_TEXT"
+assert_equal $'\n─ agent ──────────────────────────────────────────────────────────────────── 2 ─\n\none' "$SF_PRESENT_VIEWPORT_TEXT"
 
 sf_chat_reset
 sf_chat_terminal_reset
@@ -79,7 +79,7 @@ for token in hi one two three four five six seven eight nine ten; do
   occurrences=$(( (${#drained} - ${#stripped}) / ${#token} ))
   assert_equal 1 "$occurrences"
 done
-for token in '─ user ─' '─ agent ─'; do
+for token in user agent; do
   stripped=${(S)drained//$token/}
   occurrences=$(( (${#drained} - ${#stripped}) / ${#token} ))
   assert_equal 1 "$occurrences"

@@ -159,7 +159,18 @@ body:has(#code:not([hidden])) #prompt {
 .section::after {
   content: "";
   flex: 1;
+  order: 2;
   border-top: 1px solid var(--divider);
+}
+
+.section-id {
+  order: 3;
+  color: var(--muted);
+}
+
+.section-id::after {
+  content: " —";
+  color: var(--divider);
 }
 
 .section-user {

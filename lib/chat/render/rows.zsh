@@ -171,6 +171,7 @@ sf_chat_rows() {
   integer display_start map_start map_end run_start break_run map span span_index=1
   integer span_start span_end row_start row_end highlight_start highlight_end
   integer section_start section_end section_row_start section_row_end
+  integer section_id_start section_id_end section_id_row_start section_id_row_end
   integer value_start=-1 value_stop=-1
   integer clamp_start=-1 clamp_stop=-1
   local cursor=${3:-1:0} text part state type heading body spans character run activity_text
@@ -228,6 +229,8 @@ sf_chat_rows() {
     body_end=0
     content_start=-1
     content_end=-1
+    section_id_start=-1
+    section_id_end=-1
     source_base=0
     value_start=-1
     value_stop=-1
@@ -253,7 +256,14 @@ sf_chat_rows() {
           text="─ $SF_PRESENT_NODE_ROLE[node] "
           section_start=2
           section_end=${#text}
-          (( ${#text} < columns )) && text+=${(l:$(( columns - ${#text} ))::─:)""}
+          if [[ -n $heading ]] && (( ${#text} + ${#heading} + 3 <= columns )); then
+            text+=${(l:$(( columns - ${#text} - ${#heading} - 3 ))::─:)""}
+            text+=" $heading ─"
+            section_id_start=$(( ${#text} - ${#heading} - 2 ))
+            section_id_end=$(( section_id_start + ${#heading} ))
+          else
+            (( ${#text} < columns )) && text+=${(l:$(( columns - ${#text} ))::─:)""}
+          fi
           ;;
         message)
           text=$body
@@ -699,6 +709,12 @@ sf_chat_rows() {
           projected+=( $section_row_start $section_row_end "$title_style" )
         [[ -z $divider_style ]] || (( section_row_end == ${#part} )) ||
           projected+=( $section_row_end ${#part} "$divider_style" )
+        if (( section_id_start >= 0 )); then
+          section_id_row_start=$(( section_id_start > start ? section_id_start - start : 0 ))
+          section_id_row_end=$(( section_id_end - start < ${#part} ? section_id_end - start : ${#part} ))
+          [[ -z $SF_PRESENT_STYLE[muted] ]] || (( section_id_row_end <= section_id_row_start )) ||
+            projected+=( $section_id_row_start $section_id_row_end "$SF_PRESENT_STYLE[muted]" )
+        fi
       fi
       if (( ! tail_phase && value_start < offset && value_stop > start )); then
         highlight_start=$(( value_start > start ? value_start - start : 0 ))

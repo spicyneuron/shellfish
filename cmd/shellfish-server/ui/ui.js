@@ -40,6 +40,10 @@ let pending = null;
 let indicator = null;
 // The last transcript section shown, matching the terminal's grouped roles.
 let lastRole = null;
+// User and agent sections are stable addresses derived from durable order.
+let sectionId = 0;
+// Text chunks by derived section ID, used by the local /copy command.
+let sectionChunks = [];
 // Tool calls waiting for their result, by call ID.
 const calls = new Map();
 // Each tool's result display policy from the session header, by tool name.
@@ -84,7 +88,11 @@ function section(role) {
   lastRole = role;
   const heading = document.createElement("h2");
   heading.className = "section section-" + role;
-  heading.textContent = role;
+  el(heading, "span", "section-role", role);
+  if (role === "user" || role === "agent") {
+    sectionId++;
+    el(heading, "span", "section-id", String(sectionId));
+  }
   place(heading);
   return heading;
 }
@@ -110,6 +118,7 @@ function hideIndicator() {
   if (!indicator) return;
   if (indicator.heading) {
     indicator.heading.remove();
+    sectionId--;
     lastRole = indicator.previousRole;
   }
   indicator.article.remove();
@@ -429,6 +438,7 @@ function renderMessage(frame) {
       .map((part) => part.text)
       .join("");
     markdown(el(article, "pre", "text"), text);
+    sectionChunks[sectionId - 1] = [text];
     place(article);
     if (working) showIndicator();
     return;
@@ -437,6 +447,12 @@ function renderMessage(frame) {
   hideIndicator();
   section("agent");
   const article = record("assistant", null);
+  const chunks = (frame.content || [])
+    .filter((part) => part.type === "text")
+    .map((part) => part.text);
+  const index = sectionId - 1;
+  if (sectionChunks[index] === undefined) sectionChunks[index] = [];
+  sectionChunks[index].push(...chunks);
   for (const part of frame.content || []) {
     if (part.type === "reasoning") collapsible(article, "reasoning", part.text, "reasoning");
     else if (part.type === "text") markdown(el(article, "pre", "text"), part.text);
@@ -628,6 +644,8 @@ function reset() {
   calls.clear();
   indicator = null;
   lastRole = null;
+  sectionId = 0;
+  sectionChunks = [];
   pending = null;
   working = false;
   usage.textContent = "";
@@ -684,6 +702,23 @@ function deauthenticate(reason) {
   codeEntry.focus();
 }
 
+async function copySection(command) {
+  const match = /^\/copy(?:\s+(\d+))?\s*$/.exec(command);
+  if (!match) return false;
+  const id = match[1] === undefined ? sectionChunks.length : Number(match[1]);
+  if (id < 1 || id > sectionChunks.length) {
+    note("copy target does not exist", "error");
+    return true;
+  }
+  try {
+    await navigator.clipboard.writeText(sectionChunks[id - 1].join("\n\n"));
+    note("Copied.");
+  } catch {
+    note("cannot copy to clipboard", "error");
+  }
+  return true;
+}
+
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
   const value = code === null ? codeEntry.value : entry.value;
@@ -693,6 +728,12 @@ form.addEventListener("submit", async (event) => {
   }
   // A message the service will not take stays in the box rather than vanishing.
   if (!value.trim() || busy || working) return;
+  if (await copySection(value)) {
+    entry.value = "";
+    resizeEntry();
+    entry.focus();
+    return;
+  }
   entry.value = "";
   resizeEntry();
   entry.focus();

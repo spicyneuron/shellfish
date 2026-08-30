@@ -63,13 +63,13 @@ sf_chat_event user ''
 sf_chat_rows 80 20
 assert_equal $'↪ environment session_start\n  <env>test</env>' \
   "${(F)SF_PRESENT_ROW_TEXT[1,2]}"
-assert_equal '─ user ─────────────────────────────────────────────────────────────────────────' "$SF_PRESENT_ROW_TEXT[-1]"
+assert_equal '─ user ───────────────────────────────────────────────────────────────────── 1 ─' "$SF_PRESENT_ROW_TEXT[-1]"
 
 sf_chat_reset
 sf_chat_event tool_call call_1 shell for
 sf_chat_event tool_result call_1 0 ok
 sf_chat_rows 80 20
-assert_equal $'─ agent ────────────────────────────────────────────────────────────────────────\n\n⛭ shell\n│ for\n╰ ok\n  exit 0' "${(F)SF_PRESENT_ROW_TEXT}"
+assert_equal $'─ agent ──────────────────────────────────────────────────────────────────── 1 ─\n\n⛭ shell\n│ for\n╰ ok\n  exit 0' "${(F)SF_PRESENT_ROW_TEXT}"
 
 # An expanded tool can settle its heading before a result exists. Its activity
 # is display-only: the cursor stays at the body boundary so the result is not
@@ -98,7 +98,7 @@ sf_chat_rows_config "$SF_PRESENTATION"
 sf_chat_reset
 sf_chat_event assistant_reasoning_delta $'one\ntwo\nthree'
 sf_chat_rows 80 20
-assert_equal $'─ agent ────────────────────────────────────────────────────────────────────────\n\n✎ Thinking… ⠃' \
+assert_equal $'─ agent ──────────────────────────────────────────────────────────────────── 1 ─\n\n✎ Thinking… ⠃' \
   "${(F)SF_PRESENT_ROW_TEXT}"
 assert_equal 0 "$SF_PRESENT_ROW_SETTLED[-1]"
 sf_chat_event assistant_commit
@@ -110,14 +110,14 @@ sf_chat_reset
 sf_chat_event user done
 sf_chat_add activity '' '' '' open
 sf_chat_rows 80 20
-assert_equal $'─ user ─────────────────────────────────────────────────────────────────────────\n\ndone\n\n⠃' \
+assert_equal $'─ user ───────────────────────────────────────────────────────────────────── 1 ─\n\ndone\n\n⠃' \
   "${(F)SF_PRESENT_ROW_TEXT}"
 assert_equal '0,0' "${(j:,:)SF_PRESENT_ROW_SETTLED[-2,-1]}"
 
 sf_chat_reset
 sf_chat_event tool_call call_zero shell 'make test'
 sf_chat_rows 80 20
-assert_equal $'─ agent ────────────────────────────────────────────────────────────────────────\n\n⛭ shell\n╰ ⠃' \
+assert_equal $'─ agent ──────────────────────────────────────────────────────────────────── 1 ─\n\n⛭ shell\n╰ ⠃' \
   "${(F)SF_PRESENT_ROW_TEXT}"
 assert_equal 0 "$SF_PRESENT_ROW_SETTLED[-1]"
 sf_chat_event tool_result call_zero 1 $'failure\ndetail'
@@ -163,12 +163,12 @@ sf_chat_rows_config "$SF_PRESENTATION"
 sf_chat_reset
 sf_chat_event assistant_reasoning_delta $'first\nsecond'
 sf_chat_rows 80 20
-assert_equal $'─ agent ────────────────────────────────────────────────────────────────────────\n\n✎ Reasoning\n  first\n  … ~3 tokens ⠃' \
+assert_equal $'─ agent ──────────────────────────────────────────────────────────────────── 1 ─\n\n✎ Reasoning\n  first\n  … ~3 tokens ⠃' \
   "${(F)SF_PRESENT_ROW_TEXT}"
 sf_chat_event reasoning_tokens 4
 sf_chat_event assistant_commit
 sf_chat_rows 80 20
-assert_equal $'─ agent ────────────────────────────────────────────────────────────────────────\n\n✎ Reasoning\n  first\n  … Thought for ~4 tokens.' \
+assert_equal $'─ agent ──────────────────────────────────────────────────────────────────── 1 ─\n\n✎ Reasoning\n  first\n  … Thought for ~4 tokens.' \
   "${(F)SF_PRESENT_ROW_TEXT}"
 
 sf_chat_reset
@@ -201,7 +201,7 @@ sf_chat_reset
 sf_chat_event tool_call call_preview shell run
 sf_chat_event tool_result call_preview 1 $'first row\nsecond row\nthird row'
 sf_chat_rows 80 20
-assert_equal $'─ agent ────────────────────────────────────────────────────────────────────────\n\n⛭ shell\n│ run\n╰ first row\n  … ~8 tokens · exit 1' \
+assert_equal $'─ agent ──────────────────────────────────────────────────────────────────── 1 ─\n\n⛭ shell\n│ run\n╰ first row\n  … ~8 tokens · exit 1' \
   "${(F)SF_PRESENT_ROW_TEXT}"
 sf_chat_rows 16 20
 assert_equal '  exit 1' "$SF_PRESENT_ROW_TEXT[-1]"
@@ -334,13 +334,17 @@ fi
 # leaves blank separator rows unstyled.
 SF_PRESENT_STYLE=( divider 'fg=8' section.user 'fg=1,bold' message 'fg=2'
   reasoning 'fg=3' tool_call 'fg=4' tool_result 'fg=4' injection 'fg=5' notice 'fg=6'
-  clamp 'fg=7' )
+  clamp 'fg=7' muted 'fg=9' )
 sf_chat_reset
 sf_chat_event user hello
 sf_chat_rows 8 20
 assert_equal 'section.user,separator,message.user' "${(j:,:)SF_PRESENT_ROW_KIND}"
 assert_equal '0 2 fg=8 2 7 fg=1,bold 7 8 fg=8||0 5 fg=2' \
   "${(j:|:)SF_PRESENT_ROW_HIGHLIGHTS}"
+
+sf_chat_rows 20 20
+assert_equal '─ user ───────── 1 ─' "$SF_PRESENT_ROW_TEXT[1]"
+assert_equal '0 2 fg=8 2 7 fg=1,bold 7 20 fg=8 17 18 fg=9' "$SF_PRESENT_ROW_HIGHLIGHTS[1]"
 
 sf_chat_rows 3 20
 assert_equal '0 1 fg=8|0 3 fg=1,bold|0 2 fg=1,bold||0 3 fg=2|0 2 fg=2' \

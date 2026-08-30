@@ -50,7 +50,7 @@
       // Hooks run executables in order. See docs/HOOKS.md for payloads, exit
       // statuses, and environment guarantees.
       "session_start": ["add_environment", "add_command_availability", "add_project_instructions"],
-      "user_prompt_submit": ["refresh", "verbose", "new", "fork", "sandbox", "user_shell", "server", "resume", "help"],
+      "user_prompt_submit": ["refresh", "verbose", "new", "copy", "fork", "sandbox", "user_shell", "server", "resume", "help"],
       "permission_request": [],
       "pre_tool_use": [],
       "post_tool_use": [],
@@ -64,8 +64,8 @@
       "sandbox_write_paths": [],
 
       // Caps for requests, tool calls, and bytes from a single tool result.
-      "max_requests_per_turn": 50,
-      "max_tool_calls_per_request": 20,
+      "max_requests_per_turn": 100,
+      "max_tool_calls_per_request": 25,
       "max_capture_bytes": 32768
     }
   },

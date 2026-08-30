@@ -16,6 +16,7 @@ typeset -gA SF_PRESENT_TOOL_POLICY=() SF_PRESENT_TOOL_FORMAT=()
 typeset -ga SF_PRESENT_TOOL_ORDER=()
 typeset -g SF_PRESENT_TOOL_CURRENT=''
 typeset -g SF_PRESENT_ERROR='' SF_PRESENT_LAST_ROLE=''
+typeset -gi SF_PRESENT_SECTION_ID=0
 
 sf_chat_safe() {
   local character text=$1
@@ -45,6 +46,7 @@ sf_chat_reset() {
   SF_PRESENT_TOOL_ORDER=()
   SF_PRESENT_TOOL_CURRENT=''
   SF_PRESENT_LAST_ROLE=''
+  SF_PRESENT_SECTION_ID=0
 }
 
 sf_chat_add() {
@@ -76,9 +78,16 @@ sf_chat_set_frontier() {
 }
 
 sf_chat_section() {
-  local role=$1
+  local role=$1 id=''
   [[ $SF_PRESENT_LAST_ROLE != $role ]] || return 0
-  sf_chat_add section "$role" || return 1
+  if [[ $role == (user|agent) ]]; then
+    (( ++SF_PRESENT_SECTION_ID ))
+    id=$SF_PRESENT_SECTION_ID
+  fi
+  sf_chat_add section "$role" "$id" || {
+    [[ -z $id ]] || (( --SF_PRESENT_SECTION_ID ))
+    return 1
+  }
   SF_PRESENT_LAST_ROLE=$role
 }
 
@@ -113,7 +122,7 @@ sf_chat_drop() {
 }
 
 sf_chat_close() {
-  integer index=$1 end section
+  integer index=$1 end section removed_section=0
   [[ $index == ${#SF_PRESENT_NODE_TYPE} && $SF_PRESENT_NODE_STATE[index] == open ]] || return 1
   if [[ $SF_PRESENT_NODE_TYPE[index] == (activity|message|reasoning) &&
       -z $SF_PRESENT_NODE_HEADING[index] && -z $SF_PRESENT_NODE_BODY[index] ]]; then
@@ -121,6 +130,7 @@ sf_chat_close() {
     if [[ ${2-} == orphan_section && $index -gt 1 &&
         $SF_PRESENT_NODE_TYPE[index-1] == section ]]; then
       end=$(( end - 1 ))
+      [[ -z $SF_PRESENT_NODE_HEADING[index-1] ]] || removed_section=1
     fi
     SF_PRESENT_NODE_TYPE=( "${(@)SF_PRESENT_NODE_TYPE[1,end]}" )
     SF_PRESENT_NODE_ROLE=( "${(@)SF_PRESENT_NODE_ROLE[1,end]}" )
@@ -133,6 +143,7 @@ sf_chat_close() {
     SF_PRESENT_NODE_BLOCKED=( "${(@)SF_PRESENT_NODE_BLOCKED[1,end]}" )
     SF_PRESENT_NODE_FRONTIER=( "${(@)SF_PRESENT_NODE_FRONTIER[1,end]}" )
     if (( end < index - 1 )); then
+      (( ! removed_section )) || SF_PRESENT_SECTION_ID=$(( SF_PRESENT_SECTION_ID - 1 ))
       section=${SF_PRESENT_NODE_TYPE[(I)section]}
       SF_PRESENT_LAST_ROLE=${SF_PRESENT_NODE_ROLE[section]-}
     fi
