@@ -422,6 +422,11 @@ sf_chat_rows() {
         body_end=${#text}
       fi
       length=${#text}
+      # Closing may trim trailing newlines the display cursor already consumed.
+      if (( offset > length )) &&
+          [[ $state == closed && $type == (message|reasoning) ]]; then
+        offset=$length
+      fi
       (( offset <= length )) || return 1
       # A settled decorated heading already owns its terminal row. When its
       # body arrives later, resume after the newly inserted join newline.

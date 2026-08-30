@@ -88,6 +88,19 @@ sf_chat_close 1
 sf_chat_repaint
 assert_equal $'hello\n\n───────────\n❯ ' "$PREDISPLAY"
 
+# Closing a streamed node trims trailing newlines after its display cursor may
+# already have advanced past them. A following event must remain renderable.
+sf_chat_reset
+sf_chat_terminal_reset
+sf_chat_event assistant_delta $'hello\n'
+sf_chat_repaint
+sf_chat_terminal_stage
+sf_chat_terminal_finish
+sf_chat_event assistant_commit
+sf_chat_event tool_call call_1 shell '{}'
+sf_chat_repaint || fail 'trimmed streamed message invalidated the display cursor'
+[[ $PREDISPLAY == *'╰ ⠃'* ]] || fail 'tool result after trimmed message was not rendered'
+
 sf_chat_reset
 sf_chat_terminal_reset
 sf_chat_add activity '' '' '' open
