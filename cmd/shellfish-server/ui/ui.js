@@ -137,9 +137,18 @@ function collapsible(parent, summary, text, kind, secondary) {
   el(details, "pre", null, safe(text));
 }
 
-function note(text, kind, heading) {
+function note(text, kind, heading, secondary) {
   hideIndicator();
-  const article = record(kind ? "note " + kind : "note", heading ? safe(heading) : null);
+  const article = record(kind ? "note " + kind : "note", null);
+  if (heading) {
+    const title = el(article, "h2");
+    if (secondary !== undefined) {
+      el(title, "strong", null, safe(heading));
+      title.append(document.createTextNode(" " + safe(secondary)));
+    } else {
+      title.textContent = safe(heading);
+    }
+  }
   el(article, "pre", null, safe(text));
   place(article);
   if (working) showIndicator();
@@ -374,7 +383,7 @@ function apply(frame) {
     case "_tool_permission_request":
       return askPermission(frame);
     case "_hook_display":
-      return note(frame.text, null, frame.event + ": " + frame.hook);
+      return note(frame.text, null, safe(frame.hook).split("/").pop(), frame.event);
     case "_exec_error": {
       let heading = "Turn failed";
       let detail = safe(frame.message);

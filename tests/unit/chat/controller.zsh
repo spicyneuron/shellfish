@@ -82,6 +82,8 @@ sf_chat_terminal_reset
 sf_chat_event tool_call call_1 shell '{"command":"true"}'
 sf_chat_decoded hook_display pre_tool_use /tmp/progress working
 assert_equal 'section,tool_call,tool_result,notice,tool_result' "${(j:,:)SF_PRESENT_NODE_TYPE}"
+assert_equal progress "$SF_PRESENT_NODE_HEADING[4]"
+assert_equal pre_tool_use "$SF_PRESENT_NODE_META[4]"
 assert_equal '' "$SF_PRESENT_NODE_STATUS[3]"
 assert_equal closed "$SF_PRESENT_NODE_STATE[3]"
 assert_equal open "$SF_PRESENT_NODE_STATE[5]"

@@ -312,6 +312,7 @@ sf_chat_rows() {
           else
             head="ℹ $heading"
           fi
+          [[ -z $SF_PRESENT_NODE_META[node] ]] || head+=" $SF_PRESENT_NODE_META[node]"
           ;;
         *) return 1 ;;
       esac

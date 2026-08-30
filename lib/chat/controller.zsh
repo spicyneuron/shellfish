@@ -129,7 +129,8 @@ sf_chat_decoded() {
         sf_chat_notice error "$first" "$second" || return 1
         ;;
       hook_display)
-        sf_chat_notice notice "$first: $second" "$third" || return 1
+        sf_chat_notice notice "${second:t}" "$third" || return 1
+        SF_PRESENT_NODE_META[REPLY]=$first
         ;;
       permission_request)
         [[ $SF_PRESENT_STATE == working && -z $SF_PRESENT_PERMISSION_ID ]] || return 1

@@ -205,7 +205,7 @@ sf_chat_tool_open() {
 
 sf_chat_notice() {
   local severity=$1 heading=$2 body=${3-}
-  integer index=${#SF_PRESENT_NODE_TYPE} resume_tool=0
+  integer index=${#SF_PRESENT_NODE_TYPE} notice_index resume_tool=0
   if (( index )) && [[ $SF_PRESENT_NODE_STATE[index] == open ]]; then
     if [[ $SF_PRESENT_NODE_TYPE[index] == tool_result ]]; then
       if [[ $severity == error ]]; then
@@ -220,7 +220,9 @@ sf_chat_notice() {
     fi
   fi
   sf_chat_add notice "$severity" "$heading" "$body" || return 1
-  (( ! resume_tool )) || sf_chat_tool_open
+  notice_index=$REPLY
+  (( ! resume_tool )) || sf_chat_tool_open || return 1
+  REPLY=$notice_index
 }
 
 sf_chat_event() {

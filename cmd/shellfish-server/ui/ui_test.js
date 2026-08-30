@@ -449,7 +449,8 @@ test("separates notice titles from their bodies", async () => {
     { type: "_exec_error", message: "recoverable" },
   );
   const notes = find(page.output, "note");
-  assert.equal(findTag(notes[0], "h2")[0].textContent, "stop: /tmp/\ufffdcheck");
+  assert.equal(findTag(notes[0], "h2")[0].textContent, "\ufffdcheck stop");
+  assert.equal(findTag(findTag(notes[0], "h2")[0], "strong")[0].textContent, "\ufffdcheck");
   assert.equal(findTag(notes[0], "pre")[0].textContent, "done");
   assert.equal(findTag(notes[1], "h2")[0].textContent, "Turn failed");
   assert.equal(findTag(notes[1], "pre")[0].textContent, "recoverable");
