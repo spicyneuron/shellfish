@@ -37,18 +37,9 @@ def tool_manifest:
   def result_preview:
     type == "object" and keys == ["content", "format"] and
     (.content | result_display) and (.format | display_format);
-  def valid_result:
-    .result as $result |
-    ($result | type == "object" and keys == ["path_field", "type"]) and
-    $result.type == "file_diff" and
-    ($result.path_field | type == "string" and
-      test("^[A-Za-z_][A-Za-z0-9_-]*$")) and
-    (.input_schema.properties[$result.path_field] as $path |
-      $path.type? == "string" and ($path.minLength? // 0) >= 1) and
-    ([.input_schema.required[]?] | index($result.path_field) != null);
   type == "object" and
   ((keys - ["allow_sandbox_bypass", "description", "display", "input_schema",
-    "result", "sandbox"]) | length == 0) and
+    "sandbox"]) | length == 0) and
   (.description | nul_free_string and length > 0) and
   (.input_schema | type == "object" and .type == "object" and
     ((.properties // {}) | type == "object") and
@@ -75,8 +66,7 @@ def tool_manifest:
         result_preview))) and
   (.sandbox | type == "boolean") and
   ((.allow_sandbox_bypass // false) | type == "boolean") and
-  (if (.allow_sandbox_bypass // false) then .sandbox else true end) and
-  ((has("result") | not) or valid_result);
+  (if (.allow_sandbox_bypass // false) then .sandbox else true end);
 
 def identifier:
   type == "string" and test("^[A-Za-z0-9_-]+$");

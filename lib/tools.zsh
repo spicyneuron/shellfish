@@ -120,29 +120,6 @@ sf_tool_bound_capture() {
   (( room == 0 )) || tail -c "$room" "$captured" >>"$result"
 }
 
-sf_tool_build_file_diff() {
-  local target=$1 original=$2 result=$3 state_dir=$4
-  local diff="$state_dir/file-diff"
-  integer diff_status
-  REPLY=''
-  if diff -U1 -L '' -L '' -- "$original" "$target" >"$diff"; then
-    diff_status=0
-  else
-    diff_status=$?
-  fi
-  case $diff_status in
-    0) return ;;
-    1) ;;
-    *) sf_tools_fail "cannot render file diff result: $target"; return ;;
-  esac
-  awk '
-    NR == 1 && /^--- / { next }
-    NR == 2 && /^\+\+\+ / { next }
-    { print }
-  ' "$diff" >"$result" || return
-  REPLY=file_diff
-}
-
 # Reports whether a call needs approval. The caller owns the decision.
 sf_tool_needs_permission() {
   local name=$1 input=$2 tools=$3
@@ -168,9 +145,9 @@ sf_tool_execute() {
   local tools=$5 cwd=$6 max_capture=$7 fence=$8
   local sandbox_read_paths=$9 sandbox_write_paths=${10}
   local tool_home=${HOME:-$cwd}
-  local id name execution_input bypass sandboxed result_type tool_sandbox tool_bypass tool_settings
+  local id name execution_input bypass sandboxed tool_sandbox tool_bypass tool_settings
   local state_dir captured bounded status_file temp command_path settings sandbox_log
-  local diff_field result_path original decoded sandbox_blocked=''
+  local decoded sandbox_blocked=''
   local -a fields read_paths write_paths
   local -a command locale_env
   integer exit_code tail_status process_status read_count
@@ -210,7 +187,7 @@ sf_tool_execute() {
     ($tools[] | select(.name == $call.name) |
       (.command | field), (.manifest.sandbox | tostring | field),
       (.manifest.allow_sandbox_bypass // false | tostring | field),
-      (.manifest.result.path_field // "" | field), (.settings | tojson | field)),
+      (.settings | tojson | field)),
     ("ok" | field)
   ' 2>/dev/null) || { sf_tools_fail 'cannot decode tool call'; return; }
   fields=( "${(@0)${decoded%$'\0'}}" )
@@ -225,7 +202,7 @@ sf_tool_execute() {
     sf_tool_result "$id" "$name" "tool is not allowed: $name" 127
     return
   fi
-  (( ${#fields} == 9 )) || { sf_tools_fail 'cannot decode tool call'; return; }
+  (( ${#fields} == 8 )) || { sf_tools_fail 'cannot decode tool call'; return; }
   id=$fields[1]
   name=$fields[2]
   execution_input=$fields[3]
@@ -233,8 +210,7 @@ sf_tool_execute() {
   command_path=$fields[5]
   tool_sandbox=$fields[6]
   tool_bypass=$fields[7]
-  diff_field=$fields[8]
-  tool_settings=$fields[9]
+  tool_settings=$fields[8]
   (( harness_sandbox )) || bypass=false
   if [[ $bypass == invalid || ( $bypass == true && $tool_bypass != true ) ]]; then
     sf_tool_result "$id" "$name" 'sandbox bypass is not allowed' 126
@@ -255,31 +231,6 @@ sf_tool_execute() {
     captured="$state_dir/captured"
     bounded="$state_dir/result"
     status_file="$state_dir/status"
-    if [[ -n $diff_field ]]; then
-      decoded=$(jq -jer --arg field "$diff_field" '
-        (.[$field] | select(type == "string")), "\u0000", "ok", "\u0000"
-      ' <<<"$execution_input") || { sf_tools_fail 'cannot decode file result path'; return; }
-      fields=( "${(@0)${decoded%$'\0'}}" )
-      (( ${#fields} == 2 )) && [[ $fields[2] == ok ]] || {
-        sf_tools_fail 'cannot decode file result path'
-        return
-      }
-      result_path=$fields[1]
-      [[ $result_path == /* ]] || result_path="$cwd/$result_path"
-      original="$state_dir/original"
-      if [[ -e $result_path || -L $result_path ]]; then
-        if [[ -f $result_path && -r $result_path ]]; then
-          cp -- "$result_path" "$original" || {
-            sf_tools_fail "cannot snapshot file result: $result_path"
-            return
-          }
-        else
-          result_path=''
-        fi
-      else
-        : >"$original" || return 1
-      fi
-    fi
     if (( harness_sandbox )) && [[ $tool_sandbox == true && $bypass != true ]]; then
       settings="$state_dir/fence.jsonc"
       sandbox_log="$state_dir/sandbox.log"
@@ -332,10 +283,6 @@ sf_tool_execute() {
       sf_tools_fail 'cannot bound tool output'
       return
     }
-    if [[ -n $result_path && $exit_code == 0 ]]; then
-      sf_tool_build_file_diff "$result_path" "$original" "$bounded" "$state_dir" || return 1
-      result_type=$REPLY
-    fi
     # Process startup denials are logged even on success, so a violation only
     # counts as a block when it accompanies a failure.
     if [[ $exit_code != 0 && -n $sandbox_log && -f $sandbox_log ]] &&
@@ -348,11 +295,10 @@ sf_tool_execute() {
       (( harness_sandbox )) && [[ $tool_sandbox == true && $bypass != true ]] && sandboxed=true
     fi
     REPLY=$(jq -cn --arg call_id "$id" --arg name "$name" \
-      --rawfile content "$bounded" --argjson exit_code "$exit_code" --arg result_type "$result_type" \
+      --rawfile content "$bounded" --argjson exit_code "$exit_code" \
       --arg sandboxed "$sandboxed" --arg sandbox_blocked "$sandbox_blocked" '
         {type:"message",role:"tool_result",call_id:$call_id,name:$name,
          content:$content,exit_code:$exit_code} +
-        (if $result_type == "" then {} else {result_type:$result_type} end) +
         (if $sandboxed == "" then {} else {sandboxed:($sandboxed == "true")} end) +
         (if $sandbox_blocked == "" then {} else {sandbox_blocked:true} end)
     ') || return

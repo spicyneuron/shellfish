@@ -32,23 +32,6 @@ sf_test_tool_execute() {
     "$tool_max_capture" "$tool_fence" "$tool_read_paths" "$tool_write_paths"
 }
 
-# File diffs compare snapshots directly; an empty snapshot represents a new file.
-typeset diff_state="$tmp/direct-diff"
-mkdir "$diff_state"
-print -r -- alpha >"$diff_state/original"
-print -r -- beta >"$diff_state/target"
-sf_tool_build_file_diff "$diff_state/target" "$diff_state/original" \
-  "$diff_state/result" "$diff_state"
-[[ $REPLY == file_diff ]]
-grep -Fqx -- '-alpha' "$diff_state/result"
-grep -Fqx -- '+beta' "$diff_state/result"
-: >"$diff_state/original"
-print -r -- created >"$diff_state/target"
-sf_tool_build_file_diff "$diff_state/target" "$diff_state/original" \
-  "$diff_state/result" "$diff_state"
-[[ $REPLY == file_diff ]]
-grep -Fqx -- '+created' "$diff_state/result"
-
 # Tool execution preserves the caller's home in its otherwise clean environment.
 load_tools "$stored_runtime"
 sf_test_tool_execute "$(jq -cn --arg command 'print -rn -- "$HOME"' \
@@ -143,7 +126,7 @@ jq -e '.content == "L1-1 of 1\n1\talpha\n"' <<<"$REPLY" >/dev/null
 sf_test_tool_execute '{"id":"read_empty","name":"read_file","input":{"file_path":"empty.txt"}}' 0
 jq -e '.content == "(empty)\n"' <<<"$REPLY" >/dev/null
 sf_test_tool_execute '{"id":"edit_1","name":"edit_file","input":{"file_path":"file-tool.txt","old_string":"alpha","new_string":"beta"}}' 0
-jq -e '.result_type == "file_diff" and (.content | startswith("@@ -1 +1 @@\n") and contains("-alpha") and contains("+beta"))' \
+jq -e '(has("result_type") | not) and (.content | startswith("@@ -1 +1 @@\n") and contains("-alpha") and contains("+beta"))' \
   <<<"$REPLY" >/dev/null
 print -r -- $'one\ntwo\nthree\nfour\nfive\nsix\nseven' >"$tmp/context-diff.txt"
 sf_test_tool_execute '{"id":"edit_context","name":"edit_file","input":{"file_path":"context-diff.txt","old_string":"four","new_string":"changed"}}' 0
@@ -155,7 +138,7 @@ typeset full_new=newnewnewnewnewnewnewnewnewnewnewnewnewnewnewnew
 print -r -- "$full_old" >"$tmp/full-diff.txt"
 sf_test_tool_execute "$(jq -cn --arg old "$full_old" --arg new "$full_new" \
   '{id:"edit_full",name:"edit_file",input:{file_path:"full-diff.txt",old_string:$old,new_string:$new}}')" 0
-jq -e '.content | (length > 64 and (contains("[output truncated]") | not) and contains("+newnew"))' \
+jq -e '.content | length == 64 and startswith("[output truncated]\n")' \
   <<<"$REPLY" >/dev/null
 tool_max_capture=$(jq -r '.harness.max_capture_bytes' <<<"$file_runtime")
 sf_test_tool_execute '{"id":"edit_2","name":"edit_file","input":{"file_path":"file-tool.txt","old_string":"beta","new_string":"beta"}}' 0

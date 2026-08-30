@@ -104,7 +104,7 @@ order=$(print -r -- \
 assert_equal 'assistant_commit,tool_call,call_3,edit_file,notes.json,plain,batch_ok' "$order"
 
 order=$(print -r -- \
-    '{"type":"message","role":"tool_result","call_id":"call_2","name":"edit_file","content":"@@ -1 +1 @@\n-old\n+new","exit_code":0,"result_type":"file_diff","sandbox_blocked":true}' |
+    '{"type":"message","role":"tool_result","call_id":"call_2","name":"edit_file","content":"@@ -1 +1 @@\n-old\n+new","exit_code":0,"sandbox_blocked":true}' |
   jq -jRs -L "$ROOT/lib" --argjson runtime "$edit_runtime" \
     -f "$ROOT/lib/chat/event-decode.jq" |
   tr '\0' '\n' | sed '/^$/d' | paste -sd, -)

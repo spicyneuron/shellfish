@@ -54,7 +54,35 @@ if [[ $updated == "$original" ]]; then
   printf 'edit_file: %s is already up to date\n' "$file_path"
   exit 0
 fi
+snapshot=$(mktemp "${TMPDIR:-/tmp}/shellfish-edit-original.XXXXXX") || {
+  printf 'edit_file: cannot prepare diff for %s\n' "$file_path" >&2
+  exit 2
+}
+diff_file=$(mktemp "${TMPDIR:-/tmp}/shellfish-edit-diff.XXXXXX") || {
+  rm -f -- "$snapshot"
+  printf 'edit_file: cannot prepare diff for %s\n' "$file_path" >&2
+  exit 2
+}
+trap 'rm -f -- "$snapshot" "$diff_file"' EXIT
+cp -- "$file_path" "$snapshot" || {
+  printf 'edit_file: cannot prepare diff for %s\n' "$file_path" >&2
+  exit 2
+}
 printf '%s' "$updated" >"$file_path" || {
   printf 'edit_file: cannot write %s\n' "$file_path" >&2
   exit 2
 }
+if diff -U1 -L '' -L '' -- "$snapshot" "$file_path" >"$diff_file"; then
+  diff_status=0
+else
+  diff_status=$?
+fi
+((diff_status == 1)) || {
+  printf 'edit_file: cannot render diff for %s\n' "$file_path" >&2
+  exit 2
+}
+awk '
+  NR == 1 && /^--- / { next }
+  NR == 2 && /^\+\+\+ / { next }
+  { print }
+' "$diff_file"

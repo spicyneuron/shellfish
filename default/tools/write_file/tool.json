@@ -13,9 +13,8 @@
     "summary": ["$file_path"],
     "call": {"content": [], "format": "plain"},
     "permission_preview": {"content": ["$file_path"], "format": "plain"},
-    "result": {"content": ["$result_full"], "format": "plain"}
+    "result": {"content": ["$result_full"], "format": "file_diff"}
   },
   "sandbox": true,
-  "allow_sandbox_bypass": true,
-  "result": {"type": "file_diff", "path_field": "file_path"}
+  "allow_sandbox_bypass": true
 }
