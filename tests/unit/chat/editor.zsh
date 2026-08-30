@@ -83,6 +83,21 @@ ZLE_CALLS=()
 sf_chat_undefined_key
 assert_equal $'-U \x18' "$ZLE_CALLS[-2]"
 assert_equal $'-U \t' "$ZLE_CALLS[-1]"
+KEYS=$'\x18\e'
+ZLE_CALLS=()
+sf_chat_undefined_key
+assert_equal 1 "${#ZLE_CALLS}"
+assert_equal $'-U \e' "$ZLE_CALLS[1]"
+SF_PRESENT_STATE=working
+KEYS_QUEUED_COUNT=0
+PENDING=0
+SF_PRESENT_PENDING_ROWS=1
+ZLE_CALLS=()
+sf_chat_pre_redraw
+assert_equal 0 "${#ZLE_CALLS}"
+SF_PRESENT_PENDING_ROWS=0
+sf_chat_pre_redraw
+assert_equal $'-U \x18' "$ZLE_CALLS[-1]"
 KEYS=$'\x18\u00e9'
 ZLE_CALLS=()
 sf_chat_undefined_key

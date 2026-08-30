@@ -5,7 +5,7 @@ zmodload zsh/zselect
 typeset -g SF_PRESENT_PERMISSION_DRAFT=''
 typeset -gi SF_PRESENT_PERMISSION_CURSOR=0
 typeset -gi SF_PRESENT_HEARTBEAT_TIMEOUT=1 SF_PRESENT_HEARTBEAT_EPOCHS=10
-typeset -gi SF_PRESENT_HEARTBEAT_REMAINING=0
+typeset -gi SF_PRESENT_HEARTBEAT_REMAINING=0 SF_PRESENT_HEARTBEAT_DEFERRED=0
 typeset -gi SF_PRESENT_ACTIVITY_FRAME=0 SF_PRESENT_ACTIVITY_TICKS=0
 typeset -gi SF_PRESENT_VERTICAL_COLUMN=-1
 typeset -g SF_PRESENT_HISTORY_DRAFT=''
@@ -124,6 +124,11 @@ sf_chat_line_finish() {
 }
 
 sf_chat_pre_redraw() {
+  if (( SF_PRESENT_HEARTBEAT_DEFERRED )); then
+    # Keep the next heartbeat behind the replayed terminal input.
+    SF_PRESENT_HEARTBEAT_DEFERRED=0
+    return 0
+  fi
   (( ! SF_PRESENT_PENDING_ROWS )) || return 0
   if (( SF_PRESENT_HISTORY_NO )) && [[ $SF_PRESENT_STATE != permission &&
       $BUFFER != $SF_PRESENT_HISTORY[$SF_PRESENT_HISTORY_NO] ]]; then
@@ -332,8 +337,11 @@ sf_chat_insert() {
 
 sf_chat_undefined_key() {
   if [[ $KEYS == $'\x18'?* ]]; then
-    # zle -U prepends, so enqueue the heartbeat first to replay input ahead of it.
-    zle -U $'\x18'
+    if [[ ${KEYS[2]} == $'\e' ]]; then
+      SF_PRESENT_HEARTBEAT_DEFERRED=1
+    else
+      zle -U $'\x18'
+    fi
     zle -U "${KEYS[2,-1]}"
     return
   fi
@@ -371,6 +379,7 @@ sf_chat_bind() {
   SF_PRESENT_PERMISSION_DRAFT=''
   SF_PRESENT_PERMISSION_CURSOR=0
   SF_PRESENT_HEARTBEAT_REMAINING=0
+  SF_PRESENT_HEARTBEAT_DEFERRED=0
   SF_PRESENT_VERTICAL_COLUMN=-1
   sf_chat_history_reset
   zle -N sf_chat_exec_ready
