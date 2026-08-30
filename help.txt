@@ -39,7 +39,7 @@ Backend credentials:
 
 Notes:
   Run /help in chat to list available commands.
-  Config is stored at $XDG_CONFIG_HOME/shellfish/config.jsonc
+  Config is stored at $XDG_CONFIG_HOME/shellfish/shellfish.jsonc
 
 Full documentation:
   https://github.com/spicyneuron/shellfish/tree/main/docs

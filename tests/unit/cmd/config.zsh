@@ -24,7 +24,7 @@ typeset report
 
 # Config initialization.
 typeset init_home="$tmp/init-home"
-typeset init_config="$init_home/config/shellfish/config.jsonc"
+typeset init_config="$init_home/config/shellfish/shellfish.jsonc"
 HOME="$init_home" XDG_CONFIG_HOME="$init_home/config" \
   zsh -f "$entry" config --init >/dev/null || fail 'config init failed'
 [[ -f $init_config ]] || fail 'config init did not create the default path'

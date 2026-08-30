@@ -1,6 +1,6 @@
 # Configuration
 
-Shellfish reads JSONC from `$XDG_CONFIG_HOME/shellfish/config.jsonc`, or `~/.config/shellfish/config.jsonc` when `XDG_CONFIG_HOME` is unset. User configuration is merged over the bundled [`default/config.jsonc`](../default/config.jsonc). Objects merge recursively and arrays replace their defaults.
+Shellfish reads JSONC from `$XDG_CONFIG_HOME/shellfish/shellfish.jsonc`, or `~/.config/shellfish/shellfish.jsonc` when `XDG_CONFIG_HOME` is unset. User configuration is merged over the bundled [`default/shellfish.jsonc`](../default/shellfish.jsonc). Objects merge recursively and arrays replace their defaults.
 
 Run `shellfish config --init` to create the configuration directory and copy [`config.template.jsonc`](../config.template.jsonc). Add `--sandbox-auto` to include detected development-tool paths in the new configuration. Use `shellfish config` to inspect what a new session would use.
 
@@ -45,7 +45,7 @@ A custom OpenAI-compatible service can reuse the built-in adapter:
 }
 ```
 
-Put credentials in the environment or in `.env` beside `config.jsonc`. Exported values take precedence.
+Put credentials in the environment or in `.env` beside `shellfish.jsonc`. Exported values take precedence.
 
 ## Customize a harness
 

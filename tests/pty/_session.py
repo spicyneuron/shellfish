@@ -51,7 +51,7 @@ class Session:
         self.config_home = Path(self.state_home.name) / "config"
         config_dir = self.config_home / "shellfish"
         config_dir.mkdir(parents=True)
-        self.config_file = config_dir / "config.jsonc"
+        self.config_file = config_dir / "shellfish.jsonc"
         config = {
             "default_profile": "development",
             # Pinned rather than "auto", which probes the terminal for its

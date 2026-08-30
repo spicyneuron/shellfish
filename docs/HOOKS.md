@@ -36,7 +36,7 @@ Hooks in one creation or turn operation share an ephemeral coordination director
 
 ## Configuring hooks
 
-Hooks are configured per harness in `config.jsonc`, as ordered lists of references keyed by event name:
+Hooks are configured per harness in `shellfish.jsonc`, as ordered lists of references keyed by event name:
 
 ```jsonc
 {

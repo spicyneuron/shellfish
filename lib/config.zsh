@@ -29,7 +29,7 @@ sf_config_init() {
     sf_config_fail "cannot create config directory: $dir"
     return
   }
-  temp=$(mktemp "$dir/.config.jsonc.XXXXXX") || {
+  temp=$(mktemp "$dir/.shellfish.jsonc.XXXXXX") || {
     sf_config_fail "cannot create config: $config_path"
     return
   }

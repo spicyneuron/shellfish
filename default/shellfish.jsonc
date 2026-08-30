@@ -1,6 +1,6 @@
 // Shellfish: https://github.com/spicyneuron/shellfish
 //
-// Default configuration. $XDG_CONFIG_HOME/shellfish/config.jsonc is merged over
+// Default configuration. $XDG_CONFIG_HOME/shellfish/shellfish.jsonc is merged over
 // this file.
 {
   "$schema": "https://raw.githubusercontent.com/spicyneuron/shellfish/refs/heads/main/config.schema.json",

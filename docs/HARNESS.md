@@ -8,7 +8,7 @@ Harnesses are resolved when a session is created and stored in its header. Chang
 
 ## Default coding harness
 
-The bundled `default` harness is intentionally small. It provides project context, four general-purpose tools, interactive commands, sandboxing, and conservative turn limits. Its complete configuration lives in [`default/config.jsonc`](../default/config.jsonc).
+The bundled `default` harness is intentionally small. It provides project context, four general-purpose tools, interactive commands, sandboxing, and conservative turn limits. Its complete configuration lives in [`default/shellfish.jsonc`](../default/shellfish.jsonc).
 
 ### System prompt
 

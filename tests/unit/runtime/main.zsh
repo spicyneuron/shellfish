@@ -339,7 +339,7 @@ fi
 # hook.
 mkdir -p "$tmp/root/default/hooks/stop"
 ln -s "$ROOT/lib" "$tmp/root/lib"
-ln -s "$ROOT/default/config.jsonc" "$tmp/root/default/config.jsonc"
+ln -s "$ROOT/default/shellfish.jsonc" "$tmp/root/default/shellfish.jsonc"
 print -r -- '#!/bin/sh' >"$tmp/root/default/hooks/stop/bundled"
 chmod +x "$tmp/root/default/hooks/stop/bundled"
 mkdir -p "$tmp/hooks/stop"

@@ -56,9 +56,9 @@ sf_runtime_config_path() {
     [[ $requested == /* ]] || requested="$PWD/$requested"
     REPLY=${requested:A}
   elif [[ -n ${XDG_CONFIG_HOME-} ]]; then
-    REPLY="$XDG_CONFIG_HOME/shellfish/config.jsonc"
+    REPLY="$XDG_CONFIG_HOME/shellfish/shellfish.jsonc"
   elif [[ -n ${HOME-} ]]; then
-    REPLY="$HOME/.config/shellfish/config.jsonc"
+    REPLY="$HOME/.config/shellfish/shellfish.jsonc"
   else
     REPLY=''
   fi
@@ -164,7 +164,7 @@ sf_runtime_resolve_from_config() {
   REPLY=''
   sf_runtime_config_path "$requested_config"
   config_path=$REPLY
-  defaults=$(sf_runtime_read_jsonc "$SF_ROOT/default/config.jsonc" 2>/dev/null) || {
+  defaults=$(sf_runtime_read_jsonc "$SF_ROOT/default/shellfish.jsonc" 2>/dev/null) || {
     sf_runtime_fail 'invalid bundled config'
     return
   }
@@ -371,7 +371,7 @@ sf_runtime_restore_presentation() {
   SF_PRESENTATION=''
   sf_runtime_config_path "$requested_config"
   config_path=$REPLY
-  defaults=$(sf_runtime_read_jsonc "$SF_ROOT/default/config.jsonc" 2>/dev/null) || {
+  defaults=$(sf_runtime_read_jsonc "$SF_ROOT/default/shellfish.jsonc" 2>/dev/null) || {
     sf_runtime_fail 'invalid bundled config'
     return
   }

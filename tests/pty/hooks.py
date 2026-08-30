@@ -22,8 +22,9 @@ IFS= read -r submitted
 read_status=$?
 [[ "$read_status:$submitted" == '1:/switch' ]] || exit 0
 jq -cn --arg path "${SHELLFISH_SESSION:h}/switched.jsonl" \
+  --arg config "${SHELLFISH_SESSION:h}/config/shellfish/shellfish.jsonc" \
   --arg executable "$SHELLFISH_EXECUTABLE" \
-  '{action:"handoff",argv:[$executable,"--session",$path]}' >&3
+  '{action:"handoff",argv:[$executable,"--config",$config,"--session",$path]}' >&3
 exit 11
 """
 
