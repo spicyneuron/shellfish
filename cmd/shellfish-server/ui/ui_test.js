@@ -19,8 +19,29 @@ const HEADER = {
   profile: { request: { model: "test-model" } },
   harness: {
     tools: [
-      { name: "shell", manifest: { display: { result: { exit_code: true } } } },
-      { name: "read_file", manifest: {} },
+      {
+        name: "shell",
+        manifest: {
+          display: {
+            summary: [],
+            call: { content: ["$command"], format: "sh" },
+            permission_preview: { content: ["$command"], format: "sh" },
+            result: { content: ["$result_preview", "$exit_code"], format: "plain" },
+          },
+        },
+      },
+      {
+        name: "read_file",
+        manifest: {
+          display: {
+            summary: ["$file_path"],
+            call: { content: [], format: "plain" },
+            permission_preview: { content: ["$file_path"], format: "plain" },
+            result: { content: ["$result_preview"], format: "plain" },
+          },
+        },
+      },
+      { name: "fallback", manifest: {} },
     ],
   },
 };
@@ -432,7 +453,12 @@ test("decorates reasoning and tools like the terminal", async () => {
     stop: "tool_calls",
     content: [
       { type: "reasoning", text: "thinking" },
-      { type: "tool_call", id: "call_1", name: "shell", input: { command: "pwd" } },
+      {
+        type: "tool_call",
+        id: "call_1",
+        name: "shell",
+        input: { command: "if true; then pwd; fi" },
+      },
       {
         type: "tool_call",
         id: "call_2",
@@ -443,13 +469,27 @@ test("decorates reasoning and tools like the terminal", async () => {
           sandbox_bypass_reason: "outside project",
         },
       },
+      {
+        type: "tool_call",
+        id: "call_3",
+        name: "fallback",
+        input: {
+          value: 1,
+          request_sandbox_bypass: true,
+          sandbox_bypass_reason: "outside project",
+        },
+      },
     ],
   });
   assert.equal(findTag(find(page.output, "reasoning")[0], "summary")[0].textContent, "✎Reasoning");
   const calls = find(page.output, "call");
   assert.equal(findTag(calls[0], "summary")[0].textContent, "⛭shell");
-  assert.equal(findTag(calls[1], "summary")[0].textContent, "⛭read_file · unsandboxed");
-  assert.equal(find(calls[1], "input")[0].textContent, '{\n  "file_path": "outside.txt"\n}');
+  assert.equal(find(calls[0], "input")[0].textContent, "if true; then pwd; fi");
+  assert.equal(find(calls[0], "word").length, 3);
+  assert.equal(findTag(calls[1], "summary")[0].textContent, "⛭read_file · outside.txt · unsandboxed");
+  assert.equal(find(calls[1], "input")[0].textContent, "");
+  assert.equal(findTag(calls[2], "summary")[0].textContent, "⛭fallback · unsandboxed");
+  assert.equal(find(calls[2], "input")[0].textContent, '{"value":1}');
 });
 
 test("leaves deltas out of the transcript and draws the record once", async () => {
@@ -568,9 +608,15 @@ test("retries a refused connection", async () => {
 });
 
 test("answers and removes permission prompts", async () => {
-  for (const [decision, button] of [
-    ["approve", 0],
-    ["deny", 1],
+  for (const [decision, button, name, input, preview] of [
+    ["approve", 0, "shell", { command: "ls", request_sandbox_bypass: true }, "ls"],
+    [
+      "deny",
+      1,
+      "read_file",
+      { file_path: "outside.txt", request_sandbox_bypass: true },
+      "outside.txt",
+    ],
   ]) {
     const page = await idle();
     await page.send(
@@ -583,24 +629,24 @@ test("answers and removes permission prompts", async () => {
           {
             type: "tool_call",
             id: "call_1",
-            name: "shell",
-            input: { command: "ls", request_sandbox_bypass: true },
+            name,
+            input,
           },
         ],
       },
       {
         type: "_tool_permission_request",
         id: "permission_1",
-        tool: { call_id: "call_1", name: "shell", input: { command: "ls" } },
+        tool: { call_id: "call_1", name, input },
         reason: "not allowed by policy",
       },
     );
     const request = find(page.output, "permission")[0];
-    assert.match(request.textContent, /Run shell outside of sandbox\?/);
-    assert.match(request.textContent, /ls/);
+    assert.match(request.textContent, new RegExp("Run " + name + " outside of sandbox\\?"));
+    assert.equal(find(request, "input")[0].textContent, preview);
     assert.match(request.textContent, /Reason: not allowed by policy/);
     assert.equal(find(request, "input")[0].tagName, "pre");
-    assert.equal(findTag(find(page.output, "call")[0], "summary")[0].textContent, "⛭shell · unsandboxed");
+    assert.match(findTag(find(page.output, "call")[0], "summary")[0].textContent, /unsandboxed$/);
     assert.equal(page.cancel.hidden, false);
 
     find(page.output, "actions")[0].children[button].dispatch("click");
@@ -636,15 +682,18 @@ test("keeps a tool result together with its sandbox notice", async () => {
     role: "tool_result",
     call_id: "call_1",
     name: "shell",
-    content: "/project",
+    content: "@@ -1 +1 @@\n-old\n+new",
     exit_code: 0,
+    result_type: "file_diff",
     sandbox_blocked: true,
   });
   const call = find(page.output, "call")[0];
   const result = find(call, "result");
   assert.equal(result.length, 1);
   assert.equal(result[0].tagName, "pre");
-  assert.match(result[0].textContent, /\/project$/);
+  assert.match(result[0].textContent, /\+new$/);
+  assert.equal(find(result[0], "diff-removed").length, 1);
+  assert.equal(find(result[0], "diff-added").length, 1);
   // The shell manifest asks for its exit code, so the tail mirrors the terminal.
   assert.equal(find(result[0], "notes")[0].textContent, "exit 0 · sandbox blocked");
   assert.equal(find(page.output, "note").length, 0);

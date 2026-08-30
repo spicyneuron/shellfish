@@ -46,8 +46,10 @@ let sectionId = 0;
 let sectionChunks = [];
 // Tool calls waiting for their result, by call ID.
 const calls = new Map();
-// Each tool's result display policy from the session header, by tool name.
-const resultDisplay = new Map();
+// Each tool's display policy from the session header, by tool name.
+const toolDisplay = new Map();
+const INPUT_FALLBACK = { content: ["$input_json"], format: "json" };
+const RESULT_FALLBACK = { content: ["$result_preview"], format: "plain" };
 
 // -------------------------------------------------------------------- the DOM
 
@@ -185,14 +187,51 @@ function note(text, kind, heading, secondary) {
   if (working) showIndicator();
 }
 
-// A shell command is the whole of what a call does; anything else reads better
-// as its own arguments.
-function inputText(input) {
-  if (input && typeof input.command === "string") return input.command;
-  const shown = { ...input };
-  delete shown.request_sandbox_bypass;
-  delete shown.sandbox_bypass_reason;
-  return JSON.stringify(shown, null, 2);
+function inputDisplay(input, content) {
+  return content
+    .map((part) => {
+      if (!part.startsWith("$")) return part;
+      const field = part.slice(1);
+      if (field === "input_json") {
+        const shown = { ...input };
+        delete shown.request_sandbox_bypass;
+        delete shown.sandbox_bypass_reason;
+        return JSON.stringify(shown);
+      }
+      if (!Object.hasOwn(input, field) || input[field] === null) return "";
+      return typeof input[field] === "string" ? input[field] : JSON.stringify(input[field]);
+    })
+    .join("");
+}
+
+function renderFormatted(parent, text, format) {
+  if (format === "md" || format === "markdown") {
+    markdown(parent, text);
+    return;
+  }
+  if (format === "diff" || format === "file_diff") {
+    for (const line of text.match(/[^\n]*(?:\n|$)/g)) {
+      if (!line) continue;
+      const className = line.startsWith("+") && !line.startsWith("+++")
+        ? "diff-added"
+        : line.startsWith("-") && !line.startsWith("---")
+          ? "diff-removed"
+          : null;
+      if (className) el(parent, "span", className, line);
+      else parent.append(document.createTextNode(line));
+    }
+    return;
+  }
+  highlight(parent, text, format);
+}
+
+function renderPreview(parent, input, preview) {
+  const block = el(parent, "pre", "input");
+  renderFormatted(block, safe(inputDisplay(input, preview.content)), preview.format);
+}
+
+function toolPolicy(name) {
+  return toolDisplay.get(name) || {};
 }
 
 // -------------------------------------------------------------------- markdown
@@ -390,9 +429,9 @@ function apply(frame) {
       const backend = safe((frame.backend || {}).name);
       model.textContent = backend ? backend + "/" + name : name;
       document.title = "shellfish " + safe(frame.cwd);
-      resultDisplay.clear();
+      toolDisplay.clear();
       for (const tool of (frame.harness || {}).tools || []) {
-        resultDisplay.set(tool.name, ((tool.manifest || {}).display || {}).result || {});
+        toolDisplay.set(tool.name, ((tool.manifest || {}).display || {}));
       }
       return;
     }
@@ -526,19 +565,16 @@ function renderMessage(frame) {
 
 function renderCall(parent, call) {
   const details = el(parent, "details", "call");
-  summary(
-    el(details, "summary"),
-    "⛭",
-    call.name,
-    call.input && call.input.request_sandbox_bypass === true ? "unsandboxed" : undefined,
-  );
-  renderInput(details, call.input);
+  const display = toolPolicy(call.name);
+  const parts = (display.summary || []).map((part) => inputDisplay(call.input, [part]));
+  if (call.input.request_sandbox_bypass === true) parts.push("unsandboxed");
+  const secondary = parts
+    .map((part) => part.replace(/\s+/g, " ").trim())
+    .filter(Boolean)
+    .join(" · ");
+  summary(el(details, "summary"), "⛭", call.name, secondary || undefined);
+  renderPreview(details, call.input, display.call || INPUT_FALLBACK);
   calls.set(call.id, details);
-}
-
-function renderInput(parent, input) {
-  const command = input && typeof input.command === "string";
-  highlight(el(parent, "pre", "input"), safe(inputText(input)), command ? "sh" : "json");
 }
 
 // A result belongs to the call it names.
@@ -547,16 +583,19 @@ function renderResult(frame) {
   if (!call) throw new Error("tool result has no call");
   hideIndicator();
   calls.delete(frame.call_id);
+  const display = toolPolicy(frame.name).result || RESULT_FALLBACK;
   const result = el(call, "pre", frame.exit_code ? "result failed" : "result");
   const notes = [];
-  if ((resultDisplay.get(frame.name) || {}).exit_code === true || frame.exit_code) {
+  if (display.content.includes("$exit_code") || frame.exit_code !== 0) {
     notes.push("exit " + frame.exit_code);
   }
   if (frame.sandbox_blocked === true) notes.push("sandbox blocked");
   if (notes.length) {
     el(result, "span", frame.exit_code ? "notes failed" : "notes", notes.join(" · "));
   }
-  result.append(document.createTextNode(safe(frame.content)));
+  if (display.content.includes("$result_preview") || display.content.includes("$result_full")) {
+    renderFormatted(el(result, "span", "content"), safe(frame.content), frame.result_type || display.format);
+  }
   place(call);
   if (working) showIndicator();
 }
@@ -589,7 +628,8 @@ function askPermission(frame) {
   pending = frame.id;
   const tool = frame.tool || {};
   const article = record("permission", "Run " + safe(tool.name) + " outside of sandbox?");
-  renderInput(article, tool.input);
+  const preview = toolPolicy(tool.name).permission_preview || INPUT_FALLBACK;
+  renderPreview(article, tool.input, preview);
   if (frame.reason) el(article, "pre", "reason", "Reason: " + safe(frame.reason));
   const actions = el(article, "div", "actions");
   for (const decision of ["approve", "deny"]) {

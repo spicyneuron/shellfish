@@ -22,6 +22,10 @@
   --syntax-string: #86b300;
   --syntax-number: #a37acc;
   --syntax-tag: #55b4d4;
+  --diff-added: #3f7f34;
+  --diff-added-background: #e2f4df;
+  --diff-removed: #b84f5b;
+  --diff-removed-background: #f8e1e3;
   --node-gap: 1.5em;
 }
 
@@ -47,6 +51,10 @@
     --syntax-string: #d5ff80;
     --syntax-number: #dfbfff;
     --syntax-tag: #5ccfe6;
+    --diff-added: #87d96c;
+    --diff-added-background: #12261e;
+    --diff-removed: #f27983;
+    --diff-removed-background: #2d1519;
   }
 }
 
@@ -239,6 +247,16 @@ code {
 
 .tag {
   color: var(--syntax-tag);
+}
+
+.diff-added {
+  color: var(--diff-added);
+  background: var(--diff-added-background);
+}
+
+.diff-removed {
+  color: var(--diff-removed);
+  background: var(--diff-removed-background);
 }
 
 details {
