@@ -57,7 +57,7 @@ Durable records are:
 - `context`: model-visible hook script output.
 - `message` with role `user`, `assistant`, or `tool_result`.
 
-A sandboxed tool result includes `sandbox_blocked: true` when the tool exits non-zero and sandbox monitoring reports that it attempted a blocked action.
+A sandboxed tool result includes `sandbox_denial_detected: true` when the tool exits non-zero and sandbox monitoring reports a denied action. The denial and non-zero exit are correlated signals; the denial is not necessarily the cause of the failure.
 
 Transient events currently include:
 

@@ -91,12 +91,12 @@ sf_chat_event tool_result call_1 0 done
 assert_equal done "$SF_PRESENT_NODE_BODY[5]"
 assert_equal closed "$SF_PRESENT_NODE_STATE[5]"
 
-# A sandbox block rides its own result rather than interrupting the tool.
+# A detected sandbox denial rides its own result rather than interrupting the tool.
 sf_chat_reset
 sf_chat_event tool_call call_1 shell '{"command":"true"}'
-sf_chat_decoded tool_result call_1 1 denied '' '' blocked
+sf_chat_decoded tool_result call_1 1 denied '' '' sandbox_denial
 assert_equal 'section,tool_call,tool_result' "${(j:,:)SF_PRESENT_NODE_TYPE}"
-assert_equal blocked "$SF_PRESENT_NODE_BLOCKED[3]"
+assert_equal sandbox_denial "$SF_PRESENT_NODE_SANDBOX_DENIAL[3]"
 assert_equal denied "$SF_PRESENT_NODE_BODY[3]"
 
 # An execution error abandons rather than resumes the live tool.

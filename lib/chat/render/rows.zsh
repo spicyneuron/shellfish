@@ -45,7 +45,7 @@ sf_chat_result_notes() {
   local code=$SF_PRESENT_NODE_STATUS[node]
   local -a notes=()
   [[ -z $code || $code == hidden ]] || notes+=( "exit $code" )
-  [[ -z $SF_PRESENT_NODE_BLOCKED[node] ]] || notes+=( 'sandbox blocked' )
+  [[ -z $SF_PRESENT_NODE_SANDBOX_DENIAL[node] ]] || notes+=( 'sandbox denial detected' )
   REPLY=${(j: · :)notes}
 }
 

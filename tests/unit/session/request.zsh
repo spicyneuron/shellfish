@@ -72,12 +72,12 @@ print -r -- '[
   {"type":"message","role":"assistant","content":[]},
   {"type":"context","hook":"t","script":"notes","content":"ctx"},
   {"type":"message","role":"tool_result","call_id":"c1","name":"shell",
-   "content":"out","exit_code":0,"sandbox_blocked":true,"sandboxed":true},
+   "content":"out","exit_code":0,"sandbox_denial_detected":true,"sandboxed":true},
   {"type":"message","role":"user","content":[{"type":"text","text":"next"}]}
 ]' | fold | jq -e '
   [.[].role] == ["assistant","tool_result","user"] and
-  (.[1] | has("sandbox_blocked", "sandboxed") | not) and
-  .[1].content == "out\n\nSandbox notice: The sandbox blocked one or more actions attempted by this tool." and
+  (.[1] | has("sandbox_denial_detected", "sandboxed") | not) and
+  .[1].content == "out\n\nSandbox notice: A sandbox denial was detected while this tool was running." and
   .[2].content[0].text == "<hook name=\"t\">\n<context script=\"notes\">\nctx\n</context>\n</hook>\n\nnext"
 ' >/dev/null
 

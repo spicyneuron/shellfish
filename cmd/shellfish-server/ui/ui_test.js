@@ -702,7 +702,7 @@ test("keeps a tool result together with its sandbox notice", async () => {
     name: "edit_file",
     content: "@@ -1 +1 @@\n-old\n+new",
     exit_code: 0,
-    sandbox_blocked: true,
+    sandbox_denial_detected: true,
   });
   const call = find(page.output, "call")[0];
   const result = find(call, "result");
@@ -711,7 +711,7 @@ test("keeps a tool result together with its sandbox notice", async () => {
   assert.match(result[0].textContent, /\+new$/);
   assert.equal(find(result[0], "diff-removed").length, 1);
   assert.equal(find(result[0], "diff-added").length, 1);
-  assert.equal(find(result[0], "notes")[0].textContent, "sandbox blocked");
+  assert.equal(find(result[0], "notes")[0].textContent, "sandbox denial detected");
   assert.equal(find(page.output, "note").length, 0);
   assert.equal(find(page.output, "activity").length, 1);
   assert.equal(page.cancel.hidden, false);

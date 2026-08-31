@@ -6,8 +6,8 @@ typeset -ga SF_PRESENT_NODE_TYPE=() SF_PRESENT_NODE_ROLE=()
 typeset -ga SF_PRESENT_NODE_HEADING=() SF_PRESENT_NODE_BODY=()
 typeset -ga SF_PRESENT_NODE_META=() SF_PRESENT_NODE_STATE=()
 typeset -ga SF_PRESENT_NODE_STATUS=() SF_PRESENT_NODE_FORMAT=()
-# Marks a tool result whose sandbox blocked an action.
-typeset -ga SF_PRESENT_NODE_BLOCKED=()
+# Marks a tool result accompanied by a detected sandbox denial.
+typeset -ga SF_PRESENT_NODE_SANDBOX_DENIAL=()
 # A formatter enables the node frontier before body rows can flush. A negative
 # frontier preserves ordinary row settlement.
 typeset -ga SF_PRESENT_NODE_FRONTIER=()
@@ -100,7 +100,7 @@ sf_chat_drop() {
     SF_PRESENT_NODE_STATE=()
     SF_PRESENT_NODE_STATUS=()
     SF_PRESENT_NODE_FORMAT=()
-    SF_PRESENT_NODE_BLOCKED=()
+    SF_PRESENT_NODE_SANDBOX_DENIAL=()
     SF_PRESENT_NODE_FRONTIER=()
     return 0
   fi
@@ -112,7 +112,7 @@ sf_chat_drop() {
   SF_PRESENT_NODE_STATE=( "${(@)SF_PRESENT_NODE_STATE[count + 1,-1]}" )
   SF_PRESENT_NODE_STATUS=( "${(@)SF_PRESENT_NODE_STATUS[count + 1,-1]}" )
   SF_PRESENT_NODE_FORMAT=( "${(@)SF_PRESENT_NODE_FORMAT[count + 1,-1]}" )
-  SF_PRESENT_NODE_BLOCKED=( "${(@)SF_PRESENT_NODE_BLOCKED[count + 1,-1]}" )
+  SF_PRESENT_NODE_SANDBOX_DENIAL=( "${(@)SF_PRESENT_NODE_SANDBOX_DENIAL[count + 1,-1]}" )
   SF_PRESENT_NODE_FRONTIER=( "${(@)SF_PRESENT_NODE_FRONTIER[count + 1,-1]}" )
 }
 
@@ -140,7 +140,7 @@ sf_chat_close() {
     SF_PRESENT_NODE_STATE=( "${(@)SF_PRESENT_NODE_STATE[1,end]}" )
     SF_PRESENT_NODE_STATUS=( "${(@)SF_PRESENT_NODE_STATUS[1,end]}" )
     SF_PRESENT_NODE_FORMAT=( "${(@)SF_PRESENT_NODE_FORMAT[1,end]}" )
-    SF_PRESENT_NODE_BLOCKED=( "${(@)SF_PRESENT_NODE_BLOCKED[1,end]}" )
+    SF_PRESENT_NODE_SANDBOX_DENIAL=( "${(@)SF_PRESENT_NODE_SANDBOX_DENIAL[1,end]}" )
     SF_PRESENT_NODE_FRONTIER=( "${(@)SF_PRESENT_NODE_FRONTIER[1,end]}" )
     if (( end < index - 1 )); then
       (( ! removed_section )) || SF_PRESENT_SECTION_ID=$(( SF_PRESENT_SECTION_ID - 1 ))
@@ -292,7 +292,7 @@ sf_chat_event() {
       SF_PRESENT_NODE_STATUS[index]=$second
       SF_PRESENT_NODE_FORMAT[index]=$fourth
       SF_PRESENT_NODE_META[index]=$fifth
-      SF_PRESENT_NODE_BLOCKED[index]=$sixth
+      SF_PRESENT_NODE_SANDBOX_DENIAL[index]=$sixth
       sf_chat_close $index || return 1
       unset "SF_PRESENT_TOOL_HEADING[$first]" "SF_PRESENT_TOOL_CONTENT[$first]" \
         "SF_PRESENT_TOOL_SUMMARY[$first]" "SF_PRESENT_TOOL_FORMAT[$first]"

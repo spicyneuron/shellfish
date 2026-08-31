@@ -41,11 +41,11 @@ def request_messages:
         .messages += [context_message(.context; ""), ($record | del(.type, .usage))] |
         .context = []
       else .messages += [$record |
-        if .role == "tool_result" and .sandbox_blocked? == true then
+        if .role == "tool_result" and .sandbox_denial_detected? == true then
           .content += (if .content == "" then "" else "\n\n" end) +
-            "Sandbox notice: The sandbox blocked one or more actions attempted by this tool."
+            "Sandbox notice: A sandbox denial was detected while this tool was running."
         else . end |
-        del(.type, .usage, .sandbox_blocked, .sandboxed)] end
+        del(.type, .usage, .sandbox_denial_detected, .sandboxed)] end
     elif ($record.type | IN("system", "session")) then .
     else error("unrecognized session record: " + ($record.type | tostring)) end
   ) as $conversation |

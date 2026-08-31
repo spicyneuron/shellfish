@@ -149,7 +149,7 @@ sf_tool_execute() {
   local tool_home=${HOME:-$cwd}
   local id name execution_input bypass sandboxed tool_sandbox tool_bypass tool_settings
   local state_dir captured bounded status_file temp command_path settings sandbox_log
-  local decoded sandbox_blocked=''
+  local decoded sandbox_denial_detected=''
   local -a fields read_paths write_paths
   local -a command locale_env
   integer exit_code tail_status process_status read_count
@@ -288,11 +288,11 @@ sf_tool_execute() {
       sf_tools_fail 'cannot bound tool output'
       return
     }
-    # Process startup denials are logged even on success, so a violation only
-    # counts as a block when it accompanies a failure.
+    # Process startup denials are logged even on success, so only report a
+    # denial when it accompanies a failure.
     if [[ $exit_code != 0 && -n $sandbox_log && -f $sandbox_log ]] &&
       grep -Fq ' ✗ ' "$sandbox_log"; then
-      sandbox_blocked=true
+      sandbox_denial_detected=true
     fi
     sandboxed=''
     if [[ $name == shell ]]; then
@@ -301,11 +301,11 @@ sf_tool_execute() {
     fi
     REPLY=$(jq -cn --arg call_id "$id" --arg name "$name" \
       --rawfile content "$bounded" --argjson exit_code "$exit_code" \
-      --arg sandboxed "$sandboxed" --arg sandbox_blocked "$sandbox_blocked" '
+      --arg sandboxed "$sandboxed" --arg sandbox_denial_detected "$sandbox_denial_detected" '
         {type:"message",role:"tool_result",call_id:$call_id,name:$name,
          content:$content,exit_code:$exit_code} +
         (if $sandboxed == "" then {} else {sandboxed:($sandboxed == "true")} end) +
-        (if $sandbox_blocked == "" then {} else {sandbox_blocked:true} end)
+        (if $sandbox_denial_detected == "" then {} else {sandbox_denial_detected:true} end)
     ') || return
   } always {
     sf_tools_cleanup

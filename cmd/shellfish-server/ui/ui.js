@@ -589,7 +589,7 @@ function renderResult(frame) {
   if (display.content.includes("$exit_code") || frame.exit_code !== 0) {
     notes.push("exit " + frame.exit_code);
   }
-  if (frame.sandbox_blocked === true) notes.push("sandbox blocked");
+  if (frame.sandbox_denial_detected === true) notes.push("sandbox denial detected");
   if (notes.length) {
     el(result, "span", frame.exit_code ? "notes failed" : "notes", notes.join(" · "));
   }

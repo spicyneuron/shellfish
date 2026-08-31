@@ -78,7 +78,7 @@ def durable_display_fields($replay; $tools):
       (if any($display.content[]; . == "$result_preview" or . == "$result_full")
        then .content else "" end), $display.format,
       (if ($display.content | index("$result_full")) != null then "full" else "" end),
-      (if .sandbox_blocked? == true then "blocked" else "" end)]
+      (if .sandbox_denial_detected? == true then "sandbox_denial" else "" end)]
   elif canonical_context then
     ["context", .script,
       ([.hook, .prompt?] | display_summary), .content]

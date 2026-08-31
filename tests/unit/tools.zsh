@@ -365,11 +365,11 @@ grep -Fx -- "$tmp/write file" "$tmp/fence.args" >/dev/null
 touch "$tmp/fence.violate"
 sf_test_tool_execute "$(jq -cn --arg command 'printf blocked; exit 3' \
   '{id:"fence_blocked",name:"shell",input:{command:$command}}')" 1
-jq -e '.content == "blocked" and .sandboxed == true and .sandbox_blocked == true' \
+jq -e '.content == "blocked" and .sandboxed == true and .sandbox_denial_detected == true' \
   <<<"$REPLY" >/dev/null
 sf_test_tool_execute "$(jq -cn --arg command 'printf noisy' \
   '{id:"fence_noise",name:"shell",input:{command:$command}}')" 1
-jq -e '.content == "noisy" and .sandboxed == true and (has("sandbox_blocked") | not)' \
+jq -e '.content == "noisy" and .sandboxed == true and (has("sandbox_denial_detected") | not)' \
   <<<"$REPLY" >/dev/null
 rm "$tmp/fence.violate"
 load_tools "$(jq -c --arg fence "$tmp/bin/fence" \
