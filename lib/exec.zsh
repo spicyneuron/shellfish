@@ -250,7 +250,7 @@ sf_exec_turn() {
   local user_record=$1 session_path=$2 permission_available=${3:-0} prompt
   local request assistant stop_input call result backend_command opened_records
   local tool_name call_id tool_input decision denial_reason hook_action hook_reason
-  local runtime_projection tools tool_schema max_capture fence
+  local runtime_projection tools tool_schema max_capture fence config_file config_dir
   local sandbox_read_paths sandbox_write_paths
   local SHELLFISH_STATE_DIR='' SF_API_KEY='' SF_API_KEY_SOURCE=''
   local -a runtime_fields response_fields tool_fields tool_calls handoff
@@ -282,13 +282,14 @@ sf_exec_turn() {
       ($runtime.harness.sandbox_write_paths | tojson | field),
       (if ($runtime.harness.permission_request // [] | length) > 0 then "1" else "0" end | field),
       ($runtime.harness.tools | tojson | field),
+      ($runtime.backend.env_file | field),
       ("ok" | field)
     ' 2>/dev/null) || {
       failure='cannot inspect frozen runtime'
       return 1
     }
     runtime_fields=( "${(@0)${runtime_projection%$'\0'}}" )
-    (( ${#runtime_fields} == 11 )) && [[ $runtime_fields[11] == ok ]] || {
+    (( ${#runtime_fields} == 12 )) && [[ $runtime_fields[12] == ok ]] || {
       failure='cannot inspect frozen runtime'
       return 1
     }
@@ -302,6 +303,9 @@ sf_exec_turn() {
     sandbox_write_paths=$runtime_fields[8]
     permission_hook_available=$runtime_fields[9]
     tools=$runtime_fields[10]
+    config_file=$runtime_fields[11]
+    config_dir=''
+    [[ -z $config_file ]] || config_dir=${config_file:h}
     [[ -d $SF_SESSION[cwd] && -x $SF_SESSION[cwd] ]] || {
       failure="session working directory is unavailable: $SF_SESSION[cwd]"
       return 1
@@ -472,7 +476,7 @@ sf_exec_turn() {
             fi
             if ! sf_tool_execute "$call" "$harness_sandbox" "$decision" "$denial_reason" \
                 "$tools" "$SF_SESSION[cwd]" "$max_capture" "$fence" \
-                "$sandbox_read_paths" "$sandbox_write_paths"; then
+                "$sandbox_read_paths" "$sandbox_write_paths" "$config_dir"; then
               failure=${SF_TOOL_ERROR:-shell tool execution failed}
               return 1
             fi

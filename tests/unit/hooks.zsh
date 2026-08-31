@@ -5,15 +5,17 @@ source "${0:A:h}/_hooks.zsh"
 # session_start runs during lock-free session creation, receives its event, and
 # commits one attributed context record after the complete chain succeeds.
 typeset start_session="$tmp/start-session.jsonl"
-make_hook start '[[ $# == 1 && $1 == session_start ]]; [[ ! -s /dev/stdin && -z ${SHELLFISH_TURN_ID-} ]]; [[ -z ${OPENAI_API_KEY-} && -z ${CUSTOM_API_KEY-} ]]; [[ -n $SHELLFISH_SESSION_ID && $SHELLFISH_MODEL == test && $PROJECT_DIR == $PWD ]]; print -n startup; print -n -u2 local; [[ -z $SKIP ]] || exit 10'
+make_hook start '[[ $# == 1 && $1 == session_start ]]; [[ ! -s /dev/stdin && -z ${SHELLFISH_TURN_ID-} ]]; [[ -z ${OPENAI_API_KEY-} && -z ${CUSTOM_API_KEY-} ]]; [[ -n $SHELLFISH_SESSION_ID && $SHELLFISH_MODEL == test && $PROJECT_DIR == $PWD ]]; [[ $SHELLFISH_CONFIG_DIR == "$EXPECTED_CONFIG_DIR" ]]; print -n startup; print -n -u2 local; [[ -z $SKIP ]] || exit 10'
 typeset start_hook=$hook
 make_hook start_second 'print -n second'
 typeset start_second_hook=$hook
-SF_TEST_RUNTIME=$(jq -cn --arg hook "$start_hook" --arg second "$start_second_hook" '
+typeset -gx EXPECTED_CONFIG_DIR="$tmp/config"
+SF_TEST_RUNTIME=$(jq -cn --arg hook "$start_hook" --arg second "$start_second_hook" \
+  --arg env_file "$EXPECTED_CONFIG_DIR/.env" '
   {
     profile:{request:{model:"test"}},
     backend:{name:"test",command:"/usr/bin/false",endpoint:"https://example.invalid",
-      api_key_env:"CUSTOM_API_KEY",env_file:"",insecure_tls:false,http_timeout:1,http_stall:1},
+      api_key_env:"CUSTOM_API_KEY",env_file:$env_file,insecure_tls:false,http_timeout:1,http_stall:1},
     harness:{sandbox_read_paths:[],sandbox_write_paths:[],fence:"",tools:[],sandbox:false,max_requests_per_turn:1,
       max_tool_calls_per_request:1,max_capture_bytes:512,session_start:[$hook,$second]}
   }

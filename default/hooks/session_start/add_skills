@@ -1,0 +1,17 @@
+#!/usr/bin/env zsh
+
+emulate -R zsh
+setopt extended_glob
+set -u
+
+[[ $# == 1 && $1 == session_start ]] || exit 1
+bundled_root=${0:A:h:h:h}
+source "$bundled_root/lib/skills.zsh" || exit 1
+sf_skills_discover "$bundled_root" "${SHELLFISH_CONFIG_DIR-}" "${PROJECT_DIR:-$PWD}"
+(( ${#reply} )) || exit 0
+print -r -- 'Available agent skills. Invoke the `skill` tool when one applies:'
+integer index
+for (( index = 1; index <= ${#reply}; index += 3 )); do
+  printf -- '- %s: %s\n' "$reply[index]" "$reply[index+1]"
+done
+exit 0

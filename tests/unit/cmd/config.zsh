@@ -46,7 +46,7 @@ assert_equal 700 "$(file_mode "$init_dir")" 'config init did not protect the con
 assert_equal 600 "$(file_mode "$init_config")" 'config init did not protect the config file'
 assert_equal 600 "$(file_mode "$init_dir/example.env")" \
   'config init did not protect the environment example'
-for component in hooks backends prompts tools; do
+for component in hooks backends prompts tools skills; do
   [[ -d $init_dir/$component ]] || fail "config init did not create $component directory"
   assert_equal 700 "$(file_mode "$init_dir/$component")" \
     "config init did not protect the $component directory"

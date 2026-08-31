@@ -1,0 +1,23 @@
+#!/usr/bin/env zsh
+set -euo pipefail
+setopt extended_glob
+
+(($# == 0)) || { print -u2 -r -- 'Usage: skill'; exit 2; }
+name=$(jq -ejr 'select(type == "object" and keys == ["name"] and
+  (.name | type == "string" and test("^[a-z0-9]+(-[a-z0-9]+)*$") and length <= 64)) | .name') || {
+  print -u2 -r -- 'skill: invalid input'
+  exit 2
+}
+bundled_root=${0:A:h:h:h}
+source "$bundled_root/lib/skills.zsh" || exit 1
+sf_skills_discover "$bundled_root" "${SHELLFISH_CONFIG_DIR-}" "${PROJECT_DIR:-$PWD}"
+integer index
+for (( index = 1; index <= ${#reply}; index += 3 )); do
+  [[ $reply[index] == $name ]] || continue
+  file=$reply[index+2]
+  printf 'Skill directory: %s\n\n' "${file:h}"
+  cat -- "$file"
+  exit 0
+done
+print -u2 -r -- "skill is not available: $name"
+exit 2

@@ -12,7 +12,7 @@ SF_SESSION_PATH=$session
 typeset stored_runtime=$(head -n 1 "$session" | jq -c 'del(.type,.format_version,.cwd,.created)')
 typeset stored_cwd=$(jq -r '.cwd' "$session")
 typeset tool_tools tool_schema tool_cwd=$stored_cwd tool_max_capture tool_sandbox tool_fence
-typeset tool_read_paths tool_write_paths
+typeset tool_read_paths tool_write_paths tool_config_dir=''
 
 load_tools() {
   local runtime=$1 permission_available=${2:-0}
@@ -29,7 +29,7 @@ load_tools() {
 
 sf_test_tool_execute() {
   sf_tool_execute "$1" "$2" "${3-}" "${4-}" "$tool_tools" "$tool_cwd" \
-    "$tool_max_capture" "$tool_fence" "$tool_read_paths" "$tool_write_paths"
+    "$tool_max_capture" "$tool_fence" "$tool_read_paths" "$tool_write_paths" "$tool_config_dir"
 }
 
 # The web fetch tool validates its input and sends only fixed Reader options to curl.
@@ -133,6 +133,11 @@ load_tools "$stored_runtime"
 sf_test_tool_execute "$(jq -cn --arg command 'print -rn -- "$HOME"' \
   '{id:"home_1",name:"shell",input:{command:$command}}')" 0
 jq -e --arg home "$HOME" '.content == $home' <<<"$REPLY" >/dev/null
+tool_config_dir="$tmp/custom-config"
+sf_test_tool_execute "$(jq -cn --arg command 'print -rn -- "$SHELLFISH_CONFIG_DIR"' \
+  '{id:"config_dir_1",name:"shell",input:{command:$command}}')" 0
+jq -e --arg config "$tool_config_dir" '.content == $config' <<<"$REPLY" >/dev/null
+tool_config_dir=''
 typeset caller_home=$HOME
 mkdir "$tmp/home"
 export HOME="$tmp/home"

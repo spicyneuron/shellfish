@@ -24,6 +24,7 @@ These are ordinary component files under `default/prompts/system/`; a user confi
 - `read_file` reads project text files with line numbers.
 - `edit_file` makes targeted replacements in existing project text files.
 - `write_file` creates new project text files.
+- `skill` loads instructions for an advertised Agent Skill.
 - `search_web` uses Exa's anonymous MCP endpoint to search the web.
 - `fetch_url` uses Jina Reader to fetch an HTTP(S) website as Markdown.
 - `shell` runs one Zsh command in the session working directory.
@@ -32,15 +33,18 @@ Tools are shell scripts with JSON manifests. The default harness enables sandbox
 
 Sandboxing applies to opted-in tools. Hooks and backend adapters are trusted executables and run with the user's permissions. See [Configuration](CONFIG.md#sandbox-grants) for persistent and one-off path grants.
 
-### Project context
+### Session context
 
-At session start, three hooks prepare context before the transcript is created:
+At session start, four hooks prepare context before the transcript is created:
 
 - `add_environment` reports the host, project tree, and Git context.
 - `add_command_availability` reports versions of common shell commands when available.
 - `add_project_instructions` loads the project's `AGENTS.md`, or `CLAUDE.md` when `AGENTS.md` is absent.
+- `add_skills` advertises available Agent Skills.
 
 This context becomes part of the durable initial session prefix. It is collected once for a new session rather than before every turn.
+
+Skills are discovered in descending precedence from `./.agents/skills/`, the resolved configuration directory's `skills/`, `~/.agents/skills/`, and bundled `default/skills/`. Each skill directory contains a `SKILL.md` whose frontmatter supplies its matching `name` and `description`. Invalid skills and skills with `disable-model-invocation: true` are unavailable to the model. The advertised catalog is recorded when the session is created; the `skill` tool reads the selected file when invoked.
 
 ### Interactive commands
 
@@ -61,7 +65,7 @@ These features are harness behavior, not special cases in the agent loop. A cust
 
 ### Limits
 
-The bundled harness allows up to 50 provider requests per turn and 20 tool calls per provider response. Tool output is truncated to 32 KiB. Each hook invocation has a separate 32 KiB budget across stdout, stderr, and fd 3; exceeding it fails the operation. These limits bound accidental loops and oversized context while leaving room for multi-step coding tasks.
+The bundled harness allows up to 100 provider requests per turn and 25 tool calls per provider response. Tool output is truncated to 32 KiB. Each hook invocation has a separate 32 KiB budget across stdout, stderr, and fd 3; exceeding it fails the operation. These limits bound accidental loops and oversized context while leaving room for multi-step coding tasks.
 
 ## Build a focused harness
 

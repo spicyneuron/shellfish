@@ -1,0 +1,18 @@
+{
+  "description": "Load an available agent skill when its description matches the task. The tool returns the skill's complete instructions and its directory for resolving referenced resources.",
+  "input_schema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["name"],
+    "properties": {
+      "name": {"type": "string", "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$", "maxLength": 64, "description": "Skill name from the available agent skills context"}
+    }
+  },
+  "display": {
+    "summary": ["$name"],
+    "call": {"content": [], "format": "plain"},
+    "permission_preview": {"content": ["$name"], "format": "plain"},
+    "result": {"content": ["$result_preview"], "format": "markdown"}
+  },
+  "sandbox": false
+}

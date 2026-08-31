@@ -143,7 +143,7 @@ sf_tool_needs_permission() {
 sf_tool_execute() {
   local call=$1 harness_sandbox=$2 decision=${3-} denial_reason=${4-}
   local tools=$5 cwd=$6 max_capture=$7 fence=$8
-  local sandbox_read_paths=$9 sandbox_write_paths=${10}
+  local sandbox_read_paths=$9 sandbox_write_paths=${10} config_dir=${11-}
   local tool_home=${HOME:-$cwd}
   local id name execution_input bypass sandboxed tool_sandbox tool_bypass tool_settings
   local state_dir captured bounded status_file temp command_path settings sandbox_log
@@ -236,6 +236,7 @@ sf_tool_execute() {
       sandbox_log="$state_dir/sandbox.log"
       print -r -- "$tool_settings" >"$settings" || return 1
       command=(/usr/bin/env -i HOME="$tool_home" "${locale_env[@]}" PATH="$PATH" TERM="${TERM:-dumb}"
+        SHELLFISH_CONFIG_DIR="$config_dir"
         TMPPREFIX=/tmp/fence/zsh SHELLFISH_MAX_CAPTURE_BYTES="$max_capture"
         "$fence" --monitor --fence-log-file "$sandbox_log" --settings "$settings"
         --expose-host-path "$settings" --expose-host-path "$command_path")
@@ -252,6 +253,7 @@ sf_tool_execute() {
       temp="$state_dir/tmp"
       mkdir "$temp" || return 1
       command=(/usr/bin/env -i HOME="$tool_home" "${locale_env[@]}" PATH="$PATH" TERM="${TERM:-dumb}"
+        SHELLFISH_CONFIG_DIR="$config_dir"
         TMPDIR="$temp" TMPPREFIX="$temp/zsh"
         SHELLFISH_MAX_CAPTURE_BYTES="$max_capture" "$command_path")
     fi

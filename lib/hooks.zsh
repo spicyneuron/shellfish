@@ -256,10 +256,12 @@ sf_hooks_invoke() {
   local SHELLFISH_MODEL=${SHELLFISH_MODEL:-$SF_SESSION[model]}
   local SHELLFISH_EXECUTABLE=${SF_ENTRY-}
   local PROJECT_DIR=${PROJECT_DIR:-$SF_SESSION[cwd]}
+  local SHELLFISH_CONFIG_DIR=${SHELLFISH_CONFIG_DIR-}
   local SHELLFISH_TURN_ID=${SHELLFISH_TURN_ID-}
   local SF_HOOKS_EVENT=$event
   export SHELLFISH_SESSION SHELLFISH_STATE_DIR SHELLFISH_CAPTURE_LIMIT
   export SHELLFISH_SESSION_ID SHELLFISH_MODEL SHELLFISH_EXECUTABLE PROJECT_DIR
+  export SHELLFISH_CONFIG_DIR
   if [[ $event == (user_prompt_submit|permission_request|pre_tool_use|post_tool_use|stop) ]]; then
     [[ -n $SHELLFISH_TURN_ID ]] || {
       sf_hooks_fail "$event hook requires a turn ID"
@@ -298,6 +300,9 @@ sf_hooks_run_chain() {
   local SHELLFISH_SESSION_ID=$SF_SESSION[id]
   local SHELLFISH_MODEL=$SF_SESSION[model]
   local PROJECT_DIR=$SF_SESSION[cwd]
+  local config_file SHELLFISH_CONFIG_DIR=''
+  config_file=$(jq -r '.backend.env_file // ""' <<<"$SF_SESSION[runtime]") || return 1
+  [[ -z $config_file ]] || SHELLFISH_CONFIG_DIR=${config_file:h}
   sf_hooks_invoke "$session" "$SF_SESSION[cwd]" "$input" "$fields[1]" \
     "$allow_control" "$argument_count" "$event" "$@" "${hooks[@]}"
 }

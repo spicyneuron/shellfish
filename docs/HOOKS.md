@@ -79,6 +79,7 @@ Every hook is invoked with the session working directory as its `PWD` and these 
 | `SHELLFISH_MODEL` | Active model frozen in the session header |
 | `SHELLFISH_VERBOSE` | `1` when the chat was started with the `--verbose` presentation override; otherwise `0` |
 | `PROJECT_DIR` | Working directory frozen in the session header |
+| `SHELLFISH_CONFIG_DIR` | Directory containing the resolved config file, or its prospective default location |
 | `PLUGIN_ROOT` | Directory containing the resolved hook executable |
 | `PLUGIN_DATA` | Persistent, mode-0700 data directory for the event and hook name |
 
@@ -155,8 +156,6 @@ Runs once during lock-free session preparation. It does not run when an existing
 - **stderr** is shown and discarded.
 - **fd 3** is invalid; this event accepts no control.
 - **Default action** is finishing creation. Exit 10 or 11 is unsupported and fails exec entry without committing stdout.
-
-`add_environment` prints date, platform, working directory, a directory tree, and git state to stdout. `add_command_availability` reports the host Zsh version and the first available command and version in common command groups. Missing commands and unsupported version flags are omitted. `add_project_instructions` prints `AGENTS.md` from the session working directory, or `CLAUDE.md` when `AGENTS.md` is absent. Creation-only execution prevents this durable context from being repeated on resume.
 
 If a creation hook fails or is interrupted by a handled signal, Shellfish reports the failure and does not create the session file. Hooks that perform external writes must provide their own idempotency if creation is retried.
 
