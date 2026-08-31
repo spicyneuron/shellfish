@@ -54,7 +54,8 @@ def durable_display_fields($replay; $tools):
     if $replay then ["user", .content[0].text] else empty end
   elif canonical_assistant_message then
     (if $replay then
-      ([(.content[] | select(.type == "reasoning") | .text)] | join("\n")) as $reasoning |
+      ([(.content[] | select(.type == "reasoning" and .text != "") | .text)] |
+        join("\n\n")) as $reasoning |
       (if .usage | has("reasoning_tokens") then (.usage.reasoning_tokens | tostring) else "" end) as $reasoning_tokens |
       ["assistant", ([.content[] | select(.type == "text") | .text] | join("")),
        $reasoning, $reasoning_tokens]
