@@ -11,7 +11,7 @@ read_status=$?
 
 case "$read_status:$submitted" in
   1:/help|1:/h)
-    print -r -- $'40\t!COMMAND\tRun COMMAND and stage its output as context' >>"$SHELLFISH_STATE_DIR/help.tsv"
+    print -r -- $'40\t!COMMAND\tRun COMMAND and stage its output as context' >>"$SHELLFISH_TURN_STATE/help.tsv"
     exit 0
     ;;
   1:\!*) ;;
@@ -26,9 +26,9 @@ if [[ -z $command ]]; then
 fi
 
 print -r -- '$ '"$command"
-unset SHELLFISH_SESSION SHELLFISH_SESSION_ID SHELLFISH_STATE_DIR
+unset SHELLFISH_SESSION SHELLFISH_SESSION_ID SHELLFISH_TURN_STATE SHELLFISH_SESSION_STATE
 unset SHELLFISH_CAPTURE_LIMIT SHELLFISH_MODE SHELLFISH_MODEL SHELLFISH_TURN_ID SHELLFISH_VERBOSE
-unset PROJECT_DIR SHELLFISH_CONFIG_DIR PLUGIN_ROOT PLUGIN_DATA
+unset PROJECT_DIR SHELLFISH_CONFIG_DIR PLUGIN_ROOT
 command zsh -f -c "$command" </dev/null 2>&1
 command_status=$?
 (( ! command_status )) || print -r -- $'\n(exit '"$command_status"')'

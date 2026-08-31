@@ -106,12 +106,13 @@ fi
 
 SF_TEST_RUNTIME=$(jq -c --arg hook "$availability_hook" \
   '.harness.session_start=[$hook]' <<<"$SF_TEST_RUNTIME")
-sf_hooks_state_create
 SF_SESSION_PATH=$availability_session
+SHELLFISH_SESSION_STATE=''
+sf_hooks_session_state_create
 sf_session_prepare "$SF_TEST_RUNTIME"
 sf_hooks_session_start "$availability_session"
 sf_session_create "${SF_HOOK_CONTEXT_RECORDS[@]}"
-sf_hooks_state_cleanup
+sf_hooks_turn_state_cleanup
 jq -e -s '
   length == 2 and .[1].type == "context" and .[1].tag == "session_start" and
   .[1].hook == "add_command_availability" and
@@ -119,7 +120,7 @@ jq -e -s '
     contains("\nAvailable commands:\n"))
 ' "$availability_session" >/dev/null
 
-# The bundled /help chain appends TSV rows to $SHELLFISH_STATE_DIR/help.tsv;
+# The bundled /help chain appends TSV rows to $SHELLFISH_TURN_STATE/help.tsv;
 # the help hook (last in the chain) sorts by order and aligns columns. Verify
 # structural properties, not exact text: submission is skipped, every command
 # key appears, and rows are sorted by order ascending.
@@ -141,7 +142,7 @@ SF_TEST_RUNTIME=$(jq -c \
 sf_test_session "$help_session"
 sf_session_open "$help_session"
 sf_session_close
-sf_hooks_state_create
+sf_hooks_turn_state_create
 run_prompt_hook /help "$help_session"
 [[ $reply[1] == handled ]]
 typeset help_display=''
@@ -245,7 +246,7 @@ for former_alias in /n /f '/f 1'; do
   run_prompt_hook "$former_alias" "$help_session"
   [[ $reply[1] == proceed ]]
 done
-sf_hooks_state_cleanup
+sf_hooks_turn_state_cleanup
 
 # Forking a fork starts a numbered sequence instead of repeating the suffix.
 typeset fork_session="$tmp/fork-source_fork.jsonl"
@@ -257,7 +258,7 @@ jq -c '
   else . end
 ' "$SF_TEST_SESSIONS/complete.jsonl" >"$fork_session"
 SHELLFISH_EXECUTABLE="$ROOT/bin/shellfish" \
-  SHELLFISH_SESSION="$fork_session" SHELLFISH_STATE_DIR="$tmp" \
+  SHELLFISH_SESSION="$fork_session" SHELLFISH_TURN_STATE="$tmp" \
   zsh -f "$ROOT/default/hooks/user_prompt_submit/fork" user_prompt_submit \
   3>"$fork_control" < <(print -n -- '/fork 1') || fork_status=$?
 (( fork_status == 11 ))
@@ -270,7 +271,7 @@ jq -e --arg command "$ROOT/bin/shellfish" \
 
 fork_status=0
 SHELLFISH_EXECUTABLE="$ROOT/bin/shellfish" \
-  SHELLFISH_SESSION="$fork_session" SHELLFISH_STATE_DIR="$tmp" \
+  SHELLFISH_SESSION="$fork_session" SHELLFISH_TURN_STATE="$tmp" \
   zsh -f "$ROOT/default/hooks/user_prompt_submit/fork" user_prompt_submit \
   3>"$fork_control" < <(print -n -- /fork) || fork_status=$?
 (( fork_status == 11 ))
@@ -291,13 +292,13 @@ print -r -- '{"type":"message","role":"user","content":[{"type":"text","text":"S
 print -r -- '{"type":"message","role":"assistant","stop":"end","content":[{"type":"text","text":"Answer"},{"type":"text","text":"Continued\n\n"}],"usage":{"input_tokens":1,"output_tokens":1}}' >>"$copy_session"
 integer copy_status=0
 COPY_OUTPUT="$copy_output" PATH="$copy_bin:$PATH" SHELLFISH_SESSION="$copy_session" \
-  SHELLFISH_STATE_DIR="$tmp" zsh -f "$ROOT/default/hooks/user_prompt_submit/copy" \
+  SHELLFISH_TURN_STATE="$tmp" zsh -f "$ROOT/default/hooks/user_prompt_submit/copy" \
   user_prompt_submit < <(print -n -- '/copy 1') || copy_status=$?
 (( copy_status == 10 ))
 assert_equal Hello "$(<$copy_output)"
 copy_status=0
 COPY_OUTPUT="$copy_output" PATH="$copy_bin:$PATH" SHELLFISH_SESSION="$copy_session" \
-  SHELLFISH_STATE_DIR="$tmp" zsh -f "$ROOT/default/hooks/user_prompt_submit/copy" \
+  SHELLFISH_TURN_STATE="$tmp" zsh -f "$ROOT/default/hooks/user_prompt_submit/copy" \
   user_prompt_submit < <(print -n -- /copy) || copy_status=$?
 (( copy_status == 10 ))
 print -n -- $'Answer\n\nContinued\n\n' >"$tmp/copy-expected"
@@ -308,7 +309,7 @@ integer fork_number=1
 for target in 2 3; do
   fork_status=0
   SHELLFISH_EXECUTABLE="$ROOT/bin/shellfish" SHELLFISH_SESSION="$copy_session" \
-    SHELLFISH_STATE_DIR="$tmp" zsh -f "$ROOT/default/hooks/user_prompt_submit/fork" \
+    SHELLFISH_TURN_STATE="$tmp" zsh -f "$ROOT/default/hooks/user_prompt_submit/fork" \
     user_prompt_submit 3>"$fork_control" < <(print -n -- "/fork $target") || fork_status=$?
   (( fork_status == 11 ))
   jq -e --arg draft Second \
@@ -327,10 +328,10 @@ SF_TEST_RUNTIME=$(jq -c \
 sf_test_session "$shell_session"
 sf_session_open "$shell_session"
 sf_session_close
-sf_hooks_state_create
+sf_hooks_turn_state_create
 typeset -gx SHELLFISH_MODE=test SHELLFISH_VERBOSE=1
-typeset shell_state_dir=$SHELLFISH_STATE_DIR
-typeset shell_command='[[ -n $HOME ]] || exit 8; env | grep -Eq '\''^(SHELLFISH_(SESSION|SESSION_ID|STATE_DIR|CAPTURE_LIMIT|MODE|MODEL|TURN_ID|VERBOSE|CONFIG_DIR)|PROJECT_DIR|PLUGIN_ROOT|PLUGIN_DATA)='\'' && exit 9; print output; exit 7'
+typeset shell_state_dir=$SHELLFISH_TURN_STATE
+typeset shell_command='[[ -n $HOME ]] || exit 8; env | grep -Eq '\''^(SHELLFISH_(SESSION|SESSION_ID|TURN_STATE|SESSION_STATE|CAPTURE_LIMIT|MODE|MODEL|TURN_ID|VERBOSE|CONFIG_DIR)|PROJECT_DIR|PLUGIN_ROOT)='\'' && exit 9; print output; exit 7'
 run_prompt_hook "!$shell_command" "$shell_session"
 [[ $reply[1] == handled ]]
 [[ -d $shell_state_dir ]]
@@ -339,6 +340,6 @@ jq -e --arg prompt "$shell_command" '
     .hook == "user_shell" and .prompt == $prompt and
     .status == 7 and (.content | contains("output")))
 ' < <(tail -n 1 "$shell_session") >/dev/null
-sf_hooks_state_cleanup
+sf_hooks_turn_state_cleanup
 unset SHELLFISH_MODE SHELLFISH_VERBOSE
 assert_no_hook_captures

@@ -11,7 +11,7 @@ read_status=$?
 
 case "$read_status:$submitted" in
   1:/help|1:/h)
-    print -r -- $'111\t/copy [N]\tCopy the latest or selected user/agent section' >>"$SHELLFISH_STATE_DIR/help.tsv"
+    print -r -- $'111\t/copy [N]\tCopy the latest or selected user/agent section' >>"$SHELLFISH_TURN_STATE/help.tsv"
     exit 0
     ;;
   1:/copy) target=0 ;;

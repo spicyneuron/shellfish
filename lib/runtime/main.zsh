@@ -137,12 +137,6 @@ sf_runtime_resolve() {
     sf_runtime_resolve_from_config "$requested_config" "$requested_profile" \
       "$requested_model" "$requested_request" "$requested_backend" || return
   fi
-  jq -e '[.harness | to_entries[] | select(.key | IN(
-    "session_start", "user_prompt_submit", "permission_request", "pre_tool_use",
-    "post_tool_use", "stop")) | .value[]] | length == 0' \
-    <<<"$REPLY" >/dev/null 2>&1 && return 0
-  [[ -n ${XDG_STATE_HOME-} || -n ${HOME-} ]] ||
-    sf_runtime_fail 'HOME or XDG_STATE_HOME is required for persistent hook data'
 }
 
 sf_runtime_resolve_from_config() {

@@ -11,7 +11,7 @@ read_status=$?
 
 case "$read_status:$submitted" in
   1:/help|1:/h)
-    print -r -- $'999\t/resume\tSwitch to a session for this directory' >>"$SHELLFISH_STATE_DIR/help.tsv"
+    print -r -- $'999\t/resume\tSwitch to a session for this directory' >>"$SHELLFISH_TURN_STATE/help.tsv"
     exit 0
     ;;
   1:/resume)

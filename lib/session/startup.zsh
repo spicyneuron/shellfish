@@ -10,19 +10,15 @@ sf_session_startup_create() {
   local session=$1 runtime=$2 system_record=${3-}
   SF_SESSION_STARTUP_ERROR=''
   SF_SESSION_PATH=$session
-  SHELLFISH_STATE_DIR=''
-  {
-    if ! sf_hooks_state_create; then
-      SF_SESSION_STARTUP_ERROR=$SF_HOOK_ERROR
-    elif ! sf_session_prepare "$runtime" "$system_record"; then
-      SF_SESSION_STARTUP_ERROR=$SF_SESSION_ERROR
-    elif ! sf_hooks_session_start "$session"; then
-      SF_SESSION_STARTUP_ERROR=$SF_HOOK_ERROR
-    elif ! sf_session_create "${SF_HOOK_CONTEXT_RECORDS[@]}"; then
-      SF_SESSION_STARTUP_ERROR=$SF_SESSION_ERROR
-    fi
-  } always {
-    sf_hooks_state_cleanup
-  }
+  SHELLFISH_SESSION_STATE=''
+  if ! sf_hooks_session_state_create; then
+    SF_SESSION_STARTUP_ERROR=$SF_HOOK_ERROR
+  elif ! sf_session_prepare "$runtime" "$system_record"; then
+    SF_SESSION_STARTUP_ERROR=$SF_SESSION_ERROR
+  elif ! sf_hooks_session_start "$session"; then
+    SF_SESSION_STARTUP_ERROR=$SF_HOOK_ERROR
+  elif ! sf_session_create "${SF_HOOK_CONTEXT_RECORDS[@]}"; then
+    SF_SESSION_STARTUP_ERROR=$SF_SESSION_ERROR
+  fi
   [[ -z $SF_SESSION_STARTUP_ERROR ]]
 }

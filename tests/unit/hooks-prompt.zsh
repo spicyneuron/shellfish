@@ -10,7 +10,7 @@ typeset empty_command=$hook
 # The prompt hook runs under the session lock and preserves exact prompt bytes.
 typeset prompt_session="$tmp/prompt-session.jsonl"
 typeset prompt_hook
-make_hook prompt '[[ $1 == user_prompt_submit && $SHELLFISH_TURN_ID == 1 ]]; [[ $SHELLFISH_SESSION == /* && $SHELLFISH_SESSION_ID == prompt-session && $SHELLFISH_MODEL == test ]]; [[ $PROJECT_DIR == $PWD && $PLUGIN_ROOT == ${0:A:h} && -d $SHELLFISH_STATE_DIR ]]; [[ $PLUGIN_DATA == "$XDG_STATE_HOME/shellfish/hooks/user_prompt_submit/prompt" ]]; cat; print -n context; [[ -z $CONTROL ]] || { jq -cn --arg path "$CONTROL" '\''{action:"handoff",argv:["/usr/bin/printf",$path]}'\'' >&3; exit 11 }; [[ -z $META ]] || { print -rn -u3 -- '\''{"context":{"prompt":"false","status":1}}'\''; exit 10 }; [[ -z $BINARY ]] || print -rn -- $'\''\0tail'\''; [[ -z $SKIP ]] || { print -rn -u2 -- blocked; exit 10; }'
+make_hook prompt '[[ $1 == user_prompt_submit && $SHELLFISH_TURN_ID == 1 ]]; [[ $SHELLFISH_SESSION == /* && $SHELLFISH_SESSION_ID == prompt-session && $SHELLFISH_MODEL == test ]]; [[ $PROJECT_DIR == $PWD && $PLUGIN_ROOT == ${0:A:h} && -d $SHELLFISH_TURN_STATE && -d $SHELLFISH_SESSION_STATE ]]; [[ -z ${PLUGIN_DATA-} ]]; cat; print -n context; [[ -z $CONTROL ]] || { jq -cn --arg path "$CONTROL" '\''{action:"handoff",argv:["/usr/bin/printf",$path]}'\'' >&3; exit 11 }; [[ -z $META ]] || { print -rn -u3 -- '\''{"context":{"prompt":"false","status":1}}'\''; exit 10 }; [[ -z $BINARY ]] || print -rn -- $'\''\0tail'\''; [[ -z $SKIP ]] || { print -rn -u2 -- blocked; exit 10; }'
 prompt_hook=$hook
 typeset -g SF_TEST_RUNTIME=$(jq -cn --arg hook "$prompt_hook" '
   {
@@ -22,7 +22,7 @@ typeset -g SF_TEST_RUNTIME=$(jq -cn --arg hook "$prompt_hook" '
   }
 ')
 sf_test_session "$prompt_session"
-sf_hooks_state_create
+sf_hooks_turn_state_create
 run_prompt_hook $'first\nsecond\n' "$prompt_session"
 [[ ${#reply} == 1 && $reply[1] == proceed ]]
 typeset accepted_turn=$SHELLFISH_TURN_ID
@@ -84,5 +84,5 @@ if run_prompt_hook ordinary "$invalid_control_session"; then
 fi
 [[ $SF_HOOK_ERROR == 'prompt hook returned invalid control data' ]]
 
-sf_hooks_state_cleanup
+sf_hooks_turn_state_cleanup
 assert_no_hook_captures

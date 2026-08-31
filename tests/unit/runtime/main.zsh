@@ -112,7 +112,7 @@ sf_runtime_resolve "$session" "$config" '' changed '{}' '' 1 || resolve_status=$
 (( resolve_status == 2 ))
 [[ $SF_RUNTIME_ERROR == 'runtime overrides cannot be used with an existing session' ]]
 
-# Hooked runtimes require a persistent state base before a session starts.
+# Hooked runtimes do not require persistent plugin storage.
 integer had_home=${+HOME} had_state_home=${+XDG_STATE_HOME}
 typeset saved_home=${HOME-} saved_state_home=${XDG_STATE_HOME-}
 typeset hooked_session="$tmp/hooked.jsonl"
@@ -122,10 +122,7 @@ jq -cn --argjson runtime "$runtime" '
   ($runtime | .harness.stop=["/bin/hook"])
 ' >"$hooked_session"
 unset HOME XDG_STATE_HOME
-if sf_runtime_resolve "$hooked_session" "$config" '' '' '{}' '' 0; then
-  fail 'hooked runtime resolved without a persistent state base'
-fi
-[[ $SF_RUNTIME_ERROR == 'HOME or XDG_STATE_HOME is required for persistent hook data' ]]
+sf_runtime_resolve "$hooked_session" "$config" '' '' '{}' '' 0 >/dev/null
 if (( had_home )); then export HOME=$saved_home; else unset HOME; fi
 if (( had_state_home )); then export XDG_STATE_HOME=$saved_state_home
 else unset XDG_STATE_HOME; fi

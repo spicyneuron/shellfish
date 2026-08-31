@@ -22,9 +22,9 @@ esac
   print -r -- $'100\t/queue drop <N>\tDiscard queued prompt'
   print -r -- $'101\t/queue clear\tDiscard all queued prompts'
   print -r -- $'1000\t/quit, /q\tExit'
-} >>"$SHELLFISH_STATE_DIR/help.tsv"
+} >>"$SHELLFISH_TURN_STATE/help.tsv"
 
-sort -s -t$'\t' -k1,1n "$SHELLFISH_STATE_DIR/help.tsv" |
+sort -s -t$'\t' -k1,1n "$SHELLFISH_TURN_STATE/help.tsv" |
   LC_ALL=C awk -F'\t' '
     function chars(text, copy) {
       copy=text
@@ -37,5 +37,5 @@ sort -s -t$'\t' -k1,1n "$SHELLFISH_STATE_DIR/help.tsv" |
       for (i=1;i<=NR;i++) { l=chars(key[i]); if (l>max) max=l }
       for (i=1;i<=NR;i++) printf "%s%*s  %s\n", key[i], max-chars(key[i]), "", desc[i]
     }' >&2
-rm -f -- "$SHELLFISH_STATE_DIR/help.tsv"
+rm -f -- "$SHELLFISH_TURN_STATE/help.tsv"
 exit 10

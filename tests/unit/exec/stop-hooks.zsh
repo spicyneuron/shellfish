@@ -28,13 +28,13 @@ set -e
 [[ $SHELLFISH_MODEL == test-model ]] || exit 4
 [[ $PROJECT_DIR == "$PWD" ]] || exit 5
 [[ ${PLUGIN_ROOT:A} == "${0:A:h}" ]] || exit 6
-[[ ${PLUGIN_DATA:A} == "${XDG_STATE_HOME:A}/shellfish/hooks/stop/stop-once" ]] || exit 7
-[[ ! -e $SHELLFISH_STATE_DIR/inherited ]] || exit 8
-[[ -e $TEST_STATE_PATH ]] || print -rn -- "$SHELLFISH_STATE_DIR" >"$TEST_STATE_PATH"
+[[ -z ${PLUGIN_DATA-} && -d $SHELLFISH_SESSION_STATE ]] || exit 7
+[[ ! -e $SHELLFISH_TURN_STATE/inherited ]] || exit 8
+[[ -e $TEST_STATE_PATH ]] || print -rn -- "$SHELLFISH_TURN_STATE" >"$TEST_STATE_PATH"
 input=$(cat)
-print -r -- "$2|${input//$'\n'/\\n}" >>"$SHELLFISH_STATE_DIR/attempts"
-if [[ ! -e $SHELLFISH_STATE_DIR/stopped ]]; then
-  : >$SHELLFISH_STATE_DIR/stopped
+print -r -- "$2|${input//$'\n'/\\n}" >>"$SHELLFISH_TURN_STATE/attempts"
+if [[ ! -e $SHELLFISH_TURN_STATE/stopped ]]; then
+  : >$SHELLFISH_TURN_STATE/stopped
   print -rn -- feedback
   print -rn -u2 -- first-local
   exit 10
@@ -47,11 +47,11 @@ SF_TEST_RUNTIME=$(jq -c --arg hook "$stop_once" \
   '.harness.stop=[$hook]' <<<"$SF_TEST_RUNTIME")
 typeset stop_session="$tmp/stop.jsonl"
 sf_test_session "$stop_session"
-sf_hooks_state_create
-typeset inherited_state=$SHELLFISH_STATE_DIR
+sf_hooks_turn_state_create
+typeset inherited_state=$SHELLFISH_TURN_STATE
 : >"$inherited_state/inherited"
 stream=$(sf_test_turn original "$stop_session")
-[[ -d $inherited_state && $SHELLFISH_STATE_DIR == "$inherited_state" ]]
+[[ -d $inherited_state && $SHELLFISH_TURN_STATE == "$inherited_state" ]]
 [[ -s $TEST_STATE_PATH ]] || fail 'stop hook did not report its state directory'
 typeset turn_state=$(<$TEST_STATE_PATH)
 [[ ! -d $turn_state ]]
@@ -63,7 +63,7 @@ print -r -- "$stream" | jq -eRn '
   ($events | map(select(.type == "_hook_display") | [.event,(.hook|split("/")[-1]),.text])) ==
     [["stop","stop-once","first-local"],["stop","stop-once","second-local"]]
 ' >/dev/null
-sf_hooks_state_cleanup
+sf_hooks_turn_state_cleanup
 jq -e '
   .messages[-2].role == "assistant" and
   .messages[-1].role == "user" and
@@ -74,7 +74,7 @@ jq -e -s '
   ([.[] | select(.type == "context")] | length) == 1 and
   ([.[] | select(.content? == "discarded")] | length) == 0
 ' "$stop_session" >/dev/null
-sf_hooks_state_cleanup
+sf_hooks_turn_state_cleanup
 
 # Stop stdin concatenates only the last assistant's text blocks and preserves
 # trailing newlines. The attempt count starts at one.
@@ -90,7 +90,7 @@ cat >"$text_stop" <<'ZSH'
 #!/usr/bin/env zsh
 set -e
 [[ $# == 2 && $1 == stop && $2 == 1 ]]
-cmp -s /dev/stdin "$SHELLFISH_STATE_DIR/expected"
+cmp -s /dev/stdin "$SHELLFISH_TURN_STATE/expected"
 ZSH
 chmod +x "$text_stop"
 SF_TEST_RUNTIME=$(jq -c --arg hook "$text_stop" --arg backend "$text_backend" '
@@ -98,14 +98,14 @@ SF_TEST_RUNTIME=$(jq -c --arg hook "$text_stop" --arg backend "$text_backend" '
 ' <<<"$SF_TEST_RUNTIME")
 typeset text_session="$tmp/stop-text.jsonl"
 sf_test_session "$text_session"
-sf_hooks_state_create
-printf 'first\nsecond\n' >"$SHELLFISH_STATE_DIR/expected"
+sf_hooks_turn_state_create
+printf 'first\nsecond\n' >"$SHELLFISH_TURN_STATE/expected"
 stream=$(sf_test_turn text "$text_session")
 print -r -- "$stream" | jq -eRn '
   [inputs | fromjson] as $events |
   ($events | any(.type == "message" and .role == "assistant"))
 ' >/dev/null
-sf_hooks_state_cleanup
+sf_hooks_turn_state_cleanup
 SF_TEST_RUNTIME=$(jq -c --arg backend "$ROOT/tests/fixtures/backend/run" \
   '.backend.command=$backend' <<<"$SF_TEST_RUNTIME")
 
@@ -114,8 +114,8 @@ SF_TEST_RUNTIME=$(jq -c --arg backend "$ROOT/tests/fixtures/backend/run" \
 typeset tool_stop="$tmp/stop-feedback"
 cat >"$tool_stop" <<'ZSH'
 #!/usr/bin/env zsh
-if [[ ! -e $SHELLFISH_STATE_DIR/tool-feedback ]]; then
-  : >$SHELLFISH_STATE_DIR/tool-feedback
+if [[ ! -e $SHELLFISH_TURN_STATE/tool-feedback ]]; then
+  : >$SHELLFISH_TURN_STATE/tool-feedback
   print -rn -- 'use a tool'
   exit 10
 fi

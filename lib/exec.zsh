@@ -220,7 +220,7 @@ sf_exec_turn_cleanup() {
   local failure=$2 after=$3 recovered='' close_failure=''
 
   sf_tools_cleanup
-  sf_hooks_state_cleanup
+  sf_hooks_turn_state_cleanup
   [[ -z $SF_EXEC[backend_error_file] ]] ||
     rm -f -- "$SF_EXEC[backend_error_file]" 2>/dev/null || true
   if { (( interrupted )) || [[ -n $failure ]] } && [[ -n $SF_SESSION_LOCK ]]; then
@@ -252,7 +252,7 @@ sf_exec_turn() {
   local tool_name call_id tool_input decision denial_reason hook_action hook_reason
   local runtime_projection tools tool_schema max_capture fence config_file config_dir
   local sandbox_read_paths sandbox_write_paths
-  local SHELLFISH_STATE_DIR='' SF_API_KEY='' SF_API_KEY_SOURCE=''
+  local SHELLFISH_TURN_STATE='' SHELLFISH_SESSION_STATE='' SF_API_KEY='' SF_API_KEY_SOURCE=''
   local -a runtime_fields response_fields tool_fields tool_calls handoff
   integer request_count=0 stop_count=0 call_count harness_sandbox tool_limit request_limit
   integer permission_status
@@ -321,7 +321,7 @@ sf_exec_turn() {
       failure='cannot inspect user message'
       return 1
     }
-    if ! sf_hooks_state_create; then
+    if ! sf_hooks_turn_state_create; then
       failure=$SF_HOOK_ERROR
       return 1
     fi
@@ -594,7 +594,8 @@ sf_exec_run() {
     trap - INT HUP TERM
     return $rc
   fi
-  SHELLFISH_STATE_DIR=''
+  SHELLFISH_TURN_STATE=''
+  SHELLFISH_SESSION_STATE=''
   sf_exec_turn "$message" "$selected" "$jsonl"
   rc=$?
   trap - INT HUP TERM

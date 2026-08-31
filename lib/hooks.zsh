@@ -2,24 +2,27 @@ emulate -R zsh
 setopt no_aliases no_bg_nice no_multios pipe_fail
 zmodload zsh/system
 
+(( $+functions[sf_scratch_category] )) || source "$SF_ROOT/lib/scratch.zsh"
+
 typeset -g SF_HOOK_ERROR=''
 # Ordered hook, status, stdout, stderr, and control quintets.
 typeset -ga SF_HOOK_RESULTS=()
 typeset -g SF_HOOK_CONTEXT_COUNT=0
 typeset -ga SF_HOOK_CONTEXT_RECORDS=()
-# Preserve an inherited hook state directory across turn setup.
-typeset -g SHELLFISH_STATE_DIR=${SHELLFISH_STATE_DIR-}
+# Preserve inherited hook state across nested turn setup.
+typeset -g SHELLFISH_TURN_STATE=${SHELLFISH_TURN_STATE-}
+typeset -g SHELLFISH_SESSION_STATE=${SHELLFISH_SESSION_STATE-}
 typeset -g SHELLFISH_TURN_ID=${SHELLFISH_TURN_ID-}
 typeset -g SF_HOOKS_EVENT=''
 typeset -g SF_HOOK_ACTIVE_PID=''
 # Cancellation takes its pending exit at the first nested return, so cleanup
 # written after that point never runs. These name the paths this process made,
 # never an inherited one, and zshexit removes whatever a cancelled turn left.
-typeset -g SF_HOOK_STATE_TEMP=''
+typeset -g SF_HOOK_TURN_STATE_TEMP=''
 typeset -g SF_HOOK_INPUT_TEMP=''
 
 zshexit() {
-  [[ -z $SF_HOOK_STATE_TEMP ]] || rm -rf -- "$SF_HOOK_STATE_TEMP" 2>/dev/null || true
+  [[ -z $SF_HOOK_TURN_STATE_TEMP ]] || rm -rf -- "$SF_HOOK_TURN_STATE_TEMP" 2>/dev/null || true
   [[ -z $SF_HOOK_INPUT_TEMP ]] || rm -f -- "$SF_HOOK_INPUT_TEMP" 2>/dev/null || true
 }
 
@@ -72,27 +75,14 @@ sf_hooks_capture_one() {
   local context="$directory/current-context"
   local display="$directory/current-display"
   local control="$directory/current-control"
-  local PLUGIN_ROOT=${hook:h} PLUGIN_DATA data_root event=$SF_HOOKS_EVENT api_key_env
+  local PLUGIN_ROOT=${hook:h} event=$SF_HOOKS_EVENT api_key_env
   integer hook_status
 
   [[ -n $event ]] || {
     sf_hooks_fail 'hook event is not available'
     return
   }
-  if [[ -n ${XDG_STATE_HOME-} ]]; then
-    data_root="$XDG_STATE_HOME/shellfish/hooks"
-  elif [[ -n ${HOME-} ]]; then
-    data_root="$HOME/.local/state/shellfish/hooks"
-  else
-    sf_hooks_fail 'HOME or XDG_STATE_HOME is required for persistent hook data'
-    return
-  fi
-  PLUGIN_DATA="$data_root/$event/${hook:t}"
-  mkdir -p "$PLUGIN_DATA" && chmod 700 "$PLUGIN_DATA" || {
-    sf_hooks_fail "cannot prepare persistent hook data: $hook"
-    return
-  }
-  export PLUGIN_ROOT PLUGIN_DATA
+  export PLUGIN_ROOT
   api_key_env=$(jq -r '.backend.api_key_env' <<<"$SF_SESSION[runtime]") || {
     sf_hooks_fail 'cannot inspect hook credential environment'
     return
@@ -222,26 +212,66 @@ sf_hooks_dispatch() {
   reply=( "$perform" "$halted" "$origin" "$control" )
 }
 
-sf_hooks_state_create() {
-  [[ -z $SHELLFISH_STATE_DIR ]] || return 0
-  SHELLFISH_STATE_DIR=$(mktemp -d "${TMPDIR:-/tmp}/shellfish-state.XXXXXX") || {
-    sf_hooks_fail 'cannot prepare hook state directory'
+sf_hooks_session_state_create() {
+  [[ -n $SHELLFISH_SESSION_STATE && -d $SHELLFISH_SESSION_STATE ]] && return 0
+  local id=${SHELLFISH_SESSION_ID:-$SF_SESSION[id]}
+  if [[ -z $id && -n $SF_SESSION_PATH ]]; then
+    id=${SF_SESSION_PATH:t}
+    id=${id%.jsonl}
+  fi
+  [[ -n $id && $id != . && $id != .. ]] || {
+    sf_hooks_fail 'cannot derive hook session state'
     return
   }
-  SHELLFISH_STATE_DIR=${SHELLFISH_STATE_DIR:A}
-  SF_HOOK_STATE_TEMP=$SHELLFISH_STATE_DIR
-  chmod 700 "$SHELLFISH_STATE_DIR" || {
-    sf_hooks_state_cleanup
-    sf_hooks_fail 'cannot secure hook state directory'
+  sf_scratch_category sessions || {
+    sf_hooks_fail 'cannot prepare hook session state'
     return
   }
-  export SHELLFISH_STATE_DIR
+  SHELLFISH_SESSION_STATE="$REPLY/$id"
+  if [[ -e $SHELLFISH_SESSION_STATE || -L $SHELLFISH_SESSION_STATE ]]; then
+    [[ -d $SHELLFISH_SESSION_STATE && ! -L $SHELLFISH_SESSION_STATE && -O $SHELLFISH_SESSION_STATE ]] || {
+      sf_hooks_fail 'cannot prepare hook session state'
+      return
+    }
+  else
+    (umask 077; mkdir -- "$SHELLFISH_SESSION_STATE") || {
+      sf_hooks_fail 'cannot prepare hook session state'
+      return
+    }
+  fi
+  chmod 700 "$SHELLFISH_SESSION_STATE" || {
+    sf_hooks_fail 'cannot secure hook session state'
+    return
+  }
+  SHELLFISH_SESSION_STATE=${SHELLFISH_SESSION_STATE:A}
+  export SHELLFISH_SESSION_STATE
 }
 
-sf_hooks_state_cleanup() {
-  [[ -z $SHELLFISH_STATE_DIR ]] || rm -rf -- "$SHELLFISH_STATE_DIR" 2>/dev/null || true
-  SF_HOOK_STATE_TEMP=''
-  unset SHELLFISH_STATE_DIR
+sf_hooks_turn_state_create() {
+  sf_hooks_session_state_create || return
+  [[ -z $SHELLFISH_TURN_STATE ]] || return 0
+  sf_scratch_category turns || {
+    sf_hooks_fail 'cannot prepare hook turn state'
+    return
+  }
+  SHELLFISH_TURN_STATE=$(mktemp -d "$REPLY/turn.XXXXXX") || {
+    sf_hooks_fail 'cannot prepare hook turn state'
+    return
+  }
+  SHELLFISH_TURN_STATE=${SHELLFISH_TURN_STATE:A}
+  SF_HOOK_TURN_STATE_TEMP=$SHELLFISH_TURN_STATE
+  chmod 700 "$SHELLFISH_TURN_STATE" || {
+    sf_hooks_turn_state_cleanup
+    sf_hooks_fail 'cannot secure hook turn state'
+    return
+  }
+  export SHELLFISH_TURN_STATE
+}
+
+sf_hooks_turn_state_cleanup() {
+  [[ -z $SHELLFISH_TURN_STATE ]] || rm -rf -- "$SHELLFISH_TURN_STATE" 2>/dev/null || true
+  SF_HOOK_TURN_STATE_TEMP=''
+  unset SHELLFISH_TURN_STATE
 }
 
 sf_hooks_invoke() {
@@ -259,24 +289,28 @@ sf_hooks_invoke() {
   local SHELLFISH_CONFIG_DIR=${SHELLFISH_CONFIG_DIR-}
   local SHELLFISH_TURN_ID=${SHELLFISH_TURN_ID-}
   local SF_HOOKS_EVENT=$event
-  export SHELLFISH_SESSION SHELLFISH_STATE_DIR SHELLFISH_CAPTURE_LIMIT
+  export SHELLFISH_SESSION SHELLFISH_SESSION_STATE SHELLFISH_CAPTURE_LIMIT
   export SHELLFISH_SESSION_ID SHELLFISH_MODEL SHELLFISH_EXECUTABLE PROJECT_DIR
   export SHELLFISH_CONFIG_DIR
+  [[ -n $SHELLFISH_SESSION_STATE && -d $SHELLFISH_SESSION_STATE ]] || {
+    sf_hooks_fail 'hook session state is not available'
+    return
+  }
   if [[ $event == (user_prompt_submit|permission_request|pre_tool_use|post_tool_use|stop) ]]; then
     [[ -n $SHELLFISH_TURN_ID ]] || {
       sf_hooks_fail "$event hook requires a turn ID"
       return
     }
-    export SHELLFISH_TURN_ID
+    [[ -n $SHELLFISH_TURN_STATE && -d $SHELLFISH_TURN_STATE ]] || {
+      sf_hooks_fail 'hook turn state is not available'
+      return
+    }
+    export SHELLFISH_TURN_ID SHELLFISH_TURN_STATE
   else
     SHELLFISH_TURN_ID=''
-    typeset +x SHELLFISH_TURN_ID
+    SHELLFISH_TURN_STATE=''
+    typeset +x SHELLFISH_TURN_ID SHELLFISH_TURN_STATE
   fi
-
-  [[ -n $SHELLFISH_STATE_DIR && -d $SHELLFISH_STATE_DIR ]] || {
-    sf_hooks_fail 'hook state directory is not available'
-    return
-  }
   cd -- "$working_directory" || {
     sf_hooks_fail 'cannot enter session working directory'
     return

@@ -119,26 +119,23 @@ fi
 [[ $SF_HOOK_ERROR == "hook output exceeds capture limit: $combined_overflow" ]]
 
 # Prepared stdin and argv reach hooks without newline insertion or shell parsing.
-make_hook invocation 'print -rn -- "$#|$1|$2|$3|"; cat; print -rn -- "|$PWD|$SHELLFISH_SESSION|$SHELLFISH_CAPTURE_LIMIT|$SHELLFISH_STATE_DIR|$SHELLFISH_SESSION_ID|$SHELLFISH_MODEL|$PROJECT_DIR|$PLUGIN_ROOT|$PLUGIN_DATA"'
+make_hook invocation 'print -rn -- "$#|$1|$2|$3|"; cat; print -rn -- "|$PWD|$SHELLFISH_SESSION|$SHELLFISH_CAPTURE_LIMIT|$SHELLFISH_TURN_STATE|$SHELLFISH_SESSION_STATE|$SHELLFISH_SESSION_ID|$SHELLFISH_MODEL|$PROJECT_DIR|$PLUGIN_ROOT|${PLUGIN_DATA-}"'
 typeset invocation=$hook
 typeset working="$tmp/working" session="$tmp/session.jsonl" state
 mkdir "$working"
 working=${working:A}
 : >"$session"
 print -rn -- $'first\nsecond\n' >"$input"
-sf_hooks_state_create
-state=$SHELLFISH_STATE_DIR
 typeset -gA SF_SESSION=(id session-id model model-name cwd "$working")
+typeset -g SHELLFISH_TURN_ID=1
+sf_hooks_turn_state_create
+state=$SHELLFISH_TURN_STATE
 [[ $(stat -f %Lp "$state") == 700 ]]
 print -n shared >"$state/marker"
-sf_hooks_invoke "$session" "$working" "$input" 1024 0 3 test_event '' $'line\nbreak' "$invocation"
-typeset expected="3|test_event||"$'line\nbreak|first\nsecond\n'"|$working|${session:A}|1024|$state|session-id|model-name|$working|${invocation:h}|"
-[[ $SF_HOOK_RESULTS[3] == "$expected"* ]]
-typeset plugin_data=${SF_HOOK_RESULTS[3]#$expected}
-[[ -d $plugin_data ]]
-assert_equal 700 "$(stat -f %Lp "$plugin_data")"
-assert_equal "$XDG_STATE_HOME/shellfish/hooks/test_event" "${plugin_data:h}"
-assert_equal invocation "${plugin_data:t}"
+sf_hooks_invoke "$session" "$working" "$input" 1024 0 3 stop '' $'line\nbreak' "$invocation"
+typeset expected="3|stop||"$'line\nbreak|first\nsecond\n'"|$working|${session:A}|1024|$state|$SHELLFISH_SESSION_STATE|session-id|model-name|$working|${invocation:h}|"
+assert_equal "$expected" "$SF_HOOK_RESULTS[3]"
+assert_equal 700 "$(stat -f %Lp "$SHELLFISH_SESSION_STATE")"
 [[ $(cat "$state/marker") == shared ]]
 [[ $PWD == $original_directory ]]
 make_hook event_only 'print -rn -- "$#|$1|"; cat'
@@ -152,7 +149,15 @@ sf_hooks_invoke "$session" "$working" "$input" 512 0 1 stop "$event_only"
 : >"$empty"
 sf_hooks_invoke "$session" "$working" "$empty" 512 0 1 stop "$event_only"
 [[ $SF_HOOK_RESULTS[3] == '1|stop|' ]]
-sf_hooks_state_cleanup
-[[ -z $SHELLFISH_STATE_DIR && ! -e $state ]]
+typeset session_state=$SHELLFISH_SESSION_STATE
+print -n persistent >"$session_state/marker"
+sf_hooks_turn_state_cleanup
+[[ -z $SHELLFISH_TURN_STATE && ! -e $state ]]
+SHELLFISH_SESSION_STATE=''
+sf_hooks_turn_state_create
+typeset next_state=$SHELLFISH_TURN_STATE
+[[ $SHELLFISH_SESSION_STATE == $session_state && $(<$session_state/marker) == persistent ]]
+[[ $next_state != $state && -d $next_state ]]
+sf_hooks_turn_state_cleanup
 
 assert_no_hook_captures

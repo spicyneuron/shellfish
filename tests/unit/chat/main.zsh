@@ -42,11 +42,11 @@ assert_equal '{"source":"resolve"}' "$lean_presentation"
 typeset new_session="$tmp/new.jsonl"
 resolve_calls=0
 lean_called=''
-sf_hooks_state_create() { return 0; }
+sf_hooks_turn_state_create() { return 0; }
 sf_session_prepare() { return 0; }
 sf_hooks_session_start() { return 0; }
 sf_session_create() { : >"$SF_SESSION_SELECTED"; }
-sf_hooks_state_cleanup() { return 0; }
+sf_hooks_turn_state_cleanup() { return 0; }
 sf_chat_run "$new_session" '' '' '' '{}' '' 0 0 0
 assert_equal "$new_session" "$lean_called"
 assert_equal '{"resolved":true}' "$lean_runtime"

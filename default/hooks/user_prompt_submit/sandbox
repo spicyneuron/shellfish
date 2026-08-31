@@ -14,7 +14,7 @@ read_status=$?
 case "$read_status:$submitted" in
   1:/help|1:/h)
     print -r -- $'114\t/sandbox [OP DIR]\tList or update session sandbox grants' \
-      >>"$SHELLFISH_STATE_DIR/help.tsv"
+      >>"$SHELLFISH_TURN_STATE/help.tsv"
     exit 0
     ;;
   1:/sandbox)
