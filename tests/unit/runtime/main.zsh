@@ -79,7 +79,7 @@ jq -e --arg root "$ROOT/default/hooks/session_start" \
   --arg tools "$ROOT/default/tools" '
   .harness.session_start == [
     ($root + "/add_environment"),
-    ($root + "/add_command_availability"),
+    ($root + "/add_shell_commands"),
     ($root + "/add_skills"),
     ($root + "/add_project_instructions")
   ] and

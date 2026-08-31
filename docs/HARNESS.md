@@ -38,7 +38,7 @@ Sandboxing applies to opted-in tools. Hook scripts and backend adapters are trus
 At the `session_start` hook, four scripts prepare context before the transcript is created:
 
 - `add_environment` reports the host, project tree, and Git context.
-- `add_command_availability` reports versions of common shell commands when available.
+- `add_shell_commands` reports versions of common shell commands when available.
 - `add_project_instructions` loads the project's `AGENTS.md`, or `CLAUDE.md` when `AGENTS.md` is absent.
 - `add_skills` advertises available Agent Skills.
 

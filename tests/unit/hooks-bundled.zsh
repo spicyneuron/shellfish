@@ -56,18 +56,18 @@ chmod +x "$environment_bin/tree" "$environment_bin/git"
 environment_output=$(PATH="$environment_bin:$PATH" zsh -f "$environment_script" session_start)
 [[ $environment_output == *'Not in git repo'* ]]
 
-# Command availability is best-effort, selects the first candidate with a
+# Shell command reporting is best-effort, selects the first candidate with a
 # usable version, and emits one separately attributed creation context.
-typeset availability_script="$ROOT/default/hooks/session_start/add_command_availability"
-typeset availability_bin="$tmp/availability-bin"
-typeset availability_output availability_rows availability_session="$tmp/availability-session.jsonl"
-mkdir "$availability_bin"
-ln -s "${commands[zsh]:A}" "$availability_bin/zsh"
+typeset shell_commands_script="$ROOT/default/hooks/session_start/add_shell_commands"
+typeset shell_commands_bin="$tmp/shell-commands-bin"
+typeset shell_commands_output shell_commands_rows shell_commands_session="$tmp/shell-commands-session.jsonl"
+mkdir "$shell_commands_bin"
+ln -s "${commands[zsh]:A}" "$shell_commands_bin/zsh"
 make_version_command() {
   local name=$1 body=$2
-  print -r -- '#!/bin/sh' >"$availability_bin/$name"
-  print -r -- "$body" >>"$availability_bin/$name"
-  chmod +x "$availability_bin/$name"
+  print -r -- '#!/bin/sh' >"$shell_commands_bin/$name"
+  print -r -- "$body" >>"$shell_commands_bin/$name"
+  chmod +x "$shell_commands_bin/$name"
 }
 make_version_command rg 'exit 2'
 make_version_command grep "printf 'grep 1.0\\nignored\\n'"
@@ -79,18 +79,18 @@ make_version_command python3 "printf 'Python 3.13\\n' >&2"
 make_version_command git "printf 'git version 2.48\\n'"
 make_version_command gh 'exit 2'
 
-availability_output=$(
-  /usr/bin/env PATH="$availability_bin" "$availability_bin/zsh" -f \
-    "$availability_script" session_start
+shell_commands_output=$(
+  /usr/bin/env PATH="$shell_commands_bin" "$shell_commands_bin/zsh" -f \
+    "$shell_commands_script" session_start
 )
-typeset -a availability_lines=( "${(@f)availability_output}" )
-assert_equal "Host shell: zsh $ZSH_VERSION" "$availability_lines[1]"
-assert_equal 'Available commands:' "$availability_lines[2]"
-availability_rows=$(jq -Rsc '
+typeset -a shell_commands_lines=( "${(@f)shell_commands_output}" )
+assert_equal "Host shell: zsh $ZSH_VERSION" "$shell_commands_lines[1]"
+assert_equal 'Available commands:' "$shell_commands_lines[2]"
+shell_commands_rows=$(jq -Rsc '
   [split("\n")[] |
     capture("^- (?<label>[^:]+): (?<command>[^ ]+) \\((?<version>.*)\\)$")?] |
   INDEX(.label)
-' <<<"$availability_output") || fail 'cannot parse command availability output'
+' <<<"$shell_commands_output") || fail 'cannot parse shell commands output'
 jq -e '
   length == 5 and
   .search.command == "grep" and .search.version == "grep 1.0" and
@@ -99,26 +99,26 @@ jq -e '
   .Python.command == "python3" and .Python.version == "Python 3.13" and
   .VCS.command == "git" and .VCS.version == "git version 2.48" and
   (has("trees") | not) and (has("YAML") | not) and (has("GitHub") | not)
-' <<<"$availability_rows" >/dev/null
-if zsh -f "$availability_script" user_prompt_submit >/dev/null 2>&1; then
-  fail 'command availability accepted the wrong hook name'
+' <<<"$shell_commands_rows" >/dev/null
+if zsh -f "$shell_commands_script" user_prompt_submit >/dev/null 2>&1; then
+  fail 'shell command reporting accepted the wrong hook name'
 fi
 
-SF_TEST_RUNTIME=$(jq -c --arg script "$availability_script" \
+SF_TEST_RUNTIME=$(jq -c --arg script "$shell_commands_script" \
   '.harness.session_start=[$script]' <<<"$SF_TEST_RUNTIME")
-SF_SESSION_PATH=$availability_session
+SF_SESSION_PATH=$shell_commands_session
 SHELLFISH_SESSION_STATE=''
 sf_hooks_session_state_create
 sf_session_prepare "$SF_TEST_RUNTIME"
-sf_hooks_session_start "$availability_session"
+sf_hooks_session_start "$shell_commands_session"
 sf_session_create "${SF_HOOK_CONTEXT_RECORDS[@]}"
 sf_hooks_turn_state_cleanup
 jq -e -s '
   length == 2 and .[1].type == "context" and .[1].hook == "session_start" and
-  .[1].script == "add_command_availability" and
+  .[1].script == "add_shell_commands" and
   (.[1].content | startswith("Host shell: zsh ") and
     contains("\nAvailable commands:\n"))
-' "$availability_session" >/dev/null
+' "$shell_commands_session" >/dev/null
 
 # The bundled /help chain appends TSV rows to $SHELLFISH_TURN_STATE/help.tsv;
 # the help script (last in the chain) sorts by order and aligns columns. Verify
