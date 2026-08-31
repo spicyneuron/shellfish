@@ -217,6 +217,10 @@ pre {
   color: var(--muted);
 }
 
+.heading {
+  text-decoration: underline;
+}
+
 .link {
   color: var(--user-heading);
   text-decoration: underline;

@@ -333,7 +333,7 @@ SF_PRESENT_HIGHLIGHT_SPANS=()
 sf_chat_markdown_highlight "$markdown"
 span_texts "$markdown"
 assert_equal $'Head,bold,[link](url),code,```js,const,3,```' "$REPLY"
-assert_equal '2,6,bold,9,13,bold' \
+assert_equal '2,6,bold,underline,9,13,bold' \
   "${(j:,:)SF_PRESENT_HIGHLIGHT_SPANS[1,6]}"
 
 SF_PRESENT_HIGHLIGHT_SPANS=()
@@ -363,7 +363,7 @@ assert_equal heading "$REPLY"
 SF_PRESENT_HIGHLIGHT_SPANS=()
 sf_chat_markdown_highlight $' continues\n' 9 heading 1
 heading_spans+=( "${SF_PRESENT_HIGHLIGHT_SPANS[@]}" )
-assert_equal '2 9 bold 9 19 bold' "${(j: :)heading_spans}"
+assert_equal '2 9 bold,underline 9 19 bold,underline' "${(j: :)heading_spans}"
 SF_PRESENT_HIGHLIGHT_SPANS=()
 sf_chat_markdown_highlight 'const x = 3;' 0 $'```\tjs' 1
 span_texts 'const x = 3;'

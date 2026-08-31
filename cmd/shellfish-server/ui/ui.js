@@ -267,7 +267,7 @@ function markdown(parent, text) {
     const leader = LEADER.exec(line);
     if (leader) {
       parent.append(document.createTextNode(leader[1]));
-      const content = leader[2].startsWith("#") ? el(parent, "strong") : parent;
+      const content = leader[2].startsWith("#") ? el(parent, "strong", "heading") : parent;
       markup(content, leader[2] + leader[3]);
       inline(content, leader[4]);
     } else {

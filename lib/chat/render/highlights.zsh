@@ -99,6 +99,7 @@ sf_chat_theme_config() {
        "syntax.fence":("fg=" + .muted),
        "syntax.link":("fg=" + .user_heading + ",underline"),
        "syntax.code":("fg=" + .user_heading),
+       "syntax.heading":"bold,underline",
        "syntax.strong":"bold", "syntax.em":"underline",
        "syntax.added":("fg=" + .diff_added + ",bg=" + .diff_added_background),
        "syntax.removed":("fg=" + .diff_removed + ",bg=" + .diff_removed_background)};
@@ -496,14 +497,14 @@ sf_chat_markdown_highlight() {
     fi
     if (( inline )); then
       if (( heading )); then
-        sf_chat_highlight_span $base $(( base + ${#line} )) strong
+        sf_chat_highlight_span $base $(( base + ${#line} )) heading
       elif (( starts_line )) &&
           [[ $line =~ '^( {0,3})(#{1,6}|>|[-*+]|[0-9]{1,9}[.)])([[:space:]]+)' ]]; then
         match_end=$MEND
         if [[ $match[2] == \#* ]]; then
           heading=1
           boundary=heading
-          sf_chat_highlight_span $(( base + match_end )) $(( base + ${#line} )) strong
+          sf_chat_highlight_span $(( base + match_end )) $(( base + ${#line} )) heading
         fi
         line=${line[match_end + 1,-1]}
         (( base += match_end ))

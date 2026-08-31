@@ -818,7 +818,9 @@ test("styles markdown without hiding its source", async () => {
     "```",
   ].join("\n"));
   assert.equal(findTag(text, "strong")[0].textContent, "## Heading");
+  assert.equal(findTag(text, "strong")[0].className, "heading");
   assert.equal(findTag(text, "strong")[1].textContent, "**bold**");
+  assert.equal(findTag(text, "strong")[1].className, "");
   assert.equal(findTag(text, "em")[0].textContent, "*italic*");
   assert.equal(findTag(text, "em")[1].textContent, "_italic_");
   assert.equal(findTag(text, "em").length, 2);
