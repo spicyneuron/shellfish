@@ -43,9 +43,9 @@ sf_exec_stop_process() {
 sf_exec_interrupt() {
   SF_EXEC[interrupted]=1
   SF_TOOL_INTERRUPTED=1
-  if [[ -n $SF_HOOK_ACTIVE_PID ]]; then
-    sf_exec_stop_process "$SF_HOOK_ACTIVE_PID"
-    SF_HOOK_ACTIVE_PID=''
+  if [[ -n $SF_HOOK_SCRIPT_PID ]]; then
+    sf_exec_stop_process "$SF_HOOK_SCRIPT_PID"
+    SF_HOOK_SCRIPT_PID=''
   fi
   if [[ -n $SF_EXEC[backend_pid] ]]; then
     sf_exec_stop_process "$SF_EXEC[backend_pid]"
@@ -119,14 +119,14 @@ sf_exec_error() {
 sf_exec_hook_displays() {
   local hook=$1
   integer index
-  for (( index = 1; index <= ${#SF_HOOK_RESULTS}; index += 5 )); do
-    [[ -n $SF_HOOK_RESULTS[index+3] ]] || continue
+  for (( index = 1; index <= ${#SF_HOOK_SCRIPT_RESULTS}; index += 5 )); do
+    [[ -n $SF_HOOK_SCRIPT_RESULTS[index+3] ]] || continue
     if (( SF_EXEC[jsonl] )); then
-      sf_exec_emit "$(jq -cn --arg hook "$hook" --arg script "$SF_HOOK_RESULTS[index]" \
-        --arg text "$SF_HOOK_RESULTS[index+3]" \
+      sf_exec_emit "$(jq -cn --arg hook "$hook" --arg script "$SF_HOOK_SCRIPT_RESULTS[index]" \
+        --arg text "$SF_HOOK_SCRIPT_RESULTS[index+3]" \
         '{type:"_hook_display",hook:$hook,script:$script,text:$text}')"
     else
-      print -rn -u2 -- "$SF_HOOK_RESULTS[index+3]"
+      print -rn -u2 -- "$SF_HOOK_SCRIPT_RESULTS[index+3]"
     fi
   done
 }

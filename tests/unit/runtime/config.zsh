@@ -47,7 +47,7 @@ if print -r -- '{"tui":{"agent_heading":"custom"}}' |
   fail 'custom TUI heading was accepted'
 fi
 
-# Validation rejects unknown hook events in harnesses.
+# Validation rejects unknown hook names in harnesses.
 if print -r -- '{"harnesses":{"bad":{"session_end":[]}}}' |
     config_eval 'config_validate' >/dev/null 2>&1; then
   fail 'removed session_end hook was accepted'

@@ -2,20 +2,20 @@ source "${0:A:h:h}/_helpers.zsh"
 sf_test_source session/main.zsh hooks.zsh
 typeset -g SF_ENTRY="$ROOT/bin/shellfish"
 
-typeset hooks captures hook
+typeset scripts captures script
 sf_test_tmp hooks
-hooks="$tmp/hooks"
+scripts="$tmp/hooks"
 captures="$tmp/captures"
-mkdir -p "$hooks" "$captures"
+mkdir -p "$scripts" "$captures"
 export TMPDIR=$captures
 export XDG_STATE_HOME="$tmp/state"
 
-make_hook() {
+make_script() {
   local name=$1 body=$2
-  hook="$hooks/$name"
-  print -r -- '#!/usr/bin/env zsh' >"$hook"
-  print -r -- "$body" >>"$hook"
-  chmod +x "$hook"
+  script="$scripts/$name"
+  print -r -- '#!/usr/bin/env zsh' >"$script"
+  print -r -- "$body" >>"$script"
+  chmod +x "$script"
 }
 
 run_prompt_hook() {

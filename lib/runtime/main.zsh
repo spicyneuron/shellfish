@@ -144,11 +144,11 @@ sf_runtime_resolve_from_config() {
   local backend_override=${5-}
   local config_path config_dir='' raw='{}' defaults prepared presentation value
   local backend_name backend_reference backend_dir backend_base manifest tool_manifest command
-  local reference resolved event external_name final system_content settings fence='' env_file=''
+  local reference resolved hook external_name final system_content settings fence='' env_file=''
   local home=${HOME-} sandbox_read_paths=${_SHELLFISH_SANDBOX_READ_PATHS:-[]}
   local theme_marker=': shellfish:unknown-theme:'
-  local -a fields system_parts tool_entries hook_entries resolved_args finalized
-  integer system_count tool_count hook_count index tool_index needs_fence=0 sandbox_enabled=1
+  local -a fields system_parts tool_entries script_entries resolved_args finalized
+  integer system_count tool_count script_count index tool_index needs_fence=0 sandbox_enabled=1
 
   SF_RUNTIME_ERROR=''
   SF_RUNTIME_SYSTEM_RECORD=''
@@ -200,10 +200,10 @@ sf_runtime_resolve_from_config() {
     ($prepared.backend_external | tostring | record),
     ($prepared.system_references | length | tostring | record),
     ($prepared.tool_references | length | tostring | record),
-    ($prepared.hook_references | length | tostring | record),
+    ($prepared.hook_script_references | length | tostring | record),
     ($prepared.system_references[] | record),
     ($prepared.tool_references[] | record),
-    ($prepared.hook_references[] | .event, "\u0000", .reference, "\u0000"),
+    ($prepared.hook_script_references[] | .hook, "\u0000", .reference, "\u0000"),
     ("ok" | record)
   ' 2>/dev/null)
   (( ${#fields} >= 7 )) && [[ $fields[-1] == ok ]] || {
@@ -214,7 +214,7 @@ sf_runtime_resolve_from_config() {
   backend_reference=$fields[2]
   system_count=$fields[4]
   tool_count=$fields[5]
-  hook_count=$fields[6]
+  script_count=$fields[6]
   index=7
   jq -e '.profile.harness |
     if has("sandbox") then .sandbox else true end' \
@@ -287,20 +287,20 @@ sf_runtime_resolve_from_config() {
     fi
     tool_entries+=( "${${resolved%/}:t}" "$resolved/run" "$tool_manifest" "$settings" )
   done
-  while (( ${#hook_entries} / 2 < hook_count )); do
-    event=$fields[index]
+  while (( ${#script_entries} / 2 < script_count )); do
+    hook=$fields[index]
     reference=$fields[index+1]
     (( index += 2 ))
-    sf_runtime_reference "$reference" "$config_dir" "hooks/$event" || {
-      sf_runtime_fail "cannot resolve $event hook: $reference"
+    sf_runtime_reference "$reference" "$config_dir" "hooks/$hook" || {
+      sf_runtime_fail "cannot resolve $hook hook script: $reference"
       return
     }
     resolved=$REPLY
     [[ -f $resolved && -x $resolved ]] || {
-      sf_runtime_fail "$event hook is not executable: $reference"
+      sf_runtime_fail "$hook hook script is not executable: $reference"
       return
     }
-    hook_entries+=( "$event" "$resolved" )
+    script_entries+=( "$hook" "$resolved" )
   done
   (( index == ${#fields} )) || {
     sf_runtime_fail 'cannot inspect prepared runtime'
@@ -316,11 +316,11 @@ sf_runtime_resolve_from_config() {
 
   (( ${#system_parts} == system_count &&
     ${#tool_entries} == tool_count * 4 &&
-    ${#hook_entries} == hook_count * 2 )) || {
+    ${#script_entries} == script_count * 2 )) || {
     sf_runtime_fail 'cannot assemble resolved runtime references'
     return
   }
-  resolved_args=( "${system_parts[@]}" "${tool_entries[@]}" "${hook_entries[@]}" )
+  resolved_args=( "${system_parts[@]}" "${tool_entries[@]}" "${script_entries[@]}" )
   final=$(jq -L "$SF_ROOT/lib" -cnce --argjson prepared "$prepared" \
     --arg manifest "$manifest" --arg command "$command" --arg fence "$fence" \
     --arg env_file "$env_file" \

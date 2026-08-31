@@ -6,7 +6,7 @@ sf_test_runtime
 
 # A slow directory tree acts as a filesystem canary, preventing git status
 # from walking the worktree without blocking the remaining git context.
-typeset environment_hook="$ROOT/default/hooks/session_start/add_environment"
+typeset environment_script="$ROOT/default/hooks/session_start/add_environment"
 typeset environment_bin="$tmp/environment-bin"
 typeset environment_output
 typeset -i environment_started environment_elapsed
@@ -33,7 +33,7 @@ esac
 EOF
 chmod +x "$environment_bin/tree" "$environment_bin/git"
 environment_started=$SECONDS
-environment_output=$(PATH="$environment_bin:$PATH" zsh -f "$environment_hook" session_start)
+environment_output=$(PATH="$environment_bin:$PATH" zsh -f "$environment_script" session_start)
 environment_elapsed=$(( SECONDS - environment_started ))
 (( environment_elapsed >= 3 && environment_elapsed < 7 )) ||
   fail "environment tree timeout took ${environment_elapsed}s"
@@ -53,12 +53,12 @@ cat >"$environment_bin/tree" <<'EOF'
 printf '.\n'
 EOF
 chmod +x "$environment_bin/tree" "$environment_bin/git"
-environment_output=$(PATH="$environment_bin:$PATH" zsh -f "$environment_hook" session_start)
+environment_output=$(PATH="$environment_bin:$PATH" zsh -f "$environment_script" session_start)
 [[ $environment_output == *'Not in git repo'* ]]
 
 # Command availability is best-effort, selects the first candidate with a
 # usable version, and emits one separately attributed creation context.
-typeset availability_hook="$ROOT/default/hooks/session_start/add_command_availability"
+typeset availability_script="$ROOT/default/hooks/session_start/add_command_availability"
 typeset availability_bin="$tmp/availability-bin"
 typeset availability_output availability_rows availability_session="$tmp/availability-session.jsonl"
 mkdir "$availability_bin"
@@ -81,7 +81,7 @@ make_version_command gh 'exit 2'
 
 availability_output=$(
   /usr/bin/env PATH="$availability_bin" "$availability_bin/zsh" -f \
-    "$availability_hook" session_start
+    "$availability_script" session_start
 )
 typeset -a availability_lines=( "${(@f)availability_output}" )
 assert_equal "Host shell: zsh $ZSH_VERSION" "$availability_lines[1]"
@@ -100,12 +100,12 @@ jq -e '
   .VCS.command == "git" and .VCS.version == "git version 2.48" and
   (has("trees") | not) and (has("YAML") | not) and (has("GitHub") | not)
 ' <<<"$availability_rows" >/dev/null
-if zsh -f "$availability_hook" user_prompt_submit >/dev/null 2>&1; then
-  fail 'command availability accepted the wrong hook event'
+if zsh -f "$availability_script" user_prompt_submit >/dev/null 2>&1; then
+  fail 'command availability accepted the wrong hook name'
 fi
 
-SF_TEST_RUNTIME=$(jq -c --arg hook "$availability_hook" \
-  '.harness.session_start=[$hook]' <<<"$SF_TEST_RUNTIME")
+SF_TEST_RUNTIME=$(jq -c --arg script "$availability_script" \
+  '.harness.session_start=[$script]' <<<"$SF_TEST_RUNTIME")
 SF_SESSION_PATH=$availability_session
 SHELLFISH_SESSION_STATE=''
 sf_hooks_session_state_create
@@ -147,8 +147,8 @@ run_prompt_hook /help "$help_session"
 [[ $reply[1] == handled ]]
 typeset help_display=''
 integer result_index
-for (( result_index = 4; result_index <= ${#SF_HOOK_RESULTS}; result_index += 5 )); do
-  [[ -z $SF_HOOK_RESULTS[result_index] ]] || help_display=$SF_HOOK_RESULTS[result_index]
+for (( result_index = 4; result_index <= ${#SF_HOOK_SCRIPT_RESULTS}; result_index += 5 )); do
+  [[ -z $SF_HOOK_SCRIPT_RESULTS[result_index] ]] || help_display=$SF_HOOK_SCRIPT_RESULTS[result_index]
 done
 [[ $help_display == 'shift+enter'* ]]
 (( ${#help_display} > 20 ))
@@ -208,8 +208,8 @@ typeset sandbox_display='' sandbox_patch sandbox_dir="$tmp/output with spaces"
 mkdir "$sandbox_dir"
 run_prompt_hook /sandbox "$help_session"
 [[ $reply[1] == handled ]]
-for (( result_index = 4; result_index <= ${#SF_HOOK_RESULTS}; result_index += 5 )); do
-  [[ -z $SF_HOOK_RESULTS[result_index] ]] || sandbox_display=$SF_HOOK_RESULTS[result_index]
+for (( result_index = 4; result_index <= ${#SF_HOOK_SCRIPT_RESULTS}; result_index += 5 )); do
+  [[ -z $SF_HOOK_SCRIPT_RESULTS[result_index] ]] || sandbox_display=$SF_HOOK_SCRIPT_RESULTS[result_index]
 done
 [[ $sandbox_display == *'Sandbox: enabled'* && $sandbox_display == *'Read grants:'* &&
    $sandbox_display == *'Write grants:'* ]]
@@ -236,8 +236,8 @@ sf_test_session "$disabled_session"
 SF_TEST_RUNTIME=$enabled_runtime
 run_prompt_hook "/sandbox +r $sandbox_dir" "$disabled_session"
 [[ $reply[1] == handled ]]
-for (( result_index = 4; result_index <= ${#SF_HOOK_RESULTS}; result_index += 5 )); do
-  [[ -z $SF_HOOK_RESULTS[result_index] ]] || sandbox_display=$SF_HOOK_RESULTS[result_index]
+for (( result_index = 4; result_index <= ${#SF_HOOK_SCRIPT_RESULTS}; result_index += 5 )); do
+  [[ -z $SF_HOOK_SCRIPT_RESULTS[result_index] ]] || sandbox_display=$SF_HOOK_SCRIPT_RESULTS[result_index]
 done
 [[ $sandbox_display == 'session sandbox is disabled'* ]] ||
   fail "unexpected disabled sandbox display: $sandbox_display"
@@ -323,8 +323,8 @@ done
 # status separately from the hook's skip status.
 typeset shell_session="$tmp/shell-session.jsonl"
 SF_TEST_RUNTIME=$(jq -c \
-  --arg hook "$ROOT/default/hooks/user_prompt_submit/user_shell" \
-  '.harness.user_prompt_submit=[$hook]' <<<"$SF_TEST_RUNTIME")
+  --arg script "$ROOT/default/hooks/user_prompt_submit/user_shell" \
+  '.harness.user_prompt_submit=[$script]' <<<"$SF_TEST_RUNTIME")
 sf_test_session "$shell_session"
 sf_session_open "$shell_session"
 sf_session_close

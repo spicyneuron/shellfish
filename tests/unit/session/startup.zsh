@@ -23,7 +23,7 @@ export XDG_STATE_HOME="$tmp/state" SF_TEST_STATE_MARKER="$marker"
 if sf_session_startup_create "$failed" "$SF_TEST_RUNTIME"; then
   fail 'failed session hook created a session'
 fi
-[[ $SF_SESSION_STARTUP_ERROR == *"hook failed with status 9: $hook: startup detail"* ]]
+[[ $SF_SESSION_STARTUP_ERROR == *"hook script failed with status 9: $hook: startup detail"* ]]
 [[ ! -e $failed && -s $marker ]]
 typeset state_dir=$(<"$marker")
 [[ -d $state_dir && $state_dir == */sessions/failed ]]

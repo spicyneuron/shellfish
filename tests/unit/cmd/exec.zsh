@@ -187,7 +187,7 @@ integer skip_status=0
 output=$(zsh -f "$entry" exec --session "$skip_session" --config "$skip_config" \
   ignored 2>"$skip_stderr") || skip_status=$?
 (( skip_status == 1 ))
-[[ -z $output && $(<"$skip_stderr") == *'session_start hook returned unsupported skip status'* ]]
+[[ -z $output && $(<"$skip_stderr") == *'session_start hook script returned unsupported skip status'* ]]
 [[ ! -e $skip_session ]]
 
 typeset jsonl_skip_session="$tmp/jsonl-skipped.jsonl" jsonl_skip_stderr="$tmp/jsonl-skipped.stderr"
@@ -201,7 +201,7 @@ jsonl=$(print -r -- \
 print -r -- "$jsonl" | jq -eRn -L "$ROOT/lib" '
   [inputs | fromjson] as $events |
   $events == [{type:"_exec_error",
-    message:"session_start hook returned unsupported skip status"}]
+    message:"session_start hook script returned unsupported skip status"}]
 ' >/dev/null || fail 'JSONL creation failure did not emit its error'
 [[ ! -e $jsonl_skip_session ]]
 

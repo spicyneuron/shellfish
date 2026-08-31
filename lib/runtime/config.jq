@@ -35,10 +35,10 @@ def config_backend($path):
   config_assert((has("http_stall") | not) or (.http_stall | positive_integer);
     $path + ["http_stall"]; "must be a positive integer");
 def config_harness($path):
-  config_object($path; harness_fields + hook_event_names) |
-  reduce hook_event_names[] as $event (.;
-    config_assert((has($event) | not) or (.[$event] | type == "array" and
-      all(.[]; nonempty_control_free_string)); $path + [$event]; "must be references")) |
+  config_object($path; harness_fields + hook_names) |
+  reduce hook_names[] as $hook (.;
+    config_assert((has($hook) | not) or (.[$hook] | type == "array" and
+      all(.[]; nonempty_control_free_string)); $path + [$hook]; "must be references")) |
   config_assert((has("system") | not) or (.system | type == "array" and
     all(.[]; nonempty_control_free_string)); $path + ["system"]; "must be references") |
   config_assert((has("tools") | not) or (.tools | type == "array" and
@@ -177,8 +177,8 @@ def runtime_prepare:
       with_entries(select(.value != null)))) | presentation_finish),
     system_references:($profile.harness.system // []),
     tool_references:($profile.harness.tools // []),
-    hook_references:[hook_event_names[] as $event |
-      ($profile.harness[$event] // [])[] | {event:$event,reference:.}]
+    hook_script_references:[hook_names[] as $hook |
+      ($profile.harness[$hook] // [])[] | {hook:$hook,reference:.}]
   };
 
 def presentation_resolve:
@@ -200,16 +200,16 @@ def runtime_finalize:
   $input.resolved as $args |
   ($prepared.system_references | length) as $system_count |
   ($prepared.tool_references | length) as $tool_count |
-  ($prepared.hook_references | length) as $hook_count |
+  ($prepared.hook_script_references | length) as $script_count |
   $system_count as $tool_offset |
-  ($tool_offset + ($tool_count * 4)) as $hook_offset |
+  ($tool_offset + ($tool_count * 4)) as $script_offset |
   [$args[0:$system_count][]] as $systems |
   [range(0; $tool_count) as $index |
     ($args[($tool_offset + ($index * 4)):][:4]) |
     {name:.[0],command:.[1],manifest_json:.[2],settings_json:.[3]}] as $resolved_tools |
-  [range(0; $hook_count) as $index |
-    ($args[($hook_offset + ($index * 2)):][:2]) |
-    {event:.[0],path:.[1]}] as $resolved_hooks |
+  [range(0; $script_count) as $index |
+    ($args[($script_offset + ($index * 2)):][:2]) |
+    {hook:.[0],path:.[1]}] as $resolved_scripts |
   [$resolved_tools[] as $tool |
     ($tool.manifest_json | fromjson |
       select(tool_manifest) //
@@ -221,8 +221,8 @@ def runtime_finalize:
       error("unexpected tool sandbox settings: " + $tool.command)
     else {name:$tool.name,command:$tool.command,
       manifest:$tool_manifest,settings:$settings} end] as $tools |
-  (reduce $resolved_hooks[] as $hook ({};
-    .[$hook.event] += [$hook.path])) as $hooks |
+  (reduce $resolved_scripts[] as $script ({};
+    .[$script.hook] += [$script.path])) as $hooks |
   $prepared.profile as $profile |
   ({
     profile:{request:$prepared.request},

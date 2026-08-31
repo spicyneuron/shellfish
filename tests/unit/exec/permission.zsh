@@ -213,5 +213,5 @@ stream=$(SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_BYPASS=true \
 print -r -- "$stream" | jq -eRn '
   [inputs | fromjson] as $events |
   ($events | map(select(.type == "_exec_error") | .message) |
-    any(. == "permission hook returned invalid decision"))
+    any(. == "permission_request hook script returned invalid decision"))
 ' >/dev/null

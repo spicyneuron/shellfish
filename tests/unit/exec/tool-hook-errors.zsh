@@ -38,7 +38,7 @@ print -r -- "$stream" | jq -eRn '
   ($events | map(select(.role == "tool_result")) | length) == 1 and
   ($events | map(select(.role == "tool_result"))[0].exit_code) == 126 and
   $events[-2].role == "assistant" and $events[-2].stop == "end" and
-  $events[-1].message == "pre_tool_use hook wrote unsupported stdout"
+  $events[-1].message == "pre_tool_use hook script wrote unsupported stdout"
 ' >/dev/null
 [[ ! -e $TEST_OUTPUT_DIR/post-ran ]]
 jq -L "$ROOT/lib" -e -s '
@@ -64,7 +64,7 @@ print -r -- "$stream" | jq -eRn '
   ($events | map(select(.role == "tool_result")) | length) == 1 and
   ($events | map(select(.role == "tool_result"))[0].exit_code) == 0 and
   $events[-2].role == "assistant" and $events[-2].stop == "end" and
-  $events[-1].message == "post_tool_use hook returned unsupported skip status"
+  $events[-1].message == "post_tool_use hook script returned unsupported skip status"
 ' >/dev/null
 jq -L "$ROOT/lib" -e -s '
   include "runtime/schema";

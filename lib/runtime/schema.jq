@@ -102,15 +102,15 @@ def harness_fields:
   ["system", "tools", "sandbox", "sandbox_read_paths", "sandbox_write_paths",
    "max_requests_per_turn",
    "max_tool_calls_per_request", "max_capture_bytes"];
-def hook_event_names:
+def hook_names:
   ["session_start", "user_prompt_submit", "permission_request", "pre_tool_use",
    "post_tool_use", "stop"];
 
 def harness_hooks:
   . as $harness |
-  all(hook_event_names[]; . as $event |
-    ($harness | has($event) | not) or
-    ($harness[$event] | type == "array" and all(.[]; absolute_path)));
+  all(hook_names[]; . as $hook |
+    ($harness | has($hook) | not) or
+    ($harness[$hook] | type == "array" and all(.[]; absolute_path)));
 
 def token_usage:
   type == "object" and
@@ -201,7 +201,7 @@ def canonical_session_header($format_version):
     (["sandbox_read_paths", "sandbox_write_paths", "fence",
       "max_capture_bytes", "max_requests_per_turn",
       "max_tool_calls_per_request", "sandbox", "tools"] as $required |
-      ((keys - ($required + hook_event_names)) | length == 0) and
+      ((keys - ($required + hook_names)) | length == 0) and
       (($required - keys) | length == 0)) and
     harness_hooks and
     (.sandbox_read_paths | type == "array" and all(.[]; absolute_nul_free_path)) and

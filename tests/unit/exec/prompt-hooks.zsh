@@ -100,11 +100,11 @@ integer pid=$! cancel_status=0 waited=0
 while (( waited++ < 50 )) && [[ ! -e $PROMPT_MARKER ]]; do
   sleep 0.1
 done
-(( waited <= 50 )) || fail 'prompt hook did not start'
+(( waited <= 50 )) || fail 'user_prompt_submit hook script did not start'
 kill -TERM "$pid"
 wait "$pid" || cancel_status=$?
 (( cancel_status == 143 ))
-[[ ! -e $PROMPT_EXIT_MARKER ]] || fail 'cancelled prompt hook ran to completion'
+[[ ! -e $PROMPT_EXIT_MARKER ]] || fail 'cancelled user_prompt_submit hook script ran to completion'
 jq -eRn '
   [inputs | fromjson] as $events |
   ($events | any(.role == "user" or .role == "assistant") | not)

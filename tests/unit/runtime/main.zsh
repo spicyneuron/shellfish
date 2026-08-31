@@ -266,7 +266,7 @@ if sf_runtime_restore_presentation "$tmp/config/invalid-presentation.jsonc"; the
 fi
 [[ $SF_RUNTIME_ERROR == *'invalid config at $["tui"]["preview_lines_context"]: must be full or a non-negative integer'* ]]
 
-# Hook references preserve event and configured order, prefer the config
+# Hook script references preserve hook and configured order, prefer the config
 # directory, and freeze as absolute executables inside the harness.
 mkdir -p "$tmp/config/hooks/user_prompt_submit"
 print -r -- '#!/bin/sh' >"$tmp/config/hooks/user_prompt_submit/help"
@@ -297,7 +297,7 @@ chmod -x "$tmp/config/hooks/user_prompt_submit/help"
 if sf_runtime_resolve_from_config "$tmp/config/hooked.jsonc" '' '' '{}' "$ROOT/tests/fixtures/backend"; then
   fail 'non-executable hook was accepted'
 fi
-[[ $SF_RUNTIME_ERROR == 'user_prompt_submit hook is not executable: help' ]]
+[[ $SF_RUNTIME_ERROR == 'user_prompt_submit hook script is not executable: help' ]]
 chmod +x "$tmp/config/hooks/user_prompt_submit/help"
 
 cat >"$tmp/config/malformed-hooks.jsonc" <<'JSON'
@@ -309,12 +309,12 @@ if sf_runtime_resolve_from_config "$tmp/config/malformed-hooks.jsonc" '' '' '{}'
 fi
 [[ $SF_RUNTIME_ERROR == *'invalid config at $["harnesses"]["bad"]["stop"]: must be references'* ]]
 
-cat >"$tmp/config/unknown-hook-event.jsonc" <<'JSON'
+cat >"$tmp/config/unknown-hook.jsonc" <<'JSON'
 {"harnesses":{"bad":{"before_prompt":[]}}}
 JSON
-if sf_runtime_resolve_from_config "$tmp/config/unknown-hook-event.jsonc" '' '' '{}' \
+if sf_runtime_resolve_from_config "$tmp/config/unknown-hook.jsonc" '' '' '{}' \
     "$ROOT/tests/fixtures/backend"; then
-  fail 'unknown hook event was accepted'
+  fail 'unknown hook name was accepted'
 fi
 [[ $SF_RUNTIME_ERROR == *'invalid config at $["harnesses"]["bad"]["before_prompt"]: unknown field'* ]]
 
@@ -357,7 +357,7 @@ if sf_runtime_resolve_from_config "$tmp/config/missing-hook.jsonc" '' '' '{}' \
     "$ROOT/tests/fixtures/backend"; then
   fail 'missing hook was accepted'
 fi
-[[ $SF_RUNTIME_ERROR == 'stop hook is not executable: missing' ]]
+[[ $SF_RUNTIME_ERROR == 'stop hook script is not executable: missing' ]]
 
 # A configured hook wins over a bundled hook with the same name. Removing it
 # exercises bundled fallback. Use an isolated root so this adds no production
