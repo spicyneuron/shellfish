@@ -200,7 +200,7 @@ SF_CHAT_TRANSPORT_LINES=(
   '{"type":"_assistant_delta","text":"four five six "}'
   '{"type":"_assistant_delta","text":"seven eight"}'
   '{"type":"message","role":"assistant","stop":"end","content":[{"type":"text","text":"one two three four five six seven eight"}]}'
-  '{"type":"context","tag":"project","hook":"test","content":"later"}'
+  '{"type":"context","hook":"project","script":"test","content":"later"}'
 )
 SF_PRESENT_HEARTBEAT_EPOCHS=1
 SF_PRESENT_HEARTBEAT_REMAINING=0

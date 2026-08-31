@@ -117,14 +117,14 @@ sf_exec_error() {
 }
 
 sf_exec_hook_displays() {
-  local event=$1
+  local hook=$1
   integer index
   for (( index = 1; index <= ${#SF_HOOK_RESULTS}; index += 5 )); do
     [[ -n $SF_HOOK_RESULTS[index+3] ]] || continue
     if (( SF_EXEC[jsonl] )); then
-      sf_exec_emit "$(jq -cn --arg event "$event" --arg hook "$SF_HOOK_RESULTS[index]" \
+      sf_exec_emit "$(jq -cn --arg hook "$hook" --arg script "$SF_HOOK_RESULTS[index]" \
         --arg text "$SF_HOOK_RESULTS[index+3]" \
-        '{type:"_hook_display",event:$event,hook:$hook,text:$text}')"
+        '{type:"_hook_display",hook:$hook,script:$script,text:$text}')"
     else
       print -rn -u2 -- "$SF_HOOK_RESULTS[index+3]"
     fi

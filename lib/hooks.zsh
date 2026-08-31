@@ -392,7 +392,7 @@ sf_hooks_run() {
 }
 
 sf_hooks_commit_context() {
-  local tag=$1 mode=${2-} context item hook_name control control_json
+  local hook=$1 mode=${2-} context item script control control_json
   integer index
   SF_HOOK_CONTEXT_COUNT=0
   SF_HOOK_CONTEXT_RECORDS=()
@@ -400,14 +400,14 @@ sf_hooks_commit_context() {
   for (( index = 1; index <= ${#SF_HOOK_RESULTS}; index += 5 )); do
     item=$SF_HOOK_RESULTS[index+2]
     [[ -n $item ]] || continue
-    hook_name=${SF_HOOK_RESULTS[index]:t}
+    script=${SF_HOOK_RESULTS[index]:t}
     control=$SF_HOOK_RESULTS[index+4]
     control_json=${control:-'{}'}
     context=$(print -rn -- "$item" |
-      jq -Rsc -L "$SF_ROOT/lib" --arg tag "$tag" --arg hook "$hook_name" \
+      jq -Rsc -L "$SF_ROOT/lib" --arg hook "$hook" --arg script "$script" \
         --argjson control "$control_json" '
           include "runtime/schema";
-          ({type:"context",tag:$tag,hook:$hook,content:.} +
+          ({type:"context",hook:$hook,script:$script,content:.} +
             ($control.context // {})) as $context |
           if ($control.context? // {} | type == "object") and
               ($control.context? // {} | keys - ["prompt", "status"] | length) == 0 and
@@ -415,7 +415,7 @@ sf_hooks_commit_context() {
           then $context
           else error("invalid context control") end
         ') || {
-      SF_HOOK_ERROR="hook returned invalid context control: $hook_name"
+      SF_HOOK_ERROR="hook script returned invalid context control: $script"
       return 1
     }
     SF_HOOK_CONTEXT_RECORDS+=( "$context" )
@@ -462,7 +462,7 @@ sf_hooks_user_prompt_submit_locked() {
     if ! jq -L "$SF_ROOT/lib" -e --argjson status "$control_status" '
           include "runtime/schema";
           (keys - ["action", "argv", "context"] | length) == 0 and
-          (({type:"context",tag:"user_prompt_submit",hook:"hook",content:""} +
+          (({type:"context",hook:"user_prompt_submit",script:"script",content:""} +
             (.context // {})) | canonical_context) and
           (if has("action") then
              $status == 11 and .action == "handoff" and

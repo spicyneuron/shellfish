@@ -4,21 +4,21 @@ def xml_escape:
 
 # Schema-constrained tags and XML-escaped text prevent forged blocks.
 def context_item:
-  "<context hook=\"" + (.hook | xml_escape) + "\"" +
+  "<context script=\"" + (.script | xml_escape) + "\"" +
   (if has("prompt") then " prompt=\"" + (.prompt | xml_escape) + "\"" else "" end) +
   (if has("status") then " status=\"" + (.status | tostring) + "\"" else "" end) +
   ">\n" + (.content | xml_escape) + "\n</context>";
 
 def context_groups:
   reduce .[] as $record ([];
-    if length > 0 and .[-1][0].tag == $record.tag then
+    if length > 0 and .[-1][0].hook == $record.hook then
       .[-1] += [$record]
     else . += [[$record]] end);
 
 def context_group:
-  .[0].tag as $tag |
-  "<" + $tag + ">\n" + ([.[] | context_item] | join("\n\n")) +
-  "\n</" + $tag + ">";
+  .[0].hook as $hook |
+  "<hook name=\"" + $hook + "\">\n" + ([.[] | context_item] | join("\n\n")) +
+  "\n</hook>";
 
 def context_message($context; $request):
   ([$context | context_groups[] | context_group] | join("\n\n")) as $blocks |

@@ -33,8 +33,8 @@ unset OPENAI_API_KEY CUSTOM_API_KEY
 sf_session_create "${SF_HOOK_CONTEXT_RECORDS[@]}"
 jq -e -s '
   length == 3 and
-  .[1] == {type:"context",tag:"session_start",hook:"start",content:"startup"} and
-  .[2] == {type:"context",tag:"session_start",hook:"start_second",content:"second"}
+  .[1] == {type:"context",hook:"session_start",script:"start",content:"startup"} and
+  .[2] == {type:"context",hook:"session_start",script:"start_second",content:"second"}
 ' "$start_session" >/dev/null
 
 # CLI entry runs creation hooks once and does not rerun them for an existing session.
@@ -232,7 +232,7 @@ STOP_ATTEMPT=2 STOP_INPUT=hi STOP_SKIP=1 STOP_STDOUT=1 \
   sf_hooks_stop "$stop_session" hi 2
 [[ $reply[1] == continue && $SF_HOOK_RESULTS[4] == local ]]
 sf_session_close
-jq -e -s '.[-1] == {type:"context",tag:"stop",hook:"stop",content:"feedback"}' \
+jq -e -s '.[-1] == {type:"context",hook:"stop",script:"stop",content:"feedback"}' \
   "$stop_session" >/dev/null
 
 sf_session_open "$stop_session"

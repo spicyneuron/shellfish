@@ -11,7 +11,7 @@ cat <<'STREAM' |
 {"type":"_assistant_delta","text":"hi\n","seq":1}
 {"type":"_turn_usage","input_tokens":14,"output_tokens":2}
 {"type":"_turn_usage","input_tokens":100,"cached_tokens":85,"output_tokens":100}
-{"type":"_hook_display","event":"stop","hook":"/tmp/check","text":"done"}
+{"type":"_hook_display","hook":"stop","script":"/tmp/check","text":"done"}
 {"type":"_exec_error","message":"recoverable"}
 {"type":"_handoff","argv":["/usr/bin/env","printf","%s","done"]}
 {"type":"message","role":"user","content":[{"type":"text","text":"hi"}]}
@@ -72,7 +72,7 @@ order=$(print -r -- \
 assert_equal 'assistant_commit,tool_call,call_2,read_file,outside.txt · unsandboxed,plain,batch_ok' "$order"
 
 order=$(print -r -- \
-    '{"type":"context","tag":"user_prompt_submit","hook":"hook name","prompt":"prompt","status":0,"content":"body"}' |
+    '{"type":"context","hook":"user_prompt_submit","script":"hook name","prompt":"prompt","status":0,"content":"body"}' |
   jq -jRs -L "$ROOT/lib" --argjson runtime null \
     -f "$ROOT/lib/chat/event-decode.jq" |
   tr '\0' '\n' | sed '/^$/d' | paste -sd, -)

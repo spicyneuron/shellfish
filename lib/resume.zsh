@@ -59,7 +59,7 @@ sf_resume_load() {
       if . == null then "(unreadable)"
       elif .type == "session" then "(empty session)"
       elif .type == "system" then "SYSTEM"
-      elif .type == "context" then (.tag | ascii_upcase)
+      elif .type == "context" then (.hook | ascii_upcase)
       elif .type == "message" and .role == "user" then
         ([.content[]? | select(.type == "text") | .text] | join(""))
       elif .type == "message" and .role == "assistant" then

@@ -424,12 +424,12 @@ test("copies the latest or selected derived section locally", async () => {
   assert.equal(page.posts.length, 0);
 });
 
-test("labels context with its hook, tag, and prompt", async () => {
+test("labels context with its script, hook, and prompt", async () => {
   const page = await idle();
   await page.send({
     type: "context",
-    tag: "session_start",
-    hook: "add_environment",
+    hook: "session_start",
+    script: "add_environment",
     prompt: "  project\n context ",
     status: 0,
     content: "environment",
@@ -444,8 +444,8 @@ test("puts prompt context under a user heading", async () => {
     { type: "state", working: true },
     {
       type: "context",
-      tag: "user_prompt_submit",
-      hook: "add_context",
+      hook: "user_prompt_submit",
+      script: "add_context",
       content: "injected",
     },
     { type: "message", role: "user", content: [{ type: "text", text: "prompt" }] },
@@ -557,7 +557,7 @@ test("does not strand a divider before a delayed user record", async () => {
 test("separates notice titles from their bodies", async () => {
   const page = await idle();
   await page.send(
-    { type: "_hook_display", event: "stop", hook: "/tmp/\u0001check", text: "done" },
+    { type: "_hook_display", hook: "stop", script: "/tmp/\u0001check", text: "done" },
     { type: "_exec_error", message: "recoverable" },
   );
   const notes = find(page.output, "note");

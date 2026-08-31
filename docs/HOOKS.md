@@ -137,19 +137,19 @@ Quick reference. "Owner" is the process that runs the chain; "stdin" is the exac
 | `post_tool_use` | exec | — | tool response envelope JSON | must be empty | none | continue / unsupported (10/11 fails) |
 | `stop` | exec | `STOP_ATTEMPT` | assistant text | continuation feedback | none | finish turn / commit feedback, request again |
 
-When stdout is committed, it becomes a `context` record tagged with the event name and the producing hook's basename: `{type:"context",tag:"<event>", hook:"<basename>",content:"<stdout>"}`. For `user_prompt_submit`, a `context` object on fd 3 may add `prompt` and `status` to that hook's record. `prompt` requires an integer `status` from 0 through 255.
+When stdout is committed, it becomes a `context` record named for the hook and attributed to the producing script's basename: `{type:"context",hook:"<hook>",script:"<basename>",content:"<stdout>"}`. For `user_prompt_submit`, a `context` object on fd 3 may add `prompt` and `status` to that script's record. `prompt` requires an integer `status` from 0 through 255.
 
-The request builder groups adjacent context records from the same event into an escaped lifecycle XML block. Each producing hook becomes a nested `context` element; `hook`, and when present `prompt` and `status`, are attributes:
+The request builder groups adjacent context records from the same hook into an escaped XML block. Each producing script becomes a nested `context` element; `script`, and when present `prompt` and `status`, are attributes:
 
 ```xml
-<user_prompt_submit>
-<context hook="user_shell" prompt="git status" status="0">
+<hook name="user_prompt_submit">
+<context script="user_shell" prompt="git status" status="0">
 ...
 </context>
-</user_prompt_submit>
+</hook>
 ```
 
-The lifecycle wrapper keeps injected context distinct from the user request that follows it. Separate durable records retain each hook's attribution; grouping happens only in provider request projection.
+The hook wrapper keeps injected context distinct from the user request that follows it. Separate durable records retain each script's attribution; grouping happens only in provider request projection.
 
 Trailing context, typically `stop` feedback, becomes a synthetic trailing user message so the transcript does not misattribute it to the human.
 

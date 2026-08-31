@@ -59,8 +59,8 @@ print -r -- "$stream" | jq -eRn '
   [inputs | fromjson] as $events |
   ($events | map(select(.role == "assistant")) | length) == 2 and
   ($events | map(select(.type == "context"))) ==
-    [{type:"context",tag:"stop",hook:"stop-once",content:"feedback"}] and
-  ($events | map(select(.type == "_hook_display") | [.event,(.hook|split("/")[-1]),.text])) ==
+    [{type:"context",hook:"stop",script:"stop-once",content:"feedback"}] and
+  ($events | map(select(.type == "_hook_display") | [.hook,(.script|split("/")[-1]),.text])) ==
     [["stop","stop-once","first-local"],["stop","stop-once","second-local"]]
 ' >/dev/null
 sf_hooks_turn_state_cleanup
@@ -68,7 +68,7 @@ jq -e '
   .messages[-2].role == "assistant" and
   .messages[-1].role == "user" and
   .messages[-1].content[0].text ==
-    "<stop>\n<context hook=\"stop-once\">\nfeedback\n</context>\n</stop>\n\n"
+    "<hook name=\"stop\">\n<context script=\"stop-once\">\nfeedback\n</context>\n</hook>\n\n"
 ' "$request_capture" >/dev/null
 jq -e -s '
   ([.[] | select(.type == "context")] | length) == 1 and
@@ -168,7 +168,7 @@ cat >"$cancel_backend" <<ZSH
 #!/usr/bin/env zsh
 request=\$(cat)
 if jq -e '.messages[-1].role == "user" and
-    (.messages[-1].content[0].text | contains("<stop>\\n<context hook=\\"stop-once\\">"))' \
+    (.messages[-1].content[0].text | contains("<hook name=\\"stop\\">\\n<context script=\\"stop-once\\">"))' \
     <<<"\$request" >/dev/null; then
   : >"$cancel_ready"
   sleep 10
@@ -201,11 +201,11 @@ wait "$cancel_pid" || cancel_status=$?
 (( cancel_status == 143 ))
 jq -eRn '
   [inputs | fromjson] as $events |
-  ($events | map(select(.type == "context" and .tag == "stop")) | length) == 1 and
+  ($events | map(select(.type == "context" and .hook == "stop")) | length) == 1 and
   $events[-1].role == "assistant" and $events[-1].stop == "end"
 ' <"$cancel_stream" >/dev/null
 jq -L "$ROOT/lib" -e -s '
   include "runtime/schema";
   (.[1:] | canonical_session_records) and
-  ([.[] | select(.type == "context" and .tag == "stop")] | length) == 1
+  ([.[] | select(.type == "context" and .hook == "stop")] | length) == 1
 ' "$cancel_session" >/dev/null

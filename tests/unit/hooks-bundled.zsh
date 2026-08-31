@@ -114,8 +114,8 @@ sf_hooks_session_start "$availability_session"
 sf_session_create "${SF_HOOK_CONTEXT_RECORDS[@]}"
 sf_hooks_turn_state_cleanup
 jq -e -s '
-  length == 2 and .[1].type == "context" and .[1].tag == "session_start" and
-  .[1].hook == "add_command_availability" and
+  length == 2 and .[1].type == "context" and .[1].hook == "session_start" and
+  .[1].script == "add_command_availability" and
   (.[1].content | startswith("Host shell: zsh ") and
     contains("\nAvailable commands:\n"))
 ' "$availability_session" >/dev/null
@@ -336,8 +336,8 @@ run_prompt_hook "!$shell_command" "$shell_session"
 [[ $reply[1] == handled ]]
 [[ -d $shell_state_dir ]]
 jq -e --arg prompt "$shell_command" '
-  select(.type == "context" and .tag == "user_prompt_submit" and
-    .hook == "user_shell" and .prompt == $prompt and
+  select(.type == "context" and .hook == "user_prompt_submit" and
+    .script == "user_shell" and .prompt == $prompt and
     .status == 7 and (.content | contains("output")))
 ' < <(tail -n 1 "$shell_session") >/dev/null
 sf_hooks_turn_state_cleanup

@@ -439,15 +439,15 @@ function apply(frame) {
       section("system");
       return renderCollapsed("system", "system prompt", frame.content);
     case "context":
-      if (frame.tag === "user_prompt_submit") {
+      if (frame.hook === "user_prompt_submit") {
         hideIndicator();
         section("user");
       }
       return renderCollapsed(
         "context",
-        frame.hook,
+        frame.script,
         frame.content,
-        [frame.tag, frame.prompt]
+        [frame.hook, frame.prompt]
           .filter((value) => value !== undefined)
           .map((value) => safe(value).replace(/\s+/g, " ").trim())
           .filter(Boolean)
@@ -469,7 +469,7 @@ function apply(frame) {
     case "_tool_permission_request":
       return askPermission(frame);
     case "_hook_display":
-      return note(frame.text, null, safe(frame.hook).split("/").pop(), frame.event);
+      return note(frame.text, null, safe(frame.script).split("/").pop(), frame.hook);
     case "_exec_error": {
       let heading = "Turn failed";
       let detail = safe(frame.message);

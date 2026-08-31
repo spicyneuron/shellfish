@@ -29,7 +29,7 @@ typeset accepted_turn=$SHELLFISH_TURN_ID
 [[ $accepted_turn == 1 && ${(t)SHELLFISH_TURN_ID} != *export* ]]
 jq -eRs '
   [split("\n")[] | select(length > 0) | fromjson] as $records |
-  $records[-1] == {type:"context",tag:"user_prompt_submit",hook:"prompt",
+  $records[-1] == {type:"context",hook:"user_prompt_submit",script:"prompt",
     content:"first\nsecond\ncontext"}
 ' "$prompt_session" >/dev/null
 SKIP=1 run_prompt_hook command "$prompt_session"
@@ -40,7 +40,7 @@ jq -e 'select(.type == "context" and .content == "commandcontext")' \
   < <(tail -n 1 "$prompt_session") >/dev/null
 META=1 run_prompt_hook '!false' "$prompt_session"
 jq -e '
-  select(.type == "context" and .hook == "prompt" and
+  select(.type == "context" and .script == "prompt" and
     .prompt == "false" and .status == 1 and .content == "!falsecontext")
 ' < <(tail -n 1 "$prompt_session") >/dev/null
 BINARY=1 run_prompt_hook binary "$prompt_session"

@@ -24,7 +24,7 @@ cached_tokens=$(( input_tokens * 85 / 100 ))
 # before deriving the text and its keyword counts.
 decoded=$(jq -rj '
   def echo_text:
-    gsub("<session_start>\\n(?:<context(?: [^>]*)?>\\n[^<]*\\n</context>\\n*)+</session_start>\\n*"; "");
+    gsub("<hook name=\\\"session_start\\\">\\n(?:<context(?: [^>]*)?>\\n[^<]*\\n</context>\\n*)+</hook>\\n*"; "");
   ([.messages[] | select(.role == "user") |
     [.content[] | select(.type == "text") | .text] | join("")] | last // "" | echo_text) as $text |
   $text, "\u0000",

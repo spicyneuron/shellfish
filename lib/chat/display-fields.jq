@@ -80,8 +80,8 @@ def durable_display_fields($replay; $tools):
       (if ($display.content | index("$result_full")) != null then "full" else "" end),
       (if .sandbox_blocked? == true then "blocked" else "" end)]
   elif canonical_context then
-    ["context", .hook,
-      ([.tag, .prompt?] | display_summary), .content]
+    ["context", .script,
+      ([.hook, .prompt?] | display_summary), .content]
   else
     empty
   end;

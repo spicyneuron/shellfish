@@ -142,7 +142,7 @@ cmp -s "$tmp/partial-before.jsonl" "$partial_session" ||
 typeset echo_session="$tmp/echo.jsonl"
 sf_test_session "$echo_session"
 sf_session_open "$echo_session"
-sf_session_append '{"type":"context","tag":"session_start","hook":"fixture","content":"startup context"}'
+sf_session_append '{"type":"context","hook":"session_start","script":"fixture","content":"startup context"}'
 sf_session_close
 stream=$(sf_test_turn 'plain prompt' "$echo_session")
 print -r -- "$stream" | jq -eRn '
@@ -151,7 +151,7 @@ print -r -- "$stream" | jq -eRn '
 ' >/dev/null
 jq -e '
   .system == "frozen system" and
-  (.messages[-1].content[0].text | contains("<session_start>\n<context hook=\"fixture\">"))
+  (.messages[-1].content[0].text | contains("<hook name=\"session_start\">\n<context script=\"fixture\">"))
 ' "$request_capture" >/dev/null
 
 # A tool response commits its call and result before the provider continues.

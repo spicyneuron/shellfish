@@ -167,10 +167,10 @@ def canonical_assistant_message:
 
 def canonical_context:
   type == "object" and
-  (keys - ["content", "hook", "prompt", "status", "tag", "type"] | length) == 0 and
-  .type == "context" and (.tag | element_name) and
+  (keys - ["content", "hook", "prompt", "script", "status", "type"] | length) == 0 and
+  .type == "context" and (.hook | element_name) and
   (.content | type == "string") and
-  (.hook | nonempty_control_free_string) and
+  (.script | nonempty_control_free_string) and
   ((has("prompt") | not) or ((.prompt | nul_free_string and length > 0) and has("status"))) and
   ((has("status") | not) or
     (.status | type == "number" and floor == . and . >= 0 and . <= 255));
@@ -233,8 +233,8 @@ def canonical_session_records:
       elif $record.type == "system" then
         if .next == "user" then . else .valid = false end
       elif $record.type == "context" then
-        if $record.tag == "stop" and .next == "user" then .next = "assistant"
-        elif $record.tag != "stop" and .next == "user" then .
+        if $record.hook == "stop" and .next == "user" then .next = "assistant"
+        elif $record.hook != "stop" and .next == "user" then .
         else .valid = false end
       elif $record.role == "user" then
         if .next == "user" then .next = "assistant" else .valid = false end

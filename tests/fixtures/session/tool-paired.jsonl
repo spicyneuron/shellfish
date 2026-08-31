@@ -4,4 +4,4 @@
 {"type":"message","role":"tool_result","call_id":"call_1","name":"read_file","content":"contents\nsecond line","exit_code":0}
 {"type":"message","role":"tool_result","call_id":"call_2","name":"shell","content":"failed\u001b[31m","exit_code":1}
 {"type":"message","role":"assistant","stop":"end","content":[{"type":"text","text":"Done"}],"usage":{"input_tokens":2,"output_tokens":1}}
-{"type":"context","tag":"project","hook":"test","content":"Use fixtures."}
+{"type":"context","hook":"project","script":"test","content":"Use fixtures."}

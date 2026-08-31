@@ -246,7 +246,7 @@ SF_TEST_SYSTEM_RECORD=''
 # Opening rejects noncanonical durable records.
 typeset invalid_record="$tmp/invalid-record.jsonl"
 cp "$SF_TEST_SESSIONS/header-only.jsonl" "$invalid_record"
-print -r -- '{"type":"context","tag":"test","hook":"","content":"bad"}' >>"$invalid_record"
+print -r -- '{"type":"context","hook":"test","script":"","content":"bad"}' >>"$invalid_record"
 if sf_session_open "$invalid_record"; then
   fail 'session with an invalid durable record was accepted'
 fi
@@ -274,7 +274,7 @@ sf_session_append '{"type":"message","role":"assistant","stop":"tool_calls","con
 sf_session_append '{"type":"message","role":"tool_result","call_id":"call_1","name":"shell","content":"denied","exit_code":126}'
 sf_session_append '{"type":"message","role":"tool_result","call_id":"call_2","name":"read_file","content":"bad","exit_code":1}'
 sf_session_append '{"type":"message","role":"assistant","stop":"length","content":[{"type":"text","text":"partial"}]}'
-sf_session_append '{"type":"context","tag":"stop","hook":"fixture","content":"continue"}'
+sf_session_append '{"type":"context","hook":"stop","script":"fixture","content":"continue"}'
 sf_session_append '{"type":"message","role":"assistant","stop":"end","content":[{"type":"text","text":"halted"}]}'
 sf_session_close
 sf_session_open "$native"

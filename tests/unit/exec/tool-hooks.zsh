@@ -57,11 +57,11 @@ print -r -- "$stream" | jq -eRn '
     map({exit_code,content})) ==
     [{exit_code:7,content:"line\n\n"},
      {exit_code:7,content:"line\n\n"}] and
-  ($events | map(select(.type == "_hook_display") | {event,hook:(.hook|split("/")[-1]),text})) ==
-    [{event:"pre_tool_use",hook:"pre-observe",text:"pre-local-call_1"},
-     {event:"post_tool_use",hook:"post-observe",text:"post-local-call_1"},
-     {event:"pre_tool_use",hook:"pre-observe",text:"pre-local-call_2"},
-     {event:"post_tool_use",hook:"post-observe",text:"post-local-call_2"}]
+  ($events | map(select(.type == "_hook_display") | {hook,script:(.script|split("/")[-1]),text})) ==
+    [{hook:"pre_tool_use",script:"pre-observe",text:"pre-local-call_1"},
+     {hook:"post_tool_use",script:"post-observe",text:"post-local-call_1"},
+     {hook:"pre_tool_use",script:"pre-observe",text:"pre-local-call_2"},
+     {hook:"post_tool_use",script:"post-observe",text:"post-local-call_2"}]
 ' >/dev/null
 jq -e '. == {turn_id:1,tool_name:"shell",tool_use_id:"call_1",
   tool_input:{command:"printf '\''line\\n\\n'\''; exit 7"}}' \

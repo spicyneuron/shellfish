@@ -26,7 +26,7 @@ print -r -- '{"type":"system","content":"Instructions"}' >>"$s_system"
 
 # 3. Context record
 make_header >"$s_context"
-print -r -- '{"type":"context","tag":"env","hook":"test","content":"data"}' >>"$s_context"
+print -r -- '{"type":"context","hook":"env","script":"test","content":"data"}' >>"$s_context"
 
 # 4. User message
 make_header >"$s_user"

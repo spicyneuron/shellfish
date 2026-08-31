@@ -471,7 +471,7 @@ sf_session_recover_turn() {
       if $records[$last].stop == "tool_calls" then
         {recover:true,pending:[$records[$last].content[] |
           select(.type == "tool_call") | {id,name}]}
-      elif any($records[$last + 1:][]; .type == "context" and .tag == "stop") then
+      elif any($records[$last + 1:][]; .type == "context" and .hook == "stop") then
         {recover:true,pending:[]}
       else {recover:false,pending:[]} end
     else

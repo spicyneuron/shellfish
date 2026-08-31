@@ -46,7 +46,7 @@ def event_fields:
        ["Turn failed", $message]
      end)
   elif .type == "_hook_display" then
-    ["hook_display", .event, .hook, .text]
+    ["hook_display", .hook, .script, .text]
   elif .type == "_tool_permission_request" then
     (.tool | tool_permission_display($runtime.harness.tools // [])) as $preview |
      ["permission_request", .id, .tool.name,
