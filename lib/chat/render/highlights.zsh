@@ -504,7 +504,7 @@ sf_chat_markdown_highlight() {
         if [[ $match[2] == \#* ]]; then
           heading=1
           boundary=heading
-          sf_chat_highlight_span $(( base + match_end )) $(( base + ${#line} )) heading
+          sf_chat_highlight_span $(( base + ${#match[1]} )) $(( base + ${#line} )) heading
         fi
         line=${line[match_end + 1,-1]}
         (( base += match_end ))
@@ -526,8 +526,8 @@ sf_chat_markdown_highlight() {
           if [[ $suffix == *"$delimiter"* ]]; then
             rest=${suffix#*"$delimiter"}
             content=$(( ${#line} - ${#rest} - ${#delimiter} + 1 ))
-            sf_chat_highlight_span $(( base + inline_end - 1 )) \
-              $(( base + content - 1 )) code
+            sf_chat_highlight_span $(( base + cursor - 1 )) \
+              $(( base + content + ${#delimiter} - 1 )) code
             cursor=$(( content + ${#delimiter} ))
             continue
           fi
@@ -562,8 +562,8 @@ sf_chat_markdown_highlight() {
             rest=${suffix#*"$delimiter"}
             content=$(( ${#line} - ${#rest} - count + 1 ))
             (( count == 2 )) && kind=strong || kind=em
-            sf_chat_highlight_span $(( base + cursor + count - 1 )) \
-              $(( base + content - 1 )) $kind
+            sf_chat_highlight_span $(( base + cursor - 1 )) \
+              $(( base + content + count - 1 )) $kind
             cursor=$(( content + count ))
             continue
           fi
