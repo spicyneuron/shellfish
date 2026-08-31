@@ -1,33 +1,48 @@
 ---
 name: skill-creator
-description: Create a reusable project-local skill. Use when the user asks to add or edit a skill for the current project.
+description: Invoke when user asks to create or edit a skill.
 ---
 # Create a project-local skill
 
-Create the skill at `./.agents/skills/<name>/SKILL.md`, where `<name>` is a specific capability name using only lowercase letters, numbers, and single hyphens. The frontmatter `name` must exactly match the directory name.
+## 1. Starting Point
 
-Before writing, inspect nearby project instructions and any existing skills under `./.agents/skills/` so the new skill follows local conventions and does not duplicate existing capabilities.
+Match the process to how much the user has already decided:
 
-Use this minimal structure:
+- **High-level?** Interview them to understand their goals and constraints.
+- **Partially settled?** Focus on open decisions and ambiguities.
+- **Settled and procedural?** Move directly to writing the skill.
 
-```markdown
----
-name: example-skill
-description: Explain what the skill does and when the agent should use it.
----
-# Example skill
+## 2. Design
 
-Write direct, actionable instructions here.
-```
+Before writing, make sure you understand what a good result looks like.
 
-Keep `name` at most 64 characters and `description` at most 1024 characters. Use single-line scalar values for both fields. Omit `disable-model-invocation` unless the user explicitly asks to hide the skill from automatic agent invocation.
+- Clarify the purpose, success criteria, invocation conditions, non-goals, constraints, required steps, and important edge cases.
+- Work through one meaningful decision at a time, starting from the high level and working through dependencies and details.
+- When useful, give the user concrete options or examples, explain the trade-offs, and recommend an approach.
+- Recap decisions as they are made. Start writing once only routine implementation details remain.
 
-Put the essential workflow in `SKILL.md`. Add supporting files under the same skill directory only when they are useful, and reference them with paths relative to that directory. Do not add scripts, dependencies, or broad permissions unless the requested workflow requires them.
+## 3. Write
 
-After writing the skill, verify that:
+Turn the agreed design into the shortest instructions that will reliably produce the intended behavior.
 
+- Be precise about settled requirements, but leave room for judgment where the user wants flexibility. Do not introduce certainty or constraints the user did not choose.
+- Use direct, unambiguous, information-dense language. Remove repetition, unnecessary background, and guidance the model can safely infer. All else equal, shorter is better.
+- Remember that length costs tokens. The name and description load in every new session, and the full skill loads when invoked.
+- Give the description just enough detail to tell the model when, and when not, to invoke the skill.
+- Inspect project instructions and existing skills under `./.agents/skills/` so the skill follows local conventions and does not duplicate an existing capability.
+- Create the skill at `./.agents/skills/<name>/SKILL.md`. Choose a specific name using only lowercase letters, numbers, and single hyphens.
+- Match the frontmatter `name` to the directory name. Keep `name` at most 64 characters and `description` at most 1024 characters. Use single-line scalars.
+- Omit `disable-model-invocation` unless the user asks to hide the skill from automatic invocation.
+- Keep the essential workflow in `SKILL.md`. Add supporting files with relative paths only when they are useful. Add scripts, dependencies, or broad permissions only when the workflow requires them.
+
+## 4. Verify
+
+Read the finished skill once more and confirm that:
+
+- It reflects the decisions made with the user.
 - The directory and frontmatter names match.
-- The description states both capability and trigger conditions.
-- The instructions are concrete enough to follow without unstated project knowledge.
-- Referenced files exist and use relative paths.
-- The skill does not weaken project safety or permission boundaries.
+- The description makes its invocation boundaries clear.
+- The instructions are concise, unambiguous, and usable without unstated project knowledge.
+- Settled requirements are specific, while deliberately open-ended behavior remains open.
+- Every referenced file exists and uses a relative path.
+- The skill preserves existing safety and permission boundaries.
