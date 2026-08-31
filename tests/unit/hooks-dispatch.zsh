@@ -24,7 +24,7 @@ sf_hooks_dispatch "$input" 64 0 0 "$mixed"
 [[ $SF_HOOK_SCRIPT_RESULTS[4] == $'local\n' && -z $SF_HOOK_SCRIPT_RESULTS[5] ]]
 (( reply[1] ))
 
-# Each hook retains its attribution and independently captured channels.
+# Each script retains its attribution and independently captured channels.
 make_script context_only 'print -n from-stdout; exit 0'
 typeset context_only=$script
 make_script display_only 'print -rn -u2 -- from-stderr; exit 0'
@@ -36,7 +36,7 @@ sf_hooks_dispatch "$empty" 64 0 0 "$context_only" "$display_only"
 [[ $SF_HOOK_SCRIPT_RESULTS[6] == "$display_only" && -z $SF_HOOK_SCRIPT_RESULTS[8] &&
    $SF_HOOK_SCRIPT_RESULTS[9] == from-stderr ]]
 
-# Status 10 skips sticky default behavior while later hooks continue in order.
+# Status 10 skips sticky default behavior while later scripts continue in order.
 make_script skip 'print -n first; exit 10'
 typeset skip=$script
 make_script later 'print -n second; exit 0'
@@ -97,13 +97,13 @@ fi
 make_script failed 'print -n failed; print -n -u2 detail; exit 9'
 typeset failed=$script
 if sf_hooks_dispatch "$empty" 64 0 0 "$later" "$failed"; then
-  fail 'unexpected hook status was accepted'
+  fail 'unexpected script status was accepted'
 fi
 [[ $SF_HOOK_ERROR == "hook script failed with status 9: $failed: detail" ]]
 [[ -z $REPLY && ${#reply} == 0 ]]
 (( ${#SF_HOOK_SCRIPT_RESULTS} == 0 ))
 
-# Each hook receives its own combined output budget.
+# Each script receives its own combined output budget.
 make_script forty 'printf %040d 0; exit 0'
 typeset forty=$script
 make_script thirty 'printf %030d 0; exit 0'
@@ -118,8 +118,8 @@ if sf_hooks_dispatch "$empty" 64 0 0 "$combined_overflow"; then
 fi
 [[ $SF_HOOK_ERROR == "hook script output exceeds capture limit: $combined_overflow" ]]
 
-# Prepared stdin and argv reach hooks without newline insertion or shell parsing.
-make_script invocation 'print -rn -- "$#|$1|$2|$3|"; cat; print -rn -- "|$PWD|$SHELLFISH_SESSION|$SHELLFISH_CAPTURE_LIMIT|$SHELLFISH_TURN_STATE|$SHELLFISH_SESSION_STATE|$SHELLFISH_SESSION_ID|$SHELLFISH_MODEL|$PROJECT_DIR|$PLUGIN_ROOT"'
+# Prepared stdin and argv reach scripts without newline insertion or shell parsing.
+make_script invocation 'print -rn -- "$#|$1|$2|$3|"; cat; print -rn -- "|$PWD|$SHELLFISH_SESSION|$SHELLFISH_CAPTURE_LIMIT|$SHELLFISH_TURN_STATE|$SHELLFISH_SESSION_STATE|$SHELLFISH_SESSION_ID|$SHELLFISH_MODEL|$PROJECT_DIR|$HOOK_SCRIPT_ROOT"'
 typeset invocation=$script
 typeset working="$tmp/working" session="$tmp/session.jsonl" state
 mkdir "$working"

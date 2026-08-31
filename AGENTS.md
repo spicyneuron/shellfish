@@ -18,7 +18,7 @@ NOTE: This project is pre-release. Do not add deprecation noticies, backwards co
 
 - `bin/shellfish` validates CLI input and dispatches to config reporting, single-turn exec, or interactive chat.
 - New sessions resolve configuration into a frozen runtime, prepare the header and system record in memory, collect `session_start` context, then create the complete initial JSONL prefix without a session lock.
-- Each turn opens and locks the session, runs prompt hooks, then loops over provider responses. Final responses run stop hooks; tool-call responses run the pre-hook, permission, execution, persistence, and post-hook pipeline before the next provider request.
+- Each turn opens and locks the session, runs `user_prompt_submit` scripts, then loops over provider responses. Final responses run `stop` scripts; tool-call responses run the `pre_tool_use` scripts, permission, execution, persistence, and `post_tool_use` scripts before the next provider request.
 - The session layer is authoritative. Request projection converts durable records into provider messages; provider deltas and UI events are transient. Any failure, cancellation, or early return converges on turn recovery, hook/tool cleanup, and unlock.
 - Interactive chat runs single turns through `shellfish exec --jsonl`, renders its event stream, and reloads the durable transcript after completion or uncertainty.
 - A served session runs the same single turns: the proxy relays one child's JSONL to one browser, which replays the durable session on connect and reopens that stream to recover.
@@ -28,7 +28,7 @@ NOTE: This project is pre-release. Do not add deprecation noticies, backwards co
 - Sessions are append-only JSONL and are the durable source of truth. Every durable prefix must be valid, including an in-progress last turn.
 - Durable records are `session`, `system`, `message`, and hook-injected `context`. Provider deltas, turn status, and presentation events are transient.
 - Interactive chat submits single turns through the shared session and turn machinery. Do not introduce lifecycle or presentation records.
-- Session preparation and creation are lock-free; each full turn owns the session lock from open through recovery and cleanup. Keep credentials out of hooks; exec passes the scoped `SHELLFISH_API_KEY` only to the backend adapter.
+- Session preparation and creation are lock-free; each full turn owns the session lock from open through recovery and cleanup. Keep credentials out of hook scripts; exec passes the scoped `SHELLFISH_API_KEY` only to the backend adapter.
 
 ## Configuration
 
@@ -41,7 +41,7 @@ NOTE: This project is pre-release. Do not add deprecation noticies, backwards co
 ## Hooks
 
 - `session_start` runs during lock-free session preparation and its context becomes part of the initial prefix. `user_prompt_submit`, `permission_request`, `pre_tool_use`, `post_tool_use`, and `stop` run under the full-turn lock.
-- Hook stdout supplies context according to event policy, stderr is user display only, and fd 3 carries control decisions. Use `docs/HOOKS.md` for payloads, exit statuses, and environment guarantees.
+- Hook script stdout supplies context according to hook policy, stderr is user display only, and fd 3 carries control decisions. Use `docs/HOOKS.md` for payloads, exit statuses, and environment guarantees.
 
 ## Development
 

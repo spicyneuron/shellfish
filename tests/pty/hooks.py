@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""How user_prompt_submit hooks reach the chat UI: display, pacing, and handoff.
+"""How user_prompt_submit hook scripts reach the chat UI: display, pacing, and handoff.
 
 Split from chat.py so each file's scenarios fit the runner's per-file timeout
 and the two run concurrently.
@@ -160,7 +160,7 @@ def main():
     test_prompt_hook_hands_off_to_another_session()
     test_prompt_hook_hands_off_to_new_session()
     test_fork_restores_removed_user_prompt_as_draft()
-    print("PASS prompt hook PTY scenarios")
+    print("PASS user_prompt_submit hook script PTY scenarios")
 
 
 if __name__ == "__main__":

@@ -1,8 +1,8 @@
 # Single-turn exec and JSONL
 
-`shellfish exec` runs a single agent turn. A turn begins with one user message and may contain multiple provider requests, tool calls, permission decisions, and stop-hook continuations.
+`shellfish exec` runs a single agent turn. A turn begins with one user message and may contain multiple provider requests, tool calls, permission decisions, and continuations requested by `stop` scripts.
 
-`exec --new [SESSION]` creates an idle session and prints its absolute path. Without `SESSION`, it uses current configuration. With `SESSION`, it copies that session's settings and system prompt. It does not copy messages or context. It runs `session_start` hooks for the new session.
+`exec --new [SESSION]` creates an idle session and prints its absolute path. Without `SESSION`, it uses current configuration. With `SESSION`, it copies that session's settings and system prompt. It does not copy messages or context. It runs the `session_start` scripts for the new session.
 
 ```sh
 shellfish exec --new
@@ -41,7 +41,7 @@ Stdin remains open for permission replies. When exec emits a permission request,
 {"type":"_tool_permission_response","id":"permission_1","decision":"approve"}
 ```
 
-`decision` is `approve` or `deny`, and `id` must match the pending request. A client must preserve line framing and send no unrelated input. If no interactive client or permission hook decides a sandbox bypass, exec denies it.
+`decision` is `approve` or `deny`, and `id` must match the pending request. A client must preserve line framing and send no unrelated input. If no interactive client or `permission_request` script decides a sandbox bypass, exec denies it.
 
 ## Output
 
@@ -54,7 +54,7 @@ Durable records are:
 
 - `session`: the resolved runtime header, emitted when a new session is created.
 - `system`: the configured system prompt.
-- `context`: model-visible hook output.
+- `context`: model-visible hook script output.
 - `message` with role `user`, `assistant`, or `tool_result`.
 
 A sandboxed tool result includes `sandbox_blocked: true` when the tool exits non-zero and sandbox monitoring reports that it attempted a blocked action.
@@ -67,9 +67,9 @@ Transient events currently include:
 | `_assistant_delta` | Incremental assistant text for live presentation. |
 | `_assistant_reasoning_delta` | Incremental reasoning text for live presentation. |
 | `_turn_usage` | Token usage accumulated for the turn. |
-| `_hook_display` | Ephemeral hook stderr for the user. |
+| `_hook_display` | Ephemeral hook script stderr for the user. |
 | `_tool_permission_request` | A sandbox bypass needs a client decision. |
-| `_handoff` | A hook asks a capable client to run `argv` after exec exits cleanly. |
+| `_handoff` | A hook script asks a capable client to run `argv` after exec exits cleanly. |
 | `_exec_error` | Exec cannot start or complete the operation. |
 
 Text and reasoning deltas have a zero-based `seq` shared by both types and restarted for each provider response. They are previews only. Consumers should render committed assistant and reasoning content from the later durable assistant record. Clients should treat unknown transient types as unsupported protocol input and recover from the durable session rather than guessing their meaning.
@@ -87,7 +87,7 @@ A permission request has this shape:
 
 ## Completion and recovery
 
-A successful process exit means the single-turn operation completed cleanly. This includes a prompt hook that deliberately blocks submission or requests a handoff. Tool commands may return nonzero results without making exec itself fail.
+A successful process exit means the single-turn operation completed cleanly. This includes a `user_prompt_submit` script that deliberately blocks submission or requests a handoff. Tool commands may return nonzero results without making exec itself fail.
 
 A nonzero exec exit means the operation failed or was interrupted. Exec emits `_exec_error` when JSONL output is available. After malformed output, disconnection, cancellation, or process failure, discard uncertain live state and replay the durable session.
 

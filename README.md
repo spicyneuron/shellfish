@@ -23,8 +23,8 @@ This entire codebase fits comfortably within the context window of any modern LL
 
 ## Highlights
 
-- **Context is just stdout.** Hooks turn ordinary command output into model context, making it easy to extend awareness of project state and changes.
-- **Extensible agent loop.** Hooks run in a pipeline, gating actions, modifying state, and even launching other services.
+- **Context is just stdout.** Hook scripts turn ordinary command output into model context, making it easy to extend awareness of project state and changes.
+- **Extensible agent loop.** Hook scripts run in a pipeline, gating actions, modifying state, and even launching other services.
 - **Audit in one sitting.** Agent behavior is inspectable Markdown, shell, and JSON; full session state is just JSONL.
 - **Harnesses, plural.** Configure multiple purpose-built agents instead of forcing every workflow into one configuration.
 - **Take a session on the go.** The optional server exposes your agent through a lightweight browser client. Because what could go wrong?

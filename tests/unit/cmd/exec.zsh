@@ -37,14 +37,14 @@ mkdir "$tmp/read" "$tmp/write"
 
 # Turn subprocesses preserve the chat's verbose override, but do not trust
 # arbitrary inherited values.
-typeset verbose_hook="$tmp/verbose-hook" verbose_config="$tmp/verbose-config.json"
-cat >"$verbose_hook" <<'EOF'
+typeset verbose_script="$tmp/verbose-hook" verbose_config="$tmp/verbose-config.json"
+cat >"$verbose_script" <<'EOF'
 #!/usr/bin/env zsh
 print -r -- "${SHELLFISH_VERBOSE-unset}" >"$SF_VERBOSE_MARKER"
 exit 10
 EOF
-chmod +x "$verbose_hook"
-jq --arg hook "$verbose_hook" '.harnesses.machine.user_prompt_submit=[$hook]' \
+chmod +x "$verbose_script"
+jq --arg script "$verbose_script" '.harnesses.machine.user_prompt_submit=[$script]' \
   "$config" >"$verbose_config"
 SF_VERBOSE_MARKER="$tmp/verbose-one" SHELLFISH_VERBOSE=1 \
   zsh -f "$entry" exec --config "$verbose_config" test || fail 'verbose exec failed'
@@ -148,16 +148,16 @@ cmp -s "$tmp/stream-durable" "$tmp/session-durable" ||
   fail 'JSONL durable events differ from the appended session records'
 
 # A bounded exec emits an arbitrary command handoff and completes cleanly.
-typeset handoff_hook="$tmp/handoff"
-cat >"$handoff_hook" <<'ZSH'
+typeset handoff_script="$tmp/handoff"
+cat >"$handoff_script" <<'ZSH'
 #!/usr/bin/env zsh
 [[ $1 == user_prompt_submit ]] || exit 1
 print -rn -u3 -- '{"action":"handoff","argv":["/usr/bin/printf","next.jsonl"]}'
 exit 11
 ZSH
-chmod +x "$handoff_hook"
+chmod +x "$handoff_script"
 typeset handoff_config="$tmp/handoff.jsonc" handoff_output="$tmp/handoff.jsonl"
-jq --arg hook "$handoff_hook" '.harnesses.machine.user_prompt_submit=[$hook]' \
+jq --arg script "$handoff_script" '.harnesses.machine.user_prompt_submit=[$script]' \
   "$config" >"$handoff_config"
 print -r -- \
   '{"type":"message","role":"user","content":[{"type":"text","text":"handoff"}]}' |
@@ -170,17 +170,17 @@ jq -eRn '
 ' <"$handoff_output" >/dev/null || fail 'JSONL exec discarded the handoff'
 
 # A session_start skip status fails without creating a session.
-typeset skip_hook="$tmp/skip-start"
-cat >"$skip_hook" <<'ZSH'
+typeset skip_script="$tmp/skip-start"
+cat >"$skip_script" <<'ZSH'
 #!/usr/bin/env zsh
 [[ $SHELLFISH_MODE == exec && $# == 1 && $1 == session_start ]] || exit 1
 print -n 'startup context'
 print -n -u2 'startup display'
 exit 10
 ZSH
-chmod +x "$skip_hook"
+chmod +x "$skip_script"
 typeset skip_config="$tmp/skip-start.jsonc"
-jq --arg hook "$skip_hook" '.harnesses.machine.session_start=[$hook]' \
+jq --arg script "$skip_script" '.harnesses.machine.session_start=[$script]' \
   "$config" >"$skip_config"
 typeset skip_session="$tmp/skipped.jsonl" skip_stderr="$tmp/skipped.stderr"
 integer skip_status=0

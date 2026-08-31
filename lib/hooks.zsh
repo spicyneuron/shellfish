@@ -75,14 +75,14 @@ sf_hooks_capture_one() {
   local context="$directory/current-context"
   local display="$directory/current-display"
   local control="$directory/current-control"
-  local PLUGIN_ROOT=${script:h} hook=$SF_HOOK_NAME api_key_env
+  local HOOK_SCRIPT_ROOT=${script:h} hook=$SF_HOOK_NAME api_key_env
   integer script_status
 
   [[ -n $hook ]] || {
     sf_hooks_fail 'hook name is not available'
     return
   }
-  export PLUGIN_ROOT
+  export HOOK_SCRIPT_ROOT
   api_key_env=$(jq -r '.backend.api_key_env' <<<"$SF_SESSION[runtime]") || {
     sf_hooks_fail 'cannot inspect hook credential environment'
     return

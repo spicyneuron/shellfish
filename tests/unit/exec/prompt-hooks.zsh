@@ -9,9 +9,9 @@ export XDG_STATE_HOME="$tmp/state"
 sf_test_runtime
 export SF_TEST_BACKEND_DELAY=0
 
-# Exec derives the turn ID under lock and owns prompt-hook decisions.
-typeset prompt_hook="$tmp/prompt-hook"
-cat >"$prompt_hook" <<'ZSH'
+# Exec derives the turn ID under lock and owns user_prompt_submit script decisions.
+typeset prompt_script="$tmp/prompt-hook"
+cat >"$prompt_script" <<'ZSH'
 #!/usr/bin/env zsh
 prompt=$(cat)
 [[ $1 == user_prompt_submit && $SHELLFISH_TURN_ID == 1 ]] || exit 2
@@ -39,9 +39,9 @@ case $prompt in
   *) print -rn -- 'accepted context' ;;
 esac
 ZSH
-chmod +x "$prompt_hook"
-SF_TEST_RUNTIME=$(jq -c --arg hook "$prompt_hook" \
-  '.harness.user_prompt_submit=[$hook]' <<<"$SF_TEST_RUNTIME")
+chmod +x "$prompt_script"
+SF_TEST_RUNTIME=$(jq -c --arg script "$prompt_script" \
+  '.harness.user_prompt_submit=[$script]' <<<"$SF_TEST_RUNTIME")
 
 typeset prompt_session="$tmp/prompt.jsonl"
 sf_test_session "$prompt_session"

@@ -16,8 +16,8 @@ sf_test_runtime "$system_file"
 export SF_TEST_BACKEND_DELAY=0
 export SF_TEST_BACKEND_REQUEST="$request_capture"
 
-# Tool-use hooks receive canonical envelopes. A nonzero tool exit remains an
-# executed result, and stderr remains a transient hook display.
+# pre_tool_use and post_tool_use scripts receive canonical envelopes. A nonzero
+# tool exit remains an executed result, and stderr remains a transient hook display.
 typeset pre_observe="$tmp/pre-observe"
 cat >"$pre_observe" <<'ZSH'
 #!/usr/bin/env zsh

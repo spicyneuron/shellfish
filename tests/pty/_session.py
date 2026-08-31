@@ -80,9 +80,9 @@ class Session:
             hook_dir = config_dir / "hooks" / "user_prompt_submit"
             hook_dir.mkdir(parents=True)
             for name, body in hooks.items():
-                # A bodyless entry names a bundled hook: with nothing written
+                # A bodyless entry names a bundled script: with nothing written
                 # here the reference falls through to default/hooks, so the
-                # shipped hook runs rather than a copy that could drift from it.
+                # shipped script runs rather than a copy that could drift from it.
                 if body is None:
                     continue
                 script = hook_dir / name

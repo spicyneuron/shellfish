@@ -110,7 +110,7 @@ assert_equal error "$SF_PRESENT_NODE_ROLE[4]"
 assert_equal 0 "${#SF_PRESENT_TOOL_ORDER}"
 assert_equal '' "$SF_PRESENT_TOOL_CURRENT"
 
-# Sequential tool calls remain completable across pre- and post-hook output.
+# Sequential tool calls remain completable across pre- and post-hook script output.
 sf_chat_reset
 sf_chat_event tool_call call_1 shell one
 sf_chat_event tool_call call_2 shell two

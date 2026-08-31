@@ -4,7 +4,7 @@ Shellfish is the brainchild of my grudge against bloated modern software, plus a
 
 ## The transcript is the state
 
-A session JSONL file is the authoritative state of the agent. Transcript records after its header are append-only and durable. Provider deltas, permission prompts, hook display output, and other transient events are not.
+A session JSONL file is the authoritative state of the agent. Transcript records after its header are append-only and durable. Provider deltas, permission prompts, hook script display output, and other transient events are not.
 
 Clients attach to a session and consume the same event stream. Durable records provide history they can replay, while transient events provide live interaction around it. A client can use either without becoming another owner of the state.
 
@@ -31,6 +31,6 @@ Clients do not embed the agent loop or maintain their own copy of session state.
 
 The turn loop is deliberately generic. A harness combines system prompts, tools, limits, sandbox policy, and shell scripts bound to lifecycle hooks. The default coding behavior is assembled this way rather than built into `shellfish exec`.
 
-Project discovery, slash commands, permission policy, tool review, and stop-time continuation are all harness behavior. The core still owns event ordering, validation, locking, persistence, recovery, and cleanup. Hooks can influence a turn at defined points, but they do not redefine the state machine.
+Project discovery, slash commands, permission policy, tool review, and stop-time continuation are all harness behavior. The core still owns event ordering, validation, locking, persistence, recovery, and cleanup. Hook scripts can influence a turn at defined points, but they do not redefine the state machine.
 
-Tools may run inside the configured sandbox. Hooks and backend adapters are trusted programs that run with the user's permissions. The scoped API key is passed only to the backend adapter.
+Tools may run inside the configured sandbox. Hook scripts and backend adapters are trusted programs that run with the user's permissions. The scoped API key is passed only to the backend adapter.

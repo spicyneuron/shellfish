@@ -112,7 +112,7 @@ sf_runtime_resolve "$session" "$config" '' changed '{}' '' 1 || resolve_status=$
 (( resolve_status == 2 ))
 [[ $SF_RUNTIME_ERROR == 'runtime overrides cannot be used with an existing session' ]]
 
-# Hooked runtimes do not require persistent plugin storage.
+# Stored runtimes with hook scripts do not require HOME or XDG_STATE_HOME.
 integer had_home=${+HOME} had_state_home=${+XDG_STATE_HOME}
 typeset saved_home=${HOME-} saved_state_home=${XDG_STATE_HOME-}
 typeset hooked_session="$tmp/hooked.jsonl"
@@ -359,9 +359,9 @@ if sf_runtime_resolve_from_config "$tmp/config/missing-hook.jsonc" '' '' '{}' \
 fi
 [[ $SF_RUNTIME_ERROR == 'stop hook script is not executable: missing' ]]
 
-# A configured hook wins over a bundled hook with the same name. Removing it
+# A configured script wins over a bundled script with the same name. Removing it
 # exercises bundled fallback. Use an isolated root so this adds no production
-# hook.
+# script.
 mkdir -p "$tmp/root/default/hooks/stop"
 ln -s "$ROOT/lib" "$tmp/root/lib"
 ln -s "$ROOT/default/shellfish.jsonc" "$tmp/root/default/shellfish.jsonc"

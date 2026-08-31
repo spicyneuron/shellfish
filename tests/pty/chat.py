@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Chat UI scenarios in a real pty: startup records, tools, editing, shutdown.
 
-Prompt hook scenarios live in hooks.py; the Session harness in _session.py.
+`user_prompt_submit` script scenarios live in hooks.py; the Session harness in _session.py.
 """
 import fcntl
 import json
@@ -197,7 +197,8 @@ def test_startup_records_precede_two_turns():
         assert records[0]["type"] == "session"
         assert records[1] == {"type": "system", "content": "startup system prompt"}
         assert records[2]["type"] == "context"
-        assert records[2]["tag"] == "session_start"
+        assert records[2]["hook"] == "session_start"
+        assert records[2]["script"] == "add_environment"
         banner = (
             "Project:",
             "Tools: read_file, write_file, edit_file, shell",

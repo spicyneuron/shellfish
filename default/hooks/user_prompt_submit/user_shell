@@ -28,7 +28,7 @@ fi
 print -r -- '$ '"$command"
 unset SHELLFISH_SESSION SHELLFISH_SESSION_ID SHELLFISH_TURN_STATE SHELLFISH_SESSION_STATE
 unset SHELLFISH_CAPTURE_LIMIT SHELLFISH_MODE SHELLFISH_MODEL SHELLFISH_TURN_ID SHELLFISH_VERBOSE
-unset PROJECT_DIR SHELLFISH_CONFIG_DIR PLUGIN_ROOT
+unset PROJECT_DIR SHELLFISH_CONFIG_DIR HOOK_SCRIPT_ROOT
 command zsh -f -c "$command" </dev/null 2>&1
 command_status=$?
 (( ! command_status )) || print -r -- $'\n(exit '"$command_status"')'

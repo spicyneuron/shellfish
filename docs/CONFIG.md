@@ -73,7 +73,7 @@ Harnesses choose prompt files, tools, hooks, sandbox policy, and turn limits. Th
 }
 ```
 
-This example reads its prompt from `prompts/review.md` under the configuration directory. Hook event names and behavior are defined in [`HOOKS.md`](HOOKS.md). Tool directories contain an executable `run` and a `tool.json` manifest. Sandboxed tools also contain `fence.jsonc`. Tool processes receive `SHELLFISH_CONFIG_DIR`, the directory containing the resolved config file or its prospective default location.
+This example reads its prompt from `prompts/review.md` under the configuration directory. Hook names and behavior are defined in [`HOOKS.md`](HOOKS.md). Tool directories contain an executable `run` and a `tool.json` manifest. Sandboxed tools also contain `fence.jsonc`. Tool processes receive `SHELLFISH_CONFIG_DIR`, the directory containing the resolved config file or its prospective default location.
 
 ## Resolve component references
 
@@ -83,7 +83,7 @@ Prompt files, tools, hooks, and backend adapters accept these reference forms:
 2. `~/...` paths relative to `$HOME`.
 3. Relative paths under the matching configuration subdirectory, falling back to bundled defaults.
 
-The matching subdirectories are `prompts/`, `tools/`, `backends/`, and `hooks/<event>/`. This lets a local component shadow a bundled component with the same name.
+The matching subdirectories are `prompts/`, `tools/`, `backends/`, and `hooks/<hook>/`. This lets a local component shadow a bundled component with the same name.
 
 ## Sandbox grants
 

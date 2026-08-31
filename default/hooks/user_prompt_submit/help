@@ -13,7 +13,7 @@ case "$read_status:$submitted" in
   *) exit 0 ;;
 esac
 
-# Framework rows for commands that have no dedicated hook. Command hooks run
+# Framework rows for commands that have no dedicated script. Command scripts run
 # earlier in the chain and append their own rows to the same file.
 {
   print -r -- $'10\tshift+enter\tAdd a line instead of sending the message'

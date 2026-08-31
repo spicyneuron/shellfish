@@ -121,7 +121,7 @@ jq -e -s '
 ' "$availability_session" >/dev/null
 
 # The bundled /help chain appends TSV rows to $SHELLFISH_TURN_STATE/help.tsv;
-# the help hook (last in the chain) sorts by order and aligns columns. Verify
+# the help script (last in the chain) sorts by order and aligns columns. Verify
 # structural properties, not exact text: submission is skipped, every command
 # key appears, and rows are sorted by order ascending.
 typeset help_session="$tmp/help-session.jsonl"
@@ -320,7 +320,7 @@ for target in 2 3; do
 done
 
 # The bundled shell shortcut records the normalized command and its nested exit
-# status separately from the hook's skip status.
+# status separately from the script's skip status.
 typeset shell_session="$tmp/shell-session.jsonl"
 SF_TEST_RUNTIME=$(jq -c \
   --arg script "$ROOT/default/hooks/user_prompt_submit/user_shell" \
@@ -331,7 +331,7 @@ sf_session_close
 sf_hooks_turn_state_create
 typeset -gx SHELLFISH_MODE=test SHELLFISH_VERBOSE=1
 typeset shell_state_dir=$SHELLFISH_TURN_STATE
-typeset shell_command='[[ -n $HOME ]] || exit 8; env | grep -Eq '\''^(SHELLFISH_(SESSION|SESSION_ID|TURN_STATE|SESSION_STATE|CAPTURE_LIMIT|MODE|MODEL|TURN_ID|VERBOSE|CONFIG_DIR)|PROJECT_DIR|PLUGIN_ROOT)='\'' && exit 9; print output; exit 7'
+typeset shell_command='[[ -n $HOME ]] || exit 8; env | grep -Eq '\''^(SHELLFISH_(SESSION|SESSION_ID|TURN_STATE|SESSION_STATE|CAPTURE_LIMIT|MODE|MODEL|TURN_ID|VERBOSE|CONFIG_DIR)|PROJECT_DIR|HOOK_SCRIPT_ROOT)='\'' && exit 9; print output; exit 7'
 run_prompt_hook "!$shell_command" "$shell_session"
 [[ $reply[1] == handled ]]
 [[ -d $shell_state_dir ]]

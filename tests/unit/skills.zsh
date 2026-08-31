@@ -3,7 +3,7 @@
 source "${0:A:h:h}/_helpers.zsh"
 sf_test_tmp skills
 
-hook="$ROOT/default/hooks/session_start/add_skills"
+script="$ROOT/default/hooks/session_start/add_skills"
 tool="$ROOT/default/tools/skill/run"
 project="$tmp/project"
 config="$tmp/config"
@@ -33,7 +33,7 @@ make_skill "$project/.agents/skills" hidden 'must not be advertised' true
 make_skill "$project/.agents/skills" bad_name 'invalid skill'
 
 output=$(HOME="$home" PROJECT_DIR="$project" SHELLFISH_CONFIG_DIR="$config" \
-  zsh -f "$hook" session_start)
+  zsh -f "$script" session_start)
 [[ $output == *'- shared: project description'* ]]
 [[ $output == *'- config-only: configured skill'* ]]
 [[ $output == *'- personal: personal skill'* ]]

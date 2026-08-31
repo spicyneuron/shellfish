@@ -28,10 +28,10 @@ EOF
 export XDG_STATE_HOME="$tmp/state"
 typeset entry="$ROOT/bin/shellfish"
 
-# Interrupting a creation hook leaves the created prefix unlocked. Reopening the
-# session does not retry the hook.
-typeset interrupt_hook="$tmp/interrupt-start" interrupt_marker="$tmp/interrupt-started"
-cat >"$interrupt_hook" <<'ZSH'
+# Interrupting a session_start script leaves the created prefix unlocked. Reopening the
+# session does not retry the script.
+typeset interrupt_script="$tmp/interrupt-start" interrupt_marker="$tmp/interrupt-started"
+cat >"$interrupt_script" <<'ZSH'
 #!/usr/bin/env zsh
 [[ $# == 1 && $1 == session_start ]] || exit 1
 print -r -- started >>"$INTERRUPT_MARKER"
@@ -39,9 +39,9 @@ trap 'exit 143' TERM
 zmodload zsh/zselect
 while true; do zselect -t 100; done
 ZSH
-chmod +x "$interrupt_hook"
+chmod +x "$interrupt_script"
 typeset interrupt_config="$tmp/interrupt-start.jsonc"
-jq --arg hook "$interrupt_hook" '.harnesses.machine.session_start=[$hook]' \
+jq --arg script "$interrupt_script" '.harnesses.machine.session_start=[$script]' \
   "$config" >"$interrupt_config"
 typeset interrupt_session="$tmp/interrupted-start.jsonl"
 typeset interrupt_output="$tmp/interrupted-start.out"
@@ -55,8 +55,8 @@ while (( interrupt_waited < 50 )) && [[ ! -s $interrupt_marker ]]; do
   sleep 0.1
   (( interrupt_waited += 1 ))
 done
-(( interrupt_waited < 50 )) || fail 'session_start hook did not begin'
-kill -TERM "$interrupt_pid" || fail 'session_start hook ended before interruption'
+(( interrupt_waited < 50 )) || fail 'session_start script did not begin'
+kill -TERM "$interrupt_pid" || fail 'session_start script ended before interruption'
 integer interrupt_status=0
 wait "$interrupt_pid" || interrupt_status=$?
 (( interrupt_status == 143 )) ||

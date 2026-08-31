@@ -1,4 +1,4 @@
-# Shared Agent Skills discovery for bundled hooks and tools.
+# Shared Agent Skills discovery for bundled hook scripts and tools.
 
 sf_skills_scalar() {
   local value=$1 decoded

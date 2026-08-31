@@ -15,7 +15,7 @@ sf_test_runtime "$system_file"
 export SF_TEST_BACKEND_DELAY=0
 export SF_TEST_BACKEND_REQUEST="$request_capture"
 
-# A configured permission hook exposes bypass approval without an interactive
+# A configured permission_request script exposes bypass approval without an interactive
 # adapter. Its decision precedes the existing UI path and its stderr stays local.
 typeset permission_allow="$tmp/permission-allow"
 cat >"$permission_allow" <<'ZSH'
@@ -53,8 +53,8 @@ jq -e '
 ' "$request_capture" >/dev/null
 jq -e -s 'all(.[]; .type != "context")' "$permission_allow_session" >/dev/null
 
-# A hook denial uses its reason without consulting the UI. With no hook and no
-# UI, a bypass request is denied by exec's noninteractive fallback.
+# A script denial uses its reason without consulting the UI. With no configured
+# permission_request script and no UI, exec denies a bypass request.
 typeset permission_deny="$tmp/permission-deny"
 cat >"$permission_deny" <<'ZSH'
 #!/usr/bin/env zsh

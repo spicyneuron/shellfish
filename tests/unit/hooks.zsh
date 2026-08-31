@@ -37,7 +37,7 @@ jq -e -s '
   .[2] == {type:"context",hook:"session_start",script:"start_second",content:"second"}
 ' "$start_session" >/dev/null
 
-# CLI entry runs creation hooks once and does not rerun them for an existing session.
+# CLI entry runs session_start scripts once and does not rerun them for an existing session.
 typeset resume_session="$tmp/resume-session.jsonl"
 typeset resume_marker="$tmp/resume-marker" resume_config="$tmp/resume-shellfish.jsonc"
 make_script resume 'print -r -- run >>"$RESUME_MARKER"'
@@ -66,7 +66,7 @@ RESUME_MARKER=$resume_marker SF_TEST_BACKEND_DELAY=0 zsh -f "$SF_ENTRY" exec \
 RESUME_MARKER=$resume_marker SF_TEST_BACKEND_DELAY=0 zsh -f "$SF_ENTRY" exec \
   --session "$resume_session" second >/dev/null ||
   fail 'existing-session CLI entry failed'
-(( $(wc -l <"$resume_marker") == 1 )) || fail 'session_start hook ran more than once'
+(( $(wc -l <"$resume_marker") == 1 )) || fail 'session_start script ran more than once'
 
 # Hook projection preserves a session working directory containing a newline.
 typeset newline_cwd="$tmp/"$'line\nbreak' previous_cwd=$PWD
@@ -90,7 +90,7 @@ fi
 [[ $SF_HOOK_ERROR == 'session_start hook script returned unsupported skip status' ]]
 [[ ! -e $skipped_session ]]
 
-# Startup has no control vocabulary, including when a hook stops its chain.
+# Startup has no control vocabulary, including when a script stops its chain.
 typeset control_session="$tmp/control-session.jsonl"
 make_script start_control 'print -rn -u3 -- $'\''again\0'\''; exit 11'
 SF_TEST_RUNTIME=$(jq -c --arg script "$script" \
@@ -103,7 +103,7 @@ fi
 [[ $SF_HOOK_ERROR == "hook script returned unexpected control data: $script" ]]
 [[ ! -e $control_session ]]
 
-# Permission hooks receive a canonical envelope and may allow, deny with a reason,
+# permission_request scripts receive a canonical envelope and may allow, deny with a reason,
 # deny by status alone, or defer. Their stdout is never committed.
 typeset permission_session="$tmp/permission-session.jsonl"
 typeset permission_script="$scripts/permission"
@@ -114,7 +114,7 @@ cat >"$permission_script" <<'ZSH'
 [[ $SHELLFISH_MODEL == test && $PROJECT_DIR == "$PWD" ]] || exit 1
 [[ -d $SHELLFISH_TURN_STATE && -d $SHELLFISH_SESSION_STATE &&
   $SHELLFISH_SESSION_STATE == */sessions/permission-session &&
-  ${PLUGIN_ROOT:A} == "${0:A:h}" ]] || exit 1
+  ${HOOK_SCRIPT_ROOT:A} == "${0:A:h}" ]] || exit 1
 jq -e '. == {turn_id:1,tool_name:"shell",tool_use_id:"call_7",
   tool_input:{command:"true"}}' >/dev/null || exit 1
 print -rn -- ignored
@@ -207,7 +207,7 @@ run_prompt_hook ordinary "$plain_session"
 (( $(wc -l <"$plain_session") == 1 ))
 sf_hooks_turn_state_cleanup
 
-# Stop hooks observe a completed assistant. A status-0 hook's stdout is
+# stop scripts observe a completed assistant. A status-0 script's stdout is
 # discarded; only a skipped completion commits stdout as continuation feedback,
 # and a skip without feedback is a contract error.
 make_script stop '[[ $# == 2 && $1 == stop && $2 == "$STOP_ATTEMPT" && "$(cat)" == "$STOP_INPUT" ]] || exit 1; print -rn -u2 -- local; [[ -z $STOP_STDOUT ]] || print -rn -- feedback; [[ -z $STOP_SKIP ]] || exit 10'

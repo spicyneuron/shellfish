@@ -29,13 +29,13 @@ These are ordinary component files under `default/prompts/system/`; a user confi
 - `fetch_url` uses Jina Reader to fetch an HTTP(S) website as Markdown.
 - `shell` runs one Zsh command in the session working directory.
 
-Tools are shell scripts with JSON manifests. The default harness enables sandboxing with [`fence`](https://github.com/fencesandbox/fence). Its policies constrain project and network access and deny common secret files. When a tool fails and sandbox monitoring reports a blocked action, the durable tool result records that fact for both the model and client presentation. Supported tool calls can request a one-time bypass in interactive clients; headless execution denies requests that hooks do not decide.
+Tools are shell scripts with JSON manifests. The default harness enables sandboxing with [`fence`](https://github.com/fencesandbox/fence). Its policies constrain project and network access and deny common secret files. When a tool fails and sandbox monitoring reports a blocked action, the durable tool result records that fact for both the model and client presentation. Supported tool calls can request a one-time bypass in interactive clients; headless execution denies requests that `permission_request` scripts do not decide.
 
-Sandboxing applies to opted-in tools. Hooks and backend adapters are trusted executables and run with the user's permissions. See [Configuration](CONFIG.md#sandbox-grants) for persistent and one-off path grants.
+Sandboxing applies to opted-in tools. Hook scripts and backend adapters are trusted executables and run with the user's permissions. See [Configuration](CONFIG.md#sandbox-grants) for persistent and one-off path grants.
 
 ### Session context
 
-At session start, four hooks prepare context before the transcript is created:
+At the `session_start` hook, four scripts prepare context before the transcript is created:
 
 - `add_environment` reports the host, project tree, and Git context.
 - `add_command_availability` reports versions of common shell commands when available.
@@ -48,7 +48,7 @@ Skills are discovered in descending precedence from `./.agents/skills/`, the res
 
 ### Interactive commands
 
-The default harness implements most chat commands as `user_prompt_submit` hooks:
+The default harness implements most chat commands as scripts on the `user_prompt_submit` hook:
 
 - `/help` lists available commands.
 - `/new` creates a new session with the active session's settings.
@@ -61,15 +61,15 @@ The default harness implements most chat commands as `user_prompt_submit` hooks:
 - `/server` hands the current session to the optional `shellfish-server` process.
 - `! command` runs a shell command and injects its input and output as context.
 
-These features are harness behavior, not special cases in the agent loop. A custom harness can omit them, replace them, or bind other scripts to the same lifecycle event.
+These features are harness behavior, not special cases in the agent loop. A custom harness can omit them, replace them, or bind other scripts to the same hook.
 
 ### Limits
 
-The bundled harness allows up to 100 provider requests per turn and 25 tool calls per provider response. Tool output is truncated to 32 KiB. Each hook invocation has a separate 32 KiB budget across stdout, stderr, and fd 3; exceeding it fails the operation. These limits bound accidental loops and oversized context while leaving room for multi-step coding tasks.
+The bundled harness allows up to 100 provider requests per turn and 25 tool calls per provider response. Tool output is truncated to 32 KiB. Each hook script invocation has a separate 32 KiB budget across stdout, stderr, and fd 3; exceeding it fails the operation. These limits bound accidental loops and oversized context while leaving room for multi-step coding tasks.
 
 ## Build a focused harness
 
-A harness can be smaller than the default. For example, a review harness might use a review-specific system prompt, expose only `read_file`, retain project context hooks, and keep sandboxing enabled. Harnesses do not inherit from one another, so each named harness lists the capabilities it needs.
+A harness can be smaller than the default. For example, a review harness might use a review-specific system prompt, expose only `read_file`, retain the project context scripts, and keep sandboxing enabled. Harnesses do not inherit from one another, so each named harness lists the capabilities it needs.
 
 The configuration template includes a `readonly` harness using the bundled `system/readonly.md` prompt with the `read_file` and `shell_readonly` tools.
 

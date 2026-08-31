@@ -27,7 +27,7 @@ set -e
 [[ $SHELLFISH_TURN_ID == 1 ]] || exit 3
 [[ $SHELLFISH_MODEL == test-model ]] || exit 4
 [[ $PROJECT_DIR == "$PWD" ]] || exit 5
-[[ ${PLUGIN_ROOT:A} == "${0:A:h}" ]] || exit 6
+[[ ${HOOK_SCRIPT_ROOT:A} == "${0:A:h}" ]] || exit 6
 [[ -d $SHELLFISH_SESSION_STATE ]] || exit 7
 [[ ! -e $SHELLFISH_TURN_STATE/inherited ]] || exit 8
 [[ -e $TEST_STATE_PATH ]] || print -rn -- "$SHELLFISH_TURN_STATE" >"$TEST_STATE_PATH"
@@ -52,7 +52,7 @@ typeset inherited_state=$SHELLFISH_TURN_STATE
 : >"$inherited_state/inherited"
 stream=$(sf_test_turn original "$stop_session")
 [[ -d $inherited_state && $SHELLFISH_TURN_STATE == "$inherited_state" ]]
-[[ -s $TEST_STATE_PATH ]] || fail 'stop hook did not report its state directory'
+[[ -s $TEST_STATE_PATH ]] || fail 'stop script did not report its state directory'
 typeset turn_state=$(<$TEST_STATE_PATH)
 [[ ! -d $turn_state ]]
 print -r -- "$stream" | jq -eRn '
@@ -194,7 +194,7 @@ done
 [[ -e $cancel_ready ]] || {
   kill -TERM "$cancel_pid" 2>/dev/null
   wait "$cancel_pid" 2>/dev/null || true
-  fail 'backend did not begin the stop-hook retry'
+  fail 'backend did not begin the stop-script retry'
 }
 kill -TERM "$cancel_pid"
 wait "$cancel_pid" || cancel_status=$?

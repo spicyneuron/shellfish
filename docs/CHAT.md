@@ -18,7 +18,7 @@ Each session stores its resolved backend, harness, model, and sandbox settings. 
 
 ## Slash commands
 
-Most slash commands are `user_prompt_submit` hooks from the default harness. Run `/help` in chat to see the current list.
+Most slash commands are scripts on the default harness's `user_prompt_submit` hook. Run `/help` in chat to see the current list.
 
 | Command | Description |
 | --- | --- |
