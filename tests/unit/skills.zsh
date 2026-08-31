@@ -37,11 +37,15 @@ output=$(HOME="$home" PROJECT_DIR="$project" SHELLFISH_CONFIG_DIR="$config" \
 [[ $output == *'- shared: project description'* ]]
 [[ $output == *'- config-only: configured skill'* ]]
 [[ $output == *'- personal: personal skill'* ]]
+[[ $output == *'- skill-creator: Create a reusable project-local skill.'* ]]
 [[ $output != *'home description'* && $output != *hidden* && $output != *bad_name* ]]
 
 loaded=$(print -rn -- '{"name":"shared"}' | HOME="$home" PROJECT_DIR="$project" \
   SHELLFISH_CONFIG_DIR="$config" zsh -f "$tool")
 [[ $loaded == "Skill directory: ${project:A}/.agents/skills/shared"*$'# shared instructions'* ]]
+loaded=$(print -rn -- '{"name":"skill-creator"}' | HOME="$home" PROJECT_DIR="$project" \
+  SHELLFISH_CONFIG_DIR="$config" zsh -f "$tool")
+[[ $loaded == "Skill directory: $ROOT/default/skills/skill-creator"*$'# Create a project-local skill'* ]]
 if print -rn -- '{"name":"hidden"}' | HOME="$home" PROJECT_DIR="$project" \
     SHELLFISH_CONFIG_DIR="$config" zsh -f "$tool" >/dev/null 2>&1; then
   fail 'skill tool loaded a model-disabled skill'
