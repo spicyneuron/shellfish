@@ -89,8 +89,8 @@ sf_chat_event assistant_delta $'answer\n'
 sf_chat_event assistant_delta $'\n'
 sf_chat_set_frontier 2 8
 sf_chat_event assistant_commit
-assert_equal answer "$SF_PRESENT_NODE_BODY[2]"
-assert_equal 6 "$SF_PRESENT_NODE_FRONTIER[2]"
+assert_equal $'answer\n\n' "$SF_PRESENT_NODE_BODY[2]"
+assert_equal 8 "$SF_PRESENT_NODE_FRONTIER[2]"
 
 sf_chat_event assistant_delta $'\nnext'
 sf_chat_event assistant_commit
@@ -114,6 +114,13 @@ sf_chat_add reasoning agent '' '' open
 sf_chat_close 1
 assert_equal 0 "${#SF_PRESENT_NODE_TYPE}"
 
+sf_chat_add reasoning agent '' $'thought\n\n' open
+sf_chat_set_frontier 1 9
+sf_chat_close 1
+assert_equal $'thought\n\n' "$SF_PRESENT_NODE_BODY[1]"
+assert_equal 9 "$SF_PRESENT_NODE_FRONTIER[1]"
+
+sf_chat_reset
 sf_chat_event user hello
 sf_chat_drop 2
 assert_equal 0 "${#SF_PRESENT_NODE_TYPE}"
@@ -127,7 +134,7 @@ sf_chat_event user $'\n\n  unsafe\e[31m\t\n'
 sf_chat_event assistant_delta $'\n\treply\rtext\n\n'
 sf_chat_event assistant_commit
 assert_equal $'  unsafe�[31m\t' "$SF_PRESENT_NODE_BODY[2]"
-assert_equal $'\treply�text' "$SF_PRESENT_NODE_BODY[4]"
+assert_equal $'\treply�text\n\n' "$SF_PRESENT_NODE_BODY[4]"
 
 sf_chat_reset
 sf_chat_add activity '' '' '' open

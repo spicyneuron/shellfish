@@ -88,9 +88,8 @@ sf_chat_close 1
 sf_chat_repaint
 assert_equal $'hello\n\n───────────\n❯ ' "$PREDISPLAY"
 
-# Legal streaming transitions remain renderable across terminal epochs. Closing
-# may trim trailing newlines after the display cursor has consumed them, either
-# alone or in the same transport batch as a following tool call.
+# Legal streaming transitions remain renderable across terminal epochs. Boundary
+# newlines stay in the node while the row projection hides them.
 typeset close_type suffix detail
 integer trailing split width highlight epoch newline
 for close_type in message reasoning; do

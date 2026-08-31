@@ -41,6 +41,17 @@ sf_chat_rows 5 20 1:6
 assert_equal world "${(F)SF_PRESENT_ROW_TEXT}"
 
 sf_chat_reset
+sf_chat_add message agent '' $'hello\n\n' open
+sf_chat_rows 80 20
+assert_equal $'hello\n⠃' "${(F)SF_PRESENT_ROW_TEXT}"
+assert_equal $'hello\n\n' "$SF_PRESENT_NODE_BODY[1]"
+sf_chat_stream message world
+sf_chat_close 1
+sf_chat_rows 80 20
+assert_equal $'hello\n\nworld' "${(F)SF_PRESENT_ROW_TEXT}"
+assert_equal $'hello\n\nworld' "$SF_PRESENT_NODE_BODY[1]"
+
+sf_chat_reset
 sf_chat_add message agent '' $'hello\nworld' open
 sf_chat_rows 80 20
 assert_equal $'hello\n⠃' "${(F)SF_PRESENT_ROW_TEXT}"

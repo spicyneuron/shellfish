@@ -129,16 +129,15 @@ sf_chat_drop() {
 
 sf_chat_close() {
   integer index=$1 end section removed_section=0
+  local visible_body
   [[ $index == ${#SF_PRESENT_NODE_TYPE} && $SF_PRESENT_NODE_STATE[index] == open ]] || return 1
+  visible_body=$SF_PRESENT_NODE_BODY[index]
   if [[ $SF_PRESENT_NODE_TYPE[index] == (message|reasoning) ]]; then
-    sf_chat_trim_boundary_newlines "$SF_PRESENT_NODE_BODY[index]"
-    SF_PRESENT_NODE_BODY[index]=$REPLY
-    if (( SF_PRESENT_NODE_FRONTIER[index] > ${#REPLY} )); then
-      SF_PRESENT_NODE_FRONTIER[index]=${#REPLY}
-    fi
+    sf_chat_trim_boundary_newlines "$visible_body"
+    visible_body=$REPLY
   fi
   if [[ $SF_PRESENT_NODE_TYPE[index] == (activity|message|reasoning) &&
-      -z $SF_PRESENT_NODE_HEADING[index] && -z $SF_PRESENT_NODE_BODY[index] ]]; then
+      -z $SF_PRESENT_NODE_HEADING[index] && -z $visible_body ]]; then
     end=$(( index - 1 ))
     if [[ ${2-} == orphan_section && $index -gt 1 &&
         $SF_PRESENT_NODE_TYPE[index-1] == section ]]; then

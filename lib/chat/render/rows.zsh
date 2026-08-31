@@ -214,6 +214,11 @@ sf_chat_rows() {
     type=$SF_PRESENT_NODE_TYPE[node]
     heading=$SF_PRESENT_NODE_HEADING[node]
     body=$SF_PRESENT_NODE_BODY[node]
+    if [[ $type == message && $body == *$'\n' ]]; then
+      # One final newline settles the text row; additional ones are blank rows.
+      tail=${body##*[!$'\n']}
+      body=${body%"$tail"}$'\n'
+    fi
     source_spans=( ${(s: :)${SF_PRESENT_HIGHLIGHT_CACHE[node]-}} )
     span_index=1
     state=$SF_PRESENT_NODE_STATE[node]
@@ -422,11 +427,6 @@ sf_chat_rows() {
         body_end=${#text}
       fi
       length=${#text}
-      # Closing may trim trailing newlines the display cursor already consumed.
-      if (( offset > length )) &&
-          [[ $state == closed && $type == (message|reasoning) ]]; then
-        offset=$length
-      fi
       (( offset <= length )) || return 1
       # A settled decorated heading already owns its terminal row. When its
       # body arrives later, resume after the newly inserted join newline.
