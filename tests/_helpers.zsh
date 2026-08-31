@@ -1,7 +1,7 @@
 # Shared unit-test setup. Sourced, never executed.
 
 emulate -R zsh
-setopt err_exit no_aliases no_multios pipe_fail
+setopt err_exit no_aliases no_bg_nice no_multios pipe_fail
 
 typeset -gr ROOT=${${(%):-%x}:A:h:h}
 typeset -g SF_ROOT=$ROOT
@@ -16,7 +16,7 @@ sf_test_source() {
   for module in "$@"; do
     source "$ROOT/lib/$module"
   done
-  setopt err_exit no_aliases no_multios pipe_fail
+  setopt err_exit no_aliases no_bg_nice no_multios pipe_fail
 }
 
 sf_test_tmp() {

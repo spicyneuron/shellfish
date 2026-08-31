@@ -2,7 +2,6 @@
 
 source "${0:A:h:h:h}/_helpers.zsh"
 sf_test_source session/main.zsh hooks.zsh
-setopt no_bg_nice
 
 typeset stream
 sf_test_tmp exec-permission
