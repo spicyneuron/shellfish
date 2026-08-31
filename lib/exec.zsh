@@ -157,12 +157,12 @@ sf_exec_backend() {
   integer delta_seq=0
   SF_EXEC[assistant]=''
   SF_EXEC[backend_error]=''
-  error_file=$(mktemp "${TMPDIR:-/tmp}/shellfish-backend-error.XXXXXX") || {
+  sf_scratch_file backends exec-error || {
     SF_EXEC[backend_error]='cannot prepare provider error capture'
     return 1
   }
+  error_file=$REPLY
   SF_EXEC[backend_error_file]=$error_file
-  chmod 600 "$error_file"
   coproc SHELLFISH_API_KEY="$SF_API_KEY" \
     SHELLFISH_API_KEY_SOURCE="$SF_API_KEY_SOURCE" \
     "$command" <<<"$request" 2>"$error_file"

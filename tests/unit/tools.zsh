@@ -133,6 +133,10 @@ load_tools "$stored_runtime"
 sf_test_tool_execute "$(jq -cn --arg command 'print -rn -- "$HOME"' \
   '{id:"home_1",name:"shell",input:{command:$command}}')" 0
 jq -e --arg home "$HOME" '.content == $home' <<<"$REPLY" >/dev/null
+sf_test_tool_execute "$(jq -cn --arg command 'print -rn -- "$TMPDIR"' \
+  '{id:"temp_1",name:"shell",input:{command:$command}}')" 0
+typeset tool_temp=$(jq -r '.content' <<<"$REPLY")
+[[ $tool_temp == "${${TMPDIR:-/tmp}:A}/shellfish-$EUID/tools/tool."*/tmp ]]
 tool_config_dir="$tmp/custom-config"
 sf_test_tool_execute "$(jq -cn --arg command 'print -rn -- "$SHELLFISH_CONFIG_DIR"' \
   '{id:"config_dir_1",name:"shell",input:{command:$command}}')" 0

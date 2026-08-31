@@ -18,3 +18,27 @@ sf_scratch_category() {
   fi
   chmod 700 "$REPLY" || return 1
 }
+
+sf_scratch_create() {
+  local category=$1 prefix=$2 created
+  [[ -n $prefix && $prefix != *[^A-Za-z0-9_-]* ]] || return 1
+  sf_scratch_category "$category" || return 1
+  created=$(mktemp -d "$REPLY/$prefix.XXXXXX") || return 1
+  chmod 700 "$created" || {
+    rm -rf -- "$created"
+    return 1
+  }
+  REPLY=${created:A}
+}
+
+sf_scratch_file() {
+  local category=$1 prefix=$2 created
+  [[ -n $prefix && $prefix != *[^A-Za-z0-9_-]* ]] || return 1
+  sf_scratch_category "$category" || return 1
+  created=$(mktemp "$REPLY/$prefix.XXXXXX") || return 1
+  chmod 600 "$created" || {
+    rm -f -- "$created"
+    return 1
+  }
+  REPLY=${created:A}
+}

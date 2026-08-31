@@ -1,6 +1,8 @@
 emulate -R zsh
 setopt no_aliases no_bg_nice no_multios pipe_fail
 
+(( $+functions[sf_scratch_create] )) || source "$SF_ROOT/lib/scratch.zsh"
+
 typeset -g SF_TOOL_ERROR=''
 typeset -g SF_TOOL_STATE_DIR=''
 typeset -g SF_TOOL_ACTIVE_PID=''
@@ -222,10 +224,11 @@ sf_tool_execute() {
     return
   fi
   sf_tools_cleanup
-  state_dir=$(mktemp -d "${TMPDIR:-/tmp}/shellfish-tool.XXXXXX") || {
+  sf_scratch_create tools tool || {
     sf_tools_fail 'cannot prepare tool capture'
     return
   }
+  state_dir=$REPLY
   SF_TOOL_STATE_DIR=$state_dir
   {
     captured="$state_dir/captured"

@@ -66,6 +66,7 @@ assert_equal 'first second third' "$SF_CHAT_TRANSPORT_EXIT_DETAIL"
 SF_CHAT_TRANSPORT_COMMAND=( "${commands[zsh]}" -f -c \
   'IFS= read -r line; print -r -- "$line"' )
 sf_chat_transport_start '{"ping":true}' callback || fail "$SF_CHAT_TRANSPORT_ERROR"
+[[ $SF_CHAT_TRANSPORT_ERROR_FILE == "${${TMPDIR:-/tmp}:A}/shellfish-$EUID/transport/exec-error."* ]]
 [[ $ZLE_CALLS[-1] == '-F -w '*' callback' ]] || fail 'transport watcher was not installed'
 sf_chat_transport_read "$SF_CHAT_TRANSPORT_OUTPUT_FD"
 assert_equal '{"ping":true}' "$SF_CHAT_TRANSPORT_LINES[1]"

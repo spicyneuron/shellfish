@@ -6,6 +6,7 @@ sf_test_tmp backend
 
 # Setup creates files with restrictive permissions.
 sf_backend_setup test_backend
+[[ $SF_BACKEND_TEMP_DIR == "${${TMPDIR:-/tmp}:A}/shellfish-$EUID/backends/test_backend."* ]]
 assert_equal 600 "$(stat -f %Lp "$SF_BACKEND_HEADERS_FILE")"
 
 # Empty credential is a no-op.

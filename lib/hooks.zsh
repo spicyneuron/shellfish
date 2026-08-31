@@ -120,10 +120,11 @@ sf_hooks_dispatch() {
 
   sf_hooks_reset
 
-  directory=$(mktemp -d "${TMPDIR:-/tmp}/shellfish-hooks.XXXXXX") || {
+  sf_scratch_create hooks capture || {
     sf_hooks_fail 'cannot prepare hook captures'
     return
   }
+  directory=$REPLY
   {
     [[ -f $input ]] || {
       sf_hooks_fail 'cannot prepare hook input'
@@ -250,21 +251,12 @@ sf_hooks_session_state_create() {
 sf_hooks_turn_state_create() {
   sf_hooks_session_state_create || return
   [[ -z $SHELLFISH_TURN_STATE ]] || return 0
-  sf_scratch_category turns || {
+  sf_scratch_create turns turn || {
     sf_hooks_fail 'cannot prepare hook turn state'
     return
   }
-  SHELLFISH_TURN_STATE=$(mktemp -d "$REPLY/turn.XXXXXX") || {
-    sf_hooks_fail 'cannot prepare hook turn state'
-    return
-  }
-  SHELLFISH_TURN_STATE=${SHELLFISH_TURN_STATE:A}
+  SHELLFISH_TURN_STATE=$REPLY
   SF_HOOK_TURN_STATE_TEMP=$SHELLFISH_TURN_STATE
-  chmod 700 "$SHELLFISH_TURN_STATE" || {
-    sf_hooks_turn_state_cleanup
-    sf_hooks_fail 'cannot secure hook turn state'
-    return
-  }
   export SHELLFISH_TURN_STATE
 }
 
@@ -356,10 +348,11 @@ sf_hooks_run() {
   else
     sf_hooks_require_lock "$event" "$session" || return
   fi
-  input=$(mktemp "${TMPDIR:-/tmp}/shellfish-$label.XXXXXX") || {
+  sf_scratch_file hooks input || {
     sf_hooks_fail "cannot prepare $label hook input"
     return
   }
+  input=$REPLY
   SF_HOOK_INPUT_TEMP=$input
   print -rn -- "$content" >"$input" || operation_status=1
   (( operation_status )) || sf_hooks_run_chain "$session" "$input" "$event" \

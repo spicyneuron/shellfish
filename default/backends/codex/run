@@ -5,6 +5,7 @@ setopt err_exit no_aliases no_multios pipe_fail
 umask 077
 
 typeset -gr ROOT=${0:A:h:h:h:h}
+source "$ROOT/lib/scratch.zsh"
 typeset -gr ENDPOINT=https://chatgpt.com/backend-api/codex/responses
 unset SHELLFISH_API_KEY SHELLFISH_RESPONSES_ACCOUNT_ID
 
@@ -15,8 +16,8 @@ die() {
 
 typeset temp_dir request_file prepared_file request_status codex_home auth_file credentials
 typeset access_token='' account_id=''
-temp_dir=$(mktemp -d "${TMPDIR:-/tmp}/shellfish-codex.XXXXXX") ||
-  die 'cannot create temporary directory'
+sf_scratch_create backends codex || die 'cannot create temporary directory'
+temp_dir=$REPLY
 trap 'rm -rf -- "$temp_dir"' EXIT
 request_file="$temp_dir/request.json"
 prepared_file="$temp_dir/prepared.json"

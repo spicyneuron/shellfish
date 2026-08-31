@@ -112,8 +112,13 @@ jq -eRn '
 (( $(wc -l <"$cancel_session") == records )) ||
   fail 'pre-commit cancellation appended a recovery record'
 assert_session_unlocked "$cancel_session"
-# Cancellation strands the cleanup that follows the interrupted call, so the
-# state directory and prompt input outlive the turn unless process exit sweeps.
-typeset -a cancel_leftovers=( "$cancel_temp"/*(N) )
+# Process exit sweeps transient turn and hook files. Session state remains.
+typeset cancel_root="$cancel_temp/shellfish-$EUID"
+typeset category
+typeset -a cancel_leftovers=()
+for category in turns hooks tools backends transport; do
+  cancel_leftovers+=( "$cancel_root/$category"/*(N) )
+done
 (( ! ${#cancel_leftovers} )) ||
   fail "cancelled turn left temporary files: ${(j:, :)cancel_leftovers:t}"
+[[ -d $cancel_root/sessions/prompt-cancel ]]

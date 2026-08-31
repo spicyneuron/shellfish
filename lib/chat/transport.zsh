@@ -1,6 +1,8 @@
 emulate -R zsh
 setopt no_aliases no_bg_nice no_multios pipe_fail
 
+(( $+functions[sf_scratch_file] )) || source "$SF_ROOT/lib/scratch.zsh"
+
 typeset -ga SF_CHAT_TRANSPORT_COMMAND=() SF_CHAT_TRANSPORT_LINES=()
 typeset -ga SF_CHAT_TRANSPORT_EVENTS=()
 typeset -g SF_CHAT_TRANSPORT_PID='' SF_CHAT_TRANSPORT_INPUT_FD=''
@@ -86,15 +88,11 @@ sf_chat_transport_start() {
     return 1
   }
   sf_chat_transport_reset
-  error_file=$(mktemp "${TMPDIR:-/tmp}/shellfish-chat-exec.XXXXXX") || {
+  sf_scratch_file transport exec-error || {
     SF_CHAT_TRANSPORT_ERROR='cannot create exec error file'
     return 1
   }
-  chmod 600 "$error_file" || {
-    rm -f -- "$error_file"
-    SF_CHAT_TRANSPORT_ERROR='cannot secure exec error file'
-    return 1
-  }
+  error_file=$REPLY
   SF_CHAT_TRANSPORT_ERROR_FILE=$error_file
   unsetopt monitor bg_nice
   coproc "${SF_CHAT_TRANSPORT_COMMAND[@]}" 2>"$error_file"

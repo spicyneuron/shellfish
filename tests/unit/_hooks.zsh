@@ -29,6 +29,7 @@ run_prompt_hook() {
 }
 
 assert_no_hook_captures() {
-  local -a files=( "$captures"/shellfish-hooks.*(N) )
+  local root="$captures/shellfish-$EUID/hooks"
+  local -a files=( "$root"/capture.*(N) "$root"/input.*(N) )
   (( ${#files} == 0 ))
 }
