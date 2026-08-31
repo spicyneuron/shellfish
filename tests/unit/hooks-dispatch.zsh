@@ -119,7 +119,7 @@ fi
 [[ $SF_HOOK_ERROR == "hook output exceeds capture limit: $combined_overflow" ]]
 
 # Prepared stdin and argv reach hooks without newline insertion or shell parsing.
-make_hook invocation 'print -rn -- "$#|$1|$2|$3|"; cat; print -rn -- "|$PWD|$SHELLFISH_SESSION|$SHELLFISH_CAPTURE_LIMIT|$SHELLFISH_TURN_STATE|$SHELLFISH_SESSION_STATE|$SHELLFISH_SESSION_ID|$SHELLFISH_MODEL|$PROJECT_DIR|$PLUGIN_ROOT|${PLUGIN_DATA-}"'
+make_hook invocation 'print -rn -- "$#|$1|$2|$3|"; cat; print -rn -- "|$PWD|$SHELLFISH_SESSION|$SHELLFISH_CAPTURE_LIMIT|$SHELLFISH_TURN_STATE|$SHELLFISH_SESSION_STATE|$SHELLFISH_SESSION_ID|$SHELLFISH_MODEL|$PROJECT_DIR|$PLUGIN_ROOT"'
 typeset invocation=$hook
 typeset working="$tmp/working" session="$tmp/session.jsonl" state
 mkdir "$working"
@@ -133,7 +133,7 @@ state=$SHELLFISH_TURN_STATE
 [[ $(stat -f %Lp "$state") == 700 ]]
 print -n shared >"$state/marker"
 sf_hooks_invoke "$session" "$working" "$input" 1024 0 3 stop '' $'line\nbreak' "$invocation"
-typeset expected="3|stop||"$'line\nbreak|first\nsecond\n'"|$working|${session:A}|1024|$state|$SHELLFISH_SESSION_STATE|session-id|model-name|$working|${invocation:h}|"
+typeset expected="3|stop||"$'line\nbreak|first\nsecond\n'"|$working|${session:A}|1024|$state|$SHELLFISH_SESSION_STATE|session-id|model-name|$working|${invocation:h}"
 assert_equal "$expected" "$SF_HOOK_RESULTS[3]"
 assert_equal 700 "$(stat -f %Lp "$SHELLFISH_SESSION_STATE")"
 [[ $(cat "$state/marker") == shared ]]

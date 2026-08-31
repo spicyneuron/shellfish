@@ -10,7 +10,7 @@ typeset empty_command=$hook
 # The prompt hook runs under the session lock and preserves exact prompt bytes.
 typeset prompt_session="$tmp/prompt-session.jsonl"
 typeset prompt_hook
-make_hook prompt '[[ $1 == user_prompt_submit && $SHELLFISH_TURN_ID == 1 ]]; [[ $SHELLFISH_SESSION == /* && $SHELLFISH_SESSION_ID == prompt-session && $SHELLFISH_MODEL == test ]]; [[ $PROJECT_DIR == $PWD && $PLUGIN_ROOT == ${0:A:h} && -d $SHELLFISH_TURN_STATE && -d $SHELLFISH_SESSION_STATE ]]; [[ -z ${PLUGIN_DATA-} ]]; cat; print -n context; [[ -z $CONTROL ]] || { jq -cn --arg path "$CONTROL" '\''{action:"handoff",argv:["/usr/bin/printf",$path]}'\'' >&3; exit 11 }; [[ -z $META ]] || { print -rn -u3 -- '\''{"context":{"prompt":"false","status":1}}'\''; exit 10 }; [[ -z $BINARY ]] || print -rn -- $'\''\0tail'\''; [[ -z $SKIP ]] || { print -rn -u2 -- blocked; exit 10; }'
+make_hook prompt '[[ $1 == user_prompt_submit && $SHELLFISH_TURN_ID == 1 ]]; [[ $SHELLFISH_SESSION == /* && $SHELLFISH_SESSION_ID == prompt-session && $SHELLFISH_MODEL == test ]]; [[ $PROJECT_DIR == $PWD && $PLUGIN_ROOT == ${0:A:h} && -d $SHELLFISH_TURN_STATE && -d $SHELLFISH_SESSION_STATE ]]; cat; print -n context; [[ -z $CONTROL ]] || { jq -cn --arg path "$CONTROL" '\''{action:"handoff",argv:["/usr/bin/printf",$path]}'\'' >&3; exit 11 }; [[ -z $META ]] || { print -rn -u3 -- '\''{"context":{"prompt":"false","status":1}}'\''; exit 10 }; [[ -z $BINARY ]] || print -rn -- $'\''\0tail'\''; [[ -z $SKIP ]] || { print -rn -u2 -- blocked; exit 10; }'
 prompt_hook=$hook
 typeset -g SF_TEST_RUNTIME=$(jq -cn --arg hook "$prompt_hook" '
   {

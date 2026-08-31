@@ -28,7 +28,7 @@ set -e
 [[ $SHELLFISH_MODEL == test-model ]] || exit 4
 [[ $PROJECT_DIR == "$PWD" ]] || exit 5
 [[ ${PLUGIN_ROOT:A} == "${0:A:h}" ]] || exit 6
-[[ -z ${PLUGIN_DATA-} && -d $SHELLFISH_SESSION_STATE ]] || exit 7
+[[ -d $SHELLFISH_SESSION_STATE ]] || exit 7
 [[ ! -e $SHELLFISH_TURN_STATE/inherited ]] || exit 8
 [[ -e $TEST_STATE_PATH ]] || print -rn -- "$SHELLFISH_TURN_STATE" >"$TEST_STATE_PATH"
 input=$(cat)

@@ -32,7 +32,7 @@ repeat:
 
 Exec owns hooks. It runs `session_start` during lock-free session preparation and creates the durable session after those hooks succeed. It owns each complete locked turn through `user_prompt_submit`, provider requests, tools, permissions, cancellation, and recovery.
 
-Hooks in one creation or turn operation share an ephemeral coordination directory (see `SHELLFISH_STATE_DIR` below). A hook runs synchronously. If the operation is cancelled, in-flight hook work is terminated with it. Hooks must finish or terminate their own subprocesses before exiting. Daemonizing is unsupported.
+Hooks in one turn share ephemeral coordination state, and hooks for one session ID share disposable session state (see `SHELLFISH_TURN_STATE` and `SHELLFISH_SESSION_STATE` below). A hook runs synchronously. If the operation is cancelled, in-flight hook work is terminated with it. Hooks must finish or terminate their own subprocesses before exiting. Daemonizing is unsupported.
 
 ## Configuring hooks
 
@@ -72,7 +72,7 @@ Every hook is invoked with the session working directory as its `PWD` and these 
 | --- | --- |
 | `SHELLFISH_SESSION` | Absolute path of the active session JSONL |
 | `SHELLFISH_SESSION_ID` | Transcript filename without the `.jsonl` suffix |
-| `SHELLFISH_STATE_DIR` | Ephemeral, mode-0700 coordination directory |
+| `SHELLFISH_SESSION_STATE` | Absolute path to the disposable, mode-0700 state directory shared by the session ID |
 | `SHELLFISH_CAPTURE_LIMIT` | Combined output byte limit for one hook (`harness.max_capture_bytes`) |
 | `SHELLFISH_EXECUTABLE` | Absolute path of the invoked Shellfish executable |
 | `SHELLFISH_MODE` | Invocation mode: `chat` or `exec` |
@@ -81,15 +81,16 @@ Every hook is invoked with the session working directory as its `PWD` and these 
 | `PROJECT_DIR` | Working directory frozen in the session header |
 | `SHELLFISH_CONFIG_DIR` | Directory containing the resolved config file, or its prospective default location |
 | `PLUGIN_ROOT` | Directory containing the resolved hook executable |
-| `PLUGIN_DATA` | Persistent, mode-0700 data directory for the event and hook name |
 
-Turn-scoped hooks (`user_prompt_submit`, `permission_request`, `pre_tool_use`, `post_tool_use`, and `stop`) also receive `SHELLFISH_TURN_ID`. It is the one-based ordinal of the next durable user message. Exec derives it under the session lock before `user_prompt_submit`, reuses it for the accepted turn's later hooks, and discards it when submission is blocked. Turn IDs are not written separately to the session transcript.
+Turn-scoped hooks (`user_prompt_submit`, `permission_request`, `pre_tool_use`, `post_tool_use`, and `stop`) also receive `SHELLFISH_TURN_ID` and `SHELLFISH_TURN_STATE`. The turn ID is the one-based ordinal of the next durable user message. Exec derives it under the session lock before `user_prompt_submit`, reuses it for the accepted turn's later hooks, and discards it when submission is blocked. Turn IDs are not written separately to the session transcript. `SHELLFISH_TURN_STATE` is an absolute path to a private, mode-0700 directory shared by all hooks in that turn.
 
 `$1` is always the event name. Remaining argv and stdin are event-specific (see [Events](#events)).
 
-`SHELLFISH_STATE_DIR` is private to one creation or turn operation and shared by its hooks. It is removed on teardown. Do not store anything durable there. Use it to coordinate across hooks within a turn. For example, a `post_tool_use` hook marks a turn dirty and a `stop` hook consumes the marker.
+`SHELLFISH_TURN_STATE` is private to one turn and removed during turn cleanup. Use it to coordinate across hooks in that turn. For example, a `post_tool_use` hook can mark the turn dirty and a `stop` hook can consume the marker. It is not exported to `session_start` hooks.
 
-`PLUGIN_DATA` persists across invocations under `${XDG_STATE_HOME:-$HOME/.local/state}/shellfish/hooks/<event>/<hook-name>`. A bundled hook and a user hook shadowing it share persistent data when they have the same event and basename. Hooks should use `PLUGIN_DATA` for durable hook-owned data and `SHELLFISH_STATE_DIR` only for coordination within the current operation.
+`SHELLFISH_SESSION_STATE` is shared by hooks whose sessions have the same `SHELLFISH_SESSION_ID`. It lives under Shellfish's host temporary root, is retained across ordinary process exits, and is not removed when a turn or chat ends. It is disposable cache state: the host may remove it after a restart or temporary-file cleanup, and a changed `TMPDIR` selects a different location. Hooks must tolerate it being empty. `session_start` receives session state before the transcript file is created; failed session creation does not remove that state.
+
+Both directories are shared writable coordination spaces, not per-hook storage. Hooks must namespace files when needed and must account for other Shellfish processes that use the same session ID. The session lock serializes ordinary turn hooks for one transcript, but intentionally overlapping session IDs may share session state.
 
 ### Output channels
 
@@ -150,7 +151,7 @@ Trailing context, typically `stop` feedback, becomes a synthetic trailing user m
 
 ### `session_start`
 
-Runs once during lock-free session preparation. It does not run when an existing session is resumed or exec restarts. The header and configured system record are prepared in memory, and hook input is constructed from that state and its resolved runtime. The session path does not exist until the complete initial prefix is written after all hooks succeed. stdin is empty and `$1` is `session_start`. There are no further arguments. The hook does not receive `SHELLFISH_TURN_ID` or credentials. The API key is scoped to the backend adapter only.
+Runs once during lock-free session preparation. It does not run when an existing session is resumed or exec restarts. The header and configured system record are prepared in memory, and hook input is constructed from that state and its resolved runtime. The session path does not exist until the complete initial prefix is written after all hooks succeed. stdin is empty and `$1` is `session_start`. There are no further arguments. The hook receives `SHELLFISH_SESSION_STATE`, but it does not receive `SHELLFISH_TURN_ID`, `SHELLFISH_TURN_STATE`, or credentials. The API key is scoped to the backend adapter only.
 
 - **stdout** becomes durable `session_start` context in the initial session prefix. Each hook's nonempty stdout is a separately attributed record.
 - **stderr** is shown and discarded.
@@ -246,7 +247,7 @@ Runs immediately before a tool executes, with exec holding the session lock. `$1
 - **fd 3** is invalid.
 - **Default action** is executing the tool. Exit 10 denies the call and continues the hook chain. Exit 11 denies the call and halts the chain. Shellfish commits an ordinary `tool_result` with exit code 126, then proceeds to later tool calls in provider order. This policy gate cannot approve sandbox bypass. `permission_request` remains a separate boundary.
 
-Coordinate state beyond denial feedback through `SHELLFISH_STATE_DIR`. For example, mark a file edit here and consume the marker in a `stop` hook.
+Coordinate state beyond denial feedback through `SHELLFISH_TURN_STATE` or `SHELLFISH_SESSION_STATE`. For example, mark a file edit in turn state and consume the marker in a `stop` hook.
 
 ### `post_tool_use`
 
@@ -270,7 +271,7 @@ Runs after the canonical tool result is durably committed. `$1` is `post_tool_us
 - **fd 3** is invalid.
 - **Default action** is continuing the tool loop. There is no coherent skipped action, so exit 10 or 11 **fails the event** (it does not skip anything).
 
-A nonzero tool exit is a normal canonical result, not a hook failure, so this hook still runs. Hook failure is an orchestration failure and triggers ordinary turn recovery. Use `SHELLFISH_STATE_DIR` or `PLUGIN_DATA` to coordinate observations with `stop`. `post_tool_use` cannot replace results or add model context.
+A nonzero tool exit is a normal canonical result, not a hook failure, so this hook still runs. Hook failure is an orchestration failure and triggers ordinary turn recovery. Use turn or session state to coordinate observations with `stop`. `post_tool_use` cannot replace results or add model context.
 
 ### `stop`
 
@@ -288,7 +289,7 @@ Exit 10 runs later stop hooks. Exit 11 halts the chain. Both commit feedback and
 #!/bin/sh
 # Force another request if a tracked file changed during the turn.
 set -u
-[ -f "$SHELLFISH_STATE_DIR/dirty" ] || exit 0
+[ -f "$SHELLFISH_TURN_STATE/dirty" ] || exit 0
 [ "$2" -le 1 ] || exit 0
 printf 'Files changed; re-check your work before stopping.\n'
 exit 10
@@ -302,6 +303,6 @@ exit 10
 - Captures are private, bounded, and cleaned on every path.
 - Hooks have no independent timeout. They must terminate themselves. Cancelling the enclosing operation terminates the active hook.
 - Hooks inherit the process environment, but Shellfish removes built-in provider credentials and the configured backend credential before invocation. Exec scopes that credential to the backend as `SHELLFISH_API_KEY`. The variables documented above are the Shellfish-specific hook guarantees.
-- `PLUGIN_DATA` may be shared by concurrent sessions or processes. Hooks must coordinate access when their persistent data requires it.
-- Hooks are not transformation middleware. Tool-use hooks cannot modify tool input or result content. They observe and gate. Coordinate policy through `SHELLFISH_STATE_DIR`, not by overloading stdout.
+- Session state may be shared by concurrent sessions or processes using the same session ID. Hooks must coordinate access when their data requires it.
+- Hooks are not transformation middleware. Tool-use hooks cannot modify tool input or result content. They observe and gate. Coordinate policy through turn or session state, not by overloading stdout.
 - Adding an event is an adapter change, not a dispatcher change. The dispatcher implements the status table, channel limits, and JSON framing. Each event owns its control fields, default action, and the consequence of skipping it.

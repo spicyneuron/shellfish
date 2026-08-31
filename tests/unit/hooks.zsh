@@ -114,7 +114,7 @@ cat >"$permission_hook" <<'ZSH'
 [[ $SHELLFISH_MODEL == test && $PROJECT_DIR == "$PWD" ]] || exit 1
 [[ -d $SHELLFISH_TURN_STATE && -d $SHELLFISH_SESSION_STATE &&
   $SHELLFISH_SESSION_STATE == */sessions/permission-session &&
-  ${PLUGIN_ROOT:A} == "${0:A:h}" && -z ${PLUGIN_DATA-} ]] || exit 1
+  ${PLUGIN_ROOT:A} == "${0:A:h}" ]] || exit 1
 jq -e '. == {turn_id:1,tool_name:"shell",tool_use_id:"call_7",
   tool_input:{command:"true"}}' >/dev/null || exit 1
 print -rn -- ignored
