@@ -68,7 +68,7 @@ jq -e '
   .messages[-2].role == "assistant" and
   .messages[-1].role == "user" and
   .messages[-1].content[0].text ==
-    "<stop hook=\"stop-once\">\nfeedback\n</stop>\n\n"
+    "<stop>\n<context hook=\"stop-once\">\nfeedback\n</context>\n</stop>\n\n"
 ' "$request_capture" >/dev/null
 jq -e -s '
   ([.[] | select(.type == "context")] | length) == 1 and
@@ -168,7 +168,7 @@ cat >"$cancel_backend" <<ZSH
 #!/usr/bin/env zsh
 request=\$(cat)
 if jq -e '.messages[-1].role == "user" and
-    (.messages[-1].content[0].text | contains("<stop hook=\\"stop-once\\">"))' \
+    (.messages[-1].content[0].text | contains("<stop>\\n<context hook=\\"stop-once\\">"))' \
     <<<"\$request" >/dev/null; then
   : >"$cancel_ready"
   sleep 10

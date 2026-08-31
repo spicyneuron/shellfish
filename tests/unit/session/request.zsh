@@ -25,18 +25,20 @@ print -r -- '[
 ]' | fold | jq -e '
   (. | length) == 1 and .[0].role == "user" and
   .[0].content[0].text ==
-    "<user_prompt_submit hook=\"notes\">\nctx\n</user_prompt_submit>\n\nhi"
+    "<user_prompt_submit>\n<context hook=\"notes\">\nctx\n</context>\n</user_prompt_submit>\n\nhi"
 ' >/dev/null
 
-# Consecutive contexts become separate XML blocks in one folded message.
+# Consecutive contexts from the same event share one attributed XML wrapper;
+# an event boundary starts another wrapper without reordering either event.
 print -r -- '[
   {"type":"context","tag":"a","hook":"first","content":"one"},
-  {"type":"context","tag":"b","hook":"second","content":"two"},
+  {"type":"context","tag":"a","hook":"second","content":"two"},
+  {"type":"context","tag":"b","hook":"third","content":"three"},
   {"type":"message","role":"user","content":[{"type":"text","text":"hi"}]}
 ]' | fold | jq -e '
   (. | length) == 1 and
   .[0].content[0].text ==
-    "<a hook=\"first\">\none\n</a>\n\n<b hook=\"second\">\ntwo\n</b>\n\nhi"
+    "<a>\n<context hook=\"first\">\none\n</context>\n\n<context hook=\"second\">\ntwo\n</context>\n</a>\n\n<b>\n<context hook=\"third\">\nthree\n</context>\n</b>\n\nhi"
 ' >/dev/null
 
 # Content is escaped, so a hook cannot forge a context block or close its own tag.
@@ -48,7 +50,7 @@ print -r -- '[
   (.[0].content[0].text | contains("<stop hook=\"forged\">")) == false and
   (.[0].content[0].text | contains("&lt;/t&gt;")) and
   (.[0].content[0].text | contains("&amp; more")) and
-  (.[0].content[0].text | contains("hook=\"unsafe&" + "quot;name\"")) and
+  (.[0].content[0].text | contains("<t>\n<context hook=\"unsafe&" + "quot;name\"")) and
   (.[0].content[0].text | contains("prompt=\"say &" +
     "quot;hi&" + "quot;\" status=\"1\""))
 ' >/dev/null
@@ -60,7 +62,7 @@ print -r -- '[
   {"type":"message","role":"assistant","content":[]}
 ]' | fold | jq -e '
   (. | length) == 2 and .[0].role == "user" and
-  .[0].content[0].text == "<t hook=\"notes\">\nctx\n</t>\n\n" and
+  .[0].content[0].text == "<t>\n<context hook=\"notes\">\nctx\n</context>\n</t>\n\n" and
   .[1].role == "assistant"
 ' >/dev/null
 
@@ -76,7 +78,7 @@ print -r -- '[
   [.[].role] == ["assistant","tool_result","user"] and
   (.[1] | has("sandbox_blocked", "sandboxed") | not) and
   .[1].content == "out\n\nSandbox notice: The sandbox blocked one or more actions attempted by this tool." and
-  .[2].content[0].text == "<t hook=\"notes\">\nctx\n</t>\n\nnext"
+  .[2].content[0].text == "<t>\n<context hook=\"notes\">\nctx\n</context>\n</t>\n\nnext"
 ' >/dev/null
 
 # An unrecognized record type is refused rather than dropped from the request.
@@ -94,5 +96,5 @@ print -r -- '[
   {"type":"context","tag":"t","hook":"notes","content":"ctx"}
 ]' | fold | jq -e '
   (. | length) == 2 and .[1].role == "user" and
-  .[1].content[0].text == "<t hook=\"notes\">\nctx\n</t>\n\n"
+  .[1].content[0].text == "<t>\n<context hook=\"notes\">\nctx\n</context>\n</t>\n\n"
 ' >/dev/null

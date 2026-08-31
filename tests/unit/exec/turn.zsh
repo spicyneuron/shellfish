@@ -151,7 +151,7 @@ print -r -- "$stream" | jq -eRn '
 ' >/dev/null
 jq -e '
   .system == "frozen system" and
-  (.messages[-1].content[0].text | contains("<session_start hook=\"fixture\">"))
+  (.messages[-1].content[0].text | contains("<session_start>\n<context hook=\"fixture\">"))
 ' "$request_capture" >/dev/null
 
 # A tool response commits its call and result before the provider continues.

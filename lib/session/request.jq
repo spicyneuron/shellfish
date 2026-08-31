@@ -3,14 +3,25 @@ def xml_escape:
   gsub("\""; "&quot;");
 
 # Schema-constrained tags and XML-escaped text prevent forged blocks.
-def context_block:
-  "<" + .tag + " hook=\"" + (.hook | xml_escape) + "\"" +
+def context_item:
+  "<context hook=\"" + (.hook | xml_escape) + "\"" +
   (if has("prompt") then " prompt=\"" + (.prompt | xml_escape) + "\"" else "" end) +
   (if has("status") then " status=\"" + (.status | tostring) + "\"" else "" end) +
-  ">\n" + (.content | xml_escape) + "\n</" + .tag + ">";
+  ">\n" + (.content | xml_escape) + "\n</context>";
+
+def context_groups:
+  reduce .[] as $record ([];
+    if length > 0 and .[-1][0].tag == $record.tag then
+      .[-1] += [$record]
+    else . += [[$record]] end);
+
+def context_group:
+  .[0].tag as $tag |
+  "<" + $tag + ">\n" + ([.[] | context_item] | join("\n\n")) +
+  "\n</" + $tag + ">";
 
 def context_message($context; $request):
-  ([$context[] | context_block] | join("\n\n")) as $blocks |
+  ([$context | context_groups[] | context_group] | join("\n\n")) as $blocks |
   {role:"user", content:[{type:"text", text:($blocks + "\n\n" + $request)}]};
 
 # Fold roleless context into the next message, or a trailing user message.

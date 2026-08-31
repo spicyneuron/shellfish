@@ -139,13 +139,17 @@ Quick reference. "Owner" is the process that runs the chain; "stdin" is the exac
 
 When stdout is committed, it becomes a `context` record tagged with the event name and the producing hook's basename: `{type:"context",tag:"<event>", hook:"<basename>",content:"<stdout>"}`. For `user_prompt_submit`, a `context` object on fd 3 may add `prompt` and `status` to that hook's record. `prompt` requires an integer `status` from 0 through 255.
 
-The request builder folds each run into an escaped XML block. The event is the element name; `hook`, and when present `prompt` and `status`, are attributes:
+The request builder groups adjacent context records from the same event into an escaped lifecycle XML block. Each producing hook becomes a nested `context` element; `hook`, and when present `prompt` and `status`, are attributes:
 
 ```xml
-<user_prompt_submit hook="user_shell" prompt="git status" status="0">
+<user_prompt_submit>
+<context hook="user_shell" prompt="git status" status="0">
 ...
+</context>
 </user_prompt_submit>
 ```
+
+The lifecycle wrapper keeps injected context distinct from the user request that follows it. Separate durable records retain each hook's attribution; grouping happens only in provider request projection.
 
 Trailing context, typically `stop` feedback, becomes a synthetic trailing user message so the transcript does not misattribute it to the human.
 
