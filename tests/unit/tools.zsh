@@ -245,7 +245,24 @@ tool_max_capture=$(jq -r '.harness.max_capture_bytes' <<<"$file_runtime")
 sf_test_tool_execute '{"id":"edit_2","name":"edit_file","input":{"file_path":"file-tool.txt","old_string":"beta","new_string":"beta"}}' 0
 jq -e '.content == "edit_file: file-tool.txt is already up to date\n"' \
   <<<"$REPLY" >/dev/null
+mkdir "$tmp/diff-bin"
+cat >"$tmp/diff-bin/diff" <<'ZSH'
+#!/usr/bin/env zsh
+for arg in "$@"; do
+  [[ $arg != /dev/null ]] || {
+    print -u2 -- 'diff: /dev/null: Operation not permitted'
+    exit 2
+  }
+done
+exec /usr/bin/diff "$@"
+ZSH
+chmod +x "$tmp/diff-bin/diff"
+typeset saved_path=$PATH
+PATH="$tmp/diff-bin:$PATH"
+rehash
 sf_test_tool_execute '{"id":"write_1","name":"write_file","input":{"file_path":"created.txt","content":"created\n"}}' 0
+PATH=$saved_path
+rehash
 jq -e '.content | startswith("@@ -0,0 +1 @@\n") and contains("+created")' \
   <<<"$REPLY" >/dev/null
 typeset newline_path=$'trailing-newline\n'

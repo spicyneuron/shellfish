@@ -28,12 +28,17 @@ if ! (set -C; printf '%s' "$content" >"$file_path"); then
   printf 'write_file: cannot create %s\n' "$file_path" >&2
   exit 2
 fi
-diff_file=$(mktemp "${TMPDIR:-/tmp}/shellfish-write-diff.XXXXXX") || {
+empty_file=$(mktemp "${TMPDIR:-/tmp}/shellfish-write-empty.XXXXXX") || {
   printf 'write_file: cannot prepare diff for %s\n' "$file_path" >&2
   exit 2
 }
-trap 'rm -f -- "$diff_file"' EXIT
-if diff -U1 -L '' -L '' -- /dev/null "$file_path" >"$diff_file"; then
+diff_file=$(mktemp "${TMPDIR:-/tmp}/shellfish-write-diff.XXXXXX") || {
+  rm -f -- "$empty_file"
+  printf 'write_file: cannot prepare diff for %s\n' "$file_path" >&2
+  exit 2
+}
+trap 'rm -f -- "$empty_file" "$diff_file"' EXIT
+if diff -U1 -L '' -L '' -- "$empty_file" "$file_path" >"$diff_file"; then
   diff_status=0
 else
   diff_status=$?
