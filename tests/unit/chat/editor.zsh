@@ -346,8 +346,40 @@ sf_chat_bind
 [[ $(bindkey -M sf-permission $'\e') == *sf_chat_escape ]] ||
   fail 'permission keymap bypasses the escape widget'
 
-# A failed repaint cannot release the prompt as a submitted turn.
+# A live repaint failure is reported once, cannot stage partial renderer state,
+# and leaves the heartbeat draining transport until the turn completes.
 typeset saved_repaint=$functions[sf_chat_repaint]
+typeset -gi failed_repaints=0
+sf_chat_repaint() {
+  (( ++failed_repaints ))
+  SF_PRESENT_FLUSH_ROWS=3
+  return 1
+}
+sf_chat_reset
+sf_chat_terminal_reset
+sf_chat_add message agent '' before open
+SF_PRESENT_STATE=working
+SF_PRESENT_RENDER_ERROR=''
+SF_CHAT_TRANSPORT_EVENTS=( assistant_delta after '' '' '' '' '' )
+SF_CHAT_TRANSPORT_EOF=0
+KEYS_QUEUED_COUNT=0
+PENDING=0
+ZLE_CALLS=()
+sf_chat_heartbeat_tick
+assert_equal 1 "$failed_repaints"
+assert_equal 0 "$SF_PRESENT_FLUSH_ROWS"
+assert_equal beforeafter "$SF_PRESENT_NODE_BODY[-1]"
+assert_equal 0 "${#SF_CHAT_TRANSPORT_EVENTS}"
+assert_equal 'Live rendering failed.' "$SF_PRESENT_RENDER_ERROR"
+[[ $ZLE_CALLS == *'-M Live rendering failed. Waiting for turn to finish.'* ]] ||
+  fail 'live render failure was not shown in ZLE'
+sf_chat_pre_redraw
+assert_equal 1 "$failed_repaints"
+functions[sf_chat_repaint]=$saved_repaint
+SF_PRESENT_RENDER_ERROR=''
+
+# A failed repaint cannot release the prompt as a submitted turn.
+saved_repaint=$functions[sf_chat_repaint]
 sf_chat_repaint() { return 1; }
 SF_PRESENT_STATE=idle
 SF_PRESENT_ACTION=''

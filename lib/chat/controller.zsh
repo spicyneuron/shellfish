@@ -20,6 +20,18 @@ sf_chat_permission_reset() {
   SF_PRESENT_PERMISSION_PREVIEW_LENGTH=0
 }
 
+sf_chat_render_permission_stop() {
+  local heading=$SF_PRESENT_RENDER_ERROR detail='Turn stopped before a permission decision.'
+  sf_chat_transport_stop
+  sf_chat_discard_queue
+  [[ -z $REPLY ]] || detail+=$'\n'$REPLY
+  if sf_chat_recover "$heading" "$detail"; then
+    SF_PRESENT_STATE=idle
+  else
+    SF_PRESENT_STATE=stopped
+  fi
+}
+
 TRAPTERM() {
   sf_chat_terminal_sync_end force
   [[ $SF_PRESENT_STATE == idle ]] || sf_chat_transport_stop
@@ -165,6 +177,7 @@ sf_chat_recover() {
   local type role node_heading body meta state cursor=$SF_PRESENT_CURSOR
   integer visible=$SF_PRESENT_PREFIX_VISIBLE index match=0
   sf_chat_transport_reset
+  SF_PRESENT_RENDER_ERROR=''
   sf_chat_permission_reset
   sf_chat_editor_permission discard
   if (( visible && ${#SF_PRESENT_NODE_TYPE} )); then
@@ -229,7 +242,7 @@ sf_chat_pending_next() {
 }
 
 sf_chat_exec_finish() {
-  local heading detail
+  local heading detail render_error=$SF_PRESENT_RENDER_ERROR
   integer exit_status
   sf_chat_transport_result || return 1
   exit_status=$reply[1]
@@ -244,16 +257,24 @@ sf_chat_exec_finish() {
       SF_PRESENT_STATE=stopped
     fi
   else
-    if (( ${#SF_PRESENT_NODE_TYPE} )) && [[ $SF_PRESENT_NODE_TYPE[-1] == activity &&
-        $SF_PRESENT_NODE_STATE[-1] == open ]]; then
-      sf_chat_event assistant_commit || return 1
+    if [[ -n $render_error ]]; then
+      if sf_chat_recover "$render_error" 'The completed turn was reloaded.'; then
+        SF_PRESENT_STATE=idle
+      else
+        SF_PRESENT_STATE=stopped
+      fi
+    else
+      if (( ${#SF_PRESENT_NODE_TYPE} )) && [[ $SF_PRESENT_NODE_TYPE[-1] == activity &&
+          $SF_PRESENT_NODE_STATE[-1] == open ]]; then
+        sf_chat_event assistant_commit || return 1
+      fi
+      SF_PRESENT_STATE=idle
+      sf_chat_permission_reset
     fi
-    SF_PRESENT_STATE=idle
-    sf_chat_permission_reset
-    if (( ${#SF_PRESENT_HANDOFF} )); then
+    if [[ $SF_PRESENT_STATE == idle ]] && (( ${#SF_PRESENT_HANDOFF} )); then
       sf_chat_discard_queue
       SF_PRESENT_ACTION=handoff
-    elif (( ${#SF_PRESENT_QUEUE} )); then
+    elif [[ $SF_PRESENT_STATE == idle ]] && (( ${#SF_PRESENT_QUEUE} )); then
       SF_PRESENT_SUBMITTED=$SF_PRESENT_QUEUE[1]
       SF_PRESENT_QUEUE=( "${(@)SF_PRESENT_QUEUE[2,-1]}" )
       SF_PRESENT_STATE=queued
@@ -275,6 +296,7 @@ sf_chat_turn() {
     '{type:"message",role:"user",content:[{type:"text",text:$prompt}]}') || return 1
   SF_PRESENT_HANDOFF=()
   SF_PRESENT_REASONING_TOKENS=''
+  SF_PRESENT_RENDER_ERROR=''
   SF_PRESENT_HEARTBEAT_REMAINING=0
   SF_PRESENT_ACTIVITY_FRAME=0
   SF_PRESENT_ACTIVITY_TICKS=0
@@ -321,6 +343,7 @@ sf_chat_controller() {
   SF_PRESENT_QUEUE=()
   SF_PRESENT_EXIT_STATUS=0
   SF_PRESENT_EXIT_PENDING=0
+  SF_PRESENT_RENDER_ERROR=''
   sf_chat_rows_config "${SF_PRESENTATION:-\{\}}" || {
     SF_PRESENT_ERROR='cannot read presentation configuration'
     return 1

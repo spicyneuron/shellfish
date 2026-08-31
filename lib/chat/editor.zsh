@@ -12,7 +12,29 @@ typeset -g SF_PRESENT_HISTORY_DRAFT=''
 typeset -gi SF_PRESENT_HISTORY_CURSOR=0 SF_PRESENT_HISTORY_NO=0
 typeset -gi SF_PRESENT_HISTORY_LIMIT=100
 typeset -ga SF_PRESENT_HISTORY=()
+typeset -g SF_PRESENT_RENDER_ERROR=''
 KEYTIMEOUT=$SF_PRESENT_HEARTBEAT_TIMEOUT
+
+sf_chat_repaint_checked() {
+  if [[ -z $SF_PRESENT_RENDER_ERROR ]]; then
+    sf_chat_repaint && return 0
+    SF_PRESENT_FLUSH_ROWS=0
+    if [[ $SF_PRESENT_STATE != (working|cancelling|permission) ]]; then
+      SF_PRESENT_STATE=stopped
+      SF_PRESENT_ERROR='cannot render chat'
+      zle -M 'Rendering failed. Press Ctrl-C to exit.'
+      return 1
+    fi
+    SF_PRESENT_RENDER_ERROR='Live rendering failed.'
+  fi
+  if [[ $SF_PRESENT_STATE == permission ]]; then
+    sf_chat_render_permission_stop
+    zle -M 'Live rendering failed; turn stopped before permission.'
+  else
+    zle -M "$SF_PRESENT_RENDER_ERROR Waiting for turn to finish."
+  fi
+  return 1
+}
 
 # Nothing wakes ZLE while a turn streams, so the view is driven by a synthetic
 # key that dispatches the tick. Its prefix timeout yields to fd callbacks between
@@ -36,8 +58,13 @@ sf_chat_heartbeat_tick() {
     fi
   fi
   while true; do
-    sf_chat_repaint || return 1
-    if (( SF_PRESENT_FLUSH_ROWS )); then
+    if ! sf_chat_repaint_checked; then
+      if [[ -z $SF_PRESENT_RENDER_ERROR && $SF_PRESENT_STATE == idle ]]; then
+        continue
+      fi
+      [[ -n $SF_PRESENT_RENDER_ERROR ]] || return 1
+    fi
+    if [[ -z $SF_PRESENT_RENDER_ERROR ]] && (( SF_PRESENT_FLUSH_ROWS )); then
       SF_PRESENT_HEARTBEAT_REMAINING=$(( SF_PRESENT_HEARTBEAT_REMAINING - 1 ))
       sf_chat_terminal_stage || return 1
       sf_chat_transport_unwatch
@@ -61,7 +88,11 @@ sf_chat_heartbeat_tick() {
       sf_chat_exec_finish || return 1
       continue
     fi
-    zle -R
+    if [[ -n $SF_PRESENT_RENDER_ERROR ]]; then
+      zle -M "$SF_PRESENT_RENDER_ERROR Waiting for turn to finish."
+    else
+      zle -R
+    fi
     # A stream that outruns its epochs ends the chain here rather than in line
     # initialization, so the held view has to be released here too, or nothing
     # is presented until the turn starves.
@@ -86,7 +117,15 @@ sf_chat_line_init() {
     sf_chat_heartbeat_tick
     return
   fi
-  sf_chat_repaint || return 1
+  if ! sf_chat_repaint_checked; then
+    if [[ -z $SF_PRESENT_RENDER_ERROR && $SF_PRESENT_STATE == idle ]]; then
+      sf_chat_repaint_checked || return 1
+    else
+      [[ -n $SF_PRESENT_RENDER_ERROR ]] || return 1
+      sf_chat_heartbeat_arm
+      return 0
+    fi
+  fi
   if (( SF_PRESENT_FLUSH_ROWS )) && [[ $SF_PRESENT_STATE != working ]]; then
     sf_chat_terminal_stage || return 1
     SF_PRESENT_ACTION=epoch
@@ -134,7 +173,15 @@ sf_chat_pre_redraw() {
       $BUFFER != $SF_PRESENT_HISTORY[$SF_PRESENT_HISTORY_NO] ]]; then
     sf_chat_history_reset
   fi
-  sf_chat_repaint || return 1
+  if ! sf_chat_repaint_checked; then
+    if [[ -z $SF_PRESENT_RENDER_ERROR && $SF_PRESENT_STATE == idle ]]; then
+      sf_chat_repaint_checked || return 1
+    else
+      [[ -n $SF_PRESENT_RENDER_ERROR ]] || return 1
+      sf_chat_heartbeat_arm
+      return 0
+    fi
+  fi
   sf_chat_heartbeat_arm
 }
 
@@ -189,7 +236,7 @@ sf_chat_accept() {
       sf_chat_history_reset
       BUFFER=''
       CURSOR=0
-      sf_chat_repaint
+      [[ -n $SF_PRESENT_RENDER_ERROR ]] || sf_chat_repaint_checked
       zle -R
       ;;
     quit) zle accept-line ;;
@@ -380,6 +427,7 @@ sf_chat_bind() {
   SF_PRESENT_PERMISSION_CURSOR=0
   SF_PRESENT_HEARTBEAT_REMAINING=0
   SF_PRESENT_HEARTBEAT_DEFERRED=0
+  SF_PRESENT_RENDER_ERROR=''
   SF_PRESENT_VERTICAL_COLUMN=-1
   sf_chat_history_reset
   zle -N sf_chat_exec_ready

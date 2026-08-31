@@ -269,6 +269,59 @@ assert_equal 'Exec exited unexpectedly.' "$SF_PRESENT_NODE_HEADING[-1]"
 [[ $SF_PRESENT_NODE_BODY[-1] == *'Discarded 1 queued prompt.'* ]] ||
   fail 'exec failure did not report discarded queued prompts'
 
+# A renderer failure does not abort a successful turn. Completion reloads the
+# durable transcript, reports the recovery, and clears the live-render latch.
+sf_chat_reset
+sf_chat_terminal_reset
+sf_chat_event assistant_delta speculative
+SF_PRESENT_SESSION="$tmp/recover.jsonl"
+SF_PRESENT_STATE=working
+SF_PRESENT_RENDER_ERROR='Live rendering failed.'
+SF_PRESENT_QUEUE=()
+SF_PRESENT_HANDOFF=()
+SF_CHAT_TRANSPORT_EOF=1
+SF_CHAT_TRANSPORT_EXIT_STATUS=0
+SF_CHAT_TRANSPORT_EXIT_DETAIL=''
+sf_chat_exec_finish
+assert_equal idle "$SF_PRESENT_STATE"
+assert_equal '' "$SF_PRESENT_RENDER_ERROR"
+assert_equal 'Live rendering failed.' "$SF_PRESENT_NODE_HEADING[-1]"
+assert_equal 'The completed turn was reloaded.' "$SF_PRESENT_NODE_BODY[-1]"
+[[ ${(j:\n:)SF_PRESENT_NODE_BODY} != *speculative* ]] ||
+  fail 'render recovery retained speculative presentation text'
+
+# If the durable transcript cannot be reloaded, the chat stops instead of
+# resuming from the invalid live presentation.
+SF_PRESENT_SESSION="$tmp/missing.jsonl"
+SF_PRESENT_STATE=working
+SF_PRESENT_RENDER_ERROR='Live rendering failed.'
+SF_CHAT_TRANSPORT_EOF=1
+SF_CHAT_TRANSPORT_EXIT_STATUS=0
+sf_chat_exec_finish
+assert_equal stopped "$SF_PRESENT_STATE"
+assert_equal '' "$SF_PRESENT_RENDER_ERROR"
+
+# A permission prompt cannot be reviewed safely without rendering. Stop the
+# waiting child, reload durable state, and report discarded queued prompts.
+sf_chat_reset
+sf_chat_terminal_reset
+SF_PRESENT_SESSION="$tmp/recover.jsonl"
+SF_PRESENT_STATE=permission
+SF_PRESENT_RENDER_ERROR='Live rendering failed.'
+SF_PRESENT_QUEUE=( queued )
+ZLE_CALLS=''
+sf_chat_pre_redraw
+assert_equal idle "$SF_PRESENT_STATE"
+assert_equal '' "$SF_PRESENT_RENDER_ERROR"
+assert_equal 0 "${#SF_PRESENT_QUEUE}"
+assert_equal 'Live rendering failed.' "$SF_PRESENT_NODE_HEADING[-1]"
+[[ $SF_PRESENT_NODE_BODY[-1] == *'Turn stopped before a permission decision.'* ]] ||
+  fail 'permission render failure omitted its stop reason'
+[[ $SF_PRESENT_NODE_BODY[-1] == *'Discarded 1 queued prompt.'* ]] ||
+  fail 'permission render failure omitted its discarded queue'
+[[ $ZLE_CALLS == *'turn stopped before permission.'* ]] ||
+  fail 'permission render failure was not shown in ZLE'
+
 SF_PRESENT_QUEUE=( one two )
 sf_chat_discard_queue
 assert_equal 'Discarded 2 queued prompts. Use ↑↓ keys to recover.' "$REPLY"

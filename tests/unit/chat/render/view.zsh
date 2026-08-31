@@ -88,18 +88,52 @@ sf_chat_close 1
 sf_chat_repaint
 assert_equal $'hello\n\n───────────\n❯ ' "$PREDISPLAY"
 
-# Closing a streamed node trims trailing newlines after its display cursor may
-# already have advanced past them. A following event must remain renderable.
-sf_chat_reset
-sf_chat_terminal_reset
-sf_chat_event assistant_delta $'hello\n'
-sf_chat_repaint
-sf_chat_terminal_stage
-sf_chat_terminal_finish
-sf_chat_event assistant_commit
-sf_chat_event tool_call call_1 shell '{}'
-sf_chat_repaint || fail 'trimmed streamed message invalidated the display cursor'
-[[ $PREDISPLAY == *'╰ ⠃'* ]] || fail 'tool result after trimmed message was not rendered'
+# Legal streaming transitions remain renderable across terminal epochs. Closing
+# may trim trailing newlines after the display cursor has consumed them, either
+# alone or in the same transport batch as a following tool call.
+typeset close_type suffix detail
+integer trailing split width highlight epoch newline
+for close_type in message reasoning; do
+  for trailing in 0 1 2; do
+    suffix=''
+    for (( newline = 0; newline < trailing; newline++ )); do suffix+=$'\n'; done
+    for split in 0 1; do
+      for width in 12 30; do
+        for highlight in 0 1; do
+          sf_chat_reset
+          sf_chat_terminal_reset
+          SF_PRESENT_HIGHLIGHT_ENABLED=$highlight
+          BUFFER=''
+          CURSOR=0
+          COLUMNS=$width
+          LINES=20
+          if [[ $close_type == message ]]; then
+            sf_chat_event assistant_delta "hello$suffix"
+          else
+            sf_chat_event assistant_reasoning_delta "thought$suffix"
+          fi
+          for epoch in {1..12}; do
+            sf_chat_repaint || fail "cannot render open $close_type transition: $trailing/$split/$width/$highlight"
+            (( SF_PRESENT_FLUSH_ROWS )) || break
+            sf_chat_terminal_stage
+            sf_chat_terminal_finish
+          done
+          (( epoch < 12 )) || fail "open $close_type transition did not settle"
+          sf_chat_event assistant_commit
+          (( ! split )) || sf_chat_repaint ||
+            fail "cannot render closed $close_type transition: $trailing/$width/$highlight"
+          sf_chat_event tool_call call_1 shell '{}'
+          detail="$close_type transition: $trailing/$split/$width/$highlight"
+          sf_chat_repaint || fail "cannot render tool after $detail"
+          [[ $PREDISPLAY == *'╰ ⠃'* ]] || fail "tool result missing after $detail"
+        done
+      done
+    done
+  done
+done
+SF_PRESENT_HIGHLIGHT_ENABLED=0
+COLUMNS=12
+LINES=10
 
 sf_chat_reset
 sf_chat_terminal_reset
