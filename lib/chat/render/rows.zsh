@@ -214,11 +214,6 @@ sf_chat_rows() {
     type=$SF_PRESENT_NODE_TYPE[node]
     heading=$SF_PRESENT_NODE_HEADING[node]
     body=$SF_PRESENT_NODE_BODY[node]
-    if [[ $type == message && $body == *$'\n' ]]; then
-      # One final newline settles the text row; additional ones are blank rows.
-      tail=${body##*[!$'\n']}
-      body=${body%"$tail"}$'\n'
-    fi
     source_spans=( ${(s: :)${SF_PRESENT_HIGHLIGHT_CACHE[node]-}} )
     span_index=1
     state=$SF_PRESENT_NODE_STATE[node]
@@ -244,6 +239,17 @@ sf_chat_rows() {
     clamp_stop=-1
     head=''
     preview=full
+
+    if [[ $type == message && $SF_PRESENT_NODE_ROLE[node] != system ]]; then
+      leading=${body%%[!$'\n']*}
+      source_base=${#leading}
+      body=${body#"$leading"}
+      if [[ $body == *$'\n' ]]; then
+        # One final newline settles the text row; additional ones are blank rows.
+        tail=${body##*[!$'\n']}
+        body=${body%"$tail"}$'\n'
+      fi
+    fi
 
     if (( tail_phase )); then
       sf_chat_preview_tail $node $hidden

@@ -136,6 +136,22 @@ LINES=10
 
 sf_chat_reset
 sf_chat_terminal_reset
+LINES=3
+sf_chat_event backend_request_start
+sf_chat_event assistant_delta $'\n'
+sf_chat_repaint || fail 'cannot render a newline-only message'
+(( SF_PRESENT_FLUSH_ROWS )) || fail 'newline-only message did not stage a prefix'
+sf_chat_terminal_stage
+sf_chat_terminal_finish
+sf_chat_event assistant_reasoning_delta $'\n\n'
+sf_chat_repaint || fail 'cannot replace a newline-only message with reasoning'
+sf_chat_event assistant_commit
+sf_chat_repaint || fail 'cannot close newline-only reasoning'
+assert_equal 0 "${#SF_PRESENT_NODE_TYPE}"
+LINES=10
+
+sf_chat_reset
+sf_chat_terminal_reset
 sf_chat_add activity '' '' '' open
 sf_chat_repaint
 assert_equal $'⠃\n\n───────────\n❯ ' "$PREDISPLAY"

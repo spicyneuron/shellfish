@@ -174,7 +174,7 @@ sf_chat_decoded() {
 
 sf_chat_recover() {
   local heading=$1 detail=${2-}
-  local type role node_heading body candidate_body meta state cursor=$SF_PRESENT_CURSOR
+  local type role node_heading body meta state cursor=$SF_PRESENT_CURSOR
   integer visible=$SF_PRESENT_PREFIX_VISIBLE index match=0
   sf_chat_transport_reset
   SF_PRESENT_RENDER_ERROR=''
@@ -185,10 +185,6 @@ sf_chat_recover() {
     role=$SF_PRESENT_NODE_ROLE[1]
     node_heading=$SF_PRESENT_NODE_HEADING[1]
     body=$SF_PRESENT_NODE_BODY[1]
-    if [[ $type == (message|reasoning) ]]; then
-      sf_chat_trim_boundary_newlines "$body"
-      body=$REPLY
-    fi
     meta=$SF_PRESENT_NODE_META[1]
     state=$SF_PRESENT_NODE_STATE[1]
   fi
@@ -198,15 +194,10 @@ sf_chat_recover() {
       sf_chat_reset
     else
       for (( index = 1; index <= ${#SF_PRESENT_NODE_TYPE}; index++ )); do
-        candidate_body=$SF_PRESENT_NODE_BODY[index]
-        if [[ $SF_PRESENT_NODE_TYPE[index] == (message|reasoning) ]]; then
-          sf_chat_trim_boundary_newlines "$candidate_body"
-          candidate_body=$REPLY
-        fi
         if [[ $SF_PRESENT_NODE_TYPE[index] == $type &&
             $SF_PRESENT_NODE_ROLE[index] == $role &&
             $SF_PRESENT_NODE_HEADING[index] == $node_heading &&
-            $candidate_body == $body &&
+            $SF_PRESENT_NODE_BODY[index] == $body &&
             $SF_PRESENT_NODE_META[index] == $meta ]]; then
           match=$index
           break

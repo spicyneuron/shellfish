@@ -187,26 +187,6 @@ sf_chat_viewport 80 20 "$SF_PRESENT_CURSOR"
 [[ $ZLE_CALLS == *'-R'* ]] ||
   fail 'recovery did not repaint ZLE'
 
-# Recovery reconciles the append-only live body with the normalized durable
-# presentation after its prefix has already reached scrollback.
-sf_chat_reload "$tmp/recover.jsonl" || fail "$SF_PRESENT_ERROR"
-integer boundary_node=0
-for (( node = 1; node <= ${#SF_PRESENT_NODE_TYPE}; node++ )); do
-  if [[ $SF_PRESENT_NODE_TYPE[node] == message ]]; then
-    boundary_node=$node
-    break
-  fi
-done
-(( boundary_node )) || fail 'recovery fixture has no message'
-sf_chat_drop $(( boundary_node - 1 ))
-SF_PRESENT_NODE_BODY[1]+=$'\n\n'
-SF_PRESENT_PREFIX_VISIBLE=1
-SF_PRESENT_SESSION="$tmp/recover.jsonl"
-sf_chat_recover 'Recovered.' || fail "$SF_PRESENT_ERROR"
-assert_equal message "$SF_PRESENT_NODE_TYPE[1]"
-assert_equal Hello "$SF_PRESENT_NODE_BODY[1]"
-assert_equal 'Recovered.' "$SF_PRESENT_NODE_HEADING[-1]"
-
 # Buffered transport records are applied as one semantic batch after older rows
 # stop flushing. The bounded viewport still sends their display rows to
 # scrollback in source order.

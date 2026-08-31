@@ -32,17 +32,6 @@ sf_chat_safe() {
   done
 }
 
-sf_chat_trim_leading_newlines() {
-  local text=$1
-  REPLY=${text#"${text%%[!$'\n']*}"}
-}
-
-sf_chat_trim_boundary_newlines() {
-  local text=$1
-  text=${text#"${text%%[!$'\n']*}"}
-  REPLY=${text%"${text##*[!$'\n']}"}
-}
-
 sf_chat_reset() {
   sf_chat_drop ${#SF_PRESENT_NODE_TYPE}
   SF_PRESENT_TOOL_HEADING=()
@@ -129,15 +118,14 @@ sf_chat_drop() {
 
 sf_chat_close() {
   integer index=$1 end section removed_section=0
-  local visible_body
+  local body
   [[ $index == ${#SF_PRESENT_NODE_TYPE} && $SF_PRESENT_NODE_STATE[index] == open ]] || return 1
-  visible_body=$SF_PRESENT_NODE_BODY[index]
-  if [[ $SF_PRESENT_NODE_TYPE[index] == (message|reasoning) ]]; then
-    sf_chat_trim_boundary_newlines "$visible_body"
-    visible_body=$REPLY
+  body=$SF_PRESENT_NODE_BODY[index]
+  if [[ $SF_PRESENT_NODE_TYPE[index] == (message|reasoning) && $body != *[!$'\n']* ]]; then
+    body=''
   fi
   if [[ $SF_PRESENT_NODE_TYPE[index] == (activity|message|reasoning) &&
-      -z $SF_PRESENT_NODE_HEADING[index] && -z $visible_body ]]; then
+      -z $SF_PRESENT_NODE_HEADING[index] && -z $body ]]; then
     end=$(( index - 1 ))
     if [[ ${2-} == orphan_section && $index -gt 1 &&
         $SF_PRESENT_NODE_TYPE[index-1] == section ]]; then
@@ -176,12 +164,10 @@ sf_chat_append() {
 sf_chat_stream() {
   local type=$1 text=${2-}
   integer index=${#SF_PRESENT_NODE_TYPE}
+  [[ -n $text ]] || return 0
 
   if (( ! index )) || [[ $SF_PRESENT_NODE_TYPE[index] != $type ||
       $SF_PRESENT_NODE_STATE[index] != open ]]; then
-    sf_chat_trim_leading_newlines "$text"
-    text=$REPLY
-    [[ -n $text ]] || return 0
     if (( index )) && [[ $SF_PRESENT_NODE_STATE[index] == open ]]; then
       [[ $SF_PRESENT_NODE_TYPE[index] == (activity|message|reasoning) ]] || return 1
       sf_chat_close $index || return 1
@@ -241,12 +227,8 @@ sf_chat_event() {
   local type=$1 first=${2-} second=${3-} third=${4-} fourth=${5-} fifth=${6-} sixth=${7-}
   integer index=${#SF_PRESENT_NODE_TYPE}
 
-  if [[ $type == (user|assistant) ]]; then
-    sf_chat_trim_boundary_newlines "$first"; first=$REPLY
-    if [[ $type == assistant ]]; then
-      sf_chat_trim_boundary_newlines "$second"; second=$REPLY
-      [[ -n $first || -n $second ]] || return 0
-    fi
+  if [[ $type == assistant && $first != *[!$'\n']* && $second != *[!$'\n']* ]]; then
+    return 0
   fi
 
   if (( index )) && [[ $SF_PRESENT_NODE_TYPE[index] == activity &&
@@ -267,11 +249,11 @@ sf_chat_event() {
       ;;
     assistant)
       sf_chat_section agent || return 1
-      if [[ -n $second ]]; then
+      if [[ $second == *[!$'\n']* ]]; then
         sf_chat_add reasoning agent '' "$second" || return 1
         SF_PRESENT_NODE_META[REPLY]=$third
       fi
-      if [[ -n $first ]]; then
+      if [[ $first == *[!$'\n']* ]]; then
         sf_chat_add message agent '' "$first"
       fi
       ;;
