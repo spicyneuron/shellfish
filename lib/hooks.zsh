@@ -76,6 +76,7 @@ sf_hooks_capture_one() {
   local display="$directory/current-display"
   local control="$directory/current-control"
   local HOOK_SCRIPT_ROOT=${script:h} hook=$SF_HOOK_NAME api_key_env
+  local -a command
   integer script_status
 
   [[ -n $hook ]] || {
@@ -90,8 +91,13 @@ sf_hooks_capture_one() {
   [[ -z $api_key_env ]] || environment+=( -u "$api_key_env" )
 
   rm -f -- "$context" "$display" "$control"
+  if [[ $hook == system && $script == *.zsh ]]; then
+    command=( zsh -f "$script" )
+  else
+    command=( "$script" )
+  fi
 
-  "${environment[@]}" "$script" "${arguments[@]}" \
+  "${environment[@]}" "${command[@]}" "${arguments[@]}" \
     <"$input" >"$context" 2>"$display" 3>"$control" &
   integer script_pid=$!
   SF_HOOK_SCRIPT_PID=$script_pid
@@ -112,7 +118,7 @@ sf_hooks_dispatch() {
   local -a arguments=( "${(@)argv[1,argument_count]}" )
   shift argument_count
   local -a scripts=( "$@" ) result results
-  local directory script script_context script_display script_control
+  local directory script script_context script_display script_control hook=$SF_HOOK_NAME
   local origin='' control=''
   integer script_status context_size display_size control_size
   integer perform=1 halted=0
@@ -132,6 +138,26 @@ sf_hooks_dispatch() {
     }
 
     for script in $scripts; do
+      if [[ $hook == system && $script != *.zsh && ! -x $script ]]; then
+        [[ -f $script && -r $script ]] || {
+          sf_hooks_fail "invalid system hook component: $script"
+          return
+        }
+        context_size=$(wc -c <"$script") || {
+          sf_hooks_fail "cannot inspect system hook component: $script"
+          return
+        }
+        (( context_size <= max_capture )) || {
+          sf_hooks_fail "hook component output exceeds capture limit: $script"
+          return
+        }
+        sf_hooks_read_capture "$script" "$context_size" || {
+          sf_hooks_fail "cannot read system hook component: $script"
+          return
+        }
+        results+=( "$script" 0 "$REPLY" '' '' )
+        continue
+      fi
       sf_hooks_capture_one "$script" "$input" "$directory" \
         "$argument_count" "${arguments[@]}" || return
       result=( "${reply[@]}" )
@@ -342,9 +368,9 @@ sf_hooks_run() {
   [[ $hook != pre_tool_use ]] || label=pre-tool
 
   SF_HOOK_ERROR=''
-  if [[ $hook == session_start ]]; then
+  if [[ $hook == (system|session_start) ]]; then
     [[ -z $SF_SESSION_LOCK && $SF_SESSION_PATH == "$session" && ${#SF_SESSION_RECORDS} -gt 0 ]] ||
-      sf_hooks_fail 'session_start requires active session preparation' || return
+      sf_hooks_fail "$hook requires active session preparation" || return
   else
     sf_hooks_require_lock "$hook" "$session" || return
   fi
@@ -428,6 +454,30 @@ sf_hooks_commit_context() {
       return 1
     }
   done
+}
+
+# Materializes the system record during session preparation.
+sf_hooks_system() {
+  local content item
+  local -a parts
+  integer index
+  sf_hooks_run "$1" system '' allow reject 0 1 || return
+  for (( index = 1; index <= ${#SF_HOOK_SCRIPT_RESULTS}; index += 5 )); do
+    item=$SF_HOOK_SCRIPT_RESULTS[index+2]
+    while [[ $item == *$'\n' ]]; do item=${item%$'\n'}; done
+    [[ -z $item ]] || parts+=( "$item" )
+    [[ -z $SF_HOOK_SCRIPT_RESULTS[index+3] ]] ||
+      print -rn -u2 -- "$SF_HOOK_SCRIPT_RESULTS[index+3]"
+  done
+  content=${(pj:\n\n:)parts}
+  if [[ -n $content ]]; then
+    item=$(jq -cn --arg content "$content" '{type:"system",content:$content}') || {
+      sf_hooks_fail 'cannot prepare system hook output'
+      return
+    }
+    SF_SESSION_RECORDS+=( "$item" )
+  fi
+  reply=()
 }
 
 # Runs once during session preparation.

@@ -46,7 +46,7 @@ assert_equal 700 "$(file_mode "$init_dir")" 'config init did not protect the con
 assert_equal 600 "$(file_mode "$init_config")" 'config init did not protect the config file'
 assert_equal 600 "$(file_mode "$init_dir/example.env")" \
   'config init did not protect the environment example'
-for component in hooks backends prompts tools skills; do
+for component in hooks backends tools skills; do
   [[ -d $init_dir/$component ]] || fail "config init did not create $component directory"
   assert_equal 700 "$(file_mode "$init_dir/$component")" \
     "config init did not protect the $component directory"
@@ -62,10 +62,10 @@ if HOME="$init_home" XDG_CONFIG_HOME="$init_home/config" \
   fail 'config init overwrote an existing config'
 fi
 typeset custom_config="$tmp/custom/shellfish.jsonc"
-mkdir -p "${custom_config:h}/prompts"
+mkdir -p "${custom_config:h}/hooks/system"
 print -r -- 'KEEP=1' >"${custom_config:h}/example.env"
-print -r -- 'custom' >"${custom_config:h}/prompts/custom.md"
-chmod 750 "${custom_config:h}/prompts"
+print -r -- 'custom' >"${custom_config:h}/hooks/system/custom.md"
+chmod 750 "${custom_config:h}/hooks/system"
 chmod 640 "${custom_config:h}/example.env"
 zsh -f "$entry" config --init --config "$custom_config" >/dev/null || \
   fail 'config init with an explicit path failed'
@@ -73,11 +73,11 @@ cmp -s "$ROOT/template/shellfish.jsonc" "$custom_config" || \
   fail 'config init did not use the explicit path'
 grep -qxF 'KEEP=1' "${custom_config:h}/example.env" || \
   fail 'config init overwrote an existing environment example'
-grep -qxF 'custom' "${custom_config:h}/prompts/custom.md" || \
+grep -qxF 'custom' "${custom_config:h}/hooks/system/custom.md" || \
   fail 'config init overwrote an existing component'
 assert_equal 640 "$(file_mode "${custom_config:h}/example.env")" \
   'config init changed permissions on an existing environment example'
-assert_equal 750 "$(file_mode "${custom_config:h}/prompts")" \
+assert_equal 750 "$(file_mode "${custom_config:h}/hooks/system")" \
   'config init changed permissions on an existing component directory'
 
 # Automatic sandbox grants.
@@ -226,7 +226,7 @@ jq -cn '{
   profile:{request:{model:"stored-model"}},
   backend:{name:"test",command:"/bin/true",endpoint:"https://example.invalid",
     api_key_env:"",env_file:"",insecure_tls:false,http_timeout:30,http_stall:10},
-  harness:{sandbox_read_paths:[],sandbox_write_paths:[],
+  harness:{system:[],sandbox_read_paths:[],sandbox_write_paths:[],
     fence:"",tools:[],sandbox:false,
     max_requests_per_turn:8,max_tool_calls_per_request:16,max_capture_bytes:65536}
 }' >"$tmp/stored.jsonl"

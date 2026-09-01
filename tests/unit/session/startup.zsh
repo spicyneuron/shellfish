@@ -28,3 +28,37 @@ fi
 typeset state_dir=$(<"$marker")
 [[ -d $state_dir && $state_dir == */sessions/failed ]]
 [[ -z ${SHELLFISH_TURN_STATE-} ]]
+
+# The system hook materializes one ordered record before session_start context.
+typeset static="$tmp/system.md" dynamic="$tmp/system.zsh" mixed="$tmp/mixed.jsonl"
+typeset display="$tmp/system-display"
+print -r -- 'static prompt' >"$static"
+cat >"$dynamic" <<'ZSH'
+[[ $# == 1 && $1 == system && ! -s /dev/stdin ]] || exit 2
+[[ $PWD == "$PROJECT_DIR" && $HOOK_SCRIPT_ROOT == ${0:A:h} ]] || exit 3
+[[ -n $SHELLFISH_SESSION_ID && -d $SHELLFISH_SESSION_STATE ]] || exit 4
+[[ -z ${SHELLFISH_TURN_ID-} && -z ${SHELLFISH_API_KEY-} && -z ${CUSTOM_API_KEY-} ]] || exit 5
+print -r -- 'dynamic prompt'
+print -u2 -n -- 'system detail'
+ZSH
+chmod -x "$dynamic"
+typeset mixed_runtime=$(jq -c --arg static "${static:A}" --arg dynamic "${dynamic:A}" '
+  .harness.system=[$static,$dynamic] | .harness.session_start=[] |
+  .backend.api_key_env="CUSTOM_API_KEY"
+' <<<"$SF_TEST_RUNTIME")
+CUSTOM_API_KEY=secret sf_session_startup_create "$mixed" "$mixed_runtime" 2>"$display"
+[[ $(<"$display") == 'system detail' ]]
+jq -se '
+  length == 2 and
+  .[1] == {type:"system",content:"static prompt\n\ndynamic prompt"}
+' "$mixed" >/dev/null
+
+# Unsupported system hook statuses fail without creating a transcript.
+typeset skip="$tmp/skip.zsh" skipped="$tmp/skipped.jsonl"
+print -r -- 'exit 10' >"$skip"
+typeset skip_runtime=$(jq -c --arg skip "${skip:A}" '.harness.system=[$skip]' <<<"$mixed_runtime")
+if sf_session_startup_create "$skipped" "$skip_runtime"; then
+  fail 'skipped system hook created a session'
+fi
+[[ $SF_SESSION_STARTUP_ERROR == 'system hook script returned unsupported skip status' ]]
+[[ ! -e $skipped ]]

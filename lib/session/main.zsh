@@ -167,7 +167,7 @@ sf_session_repair_tail() {
 }
 
 sf_session_prepare() {
-  local runtime=$1 system_record=${2-} cwd created header id model
+  local runtime=$1 cwd created header id model
   SF_SESSION_ERROR=''
   [[ -z $SF_SESSION_LOCK ]] || {
     sf_session_fail "session lock is already held: $SF_SESSION_LOCK"
@@ -205,7 +205,6 @@ sf_session_prepare() {
     turn_id 1
   )
   SF_SESSION_RECORDS=( "$header" )
-  [[ -z $system_record ]] || SF_SESSION_RECORDS+=( "$system_record" )
   printf '%s\n' "${SF_SESSION_RECORDS[@]}" | jq -L "$SF_ROOT/lib" -jes '
     include "runtime/schema";
     select(.[0] | canonical_session_header(1)) |
@@ -263,9 +262,7 @@ sf_session_create() {
 }
 
 sf_session_read_settings() {
-  local session_path=$1 header second=null extracted record
-  local -a fields startup
-  integer count=0
+  local session_path=$1 header extracted
   SF_SESSION_ERROR=''
   REPLY=''
   reply=()
@@ -273,34 +270,19 @@ sf_session_read_settings() {
     sf_session_fail "invalid session path: $session_path"
     return
   }
-  while (( count < 2 )) && IFS= read -r record; do
-    startup+=( "$record" )
-    (( ++count ))
-  done <"$session_path"
-  (( count >= 1 )) || {
+  IFS= read -r header <"$session_path" || {
     sf_session_fail "cannot read session settings: $session_path"
     return
   }
-  header=$startup[1]
-  (( count < 2 )) || second=$startup[2]
-  extracted=$(jq -L "$SF_ROOT/lib" -jcn --argjson header "$header" --argjson second "$second" '
+  extracted=$(jq -L "$SF_ROOT/lib" -cnce --argjson header "$header" '
     include "runtime/schema";
-    def field: ., "\u0000";
-    select($header | canonical_session_header(1)) |
-    ($header | del(.type, .format_version, .cwd, .created) | tojson | field),
-    ((if $second.type? == "system" then $second else null end) | tojson | field),
-    ("ok" | field)
+    $header | select(canonical_session_header(1)) |
+    del(.type, .format_version, .cwd, .created)
   ' 2>/dev/null) || {
     sf_session_fail "cannot read session settings: $session_path"
     return
   }
-  fields=( "${(@0)${extracted%$'\0'}}" )
-  (( ${#fields} == 3 )) && [[ $fields[3] == ok ]] || {
-    sf_session_fail "cannot read session settings: $session_path"
-    return
-  }
-  REPLY=$fields[1]
-  [[ $fields[2] == null ]] || reply=( "$fields[2]" )
+  REPLY=$extracted
 }
 
 sf_session_read_runtime() {

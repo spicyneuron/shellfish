@@ -2,7 +2,7 @@
 
 `shellfish exec` runs a single agent turn. A turn begins with one user message and may contain multiple provider requests, tool calls, permission decisions, and continuations requested by `stop` scripts.
 
-`exec --new [SESSION]` creates an idle session and prints its absolute path. Without `SESSION`, it uses current configuration. With `SESSION`, it copies that session's settings and system prompt. It does not copy messages or context. It runs the `session_start` scripts for the new session.
+`exec --new [SESSION]` creates an idle session and prints its absolute path. Without `SESSION`, it uses current configuration. With `SESSION`, it copies that session's frozen settings and rematerializes their system hook components. It does not copy messages, context, or the source system record. It runs the `session_start` scripts for the new session.
 
 ```sh
 shellfish exec --new
@@ -53,7 +53,7 @@ Stdout contains one compact JSON object per line in source order. Objects fall i
 Durable records are:
 
 - `session`: the resolved runtime header, emitted when a new session is created.
-- `system`: the configured system prompt.
+- `system`: the materialized system hook output.
 - `context`: model-visible hook script output.
 - `message` with role `user`, `assistant`, or `tool_result`.
 

@@ -17,7 +17,7 @@ typeset -g SF_TEST_RUNTIME=$(jq -cn --arg script "$prompt_script" '
     profile:{request:{model:"test"}},
     backend:{name:"test",command:"/usr/bin/false",endpoint:"https://example.invalid",
       api_key_env:"",env_file:"",insecure_tls:false,http_timeout:1,http_stall:1},
-    harness:{sandbox_read_paths:[],sandbox_write_paths:[],fence:"",tools:[],sandbox:false,max_requests_per_turn:1,
+    harness:{system:[],sandbox_read_paths:[],sandbox_write_paths:[],fence:"",tools:[],sandbox:false,max_requests_per_turn:1,
       max_tool_calls_per_request:1,max_capture_bytes:512,user_prompt_submit:[$script]}
   }
 ')
@@ -57,7 +57,9 @@ SF_TEST_RUNTIME=$(jq -c --arg script "$nul_argv" '
   .harness.user_prompt_submit=[$script]
 ' <<<"$SF_TEST_RUNTIME")
 typeset nul_session="$tmp/nul-session.jsonl"
+sf_hooks_turn_state_cleanup
 sf_test_session "$nul_session"
+sf_hooks_turn_state_create
 if run_prompt_hook /switch "$nul_session"; then
   fail 'NUL-containing handoff argument was accepted'
 fi
@@ -66,7 +68,9 @@ SF_TEST_RUNTIME=$(jq -c --arg script "$empty_command" '
   .harness.user_prompt_submit=[$script]
 ' <<<"$SF_TEST_RUNTIME")
 typeset empty_command_session="$tmp/empty-command-session.jsonl"
+sf_hooks_turn_state_cleanup
 sf_test_session "$empty_command_session"
+sf_hooks_turn_state_create
 if run_prompt_hook /switch "$empty_command_session"; then
   fail 'empty handoff executable was accepted'
 fi
@@ -78,7 +82,9 @@ SF_TEST_RUNTIME=$(jq -c --arg first "$invalid_earlier" --arg second "$prompt_scr
   .harness.user_prompt_submit=[$first,$second]
 ' <<<"$SF_TEST_RUNTIME")
 typeset invalid_control_session="$tmp/invalid-control-session.jsonl"
+sf_hooks_turn_state_cleanup
 sf_test_session "$invalid_control_session"
+sf_hooks_turn_state_create
 if run_prompt_hook ordinary "$invalid_control_session"; then
   fail 'invalid earlier prompt control was accepted'
 fi

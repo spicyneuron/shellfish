@@ -15,7 +15,7 @@ sf_test_runtime "$system_file"
 export SF_TEST_BACKEND_DELAY=0
 export SF_TEST_BACKEND_REQUEST="$request_capture"
 
-# Startup materializes the header and configured system prompt before a turn.
+# Startup materializes the header and system hook before a turn.
 sf_test_session "$session"
 
 stream=$(sf_test_turn $'two\nwords' "$session")

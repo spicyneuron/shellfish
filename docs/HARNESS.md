@@ -12,12 +12,12 @@ The bundled `default` harness is intentionally small. It provides project contex
 
 ### System prompt
 
-The harness builds its system prompt from two Markdown files:
+The harness builds its system prompt through the ordered `system` hook:
 
-- `system/general.md` defines communication and context-handling conventions.
-- `system/tools.md` directs the agent to prefer native file tools over shell commands.
+- `general.md` defines communication and context-handling conventions.
+- `tools.md` defines tool-use conventions.
 
-These are ordinary component files under `default/prompts/system/`; a user configuration can select different files or shadow bundled files by name.
+These components live under `default/hooks/system/`; a user configuration can select different files or shadow bundled files by name. Readable files contribute static text, `.zsh` files run through Zsh, and other executable files run directly.
 
 ### Tools
 
@@ -71,6 +71,6 @@ The bundled harness allows up to 100 provider requests per turn and 25 tool call
 
 A harness can be smaller than the default. For example, a review harness might use a review-specific system prompt, expose only `read_file`, retain the project context scripts, and keep sandboxing enabled. Harnesses do not inherit from one another, so each named harness lists the capabilities it needs.
 
-The configuration template includes a `readonly` harness using the bundled `system/readonly.md` prompt with the `read_file` and `shell_readonly` tools.
+The configuration template includes a `readonly` harness using the bundled `readonly.md` system component with the `read_file` and `shell_readonly` tools.
 
 See [Customize a harness](CONFIG.md#customize-a-harness) for a configuration example, component lookup rules, and sandbox grants. See [Hooks](HOOKS.md) for lifecycle payloads, control decisions, and environment guarantees.

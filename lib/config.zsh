@@ -30,7 +30,7 @@ sf_config_init_private() {
     sf_config_fail "cannot create config directory: $dir"
     return
   }
-  mkdir -p -- "$dir/hooks" "$dir/backends" "$dir/prompts" "$dir/tools" "$dir/skills" || {
+  mkdir -p -- "$dir/hooks" "$dir/backends" "$dir/tools" "$dir/skills" || {
     sf_config_fail "cannot create config component directories: $dir"
     return
   }

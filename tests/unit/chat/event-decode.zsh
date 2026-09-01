@@ -4,7 +4,7 @@ source "${0:A:h:h:h}/_helpers.zsh"
 
 # A canonical exec stream covering each event family decodes without error.
 cat <<'STREAM' |
-{"type":"session","format_version":1,"cwd":"/tmp","created":"2026-01-01T00:00:00Z","profile":{"request":{"model":"test"}},"backend":{"name":"test","command":"/usr/bin/false","endpoint":"https://example.invalid","api_key_env":"","env_file":"","insecure_tls":false,"http_timeout":30,"http_stall":10},"harness":{"sandbox_read_paths":[],"sandbox_write_paths":[],"fence":"","tools":[],"sandbox":false,"max_requests_per_turn":8,"max_tool_calls_per_request":16,"max_capture_bytes":65536}}
+{"type":"session","format_version":1,"cwd":"/tmp","created":"2026-01-01T00:00:00Z","profile":{"request":{"model":"test"}},"backend":{"name":"test","command":"/usr/bin/false","endpoint":"https://example.invalid","api_key_env":"","env_file":"","insecure_tls":false,"http_timeout":30,"http_stall":10},"harness":{"system":[],"sandbox_read_paths":[],"sandbox_write_paths":[],"fence":"","tools":[],"sandbox":false,"max_requests_per_turn":8,"max_tool_calls_per_request":16,"max_capture_bytes":65536}}
 {"type":"system","content":"instructions"}
 {"type":"_backend_request_start"}
 {"type":"_assistant_reasoning_delta","text":"why","seq":0}

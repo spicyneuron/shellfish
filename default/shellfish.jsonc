@@ -41,13 +41,13 @@
   // and limits.
   "harnesses": {
     "default": {
-      // Files concatenated into the system prompt.
-      "system": ["system/general.md", "system/tools.md"],
+      // Static files and scripts concatenated into the system prompt.
+      "system": ["general.md", "tools.md"],
 
       // Tools available to the model.
       "tools": ["read_file", "edit_file", "write_file", "skill", "search_web", "fetch_url", "shell"],
 
-      // Each hook runs an ordered list of scripts. See docs/HOOKS.md for
+      // Each hook runs an ordered list of components. See docs/HOOKS.md for
       // payloads, exit statuses, and environment guarantees.
       "session_start": ["add_environment", "add_shell_commands", "add_skills", "add_project_instructions"],
       "user_prompt_submit": ["refresh", "verbose", "new", "copy", "fork", "sandbox", "user_shell", "server", "resume", "help"],

@@ -507,7 +507,7 @@ sf_exec_run() {
   integer runtime_override=${8:-0} continue_requested=${9:-0} jsonl=${10:-0} new=${11:-0}
   local new_source=${12-}
   integer rc=0 create=0
-  local selected runtime system_record record
+  local selected runtime record
   local -a startup_records
 
   SF_EXEC[error]=''
@@ -549,10 +549,7 @@ sf_exec_run() {
           rc=$?
           sf_exec_set_error "$SF_SESSION_ERROR"
         }
-        if (( ! rc )); then
-          runtime=$REPLY
-          (( ${#reply} )) && system_record=$reply[1]
-        fi
+        (( rc )) || runtime=$REPLY
       else
         sf_runtime_resolve '' "$requested_config" "$requested_profile" \
             "$requested_model" "$requested_request" "$requested_backend" \
@@ -560,10 +557,7 @@ sf_exec_run() {
           rc=$?
           sf_exec_set_error "$SF_RUNTIME_ERROR"
         }
-        if (( ! rc )); then
-          runtime=$REPLY
-          system_record=$SF_RUNTIME_SYSTEM_RECORD
-        fi
+        (( rc )) || runtime=$REPLY
       fi
     fi
   fi
@@ -571,7 +565,7 @@ sf_exec_run() {
   trap 'SF_EXEC[signal_status]=129; kill -TERM $$' HUP
   trap 'sf_exec_interrupt; exit $SF_EXEC[signal_status]' TERM
   if (( ! rc && create )); then
-    if sf_session_startup_create "$selected" "$runtime" "$system_record"; then
+    if sf_session_startup_create "$selected" "$runtime"; then
       startup_records=( "${SF_SESSION_RECORDS[@]}" )
     else
       sf_exec_set_error "$SF_SESSION_STARTUP_ERROR"

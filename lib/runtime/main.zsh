@@ -2,7 +2,6 @@ emulate -R zsh
 setopt no_aliases no_multios pipe_fail
 
 typeset -g SF_RUNTIME_ERROR=''
-typeset -g SF_RUNTIME_SYSTEM_RECORD=''
 typeset -g SF_PRESENTATION=''
 typeset -g SF_RUNTIME_VERBOSE=0
 
@@ -118,7 +117,6 @@ sf_runtime_resolve() {
   integer runtime_override=${7:-0}
 
   SF_RUNTIME_ERROR=''
-  SF_RUNTIME_SYSTEM_RECORD=''
   SF_PRESENTATION=''
   REPLY=''
   if [[ -n $session_path ]]; then
@@ -144,14 +142,13 @@ sf_runtime_resolve_from_config() {
   local backend_override=${5-}
   local config_path config_dir='' raw='{}' defaults prepared presentation value
   local backend_name backend_reference backend_dir backend_base manifest tool_manifest command
-  local reference resolved hook external_name final system_content settings fence='' env_file=''
+  local reference resolved hook external_name final settings fence='' env_file=''
   local home=${HOME-} sandbox_read_paths=${_SHELLFISH_SANDBOX_READ_PATHS:-[]}
   local theme_marker=': shellfish:unknown-theme:'
-  local -a fields system_parts tool_entries script_entries resolved_args finalized
-  integer system_count tool_count script_count index tool_index needs_fence=0 sandbox_enabled=1
+  local -a fields tool_entries component_entries resolved_args finalized
+  integer tool_count component_count index tool_index needs_fence=0 sandbox_enabled=1
 
   SF_RUNTIME_ERROR=''
-  SF_RUNTIME_SYSTEM_RECORD=''
   SF_PRESENTATION=''
   REPLY=''
   sf_runtime_config_path "$requested_config"
@@ -198,24 +195,21 @@ sf_runtime_resolve_from_config() {
     ($prepared.backend_name | record),
     ($prepared.backend_reference | record),
     ($prepared.backend_external | tostring | record),
-    ($prepared.system_references | length | tostring | record),
     ($prepared.tool_references | length | tostring | record),
-    ($prepared.hook_script_references | length | tostring | record),
-    ($prepared.system_references[] | record),
+    ($prepared.hook_component_references | length | tostring | record),
     ($prepared.tool_references[] | record),
-    ($prepared.hook_script_references[] | .hook, "\u0000", .reference, "\u0000"),
+    ($prepared.hook_component_references[] | .hook, "\u0000", .reference, "\u0000"),
     ("ok" | record)
   ' 2>/dev/null)
-  (( ${#fields} >= 7 )) && [[ $fields[-1] == ok ]] || {
+  (( ${#fields} >= 6 )) && [[ $fields[-1] == ok ]] || {
     sf_runtime_fail 'cannot inspect prepared runtime'
     return
   }
   backend_name=$fields[1]
   backend_reference=$fields[2]
-  system_count=$fields[4]
-  tool_count=$fields[5]
-  script_count=$fields[6]
-  index=7
+  tool_count=$fields[4]
+  component_count=$fields[5]
+  index=6
   jq -e '.profile.harness |
     if has("sandbox") then .sandbox else true end' \
     <<<"$prepared" >/dev/null 2>&1 || sandbox_enabled=0
@@ -246,24 +240,6 @@ sf_runtime_resolve_from_config() {
   command=$backend_dir/run
   manifest=$(<"$backend_dir/backend.json")
 
-  while (( ${#system_parts} < system_count )); do
-    reference=$fields[index]
-    (( index += 1 ))
-    sf_runtime_reference "$reference" "$config_dir" prompts || {
-      sf_runtime_fail "cannot resolve prompt file: $reference"
-      return
-    }
-    resolved=$REPLY
-    [[ -f $resolved && -r $resolved ]] || {
-      sf_runtime_fail "cannot read prompt file: $reference"
-      return
-    }
-    system_content=$(<"$resolved") || {
-      sf_runtime_fail "cannot read prompt file: $reference"
-      return
-    }
-    system_parts+=( "$system_content" )
-  done
   for (( tool_index = 0; tool_index < tool_count; tool_index++ )); do
     reference=$fields[index]
     (( index += 1 ))
@@ -287,7 +263,7 @@ sf_runtime_resolve_from_config() {
     fi
     tool_entries+=( "${${resolved%/}:t}" "$resolved/run" "$tool_manifest" "$settings" )
   done
-  while (( ${#script_entries} / 2 < script_count )); do
+  while (( ${#component_entries} / 2 < component_count )); do
     hook=$fields[index]
     reference=$fields[index+1]
     (( index += 2 ))
@@ -296,11 +272,19 @@ sf_runtime_resolve_from_config() {
       return
     }
     resolved=$REPLY
-    [[ -f $resolved && -x $resolved ]] || {
-      sf_runtime_fail "$hook hook script is not executable: $reference"
-      return
-    }
-    script_entries+=( "$hook" "$resolved" )
+    if [[ $hook == system ]]; then
+      [[ -f $resolved && ( ( $resolved == *.zsh && -r $resolved ) ||
+        ( $resolved != *.zsh && ( -r $resolved || -x $resolved ) ) ) ]] || {
+        sf_runtime_fail "invalid system hook component: $reference"
+        return
+      }
+    else
+      [[ -f $resolved && -x $resolved ]] || {
+        sf_runtime_fail "$hook hook script is not executable: $reference"
+        return
+      }
+    fi
+    component_entries+=( "$hook" "$resolved" )
   done
   (( index == ${#fields} )) || {
     sf_runtime_fail 'cannot inspect prepared runtime'
@@ -314,13 +298,12 @@ sf_runtime_resolve_from_config() {
     fence=${commands[fence]:A}
   fi
 
-  (( ${#system_parts} == system_count &&
-    ${#tool_entries} == tool_count * 4 &&
-    ${#script_entries} == script_count * 2 )) || {
+  (( ${#tool_entries} == tool_count * 4 &&
+    ${#component_entries} == component_count * 2 )) || {
     sf_runtime_fail 'cannot assemble resolved runtime references'
     return
   }
-  resolved_args=( "${system_parts[@]}" "${tool_entries[@]}" "${script_entries[@]}" )
+  resolved_args=( "${tool_entries[@]}" "${component_entries[@]}" )
   final=$(jq -L "$SF_ROOT/lib" -cnce --argjson prepared "$prepared" \
     --arg manifest "$manifest" --arg command "$command" --arg fence "$fence" \
     --arg env_file "$env_file" \
@@ -335,28 +318,17 @@ sf_runtime_resolve_from_config() {
       runtime_finalize as $result |
       ({type:"session",format_version:1,cwd:"/",created:"1970-01-01T00:00:00Z"} +
         $result.runtime) | select(canonical_session_header(1)) |
-      $result.runtime, ($result.system // "")
+      $result.runtime
     ' "${resolved_args[@]}" 2>&1) || {
     sf_runtime_validation_error "$final" "cannot finalize runtime"
     return
   }
   finalized=( "${(@f)final}" )
-  (( ${#finalized} == 2 )) || {
+  (( ${#finalized} == 1 )) || {
     sf_runtime_fail 'cannot finalize runtime'
     return
   }
   REPLY=$finalized[1]
-  system_content=$(jq -r . <<<"$finalized[2]") || {
-    sf_runtime_fail 'cannot inspect configured system prompt'
-    return
-  }
-  if [[ -n $system_content ]]; then
-    SF_RUNTIME_SYSTEM_RECORD=$(jq -cn --arg content "$system_content" \
-      '{type:"system",content:$content}') || {
-      sf_runtime_fail 'cannot prepare configured system prompt'
-      return
-    }
-  fi
   SF_PRESENTATION=$presentation
   sf_runtime_apply_verbose
 }

@@ -60,7 +60,7 @@ jq -e --arg command "$ROOT/default/backends/openai/run" '
   .backend.endpoint == "https://api.openai.com/v1/chat/completions" and
   .backend.api_key_env == "OPENAI_API_KEY" and
   .harness == {
-    sandbox_read_paths:[],sandbox_write_paths:[],
+    system:[],sandbox_read_paths:[],sandbox_write_paths:[],
     fence:"",tools:[],sandbox:true,
     max_requests_per_turn:100,max_tool_calls_per_request:25,
     max_capture_bytes:32768
@@ -318,22 +318,22 @@ if sf_runtime_resolve_from_config "$tmp/config/unknown-hook.jsonc" '' '' '{}' \
 fi
 [[ $SF_RUNTIME_ERROR == *'invalid config at $["harnesses"]["bad"]["before_prompt"]: unknown field'* ]]
 
-# System references resolve to one durable record and never enter the header.
-mkdir -p "$tmp/config/prompts/system"
-print -r -- 'first' >"$tmp/config/prompts/system/first.md"
-print -r -- 'second' >"$tmp/config/prompts/second.md"
+# System references resolve to ordered absolute paths in the frozen harness.
+mkdir -p "$tmp/config/hooks/system"
+print -r -- 'first' >"$tmp/config/hooks/system/first.md"
+print -r -- 'second' >"$tmp/config/hooks/system/second.md"
 cat >"$tmp/config/system.jsonc" <<'JSON'
 {
   "profiles":{"default":{"harness":"system","request":{"model":"m"}}},
-  "harnesses":{"system":{"system":["system/first.md","second.md"]}}
+  "harnesses":{"system":{"system":["first.md","second.md"]}}
 }
 JSON
 sf_runtime_resolve_from_config "$tmp/config/system.jsonc" '' '' '{}' \
   "$ROOT/tests/fixtures/backend"
-jq -e '.harness | has("system") | not' <<<"$REPLY" >/dev/null
-jq -e '. == {type:"system",content:"first\n\nsecond"}' \
-  <<<"$SF_RUNTIME_SYSTEM_RECORD" >/dev/null
-rm "$tmp/config/prompts/second.md"
+jq -e --arg first "${tmp:A}/config/hooks/system/first.md" \
+  --arg second "${tmp:A}/config/hooks/system/second.md" \
+  '.harness.system == [$first,$second]' <<<"$REPLY" >/dev/null
+rm "$tmp/config/hooks/system/second.md"
 if sf_runtime_resolve_from_config "$tmp/config/system.jsonc" '' '' '{}' \
     "$ROOT/tests/fixtures/backend"; then
   fail 'missing prompt file was accepted'
@@ -344,8 +344,8 @@ sf_runtime_read_jsonc "$ROOT/template/shellfish.jsonc" |
   jq -c '.profiles.default.harness = "readonly"' >"$tmp/config/readonly.jsonc"
 sf_runtime_resolve_from_config "$tmp/config/readonly.jsonc" '' 'm' '{}' \
   "$ROOT/tests/fixtures/backend"
-jq -e --arg content "$(<"$ROOT/default/prompts/system/readonly.md")" \
-  '. == {type:"system",content:$content}' <<<"$SF_RUNTIME_SYSTEM_RECORD" >/dev/null
+jq -e --arg path "$ROOT/default/hooks/system/readonly.md" \
+  '.harness.system == [$path]' <<<"$REPLY" >/dev/null
 
 cat >"$tmp/config/missing-hook.jsonc" <<'JSON'
 {

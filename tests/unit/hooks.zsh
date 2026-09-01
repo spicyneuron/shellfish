@@ -16,7 +16,7 @@ SF_TEST_RUNTIME=$(jq -cn --arg script "$start_script" --arg second "$start_secon
     profile:{request:{model:"test"}},
     backend:{name:"test",command:"/usr/bin/false",endpoint:"https://example.invalid",
       api_key_env:"CUSTOM_API_KEY",env_file:$env_file,insecure_tls:false,http_timeout:1,http_stall:1},
-    harness:{sandbox_read_paths:[],sandbox_write_paths:[],fence:"",tools:[],sandbox:false,max_requests_per_turn:1,
+    harness:{system:[],sandbox_read_paths:[],sandbox_write_paths:[],fence:"",tools:[],sandbox:false,max_requests_per_turn:1,
       max_tool_calls_per_request:1,max_capture_bytes:512,session_start:[$script,$second]}
   }
 ')

@@ -39,8 +39,6 @@ def config_harness($path):
   reduce hook_names[] as $hook (.;
     config_assert((has($hook) | not) or (.[$hook] | type == "array" and
       all(.[]; nonempty_control_free_string)); $path + [$hook]; "must be references")) |
-  config_assert((has("system") | not) or (.system | type == "array" and
-    all(.[]; nonempty_control_free_string)); $path + ["system"]; "must be references") |
   config_assert((has("tools") | not) or (.tools | type == "array" and
     all(.[]; nonempty_control_free_string) and length == (unique | length));
     $path + ["tools"]; "must be unique references") |
@@ -175,9 +173,8 @@ def runtime_prepare:
     presentation:((($defaults | {theme_mode,theme_light,theme_dark,tui,themes}) *
       ($validated | {theme_mode,theme_light,theme_dark,tui,themes} |
       with_entries(select(.value != null)))) | presentation_finish),
-    system_references:($profile.harness.system // []),
     tool_references:($profile.harness.tools // []),
-    hook_script_references:[hook_names[] as $hook |
+    hook_component_references:[hook_names[] as $hook |
       ($profile.harness[$hook] // [])[] | {hook:$hook,reference:.}]
   };
 
@@ -198,18 +195,15 @@ def runtime_finalize:
     select(backend_manifest) // error("invalid backend manifest")) as $manifest |
   $input.command as $command |
   $input.resolved as $args |
-  ($prepared.system_references | length) as $system_count |
   ($prepared.tool_references | length) as $tool_count |
-  ($prepared.hook_script_references | length) as $script_count |
-  $system_count as $tool_offset |
-  ($tool_offset + ($tool_count * 4)) as $script_offset |
-  [$args[0:$system_count][]] as $systems |
+  ($prepared.hook_component_references | length) as $component_count |
+  ($tool_count * 4) as $component_offset |
   [range(0; $tool_count) as $index |
-    ($args[($tool_offset + ($index * 4)):][:4]) |
+    ($args[($index * 4):][:4]) |
     {name:.[0],command:.[1],manifest_json:.[2],settings_json:.[3]}] as $resolved_tools |
-  [range(0; $script_count) as $index |
-    ($args[($script_offset + ($index * 2)):][:2]) |
-    {hook:.[0],path:.[1]}] as $resolved_scripts |
+  [range(0; $component_count) as $index |
+    ($args[($component_offset + ($index * 2)):][:2]) |
+    {hook:.[0],path:.[1]}] as $resolved_components |
   [$resolved_tools[] as $tool |
     ($tool.manifest_json | fromjson |
       select(tool_manifest) //
@@ -221,8 +215,8 @@ def runtime_finalize:
       error("unexpected tool sandbox settings: " + $tool.command)
     else {name:$tool.name,command:$tool.command,
       manifest:$tool_manifest,settings:$settings} end] as $tools |
-  (reduce $resolved_scripts[] as $script ({};
-    .[$script.hook] += [$script.path])) as $hooks |
+  (reduce $resolved_components[] as $component ({system:[]};
+    .[$component.hook] += [$component.path])) as $hooks |
   $prepared.profile as $profile |
   ({
     profile:{request:$prepared.request},
@@ -243,4 +237,4 @@ def runtime_finalize:
       max_tool_calls_per_request:($profile.harness.max_tool_calls_per_request // 25),
       max_capture_bytes:($profile.harness.max_capture_bytes // 32768)} + $hooks)
   }) as $runtime |
-  {runtime:$runtime,system:($systems | map(select(. != "")) | join("\n\n"))};
+  {runtime:$runtime};

@@ -118,6 +118,23 @@ if sf_hooks_dispatch "$empty" 64 0 0 "$combined_overflow"; then
 fi
 [[ $SF_HOOK_ERROR == "hook script output exceeds capture limit: $combined_overflow" ]]
 
+# The system hook interleaves static files, .zsh producers, and other executables.
+typeset static="$tmp/static.md" zsh_component="$tmp/dynamic.zsh"
+print -rn -- 'static' >"$static"
+cat >"$zsh_component" <<'ZSH'
+[[ $# == 1 && $1 == system ]] || exit 2
+print -rn -- dynamic
+ZSH
+chmod -x "$zsh_component"
+make_script executable '[[ $# == 1 && $1 == system ]] || exit 2; print -rn -- executable'
+typeset executable=$script
+SF_HOOK_NAME=system
+sf_hooks_dispatch "$empty" 64 0 1 system "$static" "$zsh_component" "$executable"
+(( ${#SF_HOOK_SCRIPT_RESULTS} == 15 ))
+[[ $SF_HOOK_SCRIPT_RESULTS[3] == static && $SF_HOOK_SCRIPT_RESULTS[8] == dynamic &&
+  $SF_HOOK_SCRIPT_RESULTS[13] == executable ]]
+SF_HOOK_NAME=test_hook
+
 # Prepared stdin and argv reach scripts without newline insertion or shell parsing.
 make_script invocation 'print -rn -- "$#|$1|$2|$3|"; cat; print -rn -- "|$PWD|$SHELLFISH_SESSION|$SHELLFISH_CAPTURE_LIMIT|$SHELLFISH_TURN_STATE|$SHELLFISH_SESSION_STATE|$SHELLFISH_SESSION_ID|$SHELLFISH_MODEL|$PROJECT_DIR|$HOOK_SCRIPT_ROOT"'
 typeset invocation=$script

@@ -225,23 +225,14 @@ fi
 
 # A supplied resolved runtime replaces the direct-test development header.
 typeset configured="$tmp/configured.jsonl"
-mkdir "$tmp/system"
-printf 'first prompt\n' >"$tmp/system/first.md"
-printf 'second prompt\n' >"$tmp/system/second.md"
 SF_TEST_RUNTIME=$(jq -c '.profile.request.model="configured-model"' <<<"$stored_runtime")
-SF_TEST_SYSTEM_RECORD=$(jq -cn \
-  --arg content $'first prompt\n\nsecond prompt' '{type:"system",content:$content}')
 SF_SESSION_PATH=$configured
-sf_session_prepare "$SF_TEST_RUNTIME" "$SF_TEST_SYSTEM_RECORD"
+sf_session_prepare "$SF_TEST_RUNTIME"
 sf_session_create
-jq -e -s '.[0].profile.request.model == "configured-model"' "$configured" >/dev/null
-jq -e -s '
-  length == 2 and
-  .[1] == {type:"system",content:"first prompt\n\nsecond prompt"}
-' "$configured" >/dev/null
+jq -e -s 'length == 1 and .[0].profile.request.model == "configured-model"' \
+  "$configured" >/dev/null
 
 SF_TEST_RUNTIME=''
-SF_TEST_SYSTEM_RECORD=''
 
 # Opening rejects noncanonical durable records.
 typeset invalid_record="$tmp/invalid-record.jsonl"

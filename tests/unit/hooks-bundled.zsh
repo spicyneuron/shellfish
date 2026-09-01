@@ -232,8 +232,10 @@ jq -e '. == {harness:{sandbox_write_paths:[]}}' <<<"$reply[7]" >/dev/null
 
 typeset disabled_session="$tmp/disabled-session.jsonl" enabled_runtime=$SF_TEST_RUNTIME
 SF_TEST_RUNTIME=$(jq -c '.harness.sandbox=false' <<<"$SF_TEST_RUNTIME")
+sf_hooks_turn_state_cleanup
 sf_test_session "$disabled_session"
 SF_TEST_RUNTIME=$enabled_runtime
+sf_hooks_turn_state_create
 run_prompt_hook "/sandbox +r $sandbox_dir" "$disabled_session"
 [[ $reply[1] == handled ]]
 for (( result_index = 4; result_index <= ${#SF_HOOK_SCRIPT_RESULTS}; result_index += 5 )); do

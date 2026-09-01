@@ -99,11 +99,11 @@ def backend_manifest:
 def profile_fields:
   ["backend", "harness", "request"];
 def harness_fields:
-  ["system", "tools", "sandbox", "sandbox_read_paths", "sandbox_write_paths",
+  ["tools", "sandbox", "sandbox_read_paths", "sandbox_write_paths",
    "max_requests_per_turn",
    "max_tool_calls_per_request", "max_capture_bytes"];
 def hook_names:
-  ["session_start", "user_prompt_submit", "permission_request", "pre_tool_use",
+  ["system", "session_start", "user_prompt_submit", "permission_request", "pre_tool_use",
    "post_tool_use", "stop"];
 
 def harness_hooks:
@@ -200,7 +200,7 @@ def canonical_session_header($format_version):
   (.harness | type == "object" and
     (["sandbox_read_paths", "sandbox_write_paths", "fence",
       "max_capture_bytes", "max_requests_per_turn",
-      "max_tool_calls_per_request", "sandbox", "tools"] as $required |
+      "max_tool_calls_per_request", "sandbox", "system", "tools"] as $required |
       ((keys - ($required + hook_names)) | length == 0) and
       (($required - keys) | length == 0)) and
     harness_hooks and

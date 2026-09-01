@@ -2,7 +2,8 @@
 
 source "${0:A:h:h:h}/_helpers.zsh"
 sf_test_tmp exec-command
-mkdir "$tmp/home"
+mkdir -p "$tmp/home" "$tmp/hooks/system"
+print -r -- 'initial system' >"$tmp/hooks/system/source.md"
 export HOME="${tmp:A}/home"
 unset XDG_CONFIG_HOME
 
@@ -13,7 +14,7 @@ cat >"$config" <<EOF
   "backends": {"fixture": {"adapter": "$ROOT/tests/fixtures/backend"}},
   "harnesses": {
     "machine": {
-      "system": [], "tools": [], "sandbox": true,
+      "system": ["source.md"], "tools": [], "sandbox": true,
       "sandbox_read_paths": ["$tmp/read"],
       "sandbox_write_paths": ["$tmp/write"],
       "session_start": [], "user_prompt_submit": [], "permission_request": [],
@@ -108,12 +109,13 @@ assert_equal 'several prompt words' "$output" 'exec joins positional prompt word
 typeset new_session
 new_session=$(zsh -f "$entry" exec --new --config "$config") || fail 'new exec failed'
 [[ -f $new_session && $new_session == /* ]] || fail 'new exec did not return its session path'
-jq -es 'length == 1 and .[0].type == "session"' \
+jq -es 'length == 2 and .[0].type == "session" and
+  .[1] == {type:"system",content:"initial system"}' \
   "$new_session" >/dev/null || fail 'new exec did not create the initial session prefix'
 
-# An optional source session reuses its frozen runtime and system record without
-# copying transcript records.
-print -r -- '{"type":"system","content":"source system"}' >>"$new_session"
+# An optional source session reuses its frozen runtime, rematerializes its system
+# components, and does not copy transcript records.
+print -r -- 'rematerialized system' >"$tmp/hooks/system/source.md"
 print -r -- '{"type":"message","role":"user","content":[{"type":"text","text":"old"}]}' \
   >>"$new_session"
 print -r -- '{"type":"message","role":"assistant","stop":"end","content":[{"type":"text","text":"answer"}]}' \
@@ -121,7 +123,7 @@ print -r -- '{"type":"message","role":"assistant","stop":"end","content":[{"type
 typeset reused_session
 reused_session=$(zsh -f "$entry" exec --new "$new_session") || fail 'sourced new exec failed'
 jq -e -s --slurpfile source "$new_session" '
-  length == 2 and .[1] == {type:"system",content:"source system"} and
+  length == 2 and .[1] == {type:"system",content:"rematerialized system"} and
   (.[0] | del(.created)) == ($source[0] | del(.created))
 ' "$reused_session" >/dev/null || fail 'new exec did not reuse only source settings'
 

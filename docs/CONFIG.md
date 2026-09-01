@@ -2,7 +2,7 @@
 
 Shellfish reads JSONC from `$XDG_CONFIG_HOME/shellfish/shellfish.jsonc`, or `~/.config/shellfish/shellfish.jsonc` when `XDG_CONFIG_HOME` is unset. User configuration is merged over the bundled [`default/shellfish.jsonc`](../default/shellfish.jsonc). Objects merge recursively and arrays replace their defaults.
 
-Run `shellfish config --init` to create the configuration directory from the bundled [`template/`](../template/). Initialization creates `shellfish.jsonc`, `example.env`, and empty `hooks/`, `backends/`, `prompts/`, `tools/`, and `skills/` directories without replacing existing customization assets. Newly created files are mode `0600` and directories are mode `0700`; existing asset permissions are unchanged. Copy `example.env` to `.env` and set the credential for the selected backend. Add `--sandbox-auto` to include detected development-tool paths in the new configuration. Use `shellfish config` to inspect what a new session would use.
+Run `shellfish config --init` to create the configuration directory from the bundled [`template/`](../template/). Initialization creates `shellfish.jsonc`, `example.env`, and empty `hooks/`, `backends/`, `tools/`, and `skills/` directories without replacing existing customization assets. Newly created files are mode `0600` and directories are mode `0700`; existing asset permissions are unchanged. Copy `example.env` to `.env` and set the credential for the selected backend. Add `--sandbox-auto` to include detected development-tool paths in the new configuration. Use `shellfish config` to inspect what a new session would use.
 
 ## Choose a backend and model
 
@@ -49,7 +49,7 @@ Put credentials in the environment or in `.env` beside `shellfish.jsonc`. Export
 
 ## Customize a harness
 
-Harnesses choose prompt files, tools, hooks, sandbox policy, and turn limits. They do not have an inheritance field, so a named harness should list the capabilities it needs:
+Harnesses choose system components, tools, hooks, sandbox policy, and turn limits. They do not have an inheritance field, so a named harness should list the capabilities it needs:
 
 ```jsonc
 {
@@ -73,17 +73,17 @@ Harnesses choose prompt files, tools, hooks, sandbox policy, and turn limits. Th
 }
 ```
 
-This example reads its prompt from `prompts/review.md` under the configuration directory. Hook names and behavior are defined in [`HOOKS.md`](HOOKS.md). Tool directories contain an executable `run` and a `tool.json` manifest. Sandboxed tools also contain `fence.jsonc`. Tool processes receive `SHELLFISH_CONFIG_DIR`, the directory containing the resolved config file or its prospective default location.
+This example reads its system component from `hooks/system/review.md` under the configuration directory. Hook names and behavior are defined in [`HOOKS.md`](HOOKS.md). Tool directories contain an executable `run` and a `tool.json` manifest. Sandboxed tools also contain `fence.jsonc`. Tool processes receive `SHELLFISH_CONFIG_DIR`, the directory containing the resolved config file or its prospective default location.
 
 ## Resolve component references
 
-Prompt files, tools, hooks, and backend adapters accept these reference forms:
+System components, tools, hooks, and backend adapters accept these reference forms:
 
 1. Absolute paths.
 2. `~/...` paths relative to `$HOME`.
 3. Relative paths under the matching configuration subdirectory, falling back to bundled defaults.
 
-The matching subdirectories are `prompts/`, `tools/`, `backends/`, and `hooks/<hook>/`. This lets a local component shadow a bundled component with the same name.
+The matching subdirectories are `tools/`, `backends/`, and `hooks/<hook>/`, including `hooks/system/`. This lets a local component shadow a bundled component with the same name.
 
 ## Sandbox grants
 

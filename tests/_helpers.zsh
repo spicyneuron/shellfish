@@ -76,8 +76,8 @@ assert_session_unlocked() {
 
 # Frozen runtime used by tool and exec tests. Optional system-file path.
 sf_test_runtime() {
-  local system=${1-} tool=$ROOT/default/tools/shell content
-  typeset -g SF_TEST_RUNTIME SF_TEST_SYSTEM_RECORD=''
+  local system=${1-} tool=$ROOT/default/tools/shell
+  typeset -g SF_TEST_RUNTIME
   SF_TEST_RUNTIME=$(jq -cn \
     --arg command "$SF_TEST_BACKEND" \
     --arg system "$system" \
@@ -88,23 +88,21 @@ sf_test_runtime() {
         profile:{request:{model:"test-model"}},
         backend:{name:"test",command:$command,endpoint:"https://example.invalid/test",
           api_key_env:"",env_file:"",insecure_tls:false,http_timeout:30,http_stall:10},
-        harness:{sandbox_read_paths:[],sandbox_write_paths:[],fence:$fence,
+        harness:{system:(if $system == "" then [] else [$system] end),
+          sandbox_read_paths:[],sandbox_write_paths:[],fence:$fence,
           tools:[{name:"shell",command:($tool+"/run"),
             settings:(if $tool_manifest[0].sandbox then {} else null end),
             manifest:$tool_manifest[0]}],sandbox:false,
           max_requests_per_turn:8,max_tool_calls_per_request:16,max_capture_bytes:65536}
       }
     ')
-  if [[ -n $system ]]; then
-    content=$(<"$system")
-    SF_TEST_SYSTEM_RECORD=$(jq -cn --arg content "$content" \
-      '{type:"system",content:$content}')
-  fi
 }
 
 sf_test_session() {
   SF_SESSION_PATH=$1
-  sf_session_prepare "$SF_TEST_RUNTIME" "$SF_TEST_SYSTEM_RECORD" && sf_session_create
+  SHELLFISH_SESSION_STATE=''
+  sf_hooks_session_state_create && sf_session_prepare "$SF_TEST_RUNTIME" &&
+    sf_hooks_system "$SF_SESSION_PATH" && sf_session_create
 }
 
 sf_test_turn() {
