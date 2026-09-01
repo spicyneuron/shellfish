@@ -6,8 +6,8 @@ set -u
 
 for name in AGENTS.md CLAUDE.md; do
   [ -f "$name" ] && [ -r "$name" ] || continue
-  printf '%s: Follow these instructions for work in this directory. ' "$name"
-  printf 'A more deeply nested instruction file takes precedence.\n\n'
+  printf '%s: Follow the instructions below for this directory tree. ' "$name"
+  printf 'Do not reread this file. A nested %s takes precedence.\n\n' "$name"
   cat "$name" || exit 1
   exit 0
 done
