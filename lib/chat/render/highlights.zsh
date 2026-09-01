@@ -263,7 +263,7 @@ sf_chat_highlight_span() {
 }
 
 # Highlight enough of common languages to distinguish comments, strings,
-# numbers, reserved words, and markup tags. Unknown languages remain plain text.
+# numbers, keywords, shell options, and markup tags. Unknown languages remain plain text.
 sf_chat_code_highlight() {
   local source=$1 language=$2 quotes='"' line_comment='' block_start='' block_end=''
   local block_kind=comment words='' character quote token
@@ -285,7 +285,7 @@ sf_chat_code_highlight() {
       ;;
     sh)
       line_comment='#' quotes="\"'"
-      words='case|do|done|elif|else|esac|export|fi|for|function|if|in|local|return|then|until|while'
+      words='alias|awk|basename|case|cat|cd|chmod|chown|cmp|comm|cp|curl|cut|date|diff|dirname|do|done|du|echo|elif|else|env|esac|eval|exec|export|false|fi|find|for|function|getopts|git|grep|head|if|in|jobs|jq|kill|less|ln|local|ls|make|mkdir|mv|npm|paste|printf|pwd|read|realpath|return|rm|sed|set|sort|source|ssh|tail|tar|tee|test|then|time|touch|tr|true|uniq|until|wait|wc|wget|which|while|xargs'
       ;;
     go)
       line_comment=// block_start='/*' block_end='*/' quotes="\"'"; quotes+='`'
@@ -410,6 +410,18 @@ sf_chat_code_highlight() {
       [[ $character == / ]] && (( ++end ))
       sf_chat_highlight_span $(( base + index - 1 )) $(( base + end - 1 )) tag
       tag_open=0
+      index=$end
+      continue
+    fi
+    if [[ $language == sh && $character == - &&
+        ( ${source[index + 1]} == [A-Za-z] ||
+          ( ${source[index + 1]} == - && ${source[index + 2]} == [A-Za-z] ) ) &&
+        ( index == 1 || ${source[index - 1]} == [[:space:]\;\|\&\(] ) ]]; then
+      end=$(( index + 1 ))
+      while (( end <= length )) && [[ ${source[end]} == [A-Za-z0-9_-] ]]; do
+        (( ++end ))
+      done
+      sf_chat_highlight_span $(( base + index - 1 )) $(( base + end - 1 )) tag
       index=$end
       continue
     fi

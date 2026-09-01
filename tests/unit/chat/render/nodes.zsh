@@ -328,6 +328,18 @@ SF_PRESENT_HIGHLIGHT_SPANS=()
 sf_chat_code_highlight 'value * other * last' js
 assert_equal 0 "${#SF_PRESENT_HIGHLIGHT_SPANS}"
 
+typeset shell_code='find . -type f | grep --extended-regexp "foo --bar" # tail -n'
+SF_PRESENT_HIGHLIGHT_SPANS=()
+sf_chat_code_highlight "$shell_code" sh
+span_texts "$shell_code"
+assert_equal 'find,-type,grep,--extended-regexp,"foo --bar",# tail -n' "$REPLY"
+assert_equal '0,4,fg=#222224' "${(j:,:)SF_PRESENT_HIGHLIGHT_SPANS[1,3]}"
+assert_equal '7,12,fg=#222227' "${(j:,:)SF_PRESENT_HIGHLIGHT_SPANS[4,6]}"
+SF_PRESENT_HIGHLIGHT_SPANS=()
+sf_chat_code_highlight 'echo foo-bar -1 --color=auto' bash
+span_texts 'echo foo-bar -1 --color=auto'
+assert_equal 'echo,1,--color' "$REPLY"
+
 typeset markdown=$'# Head\n**bold** [link](url) `code`\n```js\nconst x = 3;\n```'
 SF_PRESENT_HIGHLIGHT_SPANS=()
 sf_chat_markdown_highlight "$markdown"
