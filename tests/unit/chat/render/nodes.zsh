@@ -231,6 +231,7 @@ assert_equal 'fg=#222224' "$SF_PRESENT_STYLE[syntax.keyword]"
 assert_equal 'fg=#222226' "$SF_PRESENT_STYLE[syntax.number]"
 assert_equal 'fg=#222227' "$SF_PRESENT_STYLE[syntax.tag]"
 assert_equal 'fg=#222222' "$SF_PRESENT_STYLE[syntax.fence]"
+assert_equal 'fg=#222222' "$SF_PRESENT_STYLE[syntax.table]"
 
 if NO_COLOR=1 sf_chat_theme_config "$theme_config"; then
   assert_equal 0 "${#SF_PRESENT_STYLE}"
@@ -347,6 +348,33 @@ span_texts "$markdown"
 assert_equal $'# Head,**bold**,[link](url),`code`,```js,const,3,```' "$REPLY"
 assert_equal '0,6,bold,underline,7,15,bold' \
   "${(j:,:)SF_PRESENT_HIGHLIGHT_SPANS[1,6]}"
+
+# Table punctuation stays in the source but is muted. Inline constructs keep
+# their own styles, and neither escaped nor inline-code pipes become separators.
+SF_PRESENT_HIGHLIGHT_SPANS=()
+sf_chat_markdown_highlight '| Name | Status |'
+span_texts '| Name | Status |'
+assert_equal '|,|,|' "$REPLY"
+SF_PRESENT_HIGHLIGHT_SPANS=()
+sf_chat_markdown_highlight '| --- | :---: |'
+span_texts '| --- | :---: |'
+assert_equal '| --- | :---: |' "$REPLY"
+SF_PRESENT_HIGHLIGHT_SPANS=()
+markdown='| **A** | `x | y` | a\|b |'
+sf_chat_markdown_highlight "$markdown"
+span_texts "$markdown"
+assert_equal '|,**A**,|,`x | y`,|,|' "$REPLY"
+SF_PRESENT_HIGHLIGHT_SPANS=()
+sf_chat_markdown_highlight 'value | other'
+assert_equal 0 "${#SF_PRESENT_HIGHLIGHT_SPANS}"
+sf_chat_markdown_highlight '| first | long cell '
+assert_equal table "$REPLY"
+SF_PRESENT_HIGHLIGHT_SPANS=()
+sf_chat_markdown_highlight 'continued | last' 0 table 1
+span_texts 'continued | last'
+assert_equal '|' "$REPLY"
+sf_chat_markdown_highlight $'continued | last\n' 0 table 1
+assert_equal '' "$REPLY"
 
 SF_PRESENT_HIGHLIGHT_SPANS=()
 sf_chat_markdown_highlight '- item'

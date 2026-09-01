@@ -97,6 +97,7 @@ sf_chat_theme_config() {
        "syntax.keyword":("fg=" + .syntax_keyword),
        "syntax.tag":("fg=" + .syntax_tag),
        "syntax.fence":("fg=" + .muted),
+       "syntax.table":("fg=" + .muted),
        "syntax.link":("fg=" + .user_heading + ",underline"),
        "syntax.code":("fg=" + .user_heading),
        "syntax.heading":"bold,underline",
@@ -457,14 +458,16 @@ sf_chat_code_highlight() {
 # separately because it is the only state for which a caller withholds a row.
 sf_chat_markdown_highlight() {
   local source=$1 state=${3-} line fence='' delimiter='' language='' close
-  local character suffix rest kind boundary=$state
+  local character suffix rest kind boundary=$state trimmed pipes
   integer base_offset=${2:-0} continuation=${4:-0}
   integer length=${#source} index=1 end base close_start
   integer cursor inline_end count content match_end inline complete_line starts_line
-  integer comment=0 heading=0
+  integer comment=0 heading=0 table_line table_continuation=0
   local -a fields lines
   if [[ $state == heading ]]; then
     heading=1
+  elif [[ $state == table ]]; then
+    table_continuation=1
   elif [[ -n $state ]]; then
     fields=( "${(@ps:\t:)state}" )
     fence=${fields[1]-}
@@ -481,6 +484,7 @@ sf_chat_markdown_highlight() {
     base=$(( base_offset + index - 1 ))
     complete_line=$(( end <= length ))
     inline=1
+    table_line=$(( index == 1 && continuation && table_continuation ))
     # A fence opens or closes only on a whole line, so a continuation fragment
     # stays inside whatever mode it inherited.
     starts_line=$(( index > 1 || ! continuation ))
@@ -508,6 +512,17 @@ sf_chat_markdown_highlight() {
       inline=0
     fi
     if (( inline )); then
+      if (( starts_line )); then
+        trimmed=${line#${line%%[![:space:]]*}}
+        trimmed=${trimmed%${trimmed##*[![:space:]]}}
+        pipes=${trimmed//[^\|]/}
+        if [[ $trimmed =~ '^\|?[[:space:]]*:?-{3,}:?[[:space:]]*(\|[[:space:]]*:?-{3,}:?[[:space:]]*)+\|?$' ]]; then
+          sf_chat_highlight_span $base $(( base + ${#line} )) table
+        elif [[ $trimmed == \|* || $trimmed == *\| ]] || (( ${#pipes} >= 2 )); then
+          table_line=1
+          boundary=table
+        fi
+      fi
       if (( heading )); then
         sf_chat_highlight_span $base $(( base + ${#line} )) heading
       elif (( starts_line )) &&
@@ -525,7 +540,8 @@ sf_chat_markdown_highlight() {
       SF_PRESENT_HIGHLIGHT_INLINE_OPEN=0
       cursor=1
       # A line holding no delimiter has nothing for the scan below to find.
-      [[ $line == *[\`\*_\[]* ]] || cursor=$(( ${#line} + 1 ))
+      [[ $line == *[\`\*_\[]* || ( $table_line == 1 && $line == *\|* ) ]] ||
+        cursor=$(( ${#line} + 1 ))
       while (( cursor <= ${#line} )); do
         character=${line[cursor]}
         if [[ $character == '`' ]]; then
@@ -551,6 +567,12 @@ sf_chat_markdown_highlight() {
           sf_chat_highlight_span $(( base + cursor - 1 )) \
             $(( base + cursor + match_end - 1 )) link
           (( cursor += match_end ))
+          continue
+        fi
+        if (( table_line )) && [[ $character == \| &&
+            ( $cursor == 1 || ${line[cursor - 1]} != \\ ) ]]; then
+          sf_chat_highlight_span $(( base + cursor - 1 )) $(( base + cursor )) table
+          (( ++cursor ))
           continue
         fi
         delimiter=''
