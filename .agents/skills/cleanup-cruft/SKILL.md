@@ -1,6 +1,6 @@
 ---
 name: cleanup-cruft
-description: Remove dead code, low-value tests, verbose comments, and other maintenance cruft without changing behavior.
+description: Use when user requests code cleanup or cruft removal.
 ---
 # Clean up cruft
 
