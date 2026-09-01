@@ -1,5 +1,5 @@
 {
-  "description": "Run one Zsh command in the session working directory and return its combined stdout and stderr. Use `$TMPDIR` for temporary files and pass it explicitly to `mktemp`, for example `mktemp \"${TMPDIR%/}/name.XXXXXX\"`. Bare `mktemp` may ignore `$TMPDIR`.",
+  "description": "Run one Zsh command in the session working directory and return its combined stdout and stderr.",
   "input_schema": {
     "type": "object",
     "additionalProperties": false,

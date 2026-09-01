@@ -254,27 +254,11 @@ sf_hooks_session_state_create() {
     sf_hooks_fail 'cannot derive hook session state'
     return
   }
-  sf_scratch_category sessions || {
+  sf_scratch_directory sessions "$id" || {
     sf_hooks_fail 'cannot prepare hook session state'
     return
   }
-  SHELLFISH_SESSION_STATE="$REPLY/$id"
-  if [[ -e $SHELLFISH_SESSION_STATE || -L $SHELLFISH_SESSION_STATE ]]; then
-    [[ -d $SHELLFISH_SESSION_STATE && ! -L $SHELLFISH_SESSION_STATE && -O $SHELLFISH_SESSION_STATE ]] || {
-      sf_hooks_fail 'cannot prepare hook session state'
-      return
-    }
-  else
-    (umask 077; mkdir -- "$SHELLFISH_SESSION_STATE") || {
-      sf_hooks_fail 'cannot prepare hook session state'
-      return
-    }
-  fi
-  chmod 700 "$SHELLFISH_SESSION_STATE" || {
-    sf_hooks_fail 'cannot secure hook session state'
-    return
-  }
-  SHELLFISH_SESSION_STATE=${SHELLFISH_SESSION_STATE:A}
+  SHELLFISH_SESSION_STATE=$REPLY
   export SHELLFISH_SESSION_STATE
 }
 

@@ -131,9 +131,6 @@ jq -e '
 
 # Tool execution preserves the caller's home in its otherwise clean environment.
 load_tools "$stored_runtime"
-jq -e '.[0].description |
-  contains("Use `$TMPDIR` for temporary files") and contains("Bare `mktemp`")' \
-  <<<"$tool_schema" >/dev/null
 sf_test_tool_execute "$(jq -cn --arg command 'print -rn -- "$HOME"' \
   '{id:"home_1",name:"shell",input:{command:$command}}')" 0
 jq -e --arg home "$HOME" '.content == $home' <<<"$REPLY" >/dev/null
@@ -142,6 +139,10 @@ sf_test_tool_execute "$(jq -cn --arg command 'print -rn -- "$TMPDIR"' \
 typeset tool_temp=$(jq -r '.content' <<<"$REPLY")
 [[ $tool_temp == "${${TMPDIR:-/tmp}:A}/shellfish-$EUID/tooltemps/session-$SF_SESSION[id]-tmp" ]]
 assert_equal 700 "$(stat -f %Lp "$tool_temp")"
+sf_temp_directory native "$tool_temp"
+typeset native_temp=$REPLY
+integer native_grant=0
+[[ $native_temp == $tool_temp ]] || native_grant=1
 sf_test_tool_execute "$(jq -cn --arg command 'print -rn persistent >"$TMPDIR/marker"' \
   '{id:"temp_write",name:"shell",input:{command:$command}}')" 0
 sf_test_tool_execute "$(jq -cn --arg command 'cat "$TMPDIR/marker"' \
@@ -226,6 +227,11 @@ typeset file_runtime=$(jq -cn --argjson base "$stored_runtime" \
       {name:"write_file",command:($root + "/write_file/run"),
        settings:(if $write[0].sandbox then {} else null end),manifest:$write[0]}]
 ')
+for policy in edit_file write_file; do
+  jq -e '.filesystem.denyWrite |
+    all(.[]; test("^/(private/)?var/(tmp|folders)/") | not)' \
+    "$ROOT/default/tools/$policy/fence.jsonc" >/dev/null
+done
 print -r -- alpha >"$tmp/file-tool.txt"
 tool_cwd=$tmp
 load_tools "$(jq -c '.harness.sandbox=true' <<<"$file_runtime")" 1
@@ -341,8 +347,9 @@ sf_test_tool_execute "$(jq -cn --arg command 'printf "%s|%s" "$TMPDIR" "$TMPPREF
   '{id:"fence_empty",name:"shell",input:{command:$command}}')" 1
 jq -e --arg temp "$tool_temp" '.content == ($temp + "|" + $temp + "/zsh")' \
   <<<"$REPLY" >/dev/null
-(( $(grep -Fxc -- '--expose-host-path-rw' "$tmp/fence.args") == 1 ))
+(( $(grep -Fxc -- '--expose-host-path-rw' "$tmp/fence.args") == 1 + native_grant ))
 grep -Fx -- "$tool_temp" "$tmp/fence.args" >/dev/null
+(( ! native_grant )) || grep -Fx -- "$native_temp" "$tmp/fence.args" >/dev/null
 assert_equal "${LANG:-C}" "$(<"$tmp/fence.lang")"
 assert_equal "$LC_ALL" "$(<"$tmp/fence.lc_all")"
 assert_equal "$LC_CTYPE" "$(<"$tmp/fence.lc_ctype")"
@@ -369,8 +376,9 @@ jq -e '. == {}' "$tmp/fence.settings" >/dev/null
 grep -Fx -- "$tool_dir/run" "$tmp/fence.args" >/dev/null
 grep -Fx -- "$tmp/read dir" "$tmp/fence.args" >/dev/null
 grep -Fx -- "$tmp/read file" "$tmp/fence.args" >/dev/null
-(( $(grep -Fxc -- '--expose-host-path-rw' "$tmp/fence.args") == 3 ))
+(( $(grep -Fxc -- '--expose-host-path-rw' "$tmp/fence.args") == 3 + native_grant ))
 grep -Fx -- "$tool_temp" "$tmp/fence.args" >/dev/null
+(( ! native_grant )) || grep -Fx -- "$native_temp" "$tmp/fence.args" >/dev/null
 grep -Fx -- "$tmp/write dir" "$tmp/fence.args" >/dev/null
 grep -Fx -- "$tmp/write file" "$tmp/fence.args" >/dev/null
 touch "$tmp/fence.violate"

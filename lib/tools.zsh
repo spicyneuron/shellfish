@@ -138,7 +138,7 @@ sf_tool_execute() {
   local session_id=${12-}
   local tool_home=${HOME:-$cwd}
   local id name execution_input bypass sandboxed tool_sandbox tool_bypass tool_settings
-  local state_dir captured bounded status_file temp command_path settings sandbox_log
+  local state_dir captured bounded status_file temp native_temp command_path settings sandbox_log
   local decoded sandbox_denial_detected=''
   local -a fields read_paths write_paths
   local -a command locale_env
@@ -212,27 +212,11 @@ sf_tool_execute() {
     sf_tools_fail 'tool session ID is not available'
     return
   }
-  sf_scratch_category tooltemps || {
+  sf_scratch_directory tooltemps "session-$session_id-tmp" || {
     sf_tools_fail 'cannot prepare tool temporary directory'
     return
   }
-  temp="$REPLY/session-$session_id-tmp"
-  if [[ -e $temp || -L $temp ]]; then
-    [[ -d $temp && ! -L $temp && -O $temp ]] || {
-      sf_tools_fail 'cannot prepare tool temporary directory'
-      return
-    }
-  else
-    (umask 077; mkdir -- "$temp") || {
-      sf_tools_fail 'cannot prepare tool temporary directory'
-      return
-    }
-  fi
-  chmod 700 "$temp" || {
-    sf_tools_fail 'cannot secure tool temporary directory'
-    return
-  }
-  temp=${temp:A}
+  temp=$REPLY
   sf_tools_cleanup
   sf_scratch_create tools tool || {
     sf_tools_fail 'cannot prepare tool capture'
@@ -245,6 +229,11 @@ sf_tool_execute() {
     bounded="$state_dir/result"
     status_file="$state_dir/status"
     if (( harness_sandbox )) && [[ $tool_sandbox == true && $bypass != true ]]; then
+      sf_temp_directory native "$temp" || {
+        sf_tools_fail 'cannot resolve native temporary directory'
+        return
+      }
+      native_temp=$REPLY
       settings="$state_dir/fence.jsonc"
       sandbox_log="$state_dir/sandbox.log"
       print -r -- "$tool_settings" >"$settings" || return 1
@@ -254,6 +243,7 @@ sf_tool_execute() {
         "$fence" --monitor --fence-log-file "$sandbox_log" --settings "$settings"
         --expose-host-path "$settings" --expose-host-path "$command_path"
         --expose-host-path-rw "$temp")
+      [[ $native_temp == $temp ]] || command+=( --expose-host-path-rw "$native_temp" )
       for decoded in "${read_paths[@]}"; do
         command+=( --expose-host-path "$decoded" )
       done
