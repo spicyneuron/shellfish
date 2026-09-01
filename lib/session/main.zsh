@@ -6,6 +6,7 @@ typeset -g SF_SESSION_PATH=''
 typeset -g SF_SESSION_LOCK=''
 typeset -gA SF_SESSION=()
 typeset -ga SF_SESSION_RECORDS=()
+typeset -gA SF_HOOK_COUNTS=()
 typeset -g SF_SESSION_ERROR=''
 typeset -ga SF_SESSION_MATCHES=()
 
@@ -147,6 +148,7 @@ sf_session_close() {
   SF_SESSION_LOCK=''
   SF_SESSION=()
   SF_SESSION_RECORDS=()
+  SF_HOOK_COUNTS=()
 }
 
 sf_session_repair_tail() {
@@ -175,6 +177,7 @@ sf_session_prepare() {
   }
   SF_SESSION=()
   SF_SESSION_RECORDS=()
+  SF_HOOK_COUNTS=()
   [[ ! -e $SF_SESSION_PATH && ! -L $SF_SESSION_PATH ]] || {
     sf_session_fail "cannot create session: $SF_SESSION_PATH"
     return
@@ -192,10 +195,24 @@ sf_session_prepare() {
     sf_session_fail 'cannot prepare session header'
     return
   }
-  model=$(jq -er '.profile.request.model' <<<$runtime) || {
+  local -a fields
+  fields=( "${(@f)$(jq -L "$SF_ROOT/lib" -er '
+    include "runtime/schema";
+    .profile.request.model,
+    (hook_names[] as $hook | $hook, (.harness[$hook] // [] | length))
+  ' <<<$runtime)}" ) || {
     sf_session_fail 'cannot prepare session header'
     return
   }
+  (( ${#fields} >= 3 && ${#fields} % 2 == 1 )) || {
+    sf_session_fail 'cannot prepare session header'
+    return
+  }
+  model=$fields[1]
+  integer index
+  for (( index = 2; index <= ${#fields}; index += 2 )); do
+    SF_HOOK_COUNTS[$fields[index]]=$fields[index+1]
+  done
   id=${SF_SESSION_PATH:t}
   SF_SESSION=(
     runtime "$runtime"
@@ -212,6 +229,7 @@ sf_session_prepare() {
   ' >/dev/null 2>&1 || {
     SF_SESSION=()
     SF_SESSION_RECORDS=()
+    SF_HOOK_COUNTS=()
     sf_session_fail 'cannot prepare session records'
     return
   }
@@ -310,6 +328,7 @@ sf_session_load() {
   local -a fields
   SF_SESSION=()
   SF_SESSION_RECORDS=()
+  SF_HOOK_COUNTS=()
   while IFS= read -r record; do
     [[ -n $record ]] || {
       SF_SESSION_RECORDS=()
@@ -333,6 +352,8 @@ sf_session_load() {
     (.[0].profile.request.model | field),
     (([.[] | select(.type == "message" and .role == "user")] | length + 1) |
       tostring | field),
+    (hook_names[] as $hook |
+      ($hook | field), (.[0].harness[$hook] // [] | length | tostring | field)),
     ("ok" | field)
   ' 2>/dev/null) || {
     SF_SESSION_RECORDS=()
@@ -340,11 +361,15 @@ sf_session_load() {
     return
   }
   fields=( "${(@0)${loaded%$'\0'}}" )
-  (( ${#fields} == 5 )) && [[ $fields[-1] == ok ]] || {
+  (( ${#fields} >= 7 && (${#fields} - 5) % 2 == 0 )) && [[ $fields[-1] == ok ]] || {
     SF_SESSION_RECORDS=()
     sf_session_fail "cannot restore session runtime: $SF_SESSION_PATH"
     return
   }
+  integer index
+  for (( index = 5; index < ${#fields}; index += 2 )); do
+    SF_HOOK_COUNTS[$fields[index]]=$fields[index+1]
+  done
   local id=${SF_SESSION_PATH:t}
   SF_SESSION=(
     runtime "$fields[1]"

@@ -50,6 +50,10 @@ sf_hooks_require_lock() {
     sf_hooks_fail "$hook requires the active session lock"
 }
 
+sf_hooks_configured() {
+  (( ! ${+SF_HOOK_COUNTS[$1]} || SF_HOOK_COUNTS[$1] > 0 ))
+}
+
 sf_hooks_read_capture() {
   local capture=$1 value=''
   local LC_ALL=C
@@ -374,6 +378,11 @@ sf_hooks_run() {
   else
     sf_hooks_require_lock "$hook" "$session" || return
   fi
+  if ! sf_hooks_configured "$hook"; then
+    sf_hooks_reset
+    reply=( 1 0 '' '' )
+    return 0
+  fi
   sf_scratch_file hooks input || {
     sf_hooks_fail "cannot prepare $label hook input"
     return
@@ -626,6 +635,12 @@ sf_hooks_pre_tool_use() {
   local -a decision feedback
   integer index
 
+  if ! sf_hooks_configured pre_tool_use; then
+    sf_hooks_require_lock pre_tool_use "$session" || return
+    sf_hooks_reset
+    reply=( allow '' )
+    return 0
+  fi
   input=$(print -rn -- "$tool_input" | jq -c --argjson turn_id "$SHELLFISH_TURN_ID" \
     --arg tool_name "$tool_name" --arg tool_use_id "$call_id" \
     '{turn_id:$turn_id,tool_name:$tool_name,tool_use_id:$tool_use_id,
@@ -655,6 +670,11 @@ sf_hooks_pre_tool_use() {
 sf_hooks_post_tool_use() {
   local session=$1 result=$2 tool_input=$3 input
 
+  if ! sf_hooks_configured post_tool_use; then
+    sf_hooks_require_lock post_tool_use "$session" || return
+    sf_hooks_reset
+    return 0
+  fi
   input=$({ print -r -- "$tool_input"; print -r -- "$result"; } |
     jq -cs --argjson turn_id "$SHELLFISH_TURN_ID" '
       .[0] as $tool_input | .[1] as $result |
