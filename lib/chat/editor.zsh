@@ -1,19 +1,21 @@
 emulate -R zsh
 setopt no_aliases no_bg_nice no_multios pipe_fail
 zmodload zsh/zselect
+zmodload zsh/zpty
 
 typeset -g SF_PRESENT_PERMISSION_DRAFT=''
 typeset -gi SF_PRESENT_PERMISSION_CURSOR=0
-typeset -gi SF_PRESENT_HEARTBEAT_TIMEOUT=1 SF_PRESENT_HEARTBEAT_EPOCHS=10
-typeset -gi SF_PRESENT_HEARTBEAT_REMAINING=0 SF_PRESENT_HEARTBEAT_DEFERRED=0
-typeset -gi SF_PRESENT_ACTIVITY_FRAME=0 SF_PRESENT_ACTIVITY_TICKS=0
+typeset -gi SF_PRESENT_HEARTBEAT_TIMEOUT=10
+typeset -g SF_PRESENT_HEARTBEAT_FD=''
+typeset -gr SF_PRESENT_HEARTBEAT_WORKER=sf-chat-heartbeat
+typeset -gi SF_PRESENT_ACTIVITY_FRAME=0
 typeset -gi SF_PRESENT_VERTICAL_COLUMN=-1
 typeset -g SF_PRESENT_HISTORY_DRAFT=''
 typeset -gi SF_PRESENT_HISTORY_CURSOR=0 SF_PRESENT_HISTORY_NO=0
 typeset -gi SF_PRESENT_HISTORY_LIMIT=100
 typeset -ga SF_PRESENT_HISTORY=()
 typeset -g SF_PRESENT_RENDER_ERROR=''
-KEYTIMEOUT=$SF_PRESENT_HEARTBEAT_TIMEOUT
+KEYTIMEOUT=5
 
 sf_chat_repaint_checked() {
   if [[ -z $SF_PRESENT_RENDER_ERROR ]]; then
@@ -36,48 +38,71 @@ sf_chat_repaint_checked() {
   return 1
 }
 
-# Nothing wakes ZLE while a turn streams, so the view is driven by a synthetic
-# key that dispatches the tick. Its prefix timeout yields to fd callbacks between
-# ticks. The undefined-key widget preserves the heartbeat through collisions.
+sf_chat_heartbeat_worker() {
+  emulate -L zsh
+  zmodload zsh/zselect || exit
+  while true; do
+    zselect -t "$1" 2>/dev/null || true
+    print -n . || exit
+  done
+}
+
 sf_chat_heartbeat_arm() {
-  [[ $SF_PRESENT_STATE == (working|cancelling) ]] || return 0
-  (( ${KEYS_QUEUED_COUNT:-0} == 0 && ${PENDING:-0} == 0 )) || return 0
-  zle -U $'\x18' || return 0
+  local mode=${1-} fd
+  [[ $SF_PRESENT_STATE == (working|cancelling) || $mode == drain ]] || return 0
+  [[ -z $SF_PRESENT_HEARTBEAT_FD ]] || return 0
+  zpty -b "$SF_PRESENT_HEARTBEAT_WORKER" sf_chat_heartbeat_worker \
+    "$SF_PRESENT_HEARTBEAT_TIMEOUT" || return 1
+  fd=$REPLY
+  if ! zle -F -w "$fd" sf_chat_heartbeat_ready; then
+    zpty -d "$SF_PRESENT_HEARTBEAT_WORKER" 2>/dev/null || true
+    return 1
+  fi
+  SF_PRESENT_HEARTBEAT_FD=$fd
+}
+
+sf_chat_heartbeat_stop() {
+  local fd=$SF_PRESENT_HEARTBEAT_FD
+  SF_PRESENT_HEARTBEAT_FD=''
+  [[ -z $fd ]] || zle -F "$fd" 2>/dev/null || true
+  zpty -d "$SF_PRESENT_HEARTBEAT_WORKER" 2>/dev/null || true
+}
+
+sf_chat_heartbeat_ready() {
+  local fd=$1 transport=$SF_CHAT_TRANSPORT_OUTPUT_FD
+  integer tick_status=0
+  if [[ -n ${2-} ]]; then
+    sf_chat_heartbeat_stop
+    return 1
+  fi
+  if (( ${KEYS_QUEUED_COUNT:-0} || ${PENDING:-0} )); then
+    sf_chat_heartbeat_stop
+    return 0
+  fi
+  while zselect -r "$fd" -t 0 2>/dev/null; do
+    read -k 1 -u "$fd" || { sf_chat_heartbeat_stop; return 1; }
+  done
+  if [[ -n $transport ]] && zselect -r "$transport" -t 0 2>/dev/null; then
+    sf_chat_exec_ready "$transport" || return 1
+  fi
+  sf_chat_heartbeat_tick || tick_status=$?
+  (( ! tick_status )) && return 0
+  (( tick_status != 2 )) || sf_chat_handoff_exec
+  # A live turn still needs draining, even degraded. Anything else cannot
+  # recover by itself, so stop instead of repainting the failure every interval.
+  [[ $SF_PRESENT_STATE == (working|cancelling) ]] || sf_chat_heartbeat_stop
+  return $tick_status
 }
 
 sf_chat_heartbeat_tick() {
-  if (( ! SF_PRESENT_HEARTBEAT_REMAINING )); then
-    zselect -t $SF_PRESENT_HEARTBEAT_TIMEOUT 2>/dev/null || true
-    SF_PRESENT_HEARTBEAT_REMAINING=$SF_PRESENT_HEARTBEAT_EPOCHS
-    if [[ $SF_PRESENT_STATE == working ]] && (( ++SF_PRESENT_ACTIVITY_TICKS == 2 )); then
-      SF_PRESENT_ACTIVITY_TICKS=0
-      SF_PRESENT_ACTIVITY_FRAME=$((
-        (SF_PRESENT_ACTIVITY_FRAME + 1) % ${#SF_PRESENT_ACTIVITY_FRAMES}
-      ))
-      SF_PRESENT_ACTIVITY=${SF_PRESENT_ACTIVITY_FRAMES[SF_PRESENT_ACTIVITY_FRAME + 1]}
-    fi
+  # The frame follows the clock, not provider traffic.
+  if [[ $SF_PRESENT_STATE == working ]]; then
+    SF_PRESENT_ACTIVITY_FRAME=$((
+      (SF_PRESENT_ACTIVITY_FRAME + 1) % ${#SF_PRESENT_ACTIVITY_FRAMES}
+    ))
+    SF_PRESENT_ACTIVITY=${SF_PRESENT_ACTIVITY_FRAMES[SF_PRESENT_ACTIVITY_FRAME + 1]}
   fi
   while true; do
-    if ! sf_chat_repaint_checked; then
-      if [[ -z $SF_PRESENT_RENDER_ERROR && $SF_PRESENT_STATE == idle ]]; then
-        continue
-      fi
-      [[ -n $SF_PRESENT_RENDER_ERROR ]] || return 1
-    fi
-    if [[ -z $SF_PRESENT_RENDER_ERROR ]] && (( SF_PRESENT_FLUSH_ROWS )); then
-      SF_PRESENT_HEARTBEAT_REMAINING=$(( SF_PRESENT_HEARTBEAT_REMAINING - 1 ))
-      sf_chat_terminal_stage || return 1
-      sf_chat_transport_unwatch
-      sf_chat_terminal_sync_start
-      PREDISPLAY=$SF_PRESENT_PENDING_TEXT
-      BUFFER=''
-      CURSOR=0
-      POSTDISPLAY=''
-      sf_chat_update_highlights pending || return 1
-      SF_PRESENT_ACTION=epoch
-      zle accept-line
-      return
-    fi
     if sf_chat_transport_has_pending; then
       while sf_chat_transport_has_pending; do
         sf_chat_pending_next || return 1
@@ -88,24 +113,53 @@ sf_chat_heartbeat_tick() {
       sf_chat_exec_finish || return 1
       continue
     fi
+    if ! sf_chat_repaint_checked; then
+      if [[ -z $SF_PRESENT_RENDER_ERROR && $SF_PRESENT_STATE == idle ]]; then
+        continue
+      fi
+      [[ -n $SF_PRESENT_RENDER_ERROR ]] || return 1
+    fi
+    if [[ -z $SF_PRESENT_RENDER_ERROR ]] && (( SF_PRESENT_FLUSH_ROWS )); then
+      sf_chat_terminal_stage || return 1
+      # Hold the frame so the commit and the redraw beneath it land together.
+      sf_chat_terminal_sync_start
+      # Draw the settled rows as the whole display, styling included, then hand
+      # the frame to the terminal: `zle -I` leaves what is drawn on screen and
+      # continues below it, which commits exactly those rows to scrollback. The
+      # editor rebuilds from there, so a scroll cannot desynchronise it.
+      PREDISPLAY=$SF_PRESENT_PENDING_TEXT
+      BUFFER=''
+      CURSOR=0
+      POSTDISPLAY=''
+      sf_chat_update_highlights pending || return 1
+      zle -R
+      zle -I
+      sf_chat_terminal_finish || return 1
+      sf_chat_terminal_restore
+      sf_chat_repaint_checked || return 1
+      zle -R
+      sf_chat_terminal_sync_end
+      sf_chat_heartbeat_arm drain
+      return
+    fi
     if [[ -n $SF_PRESENT_RENDER_ERROR ]]; then
       zle -M "$SF_PRESENT_RENDER_ERROR Waiting for turn to finish."
     else
       zle -R
     fi
-    # A stream that outruns its epochs ends the chain here rather than in line
-    # initialization, so the held view has to be released here too, or nothing
-    # is presented until the turn starves.
+    # Release a synchronized update even when no rows were committed.
     sf_chat_terminal_sync_end
-    SF_PRESENT_HEARTBEAT_REMAINING=0
     if [[ $SF_PRESENT_ACTION == handoff ]]; then
-      zle accept-line
-    elif (( SF_PRESENT_EXIT_PENDING )) && [[ $SF_PRESENT_STATE == idle ]]; then
-      SF_PRESENT_ACTION=quit
-      zle accept-line
+      sf_chat_terminal_sync_end force
+      return 2
+    elif [[ $SF_PRESENT_STATE == queued ]]; then
+      SF_PRESENT_STATE=idle
+      sf_chat_turn "$SF_PRESENT_SUBMITTED" || return 1
+      continue
     else
       sf_chat_heartbeat_arm
     fi
+    [[ $SF_PRESENT_STATE == (working|cancelling) ]] || sf_chat_heartbeat_stop
     return
   done
 }
@@ -113,10 +167,6 @@ sf_chat_heartbeat_tick() {
 sf_chat_line_init() {
   sf_chat_terminal_restore
   sf_chat_transport_watch sf_chat_exec_ready
-  if [[ $SF_PRESENT_STATE == working ]] && (( SF_PRESENT_HEARTBEAT_REMAINING )); then
-    sf_chat_heartbeat_tick
-    return
-  fi
   if ! sf_chat_repaint_checked; then
     if [[ -z $SF_PRESENT_RENDER_ERROR && $SF_PRESENT_STATE == idle ]]; then
       sf_chat_repaint_checked || return 1
@@ -129,9 +179,6 @@ sf_chat_line_init() {
   if (( SF_PRESENT_FLUSH_ROWS )) && [[ $SF_PRESENT_STATE != working ]]; then
     sf_chat_terminal_stage || return 1
     SF_PRESENT_ACTION=epoch
-    zle accept-line
-  elif (( SF_PRESENT_EXIT_PENDING )) && [[ $SF_PRESENT_STATE == idle ]]; then
-    SF_PRESENT_ACTION=quit
     zle accept-line
   elif [[ $SF_PRESENT_STATE == queued ]]; then
     SF_PRESENT_DRAFT=$BUFFER
@@ -163,11 +210,6 @@ sf_chat_line_finish() {
 }
 
 sf_chat_pre_redraw() {
-  if (( SF_PRESENT_HEARTBEAT_DEFERRED )); then
-    # Keep the next heartbeat behind the replayed terminal input.
-    SF_PRESENT_HEARTBEAT_DEFERRED=0
-    return 0
-  fi
   (( ! SF_PRESENT_PENDING_ROWS )) || return 0
   if (( SF_PRESENT_HISTORY_NO )) && [[ $SF_PRESENT_STATE != permission &&
       $BUFFER != $SF_PRESENT_HISTORY[$SF_PRESENT_HISTORY_NO] ]]; then
@@ -382,19 +424,6 @@ sf_chat_insert() {
   zle .self-insert
 }
 
-sf_chat_undefined_key() {
-  if [[ $KEYS == $'\x18'?* ]]; then
-    if [[ ${KEYS[2]} == $'\e' ]]; then
-      SF_PRESENT_HEARTBEAT_DEFERRED=1
-    else
-      zle -U $'\x18'
-    fi
-    zle -U "${KEYS[2,-1]}"
-    return
-  fi
-  zle .undefined-key
-}
-
 sf_chat_interrupt() {
   local intent
   if [[ $SF_PRESENT_STATE == (idle|stopped) && -n $BUFFER ]]; then
@@ -413,28 +442,39 @@ sf_chat_interrupt() {
   fi
 }
 
+# Escape cannot be told from the start of an arrow key without an idle window,
+# and a streaming turn never provides one, so it cannot carry cancellation:
+# Ctrl-C does. It stays bound all the same, because an escape with no exact
+# binding leaves the editor waiting for the rest of a sequence that never
+# arrives, and the next key then completes a meta binding instead.
 sf_chat_escape() {
-  if [[ $SF_PRESENT_STATE == (working|cancelling|permission) ]]; then
-    sf_chat_interrupt
-  else
-    zle -R
-  fi
+  zle -R
+}
+
+sf_chat_handoff_exec() {
+  sf_chat_heartbeat_stop
+  [[ $SF_PRESENT_STATE == idle ]] || sf_chat_transport_stop
+  zle -I
+  stty "$SF_PRESENT_TTY" 2>/dev/null || true
+  print
+  # A fresh interactive shell prevents the next controller inheriting active ZLE state.
+  exec zsh -f -i "${SF_PRESENT_HANDOFF[@]}" </dev/tty >/dev/tty 2>/dev/tty
+  print -u2 -r -- 'Cannot execute handoff.'
+  exit 1
 }
 
 sf_chat_bind() {
   SF_PRESENT_HISTORY=()
   SF_PRESENT_PERMISSION_DRAFT=''
   SF_PRESENT_PERMISSION_CURSOR=0
-  SF_PRESENT_HEARTBEAT_REMAINING=0
-  SF_PRESENT_HEARTBEAT_DEFERRED=0
+  SF_PRESENT_HEARTBEAT_FD=''
   SF_PRESENT_RENDER_ERROR=''
   SF_PRESENT_VERTICAL_COLUMN=-1
   sf_chat_history_reset
   zle -N sf_chat_exec_ready
-  zle -N sf_chat_heartbeat_tick
+  zle -N sf_chat_heartbeat_ready
   zle -N sf_chat_accept
   zle -N sf_chat_insert
-  zle -N undefined-key sf_chat_undefined_key
   zle -N sf_chat_insert_newline
   zle -N sf_chat_up
   zle -N sf_chat_down
@@ -458,11 +498,9 @@ sf_chat_bind() {
   bindkey -M sf-present $'\e[1;1B' sf_chat_down
   bindkey -M sf-present $'\eOA' sf_chat_up
   bindkey -M sf-present $'\eOB' sf_chat_down
+  bindkey -M sf-present $'\e[3;5~' kill-word
   bindkey -M sf-present '^C' sf_chat_interrupt
   bindkey -M sf-present $'\e' sf_chat_escape
-  bindkey -rpM sf-present $'\x18'
-  bindkey -M sf-present $'\x18' sf_chat_heartbeat_tick
-  bindkey -M sf-present $'\x18\x1f' sf_chat_heartbeat_tick
   bindkey -M sf-present ' ' sf_chat_insert
   bindkey -M sf-present -R $'!-~' sf_chat_insert
   bindkey -D sf-permission 2>/dev/null || true

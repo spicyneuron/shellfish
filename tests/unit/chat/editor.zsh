@@ -10,7 +10,14 @@ typeset -g SF_PRESENT_STATE=idle
 typeset -g SF_PRESENT_FOOTER=test/model
 typeset -gi COLUMNS=80 LINES=10
 typeset -ga ZLE_CALLS=()
-zle() { ZLE_CALL="$*"; ZLE_CALLS+=( "$*" ); }
+typeset -g COMMITTED=''
+# A commit hands its rows to the terminal by leaving them drawn when the display
+# is invalidated, so that is the moment worth capturing.
+zle() {
+  ZLE_CALL="$*"
+  ZLE_CALLS+=( "$*" )
+  [[ $1 != -I ]] || COMMITTED=$PREDISPLAY$BUFFER$POSTDISPLAY
+}
 sf_chat_answer_permission() {
   assert_equal approve "$1"
   BUFFER=draft
@@ -68,44 +75,22 @@ assert_equal quit "$SF_PRESENT_ACTION"
 assert_equal accept-line "$ZLE_CALL"
 assert_equal 130 "$SF_PRESENT_EXIT_STATUS"
 
-SF_PRESENT_STATE=idle
+# Escape never cancels: it cannot be told from an arrow key without an idle
+# window, and a streaming turn never provides one.
+SF_PRESENT_STATE=working
 SF_PRESENT_ACTION=''
-BUFFER=draft
 ZLE_CALL=''
-KEYS=$'\e'
 sf_chat_escape
-assert_equal draft "$BUFFER"
+assert_equal working "$SF_PRESENT_STATE"
 assert_equal '' "$SF_PRESENT_ACTION"
 assert_equal -R "$ZLE_CALL"
 
-KEYS=$'\x18\t'
-ZLE_CALLS=()
-sf_chat_undefined_key
-assert_equal $'-U \x18' "$ZLE_CALLS[-2]"
-assert_equal $'-U \t' "$ZLE_CALLS[-1]"
-KEYS=$'\x18\e'
-ZLE_CALLS=()
-sf_chat_undefined_key
-assert_equal 1 "${#ZLE_CALLS}"
-assert_equal $'-U \e' "$ZLE_CALLS[1]"
 SF_PRESENT_STATE=working
-KEYS_QUEUED_COUNT=0
-PENDING=0
 SF_PRESENT_PENDING_ROWS=1
 ZLE_CALLS=()
 sf_chat_pre_redraw
 assert_equal 0 "${#ZLE_CALLS}"
 SF_PRESENT_PENDING_ROWS=0
-sf_chat_pre_redraw
-assert_equal $'-U \x18' "$ZLE_CALLS[-1]"
-KEYS=$'\x18\u00e9'
-ZLE_CALLS=()
-sf_chat_undefined_key
-assert_equal $'-U \x18' "$ZLE_CALLS[-2]"
-assert_equal $'-U \u00e9' "$ZLE_CALLS[-1]"
-KEYS=$'\t'
-sf_chat_undefined_key
-assert_equal .undefined-key "$ZLE_CALL"
 
 SF_PRESENT_STATE=queued
 SF_PRESENT_ACTION=''
@@ -134,11 +119,9 @@ BUFFER=draft
 ZLE_CALLS=()
 sf_chat_interrupt
 assert_equal draft "$BUFFER"
-assert_equal '' "$SF_PRESENT_ACTION"
-assert_equal 1 "$SF_PRESENT_EXIT_PENDING"
+assert_equal quit "$SF_PRESENT_ACTION"
 assert_equal 130 "$SF_PRESENT_EXIT_STATUS"
-assert_equal -R "$ZLE_CALLS[-1]"
-SF_PRESENT_EXIT_PENDING=0
+assert_equal accept-line "$ZLE_CALLS[-1]"
 
 SF_PRESENT_STATE=permission
 SF_PRESENT_PERMISSION_TOOL=shell
@@ -186,62 +169,61 @@ LBUFFER=first
 sf_chat_insert_newline
 assert_equal $'first\n' "$LBUFFER"
 
-# Pre-redraw runs after every widget, so an empty heartbeat queue always earns
-# a replacement.
+# An active turn registers one heartbeat descriptor and reuses it across redraws.
 SF_PRESENT_STATE=working
-KEYS_QUEUED_COUNT=0
-PENDING=0
+SF_PRESENT_PENDING_ROWS=0
 ZLE_CALLS=()
 sf_chat_pre_redraw
-assert_equal $'-U \x18' "$ZLE_CALLS[-1]"
+[[ -n $SF_PRESENT_HEARTBEAT_FD ]] || fail 'chat heartbeat descriptor was not opened'
+[[ $ZLE_CALLS[-1] == '-F -w '*' sf_chat_heartbeat_ready' ]] ||
+  fail 'chat heartbeat descriptor was not watched'
+if zselect -r "$SF_PRESENT_HEARTBEAT_FD" -t 1 2>/dev/null; then
+  fail 'chat heartbeat fired before its configured interval'
+fi
+ZLE_CALLS=()
+sf_chat_pre_redraw
+[[ ${(j: :)ZLE_CALLS} != *sf_chat_heartbeat_ready* ]] ||
+  fail 'chat registered a second heartbeat watcher'
+sf_chat_heartbeat_stop
+assert_equal '' "$SF_PRESENT_HEARTBEAT_FD"
 
-# Input already waiting will wake ZLE on its own, and queuing a second tick
-# behind it would double the heartbeat for every redraw that follows.
-KEYS_QUEUED_COUNT=1
-ZLE_CALLS=()
-sf_chat_pre_redraw
-assert_equal 0 "${#ZLE_CALLS}"
-KEYS_QUEUED_COUNT=0
-PENDING=1
-ZLE_CALLS=()
-sf_chat_pre_redraw
-assert_equal 0 "${#ZLE_CALLS}"
+# The remaining tests exercise the tick independently of its process lifecycle.
+sf_chat_heartbeat_arm() { return 0; }
 
 SF_PRESENT_STATE=cancelling
-KEYS_QUEUED_COUNT=0
-PENDING=0
 ZLE_CALLS=()
 sf_chat_heartbeat_arm
-assert_equal $'-U \x18' "$ZLE_CALLS[-1]"
+assert_equal 0 "${#ZLE_CALLS}"
 
 sf_chat_reset
 sf_chat_terminal_reset
 sf_chat_add message agent '' $'one\ntwo\nthree\nfour\nfive\nsix'
 SF_PRESENT_STATE=working
+SF_PRESENT_ACTION=''
 typeset -gi KEYS_QUEUED_COUNT=0 PENDING=0
 COLUMNS=80
 LINES=10
-# No fd callback runs in this path. The queued heartbeat alone starts the epoch
-# and line initialization drains the remaining bounded viewport.
+# Each heartbeat commits one bounded batch to scrollback, without leaving the
+# active editor and without spilling editor chrome into it.
+BUFFER=draft
+CURSOR=3
 ZLE_CALLS=()
-sf_chat_heartbeat_arm
-assert_equal $'-U \x18' "$ZLE_CALLS[-1]"
+COMMITTED=''
 sf_chat_heartbeat_tick
-assert_equal epoch "$SF_PRESENT_ACTION"
-assert_equal accept-line "$ZLE_CALL"
-assert_equal 4 "$SF_PRESENT_PENDING_ROWS"
-assert_equal 9 "$SF_PRESENT_HEARTBEAT_REMAINING"
-sf_chat_line_finish
-sf_chat_line_init
-assert_equal epoch "$SF_PRESENT_ACTION"
-assert_equal accept-line "$ZLE_CALL"
-sf_chat_line_finish
+assert_equal '' "$SF_PRESENT_ACTION"
+assert_equal 0 "$SF_PRESENT_PENDING_ROWS"
+assert_equal draft "$BUFFER"
+assert_equal 3 "$CURSOR"
+[[ $COMMITTED == *one* ]] || fail 'heartbeat did not commit the settled rows'
+[[ $COMMITTED != *❯* && $COMMITTED != *test/model* ]] ||
+  fail 'heartbeat committed editor chrome to scrollback'
+[[ ${(j: :)ZLE_CALLS} != *accept-line* ]] ||
+  fail 'descriptor heartbeat left the active editor'
+sf_chat_heartbeat_tick
 assert_equal 0 "${#SF_PRESENT_NODE_TYPE}"
 
-# A heartbeat that finds only a mutable tail repaints and rearms itself rather
-# than waiting for another fd notification. A stream that outruns its epochs
-# ends its chain here rather than in line initialization, so this is where the
-# held view has to be released; holding it spans the rest of the turn.
+# A heartbeat that finds only a mutable tail repaints and releases the
+# synchronized update rather than holding it across the rest of the turn.
 sf_chat_reset
 sf_chat_terminal_reset
 sf_chat_add message agent '' partial open
@@ -249,22 +231,18 @@ SF_PRESENT_STATE=working
 SF_PRESENT_SYNC_ACTIVE=1
 ZLE_CALLS=()
 sf_chat_heartbeat_tick
-assert_equal '-R' "$ZLE_CALLS[-2]"
-assert_equal $'-U \x18' "$ZLE_CALLS[-1]"
+assert_equal 1 "${#ZLE_CALLS}"
+assert_equal '-R' "$ZLE_CALLS[-1]"
 assert_equal 0 "$SF_PRESENT_SYNC_ACTIVE"
 
-# Timed heartbeats advance and repaint the activity pulse.
+# Each heartbeat advances and repaints the activity pulse.
 sf_chat_reset
 sf_chat_terminal_reset
 sf_chat_add activity '' '' '' open
 SF_PRESENT_STATE=working
-SF_PRESENT_HEARTBEAT_TIMEOUT=0
-SF_PRESENT_HEARTBEAT_REMAINING=0
 SF_PRESENT_ACTIVITY_FRAME=0
-SF_PRESENT_ACTIVITY_TICKS=0
 SF_PRESENT_ACTIVITY=${SF_PRESENT_ACTIVITY_FRAMES[1]}
 typeset activity=$SF_PRESENT_ACTIVITY
-sf_chat_heartbeat_tick
 sf_chat_heartbeat_tick
 [[ $SF_PRESENT_ACTIVITY != $activity ]] || fail 'activity frame did not advance'
 [[ $PREDISPLAY == *$SF_PRESENT_ACTIVITY* ]] || fail 'activity frame was not repainted'
@@ -333,18 +311,23 @@ sf_chat_bind
   fail 'chat keymap does not bind parameterized up-arrow navigation'
 [[ $(bindkey -M sf-present $'\e[1;1B') == *sf_chat_down ]] ||
   fail 'chat keymap does not bind parameterized down-arrow navigation'
+[[ $(bindkey -M sf-present $'\e[3;5~') == *kill-word ]] ||
+  fail 'chat keymap does not bind control-delete'
 [[ $(bindkey -M sf-permission '^P') == *undefined-key ]] ||
   fail 'permission keymap permits vertical navigation'
 [[ $(bindkey -M sf-present '^C') == *sf_chat_interrupt ]] ||
   fail 'chat keymap bypasses the interrupt widget'
+# Escape stays bound to an inert widget: unbound, it is a bare prefix that
+# leaves the editor waiting for a sequence that never arrives, and the next key
+# then completes a meta binding instead.
 [[ $(bindkey -M sf-present $'\e') == *sf_chat_escape ]] ||
-  fail 'chat keymap does not interrupt on escape'
-[[ $(bindkey -M sf-present $'\x18x') == *undefined-key ]] ||
-  fail 'chat heartbeat suffix does not use the generic fallback'
+  fail 'chat keymap leaves escape an unresolved prefix'
+[[ $(bindkey -M sf-present $'\x18') != *sf_chat_heartbeat* ]] ||
+  fail 'chat keymap reserves control-X for its heartbeat'
 [[ $(bindkey -M sf-permission '^C') == *sf_chat_interrupt ]] ||
   fail 'permission keymap bypasses the interrupt widget'
 [[ $(bindkey -M sf-permission $'\e') == *sf_chat_escape ]] ||
-  fail 'permission keymap bypasses the escape widget'
+  fail 'permission keymap leaves escape an unresolved prefix'
 
 # A live repaint failure is reported once, cannot stage partial renderer state,
 # and leaves the heartbeat draining transport until the turn completes.

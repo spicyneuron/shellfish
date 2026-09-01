@@ -43,7 +43,7 @@ sf_chat_terminal_sync_end() {
   return 0
 }
 
-# Freeze the viewport's current flush before ZLE accepts the epoch.
+# Freeze the viewport's current flush before committing it.
 sf_chat_terminal_stage() {
   (( ! SF_PRESENT_PENDING_ROWS )) || return 1
   (( SF_PRESENT_FLUSH_ROWS )) || return 1
@@ -59,8 +59,9 @@ sf_chat_terminal_stage() {
   SF_PRESENT_FLUSH_ROWS=0
 }
 
-# Replace the accepted editor view with the staged rows. ZLE supplies the final
-# newline, so an empty string still flushes one blank terminal row.
+# Advance presentation state after the caller commits the staged rows. An
+# accepted line supplies its newline; a descriptor commit leaves the rows drawn
+# and invalidates the display.
 sf_chat_terminal_finish() {
   integer node offset was_visible=$SF_PRESENT_PREFIX_VISIBLE
   local rest suffix

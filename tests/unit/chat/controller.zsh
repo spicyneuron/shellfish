@@ -187,6 +187,20 @@ sf_chat_viewport 80 20 "$SF_PRESENT_CURSOR"
 [[ $ZLE_CALLS == *'-R'* ]] ||
   fail 'recovery did not repaint ZLE'
 
+# Cancelling mid-stream leaves a flushed prefix whose open node was never
+# persisted, so recovery drops the whole presentation. The saved cursor is an
+# offset into that node, and keeping it points past everything that remains.
+sf_chat_reset
+sf_chat_terminal_reset
+SF_PRESENT_SESSION=$tmp/recover.jsonl
+SF_PRESENT_PREFIX_VISIBLE=1
+sf_chat_add message agent '' 'streamed text that never reached the session' open
+SF_PRESENT_CURSOR='1:30'
+sf_chat_recover 'Cancelled.' || fail 'recovery rejected an unmatched open prefix'
+assert_equal 1:0 "$SF_PRESENT_CURSOR"
+sf_chat_viewport 80 20 "$SF_PRESENT_CURSOR" ||
+  fail 'recovery left a cursor the viewport cannot render'
+
 # Buffered transport records are applied as one semantic batch after older rows
 # stop flushing. The bounded viewport still sends their display rows to
 # scrollback in source order.
@@ -202,8 +216,6 @@ SF_CHAT_TRANSPORT_LINES=(
   '{"type":"message","role":"assistant","stop":"end","content":[{"type":"text","text":"one two three four five six seven eight"}]}'
   '{"type":"context","hook":"project","script":"test","content":"later"}'
 )
-SF_PRESENT_HEARTBEAT_EPOCHS=1
-SF_PRESENT_HEARTBEAT_REMAINING=0
 BUFFER=''
 CURSOR=0
 COLUMNS=12
@@ -227,16 +239,17 @@ fi
 assert_equal closed "$SF_PRESENT_NODE_STATE[2]"
 injections=( ${(M)SF_PRESENT_NODE_TYPE:#injection} )
 assert_equal 1 "${#injections}"
-assert_equal epoch "$SF_PRESENT_ACTION"
-[[ $SF_PRESENT_PENDING_TEXT != *later* ]] ||
+assert_equal '' "$SF_PRESENT_ACTION"
+assert_equal 0 "$SF_PRESENT_PENDING_ROWS"
+[[ $ZLE_CALLS != *accept-line* ]] ||
+  fail 'transport batch left the active editor'
+integer context_node=${SF_PRESENT_NODE_TYPE[(i)injection]}
+integer cursor_node=${SF_PRESENT_CURSOR%%:*}
+(( cursor_node < context_node )) ||
   fail 'later context crossed the bounded assistant viewport'
-sf_chat_line_finish
-sf_chat_line_init
 functions[sf_chat_markdown_highlight]=$functions[sf_chat_markdown_saved]
 unfunction sf_chat_markdown_saved
 SF_PRESENT_HIGHLIGHT_ENABLED=0
-SF_PRESENT_HEARTBEAT_EPOCHS=10
-
 # Successful completion stages the FIFO head as the next ordinary user turn.
 sf_chat_reset
 sf_chat_terminal_reset

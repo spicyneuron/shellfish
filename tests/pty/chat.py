@@ -123,66 +123,35 @@ def test_zle_wrapped_line_navigation():
         session.close()
 
 
-def test_zle_preserves_heartbeat_through_input_collisions():
-    editor = Path(__file__).resolve().parents[2] / "lib/chat/editor.zsh"
-    script = r'''
-zmodload zsh/zle || exit
-source "$1" || exit
-sf_test_init() { zle -U $'\x18xyz'; }
-sf_test_tick() { (( ++ticks )); zle accept-line; }
-zle -N sf-test-replay sf_chat_undefined_key
-zle -N sf-test-tick sf_test_tick
-zle -N zle-line-init sf_test_init
-bindkey -N sf-test emacs
-# Direct bindings make each combined-key dispatch deterministic.
-bindkey -M sf-test $'\x18x' sf-test-replay
-bindkey -M sf-test $'\x18y' sf-test-replay
-bindkey -M sf-test $'\x18z' sf-test-replay
-bindkey -M sf-test $'\x18' sf-test-tick
-input=''
-integer ticks=0
-vared -M sf-test input
-print -r -- "BUFFER=$input TICKS=$ticks"
-'''
-    master, slave = pty.openpty()
-    process = subprocess.Popen(
-        ["zsh", "-f", "-c", script, "heartbeat-test", str(editor)],
-        stdin=slave, stdout=slave, stderr=slave, close_fds=True,
+def test_streaming_input_sequences_remain_atomic():
+    prompt = " ".join(f"stream{i}" for i in range(30))
+    session = Session(
+        explicit_session=True,
+        env={"SF_TEST_BACKEND_DELAY": "0.08"},
     )
-    os.close(slave)
-    output = b""
     try:
-        end = time.monotonic() + 3
-        while process.poll() is None and time.monotonic() < end:
-            if not select.select([master], [], [], 0.05)[0]:
-                continue
-            try:
-                chunk = os.read(master, 65536)
-            except OSError:
-                break
-            if not chunk:
-                break
-            output += chunk
-        try:
-            process.wait(timeout=1)
-        except subprocess.TimeoutExpired as error:
-            detail = output.decode("utf-8", "replace")
-            raise AssertionError(f"heartbeat replay ZLE did not exit: {detail}") from error
-        while select.select([master], [], [], 0)[0]:
-            try:
-                chunk = os.read(master, 65536)
-            except OSError:
-                break
-            if not chunk:
-                break
-            output += chunk
-        assert process.poll() == 0, output.decode("utf-8", "replace")
-        assert b"BUFFER=xyz TICKS=1" in output, output.decode("utf-8", "replace")
+        mark = len(session.output)
+        session.send(prompt.encode() + b"\r")
+        session.wait_session_records(2, path=session.explicit_session)
+        session.wait_after(mark, "stream0")
+
+        sequence = b"\x1b[A\x1b[B\x1b[C\x1b[D\x1b[3;5~"
+        for index in range(8):
+            session.send(b"draft" + str(index).encode() + sequence)
+            session.pump(0.08)
+
+        session.wait_session_records(3, timeout=5, path=session.explicit_session)
+        session.send(b"X\r")
+        _, records = session.wait_session_records(
+            4, timeout=5, path=session.explicit_session
+        )
+        draft = records[-1]["content"][0]["text"]
+        assert draft == "draft" * 8 + "X", draft
+        output = session.visible(mark)
+        assert "Rendering failed" not in output, output
+        assert not re.search(r"\[\d+\].*(?:done|terminated)", output, re.I), output
     finally:
-        if process.poll() is None:
-            process.kill()
-            process.wait()
-        os.close(master)
+        session.close()
 
 
 def test_startup_records_precede_two_turns():
@@ -270,7 +239,7 @@ def test_activity_input_does_not_delay_interrupt():
         session.close()
 
 
-def test_slow_tool_animates_until_escape():
+def test_slow_tool_animates_until_interrupt():
     session = Session(
         env={"SF_TEST_BACKEND_DELAY_MATCH_SECONDS": "0.5"}, sandbox=False
     )
@@ -301,7 +270,7 @@ def test_slow_tool_animates_until_escape():
             session.pump()
         visible = session.visible(mark)
         assert seen != before and "Cancelled." not in visible, visible
-        session.send(b"\x1b")
+        session.send(b"\x03")
         session.wait_after(mark, "Cancelled.", timeout=1.5)
     finally:
         session.close()
@@ -573,7 +542,7 @@ def main():
     test_startup_records_precede_two_turns()
     test_tool_uses_manifest_display()
     test_activity_input_does_not_delay_interrupt()
-    test_slow_tool_animates_until_escape()
+    test_slow_tool_animates_until_interrupt()
     test_permission_decisions_restore_draft()
     test_permission_ctrl_c_cancels_pending_tools()
     test_repeated_permission_ctrl_c_exits_after_recovery()
@@ -581,7 +550,7 @@ def main():
     test_chat_end()
     test_zle_multiline_editing()
     test_zle_wrapped_line_navigation()
-    test_zle_preserves_heartbeat_through_input_collisions()
+    test_streaming_input_sequences_remain_atomic()
     test_sigterm_leaves_terminal_state()
     print("PASS terminal PTY scenarios")
 

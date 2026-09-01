@@ -8,9 +8,10 @@ typeset -g SF_PRESENT_STATE=idle SF_PRESENT_PERMISSION_ID=''
 typeset -g SF_PRESENT_PERMISSION_TOOL='' SF_PRESENT_PERMISSION_TEXT=''
 typeset -g SF_PRESENT_PERMISSION_LANGUAGE=''
 typeset -gi SF_PRESENT_PERMISSION_PREVIEW_LENGTH=0
-typeset -gi SF_PRESENT_EXIT_STATUS=0 SF_PRESENT_EXIT_PENDING=0
+typeset -gi SF_PRESENT_EXIT_STATUS=0
 typeset -g SF_PRESENT_REASONING_TOKENS=''
 typeset -g SF_PRESENT_IDENTITY='' SF_PRESENT_FOOTER=''
+typeset -g SF_PRESENT_TTY=''
 
 sf_chat_permission_reset() {
   SF_PRESENT_PERMISSION_ID=''
@@ -91,7 +92,8 @@ sf_chat_cancel() {
     queued) return ;;
     cancelling)
       SF_PRESENT_EXIT_STATUS=130
-      SF_PRESENT_EXIT_PENDING=1
+      SF_PRESENT_ACTION=quit
+      REPLY=quit
       return
       ;;
     permission)
@@ -190,9 +192,7 @@ sf_chat_recover() {
   fi
   sf_chat_reload "$SF_PRESENT_SESSION" || return 1
   if (( visible )); then
-    if [[ -z $type ]]; then
-      sf_chat_reset
-    else
+    if [[ -n $type ]]; then
       for (( index = 1; index <= ${#SF_PRESENT_NODE_TYPE}; index++ )); do
         if [[ $SF_PRESENT_NODE_TYPE[index] == $type &&
             $SF_PRESENT_NODE_ROLE[index] == $role &&
@@ -203,16 +203,19 @@ sf_chat_recover() {
           break
         fi
       done
-      if (( match )); then
-        sf_chat_drop $(( match - 1 )) || return 1
-      elif [[ $state == open ]]; then
-        sf_chat_reset
-      else
-        SF_PRESENT_ERROR='cannot reconcile presentation with flushed scrollback'
-        return 1
-      fi
     fi
-    SF_PRESENT_CURSOR=$cursor
+    if (( match )); then
+      sf_chat_drop $(( match - 1 )) || return 1
+      # The cursor is an offset into the node the prefix stopped at, so it
+      # outlives the reload only when that node does.
+      SF_PRESENT_CURSOR=$cursor
+    elif [[ -z $type || $state == open ]]; then
+      sf_chat_reset
+      SF_PRESENT_CURSOR='1:0'
+    else
+      SF_PRESENT_ERROR='cannot reconcile presentation with flushed scrollback'
+      return 1
+    fi
   fi
   sf_chat_notice error "$heading" "$detail"
 }
@@ -297,9 +300,7 @@ sf_chat_turn() {
   SF_PRESENT_HANDOFF=()
   SF_PRESENT_REASONING_TOKENS=''
   SF_PRESENT_RENDER_ERROR=''
-  SF_PRESENT_HEARTBEAT_REMAINING=0
   SF_PRESENT_ACTIVITY_FRAME=0
-  SF_PRESENT_ACTIVITY_TICKS=0
   SF_PRESENT_ACTIVITY=${SF_PRESENT_ACTIVITY_FRAMES[1]}
   SF_PRESENT_STATE=working
   sf_chat_add activity '' '' '' open || { SF_PRESENT_STATE=idle; return 1; }
@@ -342,7 +343,6 @@ sf_chat_controller() {
   SF_PRESENT_SUBMITTED=''
   SF_PRESENT_QUEUE=()
   SF_PRESENT_EXIT_STATUS=0
-  SF_PRESENT_EXIT_PENDING=0
   SF_PRESENT_RENDER_ERROR=''
   sf_chat_rows_config "${SF_PRESENTATION:-\{\}}" || {
     SF_PRESENT_ERROR='cannot read presentation configuration'
@@ -369,6 +369,7 @@ sf_chat_controller() {
   sf_chat_bind
   PROMPT=''
   saved_tty=$(stty -g 2>/dev/null) || return 1
+  SF_PRESENT_TTY=$saved_tty
   if [[ -n $initial ]]; then
     sf_chat_record_prompt "$initial"
     sf_chat_event user "$initial" || return 1
@@ -390,6 +391,7 @@ sf_chat_controller() {
       *) break ;;
     esac
   done
+  sf_chat_heartbeat_stop
   sf_chat_terminal_sync_end force
   [[ $SF_PRESENT_STATE == idle ]] || sf_chat_transport_stop
   print
