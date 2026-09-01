@@ -140,12 +140,13 @@ sf_runtime_resolve() {
 sf_runtime_resolve_from_config() {
   local requested_config=$1 profile_override=$2 model_override=$3 request_override=$4
   local backend_override=${5-}
-  local config_path config_dir='' raw='{}' defaults prepared presentation value
+  local config_path config_dir='' raw='{}' defaults decoded prepared presentation
   local backend_name backend_reference backend_dir backend_base manifest tool_manifest command
   local reference resolved hook external_name final settings fence='' env_file=''
   local home=${HOME-} sandbox_read_paths=${_SHELLFISH_SANDBOX_READ_PATHS:-[]}
   local theme_marker=': shellfish:unknown-theme:'
-  local -a fields tool_entries component_entries resolved_args finalized
+  local -a fields tool_entries tool_paths tool_manifests sandbox_flags
+  local -a component_entries resolved_args finalized
   integer tool_count component_count index tool_index needs_fence=0 sandbox_enabled=1
 
   SF_RUNTIME_ERROR=''
@@ -165,54 +166,52 @@ sf_runtime_resolve_from_config() {
 
   external_name=${backend_override%/}
   external_name=${external_name:t}
-  prepared=$(jq -L "$SF_ROOT/lib" -cnce --argjson defaults "$defaults" \
+  decoded=$(jq -L "$SF_ROOT/lib" -jnre --argjson defaults "$defaults" \
     --argjson raw "$raw" --arg profile_override "$profile_override" \
     --arg model_override "$model_override" --argjson request_override "$request_override" \
     --arg backend_override "$backend_override" \
     --arg external_backend_name "$external_name" --arg home "$home" '
       include "runtime/config";
+      def record: ., "\u0000";
       {defaults:$defaults,raw:$raw,profile_override:$profile_override,
        model_override:$model_override,request_override:$request_override,
        backend_override:$backend_override,
-       external_backend_name:$external_backend_name,home:$home} | runtime_prepare
+       external_backend_name:$external_backend_name,home:$home} |
+      runtime_prepare as $prepared |
+      ($prepared | tojson | record),
+      ($prepared.presentation | tojson | record),
+      ($prepared.profile.harness |
+        if has("sandbox") then .sandbox else true end | tostring | record),
+      ($prepared.backend_name | record),
+      ($prepared.backend_reference | record),
+      ($prepared.backend_external | tostring | record),
+      ($prepared.tool_references | length | tostring | record),
+      ($prepared.hook_component_references | length | tostring | record),
+      ($prepared.tool_references[] | record),
+      ($prepared.hook_component_references[] | .hook, "\u0000", .reference, "\u0000"),
+      ("ok" | record)
   ' 2>&1) || {
-    if [[ $prepared == *"$theme_marker"* ]]; then
-      sf_runtime_fail "unknown theme: ${prepared#*"$theme_marker"}"
+    if [[ $decoded == *"$theme_marker"* ]]; then
+      sf_runtime_fail "unknown theme: ${decoded#*"$theme_marker"}"
     else
-      sf_runtime_validation_error "$prepared" "cannot prepare runtime"
+      sf_runtime_validation_error "$decoded" "cannot prepare runtime"
     fi
     return
   }
-  presentation=$(jq -c '.presentation' <<<"$prepared" 2>/dev/null) || {
-    sf_runtime_fail 'cannot inspect prepared presentation'
-    return
-  }
-
-  while IFS= read -r -d '' value; do
-    fields+=( "$value" )
-  done < <(jq -jrn --argjson prepared "$prepared" '
-    def record: ., "\u0000";
-    ($prepared.backend_name | record),
-    ($prepared.backend_reference | record),
-    ($prepared.backend_external | tostring | record),
-    ($prepared.tool_references | length | tostring | record),
-    ($prepared.hook_component_references | length | tostring | record),
-    ($prepared.tool_references[] | record),
-    ($prepared.hook_component_references[] | .hook, "\u0000", .reference, "\u0000"),
-    ("ok" | record)
-  ' 2>/dev/null)
-  (( ${#fields} >= 6 )) && [[ $fields[-1] == ok ]] || {
+  fields=( "${(@0)${decoded%$'\0'}}" )
+  (( ${#fields} >= 9 )) && [[ $fields[-1] == ok ]] || {
     sf_runtime_fail 'cannot inspect prepared runtime'
     return
   }
+  prepared=$fields[1]
+  presentation=$fields[2]
+  [[ $fields[3] == true ]] || sandbox_enabled=0
+  fields=( "${(@)fields[4,-1]}" )
   backend_name=$fields[1]
   backend_reference=$fields[2]
   tool_count=$fields[4]
   component_count=$fields[5]
   index=6
-  jq -e '.profile.harness |
-    if has("sandbox") then .sandbox else true end' \
-    <<<"$prepared" >/dev/null 2>&1 || sandbox_enabled=0
 
   backend_base=$config_dir
   if [[ $fields[3] == true ]]; then
@@ -252,9 +251,31 @@ sf_runtime_resolve_from_config() {
       sf_runtime_fail "invalid tool directory: $reference"
       return
     }
-    tool_manifest=$(<"$resolved/tool.json")
+    tool_paths+=( "$resolved" )
+    tool_manifests+=( "$(<"$resolved/tool.json")" )
+  done
+  if (( tool_count )); then
+    decoded=$(jq -jrn --args '
+      ($ARGS.positional[] |
+        ((try fromjson catch null) |
+          if type == "object" then .sandbox == true else false end | tostring), "\u0000"),
+      "ok", "\u0000"
+    ' -- "${tool_manifests[@]}") || {
+      sf_runtime_fail 'cannot inspect tool manifests'
+      return
+    }
+    sandbox_flags=( "${(@0)${decoded%$'\0'}}" )
+    (( ${#sandbox_flags} == tool_count + 1 )) && [[ $sandbox_flags[-1] == ok ]] || {
+      sf_runtime_fail 'cannot inspect tool manifests'
+      return
+    }
+    sandbox_flags[-1]=()
+  fi
+  for (( tool_index = 1; tool_index <= tool_count; tool_index++ )); do
+    resolved=$tool_paths[tool_index]
+    tool_manifest=$tool_manifests[tool_index]
     settings=null
-    if jq -e '.sandbox == true' <<<"$tool_manifest" >/dev/null 2>&1; then
+    if [[ $sandbox_flags[tool_index] == true ]]; then
       settings=$(sf_runtime_read_jsonc "$resolved/fence.jsonc" 2>&1) || {
         sf_runtime_fail "cannot read tool sandbox settings: $resolved/fence.jsonc"
         return
