@@ -169,7 +169,7 @@ sf_session_repair_tail() {
 }
 
 sf_session_prepare() {
-  local runtime=$1 cwd created header id model
+  local runtime=$1 cwd created decoded header id model
   SF_SESSION_ERROR=''
   [[ -z $SF_SESSION_LOCK ]] || {
     sf_session_fail "session lock is already held: $SF_SESSION_LOCK"
@@ -186,31 +186,30 @@ sf_session_prepare() {
     sf_session_fail 'cannot prepare session header'
     return
   }
-  header=$(jq -L "$SF_ROOT/lib" -cnce --arg cwd "$cwd" --arg created "$created" \
+  decoded=$(jq -L "$SF_ROOT/lib" -jnre --arg cwd "$cwd" --arg created "$created" \
     --argjson runtime "$runtime" '
       include "runtime/schema";
+      def field: ., "\u0000";
       ({type:"session",format_version:1,cwd:$cwd,created:$created} + $runtime) |
-      select(canonical_session_header(1))
+      select(canonical_session_header(1)) |
+      (tojson | field),
+      (.profile.request.model | field),
+      (hook_names[] as $hook |
+        ($hook | field), (.harness[$hook] // [] | length | tostring | field)),
+      ("ok" | field)
     ') || {
     sf_session_fail 'cannot prepare session header'
     return
   }
-  local -a fields
-  fields=( "${(@f)$(jq -L "$SF_ROOT/lib" -er '
-    include "runtime/schema";
-    .profile.request.model,
-    (hook_names[] as $hook | $hook, (.harness[$hook] // [] | length))
-  ' <<<$runtime)}" ) || {
+  local -a fields=( "${(@0)${decoded%$'\0'}}" )
+  (( ${#fields} >= 5 && (${#fields} - 3) % 2 == 0 )) && [[ $fields[-1] == ok ]] || {
     sf_session_fail 'cannot prepare session header'
     return
   }
-  (( ${#fields} >= 3 && ${#fields} % 2 == 1 )) || {
-    sf_session_fail 'cannot prepare session header'
-    return
-  }
-  model=$fields[1]
+  header=$fields[1]
+  model=$fields[2]
   integer index
-  for (( index = 2; index <= ${#fields}; index += 2 )); do
+  for (( index = 3; index < ${#fields}; index += 2 )); do
     SF_HOOK_COUNTS[$fields[index]]=$fields[index+1]
   done
   id=${SF_SESSION_PATH:t}
@@ -222,17 +221,6 @@ sf_session_prepare() {
     turn_id 1
   )
   SF_SESSION_RECORDS=( "$header" )
-  printf '%s\n' "${SF_SESSION_RECORDS[@]}" | jq -L "$SF_ROOT/lib" -jes '
-    include "runtime/schema";
-    select(.[0] | canonical_session_header(1)) |
-    select(.[1:] | canonical_session_records)
-  ' >/dev/null 2>&1 || {
-    SF_SESSION=()
-    SF_SESSION_RECORDS=()
-    SF_HOOK_COUNTS=()
-    sf_session_fail 'cannot prepare session records'
-    return
-  }
 }
 
 sf_session_create() {
@@ -265,15 +253,7 @@ sf_session_create() {
       break
     fi
   done
-  if [[ -z $error ]]; then
-    sf_session_load || {
-      error=$SF_SESSION_ERROR
-      rm -f -- "$SF_SESSION_PATH" 2>/dev/null
-      sf_session_fail "$error"
-      return
-    }
-    return
-  fi
+  [[ -n $error ]] || return 0
   rm -f -- "$SF_SESSION_PATH" 2>/dev/null
   sf_session_fail "$error"
   return 1
