@@ -25,44 +25,14 @@ sf_tools_load() {
     sf_tools_fail "session working directory is unavailable: $cwd"
     return
   }
-  projected=$(jq -jrn --argjson tools "$tools" '
-    def field: ., "\u0000";
-    ($tools[] |
-      (.command | field), (.manifest.sandbox | tostring | field)),
-    ("ok" | field)
-  ' 2>/dev/null) || {
-    sf_tools_fail 'cannot inspect configured tools'
-    return
-  }
-  fields=( "${(@0)${projected%$'\0'}}" )
-  if (( ! ${#fields} )) || [[ $fields[-1] != ok ]]; then
-    sf_tools_fail 'cannot inspect configured tools'
-    return
-  fi
-  fields=( "${fields[@]:0:-1}" )
-  (( ${#fields} % 2 == 0 )) || {
-    sf_tools_fail 'cannot inspect configured tools'
-    return
-  }
-  (( ${#fields} == 0 )) && { REPLY='[]'; return; }
-  index=1
-  while (( index <= ${#fields} )); do
-    command=$fields[index]
-    sandbox=$fields[index+1]
-    (( index += 2 ))
-    [[ -x $command ]] || {
-      sf_tools_fail "tool command is not executable: $command"
-      return
-    }
-    [[ $sandbox != true ]] || sandboxed_tools=1
-  done
-  REPLY=$(jq -cn --argjson tools "$tools" \
+  projected=$(jq -jrn --argjson tools "$tools" \
     --argjson harness_sandbox "$harness_sandbox" \
     --argjson permission_available "$permission_available" '
+      def field: ., "\u0000";
       def bypass_available($manifest):
         ($permission_available == 1) and ($harness_sandbox == 1) and
         $manifest.sandbox and ($manifest.allow_sandbox_bypass // false);
-      [$tools | to_entries[] |
+      ([$tools | to_entries[] |
         .value as $tool | $tool.manifest as $manifest |
         {name:$tool.name,description:($manifest.description +
           if $harness_sandbox == 1 and $manifest.sandbox then
@@ -82,11 +52,30 @@ sf_tools_load() {
               if:{properties:{request_sandbox_bypass:{const:true}},
                   required:["request_sandbox_bypass"]},
               then:{required:["sandbox_bypass_reason"]}}])
-          else . end)}]
-    ') || {
-    sf_tools_fail 'cannot prepare tool schemas'
+          else . end)}] | tojson | field),
+      ($tools[] | (.command | field), (.manifest.sandbox | tostring | field)),
+      ("ok" | field)
+  ' 2>/dev/null) || {
+    sf_tools_fail 'cannot inspect configured tools'
     return
   }
+  fields=( "${(@0)${projected%$'\0'}}" )
+  (( ${#fields} >= 2 && (${#fields} - 2) % 2 == 0 )) && [[ $fields[-1] == ok ]] || {
+    sf_tools_fail 'cannot inspect configured tools'
+    return
+  }
+  REPLY=$fields[1]
+  index=2
+  while (( index < ${#fields} )); do
+    command=$fields[index]
+    sandbox=$fields[index+1]
+    (( index += 2 ))
+    [[ -x $command ]] || {
+      sf_tools_fail "tool command is not executable: $command"
+      return
+    }
+    [[ $sandbox != true ]] || sandboxed_tools=1
+  done
   if (( harness_sandbox && sandboxed_tools )); then
     [[ -x $fence ]] || {
       sf_tools_fail "sandbox executable is unavailable: $fence"
@@ -152,7 +141,7 @@ sf_tool_execute() {
   local decoded sandbox_denial_detected=''
   local -a fields read_paths write_paths
   local -a command locale_env
-  integer exit_code tail_status process_status read_count
+  integer exit_code tail_status process_status read_count write_count call_offset
   setopt local_options no_err_exit
   SF_TOOL_ERROR=''
   REPLY=''
@@ -161,25 +150,11 @@ sf_tool_execute() {
   [[ -z $LC_CTYPE ]] || locale_env+=( LC_CTYPE="$LC_CTYPE" )
   [[ -z ${XDG_CONFIG_HOME-} ]] || locale_env+=( XDG_CONFIG_HOME="$XDG_CONFIG_HOME" )
   decoded=$(jq -jrn --argjson reads "$sandbox_read_paths" \
-    --argjson writes "$sandbox_write_paths" '
-      def field: ., "\u0000";
-      ($reads | length | tostring | field),
-      ($reads[] | field), ($writes[] | field), ("ok" | field)
-  ' 2>/dev/null) || { sf_tools_fail 'cannot decode sandbox paths'; return; }
-  fields=( "${(@0)${decoded%$'\0'}}" )
-  (( ${#fields} >= 2 )) && [[ $fields[1] == <-> && $fields[-1] == ok ]] || {
-    sf_tools_fail 'cannot decode sandbox paths'
-    return
-  }
-  read_count=$fields[1]
-  (( read_count <= ${#fields} - 2 )) || {
-    sf_tools_fail 'cannot decode sandbox paths'
-    return
-  }
-  read_paths=( "${fields[@]:1:$read_count}" )
-  write_paths=( "${fields[@]:$(( read_count + 1 )):-1}" )
-  decoded=$(jq -jrn --argjson tools "$tools" --argjson call "$call" '
+    --argjson writes "$sandbox_write_paths" --argjson tools "$tools" --argjson call "$call" '
     def field: ., "\u0000";
+    ($reads | length | tostring | field),
+    ($writes | length | tostring | field),
+    ($reads[] | field), ($writes[] | field),
     ($call | .id | field), ($call | .name | field),
     ($call.input | del(.request_sandbox_bypass, .sandbox_bypass_reason) | tojson | field),
     ($call.input | if has("request_sandbox_bypass") then
@@ -193,11 +168,20 @@ sf_tool_execute() {
     ("ok" | field)
   ' 2>/dev/null) || { sf_tools_fail 'cannot decode tool call'; return; }
   fields=( "${(@0)${decoded%$'\0'}}" )
-  (( ${#fields} && $fields[-1] == ok )) || {
+  (( ${#fields} >= 7 )) && [[ $fields[1] == <-> && $fields[2] == <-> && $fields[-1] == ok ]] || {
     sf_tools_fail 'cannot decode tool call'
     return
   }
-  fields=( "${fields[@]:0:-1}" )
+  read_count=$fields[1]
+  write_count=$fields[2]
+  call_offset=$(( read_count + write_count + 3 ))
+  (( call_offset <= ${#fields} - 4 )) || {
+    sf_tools_fail 'cannot decode tool call'
+    return
+  }
+  read_paths=( "${fields[@]:2:$read_count}" )
+  write_paths=( "${fields[@]:$(( read_count + 2 )):$write_count}" )
+  fields=( "${fields[@]:$(( call_offset - 1 )):-1}" )
   if (( ${#fields} == 4 )); then
     id=$fields[1]
     name=$fields[2]
