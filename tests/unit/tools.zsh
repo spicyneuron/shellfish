@@ -29,7 +29,8 @@ load_tools() {
 
 sf_test_tool_execute() {
   sf_tool_execute "$1" "$2" "${3-}" "${4-}" "$tool_tools" "$tool_cwd" \
-    "$tool_max_capture" "$tool_fence" "$tool_read_paths" "$tool_write_paths" "$tool_config_dir"
+    "$tool_max_capture" "$tool_fence" "$tool_read_paths" "$tool_write_paths" \
+    "$tool_config_dir" "$SF_SESSION[id]" || return
 }
 
 # The web fetch tool validates its input and sends only fixed Reader options to curl.
@@ -130,13 +131,22 @@ jq -e '
 
 # Tool execution preserves the caller's home in its otherwise clean environment.
 load_tools "$stored_runtime"
+jq -e '.[0].description |
+  contains("Use `$TMPDIR` for temporary files") and contains("Bare `mktemp`")' \
+  <<<"$tool_schema" >/dev/null
 sf_test_tool_execute "$(jq -cn --arg command 'print -rn -- "$HOME"' \
   '{id:"home_1",name:"shell",input:{command:$command}}')" 0
 jq -e --arg home "$HOME" '.content == $home' <<<"$REPLY" >/dev/null
 sf_test_tool_execute "$(jq -cn --arg command 'print -rn -- "$TMPDIR"' \
   '{id:"temp_1",name:"shell",input:{command:$command}}')" 0
 typeset tool_temp=$(jq -r '.content' <<<"$REPLY")
-[[ $tool_temp == "${${TMPDIR:-/tmp}:A}/shellfish-$EUID/tools/tool."*/tmp ]]
+[[ $tool_temp == "${${TMPDIR:-/tmp}:A}/shellfish-$EUID/tooltemps/session-$SF_SESSION[id]-tmp" ]]
+assert_equal 700 "$(stat -f %Lp "$tool_temp")"
+sf_test_tool_execute "$(jq -cn --arg command 'print -rn persistent >"$TMPDIR/marker"' \
+  '{id:"temp_write",name:"shell",input:{command:$command}}')" 0
+sf_test_tool_execute "$(jq -cn --arg command 'cat "$TMPDIR/marker"' \
+  '{id:"temp_read",name:"shell",input:{command:$command}}')" 0
+jq -e '.content == "persistent"' <<<"$REPLY" >/dev/null
 tool_config_dir="$tmp/custom-config"
 sf_test_tool_execute "$(jq -cn --arg command 'print -rn -- "$SHELLFISH_CONFIG_DIR"' \
   '{id:"config_dir_1",name:"shell",input:{command:$command}}')" 0
@@ -329,15 +339,15 @@ load_tools "$(jq -c --arg fence "$tmp/bin/fence" \
   '.harness.sandbox=true | .harness.fence=$fence' <<<"$stored_runtime")"
 sf_test_tool_execute "$(jq -cn --arg command 'printf "%s|%s" "$TMPDIR" "$TMPPREFIX"' \
   '{id:"fence_empty",name:"shell",input:{command:$command}}')" 1
-jq -e '.content == "/tmp/fence|/tmp/fence/zsh"' <<<"$REPLY" >/dev/null
-if grep -Fx -- '--expose-host-path-rw' "$tmp/fence.args" >/dev/null; then
-  fail 'sandbox added an unexpected writable runtime exposure'
-fi
+jq -e --arg temp "$tool_temp" '.content == ($temp + "|" + $temp + "/zsh")' \
+  <<<"$REPLY" >/dev/null
+(( $(grep -Fxc -- '--expose-host-path-rw' "$tmp/fence.args") == 1 ))
+grep -Fx -- "$tool_temp" "$tmp/fence.args" >/dev/null
 assert_equal "${LANG:-C}" "$(<"$tmp/fence.lang")"
 assert_equal "$LC_ALL" "$(<"$tmp/fence.lc_all")"
 assert_equal "$LC_CTYPE" "$(<"$tmp/fence.lc_ctype")"
 assert_equal '' "$(<"$tmp/fence.tmpdir")"
-assert_equal /tmp/fence/zsh "$(<"$tmp/fence.tmpprefix")"
+assert_equal /tmp/zsh "$(<"$tmp/fence.tmpprefix")"
 assert_equal "$HOME" "$(<"$tmp/fence.home")"
 mkdir "$tmp/read dir" "$tmp/write dir"
 touch "$tmp/read file" "$tmp/write file"
@@ -359,7 +369,8 @@ jq -e '. == {}' "$tmp/fence.settings" >/dev/null
 grep -Fx -- "$tool_dir/run" "$tmp/fence.args" >/dev/null
 grep -Fx -- "$tmp/read dir" "$tmp/fence.args" >/dev/null
 grep -Fx -- "$tmp/read file" "$tmp/fence.args" >/dev/null
-(( $(grep -Fxc -- '--expose-host-path-rw' "$tmp/fence.args") == 2 ))
+(( $(grep -Fxc -- '--expose-host-path-rw' "$tmp/fence.args") == 3 ))
+grep -Fx -- "$tool_temp" "$tmp/fence.args" >/dev/null
 grep -Fx -- "$tmp/write dir" "$tmp/fence.args" >/dev/null
 grep -Fx -- "$tmp/write file" "$tmp/fence.args" >/dev/null
 touch "$tmp/fence.violate"

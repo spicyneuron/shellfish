@@ -491,7 +491,8 @@ sf_exec_turn() {
             fi
             if ! sf_tool_execute "$call" "$harness_sandbox" "$decision" "$denial_reason" \
                 "$tools" "$SF_SESSION[cwd]" "$max_capture" "$fence" \
-                "$sandbox_read_paths" "$sandbox_write_paths" "$config_dir"; then
+                "$sandbox_read_paths" "$sandbox_write_paths" "$config_dir" \
+                "$SF_SESSION[id]"; then
               failure=${SF_TOOL_ERROR:-shell tool execution failed}
               return 1
             fi

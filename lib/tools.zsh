@@ -135,6 +135,7 @@ sf_tool_execute() {
   local call=$1 harness_sandbox=$2 decision=${3-} denial_reason=${4-}
   local tools=$5 cwd=$6 max_capture=$7 fence=$8
   local sandbox_read_paths=$9 sandbox_write_paths=${10} config_dir=${11-}
+  local session_id=${12-}
   local tool_home=${HOME:-$cwd}
   local id name execution_input bypass sandboxed tool_sandbox tool_bypass tool_settings
   local state_dir captured bounded status_file temp command_path settings sandbox_log
@@ -207,6 +208,31 @@ sf_tool_execute() {
     sf_tool_result "$id" "$name" "${denial_reason:-sandbox bypass denied}" 126
     return
   fi
+  [[ -n $session_id && $session_id != . && $session_id != .. ]] || {
+    sf_tools_fail 'tool session ID is not available'
+    return
+  }
+  sf_scratch_category tooltemps || {
+    sf_tools_fail 'cannot prepare tool temporary directory'
+    return
+  }
+  temp="$REPLY/session-$session_id-tmp"
+  if [[ -e $temp || -L $temp ]]; then
+    [[ -d $temp && ! -L $temp && -O $temp ]] || {
+      sf_tools_fail 'cannot prepare tool temporary directory'
+      return
+    }
+  else
+    (umask 077; mkdir -- "$temp") || {
+      sf_tools_fail 'cannot prepare tool temporary directory'
+      return
+    }
+  fi
+  chmod 700 "$temp" || {
+    sf_tools_fail 'cannot secure tool temporary directory'
+    return
+  }
+  temp=${temp:A}
   sf_tools_cleanup
   sf_scratch_create tools tool || {
     sf_tools_fail 'cannot prepare tool capture'
@@ -224,9 +250,10 @@ sf_tool_execute() {
       print -r -- "$tool_settings" >"$settings" || return 1
       command=(/usr/bin/env -i HOME="$tool_home" "${locale_env[@]}" PATH="$PATH" TERM="${TERM:-dumb}"
         SHELLFISH_CONFIG_DIR="$config_dir"
-        TMPPREFIX=/tmp/fence/zsh SHELLFISH_MAX_CAPTURE_BYTES="$max_capture"
+        SHELLFISH_MAX_CAPTURE_BYTES="$max_capture"
         "$fence" --monitor --fence-log-file "$sandbox_log" --settings "$settings"
-        --expose-host-path "$settings" --expose-host-path "$command_path")
+        --expose-host-path "$settings" --expose-host-path "$command_path"
+        --expose-host-path-rw "$temp")
       for decoded in "${read_paths[@]}"; do
         command+=( --expose-host-path "$decoded" )
       done
@@ -234,11 +261,8 @@ sf_tool_execute() {
         command+=( --expose-host-path-rw "$decoded" )
       done
       command+=(
-        -- "$command_path")
+        -- /usr/bin/env TMPDIR="$temp" TMPPREFIX="$temp/zsh" "$command_path")
     else
-      # env -i drops TMPDIR; TMPPREFIX separately controls Zsh here-documents.
-      temp="$state_dir/tmp"
-      mkdir "$temp" || return 1
       command=(/usr/bin/env -i HOME="$tool_home" "${locale_env[@]}" PATH="$PATH" TERM="${TERM:-dumb}"
         SHELLFISH_CONFIG_DIR="$config_dir"
         TMPDIR="$temp" TMPPREFIX="$temp/zsh"
