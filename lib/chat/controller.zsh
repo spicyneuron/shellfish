@@ -177,7 +177,7 @@ sf_chat_decoded() {
 sf_chat_recover() {
   local heading=$1 detail=${2-}
   local type role node_heading body meta state cursor=$SF_PRESENT_CURSOR
-  integer visible=$SF_PRESENT_PREFIX_VISIBLE index match=0
+  integer visible=$SF_PRESENT_PREFIX_VISIBLE index match=0 allow_reset=${3:-0}
   sf_chat_transport_reset
   SF_PRESENT_RENDER_ERROR=''
   sf_chat_permission_reset
@@ -209,7 +209,7 @@ sf_chat_recover() {
       # The cursor is an offset into the node the prefix stopped at, so it
       # outlives the reload only when that node does.
       SF_PRESENT_CURSOR=$cursor
-    elif [[ -z $type || $state == open ]]; then
+    elif [[ -z $type || $state == open ]] || (( allow_reset )); then
       sf_chat_reset
       SF_PRESENT_CURSOR='1:0'
     else
@@ -254,7 +254,7 @@ sf_chat_exec_finish() {
     heading=$([[ $SF_PRESENT_STATE == cancelling ]] && print 'Cancelled.' || print 'Exec exited unexpectedly.')
     sf_chat_discard_queue
     [[ -z $REPLY ]] || detail+="${detail:+$'\n'}$REPLY"
-    if sf_chat_recover "$heading" "$detail"; then
+    if sf_chat_recover "$heading" "$detail" "$(( exit_status == 143 ))"; then
       SF_PRESENT_STATE=idle
     else
       SF_PRESENT_STATE=stopped

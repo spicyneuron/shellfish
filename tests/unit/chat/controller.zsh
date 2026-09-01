@@ -282,6 +282,26 @@ assert_equal 'Exec exited unexpectedly.' "$SF_PRESENT_NODE_HEADING[-1]"
 [[ $SF_PRESENT_NODE_BODY[-1] == *'Discarded 1 queued prompt.'* ]] ||
   fail 'exec failure did not report discarded queued prompts'
 
+# A terminated exec can replace a flushed and closed speculative assistant
+# prefix during turn recovery. Chat resets that live tail and remains usable.
+sf_chat_reset
+sf_chat_terminal_reset
+SF_PRESENT_SESSION="$tmp/recover.jsonl"
+SF_PRESENT_PREFIX_VISIBLE=1
+sf_chat_add message agent '' 'speculative streamed prefix'
+SF_PRESENT_CURSOR='1:12'
+SF_PRESENT_STATE=working
+SF_CHAT_TRANSPORT_EOF=1
+SF_CHAT_TRANSPORT_EXIT_STATUS=143
+SF_CHAT_TRANSPORT_EXIT_DETAIL=''
+sf_chat_exec_finish
+assert_equal idle "$SF_PRESENT_STATE"
+assert_equal 1:0 "$SF_PRESENT_CURSOR"
+assert_equal 'Exec exited unexpectedly.' "$SF_PRESENT_NODE_HEADING[-1]"
+sf_chat_submit next
+assert_equal submit "$REPLY"
+assert_equal next "$SF_PRESENT_SUBMITTED"
+
 # A renderer failure does not abort a successful turn. Completion reloads the
 # durable transcript, reports the recovery, and clears the live-render latch.
 sf_chat_reset
