@@ -12,37 +12,91 @@ cat >"$environment_bin/tree" <<'EOF'
 #!/bin/sh
 printf '.\n'
 EOF
-cat >"$environment_bin/git" <<'EOF'
+chmod +x "$environment_bin/tree"
+environment_output=$(PATH="$environment_bin:$PATH" zsh -f "$environment_script" session_start)
+[[ $environment_output == *$'PWD: '*$'\n.' ]]
+[[ $environment_output != *'Git '* ]]
+
+# Git awareness establishes state only after a fast, successful startup probe.
+# Later prompt probes report each branch or detached-commit transition once.
+typeset git_start="$ROOT/default/hooks/session_start/git_awareness"
+typeset git_prompt="$ROOT/default/hooks/user_prompt_submit/git_awareness"
+typeset git_bin="$tmp/git-awareness-bin" git_state="$tmp/git-state"
+typeset git_cache="$tmp/git_awareness" git_output
+mkdir "$git_bin"
+cat >"$git_bin/git" <<'EOF'
 #!/bin/sh
-case "$1" in
-  rev-parse) printf '.git\n' ;;
-  branch) printf 'main\n' ;;
-  status) printf 'M changed-file\n' ;;
-  log)
-    case "$2" in
-      --oneline) printf 'abc123 Test commit\n' ;;
-      --name-status) printf 'M\tchanged-file\n' ;;
+case "$1:$2" in
+  rev-parse:--verify) sed 's/^commit://' "$GIT_STATE" ;;
+  log:--oneline) printf 'abc123 Test commit\n' ;;
+  log:--name-status) printf 'M\tchanged-file\n' ;;
+  status:--short) printf 'M changed-file\n' ;;
+  symbolic-ref:--quiet)
+    case "$(cat "$GIT_STATE")" in
+      branch:*) sed 's/^branch://' "$GIT_STATE" ;;
       *) exit 1 ;;
     esac
     ;;
   *) exit 1 ;;
 esac
 EOF
-chmod +x "$environment_bin/tree" "$environment_bin/git"
-environment_output=$(PATH="$environment_bin:$PATH" zsh -f "$environment_script" session_start)
-[[ $environment_output == *$'\n.\n\nGit branch:'* ]]
-[[ $environment_output == *$'Git branch: main'* ]]
-[[ $environment_output == *$'Recent commits:\nabc123 Test commit'* ]]
-[[ $environment_output == *$'Recent files:\n M changed-file'* ]]
-[[ $environment_output == *$'Git status:\nM changed-file'* ]]
+chmod +x "$git_bin/git"
+print -r -- 'branch:main' >"$git_state"
+git_output=$(PATH="$git_bin:$PATH" GIT_STATE="$git_state" SHELLFISH_SESSION_STATE="$tmp" \
+  zsh -f "$git_start" session_start)
+[[ $git_output == 'Git branch: main'* ]]
+[[ $git_output == *$'Recent commits:\nabc123 Test commit'* ]]
+[[ $git_output == *$'Recent files:\n M changed-file'* ]]
+[[ $git_output == *$'Git status:\nM changed-file'* ]]
+assert_equal 'branch:main' "$(<$git_cache)"
 
-cat >"$environment_bin/git" <<'EOF'
+git_output=$(PATH="$git_bin:$PATH" GIT_STATE="$git_state" SHELLFISH_SESSION_STATE="$tmp" \
+  zsh -f "$git_prompt" user_prompt_submit)
+assert_equal '' "$git_output"
+print -r -- 'branch:feature' >"$git_state"
+git_output=$(PATH="$git_bin:$PATH" GIT_STATE="$git_state" SHELLFISH_SESSION_STATE="$tmp" \
+  zsh -f "$git_prompt" user_prompt_submit)
+assert_equal 'Git branch changed from main to feature.' "$git_output"
+assert_equal 'branch:feature' "$(<$git_cache)"
+git_output=$(PATH="$git_bin:$PATH" GIT_STATE="$git_state" SHELLFISH_SESSION_STATE="$tmp" \
+  zsh -f "$git_prompt" user_prompt_submit)
+assert_equal '' "$git_output"
+
+print -r -- 'commit:0123456789abcdef' >"$git_state"
+git_output=$(PATH="$git_bin:$PATH" GIT_STATE="$git_state" SHELLFISH_SESSION_STATE="$tmp" \
+  zsh -f "$git_prompt" user_prompt_submit)
+assert_equal 'Git identity changed from branch:feature to commit:0123456789abcdef.' "$git_output"
+assert_equal 'commit:0123456789abcdef' "$(<$git_cache)"
+
+cat >"$git_bin/git" <<'EOF'
 #!/bin/sh
+exit 124
+EOF
+chmod +x "$git_bin/git"
+git_output=$(PATH="$git_bin:$PATH" SHELLFISH_SESSION_STATE="$tmp" \
+  zsh -f "$git_prompt" user_prompt_submit)
+assert_equal '' "$git_output"
+assert_equal 'commit:0123456789abcdef' "$(<$git_cache)"
+
+rm -f "$git_cache"
+cat >"$git_bin/git" <<'EOF'
+#!/bin/sh
+exit 124
+EOF
+chmod +x "$git_bin/git"
+git_output=$(PATH="$git_bin:$PATH" SHELLFISH_SESSION_STATE="$tmp" \
+  zsh -f "$git_start" session_start)
+assert_equal '' "$git_output"
+[[ ! -e $git_cache ]]
+cat >"$git_bin/git" <<'EOF'
+#!/bin/sh
+: >"$GIT_MARKER"
 exit 1
 EOF
-chmod +x "$environment_bin/git"
-environment_output=$(PATH="$environment_bin:$PATH" zsh -f "$environment_script" session_start)
-[[ $environment_output == *'Not in git repo'* ]]
+chmod +x "$git_bin/git"
+GIT_MARKER="$tmp/git-called" PATH="$git_bin:$PATH" SHELLFISH_SESSION_STATE="$tmp" \
+  zsh -f "$git_prompt" user_prompt_submit >/dev/null
+[[ ! -e $tmp/git-called ]]
 
 # Shell command reporting is best-effort, selects the first candidate with a
 # usable version, and emits one separately attributed creation context.

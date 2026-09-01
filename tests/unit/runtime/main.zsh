@@ -76,13 +76,16 @@ print -r -- '{}' >"$tmp/config/empty.jsonc"
 sf_runtime_resolve_from_config "$tmp/config/empty.jsonc" '' 'default-model' '{}' \
   "$ROOT/tests/fixtures/backend"
 jq -e --arg root "$ROOT/default/hooks/session_start" \
+  --arg prompt_root "$ROOT/default/hooks/user_prompt_submit" \
   --arg tools "$ROOT/default/tools" '
   .harness.session_start == [
     ($root + "/add_environment"),
+    ($root + "/git_awareness"),
     ($root + "/add_shell_commands"),
     ($root + "/add_skills"),
     ($root + "/add_project_instructions")
   ] and
+  .harness.user_prompt_submit[-1] == ($prompt_root + "/git_awareness") and
   (.harness.tools | map(.name)) ==
     ["read_file", "edit_file", "write_file", "skill", "search_web", "fetch_url", "shell"] and
   (.harness.tools[] | select(.name == "search_web") |

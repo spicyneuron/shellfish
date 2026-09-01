@@ -49,8 +49,8 @@
 
       // Each hook runs an ordered list of components. See docs/HOOKS.md for
       // payloads, exit statuses, and environment guarantees.
-      "session_start": ["add_environment", "add_shell_commands", "add_skills", "add_project_instructions"],
-      "user_prompt_submit": ["refresh", "verbose", "new", "copy", "fork", "sandbox", "user_shell", "server", "resume", "help"],
+      "session_start": ["add_environment", "git_awareness", "add_shell_commands", "add_skills", "add_project_instructions"],
+      "user_prompt_submit": ["refresh", "verbose", "new", "copy", "fork", "sandbox", "user_shell", "server", "resume", "help", "git_awareness"],
       "permission_request": [],
       "pre_tool_use": [],
       "post_tool_use": [],
