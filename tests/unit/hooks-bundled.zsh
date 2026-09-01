@@ -73,11 +73,12 @@ make_version_command rg 'exit 2'
 make_version_command grep "printf 'grep 1.0\\nignored\\n'"
 make_version_command find 'exit 2'
 make_version_command what "printf 'archive PROGRAM:find  PROJECT:find-2.1 other\\n'"
+make_version_command tree "printf 'tree v2.3.2-beta+build456 © 1996 Example\\n'"
 make_version_command jq "printf 'jq-1.7\\n'"
-make_version_command yq 'exit 0'
+make_version_command yq "printf 'yq 01.2.3, 1.2.3.4, and 1.2.3+ are invalid semver\\n'"
 make_version_command python3 "printf 'Python 3.13\\n' >&2"
 make_version_command git "printf 'git version 2.48\\n'"
-make_version_command gh 'exit 2'
+make_version_command gh 'exit 0'
 
 shell_commands_output=$(
   /usr/bin/env PATH="$shell_commands_bin" "$shell_commands_bin/zsh" -f \
@@ -92,13 +93,15 @@ shell_commands_rows=$(jq -Rsc '
   INDEX(.label)
 ' <<<"$shell_commands_output") || fail 'cannot parse shell commands output'
 jq -e '
-  length == 5 and
+  length == 7 and
   .search.command == "grep" and .search.version == "grep 1.0" and
   .files.command == "find" and .files.version == "find-2.1" and
+  .trees.command == "tree" and .trees.version == "2.3.2-beta+build456" and
   .JSON.command == "jq" and .JSON.version == "jq-1.7" and
+  .YAML.command == "yq" and .YAML.version == "yq 01.2.3, 1.2.3.4, and 1.2.3+ are invalid semver" and
   .Python.command == "python3" and .Python.version == "Python 3.13" and
   .VCS.command == "git" and .VCS.version == "git version 2.48" and
-  (has("trees") | not) and (has("YAML") | not) and (has("GitHub") | not)
+  (has("GitHub") | not)
 ' <<<"$shell_commands_rows" >/dev/null
 if zsh -f "$shell_commands_script" user_prompt_submit >/dev/null 2>&1; then
   fail 'shell command reporting accepted the wrong hook name'
