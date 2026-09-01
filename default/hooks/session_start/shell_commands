@@ -3,8 +3,6 @@
 emulate -R zsh
 setopt no_aliases
 
-[[ $# == 1 && $1 == session_start ]] || exit 1
-
 command_version() {
   local name=$1 output command_path
   local semver='(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-((0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(\.(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*))?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?'

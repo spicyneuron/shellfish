@@ -5,8 +5,6 @@ setopt no_aliases no_bg_nice no_multios pipe_fail
 zmodload zsh/datetime
 zmodload zsh/zselect
 
-[[ $# == 1 && $1 == session_start ]] || exit 1
-
 state="$SHELLFISH_SESSION_STATE/git_awareness"
 temp="$state.$$"
 typeset -F deadline=$(( EPOCHREALTIME + 1 ))

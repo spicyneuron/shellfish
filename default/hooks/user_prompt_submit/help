@@ -5,7 +5,6 @@ setopt no_aliases no_multios pipe_fail
 
 typeset submitted=''
 integer read_status
-[[ $1 == user_prompt_submit ]] || exit 1
 IFS= read -r submitted
 read_status=$?
 case "$read_status:$submitted" in

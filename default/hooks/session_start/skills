@@ -4,7 +4,6 @@ emulate -R zsh
 setopt extended_glob
 set -u
 
-[[ $# == 1 && $1 == session_start ]] || exit 1
 bundled_root=${0:A:h:h:h}
 source "$bundled_root/lib/skills.zsh" || exit 1
 sf_skills_discover "$bundled_root" "${SHELLFISH_CONFIG_DIR-}" "${PROJECT_DIR:-$PWD}"

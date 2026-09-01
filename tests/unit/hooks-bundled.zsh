@@ -145,10 +145,6 @@ jq -e '
   .VCS.command == "git" and .VCS.version == "git version 2.48" and
   (has("GitHub") | not)
 ' <<<"$shell_commands_rows" >/dev/null
-if zsh -f "$shell_commands_script" user_prompt_submit >/dev/null 2>&1; then
-  fail 'shell command reporting accepted the wrong hook name'
-fi
-
 SF_TEST_RUNTIME=$(jq -c --arg script "$shell_commands_script" \
   '.harness.session_start=[$script]' <<<"$SF_TEST_RUNTIME")
 SF_SESSION_PATH=$shell_commands_session

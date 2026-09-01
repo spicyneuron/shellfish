@@ -5,7 +5,6 @@ setopt extended_glob no_aliases no_multios pipe_fail
 
 typeset submitted='' command
 integer read_status command_status
-[[ $1 == user_prompt_submit ]] || exit 1
 IFS= read -r submitted
 read_status=$?
 

@@ -5,8 +5,6 @@ unsetopt BG_NICE
 zmodload zsh/datetime
 zmodload zsh/zselect
 
-[ "$#" -eq 1 ] && [ "$1" = session_start ] || exit 1
-
 printf 'Date: %s\n' "$(date '+%Y-%m-%d')"
 printf 'Platform: %s %s\n\n' "$(uname -s)" "$(uname -r)"
 printf 'PWD: %s\n' "$(pwd -P)"

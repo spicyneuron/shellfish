@@ -7,7 +7,6 @@ typeset submitted='' body operation candidate grant_path header grants updated p
 typeset action access
 typeset usage='usage: /sandbox {read|write|+read|+write|+r|+w|-read|-write|-r|-w} DIR'
 integer read_status
-[[ $1 == user_prompt_submit ]] || exit 1
 IFS= read -r submitted
 read_status=$?
 

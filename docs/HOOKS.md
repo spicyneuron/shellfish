@@ -174,7 +174,6 @@ If a creation script fails or is interrupted by a handled signal, Shellfish repo
 #!/bin/sh
 # A minimal session_start hook script: emit one context block and proceed.
 set -u
-[ "$#" -eq 1 ] && [ "$1" = session_start ] || exit 1
 printf 'Workspace\n\n'
 pwd -P
 exit 0

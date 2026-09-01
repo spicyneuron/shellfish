@@ -2,8 +2,6 @@
 
 set -u
 
-[ "$#" -eq 1 ] && [ "$1" = session_start ] || exit 1
-
 for name in AGENTS.md CLAUDE.md; do
   [ -f "$name" ] && [ -r "$name" ] || continue
   printf '%s: Follow the instructions below for this directory tree. ' "$name"

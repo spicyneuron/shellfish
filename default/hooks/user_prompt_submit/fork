@@ -6,7 +6,6 @@ setopt extended_glob no_aliases no_multios pipe_fail
 typeset submitted='' target=0 base candidate created draft='' resolved
 typeset -a argv fields
 integer read_status suffix=1 cutoff=0 explicit=0 has_draft=0
-[[ $1 == user_prompt_submit ]] || exit 1
 IFS= read -r submitted
 read_status=$?
 
