@@ -59,8 +59,7 @@ Reference resolution, most-specific first:
 
 1. an absolute path;
 2. `~/...` against `$HOME`;
-3. a path with a slash, relative to the config directory;
-4. a bare name, resolved against `<config-dir>/hooks/<hook>/` then the bundled `default/hooks/<hook>/`.
+3. a relative path under `<config-dir>/hooks/<hook>/`, falling back to `default/hooks/<hook>/`.
 
 So `"add_environment"` resolves to the `add_environment` script at `default/hooks/session_start/add_environment` unless you shadow it with `~/.config/shellfish/hooks/session_start/add_environment`. Ordinary hook references must resolve to executable files. A `system` reference must resolve to a regular file that is readable or executable. Resolved component paths are stored in the session header, so later configuration changes do not reinterpret an existing session. Creating a new session from an existing session rematerializes its frozen system component paths.
 
