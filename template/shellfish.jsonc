@@ -33,7 +33,7 @@
     "readonly": {
       "system": ["readonly.md"],
       "tools": ["read_file", "shell_readonly"],
-      "session_start": ["add_project_instructions"],
+      "session_start": ["project_instructions"],
       "sandbox": true
     }
   }

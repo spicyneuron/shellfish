@@ -44,7 +44,7 @@ Each hook is configured per harness in `shellfish.jsonc` as an ordered list of c
   "harnesses": {
     "default": {
       "system": ["general.md", "tools.md"],
-      "session_start": ["add_environment", "add_shell_commands", "add_project_instructions"],
+      "session_start": ["project_environment", "shell_commands", "project_instructions"],
       "user_prompt_submit": ["help", "new", "fork", "user_shell"],
       "stop": [],
       "max_capture_bytes": 32768
@@ -61,7 +61,7 @@ Reference resolution, most-specific first:
 2. `~/...` against `$HOME`;
 3. a relative path under `<config-dir>/hooks/<hook>/`, falling back to `default/hooks/<hook>/`.
 
-So `"add_environment"` resolves to the `add_environment` script at `default/hooks/session_start/add_environment` unless you shadow it with `~/.config/shellfish/hooks/session_start/add_environment`. Ordinary hook references must resolve to executable files. A `system` reference must resolve to a regular file that is readable or executable. Resolved component paths are stored in the session header, so later configuration changes do not reinterpret an existing session. Creating a new session from an existing session rematerializes its frozen system component paths.
+So `"project_environment"` resolves to the `project_environment` script at `default/hooks/session_start/project_environment` unless you shadow it with `~/.config/shellfish/hooks/session_start/project_environment`. Ordinary hook references must resolve to executable files. A `system` reference must resolve to a regular file that is readable or executable. Resolved component paths are stored in the session header, so later configuration changes do not reinterpret an existing session. Creating a new session from an existing session rematerializes its frozen system component paths.
 
 ## The hook script contract
 

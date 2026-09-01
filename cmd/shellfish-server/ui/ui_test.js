@@ -429,13 +429,13 @@ test("labels context with its script, hook, and prompt", async () => {
   await page.send({
     type: "context",
     hook: "session_start",
-    script: "add_environment",
+    script: "project_environment",
     prompt: "  project\n context ",
     status: 0,
     content: "environment",
   });
   const summary = findTag(find(page.output, "context")[0], "summary")[0];
-  assert.equal(summary.textContent, "↪add_environment · session_start · project context");
+  assert.equal(summary.textContent, "↪project_environment · session_start · project context");
 });
 
 test("puts prompt context under a user heading", async () => {

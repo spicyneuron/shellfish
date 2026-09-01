@@ -57,11 +57,11 @@ assert_equal plain "$SF_PRESENT_NODE_FORMAT[6]"
 assert_equal tool_result "$SF_PRESENT_NODE_TYPE[7]"
 
 sf_chat_reset
-sf_chat_event context environment session_start '<env>test</env>'
+sf_chat_event context project_environment session_start '<env>test</env>'
 sf_chat_event user ''
 assert_equal 'injection,section,message' "${(j:,:)SF_PRESENT_NODE_TYPE}"
 assert_equal session_start "$SF_PRESENT_NODE_META[1]"
-assert_equal environment "$SF_PRESENT_NODE_HEADING[1]"
+assert_equal project_environment "$SF_PRESENT_NODE_HEADING[1]"
 assert_equal '' "$SF_PRESENT_NODE_BODY[3]"
 
 sf_chat_reset

@@ -11,7 +11,7 @@ printf 'Date: %s\n' "$(date '+%Y-%m-%d')"
 printf 'Platform: %s %s\n\n' "$(uname -s)" "$(uname -r)"
 printf 'PWD: %s\n' "$(pwd -P)"
 
-typeset -F deadline=$(( EPOCHREALTIME + 3 ))
+typeset -F deadline=$(( EPOCHREALTIME + 1 ))
 capped() {
   local pid timer
   typeset -i exit_code=0 ticks=$(( (deadline - EPOCHREALTIME) * 100 ))

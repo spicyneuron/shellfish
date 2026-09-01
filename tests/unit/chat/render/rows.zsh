@@ -71,10 +71,10 @@ sf_chat_rows 80 20
 assert_equal '1,1,0' "${(j:,:)SF_PRESENT_ROW_SETTLED[1,3]}"
 
 sf_chat_reset
-sf_chat_event context environment session_start '<env>test</env>'
+sf_chat_event context project_environment session_start '<env>test</env>'
 sf_chat_event user ''
 sf_chat_rows 80 20
-assert_equal $'↪ environment · session_start\n  <env>test</env>' \
+assert_equal $'↪ project_environment · session_start\n  <env>test</env>' \
   "${(F)SF_PRESENT_ROW_TEXT[1,2]}"
 assert_equal '─ user ───────────────────────────────────────────────────────────────────── 1 ─' "$SF_PRESENT_ROW_TEXT[-1]"
 
@@ -150,9 +150,9 @@ sf_chat_rows 80 20
 assert_equal $'⛭ read_file\n╰' "${(F)SF_PRESENT_ROW_TEXT[-2,-1]}"
 
 sf_chat_reset
-sf_chat_event context environment session_start $'one\ntwo'
+sf_chat_event context project_environment session_start $'one\ntwo'
 sf_chat_rows 80 20
-assert_equal '↪ environment · session_start · ~2 tokens' "${(F)SF_PRESENT_ROW_TEXT}"
+assert_equal '↪ project_environment · session_start · ~2 tokens' "${(F)SF_PRESENT_ROW_TEXT}"
 
 sf_chat_reset
 sf_chat_event system $'one\ntwo'

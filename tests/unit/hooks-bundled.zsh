@@ -4,7 +4,7 @@ source "${0:A:h}/_hooks.zsh"
 
 sf_test_runtime
 
-typeset environment_script="$ROOT/default/hooks/session_start/add_environment"
+typeset environment_script="$ROOT/default/hooks/session_start/project_environment"
 typeset environment_bin="$tmp/environment-bin"
 typeset environment_output
 mkdir "$environment_bin"
@@ -100,7 +100,7 @@ GIT_MARKER="$tmp/git-called" PATH="$git_bin:$PATH" SHELLFISH_SESSION_STATE="$tmp
 
 # Shell command reporting is best-effort, selects the first candidate with a
 # usable version, and emits one separately attributed creation context.
-typeset shell_commands_script="$ROOT/default/hooks/session_start/add_shell_commands"
+typeset shell_commands_script="$ROOT/default/hooks/session_start/shell_commands"
 typeset shell_commands_bin="$tmp/shell-commands-bin"
 typeset shell_commands_output shell_commands_rows shell_commands_session="$tmp/shell-commands-session.jsonl"
 mkdir "$shell_commands_bin"
@@ -160,7 +160,7 @@ sf_session_create "${SF_HOOK_CONTEXT_RECORDS[@]}"
 sf_hooks_turn_state_cleanup
 jq -e -s '
   length == 2 and .[1].type == "context" and .[1].hook == "session_start" and
-  .[1].script == "add_shell_commands" and
+  .[1].script == "shell_commands" and
   (.[1].content | startswith("Host shell: zsh ") and
     contains("\nAvailable commands:\n"))
 ' "$shell_commands_session" >/dev/null

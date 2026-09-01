@@ -158,7 +158,7 @@ def test_startup_records_precede_two_turns():
     session = Session(
         explicit_session=True,
         args=["--model", "override-model"],
-        session_start=["add_environment"],
+        session_start=["project_environment"],
         system="startup system prompt",
     )
     try:
@@ -167,7 +167,7 @@ def test_startup_records_precede_two_turns():
         assert records[1] == {"type": "system", "content": "startup system prompt"}
         assert records[2]["type"] == "context"
         assert records[2]["hook"] == "session_start"
-        assert records[2]["script"] == "add_environment"
+        assert records[2]["script"] == "project_environment"
         banner = (
             "Project:",
             "Tools: read_file, write_file, edit_file, shell",
@@ -175,7 +175,7 @@ def test_startup_records_precede_two_turns():
         )
         for token in banner:
             session.wait_after(0, token)
-        transcript = ("startup system prompt", "add_environment · session_start")
+        transcript = ("startup system prompt", "project_environment · session_start")
         for token in transcript:
             session.wait_after(0, token)
         visible = session.visible()

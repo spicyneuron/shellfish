@@ -59,7 +59,7 @@ Harnesses choose system components, tools, hooks, sandbox policy, and turn limit
       "system": ["review.md"],
       "tools": ["read_file"],
       "sandbox": true,
-      "session_start": ["add_environment", "add_project_instructions"]
+      "session_start": ["project_environment", "project_instructions"]
     }
   },
   "profiles": {
