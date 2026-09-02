@@ -103,6 +103,11 @@ updated=$(jq -c --arg action "$action" --arg path "$grant_path" '
 ' <<<"$grants") || exit 1
 patch=$(jq -cn --arg field "$field" --argjson paths "$updated" \
   '{harness:{($field):$paths}}') || exit 1
+if [[ $action == add ]]; then
+  print -r -- "Session sandbox $access grant added: $grant_path"
+else
+  print -r -- "Session sandbox $access grant removed: $grant_path"
+fi
 
 typeset -a argv=( "$SHELLFISH_EXECUTABLE" )
 [[ ${SHELLFISH_VERBOSE-0} != 1 ]] || argv+=( --verbose )

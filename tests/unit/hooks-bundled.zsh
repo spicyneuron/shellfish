@@ -258,6 +258,10 @@ run_prompt_hook "/sandbox +w $sandbox_dir" "$help_session"
 [[ $reply[1] == handoff && $reply[2] == "$ROOT/bin/shellfish" &&
    $reply[3] == --clear && $reply[4] == --session && $reply[5] == "${help_session:A}" &&
    $reply[6] == --session-update ]]
+jq -se --arg content "Session sandbox write grant added: ${sandbox_dir:A}"$'\n' '
+  [.[] | select(.type == "context" and .hook == "user_prompt_submit" and .script == "sandbox")]
+    | .[-1].content == $content
+' "$help_session" >/dev/null || fail 'sandbox add did not commit model context'
 sandbox_patch=$reply[7]
 jq -e --arg path "${sandbox_dir:A}" \
   '. == {harness:{sandbox_write_paths:[$path]}}' <<<"$sandbox_patch" >/dev/null ||
@@ -269,6 +273,10 @@ run_prompt_hook "/sandbox write $sandbox_dir" "$help_session"
 [[ $reply[1] == handled ]]
 run_prompt_hook "/sandbox -w $sandbox_dir" "$help_session"
 [[ $reply[1] == handoff && $reply[6] == --session-update ]]
+jq -se --arg content "Session sandbox write grant removed: ${sandbox_dir:A}"$'\n' '
+  [.[] | select(.type == "context" and .hook == "user_prompt_submit" and .script == "sandbox")]
+    | .[-1].content == $content
+' "$help_session" >/dev/null || fail 'sandbox removal did not commit model context'
 jq -e '. == {harness:{sandbox_write_paths:[]}}' <<<"$reply[7]" >/dev/null
 
 typeset disabled_session="$tmp/disabled-session.jsonl" enabled_runtime=$SF_TEST_RUNTIME
