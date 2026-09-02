@@ -454,6 +454,30 @@ def test_chat_end():
             session.close()
 
 
+def test_actionless_editor_return_is_not_a_clean_exit():
+    session = Session(env={"SF_TEST_BACKEND_DELAY_MATCH_SECONDS": "2"})
+    try:
+        session.send(b"delay response\r")
+        session.wait_session_records(2)
+        mark = len(session.output)
+        # Emacs Ctrl-O accepts the editor buffer without setting a chat action.
+        session.send(b"\x0f")
+        session.wait_after(mark, "Chat editor exited unexpectedly", timeout=3)
+        visible = session.visible(mark)
+        assert "state working" in visible, visible
+        assert "Saved:" not in visible, visible
+        end = time.monotonic() + 3
+        result = None
+        while result is None and time.monotonic() < end:
+            result = os.waitid(
+                os.P_PID, session.pid, os.WEXITED | os.WNOHANG | os.WNOWAIT
+            )
+            session.pump()
+        assert result is not None and result.si_status == 1
+    finally:
+        session.close()
+
+
 def test_sigterm_leaves_terminal_state():
     master, slave = pty.openpty()
     fcntl.ioctl(master, termios.TIOCSWINSZ, struct.pack("HHHH", ROWS, COLUMNS, 0, 0))
@@ -548,6 +572,7 @@ def main():
     test_repeated_permission_ctrl_c_exits_after_recovery()
     test_tool_result_preview_reports_total_tokens()
     test_chat_end()
+    test_actionless_editor_return_is_not_a_clean_exit()
     test_zle_multiline_editing()
     test_zle_wrapped_line_navigation()
     test_streaming_input_sequences_remain_atomic()

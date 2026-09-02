@@ -333,8 +333,8 @@ sf_chat_answer_permission() {
 
 sf_chat_controller() {
   local session=$1 runtime=$2 initial=${3-} session_mode=${4:-resume} draft=${5-}
-  local input=$draft saved_tty identity
-  integer exit_status=0
+  local input=$draft saved_tty identity editor_error
+  integer exit_status=0 editor_status=0
 
   SF_PRESENT_SESSION=$session
   SF_PRESENT_RUNTIME=$runtime
@@ -379,7 +379,13 @@ sf_chat_controller() {
   while (( ! exit_status )); do
     [[ $SF_PRESENT_ACTION == epoch ]] || SF_PRESENT_ACTION=''
     stty intr undef 2>/dev/null || { exit_status=1; break; }
-    { vared -h -M sf-present -p "$PROMPT" input } always { stty "$saved_tty" 2>/dev/null || true }
+    {
+      if vared -h -M sf-present -p "$PROMPT" input; then
+        editor_status=0
+      else
+        editor_status=$?
+      fi
+    } always { stty "$saved_tty" 2>/dev/null || true }
     [[ $SF_PRESENT_ACTION == epoch ]] || input=''
     case $SF_PRESENT_ACTION in
       epoch) SF_PRESENT_ACTION='' ;;
@@ -388,7 +394,14 @@ sf_chat_controller() {
         sf_chat_turn "$SF_PRESENT_SUBMITTED" || exit_status=1
         ;;
       handoff|quit) break ;;
-      *) break ;;
+      *)
+        editor_error="Chat editor exited unexpectedly (status $editor_status, state $SF_PRESENT_STATE"
+        [[ -z $SF_PRESENT_RENDER_ERROR ]] || editor_error+=", render: $SF_PRESENT_RENDER_ERROR"
+        editor_error+=').'
+        [[ -z $SF_PRESENT_ERROR ]] || editor_error="$SF_PRESENT_ERROR"$'\n'"$editor_error"
+        SF_PRESENT_ERROR=$editor_error
+        exit_status=1
+        ;;
     esac
   done
   sf_chat_heartbeat_stop
