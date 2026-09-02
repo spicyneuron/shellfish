@@ -21,6 +21,8 @@ def event_fields:
     (if ($message | test("^provider request limit reached: [0-9]+$")) then
        ($message | capture(": (?<limit>[0-9]+)$").limit) as $limit |
        ["Turn limit reached", "This turn reached the maximum of \($limit) provider requests."]
+     elif ($message | test("(^| )hooks?( |$)")) then
+       ["Hook failed", $message]
      elif ($message | contains("no API key was supplied")) then
        ["API key required", $message]
      elif ($message | contains("credentials are unavailable; authenticate")) then
@@ -58,8 +60,6 @@ def event_fields:
        ["Working directory unavailable", $message]
      elif ($message | test("^(cannot (append|create|inspect|prepare|read|release|repair|replace|restore|secure|timestamp|write) session|invalid session path:)")) then
        ["Session failed", $message]
-     elif ($message | test("(^| )hooks?( |$)")) then
-       ["Hook failed", $message]
      elif ($message == "sandbox executable is unavailable" or
            ($message | startswith("sandbox executable is unavailable: "))) then
        ["Sandbox unavailable", $message]

@@ -58,6 +58,7 @@ for error expected in \
     'cannot append session record: /tmp/session.jsonl' 'Session failed,cannot append session record: /tmp/session.jsonl' \
     'cannot prepare session records' 'Session failed,cannot prepare session records' \
     'cannot prepare hook captures' 'Hook failed,cannot prepare hook captures' \
+    'hook script failed with status 1: HTTP 400: bad request' 'Hook failed,hook script failed with status 1: HTTP 400: bad request' \
     'sandbox executable is unavailable: /usr/bin/fence' 'Sandbox unavailable,sandbox executable is unavailable: /usr/bin/fence' \
     'cannot capture tool output' 'Tool failed,cannot capture tool output' \
     'cannot inspect configured tools' 'Tool failed,cannot inspect configured tools' \
