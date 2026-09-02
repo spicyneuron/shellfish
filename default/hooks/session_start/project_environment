@@ -3,30 +3,13 @@
 set -u
 unsetopt BG_NICE
 zmodload zsh/datetime
-zmodload zsh/zselect
+source "${0:A:h:h:h}/lib/capped.zsh" || exit 1
 
 printf 'Date: %s\n' "$(date '+%Y-%m-%d')"
 printf 'Platform: %s %s\n\n' "$(uname -s)" "$(uname -r)"
 printf 'PWD: %s\n' "$(pwd -P)"
 
 typeset -F deadline=$(( EPOCHREALTIME + 1 ))
-capped() {
-  local pid timer
-  typeset -i exit_code=0 ticks=$(( (deadline - EPOCHREALTIME) * 100 ))
-  (( ticks > 0 )) || return 124
-  "$@" &
-  pid=$!
-  (
-    zselect -t "$ticks" || true
-    kill -TERM "$pid" 2>/dev/null || true
-  ) </dev/null >/dev/null 2>&1 &
-  timer=$!
-  wait "$pid" || exit_code=$?
-  kill -TERM "$timer" 2>/dev/null || true
-  wait "$timer" 2>/dev/null || true
-  (( exit_code == 143 )) && return 124
-  return "$exit_code"
-}
 
 exit_if_slow() {
   (( $1 == 124 )) || return 0
@@ -44,12 +27,12 @@ fi
 
 typeset output
 typeset -i probe_status
-output=$(capped "${directory_command[@]}" 2>&1)
+output=$(sf_capped "$deadline" "${directory_command[@]}" 2>&1)
 probe_status=$?
 exit_if_slow "$probe_status" 'Filesystem context'
 if (( $+commands[tree] )) &&
     { (( probe_status != 0 )) || [[ $output == *'[error opening dir]'* ]]; }; then
-  output=$(capped ls -F 2>&1)
+  output=$(sf_capped "$deadline" ls -F 2>&1)
   probe_status=$?
   exit_if_slow "$probe_status" 'Filesystem context'
 fi

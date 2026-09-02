@@ -4,6 +4,29 @@ source "${0:A:h}/_hooks.zsh"
 
 sf_test_runtime
 
+# Short bundled probes preserve command results and share an absolute deadline.
+source "$ROOT/default/lib/capped.zsh"
+zmodload zsh/datetime
+typeset -F capped_deadline
+integer capped_status=0
+setopt bg_nice
+capped_deadline=$(( EPOCHREALTIME + 1 ))
+assert_equal 'probe output' "$(sf_capped "$capped_deadline" printf 'probe output')"
+sf_capped "$capped_deadline" sh -c 'exit 7' || capped_status=$?
+assert_equal 7 "$capped_status"
+capped_status=0
+sf_capped "$capped_deadline" sh -c 'exit 143' || capped_status=$?
+assert_equal 143 "$capped_status"
+[[ $options[bgnice] == on ]]
+capped_deadline=$(( EPOCHREALTIME + 0.05 ))
+capped_status=0
+sf_capped "$capped_deadline" sleep 1 || capped_status=$?
+assert_equal 124 "$capped_status"
+capped_status=0
+sf_capped "$capped_deadline" sh -c ': >"$1"' _ "$tmp/capped-called" || capped_status=$?
+assert_equal 124 "$capped_status"
+[[ ! -e $tmp/capped-called ]]
+
 typeset environment_script="$ROOT/default/hooks/session_start/project_environment"
 typeset environment_bin="$tmp/environment-bin"
 typeset environment_output

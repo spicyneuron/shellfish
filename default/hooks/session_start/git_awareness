@@ -3,29 +3,11 @@
 emulate -R zsh
 setopt no_aliases no_bg_nice no_multios pipe_fail
 zmodload zsh/datetime
-zmodload zsh/zselect
+source "${0:A:h:h:h}/lib/capped.zsh" || exit 1
 
 state="$SHELLFISH_SESSION_STATE/git_awareness"
 temp="$state.$$"
 typeset -F deadline=$(( EPOCHREALTIME + 1 ))
-
-capped() {
-  local pid timer
-  integer exit_code=0 ticks=$(( (deadline - EPOCHREALTIME) * 100 ))
-  (( ticks > 0 )) || return 124
-  "$@" &
-  pid=$!
-  (
-    zselect -t "$ticks" || true
-    kill -TERM "$pid" 2>/dev/null || true
-  ) </dev/null >/dev/null 2>&1 &
-  timer=$!
-  wait "$pid" || exit_code=$?
-  kill -TERM "$timer" 2>/dev/null || true
-  wait "$timer" 2>/dev/null || true
-  (( exit_code == 143 )) && return 124
-  return "$exit_code"
-}
 
 cleanup() {
   rm -f -- "$temp"
@@ -34,24 +16,24 @@ trap cleanup EXIT INT TERM
 
 typeset branch hash identity commits files git_status
 integer probe_status
-branch=$(capped git symbolic-ref --quiet --short HEAD 2>/dev/null)
+branch=$(sf_capped "$deadline" git symbolic-ref --quiet --short HEAD 2>/dev/null)
 case $? in
   0) identity="branch:$branch" ;;
   1)
-    hash=$(capped git rev-parse --verify HEAD 2>/dev/null) || exit 0
+    hash=$(sf_capped "$deadline" git rev-parse --verify HEAD 2>/dev/null) || exit 0
     identity="commit:$hash"
     ;;
   *) exit 0 ;;
 esac
-commits=$(capped git log --oneline -5 2>/dev/null)
+commits=$(sf_capped "$deadline" git log --oneline -5 2>/dev/null)
 probe_status=$?
 (( probe_status != 124 )) || exit 0
 (( probe_status == 0 )) || commits=''
-files=$(capped git log --name-status --pretty=format: -5 2>/dev/null)
+files=$(sf_capped "$deadline" git log --name-status --pretty=format: -5 2>/dev/null)
 probe_status=$?
 (( probe_status != 124 )) || exit 0
 (( probe_status == 0 )) || files=''
-git_status=$(capped git status --short 2>/dev/null)
+git_status=$(sf_capped "$deadline" git status --short 2>/dev/null)
 probe_status=$?
 (( probe_status != 124 )) || exit 0
 (( probe_status == 0 )) || git_status=''
