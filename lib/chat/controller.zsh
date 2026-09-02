@@ -10,6 +10,7 @@ typeset -g SF_PRESENT_PERMISSION_LANGUAGE=''
 typeset -gi SF_PRESENT_PERMISSION_PREVIEW_LENGTH=0
 typeset -gi SF_PRESENT_EXIT_STATUS=0
 typeset -g SF_PRESENT_REASONING_TOKENS=''
+typeset -g SF_PRESENT_EXEC_ERROR_HEADING='' SF_PRESENT_EXEC_ERROR_DETAIL=''
 typeset -g SF_PRESENT_IDENTITY='' SF_PRESENT_FOOTER=''
 typeset -g SF_PRESENT_TTY=''
 
@@ -127,6 +128,13 @@ sf_chat_decoded() {
         ;;
       exec_error)
         sf_chat_notice error "$first" "$second" || return 1
+        if [[ -z $SF_PRESENT_EXEC_ERROR_HEADING ]]; then
+          SF_PRESENT_EXEC_ERROR_HEADING=$first
+          SF_PRESENT_EXEC_ERROR_DETAIL=$second
+        else
+          [[ -z $SF_PRESENT_EXEC_ERROR_DETAIL ]] || SF_PRESENT_EXEC_ERROR_DETAIL+=$'\n'
+          SF_PRESENT_EXEC_ERROR_DETAIL+="$first${second:+: $second}"
+        fi
         ;;
       hook_display)
         sf_chat_notice notice "${second:t}" "$third" || return 1
@@ -235,20 +243,40 @@ sf_chat_pending_next() {
 }
 
 sf_chat_exec_finish() {
-  local heading detail render_error=$SF_PRESENT_RENDER_ERROR
+  local heading detail exit_detail render_error=$SF_PRESENT_RENDER_ERROR
+  local exec_heading=$SF_PRESENT_EXEC_ERROR_HEADING exec_detail=$SF_PRESENT_EXEC_ERROR_DETAIL
   integer exit_status cancelled=0
   sf_chat_transport_result || return 1
   exit_status=$reply[1]
-  detail=$reply[2]
+  exit_detail=$reply[2]
+  SF_PRESENT_EXEC_ERROR_HEADING=''
+  SF_PRESENT_EXEC_ERROR_DETAIL=''
   [[ $SF_PRESENT_STATE != cancelling ]] || cancelled=1
   if (( exit_status || cancelled )); then
     if (( cancelled )); then
       heading='Cancelled.'
+      detail=$exit_detail
+    elif [[ -n $exec_heading ]]; then
+      heading=$exec_heading
+      detail=$exec_detail
+      if [[ -n $exit_detail && $detail != *"$exit_detail"* ]]; then
+        [[ -z $detail ]] || detail+=$'\n'
+        detail+=$exit_detail
+      fi
     else
-      heading='Exec exited unexpectedly.'
+      if (( exit_status >= 128 )); then
+        heading='Exec process terminated.'
+        detail=${exit_detail:-"Terminated by signal $(( exit_status - 128 ))."}
+      else
+        heading='Exec process failed.'
+        detail=${exit_detail:-"Exited with status $exit_status."}
+      fi
     fi
     sf_chat_discard_queue
-    [[ -z $REPLY ]] || detail+="${detail:+$'\n'}$REPLY"
+    if [[ -n $REPLY ]]; then
+      [[ -z $detail ]] || detail+=$'\n'
+      detail+=$REPLY
+    fi
     if sf_chat_recover "$heading" "$detail" "$(( cancelled || exit_status == 143 ))"; then
       SF_PRESENT_STATE=idle
     else
@@ -294,6 +322,8 @@ sf_chat_turn() {
     '{type:"message",role:"user",content:[{type:"text",text:$prompt}]}') || return 1
   SF_PRESENT_HANDOFF=()
   SF_PRESENT_REASONING_TOKENS=''
+  SF_PRESENT_EXEC_ERROR_HEADING=''
+  SF_PRESENT_EXEC_ERROR_DETAIL=''
   SF_PRESENT_RENDER_ERROR=''
   SF_PRESENT_ACTIVITY_FRAME=0
   SF_PRESENT_ACTIVITY=${SF_PRESENT_ACTIVITY_FRAMES[1]}

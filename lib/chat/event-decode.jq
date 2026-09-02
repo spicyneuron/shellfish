@@ -36,12 +36,40 @@ def event_fields:
        ["Provider rate limit reached", $message]
      elif ($message | test(": HTTP [0-9]{3}(:|$)")) then
        ["Provider request failed", $message]
+     elif ($message == "cannot prepare provider request" or
+           ($message | contains(": request failed"))) then
+       ["Provider request failed", $message]
+     elif ($message | contains("invalid canonical request") or
+           contains("cannot translate canonical request")) then
+       ["Provider request invalid", $message]
+     elif ($message == "backend exited before completing a response") then
+       ["Provider response incomplete", $message]
+     elif ($message == "backend emitted an invalid event stream" or
+           ($message | contains("cannot read the response status")) or
+           $message == "cannot inspect provider response" or
+           ($message | contains("cannot normalize API response"))) then
+       ["Provider response invalid", $message]
+     elif ($message == "invalid permission response" or
+           $message == "cannot prepare permission request") then
+       ["Permission failed", $message]
      elif ($message | startswith("session is busy: ")) then
        ["Session busy", $message]
      elif ($message | startswith("session working directory is unavailable: ")) then
        ["Working directory unavailable", $message]
+     elif ($message | test("^(cannot (append|create|inspect|prepare|read|release|repair|replace|restore|secure|timestamp|write) session|invalid session path:)")) then
+       ["Session failed", $message]
      elif ($message | test("(^| )hooks?( |$)")) then
        ["Hook failed", $message]
+     elif ($message == "sandbox executable is unavailable" or
+           ($message | startswith("sandbox executable is unavailable: "))) then
+       ["Sandbox unavailable", $message]
+     elif ($message == "cannot inspect configured tools" or
+           $message == "cannot resolve native temporary directory" or
+           $message == "sandbox bypass reason is required" or
+           ($message | test("^(cannot (bound|capture|decode|inspect|load|prepare) (denied )?tool|tool (command|process|session)|shell tool execution failed)"))) then
+       ["Tool failed", $message]
+     elif ($message == "cannot prepare handoff") then
+       ["Handoff failed", $message]
      else
        ["Turn failed", $message]
      end)

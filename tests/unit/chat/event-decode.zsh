@@ -45,9 +45,23 @@ for error expected in \
     'openai: TLS connection failed (curl status 60)' 'Provider connection failed,openai: TLS connection failed (curl status 60)' \
     'openai: HTTP 429: slow down' 'Provider rate limit reached,openai: HTTP 429: slow down' \
     'openai: HTTP 400: bad request' 'Provider request failed,openai: HTTP 400: bad request' \
+    'cannot prepare provider request' 'Provider request failed,cannot prepare provider request' \
+    'openai: request failed (curl status 1)' 'Provider request failed,openai: request failed (curl status 1)' \
+    'openai: invalid canonical request' 'Provider request invalid,openai: invalid canonical request' \
+    'backend exited before completing a response' 'Provider response incomplete,backend exited before completing a response' \
+    'backend emitted an invalid event stream' 'Provider response invalid,backend emitted an invalid event stream' \
+    'openai: cannot read the response status' 'Provider response invalid,openai: cannot read the response status' \
+    'openai: cannot normalize API response: bad payload' 'Provider response invalid,openai: cannot normalize API response: bad payload' \
+    'invalid permission response' 'Permission failed,invalid permission response' \
     'session is busy: /tmp/session.jsonl' 'Session busy,session is busy: /tmp/session.jsonl' \
     'session working directory is unavailable: /tmp/gone' 'Working directory unavailable,session working directory is unavailable: /tmp/gone' \
+    'cannot append session record: /tmp/session.jsonl' 'Session failed,cannot append session record: /tmp/session.jsonl' \
+    'cannot prepare session records' 'Session failed,cannot prepare session records' \
     'cannot prepare hook captures' 'Hook failed,cannot prepare hook captures' \
+    'sandbox executable is unavailable: /usr/bin/fence' 'Sandbox unavailable,sandbox executable is unavailable: /usr/bin/fence' \
+    'cannot capture tool output' 'Tool failed,cannot capture tool output' \
+    'cannot inspect configured tools' 'Tool failed,cannot inspect configured tools' \
+    'cannot prepare handoff' 'Handoff failed,cannot prepare handoff' \
     'cannot inspect frozen runtime' 'Turn failed,cannot inspect frozen runtime'; do
   order=$(jq -cn --arg message "$error" '{type:"_exec_error",message:$message}' |
     jq -jRs -L "$ROOT/lib" --argjson runtime null \

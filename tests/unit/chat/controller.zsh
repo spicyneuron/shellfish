@@ -364,9 +364,31 @@ SF_CHAT_TRANSPORT_EXIT_DETAIL='backend failed'
 sf_chat_exec_finish
 assert_equal 0 "${#SF_PRESENT_QUEUE}"
 assert_equal idle "$SF_PRESENT_STATE"
-assert_equal 'Exec exited unexpectedly.' "$SF_PRESENT_NODE_HEADING[-1]"
+assert_equal 'Exec process failed.' "$SF_PRESENT_NODE_HEADING[-1]"
+[[ $SF_PRESENT_NODE_BODY[-1] == *'backend failed'* ]] ||
+  fail 'exec failure omitted process stderr'
 [[ $SF_PRESENT_NODE_BODY[-1] == *'Discarded 1 queued prompt.'* ]] ||
   fail 'exec failure did not report discarded queued prompts'
+
+# A decoded exec error survives authoritative recovery and takes precedence over
+# the child process's generic nonzero exit.
+sf_chat_reset
+sf_chat_terminal_reset
+SF_PRESENT_SESSION="$tmp/recover.jsonl"
+SF_PRESENT_STATE=working
+sf_chat_transport_reset
+SF_CHAT_TRANSPORT_LINES=(
+  '{"type":"_exec_error","message":"backend emitted an invalid event stream"}'
+  '{"type":"_exec_error","message":"cannot release session lock"}'
+)
+SF_CHAT_TRANSPORT_EOF=1
+SF_CHAT_TRANSPORT_EXIT_STATUS=1
+SF_CHAT_TRANSPORT_EXIT_DETAIL='backend emitted an invalid event stream'
+sf_chat_heartbeat_tick
+assert_equal idle "$SF_PRESENT_STATE"
+assert_equal 'Provider response invalid' "$SF_PRESENT_NODE_HEADING[-1]"
+assert_equal $'backend emitted an invalid event stream\nSession failed: cannot release session lock' \
+  "$SF_PRESENT_NODE_BODY[-1]"
 
 # A terminated exec can replace a flushed and closed speculative assistant
 # prefix during turn recovery. Chat resets that live tail and remains usable.
@@ -383,7 +405,8 @@ SF_CHAT_TRANSPORT_EXIT_DETAIL=''
 sf_chat_exec_finish
 assert_equal idle "$SF_PRESENT_STATE"
 assert_equal 1:0 "$SF_PRESENT_CURSOR"
-assert_equal 'Exec exited unexpectedly.' "$SF_PRESENT_NODE_HEADING[-1]"
+assert_equal 'Exec process terminated.' "$SF_PRESENT_NODE_HEADING[-1]"
+assert_equal 'Terminated by signal 15.' "$SF_PRESENT_NODE_BODY[-1]"
 sf_chat_submit next
 assert_equal submit "$REPLY"
 assert_equal next "$SF_PRESENT_SUBMITTED"
