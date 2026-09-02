@@ -121,6 +121,36 @@ def token_usage:
    else true end) and
   (if has("reasoning_tokens") then .reasoning_tokens | token_count else true end);
 
+def content_index:
+  type == "number" and floor == . and . >= 0 and . <= 2147483647;
+
+def canonical_backend_event:
+  type == "object" and
+  if .type == "_assistant_delta" or .type == "_assistant_reasoning_delta" then
+    keys == ["index", "text", "type"] and (.index | content_index) and
+    (.text | type == "string")
+  elif .type == "_assistant_reasoning_opaque" then
+    keys == ["index", "opaque", "type"] and (.index | content_index) and
+    (.opaque | type == "object")
+  elif .type == "_assistant_tool_call_delta" then
+    ((keys - ["id", "index", "input", "name", "type"]) | length == 0) and
+    (["index", "type"] - keys | length == 0) and
+    (has("id") or has("name") or has("input")) and
+    (.index | content_index) and
+    (if has("id") then .id | identifier else true end) and
+    (if has("name") then .name | tool_name else true end) and
+    (if has("input") then .input | type == "string" else true end)
+  elif .type == "_turn_usage" then
+    del(.type) | token_usage
+  elif .type == "_assistant_response_end" then
+    keys == ["stop", "type"] and (.stop | IN("end", "tool_calls", "length"))
+  else false end;
+
+def canonical_backend_response_events:
+  type == "array" and length > 0 and all(.[]; canonical_backend_event) and
+  .[-1].type == "_assistant_response_end" and
+  ([.[] | select(.type == "_assistant_response_end")] | length) == 1;
+
 def canonical_text:
   type == "object" and keys == ["text", "type"] and
   .type == "text" and (.text | type == "string");
