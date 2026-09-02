@@ -20,6 +20,12 @@ sf_chat_transport_reset() {
 }
 
 sf_chat_transport_has_pending() {
+  # A type filter matches only the head of an already decoded batch.
+  if (( $# )); then
+    (( $# == 1 && ${#SF_CHAT_TRANSPORT_EVENTS} >= 7 )) || return 1
+    [[ $SF_CHAT_TRANSPORT_EVENTS[1] == $1 ]]
+    return
+  fi
   (( ${#SF_CHAT_TRANSPORT_EVENTS} || ${#SF_CHAT_TRANSPORT_LINES} ))
 }
 

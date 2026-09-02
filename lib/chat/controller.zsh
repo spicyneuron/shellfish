@@ -206,16 +206,20 @@ sf_chat_recover() {
   sf_chat_notice error "$heading" "$detail"
 }
 
-# Apply one transport record. The heartbeat drains the decoded batch only after
-# rows from previously applied records have stopped flushing.
+# Apply one transport record and name it in REPLY.
 sf_chat_pending_next() {
-  local queue_notice
+  local queue_notice applied
   integer transport_status=0
 
+  REPLY=''
   sf_chat_transport_next "${SF_PRESENT_RUNTIME:-null}" || transport_status=$?
   case $transport_status in
     0)
-      sf_chat_decoded "${reply[@]}" && return 0
+      applied=$reply[1]
+      if sf_chat_decoded "${reply[@]}"; then
+        REPLY=$applied
+        return 0
+      fi
       ;;
     1) return 0 ;;
   esac

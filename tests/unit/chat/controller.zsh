@@ -177,8 +177,11 @@ SF_PRESENT_PERMISSION_LANGUAGE=stale
 SF_PRESENT_PERMISSION_PREVIEW_LENGTH=5
 SF_PRESENT_PERMISSION_DRAFT=stale
 SF_PRESENT_PERMISSION_CURSOR=5
-typeset -g BUFFER='' CURSOR=0 PREDISPLAY='' POSTDISPLAY='' ZLE_CALLS=''
-zle() { ZLE_CALLS+="${ZLE_CALLS:+,}$*"; }
+typeset -g BUFFER='' CURSOR=0 PREDISPLAY='' POSTDISPLAY='' ZLE_CALLS='' DRAWN=''
+zle() {
+  ZLE_CALLS+="${ZLE_CALLS:+,}$*"
+  [[ $1 != -I ]] || DRAWN=$PREDISPLAY$BUFFER$POSTDISPLAY
+}
 exec {SF_CHAT_TRANSPORT_OUTPUT_FD}< <(print -r -- broken)
 sf_chat_exec_ready "$SF_CHAT_TRANSPORT_OUTPUT_FD"
 assert_equal working "$SF_PRESENT_STATE"
@@ -270,6 +273,53 @@ integer cursor_node=${SF_PRESENT_CURSOR%%:*}
 functions[sf_chat_markdown_highlight]=$functions[sf_chat_markdown_saved]
 unfunction sf_chat_markdown_saved
 SF_PRESENT_HIGHLIGHT_ENABLED=0
+
+# Completed assistant rows drain before the validated tool call is applied,
+# including when the response is taller than one viewport.
+sf_chat_reset
+sf_chat_terminal_reset
+SF_PRESENT_STATE=working
+sf_chat_transport_reset
+SF_CHAT_TRANSPORT_LINES=(
+  '{"type":"_assistant_delta","text":"one\ntwo\nthree\nfour\nfive\nsix\nseven\nbefore tool"}'
+  '{"type":"message","role":"assistant","stop":"tool_calls","content":[{"type":"text","text":"one\ntwo\nthree\nfour\nfive\nsix\nseven\nbefore tool"},{"type":"tool_call","id":"call_1","name":"shell","input":{"command":"true"}}]}'
+)
+BUFFER=''
+CURSOR=0
+COLUMNS=80
+LINES=8
+DRAWN=''
+sf_chat_heartbeat_tick
+(( ! ${#${(M)SF_PRESENT_NODE_TYPE:#tool_call}} )) ||
+  fail 'tool call was applied in the assistant row frame'
+assert_equal '' "$SF_PRESENT_TOOL_CURRENT"
+sf_chat_transport_has_pending || fail 'tool call did not remain queued for the next frame'
+typeset published
+integer tool_ticks=0
+while [[ -z $SF_PRESENT_TOOL_CURRENT ]] && (( ++tool_ticks < 10 )); do
+  published=$DRAWN
+  sf_chat_heartbeat_tick
+done
+assert_equal call_1 "$SF_PRESENT_TOOL_CURRENT"
+[[ $published == *'before tool'* ]] || fail 'tool call preceded the final assistant row'
+if sf_chat_transport_has_pending; then
+  fail 'transport events remained after the tool frame'
+fi
+
+# A tool-only response has no assistant row to publish first.
+sf_chat_reset
+sf_chat_terminal_reset
+sf_chat_transport_reset
+SF_CHAT_TRANSPORT_LINES=(
+  '{"type":"_backend_request_start"}'
+  '{"type":"message","role":"assistant","stop":"tool_calls","content":[{"type":"tool_call","id":"call_2","name":"shell","input":{"command":"true"}}]}'
+)
+sf_chat_heartbeat_tick
+assert_equal call_2 "$SF_PRESENT_TOOL_CURRENT"
+if sf_chat_transport_has_pending; then
+  fail 'tool-only response paused for an empty frame'
+fi
+
 # Successful completion stages the FIFO head as the next ordinary user turn.
 sf_chat_reset
 sf_chat_terminal_reset
