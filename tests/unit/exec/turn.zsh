@@ -107,6 +107,66 @@ print -r -- "$stream" | jq -eRn '
   ($events[-1].message | contains("test backend failure"))
 ' >/dev/null
 
+# Visible content from an incomplete provider response is committed for replay,
+# while incomplete tool intent and usage remain transient.
+typeset partial_backend="$tmp/partial-backend" partial_capture="$tmp/partial-request.json"
+cat >"$partial_backend" <<'ZSH'
+#!/usr/bin/env zsh
+request=$(cat)
+if jq -e '.messages[-1].content[0].text == "next"' <<<"$request" >/dev/null; then
+  print -r -- "$request" >"$PARTIAL_CAPTURE"
+  print -r -- '{"type":"_assistant_delta","index":0,"text":"continued"}'
+  print -r -- '{"type":"_assistant_response_end","stop":"end"}'
+  exit
+fi
+print -r -- '{"type":"_assistant_reasoning_delta","index":0,"text":"partial thought"}'
+print -r -- '{"type":"_assistant_reasoning_opaque","index":0,"opaque":{"id":"reasoning_1","encrypted_content":"secret"}}'
+print -r -- '{"type":"_assistant_delta","index":1,"text":"partial answer"}'
+print -r -- '{"type":"_assistant_tool_call_delta","index":2,"id":"incomplete","name":"shell","input":"{\"command\":"}'
+print -r -- '{"type":"_turn_usage","input_tokens":10,"output_tokens":4}'
+print -u2 -r -- 'partial backend failure'
+exit 7
+ZSH
+chmod +x "$partial_backend"
+typeset saved_runtime=$SF_TEST_RUNTIME
+SF_TEST_RUNTIME=$(jq -c --arg command "$partial_backend" '.backend.command=$command' \
+  <<<$SF_TEST_RUNTIME)
+typeset partial_response_session="$tmp/partial-response.jsonl"
+sf_test_session "$partial_response_session"
+stream=$(PARTIAL_CAPTURE="$partial_capture" sf_test_turn 'start' "$partial_response_session")
+print -r -- "$stream" | jq -eRn -L "$ROOT/lib" '
+  include "runtime/schema";
+  [inputs | fromjson] as $events |
+  ($events | map(select(.role == "assistant"))[-1]) as $assistant |
+  ($assistant | canonical_assistant_message) and
+  $assistant == {
+    type:"message",role:"assistant",stop:"length",content:[
+      {type:"reasoning",text:"partial thought",opaque:{id:"reasoning_1",encrypted_content:"secret"}},
+      {type:"text",text:"partial answer"}
+    ]
+  } and
+  ($events[-1].type == "_exec_error") and
+  ($events[-1].message | contains("partial backend failure"))
+' >/dev/null
+jq -L "$ROOT/lib" -e -s '
+  include "runtime/schema";
+  (.[1:] | canonical_session_records) and .[-1].stop == "length" and
+  (.[-1] | has("usage") | not) and
+  (.[-1].content | all(.type != "tool_call"))
+' "$partial_response_session" >/dev/null
+stream=$(PARTIAL_CAPTURE="$partial_capture" sf_test_turn next "$partial_response_session")
+print -r -- "$stream" | jq -eRn '
+  [inputs | fromjson] as $events |
+  ($events | map(select(.role == "assistant"))[-1].content[0].text) == "continued"
+' >/dev/null
+jq -e '
+  .messages[-2] == {role:"assistant",stop:"length",content:[
+    {type:"reasoning",text:"partial thought",opaque:{id:"reasoning_1",encrypted_content:"secret"}},
+    {type:"text",text:"partial answer"}
+  ]} and .messages[-1] == {role:"user",content:[{type:"text",text:"next"}]}
+' "$partial_capture" >/dev/null
+SF_TEST_RUNTIME=$saved_runtime
+
 # A partial append failure is fatal, emits no uncommitted durable record, and
 # releases the session lock. The next owner repairs the fragment.
 typeset partial_session="$tmp/partial.jsonl"

@@ -87,9 +87,84 @@ wait "$cancel_pid" || cancel_status=$?
 (( cancel_status == 143 )) || fail 'signalled exec did not report the signal'
 jq -eRn '
   [inputs | fromjson] as $events |
-  ($events[-1] | .role == "assistant" and .stop == "end")
+  ($events[-1] | .role == "assistant" and .stop == "length" and
+    (.content | any(.type == "text" and .text != "")))
 ' <"$cancel_output" >/dev/null || fail 'signalled exec did not close the interrupted turn'
 assert_session_unlocked "$cancel_session"
+
+# Reasoning metadata received before cancellation remains available to the next
+# provider request when visible reasoning is recovered.
+typeset cancel_backend="$tmp/cancel-backend" cancel_backend_marker="$tmp/tool-input"
+mkdir "$cancel_backend"
+cp "$ROOT/tests/fixtures/backend/backend.json" "$cancel_backend/backend.json"
+cat >"$cancel_backend/run" <<'ZSH'
+#!/usr/bin/env zsh
+request=$(cat)
+prompt=$(jq -r '.messages[-1].content[0].text' <<<"$request")
+if [[ $prompt == reasoning ]]; then
+  print -r -- '{"type":"_assistant_reasoning_opaque","index":0,"opaque":{"id":"reasoning_1","encrypted_content":"secret"}}'
+  print -r -- '{"type":"_assistant_reasoning_delta","index":0,"text":"partial thought"}'
+else
+  print -r -- '{"type":"_assistant_tool_call_delta","index":0,"id":"call_1","name":"shell","input":"{}"}'
+  print -r -- ready >"$CANCEL_BACKEND_MARKER"
+fi
+trap 'exit 143' TERM
+while true; do sleep 1; done
+ZSH
+chmod +x "$cancel_backend/run"
+typeset cancel_backend_config="$tmp/cancel-backend.jsonc"
+jq --arg adapter "$cancel_backend" '.backends.fixture.adapter=$adapter' \
+  "$config" >"$cancel_backend_config"
+
+typeset reasoning_session="$tmp/reasoning-cancel.jsonl" reasoning_output="$tmp/reasoning-cancel.out"
+zsh -f "$entry" exec --jsonl --config "$cancel_backend_config" \
+  --session "$reasoning_session" \
+  < <(print -r -- '{"type":"message","role":"user","content":[{"type":"text","text":"reasoning"}]}') \
+  >"$reasoning_output" 2>&1 &
+typeset reasoning_pid=$!
+waited=0
+while (( waited < 50 )) && ! grep -q '_assistant_reasoning_delta' "$reasoning_output" 2>/dev/null; do
+  sleep 0.1
+  (( waited += 1 ))
+done
+(( waited < 50 )) || fail 'exec never streamed reasoning to cancel'
+kill -TERM "$reasoning_pid" || fail 'reasoning turn ended before cancellation'
+integer reasoning_status=0
+wait "$reasoning_pid" || reasoning_status=$?
+(( reasoning_status == 143 )) || fail 'cancelled reasoning turn did not report the signal'
+jq -e -s '
+  .[-1] == {type:"message",role:"assistant",stop:"length",content:[{
+    type:"reasoning",text:"partial thought",
+    opaque:{id:"reasoning_1",encrypted_content:"secret"}
+  }]}
+' "$reasoning_session" >/dev/null || fail 'cancelled reasoning was not recovered'
+
+# A parseable tool-input prefix is not a completed provider response. Cancelling
+# during it must not commit a call that a later turn could execute.
+typeset tool_input_session="$tmp/tool-input-cancel.jsonl" tool_input_output="$tmp/tool-input-cancel.out"
+CANCEL_BACKEND_MARKER="$cancel_backend_marker" zsh -f "$entry" exec --jsonl \
+  --config "$cancel_backend_config" --session "$tool_input_session" \
+  < <(print -r -- '{"type":"message","role":"user","content":[{"type":"text","text":"tool input"}]}') \
+  >"$tool_input_output" 2>&1 &
+typeset tool_input_pid=$!
+waited=0
+while (( waited < 50 )) && [[ ! -s $cancel_backend_marker ]]; do
+  sleep 0.1
+  (( waited += 1 ))
+done
+(( waited < 50 )) || fail 'backend never started tool input to cancel'
+sleep 0.1
+kill -TERM "$tool_input_pid" || fail 'tool-input turn ended before cancellation'
+integer tool_input_status=0
+wait "$tool_input_pid" || tool_input_status=$?
+(( tool_input_status == 143 )) || fail 'cancelled tool-input turn did not report the signal'
+jq -e -s '
+  .[-1] == {type:"message",role:"assistant",stop:"end",
+    content:[{type:"text",text:"Turn interrupted."}]} and
+  ([.[] | .content[]? | select(.type == "tool_call")] | length) == 0
+' "$tool_input_session" >/dev/null || fail 'cancelled tool input became durable intent'
+assert_session_unlocked "$reasoning_session"
+assert_session_unlocked "$tool_input_session"
 
 # A turn that never finished is repaired when the session is next opened, and
 # the repair is announced before the new turn, since it is as durable as any

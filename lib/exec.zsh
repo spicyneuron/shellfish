@@ -11,7 +11,7 @@ setopt no_aliases no_bg_nice no_multios pipe_fail
 
 typeset -gA SF_EXEC=(
   answer '' backend_error_file '' backend_pid '' error '' jsonl 0
-  interrupted 0 permission_count 0 permission_available 0 signal_status 143
+  interrupted 0 partial_events '' permission_count 0 permission_available 0 signal_status 143
 )
 
 sf_exec_set_error() {
@@ -158,6 +158,7 @@ sf_exec_backend() {
   integer delta_seq=0 ended=0
   SF_EXEC[assistant]=''
   SF_EXEC[backend_error]=''
+  SF_EXEC[partial_events]=''
   sf_scratch_file backends exec-error || {
     SF_EXEC[backend_error]='cannot prepare provider error capture'
     return 1
@@ -176,6 +177,7 @@ sf_exec_backend() {
       if canonical_backend_event | not then "invalid"
       elif .type == "_assistant_delta" or .type == "_assistant_reasoning_delta" then
         "delta", (.seq = $seq)
+      elif .type == "_assistant_reasoning_opaque" then "opaque"
       elif .type == "_turn_usage" then "usage"
       elif .type == "_assistant_response_end" then "end"
       else "internal" end
@@ -183,10 +185,14 @@ sf_exec_backend() {
     kind=${decoded%%$'\n'*}
     (( ! ended )) || kind=invalid
     case $kind in
-      delta)
+      delta|opaque)
         events+=( "$event" )
-        sf_exec_emit "${decoded#*$'\n'}"
-        (( ++delta_seq ))
+        [[ -z $SF_EXEC[partial_events] ]] || SF_EXEC[partial_events]+=$'\n'
+        SF_EXEC[partial_events]+=$event
+        if [[ $kind == delta ]]; then
+          sf_exec_emit "${decoded#*$'\n'}"
+          (( ++delta_seq ))
+        fi
         ;;
       usage)
         events+=( "$event" )
@@ -212,6 +218,7 @@ sf_exec_backend() {
       include "runtime/schema";
       assemble_backend_response
     ' 2>/dev/null) || kind=invalid
+    [[ -z $SF_EXEC[assistant] ]] || SF_EXEC[partial_events]=''
   fi
   if [[ $kind == invalid || $adapter_status != 0 || -z $SF_EXEC[assistant] ]]; then
     if [[ -s $error_file ]]; then
@@ -229,22 +236,48 @@ sf_exec_backend() {
   SF_EXEC[backend_error_file]=''
 }
 
+sf_exec_partial_assistant() {
+  REPLY=''
+  [[ -n $SF_EXEC[partial_events] ]] || return 0
+  REPLY=$({
+    print -r -- "$SF_EXEC[partial_events]"
+    print -r -- '{"type":"_assistant_response_end","stop":"length"}'
+  } | jq -L "$SF_ROOT/lib" -cse '
+    include "runtime/schema";
+    assemble_backend_response |
+    select(any(.content[]; (.type == "text" or .type == "reasoning") and .text != ""))
+  ' 2>/dev/null) || REPLY=''
+}
+
 # Zsh defers a trap's pending exit until this cleanup call returns.
 sf_exec_turn_cleanup() {
   integer interrupted=$1
-  local failure=$2 after=$3 recovered='' close_failure=''
+  local failure=$2 after=$3 recovered='' partial='' close_failure=''
 
   sf_tools_cleanup
   sf_hooks_turn_state_cleanup
   [[ -z $SF_EXEC[backend_error_file] ]] ||
     rm -f -- "$SF_EXEC[backend_error_file]" 2>/dev/null || true
   if { (( interrupted )) || [[ -n $failure ]] } && [[ -n $SF_SESSION_LOCK ]]; then
+    sf_exec_partial_assistant
+    partial=$REPLY
+    if [[ -n $partial ]]; then
+      if sf_session_append "$partial"; then
+        recovered=$partial
+      else
+        failure=$SF_SESSION_ERROR
+      fi
+    fi
     if sf_session_recover_turn; then
-      recovered=$REPLY
+      if [[ -n $REPLY ]]; then
+        [[ -z $recovered ]] || recovered+=$'\n'
+        recovered+=$REPLY
+      fi
     else
       failure=$SF_SESSION_ERROR
     fi
   fi
+  SF_EXEC[partial_events]=''
   [[ -z $recovered ]] || sf_exec_emit "$recovered"
   if [[ -n $SF_SESSION_LOCK ]]; then
     if (( interrupted )); then
@@ -543,6 +576,7 @@ sf_exec_run() {
 
   SF_EXEC[error]=''
   SF_EXEC[answer]=''
+  SF_EXEC[partial_events]=''
   SF_EXEC[interrupted]=0
   SF_TOOL_INTERRUPTED=0
   SF_EXEC[signal_status]=143
