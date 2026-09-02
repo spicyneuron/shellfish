@@ -235,6 +235,18 @@ jq -e '
   .messages[-1].role == "tool_result"
 ' "$request_capture" >/dev/null
 
+# Replacing a lorem prompt with the sampler does not discard its tool keyword.
+typeset lorem_session="$tmp/lorem.jsonl"
+sf_test_session "$lorem_session"
+stream=$(sf_test_turn 'lorem tool' "$lorem_session")
+print -r -- "$stream" | jq -eRn '
+  [inputs | fromjson] as $events |
+  ($events | any(.type == "_exec_error") | not) and
+  ($events | map(select(.role == "assistant"))[0].stop) == "tool_calls" and
+  ($events | map(select(.role == "tool_result")) | length) == 1 and
+  ($events | map(select(.role == "assistant"))[-1].stop) == "end"
+' >/dev/null
+
 # A later owner recovers an interrupted provider state before the next request.
 sf_session_open "$session"
 sf_session_append '{"type":"message","role":"user","content":[{"type":"text","text":"interrupted"}]}'

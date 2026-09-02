@@ -3,7 +3,7 @@
 emulate -R zsh
 setopt err_exit no_aliases no_multios pipe_fail
 
-typeset request decoded user_text text tool_command tool_bypass keyword_mode=false
+typeset request decoded user_text prompt_text text tool_command tool_bypass keyword_mode=false
 typeset tool_mode tool_name tool_input fixture_dir fixture_path old_string new_string
 typeset cleanup_path cleanup_dir temp_root
 typeset -a parts deltas
@@ -46,6 +46,7 @@ think=${parts[4]}
 error_count=${parts[5]}
 tool_mode=${parts[6]}
 lorem=${parts[7]}
+prompt_text=$user_text
 
 if (( lorem )); then
   user_text=$(cat <<'EOF'
@@ -286,7 +287,7 @@ if [[ ${SF_TEST_BACKEND_TOOL_CALL:-0} == 1 || -n $tool_mode ]] || (( keyword_cou
       --argjson reasoning "$reasoning_tokens" \
       --argjson delay "$delay_match" \
       --arg delay_seconds "$delay_match_seconds" \
-      --arg prompt "$user_text" \
+      --arg prompt "$prompt_text" \
       --argjson keyword_mode "$keyword_mode" '
       def call_input($call):
         if $native then $tool_input
