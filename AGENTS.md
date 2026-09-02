@@ -48,5 +48,6 @@ NOTE: This project is pre-release. Do not add deprecation noticies, backwards co
 - For code changes, run the focused unit test nearest the feature first, then `./tests/run unit`. Reserve PTY tests for behavior that requires a real terminal. When running PTY tests, request a run outside the sandbox because otherwise they report `out of pty devices`. Run `./tests/run server` for changes under `cmd/shellfish-server/`. It runs the browser and Go tests.
 - Treat the worktree as shared: before any `git checkout`, `git restore`, `git reset`, or `git stash`, preserve and review affected uncommitted changes. Never discard or hide another agent's work.
 - Do not run tests for documentation- or comment-only changes.
+- In Zsh, avoid variable names that collide with special parameters such as `status` and `commands`. When a command substitution's exit status matters, declare the variable first and assign it separately.
 - `shellcheck` and `shfmt` are available, although their Zsh support is partial. Address diagnostics when they are relevant and cheap; do not chase every warning.
 - Write Markdown as normal paragraphs: do not manually wrap lines.
