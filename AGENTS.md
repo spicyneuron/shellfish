@@ -45,7 +45,7 @@ NOTE: This project is pre-release. Do not add deprecation noticies, backwards co
 
 ## Development
 
-- For code changes, run the focused unit test nearest the feature first, then `./tests/run unit`. Run `./tests/run pty` when terminal or UI behavior is relevant. Run `./tests/run server` for changes under `cmd/shellfish-server/`. It runs the browser and Go tests.
+- For code changes, run the focused unit test nearest the feature first, then `./tests/run unit`. Reserve PTY tests for behavior that requires a real terminal. When running PTY tests, request a run outside the sandbox because otherwise they report `out of pty devices`. Run `./tests/run server` for changes under `cmd/shellfish-server/`. It runs the browser and Go tests.
 - Treat the worktree as shared: before any `git checkout`, `git restore`, `git reset`, or `git stash`, preserve and review affected uncommitted changes. Never discard or hide another agent's work.
 - Do not run tests for documentation- or comment-only changes.
 - `shellcheck` and `shfmt` are available, although their Zsh support is partial. Address diagnostics when they are relevant and cheap; do not chase every warning.

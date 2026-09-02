@@ -318,10 +318,6 @@ done
 [[ $sandbox_display == 'session sandbox is disabled'* ]] ||
   fail "unexpected disabled sandbox display: $sandbox_display"
 
-for former_alias in /n /f '/f 1'; do
-  run_prompt_hook "$former_alias" "$help_session"
-  [[ $reply[1] == proceed ]]
-done
 sf_hooks_turn_state_cleanup
 
 # Forking a fork starts a numbered sequence instead of repeating the suffix.

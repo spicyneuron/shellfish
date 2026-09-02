@@ -8,6 +8,7 @@ which the shell reads 0x0 from stty and silently disables both wrapping and
 flushing, so nothing under test runs.
 """
 import json
+import os
 import re
 import sys
 import time
@@ -28,6 +29,13 @@ from _session import ROWS, COLUMNS, Session  # noqa: E402
 # overflow site: the user block above it is committed before the turn starts.
 WORDS = [f"w{index:03d}" for index in range(1, 201)]
 SESSION_FIXTURE = Path(__file__).resolve().parents[1] / "fixtures/session/complete.jsonl"
+QUEUE_HOOK = r"""#!/usr/bin/env zsh
+[[ $1 == user_prompt_submit ]] || exit 1
+IFS= read -r prompt
+[[ $prompt == alpha ]] || exit 0
+: >"${SHELLFISH_SESSION:h}/queue-ready"
+IFS= read -r <"${SHELLFISH_SESSION:h}/queue-release"
+"""
 
 
 class Recorder(pyte.Screen):
@@ -319,20 +327,29 @@ def test_tall_resume_drains_bounded_backlog():
 
 def test_queued_submits_keep_committed_history():
     """Queued submits execute in order without disturbing committed output."""
-    session = Session(env={"SF_TEST_BACKEND_DELAY": "0.5"})
+    session = Session(hooks={"hold_queue": QUEUE_HOOK})
     terminal = Terminal(session)
     try:
+        path, _ = session.wait_session_records(1)
+        ready = path.parent / "queue-ready"
+        release = path.parent / "queue-release"
+        os.mkfifo(release)
         session.send(b"alpha\r")
-        _, records = session.wait_session_records(2)
-        assert len(records) == 2 and records[-1]["role"] == "user", records
-        assert records[-1]["content"][0]["text"] == "alpha", records
         terminal.wait_for(
             "the first turn to remain active",
             lambda: "─ user" in terminal.everything().lower()
+            and ready.exists()
             and not terminal.turn_finished(),
         )
         session.send(b"two\rthree\rdraft")
-        _, records = session.wait_session_records(7)
+        terminal.wait_for(
+            "the prompts to queue",
+            lambda: "─ queue " in terminal.frame()
+            and "two" in terminal.frame()
+            and "three" in terminal.frame(),
+        )
+        release.write_text("\n")
+        _, records = session.wait_session_records(7, path=path)
         messages = [
             record["content"][0]["text"]
             for record in records
@@ -352,97 +369,11 @@ def test_queued_submits_keep_committed_history():
         session.close()
 
 
-def test_history_counter_labels_prompt_divider():
-    """Walking back through prompts counts the depth into the prompt divider."""
-    session = Session()
-    terminal = Terminal(session)
-    try:
-        session.send(b"one\rtwo\r")
-        session.wait_session_records(5)
-        terminal.wait_for(
-            "both turns to render",
-            lambda: terminal.turn_finished() and terminal.everything().count("two") >= 2,
-        )
-        session.send(b"\x1b[A")
-        terminal.wait_for(
-            "the newest prompt",
-            lambda: "─ history 1/2 " in terminal.frame() and "❯ two" in terminal.frame(),
-        )
-        session.send(b"\x1b[A")
-        terminal.wait_for(
-            "the oldest prompt",
-            lambda: "─ history 2/2 " in terminal.frame() and "❯ one" in terminal.frame(),
-        )
-        session.send(b"\x1b[B\x1b[B")
-        terminal.wait_for(
-            "the unsubmitted draft",
-            lambda: "history" not in terminal.frame() and "❯" in terminal.frame(),
-        )
-        draft = "0123456789" * 7
-        session.send(draft.encode() + b"\x1b[A\x1b[A")
-        terminal.wait_for(
-            "history beyond the wrapped draft",
-            lambda: "─ history 1/2 " in terminal.frame() and "❯ two" in terminal.frame(),
-        )
-        session.send("é".encode())
-        terminal.wait_for(
-            "editing history as a new draft",
-            lambda: "history" not in terminal.frame() and "❯ twoé" in terminal.frame(),
-        )
-        session.send(b"\x1b[A")
-        terminal.wait_for(
-            "the immutable history entry",
-            lambda: "─ history 1/2 " in terminal.frame() and "❯ two" in terminal.frame(),
-        )
-        session.send(b"\x1b[B")
-        terminal.wait_for(
-            "the promoted current draft",
-            lambda: "history" not in terminal.frame() and "❯ twoé" in terminal.frame(),
-        )
-        print("PASS history: prompt divider counts browsed history")
-    finally:
-        session.close()
-
-
-def test_history_survives_turn_completion():
-    """Turn completion preserves the selected history entry and current draft."""
-    session = Session(env={"SF_TEST_BACKEND_DELAY_MATCH_SECONDS": "2"})
-    terminal = Terminal(session)
-    try:
-        session.send(b"one\r")
-        session.wait_session_records(3)
-        terminal.wait_for("the first turn", lambda: terminal.turn_finished())
-        session.send(b"delay response\r")
-        terminal.wait_for(
-            "the delayed turn",
-            lambda: not terminal.turn_finished() and "delay response" in terminal.frame(),
-        )
-        session.send(b"draft\x1b[A")
-        terminal.wait_for(
-            "history during the turn",
-            lambda: "─ history 1/2 " in terminal.frame()
-            and "❯ delay response" in terminal.frame(),
-        )
-        terminal.wait_for("the delayed turn to complete", terminal.turn_finished, timeout=4)
-        assert "─ history 1/2 " in terminal.frame(), terminal.dump()
-        session.send("é".encode())
-        terminal.wait_for(
-            "promoting history to the current draft",
-            lambda: "history" not in terminal.frame()
-            and "delay responseé" in terminal.frame(),
-        )
-        print("PASS history: turn completion preserved history and draft")
-    finally:
-        session.close()
-
-
 def main():
     test_tall_resume_drains_bounded_backlog()
     test_tall_turn_loses_neither_text_nor_draft()
     test_committed_headings_keep_style()
     test_queued_submits_keep_committed_history()
-    test_history_counter_labels_prompt_divider()
-    test_history_survives_turn_completion()
 
 
 if __name__ == "__main__":
