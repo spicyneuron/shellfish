@@ -181,7 +181,7 @@ curl "${SF_BACKEND_CURL_ARGS[@]}" 2>"$status_file" | tee "$response_file" | \
           end
     } end);
 
-  def complete_events:
+  def buffered_response_events:
     . as $message |
     [.content | to_entries[] | .key as $index | .value |
       if .type == "text" then transient("_assistant_delta";$index;.text)
@@ -193,7 +193,7 @@ curl "${SF_BACKEND_CURL_ARGS[@]}" 2>"$status_file" | tee "$response_file" | \
       else error("unsupported assistant content") end] +
     (if .usage == null then [] else [{type:"_turn_usage"} + .usage] end) +
     [{type:"_assistant_response_end",stop:.stop}];
-  def finish_events:
+  def stream_end_events:
     (if .usage == null then [] else [{type:"_turn_usage"} + .usage] end) +
     [{type:"_assistant_response_end",stop:.stop}];
 
@@ -211,7 +211,7 @@ curl "${SF_BACKEND_CURL_ARGS[@]}" 2>"$status_file" | tee "$response_file" | \
       elif .mode != "json" then error("no completed response")
       else (.body | try fromjson catch null) as $body |
         if $body == null then error("no completed response")
-        else .done = true | .out += ($body | normalized | complete_events)
+        else .done = true | .out += ($body | normalized | buffered_response_events)
         end
       end
     else
@@ -294,7 +294,7 @@ curl "${SF_BACKEND_CURL_ARGS[@]}" 2>"$status_file" | tee "$response_file" | \
            $event.type == "response.incomplete" then
         (merged($event.response; .items; .text; .added) | normalized) as $response |
         .done = true |
-        .out += ($response | finish_events)
+        .out += ($response | stream_end_events)
       else .
       end
     end;

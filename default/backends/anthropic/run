@@ -130,11 +130,11 @@ curl "${SF_BACKEND_CURL_ARGS[@]}" 2>"$status_file" | tee "$response_file" | \
     [$content | to_entries[] |
       select(.value.type == "thinking" or .value.type == "redacted_thinking") |
       {type:"_assistant_reasoning_opaque",index:.key,opaque:.value}];
-  def finish_events($content):
+  def stream_end_events($content):
     opaque_events($content) +
     (if .usage == null then [] else [(.usage | usage_event)] end) + [stop_event];
   # A buffered body expands into the same events a provider stream would emit.
-  def complete_events($content):
+  def buffered_response_events($content):
     [$content | to_entries[] |
       .key as $index | .value |
       if .type == "text" then transient("_assistant_delta";$index;.text)
@@ -160,7 +160,7 @@ curl "${SF_BACKEND_CURL_ARGS[@]}" 2>"$status_file" | tee "$response_file" | \
       elif .mode != "json" then error("no completed response")
       else (.body | try fromjson catch null) as $body |
         if $body == null then error("no completed response")
-        else .done = true | .out += ($body | complete_events(.content // []))
+        else .done = true | .out += ($body | buffered_response_events(.content // []))
         end
       end
     else
@@ -214,7 +214,7 @@ curl "${SF_BACKEND_CURL_ARGS[@]}" 2>"$status_file" | tee "$response_file" | \
          else .usage = ((.usage // {}) + $event.usage) end)
       elif $event.type == "message_stop" then
         .done = true |
-        .out += finish_events(rebuilt)
+        .out += stream_end_events(rebuilt)
       else .
       end
     end;
