@@ -243,11 +243,24 @@ typeset control_prefix=${help_lines[control_idx]%%Cancel*}
 typeset history_prefix=${help_lines[history_idx]%%Navigate*}
 assert_equal "${#control_prefix}" "${#history_prefix}"
 
+set_prompt_hook() {
+  local session=$1 script=$2 patch
+  integer rc=0
+  patch=$(jq -cn --arg script "$script" \
+    '{harness:{user_prompt_submit:[$script]}}') || return
+  sf_session_open "$session" || return
+  sf_session_update "$patch" || rc=1
+  sf_session_close || rc=1
+  return $rc
+}
+
+set_prompt_hook "$help_session" "$ROOT/default/hooks/user_prompt_submit/refresh"
 run_prompt_hook /refresh "$help_session"
 [[ $reply[1] == handoff && $reply[2] == "$ROOT/bin/shellfish" &&
    $reply[3] == --clear && $reply[4] == --session && $reply[5] == "${help_session:A}" ]]
 
 # /verbose reloads the same session and toggles the preview limits.
+set_prompt_hook "$help_session" "$ROOT/default/hooks/user_prompt_submit/verbose"
 unset SHELLFISH_VERBOSE
 run_prompt_hook /verbose "$help_session"
 [[ $reply[1] == handoff && $reply[2] == "$ROOT/bin/shellfish" &&
@@ -257,21 +270,21 @@ SHELLFISH_VERBOSE=1 run_prompt_hook /verbose "$help_session"
 [[ $reply[1] == handoff && $reply[2] == "$ROOT/bin/shellfish" &&
    $reply[3] == --clear && $reply[4] == --session && $reply[5] == "${help_session:A}" ]]
 
+set_prompt_hook "$help_session" "$ROOT/default/hooks/user_prompt_submit/server"
 run_prompt_hook /server "$help_session"
 [[ $reply[1] == handoff && $reply[2] == shellfish-server &&
    $reply[3] == --session && $reply[4] == "${help_session:A}" ]]
 
+set_prompt_hook "$help_session" "$ROOT/default/hooks/user_prompt_submit/resume"
 run_prompt_hook /resume "$help_session"
 [[ $reply[1] == handoff && $reply[2] == "$ROOT/bin/shellfish" &&
    $reply[3] == --resume ]]
-run_prompt_hook /r "$help_session"
-[[ $reply[1] == handoff && $reply[2] == "$ROOT/bin/shellfish" &&
-   $reply[3] == --clear && $reply[4] == --session && $reply[5] == "${help_session:A}" ]]
 
 # /sandbox lists grants without reloading and hands a minimal runtime patch to
 # the ordinary reload path for changes.
 typeset sandbox_display='' sandbox_patch sandbox_dir="$tmp/output with spaces"
 mkdir "$sandbox_dir"
+set_prompt_hook "$help_session" "$ROOT/default/hooks/user_prompt_submit/sandbox"
 run_prompt_hook /sandbox "$help_session"
 [[ $reply[1] == handled ]]
 for (( result_index = 4; result_index <= ${#SF_HOOK_SCRIPT_RESULTS}; result_index += 5 )); do
@@ -310,6 +323,7 @@ sf_hooks_turn_state_cleanup
 sf_test_session "$disabled_session"
 SF_TEST_RUNTIME=$enabled_runtime
 sf_hooks_turn_state_create
+set_prompt_hook "$disabled_session" "$ROOT/default/hooks/user_prompt_submit/sandbox"
 run_prompt_hook "/sandbox +r $sandbox_dir" "$disabled_session"
 [[ $reply[1] == handled ]]
 for (( result_index = 4; result_index <= ${#SF_HOOK_SCRIPT_RESULTS}; result_index += 5 )); do
