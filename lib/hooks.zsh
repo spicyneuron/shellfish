@@ -483,7 +483,7 @@ sf_hooks_session_start() {
 sf_hooks_user_prompt_submit_locked() {
   local prompt=$1 session=$2 argument control
   local -a decision handoff
-  integer operation_status=0 index control_status
+  integer operation_status=0 index control_status handoff_requested=0
 
   SF_HOOK_ERROR=''
   unset SHELLFISH_TURN_ID
@@ -516,19 +516,14 @@ sf_hooks_user_prompt_submit_locked() {
       ' <<<"$control" >/dev/null; then
       SF_HOOK_ERROR='user_prompt_submit hook script returned invalid control data'
       operation_status=1
-    fi
-  done
-  if (( ! operation_status && decision[2] )); then
-    if [[ -z $decision[4] ]] ||
-        ! jq -e '.action == "handoff"' <<<"$decision[4]" >/dev/null; then
-      SF_HOOK_ERROR='user_prompt_submit hook script halted without a handoff action'
-      operation_status=1
-    else
+    elif (( control_status == 11 )) &&
+        jq -e '.action? == "handoff"' <<<"$control" >/dev/null; then
+      handoff_requested=1
       while IFS= read -r -d $'\0' argument; do
         handoff+=( "$argument" )
-      done < <(jq -j '.argv[] | ., "\u0000"' <<<"$decision[4]")
+      done < <(jq -j '.argv[] | ., "\u0000"' <<<"$control")
     fi
-  fi
+  done
   (( operation_status )) || sf_hooks_commit_context user_prompt_submit || operation_status=1
   if (( operation_status )); then
     [[ -n $SF_HOOK_ERROR ]] || SF_HOOK_ERROR='cannot prepare user_prompt_submit hook script invocation'
@@ -539,7 +534,7 @@ sf_hooks_user_prompt_submit_locked() {
   if (( decision[1] )); then
     typeset -g +x SHELLFISH_TURN_ID
     reply=(proceed)
-  elif (( decision[2] )); then
+  elif (( handoff_requested )); then
     unset SHELLFISH_TURN_ID
     reply=(handoff "${handoff[@]}")
   else

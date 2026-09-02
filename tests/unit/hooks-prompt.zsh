@@ -53,6 +53,22 @@ CONTROL="$tmp/switched.jsonl" run_prompt_hook /switch "$prompt_session"
    $reply[3] == "$tmp/switched.jsonl" ]]
 jq -e 'select(.type == "context" and .content == "/switchcontext")' \
   < <(tail -n 1 "$prompt_session") >/dev/null
+
+# Exit 11 may halt the remaining prompt scripts without requesting a handoff.
+make_script halt 'print -rn -- halted; exit 11'
+typeset halt=$script
+SF_TEST_RUNTIME=$(jq -c --arg script "$halt" '
+  .harness.user_prompt_submit=[$script]
+' <<<"$SF_TEST_RUNTIME")
+typeset halt_session="$tmp/halt-session.jsonl"
+sf_hooks_turn_state_cleanup
+sf_test_session "$halt_session"
+sf_hooks_turn_state_create
+run_prompt_hook /halt "$halt_session"
+[[ ${#reply} == 1 && $reply[1] == handled ]]
+jq -e 'select(.type == "context" and .content == "halted")' \
+  < <(tail -n 1 "$halt_session") >/dev/null
+
 SF_TEST_RUNTIME=$(jq -c --arg script "$nul_argv" '
   .harness.user_prompt_submit=[$script]
 ' <<<"$SF_TEST_RUNTIME")

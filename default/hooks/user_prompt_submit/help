@@ -37,4 +37,4 @@ sort -s -t$'\t' -k1,1n "$SHELLFISH_TURN_STATE/help.tsv" |
       for (i=1;i<=NR;i++) printf "%s%*s  %s\n", key[i], max-chars(key[i]), "", desc[i]
     }' >&2
 rm -f -- "$SHELLFISH_TURN_STATE/help.tsv"
-exit 10
+exit 11

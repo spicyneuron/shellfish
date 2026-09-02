@@ -187,11 +187,12 @@ jq -e -s '
     contains("\nAvailable commands:\n"))
 ' "$shell_commands_session" >/dev/null
 
-# The bundled /help chain appends TSV rows to $SHELLFISH_TURN_STATE/help.tsv;
-# the help script (last in the chain) sorts by order and aligns columns. Verify
-# structural properties, not exact text: submission is skipped, every command
-# key appears, and rows are sorted by order ascending.
+# The bundled command scripts append TSV rows to $SHELLFISH_TURN_STATE/help.tsv.
+# The help script sorts and displays them, then halts before unrelated scripts.
+# Verify structural properties rather than exact text.
 typeset help_session="$tmp/help-session.jsonl"
+make_script after_help ': >"$SHELLFISH_TURN_STATE/after-help"'
+typeset after_help=$script
 SF_TEST_RUNTIME=$(jq -c \
   --arg help "$ROOT/default/hooks/user_prompt_submit/help" \
   --arg new "$ROOT/default/hooks/user_prompt_submit/new" \
@@ -203,8 +204,9 @@ SF_TEST_RUNTIME=$(jq -c \
   --arg user_shell "$ROOT/default/hooks/user_prompt_submit/user_shell" \
   --arg server "$ROOT/default/hooks/user_prompt_submit/server" \
   --arg resume "$ROOT/default/hooks/user_prompt_submit/resume" \
+  --arg after_help "$after_help" \
   '.harness.sandbox=true |
-   .harness.user_prompt_submit=[$new,$refresh,$verbose,$copy,$fork,$sandbox,$user_shell,$server,$resume,$help]' \
+   .harness.user_prompt_submit=[$new,$refresh,$verbose,$copy,$fork,$sandbox,$user_shell,$server,$resume,$help,$after_help]' \
   <<<"$SF_TEST_RUNTIME")
 sf_test_session "$help_session"
 sf_session_open "$help_session"
@@ -212,6 +214,7 @@ sf_session_close
 sf_hooks_turn_state_create
 run_prompt_hook /help "$help_session"
 [[ $reply[1] == handled ]]
+[[ ! -e $SHELLFISH_TURN_STATE/after-help ]]
 typeset help_display=''
 integer result_index
 for (( result_index = 4; result_index <= ${#SF_HOOK_SCRIPT_RESULTS}; result_index += 5 )); do

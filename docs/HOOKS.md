@@ -133,7 +133,7 @@ Quick reference. "Owner" is the process that runs the chain; "stdin" is the exac
 | --- | --- | --- | --- | --- | --- | --- |
 | `system` | exec | — | empty | durable system text | none | finish creation / unsupported (10/11 fails) |
 | `session_start` | exec | — | empty | durable context | none | finish creation / unsupported (10/11 fails) |
-| `user_prompt_submit` | exec | — | exact prompt | durable context | context metadata; handoff action with exit 11 | submit prompt / do not submit, optionally hand off |
+| `user_prompt_submit` | exec | — | exact prompt | durable context | context metadata; optional handoff action with exit 11 | submit prompt / do not submit, optionally hand off |
 | `permission_request` | exec | — | tool request envelope JSON | ignored | allow or deny action with exit 11 | defer to adapter / deny, or apply fd 3 |
 | `pre_tool_use` | exec | — | tool request envelope JSON | denial feedback on exit 10/11 | none | execute / deny the call |
 | `post_tool_use` | exec | — | tool response envelope JSON | must be empty | none | continue / unsupported (10/11 fails) |
@@ -185,7 +185,7 @@ Runs in exec before the ordinary user record is committed, with the exact submit
 
 - **stdout** becomes durable `user_prompt_submit` context, pending before the next committed user message.
 - **stderr** is shown and discarded.
-- **fd 3** accepts context metadata on any successful script status and a handoff action with exit 11.
+- **fd 3** accepts context metadata on any successful script status and an optional handoff action with exit 11.
 - **Default action** is submitting the literal prompt. Exit 10 or 11 does not submit it; stdout is still committed.
 
 For a blocked prompt, write model-visible context to stdout and a user-only explanation to stderr. There is no separate block-reason channel.
@@ -193,12 +193,12 @@ For a blocked prompt, write model-visible context to stdout and a user-only expl
 The supported statuses are:
 
 - **Exit 0** — submit normally. The script did not recognize the input (or only added context).
-- **Exit 10** — skip submission without a handoff. Write feedback to stderr and/or context to stdout. A script can attach prompt and status metadata to committed context through fd 3:
+- **Exit 10** — skip submission and continue the remaining `user_prompt_submit` scripts. Write feedback to stderr and/or context to stdout. A script can attach prompt and status metadata to committed context through fd 3:
 
   ```json
   {"context":{"prompt":"git status","status":0}}
   ```
-- **Exit 11** — skip submission and hand control to a capable client. fd 3 must request `{"action":"handoff","argv":[...]}` with a complete, nonempty command array including the executable as `argv[0]`.
+- **Exit 11** — skip submission and stop the remaining `user_prompt_submit` scripts. To hand control to a capable client, fd 3 may request `{"action":"handoff","argv":[...]}` with a complete, nonempty command array including the executable as `argv[0]`.
 
 Only exit 11 can request handoff. The script only requests it. A capable client executes the command after exec completes cleanly. argv strings must not contain NUL bytes.
 

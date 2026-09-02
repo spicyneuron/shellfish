@@ -591,7 +591,7 @@ test("labels actionable exec errors", async () => {
       "session working directory is unavailable: /tmp/gone",
       "Working directory unavailable",
     ],
-    ["user_prompt_submit hook script halted without a handoff action", "Hook failed"],
+    ["user_prompt_submit hook script returned invalid control data", "Hook failed"],
   ];
   for (const [message, heading, body = message] of errors) {
     await page.send({ type: "_exec_error", message });
