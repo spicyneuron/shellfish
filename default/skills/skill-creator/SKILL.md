@@ -1,6 +1,6 @@
 ---
 name: skill-creator
-description: Invoke when user asks to create or edit a skill.
+description: Use when creating or editing project-local skills.
 ---
 # Create a project-local skill
 
@@ -28,7 +28,8 @@ Turn the agreed design into the shortest instructions that will reliably produce
 - Be precise about settled requirements, but leave room for judgment where the user wants flexibility. Do not introduce certainty or constraints the user did not choose.
 - Use direct, unambiguous, information-dense language. Remove repetition, unnecessary background, and guidance the model can safely infer. All else equal, shorter is better.
 - Remember that length costs tokens. The name and description load in every new session, and the full skill loads when invoked.
-- Give the description just enough detail to tell the model when, and when not, to invoke the skill.
+- Make the description the shortest clear answer to: When should this skill be used? Prefer `Use when ...` or `Invoke when ...`.
+- Open the skill body with a brief section that captures its intent.
 - Inspect project instructions and existing skills under `./.agents/skills/` so the skill follows local conventions and does not duplicate an existing capability.
 - Create the skill at `./.agents/skills/<name>/SKILL.md`. Choose a specific name using only lowercase letters, numbers, and single hyphens.
 - Match the frontmatter `name` to the directory name. Keep `name` at most 64 characters and `description` at most 1024 characters. Use single-line scalars.
@@ -41,7 +42,8 @@ Read the finished skill once more and confirm that:
 
 - It reflects the decisions made with the user.
 - The directory and frontmatter names match.
-- The description makes its invocation boundaries clear.
+- The description succinctly answers when the skill should be used and contains no fluff.
+- The opening section briefly captures the skill's intent.
 - The instructions are concise, unambiguous, and usable without unstated project knowledge.
 - Settled requirements are specific, while deliberately open-ended behavior remains open.
 - Every referenced file exists and uses a relative path.
