@@ -111,7 +111,8 @@ sf_chat_cancel() {
 }
 
 sf_chat_decoded() {
-  local type=$1 first=${2-} second=${3-} third=${4-} fourth=${5-} fifth=${6-} sixth=${7-} encoded preview reason
+  local type=$1 first=${2-} second=${3-} third=${4-} fourth=${5-} fifth=${6-} sixth=${7-}
+  local encoded preview reason identity
   case $type in
       backend_request_start|assistant_delta|assistant_reasoning_delta|tool_call|tool_result|context)
         sf_chat_event "$type" "$first" "$second" "$third" "$fourth" "$fifth" "$sixth" || return 1
@@ -163,6 +164,13 @@ sf_chat_decoded() {
         (( ! ${#SF_PRESENT_HANDOFF} )) || return 1
         encoded=$(jq -j '.[] | ., "\u0000"' <<<"$first") || return 1
         SF_PRESENT_HANDOFF=( "${(@0)${encoded%$'\0'}}" )
+        ;;
+      session_update)
+        identity=$(jq -r '.backend.name + "/" + .profile.request.model' \
+          <<<"$first") || return 1
+        SF_PRESENT_RUNTIME=$first
+        SF_PRESENT_IDENTITY=$identity
+        SF_PRESENT_FOOTER=$identity
         ;;
       *) return 1 ;;
   esac

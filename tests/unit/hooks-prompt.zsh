@@ -6,6 +6,10 @@ make_script nul_argv 'print -rn -u3 -- '\''{"action":"handoff","argv":["bad\u000
 typeset nul_argv=$script
 make_script empty_command 'print -rn -u3 -- '\''{"action":"handoff","argv":[""]}'\''; exit 11'
 typeset empty_command=$script
+make_script session_update 'print -rn -u3 -- '\''{"action":"session_update","patch":{"harness":{"sandbox_write_paths":["/tmp/reference"]}}}'\''; exit 11'
+typeset session_update=$script
+make_script invalid_update 'print -rn -u3 -- '\''{"action":"session_update","patch":[]}'\''; exit 11'
+typeset invalid_update=$script
 
 # The user_prompt_submit hook runs under the session lock and preserves exact prompt bytes.
 typeset prompt_session="$tmp/prompt-session.jsonl"
@@ -53,6 +57,30 @@ CONTROL="$tmp/switched.jsonl" run_prompt_hook /switch "$prompt_session"
    $reply[3] == "$tmp/switched.jsonl" ]]
 jq -e 'select(.type == "context" and .content == "/switchcontext")' \
   < <(tail -n 1 "$prompt_session") >/dev/null
+
+# A session update is returned to exec for application under the existing lock.
+SF_TEST_RUNTIME=$(jq -c --arg script "$session_update" '
+  .harness.user_prompt_submit=[$script]
+' <<<"$SF_TEST_RUNTIME")
+typeset update_session="$tmp/update-session.jsonl"
+sf_hooks_turn_state_cleanup
+sf_test_session "$update_session"
+sf_hooks_turn_state_create
+run_prompt_hook /update "$update_session"
+[[ ${#reply} == 2 && $reply[1] == session_update ]]
+jq -e '. == {harness:{sandbox_write_paths:["/tmp/reference"]}}' <<<"$reply[2]" >/dev/null
+
+SF_TEST_RUNTIME=$(jq -c --arg script "$invalid_update" '
+  .harness.user_prompt_submit=[$script]
+' <<<"$SF_TEST_RUNTIME")
+typeset invalid_update_session="$tmp/invalid-update-session.jsonl"
+sf_hooks_turn_state_cleanup
+sf_test_session "$invalid_update_session"
+sf_hooks_turn_state_create
+if run_prompt_hook /update "$invalid_update_session"; then
+  fail 'non-object session update was accepted'
+fi
+[[ $SF_HOOK_ERROR == 'user_prompt_submit hook script returned invalid control data' ]]
 
 # Exit 11 may halt the remaining prompt scripts without requesting a handoff.
 make_script halt 'print -rn -- halted; exit 11'

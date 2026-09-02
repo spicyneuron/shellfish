@@ -132,6 +132,15 @@ handoff=$(print -r -- '{"type":"_handoff","argv":["/tmp/custom command","","arg"
   tr '\0' '\n' | sed '/^$/d' | paste -sd, -)
 assert_equal 'handoff,["/tmp/custom command","","arg"],batch_ok' "$handoff"
 
+typeset updated_runtime session_update
+updated_runtime=$(head -n 1 "$ROOT/tests/fixtures/session/header-only.jsonl")
+session_update=$(jq -cn --argjson runtime "$updated_runtime" \
+    '{type:"_session_update",runtime:$runtime}' |
+  jq -jRs -L "$ROOT/lib" --argjson runtime null \
+    -f "$ROOT/lib/chat/event-decode.jq" |
+  tr '\0' '\n' | sed '/^$/d' | paste -sd, -)
+assert_equal "session_update,$updated_runtime,batch_ok" "$session_update"
+
 typeset invalid
 for invalid in \
     '{"type":"_handoff","argv":[]}' \
@@ -144,6 +153,12 @@ for invalid in \
     fail "invalid handoff was accepted: $invalid"
   fi
 done
+
+if print -r -- '{"type":"_session_update","runtime":{}}' |
+    jq -jRs -L "$ROOT/lib" --argjson runtime null \
+      -f "$ROOT/lib/chat/event-decode.jq" >/dev/null 2>&1; then
+  fail 'invalid session update was accepted'
+fi
 
 if print -r -- '{"type":"message","role":"user"}' |
     jq -jRs -L "$ROOT/lib" --argjson runtime null \

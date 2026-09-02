@@ -26,6 +26,11 @@ case $prompt in
     print -rn -u3 -- '{"action":"handoff","argv":["/usr/bin/printf","next.jsonl"]}'
     exit 11
     ;;
+  /update)
+    print -rn -- 'update context'
+    print -rn -u3 -- '{"action":"session_update","patch":{"harness":{"sandbox_write_paths":["/tmp/reference"]}}}'
+    exit 11
+    ;;
   /fail)
     print -rn -u2 -- 'prompt failure'
     exit 1
@@ -73,6 +78,22 @@ print -r -- "$stream" | jq -eRn '
   ($events | any(.type == "_backend_request_start") | not) and
   $events[-1] == {type:"_handoff",argv:["/usr/bin/printf","next.jsonl"]}
 ' >/dev/null
+
+typeset update_session="$tmp/update.jsonl"
+sf_test_session "$update_session"
+stream=$(sf_test_turn /update "$update_session")
+print -r -- "$stream" | jq -eRn '
+  [inputs | fromjson] as $events |
+  ($events | any(.role == "user") | not) and
+  ($events | any(.type == "_backend_request_start") | not) and
+  $events[-1].type == "_session_update" and
+  $events[-1].runtime.harness.sandbox_write_paths == ["/tmp/reference"]
+' >/dev/null
+jq -e -s '
+  .[0].harness.sandbox_write_paths == ["/tmp/reference"] and
+  .[1] == {type:"context",hook:"user_prompt_submit",script:"prompt-hook",
+    content:"update context"}
+' "$update_session" >/dev/null
 
 typeset failure_session="$tmp/prompt-failure.jsonl"
 sf_test_session "$failure_session"

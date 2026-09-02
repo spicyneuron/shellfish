@@ -46,6 +46,17 @@ SF_PRESENT_PERMISSION_ID=''
 sf_chat_decoded handoff '["/tmp/custom command","","arg"]'
 assert_equal '/tmp/custom command,,arg' "${(j:,:)SF_PRESENT_HANDOFF}"
 
+typeset node_types="${(j:,:)SF_PRESENT_NODE_TYPE}"
+typeset updated_runtime
+updated_runtime=$(jq -c '
+  .backend.name = "updated" | .profile.request.model = "new-model"
+' "$ROOT/tests/fixtures/session/header-only.jsonl")
+sf_chat_decoded session_update "$updated_runtime"
+assert_equal "$updated_runtime" "$SF_PRESENT_RUNTIME"
+assert_equal updated/new-model "$SF_PRESENT_IDENTITY"
+assert_equal updated/new-model "$SF_PRESENT_FOOTER"
+assert_equal "$node_types" "${(j:,:)SF_PRESENT_NODE_TYPE}"
+
 if sf_chat_decoded not-supported; then
   fail 'unsupported exec output was accepted'
 fi

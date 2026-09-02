@@ -307,7 +307,7 @@ sf_exec_turn() {
   integer harness_sandbox tool_limit request_limit
   integer permission_status
   integer permission_hook_available=0 permission_decision_available=0
-  local failure='' after=''
+  local failure='' after='' patch=''
 
   SF_EXEC[permission_count]=0
   SF_EXEC[permission_available]=$permission_available
@@ -386,6 +386,7 @@ sf_exec_turn() {
     fi
     hook_action=$reply[1]
     handoff=( "${(@)reply[2,-1]}" )
+    [[ $hook_action != session_update ]] || patch=$reply[2]
     (( ! SF_HOOK_CONTEXT_COUNT )) ||
       sf_exec_emit "${(pj:\n:)SF_SESSION_RECORDS[-SF_HOOK_CONTEXT_COUNT,-1]}"
     sf_exec_hook_displays user_prompt_submit
@@ -394,6 +395,18 @@ sf_exec_turn() {
         after=$(jq -cn --args '$ARGS.positional |
           {type:"_handoff",argv:.}' -- "${handoff[@]}") || {
           failure='cannot prepare handoff'
+          return 1
+        }
+        return
+        ;;
+      session_update)
+        if ! sf_session_update "$patch"; then
+          failure=$SF_SESSION_ERROR
+          return 1
+        fi
+        after=$(jq -cn --argjson runtime "$SF_SESSION[runtime]" \
+          '{type:"_session_update",runtime:$runtime}') || {
+          failure='cannot prepare session update'
           return 1
         }
         return

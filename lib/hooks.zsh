@@ -481,9 +481,9 @@ sf_hooks_session_start() {
 
 # Commits prompt context while exec retains the full-turn lock.
 sf_hooks_user_prompt_submit_locked() {
-  local prompt=$1 session=$2 argument control
+  local prompt=$1 session=$2 argument control patch
   local -a decision handoff
-  integer operation_status=0 index control_status handoff_requested=0
+  integer operation_status=0 index control_status handoff_requested=0 update_requested=0
 
   SF_HOOK_ERROR=''
   unset SHELLFISH_TURN_ID
@@ -504,15 +504,20 @@ sf_hooks_user_prompt_submit_locked() {
     control_status=$SF_HOOK_SCRIPT_RESULTS[index+1]
     if ! jq -L "$SF_ROOT/lib" -e --argjson status "$control_status" '
           include "runtime/schema";
-          (keys - ["action", "argv", "context"] | length) == 0 and
+          (keys - ["action", "argv", "context", "patch"] | length) == 0 and
           (({type:"context",hook:"user_prompt_submit",script:"script",content:""} +
             (.context // {})) | canonical_context) and
           (if has("action") then
-             $status == 11 and .action == "handoff" and
-             (.argv | type == "array" and length > 0 and
-               (.[0] | length > 0) and
-               all(.[]; type == "string" and (index("\u0000") | not)))
-           else has("argv") | not end)
+             $status == 11 and
+             (if .action == "handoff" then
+                (has("patch") | not) and
+                (.argv | type == "array" and length > 0 and
+                  (.[0] | length > 0) and
+                  all(.[]; type == "string" and (index("\u0000") | not)))
+              elif .action == "session_update" then
+                (has("argv") | not) and (.patch | type == "object")
+              else false end)
+           else ((has("argv") or has("patch")) | not) end)
       ' <<<"$control" >/dev/null; then
       SF_HOOK_ERROR='user_prompt_submit hook script returned invalid control data'
       operation_status=1
@@ -522,6 +527,10 @@ sf_hooks_user_prompt_submit_locked() {
       while IFS= read -r -d $'\0' argument; do
         handoff+=( "$argument" )
       done < <(jq -j '.argv[] | ., "\u0000"' <<<"$control")
+    elif (( control_status == 11 )) &&
+        jq -e '.action? == "session_update"' <<<"$control" >/dev/null; then
+      update_requested=1
+      patch=$(jq -c '.patch' <<<"$control") || operation_status=1
     fi
   done
   (( operation_status )) || sf_hooks_commit_context user_prompt_submit || operation_status=1
@@ -537,6 +546,9 @@ sf_hooks_user_prompt_submit_locked() {
   elif (( handoff_requested )); then
     unset SHELLFISH_TURN_ID
     reply=(handoff "${handoff[@]}")
+  elif (( update_requested )); then
+    unset SHELLFISH_TURN_ID
+    reply=(session_update "$patch")
   else
     unset SHELLFISH_TURN_ID
     reply=(handled)
