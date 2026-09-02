@@ -75,6 +75,7 @@ The `openai` backend also supports compatible services by setting `endpoint` in 
 - [`docs/HARNESS.md`](docs/HARNESS.md): Understand the harness role and the bundled defaults.
 - [`docs/CHAT.md`](docs/CHAT.md): Use interactive chat, slash commands, and keybindings.
 - [`docs/HOOKS.md`](docs/HOOKS.md): Write custom lifecycle hooks.
+- [`docs/BACKENDS.md`](docs/BACKENDS.md): Write provider backend adapters.
 - [`docs/EXEC.md`](docs/EXEC.md): Integrate with the single-turn JSONL interface.
 - [`docs/SERVER.md`](docs/SERVER.md): Serve a session for remote access.
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md): Design intent and opinionated boundaries.
