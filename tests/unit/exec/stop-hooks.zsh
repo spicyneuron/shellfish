@@ -82,7 +82,10 @@ typeset text_backend="$tmp/text-backend"
 cat >"$text_backend" <<'ZSH'
 #!/usr/bin/env zsh
 cat >/dev/null
-print -r -- '{"type":"message","role":"assistant","stop":"end","content":[{"type":"text","text":"first\n"},{"type":"reasoning","text":"omit"},{"type":"text","text":"second\n"}]}'
+print -r -- '{"type":"_assistant_delta","index":0,"text":"first\n"}'
+print -r -- '{"type":"_assistant_reasoning_delta","index":1,"text":"omit"}'
+print -r -- '{"type":"_assistant_delta","index":2,"text":"second\n"}'
+print -r -- '{"type":"_assistant_response_end","stop":"end"}'
 ZSH
 chmod +x "$text_backend"
 typeset text_stop="$tmp/text-stop"
@@ -173,7 +176,8 @@ if jq -e '.messages[-1].role == "user" and
   : >"$cancel_ready"
   sleep 10
 else
-  print -r -- '{"type":"message","role":"assistant","stop":"end","content":[{"type":"text","text":"original\\n"}]}'
+  print -r -- '{"type":"_assistant_delta","index":0,"text":"original\\n"}'
+  print -r -- '{"type":"_assistant_response_end","stop":"end"}'
 fi
 ZSH
 chmod +x "$cancel_backend"

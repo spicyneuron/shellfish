@@ -61,7 +61,7 @@ SHELLFISH_API_KEY=test-key zsh -f "$run" <"$req" >"$res"
 
 jq -n -e -L "$ROOT/lib" '
   include "runtime/schema";
-  [inputs] | map(select(.type == "message")) | last |
+  [inputs] | assemble_backend_response |
   canonical_assistant_message and
   .role == "assistant" and
   .stop == "tool_calls" and
@@ -71,6 +71,18 @@ jq -n -e -L "$ROOT/lib" '
   .usage.cached_tokens == 8 and
   .usage.output_tokens == 5 and
   .usage.reasoning_tokens == 2
+' "$res" >/dev/null
+
+# A length stop discards partial tool state rather than completing a call.
+printf "%s\n" \
+  'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_cut","function":{"name":"shell","arguments":"{\"command\":"}}]},"finish_reason":"length"}]}' \
+  'data: [DONE]' \
+  "" >"$BACKEND_TEST_RESPONSE"
+SHELLFISH_API_KEY=test-key zsh -f "$run" <"$req" >"$res"
+jq -n -e -L "$ROOT/lib" '
+  include "runtime/schema";
+  [inputs] | assemble_backend_response ==
+    {type:"message",role:"assistant",stop:"length",content:[]}
 ' "$res" >/dev/null
 
 # 2. Test compatible backend sending finish_reason: "stop" or missing id on tool calls
@@ -83,7 +95,7 @@ SHELLFISH_API_KEY=test-key zsh -f "$run" <"$req" >"$res"
 
 jq -n -e -L "$ROOT/lib" '
   include "runtime/schema";
-  [inputs] | map(select(.type == "message")) | last |
+  [inputs] | assemble_backend_response |
   canonical_assistant_message and
   .stop == "tool_calls" and
   .content[0].type == "tool_call" and
@@ -128,7 +140,7 @@ SHELLFISH_API_KEY=test-key zsh -f "$run" <"$req" >"$res"
 
 jq -n -e -L "$ROOT/lib" '
   include "runtime/schema";
-  [inputs] | map(select(.type == "message")) | last |
+  [inputs] | assemble_backend_response |
   canonical_assistant_message and
   .stop == "tool_calls" and
   .content[0] == {type:"tool_call",id:"call_abc",name:"shell",input:{command:"ls"}} and

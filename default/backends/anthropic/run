@@ -96,7 +96,7 @@ sf_backend_curl_args $transport[1] $transport[2] $transport[3] $transport[4]
 SF_BACKEND_CURL_ARGS+=(--header 'anthropic-version: 2023-06-01')
 curl "${SF_BACKEND_CURL_ARGS[@]}" 2>"$status_file" | tee "$response_file" | \
   jq -nRrc --unbuffered -L "$ROOT/lib" --arg control "$SF_BACKEND_CONTROL_PATTERN" '
-  def transient($type;$text): {type:$type,text:$text};
+  def transient($type;$index;$text): {type:$type,index:$index,text:$text};
   def usage_event:
     {type:"_turn_usage",
      input_tokens:((.input_tokens // 0) + (.cache_read_input_tokens // 0) +
@@ -120,39 +120,33 @@ curl "${SF_BACKEND_CURL_ARGS[@]}" 2>"$status_file" | tee "$response_file" | \
       elif .type == "redacted_thinking" then {type:"redacted_thinking", data:.data}
       else {type:"text", text:.text}
       end];
-  # Takes the content blocks rather than reaching for the stream state, so a body
-  # that arrived whole normalizes through exactly the same path.
-  def normalized($content):
-    .usage as $usage |
-    ({
-      type: "message",
-        role: "assistant",
-        # The whole block is kept as the opaque payload rather than just its
-        # signature, so the next request echoes back exactly what arrived.
-        # Redacted thinking has nothing to show but still has to make that trip.
-        content: [$content[] |
-          if .type == "text" then {type:"text",text:.text}
-          elif .type == "thinking" then {type:"reasoning",text:.thinking,opaque:.}
-          elif .type == "redacted_thinking" then {type:"reasoning",text:"",opaque:.}
-          elif .type == "tool_use" then {type:"tool_call",id:.id,name:.name,input:.input}
-          else error("unsupported content block") end],
-      stop:
-          (if .stop_reason == "tool_use" then "tool_calls"
+  def stop_event:
+    {type:"_assistant_response_end",
+     stop:(if .stop_reason == "tool_use" then "tool_calls"
            elif .stop_reason == "max_tokens" then "length"
            elif .stop_reason == "end_turn" or .stop_reason == "stop_sequence" then "end"
-           else error("unsupported stop reason") end)
-    } + if $usage == null then {} else {
-      usage: {
-        input_tokens:
-          (($usage.input_tokens // 0) +
-            ($usage.cache_read_input_tokens // 0) +
-            ($usage.cache_creation_input_tokens // 0)),
-        output_tokens: ($usage.output_tokens // 0)
-      } + if ($usage.cache_read_input_tokens // null) == null then {}
-          else {cached_tokens: $usage.cache_read_input_tokens}
-          end + if ($usage.output_tokens_details.thinking_tokens // null) == null then {}
-          else {reasoning_tokens: $usage.output_tokens_details.thinking_tokens} end
-    } end);
+           else error("unsupported stop reason") end)};
+  def opaque_events($content):
+    [$content | to_entries[] |
+      select(.value.type == "thinking" or .value.type == "redacted_thinking") |
+      {type:"_assistant_reasoning_opaque",index:.key,opaque:.value}];
+  def finish_events($content):
+    opaque_events($content) +
+    (if .usage == null then [] else [(.usage | usage_event)] end) + [stop_event];
+  # A buffered body expands into the same events a provider stream would emit.
+  def complete_events($content):
+    [$content | to_entries[] |
+      .key as $index | .value |
+      if .type == "text" then transient("_assistant_delta";$index;.text)
+      elif .type == "thinking" then
+        transient("_assistant_reasoning_delta";$index;.thinking),
+        {type:"_assistant_reasoning_opaque",index:$index,opaque:.}
+      elif .type == "redacted_thinking" then
+        {type:"_assistant_reasoning_opaque",index:$index,opaque:.}
+      elif .type == "tool_use" then
+        {type:"_assistant_tool_call_delta",index:$index,id:.id,name:.name,input:(.input | tojson)}
+      else error("unsupported content block") end] +
+    (if .usage == null then [] else [(.usage | usage_event)] end) + [stop_event];
 
   # A null line ends the stream. A body that never announced itself as a stream
   # is taken whole there, so a provider that ignores the requested streaming mode
@@ -166,15 +160,7 @@ curl "${SF_BACKEND_CURL_ARGS[@]}" 2>"$status_file" | tee "$response_file" | \
       elif .mode != "json" then error("no completed response")
       else (.body | try fromjson catch null) as $body |
         if $body == null then error("no completed response")
-        else ($body | normalized($body.content // [])) as $response |
-          .done = true |
-          .out += [
-            ($response.content[] | select(.type == "reasoning" and .text != "") |
-              transient("_assistant_reasoning_delta";.text)),
-            ($response.content[] | select(.type == "text" and .text != "") |
-              transient("_assistant_delta";.text)),
-            ($response.usage? | select(. != null) | {type:"_turn_usage"} + .),
-            $response]
+        else .done = true | .out += ($body | complete_events(.content // []))
         end
       end
     else
@@ -196,19 +182,27 @@ curl "${SF_BACKEND_CURL_ARGS[@]}" 2>"$status_file" | tee "$response_file" | \
       elif $event.type == "content_block_start" then
         .order += [$key] |
         .blocks[$key] = ($event.content_block +
-          (if $event.content_block.type == "tool_use" then {partial:""} else {} end))
+          (if $event.content_block.type == "tool_use" then {partial:""} else {} end)) |
+        if $event.content_block.type == "tool_use" then
+          .out += [{type:"_assistant_tool_call_delta",index:$event.index,
+                    id:$event.content_block.id,name:$event.content_block.name}]
+        else . end
       elif $event.type == "content_block_delta" then
         $event.delta as $delta |
         if $delta.type == "text_delta" then
           .blocks[$key].text += $delta.text |
-          .out += [transient("_assistant_delta";$delta.text)]
+          .out += [transient("_assistant_delta";$event.index;$delta.text)]
         elif $delta.type == "thinking_delta" then
           .blocks[$key].thinking += $delta.thinking |
-          .out += [transient("_assistant_reasoning_delta";$delta.thinking)]
+          .out += [transient("_assistant_reasoning_delta";$event.index;$delta.thinking)]
         elif $delta.type == "signature_delta" then
           .blocks[$key].signature += $delta.signature
         elif $delta.type == "input_json_delta" then
-          .blocks[$key].partial += $delta.partial_json
+          .blocks[$key].partial += $delta.partial_json |
+          if $delta.partial_json == "" then . else
+            .out += [{type:"_assistant_tool_call_delta",index:$event.index,
+                      input:$delta.partial_json}]
+          end
         else .
         end
       elif $event.type == "message_delta" then
@@ -220,7 +214,7 @@ curl "${SF_BACKEND_CURL_ARGS[@]}" 2>"$status_file" | tee "$response_file" | \
          else .usage = ((.usage // {}) + $event.usage) end)
       elif $event.type == "message_stop" then
         .done = true |
-        .out += [(.usage? | select(. != null) | usage_event), normalized(rebuilt)]
+        .out += finish_events(rebuilt)
       else .
       end
     end;

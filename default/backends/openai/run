@@ -68,31 +68,28 @@ sf_backend_curl_args $transport[1] $transport[2] $transport[3] $transport[4]
 set +e
 curl "${SF_BACKEND_CURL_ARGS[@]}" 2>"$status_file" | tee "$response_file" | \
 jq -nRrc --unbuffered '
-  def transient($type;$text): {type:$type,text:$text};
+  def transient($type;$index;$text): {type:$type,index:$index,text:$text};
   def usage:
     {type:"_turn_usage",input_tokens:(.prompt_tokens // 0),output_tokens:(.completion_tokens // 0)} +
     (if (.prompt_tokens_details.cached_tokens // null) == null then {}
      else {cached_tokens:.prompt_tokens_details.cached_tokens} end) +
     (if (.completion_tokens_details.reasoning_tokens // null) == null then {}
      else {reasoning_tokens:.completion_tokens_details.reasoning_tokens} end);
-  def assistant:
-    ([.calls | to_entries | sort_by(.key|tonumber)[] | .key as $index | .value |
-      if .name == null or .name == "" then empty
-      else {
-        type: "tool_call",
-        id: (.id // ("call_" + $index)),
-        name: .name,
-        input: ((.arguments | if . == null or . == "" then "{}" else . end) | try fromjson catch {})
-      } end]) as $tool_calls |
-    {type:"message",role:"assistant",
-     stop:(if ($tool_calls | length) > 0 then "tool_calls"
-           elif .finish_reason == "length" or .finish_reason == "max_tokens" then "length"
-           else "end" end),
-     content:
-       (if .reasoning=="" then [] else [{type:"reasoning",text:.reasoning}] end) +
-       (if .text=="" then [] else [{type:"text",text:.text}] end) +
-       $tool_calls} +
-    (if .usage==null then {} else {usage:(.usage|usage|del(.type))} end);
+  def tool_delta($index;$call):
+    {type:"_assistant_tool_call_delta",index:($index + 2)} +
+    (if ($call.id // "") == "" then {} else {id:$call.id} end) +
+    (if ($call.function.name // "") == "" then {} else {name:$call.function.name} end) +
+    (if ($call.function.arguments // "") == "" then {} else {input:$call.function.arguments} end) |
+    select(keys | length > 2);
+  def response_end:
+    [.calls | to_entries | sort_by(.key | tonumber)[] |
+      {type:"_assistant_tool_call_delta",index:((.key | tonumber) + 2),
+       id:(.value.id // ("call_" + .key))} +
+      (if (.value.name // "") == "" then {} else {name:.value.name} end)] +
+    [{type:"_assistant_response_end",
+      stop:(if .finish_reason == "length" or .finish_reason == "max_tokens" then "length"
+            elif (.calls | length) > 0 then "tool_calls"
+            else "end" end)}];
   def accept_body($body):
     if $body.error? != null then error($body.error.message // "API error")
     elif ($body.choices[0]? // null) == null then error("response has no choice")
@@ -107,9 +104,10 @@ jq -nRrc --unbuffered '
         .[$key]={type:($call.type // "function"),id:$call.id,name:$call.function.name,
           arguments:$call.function.arguments}) |
       .out +=
-        (if $reasoning=="" then [] else [transient("_assistant_reasoning_delta";$reasoning)] end) +
-        (if $text=="" then [] else [transient("_assistant_delta";$text)] end) +
-        (if .usage==null then [] else [(.usage|usage)] end) + [assistant] |
+        (if $reasoning=="" then [] else [transient("_assistant_reasoning_delta";0;$reasoning)] end) +
+        (if $text=="" then [] else [transient("_assistant_delta";1;$text)] end) +
+        [($message.tool_calls // []) | to_entries[] | tool_delta(.key;.value)] +
+        (if .usage==null then [] else [(.usage|usage)] end) + response_end |
       .done=true
     end;
   foreach (inputs, null) as $line
@@ -129,7 +127,7 @@ jq -nRrc --unbuffered '
          ($clean|sub("^data:[ ]?";"")) as $data |
          if $data=="[DONE]" then
            .finish_reason = (.finish_reason // "stop") |
-           .done=true | .out += [assistant]
+           .done=true | .out += response_end
          else ($data|fromjson) as $event |
            if $event.error? != null then error($event.error.message // "API error")
            elif ($event.choices[0]? // null) != null then
@@ -138,11 +136,12 @@ jq -nRrc --unbuffered '
                if type=="string" then . else "" end) as $reasoning |
              ($delta.content // "") as $text |
              (if $reasoning=="" then . else .reasoning += $reasoning |
-                .out += [transient("_assistant_reasoning_delta";$reasoning)] end) |
+                .out += [transient("_assistant_reasoning_delta";0;$reasoning)] end) |
              (if $text=="" then . else .text += $text |
-                .out += [transient("_assistant_delta";$text)] end) |
+                .out += [transient("_assistant_delta";1;$text)] end) |
              reduce ($delta.tool_calls // [])[] as $call (.;
                (($call.index // 0)|tostring) as $key |
+               .out += [tool_delta(($call.index // 0);$call)] |
                if .calls[$key]==null then
                  .calls[$key]={type:"function",id:null,name:null,arguments:""} else . end |
                (if $call.type != null and $call.type != "" then .calls[$key].type=$call.type else . end) |

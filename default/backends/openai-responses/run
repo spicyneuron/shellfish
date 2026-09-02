@@ -93,7 +93,7 @@ set +e
 sf_backend_curl_args $transport[1] $transport[2] $transport[3] $transport[4]
 curl "${SF_BACKEND_CURL_ARGS[@]}" 2>"$status_file" | tee "$response_file" | \
   jq -nRrc --unbuffered -L "$ROOT/lib" '
-  def transient($type;$text): {type:$type,text:$text};
+  def transient($type;$index;$text): {type:$type,index:$index,text:$text};
   def usage_event:
     {type:"_turn_usage"} + .;
 
@@ -137,6 +137,7 @@ curl "${SF_BACKEND_CURL_ARGS[@]}" 2>"$status_file" | tee "$response_file" | \
     # no status, which would otherwise normalize into an empty completed turn.
     if .error? != null then error("API error") else . end |
     (.usage // null) as $usage |
+    (.status // "completed") as $status |
     [(.output // [])[] |
       if .type == "message" then
         .content[]? |
@@ -152,9 +153,11 @@ curl "${SF_BACKEND_CURL_ARGS[@]}" 2>"$status_file" | tee "$response_file" | \
            select(.text | type == "string") | .text] | join("\n\n")),
          opaque:.}
       elif .type == "function_call" then
-        (.arguments | fromjson) as $input |
-        if ($input | type) != "object" then error("unsupported tool input")
-        else {type:"tool_call",id:.call_id,name:.name,input:$input} end
+        if $status == "incomplete" then empty
+        else (.arguments | fromjson) as $input |
+          if ($input | type) != "object" then error("unsupported tool input")
+          else {type:"tool_call",id:.call_id,name:.name,input:$input} end
+        end
       else empty end
     ] as $content |
     ([$content[] | select(.type == "tool_call")] | length) as $calls |
@@ -163,9 +166,9 @@ curl "${SF_BACKEND_CURL_ARGS[@]}" 2>"$status_file" | tee "$response_file" | \
         role: "assistant",
         content: $content,
         stop:
-          (if $calls > 0 then "tool_calls"
+          (if .status == "incomplete" then "length"
+           elif $calls > 0 then "tool_calls"
            elif (.status // "completed") == "completed" then "end"
-           elif .status == "incomplete" then "length"
            else error("unsupported response status") end)
     } + if $usage == null then {} else {
       usage: {
@@ -177,6 +180,22 @@ curl "${SF_BACKEND_CURL_ARGS[@]}" 2>"$status_file" | tee "$response_file" | \
           else {reasoning_tokens: $usage.output_tokens_details.reasoning_tokens}
           end
     } end);
+
+  def complete_events:
+    . as $message |
+    [.content | to_entries[] | .key as $index | .value |
+      if .type == "text" then transient("_assistant_delta";$index;.text)
+      elif .type == "reasoning" then
+        (if .text == "" then empty else transient("_assistant_reasoning_delta";$index;.text) end),
+        {type:"_assistant_reasoning_opaque",index:$index,opaque:.opaque}
+      elif .type == "tool_call" then
+        {type:"_assistant_tool_call_delta",index:$index,id:.id,name:.name,input:(.input | tojson)}
+      else error("unsupported assistant content") end] +
+    (if .usage == null then [] else [{type:"_turn_usage"} + .usage] end) +
+    [{type:"_assistant_response_end",stop:.stop}];
+  def finish_events:
+    (if .usage == null then [] else [{type:"_turn_usage"} + .usage] end) +
+    [{type:"_assistant_response_end",stop:.stop}];
 
   # A null line ends the stream. A body that never announced itself as a stream
   # is taken whole there, so a provider that ignores the requested streaming mode
@@ -192,15 +211,7 @@ curl "${SF_BACKEND_CURL_ARGS[@]}" 2>"$status_file" | tee "$response_file" | \
       elif .mode != "json" then error("no completed response")
       else (.body | try fromjson catch null) as $body |
         if $body == null then error("no completed response")
-        else ($body | normalized) as $response |
-          .done = true |
-          .out += [
-            ($response.content[] | select(.type == "reasoning" and .text != "") |
-              transient("_assistant_reasoning_delta";.text)),
-            ($response.content[] | select(.type == "text" and .text != "") |
-              transient("_assistant_delta";.text)),
-            ($response.usage? | select(. != null) | usage_event),
-            $response]
+        else .done = true | .out += ($body | normalized | complete_events)
         end
       end
     else
@@ -217,7 +228,8 @@ curl "${SF_BACKEND_CURL_ARGS[@]}" 2>"$status_file" | tee "$response_file" | \
       if .done then .
       elif $event.type == "response.output_text.delta" then
         ($event.delta // "") as $delta |
-        .text += $delta | .out += [transient("_assistant_delta";$delta)]
+        .text += $delta |
+        .out += [transient("_assistant_delta";($event.output_index // 0);$delta)]
       # Only the summary is streamed, since only the summary is what normalization
       # keeps; raw reasoning deltas would show text the saved message never carries.
       # Parts join the way that normalization joins them, and a part index only
@@ -230,23 +242,50 @@ curl "${SF_BACKEND_CURL_ARGS[@]}" 2>"$status_file" | tee "$response_file" | \
          else "" end) as $gap |
         .summary_item_id = $item_id |
         .summary_index = $index |
-        .out += [transient("_assistant_reasoning_delta";$gap + ($event.delta // ""))]
+        .out += [transient("_assistant_reasoning_delta";($event.output_index // 0);
+                           $gap + ($event.delta // ""))]
       elif $event.type == "response.output_item.done" then
         ($event.item // {}) as $item |
         if ($item.type | IN("message", "function_call", "reasoning")) then
-          .items += [$item]
+          .items += [$item] |
+          if $item.type == "reasoning" then
+            .out += [{type:"_assistant_reasoning_opaque",index:($event.output_index // 0),
+                      opaque:$item}]
+          else . end
         else . end
       elif $event.type == "response.output_item.added" and
            ($event.item.type // "") == "function_call" then
         (($event.output_index // 0) | tostring) as $key |
         .added[$key] = {type:"function_call", call_id:$event.item.call_id,
-                        name:$event.item.name, arguments:"{}"}
+                        name:$event.item.name, arguments:""} |
+        .out += [{type:"_assistant_tool_call_delta",index:($event.output_index // 0),
+                  id:$event.item.call_id,name:$event.item.name}]
       # Ignored unless a call was opened at that index, so arguments cannot
       # conjure a call the stream never announced.
+      elif $event.type == "response.function_call_arguments.delta" then
+        (($event.output_index // 0) | tostring) as $key |
+        if .added[$key] == null or ($event.delta // "") == "" then .
+        else
+          .added[$key].arguments += $event.delta |
+          .out += [{type:"_assistant_tool_call_delta",index:($event.output_index // 0),
+                    input:$event.delta}]
+        end
       elif $event.type == "response.function_call_arguments.done" then
         (($event.output_index // 0) | tostring) as $key |
         if .added[$key] == null then .
-        else .added[$key].arguments = ($event.arguments // "{}") end
+        else
+          (.added[$key].arguments // "") as $seen |
+          ($event.arguments // "{}") as $full |
+          if ($full | startswith($seen)) then
+            ($seen | length) as $length |
+            ($full[$length:]) as $suffix |
+            .added[$key].arguments = $full |
+            if $suffix == "" then . else
+              .out += [{type:"_assistant_tool_call_delta",index:($event.output_index // 0),
+                        input:$suffix}]
+            end
+          else error("function call arguments changed") end
+        end
       # A response cut short by the output limit ends the stream just as a
       # finished one does, and carries the same output; only its status differs,
       # which normalization turns into the stop reason. Without this the turn is
@@ -255,7 +294,7 @@ curl "${SF_BACKEND_CURL_ARGS[@]}" 2>"$status_file" | tee "$response_file" | \
            $event.type == "response.incomplete" then
         (merged($event.response; .items; .text; .added) | normalized) as $response |
         .done = true |
-        .out += [($response.usage? | select(. != null) | usage_event), $response]
+        .out += ($response | finish_events)
       else .
       end
     end;

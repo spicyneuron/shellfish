@@ -31,7 +31,7 @@ assert_usage() {
   jq -e -s -L "$ROOT/lib" '
     include "runtime/schema";
     map(select(.type == "_turn_usage"))[0] as $event |
-    map(select(.type == "message"))[0] as $message |
+    assemble_backend_response as $message |
     ($event | del(.type)) == {
       input_tokens:100, output_tokens:7, cached_tokens:85, reasoning_tokens:3
     } and
@@ -48,6 +48,16 @@ EOF
 SHELLFISH_API_KEY=test zsh -f "$run" <"$req" >"$res"
 assert_usage
 
+# An incomplete response discards partial function-call arguments.
+cat >"$BACKEND_TEST_RESPONSE" <<'EOF'
+{"status":"incomplete","output":[{"type":"function_call","call_id":"call_cut","name":"shell","arguments":"{\"command\":"}],"usage":{"input_tokens":10,"output_tokens":5}}
+EOF
+SHELLFISH_API_KEY=test zsh -f "$run" <"$req" >"$res"
+jq -e -s -L "$ROOT/lib" '
+  include "runtime/schema";
+  assemble_backend_response == {type:"message",role:"assistant",stop:"length",content:[],usage:{input_tokens:10,output_tokens:5}}
+' "$res" >/dev/null
+
 # Streaming response.
 cat >"$BACKEND_TEST_RESPONSE" <<'EOF'
 data: {"type":"response.output_text.delta","delta":"ok"}
@@ -56,3 +66,23 @@ data: {"type":"response.completed","response":{"status":"completed","output":[],
 EOF
 SHELLFISH_API_KEY=test zsh -f "$run" <"$req" >"$res"
 assert_usage
+
+# Streaming reasoning metadata and tool arguments retain provider output indexes.
+cat >"$BACKEND_TEST_RESPONSE" <<'EOF'
+data: {"type":"response.reasoning_summary_text.delta","output_index":0,"item_id":"rs_1","summary_index":0,"delta":"why"}
+data: {"type":"response.output_item.done","output_index":0,"item":{"type":"reasoning","id":"rs_1","summary":[{"type":"summary_text","text":"why"}],"encrypted_content":"secret"}}
+data: {"type":"response.output_item.added","output_index":1,"item":{"type":"function_call","id":"fc_1","call_id":"call_1","name":"shell","arguments":""}}
+data: {"type":"response.function_call_arguments.delta","output_index":1,"delta":"{\"command\":"}
+data: {"type":"response.function_call_arguments.done","output_index":1,"arguments":"{\"command\":\"pwd\"}"}
+data: {"type":"response.output_item.done","output_index":1,"item":{"type":"function_call","id":"fc_1","call_id":"call_1","name":"shell","arguments":"{\"command\":\"pwd\"}"}}
+data: {"type":"response.completed","response":{"status":"completed","output":[],"usage":{"input_tokens":10,"output_tokens":5}}}
+
+EOF
+SHELLFISH_API_KEY=test zsh -f "$run" <"$req" >"$res"
+jq -e -s -L "$ROOT/lib" '
+  include "runtime/schema";
+  assemble_backend_response |
+  .stop == "tool_calls" and
+  .content[0] == {type:"reasoning",text:"why",opaque:{type:"reasoning",id:"rs_1",summary:[{type:"summary_text",text:"why"}],encrypted_content:"secret"}} and
+  .content[1] == {type:"tool_call",id:"call_1",name:"shell",input:{command:"pwd"}}
+' "$res" >/dev/null

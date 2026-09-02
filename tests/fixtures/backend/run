@@ -175,10 +175,11 @@ build_deltas() {
 # included -- not just reasoning.
 stream_deltas() {
   typeset delta_type=$1
-  integer index
+  integer content_index=$2 index
   for (( index = 1; index <= ${#deltas}; index++ )); do
     sleep "$delay"
-    jq -cn --arg text "$deltas[index]" --arg type "$delta_type" '{type:$type,text:$text}'
+    jq -cn --arg text "$deltas[index]" --arg type "$delta_type" \
+      --argjson index "$content_index" '{type:$type,index:$index,text:$text}'
   done
 }
 
@@ -216,12 +217,11 @@ if [[ ${SF_TEST_BACKEND_TOOL_CALL:-0} == 1 || -n $tool_mode ]] || (( keyword_cou
     build_deltas $'Tool complete.\n'
     text="${(j::)deltas}"
     text_tokens=$(( (${#text} + 3) / 4 ))
-    stream_deltas _assistant_delta
-    jq -cn --arg text "$text" --argjson input "$input_tokens" \
+    stream_deltas _assistant_delta 0
+    jq -cn --argjson input "$input_tokens" \
       --argjson cached "$cached_tokens" --argjson output "$text_tokens" '
       {type:"_turn_usage",input_tokens:$input,cached_tokens:$cached,output_tokens:$output},
-      {type:"message",role:"assistant",stop:"end",content:[{type:"text",text:$text}],
-       usage:{input_tokens:$input,cached_tokens:$cached,output_tokens:$output}}
+      {type:"_assistant_response_end",stop:"end"}
     '
   else
     tool_command=${SF_TEST_BACKEND_TOOL_COMMAND:-true}
@@ -265,9 +265,9 @@ if [[ ${SF_TEST_BACKEND_TOOL_CALL:-0} == 1 || -n $tool_mode ]] || (( keyword_cou
       keyword_mode=true
     fi
     if (( think )); then
-      stream_deltas _assistant_reasoning_delta
+      stream_deltas _assistant_reasoning_delta 0
     fi
-    stream_deltas _assistant_delta
+    stream_deltas _assistant_delta $think
     text_tokens=$(( (${#text} + 3) / 4 ))
     reasoning_tokens=$(( think ? text_tokens : 0 ))
     output_tokens=$(( text_tokens + reasoning_tokens ))
@@ -288,30 +288,31 @@ if [[ ${SF_TEST_BACKEND_TOOL_CALL:-0} == 1 || -n $tool_mode ]] || (( keyword_cou
       --arg delay_seconds "$delay_match_seconds" \
       --arg prompt "$user_text" \
       --argjson keyword_mode "$keyword_mode" '
-      ((if $native then ["tool"] elif $keyword_mode then
+      def call_input($call):
+        if $native then $tool_input
+        else
+          {command:((if $delay > 0 then
+              "sleep " + ($delay_seconds | @sh) + "; "
+            else "" end) +
+            (if $keyword_mode then
+               "for ((i=0; i<" + (($call.key + 1) | tostring) +
+               "; i++)); do print -r -- \"Test tool $i completed.\"; done"
+             else $command end))} +
+          (if $call.value == "TOOL" then {
+             request_sandbox_bypass:true,sandbox_bypass_reason:$bypass_reason
+           } else {} end)
+        end;
+      (if $native then ["tool"] elif $keyword_mode then
         [$prompt | scan("\\b(?:tool|TOOL)\\b")]
       else [range(1; $count + 1) | if . == 1 and $bypass then "TOOL" else "tool" end]
       end) as $calls |
       {type:"_turn_usage",input_tokens:$input,cached_tokens:$cached,output_tokens:$output} +
         (if $reasoning > 0 then {reasoning_tokens:$reasoning} else {} end),
-      {type:"message",role:"assistant",stop:"tool_calls",
-       content:((if $think > 0 then [{type:"reasoning",text:$text}] else [] end) +
-        [{type:"text",text:$text}] + ($calls | to_entries | map(
-         {type:"tool_call",id:("call_" + ((.key + 1) | tostring)),name:$name,
-         input:(if $native then $tool_input else
-           ({command:((if $delay > 0 then
-               "sleep " + ($delay_seconds | @sh) + "; "
-             else "" end) +
-             (if $keyword_mode then
-                "for ((i=0; i<" + ((.key + 1) | tostring) +
-                "; i++)); do print -r -- \"Test tool $i completed.\"; done"
-              else $command end))} +
-            (if .value == "TOOL" then {
-               request_sandbox_bypass:true,sandbox_bypass_reason:$bypass_reason
-             } else {} end))
-         end)}))),
-       usage:({input_tokens:$input,cached_tokens:$cached,output_tokens:$output} +
-         if $reasoning > 0 then {reasoning_tokens:$reasoning} else {} end)})
+      ($calls | to_entries[] | . as $call |
+        {type:"_assistant_tool_call_delta",index:($call.key + $think + 1),
+         id:("call_" + (($call.key + 1) | tostring)),name:$name,
+         input:(call_input($call) | tojson)}),
+      {type:"_assistant_response_end",stop:"tool_calls"}
     ' --arg bypass_reason "$tool_bypass_reason"
   fi
   exit
@@ -319,22 +320,16 @@ fi
 
 # A "think" prompt echoes the whole message as reasoning before the text.
 if (( think )); then
-  stream_deltas _assistant_reasoning_delta
+  stream_deltas _assistant_reasoning_delta 0
 fi
-stream_deltas _assistant_delta
+stream_deltas _assistant_delta $think
 text_tokens=$(( (${#text} + 3) / 4 ))
 reasoning_tokens=$(( think ? text_tokens : 0 ))
 output_tokens=$(( text_tokens + reasoning_tokens ))
-# Usage and final assistant message share $text and the token counts, so one
-# jq call emits both: usage first, then the message (comma operator with -c).
-jq -cn --arg text "$text" --argjson input "$input_tokens" \
+jq -cn --argjson input "$input_tokens" \
   --argjson cached "$cached_tokens" --argjson output "$output_tokens" \
-  --argjson reasoning "$reasoning_tokens" --argjson think "$think" '
+  --argjson reasoning "$reasoning_tokens" '
   {type:"_turn_usage",input_tokens:$input,cached_tokens:$cached,output_tokens:$output} +
     (if $reasoning > 0 then {reasoning_tokens:$reasoning} else {} end),
-  {type:"message",role:"assistant",stop:"end",
-   content:((if $think > 0 then [{type:"reasoning",text:$text}] else [] end) +
-     [{type:"text",text:$text}]),
-   usage:({input_tokens:$input,cached_tokens:$cached,output_tokens:$output} +
-     if $reasoning > 0 then {reasoning_tokens:$reasoning} else {} end)}
+  {type:"_assistant_response_end",stop:"end"}
 '

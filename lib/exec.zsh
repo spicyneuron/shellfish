@@ -152,9 +152,10 @@ sf_exec_request() {
 
 sf_exec_backend() {
   local request=$1 command=$2 error_file adapter_pid adapter_status event decoded kind=''
+  local -a events
   # Text and reasoning deltas share one zero-based sequence per provider
   # response, so a client can tell a response start from a mid-response join.
-  integer delta_seq=0
+  integer delta_seq=0 ended=0
   SF_EXEC[assistant]=''
   SF_EXEC[backend_error]=''
   sf_scratch_file backends exec-error || {
@@ -172,22 +173,30 @@ sf_exec_backend() {
   while IFS= read -r event <&p; do
     decoded=$(jq -L "$SF_ROOT/lib" -cr --argjson seq "$delta_seq" '
       include "runtime/schema";
-      if (.type == "_assistant_delta" or .type == "_assistant_reasoning_delta") and
-        (.text | type) == "string" then "delta", (.seq = $seq)
-      elif .type == "_turn_usage" and (del(.type) | token_usage) then "usage"
-      elif canonical_assistant_message then "assistant"
-      else "invalid" end
+      if canonical_backend_event | not then "invalid"
+      elif .type == "_assistant_delta" or .type == "_assistant_reasoning_delta" then
+        "delta", (.seq = $seq)
+      elif .type == "_turn_usage" then "usage"
+      elif .type == "_assistant_response_end" then "end"
+      else "internal" end
     ' <<<"$event" 2>/dev/null) || decoded=invalid
     kind=${decoded%%$'\n'*}
-    # Nothing may follow the committed assistant message of a response.
-    [[ -z $SF_EXEC[assistant] ]] || kind=invalid
+    (( ! ended )) || kind=invalid
     case $kind in
       delta)
+        events+=( "$event" )
         sf_exec_emit "${decoded#*$'\n'}"
         (( ++delta_seq ))
         ;;
-      usage) sf_exec_emit "$event" ;;
-      assistant) SF_EXEC[assistant]=$event ;;
+      usage)
+        events+=( "$event" )
+        sf_exec_emit "$event"
+        ;;
+      internal) events+=( "$event" ) ;;
+      end)
+        events+=( "$event" )
+        ended=1
+        ;;
       *) kind=invalid; break ;;
     esac
   done
@@ -198,6 +207,12 @@ sf_exec_backend() {
   else adapter_status=$?
   fi
   SF_EXEC[backend_pid]=''
+  if [[ $kind != invalid && $adapter_status == 0 ]] && (( ended )); then
+    SF_EXEC[assistant]=$(printf '%s\n' "${events[@]}" | jq -L "$SF_ROOT/lib" -cse '
+      include "runtime/schema";
+      assemble_backend_response
+    ' 2>/dev/null) || kind=invalid
+  fi
   if [[ $kind == invalid || $adapter_status != 0 || -z $SF_EXEC[assistant] ]]; then
     if [[ -s $error_file ]]; then
       SF_EXEC[backend_error]=$(LC_ALL=C tr -s '[:cntrl:]' ' ' <"$error_file" | cut -c 1-1000)

@@ -70,6 +70,7 @@ print -r -- "$stream" | jq -eRn '
   [inputs | fromjson |
     select(.type | IN("_assistant_delta","_assistant_reasoning_delta"))] as $deltas |
   ($deltas | map(.type) | unique | length) == 2 and
+  ($deltas | map(.index) | unique) == [0,1] and
   ($deltas | map(.seq)) == [range(0; $deltas | length)]
 ' >/dev/null
 

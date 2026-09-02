@@ -31,7 +31,7 @@ assert_usage() {
   jq -e -s -L "$ROOT/lib" '
     include "runtime/schema";
     map(select(.type == "_turn_usage"))[0] as $event |
-    map(select(.type == "message"))[0] as $message |
+    assemble_backend_response as $message |
     ($event | del(.type)) == {
       input_tokens:100, output_tokens:7, cached_tokens:85, reasoning_tokens:3
     } and
@@ -59,3 +59,26 @@ data: {"type":"message_stop"}
 EOF
 SHELLFISH_API_KEY=test zsh -f "$run" <"$req" >"$res"
 assert_usage
+
+# Streaming thinking payloads and tool input retain content-block indexes.
+cat >"$BACKEND_TEST_RESPONSE" <<'EOF'
+data: {"type":"message_start","message":{"usage":{"input_tokens":10,"output_tokens":0}}}
+data: {"type":"content_block_start","index":0,"content_block":{"type":"thinking","thinking":"","signature":""}}
+data: {"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"why"}}
+data: {"type":"content_block_delta","index":0,"delta":{"type":"signature_delta","signature":"signed"}}
+data: {"type":"content_block_stop","index":0}
+data: {"type":"content_block_start","index":1,"content_block":{"type":"tool_use","id":"call_1","name":"shell","input":{}}}
+data: {"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"{\"command\":\"pwd\"}"}}
+data: {"type":"content_block_stop","index":1}
+data: {"type":"message_delta","delta":{"stop_reason":"tool_use"},"usage":{"output_tokens":5}}
+data: {"type":"message_stop"}
+
+EOF
+SHELLFISH_API_KEY=test zsh -f "$run" <"$req" >"$res"
+jq -e -s -L "$ROOT/lib" '
+  include "runtime/schema";
+  assemble_backend_response |
+  .stop == "tool_calls" and
+  .content[0] == {type:"reasoning",text:"why",opaque:{type:"thinking",thinking:"why",signature:"signed"}} and
+  .content[1] == {type:"tool_call",id:"call_1",name:"shell",input:{command:"pwd"}}
+' "$res" >/dev/null
