@@ -50,6 +50,27 @@ if sf_chat_decoded not-supported; then
   fail 'unsupported exec output was accepted'
 fi
 
+# Cancellation keeps the transport open so exec can emit durable recovery before EOF.
+typeset -gi cancel_signals=0 cancel_stops=0 cancel_reloads=0
+functions[sf_chat_transport_signal_saved]=$functions[sf_chat_transport_signal]
+functions[sf_chat_transport_stop_saved]=$functions[sf_chat_transport_stop]
+functions[sf_chat_recover_saved]=$functions[sf_chat_recover]
+sf_chat_transport_signal() { (( ++cancel_signals )); }
+sf_chat_transport_stop() { (( ++cancel_stops )); }
+sf_chat_recover() { (( ++cancel_reloads )); }
+SF_PRESENT_STATE=working
+SF_PRESENT_QUEUE=( queued )
+sf_chat_cancel
+assert_equal cancelling "$SF_PRESENT_STATE"
+assert_equal 1 "$cancel_signals"
+assert_equal 0 "$cancel_stops"
+assert_equal 0 "$cancel_reloads"
+assert_equal queued "${(j:,:)SF_PRESENT_QUEUE}"
+functions[sf_chat_transport_signal]=$functions[sf_chat_transport_signal_saved]
+functions[sf_chat_transport_stop]=$functions[sf_chat_transport_stop_saved]
+functions[sf_chat_recover]=$functions[sf_chat_recover_saved]
+unfunction sf_chat_transport_signal_saved sf_chat_transport_stop_saved sf_chat_recover_saved
+
 # A notice is role-agnostic. It closes a live tail without creating a system
 # section or changing which message role owns the surrounding section.
 sf_chat_reset
@@ -187,9 +208,8 @@ sf_chat_viewport 80 20 "$SF_PRESENT_CURSOR"
 [[ $ZLE_CALLS == *'-R'* ]] ||
   fail 'recovery did not repaint ZLE'
 
-# Cancelling mid-stream leaves a flushed prefix whose open node was never
-# persisted, so recovery drops the whole presentation. The saved cursor is an
-# offset into that node, and keeping it points past everything that remains.
+# An unmatched speculative prefix cannot survive authoritative recovery. Its
+# saved cursor points past everything that remains and must be reset as well.
 sf_chat_reset
 sf_chat_terminal_reset
 SF_PRESENT_SESSION=$tmp/recover.jsonl
@@ -265,6 +285,22 @@ assert_equal first "$SF_PRESENT_SUBMITTED"
 assert_equal second "$SF_PRESENT_QUEUE[1]"
 assert_equal user "$SF_PRESENT_NODE_ROLE[-1]"
 assert_equal first "$SF_PRESENT_NODE_BODY[-1]"
+
+# Cancellation intent wins when signalling races with an already-completed exec.
+sf_chat_reset
+sf_chat_terminal_reset
+SF_PRESENT_SESSION="$tmp/recover.jsonl"
+SF_PRESENT_STATE=cancelling
+SF_PRESENT_QUEUE=( speculative )
+SF_CHAT_TRANSPORT_EOF=1
+SF_CHAT_TRANSPORT_EXIT_STATUS=0
+SF_CHAT_TRANSPORT_EXIT_DETAIL=''
+sf_chat_exec_finish
+assert_equal idle "$SF_PRESENT_STATE"
+assert_equal 0 "${#SF_PRESENT_QUEUE}"
+assert_equal 'Cancelled.' "$SF_PRESENT_NODE_HEADING[-1]"
+[[ $SF_PRESENT_NODE_BODY[-1] == *'Discarded 1 queued prompt.'* ]] ||
+  fail 'cancelled completion did not report discarded queued prompts'
 
 # An uncertain exec boundary discards follow-up prompts before recovery.
 sf_chat_reset

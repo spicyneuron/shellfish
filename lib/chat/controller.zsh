@@ -86,7 +86,6 @@ sf_chat_submit() {
 }
 
 sf_chat_cancel() {
-  local queue_notice
   REPLY=redraw
   case $SF_PRESENT_STATE in
     queued) return ;;
@@ -96,23 +95,10 @@ sf_chat_cancel() {
       REPLY=quit
       return
       ;;
-    permission)
-      sf_chat_editor_permission restore
+    permission|working)
+      [[ $SF_PRESENT_STATE != permission ]] || sf_chat_editor_permission restore
       SF_PRESENT_STATE=cancelling
       sf_chat_transport_signal
-      return
-      ;;
-    working)
-      sf_chat_discard_queue
-      queue_notice=$REPLY
-      SF_PRESENT_STATE=cancelling
-      sf_chat_transport_stop
-      if sf_chat_recover 'Cancelled.' "$queue_notice"; then
-        SF_PRESENT_STATE=idle
-      else
-        SF_PRESENT_STATE=stopped
-      fi
-      REPLY=reset
       return
       ;;
     idle|stopped)
@@ -246,15 +232,20 @@ sf_chat_pending_next() {
 
 sf_chat_exec_finish() {
   local heading detail render_error=$SF_PRESENT_RENDER_ERROR
-  integer exit_status
+  integer exit_status cancelled=0
   sf_chat_transport_result || return 1
   exit_status=$reply[1]
   detail=$reply[2]
-  if (( exit_status )); then
-    heading=$([[ $SF_PRESENT_STATE == cancelling ]] && print 'Cancelled.' || print 'Exec exited unexpectedly.')
+  [[ $SF_PRESENT_STATE != cancelling ]] || cancelled=1
+  if (( exit_status || cancelled )); then
+    if (( cancelled )); then
+      heading='Cancelled.'
+    else
+      heading='Exec exited unexpectedly.'
+    fi
     sf_chat_discard_queue
     [[ -z $REPLY ]] || detail+="${detail:+$'\n'}$REPLY"
-    if sf_chat_recover "$heading" "$detail" "$(( exit_status == 143 ))"; then
+    if sf_chat_recover "$heading" "$detail" "$(( cancelled || exit_status == 143 ))"; then
       SF_PRESENT_STATE=idle
     else
       SF_PRESENT_STATE=stopped

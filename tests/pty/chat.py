@@ -239,6 +239,34 @@ def test_activity_input_does_not_delay_interrupt():
         session.close()
 
 
+def test_interrupt_drains_partial_recovery():
+    session = Session(
+        explicit_session=True,
+        env={"SF_TEST_BACKEND_DELAY": "0.04"},
+    )
+    try:
+        prompt = "think " + " ".join(f"stream{i:02}" for i in range(40))
+        mark = len(session.output)
+        session.send((prompt + "\r").encode())
+        path, _ = session.wait_session_records(2, path=session.explicit_session)
+        session.wait_after(mark, "Thinking…")
+
+        mark = len(session.output)
+        session.send(b"\x03")
+        session.wait_after(mark, "Cancelled.", timeout=2)
+        _, records = session.wait_session_records(3, path=path)
+        recovered = records[-1]
+        assert recovered["role"] == "assistant" and recovered["stop"] == "length"
+        assert any(
+            item["type"] == "reasoning" and item["text"]
+            for item in recovered["content"]
+        )
+        with Path(f"{path}.lock").open() as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    finally:
+        session.close()
+
+
 def test_slow_tool_animates_until_interrupt():
     session = Session(
         env={"SF_TEST_BACKEND_DELAY_MATCH_SECONDS": "0.5"}, sandbox=False
@@ -566,6 +594,7 @@ def main():
     test_startup_records_precede_two_turns()
     test_tool_uses_manifest_display()
     test_activity_input_does_not_delay_interrupt()
+    test_interrupt_drains_partial_recovery()
     test_slow_tool_animates_until_interrupt()
     test_permission_decisions_restore_draft()
     test_permission_ctrl_c_cancels_pending_tools()
