@@ -82,6 +82,48 @@ if jq -cn '[{type:"_assistant_delta",index:0,text:"unfinished"}]' |
   fail 'backend response without response end was accepted'
 fi
 
+# Assembly orders indexed blocks, joins deltas, retains opaque data, and uses final usage.
+jq -cn '[
+  {type:"_assistant_tool_call_delta",index:2,id:"call_1",name:"shell",input:"{\"command\":"},
+  {type:"_assistant_reasoning_delta",index:0,text:"think "},
+  {type:"_turn_usage",input_tokens:5,output_tokens:1},
+  {type:"_assistant_delta",index:1,text:"run "},
+  {type:"_assistant_reasoning_opaque",index:0,opaque:{signature:"signed"}},
+  {type:"_assistant_tool_call_delta",index:2,input:"\"pwd\"}"},
+  {type:"_assistant_reasoning_delta",index:0,text:"first"},
+  {type:"_assistant_delta",index:1,text:"this"},
+  {type:"_turn_usage",input_tokens:5,cached_tokens:2,output_tokens:4},
+  {type:"_assistant_response_end",stop:"tool_calls"}
+]' | schema_eval 'assemble_backend_response == {
+  type:"message",role:"assistant",stop:"tool_calls",
+  content:[
+    {type:"reasoning",text:"think first",opaque:{signature:"signed"}},
+    {type:"text",text:"run this"},
+    {type:"tool_call",id:"call_1",name:"shell",input:{command:"pwd"}}
+  ],
+  usage:{input_tokens:5,cached_tokens:2,output_tokens:4}
+}' >/dev/null
+
+# A length-limited response preserves completed content but discards partial calls.
+jq -cn '[
+  {type:"_assistant_delta",index:0,text:"visible"},
+  {type:"_assistant_tool_call_delta",index:1,id:"call_1",name:"shell",input:"{\"command\":"},
+  {type:"_assistant_response_end",stop:"length"}
+]' | schema_eval 'assemble_backend_response == {
+  type:"message",role:"assistant",stop:"length",content:[{type:"text",text:"visible"}]
+}' >/dev/null
+
+for events in \
+    '[{"type":"_assistant_delta","index":0,"text":"text"},{"type":"_assistant_reasoning_delta","index":0,"text":"reason"},{"type":"_assistant_response_end","stop":"end"}]' \
+    '[{"type":"_assistant_reasoning_opaque","index":0,"opaque":{"a":1}},{"type":"_assistant_reasoning_opaque","index":0,"opaque":{"a":2}},{"type":"_assistant_response_end","stop":"end"}]' \
+    '[{"type":"_assistant_tool_call_delta","index":0,"id":"call_1","name":"shell","input":"{}"},{"type":"_assistant_response_end","stop":"end"}]' \
+    '[{"type":"_assistant_tool_call_delta","index":0,"id":"call_1","name":"shell","input":"{"},{"type":"_assistant_response_end","stop":"tool_calls"}]' \
+    '[{"type":"_assistant_tool_call_delta","index":0,"id":"call_1","name":"shell","input":"{}"},{"type":"_assistant_tool_call_delta","index":1,"id":"call_1","name":"shell","input":"{}"},{"type":"_assistant_response_end","stop":"tool_calls"}]'; do
+  if print -r -- "$events" | schema_eval 'assemble_backend_response' >/dev/null 2>&1; then
+    fail "invalid backend response was assembled: $events"
+  fi
+done
+
 # Canonical tool results require numeric exit codes from 0 through 255.
 print -r -- '{"type":"message","role":"tool_result","call_id":"c1","name":"shell","content":"out","exit_code":0}' |
   schema_eval 'canonical_tool_result' >/dev/null
