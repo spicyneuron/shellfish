@@ -66,9 +66,15 @@ def test_sandbox_update_reloads_session():
             mark = len(session.output)
             session.send(f"/sandbox +w {grant}\r".encode())
             session.wait_after(mark, "Project:", timeout=5)
-            header = json.loads(path.read_text().splitlines()[0])
-            assert str(Path(grant).resolve()) in header["harness"]["sandbox_write_paths"]
-            assert len(path.read_text().splitlines()) == 1
+            records = [json.loads(line) for line in path.read_text().splitlines()]
+            grant_path = str(Path(grant).resolve())
+            assert grant_path in records[0]["harness"]["sandbox_write_paths"]
+            assert records[1:] == [{
+                "type": "context",
+                "hook": "user_prompt_submit",
+                "script": "sandbox",
+                "content": f"Session sandbox write grant added: {grant_path}\n",
+            }]
         finally:
             session.close()
 
