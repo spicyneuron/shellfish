@@ -51,14 +51,15 @@ typeset git_cache="$tmp/git_awareness" git_output
 mkdir "$git_bin"
 cat >"$git_bin/git" <<'EOF'
 #!/bin/sh
+IFS= read -r state <"$GIT_STATE" || state=
 case "$1:$2" in
-  rev-parse:--verify) sed 's/^commit://' "$GIT_STATE" ;;
+  rev-parse:--verify) printf '%s\n' "${state#commit:}" ;;
   log:--oneline) printf 'abc123 Test commit\n' ;;
   log:--name-status) printf 'M\tchanged-file\n' ;;
   status:--short) printf 'M changed-file\n' ;;
   symbolic-ref:--quiet)
-    case "$(cat "$GIT_STATE")" in
-      branch:*) sed 's/^branch://' "$GIT_STATE" ;;
+    case "$state" in
+      branch:*) printf '%s\n' "${state#branch:}" ;;
       *) exit 1 ;;
     esac
     ;;

@@ -24,10 +24,32 @@ sf_hooks_dispatch "$input" 64 0 0 "$mixed"
 [[ $SF_HOOK_SCRIPT_RESULTS[4] == $'local\n' && -z $SF_HOOK_SCRIPT_RESULTS[5] ]]
 (( reply[1] ))
 
+# Policy cases consume captured files; subprocess coverage remains above and below.
+functions -c sf_hooks_capture_one sf_hooks_capture_real
+typeset -A capture_status=() capture_context=() capture_display=() capture_control=()
+capture_result() {
+  local name=$1
+  script="$scripts/$name"
+  capture_status[$script]=$2
+  capture_context[$script]=${3-}
+  capture_display[$script]=${4-}
+  capture_control[$script]=${5-}
+}
+sf_hooks_capture_one() {
+  local target=$1 directory=$3
+  local context="$directory/current-context"
+  local display="$directory/current-display"
+  local control="$directory/current-control"
+  print -rn -- "${capture_context[$target]-}" >"$context"
+  print -rn -- "${capture_display[$target]-}" >"$display"
+  print -rn -- "${capture_control[$target]-}" >"$control"
+  reply=( "${capture_status[$target]}" "$context" "$display" "$control" )
+}
+
 # Each script retains its attribution and independently captured channels.
-make_script context_only 'print -n from-stdout; exit 0'
+capture_result context_only 0 from-stdout
 typeset context_only=$script
-make_script display_only 'print -rn -u2 -- from-stderr; exit 0'
+capture_result display_only 0 '' from-stderr
 typeset display_only=$script
 sf_hooks_dispatch "$empty" 64 0 0 "$context_only" "$display_only"
 (( ${#SF_HOOK_SCRIPT_RESULTS} == 10 ))
@@ -37,9 +59,9 @@ sf_hooks_dispatch "$empty" 64 0 0 "$context_only" "$display_only"
    $SF_HOOK_SCRIPT_RESULTS[9] == from-stderr ]]
 
 # Status 10 skips sticky default behavior while later scripts continue in order.
-make_script skip 'print -n first; exit 10'
+capture_result skip 10 first
 typeset skip=$script
-make_script later 'print -n second; exit 0'
+capture_result later 0 second
 typeset later=$script
 sf_hooks_dispatch "$empty" 64 0 0 "$skip" "$later"
 (( ! reply[1] ))
@@ -51,16 +73,16 @@ sf_hooks_dispatch "$empty" 64 0 0 "$skip" "$later"
    $SF_HOOK_SCRIPT_RESULTS[8] == second ]]
 
 # Status 11 stops the chain and preserves structured JSON control.
-make_script control 'print -n before; print -rn -u3 -- '\''{"action":"handoff","argv":["one","","line\\nbreak"]}'\''; exit 11'
+capture_result control 11 before '' '{"action":"handoff","argv":["one","","line\\nbreak"]}'
 typeset control=$script
-make_script forbidden 'print -n forbidden; exit 0'
+capture_result forbidden 0 forbidden
 typeset forbidden=$script
 sf_hooks_dispatch "$empty" 64 1 0 "$control" "$forbidden"
 (( ! reply[1] ))
 [[ -z $REPLY && $reply[3] == "$control" ]]
 [[ $reply[4] == '{"action":"handoff","argv":["one","","line\\nbreak"]}' ]]
 
-make_script halt 'print -n feedback; exit 11'
+capture_result halt 11 feedback
 typeset halt=$script
 sf_hooks_dispatch "$empty" 64 0 0 "$halt" "$forbidden"
 (( ! reply[1] ))
@@ -68,7 +90,7 @@ sf_hooks_dispatch "$empty" 64 0 0 "$halt" "$forbidden"
 
 # Structured control is accepted on any successful status when the hook allows
 # it, and rejected when the caller disallows it.
-make_script status_zero 'print -rn -u3 -- '\''{"action":"test"}'\''; exit 0'
+capture_result status_zero 0 '' '' '{"action":"test"}'
 typeset status_zero=$script
 sf_hooks_dispatch "$empty" 64 1 0 "$status_zero"
 [[ $reply[4] == '{"action":"test"}' ]]
@@ -79,14 +101,14 @@ fi
 [[ $SF_HOOK_ERROR == "hook script returned unexpected control data: $control" ]]
 
 # Invalid JSON is malformed and never reaches an adapter.
-make_script malformed 'print -rn -u3 -- argument; exit 11'
+capture_result malformed 11 '' '' argument
 typeset malformed=$script
 if sf_hooks_dispatch "$empty" 64 1 0 "$malformed"; then
   fail 'malformed JSON control was accepted'
 fi
 [[ $SF_HOOK_ERROR == 'hook script returned malformed control data' && -z $REPLY && ${#reply} == 0 ]]
 
-make_script multiple 'print -rn -u3 -- '\''{}{}'\''; exit 11'
+capture_result multiple 11 '' '' '{}{}'
 typeset multiple=$script
 if sf_hooks_dispatch "$empty" 64 1 0 "$multiple"; then
   fail 'multiple JSON control objects were accepted'
@@ -94,7 +116,7 @@ fi
 [[ $SF_HOOK_ERROR == 'hook script returned malformed control data' ]]
 
 # Unexpected exits discard all accumulated candidate output.
-make_script failed 'print -n failed; print -n -u2 detail; exit 9'
+capture_result failed 9 failed detail
 typeset failed=$script
 if sf_hooks_dispatch "$empty" 64 0 0 "$later" "$failed"; then
   fail 'unexpected script status was accepted'
@@ -104,19 +126,22 @@ fi
 (( ${#SF_HOOK_SCRIPT_RESULTS} == 0 ))
 
 # Each script receives its own combined output budget.
-make_script forty 'printf %040d 0; exit 0'
+capture_result forty 0 "${(l:40::0:)""}"
 typeset forty=$script
-make_script thirty 'printf %030d 0; exit 0'
+capture_result thirty 0 "${(l:30::0:)""}"
 typeset thirty=$script
 sf_hooks_dispatch "$empty" 64 0 0 "$forty" "$thirty"
 (( ${#SF_HOOK_SCRIPT_RESULTS} == 10 ))
 
-make_script combined_overflow 'printf %040d 0; printf %025d 0 >&2; exit 0'
+capture_result combined_overflow 0 "${(l:40::0:)""}" "${(l:25::0:)""}"
 typeset combined_overflow=$script
 if sf_hooks_dispatch "$empty" 64 0 0 "$combined_overflow"; then
   fail 'combined hook overflow was accepted'
 fi
 [[ $SF_HOOK_ERROR == "hook script output exceeds capture limit: $combined_overflow" ]]
+
+functions -c sf_hooks_capture_real sf_hooks_capture_one
+unfunction sf_hooks_capture_real
 
 # The system hook interleaves static files, .zsh producers, and other executables.
 typeset static="$tmp/static.md" zsh_component="$tmp/dynamic.zsh"
