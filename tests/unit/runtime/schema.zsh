@@ -229,7 +229,7 @@ done
 typeset tool_header
 tool_header=$(jq -cn --argjson header "$valid_header" --argjson manifest "$valid_manifest" '
   $header | .harness.tools = [{
-    name:"shell", command:"/bin/shell-tool", manifest:$manifest, settings:{}
+    name:"shell", command:"/bin/shell-tool", manifest:$manifest, settings:"/etc/fence.jsonc"
   }]
 ')
 print -r -- "$tool_header" | schema_eval 'canonical_session_header(1)' >/dev/null

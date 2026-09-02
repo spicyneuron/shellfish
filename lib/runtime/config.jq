@@ -200,7 +200,7 @@ def runtime_finalize:
   ($tool_count * 4) as $component_offset |
   [range(0; $tool_count) as $index |
     ($args[($index * 4):][:4]) |
-    {name:.[0],command:.[1],manifest_json:.[2],settings_json:.[3]}] as $resolved_tools |
+    {name:.[0],command:.[1],manifest_json:.[2],settings:.[3]}] as $resolved_tools |
   [range(0; $component_count) as $index |
     ($args[($component_offset + ($index * 2)):][:2]) |
     {hook:.[0],path:.[1]}] as $resolved_components |
@@ -208,13 +208,13 @@ def runtime_finalize:
     ($tool.manifest_json | fromjson |
       select(tool_manifest) //
         error("invalid tool manifest: " + $tool.command)) as $tool_manifest |
-    ($tool.settings_json | fromjson) as $settings |
-    if $tool_manifest.sandbox and ($settings | type) != "object" then
-      error("invalid tool sandbox settings: " + $tool.command)
-    elif ($tool_manifest.sandbox | not) and $settings != null then
+    if $tool_manifest.sandbox and $tool.settings == "" then
+      error("missing tool sandbox settings: " + $tool.command)
+    elif ($tool_manifest.sandbox | not) and $tool.settings != "" then
       error("unexpected tool sandbox settings: " + $tool.command)
     else {name:$tool.name,command:$tool.command,
-      manifest:$tool_manifest,settings:$settings} end] as $tools |
+      manifest:$tool_manifest,
+      settings:(if $tool.settings == "" then null else $tool.settings end)} end] as $tools |
   (reduce $resolved_components[] as $component ({system:[]};
     .[$component.hook] += [$component.path])) as $hooks |
   $prepared.profile as $profile |

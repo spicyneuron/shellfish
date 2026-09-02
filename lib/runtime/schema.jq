@@ -299,7 +299,7 @@ def canonical_session_header($format_version):
     (.tools | type == "array" and all(.[];
       type == "object" and keys == ["command", "manifest", "name", "settings"] and
       (.name | tool_name) and (.command | absolute_path) and
-      (.settings == null or (.settings | type == "object")) and
+      (.settings == null or (.settings | absolute_nul_free_path)) and
       (.manifest | tool_manifest) and
       (if .manifest.sandbox then .settings != null else .settings == null end))) and
     (([.tools[].name] | unique | length) == (.tools | length)) and

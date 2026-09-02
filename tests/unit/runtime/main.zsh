@@ -90,10 +90,10 @@ jq -e --arg root "$ROOT/default/hooks/session_start" \
     ["read_file", "edit_file", "write_file", "skill", "search_web", "fetch_url", "shell"] and
   (.harness.tools[] | select(.name == "search_web") |
     .command == ($tools + "/search_web/run") and
-    .settings.network.allowedDomains == ["mcp.exa.ai"]) and
+    .settings == ($tools + "/search_web/fence.jsonc")) and
   (.harness.tools[] | select(.name == "fetch_url") |
     .command == ($tools + "/fetch_url/run") and
-    .settings.network.allowedDomains == ["r.jina.ai"])
+    .settings == ($tools + "/fetch_url/fence.jsonc"))
 ' <<<"$REPLY" >/dev/null
 
 # Runtime resolution gives new and existing sessions the same boundary.
@@ -389,7 +389,7 @@ jq -e --arg path "${tmp:A}/root/default/hooks/stop/bundled" \
   '.harness.stop == [$path]' <<<"$REPLY" >/dev/null
 SF_ROOT=$ROOT
 
-# Tool references freeze as executable paths, settings, and manifests in configured order.
+# Tool references resolve to executable and settings paths with manifests in configured order.
 mkdir -p "$tmp/config/tools"
 for tool_name in alpha beta gamma delta epsilon; do
   mkdir "$tmp/config/tools/$tool_name"
@@ -423,8 +423,10 @@ fi
 [[ $SF_RUNTIME_ERROR == *"cannot read tool sandbox settings: ${tmp:A}/config/tools/alpha/fence.jsonc"* ]]
 print -r -- '{}' >"$tmp/config/tools/alpha/fence.jsonc"
 sf_runtime_resolve_from_config "$tmp/config/tooled.jsonc" '' '' '{}' "$ROOT/tests/fixtures/backend"
-jq -e '(.harness.tools | map(.name)) == ["beta", "alpha", "gamma", "delta", "epsilon"] and
-  .harness.tools[1].manifest.sandbox == true' <<<"$REPLY" >/dev/null
+jq -e --arg settings "${tmp:A}/config/tools/alpha/fence.jsonc" '
+  (.harness.tools | map(.name)) == ["beta", "alpha", "gamma", "delta", "epsilon"] and
+  .harness.tools[1].manifest.sandbox == true and
+  .harness.tools[1].settings == $settings' <<<"$REPLY" >/dev/null
 
 # An unsandboxed harness resolves sandboxed tool settings without requiring fence.
 jq '.harnesses.tooled.sandbox=false' "$tmp/config/tooled.jsonc" \

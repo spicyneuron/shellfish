@@ -138,7 +138,7 @@ sf_tool_execute() {
   local session_id=${12-}
   local tool_home=${HOME:-$cwd}
   local id name execution_input bypass sandboxed tool_sandbox tool_bypass tool_settings
-  local state_dir captured bounded status_file temp native_temp command_path settings sandbox_log
+  local state_dir captured bounded status_file temp native_temp command_path sandbox_log
   local decoded sandbox_denial_detected=''
   local -a fields read_paths write_paths
   local -a command locale_env
@@ -165,7 +165,7 @@ sf_tool_execute() {
     ($tools[] | select(.name == $call.name) |
       (.command | field), (.manifest.sandbox | tostring | field),
       (.manifest.allow_sandbox_bypass // false | tostring | field),
-      (.settings | tojson | field)),
+      ((.settings // "") | field)),
     ("ok" | field)
   ' 2>/dev/null) || { sf_tools_fail 'cannot decode tool call'; return; }
   fields=( "${(@0)${decoded%$'\0'}}" )
@@ -234,15 +234,12 @@ sf_tool_execute() {
         return
       }
       native_temp=$REPLY
-      settings="$state_dir/fence.jsonc"
       sandbox_log="$state_dir/sandbox.log"
-      print -r -- "$tool_settings" >"$settings" || return 1
       command=(/usr/bin/env -i HOME="$tool_home" "${locale_env[@]}" PATH="$PATH" TERM="${TERM:-dumb}"
         SHELLFISH_CONFIG_DIR="$config_dir"
         SHELLFISH_MAX_CAPTURE_BYTES="$max_capture"
-        "$fence" --monitor --fence-log-file "$sandbox_log" --settings "$settings"
-        --expose-host-path "$settings" --expose-host-path "$command_path"
-        --expose-host-path-rw "$temp")
+        "$fence" --monitor --fence-log-file "$sandbox_log" --settings "$tool_settings"
+        --expose-host-path "$command_path" --expose-host-path-rw "$temp")
       [[ $native_temp == $temp ]] || command+=( --expose-host-path-rw "$native_temp" )
       for decoded in "${read_paths[@]}"; do
         command+=( --expose-host-path "$decoded" )

@@ -221,11 +221,11 @@ typeset file_runtime=$(jq -cn --argjson base "$stored_runtime" \
   --slurpfile write "$ROOT/default/tools/write_file/tool.json" '
     $base | .harness.tools = [
       {name:"read_file",command:($root + "/read_file/run"),
-       settings:(if $read[0].sandbox then {} else null end),manifest:$read[0]},
+       settings:(if $read[0].sandbox then ($root + "/read_file/fence.jsonc") else null end),manifest:$read[0]},
       {name:"edit_file",command:($root + "/edit_file/run"),
-       settings:(if $edit[0].sandbox then {} else null end),manifest:$edit[0]},
+       settings:(if $edit[0].sandbox then ($root + "/edit_file/fence.jsonc") else null end),manifest:$edit[0]},
       {name:"write_file",command:($root + "/write_file/run"),
-       settings:(if $write[0].sandbox then {} else null end),manifest:$write[0]}]
+       settings:(if $write[0].sandbox then ($root + "/write_file/fence.jsonc") else null end),manifest:$write[0]}]
 ')
 for policy in edit_file write_file; do
   jq -e '.filesystem.denyWrite |
@@ -290,8 +290,7 @@ sf_test_tool_execute "$(jq -cn --arg path "$newline_path" \
   '{id:"write_2",name:"write_file",input:{file_path:$path,content:"kept\n"}}')" 0
 [[ -f "$tmp/$newline_path" ]]
 
-# Sandboxed execution goes through Fence with the frozen package policy and
-# executable exposed read-only.
+# Sandboxed execution gives Fence the package policy path and runtime grants.
 mkdir "$tmp/bin"
 cat >"$tmp/bin/fence" <<'ZSH'
 #!/usr/bin/env zsh
@@ -306,7 +305,7 @@ typeset sandbox_log=''
 while (( $# )) && [[ $1 != -- ]]; do
   case $1 in
     --fence-log-file) sandbox_log=$2; shift 2 ;;
-    --settings) cp -- "$2" "${0:A:h:h}/fence.settings"; shift 2 ;;
+    --settings) print -r -- "$2" >"${0:A:h:h}/fence.settings"; shift 2 ;;
     *) shift ;;
   esac
 done
@@ -327,11 +326,10 @@ PATH="$tmp/bin:$PATH"
 rehash
 typeset fetch_runtime=$(jq -cn --argjson base "$stored_runtime" \
   --arg root "$ROOT/default/tools/fetch_url" \
-  --slurpfile manifest "$ROOT/default/tools/fetch_url/tool.json" \
-  --slurpfile settings "$ROOT/default/tools/fetch_url/fence.jsonc" '
+  --slurpfile manifest "$ROOT/default/tools/fetch_url/tool.json" '
     $base | .harness.tools = [{
       name:"fetch_url",command:($root + "/run"),
-      settings:$settings[0],manifest:$manifest[0]
+      settings:($root + "/fence.jsonc"),manifest:$manifest[0]
     }]
 ')
 load_tools "$(jq -c --arg fence "$tmp/bin/fence" \
@@ -339,8 +337,7 @@ load_tools "$(jq -c --arg fence "$tmp/bin/fence" \
 sf_test_tool_execute \
   '{"id":"fetch_1","name":"fetch_url","input":{"url":"https://example.com"}}' 1
 jq -e '.exit_code == 0 and .content == "# sandboxed markdown\n"' <<<"$REPLY" >/dev/null
-jq -e '.network.allowedDomains == ["r.jina.ai"] and .filesystem.defaultDenyRead == true' \
-  "$tmp/fence.settings" >/dev/null
+grep -Fx -- "$ROOT/default/tools/fetch_url/fence.jsonc" "$tmp/fence.settings" >/dev/null
 load_tools "$(jq -c --arg fence "$tmp/bin/fence" \
   '.harness.sandbox=true | .harness.fence=$fence' <<<"$stored_runtime")"
 sf_test_tool_execute "$(jq -cn --arg command 'printf "%s|%s" "$TMPDIR" "$TMPPREFIX"' \
@@ -371,8 +368,7 @@ jq -e '.content == "fenced" and .sandboxed == true' \
 grep -Fx -- '--monitor' "$tmp/fence.args" >/dev/null
 grep -Fx -- '--fence-log-file' "$tmp/fence.args" >/dev/null
 grep -Fx -- '--settings' "$tmp/fence.args" >/dev/null
-jq -e '. == {}' "$tmp/fence.settings" >/dev/null
-(( $(grep -Fxc -- '--expose-host-path' "$tmp/fence.args") == 4 ))
+grep -Fx -- "$tool_dir/fence.jsonc" "$tmp/fence.settings" >/dev/null
 grep -Fx -- "$tool_dir/run" "$tmp/fence.args" >/dev/null
 grep -Fx -- "$tmp/read dir" "$tmp/fence.args" >/dev/null
 grep -Fx -- "$tmp/read file" "$tmp/fence.args" >/dev/null

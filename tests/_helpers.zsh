@@ -91,7 +91,7 @@ sf_test_runtime() {
         harness:{system:(if $system == "" then [] else [$system] end),
           sandbox_read_paths:[],sandbox_write_paths:[],fence:$fence,
           tools:[{name:"shell",command:($tool+"/run"),
-            settings:(if $tool_manifest[0].sandbox then {} else null end),
+            settings:(if $tool_manifest[0].sandbox then ($tool+"/fence.jsonc") else null end),
             manifest:$tool_manifest[0]}],sandbox:false,
           max_requests_per_turn:8,max_tool_calls_per_request:16,max_capture_bytes:65536}
       }

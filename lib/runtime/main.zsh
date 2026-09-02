@@ -274,10 +274,11 @@ sf_runtime_resolve_from_config() {
   for (( tool_index = 1; tool_index <= tool_count; tool_index++ )); do
     resolved=$tool_paths[tool_index]
     tool_manifest=$tool_manifests[tool_index]
-    settings=null
+    settings=''
     if [[ $sandbox_flags[tool_index] == true ]]; then
-      settings=$(sf_runtime_read_jsonc "$resolved/fence.jsonc" 2>&1) || {
-        sf_runtime_fail "cannot read tool sandbox settings: $resolved/fence.jsonc"
+      settings="$resolved/fence.jsonc"
+      [[ -f $settings && -r $settings ]] || {
+        sf_runtime_fail "cannot read tool sandbox settings: $settings"
         return
       }
       (( sandbox_enabled )) && needs_fence=1
