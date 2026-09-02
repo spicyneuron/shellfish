@@ -1,6 +1,5 @@
 #!/usr/bin/env zsh
 set -euo pipefail
-setopt extended_glob
 
 (($# == 0)) || { print -u2 -r -- 'Usage: skill'; exit 2; }
 name=$(jq -ejr 'select(type == "object" and keys == ["name"] and

@@ -1,7 +1,6 @@
 #!/usr/bin/env zsh
 
 emulate -R zsh
-setopt extended_glob
 set -u
 
 bundled_root=${0:A:h:h:h}

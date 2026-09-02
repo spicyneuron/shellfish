@@ -1,6 +1,8 @@
 # Shared Agent Skills discovery for bundled hook scripts and tools.
 
 sf_skills_scalar() {
+  emulate -L zsh
+  setopt extended_glob
   local value=$1 decoded
   value=${value##[[:space:]]#}
   value=${value%%[[:space:]]#}
@@ -22,6 +24,8 @@ sf_skills_scalar() {
 }
 
 sf_skills_metadata() {
+  emulate -L zsh
+  setopt extended_glob
   local file=$1 line key value name='' description='' disabled=false
   integer first=1 closed=0
   while IFS= read -r line || [[ -n $line ]]; do
@@ -67,6 +71,8 @@ sf_skills_metadata() {
 
 # Populates reply with name, description, and canonical SKILL.md path triplets.
 sf_skills_discover() {
+  emulate -L zsh
+  setopt extended_glob
   local bundled_root=$1 config_dir=${2-} project_dir=${3:-$PWD}
   local home=${HOME-} root canonical directory file name description disabled
   local -a roots discovered
