@@ -461,7 +461,7 @@ sf_chat_markdown_highlight() {
   local character suffix rest kind boundary=$state trimmed pipes
   integer base_offset=${2:-0} continuation=${4:-0}
   integer length=${#source} index=1 end base close_start
-  integer cursor inline_end count content match_end inline complete_line starts_line
+  integer cursor inline_end count content match_end next_open inline complete_line starts_line
   integer comment=0 heading=0 table_line table_continuation=0
   local -a fields lines
   if [[ $state == heading ]]; then
@@ -584,21 +584,41 @@ sf_chat_markdown_highlight() {
           count=1
         fi
         if [[ -n $delimiter ]]; then
-          # Underscores inside a word are identifier characters, not emphasis.
-          if [[ $delimiter == _* ]] && (( cursor > 1 )) &&
-              [[ ${line[cursor - 1]} == [[:alnum:]] &&
-              ${line[cursor + count]-} == [[:alnum:]] ]]; then
+          # Emphasis delimiters need non-space content and outer word boundaries.
+          if { (( cursor > 1 )) && [[ ${line[cursor - 1]} == [[:alnum:]] ]]; } ||
+              [[ -z ${line[cursor + count]-} ||
+              ${line[cursor + count]} == [[:space:]] ]]; then
             (( cursor += count ))
             continue
           fi
           suffix=${line[cursor + count,-1]}
-          if [[ $suffix == *"$delimiter"* ]]; then
-            rest=${suffix#*"$delimiter"}
-            content=$(( ${#line} - ${#rest} - count + 1 ))
+          content=0
+          next_open=0
+          match_end=$(( cursor + count ))
+          while (( match_end + count - 1 <= ${#line} )); do
+            if [[ ${line[match_end,match_end + count - 1]} == "$delimiter" ]]; then
+              if [[ ${line[match_end - 1]} != [[:space:]] &&
+                  ${line[match_end + count]-} != [[:alnum:]] ]]; then
+                content=$match_end
+                break
+              elif [[ ${line[match_end - 1]} != [[:alnum:]] &&
+                  -n ${line[match_end + count]-} &&
+                  ${line[match_end + count]} != [[:space:]] ]]; then
+                next_open=$match_end
+                break
+              fi
+            fi
+            (( ++match_end ))
+          done
+          if (( content )); then
             (( count == 2 )) && kind=strong || kind=em
             sf_chat_highlight_span $(( base + cursor - 1 )) \
               $(( base + content + count - 1 )) $kind
             cursor=$(( content + count ))
+            continue
+          fi
+          if (( next_open )); then
+            cursor=$next_open
             continue
           fi
           [[ -n $suffix && $suffix[1] == ' ' ]] || SF_PRESENT_HIGHLIGHT_INLINE_OPEN=1

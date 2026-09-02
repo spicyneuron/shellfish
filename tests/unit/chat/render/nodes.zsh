@@ -427,12 +427,23 @@ assert_equal 1 "$SF_PRESENT_HIGHLIGHT_INLINE_OPEN"
 sf_chat_markdown_highlight $'a **bold start\n'
 assert_equal 0 "$SF_PRESENT_HIGHLIGHT_INLINE_OPEN"
 # Multiplication is not emphasis: a delimiter followed by a space cannot open.
-sf_chat_markdown_highlight 'value * other'
-assert_equal 0 "$SF_PRESENT_HIGHLIGHT_INLINE_OPEN"
-# Identifier underscores do not open emphasis.
 SF_PRESENT_HIGHLIGHT_SPANS=()
-sf_chat_markdown_highlight 'user_prompt_submit and _italic_'
-span_texts 'user_prompt_submit and _italic_'
+sf_chat_markdown_highlight 'value * other * last'
+assert_equal 0 "${#SF_PRESENT_HIGHLIGHT_SPANS}"
+assert_equal 0 "$SF_PRESENT_HIGHLIGHT_INLINE_OPEN"
+# Emphasis and strong tags require outer word boundaries.
+SF_PRESENT_HIGHLIGHT_SPANS=()
+sf_chat_markdown_highlight 'plain_old_text and plain**old**text'
+assert_equal 0 "${#SF_PRESENT_HIGHLIGHT_SPANS}"
+sf_chat_markdown_highlight 'plain_old_text_ and plain**old**'
+assert_equal 0 "$SF_PRESENT_HIGHLIGHT_INLINE_OPEN"
+SF_PRESENT_HIGHLIGHT_SPANS=()
+sf_chat_markdown_highlight '_also_plain_text_ and **bold**'
+span_texts '_also_plain_text_ and **bold**'
+assert_equal '_also_plain_text_,**bold**' "$REPLY"
+SF_PRESENT_HIGHLIGHT_SPANS=()
+sf_chat_markdown_highlight '_assistant_response_end and _italic_'
+span_texts '_assistant_response_end and _italic_'
 assert_equal _italic_ "$REPLY"
 assert_equal 0 "$SF_PRESENT_HIGHLIGHT_INLINE_OPEN"
 sf_chat_markdown_highlight $'```js\nconst x = 3;'
