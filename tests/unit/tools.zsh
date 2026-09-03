@@ -15,15 +15,14 @@ typeset tool_tools tool_schema tool_cwd=$stored_cwd tool_max_capture tool_sandbo
 typeset tool_read_paths tool_write_paths tool_config_dir=''
 
 load_tools() {
-  local runtime=$1 permission_available=${2:-0}
+  local runtime=$1
   tool_tools=$(jq -c '.harness.tools' <<<$runtime)
   tool_max_capture=$(jq -r '.harness.max_capture_bytes' <<<$runtime)
   tool_sandbox=$(jq -r 'if .harness.sandbox then 1 else 0 end' <<<$runtime)
   tool_fence=$(jq -r '.harness.fence' <<<$runtime)
   tool_read_paths=$(jq -c '.harness.sandbox_read_paths' <<<$runtime)
   tool_write_paths=$(jq -c '.harness.sandbox_write_paths' <<<$runtime)
-  sf_tools_load "$tool_tools" "$permission_available" "$tool_cwd" \
-    "$tool_max_capture" "$tool_sandbox" "$tool_fence"
+  sf_tools_load "$tool_tools" "$tool_cwd" "$tool_sandbox" "$tool_fence"
   tool_schema=$REPLY
 }
 
@@ -191,7 +190,7 @@ jq -e '.exit_code == 143 and .sandboxed == false' <<<"$REPLY" >/dev/null
 
 # A sandboxed bypass executes only with an approval decision from its caller.
 load_tools "$(jq -c --arg fence "${commands[fence]:A}" \
-  '.harness.sandbox=true | .harness.fence=$fence' <<<"$stored_runtime")" 1
+  '.harness.sandbox=true | .harness.fence=$fence' <<<"$stored_runtime")"
 typeset bypass_call=$(jq -cn \
   '{id:"bypass_1",name:"shell",input:{command:"true",request_sandbox_bypass:true,
     sandbox_bypass_reason:"test"}}')
@@ -234,7 +233,7 @@ for policy in edit_file write_file; do
 done
 print -r -- alpha >"$tmp/file-tool.txt"
 tool_cwd=$tmp
-load_tools "$(jq -c '.harness.sandbox=true' <<<"$file_runtime")" 1
+load_tools "$(jq -c '.harness.sandbox=true' <<<"$file_runtime")"
 jq -e 'map(.name) == ["read_file","edit_file","write_file"] and
   all(.[].input_schema.properties; .request_sandbox_bypass.type == "boolean" and
     .sandbox_bypass_reason.minLength == 1) and
@@ -389,12 +388,6 @@ jq -e '.content == "noisy" and .sandboxed == true and (has("sandbox_denial_detec
 rm "$tmp/fence.violate"
 load_tools "$(jq -c --arg fence "$tmp/bin/fence" \
   '.harness.sandbox=true | .harness.fence=$fence' <<<"$stored_runtime")"
-jq -e '.[0] |
-  (.input_schema.properties | has("request_sandbox_bypass") | not) and
-  (.description | contains("keep it to one logical operation") | not)' \
-  <<<"$tool_schema" >/dev/null
-load_tools "$(jq -c --arg fence "$tmp/bin/fence" \
-  '.harness.sandbox=true | .harness.fence=$fence' <<<"$stored_runtime")" 1
 jq -e '.[0].input_schema.properties.request_sandbox_bypass.type == "boolean" and
   .[0].input_schema.properties.sandbox_bypass_reason.minLength == 1 and
   (.[0].input_schema.allOf[0].then.required | index("sandbox_bypass_reason")) != null and

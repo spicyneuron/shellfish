@@ -387,7 +387,6 @@ sf_exec_turn() {
   integer request_count=0 stop_count=0 call_count tool_index
   integer harness_sandbox tool_limit request_limit context_window_set
   integer permission_status
-  integer permission_hook_available=0 permission_decision_available=0
   local failure='' after='' patch=''
 
   SF_EXEC[permission_count]=0
@@ -411,7 +410,6 @@ sf_exec_turn() {
       ($runtime.harness.fence | field),
       ($runtime.harness.sandbox_read_paths | tojson | field),
       ($runtime.harness.sandbox_write_paths | tojson | field),
-      (if ($runtime.harness.permission_request // [] | length) > 0 then "1" else "0" end | field),
       ($runtime.harness.tools | tojson | field),
       ($runtime.backend.env_file | field),
       ($runtime.backend.context_window_command // "" | field),
@@ -422,7 +420,7 @@ sf_exec_turn() {
       return 1
     }
     runtime_fields=( "${(@0)${runtime_projection%$'\0'}}" )
-    (( ${#runtime_fields} == 14 )) && [[ $runtime_fields[14] == ok ]] || {
+    (( ${#runtime_fields} == 13 )) && [[ $runtime_fields[13] == ok ]] || {
       failure='cannot inspect frozen runtime'
       return 1
     }
@@ -434,11 +432,10 @@ sf_exec_turn() {
     fence=$runtime_fields[6]
     sandbox_read_paths=$runtime_fields[7]
     sandbox_write_paths=$runtime_fields[8]
-    permission_hook_available=$runtime_fields[9]
-    tools=$runtime_fields[10]
-    config_file=$runtime_fields[11]
-    context_window_command=$runtime_fields[12]
-    context_window_set=$runtime_fields[13]
+    tools=$runtime_fields[9]
+    config_file=$runtime_fields[10]
+    context_window_command=$runtime_fields[11]
+    context_window_set=$runtime_fields[12]
     config_dir=''
     [[ -z $config_file ]] || config_dir=${config_file:h}
     [[ -d $SF_SESSION[cwd] && -x $SF_SESSION[cwd] ]] || {
@@ -502,9 +499,7 @@ sf_exec_turn() {
         return
         ;;
     esac
-    (( permission_available || permission_hook_available )) && permission_decision_available=1
-    if ! sf_tools_load "$tools" "$permission_decision_available" \
-        "$SF_SESSION[cwd]" "$max_capture" "$harness_sandbox" "$fence"; then
+    if ! sf_tools_load "$tools" "$SF_SESSION[cwd]" "$harness_sandbox" "$fence"; then
       failure=$SF_TOOL_ERROR
       return 1
     fi

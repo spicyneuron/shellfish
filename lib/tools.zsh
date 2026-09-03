@@ -14,8 +14,7 @@ sf_tools_fail() {
 }
 
 sf_tools_load() {
-  local tools=$1 permission_available=${2:-0} cwd=$3
-  local max_capture=$4 harness_sandbox=$5 fence=${6-}
+  local tools=$1 cwd=$2 harness_sandbox=$3 fence=${4-}
   local command projected sandbox
   local -a fields
   integer index=1 sandboxed_tools=0
@@ -26,12 +25,11 @@ sf_tools_load() {
     return
   }
   projected=$(jq -jrn --argjson tools "$tools" \
-    --argjson harness_sandbox "$harness_sandbox" \
-    --argjson permission_available "$permission_available" '
+    --argjson harness_sandbox "$harness_sandbox" '
       def field: ., "\u0000";
       def bypass_available($manifest):
-        ($permission_available == 1) and ($harness_sandbox == 1) and
-        $manifest.sandbox and ($manifest.allow_sandbox_bypass // false);
+        ($harness_sandbox == 1) and $manifest.sandbox and
+        ($manifest.allow_sandbox_bypass // false);
       ([$tools | to_entries[] |
         .value as $tool | $tool.manifest as $manifest |
         {name:$tool.name,description:($manifest.description +

@@ -50,6 +50,8 @@ jq -e '
   (.tools[0].input_schema.properties.request_sandbox_bypass.description |
     contains("interactive") | not)
 ' "$request_capture" >/dev/null
+# Tool projection comes only from frozen runtime, so every client sees these tools.
+typeset frozen_tools=$(jq -c '.tools' "$request_capture")
 jq -e -s 'all(.[]; .type != "context")' "$permission_allow_session" >/dev/null
 
 # A script denial uses its reason without consulting the UI. With no configured
@@ -85,8 +87,7 @@ print -r -- "$stream" | jq -eRn '
   ($events | map(select(.role == "tool_result"))[0] |
     .exit_code == 126 and .content == "sandbox bypass denied")
 ' >/dev/null
-jq -e '(.tools[0].input_schema.properties | has("request_sandbox_bypass") | not)' \
-  "$request_capture" >/dev/null
+assert_equal "$frozen_tools" "$(jq -c '.tools' "$request_capture")"
 
 # A reply channel advertises bypass and applies the next stdin line. Approve
 # executes; deny uses the fallback reason; a malformed reply or a closed channel
@@ -107,9 +108,7 @@ print -r -- "$stream" | jq -eRn '
   ($events | map(select(.role == "tool_result"))[0] |
     .exit_code == 0 and .content == "approved")
 ' >/dev/null
-jq -e '
-  .tools[0].input_schema.properties.request_sandbox_bypass.type == "boolean"
-' "$request_capture" >/dev/null
+assert_equal "$frozen_tools" "$(jq -c '.tools' "$request_capture")"
 
 typeset permission_reply_deny_session="$tmp/permission-reply-deny.jsonl"
 sf_test_session "$permission_reply_deny_session"

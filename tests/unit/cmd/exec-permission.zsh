@@ -97,3 +97,18 @@ jq -eRn '
   ($events | map(select(.role == "tool_result"))[0].exit_code) == 126
 ' <"$tmp/permission-eof.out" >/dev/null || fail 'permission EOF did not close the active turn'
 assert_session_unlocked "$eof_session"
+
+# Tool projection is frozen runtime data, so plain and JSONL exec send identical tools.
+typeset projection_session="$tmp/projection.jsonl"
+typeset request_capture="$tmp/request.json"
+print -r -- 'projected plainly' |
+  SF_TEST_BACKEND_DELAY=0 SF_TEST_BACKEND_REQUEST="$request_capture" \
+    zsh -f "$entry" exec --config "$config" --session "$projection_session" \
+      >/dev/null || fail 'plain projection turn failed'
+typeset plain_tools=$(jq -c '.tools' "$request_capture")
+print -r -- \
+  '{"type":"message","role":"user","content":[{"type":"text","text":"projected as jsonl"}]}' |
+  SF_TEST_BACKEND_DELAY=0 SF_TEST_BACKEND_REQUEST="$request_capture" \
+    zsh -f "$entry" exec --jsonl --config "$config" --session "$projection_session" \
+      >/dev/null || fail 'jsonl projection turn failed'
+assert_equal "$plain_tools" "$(jq -c '.tools' "$request_capture")"
