@@ -20,6 +20,9 @@ if [[ $1 != user_prompt_submit ]]; then
     exec -- "${open[@]}"
   }
 
+  # Chat has already exited, so this runs on the bare terminal between two
+  # renders. Without progress the summarizing request looks like a freeze.
+  print -u2 -r -- 'Compacting session…'
   summary=$("$executable" exec --session "$source" --no-save --no-hooks "$instruction" \
     </dev/null) && [[ $summary == *[^[:space:]]* ]] || {
     print -u2 -r -- 'cannot summarize session; keeping the original'
@@ -59,6 +62,7 @@ if [[ $1 != user_prompt_submit ]]; then
     print -u2 -r -- 'cannot create compacted session; keeping the original'
     open_session "$source"
   }
+  print -u2 -r -- "Compacted. The original session is kept at $source"
   open_session "$candidate"
 fi
 
