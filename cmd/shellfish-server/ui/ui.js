@@ -513,6 +513,10 @@ function apply(frame) {
     case "_handoff":
       // A hook asked to replace the process, which only a terminal can honour.
       return note("the turn requested a handoff, which a served session cannot run", "error");
+    case "_session_compaction":
+      return note("Future turns will use the compacted session.", null, "Session compacted");
+    case "_compaction_error":
+      return note(safe(frame.message), null, "Compaction skipped");
     case "_session_update":
       return applyRuntime(frame.runtime);
     default:

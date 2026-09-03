@@ -151,7 +151,7 @@ sf_exec_request() {
 }
 
 sf_exec_backend() {
-  local request=$1 command=$2 error_file adapter_pid adapter_status event decoded kind=''
+  local request=$1 command=$2 emit=${3:-1} error_file adapter_pid adapter_status event decoded kind=''
   local -a events
   # Text and reasoning deltas share one zero-based sequence per provider
   # response, so a client can tell a response start from a mid-response join.
@@ -170,7 +170,7 @@ sf_exec_backend() {
     "$command" <<<"$request" 2>"$error_file"
   adapter_pid=$!
   SF_EXEC[backend_pid]=$adapter_pid
-  sf_exec_emit '{"type":"_backend_request_start"}'
+  (( ! emit )) || sf_exec_emit '{"type":"_backend_request_start"}'
   while IFS= read -r event <&p; do
     decoded=$(jq -L "$SF_ROOT/lib" -cr --argjson seq "$delta_seq" '
       include "runtime/schema";
@@ -190,13 +190,13 @@ sf_exec_backend() {
         [[ -z $SF_EXEC[partial_events] ]] || SF_EXEC[partial_events]+=$'\n'
         SF_EXEC[partial_events]+=$event
         if [[ $kind == delta ]]; then
-          sf_exec_emit "${decoded#*$'\n'}"
+          (( ! emit )) || sf_exec_emit "${decoded#*$'\n'}"
           (( ++delta_seq ))
         fi
         ;;
       usage)
         events+=( "$event" )
-        sf_exec_emit "$event"
+        (( ! emit )) || sf_exec_emit "$event"
         ;;
       internal) events+=( "$event" ) ;;
       end)
@@ -234,6 +234,82 @@ sf_exec_backend() {
   fi
   rm -f -- "$error_file"
   SF_EXEC[backend_error_file]=''
+}
+
+sf_exec_compact() {
+  local tools=$1 command=$2 needed request assistant summary target error
+  local instruction=$'Create a concise continuation summary of this conversation. Preserve key decisions, requirements, completed work, unresolved work, and technical details needed to continue. The first and most recent turns will be retained verbatim. Return only the summary. Do not address the user or take actions.'
+  SF_EXEC[compact_error]=''
+  REPLY=''
+  reply=()
+  needed=$(printf '%s\n' "${SF_SESSION_RECORDS[@]}" |
+    jq -sr --argjson runtime "$SF_SESSION[runtime]" '
+      ($runtime.profile.context_window // null) as $window |
+      [.[] | select(.type == "message" and .role == "user")] as $users |
+      [.[] | select(.type == "message" and .role == "assistant")] as $assistants |
+      ($assistants[-1] // null) as $last |
+      if $window == null or ($users | length) < 3 or $last == null or
+          $last.stop == "tool_calls" or ($last.usage // null) == null
+      then false
+      else (($last.usage.input_tokens + $last.usage.output_tokens) / $window) >= 0.8
+      end
+    ' 2>/dev/null) || {
+    reply=( 'cannot inspect session for compaction' )
+    return 0
+  }
+  [[ $needed == true ]] || return 0
+  request=$(sf_exec_request "$tools") || {
+    reply=( 'cannot prepare compaction request' )
+    return 0
+  }
+  request=$(jq -c --arg text "$instruction" '
+    .messages += [{role:"user",content:[{type:"text",text:$text}]}]
+  ' <<<"$request") || {
+    reply=( 'cannot prepare compaction request' )
+    return 0
+  }
+  if ! sf_runtime_resolve_api_key "$SF_SESSION[runtime]"; then
+    reply=( "$SF_RUNTIME_ERROR" )
+    return 0
+  fi
+  SF_API_KEY=$REPLY
+  SF_API_KEY_SOURCE=$reply[1]
+  if ! sf_exec_backend "$request" "$command" 0; then
+    error=${SF_EXEC[backend_error]}
+    SF_EXEC[partial_events]=''
+    reply=( "${error:-compaction response failed}" )
+    return 0
+  fi
+  assistant=$SF_EXEC[assistant]
+  summary=$(jq -jre '
+    select(.stop == "end") |
+    ([.content[] | select(.type == "text") | .text] | join("")) as $summary |
+    select($summary | test("\\S")) |
+    $summary, "\u001e"
+  ' <<<"$assistant" 2>/dev/null) || {
+    reply=( 'compaction response did not contain a complete summary' )
+    return 0
+  }
+  summary=${summary%$'\x1e'}
+  if ! sf_session_compact "$summary"; then
+    reply=( "$SF_SESSION_ERROR" )
+    return 0
+  fi
+  target=$REPLY
+  sf_session_close || {
+    SF_EXEC[compact_error]=$SF_SESSION_ERROR
+    return 1
+  }
+  sf_session_open "$target" || {
+    SF_EXEC[compact_error]=$SF_SESSION_ERROR
+    return 1
+  }
+  SHELLFISH_SESSION_STATE=''
+  sf_hooks_session_state_create || {
+    SF_EXEC[compact_error]=$SF_HOOK_ERROR
+    return 1
+  }
+  REPLY=$target
 }
 
 sf_exec_partial_assistant() {
@@ -303,7 +379,7 @@ sf_exec_turn() {
   local sandbox_read_paths sandbox_write_paths
   local context_output context_line context_window context_window_command update_event adapter_pid
   local SHELLFISH_TURN_STATE='' SHELLFISH_SESSION_STATE='' SF_API_KEY='' SF_API_KEY_SOURCE=''
-  local -a runtime_fields user_fields response_fields tool_calls handoff
+  local -a runtime_fields user_fields response_fields tool_calls handoff prompt_contexts
   integer request_count=0 stop_count=0 call_count tool_index
   integer harness_sandbox tool_limit request_limit context_window_set
   integer permission_status
@@ -385,16 +461,18 @@ sf_exec_turn() {
       failure=$SF_HOOK_ERROR
       return 1
     fi
-    if ! sf_hooks_user_prompt_submit_locked "$prompt" "$session_path"; then
+    if ! sf_hooks_user_prompt_submit_locked "$prompt" "$session_path" 1; then
       failure=$SF_HOOK_ERROR
       return 1
     fi
     hook_action=$reply[1]
     handoff=( "${(@)reply[2,-1]}" )
+    prompt_contexts=( "${SF_HOOK_CONTEXT_RECORDS[@]}" )
     [[ $hook_action != session_update ]] || patch=$reply[2]
-    (( ! SF_HOOK_CONTEXT_COUNT )) ||
-      sf_exec_emit "${(pj:\n:)SF_SESSION_RECORDS[-SF_HOOK_CONTEXT_COUNT,-1]}"
     sf_exec_hook_displays user_prompt_submit
+    if [[ $hook_action != proceed ]] && (( SF_HOOK_CONTEXT_COUNT )); then
+      sf_exec_emit "${(pj:\n:)SF_SESSION_RECORDS[-SF_HOOK_CONTEXT_COUNT,-1]}"
+    fi
     case $hook_action in
       handoff)
         after=$(jq -cn --args '$ARGS.positional |
@@ -427,6 +505,25 @@ sf_exec_turn() {
       return 1
     fi
     tool_schema=$REPLY
+    if ! sf_exec_compact "$tool_schema" "$backend_command"; then
+      failure=${SF_EXEC[compact_error]:-cannot switch to compacted session}
+      return 1
+    fi
+    if [[ -n $REPLY ]]; then
+      session_path=$REPLY
+      sf_exec_emit "$(jq -cn --arg session "$session_path" \
+        '{type:"_session_compaction",session:$session}')"
+    elif (( ${#reply} )); then
+      sf_exec_emit "$(jq -cn --arg message "$reply[1]" \
+        '{type:"_compaction_error",message:$message}')"
+    fi
+    for context in "${prompt_contexts[@]}"; do
+      if ! sf_session_append "$context"; then
+        failure=$SF_SESSION_ERROR
+        return 1
+      fi
+      sf_exec_emit "$context"
+    done
     if ! sf_session_append "$user_record"; then
       failure=$SF_SESSION_ERROR
       return 1

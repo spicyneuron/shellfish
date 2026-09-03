@@ -81,6 +81,12 @@ def event_fields($event_runtime):
        (.[0] | type == "string" and length > 0) and
        all(.[]; type == "string" and (contains("\u0000") | not))) then
     ["handoff", (.argv | tojson)]
+  elif .type == "_session_compaction" and keys == ["session","type"] and
+      (.session | absolute_nul_free_path) then
+    ["session_compaction", .session]
+  elif .type == "_compaction_error" and keys == ["message","type"] and
+      (.message | nonempty_control_free_string) then
+    ["compaction_error", .message]
   elif .type == "_session_update" and
       (.runtime |
         type == "object" and keys == ["backend", "harness", "profile"] and

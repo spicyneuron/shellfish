@@ -46,6 +46,14 @@ SF_PRESENT_PERMISSION_ID=''
 sf_chat_decoded handoff '["/tmp/custom command","","arg"]'
 assert_equal '/tmp/custom command,,arg' "${(j:,:)SF_PRESENT_HANDOFF}"
 
+SF_PRESENT_SESSION=/tmp/source.jsonl
+SF_CHAT_TRANSPORT_COMMAND=( shellfish exec --jsonl --session /tmp/source.jsonl )
+sf_chat_decoded session_compaction /tmp/compact.jsonl
+assert_equal /tmp/compact.jsonl "$SF_PRESENT_SESSION"
+assert_equal /tmp/compact.jsonl "$SF_CHAT_TRANSPORT_COMMAND[-1]"
+sf_chat_decoded compaction_error unavailable
+assert_equal 'Compaction skipped' "$SF_PRESENT_NODE_HEADING[-1]"
+
 typeset node_types="${(j:,:)SF_PRESENT_NODE_TYPE}"
 typeset updated_runtime
 updated_runtime=$(jq -c '
