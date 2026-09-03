@@ -47,6 +47,19 @@ sf_backend_curl_args() {
   [[ $insecure != true ]] || SF_BACKEND_CURL_ARGS+=(--insecure)
 }
 
+sf_backend_context_curl_args() {
+  local endpoint=$1 insecure=$2
+  integer timeout=$3 stall=$4
+  (( timeout <= 10 )) || timeout=10
+  (( stall <= 5 )) || stall=5
+  SF_BACKEND_CURL_ARGS=(--disable --silent --show-error --fail-with-body
+    --connect-timeout 5 --max-time "$timeout" --speed-limit 1 --speed-time "$stall"
+    --request GET --url "$endpoint")
+  [[ ! -s $SF_BACKEND_HEADERS_FILE ]] ||
+    SF_BACKEND_CURL_ARGS+=(--header "@$SF_BACKEND_HEADERS_FILE")
+  [[ $insecure != true ]] || SF_BACKEND_CURL_ARGS+=(--insecure)
+}
+
 sf_backend_finish() {
   local -a statuses=( "$@" )
   local stage http_status message

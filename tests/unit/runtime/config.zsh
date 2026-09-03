@@ -20,6 +20,12 @@ if print -r -- '{"profiles":{"work":{"legacy_backend":"test"}}}' |
     config_eval 'config_validate' >/dev/null 2>&1; then
   fail 'unknown profile field was accepted'
 fi
+if print -r -- '{"profiles":{"work":{"context_window":0}}}' |
+    config_eval 'config_validate' >/dev/null 2>&1; then
+  fail 'invalid profile context window was accepted'
+fi
+print -r -- '{"profiles":{"work":{"context_window":null}}}' |
+  config_eval 'config_validate' >/dev/null
 
 # Validation rejects invalid color formats in themes.
 if print -r -- '{"themes":{"dark":{"text":"red"}}}' |
@@ -58,7 +64,7 @@ typeset resolved_profile
 resolved_profile=$(jq -n -L "$ROOT/lib" '
   include "runtime/config";
   config_resolve_profiles(
-    {default:{backend:"openai",harness:"default",request:{model:"base"}}};
+    {default:{backend:"openai",harness:"default",context_window:100000,request:{model:"base"}}};
     {work:{extend:"default",request:{model:"work-model"}}};
     {openai:{adapter:"openai"}};
     {default:{tools:[]}}
@@ -67,5 +73,6 @@ resolved_profile=$(jq -n -L "$ROOT/lib" '
 jq -e '
   .work.backend.name == "openai" and
   .work.harness.name == "default" and
+  .work.context_window == 100000 and
   .work.request.model == "work-model"
 ' <<<"$resolved_profile" >/dev/null

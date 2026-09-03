@@ -134,7 +134,7 @@ assert_equal 'handoff,["/tmp/custom command","","arg"],batch_ok' "$handoff"
 
 typeset updated_runtime session_update
 updated_runtime=$(head -n 1 "$ROOT/tests/fixtures/session/header-only.jsonl" |
-  jq -c 'del(.type,.format_version,.cwd,.created)')
+  jq -c 'del(.type,.format_version,.cwd,.created) | .profile.context_window = null')
 session_update=$(jq -cn --argjson runtime "$updated_runtime" \
     '{type:"_session_update",runtime:$runtime}' |
   jq -jRs -L "$ROOT/lib" --argjson runtime null \

@@ -4,17 +4,20 @@ source "${0:A:h:h}/_helpers.zsh"
 
 sf_test_tmp backend-anthropic
 typeset run="$ROOT/default/backends/anthropic/run"
+typeset context_window="$ROOT/default/backends/anthropic/context_window"
 typeset req="$tmp/request.json"
 typeset res="$tmp/output.jsonl"
 
 cat >"$tmp/curl" <<'EOF'
 #!/bin/sh
+printf '%s\n' "$@" >"$BACKEND_TEST_ARGS"
 cat "$BACKEND_TEST_RESPONSE"
 printf 200 >&2
 EOF
 chmod +x "$tmp/curl"
 export PATH="$tmp:$PATH"
 export BACKEND_TEST_RESPONSE="$tmp/response"
+export BACKEND_TEST_ARGS="$tmp/curl-args"
 
 cat >"$req" <<'EOF'
 {
@@ -23,7 +26,7 @@ cat >"$req" <<'EOF'
   "messages": [{"role":"user","content":[{"type":"text","text":"hello"}]}],
   "tools": [],
   "options": {"request":{"model":"claude-test"}},
-  "transport": {"endpoint":"https://api.anthropic.test","insecure_tls":false,"http_timeout":30,"http_stall":10}
+  "transport": {"endpoint":"https://api.anthropic.com/v1/messages","insecure_tls":false,"http_timeout":30,"http_stall":10}
 }
 EOF
 
@@ -82,3 +85,18 @@ jq -e -s -L "$ROOT/lib" '
   .content[0] == {type:"reasoning",text:"why",opaque:{type:"thinking",thinking:"why",signature:"signed"}} and
   .content[1] == {type:"tool_call",id:"call_1",name:"shell",input:{command:"pwd"}}
 ' "$res" >/dev/null
+
+# Model metadata uses the provider's authoritative maximum input count.
+cat >"$BACKEND_TEST_RESPONSE" <<'EOF'
+{"data":[{"id":"other","max_input_tokens":1000},{"id":"claude-test","max_input_tokens":200000,"max_tokens":64000}]}
+EOF
+SHELLFISH_API_KEY=test zsh -f "$context_window" <"$req" >"$res"
+jq -e '. == {context_window:200000}' "$res" >/dev/null
+grep -qx 'https://api.anthropic.com/v1/models?limit=1000' "$BACKEND_TEST_ARGS"
+
+cat >"$BACKEND_TEST_RESPONSE" <<'EOF'
+{"data":[]}
+EOF
+if SHELLFISH_API_KEY=test zsh -f "$context_window" <"$req" >"$res"; then
+  fail 'unknown model context was reported as available'
+fi

@@ -142,6 +142,7 @@ sf_runtime_resolve_from_config() {
   local backend_override=${5-}
   local config_path config_dir='' raw='{}' defaults decoded prepared presentation
   local backend_name backend_reference backend_dir backend_base manifest tool_manifest command
+  local context_window_command=''
   local reference resolved hook external_name final settings fence='' env_file=''
   local home=${HOME-} sandbox_read_paths=${_SHELLFISH_SANDBOX_READ_PATHS:-[]}
   local theme_marker=': shellfish:unknown-theme:'
@@ -237,6 +238,8 @@ sf_runtime_resolve_from_config() {
     return
   }
   command=$backend_dir/run
+  [[ ! -f $backend_dir/context_window || ! -x $backend_dir/context_window ]] ||
+    context_window_command=$backend_dir/context_window
   manifest=$(<"$backend_dir/backend.json")
 
   for (( tool_index = 0; tool_index < tool_count; tool_index++ )); do
@@ -327,13 +330,15 @@ sf_runtime_resolve_from_config() {
   }
   resolved_args=( "${tool_entries[@]}" "${component_entries[@]}" )
   final=$(jq -L "$SF_ROOT/lib" -cnce --argjson prepared "$prepared" \
-    --arg manifest "$manifest" --arg command "$command" --arg fence "$fence" \
+    --arg manifest "$manifest" --arg command "$command" \
+    --arg context_window_command "$context_window_command" --arg fence "$fence" \
     --arg env_file "$env_file" \
     --argjson sandbox_read_paths "$sandbox_read_paths" \
     --argjson sandbox_write_paths "${_SHELLFISH_SANDBOX_WRITE_PATHS:-[]}" --args '
       include "runtime/config";
       include "runtime/schema";
-      {prepared:$prepared,manifest:$manifest,command:$command,fence:$fence,
+      {prepared:$prepared,manifest:$manifest,command:$command,
+       context_window_command:$context_window_command,fence:$fence,
        env_file:$env_file,sandbox_read_paths:$sandbox_read_paths,
        sandbox_write_paths:$sandbox_write_paths,
        resolved:$ARGS.positional} |

@@ -97,7 +97,7 @@ def backend_manifest:
   (.endpoint | endpoint) and (.api_key_env | api_key_env);
 
 def profile_fields:
-  ["backend", "harness", "request"];
+  ["backend", "context_window", "harness", "request"];
 def harness_fields:
   ["tools", "sandbox", "sandbox_read_paths", "sandbox_write_paths",
    "max_requests_per_turn",
@@ -278,14 +278,23 @@ def canonical_request:
 def canonical_session_header($format_version):
   type == "object" and .type == "session" and .format_version == $format_version and
   (.cwd | absolute_nul_free_path) and (.created | type == "string") and
-  (.profile | type == "object" and keys == ["request"] and
-    (.request | type == "object" and (.model | model_name))) and
-  (.backend | type == "object" and keys ==
-    ["api_key_env", "command", "endpoint", "env_file", "http_stall", "http_timeout", "insecure_tls", "name"] and
+  (.profile | type == "object" and
+    ((keys - ["context_window", "request"]) | length == 0) and
+    (["request"] - keys | length == 0) and
+    (.request | type == "object" and (.model | model_name)) and
+    (if has("context_window") then
+      .context_window == null or (.context_window | positive_integer)
+    else true end)) and
+  (.backend | type == "object" and
+    ((keys - ["api_key_env", "command", "context_window_command", "endpoint", "env_file", "http_stall", "http_timeout", "insecure_tls", "name"]) | length == 0) and
+    (["api_key_env", "command", "endpoint", "env_file", "http_stall", "http_timeout", "insecure_tls", "name"] - keys | length == 0) and
     (.name | profile_name) and (.command | absolute_path) and (.endpoint | endpoint) and
     (.api_key_env | api_key_env) and (.insecure_tls | type == "boolean") and
     (.env_file == "" or (.env_file | absolute_nul_free_path)) and
-    (.http_timeout | positive_integer) and (.http_stall | positive_integer)) and
+    (.http_timeout | positive_integer) and (.http_stall | positive_integer) and
+    (if has("context_window_command") then
+      .context_window_command | absolute_path
+    else true end)) and
   (.harness | type == "object" and
     (["sandbox_read_paths", "sandbox_write_paths", "fence",
       "max_capture_bytes", "max_requests_per_turn",

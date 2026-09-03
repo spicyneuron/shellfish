@@ -50,7 +50,8 @@ typeset node_types="${(j:,:)SF_PRESENT_NODE_TYPE}"
 typeset updated_runtime
 updated_runtime=$(jq -c '
   del(.type,.format_version,.cwd,.created) |
-  .backend.name = "updated" | .profile.request.model = "new-model"
+  .backend.name = "updated" | .profile.request.model = "new-model" |
+  .profile.context_window = null
 ' "$ROOT/tests/fixtures/session/header-only.jsonl")
 sf_chat_decoded session_update "$updated_runtime"
 assert_equal "$updated_runtime" "$SF_PRESENT_RUNTIME"

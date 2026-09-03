@@ -70,7 +70,7 @@ Transient events currently include:
 | `_hook_display` | Ephemeral hook script stderr for the user. |
 | `_tool_permission_request` | A sandbox bypass needs a client decision. |
 | `_handoff` | A hook script asks a capable client to run `argv` after exec exits cleanly. |
-| `_session_update` | A hook-requested session update completed; `runtime` is the resulting resolved runtime. |
+| `_session_update` | A hook-requested update or model-context discovery changed the session; `runtime` is the resulting resolved runtime. |
 | `_exec_error` | Exec cannot start or complete the operation. |
 
 Text and reasoning deltas carry a zero-based content `index` and a zero-based `seq`. The index identifies the block's position in the later assistant content. The sequence is shared by both delta types and restarted for each provider response, so it orders visible events independently of block identity. Deltas are previews only. Consumers should render committed assistant and reasoning content from the later durable assistant record. Clients should treat unknown transient types as unsupported protocol input and recover from the durable session rather than guessing their meaning.

@@ -65,6 +65,9 @@ def config_profile($path):
     $path + ["backend"]; "invalid backend name") |
   config_assert((has("harness") | not) or (.harness | profile_name);
     $path + ["harness"]; "invalid harness name") |
+  config_assert((has("context_window") | not) or
+    (.context_window == null or (.context_window | positive_integer));
+    $path + ["context_window"]; "must be null or a positive integer") |
   config_assert((has("request") | not) or (.request | type == "object");
     $path + ["request"]; "must be an object");
 
@@ -219,14 +222,18 @@ def runtime_finalize:
     .[$component.hook] += [$component.path])) as $hooks |
   $prepared.profile as $profile |
   ({
-    profile:{request:$prepared.request},
+    profile:({request:$prepared.request} +
+      (if $profile | has("context_window") then
+        {context_window:$profile.context_window} else {} end)),
     backend:{name:$prepared.backend_name,command:$command,env_file:$input.env_file,
       endpoint:($profile.backend.endpoint // $manifest.endpoint),
       api_key_env:(if $profile.backend | has("api_key_env") then
         $profile.backend.api_key_env else $manifest.api_key_env end),
       insecure_tls:($profile.backend.insecure_tls // false),
       http_timeout:($profile.backend.http_timeout // 3600),
-      http_stall:($profile.backend.http_stall // 300)},
+      http_stall:($profile.backend.http_stall // 300)} +
+      (if $input.context_window_command == "" then {}
+       else {context_window_command:$input.context_window_command} end),
     harness:({
       sandbox_read_paths:(($profile.harness.sandbox_read_paths // []) + $input.sandbox_read_paths),
       sandbox_write_paths:(($profile.harness.sandbox_write_paths // []) + $input.sandbox_write_paths),

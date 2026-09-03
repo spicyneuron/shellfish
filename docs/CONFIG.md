@@ -23,6 +23,23 @@ A profile combines a backend, a harness, and provider request settings. The buil
 
 `extend` merges the parent profile into the child using the same object and array rules. Inheriting `default` retains the bundled harness and request defaults.
 
+An optional `context_window` records the model's input capacity for usage display and future context management:
+
+```jsonc
+{
+  "profiles": {
+    "agent": {
+      "extend": "default",
+      "backend": "openrouter",
+      "context_window": 200000,
+      "request": {"model": "MODEL"}
+    }
+  }
+}
+```
+
+The field has three states. A positive integer is authoritative and skips discovery. An explicit `null` disables discovery. When the field is absent, a backend with an optional `context_window` script makes one best-effort model metadata lookup before the session's first provider request. The bundled Anthropic script uses `max_input_tokens`; the OpenAI-compatible script uses a matching model's `context_length` when the provider supplies it, including OpenRouter. OpenAI's own Models API does not currently supply this field, and the Codex adapter has no lookup script. An unavailable lookup does not fail the turn; Shellfish freezes `null` into the session and usage remains visible without a capacity fraction. A discovered value is also frozen into the session header. A command-line `--model` override does not remove a configured `context_window`, so use a matching profile when the replacement model has a different limit.
+
 A custom OpenAI-compatible service can reuse the built-in adapter:
 
 ```jsonc

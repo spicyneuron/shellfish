@@ -301,10 +301,11 @@ sf_exec_turn() {
   local runtime_projection user_projection response_projection response_meta
   local tools tool_schema max_capture fence config_file config_dir
   local sandbox_read_paths sandbox_write_paths
+  local context_output context_line context_window context_window_command update_event adapter_pid
   local SHELLFISH_TURN_STATE='' SHELLFISH_SESSION_STATE='' SF_API_KEY='' SF_API_KEY_SOURCE=''
   local -a runtime_fields user_fields response_fields tool_calls handoff
   integer request_count=0 stop_count=0 call_count tool_index
-  integer harness_sandbox tool_limit request_limit
+  integer harness_sandbox tool_limit request_limit context_window_set
   integer permission_status
   integer permission_hook_available=0 permission_decision_available=0
   local failure='' after='' patch=''
@@ -333,13 +334,15 @@ sf_exec_turn() {
       (if ($runtime.harness.permission_request // [] | length) > 0 then "1" else "0" end | field),
       ($runtime.harness.tools | tojson | field),
       ($runtime.backend.env_file | field),
+      ($runtime.backend.context_window_command // "" | field),
+      (if $runtime.profile | has("context_window") then "1" else "0" end | field),
       ("ok" | field)
     ' 2>/dev/null) || {
       failure='cannot inspect frozen runtime'
       return 1
     }
     runtime_fields=( "${(@0)${runtime_projection%$'\0'}}" )
-    (( ${#runtime_fields} == 12 )) && [[ $runtime_fields[12] == ok ]] || {
+    (( ${#runtime_fields} == 14 )) && [[ $runtime_fields[14] == ok ]] || {
       failure='cannot inspect frozen runtime'
       return 1
     }
@@ -354,6 +357,8 @@ sf_exec_turn() {
     permission_hook_available=$runtime_fields[9]
     tools=$runtime_fields[10]
     config_file=$runtime_fields[11]
+    context_window_command=$runtime_fields[12]
+    context_window_set=$runtime_fields[13]
     config_dir=''
     [[ -z $config_file ]] || config_dir=${config_file:h}
     [[ -d $SF_SESSION[cwd] && -x $SF_SESSION[cwd] ]] || {
@@ -445,6 +450,51 @@ sf_exec_turn() {
       if (( request_count == 1 )); then
         SF_API_KEY=$REPLY
         SF_API_KEY_SOURCE=$reply[1]
+      fi
+      if (( request_count == 1 && ! context_window_set )) &&
+          [[ -n $context_window_command ]]; then
+        context_output=''
+        coproc SHELLFISH_API_KEY="$SF_API_KEY" \
+          SHELLFISH_API_KEY_SOURCE="$SF_API_KEY_SOURCE" \
+          "$context_window_command" <<<"$request" 2>/dev/null
+        adapter_pid=$!
+        SF_EXEC[backend_pid]=$adapter_pid
+        while IFS= read -r context_line <&p; do
+          [[ -z $context_output ]] || context_output+=$'\n'
+          context_output+=$context_line
+        done
+        if ! wait "$adapter_pid"; then
+          context_output=''
+        fi
+        SF_EXEC[backend_pid]=''
+        context_window=$(jq -L "$SF_ROOT/lib" -ser '
+          include "runtime/schema";
+          select(length == 1 and (.[0] | type == "object" and
+            keys == ["context_window"] and (.context_window | positive_integer))) |
+          .[0].context_window
+        ' <<<"$context_output" 2>/dev/null) || context_window=''
+        if [[ -n $context_window ]]; then
+          patch=$(jq -cn --argjson context_window "$context_window" \
+            '{profile:{context_window:$context_window}}') || {
+            failure='cannot prepare context window update'
+            return 1
+          }
+          if ! sf_session_update "$patch"; then
+            failure=$SF_SESSION_ERROR
+            return 1
+          fi
+        else
+          if ! sf_session_update '{"profile":{"context_window":null}}'; then
+            failure=$SF_SESSION_ERROR
+            return 1
+          fi
+        fi
+        update_event=$(jq -cn --argjson runtime "$SF_SESSION[runtime]" \
+          '{type:"_session_update",runtime:$runtime}') || {
+          failure='cannot prepare context window update'
+          return 1
+        }
+        sf_exec_emit "$update_event"
       fi
       if ! sf_exec_backend "$request" "$backend_command"; then
         failure=$SF_EXEC[backend_error]

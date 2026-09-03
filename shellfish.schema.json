@@ -175,6 +175,9 @@
         "extend": {"$ref": "#/$defs/name"},
         "backend": {"$ref": "#/$defs/name"},
         "harness": {"$ref": "#/$defs/name"},
+        "context_window": {
+          "anyOf": [{"$ref": "#/$defs/positive_integer"}, {"type": "null"}]
+        },
         "request": {"$ref": "#/$defs/request"}
       }
     }

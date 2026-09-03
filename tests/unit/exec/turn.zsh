@@ -44,6 +44,84 @@ jq -e -s '
   .[2].role == "user" and .[3].role == "assistant"
 ' "$session" >/dev/null
 
+# A capable backend discovers model context once and freezes it into the session.
+typeset model_backend="$tmp/model-backend" context_backend="$tmp/context-backend"
+typeset model_calls="$tmp/model-calls"
+typeset base_runtime=$SF_TEST_RUNTIME
+cat >"$model_backend" <<ZSH
+#!/usr/bin/env zsh
+exec "$SF_TEST_BACKEND"
+ZSH
+cat >"$context_backend" <<ZSH
+#!/usr/bin/env zsh
+print -r -- context >>"$model_calls"
+if [[ -n \${MODEL_CONTEXT_MISSING-} ]]; then
+  print -r -- '{}'
+  exit
+fi
+print -r -- '{"context_window":128000}'
+ZSH
+chmod +x "$model_backend" "$context_backend"
+SF_TEST_RUNTIME=$(jq -c --arg command "$model_backend" --arg context "$context_backend" \
+  '.backend.command=$command | .backend.context_window_command=$context' <<<"$base_runtime")
+typeset discovered_session="$tmp/discovered.jsonl"
+sf_test_session "$discovered_session"
+stream=$(sf_test_turn first "$discovered_session")
+print -r -- "$stream" | jq -eRn '
+  [inputs | fromjson] as $events |
+  [$events[] | select(.type == "_session_update")] ==
+    [{type:"_session_update",runtime:$events[1].runtime}] and
+  $events[1].runtime.profile.context_window == 128000
+' >/dev/null
+jq -e 'select(.type == "session") | .profile.context_window == 128000' \
+  "$discovered_session" >/dev/null
+sf_test_turn second "$discovered_session" >/dev/null
+(( $(wc -l <"$model_calls") == 1 ))
+
+# A configured context window is authoritative and skips backend discovery.
+SF_TEST_RUNTIME=$(jq -c --arg command "$model_backend" --arg context "$context_backend" '
+  .backend.command=$command | .backend.context_window_command=$context |
+  .profile.context_window=200000
+' <<<"$base_runtime")
+typeset configured_session="$tmp/configured.jsonl"
+rm -f "$model_calls"
+sf_test_session "$configured_session"
+stream=$(sf_test_turn first "$configured_session")
+print -r -- "$stream" | jq -eRn '
+  [inputs | fromjson] | any(.type == "_session_update") | not
+' >/dev/null
+[[ ! -e $model_calls ]]
+
+# An explicit null disables backend discovery too.
+SF_TEST_RUNTIME=$(jq -c --arg command "$model_backend" --arg context "$context_backend" '
+  .backend.command=$command | .backend.context_window_command=$context |
+  .profile.context_window=null
+' <<<"$base_runtime")
+typeset disabled_session="$tmp/disabled.jsonl"
+sf_test_session "$disabled_session"
+sf_test_turn first "$disabled_session" >/dev/null
+[[ ! -e $model_calls ]]
+
+# Unavailable metadata does not fail generation and is not retried.
+SF_TEST_RUNTIME=$(jq -c --arg command "$model_backend" --arg context "$context_backend" \
+  '.backend.command=$command | .backend.context_window_command=$context' <<<"$base_runtime")
+typeset unavailable_session="$tmp/unavailable.jsonl"
+sf_test_session "$unavailable_session"
+stream=$(MODEL_CONTEXT_MISSING=1 sf_test_turn first "$unavailable_session")
+print -r -- "$stream" | jq -eRn '
+  [inputs | fromjson] |
+  any(.type == "_session_update" and .runtime.profile.context_window == null)
+' >/dev/null
+jq -e '
+  select(.type == "session") |
+  (.profile | has("context_window")) and .profile.context_window == null
+' "$unavailable_session" >/dev/null
+sf_test_turn second "$unavailable_session" >/dev/null
+(( $(wc -l <"$model_calls") == 1 ))
+sf_session_read_settings "$unavailable_session"
+jq -e '.profile.context_window == null' <<<"$REPLY" >/dev/null
+SF_TEST_RUNTIME=$base_runtime
+
 # Provider projection uses the synchronized records and does not reread disk.
 typeset memory_request="$tmp/memory-request.json"
 SF_ROOT=$ROOT zsh -f -c '

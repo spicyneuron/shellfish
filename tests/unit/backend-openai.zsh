@@ -5,12 +5,14 @@ sf_test_source backend.zsh
 
 sf_test_tmp backend-openai
 typeset run="$ROOT/default/backends/openai/run"
+typeset context_window="$ROOT/default/backends/openai/context_window"
 typeset req="$tmp/request.json"
 typeset res="$tmp/response.json"
 typeset body="$tmp/body.json"
 
 cat >"$tmp/curl" <<'EOF'
 #!/usr/bin/env bash
+printf '%s\n' "$@" >"$BACKEND_TEST_ARGS"
 while (($#)); do
   case $1 in
     --data-binary) cp "${2#@}" "$BACKEND_TEST_BODY" ; shift 2 ;;
@@ -29,6 +31,7 @@ export PATH="$tmp:$PATH"
 export BACKEND_TEST_BODY="$body"
 export BACKEND_TEST_HEADERS="$tmp/headers"
 export BACKEND_TEST_RESPONSE="$tmp/sse.txt"
+export BACKEND_TEST_ARGS="$tmp/curl-args"
 
 # 1. Test streaming with fragmented tool call, missing type in delta, omitted id in later chunks
 printf "%s\n" \
@@ -72,6 +75,22 @@ jq -n -e -L "$ROOT/lib" '
   .usage.output_tokens == 5 and
   .usage.reasoning_tokens == 2
 ' "$res" >/dev/null
+
+# Model metadata normalizes OpenRouter's catalog field without affecting generation.
+cat >"$BACKEND_TEST_RESPONSE" <<'EOF'
+{"data":[{"id":"other","context_length":1000},{"id":"gpt-4o","context_length":128000}]}
+EOF
+SHELLFISH_API_KEY=test-key zsh -f "$context_window" <"$req" >"$res"
+jq -e '. == {context_window:128000}' "$res" >/dev/null
+grep -qx 'https://api.openai.com/v1/models' "$BACKEND_TEST_ARGS"
+grep -qx '10' "$BACKEND_TEST_ARGS"
+
+cat >"$BACKEND_TEST_RESPONSE" <<'EOF'
+{"data":[{"id":"gpt-4o"}]}
+EOF
+if SHELLFISH_API_KEY=test-key zsh -f "$context_window" <"$req" >"$res"; then
+  fail 'missing model context was reported as available'
+fi
 
 # A length stop discards partial tool state rather than completing a call.
 printf "%s\n" \

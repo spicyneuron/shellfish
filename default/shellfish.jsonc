@@ -11,7 +11,8 @@
   // Profiles compose a backend, a harness, and request overrides. "extend"
   // inherits from another profile and later keys override. "request" holds
   // model and other parameters passed through to backend adapters. "max_tokens"
-  // and "reasoning.effort" are normalized in default backends.
+  // and "reasoning.effort" are normalized in default backends. An optional
+  // "context_window" overrides best-effort model metadata discovery.
   "profiles": {
     "default": {
       "harness": "default",

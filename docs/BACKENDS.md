@@ -15,7 +15,7 @@ An adapter directory contains an executable `run` and a `backend.json` manifest:
 }
 ```
 
-`endpoint` supplies the default provider endpoint. `api_key_env` names the environment variable Shellfish resolves from exported variables or the adjacent `.env`; an empty name means the backend does not use this credential mechanism. Backend configuration may override both values and the transport settings described in [`CONFIG.md`](CONFIG.md).
+`endpoint` supplies the default provider endpoint. `api_key_env` names the environment variable Shellfish resolves from exported variables or the adjacent `.env`; an empty name means the backend does not use this credential mechanism. Backend configuration may override the endpoint, credential name, and transport settings described in [`CONFIG.md`](CONFIG.md).
 
 Component lookup rules for bundled, user-defined, relative, and absolute adapter references are also documented in [`CONFIG.md`](CONFIG.md#resolve-component-references).
 
@@ -44,6 +44,18 @@ The input has this top-level shape:
 ```
 
 `messages` contains provider-neutral user, assistant, and tool-result messages projected from the durable session. Assistant content may contain text, reasoning with provider-specific `opaque` data, and completed tool calls. `tools` contains canonical tool definitions. `options.request` contains the resolved model and request overrides; the adapter maps supported options to provider fields and should reject conflicting provider-native fields rather than silently producing an ambiguous request. `transport` is authoritative for the exchange.
+
+### Context window lookup
+
+An adapter directory may contain an executable `context_window` alongside `run`. Shellfish freezes its resolved path with the backend runtime. Before the first provider request, exec invokes it only when the profile has no `context_window` field. The script receives the same canonical request and scoped credential as `run`. A successful lookup writes exactly one object and exits zero:
+
+```json
+{"context_window":200000}
+```
+
+`context_window` is a positive integer token count. A nonzero exit or any other output means metadata is unavailable; stderr is discarded and the provider request still proceeds. Exec freezes a successful value into the profile and freezes `null` after an unavailable result, so that session does not retry.
+
+Model lookup is separate from the normalized response stream. The script must not make a generation request.
 
 ## Normalized response stream
 

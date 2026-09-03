@@ -22,6 +22,7 @@ cat >"$config" <<'JSON'
   "profiles": {
     "work": {
       "backend": "custom",
+      "context_window": 128000,
       "request": {"model": "configured", "temperature": 0.2}
     }
   },
@@ -54,8 +55,10 @@ sf_runtime_resolve_from_config "$config" '' 'cli-model' '{"temperature":0.7,"see
 runtime=$REPLY
 jq -e --arg command "$ROOT/default/backends/openai/run" '
   .profile.request == {model:"cli-model",temperature:0.7,seed:4} and
+  .profile.context_window == 128000 and
   .backend.name == "custom" and
   .backend.command == $command and
+  (.backend.context_window_command | endswith("/default/backends/openai/context_window")) and
   (.backend.env_file | endswith("/config/.env")) and
   .backend.endpoint == "https://api.openai.com/v1/chat/completions" and
   .backend.api_key_env == "OPENAI_API_KEY" and
@@ -86,6 +89,7 @@ jq -e --arg root "$ROOT/default/hooks/session_start" \
     ($root + "/project_instructions")
   ] and
   .harness.user_prompt_submit[-1] == ($prompt_root + "/git_awareness") and
+  (.backend | has("context_window_command") | not) and
   (.harness.tools | map(.name)) ==
     ["read_file", "edit_file", "write_file", "skill", "search_web", "fetch_url", "shell"] and
   (.harness.tools[] | select(.name == "search_web") |

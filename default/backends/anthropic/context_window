@@ -1,0 +1,41 @@
+#!/usr/bin/env zsh
+
+emulate -R zsh
+setopt err_exit no_aliases no_multios pipe_fail
+umask 077
+
+typeset -gr ROOT=${0:A:h:h:h:h}
+source "$ROOT/lib/backend.zsh"
+
+api_key=${SHELLFISH_API_KEY-}
+unset SHELLFISH_API_KEY
+
+sf_backend_setup anthropic
+trap 'rm -rf -- "$SF_BACKEND_TEMP_DIR"' EXIT
+typeset request_file=$SF_BACKEND_REQUEST_FILE
+cat >"$request_file"
+
+typeset -a fields
+fields=( "${(@f)$(jq -L "$ROOT/lib" -er '
+  include "runtime/schema";
+  select(canonical_request) |
+  .options.request.model, .transport.endpoint,
+  (.transport.insecure_tls | tostring), (.transport.http_timeout | tostring),
+  (.transport.http_stall | tostring)
+' "$request_file")}" ) || exit 10
+(( ${#fields} == 5 )) || exit 10
+
+sf_backend_credential 'x-api-key' "$api_key"
+unset api_key
+
+typeset endpoint=${fields[2]%/}
+typeset models_endpoint="${endpoint:h}/models?limit=1000" context
+sf_backend_context_curl_args "$models_endpoint" $fields[3] $fields[4] $fields[5]
+SF_BACKEND_CURL_ARGS+=(--header 'anthropic-version: 2023-06-01')
+context=$(curl "${SF_BACKEND_CURL_ARGS[@]}" 2>/dev/null | \
+  jq -L "$ROOT/lib" -ce --arg model "$fields[1]" '
+    include "runtime/schema";
+    first(.data[]? | select(.id == $model) | .max_input_tokens) |
+    select(positive_integer) | {context_window:.}
+  ' 2>/dev/null) || exit 10
+print -r -- "$context"

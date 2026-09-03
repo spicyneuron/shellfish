@@ -65,6 +65,45 @@ wait "$interrupt_pid" || interrupt_status=$?
 [[ ! -e $interrupt_session ]] || fail 'interrupted session_start created a session'
 (( $(wc -l <"$interrupt_marker") == 1 )) || fail 'session_start ran more than once'
 
+# Cancelling model metadata lookup stops the adapter and releases the turn lock.
+typeset model_backend="$tmp/model-backend" model_ready="$tmp/model-ready"
+typeset model_stopped="$tmp/model-stopped" model_config="$tmp/model.jsonc"
+mkdir "$model_backend"
+cat >"$model_backend/backend.json" <<'JSON'
+{"endpoint":"https://example.invalid/v1/messages","api_key_env":""}
+JSON
+cat >"$model_backend/run" <<'ZSH'
+#!/usr/bin/env zsh
+exit 1
+ZSH
+cat >"$model_backend/context_window" <<'ZSH'
+#!/usr/bin/env zsh
+cat >/dev/null
+print -r -- ready >"$MODEL_READY"
+trap 'print -r -- stopped >"$MODEL_STOPPED"; exit 143' TERM
+while true; do sleep 0.1; done
+ZSH
+chmod +x "$model_backend/run" "$model_backend/context_window"
+jq --arg adapter "$model_backend" '.backends.fixture.adapter=$adapter' \
+  "$config" >"$model_config"
+typeset model_session="$tmp/model-cancel.jsonl" model_output="$tmp/model-cancel.out"
+MODEL_READY="$model_ready" MODEL_STOPPED="$model_stopped" \
+  zsh -f "$entry" exec --config "$model_config" --session "$model_session" prompt \
+  >"$model_output" 2>&1 &
+typeset model_pid=$!
+integer model_waited=0
+while (( model_waited < 50 )) && [[ ! -s $model_ready ]]; do
+  sleep 0.1
+  (( model_waited += 1 ))
+done
+(( model_waited < 50 )) || fail 'model metadata lookup did not begin'
+kill -TERM "$model_pid" || fail 'model metadata lookup ended before interruption'
+integer model_status=0
+wait "$model_pid" || model_status=$?
+(( model_status == 143 )) || fail 'interrupted model metadata lookup reported the wrong status'
+[[ -s $model_stopped ]] || fail 'interrupted model metadata adapter was not stopped'
+assert_session_unlocked "$model_session"
+
 # A signalled run stops exec, closes the interrupted turn on disk, and
 # reports the signal rather than an ordinary failure.
 typeset cancel_session="$tmp/cancel.jsonl" cancel_output="$tmp/cancel.out"
