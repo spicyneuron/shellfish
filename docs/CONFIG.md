@@ -23,7 +23,7 @@ A profile combines a backend, a harness, and provider request settings. The buil
 
 `extend` merges the parent profile into the child using the same object and array rules. Inheriting `default` retains the bundled harness and request defaults.
 
-An optional `context_window` records the model's input capacity for usage display and automatic compaction:
+An optional `context_window` records the model's input capacity for usage display and policies such as the bundled automatic compaction hook:
 
 ```jsonc
 {
@@ -38,7 +38,7 @@ An optional `context_window` records the model's input capacity for usage displa
 }
 ```
 
-The field has three states. A positive integer is authoritative, skips discovery, and enables automatic compaction when the latest completed assistant response reports input plus output usage at or above 80% of that value. An explicit `null` disables discovery and compaction. When the field is absent, a backend with an optional `context_window` script makes one best-effort model metadata lookup before the session's first provider request. The bundled Anthropic script uses `max_input_tokens`; the OpenAI-compatible script uses a matching model's `context_length` when the provider supplies it, including OpenRouter; and Codex reads the installed CLI's bundled model catalog. OpenAI's own Models API does not currently supply this field. An unavailable lookup does not fail the turn; Shellfish freezes `null` into the session and usage remains visible without a capacity fraction. A discovered value is also frozen into the session header. A command-line `--model` override does not remove a configured `context_window`, so use a matching profile when the replacement model has a different limit.
+The field has three states. A positive integer is authoritative, skips discovery, and lets the bundled compaction hook trigger when the most recent measured assistant response's input plus output usage reaches 80% of that value. An explicit `null` disables discovery and threshold-based compaction. When the field is absent, a backend with an optional `context_window` script makes one best-effort model metadata lookup before the session's first provider request. The bundled Anthropic script uses `max_input_tokens`; the OpenAI-compatible script uses a matching model's `context_length` when the provider supplies it, including OpenRouter; and Codex reads the installed CLI's bundled model catalog. OpenAI's own Models API does not currently supply this field. An unavailable lookup does not fail the turn; Shellfish freezes `null` into the session and usage remains visible without a capacity fraction. A discovered value is also frozen into the session header. A command-line `--model` override does not remove a configured `context_window`, so use a matching profile when the replacement model has a different limit.
 
 A custom OpenAI-compatible service can reuse the built-in adapter:
 

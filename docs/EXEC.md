@@ -43,11 +43,27 @@ Stdin remains open for permission replies. When exec emits a permission request,
 
 `decision` is `approve` or `deny`, and `id` must match the pending request. A client must preserve line framing and send no unrelated input. If no interactive client or `permission_request` script decides a sandbox bypass, exec denies it.
 
-## Automatic compaction
+## Read-only request composition
 
-After `user_prompt_submit` handling confirms an ordinary model turn, and the session ends on a completed assistant response, exec measures the most recent response that reported usage. Responses that report no usage, such as a cancelled turn, do not hide an earlier measurement. If that response's input and output tokens total at least 80% of the frozen `context_window`, exec asks the same backend to summarize the existing provider request. The summarization request preserves the request prefix and appends only a user instruction, allowing providers to reuse the cached prefix.
+`shellfish build-request` and `shellfish run-request` expose the provider-request boundary without opening a durable turn. Both require `--session` and read the selected session without locking, recovery, or mutation.
 
-Exec creates a sibling child named with a `_compact` suffix. The child retains the initial session prefix, meaning the frozen header, the system record, and any `session_start` contexts, and replaces every message with one summary context. It leaves the source unchanged, switches to the child, and appends the current prompt and its hook context there. A session without messages has nothing to summarize. An unavailable `context_window` disables compaction.
+`build-request` reads zero or more additional durable records as JSONL on stdin, validates them as a continuation of the selected session, and writes one canonical backend request. `--tools` accepts a JSON array of provider tool schemas and defaults to `[]`.
+
+`run-request` reads one canonical backend request on stdin. It requires the request and transport options to match the session's frozen runtime, resolves the scoped backend credential, validates the adapter event stream, and writes one canonical assistant message.
+
+Neither command runs hooks, executes tool calls, or persists its output. Provider tool schemas in a built request are inert. Diagnostics go to stderr and failures return nonzero.
+
+```sh
+printf '%s\n' '{"type":"message","role":"user","content":[{"type":"text","text":"Summarize this conversation"}]}' |
+  shellfish build-request --session path/to/session.jsonl --tools '[]' |
+  shellfish run-request --session path/to/session.jsonl
+```
+
+## Bundled compaction
+
+The default harness implements compaction in its `user_prompt_submit` hook by composing `build-request` and `run-request` with tools disabled. `/compact` summarizes on demand. Automatic compaction runs when the most recent measured assistant usage reaches 80% of the frozen `context_window`; an unavailable window disables the automatic threshold.
+
+Compaction creates a sibling child named with a `_compact` suffix without changing the source. The child retains the session header, system record, and `session_start` contexts, then replaces the conversation with one summary context. A successful hook requests a client handoff to the child. Automatic compaction passes the interrupted prompt as an editable draft rather than submitting it. Automatic failures are fail-open and submit the prompt to the source; explicit `/compact` failures stop that command and leave the source active.
 
 ## Output
 
@@ -77,9 +93,6 @@ Transient events currently include:
 | `_tool_permission_request` | A sandbox bypass needs a client decision. |
 | `_handoff` | A hook script asks a capable client to run `argv` after exec exits cleanly. |
 | `_session_update` | A hook-requested update or model-context discovery changed the session; `runtime` is the resulting resolved runtime. |
-| `_compaction_start` | Exec is summarizing the session for compaction. A `_session_compaction` or `_compaction_error` follows unless the turn fails first. |
-| `_session_compaction` | Exec created and adopted the compacted child at absolute path `session`. `characters` is the stored summary's length, which clients render with their own token estimate. |
-| `_compaction_error` | Compaction preparation or summary generation failed and exec is continuing with the source session. |
 | `_exec_error` | Exec cannot start or complete the operation. |
 
 Text and reasoning deltas carry a zero-based content `index` and a zero-based `seq`. The index identifies the block's position in the later assistant content. The sequence is shared by both delta types and restarted for each provider response, so it orders visible events independently of block identity. Deltas are previews only. Consumers should render committed assistant and reasoning content from the later durable assistant record. Clients should treat unknown transient types as unsupported protocol input and recover from the durable session rather than guessing their meaning.
@@ -98,8 +111,6 @@ A permission request has this shape:
 ## Completion and recovery
 
 A successful process exit means the single-turn operation completed cleanly. This includes a `user_prompt_submit` script that deliberately blocks submission or requests a handoff. Tool commands may return nonzero results without making exec itself fail.
-
-Compaction preparation and summary failures are fail-open: exec emits `_compaction_error` and submits the prompt to the source session. A failure after the child has been created, when exec must switch authoritative session state, is an exec failure instead.
 
 A nonzero exec exit means the operation failed or was interrupted. Exec emits `_exec_error` when JSONL output is available. After malformed output, disconnection, cancellation, or process failure, discard uncertain live state and replay the durable session.
 

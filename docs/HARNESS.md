@@ -55,6 +55,7 @@ The default harness implements most chat commands as scripts on the `user_prompt
 - `/new` creates a new session with the active session's settings.
 - `/copy [N]` copies the text of the latest user/agent section, or section `N`, to the local clipboard.
 - `/fork [N]` copies the transcript into a new session at section `N`, resolving an agent section to the following user section and restoring that prompt as an editable draft. Without an index it forks at the current end.
+- `/compact` summarizes the conversation into a child session and requests a handoff to it.
 - `/refresh` rebuilds the terminal presentation from the durable session.
 - `/verbose` toggles presentation preview limits.
 - `/sandbox` lists or updates the session's sandbox path grants.

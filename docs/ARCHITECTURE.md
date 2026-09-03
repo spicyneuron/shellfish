@@ -10,7 +10,7 @@ Clients attach to a session and consume the same event stream. Durable records p
 
 The session header consolidates the resolved settings required to run the agent: backend, harness, model request, tools, hooks, limits, sandbox policy. A session carries the runtime configuration needed to continue it instead of being reinterpreted through the current profile on every turn. Credentials and presentation settings remain external. A hook-requested session update may atomically replace the header under the session lock; submitted model turns never rewrite it.
 
-Automatic compaction preserves that append-only boundary by creating a child session rather than rewriting its source. The child keeps the frozen runtime and startup context, and replaces the conversation with a model-produced continuation summary. The prompt that triggers compaction is then submitted to the child. Clients adopt the child for subsequent turns, while opening the source path explicitly still restores the original history.
+The bundled compaction hook preserves that append-only boundary by creating a child session rather than rewriting its source. The child keeps the frozen runtime and startup context and replaces the conversation with a model-produced continuation summary. A capable handoff client opens the child and, for automatic compaction, restores the interrupted prompt as an editable draft. A client that cannot follow the handoff remains on the source, whose original history is unchanged.
 
 ## A turn is the unit of execution
 
@@ -30,6 +30,8 @@ Backend adapters translate provider responses into indexed text, reasoning, opaq
 Terminal chat, `shellfish-server`, and any other integrations all use the same boundary. A client submits one user message to `shellfish exec`, consumes its JSONL, and answers permission requests over stdin when it can. The process exits when the turn is complete.
 
 Clients do not embed the agent loop or maintain their own copy of session state. They invoke turns and present the results.
+
+`shellfish build-request` and `shellfish run-request` expose the narrower provider boundary for read-only composition. They project or execute a request against a session's frozen runtime without locking or mutating the transcript. `exec` remains the owner of durable turns, hook execution, tool execution, and recovery.
 
 ## Harnesses bind scripts to the lifecycle
 

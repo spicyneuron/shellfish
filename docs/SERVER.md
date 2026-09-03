@@ -76,7 +76,7 @@ Frames are SSE `data:` lines containing one JSON object each, plus `: keepalive`
 
 Types beginning with an underscore are transient exec events. Other exec objects are durable session records. The server-owned `state` frame is the one exception. Text and reasoning deltas share a zero-based `seq` that restarts for each provider response. The bundled browser ignores those deltas and renders the later durable assistant record.
 
-When exec emits `_session_compaction`, the server validates and adopts the reported compacted child. Later records, turns, and reconnect replays use the child; the original session remains available at its existing path. `_compaction_error` is nonfatal and leaves the server attached to the source session.
+The server relays `_handoff` events but does not execute their argv or switch sessions. The bundled browser reports the unsupported handoff. If argv includes `--draft`, it restores that value into an empty prompt editor; if the editor already contains newer text, it preserves that text and displays the handoff draft separately. The browser therefore remains attached to the source session after commands such as `/new`, `/fork`, `/resume`, and `/compact`.
 
 ## Actions
 
