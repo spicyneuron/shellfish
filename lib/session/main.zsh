@@ -10,8 +10,6 @@ typeset -gA SF_HOOK_COUNTS=()
 typeset -g SF_SESSION_ERROR=''
 typeset -ga SF_SESSION_MATCHES=()
 typeset -ga SF_SESSION_PENDING_CALLS=()
-# An ephemeral session keeps its records in memory and never writes its source.
-integer -g SF_SESSION_EPHEMERAL=0
 
 sf_session_fail() {
   SF_SESSION_ERROR=$1
@@ -149,7 +147,6 @@ sf_session_close() {
     return
   }
   SF_SESSION_LOCK=''
-  SF_SESSION_EPHEMERAL=0
   SF_SESSION=()
   SF_SESSION_RECORDS=()
   SF_HOOK_COUNTS=()
@@ -379,7 +376,7 @@ sf_session_append() {
     sf_session_fail 'session is not open for mutation'
     return
   }
-  if (( ! SF_SESSION_EPHEMERAL )) && ! printf '%s\n' "$record" >>"$SF_SESSION_PATH"; then
+  if ! printf '%s\n' "$record" >>"$SF_SESSION_PATH"; then
     sf_session_fail "cannot append session record: $SF_SESSION_PATH"
     return
   fi
@@ -421,12 +418,6 @@ sf_session_update() {
     return 0
   fi
   header=$fields[2]
-  if (( SF_SESSION_EPHEMERAL )); then
-    SF_SESSION_RECORDS[1]=$header
-    sf_session_project || return
-    REPLY=1
-    return 0
-  fi
   temp=$(mktemp "${SF_SESSION_PATH:h}/.${SF_SESSION_PATH:t}.XXXXXX") || {
     sf_session_fail "cannot prepare session update: $SF_SESSION_PATH"
     return
@@ -507,7 +498,6 @@ sf_session_recover_turn() {
   local -a pending
   integer index
   REPLY=''
-  (( ! SF_SESSION_EPHEMERAL )) || return 0
   sf_session_repair_tail || return
   sf_session_load || return
   sf_session_turn_pending || return
@@ -530,25 +520,8 @@ sf_session_recover_turn() {
   REPLY=$recovered
 }
 
-# Loads a source that must already be able to begin a user turn. An ephemeral
-# turn cannot repair or recover, so it rejects anything it would have to rewrite.
-sf_session_require_turn_start() {
-  [[ ! -s $SF_SESSION_PATH || -z $(tail -c 1 "$SF_SESSION_PATH") ]] || {
-    sf_session_fail "session has an incomplete final record: $SF_SESSION_PATH"
-    return
-  }
-  sf_session_load || return
-  sf_session_turn_pending || return
-  [[ $REPLY == false ]] || {
-    sf_session_fail "session has an unfinished turn: $SF_SESSION_PATH"
-    return
-  }
-  REPLY=''
-}
-
 sf_session_open() {
   local session_path=$1
-  integer ephemeral=${2:-0} open_status=0
   [[ -z $SF_SESSION_LOCK ]] || {
     sf_session_fail "session lock is already held: $SF_SESSION_LOCK"
     return
@@ -565,13 +538,7 @@ sf_session_open() {
     return
   }
   sf_session_acquire_lock || return
-  SF_SESSION_EPHEMERAL=$ephemeral
-  if (( ephemeral )); then
-    sf_session_require_turn_start || open_status=1
-  else
-    sf_session_recover_turn || open_status=1
-  fi
-  if (( open_status )); then
+  if ! sf_session_recover_turn; then
     local error=$SF_SESSION_ERROR
     sf_session_close 2>/dev/null || true
     SF_SESSION_ERROR=$error

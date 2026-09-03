@@ -32,8 +32,6 @@ Config flags:
 
 Exec flags:
   --jsonl               Exchange ordered JSONL records on stdin and stdout
-  --no-save             Run one turn without writing the selected session
-  --no-hooks            Skip this turn's hooks
 
 Request flags:
   --tools JSON          Set backend request tools for build-request
