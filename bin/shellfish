@@ -44,7 +44,7 @@ sf_main() {
   integer session_explicit=0 config_explicit=0 request_explicit=0 runtime_override=0
   integer continue_requested=0 resume_requested=0 clear_requested=0 new_requested=0 resume_status=0
   integer chat_handoff=0 draft_explicit=0 init_requested=0 jsonl_requested=0 sandbox_auto_requested=0
-  integer verbose_requested=0
+  integer verbose_requested=0 no_save_requested=0 no_hooks_requested=0
   case ${1-} in
     chat)
       shift
@@ -131,6 +131,14 @@ sf_main() {
         ;;
       --sandbox-auto)
         sandbox_auto_requested=1
+        shift
+        ;;
+      --no-save)
+        no_save_requested=1
+        shift
+        ;;
+      --no-hooks)
+        no_hooks_requested=1
         shift
         ;;
       --jsonl)
@@ -303,6 +311,14 @@ sf_main() {
     sf_die 'shellfish exec does not support --verbose'
     return 2
   fi
+  if [[ $command != exec ]] && (( no_save_requested || no_hooks_requested )); then
+    sf_die '--no-save and --no-hooks require shellfish exec'
+    return 2
+  fi
+  if (( no_save_requested && jsonl_requested )); then
+    sf_die '--no-save cannot be combined with --jsonl'
+    return 2
+  fi
   if (( new_requested )); then
     [[ $command != config ]] || {
       sf_die 'shellfish config does not support --new'
@@ -314,6 +330,10 @@ sf_main() {
     }
     (( ! jsonl_requested )) || {
       sf_die '--new cannot be combined with --jsonl'
+      return 2
+    }
+    (( ! no_save_requested )) || {
+      sf_die '--new cannot be combined with --no-save'
       return 2
     }
     (( ${#positional} <= 1 )) || {
@@ -432,7 +452,7 @@ sf_main() {
     sf_exec_run "$input" "$requested_session" "$requested_config" \
       "$requested_profile" "$requested_model" "$requested_request" "$requested_backend" \
       "$runtime_override" "$continue_requested" "$jsonl_requested" "$new_requested" \
-      "$new_source"
+      "$new_source" "$no_save_requested" "$no_hooks_requested"
     local exit_status=$?
     [[ -z $SF_EXEC[error] ]] || sf_die "$SF_EXEC[error]"
     return $exit_status

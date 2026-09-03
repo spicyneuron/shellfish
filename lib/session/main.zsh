@@ -9,6 +9,9 @@ typeset -ga SF_SESSION_RECORDS=()
 typeset -gA SF_HOOK_COUNTS=()
 typeset -g SF_SESSION_ERROR=''
 typeset -ga SF_SESSION_MATCHES=()
+typeset -ga SF_SESSION_PENDING_CALLS=()
+# An ephemeral session keeps its records in memory and never writes its source.
+integer -g SF_SESSION_EPHEMERAL=0
 
 sf_session_fail() {
   SF_SESSION_ERROR=$1
@@ -146,6 +149,7 @@ sf_session_close() {
     return
   }
   SF_SESSION_LOCK=''
+  SF_SESSION_EPHEMERAL=0
   SF_SESSION=()
   SF_SESSION_RECORDS=()
   SF_HOOK_COUNTS=()
@@ -364,24 +368,12 @@ sf_session_read_runtime() {
   }
 }
 
-sf_session_load() {
-  local loaded record
+# Derives session state from the records already held in memory.
+sf_session_project() {
+  local loaded
   local -a fields
   SF_SESSION=()
-  SF_SESSION_RECORDS=()
   SF_HOOK_COUNTS=()
-  while IFS= read -r record; do
-    [[ -n $record ]] || {
-      SF_SESSION_RECORDS=()
-      sf_session_fail "cannot read session: $SF_SESSION_PATH"
-      return
-    }
-    SF_SESSION_RECORDS+=( "$record" )
-  done <"$SF_SESSION_PATH"
-  (( ${#SF_SESSION_RECORDS} )) || {
-    sf_session_fail "cannot read session: $SF_SESSION_PATH"
-    return
-  }
   loaded=$(printf '%s\n' "${SF_SESSION_RECORDS[@]}" | jq -L "$SF_ROOT/lib" -jes '
     include "runtime/schema";
     def field: ., "\u0000";
@@ -397,13 +389,11 @@ sf_session_load() {
       ($hook | field), (.[0].harness[$hook] // [] | length | tostring | field)),
     ("ok" | field)
   ' 2>/dev/null) || {
-    SF_SESSION_RECORDS=()
     sf_session_fail "cannot read session: $SF_SESSION_PATH"
     return
   }
   fields=( "${(@0)${loaded%$'\0'}}" )
   (( ${#fields} >= 7 && (${#fields} - 5) % 2 == 0 )) && [[ $fields[-1] == ok ]] || {
-    SF_SESSION_RECORDS=()
     sf_session_fail "cannot restore session runtime: $SF_SESSION_PATH"
     return
   }
@@ -421,13 +411,36 @@ sf_session_load() {
   )
 }
 
+sf_session_load() {
+  local record
+  SF_SESSION=()
+  SF_SESSION_RECORDS=()
+  SF_HOOK_COUNTS=()
+  while IFS= read -r record; do
+    [[ -n $record ]] || {
+      SF_SESSION_RECORDS=()
+      sf_session_fail "cannot read session: $SF_SESSION_PATH"
+      return
+    }
+    SF_SESSION_RECORDS+=( "$record" )
+  done <"$SF_SESSION_PATH"
+  (( ${#SF_SESSION_RECORDS} )) || {
+    sf_session_fail "cannot read session: $SF_SESSION_PATH"
+    return
+  }
+  sf_session_project || {
+    SF_SESSION_RECORDS=()
+    return 1
+  }
+}
+
 sf_session_append() {
   local record=$1
   [[ -n $SF_SESSION_LOCK ]] || {
     sf_session_fail 'session is not open for mutation'
     return
   }
-  if ! printf '%s\n' "$record" >>"$SF_SESSION_PATH"; then
+  if (( ! SF_SESSION_EPHEMERAL )) && ! printf '%s\n' "$record" >>"$SF_SESSION_PATH"; then
     sf_session_fail "cannot append session record: $SF_SESSION_PATH"
     return
   fi
@@ -469,6 +482,12 @@ sf_session_update() {
     return 0
   fi
   header=$fields[2]
+  if (( SF_SESSION_EPHEMERAL )); then
+    SF_SESSION_RECORDS[1]=$header
+    sf_session_project || return
+    REPLY=1
+    return 0
+  fi
   temp=$(mktemp "${SF_SESSION_PATH:h}/.${SF_SESSION_PATH:t}.XXXXXX") || {
     sf_session_fail "cannot prepare session update: $SF_SESSION_PATH"
     return
@@ -502,13 +521,13 @@ sf_session_update() {
   REPLY=1
 }
 
-sf_session_recover_turn() {
-  local recovery record recovered=''
-  local -a pending fields
-  integer index
+# Reports in REPLY whether the loaded suffix needs recovery, leaving any
+# unanswered tool calls in SF_SESSION_PENDING_CALLS as id and name pairs.
+sf_session_turn_pending() {
+  local recovery
+  local -a fields
   REPLY=''
-  sf_session_repair_tail || return
-  sf_session_load || return
+  SF_SESSION_PENDING_CALLS=()
   recovery=$(printf '%s\n' "${SF_SESSION_RECORDS[@]}" | jq -jsc '
     .[1:] as $records |
     ([range(0; $records | length) |
@@ -540,8 +559,23 @@ sf_session_recover_turn() {
     sf_session_fail 'cannot inspect session recovery suffix'
     return
   }
-  [[ $fields[1] == true ]] || return 0
-  pending=( "${(@)fields[2,-2]}" )
+  REPLY=$fields[1]
+  SF_SESSION_PENDING_CALLS=( "${(@)fields[2,-2]}" )
+}
+
+sf_session_recover_turn() {
+  local record recovered='' needed
+  local -a pending
+  integer index
+  REPLY=''
+  (( ! SF_SESSION_EPHEMERAL )) || return 0
+  sf_session_repair_tail || return
+  sf_session_load || return
+  sf_session_turn_pending || return
+  needed=$REPLY
+  pending=( "${SF_SESSION_PENDING_CALLS[@]}" )
+  REPLY=''
+  [[ $needed == true ]] || return 0
   for (( index = 1; index <= ${#pending}; index += 2 )); do
     record=$(jq -cn --arg call_id "$pending[index]" --arg name "$pending[index + 1]" \
       '{type:"message",role:"tool_result",call_id:$call_id,name:$name,
@@ -557,8 +591,25 @@ sf_session_recover_turn() {
   REPLY=$recovered
 }
 
+# Loads a source that must already be able to begin a user turn. An ephemeral
+# turn cannot repair or recover, so it rejects anything it would have to rewrite.
+sf_session_require_turn_start() {
+  [[ ! -s $SF_SESSION_PATH || -z $(tail -c 1 "$SF_SESSION_PATH") ]] || {
+    sf_session_fail "session has an incomplete final record: $SF_SESSION_PATH"
+    return
+  }
+  sf_session_load || return
+  sf_session_turn_pending || return
+  [[ $REPLY == false ]] || {
+    sf_session_fail "session has an unfinished turn: $SF_SESSION_PATH"
+    return
+  }
+  REPLY=''
+}
+
 sf_session_open() {
   local session_path=$1
+  integer ephemeral=${2:-0} open_status=0
   [[ -z $SF_SESSION_LOCK ]] || {
     sf_session_fail "session lock is already held: $SF_SESSION_LOCK"
     return
@@ -575,7 +626,13 @@ sf_session_open() {
     return
   }
   sf_session_acquire_lock || return
-  if ! sf_session_recover_turn; then
+  SF_SESSION_EPHEMERAL=$ephemeral
+  if (( ephemeral )); then
+    sf_session_require_turn_start || open_status=1
+  else
+    sf_session_recover_turn || open_status=1
+  fi
+  if (( open_status )); then
     local error=$SF_SESSION_ERROR
     sf_session_close 2>/dev/null || true
     SF_SESSION_ERROR=$error

@@ -30,6 +30,8 @@ Config flags:
 
 Exec flags:
   --jsonl               Exchange ordered JSONL records on stdin and stdout
+  --no-save             Run one turn without writing the selected session
+  --no-hooks            Skip this turn's hooks
 
 Backend credentials:
   anthropic         ANTHROPIC_API_KEY

@@ -15,6 +15,7 @@ typeset -g SHELLFISH_SESSION_STATE=${SHELLFISH_SESSION_STATE-}
 typeset -g SHELLFISH_TURN_ID=${SHELLFISH_TURN_ID-}
 typeset -g SF_HOOK_NAME=''
 typeset -g SF_HOOK_SCRIPT_PID=''
+integer -g SF_HOOKS_SKIP_TURN=0
 # Cancellation takes its pending exit at the first nested return, so cleanup
 # written after that point never runs. These name the paths this process made,
 # never an inherited one, and zshexit removes whatever a cancelled turn left.
@@ -50,7 +51,13 @@ sf_hooks_require_lock() {
     sf_hooks_fail "$hook requires the active session lock"
 }
 
+# A turn can disable its own hooks. Session preparation hooks are unaffected,
+# so an existing system record and session-start context still project.
 sf_hooks_configured() {
+  if (( SF_HOOKS_SKIP_TURN )) &&
+      [[ $1 == (user_prompt_submit|permission_request|pre_tool_use|post_tool_use|stop) ]]; then
+    return 1
+  fi
   (( ! ${+SF_HOOK_COUNTS[$1]} || SF_HOOK_COUNTS[$1] > 0 ))
 }
 

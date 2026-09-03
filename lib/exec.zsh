@@ -376,6 +376,7 @@ sf_exec_turn_cleanup() {
 
 sf_exec_turn() {
   local user_record=$1 session_path=$2 permission_available=${3:-0} prompt
+  integer ephemeral=${4:-0}
   local request assistant stop_input call result backend_command opened_records
   local tool_name call_id tool_input decision denial_reason hook_action hook_reason
   local runtime_projection user_projection response_projection response_meta
@@ -392,7 +393,7 @@ sf_exec_turn() {
   SF_EXEC[permission_count]=0
   SF_EXEC[permission_available]=$permission_available
   trap 'sf_exec_interrupt; exit $SF_EXEC[signal_status]' TERM
-  if ! sf_session_open "$session_path"; then
+  if ! sf_session_open "$session_path" "$ephemeral"; then
     sf_exec_error "$SF_SESSION_ERROR"
     return 1
   fi
@@ -504,18 +505,22 @@ sf_exec_turn() {
       return 1
     fi
     tool_schema=$REPLY
-    if ! sf_exec_compact "$tool_schema" "$backend_command"; then
-      failure=${SF_EXEC[compact_error]:-cannot switch to compacted session}
-      return 1
-    fi
-    if [[ -n $REPLY ]]; then
-      session_path=$REPLY
-      sf_exec_emit "$(jq -cn --arg session "$session_path" \
-        --argjson characters "$SF_EXEC[compact_characters]" \
-        '{type:"_session_compaction",session:$session,characters:$characters}')"
-    elif (( ${#reply} )); then
-      sf_exec_emit "$(jq -cn --arg message "$reply[1]" \
-        '{type:"_compaction_error",message:$message}')"
+    # Compaction publishes a sibling session and moves the lock to it, which an
+    # ephemeral turn cannot do.
+    if (( ! ephemeral )); then
+      if ! sf_exec_compact "$tool_schema" "$backend_command"; then
+        failure=${SF_EXEC[compact_error]:-cannot switch to compacted session}
+        return 1
+      fi
+      if [[ -n $REPLY ]]; then
+        session_path=$REPLY
+        sf_exec_emit "$(jq -cn --arg session "$session_path" \
+          --argjson characters "$SF_EXEC[compact_characters]" \
+          '{type:"_session_compaction",session:$session,characters:$characters}')"
+      elif (( ${#reply} )); then
+        sf_exec_emit "$(jq -cn --arg message "$reply[1]" \
+          '{type:"_compaction_error",message:$message}')"
+      fi
     fi
     for context in "${prompt_contexts[@]}"; do
       if ! sf_session_append "$context"; then
@@ -730,6 +735,7 @@ sf_exec_run() {
   local requested_model=${5-} requested_request=${6:-\{\}} requested_backend=${7-}
   integer runtime_override=${8:-0} continue_requested=${9:-0} jsonl=${10:-0} new=${11:-0}
   local new_source=${12-}
+  integer no_save=${13:-0} no_hooks=${14:-0}
   integer rc=0 create=0
   local selected runtime record
   local -a startup_records
@@ -767,6 +773,9 @@ sf_exec_run() {
     elif [[ -e $selected && ( ! -f $selected || -L $selected ) ]]; then
       sf_exec_set_error "invalid session path: $selected"
       rc=$?
+    elif (( no_save )); then
+      sf_exec_set_error "--no-save requires an existing session: $selected"
+      rc=2
     else
       create=1
       if [[ -n $new_source ]]; then
@@ -815,7 +824,8 @@ sf_exec_run() {
   fi
   SHELLFISH_TURN_STATE=''
   SHELLFISH_SESSION_STATE=''
-  sf_exec_turn "$message" "$selected" "$jsonl"
+  SF_HOOKS_SKIP_TURN=$no_hooks
+  sf_exec_turn "$message" "$selected" "$jsonl" "$no_save"
   rc=$?
   trap - INT HUP TERM
   if (( ! jsonl )) && [[ -n $SF_EXEC[answer] ]]; then
