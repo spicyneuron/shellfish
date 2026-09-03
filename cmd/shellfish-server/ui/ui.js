@@ -621,16 +621,26 @@ function applyState(frame) {
   if (!working) entry.focus();
 }
 
+function compactTokens(value) {
+  if (value < 1000) return String(value);
+  if (value < 10000) return String(Math.round(value / 100) / 10) + "k";
+  if (value < 999500) return Math.round(value / 1000) + "k";
+  if (value < 10000000) return String(Math.round(value / 100000) / 10) + "m";
+  return Math.round(value / 1000000) + "m";
+}
+
 function showUsage(tokens) {
   const context = contextWindow
-    ? " / " + contextWindow + " (" + Math.floor((tokens.input_tokens * 100) / contextWindow) + "%)"
+    ? " " + Math.floor((tokens.input_tokens * 100) / contextWindow) +
+      "% of " + compactTokens(contextWindow) + " ◔"
     : "";
   const cached =
     tokens.cached_tokens && tokens.input_tokens
       ? " " + Math.floor((tokens.cached_tokens * 100) / tokens.input_tokens) + "% ⦿"
       : "";
   usage.textContent =
-    " · " + tokens.input_tokens + context + " ↑" + cached + " " + tokens.output_tokens + " ↓";
+    " · " + compactTokens(tokens.input_tokens) + " ↑" + cached + " " +
+    compactTokens(tokens.output_tokens) + " ↓" + context;
 }
 
 // ---------------------------------------------------------------- permissions

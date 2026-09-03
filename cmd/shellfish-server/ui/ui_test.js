@@ -409,17 +409,17 @@ test("shows context usage and preserves cache usage", async () => {
     type: "_session_update",
     runtime: {
       backend: { name: "test" },
-      profile: { request: { model: "test-model" }, context_window: 100 },
+      profile: { request: { model: "test-model" }, context_window: 264000 },
       harness: { tools: [] },
     },
   });
   await page.send({
     type: "_turn_usage",
-    input_tokens: 29,
-    cached_tokens: 10,
-    output_tokens: 5,
+    input_tokens: 13200,
+    cached_tokens: 11220,
+    output_tokens: 900,
   });
-  assert.equal(page.usage.textContent, " · 29 / 100 (29%) ↑ 34% ⦿ 5 ↓");
+  assert.equal(page.usage.textContent, " · 13k ↑ 85% ⦿ 900 ↓ 5% of 264k ◔");
 
   await page.send({
     type: "_session_update",

@@ -31,7 +31,7 @@ SF_CHAT_TRANSPORT_LINES=(
 sf_chat_transport_next "$runtime"
 assert_equal "session_update,$updated_runtime,,,,," "${(j:,:)reply}"
 sf_chat_transport_next "$updated_runtime"
-assert_equal 'turn_usage,75 / 200 (37%) ↑ 5 ↓,,,,,' "${(j:,:)reply}"
+assert_equal 'turn_usage,75 ↑ 5 ↓ 37% of 200 ◔,,,,,' "${(j:,:)reply}"
 
 # A batch is accepted atomically; malformed trailing input exposes no prefix.
 SF_CHAT_TRANSPORT_LINES=(

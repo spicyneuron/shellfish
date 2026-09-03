@@ -36,11 +36,11 @@ assert_equal 'assistant_commit,tool_call,call_1,shell,{},json,batch_ok' "$order"
 
 typeset usage
 usage=$(print -r -- \
-    '{"type":"_turn_usage","input_tokens":75,"cached_tokens":30,"output_tokens":5}' |
+    '{"type":"_turn_usage","input_tokens":13200,"cached_tokens":11220,"output_tokens":900}' |
   jq -jRs -L "$ROOT/lib" --argjson runtime \
-    '{"profile":{"context_window":200}}' -f "$ROOT/lib/chat/event-decode.jq" |
+    '{"profile":{"context_window":264000}}' -f "$ROOT/lib/chat/event-decode.jq" |
   tr '\0' '\n' | sed '/^$/d' | paste -sd, -)
-assert_equal 'turn_usage,75 / 200 (37%) ↑ 40% ⦿ 5 ↓,batch_ok' "$usage"
+assert_equal 'turn_usage,13k ↑ 85% ⦿ 900 ↓ 5% of 264k ◔,batch_ok' "$usage"
 
 usage=$(print -r -- \
     '{"type":"_turn_usage","input_tokens":100,"cached_tokens":85,"output_tokens":20}' |
