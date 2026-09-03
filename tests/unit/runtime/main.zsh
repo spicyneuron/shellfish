@@ -17,7 +17,8 @@ cat >"$config" <<'JSON'
   "theme_light": "light",
   "theme_dark": "dark",
   "backends": {
-    "custom": {"adapter": "openai"}
+    "custom": {"adapter": "openai"},
+    "custom-responses": {"adapter": "openai-responses"}
   },
   "profiles": {
     "work": {
@@ -69,6 +70,13 @@ jq -e --arg command "$ROOT/default/backends/openai/run" '
     max_capture_bytes:32768
   }
 ' <<<"$runtime" >/dev/null
+
+sf_runtime_resolve_from_config "$config" '' 'cli-model' '{}' custom-responses
+jq -e '
+  .backend.name == "custom-responses" and
+  (.backend.context_window_command |
+    endswith("/default/backends/openai-responses/context_window"))
+' <<<"$REPLY" >/dev/null
 jq -e '
   .theme_mode == "light" and .theme_light == "light" and
   .themes.light.text == "#123456" and
@@ -98,6 +106,12 @@ jq -e --arg root "$ROOT/default/hooks/session_start" \
   (.harness.tools[] | select(.name == "fetch_url") |
     .command == ($tools + "/fetch_url/run") and
     .settings == ($tools + "/fetch_url/fence.jsonc"))
+' <<<"$REPLY" >/dev/null
+
+sf_runtime_resolve_from_config "$tmp/config/empty.jsonc" '' 'gpt-codex-test' '{}' codex
+jq -e '
+  .backend.name == "codex" and
+  (.backend.context_window_command | endswith("/default/backends/codex/context_window"))
 ' <<<"$REPLY" >/dev/null
 
 # Runtime resolution gives new and existing sessions the same boundary.

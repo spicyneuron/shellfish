@@ -29,7 +29,12 @@ sf_backend_credential 'Authorization' "${api_key:+Bearer $api_key}"
 unset api_key
 
 typeset endpoint=${fields[2]%/}
-typeset models_endpoint="${endpoint:h:h}/models" context
+typeset models_endpoint context
+case $endpoint in
+  */chat/completions) models_endpoint="${endpoint%/chat/completions}/models" ;;
+  */responses) models_endpoint="${endpoint%/responses}/models" ;;
+  *) models_endpoint="${endpoint:h:h}/models" ;;
+esac
 sf_backend_context_curl_args "$models_endpoint" $fields[3] $fields[4] $fields[5]
 context=$(curl "${SF_BACKEND_CURL_ARGS[@]}" 2>/dev/null | \
   jq -L "$ROOT/lib" -ce --arg model "$fields[1]" '

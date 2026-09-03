@@ -6,6 +6,7 @@ sf_test_source backend.zsh
 sf_test_tmp backend-openai
 typeset run="$ROOT/default/backends/openai/run"
 typeset context_window="$ROOT/default/backends/openai/context_window"
+typeset responses_context_window="$ROOT/default/backends/openai-responses/context_window"
 typeset req="$tmp/request.json"
 typeset res="$tmp/response.json"
 typeset body="$tmp/body.json"
@@ -84,6 +85,12 @@ SHELLFISH_API_KEY=test-key zsh -f "$context_window" <"$req" >"$res"
 jq -e '. == {context_window:128000}' "$res" >/dev/null
 grep -qx 'https://api.openai.com/v1/models' "$BACKEND_TEST_ARGS"
 grep -qx '10' "$BACKEND_TEST_ARGS"
+
+jq '.transport.endpoint = "https://api.openai.com/v1/responses"' "$req" >"$tmp/responses-request.json"
+SHELLFISH_API_KEY=test-key zsh -f "$responses_context_window" \
+  <"$tmp/responses-request.json" >"$res"
+jq -e '. == {context_window:128000}' "$res" >/dev/null
+grep -qx 'https://api.openai.com/v1/models' "$BACKEND_TEST_ARGS"
 
 cat >"$BACKEND_TEST_RESPONSE" <<'EOF'
 {"data":[{"id":"gpt-4o"}]}

@@ -20,6 +20,19 @@ if sf_chat_transport_has_pending; then
   fail 'decoded transport batch remained pending'
 fi
 
+# Runtime updates affect later events already buffered in the same read.
+typeset runtime=$(head -n 1 "$SF_TEST_SESSIONS/header-only.jsonl" |
+  jq -c 'del(.type,.format_version,.cwd,.created)')
+typeset updated_runtime=$(jq -c '.profile.context_window = 200' <<<"$runtime")
+SF_CHAT_TRANSPORT_LINES=(
+  "$(jq -cn --argjson runtime "$updated_runtime" '{type:"_session_update",runtime:$runtime}')"
+  '{"type":"_turn_usage","input_tokens":75,"output_tokens":5}'
+)
+sf_chat_transport_next "$runtime"
+assert_equal "session_update,$updated_runtime,,,,," "${(j:,:)reply}"
+sf_chat_transport_next "$updated_runtime"
+assert_equal 'turn_usage,75 / 200 (37%) ↑ 5 ↓,,,,,' "${(j:,:)reply}"
+
 # A batch is accepted atomically; malformed trailing input exposes no prefix.
 SF_CHAT_TRANSPORT_LINES=(
   '{"type":"_assistant_delta","text":"speculative"}'

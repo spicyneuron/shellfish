@@ -4,6 +4,7 @@ source "${0:A:h:h}/_helpers.zsh"
 
 sf_test_tmp backend-openai-responses
 typeset run="$ROOT/default/backends/openai-responses/run"
+typeset codex_context_window="$ROOT/default/backends/codex/context_window"
 typeset req="$tmp/request.json"
 typeset res="$tmp/output.jsonl"
 
@@ -57,6 +58,37 @@ jq -e -s -L "$ROOT/lib" '
   include "runtime/schema";
   assemble_backend_response == {type:"message",role:"assistant",stop:"length",content:[],usage:{input_tokens:10,output_tokens:5}}
 ' "$res" >/dev/null
+
+# Codex model metadata comes from the installed CLI's offline bundled catalog.
+cat >"$tmp/codex" <<'EOF'
+#!/bin/sh
+printf '%s\n' "$*" >"$CODEX_TEST_ARGS"
+cat "$CODEX_TEST_CATALOG"
+EOF
+chmod +x "$tmp/codex"
+export CODEX_TEST_ARGS="$tmp/codex-args"
+export CODEX_TEST_CATALOG="$tmp/codex-models.json"
+cat >"$tmp/codex-request.json" <<'EOF'
+{
+  "format_version": 1,
+  "system": "test",
+  "messages": [{"role":"user","content":[{"type":"text","text":"hello"}]}],
+  "tools": [],
+  "options": {"request":{"model":"gpt-codex-test"}},
+  "transport": {"endpoint":"https://chatgpt.com/backend-api/codex/responses","insecure_tls":false,"http_timeout":30,"http_stall":10}
+}
+EOF
+cat >"$CODEX_TEST_CATALOG" <<'EOF'
+{"models":[{"slug":"other","context_window":1000},{"slug":"gpt-codex-test","context_window":272000}]}
+EOF
+zsh -f "$codex_context_window" <"$tmp/codex-request.json" >"$res"
+jq -e '. == {context_window:272000}' "$res" >/dev/null
+assert_equal 'debug models --bundled' "$(<"$CODEX_TEST_ARGS")"
+
+print -r -- '{"models":[]}' >"$CODEX_TEST_CATALOG"
+if zsh -f "$codex_context_window" <"$tmp/codex-request.json" >"$res"; then
+  fail 'unknown Codex model context was reported as available'
+fi
 
 # Streaming response.
 cat >"$BACKEND_TEST_RESPONSE" <<'EOF'

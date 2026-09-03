@@ -42,6 +42,8 @@ let indicator = null;
 let lastRole = null;
 // User and agent sections are stable addresses derived from durable order.
 let sectionId = 0;
+// The context limit frozen in the session, or null when unavailable.
+let contextWindow = null;
 // Text chunks by derived section ID, used by the local /copy command.
 let sectionChunks = [];
 // Tool calls waiting for their result, by call ID.
@@ -425,6 +427,7 @@ function highlight(parent, code, language) {
 function applyRuntime(runtime) {
   const name = safe(((runtime.profile || {}).request || {}).model);
   const backend = safe((runtime.backend || {}).name);
+  contextWindow = (runtime.profile || {}).context_window ?? null;
   model.textContent = backend ? backend + "/" + name : name;
   toolDisplay.clear();
   for (const tool of (runtime.harness || {}).tools || []) {
@@ -619,11 +622,15 @@ function applyState(frame) {
 }
 
 function showUsage(tokens) {
+  const context = contextWindow
+    ? " / " + contextWindow + " (" + Math.floor((tokens.input_tokens * 100) / contextWindow) + "%)"
+    : "";
   const cached =
     tokens.cached_tokens && tokens.input_tokens
       ? " " + Math.floor((tokens.cached_tokens * 100) / tokens.input_tokens) + "% ⦿"
       : "";
-  usage.textContent = " · " + tokens.input_tokens + " ↑" + cached + " " + tokens.output_tokens + " ↓";
+  usage.textContent =
+    " · " + tokens.input_tokens + context + " ↑" + cached + " " + tokens.output_tokens + " ↓";
 }
 
 // ---------------------------------------------------------------- permissions

@@ -34,6 +34,21 @@ order=$(print -r -- \
   tr '\0' '\n' | sed '/^$/d' | paste -sd, -)
 assert_equal 'assistant_commit,tool_call,call_1,shell,{},json,batch_ok' "$order"
 
+typeset usage
+usage=$(print -r -- \
+    '{"type":"_turn_usage","input_tokens":75,"cached_tokens":30,"output_tokens":5}' |
+  jq -jRs -L "$ROOT/lib" --argjson runtime \
+    '{"profile":{"context_window":200}}' -f "$ROOT/lib/chat/event-decode.jq" |
+  tr '\0' '\n' | sed '/^$/d' | paste -sd, -)
+assert_equal 'turn_usage,75 / 200 (37%) ↑ 40% ⦿ 5 ↓,batch_ok' "$usage"
+
+usage=$(print -r -- \
+    '{"type":"_turn_usage","input_tokens":100,"cached_tokens":85,"output_tokens":20}' |
+  jq -jRs -L "$ROOT/lib" --argjson runtime \
+    '{"profile":{"context_window":null}}' -f "$ROOT/lib/chat/event-decode.jq" |
+  tr '\0' '\n' | sed '/^$/d' | paste -sd, -)
+assert_equal 'turn_usage,100 ↑ 85% ⦿ 20 ↓,batch_ok' "$usage"
+
 typeset error expected
 for error expected in \
     'provider request limit reached: 50' 'Turn limit reached,This turn reached the maximum of 50 provider requests.' \
