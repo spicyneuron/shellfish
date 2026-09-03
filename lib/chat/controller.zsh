@@ -124,7 +124,7 @@ sf_chat_decoded() {
         ;;
       turn_usage)
         SF_PRESENT_REASONING_TOKENS=$second
-        SF_PRESENT_FOOTER="${SF_PRESENT_IDENTITY} · $first"
+        sf_chat_footer_usage "$first"
         [[ -z $second ]] || sf_chat_event reasoning_tokens "$second" || return 1
         ;;
       exec_error)
@@ -385,14 +385,14 @@ sf_chat_controller() {
     SF_PRESENT_ERROR=$SF_PRESENT_HIGHLIGHT_ERROR
     return 1
   }
-  sf_chat_terminal_reset
-  sf_chat_reload "$session" || return 1
   identity=$(jq -r '.backend.name + "/" + .profile.request.model' <<<"$runtime" 2>/dev/null) || {
     SF_PRESENT_ERROR='cannot read session identity'
     return 1
   }
   SF_PRESENT_IDENTITY=$identity
   SF_PRESENT_FOOTER=$identity
+  sf_chat_terminal_reset
+  sf_chat_reload "$session" || return 1
   sf_chat_chat_start "$session_mode" "$session" || {
     SF_PRESENT_ERROR='cannot render startup banner'
     return 1

@@ -42,6 +42,16 @@ replay=$({
 typeset -a replay_fields=( "${(@0)${replay%$'\0'}}" )
 assert_equal assistant "$replay_fields[8]"
 assert_equal $'first\n\nsecond' "$replay_fields[10]"
+
+typeset usage_replay
+usage_replay=$({
+  head -n 1 "$ROOT/tests/fixtures/session/complete.jsonl" |
+    jq -c '.profile.context_window = 264000'
+  print -r -- '{"type":"message","role":"user","content":[{"type":"text","text":"question"}]}'
+  print -r -- '{"type":"message","role":"assistant","stop":"end","content":[{"type":"text","text":"answer"}],"usage":{"input_tokens":12400,"cached_tokens":10478,"output_tokens":900}}'
+} | jq -jRs -L "$ROOT/lib" -f "$ROOT/lib/chat/transcript-decode.jq" |
+  tr '\0' '\n' | sed '/^$/d' | paste -sd, -)
+assert_equal 'user,question,assistant,answer,assistant_commit,turn_usage,12k ↑ 85% ⦿ 900 ↓ 5% of 264k ◔,batch_ok' "$usage_replay"
 jq -e '
   .harness.tools[0].manifest.display.result.content == ["$result_full"] and
   .harness.tools[1].manifest.display.result.content == ["$result_preview", "$exit_code"] and

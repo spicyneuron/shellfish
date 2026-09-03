@@ -223,6 +223,10 @@ sf_chat_notice() {
   REPLY=$notice_index
 }
 
+sf_chat_footer_usage() {
+  SF_PRESENT_FOOTER="${SF_PRESENT_IDENTITY} · $1"
+}
+
 sf_chat_event() {
   local type=$1 first=${2-} second=${3-} third=${4-} fourth=${5-} fifth=${6-} sixth=${7-}
   integer index=${#SF_PRESENT_NODE_TYPE}
@@ -357,9 +361,12 @@ sf_chat_reload() {
   }
   fields=( "${(@0)${events%$'\0'}}" )
   sf_chat_reset
+  SF_PRESENT_FOOTER=$SF_PRESENT_IDENTITY
   for (( index = 1; index + 6 <= ${#fields}; index += 7 )); do
     if [[ $fields[index] == batch_ok ]]; then
       complete=1
+    elif [[ $fields[index] == turn_usage ]]; then
+      sf_chat_footer_usage "$fields[index + 1]"
     else
       sf_chat_event "${(@)fields[index,index + 6]}" || {
         SF_PRESENT_ERROR='cannot build presentation transcript'

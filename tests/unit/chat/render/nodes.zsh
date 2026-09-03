@@ -187,6 +187,11 @@ assert_equal 'section,message,section,tool_call,tool_result,tool_call,tool_resul
 assert_equal 'Use both tools' "$SF_PRESENT_NODE_BODY[2]"
 assert_equal Done "$SF_PRESENT_NODE_BODY[8]"
 
+SF_PRESENT_IDENTITY=test/model
+SF_PRESENT_FOOTER='test/model · stale usage'
+sf_chat_reload "$SF_TEST_SESSIONS/header-only.jsonl" || fail "$SF_PRESENT_ERROR"
+assert_equal test/model "$SF_PRESENT_FOOTER"
+
 cp "$SF_TEST_SESSIONS/tool-paired.jsonl" "$tmp/invalid.jsonl"
 print -r -- broken >>"$tmp/invalid.jsonl"
 if sf_chat_reload "$tmp/invalid.jsonl"; then

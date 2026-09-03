@@ -366,24 +366,34 @@ test("replays the durable session before live work", async () => {
   const page = load();
   await page.authenticate();
   assert.deepEqual(page.opens, ["Bearer 123456"]);
+  const header = structuredClone(HEADER);
+  header.profile.context_window = 200;
   await page.send(
-    HEADER,
+    header,
     { type: "system", content: "instructions" },
     {
       type: "message",
       role: "user",
       content: [{ type: "text", text: "**hello**" }],
     },
+    {
+      type: "message",
+      role: "assistant",
+      stop: "end",
+      content: [{ type: "text", text: "welcome" }],
+      usage: { input_tokens: 75, cached_tokens: 60, output_tokens: 5 },
+    },
     { type: "state", working: false },
   );
   assert.deepEqual(
     find(page.output, "section").map((heading) => heading.textContent),
-    ["system", "user1"],
+    ["system", "user1", "agent2"],
   );
   assert.equal(find(page.output, "user").length, 1);
   assert.equal(find(page.output, "user")[0].textContent, "**hello**");
   assert.equal(findTag(find(page.output, "user")[0], "strong")[0].textContent, "**hello**");
   assert.equal(page.model.textContent, "test/test-model");
+  assert.equal(page.usage.textContent, " · 75 ↑ 80% ⦿ 5 ↓ 38% of 200 ◔");
 });
 
 test("applies a session update without replaying the transcript", async () => {

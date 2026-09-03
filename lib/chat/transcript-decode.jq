@@ -24,7 +24,10 @@ else
     error("invalid session")
   else
     $records[0].harness.tools as $tools |
-    $records[1:][] | durable_display_fields(true; $tools)
+    ($records[1:][] | durable_display_fields(true; $tools)),
+    ([$records[1:][] | select(canonical_assistant_message and has("usage"))] |
+      last? | select(. != null) | .usage |
+      turn_usage_fields($records[0].profile.context_window // null))
   end
 end]
 | emit_display_batch

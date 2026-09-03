@@ -108,6 +108,7 @@ sf_chat_terminal_finish
 [[ $PREDISPLAY == *$'ℹ Heads up\n  detail'* ]] || fail 'Notice did not survive flushing'
 sf_chat_reload "$SF_TEST_SESSIONS/complete.jsonl" || fail "$SF_PRESENT_ERROR"
 assert_equal 0 "${#${(M)SF_PRESENT_NODE_TYPE:#notice}}"
+assert_equal "${SF_PRESENT_IDENTITY} · 1 ↑ 1 ↓" "$SF_PRESENT_FOOTER"
 
 # Hook displays split a live tool into contiguous presentation segments. The
 # result still completes the resumed segment.
