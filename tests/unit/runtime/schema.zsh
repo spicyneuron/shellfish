@@ -45,6 +45,40 @@ if print -r -- '{"type":"message","role":"assistant","stop":"cancelled","content
   fail 'cancelled assistant stop reason was accepted'
 fi
 
+# Canonical requests use exact projected message and tool wrappers.
+typeset valid_request
+valid_request=$(jq -cn '{
+  format_version:1,
+  system:"system",
+  messages:[
+    {role:"user",content:[{type:"text",text:"question"}]},
+    {role:"assistant",stop:"tool_calls",content:[
+      {type:"reasoning",text:"checking",opaque:{signature:"signed"}},
+      {type:"tool_call",id:"call_1",name:"shell",input:{command:"pwd"}}
+    ]},
+    {role:"tool_result",call_id:"call_1",name:"shell",content:"/tmp",exit_code:0},
+    {role:"assistant",stop:"end",content:[{type:"text",text:"done"}]}
+  ],
+  tools:[{name:"shell",description:"Run a command",input_schema:{
+    type:"object",properties:{command:{type:"string"}},required:["command"]
+  }}],
+  options:{request:{model:"model"}},
+  transport:{endpoint:"https://example.com",insecure_tls:false,http_timeout:30,http_stall:10}
+}') || fail 'cannot prepare canonical request fixture'
+print -r -- "$valid_request" | schema_eval 'canonical_request' >/dev/null
+
+for filter in \
+    '.messages[0].content = [{}]' \
+    '.messages[1].content[0].extra = true' \
+    '.tools[0] = {}' \
+    '.options.extra = true' \
+    '.transport.extra = true' \
+    '.extra = true'; do
+  if jq "$filter" <<<"$valid_request" | schema_eval 'canonical_request' >/dev/null 2>&1; then
+    fail "canonical request accepted malformed input: $filter"
+  fi
+done
+
 # Backend response events carry indexed content updates and one terminal response end.
 jq -cn '[
   {type:"_assistant_reasoning_opaque",index:0,opaque:{type:"redacted_thinking",data:"secret"}},

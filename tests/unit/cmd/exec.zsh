@@ -136,6 +136,8 @@ print -r -- '{}' | zsh -f "$entry" run-request --session "$tmp/missing.jsonl" \
   >/dev/null 2>&1 && fail 'run-request accepted a missing session'
 zsh -f "$entry" build-request --session "$new_session" --tools '{}' \
   >/dev/null 2>&1 && fail 'build-request accepted invalid tools'
+zsh -f "$entry" build-request --session "$new_session" --tools '[{}]' \
+  >/dev/null 2>&1 && fail 'build-request accepted an invalid tool schema'
 request_record=$(jq -cn --arg text 'composed request' \
   '{type:"message",role:"user",content:[{type:"text",text:$text}]}')
 request_digest=$(shasum <"$new_session")
@@ -166,6 +168,9 @@ print -r -- '{"type":"message","role":"assistant","stop":"end","content":[]}' |
   fail 'build-request accepted an invalid record transition'
 print -r -- '{}' | zsh -f "$entry" run-request --session "$new_session" \
   >/dev/null 2>&1 && fail 'run-request accepted an invalid request'
+printf '%s\n%s\n' "$request" "$request" |
+  zsh -f "$entry" run-request --session "$new_session" >/dev/null 2>&1 &&
+  fail 'run-request accepted multiple requests'
 jq '.transport.endpoint = "https://elsewhere.invalid"' <<<"$request" |
   zsh -f "$entry" run-request --session "$new_session" >/dev/null 2>&1 &&
   fail 'run-request accepted transport from outside the frozen runtime'

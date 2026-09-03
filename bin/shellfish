@@ -441,8 +441,9 @@ sf_main() {
       sf_die 'run-request requires a canonical backend request on stdin'
       return 2
     }
-    input=$(jq -L "$SF_ROOT/lib" -ce --argjson runtime "$runtime" '
+    input=$(jq -L "$SF_ROOT/lib" -cse --argjson runtime "$runtime" '
       include "runtime/schema";
+      select(length == 1) | .[0] |
       select(canonical_request) |
       select(.options == {request:$runtime.profile.request}) |
       select(.transport == ($runtime.backend |

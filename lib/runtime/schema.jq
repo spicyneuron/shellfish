@@ -265,15 +265,39 @@ def canonical_context:
     (.status | type == "number" and floor == . and . >= 0 and . <= 255));
 
 def canonical_request:
-  type == "object" and .format_version == 1 and (.system | type == "string") and
+  type == "object" and
+  keys == ["format_version", "messages", "options", "system", "tools", "transport"] and
+  .format_version == 1 and (.system | type == "string") and
   (.messages | type == "array" and all(.[];
-    (.role == "user" and (.content | type == "array")) or
-    (.role == "assistant" and (.content | type == "array")) or
-    (.role == "tool_result" and (.content | type == "string")))) and
-  (.tools | type == "array") and
-  (.options.request | type == "object" and (.model | model_name)) and
-  (.transport.endpoint | endpoint) and (.transport.insecure_tls | type == "boolean") and
-  (.transport.http_timeout | positive_integer) and (.transport.http_stall | positive_integer);
+    type == "object" and
+    if .role == "user" then
+      keys == ["content", "role"] and
+      ((. + {type:"message"}) | canonical_user_message)
+    elif .role == "assistant" then
+      keys == ["content", "role", "stop"] and
+      (.content | type == "array" and all(.[];
+        if type == "object" and .type == "reasoning" then
+          keys == ["text", "type"] or keys == ["opaque", "text", "type"]
+        else true end)) and
+      ((. + {type:"message"}) | canonical_assistant_message)
+    elif .role == "tool_result" then
+      keys == ["call_id", "content", "exit_code", "name", "role"] and
+      ((. + {type:"message"}) | canonical_tool_result)
+    else false end)) and
+  (.tools | type == "array" and all(.[];
+    type == "object" and keys == ["description", "input_schema", "name"] and
+    (.name | tool_name) and (.description | nul_free_string and length > 0) and
+    (.input_schema | type == "object" and .type == "object" and
+      ((.properties // {}) | type == "object") and
+      ((.required // []) | type == "array" and all(.[]; type == "string") and
+        length == (unique | length)))) and
+    ([.[].name] | length) == ([.[].name] | unique | length)) and
+  (.options | type == "object" and keys == ["request"] and
+    (.request | type == "object" and (.model | model_name))) and
+  (.transport | type == "object" and
+    keys == ["endpoint", "http_stall", "http_timeout", "insecure_tls"] and
+    (.endpoint | endpoint) and (.insecure_tls | type == "boolean") and
+    (.http_timeout | positive_integer) and (.http_stall | positive_integer));
 
 def canonical_session_header($format_version):
   type == "object" and .type == "session" and .format_version == $format_version and
