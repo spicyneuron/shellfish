@@ -30,12 +30,17 @@ sf_chat_rows_config() {
   SF_PRESENT_PREVIEW_TOOL_RESULT=$limits[4]
 }
 
+# The shared display estimate of about four characters per token.
+sf_chat_token_estimate() {
+  REPLY=$(( ($1 + 3) / 4 ))
+}
+
 sf_chat_token_count() {
   local text=$1 exact=${2-}
   if [[ -n $exact ]]; then
     REPLY=$exact
   else
-    REPLY=$(( (${#text} + 3) / 4 ))
+    sf_chat_token_estimate ${#text}
   fi
 }
 
@@ -321,6 +326,12 @@ sf_chat_rows() {
             head="✕ $heading"
           else
             head="ℹ $heading"
+          fi
+          if [[ $state == open ]]; then
+            # A live notice rewrites itself when it settles, so nothing it
+            # renders is final while it is open.
+            activity=1
+            withhold_all=1
           fi
           ;;
         *) return 1 ;;

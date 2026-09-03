@@ -45,9 +45,9 @@ Stdin remains open for permission replies. When exec emits a permission request,
 
 ## Automatic compaction
 
-After `user_prompt_submit` handling confirms an ordinary model turn, exec checks the latest completed assistant response when the session contains at least three user turns. If that response's input and output tokens total at least 80% of the frozen `context_window`, exec asks the same backend to summarize the existing provider request. The summarization request preserves the request prefix and appends only a user instruction, allowing providers to reuse the cached prefix.
+After `user_prompt_submit` handling confirms an ordinary model turn, and the session ends on a completed assistant response, exec measures the most recent response that reported usage. Responses that report no usage, such as a cancelled turn, do not hide an earlier measurement. If that response's input and output tokens total at least 80% of the frozen `context_window`, exec asks the same backend to summarize the existing provider request. The summarization request preserves the request prefix and appends only a user instruction, allowing providers to reuse the cached prefix.
 
-Exec creates a sibling child named with a `_compact` suffix, retaining the initial session prefix, first complete turn, summary context, and most recent complete turn. It leaves the source unchanged, switches to the child, and appends the current prompt and its hook context there. An unavailable `context_window` disables compaction.
+Exec creates a sibling child named with a `_compact` suffix. The child retains the initial session prefix, meaning the frozen header, the system record, and any `session_start` contexts, and replaces every message with one summary context. It leaves the source unchanged, switches to the child, and appends the current prompt and its hook context there. A session without messages has nothing to summarize. An unavailable `context_window` disables compaction.
 
 ## Output
 
@@ -77,7 +77,8 @@ Transient events currently include:
 | `_tool_permission_request` | A sandbox bypass needs a client decision. |
 | `_handoff` | A hook script asks a capable client to run `argv` after exec exits cleanly. |
 | `_session_update` | A hook-requested update or model-context discovery changed the session; `runtime` is the resulting resolved runtime. |
-| `_session_compaction` | Exec created and adopted the compacted child at absolute path `session`. |
+| `_compaction_start` | Exec is summarizing the session for compaction. A `_session_compaction` or `_compaction_error` follows unless the turn fails first. |
+| `_session_compaction` | Exec created and adopted the compacted child at absolute path `session`. `characters` is the stored summary's length, which clients render with their own token estimate. |
 | `_compaction_error` | Compaction preparation or summary generation failed and exec is continuing with the source session. |
 | `_exec_error` | Exec cannot start or complete the operation. |
 

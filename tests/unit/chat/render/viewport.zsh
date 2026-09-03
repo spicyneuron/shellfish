@@ -104,6 +104,16 @@ assert_equal 0 "$SF_PRESENT_FLUSH_ROWS"
 sf_chat_highlight_rows 1 5 100
 assert_equal 0 "$SF_PRESENT_HIGHLIGHT_ADVANCED"
 
+# A live notice settles by rewriting its own rows, so it is held out of
+# scrollback until it closes.
+sf_chat_reset
+sf_chat_notice notice 'Compacting…' '' open
+sf_chat_viewport 80 20
+assert_equal 0 "$SF_PRESENT_FLUSH_ROWS"
+sf_chat_notice notice 'Session compacted' 'Original saved.'
+sf_chat_viewport 80 20
+assert_equal $'ℹ Session compacted\n  Original saved.' "$SF_PRESENT_FLUSH_TEXT"
+
 SF_PRESENT_ROW_TEXT=( alpha beta )
 SF_PRESENT_ROW_HIGHLIGHTS=( '0 5 bold' '1 3 fg=2' )
 sf_chat_collect_highlights 2

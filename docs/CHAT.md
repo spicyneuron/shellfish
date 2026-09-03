@@ -15,7 +15,7 @@ Interactive chat is the default Shellfish mode. Run `shellfish` from your projec
 
 Each session stores its resolved backend, harness, model, and sandbox settings. A fresh `shellfish` launch uses current configuration. `/new` starts a new session with the active session's settings. Themes and TUI preview settings come from current configuration, so they affect how existing sessions are displayed.
 
-When automatic compaction creates a child session, chat displays a notice and uses that child for future turns and recovery. The source session remains unchanged and can still be reopened explicitly.
+Automatic compaction shows a live `Compacting…` notice while the summary is generated. That notice settles in place into the outcome, either the compacted session and its summary size or the reason compaction was skipped. Chat then uses the child for this turn, later turns, and recovery, and its exit banner names the child. The source session remains unchanged and can still be reopened explicitly.
 
 ## Slash commands
 

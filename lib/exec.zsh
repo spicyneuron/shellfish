@@ -238,26 +238,27 @@ sf_exec_backend() {
 
 sf_exec_compact() {
   local tools=$1 command=$2 needed request assistant summary target error
-  local instruction=$'Create a concise continuation summary of this conversation. Preserve key decisions, requirements, completed work, unresolved work, and technical details needed to continue. The first and most recent turns will be retained verbatim. Return only the summary. Do not address the user or take actions.'
+  local instruction=$'Create a concise continuation summary of this conversation. Preserve key decisions, requirements, completed work, unresolved work, and technical details needed to continue. Return only the summary. Do not address the user or take actions.'
   SF_EXEC[compact_error]=''
+  SF_EXEC[compact_characters]=''
   REPLY=''
   reply=()
   needed=$(printf '%s\n' "${SF_SESSION_RECORDS[@]}" |
     jq -sr --argjson runtime "$SF_SESSION[runtime]" '
       ($runtime.profile.context_window // null) as $window |
-      [.[] | select(.type == "message" and .role == "user")] as $users |
       [.[] | select(.type == "message" and .role == "assistant")] as $assistants |
-      ($assistants[-1] // null) as $last |
-      if $window == null or ($users | length) < 3 or $last == null or
-          $last.stop == "tool_calls" or ($last.usage // null) == null
+      ($assistants | map(select(.usage != null)) | last) as $measured |
+      if $window == null or $measured == null or
+          $assistants[-1].stop == "tool_calls"
       then false
-      else (($last.usage.input_tokens + $last.usage.output_tokens) / $window) >= 0.8
+      else (($measured.usage.input_tokens + $measured.usage.output_tokens) / $window) >= 0.8
       end
     ' 2>/dev/null) || {
     reply=( 'cannot inspect session for compaction' )
     return 0
   }
   [[ $needed == true ]] || return 0
+  sf_exec_emit '{"type":"_compaction_start"}'
   request=$(sf_exec_request "$tools") || {
     reply=( 'cannot prepare compaction request' )
     return 0
@@ -309,6 +310,9 @@ sf_exec_compact() {
     SF_EXEC[compact_error]=$SF_HOOK_ERROR
     return 1
   }
+  # The stored summary's size. Reported usage would also count reasoning the
+  # summary does not keep.
+  SF_EXEC[compact_characters]=${#summary}
   REPLY=$target
 }
 
@@ -512,7 +516,8 @@ sf_exec_turn() {
     if [[ -n $REPLY ]]; then
       session_path=$REPLY
       sf_exec_emit "$(jq -cn --arg session "$session_path" \
-        '{type:"_session_compaction",session:$session}')"
+        --argjson characters "$SF_EXEC[compact_characters]" \
+        '{type:"_session_compaction",session:$session,characters:$characters}')"
     elif (( ${#reply} )); then
       sf_exec_emit "$(jq -cn --arg message "$reply[1]" \
         '{type:"_compaction_error",message:$message}')"

@@ -202,9 +202,18 @@ sf_chat_tool_open() {
 }
 
 sf_chat_notice() {
-  local severity=$1 heading=$2 body=${3-}
+  local severity=$1 heading=$2 body=${3-} state=${4:-closed}
   integer index=${#SF_PRESENT_NODE_TYPE} notice_index resume_tool=0
   if (( index )) && [[ $SF_PRESENT_NODE_STATE[index] == open ]]; then
+    # A live notice settles in place, so its outcome replaces its own row.
+    if [[ $SF_PRESENT_NODE_TYPE[index] == notice ]]; then
+      sf_chat_safe "$heading"; SF_PRESENT_NODE_HEADING[index]=$REPLY
+      sf_chat_safe "$body"; SF_PRESENT_NODE_BODY[index]=$REPLY
+      SF_PRESENT_NODE_ROLE[index]=$severity
+      [[ $state == open ]] || sf_chat_close $index || return 1
+      REPLY=$index
+      return 0
+    fi
     if [[ $SF_PRESENT_NODE_TYPE[index] == tool_result ]]; then
       if [[ $severity == error ]]; then
         sf_chat_event tool_segment_close abandon || return 1
@@ -217,7 +226,7 @@ sf_chat_notice() {
       sf_chat_close $index || return 1
     fi
   fi
-  sf_chat_add notice "$severity" "$heading" "$body" || return 1
+  sf_chat_add notice "$severity" "$heading" "$body" "$state" || return 1
   notice_index=$REPLY
   (( ! resume_tool )) || sf_chat_tool_open || return 1
   REPLY=$notice_index

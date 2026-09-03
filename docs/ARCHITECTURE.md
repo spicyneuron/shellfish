@@ -10,7 +10,7 @@ Clients attach to a session and consume the same event stream. Durable records p
 
 The session header consolidates the resolved settings required to run the agent: backend, harness, model request, tools, hooks, limits, sandbox policy. A session carries the runtime configuration needed to continue it instead of being reinterpreted through the current profile on every turn. Credentials and presentation settings remain external. A hook-requested session update may atomically replace the header under the session lock; submitted model turns never rewrite it.
 
-Automatic compaction preserves that append-only boundary by creating a child session rather than rewriting its source. The child keeps the frozen runtime, first complete turn, a model-produced continuation summary, and most recent complete turn. The prompt that triggers compaction is then submitted to the child. Clients adopt the child for subsequent turns, while opening the source path explicitly still restores the original history.
+Automatic compaction preserves that append-only boundary by creating a child session rather than rewriting its source. The child keeps the frozen runtime and startup context, and replaces the conversation with a model-produced continuation summary. The prompt that triggers compaction is then submitted to the child. Clients adopt the child for subsequent turns, while opening the source path explicitly still restores the original history.
 
 ## A turn is the unit of execution
 

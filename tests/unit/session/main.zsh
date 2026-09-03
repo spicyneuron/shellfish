@@ -99,13 +99,14 @@ sf_session_close
 assert_session_unlocked "$session"
 (( $(wc -l <"$session") == 3 ))
 
-# Compaction creates a validated child with the first and latest complete turns
-# around one summary context, without changing the locked source.
+# Compaction creates a validated child that keeps the initial prefix and
+# replaces every message with one summary context, leaving the source unchanged.
 typeset compact_source="$tmp/history.jsonl" compacted
 SF_SESSION_PATH=$compact_source
 sf_session_prepare "$SF_TEST_RUNTIME"
 sf_session_create
 sf_session_open "$compact_source"
+sf_session_append '{"type":"context","hook":"session_start","script":"project","content":"startup context"}'
 sf_session_append '{"type":"message","role":"user","content":[{"type":"text","text":"first"}]}'
 sf_session_append '{"type":"message","role":"assistant","stop":"end","content":[{"type":"text","text":"one"}],"usage":{"input_tokens":10,"output_tokens":1}}'
 sf_session_append '{"type":"context","hook":"user_prompt_submit","script":"project","content":"middle context"}'
@@ -127,15 +128,24 @@ cmp -s "$compact_source" "$tmp/history-before.jsonl"
 jq -L "$ROOT/lib" -e -s '
   include "runtime/schema";
   (.[1:] | canonical_session_records) and
-  [.[].type] == ["session","message","message","context","context","message","message"] and
-  .[1].content[0].text == "first" and .[2].content[0].text == "one" and
-  .[3] == {type:"context",hook:"compact",script:"shellfish",content:"key decisions"} and
-  (map(select(.content? == "middle context")) | length) == 0 and
-  .[4].content == "latest context" and
-  .[5].content[0].text == "latest" and .[6].content[0].text == "three"
+  [.[].type] == ["session","context","context"] and
+  .[1].content == "startup context" and
+  .[2] == {type:"context",hook:"compact",script:"shellfish",content:"key decisions"}
 ' "$compacted" >/dev/null
 sf_session_compact 'second summary'
 [[ $REPLY == "$tmp/history_compact_1.jsonl" ]]
+sf_session_close
+
+# A session without messages has nothing to summarize.
+typeset empty_source="$tmp/empty.jsonl"
+SF_SESSION_PATH=$empty_source
+sf_session_prepare "$SF_TEST_RUNTIME"
+sf_session_create
+sf_session_open "$empty_source"
+if sf_session_compact 'key decisions'; then
+  fail 'compacted a session without messages'
+fi
+[[ ! -e $tmp/empty_compact.jsonl ]]
 sf_session_close
 
 # Runtime updates replace only the header while retaining the lock, transcript,

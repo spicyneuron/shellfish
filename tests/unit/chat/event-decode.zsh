@@ -14,7 +14,8 @@ cat <<'STREAM' |
 {"type":"_hook_display","hook":"stop","script":"/tmp/check","text":"done"}
 {"type":"_exec_error","message":"recoverable"}
 {"type":"_handoff","argv":["/usr/bin/env","printf","%s","done"]}
-{"type":"_session_compaction","session":"/tmp/compact.jsonl"}
+{"type":"_compaction_start"}
+{"type":"_session_compaction","session":"/tmp/compact.jsonl","characters":932}
 {"type":"_compaction_error","message":"summary unavailable"}
 {"type":"message","role":"user","content":[{"type":"text","text":"hi"}]}
 {"type":"message","role":"assistant","stop":"end","content":[{"type":"text","text":"hi\n"}],"usage":{"input_tokens":14,"output_tokens":2}}
@@ -150,11 +151,13 @@ handoff=$(print -r -- '{"type":"_handoff","argv":["/tmp/custom command","","arg"
 assert_equal 'handoff,["/tmp/custom command","","arg"],batch_ok' "$handoff"
 
 typeset compaction
-compaction=$(print -r -- '{"type":"_session_compaction","session":"/tmp/compact.jsonl"}' |
+compaction=$(print -rl -- '{"type":"_compaction_start"}' \
+    '{"type":"_session_compaction","session":"/tmp/compact.jsonl","characters":932}' |
   jq -jRs -L "$ROOT/lib" --argjson runtime null \
     -f "$ROOT/lib/chat/event-decode.jq" |
   tr '\0' '\n' | sed '/^$/d' | paste -sd, -)
-assert_equal 'session_compaction,/tmp/compact.jsonl,batch_ok' "$compaction"
+assert_equal 'compaction_start,session_compaction,/tmp/compact.jsonl,932,batch_ok' \
+  "$compaction"
 
 typeset updated_runtime session_update
 updated_runtime=$(head -n 1 "$ROOT/tests/fixtures/session/header-only.jsonl" |
@@ -172,7 +175,10 @@ for invalid in \
     '{"type":"_handoff","argv":[""]}' \
     '{"type":"_handoff","argv":["cmd",1]}' \
     '{"type":"_handoff","argv":["cmd","bad\u0000arg"]}' \
-    '{"type":"_session_compaction","session":"relative.jsonl"}' \
+    '{"type":"_session_compaction","session":"relative.jsonl","characters":1}' \
+    '{"type":"_session_compaction","session":"/tmp/compact.jsonl"}' \
+    '{"type":"_session_compaction","session":"/tmp/compact.jsonl","characters":-1}' \
+    '{"type":"_compaction_start","message":"unexpected"}' \
     '{"type":"_compaction_error","message":""}'; do
   if print -r -- "$invalid" |
       jq -jRs -L "$ROOT/lib" --argjson runtime null \

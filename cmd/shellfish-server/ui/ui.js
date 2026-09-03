@@ -513,8 +513,17 @@ function apply(frame) {
     case "_handoff":
       // A hook asked to replace the process, which only a terminal can honour.
       return note("the turn requested a handoff, which a served session cannot run", "error");
+    case "_compaction_start":
+      return note("Summarizing the session so far.", null, "Compacting…");
     case "_session_compaction":
-      return note("Future turns will use the compacted session.", null, "Session compacted");
+      // The same four-characters-per-token estimate the terminal client shows.
+      return note(
+        "Original saved and summarized into ~" +
+          Math.ceil(frame.characters / 4) +
+          " tokens.",
+        null,
+        "Session compacted",
+      );
     case "_compaction_error":
       return note(safe(frame.message), null, "Compaction skipped");
     case "_session_update":

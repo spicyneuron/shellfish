@@ -123,7 +123,8 @@ jq -e '.profile.context_window == null' <<<"$REPLY" >/dev/null
 SF_TEST_RUNTIME=$base_runtime
 
 # The next ordinary prompt lazily compacts a completed session above 80%, then
-# runs against the child while leaving the source unchanged.
+# runs against the child while leaving the source unchanged. The threshold reads
+# the most recent response that reported usage.
 typeset compact_session="$tmp/compact-source.jsonl" compact_stream compact_path
 typeset compact_backend="$tmp/compact-backend" compact_requests="$tmp/compact-requests.jsonl"
 typeset compact_hook="$tmp/compact-prompt"
@@ -142,7 +143,7 @@ ZSH
 chmod +x "$compact_hook"
 export COMPACT_REQUESTS=$compact_requests
 SF_TEST_RUNTIME=$(jq -c --arg command "$compact_backend" --arg hook "$compact_hook" '
-  .backend.command=$command | .profile.context_window=100 |
+  .backend.command=$command | .profile.context_window=100000 |
   .harness.user_prompt_submit=[$hook]
 ' <<<"$base_runtime")
 sf_test_session "$compact_session"
@@ -152,12 +153,15 @@ sf_test_turn latest "$compact_session" >/dev/null
 typeset below_session="$tmp/compact-below.jsonl"
 cp "$compact_session" "$below_session"
 jq -cs '
-  ([to_entries[] | select(.value.type == "message" and .value.role == "assistant") | .key] | last) as $last |
-  .[$last].usage = {input_tokens:80,output_tokens:0} | .[]
+  [to_entries[] | select(.value.type == "message" and .value.role == "assistant") | .key] as $keys |
+  .[0].profile.context_window = 100 |
+  .[$keys[-2]].usage = {input_tokens:80,output_tokens:0} |
+  (.[$keys[-1]] |= del(.usage)) | .[]
 ' "$compact_session" >"$tmp/compact-exact.jsonl"
 mv "$tmp/compact-exact.jsonl" "$compact_session"
 jq -cs '
   ([to_entries[] | select(.value.type == "message" and .value.role == "assistant") | .key] | last) as $last |
+  .[0].profile.context_window = 100 |
   .[$last].usage = {input_tokens:79,output_tokens:0} | .[]
 ' "$below_session" >"$tmp/compact-under.jsonl"
 mv "$tmp/compact-under.jsonl" "$below_session"
@@ -176,7 +180,9 @@ compact_path=$(print -r -- "$compact_stream" | jq -Rr '
 print -r -- "$compact_stream" | jq -eRn '
   [inputs | fromjson] as $events |
   ($events | map(.type) | map(select(. == "_backend_request_start")) | length) == 1 and
-  ($events | map(select(.type == "_session_compaction")) | length) == 1 and
+  ($events | map(select(.type == "_compaction_start")) | length) == 1 and
+  ($events | map(select(.type == "_session_compaction")) |
+    length == 1 and (.[0].characters | type == "number" and . > 0)) and
   ($events | map(select(.type == "_compaction_error")) | length) == 0 and
   ($events | map(select(.role == "user"))[-1].content[0].text) == "continue" and
   ($events | map(select(.role == "assistant"))[-1].content[0].text | endswith("continue\n"))
@@ -188,7 +194,7 @@ jq -e -s '
 jq -L "$ROOT/lib" -e -s '
   include "runtime/schema";
   (.[1:] | canonical_session_records) and
-  [.[] | select(.role == "user") | .content[0].text] == ["first","latest","continue"] and
+  [.[] | select(.role == "user") | .content[0].text] == ["continue"] and
   ([.[] | select(.type == "context" and .hook == "compact")] | length) == 1 and
   ([.[] | select(.type == "context") | .content] | index("continuecontext")) != null
 ' "$compact_path" >/dev/null

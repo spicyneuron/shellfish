@@ -165,10 +165,16 @@ sf_chat_decoded() {
         encoded=$(jq -j '.[] | ., "\u0000"' <<<"$first") || return 1
         SF_PRESENT_HANDOFF=( "${(@0)${encoded%$'\0'}}" )
         ;;
+      compaction_start)
+        sf_chat_notice notice 'Compacting…' '' open || return 1
+        ;;
       session_compaction)
         [[ ${#SF_CHAT_TRANSPORT_COMMAND} -gt 0 ]] || return 1
         SF_PRESENT_SESSION=$first
         SF_CHAT_TRANSPORT_COMMAND[-1]=$first
+        sf_chat_token_estimate "$second"
+        sf_chat_notice notice 'Session compacted' \
+          "Original saved and summarized into ~$REPLY tokens." || return 1
         ;;
       compaction_error)
         sf_chat_notice warning 'Compaction skipped' "$first" || return 1
@@ -455,9 +461,9 @@ sf_chat_controller() {
     return 1
   fi
   if [[ $SF_PRESENT_ACTION == quit ]]; then
-    sf_chat_chat_end "$session"
+    sf_chat_chat_end "$SF_PRESENT_SESSION"
     return $SF_PRESENT_EXIT_STATUS
   fi
-  (( exit_status )) || sf_chat_chat_end "$session"
+  (( exit_status )) || sf_chat_chat_end "$SF_PRESENT_SESSION"
   return $exit_status
 }

@@ -288,23 +288,13 @@ sf_session_compact() {
       if ! printf '%s\n' "${SF_SESSION_RECORDS[@]}" | jq -L "$SF_ROOT/lib" -cse \
           --rawfile summary <(print -rn -- "$summary") --arg created "$created" '
         include "runtime/schema";
-        . as $records |
-        [$records | to_entries[] |
-          select(.value.type == "message" and .value.role == "user") | .key] as $users |
-        select(($users | length) >= 3) |
         select($summary | test("\\S")) |
-        (([range($users[0]; $users[1]) |
-          select($records[.].type != "context")] | last) + 1) as $head |
-        $users[-1] as $latest |
-        (([range($head; $latest) |
-          select($records[.].type != "context")] | last // ($head - 1)) + 1) as $tail |
-        ({type:"context",hook:"compact",script:"shellfish",content:$summary}) as $context |
-        ([$records[0:$head][], $context, $records[$tail:][]] |
-          .[0].created = $created) as $compacted |
+        ([to_entries[] | select(.value.type == "message") | .key] | first) as $start |
+        select($start != null) |
+        ([(.[0:$start] | .[0].created = $created)[],
+          {type:"context",hook:"compact",script:"shellfish",content:$summary}]) as $compacted |
         select($compacted[0] | canonical_session_header(1)) |
         select($compacted[1:] | canonical_session_records) |
-        select($compacted[-1].type == "message" and
-          $compacted[-1].role == "assistant" and $compacted[-1].stop != "tool_calls") |
         $compacted[]
       ' >"$temp"; then
         error='cannot prepare compacted session records'
