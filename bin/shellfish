@@ -35,13 +35,13 @@ sf_read_prompt() {
 
 sf_main() {
   local requested_session='' requested_config='' requested_profile=''
-  local requested_backend='' requested_model='' requested_request='{}'
+  local requested_backend='' requested_model='' requested_request='{}' requested_tools='[]'
   local command='' input='' draft='' new_source=''
   local sandbox_detected='{"sandbox_read_paths":[],"sandbox_write_paths":[]}'
   local sandbox_flag sandbox_path resolved_path
   local -a positional=() sandbox_read_paths=() sandbox_write_paths=()
   local -a original_args=("$@")
-  integer session_explicit=0 config_explicit=0 request_explicit=0 runtime_override=0
+  integer session_explicit=0 config_explicit=0 request_explicit=0 tools_explicit=0 runtime_override=0
   integer continue_requested=0 resume_requested=0 clear_requested=0 new_requested=0 resume_status=0
   integer chat_handoff=0 draft_explicit=0 init_requested=0 jsonl_requested=0 sandbox_auto_requested=0
   integer verbose_requested=0 no_save_requested=0 no_hooks_requested=0
@@ -55,6 +55,10 @@ sf_main() {
       ;;
     exec)
       command=exec
+      shift
+      ;;
+    build-request|run-request)
+      command=$1
       shift
       ;;
     -h|--help)
@@ -223,6 +227,22 @@ sf_main() {
         runtime_override=1
         shift 2
         ;;
+      --tools)
+        (( $# >= 2 )) || {
+          sf_die '--tools requires a JSON array'
+          return 2
+        }
+        (( ! tools_explicit )) || {
+          sf_die '--tools may only be specified once'
+          return 2
+        }
+        requested_tools=$(jq -ce 'select(type == "array")' <<<"$2" 2>/dev/null) || {
+          sf_die '--tools requires a JSON array'
+          return 2
+        }
+        tools_explicit=1
+        shift 2
+        ;;
       --sandbox-read|--sandbox-write)
         sandbox_flag=$1
         (( $# >= 2 )) || {
@@ -276,6 +296,10 @@ sf_main() {
   if (( continue_requested && resume_requested )); then
     sf_usage >&2
     sf_die '--continue and --resume are mutually exclusive'
+    return 2
+  fi
+  if [[ $command != build-request ]] && (( tools_explicit )); then
+    sf_die '--tools requires shellfish build-request'
     return 2
   fi
   if (( (continue_requested || resume_requested) && session_explicit )); then
@@ -379,6 +403,97 @@ sf_main() {
     typeset -gx SHELLFISH_VERBOSE=$verbose_requested
   fi
   (( sandbox_auto_requested && ! init_requested )) && runtime_override=1
+
+  if [[ $command == (build-request|run-request) ]]; then
+    local supported='--session'
+    [[ $command != build-request ]] || supported+=' and --tools'
+    (( session_explicit )) || {
+      sf_die "$command requires --session"
+      return 2
+    }
+    if (( ${#positional} || config_explicit || runtime_override || continue_requested ||
+      resume_requested || clear_requested || draft_explicit || new_requested || verbose_requested ||
+      init_requested || jsonl_requested || no_save_requested || no_hooks_requested )); then
+      sf_die "$command only supports $supported"
+      return 2
+    fi
+    sf_session_select_path "$requested_session" || {
+      sf_die "$SF_SESSION_ERROR"
+      return 1
+    }
+    local selected=$REPLY record runtime backend_command api_key api_key_source
+    [[ -f $selected && ! -L $selected && -r $selected ]] || {
+      sf_die "invalid session path: $selected"
+      return 1
+    }
+    source "$SF_ROOT/lib/request.zsh"
+    if [[ $command == build-request ]]; then
+      SF_SESSION_PATH=$selected
+      sf_session_load || {
+        sf_die "$SF_SESSION_ERROR"
+        return 1
+      }
+      while IFS= read -r record; do
+        [[ -n $record ]] || {
+          sf_die 'build-request requires nonempty JSONL records'
+          return 2
+        }
+        SF_SESSION_RECORDS+=( "$record" )
+      done
+      sf_session_project || {
+        sf_die 'build-request received invalid session records'
+        return 2
+      }
+      printf '%s\n' "${SF_SESSION_RECORDS[@]}" |
+        sf_request_build "$SF_SESSION[runtime]" "$requested_tools" || {
+          sf_die 'cannot build backend request'
+          return 1
+        }
+      return
+    fi
+    sf_session_read_runtime "$selected" || {
+      sf_die "$SF_SESSION_ERROR"
+      return 1
+    }
+    runtime=$REPLY
+    input=$(cat)
+    [[ -n $input ]] || {
+      sf_die 'run-request requires a canonical backend request on stdin'
+      return 2
+    }
+    input=$(jq -L "$SF_ROOT/lib" -ce --argjson runtime "$runtime" '
+      include "runtime/schema";
+      select(canonical_request) |
+      select(.options == {request:$runtime.profile.request}) |
+      select(.transport == ($runtime.backend |
+        {endpoint,insecure_tls,http_timeout,http_stall}))
+    ' <<<"$input" 2>/dev/null) || {
+      sf_die 'run-request requires a canonical request for the selected session'
+      return 2
+    }
+    backend_command=$(jq -er '.backend.command' <<<"$runtime") || {
+      sf_die 'cannot inspect frozen runtime'
+      return 1
+    }
+    sf_runtime_resolve_api_key "$runtime" || {
+      sf_die "$SF_RUNTIME_ERROR"
+      return 1
+    }
+    api_key=$REPLY
+    api_key_source=$reply[1]
+    trap 'sf_process_stop "$SF_REQUEST[pid]"; [[ -z $SF_REQUEST[error_file] ]] || rm -f -- "$SF_REQUEST[error_file]"; exit 130' INT
+    trap 'sf_process_stop "$SF_REQUEST[pid]"; [[ -z $SF_REQUEST[error_file] ]] || rm -f -- "$SF_REQUEST[error_file]"; exit 129' HUP
+    trap 'sf_process_stop "$SF_REQUEST[pid]"; [[ -z $SF_REQUEST[error_file] ]] || rm -f -- "$SF_REQUEST[error_file]"; exit 143' TERM
+    sf_request_run "$input" "$backend_command" "$api_key" "$api_key_source" || {
+      local request_error=$SF_REQUEST[error]
+      trap - INT HUP TERM
+      sf_die "$request_error"
+      return 1
+    }
+    trap - INT HUP TERM
+    print -r -- "$SF_REQUEST[assistant]"
+    return
+  fi
 
   if [[ $command == config ]]; then
     (( ! ${#positional} )) || {

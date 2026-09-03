@@ -6,6 +6,8 @@ Usage:
   shellfish [OPTIONS] [PROMPT]       Start interactive chat
   shellfish exec [OPTIONS] [PROMPT]  Run exactly one agent turn
   shellfish config [OPTIONS]         Print resolved configuration as JSON
+  shellfish build-request [OPTIONS]  Project session records into a backend request
+  shellfish run-request [OPTIONS]    Run one canonical backend request
 
 Global flags:
   -p, --profile NAME    Select a configured profile
@@ -32,6 +34,9 @@ Exec flags:
   --jsonl               Exchange ordered JSONL records on stdin and stdout
   --no-save             Run one turn without writing the selected session
   --no-hooks            Skip this turn's hooks
+
+Request flags:
+  --tools JSON          Set backend request tools for build-request
 
 Backend credentials:
   anthropic         ANTHROPIC_API_KEY

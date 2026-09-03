@@ -127,6 +127,64 @@ jq -e -s --slurpfile source "$new_session" '
   (.[0] | del(.created)) == ($source[0] | del(.created))
 ' "$reused_session" >/dev/null || fail 'new exec did not reuse only source settings'
 
+# Read-only request commands compose one provider call without claiming or
+# mutating the durable turn.
+typeset request_record request_response request_digest
+print -r -- '{}' | zsh -f "$entry" build-request --session "$tmp/missing.jsonl" \
+  >/dev/null 2>&1 && fail 'build-request accepted a missing session'
+print -r -- '{}' | zsh -f "$entry" run-request --session "$tmp/missing.jsonl" \
+  >/dev/null 2>&1 && fail 'run-request accepted a missing session'
+zsh -f "$entry" build-request --session "$new_session" --tools '{}' \
+  >/dev/null 2>&1 && fail 'build-request accepted invalid tools'
+request_record=$(jq -cn --arg text 'composed request' \
+  '{type:"message",role:"user",content:[{type:"text",text:$text}]}')
+request_digest=$(shasum <"$new_session")
+zmodload zsh/system
+integer request_lock
+: >"${new_session}.lock"
+zsystem flock -f request_lock "${new_session}.lock" || fail 'cannot hold request test lock'
+request=$(print -r -- "$request_record" |
+  zsh -f "$entry" build-request --session "$new_session" --tools '[]') ||
+  fail 'build-request failed while the source was locked'
+jq -e '
+  .tools == [] and .messages[-1] == {
+    role:"user",content:[{type:"text",text:"composed request"}]
+  }
+' <<<"$request" >/dev/null || fail 'build-request produced the wrong request'
+request_response=$(print -r -- "$request" |
+  SF_TEST_BACKEND_DELAY=0 zsh -f "$entry" run-request --session "$new_session") ||
+  fail 'run-request failed while the source was locked'
+jq -e '
+  .type == "message" and .role == "assistant" and .stop == "end" and
+  .content == [{type:"text",text:"composed request\n"}]
+' <<<"$request_response" >/dev/null || fail 'run-request produced the wrong response'
+zsystem flock -u "$request_lock" || fail 'cannot release request test lock'
+assert_equal "$request_digest" "$(shasum <"$new_session")"
+
+print -r -- '{"type":"message","role":"assistant","stop":"end","content":[]}' |
+  zsh -f "$entry" build-request --session "$new_session" >/dev/null 2>&1 &&
+  fail 'build-request accepted an invalid record transition'
+print -r -- '{}' | zsh -f "$entry" run-request --session "$new_session" \
+  >/dev/null 2>&1 && fail 'run-request accepted an invalid request'
+jq '.transport.endpoint = "https://elsewhere.invalid"' <<<"$request" |
+  zsh -f "$entry" run-request --session "$new_session" >/dev/null 2>&1 &&
+  fail 'run-request accepted transport from outside the frozen runtime'
+typeset separator_request separator_response
+separator_request=$(jq --arg text $'record separator: \x1e' \
+  '.messages[-1].content[0].text = $text' <<<"$request")
+separator_response=$(print -r -- "$separator_request" |
+  SF_TEST_BACKEND_DELAY=0 zsh -f "$entry" run-request --session "$new_session") ||
+  fail 'run-request rejected valid assistant text'
+jq -e --arg text $'record separator: \x1e\n' '.content[0].text == $text' \
+  <<<"$separator_response" >/dev/null || fail 'run-request changed assistant text'
+typeset failing_request
+failing_request=$(jq '.messages[-1].content[0].text = "error"' <<<"$request")
+print -r -- "$failing_request" |
+  SF_TEST_BACKEND_DELAY=0 zsh -f "$entry" run-request --session "$new_session" \
+    >/dev/null 2>"$tmp/run-request-error" && fail 'run-request accepted backend failure'
+[[ $(<"$tmp/run-request-error") == *'test backend failure'* ]] ||
+  fail 'run-request hid the backend error'
+
 # JSONL exposes the canonical exec stream through EOF and process status.
 typeset jsonl stream_session="$tmp/stream.jsonl"
 jsonl=$(print -r -- \
