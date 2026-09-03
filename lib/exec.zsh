@@ -236,86 +236,6 @@ sf_exec_backend() {
   SF_EXEC[backend_error_file]=''
 }
 
-sf_exec_compact() {
-  local tools=$1 command=$2 needed request assistant summary target error
-  local instruction=$'Create a concise continuation summary of this conversation. Preserve key decisions, requirements, completed work, unresolved work, and technical details needed to continue. Return only the summary. Do not address the user or take actions.'
-  SF_EXEC[compact_error]=''
-  SF_EXEC[compact_characters]=''
-  REPLY=''
-  reply=()
-  needed=$(printf '%s\n' "${SF_SESSION_RECORDS[@]}" |
-    jq -sr --argjson runtime "$SF_SESSION[runtime]" '
-      ($runtime.profile.context_window // null) as $window |
-      [.[] | select(.type == "message" and .role == "assistant")] as $assistants |
-      ($assistants | map(select(.usage != null)) | last) as $measured |
-      if $window == null or $measured == null or
-          $assistants[-1].stop == "tool_calls"
-      then false
-      else (($measured.usage.input_tokens + $measured.usage.output_tokens) / $window) >= 0.8
-      end
-    ' 2>/dev/null) || {
-    reply=( 'cannot inspect session for compaction' )
-    return 0
-  }
-  [[ $needed == true ]] || return 0
-  sf_exec_emit '{"type":"_compaction_start"}'
-  request=$(sf_exec_request "$tools") || {
-    reply=( 'cannot prepare compaction request' )
-    return 0
-  }
-  request=$(jq -c --arg text "$instruction" '
-    .messages += [{role:"user",content:[{type:"text",text:$text}]}]
-  ' <<<"$request") || {
-    reply=( 'cannot prepare compaction request' )
-    return 0
-  }
-  if ! sf_runtime_resolve_api_key "$SF_SESSION[runtime]"; then
-    reply=( "$SF_RUNTIME_ERROR" )
-    return 0
-  fi
-  SF_API_KEY=$REPLY
-  SF_API_KEY_SOURCE=$reply[1]
-  if ! sf_exec_backend "$request" "$command" 0; then
-    error=${SF_EXEC[backend_error]}
-    SF_EXEC[partial_events]=''
-    reply=( "${error:-compaction response failed}" )
-    return 0
-  fi
-  assistant=$SF_EXEC[assistant]
-  summary=$(jq -jre '
-    select(.stop == "end") |
-    ([.content[] | select(.type == "text") | .text] | join("")) as $summary |
-    select($summary | test("\\S")) |
-    $summary, "\u001e"
-  ' <<<"$assistant" 2>/dev/null) || {
-    reply=( 'compaction response did not contain a complete summary' )
-    return 0
-  }
-  summary=${summary%$'\x1e'}
-  if ! sf_session_compact "$summary"; then
-    reply=( "$SF_SESSION_ERROR" )
-    return 0
-  fi
-  target=$REPLY
-  sf_session_close || {
-    SF_EXEC[compact_error]=$SF_SESSION_ERROR
-    return 1
-  }
-  sf_session_open "$target" || {
-    SF_EXEC[compact_error]=$SF_SESSION_ERROR
-    return 1
-  }
-  SHELLFISH_SESSION_STATE=''
-  sf_hooks_session_state_create || {
-    SF_EXEC[compact_error]=$SF_HOOK_ERROR
-    return 1
-  }
-  # The stored summary's size. Reported usage would also count reasoning the
-  # summary does not keep.
-  SF_EXEC[compact_characters]=${#summary}
-  REPLY=$target
-}
-
 sf_exec_partial_assistant() {
   REPLY=''
   [[ -n $SF_EXEC[partial_events] ]] || return 0
@@ -505,23 +425,6 @@ sf_exec_turn() {
       return 1
     fi
     tool_schema=$REPLY
-    # Compaction publishes a sibling session and moves the lock to it, which an
-    # ephemeral turn cannot do.
-    if (( ! ephemeral )); then
-      if ! sf_exec_compact "$tool_schema" "$backend_command"; then
-        failure=${SF_EXEC[compact_error]:-cannot switch to compacted session}
-        return 1
-      fi
-      if [[ -n $REPLY ]]; then
-        session_path=$REPLY
-        sf_exec_emit "$(jq -cn --arg session "$session_path" \
-          --argjson characters "$SF_EXEC[compact_characters]" \
-          '{type:"_session_compaction",session:$session,characters:$characters}')"
-      elif (( ${#reply} )); then
-        sf_exec_emit "$(jq -cn --arg message "$reply[1]" \
-          '{type:"_compaction_error",message:$message}')"
-      fi
-    fi
     for context in "${prompt_contexts[@]}"; do
       if ! sf_session_append "$context"; then
         failure=$SF_SESSION_ERROR

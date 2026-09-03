@@ -204,9 +204,10 @@ SF_TEST_RUNTIME=$(jq -c \
   --arg user_shell "$ROOT/default/hooks/user_prompt_submit/user_shell" \
   --arg server "$ROOT/default/hooks/user_prompt_submit/server" \
   --arg resume "$ROOT/default/hooks/user_prompt_submit/resume" \
+  --arg compact "$ROOT/default/hooks/user_prompt_submit/compact" \
   --arg after_help "$after_help" \
   '.harness.sandbox=true |
-   .harness.user_prompt_submit=[$new,$refresh,$verbose,$copy,$fork,$sandbox,$user_shell,$server,$resume,$help,$after_help]' \
+   .harness.user_prompt_submit=[$new,$refresh,$verbose,$copy,$fork,$sandbox,$user_shell,$server,$resume,$compact,$help,$after_help]' \
   <<<"$SF_TEST_RUNTIME")
 sf_test_session "$help_session"
 sf_session_open "$help_session"
@@ -224,7 +225,8 @@ done
 (( ${#help_display} > 20 ))
 # Every command key appears in the formatted output.
 for key in '↑, ↓' '/queue drop <N>' '/queue clear' '/new' '/refresh, /r' '/verbose, /v' \
-    '/copy [N]' '/fork [N]' '/sandbox [OP DIR]' '!COMMAND' '/server' '/resume' '/quit, /q'; do
+    '/copy [N]' '/fork [N]' '/sandbox [OP DIR]' '!COMMAND' '/server' '/resume' '/compact' \
+    '/quit, /q'; do
   [[ $help_display == *"$key"* ]]
 done
 # Rows remain sorted by their configured order through /quit.
@@ -430,3 +432,98 @@ jq -e --arg prompt "$shell_command" '
 sf_hooks_turn_state_cleanup
 unset SHELLFISH_MODE SHELLFISH_VERBOSE
 assert_no_hook_captures
+
+# Compaction is script policy. As a hook it recognizes /compact and detects a
+# session at 80% of its frozen context window; as a handoff target it summarizes
+# the source with a throwaway turn and publishes a child.
+typeset compact_hook="$ROOT/default/hooks/user_prompt_submit/compact"
+typeset compact_source="$tmp/compact-source.jsonl"
+typeset compact_control="$tmp/compact-control.json"
+typeset compact_shellfish="$tmp/compact-shellfish"
+typeset compact_open="$tmp/compact-open.log"
+integer compact_status=0
+
+sf_test_runtime
+SF_TEST_RUNTIME=$(jq -c '.profile.context_window = 100' <<<"$SF_TEST_RUNTIME")
+sf_test_session "$compact_source"
+sf_session_open "$compact_source"
+sf_session_append '{"type":"message","role":"user","content":[{"type":"text","text":"Hello"}]}'
+sf_session_append '{"type":"message","role":"assistant","stop":"end","content":[{"type":"text","text":"Hi"}],"usage":{"input_tokens":1,"output_tokens":1}}'
+sf_session_close
+
+# Below the threshold an ordinary prompt is left alone.
+: >"$compact_control"
+SHELLFISH_EXECUTABLE="$ROOT/bin/shellfish" SHELLFISH_SESSION="$compact_source" \
+  SHELLFISH_TURN_STATE="$tmp" zsh -f "$compact_hook" user_prompt_submit \
+  3>"$compact_control" < <(print -n -- 'ordinary prompt') || compact_status=$?
+(( compact_status == 0 )) || fail 'a session below the threshold was compacted'
+[[ ! -s $compact_control ]] || fail 'a session below the threshold requested a handoff'
+
+# At or above it, the submitted prompt is carried back as a draft.
+jq -c 'if .role == "assistant" then .usage = {input_tokens:75,output_tokens:5} else . end' \
+  "$compact_source" >"$tmp/compact-above.jsonl"
+mv "$tmp/compact-above.jsonl" "$compact_source"
+SHELLFISH_EXECUTABLE="$ROOT/bin/shellfish" SHELLFISH_SESSION="$compact_source" \
+  SHELLFISH_TURN_STATE="$tmp" zsh -f "$compact_hook" user_prompt_submit \
+  3>"$compact_control" < <(print -n -- 'my next prompt') || compact_status=$?
+(( compact_status == 11 ))
+jq -e --arg script "$compact_hook" --arg command "$ROOT/bin/shellfish" \
+  --arg source "$compact_source" '
+  . == {action:"handoff",argv:[$script,$command,$source,"my next prompt"]}
+' "$compact_control" >/dev/null || fail 'automatic compaction lost the prompt'
+
+# /compact hands off the same way but opens the child without a draft.
+compact_status=0
+SHELLFISH_EXECUTABLE="$ROOT/bin/shellfish" SHELLFISH_SESSION="$compact_source" \
+  SHELLFISH_TURN_STATE="$tmp" zsh -f "$compact_hook" user_prompt_submit \
+  3>"$compact_control" < <(print -n -- /compact) || compact_status=$?
+(( compact_status == 11 ))
+jq -e '.argv[-1] == ""' "$compact_control" >/dev/null || fail '/compact requested a draft'
+
+# The handoff target summarizes through exec, then opens the published child.
+cat >"$compact_shellfish" <<ZSH
+#!/usr/bin/env zsh
+[[ \$1 != exec ]] || exec "$ROOT/bin/shellfish" "\$@"
+print -r -- "\$*" >>"$compact_open"
+ZSH
+chmod +x "$compact_shellfish"
+typeset compact_before=$(shasum <"$compact_source")
+SF_TEST_BACKEND_DELAY=0 XDG_STATE_HOME="$tmp/state" \
+  zsh -f "$compact_hook" "$compact_shellfish" "$compact_source" 'my next prompt' </dev/null
+assert_equal "--session $tmp/compact-source_compact.jsonl --draft my next prompt" \
+  "$(<"$compact_open")"
+assert_equal "$compact_before" "$(shasum <"$compact_source")"
+jq -L "$ROOT/lib" -e -s '
+  include "runtime/schema";
+  (.[0] | canonical_session_header(1)) and (.[1:] | canonical_session_records) and
+  [.[].type] == ["session","context"] and
+  .[1].hook == "compact" and .[1].script == "compact" and
+  (.[1].content | length) > 0
+' "$tmp/compact-source_compact.jsonl" >/dev/null || fail 'the compacted child is not canonical'
+
+# A second compaction of the same source takes a numbered sibling.
+: >"$compact_open"
+SF_TEST_BACKEND_DELAY=0 XDG_STATE_HOME="$tmp/state" \
+  zsh -f "$compact_hook" "$compact_shellfish" "$compact_source" '' </dev/null
+assert_equal "--session $tmp/compact-source_compact_1.jsonl" "$(<"$compact_open")"
+
+# A failed summary reopens the source and keeps the intercepted prompt.
+cat >"$compact_shellfish" <<ZSH
+#!/usr/bin/env zsh
+[[ \$1 != exec ]] || exit 1
+print -r -- "\$*" >>"$compact_open"
+ZSH
+: >"$compact_open"
+SF_TEST_BACKEND_DELAY=0 zsh -f "$compact_hook" "$compact_shellfish" \
+  "$compact_source" 'my next prompt' </dev/null 2>/dev/null
+assert_equal "--session $compact_source --draft my next prompt" "$(<"$compact_open")"
+typeset -a compact_temps=( "$tmp"/.compact-source.jsonl.compact.*(N) )
+(( ${#compact_temps} == 0 )) || fail 'a failed compaction left a temporary file'
+
+# A session with no messages reports rather than compacting.
+compact_status=0
+SHELLFISH_EXECUTABLE="$ROOT/bin/shellfish" \
+  SHELLFISH_SESSION="$tmp/compact-source_compact.jsonl" SHELLFISH_TURN_STATE="$tmp" \
+  zsh -f "$compact_hook" user_prompt_submit 3>"$compact_control" \
+  < <(print -n -- /compact) 2>/dev/null || compact_status=$?
+(( compact_status == 10 )) || fail '/compact accepted a session without messages'
