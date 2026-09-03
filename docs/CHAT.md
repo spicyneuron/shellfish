@@ -15,6 +15,8 @@ Interactive chat is the default Shellfish mode. Run `shellfish` from your projec
 
 Each session stores its resolved backend, harness, model, and sandbox settings. A fresh `shellfish` launch uses current configuration. `/new` starts a new session with the active session's settings. Themes and TUI preview settings come from current configuration, so they affect how existing sessions are displayed.
 
+When automatic compaction creates a child session, chat displays a notice and uses that child for future turns and recovery. The source session remains unchanged and can still be reopened explicitly.
+
 ## Slash commands
 
 Most slash commands are scripts on the default harness's `user_prompt_submit` hook. Run `/help` in chat to see the current list.

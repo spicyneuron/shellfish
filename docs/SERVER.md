@@ -76,6 +76,8 @@ Frames are SSE `data:` lines containing one JSON object each, plus `: keepalive`
 
 Types beginning with an underscore are transient exec events. Other exec objects are durable session records. The server-owned `state` frame is the one exception. Text and reasoning deltas share a zero-based `seq` that restarts for each provider response. The bundled browser ignores those deltas and renders the later durable assistant record.
 
+When exec emits `_session_compaction`, the server validates and adopts the reported compacted child. Later records, turns, and reconnect replays use the child; the original session remains available at its existing path. `_compaction_error` is nonfatal and leaves the server attached to the source session.
+
 ## Actions
 
 Every action requires bearer authentication.

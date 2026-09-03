@@ -43,6 +43,12 @@ Stdin remains open for permission replies. When exec emits a permission request,
 
 `decision` is `approve` or `deny`, and `id` must match the pending request. A client must preserve line framing and send no unrelated input. If no interactive client or `permission_request` script decides a sandbox bypass, exec denies it.
 
+## Automatic compaction
+
+After `user_prompt_submit` handling confirms an ordinary model turn, exec checks the latest completed assistant response when the session contains at least three user turns. If that response's input and output tokens total at least 80% of the frozen `context_window`, exec asks the same backend to summarize the existing provider request. The summarization request preserves the request prefix and appends only a user instruction, allowing providers to reuse the cached prefix.
+
+Exec creates a sibling child named with a `_compact` suffix, retaining the initial session prefix, first complete turn, summary context, and most recent complete turn. It leaves the source unchanged, switches to the child, and appends the current prompt and its hook context there. An unavailable `context_window` disables compaction.
+
 ## Output
 
 Stdout contains one compact JSON object per line in source order. Objects fall into two classes:
@@ -71,6 +77,8 @@ Transient events currently include:
 | `_tool_permission_request` | A sandbox bypass needs a client decision. |
 | `_handoff` | A hook script asks a capable client to run `argv` after exec exits cleanly. |
 | `_session_update` | A hook-requested update or model-context discovery changed the session; `runtime` is the resulting resolved runtime. |
+| `_session_compaction` | Exec created and adopted the compacted child at absolute path `session`. |
+| `_compaction_error` | Compaction preparation or summary generation failed and exec is continuing with the source session. |
 | `_exec_error` | Exec cannot start or complete the operation. |
 
 Text and reasoning deltas carry a zero-based content `index` and a zero-based `seq`. The index identifies the block's position in the later assistant content. The sequence is shared by both delta types and restarted for each provider response, so it orders visible events independently of block identity. Deltas are previews only. Consumers should render committed assistant and reasoning content from the later durable assistant record. Clients should treat unknown transient types as unsupported protocol input and recover from the durable session rather than guessing their meaning.
@@ -89,6 +97,8 @@ A permission request has this shape:
 ## Completion and recovery
 
 A successful process exit means the single-turn operation completed cleanly. This includes a `user_prompt_submit` script that deliberately blocks submission or requests a handoff. Tool commands may return nonzero results without making exec itself fail.
+
+Compaction preparation and summary failures are fail-open: exec emits `_compaction_error` and submits the prompt to the source session. A failure after the child has been created, when exec must switch authoritative session state, is an exec failure instead.
 
 A nonzero exec exit means the operation failed or was interrupted. Exec emits `_exec_error` when JSONL output is available. After malformed output, disconnection, cancellation, or process failure, discard uncertain live state and replay the durable session.
 
