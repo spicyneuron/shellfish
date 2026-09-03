@@ -151,7 +151,7 @@ sf_exec_request() {
 }
 
 sf_exec_backend() {
-  local request=$1 command=$2 emit=${3:-1} error_file adapter_pid adapter_status event decoded kind=''
+  local request=$1 command=$2 error_file adapter_pid adapter_status event decoded kind=''
   local -a events
   # Text and reasoning deltas share one zero-based sequence per provider
   # response, so a client can tell a response start from a mid-response join.
@@ -170,7 +170,7 @@ sf_exec_backend() {
     "$command" <<<"$request" 2>"$error_file"
   adapter_pid=$!
   SF_EXEC[backend_pid]=$adapter_pid
-  (( ! emit )) || sf_exec_emit '{"type":"_backend_request_start"}'
+  sf_exec_emit '{"type":"_backend_request_start"}'
   while IFS= read -r event <&p; do
     decoded=$(jq -L "$SF_ROOT/lib" -cr --argjson seq "$delta_seq" '
       include "runtime/schema";
@@ -190,13 +190,13 @@ sf_exec_backend() {
         [[ -z $SF_EXEC[partial_events] ]] || SF_EXEC[partial_events]+=$'\n'
         SF_EXEC[partial_events]+=$event
         if [[ $kind == delta ]]; then
-          (( ! emit )) || sf_exec_emit "${decoded#*$'\n'}"
+          sf_exec_emit "${decoded#*$'\n'}"
           (( ++delta_seq ))
         fi
         ;;
       usage)
         events+=( "$event" )
-        (( ! emit )) || sf_exec_emit "$event"
+        sf_exec_emit "$event"
         ;;
       internal) events+=( "$event" ) ;;
       end)
@@ -299,7 +299,7 @@ sf_exec_turn() {
   integer ephemeral=${4:-0}
   local request assistant stop_input call result backend_command opened_records
   local tool_name call_id tool_input decision denial_reason hook_action hook_reason
-  local runtime_projection user_projection response_projection response_meta
+  local runtime_projection user_projection response_projection
   local tools tool_schema max_capture fence config_file config_dir
   local sandbox_read_paths sandbox_write_paths
   local context_output context_line context_window context_window_command update_event adapter_pid
@@ -510,32 +510,23 @@ sf_exec_turn() {
       fi
       sf_exec_emit "$assistant"
       response_projection=$(jq -jr '
-        .stop,
+        def field: ., "\u0000";
+        (.stop | field),
         (.content[] | select(.type == "tool_call") |
-          ("\n", tojson, "\n", .id, "\n", .name, "\n", (.input | tojson))),
-        "\u001e",
-        ([.content[] | select(.type == "text") | .text] | join("")),
-        "\u001e"
+          (tojson | field), (.id | field), (.name | field), (.input | tojson | field)),
+        ([.content[] | select(.type == "text") | .text] | join("") | field),
+        ("ok" | field)
       ' <<<"$assistant") || {
         failure='cannot inspect provider response'
         return 1
       }
-      [[ $response_projection == *$'\x1e'* ]] || {
+      response_fields=( "${(@0)${response_projection%$'\0'}}" )
+      (( ${#response_fields} >= 3 && (${#response_fields} - 3) % 4 == 0 )) &&
+          [[ $response_fields[-1] == ok ]] || {
         failure='cannot inspect provider response'
         return 1
       }
-      response_meta=${response_projection%%$'\x1e'*}
-      stop_input=${response_projection#*$'\x1e'}
-      [[ $stop_input == *$'\x1e' ]] || {
-        failure='cannot inspect provider response'
-        return 1
-      }
-      stop_input=${stop_input%$'\x1e'}
-      response_fields=( "${(@f)response_meta}" )
-      (( ${#response_fields} >= 1 && (${#response_fields} - 1) % 4 == 0 )) || {
-        failure='cannot inspect provider response'
-        return 1
-      }
+      stop_input=$response_fields[-2]
       if [[ $response_fields[1] != tool_calls ]]; then
         (( stop_count += 1 ))
         if ! sf_hooks_stop "$session_path" "$stop_input" "$stop_count"; then
@@ -552,7 +543,7 @@ sf_exec_turn() {
         continue
       fi
       call_count=0
-      tool_calls=( "${(@)response_fields[2,-1]}" )
+      tool_calls=( "${(@)response_fields[2,-3]}" )
       for (( tool_index = 1; tool_index <= ${#tool_calls}; tool_index += 4 )); do
         (( call_count += 1 ))
         call=$tool_calls[tool_index]

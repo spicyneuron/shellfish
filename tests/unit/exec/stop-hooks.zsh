@@ -77,12 +77,12 @@ jq -e -s '
 sf_hooks_turn_state_cleanup
 
 # Stop stdin concatenates only the last assistant's text blocks and preserves
-# trailing newlines. The attempt count starts at one.
+# control characters and trailing newlines. The attempt count starts at one.
 typeset text_backend="$tmp/text-backend"
 cat >"$text_backend" <<'ZSH'
 #!/usr/bin/env zsh
 cat >/dev/null
-print -r -- '{"type":"_assistant_delta","index":0,"text":"first\n"}'
+print -r -- '{"type":"_assistant_delta","index":0,"text":"first\u001e\n"}'
 print -r -- '{"type":"_assistant_reasoning_delta","index":1,"text":"omit"}'
 print -r -- '{"type":"_assistant_delta","index":2,"text":"second\n"}'
 print -r -- '{"type":"_assistant_response_end","stop":"end"}'
@@ -102,7 +102,7 @@ SF_TEST_RUNTIME=$(jq -c --arg hook "$text_stop" --arg backend "$text_backend" '
 typeset text_session="$tmp/stop-text.jsonl"
 sf_test_session "$text_session"
 sf_hooks_turn_state_create
-printf 'first\nsecond\n' >"$SHELLFISH_TURN_STATE/expected"
+printf 'first\x1e\nsecond\n' >"$SHELLFISH_TURN_STATE/expected"
 stream=$(sf_test_turn text "$text_session")
 print -r -- "$stream" | jq -eRn '
   [inputs | fromjson] as $events |
