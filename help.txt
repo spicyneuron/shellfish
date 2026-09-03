@@ -20,7 +20,6 @@ Global flags:
   --verbose             Lift every preview limit (not valid with exec)
   --config FILE         Use another configuration file
   --session PATH        Use the session at PATH
-  --session-update JSON Recursively merge resolved runtime into an existing session
   -c, --continue        Open the most recent session for the current directory
   -r, --resume          Pick a session for the current directory
   --new [SESSION]       Create new session, optionally with SESSION settings

@@ -49,6 +49,7 @@ assert_equal '/tmp/custom command,,arg' "${(j:,:)SF_PRESENT_HANDOFF}"
 typeset node_types="${(j:,:)SF_PRESENT_NODE_TYPE}"
 typeset updated_runtime
 updated_runtime=$(jq -c '
+  del(.type,.format_version,.cwd,.created) |
   .backend.name = "updated" | .profile.request.model = "new-model"
 ' "$ROOT/tests/fixtures/session/header-only.jsonl")
 sf_chat_decoded session_update "$updated_runtime"

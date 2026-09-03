@@ -36,13 +36,12 @@ sf_read_prompt() {
 sf_main() {
   local requested_session='' requested_config='' requested_profile=''
   local requested_backend='' requested_model='' requested_request='{}'
-  local command='' input='' draft='' new_source='' session_update=''
+  local command='' input='' draft='' new_source=''
   local sandbox_detected='{"sandbox_read_paths":[],"sandbox_write_paths":[]}'
   local sandbox_flag sandbox_path resolved_path
   local -a positional=() sandbox_read_paths=() sandbox_write_paths=()
   local -a original_args=("$@")
   integer session_explicit=0 config_explicit=0 request_explicit=0 runtime_override=0
-  integer session_update_explicit=0
   integer continue_requested=0 resume_requested=0 clear_requested=0 new_requested=0 resume_status=0
   integer chat_handoff=0 draft_explicit=0 init_requested=0 jsonl_requested=0 sandbox_auto_requested=0
   integer verbose_requested=0
@@ -91,22 +90,6 @@ sf_main() {
         }
         session_explicit=1
         requested_session=$2
-        shift 2
-        ;;
-      --session-update)
-        (( $# >= 2 )) || {
-          sf_die '--session-update requires a JSON object'
-          return 2
-        }
-        (( ! session_update_explicit )) || {
-          sf_die '--session-update may only be specified once'
-          return 2
-        }
-        session_update=$(jq -ce 'select(type == "object")' <<<"$2" 2>/dev/null) || {
-          sf_die '--session-update requires a JSON object'
-          return 2
-        }
-        session_update_explicit=1
         shift 2
         ;;
       -c|--continue)
@@ -291,24 +274,6 @@ sf_main() {
     sf_usage >&2
     sf_die '--continue and --resume cannot be combined with --session'
     return 2
-  fi
-  if (( session_update_explicit )); then
-    (( session_explicit )) || {
-      sf_die '--session-update requires --session'
-      return 2
-    }
-    [[ -z $command ]] || {
-      sf_die '--session-update requires interactive chat'
-      return 2
-    }
-    (( ! continue_requested && ! resume_requested && ! new_requested )) || {
-      sf_die '--session-update cannot be combined with --continue, --resume, or --new'
-      return 2
-    }
-    (( ! runtime_override && ! sandbox_auto_requested )) || {
-      sf_die '--session-update cannot be combined with runtime overrides'
-      return 2
-    }
   fi
   if [[ $command != exec ]] && (( jsonl_requested )); then
     sf_die '--jsonl requires shellfish exec'
@@ -521,27 +486,6 @@ sf_main() {
     exec -- "${resume_args[@]}"
     sf_die 'cannot resume selected session'
     return 1
-  fi
-
-  if (( session_update_explicit )); then
-    local update_error=''
-    sf_session_select_path "$requested_session" || {
-      sf_die "$SF_SESSION_ERROR"
-      return 1
-    }
-    requested_session=$REPLY
-    sf_session_open "$requested_session" || {
-      sf_die "$SF_SESSION_ERROR"
-      return 1
-    }
-    sf_session_update "$session_update" || update_error=$SF_SESSION_ERROR
-    if ! sf_session_close && [[ -z $update_error ]]; then
-      update_error=$SF_SESSION_ERROR
-    fi
-    [[ -z $update_error ]] || {
-      sf_die "$update_error"
-      return 1
-    }
   fi
 
   source "$SF_ROOT/lib/chat/main.zsh"

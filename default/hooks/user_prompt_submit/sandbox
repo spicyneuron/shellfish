@@ -109,8 +109,6 @@ else
   print -r -- "Session sandbox $access grant removed: $grant_path"
 fi
 
-typeset -a argv=( "$SHELLFISH_EXECUTABLE" )
-[[ ${SHELLFISH_VERBOSE-0} != 1 ]] || argv+=( --verbose )
-argv+=( --clear --session "$SHELLFISH_SESSION" --session-update "$patch" )
-jq -cn --args '$ARGS.positional | {action:"handoff",argv:.}' -- "${argv[@]}" >&3 || exit 1
+jq -cn --argjson patch "$patch" \
+  '{action:"session_update",patch:$patch}' >&3 || exit 1
 exit 11

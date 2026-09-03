@@ -87,7 +87,10 @@ def event_fields:
        all(.[]; type == "string" and (contains("\u0000") | not))) then
     ["handoff", (.argv | tojson)]
   elif .type == "_session_update" and
-      (.runtime | canonical_session_header(1)) then
+      (.runtime |
+        type == "object" and keys == ["backend", "harness", "profile"] and
+        (({type:"session",format_version:1,cwd:"/",created:"1970-01-01T00:00:00Z"} + .) |
+          canonical_session_header(1))) then
     ["session_update", (.runtime | tojson)]
   elif canonical_session_header(1) or
       (.type == "system" and canonical_session_record) then

@@ -36,7 +36,7 @@ while [[ ! -e ${SHELLFISH_SESSION:h}/permission-release ]]; do sleep 0.02; done
 """
 
 
-def test_sandbox_auto_runs_once_during_handoff():
+def test_sandbox_auto_runs_once():
     with tempfile.TemporaryDirectory() as detector_dir:
         count = Path(detector_dir) / "git-count"
         git = Path(detector_dir) / "git"
@@ -58,14 +58,16 @@ def test_sandbox_auto_runs_once_during_handoff():
             session.close()
 
 
-def test_sandbox_update_reloads_session():
+def test_sandbox_updates_without_reload():
     with tempfile.TemporaryDirectory() as grant:
         session = Session(hooks={"sandbox": None})
         try:
             path, _ = session.wait_session_records(1)
             mark = len(session.output)
             session.send(f"/sandbox +w {grant}\r".encode())
-            session.wait_after(mark, "Project:", timeout=5)
+            session.wait_after(mark, "Session sandbox write grant added", timeout=5)
+            session.wait_ready(mark, timeout=5)
+            assert "Project:" not in session.visible(mark)
             records = [json.loads(line) for line in path.read_text().splitlines()]
             grant_path = str(Path(grant).resolve())
             assert grant_path in records[0]["harness"]["sandbox_write_paths"]
@@ -546,8 +548,8 @@ def test_sigterm_leaves_terminal_state():
 
 
 def main():
-    test_sandbox_auto_runs_once_during_handoff()
-    test_sandbox_update_reloads_session()
+    test_sandbox_auto_runs_once()
+    test_sandbox_updates_without_reload()
     test_startup_records_precede_two_turns()
     test_tool_uses_manifest_display()
     test_activity_input_does_not_delay_interrupt()

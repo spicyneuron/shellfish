@@ -386,6 +386,23 @@ test("replays the durable session before live work", async () => {
   assert.equal(page.model.textContent, "test/test-model");
 });
 
+test("applies a session update without replaying the transcript", async () => {
+  const page = await idle();
+  await page.send(ASSISTANT);
+  const records = page.output.children.slice();
+  await page.send({
+    type: "_session_update",
+    runtime: {
+      backend: { name: "updated" },
+      profile: { request: { model: "new-model" } },
+      harness: { tools: [] },
+    },
+  });
+  assert.equal(page.model.textContent, "updated/new-model");
+  assert.deepEqual(page.output.children, records);
+  assert.equal(page.reloads, 0);
+});
+
 test("copies the latest or selected derived section locally", async () => {
   const page = await idle();
   await page.send(

@@ -9,7 +9,6 @@ Interactive chat is the default Shellfish mode. Run `shellfish` from your projec
 - `shellfish --continue` reopens the most recent session for this directory.
 - `shellfish --resume` opens a picker listing recent sessions for this directory.
 - `shellfish --session path/to/session.jsonl` opens a specific session directly.
-- `shellfish --session path/to/session.jsonl --session-update JSON` updates its resolved runtime before opening it.
 - `shellfish --draft "prompt"` prefills the editor without submitting the prompt.
 - `shellfish --clear` clears the terminal before the first render.
 - `shellfish --verbose` lifts all preview limits for the current chat, showing full reasoning, context, and tool output inline.
@@ -28,7 +27,7 @@ Most slash commands are scripts on the default harness's `user_prompt_submit` ho
 | `/fork [N]` | Fork at section `N`, resolving an agent section to the following user section and restoring that prompt as a draft. With no index, fork at the current end without a draft. |
 | `/refresh`, `/r` | Rerender the current session from scratch. Fixes layout corruption. |
 | `/verbose`, `/v` | Toggle full context, reasoning, and tool output display. |
-| `/sandbox [OP DIR]` | List grants, or update and reload with `read` or `write`. Prefix with `-` to remove; `+` is accepted when adding, and signed forms may abbreviate the operation to `r` or `w`. |
+| `/sandbox [OP DIR]` | List grants, or update them in place with `read` or `write`. Prefix with `-` to remove; `+` is accepted when adding, and signed forms may abbreviate the operation to `r` or `w`. |
 | `/server` | Hand the current session to `shellfish-server`. |
 | `!command` | Run a shell command and stage its output as context for the next turn. |
 | `/queue drop N` | Discard the Nth queued prompt. |

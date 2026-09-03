@@ -422,19 +422,22 @@ function highlight(parent, code, language) {
 
 // ------------------------------------------------------------------- the frames
 
+function applyRuntime(runtime) {
+  const name = safe(((runtime.profile || {}).request || {}).model);
+  const backend = safe((runtime.backend || {}).name);
+  model.textContent = backend ? backend + "/" + name : name;
+  toolDisplay.clear();
+  for (const tool of (runtime.harness || {}).tools || []) {
+    toolDisplay.set(tool.name, ((tool.manifest || {}).display || {}));
+  }
+}
+
 function apply(frame) {
   switch (frame.type) {
-    case "session": {
-      const name = safe(((frame.profile || {}).request || {}).model);
-      const backend = safe((frame.backend || {}).name);
-      model.textContent = backend ? backend + "/" + name : name;
+    case "session":
+      applyRuntime(frame);
       document.title = "shellfish " + safe(frame.cwd);
-      toolDisplay.clear();
-      for (const tool of (frame.harness || {}).tools || []) {
-        toolDisplay.set(tool.name, ((tool.manifest || {}).display || {}));
-      }
       return;
-    }
     case "system":
       section("system");
       return renderCollapsed("system", "system prompt", frame.content);
@@ -507,6 +510,8 @@ function apply(frame) {
     case "_handoff":
       // A hook asked to replace the process, which only a terminal can honour.
       return note("the turn requested a handoff, which a served session cannot run", "error");
+    case "_session_update":
+      return applyRuntime(frame.runtime);
     default:
       throw new Error("unexpected frame: " + frame.type);
   }

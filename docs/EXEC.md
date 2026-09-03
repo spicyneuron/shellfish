@@ -70,6 +70,7 @@ Transient events currently include:
 | `_hook_display` | Ephemeral hook script stderr for the user. |
 | `_tool_permission_request` | A sandbox bypass needs a client decision. |
 | `_handoff` | A hook script asks a capable client to run `argv` after exec exits cleanly. |
+| `_session_update` | A hook-requested session update completed; `runtime` is the resulting resolved runtime. |
 | `_exec_error` | Exec cannot start or complete the operation. |
 
 Text and reasoning deltas carry a zero-based content `index` and a zero-based `seq`. The index identifies the block's position in the later assistant content. The sequence is shared by both delta types and restarted for each provider response, so it orders visible events independently of block identity. Deltas are previews only. Consumers should render committed assistant and reasoning content from the later durable assistant record. Clients should treat unknown transient types as unsupported protocol input and recover from the durable session rather than guessing their meaning.
@@ -93,4 +94,4 @@ A nonzero exec exit means the operation failed or was interrupted. Exec emits `_
 
 If a provider fails or is cancelled after exec accepted visible text or reasoning, cleanup makes a best-effort append of that content as a canonical assistant message with `stop: "length"`. A failure before visible content uses the ordinary interruption record. This recovery cannot guarantee persistence after `SIGKILL` or process crash.
 
-Do not write presentation or lifecycle records into a session. Transcript records are append-only and owned by Shellfish. Custom clients submit turns through exec and use the transcript only for replay and recovery. The separate `--session-update` chat operation may atomically replace the runtime header under the session lock.
+Do not write presentation or lifecycle records into a session. Transcript records are append-only and owned by Shellfish. Custom clients submit turns through exec and use the transcript only for replay and recovery. A hook-requested session update may atomically replace the runtime header under the session lock.

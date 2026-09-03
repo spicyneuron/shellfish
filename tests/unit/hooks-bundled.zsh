@@ -284,8 +284,7 @@ run_prompt_hook /resume "$help_session"
 [[ $reply[1] == handoff && $reply[2] == "$ROOT/bin/shellfish" &&
    $reply[3] == --resume ]]
 
-# /sandbox lists grants without reloading and hands a minimal runtime patch to
-# the ordinary reload path for changes.
+# /sandbox lists grants or requests a minimal in-place runtime update.
 typeset sandbox_display='' sandbox_patch sandbox_dir="$tmp/output with spaces"
 mkdir "$sandbox_dir"
 set_prompt_hook "$help_session" "$ROOT/default/hooks/user_prompt_submit/sandbox"
@@ -297,14 +296,12 @@ done
 [[ $sandbox_display == *'Sandbox: enabled'* && $sandbox_display == *'Read grants:'* &&
    $sandbox_display == *'Write grants:'* ]]
 run_prompt_hook "/sandbox +w $sandbox_dir" "$help_session"
-[[ $reply[1] == handoff && $reply[2] == "$ROOT/bin/shellfish" &&
-   $reply[3] == --clear && $reply[4] == --session && $reply[5] == "${help_session:A}" &&
-   $reply[6] == --session-update ]]
+[[ $reply[1] == session_update ]]
 jq -se --arg content "Session sandbox write grant added: ${sandbox_dir:A}"$'\n' '
   [.[] | select(.type == "context" and .hook == "user_prompt_submit" and .script == "sandbox")]
     | .[-1].content == $content
 ' "$help_session" >/dev/null || fail 'sandbox add did not commit model context'
-sandbox_patch=$reply[7]
+sandbox_patch=$reply[2]
 jq -e --arg path "${sandbox_dir:A}" \
   '. == {harness:{sandbox_write_paths:[$path]}}' <<<"$sandbox_patch" >/dev/null ||
   fail "unexpected sandbox patch: $sandbox_patch"
@@ -314,12 +311,12 @@ sf_session_close
 run_prompt_hook "/sandbox write $sandbox_dir" "$help_session"
 [[ $reply[1] == handled ]]
 run_prompt_hook "/sandbox -w $sandbox_dir" "$help_session"
-[[ $reply[1] == handoff && $reply[6] == --session-update ]]
+[[ $reply[1] == session_update ]]
 jq -se --arg content "Session sandbox write grant removed: ${sandbox_dir:A}"$'\n' '
   [.[] | select(.type == "context" and .hook == "user_prompt_submit" and .script == "sandbox")]
     | .[-1].content == $content
 ' "$help_session" >/dev/null || fail 'sandbox removal did not commit model context'
-jq -e '. == {harness:{sandbox_write_paths:[]}}' <<<"$reply[7]" >/dev/null
+jq -e '. == {harness:{sandbox_write_paths:[]}}' <<<"$reply[2]" >/dev/null
 
 typeset disabled_session="$tmp/disabled-session.jsonl" enabled_runtime=$SF_TEST_RUNTIME
 SF_TEST_RUNTIME=$(jq -c '.harness.sandbox=false' <<<"$SF_TEST_RUNTIME")

@@ -56,25 +56,4 @@ error=$(zsh -f "$entry" --resume --sandbox-auto 2>&1) || exit_code=$?
 [[ $error == *'--sandbox-auto cannot be used with --resume'* && $exit_code == 2 ]] || \
   fail 'resume accepted automatic sandbox grants'
 
-exit_code=0
-error=$(zsh -f "$entry" --session-update '{}' 2>&1) || exit_code=$?
-[[ $error == *'--session-update requires --session'* && $exit_code == 2 ]] || \
-  fail 'session update did not require an explicit session'
-
-exit_code=0
-error=$(zsh -f "$entry" --session session.jsonl --session-update '[]' 2>&1) || exit_code=$?
-[[ $error == *'--session-update requires a JSON object'* && $exit_code == 2 ]] || \
-  fail 'session update accepted a JSON array'
-
-exit_code=0
-error=$(zsh -f "$entry" exec --session session.jsonl --session-update '{}' 2>&1) || exit_code=$?
-[[ $error == *'--session-update requires interactive chat'* && $exit_code == 2 ]] || \
-  fail 'exec accepted a session update'
-
-exit_code=0
-error=$(zsh -f "$entry" --session session.jsonl --session-update '{}' \
-  --model replacement 2>&1) || exit_code=$?
-[[ $error == *'--session-update cannot be combined with runtime overrides'* &&
-  $exit_code == 2 ]] || fail 'session update accepted a runtime override'
-
 print -r -- ok

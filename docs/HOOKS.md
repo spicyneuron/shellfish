@@ -185,7 +185,7 @@ Runs in exec before the ordinary user record is committed, with the exact submit
 
 - **stdout** becomes durable `user_prompt_submit` context, pending before the next committed user message.
 - **stderr** is shown and discarded.
-- **fd 3** accepts context metadata on any successful script status and an optional handoff action with exit 11.
+- **fd 3** accepts context metadata on any successful script status and an optional handoff or session-update action with exit 11.
 - **Default action** is submitting the literal prompt. Exit 10 or 11 does not submit it; stdout is still committed.
 
 For a blocked prompt, write model-visible context to stdout and a user-only explanation to stderr. There is no separate block-reason channel.
@@ -198,9 +198,9 @@ The supported statuses are:
   ```json
   {"context":{"prompt":"git status","status":0}}
   ```
-- **Exit 11** — skip submission and stop the remaining `user_prompt_submit` scripts. To hand control to a capable client, fd 3 may request `{"action":"handoff","argv":[...]}` with a complete, nonempty command array including the executable as `argv[0]`.
+- **Exit 11** — skip submission and stop the remaining `user_prompt_submit` scripts. On fd 3, the script may request either `{"action":"handoff","argv":[...]}` with a complete, nonempty command array including the executable as `argv[0]`, or `{"action":"session_update","patch":{...}}` to atomically update the current session runtime.
 
-Only exit 11 can request handoff. The script only requests it. A capable client executes the command after exec completes cleanly. argv strings must not contain NUL bytes.
+Only exit 11 can request these actions. Exec applies a session update under the current turn lock and emits the resulting runtime to the client after unlocking. The result must be a canonical session runtime. For a handoff, the script only requests it; a capable client executes the command after exec completes cleanly. argv strings must not contain NUL bytes.
 
 A script requesting a session switch writes a JSON action to fd 3:
 
@@ -306,7 +306,7 @@ exit 10
 
 ## Guarantees and limits
 
-- Session transcript records are append-only and authoritative. Hook scripts are trusted user-provided programs, and durable script output must travel through stdout rather than direct transcript mutation. Scripts may hand off to the locked `--session-update` operation but must not rewrite the header directly.
+- Session transcript records are append-only and authoritative. Hook scripts are trusted user-provided programs, and durable script output must travel through stdout rather than direct transcript mutation. Scripts may request a locked session update through fd 3 but must not rewrite the header directly.
 - Script output is untrusted. stdout is escaped before it reaches the model. It cannot forge tags or inject provider roles.
 - Dispatch is sequential and preserves configured order. A failed chain does not commit partial output. Candidate context is usable only after the whole chain succeeds.
 - Captures are private, bounded, and cleaned on every path.
