@@ -304,7 +304,7 @@ sf_exec_turn() {
   local sandbox_read_paths sandbox_write_paths
   local context_output context_line context_window context_window_command update_event adapter_pid
   local SHELLFISH_TURN_STATE='' SHELLFISH_SESSION_STATE='' SF_API_KEY='' SF_API_KEY_SOURCE=''
-  local -a runtime_fields user_fields response_fields tool_calls handoff prompt_contexts
+  local -a runtime_fields user_fields response_fields tool_calls handoff
   integer request_count=0 stop_count=0 call_count tool_index
   integer harness_sandbox tool_limit request_limit context_window_set
   integer permission_status
@@ -383,18 +383,28 @@ sf_exec_turn() {
       failure=$SF_HOOK_ERROR
       return 1
     fi
-    if ! sf_hooks_user_prompt_submit_locked "$prompt" "$session_path" 1; then
+    if ! sf_hooks_user_prompt_submit_locked "$prompt" "$session_path"; then
       failure=$SF_HOOK_ERROR
       return 1
     fi
     hook_action=$reply[1]
     handoff=( "${(@)reply[2,-1]}" )
-    prompt_contexts=( "${SF_HOOK_CONTEXT_RECORDS[@]}" )
     [[ $hook_action != session_update ]] || patch=$reply[2]
     sf_exec_hook_displays user_prompt_submit
-    if [[ $hook_action != proceed ]] && (( SF_HOOK_CONTEXT_COUNT )); then
-      sf_exec_emit "${(pj:\n:)SF_SESSION_RECORDS[-SF_HOOK_CONTEXT_COUNT,-1]}"
+    if [[ $hook_action == proceed ]]; then
+      if ! sf_tools_load "$tools" "$SF_SESSION[cwd]" "$harness_sandbox" "$fence"; then
+        failure=$SF_TOOL_ERROR
+        return 1
+      fi
+      tool_schema=$REPLY
     fi
+    for context in "${SF_HOOK_CONTEXT_RECORDS[@]}"; do
+      if ! sf_session_append "$context"; then
+        failure=$SF_SESSION_ERROR
+        return 1
+      fi
+      sf_exec_emit "$context"
+    done
     case $hook_action in
       handoff)
         after=$(jq -cn --args '$ARGS.positional |
@@ -420,18 +430,6 @@ sf_exec_turn() {
         return
         ;;
     esac
-    if ! sf_tools_load "$tools" "$SF_SESSION[cwd]" "$harness_sandbox" "$fence"; then
-      failure=$SF_TOOL_ERROR
-      return 1
-    fi
-    tool_schema=$REPLY
-    for context in "${prompt_contexts[@]}"; do
-      if ! sf_session_append "$context"; then
-        failure=$SF_SESSION_ERROR
-        return 1
-      fi
-      sf_exec_emit "$context"
-    done
     if ! sf_session_append "$user_record"; then
       failure=$SF_SESSION_ERROR
       return 1

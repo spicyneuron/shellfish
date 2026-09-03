@@ -488,7 +488,7 @@ sf_hooks_session_start() {
 
 # Prepares prompt context while exec retains the full-turn lock.
 sf_hooks_user_prompt_submit_locked() {
-  local prompt=$1 session=$2 collect=${3:-0} argument control patch context
+  local prompt=$1 session=$2 argument control patch
   local -a decision handoff
   integer operation_status=0 index control_status handoff_requested=0 update_requested=0
 
@@ -541,15 +541,6 @@ sf_hooks_user_prompt_submit_locked() {
     fi
   done
   (( operation_status )) || sf_hooks_commit_context user_prompt_submit collect || operation_status=1
-  if (( ! operation_status && (! collect || ! decision[1]) )); then
-    for context in "${SF_HOOK_CONTEXT_RECORDS[@]}"; do
-      sf_session_append "$context" || {
-        SF_HOOK_ERROR=$SF_SESSION_ERROR
-        operation_status=1
-        break
-      }
-    done
-  fi
   if (( operation_status )); then
     [[ -n $SF_HOOK_ERROR ]] || SF_HOOK_ERROR='cannot prepare user_prompt_submit hook script invocation'
     sf_hooks_fail "$SF_HOOK_ERROR"

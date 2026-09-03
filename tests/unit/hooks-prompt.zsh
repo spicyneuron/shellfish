@@ -37,17 +37,6 @@ jq -eRs '
     content:"first\nsecond\ncontext"}
 ' "$prompt_session" >/dev/null
 
-# Exec may retain accepted prompt context until it knows which session will own
-# the turn. Handled prompts still commit immediately.
-typeset buffered_session="$tmp/buffered-session.jsonl"
-sf_hooks_turn_state_cleanup
-sf_test_session "$buffered_session"
-sf_hooks_turn_state_create
-run_prompt_hook buffered "$buffered_session" 1
-[[ ${#reply} == 1 && $reply[1] == proceed && ${#SF_HOOK_CONTEXT_RECORDS} == 1 ]]
-(( $(wc -l <"$buffered_session") == 1 ))
-jq -e '. == {type:"context",hook:"user_prompt_submit",script:"prompt",
-  content:"bufferedcontext"}' <<<"$SF_HOOK_CONTEXT_RECORDS[1]" >/dev/null
 SKIP=1 run_prompt_hook command "$prompt_session"
 [[ ${#reply} == 1 && $reply[1] == handled ]]
 [[ -z ${SHELLFISH_TURN_ID-} ]]
@@ -63,7 +52,7 @@ BINARY=1 run_prompt_hook binary "$prompt_session"
 [[ ${#reply} == 1 && $reply[1] == proceed ]]
 jq -e 'select(.type == "context" and .content == "binarycontext\u0000tail")' \
   < <(tail -n 1 "$prompt_session") >/dev/null
-# user_prompt_submit scripts may request a handoff; the locked path still commits their context.
+# The caller commits context returned with a handoff.
 CONTROL="$tmp/switched.jsonl" run_prompt_hook /switch "$prompt_session"
 [[ ${#reply} == 3 && $reply[1] == handoff && $reply[2] == /usr/bin/printf &&
    $reply[3] == "$tmp/switched.jsonl" ]]
