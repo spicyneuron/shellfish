@@ -46,22 +46,6 @@ SF_PRESENT_PERMISSION_ID=''
 sf_chat_decoded handoff '["/tmp/custom command","","arg"]'
 assert_equal '/tmp/custom command,,arg' "${(j:,:)SF_PRESENT_HANDOFF}"
 
-SF_PRESENT_SESSION=/tmp/source.jsonl
-SF_CHAT_TRANSPORT_COMMAND=( shellfish exec --jsonl --session /tmp/source.jsonl )
-sf_chat_decoded compaction_start
-assert_equal 'Compacting…' "$SF_PRESENT_NODE_HEADING[-1]"
-assert_equal open "$SF_PRESENT_NODE_STATE[-1]"
-typeset live_nodes=${#SF_PRESENT_NODE_TYPE}
-sf_chat_decoded session_compaction /tmp/compact.jsonl 932
-assert_equal /tmp/compact.jsonl "$SF_PRESENT_SESSION"
-assert_equal /tmp/compact.jsonl "$SF_CHAT_TRANSPORT_COMMAND[-1]"
-assert_equal 'Session compacted' "$SF_PRESENT_NODE_HEADING[-1]"
-assert_equal 'Original saved and summarized into ~233 tokens.' "$SF_PRESENT_NODE_BODY[-1]"
-assert_equal closed "$SF_PRESENT_NODE_STATE[-1]"
-assert_equal "$live_nodes" "${#SF_PRESENT_NODE_TYPE}"
-sf_chat_decoded compaction_error unavailable
-assert_equal 'Compaction skipped' "$SF_PRESENT_NODE_HEADING[-1]"
-
 typeset node_types="${(j:,:)SF_PRESENT_NODE_TYPE}"
 typeset updated_runtime
 updated_runtime=$(jq -c '

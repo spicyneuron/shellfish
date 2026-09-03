@@ -312,50 +312,6 @@ printf '%s\n' '`+assistantRecord+`'
 	}
 }
 
-func TestSessionCompactionSwitchesReplayAndFutureTurns(t *testing.T) {
-	dir := t.TempDir()
-	source := filepath.Join(dir, "source.jsonl")
-	child := filepath.Join(dir, "source_compact.jsonl")
-	recorded := filepath.Join(dir, "sessions")
-	if err := os.WriteFile(source, []byte(headerLine(t)), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(child, []byte(headerLine(t)), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	base := newTestServer(t, source, `
-IFS= read -r input
-printf '%s\n' "$4" >>'`+recorded+`'
-target="$4"
-if [ "$4" = '`+source+`' ]; then
-  target='`+child+`'
-  printf '%s\n' '{"type":"_session_compaction","session":"`+child+`"}'
-fi
-printf '%s\n' '`+userRecord+`' >>"$target"
-printf '%s\n' '`+userRecord+`'
-printf '%s\n' '`+assistantRecord+`' >>"$target"
-printf '%s\n' '`+assistantRecord+`'
-`)
-	session := openStream(t, base, http.StatusOK)
-	session.expectRaw(t, strings.TrimSuffix(headerLine(t), "\n"))
-	session.expectJSON(t, `{"type":"state","working":false}`)
-	post(t, base+"/turn", userRecord, http.StatusAccepted)
-	session.expectJSON(t, `{"type":"state","working":true}`,
-		`{"type":"_session_compaction","session":"`+child+`"}`,
-		userRecord, assistantRecord, `{"type":"state","working":false}`)
-	session.body.Close()
-
-	session = openStream(t, base, http.StatusOK)
-	session.expectRaw(t, strings.TrimSuffix(headerLine(t), "\n"), userRecord, assistantRecord)
-	session.expectJSON(t, `{"type":"state","working":false}`)
-	post(t, base+"/turn", userRecord, http.StatusAccepted)
-	session.expectJSON(t, `{"type":"state","working":true}`,
-		userRecord, assistantRecord, `{"type":"state","working":false}`)
-	if got, err := os.ReadFile(recorded); err != nil || string(got) != source+"\n"+child+"\n" {
-		t.Fatalf("turn sessions = %q (%v)", got, err)
-	}
-}
-
 func TestOneClient(t *testing.T) {
 	base := newTestServer(t, newSession(t, ""), "")
 	openStream(t, base, http.StatusOK)

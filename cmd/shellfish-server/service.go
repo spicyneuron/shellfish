@@ -312,8 +312,7 @@ func (s *Service) forward(active *turn, event json.RawMessage) {
 	}
 	frame, ok := compactObject(event, maxEventBytes)
 	var envelope struct {
-		Type    string `json:"type"`
-		Session string `json:"session"`
+		Type string `json:"type"`
 	}
 	if !ok || json.Unmarshal(frame, &envelope) != nil || envelope.Type == "" {
 		log.Print("turn emitted an invalid event; terminating it")
@@ -325,32 +324,6 @@ func (s *Service) forward(active *turn, event json.RawMessage) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	switch {
-	case kind == "_session_compaction":
-		path := envelope.Session
-		if path == "" || !filepath.IsAbs(path) || filepath.Dir(path) != filepath.Dir(s.sessionPath) {
-			log.Print("turn emitted an invalid session compaction; terminating it")
-			active.failed = true
-			active.cancel()
-			return
-		}
-		records, err := readTranscript(path)
-		if err != nil || len(records) == 0 {
-			log.Print("turn emitted an invalid session compaction; terminating it")
-			active.failed = true
-			active.cancel()
-			return
-		}
-		header, err := checkHeader(records[0])
-		if err != nil {
-			log.Printf("turn emitted an invalid compacted session; terminating it: %v", err)
-			active.failed = true
-			active.cancel()
-			return
-		}
-		s.sessionPath = path
-		s.header = header
-		s.exec.session = path
-		s.recordCount = len(records)
 	case kind == "_tool_permission_request":
 		s.pending = frame
 	case !strings.HasPrefix(kind, "_"):

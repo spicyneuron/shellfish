@@ -413,25 +413,6 @@ test("applies a session update without replaying the transcript", async () => {
   assert.equal(page.reloads, 0);
 });
 
-test("reports session compaction without replaying the transcript", async () => {
-  const page = await idle();
-  await page.send(
-    { type: "_compaction_start" },
-    { type: "_session_compaction", session: "/tmp/compact.jsonl", characters: 932 },
-    { type: "_compaction_error", message: "summary unavailable" },
-  );
-  const notes = find(page.output, "note");
-  assert.equal(findTag(notes[0], "h2")[0].textContent, "ℹCompacting…");
-  assert.equal(findTag(notes[1], "h2")[0].textContent, "ℹSession compacted");
-  assert.equal(
-    findTag(notes[1], "pre")[0].textContent,
-    "Original saved and summarized into ~233 tokens.",
-  );
-  assert.equal(findTag(notes[2], "h2")[0].textContent, "ℹCompaction skipped");
-  assert.equal(findTag(notes[2], "pre")[0].textContent, "summary unavailable");
-  assert.equal(page.reloads, 0);
-});
-
 test("shows context usage and preserves cache usage", async () => {
   const page = await idle();
   await page.send({
