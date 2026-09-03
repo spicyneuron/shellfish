@@ -259,6 +259,77 @@ sf_session_create() {
   return 1
 }
 
+sf_session_compact() {
+  local summary=$1 source=$SF_SESSION_PATH base candidate created temp error=''
+  integer suffix=1 published=0
+  SF_SESSION_ERROR=''
+  REPLY=''
+  [[ -n $SF_SESSION_LOCK && ${#SF_SESSION_RECORDS} -gt 0 ]] || {
+    sf_session_fail 'session is not open for compaction'
+    return
+  }
+  base=${source%.jsonl}
+  base=${base%_compact(|_<->)}
+  candidate="${base}_compact.jsonl"
+  created=$(date -u '+%Y-%m-%dT%H:%M:%SZ') || {
+    sf_session_fail 'cannot timestamp compacted session'
+    return
+  }
+  temp=$(mktemp "${source:h}/.${source:t}.compact.XXXXXX") || {
+    sf_session_fail "cannot prepare compacted session: $source"
+    return
+  }
+  {
+    repeat 1; do
+      chmod 600 "$temp" || {
+        error="cannot secure compacted session: $source"
+        break
+      }
+      if ! printf '%s\n' "${SF_SESSION_RECORDS[@]}" | jq -L "$SF_ROOT/lib" -cse \
+          --rawfile summary <(print -rn -- "$summary") --arg created "$created" '
+        include "runtime/schema";
+        . as $records |
+        [$records | to_entries[] |
+          select(.value.type == "message" and .value.role == "user") | .key] as $users |
+        select(($users | length) >= 3) |
+        select($summary | test("\\S")) |
+        (([range($users[0]; $users[1]) |
+          select($records[.].type != "context")] | last) + 1) as $head |
+        $users[-1] as $latest |
+        (([range($head; $latest) |
+          select($records[.].type != "context")] | last // ($head - 1)) + 1) as $tail |
+        ({type:"context",hook:"compact",script:"shellfish",content:$summary}) as $context |
+        ([$records[0:$head][], $context, $records[$tail:][]] |
+          .[0].created = $created) as $compacted |
+        select($compacted[0] | canonical_session_header(1)) |
+        select($compacted[1:] | canonical_session_records) |
+        select($compacted[-1].type == "message" and
+          $compacted[-1].role == "assistant" and $compacted[-1].stop != "tool_calls") |
+        $compacted[]
+      ' >"$temp"; then
+        error='cannot prepare compacted session records'
+        break
+      fi
+      while ! ln "$temp" "$candidate" 2>/dev/null; do
+        if [[ ! -e $candidate && ! -L $candidate ]]; then
+          error="cannot create compacted session: $candidate"
+          break 2
+        fi
+        candidate="${base}_compact_${suffix}.jsonl"
+        (( suffix++ ))
+      done
+      published=1
+    done
+  } always {
+    rm -f -- "$temp" 2>/dev/null || true
+  }
+  if (( ! published )); then
+    sf_session_fail "$error"
+    return 1
+  fi
+  REPLY=$candidate
+}
+
 sf_session_read_settings() {
   local session_path=$1 header extracted
   SF_SESSION_ERROR=''

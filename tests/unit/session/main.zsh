@@ -99,6 +99,45 @@ sf_session_close
 assert_session_unlocked "$session"
 (( $(wc -l <"$session") == 3 ))
 
+# Compaction creates a validated child with the first and latest complete turns
+# around one summary context, without changing the locked source.
+typeset compact_source="$tmp/history.jsonl" compacted
+SF_SESSION_PATH=$compact_source
+sf_session_prepare "$SF_TEST_RUNTIME"
+sf_session_create
+sf_session_open "$compact_source"
+sf_session_append '{"type":"message","role":"user","content":[{"type":"text","text":"first"}]}'
+sf_session_append '{"type":"message","role":"assistant","stop":"end","content":[{"type":"text","text":"one"}],"usage":{"input_tokens":10,"output_tokens":1}}'
+sf_session_append '{"type":"context","hook":"user_prompt_submit","script":"project","content":"middle context"}'
+sf_session_append '{"type":"message","role":"user","content":[{"type":"text","text":"middle"}]}'
+sf_session_append '{"type":"message","role":"assistant","stop":"end","content":[{"type":"text","text":"two"}],"usage":{"input_tokens":20,"output_tokens":1}}'
+sf_session_append '{"type":"context","hook":"user_prompt_submit","script":"project","content":"latest context"}'
+sf_session_append '{"type":"message","role":"user","content":[{"type":"text","text":"latest"}]}'
+sf_session_append '{"type":"message","role":"assistant","stop":"end","content":[{"type":"text","text":"three"}],"usage":{"input_tokens":30,"output_tokens":1}}'
+cp "$compact_source" "$tmp/history-before.jsonl"
+if sf_session_compact '   '; then
+  fail 'empty summary compacted a session'
+fi
+[[ $SF_SESSION_ERROR == 'cannot prepare compacted session records' &&
+  ! -e $tmp/history_compact.jsonl ]]
+sf_session_compact 'key decisions'
+compacted=$REPLY
+[[ $compacted == "$tmp/history_compact.jsonl" ]]
+cmp -s "$compact_source" "$tmp/history-before.jsonl"
+jq -L "$ROOT/lib" -e -s '
+  include "runtime/schema";
+  (.[1:] | canonical_session_records) and
+  [.[].type] == ["session","message","message","context","context","message","message"] and
+  .[1].content[0].text == "first" and .[2].content[0].text == "one" and
+  .[3] == {type:"context",hook:"compact",script:"shellfish",content:"key decisions"} and
+  (map(select(.content? == "middle context")) | length) == 0 and
+  .[4].content == "latest context" and
+  .[5].content[0].text == "latest" and .[6].content[0].text == "three"
+' "$compacted" >/dev/null
+sf_session_compact 'second summary'
+[[ $REPLY == "$tmp/history_compact_1.jsonl" ]]
+sf_session_close
+
 # Runtime updates replace only the header while retaining the lock, transcript,
 # restrictive file mode, and synchronized state.
 typeset transcript_before updated_before

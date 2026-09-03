@@ -36,6 +36,18 @@ jq -eRs '
   $records[-1] == {type:"context",hook:"user_prompt_submit",script:"prompt",
     content:"first\nsecond\ncontext"}
 ' "$prompt_session" >/dev/null
+
+# Exec may retain accepted prompt context until it knows which session will own
+# the turn. Handled prompts still commit immediately.
+typeset buffered_session="$tmp/buffered-session.jsonl"
+sf_hooks_turn_state_cleanup
+sf_test_session "$buffered_session"
+sf_hooks_turn_state_create
+run_prompt_hook buffered "$buffered_session" 1
+[[ ${#reply} == 1 && $reply[1] == proceed && ${#SF_HOOK_CONTEXT_RECORDS} == 1 ]]
+(( $(wc -l <"$buffered_session") == 1 ))
+jq -e '. == {type:"context",hook:"user_prompt_submit",script:"prompt",
+  content:"bufferedcontext"}' <<<"$SF_HOOK_CONTEXT_RECORDS[1]" >/dev/null
 SKIP=1 run_prompt_hook command "$prompt_session"
 [[ ${#reply} == 1 && $reply[1] == handled ]]
 [[ -z ${SHELLFISH_TURN_ID-} ]]
