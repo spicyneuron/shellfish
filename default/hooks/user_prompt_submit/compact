@@ -1,72 +1,18 @@
 #!/usr/bin/env zsh
 
-# Compaction policy. As a user_prompt_submit hook it recognizes /compact and
-# detects a session near its context window, then hands off to itself. The
-# handoff runs in the client's environment, where provider credentials are
-# still resolvable and the source session lock has been released.
-
 emulate -R zsh
 setopt extended_glob no_aliases no_multios pipe_fail
 
-if [[ $1 != user_prompt_submit ]]; then
-  typeset executable=$1 source=$2 draft=${3-}
-  typeset summary='' created base candidate='' temp
-  typeset instruction=$'Create a concise continuation summary of this conversation. Preserve key decisions, requirements, completed work, unresolved work, and technical details needed to continue. Return only the summary. Do not address the user or take actions.'
-  integer suffix=1 published=0
+typeset submitted draft='' instruction request summary created base candidate
+typeset -a argv
+integer explicit=0 suffix=1
 
-  open_session() {
-    local -a open=( "$executable" --session "$1" )
-    [[ -z $draft ]] || open+=( --draft "$draft" )
-    exec -- "${open[@]}"
-  }
+fail_compaction() {
+  print -u2 -r -- "$1"
+  (( explicit )) && return 10
+  return 0
+}
 
-  # Chat has already exited, so this runs on the bare terminal between two
-  # renders. Without progress the summarizing request looks like a freeze.
-  print -u2 -r -- 'Compacting session…'
-  summary=$("$executable" exec --session "$source" --no-save --no-hooks "$instruction" \
-    </dev/null) && [[ $summary == *[^[:space:]]* ]] || {
-    print -u2 -r -- 'cannot summarize session; keeping the original'
-    open_session "$source"
-  }
-
-  base=${source%.jsonl}
-  base=${base%_compact(|_<->)}
-  created=$(date -u '+%Y-%m-%dT%H:%M:%SZ') &&
-    temp=$(mktemp "${source:h}/.${source:t}.compact.XXXXXX") || {
-    print -u2 -r -- 'cannot prepare compacted session; keeping the original'
-    open_session "$source"
-  }
-  {
-    repeat 1; do
-      chmod 600 "$temp" || break
-      # The summarizing turn already validated the source, and any string is
-      # valid context content, so a slice plus the summary is a valid child.
-      jq -ce -s --rawfile summary <(print -rn -- "$summary") --arg created "$created" '
-        ([to_entries[] | select(.value.type == "message") | .key] | first) as $start |
-        select($start != null) |
-        (.[0:$start] | .[0].created = $created)[],
-        {type:"context",hook:"compact",script:"compact",content:$summary}
-      ' "$source" >"$temp" || break
-      candidate="${base}_compact.jsonl"
-      while ! ln "$temp" "$candidate" 2>/dev/null; do
-        [[ -e $candidate || -L $candidate ]] || break 2
-        candidate="${base}_compact_${suffix}.jsonl"
-        (( suffix++ ))
-      done
-      published=1
-    done
-  } always {
-    rm -f -- "$temp" 2>/dev/null || true
-  }
-  (( published )) || {
-    print -u2 -r -- 'cannot create compacted session; keeping the original'
-    open_session "$source"
-  }
-  print -u2 -r -- "Compacted. The original session is kept at $source"
-  open_session "$candidate"
-fi
-
-typeset submitted draft=''
 submitted=$(cat; printf x)
 submitted=${submitted%x}
 
@@ -77,14 +23,15 @@ case $submitted in
     exit 0
     ;;
   /compact)
+    explicit=1
     jq -es 'any(.[]; .type == "message")' "$SHELLFISH_SESSION" >/dev/null 2>&1 || {
       print -u2 -r -- 'nothing to compact yet'
       exit 10
     }
     ;;
   *)
-    # An ordinary prompt compacts only once the most recent measured response
-    # reaches 80% of the frozen context window.
+    # Automatic compaction uses the most recent measured response only after a
+    # complete assistant turn.
     jq -es '
       .[0].profile.context_window as $window |
       [.[] | select(.type == "message" and .role == "assistant")] as $assistants |
@@ -97,8 +44,54 @@ case $submitted in
     ;;
 esac
 
-jq -cn --arg script "${0:A}" --arg command "$SHELLFISH_EXECUTABLE" \
-  --arg source "$SHELLFISH_SESSION" --arg draft "$draft" '
-  {action:"handoff",argv:[$script,$command,$source,$draft]}
-' >&3 || exit 1
+instruction=$'Create a concise continuation summary of this conversation. Preserve key decisions, requirements, completed work, unresolved work, and technical details needed to continue. Return only the summary. Do not address the user or take actions.'
+request=$(jq -cn --arg text "$instruction" \
+  '{type:"message",role:"user",content:[{type:"text",text:$text}]}') || {
+  fail_compaction 'cannot prepare summary request; keeping the original'
+  exit $?
+}
+summary=$(print -r -- "$request" |
+  "$SHELLFISH_EXECUTABLE" build-request --session "$SHELLFISH_SESSION" --tools '[]' |
+  "$SHELLFISH_EXECUTABLE" run-request --session "$SHELLFISH_SESSION" |
+  jq -er '[.content[] | select(.type == "text") | .text] | join("") |
+    select(test("[^[:space:]]"))') || {
+  fail_compaction 'cannot summarize session; keeping the original'
+  exit $?
+}
+
+base=${SHELLFISH_SESSION%.jsonl}
+base=${base%_compact(|_<->)}
+candidate="${base}_compact.jsonl"
+umask 077
+while ! (setopt no_clobber; : >"$candidate") 2>/dev/null; do
+  if [[ ! -e $candidate && ! -L $candidate ]]; then
+    fail_compaction 'cannot create compacted session; keeping the original'
+    exit $?
+  fi
+  candidate="${base}_compact_${suffix}.jsonl"
+  (( suffix++ ))
+done
+
+created=$(date -u '+%Y-%m-%dT%H:%M:%SZ') || {
+  rm -f -- "$candidate"
+  fail_compaction 'cannot create compacted session; keeping the original'
+  exit $?
+}
+if ! jq -ce -s --rawfile summary <(print -rn -- "$summary") --arg created "$created" '
+    ([to_entries[] | select(.value.type == "message") | .key] | first) as $start |
+    select($start != null) |
+    (.[0:$start] | .[0].created = $created)[],
+    {type:"context",hook:"compact",script:"compact",content:$summary}
+  ' "$SHELLFISH_SESSION" >"$candidate" || ! chmod 600 "$candidate"; then
+  rm -f -- "$candidate"
+  fail_compaction 'cannot create compacted session; keeping the original'
+  exit $?
+fi
+
+argv=( "$SHELLFISH_EXECUTABLE" --session "$candidate" )
+[[ -z $draft ]] || argv+=( --draft "$draft" )
+jq -cn '$ARGS.positional | {action:"handoff",argv:.}' --args -- "${argv[@]}" >&3 || {
+  rm -f -- "$candidate"
+  exit 1
+}
 exit 11
