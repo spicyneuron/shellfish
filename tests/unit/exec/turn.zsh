@@ -128,7 +128,8 @@ SF_ROOT=$ROOT zsh -f -c '
   source "$SF_ROOT/lib/exec.zsh"
   sf_session_open "$1" || exit
   mv "$1" "$1.saved" || exit
-  sf_exec_request "[]" >"$2"
+  print -rl -- "${SF_SESSION_RECORDS[@]}" |
+    sf_request_build "$SF_SESSION[runtime]" "[]" >"$2"
   rc=$?
   mv "$1.saved" "$1"
   sf_session_close || rc=1

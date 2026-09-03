@@ -8,10 +8,11 @@ setopt no_aliases no_bg_nice no_multios pipe_fail
 (( $+functions[sf_hooks_session_start] )) || source "$SF_ROOT/lib/hooks.zsh"
 (( $+functions[sf_tools_load] )) || source "$SF_ROOT/lib/tools.zsh"
 (( $+functions[sf_session_startup_create] )) || source "$SF_ROOT/lib/session/startup.zsh"
+(( $+functions[sf_request_run] )) || source "$SF_ROOT/lib/request.zsh"
 
 typeset -gA SF_EXEC=(
-  answer '' backend_error_file '' backend_pid '' error '' jsonl 0
-  interrupted 0 partial_events '' permission_count 0 permission_available 0 signal_status 143
+  answer '' error '' jsonl 0 interrupted 0 permission_count 0 permission_available 0
+  signal_status 143
 )
 
 sf_exec_set_error() {
@@ -24,35 +25,19 @@ sf_exec_emit() {
   return 0
 }
 
-sf_exec_stop_process() {
-  local pid=$1 target=$1 watchdog
-  [[ -n $pid ]] || return 0
-  kill -TERM -- "-$pid" 2>/dev/null && target="-$pid" ||
-    kill -TERM "$pid" 2>/dev/null || true
-  kill -CONT -- "$target" 2>/dev/null || true
-  {
-    sleep 0.5
-    kill -KILL -- "$target" 2>/dev/null || kill -KILL "$pid" 2>/dev/null || true
-  } &
-  watchdog=$!
-  wait "$pid" 2>/dev/null || true
-  kill -TERM "$watchdog" 2>/dev/null || true
-  wait "$watchdog" 2>/dev/null || true
-}
-
 sf_exec_interrupt() {
   SF_EXEC[interrupted]=1
   SF_TOOL_INTERRUPTED=1
   if [[ -n $SF_HOOK_SCRIPT_PID ]]; then
-    sf_exec_stop_process "$SF_HOOK_SCRIPT_PID"
+    sf_process_stop "$SF_HOOK_SCRIPT_PID"
     SF_HOOK_SCRIPT_PID=''
   fi
-  if [[ -n $SF_EXEC[backend_pid] ]]; then
-    sf_exec_stop_process "$SF_EXEC[backend_pid]"
-    SF_EXEC[backend_pid]=''
+  if [[ -n $SF_REQUEST[pid] ]]; then
+    sf_process_stop "$SF_REQUEST[pid]"
+    SF_REQUEST[pid]=''
   fi
   if [[ -n $SF_TOOL_ACTIVE_PID ]]; then
-    sf_exec_stop_process "$SF_TOOL_ACTIVE_PID"
+    sf_process_stop "$SF_TOOL_ACTIVE_PID"
     SF_TOOL_ACTIVE_PID=''
   fi
 }
@@ -131,116 +116,11 @@ sf_exec_hook_displays() {
   done
 }
 
-sf_exec_request() {
-  local tools=$1
-  printf '%s\n' "${SF_SESSION_RECORDS[@]}" |
-    jq -L "$SF_ROOT/lib" -sce --argjson runtime "$SF_SESSION[runtime]" \
-    --argjson tools "$tools" '
-    include "runtime/schema";
-    include "session/request";
-    . as $records |
-    {
-      format_version:1,
-      system:([$records[] | select(.type == "system") | .content] | join("\n\n")),
-      messages:($records | request_messages),
-      tools:$tools,
-      options:{request:$runtime.profile.request},
-      transport:($runtime.backend | {endpoint,insecure_tls,http_timeout,http_stall})
-    } | select(canonical_request)
-  '
-}
-
-sf_exec_backend() {
-  local request=$1 command=$2 error_file adapter_pid adapter_status event decoded kind=''
-  local -a events
-  # Text and reasoning deltas share one zero-based sequence per provider
-  # response, so a client can tell a response start from a mid-response join.
-  integer delta_seq=0 ended=0
-  SF_EXEC[assistant]=''
-  SF_EXEC[backend_error]=''
-  SF_EXEC[partial_events]=''
-  sf_scratch_file backends exec-error || {
-    SF_EXEC[backend_error]='cannot prepare provider error capture'
-    return 1
-  }
-  error_file=$REPLY
-  SF_EXEC[backend_error_file]=$error_file
-  coproc SHELLFISH_API_KEY="$SF_API_KEY" \
-    SHELLFISH_API_KEY_SOURCE="$SF_API_KEY_SOURCE" \
-    "$command" <<<"$request" 2>"$error_file"
-  adapter_pid=$!
-  SF_EXEC[backend_pid]=$adapter_pid
-  sf_exec_emit '{"type":"_backend_request_start"}'
-  while IFS= read -r event <&p; do
-    decoded=$(jq -L "$SF_ROOT/lib" -cr --argjson seq "$delta_seq" '
-      include "runtime/schema";
-      if canonical_backend_event | not then "invalid"
-      elif .type == "_assistant_delta" or .type == "_assistant_reasoning_delta" then
-        "delta", (.seq = $seq)
-      elif .type == "_assistant_reasoning_opaque" then "opaque"
-      elif .type == "_turn_usage" then "usage"
-      elif .type == "_assistant_response_end" then "end"
-      else "internal" end
-    ' <<<"$event" 2>/dev/null) || decoded=invalid
-    kind=${decoded%%$'\n'*}
-    (( ! ended )) || kind=invalid
-    case $kind in
-      delta|opaque)
-        events+=( "$event" )
-        [[ -z $SF_EXEC[partial_events] ]] || SF_EXEC[partial_events]+=$'\n'
-        SF_EXEC[partial_events]+=$event
-        if [[ $kind == delta ]]; then
-          sf_exec_emit "${decoded#*$'\n'}"
-          (( ++delta_seq ))
-        fi
-        ;;
-      usage)
-        events+=( "$event" )
-        sf_exec_emit "$event"
-        ;;
-      internal) events+=( "$event" ) ;;
-      end)
-        events+=( "$event" )
-        ended=1
-        ;;
-      *) kind=invalid; break ;;
-    esac
-  done
-  if [[ $kind == invalid ]]; then
-    sf_exec_stop_process "$adapter_pid"
-    adapter_status=1
-  elif wait "$adapter_pid"; then adapter_status=0
-  else adapter_status=$?
-  fi
-  SF_EXEC[backend_pid]=''
-  if [[ $kind != invalid && $adapter_status == 0 ]] && (( ended )); then
-    SF_EXEC[assistant]=$(printf '%s\n' "${events[@]}" | jq -L "$SF_ROOT/lib" -cse '
-      include "runtime/schema";
-      assemble_backend_response
-    ' 2>/dev/null) || kind=invalid
-    [[ -z $SF_EXEC[assistant] ]] || SF_EXEC[partial_events]=''
-  fi
-  if [[ $kind == invalid || $adapter_status != 0 || -z $SF_EXEC[assistant] ]]; then
-    if [[ -s $error_file ]]; then
-      SF_EXEC[backend_error]=$(LC_ALL=C tr -s '[:cntrl:]' ' ' <"$error_file" | cut -c 1-1000)
-    elif [[ $kind == invalid ]]; then
-      SF_EXEC[backend_error]='backend emitted an invalid event stream'
-    else
-      SF_EXEC[backend_error]='backend exited before completing a response'
-    fi
-    rm -f -- "$error_file"
-    SF_EXEC[backend_error_file]=''
-    return 1
-  fi
-  rm -f -- "$error_file"
-  SF_EXEC[backend_error_file]=''
-}
-
 sf_exec_partial_assistant() {
   REPLY=''
-  [[ -n $SF_EXEC[partial_events] ]] || return 0
+  [[ -n $SF_REQUEST[partial_events] ]] || return 0
   REPLY=$({
-    print -r -- "$SF_EXEC[partial_events]"
+    print -r -- "$SF_REQUEST[partial_events]"
     print -r -- '{"type":"_assistant_response_end","stop":"length"}'
   } | jq -L "$SF_ROOT/lib" -cse '
     include "runtime/schema";
@@ -256,8 +136,8 @@ sf_exec_turn_cleanup() {
 
   sf_tools_cleanup
   sf_hooks_turn_state_cleanup
-  [[ -z $SF_EXEC[backend_error_file] ]] ||
-    rm -f -- "$SF_EXEC[backend_error_file]" 2>/dev/null || true
+  [[ -z $SF_REQUEST[error_file] ]] ||
+    rm -f -- "$SF_REQUEST[error_file]" 2>/dev/null || true
   if { (( interrupted )) || [[ -n $failure ]] } && [[ -n $SF_SESSION_LOCK ]]; then
     sf_exec_partial_assistant
     partial=$REPLY
@@ -277,7 +157,7 @@ sf_exec_turn_cleanup() {
       failure=$SF_SESSION_ERROR
     fi
   fi
-  SF_EXEC[partial_events]=''
+  SF_REQUEST[partial_events]=''
   [[ -z $recovered ]] || sf_exec_emit "$recovered"
   if [[ -n $SF_SESSION_LOCK ]]; then
     if (( interrupted )); then
@@ -442,7 +322,8 @@ sf_exec_turn() {
         failure="provider request limit reached: $request_limit"
         return 1
       fi
-      request=$(sf_exec_request "$tool_schema") || {
+      request=$(printf '%s\n' "${SF_SESSION_RECORDS[@]}" |
+        sf_request_build "$SF_SESSION[runtime]" "$tool_schema") || {
         failure='cannot prepare provider request'
         return 1
       }
@@ -461,7 +342,7 @@ sf_exec_turn() {
           SHELLFISH_API_KEY_SOURCE="$SF_API_KEY_SOURCE" \
           "$context_window_command" <<<"$request" 2>/dev/null
         adapter_pid=$!
-        SF_EXEC[backend_pid]=$adapter_pid
+        SF_REQUEST[pid]=$adapter_pid
         while IFS= read -r context_line <&p; do
           [[ -z $context_output ]] || context_output+=$'\n'
           context_output+=$context_line
@@ -469,7 +350,7 @@ sf_exec_turn() {
         if ! wait "$adapter_pid"; then
           context_output=''
         fi
-        SF_EXEC[backend_pid]=''
+        SF_REQUEST[pid]=''
         context_window=$(jq -L "$SF_ROOT/lib" -ser '
           include "runtime/schema";
           select(length == 1 and (.[0] | type == "object" and
@@ -499,11 +380,12 @@ sf_exec_turn() {
         }
         sf_exec_emit "$update_event"
       fi
-      if ! sf_exec_backend "$request" "$backend_command"; then
-        failure=$SF_EXEC[backend_error]
+      if ! sf_request_run "$request" "$backend_command" "$SF_API_KEY" \
+          "$SF_API_KEY_SOURCE" sf_exec_emit; then
+        failure=$SF_REQUEST[error]
         return 1
       fi
-      assistant=$SF_EXEC[assistant]
+      assistant=$SF_REQUEST[assistant]
       if ! sf_session_append "$assistant"; then
         failure=$SF_SESSION_ERROR
         return 1
@@ -634,7 +516,7 @@ sf_exec_run() {
 
   SF_EXEC[error]=''
   SF_EXEC[answer]=''
-  SF_EXEC[partial_events]=''
+  SF_REQUEST[partial_events]=''
   SF_EXEC[interrupted]=0
   SF_TOOL_INTERRUPTED=0
   SF_EXEC[signal_status]=143
