@@ -415,11 +415,11 @@ test("shows context usage and preserves cache usage", async () => {
   });
   await page.send({
     type: "_turn_usage",
-    input_tokens: 13200,
-    cached_tokens: 11220,
+    input_tokens: 12400,
+    cached_tokens: 10478,
     output_tokens: 900,
   });
-  assert.equal(page.usage.textContent, " · 13k ↑ 85% ⦿ 900 ↓ 5% of 264k ◔");
+  assert.equal(page.usage.textContent, " · 12k ↑ 85% ⦿ 900 ↓ 5% of 264k ◔");
 
   await page.send({
     type: "_session_update",

@@ -23,10 +23,10 @@ def event_fields($event_runtime):
     ["turn_usage",
      ((.input_tokens | compact_tokens) + " ↑" +
        (if has("cached_tokens") and .input_tokens > 0 then
-          " " + ((.cached_tokens * 100 / .input_tokens) | floor | tostring) + "% ⦿"
+          " " + ((.cached_tokens * 100 / .input_tokens) | round | tostring) + "% ⦿"
         else "" end) + " " + (.output_tokens | compact_tokens) + " ↓" +
        (if $context_window != null then
-          " " + ((.input_tokens * 100 / $context_window) | floor | tostring) +
+          " " + ((.input_tokens * 100 / $context_window) | round | tostring) +
           "% of " + ($context_window | compact_tokens) + " ◔"
         else "" end)),
      (if has("reasoning_tokens") then (.reasoning_tokens | tostring) else "" end)]

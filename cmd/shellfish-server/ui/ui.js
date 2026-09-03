@@ -631,12 +631,12 @@ function compactTokens(value) {
 
 function showUsage(tokens) {
   const context = contextWindow
-    ? " " + Math.floor((tokens.input_tokens * 100) / contextWindow) +
+    ? " " + Math.round((tokens.input_tokens * 100) / contextWindow) +
       "% of " + compactTokens(contextWindow) + " ◔"
     : "";
   const cached =
     tokens.cached_tokens && tokens.input_tokens
-      ? " " + Math.floor((tokens.cached_tokens * 100) / tokens.input_tokens) + "% ⦿"
+      ? " " + Math.round((tokens.cached_tokens * 100) / tokens.input_tokens) + "% ⦿"
       : "";
   usage.textContent =
     " · " + compactTokens(tokens.input_tokens) + " ↑" + cached + " " +
