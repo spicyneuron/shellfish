@@ -510,9 +510,22 @@ function apply(frame) {
       }
       return note(detail, "error", heading);
     }
-    case "_handoff":
+    case "_handoff": {
       // A hook asked to replace the process, which only a terminal can honour.
+      const index = Array.isArray(frame.argv)
+        ? frame.argv.lastIndexOf("--draft", frame.argv.length - 2)
+        : -1;
+      if (index >= 0 && typeof frame.argv[index + 1] === "string") {
+        const draft = frame.argv[index + 1];
+        if (!entry.value) {
+          entry.value = draft;
+          resizeEntry();
+        } else if (entry.value !== draft) {
+          note(draft, null, "Handoff draft");
+        }
+      }
       return note("the turn requested a handoff, which a served session cannot run", "error");
+    }
     case "_session_update":
       return applyRuntime(frame.runtime);
     default:

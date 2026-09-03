@@ -625,6 +625,34 @@ test("separates notice titles from their bodies", async () => {
   assert.equal(findTag(notes[1], "pre")[0].textContent, "recoverable");
 });
 
+test("preserves drafts from unsupported handoffs", async () => {
+  const page = await idle();
+  await page.send({
+    type: "_handoff",
+    argv: ["shellfish", "--session", "/tmp/child.jsonl", "--draft", "first\nline"],
+  });
+  assert.equal(page.entry.value, "first\nline");
+  assert.equal(
+    findTag(find(page.output, "note")[0], "h2")[0].textContent,
+    "✕the turn requested a handoff, which a served session cannot run",
+  );
+
+  page.entry.value = "newer draft";
+  await page.send({ type: "_handoff", argv: ["shellfish", "--draft", "intercepted prompt"] });
+  assert.equal(page.entry.value, "newer draft");
+  const notes = find(page.output, "note");
+  assert.equal(findTag(notes[1], "h2")[0].textContent, "ℹHandoff draft");
+  assert.equal(findTag(notes[1], "pre")[0].textContent, "intercepted prompt");
+  assert.equal(
+    findTag(notes[2], "h2")[0].textContent,
+    "✕the turn requested a handoff, which a served session cannot run",
+  );
+
+  page.entry.value = "";
+  await page.send({ type: "_handoff", argv: ["shellfish", "--draft", "--draft"] });
+  assert.equal(page.entry.value, "--draft");
+});
+
 test("labels actionable exec errors", async () => {
   const page = await idle();
   const errors = [
