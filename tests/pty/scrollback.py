@@ -219,11 +219,7 @@ def test_tall_turn_loses_neither_text_nor_draft():
                 "the stream to progress after a typed key",
                 lambda: echoed_words() > before,
             )
-        terminal.wait_for(
-            "the turn to finish",
-            lambda: terminal.turn_finished()
-            and Path(f"{session_path}.lock").is_file(),
-        )
+        terminal.wait_for("the turn to finish", terminal.turn_finished)
         terminal.wait_for("the draft to come back",
                           lambda: "❯ done" in terminal.frame())
         assert not terminal.deleted_during_turn, (

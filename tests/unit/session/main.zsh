@@ -59,24 +59,16 @@ sf_session_find 1
   fi
 )
 
-# Creation exclusively materializes the validated prefix without a turn lock.
+# Creation exclusively materializes the validated prefix.
 SF_SESSION_PATH=$session
 sf_session_prepare "$SF_TEST_RUNTIME"
 sf_session_create
 (( ${#SF_SESSION_RECORDS} == 1 ))
 sf_session_open "$session"
-[[ -n $SF_SESSION_LOCK ]]
 [[ $(stat -f '%Lp' "$session") == 600 ]]
 jq -e '.profile.request.model == "test-model" and .backend.env_file == ""' \
   <<<"$SF_SESSION[runtime]" >/dev/null
 stored_runtime=$SF_SESSION[runtime]
-if sf_session_open "$tmp/other.jsonl"; then
-  fail 'nested session open succeeded'
-fi
-[[ $SF_SESSION_PATH == "$session" && -n $SF_SESSION_LOCK ]]
-if SF_ROOT=$ROOT zsh -fc 'source "$SF_ROOT/lib/session/main.zsh"; sf_session_open "$1"' -- "$session"; then
-  fail 'a second process acquired the held session lock'
-fi
 header=$(head -n 1 "$session")
 (( ${#SF_SESSION_RECORDS} == 1 ))
 assert_equal "$header" "$SF_SESSION_RECORDS[1]"
@@ -96,17 +88,16 @@ sf_session_append '{"type":"message","role":"assistant","stop":"end","content":[
 assert_equal '{"type":"message","role":"assistant","stop":"end","content":[{"type":"text","text":"hi"}],"usage":{"input_tokens":1,"output_tokens":1}}' "$SF_SESSION_RECORDS[3]"
 sf_session_close
 (( ${#SF_SESSION[@]} == 0 && ${#SF_SESSION_RECORDS} == 0 ))
-assert_session_unlocked "$session"
 (( $(wc -l <"$session") == 3 ))
 
-# Runtime updates replace only the header while retaining the lock, transcript,
+# Runtime updates replace only the header while retaining the transcript,
 # restrictive file mode, and synchronized state.
 typeset transcript_before updated_before
 transcript_before=$(tail -n +2 "$session")
 sf_session_open "$session"
 sf_session_update '{"harness":{"sandbox_read_paths":["/tmp/reference"]}}' ||
   fail "$SF_SESSION_ERROR"
-[[ $REPLY == 1 && -n $SF_SESSION_LOCK ]]
+[[ $REPLY == 1 ]]
 typeset request_update='{"harness":{"sandbox_write_paths":["/tmp/reference"]},"profile":{"request":{"effort":null}}}'
 sf_session_update "$request_update" ||
   fail "$SF_SESSION_ERROR"
@@ -144,7 +135,7 @@ jq -e '
   .harness.sandbox_write_paths == []
 ' <<<"$REPLY" >/dev/null
 if sf_session_update '{}'; then
-  fail 'session update without a lock succeeded'
+  fail 'session update on a closed session succeeded'
 fi
 
 typeset broken="$tmp/broken.jsonl"
@@ -242,7 +233,7 @@ if sf_session_open "$invalid_record"; then
   fail 'session with an invalid durable record was accepted'
 fi
 
-# A later lock owner removes only an incomplete trailing fragment.
+# A later reader removes only an incomplete trailing fragment.
 before=$(head -n 3 "$session")
 print -rn -- '{"type":"message"' >>"$session"
 sf_session_open "$session"

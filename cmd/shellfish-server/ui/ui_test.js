@@ -724,7 +724,6 @@ test("labels actionable exec errors", async () => {
     ["openai: could not connect to the provider (curl status 7)", "Provider connection failed"],
     ["openai: HTTP 429: slow down", "Provider rate limit reached"],
     ["openai: HTTP 400: bad request", "Provider request failed"],
-    ["session is busy: /tmp/session.jsonl", "Session busy"],
     [
       "session working directory is unavailable: /tmp/gone",
       "Working directory unavailable",

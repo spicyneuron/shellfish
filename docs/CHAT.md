@@ -64,4 +64,4 @@ Chat renders from an in-memory presentation transcript during a normal turn. If 
 
 ## Architecture
 
-Interactive chat is a controller around single `shellfish exec --jsonl` turns. Durable session JSONL is the source of truth for session and turn lifecycle. Chat owns only transient input, presentation, terminal rendering, and visual reconciliation. The session layer handles locking, hooks, provider requests, tool execution, persistence, and recovery.
+Interactive chat is a controller around single `shellfish exec --jsonl` turns. Durable session JSONL is the source of truth for session and turn lifecycle. Chat owns only transient input, presentation, terminal rendering, and visual reconciliation. The session layer handles hooks, provider requests, tool execution, persistence, and recovery.

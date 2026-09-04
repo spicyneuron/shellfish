@@ -39,10 +39,8 @@ jq -L "$ROOT/lib" -e -s '
   include "runtime/schema";
   (.[1:] | canonical_session_records) and .[-1].stop == "end"
 ' "$cancel_session" >/dev/null
-assert_session_unlocked "$cancel_session"
 
-# Cancellation escalates when a tool ignores TERM instead of retaining the
-# session lock indefinitely.
+# Cancellation escalates when a tool ignores TERM instead of hanging indefinitely.
 typeset stubborn_session="$tmp/tool-stubborn.jsonl"
 typeset stubborn_stream="$tmp/tool-stubborn.stream"
 typeset stubborn_marker="$tmp/tool-stubborn-active"
@@ -66,4 +64,3 @@ jq -eRn '
   ($events | map(select(.role == "tool_result") | .exit_code)) == [126] and
   $events[-1].role == "assistant" and $events[-1].stop == "end"
 ' <"$stubborn_stream" >/dev/null
-assert_session_unlocked "$stubborn_session"

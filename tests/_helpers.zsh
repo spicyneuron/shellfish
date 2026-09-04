@@ -67,13 +67,6 @@ fail() {
   return 1
 }
 
-assert_session_unlocked() {
-  local session=$1
-  [[ -f ${session}.lock && ! -L ${session}.lock ]] &&
-    zsh -fc 'zmodload zsh/system; zsystem flock -t 0 "$1"' -- "${session}.lock" 2>/dev/null ||
-    fail "session lock is unavailable: $session"
-}
-
 # Frozen runtime used by tool and exec tests. Optional system-file path.
 sf_test_runtime() {
   local system=${1-} tool=$ROOT/default/tools/shell

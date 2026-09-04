@@ -16,7 +16,7 @@ if creating a session:
     prepare header and system record
     run session_start hook scripts
     create the complete initial prefix
-open and lock the session for a turn
+open the session for a turn
 run user_prompt_submit hook scripts
 append user
 repeat:
@@ -30,7 +30,7 @@ repeat:
     if completion allowed: finish turn
 ```
 
-Exec owns hook execution. It runs the `session_start` scripts during lock-free session preparation and creates the durable session after those scripts succeed. It owns each complete locked turn through `user_prompt_submit`, provider requests, tools, permissions, cancellation, and recovery.
+Exec owns hook execution. It runs the `session_start` scripts during session preparation and creates the durable session after those scripts succeed. It owns each complete turn through `user_prompt_submit`, provider requests, tools, permissions, cancellation, and recovery.
 
 Scripts in one turn share ephemeral coordination state, and scripts for one session ID share disposable session state (see `SHELLFISH_TURN_STATE` and `SHELLFISH_SESSION_STATE` below). A script runs synchronously. If the operation is cancelled, in-flight script work is terminated with it. Scripts must finish or terminate their own subprocesses before exiting. Daemonizing is unsupported.
 
@@ -81,7 +81,7 @@ Every script is invoked with the session working directory as its `PWD` and thes
 | `SHELLFISH_CONFIG_DIR` | Directory containing the resolved config file, or its prospective default location |
 | `HOOK_SCRIPT_ROOT` | Directory containing the resolved hook script |
 
-Scripts on turn-scoped hooks (`user_prompt_submit`, `permission_request`, `pre_tool_use`, `post_tool_use`, and `stop`) also receive `SHELLFISH_TURN_ID` and `SHELLFISH_TURN_STATE`. The turn ID is the one-based ordinal of the next durable user message. Exec derives it under the session lock before `user_prompt_submit`, reuses it for the accepted turn's later hooks, and discards it when submission is blocked. Turn IDs are not written separately to the session transcript. `SHELLFISH_TURN_STATE` is an absolute path to a private, mode-0700 directory shared by all scripts in that turn.
+Scripts on turn-scoped hooks (`user_prompt_submit`, `permission_request`, `pre_tool_use`, `post_tool_use`, and `stop`) also receive `SHELLFISH_TURN_ID` and `SHELLFISH_TURN_STATE`. The turn ID is the one-based ordinal of the next durable user message. Exec derives it before `user_prompt_submit`, reuses it for the accepted turn's later hooks, and discards it when submission is blocked. Turn IDs are not written separately to the session transcript. `SHELLFISH_TURN_STATE` is an absolute path to a private, mode-0700 directory shared by all scripts in that turn.
 
 `$1` is always the hook name. Remaining argv and stdin are hook-specific (see [Hooks](#hooks)).
 
@@ -89,7 +89,7 @@ Scripts on turn-scoped hooks (`user_prompt_submit`, `permission_request`, `pre_t
 
 `SHELLFISH_SESSION_STATE` is shared by scripts whose sessions have the same `SHELLFISH_SESSION_ID`. It lives under Shellfish's host temporary root, is retained across ordinary process exits, and is not removed when a turn or chat ends. It is disposable cache state: the host may remove it after a restart or temporary-file cleanup, and a changed `TMPDIR` selects a different location. Scripts must tolerate it being empty. `session_start` receives session state before the transcript file is created; failed session creation does not remove that state.
 
-Both directories are shared writable coordination spaces, not per-script storage. Scripts must namespace files when needed and must account for other Shellfish processes that use the same session ID. The session lock serializes scripts on ordinary turn hooks for one transcript, but intentionally overlapping session IDs may share session state.
+Both directories are shared writable coordination spaces, not per-script storage. Scripts must namespace files when needed and must account for other Shellfish processes that use the same session ID. Shellfish does not serialize concurrent processes that use the same session or session ID.
 
 ### Output channels
 
@@ -156,7 +156,7 @@ Trailing context, typically `stop` feedback, becomes a synthetic trailing user m
 
 ### `session_start`
 
-Runs once during lock-free session preparation. It does not run when an existing session is resumed or exec restarts. The header and configured system record are prepared in memory, and script input is constructed from that state and its resolved runtime. The session path does not exist until the complete initial prefix is written after all scripts succeed. stdin is empty and `$1` is `session_start`. There are no further arguments. The script receives `SHELLFISH_SESSION_STATE`, but it does not receive `SHELLFISH_TURN_ID`, `SHELLFISH_TURN_STATE`, or credentials. The API key is scoped to the backend adapter only.
+Runs once during session preparation. It does not run when an existing session is resumed or exec restarts. The header and configured system record are prepared in memory, and script input is constructed from that state and its resolved runtime. The session path does not exist until the complete initial prefix is written after all scripts succeed. stdin is empty and `$1` is `session_start`. There are no further arguments. The script receives `SHELLFISH_SESSION_STATE`, but it does not receive `SHELLFISH_TURN_ID`, `SHELLFISH_TURN_STATE`, or credentials. The API key is scoped to the backend adapter only.
 
 - **stdout** becomes durable `session_start` context in the initial session prefix. Each script's nonempty stdout is a separately attributed record.
 - **stderr** is shown and discarded.
@@ -195,7 +195,7 @@ The supported statuses are:
   ```
 - **Exit 11** — skip submission and stop the remaining `user_prompt_submit` scripts. On fd 3, the script may request either `{"action":"handoff","argv":[...]}` with a complete, nonempty command array including the executable as `argv[0]`, or `{"action":"session_update","patch":{...}}` to atomically update the current session runtime.
 
-Only exit 11 can request these actions. Exec applies a session update under the current turn lock and emits the resulting runtime to the client after unlocking. The result must be a canonical session runtime. For a handoff, the script only requests it; a capable client executes the command after exec completes cleanly. argv strings must not contain NUL bytes.
+Only exit 11 can request these actions. Exec applies a session update during the current turn and emits the resulting runtime to the client. The result must be a canonical session runtime. For a handoff, the script only requests it; a capable client executes the command after exec completes cleanly. argv strings must not contain NUL bytes.
 
 A script requesting a session switch writes a JSON action to fd 3:
 
@@ -244,7 +244,7 @@ exit 11
 
 ### `pre_tool_use`
 
-Runs immediately before a tool executes, with exec holding the session lock. `$1` is `pre_tool_use`. stdin is the same canonical tool request envelope used by `permission_request`.
+Runs immediately before a tool executes. `$1` is `pre_tool_use`. stdin is the same canonical tool request envelope used by `permission_request`.
 
 - **stdout** must be empty on exit 0. On exit 10 or 11, nonempty stdout is denial feedback for the model. Shellfish joins feedback from denying scripts with newlines in configured order and uses it as the denied `tool_result` content. When no denying script writes feedback, the result retains the generic denial text naming the first denying script. Stdout never rewrites tool input.
 - **stderr** is shown and discarded.
@@ -279,7 +279,7 @@ A nonzero tool exit is a normal canonical result, not a script failure, so this 
 
 ### `stop`
 
-Runs after the completed assistant record is committed, with exec holding the lock. `$1` is `stop`, `$2` is the one-based stop-attempt count for the current turn, and stdin is the last assistant message's text blocks concatenated in content order. Non-text blocks are omitted.
+Runs after the completed assistant record is committed. `$1` is `stop`, `$2` is the one-based stop-attempt count for the current turn, and stdin is the last assistant message's text blocks concatenated in content order. Non-text blocks are omitted.
 
 - **stdout** is continuation feedback, but only when completion is skipped. Exit-0 stdout is **discarded**: permitting completion must not stage feedback.
 - **stderr** is shown and discarded.
@@ -301,7 +301,7 @@ exit 10
 
 ## Guarantees and limits
 
-- Session transcript records are append-only and authoritative. Hook scripts are trusted user-provided programs, and durable script output must travel through stdout rather than direct transcript mutation. Scripts may request a locked session update through fd 3 but must not rewrite the header directly.
+- Session transcript records are append-only and authoritative. Hook scripts are trusted user-provided programs, and durable script output must travel through stdout rather than direct transcript mutation. Scripts may request a session update through fd 3 but must not rewrite the header directly.
 - Script output is untrusted. stdout is escaped before it reaches the model. It cannot forge tags or inject provider roles.
 - Dispatch is sequential and preserves configured order. A failed chain does not commit partial output. Candidate context is usable only after the whole chain succeeds.
 - Captures are private, bounded, and cleaned on every path.

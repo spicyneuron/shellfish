@@ -256,7 +256,7 @@ set_prompt_hook() {
     '{harness:{user_prompt_submit:[$script]}}') || return
   sf_session_open "$session" || return
   sf_session_update "$patch" || rc=1
-  sf_session_close || rc=1
+  sf_session_close
   return $rc
 }
 

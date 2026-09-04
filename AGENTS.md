@@ -6,7 +6,7 @@ NOTE: This project is pre-release. Do not add deprecation noticies, backwards co
 
 - `bin/shellfish` parses the CLI and starts interactive chat or reports resolved configuration.
 - `lib/chat/main.zsh` owns interactive session selection, terminal lifecycle, and the ZLE prompt.
-- `lib/exec.zsh` owns process setup, input handling, full locked turns, events, permissions, signals, and cleanup.
+- `lib/exec.zsh` owns process setup, input handling, full turns, events, permissions, signals, and cleanup.
 - `lib/session/` owns JSONL persistence, state validation, recovery, and provider request projection.
 - `lib/runtime/` resolves configuration, credentials, profiles, and schema validation.
 - `lib/backend.zsh` adapts provider streams.
@@ -17,9 +17,9 @@ NOTE: This project is pre-release. Do not add deprecation noticies, backwards co
 ## Execution flow
 
 - `bin/shellfish` validates CLI input and dispatches to config reporting, single-turn exec, or interactive chat.
-- New sessions resolve configuration into a frozen runtime, prepare the header, concatenate the profile's `system` components into one system record, collect `session_start` context, then create the complete initial JSONL prefix without a session lock.
-- Each turn opens and locks the session, runs `user_prompt_submit` scripts, then loops over provider responses. Final responses run `stop` scripts; tool-call responses run the `pre_tool_use` scripts, permission, execution, persistence, and `post_tool_use` scripts before the next provider request.
-- The session layer is authoritative. Request projection converts durable records into provider messages; provider deltas and UI events are transient. Any failure, cancellation, or early return converges on turn recovery, hook/tool cleanup, and unlock.
+- New sessions resolve configuration into a frozen runtime, prepare the header, concatenate the profile's `system` components into one system record, collect `session_start` context, then create the complete initial JSONL prefix.
+- Each turn opens the session, runs `user_prompt_submit` scripts, then loops over provider responses. Final responses run `stop` scripts; tool-call responses run the `pre_tool_use` scripts, permission, execution, persistence, and `post_tool_use` scripts before the next provider request.
+- The session layer is authoritative. Request projection converts durable records into provider messages; provider deltas and UI events are transient. Any failure, cancellation, or early return converges on turn recovery and hook/tool cleanup.
 - Interactive chat runs single turns through `shellfish exec --jsonl`, renders its event stream, and reloads the durable transcript after completion or uncertainty.
 - A served session runs the same single turns: the proxy relays one child's JSONL to one browser, which replays the durable session on connect and reopens that stream to recover.
 
@@ -28,7 +28,7 @@ NOTE: This project is pre-release. Do not add deprecation noticies, backwards co
 - Sessions are append-only JSONL and are the durable source of truth. Every durable prefix must be valid, including an in-progress last turn.
 - Durable records are `session`, `system`, `message`, and hook-injected `context`. Provider deltas, turn status, and presentation events are transient.
 - Interactive chat submits single turns through the shared session and turn machinery. Do not introduce lifecycle or presentation records.
-- Session preparation and creation are lock-free; each full turn owns the session lock from open through recovery and cleanup. Keep credentials out of hook scripts; exec passes the scoped `SHELLFISH_API_KEY` only to the backend adapter.
+- One `shellfish exec` process owns a session for the duration of a turn by convention; concurrent writers are not prevented. Keep credentials out of hook scripts; exec passes the scoped `SHELLFISH_API_KEY` only to the backend adapter.
 
 ## Configuration
 
@@ -40,7 +40,7 @@ NOTE: This project is pre-release. Do not add deprecation noticies, backwards co
 
 ## Hooks
 
-- `session_start` runs during lock-free session preparation; its output becomes the initial context. `user_prompt_submit`, `permission_request`, `pre_tool_use`, `post_tool_use`, and `stop` run under the full-turn lock.
+- `session_start` runs during session preparation; its output becomes the initial context. `user_prompt_submit`, `permission_request`, `pre_tool_use`, `post_tool_use`, and `stop` run during a turn.
 - Hook script stdout supplies model input according to hook policy, stderr is user display only, and fd 3 carries control decisions where supported. Use `docs/HOOKS.md` for payloads, exit statuses, and environment guarantees.
 
 ## Development

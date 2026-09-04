@@ -132,7 +132,7 @@ SF_ROOT=$ROOT zsh -f -c '
     sf_request_build "$SF_SESSION[runtime]" "[]" >"$2"
   rc=$?
   mv "$1.saved" "$1"
-  sf_session_close || rc=1
+  sf_session_close
   exit $rc
 ' -- "$session" "$memory_request"
 jq -e '
@@ -246,8 +246,8 @@ jq -e '
 ' "$partial_capture" >/dev/null
 SF_TEST_RUNTIME=$saved_runtime
 
-# A partial append failure is fatal, emits no uncommitted durable record, and
-# releases the session lock. The next owner repairs the fragment.
+# A partial append failure is fatal and emits no uncommitted durable record.
+# The next reader repairs the fragment.
 typeset partial_session="$tmp/partial.jsonl"
 typeset partial_stream="$tmp/partial.stream"
 integer partial_status=0
@@ -271,7 +271,6 @@ print -r -- "$(<"$partial_stream")" | jq -eRn '
   ($events[-1].message | contains("cannot append session record")) and
   ($events | any(.type | IN("session","system","message","context")) | not)
 ' >/dev/null
-assert_session_unlocked "$partial_session"
 sf_session_open "$partial_session"
 sf_session_close
 cmp -s "$tmp/partial-before.jsonl" "$partial_session" ||

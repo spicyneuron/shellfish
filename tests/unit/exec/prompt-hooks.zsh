@@ -9,7 +9,7 @@ export XDG_STATE_HOME="$tmp/state"
 sf_test_runtime
 export SF_TEST_BACKEND_DELAY=0
 
-# Exec derives the turn ID under lock and owns user_prompt_submit script decisions.
+# Exec derives the turn ID and owns user_prompt_submit script decisions.
 typeset prompt_script="$tmp/prompt-hook"
 cat >"$prompt_script" <<'ZSH'
 #!/usr/bin/env zsh
@@ -162,7 +162,6 @@ jq -eRn '
 ' <"$cancel_stream" >/dev/null
 (( $(wc -l <"$cancel_session") == records )) ||
   fail 'pre-commit cancellation appended a recovery record'
-assert_session_unlocked "$cancel_session"
 # Process exit sweeps transient turn and hook files. Session state remains.
 typeset cancel_root="$cancel_temp/shellfish-$EUID"
 typeset category

@@ -28,7 +28,7 @@ EOF
 export XDG_STATE_HOME="$tmp/state"
 typeset entry="$ROOT/bin/shellfish"
 
-# Interrupting a session_start script leaves the created prefix unlocked. Reopening the
+# Interrupting a session_start script creates no session. Reopening the
 # session does not retry the script.
 typeset interrupt_script="$tmp/interrupt-start" interrupt_marker="$tmp/interrupt-started"
 cat >"$interrupt_script" <<'ZSH'
@@ -61,11 +61,10 @@ integer interrupt_status=0
 wait "$interrupt_pid" || interrupt_status=$?
 (( interrupt_status == 143 )) ||
   fail "interrupted session_start reported status $interrupt_status instead of 143: $(<"$interrupt_output")"
-[[ ! -e "$interrupt_session.lock" ]] || fail 'interrupted session_start left the session locked'
 [[ ! -e $interrupt_session ]] || fail 'interrupted session_start created a session'
 (( $(wc -l <"$interrupt_marker") == 1 )) || fail 'session_start ran more than once'
 
-# Cancelling model metadata lookup stops the adapter and releases the turn lock.
+# Cancelling model metadata lookup stops the adapter and ends the turn.
 typeset model_backend="$tmp/model-backend" model_ready="$tmp/model-ready"
 typeset model_stopped="$tmp/model-stopped" model_config="$tmp/model.jsonc"
 mkdir "$model_backend"
@@ -102,7 +101,6 @@ integer model_status=0
 wait "$model_pid" || model_status=$?
 (( model_status == 143 )) || fail 'interrupted model metadata lookup reported the wrong status'
 [[ -s $model_stopped ]] || fail 'interrupted model metadata adapter was not stopped'
-assert_session_unlocked "$model_session"
 
 # A signalled run stops exec, closes the interrupted turn on disk, and
 # reports the signal rather than an ordinary failure.
@@ -129,7 +127,6 @@ jq -eRn '
   ($events[-1] | .role == "assistant" and .stop == "length" and
     (.content | any(.type == "text" and .text != "")))
 ' <"$cancel_output" >/dev/null || fail 'signalled exec did not close the interrupted turn'
-assert_session_unlocked "$cancel_session"
 
 # Reasoning metadata received before cancellation remains available to the next
 # provider request when visible reasoning is recovered.
@@ -202,8 +199,6 @@ jq -e -s '
     content:[{type:"text",text:"Turn interrupted."}]} and
   ([.[] | .content[]? | select(.type == "tool_call")] | length) == 0
 ' "$tool_input_session" >/dev/null || fail 'cancelled tool input became durable intent'
-assert_session_unlocked "$reasoning_session"
-assert_session_unlocked "$tool_input_session"
 
 # A turn that never finished is repaired when the session is next opened, and
 # the repair is announced before the new turn, since it is as durable as any

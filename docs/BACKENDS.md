@@ -86,7 +86,7 @@ Exactly one `_assistant_response_end` must be the final event. Its stop value is
 
 Exec validates the normalized stream and assembles the canonical assistant message. It rejects conflicting block metadata, invalid tool input, duplicate call IDs, and disagreement between content and the stop reason. The message is appended before hooks, permissions, or tools can act, so an adapter must never execute tool calls itself.
 
-If an adapter fails or is cancelled without successfully completing the response, locked cleanup best-effort preserves accepted visible text and reasoning as an assistant message with `stop: "length"`. Opaque data attached to recovered reasoning is retained for future provider requests. Usage and incomplete tool calls are discarded, even when the received tool input is valid JSON. A response with no visible content uses ordinary turn recovery instead.
+If an adapter fails or is cancelled without successfully completing the response, turn cleanup best-effort preserves accepted visible text and reasoning as an assistant message with `stop: "length"`. Opaque data attached to recovered reasoning is retained for future provider requests. Usage and incomplete tool calls are discarded, even when the received tool input is valid JSON. A response with no visible content uses ordinary turn recovery instead.
 
 This recovery is not a durability guarantee across `SIGKILL`, process crashes, or machine loss. Provider-specific validation should still fail promptly and write a concise diagnostic to stderr.
 

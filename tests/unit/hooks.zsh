@@ -2,7 +2,7 @@
 
 source "${0:A:h}/_hooks.zsh"
 
-# session_start runs during lock-free session creation, receives its hook name, and
+# session_start runs during session creation, receives its hook name, and
 # commits one attributed context record after the complete chain succeeds.
 typeset start_session="$tmp/start-session.jsonl"
 make_script start '[[ $# == 1 && $1 == session_start ]]; [[ ! -s /dev/stdin && -z ${SHELLFISH_TURN_ID-} ]]; [[ -z ${OPENAI_API_KEY-} && -z ${CUSTOM_API_KEY-} ]]; [[ -n $SHELLFISH_SESSION_ID && $SHELLFISH_MODEL == test && $PROJECT_DIR == $PWD ]]; [[ $SHELLFISH_CONFIG_DIR == "$EXPECTED_CONFIG_DIR" ]]; print -n startup; print -n -u2 local; [[ -z $SKIP ]] || exit 10'
@@ -24,7 +24,6 @@ export OPENAI_API_KEY=standard-secret CUSTOM_API_KEY=custom-secret
 SF_SESSION_PATH=$start_session
 sf_hooks_session_state_create
 sf_session_prepare "$SF_TEST_RUNTIME"
-[[ ! -e ${start_session}.lock ]]
 sf_hooks_session_start "$start_session"
 [[ -z $REPLY && ${#reply} == 0 && $SF_HOOK_SCRIPT_RESULTS[4] == local ]]
 [[ $OPENAI_API_KEY == standard-secret && $CUSTOM_API_KEY == custom-secret ]]

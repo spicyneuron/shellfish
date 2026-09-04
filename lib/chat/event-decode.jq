@@ -49,11 +49,9 @@ def event_fields($event_runtime):
      elif ($message == "invalid permission response" or
            $message == "cannot prepare permission request") then
        ["Permission failed", $message]
-     elif ($message | startswith("session is busy: ")) then
-       ["Session busy", $message]
      elif ($message | startswith("session working directory is unavailable: ")) then
        ["Working directory unavailable", $message]
-     elif ($message | test("^(cannot (append|create|inspect|prepare|read|release|repair|replace|restore|secure|timestamp|write) session|invalid session path:)")) then
+     elif ($message | test("^(cannot (append|create|inspect|prepare|read|repair|replace|restore|secure|timestamp|write) session|invalid session path:)")) then
        ["Session failed", $message]
      elif ($message == "sandbox executable is unavailable" or
            ($message | startswith("sandbox executable is unavailable: "))) then

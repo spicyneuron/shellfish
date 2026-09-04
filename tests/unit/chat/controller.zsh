@@ -408,7 +408,7 @@ SF_PRESENT_STATE=working
 sf_chat_transport_reset
 SF_CHAT_TRANSPORT_LINES=(
   '{"type":"_exec_error","message":"backend emitted an invalid event stream"}'
-  '{"type":"_exec_error","message":"cannot release session lock"}'
+  '{"type":"_exec_error","message":"cannot append session record: /tmp/recover.jsonl"}'
 )
 SF_CHAT_TRANSPORT_EOF=1
 SF_CHAT_TRANSPORT_EXIT_STATUS=1
@@ -416,7 +416,7 @@ SF_CHAT_TRANSPORT_EXIT_DETAIL='backend emitted an invalid event stream'
 sf_chat_heartbeat_tick
 assert_equal idle "$SF_PRESENT_STATE"
 assert_equal 'Provider response invalid' "$SF_PRESENT_NODE_HEADING[-1]"
-assert_equal $'backend emitted an invalid event stream\nSession failed: cannot release session lock' \
+assert_equal $'backend emitted an invalid event stream\nSession failed: cannot append session record: /tmp/recover.jsonl' \
   "$SF_PRESENT_NODE_BODY[-1]"
 
 # A terminated exec can replace a flushed and closed speculative assistant

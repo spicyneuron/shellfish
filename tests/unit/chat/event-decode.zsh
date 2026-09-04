@@ -68,7 +68,6 @@ for error expected in \
     'openai: cannot read the response status' 'Provider response invalid,openai: cannot read the response status' \
     'openai: cannot normalize API response: bad payload' 'Provider response invalid,openai: cannot normalize API response: bad payload' \
     'invalid permission response' 'Permission failed,invalid permission response' \
-    'session is busy: /tmp/session.jsonl' 'Session busy,session is busy: /tmp/session.jsonl' \
     'session working directory is unavailable: /tmp/gone' 'Working directory unavailable,session working directory is unavailable: /tmp/gone' \
     'cannot append session record: /tmp/session.jsonl' 'Session failed,cannot append session record: /tmp/session.jsonl' \
     'cannot prepare session records' 'Session failed,cannot prepare session records' \

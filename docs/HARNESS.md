@@ -2,7 +2,7 @@
 
 A harness defines how Shellfish behaves as an agent. It combines tools, lifecycle hooks, sandbox policy, and turn limits around the shared execution loop. A profile selects a harness together with a backend, a system prompt, and model request settings.
 
-The core owns the parts that must remain consistent: event ordering, session locking, persistence, recovery, and cleanup. The harness supplies the coding behavior and workflow policy. This separation lets a different harness turn the same runtime into a reviewer, research assistant, or project-specific agent without replacing the turn machinery.
+The core owns the parts that must remain consistent: event ordering, persistence, recovery, and cleanup. The harness supplies the coding behavior and workflow policy. This separation lets a different harness turn the same runtime into a reviewer, research assistant, or project-specific agent without replacing the turn machinery.
 
 Harnesses are resolved when a session is created and stored in its header. Changing a harness affects new sessions, not existing ones.
 

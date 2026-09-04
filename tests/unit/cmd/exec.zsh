@@ -141,13 +141,9 @@ zsh -f "$entry" build-request --session "$new_session" --tools '[{}]' \
 request_record=$(jq -cn --arg text 'composed request' \
   '{type:"message",role:"user",content:[{type:"text",text:$text}]}')
 request_digest=$(shasum <"$new_session")
-zmodload zsh/system
-integer request_lock
-: >"${new_session}.lock"
-zsystem flock -f request_lock "${new_session}.lock" || fail 'cannot hold request test lock'
 request=$(print -r -- "$request_record" |
   zsh -f "$entry" build-request --session "$new_session" --tools '[]') ||
-  fail 'build-request failed while the source was locked'
+  fail 'build-request failed'
 jq -e '
   .tools == [] and .messages[-1] == {
     role:"user",content:[{type:"text",text:"composed request"}]
@@ -155,12 +151,11 @@ jq -e '
 ' <<<"$request" >/dev/null || fail 'build-request produced the wrong request'
 request_response=$(print -r -- "$request" |
   SF_TEST_BACKEND_DELAY=0 zsh -f "$entry" run-request --session "$new_session") ||
-  fail 'run-request failed while the source was locked'
+  fail 'run-request failed'
 jq -e '
   .type == "message" and .role == "assistant" and .stop == "end" and
   .content == [{type:"text",text:"composed request\n"}]
 ' <<<"$request_response" >/dev/null || fail 'run-request produced the wrong response'
-zsystem flock -u "$request_lock" || fail 'cannot release request test lock'
 assert_equal "$request_digest" "$(shasum <"$new_session")"
 
 print -r -- '{"type":"message","role":"assistant","stop":"end","content":[]}' |

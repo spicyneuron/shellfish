@@ -45,7 +45,7 @@ Stdin remains open for permission replies. When exec emits a permission request,
 
 ## Read-only request composition
 
-`shellfish build-request` and `shellfish run-request` expose the provider-request boundary without opening a durable turn. Both require `--session` and read the selected session without locking, recovery, or mutation.
+`shellfish build-request` and `shellfish run-request` expose the provider-request boundary without opening a durable turn. Both require `--session` and read the selected session without recovery or mutation.
 
 `build-request` reads zero or more additional durable records as JSONL on stdin, validates them as a continuation of the selected session, and writes one canonical backend request. `--tools` accepts a JSON array of provider tool schemas and defaults to `[]`.
 
@@ -118,4 +118,4 @@ A nonzero exec exit means the operation failed or was interrupted. Exec emits `_
 
 If a provider fails or is cancelled after exec accepted visible text or reasoning, cleanup makes a best-effort append of that content as a canonical assistant message with `stop: "length"`. A failure before visible content uses the ordinary interruption record. This recovery cannot guarantee persistence after `SIGKILL` or process crash.
 
-Do not write presentation or lifecycle records into a session. Transcript records are append-only and owned by Shellfish. Custom clients submit turns through exec and use the transcript only for replay and recovery. A hook-requested session update may atomically replace the runtime header under the session lock.
+Do not write presentation or lifecycle records into a session. Transcript records are append-only and owned by Shellfish. Custom clients submit turns through exec and use the transcript only for replay and recovery. A hook-requested session update may atomically replace the runtime header.

@@ -1,9 +1,7 @@
 emulate -R zsh
 setopt no_aliases no_multios pipe_fail
-zmodload zsh/system
 
 typeset -g SF_SESSION_PATH=''
-typeset -g SF_SESSION_LOCK=''
 typeset -gA SF_SESSION=()
 typeset -ga SF_SESSION_RECORDS=()
 typeset -gA SF_HOOK_COUNTS=()
@@ -120,33 +118,7 @@ sf_session_find() {
   (( ${#SF_SESSION_MATCHES} )) || sf_session_fail "no sessions match $cwd"
 }
 
-sf_session_acquire_lock() {
-  local lock="${SF_SESSION_PATH}.lock"
-  [[ -z $SF_SESSION_LOCK ]] || {
-    sf_session_fail "session lock is already held: $SF_SESSION_LOCK"
-    return
-  }
-  [[ -d ${SF_SESSION_PATH:h} ]] || {
-    sf_session_fail "session directory does not exist: ${SF_SESSION_PATH:h}"
-    return
-  }
-  if ! (umask 077; setopt no_clobber; : >"$lock") 2>/dev/null; then
-    [[ -f $lock && ! -L $lock ]] || {
-      sf_session_fail "invalid session lock: $lock"
-      return
-    }
-  fi
-  zsystem flock -t 0 -f SF_SESSION_LOCK "$lock" 2>/dev/null ||
-    sf_session_fail "session is busy: $SF_SESSION_PATH"
-}
-
 sf_session_close() {
-  [[ -n $SF_SESSION_LOCK ]] || return 0
-  zsystem flock -u "$SF_SESSION_LOCK" 2>/dev/null || {
-    sf_session_fail "cannot release session lock: $SF_SESSION_PATH"
-    return
-  }
-  SF_SESSION_LOCK=''
   SF_SESSION=()
   SF_SESSION_RECORDS=()
   SF_HOOK_COUNTS=()
@@ -172,10 +144,6 @@ sf_session_repair_tail() {
 sf_session_prepare() {
   local runtime=$1 cwd created decoded header id model
   SF_SESSION_ERROR=''
-  [[ -z $SF_SESSION_LOCK ]] || {
-    sf_session_fail "session lock is already held: $SF_SESSION_LOCK"
-    return
-  }
   SF_SESSION=()
   SF_SESSION_RECORDS=()
   SF_HOOK_COUNTS=()
@@ -250,7 +218,7 @@ sf_session_system() {
 sf_session_create() {
   local error
   local -a records
-  [[ -z $SF_SESSION_LOCK && ${#SF_SESSION_RECORDS} -gt 0 ]] || {
+  (( ${#SF_SESSION_RECORDS} )) || {
     sf_session_fail 'session is not prepared for creation'
     return
   }
@@ -395,7 +363,7 @@ sf_session_load() {
 
 sf_session_append() {
   local record=$1
-  [[ -n $SF_SESSION_LOCK ]] || {
+  (( ${#SF_SESSION_RECORDS} )) || {
     sf_session_fail 'session is not open for mutation'
     return
   }
@@ -410,7 +378,7 @@ sf_session_update() {
   local update=$1 decoded header temp error
   local -a fields
   integer changed=0
-  [[ -n $SF_SESSION_LOCK && ${#SF_SESSION_RECORDS} -gt 0 ]] || {
+  (( ${#SF_SESSION_RECORDS} )) || {
     sf_session_fail 'session is not open for mutation'
     return
   }
@@ -545,10 +513,6 @@ sf_session_recover_turn() {
 
 sf_session_open() {
   local session_path=$1
-  [[ -z $SF_SESSION_LOCK ]] || {
-    sf_session_fail "session lock is already held: $SF_SESSION_LOCK"
-    return
-  }
   SF_SESSION_ERROR=''
   REPLY=''
   [[ $session_path == /* ]] || {
@@ -560,11 +524,8 @@ sf_session_open() {
     sf_session_fail "invalid session path: $session_path"
     return
   }
-  sf_session_acquire_lock || return
   if ! sf_session_recover_turn; then
-    local error=$SF_SESSION_ERROR
-    sf_session_close 2>/dev/null || true
-    SF_SESSION_ERROR=$error
+    sf_session_close
     return 1
   fi
 }

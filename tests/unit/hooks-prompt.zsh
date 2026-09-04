@@ -11,7 +11,7 @@ typeset session_update=$script
 make_script invalid_update 'print -rn -u3 -- '\''{"action":"session_update","patch":[]}'\''; exit 11'
 typeset invalid_update=$script
 
-# The user_prompt_submit hook runs under the session lock and preserves exact prompt bytes.
+# The user_prompt_submit hook preserves exact prompt bytes.
 typeset prompt_session="$tmp/prompt-session.jsonl"
 typeset prompt_script
 make_script prompt '[[ $1 == user_prompt_submit && $SHELLFISH_TURN_ID == 1 ]]; [[ $SHELLFISH_SESSION == /* && $SHELLFISH_SESSION_ID == prompt-session && $SHELLFISH_MODEL == test ]]; [[ $PROJECT_DIR == $PWD && $HOOK_SCRIPT_ROOT == ${0:A:h} && -d $SHELLFISH_TURN_STATE && -d $SHELLFISH_SESSION_STATE ]]; cat; print -n context; [[ -z $CONTROL ]] || { jq -cn --arg path "$CONTROL" '\''{action:"handoff",argv:["/usr/bin/printf",$path]}'\'' >&3; exit 11 }; [[ -z $META ]] || { print -rn -u3 -- '\''{"context":{"prompt":"false","status":1}}'\''; exit 10 }; [[ -z $BINARY ]] || print -rn -- $'\''\0tail'\''; [[ -z $SKIP ]] || { print -rn -u2 -- blocked; exit 10; }'
@@ -59,7 +59,7 @@ CONTROL="$tmp/switched.jsonl" run_prompt_hook /switch "$prompt_session"
 jq -e 'select(.type == "context" and .content == "/switchcontext")' \
   < <(tail -n 1 "$prompt_session") >/dev/null
 
-# A session update is returned to exec for application under the existing lock.
+# A session update is returned to exec for application during the turn.
 SF_TEST_RUNTIME=$(jq -c --arg script "$session_update" '
   .harness.user_prompt_submit=[$script]
 ' <<<"$SF_TEST_RUNTIME")

@@ -139,13 +139,13 @@ sf_exec_partial_assistant() {
 # Zsh defers a trap's pending exit until this cleanup call returns.
 sf_exec_turn_cleanup() {
   integer interrupted=$1
-  local failure=$2 after=$3 recovered='' partial='' close_failure=''
+  local failure=$2 after=$3 recovered='' partial=''
 
   sf_tools_cleanup
   sf_hooks_turn_state_cleanup
   [[ -z $SF_REQUEST[error_file] ]] ||
     rm -f -- "$SF_REQUEST[error_file]" 2>/dev/null || true
-  if { (( interrupted )) || [[ -n $failure ]] } && [[ -n $SF_SESSION_LOCK ]]; then
+  if { (( interrupted )) || [[ -n $failure ]] } && (( ${#SF_SESSION_RECORDS} )); then
     sf_exec_partial_assistant
     partial=$REPLY
     if [[ -n $partial ]]; then
@@ -166,18 +166,11 @@ sf_exec_turn_cleanup() {
   fi
   SF_REQUEST[partial_events]=''
   [[ -z $recovered ]] || sf_exec_emit "$recovered"
-  if [[ -n $SF_SESSION_LOCK ]]; then
-    if (( interrupted )); then
-      sf_session_close || sf_exec_error "$SF_SESSION_ERROR"
-    else
-      sf_session_close || close_failure=$SF_SESSION_ERROR
-    fi
-  fi
+  sf_session_close
   if (( ! interrupted )); then
     [[ -z $failure ]] || sf_exec_error "$failure"
-    [[ -z $close_failure ]] || sf_exec_error "$close_failure"
-    [[ -n $failure || -n $close_failure || -z $after ]] || sf_exec_emit "$after"
-    [[ -z $failure && -z $close_failure ]]
+    [[ -n $failure || -z $after ]] || sf_exec_emit "$after"
+    [[ -z $failure ]]
   fi
 }
 
@@ -269,7 +262,7 @@ sf_exec_turn() {
       failure=$SF_HOOK_ERROR
       return 1
     fi
-    if ! sf_hooks_user_prompt_submit_locked "$prompt" "$session_path"; then
+    if ! sf_hooks_user_prompt_submit "$prompt" "$session_path"; then
       failure=$SF_HOOK_ERROR
       return 1
     fi

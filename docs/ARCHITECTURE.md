@@ -8,7 +8,7 @@ A session JSONL file is the authoritative state of the agent. Transcript records
 
 Clients attach to a session and consume the same event stream. Durable records provide history they can replay, while transient events provide live interaction around it. A client can use either without becoming another owner of the state.
 
-The session header consolidates the resolved settings required to run the agent: backend, harness, model request, tools, hooks, limits, sandbox policy. A session carries the runtime configuration needed to continue it instead of being reinterpreted through the current profile on every turn. Credentials and presentation settings remain external. A hook-requested session update may atomically replace the header under the session lock; submitted model turns never rewrite it.
+The session header consolidates the resolved settings required to run the agent: backend, harness, model request, tools, hooks, limits, sandbox policy. A session carries the runtime configuration needed to continue it instead of being reinterpreted through the current profile on every turn. Credentials and presentation settings remain external. A hook-requested session update may atomically replace the header; submitted model turns never rewrite it.
 
 The bundled compaction hook preserves that append-only boundary by creating a child session rather than rewriting its source. The child keeps the frozen runtime and startup context and replaces the conversation with a model-produced continuation summary. A capable handoff client opens the child and, for automatic compaction, restores the interrupted prompt as an editable draft. A client that cannot follow the handoff remains on the source, whose original history is unchanged.
 
@@ -21,7 +21,7 @@ A turn is one transition of the agent state machine. It begins with a user messa
 3. If the response contains tool calls, run them and append their results.
 4. Send another provider request until there are no more tool calls.
 
-One `shellfish exec` process owns the entire transition, including the session lock and cleanup. There is no resident agent process and no ownership to coordinate across requests or tools.
+One `shellfish exec` process owns the entire transition, including cleanup. There is no resident agent process and no ownership to coordinate across requests or tools.
 
 Backend adapters translate provider responses into indexed text, reasoning, opaque reasoning, and tool-call updates followed by one response-end event. The exec framework validates and accumulates that normalized stream into the canonical assistant message. Adapters retain only provider-specific parsing, correlation, and protocol validation. Tool calls remain inert until the complete response has been assembled, validated, and appended.
 
@@ -31,12 +31,12 @@ Terminal chat, `shellfish-server`, and any other integrations all use the same b
 
 Clients do not embed the agent loop or maintain their own copy of session state. They invoke turns and present the results.
 
-`shellfish build-request` and `shellfish run-request` expose the narrower provider boundary for read-only composition. They project or execute a request against a session's frozen runtime without locking or mutating the transcript. `exec` remains the owner of durable turns, hook execution, tool execution, and recovery.
+`shellfish build-request` and `shellfish run-request` expose the narrower provider boundary for read-only composition. They project or execute a request against a session's frozen runtime without mutating the transcript. `exec` remains the owner of durable turns, hook execution, tool execution, and recovery.
 
 ## Harnesses bind scripts to the lifecycle
 
 The turn loop is deliberately generic. A harness combines tools, limits, sandbox policy, and shell scripts bound to lifecycle hooks. The default coding behavior is assembled this way rather than built into `shellfish exec`.
 
-Project discovery, slash commands, permission policy, tool review, and stop-time continuation are all harness behavior. The core still owns event ordering, validation, locking, persistence, recovery, and cleanup. Hook scripts can influence a turn at defined points, but they do not redefine the state machine.
+Project discovery, slash commands, permission policy, tool review, and stop-time continuation are all harness behavior. The core still owns event ordering, validation, persistence, recovery, and cleanup. Hook scripts can influence a turn at defined points, but they do not redefine the state machine.
 
 Tools may run inside the configured sandbox. Hook scripts and backend adapters are trusted programs that run with the user's permissions. The scoped API key is passed only to the backend adapter.

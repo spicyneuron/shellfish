@@ -44,12 +44,6 @@ sf_hooks_fail() {
   return 1
 }
 
-sf_hooks_require_lock() {
-  local hook=$1 session=$2
-  [[ -n $SF_SESSION_LOCK && $SF_SESSION_PATH == "$session" ]] ||
-    sf_hooks_fail "$hook requires the active session lock"
-}
-
 sf_hooks_configured() {
   (( ! ${+SF_HOOK_COUNTS[$1]} || SF_HOOK_COUNTS[$1] > 0 ))
 }
@@ -386,12 +380,6 @@ sf_hooks_run() {
   [[ $hook != pre_tool_use ]] || label=pre-tool
 
   SF_HOOK_ERROR=''
-  if [[ $hook == session_start ]]; then
-    [[ -z $SF_SESSION_LOCK && $SF_SESSION_PATH == "$session" && ${#SF_SESSION_RECORDS} -gt 0 ]] ||
-      sf_hooks_fail "$hook requires active session preparation" || return
-  else
-    sf_hooks_require_lock "$hook" "$session" || return
-  fi
   if ! sf_hooks_configured "$hook"; then
     sf_hooks_reset
     reply=( 1 0 '' '' )
@@ -485,15 +473,14 @@ sf_hooks_session_start() {
   reply=()
 }
 
-# Prepares prompt context while exec retains the full-turn lock.
-sf_hooks_user_prompt_submit_locked() {
+# Prepares prompt context before the user record is committed.
+sf_hooks_user_prompt_submit() {
   local prompt=$1 session=$2 argument control patch
   local -a decision handoff
   integer operation_status=0 index control_status handoff_requested=0 update_requested=0
 
   SF_HOOK_ERROR=''
   unset SHELLFISH_TURN_ID
-  sf_hooks_require_lock user_prompt_submit "$session" || return
   SHELLFISH_TURN_ID=$SF_SESSION[turn_id]
   [[ $SHELLFISH_TURN_ID == <1-> ]] || {
     sf_hooks_fail 'cannot derive turn ID'
@@ -575,7 +562,6 @@ sf_hooks_permission_request() {
   integer operation_status=0 index
 
   SF_HOOK_ERROR=''
-  sf_hooks_require_lock permission_request "$session" || return
   input=$(print -rn -- "$tool_input" | jq -c --argjson turn_id "$SHELLFISH_TURN_ID" \
     --arg tool_name "$tool_name" --arg tool_use_id "$call_id" \
     '{turn_id:$turn_id,tool_name:$tool_name,tool_use_id:$tool_use_id,
@@ -626,14 +612,13 @@ sf_hooks_permission_request() {
   fi
 }
 
-# Gates tool calls under the session lock and uses script output as denial feedback.
+# Gates tool calls and uses script output as denial feedback.
 sf_hooks_pre_tool_use() {
   local session=$1 tool_name=$2 call_id=$3 tool_input=$4 input reason
   local -a decision feedback
   integer index
 
   if ! sf_hooks_configured pre_tool_use; then
-    sf_hooks_require_lock pre_tool_use "$session" || return
     sf_hooks_reset
     reply=( allow '' )
     return 0
@@ -668,7 +653,6 @@ sf_hooks_post_tool_use() {
   local session=$1 result=$2 tool_input=$3 input
 
   if ! sf_hooks_configured post_tool_use; then
-    sf_hooks_require_lock post_tool_use "$session" || return
     sf_hooks_reset
     return 0
   fi

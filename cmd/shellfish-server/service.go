@@ -429,8 +429,8 @@ func readTranscript(path string) ([]json.RawMessage, error) {
 		return nil, fmt.Errorf("open session: %w", err)
 	}
 	// One record per line, so a trailing fragment is a record a killed writer never
-	// finished. The service does not hold the session lock and must not repair it;
-	// the records before it are the session, and the next owner discards the rest.
+	// finished. The service reads only and must not repair it; the records before it
+	// are the session, and the next writer discards the rest.
 	if end := bytes.LastIndexByte(body, '\n'); end < 0 {
 		body = nil
 	} else {

@@ -192,7 +192,6 @@ jq -L "$ROOT/lib" -e -s '
   include "runtime/schema";
   (.[1:] | canonical_session_records) and .[-1].stop == "end"
 ' "$permission_cancel_session" >/dev/null
-assert_session_unlocked "$permission_cancel_session"
 
 # Malformed hook control fails the turn rather than silently becoming denial.
 typeset permission_invalid="$tmp/permission-invalid"

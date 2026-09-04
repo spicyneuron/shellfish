@@ -82,7 +82,6 @@ jq -eRn '
   ($events | map(select(.role == "tool_result"))[0].exit_code) == 126 and
   $events[-2].role == "assistant" and $events[-2].stop == "end"
 ' <"$wrong_output" >/dev/null || fail 'bounded permission accepted the wrong request identity'
-assert_session_unlocked "$wrong_session"
 
 typeset eof_session="$tmp/permission-eof.jsonl"
 print -r -- \
@@ -96,7 +95,6 @@ jq -eRn '
   ($events | any(.type == "_exec_error") | not) and
   ($events | map(select(.role == "tool_result"))[0].exit_code) == 126
 ' <"$tmp/permission-eof.out" >/dev/null || fail 'permission EOF did not close the active turn'
-assert_session_unlocked "$eof_session"
 
 # Tool projection is frozen runtime data, so plain and JSONL exec send identical tools.
 typeset projection_session="$tmp/projection.jsonl"

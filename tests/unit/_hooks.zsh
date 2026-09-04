@@ -23,13 +23,13 @@ run_prompt_hook() {
   integer operation_status=0
 
   sf_session_open "$session" || return
-  sf_hooks_user_prompt_submit_locked "$prompt" "$session" || operation_status=1
+  sf_hooks_user_prompt_submit "$prompt" "$session" || operation_status=1
   if (( ! operation_status )); then
     for context in "${SF_HOOK_CONTEXT_RECORDS[@]}"; do
       sf_session_append "$context" || { operation_status=1; break; }
     done
   fi
-  sf_session_close || operation_status=1
+  sf_session_close
   return $operation_status
 }
 

@@ -269,8 +269,6 @@ def test_interrupt_drains_partial_recovery():
             item["type"] == "reasoning" and item["text"]
             for item in recovered["content"]
         )
-        with Path(f"{path}.lock").open() as lock:
-            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
     finally:
         session.close()
 

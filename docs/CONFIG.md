@@ -133,7 +133,7 @@ For chat and `exec`, automatic grants are frozen into a new session like other r
 
 A session retains the resolved backend, harness, request, and sandbox settings stored in its header. Ordinary runtime overrides cannot be applied when opening an existing session. Themes and TUI preview settings come from the current configuration.
 
-Hook-requested session updates merge recursively into the header under the current turn lock. Arrays, scalars, and `null` replace the existing value, and the result must remain a canonical session runtime. Updates to different fields compose, while updates that replace the same scalar or array are last-writer-wins. `/sandbox` refreshes the client's runtime after an update without replaying the transcript.
+Hook-requested session updates merge recursively into the header during the current turn. Arrays, scalars, and `null` replace the existing value, and the result must remain a canonical session runtime. Updates to different fields compose, while updates that replace the same scalar or array are last-writer-wins. `/sandbox` refreshes the client's runtime after an update without replaying the transcript.
 
 The default `/sandbox` command uses this operation to list, add, and remove read or write grants. Additions must name an existing directory. Paths beginning with `~/` use `HOME`, relative paths use the session working directory, and stored additions are canonical absolute paths. Read and write lists remain independent, and removing an exact child grant does not restrict access inherited from a granted parent.
 

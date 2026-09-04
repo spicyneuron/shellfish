@@ -524,8 +524,6 @@ function apply(frame) {
         heading = "Provider rate limit reached";
       } else if (/: HTTP \d{3}(:|$)/.test(detail)) {
         heading = "Provider request failed";
-      } else if (detail.startsWith("session is busy: ")) {
-        heading = "Session busy";
       } else if (detail.startsWith("session working directory is unavailable: ")) {
         heading = "Working directory unavailable";
       } else if (/(^| )hooks?( |$)/.test(detail)) {
