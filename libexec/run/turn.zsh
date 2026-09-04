@@ -5,8 +5,8 @@ setopt no_aliases no_bg_nice no_multios pipe_fail
 
 (( $+functions[sf_session_begin_turn] )) || source "$SF_ROOT/lib/session/main.zsh"
 (( $+functions[sf_credentials_resolve] )) || source "$SF_ROOT/lib/credentials.zsh"
-(( $+functions[sf_hooks_session_start] )) || source "$SF_ROOT/lib/hooks.zsh"
-(( $+functions[sf_tools_load] )) || source "$SF_ROOT/lib/tools.zsh"
+(( $+functions[sf_hooks_user_prompt_submit] )) || source "$SF_ROOT/lib/hooks.zsh"
+(( $+functions[sf_tools_load] )) || source "$SF_ROOT/libexec/run/tools.zsh"
 (( $+functions[sf_request_run] )) || source "$SF_ROOT/lib/request.zsh"
 
 typeset -gA SF_RUN=(

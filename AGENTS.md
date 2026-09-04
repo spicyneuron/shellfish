@@ -7,9 +7,10 @@ NOTE: This project is pre-release. Do not add deprecation noticies, backwards co
 - `bin/shellfish` routes the first argument to an independent component.
 - `libexec/` holds independent shell programs, each with its own executable entry point and private implementation. They do not share a shell namespace with the dispatcher or each other.
 - `libexec/tui/` owns interactive chat, including session attachment, current presentation configuration, rendering, terminal lifecycle, and the ZLE prompt.
-- `libexec/run/` owns the single-turn command: `main.zsh` parses and composes, and its private `turn.zsh` covers input handling, full turns, events, permissions, signals, and cleanup.
+- `libexec/run/` owns the single-turn command: `main.zsh` parses and composes, while its private implementation covers input handling, full turns, tools, events, permissions, signals, and cleanup.
+- `libexec/config/` owns configuration initialization and resolution, including profiles, presentation, and schema validation.
 - `lib/session/` owns JSONL persistence, state validation, recovery, and provider request projection.
-- `lib/runtime/` resolves configuration, credentials, profiles, and schema validation.
+- `lib/runtime/schema.jq` defines canonical data shared across components; `lib/credentials.zsh` resolves credentials for provider requests.
 - `default/backends/_backend.zsh` supports the bundled provider adapters.
 - `libexec/resume/` owns session discovery, latest-session selection, and the resume picker with its private terminal implementation.
 - `shellfish-server/` is a Go proxy that exposes one session to one browser, plus the browser client it serves. `docs/SERVER.md` is its contract.
