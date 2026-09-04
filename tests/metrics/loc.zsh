@@ -11,7 +11,7 @@ fi
 typeset -r root=${0:A:h:h:h}
 typeset -a core terminal server sources
 
-core=( "$root/bin/shellfish" "$root"/lib/**/*.(zsh|jq)(N.) )
+core=( "$root/bin/shellfish" "$root"/(lib|libexec)/**/*.(zsh|jq)(N.) )
 terminal=( "$root"/tui/**/*.(zsh|jq|awk)(N.) )
 server=( "$root"/shellfish-server/**/*.(go|js|css|html)(N.) )
 server=( ${server:#*_test.(go|js)} )

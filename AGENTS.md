@@ -4,7 +4,8 @@ NOTE: This project is pre-release. Do not add deprecation noticies, backwards co
 
 ## Project map
 
-- `bin/shellfish` parses the CLI and starts interactive chat or reports resolved configuration.
+- `bin/shellfish` parses the CLI and starts interactive chat, routing recognized commands to their component.
+- `libexec/` holds independent shell programs, each with its own executable entry point and private implementation. They do not share a shell namespace with the dispatcher or each other.
 - `tui/main.zsh` owns interactive session selection, terminal lifecycle, and the ZLE prompt.
 - `lib/exec.zsh` owns process setup, input handling, full turns, events, permissions, signals, and cleanup.
 - `lib/session/` owns JSONL persistence, state validation, recovery, and provider request projection.
@@ -16,7 +17,7 @@ NOTE: This project is pre-release. Do not add deprecation noticies, backwards co
 
 ## Execution flow
 
-- `bin/shellfish` validates CLI input and dispatches to config reporting, single-turn exec, or interactive chat.
+- `bin/shellfish` validates CLI input and dispatches to single-turn exec or interactive chat. `shellfish config` execs `libexec/config/main.zsh`, which owns its own parsing.
 - New sessions resolve configuration into a frozen runtime, prepare the header, concatenate the profile's `system` components into one system record, collect `session_start` context, then create the complete initial JSONL prefix.
 - Each turn opens the session, runs `user_prompt_submit` scripts, then loops over provider responses. Final responses run `stop` scripts; tool-call responses run the `pre_tool_use` scripts, permission, execution, persistence, and `post_tool_use` scripts before the next provider request.
 - The session layer is authoritative. Request projection converts durable records into provider messages; provider deltas and UI events are transient. Any failure, cancellation, or early return converges on turn recovery and hook/tool cleanup.

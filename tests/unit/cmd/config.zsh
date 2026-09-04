@@ -176,7 +176,7 @@ jq -e --arg explicit "${tmp:A}/explicit" --arg rust "$detector_root/rust" \
 typeset empty_bin="$tmp/empty-bin"
 typeset zsh_bin="${commands[zsh]}"
 mkdir "$empty_bin"
-for utility in awk cp fence jq ln mkdir mktemp rm; do
+for utility in awk cp fence jq ln mkdir mktemp rm zsh; do
   ln -s "${commands[$utility]}" "$empty_bin/$utility"
 done
 mkdir "$tmp/empty-home"

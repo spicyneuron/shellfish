@@ -43,15 +43,15 @@ sf_main() {
   local -a original_args=("$@")
   integer session_explicit=0 config_explicit=0 request_explicit=0 tools_explicit=0 runtime_override=0
   integer continue_requested=0 resume_requested=0 clear_requested=0 new_requested=0 resume_status=0
-  integer chat_handoff=0 draft_explicit=0 init_requested=0 jsonl_requested=0 sandbox_auto_requested=0
+  integer chat_handoff=0 draft_explicit=0 jsonl_requested=0 sandbox_auto_requested=0
   integer verbose_requested=0
   case ${1-} in
     chat)
       shift
       ;;
     config)
-      command=config
       shift
+      exec -- "$SF_ROOT/libexec/config/main.zsh" "$@"
       ;;
     exec)
       command=exec
@@ -127,10 +127,6 @@ sf_main() {
         ;;
       --verbose)
         verbose_requested=1
-        shift
-        ;;
-      --init)
-        init_requested=1
         shift
         ;;
       --sandbox-auto)
@@ -303,12 +299,8 @@ sf_main() {
     sf_die '--jsonl requires shellfish exec'
     return 2
   fi
-  if [[ $command == (exec|config) ]] && (( draft_explicit )); then
+  if [[ $command == exec ]] && (( draft_explicit )); then
     sf_die '--draft requires interactive chat'
-    return 2
-  fi
-  if (( init_requested )) && [[ $command != config ]]; then
-    sf_die '--init requires shellfish config'
     return 2
   fi
   if (( resume_requested && sandbox_auto_requested )); then
@@ -328,10 +320,6 @@ sf_main() {
     return 2
   fi
   if (( new_requested )); then
-    [[ $command != config ]] || {
-      sf_die 'shellfish config does not support --new'
-      return 2
-    }
     (( ! session_explicit && ! continue_requested && ! resume_requested )) || {
       sf_die '--new cannot be combined with --session, --continue, or --resume'
       return 2
@@ -358,7 +346,7 @@ sf_main() {
     chat_handoff=1
   fi
   (( $+commands[jq] )) || { sf_die 'shellfish requires jq'; return 2; }
-  if (( init_requested || sandbox_auto_requested )); then
+  if (( sandbox_auto_requested )); then
     source "$SF_ROOT/lib/config.zsh"
   fi
   if (( sandbox_auto_requested && ! chat_handoff )); then
@@ -382,7 +370,7 @@ sf_main() {
   else
     typeset -gx SHELLFISH_VERBOSE=$verbose_requested
   fi
-  (( sandbox_auto_requested && ! init_requested )) && runtime_override=1
+  (( ! sandbox_auto_requested )) || runtime_override=1
 
   if [[ $command == (build-request|send-request) ]]; then
     local supported='--session'
@@ -393,7 +381,7 @@ sf_main() {
     }
     if (( ${#positional} || config_explicit || runtime_override || continue_requested ||
       resume_requested || clear_requested || draft_explicit || new_requested || verbose_requested ||
-      init_requested || jsonl_requested )); then
+      jsonl_requested )); then
       sf_die "$command only supports $supported"
       return 2
     fi
@@ -474,49 +462,6 @@ sf_main() {
     trap - INT HUP TERM
     print -r -- "$SF_REQUEST[assistant]"
     return
-  fi
-
-  if [[ $command == config ]]; then
-    (( ! ${#positional} )) || {
-      sf_die 'shellfish config does not accept a prompt'
-      return 2
-    }
-    (( ! continue_requested && ! resume_requested && ! clear_requested )) || {
-      sf_usage >&2
-      sf_die 'shellfish config does not support --continue, --resume, or --clear'
-      return 2
-    }
-    if (( init_requested )); then
-      (( ! session_explicit && ! verbose_requested && ! request_explicit )) &&
-        [[ -z $requested_profile && -z $requested_backend && -z $requested_model ]] || {
-        sf_die '--init only supports --config and sandbox flags'
-        return 2
-      }
-      local init_sandbox=''
-      if (( sandbox_auto_requested || ${#sandbox_read_paths} || ${#sandbox_write_paths} )); then
-        init_sandbox=$(jq -cn --argjson read "$_SHELLFISH_SANDBOX_READ_PATHS" \
-          --argjson write "$_SHELLFISH_SANDBOX_WRITE_PATHS" \
-          '{sandbox_read_paths:$read,sandbox_write_paths:$write}') || return 1
-      fi
-      sf_config_init "$requested_config" "$init_sandbox" || {
-        sf_die "$SF_CONFIG_ERROR"
-        return 1
-      }
-      print -r -- "Initialized config: $REPLY"
-      return
-    fi
-    local runtime
-    sf_runtime_resolve "$requested_session" "$requested_config" \
-      "$requested_profile" "$requested_model" "$requested_request" \
-      "$requested_backend" "$runtime_override" || {
-      local resolve_status=$?
-      (( resolve_status != 2 )) || sf_usage >&2
-      sf_die "$SF_RUNTIME_ERROR"
-      return $resolve_status
-    }
-    runtime=$REPLY
-    sf_runtime_report "$runtime"
-    return $?
   fi
 
   if [[ $command == exec ]]; then
