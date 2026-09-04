@@ -7,7 +7,7 @@ typeset -ga SF_PRESENT_VIEWPORT_HIGHLIGHTS=() SF_PRESENT_FLUSH_HIGHLIGHTS=()
 typeset -gi SF_PRESENT_FLUSH_ROWS=0
 typeset -gi SF_PRESENT_FLUSH_SOURCE_NODE=0 SF_PRESENT_FLUSH_SOURCE_OFFSET=0
 
-sf_chat_collect_highlights() {
+sf_tui_collect_highlights() {
   integer count=$1 row offset=0 index start end
   local -a fields
   reply=()
@@ -26,12 +26,12 @@ sf_chat_collect_highlights() {
   done
 }
 
-sf_chat_viewport() {
+sf_tui_viewport() {
   integer columns=$1 budget=$2 index open_node=0 open_rows=0
   local cursor=${3:-1:0}
   local -a flushed
 
-  sf_chat_rows $columns $budget "$cursor" || return 1
+  sf_tui_rows $columns $budget "$cursor" || return 1
   SF_PRESENT_VIEWPORT_TEXT=${(F)SF_PRESENT_ROW_TEXT}
   SF_PRESENT_FLUSH_TEXT=''
   SF_PRESENT_FLUSH_CURSOR=''
@@ -41,7 +41,7 @@ sf_chat_viewport() {
   SF_PRESENT_FLUSH_SOURCE_NODE=0
   SF_PRESENT_FLUSH_SOURCE_OFFSET=0
   (( ${#SF_PRESENT_ROW_TEXT} )) || return 0
-  sf_chat_collect_highlights ${#SF_PRESENT_ROW_TEXT} || return 1
+  sf_tui_collect_highlights ${#SF_PRESENT_ROW_TEXT} || return 1
   SF_PRESENT_VIEWPORT_HIGHLIGHTS=( "${(@)reply}" )
 
   if (( ${#SF_PRESENT_NODE_TYPE} )) && [[ $SF_PRESENT_NODE_STATE[-1] == open ]]; then
@@ -70,6 +70,6 @@ sf_chat_viewport() {
       SF_PRESENT_FLUSH_SOURCE_OFFSET=$SF_PRESENT_ROW_SOURCE_END[index]
     fi
   done
-  sf_chat_collect_highlights $SF_PRESENT_FLUSH_ROWS || return 1
+  sf_tui_collect_highlights $SF_PRESENT_FLUSH_ROWS || return 1
   SF_PRESENT_FLUSH_HIGHLIGHTS=( "${(@)reply}" )
 }

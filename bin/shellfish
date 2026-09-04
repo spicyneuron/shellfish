@@ -615,10 +615,10 @@ sf_main() {
   fi
 
   source "$SF_ROOT/tui/main.zsh"
-  sf_chat_run "$SF_SESSION_OPEN[path]" "$SF_SESSION_OPEN[runtime]" "$SF_SESSION_OPEN[mode]" \
+  sf_tui_run "$SF_SESSION_OPEN[path]" "$SF_SESSION_OPEN[runtime]" "$SF_SESSION_OPEN[mode]" \
     "$clear_requested" "$input" "$draft"
   local exit_status=$?
-  [[ -z $SF_CHAT_ERROR ]] || sf_die "$SF_CHAT_ERROR"
+  [[ -z $SF_TUI_ERROR ]] || sf_die "$SF_TUI_ERROR"
   return $exit_status
 }
 

@@ -9,7 +9,7 @@ typeset -g SF_PRESENT_DRAFT=''
 typeset -gi SF_PRESENT_DRAFT_CURSOR=0 SF_PRESENT_DRAFT_SAVED=0
 typeset -gi SF_PRESENT_PENDING_ROWS=0 SF_PRESENT_SYNC_ACTIVE=0
 
-sf_chat_terminal_reset() {
+sf_tui_terminal_reset() {
   SF_PRESENT_CURSOR='1:0'
   SF_PRESENT_PENDING_TEXT=''
   SF_PRESENT_PENDING_CURSOR=''
@@ -24,7 +24,7 @@ sf_chat_terminal_reset() {
   SF_PRESENT_SYNC_ACTIVE=0
 }
 
-sf_chat_terminal_sync_start() {
+sf_tui_terminal_sync_start() {
   (( ! SF_PRESENT_SYNC_ACTIVE )) || return 0
   SF_PRESENT_SYNC_ACTIVE=1
   if [[ -o zle ]]; then
@@ -33,7 +33,7 @@ sf_chat_terminal_sync_start() {
   return 0
 }
 
-sf_chat_terminal_sync_end() {
+sf_tui_terminal_sync_end() {
   local force=${1-}
   (( SF_PRESENT_SYNC_ACTIVE )) || return 0
   SF_PRESENT_SYNC_ACTIVE=0
@@ -44,7 +44,7 @@ sf_chat_terminal_sync_end() {
 }
 
 # Freeze the viewport's current flush before committing it.
-sf_chat_terminal_stage() {
+sf_tui_terminal_stage() {
   (( ! SF_PRESENT_PENDING_ROWS )) || return 1
   (( SF_PRESENT_FLUSH_ROWS )) || return 1
   SF_PRESENT_PENDING_TEXT=$SF_PRESENT_FLUSH_TEXT
@@ -62,11 +62,11 @@ sf_chat_terminal_stage() {
 # Advance presentation state after the caller commits the staged rows. An
 # accepted line supplies its newline; a descriptor commit leaves the rows drawn
 # and invalidates the display.
-sf_chat_terminal_finish() {
+sf_tui_terminal_finish() {
   integer node offset was_visible=$SF_PRESENT_PREFIX_VISIBLE
   local rest suffix
   (( SF_PRESENT_PENDING_ROWS )) || return 0
-  sf_chat_terminal_sync_start
+  sf_tui_terminal_sync_start
   PREDISPLAY=$SF_PRESENT_PENDING_TEXT
   BUFFER=''
   CURSOR=0
@@ -77,7 +77,7 @@ sf_chat_terminal_finish() {
   SF_PRESENT_PENDING_CURSOR=''
   SF_PRESENT_PENDING_ROWS=0
   if (( SF_PRESENT_PENDING_SOURCE_NODE )); then
-    sf_chat_highlight_prune $SF_PRESENT_PENDING_SOURCE_NODE \
+    sf_tui_highlight_prune $SF_PRESENT_PENDING_SOURCE_NODE \
       $SF_PRESENT_PENDING_SOURCE_OFFSET || return 1
   fi
   SF_PRESENT_PENDING_SOURCE_NODE=0
@@ -93,7 +93,7 @@ sf_chat_terminal_finish() {
     fi
   fi
   if (( node > 1 )); then
-    sf_chat_drop $(( node - 1 )) || return 1
+    sf_tui_drop $(( node - 1 )) || return 1
     rest=${SF_PRESENT_CURSOR#*:}
     if [[ $rest == t:* ]]; then
       SF_PRESENT_CURSOR="1:$rest"
@@ -107,7 +107,7 @@ sf_chat_terminal_finish() {
   fi
 }
 
-sf_chat_terminal_restore() {
+sf_tui_terminal_restore() {
   (( SF_PRESENT_DRAFT_SAVED )) || return 0
   BUFFER=$SF_PRESENT_DRAFT
   CURSOR=$SF_PRESENT_DRAFT_CURSOR

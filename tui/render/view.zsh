@@ -8,7 +8,7 @@ typeset -ga SF_PRESENT_CHROME_HIGHLIGHTS=()
 # the text is styled as it stands, so a full viewport always drains.
 typeset -gi SF_PRESENT_HOLD_ROWS=10
 
-sf_chat_chat_start() {
+sf_tui_chat_start() {
   local session_mode=$1 session=$2 tools sandbox line
   local -a details logo shrimp
   details=( "${(@f)$(jq -r '
@@ -49,7 +49,7 @@ sf_chat_chat_start() {
   print
 }
 
-sf_chat_chat_end() {
+sf_tui_chat_end() {
   local session=$1 divider
   integer divider_width=13
   local -a messages=(
@@ -71,7 +71,7 @@ sf_chat_chat_end() {
   print -r -- "${messages[RANDOM % ${#messages} + 1]}"
 }
 
-sf_chat_chrome() {
+sf_tui_chrome() {
   integer start=$1 length=$2
   local style=$SF_PRESENT_STYLE[$3]
   (( length > 0 )) || return 0
@@ -79,7 +79,7 @@ sf_chat_chrome() {
   SF_PRESENT_CHROME_HIGHLIGHTS+=( $start $(( start + length )) "$style" )
 }
 
-sf_chat_update_highlights() {
+sf_tui_update_highlights() {
   local set=${1:-view}
   local -a spans
   integer index
@@ -96,7 +96,7 @@ sf_chat_update_highlights() {
   done
 }
 
-sf_chat_repaint() {
+sf_tui_repaint() {
   integer columns=${COLUMNS:-0} rows=${LINES:-0} budget reserve=6
   integer index queue_shown queue_limit start queue_head=0 history_item=0 history_label=0
   local divider footer_divider permission label preview queue_item queue_line queue_text=''
@@ -118,15 +118,15 @@ sf_chat_repaint() {
   fi
   (( rows > reserve )) || rows=$(( reserve + 1 ))
   budget=$(( rows - reserve ))
-  sf_chat_highlight_update || return 1
-  sf_chat_viewport $columns $budget "$SF_PRESENT_CURSOR" || return 1
+  sf_tui_highlight_update || return 1
+  sf_tui_viewport $columns $budget "$SF_PRESENT_CURSOR" || return 1
   # Wrapping is what discovers a filled row, so a growing line can only be
   # highlighted after the pass that found its boundary, and only then repainted.
   if (( SF_PRESENT_ROW_BOUNDARY_NODE )); then
-    sf_chat_highlight_rows $SF_PRESENT_ROW_BOUNDARY_NODE $SF_PRESENT_ROW_BOUNDARY \
+    sf_tui_highlight_rows $SF_PRESENT_ROW_BOUNDARY_NODE $SF_PRESENT_ROW_BOUNDARY \
       $(( columns * (budget < SF_PRESENT_HOLD_ROWS ? budget : SF_PRESENT_HOLD_ROWS) )) || return 1
     if (( SF_PRESENT_HIGHLIGHT_ADVANCED )); then
-      sf_chat_viewport $columns $budget "$SF_PRESENT_CURSOR" || return 1
+      sf_tui_viewport $columns $budget "$SF_PRESENT_CURSOR" || return 1
     fi
   fi
   PREDISPLAY=$SF_PRESENT_VIEWPORT_TEXT
@@ -154,13 +154,13 @@ sf_chat_repaint() {
     fi
     start=${#PREDISPLAY}
     PREDISPLAY+="$permission"
-    sf_chat_chrome $start ${#permission} permission
+    sf_tui_chrome $start ${#permission} permission
     PREDISPLAY+=$'\n\n'
     start=${#PREDISPLAY}
     if (( SF_PRESENT_PERMISSION_PREVIEW_LENGTH )); then
       preview=${SF_PRESENT_PERMISSION_TEXT[1,SF_PRESENT_PERMISSION_PREVIEW_LENGTH]}
       SF_PRESENT_HIGHLIGHT_SPANS=()
-      sf_chat_code_highlight "$preview" "$SF_PRESENT_PERMISSION_LANGUAGE"
+      sf_tui_code_highlight "$preview" "$SF_PRESENT_PERMISSION_LANGUAGE"
       for (( index = 1; index <= ${#SF_PRESENT_HIGHLIGHT_SPANS}; index += 3 )); do
         SF_PRESENT_CHROME_HIGHLIGHTS+=(
           $(( start + SF_PRESENT_HIGHLIGHT_SPANS[index] ))
@@ -173,7 +173,7 @@ sf_chat_repaint() {
     PREDISPLAY+="$SF_PRESENT_PERMISSION_TEXT"$'\n\n'
     start=${#PREDISPLAY}
     PREDISPLAY+="$choices"$'\n'
-    sf_chat_chrome $start ${#choices} permission
+    sf_tui_chrome $start ${#choices} permission
   else
     if (( queue_shown )); then
       queue_text='─ queue '
@@ -183,7 +183,7 @@ sf_chat_repaint() {
       queue_head=${#queue_text}
       queue_limit=$(( columns > 7 ? columns - 7 : 0 ))
       for (( index = 1; index <= queue_shown; index++ )); do
-        sf_chat_safe "$SF_PRESENT_QUEUE[index]"
+        sf_tui_safe "$SF_PRESENT_QUEUE[index]"
         queue_item=${REPLY//$'\n'/ }
         queue_item=${queue_item//$'\t'/ }
         if (( queue_limit && ${#queue_item} > queue_limit )); then
@@ -198,9 +198,9 @@ sf_chat_repaint() {
       fi
       start=${#PREDISPLAY}
       PREDISPLAY+="$queue_text"$'\n\n'
-      sf_chat_chrome $start $queue_head divider
-      sf_chat_chrome $(( start + 2 )) $(( queue_head - 2 < 5 ? queue_head - 2 : 5 )) muted
-      sf_chat_chrome $(( start + queue_head + 1 )) \
+      sf_tui_chrome $start $queue_head divider
+      sf_tui_chrome $(( start + 2 )) $(( queue_head - 2 < 5 ? queue_head - 2 : 5 )) muted
+      sf_tui_chrome $(( start + queue_head + 1 )) \
         $(( ${#queue_text} - queue_head - 1 )) muted
     fi
     if (( SF_PRESENT_HISTORY_NO )); then
@@ -216,20 +216,20 @@ sf_chat_repaint() {
     fi
     start=${#PREDISPLAY}
     PREDISPLAY+="$divider"$'\n'
-    sf_chat_chrome $start ${#divider} divider
+    sf_tui_chrome $start ${#divider} divider
     if (( history_label )); then
-      sf_chat_chrome $(( start + 2 )) ${#label} muted
+      sf_tui_chrome $(( start + 2 )) ${#label} muted
     fi
     start=${#PREDISPLAY}
     PREDISPLAY+='❯ '
-    sf_chat_chrome $start 2 prompt
+    sf_tui_chrome $start 2 prompt
   fi
   POSTDISPLAY=$'\n'"$footer_divider"
-  sf_chat_chrome $(( ${#PREDISPLAY} + ${#BUFFER} + 1 )) ${#footer_divider} $bottom_style
+  sf_tui_chrome $(( ${#PREDISPLAY} + ${#BUFFER} + 1 )) ${#footer_divider} $bottom_style
   if [[ -n $SF_PRESENT_FOOTER ]]; then
     start=$(( ${#PREDISPLAY} + ${#BUFFER} + ${#POSTDISPLAY} + 1 ))
     POSTDISPLAY+=$'\n'"$SF_PRESENT_FOOTER"
-    sf_chat_chrome $start ${#SF_PRESENT_FOOTER} footer
+    sf_tui_chrome $start ${#SF_PRESENT_FOOTER} footer
   fi
-  sf_chat_update_highlights view || return 1
+  sf_tui_update_highlights view || return 1
 }

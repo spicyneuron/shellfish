@@ -22,19 +22,19 @@ source "$root/tui/render/main.zsh"
 # with LINES - 5, so 45 stands in for a normal window. Full previews keep it
 # from eliding a body it would otherwise lay out.
 integer columns=80 budget=45
-sf_chat_rows_config '{"tui":{"preview_lines_reasoning":"full","preview_lines_context":"full","preview_lines_tool_call":"full","preview_lines_tool_result":"full"}}'
+sf_tui_rows_config '{"tui":{"preview_lines_reasoning":"full","preview_lines_context":"full","preview_lines_tool_call":"full","preview_lines_tool_result":"full"}}'
 
 # Mirror the editor heartbeat: repaint, then flush every settled row
 # before taking the next delta. Rendering one bounded viewport per delta would
 # leave the cursor at the head of the transcript and measure nothing but the
 # first screenful.
 present_feed() {
-  sf_chat_event assistant_delta "$1"
-  sf_chat_viewport $columns $budget "$SF_PRESENT_CURSOR"
+  sf_tui_event assistant_delta "$1"
+  sf_tui_viewport $columns $budget "$SF_PRESENT_CURSOR"
   while (( SF_PRESENT_FLUSH_ROWS )); do
-    sf_chat_terminal_stage
-    sf_chat_terminal_finish
-    sf_chat_viewport $columns $budget "$SF_PRESENT_CURSOR"
+    sf_tui_terminal_stage
+    sf_tui_terminal_finish
+    sf_tui_viewport $columns $budget "$SF_PRESENT_CURSOR"
   done
 }
 
@@ -75,8 +75,8 @@ measure_case() {
   float start elapsed total=0 minimum=0
   $builder $count
   for (( iteration = 1; iteration <= iterations; iteration++ )); do
-    sf_chat_reset
-    sf_chat_terminal_reset
+    sf_tui_reset
+    sf_tui_terminal_reset
     start=$EPOCHREALTIME
     for (( index = 1; index <= ${#deltas}; index++ )); do
       present_feed "$deltas[index]"

@@ -14,7 +14,7 @@ typeset -g SF_PRESENT_EXEC_ERROR_HEADING='' SF_PRESENT_EXEC_ERROR_DETAIL=''
 typeset -g SF_PRESENT_IDENTITY='' SF_PRESENT_FOOTER=''
 typeset -g SF_PRESENT_TTY=''
 
-sf_chat_permission_reset() {
+sf_tui_permission_reset() {
   SF_PRESENT_PERMISSION_ID=''
   SF_PRESENT_PERMISSION_TOOL=''
   SF_PRESENT_PERMISSION_TEXT=''
@@ -22,12 +22,12 @@ sf_chat_permission_reset() {
   SF_PRESENT_PERMISSION_PREVIEW_LENGTH=0
 }
 
-sf_chat_render_permission_stop() {
+sf_tui_render_permission_stop() {
   local heading=$SF_PRESENT_RENDER_ERROR detail='Turn stopped before a permission decision.'
-  sf_chat_transport_stop
-  sf_chat_discard_queue
+  sf_tui_transport_stop
+  sf_tui_discard_queue
   [[ -z $REPLY ]] || detail+=$'\n'$REPLY
-  if sf_chat_recover "$heading" "$detail"; then
+  if sf_tui_recover "$heading" "$detail"; then
     SF_PRESENT_STATE=idle
   else
     SF_PRESENT_STATE=stopped
@@ -35,12 +35,12 @@ sf_chat_render_permission_stop() {
 }
 
 TRAPTERM() {
-  sf_chat_terminal_sync_end force
-  [[ $SF_PRESENT_STATE == idle ]] || sf_chat_transport_stop
+  sf_tui_terminal_sync_end force
+  [[ $SF_PRESENT_STATE == idle ]] || sf_tui_transport_stop
   exit 143
 }
 
-sf_chat_discard_queue() {
+sf_tui_discard_queue() {
   integer count=${#SF_PRESENT_QUEUE}
   SF_PRESENT_QUEUE=()
   REPLY=''
@@ -50,7 +50,7 @@ sf_chat_discard_queue() {
   REPLY+='. Use ↑↓ keys to recover.'
 }
 
-sf_chat_submit() {
+sf_tui_submit() {
   local submitted=$1
   integer queue_index
   REPLY=ignore
@@ -70,7 +70,7 @@ sf_chat_submit() {
   if [[ $SF_PRESENT_STATE == (working|queued) ]]; then
     [[ -n $submitted ]] || return 0
     SF_PRESENT_QUEUE+=( "$submitted" )
-    sf_chat_record_prompt "$submitted"
+    sf_tui_record_prompt "$submitted"
     REPLY=repaint
     return
   fi
@@ -81,12 +81,12 @@ sf_chat_submit() {
     return
   fi
   SF_PRESENT_SUBMITTED=$submitted
-  sf_chat_record_prompt "$submitted"
-  sf_chat_event user "$submitted" || return 1
+  sf_tui_record_prompt "$submitted"
+  sf_tui_event user "$submitted" || return 1
   REPLY=submit
 }
 
-sf_chat_cancel() {
+sf_tui_cancel() {
   REPLY=redraw
   case $SF_PRESENT_STATE in
     queued) return ;;
@@ -97,9 +97,9 @@ sf_chat_cancel() {
       return
       ;;
     permission|working)
-      [[ $SF_PRESENT_STATE != permission ]] || sf_chat_editor_permission restore
+      [[ $SF_PRESENT_STATE != permission ]] || sf_tui_editor_permission restore
       SF_PRESENT_STATE=cancelling
-      sf_chat_transport_signal
+      sf_tui_transport_signal
       return
       ;;
     idle|stopped)
@@ -110,25 +110,25 @@ sf_chat_cancel() {
   esac
 }
 
-sf_chat_decoded() {
+sf_tui_decoded() {
   local type=$1 first=${2-} second=${3-} third=${4-} fourth=${5-} fifth=${6-} sixth=${7-}
   local encoded preview reason identity notice_state
   case $type in
       backend_request_start|assistant_delta|assistant_reasoning_delta|tool_call|tool_result|context)
-        sf_chat_event "$type" "$first" "$second" "$third" "$fourth" "$fifth" "$sixth" || return 1
+        sf_tui_event "$type" "$first" "$second" "$third" "$fourth" "$fifth" "$sixth" || return 1
         ;;
       assistant_commit)
         [[ -z $SF_PRESENT_REASONING_TOKENS ]] ||
-          sf_chat_event reasoning_tokens "$SF_PRESENT_REASONING_TOKENS" || return 1
-        sf_chat_event assistant_commit || return 1
+          sf_tui_event reasoning_tokens "$SF_PRESENT_REASONING_TOKENS" || return 1
+        sf_tui_event assistant_commit || return 1
         ;;
       turn_usage)
         SF_PRESENT_REASONING_TOKENS=$second
-        sf_chat_footer_usage "$first"
-        [[ -z $second ]] || sf_chat_event reasoning_tokens "$second" || return 1
+        sf_tui_footer_usage "$first"
+        [[ -z $second ]] || sf_tui_event reasoning_tokens "$second" || return 1
         ;;
       exec_error)
-        sf_chat_notice error "$first" "$second" || return 1
+        sf_tui_notice error "$first" "$second" || return 1
         if [[ -z $SF_PRESENT_EXEC_ERROR_HEADING ]]; then
           SF_PRESENT_EXEC_ERROR_HEADING=$first
           SF_PRESENT_EXEC_ERROR_DETAIL=$second
@@ -139,26 +139,26 @@ sf_chat_decoded() {
         ;;
       hook_display)
         if [[ $fourth == true ]]; then notice_state=closed; else notice_state=open; fi
-        sf_chat_notice notice "${second:t}" "$third" "$notice_state" || return 1
+        sf_tui_notice notice "${second:t}" "$third" "$notice_state" || return 1
         SF_PRESENT_NODE_META[REPLY]=$first
         ;;
       permission_request)
         [[ $SF_PRESENT_STATE == working && -z $SF_PRESENT_PERMISSION_ID ]] || return 1
         SF_PRESENT_PERMISSION_ID=$first
-        sf_chat_safe "$second"
+        sf_tui_safe "$second"
         SF_PRESENT_PERMISSION_TOOL=$REPLY
-        sf_chat_safe "$third"
+        sf_tui_safe "$third"
         preview=$REPLY
-        sf_chat_safe "$fourth"
+        sf_tui_safe "$fourth"
         reason=$REPLY
         SF_PRESENT_PERMISSION_TEXT="$preview"$'\n\nReason: '"$reason"
         SF_PRESENT_PERMISSION_LANGUAGE=$fifth
         SF_PRESENT_PERMISSION_PREVIEW_LENGTH=${#preview}
-        sf_chat_editor_permission open
+        sf_tui_editor_permission open
         SF_PRESENT_STATE=permission
-        sf_chat_event tool_permission || return 1
+        sf_tui_event tool_permission || return 1
         if (( ! REPLY )); then
-          sf_chat_notice notice "Permission: $second" "$SF_PRESENT_PERMISSION_TEXT" || return 1
+          sf_tui_notice notice "Permission: $second" "$SF_PRESENT_PERMISSION_TEXT" || return 1
         fi
         ;;
       handoff)
@@ -177,14 +177,14 @@ sf_chat_decoded() {
   esac
 }
 
-sf_chat_recover() {
+sf_tui_recover() {
   local heading=$1 detail=${2-}
   local type role node_heading body meta state cursor=$SF_PRESENT_CURSOR
   integer visible=$SF_PRESENT_PREFIX_VISIBLE index match=0 allow_reset=${3:-0}
-  sf_chat_transport_reset
+  sf_tui_transport_reset
   SF_PRESENT_RENDER_ERROR=''
-  sf_chat_permission_reset
-  sf_chat_editor_permission discard
+  sf_tui_permission_reset
+  sf_tui_editor_permission discard
   if (( visible && ${#SF_PRESENT_NODE_TYPE} )); then
     type=$SF_PRESENT_NODE_TYPE[1]
     role=$SF_PRESENT_NODE_ROLE[1]
@@ -193,7 +193,7 @@ sf_chat_recover() {
     meta=$SF_PRESENT_NODE_META[1]
     state=$SF_PRESENT_NODE_STATE[1]
   fi
-  sf_chat_reload "$SF_PRESENT_SESSION" || return 1
+  sf_tui_reload "$SF_PRESENT_SESSION" || return 1
   if (( visible )); then
     if [[ -n $type ]]; then
       for (( index = 1; index <= ${#SF_PRESENT_NODE_TYPE}; index++ )); do
@@ -208,42 +208,42 @@ sf_chat_recover() {
       done
     fi
     if (( match )); then
-      sf_chat_drop $(( match - 1 )) || return 1
+      sf_tui_drop $(( match - 1 )) || return 1
       # The cursor is an offset into the node the prefix stopped at, so it
       # outlives the reload only when that node does.
       SF_PRESENT_CURSOR=$cursor
     elif [[ -z $type || $state == open ]] || (( allow_reset )); then
-      sf_chat_reset
+      sf_tui_reset
       SF_PRESENT_CURSOR='1:0'
     else
       SF_PRESENT_ERROR='cannot reconcile presentation with flushed scrollback'
       return 1
     fi
   fi
-  sf_chat_notice error "$heading" "$detail"
+  sf_tui_notice error "$heading" "$detail"
 }
 
 # Apply one transport record and name it in REPLY.
-sf_chat_pending_next() {
+sf_tui_pending_next() {
   local queue_notice applied
   integer transport_status=0
 
   REPLY=''
-  sf_chat_transport_next "${SF_PRESENT_RUNTIME:-null}" || transport_status=$?
+  sf_tui_transport_next "${SF_PRESENT_RUNTIME:-null}" || transport_status=$?
   case $transport_status in
     0)
       applied=$reply[1]
-      if sf_chat_decoded "${reply[@]}"; then
+      if sf_tui_decoded "${reply[@]}"; then
         REPLY=$applied
         return 0
       fi
       ;;
     1) return 0 ;;
   esac
-  sf_chat_transport_stop
-  sf_chat_discard_queue
+  sf_tui_transport_stop
+  sf_tui_discard_queue
   queue_notice=$REPLY
-  if sf_chat_recover 'Exec sent invalid JSONL.' "$queue_notice"; then
+  if sf_tui_recover 'Exec sent invalid JSONL.' "$queue_notice"; then
     SF_PRESENT_STATE=idle
   else
     SF_PRESENT_STATE=stopped
@@ -251,11 +251,11 @@ sf_chat_pending_next() {
   return 0
 }
 
-sf_chat_exec_finish() {
+sf_tui_exec_finish() {
   local heading detail exit_detail render_error=$SF_PRESENT_RENDER_ERROR
   local exec_heading=$SF_PRESENT_EXEC_ERROR_HEADING exec_detail=$SF_PRESENT_EXEC_ERROR_DETAIL
   integer exit_status cancelled=0
-  sf_chat_transport_result || return 1
+  sf_tui_transport_result || return 1
   exit_status=$reply[1]
   exit_detail=$reply[2]
   SF_PRESENT_EXEC_ERROR_HEADING=''
@@ -281,19 +281,19 @@ sf_chat_exec_finish() {
         detail=${exit_detail:-"Exited with status $exit_status."}
       fi
     fi
-    sf_chat_discard_queue
+    sf_tui_discard_queue
     if [[ -n $REPLY ]]; then
       [[ -z $detail ]] || detail+=$'\n'
       detail+=$REPLY
     fi
-    if sf_chat_recover "$heading" "$detail" "$(( cancelled || exit_status == 143 ))"; then
+    if sf_tui_recover "$heading" "$detail" "$(( cancelled || exit_status == 143 ))"; then
       SF_PRESENT_STATE=idle
     else
       SF_PRESENT_STATE=stopped
     fi
   else
     if [[ -n $render_error ]]; then
-      if sf_chat_recover "$render_error" 'The completed turn was reloaded.'; then
+      if sf_tui_recover "$render_error" 'The completed turn was reloaded.'; then
         SF_PRESENT_STATE=idle
       else
         SF_PRESENT_STATE=stopped
@@ -301,29 +301,29 @@ sf_chat_exec_finish() {
     else
       if (( ${#SF_PRESENT_NODE_TYPE} )) && [[ $SF_PRESENT_NODE_TYPE[-1] == activity &&
           $SF_PRESENT_NODE_STATE[-1] == open ]]; then
-        sf_chat_event assistant_commit || return 1
+        sf_tui_event assistant_commit || return 1
       fi
       SF_PRESENT_STATE=idle
-      sf_chat_permission_reset
+      sf_tui_permission_reset
     fi
     if [[ $SF_PRESENT_STATE == idle ]] && (( ${#SF_PRESENT_HANDOFF} )); then
-      sf_chat_discard_queue
+      sf_tui_discard_queue
       SF_PRESENT_ACTION=handoff
     elif [[ $SF_PRESENT_STATE == idle ]] && (( ${#SF_PRESENT_QUEUE} )); then
       SF_PRESENT_SUBMITTED=$SF_PRESENT_QUEUE[1]
       SF_PRESENT_QUEUE=( "${(@)SF_PRESENT_QUEUE[2,-1]}" )
       SF_PRESENT_STATE=queued
-      sf_chat_event user "$SF_PRESENT_SUBMITTED" || return 1
+      sf_tui_event user "$SF_PRESENT_SUBMITTED" || return 1
     fi
   fi
 }
 
-sf_chat_exec_ready() {
-  sf_chat_transport_read "$1" || return 1
-  sf_chat_heartbeat_arm
+sf_tui_exec_ready() {
+  sf_tui_transport_read "$1" || return 1
+  sf_tui_heartbeat_arm
 }
 
-sf_chat_turn() {
+sf_tui_turn() {
   local prompt=$1 input
 
   [[ $SF_PRESENT_STATE == idle ]] || return 1
@@ -337,35 +337,35 @@ sf_chat_turn() {
   SF_PRESENT_ACTIVITY_FRAME=0
   SF_PRESENT_ACTIVITY=${SF_PRESENT_ACTIVITY_FRAMES[1]}
   SF_PRESENT_STATE=working
-  sf_chat_add activity '' '' '' open || { SF_PRESENT_STATE=idle; return 1; }
-  if ! sf_chat_transport_start "$input" sf_chat_exec_ready; then
-    sf_chat_reload "$SF_PRESENT_SESSION" || true
+  sf_tui_add activity '' '' '' open || { SF_PRESENT_STATE=idle; return 1; }
+  if ! sf_tui_transport_start "$input" sf_tui_exec_ready; then
+    sf_tui_reload "$SF_PRESENT_SESSION" || true
     SF_PRESENT_STATE=idle
-    SF_PRESENT_ERROR=$SF_CHAT_TRANSPORT_ERROR
+    SF_PRESENT_ERROR=$SF_TUI_TRANSPORT_ERROR
     return 1
   fi
 }
 
-sf_chat_answer_permission() {
+sf_tui_answer_permission() {
   local decision=$1
   [[ $SF_PRESENT_STATE == permission && $decision == (approve|deny) ]] || return 1
-  if ! sf_chat_transport_reply "$SF_PRESENT_PERMISSION_ID" "$decision"; then
-    sf_chat_transport_stop
-    sf_chat_editor_permission restore
-    if sf_chat_recover 'Cannot answer permission.'; then
+  if ! sf_tui_transport_reply "$SF_PRESENT_PERMISSION_ID" "$decision"; then
+    sf_tui_transport_stop
+    sf_tui_editor_permission restore
+    if sf_tui_recover 'Cannot answer permission.'; then
       SF_PRESENT_STATE=idle
     else
       SF_PRESENT_STATE=stopped
     fi
     return 1
   fi
-  sf_chat_permission_reset
-  sf_chat_event tool_permission_clear || return 1
-  sf_chat_editor_permission restore
+  sf_tui_permission_reset
+  sf_tui_event tool_permission_clear || return 1
+  sf_tui_editor_permission restore
   SF_PRESENT_STATE=working
 }
 
-sf_chat_controller() {
+sf_tui_controller() {
   local session=$1 runtime=$2 initial=${3-} session_mode=${4:-resume} draft=${5-}
   local input=$draft saved_tty identity editor_error
   integer exit_status=0 editor_status=0
@@ -378,11 +378,11 @@ sf_chat_controller() {
   SF_PRESENT_QUEUE=()
   SF_PRESENT_EXIT_STATUS=0
   SF_PRESENT_RENDER_ERROR=''
-  sf_chat_rows_config "${SF_PRESENTATION:-\{\}}" || {
+  sf_tui_rows_config "${SF_PRESENTATION:-\{\}}" || {
     SF_PRESENT_ERROR='cannot read presentation configuration'
     return 1
   }
-  sf_chat_theme_config "${SF_PRESENTATION:-\{\}}" || {
+  sf_tui_theme_config "${SF_PRESENTATION:-\{\}}" || {
     SF_PRESENT_ERROR=$SF_PRESENT_HIGHLIGHT_ERROR
     return 1
   }
@@ -392,22 +392,22 @@ sf_chat_controller() {
   }
   SF_PRESENT_IDENTITY=$identity
   SF_PRESENT_FOOTER=$identity
-  sf_chat_terminal_reset
-  sf_chat_reload "$session" || return 1
-  sf_chat_chat_start "$session_mode" "$session" || {
+  sf_tui_terminal_reset
+  sf_tui_reload "$session" || return 1
+  sf_tui_chat_start "$session_mode" "$session" || {
     SF_PRESENT_ERROR='cannot render startup banner'
     return 1
   }
   zmodload zsh/zle || { SF_PRESENT_ERROR='cannot load ZLE'; return 1; }
   bindkey -e
-  sf_chat_bind
+  sf_tui_bind
   PROMPT=''
   saved_tty=$(stty -g 2>/dev/null) || return 1
   SF_PRESENT_TTY=$saved_tty
   if [[ -n $initial ]]; then
-    sf_chat_record_prompt "$initial"
-    sf_chat_event user "$initial" || return 1
-    sf_chat_turn "$initial" || return 1
+    sf_tui_record_prompt "$initial"
+    sf_tui_event user "$initial" || return 1
+    sf_tui_turn "$initial" || return 1
   fi
 
   while (( ! exit_status )); do
@@ -425,7 +425,7 @@ sf_chat_controller() {
       epoch) SF_PRESENT_ACTION='' ;;
       submit)
         SF_PRESENT_STATE=idle
-        sf_chat_turn "$SF_PRESENT_SUBMITTED" || exit_status=1
+        sf_tui_turn "$SF_PRESENT_SUBMITTED" || exit_status=1
         ;;
       handoff|quit) break ;;
       *)
@@ -438,9 +438,9 @@ sf_chat_controller() {
         ;;
     esac
   done
-  sf_chat_heartbeat_stop
-  sf_chat_terminal_sync_end force
-  [[ $SF_PRESENT_STATE == idle ]] || sf_chat_transport_stop
+  sf_tui_heartbeat_stop
+  sf_tui_terminal_sync_end force
+  [[ $SF_PRESENT_STATE == idle ]] || sf_tui_transport_stop
   print
   if [[ $SF_PRESENT_ACTION == handoff ]]; then
     exec -- "${SF_PRESENT_HANDOFF[@]}"
@@ -448,9 +448,9 @@ sf_chat_controller() {
     return 1
   fi
   if [[ $SF_PRESENT_ACTION == quit ]]; then
-    sf_chat_chat_end "$SF_PRESENT_SESSION"
+    sf_tui_chat_end "$SF_PRESENT_SESSION"
     return $SF_PRESENT_EXIT_STATUS
   fi
-  (( exit_status )) || sf_chat_chat_end "$SF_PRESENT_SESSION"
+  (( exit_status )) || sf_tui_chat_end "$SF_PRESENT_SESSION"
   return $exit_status
 }

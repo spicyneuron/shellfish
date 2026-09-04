@@ -7,7 +7,7 @@ typeset -g SF_PRESENT_PERMISSION_DRAFT=''
 typeset -gi SF_PRESENT_PERMISSION_CURSOR=0
 typeset -gi SF_PRESENT_HEARTBEAT_TIMEOUT=10
 typeset -g SF_PRESENT_HEARTBEAT_FD=''
-typeset -gr SF_PRESENT_HEARTBEAT_WORKER=sf-chat-heartbeat
+typeset -gr SF_PRESENT_HEARTBEAT_WORKER=sf-tui-heartbeat
 typeset -gi SF_PRESENT_ACTIVITY_FRAME=0
 typeset -gi SF_PRESENT_VERTICAL_COLUMN=-1
 typeset -g SF_PRESENT_HISTORY_DRAFT=''
@@ -17,9 +17,9 @@ typeset -ga SF_PRESENT_HISTORY=()
 typeset -g SF_PRESENT_RENDER_ERROR=''
 KEYTIMEOUT=5
 
-sf_chat_repaint_checked() {
+sf_tui_repaint_checked() {
   if [[ -z $SF_PRESENT_RENDER_ERROR ]]; then
-    sf_chat_repaint && return 0
+    sf_tui_repaint && return 0
     SF_PRESENT_FLUSH_ROWS=0
     if [[ $SF_PRESENT_STATE != (working|cancelling|permission) ]]; then
       SF_PRESENT_STATE=stopped
@@ -30,7 +30,7 @@ sf_chat_repaint_checked() {
     SF_PRESENT_RENDER_ERROR='Live rendering failed.'
   fi
   if [[ $SF_PRESENT_STATE == permission ]]; then
-    sf_chat_render_permission_stop
+    sf_tui_render_permission_stop
     zle -M 'Live rendering failed; turn stopped before permission.'
   else
     zle -M "$SF_PRESENT_RENDER_ERROR Waiting for turn to finish."
@@ -38,7 +38,7 @@ sf_chat_repaint_checked() {
   return 1
 }
 
-sf_chat_heartbeat_worker() {
+sf_tui_heartbeat_worker() {
   emulate -L zsh
   zmodload zsh/zselect || exit
   while true; do
@@ -47,54 +47,54 @@ sf_chat_heartbeat_worker() {
   done
 }
 
-sf_chat_heartbeat_arm() {
+sf_tui_heartbeat_arm() {
   local mode=${1-} fd
   [[ $SF_PRESENT_STATE == (working|cancelling) || $mode == drain ]] || return 0
   [[ -z $SF_PRESENT_HEARTBEAT_FD ]] || return 0
-  zpty -b "$SF_PRESENT_HEARTBEAT_WORKER" sf_chat_heartbeat_worker \
+  zpty -b "$SF_PRESENT_HEARTBEAT_WORKER" sf_tui_heartbeat_worker \
     "$SF_PRESENT_HEARTBEAT_TIMEOUT" || return 1
   fd=$REPLY
-  if ! zle -F -w "$fd" sf_chat_heartbeat_ready; then
+  if ! zle -F -w "$fd" sf_tui_heartbeat_ready; then
     zpty -d "$SF_PRESENT_HEARTBEAT_WORKER" 2>/dev/null || true
     return 1
   fi
   SF_PRESENT_HEARTBEAT_FD=$fd
 }
 
-sf_chat_heartbeat_stop() {
+sf_tui_heartbeat_stop() {
   local fd=$SF_PRESENT_HEARTBEAT_FD
   SF_PRESENT_HEARTBEAT_FD=''
   [[ -z $fd ]] || zle -F "$fd" 2>/dev/null || true
   zpty -d "$SF_PRESENT_HEARTBEAT_WORKER" 2>/dev/null || true
 }
 
-sf_chat_heartbeat_ready() {
-  local fd=$1 transport=$SF_CHAT_TRANSPORT_OUTPUT_FD
+sf_tui_heartbeat_ready() {
+  local fd=$1 transport=$SF_TUI_TRANSPORT_OUTPUT_FD
   integer tick_status=0
   if [[ -n ${2-} ]]; then
-    sf_chat_heartbeat_stop
+    sf_tui_heartbeat_stop
     return 1
   fi
   if (( ${KEYS_QUEUED_COUNT:-0} || ${PENDING:-0} )); then
-    sf_chat_heartbeat_stop
+    sf_tui_heartbeat_stop
     return 0
   fi
   while zselect -r "$fd" -t 0 2>/dev/null; do
-    read -k 1 -u "$fd" || { sf_chat_heartbeat_stop; return 1; }
+    read -k 1 -u "$fd" || { sf_tui_heartbeat_stop; return 1; }
   done
   if [[ -n $transport ]] && zselect -r "$transport" -t 0 2>/dev/null; then
-    sf_chat_exec_ready "$transport" || return 1
+    sf_tui_exec_ready "$transport" || return 1
   fi
-  sf_chat_heartbeat_tick || tick_status=$?
+  sf_tui_heartbeat_tick || tick_status=$?
   (( ! tick_status )) && return 0
-  (( tick_status != 2 )) || sf_chat_handoff_exec
+  (( tick_status != 2 )) || sf_tui_handoff_exec
   # A live turn still needs draining, even degraded. Anything else cannot
   # recover by itself, so stop instead of repainting the failure every interval.
-  [[ $SF_PRESENT_STATE == (working|cancelling) ]] || sf_chat_heartbeat_stop
+  [[ $SF_PRESENT_STATE == (working|cancelling) ]] || sf_tui_heartbeat_stop
   return $tick_status
 }
 
-sf_chat_heartbeat_tick() {
+sf_tui_heartbeat_tick() {
   integer frame_boundary
   # The frame follows the clock, not provider traffic.
   if [[ $SF_PRESENT_STATE == working ]]; then
@@ -109,35 +109,35 @@ sf_chat_heartbeat_tick() {
     if (( SF_PRESENT_FLUSH_ROWS )) &&
         [[ ${SF_PRESENT_NODE_TYPE[-1]-} == (message|reasoning) &&
         ${SF_PRESENT_NODE_STATE[-1]-} == closed ]] &&
-        sf_chat_transport_has_pending tool_call; then
+        sf_tui_transport_has_pending tool_call; then
       frame_boundary=1
-    elif sf_chat_transport_has_pending; then
-      while sf_chat_transport_has_pending; do
-        sf_chat_pending_next || return 1
+    elif sf_tui_transport_has_pending; then
+      while sf_tui_transport_has_pending; do
+        sf_tui_pending_next || return 1
         if [[ $REPLY == assistant_commit &&
             ${SF_PRESENT_NODE_TYPE[-1]-} == (message|reasoning) &&
             ${SF_PRESENT_NODE_STATE[-1]-} == closed ]] &&
-            sf_chat_transport_has_pending tool_call; then
+            sf_tui_transport_has_pending tool_call; then
           frame_boundary=1
           break
         fi
       done
       (( frame_boundary )) || continue
     fi
-    if (( ! frame_boundary )) && sf_chat_transport_is_complete; then
-      sf_chat_exec_finish || return 1
+    if (( ! frame_boundary )) && sf_tui_transport_is_complete; then
+      sf_tui_exec_finish || return 1
       continue
     fi
-    if ! sf_chat_repaint_checked; then
+    if ! sf_tui_repaint_checked; then
       if [[ -z $SF_PRESENT_RENDER_ERROR && $SF_PRESENT_STATE == idle ]]; then
         continue
       fi
       [[ -n $SF_PRESENT_RENDER_ERROR ]] || return 1
     fi
     if [[ -z $SF_PRESENT_RENDER_ERROR ]] && (( SF_PRESENT_FLUSH_ROWS )); then
-      sf_chat_terminal_stage || return 1
+      sf_tui_terminal_stage || return 1
       # Hold the frame so the commit and the redraw beneath it land together.
-      sf_chat_terminal_sync_start
+      sf_tui_terminal_sync_start
       # Draw the settled rows as the whole display, styling included, then hand
       # the frame to the terminal: `zle -I` leaves what is drawn on screen and
       # continues below it, which commits exactly those rows to scrollback. The
@@ -146,15 +146,15 @@ sf_chat_heartbeat_tick() {
       BUFFER=''
       CURSOR=0
       POSTDISPLAY=''
-      sf_chat_update_highlights pending || return 1
+      sf_tui_update_highlights pending || return 1
       zle -R
       zle -I
-      sf_chat_terminal_finish || return 1
-      sf_chat_terminal_restore
-      sf_chat_repaint_checked || return 1
+      sf_tui_terminal_finish || return 1
+      sf_tui_terminal_restore
+      sf_tui_repaint_checked || return 1
       zle -R
-      sf_chat_terminal_sync_end
-      sf_chat_heartbeat_arm drain
+      sf_tui_terminal_sync_end
+      sf_tui_heartbeat_arm drain
       return
     fi
     if [[ -n $SF_PRESENT_RENDER_ERROR ]]; then
@@ -163,36 +163,36 @@ sf_chat_heartbeat_tick() {
       zle -R
     fi
     # Release a synchronized update even when no rows were committed.
-    sf_chat_terminal_sync_end
+    sf_tui_terminal_sync_end
     if [[ $SF_PRESENT_ACTION == handoff ]]; then
-      sf_chat_terminal_sync_end force
+      sf_tui_terminal_sync_end force
       return 2
     elif [[ $SF_PRESENT_STATE == queued ]]; then
       SF_PRESENT_STATE=idle
-      sf_chat_turn "$SF_PRESENT_SUBMITTED" || return 1
+      sf_tui_turn "$SF_PRESENT_SUBMITTED" || return 1
       continue
     else
-      sf_chat_heartbeat_arm
+      sf_tui_heartbeat_arm
     fi
-    [[ $SF_PRESENT_STATE == (working|cancelling) ]] || sf_chat_heartbeat_stop
+    [[ $SF_PRESENT_STATE == (working|cancelling) ]] || sf_tui_heartbeat_stop
     return
   done
 }
 
-sf_chat_line_init() {
-  sf_chat_terminal_restore
-  sf_chat_transport_watch sf_chat_exec_ready
-  if ! sf_chat_repaint_checked; then
+sf_tui_line_init() {
+  sf_tui_terminal_restore
+  sf_tui_transport_watch sf_tui_exec_ready
+  if ! sf_tui_repaint_checked; then
     if [[ -z $SF_PRESENT_RENDER_ERROR && $SF_PRESENT_STATE == idle ]]; then
-      sf_chat_repaint_checked || return 1
+      sf_tui_repaint_checked || return 1
     else
       [[ -n $SF_PRESENT_RENDER_ERROR ]] || return 1
-      sf_chat_heartbeat_arm
+      sf_tui_heartbeat_arm
       return 0
     fi
   fi
   if (( SF_PRESENT_FLUSH_ROWS )) && [[ $SF_PRESENT_STATE != working ]]; then
-    sf_chat_terminal_stage || return 1
+    sf_tui_terminal_stage || return 1
     SF_PRESENT_ACTION=epoch
     zle accept-line
   elif [[ $SF_PRESENT_STATE == queued ]]; then
@@ -203,16 +203,16 @@ sf_chat_line_init() {
     zle accept-line
   else
     zle -R
-    sf_chat_terminal_sync_end
-    sf_chat_heartbeat_arm
+    sf_tui_terminal_sync_end
+    sf_tui_heartbeat_arm
   fi
 }
 
-sf_chat_line_finish() {
+sf_tui_line_finish() {
   integer pending=$SF_PRESENT_PENDING_ROWS
-  sf_chat_terminal_finish
+  sf_tui_terminal_finish
   if (( pending )); then
-    sf_chat_update_highlights pending || return 1
+    sf_tui_update_highlights pending || return 1
     zle -R
   elif [[ $SF_PRESENT_ACTION == (submit|quit) ]]; then
     PREDISPLAY=''
@@ -224,31 +224,31 @@ sf_chat_line_finish() {
   fi
 }
 
-sf_chat_pre_redraw() {
+sf_tui_pre_redraw() {
   (( ! SF_PRESENT_PENDING_ROWS )) || return 0
   if (( SF_PRESENT_HISTORY_NO )) && [[ $SF_PRESENT_STATE != permission &&
       $BUFFER != $SF_PRESENT_HISTORY[$SF_PRESENT_HISTORY_NO] ]]; then
-    sf_chat_history_reset
+    sf_tui_history_reset
   fi
-  if ! sf_chat_repaint_checked; then
+  if ! sf_tui_repaint_checked; then
     if [[ -z $SF_PRESENT_RENDER_ERROR && $SF_PRESENT_STATE == idle ]]; then
-      sf_chat_repaint_checked || return 1
+      sf_tui_repaint_checked || return 1
     else
       [[ -n $SF_PRESENT_RENDER_ERROR ]] || return 1
-      sf_chat_heartbeat_arm
+      sf_tui_heartbeat_arm
       return 0
     fi
   fi
-  sf_chat_heartbeat_arm
+  sf_tui_heartbeat_arm
 }
 
-sf_chat_record_prompt() {
+sf_tui_record_prompt() {
   [[ $1 != ${SF_PRESENT_HISTORY[-1]-} ]] || return 0
   SF_PRESENT_HISTORY+=( "$1" )
   (( ${#SF_PRESENT_HISTORY} <= SF_PRESENT_HISTORY_LIMIT )) || SF_PRESENT_HISTORY[1]=()
 }
 
-sf_chat_editor_permission() {
+sf_tui_editor_permission() {
   local mode=$1
   if [[ $mode == open ]]; then
     SF_PRESENT_PERMISSION_DRAFT=${BUFFER-}
@@ -273,11 +273,11 @@ TRAPWINCH() {
   zle reset-prompt 2>/dev/null || true
 }
 
-sf_chat_accept() {
+sf_tui_accept() {
   local decision=deny intent submitted=$BUFFER
   if [[ $SF_PRESENT_STATE == permission ]]; then
     [[ $BUFFER != a ]] || decision=approve
-    if ! sf_chat_answer_permission "$decision"; then
+    if ! sf_tui_answer_permission "$decision"; then
       zle reset-prompt
       zle -R
       return 0
@@ -285,15 +285,15 @@ sf_chat_accept() {
     zle -R
     return
   fi
-  sf_chat_submit "$submitted" || return 1
+  sf_tui_submit "$submitted" || return 1
   intent=$REPLY
   case $intent in
     ignore) return 0 ;;
     repaint)
-      sf_chat_history_reset
+      sf_tui_history_reset
       BUFFER=''
       CURSOR=0
-      [[ -n $SF_PRESENT_RENDER_ERROR ]] || sf_chat_repaint_checked
+      [[ -n $SF_PRESENT_RENDER_ERROR ]] || sf_tui_repaint_checked
       zle -R
       ;;
     quit) zle accept-line ;;
@@ -301,11 +301,11 @@ sf_chat_accept() {
       SF_PRESENT_DRAFT=''
       SF_PRESENT_DRAFT_CURSOR=0
       SF_PRESENT_DRAFT_SAVED=0
-      sf_chat_history_reset
+      sf_tui_history_reset
       BUFFER=''
       CURSOR=0
-      sf_chat_repaint || return 1
-      sf_chat_terminal_stage || return 1
+      sf_tui_repaint || return 1
+      sf_tui_terminal_stage || return 1
       SF_PRESENT_ACTION=submit
       zle accept-line
       ;;
@@ -313,17 +313,17 @@ sf_chat_accept() {
   esac
 }
 
-sf_chat_insert_newline() {
+sf_tui_insert_newline() {
   LBUFFER+=$'\n'
 }
 
-sf_chat_history_reset() {
+sf_tui_history_reset() {
   SF_PRESENT_HISTORY_DRAFT=''
   SF_PRESENT_HISTORY_CURSOR=0
   SF_PRESENT_HISTORY_NO=0
 }
 
-sf_chat_history_move() {
+sf_tui_history_move() {
   integer direction=$1 newest=${#SF_PRESENT_HISTORY}
   (( newest )) || return 0
   if (( direction < 0 )); then
@@ -346,18 +346,18 @@ sf_chat_history_move() {
   else
     BUFFER=$SF_PRESENT_HISTORY_DRAFT
     CURSOR=$SF_PRESENT_HISTORY_CURSOR
-    sf_chat_history_reset
+    sf_tui_history_reset
   fi
 }
 
 # Move by rendered rows, crossing into history only beyond the buffer edges.
-sf_chat_move_vertical() {
+sf_tui_move_vertical() {
   integer direction=$1 columns=${COLUMNS:-0} row column index width
   integer current_row current_column target_row target_column best=-1 distance best_distance=-1
   local character
   local -a rows columns_at
   if (( columns <= 0 )); then
-    sf_chat_history_move $direction
+    sf_tui_history_move $direction
     return
   fi
 
@@ -372,7 +372,7 @@ sf_chat_move_vertical() {
       row=$(( row + 1 ))
       column=0
     else
-      sf_chat_cell_width "$character" $column
+      sf_tui_cell_width "$character" $column
       width=$REPLY
       if (( width && column + width > columns )); then
         row=$(( row + 1 ))
@@ -393,11 +393,11 @@ sf_chat_move_vertical() {
   current_column=$columns_at[index]
   target_row=$(( current_row + direction ))
   if (( target_row < rows[1] || target_row > rows[-1] )); then
-    sf_chat_history_move $direction
+    sf_tui_history_move $direction
     SF_PRESENT_VERTICAL_COLUMN=-1
     return
   fi
-  if [[ ${LASTWIDGET-} == (sf_chat_up|sf_chat_down) ]] &&
+  if [[ ${LASTWIDGET-} == (sf_tui_up|sf_tui_down) ]] &&
       (( SF_PRESENT_VERTICAL_COLUMN >= 0 )); then
     target_column=$SF_PRESENT_VERTICAL_COLUMN
   else
@@ -416,15 +416,15 @@ sf_chat_move_vertical() {
   SF_PRESENT_VERTICAL_COLUMN=$target_column
 }
 
-sf_chat_up() {
-  sf_chat_move_vertical -1
+sf_tui_up() {
+  sf_tui_move_vertical -1
 }
 
-sf_chat_down() {
-  sf_chat_move_vertical 1
+sf_tui_down() {
+  sf_tui_move_vertical 1
 }
 
-sf_chat_insert() {
+sf_tui_insert() {
   local decision
   if [[ $SF_PRESENT_STATE == permission ]]; then
     case $KEYS in
@@ -432,14 +432,14 @@ sf_chat_insert() {
       d) decision=deny ;;
       *) zle -R; return 0 ;;
     esac
-    sf_chat_answer_permission "$decision" || zle reset-prompt
+    sf_tui_answer_permission "$decision" || zle reset-prompt
     zle -R
     return 0
   fi
   zle .self-insert
 }
 
-sf_chat_interrupt() {
+sf_tui_interrupt() {
   local intent
   if [[ $SF_PRESENT_STATE == (idle|stopped) && -n $BUFFER ]]; then
     BUFFER=''
@@ -447,7 +447,7 @@ sf_chat_interrupt() {
     zle -R
     return
   fi
-  sf_chat_cancel || return 1
+  sf_tui_cancel || return 1
   intent=$REPLY
   [[ $intent != reset ]] || zle reset-prompt
   if [[ $intent == quit ]]; then
@@ -462,13 +462,13 @@ sf_chat_interrupt() {
 # Ctrl-C does. It stays bound all the same, because an escape with no exact
 # binding leaves the editor waiting for the rest of a sequence that never
 # arrives, and the next key then completes a meta binding instead.
-sf_chat_escape() {
+sf_tui_escape() {
   zle -R
 }
 
-sf_chat_handoff_exec() {
-  sf_chat_heartbeat_stop
-  [[ $SF_PRESENT_STATE == idle ]] || sf_chat_transport_stop
+sf_tui_handoff_exec() {
+  sf_tui_heartbeat_stop
+  [[ $SF_PRESENT_STATE == idle ]] || sf_tui_transport_stop
   zle -I
   stty "$SF_PRESENT_TTY" 2>/dev/null || true
   print
@@ -478,52 +478,52 @@ sf_chat_handoff_exec() {
   exit 1
 }
 
-sf_chat_bind() {
+sf_tui_bind() {
   SF_PRESENT_HISTORY=()
   SF_PRESENT_PERMISSION_DRAFT=''
   SF_PRESENT_PERMISSION_CURSOR=0
   SF_PRESENT_HEARTBEAT_FD=''
   SF_PRESENT_RENDER_ERROR=''
   SF_PRESENT_VERTICAL_COLUMN=-1
-  sf_chat_history_reset
-  zle -N sf_chat_exec_ready
-  zle -N sf_chat_heartbeat_ready
-  zle -N sf_chat_accept
-  zle -N sf_chat_insert
-  zle -N sf_chat_insert_newline
-  zle -N sf_chat_up
-  zle -N sf_chat_down
-  zle -N sf_chat_interrupt
-  zle -N sf_chat_escape
-  zle -N zle-line-init sf_chat_line_init
-  zle -N zle-line-finish sf_chat_line_finish
-  zle -N zle-line-pre-redraw sf_chat_pre_redraw
-  bindkey '^M' sf_chat_accept
-  bindkey '^J' sf_chat_accept
-  bindkey '^[^M' sf_chat_insert_newline
-  bindkey $'\e[13;2u' sf_chat_insert_newline
-  bindkey '^C' sf_chat_interrupt
+  sf_tui_history_reset
+  zle -N sf_tui_exec_ready
+  zle -N sf_tui_heartbeat_ready
+  zle -N sf_tui_accept
+  zle -N sf_tui_insert
+  zle -N sf_tui_insert_newline
+  zle -N sf_tui_up
+  zle -N sf_tui_down
+  zle -N sf_tui_interrupt
+  zle -N sf_tui_escape
+  zle -N zle-line-init sf_tui_line_init
+  zle -N zle-line-finish sf_tui_line_finish
+  zle -N zle-line-pre-redraw sf_tui_pre_redraw
+  bindkey '^M' sf_tui_accept
+  bindkey '^J' sf_tui_accept
+  bindkey '^[^M' sf_tui_insert_newline
+  bindkey $'\e[13;2u' sf_tui_insert_newline
+  bindkey '^C' sf_tui_interrupt
   bindkey -D sf-present 2>/dev/null || true
   bindkey -N sf-present emacs
-  bindkey -M sf-present '^P' sf_chat_up
-  bindkey -M sf-present '^N' sf_chat_down
-  bindkey -M sf-present $'\e[A' sf_chat_up
-  bindkey -M sf-present $'\e[B' sf_chat_down
-  bindkey -M sf-present $'\e[1;1A' sf_chat_up
-  bindkey -M sf-present $'\e[1;1B' sf_chat_down
-  bindkey -M sf-present $'\eOA' sf_chat_up
-  bindkey -M sf-present $'\eOB' sf_chat_down
+  bindkey -M sf-present '^P' sf_tui_up
+  bindkey -M sf-present '^N' sf_tui_down
+  bindkey -M sf-present $'\e[A' sf_tui_up
+  bindkey -M sf-present $'\e[B' sf_tui_down
+  bindkey -M sf-present $'\e[1;1A' sf_tui_up
+  bindkey -M sf-present $'\e[1;1B' sf_tui_down
+  bindkey -M sf-present $'\eOA' sf_tui_up
+  bindkey -M sf-present $'\eOB' sf_tui_down
   bindkey -M sf-present $'\e[3;5~' kill-word
-  bindkey -M sf-present '^C' sf_chat_interrupt
-  bindkey -M sf-present $'\e' sf_chat_escape
-  bindkey -M sf-present ' ' sf_chat_insert
-  bindkey -M sf-present -R $'!-~' sf_chat_insert
+  bindkey -M sf-present '^C' sf_tui_interrupt
+  bindkey -M sf-present $'\e' sf_tui_escape
+  bindkey -M sf-present ' ' sf_tui_insert
+  bindkey -M sf-present -R $'!-~' sf_tui_insert
   bindkey -D sf-permission 2>/dev/null || true
   bindkey -N sf-permission
-  bindkey -M sf-permission '^M' sf_chat_accept
-  bindkey -M sf-permission '^J' sf_chat_accept
-  bindkey -M sf-permission '^C' sf_chat_interrupt
-  bindkey -M sf-permission $'\e' sf_chat_escape
-  bindkey -M sf-permission 'a' sf_chat_insert
-  bindkey -M sf-permission 'd' sf_chat_insert
+  bindkey -M sf-permission '^M' sf_tui_accept
+  bindkey -M sf-permission '^J' sf_tui_accept
+  bindkey -M sf-permission '^C' sf_tui_interrupt
+  bindkey -M sf-permission $'\e' sf_tui_escape
+  bindkey -M sf-permission 'a' sf_tui_insert
+  bindkey -M sf-permission 'd' sf_tui_insert
 }

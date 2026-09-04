@@ -26,7 +26,7 @@ typeset -gi SF_PRESENT_HIGHLIGHT_ADVANCED=0
 
 # Returns light or dark from the terminal's OSC 11 default-background reply. A
 # terminal that does not implement OSC 11 cannot hold startup indefinitely.
-sf_chat_background_mode() {
+sf_tui_background_mode() {
   local tty saved answer='' character previous=''
   integer index red green blue luminance
   [[ -r /dev/tty && -w /dev/tty ]] || return 1
@@ -63,7 +63,7 @@ sf_chat_background_mode() {
 
 # Resolve the active palette into semantic styles.
 # Leaves everything empty when the terminal or environment refuses color.
-sf_chat_theme_config() {
+sf_tui_theme_config() {
   local presentation=${1:-\{\}} mode key value
   local -A values
 
@@ -120,7 +120,7 @@ sf_chat_theme_config() {
     # Probing queries the terminal in raw mode, so it happens once per process
     # rather than on every presentation change.
     [[ -n $SF_PRESENT_BACKGROUND ]] ||
-      { sf_chat_background_mode && SF_PRESENT_BACKGROUND=$REPLY } ||
+      { sf_tui_background_mode && SF_PRESENT_BACKGROUND=$REPLY } ||
       SF_PRESENT_BACKGROUND=dark
     mode=$SF_PRESENT_BACKGROUND
   fi
@@ -142,7 +142,7 @@ sf_chat_theme_config() {
 
 # Drops the oldest $1 cache entries so they stay aligned with the nodes they
 # describe. Dropping every entry is how a transcript rebuild clears the cache.
-sf_chat_highlight_drop() {
+sf_tui_highlight_drop() {
   integer count=$1
   (( count > 0 )) || return 0
   if (( count >= ${#SF_PRESENT_HIGHLIGHT_CACHE} )); then
@@ -163,7 +163,7 @@ sf_chat_highlight_drop() {
 
 # Retains only spans still ahead of a flushed boundary. Flushed rows are gone
 # from the viewport, so the source behind them cannot be styled again.
-sf_chat_highlight_prune() {
+sf_tui_highlight_prune() {
   integer node=$1 offset=$2 index start end
   local -a spans=()
   (( node > 0 && node <= ${#SF_PRESENT_NODE_TYPE} && offset >= 0 &&
@@ -185,7 +185,7 @@ sf_chat_highlight_prune() {
 # Scans one bounded segment, resuming at the node's frontier. Committed source
 # is never revisited, so the scan mode is carried across the boundary instead
 # of being recovered by rescanning the line that produced it.
-sf_chat_highlight_scan() {
+sf_tui_highlight_scan() {
   integer node=$1 target=$2 frontier continuation=0
   local body=$SF_PRESENT_NODE_BODY[node] language segment state
   SF_PRESENT_HIGHLIGHT_SPANS=()
@@ -202,13 +202,13 @@ sf_chat_highlight_scan() {
   (( frontier == 0 )) || [[ ${body[frontier]} == $'\n' ]] || continuation=1
   case $language in
     markdown)
-      sf_chat_markdown_highlight "$segment" $frontier "$state" $continuation
+      sf_tui_markdown_highlight "$segment" $frontier "$state" $continuation
       SF_PRESENT_HIGHLIGHT_NEXT_STATE=$REPLY
       ;;
-    diff) sf_chat_diff_highlight "$segment" $frontier ;;
+    diff) sf_tui_diff_highlight "$segment" $frontier ;;
     plain) ;;
     *)
-      sf_chat_code_highlight "$segment" "$language" $frontier "${state:-0}"
+      sf_tui_code_highlight "$segment" "$language" $frontier "${state:-0}"
       SF_PRESENT_HIGHLIGHT_NEXT_STATE=$SF_PRESENT_HIGHLIGHT_BLOCK_OPEN
       ;;
   esac
@@ -218,7 +218,7 @@ sf_chat_highlight_scan() {
 # reads the frontier unset rather than treating it as zero, so a node with
 # nothing to scan yet still moves from unset to zero here. That is what lets
 # wrapping start reporting row boundaries for it at all.
-sf_chat_highlight_commit() {
+sf_tui_highlight_commit() {
   integer node=$1 target=$2 retain index start end
   local -a spans
   (( target > ${SF_PRESENT_NODE_FRONTIER[node]:--1} )) || return 0
@@ -233,13 +233,13 @@ sf_chat_highlight_commit() {
   done
   SF_PRESENT_HIGHLIGHT_CACHE[node]="${(j: :)spans}"
   SF_PRESENT_HIGHLIGHT_CACHE_STATE[node]=$SF_PRESENT_HIGHLIGHT_NEXT_STATE
-  sf_chat_set_frontier $node $target
+  sf_tui_set_frontier $node $target
 }
 
 # Releases one filled visual row of a growing line. A row ending inside an
 # inline construct is withheld so the next row can close it, up to a limit the
 # caller sizes from the viewport: a flushed row can never be restyled.
-sf_chat_highlight_rows() {
+sf_tui_highlight_rows() {
   integer node=$1 boundary=$2 limit=$3 frontier
   SF_PRESENT_HIGHLIGHT_ADVANCED=0
   (( SF_PRESENT_HIGHLIGHT_ENABLED )) || return 0
@@ -249,14 +249,14 @@ sf_chat_highlight_rows() {
   frontier=${SF_PRESENT_NODE_FRONTIER[node]:--1}
   (( frontier >= 0 && boundary > frontier &&
       boundary <= ${#SF_PRESENT_NODE_BODY[node]} )) || return 0
-  sf_chat_highlight_scan $node $boundary || return 1
+  sf_tui_highlight_scan $node $boundary || return 1
   (( ! SF_PRESENT_HIGHLIGHT_INLINE_OPEN || boundary - frontier > limit )) || return 0
-  sf_chat_highlight_commit $node $boundary || return 1
+  sf_tui_highlight_commit $node $boundary || return 1
   SF_PRESENT_HIGHLIGHT_ADVANCED=1
 }
 
 # Append one zero-based semantic span when its configured style is active.
-sf_chat_highlight_span() {
+sf_tui_highlight_span() {
   integer start=$1 end=$2
   local style=${SF_PRESENT_STYLE[syntax.$3]-}
   (( end > start )) && [[ -n $style ]] || return 0
@@ -265,7 +265,7 @@ sf_chat_highlight_span() {
 
 # Highlight enough of common languages to distinguish comments, strings,
 # numbers, keywords, shell options, and markup tags. Unknown languages remain plain text.
-sf_chat_code_highlight() {
+sf_tui_code_highlight() {
   local source=$1 language=$2 quotes='"' line_comment='' block_start='' block_end=''
   local block_kind=comment words='' character quote token
   integer base=${3:-0} state=${4:-0} length=${#source} index=1 end escaped closed tag_open=0
@@ -324,7 +324,7 @@ sf_chat_code_highlight() {
       end=$(( length + 1 ))
       SF_PRESENT_HIGHLIGHT_BLOCK_OPEN=1
     fi
-    sf_chat_highlight_span $base $(( base + end - 1 )) $block_kind
+    sf_tui_highlight_span $base $(( base + end - 1 )) $block_kind
     index=$end
   fi
   while (( index <= length )); do
@@ -337,7 +337,7 @@ sf_chat_code_highlight() {
       integer key_end=$end
       while (( end <= length )) && [[ ${source[end]} == [[:blank:]] ]]; do (( ++end )); done
       if (( key_end > key_start )) && [[ ${source[end]} == : ]]; then
-        sf_chat_highlight_span $(( base + key_start - 1 )) $(( base + key_end - 1 )) tag
+        sf_tui_highlight_span $(( base + key_start - 1 )) $(( base + key_end - 1 )) tag
         index=$key_end
         continue
       fi
@@ -354,7 +354,7 @@ sf_chat_code_highlight() {
         end=$(( length + 1 ))
         SF_PRESENT_HIGHLIGHT_BLOCK_OPEN=1
       fi
-      sf_chat_highlight_span $(( base + index - 1 )) $(( base + end - 1 )) $block_kind
+      sf_tui_highlight_span $(( base + index - 1 )) $(( base + end - 1 )) $block_kind
       index=$end
       continue
     fi
@@ -362,7 +362,7 @@ sf_chat_code_highlight() {
         ${source[index,index + ${#line_comment} - 1]} == $line_comment ]]; then
       end=$index
       while (( end <= length )) && [[ ${source[end]} != $'\n' ]]; do (( ++end )); done
-      sf_chat_highlight_span $(( base + index - 1 )) $(( base + end - 1 )) comment
+      sf_tui_highlight_span $(( base + index - 1 )) $(( base + end - 1 )) comment
       index=$end
       continue
     fi
@@ -385,7 +385,7 @@ sf_chat_code_highlight() {
         (( ++end ))
       done
       if (( closed )); then
-        sf_chat_highlight_span $(( base + index - 1 )) $(( base + end - 1 )) string
+        sf_tui_highlight_span $(( base + index - 1 )) $(( base + end - 1 )) string
         index=$end
         continue
       fi
@@ -401,7 +401,7 @@ sf_chat_code_highlight() {
       else
         tag_open=1
       fi
-      sf_chat_highlight_span $(( base + index - 1 )) $(( base + end - 1 )) tag
+      sf_tui_highlight_span $(( base + index - 1 )) $(( base + end - 1 )) tag
       index=$end
       continue
     fi
@@ -409,7 +409,7 @@ sf_chat_code_highlight() {
         [[ $character == '>' || ${source[index,index + 1]} == '/>' ]]; then
       end=$(( index + 1 ))
       [[ $character == / ]] && (( ++end ))
-      sf_chat_highlight_span $(( base + index - 1 )) $(( base + end - 1 )) tag
+      sf_tui_highlight_span $(( base + index - 1 )) $(( base + end - 1 )) tag
       tag_open=0
       index=$end
       continue
@@ -422,7 +422,7 @@ sf_chat_code_highlight() {
       while (( end <= length )) && [[ ${source[end]} == [A-Za-z0-9_-] ]]; do
         (( ++end ))
       done
-      sf_chat_highlight_span $(( base + index - 1 )) $(( base + end - 1 )) tag
+      sf_tui_highlight_span $(( base + index - 1 )) $(( base + end - 1 )) tag
       index=$end
       continue
     fi
@@ -431,7 +431,7 @@ sf_chat_code_highlight() {
       while (( end <= length )) && [[ ${source[end]} == [[:alnum:]_.] ]]; do
         (( ++end ))
       done
-      sf_chat_highlight_span $(( base + index - 1 )) $(( base + end - 1 )) number
+      sf_tui_highlight_span $(( base + index - 1 )) $(( base + end - 1 )) number
       index=$end
       continue
     fi
@@ -442,7 +442,7 @@ sf_chat_code_highlight() {
       done
       token=${source[index,end - 1]}
       if [[ -n $words && "|$words|" == *"|$token|"* ]]; then
-        sf_chat_highlight_span $(( base + index - 1 )) $(( base + end - 1 )) keyword
+        sf_tui_highlight_span $(( base + index - 1 )) $(( base + end - 1 )) keyword
       fi
       index=$end
       continue
@@ -456,7 +456,7 @@ sf_chat_code_highlight() {
 # already scanned, so line-leading syntax is not matched against a fragment.
 # Returns the scan mode in REPLY. An unclosed inline construct is reported
 # separately because it is the only state for which a caller withholds a row.
-sf_chat_markdown_highlight() {
+sf_tui_markdown_highlight() {
   local source=$1 state=${3-} line fence='' delimiter='' language='' close
   local character suffix rest kind boundary=$state trimmed pipes
   integer base_offset=${2:-0} continuation=${4:-0}
@@ -497,18 +497,18 @@ sf_chat_markdown_highlight() {
         (( ++close_start ))
       done
       if (( starts_line )) && [[ ${close[close_start,-1]} == "$fence"* ]]; then
-        sf_chat_highlight_span $base $(( base + ${#line} )) fence
+        sf_tui_highlight_span $base $(( base + ${#line} )) fence
         fence=''
         language=''
         comment=0
       else
-        sf_chat_code_highlight "$line" "$language" $base $comment
+        sf_tui_code_highlight "$line" "$language" $base $comment
         comment=$SF_PRESENT_HIGHLIGHT_BLOCK_OPEN
       fi
     elif (( starts_line )) && [[ $line =~ '^ {0,3}(```+|~~~+)[[:space:]]*([^[:space:]]*)' ]]; then
       fence=$match[1]
       language=$match[2]
-      sf_chat_highlight_span $base $(( base + ${#line} )) fence
+      sf_tui_highlight_span $base $(( base + ${#line} )) fence
       inline=0
     fi
     if (( inline )); then
@@ -517,21 +517,21 @@ sf_chat_markdown_highlight() {
         trimmed=${trimmed%${trimmed##*[![:space:]]}}
         pipes=${trimmed//[^\|]/}
         if [[ $trimmed =~ '^\|?[[:space:]]*:?-{3,}:?[[:space:]]*(\|[[:space:]]*:?-{3,}:?[[:space:]]*)+\|?$' ]]; then
-          sf_chat_highlight_span $base $(( base + ${#line} )) table
+          sf_tui_highlight_span $base $(( base + ${#line} )) table
         elif [[ $trimmed == \|* || $trimmed == *\| ]] || (( ${#pipes} >= 2 )); then
           table_line=1
           boundary=table
         fi
       fi
       if (( heading )); then
-        sf_chat_highlight_span $base $(( base + ${#line} )) heading
+        sf_tui_highlight_span $base $(( base + ${#line} )) heading
       elif (( starts_line )) &&
           [[ $line =~ '^( {0,3})(#{1,6}|>|[-*+]|[0-9]{1,9}[.)])([[:space:]]+)' ]]; then
         match_end=$MEND
         if [[ $match[2] == \#* ]]; then
           heading=1
           boundary=heading
-          sf_chat_highlight_span $(( base + ${#match[1]} )) $(( base + ${#line} )) heading
+          sf_tui_highlight_span $(( base + ${#match[1]} )) $(( base + ${#line} )) heading
         fi
         line=${line[match_end + 1,-1]}
         (( base += match_end ))
@@ -554,7 +554,7 @@ sf_chat_markdown_highlight() {
           if [[ $suffix == *"$delimiter"* ]]; then
             rest=${suffix#*"$delimiter"}
             content=$(( ${#line} - ${#rest} - ${#delimiter} + 1 ))
-            sf_chat_highlight_span $(( base + cursor - 1 )) \
+            sf_tui_highlight_span $(( base + cursor - 1 )) \
               $(( base + content + ${#delimiter} - 1 )) code
             cursor=$(( content + ${#delimiter} ))
             continue
@@ -564,14 +564,14 @@ sf_chat_markdown_highlight() {
         fi
         if [[ $character == '[' && ${line[cursor,-1]} =~ '^\[[^]]+\]\([^[:space:])]+\)' ]]; then
           match_end=${#MATCH}
-          sf_chat_highlight_span $(( base + cursor - 1 )) \
+          sf_tui_highlight_span $(( base + cursor - 1 )) \
             $(( base + cursor + match_end - 1 )) link
           (( cursor += match_end ))
           continue
         fi
         if (( table_line )) && [[ $character == \| &&
             ( $cursor == 1 || ${line[cursor - 1]} != \\ ) ]]; then
-          sf_chat_highlight_span $(( base + cursor - 1 )) $(( base + cursor )) table
+          sf_tui_highlight_span $(( base + cursor - 1 )) $(( base + cursor )) table
           (( ++cursor ))
           continue
         fi
@@ -612,7 +612,7 @@ sf_chat_markdown_highlight() {
           done
           if (( content )); then
             (( count == 2 )) && kind=strong || kind=em
-            sf_chat_highlight_span $(( base + cursor - 1 )) \
+            sf_tui_highlight_span $(( base + cursor - 1 )) \
               $(( base + content + count - 1 )) $kind
             cursor=$(( content + count ))
             continue
@@ -643,7 +643,7 @@ sf_chat_markdown_highlight() {
   REPLY=$boundary
 }
 
-sf_chat_diff_highlight() {
+sf_tui_diff_highlight() {
   local source=$1 line kind
   integer base=${2:-0} length=${#source} index=1 end
   while (( index <= length )); do
@@ -654,15 +654,15 @@ sf_chat_diff_highlight() {
     if [[ $line == '+'* && $line != '+++'* ]]; then kind=added
     elif [[ $line == '-'* && $line != '---'* ]]; then kind=removed
     fi
-    [[ -z $kind ]] || sf_chat_highlight_span $(( base + index - 1 )) $(( base + end - 1 )) $kind
+    [[ -z $kind ]] || sf_tui_highlight_span $(( base + index - 1 )) $(( base + end - 1 )) $kind
     index=$(( end <= length ? end + 1 : length + 1 ))
   done
 }
 
 # Advances every node's highlighting through its last complete line. A line that
 # is still growing is left alone here; only a filled visual row releases part of
-# one, through sf_chat_highlight_rows.
-sf_chat_highlight_update() {
+# one, through sf_tui_highlight_rows.
+sf_tui_highlight_update() {
   integer node target
   local body complete language
   (( SF_PRESENT_HIGHLIGHT_ENABLED )) || return 0
@@ -691,7 +691,7 @@ sf_chat_highlight_update() {
       complete=${body%$'\n'*}
       [[ $complete == $body ]] && target=0 || target=$(( ${#complete} + 1 ))
     fi
-    sf_chat_highlight_scan $node $target || return 1
-    sf_chat_highlight_commit $node $target || return 1
+    sf_tui_highlight_scan $node $target || return 1
+    sf_tui_highlight_commit $node $target || return 1
   done
 }

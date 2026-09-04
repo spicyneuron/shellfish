@@ -15,7 +15,7 @@ typeset -g SF_PRESENT_PREVIEW_TOOL_CALL=full SF_PRESENT_PREVIEW_TOOL_RESULT=full
 typeset -ga SF_PRESENT_ACTIVITY_FRAMES=( ⠃ ⠁ ⠁ ⠃ ⠆ ⡄ ⡀ ⡀ ⡄ ⠆ )
 typeset -g SF_PRESENT_ACTIVITY=${SF_PRESENT_ACTIVITY_FRAMES[1]}
 
-sf_chat_rows_config() {
+sf_tui_rows_config() {
   local config=${1:-\{\}} values
   local -a limits
   values=$(jq -r '[.tui.preview_lines_reasoning // "full",
@@ -31,21 +31,21 @@ sf_chat_rows_config() {
 }
 
 # The shared display estimate of about four characters per token.
-sf_chat_token_estimate() {
+sf_tui_token_estimate() {
   REPLY=$(( ($1 + 3) / 4 ))
 }
 
-sf_chat_token_count() {
+sf_tui_token_count() {
   local text=$1 exact=${2-}
   if [[ -n $exact ]]; then
     REPLY=$exact
   else
-    sf_chat_token_estimate ${#text}
+    sf_tui_token_estimate ${#text}
   fi
 }
 
 # The notes trailing a completed tool result, in transcript order.
-sf_chat_result_notes() {
+sf_tui_result_notes() {
   integer node=$1
   local code=$SF_PRESENT_NODE_STATUS[node]
   local -a notes=()
@@ -54,7 +54,7 @@ sf_chat_result_notes() {
   REPLY=${(j: · :)notes}
 }
 
-sf_chat_preview_tail() {
+sf_tui_preview_tail() {
   integer node=$1 hidden=$2
   local type=$SF_PRESENT_NODE_TYPE[node] state=$SF_PRESENT_NODE_STATE[node]
   local role=$SF_PRESENT_NODE_ROLE[node]
@@ -71,7 +71,7 @@ sf_chat_preview_tail() {
     return
   fi
   [[ $type != reasoning ]] || exact=$SF_PRESENT_NODE_META[node]
-  sf_chat_token_count "$body" "$exact"
+  sf_tui_token_count "$body" "$exact"
   tokens=$REPLY
   REPLY=''
   case $type in
@@ -101,7 +101,7 @@ sf_chat_preview_tail() {
           fi
         }
       else
-        sf_chat_result_notes $node
+        sf_tui_result_notes $node
         notes=$REPLY
         REPLY=''
         (( ! hidden )) || REPLY="  … ~$tokens tokens"
@@ -126,7 +126,7 @@ sf_chat_preview_tail() {
 
 # Appends a row with semantic style spans, resolving "type.role" before falling
 # back to "type". The caller appends the matching row cursor separately.
-sf_chat_row_append() {
+sf_tui_row_append() {
   local text=$1 kind=$2 syntax=${5-} style_kind=${7:-$2} style highlight=''
   integer settled=$3 node=$4 source_end=${6:--1}
   style=${SF_PRESENT_STYLE[$style_kind]:-$SF_PRESENT_STYLE[${style_kind%%.*}]}
@@ -140,7 +140,7 @@ sf_chat_row_append() {
   SF_PRESENT_ROW_SOURCE_END+=( $source_end )
 }
 
-sf_chat_cell_width() {
+sf_tui_cell_width() {
   local character=$1
   integer column=$2 code
   if [[ $character == $'\t' ]]; then
@@ -166,7 +166,7 @@ sf_chat_cell_width() {
 }
 
 # Render a bounded suffix from an opaque width-independent node cursor.
-sf_chat_rows() {
+sf_tui_rows() {
   integer columns=$1 budget=$2 node offset length consumed settled start
   integer column size take break_consumed break_length activity withhold withhold_all
   integer withhold_separator
@@ -257,7 +257,7 @@ sf_chat_rows() {
     fi
 
     if (( tail_phase )); then
-      sf_chat_preview_tail $node $hidden
+      sf_tui_preview_tail $node $hidden
       text=$REPLY
       length=${#text}
       (( offset <= length )) || return 1
@@ -288,7 +288,7 @@ sf_chat_rows() {
             previewed=1
             preview=$SF_PRESENT_PREVIEW_CONTEXT
             if [[ $preview == 0 && -n $body ]]; then
-              sf_chat_token_count "$body"
+              sf_tui_token_count "$body"
               text="… ~$REPLY tokens"
               collapsed=1
               clamp_start=0
@@ -353,7 +353,7 @@ sf_chat_rows() {
           if [[ $type != (tool_call|tool_result) ]]; then
             exact=''
             [[ $type != reasoning ]] || exact=$SF_PRESENT_NODE_META[node]
-            sf_chat_token_count "$body" "$exact"
+            sf_tui_token_count "$body" "$exact"
           fi
           if [[ $type == reasoning ]]; then
             if [[ $state == open ]]; then
@@ -369,7 +369,7 @@ sf_chat_rows() {
             if [[ $state == open ]]; then
               text+=" $SF_PRESENT_ACTIVITY"
             else
-              sf_chat_result_notes $node
+              sf_tui_result_notes $node
               [[ -z $REPLY ]] || text+=" · $REPLY"
             fi
           else
@@ -396,7 +396,7 @@ sf_chat_rows() {
           fi
           [[ $type != tool_result || $SF_PRESENT_NODE_STATUS[node] != permission ]] || withhold_all=1
           if [[ $state == open && -z $body ]] && (( ! withhold_all )); then
-            sf_chat_preview_tail $node 0
+            sf_tui_preview_tail $node 0
             if [[ -n $REPLY ]]; then
               activity=1
               activity_text=$REPLY
@@ -456,7 +456,7 @@ sf_chat_rows() {
           if [[ $state == open ]] && (( activity )); then
             text=''
           else
-            sf_chat_preview_tail $node 0
+            sf_tui_preview_tail $node 0
           fi
           if (( ! activity )) && [[ -n $REPLY ]]; then
             tail_phase=1
@@ -535,7 +535,7 @@ sf_chat_rows() {
             settled=1
             break
           fi
-          sf_chat_cell_width "$character" $column
+          sf_tui_cell_width "$character" $column
           size=$REPLY
           if (( size > 0 )); then
             if (( break_consumed )); then
@@ -611,7 +611,7 @@ sf_chat_rows() {
           settled=1
           break
         fi
-        sf_chat_cell_width "$character" $column
+        sf_tui_cell_width "$character" $column
         size=$REPLY
         if [[ $character == $'\t' && $column == 0 ]] && (( size > columns )); then
           size=$columns
@@ -779,14 +779,14 @@ sf_chat_rows() {
         part_column=0
         characters=( ${(s::)part} )
         for character in $characters; do
-          sf_chat_cell_width "$character" $part_column
+          sf_tui_cell_width "$character" $part_column
           part_column=$(( part_column + REPLY ))
         done
         (( part_column >= columns )) || part+="${(l:$(( columns - part_column )):: :)}"
         projected=( 0 ${#part} "${projected[diff_span + 2]}" )
       fi
       row_highlight="${(j: :)projected}"
-      sf_chat_row_append "$part" "$spans" $settled $node "$row_highlight" $source_end \
+      sf_tui_row_append "$part" "$spans" $settled $node "$row_highlight" $source_end \
         "$style_kind"
 
       if (( previewed && ! collapsed && ! tail_phase && ! transition )) &&
@@ -795,7 +795,7 @@ sf_chat_rows() {
         hidden=0
       fi
       if (( transition )); then
-        sf_chat_preview_tail $node $hidden
+        sf_tui_preview_tail $node $hidden
         tail=$REPLY
         if [[ -n $tail ]]; then
           SF_PRESENT_ROW_CURSOR+=( "${node}:t:0:$hidden" )
@@ -831,7 +831,7 @@ sf_chat_rows() {
       if [[ $type == tool_result && $activity_text == ╰* && -n $SF_PRESENT_STYLE[divider] ]]; then
         row_highlight="0 1 $SF_PRESENT_STYLE[divider]"
       fi
-      sf_chat_row_append "$activity_text" "$spans" 0 $node "$row_highlight"
+      sf_tui_row_append "$activity_text" "$spans" 0 $node "$row_highlight"
       SF_PRESENT_ROW_CURSOR+=( "$node:$offset" )
     fi
     [[ $state == closed ]] || break
