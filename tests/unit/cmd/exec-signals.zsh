@@ -10,7 +10,7 @@ cat >"$config" <<EOF
   "backends": {"fixture": {"adapter": "$ROOT/tests/fixtures/backend"}},
   "harnesses": {
     "machine": {
-      "system": [], "tools": [], "sandbox": true,
+      "tools": [], "sandbox": true,
       "session_start": [], "user_prompt_submit": [], "permission_request": [],
       "pre_tool_use": [], "post_tool_use": [], "stop": [],
       "max_requests_per_turn": 8, "max_tool_calls_per_request": 16,

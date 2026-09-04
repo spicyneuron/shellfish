@@ -97,13 +97,13 @@ def backend_manifest:
   (.endpoint | endpoint) and (.api_key_env | api_key_env);
 
 def profile_fields:
-  ["backend", "context_window", "harness", "request"];
+  ["backend", "context_window", "harness", "request", "system"];
 def harness_fields:
   ["tools", "sandbox", "sandbox_read_paths", "sandbox_write_paths",
    "max_requests_per_turn",
    "max_tool_calls_per_request", "max_capture_bytes"];
 def hook_names:
-  ["system", "session_start", "user_prompt_submit", "permission_request", "pre_tool_use",
+  ["session_start", "user_prompt_submit", "permission_request", "pre_tool_use",
    "post_tool_use", "stop"];
 
 def harness_hooks:
@@ -303,9 +303,10 @@ def canonical_session_header($format_version):
   type == "object" and .type == "session" and .format_version == $format_version and
   (.cwd | absolute_nul_free_path) and (.created | type == "string") and
   (.profile | type == "object" and
-    ((keys - ["context_window", "request"]) | length == 0) and
-    (["request"] - keys | length == 0) and
+    ((keys - ["context_window", "request", "system"]) | length == 0) and
+    (["request", "system"] - keys | length == 0) and
     (.request | type == "object" and (.model | model_name)) and
+    (.system | type == "array" and all(.[]; absolute_path)) and
     (if has("context_window") then
       .context_window == null or (.context_window | positive_integer)
     else true end)) and
@@ -322,7 +323,7 @@ def canonical_session_header($format_version):
   (.harness | type == "object" and
     (["sandbox_read_paths", "sandbox_write_paths", "fence",
       "max_capture_bytes", "max_requests_per_turn",
-      "max_tool_calls_per_request", "sandbox", "system", "tools"] as $required |
+      "max_tool_calls_per_request", "sandbox", "tools"] as $required |
       ((keys - ($required + hook_names)) | length == 0) and
       (($required - keys) | length == 0)) and
     harness_hooks and

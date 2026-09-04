@@ -98,11 +98,7 @@ sf_hooks_capture_one() {
   [[ -z $api_key_env ]] || environment+=( -u "$api_key_env" )
 
   rm -f -- "$context" "$display" "$display_pipe" "$control"
-  if [[ $hook == system && $script == *.zsh ]]; then
-    command=( zsh -f "$script" )
-  else
-    command=( "$script" )
-  fi
+  command=( "$script" )
 
   mkfifo "$display_pipe" || {
     sf_hooks_fail 'cannot prepare hook display capture'
@@ -199,26 +195,6 @@ sf_hooks_dispatch() {
     }
 
     for script in $scripts; do
-      if [[ $hook == system && $script != *.zsh && ! -x $script ]]; then
-        [[ -f $script && -r $script ]] || {
-          sf_hooks_fail "invalid system hook component: $script"
-          return
-        }
-        context_size=$(wc -c <"$script") || {
-          sf_hooks_fail "cannot inspect system hook component: $script"
-          return
-        }
-        (( context_size <= max_capture )) || {
-          sf_hooks_fail "hook component output exceeds capture limit: $script"
-          return
-        }
-        sf_hooks_read_capture "$script" "$context_size" || {
-          sf_hooks_fail "cannot read system hook component: $script"
-          return
-        }
-        results+=( "$script" 0 "$REPLY" '' '' )
-        continue
-      fi
       sf_hooks_capture_one "$script" "$input" "$directory" "$max_capture" \
         "$argument_count" "${arguments[@]}" || return
       result=( "${reply[@]}" )
@@ -413,7 +389,7 @@ sf_hooks_run() {
   [[ $hook != pre_tool_use ]] || label=pre-tool
 
   SF_HOOK_ERROR=''
-  if [[ $hook == (system|session_start) ]]; then
+  if [[ $hook == session_start ]]; then
     [[ -z $SF_SESSION_LOCK && $SF_SESSION_PATH == "$session" && ${#SF_SESSION_RECORDS} -gt 0 ]] ||
       sf_hooks_fail "$hook requires active session preparation" || return
   else
@@ -504,31 +480,6 @@ sf_hooks_commit_context() {
       return 1
     }
   done
-}
-
-# Materializes the system record during session preparation.
-sf_hooks_system() {
-  local content item
-  local -a parts
-  integer index
-  sf_hooks_run "$1" system '' allow reject 0 1 || return
-  for (( index = 1; index <= ${#SF_HOOK_SCRIPT_RESULTS}; index += 5 )); do
-    item=$SF_HOOK_SCRIPT_RESULTS[index+2]
-    while [[ $item == *$'\n' ]]; do item=${item%$'\n'}; done
-    [[ -z $item ]] || parts+=( "$item" )
-    [[ -z $SF_HOOK_SCRIPT_RESULTS[index+3] ||
-      $+functions[sf_exec_hook_display_complete] == 1 ]] ||
-      print -rn -u2 -- "$SF_HOOK_SCRIPT_RESULTS[index+3]"
-  done
-  content=${(pj:\n\n:)parts}
-  if [[ -n $content ]]; then
-    item=$(jq -cn --arg content "$content" '{type:"system",content:$content}') || {
-      sf_hooks_fail 'cannot prepare system hook output'
-      return
-    }
-    SF_SESSION_RECORDS+=( "$item" )
-  fi
-  reply=()
 }
 
 # Runs once during session preparation.

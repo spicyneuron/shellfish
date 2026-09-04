@@ -14,7 +14,7 @@ cat >"$config" <<EOF
   "backends": {"fixture": {"adapter": "$ROOT/tests/fixtures/backend"}},
   "harnesses": {
     "machine": {
-      "system": ["source.md"], "tools": [], "sandbox": true,
+      "tools": [], "sandbox": true,
       "sandbox_read_paths": ["$tmp/read"],
       "sandbox_write_paths": ["$tmp/write"],
       "session_start": [], "user_prompt_submit": [], "permission_request": [],
@@ -25,7 +25,7 @@ cat >"$config" <<EOF
   },
   "profiles": {
     "exec": {
-      "backend": "fixture", "harness": "machine",
+      "backend": "fixture", "harness": "machine", "system": ["source.md"],
       "request": {"model": "test-model"}
     }
   }

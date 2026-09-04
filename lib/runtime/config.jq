@@ -69,7 +69,9 @@ def config_profile($path):
     (.context_window == null or (.context_window | positive_integer));
     $path + ["context_window"]; "must be null or a positive integer") |
   config_assert((has("request") | not) or (.request | type == "object");
-    $path + ["request"]; "must be an object");
+    $path + ["request"]; "must be an object") |
+  config_assert((has("system") | not) or (.system | type == "array" and
+    all(.[]; nonempty_control_free_string)); $path + ["system"]; "must be references");
 
 def config_validate:
   config_object([]; ["$schema", "default_profile", "theme_mode", "theme_light", "theme_dark",
@@ -177,6 +179,7 @@ def runtime_prepare:
       ($validated | {theme_mode,theme_light,theme_dark,tui,themes} |
       with_entries(select(.value != null)))) | presentation_finish),
     tool_references:($profile.harness.tools // []),
+    system_references:($profile.system // []),
     hook_component_references:[hook_names[] as $hook |
       ($profile.harness[$hook] // [])[] | {hook:$hook,reference:.}]
   };
@@ -199,11 +202,14 @@ def runtime_finalize:
   $input.command as $command |
   $input.resolved as $args |
   ($prepared.tool_references | length) as $tool_count |
+  ($prepared.system_references | length) as $system_count |
   ($prepared.hook_component_references | length) as $component_count |
-  ($tool_count * 4) as $component_offset |
+  ($tool_count * 4) as $system_offset |
+  ($system_offset + $system_count) as $component_offset |
   [range(0; $tool_count) as $index |
     ($args[($index * 4):][:4]) |
     {name:.[0],command:.[1],manifest_json:.[2],settings:.[3]}] as $resolved_tools |
+  ($args[$system_offset:][:$system_count]) as $system |
   [range(0; $component_count) as $index |
     ($args[($component_offset + ($index * 2)):][:2]) |
     {hook:.[0],path:.[1]}] as $resolved_components |
@@ -218,11 +224,11 @@ def runtime_finalize:
     else {name:$tool.name,command:$tool.command,
       manifest:$tool_manifest,
       settings:(if $tool.settings == "" then null else $tool.settings end)} end] as $tools |
-  (reduce $resolved_components[] as $component ({system:[]};
+  (reduce $resolved_components[] as $component ({};
     .[$component.hook] += [$component.path])) as $hooks |
   $prepared.profile as $profile |
   ({
-    profile:({request:$prepared.request} +
+    profile:({request:$prepared.request,system:$system} +
       (if $profile | has("context_window") then
         {context_window:$profile.context_window} else {} end)),
     backend:{name:$prepared.backend_name,command:$command,env_file:$input.env_file,

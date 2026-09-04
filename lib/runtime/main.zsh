@@ -147,8 +147,9 @@ sf_runtime_resolve_from_config() {
   local home=${HOME-} sandbox_read_paths=${_SHELLFISH_SANDBOX_READ_PATHS:-[]}
   local theme_marker=': shellfish:unknown-theme:'
   local -a fields tool_entries tool_paths tool_manifests sandbox_flags
-  local -a component_entries resolved_args finalized
-  integer tool_count component_count index tool_index needs_fence=0 sandbox_enabled=1
+  local -a system_entries component_entries resolved_args finalized
+  integer tool_count system_count component_count index tool_index
+  integer needs_fence=0 sandbox_enabled=1
 
   SF_RUNTIME_ERROR=''
   SF_PRESENTATION=''
@@ -187,8 +188,10 @@ sf_runtime_resolve_from_config() {
       ($prepared.backend_reference | record),
       ($prepared.backend_external | tostring | record),
       ($prepared.tool_references | length | tostring | record),
+      ($prepared.system_references | length | tostring | record),
       ($prepared.hook_component_references | length | tostring | record),
       ($prepared.tool_references[] | record),
+      ($prepared.system_references[] | record),
       ($prepared.hook_component_references[] | .hook, "\u0000", .reference, "\u0000"),
       ("ok" | record)
   ' 2>&1) || {
@@ -200,7 +203,7 @@ sf_runtime_resolve_from_config() {
     return
   }
   fields=( "${(@0)${decoded%$'\0'}}" )
-  (( ${#fields} >= 9 )) && [[ $fields[-1] == ok ]] || {
+  (( ${#fields} >= 10 )) && [[ $fields[-1] == ok ]] || {
     sf_runtime_fail 'cannot inspect prepared runtime'
     return
   }
@@ -211,8 +214,9 @@ sf_runtime_resolve_from_config() {
   backend_name=$fields[1]
   backend_reference=$fields[2]
   tool_count=$fields[4]
-  component_count=$fields[5]
-  index=6
+  system_count=$fields[5]
+  component_count=$fields[6]
+  index=7
 
   backend_base=$config_dir
   if [[ $fields[3] == true ]]; then
@@ -288,6 +292,20 @@ sf_runtime_resolve_from_config() {
     fi
     tool_entries+=( "${${resolved%/}:t}" "$resolved/run" "$tool_manifest" "$settings" )
   done
+  while (( ${#system_entries} < system_count )); do
+    reference=$fields[index]
+    (( index += 1 ))
+    sf_runtime_reference "$reference" "$config_dir" "hooks/system" || {
+      sf_runtime_fail "cannot resolve system component: $reference"
+      return
+    }
+    resolved=$REPLY
+    [[ -f $resolved && -r $resolved ]] || {
+      sf_runtime_fail "cannot read system component: $reference"
+      return
+    }
+    system_entries+=( "$resolved" )
+  done
   while (( ${#component_entries} / 2 < component_count )); do
     hook=$fields[index]
     reference=$fields[index+1]
@@ -297,18 +315,10 @@ sf_runtime_resolve_from_config() {
       return
     }
     resolved=$REPLY
-    if [[ $hook == system ]]; then
-      [[ -f $resolved && ( ( $resolved == *.zsh && -r $resolved ) ||
-        ( $resolved != *.zsh && ( -r $resolved || -x $resolved ) ) ) ]] || {
-        sf_runtime_fail "invalid system hook component: $reference"
-        return
-      }
-    else
-      [[ -f $resolved && -x $resolved ]] || {
-        sf_runtime_fail "$hook hook script is not executable: $reference"
-        return
-      }
-    fi
+    [[ -f $resolved && -x $resolved ]] || {
+      sf_runtime_fail "$hook hook script is not executable: $reference"
+      return
+    }
     component_entries+=( "$hook" "$resolved" )
   done
   (( index == ${#fields} )) || {
@@ -323,12 +333,12 @@ sf_runtime_resolve_from_config() {
     fence=${commands[fence]:A}
   fi
 
-  (( ${#tool_entries} == tool_count * 4 &&
+  (( ${#tool_entries} == tool_count * 4 && ${#system_entries} == system_count &&
     ${#component_entries} == component_count * 2 )) || {
     sf_runtime_fail 'cannot assemble resolved runtime references'
     return
   }
-  resolved_args=( "${tool_entries[@]}" "${component_entries[@]}" )
+  resolved_args=( "${tool_entries[@]}" "${system_entries[@]}" "${component_entries[@]}" )
   final=$(jq -L "$SF_ROOT/lib" -cnce --argjson prepared "$prepared" \
     --arg manifest "$manifest" --arg command "$command" \
     --arg context_window_command "$context_window_command" --arg fence "$fence" \

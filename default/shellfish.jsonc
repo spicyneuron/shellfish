@@ -12,10 +12,12 @@
   // inherits from another profile and later keys override. "request" holds
   // model and other parameters passed through to backend adapters. "max_tokens"
   // and "reasoning.effort" are normalized in default backends. An optional
-  // "context_window" overrides best-effort model metadata discovery.
+  // "context_window" overrides best-effort model metadata discovery. "system"
+  // lists files under system/ concatenated into the system prompt.
   "profiles": {
     "default": {
       "harness": "default",
+      "system": ["general.md", "tools.md"],
       "request": {"max_tokens": 16384, "reasoning": {"effort": "medium"}}
     }
   },
@@ -42,9 +44,6 @@
   // and limits.
   "harnesses": {
     "default": {
-      // Static files and scripts concatenated into the system prompt.
-      "system": ["general.md", "tools.md"],
-
       // Tools available to the model.
       "tools": ["read_file", "edit_file", "write_file", "skill", "search_web", "fetch_url", "shell"],
 

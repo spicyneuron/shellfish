@@ -63,8 +63,9 @@ jq -e --arg command "$ROOT/default/backends/openai/run" '
   (.backend.env_file | endswith("/config/.env")) and
   .backend.endpoint == "https://api.openai.com/v1/chat/completions" and
   .backend.api_key_env == "OPENAI_API_KEY" and
+  .profile.system == [] and
   .harness == {
-    system:[],sandbox_read_paths:[],sandbox_write_paths:[],
+    sandbox_read_paths:[],sandbox_write_paths:[],
     fence:"",tools:[],sandbox:true,
     max_requests_per_turn:100,max_tool_calls_per_request:25,
     max_capture_bytes:32768
@@ -339,34 +340,32 @@ if sf_runtime_resolve_from_config "$tmp/config/unknown-hook.jsonc" '' '' '{}' \
 fi
 [[ $SF_RUNTIME_ERROR == *'invalid config at $["harnesses"]["bad"]["before_prompt"]: unknown field'* ]]
 
-# System references resolve to ordered absolute paths in the frozen harness.
+# System references resolve to ordered absolute paths in the frozen profile.
 mkdir -p "$tmp/config/hooks/system"
 print -r -- 'first' >"$tmp/config/hooks/system/first.md"
 print -r -- 'second' >"$tmp/config/hooks/system/second.md"
 cat >"$tmp/config/system.jsonc" <<'JSON'
 {
-  "profiles":{"default":{"harness":"system","request":{"model":"m"}}},
-  "harnesses":{"system":{"system":["first.md","second.md"]}}
+  "profiles":{"default":{"system":["first.md","second.md"],"request":{"model":"m"}}}
 }
 JSON
 sf_runtime_resolve_from_config "$tmp/config/system.jsonc" '' '' '{}' \
   "$ROOT/tests/fixtures/backend"
 jq -e --arg first "${tmp:A}/config/hooks/system/first.md" \
   --arg second "${tmp:A}/config/hooks/system/second.md" \
-  '.harness.system == [$first,$second]' <<<"$REPLY" >/dev/null
+  '.profile.system == [$first,$second]' <<<"$REPLY" >/dev/null
 rm "$tmp/config/hooks/system/second.md"
 if sf_runtime_resolve_from_config "$tmp/config/system.jsonc" '' '' '{}' \
     "$ROOT/tests/fixtures/backend"; then
   fail 'missing prompt file was accepted'
 fi
 
-# The template's readonly harness resolves its bundled nested prompt.
-sf_runtime_read_jsonc "$ROOT/template/shellfish.jsonc" |
-  jq -c '.profiles.default.harness = "readonly"' >"$tmp/config/readonly.jsonc"
-sf_runtime_resolve_from_config "$tmp/config/readonly.jsonc" '' 'm' '{}' \
+# The template's readonly profile resolves its bundled nested prompt.
+sf_runtime_read_jsonc "$ROOT/template/shellfish.jsonc" >"$tmp/config/readonly.jsonc"
+sf_runtime_resolve_from_config "$tmp/config/readonly.jsonc" 'readonly' 'm' '{}' \
   "$ROOT/tests/fixtures/backend"
 jq -e --arg path "$ROOT/default/hooks/system/readonly.md" \
-  '.harness.system == [$path]' <<<"$REPLY" >/dev/null
+  '.profile.system == [$path]' <<<"$REPLY" >/dev/null
 
 cat >"$tmp/config/missing-hook.jsonc" <<'JSON'
 {

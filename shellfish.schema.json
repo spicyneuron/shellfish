@@ -126,7 +126,6 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "system": {"$ref": "#/$defs/component_list"},
         "tools": {
           "type": "array",
           "items": {"$ref": "#/$defs/reference"},
@@ -175,6 +174,7 @@
         "extend": {"$ref": "#/$defs/name"},
         "backend": {"$ref": "#/$defs/name"},
         "harness": {"$ref": "#/$defs/name"},
+        "system": {"$ref": "#/$defs/component_list"},
         "context_window": {
           "anyOf": [{"$ref": "#/$defs/positive_integer"}, {"type": "null"}]
         },

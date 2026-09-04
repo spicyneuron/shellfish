@@ -66,14 +66,13 @@ Put credentials in the environment or in `.env` beside `shellfish.jsonc`. Export
 
 ## Customize a harness
 
-Harnesses choose system components, tools, hooks, sandbox policy, and turn limits. They do not have an inheritance field, so a named harness should list the capabilities it needs:
+Harnesses choose tools, hooks, sandbox policy, and turn limits. They do not have an inheritance field, so a named harness should list the capabilities it needs. The system prompt belongs to the profile, so one harness can serve profiles with different instructions:
 
 ```jsonc
 {
   "default_profile": "review",
   "harnesses": {
     "review": {
-      "system": ["review.md"],
       "tools": ["read_file"],
       "sandbox": true,
       "session_start": ["project_environment", "project_instructions"]
@@ -83,6 +82,7 @@ Harnesses choose system components, tools, hooks, sandbox policy, and turn limit
     "review": {
       "extend": "default",
       "harness": "review",
+      "system": ["review.md"],
       "backend": "openrouter",
       "request": {"model": "MODEL"}
     }

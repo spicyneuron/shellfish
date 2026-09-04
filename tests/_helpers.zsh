@@ -85,11 +85,11 @@ sf_test_runtime() {
     --arg fence "${commands[fence]:A}" \
     --slurpfile tool_manifest "$tool/tool.json" '
       {
-        profile:{request:{model:"test-model"}},
+        profile:{request:{model:"test-model"},
+          system:(if $system == "" then [] else [$system] end)},
         backend:{name:"test",command:$command,endpoint:"https://example.invalid/test",
           api_key_env:"",env_file:"",insecure_tls:false,http_timeout:30,http_stall:10},
-        harness:{system:(if $system == "" then [] else [$system] end),
-          sandbox_read_paths:[],sandbox_write_paths:[],fence:$fence,
+        harness:{sandbox_read_paths:[],sandbox_write_paths:[],fence:$fence,
           tools:[{name:"shell",command:($tool+"/run"),
             settings:(if $tool_manifest[0].sandbox then ($tool+"/fence.jsonc") else null end),
             manifest:$tool_manifest[0]}],sandbox:false,
@@ -102,7 +102,7 @@ sf_test_session() {
   SF_SESSION_PATH=$1
   SHELLFISH_SESSION_STATE=''
   sf_hooks_session_state_create && sf_session_prepare "$SF_TEST_RUNTIME" &&
-    sf_hooks_system "$SF_SESSION_PATH" && sf_session_create
+    sf_session_system && sf_session_create
 }
 
 sf_test_turn() {

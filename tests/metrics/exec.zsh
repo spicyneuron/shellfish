@@ -64,7 +64,7 @@ cat >"$tmp/config/shellfish.jsonc" <<'EOF'
   "default_profile":"perf",
   "theme_mode":"dark","theme_light":"light","theme_dark":"dark",
   "backends":{"perf":{"adapter":"perf"}},
-  "harnesses":{"perf":{"system":[],"tools":["perf"],"sandbox":false,
+  "harnesses":{"perf":{"tools":["perf"],"sandbox":false,
     "session_start":[],"user_prompt_submit":[],"permission_request":[],
     "pre_tool_use":[],"post_tool_use":[],"stop":[],
     "max_requests_per_turn":8,"max_tool_calls_per_request":16,"max_capture_bytes":65536}},

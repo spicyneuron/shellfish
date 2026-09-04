@@ -35,7 +35,7 @@ Clients do not embed the agent loop or maintain their own copy of session state.
 
 ## Harnesses bind scripts to the lifecycle
 
-The turn loop is deliberately generic. A harness combines system prompts, tools, limits, sandbox policy, and shell scripts bound to lifecycle hooks. The default coding behavior is assembled this way rather than built into `shellfish exec`.
+The turn loop is deliberately generic. A harness combines tools, limits, sandbox policy, and shell scripts bound to lifecycle hooks. The default coding behavior is assembled this way rather than built into `shellfish exec`.
 
 Project discovery, slash commands, permission policy, tool review, and stop-time continuation are all harness behavior. The core still owns event ordering, validation, locking, persistence, recovery, and cleanup. Hook scripts can influence a turn at defined points, but they do not redefine the state machine.
 

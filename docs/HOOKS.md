@@ -13,8 +13,7 @@ The agent loop, with hooks marked, is:
 ```text
 resolve runtime
 if creating a session:
-    prepare header
-    run system hook components and prepare the system record
+    prepare header and system record
     run session_start hook scripts
     create the complete initial prefix
 open and lock the session for a turn
@@ -37,13 +36,12 @@ Scripts in one turn share ephemeral coordination state, and scripts for one sess
 
 ## Configuring hooks
 
-Each hook is configured per harness in `shellfish.jsonc` as an ordered list of component references keyed by hook name. All hooks except `system` require executable scripts. The `system` hook also accepts readable static files:
+Each hook is configured per harness in `shellfish.jsonc` as an ordered list of component references keyed by hook name. Every component must be an executable script:
 
 ```jsonc
 {
   "harnesses": {
     "default": {
-      "system": ["general.md", "tools.md"],
       "session_start": ["project_environment", "shell_commands", "project_instructions"],
       "user_prompt_submit": ["help", "new", "fork", "user_shell"],
       "stop": [],
@@ -53,7 +51,7 @@ Each hook is configured per harness in `shellfish.jsonc` as an ordered list of c
 }
 ```
 
-These seven hook names are the only valid keys: `system`, `session_start`, `user_prompt_submit`, `permission_request`, `pre_tool_use`, `post_tool_use`, and `stop`. Any other name is rejected at resolve time. Omitting a hook or giving it an empty list means no components run there.
+These six hook names are the only valid keys: `session_start`, `user_prompt_submit`, `permission_request`, `pre_tool_use`, `post_tool_use`, and `stop`. Any other name is rejected at resolve time. Omitting a hook or giving it an empty list means no components run there.
 
 Reference resolution, most-specific first:
 
@@ -61,7 +59,7 @@ Reference resolution, most-specific first:
 2. `~/...` against `$HOME`;
 3. a relative path under `<config-dir>/hooks/<hook>/`, falling back to `default/hooks/<hook>/`.
 
-So `"project_environment"` resolves to the `project_environment` script at `default/hooks/session_start/project_environment` unless you shadow it with `~/.config/shellfish/hooks/session_start/project_environment`. Ordinary hook references must resolve to executable files. A `system` reference must resolve to a regular file that is readable or executable. Resolved component paths are stored in the session header, so later configuration changes do not reinterpret an existing session. Creating a new session from an existing session rematerializes its frozen system component paths.
+So `"project_environment"` resolves to the `project_environment` script at `default/hooks/session_start/project_environment` unless you shadow it with `~/.config/shellfish/hooks/session_start/project_environment`. Hook references must resolve to executable files. Resolved component paths are stored in the session header, so later configuration changes do not reinterpret an existing session. Creating a new session from an existing session rematerializes its frozen system component paths.
 
 ## The hook script contract
 
@@ -133,7 +131,6 @@ Quick reference. "Owner" is the process that runs the chain; "stdin" is the exac
 
 | Hook | Owner | argv (after `$1`) | stdin | stdout | Control (fd 3) | Default / skipped |
 | --- | --- | --- | --- | --- | --- | --- |
-| `system` | exec | — | empty | durable system text | none | finish creation / unsupported (10/11 fails) |
 | `session_start` | exec | — | empty | durable context | none | finish creation / unsupported (10/11 fails) |
 | `user_prompt_submit` | exec | — | exact prompt | durable context | context metadata; optional handoff action with exit 11 | submit prompt / do not submit, optionally hand off |
 | `permission_request` | exec | — | tool request envelope JSON | ignored | allow or deny action with exit 11 | defer to adapter / deny, or apply fd 3 |
@@ -141,7 +138,7 @@ Quick reference. "Owner" is the process that runs the chain; "stdin" is the exac
 | `post_tool_use` | exec | — | tool response envelope JSON | must be empty | none | continue / unsupported (10/11 fails) |
 | `stop` | exec | `STOP_ATTEMPT` | assistant text | continuation feedback | none | finish turn / commit feedback, request again |
 
-For context-producing hooks, committed stdout becomes a `context` record named for the hook and attributed to the producing script's basename: `{type:"context",hook:"<hook>",script:"<basename>",content:"<stdout>"}`. The `system` hook instead joins its component output into the single system record described below. For `user_prompt_submit`, a `context` object on fd 3 may add `prompt` and `status` to that script's record. `prompt` requires an integer `status` from 0 through 255.
+For context-producing hooks, committed stdout becomes a `context` record named for the hook and attributed to the producing script's basename: `{type:"context",hook:"<hook>",script:"<basename>",content:"<stdout>"}`. For `user_prompt_submit`, a `context` object on fd 3 may add `prompt` and `status` to that script's record. `prompt` requires an integer `status` from 0 through 255.
 
 The request builder groups adjacent context records from the same hook into an escaped XML block. Each producing script becomes a nested `context` element; `script`, and when present `prompt` and `status`, are attributes:
 
@@ -156,10 +153,6 @@ The request builder groups adjacent context records from the same hook into an e
 The hook wrapper keeps injected context distinct from the user request that follows it. Separate durable records retain each script's attribution; grouping happens only in provider request projection.
 
 Trailing context, typically `stop` feedback, becomes a synthetic trailing user message so the transcript does not misattribute it to the human.
-
-### `system`
-
-Runs once during lock-free session preparation before `session_start`. Components are concatenated in configuration order into the session's single durable system record. A `.zsh` file runs through `zsh -f`; another executable file runs directly; another readable file contributes its contents without execution. Executable components receive empty stdin and `$1` = `system`. stdout contributes system text, stderr is shown and discarded, fd 3 is invalid, and any status other than 0 fails creation. Trailing newlines are removed from each nonempty contribution before contributions are joined with a blank line. Each component has its own `max_capture_bytes` budget.
 
 ### `session_start`
 

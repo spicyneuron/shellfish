@@ -1,6 +1,6 @@
 # Harnesses
 
-A harness defines how Shellfish behaves as an agent. It combines system prompts, tools, lifecycle hooks, sandbox policy, and turn limits around the shared execution loop. A profile selects a harness together with a backend and model request settings.
+A harness defines how Shellfish behaves as an agent. It combines tools, lifecycle hooks, sandbox policy, and turn limits around the shared execution loop. A profile selects a harness together with a backend, a system prompt, and model request settings.
 
 The core owns the parts that must remain consistent: event ordering, session locking, persistence, recovery, and cleanup. The harness supplies the coding behavior and workflow policy. This separation lets a different harness turn the same runtime into a reviewer, research assistant, or project-specific agent without replacing the turn machinery.
 
@@ -12,12 +12,12 @@ The bundled `default` harness is intentionally small. It provides project contex
 
 ### System prompt
 
-The harness builds its system prompt through the ordered `system` hook:
+The system prompt is a profile field, not a harness field. The bundled `default` profile lists two components:
 
 - `general.md` defines communication and context-handling conventions.
 - `tools.md` defines tool-use conventions.
 
-These components live under `default/hooks/system/`; a user configuration can select different files or shadow bundled files by name. Readable files contribute static text, `.zsh` files run through Zsh, and other executable files run directly.
+These files live under `default/hooks/system/`; a user configuration can select different files or shadow bundled files by name. They are read in order, stripped of trailing newlines, and joined with a blank line into the session's single durable system record.
 
 ### Tools
 
@@ -71,8 +71,8 @@ The bundled harness allows up to 100 provider requests per turn and 25 tool call
 
 ## Build a focused harness
 
-A harness can be smaller than the default. For example, a review harness might use a review-specific system prompt, expose only `read_file`, retain the project context scripts, and keep sandboxing enabled. Harnesses do not inherit from one another, so each named harness lists the capabilities it needs.
+A harness can be smaller than the default. For example, a review harness might expose only `read_file`, retain the project context scripts, and keep sandboxing enabled, with a review-specific system prompt set on the profile that selects it. Harnesses do not inherit from one another, so each named harness lists the capabilities it needs.
 
-The configuration template includes a `readonly` harness using the bundled `readonly.md` system component with the `read_file` and `shell_readonly` tools.
+The configuration template includes a `readonly` harness with the `read_file` and `shell_readonly` tools, selected by a `readonly` profile that uses the bundled `readonly.md` system component.
 
 See [Customize a harness](CONFIG.md#customize-a-harness) for a configuration example, component lookup rules, and sandbox grants. See [Hooks](HOOKS.md) for lifecycle payloads, control decisions, and environment guarantees.

@@ -206,7 +206,7 @@ valid_header=$(jq -cn '
     cwd: "/tmp",
     created: "2026-08-18T00:00:00Z",
     profile: {
-      request: {model: "gpt-4o"}
+      request: {model: "gpt-4o"}, system: []
     },
     backend: {
       name: "openai", command: "/bin/run", env_file: "/tmp/.env",
@@ -215,7 +215,7 @@ valid_header=$(jq -cn '
       http_timeout: 30, http_stall: 10
     },
     harness: {
-      system: [], sandbox_read_paths: [], sandbox_write_paths: [],
+      sandbox_read_paths: [], sandbox_write_paths: [],
       fence: "", tools: [], sandbox: true,
       max_requests_per_turn: 50, max_tool_calls_per_request: 20,
       max_capture_bytes: 32768, stop: ["/bin/hook"]

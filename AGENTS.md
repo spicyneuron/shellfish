@@ -17,7 +17,7 @@ NOTE: This project is pre-release. Do not add deprecation noticies, backwards co
 ## Execution flow
 
 - `bin/shellfish` validates CLI input and dispatches to config reporting, single-turn exec, or interactive chat.
-- New sessions resolve configuration into a frozen runtime, prepare the header, materialize the `system` hook into one system record, collect `session_start` context, then create the complete initial JSONL prefix without a session lock.
+- New sessions resolve configuration into a frozen runtime, prepare the header, concatenate the profile's `system` components into one system record, collect `session_start` context, then create the complete initial JSONL prefix without a session lock.
 - Each turn opens and locks the session, runs `user_prompt_submit` scripts, then loops over provider responses. Final responses run `stop` scripts; tool-call responses run the `pre_tool_use` scripts, permission, execution, persistence, and `post_tool_use` scripts before the next provider request.
 - The session layer is authoritative. Request projection converts durable records into provider messages; provider deltas and UI events are transient. Any failure, cancellation, or early return converges on turn recovery, hook/tool cleanup, and unlock.
 - Interactive chat runs single turns through `shellfish exec --jsonl`, renders its event stream, and reloads the durable transcript after completion or uncertainty.
@@ -33,14 +33,14 @@ NOTE: This project is pre-release. Do not add deprecation noticies, backwards co
 ## Configuration
 
 - User configuration is JSONC at `$XDG_CONFIG_HOME/shellfish/shellfish.jsonc` or `~/.config/shellfish/shellfish.jsonc`; comments are stripped before `jq` processing.
-- Profiles compose a backend, a harness, and model/request overrides. Backends define provider adapters and transport; harnesses wrap the shared turn loop with system prompts, tools, hooks, sandboxing, and limits; top-level themes and `tui` settings define presentation.
+- Profiles compose a backend, a harness, and model/request overrides. Backends define provider adapters and transport; harnesses wrap the shared turn loop with tools, hooks, sandboxing, and limits; top-level themes and `tui` settings define presentation.
 - Resolution merges `default/shellfish.jsonc` with user configuration, selects a profile (including its `extend` chain), and resolves referenced files from the config directory before bundled defaults.
 - The session header freezes runtime data. Current configuration supplies presentation, so old sessions use the currently selected themes and TUI settings.
 - Resolve secrets from the adjacent `.env` or exported variables; exported values win.
 
 ## Hooks
 
-- `system` and `session_start` run during lock-free session preparation; their output becomes the system record and initial context. `user_prompt_submit`, `permission_request`, `pre_tool_use`, `post_tool_use`, and `stop` run under the full-turn lock.
+- `session_start` runs during lock-free session preparation; its output becomes the initial context. `user_prompt_submit`, `permission_request`, `pre_tool_use`, `post_tool_use`, and `stop` run under the full-turn lock.
 - Hook script stdout supplies model input according to hook policy, stderr is user display only, and fd 3 carries control decisions where supported. Use `docs/HOOKS.md` for payloads, exit statuses, and environment guarantees.
 
 ## Development

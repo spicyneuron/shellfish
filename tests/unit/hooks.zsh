@@ -13,10 +13,10 @@ typeset -gx EXPECTED_CONFIG_DIR="$tmp/config"
 SF_TEST_RUNTIME=$(jq -cn --arg script "$start_script" --arg second "$start_second_script" \
   --arg env_file "$EXPECTED_CONFIG_DIR/.env" '
   {
-    profile:{request:{model:"test"}},
+    profile:{request:{model:"test"},system:[]},
     backend:{name:"test",command:"/usr/bin/false",endpoint:"https://example.invalid",
       api_key_env:"CUSTOM_API_KEY",env_file:$env_file,insecure_tls:false,http_timeout:1,http_stall:1},
-    harness:{system:[],sandbox_read_paths:[],sandbox_write_paths:[],fence:"",tools:[],sandbox:false,max_requests_per_turn:1,
+    harness:{sandbox_read_paths:[],sandbox_write_paths:[],fence:"",tools:[],sandbox:false,max_requests_per_turn:1,
       max_tool_calls_per_request:1,max_capture_bytes:512,session_start:[$script,$second]}
   }
 ')
@@ -48,7 +48,7 @@ cat >"$resume_config" <<EOF
   "backends": {"fixture": {"adapter": "$ROOT/tests/fixtures/backend"}},
   "harnesses": {
     "test": {
-      "system": [], "tools": [], "sandbox": false,
+      "tools": [], "sandbox": false,
       "session_start": ["$resume_script"], "user_prompt_submit": [],
       "permission_request": [], "pre_tool_use": [], "post_tool_use": [], "stop": [],
       "max_requests_per_turn": 1, "max_tool_calls_per_request": 1,

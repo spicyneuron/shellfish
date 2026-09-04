@@ -223,10 +223,10 @@ assert_equal claude-3 "$(jq -r '.profile.request.model' <<<"$report")" 'config a
 # A stored session supplies its runtime. Themes and limits come from current config.
 jq -cn '{
   type:"session",format_version:1,cwd:"/tmp",created:"2026-08-18T00:00:00Z",
-  profile:{request:{model:"stored-model"}},
+  profile:{request:{model:"stored-model"},system:[]},
   backend:{name:"test",command:"/bin/true",endpoint:"https://example.invalid",
     api_key_env:"",env_file:"",insecure_tls:false,http_timeout:30,http_stall:10},
-  harness:{system:[],sandbox_read_paths:[],sandbox_write_paths:[],
+  harness:{sandbox_read_paths:[],sandbox_write_paths:[],
     fence:"",tools:[],sandbox:false,
     max_requests_per_turn:8,max_tool_calls_per_request:16,max_capture_bytes:65536}
 }' >"$tmp/stored.jsonl"
