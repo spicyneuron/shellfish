@@ -37,7 +37,7 @@ printf '%s\n' '{"type":"_assistant_delta","text":"working"}' ''
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := "exec --jsonl --session " + session + "\n" + string(input)
+	want := "run --jsonl --session " + session + "\n" + string(input)
 	if invocation, err := os.ReadFile(recorded); err != nil || string(invocation) != want {
 		t.Fatalf("invocation = %q, want %q (%v)", invocation, want, err)
 	}

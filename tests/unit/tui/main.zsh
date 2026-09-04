@@ -20,7 +20,7 @@ assert_equal '{"theme":"dark"}' "$seen_presentation"
 assert_equal startup "$seen_mode"
 assert_equal prompt "$seen_initial"
 assert_equal sketch "$seen_draft"
-assert_equal "$SF_ENTRY exec --jsonl --session /sessions/open.jsonl" \
+assert_equal "$SF_ENTRY run --jsonl --session /sessions/open.jsonl" \
   "${SF_TUI_TRANSPORT_COMMAND[*]}"
 
 # A controller failure surfaces its status and presentation error.

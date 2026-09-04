@@ -15,7 +15,7 @@ sf_tui_run() {
 
   SF_TUI_ERROR=''
   typeset -gx SHELLFISH_MODE=chat
-  SF_TUI_TRANSPORT_COMMAND=( "$SF_ENTRY" exec --jsonl --session "$session" )
+  SF_TUI_TRANSPORT_COMMAND=( "$SF_ENTRY" run --jsonl --session "$session" )
   if (( clear_requested )); then
     zmodload zsh/terminfo && echoti clear || {
       SF_TUI_ERROR='cannot clear terminal'

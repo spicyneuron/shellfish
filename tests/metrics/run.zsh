@@ -11,9 +11,9 @@ typeset iteration_arg=${1:-5}
   exit 2
 }
 integer iterations=$iteration_arg
-(( $+commands[jq] )) || { print -u2 -r -- 'tests/metrics/exec.zsh requires jq'; exit 2; }
+(( $+commands[jq] )) || { print -u2 -r -- 'tests/metrics/run.zsh requires jq'; exit 2; }
 
-print -P -- '%BExec Performance%b'
+print -P -- '%BRun Performance%b'
 
 typeset tmp
 tmp=$(mktemp -d "${TMPDIR:-/tmp}/shellfish-perf.XXXXXX")
@@ -87,7 +87,7 @@ for (( iteration = 1; iteration <= iterations; iteration++ )); do
   (
     cd "$tmp/project"
     XDG_STATE_HOME="$tmp/state" PATH="$tmp/bin:$PATH" \
-      zsh -f "$root/bin/shellfish" exec --session "$tmp/session-$iteration.jsonl" \
+      zsh -f "$root/bin/shellfish" run --session "$tmp/session-$iteration.jsonl" \
       --config "$tmp/config/shellfish.jsonc" perf >/dev/null 2>"$stderr"
   ) || { cat "$stderr" >&2; exit 1; }
   float elapsed=$(( (EPOCHREALTIME - start) * 1000 ))

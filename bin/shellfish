@@ -32,7 +32,7 @@ sf_read_prompt() {
 sf_main() {
   local requested_session='' requested_config='' requested_profile=''
   local requested_backend='' requested_model='' requested_request='{}'
-  local command='' input='' draft='' new_source=''
+  local input='' draft='' new_source=''
   local sandbox_detected='{"sandbox_read_paths":[],"sandbox_write_paths":[]}'
   local sandbox_flag sandbox_path resolved_path
   local -a positional=() sandbox_read_paths=() sandbox_write_paths=()
@@ -42,7 +42,7 @@ sf_main() {
   local -a original_args=("$@")
   integer session_explicit=0 config_explicit=0 request_explicit=0 runtime_override=0
   integer continue_requested=0 resume_requested=0 clear_requested=0 new_requested=0 resume_status=0
-  integer chat_handoff=0 draft_explicit=0 jsonl_requested=0 sandbox_auto_requested=0
+  integer chat_handoff=0 draft_explicit=0 sandbox_auto_requested=0
   integer verbose_requested=0
   case ${1-} in
     chat)
@@ -52,11 +52,7 @@ sf_main() {
       shift
       exec -- "$SF_ROOT/libexec/config/main.zsh" "$@"
       ;;
-    exec)
-      command=exec
-      shift
-      ;;
-    create|build-request|send-request)
+    run|create|build-request|send-request)
       exec -- "$SF_ROOT/libexec/$1/main.zsh" "${@:2}"
       ;;
     -h|--help)
@@ -126,14 +122,6 @@ sf_main() {
         ;;
       --sandbox-auto)
         sandbox_auto_requested=1
-        shift
-        ;;
-      --jsonl)
-        (( ! jsonl_requested )) || {
-          sf_die '--jsonl may only be specified once'
-          return 2
-        }
-        jsonl_requested=1
         shift
         ;;
       --config)
@@ -271,35 +259,11 @@ sf_main() {
     sf_die '--continue and --resume cannot be combined with --session'
     return 2
   fi
-  if [[ $command != exec ]] && (( jsonl_requested )); then
-    sf_die '--jsonl requires shellfish exec'
-    return 2
-  fi
-  if [[ $command == exec ]] && (( draft_explicit )); then
-    sf_die '--draft requires interactive chat'
-    return 2
-  fi
   if (( resume_requested && sandbox_auto_requested )); then
     sf_die '--sandbox-auto cannot be used with --resume'
     return 2
   fi
-  if [[ $command == exec ]] && (( resume_requested )); then
-    sf_die 'shellfish exec does not support --resume; use --continue or --session'
-    return 2
-  fi
-  if [[ $command == exec ]] && (( clear_requested )); then
-    sf_die 'shellfish exec does not support --clear'
-    return 2
-  fi
-  if [[ $command == exec ]] && (( verbose_requested )); then
-    sf_die 'shellfish exec does not support --verbose'
-    return 2
-  fi
   if (( new_requested )); then
-    [[ $command != exec ]] || {
-      sf_die 'shellfish exec does not support --new; use shellfish create'
-      return 2
-    }
     (( ! session_explicit && ! continue_requested && ! resume_requested )) || {
       sf_die '--new cannot be combined with --session, --continue, or --resume'
       return 2
@@ -318,7 +282,7 @@ sf_main() {
     fi
   fi
 
-  if [[ -z $command && ! -o interactive && -t 1 && ( -t 0 || -r /dev/tty ) ]]; then
+  if [[ ! -o interactive && -t 1 && ( -t 0 || -r /dev/tty ) ]]; then
     chat_handoff=1
   fi
   (( $+commands[jq] )) || { sf_die 'shellfish requires jq'; return 2; }
@@ -341,50 +305,8 @@ sf_main() {
   source "$SF_ROOT/lib/runtime/main.zsh"
   source "$SF_ROOT/lib/session/main.zsh"
   SF_RUNTIME_VERBOSE=$verbose_requested
-  if [[ $command == exec && ${SHELLFISH_VERBOSE-0} == 1 ]]; then
-    typeset -gx SHELLFISH_VERBOSE=1
-  else
-    typeset -gx SHELLFISH_VERBOSE=$verbose_requested
-  fi
+  typeset -gx SHELLFISH_VERBOSE=$verbose_requested
   (( ! sandbox_auto_requested )) || runtime_override=1
-
-  if [[ $command == exec ]]; then
-    if (( jsonl_requested )); then
-      (( ! ${#positional} )) || {
-        sf_die '--jsonl does not accept a prompt'
-        return 2
-      }
-      IFS= read -r input || [[ -n $input ]] || input=''
-      [[ -n $input ]] || {
-        sf_die '--jsonl requires a canonical user message on stdin'
-        return 2
-      }
-      input=$(jq -L "$SF_ROOT" -ce '
-        include "lib/runtime/schema";
-        select(canonical_user_message)
-      ' <<<"$input" 2>/dev/null) || {
-        sf_die '--jsonl requires a canonical user message on stdin'
-        return 2
-      }
-    else
-      sf_read_prompt 1 "${positional[@]}" || return
-      input=$(jq -cn --arg text "$REPLY" \
-        '{type:"message",role:"user",content:[{type:"text",text:$text}]}') || return 1
-    fi
-    source "$SF_ROOT/lib/session/startup.zsh"
-    sf_session_open "$requested_session" "$runtime_override" "$continue_requested" \
-      '' "${runtime_args[@]}"
-    local open_status=$?
-    if (( open_status )); then
-      [[ -z $SF_SESSION_STARTUP_ERROR ]] || sf_die "$SF_SESSION_STARTUP_ERROR"
-      return $open_status
-    fi
-    source "$SF_ROOT/lib/exec.zsh"
-    sf_exec_run "$input" "$SF_SESSION_OPEN[path]" "$jsonl_requested"
-    local exit_status=$?
-    [[ -z $SF_EXEC[error] ]] || sf_die "$SF_EXEC[error]"
-    return $exit_status
-  fi
 
   sf_read_prompt 0 "${positional[@]}" || return
   input=$REPLY

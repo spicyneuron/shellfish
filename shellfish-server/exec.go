@@ -18,7 +18,7 @@ import (
 
 const maxDiagnosticBytes = 8 << 10
 
-// A cancelled turn is given time to unwind: TERM targets Shellfish exec alone so it
+// A cancelled turn is given time to unwind: TERM targets the Shellfish turn alone so it
 // can commit the interrupted turn before exiting. Killing
 // the process group is the backstop for a child that cannot manage that.
 var cancelGracePeriod = 5 * time.Second
@@ -43,7 +43,7 @@ func (e *Exec) Run(ctx context.Context, input json.RawMessage, replies <-chan js
 		stop()
 		cancel()
 	}()
-	args := []string{"exec", "--jsonl", "--session", e.session}
+	args := []string{"run", "--jsonl", "--session", e.session}
 	child := exec.CommandContext(ctx, e.binary, args...)
 	child.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	grace := cancelGracePeriod

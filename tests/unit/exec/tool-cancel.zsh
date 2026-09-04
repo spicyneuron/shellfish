@@ -16,7 +16,7 @@ typeset marker="$tmp/tool-active" exit_marker="$tmp/tool-exit"
 typeset command=": >${(q)marker}; sleep 5; : >${(q)exit_marker}"
 sf_test_session "$cancel_session"
 SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_COMMAND="$command" \
-  "$ROOT/bin/shellfish" exec --jsonl --session "$cancel_session" \
+  "$ROOT/bin/shellfish" run --jsonl --session "$cancel_session" \
     < <(print -r -- '{"type":"message","role":"user","content":[{"type":"text","text":"cancel tool"}]}') \
     >"$cancel_stream" &
 integer pid=$! cancel_status=0 waited=0
@@ -47,7 +47,7 @@ typeset stubborn_marker="$tmp/tool-stubborn-active"
 typeset stubborn_command="trap '' TERM; : >${(q)stubborn_marker}; while :; do sleep 1; done"
 sf_test_session "$stubborn_session"
 SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_COMMAND="$stubborn_command" \
-  "$ROOT/bin/shellfish" exec --jsonl --session "$stubborn_session" \
+  "$ROOT/bin/shellfish" run --jsonl --session "$stubborn_session" \
     < <(print -r -- '{"type":"message","role":"user","content":[{"type":"text","text":"cancel stubborn tool"}]}') \
     >"$stubborn_stream" &
 integer stubborn_pid=$! stubborn_status=0

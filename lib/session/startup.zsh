@@ -38,12 +38,14 @@ sf_session_open() {
 
   if [[ -n $SF_SESSION_OPEN[path] && -s $SF_SESSION_OPEN[path] ]]; then
     (( ! override )) || {
-      SF_SESSION_STARTUP_ERROR='runtime overrides cannot be used with an existing session'
+      SF_SESSION_STARTUP_ERROR='options that configure a new session cannot be used with an existing one'
       return 2
     }
   else
     SF_SESSION_OPEN[mode]=startup
-    created=$("${create[@]}" "$@") || return 1
+    local create_status=0
+    created=$("${create[@]}" "$@") || create_status=$?
+    (( ! create_status )) || return $create_status
     [[ -n $created ]] || {
       SF_SESSION_STARTUP_ERROR='create did not return a session path'
       return 1

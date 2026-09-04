@@ -1,6 +1,6 @@
 # shellfish-server
 
-`shellfish-server` exposes one Shellfish session to one browser. It runs every turn through `shellfish exec --jsonl`, so terminal chat, the server, and other clients all use the same agent loop and durable transcript.
+`shellfish-server` exposes one Shellfish session to one browser. It runs every turn through `shellfish run --jsonl`, so terminal chat, the server, and other clients all use the same agent loop and durable transcript.
 
 Install the optional server with Go:
 

@@ -188,7 +188,7 @@ SF_TEST_RUNTIME=$(jq -c --arg hook "$stop_once" --arg backend "$cancel_backend" 
 typeset cancel_session="$tmp/stop-cancel.jsonl"
 typeset cancel_stream="$tmp/stop-cancel.stream"
 sf_test_session "$cancel_session"
-"$ROOT/bin/shellfish" exec --jsonl --session "$cancel_session" \
+"$ROOT/bin/shellfish" run --jsonl --session "$cancel_session" \
   < <(print -r -- '{"type":"message","role":"user","content":[{"type":"text","text":"wait for retry"}]}') \
   >"$cancel_stream" &
 integer cancel_pid=$! cancel_status=0 cancel_polls=0

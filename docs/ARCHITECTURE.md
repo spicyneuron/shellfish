@@ -21,13 +21,13 @@ A turn is one transition of the agent state machine. It begins with a user messa
 3. If the response contains tool calls, run them and append their results.
 4. Send another provider request until there are no more tool calls.
 
-One `shellfish exec` process owns the entire transition, including cleanup. There is no resident agent process and no ownership to coordinate across requests or tools.
+One `shellfish run` process owns the entire transition, including cleanup. There is no resident agent process and no ownership to coordinate across requests or tools.
 
 Backend adapters translate provider responses into indexed text, reasoning, opaque reasoning, and tool-call updates followed by one response-end event. The exec framework validates and accumulates that normalized stream into the canonical assistant message. Adapters retain only provider-specific parsing, correlation, and protocol validation. Tool calls remain inert until the complete response has been assembled, validated, and appended.
 
 ## Clients invoke turns
 
-Terminal chat, `shellfish-server`, and any other integrations all use the same boundary. A client submits one user message to `shellfish exec`, consumes its JSONL, and answers permission requests over stdin when it can. The process exits when the turn is complete.
+Terminal chat, `shellfish-server`, and any other integrations all use the same boundary. A client submits one user message to `shellfish run`, consumes its JSONL, and answers permission requests over stdin when it can. The process exits when the turn is complete.
 
 Clients do not embed the agent loop or maintain their own copy of session state. They invoke turns and present the results.
 
@@ -35,7 +35,7 @@ Clients do not embed the agent loop or maintain their own copy of session state.
 
 ## Harnesses bind scripts to the lifecycle
 
-The turn loop is deliberately generic. A harness combines tools, limits, sandbox policy, and shell scripts bound to lifecycle hooks. The default coding behavior is assembled this way rather than built into `shellfish exec`.
+The turn loop is deliberately generic. A harness combines tools, limits, sandbox policy, and shell scripts bound to lifecycle hooks. The default coding behavior is assembled this way rather than built into `shellfish run`.
 
 Project discovery, slash commands, permission policy, tool review, and stop-time continuation are all harness behavior. The core still owns event ordering, validation, persistence, recovery, and cleanup. Hook scripts can influence a turn at defined points, but they do not redefine the state machine.
 

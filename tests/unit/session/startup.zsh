@@ -26,7 +26,7 @@ sf_session_select_path() { REPLY=$1; }
 integer open_status=0
 sf_session_open "$existing" 1 0 '' || open_status=$?
 (( open_status == 2 ))
-[[ $SF_SESSION_STARTUP_ERROR == 'runtime overrides cannot be used with an existing session' ]]
+[[ $SF_SESSION_STARTUP_ERROR == 'options that configure a new session cannot be used with an existing one' ]]
 
 # An existing session reports only its path, mode, and current presentation. Its
 # frozen runtime stays in the transcript, and nothing is created.

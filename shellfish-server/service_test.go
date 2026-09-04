@@ -57,7 +57,7 @@ func newSession(t *testing.T, records string) string {
 }
 
 // newTestServer serves a session whose turns run the given shell script in place
-// of shellfish exec, so a script can append to the session file exactly as a
+// of shellfish run, so a script can append to the session file exactly as a
 // turn would.
 func newTestServer(t *testing.T, sessionPath, script string) string {
 	t.Helper()

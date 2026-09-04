@@ -1,7 +1,7 @@
 #!/usr/bin/env zsh
 
 source "${0:A:h:h:h}/_helpers.zsh"
-sf_test_tmp exec-command
+sf_test_tmp run-command
 mkdir -p "$tmp/home" "$tmp/system"
 print -r -- 'initial system' >"$tmp/system/source.md"
 export HOME="${tmp:A}/home"
@@ -48,10 +48,10 @@ chmod +x "$verbose_script"
 jq --arg script "$verbose_script" '.harnesses.machine.user_prompt_submit=[$script]' \
   "$config" >"$verbose_config"
 SF_VERBOSE_MARKER="$tmp/verbose-one" SHELLFISH_VERBOSE=1 \
-  zsh -f "$entry" exec --config "$verbose_config" test || fail 'verbose exec failed'
+  zsh -f "$entry" run --config "$verbose_config" test || fail 'verbose run failed'
 assert_equal 1 "$(<"$tmp/verbose-one")"
 SF_VERBOSE_MARKER="$tmp/verbose-invalid" SHELLFISH_VERBOSE=invalid \
-  zsh -f "$entry" exec --config "$verbose_config" test || fail 'normalized exec failed'
+  zsh -f "$entry" run --config "$verbose_config" test || fail 'normalized run failed'
 assert_equal 0 "$(<"$tmp/verbose-invalid")"
 
 output=$(zsh -f "$entry" config --config "$config") || fail 'sandbox paths were rejected'
@@ -87,23 +87,23 @@ zsh -f "$entry" config --config "$config" --sandbox-read "$tmp/missing" >/dev/nu
   fail '--sandbox-read accepted a missing path'
 
 # Plain mode prints only the final assistant text.
-output=$(SF_TEST_BACKEND_DELAY=0 zsh -f "$entry" exec --config "$config" 'plain answer') || \
-  fail 'plain exec failed'
-assert_equal 'plain answer' "$output" 'plain exec prints only the answer'
+output=$(SF_TEST_BACKEND_DELAY=0 zsh -f "$entry" run --config "$config" 'plain answer') || \
+  fail 'plain run failed'
+assert_equal 'plain answer' "$output" 'plain run prints only the answer'
 
 integer failed_status=0
-SF_TEST_BACKEND_DELAY=0 zsh -f "$entry" exec --config "$config" \
+SF_TEST_BACKEND_DELAY=0 zsh -f "$entry" run --config "$config" \
   'retry error later' >/dev/null 2>&1 || failed_status=$?
 (( failed_status == 1 )) || fail 'recoverable turn failure exited successfully'
 
 output=$(print -rn -- 'piped answer' |
-  SF_TEST_BACKEND_DELAY=0 zsh -f "$entry" exec --config "$config") || \
-  fail 'piped exec failed'
-assert_equal 'piped answer' "$output" 'exec accepts standard input'
+  SF_TEST_BACKEND_DELAY=0 zsh -f "$entry" run --config "$config") || \
+  fail 'piped run failed'
+assert_equal 'piped answer' "$output" 'run accepts standard input'
 
-output=$(SF_TEST_BACKEND_DELAY=0 zsh -f "$entry" exec --config "$config" \
-  several prompt words) || fail 'multi-argument exec failed'
-assert_equal 'several prompt words' "$output" 'exec joins positional prompt words'
+output=$(SF_TEST_BACKEND_DELAY=0 zsh -f "$entry" run --config "$config" \
+  several prompt words) || fail 'multi-argument run failed'
+assert_equal 'several prompt words' "$output" 'run joins positional prompt words'
 
 # Exec no longer creates sessions; shellfish create supplies the one the
 # read-only request commands compose against.
@@ -172,7 +172,7 @@ print -r -- "$failing_request" |
 [[ $(<"$tmp/send-request-error") == *'test backend failure'* ]] ||
   fail 'send-request hid the backend error'
 
-# JSONL exposes the canonical exec stream through EOF and process status. The
+# JSONL exposes the canonical turn stream through EOF and process status. The
 # session prefix is created before the turn and is not replayed onto the stream.
 typeset jsonl stream_session="$tmp/stream.jsonl"
 zsh -f "$entry" create --path "$stream_session" --config "$config" >/dev/null ||
@@ -180,8 +180,8 @@ zsh -f "$entry" create --path "$stream_session" --config "$config" >/dev/null ||
 typeset -i prefix=$(jq -es 'length' "$stream_session")
 jsonl=$(print -r -- \
   '{"type":"message","role":"user","content":[{"type":"text","text":"stream answer"}]}' |
-  SF_TEST_BACKEND_DELAY=0 zsh -f "$entry" exec --jsonl --config "$config" \
-    --session "$stream_session") || fail 'JSONL exec failed'
+  SF_TEST_BACKEND_DELAY=0 zsh -f "$entry" run --jsonl --config "$config" \
+    --session "$stream_session") || fail 'JSONL run failed'
 print -r -- "$jsonl" | jq -eRn -L "$ROOT" '
   include "lib/runtime/schema";
   [inputs | fromjson] as $events |
@@ -190,7 +190,7 @@ print -r -- "$jsonl" | jq -eRn -L "$ROOT" '
   ($events | any(.type == "_turn_usage")) and
   ($events | any(.type == "message" and .role == "user")) and
   ($events | any(.type == "message" and .role == "assistant"))
-' >/dev/null || fail 'JSONL exec produced the wrong stream'
+' >/dev/null || fail 'JSONL run produced the wrong stream'
 
 print -r -- "$jsonl" | jq -c 'select(.type | IN("session", "system", "message", "context"))' \
   >"$tmp/stream-durable"
@@ -198,7 +198,7 @@ jq -c . "$stream_session" | tail -n +$(( prefix + 1 )) >"$tmp/session-durable"
 cmp -s "$tmp/stream-durable" "$tmp/session-durable" ||
   fail 'JSONL durable events differ from the appended session records'
 
-# A bounded exec emits an arbitrary command handoff and completes cleanly.
+# A bounded turn emits an arbitrary command handoff and completes cleanly.
 typeset handoff_script="$tmp/handoff"
 cat >"$handoff_script" <<'ZSH'
 #!/usr/bin/env zsh
@@ -212,13 +212,13 @@ jq --arg script "$handoff_script" '.harnesses.machine.user_prompt_submit=[$scrip
   "$config" >"$handoff_config"
 print -r -- \
   '{"type":"message","role":"user","content":[{"type":"text","text":"handoff"}]}' |
-  zsh -f "$entry" exec --jsonl --config "$handoff_config" \
-  >"$handoff_output" || fail 'JSONL exec rejected a handoff'
+  zsh -f "$entry" run --jsonl --config "$handoff_config" \
+  >"$handoff_output" || fail 'JSONL run rejected a handoff'
 jq -eRn '
   [inputs | fromjson] as $events |
   $events[-1] == {type:"_handoff",argv:["/usr/bin/printf","next.jsonl"]} and
   ($events | any(.type == "_exec_error" or .role == "user") | not)
-' <"$handoff_output" >/dev/null || fail 'JSONL exec discarded the handoff'
+' <"$handoff_output" >/dev/null || fail 'JSONL run discarded the handoff'
 
 # Session creation and its session_start failures belong to shellfish create.
 
@@ -227,31 +227,31 @@ ln -s "$config" "$invalid_path"
 integer invalid_path_status=0
 print -r -- \
   '{"type":"message","role":"user","content":[{"type":"text","text":"ignored"}]}' |
-  zsh -f "$entry" exec --jsonl --session "$invalid_path" \
+  zsh -f "$entry" run --jsonl --session "$invalid_path" \
   >"$invalid_path_output" 2>"$tmp/invalid-path.stderr" || invalid_path_status=$?
 (( invalid_path_status == 1 ))
 [[ ! -s $tmp/invalid-path.stderr ]]
 jq -eRn --arg path "$invalid_path" '
   [inputs | fromjson] == [{type:"_exec_error",message:("invalid session path: " + $path)}]
 ' <"$invalid_path_output" >/dev/null ||
-  fail 'JSONL prepare failure was not emitted as an exec error'
+  fail 'JSONL prepare failure was not emitted as a turn error'
 
 integer exit_code=0
-print -n piped | zsh -f "$entry" exec --config "$config" argument >/dev/null 2>&1 || \
+print -n piped | zsh -f "$entry" run --config "$config" argument >/dev/null 2>&1 || \
   exit_code=$?
-(( exit_code == 2 )) || fail 'exec accepted prompt argument and stdin together'
+(( exit_code == 2 )) || fail 'run accepted prompt argument and stdin together'
 exit_code=0
-print -n '{}' | zsh -f "$entry" exec --jsonl --config "$config" >/dev/null 2>&1 || \
+print -n '{}' | zsh -f "$entry" run --jsonl --config "$config" >/dev/null 2>&1 || \
   exit_code=$?
-(( exit_code == 2 )) || fail 'exec accepted noncanonical JSON input'
+(( exit_code == 2 )) || fail 'run accepted noncanonical JSON input'
 exit_code=0
 zsh -f "$entry" --jsonl >/dev/null 2>&1 || exit_code=$?
 (( exit_code == 2 )) || fail 'chat accepted --jsonl'
 exit_code=0
-zsh -f "$entry" exec --verbose --config "$config" hi >/dev/null 2>&1 || exit_code=$?
-(( exit_code == 2 )) || fail 'exec accepted --verbose'
+zsh -f "$entry" run --verbose --config "$config" hi >/dev/null 2>&1 || exit_code=$?
+(( exit_code == 2 )) || fail 'run accepted --verbose'
 exit_code=0
-zsh -f "$entry" exec --new --config "$config" >/dev/null 2>&1 || exit_code=$?
-(( exit_code == 2 )) || fail 'exec accepted --new'
+zsh -f "$entry" run --new --config "$config" >/dev/null 2>&1 || exit_code=$?
+(( exit_code == 2 )) || fail 'run accepted --new'
 
 print -r -- 'ok'

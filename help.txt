@@ -4,7 +4,7 @@ A tiny coding agent written in Zsh, awk, curl, and jq.
 
 Usage:
   shellfish [OPTIONS] [PROMPT]       Start interactive chat
-  shellfish exec [OPTIONS] [PROMPT]  Run exactly one agent turn
+  shellfish run [OPTIONS] [PROMPT]   Run exactly one agent turn
   shellfish create [OPTIONS]         Create one idle session and print its path
   shellfish config [OPTIONS]         Print resolved configuration as JSON
   shellfish build-request [OPTIONS]  Project session records into a backend request
@@ -20,7 +20,7 @@ Global flags:
   --sandbox-write PATH  Give sandboxed tools read-write access (repeatable)
   --clear               Clear the terminal before the first chat render
   --draft TEXT          Prefill the chat editor without submitting
-  --verbose             Lift every preview limit (not valid with exec)
+  --verbose             Lift every preview limit (chat only)
   --config FILE         Use another configuration file
   --session PATH        Use the session at PATH
   -c, --continue        Open the most recent session for the current directory
@@ -31,7 +31,7 @@ Config flags:
   --init                Create the user configuration directory; combine with
                         --sandbox-auto to generate sandbox grants
 
-Exec flags:
+Run flags:
   --jsonl               Exchange ordered JSONL records on stdin and stdout
 
 Create flags:

@@ -36,9 +36,9 @@ error=$(zsh -f "$entry" chat --draft draft positional 2>&1) || exit_code=$?
   fail 'chat accepted a draft with a positional prompt'
 
 exit_code=0
-error=$(zsh -f "$entry" exec --draft draft prompt 2>&1) || exit_code=$?
-[[ $error == *'--draft requires interactive chat'* && $exit_code == 2 ]] || \
-  fail 'exec accepted a draft'
+error=$(zsh -f "$entry" run --draft draft prompt 2>&1) || exit_code=$?
+[[ $error == *'unknown argument: --draft'* && $exit_code == 2 ]] || \
+  fail 'run accepted a draft'
 
 exit_code=0
 error=$(print -rn piped | zsh -f "$entry" chat 2>&1) || exit_code=$?

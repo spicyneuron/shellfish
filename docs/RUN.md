@@ -1,6 +1,6 @@
-# Single-turn exec and JSONL
+# Single-turn run and JSONL
 
-`shellfish exec` runs a single agent turn. A turn begins with one user message and may contain multiple provider requests, tool calls, permission decisions, and continuations requested by `stop` scripts.
+`shellfish run` runs a single agent turn. A turn begins with one user message and may contain multiple provider requests, tool calls, permission decisions, and continuations requested by `stop` scripts.
 
 `shellfish create` creates an idle session and prints its absolute path. Without `--session`, it uses current configuration. With `--session SESSION`, it derives the runtime from that session's frozen settings and rematerializes their system components. It does not copy messages, context, or the source system record. It runs the `session_start` scripts for the new session. `--path PATH` writes the new session to PATH instead of the state directory.
 
@@ -10,20 +10,20 @@ shellfish create --session path/to/session.jsonl
 shellfish create --path ./project-session.jsonl
 ```
 
-`shellfish --new [SESSION]` provides the same behavior and opens the new session in chat. Exec does not create sessions; a turn requires one that already exists.
+`shellfish --new [SESSION]` provides the same behavior and opens the new session in chat. Run does not create sessions; a turn requires one that already exists.
 
-Ordinary exec accepts prompt text and prints the final assistant text:
+Ordinary run accepts prompt text and prints the final assistant text:
 
 ```sh
-shellfish exec "Review these changes"
-printf '%s\n' "Review these changes" | shellfish exec
+shellfish run "Review these changes"
+printf '%s\n' "Review these changes" | shellfish run
 ```
 
 `--jsonl` exposes the machine interface used by interactive chat and `shellfish-server`:
 
 ```sh
 printf '%s\n' '{"type":"message","role":"user","content":[{"type":"text","text":"Review these changes"}]}' |
-  shellfish exec --jsonl --session path/to/session.jsonl
+  shellfish run --jsonl --session path/to/session.jsonl
 ```
 
 ## Input

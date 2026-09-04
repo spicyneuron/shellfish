@@ -37,7 +37,7 @@ printf '%s\n' \
   '{"type":"_tool_permission_response","id":"permission_1","decision":"approve"}' |
   SF_TEST_BACKEND_DELAY=0 SF_TEST_BACKEND_TOOL_CALL=1 \
     SF_TEST_BACKEND_TOOL_BYPASS=true SF_TEST_BACKEND_TOOL_COMMAND='printf approved' \
-    zsh -f "$entry" exec --jsonl --config "$config" \
+    zsh -f "$entry" run --jsonl --config "$config" \
       --session "$session" >"$output" || fail 'bounded permission approval failed'
 jq -eRn '
   [inputs | fromjson] as $events |
@@ -58,7 +58,7 @@ printf '%s\n' \
   '{"type":"message","role":"user","content":[{"type":"text","text":"deny bounded"}]}' \
   '{"type":"_tool_permission_response","id":"permission_1","decision":"deny"}' |
   SF_TEST_BACKEND_DELAY=0 SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_BYPASS=true \
-    zsh -f "$entry" exec --jsonl --config "$config" \
+    zsh -f "$entry" run --jsonl --config "$config" \
       --session "$denied_session" >"$tmp/denied-permission.out" ||
   fail 'bounded permission denial failed'
 jq -eRn '
@@ -73,7 +73,7 @@ printf '%s\n' \
   '{"type":"message","role":"user","content":[{"type":"text","text":"wrong permission"}]}' \
   '{"type":"_tool_permission_response","id":"permission_2","decision":"approve"}' |
   SF_TEST_BACKEND_DELAY=0 SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_BYPASS=true \
-    zsh -f "$entry" exec --jsonl --config "$config" \
+    zsh -f "$entry" run --jsonl --config "$config" \
       --session "$wrong_session" >"$wrong_output" &&
   fail 'bounded invalid permission response exited successfully'
 jq -eRn '
@@ -87,7 +87,7 @@ typeset eof_session="$tmp/permission-eof.jsonl"
 print -r -- \
   '{"type":"message","role":"user","content":[{"type":"text","text":"permission eof"}]}' |
   SF_TEST_BACKEND_DELAY=0 SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_BYPASS=true \
-    zsh -f "$entry" exec --jsonl --config "$config" \
+    zsh -f "$entry" run --jsonl --config "$config" \
       --session "$eof_session" >"$tmp/permission-eof.out" ||
   fail 'permission EOF denial failed'
 jq -eRn '
@@ -101,12 +101,12 @@ typeset projection_session="$tmp/projection.jsonl"
 typeset request_capture="$tmp/request.json"
 print -r -- 'projected plainly' |
   SF_TEST_BACKEND_DELAY=0 SF_TEST_BACKEND_REQUEST="$request_capture" \
-    zsh -f "$entry" exec --config "$config" --session "$projection_session" \
+    zsh -f "$entry" run --config "$config" --session "$projection_session" \
       >/dev/null || fail 'plain projection turn failed'
 typeset plain_tools=$(jq -c '.tools' "$request_capture")
 print -r -- \
   '{"type":"message","role":"user","content":[{"type":"text","text":"projected as jsonl"}]}' |
   SF_TEST_BACKEND_DELAY=0 SF_TEST_BACKEND_REQUEST="$request_capture" \
-    zsh -f "$entry" exec --jsonl --config "$config" --session "$projection_session" \
+    zsh -f "$entry" run --jsonl --config "$config" --session "$projection_session" \
       >/dev/null || fail 'jsonl projection turn failed'
 assert_equal "$plain_tools" "$(jq -c '.tools' "$request_capture")"

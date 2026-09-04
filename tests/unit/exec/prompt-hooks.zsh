@@ -134,7 +134,7 @@ integer records=$(wc -l <"$cancel_session")
 # A private temp root, since the suite shares one and runs files concurrently.
 typeset cancel_temp="$tmp/cancel-temp"
 mkdir -p "$cancel_temp"
-TMPDIR="$cancel_temp" "$ROOT/bin/shellfish" exec --jsonl --session "$cancel_session" \
+TMPDIR="$cancel_temp" "$ROOT/bin/shellfish" run --jsonl --session "$cancel_session" \
   < <(print -r -- '{"type":"message","role":"user","content":[{"type":"text","text":"/slow"}]}') \
   >"$cancel_stream" &
 integer pid=$! cancel_status=0 waited=0

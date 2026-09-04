@@ -164,7 +164,7 @@ sf_test_session "$permission_cancel_session"
 mkfifo "$permission_cancel_fifo"
 SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_BYPASS=true \
   SF_TEST_BACKEND_TOOL_COUNT=3 \
-  "$ROOT/bin/shellfish" exec --jsonl --session "$permission_cancel_session" \
+  "$ROOT/bin/shellfish" run --jsonl --session "$permission_cancel_session" \
     <"$permission_cancel_fifo" >"$permission_cancel_stream" &
 integer permission_cancel_pid=$! permission_cancel_status=0 waited=0
 exec {permission_cancel_fd}>"$permission_cancel_fifo"
