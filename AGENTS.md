@@ -17,11 +17,11 @@ NOTE: This project is pre-release. Do not add deprecation noticies, backwards co
 
 ## Execution flow
 
-- `bin/shellfish` validates CLI input and dispatches to single-turn exec or interactive chat. `shellfish config`, `shellfish build-request`, and `shellfish send-request` exec their program under `libexec/`, each of which owns its own parsing.
-- New sessions resolve configuration into a frozen runtime, prepare the header, concatenate the profile's `system` components into one system record, collect `session_start` context, then create the complete initial JSONL prefix.
+- `bin/shellfish` validates CLI input and dispatches to single-turn exec or interactive chat. `shellfish create`, `shellfish config`, `shellfish build-request`, and `shellfish send-request` exec their program under `libexec/`, each of which owns its own parsing.
+- `shellfish create` owns session creation. It obtains the frozen runtime by forwarding its unparsed options to `shellfish config` and deleting the presentation fields, prepares the header, concatenates the profile's `system` components into one system record, collects `session_start` context, writes the complete initial JSONL prefix, and prints the path. `--path` chooses the destination; `--session` names the session the runtime is derived from.
 - Each turn opens the session, runs `user_prompt_submit` scripts, then loops over provider responses. Final responses run `stop` scripts; tool-call responses run the `pre_tool_use` scripts, permission, execution, persistence, and `post_tool_use` scripts before the next provider request.
 - The session layer is authoritative. Request projection converts durable records into provider messages; provider deltas and UI events are transient. Any failure, cancellation, or early return converges on turn recovery and hook/tool cleanup.
-- `sf_session_open` resolves which session a client attaches to, its presentation, and whether that session already exists, creating it when it does not.
+- `sf_session_open` resolves which session a client attaches to and whether it already exists, invoking `shellfish create` when it does not. Turns never create sessions.
 - Interactive chat runs single turns through `shellfish exec --jsonl`, renders its event stream, and reloads the durable transcript after completion or uncertainty. Transcript replay establishes the frozen runtime from the session header, which live `_session_update` events then refresh.
 - A served session runs the same single turns: the proxy relays one child's JSONL to one browser, which replays the durable session on connect and reopens that stream to recover.
 
