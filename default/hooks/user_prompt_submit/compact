@@ -3,7 +3,7 @@
 emulate -R zsh
 setopt extended_glob no_aliases no_multios pipe_fail
 
-typeset submitted draft='' instruction request summary created base candidate
+typeset submitted draft='' instruction budget request summary created base candidate
 typeset -a argv
 integer explicit=0 suffix=1
 
@@ -44,7 +44,20 @@ case $submitted in
     ;;
 esac
 
-instruction=$'Create a concise continuation summary of this conversation. Preserve key decisions, requirements, completed work, unresolved work, and technical details needed to continue. Return only the summary. Do not address the user or take actions.'
+[[ -r ${0:A:h}/compact.md ]] && instruction=$(<"${0:A:h}/compact.md") || {
+  fail_compaction 'cannot read compaction prompt; keeping the original'
+  exit $?
+}
+budget=$(jq -er '
+  .profile.context_window | select(. != null) |
+  [(. / 10 | floor), 1] | max
+' <"$SHELLFISH_SESSION" 2>/dev/null) || budget=''
+if [[ -n $budget ]]; then
+  instruction+=$'\n\n## Summary budget\n\nAim to keep the summary within '"$budget"$' tokens (10% of the session context window). Do not add low-value detail merely to fill the budget.'
+else
+  instruction+=$'\n\n## Summary budget\n\nNo context-window size is available. Be aggressively concise while preserving all required continuation state.'
+fi
+instruction=$'<compaction_request>\n\n'"$instruction"$'\n\n</compaction_request>'
 request=$(jq -cn --arg text "$instruction" \
   '{type:"message",role:"user",content:[{type:"text",text:$text}]}') || {
   fail_compaction 'cannot prepare summary request; keeping the original'

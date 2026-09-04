@@ -480,6 +480,12 @@ jq -e --arg command "$ROOT/bin/shellfish" \
 ' "$compact_control" >/dev/null || fail 'automatic compaction lost the prompt'
 assert_equal "$compact_before" "$(shasum <"$compact_source")"
 jq -e '.tools == []' "$compact_request" >/dev/null || fail 'compaction exposed tools'
+jq -e --rawfile prompt "$ROOT/default/hooks/user_prompt_submit/compact.md" '
+  .messages[-1].content == [{
+    type:"text",
+    text:("<compaction_request>\n\n" + ($prompt | rtrimstr("\n")) + "\n\n## Summary budget\n\nAim to keep the summary within 10 tokens (10% of the session context window). Do not add low-value detail merely to fill the budget.\n\n</compaction_request>")
+  }]
+' "$compact_request" >/dev/null || fail 'compaction did not use its structured prompt and budget'
 jq -L "$ROOT/lib" -e -s '
   include "runtime/schema";
   (.[0] | canonical_session_header(1)) and (.[1:] | canonical_session_records) and
