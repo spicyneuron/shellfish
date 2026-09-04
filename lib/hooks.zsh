@@ -441,9 +441,9 @@ sf_hooks_commit_context() {
     control=$SF_HOOK_SCRIPT_RESULTS[index+4]
     control_json=${control:-'{}'}
     context=$(print -rn -- "$item" |
-      jq -Rsc -L "$SF_ROOT/lib" --arg hook "$hook" --arg script "$script" \
+      jq -Rsc -L "$SF_ROOT" --arg hook "$hook" --arg script "$script" \
         --argjson control "$control_json" '
-          include "runtime/schema";
+          include "lib/runtime/schema";
           ({type:"context",hook:$hook,script:$script,content:.} +
             ($control.context // {})) as $context |
           if ($control.context? // {} | type == "object") and
@@ -495,8 +495,8 @@ sf_hooks_user_prompt_submit() {
     control=$SF_HOOK_SCRIPT_RESULTS[index+4]
     [[ -n $control ]] || continue
     control_status=$SF_HOOK_SCRIPT_RESULTS[index+1]
-    if ! jq -L "$SF_ROOT/lib" -e --argjson status "$control_status" '
-          include "runtime/schema";
+    if ! jq -L "$SF_ROOT" -e --argjson status "$control_status" '
+          include "lib/runtime/schema";
           (keys - ["action", "argv", "context", "patch"] | length) == 0 and
           (({type:"context",hook:"user_prompt_submit",script:"script",content:""} +
             (.context // {})) | canonical_context) and

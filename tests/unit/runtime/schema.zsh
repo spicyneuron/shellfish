@@ -3,7 +3,7 @@
 source "${0:A:h:h:h}/_helpers.zsh"
 
 schema_eval() {
-  jq -L "$ROOT/lib" -e 'include "runtime/schema"; '"$1"
+  jq -L "$ROOT" -e 'include "lib/runtime/schema"; '"$1"
 }
 
 # Canonical user messages require single text content without NUL bytes.

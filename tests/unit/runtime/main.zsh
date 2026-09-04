@@ -1,7 +1,7 @@
 #!/usr/bin/env zsh
 
 source "${0:A:h:h:h}/_helpers.zsh"
-sf_test_source runtime/main.zsh session/main.zsh
+sf_test_source lib/runtime/main.zsh lib/session/main.zsh
 
 typeset config runtime tool_name jsonc
 sf_test_tmp runtime

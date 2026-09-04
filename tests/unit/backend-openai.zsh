@@ -1,7 +1,7 @@
 #!/usr/bin/env zsh
 
 source "${0:A:h:h}/_helpers.zsh"
-sf_test_source backend.zsh
+sf_test_source lib/backend.zsh
 
 sf_test_tmp backend-openai
 typeset run="$ROOT/default/backends/openai/run"
@@ -63,8 +63,8 @@ EOF
 
 SHELLFISH_API_KEY=test-key zsh -f "$run" <"$req" >"$res"
 
-jq -n -e -L "$ROOT/lib" '
-  include "runtime/schema";
+jq -n -e -L "$ROOT" '
+  include "lib/runtime/schema";
   [inputs] | assemble_backend_response |
   canonical_assistant_message and
   .role == "assistant" and
@@ -105,8 +105,8 @@ printf "%s\n" \
   'data: [DONE]' \
   "" >"$BACKEND_TEST_RESPONSE"
 SHELLFISH_API_KEY=test-key zsh -f "$run" <"$req" >"$res"
-jq -n -e -L "$ROOT/lib" '
-  include "runtime/schema";
+jq -n -e -L "$ROOT" '
+  include "lib/runtime/schema";
   [inputs] | assemble_backend_response ==
     {type:"message",role:"assistant",stop:"length",content:[]}
 ' "$res" >/dev/null
@@ -119,8 +119,8 @@ printf "%s\n" \
 
 SHELLFISH_API_KEY=test-key zsh -f "$run" <"$req" >"$res"
 
-jq -n -e -L "$ROOT/lib" '
-  include "runtime/schema";
+jq -n -e -L "$ROOT" '
+  include "lib/runtime/schema";
   [inputs] | assemble_backend_response |
   canonical_assistant_message and
   .stop == "tool_calls" and
@@ -164,8 +164,8 @@ EOF
 
 SHELLFISH_API_KEY=test-key zsh -f "$run" <"$req" >"$res"
 
-jq -n -e -L "$ROOT/lib" '
-  include "runtime/schema";
+jq -n -e -L "$ROOT" '
+  include "lib/runtime/schema";
   [inputs] | assemble_backend_response |
   canonical_assistant_message and
   .stop == "tool_calls" and

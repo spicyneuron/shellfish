@@ -1,7 +1,7 @@
 #!/usr/bin/env zsh
 
 source "${0:A:h:h:h}/_helpers.zsh"
-sf_test_source session/main.zsh hooks.zsh
+sf_test_source lib/session/main.zsh lib/hooks.zsh
 
 sf_test_tmp exec-tool-cancel
 export XDG_STATE_HOME="$tmp/state"
@@ -35,8 +35,8 @@ print -r -- "$(<"$cancel_stream")" | jq -eRn '
     content:"tool call interrupted",exit_code:126
   }] and $events[-1].role == "assistant" and $events[-1].stop == "end"
 ' >/dev/null
-jq -L "$ROOT/lib" -e -s '
-  include "runtime/schema";
+jq -L "$ROOT" -e -s '
+  include "lib/runtime/schema";
   (.[1:] | canonical_session_records) and .[-1].stop == "end"
 ' "$cancel_session" >/dev/null
 

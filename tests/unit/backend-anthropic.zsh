@@ -31,8 +31,8 @@ cat >"$req" <<'EOF'
 EOF
 
 assert_usage() {
-  jq -e -s -L "$ROOT/lib" '
-    include "runtime/schema";
+  jq -e -s -L "$ROOT" '
+    include "lib/runtime/schema";
     map(select(.type == "_turn_usage"))[0] as $event |
     assemble_backend_response as $message |
     ($event | del(.type)) == {
@@ -78,8 +78,8 @@ data: {"type":"message_stop"}
 
 EOF
 SHELLFISH_API_KEY=test zsh -f "$run" <"$req" >"$res"
-jq -e -s -L "$ROOT/lib" '
-  include "runtime/schema";
+jq -e -s -L "$ROOT" '
+  include "lib/runtime/schema";
   assemble_backend_response |
   .stop == "tool_calls" and
   .content[0] == {type:"reasoning",text:"why",opaque:{type:"thinking",thinking:"why",signature:"signed"}} and

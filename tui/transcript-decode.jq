@@ -1,5 +1,5 @@
-include "runtime/schema";
-include "chat/display-fields";
+include "lib/runtime/schema";
+include "tui/display-fields";
 
 def durable_prefix:
   if endswith("\n") then

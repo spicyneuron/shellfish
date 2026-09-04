@@ -18,8 +18,8 @@ typeset normalizer_error_file=$SF_BACKEND_NORMALIZER_ERROR_FILE
 cat >"$request_file"
 
 typeset -a transport
-transport=( "${(@f)$(jq -L "$ROOT/lib" -er '
-  include "runtime/schema";
+transport=( "${(@f)$(jq -L "$ROOT" -er '
+  include "lib/runtime/schema";
   select(canonical_request and (.options.request | has("stream_options") | not)) |
   .transport.endpoint, (.transport.insecure_tls | tostring),
   (.transport.http_timeout | tostring), (.transport.http_stall | tostring)

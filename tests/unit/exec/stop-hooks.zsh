@@ -1,7 +1,7 @@
 #!/usr/bin/env zsh
 
 source "${0:A:h:h:h}/_helpers.zsh"
-sf_test_source session/main.zsh hooks.zsh
+sf_test_source lib/session/main.zsh lib/hooks.zsh
 
 typeset stream
 sf_test_tmp exec-stop-hooks
@@ -158,8 +158,8 @@ print -r -- "$stream" | jq -eRn '
   $events[-2].role == "assistant" and $events[-2].stop == "end" and
   $events[-1].message == "provider request limit reached: 1"
 ' >/dev/null
-jq -L "$ROOT/lib" -e -s '
-  include "runtime/schema";
+jq -L "$ROOT" -e -s '
+  include "lib/runtime/schema";
   (.[1:] | canonical_session_records) and .[-1].stop == "end"
 ' "$limit_session" >/dev/null
 
@@ -208,8 +208,8 @@ jq -eRn '
   ($events | map(select(.type == "context" and .hook == "stop")) | length) == 1 and
   $events[-1].role == "assistant" and $events[-1].stop == "end"
 ' <"$cancel_stream" >/dev/null
-jq -L "$ROOT/lib" -e -s '
-  include "runtime/schema";
+jq -L "$ROOT" -e -s '
+  include "lib/runtime/schema";
   (.[1:] | canonical_session_records) and
   ([.[] | select(.type == "context" and .hook == "stop")] | length) == 1
 ' "$cancel_session" >/dev/null

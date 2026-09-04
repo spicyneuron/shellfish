@@ -1,7 +1,7 @@
 #!/usr/bin/env zsh
 
 source "${0:A:h:h:h}/_helpers.zsh"
-sf_test_source session/main.zsh hooks.zsh
+sf_test_source lib/session/main.zsh lib/hooks.zsh
 
 typeset stream
 sf_test_tmp exec-tool-hook-errors
@@ -41,8 +41,8 @@ print -r -- "$stream" | jq -eRn '
   $events[-1].message == "pre_tool_use hook script wrote unsupported stdout"
 ' >/dev/null
 [[ ! -e $TEST_OUTPUT_DIR/post-ran ]]
-jq -L "$ROOT/lib" -e -s '
-  include "runtime/schema";
+jq -L "$ROOT" -e -s '
+  include "lib/runtime/schema";
   (.[1:] | canonical_session_records) and .[-1].stop == "end"
 ' "$pre_session" >/dev/null
 
@@ -66,7 +66,7 @@ print -r -- "$stream" | jq -eRn '
   $events[-2].role == "assistant" and $events[-2].stop == "end" and
   $events[-1].message == "post_tool_use hook script returned unsupported skip status"
 ' >/dev/null
-jq -L "$ROOT/lib" -e -s '
-  include "runtime/schema";
+jq -L "$ROOT" -e -s '
+  include "lib/runtime/schema";
   (.[1:] | canonical_session_records) and .[-1].stop == "end"
 ' "$post_session" >/dev/null

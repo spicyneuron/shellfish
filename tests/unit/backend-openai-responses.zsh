@@ -29,8 +29,8 @@ cat >"$req" <<'EOF'
 EOF
 
 assert_usage() {
-  jq -e -s -L "$ROOT/lib" '
-    include "runtime/schema";
+  jq -e -s -L "$ROOT" '
+    include "lib/runtime/schema";
     map(select(.type == "_turn_usage"))[0] as $event |
     assemble_backend_response as $message |
     ($event | del(.type)) == {
@@ -54,8 +54,8 @@ cat >"$BACKEND_TEST_RESPONSE" <<'EOF'
 {"status":"incomplete","output":[{"type":"function_call","call_id":"call_cut","name":"shell","arguments":"{\"command\":"}],"usage":{"input_tokens":10,"output_tokens":5}}
 EOF
 SHELLFISH_API_KEY=test zsh -f "$run" <"$req" >"$res"
-jq -e -s -L "$ROOT/lib" '
-  include "runtime/schema";
+jq -e -s -L "$ROOT" '
+  include "lib/runtime/schema";
   assemble_backend_response == {type:"message",role:"assistant",stop:"length",content:[],usage:{input_tokens:10,output_tokens:5}}
 ' "$res" >/dev/null
 
@@ -111,8 +111,8 @@ data: {"type":"response.completed","response":{"status":"completed","output":[],
 
 EOF
 SHELLFISH_API_KEY=test zsh -f "$run" <"$req" >"$res"
-jq -e -s -L "$ROOT/lib" '
-  include "runtime/schema";
+jq -e -s -L "$ROOT" '
+  include "lib/runtime/schema";
   assemble_backend_response |
   .stop == "tool_calls" and
   .content[0] == {type:"reasoning",text:"why",opaque:{type:"reasoning",id:"rs_1",summary:[{type:"summary_text",text:"why"}],encrypted_content:"secret"}} and

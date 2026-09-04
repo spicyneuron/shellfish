@@ -16,8 +16,8 @@ typeset request_file=$SF_BACKEND_REQUEST_FILE
 cat >"$request_file"
 
 typeset -a fields
-fields=( "${(@f)$(jq -L "$ROOT/lib" -er '
-  include "runtime/schema";
+fields=( "${(@f)$(jq -L "$ROOT" -er '
+  include "lib/runtime/schema";
   select(canonical_request) |
   .options.request.model, .transport.endpoint,
   (.transport.insecure_tls | tostring), (.transport.http_timeout | tostring),
@@ -37,8 +37,8 @@ case $endpoint in
 esac
 sf_backend_context_curl_args "$models_endpoint" $fields[3] $fields[4] $fields[5]
 context=$(curl "${SF_BACKEND_CURL_ARGS[@]}" 2>/dev/null | \
-  jq -L "$ROOT/lib" -ce --arg model "$fields[1]" '
-    include "runtime/schema";
+  jq -L "$ROOT" -ce --arg model "$fields[1]" '
+    include "lib/runtime/schema";
     first(.data[]? | select(.id == $model) | .context_length) |
     select(positive_integer) | {context_window:.}
   ' 2>/dev/null) || exit 10

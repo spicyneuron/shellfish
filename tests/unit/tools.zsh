@@ -1,7 +1,7 @@
 #!/usr/bin/env zsh
 
 source "${0:A:h:h}/_helpers.zsh"
-sf_test_source session/main.zsh runtime/main.zsh hooks.zsh tools.zsh
+sf_test_source lib/session/main.zsh lib/runtime/main.zsh lib/hooks.zsh lib/tools.zsh
 
 sf_test_tmp tools
 typeset session="$tmp/session.jsonl"

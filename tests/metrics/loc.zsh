@@ -12,8 +12,7 @@ typeset -r root=${0:A:h:h:h}
 typeset -a core terminal server sources
 
 core=( "$root/bin/shellfish" "$root"/lib/**/*.(zsh|jq)(N.) )
-core=( ${core:#$root/lib/chat/*} )
-terminal=( "$root"/lib/chat/**/*.(zsh|jq|awk)(N.) )
+terminal=( "$root"/tui/**/*.(zsh|jq|awk)(N.) )
 server=( "$root"/cmd/shellfish-server/**/*.(go|js|css|html)(N.) )
 server=( ${server:#*_test.(go|js)} )
 
@@ -40,7 +39,7 @@ tokei --compact --streaming simple -- $sources | awk -v root="$root" '
 
     if (index(path, root "/cmd/shellfish-server/") == 1) {
       group = 3
-    } else if (index(path, root "/lib/chat/") == 1) {
+    } else if (index(path, root "/tui/") == 1) {
       group = 2
     } else {
       group = 1

@@ -14,7 +14,7 @@ trap '[[ -z $tmp ]] || rm -rf -- "$tmp"' EXIT
 sf_test_source() {
   local module
   for module in "$@"; do
-    source "$ROOT/lib/$module"
+    source "$ROOT/$module"
   done
   setopt err_exit no_aliases no_bg_nice no_multios pipe_fail
 }

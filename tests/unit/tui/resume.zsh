@@ -1,7 +1,7 @@
 #!/usr/bin/env zsh
 
-source "${0:A:h:h}/_helpers.zsh"
-sf_test_source resume.zsh
+source "${0:A:h:h:h}/_helpers.zsh"
+sf_test_source tui/resume.zsh
 sf_test_tmp resume
 
 typeset s_empty="$tmp/empty.jsonl"

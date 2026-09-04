@@ -191,8 +191,8 @@ jsonl=$(print -r -- \
   '{"type":"message","role":"user","content":[{"type":"text","text":"stream answer"}]}' |
   SF_TEST_BACKEND_DELAY=0 zsh -f "$entry" exec --jsonl --config "$config" \
     --session "$stream_session") || fail 'JSONL exec failed'
-print -r -- "$jsonl" | jq -eRn -L "$ROOT/lib" '
-  include "runtime/schema";
+print -r -- "$jsonl" | jq -eRn -L "$ROOT" '
+  include "lib/runtime/schema";
   [inputs | fromjson] as $events |
   ($events[0] | canonical_session_header(1)) and
   ($events | any(.type == "_assistant_delta")) and
@@ -258,7 +258,7 @@ jsonl=$(print -r -- \
     --config "$skip_config" 2>"$jsonl_skip_stderr") || skip_status=$?
 (( skip_status == 1 ))
 [[ ! -s $jsonl_skip_stderr ]]
-print -r -- "$jsonl" | jq -eRn -L "$ROOT/lib" '
+print -r -- "$jsonl" | jq -eRn -L "$ROOT" '
   [inputs | fromjson] as $events |
   ($events | length) == 2 and
   ($events[0] | .type == "_hook_display" and .hook == "session_start" and

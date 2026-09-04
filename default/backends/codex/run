@@ -23,8 +23,8 @@ request_file="$temp_dir/request.json"
 prepared_file="$temp_dir/prepared.json"
 cat >"$request_file"
 
-request_status=$(jq -L "$ROOT/lib" -er --arg endpoint "$ENDPOINT" '
-  include "runtime/schema";
+request_status=$(jq -L "$ROOT" -er --arg endpoint "$ENDPOINT" '
+  include "lib/runtime/schema";
   # The request body contains backend-neutral fields as well as Codex options.
   # Codex accepts only reasoning; the Responses adapter owns the generated body.
   if (canonical_request and

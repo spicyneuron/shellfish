@@ -1,8 +1,8 @@
 #!/usr/bin/env zsh
 
 source "${0:A:h:h:h:h}/_helpers.zsh"
-sf_test_source chat/render/nodes.zsh chat/render/highlights.zsh chat/render/rows.zsh \
-  chat/render/viewport.zsh
+sf_test_source tui/render/nodes.zsh tui/render/highlights.zsh tui/render/rows.zsh \
+  tui/render/viewport.zsh
 
 sf_chat_event user abcdef
 sf_chat_viewport 80 2

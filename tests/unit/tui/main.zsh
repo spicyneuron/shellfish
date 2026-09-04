@@ -1,7 +1,7 @@
 #!/usr/bin/env zsh
 
 source "${0:A:h:h:h}/_helpers.zsh"
-sf_test_source chat/main.zsh
+sf_test_source tui/main.zsh
 sf_test_tmp ui-main
 
 # Runtime overrides cannot be used with an existing non-empty session.

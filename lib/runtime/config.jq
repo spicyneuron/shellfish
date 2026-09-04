@@ -1,4 +1,4 @@
-include "runtime/schema";
+include "lib/runtime/schema";
 
 def config_error($path; $message):
   error("invalid config at $" + ($path | map("[" + tojson + "]") | join("")) + ": " + $message);

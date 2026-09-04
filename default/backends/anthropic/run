@@ -18,8 +18,8 @@ typeset normalizer_error_file=$SF_BACKEND_NORMALIZER_ERROR_FILE
 cat >$request_file
 
 typeset -a transport
-transport=( "${(@f)$(jq -L "$ROOT/lib" -er '
-  include "runtime/schema";
+transport=( "${(@f)$(jq -L "$ROOT" -er '
+  include "lib/runtime/schema";
   select(canonical_request) |
   .transport.endpoint, (.transport.insecure_tls | tostring),
   (.transport.http_timeout | tostring), (.transport.http_stall | tostring)
@@ -95,7 +95,7 @@ set +e
 sf_backend_curl_args $transport[1] $transport[2] $transport[3] $transport[4]
 SF_BACKEND_CURL_ARGS+=(--header 'anthropic-version: 2023-06-01')
 curl "${SF_BACKEND_CURL_ARGS[@]}" 2>"$status_file" | tee "$response_file" | \
-  jq -nRrc --unbuffered -L "$ROOT/lib" --arg control "$SF_BACKEND_CONTROL_PATTERN" '
+  jq -nRrc --unbuffered -L "$ROOT" --arg control "$SF_BACKEND_CONTROL_PATTERN" '
   def transient($type;$index;$text): {type:$type,index:$index,text:$text};
   def usage_event:
     {type:"_turn_usage",

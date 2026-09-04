@@ -9,9 +9,9 @@ typeset -gA SF_REQUEST=(
 
 sf_request_build() {
   local runtime=$1 tools=$2
-  jq -L "$SF_ROOT/lib" -sce --argjson runtime "$runtime" --argjson tools "$tools" '
-    include "runtime/schema";
-    include "session/request";
+  jq -L "$SF_ROOT" -sce --argjson runtime "$runtime" --argjson tools "$tools" '
+    include "lib/runtime/schema";
+    include "lib/session/request";
     . as $records |
     {
       format_version:1,
@@ -65,8 +65,8 @@ sf_request_run() {
   SF_REQUEST[pid]=$adapter_pid
   "$emit" '{"type":"_backend_request_start"}'
   while IFS= read -r event <&p; do
-    decoded=$(jq -L "$SF_ROOT/lib" -cr --argjson seq "$delta_seq" '
-      include "runtime/schema";
+    decoded=$(jq -L "$SF_ROOT" -cr --argjson seq "$delta_seq" '
+      include "lib/runtime/schema";
       if canonical_backend_event | not then "invalid"
       elif .type == "_assistant_delta" or .type == "_assistant_reasoning_delta" then
         "delta", (.seq = $seq)
@@ -107,8 +107,8 @@ sf_request_run() {
   fi
   SF_REQUEST[pid]=''
   if [[ $kind != invalid && $adapter_status == 0 ]] && (( ended )); then
-    SF_REQUEST[assistant]=$(printf '%s\n' "${events[@]}" | jq -L "$SF_ROOT/lib" -cse '
-      include "runtime/schema";
+    SF_REQUEST[assistant]=$(printf '%s\n' "${events[@]}" | jq -L "$SF_ROOT" -cse '
+      include "lib/runtime/schema";
       assemble_backend_response
     ' 2>/dev/null) || kind=invalid
     [[ -z $SF_REQUEST[assistant] ]] || SF_REQUEST[partial_events]=''

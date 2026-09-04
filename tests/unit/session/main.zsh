@@ -1,7 +1,7 @@
 #!/usr/bin/env zsh
 
 source "${0:A:h:h:h}/_helpers.zsh"
-sf_test_source session/main.zsh
+sf_test_source lib/session/main.zsh
 
 typeset session header before stored_runtime
 sf_test_tmp session
@@ -72,8 +72,8 @@ stored_runtime=$SF_SESSION[runtime]
 header=$(head -n 1 "$session")
 (( ${#SF_SESSION_RECORDS} == 1 ))
 assert_equal "$header" "$SF_SESSION_RECORDS[1]"
-jq -e -L "$ROOT/lib" '
-  include "runtime/schema";
+jq -e -L "$ROOT" '
+  include "lib/runtime/schema";
   canonical_session_header(1) and
   .profile.request.model == "test-model"
 ' <<<"$header" >/dev/null

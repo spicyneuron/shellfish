@@ -1,7 +1,7 @@
 #!/usr/bin/env zsh
 
 source "${0:A:h:h:h}/_helpers.zsh"
-sf_test_source session/main.zsh hooks.zsh
+sf_test_source lib/session/main.zsh lib/hooks.zsh
 
 typeset stream
 sf_test_tmp exec-turn
@@ -19,8 +19,8 @@ export SF_TEST_BACKEND_REQUEST="$request_capture"
 sf_test_session "$session"
 
 stream=$(sf_test_turn $'two\nwords' "$session")
-print -r -- "$stream" | jq -eRn -L "$ROOT/lib" '
-  include "runtime/schema";
+print -r -- "$stream" | jq -eRn -L "$ROOT" '
+  include "lib/runtime/schema";
   [inputs | fromjson] as $events |
   ($events | map(select(.type == "_turn_usage"))[0]) as $usage |
   ($events | map(select(.type == "message" and .role == "assistant"))[0]) as $assistant |
@@ -172,8 +172,8 @@ print -r -- "$stream" | jq -eRn '
   [inputs | fromjson | select(.role == "tool_result")] as $results |
   ($results | map(.exit_code)) == [127,127]
 ' >/dev/null
-jq -L "$ROOT/lib" -e -s '
-  include "runtime/schema";
+jq -L "$ROOT" -e -s '
+  include "lib/runtime/schema";
   (.[1:] | canonical_session_records) and .[-1].stop == "end"
 ' "$session" >/dev/null
 
@@ -213,8 +213,8 @@ SF_TEST_RUNTIME=$(jq -c --arg command "$partial_backend" '.backend.command=$comm
 typeset partial_response_session="$tmp/partial-response.jsonl"
 sf_test_session "$partial_response_session"
 stream=$(PARTIAL_CAPTURE="$partial_capture" sf_test_turn 'start' "$partial_response_session")
-print -r -- "$stream" | jq -eRn -L "$ROOT/lib" '
-  include "runtime/schema";
+print -r -- "$stream" | jq -eRn -L "$ROOT" '
+  include "lib/runtime/schema";
   [inputs | fromjson] as $events |
   ($events | map(select(.role == "assistant"))[-1]) as $assistant |
   ($assistant | canonical_assistant_message) and
@@ -227,8 +227,8 @@ print -r -- "$stream" | jq -eRn -L "$ROOT/lib" '
   ($events[-1].type == "_exec_error") and
   ($events[-1].message | contains("partial backend failure"))
 ' >/dev/null
-jq -L "$ROOT/lib" -e -s '
-  include "runtime/schema";
+jq -L "$ROOT" -e -s '
+  include "lib/runtime/schema";
   (.[1:] | canonical_session_records) and .[-1].stop == "length" and
   (.[-1] | has("usage") | not) and
   (.[-1].content | all(.type != "tool_call"))
@@ -303,8 +303,8 @@ print -r -- "$stream" | jq -eRn '
     .call_id == "call_1" and .exit_code == 0) and
   ($events | map(select(.role == "assistant"))[-1].stop) == "end"
 ' >/dev/null
-jq -L "$ROOT/lib" -e -s '
-  include "runtime/schema";
+jq -L "$ROOT" -e -s '
+  include "lib/runtime/schema";
   (.[1:] | canonical_session_records) and .[-1].stop == "end"
 ' "$session" >/dev/null
 jq -e '

@@ -3,7 +3,7 @@
 source "${0:A:h:h:h}/_helpers.zsh"
 
 fold() {
-  jq -L "$ROOT/lib" -c 'include "session/request"; request_messages'
+  jq -L "$ROOT" -c 'include "lib/session/request"; request_messages'
 }
 
 # Records without context pass through, losing only their storage fields.

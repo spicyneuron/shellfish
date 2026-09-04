@@ -10,27 +10,27 @@ typeset summary_tools=$(jq -cn \
       {name:"shell",manifest:($shell[0] |
         .display.summary=["$command"])}]}}
 ')
-assert_equal notes.txt "$(jq -nr -L "$ROOT/lib" --argjson tools "$summary_tools" '
-  include "chat/display-fields";
+assert_equal notes.txt "$(jq -nr -L "$ROOT" --argjson tools "$summary_tools" '
+  include "tui/display-fields";
   {name:"edit_file",input:{file_path:"notes.txt",old_string:"large",new_string:"secret"}} |
   tool_call_display($tools.harness.tools).summary
 ')"
-assert_equal 'make test' "$(jq -nr -L "$ROOT/lib" --argjson tools "$summary_tools" '
-  include "chat/display-fields";
+assert_equal 'make test' "$(jq -nr -L "$ROOT" --argjson tools "$summary_tools" '
+  include "tui/display-fields";
   {name:"shell",input:{command:"make test"}} | tool_call_display($tools.harness.tools).summary
 ')"
-assert_equal '' "$(jq -nr -L "$ROOT/lib" --argjson tools "$summary_tools" '
-  include "chat/display-fields";
+assert_equal '' "$(jq -nr -L "$ROOT" --argjson tools "$summary_tools" '
+  include "tui/display-fields";
   {name:"shell",input:{command:"make test"}} |
   tool_call_display([$tools.harness.tools[1] |
     .manifest.display.summary=["$timeout"]]).summary
 ')"
-assert_equal json "$(jq -nr -L "$ROOT/lib" --argjson tools "$summary_tools" '
-  include "chat/display-fields";
+assert_equal json "$(jq -nr -L "$ROOT" --argjson tools "$summary_tools" '
+  include "tui/display-fields";
   {name:"unknown",input:{value:1}} | tool_call_display($tools.harness.tools).format
 ')"
-assert_equal sh "$(jq -nr -L "$ROOT/lib" --argjson tools "$summary_tools" '
-  include "chat/display-fields";
+assert_equal sh "$(jq -nr -L "$ROOT" --argjson tools "$summary_tools" '
+  include "tui/display-fields";
   {name:"shell",input:{command:"true"}} | tool_call_display($tools.harness.tools).format
 ')"
 typeset replay
@@ -38,7 +38,7 @@ replay=$({
   head -n 1 "$ROOT/tests/fixtures/session/complete.jsonl"
   print -r -- '{"type":"message","role":"user","content":[{"type":"text","text":"question"}]}'
   print -r -- '{"type":"message","role":"assistant","stop":"end","content":[{"type":"reasoning","text":"first"},{"type":"reasoning","text":""},{"type":"reasoning","text":"second"}]}'
-} | jq -jRs -L "$ROOT/lib" -f "$ROOT/lib/chat/transcript-decode.jq")
+} | jq -jRs -L "$ROOT" -f "$ROOT/tui/transcript-decode.jq")
 typeset -a replay_fields=( "${(@0)${replay%$'\0'}}" )
 assert_equal assistant "$replay_fields[8]"
 assert_equal $'first\n\nsecond' "$replay_fields[10]"
@@ -49,7 +49,7 @@ usage_replay=$({
     jq -c '.profile.context_window = 264000'
   print -r -- '{"type":"message","role":"user","content":[{"type":"text","text":"question"}]}'
   print -r -- '{"type":"message","role":"assistant","stop":"end","content":[{"type":"text","text":"answer"}],"usage":{"input_tokens":12400,"cached_tokens":10478,"output_tokens":900}}'
-} | jq -jRs -L "$ROOT/lib" -f "$ROOT/lib/chat/transcript-decode.jq" |
+} | jq -jRs -L "$ROOT" -f "$ROOT/tui/transcript-decode.jq" |
   tr '\0' '\n' | sed '/^$/d' | paste -sd, -)
 assert_equal 'user,question,assistant,answer,assistant_commit,turn_usage,12k ↑ 85% ⦿ 900 ↓ 5% of 264k ◔,batch_ok' "$usage_replay"
 jq -e '
@@ -61,21 +61,21 @@ jq -e '
 
 # Short events are padded to the fixed width; the batch always ends in a marker.
 typeset framed
-framed=$(jq -nj -L "$ROOT/lib" '
-  include "chat/display-fields";
+framed=$(jq -nj -L "$ROOT" '
+  include "tui/display-fields";
   [["notice", "before\u0000after"]] | emit_display_batch
 ' | tr '\0' '\n' | paste -sd, -)
 assert_equal 'notice,before�after,,,,,,batch_ok,,,,,,' "$framed"
 
-if jq -nj -L "$ROOT/lib" '
-    include "chat/display-fields";
+if jq -nj -L "$ROOT" '
+    include "tui/display-fields";
     [["notice", "a", "b", "c", "d", "e", "f", "g"]] | emit_display_batch
   ' >/dev/null 2>&1; then
   fail 'an oversized display event was accepted'
 fi
 
-if jq -nj -L "$ROOT/lib" '
-    include "chat/display-fields";
+if jq -nj -L "$ROOT" '
+    include "tui/display-fields";
     [["notice", 1]] | emit_display_batch
   ' >/dev/null 2>&1; then
   fail 'a non-string display field was accepted'

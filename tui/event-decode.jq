@@ -1,5 +1,5 @@
-include "runtime/schema";
-include "chat/display-fields";
+include "lib/runtime/schema";
+include "tui/display-fields";
 
 def event_fields($event_runtime):
   if .type == "_assistant_delta" then

@@ -1,7 +1,7 @@
 #!/usr/bin/env zsh
 
 source "${0:A:h:h:h}/_helpers.zsh"
-sf_test_source session/main.zsh hooks.zsh
+sf_test_source lib/session/main.zsh lib/hooks.zsh
 
 typeset stream
 sf_test_tmp exec-permission
@@ -135,8 +135,8 @@ print -r -- "$stream" | jq -eRn '
   ($events | map(select(.type == "_exec_error") | .message) |
     any(. == "invalid permission response"))
 ' >/dev/null
-jq -L "$ROOT/lib" -e -s '
-  include "runtime/schema";
+jq -L "$ROOT" -e -s '
+  include "lib/runtime/schema";
   (.[1:] | canonical_session_records) and .[-1].stop == "end"
 ' "$permission_invalid_reply_session" >/dev/null
 
@@ -150,8 +150,8 @@ print -r -- "$stream" | jq -eRn '
   ($events | map(select(.role == "tool_result"))[0].exit_code) == 126 and
   ($events | any(.type == "_exec_error") | not)
 ' >/dev/null
-jq -L "$ROOT/lib" -e -s '
-  include "runtime/schema";
+jq -L "$ROOT" -e -s '
+  include "lib/runtime/schema";
   (.[1:] | canonical_session_records) and .[-1].stop == "end"
 ' "$permission_eof_session" >/dev/null
 
@@ -188,8 +188,8 @@ jq -eRn '
     [["call_1",126],["call_2",126],["call_3",126]] and
   $events[-1].role == "assistant" and $events[-1].stop == "end"
 ' <"$permission_cancel_stream" >/dev/null
-jq -L "$ROOT/lib" -e -s '
-  include "runtime/schema";
+jq -L "$ROOT" -e -s '
+  include "lib/runtime/schema";
   (.[1:] | canonical_session_records) and .[-1].stop == "end"
 ' "$permission_cancel_session" >/dev/null
 

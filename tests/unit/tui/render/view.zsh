@@ -1,8 +1,8 @@
 #!/usr/bin/env zsh
 
 source "${0:A:h:h:h:h}/_helpers.zsh"
-sf_test_source chat/render/nodes.zsh chat/render/highlights.zsh chat/render/rows.zsh \
-  chat/render/viewport.zsh chat/render/terminal.zsh chat/render/view.zsh
+sf_test_source tui/render/nodes.zsh tui/render/highlights.zsh tui/render/rows.zsh \
+  tui/render/viewport.zsh tui/render/terminal.zsh tui/render/view.zsh
 
 typeset -g BUFFER=draft CURSOR=3 PREDISPLAY='' POSTDISPLAY=''
 typeset -g SF_PRESENT_STATE=idle SF_PRESENT_FOOTER=test/model

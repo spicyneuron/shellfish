@@ -5,12 +5,12 @@ NOTE: This project is pre-release. Do not add deprecation noticies, backwards co
 ## Project map
 
 - `bin/shellfish` parses the CLI and starts interactive chat or reports resolved configuration.
-- `lib/chat/main.zsh` owns interactive session selection, terminal lifecycle, and the ZLE prompt.
+- `tui/main.zsh` owns interactive session selection, terminal lifecycle, and the ZLE prompt.
 - `lib/exec.zsh` owns process setup, input handling, full turns, events, permissions, signals, and cleanup.
 - `lib/session/` owns JSONL persistence, state validation, recovery, and provider request projection.
 - `lib/runtime/` resolves configuration, credentials, profiles, and schema validation.
 - `lib/backend.zsh` adapts provider streams.
-- `lib/chat/` owns chat rendering and presentation; the independent resume picker lives directly under `lib/`. Keep terminal and ZLE behavior out of exec.
+- `tui/` is the terminal client: chat rendering, presentation, and the independent resume picker. Keep terminal and ZLE behavior out of `lib/`.
 - `cmd/shellfish-server/` is a Go proxy that exposes one session to one browser, plus the browser client it serves. `docs/SERVER.md` is its contract.
 - `default/` is the bundled configuration and reference tools; `docs/HOOKS.md` is the complete hook contract.
 
@@ -28,6 +28,8 @@ NOTE: This project is pre-release. Do not add deprecation noticies, backwards co
 - Sessions are append-only JSONL and are the durable source of truth. Every durable prefix must be valid, including an in-progress last turn.
 - Durable records are `session`, `system`, `message`, and hook-injected `context`. Provider deltas, turn status, and presentation events are transient.
 - Interactive chat submits single turns through the shared session and turn machinery. Do not introduce lifecycle or presentation records.
+- `lib/` is the core. `tui/` and `cmd/shellfish-server/` are clients of it, and core code never references a client. `cmd/shellfish-server/` reaches the core only by running `shellfish exec`. `tui/` runs turns the same way, and additionally uses session selection and startup (`sf_session_find`, `sf_session_select_path`, `sf_session_read_settings`, `sf_session_startup_create`), configuration and presentation (`sf_runtime_resolve`, `sf_runtime_restore_presentation`, `SF_PRESENTATION`), `sf_scratch_file`, and the jq schema. That list is the whole permitted surface; widening it is a design decision, not a local one.
+- jq module paths are repo-rooted: pass `-L "$SF_ROOT"` and include `lib/runtime/schema`, `lib/session/request`, or `tui/display-fields`.
 - One `shellfish exec` process owns a session for the duration of a turn by convention; concurrent writers are not prevented. Keep credentials out of hook scripts; exec passes the scoped `SHELLFISH_API_KEY` only to the backend adapter.
 
 ## Configuration

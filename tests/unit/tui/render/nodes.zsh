@@ -1,7 +1,7 @@
 #!/usr/bin/env zsh
 
 source "${0:A:h:h:h:h}/_helpers.zsh"
-sf_test_source chat/render/nodes.zsh chat/render/highlights.zsh
+sf_test_source tui/render/nodes.zsh tui/render/highlights.zsh
 
 sf_chat_event user hello
 sf_chat_event user again

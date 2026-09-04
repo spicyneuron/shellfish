@@ -1,7 +1,7 @@
 #!/usr/bin/env zsh
 
 source "${0:A:h:h:h:h}/_helpers.zsh"
-sf_test_source chat/render/nodes.zsh chat/render/highlights.zsh chat/render/rows.zsh
+sf_test_source tui/render/nodes.zsh tui/render/highlights.zsh tui/render/rows.zsh
 
 typeset -g SF_PRESENTATION='{"tui":{"preview_lines_reasoning":"full","preview_lines_context":"full","preview_lines_tool_call":"full","preview_lines_tool_result":"full"}}'
 sf_chat_rows_config "$SF_PRESENTATION"

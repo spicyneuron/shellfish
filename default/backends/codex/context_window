@@ -9,8 +9,8 @@ typeset -gr ENDPOINT=https://chatgpt.com/backend-api/codex/responses
 unset SHELLFISH_API_KEY SHELLFISH_API_KEY_SOURCE
 
 typeset model catalog context
-model=$(jq -L "$ROOT/lib" -er --arg endpoint "$ENDPOINT" '
-  include "runtime/schema";
+model=$(jq -L "$ROOT" -er --arg endpoint "$ENDPOINT" '
+  include "lib/runtime/schema";
   select(canonical_request and .transport.endpoint == $endpoint and
     .transport.insecure_tls == false) |
   .options.request.model
@@ -18,8 +18,8 @@ model=$(jq -L "$ROOT/lib" -er --arg endpoint "$ENDPOINT" '
 
 command -v codex >/dev/null 2>&1 || exit 10
 catalog=$(codex debug models --bundled 2>/dev/null) || exit 10
-context=$(jq -L "$ROOT/lib" -ce --arg model "$model" '
-  include "runtime/schema";
+context=$(jq -L "$ROOT" -ce --arg model "$model" '
+  include "lib/runtime/schema";
   first(.models[]? | select(.slug == $model) | .context_window) |
   select(positive_integer) | {context_window:.}
 ' <<<"$catalog" 2>/dev/null) || exit 10

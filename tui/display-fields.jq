@@ -1,4 +1,4 @@
-include "runtime/schema";
+include "lib/runtime/schema";
 
 def compact_tokens:
   if . < 1000 then tostring

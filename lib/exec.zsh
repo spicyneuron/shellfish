@@ -129,8 +129,8 @@ sf_exec_partial_assistant() {
   REPLY=$({
     print -r -- "$SF_REQUEST[partial_events]"
     print -r -- '{"type":"_assistant_response_end","stop":"length"}'
-  } | jq -L "$SF_ROOT/lib" -cse '
-    include "runtime/schema";
+  } | jq -L "$SF_ROOT" -cse '
+    include "lib/runtime/schema";
     assemble_backend_response |
     select(any(.content[]; (.type == "text" or .type == "reasoning") and .text != ""))
   ' 2>/dev/null) || REPLY=''
@@ -244,8 +244,8 @@ sf_exec_turn() {
       failure="session working directory is unavailable: $SF_SESSION[cwd]"
       return 1
     }
-    user_projection=$(jq -L "$SF_ROOT/lib" -jnre --argjson record "$user_record" '
-      include "runtime/schema";
+    user_projection=$(jq -L "$SF_ROOT" -jnre --argjson record "$user_record" '
+      include "lib/runtime/schema";
       def field: ., "\u0000";
       $record | select(canonical_user_message) |
       (tojson | field), (.content[0].text | field), ("ok" | field)
@@ -351,8 +351,8 @@ sf_exec_turn() {
           context_output=''
         fi
         SF_REQUEST[pid]=''
-        context_window=$(jq -L "$SF_ROOT/lib" -ser '
-          include "runtime/schema";
+        context_window=$(jq -L "$SF_ROOT" -ser '
+          include "lib/runtime/schema";
           select(length == 1 and (.[0] | type == "object" and
             keys == ["context_window"] and (.context_window | positive_integer))) |
           .[0].context_window

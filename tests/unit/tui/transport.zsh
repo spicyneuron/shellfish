@@ -1,7 +1,7 @@
 #!/usr/bin/env zsh
 
 source "${0:A:h:h:h}/_helpers.zsh"
-sf_test_source chat/transport.zsh
+sf_test_source tui/transport.zsh
 sf_test_tmp transport
 
 typeset -ga ZLE_CALLS=()

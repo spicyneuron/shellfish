@@ -1,7 +1,7 @@
 #!/usr/bin/env zsh
 
 source "${0:A:h:h:h}/_helpers.zsh"
-sf_test_source session/startup.zsh
+sf_test_source lib/session/startup.zsh
 sf_test_tmp startup
 sf_test_runtime
 

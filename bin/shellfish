@@ -441,8 +441,8 @@ sf_main() {
       sf_die 'run-request requires a canonical backend request on stdin'
       return 2
     }
-    input=$(jq -L "$SF_ROOT/lib" -cse --argjson runtime "$runtime" '
-      include "runtime/schema";
+    input=$(jq -L "$SF_ROOT" -cse --argjson runtime "$runtime" '
+      include "lib/runtime/schema";
       select(length == 1) | .[0] |
       select(canonical_request) |
       select(.options == {request:$runtime.profile.request}) |
@@ -532,8 +532,8 @@ sf_main() {
         sf_die '--jsonl requires a canonical user message on stdin'
         return 2
       }
-      input=$(jq -L "$SF_ROOT/lib" -ce '
-        include "runtime/schema";
+      input=$(jq -L "$SF_ROOT" -ce '
+        include "lib/runtime/schema";
         select(canonical_user_message)
       ' <<<"$input" 2>/dev/null) || {
         sf_die '--jsonl requires a canonical user message on stdin'
@@ -587,7 +587,7 @@ sf_main() {
       sf_die 'cannot clear terminal'
       return 1
     }
-    source "$SF_ROOT/lib/resume.zsh"
+    source "$SF_ROOT/tui/resume.zsh"
     sf_session_find 0 || {
       sf_die "$SF_SESSION_ERROR"
       return 1
@@ -604,7 +604,7 @@ sf_main() {
     return 1
   fi
 
-  source "$SF_ROOT/lib/chat/main.zsh"
+  source "$SF_ROOT/tui/main.zsh"
   sf_chat_run "$requested_session" "$requested_config" "$requested_profile" \
     "$requested_model" "$requested_request" "$requested_backend" \
     "$runtime_override" "$continue_requested" "$clear_requested" "$input" "$new_source" "$draft"

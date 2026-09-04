@@ -171,12 +171,12 @@ sf_runtime_resolve_from_config() {
 
   external_name=${backend_override%/}
   external_name=${external_name:t}
-  decoded=$(jq -L "$SF_ROOT/lib" -jnre --argjson defaults "$defaults" \
+  decoded=$(jq -L "$SF_ROOT" -jnre --argjson defaults "$defaults" \
     --argjson raw "$raw" --arg profile_override "$profile_override" \
     --arg model_override "$model_override" --argjson request_override "$request_override" \
     --arg backend_override "$backend_override" \
     --arg external_backend_name "$external_name" --arg home "$home" '
-      include "runtime/config";
+      include "lib/runtime/config";
       def record: ., "\u0000";
       {defaults:$defaults,raw:$raw,profile_override:$profile_override,
        model_override:$model_override,request_override:$request_override,
@@ -342,14 +342,14 @@ sf_runtime_resolve_from_config() {
     return
   }
   resolved_args=( "${tool_entries[@]}" "${system_entries[@]}" "${component_entries[@]}" )
-  final=$(jq -L "$SF_ROOT/lib" -cnce --argjson prepared "$prepared" \
+  final=$(jq -L "$SF_ROOT" -cnce --argjson prepared "$prepared" \
     --arg manifest "$manifest" --arg command "$command" \
     --arg context_window_command "$context_window_command" --arg fence "$fence" \
     --arg env_file "$env_file" \
     --argjson sandbox_read_paths "$sandbox_read_paths" \
     --argjson sandbox_write_paths "${_SHELLFISH_SANDBOX_WRITE_PATHS:-[]}" --args '
-      include "runtime/config";
-      include "runtime/schema";
+      include "lib/runtime/config";
+      include "lib/runtime/schema";
       {prepared:$prepared,manifest:$manifest,command:$command,
        context_window_command:$context_window_command,fence:$fence,
        env_file:$env_file,sandbox_read_paths:$sandbox_read_paths,
@@ -387,9 +387,9 @@ sf_runtime_restore_presentation() {
   }
   sf_runtime_read_config "$requested_config" "$config_path" || return
   raw=$REPLY
-  output=$(jq -L "$SF_ROOT/lib" -nce --argjson defaults "$defaults" \
+  output=$(jq -L "$SF_ROOT" -nce --argjson defaults "$defaults" \
     --argjson raw "$raw" '
-      include "runtime/config";
+      include "lib/runtime/config";
       {defaults:$defaults,raw:$raw} | presentation_resolve
     ' 2>&1) || {
     if [[ $output == *"$theme_marker"* ]]; then

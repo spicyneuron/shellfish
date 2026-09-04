@@ -155,9 +155,9 @@ sf_session_prepare() {
     sf_session_fail 'cannot prepare session header'
     return
   }
-  decoded=$(jq -L "$SF_ROOT/lib" -jnre --arg cwd "$cwd" --arg created "$created" \
+  decoded=$(jq -L "$SF_ROOT" -jnre --arg cwd "$cwd" --arg created "$created" \
     --argjson runtime "$runtime" '
-      include "runtime/schema";
+      include "lib/runtime/schema";
       def field: ., "\u0000";
       ({type:"session",format_version:1,cwd:$cwd,created:$created} + $runtime) |
       select(canonical_session_header(1)) |
@@ -223,8 +223,8 @@ sf_session_create() {
     return
   }
   records=( "${SF_SESSION_RECORDS[@]}" "$@" )
-  printf '%s\n' "${records[@]}" | jq -L "$SF_ROOT/lib" -jes '
-    include "runtime/schema";
+  printf '%s\n' "${records[@]}" | jq -L "$SF_ROOT" -jes '
+    include "lib/runtime/schema";
     select(length >= 1) |
     select(.[0] | canonical_session_header(1)) |
     select(.[1:] | canonical_session_records)
@@ -264,8 +264,8 @@ sf_session_read_settings() {
     sf_session_fail "cannot read session settings: $session_path"
     return
   }
-  extracted=$(jq -L "$SF_ROOT/lib" -cnce --argjson header "$header" '
-    include "runtime/schema";
+  extracted=$(jq -L "$SF_ROOT" -cnce --argjson header "$header" '
+    include "lib/runtime/schema";
     $header | select(canonical_session_header(1)) |
     del(.type, .format_version, .cwd, .created)
   ' 2>/dev/null) || {
@@ -285,8 +285,8 @@ sf_session_read_runtime() {
     sf_session_fail "cannot read session header: $session_path"
     return
   }
-  REPLY=$(jq -L "$SF_ROOT/lib" -cnce --argjson header "$header" '
-    include "runtime/schema";
+  REPLY=$(jq -L "$SF_ROOT" -cnce --argjson header "$header" '
+    include "lib/runtime/schema";
     $header | select(canonical_session_header(1)) |
     del(.type, .format_version, .cwd, .created)
   ' 2>/dev/null) || {
@@ -301,8 +301,8 @@ sf_session_project() {
   local -a fields
   SF_SESSION=()
   SF_HOOK_COUNTS=()
-  loaded=$(printf '%s\n' "${SF_SESSION_RECORDS[@]}" | jq -L "$SF_ROOT/lib" -jes '
-    include "runtime/schema";
+  loaded=$(printf '%s\n' "${SF_SESSION_RECORDS[@]}" | jq -L "$SF_ROOT" -jes '
+    include "lib/runtime/schema";
     def field: ., "\u0000";
     select(length >= 1) |
     select(.[0] | canonical_session_header(1)) |
@@ -383,9 +383,9 @@ sf_session_update() {
     sf_session_fail 'session has not been read'
     return
   }
-  decoded=$(jq -L "$SF_ROOT/lib" -jnre --argjson header "$SF_SESSION_RECORDS[1]" \
+  decoded=$(jq -L "$SF_ROOT" -jnre --argjson header "$SF_SESSION_RECORDS[1]" \
     --argjson update "$update" '
-      include "runtime/schema";
+      include "lib/runtime/schema";
       def field: ., "\u0000";
       select($update | type == "object" and
         (keys - ["backend", "harness", "profile"] | length) == 0) |
