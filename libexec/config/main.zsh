@@ -5,10 +5,6 @@ setopt no_aliases no_multios pipe_fail
 
 typeset -gr SF_ROOT=${0:A:h:h:h}
 
-sf_usage() {
-  cat -- "$SF_ROOT/help.txt"
-}
-
 sf_die() {
   print -u2 -r -- "shellfish: $*"
   return 1
@@ -39,7 +35,6 @@ sf_config_main() {
         ;;
       --config)
         (( $# >= 2 )) || {
-          sf_usage >&2
           sf_die '--config requires a path'
           return 2
         }
@@ -57,17 +52,14 @@ sf_config_main() {
         ;;
       --session)
         (( $# >= 2 )) || {
-          sf_usage >&2
           sf_die '--session requires a path'
           return 2
         }
         (( ! session_explicit )) || {
-          sf_usage >&2
           sf_die '--session may only be specified once'
           return 2
         }
         [[ -n $2 ]] || {
-          sf_usage >&2
           sf_die '--session requires a nonempty path'
           return 2
         }
@@ -172,7 +164,6 @@ sf_config_main() {
         }
         ;;
       -*)
-        sf_usage >&2
         sf_die "unknown argument: $1"
         return 2
         ;;
@@ -227,13 +218,11 @@ sf_config_main() {
 
   source "$SF_ROOT/lib/session/main.zsh"
   SF_RUNTIME_VERBOSE=$verbose_requested
-  typeset -gx SHELLFISH_VERBOSE=$verbose_requested
   (( ! sandbox_auto_requested )) || runtime_override=1
   sf_runtime_resolve "$requested_session" "$requested_config" \
     "$requested_profile" "$requested_model" "$requested_request" \
     "$requested_backend" "$runtime_override" || {
     local resolve_status=$?
-    (( resolve_status != 2 )) || sf_usage >&2
     sf_die "$SF_RUNTIME_ERROR"
     return $resolve_status
   }

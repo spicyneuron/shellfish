@@ -6,10 +6,6 @@ setopt no_aliases no_multios pipe_fail
 typeset -gr SF_ENTRY=${0:A}
 typeset -gr SF_ROOT=${SF_ENTRY:h:h}
 
-sf_usage() {
-  cat -- "$SF_ROOT/help.txt"
-}
-
 sf_die() {
   print -u2 -r -- "shellfish: $*"
   return 1
@@ -62,7 +58,7 @@ sf_main() {
       shift
       ;;
     -h|--help)
-      sf_usage
+      cat -- "$SF_ROOT/help.txt"
       return
       ;;
     --version)
@@ -78,17 +74,14 @@ sf_main() {
     case $1 in
       --session)
         (( $# >= 2 )) || {
-          sf_usage >&2
           sf_die '--session requires a path'
           return 2
         }
         (( ! session_explicit )) || {
-          sf_usage >&2
           sf_die '--session may only be specified once'
           return 2
         }
         [[ -n $2 ]] || {
-          sf_usage >&2
           sf_die '--session requires a nonempty path'
           return 2
         }
@@ -143,7 +136,6 @@ sf_main() {
         ;;
       --config)
         (( $# >= 2 )) || {
-          sf_usage >&2
           sf_die '--config requires a path'
           return 2
         }
@@ -270,7 +262,6 @@ sf_main() {
         break
         ;;
       -*)
-        sf_usage >&2
         sf_die "unknown argument: $1"
         return 2
         ;;
@@ -282,7 +273,6 @@ sf_main() {
   done
 
   if (( continue_requested && resume_requested )); then
-    sf_usage >&2
     sf_die '--continue and --resume are mutually exclusive'
     return 2
   fi
@@ -291,7 +281,6 @@ sf_main() {
     return 2
   fi
   if (( (continue_requested || resume_requested) && session_explicit )); then
-    sf_usage >&2
     sf_die '--continue and --resume cannot be combined with --session'
     return 2
   fi
