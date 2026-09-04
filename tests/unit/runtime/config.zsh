@@ -3,13 +3,13 @@
 source "${0:A:h:h:h}/_helpers.zsh"
 
 config_eval() {
-  jq -L "$ROOT" -e 'include "lib/runtime/config"; '"$1"
+  jq -L "$ROOT" -e 'include "libexec/config/runtime"; '"$1"
 }
 
 # Profile inheritance detects reference cycles.
 if print -r -- '{"bundled":{},"configured":{"a":{"extend":"b"},"b":{"extend":"a"}},"backends":{},"harnesses":{},"themes":{}}' |
     jq -L "$ROOT" -e '
-      include "lib/runtime/config";
+      include "libexec/config/runtime";
       config_resolve_profiles(.bundled; .configured; .backends; .harnesses)
     ' >/dev/null 2>&1; then
   fail 'profile inheritance cycle was accepted'
@@ -62,7 +62,7 @@ fi
 # Profile extension applies inheritance and overrides correctly.
 typeset resolved_profile
 resolved_profile=$(jq -n -L "$ROOT" '
-  include "lib/runtime/config";
+  include "libexec/config/runtime";
   config_resolve_profiles(
     {default:{backend:"openai",harness:"default",context_window:100000,request:{model:"base"}}};
     {work:{extend:"default",request:{model:"work-model"}}};

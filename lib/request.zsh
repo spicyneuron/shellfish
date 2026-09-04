@@ -67,6 +67,7 @@ sf_request_run() {
   while IFS= read -r event <&p; do
     decoded=$(jq -L "$SF_ROOT" -cr --argjson seq "$delta_seq" '
       include "lib/runtime/schema";
+      include "lib/request";
       if canonical_backend_event | not then "invalid"
       elif .type == "_assistant_delta" or .type == "_assistant_reasoning_delta" then
         "delta", (.seq = $seq)
@@ -109,7 +110,8 @@ sf_request_run() {
   if [[ $kind != invalid && $adapter_status == 0 ]] && (( ended )); then
     SF_REQUEST[assistant]=$(printf '%s\n' "${events[@]}" | jq -L "$SF_ROOT" -cse '
       include "lib/runtime/schema";
-      assemble_backend_response
+      include "lib/request";
+      assemble_backend_response(canonical_backend_response_events; canonical_assistant_message)
     ' 2>/dev/null) || kind=invalid
     [[ -z $SF_REQUEST[assistant] ]] || SF_REQUEST[partial_events]=''
   fi

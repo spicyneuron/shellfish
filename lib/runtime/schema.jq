@@ -1,16 +1,6 @@
 def profile_name:
   type == "string" and test("^[A-Za-z0-9][A-Za-z0-9_-]*$");
 
-def theme_palette:
-  type == "object" and
-  (["muted", "divider", "footer", "prompt", "system_heading", "context",
-    "user_heading", "agent_heading", "tool", "reasoning", "error", "syntax_comment",
-    "syntax_keyword", "syntax_string", "syntax_number", "syntax_tag", "diff_added",
-    "diff_added_background", "diff_removed", "diff_removed_background", "permission"] as $colors |
-  ($colors - keys | length == 0) and
-  ([$colors[] as $color | .[$color]] |
-    all(.[]; type == "string" and test("^#[0-9A-Fa-f]{6}$"))));
-
 def tool_name:
   type == "string" and test("^[A-Za-z_][A-Za-z0-9_-]*$");
 
@@ -84,24 +74,12 @@ def endpoint: type == "string" and test("^https?://[^[:space:][:cntrl:]]+$");
 def positive_integer:
   type == "number" and floor == . and . >= 1 and . <= 2147483647;
 def capture_bytes: positive_integer and . >= 64;
-def preview_lines:
-  . == "full" or (type == "number" and floor == . and . >= 0 and . <= 2147483647);
 def token_count:
   type == "number" and floor == . and . >= 0 and . <= 9007199254740991;
 def api_key_env:
   type == "string" and test("^$|^[A-Za-z_][A-Za-z0-9_]*$") and
   (startswith("_SHELLFISH_") | not);
 
-def backend_manifest:
-  type == "object" and keys == ["api_key_env", "endpoint"] and
-  (.endpoint | endpoint) and (.api_key_env | api_key_env);
-
-def profile_fields:
-  ["backend", "context_window", "harness", "request", "system"];
-def harness_fields:
-  ["tools", "sandbox", "sandbox_read_paths", "sandbox_write_paths",
-   "max_requests_per_turn",
-   "max_tool_calls_per_request", "max_capture_bytes"];
 def hook_names:
   ["session_start", "user_prompt_submit", "permission_request", "pre_tool_use",
    "post_tool_use", "stop"];
@@ -194,65 +172,6 @@ def canonical_assistant_message:
     else $calls == 0 end) and
   ([.content[] | select(.type == "tool_call") | .id] | length) ==
   ([.content[] | select(.type == "tool_call") | .id] | unique | length);
-
-def assemble_backend_response:
-  select(canonical_backend_response_events) |
-  reduce .[] as $event
-    ({blocks:{}, usage:null, stop:null, valid:true};
-      ($event.index? | tostring) as $index |
-      if .valid | not then .
-      elif $event.type == "_assistant_delta" then
-        if .blocks[$index] == null then
-          .blocks[$index] = {type:"text", text:$event.text}
-        elif .blocks[$index].type == "text" then
-          .blocks[$index].text += $event.text
-        else .valid = false end
-      elif $event.type == "_assistant_reasoning_delta" then
-        if .blocks[$index] == null then
-          .blocks[$index] = {type:"reasoning", text:$event.text}
-        elif .blocks[$index].type == "reasoning" then
-          .blocks[$index].text += $event.text
-        else .valid = false end
-      elif $event.type == "_assistant_reasoning_opaque" then
-        if .blocks[$index] == null then
-          .blocks[$index] = {type:"reasoning", text:"", opaque:$event.opaque}
-        elif .blocks[$index].type != "reasoning" then .valid = false
-        elif .blocks[$index].opaque != null and .blocks[$index].opaque != $event.opaque then
-          .valid = false
-        else .blocks[$index].opaque = $event.opaque end
-      elif $event.type == "_assistant_tool_call_delta" then
-        if .blocks[$index] == null then
-          .blocks[$index] = {type:"tool_call", id:null, name:null, input_text:""}
-        else . end |
-        if .blocks[$index].type != "tool_call" then .valid = false
-        elif ($event.id? != null and .blocks[$index].id != null and
-              .blocks[$index].id != $event.id) or
-             ($event.name? != null and .blocks[$index].name != null and
-              .blocks[$index].name != $event.name) then .valid = false
-        else
-          .blocks[$index].id = ($event.id? // .blocks[$index].id) |
-          .blocks[$index].name = ($event.name? // .blocks[$index].name) |
-          .blocks[$index].input_text += ($event.input? // "")
-        end
-      elif $event.type == "_turn_usage" then .usage = ($event | del(.type))
-      elif $event.type == "_assistant_response_end" then .stop = $event.stop
-      else .valid = false end) |
-  select(.valid) |
-  . as $state |
-  [.blocks | to_entries | sort_by(.key | tonumber)[] | .value |
-    if .type != "tool_call" then {valid:true, content:.}
-    elif $state.stop == "length" then {valid:true, content:null}
-    elif $state.stop != "tool_calls" then {valid:false, content:null}
-    else (.input_text | if . == "" then {} else try fromjson catch null end) as $input |
-      if .id != null and .name != null and ($input | type) == "object" then
-        {valid:true, content:{type, id, name, input:$input}}
-      else {valid:false, content:null} end
-    end] as $blocks |
-  select(all($blocks[]; .valid)) |
-  [$blocks[].content | select(. != null)] as $content |
-  {type:"message", role:"assistant", stop:.stop, content:$content} +
-    (if .usage == null then {} else {usage:.usage} end) |
-  select(canonical_assistant_message);
 
 def canonical_context:
   type == "object" and

@@ -64,7 +64,8 @@ SHELLFISH_API_KEY=test-key zsh -f "$run" <"$req" >"$res"
 
 jq -n -e -L "$ROOT" '
   include "lib/runtime/schema";
-  [inputs] | assemble_backend_response |
+  include "lib/request";
+  [inputs] | assemble_backend_response(canonical_backend_response_events; canonical_assistant_message) |
   canonical_assistant_message and
   .role == "assistant" and
   .stop == "tool_calls" and
@@ -106,7 +107,8 @@ printf "%s\n" \
 SHELLFISH_API_KEY=test-key zsh -f "$run" <"$req" >"$res"
 jq -n -e -L "$ROOT" '
   include "lib/runtime/schema";
-  [inputs] | assemble_backend_response ==
+  include "lib/request";
+  [inputs] | assemble_backend_response(canonical_backend_response_events; canonical_assistant_message) ==
     {type:"message",role:"assistant",stop:"length",content:[]}
 ' "$res" >/dev/null
 
@@ -120,7 +122,8 @@ SHELLFISH_API_KEY=test-key zsh -f "$run" <"$req" >"$res"
 
 jq -n -e -L "$ROOT" '
   include "lib/runtime/schema";
-  [inputs] | assemble_backend_response |
+  include "lib/request";
+  [inputs] | assemble_backend_response(canonical_backend_response_events; canonical_assistant_message) |
   canonical_assistant_message and
   .stop == "tool_calls" and
   .content[0].type == "tool_call" and
@@ -165,7 +168,8 @@ SHELLFISH_API_KEY=test-key zsh -f "$run" <"$req" >"$res"
 
 jq -n -e -L "$ROOT" '
   include "lib/runtime/schema";
-  [inputs] | assemble_backend_response |
+  include "lib/request";
+  [inputs] | assemble_backend_response(canonical_backend_response_events; canonical_assistant_message) |
   canonical_assistant_message and
   .stop == "tool_calls" and
   .content[0] == {type:"tool_call",id:"call_abc",name:"shell",input:{command:"ls"}} and

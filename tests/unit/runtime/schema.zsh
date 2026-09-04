@@ -6,6 +6,10 @@ schema_eval() {
   jq -L "$ROOT" -e 'include "lib/runtime/schema"; '"$1"
 }
 
+request_eval() {
+  jq -L "$ROOT" -e 'include "lib/runtime/schema"; include "lib/request"; '"$1"
+}
+
 # Canonical user messages require single text content without NUL bytes.
 print -r -- '{"type":"message","role":"user","content":[{"type":"text","text":"hello"}]}' |
   schema_eval 'canonical_user_message' >/dev/null
@@ -88,18 +92,18 @@ jq -cn '[
   {type:"_assistant_tool_call_delta",index:2,input:"\"pwd\"}"},
   {type:"_turn_usage",input_tokens:10,cached_tokens:4,output_tokens:3},
   {type:"_assistant_response_end",stop:"tool_calls"}
-]' | schema_eval 'canonical_backend_response_events' >/dev/null
+]' | request_eval 'canonical_backend_response_events' >/dev/null
 
 # Opaque reasoning can exist without display text.
 print -r -- '{"type":"_assistant_reasoning_opaque","index":0,"opaque":{}}' |
-  schema_eval 'canonical_backend_event' >/dev/null
+  request_eval 'canonical_backend_event' >/dev/null
 
 for event in \
     '{"type":"_assistant_delta","text":"missing index"}' \
     '{"type":"_assistant_tool_call_delta","index":0}' \
     '{"type":"_assistant_tool_call_delta","index":0,"id":"bad id"}' \
     '{"type":"_assistant_response_end","stop":"cancelled"}'; do
-  if print -r -- "$event" | schema_eval 'canonical_backend_event' >/dev/null 2>&1; then
+  if print -r -- "$event" | request_eval 'canonical_backend_event' >/dev/null 2>&1; then
     fail "invalid backend event was accepted: $event"
   fi
 done
@@ -107,12 +111,12 @@ done
 if jq -cn '[
     {type:"_assistant_response_end",stop:"end"},
     {type:"_assistant_delta",index:0,text:"late"}
-  ]' | schema_eval 'canonical_backend_response_events' >/dev/null 2>&1; then
+  ]' | request_eval 'canonical_backend_response_events' >/dev/null 2>&1; then
   fail 'backend events after response end were accepted'
 fi
 
 if jq -cn '[{type:"_assistant_delta",index:0,text:"unfinished"}]' |
-    schema_eval 'canonical_backend_response_events' >/dev/null 2>&1; then
+    request_eval 'canonical_backend_response_events' >/dev/null 2>&1; then
   fail 'backend response without response end was accepted'
 fi
 
@@ -128,7 +132,7 @@ jq -cn '[
   {type:"_assistant_delta",index:1,text:"this"},
   {type:"_turn_usage",input_tokens:5,cached_tokens:2,output_tokens:4},
   {type:"_assistant_response_end",stop:"tool_calls"}
-]' | schema_eval 'assemble_backend_response == {
+]' | request_eval 'assemble_backend_response(canonical_backend_response_events; canonical_assistant_message) == {
   type:"message",role:"assistant",stop:"tool_calls",
   content:[
     {type:"reasoning",text:"think first",opaque:{signature:"signed"}},
@@ -143,7 +147,7 @@ jq -cn '[
   {type:"_assistant_delta",index:0,text:"visible"},
   {type:"_assistant_tool_call_delta",index:1,id:"call_1",name:"shell",input:"{\"command\":"},
   {type:"_assistant_response_end",stop:"length"}
-]' | schema_eval 'assemble_backend_response == {
+]' | request_eval 'assemble_backend_response(canonical_backend_response_events; canonical_assistant_message) == {
   type:"message",role:"assistant",stop:"length",content:[{type:"text",text:"visible"}]
 }' >/dev/null
 
@@ -153,7 +157,9 @@ for events in \
     '[{"type":"_assistant_tool_call_delta","index":0,"id":"call_1","name":"shell","input":"{}"},{"type":"_assistant_response_end","stop":"end"}]' \
     '[{"type":"_assistant_tool_call_delta","index":0,"id":"call_1","name":"shell","input":"{"},{"type":"_assistant_response_end","stop":"tool_calls"}]' \
     '[{"type":"_assistant_tool_call_delta","index":0,"id":"call_1","name":"shell","input":"{}"},{"type":"_assistant_tool_call_delta","index":1,"id":"call_1","name":"shell","input":"{}"},{"type":"_assistant_response_end","stop":"tool_calls"}]'; do
-  if print -r -- "$events" | schema_eval 'assemble_backend_response' >/dev/null 2>&1; then
+  if print -r -- "$events" | request_eval \
+      'assemble_backend_response(canonical_backend_response_events; canonical_assistant_message)' \
+      >/dev/null 2>&1; then
     fail "invalid backend response was assembled: $events"
   fi
 done

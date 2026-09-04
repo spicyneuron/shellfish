@@ -125,7 +125,8 @@ sf_run_partial_assistant() {
     print -r -- '{"type":"_assistant_response_end","stop":"length"}'
   } | jq -L "$SF_ROOT" -cse '
     include "lib/runtime/schema";
-    assemble_backend_response |
+    include "lib/request";
+    assemble_backend_response(canonical_backend_response_events; canonical_assistant_message) |
     select(any(.content[]; (.type == "text" or .type == "reasoning") and .text != ""))
   ' 2>/dev/null) || REPLY=''
 }

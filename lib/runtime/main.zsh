@@ -176,7 +176,7 @@ sf_runtime_resolve_from_config() {
     --arg model_override "$model_override" --argjson request_override "$request_override" \
     --arg backend_override "$backend_override" \
     --arg external_backend_name "$external_name" --arg home "$home" '
-      include "lib/runtime/config";
+      include "libexec/config/runtime";
       def record: ., "\u0000";
       {defaults:$defaults,raw:$raw,profile_override:$profile_override,
        model_override:$model_override,request_override:$request_override,
@@ -348,7 +348,7 @@ sf_runtime_resolve_from_config() {
     --arg env_file "$env_file" \
     --argjson sandbox_read_paths "$sandbox_read_paths" \
     --argjson sandbox_write_paths "${_SHELLFISH_SANDBOX_WRITE_PATHS:-[]}" --args '
-      include "lib/runtime/config";
+      include "libexec/config/runtime";
       include "lib/runtime/schema";
       {prepared:$prepared,manifest:$manifest,command:$command,
        context_window_command:$context_window_command,fence:$fence,
@@ -389,7 +389,7 @@ sf_runtime_restore_presentation() {
   raw=$REPLY
   output=$(jq -L "$SF_ROOT" -nce --argjson defaults "$defaults" \
     --argjson raw "$raw" '
-      include "lib/runtime/config";
+      include "libexec/config/runtime";
       {defaults:$defaults,raw:$raw} | presentation_resolve
     ' 2>&1) || {
     if [[ $output == *"$theme_marker"* ]]; then

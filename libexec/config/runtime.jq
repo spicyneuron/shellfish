@@ -35,7 +35,8 @@ def config_backend($path):
   config_assert((has("http_stall") | not) or (.http_stall | positive_integer);
     $path + ["http_stall"]; "must be a positive integer");
 def config_harness($path):
-  config_object($path; harness_fields + hook_names) |
+  config_object($path; ["tools", "sandbox", "sandbox_read_paths", "sandbox_write_paths",
+    "max_requests_per_turn", "max_tool_calls_per_request", "max_capture_bytes"] + hook_names) |
   reduce hook_names[] as $hook (.;
     config_assert((has($hook) | not) or (.[$hook] | type == "array" and
       all(.[]; nonempty_control_free_string)); $path + [$hook]; "must be references")) |
@@ -58,7 +59,7 @@ def config_harness($path):
   config_assert((has("max_capture_bytes") | not) or (.max_capture_bytes | capture_bytes);
     $path + ["max_capture_bytes"]; "must be at least 64");
 def config_profile($path):
-  config_object($path; ["extend"] + profile_fields) |
+  config_object($path; ["extend", "backend", "context_window", "harness", "request", "system"]) |
   config_assert((has("extend") | not) or (.extend | profile_name);
     $path + ["extend"]; "invalid profile name") |
   config_assert((has("backend") | not) or (.backend | profile_name);
@@ -100,7 +101,8 @@ def config_validate:
       "preview_lines_tool_result"] as $preview_fields |
     config_object(["tui"]; $preview_fields) |
     reduce $preview_fields[] as $field (.;
-      config_assert((has($field) | not) or (.[$field] | preview_lines);
+      config_assert((has($field) | not) or (.[$field] |
+        . == "full" or (type == "number" and floor == . and . >= 0 and . <= 2147483647));
         ["tui", $field]; "must be full or a non-negative integer"))) else . end |
   if has("profiles") then .profiles |= (to_entries | map(.key as $name |
     config_assert($name | profile_name; ["profiles", $name]; "invalid name") |
@@ -198,7 +200,9 @@ def runtime_finalize:
   . as $input |
   $input.prepared as $prepared |
   ($input.manifest | fromjson |
-    select(backend_manifest) // error("invalid backend manifest")) as $manifest |
+    select(type == "object" and keys == ["api_key_env", "endpoint"] and
+      (.endpoint | endpoint) and (.api_key_env | api_key_env)) //
+    error("invalid backend manifest")) as $manifest |
   $input.command as $command |
   $input.resolved as $args |
   ($prepared.tool_references | length) as $tool_count |
