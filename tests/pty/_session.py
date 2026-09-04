@@ -91,10 +91,10 @@ class Session:
         if session_start:
             config["harnesses"]["test"]["session_start"] = session_start
         if system is not None:
-            system_dir = config_dir / "hooks" / "system"
+            system_dir = config_dir / "system"
             system_dir.mkdir(parents=True, exist_ok=True)
             (system_dir / "startup.md").write_text(system)
-            config["harnesses"]["test"]["system"] = ["startup.md"]
+            config["profiles"]["development"]["system"] = ["startup.md"]
         self.config_file.write_text(json.dumps(config))
         self.explicit_session = (
             Path(self.state_home.name) / "explicit.jsonl"

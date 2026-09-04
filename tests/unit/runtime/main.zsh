@@ -340,6 +340,26 @@ if sf_runtime_resolve_from_config "$tmp/config/unknown-hook.jsonc" '' '' '{}' \
 fi
 [[ $SF_RUNTIME_ERROR == *'invalid config at $["harnesses"]["bad"]["before_prompt"]: unknown field'* ]]
 
+# A default config reached through a symlink resolves components beside the real
+# config file, consistently with an explicit config path.
+mkdir -p "$tmp/symlink-config-home/shellfish" "$tmp/config-target/system"
+print -r -- 'linked prompt' >"$tmp/config-target/system/linked.md"
+cat >"$tmp/config-target/shellfish.jsonc" <<'JSON'
+{
+  "profiles":{"default":{"system":["linked.md"],"request":{"model":"m"}}}
+}
+JSON
+ln -s "$tmp/config-target/shellfish.jsonc" \
+  "$tmp/symlink-config-home/shellfish/shellfish.jsonc"
+(
+  export XDG_CONFIG_HOME="$tmp/symlink-config-home"
+  sf_runtime_resolve_from_config '' '' '' '{}' "$ROOT/tests/fixtures/backend"
+  jq -e --arg system "${tmp:A}/config-target/system/linked.md" \
+    --arg env "${tmp:A}/config-target/.env" '
+    .profile.system == [$system] and .backend.env_file == $env
+  ' <<<"$REPLY" >/dev/null
+)
+
 # System references resolve to ordered absolute paths in the frozen profile.
 mkdir -p "$tmp/config/system"
 print -r -- 'first' >"$tmp/config/system/first.md"

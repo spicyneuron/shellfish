@@ -50,14 +50,17 @@ sf_runtime_read_jsonc() {
 }
 
 sf_runtime_config_path() {
-  local requested=${1-}
+  local requested=${1-} candidate=''
   if [[ -n $requested ]]; then
     [[ $requested == /* ]] || requested="$PWD/$requested"
-    REPLY=${requested:A}
+    candidate=$requested
   elif [[ -n ${XDG_CONFIG_HOME-} ]]; then
-    REPLY="$XDG_CONFIG_HOME/shellfish/shellfish.jsonc"
+    candidate="$XDG_CONFIG_HOME/shellfish/shellfish.jsonc"
   elif [[ -n ${HOME-} ]]; then
-    REPLY="$HOME/.config/shellfish/shellfish.jsonc"
+    candidate="$HOME/.config/shellfish/shellfish.jsonc"
+  fi
+  if [[ -n $candidate ]]; then
+    REPLY=${candidate:A}
   else
     REPLY=''
   fi
