@@ -2,7 +2,7 @@ emulate -R zsh
 setopt no_aliases no_bg_nice no_multios pipe_fail
 
 typeset -ga SF_PRESENT_HANDOFF=() SF_PRESENT_QUEUE=()
-typeset -g SF_PRESENT_SESSION='' SF_PRESENT_RUNTIME='null'
+typeset -g SF_PRESENT_SESSION=''
 typeset -g SF_PRESENT_ACTION='' SF_PRESENT_SUBMITTED=''
 typeset -g SF_PRESENT_STATE=idle SF_PRESENT_PERMISSION_ID=''
 typeset -g SF_PRESENT_PERMISSION_TOOL='' SF_PRESENT_PERMISSION_TEXT=''
@@ -11,7 +11,6 @@ typeset -gi SF_PRESENT_PERMISSION_PREVIEW_LENGTH=0
 typeset -gi SF_PRESENT_EXIT_STATUS=0
 typeset -g SF_PRESENT_REASONING_TOKENS=''
 typeset -g SF_PRESENT_EXEC_ERROR_HEADING='' SF_PRESENT_EXEC_ERROR_DETAIL=''
-typeset -g SF_PRESENT_IDENTITY='' SF_PRESENT_FOOTER=''
 typeset -g SF_PRESENT_TTY=''
 
 sf_tui_permission_reset() {
@@ -112,7 +111,7 @@ sf_tui_cancel() {
 
 sf_tui_decoded() {
   local type=$1 first=${2-} second=${3-} third=${4-} fourth=${5-} fifth=${6-} sixth=${7-}
-  local encoded preview reason identity notice_state
+  local encoded preview reason notice_state
   case $type in
       backend_request_start|assistant_delta|assistant_reasoning_delta|tool_call|tool_result|context)
         sf_tui_event "$type" "$first" "$second" "$third" "$fourth" "$fifth" "$sixth" || return 1
@@ -167,11 +166,7 @@ sf_tui_decoded() {
         SF_PRESENT_HANDOFF=( "${(@0)${encoded%$'\0'}}" )
         ;;
       session_update)
-        identity=$(jq -r '.backend.name + "/" + .profile.request.model' \
-          <<<"$first") || return 1
-        SF_PRESENT_RUNTIME=$first
-        SF_PRESENT_IDENTITY=$identity
-        SF_PRESENT_FOOTER=$identity
+        sf_tui_session_update "$first"
         ;;
       *) return 1 ;;
   esac
@@ -366,13 +361,12 @@ sf_tui_answer_permission() {
 }
 
 sf_tui_controller() {
-  local session=$1 runtime=$2 presentation=${3:-\{\}} initial=${4-}
-  local session_mode=${5:-resume} draft=${6-}
-  local input=$draft saved_tty identity editor_error
+  local session=$1 presentation=${2:-\{\}} initial=${3-}
+  local session_mode=${4:-resume} draft=${5-}
+  local input=$draft saved_tty editor_error
   integer exit_status=0 editor_status=0
 
   SF_PRESENT_SESSION=$session
-  SF_PRESENT_RUNTIME=$runtime
   SF_PRESENT_STATE=idle
   SF_PRESENT_ACTION=''
   SF_PRESENT_SUBMITTED=''
@@ -387,12 +381,6 @@ sf_tui_controller() {
     SF_PRESENT_ERROR=$SF_PRESENT_HIGHLIGHT_ERROR
     return 1
   }
-  identity=$(jq -r '.backend.name + "/" + .profile.request.model' <<<"$runtime" 2>/dev/null) || {
-    SF_PRESENT_ERROR='cannot read session identity'
-    return 1
-  }
-  SF_PRESENT_IDENTITY=$identity
-  SF_PRESENT_FOOTER=$identity
   sf_tui_terminal_reset
   sf_tui_reload "$session" || return 1
   sf_tui_chat_start "$session_mode" "$session" || {

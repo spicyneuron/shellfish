@@ -24,6 +24,7 @@ else
     error("invalid session")
   else
     $records[0].harness.tools as $tools |
+    ["session_update", ($records[0] | {backend, harness, profile} | tojson)],
     ($records[1:][] | durable_display_fields(true; $tools)),
     ([$records[1:][] | select(canonical_assistant_message and has("usage"))] |
       last? | select(. != null) | .usage |

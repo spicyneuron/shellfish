@@ -615,9 +615,8 @@ sf_main() {
   fi
 
   source "$SF_ROOT/tui/main.zsh"
-  sf_tui_run "$SF_SESSION_OPEN[path]" "$SF_SESSION_OPEN[runtime]" \
-    "$SF_SESSION_OPEN[presentation]" "$input" "$SF_SESSION_OPEN[mode]" \
-    "$draft" "$clear_requested"
+  sf_tui_run "$SF_SESSION_OPEN[path]" "$SF_SESSION_OPEN[presentation]" \
+    "$input" "$SF_SESSION_OPEN[mode]" "$draft" "$clear_requested"
   local exit_status=$?
   [[ -z $SF_TUI_ERROR ]] || sf_die "$SF_TUI_ERROR"
   return $exit_status

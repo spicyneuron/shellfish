@@ -17,6 +17,10 @@ typeset -ga SF_PRESENT_TOOL_ORDER=()
 typeset -g SF_PRESENT_TOOL_CURRENT=''
 typeset -g SF_PRESENT_ERROR='' SF_PRESENT_LAST_ROLE=''
 typeset -gi SF_PRESENT_SECTION_ID=0
+# The frozen session runtime, established by transcript replay and refreshed by
+# live session updates.
+typeset -g SF_PRESENT_RUNTIME='null'
+typeset -g SF_PRESENT_IDENTITY='' SF_PRESENT_FOOTER=''
 
 sf_tui_safe() {
   local character text=$1
@@ -252,6 +256,13 @@ sf_tui_footer_usage() {
   SF_PRESENT_FOOTER="${SF_PRESENT_IDENTITY} · $1"
 }
 
+# The runtime is a validated session header, so its identity always resolves.
+sf_tui_session_update() {
+  SF_PRESENT_RUNTIME=$1
+  SF_PRESENT_IDENTITY=$(jq -r '.backend.name + "/" + .profile.request.model' <<<"$1")
+  SF_PRESENT_FOOTER=$SF_PRESENT_IDENTITY
+}
+
 sf_tui_event() {
   local type=$1 first=${2-} second=${3-} third=${4-} fourth=${5-} fifth=${6-} sixth=${7-}
   integer index=${#SF_PRESENT_NODE_TYPE}
@@ -386,10 +397,11 @@ sf_tui_reload() {
   }
   fields=( "${(@0)${events%$'\0'}}" )
   sf_tui_reset
-  SF_PRESENT_FOOTER=$SF_PRESENT_IDENTITY
   for (( index = 1; index + 6 <= ${#fields}; index += 7 )); do
     if [[ $fields[index] == batch_ok ]]; then
       complete=1
+    elif [[ $fields[index] == session_update ]]; then
+      sf_tui_session_update "$fields[index + 1]"
     elif [[ $fields[index] == turn_usage ]]; then
       sf_tui_footer_usage "$fields[index + 1]"
     else

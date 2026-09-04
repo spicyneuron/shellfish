@@ -40,9 +40,13 @@ replay=$({
   print -r -- '{"type":"message","role":"assistant","stop":"end","content":[{"type":"reasoning","text":"first"},{"type":"reasoning","text":""},{"type":"reasoning","text":"second"}]}'
 } | jq -jRs -L "$ROOT" -f "$ROOT/tui/transcript-decode.jq")
 typeset -a replay_fields=( "${(@0)${replay%$'\0'}}" )
-assert_equal assistant "$replay_fields[8]"
-assert_equal $'first\n\nsecond' "$replay_fields[10]"
+# Replay leads with the frozen runtime from the durable header.
+assert_equal session_update "$replay_fields[1]"
+assert_equal fake-model "$(jq -r '.profile.request.model' <<<"$replay_fields[2]")"
+assert_equal assistant "$replay_fields[15]"
+assert_equal $'first\n\nsecond' "$replay_fields[17]"
 
+# tail drops the leading session_update so only display events are compared.
 typeset usage_replay
 usage_replay=$({
   head -n 1 "$ROOT/tests/fixtures/session/complete.jsonl" |
@@ -50,7 +54,7 @@ usage_replay=$({
   print -r -- '{"type":"message","role":"user","content":[{"type":"text","text":"question"}]}'
   print -r -- '{"type":"message","role":"assistant","stop":"end","content":[{"type":"text","text":"answer"}],"usage":{"input_tokens":12400,"cached_tokens":10478,"output_tokens":900}}'
 } | jq -jRs -L "$ROOT" -f "$ROOT/tui/transcript-decode.jq" |
-  tr '\0' '\n' | sed '/^$/d' | paste -sd, -)
+  tr '\0' '\n' | sed '/^$/d' | tail -n +3 | paste -sd, -)
 assert_equal 'user,question,assistant,answer,assistant_commit,turn_usage,12k ↑ 85% ⦿ 900 ↓ 5% of 264k ◔,batch_ok' "$usage_replay"
 jq -e '
   .harness.tools[0].manifest.display.result.content == ["$result_full"] and

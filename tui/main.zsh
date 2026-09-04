@@ -9,9 +9,9 @@ setopt no_aliases no_bg_nice no_multios pipe_fail
 typeset -g SF_TUI_ERROR=''
 
 sf_tui_run() {
-  local session=$1 runtime=$2 presentation=${3-} initial_prompt=${4-}
-  local session_mode=${5-} draft=${6-}
-  integer clear_requested=${7:-0} controller_status=0
+  local session=$1 presentation=${2-} initial_prompt=${3-}
+  local session_mode=${4-} draft=${5-}
+  integer clear_requested=${6:-0} controller_status=0
 
   SF_TUI_ERROR=''
   typeset -gx SHELLFISH_MODE=chat
@@ -22,7 +22,7 @@ sf_tui_run() {
       return 1
     }
   fi
-  sf_tui_controller "$session" "$runtime" "$presentation" "$initial_prompt" \
+  sf_tui_controller "$session" "$presentation" "$initial_prompt" \
     "$session_mode" "$draft" || controller_status=$?
   if (( controller_status )); then
     SF_TUI_ERROR=$SF_PRESENT_ERROR

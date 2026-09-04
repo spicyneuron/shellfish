@@ -187,15 +187,25 @@ assert_equal 'section,message,section,tool_call,tool_result,tool_call,tool_resul
 assert_equal 'Use both tools' "$SF_PRESENT_NODE_BODY[2]"
 assert_equal Done "$SF_PRESENT_NODE_BODY[8]"
 
-SF_PRESENT_IDENTITY=test/model
-SF_PRESENT_FOOTER='test/model · stale usage'
+# Replay initializes the frozen runtime from the durable header and clears any
+# usage the previous session left in the footer.
+SF_PRESENT_IDENTITY=stale/model
+SF_PRESENT_FOOTER='stale/model · stale usage'
 sf_tui_reload "$SF_TEST_SESSIONS/header-only.jsonl" || fail "$SF_PRESENT_ERROR"
-assert_equal test/model "$SF_PRESENT_FOOTER"
+assert_equal test/fake-model "$SF_PRESENT_FOOTER"
+assert_equal fake-model "$(jq -r '.profile.request.model' <<<"$SF_PRESENT_RUNTIME")"
 
 cp "$SF_TEST_SESSIONS/tool-paired.jsonl" "$tmp/invalid.jsonl"
 print -r -- broken >>"$tmp/invalid.jsonl"
 if sf_tui_reload "$tmp/invalid.jsonl"; then
   fail 'accepted an invalid durable transcript'
+fi
+
+# Replay is now the only source of the runtime, so a malformed header leaves the
+# client nothing to present.
+jq -c 'del(.backend)' "$SF_TEST_SESSIONS/header-only.jsonl" >"$tmp/bad-header.jsonl"
+if sf_tui_reload "$tmp/bad-header.jsonl"; then
+  fail 'accepted a malformed session header'
 fi
 
 # Theme resolution supplies both chrome and semantic syntax styles, and stays
