@@ -25,6 +25,29 @@ sf_exec_emit() {
   return 0
 }
 
+sf_exec_hook_display_update() {
+  local hook=$1 script=$2 text=$3 event
+  if (( SF_EXEC[jsonl] )); then
+    event=$(print -rn -- "$text" |
+      jq -Rsc --arg hook "$hook" --arg script "$script" \
+        '{type:"_hook_display",hook:$hook,script:$script,text:.,complete:false}') ||
+      return 1
+    sf_exec_emit "$event"
+  fi
+}
+
+sf_exec_hook_display_complete() {
+  local hook=$1 script=$2 display=$3 event
+  if (( ! SF_EXEC[jsonl] )); then
+    cat "$display" >&2
+    return
+  fi
+  event=$(jq -cn --arg hook "$hook" --arg script "$script" --rawfile text "$display" \
+    '{type:"_hook_display",hook:$hook,script:$script,text:$text,complete:true}') ||
+    return 1
+  sf_exec_emit "$event"
+}
+
 sf_exec_interrupt() {
   SF_EXEC[interrupted]=1
   SF_TOOL_INTERRUPTED=1
@@ -53,7 +76,6 @@ sf_exec_permission() {
   fi
   hook_decision=$reply[1]
   hook_reason=$reply[2]
-  sf_exec_hook_displays permission_request
   case $hook_decision in
     allow) return 0 ;;
     deny)
@@ -99,21 +121,6 @@ sf_exec_error() {
   else
     print -r -u2 -- "$1"
   fi
-}
-
-sf_exec_hook_displays() {
-  local hook=$1
-  integer index
-  for (( index = 1; index <= ${#SF_HOOK_SCRIPT_RESULTS}; index += 5 )); do
-    [[ -n $SF_HOOK_SCRIPT_RESULTS[index+3] ]] || continue
-    if (( SF_EXEC[jsonl] )); then
-      sf_exec_emit "$(jq -cn --arg hook "$hook" --arg script "$SF_HOOK_SCRIPT_RESULTS[index]" \
-        --arg text "$SF_HOOK_SCRIPT_RESULTS[index+3]" \
-        '{type:"_hook_display",hook:$hook,script:$script,text:$text}')"
-    else
-      print -rn -u2 -- "$SF_HOOK_SCRIPT_RESULTS[index+3]"
-    fi
-  done
 }
 
 sf_exec_partial_assistant() {
@@ -269,7 +276,6 @@ sf_exec_turn() {
     hook_action=$reply[1]
     handoff=( "${(@)reply[2,-1]}" )
     [[ $hook_action != session_update ]] || patch=$reply[2]
-    sf_exec_hook_displays user_prompt_submit
     if [[ $hook_action == proceed ]]; then
       if ! sf_tools_load "$tools" "$SF_SESSION[cwd]" "$harness_sandbox" "$fence"; then
         failure=$SF_TOOL_ERROR
@@ -415,7 +421,6 @@ sf_exec_turn() {
           return 1
         fi
         hook_action=$reply[1]
-        sf_exec_hook_displays stop
         if [[ $hook_action == finish ]]; then
           SF_EXEC[answer]=$stop_input
           return
@@ -445,7 +450,6 @@ sf_exec_turn() {
           fi
           hook_action=$reply[1]
           hook_reason=$reply[2]
-          sf_exec_hook_displays pre_tool_use
           if [[ $hook_action == deny ]]; then
             if ! sf_tool_result "$call_id" "$tool_name" \
                 "$hook_reason" \
@@ -494,7 +498,6 @@ sf_exec_turn() {
           failure=$SF_HOOK_ERROR
           return 1
         fi
-        sf_exec_hook_displays post_tool_use
       done
     done
   } always {
@@ -582,7 +585,6 @@ sf_exec_run() {
   for record in "${startup_records[@]}"; do
     sf_exec_emit "$record"
   done
-  (( rc )) || sf_exec_hook_displays session_start
   if (( rc )); then
     if (( jsonl )); then
       sf_exec_error "$SF_EXEC[error]"

@@ -265,8 +265,11 @@ jsonl=$(print -r -- \
 [[ ! -s $jsonl_skip_stderr ]]
 print -r -- "$jsonl" | jq -eRn -L "$ROOT/lib" '
   [inputs | fromjson] as $events |
-  $events == [{type:"_exec_error",
-    message:"session_start hook script returned unsupported skip status"}]
+  ($events | length) == 2 and
+  ($events[0] | .type == "_hook_display" and .hook == "session_start" and
+    .text == "startup display" and .complete == true) and
+  ($events[1] == {type:"_exec_error",
+    message:"session_start hook script returned unsupported skip status"})
 ' >/dev/null || fail 'JSONL creation failure did not emit its error'
 [[ ! -e $jsonl_skip_session ]]
 

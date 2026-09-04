@@ -211,6 +211,20 @@ sf_chat_notice() {
       sf_chat_safe "$body"; SF_PRESENT_NODE_BODY[index]=$REPLY
       SF_PRESENT_NODE_ROLE[index]=$severity
       [[ $state == open ]] || sf_chat_close $index || return 1
+      if [[ $state != open && -n $SF_PRESENT_TOOL_CURRENT ]]; then
+        notice_index=$index
+        if [[ $severity == error ]]; then
+          SF_PRESENT_TOOL_HEADING=()
+          SF_PRESENT_TOOL_CONTENT=()
+          SF_PRESENT_TOOL_SUMMARY=()
+          SF_PRESENT_TOOL_FORMAT=()
+          SF_PRESENT_TOOL_ORDER=()
+          SF_PRESENT_TOOL_CURRENT=''
+        else
+          sf_chat_tool_open || return 1
+        fi
+        index=$notice_index
+      fi
       REPLY=$index
       return 0
     fi
@@ -228,7 +242,9 @@ sf_chat_notice() {
   fi
   sf_chat_add notice "$severity" "$heading" "$body" "$state" || return 1
   notice_index=$REPLY
-  (( ! resume_tool )) || sf_chat_tool_open || return 1
+  if (( resume_tool )) && [[ $state != open ]]; then
+    sf_chat_tool_open || return 1
+  fi
   REPLY=$notice_index
 }
 

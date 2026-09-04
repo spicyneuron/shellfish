@@ -48,6 +48,8 @@ let contextWindow = null;
 let sectionChunks = [];
 // Tool calls waiting for their result, by call ID.
 const calls = new Map();
+// The current live hook notice, or null.
+let hookNotice = null;
 // Each tool's display policy from the session header, by tool name.
 const toolDisplay = new Map();
 const INPUT_FALLBACK = { content: ["$input_json"], format: "json" };
@@ -474,9 +476,30 @@ function apply(frame) {
       return showUsage(frame);
     case "_tool_permission_request":
       return askPermission(frame);
-    case "_hook_display":
-      return note(frame.text, null, safe(frame.script).split("/").pop(), frame.hook);
+    case "_hook_display": {
+      if (
+        typeof frame.hook !== "string" || typeof frame.script !== "string" ||
+        typeof frame.text !== "string" || typeof frame.complete !== "boolean" ||
+        Object.keys(frame).sort().join(",") !== "complete,hook,script,text,type"
+      ) {
+        throw new Error("invalid hook display");
+      }
+      hideIndicator();
+      if (!hookNotice) {
+        const article = record("note", null);
+        const title = el(article, "h2");
+        summary(title, "ℹ", safe(frame.script).split("/").pop(), frame.hook);
+        hookNotice = { article, body: el(article, "pre") };
+        place(article);
+      }
+      hookNotice.body.textContent = safe(frame.text);
+      if (frame.complete) hookNotice = null;
+      if (working) showIndicator();
+      return;
+    }
     case "_exec_error": {
+      if (hookNotice) hookNotice.article.remove();
+      hookNotice = null;
       let heading = "Turn failed";
       let detail = safe(frame.message);
       const limit = /^provider request limit reached: (\d+)$/.exec(detail);
@@ -627,6 +650,8 @@ function applyState(frame) {
     showIndicator();
   } else {
     hideIndicator();
+    if (hookNotice) hookNotice.article.remove();
+    hookNotice = null;
     clearPermission();
   }
   if (frame.error) note(frame.error, "error");
@@ -785,6 +810,7 @@ function reload(from) {
 function reset() {
   output.replaceChildren();
   calls.clear();
+  hookNotice = null;
   indicator = null;
   lastRole = null;
   sectionId = 0;

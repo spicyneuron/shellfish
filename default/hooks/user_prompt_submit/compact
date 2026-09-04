@@ -50,6 +50,7 @@ request=$(jq -cn --arg text "$instruction" \
   fail_compaction 'cannot prepare summary request; keeping the original'
   exit $?
 }
+print -u2 -r -- 'Compacting conversation…'
 summary=$(print -r -- "$request" |
   "$SHELLFISH_EXECUTABLE" build-request --session "$SHELLFISH_SESSION" --tools '[]' |
   "$SHELLFISH_EXECUTABLE" run-request --session "$SHELLFISH_SESSION" |

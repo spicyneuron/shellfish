@@ -614,7 +614,10 @@ test("does not strand a divider before a delayed user record", async () => {
 test("separates notice titles from their bodies", async () => {
   const page = await idle();
   await page.send(
-    { type: "_hook_display", hook: "stop", script: "/tmp/\u0001check", text: "done" },
+    {
+      type: "_hook_display", hook: "stop",
+      script: "/tmp/\u0001check", text: "done", complete: true,
+    },
     { type: "_exec_error", message: "recoverable" },
   );
   const notes = find(page.output, "note");
@@ -623,6 +626,56 @@ test("separates notice titles from their bodies", async () => {
   assert.equal(findTag(notes[0], "pre")[0].textContent, "done");
   assert.equal(findTag(notes[1], "h2")[0].textContent, "✕Turn failed");
   assert.equal(findTag(notes[1], "pre")[0].textContent, "recoverable");
+});
+
+test("updates live hook display in place", async () => {
+  const page = await idle();
+  await page.send(
+    { type: "state", working: true },
+    {
+      type: "_hook_display", hook: "user_prompt_submit",
+      script: "/tmp/compact", text: "Compacting\n", complete: false,
+    },
+  );
+  let notes = find(page.output, "note");
+  assert.equal(notes.length, 1);
+  assert.equal(findTag(notes[0], "pre")[0].textContent, "Compacting\n");
+  assert.equal(find(page.output, "activity").length, 1);
+
+  await page.send({
+    type: "_hook_display", hook: "user_prompt_submit",
+    script: "/tmp/compact", text: "Compacting conversation…", complete: true,
+  });
+  notes = find(page.output, "note");
+  assert.equal(notes.length, 1);
+  assert.equal(findTag(notes[0], "pre")[0].textContent, "Compacting conversation…");
+});
+
+test("replaces incomplete hook display with exec failure", async () => {
+  const page = await idle();
+  await page.send({
+    type: "_hook_display", hook: "stop",
+    script: "/tmp/check", text: "Checking", complete: false,
+  });
+  await page.send({ type: "_exec_error", message: "hook script failed" });
+  const notes = find(page.output, "note");
+  assert.equal(notes.length, 1);
+  assert.equal(findTag(notes[0], "h2")[0].textContent, "✕Hook failed");
+  assert.equal(findTag(notes[0], "pre")[0].textContent, "hook script failed");
+});
+
+test("discards incomplete hook display when a turn ends", async () => {
+  const page = await idle();
+  await page.send(
+    { type: "state", working: true },
+    {
+      type: "_hook_display", hook: "user_prompt_submit",
+      script: "/tmp/check", text: "Checking", complete: false,
+    },
+    { type: "state", working: false },
+  );
+  assert.equal(find(page.output, "note").length, 0);
+  assert.equal(find(page.output, "activity").length, 0);
 });
 
 test("preserves drafts from unsupported handoffs", async () => {

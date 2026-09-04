@@ -18,7 +18,7 @@ prompt=$(cat)
 case $prompt in
   /decline)
     print -rn -- 'declined context'
-    print -rn -u2 -- 'declined display'
+    print -r -u2 -- 'declined display'
     exit 10
     ;;
   /handoff)
@@ -32,11 +32,15 @@ case $prompt in
     exit 11
     ;;
   /fail)
-    print -rn -u2 -- 'prompt failure'
+    print -r -u2 -- 'prompt failure'
     exit 1
+    ;;
+  /overflow)
+    printf '%*s' "$(( SHELLFISH_CAPTURE_LIMIT + 1 ))" '' >&2
     ;;
   /slow)
     trap '' TERM
+    print -r -u2 -- 'still working'
     : >"$PROMPT_MARKER"
     sleep 2
     : >"$PROMPT_EXIT_MARKER"
@@ -63,8 +67,11 @@ sf_test_session "$decline_session"
 stream=$(sf_test_turn /decline "$decline_session")
 print -r -- "$stream" | jq -eRn '
   [inputs | fromjson] as $events |
+  ($events | map(select(.type == "_hook_display"))) as $display |
   ($events | map(select(.type == "context")))[0].content == "declined context" and
-  ($events | map(select(.type == "_hook_display")))[0].text == "declined display" and
+  ($display | length) == 2 and
+  ($display[0] | .text == "declined display\n" and .complete == false) and
+  ($display[1] | .text == "declined display\n" and .complete == true) and
   ($events | any(.type == "_backend_request_start") | not) and
   ($events | any(.role == "user") | not)
 ' >/dev/null
@@ -102,7 +109,20 @@ print -r -- "$stream" | jq -eRn '
   [inputs | fromjson] as $events |
   ($events | any(.role == "user") | not) and
   ($events | any(.type == "_backend_request_start") | not) and
+  $events[0].type == "_hook_display" and $events[0].complete == false and
+  $events[1].type == "_hook_display" and $events[1].complete == true and
   ($events[-1].message | contains("prompt-hook"))
+' >/dev/null
+
+typeset overflow_session="$tmp/prompt-overflow.jsonl"
+sf_test_session "$overflow_session"
+stream=$(sf_test_turn /overflow "$overflow_session")
+print -r -- "$stream" | jq -eRn '
+  [inputs | fromjson] as $events |
+  ($events | map(select(.type == "_hook_display"))) as $display |
+  ($display | length) == 0 and
+  ($events[-1] | .type == "_exec_error" and
+    (.message | contains("hook script output exceeds capture limit")))
 ' >/dev/null
 
 typeset cancel_session="$tmp/prompt-cancel.jsonl"
@@ -122,13 +142,23 @@ while (( waited++ < 50 )) && [[ ! -e $PROMPT_MARKER ]]; do
   sleep 0.1
 done
 (( waited <= 50 )) || fail 'user_prompt_submit hook script did not start'
+waited=0
+while (( waited++ < 50 )) && [[ ! -s $cancel_stream ]]; do
+  sleep 0.1
+done
+(( waited <= 50 )) || fail 'user_prompt_submit stderr was not streamed'
+jq -eRn '
+  [inputs | fromjson] == [{type:"_hook_display",hook:"user_prompt_submit",
+    script:$script,text:"still working\n",complete:false}]
+' --arg script "$prompt_script" <"$cancel_stream" >/dev/null
 kill -TERM "$pid"
 wait "$pid" || cancel_status=$?
 (( cancel_status == 143 ))
 [[ ! -e $PROMPT_EXIT_MARKER ]] || fail 'cancelled user_prompt_submit hook script ran to completion'
 jq -eRn '
   [inputs | fromjson] as $events |
-  ($events | any(.role == "user" or .role == "assistant") | not)
+  ($events | any(.role == "user" or .role == "assistant") | not) and
+  ($events | any(.type == "_hook_display" and .complete) | not)
 ' <"$cancel_stream" >/dev/null
 (( $(wc -l <"$cancel_session") == records )) ||
   fail 'pre-commit cancellation appended a recovery record'

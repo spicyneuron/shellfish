@@ -100,10 +100,12 @@ A script communicates through three channels. They are captured separately, but 
 | Channel | Meaning |
 | --- | --- |
 | stdout | Hook data. Often durable `context`; hook-dependent (see below). |
-| stderr | Ephemeral display. Shown to the user, never committed, never sent to the model. |
+| stderr | Ephemeral display. Streamed to a live event client while the script runs, never committed, never sent to the model. |
 | fd 3 | One JSON control object on hooks that accept it. |
 
 fd 3 must contain exactly one JSON object. It is captured to a private file and byte-counted before decoding. The dispatcher validates the encoding, and the hook-specific adapter validates the object's fields. Model-facing context remains raw stdout, so ordinary scripts can still use `cat` and pipelines without JSON-encoding their payloads.
+
+stderr is the only live hook display channel. In JSONL mode, exec emits the first newline-terminated stderr line while the script runs, then replaces it with the full stderr when the script exits. A script that writes no newline is displayed only after exit. Without a live event stream, exec preserves buffered stderr display. stdout remains buffered because its meaning and commit policy depend on the hook; it is never presented in flight.
 
 ### Exit statuses
 

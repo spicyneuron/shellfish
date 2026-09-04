@@ -115,7 +115,7 @@ assert_equal "${SF_PRESENT_IDENTITY} · 1 ↑ 1 ↓" "$SF_PRESENT_FOOTER"
 sf_chat_reset
 sf_chat_terminal_reset
 sf_chat_event tool_call call_1 shell '{"command":"true"}'
-sf_chat_decoded hook_display pre_tool_use /tmp/progress working
+sf_chat_decoded hook_display pre_tool_use /tmp/progress working true
 assert_equal 'section,tool_call,tool_result,notice,tool_result' "${(j:,:)SF_PRESENT_NODE_TYPE}"
 assert_equal progress "$SF_PRESENT_NODE_HEADING[4]"
 assert_equal pre_tool_use "$SF_PRESENT_NODE_META[4]"
@@ -149,12 +149,12 @@ assert_equal '' "$SF_PRESENT_TOOL_CURRENT"
 sf_chat_reset
 sf_chat_event tool_call call_1 shell one
 sf_chat_event tool_call call_2 shell two
-sf_chat_decoded hook_display pre_tool_use /tmp/pre first
+sf_chat_decoded hook_display pre_tool_use /tmp/pre first true
 sf_chat_event tool_result call_1 0 first
-sf_chat_decoded hook_display post_tool_use /tmp/post first-done
-sf_chat_decoded hook_display pre_tool_use /tmp/pre second
+sf_chat_decoded hook_display post_tool_use /tmp/post first-done true
+sf_chat_decoded hook_display pre_tool_use /tmp/pre second true
 sf_chat_event tool_result call_2 0 second
-sf_chat_decoded hook_display post_tool_use /tmp/post second-done
+sf_chat_decoded hook_display post_tool_use /tmp/post second-done true
 integer completed_tools=0 notices=0 node
 for (( node = 1; node <= ${#SF_PRESENT_NODE_TYPE}; node++ )); do
   if [[ $SF_PRESENT_NODE_TYPE[node] == notice ]]; then
@@ -167,6 +167,21 @@ assert_equal 4 "$notices"
 assert_equal 2 "$completed_tools"
 assert_equal 0 "${#SF_PRESENT_TOOL_ORDER}"
 assert_equal '' "$SF_PRESENT_TOOL_CURRENT"
+
+# A live hook display updates one notice and resumes the interrupted tool only
+# after the hook invocation completes.
+sf_chat_reset
+sf_chat_event tool_call call_live shell run
+sf_chat_decoded hook_display pre_tool_use /tmp/progress $'Checking\n' false
+assert_equal 'section,tool_call,tool_result,notice' "${(j:,:)SF_PRESENT_NODE_TYPE}"
+assert_equal open "$SF_PRESENT_NODE_STATE[-1]"
+sf_chat_decoded hook_display pre_tool_use /tmp/progress $'Checking policy\n' true
+assert_equal 'section,tool_call,tool_result,notice,tool_result' "${(j:,:)SF_PRESENT_NODE_TYPE}"
+assert_equal closed "$SF_PRESENT_NODE_STATE[4]"
+assert_equal $'Checking policy\n' "$SF_PRESENT_NODE_BODY[4]"
+assert_equal open "$SF_PRESENT_NODE_STATE[5]"
+assert_equal pre_tool_use "$SF_PRESENT_NODE_META[4]"
+sf_chat_event tool_result call_live 0 allowed
 
 # Malformed bounded-exec output converges on authoritative reload rather than
 # retaining the speculative live tail.

@@ -57,7 +57,7 @@ print -r -- "$stream" | jq -eRn '
     map({exit_code,content})) ==
     [{exit_code:7,content:"line\n\n"},
      {exit_code:7,content:"line\n\n"}] and
-  ($events | map(select(.type == "_hook_display") | {hook,script:(.script|split("/")[-1]),text})) ==
+  ($events | map(select(.type == "_hook_display" and .complete) | {hook,script:(.script|split("/")[-1]),text})) ==
     [{hook:"pre_tool_use",script:"pre-observe",text:"pre-local-call_1"},
      {hook:"post_tool_use",script:"post-observe",text:"post-local-call_1"},
      {hook:"pre_tool_use",script:"pre-observe",text:"pre-local-call_2"},

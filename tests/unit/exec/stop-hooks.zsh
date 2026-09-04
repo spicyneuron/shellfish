@@ -60,7 +60,7 @@ print -r -- "$stream" | jq -eRn '
   ($events | map(select(.role == "assistant")) | length) == 2 and
   ($events | map(select(.type == "context"))) ==
     [{type:"context",hook:"stop",script:"stop-once",content:"feedback"}] and
-  ($events | map(select(.type == "_hook_display") | [.hook,(.script|split("/")[-1]),.text])) ==
+  ($events | map(select(.type == "_hook_display" and .complete) | [.hook,(.script|split("/")[-1]),.text])) ==
     [["stop","stop-once","first-local"],["stop","stop-once","second-local"]]
 ' >/dev/null
 sf_hooks_turn_state_cleanup

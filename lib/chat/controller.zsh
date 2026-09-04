@@ -112,7 +112,7 @@ sf_chat_cancel() {
 
 sf_chat_decoded() {
   local type=$1 first=${2-} second=${3-} third=${4-} fourth=${5-} fifth=${6-} sixth=${7-}
-  local encoded preview reason identity
+  local encoded preview reason identity notice_state
   case $type in
       backend_request_start|assistant_delta|assistant_reasoning_delta|tool_call|tool_result|context)
         sf_chat_event "$type" "$first" "$second" "$third" "$fourth" "$fifth" "$sixth" || return 1
@@ -138,7 +138,8 @@ sf_chat_decoded() {
         fi
         ;;
       hook_display)
-        sf_chat_notice notice "${second:t}" "$third" || return 1
+        if [[ $fourth == true ]]; then notice_state=closed; else notice_state=open; fi
+        sf_chat_notice notice "${second:t}" "$third" "$notice_state" || return 1
         SF_PRESENT_NODE_META[REPLY]=$first
         ;;
       permission_request)

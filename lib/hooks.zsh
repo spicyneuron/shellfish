@@ -71,17 +71,20 @@ sf_hooks_read_capture() {
 sf_hooks_capture_one() {
   local script=$1 input=$2 directory=$3
   setopt local_options no_monitor
-  integer argument_count=$4
-  shift 4
+  integer max_capture=$4 argument_count=$5
+  shift 5
   local -a arguments=( "${(@)argv[1,argument_count]}" )
   local -a environment=( env -u SHELLFISH_API_KEY -u OPENAI_API_KEY \
     -u ANTHROPIC_API_KEY -u OPENROUTER_API_KEY )
   local context="$directory/current-context"
   local display="$directory/current-display"
+  local display_pipe="$directory/current-display-pipe"
   local control="$directory/current-control"
   local HOOK_SCRIPT_ROOT=${script:h} hook=$SF_HOOK_NAME api_key_env
   local -a command
-  integer script_status
+  local chunk notice=''
+  integer script_status display_fd display_bytes=0 notice_sent=0
+  local LC_ALL=C
 
   [[ -n $hook ]] || {
     sf_hooks_fail 'hook name is not available'
@@ -94,20 +97,74 @@ sf_hooks_capture_one() {
   }
   [[ -z $api_key_env ]] || environment+=( -u "$api_key_env" )
 
-  rm -f -- "$context" "$display" "$control"
+  rm -f -- "$context" "$display" "$display_pipe" "$control"
   if [[ $hook == system && $script == *.zsh ]]; then
     command=( zsh -f "$script" )
   else
     command=( "$script" )
   fi
 
+  mkfifo "$display_pipe" || {
+    sf_hooks_fail 'cannot prepare hook display capture'
+    return
+  }
   "${environment[@]}" "${command[@]}" "${arguments[@]}" \
-    <"$input" >"$context" 2>"$display" 3>"$control" &
+    <"$input" >"$context" 2>"$display_pipe" 3>"$control" &
   integer script_pid=$!
   SF_HOOK_SCRIPT_PID=$script_pid
+  exec {display_fd}<"$display_pipe" || {
+    kill -KILL -- "-$script_pid" 2>/dev/null || kill -KILL "$script_pid" 2>/dev/null || true
+    wait "$script_pid" 2>/dev/null || true
+    SF_HOOK_SCRIPT_PID=''
+    sf_hooks_fail 'cannot read hook display capture'
+    return
+  }
+  : >"$display" || {
+    exec {display_fd}<&-
+    kill -KILL -- "-$script_pid" 2>/dev/null || kill -KILL "$script_pid" 2>/dev/null || true
+    wait "$script_pid" 2>/dev/null || true
+    SF_HOOK_SCRIPT_PID=''
+    sf_hooks_fail 'cannot prepare hook display capture'
+    return
+  }
+  while sysread -i $display_fd -s 4096 chunk; do
+    print -rn -- "$chunk" >>"$display" || {
+      exec {display_fd}<&-
+      kill -KILL -- "-$script_pid" 2>/dev/null || kill -KILL "$script_pid" 2>/dev/null || true
+      wait "$script_pid" 2>/dev/null || true
+      SF_HOOK_SCRIPT_PID=''
+      sf_hooks_fail 'cannot write hook display capture'
+      return
+    }
+    (( display_bytes += ${#chunk} ))
+    if (( ! notice_sent )); then
+      notice+=$chunk
+      if [[ $notice == *$'\n'* ]] && (( display_bytes <= max_capture )) &&
+          (( $+functions[sf_exec_hook_display_update] )); then
+        notice=${notice%%$'\n'*}$'\n'
+        sf_exec_hook_display_update "$hook" "$script" "$notice" || {
+          exec {display_fd}<&-
+          kill -KILL -- "-$script_pid" 2>/dev/null || kill -KILL "$script_pid" 2>/dev/null || true
+          wait "$script_pid" 2>/dev/null || true
+          SF_HOOK_SCRIPT_PID=''
+          sf_hooks_fail 'cannot emit hook display'
+          return
+        }
+        notice_sent=1
+      fi
+    fi
+  done
+  exec {display_fd}<&-
   wait "$script_pid"
   script_status=$?
   SF_HOOK_SCRIPT_PID=''
+  if (( display_bytes && display_bytes <= max_capture )) &&
+      (( $+functions[sf_exec_hook_display_complete] )); then
+    sf_exec_hook_display_complete "$hook" "$script" "$display" || {
+      sf_hooks_fail 'cannot complete hook display'
+      return
+    }
+  fi
   reply=( "$script_status" "$context" "$display" "$control" )
 }
 
@@ -162,7 +219,7 @@ sf_hooks_dispatch() {
         results+=( "$script" 0 "$REPLY" '' '' )
         continue
       fi
-      sf_hooks_capture_one "$script" "$input" "$directory" \
+      sf_hooks_capture_one "$script" "$input" "$directory" "$max_capture" \
         "$argument_count" "${arguments[@]}" || return
       result=( "${reply[@]}" )
       script_status=$result[1]
@@ -459,7 +516,8 @@ sf_hooks_system() {
     item=$SF_HOOK_SCRIPT_RESULTS[index+2]
     while [[ $item == *$'\n' ]]; do item=${item%$'\n'}; done
     [[ -z $item ]] || parts+=( "$item" )
-    [[ -z $SF_HOOK_SCRIPT_RESULTS[index+3] ]] ||
+    [[ -z $SF_HOOK_SCRIPT_RESULTS[index+3] ||
+      $+functions[sf_exec_hook_display_complete] == 1 ]] ||
       print -rn -u2 -- "$SF_HOOK_SCRIPT_RESULTS[index+3]"
   done
   content=${(pj:\n\n:)parts}

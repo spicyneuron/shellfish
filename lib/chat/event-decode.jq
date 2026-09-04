@@ -68,8 +68,11 @@ def event_fields($event_runtime):
      else
        ["Turn failed", $message]
      end)
-  elif .type == "_hook_display" then
-    ["hook_display", .hook, .script, .text]
+  elif .type == "_hook_display" and
+      (keys == ["complete", "hook", "script", "text", "type"]) and
+      ([.hook, .script, .text] | all(type == "string")) and
+      (.complete | type == "boolean") then
+    ["hook_display", .hook, .script, .text, (.complete | tostring)]
   elif .type == "_tool_permission_request" then
     (.tool | tool_permission_display($event_runtime.harness.tools // [])) as $preview |
      ["permission_request", .id, .tool.name,

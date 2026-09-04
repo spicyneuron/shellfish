@@ -11,7 +11,7 @@ cat <<'STREAM' |
 {"type":"_assistant_delta","text":"hi\n","seq":1}
 {"type":"_turn_usage","input_tokens":14,"output_tokens":2}
 {"type":"_turn_usage","input_tokens":100,"cached_tokens":85,"output_tokens":100}
-{"type":"_hook_display","hook":"stop","script":"/tmp/check","text":"done"}
+{"type":"_hook_display","hook":"stop","script":"/tmp/check","text":"done","complete":true}
 {"type":"_exec_error","message":"recoverable"}
 {"type":"_handoff","argv":["/usr/bin/env","printf","%s","done"]}
 {"type":"message","role":"user","content":[{"type":"text","text":"hi"}]}

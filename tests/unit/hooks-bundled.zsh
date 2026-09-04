@@ -440,6 +440,7 @@ typeset compact_source="$tmp/compact-source.jsonl"
 typeset compact_control="$tmp/compact-control.json"
 typeset compact_shellfish="$tmp/compact-shellfish"
 typeset compact_request="$tmp/compact-request.json"
+typeset compact_display="$tmp/compact-display"
 integer compact_status=0
 
 sf_test_runtime
@@ -454,9 +455,11 @@ sf_session_close
 : >"$compact_control"
 SHELLFISH_EXECUTABLE="$ROOT/bin/shellfish" SHELLFISH_SESSION="$compact_source" \
   SHELLFISH_TURN_STATE="$tmp" zsh -f "$compact_hook" user_prompt_submit \
-  3>"$compact_control" < <(print -n -- 'ordinary prompt') || compact_status=$?
+  3>"$compact_control" 2>"$compact_display" \
+  < <(print -n -- 'ordinary prompt') || compact_status=$?
 (( compact_status == 0 )) || fail 'a session below the threshold was compacted'
 [[ ! -s $compact_control ]] || fail 'a session below the threshold requested a handoff'
+[[ ! -s $compact_display ]] || fail 'a session below the threshold displayed compaction'
 
 # At or above it, the submitted prompt is carried back as a draft.
 jq -c 'if .role == "assistant" then .usage = {input_tokens:75,output_tokens:5} else . end' \
@@ -466,8 +469,11 @@ typeset compact_before=$(shasum <"$compact_source")
 SF_TEST_BACKEND_DELAY=0 SF_TEST_BACKEND_REQUEST="$compact_request" \
   SHELLFISH_EXECUTABLE="$ROOT/bin/shellfish" SHELLFISH_SESSION="$compact_source" \
   SHELLFISH_TURN_STATE="$tmp" zsh -f "$compact_hook" user_prompt_submit \
-  3>"$compact_control" < <(print -n -- 'my next prompt') || compact_status=$?
+  3>"$compact_control" 2>"$compact_display" \
+  < <(print -n -- 'my next prompt') || compact_status=$?
 (( compact_status == 11 ))
+[[ $(head -n 1 "$compact_display") == 'Compacting conversation…' ]] ||
+  fail 'automatic compaction did not display its notice'
 jq -e --arg command "$ROOT/bin/shellfish" \
   --arg child "$tmp/compact-source_compact.jsonl" '
   . == {action:"handoff",argv:[$command,"--session",$child,"--draft","my next prompt"]}
