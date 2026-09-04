@@ -10,7 +10,7 @@ Usage:
   shellfish build-request [OPTIONS]  Project session records into a backend request
   shellfish send-request [OPTIONS]   Send one canonical backend request
 
-Global flags:
+Configuration flags:
   -p, --profile NAME    Select a configured profile
   -b, --backend NAME    Override the backend name or path
   -m, --model MODEL     Override the model
@@ -18,14 +18,20 @@ Global flags:
   --sandbox-auto        Grant detected development-tool paths
   --sandbox-read PATH   Give sandboxed tools read-only access (repeatable)
   --sandbox-write PATH  Give sandboxed tools read-write access (repeatable)
+  --config FILE         Use another configuration file
+
+Presentation flags:
   --clear               Clear the terminal before the first chat render
   --draft TEXT          Prefill the chat editor without submitting
   --verbose             Lift every preview limit (chat only)
-  --config FILE         Use another configuration file
-  --session PATH        Use the session at PATH
+
+Session flags:
+  --session PATH        Use PATH as the session or settings source
+  --new [SESSION]       Create new session, optionally with SESSION settings
+
+Session routes (first argument):
   -c, --continue        Open the most recent session for the current directory
   -r, --resume          Pick a session for the current directory
-  --new [SESSION]       Create new session, optionally with SESSION settings
 
 Config flags:
   --init                Create the user configuration directory; combine with

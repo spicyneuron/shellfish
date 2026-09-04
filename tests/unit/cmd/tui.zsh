@@ -2,14 +2,15 @@
 
 source "${0:A:h:h:h}/_helpers.zsh"
 
-typeset entry="$ROOT/bin/shellfish" error
+typeset entry="$ROOT/bin/shellfish" error output
 integer exit_code=0
 
-# A non-PTY launch reaches terminal validation only after parsing its prompt.
-error=$(zsh -f "$entry" chat positional 2>&1) || exit_code=$?
-[[ $error == *'chat requires an interactive terminal'* && $exit_code == 2 ]] || \
-  fail 'explicit chat rejected its positional prompt'
+# Help and version are first-token routes; remaining arguments are not parsed.
+output=$(zsh -f "$entry" --help ignored)
+[[ $output == 'Shellfish: '* && $output == *$'\nUsage:\n'* ]] || fail 'help route failed'
+assert_equal "shellfish $(<"$ROOT/VERSION")" "$(zsh -f "$entry" --version ignored)"
 
+# A non-PTY launch reaches terminal validation only after parsing its prompt.
 exit_code=0
 error=$(zsh -f "$entry" positional 2>&1) || exit_code=$?
 [[ $error == *'chat requires an interactive terminal'* && $exit_code == 2 ]] || \
@@ -21,17 +22,17 @@ error=$(zsh -f "$entry" --profile default positional 2>&1) || exit_code=$?
   fail 'implicit chat rejected its positional prompt after options'
 
 exit_code=0
-error=$(zsh -f "$entry" chat --draft 'editable prompt' 2>&1) || exit_code=$?
+error=$(zsh -f "$entry" --draft 'editable prompt' 2>&1) || exit_code=$?
 [[ $error == *'chat requires an interactive terminal'* && $exit_code == 2 ]] || \
   fail 'chat rejected a draft'
 
 exit_code=0
-error=$(zsh -f "$entry" chat --draft '' 2>&1) || exit_code=$?
+error=$(zsh -f "$entry" --draft '' 2>&1) || exit_code=$?
 [[ $error == *'chat requires an interactive terminal'* && $exit_code == 2 ]] || \
   fail 'chat rejected an empty draft'
 
 exit_code=0
-error=$(zsh -f "$entry" chat --draft draft positional 2>&1) || exit_code=$?
+error=$(zsh -f "$entry" --draft draft positional 2>&1) || exit_code=$?
 [[ $error == *'--draft cannot be combined with a prompt'* && $exit_code == 2 ]] || \
   fail 'chat accepted a draft with a positional prompt'
 
@@ -42,11 +43,12 @@ error=$(zsh -f "$entry" run --draft draft prompt 2>&1) || exit_code=$?
 
 exit_code=0
 error=$(print -rn piped | zsh -f "$entry" chat 2>&1) || exit_code=$?
-[[ $error == *'chat requires an interactive terminal'* && $exit_code == 2 ]] || \
-  fail 'chat rejected its standard input prompt'
+[[ $error == *'cannot use a message argument and standard input together'* && \
+  $exit_code == 2 ]] || \
+  fail 'chat is still treated as a command instead of a prompt'
 
 exit_code=0
-error=$(print -rn piped | zsh -f "$entry" chat positional 2>&1) || exit_code=$?
+error=$(print -rn piped | zsh -f "$entry" positional 2>&1) || exit_code=$?
 [[ $error == *'cannot use a message argument and standard input together'* && \
   $exit_code == 2 ]] || \
   fail 'chat did not reject standard input with a positional prompt'

@@ -5,37 +5,18 @@ setopt no_aliases no_multios pipe_fail
 
 typeset -gr SF_ROOT=${0:A:h:h}
 
-sf_main() {
-  case ${1-} in
-    chat)
-      shift
-      exec -- "$SF_ROOT/libexec/tui/main.zsh" "$@"
-      ;;
-    config)
-      shift
-      exec -- "$SF_ROOT/libexec/config/main.zsh" "$@"
-      ;;
-    -c|--continue|-r|--resume)
-      exec -- "$SF_ROOT/libexec/resume/main.zsh" "$@"
-      ;;
-    run|create|build-request|send-request)
-      exec -- "$SF_ROOT/libexec/$1/main.zsh" "${@:2}"
-      ;;
-    -h|--help)
-      cat -- "$SF_ROOT/help.txt"
-      return
-      ;;
-    --version)
-      if (( $# == 1 )); then
-        print -r -- "shellfish $(<"$SF_ROOT/VERSION")"
-        return
-      fi
-      exec -- "$SF_ROOT/libexec/tui/main.zsh" "$@"
-      ;;
-    *) exec -- "$SF_ROOT/libexec/tui/main.zsh" "$@" ;;
-  esac
-}
-
-sf_main "$@"
-typeset exit_status=$?
-exit $exit_status
+case ${1-} in
+  run|create|config|build-request|send-request)
+    exec -- "$SF_ROOT/libexec/$1/main.zsh" "${@:2}"
+    ;;
+  -c|--continue|-r|--resume)
+    exec -- "$SF_ROOT/libexec/resume/main.zsh" "$@"
+    ;;
+  -h|--help)
+    exec cat -- "$SF_ROOT/help.txt"
+    ;;
+  --version)
+    print -r -- "shellfish $(<"$SF_ROOT/VERSION")"
+    ;;
+  *) exec -- "$SF_ROOT/libexec/tui/main.zsh" "$@" ;;
+esac
