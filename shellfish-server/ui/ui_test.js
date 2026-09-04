@@ -618,7 +618,7 @@ test("separates notice titles from their bodies", async () => {
       type: "_hook_display", hook: "stop",
       script: "/tmp/\u0001check", text: "done", complete: true,
     },
-    { type: "_exec_error", message: "recoverable" },
+    { type: "_turn_error", message: "recoverable" },
   );
   const notes = find(page.output, "note");
   assert.equal(findTag(notes[0], "h2")[0].textContent, "ℹ\ufffdcheck · stop");
@@ -657,7 +657,7 @@ test("replaces incomplete hook display with exec failure", async () => {
     type: "_hook_display", hook: "stop",
     script: "/tmp/check", text: "Checking", complete: false,
   });
-  await page.send({ type: "_exec_error", message: "hook script failed" });
+  await page.send({ type: "_turn_error", message: "hook script failed" });
   const notes = find(page.output, "note");
   assert.equal(notes.length, 1);
   assert.equal(findTag(notes[0], "h2")[0].textContent, "✕Hook failed");
@@ -731,7 +731,7 @@ test("labels actionable exec errors", async () => {
     ["user_prompt_submit hook script returned invalid control data", "Hook failed"],
   ];
   for (const [message, heading, body = message] of errors) {
-    await page.send({ type: "_exec_error", message });
+    await page.send({ type: "_turn_error", message });
     const shown = find(page.output, "note").at(-1);
     assert.equal(findTag(findTag(shown, "h2")[0], "strong")[0].textContent, heading);
     assert.equal(findTag(shown, "pre")[0].textContent, body);

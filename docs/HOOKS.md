@@ -103,7 +103,7 @@ A script communicates through three channels. They are captured separately, but 
 
 fd 3 must contain exactly one JSON object. It is captured to a private file and byte-counted before decoding. The dispatcher validates the encoding, and the hook-specific adapter validates the object's fields. Model-facing context remains raw stdout, so ordinary scripts can still use `cat` and pipelines without JSON-encoding their payloads.
 
-stderr is the only live hook display channel. In JSONL mode, the turn emits the first newline-terminated stderr line while the script runs, then replaces it with the full stderr when the script exits. A script that writes no newline is displayed only after exit. Without a live event stream, the turn preserves buffered stderr display. stdout remains buffered because its meaning and commit policy depend on the hook; it is never presented in flight.
+stderr is the only live hook display channel. In JSONL mode, the turn emits the first newline-terminated stderr line while the script runs, then replaces it with the full stderr when the script exits. A script that writes no newline is displayed only after exit. Without a live event stream, the owning process writes the buffered stderr to its own stderr. stdout remains buffered because its meaning and commit policy depend on the hook; it is never presented in flight.
 
 ### Exit statuses
 

@@ -12,7 +12,7 @@ cat <<'STREAM' |
 {"type":"_turn_usage","input_tokens":14,"output_tokens":2}
 {"type":"_turn_usage","input_tokens":100,"cached_tokens":85,"output_tokens":100}
 {"type":"_hook_display","hook":"stop","script":"/tmp/check","text":"done","complete":true}
-{"type":"_exec_error","message":"recoverable"}
+{"type":"_turn_error","message":"recoverable"}
 {"type":"_handoff","argv":["/usr/bin/env","printf","%s","done"]}
 {"type":"message","role":"user","content":[{"type":"text","text":"hi"}]}
 {"type":"message","role":"assistant","stop":"end","content":[{"type":"text","text":"hi\n"}],"usage":{"input_tokens":14,"output_tokens":2}}
@@ -78,7 +78,7 @@ for error expected in \
     'cannot inspect configured tools' 'Tool failed,cannot inspect configured tools' \
     'cannot prepare handoff' 'Handoff failed,cannot prepare handoff' \
     'cannot inspect frozen runtime' 'Turn failed,cannot inspect frozen runtime'; do
-  order=$(jq -cn --arg message "$error" '{type:"_exec_error",message:$message}' |
+  order=$(jq -cn --arg message "$error" '{type:"_turn_error",message:$message}' |
     jq -jRs -L "$ROOT" --argjson runtime null \
       -f "$ROOT/tui/event-decode.jq" |
     tr '\0' '\n' | sed '/^$/d' | paste -sd, -)

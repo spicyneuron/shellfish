@@ -132,7 +132,7 @@ print -r -- "$stream" | jq -eRn '
   ($events | map(select(.type == "_tool_permission_request")) | length) == 1 and
   ($events | map(select(.role == "tool_result"))[0] |
     .exit_code == 126 and .content == "tool call interrupted") and
-  ($events | map(select(.type == "_exec_error") | .message) |
+  ($events | map(select(.type == "_turn_error") | .message) |
     any(. == "invalid permission response"))
 ' >/dev/null
 jq -L "$ROOT" -e -s '
@@ -148,7 +148,7 @@ print -r -- "$stream" | jq -eRn '
   [inputs | fromjson] as $events |
   ($events | map(select(.type == "_tool_permission_request")) | length) == 1 and
   ($events | map(select(.role == "tool_result"))[0].exit_code) == 126 and
-  ($events | any(.type == "_exec_error") | not)
+  ($events | any(.type == "_turn_error") | not)
 ' >/dev/null
 jq -L "$ROOT" -e -s '
   include "lib/runtime/schema";
@@ -209,6 +209,6 @@ stream=$(SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_BYPASS=true \
   sf_test_turn 'invalid review' "$permission_invalid_session")
 print -r -- "$stream" | jq -eRn '
   [inputs | fromjson] as $events |
-  ($events | map(select(.type == "_exec_error") | .message) |
+  ($events | map(select(.type == "_turn_error") | .message) |
     any(. == "permission_request hook script returned invalid decision"))
 ' >/dev/null

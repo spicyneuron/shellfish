@@ -9,46 +9,41 @@ setopt no_aliases no_bg_nice no_multios pipe_fail
 (( $+functions[sf_tools_load] )) || source "$SF_ROOT/lib/tools.zsh"
 (( $+functions[sf_request_run] )) || source "$SF_ROOT/lib/request.zsh"
 
-typeset -gA SF_EXEC=(
-  answer '' error '' jsonl 0 interrupted 0 permission_count 0 permission_available 0
+typeset -gA SF_RUN=(
+  answer '' jsonl 0 interrupted 0 permission_count 0 permission_available 0
   signal_status 143
 )
 
-sf_exec_set_error() {
-  SF_EXEC[error]=$1
-  return 1
-}
-
-sf_exec_emit() {
-  (( SF_EXEC[jsonl] )) && print -r -- "$1"
+sf_run_emit() {
+  (( SF_RUN[jsonl] )) && print -r -- "$1"
   return 0
 }
 
-sf_exec_hook_display_update() {
+sf_run_hook_display_update() {
   local hook=$1 script=$2 text=$3 event
-  if (( SF_EXEC[jsonl] )); then
+  if (( SF_RUN[jsonl] )); then
     event=$(print -rn -- "$text" |
       jq -Rsc --arg hook "$hook" --arg script "$script" \
         '{type:"_hook_display",hook:$hook,script:$script,text:.,complete:false}') ||
       return 1
-    sf_exec_emit "$event"
+    sf_run_emit "$event"
   fi
 }
 
-sf_exec_hook_display_complete() {
+sf_run_hook_display_complete() {
   local hook=$1 script=$2 display=$3 event
-  if (( ! SF_EXEC[jsonl] )); then
+  if (( ! SF_RUN[jsonl] )); then
     cat "$display" >&2
     return
   fi
   event=$(jq -cn --arg hook "$hook" --arg script "$script" --rawfile text "$display" \
     '{type:"_hook_display",hook:$hook,script:$script,text:$text,complete:true}') ||
     return 1
-  sf_exec_emit "$event"
+  sf_run_emit "$event"
 }
 
-sf_exec_interrupt() {
-  SF_EXEC[interrupted]=1
+sf_run_interrupt() {
+  SF_RUN[interrupted]=1
   SF_TOOL_INTERRUPTED=1
   if [[ -n $SF_HOOK_SCRIPT_PID ]]; then
     sf_process_stop "$SF_HOOK_SCRIPT_PID"
@@ -65,12 +60,12 @@ sf_exec_interrupt() {
 }
 
 # Returns 0 to allow, 1 to deny, and 2 when the decision operation failed.
-sf_exec_permission() {
+sf_run_permission() {
   local call_id=$1 name=$2 input=$3 id response decision hook_decision hook_reason
-  SF_EXEC[permission_reason]=''
-  SF_EXEC[permission_error]=''
+  SF_RUN[permission_reason]=''
+  SF_RUN[permission_error]=''
   if ! sf_hooks_permission_request "$SF_SESSION_PATH" "$name" "$call_id" "$input"; then
-    SF_EXEC[permission_error]=$SF_HOOK_ERROR
+    SF_RUN[permission_error]=$SF_HOOK_ERROR
     return 2
   fi
   hook_decision=$reply[1]
@@ -78,21 +73,21 @@ sf_exec_permission() {
   case $hook_decision in
     allow) return 0 ;;
     deny)
-      SF_EXEC[permission_reason]=${hook_reason:-sandbox bypass denied}
+      SF_RUN[permission_reason]=${hook_reason:-sandbox bypass denied}
       return 1
       ;;
   esac
-  if (( ! SF_EXEC[permission_available] )); then
-    SF_EXEC[permission_reason]='sandbox bypass denied'
+  if (( ! SF_RUN[permission_available] )); then
+    SF_RUN[permission_reason]='sandbox bypass denied'
     return 1
   fi
-  (( SF_EXEC[permission_count] += 1 ))
-  id="permission_$SF_EXEC[permission_count]"
+  (( SF_RUN[permission_count] += 1 ))
+  id="permission_$SF_RUN[permission_count]"
   jq -cn --arg id "$id" --arg call_id "$call_id" --arg name "$name" \
     --argjson input "$input" \
     '{type:"_tool_permission_request",id:$id,reason:$input.sandbox_bypass_reason,
       tool:{call_id:$call_id,name:$name,input:$input}}' || {
-      SF_EXEC[permission_error]='cannot prepare permission request'
+      SF_RUN[permission_error]='cannot prepare permission request'
       return 2
     }
   if ! IFS= read -r response; then
@@ -103,26 +98,26 @@ sf_exec_permission() {
         .type == "_tool_permission_response" and .id == $id and
         (.decision | IN("approve","deny"))) | .decision
     ' <<<$response 2>/dev/null) || {
-      SF_EXEC[permission_error]='invalid permission response'
+      SF_RUN[permission_error]='invalid permission response'
       return 2
     }
   fi
   if [[ $decision == approve ]]; then
     return 0
   fi
-  SF_EXEC[permission_reason]='sandbox bypass denied'
+  SF_RUN[permission_reason]='sandbox bypass denied'
   return 1
 }
 
-sf_exec_error() {
-  if (( SF_EXEC[jsonl] )); then
-    sf_exec_emit "$(jq -cn --arg message "$1" '{type:"_exec_error",message:$message}')"
+sf_run_error() {
+  if (( SF_RUN[jsonl] )); then
+    sf_run_emit "$(jq -cn --arg message "$1" '{type:"_turn_error",message:$message}')"
   else
     print -r -u2 -- "$1"
   fi
 }
 
-sf_exec_partial_assistant() {
+sf_run_partial_assistant() {
   REPLY=''
   [[ -n $SF_REQUEST[partial_events] ]] || return 0
   REPLY=$({
@@ -136,7 +131,7 @@ sf_exec_partial_assistant() {
 }
 
 # Zsh defers a trap's pending exit until this cleanup call returns.
-sf_exec_turn_cleanup() {
+sf_run_turn_cleanup() {
   integer interrupted=$1
   local failure=$2 after=$3 recovered='' partial=''
 
@@ -145,7 +140,7 @@ sf_exec_turn_cleanup() {
   [[ -z $SF_REQUEST[error_file] ]] ||
     rm -f -- "$SF_REQUEST[error_file]" 2>/dev/null || true
   if { (( interrupted )) || [[ -n $failure ]] } && (( ${#SF_SESSION_RECORDS} )); then
-    sf_exec_partial_assistant
+    sf_run_partial_assistant
     partial=$REPLY
     if [[ -n $partial ]]; then
       if sf_session_append "$partial"; then
@@ -166,16 +161,16 @@ sf_exec_turn_cleanup() {
     fi
   fi
   SF_REQUEST[partial_events]=''
-  [[ -z $recovered ]] || sf_exec_emit "$recovered"
+  [[ -z $recovered ]] || sf_run_emit "$recovered"
   sf_session_reset
   if (( ! interrupted )); then
-    [[ -z $failure ]] || sf_exec_error "$failure"
-    [[ -n $failure || -z $after ]] || sf_exec_emit "$after"
+    [[ -z $failure ]] || sf_run_error "$failure"
+    [[ -n $failure || -z $after ]] || sf_run_emit "$after"
     [[ -z $failure ]]
   fi
 }
 
-sf_exec_turn() {
+sf_run_turn() {
   local user_record=$1 session_path=$2 permission_available=${3:-0} prompt
   local request assistant stop_input call result backend_command opened_records
   local tool_name call_id tool_input decision denial_reason hook_action hook_reason
@@ -190,17 +185,17 @@ sf_exec_turn() {
   integer permission_status
   local failure='' after='' patch=''
 
-  SF_EXEC[permission_count]=0
-  SF_EXEC[permission_available]=$permission_available
-  trap 'sf_exec_interrupt; exit $SF_EXEC[signal_status]' TERM
+  SF_RUN[permission_count]=0
+  SF_RUN[permission_available]=$permission_available
+  trap 'sf_run_interrupt; exit $SF_RUN[signal_status]' TERM
   if ! sf_session_begin_turn "$session_path"; then
-    sf_exec_error "$SF_SESSION_ERROR"
+    sf_run_error "$SF_SESSION_ERROR"
     return 1
   fi
   opened_records=$REPLY
 
   {
-    [[ -z $opened_records ]] || sf_exec_emit "$opened_records"
+    [[ -z $opened_records ]] || sf_run_emit "$opened_records"
     runtime_projection=$(jq -jrn --argjson runtime "$SF_SESSION[runtime]" '
       def field: ., "\u0000";
       ($runtime.backend.command | field),
@@ -282,7 +277,7 @@ sf_exec_turn() {
         failure=$SF_SESSION_ERROR
         return 1
       fi
-      sf_exec_emit "$context"
+      sf_run_emit "$context"
     done
     case $hook_action in
       handoff)
@@ -313,7 +308,7 @@ sf_exec_turn() {
       failure=$SF_SESSION_ERROR
       return 1
     fi
-    sf_exec_emit "$user_record"
+    sf_run_emit "$user_record"
 
     while true; do
       (( request_count += 1 ))
@@ -377,10 +372,10 @@ sf_exec_turn() {
           failure='cannot prepare context window update'
           return 1
         }
-        sf_exec_emit "$update_event"
+        sf_run_emit "$update_event"
       fi
       if ! sf_request_run "$request" "$backend_command" "$SF_API_KEY" \
-          "$SF_API_KEY_SOURCE" sf_exec_emit; then
+          "$SF_API_KEY_SOURCE" sf_run_emit; then
         failure=$SF_REQUEST[error]
         return 1
       fi
@@ -389,7 +384,7 @@ sf_exec_turn() {
         failure=$SF_SESSION_ERROR
         return 1
       fi
-      sf_exec_emit "$assistant"
+      sf_run_emit "$assistant"
       response_projection=$(jq -jr '
         def field: ., "\u0000";
         (.stop | field),
@@ -416,10 +411,10 @@ sf_exec_turn() {
         fi
         hook_action=$reply[1]
         if [[ $hook_action == finish ]]; then
-          SF_EXEC[answer]=$stop_input
+          SF_RUN[answer]=$stop_input
           return
         fi
-        sf_exec_emit "${(pj:\n:)SF_SESSION_RECORDS[-SF_HOOK_CONTEXT_COUNT,-1]}"
+        sf_run_emit "${(pj:\n:)SF_SESSION_RECORDS[-SF_HOOK_CONTEXT_COUNT,-1]}"
         continue
       fi
       call_count=0
@@ -459,13 +454,13 @@ sf_exec_turn() {
             permission_status=$?
             if (( permission_status == 0 )); then
               permission_status=0
-              sf_exec_permission "$call_id" "$tool_name" "$tool_input" ||
+              sf_run_permission "$call_id" "$tool_name" "$tool_input" ||
                 permission_status=$?
               case $permission_status in
                 0) decision=approved ;;
-                1) denial_reason=$SF_EXEC[permission_reason] ;;
+                1) denial_reason=$SF_RUN[permission_reason] ;;
                 *)
-                  failure=$SF_EXEC[permission_error]
+                  failure=$SF_RUN[permission_error]
                   return 1
                   ;;
               esac
@@ -487,7 +482,7 @@ sf_exec_turn() {
           failure=$SF_SESSION_ERROR
           return 1
         fi
-        sf_exec_emit "$result"
+        sf_run_emit "$result"
         if ! sf_hooks_post_tool_use "$session_path" "$result" "$tool_input"; then
           failure=$SF_HOOK_ERROR
           return 1
@@ -496,47 +491,6 @@ sf_exec_turn() {
     done
   } always {
     trap - TERM
-    sf_exec_turn_cleanup "$SF_EXEC[interrupted]" "$failure" "$after"
+    sf_run_turn_cleanup "$SF_RUN[interrupted]" "$failure" "$after"
   }
-}
-
-sf_exec_run() {
-  local message=$1 selected=$2
-  integer jsonl=${3:-0} rc=0
-
-  SF_EXEC[error]=''
-  SF_EXEC[answer]=''
-  SF_REQUEST[partial_events]=''
-  SF_EXEC[interrupted]=0
-  SF_TOOL_INTERRUPTED=0
-  SF_EXEC[signal_status]=143
-  SF_EXEC[jsonl]=$jsonl
-  typeset -gx SHELLFISH_MODE=run
-  if [[ -e $selected && ( ! -f $selected || -L $selected ) ]]; then
-    sf_exec_set_error "invalid session path: $selected"
-    rc=1
-  elif [[ ! -s $selected ]]; then
-    sf_exec_set_error "no session at: $selected"
-    rc=1
-  fi
-  trap 'SF_EXEC[signal_status]=130; kill -TERM $$' INT
-  trap 'SF_EXEC[signal_status]=129; kill -TERM $$' HUP
-  trap 'sf_exec_interrupt; exit $SF_EXEC[signal_status]' TERM
-  if (( rc )); then
-    if (( jsonl )); then
-      sf_exec_error "$SF_EXEC[error]"
-      SF_EXEC[error]=''
-    fi
-    trap - INT HUP TERM
-    return $rc
-  fi
-  SHELLFISH_TURN_STATE=''
-  SHELLFISH_SESSION_STATE=''
-  sf_exec_turn "$message" "$selected" "$jsonl"
-  rc=$?
-  trap - INT HUP TERM
-  if (( ! jsonl )) && [[ -n $SF_EXEC[answer] ]]; then
-    print -r -- "$SF_EXEC[answer]"
-  fi
-  return $rc
 }

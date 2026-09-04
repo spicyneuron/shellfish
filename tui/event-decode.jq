@@ -10,7 +10,7 @@ def event_fields($event_runtime):
     ["backend_request_start"]
   elif .type == "_turn_usage" then
     turn_usage_fields($event_runtime.profile.context_window // null)
-  elif .type == "_exec_error" then
+  elif .type == "_turn_error" then
     .message as $message |
     ["exec_error"] +
     (if ($message | test("^provider request limit reached: [0-9]+$")) then

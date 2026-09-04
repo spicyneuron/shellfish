@@ -7,7 +7,7 @@ NOTE: This project is pre-release. Do not add deprecation noticies, backwards co
 - `bin/shellfish` parses the CLI and starts interactive chat, routing recognized commands to their component.
 - `libexec/` holds independent shell programs, each with its own executable entry point and private implementation. They do not share a shell namespace with the dispatcher or each other.
 - `tui/main.zsh` owns interactive session selection, terminal lifecycle, and the ZLE prompt.
-- `libexec/run/` owns the single-turn command; `lib/exec.zsh` is its turn implementation, covering process setup, input handling, full turns, events, permissions, signals, and cleanup.
+- `libexec/run/` owns the single-turn command: `main.zsh` parses and composes, and its private `turn.zsh` covers input handling, full turns, events, permissions, signals, and cleanup.
 - `lib/session/` owns JSONL persistence, state validation, recovery, and provider request projection.
 - `lib/runtime/` resolves configuration, credentials, profiles, and schema validation.
 - `lib/backend.zsh` adapts provider streams.

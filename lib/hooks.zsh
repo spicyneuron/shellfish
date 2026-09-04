@@ -127,9 +127,9 @@ sf_hooks_capture_one() {
     if (( ! notice_sent )); then
       notice+=$chunk
       if [[ $notice == *$'\n'* ]] && (( display_bytes <= max_capture )) &&
-          (( $+functions[sf_exec_hook_display_update] )); then
+          (( $+functions[sf_run_hook_display_update] )); then
         notice=${notice%%$'\n'*}$'\n'
-        sf_exec_hook_display_update "$hook" "$script" "$notice" || {
+        sf_run_hook_display_update "$hook" "$script" "$notice" || {
           exec {display_fd}<&-
           kill -KILL -- "-$script_pid" 2>/dev/null || kill -KILL "$script_pid" 2>/dev/null || true
           wait "$script_pid" 2>/dev/null || true
@@ -145,12 +145,16 @@ sf_hooks_capture_one() {
   wait "$script_pid"
   script_status=$?
   SF_HOOK_SCRIPT_PID=''
-  if (( display_bytes && display_bytes <= max_capture )) &&
-      (( $+functions[sf_exec_hook_display_complete] )); then
-    sf_exec_hook_display_complete "$hook" "$script" "$display" || {
-      sf_hooks_fail 'cannot complete hook display'
-      return
-    }
+  # Without a live event client, hook display is ordinary stderr.
+  if (( display_bytes && display_bytes <= max_capture )); then
+    if (( $+functions[sf_run_hook_display_complete] )); then
+      sf_run_hook_display_complete "$hook" "$script" "$display" || {
+        sf_hooks_fail 'cannot complete hook display'
+        return
+      }
+    else
+      cat "$display" >&2
+    fi
   fi
   reply=( "$script_status" "$context" "$display" "$control" )
 }

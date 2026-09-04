@@ -78,7 +78,7 @@ printf '%s\n' \
   fail 'bounded invalid permission response exited successfully'
 jq -eRn '
   [inputs | fromjson] as $events |
-  ($events | any(.type == "_exec_error" and .message == "invalid permission response")) and
+  ($events | any(.type == "_turn_error" and .message == "invalid permission response")) and
   ($events | map(select(.role == "tool_result"))[0].exit_code) == 126 and
   $events[-2].role == "assistant" and $events[-2].stop == "end"
 ' <"$wrong_output" >/dev/null || fail 'bounded permission accepted the wrong request identity'
@@ -92,7 +92,7 @@ print -r -- \
   fail 'permission EOF denial failed'
 jq -eRn '
   [inputs | fromjson] as $events |
-  ($events | any(.type == "_exec_error") | not) and
+  ($events | any(.type == "_turn_error") | not) and
   ($events | map(select(.role == "tool_result"))[0].exit_code) == 126
 ' <"$tmp/permission-eof.out" >/dev/null || fail 'permission EOF did not close the active turn'
 

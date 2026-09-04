@@ -21,7 +21,7 @@ Component lookup rules for bundled, user-defined, relative, and absolute adapter
 
 ## Process contract
 
-Exec starts `run` once per provider request. The adapter receives one canonical JSON request on stdin and writes one normalized JSON object per line to stdout. Stderr is not part of the normalized stream. If the adapter fails, exec sanitizes and truncates its stderr for `_exec_error`; successful stderr is discarded.
+Exec starts `run` once per provider request. The adapter receives one canonical JSON request on stdin and writes one normalized JSON object per line to stdout. Stderr is not part of the normalized stream. If the adapter fails, exec sanitizes and truncates its stderr for `_turn_error`; successful stderr is discarded.
 
 The turn exposes the resolved credential only as `SHELLFISH_API_KEY` for the adapter process. `SHELLFISH_API_KEY_SOURCE` identifies where it was resolved. Adapters should copy credentials only as long as needed to prepare authentication and then unset them. An adapter with an empty `api_key_env` is responsible for any alternative authentication; the bundled Codex adapter reads an existing Codex CLI login.
 

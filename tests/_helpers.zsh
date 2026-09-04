@@ -103,12 +103,12 @@ sf_test_turn() {
   { [[ -z $reply ]] || print -r -- "$reply" } |
     SF_ROOT=$ROOT SF_TEST_TURN_PROMPT=$prompt SF_TEST_TURN_SESSION=$session \
     SF_TEST_TURN_PERMISSION=$permission_available zsh -f -c '
-  source "$SF_ROOT/lib/exec.zsh"
+  source "$SF_ROOT/libexec/run/turn.zsh"
   typeset -g SF_API_KEY="" SF_API_KEY_SOURCE=""
-  SF_EXEC[jsonl]=1
+  SF_RUN[jsonl]=1
   message=$(jq -cn --arg text "$SF_TEST_TURN_PROMPT" \
     '\''{type:"message",role:"user",content:[{type:"text",text:$text}]}'\'') || exit
-  sf_exec_turn "$message" "$SF_TEST_TURN_SESSION" \
+  sf_run_turn "$message" "$SF_TEST_TURN_SESSION" \
     "$SF_TEST_TURN_PERMISSION" || true
 '
 }

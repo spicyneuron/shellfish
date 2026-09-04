@@ -141,10 +141,34 @@ sf_run_main() {
     return $open_status
   fi
 
-  source "$SF_ROOT/lib/exec.zsh"
-  sf_exec_run "$input" "$SF_SESSION_OPEN[path]" "$jsonl"
+  local session=$SF_SESSION_OPEN[path] failure=''
+  source "$SF_ROOT/libexec/run/turn.zsh"
+  SF_RUN[jsonl]=$jsonl
+  if [[ -e $session && ( ! -f $session || -L $session ) ]]; then
+    failure="invalid session path: $session"
+  elif [[ ! -s $session ]]; then
+    failure="no session at: $session"
+  fi
+  if [[ -n $failure ]]; then
+    if (( jsonl )); then
+      sf_run_error "$failure"
+    else
+      sf_die "$failure"
+    fi
+    return 1
+  fi
+
+  typeset -gx SHELLFISH_MODE=run
+  trap 'SF_RUN[signal_status]=130; kill -TERM $$' INT
+  trap 'SF_RUN[signal_status]=129; kill -TERM $$' HUP
+  trap 'sf_run_interrupt; exit $SF_RUN[signal_status]' TERM
+  # Only a JSONL client can answer a permission request on stdin.
+  sf_run_turn "$input" "$session" "$jsonl"
   local run_status=$?
-  [[ -z $SF_EXEC[error] ]] || sf_die "$SF_EXEC[error]"
+  trap - INT HUP TERM
+  if (( ! jsonl )) && [[ -n $SF_RUN[answer] ]]; then
+    print -r -- "$SF_RUN[answer]"
+  fi
   return $run_status
 }
 

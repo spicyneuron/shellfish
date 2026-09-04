@@ -407,8 +407,8 @@ SF_PRESENT_SESSION="$tmp/recover.jsonl"
 SF_PRESENT_STATE=working
 sf_tui_transport_reset
 SF_TUI_TRANSPORT_LINES=(
-  '{"type":"_exec_error","message":"backend emitted an invalid event stream"}'
-  '{"type":"_exec_error","message":"cannot append session record: /tmp/recover.jsonl"}'
+  '{"type":"_turn_error","message":"backend emitted an invalid event stream"}'
+  '{"type":"_turn_error","message":"cannot append session record: /tmp/recover.jsonl"}'
 )
 SF_TUI_TRANSPORT_EOF=1
 SF_TUI_TRANSPORT_EXIT_STATUS=1

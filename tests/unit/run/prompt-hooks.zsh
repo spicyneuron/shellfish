@@ -121,7 +121,7 @@ print -r -- "$stream" | jq -eRn '
   [inputs | fromjson] as $events |
   ($events | map(select(.type == "_hook_display"))) as $display |
   ($display | length) == 0 and
-  ($events[-1] | .type == "_exec_error" and
+  ($events[-1] | .type == "_turn_error" and
     (.message | contains("hook script output exceeds capture limit")))
 ' >/dev/null
 

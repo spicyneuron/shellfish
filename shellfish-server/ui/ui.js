@@ -497,7 +497,7 @@ function apply(frame) {
       if (working) showIndicator();
       return;
     }
-    case "_exec_error": {
+    case "_turn_error": {
       if (hookNotice) hookNotice.article.remove();
       hookNotice = null;
       let heading = "Turn failed";

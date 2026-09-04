@@ -125,7 +125,7 @@ SF_TEST_RUNTIME=$base_runtime
 # Provider projection uses the synchronized records and does not reread disk.
 typeset memory_request="$tmp/memory-request.json"
 SF_ROOT=$ROOT zsh -f -c '
-  source "$SF_ROOT/lib/exec.zsh"
+  source "$SF_ROOT/libexec/run/turn.zsh"
   sf_session_begin_turn "$1" || exit
   mv "$1" "$1.saved" || exit
   print -rl -- "${SF_SESSION_RECORDS[@]}" |
@@ -182,7 +182,7 @@ stream=$(sf_test_turn 'retry error later' "$session")
 print -r -- "$stream" | jq -eRn '
   [inputs | fromjson] as $events |
   $events[-2].role == "assistant" and $events[-2].stop == "end" and
-  $events[-1].type == "_exec_error" and
+  $events[-1].type == "_turn_error" and
   ($events[-1].message | contains("test backend failure"))
 ' >/dev/null
 
@@ -224,7 +224,7 @@ print -r -- "$stream" | jq -eRn -L "$ROOT" '
       {type:"text",text:"partial answer"}
     ]
   } and
-  ($events[-1].type == "_exec_error") and
+  ($events[-1].type == "_turn_error") and
   ($events[-1].message | contains("partial backend failure"))
 ' >/dev/null
 jq -L "$ROOT" -e -s '
@@ -254,20 +254,20 @@ integer partial_status=0
 sf_test_session "$partial_session"
 cp "$partial_session" "$tmp/partial-before.jsonl"
 SF_ROOT=$ROOT zsh -f -c '
-  source "$SF_ROOT/lib/exec.zsh"
-  SF_EXEC[jsonl]=1
+  source "$SF_ROOT/libexec/run/turn.zsh"
+  SF_RUN[jsonl]=1
   sf_session_append() {
     print -rn -- "{\"type\":\"message\"" >>"$SF_SESSION_PATH"
     sf_session_fail "cannot append session record: $SF_SESSION_PATH"
     return 1
   }
   message="{\"type\":\"message\",\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"partial write\"}]}"
-  sf_exec_turn "$message" "$1" 0
+  sf_run_turn "$message" "$1" 0
 ' -- "$partial_session" >"$partial_stream" || partial_status=$?
 (( partial_status == 1 )) || fail 'partial append failure exited successfully'
 print -r -- "$(<"$partial_stream")" | jq -eRn '
   [inputs | fromjson] as $events |
-  ($events | map(.type)) == ["_exec_error"] and
+  ($events | map(.type)) == ["_turn_error"] and
   ($events[-1].message | contains("cannot append session record")) and
   ($events | any(.type | IN("session","system","message","context")) | not)
 ' >/dev/null
@@ -319,7 +319,7 @@ sf_test_session "$lorem_session"
 stream=$(sf_test_turn 'lorem tool' "$lorem_session")
 print -r -- "$stream" | jq -eRn '
   [inputs | fromjson] as $events |
-  ($events | any(.type == "_exec_error") | not) and
+  ($events | any(.type == "_turn_error") | not) and
   ($events | map(select(.role == "assistant"))[0].stop) == "tool_calls" and
   ($events | map(select(.role == "tool_result")) | length) == 1 and
   ($events | map(select(.role == "assistant"))[-1].stop) == "end"

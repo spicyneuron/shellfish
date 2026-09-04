@@ -217,7 +217,7 @@ print -r -- \
 jq -eRn '
   [inputs | fromjson] as $events |
   $events[-1] == {type:"_handoff",argv:["/usr/bin/printf","next.jsonl"]} and
-  ($events | any(.type == "_exec_error" or .role == "user") | not)
+  ($events | any(.type == "_turn_error" or .role == "user") | not)
 ' <"$handoff_output" >/dev/null || fail 'JSONL run discarded the handoff'
 
 # Session creation and its session_start failures belong to shellfish create.
@@ -232,7 +232,7 @@ print -r -- \
 (( invalid_path_status == 1 ))
 [[ ! -s $tmp/invalid-path.stderr ]]
 jq -eRn --arg path "$invalid_path" '
-  [inputs | fromjson] == [{type:"_exec_error",message:("invalid session path: " + $path)}]
+  [inputs | fromjson] == [{type:"_turn_error",message:("invalid session path: " + $path)}]
 ' <"$invalid_path_output" >/dev/null ||
   fail 'JSONL prepare failure was not emitted as a turn error'
 
