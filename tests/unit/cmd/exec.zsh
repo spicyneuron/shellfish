@@ -105,13 +105,14 @@ output=$(SF_TEST_BACKEND_DELAY=0 zsh -f "$entry" exec --config "$config" \
   several prompt words) || fail 'multi-argument exec failed'
 assert_equal 'several prompt words' "$output" 'exec joins positional prompt words'
 
-# Exec no longer creates sessions; shellfish create supplies one.
-typeset new_session
-new_session=$(zsh -f "$entry" create --config "$config") || fail 'create failed'
+# Exec no longer creates sessions; shellfish create supplies the one the
+# read-only request commands compose against.
+typeset request_session
+request_session=$(zsh -f "$entry" create --config "$config") || fail 'create failed'
 print -r -- '{"type":"message","role":"user","content":[{"type":"text","text":"old"}]}' \
-  >>"$new_session"
+  >>"$request_session"
 print -r -- '{"type":"message","role":"assistant","stop":"end","content":[{"type":"text","text":"answer"}]}' \
-  >>"$new_session"
+  >>"$request_session"
 
 # Read-only request commands compose one provider call without claiming or
 # mutating the durable turn.
@@ -120,15 +121,15 @@ print -r -- '{}' | zsh -f "$entry" build-request --session "$tmp/missing.jsonl" 
   >/dev/null 2>&1 && fail 'build-request accepted a missing session'
 print -r -- '{}' | zsh -f "$entry" send-request --session "$tmp/missing.jsonl" \
   >/dev/null 2>&1 && fail 'send-request accepted a missing session'
-zsh -f "$entry" build-request --session "$new_session" --tools '{}' \
+zsh -f "$entry" build-request --session "$request_session" --tools '{}' \
   >/dev/null 2>&1 && fail 'build-request accepted invalid tools'
-zsh -f "$entry" build-request --session "$new_session" --tools '[{}]' \
+zsh -f "$entry" build-request --session "$request_session" --tools '[{}]' \
   >/dev/null 2>&1 && fail 'build-request accepted an invalid tool schema'
 request_record=$(jq -cn --arg text 'composed request' \
   '{type:"message",role:"user",content:[{type:"text",text:$text}]}')
-request_digest=$(shasum <"$new_session")
+request_digest=$(shasum <"$request_session")
 request=$(print -r -- "$request_record" |
-  zsh -f "$entry" build-request --session "$new_session" --tools '[]') ||
+  zsh -f "$entry" build-request --session "$request_session" --tools '[]') ||
   fail 'build-request failed'
 jq -e '
   .tools == [] and .messages[-1] == {
@@ -136,37 +137,37 @@ jq -e '
   }
 ' <<<"$request" >/dev/null || fail 'build-request produced the wrong request'
 request_response=$(print -r -- "$request" |
-  SF_TEST_BACKEND_DELAY=0 zsh -f "$entry" send-request --session "$new_session") ||
+  SF_TEST_BACKEND_DELAY=0 zsh -f "$entry" send-request --session "$request_session") ||
   fail 'send-request failed'
 jq -e '
   .type == "message" and .role == "assistant" and .stop == "end" and
   .content == [{type:"text",text:"composed request\n"}]
 ' <<<"$request_response" >/dev/null || fail 'send-request produced the wrong response'
-assert_equal "$request_digest" "$(shasum <"$new_session")"
+assert_equal "$request_digest" "$(shasum <"$request_session")"
 
 print -r -- '{"type":"message","role":"assistant","stop":"end","content":[]}' |
-  zsh -f "$entry" build-request --session "$new_session" >/dev/null 2>&1 &&
+  zsh -f "$entry" build-request --session "$request_session" >/dev/null 2>&1 &&
   fail 'build-request accepted an invalid record transition'
-print -r -- '{}' | zsh -f "$entry" send-request --session "$new_session" \
+print -r -- '{}' | zsh -f "$entry" send-request --session "$request_session" \
   >/dev/null 2>&1 && fail 'send-request accepted an invalid request'
 printf '%s\n%s\n' "$request" "$request" |
-  zsh -f "$entry" send-request --session "$new_session" >/dev/null 2>&1 &&
+  zsh -f "$entry" send-request --session "$request_session" >/dev/null 2>&1 &&
   fail 'send-request accepted multiple requests'
 jq '.transport.endpoint = "https://elsewhere.invalid"' <<<"$request" |
-  zsh -f "$entry" send-request --session "$new_session" >/dev/null 2>&1 &&
+  zsh -f "$entry" send-request --session "$request_session" >/dev/null 2>&1 &&
   fail 'send-request accepted transport from outside the frozen runtime'
 typeset separator_request separator_response
 separator_request=$(jq --arg text $'record separator: \x1e' \
   '.messages[-1].content[0].text = $text' <<<"$request")
 separator_response=$(print -r -- "$separator_request" |
-  SF_TEST_BACKEND_DELAY=0 zsh -f "$entry" send-request --session "$new_session") ||
+  SF_TEST_BACKEND_DELAY=0 zsh -f "$entry" send-request --session "$request_session") ||
   fail 'send-request rejected valid assistant text'
 jq -e --arg text $'record separator: \x1e\n' '.content[0].text == $text' \
   <<<"$separator_response" >/dev/null || fail 'send-request changed assistant text'
 typeset failing_request
 failing_request=$(jq '.messages[-1].content[0].text = "error"' <<<"$request")
 print -r -- "$failing_request" |
-  SF_TEST_BACKEND_DELAY=0 zsh -f "$entry" send-request --session "$new_session" \
+  SF_TEST_BACKEND_DELAY=0 zsh -f "$entry" send-request --session "$request_session" \
     >/dev/null 2>"$tmp/send-request-error" && fail 'send-request accepted backend failure'
 [[ $(<"$tmp/send-request-error") == *'test backend failure'* ]] ||
   fail 'send-request hid the backend error'
