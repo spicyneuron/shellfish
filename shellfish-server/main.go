@@ -1,7 +1,7 @@
 // Command shellfish-server exposes one Shellfish session over HTTP. Without a
 // session path, it asks Shellfish to create one in the current directory.
 //
-// Build it with: go build -o shellfish-server ./cmd/shellfish-server
+// Build it with: go build -o bin/shellfish-server ./shellfish-server
 package main
 
 import (

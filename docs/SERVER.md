@@ -5,13 +5,13 @@
 Install the optional server with Go:
 
 ```sh
-go install github.com/spicyneuron/shellfish/cmd/shellfish-server@latest
+go install github.com/spicyneuron/shellfish/shellfish-server@latest
 ```
 
 To build a local copy from the Shellfish repository instead:
 
 ```sh
-go build -o shellfish-server ./cmd/shellfish-server
+go build -o bin/shellfish-server ./shellfish-server
 ```
 
 ## Run the server

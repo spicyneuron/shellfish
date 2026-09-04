@@ -11,7 +11,7 @@ NOTE: This project is pre-release. Do not add deprecation noticies, backwards co
 - `lib/runtime/` resolves configuration, credentials, profiles, and schema validation.
 - `lib/backend.zsh` adapts provider streams.
 - `tui/` is the terminal client: chat rendering, presentation, and the independent resume picker. Keep terminal and ZLE behavior out of `lib/`.
-- `cmd/shellfish-server/` is a Go proxy that exposes one session to one browser, plus the browser client it serves. `docs/SERVER.md` is its contract.
+- `shellfish-server/` is a Go proxy that exposes one session to one browser, plus the browser client it serves. `docs/SERVER.md` is its contract.
 - `default/` is the bundled configuration and reference tools; `docs/HOOKS.md` is the complete hook contract.
 
 ## Execution flow
@@ -29,7 +29,7 @@ NOTE: This project is pre-release. Do not add deprecation noticies, backwards co
 - Sessions are append-only JSONL and are the durable source of truth. Every durable prefix must be valid, including an in-progress last turn.
 - Durable records are `session`, `system`, `message`, and hook-injected `context`. Provider deltas, turn status, and presentation events are transient.
 - Interactive chat submits single turns through the shared session and turn machinery. Do not introduce lifecycle or presentation records.
-- `lib/` is the core; `tui/` and `cmd/shellfish-server/` are clients. The entry point owns the core: `bin/shellfish` resolves the session and presentation, then passes them to a client as arguments. Clients receive core data; they never read core globals or call core functions, and core code never references a client.
+- `lib/` is the core; `tui/` and `shellfish-server/` are clients. The entry point owns the core: `bin/shellfish` resolves the session and presentation, then passes them to a client as arguments. Clients receive core data; they never read core globals or call core functions, and core code never references a client.
 - `tui/` may reference exactly `$SF_ROOT`, `$SF_ENTRY`, and `sf_scratch_file`, plus the durable session file, `shellfish exec`, and the jq schema. Verify by enumeration, not by grepping known names: every `sf_*` and `SF_*` token the client references, minus the ones it declares itself, must leave only that list.
 - jq module paths are repo-rooted: pass `-L "$SF_ROOT"` and include `lib/runtime/schema`, `lib/session/request`, or `tui/display-fields`.
 - One `shellfish exec` process owns a session for the duration of a turn by convention; concurrent writers are not prevented. Keep credentials out of hook scripts; exec passes the scoped `SHELLFISH_API_KEY` only to the backend adapter.
@@ -49,7 +49,7 @@ NOTE: This project is pre-release. Do not add deprecation noticies, backwards co
 
 ## Development
 
-- For code changes, run the focused unit test nearest the feature first, then `./tests/run unit`. Reserve PTY tests for behavior that requires a real terminal. When running PTY tests, request a run outside the sandbox because otherwise they report `out of pty devices`. Run `./tests/run server` for changes under `cmd/shellfish-server/`. It runs the browser and Go tests.
+- For code changes, run the focused unit test nearest the feature first, then `./tests/run unit`. Reserve PTY tests for behavior that requires a real terminal. When running PTY tests, request a run outside the sandbox because otherwise they report `out of pty devices`. Run `./tests/run server` for changes under `shellfish-server/`. It runs the browser and Go tests.
 - Treat the worktree as shared: before any `git checkout`, `git restore`, `git reset`, or `git stash`, preserve and review affected uncommitted changes. Never discard or hide another agent's work.
 - Do not run tests for documentation- or comment-only changes.
 - In Zsh, avoid variable names that collide with special parameters such as `status` and `commands`. When a command substitution's exit status matters, declare the variable first and assign it separately.

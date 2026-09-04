@@ -89,7 +89,7 @@ Configure a VPN like Tailscale or Wireguard, and then control `shellfish` from y
 
 ```sh
 # Install
-go install github.com/spicyneuron/shellfish/cmd/shellfish-server@latest
+go install github.com/spicyneuron/shellfish/shellfish-server@latest
 
 # Serve a project with default profile
 cd my/project/

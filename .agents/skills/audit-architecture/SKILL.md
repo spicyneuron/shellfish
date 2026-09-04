@@ -10,7 +10,7 @@ Find the highest-level material problems first, then descend through maintenance
 
 ## Scope
 
-Unless otherwise instructed, inspect the whole repository in sections: root-level contracts and metadata, `docs/`, `bin/`, `lib/`, `default/` and `template/`, `tests/`, then `cmd/shellfish-server/`. Inventory each section and read its relevant source, tests, configuration, and documentation before moving to the next. A section-scoped request does not require inspecting the others.
+Unless otherwise instructed, inspect the whole repository in sections: root-level contracts and metadata, `docs/`, `bin/`, `lib/`, `default/` and `template/`, `tests/`, then `shellfish-server/`. Inventory each section and read its relevant source, tests, configuration, and documentation before moving to the next. A section-scoped request does not require inspecting the others.
 
 Maintain provisional notes while inspecting, but assess them against the whole requested scope before reporting. Use documented architecture and observable behavior together; flag contradictions rather than assuming either is authoritative.
 

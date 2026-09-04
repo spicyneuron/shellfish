@@ -12,7 +12,7 @@ Inspect the relevant code, tests, and documentation to remove or simplify cruft.
 - Comments that restate code, narrate old implementations or model discussion, or use more words than a current non-obvious constraint requires.
 - Documentation that's incorrect, inconsistent, or ambiguously worded.
 
-Unless otherwise instructed, check the following sections in order: `AGENTS.md`, `lib/`, `default/`, `tests/`, `cmd/shellfish-server/`, and `docs/`.
+Unless otherwise instructed, check the following sections in order: `AGENTS.md`, `lib/`, `default/`, `tests/`, `shellfish-server/`, and `docs/`.
 
 Complete one section before starting the next: inventory it, read every file, then review and clean candidates one at a time. A section-scoped request does not require inspecting the others.
 
