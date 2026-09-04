@@ -57,7 +57,7 @@ sf_main() {
       command=exec
       shift
       ;;
-    build-request|run-request)
+    build-request|send-request)
       command=$1
       shift
       ;;
@@ -384,7 +384,7 @@ sf_main() {
   fi
   (( sandbox_auto_requested && ! init_requested )) && runtime_override=1
 
-  if [[ $command == (build-request|run-request) ]]; then
+  if [[ $command == (build-request|send-request) ]]; then
     local supported='--session'
     [[ $command != build-request ]] || supported+=' and --tools'
     (( session_explicit )) || {
@@ -438,7 +438,7 @@ sf_main() {
     runtime=$REPLY
     input=$(cat)
     [[ -n $input ]] || {
-      sf_die 'run-request requires a canonical backend request on stdin'
+      sf_die 'send-request requires a canonical backend request on stdin'
       return 2
     }
     input=$(jq -L "$SF_ROOT" -cse --argjson runtime "$runtime" '
@@ -449,7 +449,7 @@ sf_main() {
       select(.transport == ($runtime.backend |
         {endpoint,insecure_tls,http_timeout,http_stall}))
     ' <<<"$input" 2>/dev/null) || {
-      sf_die 'run-request requires a canonical request for the selected session'
+      sf_die 'send-request requires a canonical request for the selected session'
       return 2
     }
     backend_command=$(jq -er '.backend.command' <<<"$runtime") || {

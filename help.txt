@@ -7,7 +7,7 @@ Usage:
   shellfish exec [OPTIONS] [PROMPT]  Run exactly one agent turn
   shellfish config [OPTIONS]         Print resolved configuration as JSON
   shellfish build-request [OPTIONS]  Project session records into a backend request
-  shellfish run-request [OPTIONS]    Run one canonical backend request
+  shellfish send-request [OPTIONS]   Send one canonical backend request
 
 Global flags:
   -p, --profile NAME    Select a configured profile

@@ -66,7 +66,7 @@ request=$(jq -cn --arg text "$instruction" \
 print -u2 -r -- 'Compacting conversation…'
 summary=$(print -r -- "$request" |
   "$SHELLFISH_EXECUTABLE" build-request --session "$SHELLFISH_SESSION" --tools '[]' |
-  "$SHELLFISH_EXECUTABLE" run-request --session "$SHELLFISH_SESSION" |
+  "$SHELLFISH_EXECUTABLE" send-request --session "$SHELLFISH_SESSION" |
   jq -er '[.content[] | select(.type == "text") | .text] | join("") |
     select(test("[^[:space:]]"))') || {
   fail_compaction 'cannot summarize session; keeping the original'

@@ -31,7 +31,7 @@ Terminal chat, `shellfish-server`, and any other integrations all use the same b
 
 Clients do not embed the agent loop or maintain their own copy of session state. They invoke turns and present the results.
 
-`shellfish build-request` and `shellfish run-request` expose the narrower provider boundary for read-only composition. They project or execute a request against a session's frozen runtime without mutating the transcript. `exec` remains the owner of durable turns, hook execution, tool execution, and recovery.
+`shellfish build-request` and `shellfish send-request` expose the narrower provider boundary for read-only composition. They project or execute a request against a session's frozen runtime without mutating the transcript. `exec` remains the owner of durable turns, hook execution, tool execution, and recovery.
 
 ## Harnesses bind scripts to the lifecycle
 

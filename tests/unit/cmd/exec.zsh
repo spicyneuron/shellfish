@@ -132,8 +132,8 @@ jq -e -s --slurpfile source "$new_session" '
 typeset request_record request_response request_digest
 print -r -- '{}' | zsh -f "$entry" build-request --session "$tmp/missing.jsonl" \
   >/dev/null 2>&1 && fail 'build-request accepted a missing session'
-print -r -- '{}' | zsh -f "$entry" run-request --session "$tmp/missing.jsonl" \
-  >/dev/null 2>&1 && fail 'run-request accepted a missing session'
+print -r -- '{}' | zsh -f "$entry" send-request --session "$tmp/missing.jsonl" \
+  >/dev/null 2>&1 && fail 'send-request accepted a missing session'
 zsh -f "$entry" build-request --session "$new_session" --tools '{}' \
   >/dev/null 2>&1 && fail 'build-request accepted invalid tools'
 zsh -f "$entry" build-request --session "$new_session" --tools '[{}]' \
@@ -150,40 +150,40 @@ jq -e '
   }
 ' <<<"$request" >/dev/null || fail 'build-request produced the wrong request'
 request_response=$(print -r -- "$request" |
-  SF_TEST_BACKEND_DELAY=0 zsh -f "$entry" run-request --session "$new_session") ||
-  fail 'run-request failed'
+  SF_TEST_BACKEND_DELAY=0 zsh -f "$entry" send-request --session "$new_session") ||
+  fail 'send-request failed'
 jq -e '
   .type == "message" and .role == "assistant" and .stop == "end" and
   .content == [{type:"text",text:"composed request\n"}]
-' <<<"$request_response" >/dev/null || fail 'run-request produced the wrong response'
+' <<<"$request_response" >/dev/null || fail 'send-request produced the wrong response'
 assert_equal "$request_digest" "$(shasum <"$new_session")"
 
 print -r -- '{"type":"message","role":"assistant","stop":"end","content":[]}' |
   zsh -f "$entry" build-request --session "$new_session" >/dev/null 2>&1 &&
   fail 'build-request accepted an invalid record transition'
-print -r -- '{}' | zsh -f "$entry" run-request --session "$new_session" \
-  >/dev/null 2>&1 && fail 'run-request accepted an invalid request'
+print -r -- '{}' | zsh -f "$entry" send-request --session "$new_session" \
+  >/dev/null 2>&1 && fail 'send-request accepted an invalid request'
 printf '%s\n%s\n' "$request" "$request" |
-  zsh -f "$entry" run-request --session "$new_session" >/dev/null 2>&1 &&
-  fail 'run-request accepted multiple requests'
+  zsh -f "$entry" send-request --session "$new_session" >/dev/null 2>&1 &&
+  fail 'send-request accepted multiple requests'
 jq '.transport.endpoint = "https://elsewhere.invalid"' <<<"$request" |
-  zsh -f "$entry" run-request --session "$new_session" >/dev/null 2>&1 &&
-  fail 'run-request accepted transport from outside the frozen runtime'
+  zsh -f "$entry" send-request --session "$new_session" >/dev/null 2>&1 &&
+  fail 'send-request accepted transport from outside the frozen runtime'
 typeset separator_request separator_response
 separator_request=$(jq --arg text $'record separator: \x1e' \
   '.messages[-1].content[0].text = $text' <<<"$request")
 separator_response=$(print -r -- "$separator_request" |
-  SF_TEST_BACKEND_DELAY=0 zsh -f "$entry" run-request --session "$new_session") ||
-  fail 'run-request rejected valid assistant text'
+  SF_TEST_BACKEND_DELAY=0 zsh -f "$entry" send-request --session "$new_session") ||
+  fail 'send-request rejected valid assistant text'
 jq -e --arg text $'record separator: \x1e\n' '.content[0].text == $text' \
-  <<<"$separator_response" >/dev/null || fail 'run-request changed assistant text'
+  <<<"$separator_response" >/dev/null || fail 'send-request changed assistant text'
 typeset failing_request
 failing_request=$(jq '.messages[-1].content[0].text = "error"' <<<"$request")
 print -r -- "$failing_request" |
-  SF_TEST_BACKEND_DELAY=0 zsh -f "$entry" run-request --session "$new_session" \
-    >/dev/null 2>"$tmp/run-request-error" && fail 'run-request accepted backend failure'
-[[ $(<"$tmp/run-request-error") == *'test backend failure'* ]] ||
-  fail 'run-request hid the backend error'
+  SF_TEST_BACKEND_DELAY=0 zsh -f "$entry" send-request --session "$new_session" \
+    >/dev/null 2>"$tmp/send-request-error" && fail 'send-request accepted backend failure'
+[[ $(<"$tmp/send-request-error") == *'test backend failure'* ]] ||
+  fail 'send-request hid the backend error'
 
 # JSONL exposes the canonical exec stream through EOF and process status.
 typeset jsonl stream_session="$tmp/stream.jsonl"

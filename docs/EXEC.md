@@ -45,23 +45,23 @@ Stdin remains open for permission replies. When exec emits a permission request,
 
 ## Read-only request composition
 
-`shellfish build-request` and `shellfish run-request` expose the provider-request boundary without opening a durable turn. Both require `--session` and read the selected session without recovery or mutation.
+`shellfish build-request` and `shellfish send-request` expose the provider-request boundary without opening a durable turn. Both require `--session` and read the selected session without recovery or mutation.
 
 `build-request` reads zero or more additional durable records as JSONL on stdin, validates them as a continuation of the selected session, and writes one canonical backend request. `--tools` accepts a JSON array of provider tool schemas and defaults to `[]`.
 
-`run-request` reads one canonical backend request on stdin. It requires the request and transport options to match the session's frozen runtime, resolves the scoped backend credential, validates the adapter event stream, and writes one canonical assistant message.
+`send-request` reads one canonical backend request on stdin. It requires the request and transport options to match the session's frozen runtime, resolves the scoped backend credential, validates the adapter event stream, and writes one canonical assistant message.
 
 Neither command runs hooks, executes tool calls, or persists its output. Provider tool schemas in a built request are inert. Diagnostics go to stderr and failures return nonzero.
 
 ```sh
 printf '%s\n' '{"type":"message","role":"user","content":[{"type":"text","text":"Summarize this conversation"}]}' |
   shellfish build-request --session path/to/session.jsonl --tools '[]' |
-  shellfish run-request --session path/to/session.jsonl
+  shellfish send-request --session path/to/session.jsonl
 ```
 
 ## Bundled compaction
 
-The default harness implements compaction in its `user_prompt_submit` hook by composing `build-request` and `run-request` with tools disabled. `/compact` summarizes on demand. Automatic compaction runs when the most recent measured assistant usage reaches 80% of the frozen `context_window`; an unavailable window disables the automatic threshold.
+The default harness implements compaction in its `user_prompt_submit` hook by composing `build-request` and `send-request` with tools disabled. `/compact` summarizes on demand. Automatic compaction runs when the most recent measured assistant usage reaches 80% of the frozen `context_window`; an unavailable window disables the automatic threshold.
 
 Compaction creates a sibling child named with a `_compact` suffix without changing the source. The child retains the session header, system record, and `session_start` contexts, then replaces the conversation with one summary context. A successful hook requests a client handoff to the child. Automatic compaction passes the interrupted prompt as an editable draft rather than submitting it. Automatic failures are fail-open and submit the prompt to the source; explicit `/compact` failures stop that command and leave the source active.
 

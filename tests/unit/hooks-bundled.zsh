@@ -511,7 +511,7 @@ assert_equal \
 # explicit command. Neither path requests a handoff or creates a child.
 cat >"$compact_shellfish" <<ZSH
 #!/usr/bin/env zsh
-[[ \$1 != run-request ]] || exit 1
+[[ \$1 != send-request ]] || exit 1
 exec "$ROOT/bin/shellfish" "\$@"
 ZSH
 chmod +x "$compact_shellfish"
