@@ -2,8 +2,8 @@
 
 source "${0:A:h:h:h}/_helpers.zsh"
 sf_test_tmp exec-command
-mkdir -p "$tmp/home" "$tmp/hooks/system"
-print -r -- 'initial system' >"$tmp/hooks/system/source.md"
+mkdir -p "$tmp/home" "$tmp/system"
+print -r -- 'initial system' >"$tmp/system/source.md"
 export HOME="${tmp:A}/home"
 unset XDG_CONFIG_HOME
 
@@ -115,7 +115,7 @@ jq -es 'length == 2 and .[0].type == "session" and
 
 # An optional source session reuses its frozen runtime, rematerializes its system
 # components, and does not copy transcript records.
-print -r -- 'rematerialized system' >"$tmp/hooks/system/source.md"
+print -r -- 'rematerialized system' >"$tmp/system/source.md"
 print -r -- '{"type":"message","role":"user","content":[{"type":"text","text":"old"}]}' \
   >>"$new_session"
 print -r -- '{"type":"message","role":"assistant","stop":"end","content":[{"type":"text","text":"answer"}]}' \

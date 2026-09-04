@@ -295,7 +295,7 @@ sf_runtime_resolve_from_config() {
   while (( ${#system_entries} < system_count )); do
     reference=$fields[index]
     (( index += 1 ))
-    sf_runtime_reference "$reference" "$config_dir" "hooks/system" || {
+    sf_runtime_reference "$reference" "$config_dir" system || {
       sf_runtime_fail "cannot resolve system component: $reference"
       return
     }

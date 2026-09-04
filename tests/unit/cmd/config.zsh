@@ -62,10 +62,10 @@ if HOME="$init_home" XDG_CONFIG_HOME="$init_home/config" \
   fail 'config init overwrote an existing config'
 fi
 typeset custom_config="$tmp/custom/shellfish.jsonc"
-mkdir -p "${custom_config:h}/hooks/system"
+mkdir -p "${custom_config:h}/system"
 print -r -- 'KEEP=1' >"${custom_config:h}/example.env"
-print -r -- 'custom' >"${custom_config:h}/hooks/system/custom.md"
-chmod 750 "${custom_config:h}/hooks/system"
+print -r -- 'custom' >"${custom_config:h}/system/custom.md"
+chmod 750 "${custom_config:h}/system"
 chmod 640 "${custom_config:h}/example.env"
 zsh -f "$entry" config --init --config "$custom_config" >/dev/null || \
   fail 'config init with an explicit path failed'
@@ -73,11 +73,11 @@ cmp -s "$ROOT/template/shellfish.jsonc" "$custom_config" || \
   fail 'config init did not use the explicit path'
 grep -qxF 'KEEP=1' "${custom_config:h}/example.env" || \
   fail 'config init overwrote an existing environment example'
-grep -qxF 'custom' "${custom_config:h}/hooks/system/custom.md" || \
+grep -qxF 'custom' "${custom_config:h}/system/custom.md" || \
   fail 'config init overwrote an existing component'
 assert_equal 640 "$(file_mode "${custom_config:h}/example.env")" \
   'config init changed permissions on an existing environment example'
-assert_equal 750 "$(file_mode "${custom_config:h}/hooks/system")" \
+assert_equal 750 "$(file_mode "${custom_config:h}/system")" \
   'config init changed permissions on an existing component directory'
 
 # Automatic sandbox grants.

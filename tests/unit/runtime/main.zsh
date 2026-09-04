@@ -341,9 +341,9 @@ fi
 [[ $SF_RUNTIME_ERROR == *'invalid config at $["harnesses"]["bad"]["before_prompt"]: unknown field'* ]]
 
 # System references resolve to ordered absolute paths in the frozen profile.
-mkdir -p "$tmp/config/hooks/system"
-print -r -- 'first' >"$tmp/config/hooks/system/first.md"
-print -r -- 'second' >"$tmp/config/hooks/system/second.md"
+mkdir -p "$tmp/config/system"
+print -r -- 'first' >"$tmp/config/system/first.md"
+print -r -- 'second' >"$tmp/config/system/second.md"
 cat >"$tmp/config/system.jsonc" <<'JSON'
 {
   "profiles":{"default":{"system":["first.md","second.md"],"request":{"model":"m"}}}
@@ -351,10 +351,10 @@ cat >"$tmp/config/system.jsonc" <<'JSON'
 JSON
 sf_runtime_resolve_from_config "$tmp/config/system.jsonc" '' '' '{}' \
   "$ROOT/tests/fixtures/backend"
-jq -e --arg first "${tmp:A}/config/hooks/system/first.md" \
-  --arg second "${tmp:A}/config/hooks/system/second.md" \
+jq -e --arg first "${tmp:A}/config/system/first.md" \
+  --arg second "${tmp:A}/config/system/second.md" \
   '.profile.system == [$first,$second]' <<<"$REPLY" >/dev/null
-rm "$tmp/config/hooks/system/second.md"
+rm "$tmp/config/system/second.md"
 if sf_runtime_resolve_from_config "$tmp/config/system.jsonc" '' '' '{}' \
     "$ROOT/tests/fixtures/backend"; then
   fail 'missing prompt file was accepted'
@@ -364,7 +364,7 @@ fi
 sf_runtime_read_jsonc "$ROOT/template/shellfish.jsonc" >"$tmp/config/readonly.jsonc"
 sf_runtime_resolve_from_config "$tmp/config/readonly.jsonc" 'readonly' 'm' '{}' \
   "$ROOT/tests/fixtures/backend"
-jq -e --arg path "$ROOT/default/hooks/system/readonly.md" \
+jq -e --arg path "$ROOT/default/system/readonly.md" \
   '.profile.system == [$path]' <<<"$REPLY" >/dev/null
 
 cat >"$tmp/config/missing-hook.jsonc" <<'JSON'

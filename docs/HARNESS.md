@@ -17,7 +17,7 @@ The system prompt is a profile field, not a harness field. The bundled `default`
 - `general.md` defines communication and context-handling conventions.
 - `tools.md` defines tool-use conventions.
 
-These files live under `default/hooks/system/`; a user configuration can select different files or shadow bundled files by name. They are read in order, stripped of trailing newlines, and joined with a blank line into the session's single durable system record.
+These files live under `default/system/`; a user configuration can select different files or shadow bundled files by name. They are read in order, stripped of trailing newlines, and joined with a blank line into the session's single durable system record.
 
 ### Tools
 
