@@ -127,7 +127,7 @@ A read grant allows reading. A write grant allows reading and writing. For a one
 
 Use `--sandbox-auto` to grant detected development-tool paths. It supports Git configuration, attributes, ignore files, and includes, along with caches and stores from Go, uv, Python and pip, npm, pnpm, Rust, and Cargo. Unavailable tools, failed commands, and paths that do not exist are skipped. Explicit `--sandbox-read` and `--sandbox-write` grants are added to the detected paths.
 
-For chat and `exec`, automatic grants are frozen into a new session like other runtime overrides. `shellfish config --sandbox-auto` previews the resolved runtime. `shellfish config --init --sandbox-auto` writes the detected paths into the default harness in the new configuration. Grant paths selectively because a cache grant exposes everything inside it.
+For chat and `run`, automatic grants are frozen into a new session like other runtime overrides. `shellfish config --sandbox-auto` previews the resolved runtime. `shellfish config --init --sandbox-auto` writes the detected paths into the default harness in the new configuration. Grant paths selectively because a cache grant exposes everything inside it.
 
 ## Existing sessions
 

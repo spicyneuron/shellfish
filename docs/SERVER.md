@@ -74,7 +74,7 @@ Only one browser may be attached. A second connection receives `409 Conflict`. A
 
 Frames are SSE `data:` lines containing one JSON object each, plus `: keepalive` comments. Authentication requires an SSE-capable `fetch` implementation because the browser's native `EventSource` cannot set the authorization header.
 
-Types beginning with an underscore are transient exec events. Other exec objects are durable session records. The server-owned `state` frame is the one exception. Text and reasoning deltas share a zero-based `seq` that restarts for each provider response. The bundled browser ignores those deltas and renders the later durable assistant record.
+Types beginning with an underscore are transient turn events. Other turn objects are durable session records. The server-owned `state` frame is the one exception. Text and reasoning deltas share a zero-based `seq` that restarts for each provider response. The bundled browser ignores those deltas and renders the later durable assistant record.
 
 The bundled browser replaces the current incomplete `_hook_display` notice with its completed text, leaving the completed notice visible. A turn end, stream failure, or replay discards any incomplete hook notice with the rest of the uncertain transient state.
 
@@ -102,7 +102,7 @@ The turn continues after the request returns. Its progress appears on `/session`
 
 There is at most one active turn and one pending permission request, so actions do not carry a separate session or turn identifier. A conflicting or missing target returns `409 Conflict`.
 
-The `/turn` and `/permission` bodies must be JSON objects no larger than 1 MiB. The server validates size and framing, while exec validates message and permission fields. Malformed input returns `400 Bad Request`, oversized input returns `413 Request Entity Too Large`, invalid authentication returns `401 Unauthorized`, and shutdown may return `503 Service Unavailable`. Error bodies have the form `{"error":"message"}`.
+The `/turn` and `/permission` bodies must be JSON objects no larger than 1 MiB. The server validates size and framing, while the turn validates message and permission fields. Malformed input returns `400 Bad Request`, oversized input returns `413 Request Entity Too Large`, invalid authentication returns `401 Unauthorized`, and shutdown may return `503 Service Unavailable`. Error bodies have the form `{"error":"message"}`.
 
 ## Shutdown
 

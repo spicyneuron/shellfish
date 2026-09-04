@@ -30,7 +30,7 @@ repeat:
     if completion allowed: finish turn
 ```
 
-Exec owns hook execution. It runs the `session_start` scripts during session preparation and creates the durable session after those scripts succeed. It owns each complete turn through `user_prompt_submit`, provider requests, tools, permissions, cancellation, and recovery.
+`shellfish create` runs the `session_start` scripts during session preparation and writes the durable session after those scripts succeed. `shellfish run` owns each complete turn through `user_prompt_submit`, provider requests, tools, permissions, cancellation, and recovery.
 
 Scripts in one turn share ephemeral coordination state, and scripts for one session ID share disposable session state (see `SHELLFISH_TURN_STATE` and `SHELLFISH_SESSION_STATE` below). A script runs synchronously. If the operation is cancelled, in-flight script work is terminated with it. Scripts must finish or terminate their own subprocesses before exiting. Daemonizing is unsupported.
 
@@ -74,14 +74,14 @@ Every script is invoked with the session working directory as its `PWD` and thes
 | `SHELLFISH_SESSION_STATE` | Absolute path to the disposable, mode-0700 state directory shared by the session ID |
 | `SHELLFISH_CAPTURE_LIMIT` | Combined output byte limit for one script (`harness.max_capture_bytes`) |
 | `SHELLFISH_EXECUTABLE` | Absolute path of the invoked Shellfish executable |
-| `SHELLFISH_MODE` | Invocation mode: `create`, `chat`, or `exec`. `session_start` always runs under `create` |
+| `SHELLFISH_MODE` | Invocation mode: `create`, `chat`, or `run`. `session_start` always runs under `create` |
 | `SHELLFISH_MODEL` | Active model frozen in the session header |
 | `SHELLFISH_VERBOSE` | `1` when the chat was started with the `--verbose` presentation override; otherwise `0` |
 | `PROJECT_DIR` | Working directory frozen in the session header |
 | `SHELLFISH_CONFIG_DIR` | Directory containing the resolved config file, or its prospective default location |
 | `HOOK_SCRIPT_ROOT` | Directory containing the resolved hook script |
 
-Scripts on turn-scoped hooks (`user_prompt_submit`, `permission_request`, `pre_tool_use`, `post_tool_use`, and `stop`) also receive `SHELLFISH_TURN_ID` and `SHELLFISH_TURN_STATE`. The turn ID is the one-based ordinal of the next durable user message. Exec derives it before `user_prompt_submit`, reuses it for the accepted turn's later hooks, and discards it when submission is blocked. Turn IDs are not written separately to the session transcript. `SHELLFISH_TURN_STATE` is an absolute path to a private, mode-0700 directory shared by all scripts in that turn.
+Scripts on turn-scoped hooks (`user_prompt_submit`, `permission_request`, `pre_tool_use`, `post_tool_use`, and `stop`) also receive `SHELLFISH_TURN_ID` and `SHELLFISH_TURN_STATE`. The turn ID is the one-based ordinal of the next durable user message. The turn derives it before `user_prompt_submit`, reuses it for the accepted turn's later hooks, and discards it when submission is blocked. Turn IDs are not written separately to the session transcript. `SHELLFISH_TURN_STATE` is an absolute path to a private, mode-0700 directory shared by all scripts in that turn.
 
 `$1` is always the hook name. Remaining argv and stdin are hook-specific (see [Hooks](#hooks)).
 
@@ -103,7 +103,7 @@ A script communicates through three channels. They are captured separately, but 
 
 fd 3 must contain exactly one JSON object. It is captured to a private file and byte-counted before decoding. The dispatcher validates the encoding, and the hook-specific adapter validates the object's fields. Model-facing context remains raw stdout, so ordinary scripts can still use `cat` and pipelines without JSON-encoding their payloads.
 
-stderr is the only live hook display channel. In JSONL mode, exec emits the first newline-terminated stderr line while the script runs, then replaces it with the full stderr when the script exits. A script that writes no newline is displayed only after exit. Without a live event stream, exec preserves buffered stderr display. stdout remains buffered because its meaning and commit policy depend on the hook; it is never presented in flight.
+stderr is the only live hook display channel. In JSONL mode, the turn emits the first newline-terminated stderr line while the script runs, then replaces it with the full stderr when the script exits. A script that writes no newline is displayed only after exit. Without a live event stream, the turn preserves buffered stderr display. stdout remains buffered because its meaning and commit policy depend on the hook; it is never presented in flight.
 
 ### Exit statuses
 
@@ -131,12 +131,12 @@ Quick reference. "Owner" is the process that runs the chain; "stdin" is the exac
 
 | Hook | Owner | argv (after `$1`) | stdin | stdout | Control (fd 3) | Default / skipped |
 | --- | --- | --- | --- | --- | --- | --- |
-| `session_start` | exec | — | empty | durable context | none | finish creation / unsupported (10/11 fails) |
-| `user_prompt_submit` | exec | — | exact prompt | durable context | context metadata; optional handoff action with exit 11 | submit prompt / do not submit, optionally hand off |
-| `permission_request` | exec | — | tool request envelope JSON | ignored | allow or deny action with exit 11 | defer to adapter / deny, or apply fd 3 |
-| `pre_tool_use` | exec | — | tool request envelope JSON | denial feedback on exit 10/11 | none | execute / deny the call |
-| `post_tool_use` | exec | — | tool response envelope JSON | must be empty | none | continue / unsupported (10/11 fails) |
-| `stop` | exec | `STOP_ATTEMPT` | assistant text | continuation feedback | none | finish turn / commit feedback, request again |
+| `session_start` | create | — | empty | durable context | none | finish creation / unsupported (10/11 fails) |
+| `user_prompt_submit` | run | — | exact prompt | durable context | context metadata; optional handoff action with exit 11 | submit prompt / do not submit, optionally hand off |
+| `permission_request` | run | — | tool request envelope JSON | ignored | allow or deny action with exit 11 | defer to adapter / deny, or apply fd 3 |
+| `pre_tool_use` | run | — | tool request envelope JSON | denial feedback on exit 10/11 | none | execute / deny the call |
+| `post_tool_use` | run | — | tool response envelope JSON | must be empty | none | continue / unsupported (10/11 fails) |
+| `stop` | run | `STOP_ATTEMPT` | assistant text | continuation feedback | none | finish turn / commit feedback, request again |
 
 For context-producing hooks, committed stdout becomes a `context` record named for the hook and attributed to the producing script's basename: `{type:"context",hook:"<hook>",script:"<basename>",content:"<stdout>"}`. For `user_prompt_submit`, a `context` object on fd 3 may add `prompt` and `status` to that script's record. `prompt` requires an integer `status` from 0 through 255.
 
@@ -156,12 +156,12 @@ Trailing context, typically `stop` feedback, becomes a synthetic trailing user m
 
 ### `session_start`
 
-Runs once during session preparation. It does not run when an existing session is resumed or exec restarts. The header and configured system record are prepared in memory, and script input is constructed from that state and its resolved runtime. The session path does not exist until the complete initial prefix is written after all scripts succeed. stdin is empty and `$1` is `session_start`. There are no further arguments. The script receives `SHELLFISH_SESSION_STATE`, but it does not receive `SHELLFISH_TURN_ID`, `SHELLFISH_TURN_STATE`, or credentials. The API key is scoped to the backend adapter only.
+Runs once during session preparation. It does not run when an existing session is resumed or a turn restarts. The header and configured system record are prepared in memory, and script input is constructed from that state and its resolved runtime. The session path does not exist until the complete initial prefix is written after all scripts succeed. stdin is empty and `$1` is `session_start`. There are no further arguments. The script receives `SHELLFISH_SESSION_STATE`, but it does not receive `SHELLFISH_TURN_ID`, `SHELLFISH_TURN_STATE`, or credentials. The API key is scoped to the backend adapter only.
 
 - **stdout** becomes durable `session_start` context in the initial session prefix. Each script's nonempty stdout is a separately attributed record.
 - **stderr** is shown and discarded.
 - **fd 3** is invalid; this hook accepts no control.
-- **Default action** is finishing creation. Exit 10 or 11 is unsupported and fails exec entry without committing stdout.
+- **Default action** is finishing creation. Exit 10 or 11 is unsupported and fails session creation without committing stdout.
 
 If a creation script fails or is interrupted by a handled signal, Shellfish reports the failure and does not create the session file. Scripts that perform external writes must provide their own idempotency if creation is retried.
 
@@ -176,7 +176,7 @@ exit 0
 
 ### `user_prompt_submit`
 
-Runs in exec before the ordinary user record is committed, with the exact submitted prompt on stdin, `$1` = `user_prompt_submit`, and the shared exports including the reserved `SHELLFISH_TURN_ID`. If submission proceeds, scripts on later turn hooks reuse that turn ID. If submission is blocked, Shellfish discards it. Scripts on this hook can implement prompt commands.
+Runs in the turn before the ordinary user record is committed, with the exact submitted prompt on stdin, `$1` = `user_prompt_submit`, and the shared exports including the reserved `SHELLFISH_TURN_ID`. If submission proceeds, scripts on later turn hooks reuse that turn ID. If submission is blocked, Shellfish discards it. Scripts on this hook can implement prompt commands.
 
 - **stdout** becomes durable `user_prompt_submit` context, pending before the next committed user message.
 - **stderr** is shown and discarded.
@@ -207,7 +207,7 @@ exit 11
 
 ### `permission_request`
 
-Runs at exec's sandbox-bypass decision boundary, only when a tool requests a bypass it is allowed to ask for. It is separate from the `pre_tool_use` policy gate. `$1` is `permission_request`. stdin is a canonical tool request envelope, and the shared exports include the accepted turn's `SHELLFISH_TURN_ID`:
+Runs at the turn's sandbox-bypass decision boundary, only when a tool requests a bypass it is allowed to ask for. It is separate from the `pre_tool_use` policy gate. `$1` is `permission_request`. stdin is a canonical tool request envelope, and the shared exports include the accepted turn's `SHELLFISH_TURN_ID`:
 
 ```json
 {
@@ -221,7 +221,7 @@ Runs at exec's sandbox-bypass decision boundary, only when a tool requests a byp
 - **stdout** is captured but ignored. It is not committed.
 - **stderr** is shown and discarded.
 - **fd 3** is `{"action":"allow"}` or `{"action":"deny","reason":"..."}`. The reason must be nonempty and may not contain a NUL byte. Valid only with exit 11.
-- **Default action** (exit 0, default still enabled) is to defer: exec asks its interactive client, or denies headlessly if no reply is available.
+- **Default action** (exit 0, default still enabled) is to defer: the turn asks its interactive client, or denies headlessly if no reply is available.
 - **Skipped without control** (exit 10) denies.
 - **Skipped with control** (exit 11) applies the fd-3 decision. An invalid decision fails the operation.
 
@@ -306,7 +306,7 @@ exit 10
 - Dispatch is sequential and preserves configured order. A failed chain does not commit partial output. Candidate context is usable only after the whole chain succeeds.
 - Captures are private, bounded, and cleaned on every path.
 - Scripts have no independent timeout. They must terminate themselves. Cancelling the enclosing operation terminates the active script.
-- Scripts inherit the process environment, but Shellfish removes built-in provider credentials and the configured backend credential before invocation. Exec scopes that credential to the backend as `SHELLFISH_API_KEY`. The variables documented above are the Shellfish-specific hook script guarantees.
+- Scripts inherit the process environment, but Shellfish removes built-in provider credentials and the configured backend credential before invocation. The turn scopes that credential to the backend as `SHELLFISH_API_KEY`. The variables documented above are the Shellfish-specific hook script guarantees.
 - Session state may be shared by concurrent sessions or processes using the same session ID. Scripts must coordinate access when their data requires it.
 - Hook scripts are not transformation middleware. Tool-use scripts cannot modify tool input or result content. They observe and gate. Coordinate policy through turn or session state, not by overloading stdout.
 - Adding a hook is an adapter change, not a dispatcher change. The dispatcher implements the status table, channel limits, and JSON framing. Each hook owns its control fields, default action, and the consequence of skipping it.

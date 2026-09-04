@@ -23,7 +23,7 @@ A turn is one transition of the agent state machine. It begins with a user messa
 
 One `shellfish run` process owns the entire transition, including cleanup. There is no resident agent process and no ownership to coordinate across requests or tools.
 
-Backend adapters translate provider responses into indexed text, reasoning, opaque reasoning, and tool-call updates followed by one response-end event. The exec framework validates and accumulates that normalized stream into the canonical assistant message. Adapters retain only provider-specific parsing, correlation, and protocol validation. Tool calls remain inert until the complete response has been assembled, validated, and appended.
+Backend adapters translate provider responses into indexed text, reasoning, opaque reasoning, and tool-call updates followed by one response-end event. The turn framework validates and accumulates that normalized stream into the canonical assistant message. Adapters retain only provider-specific parsing, correlation, and protocol validation. Tool calls remain inert until the complete response has been assembled, validated, and appended.
 
 ## Clients invoke turns
 

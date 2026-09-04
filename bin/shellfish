@@ -12,8 +12,7 @@ sf_die() {
 }
 
 sf_read_prompt() {
-  local required=$1 stdin_input=''
-  shift
+  local stdin_input=''
   if [[ ! -t 0 ]]; then stdin_input=$(<&0); fi
   if (( $# )); then
     [[ -z $stdin_input ]] || {
@@ -21,10 +20,6 @@ sf_read_prompt() {
       return 2
     }
     stdin_input=${(j: :)@}
-  fi
-  if (( required )) && [[ -z $stdin_input ]]; then
-    sf_die 'a message is required for a new turn'
-    return 2
   fi
   REPLY=$stdin_input
 }
@@ -308,7 +303,7 @@ sf_main() {
   typeset -gx SHELLFISH_VERBOSE=$verbose_requested
   (( ! sandbox_auto_requested )) || runtime_override=1
 
-  sf_read_prompt 0 "${positional[@]}" || return
+  sf_read_prompt "${positional[@]}" || return
   input=$REPLY
   if (( draft_explicit )) && { (( ${#positional} )) || [[ -n $input ]]; }; then
     sf_die '--draft cannot be combined with a prompt'

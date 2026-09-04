@@ -23,7 +23,7 @@ Component lookup rules for bundled, user-defined, relative, and absolute adapter
 
 Exec starts `run` once per provider request. The adapter receives one canonical JSON request on stdin and writes one normalized JSON object per line to stdout. Stderr is not part of the normalized stream. If the adapter fails, exec sanitizes and truncates its stderr for `_exec_error`; successful stderr is discarded.
 
-Exec exposes the resolved credential only as `SHELLFISH_API_KEY` for the adapter process. `SHELLFISH_API_KEY_SOURCE` identifies where it was resolved. Adapters should copy credentials only as long as needed to prepare authentication and then unset them. An adapter with an empty `api_key_env` is responsible for any alternative authentication; the bundled Codex adapter reads an existing Codex CLI login.
+The turn exposes the resolved credential only as `SHELLFISH_API_KEY` for the adapter process. `SHELLFISH_API_KEY_SOURCE` identifies where it was resolved. Adapters should copy credentials only as long as needed to prepare authentication and then unset them. An adapter with an empty `api_key_env` is responsible for any alternative authentication; the bundled Codex adapter reads an existing Codex CLI login.
 
 The input has this top-level shape:
 
@@ -53,7 +53,7 @@ An adapter directory may contain an executable `context_window` alongside `run`.
 {"context_window":200000}
 ```
 
-`context_window` is a positive integer token count. A nonzero exit or any other output means metadata is unavailable; stderr is discarded and the provider request still proceeds. Exec freezes a successful value into the profile and freezes `null` after an unavailable result, so that session does not retry.
+`context_window` is a positive integer token count. A nonzero exit or any other output means metadata is unavailable; stderr is discarded and the provider request still proceeds. The turn freezes a successful value into the profile and freezes `null` after an unavailable result, so that session does not retry.
 
 Model lookup is separate from the normalized response stream. The script must not make a generation request.
 
@@ -76,7 +76,7 @@ Content indexes are bounded non-negative integers. They identify blocks in the c
 
 Opaque reasoning is a complete provider object associated with a reasoning index, not display text. Emit it when the provider has supplied the authoritative continuation data that must survive request projection. Repeated opaque values for one index must agree.
 
-A tool-call update must contain at least one of `id`, `name`, or `input`. The ID and name are immutable once supplied. `input` contains raw JSON text fragments, not parsed JSON. Exec concatenates the fragments and requires the completed input to be an object. Tool-call IDs must be unique within the response.
+A tool-call update must contain at least one of `id`, `name`, or `input`. The ID and name are immutable once supplied. `input` contains raw JSON text fragments, not parsed JSON. The turn concatenates the fragments and requires the completed input to be an object. Tool-call IDs must be unique within the response.
 
 Usage is optional. The latest valid `_turn_usage` before response end becomes the assistant message's canonical usage. Token counts are non-negative integers; cached tokens cannot exceed input tokens.
 

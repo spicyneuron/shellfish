@@ -7,7 +7,7 @@ NOTE: This project is pre-release. Do not add deprecation noticies, backwards co
 - `bin/shellfish` parses the CLI and starts interactive chat, routing recognized commands to their component.
 - `libexec/` holds independent shell programs, each with its own executable entry point and private implementation. They do not share a shell namespace with the dispatcher or each other.
 - `tui/main.zsh` owns interactive session selection, terminal lifecycle, and the ZLE prompt.
-- `lib/exec.zsh` owns process setup, input handling, full turns, events, permissions, signals, and cleanup.
+- `libexec/run/` owns the single-turn command; `lib/exec.zsh` is its turn implementation, covering process setup, input handling, full turns, events, permissions, signals, and cleanup.
 - `lib/session/` owns JSONL persistence, state validation, recovery, and provider request projection.
 - `lib/runtime/` resolves configuration, credentials, profiles, and schema validation.
 - `lib/backend.zsh` adapts provider streams.
@@ -17,12 +17,12 @@ NOTE: This project is pre-release. Do not add deprecation noticies, backwards co
 
 ## Execution flow
 
-- `bin/shellfish` validates CLI input and dispatches to single-turn exec or interactive chat. `shellfish create`, `shellfish config`, `shellfish build-request`, and `shellfish send-request` exec their program under `libexec/`, each of which owns its own parsing.
+- `bin/shellfish` starts interactive chat and routes every other command. `shellfish run`, `shellfish create`, `shellfish config`, `shellfish build-request`, and `shellfish send-request` exec their program under `libexec/`, each of which owns its own parsing.
 - `shellfish create` owns session creation. It obtains the frozen runtime by forwarding its unparsed options to `shellfish config` and deleting the presentation fields, prepares the header, concatenates the profile's `system` components into one system record, collects `session_start` context, writes the complete initial JSONL prefix, and prints the path. `--path` chooses the destination; `--session` names the session the runtime is derived from.
 - Each turn opens the session, runs `user_prompt_submit` scripts, then loops over provider responses. Final responses run `stop` scripts; tool-call responses run the `pre_tool_use` scripts, permission, execution, persistence, and `post_tool_use` scripts before the next provider request.
 - The session layer is authoritative. Request projection converts durable records into provider messages; provider deltas and UI events are transient. Any failure, cancellation, or early return converges on turn recovery and hook/tool cleanup.
 - `sf_session_open` resolves which session a client attaches to and whether it already exists, invoking `shellfish create` when it does not. Turns never create sessions.
-- Interactive chat runs single turns through `shellfish exec --jsonl`, renders its event stream, and reloads the durable transcript after completion or uncertainty. Transcript replay establishes the frozen runtime from the session header, which live `_session_update` events then refresh.
+- Interactive chat runs single turns through `shellfish run --jsonl`, renders its event stream, and reloads the durable transcript after completion or uncertainty. Transcript replay establishes the frozen runtime from the session header, which live `_session_update` events then refresh.
 - A served session runs the same single turns: the proxy relays one child's JSONL to one browser, which replays the durable session on connect and reopens that stream to recover.
 
 ## Architecture
@@ -31,9 +31,9 @@ NOTE: This project is pre-release. Do not add deprecation noticies, backwards co
 - Durable records are `session`, `system`, `message`, and hook-injected `context`. Provider deltas, turn status, and presentation events are transient.
 - Interactive chat submits single turns through the shared session and turn machinery. Do not introduce lifecycle or presentation records.
 - `lib/` is the core; `tui/` and `shellfish-server/` are clients. The entry point owns the core: `bin/shellfish` resolves the session and presentation, then passes them to a client as arguments. Clients receive core data; they never read core globals or call core functions, and core code never references a client.
-- `tui/` may reference exactly `$SF_ROOT`, `$SF_ENTRY`, and `sf_scratch_file`, plus the durable session file, `shellfish exec`, and the jq schema. Verify by enumeration, not by grepping known names: every `sf_*` and `SF_*` token the client references, minus the ones it declares itself, must leave only that list.
+- `tui/` may reference exactly `$SF_ROOT`, `$SF_ENTRY`, and `sf_scratch_file`, plus the durable session file, `shellfish run`, and the jq schema. Verify by enumeration, not by grepping known names: every `sf_*` and `SF_*` token the client references, minus the ones it declares itself, must leave only that list.
 - jq module paths are repo-rooted: pass `-L "$SF_ROOT"` and include `lib/runtime/schema`, `lib/session/request`, or `tui/display-fields`.
-- One `shellfish exec` process owns a session for the duration of a turn by convention; concurrent writers are not prevented. Keep credentials out of hook scripts; exec passes the scoped `SHELLFISH_API_KEY` only to the backend adapter.
+- One `shellfish run` process owns a session for the duration of a turn by convention; concurrent writers are not prevented. Keep credentials out of hook scripts; the turn passes the scoped `SHELLFISH_API_KEY` only to the backend adapter.
 
 ## Configuration
 

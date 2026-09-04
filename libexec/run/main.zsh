@@ -60,11 +60,6 @@ sf_run_main() {
         jsonl=1
         shift
         ;;
-      --)
-        shift
-        positional+=( "$@" )
-        break
-        ;;
       --verbose)
         sf_die 'shellfish run does not support --verbose'
         return 2
@@ -74,11 +69,15 @@ sf_run_main() {
         override=1
         shift
         ;;
+      --)
+        shift
+        positional+=( "$@" )
+        break
+        ;;
       -*)
-        # Options run does not own resolve the runtime of a session it creates.
-        # A following value is forwarded with them; use -- before a prompt that
-        # follows a valueless option.
-        # Selecting a config file is not a runtime override.
+        # Options run does not own configure the session it creates, so they are
+        # forwarded with any value. Use -- before a prompt that follows a
+        # valueless option. Selecting a config file is not a runtime override.
         [[ $1 == --config ]] || override=1
         if (( $# >= 2 )) && [[ $2 != -* ]]; then
           create_args+=( "$1" "$2" )
