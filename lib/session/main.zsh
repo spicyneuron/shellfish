@@ -169,28 +169,6 @@ sf_session_repair_tail() {
   }
 }
 
-# Concatenates the frozen system components into one system record. Header
-# validation guarantees the paths carry no control characters.
-sf_session_system() {
-  local content decoded item component
-  local -a components parts
-  SF_SESSION_ERROR=''
-  decoded=$(jq -r '.profile.system[]' <<<"$SF_SESSION[runtime]") ||
-    sf_session_fail 'cannot inspect system components' || return
-  [[ -z $decoded ]] || components=( "${(@f)decoded}" )
-  for component in $components; do
-    [[ -f $component && -r $component ]] ||
-      sf_session_fail "cannot read system component: $component" || return
-    item=$(<"$component")
-    [[ -z $item ]] || parts+=( "$item" )
-  done
-  content=${(pj:\n\n:)parts}
-  [[ -n $content ]] || return 0
-  item=$(jq -cn --arg content "$content" '{type:"system",content:$content}') ||
-    sf_session_fail 'cannot prepare system record' || return
-  SF_SESSION_RECORDS+=( "$item" )
-}
-
 sf_session_prepare() {
   local runtime=$1 cwd created decoded header id model
   SF_SESSION_ERROR=''
@@ -244,6 +222,29 @@ sf_session_prepare() {
     turn_id 1
   )
   SF_SESSION_RECORDS=( "$header" )
+}
+
+# Concatenates the prepared header's system components into one system record.
+# Runs after sf_session_prepare and before session creation. Header validation
+# guarantees the paths carry no control characters.
+sf_session_system() {
+  local content decoded item component
+  local -a components parts
+  SF_SESSION_ERROR=''
+  decoded=$(jq -r '.profile.system[]' <<<"$SF_SESSION[runtime]") ||
+    sf_session_fail 'cannot inspect system components' || return
+  [[ -z $decoded ]] || components=( "${(@f)decoded}" )
+  for component in $components; do
+    [[ -f $component && -r $component ]] ||
+      sf_session_fail "cannot read system component: $component" || return
+    item=$(<"$component")
+    [[ -z $item ]] || parts+=( "$item" )
+  done
+  content=${(pj:\n\n:)parts}
+  [[ -n $content ]] || return 0
+  item=$(jq -cn --arg content "$content" '{type:"system",content:$content}') ||
+    sf_session_fail 'cannot prepare system record' || return
+  SF_SESSION_RECORDS+=( "$item" )
 }
 
 sf_session_create() {

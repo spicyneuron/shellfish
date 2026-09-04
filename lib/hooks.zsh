@@ -81,7 +81,6 @@ sf_hooks_capture_one() {
   local display_pipe="$directory/current-display-pipe"
   local control="$directory/current-control"
   local HOOK_SCRIPT_ROOT=${script:h} hook=$SF_HOOK_NAME api_key_env
-  local -a command
   local chunk notice=''
   integer script_status display_fd display_bytes=0 notice_sent=0
   local LC_ALL=C
@@ -98,13 +97,11 @@ sf_hooks_capture_one() {
   [[ -z $api_key_env ]] || environment+=( -u "$api_key_env" )
 
   rm -f -- "$context" "$display" "$display_pipe" "$control"
-  command=( "$script" )
-
   mkfifo "$display_pipe" || {
     sf_hooks_fail 'cannot prepare hook display capture'
     return
   }
-  "${environment[@]}" "${command[@]}" "${arguments[@]}" \
+  "${environment[@]}" "$script" "${arguments[@]}" \
     <"$input" >"$context" 2>"$display_pipe" 3>"$control" &
   integer script_pid=$!
   SF_HOOK_SCRIPT_PID=$script_pid
