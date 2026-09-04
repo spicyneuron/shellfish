@@ -159,7 +159,7 @@ sf_tui_transport_next() {
     (( ${#SF_TUI_TRANSPORT_LINES} )) || return 1
     events=$(printf '%s\n' "${SF_TUI_TRANSPORT_LINES[@]}" |
       jq -jRs -L "$SF_ROOT" --argjson runtime "$runtime" \
-        -f "$SF_ROOT/tui/event-decode.jq" 2>/dev/null) || events=''
+        -f "$SF_ROOT/libexec/tui/event-decode.jq" 2>/dev/null) || events=''
     SF_TUI_TRANSPORT_LINES=()
     fields=( "${(@0)${events%$'\0'}}" )
     for (( index = 1; index + 6 <= ${#fields}; index += 7 )); do

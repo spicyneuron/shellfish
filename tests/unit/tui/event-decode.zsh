@@ -18,11 +18,11 @@ cat <<'STREAM' |
 {"type":"message","role":"assistant","stop":"end","content":[{"type":"text","text":"hi\n"}],"usage":{"input_tokens":14,"output_tokens":2}}
 STREAM
   jq -jRs -L "$ROOT" --argjson runtime null \
-    -f "$ROOT/tui/event-decode.jq" >/dev/null
+    -f "$ROOT/libexec/tui/event-decode.jq" >/dev/null
 
 if print -r -- '{"type":"_backend_request_start","unexpected":true}' |
     jq -jRs -L "$ROOT" --argjson runtime null \
-      -f "$ROOT/tui/event-decode.jq" >/dev/null 2>&1; then
+      -f "$ROOT/libexec/tui/event-decode.jq" >/dev/null 2>&1; then
   fail 'malformed backend request start was accepted'
 fi
 
@@ -30,7 +30,7 @@ typeset order
 order=$(print -r -- \
     '{"type":"message","role":"assistant","stop":"tool_calls","content":[{"type":"tool_call","id":"call_1","name":"shell","input":{}}]}' |
   jq -jRs -L "$ROOT" --argjson runtime null \
-    -f "$ROOT/tui/event-decode.jq" |
+    -f "$ROOT/libexec/tui/event-decode.jq" |
   tr '\0' '\n' | sed '/^$/d' | paste -sd, -)
 assert_equal 'assistant_commit,tool_call,call_1,shell,{},json,batch_ok' "$order"
 
@@ -38,14 +38,14 @@ typeset usage
 usage=$(print -r -- \
     '{"type":"_turn_usage","input_tokens":12400,"cached_tokens":10478,"output_tokens":900}' |
   jq -jRs -L "$ROOT" --argjson runtime \
-    '{"profile":{"context_window":264000}}' -f "$ROOT/tui/event-decode.jq" |
+    '{"profile":{"context_window":264000}}' -f "$ROOT/libexec/tui/event-decode.jq" |
   tr '\0' '\n' | sed '/^$/d' | paste -sd, -)
 assert_equal 'turn_usage,12k ↑ 85% ⦿ 900 ↓ 5% of 264k ◔,batch_ok' "$usage"
 
 usage=$(print -r -- \
     '{"type":"_turn_usage","input_tokens":100,"cached_tokens":85,"output_tokens":20}' |
   jq -jRs -L "$ROOT" --argjson runtime \
-    '{"profile":{"context_window":null}}' -f "$ROOT/tui/event-decode.jq" |
+    '{"profile":{"context_window":null}}' -f "$ROOT/libexec/tui/event-decode.jq" |
   tr '\0' '\n' | sed '/^$/d' | paste -sd, -)
 assert_equal 'turn_usage,100 ↑ 85% ⦿ 20 ↓,batch_ok' "$usage"
 
@@ -80,7 +80,7 @@ for error expected in \
     'cannot inspect frozen runtime' 'Turn failed,cannot inspect frozen runtime'; do
   order=$(jq -cn --arg message "$error" '{type:"_turn_error",message:$message}' |
     jq -jRs -L "$ROOT" --argjson runtime null \
-      -f "$ROOT/tui/event-decode.jq" |
+      -f "$ROOT/libexec/tui/event-decode.jq" |
     tr '\0' '\n' | sed '/^$/d' | paste -sd, -)
   assert_equal "exec_error,$expected,batch_ok" "$order"
 done
@@ -96,28 +96,28 @@ typeset shell_runtime=$(jq -cn \
 order=$(print -r -- \
     '{"type":"message","role":"assistant","stop":"tool_calls","content":[{"type":"tool_call","id":"call_2","name":"read_file","input":{"file_path":"outside.txt","request_sandbox_bypass":true,"sandbox_bypass_reason":"test"}}]}' |
   jq -jRs -L "$ROOT" --argjson runtime "$read_runtime" \
-    -f "$ROOT/tui/event-decode.jq" |
+    -f "$ROOT/libexec/tui/event-decode.jq" |
   tr '\0' '\n' | sed '/^$/d' | paste -sd, -)
 assert_equal 'assistant_commit,tool_call,call_2,read_file,outside.txt · unsandboxed,plain,batch_ok' "$order"
 
 order=$(print -r -- \
     '{"type":"context","hook":"user_prompt_submit","script":"hook name","prompt":"prompt","status":0,"content":"body"}' |
   jq -jRs -L "$ROOT" --argjson runtime null \
-    -f "$ROOT/tui/event-decode.jq" |
+    -f "$ROOT/libexec/tui/event-decode.jq" |
   tr '\0' '\n' | sed '/^$/d' | paste -sd, -)
 assert_equal 'context,hook name,user_prompt_submit · prompt,body,batch_ok' "$order"
 
 order=$(print -r -- \
     '{"type":"_tool_permission_request","id":"permission_1","reason":"host access","tool":{"name":"shell","input":{"command":"echo hi","request_sandbox_bypass":true}}}' |
   jq -jRs -L "$ROOT" --argjson runtime "$shell_runtime" \
-    -f "$ROOT/tui/event-decode.jq" |
+    -f "$ROOT/libexec/tui/event-decode.jq" |
   tr '\0' '\n' | sed '/^$/d' | paste -sd, -)
 assert_equal 'permission_request,permission_1,shell,echo hi,host access,sh,batch_ok' "$order"
 
 order=$(print -r -- \
     '{"type":"_tool_permission_request","id":"permission_2","reason":"host access","tool":{"name":"read_file","input":{"file_path":"outside.txt","request_sandbox_bypass":true,"sandbox_bypass_reason":"host access"}}}' |
   jq -jRs -L "$ROOT" --argjson runtime "$read_runtime" \
-    -f "$ROOT/tui/event-decode.jq" |
+    -f "$ROOT/libexec/tui/event-decode.jq" |
   tr '\0' '\n' | sed '/^$/d' | paste -sd, -)
 assert_equal 'permission_request,permission_2,read_file,outside.txt,host access,plain,batch_ok' "$order"
 
@@ -128,21 +128,21 @@ typeset edit_runtime=$(jq -cn \
 order=$(print -r -- \
     '{"type":"message","role":"assistant","stop":"tool_calls","content":[{"type":"tool_call","id":"call_3","name":"edit_file","input":{"file_path":"notes.json","old_string":"a","new_string":"b"}}]}' |
   jq -jRs -L "$ROOT" --argjson runtime "$edit_runtime" \
-    -f "$ROOT/tui/event-decode.jq" |
+    -f "$ROOT/libexec/tui/event-decode.jq" |
   tr '\0' '\n' | sed '/^$/d' | paste -sd, -)
 assert_equal 'assistant_commit,tool_call,call_3,edit_file,notes.json,plain,batch_ok' "$order"
 
 order=$(print -r -- \
     '{"type":"message","role":"tool_result","call_id":"call_2","name":"edit_file","content":"@@ -1 +1 @@\n-old\n+new","exit_code":0,"sandbox_denial_detected":true}' |
   jq -jRs -L "$ROOT" --argjson runtime "$edit_runtime" \
-    -f "$ROOT/tui/event-decode.jq" |
+    -f "$ROOT/libexec/tui/event-decode.jq" |
   tr '\0' '\n' | sed '/^$/d' | paste -sd, -)
 assert_equal 'tool_result,call_2,hidden,@@ -1 +1 @@,-old,+new,file_diff,full,sandbox_denial,batch_ok' "$order"
 
 typeset handoff
 handoff=$(print -r -- '{"type":"_handoff","argv":["/tmp/custom command","","arg"]}' |
   jq -jRs -L "$ROOT" --argjson runtime null \
-    -f "$ROOT/tui/event-decode.jq" |
+    -f "$ROOT/libexec/tui/event-decode.jq" |
   tr '\0' '\n' | sed '/^$/d' | paste -sd, -)
 assert_equal 'handoff,["/tmp/custom command","","arg"],batch_ok' "$handoff"
 
@@ -152,7 +152,7 @@ updated_runtime=$(head -n 1 "$ROOT/tests/fixtures/session/header-only.jsonl" |
 session_update=$(jq -cn --argjson runtime "$updated_runtime" \
     '{type:"_session_update",runtime:$runtime}' |
   jq -jRs -L "$ROOT" --argjson runtime null \
-    -f "$ROOT/tui/event-decode.jq" |
+    -f "$ROOT/libexec/tui/event-decode.jq" |
   tr '\0' '\n' | sed '/^$/d' | paste -sd, -)
 assert_equal "session_update,$updated_runtime,batch_ok" "$session_update"
 
@@ -164,27 +164,27 @@ for invalid in \
     '{"type":"_handoff","argv":["cmd","bad\u0000arg"]}'; do
   if print -r -- "$invalid" |
       jq -jRs -L "$ROOT" --argjson runtime null \
-        -f "$ROOT/tui/event-decode.jq" >/dev/null 2>&1; then
+        -f "$ROOT/libexec/tui/event-decode.jq" >/dev/null 2>&1; then
     fail "invalid handoff was accepted: $invalid"
   fi
 done
 
 if print -r -- '{"type":"_session_update","runtime":{}}' |
     jq -jRs -L "$ROOT" --argjson runtime null \
-      -f "$ROOT/tui/event-decode.jq" >/dev/null 2>&1; then
+      -f "$ROOT/libexec/tui/event-decode.jq" >/dev/null 2>&1; then
   fail 'invalid session update was accepted'
 fi
 
 if jq -cn --argjson runtime "$(head -n 1 "$ROOT/tests/fixtures/session/header-only.jsonl")" \
     '{type:"_session_update",runtime:$runtime}' |
     jq -jRs -L "$ROOT" --argjson runtime null \
-      -f "$ROOT/tui/event-decode.jq" >/dev/null 2>&1; then
+      -f "$ROOT/libexec/tui/event-decode.jq" >/dev/null 2>&1; then
   fail 'session update containing header metadata was accepted'
 fi
 
 if print -r -- '{"type":"message","role":"user"}' |
     jq -jRs -L "$ROOT" --argjson runtime null \
-      -f "$ROOT/tui/event-decode.jq" \
+      -f "$ROOT/libexec/tui/event-decode.jq" \
       >/dev/null 2>&1; then
   fail 'malformed canonical exec record was accepted'
 fi

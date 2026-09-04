@@ -74,8 +74,8 @@ sf_tui_theme_config() {
   while IFS= read -r -d '' key && IFS= read -r -d '' value; do
     values[$key]=$value
   done < <(jq -j '
-    def styles($name):
-      .themes[$name] |
+    def styles($palette):
+      $palette |
       {message:(if .text then "fg=" + .text else "" end),
        "section.user":("fg=" + .user_heading + ",bold"),
        "section.agent":("fg=" + .agent_heading + ",bold"),
@@ -105,9 +105,9 @@ sf_tui_theme_config() {
        "syntax.added":("fg=" + .diff_added + ",bg=" + .diff_added_background),
        "syntax.removed":("fg=" + .diff_removed + ",bg=" + .diff_removed_background)};
     def record($key; $value): $key, "\u0000", $value, "\u0000";
-    record("mode"; .theme_mode),
-    (styles(.theme_light) | to_entries[] | record("light." + .key; .value)),
-    (styles(.theme_dark) | to_entries[] | record("dark." + .key; .value)),
+    record("mode"; .theme.mode),
+    (styles(.theme.light.palette) | to_entries[] | record("light." + .key; .value)),
+    (styles(.theme.dark.palette) | to_entries[] | record("dark." + .key; .value)),
     record("valid"; "yes")
   ' <<<"$presentation" 2>/dev/null)
   [[ ${values[valid]-} == yes ]] || {

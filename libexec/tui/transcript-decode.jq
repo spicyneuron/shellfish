@@ -1,5 +1,5 @@
 include "lib/runtime/schema";
-include "tui/display-fields";
+include "libexec/tui/display-fields";
 
 def durable_prefix:
   if endswith("\n") then

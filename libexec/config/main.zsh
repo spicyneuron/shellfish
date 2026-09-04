@@ -14,6 +14,8 @@ sf_config_main() {
   local requested_config='' requested_session='' requested_profile=''
   local requested_backend='' requested_model='' requested_request='{}'
   local sandbox_detected='{"sandbox_read_paths":[],"sandbox_write_paths":[]}'
+  local inherited_read=${_SHELLFISH_SANDBOX_READ_PATHS:-[]}
+  local inherited_write=${_SHELLFISH_SANDBOX_WRITE_PATHS:-[]}
   local sandbox_flag sandbox_path resolved_path init_sandbox=''
   local -a sandbox_read_paths=() sandbox_write_paths=()
   integer session_explicit=0 config_explicit=0 request_explicit=0 runtime_override=0
@@ -195,11 +197,13 @@ sf_config_main() {
     }
   fi
   typeset -gx _SHELLFISH_SANDBOX_READ_PATHS _SHELLFISH_SANDBOX_WRITE_PATHS
-  _SHELLFISH_SANDBOX_READ_PATHS=$(jq -cn --argjson detected "$sandbox_detected" \
-    '$ARGS.positional + $detected.sandbox_read_paths' --args -- \
+  _SHELLFISH_SANDBOX_READ_PATHS=$(jq -cn --argjson inherited "$inherited_read" \
+    --argjson detected "$sandbox_detected" \
+    '$inherited + $ARGS.positional + $detected.sandbox_read_paths' --args -- \
     "${sandbox_read_paths[@]}") || return 1
-  _SHELLFISH_SANDBOX_WRITE_PATHS=$(jq -cn --argjson detected "$sandbox_detected" \
-    '$ARGS.positional + $detected.sandbox_write_paths' --args -- \
+  _SHELLFISH_SANDBOX_WRITE_PATHS=$(jq -cn --argjson inherited "$inherited_write" \
+    --argjson detected "$sandbox_detected" \
+    '$inherited + $ARGS.positional + $detected.sandbox_write_paths' --args -- \
     "${sandbox_write_paths[@]}") || return 1
 
   if (( init_requested )); then

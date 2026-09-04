@@ -1,5 +1,5 @@
 include "lib/runtime/schema";
-include "tui/display-fields";
+include "libexec/tui/display-fields";
 
 def event_fields($event_runtime):
   if .type == "_assistant_delta" then

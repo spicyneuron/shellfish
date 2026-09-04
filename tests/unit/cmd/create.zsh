@@ -45,6 +45,18 @@ assert_equal "$explicit" \
   'create ignored --path'
 jq -es 'length == 2' "$explicit" >/dev/null || fail 'create did not populate --path'
 
+# Private sandbox grants from a client reach config through create.
+typeset inherited="$tmp/inherited.jsonl"
+_SHELLFISH_SANDBOX_READ_PATHS='["'"${tmp:A}/system"'"]' \
+  _SHELLFISH_SANDBOX_WRITE_PATHS='["'"${tmp:A}/home"'"]' \
+  zsh -f "$entry" create --path "$inherited" --config "$config" >/dev/null || \
+  fail 'create lost inherited sandbox grants'
+jq -e --arg read "${tmp:A}/system" --arg write "${tmp:A}/home" '
+  select(.type == "session") |
+  (.harness.sandbox_read_paths | index($read)) != null and
+  (.harness.sandbox_write_paths | index($write)) != null
+' "$inherited" >/dev/null || fail 'create did not store inherited sandbox grants'
+
 # --session names the session the runtime is derived from. Its settings are
 # reused and its system components are rematerialized, without copying records.
 print -r -- 'rematerialized system' >"$tmp/system/source.md"

@@ -1,9 +1,10 @@
 #!/usr/bin/env zsh
 
 source "${0:A:h:h:h}/_helpers.zsh"
-sf_test_source tui/render/nodes.zsh tui/render/highlights.zsh tui/render/rows.zsh \
-  tui/render/viewport.zsh tui/render/terminal.zsh tui/render/view.zsh tui/transport.zsh \
-  tui/editor.zsh tui/controller.zsh
+sf_test_source libexec/tui/render/nodes.zsh libexec/tui/render/highlights.zsh \
+  libexec/tui/render/rows.zsh libexec/tui/render/viewport.zsh \
+  libexec/tui/render/terminal.zsh libexec/tui/render/view.zsh \
+  libexec/tui/transport.zsh libexec/tui/editor.zsh libexec/tui/controller.zsh
 
 typeset -g BUFFER=draft CURSOR=3 PREDISPLAY='' POSTDISPLAY='' ZLE_CALL=''
 typeset -g SF_PRESENT_STATE=idle

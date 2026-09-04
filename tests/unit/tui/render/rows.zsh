@@ -1,7 +1,8 @@
 #!/usr/bin/env zsh
 
 source "${0:A:h:h:h:h}/_helpers.zsh"
-sf_test_source tui/render/nodes.zsh tui/render/highlights.zsh tui/render/rows.zsh
+sf_test_source libexec/tui/render/nodes.zsh libexec/tui/render/highlights.zsh \
+  libexec/tui/render/rows.zsh
 
 typeset presentation='{"tui":{"preview_lines_reasoning":"full","preview_lines_context":"full","preview_lines_tool_call":"full","preview_lines_tool_result":"full"}}'
 sf_tui_rows_config "$presentation"

@@ -16,7 +16,7 @@ integer size=$size_arg iterations=$iteration_arg
 print -P -- '%BChat Rendering Performance%b'
 
 typeset -g SF_ROOT=$root
-source "$root/tui/render/main.zsh"
+source "$root/libexec/tui/render/main.zsh"
 
 # Wrap to 80 columns. The engine also needs a row budget; view.zsh repaints
 # with LINES - 5, so 45 stands in for a normal window. Full previews keep it

@@ -1,7 +1,7 @@
 #!/usr/bin/env zsh
 
 source "${0:A:h:h:h:h}/_helpers.zsh"
-sf_test_source tui/render/nodes.zsh tui/render/highlights.zsh
+sf_test_source libexec/tui/render/nodes.zsh libexec/tui/render/highlights.zsh
 
 sf_tui_event user hello
 sf_tui_event user again
@@ -212,8 +212,8 @@ fi
 # inert when the environment refuses color.
 unset NO_COLOR
 TERM=xterm-256color
-typeset -g theme_config='{"theme_mode":"dark","theme_light":"l","theme_dark":"d","themes":{
-  "l":{"muted":"#111111","divider":"#111111","footer":"#111111",
+typeset -g theme_config='{"theme":{"mode":"dark","light":{"name":"l","palette":{
+  "muted":"#111111","divider":"#111111","footer":"#111111",
     "prompt":"#111111","system_heading":"#111111","context":"#111111",
     "user_heading":"#111111","agent_heading":"#111111","tool":"#111111",
     "reasoning":"#111111","error":"#111111","diff_added":"#111111",
@@ -221,8 +221,8 @@ typeset -g theme_config='{"theme_mode":"dark","theme_light":"l","theme_dark":"d"
     "syntax_string":"#111114","syntax_number":"#111115",
     "syntax_tag":"#111116",
     "diff_added_background":"#111111","diff_removed":"#111111",
-    "diff_removed_background":"#111111","permission":"#111111"},
-  "d":{"text":"#777777","muted":"#222222","divider":"#333333","footer":"#222222",
+    "diff_removed_background":"#111111","permission":"#111111"}},
+  "dark":{"name":"d","palette":{"text":"#777777","muted":"#222222","divider":"#333333","footer":"#222222",
     "prompt":"#444444","system_heading":"#222222","context":"#222222",
     "user_heading":"#555555","agent_heading":"#222222","tool":"#222222",
     "reasoning":"#222222","error":"#666666","diff_added":"#222222",
@@ -230,7 +230,7 @@ typeset -g theme_config='{"theme_mode":"dark","theme_light":"l","theme_dark":"d"
     "syntax_string":"#222225","syntax_number":"#222226",
     "syntax_tag":"#222227",
     "diff_added_background":"#222222","diff_removed":"#222222",
-    "diff_removed_background":"#222222","permission":"#222222"}}}'
+    "diff_removed_background":"#222222","permission":"#222222"}}}}'
 
 sf_tui_theme_config "$theme_config" || fail "theme setup failed: $SF_PRESENT_HIGHLIGHT_ERROR"
 assert_equal 'fg=#555555,bold' "$SF_PRESENT_STYLE[section.user]"
@@ -259,10 +259,10 @@ else
   fail 'a dumb terminal should disable styling rather than fail'
 fi
 
-# theme_mode:auto resolves through the background probe, caches the answer for
+# theme.mode:auto resolves through the background probe, caches the answer for
 # the process, and falls back to dark when the terminal does not reply.
-typeset -g auto_config=${theme_config/'"theme_mode":"dark"'/'"theme_mode":"auto"'}
-[[ $auto_config == *'"theme_mode":"auto"'* ]] || fail 'auto theme fixture was not built'
+typeset -g auto_config=${theme_config/'"mode":"dark"'/'"mode":"auto"'}
+[[ $auto_config == *'"mode":"auto"'* ]] || fail 'auto theme fixture was not built'
 typeset -gi probe_calls=0
 sf_tui_background_mode() { (( ++probe_calls )); REPLY=light; }
 

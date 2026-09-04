@@ -391,7 +391,7 @@ sf_tui_reload() {
     return 1
   }
   events=$(jq -jRs -L "$SF_ROOT" \
-    -f "$SF_ROOT/tui/transcript-decode.jq" "$session_path" 2>/dev/null) || {
+    -f "$SF_ROOT/libexec/tui/transcript-decode.jq" "$session_path" 2>/dev/null) || {
     SF_PRESENT_ERROR="cannot read session: $session_path"
     return 1
   }
