@@ -1,88 +1,27 @@
 emulate -R zsh
 setopt no_aliases no_bg_nice no_multios pipe_fail
-zmodload zsh/system
 
-(( $+functions[sf_runtime_resolve] )) || source "$SF_ROOT/lib/runtime/main.zsh"
-(( $+functions[sf_session_startup_create] )) || source "$SF_ROOT/lib/session/startup.zsh"
 (( $+functions[sf_chat_repaint] )) || source "$SF_ROOT/tui/render/main.zsh"
 (( $+functions[sf_chat_transport_start] )) || source "$SF_ROOT/tui/transport.zsh"
 (( $+functions[sf_chat_bind] )) || source "$SF_ROOT/tui/editor.zsh"
 (( $+functions[sf_chat_controller] )) || source "$SF_ROOT/tui/controller.zsh"
 
 sf_chat_run() {
-  local requested_session=${1-} requested_config=${2-} requested_profile=${3-}
-  local requested_model=${4-} requested_request=${5:-\{\}} requested_backend=${6-}
-  integer runtime_override=${7:-0} continue_requested=${8:-0} clear_requested=${9:-0}
-  local initial_prompt=${10-} new_source=${11-} draft=${12-}
-  local runtime session_mode=resume
-  integer new_session=0
-  integer controller_status=0 runtime_status=0
+  local session=$1 runtime=$2 session_mode=$3
+  integer clear_requested=${4:-0}
+  local initial_prompt=${5-} draft=${6-}
+  integer controller_status=0
 
   SF_CHAT_ERROR=''
   typeset -gx SHELLFISH_MODE=chat
-  if (( continue_requested )); then
-    sf_session_find 1 || { SF_CHAT_ERROR=$SF_SESSION_ERROR; return 1; }
-    requested_session=$SF_SESSION_MATCHES[1]
-  fi
-
-  sf_session_select_path "$requested_session" || {
-    SF_CHAT_ERROR=$SF_SESSION_ERROR
-    return 1
-  }
-  typeset -g SF_SESSION_SELECTED=$REPLY
-  if [[ ! -s $SF_SESSION_SELECTED ]]; then
-    [[ ! -e $SF_SESSION_SELECTED || ( -f $SF_SESSION_SELECTED && ! -L $SF_SESSION_SELECTED ) ]] || {
-      SF_CHAT_ERROR="invalid session path: $SF_SESSION_SELECTED"
-      return 1
-    }
-    new_session=1
-    session_mode=startup
-  fi
-  if (( new_session )); then
-    if [[ -n $new_source ]]; then
-      sf_session_read_settings "$new_source" || {
-        SF_CHAT_ERROR=$SF_SESSION_ERROR
-        return 1
-      }
-      runtime=$REPLY
-      sf_runtime_restore_presentation "$requested_config" || {
-        SF_CHAT_ERROR=$SF_RUNTIME_ERROR
-        return 1
-      }
-    else
-      sf_runtime_resolve '' "$requested_config" "$requested_profile" \
-        "$requested_model" "$requested_request" "$requested_backend" \
-        "$runtime_override" || {
-        SF_CHAT_ERROR=$SF_RUNTIME_ERROR
-        return 1
-      }
-      runtime=$REPLY
-    fi
-    sf_session_startup_create "$SF_SESSION_SELECTED" "$runtime" || {
-      SF_CHAT_ERROR=$SF_SESSION_STARTUP_ERROR
-      return 1
-    }
-  else
-    sf_runtime_resolve "$SF_SESSION_SELECTED" "$requested_config" "$requested_profile" \
-      "$requested_model" "$requested_request" "$requested_backend" "$runtime_override" ||
-      runtime_status=$?
-    if (( runtime_status )); then
-      SF_CHAT_ERROR=$SF_RUNTIME_ERROR
-      return $runtime_status
-    fi
-    runtime=$REPLY
-  fi
-
-  SF_CHAT_TRANSPORT_COMMAND=(
-    "$SF_ENTRY" exec --jsonl --session "$SF_SESSION_SELECTED"
-  )
+  SF_CHAT_TRANSPORT_COMMAND=( "$SF_ENTRY" exec --jsonl --session "$session" )
   if (( clear_requested )); then
     zmodload zsh/terminfo && echoti clear || {
       SF_CHAT_ERROR='cannot clear terminal'
       return 1
     }
   fi
-  sf_chat_controller "$SF_SESSION_SELECTED" "$runtime" "$initial_prompt" "$session_mode" "$draft" ||
+  sf_chat_controller "$session" "$runtime" "$initial_prompt" "$session_mode" "$draft" ||
     controller_status=$?
   if (( controller_status )); then
     SF_CHAT_ERROR=$SF_PRESENT_ERROR

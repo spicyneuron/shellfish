@@ -604,10 +604,19 @@ sf_main() {
     return 1
   fi
 
-  source "$SF_ROOT/tui/main.zsh"
-  sf_chat_run "$requested_session" "$requested_config" "$requested_profile" \
+  source "$SF_ROOT/lib/session/startup.zsh"
+  sf_session_open "$requested_session" "$requested_config" "$requested_profile" \
     "$requested_model" "$requested_request" "$requested_backend" \
-    "$runtime_override" "$continue_requested" "$clear_requested" "$input" "$new_source" "$draft"
+    "$runtime_override" "$continue_requested" "$new_source"
+  local open_status=$?
+  if (( open_status )); then
+    sf_die "$SF_SESSION_STARTUP_ERROR"
+    return $open_status
+  fi
+
+  source "$SF_ROOT/tui/main.zsh"
+  sf_chat_run "$SF_SESSION_OPEN[path]" "$SF_SESSION_OPEN[runtime]" "$SF_SESSION_OPEN[mode]" \
+    "$clear_requested" "$input" "$draft"
   local exit_status=$?
   [[ -z $SF_CHAT_ERROR ]] || sf_die "$SF_CHAT_ERROR"
   return $exit_status

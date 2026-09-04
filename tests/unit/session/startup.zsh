@@ -51,3 +51,44 @@ if sf_session_startup_create "$missing" "$missing_runtime"; then
 fi
 [[ $SF_SESSION_STARTUP_ERROR == "cannot read system component: $tmp/absent.md" ]]
 [[ ! -e $missing ]]
+
+# Opening reports the runtime resolution status rather than flattening it.
+typeset existing="$tmp/existing.jsonl"
+print -r -- '{}' >"$existing"
+sf_session_select_path() { REPLY=$1; }
+integer open_status=0
+sf_session_open "$existing" '' '' '' '{}' '' 1 0 '' || open_status=$?
+(( open_status == 2 ))
+[[ $SF_SESSION_STARTUP_ERROR == 'runtime overrides cannot be used with an existing session' ]]
+
+# An existing session resolves its frozen runtime and current presentation together.
+typeset lean="$tmp/lean.jsonl"
+integer resolve_calls=0
+print -r -- '{}' >"$lean"
+sf_runtime_resolve() {
+  (( ++resolve_calls ))
+  SF_PRESENTATION='{"source":"resolve"}'
+  REPLY='{"resolved":true}'
+}
+sf_session_open "$lean" '' '' '' '{}' '' 0 0 ''
+assert_equal "$lean" "$SF_SESSION_OPEN[path]"
+assert_equal '{"resolved":true}' "$SF_SESSION_OPEN[runtime]"
+assert_equal resume "$SF_SESSION_OPEN[mode]"
+assert_equal '{"source":"resolve"}' "$SF_PRESENTATION"
+(( resolve_calls == 1 ))
+
+# An empty path opens as a new session created with the runtime just resolved.
+typeset fresh="$tmp/fresh.jsonl"
+resolve_calls=0
+sf_hooks_session_state_create() { return 0; }
+sf_session_prepare() { return 0; }
+sf_session_system() { return 0; }
+sf_hooks_session_start() { return 0; }
+sf_session_create() { : >"$SF_SESSION_OPEN[path]"; }
+sf_session_open "$fresh" '' '' '' '{}' '' 0 0 ''
+assert_equal "$fresh" "$SF_SESSION_OPEN[path]"
+assert_equal '{"resolved":true}' "$SF_SESSION_OPEN[runtime]"
+assert_equal startup "$SF_SESSION_OPEN[mode]"
+assert_equal '{"source":"resolve"}' "$SF_PRESENTATION"
+(( resolve_calls == 1 ))
+[[ -e $fresh ]]

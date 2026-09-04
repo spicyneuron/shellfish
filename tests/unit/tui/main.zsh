@@ -2,55 +2,32 @@
 
 source "${0:A:h:h:h}/_helpers.zsh"
 sf_test_source tui/main.zsh
-sf_test_tmp ui-main
 
-# Runtime overrides cannot be used with an existing non-empty session.
-typeset existing="$tmp/existing.jsonl"
-print -r -- '{}' >"$existing"
-sf_session_select_path() { REPLY=$1; }
-integer start_status=0
-sf_chat_run "$existing" '' '' '' '{}' '' 1 0 0 || start_status=$?
-(( start_status == 2 ))
-[[ $SF_CHAT_ERROR == 'runtime overrides cannot be used with an existing session' ]]
-
-# Existing chat resolves its frozen runtime and current presentation together.
-typeset lean_session="$tmp/lean.jsonl" lean_called='' lean_runtime=''
-typeset lean_initial='' lean_session_mode='' lean_presentation=''
-integer resolve_calls=0
-print -r -- '{}' >"$lean_session"
-sf_runtime_resolve() {
-  (( ++resolve_calls ))
-  SF_PRESENTATION='{"source":"resolve"}'
-  REPLY='{"resolved":true}'
-}
+# The client receives a resolved session and runs its turns through exec.
+typeset chat_session='' chat_runtime='' chat_initial='' chat_mode='' chat_draft=''
 sf_chat_controller() {
-  lean_called=$1
-  lean_runtime=$2
-  lean_initial=$3
-  lean_session_mode=$4
-  lean_presentation=$SF_PRESENTATION
+  chat_session=$1
+  chat_runtime=$2
+  chat_initial=$3
+  chat_mode=$4
+  chat_draft=$5
 }
-sf_chat_run "$lean_session" '' '' '' '{}' '' 0 0 0 prompt
-assert_equal "$lean_session" "$lean_called"
-assert_equal '{"resolved":true}' "$lean_runtime"
-assert_equal prompt "$lean_initial"
-assert_equal resume "$lean_session_mode"
-assert_equal '{"source":"resolve"}' "$lean_presentation"
-(( resolve_calls == 1 ))
+typeset -g SF_ENTRY="$ROOT/bin/shellfish"
+sf_chat_run /sessions/open.jsonl '{"resolved":true}' startup 0 prompt sketch
+assert_equal /sessions/open.jsonl "$chat_session"
+assert_equal '{"resolved":true}' "$chat_runtime"
+assert_equal startup "$chat_mode"
+assert_equal prompt "$chat_initial"
+assert_equal sketch "$chat_draft"
+assert_equal "$SF_ENTRY exec --jsonl --session /sessions/open.jsonl" \
+  "${SF_CHAT_TRANSPORT_COMMAND[*]}"
 
-# New chat uses the presentation produced with its runtime.
-typeset new_session="$tmp/new.jsonl"
-resolve_calls=0
-lean_called=''
-sf_hooks_turn_state_create() { return 0; }
-sf_session_prepare() { return 0; }
-sf_hooks_system() { return 0; }
-sf_hooks_session_start() { return 0; }
-sf_session_create() { : >"$SF_SESSION_SELECTED"; }
-sf_hooks_turn_state_cleanup() { return 0; }
-sf_chat_run "$new_session" '' '' '' '{}' '' 0 0 0
-assert_equal "$new_session" "$lean_called"
-assert_equal '{"resolved":true}' "$lean_runtime"
-assert_equal startup "$lean_session_mode"
-assert_equal '{"source":"resolve"}' "$lean_presentation"
-(( resolve_calls == 1 ))
+# A controller failure surfaces its status and presentation error.
+integer chat_status=0
+sf_chat_controller() {
+  SF_PRESENT_ERROR='controller stopped'
+  return 3
+}
+sf_chat_run /sessions/open.jsonl '{}' resume 0 '' '' || chat_status=$?
+(( chat_status == 3 ))
+assert_equal 'controller stopped' "$SF_CHAT_ERROR"
