@@ -210,8 +210,8 @@ SF_TEST_RUNTIME=$(jq -c \
    .harness.user_prompt_submit=[$new,$refresh,$verbose,$copy,$fork,$sandbox,$user_shell,$server,$resume,$compact,$help,$after_help]' \
   <<<"$SF_TEST_RUNTIME")
 sf_test_session "$help_session"
-sf_session_open "$help_session"
-sf_session_close
+sf_session_begin_turn "$help_session"
+sf_session_reset
 sf_hooks_turn_state_create
 run_prompt_hook /help "$help_session"
 [[ $reply[1] == handled ]]
@@ -254,9 +254,9 @@ set_prompt_hook() {
   integer rc=0
   patch=$(jq -cn --arg script "$script" \
     '{harness:{user_prompt_submit:[$script]}}') || return
-  sf_session_open "$session" || return
+  sf_session_begin_turn "$session" || return
   sf_session_update "$patch" || rc=1
-  sf_session_close
+  sf_session_reset
   return $rc
 }
 
@@ -307,9 +307,9 @@ sandbox_patch=$reply[2]
 jq -e --arg path "${sandbox_dir:A}" \
   '. == {harness:{sandbox_write_paths:[$path]}}' <<<"$sandbox_patch" >/dev/null ||
   fail "unexpected sandbox patch: $sandbox_patch"
-sf_session_open "$help_session"
+sf_session_begin_turn "$help_session"
 sf_session_update "$sandbox_patch"
-sf_session_close
+sf_session_reset
 run_prompt_hook "/sandbox write $sandbox_dir" "$help_session"
 [[ $reply[1] == handled ]]
 run_prompt_hook "/sandbox -w $sandbox_dir" "$help_session"
@@ -415,8 +415,8 @@ SF_TEST_RUNTIME=$(jq -c \
   --arg script "$ROOT/default/hooks/user_prompt_submit/user_shell" \
   '.harness.user_prompt_submit=[$script]' <<<"$SF_TEST_RUNTIME")
 sf_test_session "$shell_session"
-sf_session_open "$shell_session"
-sf_session_close
+sf_session_begin_turn "$shell_session"
+sf_session_reset
 sf_hooks_turn_state_create
 typeset -gx SHELLFISH_MODE=test SHELLFISH_VERBOSE=1
 typeset shell_state_dir=$SHELLFISH_TURN_STATE
@@ -446,10 +446,10 @@ integer compact_status=0
 sf_test_runtime
 SF_TEST_RUNTIME=$(jq -c '.profile.context_window = 100' <<<"$SF_TEST_RUNTIME")
 sf_test_session "$compact_source"
-sf_session_open "$compact_source"
+sf_session_begin_turn "$compact_source"
 sf_session_append '{"type":"message","role":"user","content":[{"type":"text","text":"Hello"}]}'
 sf_session_append '{"type":"message","role":"assistant","stop":"end","content":[{"type":"text","text":"Hi"}],"usage":{"input_tokens":1,"output_tokens":1}}'
-sf_session_close
+sf_session_reset
 
 # Below the threshold an ordinary prompt is left alone.
 : >"$compact_control"

@@ -3,7 +3,7 @@
 emulate -R zsh
 setopt no_aliases no_bg_nice no_multios pipe_fail
 
-(( $+functions[sf_session_open] )) || source "$SF_ROOT/lib/session/main.zsh"
+(( $+functions[sf_session_begin_turn] )) || source "$SF_ROOT/lib/session/main.zsh"
 (( $+functions[sf_runtime_resolve] )) || source "$SF_ROOT/lib/runtime/main.zsh"
 (( $+functions[sf_hooks_session_start] )) || source "$SF_ROOT/lib/hooks.zsh"
 (( $+functions[sf_tools_load] )) || source "$SF_ROOT/lib/tools.zsh"
@@ -155,7 +155,9 @@ sf_exec_turn_cleanup() {
         failure=$SF_SESSION_ERROR
       fi
     fi
-    if sf_session_recover_turn; then
+    # An interrupted turn may have written past the in-memory view, so recovery
+    # judges the durable records rather than what this process last held.
+    if sf_session_resync_turn; then
       if [[ -n $REPLY ]]; then
         [[ -z $recovered ]] || recovered+=$'\n'
         recovered+=$REPLY
@@ -166,7 +168,7 @@ sf_exec_turn_cleanup() {
   fi
   SF_REQUEST[partial_events]=''
   [[ -z $recovered ]] || sf_exec_emit "$recovered"
-  sf_session_close
+  sf_session_reset
   if (( ! interrupted )); then
     [[ -z $failure ]] || sf_exec_error "$failure"
     [[ -n $failure || -z $after ]] || sf_exec_emit "$after"
@@ -192,7 +194,7 @@ sf_exec_turn() {
   SF_EXEC[permission_count]=0
   SF_EXEC[permission_available]=$permission_available
   trap 'sf_exec_interrupt; exit $SF_EXEC[signal_status]' TERM
-  if ! sf_session_open "$session_path"; then
+  if ! sf_session_begin_turn "$session_path"; then
     sf_exec_error "$SF_SESSION_ERROR"
     return 1
   fi

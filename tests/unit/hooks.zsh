@@ -132,7 +132,7 @@ SF_TEST_RUNTIME=$(jq -c --arg script "$permission_script" '
   .harness.permission_request=[$script] | del(.harness.session_start)
 ' <<<"$SF_TEST_RUNTIME")
 sf_test_session "$permission_session"
-sf_session_open "$permission_session"
+sf_session_begin_turn "$permission_session"
 SHELLFISH_SESSION_STATE=''
 sf_hooks_turn_state_create
 typeset -gx SHELLFISH_TURN_ID=1
@@ -165,7 +165,7 @@ if sf_hooks_permission_request "$permission_session" shell call_7 \
   fail 'malformed permission decision was accepted'
 fi
 [[ $SF_HOOK_ERROR == 'permission_request hook script returned invalid decision' ]]
-sf_session_close
+sf_session_reset
 sf_hooks_turn_state_cleanup
 
 # Exit 10 continues the permission chain, so a later halting fd-3 decision wins.
@@ -180,7 +180,7 @@ SF_TEST_RUNTIME=$(jq -c \
   --arg skip "$permission_chain_skip" --arg decide "$permission_chain_decide" \
   '.harness.permission_request=[$skip,$decide]' <<<"$SF_TEST_RUNTIME")
 sf_test_session "$permission_chain_session"
-sf_session_open "$permission_chain_session"
+sf_session_begin_turn "$permission_chain_session"
 sf_hooks_turn_state_create
 typeset -gx SHELLFISH_TURN_ID=1
 print allow >"$SHELLFISH_TURN_STATE/chain-decision"
@@ -191,15 +191,15 @@ print deny >"$SHELLFISH_TURN_STATE/chain-decision"
 sf_hooks_permission_request "$permission_chain_session" shell call_8 \
   '{"command":"true"}'
 [[ $reply[1] == deny && $reply[2] == 'chain denied' ]]
-sf_session_close
+sf_session_reset
 sf_hooks_turn_state_cleanup
 SF_TEST_RUNTIME=$permission_runtime
 
 typeset plain_session="$tmp/plain-session.jsonl"
 SF_TEST_RUNTIME=$(jq 'del(.harness.user_prompt_submit)' <<<"$SF_TEST_RUNTIME")
 sf_test_session "$plain_session"
-sf_session_open "$plain_session"
-sf_session_close
+sf_session_begin_turn "$plain_session"
+sf_session_reset
 sf_hooks_turn_state_create
 run_prompt_hook ordinary "$plain_session"
 [[ ${#reply} == 1 && $reply[1] == proceed && -z $SF_HOOK_ERROR ]]
@@ -215,30 +215,30 @@ SF_TEST_RUNTIME=$(jq -c --arg script "$stop_script" \
   '.harness.stop=[$script]' <<<"$SF_TEST_RUNTIME")
 typeset stop_session="$tmp/stop-session.jsonl"
 sf_test_session "$stop_session"
-sf_session_open "$stop_session"
+sf_session_begin_turn "$stop_session"
 sf_session_append '{"type":"message","role":"user","content":[{"type":"text","text":"hi"}]}'
 sf_session_append '{"type":"message","role":"assistant","stop":"end","content":[{"type":"text","text":"hi"}],"usage":{"input_tokens":1,"output_tokens":1}}'
-sf_session_close
+sf_session_reset
 sf_hooks_turn_state_create
-sf_session_open "$stop_session"
+sf_session_begin_turn "$stop_session"
 STOP_ATTEMPT=1 STOP_INPUT=hi STOP_STDOUT=1 sf_hooks_stop "$stop_session" hi 1
 [[ $reply[1] == finish && $SF_HOOK_SCRIPT_RESULTS[4] == local ]]
-sf_session_close
+sf_session_reset
 (( $(wc -l <"$stop_session") == 3 ))
 
-sf_session_open "$stop_session"
+sf_session_begin_turn "$stop_session"
 STOP_ATTEMPT=2 STOP_INPUT=hi STOP_SKIP=1 STOP_STDOUT=1 \
   sf_hooks_stop "$stop_session" hi 2
 [[ $reply[1] == continue && $SF_HOOK_SCRIPT_RESULTS[4] == local ]]
-sf_session_close
+sf_session_reset
 jq -e -s '.[-1] == {type:"context",hook:"stop",script:"stop",content:"feedback"}' \
   "$stop_session" >/dev/null
 
-sf_session_open "$stop_session"
+sf_session_begin_turn "$stop_session"
 if STOP_ATTEMPT=3 STOP_INPUT=hi STOP_SKIP=1 sf_hooks_stop "$stop_session" hi 3; then
   fail 'stop skip without feedback was accepted'
 fi
 [[ $SF_HOOK_ERROR == 'stop hook script skipped completion without feedback' ]]
-sf_session_close
+sf_session_reset
 sf_hooks_turn_state_cleanup
 assert_no_hook_captures

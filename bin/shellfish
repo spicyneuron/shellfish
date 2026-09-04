@@ -409,7 +409,7 @@ sf_main() {
     source "$SF_ROOT/lib/request.zsh"
     if [[ $command == build-request ]]; then
       SF_SESSION_PATH=$selected
-      sf_session_load || {
+      sf_session_read || {
         sf_die "$SF_SESSION_ERROR"
         return 1
       }

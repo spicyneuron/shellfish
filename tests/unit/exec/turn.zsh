@@ -126,13 +126,13 @@ SF_TEST_RUNTIME=$base_runtime
 typeset memory_request="$tmp/memory-request.json"
 SF_ROOT=$ROOT zsh -f -c '
   source "$SF_ROOT/lib/exec.zsh"
-  sf_session_open "$1" || exit
+  sf_session_begin_turn "$1" || exit
   mv "$1" "$1.saved" || exit
   print -rl -- "${SF_SESSION_RECORDS[@]}" |
     sf_request_build "$SF_SESSION[runtime]" "[]" >"$2"
   rc=$?
   mv "$1.saved" "$1"
-  sf_session_close
+  sf_session_reset
   exit $rc
 ' -- "$session" "$memory_request"
 jq -e '
@@ -271,8 +271,8 @@ print -r -- "$(<"$partial_stream")" | jq -eRn '
   ($events[-1].message | contains("cannot append session record")) and
   ($events | any(.type | IN("session","system","message","context")) | not)
 ' >/dev/null
-sf_session_open "$partial_session"
-sf_session_close
+sf_session_begin_turn "$partial_session"
+sf_session_reset
 cmp -s "$tmp/partial-before.jsonl" "$partial_session" ||
   fail 'opening did not repair the partial append'
 
@@ -280,9 +280,9 @@ cmp -s "$tmp/partial-before.jsonl" "$partial_session" ||
 # but the fixture echoes only the submitted prompt.
 typeset echo_session="$tmp/echo.jsonl"
 sf_test_session "$echo_session"
-sf_session_open "$echo_session"
+sf_session_begin_turn "$echo_session"
 sf_session_append '{"type":"context","hook":"session_start","script":"fixture","content":"startup context"}'
-sf_session_close
+sf_session_reset
 stream=$(sf_test_turn 'plain prompt' "$echo_session")
 print -r -- "$stream" | jq -eRn '
   [inputs | fromjson | select(.role == "assistant")] as $messages |
@@ -326,9 +326,9 @@ print -r -- "$stream" | jq -eRn '
 ' >/dev/null
 
 # A later owner recovers an interrupted provider state before the next request.
-sf_session_open "$session"
+sf_session_begin_turn "$session"
 sf_session_append '{"type":"message","role":"user","content":[{"type":"text","text":"interrupted"}]}'
-sf_session_close
+sf_session_reset
 stream=$(sf_test_turn next "$session")
 print -r -- "$stream" | jq -eRn '
   [inputs | fromjson] as $events |

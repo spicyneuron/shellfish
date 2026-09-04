@@ -118,7 +118,7 @@ sf_session_find() {
   (( ${#SF_SESSION_MATCHES} )) || sf_session_fail "no sessions match $cwd"
 }
 
-sf_session_close() {
+sf_session_reset() {
   SF_SESSION=()
   SF_SESSION_RECORDS=()
   SF_HOOK_COUNTS=()
@@ -338,7 +338,8 @@ sf_session_project() {
   )
 }
 
-sf_session_load() {
+# Replaces the in-memory view with the durable records. Never writes.
+sf_session_read() {
   local record
   SF_SESSION=()
   SF_SESSION_RECORDS=()
@@ -364,7 +365,7 @@ sf_session_load() {
 sf_session_append() {
   local record=$1
   (( ${#SF_SESSION_RECORDS} )) || {
-    sf_session_fail 'session is not open for mutation'
+    sf_session_fail 'session has not been read'
     return
   }
   if ! printf '%s\n' "$record" >>"$SF_SESSION_PATH"; then
@@ -379,7 +380,7 @@ sf_session_update() {
   local -a fields
   integer changed=0
   (( ${#SF_SESSION_RECORDS} )) || {
-    sf_session_fail 'session is not open for mutation'
+    sf_session_fail 'session has not been read'
     return
   }
   decoded=$(jq -L "$SF_ROOT/lib" -jnre --argjson header "$SF_SESSION_RECORDS[1]" \
@@ -438,7 +439,7 @@ sf_session_update() {
     sf_session_fail "$error"
     return 1
   fi
-  sf_session_load || return
+  sf_session_read || return
   REPLY=1
 }
 
@@ -484,13 +485,13 @@ sf_session_turn_pending() {
   SF_SESSION_PENDING_CALLS=( "${(@)fields[2,-2]}" )
 }
 
+# Closes a dangling turn in the loaded view, reporting appended records in REPLY.
+# Requires an already-read session.
 sf_session_recover_turn() {
   local record recovered='' needed
   local -a pending
   integer index
   REPLY=''
-  sf_session_repair_tail || return
-  sf_session_load || return
   sf_session_turn_pending || return
   needed=$REPLY
   pending=( "${SF_SESSION_PENDING_CALLS[@]}" )
@@ -511,7 +512,16 @@ sf_session_recover_turn() {
   REPLY=$recovered
 }
 
-sf_session_open() {
+# Adopts the durable transcript as the in-memory view. Repair precedes the read
+# so a torn trailing line cannot fail it, and the read precedes recovery so a
+# dangling turn is judged against the durable records rather than a stale view.
+sf_session_resync_turn() {
+  sf_session_repair_tail || return
+  sf_session_read || return
+  sf_session_recover_turn
+}
+
+sf_session_begin_turn() {
   local session_path=$1
   SF_SESSION_ERROR=''
   REPLY=''
@@ -524,8 +534,8 @@ sf_session_open() {
     sf_session_fail "invalid session path: $session_path"
     return
   }
-  if ! sf_session_recover_turn; then
-    sf_session_close
+  if ! sf_session_resync_turn; then
+    sf_session_reset
     return 1
   fi
 }
