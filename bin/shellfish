@@ -296,12 +296,12 @@ sf_main() {
     return 2
   fi
   if (( new_requested )); then
-    (( ! session_explicit && ! continue_requested && ! resume_requested )) || {
-      sf_die '--new cannot be combined with --session, --continue, or --resume'
+    [[ $command != exec ]] || {
+      sf_die 'shellfish exec does not support --new; use shellfish create'
       return 2
     }
-    (( ! jsonl_requested )) || {
-      sf_die '--new cannot be combined with --jsonl'
+    (( ! session_explicit && ! continue_requested && ! resume_requested )) || {
+      sf_die '--new cannot be combined with --session, --continue, or --resume'
       return 2
     }
     (( ${#positional} <= 1 )) || {
@@ -349,9 +349,7 @@ sf_main() {
   (( ! sandbox_auto_requested )) || runtime_override=1
 
   if [[ $command == exec ]]; then
-    if (( new_requested )); then
-      input=''
-    elif (( jsonl_requested )); then
+    if (( jsonl_requested )); then
       (( ! ${#positional} )) || {
         sf_die '--jsonl does not accept a prompt'
         return 2
@@ -373,11 +371,16 @@ sf_main() {
       input=$(jq -cn --arg text "$REPLY" \
         '{type:"message",role:"user",content:[{type:"text",text:$text}]}') || return 1
     fi
+    source "$SF_ROOT/lib/session/startup.zsh"
+    sf_session_open "$requested_session" "$runtime_override" "$continue_requested" \
+      '' "${runtime_args[@]}"
+    local open_status=$?
+    if (( open_status )); then
+      [[ -z $SF_SESSION_STARTUP_ERROR ]] || sf_die "$SF_SESSION_STARTUP_ERROR"
+      return $open_status
+    fi
     source "$SF_ROOT/lib/exec.zsh"
-    sf_exec_run "$input" "$requested_session" "$requested_config" \
-      "$requested_profile" "$requested_model" "$requested_request" "$requested_backend" \
-      "$runtime_override" "$continue_requested" "$jsonl_requested" "$new_requested" \
-      "$new_source"
+    sf_exec_run "$input" "$SF_SESSION_OPEN[path]" "$jsonl_requested"
     local exit_status=$?
     [[ -z $SF_EXEC[error] ]] || sf_die "$SF_EXEC[error]"
     return $exit_status
@@ -434,16 +437,20 @@ sf_main() {
   fi
 
   source "$SF_ROOT/lib/session/startup.zsh"
-  sf_session_open "$requested_session" "$requested_config" \
-    "$runtime_override" "$continue_requested" "$new_source" "${runtime_args[@]}"
-  local open_status=$?
-  if (( open_status )); then
+  sf_session_open "$requested_session" "$runtime_override" "$continue_requested" \
+    "$new_source" "${runtime_args[@]}"
+  local chat_status=$?
+  if (( chat_status )); then
     [[ -z $SF_SESSION_STARTUP_ERROR ]] || sf_die "$SF_SESSION_STARTUP_ERROR"
-    return $open_status
+    return $chat_status
   fi
+  sf_runtime_restore_presentation "$requested_config" || {
+    sf_die "$SF_RUNTIME_ERROR"
+    return 1
+  }
 
   source "$SF_ROOT/tui/main.zsh"
-  sf_tui_run "$SF_SESSION_OPEN[path]" "$SF_SESSION_OPEN[presentation]" \
+  sf_tui_run "$SF_SESSION_OPEN[path]" "$SF_PRESENTATION" \
     "$input" "$SF_SESSION_OPEN[mode]" "$draft" "$clear_requested"
   local exit_status=$?
   [[ -z $SF_TUI_ERROR ]] || sf_die "$SF_TUI_ERROR"

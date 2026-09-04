@@ -118,7 +118,7 @@ jq -e '
 ' "$unavailable_session" >/dev/null
 sf_test_turn second "$unavailable_session" >/dev/null
 (( $(wc -l <"$model_calls") == 1 ))
-sf_session_read_settings "$unavailable_session"
+sf_session_read_runtime "$unavailable_session"
 jq -e '.profile.context_window == null' <<<"$REPLY" >/dev/null
 SF_TEST_RUNTIME=$base_runtime
 

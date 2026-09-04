@@ -71,4 +71,43 @@ zsh -f "$entry" create --path >/dev/null 2>&1 && fail 'create accepted a bare --
 zsh -f "$entry" create --path "$tmp/a.jsonl" --path "$tmp/b.jsonl" >/dev/null 2>&1 &&
   fail 'create accepted a repeated --path'
 
+# A failing session_start script leaves no transcript and reports its detail.
+# Session state stays a disposable cache even when creation fails.
+typeset hook="$tmp/failing-hook" marker="$tmp/state-marker" hook_config="$tmp/hook.jsonc"
+cat >"$hook" <<'ZSH'
+#!/usr/bin/env zsh
+[[ $1 == session_start && -d $SHELLFISH_SESSION_STATE && -z ${SHELLFISH_TURN_STATE-} ]] || exit 2
+print -r -- "$SHELLFISH_SESSION_STATE" >"$SF_TEST_STATE_MARKER"
+print -u2 -r -- 'startup detail'
+exit 9
+ZSH
+chmod +x "$hook"
+jq --arg hook "$hook" '.harnesses.machine.session_start=[$hook]' "$config" >"$hook_config"
+typeset failed="$tmp/failed.jsonl" hook_error="$tmp/hook-error"
+SF_TEST_STATE_MARKER="$marker" zsh -f "$entry" create --path "$failed" \
+  --config "$hook_config" >/dev/null 2>"$hook_error" &&
+  fail 'a failing session_start script created a session'
+[[ $(<"$hook_error") == *"hook script failed with status 9: ${hook:A}: startup detail"* ]] ||
+  fail 'create hid the session_start failure'
+[[ ! -e $failed ]] || fail 'create left a transcript behind'
+[[ -d $(<"$marker") && $(<"$marker") == */sessions/failed ]] ||
+  fail 'create did not prepare session state'
+
+# System components concatenate into one ordered record.
+typeset joined="$tmp/joined.jsonl" joined_config="$tmp/joined.jsonc"
+printf 'first prompt\n\n\n' >"$tmp/system/first.md"
+printf 'second prompt\n' >"$tmp/system/second.md"
+jq '.profiles.machine.system=["first.md","second.md"]' "$config" >"$joined_config"
+zsh -f "$entry" create --path "$joined" --config "$joined_config" >/dev/null ||
+  fail 'multi-component create failed'
+jq -se 'length == 2 and .[1] == {type:"system",content:"first prompt\n\nsecond prompt"}' \
+  "$joined" >/dev/null || fail 'create did not join the system components'
+
+# An unreadable component fails without creating a transcript.
+typeset missing="$tmp/missing.jsonl" missing_config="$tmp/missing.jsonc"
+jq --arg path "$tmp/absent.md" '.profiles.machine.system=[$path]' "$config" >"$missing_config"
+zsh -f "$entry" create --path "$missing" --config "$missing_config" >/dev/null 2>&1 &&
+  fail 'a missing system component created a session'
+[[ ! -e $missing ]] || fail 'create left a transcript for a missing component'
+
 print -r -- ok

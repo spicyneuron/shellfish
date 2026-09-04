@@ -105,27 +105,13 @@ output=$(SF_TEST_BACKEND_DELAY=0 zsh -f "$entry" exec --config "$config" \
   several prompt words) || fail 'multi-argument exec failed'
 assert_equal 'several prompt words' "$output" 'exec joins positional prompt words'
 
-# --new creates only the durable session prefix and returns its path.
+# Exec no longer creates sessions; shellfish create supplies one.
 typeset new_session
-new_session=$(zsh -f "$entry" exec --new --config "$config") || fail 'new exec failed'
-[[ -f $new_session && $new_session == /* ]] || fail 'new exec did not return its session path'
-jq -es 'length == 2 and .[0].type == "session" and
-  .[1] == {type:"system",content:"initial system"}' \
-  "$new_session" >/dev/null || fail 'new exec did not create the initial session prefix'
-
-# An optional source session reuses its frozen runtime, rematerializes its system
-# components, and does not copy transcript records.
-print -r -- 'rematerialized system' >"$tmp/system/source.md"
+new_session=$(zsh -f "$entry" create --config "$config") || fail 'create failed'
 print -r -- '{"type":"message","role":"user","content":[{"type":"text","text":"old"}]}' \
   >>"$new_session"
 print -r -- '{"type":"message","role":"assistant","stop":"end","content":[{"type":"text","text":"answer"}]}' \
   >>"$new_session"
-typeset reused_session
-reused_session=$(zsh -f "$entry" exec --new "$new_session") || fail 'sourced new exec failed'
-jq -e -s --slurpfile source "$new_session" '
-  length == 2 and .[1] == {type:"system",content:"rematerialized system"} and
-  (.[0] | del(.created)) == ($source[0] | del(.created))
-' "$reused_session" >/dev/null || fail 'new exec did not reuse only source settings'
 
 # Read-only request commands compose one provider call without claiming or
 # mutating the durable turn.
@@ -185,8 +171,12 @@ print -r -- "$failing_request" |
 [[ $(<"$tmp/send-request-error") == *'test backend failure'* ]] ||
   fail 'send-request hid the backend error'
 
-# JSONL exposes the canonical exec stream through EOF and process status.
+# JSONL exposes the canonical exec stream through EOF and process status. The
+# session prefix is created before the turn and is not replayed onto the stream.
 typeset jsonl stream_session="$tmp/stream.jsonl"
+zsh -f "$entry" create --path "$stream_session" --config "$config" >/dev/null ||
+  fail 'stream session create failed'
+typeset -i prefix=$(jq -es 'length' "$stream_session")
 jsonl=$(print -r -- \
   '{"type":"message","role":"user","content":[{"type":"text","text":"stream answer"}]}' |
   SF_TEST_BACKEND_DELAY=0 zsh -f "$entry" exec --jsonl --config "$config" \
@@ -194,16 +184,16 @@ jsonl=$(print -r -- \
 print -r -- "$jsonl" | jq -eRn -L "$ROOT" '
   include "lib/runtime/schema";
   [inputs | fromjson] as $events |
-  ($events[0] | canonical_session_header(1)) and
+  ($events | any(.type == "session") | not) and
   ($events | any(.type == "_assistant_delta")) and
   ($events | any(.type == "_turn_usage")) and
   ($events | any(.type == "message" and .role == "user")) and
   ($events | any(.type == "message" and .role == "assistant"))
-' >/dev/null
+' >/dev/null || fail 'JSONL exec produced the wrong stream'
 
 print -r -- "$jsonl" | jq -c 'select(.type | IN("session", "system", "message", "context"))' \
   >"$tmp/stream-durable"
-jq -c . "$stream_session" >"$tmp/session-durable"
+jq -c . "$stream_session" | tail -n +$(( prefix + 1 )) >"$tmp/session-durable"
 cmp -s "$tmp/stream-durable" "$tmp/session-durable" ||
   fail 'JSONL durable events differ from the appended session records'
 
@@ -229,44 +219,7 @@ jq -eRn '
   ($events | any(.type == "_exec_error" or .role == "user") | not)
 ' <"$handoff_output" >/dev/null || fail 'JSONL exec discarded the handoff'
 
-# A session_start skip status fails without creating a session.
-typeset skip_script="$tmp/skip-start"
-cat >"$skip_script" <<'ZSH'
-#!/usr/bin/env zsh
-[[ $SHELLFISH_MODE == exec && $# == 1 && $1 == session_start ]] || exit 1
-print -n 'startup context'
-print -n -u2 'startup display'
-exit 10
-ZSH
-chmod +x "$skip_script"
-typeset skip_config="$tmp/skip-start.jsonc"
-jq --arg script "$skip_script" '.harnesses.machine.session_start=[$script]' \
-  "$config" >"$skip_config"
-typeset skip_session="$tmp/skipped.jsonl" skip_stderr="$tmp/skipped.stderr"
-integer skip_status=0
-output=$(zsh -f "$entry" exec --session "$skip_session" --config "$skip_config" \
-  ignored 2>"$skip_stderr") || skip_status=$?
-(( skip_status == 1 ))
-[[ -z $output && $(<"$skip_stderr") == *'session_start hook script returned unsupported skip status'* ]]
-[[ ! -e $skip_session ]]
-
-typeset jsonl_skip_session="$tmp/jsonl-skipped.jsonl" jsonl_skip_stderr="$tmp/jsonl-skipped.stderr"
-skip_status=0
-jsonl=$(print -r -- \
-  '{"type":"message","role":"user","content":[{"type":"text","text":"ignored"}]}' |
-  zsh -f "$entry" exec --jsonl --session "$jsonl_skip_session" \
-    --config "$skip_config" 2>"$jsonl_skip_stderr") || skip_status=$?
-(( skip_status == 1 ))
-[[ ! -s $jsonl_skip_stderr ]]
-print -r -- "$jsonl" | jq -eRn -L "$ROOT" '
-  [inputs | fromjson] as $events |
-  ($events | length) == 2 and
-  ($events[0] | .type == "_hook_display" and .hook == "session_start" and
-    .text == "startup display" and .complete == true) and
-  ($events[1] == {type:"_exec_error",
-    message:"session_start hook script returned unsupported skip status"})
-' >/dev/null || fail 'JSONL creation failure did not emit its error'
-[[ ! -e $jsonl_skip_session ]]
+# Session creation and its session_start failures belong to shellfish create.
 
 typeset invalid_path="$tmp/invalid-path" invalid_path_output="$tmp/invalid-path.out"
 ln -s "$config" "$invalid_path"
@@ -297,10 +250,7 @@ exit_code=0
 zsh -f "$entry" exec --verbose --config "$config" hi >/dev/null 2>&1 || exit_code=$?
 (( exit_code == 2 )) || fail 'exec accepted --verbose'
 exit_code=0
-zsh -f "$entry" exec --new --config "$config" one two >/dev/null 2>&1 || exit_code=$?
-(( exit_code == 2 )) || fail 'new exec accepted more than one source session'
-exit_code=0
-zsh -f "$entry" exec --new --jsonl --config "$config" >/dev/null 2>&1 || exit_code=$?
-(( exit_code == 2 )) || fail 'new exec accepted JSONL mode'
+zsh -f "$entry" exec --new --config "$config" >/dev/null 2>&1 || exit_code=$?
+(( exit_code == 2 )) || fail 'exec accepted --new'
 
 print -r -- 'ok'

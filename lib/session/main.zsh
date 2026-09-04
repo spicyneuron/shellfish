@@ -251,30 +251,6 @@ sf_session_create() {
   return 1
 }
 
-sf_session_read_settings() {
-  local session_path=$1 header extracted
-  SF_SESSION_ERROR=''
-  REPLY=''
-  reply=()
-  [[ -f $session_path && ! -L $session_path && -r $session_path ]] || {
-    sf_session_fail "invalid session path: $session_path"
-    return
-  }
-  IFS= read -r header <"$session_path" || {
-    sf_session_fail "cannot read session settings: $session_path"
-    return
-  }
-  extracted=$(jq -L "$SF_ROOT" -cnce --argjson header "$header" '
-    include "lib/runtime/schema";
-    $header | select(canonical_session_header(1)) |
-    del(.type, .format_version, .cwd, .created)
-  ' 2>/dev/null) || {
-    sf_session_fail "cannot read session settings: $session_path"
-    return
-  }
-  REPLY=$extracted
-}
-
 sf_session_read_runtime() {
   local session_path=$1 header
   [[ -f $session_path && ! -L $session_path && -r $session_path ]] || {

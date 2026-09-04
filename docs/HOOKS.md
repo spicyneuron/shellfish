@@ -74,7 +74,7 @@ Every script is invoked with the session working directory as its `PWD` and thes
 | `SHELLFISH_SESSION_STATE` | Absolute path to the disposable, mode-0700 state directory shared by the session ID |
 | `SHELLFISH_CAPTURE_LIMIT` | Combined output byte limit for one script (`harness.max_capture_bytes`) |
 | `SHELLFISH_EXECUTABLE` | Absolute path of the invoked Shellfish executable |
-| `SHELLFISH_MODE` | Invocation mode: `chat` or `exec` |
+| `SHELLFISH_MODE` | Invocation mode: `create`, `chat`, or `exec`. `session_start` always runs under `create` |
 | `SHELLFISH_MODEL` | Active model frozen in the session header |
 | `SHELLFISH_VERBOSE` | `1` when the chat was started with the `--verbose` presentation override; otherwise `0` |
 | `PROJECT_DIR` | Working directory frozen in the session header |

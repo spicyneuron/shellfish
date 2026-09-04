@@ -7,7 +7,6 @@ setopt no_aliases no_bg_nice no_multios pipe_fail
 (( $+functions[sf_runtime_resolve] )) || source "$SF_ROOT/lib/runtime/main.zsh"
 (( $+functions[sf_hooks_session_start] )) || source "$SF_ROOT/lib/hooks.zsh"
 (( $+functions[sf_tools_load] )) || source "$SF_ROOT/lib/tools.zsh"
-(( $+functions[sf_session_startup_create] )) || source "$SF_ROOT/lib/session/startup.zsh"
 (( $+functions[sf_request_run] )) || source "$SF_ROOT/lib/request.zsh"
 
 typeset -gA SF_EXEC=(
@@ -502,13 +501,8 @@ sf_exec_turn() {
 }
 
 sf_exec_run() {
-  local message=$1 requested_session=${2-} requested_config=${3-} requested_profile=${4-}
-  local requested_model=${5-} requested_request=${6:-\{\}} requested_backend=${7-}
-  integer runtime_override=${8:-0} continue_requested=${9:-0} jsonl=${10:-0} new=${11:-0}
-  local new_source=${12-}
-  integer rc=0 create=0
-  local selected runtime record
-  local -a startup_records
+  local message=$1 selected=$2
+  integer jsonl=${3:-0} rc=0
 
   SF_EXEC[error]=''
   SF_EXEC[answer]=''
@@ -518,68 +512,16 @@ sf_exec_run() {
   SF_EXEC[signal_status]=143
   SF_EXEC[jsonl]=$jsonl
   typeset -gx SHELLFISH_MODE=exec
-  if (( continue_requested )); then
-    sf_session_find 1
-    rc=$?
-    if (( rc )); then
-      sf_exec_set_error "$SF_SESSION_ERROR"
-    else
-      requested_session=$SF_SESSION_MATCHES[1]
-    fi
-  fi
-  if (( ! rc )); then
-    sf_session_select_path "$requested_session" || {
-      rc=$?
-      sf_exec_set_error "$SF_SESSION_ERROR"
-    }
-  fi
-  if (( ! rc )); then
-    selected=$REPLY
-    if [[ -s $selected ]]; then
-      if (( runtime_override )); then
-        sf_exec_set_error 'runtime overrides cannot be used with an existing session'
-        rc=2
-      fi
-    elif [[ -e $selected && ( ! -f $selected || -L $selected ) ]]; then
-      sf_exec_set_error "invalid session path: $selected"
-      rc=$?
-    else
-      create=1
-      if [[ -n $new_source ]]; then
-        sf_session_read_settings "$new_source" || {
-          rc=$?
-          sf_exec_set_error "$SF_SESSION_ERROR"
-        }
-        (( rc )) || runtime=$REPLY
-      else
-        sf_runtime_resolve '' "$requested_config" "$requested_profile" \
-            "$requested_model" "$requested_request" "$requested_backend" \
-            "$runtime_override" || {
-          rc=$?
-          sf_exec_set_error "$SF_RUNTIME_ERROR"
-        }
-        (( rc )) || runtime=$REPLY
-      fi
-    fi
+  if [[ -e $selected && ( ! -f $selected || -L $selected ) ]]; then
+    sf_exec_set_error "invalid session path: $selected"
+    rc=1
+  elif [[ ! -s $selected ]]; then
+    sf_exec_set_error "no session at: $selected"
+    rc=1
   fi
   trap 'SF_EXEC[signal_status]=130; kill -TERM $$' INT
   trap 'SF_EXEC[signal_status]=129; kill -TERM $$' HUP
   trap 'sf_exec_interrupt; exit $SF_EXEC[signal_status]' TERM
-  if (( ! rc && create )); then
-    if sf_session_startup_create "$selected" "$runtime"; then
-      startup_records=( "${SF_SESSION_RECORDS[@]}" )
-    else
-      sf_exec_set_error "$SF_SESSION_STARTUP_ERROR"
-      rc=1
-    fi
-  fi
-  if (( ! rc && new )); then
-    print -r -- "$selected"
-    return
-  fi
-  for record in "${startup_records[@]}"; do
-    sf_exec_emit "$record"
-  done
   if (( rc )); then
     if (( jsonl )); then
       sf_exec_error "$SF_EXEC[error]"
