@@ -366,7 +366,8 @@ sf_tui_answer_permission() {
 }
 
 sf_tui_controller() {
-  local session=$1 runtime=$2 initial=${3-} session_mode=${4:-resume} draft=${5-}
+  local session=$1 runtime=$2 presentation=${3:-\{\}} initial=${4-}
+  local session_mode=${5:-resume} draft=${6-}
   local input=$draft saved_tty identity editor_error
   integer exit_status=0 editor_status=0
 
@@ -378,11 +379,11 @@ sf_tui_controller() {
   SF_PRESENT_QUEUE=()
   SF_PRESENT_EXIT_STATUS=0
   SF_PRESENT_RENDER_ERROR=''
-  sf_tui_rows_config "${SF_PRESENTATION:-\{\}}" || {
+  sf_tui_rows_config "$presentation" || {
     SF_PRESENT_ERROR='cannot read presentation configuration'
     return 1
   }
-  sf_tui_theme_config "${SF_PRESENTATION:-\{\}}" || {
+  sf_tui_theme_config "$presentation" || {
     SF_PRESENT_ERROR=$SF_PRESENT_HIGHLIGHT_ERROR
     return 1
   }

@@ -74,7 +74,7 @@ sf_session_open "$lean" '' '' '' '{}' '' 0 0 ''
 assert_equal "$lean" "$SF_SESSION_OPEN[path]"
 assert_equal '{"resolved":true}' "$SF_SESSION_OPEN[runtime]"
 assert_equal resume "$SF_SESSION_OPEN[mode]"
-assert_equal '{"source":"resolve"}' "$SF_PRESENTATION"
+assert_equal '{"source":"resolve"}' "$SF_SESSION_OPEN[presentation]"
 (( resolve_calls == 1 ))
 
 # An empty path opens as a new session created with the runtime just resolved.
@@ -89,6 +89,6 @@ sf_session_open "$fresh" '' '' '' '{}' '' 0 0 ''
 assert_equal "$fresh" "$SF_SESSION_OPEN[path]"
 assert_equal '{"resolved":true}' "$SF_SESSION_OPEN[runtime]"
 assert_equal startup "$SF_SESSION_OPEN[mode]"
-assert_equal '{"source":"resolve"}' "$SF_PRESENTATION"
+assert_equal '{"source":"resolve"}' "$SF_SESSION_OPEN[presentation]"
 (( resolve_calls == 1 ))
 [[ -e $fresh ]]

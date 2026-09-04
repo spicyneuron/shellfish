@@ -3,8 +3,8 @@
 source "${0:A:h:h:h:h}/_helpers.zsh"
 sf_test_source tui/render/nodes.zsh tui/render/highlights.zsh tui/render/rows.zsh
 
-typeset -g SF_PRESENTATION='{"tui":{"preview_lines_reasoning":"full","preview_lines_context":"full","preview_lines_tool_call":"full","preview_lines_tool_result":"full"}}'
-sf_tui_rows_config "$SF_PRESENTATION"
+typeset presentation='{"tui":{"preview_lines_reasoning":"full","preview_lines_context":"full","preview_lines_tool_call":"full","preview_lines_tool_result":"full"}}'
+sf_tui_rows_config "$presentation"
 
 sf_tui_event user abcdef
 sf_tui_event assistant_delta xyz
@@ -106,8 +106,8 @@ assert_equal '  exit 1 · sandbox denial detected' "$SF_PRESENT_ROW_TEXT[-1]"
 
 # A zero preview is a collapsed, single-row projection. Its open form remains
 # wholly active, then its completed form settles without wrapping the body.
-SF_PRESENTATION='{"tui":{"preview_lines_reasoning":0,"preview_lines_context":0,"preview_lines_tool_call":0,"preview_lines_tool_result":0}}'
-sf_tui_rows_config "$SF_PRESENTATION"
+presentation='{"tui":{"preview_lines_reasoning":0,"preview_lines_context":0,"preview_lines_tool_call":0,"preview_lines_tool_result":0}}'
+sf_tui_rows_config "$presentation"
 sf_tui_reset
 sf_tui_event assistant_reasoning_delta $'one\ntwo\nthree'
 sf_tui_rows 80 20
@@ -164,8 +164,8 @@ assert_equal '… ~2 tokens' "$SF_PRESENT_ROW_TEXT[-1]"
 
 # Positive preview limits visible terminal rows, reports tokens, and does not
 # count or expose hidden rows. Failed tools use the same clamp as successes.
-SF_PRESENTATION='{"tui":{"preview_lines_reasoning":1,"preview_lines_context":1,"preview_lines_tool_call":1,"preview_lines_tool_result":1}}'
-sf_tui_rows_config "$SF_PRESENTATION"
+presentation='{"tui":{"preview_lines_reasoning":1,"preview_lines_context":1,"preview_lines_tool_call":1,"preview_lines_tool_result":1}}'
+sf_tui_rows_config "$presentation"
 sf_tui_reset
 sf_tui_event assistant_reasoning_delta $'first\nsecond'
 sf_tui_rows 80 20

@@ -6,11 +6,12 @@ setopt no_aliases no_bg_nice no_multios pipe_fail
 (( $+functions[sf_tui_bind] )) || source "$SF_ROOT/tui/editor.zsh"
 (( $+functions[sf_tui_controller] )) || source "$SF_ROOT/tui/controller.zsh"
 
+typeset -g SF_TUI_ERROR=''
+
 sf_tui_run() {
-  local session=$1 runtime=$2 session_mode=$3
-  integer clear_requested=${4:-0}
-  local initial_prompt=${5-} draft=${6-}
-  integer controller_status=0
+  local session=$1 runtime=$2 presentation=${3-} initial_prompt=${4-}
+  local session_mode=${5-} draft=${6-}
+  integer clear_requested=${7:-0} controller_status=0
 
   SF_TUI_ERROR=''
   typeset -gx SHELLFISH_MODE=chat
@@ -21,8 +22,8 @@ sf_tui_run() {
       return 1
     }
   fi
-  sf_tui_controller "$session" "$runtime" "$initial_prompt" "$session_mode" "$draft" ||
-    controller_status=$?
+  sf_tui_controller "$session" "$runtime" "$presentation" "$initial_prompt" \
+    "$session_mode" "$draft" || controller_status=$?
   if (( controller_status )); then
     SF_TUI_ERROR=$SF_PRESENT_ERROR
     return $controller_status
