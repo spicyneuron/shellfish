@@ -10,12 +10,14 @@ typeset -gA SF_SESSION_OPEN=( path '' presentation '' mode '' )
 
 # Resolves what a client needs to attach to a session: its path, the current
 # presentation, and whether the transcript already existed or was created here.
+# Creation belongs to shellfish create, which reports its own failures.
 # The frozen runtime stays in the transcript; clients read it from there.
 sf_session_open() {
-  local requested=$1 config=$2 profile=$3 model=$4 request=$5 backend=$6
-  integer override=$7 continue_requested=$8
-  local source_session=$9 runtime
-  integer runtime_status=0
+  local requested=$1 config=$2
+  integer override=$3 continue_requested=$4
+  local source_session=$5 created
+  shift 5
+  local -a create=( "$SF_ENTRY" create )
 
   SF_SESSION_STARTUP_ERROR=''
   SF_SESSION_OPEN=( path '' presentation '' mode resume )
@@ -27,49 +29,36 @@ sf_session_open() {
     }
     requested=$SF_SESSION_MATCHES[1]
   fi
-  sf_session_select_path "$requested" || {
-    SF_SESSION_STARTUP_ERROR=$SF_SESSION_ERROR
-    return 1
-  }
-  SF_SESSION_OPEN[path]=$REPLY
-  if [[ ! -s $REPLY ]]; then
-    [[ ! -e $REPLY || ( -f $REPLY && ! -L $REPLY ) ]] || {
-      SF_SESSION_STARTUP_ERROR="invalid session path: $REPLY"
-      return 1
-    }
-    SF_SESSION_OPEN[mode]=startup
-  fi
-
-  if [[ $SF_SESSION_OPEN[mode] == resume ]]; then
-    sf_runtime_resolve "$SF_SESSION_OPEN[path]" "$config" "$profile" "$model" \
-      "$request" "$backend" "$override" || runtime_status=$?
-    if (( runtime_status )); then
-      SF_SESSION_STARTUP_ERROR=$SF_RUNTIME_ERROR
-      return $runtime_status
-    fi
-    SF_SESSION_OPEN[presentation]=$SF_PRESENTATION
-    return 0
-  fi
-
-  if [[ -n $source_session ]]; then
-    sf_session_read_settings "$source_session" || {
+  if [[ -n $requested ]]; then
+    sf_session_select_path "$requested" || {
       SF_SESSION_STARTUP_ERROR=$SF_SESSION_ERROR
       return 1
     }
-    runtime=$REPLY
-    sf_runtime_restore_presentation "$config" || {
-      SF_SESSION_STARTUP_ERROR=$SF_RUNTIME_ERROR
-      return 1
+    SF_SESSION_OPEN[path]=$REPLY
+    create+=( --path "$REPLY" )
+  fi
+  [[ -z $source_session ]] || create+=( --session "$source_session" )
+
+  if [[ -n $SF_SESSION_OPEN[path] && -s $SF_SESSION_OPEN[path] ]]; then
+    (( ! override )) || {
+      SF_SESSION_STARTUP_ERROR='runtime overrides cannot be used with an existing session'
+      return 2
     }
   else
-    sf_runtime_resolve '' "$config" "$profile" "$model" "$request" "$backend" "$override" || {
-      SF_SESSION_STARTUP_ERROR=$SF_RUNTIME_ERROR
+    SF_SESSION_OPEN[mode]=startup
+    created=$("${create[@]}" "$@") || return 1
+    [[ -n $created ]] || {
+      SF_SESSION_STARTUP_ERROR='create did not return a session path'
       return 1
     }
-    runtime=$REPLY
+    SF_SESSION_OPEN[path]=$created
   fi
+
+  sf_runtime_restore_presentation "$config" || {
+    SF_SESSION_STARTUP_ERROR=$SF_RUNTIME_ERROR
+    return 1
+  }
   SF_SESSION_OPEN[presentation]=$SF_PRESENTATION
-  sf_session_startup_create "$SF_SESSION_OPEN[path]" "$runtime"
 }
 
 sf_session_startup_create() {

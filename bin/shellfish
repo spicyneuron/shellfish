@@ -36,6 +36,9 @@ sf_main() {
   local sandbox_detected='{"sandbox_read_paths":[],"sandbox_write_paths":[]}'
   local sandbox_flag sandbox_path resolved_path
   local -a positional=() sandbox_read_paths=() sandbox_write_paths=()
+  # Options owned by shellfish config, kept verbatim for shellfish create.
+  # Sandbox grants travel to children in _SHELLFISH_SANDBOX_* instead.
+  local -a runtime_args=()
   local -a original_args=("$@")
   integer session_explicit=0 config_explicit=0 request_explicit=0 runtime_override=0
   integer continue_requested=0 resume_requested=0 clear_requested=0 new_requested=0 resume_status=0
@@ -148,6 +151,7 @@ sf_main() {
         }
         config_explicit=1
         requested_config=$2
+        runtime_args+=( "$1" "$2" )
         shift 2
         ;;
       -p|--profile)
@@ -161,6 +165,7 @@ sf_main() {
         }
         requested_profile=$2
         runtime_override=1
+        runtime_args+=( "$1" "$2" )
         shift 2
         ;;
       -m|--model)
@@ -174,6 +179,7 @@ sf_main() {
         }
         requested_model=$2
         runtime_override=1
+        runtime_args+=( "$1" "$2" )
         shift 2
         ;;
       -b|--backend)
@@ -187,6 +193,7 @@ sf_main() {
         }
         requested_backend=$2
         runtime_override=1
+        runtime_args+=( "$1" "$2" )
         shift 2
         ;;
       --request)
@@ -204,6 +211,7 @@ sf_main() {
         }
         request_explicit=1
         runtime_override=1
+        runtime_args+=( "$1" "$2" )
         shift 2
         ;;
       --sandbox-read|--sandbox-write)
@@ -426,12 +434,11 @@ sf_main() {
   fi
 
   source "$SF_ROOT/lib/session/startup.zsh"
-  sf_session_open "$requested_session" "$requested_config" "$requested_profile" \
-    "$requested_model" "$requested_request" "$requested_backend" \
-    "$runtime_override" "$continue_requested" "$new_source"
+  sf_session_open "$requested_session" "$requested_config" \
+    "$runtime_override" "$continue_requested" "$new_source" "${runtime_args[@]}"
   local open_status=$?
   if (( open_status )); then
-    sf_die "$SF_SESSION_STARTUP_ERROR"
+    [[ -z $SF_SESSION_STARTUP_ERROR ]] || sf_die "$SF_SESSION_STARTUP_ERROR"
     return $open_status
   fi
 
