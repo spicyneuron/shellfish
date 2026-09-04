@@ -5,6 +5,7 @@ A tiny coding agent written in Zsh, awk, curl, and jq.
 Usage:
   shellfish [OPTIONS] [PROMPT]       Start interactive chat
   shellfish exec [OPTIONS] [PROMPT]  Run exactly one agent turn
+  shellfish create [OPTIONS]         Create one idle session and print its path
   shellfish config [OPTIONS]         Print resolved configuration as JSON
   shellfish build-request [OPTIONS]  Project session records into a backend request
   shellfish send-request [OPTIONS]   Send one canonical backend request
@@ -32,6 +33,9 @@ Config flags:
 
 Exec flags:
   --jsonl               Exchange ordered JSONL records on stdin and stdout
+
+Create flags:
+  --path PATH           Write the new session to PATH
 
 Request flags:
   --tools JSON          Set backend request tools for build-request
