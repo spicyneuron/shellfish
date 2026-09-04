@@ -16,13 +16,13 @@ go build -o bin/shellfish-server ./shellfish-server
 
 ## Run the server
 
-Run `shellfish-server` from the project directory the session belongs to. Without `--session`, it creates an idle session by forwarding its remaining options to `shellfish exec --new`:
+Run `shellfish-server` from the project directory the session belongs to. Without `--session`, it creates an idle session by forwarding its remaining options to `shellfish create`:
 
 ```sh
 shellfish-server --profile work --model MODEL
 ```
 
-This accepts the runtime options supported by exec, including `--profile`, `--backend`, `--model`, `--request`, `--config`, `--sandbox-read`, and `--sandbox-write`.
+This accepts the runtime options resolved by `shellfish config`, including `--profile`, `--backend`, `--model`, `--request`, `--config`, `--sandbox-read`, and `--sandbox-write`.
 
 To serve an existing session:
 

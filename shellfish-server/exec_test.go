@@ -60,7 +60,7 @@ printf '%s\n' /sessions/new.jsonl
 		t.Fatalf("session = %q", session)
 	}
 	if got, err := os.ReadFile(recorded); err != nil ||
-		string(got) != "exec --new --profile work --model test\n" {
+		string(got) != "create --profile work --model test\n" {
 		t.Fatalf("invocation = %q (%v)", got, err)
 	}
 }

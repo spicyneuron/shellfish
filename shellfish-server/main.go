@@ -65,7 +65,7 @@ func printHelp(w io.Writer) {
 	fmt.Fprint(w, `Usage: shellfish-server [SERVER OPTIONS] [SHELLFISH OPTIONS]
 
 Expose one Shellfish session to one browser. Without --session, the server
-creates a session by forwarding Shellfish options to shellfish exec --new.
+creates a session by forwarding Shellfish options to shellfish create.
 
 Server options:
   --session PATH     Serve an existing session
@@ -120,7 +120,7 @@ func parseServerArgs(args []string) (serverOptions, error) {
 }
 
 func createSession(binary string, args []string) (string, error) {
-	command := exec.Command(binary, append([]string{"exec", "--new"}, args...)...)
+	command := exec.Command(binary, append([]string{"create"}, args...)...)
 	command.Stderr = os.Stderr
 	output, err := command.Output()
 	if err != nil {
