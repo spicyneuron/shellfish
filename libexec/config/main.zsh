@@ -188,10 +188,11 @@ sf_config_main() {
     sf_die 'shellfish requires jq'
     return 2
   }
-  source "$SF_ROOT/lib/runtime/main.zsh"
-  source "$SF_ROOT/lib/config.zsh"
+  source "$SF_ROOT/libexec/config/runtime.zsh"
+  source "$SF_ROOT/libexec/config/init.zsh"
   if (( sandbox_auto_requested )); then
-    sandbox_detected=$(sf_config_detect_sandbox) || {
+    source "$SF_ROOT/lib/sandbox.zsh"
+    sandbox_detected=$(sf_sandbox_detect) || {
       sf_die 'cannot detect sandbox paths'
       return 1
     }

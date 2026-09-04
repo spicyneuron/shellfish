@@ -68,7 +68,7 @@ sf_send_request_main() {
     return 2
   }
 
-  source "$SF_ROOT/lib/runtime/main.zsh"
+  source "$SF_ROOT/lib/credentials.zsh"
   source "$SF_ROOT/lib/session/main.zsh"
   source "$SF_ROOT/lib/request.zsh"
   sf_session_select_path "$requested_session" || {
@@ -105,8 +105,8 @@ sf_send_request_main() {
     sf_die 'cannot inspect frozen runtime'
     return 1
   }
-  sf_runtime_resolve_api_key "$runtime" || {
-    sf_die "$SF_RUNTIME_ERROR"
+  sf_credentials_resolve "$runtime" || {
+    sf_die "$SF_CREDENTIALS_ERROR"
     return 1
   }
   api_key=$REPLY

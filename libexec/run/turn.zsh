@@ -4,7 +4,7 @@ emulate -R zsh
 setopt no_aliases no_bg_nice no_multios pipe_fail
 
 (( $+functions[sf_session_begin_turn] )) || source "$SF_ROOT/lib/session/main.zsh"
-(( $+functions[sf_runtime_resolve] )) || source "$SF_ROOT/lib/runtime/main.zsh"
+(( $+functions[sf_credentials_resolve] )) || source "$SF_ROOT/lib/credentials.zsh"
 (( $+functions[sf_hooks_session_start] )) || source "$SF_ROOT/lib/hooks.zsh"
 (( $+functions[sf_tools_load] )) || source "$SF_ROOT/lib/tools.zsh"
 (( $+functions[sf_request_run] )) || source "$SF_ROOT/lib/request.zsh"
@@ -322,8 +322,8 @@ sf_run_turn() {
         failure='cannot prepare provider request'
         return 1
       }
-      if (( request_count == 1 )) && ! sf_runtime_resolve_api_key "$SF_SESSION[runtime]"; then
-        failure=$SF_RUNTIME_ERROR
+      if (( request_count == 1 )) && ! sf_credentials_resolve "$SF_SESSION[runtime]"; then
+        failure=$SF_CREDENTIALS_ERROR
         return 1
       fi
       if (( request_count == 1 )); then

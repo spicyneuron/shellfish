@@ -157,7 +157,7 @@ jq -e --arg go_cache "~/Library/Caches/go-build" --arg go_mod "$detector_root/go
     (.harnesses.default.sandbox_write_paths | sort) ==
       ([$go_cache,$go_mod,$uv,$python,$npm,$pnpm,$registry,$git,
         $package_cache,$package_mutate,$global_cache] | sort)
-  ' < <(source "$ROOT/lib/runtime/main.zsh"; sf_runtime_read_jsonc "$auto_config") >/dev/null || \
+  ' < <(source "$ROOT/libexec/config/runtime.zsh"; sf_runtime_read_jsonc "$auto_config") >/dev/null || \
   fail 'config init did not write automatic sandbox grants'
 grep -q '^// Shellfish config$' "$auto_config" || fail 'config init did not preserve template comments'
 
@@ -200,7 +200,7 @@ grep -qxF '        // Paths outside the project that sandboxed tools may read an
   "$empty_auto_config" || fail 'empty sandbox write config omitted path guidance'
 jq -e '.harnesses.default.sandbox_read_paths == [] and
   .harnesses.default.sandbox_write_paths == []' \
-  < <(source "$ROOT/lib/runtime/main.zsh"; sf_runtime_read_jsonc "$empty_auto_config") \
+  < <(source "$ROOT/libexec/config/runtime.zsh"; sf_runtime_read_jsonc "$empty_auto_config") \
   >/dev/null || fail 'empty automatic sandbox config is invalid'
 
 # `shellfish config` reports the runtime a new session would store, plus the

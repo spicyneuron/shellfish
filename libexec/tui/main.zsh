@@ -202,9 +202,9 @@ sf_tui_main() {
 
   if [[ ! -o interactive && -t 1 && ( -t 0 || -r /dev/tty ) ]]; then handoff=1; fi
   (( $+commands[jq] )) || { sf_die 'shellfish requires jq'; return 2; }
-  if (( sandbox_auto_requested )); then source "$SF_ROOT/lib/config.zsh"; fi
+  if (( sandbox_auto_requested )); then source "$SF_ROOT/lib/sandbox.zsh"; fi
   if (( sandbox_auto_requested && ! handoff )); then
-    sandbox_detected=$(sf_config_detect_sandbox) || {
+    sandbox_detected=$(sf_sandbox_detect) || {
       sf_die 'cannot detect sandbox paths'
       return 1
     }

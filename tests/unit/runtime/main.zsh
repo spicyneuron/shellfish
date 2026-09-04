@@ -1,7 +1,7 @@
 #!/usr/bin/env zsh
 
 source "${0:A:h:h:h}/_helpers.zsh"
-sf_test_source lib/runtime/main.zsh lib/session/main.zsh
+sf_test_source libexec/config/runtime.zsh lib/credentials.zsh lib/session/main.zsh
 
 typeset config runtime tool_name jsonc
 sf_test_tmp runtime
@@ -481,13 +481,13 @@ export OPENAI_API_KEY='from-environment'
 export ANTHROPIC_API_KEY='must-not-leak'
 sf_runtime_resolve_from_config "$config" work '' '{}'
 runtime=$REPLY
-sf_runtime_resolve_api_key "$runtime"
+sf_credentials_resolve "$runtime"
 [[ $REPLY == from-environment && $reply[1] == OPENAI_API_KEY ]]
 (( ! ${+OPENAI_API_KEY} && ! ${+ANTHROPIC_API_KEY} ))
 [[ $runtime != *from-environment* ]]
 
 export SHELLFISH_API_KEY='' OPENAI_API_KEY='provider-value'
-sf_runtime_resolve_api_key "$(jq -c '.backend.env_file=""' <<<"$runtime")"
+sf_credentials_resolve "$(jq -c '.backend.env_file=""' <<<"$runtime")"
 [[ -z $REPLY && $reply[1] == SHELLFISH_API_KEY ]]
 (( ! ${+SHELLFISH_API_KEY} && ! ${+OPENAI_API_KEY} ))
 
@@ -500,11 +500,11 @@ cat >"$credential_file" <<'ENV'
 export OPENAI_API_KEY = "from-file"
 SHELLFISH_API_KEY=global-file
 ENV
-sf_runtime_resolve_api_key "$credential_runtime"
+sf_credentials_resolve "$credential_runtime"
 [[ $REPLY == global-file && $reply[1] == SHELLFISH_API_KEY ]]
 [[ $runtime != *from-file* ]]
 
 print -r -- 'invalid line' >>"$credential_file"
-if sf_runtime_resolve_api_key "$credential_runtime"; then
+if sf_credentials_resolve "$credential_runtime"; then
   fail 'invalid env file tail was accepted'
 fi
