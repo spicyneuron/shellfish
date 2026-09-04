@@ -511,7 +511,7 @@ sf_exec_run() {
   SF_TOOL_INTERRUPTED=0
   SF_EXEC[signal_status]=143
   SF_EXEC[jsonl]=$jsonl
-  typeset -gx SHELLFISH_MODE=exec
+  typeset -gx SHELLFISH_MODE=run
   if [[ -e $selected && ( ! -f $selected || -L $selected ) ]]; then
     sf_exec_set_error "invalid session path: $selected"
     rc=1

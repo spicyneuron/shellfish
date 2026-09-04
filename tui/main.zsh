@@ -14,7 +14,6 @@ sf_tui_run() {
   integer clear_requested=${6:-0} controller_status=0
 
   SF_TUI_ERROR=''
-  typeset -gx SHELLFISH_MODE=chat
   SF_TUI_TRANSPORT_COMMAND=( "$SF_ENTRY" run --jsonl --session "$session" )
   if (( clear_requested )); then
     zmodload zsh/terminfo && echoti clear || {
