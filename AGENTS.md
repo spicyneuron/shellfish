@@ -11,7 +11,7 @@ NOTE: This project is pre-release. Do not add deprecation noticies, backwards co
 - `lib/session/` owns JSONL persistence, state validation, recovery, and provider request projection.
 - `lib/runtime/` resolves configuration, credentials, profiles, and schema validation.
 - `lib/backend.zsh` adapts provider streams.
-- `tui/resume.zsh` is the resume picker pending its extraction as an independent component. Keep terminal and ZLE behavior out of `lib/`.
+- `libexec/resume/` owns session discovery, latest-session selection, and the resume picker with its private terminal implementation.
 - `shellfish-server/` is a Go proxy that exposes one session to one browser, plus the browser client it serves. `docs/SERVER.md` is its contract.
 - `default/` is the bundled configuration and reference tools; `docs/HOOKS.md` is the complete hook contract.
 
@@ -21,7 +21,7 @@ NOTE: This project is pre-release. Do not add deprecation noticies, backwards co
 - `shellfish create` owns session creation. It obtains the frozen runtime by forwarding its unparsed options to `shellfish config` and deleting the presentation fields, prepares the header, concatenates the profile's `system` components into one system record, collects `session_start` context, writes the complete initial JSONL prefix, and prints the path. `--path` chooses the destination; `--session` names the session the runtime is derived from.
 - Each turn opens the session, runs `user_prompt_submit` scripts, then loops over provider responses. Final responses run `stop` scripts; tool-call responses run the `pre_tool_use` scripts, permission, execution, persistence, and `post_tool_use` scripts before the next provider request.
 - The session layer is authoritative. Request projection converts durable records into provider messages; provider deltas and UI events are transient. Any failure, cancellation, or early return converges on turn recovery and hook/tool cleanup.
-- `sf_session_open` resolves which session a client attaches to and whether it already exists, invoking `shellfish create` when it does not. Turns never create sessions.
+- `sf_session_open` resolves which session the TUI or user-facing `run` command attaches to and whether it already exists, invoking `shellfish create` when it does not. The private turn implementation receives the resulting existing session.
 - Interactive chat runs single turns through `shellfish run --jsonl`, renders its event stream, and reloads the durable transcript after completion or uncertainty. Transcript replay establishes the frozen runtime from the session header, which live `_session_update` events then refresh.
 - A served session runs the same single turns: the proxy relays one child's JSONL to one browser, which replays the durable session on connect and reopens that stream to recover.
 

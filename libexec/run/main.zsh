@@ -31,7 +31,7 @@ sf_run_prompt() {
 sf_run_main() {
   local requested_session='' input=''
   local -a positional=() create_args=()
-  integer session_explicit=0 continue_requested=0 jsonl=0 override=0
+  integer session_explicit=0 jsonl=0 override=0
 
   while (( $# )); do
     case $1 in
@@ -51,10 +51,6 @@ sf_run_main() {
         session_explicit=1
         requested_session=$2
         shift 2
-        ;;
-      -c|--continue)
-        continue_requested=1
-        shift
         ;;
       --jsonl)
         jsonl=1
@@ -94,10 +90,6 @@ sf_run_main() {
     esac
   done
 
-  (( ! (continue_requested && session_explicit) )) || {
-    sf_die '--continue cannot be combined with --session'
-    return 2
-  }
   (( $+commands[jq] )) || {
     sf_die 'shellfish requires jq'
     return 2
@@ -133,8 +125,7 @@ sf_run_main() {
   fi
 
   source "$SF_ROOT/lib/session/startup.zsh"
-  sf_session_open "$requested_session" "$override" "$continue_requested" \
-    '' "${create_args[@]}"
+  sf_session_open "$requested_session" "$override" '' "${create_args[@]}"
   local open_status=$?
   if (( open_status )); then
     [[ -z $SF_SESSION_STARTUP_ERROR ]] || sf_die "$SF_SESSION_STARTUP_ERROR"

@@ -34,8 +34,8 @@ sf_tui_main() {
   local -a runtime_args=() presentation_args=()
   local -a original_args=("$@")
   integer session_explicit=0 config_explicit=0 request_explicit=0 runtime_override=0
-  integer continue_requested=0 resume_requested=0 clear_requested=0 new_requested=0
-  integer resume_status=0 handoff=0 draft_explicit=0 sandbox_auto_requested=0
+  integer clear_requested=0 new_requested=0
+  integer handoff=0 draft_explicit=0 sandbox_auto_requested=0
   integer verbose_requested=0 controller_status=0
 
   while (( $# )); do
@@ -50,14 +50,6 @@ sf_tui_main() {
         session_explicit=1
         requested_session=$2
         shift 2
-        ;;
-      -c|--continue)
-        continue_requested=1
-        shift
-        ;;
-      -r|--resume)
-        resume_requested=1
-        shift
         ;;
       --clear)
         clear_requested=1
@@ -192,21 +184,9 @@ sf_tui_main() {
     esac
   done
 
-  if (( continue_requested && resume_requested )); then
-    sf_die '--continue and --resume are mutually exclusive'
-    return 2
-  fi
-  if (( (continue_requested || resume_requested) && session_explicit )); then
-    sf_die '--continue and --resume cannot be combined with --session'
-    return 2
-  fi
-  if (( resume_requested && sandbox_auto_requested )); then
-    sf_die '--sandbox-auto cannot be used with --resume'
-    return 2
-  fi
   if (( new_requested )); then
-    (( ! session_explicit && ! continue_requested && ! resume_requested )) || {
-      sf_die '--new cannot be combined with --session, --continue, or --resume'
+    (( ! session_explicit )) || {
+      sf_die '--new cannot be combined with --session'
       return 2
     }
     (( ${#positional} <= 1 )) || { sf_die '--new accepts at most one session'; return 2; }
@@ -260,27 +240,9 @@ sf_tui_main() {
   fi
   if [[ ! -t 1 ]]; then sf_die 'chat requires an interactive terminal'; return 2; fi
 
-  source "$SF_ROOT/lib/session/main.zsh"
-  if (( resume_requested )); then
-    local -a resume_args
-    zmodload zsh/terminfo && echoti clear || { sf_die 'cannot clear terminal'; return 1; }
-    source "$SF_ROOT/tui/resume.zsh"
-    sf_session_find 0 || { sf_die "$SF_SESSION_ERROR"; return 1; }
-    sf_resume_run "${SF_SESSION_MATCHES[@]}" || {
-      resume_status=$?
-      (( resume_status == 130 )) || sf_die "$SF_RESUME_ERROR"
-      return $resume_status
-    }
-    resume_args=( "$SF_ENTRY" --clear --session "$REPLY" )
-    [[ -z $draft ]] || resume_args+=( --draft "$draft" )
-    exec -- "${resume_args[@]}"
-    sf_die 'cannot resume selected session'
-    return 1
-  fi
-
   source "$SF_ROOT/lib/session/startup.zsh"
   integer startup_status=0 config_status=0
-  sf_session_open "$requested_session" "$runtime_override" "$continue_requested" \
+  sf_session_open "$requested_session" "$runtime_override" \
     "$new_source" "${runtime_args[@]}" || startup_status=$?
   if (( startup_status )); then
     [[ -z $SF_SESSION_STARTUP_ERROR ]] || sf_die "$SF_SESSION_STARTUP_ERROR"

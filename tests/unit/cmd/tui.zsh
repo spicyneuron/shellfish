@@ -51,9 +51,4 @@ error=$(print -rn piped | zsh -f "$entry" chat positional 2>&1) || exit_code=$?
   $exit_code == 2 ]] || \
   fail 'chat did not reject standard input with a positional prompt'
 
-exit_code=0
-error=$(zsh -f "$entry" --resume --sandbox-auto 2>&1) || exit_code=$?
-[[ $error == *'--sandbox-auto cannot be used with --resume'* && $exit_code == 2 ]] || \
-  fail 'resume accepted automatic sandbox grants'
-
 print -r -- ok

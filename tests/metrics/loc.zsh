@@ -12,8 +12,8 @@ typeset -r root=${0:A:h:h:h}
 typeset -a core terminal server sources
 
 core=( "$root/bin/shellfish" "$root"/(lib|libexec)/**/*.(zsh|jq)(N.) )
-core=( ${core:#$root/libexec/tui/*} )
-terminal=( "$root"/libexec/tui/**/*.(zsh|jq|awk)(N.) "$root/tui/resume.zsh" )
+core=( ${core:#$root/libexec/(tui|resume)/*} )
+terminal=( "$root"/libexec/tui/**/*.(zsh|jq|awk)(N.) "$root"/libexec/resume/**/*.(zsh|jq|awk)(N.) )
 server=( "$root"/shellfish-server/**/*.(go|js|css|html)(N.) )
 server=( ${server:#*_test.(go|js)} )
 
@@ -40,7 +40,7 @@ tokei --compact --streaming simple -- $sources | awk -v root="$root" '
 
     if (index(path, root "/shellfish-server/") == 1) {
       group = 3
-    } else if (index(path, root "/libexec/tui/") == 1 || path == root "/tui/resume.zsh") {
+    } else if (index(path, root "/libexec/tui/") == 1 || index(path, root "/libexec/resume/") == 1) {
       group = 2
     } else {
       group = 1

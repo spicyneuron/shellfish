@@ -10,7 +10,7 @@ shellfish create --session path/to/session.jsonl
 shellfish create --path ./project-session.jsonl
 ```
 
-`shellfish --new [SESSION]` provides the same behavior and opens the new session in chat. Run does not create sessions; a turn requires one that already exists.
+`shellfish --new [SESSION]` provides the same creation behavior and opens the new session in chat. Without `--session`, `shellfish run` prepares a new session through `shellfish create` before starting its turn. With `--session PATH`, it uses the session there or creates one at that path when none exists.
 
 Ordinary run accepts prompt text and prints the final assistant text:
 

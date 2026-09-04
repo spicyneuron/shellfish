@@ -15,6 +15,9 @@ sf_main() {
       shift
       exec -- "$SF_ROOT/libexec/config/main.zsh" "$@"
       ;;
+    -c|--continue|-r|--resume)
+      exec -- "$SF_ROOT/libexec/resume/main.zsh" "$@"
+      ;;
     run|create|build-request|send-request)
       exec -- "$SF_ROOT/libexec/$1/main.zsh" "${@:2}"
       ;;

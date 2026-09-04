@@ -8,9 +8,6 @@ sf_test_tmp session
 session="$tmp/session.jsonl"
 sf_test_runtime
 
-typeset cwd_canonical
-cwd_canonical=$(pwd -P)
-
 sf_session_select_path "$tmp/relative.jsonl"
 [[ $REPLY == "$tmp/relative.jsonl" ]]
 
@@ -18,46 +15,6 @@ typeset -g XDG_STATE_HOME="$tmp/state"
 sf_session_select_path
 [[ $REPLY == "$tmp/state/shellfish/sessions/"*.jsonl ]]
 [[ $(stat -f %Lp "$REPLY:h") == 700 ]]
-
-typeset session_dir=$REPLY:h
-
-make_header() {
-  local session_cwd=$1 profile_name=$2 model_name=$3
-  jq -cn --arg cwd "$session_cwd" --arg profile "$profile_name" --arg model "$model_name" '
-    {
-      type: "session",
-      format_version: 1,
-      cwd: $cwd,
-      created: "2026-08-18T00:00:00Z",
-      profile: {name: $profile, backend: "openai", harness: "", request: {model: $model}},
-      backend: {name: "openai", command: "/bin/run", endpoint: "https://example.invalid"}
-    }
-  '
-}
-
-make_header "$cwd_canonical" default gpt-4o >"$session_dir/session1.jsonl"
-touch -t 202608180100 "$session_dir/session1.jsonl"
-make_header "$cwd_canonical" work claude-3 >"$session_dir/session2.jsonl"
-touch -t 202608180200 "$session_dir/session2.jsonl"
-make_header /nonexistent/other/dir default gpt-4o >"$session_dir/other_cwd.jsonl"
-touch -t 202608180300 "$session_dir/other_cwd.jsonl"
-print -r -- '{"not":"a session header"}' >"$session_dir/corrupt.jsonl"
-
-sf_session_find 0
-(( ${#SF_SESSION_MATCHES} == 2 ))
-[[ $SF_SESSION_MATCHES[1] == "$session_dir/session2.jsonl" ]]
-[[ $SF_SESSION_MATCHES[2] == "$session_dir/session1.jsonl" ]]
-
-sf_session_find 1
-(( ${#SF_SESSION_MATCHES} == 1 ))
-[[ $SF_SESSION_MATCHES[1] == "$session_dir/session2.jsonl" ]]
-
-(
-  cd "$tmp"
-  if sf_session_find 0 2>/dev/null; then
-    fail 'session discovery succeeded with no matches'
-  fi
-)
 
 # Creation exclusively materializes the validated prefix.
 SF_SESSION_PATH=$session

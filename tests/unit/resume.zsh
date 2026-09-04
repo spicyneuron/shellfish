@@ -1,7 +1,7 @@
 #!/usr/bin/env zsh
 
-source "${0:A:h:h:h}/_helpers.zsh"
-sf_test_source tui/resume.zsh
+source "${0:A:h:h}/_helpers.zsh"
+sf_test_source libexec/resume/picker.zsh
 sf_test_tmp resume
 
 typeset s_empty="$tmp/empty.jsonl"
@@ -152,3 +152,49 @@ assert_equal 0 "$SF_RESUME_PAGE"
 # Cancel marks cancellation.
 sf_resume_cancel
 assert_equal 1 "$SF_RESUME_CANCELLED"
+
+# The public resume routes own selection and forward the remaining TUI arguments.
+sf_test_tmp resume-command
+typeset entry="$ROOT/bin/shellfish" directory error
+integer exit_code=0
+error=$(zsh -f "$entry" --resume 2>&1) || exit_code=$?
+[[ $error == *'resume requires an interactive terminal'* && $exit_code == 2 ]] || \
+  fail 'resume picker did not require an interactive terminal'
+
+export XDG_STATE_HOME=$tmp
+source "$ROOT/lib/session/main.zsh"
+source "$ROOT/libexec/resume/discovery.zsh"
+sf_session_directory
+directory=$REPLY
+mkdir -p -- "$directory"
+
+make_discovery_header() {
+  jq -cn --arg cwd "$1" --arg model "$2" '{type:"session",format_version:1,
+    cwd:$cwd,created:"2026-09-04T00:00:00Z",profile:{request:{model:$model}}}'
+}
+make_discovery_header "$(pwd -P)" first >"$directory/first.jsonl"
+touch -t 202609040100 "$directory/first.jsonl"
+make_discovery_header "$(pwd -P)" second >"$directory/second.jsonl"
+touch -t 202609040200 "$directory/second.jsonl"
+make_discovery_header /other/path ignored >"$directory/other.jsonl"
+touch -t 202609040300 "$directory/other.jsonl"
+print -r -- '{"not":"a session header"}' >"$directory/corrupt.jsonl"
+
+sf_session_find 0
+assert_equal 2 "${#SF_SESSION_MATCHES}"
+[[ $SF_SESSION_MATCHES[1] == "$directory/second.jsonl" ]]
+[[ $SF_SESSION_MATCHES[2] == "$directory/first.jsonl" ]]
+sf_session_find 1
+assert_equal 1 "${#SF_SESSION_MATCHES}"
+[[ $SF_SESSION_MATCHES[1] == "$directory/second.jsonl" ]]
+(
+  cd "$tmp"
+  if sf_session_find 0 2>/dev/null; then
+    fail 'session discovery succeeded with no matches'
+  fi
+)
+
+exit_code=0
+error=$(zsh -f "$entry" --continue --new 2>&1) || exit_code=$?
+[[ $error == *'--new cannot be combined with --session'* && $exit_code == 2 ]] || \
+  fail 'continue did not select a session and forward TUI arguments'
