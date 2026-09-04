@@ -1,7 +1,6 @@
 #!/usr/bin/env zsh
 
 source "${0:A:h:h}/_helpers.zsh"
-sf_test_source lib/backend.zsh
 
 sf_test_tmp backend-openai
 typeset run="$ROOT/default/backends/openai/run"

@@ -5,7 +5,7 @@ setopt err_exit no_aliases no_multios pipe_fail
 umask 077
 
 typeset -gr ROOT=${0:A:h:h:h:h}
-source "$ROOT/lib/backend.zsh"
+source "$ROOT/default/backends/_backend.zsh"
 
 api_key=${SHELLFISH_API_KEY-}
 account_id=${SHELLFISH_RESPONSES_ACCOUNT_ID-}

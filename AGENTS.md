@@ -10,7 +10,7 @@ NOTE: This project is pre-release. Do not add deprecation noticies, backwards co
 - `libexec/run/` owns the single-turn command: `main.zsh` parses and composes, and its private `turn.zsh` covers input handling, full turns, events, permissions, signals, and cleanup.
 - `lib/session/` owns JSONL persistence, state validation, recovery, and provider request projection.
 - `lib/runtime/` resolves configuration, credentials, profiles, and schema validation.
-- `lib/backend.zsh` adapts provider streams.
+- `default/backends/_backend.zsh` supports the bundled provider adapters.
 - `libexec/resume/` owns session discovery, latest-session selection, and the resume picker with its private terminal implementation.
 - `shellfish-server/` is a Go proxy that exposes one session to one browser, plus the browser client it serves. `docs/SERVER.md` is its contract.
 - `default/` is the bundled configuration and reference tools; `docs/HOOKS.md` is the complete hook contract.
