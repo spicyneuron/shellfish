@@ -62,6 +62,9 @@ sf_hooks_read_capture() {
   REPLY=$value
 }
 
+# A component that streams hook display to a live client defines
+# sf_hooks_display_update and sf_hooks_display_complete. Without them, display
+# is ordinary stderr.
 sf_hooks_capture_one() {
   local script=$1 input=$2 directory=$3
   setopt local_options no_monitor
@@ -127,9 +130,9 @@ sf_hooks_capture_one() {
     if (( ! notice_sent )); then
       notice+=$chunk
       if [[ $notice == *$'\n'* ]] && (( display_bytes <= max_capture )) &&
-          (( $+functions[sf_run_hook_display_update] )); then
+          (( $+functions[sf_hooks_display_update] )); then
         notice=${notice%%$'\n'*}$'\n'
-        sf_run_hook_display_update "$hook" "$script" "$notice" || {
+        sf_hooks_display_update "$hook" "$script" "$notice" || {
           exec {display_fd}<&-
           kill -KILL -- "-$script_pid" 2>/dev/null || kill -KILL "$script_pid" 2>/dev/null || true
           wait "$script_pid" 2>/dev/null || true
@@ -145,10 +148,9 @@ sf_hooks_capture_one() {
   wait "$script_pid"
   script_status=$?
   SF_HOOK_SCRIPT_PID=''
-  # Without a live event client, hook display is ordinary stderr.
   if (( display_bytes && display_bytes <= max_capture )); then
-    if (( $+functions[sf_run_hook_display_complete] )); then
-      sf_run_hook_display_complete "$hook" "$script" "$display" || {
+    if (( $+functions[sf_hooks_display_complete] )); then
+      sf_hooks_display_complete "$hook" "$script" "$display" || {
         sf_hooks_fail 'cannot complete hook display'
         return
       }

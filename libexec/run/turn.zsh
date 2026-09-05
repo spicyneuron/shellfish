@@ -19,7 +19,7 @@ sf_run_emit() {
   return 0
 }
 
-sf_run_hook_display_update() {
+sf_hooks_display_update() {
   local hook=$1 script=$2 text=$3 event
   if (( SF_RUN[jsonl] )); then
     event=$(print -rn -- "$text" |
@@ -30,7 +30,7 @@ sf_run_hook_display_update() {
   fi
 }
 
-sf_run_hook_display_complete() {
+sf_hooks_display_complete() {
   local hook=$1 script=$2 display=$3 event
   if (( ! SF_RUN[jsonl] )); then
     cat "$display" >&2
