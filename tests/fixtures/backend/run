@@ -5,7 +5,7 @@ setopt err_exit no_aliases no_multios pipe_fail
 
 typeset request decoded user_text prompt_text text tool_command tool_bypass keyword_mode=false
 typeset tool_mode tool_name tool_input fixture_dir fixture_path old_string new_string
-typeset cleanup_path cleanup_dir temp_root
+typeset cleanup_path cleanup_dir temp_root tool_bypass_reason
 typeset -a parts deltas
 integer keyword_count delay_match think error_count lorem delta_index input_tokens cached_tokens
 integer text_tokens output_tokens reasoning_tokens
