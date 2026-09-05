@@ -4,7 +4,7 @@ setopt no_aliases no_bg_nice no_multios pipe_fail
 (( $+functions[sf_scratch_file] )) || source "$SF_ROOT/lib/scratch.zsh"
 
 typeset -gA SF_REQUEST=(
-  assistant '' error '' error_file '' partial_events '' pid ''
+  assistant '' error '' error_file '' partial_events '' pid '' result ''
 )
 
 sf_request_build() {
@@ -53,6 +53,7 @@ sf_request_run() {
   SF_REQUEST[error_file]=''
   SF_REQUEST[partial_events]=''
   SF_REQUEST[pid]=''
+  SF_REQUEST[result]=''
   sf_scratch_file backends exec-error || {
     SF_REQUEST[error]='cannot prepare provider error capture'
     return 1
@@ -108,11 +109,20 @@ sf_request_run() {
   fi
   SF_REQUEST[pid]=''
   if [[ $kind != invalid && $adapter_status == 0 ]] && (( ended )); then
-    SF_REQUEST[assistant]=$(printf '%s\n' "${events[@]}" | jq -L "$SF_ROOT" -cse '
+    SF_REQUEST[result]=$(printf '%s\n' "${events[@]}" | jq -L "$SF_ROOT" -jse '
       include "lib/runtime/schema";
       include "lib/request";
-      assemble_backend_response(canonical_backend_response_events; canonical_assistant_message)
+      def field: ., "\u0000";
+      assemble_backend_response(canonical_backend_response_events; canonical_assistant_message) as $message |
+      ($message | tojson | field),
+      ($message.stop | field),
+      ([$message.content[] | select(.type == "tool_call")] | length | tostring | field),
+      ($message.content[] | select(.type == "tool_call") |
+        (tojson | field), (.id | field), (.name | field), (.input | tojson | field)),
+      ("ok" | field),
+      ([$message.content[] | select(.type == "text") | .text] | join("")), "\u0000"
     ' 2>/dev/null) || kind=invalid
+    SF_REQUEST[assistant]=${SF_REQUEST[result]%%$'\0'*}
     [[ -z $SF_REQUEST[assistant] ]] || SF_REQUEST[partial_events]=''
   fi
   if [[ $kind == invalid || $adapter_status != 0 || -z $SF_REQUEST[assistant] ]]; then

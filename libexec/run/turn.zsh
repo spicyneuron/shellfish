@@ -175,13 +175,13 @@ sf_run_turn() {
   local user_record=$1 session_path=$2 permission_available=${3:-0} prompt
   local request assistant stop_input call result backend_command opened_records
   local tool_name call_id tool_input decision denial_reason hook_action hook_reason
-  local runtime_projection prompt_projection response_projection
+  local runtime_projection prompt_projection response_projection response_field
   local tools tool_schema max_capture fence config_file config_dir
   local sandbox_read_paths sandbox_write_paths
   local context_output context_line context_window context_window_command update_event adapter_pid
   local SHELLFISH_TURN_STATE='' SHELLFISH_SESSION_STATE='' SF_API_KEY='' SF_API_KEY_SOURCE=''
   local -a runtime_fields prompt_fields response_fields tool_calls handoff
-  integer request_count=0 stop_count=0 call_count tool_index
+  integer request_count=0 stop_count=0 call_count tool_index response_call_count
   integer harness_sandbox tool_limit request_limit context_window_set
   integer permission_status
   local failure='' after='' patch=''
@@ -383,24 +383,38 @@ sf_run_turn() {
         return 1
       fi
       sf_run_emit "$assistant"
-      response_projection=$(jq -jr '
-        def field: ., "\u0000";
-        (.stop | field),
-        (.content[] | select(.type == "tool_call") |
-          (tojson | field), (.id | field), (.name | field), (.input | tojson | field)),
-        ([.content[] | select(.type == "text") | .text] | join("") | field),
-        ("ok" | field)
-      ' <<<"$assistant") || {
+      response_projection=${SF_REQUEST[result]#*$'\0'}
+      response_fields=()
+      for (( tool_index = 0; tool_index < 2; tool_index += 1 )); do
+        [[ $response_projection == *$'\0'* ]] || break
+        response_field=${response_projection%%$'\0'*}
+        response_projection=${response_projection#*$'\0'}
+        response_fields+=( "$response_field" )
+      done
+      if (( ${#response_fields} == 2 )) && [[ $response_fields[2] == <-> ]]; then
+        response_call_count=$response_fields[2]
+      else
+        response_call_count=-1
+      fi
+      response_fields=( "$response_fields[1]" )
+      for (( tool_index = 0; tool_index < response_call_count * 4; tool_index += 1 )); do
+        [[ $response_projection == *$'\0'* ]] || break
+        response_field=${response_projection%%$'\0'*}
+        response_projection=${response_projection#*$'\0'}
+        response_fields+=( "$response_field" )
+      done
+      [[ $response_projection == ok$'\0'* &&
+          $response_projection == *$'\0' ]] || {
         failure='cannot inspect provider response'
         return 1
       }
-      response_fields=( "${(@0)${response_projection%$'\0'}}" )
-      (( ${#response_fields} >= 3 && (${#response_fields} - 3) % 4 == 0 )) &&
-          [[ $response_fields[-1] == ok ]] || {
+      response_projection=${response_projection#*$'\0'}
+      stop_input=${response_projection%$'\0'}
+      (( response_call_count >= 0 &&
+          ${#response_fields} == 1 + response_call_count * 4 )) || {
         failure='cannot inspect provider response'
         return 1
       }
-      stop_input=$response_fields[-2]
       if [[ $response_fields[1] != tool_calls ]]; then
         (( stop_count += 1 ))
         if ! sf_hooks_stop "$session_path" "$stop_input" "$stop_count"; then
@@ -416,7 +430,7 @@ sf_run_turn() {
         continue
       fi
       call_count=0
-      tool_calls=( "${(@)response_fields[2,-3]}" )
+      tool_calls=( "${(@)response_fields[2,-1]}" )
       for (( tool_index = 1; tool_index <= ${#tool_calls}; tool_index += 4 )); do
         (( call_count += 1 ))
         call=$tool_calls[tool_index]
