@@ -175,12 +175,12 @@ sf_run_turn() {
   local user_record=$1 session_path=$2 permission_available=${3:-0} prompt
   local request assistant stop_input call result backend_command opened_records
   local tool_name call_id tool_input decision denial_reason hook_action hook_reason
-  local runtime_projection user_projection response_projection
+  local runtime_projection prompt_projection response_projection
   local tools tool_schema max_capture fence config_file config_dir
   local sandbox_read_paths sandbox_write_paths
   local context_output context_line context_window context_window_command update_event adapter_pid
   local SHELLFISH_TURN_STATE='' SHELLFISH_SESSION_STATE='' SF_API_KEY='' SF_API_KEY_SOURCE=''
-  local -a runtime_fields user_fields response_fields tool_calls handoff
+  local -a runtime_fields prompt_fields response_fields tool_calls handoff
   integer request_count=0 stop_count=0 call_count tool_index
   integer harness_sandbox tool_limit request_limit context_window_set
   integer permission_status
@@ -239,22 +239,19 @@ sf_run_turn() {
       failure="session working directory is unavailable: $SF_SESSION[cwd]"
       return 1
     }
-    user_projection=$(jq -L "$SF_ROOT" -jnre --argjson record "$user_record" '
-      include "lib/runtime/schema";
+    prompt_projection=$(jq -jrn --argjson record "$user_record" '
       def field: ., "\u0000";
-      $record | select(canonical_user_message) |
-      (tojson | field), (.content[0].text | field), ("ok" | field)
+      ($record.content[0].text | field), ("ok" | field)
     ' 2>/dev/null) || {
-      failure='exec requires a canonical user message'
-      return 1
-    }
-    user_fields=( "${(@0)${user_projection%$'\0'}}" )
-    (( ${#user_fields} == 3 )) && [[ $user_fields[3] == ok ]] || {
       failure='cannot inspect user message'
       return 1
     }
-    user_record=$user_fields[1]
-    prompt=$user_fields[2]
+    prompt_fields=( "${(@0)${prompt_projection%$'\0'}}" )
+    (( ${#prompt_fields} == 2 )) && [[ $prompt_fields[2] == ok ]] || {
+      failure='cannot inspect user message'
+      return 1
+    }
+    prompt=$prompt_fields[1]
     if ! sf_hooks_turn_state_create; then
       failure=$SF_HOOK_ERROR
       return 1

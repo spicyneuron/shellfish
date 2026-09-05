@@ -660,7 +660,7 @@ test("replaces incomplete hook display with exec failure", async () => {
   await page.send({ type: "_turn_error", message: "hook script failed" });
   const notes = find(page.output, "note");
   assert.equal(notes.length, 1);
-  assert.equal(findTag(notes[0], "h2")[0].textContent, "✕Hook failed");
+  assert.equal(findTag(notes[0], "h2")[0].textContent, "✕Turn failed");
   assert.equal(findTag(notes[0], "pre")[0].textContent, "hook script failed");
 });
 
@@ -706,36 +706,13 @@ test("preserves drafts from unsupported handoffs", async () => {
   assert.equal(page.entry.value, "--draft");
 });
 
-test("labels actionable exec errors", async () => {
+test("shows an exec error without interpreting its message", async () => {
   const page = await idle();
-  const errors = [
-    [
-      "provider request limit reached: 50",
-      "Turn limit reached",
-      "This turn reached the maximum of 50 provider requests.",
-    ],
-    ["openai: credentials rejected (HTTP 401)", "Authentication failed"],
-    ["openai: credentials rejected (HTTP 401); no API key was supplied", "API key required"],
-    [
-      "codex: Codex credentials are unavailable; authenticate using Codex and retry",
-      "Authentication required",
-    ],
-    ["openai: request timed out (curl status 28)", "Request timed out"],
-    ["openai: could not connect to the provider (curl status 7)", "Provider connection failed"],
-    ["openai: HTTP 429: slow down", "Provider rate limit reached"],
-    ["openai: HTTP 400: bad request", "Provider request failed"],
-    [
-      "session working directory is unavailable: /tmp/gone",
-      "Working directory unavailable",
-    ],
-    ["user_prompt_submit hook script returned invalid control data", "Hook failed"],
-  ];
-  for (const [message, heading, body = message] of errors) {
-    await page.send({ type: "_turn_error", message });
-    const shown = find(page.output, "note").at(-1);
-    assert.equal(findTag(findTag(shown, "h2")[0], "strong")[0].textContent, heading);
-    assert.equal(findTag(shown, "pre")[0].textContent, body);
-  }
+  const message = "provider request limit reached: 50";
+  await page.send({ type: "_turn_error", message });
+  const shown = find(page.output, "note").at(-1);
+  assert.equal(findTag(findTag(shown, "h2")[0], "strong")[0].textContent, "Turn failed");
+  assert.equal(findTag(shown, "pre")[0].textContent, message);
 });
 
 test("reopens the stream when it ends", async () => {

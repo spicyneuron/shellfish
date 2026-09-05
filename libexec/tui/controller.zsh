@@ -128,13 +128,9 @@ sf_tui_decoded() {
         ;;
       exec_error)
         sf_tui_notice error "$first" "$second" || return 1
-        if [[ -z $SF_PRESENT_EXEC_ERROR_HEADING ]]; then
-          SF_PRESENT_EXEC_ERROR_HEADING=$first
-          SF_PRESENT_EXEC_ERROR_DETAIL=$second
-        else
-          [[ -z $SF_PRESENT_EXEC_ERROR_DETAIL ]] || SF_PRESENT_EXEC_ERROR_DETAIL+=$'\n'
-          SF_PRESENT_EXEC_ERROR_DETAIL+="$first${second:+: $second}"
-        fi
+        [[ -n $SF_PRESENT_EXEC_ERROR_HEADING ]] || SF_PRESENT_EXEC_ERROR_HEADING=$first
+        [[ -z $SF_PRESENT_EXEC_ERROR_DETAIL ]] || SF_PRESENT_EXEC_ERROR_DETAIL+=$'\n'
+        SF_PRESENT_EXEC_ERROR_DETAIL+=$second
         ;;
       hook_display)
         if [[ $fourth == true ]]; then notice_state=closed; else notice_state=open; fi

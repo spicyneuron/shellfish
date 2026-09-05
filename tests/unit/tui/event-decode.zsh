@@ -49,41 +49,18 @@ usage=$(print -r -- \
   tr '\0' '\n' | sed '/^$/d' | paste -sd, -)
 assert_equal 'turn_usage,100 ↑ 85% ⦿ 20 ↓,batch_ok' "$usage"
 
-typeset error expected
-for error expected in \
-    'provider request limit reached: 50' 'Turn limit reached,This turn reached the maximum of 50 provider requests.' \
-    'openai: credentials rejected (HTTP 401)' 'Authentication failed,openai: credentials rejected (HTTP 401)' \
-    'openai: credentials rejected (HTTP 401); no API key was supplied' 'API key required,openai: credentials rejected (HTTP 401); no API key was supplied' \
-    'openai: no API key was supplied' 'API key required,openai: no API key was supplied' \
-    'codex: Codex credentials are unavailable; authenticate using Codex and retry' 'Authentication required,codex: Codex credentials are unavailable; authenticate using Codex and retry' \
-    'openai: request timed out (curl status 28)' 'Request timed out,openai: request timed out (curl status 28)' \
-    'openai: TLS connection failed (curl status 60)' 'Provider connection failed,openai: TLS connection failed (curl status 60)' \
-    'openai: HTTP 429: slow down' 'Provider rate limit reached,openai: HTTP 429: slow down' \
-    'openai: HTTP 400: bad request' 'Provider request failed,openai: HTTP 400: bad request' \
-    'cannot prepare provider request' 'Provider request failed,cannot prepare provider request' \
-    'openai: request failed (curl status 1)' 'Provider request failed,openai: request failed (curl status 1)' \
-    'openai: invalid canonical request' 'Provider request invalid,openai: invalid canonical request' \
-    'backend exited before completing a response' 'Provider response incomplete,backend exited before completing a response' \
-    'backend emitted an invalid event stream' 'Provider response invalid,backend emitted an invalid event stream' \
-    'openai: cannot read the response status' 'Provider response invalid,openai: cannot read the response status' \
-    'openai: cannot normalize API response: bad payload' 'Provider response invalid,openai: cannot normalize API response: bad payload' \
-    'invalid permission response' 'Permission failed,invalid permission response' \
-    'session working directory is unavailable: /tmp/gone' 'Working directory unavailable,session working directory is unavailable: /tmp/gone' \
-    'cannot append session record: /tmp/session.jsonl' 'Session failed,cannot append session record: /tmp/session.jsonl' \
-    'cannot prepare session records' 'Session failed,cannot prepare session records' \
-    'cannot prepare hook captures' 'Hook failed,cannot prepare hook captures' \
-    'hook script failed with status 1: HTTP 400: bad request' 'Hook failed,hook script failed with status 1: HTTP 400: bad request' \
-    'sandbox executable is unavailable: /usr/bin/fence' 'Sandbox unavailable,sandbox executable is unavailable: /usr/bin/fence' \
-    'cannot capture tool output' 'Tool failed,cannot capture tool output' \
-    'cannot inspect configured tools' 'Tool failed,cannot inspect configured tools' \
-    'cannot prepare handoff' 'Handoff failed,cannot prepare handoff' \
-    'cannot inspect frozen runtime' 'Turn failed,cannot inspect frozen runtime'; do
-  order=$(jq -cn --arg message "$error" '{type:"_turn_error",message:$message}' |
+order=$(jq -cn --arg message 'provider request limit reached: 50' \
+    '{type:"_turn_error",message:$message}' |
+  jq -jRs -L "$ROOT" --argjson runtime null \
+    -f "$ROOT/libexec/tui/event-decode.jq" |
+  tr '\0' '\n' | sed '/^$/d' | paste -sd, -)
+assert_equal 'exec_error,Turn failed,provider request limit reached: 50,batch_ok' "$order"
+
+if print -r -- '{"type":"_turn_error","message":1}' |
     jq -jRs -L "$ROOT" --argjson runtime null \
-      -f "$ROOT/libexec/tui/event-decode.jq" |
-    tr '\0' '\n' | sed '/^$/d' | paste -sd, -)
-  assert_equal "exec_error,$expected,batch_ok" "$order"
-done
+      -f "$ROOT/libexec/tui/event-decode.jq" >/dev/null 2>&1; then
+  fail 'turn error with a non-string message was accepted'
+fi
 
 typeset read_runtime=$(jq -cn \
   --slurpfile read "$ROOT/share/default/tools/read_file/tool.json" '

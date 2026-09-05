@@ -419,8 +419,8 @@ SF_TUI_TRANSPORT_EXIT_STATUS=1
 SF_TUI_TRANSPORT_EXIT_DETAIL='backend emitted an invalid event stream'
 sf_tui_heartbeat_tick
 assert_equal idle "$SF_PRESENT_STATE"
-assert_equal 'Provider response invalid' "$SF_PRESENT_NODE_HEADING[-1]"
-assert_equal $'backend emitted an invalid event stream\nSession failed: cannot append session record: /tmp/recover.jsonl' \
+assert_equal 'Turn failed' "$SF_PRESENT_NODE_HEADING[-1]"
+assert_equal $'backend emitted an invalid event stream\ncannot append session record: /tmp/recover.jsonl' \
   "$SF_PRESENT_NODE_BODY[-1]"
 
 # A terminated exec can replace a flushed and closed speculative assistant
