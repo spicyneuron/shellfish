@@ -45,6 +45,8 @@ At the `session_start` hook, five scripts prepare context before the transcript 
 
 This context becomes part of the durable initial session prefix. It is collected once for a new session rather than before every turn.
 
+The `project_environment` and `git_awareness` probes share a one-second wall-clock budget so session startup stays fast, and report no context when a host exceeds it. Set `SHELLFISH_PROBE_BUDGET` to a positive number of seconds to raise it on a slow host; other values are ignored.
+
 Skills are discovered in descending precedence from `./.agents/skills/`, the resolved configuration directory's `skills/`, `~/.agents/skills/`, and bundled `default/skills/`. Each skill directory contains a `SKILL.md` whose frontmatter supplies its matching `name` and `description`. Invalid skills and skills with `disable-model-invocation: true` are unavailable to the model. The advertised catalog is recorded when the session is created; the `skill` tool reads the selected file when invoked.
 
 ### Interactive commands

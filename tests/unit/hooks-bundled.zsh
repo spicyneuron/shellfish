@@ -4,6 +4,10 @@ source "${0:A:h}/_hooks.zsh"
 
 sf_test_runtime
 
+# The suite runs files concurrently, where a first fork can cost most of the
+# probe budget. Raise it so these cases assert hook output rather than load.
+export SHELLFISH_PROBE_BUDGET=30
+
 # Short bundled probes preserve command results and share an absolute deadline.
 (
   source "$ROOT/default/lib/capped.zsh"

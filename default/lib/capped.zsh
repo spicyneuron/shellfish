@@ -1,5 +1,13 @@
 # Runs a short command within an absolute EPOCHREALTIME deadline.
 
+# Seconds a bundled probe chain may spend before it reports no context. Hosts
+# where process startup or the file system is slow can raise the default.
+typeset -gF SF_PROBE_BUDGET=1
+if [[ ${SHELLFISH_PROBE_BUDGET-} == (<->|<->.<->) ]] &&
+    (( SHELLFISH_PROBE_BUDGET > 0 )); then
+  SF_PROBE_BUDGET=$SHELLFISH_PROBE_BUDGET
+fi
+
 sf_capped() {
   emulate -L zsh
   setopt no_bg_nice

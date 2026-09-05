@@ -9,7 +9,7 @@ state="$SHELLFISH_SESSION_STATE/git_awareness"
 [[ -f $state ]] || exit 0
 previous=$(<$state) || exit 0
 temp="$state.$$"
-typeset -F deadline=$(( EPOCHREALTIME + 1 ))
+typeset -F deadline=$(( EPOCHREALTIME + SF_PROBE_BUDGET ))
 
 cleanup() {
   rm -f -- "$temp"
