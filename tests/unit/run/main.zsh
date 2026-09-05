@@ -1,6 +1,6 @@
 #!/usr/bin/env zsh
 
-source "${0:A:h:h}/_helpers.zsh"
+source "${0:A:h:h:h}/_helpers.zsh"
 sf_test_tmp run-command
 mkdir -p "$tmp/home" "$tmp/system"
 print -r -- 'initial system' >"$tmp/system/source.md"
@@ -154,6 +154,9 @@ print -n '{}' | zsh -f "$entry" run --jsonl --config "$config" >/dev/null 2>&1 |
 exit_code=0
 zsh -f "$entry" --jsonl >/dev/null 2>&1 || exit_code=$?
 (( exit_code == 2 )) || fail 'chat accepted --jsonl'
+exit_code=0
+zsh -f "$entry" run --draft draft prompt >/dev/null 2>&1 || exit_code=$?
+(( exit_code == 2 )) || fail 'run accepted --draft'
 exit_code=0
 zsh -f "$entry" run --verbose --config "$config" hi >/dev/null 2>&1 || exit_code=$?
 (( exit_code == 2 )) || fail 'run accepted --verbose'
