@@ -11,7 +11,7 @@ Shellfish is mostly Zsh orchestration around external programs. Process startupâ
 1. Run `./tests/run metrics` unchanged. Record `jq processes/run`, end-to-end, and remainder timing. Process count is deterministic; timing is noisy.
 2. Trace one representative `tests/metrics/exec.zsh 1` run to attribute dynamic launches by arguments and call site. Static `rg` is insufficient. Exclude fixture-owned processes; keep instrumentation temporary.
 3. Rank launches by frequency and scaling: per event, tool call, tool, hook, request, turn, then startup-only.
-4. Make one coherent reduction at a time. Rerun the focused metric and nearest tests, then `./tests/run unit`.
+4. Make one coherent reduction at a time. Rerun the focused metric and nearest tests, then `./tests/run`.
 5. Report old/new process counts and timing distribution. Commit only after review.
 
 ## Patterns

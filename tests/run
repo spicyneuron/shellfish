@@ -8,7 +8,7 @@ zmodload zsh/datetime
 
 typeset test_dir=${0:A:h} project_dir=${test_dir:h}
 typeset suite
-typeset -a tests
+typeset -a suites tests
 typeset -a pids names logs results
 typeset test_path test_file log_dir
 integer jobs=${TEST_JOBS:-4} timeout=${TEST_TIMEOUT:-30}
@@ -26,9 +26,9 @@ export TMPDIR=${${TMPDIR:-/tmp}%/}/shellfish-tests
 mkdir -p -- "$TMPDIR" || exit 1
 
 if (( $# == 0 )); then
-  suite=unit
-elif (( $# == 1 )) && [[ $1 == (unit|pty|server|metrics) ]]; then
-  suite=$1
+  suites=( unit e2e )
+elif (( $# == 1 )) && [[ $1 == (unit|e2e|pty|server|metrics) ]]; then
+  suites=( $1 )
 else
   for test_path in "$@"; do
     [[ $test_path == /* ]] || test_path=$test_dir/${test_path#${test_dir:t}/}
@@ -36,11 +36,12 @@ else
   done
 fi
 
-if [[ -n $suite ]]; then
+for suite in $suites; do
   case $suite in
-    unit) tests=( $test_dir/unit/**/*.zsh(N.) ) ;;
-    pty)  tests=( $test_dir/pty/**/*.py(N.) ) ;;
-    server) tests=( "$project_dir/shellfish-server/ui/ui_test.js" "$project_dir/shellfish-server" ) ;;
+    unit) tests+=( $test_dir/unit/**/*.zsh(N.) ) ;;
+    e2e)  tests+=( $test_dir/e2e/**/*.zsh(N.) ) ;;
+    pty)  tests+=( $test_dir/pty/**/*.py(N.) ) ;;
+    server) tests+=( "$project_dir/shellfish-server/ui/ui_test.js" "$project_dir/shellfish-server" ) ;;
     metrics)
       "$test_dir/metrics/run.zsh" || exit
       "$test_dir/metrics/rendering.zsh" || exit
@@ -48,12 +49,12 @@ if [[ -n $suite ]]; then
       exit
       ;;
   esac
-fi
+done
 
 for test_file in $tests; do
   [[ -d $test_file || ( -f $test_file && $test_file == *.(zsh|py|js|go) ) ]] || {
     print -u2 -r -- "Invalid test path: $test_file"
-    print -u2 -r -- "Usage: $0 [unit|pty|server|metrics|TEST_PATH ...]"
+    print -u2 -r -- "Usage: $0 [unit|e2e|pty|server|metrics|TEST_PATH ...]"
     exit 2
   }
 done
@@ -61,7 +62,7 @@ done
 # An underscore prefix marks a shared helper rather than a test of its own.
 tests=( ${(@)tests:#*/_[^/]#} )
 (( ${#tests} )) || {
-  print -u2 -r -- "No ${suite:-requested} tests found."
+  print -u2 -r -- "No ${suites:-requested} tests found."
   exit 1
 }
 (( $+commands[python3] )) || {

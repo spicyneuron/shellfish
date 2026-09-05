@@ -1,6 +1,6 @@
 #!/usr/bin/env zsh
 
-source "${0:A:h:h:h}/_helpers.zsh"
+source "${0:A:h:h}/_helpers.zsh"
 
 typeset entry="$ROOT/bin/shellfish" error output
 integer exit_code=0

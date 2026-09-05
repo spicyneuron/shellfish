@@ -1,6 +1,6 @@
 #!/usr/bin/env zsh
 
-source "${0:A:h:h:h}/_helpers.zsh"
+source "${0:A:h:h}/_helpers.zsh"
 sf_test_tmp config-command
 
 typeset config_dir="$tmp/config"

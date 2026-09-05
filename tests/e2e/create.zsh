@@ -1,6 +1,6 @@
 #!/usr/bin/env zsh
 
-source "${0:A:h:h:h}/_helpers.zsh"
+source "${0:A:h:h}/_helpers.zsh"
 sf_test_tmp create-command
 mkdir -p "$tmp/home" "$tmp/system"
 print -r -- 'initial system' >"$tmp/system/source.md"
@@ -45,17 +45,16 @@ assert_equal "$explicit" \
   'create ignored --path'
 jq -es 'length == 2' "$explicit" >/dev/null || fail 'create did not populate --path'
 
-# Private sandbox grants from a client reach config through create.
-typeset inherited="$tmp/inherited.jsonl"
-_SHELLFISH_SANDBOX_READ_PATHS='["'"${tmp:A}/system"'"]' \
-  _SHELLFISH_SANDBOX_WRITE_PATHS='["'"${tmp:A}/home"'"]' \
-  zsh -f "$entry" create --path "$inherited" --config "$config" >/dev/null || \
-  fail 'create lost inherited sandbox grants'
+# Sandbox grants are forwarded to config unread and frozen into the header.
+typeset granted="$tmp/granted.jsonl"
+zsh -f "$entry" create --path "$granted" --config "$config" \
+  --sandbox-read "${tmp:A}/system" --sandbox-write "${tmp:A}/home" >/dev/null || \
+  fail 'create rejected forwarded sandbox grants'
 jq -e --arg read "${tmp:A}/system" --arg write "${tmp:A}/home" '
   select(.type == "session") |
   (.harness.sandbox_read_paths | index($read)) != null and
   (.harness.sandbox_write_paths | index($write)) != null
-' "$inherited" >/dev/null || fail 'create did not store inherited sandbox grants'
+' "$granted" >/dev/null || fail 'create did not store forwarded sandbox grants'
 
 # --session names the session the runtime is derived from. Its settings are
 # reused and its system components are rematerialized, without copying records.
