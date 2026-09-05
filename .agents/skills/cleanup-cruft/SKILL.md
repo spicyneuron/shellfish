@@ -1,21 +1,26 @@
 ---
 name: cleanup-cruft
-description: Use when user requests code cleanup or cruft removal.
+description: Use when the user requests code cleanup or cruft removal.
 ---
 # Clean up cruft
 
-Inspect the relevant code, tests, and documentation to remove or simplify cruft. Look for:
+Remove code and guidance that no longer earn their complexity. Shellfish is intended to remain small and auditable, so prefer deletion, direct control flow, and one clear owner over replacement abstractions.
 
-- Dead code, redundant layers, speculative abstractions, duplicate validation, and checks already guaranteed upstream.
-- Tautological or duplicate tests, tests that mirror implementation, and assertions that pin incidental details that are not themselves part of a contract.
+## Scope
+
+Match the investigation to the request. For a scoped cleanup, inspect the owning code together with its callers, configuration, tests, and documentation. For a repository-wide cleanup, inventory the tree first and work through coherent ownership or execution slices rather than following a fixed directory order. Include dynamically selected hooks, tools, adapters, and bundled resources under `share/default/` when checking reachability.
+
+Look for:
+
+- Dead code, unused files, redundant layers, speculative abstractions, and duplicate state or policy.
+- Validation or recovery repeated after an established internal guarantee.
+- Tautological tests, tests that mirror implementation, and assertions that pin non-contractual output.
 - Slow or brittle tests whose maintenance cost outweighs credible coverage.
-- Comments that restate code, narrate old implementations or model discussion, or use more words than a current non-obvious constraint requires.
-- Documentation that's incorrect, inconsistent, or ambiguously worded.
+- Comments that restate code, narrate old implementations, or over-explain a simple constraint.
+- Documentation and agent guidance that duplicate discoverable structure, preserve stale details, or obscure the actual rule.
 
-Unless otherwise instructed, check the following sections in order: `AGENTS.md`, `lib/`, `default/`, `tests/`, `shellfish-server/`, and `docs/`.
+Confirm candidates through configuration, dynamic dispatch, public interfaces, fixtures, and platform-specific paths, rather than only static references. Preserve behavior, boundary validation, failure handling, and valuable coverage. Do not unify code whose differences reflect distinct ownership or lifecycle.
 
-Complete one section before starting the next: inventory it, read every file, then review and clean candidates one at a time. A section-scoped request does not require inspecting the others.
+Make the smallest coherent cleanup in each ownership slice and run its focused checks. Leave uncertain candidates unchanged rather than inventing a rationale for removal. For changes spanning several natural boundaries, propose reviewable chunks before editing.
 
-Confirm dead code has no hidden consumer through configuration, dynamic dispatch, public interfaces, fixtures, or platform-specific paths. Preserve intended behavior and valuable coverage. Prefer deletion and direct code over replacement abstractions.
-
-Make the smallest coherent cleanup and run focused project checks. Leave uncertain candidates unchanged and continue all obvious cleanup in scope. Afterward, report what changed and present the deferred candidates with evidence and a recommendation.
+Report what was removed or simplified, the checks run, and any deferred candidates with evidence and a recommendation.

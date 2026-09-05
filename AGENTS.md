@@ -1,59 +1,29 @@
 # Shellfish
 
-NOTE: This project is pre-release. Do not add deprecation noticies, backwards compatibility, or test asserting removed functionality.
+Shellfish is a small, auditable coding agent built from shell processes, text protocols, and an append-only log. Prefer fewer concepts, direct control flow, and behavior that can be understood in one sitting.
 
-## Project map
+This project is pre-release. Remove obsolete behavior rather than adding deprecation notices, compatibility paths, or tests for removed functionality.
 
-- `bin/shellfish` routes the first argument to an independent component.
-- `libexec/` holds independent shell programs, each with its own executable entry point and private implementation. They do not share a shell namespace with the dispatcher or each other.
-- `libexec/tui/` owns interactive chat, including session attachment, current presentation configuration, rendering, terminal lifecycle, and the ZLE prompt.
-- `libexec/run/` owns the single-turn command: `main.zsh` parses and composes, while its private implementation covers input handling, full turns, tools, events, permissions, turn hook policy, signals, and cleanup.
-- `libexec/config/` owns configuration initialization and resolution, including profiles, presentation, and schema validation.
-- `lib/session/` owns JSONL persistence, state validation, recovery, and provider request projection.
-- `lib/runtime/schema.jq` defines canonical data shared across components; `lib/credentials.zsh` resolves credentials for provider requests; `lib/hooks.zsh` dispatches hook scripts and captures their output for `create` and `run`.
-- `share/default/backends/_backend.zsh` supports the bundled provider adapters.
-- `libexec/resume/` owns session discovery, latest-session selection, and the resume picker with its private terminal implementation.
-- `shellfish-server/` is a Go proxy that exposes one session to one browser, plus the browser client it serves. `docs/SERVER.md` is its contract.
-- `share/` holds bundled runtime resources: the default configuration and harness, initialization templates, command help, and configuration schema. `docs/HOOKS.md` is the complete hook contract.
+## Design boundaries
 
-## Execution flow
+- A session JSONL file is the authoritative state. Transcript records after its header are append-only. Every durable prefix must be valid, including an interrupted turn. Provider deltas, hook display, permissions, and presentation state are transient.
+- One `shellfish run` process owns a complete turn, including hooks, provider requests, tools, persistence, recovery, and cleanup. This is a convention, not concurrent-writer protection. Clients invoke that boundary and replay the transcript. They do not embed the turn loop or maintain another copy of session state.
+- The session header freezes the runtime. A session update may atomically replace it. Credentials and current presentation settings remain external. Do not add lifecycle or presentation records to the transcript.
+- The core owns event ordering, canonical validation, persistence, recovery, and cleanup. Harnesses supply tools and workflow policy through configuration and lifecycle scripts. Keep bundled coding behavior out of the generic turn machinery.
+- Backend adapters translate provider protocols into the normalized response stream. Keep provider-specific parsing, correlation, and protocol validation in the adapter. Tool calls remain inert until the core has assembled, validated, and persisted the complete assistant response.
 
-- `bin/shellfish` routes interactive chat and each named command to its program under `libexec/`, where each component owns its parsing.
-- `shellfish create` owns session creation. It obtains the frozen runtime by forwarding its unparsed options to `shellfish config` and deleting the presentation fields, prepares the header, concatenates the profile's `system` components into one system record, collects `session_start` context, writes the complete initial JSONL prefix, and prints the path. `--path` chooses the destination; `--session` names the session the runtime is derived from.
-- Each turn opens the session, runs `user_prompt_submit` scripts, then loops over provider responses. Final responses run `stop` scripts; tool-call responses run the `pre_tool_use` scripts, permission, execution, persistence, and `post_tool_use` scripts before the next provider request.
-- The session layer is authoritative. Request projection converts durable records into provider messages; provider deltas and UI events are transient. Any failure, cancellation, or early return converges on turn recovery and hook/tool cleanup.
-- `sf_session_open` resolves which session the TUI or user-facing `run` command attaches to and whether it already exists, invoking `shellfish create` when it does not. The private turn implementation receives the resulting existing session.
-- Interactive chat runs single turns through `shellfish run --jsonl`, renders its event stream, and reloads the durable transcript after completion or uncertainty. Transcript replay establishes the frozen runtime from the session header, which live `_session_update` events then refresh.
-- A served session runs the same single turns: the proxy relays one child's JSONL to one browser, which replays the durable session on connect and reopens that stream to recover.
+## Code boundaries
 
-## Architecture
+- `bin/shellfish` dispatches public commands. Each top-level directory under `libexec/` is an independent program with private implementation. Reusable cross-component code belongs in `lib/`. Components compose through durable sessions and public `shellfish` commands, not another component's private files or symbols.
+- `tests/unit/boundary.zsh` enforces component dependencies. Update the boundary deliberately when ownership changes. Do not bypass it with alternate path or symbol access.
+- `share/default/` contains the bundled configuration and harness resources, including executable scripts. These are product behavior, not fixtures. `shellfish-server/` is a separate Go proxy and browser client over the same single-turn interface.
+- jq module paths are repository-rooted. Pass `-L "$SF_ROOT"` and include modules by their repository path.
+- Tools may be sandboxed. Hook scripts and backend adapters are trusted programs running with user permissions. Keep credentials out of hooks and tools. Only the backend adapter receives the scoped `SHELLFISH_API_KEY`.
 
-- Sessions are append-only JSONL and are the durable source of truth. Every durable prefix must be valid, including an in-progress last turn.
-- Durable records are `session`, `system`, `message`, and hook-injected `context`. Provider deltas, turn status, and presentation events are transient.
-- Interactive chat submits single turns through the shared session and turn machinery. Do not introduce lifecycle or presentation records.
-- Components own their entry points and private implementation under `libexec/`. Shared implementation remains under `lib/`; clients compose work through durable sessions and public `shellfish` commands rather than another component's private functions. `tests/unit/boundary.zsh` enforces this for every component by enumerating each repository path, jq include, `shellfish` command, and symbol it references.
-- `libexec/tui/` may use shared session and scratch implementation, the durable session file, public `shellfish create`, `shellfish config`, and `shellfish run` commands, and canonical jq definitions. It must not source turn-private implementation.
-- jq module paths are repo-rooted: pass `-L "$SF_ROOT"` and include `lib/runtime/schema`, `lib/request`, `lib/session/request`, or `libexec/tui/display-fields`.
-- One `shellfish run` process owns a session for the duration of a turn by convention; concurrent writers are not prevented. Keep credentials out of hook scripts; the turn passes the scoped `SHELLFISH_API_KEY` only to the backend adapter.
+## Working here
 
-## Configuration
-
-- User configuration is JSONC at `$XDG_CONFIG_HOME/shellfish/shellfish.jsonc` or `~/.config/shellfish/shellfish.jsonc`; comments are stripped before `jq` processing.
-- Profiles compose a backend, a harness, and model/request overrides. Backends define provider adapters and transport; harnesses wrap the shared turn loop with tools, hooks, sandboxing, and limits; top-level themes and `tui` settings define presentation.
-- Resolution merges `share/default/shellfish.jsonc` with user configuration, selects a profile (including its `extend` chain), and resolves referenced files from the config directory before bundled defaults.
-- The session header freezes runtime data. Current configuration supplies presentation, so old sessions use the currently selected themes and TUI settings.
-- Resolve secrets from the adjacent `.env` or exported variables; exported values win.
-
-## Hooks
-
-- `session_start` runs during session preparation; its output becomes the initial context. `user_prompt_submit`, `permission_request`, `pre_tool_use`, `post_tool_use`, and `stop` run during a turn.
-- Hook script stdout supplies model input according to hook policy, stderr is user display only, and fd 3 carries control decisions where supported. Use `docs/HOOKS.md` for payloads, exit statuses, and environment guarantees.
-
-## Development
-
-- For code changes, run the focused test nearest the feature first, then bare `./tests/run`, which covers the shell suite. Tests under `tests/unit/` are organized by subject; they may source implementation or drive `bin/shellfish` as a subprocess for argument parsing, startup wiring, stream contracts, environment isolation, or signals. Reserve PTY tests for behavior that requires a real terminal. When running PTY tests, request a run outside the sandbox because otherwise they report `out of pty devices`. Run `./tests/run server` for changes under `shellfish-server/`. It runs the browser and Go tests.
-- Treat the worktree as shared: before any `git checkout`, `git restore`, `git reset`, or `git stash`, preserve and review affected uncommitted changes. Never discard or hide another agent's work.
-- Do not run tests for documentation- or comment-only changes.
-- In Zsh, avoid variable names that collide with special parameters such as `status` and `commands`. When a command substitution's exit status matters, declare the variable first and assign it separately.
-- `shellcheck` and `shfmt` are available, although their Zsh support is partial. Address diagnostics when they are relevant and cheap; do not chase every warning.
-- Write Markdown as normal paragraphs: do not manually wrap lines.
+- Consult the focused contract before changing a subsystem: `docs/ARCHITECTURE.md`, `docs/RUN.md`, `docs/CONFIG.md`, `docs/HARNESS.md`, `docs/HOOKS.md`, `docs/BACKENDS.md`, or `docs/SERVER.md`.
+- For code changes, run the nearest focused test first, then bare `./tests/run`. Use `./tests/run pty` only for behavior requiring a terminal and run it outside the sandbox, where PTYs are available. Use `./tests/run server` for `shellfish-server/` changes. Do not run tests for documentation- or comment-only changes.
+- Treat the worktree as shared. Before `git checkout`, `restore`, `reset`, or `stash`, inspect and preserve uncommitted work. Never discard or hide another agent's changes.
+- In Zsh, avoid names that collide with special parameters such as `status` and `commands`. When a command substitution's exit status matters, declare the variable first and assign it separately.
+- Validate at system boundaries. Trust established internal guarantees rather than duplicating checks.
