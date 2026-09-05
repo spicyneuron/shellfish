@@ -99,9 +99,7 @@ shellfish-server
 ## Develop
 
 ```sh
-./tests/run          # shell unit and end-to-end tests
-./tests/run unit     # shell unit tests
-./tests/run e2e      # command-level end-to-end tests
+./tests/run          # shell tests
 ./tests/run pty      # terminal integration tests
 ./tests/run server   # browser and Go server tests
 ./tests/run metrics  # performance and source size reports
