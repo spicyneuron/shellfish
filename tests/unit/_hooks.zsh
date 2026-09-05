@@ -1,5 +1,5 @@
 source "${0:A:h:h}/_helpers.zsh"
-sf_test_source lib/session/main.zsh lib/hooks.zsh
+sf_test_source lib/session/main.zsh libexec/run/hooks.zsh
 typeset -g SF_ENTRY="$ROOT/bin/shellfish"
 
 typeset scripts captures script

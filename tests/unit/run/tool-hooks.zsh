@@ -1,7 +1,7 @@
 #!/usr/bin/env zsh
 
 source "${0:A:h:h:h}/_helpers.zsh"
-sf_test_source lib/session/main.zsh lib/hooks.zsh
+sf_test_source lib/session/main.zsh libexec/run/hooks.zsh
 
 typeset stream
 sf_test_tmp exec-tool-hooks
