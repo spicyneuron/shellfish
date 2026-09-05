@@ -92,10 +92,10 @@ jq -e --arg root "$ROOT/share/default/hooks/session_start" \
   --arg tools "$ROOT/share/default/tools" '
   .harness.session_start == [
     ($root + "/project_environment"),
-    ($root + "/git_awareness"),
+    ($root + "/git_environment"),
     ($root + "/project_instructions")
   ] and
-  .harness.user_prompt_submit[-1] == ($prompt_root + "/git_awareness") and
+  .harness.user_prompt_submit[-1] == ($prompt_root + "/git_environment") and
   (.backend | has("context_window_command") | not) and
   (.harness.tools | map(.name)) ==
     ["read_file", "edit_file", "write_file", "skill", "search_web", "fetch_url", "shell"] and

@@ -42,7 +42,7 @@ Each hook is configured per harness in `shellfish.jsonc` as an ordered list of c
 {
   "harnesses": {
     "default": {
-      "session_start": ["project_environment", "git_awareness", "project_instructions"],
+      "session_start": ["project_environment", "git_environment", "project_instructions"],
       "user_prompt_submit": ["help", "new", "fork", "user_shell"],
       "stop": [],
       "max_capture_bytes": 32768

@@ -57,12 +57,12 @@ environment_output=$(PATH="$environment_bin:$PATH" zsh -f "$environment_script" 
 [[ $environment_output == *'Available commands:'* ]]
 [[ $environment_output == *'Available agent skills.'* ]]
 
-# Git awareness establishes state only after a fast, successful startup probe.
+# git_environment establishes state only after a fast, successful startup probe.
 # Later prompt probes report each branch or detached-commit transition once.
-typeset git_start="$ROOT/share/default/hooks/session_start/git_awareness"
-typeset git_prompt="$ROOT/share/default/hooks/user_prompt_submit/git_awareness"
-typeset git_bin="$tmp/git-awareness-bin" git_state="$tmp/git-state"
-typeset git_cache="$tmp/git_awareness" git_output
+typeset git_start="$ROOT/share/default/hooks/session_start/git_environment"
+typeset git_prompt="$ROOT/share/default/hooks/user_prompt_submit/git_environment"
+typeset git_bin="$tmp/git-environment-bin" git_state="$tmp/git-state"
+typeset git_cache="$tmp/git_environment" git_output
 mkdir "$git_bin"
 cat >"$git_bin/git" <<'EOF'
 #!/bin/sh
