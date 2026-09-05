@@ -498,36 +498,47 @@ jq -L "$ROOT" -e -s '
   (.[1].content | length) > 0
 ' "$tmp/compact-source_compact.jsonl" >/dev/null || fail 'the compacted child is not canonical'
 
+# Remaining cases exercise compaction policy without repeating request command startup.
+cat >"$compact_shellfish" <<'ZSH'
+#!/usr/bin/env zsh
+case $1 in
+  build-request) cat ;;
+  send-request)
+    cat >/dev/null
+    [[ ${SF_TEST_COMPACT_FAIL:-0} == 0 ]] || exit 1
+    print -r -- '{"content":[{"type":"text","text":"Summary"}]}'
+    ;;
+  *) exit 2 ;;
+esac
+ZSH
+chmod +x "$compact_shellfish"
+
 # /compact creates a numbered sibling and hands off without a draft.
 compact_status=0
-SF_TEST_BACKEND_DELAY=0 SHELLFISH_EXECUTABLE="$ROOT/bin/shellfish" \
+SHELLFISH_EXECUTABLE="$compact_shellfish" \
   SHELLFISH_SESSION="$compact_source" \
   SHELLFISH_TURN_STATE="$tmp" zsh -f "$compact_hook" user_prompt_submit \
   3>"$compact_control" < <(print -n -- /compact) || compact_status=$?
 (( compact_status == 11 ))
 assert_equal \
-  "$(jq -cn --arg command "$ROOT/bin/shellfish" \
+  "$(jq -cn --arg command "$compact_shellfish" \
     --arg child "$tmp/compact-source_compact_1.jsonl" \
     '{action:"handoff",argv:[$command,"--session",$child]}')" \
   "$(<"$compact_control")"
 
 # Summary failure is fail-open for an automatic trigger and handled for an
 # explicit command. Neither path requests a handoff or creates a child.
-cat >"$compact_shellfish" <<ZSH
-#!/usr/bin/env zsh
-[[ \$1 != send-request ]] || exit 1
-exec "$ROOT/bin/shellfish" "\$@"
-ZSH
-chmod +x "$compact_shellfish"
 : >"$compact_control"
 compact_status=0
-SHELLFISH_EXECUTABLE="$compact_shellfish" SHELLFISH_SESSION="$compact_source" \
+SF_TEST_COMPACT_FAIL=1 SHELLFISH_EXECUTABLE="$compact_shellfish" \
+  SHELLFISH_SESSION="$compact_source" \
   SHELLFISH_TURN_STATE="$tmp" zsh -f "$compact_hook" user_prompt_submit \
   3>"$compact_control" < <(print -n -- 'my next prompt') 2>/dev/null || compact_status=$?
 (( compact_status == 0 )) || fail 'automatic summary failure blocked the prompt'
 [[ ! -s $compact_control ]] || fail 'automatic summary failure requested a handoff'
 compact_status=0
-SHELLFISH_EXECUTABLE="$compact_shellfish" SHELLFISH_SESSION="$compact_source" \
+SF_TEST_COMPACT_FAIL=1 SHELLFISH_EXECUTABLE="$compact_shellfish" \
+  SHELLFISH_SESSION="$compact_source" \
   SHELLFISH_TURN_STATE="$tmp" zsh -f "$compact_hook" user_prompt_submit \
   3>"$compact_control" < <(print -n -- /compact) 2>/dev/null || compact_status=$?
 (( compact_status == 10 )) || fail 'explicit summary failure was not handled'
@@ -539,7 +550,7 @@ typeset compact_long="$tmp/${(l:245::a:)}.jsonl"
 cp "$compact_source" "$compact_long"
 : >"$compact_control"
 compact_status=0
-SF_TEST_BACKEND_DELAY=0 SHELLFISH_EXECUTABLE="$ROOT/bin/shellfish" \
+SHELLFISH_EXECUTABLE="$compact_shellfish" \
   SHELLFISH_SESSION="$compact_long" SHELLFISH_TURN_STATE="$tmp" \
   zsh -f "$compact_hook" user_prompt_submit 3>"$compact_control" \
   < <(print -n -- 'my next prompt') 2>/dev/null || compact_status=$?
