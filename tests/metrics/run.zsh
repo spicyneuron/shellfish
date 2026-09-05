@@ -13,7 +13,7 @@ typeset iteration_arg=${1:-5}
 integer iterations=$iteration_arg
 (( $+commands[jq] )) || { print -u2 -r -- 'tests/metrics/run.zsh requires jq'; exit 2; }
 
-print -P -- '%BRun Performance%b'
+print -P -- '%BRun Performance%b (fresh-session phases)'
 
 typeset tmp
 tmp=$(mktemp -d "${TMPDIR:-/tmp}/shellfish-perf.XXXXXX")
