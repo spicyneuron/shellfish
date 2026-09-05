@@ -88,7 +88,7 @@ for (( iteration = 1; iteration <= iterations; iteration++ )); do
     cd "$tmp/project"
     XDG_STATE_HOME="$tmp/state" PATH="$tmp/bin:$PATH" \
       zsh -f "$root/bin/shellfish" run --session "$tmp/session-$iteration.jsonl" \
-      --config "$tmp/config/shellfish.jsonc" perf >/dev/null 2>"$stderr"
+      --config "$tmp/config/shellfish.jsonc" perf </dev/null >/dev/null 2>"$stderr"
   ) || { cat "$stderr" >&2; exit 1; }
   float elapsed=$(( (EPOCHREALTIME - start) * 1000 ))
   integer tool_count=$(wc -l <"$tool_metrics")
@@ -103,6 +103,19 @@ for (( iteration = 1; iteration <= iterations; iteration++ )); do
     "$metrics")
   printf '%s\tend_to_end\t%.9f\n%s\tremainder\t%.9f\n' \
     "$iteration" "$elapsed" "$iteration" "$(( elapsed - fixture_ms ))" >>"$metrics"
+done
+
+# A second turn on each session measures steady state. Its fixture timings go to
+# a scratch file so the phase table stays one sample per iteration.
+typeset -gx SHELLFISH_PERF_RUN=steady
+for (( iteration = 1; iteration <= iterations; iteration++ )); do
+  (
+    cd "$tmp/project"
+    XDG_STATE_HOME="$tmp/state" PATH="$tmp/bin:$PATH" \
+      SHELLFISH_PERF_METRICS="$tmp/steady-metrics" \
+      zsh -f "$root/bin/shellfish" run --session "$tmp/session-$iteration.jsonl" \
+      --config "$tmp/config/shellfish.jsonc" perf </dev/null >/dev/null 2>"$stderr"
+  ) || { cat "$stderr" >&2; exit 1; }
 done
 
 typeset -a phases=(end_to_end backend_tool_call backend_final tool_fixture remainder)
@@ -124,8 +137,13 @@ for phase in $phases; do
   ' "$metrics" || { print -u2 -r -- "incomplete timing phase: $phase"; exit 1; }
 done
 
+integer steady_count=0
+steady_count=$(grep -c '^steady$' "$jq_log") || steady_count=0
 integer jq_count=$(wc -l <"$jq_log")
-float jq_per_run=$jq_count
-jq_per_run=$(( jq_per_run / iterations ))
-printf '\njq processes/run: %.1f (%d total)\n' "$jq_per_run" "$jq_count"
+integer fresh_count=$(( jq_count - steady_count ))
+float fresh_per_run=$fresh_count steady_per_run=$steady_count
+fresh_per_run=$(( fresh_per_run / iterations ))
+steady_per_run=$(( steady_per_run / iterations ))
+printf '\njq processes/run: %.1f fresh session, %.1f steady state (%d total)\n' \
+  "$fresh_per_run" "$steady_per_run" "$jq_count"
 print
