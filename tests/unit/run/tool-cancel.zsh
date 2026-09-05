@@ -35,10 +35,7 @@ print -r -- "$(<"$cancel_stream")" | jq -eRn '
     content:"tool call interrupted",exit_code:126
   }] and $events[-1].role == "assistant" and $events[-1].stop == "end"
 ' >/dev/null
-jq -L "$ROOT" -e -s '
-  include "lib/runtime/schema";
-  (.[1:] | canonical_session_records) and .[-1].stop == "end"
-' "$cancel_session" >/dev/null
+assert_canonical_session "$cancel_session" end
 
 # Cancellation escalates when a tool ignores TERM instead of hanging indefinitely.
 typeset stubborn_session="$tmp/tool-stubborn.jsonl"

@@ -109,6 +109,9 @@ print -r -- "$stream" | jq -eRn '
     .exit_code == 0 and .content == "approved")
 ' >/dev/null
 assert_equal "$frozen_tools" "$(jq -c '.tools' "$request_capture")"
+# Permission traffic never becomes durable.
+jq -se 'all(.[]; .type != "_tool_permission_request" and
+  .type != "_tool_permission_response")' "$permission_approve_session" >/dev/null
 
 typeset permission_reply_deny_session="$tmp/permission-reply-deny.jsonl"
 sf_test_session "$permission_reply_deny_session"
@@ -135,10 +138,7 @@ print -r -- "$stream" | jq -eRn '
   ($events | map(select(.type == "_turn_error") | .message) |
     any(. == "invalid permission response"))
 ' >/dev/null
-jq -L "$ROOT" -e -s '
-  include "lib/runtime/schema";
-  (.[1:] | canonical_session_records) and .[-1].stop == "end"
-' "$permission_invalid_reply_session" >/dev/null
+assert_canonical_session "$permission_invalid_reply_session" end
 
 typeset permission_eof_session="$tmp/permission-eof.jsonl"
 sf_test_session "$permission_eof_session"
@@ -150,10 +150,25 @@ print -r -- "$stream" | jq -eRn '
   ($events | map(select(.role == "tool_result"))[0].exit_code) == 126 and
   ($events | any(.type == "_turn_error") | not)
 ' >/dev/null
-jq -L "$ROOT" -e -s '
-  include "lib/runtime/schema";
-  (.[1:] | canonical_session_records) and .[-1].stop == "end"
-' "$permission_eof_session" >/dev/null
+assert_canonical_session "$permission_eof_session" end
+
+# The user record and the reply share one stdin, so the prompt read must take
+# a single line and leave the rest for the reply channel.
+typeset permission_stdin_session="$tmp/permission-stdin.jsonl"
+typeset permission_stdin_stream="$tmp/permission-stdin.stream"
+sf_test_session "$permission_stdin_session"
+printf '%s\n' \
+  '{"type":"message","role":"user","content":[{"type":"text","text":"approve over stdin"}]}' \
+  '{"type":"_tool_permission_response","id":"permission_1","decision":"approve"}' |
+  SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_BYPASS=true \
+    SF_TEST_BACKEND_TOOL_COMMAND='printf approved' \
+    "$ROOT/bin/shellfish" run --jsonl --session "$permission_stdin_session" \
+    >"$permission_stdin_stream"
+jq -eRn '
+  [inputs | fromjson] as $events |
+  ($events | map(select(.role == "tool_result"))[0] |
+    .exit_code == 0 and .content == "approved")
+' <"$permission_stdin_stream" >/dev/null
 
 # Cancellation while awaiting a frontend decision closes every pending durable
 # tool call canonically and does not leave the session or reply channel owned.
@@ -188,10 +203,7 @@ jq -eRn '
     [["call_1",126],["call_2",126],["call_3",126]] and
   $events[-1].role == "assistant" and $events[-1].stop == "end"
 ' <"$permission_cancel_stream" >/dev/null
-jq -L "$ROOT" -e -s '
-  include "lib/runtime/schema";
-  (.[1:] | canonical_session_records) and .[-1].stop == "end"
-' "$permission_cancel_session" >/dev/null
+assert_canonical_session "$permission_cancel_session" end
 
 # Malformed hook control fails the turn rather than silently becoming denial.
 typeset permission_invalid="$tmp/permission-invalid"

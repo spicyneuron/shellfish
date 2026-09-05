@@ -158,10 +158,7 @@ print -r -- "$stream" | jq -eRn '
   $events[-2].role == "assistant" and $events[-2].stop == "end" and
   $events[-1].message == "provider request limit reached: 1"
 ' >/dev/null
-jq -L "$ROOT" -e -s '
-  include "lib/runtime/schema";
-  (.[1:] | canonical_session_records) and .[-1].stop == "end"
-' "$limit_session" >/dev/null
+assert_canonical_session "$limit_session" end
 
 # Cancellation after feedback commit stops the retry without rolling back the
 # completed assistant or stop context.
@@ -208,8 +205,7 @@ jq -eRn '
   ($events | map(select(.type == "context" and .hook == "stop")) | length) == 1 and
   $events[-1].role == "assistant" and $events[-1].stop == "end"
 ' <"$cancel_stream" >/dev/null
-jq -L "$ROOT" -e -s '
-  include "lib/runtime/schema";
-  (.[1:] | canonical_session_records) and
+assert_canonical_session "$cancel_session"
+jq -e -s '
   ([.[] | select(.type == "context" and .hook == "stop")] | length) == 1
 ' "$cancel_session" >/dev/null

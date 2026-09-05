@@ -68,6 +68,20 @@ fail() {
   return 1
 }
 
+# The optional stop reason must match the final record.
+assert_canonical_session() {
+  local session=$1 stop=${2-}
+  jq -L "$ROOT" -e -s --arg stop "$stop" '
+    include "lib/runtime/schema";
+    (.[0] | canonical_session_header(1)) and
+    (.[1:] | canonical_session_records) and
+    ($stop == "" or .[-1].stop == $stop)
+  ' "$session" >/dev/null || {
+    sf_test_detail=( "not a canonical session${stop:+ ending in stop \"$stop\"}: $session" )
+    return 1
+  }
+}
+
 # Frozen runtime used by tool and exec tests. Optional system-file path.
 sf_test_runtime() {
   local system=${1-} tool=$ROOT/share/default/tools/shell

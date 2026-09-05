@@ -494,13 +494,13 @@ jq -e --rawfile prompt "$ROOT/share/default/hooks/user_prompt_submit/compact.md"
     (ltrimstr($prefix) | rtrimstr($suffix) |
       test("(^|[^0-9])10([^0-9]|$)")))
 ' "$compact_request" >/dev/null || fail 'compaction did not use its structured prompt and budget'
-jq -L "$ROOT" -e -s '
-  include "lib/runtime/schema";
-  (.[0] | canonical_session_header(1)) and (.[1:] | canonical_session_records) and
+assert_canonical_session "$tmp/compact-source_compact.jsonl"
+jq -e -s '
   [.[].type] == ["session","context"] and
   .[1].hook == "compact" and .[1].script == "compact" and
   (.[1].content | length) > 0
-' "$tmp/compact-source_compact.jsonl" >/dev/null || fail 'the compacted child is not canonical'
+' "$tmp/compact-source_compact.jsonl" >/dev/null ||
+  fail 'the compacted child is not a lone summary context'
 
 # Remaining cases exercise compaction policy without repeating request command startup.
 cat >"$compact_shellfish" <<'ZSH'

@@ -41,10 +41,7 @@ print -r -- "$stream" | jq -eRn '
   $events[-1].message == "pre_tool_use hook script wrote unsupported stdout"
 ' >/dev/null
 [[ ! -e $TEST_OUTPUT_DIR/post-ran ]]
-jq -L "$ROOT" -e -s '
-  include "lib/runtime/schema";
-  (.[1:] | canonical_session_records) and .[-1].stop == "end"
-' "$pre_session" >/dev/null
+assert_canonical_session "$pre_session" end
 
 typeset post_skip="$tmp/post-skip"
 cat >"$post_skip" <<'ZSH'
@@ -66,7 +63,4 @@ print -r -- "$stream" | jq -eRn '
   $events[-2].role == "assistant" and $events[-2].stop == "end" and
   $events[-1].message == "post_tool_use hook script returned unsupported skip status"
 ' >/dev/null
-jq -L "$ROOT" -e -s '
-  include "lib/runtime/schema";
-  (.[1:] | canonical_session_records) and .[-1].stop == "end"
-' "$post_session" >/dev/null
+assert_canonical_session "$post_session" end

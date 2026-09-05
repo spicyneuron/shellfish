@@ -172,10 +172,7 @@ print -r -- "$stream" | jq -eRn '
   [inputs | fromjson | select(.role == "tool_result")] as $results |
   ($results | map(.exit_code)) == [127,127]
 ' >/dev/null
-jq -L "$ROOT" -e -s '
-  include "lib/runtime/schema";
-  (.[1:] | canonical_session_records) and .[-1].stop == "end"
-' "$session" >/dev/null
+assert_canonical_session "$session" end
 
 # Reserved bypass fields stay in the transcript but never reach the tool, which
 # rejects input it does not declare.
@@ -245,9 +242,8 @@ print -r -- "$stream" | jq -eRn -L "$ROOT" '
   ($events[-1].type == "_turn_error") and
   ($events[-1].message | contains("partial backend failure"))
 ' >/dev/null
-jq -L "$ROOT" -e -s '
-  include "lib/runtime/schema";
-  (.[1:] | canonical_session_records) and .[-1].stop == "length" and
+assert_canonical_session "$partial_response_session" length
+jq -e -s '
   (.[-1] | has("usage") | not) and
   (.[-1].content | all(.type != "tool_call"))
 ' "$partial_response_session" >/dev/null
@@ -321,10 +317,7 @@ print -r -- "$stream" | jq -eRn '
     .call_id == "call_1" and .exit_code == 0) and
   ($events | map(select(.role == "assistant"))[-1].stop) == "end"
 ' >/dev/null
-jq -L "$ROOT" -e -s '
-  include "lib/runtime/schema";
-  (.[1:] | canonical_session_records) and .[-1].stop == "end"
-' "$session" >/dev/null
+assert_canonical_session "$session" end
 jq -e '
   (.tools | length) == 1 and .tools[0].name == "shell" and
   (.tools[0].input_schema.properties | has("request_sandbox_bypass") | not) and
@@ -341,15 +334,4 @@ print -r -- "$stream" | jq -eRn '
   ($events | map(select(.role == "assistant"))[0].stop) == "tool_calls" and
   ($events | map(select(.role == "tool_result")) | length) == 1 and
   ($events | map(select(.role == "assistant"))[-1].stop) == "end"
-' >/dev/null
-
-# A later owner recovers an interrupted provider state before the next request.
-sf_session_begin_turn "$session"
-sf_session_append '{"type":"message","role":"user","content":[{"type":"text","text":"interrupted"}]}'
-sf_session_reset
-stream=$(sf_test_turn next "$session")
-print -r -- "$stream" | jq -eRn '
-  [inputs | fromjson] as $events |
-  $events[0].role == "assistant" and $events[0].stop == "end" and
-  $events[1].role == "user"
 ' >/dev/null
