@@ -9,63 +9,81 @@ if (( ! $+commands[tokei] )); then
 fi
 
 typeset -r root=${0:A:h:h:h}
-typeset -a core terminal server sources
+typeset stage
+stage=$(mktemp -d "${TMPDIR:-/tmp}/shellfish-loc.XXXXXX") || exit
+trap 'rm -rf -- $stage' EXIT
+
+typeset -i staged=0
+typeset -a totals=(0 0 0 0 0)
+typeset -r head_format='%-24s %7s %9s %9s %10s %9s\n'
+typeset -r row_format='%-24s %7d %9d %9d %10d %9d\n'
+typeset divider
+divider=$(printf $head_format ------------------------ ------- --------- --------- ---------- ---------)
+
+# tokei picks the language from the file extension, so a file it would skip is
+# counted through a staged copy carrying an extension it recognizes.
+group() {
+  local label=$1 file copy index
+  local -a files=() counts=()
+  shift
+
+  for file in "$@"; do
+    case $file in
+      *.jsonc) copy=$stage/$((++staged)).js ;;
+      *.*) files+=( $file ); continue ;;
+      *) copy=$stage/$((++staged)).zsh ;;
+    esac
+    cp -- $file $copy
+    files+=( $copy )
+  done
+
+  counts=( ${=$(tokei --compact --streaming simple -- $files | awk '
+    /^# language/ {
+      for (field = 3; field <= NF; field++) offset[$field] = NF - field
+      next
+    }
+
+    /^#/ { next }
+
+    {
+      files++
+      lines += $(NF - offset["lines"])
+      code += $(NF - offset["code"])
+      comments += $(NF - offset["comments"])
+      blanks += $(NF - offset["blanks"])
+    }
+
+    END { printf "%d %d %d %d %d\n", files, lines, code, comments, blanks }
+  ')} )
+
+  printf $row_format $label $counts
+  for index in {1..5}; do
+    totals[index]=$(( totals[index] + counts[index] ))
+  done
+}
+
+typeset -a core terminal harness server shell_tests server_tests
 
 core=( "$root/bin/shellfish" "$root"/(lib|libexec)/**/*.(zsh|jq)(N.) )
 core=( ${core:#$root/libexec/(tui|resume)/*} )
-terminal=( "$root"/libexec/tui/**/*.(zsh|jq|awk)(N.) "$root"/libexec/resume/**/*.(zsh|jq|awk)(N.) )
+terminal=( "$root"/libexec/(tui|resume)/**/*.(zsh|jq|awk)(N.) )
+harness=( "$root"/share/default/**/*(N.) )
 server=( "$root"/shellfish-server/**/*.(go|js|css|html)(N.) )
+server_tests=( ${(M)server:#*_test.(go|js)} )
 server=( ${server:#*_test.(go|js)} )
+# Every file under tests/ is test source, apart from fixture data.
+shell_tests=( "$root"/tests/**/*(N.) )
+shell_tests=( ${shell_tests:#*.(json|jsonl|pyc)} )
 
-sources=( $core $terminal $server )
 print -P -- '%BSource Lines%b'
-tokei --compact --streaming simple -- $sources | awk -v root="$root" '
-  BEGIN {
-    labels[1] = "Core"
-    labels[2] = "Terminal client"
-    labels[3] = "Web server and client"
-  }
-
-  /^# language/ {
-    for (field = 3; field <= NF; field++) offset[$field] = NF - field
-    next
-  }
-
-  /^#/ { next }
-
-  {
-    records++
-    path = $2
-    for (field = 3; field <= NF - 4; field++) path = path " " $field
-
-    if (index(path, root "/shellfish-server/") == 1) {
-      group = 3
-    } else if (index(path, root "/libexec/tui/") == 1 || index(path, root "/libexec/resume/") == 1) {
-      group = 2
-    } else {
-      group = 1
-    }
-
-    files[group]++
-    lines[group] += $(NF - offset["lines"])
-    code[group] += $(NF - offset["code"])
-    comments[group] += $(NF - offset["comments"])
-    blanks[group] += $(NF - offset["blanks"])
-  }
-
-  END {
-    if (!records) exit
-    printf "%-24s %7s %9s %9s %10s %9s\n", "Group", "Files", "Lines", "Code", "Comments", "Blanks"
-    printf "%-24s %7s %9s %9s %10s %9s\n", "------------------------", "-------", "---------", "---------", "----------", "---------"
-    for (group = 1; group <= 3; group++) {
-      printf "%-24s %7d %9d %9d %10d %9d\n", labels[group], files[group], lines[group], code[group], comments[group], blanks[group]
-      total_files += files[group]
-      total_lines += lines[group]
-      total_code += code[group]
-      total_comments += comments[group]
-      total_blanks += blanks[group]
-    }
-    printf "%-24s %7s %9s %9s %10s %9s\n", "------------------------", "-------", "---------", "---------", "----------", "---------"
-    printf "%-24s %7d %9d %9d %10d %9d\n", "Total", total_files, total_lines, total_code, total_comments, total_blanks
-  }
-'
+printf $head_format Group Files Lines Code Comments Blanks
+print -r -- $divider
+group 'Core' $core
+group 'Default harness' $harness
+group 'Terminal client' $terminal
+group 'Server and client' $server
+print -r -- $divider
+group 'Shell tests' $shell_tests
+group 'Server tests' $server_tests
+print -r -- $divider
+printf $row_format Total $totals
