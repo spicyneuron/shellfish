@@ -46,6 +46,7 @@ environment_output=$(PATH="$environment_bin:$PATH" zsh -f "$environment_script" 
 [[ $environment_output == *$'PWD: '*$'\n.'* ]]
 [[ $environment_output == *'Available commands:'* ]]
 [[ $environment_output == *'Available agent skills.'* ]]
+[[ $environment_output == *'- skill-creator: '* ]]
 [[ $environment_output != *'Git '* ]]
 cat >"$environment_bin/tree" <<'EOF'
 #!/bin/sh
