@@ -2,7 +2,7 @@
 
 source "${0:A:h:h:h}/_helpers.zsh"
 
-sf_test_tmp backend-anthropic
+sf_test_tmp backends-anthropic
 typeset run="$ROOT/share/default/backends/anthropic/run"
 typeset context_window="$ROOT/share/default/backends/anthropic/context_window"
 typeset req="$tmp/request.json"
