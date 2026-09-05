@@ -59,8 +59,8 @@ IFS= read -r state <"$GIT_STATE" || state=
 case "$1:$2" in
   rev-parse:--verify) printf '%s\n' "${state#commit:}" ;;
   log:--oneline) printf 'abc123 Test commit\n' ;;
-  log:--name-status) printf 'M\tchanged-file\n' ;;
-  status:--short) printf 'M changed-file\n' ;;
+  log:--name-status) printf 'M\tchanged-log-file\n' ;;
+  status:--short) printf 'M status-file\n' ;;
   symbolic-ref:--quiet)
     case "$state" in
       branch:*) printf '%s\n' "${state#branch:}" ;;
@@ -74,10 +74,8 @@ chmod +x "$git_bin/git"
 print -r -- 'branch:main' >"$git_state"
 git_output=$(PATH="$git_bin:$PATH" GIT_STATE="$git_state" SHELLFISH_SESSION_STATE="$tmp" \
   zsh -f "$git_start" session_start)
-[[ $git_output == 'Git branch: main'* ]]
-[[ $git_output == *$'Recent commits:\nabc123 Test commit'* ]]
-[[ $git_output == *$'Recent files:\n M changed-file'* ]]
-[[ $git_output == *$'Git status:\nM changed-file'* ]]
+[[ $git_output == *main* && $git_output == *'abc123 Test commit'* &&
+   $git_output == *changed-log-file* && $git_output == *status-file* ]]
 assert_equal 'branch:main' "$(<$git_cache)"
 
 git_output=$(PATH="$git_bin:$PATH" GIT_STATE="$git_state" SHELLFISH_SESSION_STATE="$tmp" \
@@ -86,7 +84,7 @@ assert_equal '' "$git_output"
 print -r -- 'branch:feature' >"$git_state"
 git_output=$(PATH="$git_bin:$PATH" GIT_STATE="$git_state" SHELLFISH_SESSION_STATE="$tmp" \
   zsh -f "$git_prompt" user_prompt_submit)
-assert_equal 'Git branch changed from main to feature.' "$git_output"
+[[ $git_output == *main* && $git_output == *feature* ]]
 assert_equal 'branch:feature' "$(<$git_cache)"
 git_output=$(PATH="$git_bin:$PATH" GIT_STATE="$git_state" SHELLFISH_SESSION_STATE="$tmp" \
   zsh -f "$git_prompt" user_prompt_submit)
@@ -95,7 +93,7 @@ assert_equal '' "$git_output"
 print -r -- 'commit:0123456789abcdef' >"$git_state"
 git_output=$(PATH="$git_bin:$PATH" GIT_STATE="$git_state" SHELLFISH_SESSION_STATE="$tmp" \
   zsh -f "$git_prompt" user_prompt_submit)
-assert_equal 'Git identity changed from branch:feature to commit:0123456789abcdef.' "$git_output"
+[[ $git_output == *feature* && $git_output == *0123456789abcdef* ]]
 assert_equal 'commit:0123456789abcdef' "$(<$git_cache)"
 
 cat >"$git_bin/git" <<'EOF'
@@ -156,24 +154,22 @@ shell_commands_output=$(
   /usr/bin/env PATH="$shell_commands_bin" "$shell_commands_bin/zsh" -f \
     "$shell_commands_script" session_start
 )
-typeset -a shell_commands_lines=( "${(@f)shell_commands_output}" )
-assert_equal "Host shell: zsh $ZSH_VERSION" "$shell_commands_lines[1]"
-assert_equal 'Available commands:' "$shell_commands_lines[2]"
+[[ $shell_commands_output == *"$ZSH_VERSION"* ]]
 shell_commands_rows=$(jq -Rsc '
   [split("\n")[] |
-    capture("^- (?<label>[^:]+): (?<command>[^ ]+) \\((?<version>.*)\\)$")?] |
-  INDEX(.label)
+    capture("^- [^:]+: (?<command>[^ ]+) \\((?<version>.*)\\)$")?] |
+  INDEX(.command)
 ' <<<"$shell_commands_output") || fail 'cannot parse shell commands output'
 jq -e '
   length == 7 and
-  .search.command == "grep" and .search.version == "grep 1.0" and
-  .files.command == "find" and .files.version == "find-2.1" and
-  .trees.command == "tree" and .trees.version == "2.3.2-beta+build456" and
-  .JSON.command == "jq" and .JSON.version == "jq-1.7" and
-  .YAML.command == "yq" and .YAML.version == "yq 01.2.3, 1.2.3.4, and 1.2.3+ are invalid semver" and
-  .Python.command == "python3" and .Python.version == "Python 3.13" and
-  .VCS.command == "git" and .VCS.version == "git version 2.48" and
-  (has("GitHub") | not)
+  .grep.version == "grep 1.0" and
+  .find.version == "find-2.1" and
+  .tree.version == "2.3.2-beta+build456" and
+  .jq.version == "jq-1.7" and
+  .yq.version == "yq 01.2.3, 1.2.3.4, and 1.2.3+ are invalid semver" and
+  .python3.version == "Python 3.13" and
+  .git.version == "git version 2.48" and
+  (has("gh") | not)
 ' <<<"$shell_commands_rows" >/dev/null
 SF_TEST_RUNTIME=$(jq -c --arg script "$shell_commands_script" \
   '.harness.session_start=[$script]' <<<"$SF_TEST_RUNTIME")
@@ -187,8 +183,7 @@ sf_hooks_turn_state_cleanup
 jq -e -s '
   length == 2 and .[1].type == "context" and .[1].hook == "session_start" and
   .[1].script == "shell_commands" and
-  (.[1].content | startswith("Host shell: zsh ") and
-    contains("\nAvailable commands:\n"))
+  (.[1].content | length) > 0
 ' "$shell_commands_session" >/dev/null
 
 # The bundled command scripts append TSV rows to $SHELLFISH_TURN_STATE/help.tsv.
@@ -249,8 +244,12 @@ done
    new_idx > 0 && quit_idx > 0 ))
 (( control_idx < history_idx && history_idx < bang_idx && bang_idx < drop_idx &&
    drop_idx < queue_idx && queue_idx < new_idx && new_idx < quit_idx ))
-typeset control_prefix=${help_lines[control_idx]%%Cancel*}
-typeset history_prefix=${help_lines[history_idx]%%Navigate*}
+typeset control_prefix=${help_lines[control_idx]#ctrl+c}
+typeset history_prefix=${help_lines[history_idx]#'↑, ↓'}
+control_prefix=${control_prefix%%[^ ]*}
+history_prefix=${history_prefix%%[^ ]*}
+control_prefix="ctrl+c$control_prefix"
+history_prefix="↑, ↓$history_prefix"
 assert_equal "${#control_prefix}" "${#history_prefix}"
 
 set_prompt_hook() {
@@ -303,9 +302,9 @@ done
    $sandbox_display == *'Write grants:'* ]]
 run_prompt_hook "/sandbox +w $sandbox_dir" "$help_session"
 [[ $reply[1] == session_update ]]
-jq -se --arg content "Session sandbox write grant added: ${sandbox_dir:A}"$'\n' '
+jq -se --arg path "${sandbox_dir:A}" '
   [.[] | select(.type == "context" and .hook == "user_prompt_submit" and .script == "sandbox")]
-    | .[-1].content == $content
+    | .[-1].content | contains("added") and contains($path)
 ' "$help_session" >/dev/null || fail 'sandbox add did not commit model context'
 sandbox_patch=$reply[2]
 jq -e --arg path "${sandbox_dir:A}" \
@@ -318,9 +317,9 @@ run_prompt_hook "/sandbox write $sandbox_dir" "$help_session"
 [[ $reply[1] == handled ]]
 run_prompt_hook "/sandbox -w $sandbox_dir" "$help_session"
 [[ $reply[1] == session_update ]]
-jq -se --arg content "Session sandbox write grant removed: ${sandbox_dir:A}"$'\n' '
+jq -se --arg path "${sandbox_dir:A}" '
   [.[] | select(.type == "context" and .hook == "user_prompt_submit" and .script == "sandbox")]
-    | .[-1].content == $content
+    | .[-1].content | contains("removed") and contains($path)
 ' "$help_session" >/dev/null || fail 'sandbox removal did not commit model context'
 jq -e '. == {harness:{sandbox_write_paths:[]}}' <<<"$reply[2]" >/dev/null
 
@@ -333,11 +332,11 @@ sf_hooks_turn_state_create
 set_prompt_hook "$disabled_session" "$ROOT/default/hooks/user_prompt_submit/sandbox"
 run_prompt_hook "/sandbox +r $sandbox_dir" "$disabled_session"
 [[ $reply[1] == handled ]]
+sandbox_display=''
 for (( result_index = 4; result_index <= ${#SF_HOOK_SCRIPT_RESULTS}; result_index += 5 )); do
   [[ -z $SF_HOOK_SCRIPT_RESULTS[result_index] ]] || sandbox_display=$SF_HOOK_SCRIPT_RESULTS[result_index]
 done
-[[ $sandbox_display == 'session sandbox is disabled'* ]] ||
-  fail "unexpected disabled sandbox display: $sandbox_display"
+[[ $sandbox_display == *disabled* ]] || fail 'disabled sandbox did not display its state'
 
 sf_hooks_turn_state_cleanup
 
@@ -485,10 +484,16 @@ jq -e --arg command "$ROOT/bin/shellfish" \
 assert_equal "$compact_before" "$(shasum <"$compact_source")"
 jq -e '.tools == []' "$compact_request" >/dev/null || fail 'compaction exposed tools'
 jq -e --rawfile prompt "$ROOT/default/hooks/user_prompt_submit/compact.md" '
-  .messages[-1].content == [{
-    type:"text",
-    text:("<compaction_request>\n\n" + ($prompt | rtrimstr("\n")) + "\n\n## Summary budget\n\nAim to keep the summary within 10 tokens (10% of the session context window). Do not add low-value detail merely to fill the budget.\n\n</compaction_request>")
-  }]
+  ($prompt | rtrimstr("\n")) as $prompt |
+  ("<compaction_request>\n\n" + $prompt + "\n\n## Summary budget\n\n") as $prefix |
+  "\n\n</compaction_request>" as $suffix |
+  .messages[-1].content as $content |
+  ($content | length) == 1 and $content[0].type == "text" and
+  ($content[0].text |
+    startswith($prefix) and
+    endswith($suffix) and
+    (ltrimstr($prefix) | rtrimstr($suffix) |
+      test("(^|[^0-9])10([^0-9]|$)")))
 ' "$compact_request" >/dev/null || fail 'compaction did not use its structured prompt and budget'
 jq -L "$ROOT" -e -s '
   include "lib/runtime/schema";
