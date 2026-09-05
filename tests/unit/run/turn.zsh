@@ -188,7 +188,7 @@ print -r -- "$stream" | jq -eRn '
   [$events[] | select(.role == "assistant") | .content[] |
     select(.type == "tool_call")] as $calls |
   ($results | map(.exit_code)) == [0] and
-  ($results[0].content | test("ran")) and
+  $results[0].content == "ran\n" and
   ($calls | length) == 1 and
   $calls[0].input.request_sandbox_bypass == true and
   ($calls[0].input.sandbox_bypass_reason | length) > 0 and
