@@ -34,12 +34,12 @@ cat >"$tmp/config/backends/perf/run" <<'EOF'
 zmodload zsh/datetime
 start=$EPOCHREALTIME
 request=$(cat)
-if jq -e '.messages[-1].role == "tool_result"' <<<"$request" >/dev/null; then
+if "$SHELLFISH_PERF_JQ" -e '.messages[-1].role == "tool_result"' <<<"$request" >/dev/null; then
   phase=backend_final
-  response='{"type":"message","role":"assistant","stop":"end","content":[{"type":"text","text":"ok"}]}'
+  response=$'{"type":"_assistant_delta","index":0,"text":"ok"}\n{"type":"_assistant_response_end","stop":"end"}'
 else
   phase=backend_tool_call
-  response='{"type":"message","role":"assistant","stop":"tool_calls","content":[{"type":"tool_call","id":"perf_call","name":"perf","input":{}}]}'
+  response=$'{"type":"_assistant_tool_call_delta","index":0,"id":"perf_call","name":"perf","input":"{}"}\n{"type":"_assistant_response_end","stop":"tool_calls"}'
 fi
 printf '%s\t%s\t%.9f\n' "$SHELLFISH_PERF_RUN" "$phase" "$(( (EPOCHREALTIME - start) * 1000 ))" \
   >>"$SHELLFISH_PERF_METRICS"
