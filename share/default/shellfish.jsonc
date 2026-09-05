@@ -49,7 +49,7 @@
 
       // Each hook runs an ordered list of components. See docs/HOOKS.md for
       // payloads, exit statuses, and environment guarantees.
-      "session_start": ["project_environment", "git_awareness", "shell_commands", "skills", "project_instructions"],
+      "session_start": ["project_environment", "git_awareness", "project_instructions"],
       "user_prompt_submit": ["refresh", "verbose", "new", "copy", "fork", "sandbox", "user_shell", "server", "resume", "compact", "help", "git_awareness"],
       "permission_request": [],
       "pre_tool_use": [],

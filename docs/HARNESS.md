@@ -35,17 +35,15 @@ Sandboxing applies to opted-in tools. Hook scripts and backend adapters are trus
 
 ### Session context
 
-At the `session_start` hook, five scripts prepare context before the transcript is created:
+At the `session_start` hook, three scripts prepare context before the transcript is created:
 
-- `project_environment` reports the host and project tree.
+- `project_environment` reports the host, project tree, available shell commands, and Agent Skills.
 - `git_awareness` reports Git context at startup and branch or detached-commit changes before later prompts.
-- `shell_commands` reports versions of common shell commands when available.
 - `project_instructions` loads the project's `AGENTS.md`, or `CLAUDE.md` when `AGENTS.md` is absent.
-- `skills` advertises available Agent Skills.
 
 This context becomes part of the durable initial session prefix. It is collected once for a new session rather than before every turn.
 
-The `project_environment` and `git_awareness` probes share a one-second wall-clock budget so session startup stays fast, and report no context when a host exceeds it. Set `SHELLFISH_PROBE_BUDGET` to a positive number of seconds to raise it on a slow host; other values are ignored.
+The filesystem listing in `project_environment` and each Git probe use a one-second wall-clock budget so session startup stays fast. A slow filesystem skips the listing but retains the other environment context; a slow Git probe reports no context. Set `SHELLFISH_PROBE_BUDGET` to a positive number of seconds to raise the limit on a slow host; other values are ignored.
 
 Skills are discovered in descending precedence from `./.agents/skills/`, the resolved configuration directory's `skills/`, `~/.agents/skills/`, and bundled `share/default/skills/`. Each skill directory contains a `SKILL.md` whose frontmatter supplies its matching `name` and `description`. Invalid skills and skills with `disable-model-invocation: true` are unavailable to the model. The advertised catalog is recorded when the session is created; the `skill` tool reads the selected file when invoked.
 

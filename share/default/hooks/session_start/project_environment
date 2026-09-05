@@ -1,21 +1,18 @@
 #!/usr/bin/env zsh
 
+emulate -R zsh
+setopt no_aliases no_bg_nice
 set -u
-unsetopt BG_NICE
 zmodload zsh/datetime
-source "${0:A:h:h:h}/lib/capped.zsh" || exit 1
+bundled_root=${0:A:h:h:h}
+source "$bundled_root/lib/capped.zsh" || exit 1
+source "$bundled_root/lib/skills.zsh" || exit 1
 
 printf 'Date: %s\n' "$(date '+%Y-%m-%d')"
 printf 'Platform: %s %s\n\n' "$(uname -s)" "$(uname -r)"
 printf 'PWD: %s\n' "$(pwd -P)"
 
 typeset -F deadline=$(( EPOCHREALTIME + SF_PROBE_BUDGET ))
-
-exit_if_slow() {
-  (( $1 == 124 )) || return 0
-  printf '\n%s: %s\n' "$2" '(skipped, slow file system)'
-  exit 0
-}
 
 typeset -a directory_command
 if (( $+commands[tree] )); then
@@ -26,14 +23,77 @@ else
 fi
 
 typeset output
-typeset -i probe_status
+typeset -i probe_status filesystem_slow=0
 output=$(sf_capped "$deadline" "${directory_command[@]}" 2>&1)
 probe_status=$?
-exit_if_slow "$probe_status" 'Filesystem context'
-if (( $+commands[tree] )) &&
+if (( probe_status == 124 )); then
+  filesystem_slow=1
+elif (( $+commands[tree] )) &&
     { (( probe_status != 0 )) || [[ $output == *'[error opening dir]'* ]]; }; then
   output=$(sf_capped "$deadline" ls -F 2>&1)
   probe_status=$?
-  exit_if_slow "$probe_status" 'Filesystem context'
+  (( probe_status != 124 )) || filesystem_slow=1
 fi
-printf '%s\n' "$(print -r -- "$output" | head -100)"
+if (( filesystem_slow )); then
+  printf '\n%s: %s\n' 'Filesystem context' '(skipped, slow file system)'
+else
+  printf '%s\n' "$(print -r -- "$output" | head -100)"
+fi
+
+command_version() {
+  local name=$1 output command_path
+  local semver='(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-((0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(\.(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*))?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?'
+
+  if [[ $name == find ]]; then
+    output=$(find --version 2>&1) || {
+      command -v what >/dev/null 2>&1 || return
+      command_path=$(command -v find) || return
+      output=$(what "$command_path" 2>/dev/null) || return
+      [[ $output == *'PROGRAM:find  PROJECT:'* ]] || return
+      output=${output#*'PROGRAM:find  PROJECT:'}
+      output=${output%%[[:space:]]*}
+    }
+  else
+    output=$("$name" --version 2>&1) || return
+  fi
+
+  output=${output%%$'\n'*}
+  [[ -n $output ]] || return
+  if [[ $output =~ "(^|[^0-9A-Za-z.+-])v?($semver)([^0-9A-Za-z.+-]|$)" ]]; then
+    REPLY=$match[2]
+  else
+    REPLY=$output
+  fi
+}
+
+report_group() {
+  local label=$1 name
+  shift
+
+  for name; do
+    command -v "$name" >/dev/null 2>&1 || continue
+    command_version "$name" || continue
+    printf -- '- %s: %s (%s)\n' "$label" "$name" "$REPLY"
+    return
+  done
+}
+
+printf '\nHost shell: zsh %s\nAvailable commands:\n' "$ZSH_VERSION"
+report_group search rg grep
+report_group files fd find
+report_group trees tree eza
+report_group JSON jq
+report_group YAML yq
+report_group Python uv python3 python
+report_group VCS git
+report_group GitHub gh
+
+sf_skills_discover "$bundled_root" "${SHELLFISH_CONFIG_DIR-}" "${PROJECT_DIR:-$PWD}"
+if (( ${#reply} )); then
+  print -r -- $'\nAvailable agent skills. Invoke the `skill` tool when one applies:'
+  integer index
+  for (( index = 1; index <= ${#reply}; index += 3 )); do
+    printf -- '- %s: %s\n' "$reply[index]" "$reply[index+1]"
+  done
+fi
+exit 0

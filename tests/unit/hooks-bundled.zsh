@@ -43,8 +43,18 @@ printf '.\n'
 EOF
 chmod +x "$environment_bin/tree"
 environment_output=$(PATH="$environment_bin:$PATH" zsh -f "$environment_script" session_start)
-[[ $environment_output == *$'PWD: '*$'\n.' ]]
+[[ $environment_output == *$'PWD: '*$'\n.'* ]]
+[[ $environment_output == *'Available commands:'* ]]
+[[ $environment_output == *'Available agent skills.'* ]]
 [[ $environment_output != *'Git '* ]]
+cat >"$environment_bin/tree" <<'EOF'
+#!/bin/sh
+exit 124
+EOF
+environment_output=$(PATH="$environment_bin:$PATH" zsh -f "$environment_script" session_start)
+[[ $environment_output == *'Filesystem context: (skipped, slow file system)'* ]]
+[[ $environment_output == *'Available commands:'* ]]
+[[ $environment_output == *'Available agent skills.'* ]]
 
 # Git awareness establishes state only after a fast, successful startup probe.
 # Later prompt probes report each branch or detached-commit transition once.
@@ -126,13 +136,15 @@ GIT_MARKER="$tmp/git-called" PATH="$git_bin:$PATH" SHELLFISH_SESSION_STATE="$tmp
   zsh -f "$git_prompt" user_prompt_submit >/dev/null
 [[ ! -e $tmp/git-called ]]
 
-# Shell command reporting is best-effort, selects the first candidate with a
-# usable version, and emits one separately attributed creation context.
-typeset shell_commands_script="$ROOT/share/default/hooks/session_start/shell_commands"
+# Shell command reporting is best-effort and selects the first candidate with a
+# usable version within the combined project environment context.
 typeset shell_commands_bin="$tmp/shell-commands-bin"
-typeset shell_commands_output shell_commands_rows shell_commands_session="$tmp/shell-commands-session.jsonl"
+typeset shell_commands_output shell_commands_rows
 mkdir "$shell_commands_bin"
 ln -s "${commands[zsh]:A}" "$shell_commands_bin/zsh"
+for name in date uname head; do
+  ln -s "${commands[$name]:A}" "$shell_commands_bin/$name"
+done
 make_version_command() {
   local name=$1 body=$2
   print -r -- '#!/bin/sh' >"$shell_commands_bin/$name"
@@ -152,7 +164,7 @@ make_version_command gh 'exit 0'
 
 shell_commands_output=$(
   /usr/bin/env PATH="$shell_commands_bin" "$shell_commands_bin/zsh" -f \
-    "$shell_commands_script" session_start
+    "$environment_script" session_start
 )
 [[ $shell_commands_output == *"$ZSH_VERSION"* ]]
 shell_commands_rows=$(jq -Rsc '
@@ -171,20 +183,6 @@ jq -e '
   .git.version == "git version 2.48" and
   (has("gh") | not)
 ' <<<"$shell_commands_rows" >/dev/null
-SF_TEST_RUNTIME=$(jq -c --arg script "$shell_commands_script" \
-  '.harness.session_start=[$script]' <<<"$SF_TEST_RUNTIME")
-SF_SESSION_PATH=$shell_commands_session
-SHELLFISH_SESSION_STATE=''
-sf_hooks_session_state_create
-sf_session_prepare "$SF_TEST_RUNTIME"
-sf_hooks_session_start "$shell_commands_session"
-sf_session_create "${SF_HOOK_CONTEXT_RECORDS[@]}"
-sf_hooks_turn_state_cleanup
-jq -e -s '
-  length == 2 and .[1].type == "context" and .[1].hook == "session_start" and
-  .[1].script == "shell_commands" and
-  (.[1].content | length) > 0
-' "$shell_commands_session" >/dev/null
 
 # The bundled command scripts append TSV rows to $SHELLFISH_TURN_STATE/help.tsv.
 # The help script sorts and displays them, then halts before unrelated scripts.

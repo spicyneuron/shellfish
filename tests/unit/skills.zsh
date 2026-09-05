@@ -3,7 +3,7 @@
 source "${0:A:h:h}/_helpers.zsh"
 sf_test_tmp skills
 
-script="$ROOT/share/default/hooks/session_start/skills"
+script="$ROOT/share/default/hooks/session_start/project_environment"
 tool="$ROOT/share/default/tools/skill/run"
 project="$tmp/project"
 config="$tmp/config"

@@ -93,8 +93,6 @@ jq -e --arg root "$ROOT/share/default/hooks/session_start" \
   .harness.session_start == [
     ($root + "/project_environment"),
     ($root + "/git_awareness"),
-    ($root + "/shell_commands"),
-    ($root + "/skills"),
     ($root + "/project_instructions")
   ] and
   .harness.user_prompt_submit[-1] == ($prompt_root + "/git_awareness") and
