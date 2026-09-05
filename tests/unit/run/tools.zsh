@@ -32,16 +32,8 @@ sf_test_tool_execute() {
   local id name execution_input bypass bypass_reason_valid projected
   local -a fields
   integer permission_status=0
-  projected=$(jq -jrn --argjson call "$call" '
-    def field: ., "\u0000"; ($call.id | field), ($call.name | field),
-      ($call.input | tojson | field),
-      ($call.input | del(.request_sandbox_bypass, .sandbox_bypass_reason) | tojson | field),
-      ($call.input | if has("request_sandbox_bypass") then
-        if (.request_sandbox_bypass | type) == "boolean"
-        then (.request_sandbox_bypass | tostring) else "invalid" end
-      else "false" end | field),
-      ($call.input.sandbox_bypass_reason |
-        if type == "string" and length > 0 then "true" else "false" end | field)')
+  projected=$(jq -L "$ROOT" -jrn --argjson call "$call" '
+    include "lib/request"; $call | tool_call_fields')
   fields=( "${(@0)${projected%$'\0'}}" )
   id=$fields[1]
   name=$fields[2]

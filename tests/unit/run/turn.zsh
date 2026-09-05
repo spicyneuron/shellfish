@@ -177,6 +177,24 @@ jq -L "$ROOT" -e -s '
   (.[1:] | canonical_session_records) and .[-1].stop == "end"
 ' "$session" >/dev/null
 
+# Reserved bypass fields stay in the transcript but never reach the tool, which
+# rejects input it does not declare.
+stream=$(SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_BYPASS=true \
+  SF_TEST_BACKEND_TOOL_COMMAND='print -r -- ran' \
+  sf_test_turn 'call a helper' "$session")
+print -r -- "$stream" | jq -eRn '
+  [inputs | fromjson] as $events |
+  [$events[] | select(.role == "tool_result")] as $results |
+  [$events[] | select(.role == "assistant") | .content[] |
+    select(.type == "tool_call")] as $calls |
+  ($results | map(.exit_code)) == [0] and
+  ($results[0].content | test("ran")) and
+  ($calls | length) == 1 and
+  $calls[0].input.request_sandbox_bypass == true and
+  ($calls[0].input.sandbox_bypass_reason | length) > 0 and
+  $calls[0].input.command == "print -r -- ran"
+' >/dev/null
+
 # Provider failure after the user commit closes the durable turn canonically.
 stream=$(sf_test_turn 'retry error later' "$session")
 print -r -- "$stream" | jq -eRn '
