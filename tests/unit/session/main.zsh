@@ -225,13 +225,15 @@ typeset interrupted_tools="$tmp/interrupted-tools.jsonl"
 cp "$SF_TEST_SESSIONS/header-only.jsonl" "$interrupted_tools"
 sf_session_begin_turn "$interrupted_tools"
 sf_session_append '{"type":"message","role":"user","content":[{"type":"text","text":"run"}]}'
-sf_session_append '{"type":"message","role":"assistant","stop":"tool_calls","content":[{"type":"tool_call","id":"call_1","name":"shell","input":{}},{"type":"tool_call","id":"call_2","name":"shell","input":{}}]}'
+sf_session_append '{"type":"message","role":"assistant","stop":"tool_calls","content":[{"type":"tool_call","id":"call_1","name":"shell","input":{}},{"type":"tool_call","id":"call_2","name":"shell","input":{}},{"type":"tool_call","id":"call_3","name":"read_file","input":{}}]}'
+sf_session_append '{"type":"message","role":"tool_result","call_id":"call_1","name":"shell","content":"done","exit_code":0}'
 sf_session_reset
 sf_session_begin_turn "$interrupted_tools"
 sf_session_reset
 jq -e -s '
-  .[-3].call_id == "call_1" and .[-3].exit_code == 126 and
-  .[-2].call_id == "call_2" and .[-2].exit_code == 126 and
+  .[-4].call_id == "call_1" and .[-4].exit_code == 0 and
+  .[-3].call_id == "call_2" and .[-3].exit_code == 126 and
+  .[-2].call_id == "call_3" and .[-2].name == "read_file" and .[-2].exit_code == 126 and
   .[-1].role == "assistant" and .[-1].stop == "end"
 ' "$interrupted_tools" >/dev/null
 cp "$SF_TEST_SESSIONS/invalid-transition.jsonl" "$tmp/invalid-transition.jsonl"

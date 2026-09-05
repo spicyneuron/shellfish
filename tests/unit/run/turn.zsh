@@ -262,7 +262,7 @@ SF_ROOT=$ROOT zsh -f -c '
     return 1
   }
   message="{\"type\":\"message\",\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"partial write\"}]}"
-  sf_run_turn "$message" "$1" 0
+  sf_run_turn "$message" "$1" 0 "partial write"
 ' -- "$partial_session" >"$partial_stream" || partial_status=$?
 (( partial_status == 1 )) || fail 'partial append failure exited successfully'
 print -r -- "$(<"$partial_stream")" | jq -eRn '

@@ -110,6 +110,6 @@ sf_test_turn() {
   message=$(jq -cn --arg text "$SF_TEST_TURN_PROMPT" \
     '\''{type:"message",role:"user",content:[{type:"text",text:$text}]}'\'') || exit
   sf_run_turn "$message" "$SF_TEST_TURN_SESSION" \
-    "$SF_TEST_TURN_PERMISSION" || true
+    "$SF_TEST_TURN_PERMISSION" "$SF_TEST_TURN_PROMPT" || true
 '
 }

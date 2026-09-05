@@ -6,6 +6,7 @@ typeset -gA SF_SESSION=()
 typeset -ga SF_SESSION_RECORDS=()
 typeset -gA SF_HOOK_COUNTS=()
 typeset -g SF_SESSION_ERROR=''
+typeset -g SF_SESSION_RECOVERY_NEEDED=''
 typeset -ga SF_SESSION_PENDING_CALLS=()
 
 sf_session_fail() {
@@ -61,6 +62,8 @@ sf_session_reset() {
   SF_SESSION=()
   SF_SESSION_RECORDS=()
   SF_HOOK_COUNTS=()
+  SF_SESSION_RECOVERY_NEEDED=''
+  SF_SESSION_PENDING_CALLS=()
 }
 
 sf_session_repair_tail() {
@@ -86,6 +89,8 @@ sf_session_prepare() {
   SF_SESSION=()
   SF_SESSION_RECORDS=()
   SF_HOOK_COUNTS=()
+  SF_SESSION_RECOVERY_NEEDED=''
+  SF_SESSION_PENDING_CALLS=()
   [[ ! -e $SF_SESSION_PATH && ! -L $SF_SESSION_PATH ]] || {
     sf_session_fail "cannot create session: $SF_SESSION_PATH"
     return
@@ -216,17 +221,23 @@ sf_session_project() {
   local -a fields
   SF_SESSION=()
   SF_HOOK_COUNTS=()
+  SF_SESSION_RECOVERY_NEEDED=''
+  SF_SESSION_PENDING_CALLS=()
   loaded=$(printf '%s\n' "${SF_SESSION_RECORDS[@]}" | jq -L "$SF_ROOT" -jes '
     include "lib/runtime/schema";
     def field: ., "\u0000";
     select(length >= 1) |
     select(.[0] | canonical_session_header(1)) |
-    select(.[1:] | canonical_session_records) |
+    (.[1:] | session_records_state) as $state |
+    select($state.valid) |
     (.[0] | del(.type, .format_version, .cwd, .created) | tojson | field),
     (.[0].cwd | field),
     (.[0].profile.request.model | field),
     (([.[] | select(.type == "message" and .role == "user")] | length + 1) |
       tostring | field),
+    ($state.messages > 0 and $state.next != "user" | tostring | field),
+    ($state.pending | length | tostring | field),
+    ($state.pending[] | .id, "\u0000", .name, "\u0000"),
     (hook_names[] as $hook |
       ($hook | field), (.[0].harness[$hook] // [] | length | tostring | field)),
     ("ok" | field)
@@ -235,12 +246,16 @@ sf_session_project() {
     return
   }
   fields=( "${(@0)${loaded%$'\0'}}" )
-  (( ${#fields} >= 7 && (${#fields} - 5) % 2 == 0 )) && [[ $fields[-1] == ok ]] || {
+  (( ${#fields} >= 9 && $fields[6] >= 0 &&
+      (${#fields} - 7 - (2 * fields[6])) % 2 == 0 )) &&
+      [[ $fields[5] == (true|false) && $fields[-1] == ok ]] || {
     sf_session_fail "cannot restore session runtime: $SF_SESSION_PATH"
     return
   }
-  integer index
-  for (( index = 5; index < ${#fields}; index += 2 )); do
+  integer index hook_start=$(( 7 + (2 * fields[6]) ))
+  SF_SESSION_RECOVERY_NEEDED=$fields[5]
+  SF_SESSION_PENDING_CALLS=( "${(@)fields[7,$(( hook_start - 1 ))]}" )
+  for (( index = hook_start; index < ${#fields}; index += 2 )); do
     SF_HOOK_COUNTS[$fields[index]]=$fields[index+1]
   done
   local id=${SF_SESSION_PATH:t}
@@ -259,6 +274,8 @@ sf_session_read() {
   SF_SESSION=()
   SF_SESSION_RECORDS=()
   SF_HOOK_COUNTS=()
+  SF_SESSION_RECOVERY_NEEDED=''
+  SF_SESSION_PENDING_CALLS=()
   while IFS= read -r record; do
     [[ -n $record ]] || {
       SF_SESSION_RECORDS=()
@@ -288,6 +305,8 @@ sf_session_append() {
     return
   fi
   SF_SESSION_RECORDS+=( "$record" )
+  SF_SESSION_RECOVERY_NEEDED=''
+  SF_SESSION_PENDING_CALLS=()
 }
 
 sf_session_update() {
@@ -358,58 +377,21 @@ sf_session_update() {
   REPLY=1
 }
 
-# Reports in REPLY whether the loaded suffix needs recovery, leaving any
-# unanswered tool calls in SF_SESSION_PENDING_CALLS as id and name pairs.
-sf_session_turn_pending() {
-  local recovery
-  local -a fields
-  REPLY=''
-  SF_SESSION_PENDING_CALLS=()
-  recovery=$(printf '%s\n' "${SF_SESSION_RECORDS[@]}" | jq -jsc '
-    .[1:] as $records |
-    ([range(0; $records | length) |
-      select($records[.].type == "message")] | last // -1) as $last |
-    if $last < 0 then {recover:false,pending:[]}
-    elif $records[$last].role == "user" then {recover:true,pending:[]}
-    elif $records[$last].role == "assistant" then
-      if $records[$last].stop == "tool_calls" then
-        {recover:true,pending:[$records[$last].content[] |
-          select(.type == "tool_call") | {id,name}]}
-      elif any($records[$last + 1:][]; .type == "context" and .hook == "stop") then
-        {recover:true,pending:[]}
-      else {recover:false,pending:[]} end
-    else
-      ([range(0; $last) | select($records[.].role == "assistant" and
-        $records[.].stop == "tool_calls")] | last) as $call_index |
-      [$records[$call_index].content[] | select(.type == "tool_call") | {id,name}] as $calls |
-      [$records[$call_index + 1:][] | select(.role == "tool_result") | .call_id] as $answered |
-      {recover:true,pending:[$calls[] | select(.id as $id | $answered | index($id) | not)]}
-    end |
-    (.recover | tostring), "\u0000", (.pending[] | .id, "\u0000", .name, "\u0000"),
-    "ok", "\u0000"
-  ' 2>/dev/null) || {
-    sf_session_fail 'cannot inspect session recovery suffix'
-    return
-  }
-  fields=( "${(@0)${recovery%$'\0'}}" )
-  (( ${#fields} >= 2 )) && [[ $fields[-1] == ok ]] || {
-    sf_session_fail 'cannot inspect session recovery suffix'
-    return
-  }
-  REPLY=$fields[1]
-  SF_SESSION_PENDING_CALLS=( "${(@)fields[2,-2]}" )
-}
-
 # Closes a dangling turn in the loaded view, reporting appended records in REPLY.
-# Requires an already-read session.
+# Requires a freshly read session.
 sf_session_recover_turn() {
   local record recovered='' needed
   local -a pending
   integer index
   REPLY=''
-  sf_session_turn_pending || return
-  needed=$REPLY
+  [[ -n $SF_SESSION_RECOVERY_NEEDED ]] || {
+    sf_session_fail 'session recovery state is unavailable'
+    return
+  }
+  needed=$SF_SESSION_RECOVERY_NEEDED
   pending=( "${SF_SESSION_PENDING_CALLS[@]}" )
+  SF_SESSION_RECOVERY_NEEDED=''
+  SF_SESSION_PENDING_CALLS=()
   REPLY=''
   [[ $needed == true ]] || return 0
   for (( index = 1; index <= ${#pending}; index += 2 )); do

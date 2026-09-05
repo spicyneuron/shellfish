@@ -267,9 +267,9 @@ def canonical_session_record:
   (type == "object" and keys == ["content", "type"] and .type == "system" and
     (.content | nul_free_string));
 
-def canonical_session_records:
+def session_records_state:
   reduce .[] as $record
-    ({valid:true, next:"user", pending:[]};
+    ({valid:true, next:"user", pending:[], messages:0};
       if (.valid | not) or ($record | canonical_session_record | not) then
         .valid = false
       elif $record.type == "system" then
@@ -279,20 +279,27 @@ def canonical_session_records:
         elif $record.hook != "stop" and .next == "user" then .
         else .valid = false end
       elif $record.role == "user" then
-        if .next == "user" then .next = "assistant" else .valid = false end
+        if .next == "user" then
+          .next = "assistant" | .messages += 1
+        else .valid = false end
       elif $record.role == "assistant" then
         if .next != "assistant" then .valid = false
         elif $record.stop == "tool_calls" then
           .next = "tool" |
-          .pending = [$record.content[] | select(.type == "tool_call") | {id,name}]
-        else .next = "user" end
+          .pending = [$record.content[] | select(.type == "tool_call") | {id,name}] |
+          .messages += 1
+        else .next = "user" | .messages += 1 end
       elif $record.role == "tool_result" then
         if .next != "tool" or (.pending | length) == 0 or
             $record.call_id != .pending[0].id or $record.name != .pending[0].name then
           .valid = false
         else
+          .messages += 1 |
           .pending = .pending[1:] |
           if (.pending | length) == 0 then .next = "assistant" else . end
         end
       else .valid = false end) |
-  .valid;
+  .;
+
+def canonical_session_records:
+  session_records_state | .valid;

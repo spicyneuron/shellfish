@@ -31,8 +31,8 @@ sf_run_prompt() {
 }
 
 sf_run_main() {
-  local requested_session='' input='' arity=''
-  local -a positional=() create_args=()
+  local requested_session='' input='' prompt='' arity='' input_projection
+  local -a positional=() create_args=() input_fields
   integer session_explicit=0 jsonl=0 override=0 take=0
 
   while (( $# )); do
@@ -96,16 +96,26 @@ sf_run_main() {
       sf_die '--jsonl requires a canonical user message on stdin'
       return 2
     }
-    input=$(jq -L "$SF_ROOT" -ce '
+    input_projection=$(jq -L "$SF_ROOT" -jre '
       include "lib/runtime/schema";
-      select(canonical_user_message)
+      def field: ., "\u0000";
+      select(canonical_user_message) |
+      (tojson | field), (.content[0].text | field), ("ok" | field)
     ' <<<"$input" 2>/dev/null) || {
       sf_die '--jsonl requires a canonical user message on stdin'
       return 2
     }
+    input_fields=( "${(@0)${input_projection%$'\0'}}" )
+    (( ${#input_fields} == 3 )) && [[ $input_fields[3] == ok ]] || {
+      sf_die '--jsonl requires a canonical user message on stdin'
+      return 2
+    }
+    input=$input_fields[1]
+    prompt=$input_fields[2]
   else
     sf_run_prompt "${positional[@]}" || return
-    input=$(jq -cn --arg text "$REPLY" \
+    prompt=$REPLY
+    input=$(jq -cn --arg text "$prompt" \
       '{type:"message",role:"user",content:[{type:"text",text:$text}]}') || return 1
   fi
 
@@ -139,7 +149,7 @@ sf_run_main() {
   trap 'SF_RUN[signal_status]=129; kill -TERM $$' HUP
   trap 'sf_run_interrupt; exit $SF_RUN[signal_status]' TERM
   # Only a JSONL client can answer a permission request on stdin.
-  sf_run_turn "$input" "$session" "$jsonl"
+  sf_run_turn "$input" "$session" "$jsonl" "$prompt"
   local run_status=$?
   trap - INT HUP TERM
   if (( ! jsonl )) && [[ -n $SF_RUN[answer] ]]; then

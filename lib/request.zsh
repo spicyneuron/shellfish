@@ -4,8 +4,9 @@ setopt no_aliases no_bg_nice no_multios pipe_fail
 (( $+functions[sf_scratch_file] )) || source "$SF_ROOT/lib/scratch.zsh"
 
 typeset -gA SF_REQUEST=(
-  assistant '' error '' error_file '' partial_events '' pid '' result '' status_file ''
+  assistant '' error '' error_file '' pid '' result '' status_file ''
 )
+typeset -ga SF_REQUEST_PARTIAL_EVENTS=()
 
 sf_request_build() {
   local runtime=$1 tools=$2
@@ -48,7 +49,7 @@ sf_request_run() {
   SF_REQUEST[assistant]=''
   SF_REQUEST[error]=''
   SF_REQUEST[error_file]=''
-  SF_REQUEST[partial_events]=''
+  SF_REQUEST_PARTIAL_EVENTS=()
   SF_REQUEST[pid]=''
   SF_REQUEST[result]=''
   SF_REQUEST[status_file]=''
@@ -89,8 +90,7 @@ sf_request_run() {
           kind=invalid
           break
         fi
-        [[ -z $SF_REQUEST[partial_events] ]] || SF_REQUEST[partial_events]+=$'\n'
-        SF_REQUEST[partial_events]+=$event
+        SF_REQUEST_PARTIAL_EVENTS+=( "$event" )
         "$emit" "$display"
         ;;
       opaque)
@@ -98,8 +98,7 @@ sf_request_run() {
           kind=invalid
           break
         fi
-        [[ -z $SF_REQUEST[partial_events] ]] || SF_REQUEST[partial_events]+=$'\n'
-        SF_REQUEST[partial_events]+=$event
+        SF_REQUEST_PARTIAL_EVENTS+=( "$event" )
         ;;
       usage)
         if ! IFS= read -r -d $'\0' event <&p; then
@@ -136,7 +135,7 @@ sf_request_run() {
   (( decoder_status == 0 )) || kind=invalid
   if [[ $kind != invalid && $adapter_status == 0 ]] && (( ended )); then
     SF_REQUEST[assistant]=${SF_REQUEST[result]%%$'\0'*}
-    [[ -z $SF_REQUEST[assistant] ]] || SF_REQUEST[partial_events]=''
+    [[ -z $SF_REQUEST[assistant] ]] || SF_REQUEST_PARTIAL_EVENTS=()
   fi
   if [[ $kind == invalid || $adapter_status != 0 || -z $SF_REQUEST[assistant] ]]; then
     if [[ -s $error_file ]]; then
