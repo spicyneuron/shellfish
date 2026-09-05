@@ -6,6 +6,9 @@ sf_test_source libexec/tui/render/nodes.zsh libexec/tui/render/highlights.zsh \
   libexec/tui/render/terminal.zsh libexec/tui/render/view.zsh \
   libexec/tui/transport.zsh libexec/tui/editor.zsh libexec/tui/controller.zsh
 
+# Keep unit tests PTY-free; the real worker lifecycle is covered by tests/pty.
+sf_tui_heartbeat_arm() { return 0; }
+
 typeset -g BUFFER=draft CURSOR=3 PREDISPLAY='' POSTDISPLAY='' ZLE_CALL=''
 typeset -g SF_PRESENT_STATE=idle
 typeset -g SF_PRESENT_FOOTER=test/model
@@ -169,32 +172,6 @@ assert_equal quit "$SF_PRESENT_ACTION"
 LBUFFER=first
 sf_tui_insert_newline
 assert_equal $'first\n' "$LBUFFER"
-
-# An active turn registers one heartbeat descriptor and reuses it across redraws.
-SF_PRESENT_STATE=working
-SF_PRESENT_PENDING_ROWS=0
-ZLE_CALLS=()
-sf_tui_pre_redraw
-[[ -n $SF_PRESENT_HEARTBEAT_FD ]] || fail 'chat heartbeat descriptor was not opened'
-[[ $ZLE_CALLS[-1] == '-F -w '*' sf_tui_heartbeat_ready' ]] ||
-  fail 'chat heartbeat descriptor was not watched'
-if zselect -r "$SF_PRESENT_HEARTBEAT_FD" -t 1 2>/dev/null; then
-  fail 'chat heartbeat fired before its configured interval'
-fi
-ZLE_CALLS=()
-sf_tui_pre_redraw
-[[ ${(j: :)ZLE_CALLS} != *sf_tui_heartbeat_ready* ]] ||
-  fail 'chat registered a second heartbeat watcher'
-sf_tui_heartbeat_stop
-assert_equal '' "$SF_PRESENT_HEARTBEAT_FD"
-
-# The remaining tests exercise the tick independently of its process lifecycle.
-sf_tui_heartbeat_arm() { return 0; }
-
-SF_PRESENT_STATE=cancelling
-ZLE_CALLS=()
-sf_tui_heartbeat_arm
-assert_equal 0 "${#ZLE_CALLS}"
 
 sf_tui_reset
 sf_tui_terminal_reset

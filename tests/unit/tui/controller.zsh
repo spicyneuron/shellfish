@@ -7,6 +7,9 @@ sf_test_source libexec/tui/render/nodes.zsh libexec/tui/render/highlights.zsh \
   libexec/tui/transport.zsh libexec/tui/editor.zsh libexec/tui/controller.zsh
 sf_test_tmp controller
 
+# Keep unit tests PTY-free; the real worker lifecycle is covered by tests/pty.
+sf_tui_heartbeat_arm() { return 0; }
+
 SF_PRESENT_STATE=working
 sf_tui_add activity '' '' '' open
 sf_tui_decoded backend_request_start

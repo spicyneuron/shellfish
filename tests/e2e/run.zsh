@@ -15,8 +15,6 @@ cat >"$config" <<EOF
   "harnesses": {
     "machine": {
       "tools": [], "sandbox": true,
-      "sandbox_read_paths": ["$tmp/read"],
-      "sandbox_write_paths": ["$tmp/write"],
       "session_start": [], "user_prompt_submit": [], "permission_request": [],
       "pre_tool_use": [], "post_tool_use": [], "stop": [],
       "max_requests_per_turn": 8, "max_tool_calls_per_request": 16,
@@ -34,7 +32,6 @@ EOF
 export XDG_STATE_HOME="$tmp/state"
 typeset entry="$ROOT/bin/shellfish"
 typeset output
-mkdir "$tmp/read" "$tmp/write"
 
 # Turn subprocesses preserve the chat's verbose override, but do not trust
 # arbitrary inherited values.
@@ -53,38 +50,6 @@ assert_equal 1 "$(<"$tmp/verbose-one")"
 SF_VERBOSE_MARKER="$tmp/verbose-invalid" SHELLFISH_VERBOSE=invalid \
   zsh -f "$entry" run --config "$verbose_config" test || fail 'normalized run failed'
 assert_equal 0 "$(<"$tmp/verbose-invalid")"
-
-output=$(zsh -f "$entry" config --config "$config") || fail 'sandbox paths were rejected'
-jq -e --arg read "$tmp/read" --arg write "$tmp/write" '
-  .harness.sandbox_read_paths == [$read] and
-  .harness.sandbox_write_paths == [$write]
-' <<<"$output" >/dev/null || fail 'sandbox paths were not frozen in the runtime'
-
-sed 's#"sandbox_read_paths": \["[^\"]*"\]#"sandbox_read_paths": ["relative"]#' \
-  "$config" >"$tmp/invalid-path.jsonc"
-zsh -f "$entry" config --config "$tmp/invalid-path.jsonc" >/dev/null 2>&1 && \
-  fail 'relative sandbox path was accepted'
-
-# Sandbox paths accept files, directories, relative paths, and home-relative paths.
-mkdir "$tmp/added"
-touch "$tmp/read-file"
-output=$(cd "$tmp" && zsh -f "$entry" config --config "$config" \
-  --sandbox-read read-file --sandbox-write added) || fail 'sandbox path flags rejected valid paths'
-jq -e --arg read "$tmp/read" --arg write "$tmp/write" \
-  --arg read_file "${tmp:A}/read-file" --arg write_dir "${tmp:A}/added" '
-  .harness.sandbox_read_paths == [$read,$read_file] and
-  .harness.sandbox_write_paths == [$write,$write_dir]
-' <<<"$output" >/dev/null || fail 'sandbox path flags were not frozen in the runtime'
-typeset newline_dir="$tmp/"$'line\nbreak'
-mkdir "$newline_dir"
-output=$(zsh -f "$entry" config --config "$config" --sandbox-read "$newline_dir") || \
-  fail '--sandbox-read rejected a newline-containing path'
-jq -e --arg path "${newline_dir:A}" '.harness.sandbox_read_paths[-1] == $path' \
-  <<<"$output" >/dev/null || fail 'newline-containing sandbox path was not frozen exactly'
-HOME="$tmp" zsh -f "$entry" config --config "$config" --sandbox-write '~/added' >/dev/null || \
-  fail '--sandbox-write rejected a home-relative path'
-zsh -f "$entry" config --config "$config" --sandbox-read "$tmp/missing" >/dev/null 2>&1 && \
-  fail '--sandbox-read accepted a missing path'
 
 # Plain mode prints only the final assistant text.
 output=$(SF_TEST_BACKEND_DELAY=0 zsh -f "$entry" run --config "$config" 'plain answer') || \

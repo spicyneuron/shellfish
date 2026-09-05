@@ -80,6 +80,45 @@ assert_equal 640 "$(file_mode "${custom_config:h}/example.env")" \
 assert_equal 750 "$(file_mode "${custom_config:h}/system")" \
   'config init changed permissions on an existing component directory'
 
+# Configured sandbox paths must be absolute and survive runtime resolution.
+typeset sandbox_config="$tmp/sandbox.jsonc"
+mkdir "$tmp/read" "$tmp/write"
+jq --arg read "$tmp/read" --arg write "$tmp/write" '
+  .harnesses.default.sandbox_read_paths = [$read] |
+  .harnesses.default.sandbox_write_paths = [$write]
+' "$config_dir/shellfish.jsonc" >"$sandbox_config"
+report=$(zsh -f "$entry" config --config "$sandbox_config") || fail 'sandbox paths were rejected'
+jq -e --arg read "$tmp/read" --arg write "$tmp/write" '
+  .harness.sandbox_read_paths == [$read] and
+  .harness.sandbox_write_paths == [$write]
+' <<<"$report" >/dev/null || fail 'sandbox paths were not frozen in the runtime'
+
+jq '.harnesses.default.sandbox_read_paths = ["relative"]' \
+  "$sandbox_config" >"$tmp/invalid-path.jsonc"
+zsh -f "$entry" config --config "$tmp/invalid-path.jsonc" >/dev/null 2>&1 && \
+  fail 'relative sandbox path was accepted'
+
+# Sandbox flags accept files, directories, relative paths, and home-relative paths.
+mkdir "$tmp/added"
+touch "$tmp/read-file"
+report=$(cd "$tmp" && zsh -f "$entry" config --config "$sandbox_config" \
+  --sandbox-read read-file --sandbox-write added) || fail 'sandbox path flags rejected valid paths'
+jq -e --arg read "$tmp/read" --arg write "$tmp/write" \
+  --arg read_file "${tmp:A}/read-file" --arg write_dir "${tmp:A}/added" '
+  .harness.sandbox_read_paths == [$read,$read_file] and
+  .harness.sandbox_write_paths == [$write,$write_dir]
+' <<<"$report" >/dev/null || fail 'sandbox path flags were not frozen in the runtime'
+typeset newline_dir="$tmp/"$'line\nbreak'
+mkdir "$newline_dir"
+report=$(zsh -f "$entry" config --config "$sandbox_config" --sandbox-read "$newline_dir") || \
+  fail '--sandbox-read rejected a newline-containing path'
+jq -e --arg path "${newline_dir:A}" '.harness.sandbox_read_paths[-1] == $path' \
+  <<<"$report" >/dev/null || fail 'newline-containing sandbox path was not frozen exactly'
+HOME="$tmp" zsh -f "$entry" config --config "$sandbox_config" \
+  --sandbox-write '~/added' >/dev/null || fail '--sandbox-write rejected a home-relative path'
+zsh -f "$entry" config --config "$sandbox_config" \
+  --sandbox-read "$tmp/missing" >/dev/null 2>&1 && fail '--sandbox-read accepted a missing path'
+
 # Automatic sandbox grants.
 typeset detector_bin="$tmp/detectors"
 typeset detector_root="$tmp/detected"
