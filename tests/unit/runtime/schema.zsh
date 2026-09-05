@@ -261,7 +261,7 @@ valid_manifest=$(jq -cn '
   }
 ')
 print -r -- "$valid_manifest" | schema_eval 'tool_manifest' >/dev/null
-for manifest in "$ROOT"/default/tools/*/tool.json; do
+for manifest in "$ROOT"/share/default/tools/*/tool.json; do
   schema_eval 'tool_manifest' <"$manifest" >/dev/null ||
     fail "invalid bundled tool manifest: $manifest"
 done

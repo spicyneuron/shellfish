@@ -3,8 +3,8 @@
 source "${0:A:h:h:h}/_helpers.zsh"
 
 typeset summary_tools=$(jq -cn \
-  --slurpfile edit "$ROOT/default/tools/edit_file/tool.json" \
-  --slurpfile shell "$ROOT/default/tools/shell/tool.json" '
+  --slurpfile edit "$ROOT/share/default/tools/edit_file/tool.json" \
+  --slurpfile shell "$ROOT/share/default/tools/shell/tool.json" '
     {harness:{tools:[
       {name:"edit_file",manifest:$edit[0]},
       {name:"shell",manifest:($shell[0] |

@@ -4,6 +4,7 @@ emulate -R zsh
 setopt no_aliases no_multios pipe_fail
 
 typeset -gr SF_ROOT=${0:A:h:h}
+typeset -gr SF_SHARE=$SF_ROOT/share
 
 case ${1-} in
   run|create|config|build-request|send-request)
@@ -13,7 +14,7 @@ case ${1-} in
     exec -- "$SF_ROOT/libexec/resume/main.zsh" "$@"
     ;;
   -h|--help)
-    exec cat -- "$SF_ROOT/help.txt"
+    exec cat -- "$SF_SHARE/help.txt"
     ;;
   --version)
     print -r -- "shellfish $(<"$SF_ROOT/VERSION")"

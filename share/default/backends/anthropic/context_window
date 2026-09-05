@@ -4,13 +4,13 @@ emulate -R zsh
 setopt err_exit no_aliases no_multios pipe_fail
 umask 077
 
-typeset -gr ROOT=${0:A:h:h:h:h}
-source "$ROOT/default/backends/_backend.zsh"
+typeset -gr ROOT=${0:A:h:h:h:h:h}
+source "$ROOT/share/default/backends/_backend.zsh"
 
 api_key=${SHELLFISH_API_KEY-}
 unset SHELLFISH_API_KEY
 
-sf_backend_setup openai
+sf_backend_setup anthropic
 trap 'rm -rf -- "$SF_BACKEND_TEMP_DIR"' EXIT
 typeset request_file=$SF_BACKEND_REQUEST_FILE
 cat >"$request_file"
@@ -25,21 +25,17 @@ fields=( "${(@f)$(jq -L "$ROOT" -er '
 ' "$request_file")}" ) || exit 10
 (( ${#fields} == 5 )) || exit 10
 
-sf_backend_credential 'Authorization' "${api_key:+Bearer $api_key}"
+sf_backend_credential 'x-api-key' "$api_key"
 unset api_key
 
 typeset endpoint=${fields[2]%/}
-typeset models_endpoint context
-case $endpoint in
-  */chat/completions) models_endpoint="${endpoint%/chat/completions}/models" ;;
-  */responses) models_endpoint="${endpoint%/responses}/models" ;;
-  *) models_endpoint="${endpoint:h:h}/models" ;;
-esac
+typeset models_endpoint="${endpoint:h}/models?limit=1000" context
 sf_backend_context_curl_args "$models_endpoint" $fields[3] $fields[4] $fields[5]
+SF_BACKEND_CURL_ARGS+=(--header 'anthropic-version: 2023-06-01')
 context=$(curl "${SF_BACKEND_CURL_ARGS[@]}" 2>/dev/null | \
   jq -L "$ROOT" -ce --arg model "$fields[1]" '
     include "lib/runtime/schema";
-    first(.data[]? | select(.id == $model) | .context_length) |
+    first(.data[]? | select(.id == $model) | .max_input_tokens) |
     select(positive_integer) | {context_window:.}
   ' 2>/dev/null) || exit 10
 print -r -- "$context"

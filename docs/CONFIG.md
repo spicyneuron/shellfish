@@ -1,8 +1,8 @@
 # Configuration
 
-Shellfish reads JSONC from `$XDG_CONFIG_HOME/shellfish/shellfish.jsonc`, or `~/.config/shellfish/shellfish.jsonc` when `XDG_CONFIG_HOME` is unset. User configuration is merged over the bundled [`default/shellfish.jsonc`](../default/shellfish.jsonc). Objects merge recursively and arrays replace their defaults.
+Shellfish reads JSONC from `$XDG_CONFIG_HOME/shellfish/shellfish.jsonc`, or `~/.config/shellfish/shellfish.jsonc` when `XDG_CONFIG_HOME` is unset. User configuration is merged over the bundled [`share/default/shellfish.jsonc`](../share/default/shellfish.jsonc). Objects merge recursively and arrays replace their defaults.
 
-Run `shellfish config --init` to create the configuration directory from the bundled [`template/`](../template/). Initialization creates `shellfish.jsonc`, `example.env`, and empty `hooks/`, `backends/`, `tools/`, and `skills/` directories without replacing existing customization assets. Newly created files are mode `0600` and directories are mode `0700`; existing asset permissions are unchanged. Copy `example.env` to `.env` and set the credential for the selected backend. Add `--sandbox-auto` to include detected development-tool paths in the new configuration. Use `shellfish config` to inspect what a new session would use.
+Run `shellfish config --init` to create the configuration directory from the bundled [`share/template/`](../share/template/). Initialization creates `shellfish.jsonc`, `example.env`, and empty `hooks/`, `backends/`, `tools/`, and `skills/` directories without replacing existing customization assets. Newly created files are mode `0600` and directories are mode `0700`; existing asset permissions are unchanged. Copy `example.env` to `.env` and set the credential for the selected backend. Add `--sandbox-auto` to include detected development-tool paths in the new configuration. Use `shellfish config` to inspect what a new session would use.
 
 ## Choose a backend and model
 

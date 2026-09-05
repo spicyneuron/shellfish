@@ -1,4 +1,4 @@
-(( $+functions[sf_scratch_create] )) || source "${${(%):-%x}:A:h:h:h}/lib/scratch.zsh"
+(( $+functions[sf_scratch_create] )) || source "${${(%):-%x}:A:h:h:h:h}/lib/scratch.zsh"
 
 typeset -g SF_BACKEND_NAME SF_BACKEND_TEMP_DIR SF_BACKEND_REQUEST_FILE
 typeset -g SF_BACKEND_BODY_FILE SF_BACKEND_RESPONSE_FILE SF_BACKEND_STATUS_FILE

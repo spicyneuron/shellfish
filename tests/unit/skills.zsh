@@ -3,8 +3,8 @@
 source "${0:A:h:h}/_helpers.zsh"
 sf_test_tmp skills
 
-script="$ROOT/default/hooks/session_start/skills"
-tool="$ROOT/default/tools/skill/run"
+script="$ROOT/share/default/hooks/session_start/skills"
+tool="$ROOT/share/default/tools/skill/run"
 project="$tmp/project"
 config="$tmp/config"
 home="$tmp/home"
@@ -45,7 +45,7 @@ loaded=$(print -rn -- '{"name":"shared"}' | HOME="$home" PROJECT_DIR="$project" 
 [[ $loaded == "Skill directory: ${project:A}/.agents/skills/shared"*$'# shared instructions'* ]]
 loaded=$(print -rn -- '{"name":"skill-creator"}' | HOME="$home" PROJECT_DIR="$project" \
   SHELLFISH_CONFIG_DIR="$config" zsh -f "$tool")
-[[ $loaded == "Skill directory: $ROOT/default/skills/skill-creator"*$'\nname: skill-creator\n'* ]]
+[[ $loaded == "Skill directory: $ROOT/share/default/skills/skill-creator"*$'\nname: skill-creator\n'* ]]
 if print -rn -- '{"name":"hidden"}' | HOME="$home" PROJECT_DIR="$project" \
     SHELLFISH_CONFIG_DIR="$config" zsh -f "$tool" >/dev/null 2>&1; then
   fail 'skill tool loaded a model-disabled skill'

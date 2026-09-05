@@ -4,6 +4,7 @@ emulate -R zsh
 setopt no_aliases no_multios pipe_fail
 
 typeset -gr SF_ROOT=${0:A:h:h:h}
+typeset -gr SF_SHARE=$SF_ROOT/share
 
 sf_die() {
   print -u2 -r -- "shellfish: $*"

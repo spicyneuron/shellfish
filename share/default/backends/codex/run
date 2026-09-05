@@ -4,7 +4,7 @@ emulate -R zsh
 setopt err_exit no_aliases no_multios pipe_fail
 umask 077
 
-typeset -gr ROOT=${0:A:h:h:h:h}
+typeset -gr ROOT=${0:A:h:h:h:h:h}
 source "$ROOT/lib/scratch.zsh"
 typeset -gr ENDPOINT=https://chatgpt.com/backend-api/codex/responses
 unset SHELLFISH_API_KEY SHELLFISH_RESPONSES_ACCOUNT_ID
@@ -87,5 +87,5 @@ done <<<"$credentials"
 
 SHELLFISH_API_KEY=$access_token SHELLFISH_RESPONSES_ACCOUNT_ID=$account_id \
   SHELLFISH_API_KEY_SOURCE='Codex CLI login' \
-  "$ROOT/default/backends/openai-responses/run" <"$prepared_file"
+  "$ROOT/share/default/backends/openai-responses/run" <"$prepared_file"
 unset access_token account_id credentials

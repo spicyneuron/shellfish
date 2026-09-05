@@ -10,8 +10,8 @@ sf_config_fail() {
 
 sf_config_init_private() {
   local requested_config=$1 sandbox=${2-} config_path dir home=${HOME-} json_line line
-  local env_example="$SF_ROOT/template/example.env"
-  local read_json template="$SF_ROOT/template/shellfish.jsonc" temp write_json
+  local env_example="$SF_SHARE/template/example.env"
+  local read_json template="$SF_SHARE/template/shellfish.jsonc" temp write_json
   integer replaced=0
 
   SF_CONFIG_ERROR=''

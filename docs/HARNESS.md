@@ -8,7 +8,7 @@ Harnesses are resolved when a session is created and stored in its header. Chang
 
 ## Default coding harness
 
-The bundled `default` harness is intentionally small. It provides project context, general-purpose tools, interactive commands, and conservative sandboxing. Its complete configuration lives in [`default/shellfish.jsonc`](../default/shellfish.jsonc).
+The bundled `default` harness is intentionally small. It provides project context, general-purpose tools, interactive commands, and conservative sandboxing. Its complete configuration lives in [`share/default/shellfish.jsonc`](../share/default/shellfish.jsonc).
 
 ### System prompt
 
@@ -17,7 +17,7 @@ The system prompt is a profile field, not a harness field. The bundled `default`
 - `general.md` defines communication and context-handling conventions.
 - `tools.md` defines tool-use conventions.
 
-These files live under `default/system/`; a user configuration can select different files or shadow bundled files by name. They are read in order, stripped of trailing newlines, and joined with a blank line into the session's single durable system record. Resolved paths are stored in the session header, and creating a new session from an existing one rematerializes those frozen paths.
+These files live under `share/default/system/`; a user configuration can select different files or shadow bundled files by name. They are read in order, stripped of trailing newlines, and joined with a blank line into the session's single durable system record. Resolved paths are stored in the session header, and creating a new session from an existing one rematerializes those frozen paths.
 
 ### Tools
 
@@ -47,7 +47,7 @@ This context becomes part of the durable initial session prefix. It is collected
 
 The `project_environment` and `git_awareness` probes share a one-second wall-clock budget so session startup stays fast, and report no context when a host exceeds it. Set `SHELLFISH_PROBE_BUDGET` to a positive number of seconds to raise it on a slow host; other values are ignored.
 
-Skills are discovered in descending precedence from `./.agents/skills/`, the resolved configuration directory's `skills/`, `~/.agents/skills/`, and bundled `default/skills/`. Each skill directory contains a `SKILL.md` whose frontmatter supplies its matching `name` and `description`. Invalid skills and skills with `disable-model-invocation: true` are unavailable to the model. The advertised catalog is recorded when the session is created; the `skill` tool reads the selected file when invoked.
+Skills are discovered in descending precedence from `./.agents/skills/`, the resolved configuration directory's `skills/`, `~/.agents/skills/`, and bundled `share/default/skills/`. Each skill directory contains a `SKILL.md` whose frontmatter supplies its matching `name` and `description`. Invalid skills and skills with `disable-model-invocation: true` are unavailable to the model. The advertised catalog is recorded when the session is created; the `skill` tool reads the selected file when invoked.
 
 ### Interactive commands
 

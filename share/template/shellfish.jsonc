@@ -1,9 +1,9 @@
 // Shellfish config
 //
 // Full reference:
-// https://github.com/spicyneuron/shellfish/blob/main/default/shellfish.jsonc
+// https://github.com/spicyneuron/shellfish/blob/main/share/default/shellfish.jsonc
 {
-  "$schema": "https://raw.githubusercontent.com/spicyneuron/shellfish/refs/heads/main/shellfish.schema.json",
+  "$schema": "https://raw.githubusercontent.com/spicyneuron/shellfish/refs/heads/main/share/shellfish.schema.json",
 
   "default_profile": "default",
 

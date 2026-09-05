@@ -81,7 +81,7 @@ class Session:
             hook_dir.mkdir(parents=True)
             for name, body in hooks.items():
                 # A bodyless entry names a bundled script: with nothing written
-                # here the reference falls through to default/hooks, so the
+                # here the reference falls through to share/default/hooks, so the
                 # shipped script runs rather than a copy that could drift from it.
                 if body is None:
                     continue

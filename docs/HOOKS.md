@@ -4,7 +4,7 @@ Hooks are named lifecycle extension points. Each hook runs an ordered list of sc
 
 The lifecycle hooks may look familiar to users of Claude Code and Codex, but compatibility is not a goal. Shellfish hook scripts use shell primitives: argv and stdin for input, stdout and stderr for output, fd 3 for structured control, and exit status for flow control. Any overlap is incidental and is not guaranteed.
 
-Bundled scripts and your own scripts use the same contract. The scripts in `default/hooks/` are the best reference.
+Bundled scripts and your own scripts use the same contract. The scripts in `share/default/hooks/` are the best reference.
 
 ## Lifecycle and ownership
 
@@ -57,9 +57,9 @@ Reference resolution, most-specific first:
 
 1. an absolute path;
 2. `~/...` against `$HOME`;
-3. a relative path under `<config-dir>/hooks/<hook>/`, falling back to `default/hooks/<hook>/`.
+3. a relative path under `<config-dir>/hooks/<hook>/`, falling back to `share/default/hooks/<hook>/`.
 
-So `"project_environment"` resolves to the `project_environment` script at `default/hooks/session_start/project_environment` unless you shadow it with `~/.config/shellfish/hooks/session_start/project_environment`. Hook references must resolve to executable files. Resolved component paths are stored in the session header, so later configuration changes do not reinterpret an existing session.
+So `"project_environment"` resolves to the `project_environment` script at `share/default/hooks/session_start/project_environment` unless you shadow it with `~/.config/shellfish/hooks/session_start/project_environment`. Hook references must resolve to executable files. Resolved component paths are stored in the session header, so later configuration changes do not reinterpret an existing session.
 
 ## The hook script contract
 

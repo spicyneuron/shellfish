@@ -10,7 +10,7 @@ export SHELLFISH_PROBE_BUDGET=30
 
 # Short bundled probes preserve command results and share an absolute deadline.
 (
-  source "$ROOT/default/lib/capped.zsh"
+  source "$ROOT/share/default/lib/capped.zsh"
   zmodload zsh/datetime
   typeset -F capped_deadline
   integer capped_status=0
@@ -33,7 +33,7 @@ export SHELLFISH_PROBE_BUDGET=30
   [[ ! -e $tmp/capped-called ]]
 )
 
-typeset environment_script="$ROOT/default/hooks/session_start/project_environment"
+typeset environment_script="$ROOT/share/default/hooks/session_start/project_environment"
 typeset environment_bin="$tmp/environment-bin"
 typeset environment_output
 mkdir "$environment_bin"
@@ -48,8 +48,8 @@ environment_output=$(PATH="$environment_bin:$PATH" zsh -f "$environment_script" 
 
 # Git awareness establishes state only after a fast, successful startup probe.
 # Later prompt probes report each branch or detached-commit transition once.
-typeset git_start="$ROOT/default/hooks/session_start/git_awareness"
-typeset git_prompt="$ROOT/default/hooks/user_prompt_submit/git_awareness"
+typeset git_start="$ROOT/share/default/hooks/session_start/git_awareness"
+typeset git_prompt="$ROOT/share/default/hooks/user_prompt_submit/git_awareness"
 typeset git_bin="$tmp/git-awareness-bin" git_state="$tmp/git-state"
 typeset git_cache="$tmp/git_awareness" git_output
 mkdir "$git_bin"
@@ -128,7 +128,7 @@ GIT_MARKER="$tmp/git-called" PATH="$git_bin:$PATH" SHELLFISH_SESSION_STATE="$tmp
 
 # Shell command reporting is best-effort, selects the first candidate with a
 # usable version, and emits one separately attributed creation context.
-typeset shell_commands_script="$ROOT/default/hooks/session_start/shell_commands"
+typeset shell_commands_script="$ROOT/share/default/hooks/session_start/shell_commands"
 typeset shell_commands_bin="$tmp/shell-commands-bin"
 typeset shell_commands_output shell_commands_rows shell_commands_session="$tmp/shell-commands-session.jsonl"
 mkdir "$shell_commands_bin"
@@ -193,17 +193,17 @@ typeset help_session="$tmp/help-session.jsonl"
 make_script after_help ': >"$SHELLFISH_TURN_STATE/after-help"'
 typeset after_help=$script
 SF_TEST_RUNTIME=$(jq -c \
-  --arg help "$ROOT/default/hooks/user_prompt_submit/help" \
-  --arg new "$ROOT/default/hooks/user_prompt_submit/new" \
-  --arg refresh "$ROOT/default/hooks/user_prompt_submit/refresh" \
-  --arg verbose "$ROOT/default/hooks/user_prompt_submit/verbose" \
-  --arg copy "$ROOT/default/hooks/user_prompt_submit/copy" \
-  --arg fork "$ROOT/default/hooks/user_prompt_submit/fork" \
-  --arg sandbox "$ROOT/default/hooks/user_prompt_submit/sandbox" \
-  --arg user_shell "$ROOT/default/hooks/user_prompt_submit/user_shell" \
-  --arg server "$ROOT/default/hooks/user_prompt_submit/server" \
-  --arg resume "$ROOT/default/hooks/user_prompt_submit/resume" \
-  --arg compact "$ROOT/default/hooks/user_prompt_submit/compact" \
+  --arg help "$ROOT/share/default/hooks/user_prompt_submit/help" \
+  --arg new "$ROOT/share/default/hooks/user_prompt_submit/new" \
+  --arg refresh "$ROOT/share/default/hooks/user_prompt_submit/refresh" \
+  --arg verbose "$ROOT/share/default/hooks/user_prompt_submit/verbose" \
+  --arg copy "$ROOT/share/default/hooks/user_prompt_submit/copy" \
+  --arg fork "$ROOT/share/default/hooks/user_prompt_submit/fork" \
+  --arg sandbox "$ROOT/share/default/hooks/user_prompt_submit/sandbox" \
+  --arg user_shell "$ROOT/share/default/hooks/user_prompt_submit/user_shell" \
+  --arg server "$ROOT/share/default/hooks/user_prompt_submit/server" \
+  --arg resume "$ROOT/share/default/hooks/user_prompt_submit/resume" \
+  --arg compact "$ROOT/share/default/hooks/user_prompt_submit/compact" \
   --arg after_help "$after_help" \
   '.harness.sandbox=true |
    .harness.user_prompt_submit=[$new,$refresh,$verbose,$copy,$fork,$sandbox,$user_shell,$server,$resume,$compact,$help,$after_help]' \
@@ -263,13 +263,13 @@ set_prompt_hook() {
   return $rc
 }
 
-set_prompt_hook "$help_session" "$ROOT/default/hooks/user_prompt_submit/refresh"
+set_prompt_hook "$help_session" "$ROOT/share/default/hooks/user_prompt_submit/refresh"
 run_prompt_hook /refresh "$help_session"
 [[ $reply[1] == handoff && $reply[2] == "$ROOT/bin/shellfish" &&
    $reply[3] == --clear && $reply[4] == --session && $reply[5] == "${help_session:A}" ]]
 
 # /verbose reloads the same session and toggles the preview limits.
-set_prompt_hook "$help_session" "$ROOT/default/hooks/user_prompt_submit/verbose"
+set_prompt_hook "$help_session" "$ROOT/share/default/hooks/user_prompt_submit/verbose"
 unset SHELLFISH_VERBOSE
 run_prompt_hook /verbose "$help_session"
 [[ $reply[1] == handoff && $reply[2] == "$ROOT/bin/shellfish" &&
@@ -279,12 +279,12 @@ SHELLFISH_VERBOSE=1 run_prompt_hook /verbose "$help_session"
 [[ $reply[1] == handoff && $reply[2] == "$ROOT/bin/shellfish" &&
    $reply[3] == --clear && $reply[4] == --session && $reply[5] == "${help_session:A}" ]]
 
-set_prompt_hook "$help_session" "$ROOT/default/hooks/user_prompt_submit/server"
+set_prompt_hook "$help_session" "$ROOT/share/default/hooks/user_prompt_submit/server"
 run_prompt_hook /server "$help_session"
 [[ $reply[1] == handoff && $reply[2] == shellfish-server &&
    $reply[3] == --session && $reply[4] == "${help_session:A}" ]]
 
-set_prompt_hook "$help_session" "$ROOT/default/hooks/user_prompt_submit/resume"
+set_prompt_hook "$help_session" "$ROOT/share/default/hooks/user_prompt_submit/resume"
 run_prompt_hook /resume "$help_session"
 [[ $reply[1] == handoff && $reply[2] == "$ROOT/bin/shellfish" &&
    $reply[3] == --resume ]]
@@ -292,7 +292,7 @@ run_prompt_hook /resume "$help_session"
 # /sandbox lists grants or requests a minimal in-place runtime update.
 typeset sandbox_display='' sandbox_patch sandbox_dir="$tmp/output with spaces"
 mkdir "$sandbox_dir"
-set_prompt_hook "$help_session" "$ROOT/default/hooks/user_prompt_submit/sandbox"
+set_prompt_hook "$help_session" "$ROOT/share/default/hooks/user_prompt_submit/sandbox"
 run_prompt_hook /sandbox "$help_session"
 [[ $reply[1] == handled ]]
 for (( result_index = 4; result_index <= ${#SF_HOOK_SCRIPT_RESULTS}; result_index += 5 )); do
@@ -329,7 +329,7 @@ sf_hooks_turn_state_cleanup
 sf_test_session "$disabled_session"
 SF_TEST_RUNTIME=$enabled_runtime
 sf_hooks_turn_state_create
-set_prompt_hook "$disabled_session" "$ROOT/default/hooks/user_prompt_submit/sandbox"
+set_prompt_hook "$disabled_session" "$ROOT/share/default/hooks/user_prompt_submit/sandbox"
 run_prompt_hook "/sandbox +r $sandbox_dir" "$disabled_session"
 [[ $reply[1] == handled ]]
 sandbox_display=''
@@ -351,7 +351,7 @@ jq -c '
 ' "$SF_TEST_SESSIONS/complete.jsonl" >"$fork_session"
 SHELLFISH_EXECUTABLE="$ROOT/bin/shellfish" \
   SHELLFISH_SESSION="$fork_session" SHELLFISH_TURN_STATE="$tmp" \
-  zsh -f "$ROOT/default/hooks/user_prompt_submit/fork" user_prompt_submit \
+  zsh -f "$ROOT/share/default/hooks/user_prompt_submit/fork" user_prompt_submit \
   3>"$fork_control" < <(print -n -- '/fork 1') || fork_status=$?
 (( fork_status == 11 ))
 jq -e --arg command "$ROOT/bin/shellfish" \
@@ -364,7 +364,7 @@ jq -e --arg command "$ROOT/bin/shellfish" \
 fork_status=0
 SHELLFISH_EXECUTABLE="$ROOT/bin/shellfish" \
   SHELLFISH_SESSION="$fork_session" SHELLFISH_TURN_STATE="$tmp" \
-  zsh -f "$ROOT/default/hooks/user_prompt_submit/fork" user_prompt_submit \
+  zsh -f "$ROOT/share/default/hooks/user_prompt_submit/fork" user_prompt_submit \
   3>"$fork_control" < <(print -n -- /fork) || fork_status=$?
 (( fork_status == 11 ))
 jq -e --arg command "$ROOT/bin/shellfish" \
@@ -384,13 +384,13 @@ print -r -- '{"type":"message","role":"user","content":[{"type":"text","text":"S
 print -r -- '{"type":"message","role":"assistant","stop":"end","content":[{"type":"text","text":"Answer"},{"type":"text","text":"Continued\n\n"}],"usage":{"input_tokens":1,"output_tokens":1}}' >>"$copy_session"
 integer copy_status=0
 COPY_OUTPUT="$copy_output" PATH="$copy_bin:$PATH" SHELLFISH_SESSION="$copy_session" \
-  SHELLFISH_TURN_STATE="$tmp" zsh -f "$ROOT/default/hooks/user_prompt_submit/copy" \
+  SHELLFISH_TURN_STATE="$tmp" zsh -f "$ROOT/share/default/hooks/user_prompt_submit/copy" \
   user_prompt_submit < <(print -n -- '/copy 1') || copy_status=$?
 (( copy_status == 10 ))
 assert_equal Hello "$(<$copy_output)"
 copy_status=0
 COPY_OUTPUT="$copy_output" PATH="$copy_bin:$PATH" SHELLFISH_SESSION="$copy_session" \
-  SHELLFISH_TURN_STATE="$tmp" zsh -f "$ROOT/default/hooks/user_prompt_submit/copy" \
+  SHELLFISH_TURN_STATE="$tmp" zsh -f "$ROOT/share/default/hooks/user_prompt_submit/copy" \
   user_prompt_submit < <(print -n -- /copy) || copy_status=$?
 (( copy_status == 10 ))
 print -n -- $'Answer\n\nContinued\n\n' >"$tmp/copy-expected"
@@ -401,7 +401,7 @@ integer fork_number=1
 for target in 2 3; do
   fork_status=0
   SHELLFISH_EXECUTABLE="$ROOT/bin/shellfish" SHELLFISH_SESSION="$copy_session" \
-    SHELLFISH_TURN_STATE="$tmp" zsh -f "$ROOT/default/hooks/user_prompt_submit/fork" \
+    SHELLFISH_TURN_STATE="$tmp" zsh -f "$ROOT/share/default/hooks/user_prompt_submit/fork" \
     user_prompt_submit 3>"$fork_control" < <(print -n -- "/fork $target") || fork_status=$?
   (( fork_status == 11 ))
   jq -e --arg draft Second \
@@ -415,7 +415,7 @@ done
 # status separately from the script's skip status.
 typeset shell_session="$tmp/shell-session.jsonl"
 SF_TEST_RUNTIME=$(jq -c \
-  --arg script "$ROOT/default/hooks/user_prompt_submit/user_shell" \
+  --arg script "$ROOT/share/default/hooks/user_prompt_submit/user_shell" \
   '.harness.user_prompt_submit=[$script]' <<<"$SF_TEST_RUNTIME")
 sf_test_session "$shell_session"
 sf_session_begin_turn "$shell_session"
@@ -438,7 +438,7 @@ assert_no_hook_captures
 
 # Compaction is one hook invocation that composes the read-only request commands,
 # publishes a canonical child, and returns an ordinary handoff.
-typeset compact_hook="$ROOT/default/hooks/user_prompt_submit/compact"
+typeset compact_hook="$ROOT/share/default/hooks/user_prompt_submit/compact"
 typeset compact_source="$tmp/compact-source.jsonl"
 typeset compact_control="$tmp/compact-control.json"
 typeset compact_shellfish="$tmp/compact-shellfish"
@@ -483,7 +483,7 @@ jq -e --arg command "$ROOT/bin/shellfish" \
 ' "$compact_control" >/dev/null || fail 'automatic compaction lost the prompt'
 assert_equal "$compact_before" "$(shasum <"$compact_source")"
 jq -e '.tools == []' "$compact_request" >/dev/null || fail 'compaction exposed tools'
-jq -e --rawfile prompt "$ROOT/default/hooks/user_prompt_submit/compact.md" '
+jq -e --rawfile prompt "$ROOT/share/default/hooks/user_prompt_submit/compact.md" '
   ($prompt | rtrimstr("\n")) as $prompt |
   ("<compaction_request>\n\n" + $prompt + "\n\n## Summary budget\n\n") as $prefix |
   "\n\n</compaction_request>" as $suffix |

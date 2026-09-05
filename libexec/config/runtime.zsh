@@ -110,7 +110,7 @@ sf_runtime_reference() {
   elif [[ -n $base && ( -e $base/$kind/$reference || -L $base/$kind/$reference ) ]]; then
     candidate="$base/$kind/$reference"
   else
-    candidate="$SF_ROOT/default/$kind/$reference"
+    candidate="$SF_SHARE/default/$kind/$reference"
   fi
   REPLY=${candidate:A}
 }
@@ -160,7 +160,7 @@ sf_runtime_resolve_from_config() {
   REPLY=''
   sf_runtime_config_path "$requested_config"
   config_path=$REPLY
-  defaults=$(sf_runtime_read_jsonc "$SF_ROOT/default/shellfish.jsonc" 2>/dev/null) || {
+  defaults=$(sf_runtime_read_jsonc "$SF_SHARE/default/shellfish.jsonc" 2>/dev/null) || {
     sf_runtime_fail 'invalid bundled config'
     return
   }
@@ -379,7 +379,7 @@ sf_runtime_restore_presentation() {
   SF_PRESENTATION=''
   sf_runtime_config_path "$requested_config"
   config_path=$REPLY
-  defaults=$(sf_runtime_read_jsonc "$SF_ROOT/default/shellfish.jsonc" 2>/dev/null) || {
+  defaults=$(sf_runtime_read_jsonc "$SF_SHARE/default/shellfish.jsonc" 2>/dev/null) || {
     sf_runtime_fail 'invalid bundled config'
     return
   }

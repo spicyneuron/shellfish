@@ -4,7 +4,7 @@ emulate -R zsh
 setopt err_exit no_aliases no_multios pipe_fail
 umask 077
 
-typeset -gr ROOT=${0:A:h:h:h:h}
+typeset -gr ROOT=${0:A:h:h:h:h:h}
 typeset -gr ENDPOINT=https://chatgpt.com/backend-api/codex/responses
 unset SHELLFISH_API_KEY SHELLFISH_API_KEY_SOURCE
 

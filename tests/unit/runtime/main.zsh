@@ -54,12 +54,12 @@ jq -e '. == {
 
 sf_runtime_resolve_from_config "$config" '' 'cli-model' '{"temperature":0.7,"seed":4}'
 runtime=$REPLY
-jq -e --arg command "$ROOT/default/backends/openai/run" '
+jq -e --arg command "$ROOT/share/default/backends/openai/run" '
   .profile.request == {model:"cli-model",temperature:0.7,seed:4} and
   .profile.context_window == 128000 and
   .backend.name == "custom" and
   .backend.command == $command and
-  (.backend.context_window_command | endswith("/default/backends/openai/context_window")) and
+  (.backend.context_window_command | endswith("/share/default/backends/openai/context_window")) and
   (.backend.env_file | endswith("/config/.env")) and
   .backend.endpoint == "https://api.openai.com/v1/chat/completions" and
   .backend.api_key_env == "OPENAI_API_KEY" and
@@ -76,7 +76,7 @@ sf_runtime_resolve_from_config "$config" '' 'cli-model' '{}' custom-responses
 jq -e '
   .backend.name == "custom-responses" and
   (.backend.context_window_command |
-    endswith("/default/backends/openai-responses/context_window"))
+    endswith("/share/default/backends/openai-responses/context_window"))
 ' <<<"$REPLY" >/dev/null
 jq -e '
   .theme_mode == "light" and .theme_light == "light" and
@@ -87,9 +87,9 @@ jq -e '
 print -r -- '{}' >"$tmp/config/empty.jsonc"
 sf_runtime_resolve_from_config "$tmp/config/empty.jsonc" '' 'default-model' '{}' \
   "$ROOT/tests/fixtures/backend"
-jq -e --arg root "$ROOT/default/hooks/session_start" \
-  --arg prompt_root "$ROOT/default/hooks/user_prompt_submit" \
-  --arg tools "$ROOT/default/tools" '
+jq -e --arg root "$ROOT/share/default/hooks/session_start" \
+  --arg prompt_root "$ROOT/share/default/hooks/user_prompt_submit" \
+  --arg tools "$ROOT/share/default/tools" '
   .harness.session_start == [
     ($root + "/project_environment"),
     ($root + "/git_awareness"),
@@ -112,7 +112,7 @@ jq -e --arg root "$ROOT/default/hooks/session_start" \
 sf_runtime_resolve_from_config "$tmp/config/empty.jsonc" '' 'gpt-codex-test' '{}' codex
 jq -e '
   .backend.name == "codex" and
-  (.backend.context_window_command | endswith("/default/backends/codex/context_window"))
+  (.backend.context_window_command | endswith("/share/default/backends/codex/context_window"))
 ' <<<"$REPLY" >/dev/null
 
 # Runtime resolution gives new and existing sessions the same boundary.
@@ -381,10 +381,10 @@ if sf_runtime_resolve_from_config "$tmp/config/system.jsonc" '' '' '{}' \
 fi
 
 # The template's readonly profile resolves its bundled nested prompt.
-sf_runtime_read_jsonc "$ROOT/template/shellfish.jsonc" >"$tmp/config/readonly.jsonc"
+sf_runtime_read_jsonc "$ROOT/share/template/shellfish.jsonc" >"$tmp/config/readonly.jsonc"
 sf_runtime_resolve_from_config "$tmp/config/readonly.jsonc" 'readonly' 'm' '{}' \
   "$ROOT/tests/fixtures/backend"
-jq -e --arg path "$ROOT/default/system/readonly.md" \
+jq -e --arg path "$ROOT/share/default/system/readonly.md" \
   '.profile.system == [$path]' <<<"$REPLY" >/dev/null
 
 cat >"$tmp/config/missing-hook.jsonc" <<'JSON'
@@ -402,11 +402,11 @@ fi
 # A configured script wins over a bundled script with the same name. Removing it
 # exercises bundled fallback. Use an isolated root so this adds no production
 # script.
-mkdir -p "$tmp/root/default/hooks/stop"
+mkdir -p "$tmp/root/share/default/hooks/stop"
 ln -s "$ROOT/lib" "$tmp/root/lib"
-ln -s "$ROOT/default/shellfish.jsonc" "$tmp/root/default/shellfish.jsonc"
-print -r -- '#!/bin/sh' >"$tmp/root/default/hooks/stop/bundled"
-chmod +x "$tmp/root/default/hooks/stop/bundled"
+ln -s "$ROOT/share/default/shellfish.jsonc" "$tmp/root/share/default/shellfish.jsonc"
+print -r -- '#!/bin/sh' >"$tmp/root/share/default/hooks/stop/bundled"
+chmod +x "$tmp/root/share/default/hooks/stop/bundled"
 mkdir -p "$tmp/hooks/stop"
 print -r -- '#!/bin/sh' >"$tmp/hooks/stop/bundled"
 chmod +x "$tmp/hooks/stop/bundled"
@@ -417,14 +417,16 @@ cat >"$tmp/bundled.jsonc" <<'JSON'
 }
 JSON
 SF_ROOT="$tmp/root"
+SF_SHARE="$tmp/root/share"
 sf_runtime_resolve_from_config "$tmp/bundled.jsonc" '' '' '{}' "$ROOT/tests/fixtures/backend"
 jq -e --arg path "${tmp:A}/hooks/stop/bundled" \
   '.harness.stop == [$path]' <<<"$REPLY" >/dev/null
 rm -f -- "$tmp/hooks/stop/bundled"
 sf_runtime_resolve_from_config "$tmp/bundled.jsonc" '' '' '{}' "$ROOT/tests/fixtures/backend"
-jq -e --arg path "${tmp:A}/root/default/hooks/stop/bundled" \
+jq -e --arg path "${tmp:A}/root/share/default/hooks/stop/bundled" \
   '.harness.stop == [$path]' <<<"$REPLY" >/dev/null
 SF_ROOT=$ROOT
+SF_SHARE=$ROOT/share
 
 # Tool references resolve to executable and settings paths with manifests in configured order.
 mkdir -p "$tmp/config/tools"

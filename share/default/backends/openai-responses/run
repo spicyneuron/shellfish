@@ -4,8 +4,8 @@ emulate -R zsh
 setopt err_exit no_aliases no_multios pipe_fail
 umask 077
 
-typeset -gr ROOT=${0:A:h:h:h:h}
-source "$ROOT/default/backends/_backend.zsh"
+typeset -gr ROOT=${0:A:h:h:h:h:h}
+source "$ROOT/share/default/backends/_backend.zsh"
 
 api_key=${SHELLFISH_API_KEY-}
 account_id=${SHELLFISH_RESPONSES_ACCOUNT_ID-}

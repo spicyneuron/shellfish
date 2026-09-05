@@ -52,8 +52,14 @@ for dir in $ROOT/libexec/*(/N); do
   collect '\$SF_ROOT/[^"'\'' ]+' $shell_files $jq_files
   for token in $matches; do
     module=${token#\$SF_ROOT/}
-    [[ $module == (libexec/$component/*|bin/shellfish|lib/*|default/*|template/*) ]] ||
+    [[ $module == (libexec/$component/*|bin/shellfish|lib/*|share) ]] ||
       fail "$component uses a file it does not own: $module"
+  done
+  collect '\$SF_SHARE/[^"'\'' ]+' $shell_files $jq_files
+  for token in $matches; do
+    module=${token#\$SF_SHARE/}
+    [[ $module == (default/*|template/*) ]] ||
+      fail "$component uses unknown shared data: $module"
   done
 
   # 2. jq includes resolve to canonical definitions or the component's own.

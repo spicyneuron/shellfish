@@ -38,9 +38,9 @@ typeset init_config="$init_home/config/shellfish/shellfish.jsonc"
     zsh -f "$entry" config --init >/dev/null
 ) || fail 'config init failed'
 [[ -f $init_config ]] || fail 'config init did not create the default path'
-cmp -s "$ROOT/template/shellfish.jsonc" "$init_config" || fail 'config init did not copy the template'
+cmp -s "$ROOT/share/template/shellfish.jsonc" "$init_config" || fail 'config init did not copy the template'
 typeset init_dir=${init_config:h}
-cmp -s "$ROOT/template/example.env" "$init_dir/example.env" || \
+cmp -s "$ROOT/share/template/example.env" "$init_dir/example.env" || \
   fail 'config init did not copy the environment example'
 assert_equal 700 "$(file_mode "$init_dir")" 'config init did not protect the config directory'
 assert_equal 600 "$(file_mode "$init_config")" 'config init did not protect the config file'
@@ -69,7 +69,7 @@ chmod 750 "${custom_config:h}/system"
 chmod 640 "${custom_config:h}/example.env"
 zsh -f "$entry" config --init --config "$custom_config" >/dev/null || \
   fail 'config init with an explicit path failed'
-cmp -s "$ROOT/template/shellfish.jsonc" "$custom_config" || \
+cmp -s "$ROOT/share/template/shellfish.jsonc" "$custom_config" || \
   fail 'config init did not use the explicit path'
 grep -qxF 'KEEP=1' "${custom_config:h}/example.env" || \
   fail 'config init overwrote an existing environment example'

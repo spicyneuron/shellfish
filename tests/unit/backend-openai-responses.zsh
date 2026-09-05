@@ -3,8 +3,8 @@
 source "${0:A:h:h}/_helpers.zsh"
 
 sf_test_tmp backend-openai-responses
-typeset run="$ROOT/default/backends/openai-responses/run"
-typeset codex_context_window="$ROOT/default/backends/codex/context_window"
+typeset run="$ROOT/share/default/backends/openai-responses/run"
+typeset codex_context_window="$ROOT/share/default/backends/codex/context_window"
 typeset req="$tmp/request.json"
 typeset res="$tmp/output.jsonl"
 

@@ -5,6 +5,7 @@ setopt err_exit no_aliases no_bg_nice no_multios pipe_fail
 
 typeset -gr ROOT=${${(%):-%x}:A:h:h}
 typeset -g SF_ROOT=$ROOT
+typeset -g SF_SHARE=$ROOT/share
 typeset -gr SF_TEST_SESSIONS=$ROOT/tests/fixtures/session
 typeset -gr SF_TEST_BACKEND=$ROOT/tests/fixtures/backend/run
 typeset -g tmp=''
@@ -69,7 +70,7 @@ fail() {
 
 # Frozen runtime used by tool and exec tests. Optional system-file path.
 sf_test_runtime() {
-  local system=${1-} tool=$ROOT/default/tools/shell
+  local system=${1-} tool=$ROOT/share/default/tools/shell
   typeset -g SF_TEST_RUNTIME
   SF_TEST_RUNTIME=$(jq -cn \
     --arg command "$SF_TEST_BACKEND" \

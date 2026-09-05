@@ -5,7 +5,7 @@ sf_test_source lib/session/main.zsh libexec/run/hooks.zsh libexec/run/tools.zsh
 
 sf_test_tmp tools
 typeset session="$tmp/session.jsonl"
-typeset tool_dir="$ROOT/default/tools/shell"
+typeset tool_dir="$ROOT/share/default/tools/shell"
 sf_test_runtime
 sf_test_session "$session"
 SF_SESSION_PATH=$session
@@ -43,7 +43,7 @@ ZSH
 chmod +x "$tmp/jina-bin/curl"
 typeset jina_args="$tmp/jina.args" jina_output
 jina_output=$(PATH="$tmp/jina-bin:$PATH" JINA_TEST_ARGS="$jina_args" \
-  "$ROOT/default/tools/fetch_url/run" <<<'{"url":"https://example.com/docs?q=reader"}')
+  "$ROOT/share/default/tools/fetch_url/run" <<<'{"url":"https://example.com/docs?q=reader"}')
 assert_equal '# fetched markdown' "$jina_output"
 typeset -a expected_jina_args=(
   --disable --silent --show-error --fail-with-body --connect-timeout 10 --max-time 60
@@ -52,15 +52,15 @@ typeset -a expected_jina_args=(
 )
 assert_equal "${(F)expected_jina_args}" "$(<"$jina_args")"
 if PATH="$tmp/jina-bin:$PATH" JINA_TEST_ARGS="$jina_args" \
-    "$ROOT/default/tools/fetch_url/run" <<<'{"url":"file:///etc/passwd"}' >/dev/null 2>&1; then
+    "$ROOT/share/default/tools/fetch_url/run" <<<'{"url":"file:///etc/passwd"}' >/dev/null 2>&1; then
   fail 'fetch_url accepted a non-HTTP URL'
 fi
 if PATH="$tmp/jina-bin:$PATH" JINA_TEST_ARGS="$jina_args" \
-    "$ROOT/default/tools/fetch_url/run" <<<'{"url":"https://example.com","extra":true}' >/dev/null 2>&1; then
+    "$ROOT/share/default/tools/fetch_url/run" <<<'{"url":"https://example.com","extra":true}' >/dev/null 2>&1; then
   fail 'fetch_url accepted an unknown input field'
 fi
 if PATH="$tmp/jina-bin:$PATH" JINA_TEST_ARGS="$jina_args" JINA_TEST_STATUS=22 \
-    "$ROOT/default/tools/fetch_url/run" <<<'{"url":"https://example.com"}' >/dev/null 2>&1; then
+    "$ROOT/share/default/tools/fetch_url/run" <<<'{"url":"https://example.com"}' >/dev/null 2>&1; then
   fail 'fetch_url hid a curl failure'
 fi
 jq -e '
@@ -68,7 +68,7 @@ jq -e '
   .network.allowLocalBinding == false and
   .network.allowLocalOutbound == false and
   .filesystem.defaultDenyRead == true
-' "$ROOT/default/tools/fetch_url/fence.jsonc" >/dev/null
+' "$ROOT/share/default/tools/fetch_url/fence.jsonc" >/dev/null
 
 # The web search tool makes one fixed anonymous MCP call and decodes its SSE result.
 mkdir "$tmp/exa-bin"
@@ -88,7 +88,7 @@ ZSH
 chmod +x "$tmp/exa-bin/curl"
 typeset exa_args="$tmp/exa.args" exa_output
 exa_output=$(PATH="$tmp/exa-bin:$PATH" EXA_TEST_ARGS="$exa_args" \
-  "$ROOT/default/tools/search_web/run" \
+  "$ROOT/share/default/tools/search_web/run" \
   <<<'{"query":"current shellfish CLI documentation","num_results":3}')
 assert_equal '# search result' "$exa_output"
 typeset -a expected_exa_args=(
@@ -103,22 +103,22 @@ typeset -a expected_exa_args=(
 )
 assert_equal "${(F)expected_exa_args}" "$(<"$exa_args")"
 if PATH="$tmp/exa-bin:$PATH" EXA_TEST_ARGS="$exa_args" \
-    "$ROOT/default/tools/search_web/run" \
+    "$ROOT/share/default/tools/search_web/run" \
     <<<'{"query":"docs","num_results":1.5}' >/dev/null 2>&1; then
   fail 'search_web accepted a fractional result count'
 fi
 if PATH="$tmp/exa-bin:$PATH" EXA_TEST_ARGS="$exa_args" \
-    "$ROOT/default/tools/search_web/run" \
+    "$ROOT/share/default/tools/search_web/run" \
     <<<'{"query":"docs","extra":true}' >/dev/null 2>&1; then
   fail 'search_web accepted an unknown input field'
 fi
 typeset exa_error='{"jsonrpc":"2.0","id":1,"error":{"code":-32000,"message":"rate limited"}}'
 if PATH="$tmp/exa-bin:$PATH" EXA_TEST_ARGS="$exa_args" EXA_TEST_RESPONSE="$exa_error" \
-    "$ROOT/default/tools/search_web/run" <<<'{"query":"docs"}' >/dev/null 2>&1; then
+    "$ROOT/share/default/tools/search_web/run" <<<'{"query":"docs"}' >/dev/null 2>&1; then
   fail 'search_web accepted an MCP error response'
 fi
 if PATH="$tmp/exa-bin:$PATH" EXA_TEST_ARGS="$exa_args" EXA_TEST_STATUS=22 \
-    "$ROOT/default/tools/search_web/run" <<<'{"query":"docs"}' >/dev/null 2>&1; then
+    "$ROOT/share/default/tools/search_web/run" <<<'{"query":"docs"}' >/dev/null 2>&1; then
   fail 'search_web hid a curl failure'
 fi
 jq -e '
@@ -126,7 +126,7 @@ jq -e '
   .network.allowLocalBinding == false and
   .network.allowLocalOutbound == false and
   .filesystem.defaultDenyRead == true
-' "$ROOT/default/tools/search_web/fence.jsonc" >/dev/null
+' "$ROOT/share/default/tools/search_web/fence.jsonc" >/dev/null
 
 # Tool execution preserves the caller's home in its otherwise clean environment.
 load_tools "$stored_runtime"
@@ -214,10 +214,10 @@ sf_tool_needs_permission shell \
 
 # Bundled file tools load together and return bounded content or framework diffs.
 typeset file_runtime=$(jq -cn --argjson base "$stored_runtime" \
-  --arg root "$ROOT/default/tools" \
-  --slurpfile read "$ROOT/default/tools/read_file/tool.json" \
-  --slurpfile edit "$ROOT/default/tools/edit_file/tool.json" \
-  --slurpfile write "$ROOT/default/tools/write_file/tool.json" '
+  --arg root "$ROOT/share/default/tools" \
+  --slurpfile read "$ROOT/share/default/tools/read_file/tool.json" \
+  --slurpfile edit "$ROOT/share/default/tools/edit_file/tool.json" \
+  --slurpfile write "$ROOT/share/default/tools/write_file/tool.json" '
     $base | .harness.tools = [
       {name:"read_file",command:($root + "/read_file/run"),
        settings:(if $read[0].sandbox then ($root + "/read_file/fence.jsonc") else null end),manifest:$read[0]},
@@ -229,7 +229,7 @@ typeset file_runtime=$(jq -cn --argjson base "$stored_runtime" \
 for policy in edit_file write_file; do
   jq -e '.filesystem.denyWrite |
     all(.[]; test("^/(private/)?var/(tmp|folders)/") | not)' \
-    "$ROOT/default/tools/$policy/fence.jsonc" >/dev/null
+    "$ROOT/share/default/tools/$policy/fence.jsonc" >/dev/null
 done
 print -r -- alpha >"$tmp/file-tool.txt"
 tool_cwd=$tmp
@@ -324,8 +324,8 @@ chmod +x "$tmp/bin/curl"
 PATH="$tmp/bin:$PATH"
 rehash
 typeset fetch_runtime=$(jq -cn --argjson base "$stored_runtime" \
-  --arg root "$ROOT/default/tools/fetch_url" \
-  --slurpfile manifest "$ROOT/default/tools/fetch_url/tool.json" '
+  --arg root "$ROOT/share/default/tools/fetch_url" \
+  --slurpfile manifest "$ROOT/share/default/tools/fetch_url/tool.json" '
     $base | .harness.tools = [{
       name:"fetch_url",command:($root + "/run"),
       settings:($root + "/fence.jsonc"),manifest:$manifest[0]
@@ -336,7 +336,7 @@ load_tools "$(jq -c --arg fence "$tmp/bin/fence" \
 sf_test_tool_execute \
   '{"id":"fetch_1","name":"fetch_url","input":{"url":"https://example.com"}}' 1
 jq -e '.exit_code == 0 and .content == "# sandboxed markdown\n"' <<<"$REPLY" >/dev/null
-grep -Fx -- "$ROOT/default/tools/fetch_url/fence.jsonc" "$tmp/fence.settings" >/dev/null
+grep -Fx -- "$ROOT/share/default/tools/fetch_url/fence.jsonc" "$tmp/fence.settings" >/dev/null
 load_tools "$(jq -c --arg fence "$tmp/bin/fence" \
   '.harness.sandbox=true | .harness.fence=$fence' <<<"$stored_runtime")"
 sf_test_tool_execute "$(jq -cn --arg command 'printf "%s|%s" "$TMPDIR" "$TMPPREFIX"' \
