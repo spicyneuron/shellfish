@@ -14,6 +14,7 @@ sf_die() {
 sf_send_request_abort() {
   sf_process_stop "$SF_REQUEST[pid]"
   [[ -z $SF_REQUEST[error_file] ]] || rm -f -- "$SF_REQUEST[error_file]"
+  [[ -z $SF_REQUEST[status_file] ]] || rm -f -- "$SF_REQUEST[status_file]"
   exit $1
 }
 

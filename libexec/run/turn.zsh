@@ -140,6 +140,8 @@ sf_run_turn_cleanup() {
   sf_hooks_turn_state_cleanup
   [[ -z $SF_REQUEST[error_file] ]] ||
     rm -f -- "$SF_REQUEST[error_file]" 2>/dev/null || true
+  [[ -z $SF_REQUEST[status_file] ]] ||
+    rm -f -- "$SF_REQUEST[status_file]" 2>/dev/null || true
   if { (( interrupted )) || [[ -n $failure ]] } && (( ${#SF_SESSION_RECORDS} )); then
     sf_run_partial_assistant
     partial=$REPLY
