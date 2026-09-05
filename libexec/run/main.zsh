@@ -6,6 +6,8 @@ setopt no_aliases no_bg_nice no_multios pipe_fail
 typeset -gr SF_ROOT=${0:A:h:h:h}
 typeset -gr SF_ENTRY="$SF_ROOT/bin/shellfish"
 
+source "$SF_ROOT/lib/options.zsh"
+
 sf_die() {
   print -u2 -r -- "shellfish: $*"
   return 1
@@ -29,9 +31,9 @@ sf_run_prompt() {
 }
 
 sf_run_main() {
-  local requested_session='' input=''
+  local requested_session='' input='' arity=''
   local -a positional=() create_args=()
-  integer session_explicit=0 jsonl=0 override=0
+  integer session_explicit=0 jsonl=0 override=0 take=0
 
   while (( $# )); do
     case $1 in
@@ -60,28 +62,21 @@ sf_run_main() {
         sf_die 'shellfish run does not support --verbose'
         return 2
         ;;
-      --sandbox-auto)
-        create_args+=( "$1" )
-        override=1
-        shift
-        ;;
       --)
         shift
         positional+=( "$@" )
         break
         ;;
       -*)
-        # Options run does not own configure the session it creates, so they are
-        # forwarded with any value. Use -- before a prompt that follows a
-        # valueless option. Selecting a config file is not a runtime override.
+        # config owns these; forward them unread. Selecting a config file is not
+        # a runtime override.
+        arity=${SF_CONFIG_OPTIONS[$1]-}
+        [[ -n $arity ]] || { sf_die "unknown argument: $1"; return 2; }
+        take=$(( arity + 1 ))
+        (( $# >= take )) || { sf_die "$1 requires a value"; return 2; }
+        create_args+=( "${@:1:$take}" )
         [[ $1 == --config ]] || override=1
-        if (( $# >= 2 )) && [[ $2 != -* ]]; then
-          create_args+=( "$1" "$2" )
-          shift 2
-        else
-          create_args+=( "$1" )
-          shift
-        fi
+        shift $take
         ;;
       *)
         positional+=( "$1" )

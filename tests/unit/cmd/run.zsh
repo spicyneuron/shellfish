@@ -105,6 +105,15 @@ output=$(SF_TEST_BACKEND_DELAY=0 zsh -f "$entry" run --config "$config" \
   several prompt words) || fail 'multi-argument run failed'
 assert_equal 'several prompt words' "$output" 'run joins positional prompt words'
 
+# An option run does not own reaches shellfish create with its value intact,
+# and that value is not mistaken for the prompt that follows it.
+typeset forwarded_session="$tmp/forwarded.jsonl"
+output=$(SF_TEST_BACKEND_DELAY=0 zsh -f "$entry" run --session "$forwarded_session" \
+  --config "$config" --model forwarded-model 'plain answer') || fail 'forwarded run failed'
+assert_equal 'plain answer' "$output" 'run keeps the prompt after a forwarded value'
+head -n 1 "$forwarded_session" | jq -e '.profile.request.model == "forwarded-model"' \
+  >/dev/null || fail 'a forwarded option value did not reach the new session'
+
 # Exec no longer creates sessions; shellfish create supplies the one the
 # read-only request commands compose against.
 typeset request_session
