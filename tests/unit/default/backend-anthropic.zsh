@@ -1,6 +1,6 @@
 #!/usr/bin/env zsh
 
-source "${0:A:h:h}/_helpers.zsh"
+source "${0:A:h:h:h}/_helpers.zsh"
 
 sf_test_tmp backend-anthropic
 typeset run="$ROOT/share/default/backends/anthropic/run"
