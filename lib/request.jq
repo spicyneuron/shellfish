@@ -66,6 +66,17 @@ def assemble_backend_response(valid_events; valid_message):
     (backend_response_state; backend_response_update($event)) |
   backend_response_message(valid_message);
 
+# The bypass fields pair with the tool schema injected by libexec/run/tools.zsh.
+def tool_call_fields:
+  (.id, "\u0000", .name, "\u0000", (.input | tojson), "\u0000",
+   (.input | del(.request_sandbox_bypass, .sandbox_bypass_reason) | tojson), "\u0000",
+   (.input | if has("request_sandbox_bypass") then
+      if (.request_sandbox_bypass | type) == "boolean"
+      then (.request_sandbox_bypass | tostring) else "invalid" end
+    else "false" end), "\u0000",
+   (.input.sandbox_bypass_reason |
+    if type == "string" and length > 0 then "true" else "false" end), "\u0000");
+
 def decode_backend_response(valid_event; valid_message):
   foreach inputs as $event
     (backend_response_state + {seq:0, output:[]};
@@ -94,8 +105,7 @@ def decode_backend_response(valid_event; valid_message):
             .output = ["end", "\u0000", ($message | tojson), "\u0000",
               ($message.stop), "\u0000",
               ([$message.content[] | select(.type == "tool_call")] | length | tostring), "\u0000",
-              ($message.content[] | select(.type == "tool_call") |
-                (tojson, "\u0000", .id, "\u0000", .name, "\u0000", (.input | tojson), "\u0000")),
+              ($message.content[] | select(.type == "tool_call") | tool_call_fields),
               "ok", "\u0000",
               ([$message.content[] | select(.type == "text") | .text] | join("")), "\u0000"]
           end

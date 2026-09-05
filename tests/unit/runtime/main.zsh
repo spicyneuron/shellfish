@@ -481,30 +481,28 @@ export OPENAI_API_KEY='from-environment'
 export ANTHROPIC_API_KEY='must-not-leak'
 sf_runtime_resolve_from_config "$config" work '' '{}'
 runtime=$REPLY
-sf_credentials_resolve "$runtime"
+sf_credentials_resolve OPENAI_API_KEY "$tmp/config/.env"
 [[ $REPLY == from-environment && $reply[1] == OPENAI_API_KEY ]]
 (( ! ${+OPENAI_API_KEY} && ! ${+ANTHROPIC_API_KEY} ))
 [[ $runtime != *from-environment* ]]
 
 export SHELLFISH_API_KEY='' OPENAI_API_KEY='provider-value'
-sf_credentials_resolve "$(jq -c '.backend.env_file=""' <<<"$runtime")"
+sf_credentials_resolve OPENAI_API_KEY ''
 [[ -z $REPLY && $reply[1] == SHELLFISH_API_KEY ]]
 (( ! ${+SHELLFISH_API_KEY} && ! ${+OPENAI_API_KEY} ))
 
 # The resolved .env path is asserted above. Use a non-secret fixture name here
 # because the bundled tool sandbox intentionally denies all .env access.
 typeset credential_file="$tmp/config/credentials.fixture"
-typeset credential_runtime=$(jq -c --arg env_file "$credential_file" \
-  '.backend.env_file=$env_file' <<<"$runtime")
 cat >"$credential_file" <<'ENV'
 export OPENAI_API_KEY = "from-file"
 SHELLFISH_API_KEY=global-file
 ENV
-sf_credentials_resolve "$credential_runtime"
+sf_credentials_resolve OPENAI_API_KEY "$credential_file"
 [[ $REPLY == global-file && $reply[1] == SHELLFISH_API_KEY ]]
 [[ $runtime != *from-file* ]]
 
 print -r -- 'invalid line' >>"$credential_file"
-if sf_credentials_resolve "$credential_runtime"; then
+if sf_credentials_resolve OPENAI_API_KEY "$credential_file"; then
   fail 'invalid env file tail was accepted'
 fi

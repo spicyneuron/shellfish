@@ -175,10 +175,11 @@ sf_run_turn_cleanup() {
 
 sf_run_turn() {
   local user_record=$1 session_path=$2 permission_available=${3:-0} prompt=$4
-  local request assistant stop_input call result backend_command opened_records
-  local tool_name call_id tool_input decision denial_reason hook_action hook_reason
+  local request assistant stop_input result backend_command opened_records
+  local tool_name call_id tool_input execution_input bypass bypass_reason_valid
+  local decision denial_reason hook_action hook_reason
   local runtime_projection response_projection response_field
-  local tools tool_schema max_capture fence config_file config_dir
+  local tools tool_schema max_capture fence api_key_env env_file config_dir
   local sandbox_read_paths sandbox_write_paths
   local context_output context_line context_window context_window_command update_event adapter_pid
   local SHELLFISH_TURN_STATE='' SHELLFISH_SESSION_STATE='' SF_API_KEY='' SF_API_KEY_SOURCE=''
@@ -210,6 +211,7 @@ sf_run_turn() {
       ($runtime.harness.sandbox_read_paths | tojson | field),
       ($runtime.harness.sandbox_write_paths | tojson | field),
       ($runtime.harness.tools | tojson | field),
+      ($runtime.backend.api_key_env | field),
       ($runtime.backend.env_file | field),
       ($runtime.backend.context_window_command // "" | field),
       (if $runtime.profile | has("context_window") then "1" else "0" end | field),
@@ -219,7 +221,7 @@ sf_run_turn() {
       return 1
     }
     runtime_fields=( "${(@0)${runtime_projection%$'\0'}}" )
-    (( ${#runtime_fields} == 13 )) && [[ $runtime_fields[13] == ok ]] || {
+    (( ${#runtime_fields} == 14 )) && [[ $runtime_fields[14] == ok ]] || {
       failure='cannot inspect frozen runtime'
       return 1
     }
@@ -232,11 +234,12 @@ sf_run_turn() {
     sandbox_read_paths=$runtime_fields[7]
     sandbox_write_paths=$runtime_fields[8]
     tools=$runtime_fields[9]
-    config_file=$runtime_fields[10]
-    context_window_command=$runtime_fields[11]
-    context_window_set=$runtime_fields[12]
+    api_key_env=$runtime_fields[10]
+    env_file=$runtime_fields[11]
+    context_window_command=$runtime_fields[12]
+    context_window_set=$runtime_fields[13]
     config_dir=''
-    [[ -z $config_file ]] || config_dir=${config_file:h}
+    [[ -z $env_file ]] || config_dir=${env_file:h}
     [[ -d $SF_SESSION[cwd] && -x $SF_SESSION[cwd] ]] || {
       failure="session working directory is unavailable: $SF_SESSION[cwd]"
       return 1
@@ -253,7 +256,8 @@ sf_run_turn() {
     handoff=( "${(@)reply[2,-1]}" )
     [[ $hook_action != session_update ]] || patch=$reply[2]
     if [[ $hook_action == proceed ]]; then
-      if ! sf_tools_load "$tools" "$SF_SESSION[cwd]" "$harness_sandbox" "$fence"; then
+      if ! sf_tools_load "$tools" "$SF_SESSION[cwd]" "$harness_sandbox" "$fence" \
+          "$sandbox_read_paths" "$sandbox_write_paths"; then
         failure=$SF_TOOL_ERROR
         return 1
       fi
@@ -308,7 +312,7 @@ sf_run_turn() {
         failure='cannot prepare provider request'
         return 1
       }
-      if (( request_count == 1 )) && ! sf_credentials_resolve "$SF_SESSION[runtime]"; then
+      if (( request_count == 1 )) && ! sf_credentials_resolve "$api_key_env" "$env_file"; then
         failure=$SF_CREDENTIALS_ERROR
         return 1
       fi
@@ -386,7 +390,7 @@ sf_run_turn() {
         response_call_count=-1
       fi
       response_fields=( "$response_fields[1]" )
-      for (( tool_index = 0; tool_index < response_call_count * 4; tool_index += 1 )); do
+      for (( tool_index = 0; tool_index < response_call_count * 6; tool_index += 1 )); do
         [[ $response_projection == *$'\0'* ]] || break
         response_field=${response_projection%%$'\0'*}
         response_projection=${response_projection#*$'\0'}
@@ -400,7 +404,7 @@ sf_run_turn() {
       response_projection=${response_projection#*$'\0'}
       stop_input=${response_projection%$'\0'}
       (( response_call_count >= 0 &&
-          ${#response_fields} == 1 + response_call_count * 4 )) || {
+          ${#response_fields} == 1 + response_call_count * 6 )) || {
         failure='cannot inspect provider response'
         return 1
       }
@@ -420,12 +424,14 @@ sf_run_turn() {
       fi
       call_count=0
       tool_calls=( "${(@)response_fields[2,-1]}" )
-      for (( tool_index = 1; tool_index <= ${#tool_calls}; tool_index += 4 )); do
+      for (( tool_index = 1; tool_index <= ${#tool_calls}; tool_index += 6 )); do
         (( call_count += 1 ))
-        call=$tool_calls[tool_index]
-        call_id=$tool_calls[tool_index+1]
-        tool_name=$tool_calls[tool_index+2]
-        tool_input=$tool_calls[tool_index+3]
+        call_id=$tool_calls[tool_index]
+        tool_name=$tool_calls[tool_index+1]
+        tool_input=$tool_calls[tool_index+2]
+        execution_input=$tool_calls[tool_index+3]
+        bypass=$tool_calls[tool_index+4]
+        bypass_reason_valid=$tool_calls[tool_index+5]
         if (( call_count > tool_limit )); then
           if ! sf_tool_result "$call_id" "$tool_name" \
               "tool call denied: per-response limit is $tool_limit" 126; then
@@ -451,7 +457,8 @@ sf_run_turn() {
           else
             decision=''
             denial_reason=''
-            sf_tool_needs_permission "$tool_name" "$tool_input" "$tools" "$harness_sandbox"
+            sf_tool_needs_permission "$tool_name" "$bypass" "$bypass_reason_valid" \
+              "$harness_sandbox"
             permission_status=$?
             if (( permission_status == 0 )); then
               permission_status=0
@@ -469,9 +476,9 @@ sf_run_turn() {
               failure=$SF_TOOL_ERROR
               return 1
             fi
-            if ! sf_tool_execute "$call" "$harness_sandbox" "$decision" "$denial_reason" \
-                "$tools" "$SF_SESSION[cwd]" "$max_capture" "$fence" \
-                "$sandbox_read_paths" "$sandbox_write_paths" "$config_dir" \
+            if ! sf_tool_execute "$call_id" "$tool_name" "$execution_input" "$bypass" \
+                "$harness_sandbox" "$decision" "$denial_reason" \
+                "$SF_SESSION[cwd]" "$max_capture" "$fence" "$config_dir" \
                 "$SF_SESSION[id]"; then
               failure=${SF_TOOL_ERROR:-shell tool execution failed}
               return 1

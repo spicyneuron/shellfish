@@ -22,13 +22,37 @@ load_tools() {
   tool_fence=$(jq -r '.harness.fence' <<<$runtime)
   tool_read_paths=$(jq -c '.harness.sandbox_read_paths' <<<$runtime)
   tool_write_paths=$(jq -c '.harness.sandbox_write_paths' <<<$runtime)
-  sf_tools_load "$tool_tools" "$tool_cwd" "$tool_sandbox" "$tool_fence"
+  sf_tools_load "$tool_tools" "$tool_cwd" "$tool_sandbox" "$tool_fence" \
+    "$tool_read_paths" "$tool_write_paths"
   tool_schema=$REPLY
 }
 
 sf_test_tool_execute() {
-  sf_tool_execute "$1" "$2" "${3-}" "${4-}" "$tool_tools" "$tool_cwd" \
-    "$tool_max_capture" "$tool_fence" "$tool_read_paths" "$tool_write_paths" \
+  local call=$1 harness_sandbox=$2 decision=${3-} denial_reason=${4-}
+  local id name execution_input bypass bypass_reason_valid projected
+  local -a fields
+  integer permission_status=0
+  projected=$(jq -jrn --argjson call "$call" '
+    def field: ., "\u0000"; ($call.id | field), ($call.name | field),
+      ($call.input | tojson | field),
+      ($call.input | del(.request_sandbox_bypass, .sandbox_bypass_reason) | tojson | field),
+      ($call.input | if has("request_sandbox_bypass") then
+        if (.request_sandbox_bypass | type) == "boolean"
+        then (.request_sandbox_bypass | tostring) else "invalid" end
+      else "false" end | field),
+      ($call.input.sandbox_bypass_reason |
+        if type == "string" and length > 0 then "true" else "false" end | field)')
+  fields=( "${(@0)${projected%$'\0'}}" )
+  id=$fields[1]
+  name=$fields[2]
+  execution_input=$fields[4]
+  bypass=$fields[5]
+  bypass_reason_valid=$fields[6]
+  sf_tool_needs_permission "$name" "$bypass" "$bypass_reason_valid" \
+    "$harness_sandbox" || permission_status=$?
+  (( permission_status != 2 )) || return
+  sf_tool_execute "$id" "$name" "$execution_input" "$bypass" "$harness_sandbox" \
+    "$decision" "$denial_reason" "$tool_cwd" "$tool_max_capture" "$tool_fence" \
     "$tool_config_dir" "$SF_SESSION[id]" || return
 }
 
@@ -130,6 +154,21 @@ jq -e '
 
 # Tool execution preserves the caller's home in its otherwise clean environment.
 load_tools "$stored_runtime"
+[[ $SF_TOOL_COMMAND[shell] == "$tool_dir/run" &&
+   $SF_TOOL_SANDBOX[shell] == true && $SF_TOOL_ALLOW_BYPASS[shell] == true &&
+   $SF_TOOL_SETTINGS[shell] == "$tool_dir/fence.jsonc" ]] ||
+  fail 'tool execution metadata was not cached'
+sf_test_tool_execute '{"id":"unknown_1","name":"unknown","input":{}}' 0
+jq -e '.exit_code == 127 and .content == "tool is not allowed: unknown"' <<<"$REPLY" >/dev/null
+typeset invalid_tools=$(jq -c '.[0].command = "/missing/shellfish-tool"' <<<"$tool_tools")
+if sf_tools_load "$invalid_tools" "$tool_cwd" "$tool_sandbox" "$tool_fence" \
+    "$tool_read_paths" "$tool_write_paths"; then
+  fail 'an unavailable tool command was accepted'
+fi
+(( ${#SF_TOOL_COMMAND} == 0 && ${#SF_TOOL_SANDBOX} == 0 &&
+   ${#SF_TOOL_ALLOW_BYPASS} == 0 && ${#SF_TOOL_SETTINGS} == 0 )) ||
+  fail 'a failed tool load retained executable metadata'
+load_tools "$stored_runtime"
 sf_test_tool_execute "$(jq -cn --arg command 'print -rn -- "$HOME"' \
   '{id:"home_1",name:"shell",input:{command:$command}}')" 0
 jq -e --arg home "$HOME" '.content == $home' <<<"$REPLY" >/dev/null
@@ -194,9 +233,7 @@ load_tools "$(jq -c --arg fence "${commands[fence]:A}" \
 typeset bypass_call=$(jq -cn \
   '{id:"bypass_1",name:"shell",input:{command:"true",request_sandbox_bypass:true,
     sandbox_bypass_reason:"test"}}')
-sf_tool_needs_permission shell \
-  '{"command":"true","request_sandbox_bypass":true,"sandbox_bypass_reason":"test"}' \
-  "$tool_tools" 1
+sf_tool_needs_permission shell true true 1
 sf_test_tool_execute "$bypass_call" 1
 jq -e '.exit_code == 126 and .content == "sandbox bypass denied"' \
   <<<"$REPLY" >/dev/null
@@ -204,11 +241,10 @@ sf_test_tool_execute "$bypass_call" 1 denied 'hook said no'
 jq -e '.exit_code == 126 and .content == "hook said no"' <<<"$REPLY" >/dev/null
 sf_test_tool_execute "$bypass_call" 1 approved
 jq -e '.exit_code == 0 and .sandboxed == false' <<<"$REPLY" >/dev/null
-if sf_tool_needs_permission shell '{"command":"true"}' "$tool_tools" 1; then
+if sf_tool_needs_permission shell false false 1; then
   fail 'a call without a bypass request asked for permission'
 fi
-sf_tool_needs_permission shell \
-  '{"command":"true","request_sandbox_bypass":true}' "$tool_tools" 1 &&
+sf_tool_needs_permission shell true false 1 &&
   fail 'a bypass request without a reason was accepted'
 (( $? == 2 )) || fail 'a missing bypass reason did not report invalid input'
 
@@ -240,6 +276,8 @@ jq -e 'map(.name) == ["read_file","edit_file","write_file"] and
   all(.[].description; contains("keep it to one logical operation") | not)' \
   <<<"$tool_schema" >/dev/null
 load_tools "$file_runtime"
+(( ! ${+SF_TOOL_COMMAND[shell]} && ${+SF_TOOL_COMMAND[read_file]} )) ||
+  fail 'replacing configured tools retained stale execution metadata'
 sf_test_tool_execute '{"id":"read_1","name":"read_file","input":{"file_path":"file-tool.txt"}}' 0
 jq -e '.content == "L1-1 of 1\n1\talpha\n"' <<<"$REPLY" >/dev/null
 : >"$tmp/empty.txt"

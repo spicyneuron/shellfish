@@ -19,8 +19,9 @@ sf_send_request_abort() {
 }
 
 sf_send_request_main() {
-  local requested_session='' selected request runtime backend_command
+  local requested_session='' selected request runtime backend_projection backend_command
   local api_key api_key_source
+  local -a backend_fields
   integer session_explicit=0
 
   while (( $# )); do
@@ -89,11 +90,23 @@ sf_send_request_main() {
     sf_die 'send-request requires a canonical request for the selected session'
     return 2
   }
-  backend_command=$(jq -er '.backend.command' <<<"$runtime") || {
+  backend_projection=$(jq -jrn --argjson runtime "$runtime" '
+    def field: ., "\u0000";
+    ($runtime.backend.command | field),
+    ($runtime.backend.api_key_env | field),
+    ($runtime.backend.env_file | field),
+    ("ok" | field)
+  ' 2>/dev/null) || {
     sf_die 'cannot inspect frozen runtime'
     return 1
   }
-  sf_credentials_resolve "$runtime" || {
+  backend_fields=( "${(@0)${backend_projection%$'\0'}}" )
+  (( ${#backend_fields} == 4 )) && [[ $backend_fields[4] == ok ]] || {
+    sf_die 'cannot inspect frozen runtime'
+    return 1
+  }
+  backend_command=$backend_fields[1]
+  sf_credentials_resolve "$backend_fields[2]" "$backend_fields[3]" || {
     sf_die "$SF_CREDENTIALS_ERROR"
     return 1
   }

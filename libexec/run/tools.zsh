@@ -7,6 +7,12 @@ typeset -g SF_TOOL_ERROR=''
 typeset -g SF_TOOL_STATE_DIR=''
 typeset -g SF_TOOL_ACTIVE_PID=''
 integer -g SF_TOOL_INTERRUPTED=0
+typeset -gA SF_TOOL_COMMAND=()
+typeset -gA SF_TOOL_SANDBOX=()
+typeset -gA SF_TOOL_ALLOW_BYPASS=()
+typeset -gA SF_TOOL_SETTINGS=()
+typeset -ga SF_TOOL_READ_PATHS=()
+typeset -ga SF_TOOL_WRITE_PATHS=()
 
 sf_tools_fail() {
   SF_TOOL_ERROR=$1
@@ -15,17 +21,26 @@ sf_tools_fail() {
 
 sf_tools_load() {
   local tools=$1 cwd=$2 harness_sandbox=$3 fence=${4-}
-  local command projected sandbox
-  local -a fields
-  integer index=1 sandboxed_tools=0
+  local sandbox_read_paths=$5 sandbox_write_paths=$6
+  local command name projected sandbox allow_bypass settings
+  local -a fields read_paths write_paths
+  local -A tool_command tool_sandbox tool_allow_bypass tool_settings
+  integer index=1 read_count write_count sandboxed_tools=0
   SF_TOOL_ERROR=''
   REPLY=''
+  SF_TOOL_COMMAND=()
+  SF_TOOL_SANDBOX=()
+  SF_TOOL_ALLOW_BYPASS=()
+  SF_TOOL_SETTINGS=()
+  SF_TOOL_READ_PATHS=()
+  SF_TOOL_WRITE_PATHS=()
   [[ -d $cwd ]] || {
     sf_tools_fail "session working directory is unavailable: $cwd"
     return
   }
   projected=$(jq -jrn --argjson tools "$tools" \
-    --argjson harness_sandbox "$harness_sandbox" '
+    --argjson harness_sandbox "$harness_sandbox" \
+    --argjson reads "$sandbox_read_paths" --argjson writes "$sandbox_write_paths" '
       def field: ., "\u0000";
       def bypass_available($manifest):
         ($harness_sandbox == 1) and $manifest.sandbox and
@@ -51,27 +66,48 @@ sf_tools_load() {
                   required:["request_sandbox_bypass"]},
               then:{required:["sandbox_bypass_reason"]}}])
           else . end)}] | tojson | field),
-      ($tools[] | (.command | field), (.manifest.sandbox | tostring | field)),
+      ($reads | length | tostring | field),
+      ($writes | length | tostring | field),
+      ($reads[] | field), ($writes[] | field),
+      ($tools[] | (.name | field), (.command | field),
+        (.manifest.sandbox | tostring | field),
+        (.manifest.allow_sandbox_bypass // false | tostring | field),
+        ((.settings // "") | field)),
       ("ok" | field)
   ' 2>/dev/null) || {
     sf_tools_fail 'cannot inspect configured tools'
     return
   }
   fields=( "${(@0)${projected%$'\0'}}" )
-  (( ${#fields} >= 2 && (${#fields} - 2) % 2 == 0 )) && [[ $fields[-1] == ok ]] || {
+  (( ${#fields} >= 4 )) && [[ $fields[2] == <-> && $fields[3] == <-> && $fields[-1] == ok ]] || {
     sf_tools_fail 'cannot inspect configured tools'
     return
   }
   REPLY=$fields[1]
-  index=2
+  read_count=$fields[2]
+  write_count=$fields[3]
+  index=$(( read_count + write_count + 4 ))
+  (( index <= ${#fields} && (${#fields} - index) % 5 == 0 )) || {
+    sf_tools_fail 'cannot inspect configured tools'
+    return
+  }
+  read_paths=( "${fields[@]:3:$read_count}" )
+  write_paths=( "${fields[@]:$(( read_count + 3 )):$write_count}" )
   while (( index < ${#fields} )); do
-    command=$fields[index]
-    sandbox=$fields[index+1]
-    (( index += 2 ))
+    name=$fields[index]
+    command=$fields[index+1]
+    sandbox=$fields[index+2]
+    allow_bypass=$fields[index+3]
+    settings=$fields[index+4]
+    (( index += 5 ))
     [[ -x $command ]] || {
       sf_tools_fail "tool command is not executable: $command"
       return
     }
+    tool_command[$name]=$command
+    tool_sandbox[$name]=$sandbox
+    tool_allow_bypass[$name]=$allow_bypass
+    tool_settings[$name]=$settings
     [[ $sandbox != true ]] || sandboxed_tools=1
   done
   if (( harness_sandbox && sandboxed_tools )); then
@@ -80,6 +116,12 @@ sf_tools_load() {
       return
     }
   fi
+  SF_TOOL_COMMAND=( "${(@kv)tool_command}" )
+  SF_TOOL_SANDBOX=( "${(@kv)tool_sandbox}" )
+  SF_TOOL_ALLOW_BYPASS=( "${(@kv)tool_allow_bypass}" )
+  SF_TOOL_SETTINGS=( "${(@kv)tool_settings}" )
+  SF_TOOL_READ_PATHS=( "${read_paths[@]}" )
+  SF_TOOL_WRITE_PATHS=( "${write_paths[@]}" )
 }
 
 sf_tool_result() {
@@ -111,36 +153,28 @@ sf_tool_bound_capture() {
 
 # Reports whether a call needs approval. The caller owns the decision.
 sf_tool_needs_permission() {
-  local name=$1 input=$2 tools=$3
+  local name=$1 bypass=$2 reason_valid=$3
   integer harness_sandbox=$4
-  (( harness_sandbox )) || return 1
-  jq -e --arg name "$name" --argjson input "$input" '
-    if any(.[]; .name == $name and (.manifest.allow_sandbox_bypass // false)) and
-        $input.request_sandbox_bypass == true then
-      if ($input.sandbox_bypass_reason | type) == "string" and
-          ($input.sandbox_bypass_reason | length) > 0 then true
-      else error("sandbox bypass reason is required") end
-    else false end
-  ' <<<"$tools" >/dev/null 2>&1
-  case $? in
-    0) return 0 ;;
-    1) return 1 ;;
-    *) sf_tools_fail 'sandbox bypass reason is required'; return 2 ;;
-  esac
+  (( harness_sandbox )) &&
+    [[ ${SF_TOOL_ALLOW_BYPASS[$name]-false} == true && $bypass == true ]] ||
+    return 1
+  [[ $reason_valid == true ]] || {
+    sf_tools_fail 'sandbox bypass reason is required'
+    return 2
+  }
 }
 
 sf_tool_execute() {
-  local call=$1 harness_sandbox=$2 decision=${3-} denial_reason=${4-}
-  local tools=$5 cwd=$6 max_capture=$7 fence=$8
-  local sandbox_read_paths=$9 sandbox_write_paths=${10} config_dir=${11-}
-  local session_id=${12-}
+  local id=$1 name=$2 execution_input=$3 bypass=$4
+  integer harness_sandbox=$5
+  local decision=${6-} denial_reason=${7-} cwd=$8 max_capture=$9 fence=${10}
+  local config_dir=${11-} session_id=${12-}
   local tool_home=${HOME:-$cwd}
-  local id name execution_input bypass sandboxed tool_sandbox tool_bypass tool_settings
+  local sandboxed use_sandbox allow_bypass settings
   local state_dir captured bounded status_file temp native_temp command_path sandbox_log
-  local decoded sandbox_denial_detected=''
-  local -a fields read_paths write_paths
+  local expose sandbox_denial_detected=''
   local -a command locale_env
-  integer exit_code tail_status process_status read_count write_count call_offset
+  integer exit_code tail_status process_status
   setopt local_options no_err_exit
   SF_TOOL_ERROR=''
   REPLY=''
@@ -148,56 +182,16 @@ sf_tool_execute() {
   [[ -z $LC_ALL ]] || locale_env+=( LC_ALL="$LC_ALL" )
   [[ -z $LC_CTYPE ]] || locale_env+=( LC_CTYPE="$LC_CTYPE" )
   [[ -z ${XDG_CONFIG_HOME-} ]] || locale_env+=( XDG_CONFIG_HOME="$XDG_CONFIG_HOME" )
-  decoded=$(jq -jrn --argjson reads "$sandbox_read_paths" \
-    --argjson writes "$sandbox_write_paths" --argjson tools "$tools" --argjson call "$call" '
-    def field: ., "\u0000";
-    ($reads | length | tostring | field),
-    ($writes | length | tostring | field),
-    ($reads[] | field), ($writes[] | field),
-    ($call | .id | field), ($call | .name | field),
-    ($call.input | del(.request_sandbox_bypass, .sandbox_bypass_reason) | tojson | field),
-    ($call.input | if has("request_sandbox_bypass") then
-      if (.request_sandbox_bypass | type) == "boolean"
-      then (.request_sandbox_bypass | tostring) else "invalid" end
-    else "false" end | field),
-    ($tools[] | select(.name == $call.name) |
-      (.command | field), (.manifest.sandbox | tostring | field),
-      (.manifest.allow_sandbox_bypass // false | tostring | field),
-      ((.settings // "") | field)),
-    ("ok" | field)
-  ' 2>/dev/null) || { sf_tools_fail 'cannot decode tool call'; return; }
-  fields=( "${(@0)${decoded%$'\0'}}" )
-  (( ${#fields} >= 7 )) && [[ $fields[1] == <-> && $fields[2] == <-> && $fields[-1] == ok ]] || {
-    sf_tools_fail 'cannot decode tool call'
-    return
-  }
-  read_count=$fields[1]
-  write_count=$fields[2]
-  call_offset=$(( read_count + write_count + 3 ))
-  (( call_offset <= ${#fields} - 4 )) || {
-    sf_tools_fail 'cannot decode tool call'
-    return
-  }
-  read_paths=( "${fields[@]:2:$read_count}" )
-  write_paths=( "${fields[@]:$(( read_count + 2 )):$write_count}" )
-  fields=( "${fields[@]:$(( call_offset - 1 )):-1}" )
-  if (( ${#fields} == 4 )); then
-    id=$fields[1]
-    name=$fields[2]
+  if (( ! ${+SF_TOOL_COMMAND[$name]} )); then
     sf_tool_result "$id" "$name" "tool is not allowed: $name" 127
     return
   fi
-  (( ${#fields} == 8 )) || { sf_tools_fail 'cannot decode tool call'; return; }
-  id=$fields[1]
-  name=$fields[2]
-  execution_input=$fields[3]
-  bypass=$fields[4]
-  command_path=$fields[5]
-  tool_sandbox=$fields[6]
-  tool_bypass=$fields[7]
-  tool_settings=$fields[8]
+  command_path=$SF_TOOL_COMMAND[$name]
+  use_sandbox=$SF_TOOL_SANDBOX[$name]
+  allow_bypass=$SF_TOOL_ALLOW_BYPASS[$name]
+  settings=$SF_TOOL_SETTINGS[$name]
   (( harness_sandbox )) || bypass=false
-  if [[ $bypass == invalid || ( $bypass == true && $tool_bypass != true ) ]]; then
+  if [[ $bypass == invalid || ( $bypass == true && $allow_bypass != true ) ]]; then
     sf_tool_result "$id" "$name" 'sandbox bypass is not allowed' 126
     return
   fi
@@ -226,7 +220,7 @@ sf_tool_execute() {
     captured="$state_dir/captured"
     bounded="$state_dir/result"
     status_file="$state_dir/status"
-    if (( harness_sandbox )) && [[ $tool_sandbox == true && $bypass != true ]]; then
+    if (( harness_sandbox )) && [[ $use_sandbox == true && $bypass != true ]]; then
       sf_temp_directory native "$temp" || {
         sf_tools_fail 'cannot resolve native temporary directory'
         return
@@ -236,14 +230,14 @@ sf_tool_execute() {
       command=(/usr/bin/env -i HOME="$tool_home" "${locale_env[@]}" PATH="$PATH" TERM="${TERM:-dumb}"
         SHELLFISH_CONFIG_DIR="$config_dir"
         SHELLFISH_MAX_CAPTURE_BYTES="$max_capture"
-        "$fence" --monitor --fence-log-file "$sandbox_log" --settings "$tool_settings"
+        "$fence" --monitor --fence-log-file "$sandbox_log" --settings "$settings"
         --expose-host-path "$command_path" --expose-host-path-rw "$temp")
       [[ $native_temp == $temp ]] || command+=( --expose-host-path-rw "$native_temp" )
-      for decoded in "${read_paths[@]}"; do
-        command+=( --expose-host-path "$decoded" )
+      for expose in "${SF_TOOL_READ_PATHS[@]}"; do
+        command+=( --expose-host-path "$expose" )
       done
-      for decoded in "${write_paths[@]}"; do
-        command+=( --expose-host-path-rw "$decoded" )
+      for expose in "${SF_TOOL_WRITE_PATHS[@]}"; do
+        command+=( --expose-host-path-rw "$expose" )
       done
       command+=(
         -- /usr/bin/env TMPDIR="$temp" TMPPREFIX="$temp/zsh" "$command_path")
@@ -290,7 +284,7 @@ sf_tool_execute() {
     sandboxed=''
     if [[ $name == shell ]]; then
       sandboxed=false
-      (( harness_sandbox )) && [[ $tool_sandbox == true && $bypass != true ]] && sandboxed=true
+      (( harness_sandbox )) && [[ $use_sandbox == true && $bypass != true ]] && sandboxed=true
     fi
     REPLY=$(jq -cn --arg call_id "$id" --arg name "$name" \
       --rawfile content "$bounded" --argjson exit_code "$exit_code" \

@@ -9,25 +9,12 @@ sf_credentials_fail() {
 }
 
 sf_credentials_resolve() {
-  local runtime=$1 name line key value candidate env_file projected
-  local -a credential_names locator
+  local name=$1 env_file=$2 line key value candidate
+  local -a credential_names
   local -A credentials
   SF_CREDENTIALS_ERROR=''
   REPLY=''
   reply=()
-  projected=$(jq -jr '
-    .backend.api_key_env, "\u0000", .backend.env_file, "\u0000", "ok", "\u0000"
-  ' <<<"$runtime" 2>/dev/null) || {
-    sf_credentials_fail 'cannot read runtime credentials'
-    return
-  }
-  locator=( "${(@0)${projected%$'\0'}}" )
-  (( ${#locator} == 3 )) && [[ $locator[3] == ok ]] || {
-    sf_credentials_fail 'cannot read runtime credentials'
-    return
-  }
-  name=$locator[1]
-  env_file=$locator[2]
   credential_names=(SHELLFISH_API_KEY OPENAI_API_KEY ANTHROPIC_API_KEY OPENROUTER_API_KEY)
   [[ -z $name || ${credential_names[(Ie)$name]} -gt 0 ]] || credential_names+=($name)
   for candidate in $credential_names; do
