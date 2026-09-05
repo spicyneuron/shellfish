@@ -12,8 +12,7 @@ sf_test_runtime
 export SF_TEST_BACKEND_DELAY=0
 
 # Observer stdout and post-tool skip statuses are contract errors. Exec
-# preserves already committed records and uses ordinary recovery to restore a
-# valid await-user session state.
+# preserves already committed records and closes unanswered tool calls.
 typeset pre_stdout="$tmp/pre-stdout"
 cat >"$pre_stdout" <<'ZSH'
 #!/usr/bin/env zsh
@@ -37,11 +36,10 @@ print -r -- "$stream" | jq -eRn '
   [inputs | fromjson] as $events |
   ($events | map(select(.role == "tool_result")) | length) == 1 and
   ($events | map(select(.role == "tool_result"))[0].exit_code) == 126 and
-  $events[-2].role == "assistant" and $events[-2].stop == "end" and
   $events[-1].message == "pre_tool_use hook script wrote unsupported stdout"
 ' >/dev/null
 [[ ! -e $TEST_OUTPUT_DIR/post-ran ]]
-assert_canonical_session "$pre_session" end
+assert_canonical_session "$pre_session"
 
 typeset post_skip="$tmp/post-skip"
 cat >"$post_skip" <<'ZSH'
@@ -60,7 +58,6 @@ print -r -- "$stream" | jq -eRn '
   [inputs | fromjson] as $events |
   ($events | map(select(.role == "tool_result")) | length) == 1 and
   ($events | map(select(.role == "tool_result"))[0].exit_code) == 0 and
-  $events[-2].role == "assistant" and $events[-2].stop == "end" and
   $events[-1].message == "post_tool_use hook script returned unsupported skip status"
 ' >/dev/null
-assert_canonical_session "$post_session" end
+assert_canonical_session "$post_session"

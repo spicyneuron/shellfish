@@ -138,7 +138,7 @@ print -r -- "$stream" | jq -eRn '
   ($events | map(select(.type == "_turn_error") | .message) |
     any(. == "invalid permission response"))
 ' >/dev/null
-assert_canonical_session "$permission_invalid_reply_session" end
+assert_canonical_session "$permission_invalid_reply_session"
 
 typeset permission_eof_session="$tmp/permission-eof.jsonl"
 sf_test_session "$permission_eof_session"
@@ -200,10 +200,9 @@ jq -eRn '
   ($events | map(select(.type == "_tool_permission_request")) | length) == 1 and
   ($events | map(select(.role == "tool_result") |
     [.call_id, .exit_code])) ==
-    [["call_1",126],["call_2",126],["call_3",126]] and
-  $events[-1].role == "assistant" and $events[-1].stop == "end"
+    [["call_1",126],["call_2",126],["call_3",126]]
 ' <"$permission_cancel_stream" >/dev/null
-assert_canonical_session "$permission_cancel_session" end
+assert_canonical_session "$permission_cancel_session"
 
 # Malformed hook control fails the turn rather than silently becoming denial.
 typeset permission_invalid="$tmp/permission-invalid"

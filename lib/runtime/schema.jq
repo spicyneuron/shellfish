@@ -279,7 +279,7 @@ def session_records_state:
         elif $record.hook != "stop" and .next == "user" then .
         else .valid = false end
       elif $record.role == "user" then
-        if .next == "user" then
+        if .next == "user" or .next == "assistant" then
           .next = "assistant" | .messages += 1
         else .valid = false end
       elif $record.role == "assistant" then

@@ -377,7 +377,7 @@ sf_session_update() {
   REPLY=1
 }
 
-# Closes a dangling turn in the loaded view, reporting appended records in REPLY.
+# Closes unanswered tool calls in the loaded view, reporting appended records in REPLY.
 # Requires a freshly read session.
 sf_session_recover_turn() {
   local record recovered='' needed
@@ -402,10 +402,6 @@ sf_session_recover_turn() {
     [[ -z $recovered ]] || recovered+=$'\n'
     recovered+=$record
   done
-  record='{"type":"message","role":"assistant","stop":"end","content":[{"type":"text","text":"Turn interrupted."}]}'
-  sf_session_append "$record" || return
-  [[ -z $recovered ]] || recovered+=$'\n'
-  recovered+=$record
   REPLY=$recovered
 }
 

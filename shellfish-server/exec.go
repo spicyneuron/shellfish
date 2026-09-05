@@ -19,8 +19,8 @@ import (
 const maxDiagnosticBytes = 8 << 10
 
 // A cancelled turn is given time to unwind: TERM targets the Shellfish turn alone so it
-// can commit the interrupted turn before exiting. Killing
-// the process group is the backstop for a child that cannot manage that.
+// can finish cleanup before exiting. Killing the process group is the backstop for a
+// child that cannot manage that.
 var cancelGracePeriod = 5 * time.Second
 
 // Exec runs Shellfish children against one stored session.

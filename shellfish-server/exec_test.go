@@ -145,9 +145,9 @@ func TestExecRejectsOversizedOutput(t *testing.T) {
 	}
 }
 
-// Cancelling signals Shellfish exec itself, which lets it close the interrupted turn;
-// its descendants are never signalled directly. Whatever outlives the grace
-// period is killed with the process group.
+// Cancelling signals Shellfish exec itself, which lets it finish cleanup. Its
+// descendants are never signalled directly. Whatever outlives the grace period is
+// killed with the process group.
 func TestExecTerminatesThenKillsItsGroup(t *testing.T) {
 	previous := cancelGracePeriod
 	cancelGracePeriod = 100 * time.Millisecond
@@ -159,7 +159,7 @@ func TestExecTerminatesThenKillsItsGroup(t *testing.T) {
 	childTerminated := filepath.Join(dir, "child-terminated")
 	childPID := filepath.Join(dir, "child-pid")
 	script := "trap 'printf terminated >\"" + parentTerminated + "\"; " +
-		"printf \"%s\\n\" \"{\\\"type\\\":\\\"message\\\",\\\"role\\\":\\\"assistant\\\",\\\"stop\\\":\\\"end\\\",\\\"content\\\":[{\\\"type\\\":\\\"text\\\",\\\"text\\\":\\\"Turn interrupted.\\\"}]}\"; exit 143' TERM\n" +
+		"printf \"%s\\n\" \"{\\\"type\\\":\\\"_turn_error\\\",\\\"message\\\":\\\"cancelled\\\"}\"; exit 143' TERM\n" +
 		"(\n" +
 		"  trap 'printf terminated >\"" + childTerminated + "\"; exit 143' TERM\n" +
 		"  while :; do sleep 0.05; done\n" +
@@ -202,7 +202,7 @@ func TestExecTerminatesThenKillsItsGroup(t *testing.T) {
 	if _, err := os.Stat(childTerminated); err == nil {
 		t.Fatal("cancellation signalled a descendant instead of Shellfish exec alone")
 	}
-	if len(events) != 1 || events[0] != `{"type":"message","role":"assistant","stop":"end","content":[{"type":"text","text":"Turn interrupted."}]}` {
+	if len(events) != 1 || events[0] != `{"type":"_turn_error","message":"cancelled"}` {
 		t.Fatalf("cancellation events = %q", events)
 	}
 	pidText, err := os.ReadFile(childPID)

@@ -137,8 +137,7 @@ print -r -- "$stream" | jq -eRn '
 ' >/dev/null
 
 # Repeated skipped completion is bounded by the existing provider request
-# limit. Exhaustion keeps the committed assistant and feedback, then appends a
-# canonical cancellation record to restore an await-user state.
+# limit. Exhaustion keeps the committed assistant and feedback.
 typeset stop_always="$tmp/stop-always"
 cat >"$stop_always" <<'ZSH'
 #!/usr/bin/env zsh
@@ -155,10 +154,9 @@ stream=$(sf_test_turn bounded "$limit_session")
 print -r -- "$stream" | jq -eRn '
   [inputs | fromjson] as $events |
   ($events | map(select(.type == "context")) | length) == 1 and
-  $events[-2].role == "assistant" and $events[-2].stop == "end" and
-  $events[-1].message == "provider request limit reached: 1"
+  $events[-1] == {type:"_turn_error",message:"provider request limit reached: 1"}
 ' >/dev/null
-assert_canonical_session "$limit_session" end
+assert_canonical_session "$limit_session"
 
 # Cancellation after feedback commit stops the retry without rolling back the
 # completed assistant or stop context.
@@ -203,7 +201,7 @@ wait "$cancel_pid" || cancel_status=$?
 jq -eRn '
   [inputs | fromjson] as $events |
   ($events | map(select(.type == "context" and .hook == "stop")) | length) == 1 and
-  $events[-1].role == "assistant" and $events[-1].stop == "end"
+  ($events | map(select(.role == "assistant")) | length) == 1
 ' <"$cancel_stream" >/dev/null
 assert_canonical_session "$cancel_session"
 jq -e -s '

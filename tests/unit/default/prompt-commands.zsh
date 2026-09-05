@@ -229,6 +229,23 @@ for target in 2 3; do
   (( fork_number++ ))
 done
 
+# Consecutive unanswered prompts remain distinct user sections.
+typeset consecutive_session="$tmp/consecutive.jsonl"
+head -n 1 "$SF_TEST_SESSIONS/header-only.jsonl" >"$consecutive_session"
+print -r -- \
+  '{"type":"message","role":"user","content":[{"type":"text","text":"First"}]}' \
+  '{"type":"message","role":"user","content":[{"type":"text","text":"Second"}]}' \
+  >>"$consecutive_session"
+fork_status=0
+SHELLFISH_EXECUTABLE="$ROOT/bin/shellfish" SHELLFISH_SESSION="$consecutive_session" \
+  SHELLFISH_TURN_STATE="$tmp" zsh -f "$ROOT/share/default/hooks/user_prompt_submit/fork" \
+  user_prompt_submit 3>"$fork_control" < <(print -n -- '/fork 2') || fork_status=$?
+(( fork_status == 11 ))
+jq -e --arg draft Second '.argv[-2:] == ["--draft",$draft]' "$fork_control" >/dev/null
+jq -e -s '
+  length == 2 and .[-1].role == "user" and .[-1].content[0].text == "First"
+' "$tmp/consecutive_fork_1.jsonl" >/dev/null
+
 # The bundled shell shortcut records the normalized command and its nested exit
 # status separately from the script's skip status.
 typeset shell_session="$tmp/shell-session.jsonl"

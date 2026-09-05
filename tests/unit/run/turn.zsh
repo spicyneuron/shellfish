@@ -192,12 +192,12 @@ print -r -- "$stream" | jq -eRn '
   $calls[0].input.command == "print -r -- ran"
 ' >/dev/null
 
-# Provider failure after the user commit closes the durable turn canonically.
+# Provider failure leaves the committed user turn unfinished.
 stream=$(sf_test_turn 'retry error later' "$session")
 print -r -- "$stream" | jq -eRn '
   [inputs | fromjson] as $events |
-  $events[-2].role == "assistant" and $events[-2].stop == "end" and
   $events[-1].type == "_turn_error" and
+  ($events | map(select(.role == "assistant")) | length) == 0 and
   ($events[-1].message | contains("test backend failure"))
 ' >/dev/null
 

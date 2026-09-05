@@ -336,8 +336,7 @@ func TestTurnInputBounds(t *testing.T) {
 		http.StatusRequestEntityTooLarge)
 }
 
-// Cancellation targets whatever turn is running, and waits for the child to
-// commit its interrupted turn before answering.
+// Cancellation targets whatever turn is running and waits for the child to finish.
 func TestCancelCurrentTurn(t *testing.T) {
 	base := newTestServer(t, newSession(t, ""), "IFS= read -r input\nwhile :; do sleep 0.05; done\n")
 	post(t, base+"/cancel", "", http.StatusConflict)

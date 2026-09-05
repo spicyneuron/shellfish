@@ -33,9 +33,9 @@ print -r -- "$(<"$cancel_stream")" | jq -eRn '
   ($events | map(select(.role == "tool_result"))) == [{
     type:"message",role:"tool_result",call_id:"call_1",name:"shell",
     content:"tool call interrupted",exit_code:126
-  }] and $events[-1].role == "assistant" and $events[-1].stop == "end"
+  }] and $events[-1].role == "tool_result"
 ' >/dev/null
-assert_canonical_session "$cancel_session" end
+assert_canonical_session "$cancel_session"
 
 # Cancellation escalates when a tool ignores TERM instead of hanging indefinitely.
 typeset stubborn_session="$tmp/tool-stubborn.jsonl"
@@ -59,5 +59,5 @@ wait "$stubborn_pid" || stubborn_status=$?
 jq -eRn '
   [inputs | fromjson] as $events |
   ($events | map(select(.role == "tool_result") | .exit_code)) == [126] and
-  $events[-1].role == "assistant" and $events[-1].stop == "end"
+  $events[-1].role == "tool_result"
 ' <"$stubborn_stream" >/dev/null

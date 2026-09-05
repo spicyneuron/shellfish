@@ -135,9 +135,9 @@ sf_session_begin_turn "$recovery_sync"
 sf_session_append '{"type":"message","role":"user","content":[{"type":"text","text":"partial"}]}'
 print -rn -- '{"type":"message"' >>"$recovery_sync"
 sf_session_resync_turn
-[[ $(jq -r '.content[0].text' <<<"$REPLY") == 'Turn interrupted.' ]]
+[[ -z $REPLY ]]
 sf_session_reset
-jq -e -s 'length == 3 and .[-1].role == "assistant" and .[-1].stop == "end"' \
+jq -e -s 'length == 2 and .[-1].role == "user"' \
   "$recovery_sync" >/dev/null
 
 # Recovery reloads complete writes missing from the in-memory view.
@@ -219,8 +219,7 @@ sf_session_reset
 sf_session_begin_turn "$native"
 sf_session_reset
 
-# Reopening a session interrupted during a tool batch fills its unanswered calls
-# and closes the turn with an ordinary assistant message.
+# Reopening a session interrupted during a tool batch fills its unanswered calls.
 typeset interrupted_tools="$tmp/interrupted-tools.jsonl"
 cp "$SF_TEST_SESSIONS/header-only.jsonl" "$interrupted_tools"
 sf_session_begin_turn "$interrupted_tools"
@@ -229,23 +228,23 @@ sf_session_append '{"type":"message","role":"assistant","stop":"tool_calls","con
 sf_session_append '{"type":"message","role":"tool_result","call_id":"call_1","name":"shell","content":"done","exit_code":0}'
 sf_session_reset
 sf_session_begin_turn "$interrupted_tools"
+sf_session_append '{"type":"message","role":"user","content":[{"type":"text","text":"next"}]}'
 sf_session_reset
 jq -e -s '
   .[-4].call_id == "call_1" and .[-4].exit_code == 0 and
   .[-3].call_id == "call_2" and .[-3].exit_code == 126 and
   .[-2].call_id == "call_3" and .[-2].name == "read_file" and .[-2].exit_code == 126 and
-  .[-1].role == "assistant" and .[-1].stop == "end"
+  .[-1].role == "user" and .[-1].content[0].text == "next"
 ' "$interrupted_tools" >/dev/null
 cp "$SF_TEST_SESSIONS/invalid-transition.jsonl" "$tmp/invalid-transition.jsonl"
 if sf_session_begin_turn "$tmp/invalid-transition.jsonl"; then
   fail 'invalid transition fixture was accepted'
 fi
 
-# A committed user without an assistant remains valid and is recovered by the
-# next mutation owner before another turn begins.
+# A committed user without an assistant remains valid for the next turn.
 typeset interrupted="$tmp/interrupted.jsonl"
 cp "$SF_TEST_SESSIONS/interrupted.jsonl" "$interrupted"
 sf_session_begin_turn "$interrupted"
-[[ -n $REPLY ]]
-[[ $(jq -r '.stop' <<<"$REPLY") == end ]]
+[[ -z $REPLY ]]
+sf_session_append '{"type":"message","role":"user","content":[{"type":"text","text":"next"}]}'
 sf_session_reset

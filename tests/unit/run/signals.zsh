@@ -102,8 +102,8 @@ wait "$model_pid" || model_status=$?
 (( model_status == 143 )) || fail 'interrupted model metadata lookup reported the wrong status'
 [[ -s $model_stopped ]] || fail 'interrupted model metadata adapter was not stopped'
 
-# A signalled run stops exec, closes the interrupted turn on disk, and
-# reports the signal rather than an ordinary failure.
+# A signalled run stops exec, persists partial assistant content, and reports
+# the signal rather than an ordinary failure.
 typeset cancel_session="$tmp/cancel.jsonl" cancel_output="$tmp/cancel.out"
 SF_TEST_BACKEND_DELAY=0.3 zsh -f "$entry" run --jsonl --config "$config" \
   --session "$cancel_session" \
@@ -126,7 +126,7 @@ jq -eRn '
   [inputs | fromjson] as $events |
   ($events[-1] | .role == "assistant" and .stop == "length" and
     (.content | any(.type == "text" and .text != "")))
-' <"$cancel_output" >/dev/null || fail 'signalled exec did not close the interrupted turn'
+' <"$cancel_output" >/dev/null || fail 'signalled exec did not persist partial content'
 
 # Reasoning metadata received before cancellation remains available to the next
 # provider request when visible reasoning is recovered.
@@ -195,14 +195,11 @@ integer tool_input_status=0
 wait "$tool_input_pid" || tool_input_status=$?
 (( tool_input_status == 143 )) || fail 'cancelled tool-input turn did not report the signal'
 jq -e -s '
-  .[-1] == {type:"message",role:"assistant",stop:"end",
-    content:[{type:"text",text:"Turn interrupted."}]} and
+  .[-1] == {type:"message",role:"user",content:[{type:"text",text:"tool input"}]} and
   ([.[] | .content[]? | select(.type == "tool_call")] | length) == 0
 ' "$tool_input_session" >/dev/null || fail 'cancelled tool input became durable intent'
 
-# A turn that never finished is repaired when the session is next opened, and
-# the repair is announced before the new turn, since it is as durable as any
-# record the turn itself commits.
+# A turn that never finished can be followed by a new user turn.
 typeset recovered_session="$tmp/recovered.jsonl"
 SF_TEST_BACKEND_DELAY=0 zsh -f "$entry" run --config "$config" \
   --session "$recovered_session" seed >/dev/null || fail 'recovery seed failed'
@@ -216,6 +213,5 @@ jsonl=$(print -r -- \
     --session "$recovered_session") || fail 'recovery run failed'
 print -r -- "$jsonl" | jq -eRn '
   [inputs | fromjson] as $events |
-  ($events[0] | .role == "assistant" and .stop == "end") and
-  ($events[1] | .role == "user")
-' >/dev/null || fail 'exec did not announce the recovered record'
+  ($events[0] | .role == "user")
+' >/dev/null || fail 'exec did not start after an unfinished turn'

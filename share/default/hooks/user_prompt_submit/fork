@@ -30,16 +30,22 @@ fi
 
 resolved=$(jq -j -s --argjson target "$target" '
   . as $records |
-  [$records | to_entries[] | select(.value.type == "message" and .value.role == "user") | .key] as $users |
-  (reduce ($records[] | select(.type == "message" and
-      (.role == "user" or .role == "assistant")) | .role) as $role
-    ([]; if length == 0 or .[-1] != $role then . + [$role] else . end)) as $sections |
-  if ($users | length) == 0 then error("empty")
+  (reduce ($records | to_entries[] | select(.value.type == "message" and
+      (.value.role == "user" or .value.role == "assistant"))) as $entry
+    ([];
+      if $entry.value.role == "user" then
+        . + [{role:"user",index:$entry.key,draft:$entry.value.content[0].text}]
+      elif length == 0 or .[-1].role != "assistant" then
+        . + [{role:"assistant"}]
+      else . end)) as $sections |
+  if ($sections | any(.role == "user") | not) then error("empty")
   elif $target == 0 then [($records | length), "", 0]
   elif $target > ($sections | length) then error("missing")
-  else ((($target + 1) / 2 | floor) + (if ($target % 2) == 0 then 1 else 0 end)) as $user |
-    if $user > ($users | length) then [($records | length), "", 0]
-    else [$users[$user - 1], $records[$users[$user - 1]].content[0].text, 1] end
+  elif $sections[$target - 1].role == "user" then
+    ($sections[$target - 1] | [.index, .draft, 1])
+  else ([$sections[$target:][] | select(.role == "user")] | first) as $next |
+    if $next == null then [($records | length), "", 0]
+    else [$next.index, $next.draft, 1] end
   end | "\(.[0])\u0000\(.[1])\u0000\(.[2])\u0000"
 ' "$SHELLFISH_SESSION" 2>/dev/null) || {
   print -u2 -r -- 'fork target does not exist'

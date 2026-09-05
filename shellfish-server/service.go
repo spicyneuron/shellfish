@@ -332,8 +332,7 @@ func (s *Service) forward(active *turn, event json.RawMessage) {
 	s.publishLocked(frame)
 }
 
-// postCancel stops the active turn. Shellfish exec commits the interrupted turn
-// on its way out, so the reply waits for the child to settle.
+// postCancel stops the active turn and waits for the child to finish cleanup.
 func (s *Service) postCancel(w http.ResponseWriter) {
 	s.mu.Lock()
 	active := s.turn
