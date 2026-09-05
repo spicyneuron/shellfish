@@ -4,6 +4,7 @@ setopt no_aliases no_multios pipe_fail
 typeset -g SF_RUNTIME_ERROR=''
 typeset -g SF_PRESENTATION=''
 typeset -g SF_RUNTIME_VERBOSE=0
+typeset -g SF_RUNTIME_SANDBOX_GRANTS='{"sandbox_read_paths":[],"sandbox_write_paths":[]}'
 
 sf_runtime_fail() {
   SF_RUNTIME_ERROR=$1
@@ -147,7 +148,7 @@ sf_runtime_resolve_from_config() {
   local backend_name backend_reference backend_dir backend_base manifest tool_manifest command
   local context_window_command=''
   local reference resolved hook external_name final settings fence='' env_file=''
-  local home=${HOME-} sandbox_read_paths=${_SHELLFISH_SANDBOX_READ_PATHS:-[]}
+  local home=${HOME-}
   local theme_marker=': shellfish:unknown-theme:'
   local -a fields tool_entries tool_paths tool_manifests sandbox_flags
   local -a system_entries component_entries resolved_args finalized
@@ -346,15 +347,12 @@ sf_runtime_resolve_from_config() {
     --arg manifest "$manifest" --arg command "$command" \
     --arg context_window_command "$context_window_command" --arg fence "$fence" \
     --arg env_file "$env_file" \
-    --argjson sandbox_read_paths "$sandbox_read_paths" \
-    --argjson sandbox_write_paths "${_SHELLFISH_SANDBOX_WRITE_PATHS:-[]}" --args '
+    --argjson grants "$SF_RUNTIME_SANDBOX_GRANTS" --args '
       include "libexec/config/runtime";
       include "lib/runtime/schema";
-      {prepared:$prepared,manifest:$manifest,command:$command,
-       context_window_command:$context_window_command,fence:$fence,
-       env_file:$env_file,sandbox_read_paths:$sandbox_read_paths,
-       sandbox_write_paths:$sandbox_write_paths,
-       resolved:$ARGS.positional} |
+      ({prepared:$prepared,manifest:$manifest,command:$command,
+        context_window_command:$context_window_command,fence:$fence,
+        env_file:$env_file,resolved:$ARGS.positional} + $grants) |
       runtime_finalize as $result |
       ({type:"session",format_version:1,cwd:"/",created:"1970-01-01T00:00:00Z"} +
         $result.runtime) | select(canonical_session_header(1)) |

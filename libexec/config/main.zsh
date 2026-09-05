@@ -14,8 +14,6 @@ sf_config_main() {
   local requested_config='' requested_session='' requested_profile=''
   local requested_backend='' requested_model='' requested_request='{}'
   local sandbox_detected='{"sandbox_read_paths":[],"sandbox_write_paths":[]}'
-  local inherited_read=${_SHELLFISH_SANDBOX_READ_PATHS:-[]}
-  local inherited_write=${_SHELLFISH_SANDBOX_WRITE_PATHS:-[]}
   local sandbox_flag sandbox_path resolved_path init_sandbox=''
   local -a sandbox_read_paths=() sandbox_write_paths=()
   integer session_explicit=0 config_explicit=0 request_explicit=0 runtime_override=0
@@ -191,27 +189,23 @@ sf_config_main() {
   source "$SF_ROOT/libexec/config/runtime.zsh"
   source "$SF_ROOT/libexec/config/init.zsh"
   if (( sandbox_auto_requested )); then
-    source "$SF_ROOT/lib/sandbox.zsh"
+    source "$SF_ROOT/libexec/config/sandbox.zsh"
     sandbox_detected=$(sf_sandbox_detect) || {
       sf_die 'cannot detect sandbox paths'
       return 1
     }
   fi
-  typeset -gx _SHELLFISH_SANDBOX_READ_PATHS _SHELLFISH_SANDBOX_WRITE_PATHS
-  _SHELLFISH_SANDBOX_READ_PATHS=$(jq -cn --argjson inherited "$inherited_read" \
-    --argjson detected "$sandbox_detected" \
-    '$inherited + $ARGS.positional + $detected.sandbox_read_paths' --args -- \
-    "${sandbox_read_paths[@]}") || return 1
-  _SHELLFISH_SANDBOX_WRITE_PATHS=$(jq -cn --argjson inherited "$inherited_write" \
-    --argjson detected "$sandbox_detected" \
-    '$inherited + $ARGS.positional + $detected.sandbox_write_paths' --args -- \
-    "${sandbox_write_paths[@]}") || return 1
+  # Explicit grants precede detected ones. Read paths are passed before write
+  # paths, so their count splits the positional arguments.
+  SF_RUNTIME_SANDBOX_GRANTS=$(jq -cn --argjson detected "$sandbox_detected" \
+    --argjson reads "${#sandbox_read_paths}" --args '
+      {sandbox_read_paths: ($ARGS.positional[:$reads] + $detected.sandbox_read_paths),
+       sandbox_write_paths: ($ARGS.positional[$reads:] + $detected.sandbox_write_paths)}
+    ' -- "${sandbox_read_paths[@]}" "${sandbox_write_paths[@]}") || return 1
 
   if (( init_requested )); then
     if (( sandbox_auto_requested || ${#sandbox_read_paths} || ${#sandbox_write_paths} )); then
-      init_sandbox=$(jq -cn --argjson read "$_SHELLFISH_SANDBOX_READ_PATHS" \
-        --argjson write "$_SHELLFISH_SANDBOX_WRITE_PATHS" \
-        '{sandbox_read_paths:$read,sandbox_write_paths:$write}') || return 1
+      init_sandbox=$SF_RUNTIME_SANDBOX_GRANTS
     fi
     sf_config_init "$requested_config" "$init_sandbox" || {
       sf_die "$SF_CONFIG_ERROR"
