@@ -102,7 +102,7 @@ class Terminal:
         """True once usage is visible and EOF has cleared activity."""
         frame = self.frame()
         return (
-            re.search(r" · \d+ ↑", frame) is not None
+            re.search(r" · [\d.]+[km]? ↑", frame) is not None
             and not any(mark in frame for mark in ("⡀", "⡄", "⠆", "⠃", "⠁"))
         )
 

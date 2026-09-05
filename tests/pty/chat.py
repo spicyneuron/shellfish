@@ -194,11 +194,11 @@ def test_startup_records_precede_two_turns():
         _, records = session.wait_session_records(5, path=path)
         end = time.monotonic() + 3
         while (
-            not re.search(r" · \d+ ↑", session.visible(mark))
+            not re.search(r" · [\d.]+[km]? ↑", session.visible(mark))
             and time.monotonic() < end
         ):
             session.pump()
-        assert re.search(r" · \d+ ↑", session.visible(mark))
+        assert re.search(r" · [\d.]+[km]? ↑", session.visible(mark))
         draft_mark = len(session.output)
         session.send(b"two")
         session.wait_after(draft_mark, "two", view=session.typed)
