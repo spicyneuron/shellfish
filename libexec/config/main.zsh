@@ -34,120 +34,61 @@ sf_config_main() {
         shift
         ;;
       --config)
-        (( $# >= 2 )) || {
-          sf_die '--config requires a path'
-          return 2
-        }
-        (( ! config_explicit )) || {
-          sf_die '--config may only be specified once'
-          return 2
-        }
-        [[ -n $2 && $2 != - ]] || {
-          sf_die '--config requires a nonempty file path other than -'
-          return 2
-        }
+        (( ! config_explicit )) || { sf_die '--config may only be specified once'; return 2; }
+        [[ -n $2 && $2 != - ]] ||
+          { sf_die '--config requires a nonempty file path other than -'; return 2; }
         config_explicit=1
         requested_config=$2
         shift 2
         ;;
       --session)
-        (( $# >= 2 )) || {
-          sf_die '--session requires a path'
-          return 2
-        }
-        (( ! session_explicit )) || {
-          sf_die '--session may only be specified once'
-          return 2
-        }
-        [[ -n $2 ]] || {
-          sf_die '--session requires a nonempty path'
-          return 2
-        }
+        (( ! session_explicit )) || { sf_die '--session may only be specified once'; return 2; }
+        [[ -n $2 ]] || { sf_die '--session requires a nonempty path'; return 2; }
         session_explicit=1
         requested_session=$2
         shift 2
         ;;
       -p|--profile)
-        (( $# >= 2 )) || {
-          sf_die "$1 requires a profile name"
-          return 2
-        }
-        [[ $2 =~ ^[A-Za-z0-9][A-Za-z0-9_-]*$ ]] || {
-          sf_die '--profile must match [A-Za-z0-9][A-Za-z0-9_-]*'
-          return 2
-        }
+        [[ $2 =~ ^[A-Za-z0-9][A-Za-z0-9_-]*$ ]] ||
+          { sf_die '--profile must match [A-Za-z0-9][A-Za-z0-9_-]*'; return 2; }
         requested_profile=$2
         runtime_override=1
         shift 2
         ;;
       -m|--model)
-        (( $# >= 2 )) || {
-          sf_die "$1 requires a model"
-          return 2
-        }
-        [[ -n $2 && ! $2 =~ '[[:cntrl:]]' ]] || {
-          sf_die '--model requires a nonempty value without control characters'
-          return 2
-        }
+        [[ -n $2 && ! $2 =~ '[[:cntrl:]]' ]] ||
+          { sf_die '--model requires a nonempty value without control characters'; return 2; }
         requested_model=$2
         runtime_override=1
         shift 2
         ;;
       -b|--backend)
-        (( $# >= 2 )) || {
-          sf_die "$1 requires a backend name or path"
-          return 2
-        }
-        [[ -n $2 && ! $2 =~ '[[:cntrl:]]' ]] || {
-          sf_die '--backend requires a nonempty value without control characters'
-          return 2
-        }
+        [[ -n $2 && ! $2 =~ '[[:cntrl:]]' ]] ||
+          { sf_die '--backend requires a nonempty value without control characters'; return 2; }
         requested_backend=$2
         runtime_override=1
         shift 2
         ;;
       --request)
-        (( $# >= 2 )) || {
-          sf_die '--request requires a JSON object'
-          return 2
-        }
-        (( ! request_explicit )) || {
-          sf_die '--request may only be specified once'
-          return 2
-        }
-        requested_request=$(jq -ce 'select(type == "object")' <<<"$2" 2>/dev/null) || {
-          sf_die '--request requires a JSON object'
-          return 2
-        }
+        (( ! request_explicit )) || { sf_die '--request may only be specified once'; return 2; }
+        requested_request=$(jq -ce 'select(type == "object")' <<<"$2" 2>/dev/null) ||
+          { sf_die '--request requires a JSON object'; return 2; }
         request_explicit=1
         runtime_override=1
         shift 2
         ;;
       --sandbox-read|--sandbox-write)
         sandbox_flag=$1
-        (( $# >= 2 )) || {
-          sf_die "$sandbox_flag requires a path"
-          return 2
-        }
-        [[ -n $2 ]] || {
-          sf_die "$sandbox_flag requires a nonempty path"
-          return 2
-        }
+        [[ -n $2 ]] || { sf_die "$sandbox_flag requires a nonempty path"; return 2; }
         sandbox_path=$2
         if [[ $sandbox_path == '~/'* ]]; then
-          [[ -n ${HOME-} ]] || {
-            sf_die "$sandbox_flag cannot expand ~ without HOME"
-            return 2
-          }
+          [[ -n ${HOME-} ]] || { sf_die "$sandbox_flag cannot expand ~ without HOME"; return 2; }
           sandbox_path="$HOME/${sandbox_path#\~/}"
         elif [[ $sandbox_path != /* ]]; then
           sandbox_path="$PWD/$sandbox_path"
         fi
         resolved_path=${sandbox_path:A}
-        [[ -e $resolved_path ]] || {
-          sf_die "$sandbox_flag path does not exist: $2"
-          return 2
-        }
+        [[ -e $resolved_path ]] || { sf_die "$sandbox_flag path does not exist: $2"; return 2; }
         if [[ $sandbox_flag == --sandbox-read ]]; then
           sandbox_read_paths+=( "$resolved_path" )
         else
@@ -158,10 +99,7 @@ sf_config_main() {
         ;;
       --)
         shift
-        (( ! $# )) || {
-          sf_die 'shellfish config does not accept a prompt'
-          return 2
-        }
+        (( ! $# )) || { sf_die 'shellfish config does not accept a prompt'; return 2; }
         ;;
       -*)
         sf_die "unknown argument: $1"

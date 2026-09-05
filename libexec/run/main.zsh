@@ -38,18 +38,8 @@ sf_run_main() {
   while (( $# )); do
     case $1 in
       --session)
-        (( $# >= 2 )) || {
-          sf_die '--session requires a path'
-          return 2
-        }
-        (( ! session_explicit )) || {
-          sf_die '--session may only be specified once'
-          return 2
-        }
-        [[ -n $2 ]] || {
-          sf_die '--session requires a nonempty path'
-          return 2
-        }
+        (( ! session_explicit )) || { sf_die '--session may only be specified once'; return 2; }
+        [[ -n $2 ]] || { sf_die '--session requires a nonempty path'; return 2; }
         session_explicit=1
         requested_session=$2
         shift 2

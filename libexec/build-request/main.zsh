@@ -17,44 +17,22 @@ sf_build_request_main() {
   while (( $# )); do
     case $1 in
       --session)
-        (( $# >= 2 )) || {
-          sf_die '--session requires a path'
-          return 2
-        }
-        (( ! session_explicit )) || {
-          sf_die '--session may only be specified once'
-          return 2
-        }
-        [[ -n $2 ]] || {
-          sf_die '--session requires a nonempty path'
-          return 2
-        }
+        (( ! session_explicit )) || { sf_die '--session may only be specified once'; return 2; }
+        [[ -n $2 ]] || { sf_die '--session requires a nonempty path'; return 2; }
         session_explicit=1
         requested_session=$2
         shift 2
         ;;
       --tools)
-        (( $# >= 2 )) || {
-          sf_die '--tools requires a JSON array'
-          return 2
-        }
-        (( ! tools_explicit )) || {
-          sf_die '--tools may only be specified once'
-          return 2
-        }
-        requested_tools=$(jq -ce 'select(type == "array")' <<<"$2" 2>/dev/null) || {
-          sf_die '--tools requires a JSON array'
-          return 2
-        }
+        (( ! tools_explicit )) || { sf_die '--tools may only be specified once'; return 2; }
+        requested_tools=$(jq -ce 'select(type == "array")' <<<"$2" 2>/dev/null) ||
+          { sf_die '--tools requires a JSON array'; return 2; }
         tools_explicit=1
         shift 2
         ;;
       --)
         shift
-        (( ! $# )) || {
-          sf_die 'build-request does not accept a prompt'
-          return 2
-        }
+        (( ! $# )) || { sf_die 'build-request does not accept a prompt'; return 2; }
         ;;
       -*)
         sf_die 'build-request only supports --session and --tools'

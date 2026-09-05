@@ -38,18 +38,8 @@ sf_create_main() {
   while (( $# )); do
     case $1 in
       --path)
-        (( $# >= 2 )) || {
-          sf_die '--path requires a path'
-          return 2
-        }
-        (( ! path_explicit )) || {
-          sf_die '--path may only be specified once'
-          return 2
-        }
-        [[ -n $2 ]] || {
-          sf_die '--path requires a nonempty path'
-          return 2
-        }
+        (( ! path_explicit )) || { sf_die '--path may only be specified once'; return 2; }
+        [[ -n $2 ]] || { sf_die '--path requires a nonempty path'; return 2; }
         path_explicit=1
         requested_path=$2
         shift 2
