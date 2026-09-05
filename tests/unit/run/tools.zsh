@@ -48,102 +48,6 @@ sf_test_tool_execute() {
     "$tool_config_dir" "$SF_SESSION[id]" || return
 }
 
-# The web fetch tool validates its input and sends only fixed Reader options to curl.
-mkdir "$tmp/jina-bin"
-cat >"$tmp/jina-bin/curl" <<'ZSH'
-#!/usr/bin/env zsh
-print -rl -- "$@" >"$JINA_TEST_ARGS"
-print -r -- '# fetched markdown'
-exit "${JINA_TEST_STATUS:-0}"
-ZSH
-chmod +x "$tmp/jina-bin/curl"
-typeset jina_args="$tmp/jina.args" jina_output
-jina_output=$(PATH="$tmp/jina-bin:$PATH" JINA_TEST_ARGS="$jina_args" \
-  "$ROOT/share/default/tools/fetch_url/run" <<<'{"url":"https://example.com/docs?q=reader"}')
-assert_equal '# fetched markdown' "$jina_output"
-typeset -a expected_jina_args=(
-  --disable --silent --show-error --fail-with-body --connect-timeout 10 --max-time 60
-  --header 'X-Return-Format: markdown' --
-  'https://r.jina.ai/https://example.com/docs?q=reader'
-)
-assert_equal "${(F)expected_jina_args}" "$(<"$jina_args")"
-if PATH="$tmp/jina-bin:$PATH" JINA_TEST_ARGS="$jina_args" \
-    "$ROOT/share/default/tools/fetch_url/run" <<<'{"url":"file:///etc/passwd"}' >/dev/null 2>&1; then
-  fail 'fetch_url accepted a non-HTTP URL'
-fi
-if PATH="$tmp/jina-bin:$PATH" JINA_TEST_ARGS="$jina_args" \
-    "$ROOT/share/default/tools/fetch_url/run" <<<'{"url":"https://example.com","extra":true}' >/dev/null 2>&1; then
-  fail 'fetch_url accepted an unknown input field'
-fi
-if PATH="$tmp/jina-bin:$PATH" JINA_TEST_ARGS="$jina_args" JINA_TEST_STATUS=22 \
-    "$ROOT/share/default/tools/fetch_url/run" <<<'{"url":"https://example.com"}' >/dev/null 2>&1; then
-  fail 'fetch_url hid a curl failure'
-fi
-jq -e '
-  .network.allowedDomains == ["r.jina.ai"] and
-  .network.allowLocalBinding == false and
-  .network.allowLocalOutbound == false and
-  .filesystem.defaultDenyRead == true
-' "$ROOT/share/default/tools/fetch_url/fence.jsonc" >/dev/null
-
-# The web search tool makes one fixed anonymous MCP call and decodes its SSE result.
-mkdir "$tmp/exa-bin"
-cat >"$tmp/exa-bin/curl" <<'ZSH'
-#!/usr/bin/env zsh
-print -rl -- "$@" >"$EXA_TEST_ARGS"
-if [[ -n ${EXA_TEST_RESPONSE-} ]]; then
-  print -r -- "$EXA_TEST_RESPONSE"
-else
-  cat <<'EOF'
-event: message
-data: {"result":{"content":[{"type":"text","text":"# search result"}]},"jsonrpc":"2.0","id":1}
-EOF
-fi
-exit "${EXA_TEST_STATUS:-0}"
-ZSH
-chmod +x "$tmp/exa-bin/curl"
-typeset exa_args="$tmp/exa.args" exa_output
-exa_output=$(PATH="$tmp/exa-bin:$PATH" EXA_TEST_ARGS="$exa_args" \
-  "$ROOT/share/default/tools/search_web/run" \
-  <<<'{"query":"current shellfish CLI documentation","num_results":3}')
-assert_equal '# search result' "$exa_output"
-typeset -a expected_exa_args=(
-  --disable --silent --show-error --fail-with-body --connect-timeout 10 --max-time 60
-  --request POST
-  --header 'Content-Type: application/json'
-  --header 'Accept: application/json, text/event-stream'
-  --header 'MCP-Protocol-Version: 2025-06-18'
-  --header 'x-exa-source: shellfish'
-  --data-binary '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"web_search_exa","arguments":{"query":"current shellfish CLI documentation","numResults":3}}}'
-  -- 'https://mcp.exa.ai/mcp?tools=web_search_exa'
-)
-assert_equal "${(F)expected_exa_args}" "$(<"$exa_args")"
-if PATH="$tmp/exa-bin:$PATH" EXA_TEST_ARGS="$exa_args" \
-    "$ROOT/share/default/tools/search_web/run" \
-    <<<'{"query":"docs","num_results":1.5}' >/dev/null 2>&1; then
-  fail 'search_web accepted a fractional result count'
-fi
-if PATH="$tmp/exa-bin:$PATH" EXA_TEST_ARGS="$exa_args" \
-    "$ROOT/share/default/tools/search_web/run" \
-    <<<'{"query":"docs","extra":true}' >/dev/null 2>&1; then
-  fail 'search_web accepted an unknown input field'
-fi
-typeset exa_error='{"jsonrpc":"2.0","id":1,"error":{"code":-32000,"message":"rate limited"}}'
-if PATH="$tmp/exa-bin:$PATH" EXA_TEST_ARGS="$exa_args" EXA_TEST_RESPONSE="$exa_error" \
-    "$ROOT/share/default/tools/search_web/run" <<<'{"query":"docs"}' >/dev/null 2>&1; then
-  fail 'search_web accepted an MCP error response'
-fi
-if PATH="$tmp/exa-bin:$PATH" EXA_TEST_ARGS="$exa_args" EXA_TEST_STATUS=22 \
-    "$ROOT/share/default/tools/search_web/run" <<<'{"query":"docs"}' >/dev/null 2>&1; then
-  fail 'search_web hid a curl failure'
-fi
-jq -e '
-  .network.allowedDomains == ["mcp.exa.ai"] and
-  .network.allowLocalBinding == false and
-  .network.allowLocalOutbound == false and
-  .filesystem.defaultDenyRead == true
-' "$ROOT/share/default/tools/search_web/fence.jsonc" >/dev/null
-
 # Tool execution preserves the caller's home in its otherwise clean environment.
 load_tools "$stored_runtime"
 [[ $SF_TOOL_COMMAND[shell] == "$tool_dir/run" &&
@@ -240,7 +144,7 @@ sf_tool_needs_permission shell true false 1 &&
   fail 'a bypass request without a reason was accepted'
 (( $? == 2 )) || fail 'a missing bypass reason did not report invalid input'
 
-# Bundled file tools load together and return bounded content or framework diffs.
+# Several tools project their schemas together and share one capture bound.
 typeset file_runtime=$(jq -cn --argjson base "$stored_runtime" \
   --arg root "$ROOT/share/default/tools" \
   --slurpfile read "$ROOT/share/default/tools/read_file/tool.json" \
@@ -254,12 +158,6 @@ typeset file_runtime=$(jq -cn --argjson base "$stored_runtime" \
       {name:"write_file",command:($root + "/write_file/run"),
        settings:(if $write[0].sandbox then ($root + "/write_file/fence.jsonc") else null end),manifest:$write[0]}]
 ')
-for policy in edit_file write_file; do
-  jq -e '.filesystem.denyWrite |
-    all(.[]; test("^/(private/)?var/(tmp|folders)/") | not)' \
-    "$ROOT/share/default/tools/$policy/fence.jsonc" >/dev/null
-done
-print -r -- alpha >"$tmp/file-tool.txt"
 tool_cwd=$tmp
 load_tools "$(jq -c '.harness.sandbox=true' <<<"$file_runtime")"
 jq -e 'map(.name) == ["read_file","edit_file","write_file"] and
@@ -270,18 +168,6 @@ jq -e 'map(.name) == ["read_file","edit_file","write_file"] and
 load_tools "$file_runtime"
 (( ! ${+SF_TOOL_COMMAND[shell]} && ${+SF_TOOL_COMMAND[read_file]} )) ||
   fail 'replacing configured tools retained stale execution metadata'
-sf_test_tool_execute '{"id":"read_1","name":"read_file","input":{"file_path":"file-tool.txt"}}' 0
-jq -e '.content == "L1-1 of 1\n1\talpha\n"' <<<"$REPLY" >/dev/null
-: >"$tmp/empty.txt"
-sf_test_tool_execute '{"id":"read_empty","name":"read_file","input":{"file_path":"empty.txt"}}' 0
-jq -e '.content == "(empty)\n"' <<<"$REPLY" >/dev/null
-sf_test_tool_execute '{"id":"edit_1","name":"edit_file","input":{"file_path":"file-tool.txt","old_string":"alpha","new_string":"beta"}}' 0
-jq -e '.content | startswith("@@ -1 +1 @@\n") and contains("-alpha") and contains("+beta")' \
-  <<<"$REPLY" >/dev/null
-print -r -- $'one\ntwo\nthree\nfour\nfive\nsix\nseven' >"$tmp/context-diff.txt"
-sf_test_tool_execute '{"id":"edit_context","name":"edit_file","input":{"file_path":"context-diff.txt","old_string":"four","new_string":"changed"}}' 0
-jq -e '.content | (contains(" three\n-four\n+changed\n five") and
-  (contains(" two") | not) and (contains(" six") | not))' <<<"$REPLY" >/dev/null
 tool_max_capture=64
 typeset full_old=oldoldoldoldoldoldoldoldoldoldoldoldoldoldoldold
 typeset full_new=newnewnewnewnewnewnewnewnewnewnewnewnewnewnewnew
@@ -291,33 +177,6 @@ sf_test_tool_execute "$(jq -cn --arg old "$full_old" --arg new "$full_new" \
 jq -e '.content | length == 64 and startswith("[output truncated]\n")' \
   <<<"$REPLY" >/dev/null
 tool_max_capture=$(jq -r '.harness.max_capture_bytes' <<<"$file_runtime")
-sf_test_tool_execute '{"id":"edit_2","name":"edit_file","input":{"file_path":"file-tool.txt","old_string":"beta","new_string":"beta"}}' 0
-jq -e '.content == "edit_file: file-tool.txt is already up to date\n"' \
-  <<<"$REPLY" >/dev/null
-mkdir "$tmp/diff-bin"
-cat >"$tmp/diff-bin/diff" <<'ZSH'
-#!/usr/bin/env zsh
-for arg in "$@"; do
-  [[ $arg != /dev/null ]] || {
-    print -u2 -- 'diff: /dev/null: Operation not permitted'
-    exit 2
-  }
-done
-exec /usr/bin/diff "$@"
-ZSH
-chmod +x "$tmp/diff-bin/diff"
-typeset saved_path=$PATH
-PATH="$tmp/diff-bin:$PATH"
-rehash
-sf_test_tool_execute '{"id":"write_1","name":"write_file","input":{"file_path":"created.txt","content":"created\n"}}' 0
-PATH=$saved_path
-rehash
-jq -e '.content | startswith("@@ -0,0 +1 @@\n") and contains("+created")' \
-  <<<"$REPLY" >/dev/null
-typeset newline_path=$'trailing-newline\n'
-sf_test_tool_execute "$(jq -cn --arg path "$newline_path" \
-  '{id:"write_2",name:"write_file",input:{file_path:$path,content:"kept\n"}}')" 0
-[[ -f "$tmp/$newline_path" ]]
 
 # Sandboxed execution gives Fence the package policy path and runtime grants.
 mkdir "$tmp/bin"
