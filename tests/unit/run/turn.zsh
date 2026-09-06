@@ -22,13 +22,12 @@ stream=$(sf_test_turn $'two\nwords' "$session")
 print -r -- "$stream" | jq -eRn -L "$ROOT" '
   include "lib/runtime/schema";
   [inputs | fromjson] as $events |
-  ($events | map(select(.type == "_turn_usage"))[0]) as $usage |
   ($events | map(select(.type == "message" and .role == "assistant"))[0]) as $assistant |
   $events[0].role == "user" and
   ($events | any(.type == "_assistant_delta")) and
-  ($usage | del(.type) | token_usage) and
-  ($usage | has("cached_tokens")) and
-  ($assistant.usage == ($usage | del(.type))) and
+  ($events | any(.type == "_turn_usage") | not) and
+  ($assistant.usage | token_usage) and
+  ($assistant.usage | has("cached_tokens")) and
   ($events | map(select(.type == "message")) | length == 2) and
   ($events | map(select(.type == "message"))[0] | canonical_user_message) and
   ($events | map(select(.type == "message"))[1] | canonical_assistant_message) and

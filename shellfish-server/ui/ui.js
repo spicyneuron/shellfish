@@ -476,8 +476,6 @@ function apply(frame) {
       // Provisional output. Assistant text and reasoning are drawn only from
       // the record that commits them, which arrives on this same stream.
       return;
-    case "_turn_usage":
-      return showUsage(frame);
     case "_tool_permission_request":
       return askPermission(frame);
     case "_notice": {

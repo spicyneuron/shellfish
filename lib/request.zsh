@@ -100,13 +100,6 @@ sf_request_run() {
         fi
         SF_REQUEST_PARTIAL_EVENTS+=( "$event" )
         ;;
-      usage)
-        if ! IFS= read -r -d $'\0' event <&p; then
-          kind=invalid
-          break
-        fi
-        "$emit" "$event"
-        ;;
       end)
         SF_REQUEST[result]=$(<&p)
         ended=1

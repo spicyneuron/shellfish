@@ -9,8 +9,6 @@ cat <<'STREAM' |
 {"type":"_backend_request_start"}
 {"type":"_assistant_reasoning_delta","text":"why","seq":0}
 {"type":"_assistant_delta","text":"hi\n","seq":1}
-{"type":"_turn_usage","input_tokens":14,"output_tokens":2}
-{"type":"_turn_usage","input_tokens":100,"cached_tokens":85,"output_tokens":100}
 {"type":"_notice","level":"info","title":"/tmp/check","source":"stop","text":"done","complete":true}
 {"type":"_notice","level":"error","title":"Turn failed","source":"","text":"recoverable","complete":true}
 {"type":"turn_error","message":"recoverable"}
@@ -35,20 +33,21 @@ order=$(print -r -- \
   tr '\0' '\n' | sed '/^$/d' | paste -sd, -)
 assert_equal 'assistant_commit,tool_call,call_1,shell,{},json,batch_ok' "$order"
 
+# A committed assistant record reports the turn's usage before it settles.
 typeset usage
 usage=$(print -r -- \
-    '{"type":"_turn_usage","input_tokens":12400,"cached_tokens":10478,"output_tokens":900}' |
+    '{"type":"message","role":"assistant","stop":"end","content":[{"type":"text","text":"hi"}],"usage":{"input_tokens":12400,"cached_tokens":10478,"output_tokens":900}}' |
   jq -jRs -L "$ROOT" --argjson runtime \
     '{"profile":{"context_window":264000}}' -f "$ROOT/libexec/tui/event-decode.jq" |
   tr '\0' '\n' | sed '/^$/d' | paste -sd, -)
-assert_equal 'turn_usage,12k ↑ 85% ⦿ 900 ↓ 5% of 264k ◔,batch_ok' "$usage"
+assert_equal 'turn_usage,12k ↑ 85% ⦿ 900 ↓ 5% of 264k ◔,assistant_commit,batch_ok' "$usage"
 
 usage=$(print -r -- \
-    '{"type":"_turn_usage","input_tokens":100,"cached_tokens":85,"output_tokens":20}' |
+    '{"type":"message","role":"assistant","stop":"end","content":[{"type":"text","text":"hi"}],"usage":{"input_tokens":100,"cached_tokens":85,"output_tokens":20,"reasoning_tokens":7}}' |
   jq -jRs -L "$ROOT" --argjson runtime \
     '{"profile":{"context_window":null}}' -f "$ROOT/libexec/tui/event-decode.jq" |
   tr '\0' '\n' | sed '/^$/d' | paste -sd, -)
-assert_equal 'turn_usage,100 ↑ 85% ⦿ 20 ↓,batch_ok' "$usage"
+assert_equal 'turn_usage,100 ↑ 85% ⦿ 20 ↓,7,assistant_commit,batch_ok' "$usage"
 
 # Transient notices and durable turn errors decode into the same notice fields.
 order=$(jq -cn --arg text 'provider request limit reached: 50' \

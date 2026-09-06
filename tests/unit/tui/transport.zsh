@@ -9,13 +9,16 @@ zle() { ZLE_CALLS+=( "$*" ); }
 
 SF_TUI_TRANSPORT_LINES=(
   '{"type":"_assistant_delta","text":"one"}'
-  '{"type":"_turn_usage","input_tokens":2,"output_tokens":1}'
+  '{"type":"message","role":"assistant","stop":"end","content":[{"type":"text","text":"one"}],"usage":{"input_tokens":2,"output_tokens":1}}'
 )
 sf_tui_transport_next null
 assert_equal 'assistant_delta,one,,,,,' "${(j:,:)reply}"
 sf_tui_transport_has_pending || fail 'decoded transport tail was not pending'
 sf_tui_transport_next null
 assert_equal 'turn_usage,2 ↑ 1 ↓,,,,,' "${(j:,:)reply}"
+sf_tui_transport_has_pending || fail 'decoded transport tail was not pending'
+sf_tui_transport_next null
+assert_equal 'assistant_commit,,,,,,' "${(j:,:)reply}"
 if sf_tui_transport_has_pending; then
   fail 'decoded transport batch remained pending'
 fi
@@ -26,12 +29,14 @@ typeset runtime=$(head -n 1 "$SF_TEST_SESSIONS/header-only.jsonl" |
 typeset updated_runtime=$(jq -c '.profile.context_window = 200' <<<"$runtime")
 SF_TUI_TRANSPORT_LINES=(
   "$(jq -cn --argjson runtime "$updated_runtime" '{type:"_session_update",runtime:$runtime}')"
-  '{"type":"_turn_usage","input_tokens":75,"output_tokens":5}'
+  '{"type":"message","role":"assistant","stop":"end","content":[{"type":"text","text":"two"}],"usage":{"input_tokens":75,"output_tokens":5}}'
 )
 sf_tui_transport_next "$runtime"
 assert_equal "session_update,$updated_runtime,,,,," "${(j:,:)reply}"
 sf_tui_transport_next "$updated_runtime"
 assert_equal 'turn_usage,75 ↑ 5 ↓ 38% of 200 ◔,,,,,' "${(j:,:)reply}"
+sf_tui_transport_next "$updated_runtime"
+assert_equal 'assistant_commit,,,,,,' "${(j:,:)reply}"
 
 # A batch is accepted atomically; malformed trailing input exposes no prefix.
 SF_TUI_TRANSPORT_LINES=(

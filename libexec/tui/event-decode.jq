@@ -8,8 +8,6 @@ def event_fields($event_runtime):
     ["assistant_reasoning_delta", .text]
   elif . == {type:"_backend_request_start"} then
     ["backend_request_start"]
-  elif .type == "_turn_usage" then
-    turn_usage_fields($event_runtime.profile.context_window // null)
   elif .type == "_notice" and
       (keys == ["complete", "level", "source", "text", "title", "type"]) and
       ([.title, .source, .text] | all(type == "string")) and
@@ -40,6 +38,9 @@ def event_fields($event_runtime):
   elif canonical_user_message or canonical_assistant_message or
       canonical_tool_result or canonical_context or
       (.type == "turn_error" and canonical_session_record) then
+    # Usage is committed with its assistant record rather than streamed.
+    (select(canonical_assistant_message and has("usage")) | .usage |
+      turn_usage_fields($event_runtime.profile.context_window // null)),
     durable_display_fields(false; ($event_runtime.harness.tools // []))
   else
     error("unsupported exec event")

@@ -78,7 +78,7 @@ Durable records are:
 - `session`: the resolved runtime header, emitted when a new session is created.
 - `system`: the concatenated system components.
 - `context`: model-visible hook script output.
-- `message` with role `user`, `assistant`, or `tool_result`.
+- `message` with role `user`, `assistant`, or `tool_result`. An assistant record carries the turn's token usage when the provider reported it.
 - `turn_error`: `{type:"turn_error",message}`, the failure that ended an accepted turn without an assistant answer. It is never sent to a provider.
 
 A sandboxed tool result includes `sandbox_denial_detected: true` when the tool exits non-zero and sandbox monitoring reports a denied action. The denial and non-zero exit are correlated signals; the denial is not necessarily the cause of the failure.
@@ -90,7 +90,6 @@ Transient events currently include:
 | `_backend_request_start` | A provider request is starting. |
 | `_assistant_delta` | Incremental assistant text for live presentation. |
 | `_assistant_reasoning_delta` | Incremental reasoning text for live presentation. |
-| `_turn_usage` | Token usage accumulated for the turn. |
 | `_notice` | A user-facing notice: hook script output, or a failure before the turn was accepted. |
 | `_tool_permission_request` | A sandbox bypass needs a client decision. |
 | `_handoff` | A hook script asks a capable client to run `argv` after the turn exits cleanly. |

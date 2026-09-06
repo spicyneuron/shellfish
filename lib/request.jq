@@ -93,9 +93,8 @@ def decode_backend_response(valid_event; valid_message):
           .seq += 1
         elif $event.type == "_assistant_reasoning_opaque" then
           .output = ["opaque", "\u0000", ($event | tojson), "\u0000"]
-        elif $event.type == "_turn_usage" then
-          .output = ["usage", "\u0000", ($event | tojson), "\u0000"]
-        elif $event.type == "_assistant_tool_call_delta" then
+        elif $event.type == "_turn_usage" or
+            $event.type == "_assistant_tool_call_delta" then
           .output = []
         elif $event.type == "_assistant_response_end" then
           [backend_response_message(valid_message)] as $messages |
