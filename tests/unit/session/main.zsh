@@ -197,7 +197,7 @@ sf_session_begin_turn "$session"
 [[ $(cat "$session") == "$before" ]]
 sf_session_reset
 
-# Static fixtures cover canonical formats the new core must continue to accept.
+# Static fixtures pin canonical durable formats the core must accept.
 for fixture in header-only complete tool-complete; do
   cp "$SF_TEST_SESSIONS/$fixture.jsonl" "$tmp/$fixture.jsonl"
   sf_session_begin_turn "$tmp/$fixture.jsonl"

@@ -29,9 +29,7 @@ sf_test_tmp() {
 }
 
 # err_exit plus this trap turn every bare test expression into a located
-# assertion: the trap names the statement, then err_exit abandons the file.
-# funcfiletrace's outermost frame is the top-level line the reader cares about,
-# even when the failure surfaced inside a library function.
+# assertion; the trap names the statement, then err_exit abandons the file.
 typeset -ga sf_test_detail=()
 TRAPZERR() {
   emulate -L zsh
@@ -42,8 +40,8 @@ TRAPZERR() {
   source_file=${frame%:*}
   source_line=${frame##*:}
   # A compound statement reports the line it opened on, which may be a comment,
-  # and a test that changed directory leaves a relative frame unreadable. Both
-  # degrade to the bare location rather than quoting something misleading.
+  # and a test that changed directory leaves a relative frame unreadable; both
+  # degrade to the bare location.
   if [[ -r $source_file ]]; then
     # Quoted so blank lines stay as empty fields and keep the index aligned.
     source_lines=( "${(@f)$(<$source_file)}" )

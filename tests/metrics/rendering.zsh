@@ -18,16 +18,14 @@ print -P -- '%BChat Rendering Performance%b'
 typeset -g SF_ROOT=$root
 source "$root/libexec/tui/render/main.zsh"
 
-# Wrap to 80 columns. The engine also needs a row budget; view.zsh repaints
-# with LINES - 5, so 45 stands in for a normal window. Full previews keep it
-# from eliding a body it would otherwise lay out.
+# Wrap to 80 columns; view.zsh subtracts its chrome reserve from LINES to get
+# the row budget, so 45 matches what a normal window produces. Full previews
+# keep the engine from eliding a body.
 integer columns=80 budget=45
 sf_tui_rows_config '{"tui":{"preview_lines_reasoning":"full","preview_lines_context":"full","preview_lines_tool_call":"full","preview_lines_tool_result":"full"}}'
 
-# Mirror the editor heartbeat: repaint, then flush every settled row
-# before taking the next delta. Rendering one bounded viewport per delta would
-# leave the cursor at the head of the transcript and measure nothing but the
-# first screenful.
+# Mirror the editor heartbeat: repaint, then flush every settled row before
+# taking the next delta, or the benchmark measures only the first screenful.
 present_feed() {
   sf_tui_event assistant_delta "$1"
   sf_tui_viewport $columns $budget "$SF_PRESENT_CURSOR"

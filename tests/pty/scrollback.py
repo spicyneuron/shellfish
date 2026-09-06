@@ -152,12 +152,8 @@ class Terminal:
 
 def test_tall_turn_loses_neither_text_nor_draft():
     # Settling is line-granular, so a one-word-per-line echo is what lets the
-    # turn commit while it streams; a single-line echo settles nothing until the
-    # turn ends and never exercises the heartbeat at all. The delay is equally
-    # load-bearing: lines have to arrive faster than an epoch commits them, or
-    # each commit fits in one chunk and never chains across editor entries.
-    # Measured against a deliberately broken watcher teardown, 5 ms faults on
-    # every run and 10 ms on none.
+    # turn commit while it streams, and the delay has to be fast enough that
+    # commits chain across editor entries instead of arriving in one chunk.
     session = Session(env={"SF_TEST_BACKEND_LINE_WORDS": "1",
                            "SF_TEST_BACKEND_DELAY": "0.005"})
     terminal = Terminal(session)

@@ -223,7 +223,7 @@ if sf_tui_reload "$tmp/invalid.jsonl"; then
   fail 'accepted an invalid durable transcript'
 fi
 
-# Replay is now the only source of the runtime, so a malformed header leaves the
+# Replay is the only source of the runtime, so a malformed header leaves the
 # client nothing to present.
 jq -c 'del(.backend)' "$SF_TEST_SESSIONS/header-only.jsonl" >"$tmp/bad-header.jsonl"
 if sf_tui_reload "$tmp/bad-header.jsonl"; then
