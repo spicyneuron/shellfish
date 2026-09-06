@@ -46,7 +46,7 @@ def request_messages:
             "Sandbox notice: A sandbox denial was detected while this tool was running."
         else . end |
         del(.type, .usage, .sandbox_denial_detected, .sandboxed)] end
-    elif ($record.type | IN("system", "session")) then .
+    elif ($record.type | IN("system", "session", "turn_error")) then .
     else error("unrecognized session record: " + ($record.type | tostring)) end
   ) as $conversation |
   if ($conversation.context | length) == 0 then $conversation.messages

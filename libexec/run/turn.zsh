@@ -10,7 +10,7 @@ setopt no_aliases no_bg_nice no_multios pipe_fail
 (( $+functions[sf_request_run] )) || source "$SF_ROOT/lib/request.zsh"
 
 typeset -gA SF_RUN=(
-  answer '' jsonl 0 interrupted 0 permission_count 0 permission_available 0
+  answer '' committed 0 jsonl 0 interrupted 0 permission_count 0 permission_available 0
   signal_status 143
 )
 
@@ -133,8 +133,8 @@ sf_run_partial_assistant() {
 
 # Zsh defers a trap's pending exit until this cleanup call returns.
 sf_run_turn_cleanup() {
-  integer interrupted=$1
-  local failure=$2 after=$3 recovered='' partial=''
+  integer interrupted=$1 error_persisted=0
+  local failure=$2 after=$3 error_message error_record recovered='' partial=''
 
   sf_tools_cleanup
   sf_hooks_turn_state_cleanup
@@ -154,7 +154,8 @@ sf_run_turn_cleanup() {
     fi
     # An interrupted turn may have written past the in-memory view, so recovery
     # judges the durable records rather than what this process last held.
-    if sf_session_resync_turn; then
+    if (( interrupted )); then error_message='Turn interrupted.'; else error_message=$failure; fi
+    if sf_session_resync_turn "$error_message"; then
       if [[ -n $REPLY ]]; then
         [[ -z $recovered ]] || recovered+=$'\n'
         recovered+=$REPLY
@@ -162,12 +163,31 @@ sf_run_turn_cleanup() {
     else
       failure=$SF_SESSION_ERROR
     fi
+    if jq -e '.type == "turn_error"' <<<"$SF_SESSION_RECORDS[-1]" >/dev/null 2>&1; then
+      error_persisted=1
+    fi
+    if (( SF_RUN[committed] )) &&
+        (( ! error_persisted )); then
+      error_record=$(jq -cn --arg message "$error_message" \
+        '{type:"turn_error",message:$message}') || failure='cannot prepare turn error'
+      if [[ -n $error_record ]]; then
+        if sf_session_append "$error_record"; then
+          [[ -z $recovered ]] || recovered+=$'\n'
+          recovered+=$error_record
+          error_persisted=1
+        else
+          failure=$SF_SESSION_ERROR
+        fi
+      fi
+    fi
   fi
   SF_REQUEST_PARTIAL_EVENTS=()
   [[ -z $recovered ]] || sf_run_emit "$recovered"
   sf_session_reset
   if (( ! interrupted )); then
-    [[ -z $failure ]] || sf_run_error "$failure"
+    if [[ -n $failure ]] && (( ! error_persisted )); then
+      sf_run_error "$failure"
+    fi
     [[ -n $failure || -z $after ]] || sf_run_emit "$after"
     [[ -z $failure ]]
   fi
@@ -191,6 +211,7 @@ sf_run_turn() {
 
   SF_RUN[permission_count]=0
   SF_RUN[permission_available]=$permission_available
+  SF_RUN[committed]=0
   trap 'sf_run_interrupt; exit $SF_RUN[signal_status]' TERM
   if ! sf_session_begin_turn "$session_path"; then
     sf_run_error "$SF_SESSION_ERROR"
@@ -299,6 +320,7 @@ sf_run_turn() {
       failure=$SF_SESSION_ERROR
       return 1
     fi
+    SF_RUN[committed]=1
     sf_run_emit "$user_record"
 
     while true; do

@@ -11,6 +11,7 @@ print -r -- '[
   {"type":"session"},
   {"type":"system","content":"ignored"},
   {"type":"message","role":"user","content":[{"type":"text","text":"hi"}]},
+  {"type":"turn_error","message":"ignored"},
   {"type":"message","role":"assistant","content":[],"usage":{"input_tokens":1}}
 ]' | fold | jq -e '
   . == [{role:"user",content:[{type:"text",text:"hi"}]},

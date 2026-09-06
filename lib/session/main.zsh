@@ -377,10 +377,10 @@ sf_session_update() {
   REPLY=1
 }
 
-# Closes unanswered tool calls in the loaded view, reporting appended records in REPLY.
+# Closes an unfinished turn, reporting appended records in REPLY.
 # Requires a freshly read session.
 sf_session_recover_turn() {
-  local record recovered='' needed
+  local message=${1:-Turn interrupted.} record recovered='' needed
   local -a pending
   integer index
   REPLY=''
@@ -402,6 +402,10 @@ sf_session_recover_turn() {
     [[ -z $recovered ]] || recovered+=$'\n'
     recovered+=$record
   done
+  record=$(jq -cn --arg message "$message" '{type:"turn_error",message:$message}') || return
+  sf_session_append "$record" || return
+  [[ -z $recovered ]] || recovered+=$'\n'
+  recovered+=$record
   REPLY=$recovered
 }
 
@@ -409,9 +413,10 @@ sf_session_recover_turn() {
 # so a torn trailing line cannot fail it, and the read precedes recovery so a
 # dangling turn is judged against the durable records rather than a stale view.
 sf_session_resync_turn() {
+  local message=${1-}
   sf_session_repair_tail || return
   sf_session_read || return
-  sf_session_recover_turn
+  sf_session_recover_turn "$message"
 }
 
 sf_session_begin_turn() {

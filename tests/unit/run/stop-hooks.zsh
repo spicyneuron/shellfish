@@ -154,7 +154,7 @@ stream=$(sf_test_turn bounded "$limit_session")
 print -r -- "$stream" | jq -eRn '
   [inputs | fromjson] as $events |
   ($events | map(select(.type == "context")) | length) == 1 and
-  $events[-1] == {type:"_turn_error",message:"provider request limit reached: 1"}
+  $events[-1] == {type:"turn_error",message:"provider request limit reached: 1"}
 ' >/dev/null
 assert_canonical_session "$limit_session"
 

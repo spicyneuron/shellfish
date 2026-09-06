@@ -124,8 +124,9 @@ wait "$cancel_pid" || cancel_status=$?
 (( cancel_status == 143 )) || fail 'signalled exec did not report the signal'
 jq -eRn '
   [inputs | fromjson] as $events |
-  ($events[-1] | .role == "assistant" and .stop == "length" and
+  ($events[-2] | .role == "assistant" and .stop == "length" and
     (.content | any(.type == "text" and .text != "")))
+  and $events[-1] == {type:"turn_error",message:"Turn interrupted."}
 ' <"$cancel_output" >/dev/null || fail 'signalled exec did not persist partial content'
 
 # Reasoning metadata received before cancellation remains available to the next
@@ -169,10 +170,10 @@ integer reasoning_status=0
 wait "$reasoning_pid" || reasoning_status=$?
 (( reasoning_status == 143 )) || fail 'cancelled reasoning turn did not report the signal'
 jq -e -s '
-  .[-1] == {type:"message",role:"assistant",stop:"length",content:[{
+  .[-2] == {type:"message",role:"assistant",stop:"length",content:[{
     type:"reasoning",text:"partial thought",
     opaque:{id:"reasoning_1",encrypted_content:"secret"}
-  }]}
+  }]} and .[-1] == {type:"turn_error",message:"Turn interrupted."}
 ' "$reasoning_session" >/dev/null || fail 'cancelled reasoning was not recovered'
 
 # A parseable tool-input prefix is not a completed provider response. Cancelling
@@ -195,7 +196,8 @@ integer tool_input_status=0
 wait "$tool_input_pid" || tool_input_status=$?
 (( tool_input_status == 143 )) || fail 'cancelled tool-input turn did not report the signal'
 jq -e -s '
-  .[-1] == {type:"message",role:"user",content:[{type:"text",text:"tool input"}]} and
+  .[-2] == {type:"message",role:"user",content:[{type:"text",text:"tool input"}]} and
+  .[-1] == {type:"turn_error",message:"Turn interrupted."} and
   ([.[] | .content[]? | select(.type == "tool_call")] | length) == 0
 ' "$tool_input_session" >/dev/null || fail 'cancelled tool input became durable intent'
 
@@ -213,5 +215,6 @@ jsonl=$(print -r -- \
     --session "$recovered_session") || fail 'recovery run failed'
 print -r -- "$jsonl" | jq -eRn '
   [inputs | fromjson] as $events |
-  ($events[0] | .role == "user")
+  $events[0] == {type:"turn_error",message:"Turn interrupted."} and
+  ($events[1] | .role == "user")
 ' >/dev/null || fail 'exec did not start after an unfinished turn'

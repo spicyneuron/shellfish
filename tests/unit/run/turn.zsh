@@ -192,14 +192,17 @@ print -r -- "$stream" | jq -eRn '
   $calls[0].input.command == "print -r -- ran"
 ' >/dev/null
 
-# Provider failure leaves the committed user turn unfinished.
+# Provider failure durably closes the committed user turn with its exact error.
 stream=$(sf_test_turn 'retry error later' "$session")
 print -r -- "$stream" | jq -eRn '
   [inputs | fromjson] as $events |
-  $events[-1].type == "_turn_error" and
+  $events[-1].type == "turn_error" and
   ($events | map(select(.role == "assistant")) | length) == 0 and
   ($events[-1].message | contains("test backend failure"))
 ' >/dev/null
+jq -e -s '
+  .[-1].type == "turn_error" and (.[-1].message | contains("test backend failure"))
+' "$session" >/dev/null
 
 # Visible content from an incomplete provider response is committed for replay,
 # while incomplete tool intent and usage remain transient.
@@ -239,13 +242,15 @@ print -r -- "$stream" | jq -eRn -L "$ROOT" '
       {type:"text",text:"partial answer"}
     ]
   } and
-  ($events[-1].type == "_turn_error") and
+  ($events[-1].type == "turn_error") and
   ($events[-1].message | contains("partial backend failure"))
 ' >/dev/null
-assert_canonical_session "$partial_response_session" length
+assert_canonical_session "$partial_response_session"
 jq -e -s '
-  (.[-1] | has("usage") | not) and
-  (.[-1].content | all(.type != "tool_call"))
+  .[-1].type == "turn_error" and
+  (.[-1].message | contains("partial backend failure")) and
+  (.[-2] | has("usage") | not) and
+  (.[-2].content | all(.type != "tool_call"))
 ' "$partial_response_session" >/dev/null
 stream=$(PARTIAL_CAPTURE="$partial_capture" sf_test_turn next "$partial_response_session")
 print -r -- "$stream" | jq -eRn '

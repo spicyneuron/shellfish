@@ -135,9 +135,9 @@ sf_session_begin_turn "$recovery_sync"
 sf_session_append '{"type":"message","role":"user","content":[{"type":"text","text":"partial"}]}'
 print -rn -- '{"type":"message"' >>"$recovery_sync"
 sf_session_resync_turn
-[[ -z $REPLY ]]
+assert_equal '{"type":"turn_error","message":"Turn interrupted."}' "$REPLY"
 sf_session_reset
-jq -e -s 'length == 2 and .[-1].role == "user"' \
+jq -e -s 'length == 3 and .[-1] == {type:"turn_error",message:"Turn interrupted."}' \
   "$recovery_sync" >/dev/null
 
 # Recovery reloads complete writes missing from the in-memory view.
@@ -231,9 +231,10 @@ sf_session_begin_turn "$interrupted_tools"
 sf_session_append '{"type":"message","role":"user","content":[{"type":"text","text":"next"}]}'
 sf_session_reset
 jq -e -s '
-  .[-4].call_id == "call_1" and .[-4].exit_code == 0 and
-  .[-3].call_id == "call_2" and .[-3].exit_code == 126 and
-  .[-2].call_id == "call_3" and .[-2].name == "read_file" and .[-2].exit_code == 126 and
+  .[-5].call_id == "call_1" and .[-5].exit_code == 0 and
+  .[-4].call_id == "call_2" and .[-4].exit_code == 126 and
+  .[-3].call_id == "call_3" and .[-3].name == "read_file" and .[-3].exit_code == 126 and
+  .[-2] == {type:"turn_error",message:"Turn interrupted."} and
   .[-1].role == "user" and .[-1].content[0].text == "next"
 ' "$interrupted_tools" >/dev/null
 cp "$SF_TEST_SESSIONS/invalid-transition.jsonl" "$tmp/invalid-transition.jsonl"
@@ -245,6 +246,6 @@ fi
 typeset interrupted="$tmp/interrupted.jsonl"
 cp "$SF_TEST_SESSIONS/interrupted.jsonl" "$interrupted"
 sf_session_begin_turn "$interrupted"
-[[ -z $REPLY ]]
+assert_equal '{"type":"turn_error","message":"Turn interrupted."}' "$REPLY"
 sf_session_append '{"type":"message","role":"user","content":[{"type":"text","text":"next"}]}'
 sf_session_reset

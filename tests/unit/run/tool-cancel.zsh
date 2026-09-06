@@ -33,7 +33,7 @@ print -r -- "$(<"$cancel_stream")" | jq -eRn '
   ($events | map(select(.role == "tool_result"))) == [{
     type:"message",role:"tool_result",call_id:"call_1",name:"shell",
     content:"tool call interrupted",exit_code:126
-  }] and $events[-1].role == "tool_result"
+  }] and $events[-1] == {type:"turn_error",message:"Turn interrupted."}
 ' >/dev/null
 assert_canonical_session "$cancel_session"
 
@@ -59,5 +59,5 @@ wait "$stubborn_pid" || stubborn_status=$?
 jq -eRn '
   [inputs | fromjson] as $events |
   ($events | map(select(.role == "tool_result") | .exit_code)) == [126] and
-  $events[-1].role == "tool_result"
+  $events[-1] == {type:"turn_error",message:"Turn interrupted."}
 ' <"$stubborn_stream" >/dev/null

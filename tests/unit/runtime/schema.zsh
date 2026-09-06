@@ -49,11 +49,19 @@ if print -r -- '{"type":"message","role":"assistant","stop":"cancelled","content
   fail 'cancelled assistant stop reason was accepted'
 fi
 
-# A new user message supersedes an unfinished turn.
+# A durable error closes an unfinished turn without forging an assistant message.
 print -r -- '[
   {"type":"message","role":"user","content":[{"type":"text","text":"unfinished"}]},
+  {"type":"turn_error","message":"backend failed"},
   {"type":"message","role":"user","content":[{"type":"text","text":"next"}]}
 ]' | schema_eval 'canonical_session_records' >/dev/null
+
+if print -r -- '[
+    {"type":"message","role":"user","content":[{"type":"text","text":"unfinished"}]},
+    {"type":"message","role":"user","content":[{"type":"text","text":"next"}]}
+  ]' | schema_eval 'canonical_session_records' >/dev/null 2>&1; then
+  fail 'consecutive user messages without a turn error were accepted'
+fi
 
 # Canonical requests use exact projected message and tool wrappers.
 typeset valid_request
