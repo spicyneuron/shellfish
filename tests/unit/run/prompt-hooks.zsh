@@ -57,6 +57,9 @@ sf_test_session "$prompt_session"
 stream=$(sf_test_turn accepted "$prompt_session")
 print -r -- "$stream" | jq -eRn '
   [inputs | fromjson] as $events |
+  ($events | map(select(.type == "_notice")) | map([.text,.complete])) ==
+    [["",false],["",true]] and
+  ($events | all(has("context") | not)) and
   ($events | map(select(.type == "context")))[0].content == "accepted context" and
   ($events | map(select(.role == "user")))[0].content[0].text == "accepted" and
   ($events | map(select(.type == "_backend_request_start")) | length) == 1
@@ -69,9 +72,10 @@ print -r -- "$stream" | jq -eRn '
   [inputs | fromjson] as $events |
   ($events | map(select(.type == "_notice"))) as $display |
   ($events | map(select(.type == "context")))[0].content == "declined context" and
-  ($display | length) == 2 and
-  ($display[0] | .text == "declined display\n" and .complete == false) and
-  ($display[1] | .text == "declined display\n" and .complete == true) and
+  ($display | length) == 3 and
+  ($display[0] | .text == "" and .complete == false) and
+  ($display[1] | .text == "declined display\n" and .complete == false) and
+  ($display[2] | .text == "declined display\n" and .complete == true) and
   ($events | any(.type == "_backend_request_start") | not) and
   ($events | any(.role == "user") | not)
 ' >/dev/null
@@ -110,7 +114,8 @@ print -r -- "$stream" | jq -eRn '
   ($events | any(.role == "user") | not) and
   ($events | any(.type == "_backend_request_start") | not) and
   $events[0].type == "_notice" and $events[0].complete == false and
-  $events[1].type == "_notice" and $events[1].complete == true and
+  $events[1].type == "_notice" and $events[1].complete == false and
+  $events[2].type == "_notice" and $events[2].complete == true and
   ($events[-1] | .level == "error" and (.text | contains("prompt-hook")))
 ' >/dev/null
 
@@ -120,7 +125,7 @@ stream=$(sf_test_turn /overflow "$overflow_session")
 print -r -- "$stream" | jq -eRn '
   [inputs | fromjson] as $events |
   ($events | map(select(.type == "_notice" and .level == "info"))) as $display |
-  ($display | length) == 0 and
+  ($display | map([.text,.complete])) == [["",false]] and
   ($events[-1] | .type == "_notice" and .level == "error" and
     (.text | contains("hook script output exceeds capture limit")))
 ' >/dev/null
@@ -143,12 +148,15 @@ while (( waited++ < 50 )) && [[ ! -e $PROMPT_MARKER ]]; do
 done
 (( waited <= 50 )) || fail 'user_prompt_submit hook script did not start'
 waited=0
-while (( waited++ < 50 )) && [[ ! -s $cancel_stream ]]; do
+while (( waited++ < 50 )) && ! jq -se 'any(.text == "still working\n")' \
+    "$cancel_stream" >/dev/null 2>&1; do
   sleep 0.1
 done
 (( waited <= 50 )) || fail 'user_prompt_submit stderr was not streamed'
 jq -eRn '
   [inputs | fromjson] == [{type:"_notice",level:"info",source:"user_prompt_submit",
+    title:$script,text:"",complete:false},
+    {type:"_notice",level:"info",source:"user_prompt_submit",
     title:$script,text:"still working\n",complete:false}]
 ' --arg script "$prompt_script" <"$cancel_stream" >/dev/null
 kill -TERM "$pid"

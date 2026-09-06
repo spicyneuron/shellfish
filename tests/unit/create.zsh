@@ -168,4 +168,83 @@ zsh -f "$entry" create --session-out "$missing" --config "$missing_config" >/dev
   fail 'a missing system component created a session'
 [[ ! -e $missing ]] || fail 'create left a transcript for a missing component'
 
+# Startup previews reach hooks' observers before the initial prefix is written.
+typeset events="$tmp/events.jsonl" streamed="$tmp/streamed.jsonl"
+typeset first="$tmp/first-hook" silent="$tmp/silent-hook" stream_config="$tmp/stream.jsonc"
+cat >"$first" <<'ZSH'
+#!/usr/bin/env zsh
+[[ ! -e $SHELLFISH_SESSION ]] || exit 2
+jq -se 'length == 2 and .[0].type == "_session_prepare" and
+  .[1].type == "_notice" and .[1].complete == false and .[1].text == ""' \
+  "$SF_TEST_EVENTS" >/dev/null || exit 3
+print -r -- 'startup context'
+printf '%*s' "${SF_TEST_CONTEXT_BYTES:-0}" ''
+print -u2 -r -- 'startup display'
+ZSH
+cat >"$silent" <<'ZSH'
+#!/usr/bin/env zsh
+[[ ! -e $SHELLFISH_SESSION ]] || exit 2
+jq -se '.[-2].complete == true and .[-1].complete == false and .[-1].text == ""' \
+  "$SF_TEST_EVENTS" >/dev/null || exit 3
+ZSH
+chmod +x "$first" "$silent"
+jq --arg first "$first" --arg silent "$silent" \
+  '.harnesses.machine.session_start=[$first,$silent]' "$config" >"$stream_config"
+SF_TEST_EVENTS="$events" zsh -f "$entry" create --jsonl --config "$stream_config" \
+  --session-out "$streamed" >"$events" 2>"$hook_error" || fail 'streamed creation failed'
+[[ ! -s $hook_error ]] || fail 'streamed display leaked to stderr'
+jq -se --arg path "$streamed" --arg first "${first:A}" --arg silent "${silent:A}" \
+  --slurpfile session "$streamed" '
+  map(.type) == ["_session_prepare","_notice","_notice","_notice",
+    "_notice","_notice","_session_created"] and
+  .[0].path == $path and .[0].records == $session[:2] and
+  (.[0].presentation | keys == ["theme","tui"]) and
+  .[1] == {type:"_notice",level:"info",source:"session_start",title:$first,
+    text:"",complete:false} and
+  .[2].text == "startup display\n" and .[2].complete == false and
+  .[3].text == "startup display\n" and .[3].complete == true and
+  .[3].context == $session[2] and
+  .[4] == {type:"_notice",level:"info",source:"session_start",title:$silent,
+    text:"",complete:false} and
+  .[5] == {type:"_notice",level:"info",source:"session_start",title:$silent,
+    text:"",complete:true} and
+  .[6] == {type:"_session_created",path:$path} and
+  $session[2] == {type:"context",hook:"session_start",script:"first-hook",content:"startup context\n"} and
+  ($session | length == 3)
+' "$events" >/dev/null || fail 'invalid creation event sequence or transcript'
+
+# Context previews use the capture budget, not the operating system's argv limit.
+typeset large="$tmp/large.jsonl" large_config="$tmp/large.jsonc"
+jq '.harnesses.machine.max_capture_bytes=400000' "$stream_config" >"$large_config"
+SF_TEST_EVENTS="$events" SF_TEST_CONTEXT_BYTES=300000 zsh -f "$entry" create --jsonl \
+  --session-out "$large" --config "$large_config" >"$events" 2>"$hook_error" ||
+  fail 'large context preview failed'
+jq -se --slurpfile session "$large" '.[3].context == $session[2] and
+  (.[3].context.content | length == 300016)' "$events" >/dev/null ||
+  fail 'large context preview was truncated'
+
+# Empty startup has no hook events, including when the system is empty.
+zsh -f "$entry" create --jsonl --config "$config" --system '' >"$events"
+jq -se 'map(.type) == ["_session_prepare","_session_created"] and
+  (.[0].records | length == 1)' "$events" >/dev/null || fail 'invalid empty startup stream'
+
+# Failure leaves only previews, never a durable session or completion signal.
+SF_TEST_STATE_MARKER="$marker" zsh -f "$entry" create --jsonl --session-out "$failed" \
+  --config "$hook_config" >"$events" 2>"$hook_error" && fail 'streamed failure succeeded'
+[[ ! -e $failed && $(<"$hook_error") == *'hook script failed with status 9:'* ]]
+jq -se 'map(.type) == ["_session_prepare","_notice","_notice","_notice"] and
+  all(.[]; has("context") | not)' \
+  "$events" >/dev/null || fail 'failed creation emitted completion'
+
+# A later failure does not make an earlier context preview durable.
+jq --arg first "$first" '.harnesses.machine.session_start |= [$first] + .' \
+  "$hook_config" >"$stream_config"
+SF_TEST_EVENTS="$events" SF_TEST_STATE_MARKER="$marker" zsh -f "$entry" create --jsonl \
+  --session-out "$failed" --config "$stream_config" >"$events" 2>"$hook_error" &&
+  fail 'a later startup failure succeeded'
+[[ ! -e $failed && $(<"$hook_error") == *'hook script failed with status 9:'* ]]
+jq -se 'any(.context.content == "startup context\n") and
+  all(.[]; .type != "_session_created")' "$events" >/dev/null ||
+  fail 'later failure lost the preview or reported creation'
+
 print -r -- ok

@@ -19,29 +19,6 @@ sf_run_emit() {
   return 0
 }
 
-sf_hooks_display_update() {
-  local hook=$1 script=$2 text=$3 event
-  if (( SF_RUN[jsonl] )); then
-    event=$(print -rn -- "$text" |
-      jq -Rsc --arg hook "$hook" --arg script "$script" \
-        '{type:"_notice",level:"info",title:$script,source:$hook,text:.,complete:false}') ||
-      return 1
-    sf_run_emit "$event"
-  fi
-}
-
-sf_hooks_display_complete() {
-  local hook=$1 script=$2 display=$3 event
-  if (( ! SF_RUN[jsonl] )); then
-    cat "$display" >&2
-    return
-  fi
-  event=$(jq -cn --arg hook "$hook" --arg script "$script" --rawfile text "$display" \
-    '{type:"_notice",level:"info",title:$script,source:$hook,text:$text,complete:true}') ||
-    return 1
-  sf_run_emit "$event"
-}
-
 sf_run_interrupt() {
   SF_RUN[interrupted]=1
   SF_TOOL_INTERRUPTED=1
@@ -203,6 +180,7 @@ sf_run_turn_cleanup() {
 
 sf_run_turn() {
   local user_record=$1 session_path=$2 permission_available=${3:-0} prompt=$4
+  local SF_HOOK_JSONL=$SF_RUN[jsonl]
   local request assistant stop_input result backend_command opened_records
   local tool_name call_id tool_input execution_input bypass bypass_reason_valid
   local decision denial_reason hook_action hook_reason

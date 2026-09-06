@@ -5,6 +5,7 @@ zmodload zsh/system
 (( $+functions[sf_scratch_category] )) || source "$SF_ROOT/lib/scratch.zsh"
 
 typeset -g SF_HOOK_ERROR=''
+typeset -g SF_HOOK_JSONL=0
 # Ordered script, status, stdout, stderr, and control quintets.
 typeset -ga SF_HOOK_SCRIPT_RESULTS=()
 typeset -g SF_HOOK_CONTEXT_COUNT=0
@@ -62,9 +63,22 @@ sf_hooks_read_capture() {
   REPLY=$value
 }
 
-# A component that streams hook display to a live client defines
-# sf_hooks_display_update and sf_hooks_display_complete. Without them, display
-# is ordinary stderr.
+sf_hooks_display() {
+  local hook=$1 script=$2 text=$3 complete=$4 context=${5:-null}
+  if (( ! SF_HOOK_JSONL )); then
+    [[ $complete != true ]] || print -rn -- "$text" >&2
+    return 0
+  fi
+  # The compact context occupies one line; the remaining bytes are raw display.
+  printf '%s\n%s' "$context" "$text" | jq -Rsc --arg hook "$hook" --arg script "$script" \
+    --argjson complete "$complete" '
+      index("\n") as $end |
+      (.[:$end] | fromjson) as $context | .[$end + 1:] |
+      {type:"_notice",level:"info",title:$script,source:$hook,text:.,complete:$complete} +
+      (if $context == null then {} else {context:$context} end)
+    '
+}
+
 sf_hooks_capture_one() {
   local script=$1 input=$2 directory=$3
   setopt local_options no_monitor
@@ -129,10 +143,9 @@ sf_hooks_capture_one() {
     (( display_bytes += ${#chunk} ))
     if (( ! notice_sent )); then
       notice+=$chunk
-      if [[ $notice == *$'\n'* ]] && (( display_bytes <= max_capture )) &&
-          (( $+functions[sf_hooks_display_update] )); then
+      if [[ $notice == *$'\n'* ]] && (( display_bytes <= max_capture )); then
         notice=${notice%%$'\n'*}$'\n'
-        sf_hooks_display_update "$hook" "$script" "$notice" || {
+        sf_hooks_display "$hook" "$script" "$notice" false || {
           exec {display_fd}<&-
           kill -KILL -- "-$script_pid" 2>/dev/null || kill -KILL "$script_pid" 2>/dev/null || true
           wait "$script_pid" 2>/dev/null || true
@@ -148,16 +161,6 @@ sf_hooks_capture_one() {
   wait "$script_pid"
   script_status=$?
   SF_HOOK_SCRIPT_PID=''
-  if (( display_bytes && display_bytes <= max_capture )); then
-    if (( $+functions[sf_hooks_display_complete] )); then
-      sf_hooks_display_complete "$hook" "$script" "$display" || {
-        sf_hooks_fail 'cannot complete hook display'
-        return
-      }
-    else
-      cat "$display" >&2
-    fi
-  fi
   reply=( "$script_status" "$context" "$display" "$control" )
 }
 
@@ -173,7 +176,7 @@ sf_hooks_dispatch() {
   shift argument_count
   local -a scripts=( "$@" ) result results
   local directory script script_context script_display script_control hook=$SF_HOOK_NAME
-  local origin='' control=''
+  local origin='' control='' preview
   integer script_status context_size display_size control_size
   integer perform=1 halted=0
   setopt local_options no_err_exit no_bg_nice
@@ -192,6 +195,10 @@ sf_hooks_dispatch() {
     }
 
     for script in $scripts; do
+      sf_hooks_display "$hook" "$script" '' false || {
+        sf_hooks_fail 'cannot emit hook display'
+        return
+      }
       sf_hooks_capture_one "$script" "$input" "$directory" "$max_capture" \
         "$argument_count" "${arguments[@]}" || return
       result=( "${reply[@]}" )
@@ -214,15 +221,32 @@ sf_hooks_dispatch() {
         return
       }
 
+      sf_hooks_read_capture "$result[2]" "$context_size" || {
+        sf_hooks_fail "cannot read hook script context: $script"
+        return
+      }
+      script_context=$REPLY
+      sf_hooks_read_capture "$result[3]" "$display_size" || {
+        sf_hooks_fail "cannot read hook script display: $script"
+        return
+      }
+      script_display=$REPLY
+      preview=null
+      if (( SF_HOOK_JSONL && script_status == 0 && control_size == 0 && context_size )) &&
+          [[ $hook == session_start ]]; then
+        sf_hooks_context_record "$hook" "${script:t}" "$script_context" '{}' || {
+          sf_hooks_fail "$SF_HOOK_ERROR"
+          return
+        }
+        preview=$REPLY
+      fi
+      sf_hooks_display "$hook" "$script" "$script_display" true "$preview" || {
+        sf_hooks_fail 'cannot complete hook display'
+        return
+      }
       case $script_status in
         0|10|11) ;;
         *)
-          script_display=''
-          sf_hooks_read_capture "$result[3]" "$display_size" || {
-            sf_hooks_fail "cannot read hook script display: $script"
-            return
-          }
-          script_display=$REPLY
           sf_hooks_fail "hook script failed with status $script_status: $script${script_display:+: $script_display}"
           return
           ;;
@@ -242,18 +266,6 @@ sf_hooks_dispatch() {
         }
         control=$script_control
       fi
-      script_context=''
-      sf_hooks_read_capture "$result[2]" "$context_size" || {
-        sf_hooks_fail "cannot read hook script context: $script"
-        return
-      }
-      script_context=$REPLY
-      script_display=''
-      sf_hooks_read_capture "$result[3]" "$display_size" || {
-        sf_hooks_fail "cannot read hook script display: $script"
-        return
-      }
-      script_display=$REPLY
       results+=( "$script" "$script_status" "$script_context" "$script_display" "$script_control" )
       if (( script_status == 10 || script_status == 11 )); then
         [[ -n $origin ]] || origin=$script
@@ -434,8 +446,27 @@ sf_hooks_run() {
   reply=( "${decision[@]}" )
 }
 
+sf_hooks_context_record() {
+  local hook=$1 script=$2 item=$3 control=$4
+  REPLY=$(print -rn -- "$item" |
+    jq -Rsc -L "$SF_ROOT" --arg hook "$hook" --arg script "$script" \
+      --argjson control "$control" '
+        include "lib/runtime/schema";
+        ({type:"context",hook:$hook,script:$script,content:.} +
+          ($control.context // {})) as $context |
+        if ($control.context? // {} | type == "object") and
+            ($control.context? // {} | keys - ["prompt", "status"] | length) == 0 and
+            ($context | canonical_context)
+        then $context
+        else error("invalid context control") end
+      ') || {
+    SF_HOOK_ERROR="hook script returned invalid context control: $script"
+    return 1
+  }
+}
+
 sf_hooks_commit_context() {
-  local hook=$1 mode=${2-} context item script control control_json
+  local hook=$1 mode=${2-} context item script control
   integer index
   SF_HOOK_CONTEXT_COUNT=0
   SF_HOOK_CONTEXT_RECORDS=()
@@ -445,23 +476,9 @@ sf_hooks_commit_context() {
     [[ -n $item ]] || continue
     script=${SF_HOOK_SCRIPT_RESULTS[index]:t}
     control=$SF_HOOK_SCRIPT_RESULTS[index+4]
-    control_json=${control:-'{}'}
-    context=$(print -rn -- "$item" |
-      jq -Rsc -L "$SF_ROOT" --arg hook "$hook" --arg script "$script" \
-        --argjson control "$control_json" '
-          include "lib/runtime/schema";
-          ({type:"context",hook:$hook,script:$script,content:.} +
-            ($control.context // {})) as $context |
-          if ($control.context? // {} | type == "object") and
-              ($control.context? // {} | keys - ["prompt", "status"] | length) == 0 and
-              ($context | canonical_context)
-          then $context
-          else error("invalid context control") end
-        ') || {
-      SF_HOOK_ERROR="hook script returned invalid context control: $script"
-      return 1
-    }
-    SF_HOOK_CONTEXT_RECORDS+=( "$context" )
+    control=${control:-'{}'}
+    sf_hooks_context_record "$hook" "$script" "$item" "$control" || return
+    SF_HOOK_CONTEXT_RECORDS+=( "$REPLY" )
     (( SF_HOOK_CONTEXT_COUNT += 1 ))
   done
   [[ $mode == collect ]] && return 0
