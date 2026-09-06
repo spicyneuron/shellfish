@@ -15,6 +15,8 @@ Configuration flags:
   -b, --backend NAME    Override the backend name or path
   -m, --model MODEL     Override the model
   --request JSON        Merge raw backend request parameters
+  --system TEXT         Replace the system prompt (repeatable)
+  --system-file PATH    Replace it with file content (repeatable)
   --sandbox-auto        Grant detected development-tool paths
   --sandbox-read PATH   Give sandboxed tools read-only access (repeatable)
   --sandbox-write PATH  Give sandboxed tools read-write access (repeatable)

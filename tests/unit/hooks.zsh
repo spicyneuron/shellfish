@@ -13,7 +13,7 @@ typeset -gx EXPECTED_CONFIG_DIR="$tmp/config"
 SF_TEST_RUNTIME=$(jq -cn --arg script "$start_script" --arg second "$start_second_script" \
   --arg env_file "$EXPECTED_CONFIG_DIR/.env" '
   {
-    profile:{request:{model:"test"},system:[]},
+    profile:{request:{model:"test"}},
     backend:{name:"test",command:"/usr/bin/false",endpoint:"https://example.invalid",
       api_key_env:"CUSTOM_API_KEY",env_file:$env_file,insecure_tls:false,http_timeout:1,http_stall:1},
     harness:{sandbox_read_paths:[],sandbox_write_paths:[],fence:"",tools:[],sandbox:false,max_requests_per_turn:1,

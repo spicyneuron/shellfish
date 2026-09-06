@@ -12,7 +12,7 @@ sf_die() {
 }
 
 sf_create_session() {
-  local session=$1 runtime=$2 error=''
+  local session=$1 runtime=$2 system=$3 error=''
   typeset -gx SHELLFISH_MODE=create
   SF_SESSION_PATH=$session
   SHELLFISH_SESSION_STATE=''
@@ -20,7 +20,7 @@ sf_create_session() {
     error=$SF_HOOK_ERROR
   elif ! sf_session_prepare "$runtime"; then
     error=$SF_SESSION_ERROR
-  elif ! sf_session_system; then
+  elif ! sf_session_system "$system"; then
     error=$SF_SESSION_ERROR
   elif ! sf_hooks_session_start "$session"; then
     error=$SF_HOOK_ERROR
@@ -31,9 +31,10 @@ sf_create_session() {
 }
 
 sf_create_main() {
-  local requested_path='' report runtime session
+  local requested_path='' report runtime session system
   local -a forwarded=()
-  integer path_explicit=0 report_status=0
+  integer path_explicit=0 report_status=0 take=0
+  source "$SF_ROOT/lib/options.zsh"
 
   while (( $# )); do
     case $1 in
@@ -44,9 +45,18 @@ sf_create_main() {
         requested_path=$2
         shift 2
         ;;
+      --session)
+        (( $# >= 2 )) || { sf_die '--session requires a value'; return 2; }
+        forwarded+=( "${@:1:2}" )
+        shift 2
+        ;;
       *)
-        forwarded+=( "$1" )
-        shift
+        # Forward option values with their option so that a value that looks
+        # like --path is not read as one.
+        take=$(( ${SF_CONFIG_OPTIONS[$1]:-0} + 1 ))
+        (( $# >= take )) || { sf_die "$1 requires a value"; return 2; }
+        forwarded+=( "${@:1:$take}" )
+        shift $take
         ;;
     esac
   done
@@ -60,10 +70,15 @@ sf_create_main() {
   # of runtime overrides against an existing --session.
   report=$("$SF_ENTRY" config "${forwarded[@]}") || report_status=$?
   (( ! report_status )) || return $report_status
-  runtime=$(jq -ce 'del(.theme, .tui)' <<<"$report") || {
+  runtime=$(jq -ce 'del(.theme, .tui, .system)' <<<"$report") || {
     sf_die 'cannot resolve the session runtime'
     return 1
   }
+  system=$(jq -j '.system + "\u0000"' <<<"$report") || {
+    sf_die 'cannot resolve the system prompt'
+    return 1
+  }
+  system=${system%$'\0'}
 
   source "$SF_ROOT/lib/session/main.zsh"
   source "$SF_ROOT/lib/hooks.zsh"
@@ -80,7 +95,7 @@ sf_create_main() {
     sf_die "invalid session path: $session"
     return 1
   }
-  sf_create_session "$session" "$runtime" || return 1
+  sf_create_session "$session" "$runtime" "$system" || return 1
   print -r -- "$session"
 }
 

@@ -259,10 +259,40 @@ report=$(zsh -f "$entry" config --config "$config_dir/shellfish.jsonc" -m claude
   fail 'config report with override failed'
 assert_equal claude-3 "$(jq -r '.profile.request.model' <<<"$report")" 'config applies --model'
 
+# System inputs replace configured components and preserve their mixed order.
+print -r -- 'file prompt' >"$tmp/system-override.md"
+report=$(cd "$tmp" && zsh -f "$entry" config --config "$config_dir/shellfish.jsonc" \
+  --system 'first prompt' --system-file system-override.md --system $'last\nprompt') || \
+  fail 'config report with system overrides failed'
+jq -e '
+  .system == "first prompt\n\nfile prompt\n\nlast\nprompt" and
+  (.profile | has("system") | not)
+' <<<"$report" >/dev/null || fail 'config did not materialize ordered system overrides'
+zsh -f "$entry" config --config "$config_dir/shellfish.jsonc" \
+  --system-file "$tmp/missing-system.md" >/dev/null 2>&1 && \
+  fail '--system-file accepted an unreadable file'
+jq '.profiles.agent.system = ["missing.md"]' "$config_dir/shellfish.jsonc" \
+  >"$tmp/missing-configured-system.jsonc"
+report=$(zsh -f "$entry" config --config "$tmp/missing-configured-system.jsonc" \
+  --system replacement) || fail 'system override resolved a replaced configured file'
+jq -e '.system == "replacement" and (.profile | has("system") | not)' <<<"$report" \
+  >/dev/null || fail 'system override did not replace an unreadable configured component'
+
+printf 'before\0after\n' >"$tmp/system-override.md"
+jq --arg file "$tmp/system-override.md" '.profiles.agent.system = [$file]' \
+  "$config_dir/shellfish.jsonc" >"$tmp/binary-system.jsonc"
+for source in configured override; do
+  typeset -a system_args=( --config "$tmp/binary-system.jsonc" )
+  [[ $source != override ]] || system_args+=( --system-file "$tmp/system-override.md" )
+  report=$(zsh -f "$entry" config "${system_args[@]}" 2>&1) &&
+    fail 'a system file containing NUL bytes was silently truncated'
+  [[ $report == *'system prompt must not contain NUL bytes'* ]] || fail "$report"
+done
+
 # A stored session supplies its runtime. Themes and limits come from current config.
 jq -cn '{
   type:"session",format_version:1,cwd:"/tmp",created:"2026-08-18T00:00:00Z",
-  profile:{request:{model:"stored-model"},system:[]},
+  profile:{request:{model:"stored-model"}},
   backend:{name:"test",command:"/bin/true",endpoint:"https://example.invalid",
     api_key_env:"",env_file:"",insecure_tls:false,http_timeout:30,http_stall:10},
   harness:{sandbox_read_paths:[],sandbox_write_paths:[],
@@ -280,6 +310,11 @@ if zsh -f "$entry" config --config "$config_dir/shellfish.jsonc" \
     --session "$tmp/stored.jsonl" --sandbox-write "$tmp/extra" >/dev/null 2>&1; then
   fail '--sandbox-write overrode an existing session'
 fi
+report=$(zsh -f "$entry" config --config "$config_dir/shellfish.jsonc" \
+  --session "$tmp/stored.jsonl" --system replacement) ||
+  fail 'config rejected a system replacement for derived settings'
+jq -e '.system == "replacement" and .profile.request.model == "stored-model"' \
+  <<<"$report" >/dev/null || fail 'config did not replace the derived system prompt'
 
 # --verbose lifts every preview limit without altering the stored runtime.
 report=$(zsh -f "$entry" config --config "$config_dir/shellfish.jsonc" --verbose) || \

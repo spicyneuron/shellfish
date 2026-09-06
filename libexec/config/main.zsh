@@ -14,11 +14,13 @@ sf_die() {
 sf_config_main() {
   local requested_config='' requested_session='' requested_profile=''
   local requested_backend='' requested_model='' requested_request='{}'
+  local system_path system_text
+  local -a system_parts=()
   local sandbox_detected='{"sandbox_read_paths":[],"sandbox_write_paths":[]}'
   local sandbox_flag sandbox_path resolved_path init_sandbox=''
   local -a sandbox_read_paths=() sandbox_write_paths=()
   integer session_explicit=0 config_explicit=0 request_explicit=0 runtime_override=0
-  integer init_requested=0 verbose_requested=0 sandbox_auto_requested=0
+  integer init_requested=0 verbose_requested=0 sandbox_auto_requested=0 system_explicit=0
 
   while (( $# )); do
     case $1 in
@@ -78,6 +80,28 @@ sf_config_main() {
         runtime_override=1
         shift 2
         ;;
+      --system|--system-file)
+        (( $# >= 2 )) || { sf_die "$1 requires a value"; return 2; }
+        if [[ $1 == --system-file ]]; then
+          system_path=$2
+          [[ -n $system_path ]] || { sf_die '--system-file requires a nonempty path'; return 2; }
+          if [[ $system_path == '~/'* ]]; then
+            [[ -n ${HOME-} ]] || { sf_die '--system-file cannot expand ~ without HOME'; return 2; }
+            system_path="$HOME/${system_path#\~/}"
+          fi
+          [[ -f $system_path && -r $system_path ]] || {
+            sf_die "cannot read system file: $2"
+            return 2
+          }
+          system_text=$(<"$system_path")
+        else
+          # The command substitution strips trailing newlines, as file inputs do.
+          system_text=$(print -rn -- "$2")
+        fi
+        [[ -z $system_text ]] || system_parts+=( "$system_text" )
+        system_explicit=1
+        shift 2
+        ;;
       --sandbox-read|--sandbox-write)
         sandbox_flag=$1
         [[ -n $2 ]] || { sf_die "$sandbox_flag requires a nonempty path"; return 2; }
@@ -114,7 +138,7 @@ sf_config_main() {
   done
 
   if (( init_requested )); then
-    (( ! session_explicit && ! verbose_requested && ! request_explicit )) &&
+    (( ! session_explicit && ! verbose_requested && ! request_explicit && ! system_explicit )) &&
       [[ -z $requested_profile && -z $requested_backend && -z $requested_model ]] || {
       sf_die '--init only supports --config and sandbox flags'
       return 2
@@ -159,10 +183,15 @@ sf_config_main() {
   (( ! sandbox_auto_requested )) || runtime_override=1
   sf_runtime_resolve "$requested_session" "$requested_config" \
     "$requested_profile" "$requested_model" "$requested_request" \
-    "$requested_backend" "$runtime_override" || {
+    "$requested_backend" "$runtime_override" "$system_explicit" || {
     local resolve_status=$?
     sf_die "$SF_RUNTIME_ERROR"
     return $resolve_status
+  }
+  (( ! system_explicit )) || SF_RUNTIME_SYSTEM=${(pj:\n\n:)system_parts}
+  [[ $SF_RUNTIME_SYSTEM != *$'\0'* ]] || {
+    sf_die 'system prompt must not contain NUL bytes'
+    return 2
   }
   sf_runtime_report "$REPLY"
 }

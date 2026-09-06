@@ -18,7 +18,7 @@ make_script prompt '[[ $1 == user_prompt_submit && $SHELLFISH_TURN_ID == 1 ]]; [
 prompt_script=$script
 typeset -g SF_TEST_RUNTIME=$(jq -cn --arg script "$prompt_script" '
   {
-    profile:{request:{model:"test"},system:[]},
+    profile:{request:{model:"test"}},
     backend:{name:"test",command:"/usr/bin/false",endpoint:"https://example.invalid",
       api_key_env:"",env_file:"",insecure_tls:false,http_timeout:1,http_stall:1},
     harness:{sandbox_read_paths:[],sandbox_write_paths:[],fence:"",tools:[],sandbox:false,max_requests_per_turn:1,

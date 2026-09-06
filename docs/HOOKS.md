@@ -156,7 +156,7 @@ Trailing context, typically `stop` feedback, becomes a synthetic trailing user m
 
 ### `session_start`
 
-Runs once during session preparation. It does not run when an existing session is resumed or a turn restarts. The header and configured system record are prepared in memory, and script input is constructed from that state and its resolved runtime. The session path does not exist until the complete initial prefix is written after all scripts succeed. stdin is empty and `$1` is `session_start`. There are no further arguments. The script receives `SHELLFISH_SESSION_STATE`, but it does not receive `SHELLFISH_TURN_ID`, `SHELLFISH_TURN_STATE`, or credentials. The API key is scoped to the backend adapter only.
+Runs once during session preparation. It does not run when an existing session is resumed or a turn restarts. The header and materialized system record are prepared in memory, and script input is constructed from that state and its resolved runtime. The session path does not exist until the complete initial prefix is written after all scripts succeed. stdin is empty and `$1` is `session_start`. There are no further arguments. The script receives `SHELLFISH_SESSION_STATE`, but it does not receive `SHELLFISH_TURN_ID`, `SHELLFISH_TURN_STATE`, or credentials. The API key is scoped to the backend adapter only.
 
 - **stdout** becomes durable `session_start` context in the initial session prefix. Each script's nonempty stdout is a separately attributed record.
 - **stderr** is shown and discarded.

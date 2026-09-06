@@ -225,9 +225,7 @@ valid_header=$(jq -cn '
     format_version: 1,
     cwd: "/tmp",
     created: "2026-08-18T00:00:00Z",
-    profile: {
-      request: {model: "gpt-4o"}, system: []
-    },
+    profile: {request: {model: "gpt-4o"}},
     backend: {
       name: "openai", command: "/bin/run", env_file: "/tmp/.env",
       endpoint: "https://api.openai.com/v1/chat/completions",
@@ -243,6 +241,11 @@ valid_header=$(jq -cn '
   }
 ')
 print -r -- "$valid_header" | schema_eval 'canonical_session_header(1)' >/dev/null
+
+if jq -c '.profile.system = []' <<<"$valid_header" |
+    schema_eval 'canonical_session_header(1)' >/dev/null 2>&1; then
+  fail 'system sources were accepted in a session header'
+fi
 
 # Relative hook paths in session headers are rejected.
 if jq -c '.harness.stop = ["relative/hook"]' <<<"$valid_header" |

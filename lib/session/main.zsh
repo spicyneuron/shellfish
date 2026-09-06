@@ -132,23 +132,10 @@ sf_session_prepare() {
   SF_SESSION_RECORDS=( "$header" )
 }
 
-# Concatenates the prepared header's system components into one system record.
-# Requires sf_session_prepare. Header validation guarantees the paths carry no
-# control characters, so newlines separate them safely.
+# Adds a materialized system record to a prepared session.
 sf_session_system() {
-  local content decoded record component
-  local -a components parts
+  local content=${1-} record
   SF_SESSION_ERROR=''
-  decoded=$(jq -r '.profile.system[]' <<<"$SF_SESSION[runtime]") ||
-    sf_session_fail 'cannot inspect system components' || return
-  [[ -z $decoded ]] || components=( "${(@f)decoded}" )
-  for component in $components; do
-    [[ -f $component && -r $component ]] ||
-      sf_session_fail "cannot read system component: $component" || return
-    content=$(<"$component")
-    [[ -z $content ]] || parts+=( "$content" )
-  done
-  content=${(pj:\n\n:)parts}
   [[ -n $content ]] || return 0
   record=$(jq -cn --arg content "$content" '{type:"system",content:$content}') ||
     sf_session_fail 'cannot prepare system record' || return

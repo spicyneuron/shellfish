@@ -17,6 +17,11 @@ error=$(zsh -f "$entry" --profile default positional 2>&1) || exit_code=$?
   fail 'implicit chat rejected its positional prompt after options'
 
 exit_code=0
+error=$(zsh -f "$entry" --new source.jsonl --system replacement 2>&1) || exit_code=$?
+[[ $error == *'chat requires an interactive terminal'* && $exit_code == 2 ]] || \
+  fail 'chat rejected a system replacement with --new SESSION'
+
+exit_code=0
 error=$(zsh -f "$entry" --draft 'editable prompt' 2>&1) || exit_code=$?
 [[ $error == *'chat requires an interactive terminal'* && $exit_code == 2 ]] || \
   fail 'chat rejected a draft'

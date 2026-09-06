@@ -56,16 +56,15 @@ jq -e --arg read "${tmp:A}/system" --arg write "${tmp:A}/home" '
   (.harness.sandbox_write_paths | index($write)) != null
 ' "$granted" >/dev/null || fail 'create did not store forwarded sandbox grants'
 
-# --session names the session the runtime is derived from. Its settings are
-# reused and its system components are rematerialized, without copying records.
-print -r -- 'rematerialized system' >"$tmp/system/source.md"
+# --session names the session whose header and durable system record are copied.
+print -r -- 'changed configured system' >"$tmp/system/source.md"
 print -r -- '{"type":"message","role":"user","content":[{"type":"text","text":"old"}]}' \
   >>"$created"
 reused=$(zsh -f "$entry" create --session "$created") || fail 'sourced create failed'
 jq -e -s --slurpfile source "$created" '
-  length == 2 and .[1] == {type:"system",content:"rematerialized system"} and
+  length == 2 and .[1] == {type:"system",content:"initial system"} and
   (.[0] | del(.created)) == ($source[0] | del(.created))
-' "$reused" >/dev/null || fail 'create did not reuse only the source settings'
+' "$reused" >/dev/null || fail 'create did not copy the source header and system record'
 
 # An occupied destination is never overwritten.
 zsh -f "$entry" create --path "$explicit" --config "$config" >/dev/null 2>&1 &&
@@ -113,6 +112,44 @@ zsh -f "$entry" create --path "$joined" --config "$joined_config" >/dev/null ||
   fail 'multi-component create failed'
 jq -se 'length == 2 and .[1] == {type:"system",content:"first prompt\n\nsecond prompt"}' \
   "$joined" >/dev/null || fail 'create did not join the system components'
+
+# Command-line system inputs replace the profile list and retain mixed order.
+typeset override="$tmp/override.jsonl" override_file="$tmp/override.md" derived
+printf 'file prompt\n' >"$override_file"
+zsh -f "$entry" create --path "$override" --config "$config" \
+  --system $'inline\nprompt\n\n' --system-file "$override_file" --system 'last prompt' \
+  >/dev/null || fail 'create rejected system overrides'
+jq -se '
+  length == 2 and
+  (.[0].profile | has("system") | not) and
+  .[1] == {type:"system",content:"inline\nprompt\n\nfile prompt\n\nlast prompt"}
+' "$override" >/dev/null || fail 'create did not materialize ordered system overrides'
+printf 'updated file prompt\n' >"$override_file"
+jq -c 'if .type == "system" then .content += "\n\n" else . end' "$override" \
+  >"$tmp/stored-system.jsonl"
+mv "$tmp/stored-system.jsonl" "$override"
+derived=$(zsh -f "$entry" create --session "$override") || \
+  fail 'create did not copy the durable system record'
+jq -se '
+  length == 2 and
+  .[1] == {type:"system",content:"inline\nprompt\n\nfile prompt\n\nlast prompt\n\n"}
+' "$derived" >/dev/null || fail 'create did not preserve the durable system record'
+typeset derived_override="$tmp/derived-override.jsonl"
+zsh -f "$entry" create --path "$derived_override" --session "$override" \
+  --system '--path' >/dev/null || fail 'derived create rejected option-looking system text'
+jq -se 'length == 2 and .[1] == {type:"system",content:"--path"}' \
+  "$derived_override" >/dev/null || fail 'derived create did not replace the copied system record'
+
+# Empty overrides clear configured and copied prompts without adding separators.
+typeset empty_file="$tmp/empty.md" empty_session
+printf '\n\n' >"$empty_file"
+for source in --config --session; do
+  typeset source_path=$config
+  [[ $source != --session ]] || source_path=$override
+  empty_session=$(zsh -f "$entry" create "$source" "$source_path" \
+    --system '' --system-file "$empty_file") || fail 'empty system override failed'
+  jq -se 'length == 1' "$empty_session" >/dev/null || fail 'empty override retained a system record'
+done
 
 # An unreadable component fails without creating a transcript.
 typeset missing="$tmp/missing.jsonl" missing_config="$tmp/missing.jsonc"

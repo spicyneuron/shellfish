@@ -85,16 +85,15 @@ assert_canonical_session() {
 # Frozen runtime used by tool and exec tests. Optional system-file path.
 sf_test_runtime() {
   local system=${1-} tool=$ROOT/share/default/tools/shell
-  typeset -g SF_TEST_RUNTIME
+  typeset -g SF_TEST_RUNTIME SF_TEST_SYSTEM=''
+  [[ -z $system ]] || SF_TEST_SYSTEM=$(<"$system")
   SF_TEST_RUNTIME=$(jq -cn \
     --arg command "$SF_TEST_BACKEND" \
-    --arg system "$system" \
     --arg tool "$tool" \
     --arg fence "${commands[fence]:A}" \
     --slurpfile tool_manifest "$tool/tool.json" '
       {
-        profile:{request:{model:"test-model"},
-          system:(if $system == "" then [] else [$system] end)},
+        profile:{request:{model:"test-model"}},
         backend:{name:"test",command:$command,endpoint:"https://example.invalid/test",
           api_key_env:"",env_file:"",insecure_tls:false,http_timeout:30,http_stall:10},
         harness:{sandbox_read_paths:[],sandbox_write_paths:[],fence:$fence,
@@ -110,7 +109,7 @@ sf_test_session() {
   SF_SESSION_PATH=$1
   SHELLFISH_SESSION_STATE=''
   sf_hooks_session_state_create && sf_session_prepare "$SF_TEST_RUNTIME" &&
-    sf_session_system && sf_session_create
+    sf_session_system "$SF_TEST_SYSTEM" && sf_session_create
 }
 
 sf_test_turn() {

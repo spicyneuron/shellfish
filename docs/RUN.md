@@ -2,13 +2,15 @@
 
 `shellfish run` runs a single agent turn. A turn begins with one user message and may contain multiple provider requests, tool calls, permission decisions, and continuations requested by `stop` scripts.
 
-`shellfish create` creates an idle session and prints its absolute path. Without `--session`, it uses current configuration. With `--session SESSION`, it derives the runtime from that session's frozen settings and rematerializes their system components. It does not copy messages, context, or the source system record. It runs the `session_start` scripts for the new session. `--path PATH` writes the new session to PATH instead of the state directory.
+`shellfish create` creates an idle session and prints its absolute path. Without `--session`, it uses current configuration. With `--session SESSION`, it copies that session's frozen runtime and durable system record. It does not copy messages or context. It runs the `session_start` scripts for the new session. `--path PATH` writes the new session to PATH instead of the state directory.
 
 ```sh
 shellfish create
 shellfish create --session path/to/session.jsonl
 shellfish create --path ./project-session.jsonl
 ```
+
+`--system TEXT` and `--system-file PATH` replace the system prompt of the new session, whether it comes from configuration or from the record copied with `--session`. Both flags are repeatable and may be mixed; their contents have trailing newlines stripped and are joined in command-line order with a blank line.
 
 `shellfish --new [SESSION]` provides the same creation behavior and opens the new session in chat. Without `--session`, `shellfish run` prepares a new session through `shellfish create` before starting its turn. With `--session PATH`, it uses the session there or creates one at that path when none exists.
 

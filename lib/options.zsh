@@ -7,6 +7,6 @@
 
 typeset -gA SF_CONFIG_OPTIONS=(
   --config 1 -p 1 --profile 1 -m 1 --model 1 -b 1 --backend 1
-  --request 1 --sandbox-read 1 --sandbox-write 1
+  --request 1 --system 1 --system-file 1 --sandbox-read 1 --sandbox-write 1
   --sandbox-auto 0
 )

@@ -33,7 +33,7 @@ sf_tui_main() {
   local arity=''
   local -a positional=() runtime_args=() presentation_args=()
   local -a original_args=("$@")
-  integer session_explicit=0 runtime_override=0 take=0
+  integer session_explicit=0 session_override=0 runtime_override=0 take=0
   integer clear_requested=0 new_requested=0
   integer handoff=0 draft_explicit=0
   integer verbose_requested=0 controller_status=0
@@ -83,7 +83,10 @@ sf_tui_main() {
         if [[ $1 == --config ]]; then
           presentation_args+=( "${@:1:$take}" )
         else
-          runtime_override=1
+          # Every one of these configures a new session. Only a runtime override
+          # also conflicts with the settings copied by --new SESSION.
+          session_override=1
+          [[ $1 == (--system|--system-file) ]] || runtime_override=1
         fi
         shift $take
         ;;
@@ -137,7 +140,7 @@ sf_tui_main() {
 
   source "$SF_ROOT/lib/session/startup.zsh"
   integer startup_status=0 config_status=0
-  sf_session_open "$requested_session" "$runtime_override" \
+  sf_session_open "$requested_session" "$session_override" \
     "$new_source" "${runtime_args[@]}" || startup_status=$?
   if (( startup_status )); then
     [[ -z $SF_SESSION_STARTUP_ERROR ]] || sf_die "$SF_SESSION_STARTUP_ERROR"

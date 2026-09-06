@@ -63,7 +63,7 @@ jq -e --arg command "$ROOT/share/default/backends/openai/run" '
   (.backend.env_file | endswith("/config/.env")) and
   .backend.endpoint == "https://api.openai.com/v1/chat/completions" and
   .backend.api_key_env == "OPENAI_API_KEY" and
-  .profile.system == [] and
+  (.profile | has("system") | not) and
   .harness == {
     sandbox_read_paths:[],sandbox_write_paths:[],
     fence:"",tools:[],sandbox:true,
@@ -352,13 +352,13 @@ ln -s "$tmp/config-target/shellfish.jsonc" \
 (
   export XDG_CONFIG_HOME="$tmp/symlink-config-home"
   sf_runtime_resolve_from_config '' '' '' '{}' "$ROOT/tests/fixtures/backend"
-  jq -e --arg system "${tmp:A}/config-target/system/linked.md" \
-    --arg env "${tmp:A}/config-target/.env" '
-    .profile.system == [$system] and .backend.env_file == $env
+  jq -e --arg env "${tmp:A}/config-target/.env" '
+    (.profile | has("system") | not) and .backend.env_file == $env
   ' <<<"$REPLY" >/dev/null
+  [[ $SF_RUNTIME_SYSTEM == 'linked prompt' ]]
 )
 
-# System references resolve to ordered absolute paths in the frozen profile.
+# System references resolve to one ordered materialized string.
 mkdir -p "$tmp/config/system"
 print -r -- 'first' >"$tmp/config/system/first.md"
 print -r -- 'second' >"$tmp/config/system/second.md"
@@ -369,9 +369,7 @@ cat >"$tmp/config/system.jsonc" <<'JSON'
 JSON
 sf_runtime_resolve_from_config "$tmp/config/system.jsonc" '' '' '{}' \
   "$ROOT/tests/fixtures/backend"
-jq -e --arg first "${tmp:A}/config/system/first.md" \
-  --arg second "${tmp:A}/config/system/second.md" \
-  '.profile.system == [$first,$second]' <<<"$REPLY" >/dev/null
+[[ $SF_RUNTIME_SYSTEM == $'first\n\nsecond' ]] || fail 'system components were not materialized'
 rm "$tmp/config/system/second.md"
 if sf_runtime_resolve_from_config "$tmp/config/system.jsonc" '' '' '{}' \
     "$ROOT/tests/fixtures/backend"; then
@@ -382,8 +380,8 @@ fi
 sf_runtime_read_jsonc "$ROOT/share/template/shellfish.jsonc" >"$tmp/config/readonly.jsonc"
 sf_runtime_resolve_from_config "$tmp/config/readonly.jsonc" 'readonly' 'm' '{}' \
   "$ROOT/tests/fixtures/backend"
-jq -e --arg path "$ROOT/share/default/system/readonly.md" \
-  '.profile.system == [$path]' <<<"$REPLY" >/dev/null
+[[ $SF_RUNTIME_SYSTEM == "$(<"$ROOT/share/default/system/readonly.md")" ]] ||
+  fail 'bundled nested prompt was not materialized'
 
 cat >"$tmp/config/missing-hook.jsonc" <<'JSON'
 {
