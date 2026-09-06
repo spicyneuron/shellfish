@@ -81,6 +81,11 @@ set_prompt_hook() {
   return $rc
 }
 
+set_prompt_hook "$help_session" "$ROOT/share/default/hooks/user_prompt_submit/new"
+run_prompt_hook /new "$help_session"
+[[ $reply[1] == handoff && $reply[2] == "$ROOT/bin/shellfish" &&
+   $reply[3] == --session-from && $reply[4] == "${help_session:A}" ]]
+
 set_prompt_hook "$help_session" "$ROOT/share/default/hooks/user_prompt_submit/refresh"
 run_prompt_hook /refresh "$help_session"
 [[ $reply[1] == handoff && $reply[2] == "$ROOT/bin/shellfish" &&

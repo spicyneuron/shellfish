@@ -54,9 +54,9 @@ assert_equal startup "$SF_SESSION_OPEN[mode]"
 assert_equal 'create --profile work --sandbox-auto' "$(<"$invocation")"
 
 # Create owns the destination and the settings source; both ride through.
-sf_session_open '' 0 --session-out "$fresh" --session "$existing"
+sf_session_open '' 0 --session-out "$fresh" --session-from "$existing"
 assert_equal "$fresh" "$SF_SESSION_OPEN[path]"
-assert_equal "create --session-out $fresh --session $existing" "$(<"$invocation")"
+assert_equal "create --session-out $fresh --session-from $existing" "$(<"$invocation")"
 
 # Create reports its own failures, so opening adds no second message.
 SF_TEST_CREATE_FAILS=1 sf_session_open '' 0 && fail 'create failure was ignored'

@@ -45,11 +45,6 @@ sf_create_main() {
         requested_out=$2
         shift 2
         ;;
-      --session)
-        (( $# >= 2 )) || { sf_die '--session requires a value'; return 2; }
-        forwarded+=( "${@:1:2}" )
-        shift 2
-        ;;
       *)
         # Forward option values with their option so that a value that looks
         # like --session-out is not read as one.
@@ -67,7 +62,7 @@ sf_create_main() {
   }
 
   # Configuration resolution belongs to shellfish config, including its rejection
-  # of runtime overrides against an existing --session.
+  # of runtime overrides against --session-from.
   report=$("$SF_ENTRY" config "${forwarded[@]}") || report_status=$?
   (( ! report_status )) || return $report_status
   runtime=$(jq -ce 'del(.theme, .tui, .system)' <<<"$report") || {

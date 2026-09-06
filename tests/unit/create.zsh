@@ -56,23 +56,33 @@ jq -e --arg read "${tmp:A}/system" --arg write "${tmp:A}/home" '
   (.harness.sandbox_write_paths | index($write)) != null
 ' "$granted" >/dev/null || fail 'create did not store forwarded sandbox grants'
 
-# --session names the session whose header and durable system record are copied.
+# --session-from names the session whose header and durable system record are copied.
 print -r -- 'changed configured system' >"$tmp/system/source.md"
 print -r -- '{"type":"message","role":"user","content":[{"type":"text","text":"old"}]}' \
   >>"$created"
-reused=$(zsh -f "$entry" create --session "$created") || fail 'sourced create failed'
+reused=$(zsh -f "$entry" create --session-from "$created") || fail 'sourced create failed'
 jq -e -s --slurpfile source "$created" '
   length == 2 and .[1] == {type:"system",content:"initial system"} and
   (.[0] | del(.created)) == ($source[0] | del(.created))
 ' "$reused" >/dev/null || fail 'create did not copy the source header and system record'
+
+# Source paths must be present, nonempty, and specified once.
+zsh -f "$entry" create --session-from "$tmp/absent.jsonl" >/dev/null 2>&1 &&
+  fail 'create accepted a missing source'
+zsh -f "$entry" create --session-from '' >/dev/null 2>&1 &&
+  fail 'create accepted an empty source'
+zsh -f "$entry" create --session-from >/dev/null 2>&1 &&
+  fail 'create accepted a bare source option'
+zsh -f "$entry" create --session-from "$created" --session-from "$created" >/dev/null 2>&1 &&
+  fail 'create accepted repeated sources'
 
 # An occupied destination is never overwritten.
 zsh -f "$entry" create --session-out "$explicit" --config "$config" >/dev/null 2>&1 &&
   fail 'create overwrote an existing session'
 
 # Runtime overrides against an existing session stay rejected by config.
-zsh -f "$entry" create --session "$created" --model other >/dev/null 2>&1 &&
-  fail 'create accepted a runtime override with --session'
+zsh -f "$entry" create --session-from "$created" --model other >/dev/null 2>&1 &&
+  fail 'create accepted a runtime override with --session-from'
 
 # Options create does not own are forwarded unparsed.
 zsh -f "$entry" create --config "$tmp/missing.jsonc" >/dev/null 2>&1 &&
@@ -128,14 +138,14 @@ printf 'updated file prompt\n' >"$override_file"
 jq -c 'if .type == "system" then .content += "\n\n" else . end' "$override" \
   >"$tmp/stored-system.jsonl"
 mv "$tmp/stored-system.jsonl" "$override"
-derived=$(zsh -f "$entry" create --session "$override") || \
+derived=$(zsh -f "$entry" create --session-from "$override") || \
   fail 'create did not copy the durable system record'
 jq -se '
   length == 2 and
   .[1] == {type:"system",content:"inline\nprompt\n\nfile prompt\n\nlast prompt\n\n"}
 ' "$derived" >/dev/null || fail 'create did not preserve the durable system record'
 typeset derived_override="$tmp/derived-override.jsonl"
-zsh -f "$entry" create --session-out "$derived_override" --session "$override" \
+zsh -f "$entry" create --session-out "$derived_override" --session-from "$override" \
   --system '--session-out' >/dev/null || fail 'derived create rejected option-looking system text'
 jq -se 'length == 2 and .[1] == {type:"system",content:"--session-out"}' \
   "$derived_override" >/dev/null || fail 'derived create did not replace the copied system record'
@@ -143,9 +153,9 @@ jq -se 'length == 2 and .[1] == {type:"system",content:"--session-out"}' \
 # Empty overrides clear configured and copied prompts without adding separators.
 typeset empty_file="$tmp/empty.md" empty_session
 printf '\n\n' >"$empty_file"
-for source in --config --session; do
+for source in --config --session-from; do
   typeset source_path=$config
-  [[ $source != --session ]] || source_path=$override
+  [[ $source != --session-from ]] || source_path=$override
   empty_session=$(zsh -f "$entry" create "$source" "$source_path" \
     --system '' --system-file "$empty_file") || fail 'empty system override failed'
   jq -se 'length == 1' "$empty_session" >/dev/null || fail 'empty override retained a system record'

@@ -300,18 +300,18 @@ jq -cn '{
     max_requests_per_turn:8,max_tool_calls_per_request:16,max_capture_bytes:65536}
 }' >"$tmp/stored.jsonl"
 echo '{"type":"message","role":"user","content":[{"type":"text","text":"hi"}]}' >>"$tmp/stored.jsonl"
-report=$(zsh -f "$entry" config --config "$config_dir/shellfish.jsonc" --session "$tmp/stored.jsonl") || \
+report=$(zsh -f "$entry" config --config "$config_dir/shellfish.jsonc" --session-from "$tmp/stored.jsonl") || \
   fail 'config session report failed'
-assert_equal auto "$(jq -r '.theme.mode' <<<"$report")" 'config --session reports the current theme mode'
+assert_equal auto "$(jq -r '.theme.mode' <<<"$report")" 'config --session-from reports the current theme mode'
 assert_equal 2 "$(jq -r '.tui.preview_lines_context' <<<"$report")" \
-  'config --session reports current TUI limits'
+  'config --session-from reports current TUI limits'
 mkdir "$tmp/extra"
 if zsh -f "$entry" config --config "$config_dir/shellfish.jsonc" \
-    --session "$tmp/stored.jsonl" --sandbox-write "$tmp/extra" >/dev/null 2>&1; then
+    --session-from "$tmp/stored.jsonl" --sandbox-write "$tmp/extra" >/dev/null 2>&1; then
   fail '--sandbox-write overrode an existing session'
 fi
 report=$(zsh -f "$entry" config --config "$config_dir/shellfish.jsonc" \
-  --session "$tmp/stored.jsonl" --system replacement) ||
+  --session-from "$tmp/stored.jsonl" --system replacement) ||
   fail 'config rejected a system replacement for derived settings'
 jq -e '.system == "replacement" and .profile.request.model == "stored-model"' \
   <<<"$report" >/dev/null || fail 'config did not replace the derived system prompt'
@@ -324,7 +324,7 @@ assert_equal 'full full full full' \
     .tui.preview_lines_tool_call, .tui.preview_lines_tool_result] | join(" ")' <<<"$report")" \
   '--verbose lifts every preview limit'
 report=$(zsh -f "$entry" config --config "$config_dir/shellfish.jsonc" \
-  --session "$tmp/stored.jsonl" --verbose) || fail 'config verbose session report failed'
+  --session-from "$tmp/stored.jsonl" --verbose) || fail 'config verbose session report failed'
 assert_equal full "$(jq -r '.tui.preview_lines_context' <<<"$report")" \
   '--verbose reaches a stored session'
 assert_equal stored-model "$(jq -r '.profile.request.model' <<<"$report")" \
@@ -340,15 +340,12 @@ zsh -f "$entry" config --resume >/dev/null 2>&1 || exit_code=$?
 exit_code=0
 zsh -f "$entry" config --clear >/dev/null 2>&1 || exit_code=$?
 (( exit_code == 2 )) || fail '--clear not rejected for config'
-exit_code=0
-zsh -f "$entry" config --new >/dev/null 2>&1 || exit_code=$?
-(( exit_code == 2 )) || fail '--new not rejected for config'
 
 # Runtime overrides cannot be used with an existing session.
 exit_code=0
-zsh -f "$entry" config --config "$config_dir/shellfish.jsonc" --session "$tmp/stored.jsonl" -m other \
+zsh -f "$entry" config --config "$config_dir/shellfish.jsonc" --session-from "$tmp/stored.jsonl" -m other \
   >/dev/null 2>&1 || exit_code=$?
-(( exit_code == 2 )) || fail 'overrides not rejected with --session'
+(( exit_code == 2 )) || fail 'overrides not rejected with --session-from'
 
 # A profile that cannot resolve fails the same way starting a session would.
 exit_code=0

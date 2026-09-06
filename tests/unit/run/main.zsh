@@ -85,6 +85,24 @@ head -n 1 "$forwarded_session" | jq -e '
 jq -e 'select(.type == "system" and .content == "forwarded system")' \
   "$forwarded_session" >/dev/null || fail 'run did not create the overridden system record'
 
+# Copying settings creates a separate session without replaying source messages.
+typeset copied_session="$tmp/copied.jsonl"
+cp "$forwarded_session" "$tmp/source-before"
+output=$(SF_TEST_BACKEND_DELAY=0 zsh -f "$entry" run \
+  --session-from "$forwarded_session" --session-out "$copied_session" \
+  'copied answer') || fail 'run from a session failed'
+assert_equal 'copied answer' "$output"
+cmp -s "$forwarded_session" "$tmp/source-before" || fail 'run modified its source'
+jq -es --slurpfile source "$forwarded_session" '
+  .[0].profile == $source[0].profile and .[1] == $source[1] and
+  [.[] | select(.role == "user") | .content[0].text] == ["copied answer"]
+' "$copied_session" >/dev/null || fail 'run did not copy only the settings and system'
+
+integer conflict_status=0
+zsh -f "$entry" run --session "$forwarded_session" \
+  --session-from "$forwarded_session" ignored >/dev/null 2>&1 || conflict_status=$?
+(( conflict_status == 2 )) || fail 'run accepted session with session-from'
+
 # JSONL exposes the canonical turn stream through EOF and process status. The
 # session prefix is created before the turn and is not replayed onto the stream.
 typeset jsonl stream_session="$tmp/stream.jsonl"
@@ -166,8 +184,5 @@ zsh -f "$entry" run --draft draft prompt >/dev/null 2>&1 || exit_code=$?
 exit_code=0
 zsh -f "$entry" run --verbose --config "$config" hi >/dev/null 2>&1 || exit_code=$?
 (( exit_code == 2 )) || fail 'run accepted --verbose'
-exit_code=0
-zsh -f "$entry" run --new --config "$config" >/dev/null 2>&1 || exit_code=$?
-(( exit_code == 2 )) || fail 'run accepted --new'
 
 print -r -- 'ok'

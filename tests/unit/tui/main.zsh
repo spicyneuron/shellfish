@@ -17,9 +17,19 @@ error=$(zsh -f "$entry" --profile default positional 2>&1) || exit_code=$?
   fail 'implicit chat rejected its positional prompt after options'
 
 exit_code=0
-error=$(zsh -f "$entry" --new source.jsonl --system replacement 2>&1) || exit_code=$?
+error=$(zsh -f "$entry" --session-from source.jsonl --system replacement 2>&1) || exit_code=$?
 [[ $error == *'chat requires an interactive terminal'* && $exit_code == 2 ]] || \
-  fail 'chat rejected a system replacement with --new SESSION'
+  fail 'chat rejected a system replacement with --session-from'
+
+exit_code=0
+error=$(zsh -f "$entry" --session-from source.jsonl --draft draft positional 2>&1) || exit_code=$?
+[[ $error == *'--draft cannot be combined with a prompt'* && $exit_code == 2 ]] || \
+  fail 'chat consumed the prompt after --session-from'
+
+exit_code=0
+error=$(zsh -f "$entry" --session target.jsonl --session-from source.jsonl 2>&1) || exit_code=$?
+[[ $error == *'--session cannot be combined with --session-from'* && $exit_code == 2 ]] || \
+  fail 'chat accepted session with session-from'
 
 exit_code=0
 error=$(zsh -f "$entry" --draft 'editable prompt' 2>&1) || exit_code=$?

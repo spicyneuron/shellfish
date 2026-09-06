@@ -33,7 +33,7 @@ sf_run_prompt() {
 sf_run_main() {
   local requested_session='' input='' prompt='' arity='' input_projection
   local -a positional=() create_args=() input_fields
-  integer session_explicit=0 out_explicit=0 jsonl=0 override=0 take=0
+  integer session_explicit=0 out_explicit=0 from_explicit=0 jsonl=0 override=0 take=0
 
   while (( $# )); do
     case $1 in
@@ -69,6 +69,7 @@ sf_run_main() {
         # a runtime override.
         arity=${SF_CONFIG_OPTIONS[$1]-}
         [[ -n $arity ]] || { sf_die "unknown argument: $1"; return 2; }
+        [[ $1 != --session-from ]] || from_explicit=1
         take=$(( arity + 1 ))
         (( $# >= take )) || { sf_die "$1 requires a value"; return 2; }
         create_args+=( "${@:1:$take}" )
@@ -82,6 +83,10 @@ sf_run_main() {
     esac
   done
 
+  (( ! session_explicit || ! from_explicit )) || {
+    sf_die '--session cannot be combined with --session-from'
+    return 2
+  }
   (( ! session_explicit || ! out_explicit )) || {
     sf_die '--session names an existing session and cannot be combined with --session-out'
     return 2

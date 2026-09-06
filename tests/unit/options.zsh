@@ -10,7 +10,7 @@ sf_test_source lib/options.zsh
 
 # Arms a forwarding component must not pass through: the end-of-options
 # separator, and the options it owns itself.
-typeset -a not_forwarded=( -- --init --verbose --session )
+typeset -a not_forwarded=( -- --init --verbose )
 
 # Each case arm names its options, and its shift consumes the option plus its
 # values, so "shift 2" is arity 1 and a bare "shift" is arity 0.

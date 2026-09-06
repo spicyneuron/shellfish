@@ -44,9 +44,9 @@ sf_config_main() {
         requested_config=$2
         shift 2
         ;;
-      --session)
-        (( ! session_explicit )) || { sf_die '--session may only be specified once'; return 2; }
-        [[ -n $2 ]] || { sf_die '--session requires a nonempty path'; return 2; }
+      --session-from)
+        (( ! session_explicit )) || { sf_die '--session-from may only be specified once'; return 2; }
+        [[ -n $2 ]] || { sf_die '--session-from requires a nonempty path'; return 2; }
         session_explicit=1
         requested_session=$2
         shift 2
