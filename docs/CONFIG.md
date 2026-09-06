@@ -23,7 +23,7 @@ A profile combines a backend, a harness, and provider request settings. The buil
 
 `extend` merges the parent profile into the child using the same object and array rules. Inheriting `default` retains the bundled harness and request defaults.
 
-An optional `context_window` records the model's input capacity for usage display and policies such as the bundled automatic compaction hook:
+An optional `context_window` records the model's input capacity for usage display and hooks:
 
 ```jsonc
 {
@@ -40,7 +40,7 @@ An optional `context_window` records the model's input capacity for usage displa
 
 The field has three states:
 
-- **A positive integer** is authoritative. It skips discovery and lets the bundled compaction hook trigger when the most recent measured assistant response's input plus output usage reaches 80% of that value.
+- **A positive integer** is authoritative and skips discovery.
 - **An explicit `null`** disables discovery and threshold-based compaction.
 - **Absent** means a backend with an optional `context_window` script makes one best-effort model metadata lookup before the session's first provider request. The bundled Anthropic script uses `max_input_tokens`; the OpenAI-compatible script uses a matching model's `context_length` when the provider supplies it, including OpenRouter; and Codex reads the installed CLI's bundled model catalog. OpenAI's own Models API does not currently supply this field.
 
@@ -139,9 +139,7 @@ For chat and `run`, automatic grants are frozen into a new session like other ru
 
 A session retains the resolved backend, harness, request, and sandbox settings stored in its header. Ordinary runtime overrides cannot be applied when opening an existing session. Themes and TUI preview settings come from the current configuration.
 
-Hook-requested session updates merge recursively into the header during the current turn. Arrays, scalars, and `null` replace the existing value, and the result must remain a canonical session runtime. Updates to different fields compose, while updates that replace the same scalar or array are last-writer-wins. `/sandbox` refreshes the client's runtime after an update without replaying the transcript.
-
-The default `/sandbox` command uses this operation to list, add, and remove read or write grants. Additions must name an existing directory. Paths beginning with `~/` use `HOME`, relative paths use the session working directory, and stored additions are canonical absolute paths. Read and write lists remain independent, and removing an exact child grant does not restrict access inherited from a granted parent.
+Hook-requested session updates merge recursively into the header during the current turn. Arrays, scalars, and `null` replace the existing value, and the result must remain a canonical session runtime. Updates to different fields compose, while updates that replace the same scalar or array are last-writer-wins.
 
 Use the session path to inspect that combination:
 

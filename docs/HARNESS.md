@@ -51,21 +51,35 @@ Skills are discovered in descending precedence from `./.agents/skills/`, the res
 
 ### Interactive commands
 
-The default harness implements most chat commands as scripts on the `user_prompt_submit` hook:
+Most chat commands are bundled scripts on the `user_prompt_submit` hook:
 
-- `/help` lists available commands.
-- `/new` creates a new session with the active session's settings.
-- `/copy [N]` copies the text of the latest user/agent section, or section `N`, to the local clipboard.
-- `/fork [N]` copies the transcript into a new session at section `N`, resolving an agent section to the following user section and restoring that prompt as an editable draft. Without an index it forks at the current end.
-- `/compact` summarizes the conversation into a child session and requests a handoff to it.
-- `/refresh` rebuilds the terminal presentation from the durable session.
-- `/verbose` toggles presentation preview limits.
-- `/sandbox` lists or updates the session's sandbox path grants.
-- `/resume` switches to another session in the same project.
-- `/server` hands the current session to the optional `shellfish-server` process.
-- `! command` runs a shell command and injects its input and output as context.
+| Command | Description |
+| --- | --- |
+| `/help`, `/h` | List available commands and editor keys. |
+| `/new` | Create a new session with the active session's settings. |
+| `/copy [N]` | Copy the text of the latest user/agent section, or section `N`, to the local clipboard. |
+| `/fork [N]` | Copy the transcript into a new session at section `N`, resolving an agent section to the following user section and restoring that prompt as an editable draft. Without an index it forks at the current end. |
+| `/compact` | Summarize the conversation into a child session and request a handoff to it. See [Compaction](#compaction). |
+| `/refresh`, `/r` | Rebuild the terminal presentation from the durable session. Fixes layout corruption. |
+| `/verbose`, `/v` | Toggle presentation preview limits. |
+| `/sandbox [OP DIR]` | List the session's sandbox path grants, or update them in place. |
+| `/resume` | Switch to another session in the same project. |
+| `/server` | Hand the current session to the optional `shellfish-server` process. |
+| `! command` | Run a shell command and inject its input and output as context. |
+
+The commands that replace the current session — `/new`, `/fork`, `/compact`, `/refresh`, `/verbose`, `/resume`, and `/server` — do not switch in place. They request a [handoff](HOOKS.md#user_prompt_submit): chat exits and relaunches Shellfish, usually with a new session path.
+
+`/sandbox read DIR` and `/sandbox write DIR` add a grant, `-read` and `-write` remove one; `+` is accepted when adding, and signed forms may abbreviate the operation to `r` or `w`. Additions must name an existing directory. Paths beginning with `~/` use `HOME`, relative paths use the session working directory, and stored additions are canonical absolute paths. Read and write lists remain independent, and removing an exact child grant does not restrict access inherited from a granted parent. After an update, the client refreshes its runtime without replaying the transcript.
 
 These features are harness behavior, not special cases in the agent loop. A custom harness can omit them, replace them, or bind other scripts to the same hook.
+
+### Compaction
+
+Compaction is a `user_prompt_submit` script that replaces a full conversation with a summary in a child session. It composes `shellfish build-request` and `shellfish send-request` with tools disabled, so the summary request runs no hooks and executes no tools.
+
+`/compact` summarizes on demand. Automatic compaction runs when the most recent measured assistant usage reaches 80% of the frozen `context_window`; an unavailable window disables the automatic threshold.
+
+Compaction creates a sibling child named with a `_compact` suffix without changing the source. The child copies everything before the first user message, the session header, system record, and all committed context, then replaces the conversation with one summary context. A successful script requests a client handoff to the child. Automatic compaction passes the interrupted prompt as an editable draft rather than submitting it. Automatic failures are fail-open and submit the prompt to the source; explicit `/compact` failures stop that command and leave the source active.
 
 ### Limits
 

@@ -13,31 +13,15 @@ Interactive chat is the default Shellfish mode. Run `shellfish` from your projec
 - `shellfish --clear` clears the terminal before the first render.
 - `shellfish --verbose` lifts all preview limits for the current chat, showing full reasoning, context, and tool output inline.
 
-Each session stores its resolved backend, harness, model, and sandbox settings. A fresh `shellfish` launch uses current configuration. `/new` starts a new session with the active session's settings. Themes and TUI preview settings come from current configuration, so they affect how existing sessions are displayed.
+Each session stores its resolved backend, harness, model, and sandbox settings. A fresh `shellfish` launch uses current configuration. `/new` reuses the active session's settings. Themes and TUI preview settings come from current configuration, so they affect how existing sessions are displayed.
 
-The default harness checks for automatic compaction when a prompt is submitted. When the most recent measured assistant usage reaches 80% of the session's context window, its hook summarizes the conversation into a child session and asks chat to open that child with the interrupted prompt restored as an editable draft. Submit the draft to continue. The source session remains unchanged and can still be reopened explicitly.
+The default harness compacts a conversation approaching its context window into a child session and opens it with the interrupted prompt as an editable draft. See [Compaction](HARNESS.md#compaction) for the threshold and mechanics.
 
 ## Slash commands
 
-Most slash commands are scripts on the default harness's `user_prompt_submit` hook. Run `/help` in chat to see the current list.
+Most slash commands are bundled scripts on the default harness's `user_prompt_submit` hook. See [Interactive commands](HARNESS.md#interactive-commands) for the full list and usage. Run `/help` in chat to see the current list.
 
-| Command | Description |
-| --- | --- |
-| `/help`, `/h` | List available commands. |
-| `/new` | Start a new session with the active session's settings. |
-| `/copy [N]` | Copy the text of the latest user/agent section, or section `N`, to the local clipboard. |
-| `/fork [N]` | Fork at section `N`, resolving an agent section to the following user section and restoring that prompt as a draft. With no index, fork at the current end without a draft. |
-| `/compact` | Summarize the conversation into a child session and open it. |
-| `/refresh`, `/r` | Rerender the current session from scratch. Fixes layout corruption. |
-| `/verbose`, `/v` | Toggle full context, reasoning, and tool output display. |
-| `/sandbox [OP DIR]` | List grants, or update them in place with `read` or `write`. Prefix with `-` to remove; `+` is accepted when adding, and signed forms may abbreviate the operation to `r` or `w`. |
-| `/server` | Hand the current session to `shellfish-server`. |
-| `!command` | Run a shell command and stage its output as context for the next turn. |
-| `/queue drop N` | Discard the Nth queued prompt. |
-| `/queue clear` | Discard all queued prompts. |
-| `/quit`, `/q` | Exit. |
-
-Slash commands that start a new session, fork, compact, refresh, resume, toggle verbose mode, or serve are handoffs: chat exits and relaunches Shellfish with the new session path. Commands typed while a turn is active are queued and sent after the turn completes.
+Chat itself handles `/quit` and the queue commands below. Commands typed while a turn is active are queued and sent after the turn completes.
 
 ## Keybindings
 

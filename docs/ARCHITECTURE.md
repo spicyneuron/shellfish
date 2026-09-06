@@ -1,6 +1,6 @@
 # Architecture
 
-Shellfish is the brainchild of my grudge against bloated modern software, plus a large chunk of expiring AI subscription tokens. It leans into simplicity as a constraint: shell scripts, processes, and text. Just as Ken Thompson intended.
+Shellfish is the brainchild of my grudge against bloated software, plus a large chunk of rapidly expiring AI subscription tokens. It leans into simplicity as a constraint: shell scripts, processes, and text. Just as Ken Thompson intended.
 
 ## The transcript is the state
 
@@ -9,8 +9,6 @@ A session JSONL file is the authoritative state of the agent. Transcript records
 Clients attach to a session and consume the same event stream. Durable records provide history they can replay, while transient events provide live interaction around it. A client can use either without becoming another owner of the state.
 
 The session header consolidates the resolved settings required to run the agent: backend, harness, model request, tools, hooks, limits, sandbox policy. A session carries the runtime configuration needed to continue it instead of being reinterpreted through the current profile on every turn. Credentials and presentation settings remain external. A hook-requested session update may atomically replace the header; submitted model turns never rewrite it.
-
-The bundled compaction hook preserves that append-only boundary by creating a child session rather than rewriting its source. The child keeps the frozen runtime and startup context and replaces the conversation with a model-produced continuation summary. A capable handoff client opens the child and, for automatic compaction, restores the interrupted prompt as an editable draft. A client that cannot follow the handoff remains on the source, whose original history is unchanged.
 
 ## A turn is the unit of execution
 

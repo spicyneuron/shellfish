@@ -62,12 +62,6 @@ printf '%s\n' '{"type":"message","role":"user","content":[{"type":"text","text":
   shellfish send-request --session path/to/session.jsonl
 ```
 
-## Bundled compaction
-
-The default harness implements compaction in its `user_prompt_submit` hook by composing `build-request` and `send-request` with tools disabled. `/compact` summarizes on demand. Automatic compaction runs when the most recent measured assistant usage reaches 80% of the frozen `context_window`; an unavailable window disables the automatic threshold.
-
-Compaction creates a sibling child named with a `_compact` suffix without changing the source. The child copies everything before the first user message: the session header, system record, and all committed context, then replaces the conversation with one summary context. A successful hook requests a client handoff to the child. Automatic compaction passes the interrupted prompt as an editable draft rather than submitting it. Automatic failures are fail-open and submit the prompt to the source; explicit `/compact` failures stop that command and leave the source active.
-
 ## Output
 
 Stdout contains one compact JSON object per line in source order. Objects fall into two classes:
