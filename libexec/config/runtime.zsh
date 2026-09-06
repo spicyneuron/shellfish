@@ -151,7 +151,7 @@ sf_runtime_resolve_from_config() {
   local home=${HOME-}
   local theme_marker=': shellfish:unknown-theme:'
   local -a fields tool_entries tool_paths tool_manifests sandbox_flags
-  local -a system_entries component_entries resolved_args finalized
+  local -a system_entries component_entries resolved_args
   integer tool_count system_count component_count index tool_index
   integer needs_fence=0 sandbox_enabled=1
 
@@ -361,12 +361,7 @@ sf_runtime_resolve_from_config() {
     sf_runtime_validation_error "$final" "cannot finalize runtime"
     return
   }
-  finalized=( "${(@f)final}" )
-  (( ${#finalized} == 1 )) || {
-    sf_runtime_fail 'cannot finalize runtime'
-    return
-  }
-  REPLY=$finalized[1]
+  REPLY=$final
   SF_PRESENTATION=$presentation
   sf_runtime_apply_verbose
 }

@@ -370,15 +370,12 @@ sf_run_turn() {
             failure='cannot prepare context window update'
             return 1
           }
-          if ! sf_session_update "$patch"; then
-            failure=$SF_SESSION_ERROR
-            return 1
-          fi
         else
-          if ! sf_session_update '{"profile":{"context_window":null}}'; then
-            failure=$SF_SESSION_ERROR
-            return 1
-          fi
+          patch='{"profile":{"context_window":null}}'
+        fi
+        if ! sf_session_update "$patch"; then
+          failure=$SF_SESSION_ERROR
+          return 1
         fi
         update_event=$(jq -cn --argjson runtime "$SF_SESSION[runtime]" \
           '{type:"_session_update",runtime:$runtime}') || {
@@ -483,7 +480,6 @@ sf_run_turn() {
               "$harness_sandbox"
             permission_status=$?
             if (( permission_status == 0 )); then
-              permission_status=0
               sf_run_permission "$call_id" "$tool_name" "$tool_input" ||
                 permission_status=$?
               case $permission_status in
