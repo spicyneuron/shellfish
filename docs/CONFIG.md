@@ -140,5 +140,5 @@ The default `/sandbox` command uses this operation to list, add, and remove read
 Use the session path to inspect that combination:
 
 ```sh
-shellfish config --session path/to/session.jsonl
+shellfish config --session-from path/to/session.jsonl
 ```

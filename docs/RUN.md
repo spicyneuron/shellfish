@@ -2,17 +2,17 @@
 
 `shellfish run` runs a single agent turn. A turn begins with one user message and may contain multiple provider requests, tool calls, permission decisions, and continuations requested by `stop` scripts.
 
-`shellfish create` creates an idle session and prints its absolute path. Without `--session`, it uses current configuration. With `--session SESSION`, it copies that session's frozen runtime and durable system record. It does not copy messages or context. It runs the `session_start` scripts for the new session. `--session-out PATH` writes the new session to PATH instead of the state directory.
+`shellfish create` creates an idle session from current configuration and prints its absolute path. `--session-from PATH` copies an existing session's frozen runtime and system record, without messages or context. Creation runs the new session's `session_start` scripts. `--session-out PATH` selects the destination instead of the state directory.
 
 ```sh
 shellfish create
-shellfish create --session path/to/session.jsonl
+shellfish create --session-from path/to/session.jsonl
 shellfish create --session-out ./project-session.jsonl
 ```
 
-`--system TEXT` and `--system-file PATH` replace the system prompt of the new session, whether it comes from configuration or from the record copied with `--session`. Both flags are repeatable and may be mixed; their contents have trailing newlines stripped and are joined in command-line order with a blank line.
+`--system TEXT` and `--system-file PATH` replace the configured or copied system prompt. Both flags are repeatable and may be mixed; their contents have trailing newlines stripped and are joined in command-line order with a blank line.
 
-`shellfish --new [SESSION]` provides the same creation behavior and opens the new session in chat. `--session PATH` names a session that must already exist; chat and `shellfish run` both refuse a path with no transcript. Without it they prepare a new session through `shellfish create`, at `--session-out PATH` when given.
+Chat and `shellfish run` use an existing session with `--session PATH`. Otherwise they create one through `shellfish create`, accepting `--session-from` and `--session-out`. Neither creation flag can be combined with `--session`.
 
 Ordinary run accepts prompt text and prints the final assistant text:
 

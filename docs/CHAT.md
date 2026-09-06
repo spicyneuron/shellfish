@@ -5,7 +5,7 @@ Interactive chat is the default Shellfish mode. Run `shellfish` from your projec
 ## Starting a session
 
 - `shellfish` starts a new session using current configuration.
-- `shellfish --new [SESSION]` starts a new session using current configuration or the given session's settings.
+- `shellfish --session-from PATH` starts a new session with PATH's settings and system prompt.
 - `shellfish --continue` reopens the most recent session for this directory.
 - `shellfish --resume` opens a picker listing recent sessions for this directory.
 - `shellfish --session path/to/session.jsonl` opens a specific session directly.

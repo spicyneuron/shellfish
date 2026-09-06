@@ -29,8 +29,8 @@ Presentation flags:
 
 Session flags:
   --session PATH        Use the existing session at PATH
+  --session-from PATH   Copy settings and system prompt from PATH
   --session-out PATH    Write the new session to PATH
-  --new [SESSION]       Create new session, optionally with SESSION settings
 
 Session routes (first argument):
   -c, --continue        Open the most recent session for the current directory
