@@ -65,10 +65,6 @@ sf_send_request_main() {
     return 1
   }
   selected=$REPLY
-  [[ -f $selected && ! -L $selected && -r $selected ]] || {
-    sf_die "invalid session path: $selected"
-    return 1
-  }
   sf_session_read_runtime "$selected" || {
     sf_die "$SF_SESSION_ERROR"
     return 1

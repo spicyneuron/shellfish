@@ -86,11 +86,7 @@ sf_session_repair_tail() {
 sf_session_prepare() {
   local runtime=$1 cwd created decoded header id model
   SF_SESSION_ERROR=''
-  SF_SESSION=()
-  SF_SESSION_RECORDS=()
-  SF_HOOK_COUNTS=()
-  SF_SESSION_RECOVERY_NEEDED=''
-  SF_SESSION_PENDING_CALLS=()
+  sf_session_reset
   [[ ! -e $SF_SESSION_PATH && ! -L $SF_SESSION_PATH ]] || {
     sf_session_fail "cannot create session: $SF_SESSION_PATH"
     return
@@ -271,11 +267,7 @@ sf_session_project() {
 # Replaces the in-memory view with the durable records. Never writes.
 sf_session_read() {
   local record
-  SF_SESSION=()
-  SF_SESSION_RECORDS=()
-  SF_HOOK_COUNTS=()
-  SF_SESSION_RECOVERY_NEEDED=''
-  SF_SESSION_PENDING_CALLS=()
+  sf_session_reset
   while IFS= read -r record; do
     [[ -n $record ]] || {
       SF_SESSION_RECORDS=()
