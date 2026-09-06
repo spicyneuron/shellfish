@@ -11,6 +11,7 @@ typeset s_user="$tmp/user.jsonl"
 typeset s_torn="$tmp/torn.jsonl"
 typeset s_assistant="$tmp/assistant.jsonl"
 typeset s_tool_res="$tmp/tool_res.jsonl"
+typeset s_failed="$tmp/failed.jsonl"
 typeset s_bad="$tmp/bad.jsonl"
 
 make_header() {
@@ -43,15 +44,21 @@ print -r -- '{"type":"message","role":"assistant","stop":"end","content":[{"type
 make_header >"$s_tool_res"
 print -r -- '{"type":"message","role":"tool_result","call_id":"c1","name":"shell","content":"err","exit_code":2}' >>"$s_tool_res"
 
-# 7. Unreadable file
+# 7. Interrupted turn
+make_header >"$s_failed"
+print -r -- '{"type":"message","role":"user","content":[{"type":"text","text":"go"}]}' >>"$s_failed"
+print -r -- '{"type":"turn_error","message":"Turn interrupted."}' >>"$s_failed"
+
+# 8. Unreadable file
 print -r -- 'not json' >"$s_bad"
 
 # Loading sessions summarizes records and formats resume labels.
-sf_resume_load "$s_empty" "$s_system" "$s_context" "$s_user" "$s_torn" "$s_assistant" "$s_tool_res" "$s_bad"
-(( ${#SF_RESUME_PATHS} == 8 ))
-(( ${#SF_RESUME_TIMES} == 8 ))
-(( ${#SF_RESUME_PAIRS} == 8 ))
-(( ${#SF_RESUME_PREVIEWS} == 8 ))
+sf_resume_load "$s_empty" "$s_system" "$s_context" "$s_user" "$s_torn" "$s_assistant" "$s_tool_res" \
+  "$s_failed" "$s_bad"
+(( ${#SF_RESUME_PATHS} == 9 ))
+(( ${#SF_RESUME_TIMES} == 9 ))
+(( ${#SF_RESUME_PAIRS} == 9 ))
+(( ${#SF_RESUME_PREVIEWS} == 9 ))
 
 assert_equal custom/claude-3 "$SF_RESUME_PAIRS[1]"
 assert_equal '(empty session)' "$SF_RESUME_PREVIEWS[1]"
@@ -61,8 +68,9 @@ assert_equal 'list files' "$SF_RESUME_PREVIEWS[4]"
 assert_equal '(unreadable)' "$SF_RESUME_PREVIEWS[5]"
 assert_equal 'here they are' "$SF_RESUME_PREVIEWS[6]"
 assert_equal 'shell exit 2' "$SF_RESUME_PREVIEWS[7]"
-assert_equal '?/?' "$SF_RESUME_PAIRS[8]"
-assert_equal '(unreadable)' "$SF_RESUME_PREVIEWS[8]"
+assert_equal 'Turn interrupted.' "$SF_RESUME_PREVIEWS[8]"
+assert_equal '?/?' "$SF_RESUME_PAIRS[9]"
+assert_equal '(unreadable)' "$SF_RESUME_PREVIEWS[9]"
 
 # A session removed after discovery does not shift later summaries onto its row.
 sf_resume_load "$s_empty" "$tmp/missing.jsonl" "$s_system"

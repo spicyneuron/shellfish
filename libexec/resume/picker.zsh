@@ -70,6 +70,7 @@ sf_resume_load() {
       elif .type == "message" and .role == "tool_result" then
         (.name + (if .exit_code == 0 then "" else
           " exit " + (.exit_code | tostring) end))
+      elif .type == "turn_error" then .message
       else "(no summary)" end;
     [inputs] as $lines |
     [range(0; ($lines | length) / 2) as $i |
