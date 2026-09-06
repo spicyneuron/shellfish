@@ -19,7 +19,7 @@ import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from _session import APP, COLUMNS, ROWS, Session  # noqa: E402
+from _session import APP, COLUMNS, ROWS, Session, run  # noqa: E402
 
 
 ECHO_HOOK = r"""#!/usr/bin/env zsh
@@ -546,29 +546,22 @@ def test_sigterm_leaves_terminal_state():
         config_dir.cleanup()
 
 
-def main():
-    test_sandbox_auto_runs_once()
-    test_sandbox_updates_without_reload()
-    test_startup_records_precede_two_turns()
-    test_tool_uses_manifest_display()
-    test_activity_input_does_not_delay_interrupt()
-    test_interrupt_drains_partial_recovery()
-    test_permission_decision_restores_draft()
-    test_permission_ctrl_c_cancels_pending_tools()
-    test_repeated_permission_ctrl_c_exits_after_recovery()
-    test_tool_result_preview_reports_total_tokens()
-    test_chat_end()
-    test_actionless_editor_return_is_not_a_clean_exit()
-    test_zle_multiline_editing()
-    test_zle_wrapped_line_navigation()
-    test_streaming_input_sequences_remain_atomic()
-    test_sigterm_leaves_terminal_state()
-    print("PASS terminal PTY scenarios")
-
-
 if __name__ == "__main__":
-    try:
-        main()
-    except (AssertionError, OSError) as error:
-        print(f"FAIL: {error}", file=sys.stderr)
-        raise
+    run("terminal PTY scenarios", [
+        test_sandbox_auto_runs_once,
+        test_sandbox_updates_without_reload,
+        test_startup_records_precede_two_turns,
+        test_tool_uses_manifest_display,
+        test_activity_input_does_not_delay_interrupt,
+        test_interrupt_drains_partial_recovery,
+        test_permission_decision_restores_draft,
+        test_permission_ctrl_c_cancels_pending_tools,
+        test_repeated_permission_ctrl_c_exits_after_recovery,
+        test_tool_result_preview_reports_total_tokens,
+        test_chat_end,
+        test_actionless_editor_return_is_not_a_clean_exit,
+        test_zle_multiline_editing,
+        test_zle_wrapped_line_navigation,
+        test_streaming_input_sequences_remain_atomic,
+        test_sigterm_leaves_terminal_state,
+    ])

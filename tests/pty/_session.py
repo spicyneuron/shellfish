@@ -11,9 +11,11 @@ import re
 import select
 import signal
 import struct
+import sys
 import tempfile
 import termios
 import time
+import traceback
 from pathlib import Path
 
 ROWS, COLUMNS = 18, 50
@@ -38,6 +40,27 @@ THEME = {
     "diff_removed": "#ffa198", "diff_removed_background": "#2d1519",
     "permission": "#58a6ff",
 }
+
+
+def run(label, tests):
+    """Runs every scenario and exits non-zero if any failed.
+
+    Scenarios are independent, each with its own app process, so one failure
+    must not hide the rest. A hang still ends the file at the runner's timeout.
+    Reports on stdout, in order with whatever the scenarios print there.
+    """
+    failures = 0
+    for test in tests:
+        try:
+            test()
+        except Exception:
+            failures += 1
+            print(f"FAIL {test.__name__}")
+            traceback.print_exc(file=sys.stdout)
+    if failures:
+        print(f"FAIL {label}: {failures} of {len(tests)} scenarios")
+        sys.exit(1)
+    print(f"PASS {label}")
 
 
 class Session:

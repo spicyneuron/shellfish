@@ -10,7 +10,7 @@ import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from _session import Session  # noqa: E402
+from _session import Session, run  # noqa: E402
 
 SWITCH_HOOK = r"""#!/usr/bin/env zsh
 emulate -R zsh
@@ -154,18 +154,11 @@ def test_fork_restores_removed_user_prompt_as_draft():
         session.close()
 
 
-def main():
-    test_slow_prompt_hook_keeps_ui_active()
-    test_prompt_hook_display_precedes_agent_section()
-    test_prompt_hook_hands_off_to_another_session()
-    test_prompt_hook_hands_off_to_new_session()
-    test_fork_restores_removed_user_prompt_as_draft()
-    print("PASS user_prompt_submit hook script PTY scenarios")
-
-
 if __name__ == "__main__":
-    try:
-        main()
-    except (AssertionError, OSError) as error:
-        print(f"FAIL: {error}", file=sys.stderr)
-        raise
+    run("user_prompt_submit hook script PTY scenarios", [
+        test_slow_prompt_hook_keeps_ui_active,
+        test_prompt_hook_display_precedes_agent_section,
+        test_prompt_hook_hands_off_to_another_session,
+        test_prompt_hook_hands_off_to_new_session,
+        test_fork_restores_removed_user_prompt_as_draft,
+    ])

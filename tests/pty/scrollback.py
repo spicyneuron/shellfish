@@ -23,7 +23,7 @@ except ImportError:
     sys.exit(0)
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from _session import ROWS, COLUMNS, Session  # noqa: E402
+from _session import ROWS, COLUMNS, Session, run  # noqa: E402
 
 # Enough words that the agent block alone overflows the window. That is the last
 # overflow site: the user block above it is committed before the turn starts.
@@ -365,12 +365,10 @@ def test_queued_submits_keep_committed_history():
         session.close()
 
 
-def main():
-    test_tall_resume_drains_bounded_backlog()
-    test_tall_turn_loses_neither_text_nor_draft()
-    test_committed_headings_keep_style()
-    test_queued_submits_keep_committed_history()
-
-
 if __name__ == "__main__":
-    main()
+    run("scrollback PTY scenarios", [
+        test_tall_resume_drains_bounded_backlog,
+        test_tall_turn_loses_neither_text_nor_draft,
+        test_committed_headings_keep_style,
+        test_queued_submits_keep_committed_history,
+    ])
