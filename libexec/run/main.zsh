@@ -33,14 +33,13 @@ sf_run_prompt() {
 sf_run_main() {
   local requested_session='' input='' prompt='' arity='' input_projection
   local -a positional=() create_args=() input_fields
-  integer session_explicit=0 out_explicit=0 from_explicit=0 jsonl=0 override=0 take=0
+  integer out_explicit=0 jsonl=0 override=0 take=0
 
   while (( $# )); do
     case $1 in
       --session)
-        (( ! session_explicit )) || { sf_die '--session may only be specified once'; return 2; }
+        [[ -z $requested_session ]] || { sf_die '--session may only be specified once'; return 2; }
         [[ -n $2 ]] || { sf_die '--session requires a nonempty path'; return 2; }
-        session_explicit=1
         requested_session=$2
         shift 2
         ;;
@@ -69,7 +68,6 @@ sf_run_main() {
         # a runtime override.
         arity=${SF_CONFIG_OPTIONS[$1]-}
         [[ -n $arity ]] || { sf_die "unknown argument: $1"; return 2; }
-        [[ $1 != --session-from ]] || from_explicit=1
         take=$(( arity + 1 ))
         (( $# >= take )) || { sf_die "$1 requires a value"; return 2; }
         create_args+=( "${@:1:$take}" )
@@ -83,11 +81,7 @@ sf_run_main() {
     esac
   done
 
-  (( ! session_explicit || ! from_explicit )) || {
-    sf_die '--session cannot be combined with --session-from'
-    return 2
-  }
-  (( ! session_explicit || ! out_explicit )) || {
+  [[ -z $requested_session ]] || (( ! out_explicit )) || {
     sf_die '--session names an existing session and cannot be combined with --session-out'
     return 2
   }
@@ -143,22 +137,9 @@ sf_run_main() {
     return $open_status
   fi
 
-  local session=$SF_SESSION_OPEN[path] failure=''
+  local session=$SF_SESSION_OPEN[path]
   source "$SF_ROOT/libexec/run/turn.zsh"
   SF_RUN[jsonl]=$jsonl
-  if [[ -e $session && ( ! -f $session || -L $session ) ]]; then
-    failure="invalid session path: $session"
-  elif [[ ! -s $session ]]; then
-    failure="no session at: $session"
-  fi
-  if [[ -n $failure ]]; then
-    if (( jsonl )); then
-      sf_run_error "$failure"
-    else
-      sf_die "$failure"
-    fi
-    return 1
-  fi
 
   typeset -gx SHELLFISH_MODE=run
   trap 'SF_RUN[signal_status]=130; kill -TERM $$' INT

@@ -103,6 +103,12 @@ zsh -f "$entry" run --session "$forwarded_session" \
   --session-from "$forwarded_session" ignored >/dev/null 2>&1 || conflict_status=$?
 (( conflict_status == 2 )) || fail 'run accepted session with session-from'
 
+conflict_status=0
+output=$(zsh -f "$entry" run --session "$forwarded_session" \
+  --session "$forwarded_session" ignored 2>&1) || conflict_status=$?
+[[ $output == *'--session may only be specified once'* && $conflict_status == 2 ]] ||
+  fail 'run accepted repeated sessions'
+
 # JSONL exposes the canonical turn stream through EOF and process status. The
 # session prefix is created before the turn and is not replayed onto the stream.
 typeset jsonl stream_session="$tmp/stream.jsonl"

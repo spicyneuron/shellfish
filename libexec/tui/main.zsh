@@ -33,7 +33,7 @@ sf_tui_main() {
   local arity=''
   local -a positional=() runtime_args=() presentation_args=()
   local -a original_args=("$@")
-  integer session_explicit=0 out_explicit=0 from_explicit=0 override=0 take=0
+  integer out_explicit=0 override=0 take=0
   integer clear_requested=0
   integer handoff=0 draft_explicit=0
   integer verbose_requested=0 controller_status=0
@@ -41,9 +41,8 @@ sf_tui_main() {
   while (( $# )); do
     case $1 in
       --session)
-        (( ! session_explicit )) || { sf_die '--session may only be specified once'; return 2; }
+        [[ -z $requested_session ]] || { sf_die '--session may only be specified once'; return 2; }
         [[ -n $2 ]] || { sf_die '--session requires a nonempty path'; return 2; }
-        session_explicit=1
         requested_session=$2
         shift 2
         ;;
@@ -80,7 +79,6 @@ sf_tui_main() {
         # a runtime override, and chat also reports presentation from it.
         arity=${SF_CONFIG_OPTIONS[$1]-}
         [[ -n $arity ]] || { sf_die "unknown argument: $1"; return 2; }
-        [[ $1 != --session-from ]] || from_explicit=1
         take=$(( arity + 1 ))
         (( $# >= take )) || { sf_die "$1 requires a value"; return 2; }
         runtime_args+=( "${@:1:$take}" )
@@ -98,11 +96,7 @@ sf_tui_main() {
     esac
   done
 
-  (( ! session_explicit || ! from_explicit )) || {
-    sf_die '--session cannot be combined with --session-from'
-    return 2
-  }
-  (( ! session_explicit || ! out_explicit )) || {
+  [[ -z $requested_session ]] || (( ! out_explicit )) || {
     sf_die '--session names an existing session and cannot be combined with --session-out'
     return 2
   }

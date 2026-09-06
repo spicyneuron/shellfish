@@ -203,6 +203,6 @@ assert_equal 1 "${#SF_SESSION_MATCHES}"
 )
 
 exit_code=0
-error=$(zsh -f "$entry" --continue --session-from source.jsonl 2>&1) || exit_code=$?
-[[ $error == *'--session cannot be combined with --session-from'* && $exit_code == 2 ]] || \
+error=$(zsh -f "$entry" --continue --session-out target.jsonl 2>&1) || exit_code=$?
+[[ $error == *'--session names an existing session and cannot be combined with --session-out'* && $exit_code == 2 ]] || \
   fail 'continue did not select a session and forward TUI arguments'

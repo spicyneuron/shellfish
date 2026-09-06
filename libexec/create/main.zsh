@@ -33,15 +33,14 @@ sf_create_session() {
 sf_create_main() {
   local requested_out='' report runtime session system
   local -a forwarded=()
-  integer out_explicit=0 report_status=0 take=0
+  integer report_status=0 take=0
   source "$SF_ROOT/lib/options.zsh"
 
   while (( $# )); do
     case $1 in
       --session-out)
-        (( ! out_explicit )) || { sf_die '--session-out may only be specified once'; return 2; }
+        [[ -z $requested_out ]] || { sf_die '--session-out may only be specified once'; return 2; }
         [[ -n $2 ]] || { sf_die '--session-out requires a nonempty path'; return 2; }
-        out_explicit=1
         requested_out=$2
         shift 2
         ;;
