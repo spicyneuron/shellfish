@@ -40,7 +40,7 @@ sf_tui_main() {
 
   while (( $# )); do
     case $1 in
-      --session)
+      -s|--session)
         [[ -z $requested_session ]] || { sf_die '--session may only be specified once'; return 2; }
         [[ -n $2 ]] || { sf_die '--session requires a nonempty path'; return 2; }
         requested_session=$2

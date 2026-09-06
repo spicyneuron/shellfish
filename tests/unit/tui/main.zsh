@@ -27,9 +27,9 @@ error=$(zsh -f "$entry" --session-from source.jsonl --draft draft positional 2>&
   fail 'chat consumed the prompt after --session-from'
 
 exit_code=0
-error=$(zsh -f "$entry" --session target.jsonl --session target.jsonl 2>&1) || exit_code=$?
+error=$(zsh -f "$entry" --session target.jsonl -s target.jsonl 2>&1) || exit_code=$?
 [[ $error == *'--session may only be specified once'* && $exit_code == 2 ]] || \
-  fail 'chat accepted repeated sessions'
+  fail 'chat did not recognize -s as a repeated session'
 
 exit_code=0
 error=$(zsh -f "$entry" --draft 'editable prompt' 2>&1) || exit_code=$?
