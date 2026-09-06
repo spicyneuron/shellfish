@@ -19,9 +19,9 @@ Options:
   --sandbox-write PATH  Give sandboxed tools read-write access (repeatable)
 
 Session shortcuts:
-  -c, --continue [OPTIONS] [PROMPT]  Continue the most recent session here
-  -r, --resume [OPTIONS] [PROMPT]    Pick a session from this directory
-  --session PATH [OPTIONS] [PROMPT]  Open a specific session
+  -c, --continue [OPTIONS] [PROMPT]      Continue the most recent session here
+  -r, --resume [OPTIONS] [PROMPT]        Pick a session from this directory
+  -s, --session PATH [OPTIONS] [PROMPT]  Open a specific session
 
 Configuration:
   --config FILE         Use another configuration file
