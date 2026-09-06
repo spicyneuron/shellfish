@@ -24,7 +24,7 @@ read_status=$?
 jq -cn --arg path "${SHELLFISH_SESSION:h}/switched.jsonl" \
   --arg config "${SHELLFISH_SESSION:h}/config/shellfish/shellfish.jsonc" \
   --arg executable "$SHELLFISH_EXECUTABLE" \
-  '{action:"handoff",argv:[$executable,"--config",$config,"--session",$path]}' >&3
+  '{action:"handoff",argv:[$executable,"--config",$config,"--session-out",$path]}' >&3
 exit 11
 """
 

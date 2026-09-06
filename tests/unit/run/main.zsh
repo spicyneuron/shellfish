@@ -73,7 +73,7 @@ assert_equal 'several prompt words' "$output" 'run joins positional prompt words
 # An option run does not own reaches shellfish create with its value intact,
 # and that value is not mistaken for the prompt that follows it.
 typeset forwarded_session="$tmp/forwarded.jsonl"
-output=$(SF_TEST_BACKEND_DELAY=0 zsh -f "$entry" run --session "$forwarded_session" \
+output=$(SF_TEST_BACKEND_DELAY=0 zsh -f "$entry" run --session-out "$forwarded_session" \
   --config "$config" --model forwarded-model --system 'forwarded system' \
   'plain answer') || fail 'forwarded run failed'
 assert_equal 'plain answer' "$output" 'run keeps the prompt after a forwarded value'
@@ -88,7 +88,7 @@ jq -e 'select(.type == "system" and .content == "forwarded system")' \
 # JSONL exposes the canonical turn stream through EOF and process status. The
 # session prefix is created before the turn and is not replayed onto the stream.
 typeset jsonl stream_session="$tmp/stream.jsonl"
-zsh -f "$entry" create --path "$stream_session" --config "$config" >/dev/null ||
+zsh -f "$entry" create --session-out "$stream_session" --config "$config" >/dev/null ||
   fail 'stream session create failed'
 typeset -i prefix=$(jq -es 'length' "$stream_session")
 jsonl=$(print -r -- \

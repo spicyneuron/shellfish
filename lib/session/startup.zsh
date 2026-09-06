@@ -6,15 +6,14 @@ setopt no_aliases no_bg_nice no_multios pipe_fail
 typeset -g SF_SESSION_STARTUP_ERROR=''
 typeset -gA SF_SESSION_OPEN=( path '' mode '' )
 
-# Resolves which session a client attaches to and whether that transcript
-# already existed or was created here. Creation belongs to shellfish create,
-# which reports its own failures. The frozen runtime stays in the transcript.
+# Resolves which session a client attaches to. A requested session must already
+# exist; otherwise one is created from the remaining options. Creation belongs
+# to shellfish create, which reports its own failures and prints the path it
+# chose. The frozen runtime stays in the transcript.
 sf_session_open() {
   local requested=$1
   integer override=$2
-  local source_session=$3 created
-  shift 3
-  local -a create=( "$SF_ENTRY" create )
+  shift 2
 
   SF_SESSION_STARTUP_ERROR=''
   SF_SESSION_OPEN=( path '' mode resume )
@@ -24,25 +23,25 @@ sf_session_open() {
       SF_SESSION_STARTUP_ERROR=$SF_SESSION_ERROR
       return 1
     }
-    SF_SESSION_OPEN[path]=$REPLY
-    create+=( --path "$REPLY" )
-  fi
-  [[ -z $source_session ]] || create+=( --session "$source_session" )
-
-  if [[ -n $SF_SESSION_OPEN[path] && -s $SF_SESSION_OPEN[path] ]]; then
+    [[ -s $REPLY ]] || {
+      SF_SESSION_STARTUP_ERROR="no session at $REPLY; use --session-out to create one"
+      return 1
+    }
     (( ! override )) || {
       SF_SESSION_STARTUP_ERROR='options that configure a new session cannot be used with an existing one'
       return 2
     }
-  else
-    SF_SESSION_OPEN[mode]=startup
-    local create_status=0
-    created=$("${create[@]}" "$@") || create_status=$?
-    (( ! create_status )) || return $create_status
-    [[ -n $created ]] || {
-      SF_SESSION_STARTUP_ERROR='create did not return a session path'
-      return 1
-    }
-    SF_SESSION_OPEN[path]=$created
+    SF_SESSION_OPEN[path]=$REPLY
+    return 0
   fi
+
+  SF_SESSION_OPEN[mode]=startup
+  local created create_status=0
+  created=$("$SF_ENTRY" create "$@") || create_status=$?
+  (( ! create_status )) || return $create_status
+  [[ -n $created ]] || {
+    SF_SESSION_STARTUP_ERROR='create did not return a session path'
+    return 1
+  }
+  SF_SESSION_OPEN[path]=$created
 }

@@ -47,7 +47,7 @@ typeset interrupt_session="$tmp/interrupted-start.jsonl"
 typeset interrupt_output="$tmp/interrupted-start.out"
 unsetopt BG_NICE
 INTERRUPT_MARKER="$interrupt_marker" zsh -f "$entry" run --config "$interrupt_config" \
-  --session "$interrupt_session" ignored >"$interrupt_output" 2>&1 &
+  --session-out "$interrupt_session" ignored >"$interrupt_output" 2>&1 &
 typeset interrupt_pid=$!
 setopt BG_NICE
 integer interrupt_waited=0
@@ -87,7 +87,7 @@ jq --arg adapter "$model_backend" '.backends.fixture.adapter=$adapter' \
   "$config" >"$model_config"
 typeset model_session="$tmp/model-cancel.jsonl" model_output="$tmp/model-cancel.out"
 MODEL_READY="$model_ready" MODEL_STOPPED="$model_stopped" \
-  zsh -f "$entry" run --config "$model_config" --session "$model_session" prompt \
+  zsh -f "$entry" run --config "$model_config" --session-out "$model_session" prompt \
   >"$model_output" 2>&1 &
 typeset model_pid=$!
 integer model_waited=0
@@ -106,7 +106,7 @@ wait "$model_pid" || model_status=$?
 # the signal rather than an ordinary failure.
 typeset cancel_session="$tmp/cancel.jsonl" cancel_output="$tmp/cancel.out"
 SF_TEST_BACKEND_DELAY=0.3 zsh -f "$entry" run --jsonl --config "$config" \
-  --session "$cancel_session" \
+  --session-out "$cancel_session" \
   < <(print -r -- '{"type":"message","role":"user","content":[{"type":"text","text":"alpha beta gamma delta epsilon zeta eta theta"}]}') \
   >"$cancel_output" 2>&1 &
 typeset cancel_pid=$!
@@ -155,7 +155,7 @@ jq --arg adapter "$cancel_backend" '.backends.fixture.adapter=$adapter' \
 
 typeset reasoning_session="$tmp/reasoning-cancel.jsonl" reasoning_output="$tmp/reasoning-cancel.out"
 zsh -f "$entry" run --jsonl --config "$cancel_backend_config" \
-  --session "$reasoning_session" \
+  --session-out "$reasoning_session" \
   < <(print -r -- '{"type":"message","role":"user","content":[{"type":"text","text":"reasoning"}]}') \
   >"$reasoning_output" 2>&1 &
 typeset reasoning_pid=$!
@@ -180,7 +180,7 @@ jq -e -s '
 # during it must not commit a call that a later turn could execute.
 typeset tool_input_session="$tmp/tool-input-cancel.jsonl" tool_input_output="$tmp/tool-input-cancel.out"
 CANCEL_BACKEND_MARKER="$cancel_backend_marker" zsh -f "$entry" run --jsonl \
-  --config "$cancel_backend_config" --session "$tool_input_session" \
+  --config "$cancel_backend_config" --session-out "$tool_input_session" \
   < <(print -r -- '{"type":"message","role":"user","content":[{"type":"text","text":"tool input"}]}') \
   >"$tool_input_output" 2>&1 &
 typeset tool_input_pid=$!
@@ -204,7 +204,7 @@ jq -e -s '
 # A turn that never finished can be followed by a new user turn.
 typeset recovered_session="$tmp/recovered.jsonl"
 SF_TEST_BACKEND_DELAY=0 zsh -f "$entry" run --config "$config" \
-  --session "$recovered_session" seed >/dev/null || fail 'recovery seed failed'
+  --session-out "$recovered_session" seed >/dev/null || fail 'recovery seed failed'
 print -r -- \
   '{"type":"message","role":"user","content":[{"type":"text","text":"interrupted"}]}' \
   >>"$recovered_session"

@@ -29,11 +29,11 @@ sf_read_prompt() {
 
 sf_tui_main() {
   local requested_session=''
-  local input='' draft='' new_source='' presentation
+  local input='' draft='' presentation
   local arity=''
   local -a positional=() runtime_args=() presentation_args=()
   local -a original_args=("$@")
-  integer session_explicit=0 session_override=0 runtime_override=0 take=0
+  integer session_explicit=0 out_explicit=0 session_override=0 runtime_override=0 take=0
   integer clear_requested=0 new_requested=0
   integer handoff=0 draft_explicit=0
   integer verbose_requested=0 controller_status=0
@@ -45,6 +45,13 @@ sf_tui_main() {
         [[ -n $2 ]] || { sf_die '--session requires a nonempty path'; return 2; }
         session_explicit=1
         requested_session=$2
+        shift 2
+        ;;
+      --session-out)
+        (( ! out_explicit )) || { sf_die '--session-out may only be specified once'; return 2; }
+        [[ -n $2 ]] || { sf_die '--session-out requires a nonempty path'; return 2; }
+        out_explicit=1
+        runtime_args+=( "${@:1:2}" )
         shift 2
         ;;
       --clear)
@@ -97,6 +104,10 @@ sf_tui_main() {
     esac
   done
 
+  (( ! session_explicit || ! out_explicit )) || {
+    sf_die '--session names an existing session and cannot be combined with --session-out'
+    return 2
+  }
   if (( new_requested )); then
     (( ! session_explicit )) || {
       sf_die '--new cannot be combined with --session'
@@ -104,12 +115,12 @@ sf_tui_main() {
     }
     (( ${#positional} <= 1 )) || { sf_die '--new accepts at most one session'; return 2; }
     if (( ${#positional} )); then
-      new_source=$positional[1]
-      positional=()
       (( ! runtime_override )) || {
         sf_die 'runtime overrides cannot be used with --new SESSION'
         return 2
       }
+      runtime_args+=( --session "$positional[1]" )
+      positional=()
     fi
   fi
 
@@ -141,7 +152,7 @@ sf_tui_main() {
   source "$SF_ROOT/lib/session/startup.zsh"
   integer startup_status=0 config_status=0
   sf_session_open "$requested_session" "$session_override" \
-    "$new_source" "${runtime_args[@]}" || startup_status=$?
+    "${runtime_args[@]}" || startup_status=$?
   if (( startup_status )); then
     [[ -z $SF_SESSION_STARTUP_ERROR ]] || sf_die "$SF_SESSION_STARTUP_ERROR"
     return $startup_status

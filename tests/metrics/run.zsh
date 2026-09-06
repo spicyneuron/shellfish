@@ -87,7 +87,7 @@ for (( iteration = 1; iteration <= iterations; iteration++ )); do
   (
     cd "$tmp/project"
     XDG_STATE_HOME="$tmp/state" PATH="$tmp/bin:$PATH" \
-      zsh -f "$root/bin/shellfish" run --session "$tmp/session-$iteration.jsonl" \
+      zsh -f "$root/bin/shellfish" run --session-out "$tmp/session-$iteration.jsonl" \
       --config "$tmp/config/shellfish.jsonc" perf </dev/null >/dev/null 2>"$stderr"
   ) || { cat "$stderr" >&2; exit 1; }
   float elapsed=$(( (EPOCHREALTIME - start) * 1000 ))
@@ -113,7 +113,7 @@ for (( iteration = 1; iteration <= iterations; iteration++ )); do
     cd "$tmp/project"
     XDG_STATE_HOME="$tmp/state" PATH="$tmp/bin:$PATH" \
       SHELLFISH_PERF_METRICS="$tmp/steady-metrics" \
-      zsh -f "$root/bin/shellfish" run --session "$tmp/session-$iteration.jsonl" \
+      zsh -f "$root/bin/shellfish" run --session-out "$tmp/session-$iteration.jsonl" \
       --config "$tmp/config/shellfish.jsonc" perf </dev/null >/dev/null 2>"$stderr"
   ) || { cat "$stderr" >&2; exit 1; }
 done

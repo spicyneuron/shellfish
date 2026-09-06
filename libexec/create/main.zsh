@@ -31,18 +31,18 @@ sf_create_session() {
 }
 
 sf_create_main() {
-  local requested_path='' report runtime session system
+  local requested_out='' report runtime session system
   local -a forwarded=()
-  integer path_explicit=0 report_status=0 take=0
+  integer out_explicit=0 report_status=0 take=0
   source "$SF_ROOT/lib/options.zsh"
 
   while (( $# )); do
     case $1 in
-      --path)
-        (( ! path_explicit )) || { sf_die '--path may only be specified once'; return 2; }
-        [[ -n $2 ]] || { sf_die '--path requires a nonempty path'; return 2; }
-        path_explicit=1
-        requested_path=$2
+      --session-out)
+        (( ! out_explicit )) || { sf_die '--session-out may only be specified once'; return 2; }
+        [[ -n $2 ]] || { sf_die '--session-out requires a nonempty path'; return 2; }
+        out_explicit=1
+        requested_out=$2
         shift 2
         ;;
       --session)
@@ -52,7 +52,7 @@ sf_create_main() {
         ;;
       *)
         # Forward option values with their option so that a value that looks
-        # like --path is not read as one.
+        # like --session-out is not read as one.
         take=$(( ${SF_CONFIG_OPTIONS[$1]:-0} + 1 ))
         (( $# >= take )) || { sf_die "$1 requires a value"; return 2; }
         forwarded+=( "${@:1:$take}" )
@@ -82,7 +82,7 @@ sf_create_main() {
 
   source "$SF_ROOT/lib/session/main.zsh"
   source "$SF_ROOT/lib/hooks.zsh"
-  sf_session_select_path "$requested_path" || {
+  sf_session_select_path "$requested_out" || {
     sf_die "$SF_SESSION_ERROR"
     return 1
   }

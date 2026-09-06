@@ -28,7 +28,8 @@ Presentation flags:
   --verbose             Lift every preview limit (chat only)
 
 Session flags:
-  --session PATH        Use PATH as the session or settings source
+  --session PATH        Use the existing session at PATH
+  --session-out PATH    Write the new session to PATH
   --new [SESSION]       Create new session, optionally with SESSION settings
 
 Session routes (first argument):
@@ -41,9 +42,6 @@ Config flags:
 
 Run flags:
   --jsonl               Exchange ordered JSONL records on stdin and stdout
-
-Create flags:
-  --path PATH           Write the new session to PATH
 
 Request flags:
   --tools JSON          Set backend request tools for build-request

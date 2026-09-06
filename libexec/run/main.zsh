@@ -33,7 +33,7 @@ sf_run_prompt() {
 sf_run_main() {
   local requested_session='' input='' prompt='' arity='' input_projection
   local -a positional=() create_args=() input_fields
-  integer session_explicit=0 jsonl=0 override=0 take=0
+  integer session_explicit=0 out_explicit=0 jsonl=0 override=0 take=0
 
   while (( $# )); do
     case $1 in
@@ -42,6 +42,13 @@ sf_run_main() {
         [[ -n $2 ]] || { sf_die '--session requires a nonempty path'; return 2; }
         session_explicit=1
         requested_session=$2
+        shift 2
+        ;;
+      --session-out)
+        (( ! out_explicit )) || { sf_die '--session-out may only be specified once'; return 2; }
+        [[ -n $2 ]] || { sf_die '--session-out requires a nonempty path'; return 2; }
+        out_explicit=1
+        create_args+=( "${@:1:2}" )
         shift 2
         ;;
       --jsonl)
@@ -75,6 +82,10 @@ sf_run_main() {
     esac
   done
 
+  (( ! session_explicit || ! out_explicit )) || {
+    sf_die '--session names an existing session and cannot be combined with --session-out'
+    return 2
+  }
   (( $+commands[jq] )) || {
     sf_die 'shellfish requires jq'
     return 2
@@ -120,7 +131,7 @@ sf_run_main() {
   fi
 
   source "$SF_ROOT/lib/session/startup.zsh"
-  sf_session_open "$requested_session" "$override" '' "${create_args[@]}"
+  sf_session_open "$requested_session" "$override" "${create_args[@]}"
   local open_status=$?
   if (( open_status )); then
     [[ -z $SF_SESSION_STARTUP_ERROR ]] || sf_die "$SF_SESSION_STARTUP_ERROR"

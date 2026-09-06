@@ -60,7 +60,7 @@ cat >"$resume_config" <<EOF
 }
 EOF
 RESUME_MARKER=$resume_marker SF_TEST_BACKEND_DELAY=0 zsh -f "$SF_ENTRY" run \
-  --config "$resume_config" --session "$resume_session" first >/dev/null ||
+  --config "$resume_config" --session-out "$resume_session" first >/dev/null ||
   fail 'new-session CLI entry failed'
 RESUME_MARKER=$resume_marker SF_TEST_BACKEND_DELAY=0 zsh -f "$SF_ENTRY" run \
   --session "$resume_session" second >/dev/null ||

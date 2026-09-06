@@ -149,7 +149,13 @@ class Session:
             os.chdir(self.project_dir)
             argv = [APP, "--config", str(self.config_file)]
             if self.explicit_session:
-                argv.extend(["--session", str(self.explicit_session)])
+                # --session resumes; a path with no transcript needs --session-out.
+                flag = (
+                    "--session"
+                    if self.explicit_session.exists()
+                    else "--session-out"
+                )
+                argv.extend([flag, str(self.explicit_session)])
             argv.extend(args or [])
             os.execve(APP, argv, env)
         self.pid = pid
