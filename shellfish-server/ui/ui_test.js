@@ -611,14 +611,34 @@ test("does not strand a divider before a delayed user record", async () => {
   );
 });
 
+test("ends a section on a durable turn error without numbering it", async () => {
+  const page = await idle();
+  const user = {
+    type: "message",
+    role: "user",
+    content: [{ type: "text", text: "hello" }],
+  };
+  await page.send(user, { type: "turn_error", message: "Turn interrupted." }, user);
+  assert.deepEqual(
+    find(page.output, "section").map((heading) => heading.textContent),
+    ["user1", "user2"],
+  );
+  const shown = find(page.output, "note")[0];
+  assert.equal(findTag(shown, "h2")[0].textContent, "✕Turn failed");
+  assert.equal(findTag(shown, "pre")[0].textContent, "Turn interrupted.");
+});
+
 test("separates notice titles from their bodies", async () => {
   const page = await idle();
   await page.send(
     {
-      type: "_hook_display", hook: "stop",
-      script: "/tmp/\u0001check", text: "done", complete: true,
+      type: "_notice", level: "info", source: "stop",
+      title: "/tmp/\u0001check", text: "done", complete: true,
     },
-    { type: "_turn_error", message: "recoverable" },
+    {
+      type: "_notice", level: "error", source: "",
+      title: "Turn failed", text: "recoverable", complete: true,
+    },
   );
   const notes = find(page.output, "note");
   assert.equal(findTag(notes[0], "h2")[0].textContent, "ℹ\ufffdcheck · stop");
@@ -628,13 +648,13 @@ test("separates notice titles from their bodies", async () => {
   assert.equal(findTag(notes[1], "pre")[0].textContent, "recoverable");
 });
 
-test("updates live hook display in place", async () => {
+test("updates a live notice in place", async () => {
   const page = await idle();
   await page.send(
     { type: "state", working: true },
     {
-      type: "_hook_display", hook: "user_prompt_submit",
-      script: "/tmp/compact", text: "Compacting\n", complete: false,
+      type: "_notice", level: "info", source: "user_prompt_submit",
+      title: "/tmp/compact", text: "Compacting\n", complete: false,
     },
   );
   let notes = find(page.output, "note");
@@ -643,34 +663,37 @@ test("updates live hook display in place", async () => {
   assert.equal(find(page.output, "activity").length, 1);
 
   await page.send({
-    type: "_hook_display", hook: "user_prompt_submit",
-    script: "/tmp/compact", text: "Compacting conversation…", complete: true,
+    type: "_notice", level: "info", source: "user_prompt_submit",
+    title: "/tmp/compact", text: "Compacting conversation…", complete: true,
   });
   notes = find(page.output, "note");
   assert.equal(notes.length, 1);
   assert.equal(findTag(notes[0], "pre")[0].textContent, "Compacting conversation…");
 });
 
-test("replaces incomplete hook display with exec failure", async () => {
+test("replaces an incomplete notice with the failure", async () => {
   const page = await idle();
   await page.send({
-    type: "_hook_display", hook: "stop",
-    script: "/tmp/check", text: "Checking", complete: false,
+    type: "_notice", level: "info", source: "stop",
+    title: "/tmp/check", text: "Checking", complete: false,
   });
-  await page.send({ type: "_turn_error", message: "hook script failed" });
+  await page.send({
+    type: "_notice", level: "error", source: "",
+    title: "Turn failed", text: "hook script failed", complete: true,
+  });
   const notes = find(page.output, "note");
   assert.equal(notes.length, 1);
   assert.equal(findTag(notes[0], "h2")[0].textContent, "✕Turn failed");
   assert.equal(findTag(notes[0], "pre")[0].textContent, "hook script failed");
 });
 
-test("discards incomplete hook display when a turn ends", async () => {
+test("discards an incomplete notice when a turn ends", async () => {
   const page = await idle();
   await page.send(
     { type: "state", working: true },
     {
-      type: "_hook_display", hook: "user_prompt_submit",
-      script: "/tmp/check", text: "Checking", complete: false,
+      type: "_notice", level: "info", source: "user_prompt_submit",
+      title: "/tmp/check", text: "Checking", complete: false,
     },
     { type: "state", working: false },
   );
@@ -706,13 +729,15 @@ test("preserves drafts from unsupported handoffs", async () => {
   assert.equal(page.entry.value, "--draft");
 });
 
-test("shows an exec error without interpreting its message", async () => {
+test("shows a failure notice without interpreting its text", async () => {
   const page = await idle();
-  const message = "provider request limit reached: 50";
-  await page.send({ type: "_turn_error", message });
+  const text = "provider request limit reached: 50";
+  await page.send({
+    type: "_notice", level: "error", source: "", title: "Turn failed", text, complete: true,
+  });
   const shown = find(page.output, "note").at(-1);
   assert.equal(findTag(findTag(shown, "h2")[0], "strong")[0].textContent, "Turn failed");
-  assert.equal(findTag(shown, "pre")[0].textContent, message);
+  assert.equal(findTag(shown, "pre")[0].textContent, text);
 });
 
 test("reopens the stream when it ends", async () => {

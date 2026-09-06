@@ -10,13 +10,13 @@ def event_fields($event_runtime):
     ["backend_request_start"]
   elif .type == "_turn_usage" then
     turn_usage_fields($event_runtime.profile.context_window // null)
-  elif .type == "_turn_error" and (.message | type == "string") then
-    ["exec_error", "Turn failed", .message]
-  elif .type == "_hook_display" and
-      (keys == ["complete", "hook", "script", "text", "type"]) and
-      ([.hook, .script, .text] | all(type == "string")) and
-      (.complete | type == "boolean") then
-    ["hook_display", .hook, .script, .text, (.complete | tostring)]
+  elif .type == "_notice" and
+      (keys == ["complete", "level", "source", "text", "title", "type"]) and
+      ([.title, .source, .text] | all(type == "string")) and
+      (.level | IN("info", "error")) and (.complete | type == "boolean") then
+    ["notice", (if .level == "error" then "error" else "notice" end),
+     (.title | split("/") | last), .source, .text,
+     (if .complete then "closed" else "open" end)]
   elif .type == "_tool_permission_request" then
     (.tool | tool_permission_display($event_runtime.harness.tools // [])) as $preview |
      ["permission_request", .id, .tool.name,
@@ -38,7 +38,8 @@ def event_fields($event_runtime):
       (.type == "system" and canonical_session_record) then
     empty
   elif canonical_user_message or canonical_assistant_message or
-      canonical_tool_result or canonical_context then
+      canonical_tool_result or canonical_context or
+      (.type == "turn_error" and canonical_session_record) then
     durable_display_fields(false; ($event_runtime.harness.tools // []))
   else
     error("unsupported exec event")

@@ -79,6 +79,7 @@ Durable records are:
 - `system`: the concatenated system components.
 - `context`: model-visible hook script output.
 - `message` with role `user`, `assistant`, or `tool_result`.
+- `turn_error`: `{type:"turn_error",message}`, the failure that ended an accepted turn without an assistant answer. It is never sent to a provider.
 
 A sandboxed tool result includes `sandbox_denial_detected: true` when the tool exits non-zero and sandbox monitoring reports a denied action. The denial and non-zero exit are correlated signals; the denial is not necessarily the cause of the failure.
 
@@ -90,15 +91,14 @@ Transient events currently include:
 | `_assistant_delta` | Incremental assistant text for live presentation. |
 | `_assistant_reasoning_delta` | Incremental reasoning text for live presentation. |
 | `_turn_usage` | Token usage accumulated for the turn. |
-| `_hook_display` | Ephemeral hook script stderr for a live notice. |
+| `_notice` | A user-facing notice: hook script output, or a failure before the turn was accepted. |
 | `_tool_permission_request` | A sandbox bypass needs a client decision. |
 | `_handoff` | A hook script asks a capable client to run `argv` after the turn exits cleanly. |
 | `_session_update` | A hook-requested update or model-context discovery changed the session; `runtime` is the resulting resolved runtime. |
-| `_turn_error` | The turn cannot start or complete the operation. |
 
 Text and reasoning deltas carry a zero-based content `index` and a zero-based `seq`. The index identifies the block's position in the later assistant content. The sequence is shared by both delta types and restarted for each provider response, so it orders visible events independently of block identity. Deltas are previews only. Consumers should render committed assistant and reasoning content from the later durable assistant record. Clients should treat unknown transient types as unsupported protocol input and recover from the durable session rather than guessing their meaning.
 
-Hook display events have the shape `{type:"_hook_display",hook,script,text,complete}`. The first newline-terminated stderr line is emitted with `complete:false` while the script runs. When the script exits, its full stderr replaces that notice with `complete:true`. A script that exits before writing a newline emits only the complete event. An interrupted invocation may end without a complete event, so clients must discard an incomplete notice when the turn stream fails, ends, or is replayed.
+Notices have the shape `{type:"_notice",level,title,source,text,complete}`. The level is `info` or `error`. The source attributes the notice, and is empty when there is no attribution. Hook script output is an informational notice titled with the script path and attributed to the hook: the first newline-terminated stderr line is emitted with `complete:false` while the script runs, and the script's full stderr replaces that notice with `complete:true` when it exits. A script that exits before writing a newline emits only the complete notice. An interrupted invocation may end without one, so clients must discard an incomplete notice when the turn stream fails, ends, or is replayed. Failures are complete error notices.
 
 A permission request has this shape:
 
@@ -115,7 +115,7 @@ A permission request has this shape:
 
 A successful process exit means the single-turn operation completed cleanly. This includes a `user_prompt_submit` script that deliberately blocks submission or requests a handoff. Tool commands may return nonzero results without making the turn itself fail.
 
-A nonzero exit means the operation failed or was interrupted. The turn emits `_turn_error` when JSONL output is available. After malformed output, disconnection, cancellation, or process failure, discard uncertain live state and replay the durable session.
+A nonzero exit means the operation failed or was interrupted. A failure after the user record is committed is appended and emitted as a durable `turn_error`. An earlier failure is reported as an error `_notice` when JSONL output is available. After malformed output, disconnection, cancellation, or process failure, discard uncertain live state and replay the durable session.
 
 If a provider fails or is cancelled after the turn accepted visible text or reasoning, cleanup makes a best-effort append of that content as a canonical assistant message with `stop: "length"`. Otherwise the user message remains unanswered. Cleanup appends error results for any durable tool calls that did not finish. This recovery cannot guarantee persistence after `SIGKILL` or process crash.
 

@@ -48,8 +48,8 @@ let contextWindow = null;
 let sectionChunks = [];
 // Tool calls waiting for their result, by call ID.
 const calls = new Map();
-// The current live hook notice, or null.
-let hookNotice = null;
+// The current incomplete notice, or null.
+let liveNotice = null;
 // Each tool's display policy from the session header, by tool name.
 const toolDisplay = new Map();
 const INPUT_FALLBACK = { content: ["$input_json"], format: "json" };
@@ -463,6 +463,10 @@ function apply(frame) {
       );
     case "message":
       return renderMessage(frame);
+    case "turn_error":
+      // The failure ends its section without claiming a section number.
+      lastRole = null;
+      return note(safe(frame.message), "error", "Turn failed");
     case "state":
       return applyState(frame);
     case "_backend_request_start":
@@ -476,31 +480,32 @@ function apply(frame) {
       return showUsage(frame);
     case "_tool_permission_request":
       return askPermission(frame);
-    case "_hook_display": {
+    case "_notice": {
       if (
-        typeof frame.hook !== "string" || typeof frame.script !== "string" ||
-        typeof frame.text !== "string" || typeof frame.complete !== "boolean" ||
-        Object.keys(frame).sort().join(",") !== "complete,hook,script,text,type"
+        typeof frame.level !== "string" || typeof frame.title !== "string" ||
+        typeof frame.source !== "string" || typeof frame.text !== "string" ||
+        typeof frame.complete !== "boolean" ||
+        Object.keys(frame).sort().join(",") !== "complete,level,source,text,title,type"
       ) {
-        throw new Error("invalid hook display");
+        throw new Error("invalid notice");
+      }
+      if (frame.level === "error") {
+        if (liveNotice) liveNotice.article.remove();
+        liveNotice = null;
+        return note(safe(frame.text), "error", safe(frame.title), frame.source || undefined);
       }
       hideIndicator();
-      if (!hookNotice) {
+      if (!liveNotice) {
         const article = record("note", null);
         const title = el(article, "h2");
-        summary(title, "ℹ", safe(frame.script).split("/").pop(), frame.hook);
-        hookNotice = { article, body: el(article, "pre") };
+        summary(title, "ℹ", safe(frame.title).split("/").pop(), frame.source || undefined);
+        liveNotice = { article, body: el(article, "pre") };
         place(article);
       }
-      hookNotice.body.textContent = safe(frame.text);
-      if (frame.complete) hookNotice = null;
+      liveNotice.body.textContent = safe(frame.text);
+      if (frame.complete) liveNotice = null;
       if (working) showIndicator();
       return;
-    }
-    case "_turn_error": {
-      if (hookNotice) hookNotice.article.remove();
-      hookNotice = null;
-      return note(safe(frame.message), "error", "Turn failed");
     }
     case "_handoff": {
       // A hook asked to replace the process, which only a terminal can honour.
@@ -619,8 +624,8 @@ function applyState(frame) {
     showIndicator();
   } else {
     hideIndicator();
-    if (hookNotice) hookNotice.article.remove();
-    hookNotice = null;
+    if (liveNotice) liveNotice.article.remove();
+    liveNotice = null;
     clearPermission();
   }
   if (frame.error) note(frame.error, "error");
@@ -779,7 +784,7 @@ function reload(from) {
 function reset() {
   output.replaceChildren();
   calls.clear();
-  hookNotice = null;
+  liveNotice = null;
   indicator = null;
   lastRole = null;
   sectionId = 0;

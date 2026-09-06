@@ -24,7 +24,7 @@ sf_hooks_display_update() {
   if (( SF_RUN[jsonl] )); then
     event=$(print -rn -- "$text" |
       jq -Rsc --arg hook "$hook" --arg script "$script" \
-        '{type:"_hook_display",hook:$hook,script:$script,text:.,complete:false}') ||
+        '{type:"_notice",level:"info",title:$script,source:$hook,text:.,complete:false}') ||
       return 1
     sf_run_emit "$event"
   fi
@@ -37,7 +37,7 @@ sf_hooks_display_complete() {
     return
   fi
   event=$(jq -cn --arg hook "$hook" --arg script "$script" --rawfile text "$display" \
-    '{type:"_hook_display",hook:$hook,script:$script,text:$text,complete:true}') ||
+    '{type:"_notice",level:"info",title:$script,source:$hook,text:$text,complete:true}') ||
     return 1
   sf_run_emit "$event"
 }
@@ -111,7 +111,8 @@ sf_run_permission() {
 
 sf_run_error() {
   if (( SF_RUN[jsonl] )); then
-    sf_run_emit "$(jq -cn --arg message "$1" '{type:"_turn_error",message:$message}')"
+    sf_run_emit "$(jq -cn --arg message "$1" \
+      '{type:"_notice",level:"error",title:"Turn failed",source:"",text:$message,complete:true}')"
   else
     print -r -u2 -- "$1"
   fi

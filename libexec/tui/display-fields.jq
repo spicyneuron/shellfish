@@ -72,6 +72,9 @@ def tool_permission_display($tools):
 def durable_display_fields($replay; $tools):
   if .type == "system" and $replay then
     ["system", .content]
+  elif .type == "turn_error" then
+    # The failure closes its section without claiming a section number.
+    ["notice", "error", "Turn failed", "", .message, "closed", "end"]
   elif canonical_user_message then
     if $replay then ["user", .content[0].text] else empty end
   elif canonical_assistant_message then

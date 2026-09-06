@@ -159,7 +159,7 @@ func TestExecTerminatesThenKillsItsGroup(t *testing.T) {
 	childTerminated := filepath.Join(dir, "child-terminated")
 	childPID := filepath.Join(dir, "child-pid")
 	script := "trap 'printf terminated >\"" + parentTerminated + "\"; " +
-		"printf \"%s\\n\" \"{\\\"type\\\":\\\"_turn_error\\\",\\\"message\\\":\\\"cancelled\\\"}\"; exit 143' TERM\n" +
+		"printf \"%s\\n\" \"{\\\"type\\\":\\\"_notice\\\",\\\"text\\\":\\\"cancelled\\\"}\"; exit 143' TERM\n" +
 		"(\n" +
 		"  trap 'printf terminated >\"" + childTerminated + "\"; exit 143' TERM\n" +
 		"  while :; do sleep 0.05; done\n" +
@@ -202,7 +202,7 @@ func TestExecTerminatesThenKillsItsGroup(t *testing.T) {
 	if _, err := os.Stat(childTerminated); err == nil {
 		t.Fatal("cancellation signalled a descendant instead of Shellfish exec alone")
 	}
-	if len(events) != 1 || events[0] != `{"type":"_turn_error","message":"cancelled"}` {
+	if len(events) != 1 || events[0] != `{"type":"_notice","text":"cancelled"}` {
 		t.Fatalf("cancellation events = %q", events)
 	}
 	pidText, err := os.ReadFile(childPID)

@@ -286,8 +286,8 @@ SF_ROOT=$ROOT zsh -f -c '
 (( partial_status == 1 )) || fail 'partial append failure exited successfully'
 print -r -- "$(<"$partial_stream")" | jq -eRn '
   [inputs | fromjson] as $events |
-  ($events | map(.type)) == ["_turn_error"] and
-  ($events[-1].message | contains("cannot append session record")) and
+  ($events | map(.type)) == ["_notice"] and
+  ($events[-1] | .level == "error" and (.text | contains("cannot append session record"))) and
   ($events | any(.type | IN("session","system","message","context")) | not)
 ' >/dev/null
 sf_session_begin_turn "$partial_session"
@@ -335,7 +335,7 @@ sf_test_session "$lorem_session"
 stream=$(sf_test_turn 'lorem tool' "$lorem_session")
 print -r -- "$stream" | jq -eRn '
   [inputs | fromjson] as $events |
-  ($events | any(.type == "_turn_error") | not) and
+  ($events | any(.type == "_notice" and .level == "error") | not) and
   ($events | map(select(.role == "assistant"))[0].stop) == "tool_calls" and
   ($events | map(select(.role == "tool_result")) | length) == 1 and
   ($events | map(select(.role == "assistant"))[-1].stop) == "end"

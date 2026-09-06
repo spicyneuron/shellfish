@@ -76,7 +76,7 @@ Frames are SSE `data:` lines containing one JSON object each, plus `: keepalive`
 
 Types beginning with an underscore are transient turn events. Other turn objects are durable session records. The server-owned `state` frame is the one exception. Text and reasoning deltas share a zero-based `seq` that restarts for each provider response. The bundled browser ignores those deltas and renders the later durable assistant record.
 
-The bundled browser replaces the current incomplete `_hook_display` notice with its completed text, leaving the completed notice visible. A turn end, stream failure, or replay discards any incomplete hook notice with the rest of the uncertain transient state.
+The bundled browser replaces the current incomplete `_notice` with its completed text, leaving the completed notice visible. A turn end, stream failure, or replay discards any incomplete notice with the rest of the uncertain transient state. A durable `turn_error` renders as an error notice and ends the current section without taking a section number.
 
 The server relays `_handoff` events but does not execute their argv or switch sessions. The bundled browser reports the unsupported handoff. If argv includes `--draft`, it restores that value into an empty prompt editor; if the editor already contains newer text, it preserves that text and displays the handoff draft separately. The browser therefore remains attached to the source session after commands such as `/new`, `/fork`, `/resume`, and `/compact`.
 

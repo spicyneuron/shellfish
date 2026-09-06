@@ -111,7 +111,7 @@ sf_tui_cancel() {
 
 sf_tui_decoded() {
   local type=$1 first=${2-} second=${3-} third=${4-} fourth=${5-} fifth=${6-} sixth=${7-}
-  local encoded preview reason notice_state
+  local encoded preview reason
   case $type in
       backend_request_start|assistant_delta|assistant_reasoning_delta|tool_call|tool_result|context)
         sf_tui_event "$type" "$first" "$second" "$third" "$fourth" "$fifth" "$sixth" || return 1
@@ -126,16 +126,18 @@ sf_tui_decoded() {
         sf_tui_footer_usage "$first"
         [[ -z $second ]] || sf_tui_event reasoning_tokens "$second" || return 1
         ;;
-      exec_error)
-        sf_tui_notice error "$first" "$second" || return 1
-        [[ -n $SF_PRESENT_EXEC_ERROR_HEADING ]] || SF_PRESENT_EXEC_ERROR_HEADING=$first
-        [[ -z $SF_PRESENT_EXEC_ERROR_DETAIL ]] || SF_PRESENT_EXEC_ERROR_DETAIL+=$'\n'
-        SF_PRESENT_EXEC_ERROR_DETAIL+=$second
-        ;;
-      hook_display)
-        if [[ $fourth == true ]]; then notice_state=closed; else notice_state=open; fi
-        sf_tui_notice notice "${second:t}" "$third" "$notice_state" || return 1
-        SF_PRESENT_NODE_META[REPLY]=$first
+      notice)
+        sf_tui_notice "$first" "$second" "$fourth" "$fifth" || return 1
+        SF_PRESENT_NODE_META[REPLY]=$third
+        if [[ $sixth == end ]]; then
+          # A durable failure ends its section and survives reload, so it needs
+          # no help from the exit report.
+          SF_PRESENT_LAST_ROLE=''
+        elif [[ $first == error ]]; then
+          [[ -n $SF_PRESENT_EXEC_ERROR_HEADING ]] || SF_PRESENT_EXEC_ERROR_HEADING=$second
+          [[ -z $SF_PRESENT_EXEC_ERROR_DETAIL ]] || SF_PRESENT_EXEC_ERROR_DETAIL+=$'\n'
+          SF_PRESENT_EXEC_ERROR_DETAIL+=$fourth
+        fi
         ;;
       permission_request)
         [[ $SF_PRESENT_STATE == working && -z $SF_PRESENT_PERMISSION_ID ]] || return 1

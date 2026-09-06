@@ -119,7 +119,7 @@ assert_equal "${SF_PRESENT_IDENTITY} · 1 ↑ 1 ↓" "$SF_PRESENT_FOOTER"
 sf_tui_reset
 sf_tui_terminal_reset
 sf_tui_event tool_call call_1 shell '{"command":"true"}'
-sf_tui_decoded hook_display pre_tool_use /tmp/progress working true
+sf_tui_decoded notice notice progress pre_tool_use working closed
 assert_equal 'section,tool_call,tool_result,notice,tool_result' "${(j:,:)SF_PRESENT_NODE_TYPE}"
 assert_equal progress "$SF_PRESENT_NODE_HEADING[4]"
 assert_equal pre_tool_use "$SF_PRESENT_NODE_META[4]"
@@ -141,7 +141,7 @@ assert_equal denied "$SF_PRESENT_NODE_BODY[3]"
 # An execution error abandons rather than resumes the live tool.
 sf_tui_reset
 sf_tui_event tool_call call_1 shell '{"command":"false"}'
-sf_tui_decoded exec_error failed
+sf_tui_decoded notice error failed '' '' closed
 assert_equal 'section,tool_call,tool_result,notice' "${(j:,:)SF_PRESENT_NODE_TYPE}"
 assert_equal '' "$SF_PRESENT_NODE_STATUS[3]"
 assert_equal closed "$SF_PRESENT_NODE_STATE[3]"
@@ -149,16 +149,29 @@ assert_equal error "$SF_PRESENT_NODE_ROLE[4]"
 assert_equal 0 "${#SF_PRESENT_TOOL_ORDER}"
 assert_equal '' "$SF_PRESENT_TOOL_CURRENT"
 
+# A durable turn error closes its section without taking a section number, so the
+# next accepted record opens a numbered one.
+sf_tui_reset
+SF_PRESENT_EXEC_ERROR_HEADING=''
+sf_tui_event user first
+sf_tui_decoded notice error 'Turn failed' '' 'Turn interrupted.' closed end
+assert_equal 'section,message,notice' "${(j:,:)SF_PRESENT_NODE_TYPE}"
+assert_equal 1 "$SF_PRESENT_SECTION_ID"
+assert_equal '' "$SF_PRESENT_EXEC_ERROR_HEADING"
+sf_tui_event user second
+assert_equal 'section,message,notice,section,message' "${(j:,:)SF_PRESENT_NODE_TYPE}"
+assert_equal 2 "$SF_PRESENT_SECTION_ID"
+
 # Sequential tool calls remain completable across pre- and post-hook script output.
 sf_tui_reset
 sf_tui_event tool_call call_1 shell one
 sf_tui_event tool_call call_2 shell two
-sf_tui_decoded hook_display pre_tool_use /tmp/pre first true
+sf_tui_decoded notice notice pre pre_tool_use first closed
 sf_tui_event tool_result call_1 0 first
-sf_tui_decoded hook_display post_tool_use /tmp/post first-done true
-sf_tui_decoded hook_display pre_tool_use /tmp/pre second true
+sf_tui_decoded notice notice post post_tool_use first-done closed
+sf_tui_decoded notice notice pre pre_tool_use second closed
 sf_tui_event tool_result call_2 0 second
-sf_tui_decoded hook_display post_tool_use /tmp/post second-done true
+sf_tui_decoded notice notice post post_tool_use second-done closed
 integer completed_tools=0 notices=0 node
 for (( node = 1; node <= ${#SF_PRESENT_NODE_TYPE}; node++ )); do
   if [[ $SF_PRESENT_NODE_TYPE[node] == notice ]]; then
@@ -176,10 +189,10 @@ assert_equal '' "$SF_PRESENT_TOOL_CURRENT"
 # after the hook invocation completes.
 sf_tui_reset
 sf_tui_event tool_call call_live shell run
-sf_tui_decoded hook_display pre_tool_use /tmp/progress $'Checking\n' false
+sf_tui_decoded notice notice progress pre_tool_use $'Checking\n' open
 assert_equal 'section,tool_call,tool_result,notice' "${(j:,:)SF_PRESENT_NODE_TYPE}"
 assert_equal open "$SF_PRESENT_NODE_STATE[-1]"
-sf_tui_decoded hook_display pre_tool_use /tmp/progress $'Checking policy\n' true
+sf_tui_decoded notice notice progress pre_tool_use $'Checking policy\n' closed
 assert_equal 'section,tool_call,tool_result,notice,tool_result' "${(j:,:)SF_PRESENT_NODE_TYPE}"
 assert_equal closed "$SF_PRESENT_NODE_STATE[4]"
 assert_equal $'Checking policy\n' "$SF_PRESENT_NODE_BODY[4]"
@@ -411,8 +424,8 @@ SF_PRESENT_SESSION="$tmp/recover.jsonl"
 SF_PRESENT_STATE=working
 sf_tui_transport_reset
 SF_TUI_TRANSPORT_LINES=(
-  '{"type":"_turn_error","message":"backend emitted an invalid event stream"}'
-  '{"type":"_turn_error","message":"cannot append session record: /tmp/recover.jsonl"}'
+  '{"type":"_notice","level":"error","title":"Turn failed","source":"","text":"backend emitted an invalid event stream","complete":true}'
+  '{"type":"_notice","level":"error","title":"Turn failed","source":"","text":"cannot append session record: /tmp/recover.jsonl","complete":true}'
 )
 SF_TUI_TRANSPORT_EOF=1
 SF_TUI_TRANSPORT_EXIT_STATUS=1

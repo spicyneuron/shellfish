@@ -11,8 +11,9 @@ cat <<'STREAM' |
 {"type":"_assistant_delta","text":"hi\n","seq":1}
 {"type":"_turn_usage","input_tokens":14,"output_tokens":2}
 {"type":"_turn_usage","input_tokens":100,"cached_tokens":85,"output_tokens":100}
-{"type":"_hook_display","hook":"stop","script":"/tmp/check","text":"done","complete":true}
-{"type":"_turn_error","message":"recoverable"}
+{"type":"_notice","level":"info","title":"/tmp/check","source":"stop","text":"done","complete":true}
+{"type":"_notice","level":"error","title":"Turn failed","source":"","text":"recoverable","complete":true}
+{"type":"turn_error","message":"recoverable"}
 {"type":"_handoff","argv":["/usr/bin/env","printf","%s","done"]}
 {"type":"message","role":"user","content":[{"type":"text","text":"hi"}]}
 {"type":"message","role":"assistant","stop":"end","content":[{"type":"text","text":"hi\n"}],"usage":{"input_tokens":14,"output_tokens":2}}
@@ -49,18 +50,37 @@ usage=$(print -r -- \
   tr '\0' '\n' | sed '/^$/d' | paste -sd, -)
 assert_equal 'turn_usage,100 ↑ 85% ⦿ 20 ↓,batch_ok' "$usage"
 
-order=$(jq -cn --arg message 'provider request limit reached: 50' \
-    '{type:"_turn_error",message:$message}' |
+# Transient notices and durable turn errors decode into the same notice fields.
+order=$(jq -cn --arg text 'provider request limit reached: 50' \
+    '{type:"_notice",level:"error",title:"Turn failed",source:"",text:$text,complete:true}' |
   jq -jRs -L "$ROOT" --argjson runtime null \
     -f "$ROOT/libexec/tui/event-decode.jq" |
   tr '\0' '\n' | sed '/^$/d' | paste -sd, -)
-assert_equal 'exec_error,Turn failed,provider request limit reached: 50,batch_ok' "$order"
+assert_equal 'notice,error,Turn failed,provider request limit reached: 50,closed,batch_ok' "$order"
 
-if print -r -- '{"type":"_turn_error","message":1}' |
-    jq -jRs -L "$ROOT" --argjson runtime null \
-      -f "$ROOT/libexec/tui/event-decode.jq" >/dev/null 2>&1; then
-  fail 'turn error with a non-string message was accepted'
-fi
+order=$(print -r -- \
+    '{"type":"_notice","level":"info","title":"/tmp/hooks/check","source":"stop","text":"working","complete":false}' |
+  jq -jRs -L "$ROOT" --argjson runtime null \
+    -f "$ROOT/libexec/tui/event-decode.jq" |
+  tr '\0' '\n' | sed '/^$/d' | paste -sd, -)
+assert_equal 'notice,notice,check,stop,working,open,batch_ok' "$order"
+
+order=$(print -r -- '{"type":"turn_error","message":"Turn interrupted."}' |
+  jq -jRs -L "$ROOT" --argjson runtime null \
+    -f "$ROOT/libexec/tui/event-decode.jq" |
+  tr '\0' '\n' | sed '/^$/d' | paste -sd, -)
+assert_equal 'notice,error,Turn failed,Turn interrupted.,closed,end,batch_ok' "$order"
+
+typeset invalid
+for invalid in '{"type":"turn_error","message":1}' \
+    '{"type":"_notice","level":"warn","title":"t","source":"","text":"x","complete":true}' \
+    '{"type":"_notice","level":"error","title":"t","source":"","text":"x"}'; do
+  if print -r -- "$invalid" |
+      jq -jRs -L "$ROOT" --argjson runtime null \
+        -f "$ROOT/libexec/tui/event-decode.jq" >/dev/null 2>&1; then
+    fail "invalid notice was accepted: $invalid"
+  fi
+done
 
 typeset read_runtime=$(jq -cn \
   --slurpfile read "$ROOT/share/default/tools/read_file/tool.json" '
@@ -133,7 +153,6 @@ session_update=$(jq -cn --argjson runtime "$updated_runtime" \
   tr '\0' '\n' | sed '/^$/d' | paste -sd, -)
 assert_equal "session_update,$updated_runtime,batch_ok" "$session_update"
 
-typeset invalid
 for invalid in \
     '{"type":"_handoff","argv":[]}' \
     '{"type":"_handoff","argv":[""]}' \
