@@ -1,6 +1,6 @@
 # Shellfish
 
-Shellfish is a small, auditable coding agent built from shell processes, text protocols, and an append-only log. Prefer fewer concepts, direct control flow, and behavior that can be understood in one sitting.
+Shellfish is a small, auditable coding agent built from shell processes, text protocols, and an append-only log. Strive for simplicity: fewer concepts, direct control flow, and behavior that can be understood in one sitting.
 
 This project is pre-release. Remove obsolete behavior rather than adding deprecation notices, compatibility paths, or tests for removed functionality.
 
@@ -24,6 +24,6 @@ This project is pre-release. Remove obsolete behavior rather than adding depreca
 
 - Consult the focused contract before changing a subsystem: `docs/ARCHITECTURE.md`, `docs/RUN.md`, `docs/CONFIG.md`, `docs/HARNESS.md`, `docs/HOOKS.md`, `docs/BACKENDS.md`, or `docs/SERVER.md`.
 - For code changes, run the nearest focused test first, then bare `./tests/run`. Use `./tests/run pty` only for behavior requiring a terminal and run it outside the sandbox, where PTYs are available. Use `./tests/run server` for `shellfish-server/` changes. Do not run tests for documentation- or comment-only changes.
-- Treat the worktree as shared. Before `git checkout`, `restore`, `reset`, or `stash`, inspect and preserve uncommitted work. Never discard or hide another agent's changes.
 - In Zsh, avoid names that collide with special parameters such as `status` and `commands`. When a command substitution's exit status matters, declare the variable first and assign it separately.
-- Validate at system boundaries. Trust established internal guarantees rather than duplicating checks.
+- Treat the worktree as shared. Before `git checkout`, `restore`, `reset`, or `stash`, inspect and preserve uncommitted work. Never discard or hide another agent's changes.
+- Commit messages should start with a short, capitalized, imperative title without punctuation. The optional message body is reserved for details that would assist future debugging but not apparent in the diff's code or comments: motivation, constraints, counterintuitive decisions, alternatives considered, etc.
