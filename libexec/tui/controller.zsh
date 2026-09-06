@@ -100,7 +100,7 @@ sf_tui_cancel() {
     permission|working)
       [[ $SF_PRESENT_STATE != permission ]] || sf_tui_editor_permission restore
       SF_PRESENT_STATE=cancelling
-      sf_tui_transport_signal
+      sf_tui_transport_signal USR1
       return
       ;;
     idle|stopped)
@@ -255,9 +255,10 @@ sf_tui_exec_finish() {
   SF_PRESENT_TURN_ERROR=0
   [[ $SF_PRESENT_STATE != cancelling ]] || cancelled=1
   if (( exit_status || cancelled )); then
-    if (( cancelled )); then
-      heading='Cancelled.'
-      detail=$exit_detail
+    if (( turn_error )); then
+      # The reloaded transcript ends with the persisted failure. Exec only
+      # reports a failure notice when it could not persist one.
+      heading=''
     elif [[ -n $exec_heading ]]; then
       heading=$exec_heading
       detail=$exec_detail
@@ -265,10 +266,12 @@ sf_tui_exec_finish() {
         [[ -z $detail ]] || detail+=$'\n'
         detail+=$exit_detail
       fi
-    elif (( turn_error )); then
-      # The reloaded transcript ends with the persisted failure, which says more
-      # than the exit status does.
+    elif (( cancelled && ! exit_status )); then
+      # A completed worker wins the cancellation race.
       heading=''
+    elif (( cancelled )); then
+      heading='Cancelled.'
+      detail=$exit_detail
     elif (( exit_status >= 128 )); then
       heading='Exec process terminated.'
       detail=${exit_detail:-"Terminated by signal $(( exit_status - 128 ))."}

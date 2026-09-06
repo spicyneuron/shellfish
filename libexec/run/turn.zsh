@@ -153,9 +153,16 @@ sf_run_turn_cleanup() {
         failure=$SF_SESSION_ERROR
       fi
     fi
+    if (( ! interrupted )); then
+      error_message=$failure
+    elif (( SF_RUN[signal_status] == 130 )); then
+      # INT and the client's USR1 cancellation both report this status.
+      error_message='Cancelled.'
+    else
+      error_message='Turn interrupted.'
+    fi
     # An interrupted turn may have written past the in-memory view, so recovery
     # judges the durable records rather than what this process last held.
-    if (( interrupted )); then error_message='Turn interrupted.'; else error_message=$failure; fi
     if sf_session_resync_turn "$error_message"; then
       if [[ -n $REPLY ]]; then
         [[ -z $recovered ]] || recovered+=$'\n'
@@ -213,7 +220,6 @@ sf_run_turn() {
   SF_RUN[permission_count]=0
   SF_RUN[permission_available]=$permission_available
   SF_RUN[committed]=0
-  trap 'sf_run_interrupt; exit $SF_RUN[signal_status]' TERM
   if ! sf_session_begin_turn "$session_path"; then
     sf_run_error "$SF_SESSION_ERROR"
     return 1

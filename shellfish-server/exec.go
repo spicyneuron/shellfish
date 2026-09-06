@@ -18,9 +18,9 @@ import (
 
 const maxDiagnosticBytes = 8 << 10
 
-// A cancelled turn is given time to unwind: TERM targets the Shellfish turn alone so it
-// can finish cleanup before exiting. Killing the process group is the backstop for a
-// child that cannot manage that.
+// A cancelled turn is given time to unwind: USR1 targets the Shellfish turn alone so
+// it can finish cleanup before exiting. Killing the process group is the backstop for
+// a child that cannot manage that.
 var cancelGracePeriod = 5 * time.Second
 
 // Exec runs Shellfish children against one stored session.
@@ -50,7 +50,7 @@ func (e *Exec) Run(ctx context.Context, input json.RawMessage, replies <-chan js
 	var processMu sync.Mutex
 	processExited := false
 	child.Cancel = func() error {
-		err := child.Process.Signal(syscall.SIGTERM)
+		err := child.Process.Signal(syscall.SIGUSR1)
 		if errors.Is(err, os.ErrProcessDone) || errors.Is(err, syscall.ESRCH) {
 			return os.ErrProcessDone
 		}

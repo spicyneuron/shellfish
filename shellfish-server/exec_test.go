@@ -155,11 +155,11 @@ func TestExecTerminatesThenKillsItsGroup(t *testing.T) {
 
 	dir := t.TempDir()
 	ready := filepath.Join(dir, "ready")
-	parentTerminated := filepath.Join(dir, "parent-terminated")
+	parentCancelled := filepath.Join(dir, "parent-cancelled")
 	childTerminated := filepath.Join(dir, "child-terminated")
 	childPID := filepath.Join(dir, "child-pid")
-	script := "trap 'printf terminated >\"" + parentTerminated + "\"; " +
-		"printf \"%s\\n\" \"{\\\"type\\\":\\\"_notice\\\",\\\"text\\\":\\\"cancelled\\\"}\"; exit 143' TERM\n" +
+	script := "trap 'printf cancelled >\"" + parentCancelled + "\"; " +
+		"printf \"%s\\n\" \"{\\\"type\\\":\\\"_notice\\\",\\\"text\\\":\\\"cancelled\\\"}\"; exit 130' USR1\n" +
 		"(\n" +
 		"  trap 'printf terminated >\"" + childTerminated + "\"; exit 143' TERM\n" +
 		"  while :; do sleep 0.05; done\n" +
@@ -196,8 +196,8 @@ func TestExecTerminatesThenKillsItsGroup(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("interrupted turn did not exit")
 	}
-	if _, err := os.Stat(parentTerminated); err != nil {
-		t.Fatal("turn process did not receive SIGTERM")
+	if _, err := os.Stat(parentCancelled); err != nil {
+		t.Fatal("turn process did not receive SIGUSR1")
 	}
 	if _, err := os.Stat(childTerminated); err == nil {
 		t.Fatal("cancellation signalled a descendant instead of Shellfish exec alone")

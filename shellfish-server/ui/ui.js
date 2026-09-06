@@ -463,10 +463,13 @@ function apply(frame) {
       );
     case "message":
       return renderMessage(frame);
-    case "turn_error":
-      // The failure ends its section without claiming a section number.
+    case "turn_error": {
+      // The failure ends its section without claiming a section number. Its
+      // first line is the outcome, and any remaining lines are its detail.
       lastRole = null;
-      return note(safe(frame.message), "error", "Turn failed");
+      const [outcome, ...detail] = safe(frame.message).split("\n");
+      return note(detail.join("\n"), "error", outcome);
+    }
     case "_state":
       return applyState(frame);
     case "_backend_request_start":

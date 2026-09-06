@@ -142,13 +142,14 @@ sf_run_main() {
   SF_RUN[jsonl]=$jsonl
 
   typeset -gx SHELLFISH_MODE=run
-  trap 'SF_RUN[signal_status]=130; kill -TERM $$' INT
+  # USR1 is the client's cancellation signal, aimed at this process alone.
+  trap 'SF_RUN[signal_status]=130; kill -TERM $$' INT USR1
   trap 'SF_RUN[signal_status]=129; kill -TERM $$' HUP
   trap 'sf_run_interrupt; exit $SF_RUN[signal_status]' TERM
   # Only a JSONL client can answer a permission request on stdin.
   sf_run_turn "$input" "$session" "$jsonl" "$prompt"
   local run_status=$?
-  trap - INT HUP TERM
+  trap - INT USR1 HUP TERM
   if (( ! jsonl )) && [[ -n $SF_RUN[answer] ]]; then
     print -r -- "$SF_RUN[answer]"
   fi

@@ -631,8 +631,8 @@ test("ends a section on a durable turn error without numbering it", async () => 
     ["user1", "user2"],
   );
   const shown = find(page.output, "note")[0];
-  assert.equal(findTag(shown, "h2")[0].textContent, "✕Turn failed");
-  assert.equal(findTag(shown, "pre")[0].textContent, "Turn interrupted.");
+  assert.equal(findTag(shown, "h2")[0].textContent, "✕Turn interrupted.");
+  assert.equal(findTag(shown, "pre").length, 0);
 });
 
 test("separates notice titles from their bodies", async () => {

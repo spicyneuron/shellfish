@@ -64,7 +64,7 @@ wait "$interrupt_pid" || interrupt_status=$?
 [[ ! -e $interrupt_session ]] || fail 'interrupted session_start created a session'
 (( $(wc -l <"$interrupt_marker") == 1 )) || fail 'session_start ran more than once'
 
-# Cancelling model metadata lookup stops the adapter and ends the turn.
+# Client cancellation stops model metadata lookup through the adapter's TERM path.
 typeset model_backend="$tmp/model-backend" model_ready="$tmp/model-ready"
 typeset model_stopped="$tmp/model-stopped" model_config="$tmp/model.jsonc"
 mkdir "$model_backend"
@@ -96,14 +96,15 @@ while (( model_waited < 50 )) && [[ ! -s $model_ready ]]; do
   (( model_waited += 1 ))
 done
 (( model_waited < 50 )) || fail 'model metadata lookup did not begin'
-kill -TERM "$model_pid" || fail 'model metadata lookup ended before interruption'
+kill -USR1 "$model_pid" || fail 'model metadata lookup ended before cancellation'
 integer model_status=0
 wait "$model_pid" || model_status=$?
-(( model_status == 143 )) || fail 'interrupted model metadata lookup reported the wrong status'
-[[ -s $model_stopped ]] || fail 'interrupted model metadata adapter was not stopped'
+(( model_status == 130 )) || fail 'cancelled model metadata lookup reported the wrong status'
+[[ -s $model_stopped ]] || fail 'cancelled model metadata adapter was not stopped cleanly'
+jq -e -s '.[-1] == {type:"turn_error",message:"Cancelled."}' "$model_session" >/dev/null ||
+  fail 'cancelled model metadata lookup did not persist its outcome'
 
-# A signalled run stops exec, persists partial assistant content, and reports
-# the signal rather than an ordinary failure.
+# SIGINT stops exec, persists partial assistant content, and records cancellation.
 typeset cancel_session="$tmp/cancel.jsonl" cancel_output="$tmp/cancel.out"
 SF_TEST_BACKEND_DELAY=0.3 zsh -f "$entry" run --jsonl --config "$config" \
   --session-out "$cancel_session" \
@@ -118,16 +119,16 @@ while (( waited < 50 )) && ! grep -q '_assistant_delta' "$cancel_output" 2>/dev/
   (( waited += 1 ))
 done
 (( waited < 50 )) || fail 'exec never started streaming a turn to cancel'
-kill -TERM "$cancel_pid" || fail 'turn ended before it could be cancelled'
+kill -INT "$cancel_pid" || fail 'turn ended before it could be cancelled'
 integer cancel_status=0
 wait "$cancel_pid" || cancel_status=$?
-(( cancel_status == 143 )) || fail 'signalled exec did not report the signal'
+(( cancel_status == 130 )) || fail 'cancelled exec did not report the signal'
 jq -eRn '
   [inputs | fromjson] as $events |
   ($events[-2] | .role == "assistant" and .stop == "length" and
     (.content | any(.type == "text" and .text != "")))
-  and $events[-1] == {type:"turn_error",message:"Turn interrupted."}
-' <"$cancel_output" >/dev/null || fail 'signalled exec did not persist partial content'
+  and $events[-1] == {type:"turn_error",message:"Cancelled."}
+' <"$cancel_output" >/dev/null || fail 'cancelled exec did not persist partial content'
 
 # Reasoning metadata received before cancellation remains available to the next
 # provider request when visible reasoning is recovered.

@@ -213,8 +213,8 @@ print -r -- '{"type":"turn_error","message":"Turn interrupted."}' >>"$tmp/failed
 sf_tui_reload "$tmp/failed.jsonl" || fail "$SF_PRESENT_ERROR"
 assert_equal 'section,message,notice' "${(j:,:)SF_PRESENT_NODE_TYPE}"
 assert_equal error "$SF_PRESENT_NODE_ROLE[3]"
-assert_equal 'Turn failed' "$SF_PRESENT_NODE_HEADING[3]"
-assert_equal 'Turn interrupted.' "$SF_PRESENT_NODE_BODY[3]"
+assert_equal 'Turn interrupted.' "$SF_PRESENT_NODE_HEADING[3]"
+assert_equal '' "$SF_PRESENT_NODE_BODY[3]"
 assert_equal '' "$SF_PRESENT_LAST_ROLE"
 
 cp "$SF_TEST_SESSIONS/tool-paired.jsonl" "$tmp/invalid.jsonl"

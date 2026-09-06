@@ -336,7 +336,8 @@ func TestTurnInputBounds(t *testing.T) {
 		http.StatusRequestEntityTooLarge)
 }
 
-// Cancellation targets whatever turn is running and waits for the child to finish.
+// Cancellation targets whatever turn is running, waits for the child to finish,
+// and ends the turn without reporting a failure the client did not cause.
 func TestCancelCurrentTurn(t *testing.T) {
 	base := newTestServer(t, newSession(t, ""), "IFS= read -r input\nwhile :; do sleep 0.05; done\n")
 	post(t, base+"/cancel", "", http.StatusConflict)
@@ -347,7 +348,7 @@ func TestCancelCurrentTurn(t *testing.T) {
 	post(t, base+"/turn", userRecord, http.StatusAccepted)
 	session.expectJSON(t, `{"type":"_state","working":true}`)
 	post(t, base+"/cancel", "", http.StatusNoContent)
-	session.expectJSON(t, `{"type":"_state","working":false,"error":"turn process failed"}`)
+	session.expectJSON(t, `{"type":"_state","working":false}`)
 	post(t, base+"/cancel", "", http.StatusConflict)
 }
 
@@ -422,7 +423,7 @@ func TestFirstSignalBoundsShutdownDrain(t *testing.T) {
 	defer killTurn()
 	sessionPath := newSession(t, "")
 	service, err := New(sessionPath, testAccessCode, NewExec(turns,
-		fakeShellfish(t, "trap 'exit 143' TERM\nIFS= read -r input\nprintf ready >'"+ready+"'\nwhile :; do sleep 0.05; done\n"),
+		fakeShellfish(t, "trap 'exit 130' USR1\nIFS= read -r input\nprintf ready >'"+ready+"'\nwhile :; do sleep 0.05; done\n"),
 		sessionPath))
 	if err != nil {
 		t.Fatal(err)

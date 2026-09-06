@@ -68,7 +68,13 @@ order=$(print -r -- '{"type":"turn_error","message":"Turn interrupted."}' |
   jq -jRs -L "$ROOT" --argjson runtime null \
     -f "$ROOT/libexec/tui/event-decode.jq" |
   tr '\0' '\n' | sed '/^$/d' | paste -sd, -)
-assert_equal 'notice,error,Turn failed,Turn interrupted.,closed,end,batch_ok' "$order"
+assert_equal 'notice,error,Turn interrupted.,closed,end,batch_ok' "$order"
+
+order=$(print -r -- '{"type":"turn_error","message":"Hook failed.\ninvalid output"}' |
+  jq -jRs -L "$ROOT" --argjson runtime null \
+    -f "$ROOT/libexec/tui/event-decode.jq" |
+  tr '\0' '\n' | sed '/^$/d' | paste -sd, -)
+assert_equal 'notice,error,Hook failed.,invalid output,closed,end,batch_ok' "$order"
 
 typeset invalid
 for invalid in '{"type":"turn_error","message":1}' \

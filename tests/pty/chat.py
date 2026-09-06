@@ -263,7 +263,7 @@ def test_interrupt_drains_partial_recovery():
         session.send(b"\x03")
         session.wait_after(mark, "Cancelled.", timeout=2)
         _, records = session.wait_session_records(4, path=path)
-        assert records[-1] == {"type": "turn_error", "message": "Turn interrupted."}
+        assert records[-1] == {"type": "turn_error", "message": "Cancelled."}
         recovered = records[-2]
         assert recovered["role"] == "assistant" and recovered["stop"] == "length"
         assert any(
@@ -344,7 +344,7 @@ def test_permission_ctrl_c_cancels_pending_tools():
             ("call_2", 126),
             ("call_3", 126),
         ]
-        assert records[-1] == {"type": "turn_error", "message": "Turn interrupted."}
+        assert records[-1] == {"type": "turn_error", "message": "Cancelled."}
         session.wait_after(mark, "Cancelled.")
     finally:
         session.close()
@@ -379,7 +379,7 @@ def test_repeated_permission_ctrl_c_exits_after_recovery():
             "call_2",
             "call_3",
         ]
-        assert records[-1] == {"type": "turn_error", "message": "Turn interrupted."}
+        assert records[-1] == {"type": "turn_error", "message": "Cancelled."}
     finally:
         session.close()
 

@@ -66,7 +66,7 @@ The `_state` frame has this shape:
 {"type":"_state","working":true}
 ```
 
-`working` reports whether a turn is active. The live `_state` frame that ends a failed turn also carries an `error` field.
+`working` reports whether a turn is active. The live `_state` frame that ends a failed turn also carries an `error` field. A cancelled turn exits nonzero by design and is not reported as a failure; its own `turn_error` record states the outcome.
 
 Reopening `/session` is the only recovery mechanism. It starts another complete replay rather than resuming from an event ID. The endpoint may briefly return `503 Service Unavailable` while a live stream catches up with the session file. Clients should retry.
 
@@ -76,7 +76,7 @@ Frames are SSE `data:` lines containing one JSON object each, plus `: keepalive`
 
 Types beginning with an underscore are transient, whether they come from the turn or from the server. Other turn objects are durable session records. Text and reasoning deltas share a zero-based `seq` that restarts for each provider response. The bundled browser ignores those deltas and renders the later durable assistant record.
 
-The bundled browser replaces the current incomplete `_notice` with its completed text, leaving the completed notice visible. A turn end, stream failure, or replay discards any incomplete notice with the rest of the uncertain transient state. A durable `turn_error` renders as an error notice and ends the current section without taking a section number.
+The bundled browser replaces the current incomplete `_notice` with its completed text, leaving the completed notice visible. A turn end, stream failure, or replay discards any incomplete notice with the rest of the uncertain transient state. A durable `turn_error` renders as an error notice, titled by the first line of its message, and ends the current section without taking a section number.
 
 The server relays `_handoff` events but does not execute their argv or switch sessions. The bundled browser reports the unsupported handoff. If argv includes `--draft`, it restores that value into an empty prompt editor; if the editor already contains newer text, it preserves that text and displays the handoff draft separately. The browser therefore remains attached to the source session after commands such as `/new`, `/fork`, `/resume`, and `/compact`.
 

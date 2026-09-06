@@ -72,7 +72,10 @@ typeset -gi cancel_signals=0 cancel_stops=0 cancel_reloads=0
 functions[sf_tui_transport_signal_saved]=$functions[sf_tui_transport_signal]
 functions[sf_tui_transport_stop_saved]=$functions[sf_tui_transport_stop]
 functions[sf_tui_recover_saved]=$functions[sf_tui_recover]
-sf_tui_transport_signal() { (( ++cancel_signals )); }
+sf_tui_transport_signal() {
+  assert_equal USR1 "$1"
+  (( ++cancel_signals ))
+}
 sf_tui_transport_stop() { (( ++cancel_stops )); }
 sf_tui_recover() { (( ++cancel_reloads )); }
 SF_PRESENT_STATE=working
@@ -382,7 +385,7 @@ assert_equal second "$SF_PRESENT_QUEUE[1]"
 assert_equal user "$SF_PRESENT_NODE_ROLE[-1]"
 assert_equal first "$SF_PRESENT_NODE_BODY[-1]"
 
-# Cancellation intent wins when signalling races with an already-completed exec.
+# A completed turn wins a cancellation race, while queued prompts are still discarded.
 sf_tui_reset
 sf_tui_terminal_reset
 SF_PRESENT_SESSION="$tmp/recover.jsonl"
@@ -394,9 +397,9 @@ SF_TUI_TRANSPORT_EXIT_DETAIL=''
 sf_tui_exec_finish
 assert_equal idle "$SF_PRESENT_STATE"
 assert_equal 0 "${#SF_PRESENT_QUEUE}"
-assert_equal 'Cancelled.' "$SF_PRESENT_NODE_HEADING[-1]"
-[[ $SF_PRESENT_NODE_BODY[-1] == *'Discarded 1 queued prompt.'* ]] ||
-  fail 'cancelled completion did not report discarded queued prompts'
+[[ $SF_PRESENT_NODE_HEADING[-1] == 'Discarded 1 queued prompt.'* ]] ||
+  fail 'completed cancellation race did not report discarded queued prompts'
+assert_equal '' "$SF_PRESENT_NODE_BODY[-1]"
 
 # An uncertain exec boundary discards follow-up prompts before recovery.
 sf_tui_reset
@@ -451,8 +454,31 @@ SF_TUI_TRANSPORT_EXIT_STATUS=1
 SF_TUI_TRANSPORT_EXIT_DETAIL='test backend failure'
 sf_tui_heartbeat_tick
 assert_equal idle "$SF_PRESENT_STATE"
-assert_equal 'Turn failed' "$SF_PRESENT_NODE_HEADING[-1]"
-assert_equal 'test backend failure' "$SF_PRESENT_NODE_BODY[-1]"
+assert_equal 'test backend failure' "$SF_PRESENT_NODE_HEADING[-1]"
+assert_equal '' "$SF_PRESENT_NODE_BODY[-1]"
+
+# A persisted cancellation is the complete user-facing outcome. The cancelling
+# state does not add a second notice after authoritative recovery.
+sf_tui_reset
+sf_tui_terminal_reset
+cp "$SF_TEST_SESSIONS/interrupted.jsonl" "$tmp/cancelled.jsonl"
+print -r -- '{"type":"turn_error","message":"Cancelled."}' >>"$tmp/cancelled.jsonl"
+SF_PRESENT_SESSION="$tmp/cancelled.jsonl"
+SF_PRESENT_STATE=cancelling
+sf_tui_transport_reset
+SF_TUI_TRANSPORT_LINES=(
+  '{"type":"_notice","level":"error","title":"Turn failed","source":"","text":"transient detail","complete":true}'
+  '{"type":"turn_error","message":"Cancelled."}'
+)
+SF_TUI_TRANSPORT_EOF=1
+SF_TUI_TRANSPORT_EXIT_STATUS=130
+sf_tui_heartbeat_tick
+assert_equal idle "$SF_PRESENT_STATE"
+assert_equal notice "$SF_PRESENT_NODE_TYPE[-1]"
+assert_equal 'Cancelled.' "$SF_PRESENT_NODE_HEADING[-1]"
+assert_equal '' "$SF_PRESENT_NODE_BODY[-1]"
+[[ ${(j:\n:)SF_PRESENT_NODE_HEADING} != *'Turn failed'* ]] ||
+  fail 'durable cancellation retained a transient error notice'
 
 # A terminated exec can replace a flushed and closed speculative assistant
 # prefix during turn recovery. Chat resets that live tail and remains usable.

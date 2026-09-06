@@ -65,6 +65,9 @@ type turn struct {
 	replies chan json.RawMessage
 	// Set by the child's own reader goroutine and read once Run has returned.
 	failed bool
+	// Set under the service lock when the stop was deliberate. A cancelled turn
+	// exits nonzero by design, and its transcript already states the outcome.
+	cancelled bool
 }
 
 type sessionHeader struct {
@@ -285,21 +288,18 @@ func (s *Service) runTurn(ctx context.Context, active *turn, input json.RawMessa
 	err := s.exec.Run(ctx, input, active.replies, func(event json.RawMessage) {
 		s.forward(active, event)
 	})
-	if err != nil {
-		log.Printf("turn process failed: %v", err)
-	}
+	s.mu.Lock()
 	failure := ""
-	if err != nil || active.failed {
+	if active.failed || (err != nil && !active.cancelled) {
 		failure = "turn process failed"
 	}
-	s.mu.Lock()
 	s.turn = nil
 	s.pending = nil
 	s.publishLocked(stateFrame(false, failure))
 	s.mu.Unlock()
 	active.cancel()
 	close(active.done)
-	log.Printf("turn finished failure=%q", failure)
+	log.Printf("turn finished failure=%q err=%v", failure, err)
 }
 
 // forward relays one child event. Only its type matters here: a record advances
@@ -336,6 +336,9 @@ func (s *Service) forward(active *turn, event json.RawMessage) {
 func (s *Service) postCancel(w http.ResponseWriter) {
 	s.mu.Lock()
 	active := s.turn
+	if active != nil {
+		active.cancelled = true
+	}
 	s.mu.Unlock()
 	if active == nil {
 		writeError(w, http.StatusConflict, "no active turn")
@@ -381,6 +384,7 @@ func (s *Service) beginDrain() <-chan struct{} {
 	if s.turn != nil {
 		if s.pending != nil {
 			log.Print("cancelling active turn waiting for permission")
+			s.turn.cancelled = true
 			s.turn.cancel()
 		}
 		return s.turn.done

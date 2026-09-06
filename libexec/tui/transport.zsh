@@ -68,9 +68,16 @@ sf_tui_transport_close() {
 }
 
 sf_tui_transport_signal() {
+  local signal=${1:-TERM}
   if [[ -n $SF_TUI_TRANSPORT_PID ]]; then
-    kill -TERM -- "-$SF_TUI_TRANSPORT_PID" 2>/dev/null ||
-      kill -TERM "$SF_TUI_TRANSPORT_PID" 2>/dev/null || true
+    if [[ $signal == USR1 ]]; then
+      # Cancellation reaches the turn owner alone, which stops its own children.
+      # USR1 sent to the group would kill them before they can clean up.
+      kill -USR1 "$SF_TUI_TRANSPORT_PID" 2>/dev/null || true
+    else
+      kill -"$signal" -- "-$SF_TUI_TRANSPORT_PID" 2>/dev/null ||
+        kill -"$signal" "$SF_TUI_TRANSPORT_PID" 2>/dev/null || true
+    fi
     kill -CONT -- "-$SF_TUI_TRANSPORT_PID" 2>/dev/null ||
       kill -CONT "$SF_TUI_TRANSPORT_PID" 2>/dev/null || true
   fi
