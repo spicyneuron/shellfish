@@ -127,13 +127,9 @@ sf_tui_decoded() {
         [[ -z $second ]] || sf_tui_event reasoning_tokens "$second" || return 1
         ;;
       notice)
-        sf_tui_notice "$first" "$second" "$fourth" "$fifth" || return 1
-        SF_PRESENT_NODE_META[REPLY]=$third
-        if [[ $sixth == end ]]; then
-          # A durable failure ends its section and survives reload, so it needs
-          # no help from the exit report.
-          SF_PRESENT_LAST_ROLE=''
-        elif [[ $first == error ]]; then
+        sf_tui_event notice "$first" "$second" "$third" "$fourth" "$fifth" "$sixth" || return 1
+        # A durable failure survives reload, so it needs no help from the exit report.
+        if [[ $sixth != end && $first == error ]]; then
           [[ -n $SF_PRESENT_EXEC_ERROR_HEADING ]] || SF_PRESENT_EXEC_ERROR_HEADING=$second
           [[ -z $SF_PRESENT_EXEC_ERROR_DETAIL ]] || SF_PRESENT_EXEC_ERROR_DETAIL+=$'\n'
           SF_PRESENT_EXEC_ERROR_DETAIL+=$fourth

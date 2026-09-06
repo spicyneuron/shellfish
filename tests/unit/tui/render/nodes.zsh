@@ -195,6 +195,17 @@ sf_tui_reload "$SF_TEST_SESSIONS/header-only.jsonl" || fail "$SF_PRESENT_ERROR"
 assert_equal test/fake-model "$SF_PRESENT_FOOTER"
 assert_equal fake-model "$(jq -r '.profile.request.model' <<<"$SF_PRESENT_RUNTIME")"
 
+# A durable turn error replays as an error notice and releases its section, so a
+# later record opens a numbered one rather than joining the failed turn.
+cp "$SF_TEST_SESSIONS/interrupted.jsonl" "$tmp/failed.jsonl"
+print -r -- '{"type":"turn_error","message":"Turn interrupted."}' >>"$tmp/failed.jsonl"
+sf_tui_reload "$tmp/failed.jsonl" || fail "$SF_PRESENT_ERROR"
+assert_equal 'section,message,notice' "${(j:,:)SF_PRESENT_NODE_TYPE}"
+assert_equal error "$SF_PRESENT_NODE_ROLE[3]"
+assert_equal 'Turn failed' "$SF_PRESENT_NODE_HEADING[3]"
+assert_equal 'Turn interrupted.' "$SF_PRESENT_NODE_BODY[3]"
+assert_equal '' "$SF_PRESENT_LAST_ROLE"
+
 cp "$SF_TEST_SESSIONS/tool-paired.jsonl" "$tmp/invalid.jsonl"
 print -r -- broken >>"$tmp/invalid.jsonl"
 if sf_tui_reload "$tmp/invalid.jsonl"; then

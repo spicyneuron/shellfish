@@ -376,6 +376,12 @@ sf_tui_event() {
       sf_tui_add injection system "$first" "$third" || return 1
       SF_PRESENT_NODE_META[REPLY]=$second
       ;;
+    notice)
+      sf_tui_notice "$first" "$second" "$fourth" "$fifth" || return 1
+      SF_PRESENT_NODE_META[REPLY]=$third
+      # A durable failure ends its section without taking a section number.
+      [[ $sixth != end ]] || SF_PRESENT_LAST_ROLE=''
+      ;;
     *) return 1 ;;
   esac
 }
