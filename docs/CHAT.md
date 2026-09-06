@@ -37,7 +37,7 @@ Most slash commands are scripts on the default harness's `user_prompt_submit` ho
 | `/queue clear` | Discard all queued prompts. |
 | `/quit`, `/q` | Exit. |
 
-Slash commands that start a new session, fork, compact, refresh, or serve are handoffs: chat exits and relaunches Shellfish with the new session path. Commands typed while a turn is active are queued and sent after the turn completes.
+Slash commands that start a new session, fork, compact, refresh, resume, toggle verbose mode, or serve are handoffs: chat exits and relaunches Shellfish with the new session path. Commands typed while a turn is active are queued and sent after the turn completes.
 
 ## Keybindings
 
@@ -47,6 +47,7 @@ Slash commands that start a new session, fork, compact, refresh, or serve are ha
 | `shift+enter` | Insert a newline. |
 | `up`, `down` | Navigate prompt history (or move by rendered rows within a multiline prompt). |
 | `ctrl+c` | Cancel an active request. Press again to exit when idle. |
+| `escape` | Deliberately inert. It cannot combine with the next key into an unintended editor command. |
 
 During a permission request, the keymap switches to accept `a` (approve) or `d` (deny).
 

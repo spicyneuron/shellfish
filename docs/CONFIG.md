@@ -38,7 +38,13 @@ An optional `context_window` records the model's input capacity for usage displa
 }
 ```
 
-The field has three states. A positive integer is authoritative, skips discovery, and lets the bundled compaction hook trigger when the most recent measured assistant response's input plus output usage reaches 80% of that value. An explicit `null` disables discovery and threshold-based compaction. When the field is absent, a backend with an optional `context_window` script makes one best-effort model metadata lookup before the session's first provider request. The bundled Anthropic script uses `max_input_tokens`; the OpenAI-compatible script uses a matching model's `context_length` when the provider supplies it, including OpenRouter; and Codex reads the installed CLI's bundled model catalog. OpenAI's own Models API does not currently supply this field. An unavailable lookup does not fail the turn; Shellfish freezes `null` into the session and usage remains visible without a capacity fraction. A discovered value is also frozen into the session header. A command-line `--model` override does not remove a configured `context_window`, so use a matching profile when the replacement model has a different limit.
+The field has three states:
+
+- **A positive integer** is authoritative. It skips discovery and lets the bundled compaction hook trigger when the most recent measured assistant response's input plus output usage reaches 80% of that value.
+- **An explicit `null`** disables discovery and threshold-based compaction.
+- **Absent** means a backend with an optional `context_window` script makes one best-effort model metadata lookup before the session's first provider request. The bundled Anthropic script uses `max_input_tokens`; the OpenAI-compatible script uses a matching model's `context_length` when the provider supplies it, including OpenRouter; and Codex reads the installed CLI's bundled model catalog. OpenAI's own Models API does not currently supply this field.
+
+An unavailable lookup does not fail the turn; Shellfish freezes `null` into the session and usage remains visible without a capacity fraction. A discovered value is also frozen into the session header. A command-line `--model` override does not remove a configured `context_window`, so use a matching profile when the replacement model has a different limit.
 
 A custom OpenAI-compatible service can reuse the built-in adapter:
 

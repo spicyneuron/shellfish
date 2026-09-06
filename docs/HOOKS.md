@@ -36,7 +36,7 @@ Scripts in one turn share ephemeral coordination state, and scripts for one sess
 
 ## Configuring hooks
 
-Each hook is configured per harness in `shellfish.jsonc` as an ordered list of component references keyed by hook name. Every component must be an executable script:
+Each hook is configured per harness in `shellfish.jsonc` as an ordered list of component references keyed by hook name. Every component must be an executable script. This example is an excerpt; the bundled `default` harness configures its full chain in [`share/default/shellfish.jsonc`](../share/default/shellfish.jsonc):
 
 ```jsonc
 {
