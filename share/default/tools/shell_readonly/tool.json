@@ -1,5 +1,5 @@
 {
-  "description": "Run one Zsh command in the session working directory and return its combined output. Read only.",
+  "description": "Run one zsh command in the session working directory and return its combined output. Read only.",
   "input_schema": {
     "type": "object",
     "additionalProperties": false,

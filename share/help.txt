@@ -1,6 +1,6 @@
 Shellfish: https://github.com/spicyneuron/shellfish
 
-A tiny coding agent written in Zsh, awk, curl, and jq.
+A tiny coding agent written in zsh, awk, curl, and jq.
 
 Usage:
   shellfish [OPTIONS] [PROMPT]       Start an interactive chat

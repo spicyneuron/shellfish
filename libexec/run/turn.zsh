@@ -132,7 +132,7 @@ sf_run_partial_assistant() {
   ' 2>/dev/null) || REPLY=''
 }
 
-# Zsh defers a trap's pending exit until this cleanup call returns.
+# zsh defers a trap's pending exit until this cleanup call returns.
 sf_run_turn_cleanup() {
   integer interrupted=$1 error_persisted=0
   local failure=$2 after=$3 error_message error_record recovered='' partial=''

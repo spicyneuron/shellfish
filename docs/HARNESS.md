@@ -29,7 +29,7 @@ For a new session, repeated `--system TEXT` and `--system-file PATH` inputs repl
 - `skill` loads instructions for an advertised Agent Skill.
 - `search_web` uses Exa's anonymous MCP endpoint to search the web.
 - `fetch_url` uses Jina Reader to fetch an HTTP(S) website as Markdown.
-- `shell` runs one Zsh command in the session working directory.
+- `shell` runs one zsh command in the session working directory.
 
 Tools are shell scripts with JSON manifests. The default harness enables sandboxing with [`fence`](https://github.com/fencesandbox/fence). Its policies constrain project and network access and deny common secret files. When a tool fails and sandbox monitoring reports a blocked action, the durable tool result records that fact for both the model and client presentation. Supported tool calls can request a one-time bypass in interactive clients; headless execution denies requests that `permission_request` scripts do not decide.
 
