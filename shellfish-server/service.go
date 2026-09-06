@@ -136,7 +136,7 @@ func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 // streamSession is the client's whole view of the session and its only recovery
-// path. It replays the durable transcript, closes that replay with a state frame,
+// path. It replays the durable transcript, closes that replay with a _state frame,
 // then forwards what the child emits from there.
 func (s *Service) streamSession(w http.ResponseWriter, r *http.Request) {
 	flusher, ok := w.(http.Flusher)
@@ -216,7 +216,7 @@ func (s *Service) attach() (chan json.RawMessage, []json.RawMessage, error) {
 		return nil, nil, errStreamSettling
 	}
 	s.recordCount = len(records)
-	// The state frame closes the replay: everything before it is durable history,
+	// The _state frame closes the replay: everything before it is durable history,
 	// everything after it is happening now. A pending permission request follows,
 	// so a client that reopened mid-turn can still answer it.
 	replay := append(records, stateFrame(s.turn != nil, ""))
@@ -418,7 +418,7 @@ func stateFrame(working bool, failure string) json.RawMessage {
 		Type    string `json:"type"`
 		Working bool   `json:"working"`
 		Error   string `json:"error,omitempty"`
-	}{Type: "state", Working: working, Error: failure})
+	}{Type: "_state", Working: working, Error: failure})
 	return frame
 }
 

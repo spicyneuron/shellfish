@@ -296,12 +296,12 @@ printf '%s\n' '`+assistantRecord+`'
 `)
 	session := openStream(t, base, http.StatusOK)
 	session.expectRaw(t, strings.TrimSuffix(headerLine(t), "\n"))
-	session.expectJSON(t, `{"type":"state","working":false}`)
+	session.expectJSON(t, `{"type":"_state","working":false}`)
 
 	post(t, base+"/turn", userRecord, http.StatusAccepted)
-	session.expectJSON(t, `{"type":"state","working":true}`,
+	session.expectJSON(t, `{"type":"_state","working":true}`,
 		`{"type":"_assistant_delta","text":"do","seq":0}`, userRecord, assistantRecord,
-		`{"type":"state","working":false}`)
+		`{"type":"_state","working":false}`)
 
 	if got, err := os.ReadFile(recorded); err != nil || string(got) != userRecord+"\n" {
 		t.Fatalf("child input = %q (%v)", got, err)
@@ -343,11 +343,11 @@ func TestCancelCurrentTurn(t *testing.T) {
 
 	session := openStream(t, base, http.StatusOK)
 	session.expectRaw(t, strings.TrimSuffix(headerLine(t), "\n"))
-	session.expectJSON(t, `{"type":"state","working":false}`)
+	session.expectJSON(t, `{"type":"_state","working":false}`)
 	post(t, base+"/turn", userRecord, http.StatusAccepted)
-	session.expectJSON(t, `{"type":"state","working":true}`)
+	session.expectJSON(t, `{"type":"_state","working":true}`)
 	post(t, base+"/cancel", "", http.StatusNoContent)
-	session.expectJSON(t, `{"type":"state","working":false,"error":"turn process failed"}`)
+	session.expectJSON(t, `{"type":"_state","working":false,"error":"turn process failed"}`)
 	post(t, base+"/cancel", "", http.StatusConflict)
 }
 
@@ -367,19 +367,19 @@ printf '%s\n' "$response" >'`+recorded+`'
 
 	session := openStream(t, base, http.StatusOK)
 	session.expectRaw(t, strings.TrimSuffix(headerLine(t), "\n"))
-	session.expectJSON(t, `{"type":"state","working":false}`)
+	session.expectJSON(t, `{"type":"_state","working":false}`)
 	post(t, base+"/turn", userRecord, http.StatusAccepted)
-	session.expectJSON(t, `{"type":"state","working":true}`, permissionRequest)
+	session.expectJSON(t, `{"type":"_state","working":true}`, permissionRequest)
 
 	// A reload replays the session and presents the request again.
 	session.body.Close()
 	session = openStream(t, base, http.StatusOK)
 	session.expectRaw(t, strings.TrimSuffix(headerLine(t), "\n"))
-	session.expectJSON(t, `{"type":"state","working":true}`, permissionRequest)
+	session.expectJSON(t, `{"type":"_state","working":true}`, permissionRequest)
 
 	post(t, base+"/permission", decision, http.StatusNoContent)
 	post(t, base+"/permission", decision, http.StatusConflict)
-	session.expectJSON(t, `{"type":"state","working":false}`)
+	session.expectJSON(t, `{"type":"_state","working":false}`)
 	if got, err := os.ReadFile(recorded); err != nil || string(got) != decision+"\n" {
 		t.Fatalf("child decision = %q (%v)", got, err)
 	}
@@ -401,9 +401,9 @@ func TestDrainCancelsPendingPermission(t *testing.T) {
 	session := openStream(t, server.URL, http.StatusOK)
 	defer session.body.Close()
 	session.expectRaw(t, strings.TrimSuffix(headerLine(t), "\n"))
-	session.expectJSON(t, `{"type":"state","working":false}`)
+	session.expectJSON(t, `{"type":"_state","working":false}`)
 	post(t, server.URL+"/turn", userRecord, http.StatusAccepted)
-	session.expectJSON(t, `{"type":"state","working":true}`, permissionRequest)
+	session.expectJSON(t, `{"type":"_state","working":true}`, permissionRequest)
 
 	select {
 	case <-service.beginDrain():
@@ -492,10 +492,10 @@ func TestInvalidEventTerminatesTurn(t *testing.T) {
 		"while :; do sleep 0.05; done\n")
 	session := openStream(t, base, http.StatusOK)
 	session.expectRaw(t, strings.TrimSuffix(headerLine(t), "\n"))
-	session.expectJSON(t, `{"type":"state","working":false}`)
+	session.expectJSON(t, `{"type":"_state","working":false}`)
 	post(t, base+"/turn", userRecord, http.StatusAccepted)
-	session.expectJSON(t, `{"type":"state","working":true}`,
-		`{"type":"state","working":false,"error":"turn process failed"}`)
+	session.expectJSON(t, `{"type":"_state","working":true}`,
+		`{"type":"_state","working":false,"error":"turn process failed"}`)
 }
 
 func TestUnknownPath(t *testing.T) {

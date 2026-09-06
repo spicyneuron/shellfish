@@ -1,7 +1,7 @@
 // A browser client for one served session.
 //
 // The session stream is the whole model: it replays the durable transcript,
-// closes that replay with a state frame, and then carries live exec events.
+// closes that replay with a _state frame, and then carries live exec events.
 // Reopening it is the only recovery, so this page keeps no state that a replay
 // cannot rebuild and reloads whenever a frame surprises it.
 //
@@ -467,7 +467,7 @@ function apply(frame) {
       // The failure ends its section without claiming a section number.
       lastRole = null;
       return note(safe(frame.message), "error", "Turn failed");
-    case "state":
+    case "_state":
       return applyState(frame);
     case "_backend_request_start":
       return showIndicator();

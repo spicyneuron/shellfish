@@ -327,7 +327,7 @@ function load(savedCode, initialSessionStatus = 200) {
 async function idle() {
   const page = load();
   await page.authenticate();
-  await page.send(HEADER, { type: "state", working: false });
+  await page.send(HEADER, { type: "_state", working: false });
   return page;
 }
 
@@ -383,7 +383,7 @@ test("replays the durable session before live work", async () => {
       content: [{ type: "text", text: "welcome" }],
       usage: { input_tokens: 75, cached_tokens: 60, output_tokens: 5 },
     },
-    { type: "state", working: false },
+    { type: "_state", working: false },
   );
   assert.deepEqual(
     find(page.output, "section").map((heading) => heading.textContent),
@@ -475,7 +475,7 @@ test("copies the latest or selected derived section locally", async () => {
         { type: "text", text: "continued\n\n" },
       ],
     },
-    { type: "state", working: false },
+    { type: "_state", working: false },
   );
   assert.equal(find(page.output, "user")[0].textContent, "  question\t");
   assert.equal(find(page.output, "assistant")[1].textContent, "\tanswercontinued");
@@ -505,7 +505,7 @@ test("labels context with its script, hook, and prompt", async () => {
 test("puts prompt context under a user heading", async () => {
   const page = await idle();
   await page.send(
-    { type: "state", working: true },
+    { type: "_state", working: true },
     {
       type: "context",
       hook: "user_prompt_submit",
@@ -575,7 +575,7 @@ test("leaves deltas out of the transcript and draws the record once", async () =
       role: "user",
       content: [{ type: "text", text: "hello" }],
     },
-    { type: "state", working: true },
+    { type: "_state", working: true },
   );
   assert.equal(find(page.output, "activity").length, 1);
   const drawn = page.output.children.length;
@@ -600,7 +600,7 @@ test("leaves deltas out of the transcript and draws the record once", async () =
   await page.send({ ...ASSISTANT, content: [{ type: "text", text: "\n\n" }] });
   assert.equal(find(page.output, "assistant").length, 2);
   assert.equal(find(page.output, "assistant")[1].textContent, "");
-  await page.send({ type: "state", working: false });
+  await page.send({ type: "_state", working: false });
   assert.equal(find(page.output, "activity").length, 0);
 });
 
@@ -611,7 +611,7 @@ test("does not strand a divider before a delayed user record", async () => {
     role: "user",
     content: [{ type: "text", text: "hello" }],
   };
-  await page.send(user, { type: "state", working: true }, user);
+  await page.send(user, { type: "_state", working: true }, user);
   assert.deepEqual(
     find(page.output, "section").map((heading) => heading.textContent),
     ["user1", "agent2"],
@@ -658,7 +658,7 @@ test("separates notice titles from their bodies", async () => {
 test("updates a live notice in place", async () => {
   const page = await idle();
   await page.send(
-    { type: "state", working: true },
+    { type: "_state", working: true },
     {
       type: "_notice", level: "info", source: "user_prompt_submit",
       title: "/tmp/compact", text: "Compacting\n", complete: false,
@@ -697,12 +697,12 @@ test("replaces an incomplete notice with the failure", async () => {
 test("discards an incomplete notice when a turn ends", async () => {
   const page = await idle();
   await page.send(
-    { type: "state", working: true },
+    { type: "_state", working: true },
     {
       type: "_notice", level: "info", source: "user_prompt_submit",
       title: "/tmp/check", text: "Checking", complete: false,
     },
-    { type: "state", working: false },
+    { type: "_state", working: false },
   );
   assert.equal(find(page.output, "note").length, 0);
   assert.equal(find(page.output, "activity").length, 0);
@@ -777,7 +777,7 @@ test("answers and removes permission prompts", async () => {
   ]) {
     const page = await idle();
     await page.send(
-      { type: "state", working: true },
+      { type: "_state", working: true },
       {
         type: "message",
         role: "assistant",
@@ -822,7 +822,7 @@ test("answers and removes permission prompts", async () => {
 
 test("keeps a tool result together with its sandbox notice", async () => {
   const page = await idle();
-  await page.send({ type: "state", working: true }, { type: "_backend_request_start" });
+  await page.send({ type: "_state", working: true }, { type: "_backend_request_start" });
   assert.equal(page.cancel.hidden, false);
   await page.send({
     type: "message",
@@ -904,7 +904,7 @@ test("cancels an active turn", async () => {
   assert.deepEqual(page.posts.map((post) => post.path), ["/turn", "/cancel"]);
   assert.equal(page.posts[1].body, undefined);
 
-  await page.send({ type: "state", working: false });
+  await page.send({ type: "_state", working: false });
   assert.equal(page.entry.disabled, false);
   assert.equal(page.cancel.hidden, true);
 });
