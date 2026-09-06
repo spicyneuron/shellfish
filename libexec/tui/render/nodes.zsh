@@ -241,7 +241,9 @@ sf_tui_notice() {
       fi
     else
       [[ $SF_PRESENT_NODE_TYPE[index] == (activity|message|reasoning) ]] || return 1
-      sf_tui_close $index || return 1
+      # A notice may arrive before the agent produced anything, and an empty
+      # section would then survive a reload that never rebuilds it.
+      sf_tui_close $index orphan_section || return 1
     fi
   fi
   sf_tui_add notice "$severity" "$heading" "$body" "$state" || return 1

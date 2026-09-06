@@ -11,6 +11,8 @@ typeset -gi SF_PRESENT_PERMISSION_PREVIEW_LENGTH=0
 typeset -gi SF_PRESENT_EXIT_STATUS=0
 typeset -g SF_PRESENT_REASONING_TOKENS=''
 typeset -g SF_PRESENT_EXEC_ERROR_HEADING='' SF_PRESENT_EXEC_ERROR_DETAIL=''
+# Set when the turn persisted its own failure, which the reload then replays.
+typeset -gi SF_PRESENT_TURN_ERROR=0
 typeset -g SF_PRESENT_TTY=''
 
 sf_tui_permission_reset() {
@@ -128,8 +130,9 @@ sf_tui_decoded() {
         ;;
       notice)
         sf_tui_event notice "$first" "$second" "$third" "$fourth" "$fifth" "$sixth" || return 1
-        # A durable failure survives reload, so it needs no help from the exit report.
-        if [[ $sixth != end && $first == error ]]; then
+        if [[ $sixth == end ]]; then
+          SF_PRESENT_TURN_ERROR=1
+        elif [[ $first == error ]]; then
           [[ -n $SF_PRESENT_EXEC_ERROR_HEADING ]] || SF_PRESENT_EXEC_ERROR_HEADING=$second
           [[ -z $SF_PRESENT_EXEC_ERROR_DETAIL ]] || SF_PRESENT_EXEC_ERROR_DETAIL+=$'\n'
           SF_PRESENT_EXEC_ERROR_DETAIL+=$fourth
@@ -209,7 +212,7 @@ sf_tui_recover() {
       return 1
     fi
   fi
-  sf_tui_notice error "$heading" "$detail"
+  [[ -z $heading ]] || sf_tui_notice error "$heading" "$detail"
 }
 
 # Apply one transport record and name it in REPLY.
@@ -243,12 +246,13 @@ sf_tui_pending_next() {
 sf_tui_exec_finish() {
   local heading detail exit_detail render_error=$SF_PRESENT_RENDER_ERROR
   local exec_heading=$SF_PRESENT_EXEC_ERROR_HEADING exec_detail=$SF_PRESENT_EXEC_ERROR_DETAIL
-  integer exit_status cancelled=0
+  integer exit_status cancelled=0 turn_error=$SF_PRESENT_TURN_ERROR
   sf_tui_transport_result || return 1
   exit_status=$reply[1]
   exit_detail=$reply[2]
   SF_PRESENT_EXEC_ERROR_HEADING=''
   SF_PRESENT_EXEC_ERROR_DETAIL=''
+  SF_PRESENT_TURN_ERROR=0
   [[ $SF_PRESENT_STATE != cancelling ]] || cancelled=1
   if (( exit_status || cancelled )); then
     if (( cancelled )); then
@@ -261,19 +265,25 @@ sf_tui_exec_finish() {
         [[ -z $detail ]] || detail+=$'\n'
         detail+=$exit_detail
       fi
+    elif (( turn_error )); then
+      # The reloaded transcript ends with the persisted failure, which says more
+      # than the exit status does.
+      heading=''
+    elif (( exit_status >= 128 )); then
+      heading='Exec process terminated.'
+      detail=${exit_detail:-"Terminated by signal $(( exit_status - 128 ))."}
     else
-      if (( exit_status >= 128 )); then
-        heading='Exec process terminated.'
-        detail=${exit_detail:-"Terminated by signal $(( exit_status - 128 ))."}
-      else
-        heading='Exec process failed.'
-        detail=${exit_detail:-"Exited with status $exit_status."}
-      fi
+      heading='Exec process failed.'
+      detail=${exit_detail:-"Exited with status $exit_status."}
     fi
     sf_tui_discard_queue
     if [[ -n $REPLY ]]; then
-      [[ -z $detail ]] || detail+=$'\n'
-      detail+=$REPLY
+      if [[ -z $heading ]]; then
+        heading=$REPLY
+      else
+        [[ -z $detail ]] || detail+=$'\n'
+        detail+=$REPLY
+      fi
     fi
     if sf_tui_recover "$heading" "$detail" "$(( cancelled || exit_status == 143 ))"; then
       SF_PRESENT_STATE=idle
@@ -322,6 +332,7 @@ sf_tui_turn() {
   SF_PRESENT_REASONING_TOKENS=''
   SF_PRESENT_EXEC_ERROR_HEADING=''
   SF_PRESENT_EXEC_ERROR_DETAIL=''
+  SF_PRESENT_TURN_ERROR=0
   SF_PRESENT_RENDER_ERROR=''
   SF_PRESENT_ACTIVITY_FRAME=0
   SF_PRESENT_ACTIVITY=${SF_PRESENT_ACTIVITY_FRAMES[1]}

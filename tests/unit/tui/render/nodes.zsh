@@ -180,6 +180,17 @@ if sf_tui_event assistant_commit; then
   fail 'closed a non-assistant node on assistant commit'
 fi
 
+# A notice that arrives before the agent produced anything releases the section
+# it would otherwise strand, since a reload never rebuilds an empty section.
+sf_tui_reset
+sf_tui_event user ask
+sf_tui_event backend_request_start
+assert_equal 'section,message,section,activity' "${(j:,:)SF_PRESENT_NODE_TYPE}"
+assert_equal 2 "$SF_PRESENT_SECTION_ID"
+sf_tui_notice error 'Turn failed' 'backend failed'
+assert_equal 'section,message,notice' "${(j:,:)SF_PRESENT_NODE_TYPE}"
+assert_equal 1 "$SF_PRESENT_SECTION_ID"
+
 sf_test_tmp presentation
 sf_tui_reload "$SF_TEST_SESSIONS/tool-paired.jsonl" || fail "$SF_PRESENT_ERROR"
 assert_equal 'section,message,section,tool_call,tool_result,tool_call,tool_result,message,injection' \

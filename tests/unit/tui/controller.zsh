@@ -436,6 +436,24 @@ assert_equal 'Turn failed' "$SF_PRESENT_NODE_HEADING[-1]"
 assert_equal $'backend emitted an invalid event stream\ncannot append session record: /tmp/recover.jsonl' \
   "$SF_PRESENT_NODE_BODY[-1]"
 
+# A persisted turn error replaces the exit report: the reloaded transcript ends
+# with the failure, so recovery adds no second notice and chat stays usable.
+sf_tui_reset
+sf_tui_terminal_reset
+cp "$SF_TEST_SESSIONS/interrupted.jsonl" "$tmp/failed.jsonl"
+print -r -- '{"type":"turn_error","message":"test backend failure"}' >>"$tmp/failed.jsonl"
+SF_PRESENT_SESSION="$tmp/failed.jsonl"
+SF_PRESENT_STATE=working
+sf_tui_transport_reset
+SF_TUI_TRANSPORT_LINES=( '{"type":"turn_error","message":"test backend failure"}' )
+SF_TUI_TRANSPORT_EOF=1
+SF_TUI_TRANSPORT_EXIT_STATUS=1
+SF_TUI_TRANSPORT_EXIT_DETAIL='test backend failure'
+sf_tui_heartbeat_tick
+assert_equal idle "$SF_PRESENT_STATE"
+assert_equal 'Turn failed' "$SF_PRESENT_NODE_HEADING[-1]"
+assert_equal 'test backend failure' "$SF_PRESENT_NODE_BODY[-1]"
+
 # A terminated exec can replace a flushed and closed speculative assistant
 # prefix during turn recovery. Chat resets that live tail and remains usable.
 sf_tui_reset
