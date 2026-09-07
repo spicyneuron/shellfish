@@ -4,6 +4,12 @@ def profile_name:
 def tool_name:
   type == "string" and test("^[A-Za-z_][A-Za-z0-9_-]*$");
 
+def component_environment:
+  type == "array" and
+  all(.[]; type == "string" and test("^[A-Za-z_][A-Za-z0-9_]*$") and
+    (startswith("_SHELLFISH_") | not)) and
+  length == (unique | length);
+
 def nul_free_string:
   type == "string" and (index("\u0000") | not);
 
@@ -28,8 +34,8 @@ def tool_manifest:
     type == "object" and keys == ["content", "format"] and
     (.content | result_display) and (.format | display_format);
   type == "object" and
-  ((keys - ["allow_sandbox_bypass", "description", "display", "input_schema",
-    "sandbox"]) | length == 0) and
+  ((keys - ["allow_sandbox_bypass", "description", "display", "environment",
+    "input_schema", "sandbox"]) | length == 0) and
   (.description | nul_free_string and length > 0) and
   (.input_schema | type == "object" and .type == "object" and
     ((.properties // {}) | type == "object") and
@@ -54,6 +60,7 @@ def tool_manifest:
       ((if $display | has("result") then $display.result
         else {content:["$result_preview"],format:"plain"} end) |
         result_preview))) and
+  ((.environment // []) | component_environment) and
   (.sandbox | type == "boolean") and
   ((.allow_sandbox_bypass // false) | type == "boolean") and
   (if (.allow_sandbox_bypass // false) then .sandbox else true end);
@@ -76,19 +83,19 @@ def positive_integer:
 def capture_bytes: positive_integer and . >= 64;
 def token_count:
   type == "number" and floor == . and . >= 0 and . <= 9007199254740991;
-def api_key_env:
-  type == "string" and test("^$|^[A-Za-z_][A-Za-z0-9_]*$") and
-  (startswith("_SHELLFISH_") | not);
-
 def hook_names:
   ["session_start", "user_prompt_submit", "permission_request", "pre_tool_use",
    "post_tool_use", "stop"];
+
+def hook_component:
+  type == "object" and keys == ["command", "environment"] and
+  (.command | absolute_path) and (.environment | component_environment);
 
 def harness_hooks:
   . as $harness |
   all(hook_names[]; . as $hook |
     ($harness | has($hook) | not) or
-    ($harness[$hook] | type == "array" and all(.[]; absolute_path)));
+    ($harness[$hook] | type == "array" and all(.[]; hook_component)));
 
 def token_usage:
   type == "object" and
@@ -229,10 +236,10 @@ def canonical_session_header($format_version):
       .context_window == null or (.context_window | positive_integer)
     else true end)) and
   (.backend | type == "object" and
-    ((keys - ["api_key_env", "command", "context_window_command", "endpoint", "env_file", "http_stall", "http_timeout", "insecure_tls", "name"]) | length == 0) and
-    (["api_key_env", "command", "endpoint", "env_file", "http_stall", "http_timeout", "insecure_tls", "name"] - keys | length == 0) and
+    ((keys - ["command", "context_window_command", "endpoint", "env_file", "environment", "http_stall", "http_timeout", "insecure_tls", "name"]) | length == 0) and
+    (["command", "endpoint", "env_file", "environment", "http_stall", "http_timeout", "insecure_tls", "name"] - keys | length == 0) and
     (.name | profile_name) and (.command | absolute_path) and (.endpoint | endpoint) and
-    (.api_key_env | api_key_env) and (.insecure_tls | type == "boolean") and
+    (.environment | component_environment) and (.insecure_tls | type == "boolean") and
     (.env_file == "" or (.env_file | absolute_nul_free_path)) and
     (.http_timeout | positive_integer) and (.http_stall | positive_integer) and
     (if has("context_window_command") then

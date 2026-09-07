@@ -45,12 +45,17 @@
       "minimum": 64,
       "maximum": 2147483647
     },
-    "api_key_env": {
+    "environment_name": {
       "type": "string",
-      "pattern": "^$|^[A-Za-z_][A-Za-z0-9_]*$",
+      "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
       "not": {
         "pattern": "^_SHELLFISH_"
       }
+    },
+    "environment": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/environment_name"},
+      "uniqueItems": true
     },
     "endpoint": {
       "type": "string",
@@ -112,7 +117,7 @@
       "properties": {
         "adapter": {"$ref": "#/$defs/reference"},
         "endpoint": {"$ref": "#/$defs/endpoint"},
-        "api_key_env": {"$ref": "#/$defs/api_key_env"},
+        "environment": {"$ref": "#/$defs/environment"},
         "insecure_tls": {"type": "boolean"},
         "http_timeout": {"$ref": "#/$defs/positive_integer"},
         "http_stall": {"$ref": "#/$defs/positive_integer"}

@@ -53,6 +53,33 @@ sf_runtime_read_jsonc() {
   ' "$1" | jq -c .
 }
 
+sf_runtime_read_manifest() {
+  local stem=$1 mode=$2 json="$1.json" jsonc="$1.jsonc" manifest_path content
+  if [[ ( -e $json || -L $json ) && ( -e $jsonc || -L $jsonc ) ]]; then
+    sf_runtime_fail "multiple component manifests: $stem"
+    return
+  elif [[ -e $jsonc || -L $jsonc ]]; then
+    manifest_path=$jsonc
+  elif [[ -e $json || -L $json ]]; then
+    manifest_path=$json
+  elif [[ $mode == optional ]]; then
+    REPLY='{"environment":[]}'
+    return 0
+  else
+    sf_runtime_fail "missing component manifest: $stem"
+    return
+  fi
+  [[ -f $manifest_path && -r $manifest_path ]] || {
+    sf_runtime_fail "cannot read component manifest: $manifest_path"
+    return
+  }
+  content=$(sf_runtime_read_jsonc "$manifest_path" 2>&1) || {
+    sf_runtime_validation_error "$content" "invalid component manifest: $manifest_path"
+    return
+  }
+  REPLY=$content
+}
+
 sf_runtime_config_path() {
   local requested=${1-} candidate=''
   if [[ -n $requested ]]; then
@@ -169,7 +196,7 @@ sf_runtime_resolve_from_config() {
   local config_path config_dir='' raw='{}' defaults decoded prepared presentation
   local backend_name backend_reference backend_dir backend_base manifest tool_manifest command
   local context_window_command=''
-  local reference resolved hook external_name final settings fence='' env_file=''
+  local reference resolved hook hook_manifest external_name final settings fence='' env_file=''
   local home=${HOME-}
   local theme_marker=': shellfish:unknown-theme:'
   local -a fields tool_entries tool_paths tool_manifests sandbox_flags
@@ -264,14 +291,15 @@ sf_runtime_resolve_from_config() {
     }
     backend_dir=$REPLY
   fi
-  [[ -d $backend_dir && -x $backend_dir/run && -f $backend_dir/backend.json && -r $backend_dir/backend.json ]] || {
+  [[ -d $backend_dir && -x $backend_dir/run ]] || {
     sf_runtime_fail "invalid backend: $backend_dir"
     return
   }
+  sf_runtime_read_manifest "$backend_dir/backend" required || return
+  manifest=$REPLY
   command=$backend_dir/run
   [[ ! -f $backend_dir/context_window || ! -x $backend_dir/context_window ]] ||
     context_window_command=$backend_dir/context_window
-  manifest=$(<"$backend_dir/backend.json")
 
   for (( tool_index = 0; tool_index < tool_count; tool_index++ )); do
     reference=$fields[index]
@@ -281,12 +309,13 @@ sf_runtime_resolve_from_config() {
       return
     }
     resolved=$REPLY
-    [[ -d $resolved && -x $resolved/run && -f $resolved/tool.json && -r $resolved/tool.json ]] || {
+    [[ -d $resolved && -x $resolved/run ]] || {
       sf_runtime_fail "invalid tool directory: $reference"
       return
     }
+    sf_runtime_read_manifest "$resolved/tool" required || return
     tool_paths+=( "$resolved" )
-    tool_manifests+=( "$(<"$resolved/tool.json")" )
+    tool_manifests+=( "$REPLY" )
   done
   if (( tool_count )); then
     decoded=$(jq -jrn --args '
@@ -333,7 +362,7 @@ sf_runtime_resolve_from_config() {
     }
     system_entries+=( "$(<"$resolved")" )
   done
-  while (( ${#component_entries} / 2 < component_count )); do
+  while (( ${#component_entries} / 3 < component_count )); do
     hook=$fields[index]
     reference=$fields[index+1]
     (( index += 2 ))
@@ -346,7 +375,9 @@ sf_runtime_resolve_from_config() {
       sf_runtime_fail "$hook hook script is not executable: $reference"
       return
     }
-    component_entries+=( "$hook" "$resolved" )
+    sf_runtime_read_manifest "$resolved" optional || return
+    hook_manifest=$REPLY
+    component_entries+=( "$hook" "$resolved" "$hook_manifest" )
   done
   (( index == ${#fields} )) || {
     sf_runtime_fail 'cannot inspect prepared runtime'
@@ -361,7 +392,7 @@ sf_runtime_resolve_from_config() {
   fi
 
   (( ${#tool_entries} == tool_count * 4 && ${#system_entries} == system_count &&
-    ${#component_entries} == component_count * 2 )) || {
+    ${#component_entries} == component_count * 3 )) || {
     sf_runtime_fail 'cannot assemble resolved runtime references'
     return
   }

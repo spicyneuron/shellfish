@@ -229,18 +229,26 @@ valid_header=$(jq -cn '
     backend: {
       name: "openai", command: "/bin/run", env_file: "/tmp/.env",
       endpoint: "https://api.openai.com/v1/chat/completions",
-      api_key_env: "OPENAI_API_KEY", insecure_tls: false,
+      environment: ["OPENAI_API_KEY"], insecure_tls: false,
       http_timeout: 30, http_stall: 10
     },
     harness: {
       sandbox_read_paths: [], sandbox_write_paths: [],
       fence: "", tools: [], sandbox: true,
       max_requests_per_turn: 50, max_tool_calls_per_request: 20,
-      max_capture_bytes: 32768, stop: ["/bin/hook"]
+      max_capture_bytes: 32768,
+      stop: [{command:"/bin/hook",environment:["HOOK_MODE"]}]
     }
   }
 ')
 print -r -- "$valid_header" | schema_eval 'canonical_session_header(1)' >/dev/null
+for environment in '["DUPLICATE","DUPLICATE"]' '["invalid-name"]'; do
+  if jq -c --argjson environment "$environment" \
+      '.backend.environment = $environment' <<<"$valid_header" |
+      schema_eval 'canonical_session_header(1)' >/dev/null 2>&1; then
+    fail "invalid component environment was accepted: $environment"
+  fi
+done
 
 if jq -c '.profile.system = []' <<<"$valid_header" |
     schema_eval 'canonical_session_header(1)' >/dev/null 2>&1; then
@@ -248,7 +256,7 @@ if jq -c '.profile.system = []' <<<"$valid_header" |
 fi
 
 # Relative hook paths in session headers are rejected.
-if jq -c '.harness.stop = ["relative/hook"]' <<<"$valid_header" |
+if jq -c '.harness.stop[0].command = "relative/hook"' <<<"$valid_header" |
     schema_eval 'canonical_session_header(1)' >/dev/null 2>&1; then
   fail 'relative hook path was accepted in session header'
 fi

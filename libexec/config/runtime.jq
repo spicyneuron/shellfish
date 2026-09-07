@@ -21,14 +21,14 @@ def config_theme($path):
     config_assert((has($field) | not) or (.[$field] | type == "string" and
       test("^#[0-9A-Fa-f]{6}$")); $path + [$field]; "must be a #RRGGBB color"));
 def config_backend($path):
-  config_object($path; ["adapter", "endpoint", "api_key_env", "insecure_tls",
+  config_object($path; ["adapter", "endpoint", "environment", "insecure_tls",
     "http_timeout", "http_stall"]) |
   config_assert((has("adapter") | not) or (.adapter | nonempty_control_free_string);
     $path + ["adapter"]; "invalid reference") |
   config_assert((has("endpoint") | not) or (.endpoint | endpoint);
     $path + ["endpoint"]; "must be an HTTP(S) URL") |
-  config_assert((has("api_key_env") | not) or (.api_key_env | api_key_env);
-    $path + ["api_key_env"]; "invalid credential variable") |
+  config_assert((has("environment") | not) or (.environment | component_environment);
+    $path + ["environment"]; "must contain unique environment variable names") |
   config_assert((has("insecure_tls") | not) or (.insecure_tls | type == "boolean");
     $path + ["insecure_tls"]; "must be a boolean") |
   config_assert((has("http_timeout") | not) or (.http_timeout | positive_integer);
@@ -201,8 +201,8 @@ def runtime_finalize:
   . as $input |
   $input.prepared as $prepared |
   ($input.manifest | fromjson |
-    select(type == "object" and keys == ["api_key_env", "endpoint"] and
-      (.endpoint | endpoint) and (.api_key_env | api_key_env)) //
+    select(type == "object" and keys == ["endpoint", "environment"] and
+      (.endpoint | endpoint) and (.environment | component_environment)) //
     error("invalid backend manifest")) as $manifest |
   $input.command as $command |
   $input.resolved as $args |
@@ -213,8 +213,8 @@ def runtime_finalize:
     ($args[($index * 4):][:4]) |
     {name:.[0],command:.[1],manifest_json:.[2],settings:.[3]}] as $resolved_tools |
   [range(0; $component_count) as $index |
-    ($args[($component_offset + ($index * 2)):][:2]) |
-    {hook:.[0],path:.[1]}] as $resolved_components |
+    ($args[($component_offset + ($index * 3)):][:3]) |
+    {hook:.[0],command:.[1],manifest_json:.[2]}] as $resolved_components |
   [$resolved_tools[] as $tool |
     ($tool.manifest_json | fromjson |
       select(tool_manifest) //
@@ -227,7 +227,12 @@ def runtime_finalize:
       manifest:$tool_manifest,
       settings:(if $tool.settings == "" then null else $tool.settings end)} end] as $tools |
   (reduce $resolved_components[] as $component ({};
-    .[$component.hook] += [$component.path])) as $hooks |
+    ($component.manifest_json | fromjson |
+      select(type == "object" and keys == ["environment"] and
+        (.environment | component_environment)) //
+      error("invalid hook manifest: " + $component.command)) as $hook_manifest |
+    .[$component.hook] += [{command:$component.command,
+      environment:$hook_manifest.environment}])) as $hooks |
   $prepared.profile as $profile |
   ({
     profile:({request:$prepared.request} +
@@ -235,8 +240,7 @@ def runtime_finalize:
         {context_window:$profile.context_window} else {} end)),
     backend:{name:$prepared.backend_name,command:$command,env_file:$input.env_file,
       endpoint:($profile.backend.endpoint // $manifest.endpoint),
-      api_key_env:(if $profile.backend | has("api_key_env") then
-        $profile.backend.api_key_env else $manifest.api_key_env end),
+      environment:($profile.backend.environment // $manifest.environment),
       insecure_tls:($profile.backend.insecure_tls // false),
       http_timeout:($profile.backend.http_timeout // 3600),
       http_stall:($profile.backend.http_stall // 300)} +

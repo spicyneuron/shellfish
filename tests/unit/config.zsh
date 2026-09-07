@@ -8,7 +8,7 @@ mkdir -p "$config_dir"
 cat >"$config_dir/shellfish.jsonc" <<'EOF'
 {
   "default_profile": "agent",
-  "backends": {"work": {"adapter": "openai", "api_key_env": "OPENAI_API_KEY"}},
+  "backends": {"work": {"adapter": "openai", "environment": ["OPENAI_API_KEY"]}},
   "profiles": {
     "agent": {
       "extend": "default",
@@ -294,7 +294,7 @@ jq -cn '{
   type:"session",format_version:1,cwd:"/tmp",created:"2026-08-18T00:00:00Z",
   profile:{request:{model:"stored-model"}},
   backend:{name:"test",command:"/bin/true",endpoint:"https://example.invalid",
-    api_key_env:"",env_file:"",insecure_tls:false,http_timeout:30,http_stall:10},
+    environment:[],env_file:"",insecure_tls:false,http_timeout:30,http_stall:10},
   harness:{sandbox_read_paths:[],sandbox_write_paths:[],
     fence:"",tools:[],sandbox:false,
     max_requests_per_turn:8,max_tool_calls_per_request:16,max_capture_bytes:65536}

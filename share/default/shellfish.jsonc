@@ -23,9 +23,9 @@
   },
 
   // Backends are API adapters. "adapter" names the run script under
-  // backends/<adapter>/; "endpoint" and "api_key_env" override the adapter's
-  // built-in backend.json. An empty api_key_env means no key is sent (codex
-  // relies on an existing CLI login). The "openai" adapter works with any
+  // backends/<adapter>/; "endpoint" and "environment" override the adapter's
+  // built-in backend.json. Environment names are passed without translation.
+  // Codex relies on an existing CLI login. The "openai" adapter works with any
   // OpenAI-compatible endpoint. Optional transport knobs not shown here:
   // insecure_tls, http_timeout, http_stall.
   "backends": {
@@ -36,7 +36,7 @@
     "openrouter": {
       "adapter": "openai",
       "endpoint": "https://openrouter.ai/api/v1/chat/completions",
-      "api_key_env": "OPENROUTER_API_KEY"
+      "environment": ["OPENROUTER_API_KEY"]
     }
   },
 

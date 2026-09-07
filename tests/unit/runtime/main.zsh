@@ -62,7 +62,7 @@ jq -e --arg command "$ROOT/share/default/backends/openai/run" '
   (.backend.context_window_command | endswith("/share/default/backends/openai/context_window")) and
   (.backend.env_file | endswith("/config/.env")) and
   .backend.endpoint == "https://api.openai.com/v1/chat/completions" and
-  .backend.api_key_env == "OPENAI_API_KEY" and
+  .backend.environment == ["OPENAI_API_KEY"] and
   (.profile | has("system") | not) and
   .harness == {
     sandbox_read_paths:[],sandbox_write_paths:[],
@@ -90,12 +90,14 @@ sf_runtime_resolve_from_config "$tmp/config/empty.jsonc" '' 'default-model' '{}'
 jq -e --arg root "$ROOT/share/default/hooks/session_start" \
   --arg prompt_root "$ROOT/share/default/hooks/user_prompt_submit" \
   --arg tools "$ROOT/share/default/tools" '
-  .harness.session_start == [
+  (.harness.session_start | map(.command)) == [
     ($root + "/project_environment"),
     ($root + "/git_environment"),
     ($root + "/project_instructions")
   ] and
-  .harness.user_prompt_submit[-1] == ($prompt_root + "/git_environment") and
+  .harness.session_start[0].environment == ["SHELLFISH_PROBE_BUDGET"] and
+  .harness.session_start[2].environment == [] and
+  .harness.user_prompt_submit[-1].command == ($prompt_root + "/git_environment") and
   (.backend | has("context_window_command") | not) and
   (.harness.tools | map(.name)) ==
     ["read_file", "edit_file", "write_file", "skill", "search_web", "fetch_url", "shell"] and
@@ -156,7 +158,7 @@ typeset hooked_session="$tmp/hooked.jsonl"
 jq -cn --argjson runtime "$runtime" '
   {type:"session",format_version:1,cwd:"/",
    created:"2026-08-18T00:00:00Z"} +
-  ($runtime | .harness.stop=["/bin/hook"])
+  ($runtime | .harness.stop=[{command:"/bin/hook",environment:[]}])
 ' >"$hooked_session"
 unset HOME XDG_STATE_HOME
 sf_runtime_resolve "$hooked_session" "$config" '' '' '{}' '' 0 >/dev/null
@@ -308,6 +310,12 @@ fi
 mkdir -p "$tmp/config/hooks/user_prompt_submit"
 print -r -- '#!/bin/sh' >"$tmp/config/hooks/user_prompt_submit/help"
 chmod +x "$tmp/config/hooks/user_prompt_submit/help"
+cat >"$tmp/config/hooks/user_prompt_submit/help.jsonc" <<'JSON'
+{
+  // Imported only for this component.
+  "environment": ["HELP_FORMAT"]
+}
+JSON
 print -r -- '#!/bin/sh' >"$tmp/config/hooks/user_prompt_submit/shell"
 chmod +x "$tmp/config/hooks/user_prompt_submit/shell"
 mkdir -p "$tmp/config/hooks/stop"
@@ -325,9 +333,9 @@ JSON
 sf_runtime_resolve_from_config "$tmp/config/hooked.jsonc" '' '' '{}' "$ROOT/tests/fixtures/backend"
 jq -e --arg base "${tmp:A}/config/hooks" '
   .harness.user_prompt_submit == [
-    ($base + "/user_prompt_submit/help"),
-    ($base + "/user_prompt_submit/shell")
-  ] and .harness.stop == [($base + "/stop/gate")]
+    {command:($base + "/user_prompt_submit/help"),environment:["HELP_FORMAT"]},
+    {command:($base + "/user_prompt_submit/shell"),environment:[]}
+  ] and .harness.stop == [{command:($base + "/stop/gate"),environment:[]}]
 ' <<<"$REPLY" >/dev/null
 
 chmod -x "$tmp/config/hooks/user_prompt_submit/help"
@@ -434,11 +442,11 @@ SF_ROOT="$tmp/root"
 SF_SHARE="$tmp/root/share"
 sf_runtime_resolve_from_config "$tmp/bundled.jsonc" '' '' '{}' "$ROOT/tests/fixtures/backend"
 jq -e --arg path "${tmp:A}/hooks/stop/bundled" \
-  '.harness.stop == [$path]' <<<"$REPLY" >/dev/null
+  '.harness.stop == [{command:$path,environment:[]}]' <<<"$REPLY" >/dev/null
 rm -f -- "$tmp/hooks/stop/bundled"
 sf_runtime_resolve_from_config "$tmp/bundled.jsonc" '' '' '{}' "$ROOT/tests/fixtures/backend"
 jq -e --arg path "${tmp:A}/root/share/default/hooks/stop/bundled" \
-  '.harness.stop == [$path]' <<<"$REPLY" >/dev/null
+  '.harness.stop == [{command:$path,environment:[]}]' <<<"$REPLY" >/dev/null
 SF_ROOT=$ROOT
 SF_SHARE=$ROOT/share
 
@@ -452,6 +460,7 @@ for tool_name in alpha beta gamma delta epsilon; do
     '{description:$description,input_schema:{type:"object"},sandbox:false}' \
     >"$tmp/config/tools/$tool_name/tool.json"
 done
+mv "$tmp/config/tools/beta/tool.json" "$tmp/config/tools/beta/tool.jsonc"
 cat >"$tmp/config/tooled.jsonc" <<'JSON'
 {
   "profiles":{"default":{"harness":"tooled","request":{"model":"m"}}},
