@@ -14,7 +14,7 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-typeset branch hash identity commits files git_status
+typeset branch hash identity commits git_status
 integer probe_status
 branch=$(sf_capped "$deadline" git symbolic-ref --quiet --short HEAD 2>/dev/null)
 case $? in
@@ -29,10 +29,6 @@ commits=$(sf_capped "$deadline" git log --oneline -5 2>/dev/null)
 probe_status=$?
 (( probe_status != 124 )) || exit 0
 (( probe_status == 0 )) || commits=''
-files=$(sf_capped "$deadline" git log --name-status --pretty=format: -5 2>/dev/null)
-probe_status=$?
-(( probe_status != 124 )) || exit 0
-(( probe_status == 0 )) || files=''
 git_status=$(sf_capped "$deadline" git status --short 2>/dev/null)
 probe_status=$?
 (( probe_status != 124 )) || exit 0
@@ -45,10 +41,6 @@ case $identity in
 esac
 print -r -- $'Recent commits:
 '"$commits"
-files=$(print -r -- "$files" |
-  awk -F'\t' 'NF && !seen[$NF]++ {print "", $1, $NF}' | head -5)
-print -r -- $'Recent files:
-'"$files"
 print -r -- $'Git status:
 '"$(print -r -- "$git_status" | head -10)"
 exit 0

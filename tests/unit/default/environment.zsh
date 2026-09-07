@@ -69,7 +69,6 @@ IFS= read -r state <"$GIT_STATE" || state=
 case "$1:$2" in
   rev-parse:--verify) printf '%s\n' "${state#commit:}" ;;
   log:--oneline) printf 'abc123 Test commit\n' ;;
-  log:--name-status) printf 'M\tchanged-log-file\n' ;;
   status:--short) printf 'M status-file\n' ;;
   symbolic-ref:--quiet)
     case "$state" in
@@ -85,7 +84,7 @@ print -r -- 'branch:main' >"$git_state"
 git_output=$(PATH="$git_bin:$PATH" GIT_STATE="$git_state" SHELLFISH_SESSION_STATE="$tmp" \
   zsh -f "$git_start" session_start)
 [[ $git_output == *main* && $git_output == *'abc123 Test commit'* &&
-   $git_output == *changed-log-file* && $git_output == *status-file* ]]
+   $git_output == *status-file* && $git_output != *'Recent files:'* ]]
 assert_equal 'branch:main' "$(<$git_cache)"
 
 git_output=$(PATH="$git_bin:$PATH" GIT_STATE="$git_state" SHELLFISH_SESSION_STATE="$tmp" \
