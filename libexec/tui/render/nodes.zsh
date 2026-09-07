@@ -408,8 +408,8 @@ sf_tui_reload() {
     SF_PRESENT_ERROR="invalid session path: $session_path"
     return 1
   }
-  events=$(jq -jRs -L "$SF_ROOT" \
-    -f "$SF_ROOT/libexec/tui/transcript-decode.jq" "$session_path" 2>/dev/null) || {
+  events=$( (builtin cd -- "$SF_ROOT" && jq -jRs -L "$SF_ROOT" \
+    -f "$SF_ROOT/libexec/tui/transcript-decode.jq") <"$session_path" 2>/dev/null) || {
     SF_PRESENT_ERROR="cannot read session: $session_path"
     return 1
   }

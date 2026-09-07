@@ -43,6 +43,21 @@ jq -e '
 ' <<<"$request_response" >/dev/null || fail 'send-request produced the wrong response'
 assert_equal "$request_digest" "$(shasum <"$request_session")"
 
+# Request projection and response decoding ignore working-directory modules.
+mkdir -p "$tmp/lib/runtime"
+print -r -- 'def canonical_request(:' >"$tmp/lib/runtime/schema.jq"
+print -r -- 'def decode_backend_response(:' >"$tmp/lib/request.jq"
+(
+  builtin cd -- "$tmp"
+  request=$(print -r -- "$request_record" |
+    zsh -f "$entry" build-request --session session.jsonl)
+  request_response=$(print -r -- "$request" |
+    SF_TEST_BACKEND_DELAY=0 zsh -f "$entry" send-request --session session.jsonl)
+  jq -e '.content == [{type:"text",text:"composed request\n"}]' \
+    <<<"$request_response" >/dev/null
+  assert_equal "$tmp" "$PWD"
+)
+
 print -r -- '{"type":"message","role":"assistant","stop":"end","content":[]}' |
   zsh -f "$entry" build-request --session "$request_session" >/dev/null 2>&1 &&
   fail 'build-request accepted an invalid record transition'

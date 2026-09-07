@@ -219,6 +219,18 @@ assert_equal 'section,message,notice' "${(j:,:)SF_PRESENT_NODE_TYPE}"
 assert_equal 1 "$SF_PRESENT_SECTION_ID"
 
 sf_test_tmp presentation
+
+# Replay opens relative session paths before changing jq's working directory.
+mkdir -p "$tmp/lib/runtime"
+print -r -- 'def canonical_session_header(:' >"$tmp/lib/runtime/schema.jq"
+cp "$SF_TEST_SESSIONS/header-only.jsonl" "$tmp/session.jsonl"
+(
+  builtin cd -- "$tmp"
+  sf_tui_reload session.jsonl || fail "$SF_PRESENT_ERROR"
+  assert_equal test/fake-model "$SF_PRESENT_FOOTER"
+  assert_equal "$tmp" "$PWD"
+)
+
 sf_tui_reload "$SF_TEST_SESSIONS/tool-paired.jsonl" || fail "$SF_PRESENT_ERROR"
 assert_equal 'section,message,section,tool_call,tool_result,tool_call,tool_result,message,injection' \
   "${(j:,:)SF_PRESENT_NODE_TYPE}"

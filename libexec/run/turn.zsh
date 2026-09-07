@@ -99,7 +99,7 @@ sf_run_error() {
 sf_run_partial_assistant() {
   REPLY=''
   (( ${#SF_REQUEST_PARTIAL_EVENTS} )) || return 0
-  REPLY=$({
+  REPLY=$(builtin cd -- "$SF_ROOT" && {
     printf '%s\n' "${SF_REQUEST_PARTIAL_EVENTS[@]}"
     print -r -- '{"type":"_assistant_response_end","stop":"length"}'
   } | jq -L "$SF_ROOT" -cse '
@@ -344,7 +344,7 @@ sf_run_turn() {
           context_output=''
         fi
         SF_REQUEST[pid]=''
-        context_window=$(jq -L "$SF_ROOT" -ser '
+        context_window=$(builtin cd -- "$SF_ROOT" && jq -L "$SF_ROOT" -ser '
           include "lib/runtime/schema";
           select(length == 1 and (.[0] | type == "object" and
             keys == ["context_window"] and (.context_window | positive_integer))) |

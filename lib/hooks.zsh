@@ -446,7 +446,7 @@ sf_hooks_run() {
 
 sf_hooks_context_record() {
   local hook=$1 script=$2 item=$3 control=$4
-  REPLY=$(print -rn -- "$item" |
+  REPLY=$(builtin cd -- "$SF_ROOT" && print -rn -- "$item" |
     jq -Rsc -L "$SF_ROOT" --arg hook "$hook" --arg script "$script" \
       --argjson control "$control" '
         include "lib/runtime/schema";

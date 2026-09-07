@@ -4,9 +4,14 @@ source "${0:A:h:h:h}/_helpers.zsh"
 
 sf_test_tmp backends-openai-responses
 typeset run="$ROOT/share/default/backends/openai-responses/run"
+typeset codex_run="$ROOT/share/default/backends/codex/run"
 typeset codex_context_window="$ROOT/share/default/backends/codex/context_window"
 typeset req="$tmp/request.json"
 typeset res="$tmp/output.jsonl"
+
+# Adapter module lookup must ignore the caller's working tree.
+mkdir -p "$tmp/lib/runtime"
+print -r -- 'def canonical_request(:' >"$tmp/lib/runtime/schema.jq"
 
 cat >"$tmp/curl" <<'EOF'
 #!/bin/sh
@@ -47,7 +52,7 @@ assert_usage() {
 cat >"$BACKEND_TEST_RESPONSE" <<'EOF'
 {"status":"completed","output":[{"type":"message","content":[{"type":"output_text","text":"ok"}]}],"usage":{"input_tokens":100,"input_tokens_details":{"cached_tokens":85},"output_tokens":7,"output_tokens_details":{"reasoning_tokens":3}}}
 EOF
-SHELLFISH_API_KEY=test zsh -f "$run" <"$req" >"$res"
+(builtin cd -- "$tmp" && SHELLFISH_API_KEY=test zsh -f "$run" <"$req" >"$res")
 assert_usage
 
 # An incomplete response discards partial function-call arguments.
@@ -83,7 +88,7 @@ EOF
 cat >"$CODEX_TEST_CATALOG" <<'EOF'
 {"models":[{"slug":"other","context_window":1000},{"slug":"gpt-codex-test","context_window":272000}]}
 EOF
-zsh -f "$codex_context_window" <"$tmp/codex-request.json" >"$res"
+(builtin cd -- "$tmp" && zsh -f "$codex_context_window" <"$tmp/codex-request.json" >"$res")
 jq -e '. == {context_window:272000}' "$res" >/dev/null
 assert_equal 'debug models --bundled' "$(<"$CODEX_TEST_ARGS")"
 
@@ -99,6 +104,13 @@ data: {"type":"response.completed","response":{"status":"completed","output":[],
 
 EOF
 SHELLFISH_API_KEY=test zsh -f "$run" <"$req" >"$res"
+assert_usage
+
+# Codex keeps relative credential paths in the caller's directory.
+cat >"$tmp/auth.json" <<'EOF'
+{"auth_mode":"chatgpt","tokens":{"access_token":"test-token","account_id":"test-account"}}
+EOF
+(builtin cd -- "$tmp" && CODEX_HOME=. zsh -f "$codex_run" <"$tmp/codex-request.json" >"$res")
 assert_usage
 
 # Provider failures retain streamed text but never complete the response.

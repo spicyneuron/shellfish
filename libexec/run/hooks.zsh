@@ -27,7 +27,8 @@ sf_hooks_user_prompt_submit() {
     control=$SF_HOOK_SCRIPT_RESULTS[index+4]
     [[ -n $control ]] || continue
     control_status=$SF_HOOK_SCRIPT_RESULTS[index+1]
-    if ! jq -L "$SF_ROOT" -e --argjson status "$control_status" '
+    if ! (builtin cd -- "$SF_ROOT" &&
+        jq -L "$SF_ROOT" -e --argjson status "$control_status" '
           include "lib/runtime/schema";
           (keys - ["action", "argv", "context", "patch"] | length) == 0 and
           (({type:"context",hook:"user_prompt_submit",script:"script",content:""} +
@@ -43,7 +44,7 @@ sf_hooks_user_prompt_submit() {
                 (has("argv") | not) and (.patch | type == "object")
               else false end)
            else ((has("argv") or has("patch")) | not) end)
-      ' <<<"$control" >/dev/null; then
+      ' <<<"$control") >/dev/null; then
       SF_HOOK_ERROR='user_prompt_submit hook script returned invalid control data'
       operation_status=1
     elif (( control_status == 11 )) &&

@@ -7,6 +7,17 @@ sf_test_tmp transport
 typeset -ga ZLE_CALLS=()
 zle() { ZLE_CALLS+=( "$*" ); }
 
+# Live decoding cannot load modules from the project being displayed.
+mkdir -p "$tmp/lib/runtime"
+print -r -- 'def canonical_session_header(:' >"$tmp/lib/runtime/schema.jq"
+(
+  builtin cd -- "$tmp"
+  SF_TUI_TRANSPORT_LINES=( '{"type":"_assistant_delta","text":"shadow"}' )
+  sf_tui_transport_next null
+  assert_equal 'assistant_delta,shadow,,,,,' "${(j:,:)reply}"
+  assert_equal "$tmp" "$PWD"
+)
+
 SF_TUI_TRANSPORT_LINES=(
   '{"type":"_assistant_delta","text":"one"}'
   '{"type":"message","role":"assistant","stop":"end","content":[{"type":"text","text":"one"}],"usage":{"input_tokens":2,"output_tokens":1}}'

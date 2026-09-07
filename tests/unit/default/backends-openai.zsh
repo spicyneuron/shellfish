@@ -10,6 +10,10 @@ typeset req="$tmp/request.json"
 typeset res="$tmp/response.json"
 typeset body="$tmp/body.json"
 
+# Adapter module lookup must ignore the caller's working tree.
+mkdir -p "$tmp/lib/runtime"
+print -r -- 'def canonical_request(:' >"$tmp/lib/runtime/schema.jq"
+
 cat >"$tmp/curl" <<'EOF'
 #!/usr/bin/env bash
 printf '%s\n' "$@" >"$BACKEND_TEST_ARGS"
@@ -60,7 +64,7 @@ cat >"$req" <<'EOF'
 }
 EOF
 
-SHELLFISH_API_KEY=test-key zsh -f "$run" <"$req" >"$res"
+(builtin cd -- "$tmp" && SHELLFISH_API_KEY=test-key zsh -f "$run" <"$req" >"$res")
 
 jq -n -e -L "$ROOT" '
   include "lib/runtime/schema";
@@ -81,14 +85,14 @@ jq -n -e -L "$ROOT" '
 cat >"$BACKEND_TEST_RESPONSE" <<'EOF'
 {"data":[{"id":"other","context_length":1000},{"id":"gpt-4o","context_length":128000}]}
 EOF
-SHELLFISH_API_KEY=test-key zsh -f "$context_window" <"$req" >"$res"
+(builtin cd -- "$tmp" && SHELLFISH_API_KEY=test-key zsh -f "$context_window" <"$req" >"$res")
 jq -e '. == {context_window:128000}' "$res" >/dev/null
 grep -qx 'https://api.openai.com/v1/models' "$BACKEND_TEST_ARGS"
 grep -qx '10' "$BACKEND_TEST_ARGS"
 
 jq '.transport.endpoint = "https://api.openai.com/v1/responses"' "$req" >"$tmp/responses-request.json"
-SHELLFISH_API_KEY=test-key zsh -f "$responses_context_window" \
-  <"$tmp/responses-request.json" >"$res"
+(builtin cd -- "$tmp" && SHELLFISH_API_KEY=test-key zsh -f "$responses_context_window" \
+  <"$tmp/responses-request.json" >"$res")
 jq -e '. == {context_window:128000}' "$res" >/dev/null
 grep -qx 'https://api.openai.com/v1/models' "$BACKEND_TEST_ARGS"
 

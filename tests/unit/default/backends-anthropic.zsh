@@ -8,6 +8,10 @@ typeset context_window="$ROOT/share/default/backends/anthropic/context_window"
 typeset req="$tmp/request.json"
 typeset res="$tmp/output.jsonl"
 
+# Adapter module lookup must ignore the caller's working tree.
+mkdir -p "$tmp/lib/runtime"
+print -r -- 'def canonical_request(:' >"$tmp/lib/runtime/schema.jq"
+
 cat >"$tmp/curl" <<'EOF'
 #!/bin/sh
 printf '%s\n' "$@" >"$BACKEND_TEST_ARGS"
@@ -49,7 +53,7 @@ assert_usage() {
 cat >"$BACKEND_TEST_RESPONSE" <<'EOF'
 {"content":[{"type":"text","text":"ok"}],"stop_reason":"end_turn","usage":{"input_tokens":10,"cache_creation_input_tokens":5,"cache_read_input_tokens":85,"output_tokens":7,"output_tokens_details":{"thinking_tokens":3}}}
 EOF
-SHELLFISH_API_KEY=test zsh -f "$run" <"$req" >"$res"
+(builtin cd -- "$tmp" && SHELLFISH_API_KEY=test zsh -f "$run" <"$req" >"$res")
 assert_usage
 
 # Streaming usage arrives in separate start and delta events.
@@ -92,7 +96,7 @@ jq -e -s -L "$ROOT" '
 cat >"$BACKEND_TEST_RESPONSE" <<'EOF'
 {"data":[{"id":"other","max_input_tokens":1000},{"id":"claude-test","max_input_tokens":200000,"max_tokens":64000}]}
 EOF
-SHELLFISH_API_KEY=test zsh -f "$context_window" <"$req" >"$res"
+(builtin cd -- "$tmp" && SHELLFISH_API_KEY=test zsh -f "$context_window" <"$req" >"$res")
 jq -e '. == {context_window:200000}' "$res" >/dev/null
 grep -qx 'https://api.anthropic.com/v1/models?limit=1000' "$BACKEND_TEST_ARGS"
 

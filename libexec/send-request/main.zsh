@@ -75,7 +75,8 @@ sf_send_request_main() {
     sf_die 'send-request requires a canonical backend request on stdin'
     return 2
   }
-  request=$(jq -L "$SF_ROOT" -cse --argjson runtime "$runtime" '
+  request=$(builtin cd -- "$SF_ROOT" &&
+    jq -L "$SF_ROOT" -cse --argjson runtime "$runtime" '
     include "lib/runtime/schema";
     select(length == 1) | .[0] |
     select(canonical_request) |

@@ -125,6 +125,23 @@ jq -cn --argjson runtime "$runtime" '
 ' >"$session"
 sf_runtime_resolve "$session" "$config" '' '' '{}' '' 0
 assert_equal "$runtime" "$REPLY" 'runtime resolution reads the frozen runtime'
+
+# Relative session paths retain their meaning while jq uses installed modules.
+mkdir -p "$tmp/shadow/lib/runtime" "$tmp/shadow/libexec/config"
+print -r -- 'def canonical_session_header(:' >"$tmp/shadow/lib/runtime/schema.jq"
+print -r -- 'def runtime_prepare(:' >"$tmp/shadow/libexec/config/runtime.jq"
+cp "$session" "$tmp/shadow/session.jsonl"
+print -r -- '{"type":"system","content":"shadow system"}' >>"$tmp/shadow/session.jsonl"
+(
+  builtin cd -- "$tmp/shadow"
+  sf_runtime_resolve_from_config "$config" '' 'shadow-model' '{}'
+  jq -e '.profile.request.model == "shadow-model"' <<<"$REPLY" >/dev/null
+  sf_runtime_resolve session.jsonl "$config" '' '' '{}' '' 0
+  assert_equal "$runtime" "$REPLY"
+  assert_equal 'shadow system' "$SF_RUNTIME_SYSTEM"
+  assert_equal "$tmp/shadow" "$PWD"
+)
+
 jq -e '.theme_mode == "light" and .themes.light.text == "#123456"' \
   <<<"$SF_PRESENTATION" >/dev/null
 integer resolve_status=0
@@ -400,6 +417,7 @@ fi
 # script.
 mkdir -p "$tmp/root/share/default/hooks/stop"
 ln -s "$ROOT/lib" "$tmp/root/lib"
+ln -s "$ROOT/libexec" "$tmp/root/libexec"
 ln -s "$ROOT/share/default/shellfish.jsonc" "$tmp/root/share/default/shellfish.jsonc"
 print -r -- '#!/bin/sh' >"$tmp/root/share/default/hooks/stop/bundled"
 chmod +x "$tmp/root/share/default/hooks/stop/bundled"

@@ -164,7 +164,8 @@ sf_tui_transport_next() {
 
   if (( ! ${#SF_TUI_TRANSPORT_EVENTS} )); then
     (( ${#SF_TUI_TRANSPORT_LINES} )) || return 1
-    events=$(printf '%s\n' "${SF_TUI_TRANSPORT_LINES[@]}" |
+    events=$(builtin cd -- "$SF_ROOT" &&
+      printf '%s\n' "${SF_TUI_TRANSPORT_LINES[@]}" |
       jq -jRs -L "$SF_ROOT" --argjson runtime "$runtime" \
         -f "$SF_ROOT/libexec/tui/event-decode.jq" 2>/dev/null) || events=''
     SF_TUI_TRANSPORT_LINES=()
