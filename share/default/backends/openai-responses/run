@@ -6,12 +6,12 @@ umask 077
 
 source "${0:A:h:h}/_backend.zsh"
 
-api_key=${SHELLFISH_API_KEY-}
+api_key=${OPENAI_API_KEY-}
 account_id=${SHELLFISH_RESPONSES_ACCOUNT_ID-}
 # The ChatGPT Codex transport rejects the Responses output-limit field.
 chatgpt_transport=false
 [[ -z $account_id ]] || chatgpt_transport=true
-unset SHELLFISH_API_KEY SHELLFISH_RESPONSES_ACCOUNT_ID
+unset OPENAI_API_KEY SHELLFISH_RESPONSES_ACCOUNT_ID
 
 sf_backend_setup openai-responses
 trap 'rm -rf -- "$SF_BACKEND_TEMP_DIR"' EXIT

@@ -36,12 +36,13 @@ typeset output
 # Turn subprocesses preserve the chat's verbose override, but do not trust
 # arbitrary inherited values.
 typeset verbose_script="$tmp/verbose-hook" verbose_config="$tmp/verbose-config.json"
-cat >"$verbose_script" <<'EOF'
+mkdir "$verbose_script"
+cat >"$verbose_script/run" <<'EOF'
 #!/usr/bin/env zsh
 print -r -- "${SHELLFISH_VERBOSE-unset}" >"$SF_VERBOSE_MARKER"
 exit 10
 EOF
-chmod +x "$verbose_script"
+chmod +x "$verbose_script/run"
 jq --arg script "$verbose_script" '.harnesses.machine.user_prompt_submit=[$script]' \
   "$config" >"$verbose_config"
 SF_VERBOSE_MARKER="$tmp/verbose-one" SHELLFISH_VERBOSE=1 \
@@ -137,13 +138,14 @@ cmp -s "$tmp/stream-durable" "$tmp/session-durable" ||
 
 # A bounded turn emits an arbitrary command handoff and completes cleanly.
 typeset handoff_script="$tmp/handoff"
-cat >"$handoff_script" <<'ZSH'
+mkdir "$handoff_script"
+cat >"$handoff_script/run" <<'ZSH'
 #!/usr/bin/env zsh
 [[ $1 == user_prompt_submit ]] || exit 1
 print -rn -u3 -- '{"action":"handoff","argv":["/usr/bin/printf","next.jsonl"]}'
 exit 11
 ZSH
-chmod +x "$handoff_script"
+chmod +x "$handoff_script/run"
 typeset handoff_config="$tmp/handoff.jsonc" handoff_output="$tmp/handoff.jsonl"
 jq --arg script "$handoff_script" '.harnesses.machine.user_prompt_submit=[$script]' \
   "$config" >"$handoff_config"

@@ -50,7 +50,7 @@ esac
 ZSH
 chmod +x "$prompt_script"
 SF_TEST_RUNTIME=$(jq -c --arg script "$prompt_script" \
-  '.harness.user_prompt_submit=[$script]' <<<"$SF_TEST_RUNTIME")
+  '.harness.user_prompt_submit=[{command:$script,environment:[]}]' <<<"$SF_TEST_RUNTIME")
 
 typeset prompt_session="$tmp/prompt.jsonl"
 sf_test_session "$prompt_session"

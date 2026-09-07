@@ -5,7 +5,7 @@ setopt no_aliases no_bg_nice no_multios pipe_fail
 
 (( $+functions[sf_jq] )) || source "$SF_ROOT/lib/jq.zsh"
 (( $+functions[sf_session_begin_turn] )) || source "$SF_ROOT/lib/session/main.zsh"
-(( $+functions[sf_credentials_resolve] )) || source "$SF_ROOT/lib/credentials.zsh"
+(( $+functions[sf_environment_prepare] )) || source "$SF_ROOT/lib/environment.zsh"
 (( $+functions[sf_hooks_user_prompt_submit] )) || source "$SF_ROOT/libexec/run/hooks.zsh"
 (( $+functions[sf_tools_load] )) || source "$SF_ROOT/libexec/run/tools.zsh"
 (( $+functions[sf_request_run] )) || source "$SF_ROOT/lib/request.zsh"
@@ -187,11 +187,11 @@ sf_run_turn() {
   local tool_name call_id tool_input execution_input bypass bypass_reason_valid
   local decision denial_reason hook_action hook_reason
   local runtime_projection response_projection response_field
-  local tools tool_schema max_capture fence api_key_env env_file config_dir
+  local tools tool_schema max_capture fence backend_environment env_file config_dir name
   local sandbox_read_paths sandbox_write_paths
   local context_output context_line context_window context_window_command update_event adapter_pid
-  local SHELLFISH_TURN_STATE='' SHELLFISH_SESSION_STATE='' SF_API_KEY='' SF_API_KEY_SOURCE=''
-  local -a runtime_fields response_fields tool_calls handoff
+  local SHELLFISH_TURN_STATE='' SHELLFISH_SESSION_STATE=''
+  local -a runtime_fields response_fields tool_calls handoff context_environment
   integer request_count=0 stop_count=0 call_count tool_index response_call_count
   integer harness_sandbox tool_limit request_limit context_window_set
   integer permission_status
@@ -219,7 +219,7 @@ sf_run_turn() {
       ($runtime.harness.sandbox_read_paths | tojson | field),
       ($runtime.harness.sandbox_write_paths | tojson | field),
       ($runtime.harness.tools | tojson | field),
-      ($runtime.backend.api_key_env | field),
+      ($runtime.backend.environment | tojson | field),
       ($runtime.backend.env_file | field),
       ($runtime.backend.context_window_command // "" | field),
       (if $runtime.profile | has("context_window") then "1" else "0" end | field),
@@ -242,7 +242,7 @@ sf_run_turn() {
     sandbox_read_paths=$runtime_fields[7]
     sandbox_write_paths=$runtime_fields[8]
     tools=$runtime_fields[9]
-    api_key_env=$runtime_fields[10]
+    backend_environment=$runtime_fields[10]
     env_file=$runtime_fields[11]
     context_window_command=$runtime_fields[12]
     context_window_set=$runtime_fields[13]
@@ -321,20 +321,20 @@ sf_run_turn() {
         failure='cannot prepare provider request'
         return 1
       }
-      if (( request_count == 1 )) && ! sf_credentials_resolve "$api_key_env" "$env_file"; then
-        failure=$SF_CREDENTIALS_ERROR
-        return 1
-      fi
-      if (( request_count == 1 )); then
-        SF_API_KEY=$REPLY
-        SF_API_KEY_SOURCE=$reply[1]
-      fi
       if (( request_count == 1 && ! context_window_set )) &&
           [[ -n $context_window_command ]]; then
         context_output=''
-        coproc SHELLFISH_API_KEY="$SF_API_KEY" \
-          SHELLFISH_API_KEY_SOURCE="$SF_API_KEY_SOURCE" \
-          "$context_window_command" <<<"$request" 2>/dev/null
+        sf_environment_prepare "$SF_SESSION[runtime]" "$backend_environment" || {
+          failure=$SF_ENVIRONMENT_ERROR
+          return 1
+        }
+        context_environment=( env )
+        for name in $SF_ENVIRONMENT_NAMES; do
+          context_environment+=( -u "$name" )
+        done
+        context_environment+=( "${SF_ENVIRONMENT_VALUES[@]}" )
+        coproc "${context_environment[@]}" "$context_window_command" \
+          <<<"$request" 2>/dev/null
         adapter_pid=$!
         SF_REQUEST[pid]=$adapter_pid
         while IFS= read -r context_line <&p; do
@@ -371,8 +371,8 @@ sf_run_turn() {
         }
         sf_run_emit "$update_event"
       fi
-      if ! sf_request_run "$request" "$backend_command" "$SF_API_KEY" \
-          "$SF_API_KEY_SOURCE" sf_run_emit; then
+      if ! sf_request_run "$request" "$backend_command" "$SF_SESSION[runtime]" \
+          "$backend_environment" sf_run_emit; then
         failure=$SF_REQUEST[error]
         return 1
       fi
@@ -484,7 +484,7 @@ sf_run_turn() {
             if ! sf_tool_execute "$call_id" "$tool_name" "$execution_input" "$bypass" \
                 "$harness_sandbox" "$decision" "$denial_reason" \
                 "$SF_SESSION[cwd]" "$max_capture" "$fence" "$config_dir" \
-                "$SF_SESSION[id]"; then
+                "$SF_SESSION[id]" "$SF_SESSION[runtime]"; then
               failure=${SF_TOOL_ERROR:-shell tool execution failed}
               return 1
             fi

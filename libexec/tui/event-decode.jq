@@ -14,13 +14,13 @@ def event_fields($event_runtime):
       (.level | IN("info", "error")) and (.complete | type == "boolean") and
       (if has("context") then .complete and .level == "info" and
         (.context | canonical_context) and .context.hook == .source and
-        .context.script == (.title | split("/") | last)
+        .context.script == (.title | sub("/run$"; "") | split("/") | last)
        else true end) then
     if has("context") then
       .context | durable_display_fields(false; ($event_runtime.harness.tools // []))
     else
       ["notice", (if .level == "error" then "error" else "notice" end),
-       (.title | split("/") | last), .source, .text,
+       (.title | sub("/run$"; "") | split("/") | last), .source, .text,
        (if .complete then "closed" else "open" end)]
     end
   elif .type == "_session_prepare" and

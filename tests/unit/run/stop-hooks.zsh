@@ -44,7 +44,7 @@ print -rn -u2 -- second-local
 ZSH
 chmod +x "$stop_once"
 SF_TEST_RUNTIME=$(jq -c --arg hook "$stop_once" \
-  '.harness.stop=[$hook]' <<<"$SF_TEST_RUNTIME")
+  '.harness.stop=[{command:$hook,environment:[]}]' <<<"$SF_TEST_RUNTIME")
 typeset stop_session="$tmp/stop.jsonl"
 sf_test_session "$stop_session"
 sf_hooks_turn_state_create
@@ -97,7 +97,7 @@ cmp -s /dev/stdin "$SHELLFISH_TURN_STATE/expected"
 ZSH
 chmod +x "$text_stop"
 SF_TEST_RUNTIME=$(jq -c --arg hook "$text_stop" --arg backend "$text_backend" '
-  .harness.stop=[$hook] | .backend.command=$backend
+  .harness.stop=[{command:$hook,environment:[]}] | .backend.command=$backend
 ' <<<"$SF_TEST_RUNTIME")
 typeset text_session="$tmp/stop-text.jsonl"
 sf_test_session "$text_session"
@@ -125,7 +125,7 @@ fi
 ZSH
 chmod +x "$tool_stop"
 SF_TEST_RUNTIME=$(jq -c --arg hook "$tool_stop" \
-  '.harness.stop=[$hook]' <<<"$SF_TEST_RUNTIME")
+  '.harness.stop=[{command:$hook,environment:[]}]' <<<"$SF_TEST_RUNTIME")
 typeset tool_stop_session="$tmp/stop-tool.jsonl"
 sf_test_session "$tool_stop_session"
 stream=$(sf_test_turn original "$tool_stop_session")
@@ -146,7 +146,7 @@ exit 10
 ZSH
 chmod +x "$stop_always"
 SF_TEST_RUNTIME=$(jq -c --arg hook "$stop_always" \
-  '.harness.stop=[$hook] | .harness.max_requests_per_turn=1' \
+  '.harness.stop=[{command:$hook,environment:[]}] | .harness.max_requests_per_turn=1' \
   <<<"$SF_TEST_RUNTIME")
 typeset limit_session="$tmp/stop-limit.jsonl"
 sf_test_session "$limit_session"
@@ -178,7 +178,7 @@ ZSH
 chmod +x "$cancel_backend"
 
 SF_TEST_RUNTIME=$(jq -c --arg hook "$stop_once" --arg backend "$cancel_backend" '
-  .harness.stop=[$hook] | .harness.max_requests_per_turn=8 | .backend.command=$backend
+  .harness.stop=[{command:$hook,environment:[]}] | .harness.max_requests_per_turn=8 | .backend.command=$backend
 ' <<<"$SF_TEST_RUNTIME")
 typeset cancel_session="$tmp/stop-cancel.jsonl"
 typeset cancel_stream="$tmp/stop-cancel.stream"

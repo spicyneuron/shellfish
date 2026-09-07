@@ -12,10 +12,11 @@ SF_SESSION_PATH=$session
 typeset stored_runtime=$(head -n 1 "$session" | jq -c 'del(.type,.format_version,.cwd,.created)')
 typeset stored_cwd=$(jq -r '.cwd' "$session")
 typeset tool_tools tool_schema tool_cwd=$stored_cwd tool_max_capture tool_sandbox tool_fence
-typeset tool_read_paths tool_write_paths tool_config_dir=''
+typeset tool_read_paths tool_write_paths tool_config_dir='' tool_runtime
 
 load_tools() {
   local runtime=$1
+  tool_runtime=$runtime
   tool_tools=$(jq -c '.harness.tools' <<<$runtime)
   tool_max_capture=$(jq -r '.harness.max_capture_bytes' <<<$runtime)
   tool_sandbox=$(jq -r 'if .harness.sandbox then 1 else 0 end' <<<$runtime)
@@ -45,7 +46,7 @@ sf_test_tool_execute() {
   (( permission_status != 2 )) || return
   sf_tool_execute "$id" "$name" "$execution_input" "$bypass" "$harness_sandbox" \
     "$decision" "$denial_reason" "$tool_cwd" "$tool_max_capture" "$tool_fence" \
-    "$tool_config_dir" "$SF_SESSION[id]" || return
+    "$tool_config_dir" "$SF_SESSION[id]" "$tool_runtime" || return
 }
 
 # Tool execution preserves the caller's home in its otherwise clean environment.
@@ -97,6 +98,20 @@ jq -e --arg config "$XDG_CONFIG_HOME" '.content == $config' <<<"$REPLY" >/dev/nu
 export HOME=$caller_home
 unset XDG_CONFIG_HOME
 
+# A tool receives environment values selected by its manifest.
+typeset environment_runtime environment_call
+export TOOL_SETTING=selected
+environment_runtime=$(jq -c '.harness.tools[0].manifest.environment=["TOOL_SETTING"]' \
+  <<<"$stored_runtime") || fail 'cannot prepare tool environment runtime'
+load_tools "$environment_runtime"
+environment_call=$(jq -cn --arg command 'print -rn -- "${TOOL_SETTING-unset}"' \
+  '{id:"environment_1",name:"shell",input:{command:$command}}') || \
+  fail 'cannot prepare tool environment call'
+sf_test_tool_execute "$environment_call" 0
+jq -e '.content == "selected"' <<<"$REPLY" >/dev/null
+unset TOOL_SETTING
+load_tools "$stored_runtime"
+
 # Capture preserves trailing newlines and retains only the configured byte tail.
 sf_test_tool_execute "$(jq -cn --arg command "printf 'line\\n\\n'" \
   '{id:"capture_1",name:"shell",input:{command:$command}}')" 0
@@ -124,8 +139,11 @@ sf_test_tool_execute "$(jq -cn \
 jq -e '.exit_code == 143 and .sandboxed == false' <<<"$REPLY" >/dev/null
 
 # A sandboxed bypass executes only with an approval decision from its caller.
-load_tools "$(jq -c --arg fence "${commands[fence]:A}" \
-  '.harness.sandbox=true | .harness.fence=$fence' <<<"$stored_runtime")"
+typeset sandbox_runtime denied_runtime
+sandbox_runtime=$(jq -c --arg fence "${commands[fence]:A}" \
+  '.harness.sandbox=true | .harness.fence=$fence' <<<"$stored_runtime") || \
+  fail 'cannot prepare sandbox runtime'
+load_tools "$sandbox_runtime"
 typeset bypass_call=$(jq -cn \
   '{id:"bypass_1",name:"shell",input:{command:"true",request_sandbox_bypass:true,
     sandbox_bypass_reason:"test"}}')
@@ -133,6 +151,14 @@ sf_tool_needs_permission shell true true 1
 sf_test_tool_execute "$bypass_call" 1
 jq -e '.exit_code == 126 and .content == "sandbox bypass denied"' \
   <<<"$REPLY" >/dev/null
+denied_runtime=$(jq -c --arg path "$tmp" '
+  .backend.env_file=$path | .harness.tools[0].manifest.environment=["TOOL_SETTING"]
+' <<<"$sandbox_runtime") || fail 'cannot prepare denied tool runtime'
+load_tools "$denied_runtime"
+sf_test_tool_execute "$bypass_call" 1
+jq -e '.exit_code == 126 and .content == "sandbox bypass denied"' \
+  <<<"$REPLY" >/dev/null || fail 'denied tool resolved its environment'
+load_tools "$sandbox_runtime"
 sf_test_tool_execute "$bypass_call" 1 denied 'hook said no'
 jq -e '.exit_code == 126 and .content == "hook said no"' <<<"$REPLY" >/dev/null
 sf_test_tool_execute "$bypass_call" 1 approved

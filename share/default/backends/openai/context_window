@@ -6,8 +6,8 @@ umask 077
 
 source "${0:A:h:h}/_backend.zsh"
 
-api_key=${SHELLFISH_API_KEY-}
-unset SHELLFISH_API_KEY
+api_key=${OPENAI_API_KEY-}
+unset OPENAI_API_KEY
 
 sf_backend_setup openai
 trap 'rm -rf -- "$SF_BACKEND_TEMP_DIR"' EXIT

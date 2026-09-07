@@ -52,14 +52,14 @@ assert_usage() {
 cat >"$BACKEND_TEST_RESPONSE" <<'EOF'
 {"status":"completed","output":[{"type":"message","content":[{"type":"output_text","text":"ok"}]}],"usage":{"input_tokens":100,"input_tokens_details":{"cached_tokens":85},"output_tokens":7,"output_tokens_details":{"reasoning_tokens":3}}}
 EOF
-(builtin cd -- "$tmp" && SHELLFISH_API_KEY=test zsh -f "$run" <"$req" >"$res")
+(builtin cd -- "$tmp" && OPENAI_API_KEY=test zsh -f "$run" <"$req" >"$res")
 assert_usage
 
 # An incomplete response discards partial function-call arguments.
 cat >"$BACKEND_TEST_RESPONSE" <<'EOF'
 {"status":"incomplete","output":[{"type":"function_call","call_id":"call_cut","name":"shell","arguments":"{\"command\":"}],"usage":{"input_tokens":10,"output_tokens":5}}
 EOF
-SHELLFISH_API_KEY=test zsh -f "$run" <"$req" >"$res"
+OPENAI_API_KEY=test zsh -f "$run" <"$req" >"$res"
 jq -e -s -L "$ROOT" '
   include "lib/runtime/schema";
   include "lib/request";
@@ -103,7 +103,7 @@ data: {"type":"response.output_text.delta","delta":"ok"}
 data: {"type":"response.completed","response":{"status":"completed","output":[],"usage":{"input_tokens":100,"input_tokens_details":{"cached_tokens":85},"output_tokens":7,"output_tokens_details":{"reasoning_tokens":3}}}}
 
 EOF
-SHELLFISH_API_KEY=test zsh -f "$run" <"$req" >"$res"
+OPENAI_API_KEY=test zsh -f "$run" <"$req" >"$res"
 assert_usage
 
 # Codex keeps relative credential paths in the caller's directory.
@@ -126,7 +126,7 @@ for event expected in \
   'error (no error details)'; do
   print -rl -- 'data: {"type":"response.output_text.delta","delta":"partial"}' \
     "data: $event" >"$BACKEND_TEST_RESPONSE"
-  if SHELLFISH_API_KEY=test zsh -f "$run" <"$req" >"$res" 2>"$tmp/error"; then
+  if OPENAI_API_KEY=test zsh -f "$run" <"$req" >"$res" 2>"$tmp/error"; then
     fail 'provider failure was accepted'
   fi
   grep -Fq -- "$expected" "$tmp/error" || fail 'provider failure details were lost'
@@ -144,7 +144,7 @@ data: {"type":"response.output_item.done","output_index":1,"item":{"type":"funct
 data: {"type":"response.completed","response":{"status":"completed","output":[],"usage":{"input_tokens":10,"output_tokens":5}}}
 
 EOF
-SHELLFISH_API_KEY=test zsh -f "$run" <"$req" >"$res"
+OPENAI_API_KEY=test zsh -f "$run" <"$req" >"$res"
 jq -e -s -L "$ROOT" '
   include "lib/runtime/schema";
   include "lib/request";

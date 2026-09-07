@@ -64,7 +64,7 @@ Stdin remains open for permission replies. When the turn emits a permission requ
 
 `build-request` reads zero or more additional durable records as JSONL on stdin, validates them as a continuation of the selected session, and writes one canonical backend request. `--tools` accepts a JSON array of provider tool schemas and defaults to `[]`.
 
-`send-request` reads one canonical backend request on stdin. It requires the request and transport options to match the session's frozen runtime, resolves the scoped backend credential, validates the adapter event stream, and writes one canonical assistant message.
+`send-request` reads one canonical backend request on stdin. It requires the request and transport options to match the session's frozen runtime, resolves the backend's selected environment, validates the adapter event stream, and writes one canonical assistant message.
 
 Neither command runs hooks, executes tool calls, or persists its output. Provider tool schemas in a built request are inert. Diagnostics go to stderr and failures return nonzero.
 

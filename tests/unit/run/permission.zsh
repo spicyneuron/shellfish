@@ -30,7 +30,7 @@ exit 11
 ZSH
 chmod +x "$permission_allow"
 SF_TEST_RUNTIME=$(jq -c --arg hook "$permission_allow" '
-  .harness.sandbox=true | .harness.permission_request=[$hook]
+  .harness.sandbox=true | .harness.permission_request=[{command:$hook,environment:[]}]
 ' <<<"$SF_TEST_RUNTIME")
 typeset permission_allow_session="$tmp/permission-allow.jsonl"
 sf_test_session "$permission_allow_session"
@@ -64,7 +64,7 @@ exit 11
 ZSH
 chmod +x "$permission_deny"
 SF_TEST_RUNTIME=$(jq -c --arg hook "$permission_deny" \
-  '.harness.permission_request=[$hook]' <<<"$SF_TEST_RUNTIME")
+  '.harness.permission_request=[{command:$hook,environment:[]}]' <<<"$SF_TEST_RUNTIME")
 typeset permission_deny_session="$tmp/permission-deny.jsonl"
 sf_test_session "$permission_deny_session"
 stream=$(SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_BYPASS=true \
@@ -213,7 +213,7 @@ exit 11
 ZSH
 chmod +x "$permission_invalid"
 SF_TEST_RUNTIME=$(jq -c --arg hook "$permission_invalid" \
-  '.harness.permission_request=[$hook]' <<<"$SF_TEST_RUNTIME")
+  '.harness.permission_request=[{command:$hook,environment:[]}]' <<<"$SF_TEST_RUNTIME")
 typeset permission_invalid_session="$tmp/permission-invalid.jsonl"
 sf_test_session "$permission_invalid_session"
 stream=$(SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_BYPASS=true \

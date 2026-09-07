@@ -2,6 +2,7 @@ emulate -R zsh
 setopt no_aliases no_bg_nice no_multios pipe_fail
 
 (( $+functions[sf_scratch_create] )) || source "$SF_ROOT/lib/scratch.zsh"
+(( $+functions[sf_environment_prepare] )) || source "$SF_ROOT/lib/environment.zsh"
 
 typeset -g SF_TOOL_ERROR=''
 typeset -g SF_TOOL_STATE_DIR=''
@@ -11,6 +12,7 @@ typeset -gA SF_TOOL_COMMAND=()
 typeset -gA SF_TOOL_SANDBOX=()
 typeset -gA SF_TOOL_ALLOW_BYPASS=()
 typeset -gA SF_TOOL_SETTINGS=()
+typeset -gA SF_TOOL_ENVIRONMENT=()
 typeset -ga SF_TOOL_READ_PATHS=()
 typeset -ga SF_TOOL_WRITE_PATHS=()
 
@@ -22,9 +24,9 @@ sf_tools_fail() {
 sf_tools_load() {
   local tools=$1 cwd=$2 harness_sandbox=$3 fence=${4-}
   local sandbox_read_paths=$5 sandbox_write_paths=$6
-  local command name projected sandbox allow_bypass settings
+  local command name projected sandbox allow_bypass settings environment
   local -a fields read_paths write_paths
-  local -A tool_command tool_sandbox tool_allow_bypass tool_settings
+  local -A tool_command tool_sandbox tool_allow_bypass tool_settings tool_environment
   integer index=1 read_count write_count sandboxed_tools=0
   SF_TOOL_ERROR=''
   REPLY=''
@@ -32,6 +34,7 @@ sf_tools_load() {
   SF_TOOL_SANDBOX=()
   SF_TOOL_ALLOW_BYPASS=()
   SF_TOOL_SETTINGS=()
+  SF_TOOL_ENVIRONMENT=()
   SF_TOOL_READ_PATHS=()
   SF_TOOL_WRITE_PATHS=()
   [[ -d $cwd ]] || {
@@ -72,7 +75,7 @@ sf_tools_load() {
       ($tools[] | (.name | field), (.command | field),
         (.manifest.sandbox | tostring | field),
         (.manifest.allow_sandbox_bypass // false | tostring | field),
-        ((.settings // "") | field)),
+        ((.settings // "") | field), ((.manifest.environment // []) | tojson | field)),
       ("ok" | field)
   ' 2>/dev/null) || {
     sf_tools_fail 'cannot inspect configured tools'
@@ -87,7 +90,7 @@ sf_tools_load() {
   read_count=$fields[2]
   write_count=$fields[3]
   index=$(( read_count + write_count + 4 ))
-  (( index <= ${#fields} && (${#fields} - index) % 5 == 0 )) || {
+  (( index <= ${#fields} && (${#fields} - index) % 6 == 0 )) || {
     sf_tools_fail 'cannot inspect configured tools'
     return
   }
@@ -99,7 +102,8 @@ sf_tools_load() {
     sandbox=$fields[index+2]
     allow_bypass=$fields[index+3]
     settings=$fields[index+4]
-    (( index += 5 ))
+    environment=$fields[index+5]
+    (( index += 6 ))
     [[ -x $command ]] || {
       sf_tools_fail "tool command is not executable: $command"
       return
@@ -108,6 +112,7 @@ sf_tools_load() {
     tool_sandbox[$name]=$sandbox
     tool_allow_bypass[$name]=$allow_bypass
     tool_settings[$name]=$settings
+    tool_environment[$name]=$environment
     [[ $sandbox != true ]] || sandboxed_tools=1
   done
   if (( harness_sandbox && sandboxed_tools )); then
@@ -120,6 +125,7 @@ sf_tools_load() {
   SF_TOOL_SANDBOX=( "${(@kv)tool_sandbox}" )
   SF_TOOL_ALLOW_BYPASS=( "${(@kv)tool_allow_bypass}" )
   SF_TOOL_SETTINGS=( "${(@kv)tool_settings}" )
+  SF_TOOL_ENVIRONMENT=( "${(@kv)tool_environment}" )
   SF_TOOL_READ_PATHS=( "${read_paths[@]}" )
   SF_TOOL_WRITE_PATHS=( "${write_paths[@]}" )
 }
@@ -168,7 +174,7 @@ sf_tool_execute() {
   local id=$1 name=$2 execution_input=$3 bypass=$4
   integer harness_sandbox=$5
   local decision=${6-} denial_reason=${7-} cwd=$8 max_capture=$9 fence=${10}
-  local config_dir=${11-} session_id=${12-}
+  local config_dir=${11-} session_id=${12-} runtime=${13-}
   local tool_home=${HOME:-$cwd}
   local sandboxed use_sandbox allow_bypass settings
   local state_dir captured bounded status_file temp native_temp command_path sandbox_log
@@ -204,6 +210,10 @@ sf_tool_execute() {
     sf_tools_fail 'tool session ID is not available'
     return
   }
+  sf_environment_prepare "$runtime" "$SF_TOOL_ENVIRONMENT[$name]" || {
+    sf_tools_fail "$SF_ENVIRONMENT_ERROR"
+    return
+  }
   sf_scratch_directory tooltemps "session-$session_id-tmp" || {
     sf_tools_fail 'cannot prepare tool temporary directory'
     return
@@ -228,7 +238,7 @@ sf_tool_execute() {
       native_temp=$REPLY
       sandbox_log="$state_dir/sandbox.log"
       command=(/usr/bin/env -i HOME="$tool_home" "${locale_env[@]}" PATH="$PATH" TERM="${TERM:-dumb}"
-        SHELLFISH_CONFIG_DIR="$config_dir"
+        "${SF_ENVIRONMENT_VALUES[@]}" SHELLFISH_CONFIG_DIR="$config_dir"
         SHELLFISH_MAX_CAPTURE_BYTES="$max_capture"
         "$fence" --monitor --fence-log-file "$sandbox_log" --settings "$settings"
         --expose-host-path "$command_path" --expose-host-path-rw "$temp")
@@ -243,7 +253,7 @@ sf_tool_execute() {
         -- /usr/bin/env TMPDIR="$temp" TMPPREFIX="$temp/zsh" "$command_path")
     else
       command=(/usr/bin/env -i HOME="$tool_home" "${locale_env[@]}" PATH="$PATH" TERM="${TERM:-dumb}"
-        SHELLFISH_CONFIG_DIR="$config_dir"
+        "${SF_ENVIRONMENT_VALUES[@]}" SHELLFISH_CONFIG_DIR="$config_dir"
         TMPDIR="$temp" TMPPREFIX="$temp/zsh"
         SHELLFISH_MAX_CAPTURE_BYTES="$max_capture" "$command_path")
     fi

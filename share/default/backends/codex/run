@@ -6,7 +6,7 @@ umask 077
 
 source "${0:A:h:h}/_backend.zsh"
 typeset -gr ENDPOINT=https://chatgpt.com/backend-api/codex/responses
-unset SHELLFISH_API_KEY SHELLFISH_RESPONSES_ACCOUNT_ID
+unset OPENAI_API_KEY SHELLFISH_RESPONSES_ACCOUNT_ID
 
 sf_backend_setup codex
 trap 'rm -rf -- "$SF_BACKEND_TEMP_DIR"' EXIT
@@ -66,7 +66,6 @@ done <<<"$credentials"
 [[ -n $access_token && -n $account_id ]] || \
   sf_backend_die "Codex ChatGPT credentials are unavailable; authenticate using Codex and retry"
 
-SHELLFISH_API_KEY=$access_token SHELLFISH_RESPONSES_ACCOUNT_ID=$account_id \
-  SHELLFISH_API_KEY_SOURCE='Codex CLI login' \
+OPENAI_API_KEY=$access_token SHELLFISH_RESPONSES_ACCOUNT_ID=$account_id \
   "${0:A:h:h}/openai-responses/run" <"$prepared_file"
 unset access_token account_id credentials

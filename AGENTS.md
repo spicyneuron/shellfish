@@ -18,7 +18,7 @@ This project is pre-release. Remove obsolete behavior rather than adding depreca
 - `tests/unit/boundary.zsh` enforces component dependencies. Update the boundary deliberately when ownership changes. Do not bypass it with alternate path or symbol access.
 - `share/default/` contains the bundled configuration and harness resources, including executable scripts. These are product behavior, not fixtures. `shellfish-server/` is a separate Go proxy and browser client over the same single-turn interface.
 - jq module paths are repository-rooted. Load them with `sf_jq` from `lib/jq.zsh`, which runs jq from the installation root; jq resolves a module name against the working directory, so it would otherwise load the caller's copy. Only core components use jq modules. Bundled scripts validate their own input with plain jq, so nothing outside the core depends on the repository layout.
-- Tools may be sandboxed. Hook scripts and backend adapters are trusted programs running with user permissions. Keep credentials out of hooks and tools. Only the backend adapter receives the scoped `SHELLFISH_API_KEY`.
+- Tools may be sandboxed. Hook scripts and backend adapters are trusted programs running with user permissions. Declare environment access per component and keep backend credentials out of hook and tool manifests.
 
 ## Working here
 

@@ -4,6 +4,7 @@ zmodload zsh/system
 
 (( $+functions[sf_jq] )) || source "$SF_ROOT/lib/jq.zsh"
 (( $+functions[sf_scratch_category] )) || source "$SF_ROOT/lib/scratch.zsh"
+(( $+functions[sf_environment_prepare] )) || source "$SF_ROOT/lib/environment.zsh"
 
 typeset -g SF_HOOK_ERROR=''
 typeset -g SF_HOOK_JSONL=0
@@ -84,15 +85,15 @@ sf_hooks_capture_one() {
   local script=$1 input=$2 directory=$3
   setopt local_options no_monitor
   integer max_capture=$4 argument_count=$5
-  shift 5
+  local environment_json=$6
+  shift 6
   local -a arguments=( "${(@)argv[1,argument_count]}" )
-  local -a environment=( env -u SHELLFISH_API_KEY -u OPENAI_API_KEY \
-    -u ANTHROPIC_API_KEY -u OPENROUTER_API_KEY )
+  local -a environment=( env )
   local context="$directory/current-context"
   local display="$directory/current-display"
   local display_pipe="$directory/current-display-pipe"
   local control="$directory/current-control"
-  local HOOK_SCRIPT_ROOT=${script:h} hook=$SF_HOOK_NAME api_key_env
+  local HOOK_SCRIPT_ROOT=${script:h} hook=$SF_HOOK_NAME name
   local chunk notice=''
   integer script_status display_fd display_bytes=0 notice_sent=0
   local LC_ALL=C
@@ -102,11 +103,14 @@ sf_hooks_capture_one() {
     return
   }
   export HOOK_SCRIPT_ROOT
-  api_key_env=$(jq -r '.backend.api_key_env' <<<"$SF_SESSION[runtime]") || {
-    sf_hooks_fail 'cannot inspect hook credential environment'
+  sf_environment_prepare "$SF_SESSION[runtime]" "$environment_json" || {
+    sf_hooks_fail "$SF_ENVIRONMENT_ERROR"
     return
   }
-  [[ -z $api_key_env ]] || environment+=( -u "$api_key_env" )
+  for name in $SF_ENVIRONMENT_NAMES; do
+    environment+=( -u "$name" )
+  done
+  environment+=( "${SF_ENVIRONMENT_VALUES[@]}" )
 
   rm -f -- "$context" "$display" "$display_pipe" "$control"
   mkfifo "$display_pipe" || {
@@ -175,14 +179,18 @@ sf_hooks_dispatch() {
   }
   local -a arguments=( "${(@)argv[1,argument_count]}" )
   shift argument_count
-  local -a scripts=( "$@" ) result results
-  local directory script script_name script_context script_display script_control hook=$SF_HOOK_NAME
+  local -a components=( "$@" ) result results
+  local directory script environment_json script_name script_context script_display script_control hook=$SF_HOOK_NAME
   local origin='' control='' preview
-  integer script_status context_size display_size control_size
+  integer script_status context_size display_size control_size component_index
   integer perform=1 halted=0
   setopt local_options no_err_exit no_bg_nice
 
   sf_hooks_reset
+  (( ${#components} % 2 == 0 )) || {
+    sf_hooks_fail 'cannot inspect configured hook components'
+    return
+  }
 
   sf_scratch_create hooks capture || {
     sf_hooks_fail 'cannot prepare hook captures'
@@ -195,9 +203,11 @@ sf_hooks_dispatch() {
       return
     }
 
-    for script in $scripts; do
+    for (( component_index = 1; component_index <= ${#components}; component_index += 2 )); do
+      script=$components[component_index]
+      environment_json=$components[component_index+1]
       sf_hooks_capture_one "$script" "$input" "$directory" "$max_capture" \
-        "$argument_count" "${arguments[@]}" || return
+        "$argument_count" "$environment_json" "${arguments[@]}" || return
       result=( "${reply[@]}" )
       script_status=$result[1]
 
@@ -374,12 +384,13 @@ sf_hooks_run_chain() {
   local session=$1 input=$2 hook=$3
   integer allow_control=$4 argument_count=$5
   shift 5
-  local -a fields scripts
+  local -a fields components
 
-  fields=( "${(@f)$(jq -er --arg hook "$hook" '
-    .harness.max_capture_bytes, (.harness[$hook][]?.command)
+  fields=( "${(@f)$(jq -erc --arg hook "$hook" '
+    .harness.max_capture_bytes,
+    (.harness[$hook][]? | .command, (.environment | tojson))
   ' <<<"$SF_SESSION[runtime]")}" ) || return 1
-  scripts=( "${(@)fields[2,-1]}" )
+  components=( "${(@)fields[2,-1]}" )
   local SHELLFISH_SESSION_ID=$SF_SESSION[id]
   local SHELLFISH_MODEL=$SF_SESSION[model]
   local PROJECT_DIR=$SF_SESSION[cwd]
@@ -387,7 +398,7 @@ sf_hooks_run_chain() {
   config_file=$(jq -r '.backend.env_file // ""' <<<"$SF_SESSION[runtime]") || return 1
   [[ -z $config_file ]] || SHELLFISH_CONFIG_DIR=${config_file:h}
   sf_hooks_invoke "$session" "$SF_SESSION[cwd]" "$input" "$fields[1]" \
-    "$allow_control" "$argument_count" "$hook" "$@" "${scripts[@]}"
+    "$allow_control" "$argument_count" "$hook" "$@" "${components[@]}"
 }
 
 sf_hooks_run() {

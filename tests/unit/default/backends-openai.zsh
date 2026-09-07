@@ -4,6 +4,7 @@ source "${0:A:h:h:h}/_helpers.zsh"
 
 sf_test_tmp backends-openai
 typeset run="$ROOT/share/default/backends/openai/run"
+typeset openrouter_run="$ROOT/share/default/backends/openrouter/run"
 typeset context_window="$ROOT/share/default/backends/openai/context_window"
 typeset responses_context_window="$ROOT/share/default/backends/openai-responses/context_window"
 typeset req="$tmp/request.json"
@@ -64,7 +65,12 @@ cat >"$req" <<'EOF'
 }
 EOF
 
-(builtin cd -- "$tmp" && SHELLFISH_API_KEY=test-key zsh -f "$run" <"$req" >"$res")
+(builtin cd -- "$tmp" && OPENAI_API_KEY=test-key zsh -f "$run" <"$req" >"$res")
+
+# OpenRouter owns its user-facing credential name and delegates the protocol.
+(builtin cd -- "$tmp" && OPENROUTER_API_KEY=router-key zsh -f "$openrouter_run" \
+  <"$req" >"$res")
+grep -Fx 'Authorization: Bearer router-key' "$BACKEND_TEST_HEADERS" >/dev/null
 
 jq -n -e -L "$ROOT" '
   include "lib/runtime/schema";
@@ -85,13 +91,13 @@ jq -n -e -L "$ROOT" '
 cat >"$BACKEND_TEST_RESPONSE" <<'EOF'
 {"data":[{"id":"other","context_length":1000},{"id":"gpt-4o","context_length":128000}]}
 EOF
-(builtin cd -- "$tmp" && SHELLFISH_API_KEY=test-key zsh -f "$context_window" <"$req" >"$res")
+(builtin cd -- "$tmp" && OPENAI_API_KEY=test-key zsh -f "$context_window" <"$req" >"$res")
 jq -e '. == {context_window:128000}' "$res" >/dev/null
 grep -qx 'https://api.openai.com/v1/models' "$BACKEND_TEST_ARGS"
 grep -qx '10' "$BACKEND_TEST_ARGS"
 
 jq '.transport.endpoint = "https://api.openai.com/v1/responses"' "$req" >"$tmp/responses-request.json"
-(builtin cd -- "$tmp" && SHELLFISH_API_KEY=test-key zsh -f "$responses_context_window" \
+(builtin cd -- "$tmp" && OPENAI_API_KEY=test-key zsh -f "$responses_context_window" \
   <"$tmp/responses-request.json" >"$res")
 jq -e '. == {context_window:128000}' "$res" >/dev/null
 grep -qx 'https://api.openai.com/v1/models' "$BACKEND_TEST_ARGS"
@@ -99,7 +105,7 @@ grep -qx 'https://api.openai.com/v1/models' "$BACKEND_TEST_ARGS"
 cat >"$BACKEND_TEST_RESPONSE" <<'EOF'
 {"data":[{"id":"gpt-4o"}]}
 EOF
-if SHELLFISH_API_KEY=test-key zsh -f "$context_window" <"$req" >"$res"; then
+if OPENAI_API_KEY=test-key zsh -f "$context_window" <"$req" >"$res"; then
   fail 'missing model context was reported as available'
 fi
 
@@ -108,7 +114,7 @@ printf "%s\n" \
   'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_cut","function":{"name":"shell","arguments":"{\"command\":"}}]},"finish_reason":"length"}]}' \
   'data: [DONE]' \
   "" >"$BACKEND_TEST_RESPONSE"
-SHELLFISH_API_KEY=test-key zsh -f "$run" <"$req" >"$res"
+OPENAI_API_KEY=test-key zsh -f "$run" <"$req" >"$res"
 jq -n -e -L "$ROOT" '
   include "lib/runtime/schema";
   include "lib/request";
@@ -122,7 +128,7 @@ printf "%s\n" \
   'data: [DONE]' \
   "" >"$BACKEND_TEST_RESPONSE"
 
-SHELLFISH_API_KEY=test-key zsh -f "$run" <"$req" >"$res"
+OPENAI_API_KEY=test-key zsh -f "$run" <"$req" >"$res"
 
 jq -n -e -L "$ROOT" '
   include "lib/runtime/schema";
@@ -168,7 +174,7 @@ cat >"$BACKEND_TEST_RESPONSE" <<'EOF'
 }
 EOF
 
-SHELLFISH_API_KEY=test-key zsh -f "$run" <"$req" >"$res"
+OPENAI_API_KEY=test-key zsh -f "$run" <"$req" >"$res"
 
 jq -n -e -L "$ROOT" '
   include "lib/runtime/schema";

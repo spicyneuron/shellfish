@@ -6,16 +6,16 @@ Backend adapters are trusted executables. They run with the user's permissions a
 
 ## Adapter layout
 
-An adapter directory contains an executable `run` and a `backend.json` manifest:
+An adapter directory contains an executable `run` and a `manifest.json` or `manifest.jsonc`:
 
 ```json
 {
   "endpoint": "https://api.example.com/v1/messages",
-  "api_key_env": "EXAMPLE_API_KEY"
+  "environment": ["EXAMPLE_API_KEY"]
 }
 ```
 
-`endpoint` supplies the default provider endpoint. `api_key_env` names the environment variable Shellfish resolves from exported variables or the adjacent `.env`; an empty name means the backend does not use this credential mechanism. Backend configuration may override the endpoint, credential name, and transport settings described in [`CONFIG.md`](CONFIG.md).
+`endpoint` supplies the default provider endpoint. `environment` lists the variables made available to the adapter. Backend configuration may override the endpoint, replace the environment list, and set the transport options described in [`CONFIG.md`](CONFIG.md).
 
 Component lookup rules for bundled, user-defined, relative, and absolute adapter references are also documented in [`CONFIG.md`](CONFIG.md#resolve-component-references).
 
@@ -23,7 +23,7 @@ Component lookup rules for bundled, user-defined, relative, and absolute adapter
 
 Exec starts `run` once per provider request. The adapter receives one canonical JSON request on stdin and writes one normalized JSON object per line to stdout. Stderr is not part of the normalized stream. If the adapter fails, exec sanitizes and truncates its stderr for the reported turn failure; successful stderr is discarded.
 
-The turn exposes the resolved credential only as `SHELLFISH_API_KEY` for the adapter process. `SHELLFISH_API_KEY_SOURCE` identifies where it was resolved. Adapters should copy credentials only as long as needed to prepare authentication and then unset them. An adapter with an empty `api_key_env` is responsible for any alternative authentication; the bundled Codex adapter reads an existing Codex CLI login.
+The adapter receives its selected environment variables under their declared names. Values come from exported variables or the configuration's adjacent `.env`, with exported values taking precedence. Adapters should copy credentials only as long as needed to prepare authentication and then unset them. An adapter with an empty environment list is responsible for any alternative authentication. The bundled Codex adapter reads an existing Codex CLI login.
 
 The input has this top-level shape:
 
@@ -47,7 +47,7 @@ The input has this top-level shape:
 
 ### Context window lookup
 
-An adapter directory may contain an executable `context_window` alongside `run`. Shellfish freezes its resolved path with the backend runtime. Before the first provider request, exec invokes it only when the profile has no `context_window` field. The script receives the same canonical request and scoped credential as `run`. A successful lookup writes exactly one object and exits zero:
+An adapter directory may contain an executable `context_window` alongside `run`. Shellfish freezes its resolved path with the backend runtime. Before the first provider request, exec invokes it only when the profile has no `context_window` field. The script receives the same canonical request and selected environment as `run`. A successful lookup writes exactly one object and exits zero:
 
 ```json
 {"context_window":200000}

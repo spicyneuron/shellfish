@@ -1,7 +1,7 @@
 #!/usr/bin/env zsh
 
 source "${0:A:h:h:h}/_helpers.zsh"
-sf_test_source libexec/config/runtime.zsh lib/credentials.zsh lib/session/main.zsh
+sf_test_source libexec/config/runtime.zsh lib/environment.zsh lib/session/main.zsh
 
 typeset config runtime tool_name jsonc
 sf_test_tmp runtime
@@ -506,34 +506,36 @@ jq '.harnesses.tooled.sandbox=false' "$tmp/config/tooled.jsonc" \
   jq -e '.harness.sandbox == false and .harness.fence == ""' <<<"$REPLY" >/dev/null
 )
 
-# Credentials are selected into memory, removed from the inherited environment,
-# and never added to the durable runtime.
+# Environment values remain external and exported values take precedence over .env.
 export OPENAI_API_KEY='from-environment'
-export ANTHROPIC_API_KEY='must-not-leak'
+export ANTHROPIC_API_KEY='other-component'
 sf_runtime_resolve_from_config "$config" work '' '{}'
-runtime=$REPLY
-sf_credentials_resolve OPENAI_API_KEY "$tmp/config/.env"
-[[ $REPLY == from-environment && $reply[1] == OPENAI_API_KEY ]]
-(( ! ${+OPENAI_API_KEY} && ! ${+ANTHROPIC_API_KEY} ))
+runtime=$(jq -c '.harness.stop=[{command:"/bin/hook",environment:["ANTHROPIC_API_KEY"]}]' \
+  <<<"$REPLY")
+sf_environment_prepare "$runtime" '["OPENAI_API_KEY"]'
+[[ ${(j: :)SF_ENVIRONMENT_NAMES} == 'ANTHROPIC_API_KEY OPENAI_API_KEY' ]]
+[[ ${(j: :)SF_ENVIRONMENT_VALUES} == 'OPENAI_API_KEY=from-environment' ]]
 [[ $runtime != *from-environment* ]]
-
-export SHELLFISH_API_KEY='' OPENAI_API_KEY='provider-value'
-sf_credentials_resolve OPENAI_API_KEY ''
-[[ -z $REPLY && $reply[1] == SHELLFISH_API_KEY ]]
-(( ! ${+SHELLFISH_API_KEY} && ! ${+OPENAI_API_KEY} ))
+unset OPENAI_API_KEY ANTHROPIC_API_KEY
 
 # The resolved .env path is asserted above. Use a non-secret fixture name here
 # because the bundled tool sandbox intentionally denies all .env access.
-typeset credential_file="$tmp/config/credentials.fixture"
-cat >"$credential_file" <<'ENV'
+typeset environment_file="$tmp/config/environment.fixture"
+cat >"$environment_file" <<'ENV'
 export OPENAI_API_KEY = "from-file"
-SHELLFISH_API_KEY=global-file
+ANTHROPIC_API_KEY=other-file
 ENV
-sf_credentials_resolve OPENAI_API_KEY "$credential_file"
-[[ $REPLY == global-file && $reply[1] == SHELLFISH_API_KEY ]]
+runtime=$(jq -c --arg path "$environment_file" '.backend.env_file=$path' <<<"$runtime")
+sf_environment_prepare "$runtime" '["OPENAI_API_KEY"]'
+[[ ${(j: :)SF_ENVIRONMENT_VALUES} == 'OPENAI_API_KEY=from-file' ]]
 [[ $runtime != *from-file* ]]
 
-print -r -- 'invalid line' >>"$credential_file"
-if sf_credentials_resolve OPENAI_API_KEY "$credential_file"; then
+export OPENAI_API_KEY=''
+sf_environment_prepare "$runtime" '["OPENAI_API_KEY"]'
+[[ ${(j: :)SF_ENVIRONMENT_VALUES} == 'OPENAI_API_KEY=' ]]
+unset OPENAI_API_KEY
+
+print -r -- 'invalid line' >>"$environment_file"
+if sf_environment_prepare "$runtime" '["OPENAI_API_KEY"]'; then
   fail 'invalid env file tail was accepted'
 fi

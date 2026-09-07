@@ -2,13 +2,25 @@
 
 source "${0:A:h}/_hooks.zsh"
 typeset -g SF_HOOK_NAME=test_hook
+typeset -gA SF_SESSION=(runtime '{"backend":{"environment":[],"env_file":""},"harness":{"tools":[]}}')
 
 typeset input="$tmp/input" empty="$tmp/empty" original_directory=$PWD
 print -rn -- '{"sample":"test"}' >"$input"
 : >"$empty"
 
+dispatch_hooks() {
+  local input=$1 max_capture=$2 allow_control=$3 argument_count=$4 script
+  shift 4
+  local -a components
+  for script in "$@"; do
+    components+=( "$script" '[]' )
+  done
+  sf_hooks_dispatch "$input" "$max_capture" "$allow_control" "$argument_count" \
+    "${components[@]}"
+}
+
 # An empty chain performs its default and produces no output.
-sf_hooks_dispatch "$empty" 64 0 0
+dispatch_hooks "$empty" 64 0 0
 (( reply[1] ))
 [[ -z $REPLY && -z $reply[3] && -z $reply[4] ]]
 
@@ -16,7 +28,7 @@ sf_hooks_dispatch "$empty" 64 0 0
 # trailing newline and NUL.
 make_script mixed 'cat; print -rn -- $'\''\0tail\n'\''; print -rn -u2 -- $'\''local\n'\''; exit 0'
 typeset mixed=$script
-sf_hooks_dispatch "$input" 64 0 0 "$mixed"
+dispatch_hooks "$input" 64 0 0 "$mixed"
 [[ -z $REPLY ]]
 (( ${#SF_HOOK_SCRIPT_RESULTS} == 5 ))
 [[ $SF_HOOK_SCRIPT_RESULTS[1] == "$mixed" && $SF_HOOK_SCRIPT_RESULTS[2] == 0 ]]
@@ -51,7 +63,7 @@ capture_result context_only 0 from-stdout
 typeset context_only=$script
 capture_result display_only 0 '' from-stderr
 typeset display_only=$script
-sf_hooks_dispatch "$empty" 64 0 0 "$context_only" "$display_only"
+dispatch_hooks "$empty" 64 0 0 "$context_only" "$display_only"
 (( ${#SF_HOOK_SCRIPT_RESULTS} == 10 ))
 [[ $SF_HOOK_SCRIPT_RESULTS[1] == "$context_only" && $SF_HOOK_SCRIPT_RESULTS[3] == from-stdout &&
    -z $SF_HOOK_SCRIPT_RESULTS[4] ]]
@@ -63,7 +75,7 @@ capture_result skip 10 first
 typeset skip=$script
 capture_result later 0 second
 typeset later=$script
-sf_hooks_dispatch "$empty" 64 0 0 "$skip" "$later"
+dispatch_hooks "$empty" 64 0 0 "$skip" "$later"
 (( ! reply[1] ))
 [[ -z $REPLY && $reply[3] == "$skip" ]]
 (( ${#SF_HOOK_SCRIPT_RESULTS} == 10 ))
@@ -77,14 +89,14 @@ capture_result control 11 before '' '{"action":"handoff","argv":["one","","line\
 typeset control=$script
 capture_result forbidden 0 forbidden
 typeset forbidden=$script
-sf_hooks_dispatch "$empty" 64 1 0 "$control" "$forbidden"
+dispatch_hooks "$empty" 64 1 0 "$control" "$forbidden"
 (( ! reply[1] ))
 [[ -z $REPLY && $reply[3] == "$control" ]]
 [[ $reply[4] == '{"action":"handoff","argv":["one","","line\\nbreak"]}' ]]
 
 capture_result halt 11 feedback
 typeset halt=$script
-sf_hooks_dispatch "$empty" 64 0 0 "$halt" "$forbidden"
+dispatch_hooks "$empty" 64 0 0 "$halt" "$forbidden"
 (( ! reply[1] ))
 [[ -z $REPLY && $reply[3] == "$halt" && -z $reply[4] ]]
 
@@ -92,10 +104,10 @@ sf_hooks_dispatch "$empty" 64 0 0 "$halt" "$forbidden"
 # it, and rejected when the caller disallows it.
 capture_result status_zero 0 '' '' '{"action":"test"}'
 typeset status_zero=$script
-sf_hooks_dispatch "$empty" 64 1 0 "$status_zero"
+dispatch_hooks "$empty" 64 1 0 "$status_zero"
 [[ $reply[4] == '{"action":"test"}' ]]
 
-if sf_hooks_dispatch "$empty" 64 0 0 "$control"; then
+if dispatch_hooks "$empty" 64 0 0 "$control"; then
   fail 'control for an unsupported hook was accepted'
 fi
 [[ $SF_HOOK_ERROR == "hook script returned unexpected control data: $control" ]]
@@ -103,14 +115,14 @@ fi
 # Invalid JSON is malformed and never reaches an adapter.
 capture_result malformed 11 '' '' argument
 typeset malformed=$script
-if sf_hooks_dispatch "$empty" 64 1 0 "$malformed"; then
+if dispatch_hooks "$empty" 64 1 0 "$malformed"; then
   fail 'malformed JSON control was accepted'
 fi
 [[ $SF_HOOK_ERROR == 'hook script returned malformed control data' && -z $REPLY && ${#reply} == 0 ]]
 
 capture_result multiple 11 '' '' '{}{}'
 typeset multiple=$script
-if sf_hooks_dispatch "$empty" 64 1 0 "$multiple"; then
+if dispatch_hooks "$empty" 64 1 0 "$multiple"; then
   fail 'multiple JSON control objects were accepted'
 fi
 [[ $SF_HOOK_ERROR == 'hook script returned malformed control data' ]]
@@ -118,7 +130,7 @@ fi
 # Unexpected exits discard all accumulated candidate output.
 capture_result failed 9 failed detail
 typeset failed=$script
-if sf_hooks_dispatch "$empty" 64 0 0 "$later" "$failed"; then
+if dispatch_hooks "$empty" 64 0 0 "$later" "$failed"; then
   fail 'unexpected script status was accepted'
 fi
 [[ $SF_HOOK_ERROR == "hook script failed with status 9: $failed: detail" ]]
@@ -130,12 +142,12 @@ capture_result forty 0 "${(l:40::0:)""}"
 typeset forty=$script
 capture_result thirty 0 "${(l:30::0:)""}"
 typeset thirty=$script
-sf_hooks_dispatch "$empty" 64 0 0 "$forty" "$thirty"
+dispatch_hooks "$empty" 64 0 0 "$forty" "$thirty"
 (( ${#SF_HOOK_SCRIPT_RESULTS} == 10 ))
 
 capture_result combined_overflow 0 "${(l:40::0:)""}" "${(l:25::0:)""}"
 typeset combined_overflow=$script
-if sf_hooks_dispatch "$empty" 64 0 0 "$combined_overflow"; then
+if dispatch_hooks "$empty" 64 0 0 "$combined_overflow"; then
   fail 'combined hook overflow was accepted'
 fi
 [[ $SF_HOOK_ERROR == "hook script output exceeds capture limit: $combined_overflow" ]]
@@ -151,14 +163,16 @@ mkdir "$working"
 working=${working:A}
 : >"$session"
 print -rn -- $'first\nsecond\n' >"$input"
-typeset -gA SF_SESSION=(id session-id model model-name cwd "$working")
+typeset -gA SF_SESSION=(id session-id model model-name cwd "$working" \
+  runtime '{"backend":{"environment":[],"env_file":""},"harness":{"tools":[]}}')
 typeset -g SHELLFISH_TURN_ID=1
 sf_hooks_turn_state_create
 state=$SHELLFISH_TURN_STATE
 [[ $(stat -f %Lp "$state") == 700 ]]
 print -n shared >"$state/marker"
-sf_hooks_invoke "$session" "$working" "$input" 1024 0 3 stop '' $'line\nbreak' "$invocation"
-typeset expected="3|stop||"$'line\nbreak|first\nsecond\n'"|$working|${session:A}|1024|$state|$SHELLFISH_SESSION_STATE|session-id|model-name|$working|${invocation:h}"
+sf_hooks_invoke "$session" "$working" "$input" 4096 0 3 stop '' $'line\nbreak' \
+  "$invocation" '[]' || fail "$SF_HOOK_ERROR"
+typeset expected="3|stop||"$'line\nbreak|first\nsecond\n'"|$working|${session:A}|4096|$state|$SHELLFISH_SESSION_STATE|session-id|model-name|$working|${invocation:h}"
 assert_equal "$expected" "$SF_HOOK_SCRIPT_RESULTS[3]"
 assert_equal 700 "$(stat -f %Lp "$SHELLFISH_SESSION_STATE")"
 [[ $(cat "$state/marker") == shared ]]
@@ -168,11 +182,11 @@ typeset hook_only=$script
 print -rn -- $'first\nsecond' >"$input"
 typeset -g SHELLFISH_TURN_ID=1
 typeset -g +x SHELLFISH_TURN_ID
-sf_hooks_invoke "$session" "$working" "$input" 512 0 1 stop "$hook_only"
+sf_hooks_invoke "$session" "$working" "$input" 512 0 1 stop "$hook_only" '[]'
 [[ $SF_HOOK_SCRIPT_RESULTS[3] == $'1|stop|first\nsecond' ]]
 [[ ${(t)SHELLFISH_TURN_ID} != *export* ]]
 : >"$empty"
-sf_hooks_invoke "$session" "$working" "$empty" 512 0 1 stop "$hook_only"
+sf_hooks_invoke "$session" "$working" "$empty" 512 0 1 stop "$hook_only" '[]'
 [[ $SF_HOOK_SCRIPT_RESULTS[3] == '1|stop|' ]]
 typeset session_state=$SHELLFISH_SESSION_STATE
 print -n persistent >"$session_state/marker"
@@ -183,6 +197,16 @@ sf_hooks_turn_state_create
 typeset next_state=$SHELLFISH_TURN_STATE
 [[ $SHELLFISH_SESSION_STATE == $session_state && $(<$session_state/marker) == persistent ]]
 [[ $next_state != $state && -d $next_state ]]
+
+# A hook receives its selected environment and not names selected by other components.
+SF_SESSION[runtime]='{"backend":{"environment":["BACKEND_SETTING"],"env_file":""},"harness":{"tools":[{"manifest":{"environment":["HOOK_SETTING","TOOL_SETTING"]}}]}}'
+export BACKEND_SETTING=backend HOOK_SETTING=hook TOOL_SETTING=tool
+make_script selected_environment 'print -rn -- "${BACKEND_SETTING-unset}|${HOOK_SETTING-unset}|${TOOL_SETTING-unset}"'
+typeset selected_environment=$script
+sf_hooks_invoke "$session" "$working" "$empty" 512 0 1 stop \
+  "$selected_environment" '["HOOK_SETTING"]' || fail "$SF_HOOK_ERROR"
+assert_equal 'unset|hook|unset' "$SF_HOOK_SCRIPT_RESULTS[3]"
+unset BACKEND_SETTING HOOK_SETTING TOOL_SETTING
 sf_hooks_turn_state_cleanup
 
 assert_no_hook_captures

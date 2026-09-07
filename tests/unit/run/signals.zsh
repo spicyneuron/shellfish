@@ -31,7 +31,8 @@ typeset entry="$ROOT/bin/shellfish"
 # Interrupting a session_start script creates no session. Reopening the
 # session does not retry the script.
 typeset interrupt_script="$tmp/interrupt-start" interrupt_marker="$tmp/interrupt-started"
-cat >"$interrupt_script" <<'ZSH'
+mkdir "$interrupt_script"
+cat >"$interrupt_script/run" <<'ZSH'
 #!/usr/bin/env zsh
 [[ $# == 1 && $1 == session_start ]] || exit 1
 print -r -- started >>"$INTERRUPT_MARKER"
@@ -39,7 +40,7 @@ trap 'exit 143' TERM
 zmodload zsh/zselect
 while true; do zselect -t 100; done
 ZSH
-chmod +x "$interrupt_script"
+chmod +x "$interrupt_script/run"
 typeset interrupt_config="$tmp/interrupt-start.jsonc"
 jq --arg script "$interrupt_script" '.harnesses.machine.session_start=[$script]' \
   "$config" >"$interrupt_config"

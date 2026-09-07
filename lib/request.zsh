@@ -4,6 +4,7 @@ setopt no_aliases no_bg_nice no_multios pipe_fail
 (( $+functions[sf_jq] )) || source "$SF_ROOT/lib/jq.zsh"
 (( $+functions[sf_scratch_file] )) || source "$SF_ROOT/lib/scratch.zsh"
 (( $+functions[sf_process_stop] )) || source "$SF_ROOT/lib/process.zsh"
+(( $+functions[sf_environment_prepare] )) || source "$SF_ROOT/lib/environment.zsh"
 
 typeset -gA SF_REQUEST=(
   assistant '' error '' error_file '' pid '' result '' status_file ''
@@ -28,8 +29,9 @@ sf_request_build() {
 }
 
 sf_request_run() {
-  local request=$1 command=$2 api_key=$3 api_key_source=$4 emit=${5:-:}
-  local error_file status_file response_pid event display kind=''
+  local request=$1 command=$2 runtime=$3 selected=$4 emit=${5:-:}
+  local error_file status_file response_pid event display kind='' name
+  local -a environment=( env )
   integer process_status=0 adapter_status=1 decoder_status=1 ended=0
 
   SF_REQUEST[assistant]=''
@@ -39,6 +41,14 @@ sf_request_run() {
   SF_REQUEST[pid]=''
   SF_REQUEST[result]=''
   SF_REQUEST[status_file]=''
+  sf_environment_prepare "$runtime" "$selected" || {
+    SF_REQUEST[error]=$SF_ENVIRONMENT_ERROR
+    return 1
+  }
+  for name in $SF_ENVIRONMENT_NAMES; do
+    environment+=( -u "$name" )
+  done
+  environment+=( "${SF_ENVIRONMENT_VALUES[@]}" )
   sf_scratch_file backends exec-error || {
     SF_REQUEST[error]='cannot prepare provider error capture'
     return 1
@@ -54,8 +64,7 @@ sf_request_run() {
   status_file=$REPLY
   SF_REQUEST[status_file]=$status_file
   coproc {
-    SHELLFISH_API_KEY="$api_key" SHELLFISH_API_KEY_SOURCE="$api_key_source" \
-      "$command" <<<"$request" 2>"$error_file" |
+    "${environment[@]}" "$command" <<<"$request" 2>"$error_file" |
       sf_jq -jn --unbuffered '
         include "lib/runtime/schema";
         include "lib/request";

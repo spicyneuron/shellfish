@@ -31,7 +31,7 @@ For a new session, repeated `--system TEXT` and `--system-file PATH` inputs repl
 - `fetch_url` uses Jina Reader to fetch an HTTP(S) website as Markdown.
 - `shell` runs one zsh command in the session working directory.
 
-Tools are shell scripts with JSON manifests. The default harness enables sandboxing with [`fence`](https://github.com/fencesandbox/fence). Its policies constrain project and network access and deny common secret files. When a tool fails and sandbox monitoring reports a blocked action, the durable tool result records that fact for both the model and client presentation. Supported tool calls can request a one-time bypass in interactive clients; headless execution denies requests that `permission_request` scripts do not decide.
+Tools are component directories with executable `run` files and JSON manifests. A manifest's optional `environment` array selects configuration values for that tool process. Tools otherwise start with a clean environment. The default harness enables sandboxing with [`fence`](https://github.com/fencesandbox/fence). Its policies constrain project and network access and deny common secret files. When a tool fails and sandbox monitoring reports a blocked action, the durable tool result records that fact for both the model and client presentation. Supported tool calls can request a one-time bypass in interactive clients. Headless execution denies requests that `permission_request` scripts do not decide.
 
 Sandboxing applies to opted-in tools. Hook scripts and backend adapters are trusted executables and run with the user's permissions. See [Configuration](CONFIG.md#sandbox-grants) for persistent and one-off path grants.
 

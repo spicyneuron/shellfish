@@ -36,7 +36,7 @@ Scripts in one turn share ephemeral coordination state, and scripts for one sess
 
 ## Configuring hooks
 
-Each hook is configured per harness in `shellfish.jsonc` as an ordered list of component references keyed by hook name. Every component must be an executable script. This example is an excerpt; the bundled `default` harness configures its full chain in [`share/default/shellfish.jsonc`](../share/default/shellfish.jsonc):
+Each hook is configured per harness in `shellfish.jsonc` as an ordered list of component references keyed by hook name. Every component is a directory containing an executable `run` and, optionally, a `manifest.json` or `manifest.jsonc`. This example is an excerpt. The bundled `default` harness configures its full chain in [`share/default/shellfish.jsonc`](../share/default/shellfish.jsonc):
 
 ```jsonc
 {
@@ -59,7 +59,15 @@ Reference resolution, most-specific first:
 2. `~/...` against `$HOME`;
 3. a relative path under `<config-dir>/hooks/<hook>/`, falling back to `share/default/hooks/<hook>/`.
 
-So `"project_environment"` resolves to the `project_environment` script at `share/default/hooks/session_start/project_environment` unless you shadow it with `~/.config/shellfish/hooks/session_start/project_environment`. Hook references must resolve to executable files. Resolved component paths are stored in the session header, so later configuration changes do not reinterpret an existing session.
+So `"project_environment"` resolves to the component at `share/default/hooks/session_start/project_environment` unless you shadow it with `~/.config/shellfish/hooks/session_start/project_environment`. Hook references must resolve to component directories with executable `run` files. Resolved command paths and manifest environments are stored in the session header, so later configuration changes do not reinterpret an existing session.
+
+A hook manifest contains only its selected environment names:
+
+```json
+{"environment":["HOOK_MODE"]}
+```
+
+The manifest is optional and defaults to an empty list. See [Configure component environments](CONFIG.md#configure-component-environments) for value resolution and isolation.
 
 ## The hook script contract
 
@@ -158,7 +166,7 @@ Trailing context, typically `stop` feedback, becomes a synthetic trailing user m
 
 ### `session_start`
 
-Runs once during session preparation. It does not run when an existing session is resumed or a turn restarts. The header and materialized system record are prepared in memory, and script input is constructed from that state and its resolved runtime. The session path does not exist until the complete initial prefix is written after all scripts succeed. stdin is empty and `$1` is `session_start`. There are no further arguments. The script receives `SHELLFISH_SESSION_STATE`, but it does not receive `SHELLFISH_TURN_ID`, `SHELLFISH_TURN_STATE`, or credentials. The API key is scoped to the backend adapter only.
+Runs once during session preparation. It does not run when an existing session is resumed or a turn restarts. The header and materialized system record are prepared in memory, and script input is constructed from that state and its resolved runtime. The session path does not exist until the complete initial prefix is written after all scripts succeed. stdin is empty and `$1` is `session_start`. There are no further arguments. The script receives `SHELLFISH_SESSION_STATE`, but it does not receive `SHELLFISH_TURN_ID` or `SHELLFISH_TURN_STATE`. Of the environment names declared by configured components, it receives only those selected by its own manifest.
 
 - **stdout** becomes durable `session_start` context in the initial session prefix. Each script's nonempty stdout is a separately attributed record.
 - **stderr** is shown and discarded.
@@ -308,7 +316,7 @@ exit 10
 - Dispatch is sequential and preserves configured order. A failed chain does not commit partial output. Candidate context is usable only after the whole chain succeeds.
 - Captures are private, bounded, and cleaned on every path.
 - Scripts have no independent timeout. They must terminate themselves. Cancelling the enclosing operation terminates the active script.
-- Scripts inherit the process environment, but Shellfish removes built-in provider credentials and the configured backend credential before invocation. The turn scopes that credential to the backend as `SHELLFISH_API_KEY`. The variables documented above are the Shellfish-specific hook script guarantees.
+- Scripts inherit the ordinary process environment. Shellfish removes every environment name declared by any component in the frozen runtime, then restores only the names selected by the invoked hook's manifest. The variables documented above are the other Shellfish-specific hook script guarantees.
 - Session state may be shared by concurrent sessions or processes using the same session ID. Scripts must coordinate access when their data requires it.
 - Hook scripts are not transformation middleware. Tool-use scripts cannot modify tool input or result content. They observe and gate. Coordinate policy through turn or session state, not by overloading stdout.
 - Adding a hook is an adapter change, not a dispatcher change. The dispatcher implements the status table, channel limits, and JSON framing. Each hook owns its control fields, default action, and the consequence of skipping it.

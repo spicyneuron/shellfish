@@ -6,7 +6,7 @@ umask 077
 
 source "${0:A:h:h}/_backend.zsh"
 typeset -gr ENDPOINT=https://chatgpt.com/backend-api/codex/responses
-unset SHELLFISH_API_KEY SHELLFISH_API_KEY_SOURCE
+unset OPENAI_API_KEY
 
 sf_backend_setup codex
 trap 'rm -rf -- "$SF_BACKEND_TEMP_DIR"' EXIT

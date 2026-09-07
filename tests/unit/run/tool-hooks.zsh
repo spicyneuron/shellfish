@@ -43,7 +43,8 @@ print -rn -u2 -- "post-local-$call_id"
 ZSH
 chmod +x "$post_observe"
 SF_TEST_RUNTIME=$(jq -c --arg pre "$pre_observe" --arg post "$post_observe" '
-  .harness.pre_tool_use=[$pre] | .harness.post_tool_use=[$post] |
+  .harness.pre_tool_use=[{command:$pre,environment:[]}] |
+  .harness.post_tool_use=[{command:$post,environment:[]}] |
   .harness.sandbox=false
 ' <<<"$SF_TEST_RUNTIME")
 typeset observe_session="$tmp/tool-observe.jsonl"
@@ -110,7 +111,8 @@ ZSH
 chmod +x "$post_log"
 SF_TEST_RUNTIME=$(jq -c --arg pre "$pre_deny" --arg later "$pre_later" \
   --arg never "$pre_never" --arg post "$post_log" '
-  .harness.pre_tool_use=[$pre,$later,$never] | .harness.post_tool_use=[$post]
+  .harness.pre_tool_use=([$pre,$later,$never] | map({command:.,environment:[]})) |
+  .harness.post_tool_use=[{command:$post,environment:[]}]
 ' <<<"$SF_TEST_RUNTIME")
 typeset deny_session="$tmp/tool-deny.jsonl"
 sf_test_session "$deny_session"

@@ -1,0 +1,4 @@
+{
+  "endpoint": "https://openrouter.ai/api/v1/chat/completions",
+  "environment": ["OPENROUTER_API_KEY"]
+}

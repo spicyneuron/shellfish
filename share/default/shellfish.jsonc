@@ -33,11 +33,7 @@
     "codex": {"adapter": "codex"},
     "openai": {"adapter": "openai"},
     "openai-responses": {"adapter": "openai-responses"},
-    "openrouter": {
-      "adapter": "openai",
-      "endpoint": "https://openrouter.ai/api/v1/chat/completions",
-      "environment": ["OPENROUTER_API_KEY"]
-    }
+    "openrouter": {"adapter": "openrouter"}
   },
 
   // Harnesses wrap the shared turn loop with context, capabilities, sandboxing,

@@ -55,7 +55,7 @@ A custom OpenAI-compatible service can reuse the built-in adapter:
     "work": {
       "adapter": "openai",
       "endpoint": "https://example.test/v1/chat/completions",
-      "api_key_env": "WORK_API_KEY"
+      "environment": ["OPENAI_API_KEY"]
     }
   },
   "profiles": {
@@ -69,6 +69,16 @@ A custom OpenAI-compatible service can reuse the built-in adapter:
 ```
 
 Put credentials in the environment or in `.env` beside `shellfish.jsonc`. Exported values take precedence.
+
+## Configure component environments
+
+Backend, tool, and hook manifests declare the environment variable names their scripts may receive. A backend configuration can replace its adapter manifest's `environment` array when that adapter supports different inputs. Tool and hook environments come from their component manifests.
+
+Shellfish resolves each selected name first from an exported variable and then from `.env` beside `shellfish.jsonc`. An exported empty value still takes precedence. Missing values remain unset. Names and the resolved `.env` path are frozen in the session runtime, while values remain external and are resolved for each invocation.
+
+Each backend and hook inherits the ordinary process environment except that Shellfish removes every name declared by any component in the frozen runtime, then restores only the names selected by that component. Tools start with a clean environment and receive only their selected values plus Shellfish's fixed tool execution environment. This prevents one configured component from receiving another component's declared settings.
+
+Environment names must be unique within an array and match `[A-Za-z_][A-Za-z0-9_]*`. Names beginning with `_SHELLFISH_` are reserved.
 
 ## Customize a harness
 
@@ -96,7 +106,7 @@ Harnesses choose tools, hooks, sandbox policy, and turn limits. They do not have
 }
 ```
 
-This example reads its system component from `system/review.md` under the configuration directory. Hook names and behavior are defined in [`HOOKS.md`](HOOKS.md). Tool directories contain an executable `run` and a `tool.json` manifest. Sandboxed tools also contain `fence.jsonc`. Tool processes receive `SHELLFISH_CONFIG_DIR`, the directory containing the resolved config file or its prospective default location.
+This example reads its system component from `system/review.md` under the configuration directory. Hook names and behavior are defined in [`HOOKS.md`](HOOKS.md). Tool directories contain an executable `run` and a `manifest.json` or `manifest.jsonc`. Sandboxed tools also contain `fence.jsonc`. Tool processes receive `SHELLFISH_CONFIG_DIR`, the directory containing the resolved config file or its prospective default location.
 
 ## Resolve component references
 

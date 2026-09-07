@@ -20,7 +20,7 @@ sf_send_request_abort() {
 
 sf_send_request_main() {
   local requested_session='' selected request runtime backend_projection backend_command
-  local api_key api_key_source
+  local backend_environment
   local -a backend_fields
   integer session_explicit=0
 
@@ -58,7 +58,6 @@ sf_send_request_main() {
   }
 
   source "$SF_ROOT/lib/jq.zsh"
-  source "$SF_ROOT/lib/credentials.zsh"
   source "$SF_ROOT/lib/session/main.zsh"
   source "$SF_ROOT/lib/request.zsh"
   sf_session_select_path "$requested_session" || {
@@ -90,29 +89,23 @@ sf_send_request_main() {
   backend_projection=$(jq -jrn --argjson runtime "$runtime" '
     def field: ., "\u0000";
     ($runtime.backend.command | field),
-    ($runtime.backend.api_key_env | field),
-    ($runtime.backend.env_file | field),
+    ($runtime.backend.environment | tojson | field),
     ("ok" | field)
   ' 2>/dev/null) || {
     sf_die 'cannot inspect frozen runtime'
     return 1
   }
   backend_fields=( "${(@0)${backend_projection%$'\0'}}" )
-  (( ${#backend_fields} == 4 )) && [[ $backend_fields[4] == ok ]] || {
+  (( ${#backend_fields} == 3 )) && [[ $backend_fields[3] == ok ]] || {
     sf_die 'cannot inspect frozen runtime'
     return 1
   }
   backend_command=$backend_fields[1]
-  sf_credentials_resolve "$backend_fields[2]" "$backend_fields[3]" || {
-    sf_die "$SF_CREDENTIALS_ERROR"
-    return 1
-  }
-  api_key=$REPLY
-  api_key_source=$reply[1]
+  backend_environment=$backend_fields[2]
   trap 'sf_send_request_abort 130' INT
   trap 'sf_send_request_abort 129' HUP
   trap 'sf_send_request_abort 143' TERM
-  sf_request_run "$request" "$backend_command" "$api_key" "$api_key_source" || {
+  sf_request_run "$request" "$backend_command" "$runtime" "$backend_environment" || {
     trap - INT HUP TERM
     sf_die "$SF_REQUEST[error]"
     return 1

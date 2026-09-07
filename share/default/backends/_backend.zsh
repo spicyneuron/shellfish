@@ -140,9 +140,9 @@ sf_backend_finish() {
     ' <$SF_BACKEND_RESPONSE_FILE 2>/dev/null) || message=''
     if [[ $http_status == 401 || $http_status == 403 ]]; then
       if [[ -s $SF_BACKEND_HEADERS_FILE ]]; then
-        sf_backend_die "credentials rejected (HTTP $http_status)${SHELLFISH_API_KEY_SOURCE:+ for $SHELLFISH_API_KEY_SOURCE}${message:+: $message}"
+        sf_backend_die "credentials rejected (HTTP $http_status)${message:+: $message}"
       fi
-      sf_backend_die "credentials rejected (HTTP $http_status); no API key was supplied${SHELLFISH_API_KEY_SOURCE:+ (set $SHELLFISH_API_KEY_SOURCE)}${message:+: $message}"
+      sf_backend_die "credentials rejected (HTTP $http_status); no API key was supplied${message:+: $message}"
     fi
     sf_backend_die "HTTP $http_status${message:+: $message}"
   elif (( statuses[3] != 0 )); then

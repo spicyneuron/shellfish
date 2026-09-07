@@ -4,7 +4,7 @@ source "${0:A:h:h:h}/_helpers.zsh"
 
 # A canonical exec stream covering each event family decodes without error.
 cat <<'STREAM' |
-{"type":"session","format_version":1,"cwd":"/tmp","created":"2026-01-01T00:00:00Z","profile":{"request":{"model":"test"}},"backend":{"name":"test","command":"/usr/bin/false","endpoint":"https://example.invalid","api_key_env":"","env_file":"","insecure_tls":false,"http_timeout":30,"http_stall":10},"harness":{"sandbox_read_paths":[],"sandbox_write_paths":[],"fence":"","tools":[],"sandbox":false,"max_requests_per_turn":8,"max_tool_calls_per_request":16,"max_capture_bytes":65536}}
+{"type":"session","format_version":1,"cwd":"/tmp","created":"2026-01-01T00:00:00Z","profile":{"request":{"model":"test"}},"backend":{"name":"test","command":"/usr/bin/false","endpoint":"https://example.invalid","environment":[],"env_file":"","insecure_tls":false,"http_timeout":30,"http_stall":10},"harness":{"sandbox_read_paths":[],"sandbox_write_paths":[],"fence":"","tools":[],"sandbox":false,"max_requests_per_turn":8,"max_tool_calls_per_request":16,"max_capture_bytes":65536}}
 {"type":"system","content":"instructions"}
 {"type":"_backend_request_start"}
 {"type":"_assistant_reasoning_delta","text":"why","seq":0}
@@ -58,7 +58,7 @@ order=$(jq -cn --arg text 'provider request limit reached: 50' \
 assert_equal 'notice,error,Turn failed,provider request limit reached: 50,closed,batch_ok' "$order"
 
 order=$(print -r -- \
-    '{"type":"_notice","level":"info","title":"/tmp/hooks/check","source":"stop","text":"working","complete":false}' |
+    '{"type":"_notice","level":"info","title":"/tmp/hooks/check/run","source":"stop","text":"working","complete":false}' |
   jq -jRs -L "$ROOT" --argjson runtime null \
     -f "$ROOT/libexec/tui/event-decode.jq" |
   tr '\0' '\n' | sed '/^$/d' | paste -sd, -)
@@ -77,13 +77,17 @@ order=$(print -r -- '{"type":"turn_error","message":"Hook failed.\ninvalid outpu
 assert_equal 'notice,error,Hook failed.,invalid output,closed,end,batch_ok' "$order"
 
 typeset invalid
-typeset preview='{"type":"_notice","level":"info","source":"session_start","title":"/tmp/hook","text":"done","complete":true,"context":{"type":"context","hook":"session_start","script":"hook","content":"startup context"}}'
+typeset preview='{"type":"_notice","level":"info","source":"session_start","title":"/tmp/hook/run","text":"done","complete":true,"context":{"type":"context","hook":"session_start","script":"hook","content":"startup context"}}'
 order=$(print -r -- "$preview" |
   jq -jRs -L "$ROOT" --argjson runtime null -f "$ROOT/libexec/tui/event-decode.jq" |
   tr '\0' '\n' | sed '/^$/d' | paste -sd, -)
 assert_equal 'context,hook,session_start,startup context,batch_ok' "$order"
+order=$(jq -c 'del(.context)' <<<"$preview" |
+  jq -jRs -L "$ROOT" --argjson runtime null -f "$ROOT/libexec/tui/event-decode.jq" |
+  tr '\0' '\n' | sed '/^$/d' | paste -sd, -)
+assert_equal 'notice,notice,hook,session_start,done,closed,batch_ok' "$order"
 for invalid in '.complete=false' '.level="error"' '.context=null' \
-    '.context.hook="stop"' '.context.script="other"'; do
+    '.context.hook="stop"' '.context.script="other"' '.context.script="run"'; do
   if jq -c "$invalid" <<<"$preview" |
       jq -jRs -L "$ROOT" --argjson runtime null \
         -f "$ROOT/libexec/tui/event-decode.jq" >/dev/null 2>&1; then

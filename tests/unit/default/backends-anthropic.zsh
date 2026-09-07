@@ -53,7 +53,7 @@ assert_usage() {
 cat >"$BACKEND_TEST_RESPONSE" <<'EOF'
 {"content":[{"type":"text","text":"ok"}],"stop_reason":"end_turn","usage":{"input_tokens":10,"cache_creation_input_tokens":5,"cache_read_input_tokens":85,"output_tokens":7,"output_tokens_details":{"thinking_tokens":3}}}
 EOF
-(builtin cd -- "$tmp" && SHELLFISH_API_KEY=test zsh -f "$run" <"$req" >"$res")
+(builtin cd -- "$tmp" && ANTHROPIC_API_KEY=test zsh -f "$run" <"$req" >"$res")
 assert_usage
 
 # Streaming usage arrives in separate start and delta events.
@@ -65,7 +65,7 @@ data: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"outpu
 data: {"type":"message_stop"}
 
 EOF
-SHELLFISH_API_KEY=test zsh -f "$run" <"$req" >"$res"
+ANTHROPIC_API_KEY=test zsh -f "$run" <"$req" >"$res"
 assert_usage
 
 # Streaming thinking payloads and tool input retain content-block indexes.
@@ -82,7 +82,7 @@ data: {"type":"message_delta","delta":{"stop_reason":"tool_use"},"usage":{"outpu
 data: {"type":"message_stop"}
 
 EOF
-SHELLFISH_API_KEY=test zsh -f "$run" <"$req" >"$res"
+ANTHROPIC_API_KEY=test zsh -f "$run" <"$req" >"$res"
 jq -e -s -L "$ROOT" '
   include "lib/runtime/schema";
   include "lib/request";
@@ -96,13 +96,13 @@ jq -e -s -L "$ROOT" '
 cat >"$BACKEND_TEST_RESPONSE" <<'EOF'
 {"data":[{"id":"other","max_input_tokens":1000},{"id":"claude-test","max_input_tokens":200000,"max_tokens":64000}]}
 EOF
-(builtin cd -- "$tmp" && SHELLFISH_API_KEY=test zsh -f "$context_window" <"$req" >"$res")
+(builtin cd -- "$tmp" && ANTHROPIC_API_KEY=test zsh -f "$context_window" <"$req" >"$res")
 jq -e '. == {context_window:200000}' "$res" >/dev/null
 grep -qx 'https://api.anthropic.com/v1/models?limit=1000' "$BACKEND_TEST_ARGS"
 
 cat >"$BACKEND_TEST_RESPONSE" <<'EOF'
 {"data":[]}
 EOF
-if SHELLFISH_API_KEY=test zsh -f "$context_window" <"$req" >"$res"; then
+if ANTHROPIC_API_KEY=test zsh -f "$context_window" <"$req" >"$res"; then
   fail 'unknown model context was reported as available'
 fi

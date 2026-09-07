@@ -15,9 +15,10 @@ SF_TEST_RUNTIME=$(jq -cn --arg script "$start_script" --arg second "$start_secon
   {
     profile:{request:{model:"test"}},
     backend:{name:"test",command:"/usr/bin/false",endpoint:"https://example.invalid",
-      api_key_env:"CUSTOM_API_KEY",env_file:$env_file,insecure_tls:false,http_timeout:1,http_stall:1},
+      environment:["CUSTOM_API_KEY"],env_file:$env_file,insecure_tls:false,http_timeout:1,http_stall:1},
     harness:{sandbox_read_paths:[],sandbox_write_paths:[],fence:"",tools:[],sandbox:false,max_requests_per_turn:1,
-      max_tool_calls_per_request:1,max_capture_bytes:512,session_start:[$script,$second]}
+      max_tool_calls_per_request:1,max_capture_bytes:512,
+      session_start:([$script,$second] | map({command:.,environment:[]}))}
   }
 ')
 export OPENAI_API_KEY=standard-secret CUSTOM_API_KEY=custom-secret
@@ -39,8 +40,11 @@ jq -e -s '
 # CLI entry runs session_start scripts once and does not rerun them for an existing session.
 typeset resume_session="$tmp/resume-session.jsonl"
 typeset resume_marker="$tmp/resume-marker" resume_config="$tmp/resume-shellfish.jsonc"
-make_script resume 'print -r -- run >>"$RESUME_MARKER"'
-typeset resume_script=$script
+typeset resume_hook="$tmp/resume"
+mkdir "$resume_hook"
+print -r -- '#!/usr/bin/env zsh' >"$resume_hook/run"
+print -r -- 'print -r -- run >>"$RESUME_MARKER"' >>"$resume_hook/run"
+chmod +x "$resume_hook/run"
 cat >"$resume_config" <<EOF
 {
   "default_profile": "test",
@@ -48,7 +52,7 @@ cat >"$resume_config" <<EOF
   "harnesses": {
     "test": {
       "tools": [], "sandbox": false,
-      "session_start": ["$resume_script"], "user_prompt_submit": [],
+      "session_start": ["$resume_hook"], "user_prompt_submit": [],
       "permission_request": [], "pre_tool_use": [], "post_tool_use": [], "stop": [],
       "max_requests_per_turn": 1, "max_tool_calls_per_request": 1,
       "max_capture_bytes": 512
@@ -93,7 +97,7 @@ fi
 typeset control_session="$tmp/control-session.jsonl"
 make_script start_control 'print -rn -u3 -- $'\''again\0'\''; exit 11'
 SF_TEST_RUNTIME=$(jq -c --arg script "$script" \
-  '.harness.session_start = [$script]' <<<"$SF_TEST_RUNTIME")
+  '.harness.session_start = [{command:$script,environment:[]}]' <<<"$SF_TEST_RUNTIME")
 SF_SESSION_PATH=$control_session
 sf_session_prepare "$SF_TEST_RUNTIME"
 if sf_hooks_session_start "$control_session"; then
@@ -129,7 +133,7 @@ esac
 ZSH
 chmod +x "$permission_script"
 SF_TEST_RUNTIME=$(jq -c --arg script "$permission_script" '
-  .harness.permission_request=[$script] | del(.harness.session_start)
+  .harness.permission_request=[{command:$script,environment:[]}] | del(.harness.session_start)
 ' <<<"$SF_TEST_RUNTIME")
 sf_test_session "$permission_session"
 sf_session_begin_turn "$permission_session"
@@ -178,7 +182,7 @@ typeset permission_chain_decide=$script
 typeset permission_runtime=$SF_TEST_RUNTIME
 SF_TEST_RUNTIME=$(jq -c \
   --arg skip "$permission_chain_skip" --arg decide "$permission_chain_decide" \
-  '.harness.permission_request=[$skip,$decide]' <<<"$SF_TEST_RUNTIME")
+  '.harness.permission_request=([$skip,$decide] | map({command:.,environment:[]}))' <<<"$SF_TEST_RUNTIME")
 sf_test_session "$permission_chain_session"
 sf_session_begin_turn "$permission_chain_session"
 sf_hooks_turn_state_create
@@ -212,7 +216,7 @@ sf_hooks_turn_state_cleanup
 make_script stop '[[ $# == 2 && $1 == stop && $2 == "$STOP_ATTEMPT" && "$(cat)" == "$STOP_INPUT" ]] || exit 1; print -rn -u2 -- local; [[ -z $STOP_STDOUT ]] || print -rn -- feedback; [[ -z $STOP_SKIP ]] || exit 10'
 typeset stop_script=$script
 SF_TEST_RUNTIME=$(jq -c --arg script "$stop_script" \
-  '.harness.stop=[$script]' <<<"$SF_TEST_RUNTIME")
+  '.harness.stop=[{command:$script,environment:[]}]' <<<"$SF_TEST_RUNTIME")
 typeset stop_session="$tmp/stop-session.jsonl"
 sf_test_session "$stop_session"
 sf_session_begin_turn "$stop_session"

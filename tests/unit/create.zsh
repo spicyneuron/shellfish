@@ -94,20 +94,21 @@ zsh -f "$entry" create --session-out "$tmp/a.jsonl" --session-out "$tmp/b.jsonl"
 # A failing session_start script leaves no transcript and reports its detail.
 # Session state stays a disposable cache even when creation fails.
 typeset hook="$tmp/failing-hook" marker="$tmp/state-marker" hook_config="$tmp/hook.jsonc"
-cat >"$hook" <<'ZSH'
+mkdir "$hook"
+cat >"$hook/run" <<'ZSH'
 #!/usr/bin/env zsh
 [[ $1 == session_start && -d $SHELLFISH_SESSION_STATE && -z ${SHELLFISH_TURN_STATE-} ]] || exit 2
 print -r -- "$SHELLFISH_SESSION_STATE" >"$SF_TEST_STATE_MARKER"
 print -u2 -r -- 'startup detail'
 exit 9
 ZSH
-chmod +x "$hook"
+chmod +x "$hook/run"
 jq --arg hook "$hook" '.harnesses.machine.session_start=[$hook]' "$config" >"$hook_config"
 typeset failed="$tmp/failed.jsonl" hook_error="$tmp/hook-error"
 SF_TEST_STATE_MARKER="$marker" zsh -f "$entry" create --session-out "$failed" \
   --config "$hook_config" >/dev/null 2>"$hook_error" &&
   fail 'a failing session_start script created a session'
-[[ $(<"$hook_error") == *"hook script failed with status 9: ${hook:A}: startup detail"* ]] ||
+[[ $(<"$hook_error") == *"hook script failed with status 9: ${hook:A}/run: startup detail"* ]] ||
   fail 'create hid the session_start failure'
 [[ ! -e $failed ]] || fail 'create left a transcript behind'
 [[ -d $(<"$marker") && $(<"$marker") == */sessions/failed ]] ||
@@ -171,7 +172,8 @@ zsh -f "$entry" create --session-out "$missing" --config "$missing_config" >/dev
 # Startup previews reach hooks' observers before the initial prefix is written.
 typeset events="$tmp/events.jsonl" streamed="$tmp/streamed.jsonl"
 typeset first="$tmp/first-hook" silent="$tmp/silent-hook" stream_config="$tmp/stream.jsonc"
-cat >"$first" <<'ZSH'
+mkdir "$first" "$silent"
+cat >"$first/run" <<'ZSH'
 #!/usr/bin/env zsh
 [[ ! -e $SHELLFISH_SESSION ]] || exit 2
 jq -se 'length == 1 and .[0].type == "_session_prepare"' \
@@ -180,19 +182,19 @@ print -r -- 'startup context'
 printf '%*s' "${SF_TEST_CONTEXT_BYTES:-0}" ''
 print -u2 -r -- 'startup display'
 ZSH
-cat >"$silent" <<'ZSH'
+cat >"$silent/run" <<'ZSH'
 #!/usr/bin/env zsh
 [[ ! -e $SHELLFISH_SESSION ]] || exit 2
 jq -se '.[-1].complete == true and .[-1].context.type == "context"' \
   "$SF_TEST_EVENTS" >/dev/null || exit 3
 ZSH
-chmod +x "$first" "$silent"
+chmod +x "$first/run" "$silent/run"
 jq --arg first "$first" --arg silent "$silent" \
   '.harnesses.machine.session_start=[$first,$silent]' "$config" >"$stream_config"
 SF_TEST_EVENTS="$events" zsh -f "$entry" create --jsonl --config "$stream_config" \
   --session-out "$streamed" >"$events" 2>"$hook_error" || fail 'streamed creation failed'
 [[ ! -s $hook_error ]] || fail 'streamed display leaked to stderr'
-jq -se --arg path "$streamed" --arg first "${first:A}" \
+jq -se --arg path "$streamed" --arg first "${first:A}/run" \
   --slurpfile session "$streamed" '
   map(.type) == ["_session_prepare","_notice","_notice","_session_created"] and
   .[0] == {type:"_session_prepare",path:$path,records:$session[:2]} and
@@ -243,7 +245,8 @@ jq -se 'any(.context.content == "startup context\n") and
 typeset slow="$tmp/slow-hook" slow_config="$tmp/slow.jsonc" cancelled="$tmp/cancelled.jsonl"
 export SLOW_MARKER="$tmp/slow-active" SLOW_RELEASE="$tmp/slow-release"
 export SLOW_EXIT_MARKER="$tmp/slow-exit"
-cat >"$slow" <<'ZSH'
+mkdir "$slow"
+cat >"$slow/run" <<'ZSH'
 #!/usr/bin/env zsh
 : >"$SLOW_MARKER"
 # Released rather than timed: a sleeping script looks stopped either way.
@@ -252,7 +255,7 @@ while [[ ! -e $SLOW_RELEASE ]]; do
 done
 : >"$SLOW_EXIT_MARKER"
 ZSH
-chmod +x "$slow"
+chmod +x "$slow/run"
 jq --arg slow "$slow" '.harnesses.machine.session_start=[$slow]' "$config" >"$slow_config"
 zsh -f "$entry" create --jsonl --config "$slow_config" --session-out "$cancelled" \
   >"$events" 2>"$hook_error" &
