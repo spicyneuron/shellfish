@@ -4,23 +4,21 @@ emulate -R zsh
 setopt err_exit no_aliases no_multios pipe_fail
 umask 077
 
-typeset -gr ROOT=${0:A:h:h:h:h:h}
 typeset -gr ENDPOINT=https://chatgpt.com/backend-api/codex/responses
 unset SHELLFISH_API_KEY SHELLFISH_API_KEY_SOURCE
 
 typeset model catalog context
-model=$(builtin cd -- "$ROOT" && jq -L "$ROOT" -er --arg endpoint "$ENDPOINT" '
-  include "lib/runtime/schema";
-  select(canonical_request and .transport.endpoint == $endpoint and
-    .transport.insecure_tls == false) |
+model=$(jq -er --arg endpoint "$ENDPOINT" '
+  select((.options.request.model | type == "string" and . != "") and
+    .transport.endpoint == $endpoint and .transport.insecure_tls == false) |
   .options.request.model
 ') || exit 10
 
 command -v codex >/dev/null 2>&1 || exit 10
 catalog=$(codex debug models --bundled 2>/dev/null) || exit 10
-context=$(builtin cd -- "$ROOT" && jq -L "$ROOT" -ce --arg model "$model" '
-  include "lib/runtime/schema";
+context=$(jq -ce --arg model "$model" '
   first(.models[]? | select(.slug == $model) | .context_window) |
-  select(positive_integer) | {context_window:.}
+  select(type == "number" and floor == . and . >= 1 and . <= 2147483647) |
+  {context_window:.}
 ' <<<"$catalog" 2>/dev/null) || exit 10
 print -r -- "$context"

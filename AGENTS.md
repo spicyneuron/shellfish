@@ -17,7 +17,7 @@ This project is pre-release. Remove obsolete behavior rather than adding depreca
 - `bin/shellfish` dispatches public commands. Each top-level directory under `libexec/` is an independent program with private implementation. Reusable cross-component code belongs in `lib/`. Components compose through durable sessions and public `shellfish` commands, not another component's private files or symbols.
 - `tests/unit/boundary.zsh` enforces component dependencies. Update the boundary deliberately when ownership changes. Do not bypass it with alternate path or symbol access.
 - `share/default/` contains the bundled configuration and harness resources, including executable scripts. These are product behavior, not fixtures. `shellfish-server/` is a separate Go proxy and browser client over the same single-turn interface.
-- jq module paths are repository-rooted. Pass `-L "$SF_ROOT"` and include modules by their repository path.
+- jq module paths are repository-rooted. Load them with `sf_jq` from `lib/jq.zsh`, which anchors the working directory and `-L` to the installation; jq would otherwise resolve a module name against the caller's directory first. Only core components use jq modules. Bundled scripts validate their own input with plain jq, so nothing outside the core depends on the repository layout.
 - Tools may be sandboxed. Hook scripts and backend adapters are trusted programs running with user permissions. Keep credentials out of hooks and tools. Only the backend adapter receives the scoped `SHELLFISH_API_KEY`.
 
 ## Working here

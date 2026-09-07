@@ -4,8 +4,7 @@ emulate -R zsh
 setopt err_exit no_aliases no_multios pipe_fail
 umask 077
 
-typeset -gr ROOT=${0:A:h:h:h:h:h}
-source "$ROOT/share/default/backends/_backend.zsh"
+source "${0:A:h:h}/_backend.zsh"
 
 api_key=${SHELLFISH_API_KEY-}
 unset SHELLFISH_API_KEY
@@ -16,9 +15,12 @@ typeset request_file=$SF_BACKEND_REQUEST_FILE
 cat >"$request_file"
 
 typeset -a fields
-fields=( "${(@f)$(builtin cd -- "$ROOT" && jq -L "$ROOT" -er '
-  include "lib/runtime/schema";
-  select(canonical_request) |
+fields=( "${(@f)$(jq -er '
+  select((.options.request.model | type == "string" and . != "") and
+    (.transport.endpoint | type == "string" and . != "") and
+    (.transport.insecure_tls | type == "boolean") and
+    (.transport.http_timeout | type == "number") and
+    (.transport.http_stall | type == "number")) |
   .options.request.model, .transport.endpoint,
   (.transport.insecure_tls | tostring), (.transport.http_timeout | tostring),
   (.transport.http_stall | tostring)
@@ -33,9 +35,9 @@ typeset models_endpoint="${endpoint:h}/models?limit=1000" context
 sf_backend_context_curl_args "$models_endpoint" $fields[3] $fields[4] $fields[5]
 SF_BACKEND_CURL_ARGS+=(--header 'anthropic-version: 2023-06-01')
 context=$(curl "${SF_BACKEND_CURL_ARGS[@]}" 2>/dev/null | \
-  (builtin cd -- "$ROOT" && jq -L "$ROOT" -ce --arg model "$fields[1]" '
-    include "lib/runtime/schema";
+  jq -ce --arg model "$fields[1]" '
     first(.data[]? | select(.id == $model) | .max_input_tokens) |
-    select(positive_integer) | {context_window:.}
-  ') 2>/dev/null) || exit 10
+    select(type == "number" and floor == . and . >= 1 and . <= 2147483647) |
+    {context_window:.}
+  ' 2>/dev/null) || exit 10
 print -r -- "$context"

@@ -4,8 +4,7 @@ emulate -R zsh
 setopt err_exit no_aliases no_multios pipe_fail
 umask 077
 
-typeset -gr ROOT=${0:A:h:h:h:h:h}
-source "$ROOT/share/default/backends/_backend.zsh"
+source "${0:A:h:h}/_backend.zsh"
 
 api_key=${SHELLFISH_API_KEY-}
 account_id=${SHELLFISH_RESPONSES_ACCOUNT_ID-}
@@ -22,15 +21,18 @@ typeset normalizer_error_file=$SF_BACKEND_NORMALIZER_ERROR_FILE
 cat >$request_file
 
 typeset -a transport
-transport=( "${(@f)$(builtin cd -- "$ROOT" && jq -L "$ROOT" -er '
-  include "lib/runtime/schema";
-  select(canonical_request and
+transport=( "${(@f)$(jq -er '
+  select((.options.request.model | type == "string" and . != "") and
     (.options.request | all(keys[];
       IN("include", "input", "instructions", "store") | not))) |
-  .transport.endpoint, (.transport.insecure_tls | tostring),
-  (.transport.http_timeout | tostring), (.transport.http_stall | tostring)
-' "$request_file")}" ) || sf_backend_die 'invalid canonical request'
-(( ${#transport} == 4 )) || sf_backend_die 'invalid canonical request'
+  .transport |
+  select((.endpoint | type == "string" and . != "") and
+    (.insecure_tls | type == "boolean") and
+    (.http_timeout | type == "number") and (.http_stall | type == "number")) |
+  .endpoint, (.insecure_tls | tostring),
+  (.http_timeout | tostring), (.http_stall | tostring)
+' "$request_file")}" ) || sf_backend_die 'invalid request'
+(( ${#transport} == 4 )) || sf_backend_die 'invalid request'
 
 sf_backend_credential 'Authorization' "${api_key:+Bearer $api_key}"
 sf_backend_credential 'ChatGPT-Account-ID' "$account_id"
@@ -92,7 +94,7 @@ jq -ce --argjson chatgpt_transport "$chatgpt_transport" '
 set +e
 sf_backend_curl_args $transport[1] $transport[2] $transport[3] $transport[4]
 curl "${SF_BACKEND_CURL_ARGS[@]}" 2>"$status_file" | tee "$response_file" | \
-  jq -nRrc --unbuffered -L "$ROOT" '
+  jq -nRrc --unbuffered '
   def transient($type;$index;$text): {type:$type,index:$index,text:$text};
   def usage_event:
     {type:"_turn_usage"} + .;
