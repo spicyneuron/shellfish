@@ -91,6 +91,25 @@ sf_backend_context_curl_args() {
   [[ $insecure != true ]] || SF_BACKEND_CURL_ARGS+=(--insecure)
 }
 
+# Sends the prepared body and normalizes the response with the adapter's jq
+# program, given last as jq takes it. The body streams to the normalizer rather
+# than landing in a file first, so a response is normalized while it is still
+# arriving. It is copied aside on the way past only so a failure has something to
+# quote; nothing reads that copy when the exchange succeeds. With the body on
+# stdout the status travels on stderr, written last, so the three characters it
+# ends with are the code. The normalizer's stderr is captured so sf_backend_finish
+# can report a concise protocol or normalization reason.
+sf_backend_stream() {
+  local -a statuses
+  set +e
+  curl "${SF_BACKEND_CURL_ARGS[@]}" 2>"$SF_BACKEND_STATUS_FILE" |
+    tee "$SF_BACKEND_RESPONSE_FILE" |
+    jq -nRrc --unbuffered "$@" 2>"$SF_BACKEND_NORMALIZER_ERROR_FILE"
+  statuses=( $pipestatus )
+  set -e
+  sf_backend_finish "${statuses[@]}"
+}
+
 sf_backend_finish() {
   local -a statuses=( "$@" )
   local stage http_status message

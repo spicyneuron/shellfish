@@ -11,10 +11,7 @@ unset SHELLFISH_API_KEY
 
 sf_backend_setup openai
 trap 'rm -rf -- "$SF_BACKEND_TEMP_DIR"' EXIT
-typeset request_file=$SF_BACKEND_REQUEST_FILE body_file=$SF_BACKEND_BODY_FILE
-typeset response_file=$SF_BACKEND_RESPONSE_FILE status_file=$SF_BACKEND_STATUS_FILE
-typeset normalizer_error_file=$SF_BACKEND_NORMALIZER_ERROR_FILE
-cat >"$request_file"
+cat >"$SF_BACKEND_REQUEST_FILE"
 
 sf_backend_request '.options.request | has("stream_options") | not' ||
   sf_backend_die 'invalid request'
@@ -55,12 +52,10 @@ jq -ce '
     tools:[.tools[] | {type:"function",function:{name:.name,
       description:.description,parameters:.input_schema}}]
   } end)
-' "$request_file" >"$body_file" || sf_backend_die 'cannot translate canonical request'
+' "$SF_BACKEND_REQUEST_FILE" >"$SF_BACKEND_BODY_FILE" || sf_backend_die 'cannot translate canonical request'
 
 sf_backend_curl_args
-set +e
-curl "${SF_BACKEND_CURL_ARGS[@]}" 2>"$status_file" | tee "$response_file" | \
-jq -nRrc --unbuffered '
+sf_backend_stream '
   def transient($type;$index;$text): {type:$type,index:$index,text:$text};
   def usage:
     {type:"_turn_usage",input_tokens:(.prompt_tokens // 0),output_tokens:(.completion_tokens // 0)} +
@@ -150,8 +145,4 @@ jq -nRrc --unbuffered '
          end
        else . end
      end; .out[])
-' 2>"$normalizer_error_file"
-typeset -a statuses=( $pipestatus )
-set -e
-
-sf_backend_finish "${statuses[@]}"
+'

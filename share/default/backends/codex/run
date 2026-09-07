@@ -10,11 +10,10 @@ unset SHELLFISH_API_KEY SHELLFISH_RESPONSES_ACCOUNT_ID
 
 sf_backend_setup codex
 trap 'rm -rf -- "$SF_BACKEND_TEMP_DIR"' EXIT
-typeset request_file=$SF_BACKEND_REQUEST_FILE
 typeset prepared_file=$SF_BACKEND_TEMP_DIR/prepared.json
 typeset codex_home auth_file credentials
 typeset access_token='' account_id=''
-cat >"$request_file"
+cat >"$SF_BACKEND_REQUEST_FILE"
 
 # The request body carries backend-neutral fields as well as Codex options.
 # Codex accepts only reasoning; the Responses adapter owns the generated body.
@@ -30,7 +29,7 @@ sf_backend_request '(.options.request | has("reasoning") | not) or
 # The summary is forced after raw options are applied; effort stays the caller's.
 jq -c '.options.request |=
   (. + {reasoning:((.reasoning // {} | if . == {effort:""} then {} else . end) * {summary:"auto"})})' \
-  "$request_file" >"$prepared_file" || sf_backend_die "cannot prepare canonical request"
+  "$SF_BACKEND_REQUEST_FILE" >"$prepared_file" || sf_backend_die "cannot prepare canonical request"
 
 command -v codex >/dev/null 2>&1 || sf_backend_die "Codex CLI is not installed"
 

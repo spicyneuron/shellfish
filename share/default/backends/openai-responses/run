@@ -15,10 +15,7 @@ unset SHELLFISH_API_KEY SHELLFISH_RESPONSES_ACCOUNT_ID
 
 sf_backend_setup openai-responses
 trap 'rm -rf -- "$SF_BACKEND_TEMP_DIR"' EXIT
-typeset request_file=$SF_BACKEND_REQUEST_FILE body_file=$SF_BACKEND_BODY_FILE
-typeset response_file=$SF_BACKEND_RESPONSE_FILE status_file=$SF_BACKEND_STATUS_FILE
-typeset normalizer_error_file=$SF_BACKEND_NORMALIZER_ERROR_FILE
-cat >$request_file
+cat >"$SF_BACKEND_REQUEST_FILE"
 
 sf_backend_request '.options.request |
   all(keys[]; IN("include", "input", "instructions", "store") | not)' ||
@@ -74,17 +71,10 @@ jq -ce --argjson chatgpt_transport "$chatgpt_transport" '
   # counts here because the Codex backend forces its summary through that layer.
   $body + (if ($body | has("reasoning")) then
     {include: ["reasoning.encrypted_content"]} else {} end)
-' "$request_file" >"$body_file" || sf_backend_die 'cannot translate canonical request'
+' "$SF_BACKEND_REQUEST_FILE" >"$SF_BACKEND_BODY_FILE" || sf_backend_die 'cannot translate canonical request'
 
-# The body streams to the normalizer rather than landing in a file first, so a
-# response is normalized while it is still arriving. It is copied aside on the
-# way past only so a failure has something to quote; nothing reads that copy when
-# the exchange succeeds. With the body on stdout the status travels on stderr,
-# written last, so the three characters it ends with are the code.
-set +e
 sf_backend_curl_args
-curl "${SF_BACKEND_CURL_ARGS[@]}" 2>"$status_file" | tee "$response_file" | \
-  jq -nRrc --unbuffered '
+sf_backend_stream '
   def transient($type;$index;$text): {type:$type,index:$index,text:$text};
   def usage_event:
     {type:"_turn_usage"} + .;
@@ -298,8 +288,4 @@ curl "${SF_BACKEND_CURL_ARGS[@]}" 2>"$status_file" | tee "$response_file" | \
       end
     end;
     .out[]
-  # Captured so sf_backend_finish can report a concise protocol/normalization reason.
-  )' 2>"$normalizer_error_file"
-typeset -a statuses=( $pipestatus )
-set -e
-sf_backend_finish "${statuses[@]}"
+  )'
