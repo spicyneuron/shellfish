@@ -10,6 +10,18 @@ shellfish create --session-from path/to/session.jsonl
 shellfish create --session-out ./project-session.jsonl
 ```
 
+`shellfish create --jsonl` streams startup previews instead of printing a path:
+
+| Type | Fields and meaning |
+| --- | --- |
+| `_session_prepare` | `path` and `records` (prepared header and optional system record), before hooks run. |
+| `_notice` | Hook activity and stderr, using the shared notice format below. A completed startup notice may include a `context` preview. |
+| `_session_created` | `path`, after the initial session prefix is written successfully. |
+
+These events are all transient. Prepared records and hook content are not durable until creation succeeds. Hooks run sequentially; an empty hook chain emits only the preparation and creation events. On failure, diagnostics go to stderr, the process exits nonzero, and no creation event is emitted. Clients must not submit a turn until creation exits successfully.
+
+As in a turn, `SIGUSR1` is the client's cancellation signal, aimed at the creating process alone so it can stop a running hook script itself. Cancelled creation exits nonzero and writes no session.
+
 `--system TEXT` and `--system-file PATH` replace the configured or copied system prompt. Both flags are repeatable and may be mixed; their contents have trailing newlines stripped and are joined in command-line order with a blank line.
 
 Chat and `shellfish run` use an existing session with `--session PATH`. Otherwise they create one through `shellfish create`, accepting `--session-from` and `--session-out`. Neither creation flag can be combined with `--session`.
@@ -93,7 +105,9 @@ Transient events currently include:
 
 Text and reasoning deltas carry a zero-based content `index` and a zero-based `seq`. The index identifies the block's position in the later assistant content. The sequence is shared by both delta types and restarted for each provider response, so it orders visible events independently of block identity. Deltas are previews only. Consumers should render committed assistant and reasoning content from the later durable assistant record. Clients should treat unknown transient types as unsupported protocol input and recover from the durable session rather than guessing their meaning.
 
-Notices have the shape `{type:"_notice",level,title,source,text,complete}`. The level is `info` or `error`. The source attributes the notice, and is empty when there is no attribution. Hook script output is an informational notice titled with the script path and attributed to the hook: the first newline-terminated stderr line is emitted with `complete:false` while the script runs, and the script's full stderr replaces that notice with `complete:true` when it exits. A script that exits before writing a newline emits only the complete notice. An interrupted invocation may end without one, so clients must discard an incomplete notice when the turn stream fails, ends, or is replayed. Failures are complete error notices.
+Notices have the shape `{type:"_notice",level,title,source,text,complete}`. The level is `info` or `error`. The source attributes the notice, and is empty when there is no attribution. Hook scripts opt into display through stderr: the first newline-terminated line opens an informational notice titled with the script path and attributed to the hook, with `complete:false`. The script's full stderr replaces it with `complete:true` after capture checks succeed. A script that writes no newline emits only the complete notice. Silent hooks emit no activity notices. An interrupted invocation or rejected capture may end without completion, so clients must discard an incomplete notice when the stream fails, ends, or is replayed. Failures are complete error notices.
+
+A completed informational notice can additionally carry `context`, a canonical context record offered as a transient preview. During creation, a successful startup script's nonempty stdout is validated and attached this way before the next script starts. It becomes durable only when creation succeeds. Ordinary turn hooks do not preview stdout: their policies determine whether it becomes context, and any resulting `context` records are emitted after persistence as usual.
 
 A permission request has this shape:
 

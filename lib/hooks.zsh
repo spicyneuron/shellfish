@@ -195,10 +195,6 @@ sf_hooks_dispatch() {
     }
 
     for script in $scripts; do
-      sf_hooks_display "$hook" "$script" '' false || {
-        sf_hooks_fail 'cannot emit hook display'
-        return
-      }
       sf_hooks_capture_one "$script" "$input" "$directory" "$max_capture" \
         "$argument_count" "${arguments[@]}" || return
       result=( "${reply[@]}" )
@@ -240,10 +236,12 @@ sf_hooks_dispatch() {
         }
         preview=$REPLY
       fi
-      sf_hooks_display "$hook" "$script" "$script_display" true "$preview" || {
-        sf_hooks_fail 'cannot complete hook display'
-        return
-      }
+      if [[ -n $script_display || $preview != null ]]; then
+        sf_hooks_display "$hook" "$script" "$script_display" true "$preview" || {
+          sf_hooks_fail 'cannot complete hook display'
+          return
+        }
+      fi
       case $script_status in
         0|10|11) ;;
         *)

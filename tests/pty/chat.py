@@ -421,6 +421,7 @@ def test_chat_end():
         session = Session()
         try:
             path, _ = session.wait_session_records(1)
+            session.settle()
             mark = len(session.output)
             session.send(submitted)
             session.wait_after(mark, str(path))

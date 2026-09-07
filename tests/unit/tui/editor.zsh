@@ -10,6 +10,8 @@ sf_test_source libexec/tui/render/nodes.zsh libexec/tui/render/highlights.zsh \
 sf_tui_heartbeat_arm() { return 0; }
 
 typeset -g BUFFER=draft CURSOR=3 PREDISPLAY='' POSTDISPLAY='' ZLE_CALL=''
+# Turn events are only legal once a session exists.
+typeset -g SF_PRESENT_SESSION=session.jsonl
 typeset -g SF_PRESENT_STATE=idle
 typeset -g SF_PRESENT_FOOTER=test/model
 typeset -gi COLUMNS=80 LINES=10

@@ -9,12 +9,31 @@ def event_fields($event_runtime):
   elif . == {type:"_backend_request_start"} then
     ["backend_request_start"]
   elif .type == "_notice" and
-      (keys == ["complete", "level", "source", "text", "title", "type"]) and
+      (keys - ["context"] == ["complete", "level", "source", "text", "title", "type"]) and
       ([.title, .source, .text] | all(type == "string")) and
-      (.level | IN("info", "error")) and (.complete | type == "boolean") then
-    ["notice", (if .level == "error" then "error" else "notice" end),
-     (.title | split("/") | last), .source, .text,
-     (if .complete then "closed" else "open" end)]
+      (.level | IN("info", "error")) and (.complete | type == "boolean") and
+      (if has("context") then .complete and .level == "info" and
+        (.context | canonical_context) and .context.hook == .source and
+        .context.script == (.title | split("/") | last)
+       else true end) then
+    if has("context") then
+      .context | durable_display_fields(false; ($event_runtime.harness.tools // []))
+    else
+      ["notice", (if .level == "error" then "error" else "notice" end),
+       (.title | split("/") | last), .source, .text,
+       (if .complete then "closed" else "open" end)]
+    end
+  elif .type == "_session_prepare" and
+      keys == ["path", "records", "type"] and
+      (.path | nul_free_string and startswith("/")) and
+      (.records | type == "array" and (length == 1 or length == 2) and
+        (.[0] | canonical_session_header(1)) and
+        all(.[1:][]; .type == "system" and canonical_session_record)) then
+    ["session_prepare", (.records[0] | {backend,harness,profile} | tojson),
+     (.records[1].content // "")]
+  elif .type == "_session_created" and keys == ["path", "type"] and
+      (.path | nul_free_string and startswith("/")) then
+    ["session_created", .path]
   elif .type == "_tool_permission_request" then
     (.tool | tool_permission_display($event_runtime.harness.tools // [])) as $preview |
      ["permission_request", .id, .tool.name,
@@ -52,6 +71,8 @@ reduce .[] as $event (
   .runtime as $event_runtime |
   ([$event | event_fields($event_runtime)]) as $fields |
   .fields += $fields |
-  if $event.type == "_session_update" then .runtime = $event.runtime else . end
+  if $event.type == "_session_update" then .runtime = $event.runtime
+  elif $event.type == "_session_prepare" then .runtime = $event.records[0]
+  else . end
 ) |
 .fields | emit_display_batch

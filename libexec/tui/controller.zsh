@@ -2,6 +2,7 @@ emulate -R zsh
 setopt no_aliases no_bg_nice no_multios pipe_fail
 
 typeset -ga SF_PRESENT_HANDOFF=() SF_PRESENT_QUEUE=()
+# The durable session, empty until creation announces one.
 typeset -g SF_PRESENT_SESSION=''
 typeset -g SF_PRESENT_ACTION='' SF_PRESENT_SUBMITTED=''
 typeset -g SF_PRESENT_STATE=idle SF_PRESENT_PERMISSION_ID=''
@@ -114,7 +115,14 @@ sf_tui_cancel() {
 sf_tui_decoded() {
   local type=$1 first=${2-} second=${3-} third=${4-} fourth=${5-} fifth=${6-} sixth=${7-}
   local encoded preview reason
+  # Only creation events are legal before a durable session exists.
+  [[ -n $SF_PRESENT_SESSION || $type == (notice|context|session_created) ]] || return 1
   case $type in
+      session_created)
+        [[ -z $SF_PRESENT_SESSION ]] || return 1
+        SF_PRESENT_SESSION=$first
+        SF_TUI_TRANSPORT_COMMAND=( "$SF_ENTRY" run --jsonl --session "$first" )
+        ;;
       backend_request_start|assistant_delta|assistant_reasoning_delta|tool_call|tool_result|context)
         sf_tui_event "$type" "$first" "$second" "$third" "$fourth" "$fifth" "$sixth" || return 1
         ;;
@@ -177,6 +185,13 @@ sf_tui_recover() {
   SF_PRESENT_RENDER_ERROR=''
   sf_tui_permission_reset
   sf_tui_editor_permission discard
+  if [[ -z $SF_PRESENT_SESSION ]]; then
+    # Creation left no transcript, so the failure is all there is to present.
+    sf_tui_reset
+    SF_PRESENT_CURSOR='1:0'
+    sf_tui_notice error "$heading" "$detail" || return 1
+    return 1
+  fi
   if (( visible && ${#SF_PRESENT_NODE_TYPE} )); then
     type=$SF_PRESENT_NODE_TYPE[1]
     role=$SF_PRESENT_NODE_ROLE[1]
@@ -253,6 +268,10 @@ sf_tui_exec_finish() {
   SF_PRESENT_EXEC_ERROR_HEADING=''
   SF_PRESENT_EXEC_ERROR_DETAIL=''
   SF_PRESENT_TURN_ERROR=0
+  if [[ -z $SF_PRESENT_SESSION ]] && (( ! exit_status )); then
+    exit_status=1
+    exit_detail='Create did not confirm session creation.'
+  fi
   [[ $SF_PRESENT_STATE != cancelling ]] || cancelled=1
   if (( exit_status || cancelled )); then
     if (( turn_error )); then
@@ -276,7 +295,11 @@ sf_tui_exec_finish() {
       heading='Exec process terminated.'
       detail=${exit_detail:-"Terminated by signal $(( exit_status - 128 ))."}
     else
-      heading='Exec process failed.'
+      if [[ -z $SF_PRESENT_SESSION ]]; then
+        heading='Session creation failed.'
+      else
+        heading='Exec process failed.'
+      fi
       detail=${exit_detail:-"Exited with status $exit_status."}
     fi
     sf_tui_discard_queue
@@ -371,7 +394,7 @@ sf_tui_answer_permission() {
 sf_tui_controller() {
   local session=$1 presentation=${2:-\{\}} initial=${3-}
   local session_mode=${4:-resume} draft=${5-}
-  local input=$draft saved_tty editor_error
+  local input=$draft saved_tty editor_error system
   integer exit_status=0 editor_status=0
 
   SF_PRESENT_SESSION=$session
@@ -381,6 +404,31 @@ sf_tui_controller() {
   SF_PRESENT_QUEUE=()
   SF_PRESENT_EXIT_STATUS=0
   SF_PRESENT_RENDER_ERROR=''
+  sf_tui_terminal_reset
+  zmodload zsh/zle || { SF_PRESENT_ERROR='cannot load ZLE'; return 1; }
+  bindkey -e
+  sf_tui_bind
+  if [[ $session_mode == startup ]]; then
+    SF_PRESENT_STATE=working
+    sf_tui_transport_start '' sf_tui_exec_ready || {
+      SF_PRESENT_ERROR=$SF_TUI_TRANSPORT_ERROR
+      return 1
+    }
+    sf_tui_transport_read "$SF_TUI_TRANSPORT_OUTPUT_FD" || return 1
+    if ! sf_tui_transport_next null || [[ $reply[1] != session_prepare ]]; then
+      SF_PRESENT_ERROR=${SF_TUI_TRANSPORT_EXIT_DETAIL:-'Create did not prepare a session.'}
+      return 1
+    fi
+    system=$reply[3]
+    sf_tui_reset
+    sf_tui_session_update "$reply[2]"
+    [[ -z $system ]] || sf_tui_event system "$system" || return 1
+    # Creation presents as a running turn, so hook notices and the spinner
+    # land in the nodes a turn would use.
+    sf_tui_add activity '' '' '' open || return 1
+  else
+    sf_tui_reload "$session" || return 1
+  fi
   sf_tui_rows_config "$presentation" || {
     SF_PRESENT_ERROR='cannot read presentation configuration'
     return 1
@@ -389,22 +437,21 @@ sf_tui_controller() {
     SF_PRESENT_ERROR=$SF_PRESENT_HIGHLIGHT_ERROR
     return 1
   }
-  sf_tui_terminal_reset
-  sf_tui_reload "$session" || return 1
   sf_tui_chat_start "$session_mode" "$session" || {
     SF_PRESENT_ERROR='cannot render startup banner'
     return 1
   }
-  zmodload zsh/zle || { SF_PRESENT_ERROR='cannot load ZLE'; return 1; }
-  bindkey -e
-  sf_tui_bind
   PROMPT=''
   saved_tty=$(stty -g 2>/dev/null) || return 1
   SF_PRESENT_TTY=$saved_tty
   if [[ -n $initial ]]; then
     sf_tui_record_prompt "$initial"
-    sf_tui_event user "$initial" || return 1
-    sf_tui_turn "$initial" || return 1
+    if [[ $SF_PRESENT_STATE == working ]]; then
+      SF_PRESENT_QUEUE=( "$initial" )
+    else
+      sf_tui_event user "$initial" || return 1
+      sf_tui_turn "$initial" || return 1
+    fi
   fi
 
   while (( ! exit_status )); do
@@ -445,7 +492,7 @@ sf_tui_controller() {
     return 1
   fi
   if [[ $SF_PRESENT_ACTION == quit ]]; then
-    sf_tui_chat_end "$SF_PRESENT_SESSION"
+    [[ -z $SF_PRESENT_SESSION ]] || sf_tui_chat_end "$SF_PRESENT_SESSION"
     return $SF_PRESENT_EXIT_STATUS
   fi
   (( exit_status )) || sf_tui_chat_end "$SF_PRESENT_SESSION"

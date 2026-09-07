@@ -13,6 +13,8 @@ Interactive chat is the default Shellfish mode. Run `shellfish` from your projec
 - `shellfish --clear` clears the terminal before the first render.
 - `shellfish --verbose` lifts all preview limits for the current chat, showing full reasoning, context, and tool output inline.
 
+A new session is created inside chat, and creation presents as a running turn: `session_start` hooks stream their display, a prompt submitted meanwhile joins the queue and is sent once the session exists, and `ctrl+c` cancels creation without saving a session.
+
 Each session stores its resolved backend, harness, model, and sandbox settings. A fresh `shellfish` launch uses current configuration. `/new` reuses the active session's settings. Themes and TUI preview settings come from current configuration, so they affect how existing sessions are displayed.
 
 The default harness compacts a conversation approaching its context window into a child session and opens it with the interrupted prompt as an editable draft. See [Compaction](HARNESS.md#compaction) for the threshold and mechanics.
@@ -49,4 +51,4 @@ Chat renders from an in-memory presentation transcript during a normal turn. If 
 
 ## Architecture
 
-Interactive chat is a controller around single `shellfish run --jsonl` turns. Durable session JSONL is the source of truth for session and turn lifecycle. Chat owns only transient input, presentation, terminal rendering, and visual reconciliation. The session layer handles hooks, provider requests, tool execution, persistence, and recovery.
+Interactive chat is a controller around one `shellfish create --jsonl` startup and single `shellfish run --jsonl` turns. Durable session JSONL is the source of truth for session and turn lifecycle. Chat owns only transient input, presentation, terminal rendering, and visual reconciliation. Presentation is resolved from current configuration on each start, never from the session. The session layer handles hooks, provider requests, tool execution, persistence, and recovery.

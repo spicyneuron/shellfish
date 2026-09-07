@@ -77,6 +77,39 @@ order=$(print -r -- '{"type":"turn_error","message":"Hook failed.\ninvalid outpu
 assert_equal 'notice,error,Hook failed.,invalid output,closed,end,batch_ok' "$order"
 
 typeset invalid
+typeset preview='{"type":"_notice","level":"info","source":"session_start","title":"/tmp/hook","text":"done","complete":true,"context":{"type":"context","hook":"session_start","script":"hook","content":"startup context"}}'
+order=$(print -r -- "$preview" |
+  jq -jRs -L "$ROOT" --argjson runtime null -f "$ROOT/libexec/tui/event-decode.jq" |
+  tr '\0' '\n' | sed '/^$/d' | paste -sd, -)
+assert_equal 'context,hook,session_start,startup context,batch_ok' "$order"
+for invalid in '.complete=false' '.level="error"' '.context=null' \
+    '.context.hook="stop"' '.context.script="other"'; do
+  if jq -c "$invalid" <<<"$preview" |
+      jq -jRs -L "$ROOT" --argjson runtime null \
+        -f "$ROOT/libexec/tui/event-decode.jq" >/dev/null 2>&1; then
+    fail "invalid context preview was accepted: $invalid"
+  fi
+done
+
+typeset preparation
+preparation=$(jq -cn --slurpfile records "$SF_TEST_SESSIONS/header-only.jsonl" \
+  '{type:"_session_prepare",path:"/tmp/new.jsonl",records:($records +
+    [{type:"system",content:"startup system"}])}')
+order=$(print -r -- "$preparation" |
+  jq -jRs -L "$ROOT" --argjson runtime null -f "$ROOT/libexec/tui/event-decode.jq" |
+  tr '\0' '\n')
+[[ $order == $'session_prepare\n'*$'\nstartup system\n'* ]] ||
+  fail 'preparation did not expose its runtime and system'
+for invalid in '.path="relative"' '.path="/bad\u0000path"' '.records=[]' \
+    '.records[1]={type:"context",hook:"session_start",script:"hook",content:"early"}' \
+    '.presentation={}'; do
+  if jq -c "$invalid" <<<"$preparation" |
+      jq -jRs -L "$ROOT" --argjson runtime null \
+        -f "$ROOT/libexec/tui/event-decode.jq" >/dev/null 2>&1; then
+    fail "invalid preparation was accepted: $invalid"
+  fi
+done
+
 for invalid in '{"type":"turn_error","message":1}' \
     '{"type":"_notice","level":"warn","title":"t","source":"","text":"x","complete":true}' \
     '{"type":"_notice","level":"error","title":"t","source":"","text":"x"}'; do

@@ -4,6 +4,33 @@ source "${0:A:h:h:h:h}/_helpers.zsh"
 sf_test_source libexec/tui/render/nodes.zsh libexec/tui/render/highlights.zsh
 
 sf_tui_event user hello
+
+# Startup context settles the live notice in place, without retaining its display.
+sf_tui_reset
+sf_tui_event system instructions
+sf_tui_event notice notice hook session_start '' open
+sf_tui_event notice notice hook session_start working open
+sf_tui_event context hook session_start 'startup context'
+assert_equal 'section,message,injection' "${(j:,:)SF_PRESENT_NODE_TYPE}"
+assert_equal 'startup context' "$SF_PRESENT_NODE_BODY[-1]"
+assert_equal closed "$SF_PRESENT_NODE_STATE[-1]"
+
+# Silent notices disappear on completion, including while a tool is suspended.
+sf_tui_reset
+sf_tui_event notice notice silent session_start '' open
+sf_tui_event notice notice silent session_start '' closed
+assert_equal 0 "${#SF_PRESENT_NODE_TYPE}"
+sf_tui_event tool_call call_1 shell '{}'
+sf_tui_event notice notice silent pre_tool_use '' open
+sf_tui_event notice notice silent pre_tool_use '' closed
+assert_equal 0 "${#${(M)SF_PRESENT_NODE_TYPE:#notice}}"
+assert_equal tool_result "$SF_PRESENT_NODE_TYPE[-1]"
+assert_equal '' "$SF_PRESENT_NODE_META[-1]"
+sf_tui_event tool_result call_1 0 done
+assert_equal done "$SF_PRESENT_NODE_BODY[-1]"
+
+sf_tui_reset
+sf_tui_event user hello
 sf_tui_event user again
 sf_tui_event assistant_delta 'part '
 sf_tui_event assistant_delta done

@@ -29,7 +29,7 @@ sf_read_prompt() {
 
 sf_tui_main() {
   local requested_session=''
-  local input='' draft='' presentation
+  local input='' draft='' presentation session='' session_mode=startup
   local arity=''
   local -a positional=() runtime_args=() presentation_args=()
   local -a original_args=("$@")
@@ -125,28 +125,41 @@ sf_tui_main() {
   fi
   if [[ ! -t 1 ]]; then sf_die 'chat requires an interactive terminal'; return 2; fi
 
-  source "$SF_ROOT/lib/session/startup.zsh"
   integer startup_status=0 config_status=0
-  sf_session_open "$requested_session" "$override" \
-    "${runtime_args[@]}" || startup_status=$?
-  if (( startup_status )); then
-    [[ -z $SF_SESSION_STARTUP_ERROR ]] || sf_die "$SF_SESSION_STARTUP_ERROR"
-    return $startup_status
+  if [[ -n $requested_session ]]; then
+    source "$SF_ROOT/lib/session/startup.zsh"
+    sf_session_open "$requested_session" "$override" \
+      "${runtime_args[@]}" || startup_status=$?
+    if (( startup_status )); then
+      [[ -z $SF_SESSION_STARTUP_ERROR ]] || sf_die "$SF_SESSION_STARTUP_ERROR"
+      return $startup_status
+    fi
+    session=$SF_SESSION_OPEN[path]
+    session_mode=resume
+    presentation_args=( --session-from "$session" "${presentation_args[@]}" )
   fi
-  presentation=$("$SF_ENTRY" config --session-from "$SF_SESSION_OPEN[path]" \
-    "${presentation_args[@]}") || config_status=$?
+  # Presentation is never frozen, so chat resolves it per start for either mode.
+  presentation=$("$SF_ENTRY" config "${presentation_args[@]}") || config_status=$?
   (( ! config_status )) || return $config_status
 
   source "$SF_ROOT/libexec/tui/render/main.zsh"
   source "$SF_ROOT/libexec/tui/transport.zsh"
   source "$SF_ROOT/libexec/tui/editor.zsh"
   source "$SF_ROOT/libexec/tui/controller.zsh"
-  SF_TUI_TRANSPORT_COMMAND=( "$SF_ENTRY" run --jsonl --session "$SF_SESSION_OPEN[path]" )
+  if [[ $session_mode == startup ]]; then
+    SF_TUI_TRANSPORT_COMMAND=( "$SF_ENTRY" create --jsonl "${runtime_args[@]}" )
+  else
+    SF_TUI_TRANSPORT_COMMAND=( "$SF_ENTRY" run --jsonl --session "$session" )
+  fi
   if (( clear_requested )); then
     zmodload zsh/terminfo && echoti clear || { sf_die 'cannot clear terminal'; return 1; }
   fi
-  sf_tui_controller "$SF_SESSION_OPEN[path]" "$presentation" "$input" \
-    "$SF_SESSION_OPEN[mode]" "$draft" || controller_status=$?
+  {
+    sf_tui_controller "$session" "$presentation" "$input" \
+      "$session_mode" "$draft" || controller_status=$?
+  } always {
+    [[ -z $SF_TUI_TRANSPORT_PID ]] || sf_tui_transport_stop
+  }
   if (( controller_status )); then
     [[ -z $SF_PRESENT_ERROR ]] || sf_die "$SF_PRESENT_ERROR"
     return $controller_status

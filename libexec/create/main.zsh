@@ -13,7 +13,7 @@ sf_die() {
 }
 
 sf_create_session() {
-  local session=$1 runtime=$2 system=$3 presentation=$4 error=''
+  local session=$1 runtime=$2 system=$3 error=''
   local SF_HOOK_JSONL=$SF_CREATE_JSONL
   typeset -gx SHELLFISH_MODE=create
   SF_SESSION_PATH=$session
@@ -28,8 +28,7 @@ sf_create_session() {
   [[ -z $error ]] || { sf_die "$error"; return 1; }
   if (( SF_CREATE_JSONL )); then
     printf '%s\n' "${SF_SESSION_RECORDS[@]}" | jq -cs \
-      --arg path "$session" --argjson presentation "$presentation" \
-      '{type:"_session_prepare",path:$path,records:.,presentation:$presentation}' || return 1
+      --arg path "$session" '{type:"_session_prepare",path:$path,records:.}' || return 1
   fi
   if ! sf_hooks_session_start "$session"; then
     error=$SF_HOOK_ERROR
@@ -40,7 +39,7 @@ sf_create_session() {
 }
 
 sf_create_main() {
-  local requested_out='' report runtime session system presentation
+  local requested_out='' report runtime session system
   local -a forwarded=()
   integer report_status=0 take=0
   source "$SF_ROOT/lib/options.zsh"
@@ -86,10 +85,14 @@ sf_create_main() {
     return 1
   }
   system=${system%$'\0'}
-  presentation=$(jq -c '{theme,tui}' <<<"$report") || return 1
 
   source "$SF_ROOT/lib/session/main.zsh"
   source "$SF_ROOT/lib/hooks.zsh"
+  source "$SF_ROOT/lib/process.zsh"
+  # USR1 is the client's cancellation signal, aimed at this process alone.
+  trap 'sf_process_stop "$SF_HOOK_SCRIPT_PID"; exit 130' INT USR1
+  trap 'sf_process_stop "$SF_HOOK_SCRIPT_PID"; exit 129' HUP
+  trap 'sf_process_stop "$SF_HOOK_SCRIPT_PID"; exit 143' TERM
   sf_session_select_path "$requested_out" || {
     sf_die "$SF_SESSION_ERROR"
     return 1
@@ -103,7 +106,7 @@ sf_create_main() {
     sf_die "invalid session path: $session"
     return 1
   }
-  sf_create_session "$session" "$runtime" "$system" "$presentation" || return 1
+  sf_create_session "$session" "$runtime" "$system" || return 1
   if (( SF_CREATE_JSONL )); then
     jq -cn --arg path "$session" '{type:"_session_created",path:$path}'
   else

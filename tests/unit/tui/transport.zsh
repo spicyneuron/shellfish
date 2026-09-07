@@ -94,6 +94,17 @@ sf_tui_transport_result
 assert_equal '0,' "${(j:,:)reply}"
 [[ $ZLE_CALLS == *'-F '* ]] || fail 'transport watcher was not removed'
 
+# Creation has no initial input and may finish before transport attachment.
+SF_TUI_TRANSPORT_COMMAND=( "${commands[zsh]}" -f -c \
+  'print -r -- '\''{"type":"_session_created","path":"/tmp/new.jsonl"}'\''' )
+sf_tui_transport_start '' callback || fail 'transport required input for creation'
+sf_tui_transport_read "$SF_TUI_TRANSPORT_OUTPUT_FD"
+sf_tui_transport_next null
+assert_equal 'session_created,/tmp/new.jsonl,,,,,' "${(j:,:)reply}"
+sf_tui_transport_read "$SF_TUI_TRANSPORT_OUTPUT_FD"
+sf_tui_transport_result
+assert_equal '0,' "${(j:,:)reply}"
+
 # A command that vanishes before the initial write cannot terminate chat with SIGPIPE.
 SF_TUI_TRANSPORT_COMMAND=( "$tmp/missing" )
 if sf_tui_transport_start '{}' callback; then

@@ -211,6 +211,12 @@ class Session:
             self.pump()
         raise AssertionError(f"did not render a ready prompt\n{self.visible(start)[-1500:]}")
 
+    def settle(self, seconds=0.3):
+        """Pump past creation, which runs as a turn and queues submitted prompts."""
+        end = time.monotonic() + seconds
+        while time.monotonic() < end:
+            self.pump()
+
     def send(self, value):
         os.write(self.fd, value)
 

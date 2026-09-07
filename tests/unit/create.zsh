@@ -174,8 +174,7 @@ typeset first="$tmp/first-hook" silent="$tmp/silent-hook" stream_config="$tmp/st
 cat >"$first" <<'ZSH'
 #!/usr/bin/env zsh
 [[ ! -e $SHELLFISH_SESSION ]] || exit 2
-jq -se 'length == 2 and .[0].type == "_session_prepare" and
-  .[1].type == "_notice" and .[1].complete == false and .[1].text == ""' \
+jq -se 'length == 1 and .[0].type == "_session_prepare"' \
   "$SF_TEST_EVENTS" >/dev/null || exit 3
 print -r -- 'startup context'
 printf '%*s' "${SF_TEST_CONTEXT_BYTES:-0}" ''
@@ -184,7 +183,7 @@ ZSH
 cat >"$silent" <<'ZSH'
 #!/usr/bin/env zsh
 [[ ! -e $SHELLFISH_SESSION ]] || exit 2
-jq -se '.[-2].complete == true and .[-1].complete == false and .[-1].text == ""' \
+jq -se '.[-1].complete == true and .[-1].context.type == "context"' \
   "$SF_TEST_EVENTS" >/dev/null || exit 3
 ZSH
 chmod +x "$first" "$silent"
@@ -193,22 +192,15 @@ jq --arg first "$first" --arg silent "$silent" \
 SF_TEST_EVENTS="$events" zsh -f "$entry" create --jsonl --config "$stream_config" \
   --session-out "$streamed" >"$events" 2>"$hook_error" || fail 'streamed creation failed'
 [[ ! -s $hook_error ]] || fail 'streamed display leaked to stderr'
-jq -se --arg path "$streamed" --arg first "${first:A}" --arg silent "${silent:A}" \
+jq -se --arg path "$streamed" --arg first "${first:A}" \
   --slurpfile session "$streamed" '
-  map(.type) == ["_session_prepare","_notice","_notice","_notice",
-    "_notice","_notice","_session_created"] and
-  .[0].path == $path and .[0].records == $session[:2] and
-  (.[0].presentation | keys == ["theme","tui"]) and
+  map(.type) == ["_session_prepare","_notice","_notice","_session_created"] and
+  .[0] == {type:"_session_prepare",path:$path,records:$session[:2]} and
   .[1] == {type:"_notice",level:"info",source:"session_start",title:$first,
-    text:"",complete:false} and
-  .[2].text == "startup display\n" and .[2].complete == false and
-  .[3].text == "startup display\n" and .[3].complete == true and
-  .[3].context == $session[2] and
-  .[4] == {type:"_notice",level:"info",source:"session_start",title:$silent,
-    text:"",complete:false} and
-  .[5] == {type:"_notice",level:"info",source:"session_start",title:$silent,
-    text:"",complete:true} and
-  .[6] == {type:"_session_created",path:$path} and
+    text:"startup display\n",complete:false} and
+  .[2].text == "startup display\n" and .[2].complete == true and
+  .[2].context == $session[2] and
+  .[3] == {type:"_session_created",path:$path} and
   $session[2] == {type:"context",hook:"session_start",script:"first-hook",content:"startup context\n"} and
   ($session | length == 3)
 ' "$events" >/dev/null || fail 'invalid creation event sequence or transcript'
@@ -219,8 +211,8 @@ jq '.harnesses.machine.max_capture_bytes=400000' "$stream_config" >"$large_confi
 SF_TEST_EVENTS="$events" SF_TEST_CONTEXT_BYTES=300000 zsh -f "$entry" create --jsonl \
   --session-out "$large" --config "$large_config" >"$events" 2>"$hook_error" ||
   fail 'large context preview failed'
-jq -se --slurpfile session "$large" '.[3].context == $session[2] and
-  (.[3].context.content | length == 300016)' "$events" >/dev/null ||
+jq -se --slurpfile session "$large" '.[2].context == $session[2] and
+  (.[2].context.content | length == 300016)' "$events" >/dev/null ||
   fail 'large context preview was truncated'
 
 # Empty startup has no hook events, including when the system is empty.
@@ -232,7 +224,7 @@ jq -se 'map(.type) == ["_session_prepare","_session_created"] and
 SF_TEST_STATE_MARKER="$marker" zsh -f "$entry" create --jsonl --session-out "$failed" \
   --config "$hook_config" >"$events" 2>"$hook_error" && fail 'streamed failure succeeded'
 [[ ! -e $failed && $(<"$hook_error") == *'hook script failed with status 9:'* ]]
-jq -se 'map(.type) == ["_session_prepare","_notice","_notice","_notice"] and
+jq -se 'map(.type) == ["_session_prepare","_notice","_notice"] and
   all(.[]; has("context") | not)' \
   "$events" >/dev/null || fail 'failed creation emitted completion'
 
@@ -246,5 +238,37 @@ SF_TEST_EVENTS="$events" SF_TEST_STATE_MARKER="$marker" zsh -f "$entry" create -
 jq -se 'any(.context.content == "startup context\n") and
   all(.[]; .type != "_session_created")' "$events" >/dev/null ||
   fail 'later failure lost the preview or reported creation'
+
+# The client's cancellation signal stops the running script and saves nothing.
+typeset slow="$tmp/slow-hook" slow_config="$tmp/slow.jsonc" cancelled="$tmp/cancelled.jsonl"
+export SLOW_MARKER="$tmp/slow-active" SLOW_RELEASE="$tmp/slow-release"
+export SLOW_EXIT_MARKER="$tmp/slow-exit"
+cat >"$slow" <<'ZSH'
+#!/usr/bin/env zsh
+: >"$SLOW_MARKER"
+# Released rather than timed: a sleeping script looks stopped either way.
+while [[ ! -e $SLOW_RELEASE ]]; do
+  sleep 0.05
+done
+: >"$SLOW_EXIT_MARKER"
+ZSH
+chmod +x "$slow"
+jq --arg slow "$slow" '.harnesses.machine.session_start=[$slow]' "$config" >"$slow_config"
+zsh -f "$entry" create --jsonl --config "$slow_config" --session-out "$cancelled" \
+  >"$events" 2>"$hook_error" &
+integer create_pid=$! cancel_status=0 waited=0
+while (( waited++ < 50 )) && [[ ! -e $SLOW_MARKER ]]; do
+  sleep 0.1
+done
+(( waited <= 50 )) || fail 'session_start hook script did not start'
+kill -USR1 "$create_pid"
+wait "$create_pid" || cancel_status=$?
+(( cancel_status == 130 )) || fail 'cancelled creation did not report cancellation'
+[[ ! -e $cancelled ]] || fail 'cancelled creation wrote a session'
+: >"$SLOW_RELEASE"
+sleep 0.3
+[[ ! -e $SLOW_EXIT_MARKER ]] || fail 'cancelled session_start hook script ran to completion'
+jq -se 'all(.[]; .type != "_session_created")' "$events" >/dev/null ||
+  fail 'cancelled creation announced a session'
 
 print -r -- ok

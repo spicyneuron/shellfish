@@ -10,6 +10,8 @@ sf_test_tmp controller
 # Keep unit tests PTY-free; the real worker lifecycle is covered by tests/pty.
 sf_tui_heartbeat_arm() { return 0; }
 
+# Turn events are only legal once a session exists.
+SF_PRESENT_SESSION="$tmp/session.jsonl"
 SF_PRESENT_STATE=working
 sf_tui_add activity '' '' '' open
 sf_tui_decoded backend_request_start
@@ -558,3 +560,45 @@ SF_PRESENT_QUEUE=( one two )
 sf_tui_discard_queue
 assert_equal 'Discarded 2 queued prompts. Use ↑↓ keys to recover.' "$REPLY"
 assert_equal 0 "${#SF_PRESENT_QUEUE}"
+
+# Creation queues prompts and rejects turn events until it announces a session.
+sf_tui_reset
+sf_tui_terminal_reset
+typeset SF_ENTRY="$ROOT/bin/shellfish"
+SF_PRESENT_SESSION=''
+SF_PRESENT_STATE=working
+sf_tui_submit early
+assert_equal repaint "$REPLY"
+assert_equal early "${(j:,:)SF_PRESENT_QUEUE}"
+if sf_tui_decoded backend_request_start; then
+  fail 'creation accepted a turn event'
+fi
+sf_tui_decoded session_created "$tmp/new.jsonl"
+assert_equal "$tmp/new.jsonl" "$SF_PRESENT_SESSION"
+assert_equal "$SF_ENTRY run --jsonl --session $tmp/new.jsonl" "${(j: :)SF_TUI_TRANSPORT_COMMAND}"
+if sf_tui_decoded session_created "$tmp/second.jsonl"; then
+  fail 'creation announced a second session'
+fi
+SF_TUI_TRANSPORT_EOF=1
+SF_TUI_TRANSPORT_EXIT_STATUS=0
+SF_PRESENT_RENDER_ERROR=''
+sf_tui_exec_finish
+assert_equal queued "$SF_PRESENT_STATE"
+assert_equal early "$SF_PRESENT_SUBMITTED"
+
+# Creation that announced nothing fails, and has no transcript to reload.
+for code in 0 9; do
+  sf_tui_reset
+  sf_tui_terminal_reset
+  SF_PRESENT_SESSION=''
+  SF_PRESENT_STATE=working
+  SF_PRESENT_QUEUE=()
+  sf_tui_event notice notice hook session_start working open
+  SF_TUI_TRANSPORT_EOF=1
+  SF_TUI_TRANSPORT_EXIT_STATUS=$code
+  SF_TUI_TRANSPORT_EXIT_DETAIL='startup failure'
+  sf_tui_exec_finish
+  assert_equal stopped "$SF_PRESENT_STATE"
+  assert_equal notice "${(j:,:)SF_PRESENT_NODE_TYPE}"
+  assert_equal 'Session creation failed.' "$SF_PRESENT_NODE_HEADING[-1]"
+done

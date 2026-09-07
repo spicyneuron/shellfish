@@ -1,11 +1,8 @@
 #!/usr/bin/env python3
-"""How user_prompt_submit hook scripts reach the chat UI: display, pacing, and handoff.
-
-Split from chat.py so each file's scenarios fit the runner's per-file timeout
-and the two run concurrently.
-"""
+"""Hook display, startup pacing, and handoff in the chat UI."""
 import json
 import sys
+import tempfile
 import time
 from pathlib import Path
 
@@ -47,6 +44,67 @@ done
 exit 10
 """
 
+START_HOOK = r"""#!/usr/bin/env zsh
+typeset directory=${SHELLFISH_SESSION:h} name=${0:t}
+: >"$directory/$name-started"
+print -u2 -- "Inspecting $name"
+while [[ ! -e $directory/$name-release ]]; do
+  sleep 0.05
+done
+print -r -- "$name context"
+"""
+
+
+def test_startup_streams_hooks_and_runs_the_queued_prompt():
+    with tempfile.TemporaryDirectory() as directory:
+        script = Path(directory) / "first_start"
+        script.write_text(START_HOOK)
+        script.chmod(0o755)
+        session = Session(
+            explicit_session=True, session_start=[str(script)],
+            args=["initial prompt"],
+        )
+        state = session.explicit_session.parent
+        try:
+            session.wait_after(0, "Inspecting first_start")
+            assert "1. initial prompt" in session.visible(), session.visible()
+            activity = ("⡀", "⡄", "⠆", "⠃", "⠁")
+            mark = len(session.output)
+            end = time.monotonic() + 2
+            while len({frame for frame in activity if frame in session.visible(mark)}) < 2:
+                assert time.monotonic() < end, session.visible(mark)
+                session.pump()
+
+            (state / "first_start-release").touch()
+            _, records = session.wait_session_records(4, path=session.explicit_session)
+            assert [record["type"] for record in records[:2]] == ["session", "context"]
+            assert records[2]["role"] == "user"
+            assert records[2]["content"][0]["text"] == "initial prompt"
+        finally:
+            (state / "first_start-release").touch()
+            session.close()
+
+
+def test_startup_cancellation_quits_without_a_session():
+    with tempfile.TemporaryDirectory() as directory:
+        script = Path(directory) / "slow_start"
+        script.write_text(START_HOOK)
+        script.chmod(0o755)
+        session = Session(explicit_session=True, session_start=[str(script)])
+        try:
+            session.wait_after(0, "Inspecting slow_start")
+            session.send(b"\x03")
+            session.wait_after(0, "Cancelled.")
+            assert not session.explicit_session.exists()
+            session.send(b"\x03")
+            end = time.monotonic() + 0.2
+            while time.monotonic() < end:
+                session.pump()
+            assert "Saved:" not in session.visible(), session.visible()
+        finally:
+            (session.explicit_session.parent / "slow_start-release").touch()
+            session.close()
+
 
 def test_slow_prompt_hook_keeps_ui_active():
     session = Session(explicit_session=True, hooks={"slow": SLOW_HOOK})
@@ -72,6 +130,7 @@ def test_slow_prompt_hook_keeps_ui_active():
             session.pump()
         frames = {frame for frame in activity if frame in session.visible(mark)}
         assert len(frames) >= 2, session.visible(mark)
+        assert "slow · user_prompt_submit" not in session.visible(mark), session.visible(mark)
         assert not completed.exists()
 
         release.touch()
@@ -155,7 +214,9 @@ def test_fork_restores_removed_user_prompt_as_draft():
 
 
 if __name__ == "__main__":
-    run("user_prompt_submit hook script PTY scenarios", [
+    run("hook script PTY scenarios", [
+        test_startup_streams_hooks_and_runs_the_queued_prompt,
+        test_startup_cancellation_quits_without_a_session,
         test_slow_prompt_hook_keeps_ui_active,
         test_prompt_hook_display_precedes_agent_section,
         test_prompt_hook_hands_off_to_another_session,

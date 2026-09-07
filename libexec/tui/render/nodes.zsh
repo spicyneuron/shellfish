@@ -128,8 +128,10 @@ sf_tui_close() {
   if [[ $SF_PRESENT_NODE_TYPE[index] == (message|reasoning) && $body != *[!$'\n']* ]]; then
     body=''
   fi
-  if [[ $SF_PRESENT_NODE_TYPE[index] == (activity|message|reasoning) &&
-      -z $SF_PRESENT_NODE_HEADING[index] && -z $body ]]; then
+  if [[ ( $SF_PRESENT_NODE_TYPE[index] == (activity|message|reasoning) &&
+      -z $SF_PRESENT_NODE_HEADING[index] && -z $body ) ||
+      ( $SF_PRESENT_NODE_TYPE[index] == notice &&
+      $SF_PRESENT_NODE_ROLE[index] == notice && -z $body ) ]]; then
     end=$(( index - 1 ))
     if [[ ${2-} == orphan_section && $index -gt 1 &&
         $SF_PRESENT_NODE_TYPE[index-1] == section ]]; then
@@ -214,9 +216,10 @@ sf_tui_notice() {
       sf_tui_safe "$heading"; SF_PRESENT_NODE_HEADING[index]=$REPLY
       sf_tui_safe "$body"; SF_PRESENT_NODE_BODY[index]=$REPLY
       SF_PRESENT_NODE_ROLE[index]=$severity
+      notice_index=$index
       [[ $state == open ]] || sf_tui_close $index || return 1
+      (( ${#SF_PRESENT_NODE_TYPE} >= index )) || notice_index=0
       if [[ $state != open && -n $SF_PRESENT_TOOL_CURRENT ]]; then
-        notice_index=$index
         if [[ $severity == error ]]; then
           SF_PRESENT_TOOL_HEADING=()
           SF_PRESENT_TOOL_CONTENT=()
@@ -227,9 +230,8 @@ sf_tui_notice() {
         else
           sf_tui_tool_open || return 1
         fi
-        index=$notice_index
       fi
-      REPLY=$index
+      REPLY=$notice_index
       return 0
     fi
     if [[ $SF_PRESENT_NODE_TYPE[index] == tool_result ]]; then
@@ -246,8 +248,11 @@ sf_tui_notice() {
       sf_tui_close $index orphan_section || return 1
     fi
   fi
-  sf_tui_add notice "$severity" "$heading" "$body" "$state" || return 1
-  notice_index=$REPLY
+  notice_index=0
+  if [[ $state == open || $severity != notice || -n $body ]]; then
+    sf_tui_add notice "$severity" "$heading" "$body" "$state" || return 1
+    notice_index=$REPLY
+  fi
   if (( resume_tool )) && [[ $state != open ]]; then
     sf_tui_tool_open || return 1
   fi
@@ -375,12 +380,17 @@ sf_tui_event() {
       fi
       ;;
     context)
+      if (( index )) && [[ $SF_PRESENT_NODE_TYPE[index] == notice &&
+          $SF_PRESENT_NODE_ROLE[index] == notice && $SF_PRESENT_NODE_STATE[index] == open ]]; then
+        SF_PRESENT_NODE_BODY[index]=''
+        sf_tui_close $index || return 1
+      fi
       sf_tui_add injection system "$first" "$third" || return 1
       SF_PRESENT_NODE_META[REPLY]=$second
       ;;
     notice)
       sf_tui_notice "$first" "$second" "$fourth" "$fifth" || return 1
-      SF_PRESENT_NODE_META[REPLY]=$third
+      (( ! REPLY )) || SF_PRESENT_NODE_META[REPLY]=$third
       # A durable failure ends its section without taking a section number.
       [[ $sixth != end ]] || SF_PRESENT_LAST_ROLE=''
       ;;

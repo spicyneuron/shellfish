@@ -123,7 +123,7 @@ sf_tui_transport_start() {
   (( ! had_monitor )) || setopt monitor
   (( ! had_bg_nice )) || setopt bg_nice
   # A fast exec exit must turn a broken initial pipe into a startup error.
-  if ! (
+  if [[ -n $input ]] && ! (
     trap '' PIPE
     print -r -- "$input" >&$SF_TUI_TRANSPORT_INPUT_FD 2>/dev/null
   ); then
