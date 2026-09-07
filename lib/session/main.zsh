@@ -95,7 +95,8 @@ sf_session_prepare() {
     sf_session_fail 'cannot prepare session header'
     return
   }
-  decoded=$(jq -L "$SF_ROOT" -jnre --arg cwd "$cwd" --arg created "$created" \
+  decoded=$(builtin cd -- "$SF_ROOT" &&
+    jq -L "$SF_ROOT" -jnre --arg cwd "$cwd" --arg created "$created" \
     --argjson runtime "$runtime" '
       include "lib/runtime/schema";
       def field: ., "\u0000";
@@ -150,12 +151,13 @@ sf_session_create() {
     return
   }
   records=( "${SF_SESSION_RECORDS[@]}" "$@" )
-  printf '%s\n' "${records[@]}" | jq -L "$SF_ROOT" -jes '
+  printf '%s\n' "${records[@]}" | (builtin cd -- "$SF_ROOT" &&
+    jq -L "$SF_ROOT" -jes '
     include "lib/runtime/schema";
     select(length >= 1) |
     select(.[0] | canonical_session_header(1)) |
     select(.[1:] | canonical_session_records)
-  ' >/dev/null 2>&1 || {
+  ') >/dev/null 2>&1 || {
     sf_session_fail 'cannot prepare session records'
     return
   }
@@ -188,7 +190,8 @@ sf_session_read_runtime() {
     sf_session_fail "cannot read session header: $session_path"
     return
   }
-  REPLY=$(jq -L "$SF_ROOT" -cnce --argjson header "$header" '
+  REPLY=$(builtin cd -- "$SF_ROOT" &&
+    jq -L "$SF_ROOT" -cnce --argjson header "$header" '
     include "lib/runtime/schema";
     $header | select(canonical_session_header(1)) |
     del(.type, .format_version, .cwd, .created)
@@ -206,7 +209,8 @@ sf_session_project() {
   SF_HOOK_COUNTS=()
   SF_SESSION_RECOVERY_NEEDED=''
   SF_SESSION_PENDING_CALLS=()
-  loaded=$(printf '%s\n' "${SF_SESSION_RECORDS[@]}" | jq -L "$SF_ROOT" -jes '
+  loaded=$(builtin cd -- "$SF_ROOT" &&
+    printf '%s\n' "${SF_SESSION_RECORDS[@]}" | jq -L "$SF_ROOT" -jes '
     include "lib/runtime/schema";
     def field: ., "\u0000";
     select(length >= 1) |
@@ -296,7 +300,8 @@ sf_session_update() {
     sf_session_fail 'session has not been read'
     return
   }
-  decoded=$(jq -L "$SF_ROOT" -jnre --argjson header "$SF_SESSION_RECORDS[1]" \
+  decoded=$(builtin cd -- "$SF_ROOT" &&
+    jq -L "$SF_ROOT" -jnre --argjson header "$SF_SESSION_RECORDS[1]" \
     --argjson update "$update" '
       include "lib/runtime/schema";
       def field: ., "\u0000";

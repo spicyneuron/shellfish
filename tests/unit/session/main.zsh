@@ -8,6 +8,25 @@ sf_test_tmp session
 session="$tmp/session.jsonl"
 sf_test_runtime
 
+# Working-directory modules cannot shadow the installed session schema.
+mkdir -p "$tmp/shadow/lib/runtime"
+print -r -- 'def canonical_session_header(:' >"$tmp/shadow/lib/runtime/schema.jq"
+(
+  builtin cd -- "$tmp/shadow"
+  SF_SESSION_PATH=relative.jsonl
+  sf_session_prepare "$SF_TEST_RUNTIME"
+  assert_equal "$(pwd -P)" "$SF_SESSION[cwd]"
+  sf_session_create
+  [[ -f relative.jsonl ]]
+  sf_session_read_runtime relative.jsonl
+  assert_equal "$SF_TEST_RUNTIME" "$REPLY"
+  sf_session_read
+  sf_session_update '{"profile":{"request":{"model":"shadow-test"}}}'
+  sf_session_read_runtime relative.jsonl
+  jq -e '.profile.request.model == "shadow-test"' <<<"$REPLY" >/dev/null
+  assert_equal "$tmp/shadow" "$PWD"
+)
+
 sf_session_select_path "$tmp/relative.jsonl"
 [[ $REPLY == "$tmp/relative.jsonl" ]]
 
