@@ -11,31 +11,18 @@ unset SHELLFISH_API_KEY
 
 sf_backend_setup anthropic
 trap 'rm -rf -- "$SF_BACKEND_TEMP_DIR"' EXIT
-typeset request_file=$SF_BACKEND_REQUEST_FILE
-cat >"$request_file"
-
-typeset -a fields
-fields=( "${(@f)$(jq -er '
-  select((.options.request.model | type == "string" and . != "") and
-    (.transport.endpoint | type == "string" and . != "") and
-    (.transport.insecure_tls | type == "boolean") and
-    (.transport.http_timeout | type == "number") and
-    (.transport.http_stall | type == "number")) |
-  .options.request.model, .transport.endpoint,
-  (.transport.insecure_tls | tostring), (.transport.http_timeout | tostring),
-  (.transport.http_stall | tostring)
-' "$request_file")}" ) || exit 10
-(( ${#fields} == 5 )) || exit 10
+cat >"$SF_BACKEND_REQUEST_FILE"
+sf_backend_request || exit 10
 
 sf_backend_credential 'x-api-key' "$api_key"
 unset api_key
 
-typeset endpoint=${fields[2]%/}
-typeset models_endpoint="${endpoint:h}/models?limit=1000" context
-sf_backend_context_curl_args "$models_endpoint" $fields[3] $fields[4] $fields[5]
+typeset endpoint=${SF_BACKEND_ENDPOINT%/}
+typeset context
+sf_backend_context_curl_args "${endpoint:h}/models?limit=1000"
 SF_BACKEND_CURL_ARGS+=(--header 'anthropic-version: 2023-06-01')
 context=$(curl "${SF_BACKEND_CURL_ARGS[@]}" 2>/dev/null | \
-  jq -ce --arg model "$fields[1]" '
+  jq -ce --arg model "$SF_BACKEND_MODEL" '
     first(.data[]? | select(.id == $model) | .max_input_tokens) |
     select(type == "number" and floor == . and . >= 1 and . <= 2147483647) |
     {context_window:.}

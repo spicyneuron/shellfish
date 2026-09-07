@@ -25,8 +25,30 @@ integer operation_status=0
 (( operation_status != 0 )) || fail 'invalid authentication value was accepted'
 [[ "$(<"$tmp/cred-err")" == *"invalid authentication value"* ]]
 
+# The request supplies the model and transport every adapter consumes.
+cat >"$SF_BACKEND_REQUEST_FILE" <<'JSON'
+{"options":{"request":{"model":"test-model"}},
+ "transport":{"endpoint":"https://api.example.com/v1","insecure_tls":true,
+  "http_timeout":60,"http_stall":10}}
+JSON
+sf_backend_request
+assert_equal test-model "$SF_BACKEND_MODEL"
+assert_equal https://api.example.com/v1 "$SF_BACKEND_ENDPOINT"
+
+# An adapter's own predicate rejects request options it cannot translate.
+operation_status=0
+sf_backend_request '.options.request | has("model") | not' || operation_status=$?
+(( operation_status != 0 )) || fail 'untranslatable request options were accepted'
+
+# A request without a model is rejected before any predicate runs.
+print -r -- '{"transport":{"endpoint":"https://api.example.com/v1","insecure_tls":true,"http_timeout":60,"http_stall":10}}' \
+  >"$SF_BACKEND_REQUEST_FILE"
+operation_status=0
+sf_backend_request '.options.request | has("stream_options") | not' || operation_status=$?
+(( operation_status != 0 )) || fail 'request without a model was accepted'
+
 # Curl arguments construction includes headers, timeouts, and insecure flags.
-sf_backend_curl_args 'https://api.example.com/v1' true 60 10
+sf_backend_curl_args
 [[ "${SF_BACKEND_CURL_ARGS[*]}" == *'--url https://api.example.com/v1'* ]]
 [[ "${SF_BACKEND_CURL_ARGS[*]}" == *"--max-time 60"* ]]
 [[ "${SF_BACKEND_CURL_ARGS[*]}" == *"--speed-time 10"* ]]

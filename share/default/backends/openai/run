@@ -16,18 +16,8 @@ typeset response_file=$SF_BACKEND_RESPONSE_FILE status_file=$SF_BACKEND_STATUS_F
 typeset normalizer_error_file=$SF_BACKEND_NORMALIZER_ERROR_FILE
 cat >"$request_file"
 
-typeset -a transport
-transport=( "${(@f)$(jq -er '
-  select((.options.request.model | type == "string" and . != "") and
-    (.options.request | has("stream_options") | not)) |
-  .transport |
-  select((.endpoint | type == "string" and . != "") and
-    (.insecure_tls | type == "boolean") and
-    (.http_timeout | type == "number") and (.http_stall | type == "number")) |
-  .endpoint, (.insecure_tls | tostring),
-  (.http_timeout | tostring), (.http_stall | tostring)
-' "$request_file")}" ) || sf_backend_die 'invalid request'
-(( ${#transport} == 4 )) || sf_backend_die 'invalid request'
+sf_backend_request '.options.request | has("stream_options") | not' ||
+  sf_backend_die 'invalid request'
 
 sf_backend_credential 'Authorization' "${api_key:+Bearer $api_key}"
 unset api_key
@@ -67,7 +57,7 @@ jq -ce '
   } end)
 ' "$request_file" >"$body_file" || sf_backend_die 'cannot translate canonical request'
 
-sf_backend_curl_args $transport[1] $transport[2] $transport[3] $transport[4]
+sf_backend_curl_args
 set +e
 curl "${SF_BACKEND_CURL_ARGS[@]}" 2>"$status_file" | tee "$response_file" | \
 jq -nRrc --unbuffered '

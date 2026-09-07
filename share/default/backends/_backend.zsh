@@ -3,6 +3,9 @@
 typeset -g SF_BACKEND_NAME SF_BACKEND_TEMP_DIR SF_BACKEND_REQUEST_FILE
 typeset -g SF_BACKEND_BODY_FILE SF_BACKEND_RESPONSE_FILE SF_BACKEND_STATUS_FILE
 typeset -g SF_BACKEND_HEADERS_FILE SF_BACKEND_NORMALIZER_ERROR_FILE
+# The request fields every adapter consumes, from sf_backend_request.
+typeset -g SF_BACKEND_MODEL SF_BACKEND_ENDPOINT SF_BACKEND_INSECURE_TLS
+typeset -g SF_BACKEND_HTTP_TIMEOUT SF_BACKEND_HTTP_STALL
 typeset -ga SF_BACKEND_CURL_ARGS
 typeset -gr SF_BACKEND_CONTROL_PATTERN='[\x{0000}-\x{001f}\x{007f}-\x{009f}]'
 
@@ -29,6 +32,33 @@ sf_backend_setup() {
   }
 }
 
+# Reads the request fields an adapter consumes. The core validated the request
+# before invoking the adapter, so this checks only what this program uses, plus
+# the jq predicate an adapter passes for request options it cannot translate.
+# The model check leads because jq's and short-circuits, so the predicate never
+# runs against a missing options.request.
+sf_backend_request() {
+  local accepts=${1:-true}
+  local -a fields
+  fields=( "${(@f)$(jq -er "def accepted: $accepts;"'
+    select((.options.request.model | type == "string" and . != "") and accepted) |
+    .transport as $transport |
+    select(($transport.endpoint | type == "string" and . != "") and
+      ($transport.insecure_tls | type == "boolean") and
+      ($transport.http_timeout | type == "number") and
+      ($transport.http_stall | type == "number")) |
+    .options.request.model, $transport.endpoint,
+    ($transport.insecure_tls | tostring),
+    ($transport.http_timeout | tostring), ($transport.http_stall | tostring)
+  ' "$SF_BACKEND_REQUEST_FILE")}" ) || return 1
+  (( ${#fields} == 5 )) || return 1
+  SF_BACKEND_MODEL=$fields[1]
+  SF_BACKEND_ENDPOINT=$fields[2]
+  SF_BACKEND_INSECURE_TLS=$fields[3]
+  SF_BACKEND_HTTP_TIMEOUT=$fields[4]
+  SF_BACKEND_HTTP_STALL=$fields[5]
+}
+
 sf_backend_credential() {
   local name=$1 value=$2
   [[ -n $value ]] || return 0
@@ -37,19 +67,20 @@ sf_backend_credential() {
 }
 
 sf_backend_curl_args() {
-  local endpoint=$1 insecure=$2 timeout=$3 stall=$4
   SF_BACKEND_CURL_ARGS=(--disable --silent --show-error --no-buffer --connect-timeout 15
-    --max-time "$timeout" --speed-limit 1 --speed-time "$stall"
-    --write-out '%{stderr}%{http_code}' --request POST --url "$endpoint"
+    --max-time "$SF_BACKEND_HTTP_TIMEOUT" --speed-limit 1 --speed-time "$SF_BACKEND_HTTP_STALL"
+    --write-out '%{stderr}%{http_code}' --request POST --url "$SF_BACKEND_ENDPOINT"
     --header 'Content-Type: application/json' --data-binary "@$SF_BACKEND_BODY_FILE")
   [[ ! -s $SF_BACKEND_HEADERS_FILE ]] ||
     SF_BACKEND_CURL_ARGS+=(--header "@$SF_BACKEND_HEADERS_FILE")
-  [[ $insecure != true ]] || SF_BACKEND_CURL_ARGS+=(--insecure)
+  [[ $SF_BACKEND_INSECURE_TLS != true ]] || SF_BACKEND_CURL_ARGS+=(--insecure)
 }
 
+# Model metadata is a side lookup, so it uses the request's TLS setting but its
+# own endpoint and tighter bounds.
 sf_backend_context_curl_args() {
-  local endpoint=$1 insecure=$2
-  integer timeout=$3 stall=$4
+  local endpoint=$1 insecure=$SF_BACKEND_INSECURE_TLS
+  integer timeout=$SF_BACKEND_HTTP_TIMEOUT stall=$SF_BACKEND_HTTP_STALL
   (( timeout <= 10 )) || timeout=10
   (( stall <= 5 )) || stall=5
   SF_BACKEND_CURL_ARGS=(--disable --silent --show-error --fail-with-body
