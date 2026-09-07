@@ -45,7 +45,7 @@ exit 10
 """
 
 START_HOOK = r"""#!/usr/bin/env zsh
-typeset directory=${SHELLFISH_SESSION:h} name=${0:t}
+typeset directory=${SHELLFISH_SESSION:h} name=${0:h:t}
 : >"$directory/$name-started"
 print -u2 -- "Inspecting $name"
 while [[ ! -e $directory/$name-release ]]; do
@@ -57,11 +57,13 @@ print -r -- "$name context"
 
 def test_startup_streams_hooks_and_runs_the_queued_prompt():
     with tempfile.TemporaryDirectory() as directory:
-        script = Path(directory) / "first_start"
+        component = Path(directory) / "first_start"
+        component.mkdir()
+        script = component / "run"
         script.write_text(START_HOOK)
         script.chmod(0o755)
         session = Session(
-            explicit_session=True, session_start=[str(script)],
+            explicit_session=True, session_start=[str(component)],
             args=["initial prompt"],
         )
         state = session.explicit_session.parent
@@ -87,10 +89,12 @@ def test_startup_streams_hooks_and_runs_the_queued_prompt():
 
 def test_startup_cancellation_quits_without_a_session():
     with tempfile.TemporaryDirectory() as directory:
-        script = Path(directory) / "slow_start"
+        component = Path(directory) / "slow_start"
+        component.mkdir()
+        script = component / "run"
         script.write_text(START_HOOK)
         script.chmod(0o755)
-        session = Session(explicit_session=True, session_start=[str(script)])
+        session = Session(explicit_session=True, session_start=[str(component)])
         try:
             session.wait_after(0, "Inspecting slow_start")
             session.send(b"\x03")

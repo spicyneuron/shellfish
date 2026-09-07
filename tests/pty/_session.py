@@ -108,7 +108,9 @@ class Session:
                 # shipped script runs rather than a copy that could drift from it.
                 if body is None:
                     continue
-                script = hook_dir / name
+                component = hook_dir / name
+                component.mkdir()
+                script = component / "run"
                 script.write_text(body)
                 script.chmod(0o755)
         if session_start:
