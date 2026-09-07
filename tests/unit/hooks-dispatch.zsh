@@ -156,7 +156,7 @@ functions -c sf_hooks_capture_real sf_hooks_capture_one
 unfunction sf_hooks_capture_real
 
 # Prepared stdin and argv reach scripts without newline insertion or shell parsing.
-make_script invocation 'print -rn -- "$#|$1|$2|$3|"; cat; print -rn -- "|$PWD|$SHELLFISH_SESSION|$SHELLFISH_CAPTURE_LIMIT|$SHELLFISH_TURN_STATE|$SHELLFISH_SESSION_STATE|$SHELLFISH_SESSION_ID|$SHELLFISH_MODEL|$PROJECT_DIR|$HOOK_SCRIPT_ROOT"'
+make_script invocation 'print -rn -- "$#|$1|$2|$3|"; cat; print -rn -- "|$PWD|$SHELLFISH_SESSION|$SHELLFISH_CAPTURE_LIMIT|$SHELLFISH_TURN_STATE|$SHELLFISH_SESSION_STATE|$SHELLFISH_SESSION_ID|$SHELLFISH_MODEL|$0|${0:A:h}"'
 typeset invocation=$script
 typeset working="$tmp/working" session="$tmp/session.jsonl" state
 mkdir "$working"
@@ -172,7 +172,7 @@ state=$SHELLFISH_TURN_STATE
 print -n shared >"$state/marker"
 sf_hooks_invoke "$session" "$working" "$input" 4096 0 3 stop '' $'line\nbreak' \
   "$invocation" '[]' || fail "$SF_HOOK_ERROR"
-typeset expected="3|stop||"$'line\nbreak|first\nsecond\n'"|$working|${session:A}|4096|$state|$SHELLFISH_SESSION_STATE|session-id|model-name|$working|${invocation:h}"
+typeset expected="3|stop||"$'line\nbreak|first\nsecond\n'"|$working|${session:A}|4096|$state|$SHELLFISH_SESSION_STATE|session-id|model-name|$invocation|${invocation:h}"
 assert_equal "$expected" "$SF_HOOK_SCRIPT_RESULTS[3]"
 assert_equal 700 "$(stat -f %Lp "$SHELLFISH_SESSION_STATE")"
 [[ $(cat "$state/marker") == shared ]]

@@ -88,7 +88,7 @@ report_group Python uv python3 python
 report_group VCS git
 report_group GitHub gh
 
-sf_skills_discover "$bundled_root" "${SHELLFISH_CONFIG_DIR-}" "${PROJECT_DIR:-$PWD}"
+sf_skills_discover "$bundled_root" "${SHELLFISH_CONFIG_DIR-}" "$PWD"
 if (( ${#reply} )); then
   print -r -- $'\nAvailable agent skills. Invoke the `skill` tool when one applies:'
   integer index

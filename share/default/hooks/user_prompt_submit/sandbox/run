@@ -70,7 +70,7 @@ if [[ $candidate == '~/'* ]]; then
   }
   candidate="$HOME/${candidate#\~/}"
 elif [[ $candidate != /* ]]; then
-  candidate="$PROJECT_DIR/$candidate"
+  candidate="$PWD/$candidate"
 fi
 
 if [[ $action == add ]]; then

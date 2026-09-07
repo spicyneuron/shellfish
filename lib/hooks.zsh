@@ -93,7 +93,7 @@ sf_hooks_capture_one() {
   local display="$directory/current-display"
   local display_pipe="$directory/current-display-pipe"
   local control="$directory/current-control"
-  local HOOK_SCRIPT_ROOT=${script:h} hook=$SF_HOOK_NAME name
+  local hook=$SF_HOOK_NAME name
   local chunk notice=''
   integer script_status display_fd display_bytes=0 notice_sent=0
   local LC_ALL=C
@@ -102,7 +102,6 @@ sf_hooks_capture_one() {
     sf_hooks_fail 'hook name is not available'
     return
   }
-  export HOOK_SCRIPT_ROOT
   sf_environment_prepare "$SF_SESSION[runtime]" "$environment_json" || {
     sf_hooks_fail "$SF_ENVIRONMENT_ERROR"
     return
@@ -344,13 +343,11 @@ sf_hooks_invoke() {
   local SHELLFISH_SESSION_ID=${SHELLFISH_SESSION_ID:-$SF_SESSION[id]}
   local SHELLFISH_MODEL=${SHELLFISH_MODEL:-$SF_SESSION[model]}
   local SHELLFISH_EXECUTABLE=${SF_ENTRY-}
-  local PROJECT_DIR=${PROJECT_DIR:-$SF_SESSION[cwd]}
   local SHELLFISH_CONFIG_DIR=${SHELLFISH_CONFIG_DIR-}
   local SHELLFISH_TURN_ID=${SHELLFISH_TURN_ID-}
   local SF_HOOK_NAME=$hook
   export SHELLFISH_SESSION SHELLFISH_SESSION_STATE SHELLFISH_CAPTURE_LIMIT
-  export SHELLFISH_SESSION_ID SHELLFISH_MODEL SHELLFISH_EXECUTABLE PROJECT_DIR
-  export SHELLFISH_CONFIG_DIR
+  export SHELLFISH_SESSION_ID SHELLFISH_MODEL SHELLFISH_EXECUTABLE SHELLFISH_CONFIG_DIR
   [[ -n $SHELLFISH_SESSION_STATE && -d $SHELLFISH_SESSION_STATE ]] || {
     sf_hooks_fail 'hook session state is not available'
     return
@@ -393,7 +390,6 @@ sf_hooks_run_chain() {
   components=( "${(@)fields[2,-1]}" )
   local SHELLFISH_SESSION_ID=$SF_SESSION[id]
   local SHELLFISH_MODEL=$SF_SESSION[model]
-  local PROJECT_DIR=$SF_SESSION[cwd]
   local config_file SHELLFISH_CONFIG_DIR=''
   config_file=$(jq -r '.backend.env_file // ""' <<<"$SF_SESSION[runtime]") || return 1
   [[ -z $config_file ]] || SHELLFISH_CONFIG_DIR=${config_file:h}

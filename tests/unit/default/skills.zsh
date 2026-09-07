@@ -46,17 +46,17 @@ done
 [[ -n ${descriptions[skill-creator]-} ]]
 [[ -z ${descriptions[hidden]-} && -z ${descriptions[bad_name]-} ]]
 
-loaded=$(print -rn -- '{"name":"shared"}' | HOME="$home" PROJECT_DIR="$project" \
+loaded=$(cd "$project" && print -rn -- '{"name":"shared"}' | HOME="$home" \
   SHELLFISH_CONFIG_DIR="$config" zsh -f "$tool")
 [[ $loaded == "Skill directory: ${project:A}/.agents/skills/shared"*$'# shared instructions'* ]]
-loaded=$(print -rn -- '{"name":"skill-creator"}' | HOME="$home" PROJECT_DIR="$project" \
+loaded=$(cd "$project" && print -rn -- '{"name":"skill-creator"}' | HOME="$home" \
   SHELLFISH_CONFIG_DIR="$config" zsh -f "$tool")
 [[ $loaded == "Skill directory: $ROOT/share/default/skills/skill-creator"*$'\nname: skill-creator\n'* ]]
-if print -rn -- '{"name":"hidden"}' | HOME="$home" PROJECT_DIR="$project" \
-    SHELLFISH_CONFIG_DIR="$config" zsh -f "$tool" >/dev/null 2>&1; then
+if (cd "$project" && print -rn -- '{"name":"hidden"}' | HOME="$home" \
+    SHELLFISH_CONFIG_DIR="$config" zsh -f "$tool" >/dev/null 2>&1); then
   fail 'skill tool loaded a model-disabled skill'
 fi
-if print -rn -- '{"name":"missing","extra":true}' | HOME="$home" PROJECT_DIR="$project" \
-    SHELLFISH_CONFIG_DIR="$config" zsh -f "$tool" >/dev/null 2>&1; then
+if (cd "$project" && print -rn -- '{"name":"missing","extra":true}' | HOME="$home" \
+    SHELLFISH_CONFIG_DIR="$config" zsh -f "$tool" >/dev/null 2>&1); then
   fail 'skill tool accepted invalid input'
 fi

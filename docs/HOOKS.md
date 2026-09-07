@@ -85,9 +85,9 @@ Every script is invoked with the session working directory as its `PWD` and thes
 | `SHELLFISH_MODE` | Owning process: `create` for `session_start`, `run` for every turn hook |
 | `SHELLFISH_MODEL` | Active model frozen in the session header |
 | `SHELLFISH_VERBOSE` | `1` when the chat was started with the `--verbose` presentation override; otherwise `0` |
-| `PROJECT_DIR` | Working directory frozen in the session header |
 | `SHELLFISH_CONFIG_DIR` | Directory containing the resolved config file, or its prospective default location |
-| `HOOK_SCRIPT_ROOT` | Directory containing the resolved hook script |
+
+The initial `PWD` is the working directory frozen in the session header. The script command is a canonical absolute path, so a component can locate adjacent resources from `argv[0]`, such as `${0:A:h}` in zsh.
 
 Scripts on turn-scoped hooks (`user_prompt_submit`, `permission_request`, `pre_tool_use`, `post_tool_use`, and `stop`) also receive `SHELLFISH_TURN_ID` and `SHELLFISH_TURN_STATE`. The turn ID is the one-based ordinal of the next durable user message. The turn derives it before `user_prompt_submit`, reuses it for the accepted turn's later hooks, and discards it when submission is blocked. Turn IDs are not written separately to the session transcript. `SHELLFISH_TURN_STATE` is an absolute path to a private, mode-0700 directory shared by all scripts in that turn.
 
