@@ -10,7 +10,7 @@ sf_die() {
   return 1
 }
 
-# Usable only after lib/request.zsh defines sf_process_stop and SF_REQUEST.
+# Usable only after lib/request.zsh is sourced, for SF_REQUEST and sf_process_stop.
 sf_send_request_abort() {
   sf_process_stop "$SF_REQUEST[pid]"
   [[ -z $SF_REQUEST[error_file] ]] || rm -f -- "$SF_REQUEST[error_file]"

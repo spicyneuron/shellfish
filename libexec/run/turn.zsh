@@ -8,6 +8,7 @@ setopt no_aliases no_bg_nice no_multios pipe_fail
 (( $+functions[sf_hooks_user_prompt_submit] )) || source "$SF_ROOT/libexec/run/hooks.zsh"
 (( $+functions[sf_tools_load] )) || source "$SF_ROOT/libexec/run/tools.zsh"
 (( $+functions[sf_request_run] )) || source "$SF_ROOT/lib/request.zsh"
+(( $+functions[sf_process_stop] )) || source "$SF_ROOT/lib/process.zsh"
 
 typeset -gA SF_RUN=(
   answer '' committed 0 jsonl 0 interrupted 0 permission_count 0 permission_available 0
