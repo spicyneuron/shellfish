@@ -89,11 +89,11 @@ sf_test_runtime() {
     --arg command "$SF_TEST_BACKEND" \
     --arg tool "$tool" \
     --arg fence "${commands[fence]:A}" \
-    --slurpfile tool_manifest "$tool/tool.json" '
+    --slurpfile tool_manifest "$tool/manifest.json" '
       {
         profile:{request:{model:"test-model"}},
         backend:{name:"test",command:$command,endpoint:"https://example.invalid/test",
-          api_key_env:"",env_file:"",insecure_tls:false,http_timeout:30,http_stall:10},
+          environment:[],env_file:"",insecure_tls:false,http_timeout:30,http_stall:10},
         harness:{sandbox_read_paths:[],sandbox_write_paths:[],fence:$fence,
           tools:[{name:"shell",command:($tool+"/run"),
             settings:(if $tool_manifest[0].sandbox then ($tool+"/fence.jsonc") else null end),

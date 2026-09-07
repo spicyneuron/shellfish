@@ -176,7 +176,7 @@ sf_hooks_dispatch() {
   local -a arguments=( "${(@)argv[1,argument_count]}" )
   shift argument_count
   local -a scripts=( "$@" ) result results
-  local directory script script_context script_display script_control hook=$SF_HOOK_NAME
+  local directory script script_name script_context script_display script_control hook=$SF_HOOK_NAME
   local origin='' control='' preview
   integer script_status context_size display_size control_size
   integer perform=1 halted=0
@@ -229,9 +229,11 @@ sf_hooks_dispatch() {
       }
       script_display=$REPLY
       preview=null
+      script_name=${script:t}
+      [[ $script_name != run ]] || script_name=${script:h:t}
       if (( SF_HOOK_JSONL && script_status == 0 && control_size == 0 && context_size )) &&
           [[ $hook == session_start ]]; then
-        sf_hooks_context_record "$hook" "${script:t}" "$script_context" '{}' || {
+        sf_hooks_context_record "$hook" "$script_name" "$script_context" '{}' || {
           sf_hooks_fail "$SF_HOOK_ERROR"
           return
         }
@@ -375,7 +377,7 @@ sf_hooks_run_chain() {
   local -a fields scripts
 
   fields=( "${(@f)$(jq -er --arg hook "$hook" '
-    .harness.max_capture_bytes, (.harness[$hook][]?)
+    .harness.max_capture_bytes, (.harness[$hook][]?.command)
   ' <<<"$SF_SESSION[runtime]")}" ) || return 1
   scripts=( "${(@)fields[2,-1]}" )
   local SHELLFISH_SESSION_ID=$SF_SESSION[id]
@@ -473,7 +475,9 @@ sf_hooks_commit_context() {
   for (( index = 1; index <= ${#SF_HOOK_SCRIPT_RESULTS}; index += 5 )); do
     item=$SF_HOOK_SCRIPT_RESULTS[index+2]
     [[ -n $item ]] || continue
-    script=${SF_HOOK_SCRIPT_RESULTS[index]:t}
+    script=$SF_HOOK_SCRIPT_RESULTS[index]
+    [[ ${script:t} != run ]] || script=${script:h}
+    script=${script:t}
     control=$SF_HOOK_SCRIPT_RESULTS[index+4]
     control=${control:-'{}'}
     sf_hooks_context_record "$hook" "$script" "$item" "$control" || return

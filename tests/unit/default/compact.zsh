@@ -4,7 +4,7 @@ source "${0:A:h:h}/_hooks.zsh"
 
 # Compaction is one hook invocation that composes the read-only request commands,
 # publishes a canonical child, and returns an ordinary handoff.
-typeset compact_hook="$ROOT/share/default/hooks/user_prompt_submit/compact"
+typeset compact_hook="$ROOT/share/default/hooks/user_prompt_submit/compact/run"
 typeset compact_source="$tmp/compact-source.jsonl"
 typeset compact_control="$tmp/compact-control.json"
 typeset compact_shellfish="$tmp/compact-shellfish"
@@ -49,7 +49,7 @@ jq -e --arg command "$ROOT/bin/shellfish" \
 ' "$compact_control" >/dev/null || fail 'automatic compaction lost the prompt'
 assert_equal "$compact_before" "$(shasum <"$compact_source")"
 jq -e '.tools == []' "$compact_request" >/dev/null || fail 'compaction exposed tools'
-jq -e --rawfile prompt "$ROOT/share/default/hooks/user_prompt_submit/compact.md" '
+jq -e --rawfile prompt "$ROOT/share/default/hooks/user_prompt_submit/compact/compact.md" '
   ($prompt | rtrimstr("\n")) as $prompt |
   ("<compaction_request>\n\n" + $prompt + "\n\n## Summary budget\n\n") as $prefix |
   "\n\n</compaction_request>" as $suffix |

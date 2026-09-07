@@ -26,8 +26,8 @@ cat >"$tmp/bin/jq" <<'EOF'
 print -r -- "$SHELLFISH_PERF_RUN" >>"$SHELLFISH_PERF_JQ_LOG"
 exec "$SHELLFISH_PERF_JQ" "$@"
 EOF
-cat >"$tmp/config/backends/perf/backend.json" <<'EOF'
-{"endpoint":"https://example.invalid/perf","api_key_env":""}
+cat >"$tmp/config/backends/perf/manifest.json" <<'EOF'
+{"endpoint":"https://example.invalid/perf","environment":[]}
 EOF
 cat >"$tmp/config/backends/perf/run" <<'EOF'
 #!/usr/bin/env zsh
@@ -45,7 +45,7 @@ printf '%s\t%s\t%.9f\n' "$SHELLFISH_PERF_RUN" "$phase" "$(( (EPOCHREALTIME - sta
   >>"$SHELLFISH_PERF_METRICS"
 print -r -- "$response"
 EOF
-cat >"$tmp/config/tools/perf/tool.json" <<'EOF'
+cat >"$tmp/config/tools/perf/manifest.json" <<'EOF'
 {"description":"Performance fixture","input_schema":{"type":"object","additionalProperties":false},"sandbox":false}
 EOF
 cat >"$tmp/config/tools/perf/run" <<'EOF'

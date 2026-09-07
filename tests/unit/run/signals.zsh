@@ -68,8 +68,8 @@ wait "$interrupt_pid" || interrupt_status=$?
 typeset model_backend="$tmp/model-backend" model_ready="$tmp/model-ready"
 typeset model_stopped="$tmp/model-stopped" model_config="$tmp/model.jsonc"
 mkdir "$model_backend"
-cat >"$model_backend/backend.json" <<'JSON'
-{"endpoint":"https://example.invalid/v1/messages","api_key_env":""}
+cat >"$model_backend/manifest.json" <<'JSON'
+{"endpoint":"https://example.invalid/v1/messages","environment":[]}
 JSON
 cat >"$model_backend/run" <<'ZSH'
 #!/usr/bin/env zsh
@@ -134,7 +134,7 @@ jq -eRn '
 # provider request when visible reasoning is recovered.
 typeset cancel_backend="$tmp/cancel-backend" cancel_backend_marker="$tmp/tool-input"
 mkdir "$cancel_backend"
-cp "$ROOT/tests/fixtures/backend/backend.json" "$cancel_backend/backend.json"
+cp "$ROOT/tests/fixtures/backend/manifest.json" "$cancel_backend/manifest.json"
 cat >"$cancel_backend/run" <<'ZSH'
 #!/usr/bin/env zsh
 request=$(cat)

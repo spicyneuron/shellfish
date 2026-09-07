@@ -4,7 +4,7 @@ emulate -R zsh
 setopt no_aliases no_bg_nice
 set -u
 zmodload zsh/datetime
-bundled_root=${0:A:h:h:h}
+bundled_root=${0:A:h:h:h:h}
 source "$bundled_root/lib/capped.zsh" || exit 1
 source "$bundled_root/lib/skills.zsh" || exit 1
 

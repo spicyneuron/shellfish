@@ -54,9 +54,10 @@ sf_runtime_read_jsonc() {
 }
 
 sf_runtime_read_manifest() {
-  local stem=$1 mode=$2 json="$1.json" jsonc="$1.jsonc" manifest_path content
+  local directory=$1 mode=$2 json="$1/manifest.json" jsonc="$1/manifest.jsonc"
+  local manifest_path content
   if [[ ( -e $json || -L $json ) && ( -e $jsonc || -L $jsonc ) ]]; then
-    sf_runtime_fail "multiple component manifests: $stem"
+    sf_runtime_fail "multiple component manifests: $directory"
     return
   elif [[ -e $jsonc || -L $jsonc ]]; then
     manifest_path=$jsonc
@@ -66,7 +67,7 @@ sf_runtime_read_manifest() {
     REPLY='{"environment":[]}'
     return 0
   else
-    sf_runtime_fail "missing component manifest: $stem"
+    sf_runtime_fail "missing component manifest: $directory"
     return
   fi
   [[ -f $manifest_path && -r $manifest_path ]] || {
@@ -295,7 +296,7 @@ sf_runtime_resolve_from_config() {
     sf_runtime_fail "invalid backend: $backend_dir"
     return
   }
-  sf_runtime_read_manifest "$backend_dir/backend" required || return
+  sf_runtime_read_manifest "$backend_dir" required || return
   manifest=$REPLY
   command=$backend_dir/run
   [[ ! -f $backend_dir/context_window || ! -x $backend_dir/context_window ]] ||
@@ -313,7 +314,7 @@ sf_runtime_resolve_from_config() {
       sf_runtime_fail "invalid tool directory: $reference"
       return
     }
-    sf_runtime_read_manifest "$resolved/tool" required || return
+    sf_runtime_read_manifest "$resolved" required || return
     tool_paths+=( "$resolved" )
     tool_manifests+=( "$REPLY" )
   done
@@ -371,13 +372,13 @@ sf_runtime_resolve_from_config() {
       return
     }
     resolved=$REPLY
-    [[ -f $resolved && -x $resolved ]] || {
-      sf_runtime_fail "$hook hook script is not executable: $reference"
+    [[ -d $resolved && -x $resolved/run ]] || {
+      sf_runtime_fail "invalid $hook hook: $reference"
       return
     }
     sf_runtime_read_manifest "$resolved" optional || return
     hook_manifest=$REPLY
-    component_entries+=( "$hook" "$resolved" "$hook_manifest" )
+    component_entries+=( "$hook" "$resolved/run" "$hook_manifest" )
   done
   (( index == ${#fields} )) || {
     sf_runtime_fail 'cannot inspect prepared runtime'

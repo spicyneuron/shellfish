@@ -24,7 +24,7 @@
 
   // Backends are API adapters. "adapter" names the run script under
   // backends/<adapter>/; "endpoint" and "environment" override the adapter's
-  // built-in backend.json. Environment names are passed without translation.
+  // built-in manifest. Environment names are passed without translation.
   // Codex relies on an existing CLI login. The "openai" adapter works with any
   // OpenAI-compatible endpoint. Optional transport knobs not shown here:
   // insecure_tls, http_timeout, http_stall.
@@ -56,7 +56,7 @@
       "post_tool_use": [],
       "stop": [],
 
-      // "sandbox" enables fence for tools that opt in via their tool.json.
+      // "sandbox" enables fence for tools that opt in via their manifest.
       // sandbox_read_paths/sandbox_write_paths grant extra paths beyond the
       // project directory while keeping the tool's other restrictions.
       "sandbox": true,

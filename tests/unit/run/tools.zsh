@@ -147,9 +147,9 @@ sf_tool_needs_permission shell true false 1 &&
 # Several tools project their schemas together and share one capture bound.
 typeset file_runtime=$(jq -cn --argjson base "$stored_runtime" \
   --arg root "$ROOT/share/default/tools" \
-  --slurpfile read "$ROOT/share/default/tools/read_file/tool.json" \
-  --slurpfile edit "$ROOT/share/default/tools/edit_file/tool.json" \
-  --slurpfile write "$ROOT/share/default/tools/write_file/tool.json" '
+  --slurpfile read "$ROOT/share/default/tools/read_file/manifest.json" \
+  --slurpfile edit "$ROOT/share/default/tools/edit_file/manifest.json" \
+  --slurpfile write "$ROOT/share/default/tools/write_file/manifest.json" '
     $base | .harness.tools = [
       {name:"read_file",command:($root + "/read_file/run"),
        settings:(if $read[0].sandbox then ($root + "/read_file/fence.jsonc") else null end),manifest:$read[0]},
@@ -214,7 +214,7 @@ PATH="$tmp/bin:$PATH"
 rehash
 typeset fetch_runtime=$(jq -cn --argjson base "$stored_runtime" \
   --arg root "$ROOT/share/default/tools/fetch_url" \
-  --slurpfile manifest "$ROOT/share/default/tools/fetch_url/tool.json" '
+  --slurpfile manifest "$ROOT/share/default/tools/fetch_url/manifest.json" '
     $base | .harness.tools = [{
       name:"fetch_url",command:($root + "/run"),
       settings:($root + "/fence.jsonc"),manifest:$manifest[0]

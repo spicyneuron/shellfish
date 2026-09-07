@@ -32,7 +32,7 @@ export SHELLFISH_PROBE_BUDGET=30
   [[ ! -e $tmp/capped-called ]]
 )
 
-typeset environment_script="$ROOT/share/default/hooks/session_start/project_environment"
+typeset environment_script="$ROOT/share/default/hooks/session_start/project_environment/run"
 typeset environment_bin="$tmp/environment-bin"
 typeset environment_output
 mkdir "$environment_bin"
@@ -58,8 +58,8 @@ environment_output=$(PATH="$environment_bin:$PATH" zsh -f "$environment_script" 
 
 # git_environment establishes state only after a fast, successful startup probe.
 # Later prompt probes report each branch or detached-commit transition once.
-typeset git_start="$ROOT/share/default/hooks/session_start/git_environment"
-typeset git_prompt="$ROOT/share/default/hooks/user_prompt_submit/git_environment"
+typeset git_start="$ROOT/share/default/hooks/session_start/git_environment/run"
+typeset git_prompt="$ROOT/share/default/hooks/user_prompt_submit/git_environment/run"
 typeset git_bin="$tmp/git-environment-bin" git_state="$tmp/git-state"
 typeset git_cache="$tmp/git_environment" git_output
 mkdir "$git_bin"

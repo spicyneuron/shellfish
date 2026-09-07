@@ -121,11 +121,11 @@ for invalid in '{"type":"turn_error","message":1}' \
 done
 
 typeset read_runtime=$(jq -cn \
-  --slurpfile read "$ROOT/share/default/tools/read_file/tool.json" '
+  --slurpfile read "$ROOT/share/default/tools/read_file/manifest.json" '
   {harness:{tools:[{name:"read_file",manifest:$read[0]}]}}
 ')
 typeset shell_runtime=$(jq -cn \
-  --slurpfile shell "$ROOT/share/default/tools/shell/tool.json" '
+  --slurpfile shell "$ROOT/share/default/tools/shell/manifest.json" '
   {harness:{tools:[{name:"shell",manifest:$shell[0]}]}}
 ')
 order=$(print -r -- \
@@ -157,7 +157,7 @@ order=$(print -r -- \
 assert_equal 'permission_request,permission_2,read_file,outside.txt,host access,plain,batch_ok' "$order"
 
 typeset edit_runtime=$(jq -cn \
-  --slurpfile edit "$ROOT/share/default/tools/edit_file/tool.json" '
+  --slurpfile edit "$ROOT/share/default/tools/edit_file/manifest.json" '
   {harness:{tools:[{name:"edit_file",manifest:$edit[0]}]}}
 ')
 order=$(print -r -- \

@@ -91,13 +91,13 @@ jq -e --arg root "$ROOT/share/default/hooks/session_start" \
   --arg prompt_root "$ROOT/share/default/hooks/user_prompt_submit" \
   --arg tools "$ROOT/share/default/tools" '
   (.harness.session_start | map(.command)) == [
-    ($root + "/project_environment"),
-    ($root + "/git_environment"),
-    ($root + "/project_instructions")
+    ($root + "/project_environment/run"),
+    ($root + "/git_environment/run"),
+    ($root + "/project_instructions/run")
   ] and
   .harness.session_start[0].environment == ["SHELLFISH_PROBE_BUDGET"] and
   .harness.session_start[2].environment == [] and
-  .harness.user_prompt_submit[-1].command == ($prompt_root + "/git_environment") and
+  .harness.user_prompt_submit[-1].command == ($prompt_root + "/git_environment/run") and
   (.backend | has("context_window_command") | not) and
   (.harness.tools | map(.name)) ==
     ["read_file", "edit_file", "write_file", "skill", "search_web", "fetch_url", "shell"] and
@@ -307,20 +307,20 @@ fi
 
 # Hook script references preserve hook and configured order, prefer the config
 # directory, and freeze as absolute executables inside the harness.
-mkdir -p "$tmp/config/hooks/user_prompt_submit"
-print -r -- '#!/bin/sh' >"$tmp/config/hooks/user_prompt_submit/help"
-chmod +x "$tmp/config/hooks/user_prompt_submit/help"
-cat >"$tmp/config/hooks/user_prompt_submit/help.jsonc" <<'JSON'
+mkdir -p "$tmp/config/hooks/user_prompt_submit/help" \
+  "$tmp/config/hooks/user_prompt_submit/shell" "$tmp/config/hooks/stop/gate"
+print -r -- '#!/bin/sh' >"$tmp/config/hooks/user_prompt_submit/help/run"
+chmod +x "$tmp/config/hooks/user_prompt_submit/help/run"
+cat >"$tmp/config/hooks/user_prompt_submit/help/manifest.jsonc" <<'JSON'
 {
   // Imported only for this component.
   "environment": ["HELP_FORMAT"]
 }
 JSON
-print -r -- '#!/bin/sh' >"$tmp/config/hooks/user_prompt_submit/shell"
-chmod +x "$tmp/config/hooks/user_prompt_submit/shell"
-mkdir -p "$tmp/config/hooks/stop"
-print -r -- '#!/bin/sh' >"$tmp/config/hooks/stop/gate"
-chmod +x "$tmp/config/hooks/stop/gate"
+print -r -- '#!/bin/sh' >"$tmp/config/hooks/user_prompt_submit/shell/run"
+chmod +x "$tmp/config/hooks/user_prompt_submit/shell/run"
+print -r -- '#!/bin/sh' >"$tmp/config/hooks/stop/gate/run"
+chmod +x "$tmp/config/hooks/stop/gate/run"
 cat >"$tmp/config/hooked.jsonc" <<JSON
 {
   "profiles": {"default": {"harness": "hooked", "request": {"model": "m"}}},
@@ -333,17 +333,17 @@ JSON
 sf_runtime_resolve_from_config "$tmp/config/hooked.jsonc" '' '' '{}' "$ROOT/tests/fixtures/backend"
 jq -e --arg base "${tmp:A}/config/hooks" '
   .harness.user_prompt_submit == [
-    {command:($base + "/user_prompt_submit/help"),environment:["HELP_FORMAT"]},
-    {command:($base + "/user_prompt_submit/shell"),environment:[]}
-  ] and .harness.stop == [{command:($base + "/stop/gate"),environment:[]}]
+    {command:($base + "/user_prompt_submit/help/run"),environment:["HELP_FORMAT"]},
+    {command:($base + "/user_prompt_submit/shell/run"),environment:[]}
+  ] and .harness.stop == [{command:($base + "/stop/gate/run"),environment:[]}]
 ' <<<"$REPLY" >/dev/null
 
-chmod -x "$tmp/config/hooks/user_prompt_submit/help"
+chmod -x "$tmp/config/hooks/user_prompt_submit/help/run"
 if sf_runtime_resolve_from_config "$tmp/config/hooked.jsonc" '' '' '{}' "$ROOT/tests/fixtures/backend"; then
   fail 'non-executable hook was accepted'
 fi
-[[ $SF_RUNTIME_ERROR == 'user_prompt_submit hook script is not executable: help' ]]
-chmod +x "$tmp/config/hooks/user_prompt_submit/help"
+[[ $SF_RUNTIME_ERROR == 'invalid user_prompt_submit hook: help' ]]
+chmod +x "$tmp/config/hooks/user_prompt_submit/help/run"
 
 cat >"$tmp/config/malformed-hooks.jsonc" <<'JSON'
 {"harnesses":{"bad":{"stop":"gate"}}}
@@ -418,20 +418,19 @@ if sf_runtime_resolve_from_config "$tmp/config/missing-hook.jsonc" '' '' '{}' \
     "$ROOT/tests/fixtures/backend"; then
   fail 'missing hook was accepted'
 fi
-[[ $SF_RUNTIME_ERROR == 'stop hook script is not executable: missing' ]]
+[[ $SF_RUNTIME_ERROR == 'invalid stop hook: missing' ]]
 
 # A configured script wins over a bundled script with the same name. Removing it
 # exercises bundled fallback. Use an isolated root so this adds no production
 # script.
-mkdir -p "$tmp/root/share/default/hooks/stop"
+mkdir -p "$tmp/root/share/default/hooks/stop/bundled" "$tmp/hooks/stop/bundled"
 ln -s "$ROOT/lib" "$tmp/root/lib"
 ln -s "$ROOT/libexec" "$tmp/root/libexec"
 ln -s "$ROOT/share/default/shellfish.jsonc" "$tmp/root/share/default/shellfish.jsonc"
-print -r -- '#!/bin/sh' >"$tmp/root/share/default/hooks/stop/bundled"
-chmod +x "$tmp/root/share/default/hooks/stop/bundled"
-mkdir -p "$tmp/hooks/stop"
-print -r -- '#!/bin/sh' >"$tmp/hooks/stop/bundled"
-chmod +x "$tmp/hooks/stop/bundled"
+print -r -- '#!/bin/sh' >"$tmp/root/share/default/hooks/stop/bundled/run"
+chmod +x "$tmp/root/share/default/hooks/stop/bundled/run"
+print -r -- '#!/bin/sh' >"$tmp/hooks/stop/bundled/run"
+chmod +x "$tmp/hooks/stop/bundled/run"
 cat >"$tmp/bundled.jsonc" <<'JSON'
 {
   "profiles":{"default":{"harness":"fallback","request":{"model":"m"}}},
@@ -441,11 +440,11 @@ JSON
 SF_ROOT="$tmp/root"
 SF_SHARE="$tmp/root/share"
 sf_runtime_resolve_from_config "$tmp/bundled.jsonc" '' '' '{}' "$ROOT/tests/fixtures/backend"
-jq -e --arg path "${tmp:A}/hooks/stop/bundled" \
+jq -e --arg path "${tmp:A}/hooks/stop/bundled/run" \
   '.harness.stop == [{command:$path,environment:[]}]' <<<"$REPLY" >/dev/null
-rm -f -- "$tmp/hooks/stop/bundled"
+rm -rf -- "$tmp/hooks/stop/bundled"
 sf_runtime_resolve_from_config "$tmp/bundled.jsonc" '' '' '{}' "$ROOT/tests/fixtures/backend"
-jq -e --arg path "${tmp:A}/root/share/default/hooks/stop/bundled" \
+jq -e --arg path "${tmp:A}/root/share/default/hooks/stop/bundled/run" \
   '.harness.stop == [{command:$path,environment:[]}]' <<<"$REPLY" >/dev/null
 SF_ROOT=$ROOT
 SF_SHARE=$ROOT/share
@@ -458,9 +457,9 @@ for tool_name in alpha beta gamma delta epsilon; do
   chmod +x "$tmp/config/tools/$tool_name/run"
   jq -n --arg description "$tool_name tool" \
     '{description:$description,input_schema:{type:"object"},sandbox:false}' \
-    >"$tmp/config/tools/$tool_name/tool.json"
+    >"$tmp/config/tools/$tool_name/manifest.json"
 done
-mv "$tmp/config/tools/beta/tool.json" "$tmp/config/tools/beta/tool.jsonc"
+mv "$tmp/config/tools/beta/manifest.json" "$tmp/config/tools/beta/manifest.jsonc"
 cat >"$tmp/config/tooled.jsonc" <<'JSON'
 {
   "profiles":{"default":{"harness":"tooled","request":{"model":"m"}}},
@@ -475,10 +474,17 @@ jq -e --arg base "${tmp:A}/config/tools" '
   all(.harness.tools[]; .settings == null and (has("describe") | not)) and
   .harness.tools[0].manifest.description == "beta tool"
 ' <<<"$REPLY" >/dev/null
+cp "$tmp/config/tools/beta/manifest.jsonc" "$tmp/config/tools/beta/manifest.json"
+if sf_runtime_resolve_from_config "$tmp/config/tooled.jsonc" '' '' '{}' \
+    "$ROOT/tests/fixtures/backend"; then
+  fail 'component with ambiguous manifests was accepted'
+fi
+[[ $SF_RUNTIME_ERROR == "multiple component manifests: ${tmp:A}/config/tools/beta" ]]
+rm "$tmp/config/tools/beta/manifest.json"
 
 # A sandboxed tool resolves only once its package carries fence settings.
 jq -n '{description:"sandboxed",input_schema:{type:"object"},sandbox:true}' \
-  >"$tmp/config/tools/alpha/tool.json"
+  >"$tmp/config/tools/alpha/manifest.json"
 if sf_runtime_resolve_from_config "$tmp/config/tooled.jsonc" '' '' '{}' "$ROOT/tests/fixtures/backend"; then
   fail 'sandboxed tool without fence settings was accepted'
 fi
