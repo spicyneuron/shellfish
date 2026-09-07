@@ -46,7 +46,8 @@ sf_test_tool_execute() {
   (( permission_status != 2 )) || return
   sf_tool_execute "$id" "$name" "$execution_input" "$bypass" "$harness_sandbox" \
     "$decision" "$denial_reason" "$tool_cwd" "$tool_max_capture" "$tool_fence" \
-    "$tool_config_dir" "$SF_SESSION[id]" "$tool_runtime" || return
+    "$tool_config_dir" "$SF_SESSION[id]" "$session" "$ROOT/bin/shellfish" \
+    "$tool_runtime" || return
 }
 
 # Tool execution preserves the caller's home in its otherwise clean environment.
@@ -101,19 +102,22 @@ unset XDG_CONFIG_HOME
 # A tool receives its selected environment, with fixed context taking precedence.
 typeset environment_runtime environment_call
 tool_config_dir="$tmp/fixed-config"
-export TOOL_SETTING=selected SHELLFISH_CONFIG_DIR=external
+export TOOL_SETTING=selected SHELLFISH_CONFIG_DIR=external SHELLFISH_SESSION=external
+export SHELLFISH_EXECUTABLE=external SHELLFISH_MAX_CAPTURE_BYTES=64
 environment_runtime=$(jq -c '
-  .harness.tools[0].manifest.environment=["TOOL_SETTING","SHELLFISH_CONFIG_DIR"]
+  .harness.tools[0].manifest.environment=["TOOL_SETTING","SHELLFISH_CONFIG_DIR",
+    "SHELLFISH_SESSION","SHELLFISH_EXECUTABLE","SHELLFISH_MAX_CAPTURE_BYTES"]
 ' <<<"$stored_runtime") || fail 'cannot prepare tool environment runtime'
 load_tools "$environment_runtime"
-environment_call=$(jq -cn --arg command \
-  'print -rn -- "${TOOL_SETTING-unset}|$SHELLFISH_CONFIG_DIR"' \
-  '{id:"environment_1",name:"shell",input:{command:$command}}') || \
+environment_call=$(jq -cn --arg command '
+  print -rn -- "${TOOL_SETTING-unset}|$SHELLFISH_CONFIG_DIR|$SHELLFISH_SESSION|$SHELLFISH_EXECUTABLE|$SHELLFISH_MAX_CAPTURE_BYTES"
+' '{id:"environment_1",name:"shell",input:{command:$command}}') || \
   fail 'cannot prepare tool environment call'
 sf_test_tool_execute "$environment_call" 0
-jq -e --arg config "$tool_config_dir" '.content == "selected|\($config)"' \
-  <<<"$REPLY" >/dev/null
-unset TOOL_SETTING SHELLFISH_CONFIG_DIR
+typeset expected_context="selected|$tool_config_dir|${session:A}|$ROOT/bin/shellfish|$tool_max_capture"
+jq -e --arg expected "$expected_context" '.content == $expected' <<<"$REPLY" >/dev/null
+unset TOOL_SETTING SHELLFISH_CONFIG_DIR SHELLFISH_SESSION SHELLFISH_EXECUTABLE
+unset SHELLFISH_MAX_CAPTURE_BYTES
 tool_config_dir=''
 load_tools "$stored_runtime"
 
@@ -259,10 +263,13 @@ jq -e '.exit_code == 0 and .content == "# sandboxed markdown\n"' <<<"$REPLY" >/d
 grep -Fx -- "$ROOT/share/default/tools/fetch_url/fence.jsonc" "$tmp/fence.settings" >/dev/null
 load_tools "$(jq -c --arg fence "$tmp/bin/fence" \
   '.harness.sandbox=true | .harness.fence=$fence' <<<"$stored_runtime")"
-sf_test_tool_execute "$(jq -cn --arg command 'printf "%s|%s" "$TMPDIR" "$TMPPREFIX"' \
-  '{id:"fence_empty",name:"shell",input:{command:$command}}')" 1
-jq -e --arg temp "$tool_temp" '.content == ($temp + "|" + $temp + "/zsh")' \
-  <<<"$REPLY" >/dev/null
+sf_test_tool_execute "$(jq -cn --arg command '
+  printf "%s|%s|%s|%s" "$TMPDIR" "$TMPPREFIX" "$SHELLFISH_SESSION" "$SHELLFISH_EXECUTABLE"
+' '{id:"fence_empty",name:"shell",input:{command:$command}}')" 1
+jq -e --arg temp "$tool_temp" --arg session "${session:A}" \
+  --arg executable "$ROOT/bin/shellfish" '
+    .content == ($temp + "|" + $temp + "/zsh|" + $session + "|" + $executable)
+  ' <<<"$REPLY" >/dev/null
 (( $(grep -Fxc -- '--expose-host-path-rw' "$tmp/fence.args") == 1 + native_grant ))
 grep -Fx -- "$tool_temp" "$tmp/fence.args" >/dev/null
 (( ! native_grant )) || grep -Fx -- "$native_temp" "$tmp/fence.args" >/dev/null

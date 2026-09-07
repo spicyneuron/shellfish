@@ -80,7 +80,7 @@ Every script is invoked with the session working directory as its `PWD` and thes
 | `SHELLFISH_SESSION` | Absolute path of the active session JSONL |
 | `SHELLFISH_SESSION_ID` | Transcript filename without the `.jsonl` suffix |
 | `SHELLFISH_SESSION_STATE` | Absolute path to the disposable, mode-0700 state directory shared by the session ID |
-| `SHELLFISH_CAPTURE_LIMIT` | Combined output byte limit for one script (`harness.max_capture_bytes`) |
+| `SHELLFISH_MAX_CAPTURE_BYTES` | Combined output byte limit for one script (`harness.max_capture_bytes`) |
 | `SHELLFISH_EXECUTABLE` | Absolute path of the invoked Shellfish executable |
 | `SHELLFISH_MODE` | Owning process: `create` for `session_start`, `run` for every turn hook |
 | `SHELLFISH_MODEL` | Active model frozen in the session header |
@@ -101,7 +101,7 @@ Both directories are shared writable coordination spaces, not per-script storage
 
 ### Output channels
 
-A script communicates through three channels. They are captured separately, but their combined size may not exceed `SHELLFISH_CAPTURE_LIMIT`. Each script in a chain receives its own budget. Exceeding it fails the operation without truncating output.
+A script communicates through three channels. They are captured separately, but their combined size may not exceed `SHELLFISH_MAX_CAPTURE_BYTES`. Each script in a chain receives its own budget. Exceeding it fails the operation without truncating output.
 
 | Channel | Meaning |
 | --- | --- |

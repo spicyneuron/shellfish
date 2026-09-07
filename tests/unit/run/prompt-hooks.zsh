@@ -36,7 +36,7 @@ case $prompt in
     exit 1
     ;;
   /overflow)
-    printf '%*s' "$(( SHELLFISH_CAPTURE_LIMIT + 1 ))" '' >&2
+    printf '%*s' "$(( SHELLFISH_MAX_CAPTURE_BYTES + 1 ))" '' >&2
     ;;
   /slow)
     trap '' TERM

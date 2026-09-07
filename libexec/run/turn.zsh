@@ -484,7 +484,7 @@ sf_run_turn() {
             if ! sf_tool_execute "$call_id" "$tool_name" "$execution_input" "$bypass" \
                 "$harness_sandbox" "$decision" "$denial_reason" \
                 "$SF_SESSION[cwd]" "$max_capture" "$fence" "$config_dir" \
-                "$SF_SESSION[id]" "$SF_SESSION[runtime]"; then
+                "$SF_SESSION[id]" "$session_path" "$SF_ENTRY" "$SF_SESSION[runtime]"; then
               failure=${SF_TOOL_ERROR:-shell tool execution failed}
               return 1
             fi

@@ -156,7 +156,7 @@ functions -c sf_hooks_capture_real sf_hooks_capture_one
 unfunction sf_hooks_capture_real
 
 # Prepared stdin and argv reach scripts without newline insertion or shell parsing.
-make_script invocation 'print -rn -- "$#|$1|$2|$3|"; cat; print -rn -- "|$PWD|$SHELLFISH_SESSION|$SHELLFISH_CAPTURE_LIMIT|$SHELLFISH_TURN_STATE|$SHELLFISH_SESSION_STATE|$SHELLFISH_SESSION_ID|$SHELLFISH_MODEL|$0|${0:A:h}"'
+make_script invocation 'print -rn -- "$#|$1|$2|$3|"; cat; print -rn -- "|$PWD|$SHELLFISH_SESSION|$SHELLFISH_MAX_CAPTURE_BYTES|$SHELLFISH_TURN_STATE|$SHELLFISH_SESSION_STATE|$SHELLFISH_SESSION_ID|$SHELLFISH_MODEL|$0|${0:A:h}"'
 typeset invocation=$script
 typeset working="$tmp/working" session="$tmp/session.jsonl" state
 mkdir "$working"

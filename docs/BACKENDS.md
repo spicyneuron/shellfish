@@ -23,7 +23,7 @@ Component lookup rules for bundled, user-defined, relative, and absolute adapter
 
 Exec starts `run` once per provider request. The adapter receives one canonical JSON request on stdin and writes one normalized JSON object per line to stdout. Stderr is not part of the normalized stream. If the adapter fails, exec sanitizes and truncates its stderr for the reported turn failure; successful stderr is discarded.
 
-The adapter receives its selected environment variables under their declared names. Values come from exported variables or the configuration's adjacent `.env`, with exported values taking precedence. Adapters should copy credentials only as long as needed to prepare authentication and then unset them. An adapter with an empty environment list is responsible for any alternative authentication. The bundled Codex adapter reads an existing Codex CLI login.
+The adapter receives its selected environment variables under their declared names. Values come from exported variables or the configuration's adjacent `.env`, with exported values taking precedence. Shellfish does not inject fixed session or executable context into adapters. Adapters should copy credentials only as long as needed to prepare authentication and then unset them. An adapter with an empty environment list is responsible for any alternative authentication. The bundled Codex adapter reads an existing Codex CLI login.
 
 The input has this top-level shape:
 

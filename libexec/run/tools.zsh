@@ -174,7 +174,7 @@ sf_tool_execute() {
   local id=$1 name=$2 execution_input=$3 bypass=$4
   integer harness_sandbox=$5
   local decision=${6-} denial_reason=${7-} cwd=$8 max_capture=$9 fence=${10}
-  local config_dir=${11-} session_id=${12-} runtime=${13-}
+  local config_dir=${11-} session_id=${12-} session=${13-} executable=${14-} runtime=${15-}
   local tool_home=${HOME:-$cwd}
   local sandboxed use_sandbox allow_bypass settings
   local state_dir captured bounded status_file temp native_temp command_path sandbox_log
@@ -239,7 +239,8 @@ sf_tool_execute() {
       sandbox_log="$state_dir/sandbox.log"
       command=(/usr/bin/env -i HOME="$tool_home" "${locale_env[@]}" PATH="$PATH" TERM="${TERM:-dumb}"
         "${SF_ENVIRONMENT_VALUES[@]}" SHELLFISH_CONFIG_DIR="$config_dir"
-        SHELLFISH_MAX_CAPTURE_BYTES="$max_capture"
+        SHELLFISH_MAX_CAPTURE_BYTES="$max_capture" SHELLFISH_SESSION="$session"
+        SHELLFISH_EXECUTABLE="$executable"
         "$fence" --monitor --fence-log-file "$sandbox_log" --settings "$settings"
         --expose-host-path "$command_path" --expose-host-path-rw "$temp")
       [[ $native_temp == $temp ]] || command+=( --expose-host-path-rw "$native_temp" )
@@ -254,8 +255,8 @@ sf_tool_execute() {
     else
       command=(/usr/bin/env -i HOME="$tool_home" "${locale_env[@]}" PATH="$PATH" TERM="${TERM:-dumb}"
         "${SF_ENVIRONMENT_VALUES[@]}" SHELLFISH_CONFIG_DIR="$config_dir"
-        TMPDIR="$temp" TMPPREFIX="$temp/zsh"
-        SHELLFISH_MAX_CAPTURE_BYTES="$max_capture" "$command_path")
+        TMPDIR="$temp" TMPPREFIX="$temp/zsh" SHELLFISH_MAX_CAPTURE_BYTES="$max_capture"
+        SHELLFISH_SESSION="$session" SHELLFISH_EXECUTABLE="$executable" "$command_path")
     fi
     coproc {
       (cd "$cwd" && print -r -- "$execution_input" | "${command[@]}" 2>&1) |
