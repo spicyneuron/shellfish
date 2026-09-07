@@ -101,6 +101,26 @@ EOF
 SHELLFISH_API_KEY=test zsh -f "$run" <"$req" >"$res"
 assert_usage
 
+# Provider failures retain streamed text but never complete the response.
+typeset event expected
+for event expected in \
+  '{"type":"response.failed","response":{"error":{"code":"server_error","message":"Please retry"}}}' \
+  'response.failed: server_error: Please retry' \
+  '{"type":"error","code":"server_error","message":"Please retry"}' \
+  'error: server_error: Please retry' \
+  '{"type":"response.failed","response":{"error":null}}' \
+  'response.failed (no error details)' \
+  '{"type":"error"}' \
+  'error (no error details)'; do
+  print -rl -- 'data: {"type":"response.output_text.delta","delta":"partial"}' \
+    "data: $event" >"$BACKEND_TEST_RESPONSE"
+  if SHELLFISH_API_KEY=test zsh -f "$run" <"$req" >"$res" 2>"$tmp/error"; then
+    fail 'provider failure was accepted'
+  fi
+  grep -Fq -- "$expected" "$tmp/error" || fail 'provider failure details were lost'
+  jq -e -s '. == [{type:"_assistant_delta",index:0,text:"partial"}]' "$res" >/dev/null
+done
+
 # Streaming reasoning metadata and tool arguments retain provider output indexes.
 cat >"$BACKEND_TEST_RESPONSE" <<'EOF'
 data: {"type":"response.reasoning_summary_text.delta","output_index":0,"item_id":"rs_1","summary_index":0,"delta":"why"}

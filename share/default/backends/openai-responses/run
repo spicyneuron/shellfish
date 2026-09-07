@@ -226,6 +226,13 @@ curl "${SF_BACKEND_CURL_ARGS[@]}" 2>"$status_file" | tee "$response_file" | \
        else {type:"ignore"}
        end) as $event |
       if .done then .
+      elif $event.type == "response.failed" or $event.type == "error" then
+        (if $event.type == "response.failed" then $event.response.error
+         else $event end) as $failure |
+        ([$failure.code, $failure.message] |
+          map(select(type == "string" and length > 0)) | join(": ")) as $detail |
+        error($event.type + if $detail == "" then " (no error details)"
+                              else ": " + $detail end)
       elif $event.type == "response.output_text.delta" then
         ($event.delta // "") as $delta |
         .text += $delta |
