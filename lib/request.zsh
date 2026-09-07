@@ -1,6 +1,7 @@
 emulate -R zsh
 setopt no_aliases no_bg_nice no_multios pipe_fail
 
+(( $+functions[sf_jq] )) || source "$SF_ROOT/lib/jq.zsh"
 (( $+functions[sf_scratch_file] )) || source "$SF_ROOT/lib/scratch.zsh"
 (( $+functions[sf_process_stop] )) || source "$SF_ROOT/lib/process.zsh"
 
@@ -11,8 +12,7 @@ typeset -ga SF_REQUEST_PARTIAL_EVENTS=()
 
 sf_request_build() {
   local runtime=$1 tools=$2
-  (builtin cd -- "$SF_ROOT" &&
-    jq -L "$SF_ROOT" -sce --argjson runtime "$runtime" --argjson tools "$tools" '
+  sf_jq -sce --argjson runtime "$runtime" --argjson tools "$tools" '
     include "lib/runtime/schema";
     include "lib/session/request";
     . as $records |
@@ -24,7 +24,7 @@ sf_request_build() {
       options:{request:$runtime.profile.request},
       transport:($runtime.backend | {endpoint,insecure_tls,http_timeout,http_stall})
     } | select(canonical_request)
-  ')
+  '
 }
 
 sf_request_run() {
@@ -56,12 +56,11 @@ sf_request_run() {
   coproc {
     SHELLFISH_API_KEY="$api_key" SHELLFISH_API_KEY_SOURCE="$api_key_source" \
       "$command" <<<"$request" 2>"$error_file" |
-      (builtin cd -- "$SF_ROOT" &&
-        jq -L "$SF_ROOT" -jn --unbuffered '
+      sf_jq -jn --unbuffered '
         include "lib/runtime/schema";
         include "lib/request";
         decode_backend_response(canonical_backend_event; canonical_assistant_message)
-      ') 2>/dev/null
+      ' 2>/dev/null
     local -a child_statuses=( $pipestatus )
     print -r -- "$child_statuses[1] $child_statuses[2]" >"$status_file"
   }

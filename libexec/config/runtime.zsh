@@ -1,6 +1,8 @@
 emulate -R zsh
 setopt no_aliases no_multios pipe_fail
 
+(( $+functions[sf_jq] )) || source "$SF_ROOT/lib/jq.zsh"
+
 typeset -g SF_RUNTIME_ERROR=''
 typeset -g SF_PRESENTATION=''
 typeset -g SF_RUNTIME_SYSTEM=''
@@ -139,13 +141,13 @@ sf_runtime_resolve() {
       # A session's system record, when it has one, is the first record after
       # the header. Any other record there means the session has no prompt.
       SF_RUNTIME_SYSTEM=$(sed -n '2{p;q;}' <"$session_path" |
-        (builtin cd -- "$SF_ROOT" && jq -L "$SF_ROOT" -jse '
+        sf_jq -jse '
         include "lib/runtime/schema";
         (if length == 0 then "" else
           .[0] | select(canonical_session_record) |
           if .type == "system" then .content else "" end
         end) + "\u0000"
-      ')) || {
+      ') || {
         sf_runtime_fail "cannot read session system record: $session_path"
         return
       }
@@ -193,8 +195,7 @@ sf_runtime_resolve_from_config() {
 
   external_name=${backend_override%/}
   external_name=${external_name:t}
-  decoded=$(builtin cd -- "$SF_ROOT" &&
-    jq -L "$SF_ROOT" -jnre --argjson defaults "$defaults" \
+  decoded=$(sf_jq -jnre --argjson defaults "$defaults" \
     --argjson raw "$raw" --arg profile_override "$profile_override" \
     --arg model_override "$model_override" --argjson request_override "$request_override" \
     --arg backend_override "$backend_override" --argjson skip_system "$skip_system" \
@@ -367,8 +368,7 @@ sf_runtime_resolve_from_config() {
   system_entries=( "${(@)system_entries:#}" )
   SF_RUNTIME_SYSTEM=${(pj:\n\n:)system_entries}
   resolved_args=( "${tool_entries[@]}" "${component_entries[@]}" )
-  final=$(builtin cd -- "$SF_ROOT" &&
-    jq -L "$SF_ROOT" -cnce --argjson prepared "$prepared" \
+  final=$(sf_jq -cnce --argjson prepared "$prepared" \
     --arg manifest "$manifest" --arg command "$command" \
     --arg context_window_command "$context_window_command" --arg fence "$fence" \
     --arg env_file "$env_file" \
@@ -405,8 +405,7 @@ sf_runtime_restore_presentation() {
   }
   sf_runtime_read_config "$requested_config" "$config_path" || return
   raw=$REPLY
-  output=$(builtin cd -- "$SF_ROOT" &&
-    jq -L "$SF_ROOT" -nce --argjson defaults "$defaults" \
+  output=$(sf_jq -nce --argjson defaults "$defaults" \
     --argjson raw "$raw" '
       include "libexec/config/runtime";
       {defaults:$defaults,raw:$raw} | presentation_resolve

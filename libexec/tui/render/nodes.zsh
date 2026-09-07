@@ -1,6 +1,8 @@
 emulate -R zsh
 setopt no_aliases no_bg_nice no_multios pipe_fail
 
+(( $+functions[sf_jq] )) || source "$SF_ROOT/lib/jq.zsh"
+
 # The presentation transcript. Only this file mutates these arrays.
 typeset -ga SF_PRESENT_NODE_TYPE=() SF_PRESENT_NODE_ROLE=()
 typeset -ga SF_PRESENT_NODE_HEADING=() SF_PRESENT_NODE_BODY=()
@@ -408,8 +410,8 @@ sf_tui_reload() {
     SF_PRESENT_ERROR="invalid session path: $session_path"
     return 1
   }
-  events=$( (builtin cd -- "$SF_ROOT" && jq -jRs -L "$SF_ROOT" \
-    -f "$SF_ROOT/libexec/tui/transcript-decode.jq") <"$session_path" 2>/dev/null) || {
+  events=$(sf_jq -jRs -f "$SF_ROOT/libexec/tui/transcript-decode.jq" \
+    <"$session_path" 2>/dev/null) || {
     SF_PRESENT_ERROR="cannot read session: $session_path"
     return 1
   }

@@ -6,6 +6,7 @@ setopt no_aliases no_bg_nice no_multios pipe_fail
 typeset -gr SF_ROOT=${0:A:h:h:h}
 typeset -gr SF_ENTRY="$SF_ROOT/bin/shellfish"
 
+source "$SF_ROOT/lib/jq.zsh"
 source "$SF_ROOT/lib/options.zsh"
 
 sf_die() {
@@ -106,7 +107,7 @@ sf_run_main() {
       sf_die '--jsonl requires a canonical user message on stdin'
       return 2
     }
-    input_projection=$(builtin cd -- "$SF_ROOT" && jq -L "$SF_ROOT" -jre '
+    input_projection=$(sf_jq -jre '
       include "lib/runtime/schema";
       def field: ., "\u0000";
       select(canonical_user_message) |

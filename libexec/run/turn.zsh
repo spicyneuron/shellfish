@@ -3,6 +3,7 @@
 emulate -R zsh
 setopt no_aliases no_bg_nice no_multios pipe_fail
 
+(( $+functions[sf_jq] )) || source "$SF_ROOT/lib/jq.zsh"
 (( $+functions[sf_session_begin_turn] )) || source "$SF_ROOT/lib/session/main.zsh"
 (( $+functions[sf_credentials_resolve] )) || source "$SF_ROOT/lib/credentials.zsh"
 (( $+functions[sf_hooks_user_prompt_submit] )) || source "$SF_ROOT/libexec/run/hooks.zsh"
@@ -99,10 +100,10 @@ sf_run_error() {
 sf_run_partial_assistant() {
   REPLY=''
   (( ${#SF_REQUEST_PARTIAL_EVENTS} )) || return 0
-  REPLY=$(builtin cd -- "$SF_ROOT" && {
+  REPLY=$({
     printf '%s\n' "${SF_REQUEST_PARTIAL_EVENTS[@]}"
     print -r -- '{"type":"_assistant_response_end","stop":"length"}'
-  } | jq -L "$SF_ROOT" -cse '
+  } | sf_jq -cse '
     include "lib/runtime/schema";
     include "lib/request";
     assemble_backend_response(canonical_backend_response_events; canonical_assistant_message) |
@@ -344,7 +345,7 @@ sf_run_turn() {
           context_output=''
         fi
         SF_REQUEST[pid]=''
-        context_window=$(builtin cd -- "$SF_ROOT" && jq -L "$SF_ROOT" -ser '
+        context_window=$(sf_jq -ser '
           include "lib/runtime/schema";
           select(length == 1 and (.[0] | type == "object" and
             keys == ["context_window"] and (.context_window | positive_integer))) |

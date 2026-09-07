@@ -1,6 +1,7 @@
 emulate -R zsh
 setopt no_aliases no_bg_nice no_multios pipe_fail
 
+(( $+functions[sf_jq] )) || source "$SF_ROOT/lib/jq.zsh"
 (( $+functions[sf_scratch_file] )) || source "$SF_ROOT/lib/scratch.zsh"
 
 typeset -ga SF_TUI_TRANSPORT_COMMAND=() SF_TUI_TRANSPORT_LINES=()
@@ -164,9 +165,8 @@ sf_tui_transport_next() {
 
   if (( ! ${#SF_TUI_TRANSPORT_EVENTS} )); then
     (( ${#SF_TUI_TRANSPORT_LINES} )) || return 1
-    events=$(builtin cd -- "$SF_ROOT" &&
-      printf '%s\n' "${SF_TUI_TRANSPORT_LINES[@]}" |
-      jq -jRs -L "$SF_ROOT" --argjson runtime "$runtime" \
+    events=$(printf '%s\n' "${SF_TUI_TRANSPORT_LINES[@]}" |
+      sf_jq -jRs --argjson runtime "$runtime" \
         -f "$SF_ROOT/libexec/tui/event-decode.jq" 2>/dev/null) || events=''
     SF_TUI_TRANSPORT_LINES=()
     fields=( "${(@0)${events%$'\0'}}" )

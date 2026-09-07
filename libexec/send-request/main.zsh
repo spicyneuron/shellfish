@@ -57,6 +57,7 @@ sf_send_request_main() {
     return 2
   }
 
+  source "$SF_ROOT/lib/jq.zsh"
   source "$SF_ROOT/lib/credentials.zsh"
   source "$SF_ROOT/lib/session/main.zsh"
   source "$SF_ROOT/lib/request.zsh"
@@ -75,8 +76,7 @@ sf_send_request_main() {
     sf_die 'send-request requires a canonical backend request on stdin'
     return 2
   }
-  request=$(builtin cd -- "$SF_ROOT" &&
-    jq -L "$SF_ROOT" -cse --argjson runtime "$runtime" '
+  request=$(sf_jq -cse --argjson runtime "$runtime" '
     include "lib/runtime/schema";
     select(length == 1) | .[0] |
     select(canonical_request) |

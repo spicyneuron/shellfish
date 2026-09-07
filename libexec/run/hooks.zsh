@@ -3,6 +3,7 @@
 emulate -R zsh
 setopt no_aliases no_bg_nice no_multios pipe_fail
 
+(( $+functions[sf_jq] )) || source "$SF_ROOT/lib/jq.zsh"
 (( $+functions[sf_hooks_run] )) || source "$SF_ROOT/lib/hooks.zsh"
 
 # Prepares prompt context before the user record is committed.
@@ -27,8 +28,7 @@ sf_hooks_user_prompt_submit() {
     control=$SF_HOOK_SCRIPT_RESULTS[index+4]
     [[ -n $control ]] || continue
     control_status=$SF_HOOK_SCRIPT_RESULTS[index+1]
-    if ! (builtin cd -- "$SF_ROOT" &&
-        jq -L "$SF_ROOT" -e --argjson status "$control_status" '
+    if ! sf_jq -e --argjson status "$control_status" '
           include "lib/runtime/schema";
           (keys - ["action", "argv", "context", "patch"] | length) == 0 and
           (({type:"context",hook:"user_prompt_submit",script:"script",content:""} +
@@ -44,7 +44,7 @@ sf_hooks_user_prompt_submit() {
                 (has("argv") | not) and (.patch | type == "object")
               else false end)
            else ((has("argv") or has("patch")) | not) end)
-      ' <<<"$control") >/dev/null; then
+      ' <<<"$control" >/dev/null; then
       SF_HOOK_ERROR='user_prompt_submit hook script returned invalid control data'
       operation_status=1
     elif (( control_status == 11 )) &&

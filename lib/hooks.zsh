@@ -2,6 +2,7 @@ emulate -R zsh
 setopt no_aliases no_bg_nice no_multios pipe_fail
 zmodload zsh/system
 
+(( $+functions[sf_jq] )) || source "$SF_ROOT/lib/jq.zsh"
 (( $+functions[sf_scratch_category] )) || source "$SF_ROOT/lib/scratch.zsh"
 
 typeset -g SF_HOOK_ERROR=''
@@ -446,8 +447,8 @@ sf_hooks_run() {
 
 sf_hooks_context_record() {
   local hook=$1 script=$2 item=$3 control=$4
-  REPLY=$(builtin cd -- "$SF_ROOT" && print -rn -- "$item" |
-    jq -Rsc -L "$SF_ROOT" --arg hook "$hook" --arg script "$script" \
+  REPLY=$(print -rn -- "$item" |
+    sf_jq -Rsc --arg hook "$hook" --arg script "$script" \
       --argjson control "$control" '
         include "lib/runtime/schema";
         ({type:"context",hook:$hook,script:$script,content:.} +
