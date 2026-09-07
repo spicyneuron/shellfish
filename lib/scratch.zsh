@@ -23,18 +23,12 @@ sf_scratch_category() {
   [[ -n $category && $category != *[^A-Za-z0-9]* ]] || return 1
   sf_temp_directory environment || return 1
   root="$REPLY/shellfish-$EUID"
-  if [[ -e $root || -L $root ]]; then
-    [[ -d $root && ! -L $root && -O $root ]] || return 1
-  else
-    (umask 077; mkdir -- "$root") || return 1
-  fi
+  (umask 077; mkdir -- "$root") 2>/dev/null || :
+  [[ -d $root && ! -L $root && -O $root ]] || return 1
   chmod 700 "$root" || return 1
   REPLY="$root/$category"
-  if [[ -e $REPLY || -L $REPLY ]]; then
-    [[ -d $REPLY && ! -L $REPLY && -O $REPLY ]] || return 1
-  else
-    (umask 077; mkdir -- "$REPLY") || return 1
-  fi
+  (umask 077; mkdir -- "$REPLY") 2>/dev/null || :
+  [[ -d $REPLY && ! -L $REPLY && -O $REPLY ]] || return 1
   chmod 700 "$REPLY" || return 1
 }
 
@@ -43,11 +37,8 @@ sf_scratch_directory() {
   [[ -n $name && $name != . && $name != .. && $name != */* ]] || return 1
   sf_scratch_category "$category" || return 1
   directory="$REPLY/$name"
-  if [[ -e $directory || -L $directory ]]; then
-    [[ -d $directory && ! -L $directory && -O $directory ]] || return 1
-  else
-    (umask 077; mkdir -- "$directory") || return 1
-  fi
+  (umask 077; mkdir -- "$directory") 2>/dev/null || :
+  [[ -d $directory && ! -L $directory && -O $directory ]] || return 1
   chmod 700 "$directory" || return 1
   REPLY=${directory:A}
 }
