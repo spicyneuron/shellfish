@@ -199,14 +199,26 @@ typeset next_state=$SHELLFISH_TURN_STATE
 [[ $next_state != $state && -d $next_state ]]
 
 # A hook receives its selected environment and not names selected by other components.
-SF_SESSION[runtime]='{"backend":{"environment":["BACKEND_SETTING"],"env_file":""},"harness":{"tools":[{"manifest":{"environment":["HOOK_SETTING","TOOL_SETTING"]}}]}}'
-export BACKEND_SETTING=backend HOOK_SETTING=hook TOOL_SETTING=tool
-make_script selected_environment 'print -rn -- "${BACKEND_SETTING-unset}|${HOOK_SETTING-unset}|${TOOL_SETTING-unset}"'
+SF_SESSION[runtime]='{"backend":{"environment":["BACKEND_SETTING"],"env_file":""},"harness":{"tools":[{"manifest":{"environment":["HOOK_SETTING","TOOL_SETTING","SHELLFISH_SESSION"]}}]}}'
+export BACKEND_SETTING=backend HOOK_SETTING=hook TOOL_SETTING=tool SHELLFISH_SESSION=external
+make_script selected_environment 'print -rn -- "${BACKEND_SETTING-unset}|${HOOK_SETTING-unset}|${TOOL_SETTING-unset}|$SHELLFISH_SESSION"'
 typeset selected_environment=$script
 sf_hooks_invoke "$session" "$working" "$empty" 512 0 1 stop \
-  "$selected_environment" '["HOOK_SETTING"]' || fail "$SF_HOOK_ERROR"
-assert_equal 'unset|hook|unset' "$SF_HOOK_SCRIPT_RESULTS[3]"
-unset BACKEND_SETTING HOOK_SETTING TOOL_SETTING
+  "$selected_environment" '["HOOK_SETTING","SHELLFISH_SESSION"]' || fail "$SF_HOOK_ERROR"
+assert_equal "unset|hook|unset|${session:A}" "$SF_HOOK_SCRIPT_RESULTS[3]"
+unset BACKEND_SETTING HOOK_SETTING TOOL_SETTING SHELLFISH_SESSION
+
+# Turn-only fixed context remains absent from session_start even when selected.
+print -r -- 'SHELLFISH_TURN_ID=external' >"$tmp/component.env"
+SF_SESSION[runtime]=$(jq -c --arg path "$tmp/component.env" '
+  .backend.env_file=$path |
+  .harness.tools[0].manifest.environment += ["SHELLFISH_TURN_ID"]
+' <<<"$SF_SESSION[runtime]")
+make_script no_turn 'print -rn -- "${SHELLFISH_TURN_ID-unset}"'
+typeset no_turn=$script
+sf_hooks_invoke "$session" "$working" "$empty" 512 0 1 session_start \
+  "$no_turn" '["SHELLFISH_TURN_ID"]' || fail "$SF_HOOK_ERROR"
+assert_equal unset "$SF_HOOK_SCRIPT_RESULTS[3]"
 sf_hooks_turn_state_cleanup
 
 assert_no_hook_captures

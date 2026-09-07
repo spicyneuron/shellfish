@@ -6,8 +6,7 @@ def tool_name:
 
 def component_environment:
   type == "array" and
-  all(.[]; type == "string" and test("^[A-Za-z_][A-Za-z0-9_]*$") and
-    (startswith("_SHELLFISH_") | not)) and
+  all(.[]; type == "string" and test("^[A-Za-z_][A-Za-z0-9_]*$")) and
   length == (unique | length);
 
 def nul_free_string:

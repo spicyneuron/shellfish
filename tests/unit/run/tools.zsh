@@ -98,18 +98,23 @@ jq -e --arg config "$XDG_CONFIG_HOME" '.content == $config' <<<"$REPLY" >/dev/nu
 export HOME=$caller_home
 unset XDG_CONFIG_HOME
 
-# A tool receives environment values selected by its manifest.
+# A tool receives its selected environment, with fixed context taking precedence.
 typeset environment_runtime environment_call
-export TOOL_SETTING=selected
-environment_runtime=$(jq -c '.harness.tools[0].manifest.environment=["TOOL_SETTING"]' \
-  <<<"$stored_runtime") || fail 'cannot prepare tool environment runtime'
+tool_config_dir="$tmp/fixed-config"
+export TOOL_SETTING=selected SHELLFISH_CONFIG_DIR=external
+environment_runtime=$(jq -c '
+  .harness.tools[0].manifest.environment=["TOOL_SETTING","SHELLFISH_CONFIG_DIR"]
+' <<<"$stored_runtime") || fail 'cannot prepare tool environment runtime'
 load_tools "$environment_runtime"
-environment_call=$(jq -cn --arg command 'print -rn -- "${TOOL_SETTING-unset}"' \
+environment_call=$(jq -cn --arg command \
+  'print -rn -- "${TOOL_SETTING-unset}|$SHELLFISH_CONFIG_DIR"' \
   '{id:"environment_1",name:"shell",input:{command:$command}}') || \
   fail 'cannot prepare tool environment call'
 sf_test_tool_execute "$environment_call" 0
-jq -e '.content == "selected"' <<<"$REPLY" >/dev/null
-unset TOOL_SETTING
+jq -e --arg config "$tool_config_dir" '.content == "selected|\($config)"' \
+  <<<"$REPLY" >/dev/null
+unset TOOL_SETTING SHELLFISH_CONFIG_DIR
+tool_config_dir=''
 load_tools "$stored_runtime"
 
 # Capture preserves trailing newlines and retains only the configured byte tail.

@@ -76,9 +76,9 @@ Backend, tool, and hook manifests declare the environment variable names their s
 
 Shellfish resolves each selected name first from an exported variable and then from `.env` beside `shellfish.jsonc`. An exported empty value still takes precedence. Missing values remain unset. Names and the resolved `.env` path are frozen in the session runtime, while values remain external and are resolved for each invocation.
 
-Each backend and hook inherits the ordinary process environment except that Shellfish removes every name declared by any component in the frozen runtime, then restores only the names selected by that component. Tools start with a clean environment and receive only their selected values plus Shellfish's fixed tool execution environment. This prevents one configured component from receiving another component's declared settings.
+Each backend and hook inherits the ordinary process environment except that Shellfish removes every name declared by any component in the frozen runtime, then restores only the names selected by that component. Tools start with a clean environment and receive only their selected values plus Shellfish's fixed tool execution environment. This prevents one configured component from receiving another component's declared settings. For hooks and tools, fixed context is applied after selected values, so the Shellfish value wins a collision.
 
-Environment names must be unique within an array and match `[A-Za-z_][A-Za-z0-9_]*`. Names beginning with `_SHELLFISH_` are reserved.
+Environment names must be unique within an array and match `[A-Za-z_][A-Za-z0-9_]*`.
 
 ## Customize a harness
 

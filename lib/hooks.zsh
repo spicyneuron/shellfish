@@ -93,8 +93,13 @@ sf_hooks_capture_one() {
   local display="$directory/current-display"
   local display_pipe="$directory/current-display-pipe"
   local control="$directory/current-control"
-  local hook=$SF_HOOK_NAME name
+  local hook=$SF_HOOK_NAME name value
   local chunk notice=''
+  local -a fixed_names=(
+    SHELLFISH_SESSION SHELLFISH_SESSION_STATE SHELLFISH_CAPTURE_LIMIT
+    SHELLFISH_SESSION_ID SHELLFISH_MODEL SHELLFISH_EXECUTABLE SHELLFISH_MODE
+    SHELLFISH_VERBOSE SHELLFISH_CONFIG_DIR SHELLFISH_TURN_ID SHELLFISH_TURN_STATE
+  )
   integer script_status display_fd display_bytes=0 notice_sent=0
   local LC_ALL=C
 
@@ -109,7 +114,14 @@ sf_hooks_capture_one() {
   for name in $SF_ENVIRONMENT_NAMES; do
     environment+=( -u "$name" )
   done
-  environment+=( "${SF_ENVIRONMENT_VALUES[@]}" )
+  for value in $SF_ENVIRONMENT_VALUES; do
+    name=${value%%=*}
+    (( ${fixed_names[(Ie)$name]} )) || environment+=( "$value" )
+  done
+  for name in $fixed_names; do
+    [[ ${parameters[$name]-} == *export* ]] || continue
+    environment+=( "$name=${(P)name}" )
+  done
 
   rm -f -- "$context" "$display" "$display_pipe" "$control"
   mkfifo "$display_pipe" || {

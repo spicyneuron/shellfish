@@ -47,10 +47,7 @@
     },
     "environment_name": {
       "type": "string",
-      "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
-      "not": {
-        "pattern": "^_SHELLFISH_"
-      }
+      "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
     },
     "environment": {
       "type": "array",
