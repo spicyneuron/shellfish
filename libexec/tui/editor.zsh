@@ -304,9 +304,11 @@ sf_tui_accept() {
       sf_tui_history_reset
       BUFFER=''
       CURSOR=0
-      sf_tui_repaint || return 1
-      sf_tui_terminal_stage || return 1
       SF_PRESENT_ACTION=submit
+      if ! sf_tui_repaint || ! sf_tui_terminal_stage; then
+        SF_PRESENT_ACTION=''
+        return 1
+      fi
       zle accept-line
       ;;
     *) return 1 ;;

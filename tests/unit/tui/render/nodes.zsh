@@ -263,7 +263,7 @@ unset NO_COLOR
 TERM=xterm-256color
 typeset -g theme_config='{"theme":{"mode":"dark","light":{"name":"l","palette":{
   "muted":"#111111","divider":"#111111","footer":"#111111",
-    "prompt":"#111111","system_heading":"#111111","context":"#111111",
+    "prompt":"#111111","prompt_waiting":"#111111","system_heading":"#111111","context":"#111111",
     "user_heading":"#111111","agent_heading":"#111111","tool":"#111111",
     "reasoning":"#111111","error":"#111111","diff_added":"#111111",
     "syntax_comment":"#111112","syntax_keyword":"#111113",
@@ -272,7 +272,7 @@ typeset -g theme_config='{"theme":{"mode":"dark","light":{"name":"l","palette":{
     "diff_added_background":"#111111","diff_removed":"#111111",
     "diff_removed_background":"#111111","permission":"#111111"}},
   "dark":{"name":"d","palette":{"text":"#777777","muted":"#222222","divider":"#333333","footer":"#222222",
-    "prompt":"#444444","system_heading":"#222222","context":"#222222",
+    "prompt":"#444444","prompt_waiting":"#448844","system_heading":"#222222","context":"#222222",
     "user_heading":"#555555","agent_heading":"#222222","tool":"#222222",
     "reasoning":"#222222","error":"#666666","diff_added":"#222222",
     "syntax_comment":"#222223","syntax_keyword":"#222224",
@@ -288,7 +288,8 @@ assert_equal 'fg=#333333' "$SF_PRESENT_STYLE[divider]"
 assert_equal 'fg=#222222' "$SF_PRESENT_STYLE[clamp]"
 assert_equal 'fg=#666666' "$SF_PRESENT_STYLE[notice.error]"
 assert_equal 'fg=#444444' "$SF_PRESENT_STYLE[prompt]"
-assert_equal 'fg=#222222' "$SF_PRESENT_STYLE[permission.divider]"
+assert_equal 'fg=#448844' "$SF_PRESENT_STYLE[prompt_waiting]"
+assert_equal 'fg=#222222' "$SF_PRESENT_STYLE[permission]"
 assert_equal 'fg=#222225' "$SF_PRESENT_STYLE[syntax.string]"
 assert_equal 'fg=#222223' "$SF_PRESENT_STYLE[syntax.comment]"
 assert_equal 'fg=#222224' "$SF_PRESENT_STYLE[syntax.keyword]"

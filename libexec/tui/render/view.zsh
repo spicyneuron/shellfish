@@ -99,9 +99,17 @@ sf_tui_update_highlights() {
 sf_tui_repaint() {
   integer columns=${COLUMNS:-0} rows=${LINES:-0} budget reserve=6
   integer index queue_shown queue_limit start queue_head=0 history_item=0 history_label=0
-  local divider footer_divider permission label preview queue_item queue_line queue_text=''
-  local bottom_style=divider
+  local prompt_divider_top prompt_divider_bottom label preview
+  local queue_item queue_line queue_text=''
+  local prompt_style=prompt
   local choices='[a]pprove  [d]eny (default)'
+  # Both rules and the glyph are one block and always share a style. Idle is the
+  # only state where a prompt submits directly, so it marks the turn as waiting.
+  # An accepted prompt repaints before the controller can leave idle, so a submit
+  # in flight already belongs to the turn.
+  if [[ $SF_PRESENT_STATE == idle && ${SF_PRESENT_ACTION-} != submit ]]; then
+    prompt_style=prompt_waiting
+  fi
   SF_PRESENT_CHROME_HIGHLIGHTS=()
   (( columns > 0 )) || columns=80
   columns=$(( columns > 1 ? columns - 1 : 1 ))
@@ -138,23 +146,25 @@ sf_tui_repaint() {
   elif (( SF_PRESENT_PREFIX_VISIBLE )); then
     PREDISPLAY=$'\n'
   fi
-  divider=${(l:columns::─:)""}
-  footer_divider=$divider
+  # The two rules are one divider bracketing the buffer, so they always share a
+  # style. ZLE splits them because only the top one precedes the edited line.
+  prompt_divider_top=${(l:columns::─:)""}
+  prompt_divider_bottom=$prompt_divider_top
   if [[ $SF_PRESENT_STATE == permission ]]; then
-    bottom_style=permission.divider
-    permission="─ Allow $SF_PRESENT_PERMISSION_TOOL outside of sandbox? "
-    if (( ${#permission} < columns )); then
-      permission+=${(l:$(( columns - ${#permission} ))::─:)""}
-    elif (( ${#permission} > columns )); then
+    prompt_style=permission
+    prompt_divider_top="─ Allow $SF_PRESENT_PERMISSION_TOOL outside of sandbox? "
+    if (( ${#prompt_divider_top} < columns )); then
+      prompt_divider_top+=${(l:$(( columns - ${#prompt_divider_top} ))::─:)""}
+    elif (( ${#prompt_divider_top} > columns )); then
       if (( columns > 1 )); then
-        permission="${permission[1,$(( columns - 1 ))]}…"
+        prompt_divider_top="${prompt_divider_top[1,$(( columns - 1 ))]}…"
       else
-        permission='…'
+        prompt_divider_top='…'
       fi
     fi
     start=${#PREDISPLAY}
-    PREDISPLAY+="$permission"
-    sf_tui_chrome $start ${#permission} permission
+    PREDISPLAY+="$prompt_divider_top"
+    sf_tui_chrome $start ${#prompt_divider_top} $prompt_style
     PREDISPLAY+=$'\n\n'
     start=${#PREDISPLAY}
     if (( SF_PRESENT_PERMISSION_PREVIEW_LENGTH )); then
@@ -209,23 +219,24 @@ sf_tui_repaint() {
     if (( history_item )); then
       label="history $history_item/${#SF_PRESENT_HISTORY}"
       if (( ${#label} + 4 <= columns )); then
-        divider="─ $label "
-        divider+=${(l:$(( columns - ${#label} - 3 ))::─:)""}
+        prompt_divider_top="─ $label "
+        prompt_divider_top+=${(l:$(( columns - ${#label} - 3 ))::─:)""}
         history_label=1
       fi
     fi
     start=${#PREDISPLAY}
-    PREDISPLAY+="$divider"$'\n'
-    sf_tui_chrome $start ${#divider} divider
+    PREDISPLAY+="$prompt_divider_top"$'\n'
+    sf_tui_chrome $start ${#prompt_divider_top} $prompt_style
     if (( history_label )); then
       sf_tui_chrome $(( start + 2 )) ${#label} muted
     fi
     start=${#PREDISPLAY}
     PREDISPLAY+='❯ '
-    sf_tui_chrome $start 2 prompt
+    sf_tui_chrome $start 2 $prompt_style
   fi
-  POSTDISPLAY=$'\n'"$footer_divider"
-  sf_tui_chrome $(( ${#PREDISPLAY} + ${#BUFFER} + 1 )) ${#footer_divider} $bottom_style
+  POSTDISPLAY=$'\n'"$prompt_divider_bottom"
+  sf_tui_chrome $(( ${#PREDISPLAY} + ${#BUFFER} + 1 )) \
+    ${#prompt_divider_bottom} $prompt_style
   if [[ -n $SF_PRESENT_FOOTER ]]; then
     start=$(( ${#PREDISPLAY} + ${#BUFFER} + ${#POSTDISPLAY} + 1 ))
     POSTDISPLAY+=$'\n'"$SF_PRESENT_FOOTER"

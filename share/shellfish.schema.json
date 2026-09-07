@@ -81,6 +81,7 @@
         "divider": {"$ref": "#/$defs/color"},
         "footer": {"$ref": "#/$defs/color"},
         "prompt": {"$ref": "#/$defs/color"},
+        "prompt_waiting": {"$ref": "#/$defs/color"},
         "system_heading": {"$ref": "#/$defs/color"},
         "context": {"$ref": "#/$defs/color"},
         "user_heading": {"$ref": "#/$defs/color"},

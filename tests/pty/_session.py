@@ -31,7 +31,7 @@ OSC = re.compile(rb"\x1b\].*?(?:\x07|\x1b\\)", re.S)
 # every style empty and the whole highlighting path goes untested.
 THEME = {
     "muted": "#8b949e", "divider": "#8b949e",
-    "footer": "#8b949e", "prompt": "#8b949e",
+    "footer": "#8b949e", "prompt": "#8b949e", "prompt_waiting": "#a5d6ff",
     "system_heading": "#d2a8ff", "context": "#8b949e",
     "user_heading": "#58a6ff", "agent_heading": "#ffb77a",
     "tool": "#8b949e", "reasoning": "#8b949e",

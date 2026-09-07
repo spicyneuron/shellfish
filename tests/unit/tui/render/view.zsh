@@ -233,8 +233,8 @@ LINES=10
 
 # Chrome offsets index PREDISPLAY + BUFFER + POSTDISPLAY, so confirm each span
 # actually covers the text it claims rather than trusting the arithmetic.
-SF_PRESENT_STYLE=( divider 'fg=8' prompt 'fg=4' footer 'fg=5' muted 'fg=7'
-  permission 'fg=4,bold' permission.divider 'fg=4' syntax.string 'fg=6' )
+SF_PRESENT_STYLE=( divider 'fg=8' prompt_waiting 'fg=2' prompt 'fg=4' footer 'fg=5'
+  muted 'fg=7' permission 'fg=4' syntax.string 'fg=6' )
 sf_tui_reset
 SF_PRESENT_IDENTITY=test/model
 SF_PRESENT_FOOTER='test/model · 1 ↑ 2 ↓'
@@ -254,7 +254,20 @@ for (( index = 1; index <= ${#SF_PRESENT_CHROME_HIGHLIGHTS}; index += 3 )); do
 done
 assert_equal "${(l:79::─:)""}|❯ |${(l:79::─:)""}|test/model · 1 ↑ 2 ↓" \
   "${(j:|:)chrome_sliced}"
-assert_equal 'fg=8,fg=4,fg=8,fg=5' "${(j:,:)chrome_styled}"
+assert_equal 'fg=2,fg=2,fg=2,fg=5' "${(j:,:)chrome_styled}"
+
+# Neither an accepted prompt, which repaints before the controller can leave
+# idle, nor a live turn, which queues instead, is waiting on input.
+for SF_PRESENT_ACTION SF_PRESENT_STATE in submit idle '' working; do
+  sf_tui_repaint
+  chrome_styled=()
+  for (( index = 3; index <= ${#SF_PRESENT_CHROME_HIGHLIGHTS}; index += 3 )); do
+    chrome_styled+=( "$SF_PRESENT_CHROME_HIGHLIGHTS[index]" )
+  done
+  [[ ${(j:,:)chrome_styled} == 'fg=4,fg=4,fg=4,fg=5' ]] ||
+    fail "state '$SF_PRESENT_STATE' action '$SF_PRESENT_ACTION' chrome: ${(j:,:)chrome_styled}"
+done
+SF_PRESENT_ACTION=''
 
 SF_PRESENT_STATE=permission
 SF_PRESENT_PERMISSION_TOOL=shell
@@ -272,9 +285,14 @@ done
 assert_equal '"hi"' "$chrome_sliced[2]"
 assert_equal 'fg=6' "$chrome_styled[2]"
 assert_equal '[a]pprove  [d]eny (default)' "$chrome_sliced[3]"
-assert_equal 'fg=4,bold' "$chrome_styled[3]"
+assert_equal 'fg=4' "$chrome_styled[3]"
 assert_equal "${(l:79::─:)""}" "$chrome_sliced[4]"
 assert_equal 'fg=4' "$chrome_styled[4]"
+# The labelled top rule is the same divider as the bottom, so it shares a style.
+assert_equal 79 ${#chrome_sliced[1]}
+[[ $chrome_sliced[1] == '─ Allow shell outside of sandbox? '─* ]] ||
+  fail "top rule: $chrome_sliced[1]"
+assert_equal "$chrome_styled[4]" "$chrome_styled[1]"
 [[ ${(j:,:)chrome_sliced} != *'"host"'* ]] || fail 'permission reason was syntax highlighted'
 SF_PRESENT_STATE=idle
 

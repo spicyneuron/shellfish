@@ -341,7 +341,7 @@ assert_equal 1 "$failed_repaints"
 functions[sf_tui_repaint]=$saved_repaint
 SF_PRESENT_RENDER_ERROR=''
 
-# A failed repaint cannot release the prompt as a submitted turn.
+# A failed repaint or terminal stage cannot release the prompt as submitted.
 saved_repaint=$functions[sf_tui_repaint]
 sf_tui_repaint() { return 1; }
 SF_PRESENT_STATE=idle
@@ -352,3 +352,12 @@ if sf_tui_accept; then
 fi
 assert_equal '' "$SF_PRESENT_ACTION"
 functions[sf_tui_repaint]=$saved_repaint
+
+saved_stage=$functions[sf_tui_terminal_stage]
+sf_tui_terminal_stage() { return 1; }
+BUFFER=unstageable
+if sf_tui_accept; then
+  fail 'submit succeeded when terminal staging failed'
+fi
+assert_equal '' "$SF_PRESENT_ACTION"
+functions[sf_tui_terminal_stage]=$saved_stage
