@@ -56,6 +56,7 @@ sf_backend_curl_args
 [[ "${SF_BACKEND_CURL_ARGS[*]}" == *"--insecure"* ]]
 
 # Curl connection and resolution failures report dedicated messages.
+print -rn -- 000 >"$SF_BACKEND_STATUS_FILE"
 for code expected in \
     6 'could not resolve the provider host' \
     7 'could not connect to the provider' \

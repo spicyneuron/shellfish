@@ -112,7 +112,7 @@ sf_backend_stream() {
 
 sf_backend_finish() {
   local -a statuses=( "$@" )
-  local stage http_status message
+  local stage http_status message diagnostic
   for stage in $statuses; do
     (( stage < 128 )) || exit $stage
   done
@@ -124,7 +124,11 @@ sf_backend_finish() {
       35|51|52|56|60) message='TLS connection failed' ;;
       *) message='request failed' ;;
     esac
-    sf_backend_die "$message (curl status $statuses[1])"
+    diagnostic=$(<$SF_BACKEND_STATUS_FILE)
+    diagnostic=${diagnostic[1,-4]}
+    diagnostic=$(print -rn -- "$diagnostic" | LC_ALL=C tr -s '[:cntrl:]' ' ')
+    diagnostic=${diagnostic% }
+    sf_backend_die "$message (curl status $statuses[1])${diagnostic:+: ${diagnostic[1,1000]}}"
   fi
   http_status=$(<$SF_BACKEND_STATUS_FILE)
   http_status=${http_status[-3,-1]}
