@@ -6,8 +6,6 @@ setopt no_aliases no_bg_nice no_multios pipe_fail
 typeset -gr SF_ROOT=${0:A:h:h:h}
 typeset -g SF_INSTALL_DESTINATION=''
 typeset -g SF_INSTALL_TEMP=''
-typeset -gi SF_INSTALL_PUBLISHING=0
-typeset -gi SF_INSTALL_COMPLETE=0
 
 sf_die() {
   print -u2 -r -- "shellfish: $*"
@@ -15,18 +13,7 @@ sf_die() {
 }
 
 sf_install_cleanup() {
-  trap '' INT USR1 HUP TERM
-  if (( SF_INSTALL_PUBLISHING && ! SF_INSTALL_COMPLETE )) &&
-      [[ -e $SF_INSTALL_DESTINATION && -e $SF_INSTALL_TEMP &&
-         $SF_INSTALL_DESTINATION -ef $SF_INSTALL_TEMP ]]; then
-    rm -f -- "$SF_INSTALL_DESTINATION" 2>/dev/null
-  fi
   [[ -z $SF_INSTALL_TEMP ]] || rm -f -- "$SF_INSTALL_TEMP" 2>/dev/null
-}
-
-sf_install_interrupt() {
-  sf_install_cleanup
-  exit $1
 }
 
 sf_install_main() {
@@ -109,7 +96,6 @@ sf_install_main() {
     return 2
   }
 
-  SF_INSTALL_PUBLISHING=1
   ln -- "$SF_INSTALL_TEMP" "$SF_INSTALL_DESTINATION" 2>/dev/null || {
     if [[ -e $SF_INSTALL_DESTINATION || -L $SF_INSTALL_DESTINATION ]]; then
       sf_die "session already exists: $SF_INSTALL_DESTINATION"
@@ -119,13 +105,9 @@ sf_install_main() {
     return 1
   }
   print -r -- "$SF_INSTALL_DESTINATION" || return 1
-  SF_INSTALL_COMPLETE=1
 }
 
 trap sf_install_cleanup EXIT
-trap 'sf_install_interrupt 130' INT USR1
-trap 'sf_install_interrupt 129' HUP
-trap 'sf_install_interrupt 143' TERM
 sf_install_main "$@"
 typeset exit_status=$?
 exit $exit_status

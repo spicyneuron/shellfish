@@ -103,32 +103,6 @@ assert_equal sentinel "$(<"$raced")"
 leftovers=( "$tmp"/.raced.jsonl.*(N) )
 (( ! ${#leftovers} )) || fail 'collision left a temporary file'
 
-# A signal before publication removes the private temporary file and destination.
-typeset signal_fifo="$tmp/signal.fifo" signal_out="$tmp/signal.jsonl"
-typeset signal_release="$tmp/signal-release"
-mkfifo "$signal_fifo"
-{ while [[ ! -e $signal_release ]]; do sleep 0.02; done; cat "$header" } >"$signal_fifo" &
-writer_pid=$!
-zsh -f "$entry" install-session --session-out "$signal_out" <"$signal_fifo" \
-  >/dev/null 2>&1 &
-install_pid=$!
-waited=0
-while (( waited++ < 50 )); do
-  leftovers=( "$tmp"/.signal.jsonl.*(N) )
-  (( ${#leftovers} )) && break
-  sleep 0.02
-done
-(( waited <= 50 )) || fail 'signalled installer did not prepare its temporary file'
-kill -TERM $install_pid
-: >"$signal_release"
-wait $writer_pid
-install_status=0
-wait $install_pid || install_status=$?
-(( install_status == 143 )) || fail 'signalled installer returned the wrong status'
-[[ ! -e $signal_out && ! -L $signal_out ]] || fail 'signal left an installed destination'
-leftovers=( "$tmp"/.signal.jsonl.*(N) )
-(( ! ${#leftovers} )) || fail 'signal left a temporary file'
-
 # Argument validation happens without consuming or publishing input.
 zsh -f "$entry" install-session <"$header" >/dev/null 2>&1 &&
   fail 'installer accepted a missing destination option'

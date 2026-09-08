@@ -31,7 +31,7 @@ Chat and `shellfish run` use an existing session with `--session PATH`. Otherwis
 
 `shellfish install-session --session-out PATH` reads one complete canonical JSONL transcript from stdin and prints the installed absolute path. It preserves the supplied bytes, runs no hooks, and does not resolve configuration. The transcript must be idle, with no unanswered user message, pending tool result, or requested continuation.
 
-Installation refuses an existing file, directory, or symlink. It publishes the validated transcript atomically with mode 0600 and removes its temporary files and destination on failure or interruption. Destination naming and transcript derivation belong to the calling feature.
+Installation refuses an existing file, directory, or symlink. It publishes the validated transcript atomically with mode 0600. Destination naming and transcript derivation belong to the calling feature.
 
 Ordinary run accepts prompt text and prints the final assistant text:
 
