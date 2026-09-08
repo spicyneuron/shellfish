@@ -265,7 +265,7 @@ sf_session_reset
 sf_hooks_turn_state_create
 typeset -gx SHELLFISH_MODE=test SHELLFISH_VERBOSE=1
 typeset shell_state_dir=$SHELLFISH_TURN_STATE
-typeset shell_command='[[ -n $HOME ]] || exit 8; env | grep -Eq '\''^SHELLFISH_(SESSION|SESSION_ID|TURN_STATE|SESSION_STATE|MAX_CAPTURE_BYTES|MODE|MODEL|TURN_ID|VERBOSE|CONFIG_DIR)='\'' && exit 9; print output; exit 7'
+typeset shell_command='[[ -n $HOME ]] || exit 8; env | grep -Eq '\''^SHELLFISH_(SESSION|SESSION_ID|TURN_STATE|SESSION_STATE|MAX_CAPTURE_BYTES|MODE|MODEL|TURN_ID|VERBOSE|CONFIG_DIR)='\'' && exit 9; [[ ! -e /dev/fd/3 ]] || exit 6; print output; exit 7'
 run_prompt_hook "!$shell_command" "$shell_session"
 [[ $reply[1] == handled ]]
 [[ -d $shell_state_dir ]]

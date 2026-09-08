@@ -5,18 +5,12 @@ setopt no_aliases no_bg_nice no_multios pipe_fail
 zmodload zsh/datetime
 source "${0:A:h:h:h:h}/lib/capped.zsh" || exit 1
 
-state="$SHELLFISH_SESSION_STATE/git_environment"
-[[ -f $state ]] || exit 0
-previous=$(<$state) || exit 0
-temp="$state.$$"
+typeset previous branch hash identity
+previous=$(jq -ers '
+  [.[] | select(.type == "state" and .name == "git/identity")][-1].value |
+  select(type == "string")
+' "$SHELLFISH_SESSION" 2>/dev/null) || exit 0
 typeset -F deadline=$(( EPOCHREALTIME + SF_PROBE_BUDGET ))
-
-cleanup() {
-  rm -f -- "$temp"
-}
-trap cleanup EXIT INT TERM
-
-typeset branch hash identity
 branch=$(sf_capped "$deadline" git symbolic-ref --quiet --short HEAD 2>/dev/null)
 case $? in
   0) identity="branch:$branch" ;;
@@ -28,7 +22,8 @@ case $? in
 esac
 [[ $identity != "$previous" ]] || exit 0
 
-print -r -- "$identity" >"$temp" && mv -f -- "$temp" "$state" || exit 1
+jq -cn --arg identity "$identity" \
+  '{state:[{name:"git/identity",value:$identity}]}' >&3 || exit 1
 case "$previous -> $identity" in
   branch:*' -> branch:'*)
     print -r -- "Git branch changed from ${previous#branch:} to ${identity#branch:}."

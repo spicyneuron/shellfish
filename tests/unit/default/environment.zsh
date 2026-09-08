@@ -56,12 +56,12 @@ environment_output=$(PATH="$environment_bin:$PATH" zsh -f "$environment_script" 
 [[ $environment_output == *'Available commands:'* ]]
 [[ $environment_output == *'Available agent skills.'* ]]
 
-# git_environment establishes state only after a fast, successful startup probe.
-# Later prompt probes report each branch or detached-commit transition once.
+# git_environment records identity only after a fast, successful startup probe.
+# Later prompt probes read the transcript and record each identity transition once.
 typeset git_start="$ROOT/share/default/hooks/session_start/git_environment/run"
 typeset git_prompt="$ROOT/share/default/hooks/user_prompt_submit/git_environment/run"
 typeset git_bin="$tmp/git-environment-bin" git_state="$tmp/git-state"
-typeset git_cache="$tmp/git_environment" git_output
+typeset git_session="$tmp/git-session.jsonl" git_control="$tmp/git-control.json" git_output
 mkdir "$git_bin"
 cat >"$git_bin/git" <<'EOF'
 #!/bin/sh
@@ -81,58 +81,61 @@ esac
 EOF
 chmod +x "$git_bin/git"
 print -r -- 'branch:main' >"$git_state"
-git_output=$(PATH="$git_bin:$PATH" GIT_STATE="$git_state" SHELLFISH_SESSION_STATE="$tmp" \
-  zsh -f "$git_start" session_start)
+git_output=$(PATH="$git_bin:$PATH" GIT_STATE="$git_state" \
+  zsh -f "$git_start" session_start 3>"$git_control")
 [[ $git_output == *main* && $git_output == *'abc123 Test commit'* &&
    $git_output == *status-file* && $git_output != *'Recent files:'* ]]
-assert_equal 'branch:main' "$(<$git_cache)"
+jq -e '. == {state:[{name:"git/identity",value:"branch:main"}]}' \
+  "$git_control" >/dev/null
+jq -c '.state[] | {type:"state"} + .' "$git_control" >"$git_session"
+print -r -- '{"type":"state","name":"git/other","value":"ignored"}' >>"$git_session"
 
-git_output=$(PATH="$git_bin:$PATH" GIT_STATE="$git_state" SHELLFISH_SESSION_STATE="$tmp" \
-  zsh -f "$git_prompt" user_prompt_submit)
+git_output=$(PATH="$git_bin:$PATH" GIT_STATE="$git_state" SHELLFISH_SESSION="$git_session" \
+  zsh -f "$git_prompt" user_prompt_submit 3>"$git_control")
 assert_equal '' "$git_output"
+[[ ! -s $git_control ]]
 print -r -- 'branch:feature' >"$git_state"
-git_output=$(PATH="$git_bin:$PATH" GIT_STATE="$git_state" SHELLFISH_SESSION_STATE="$tmp" \
-  zsh -f "$git_prompt" user_prompt_submit)
+git_output=$(PATH="$git_bin:$PATH" GIT_STATE="$git_state" SHELLFISH_SESSION="$git_session" \
+  zsh -f "$git_prompt" user_prompt_submit 3>"$git_control")
 [[ $git_output == *main* && $git_output == *feature* ]]
-assert_equal 'branch:feature' "$(<$git_cache)"
-git_output=$(PATH="$git_bin:$PATH" GIT_STATE="$git_state" SHELLFISH_SESSION_STATE="$tmp" \
-  zsh -f "$git_prompt" user_prompt_submit)
+jq -e '. == {state:[{name:"git/identity",value:"branch:feature"}]}' \
+  "$git_control" >/dev/null
+jq -c '.state[] | {type:"state"} + .' "$git_control" >>"$git_session"
+git_output=$(PATH="$git_bin:$PATH" GIT_STATE="$git_state" SHELLFISH_SESSION="$git_session" \
+  zsh -f "$git_prompt" user_prompt_submit 3>"$git_control")
 assert_equal '' "$git_output"
+[[ ! -s $git_control ]]
 
 print -r -- 'commit:0123456789abcdef' >"$git_state"
-git_output=$(PATH="$git_bin:$PATH" GIT_STATE="$git_state" SHELLFISH_SESSION_STATE="$tmp" \
-  zsh -f "$git_prompt" user_prompt_submit)
+git_output=$(PATH="$git_bin:$PATH" GIT_STATE="$git_state" SHELLFISH_SESSION="$git_session" \
+  zsh -f "$git_prompt" user_prompt_submit 3>"$git_control")
 [[ $git_output == *feature* && $git_output == *0123456789abcdef* ]]
-assert_equal 'commit:0123456789abcdef' "$(<$git_cache)"
+jq -e '. == {state:[{name:"git/identity",value:"commit:0123456789abcdef"}]}' \
+  "$git_control" >/dev/null
+jq -c '.state[] | {type:"state"} + .' "$git_control" >>"$git_session"
 
 cat >"$git_bin/git" <<'EOF'
 #!/bin/sh
 exit 124
 EOF
 chmod +x "$git_bin/git"
-git_output=$(PATH="$git_bin:$PATH" SHELLFISH_SESSION_STATE="$tmp" \
-  zsh -f "$git_prompt" user_prompt_submit)
+git_output=$(PATH="$git_bin:$PATH" SHELLFISH_SESSION="$git_session" \
+  zsh -f "$git_prompt" user_prompt_submit 3>"$git_control")
 assert_equal '' "$git_output"
-assert_equal 'commit:0123456789abcdef' "$(<$git_cache)"
+[[ ! -s $git_control ]]
 
-rm -f "$git_cache"
-cat >"$git_bin/git" <<'EOF'
-#!/bin/sh
-exit 124
-EOF
-chmod +x "$git_bin/git"
-git_output=$(PATH="$git_bin:$PATH" SHELLFISH_SESSION_STATE="$tmp" \
-  zsh -f "$git_start" session_start)
+git_output=$(PATH="$git_bin:$PATH" zsh -f "$git_start" session_start 3>"$git_control")
 assert_equal '' "$git_output"
-[[ ! -e $git_cache ]]
+[[ ! -s $git_control ]]
 cat >"$git_bin/git" <<'EOF'
 #!/bin/sh
 : >"$GIT_MARKER"
 exit 1
 EOF
 chmod +x "$git_bin/git"
-GIT_MARKER="$tmp/git-called" PATH="$git_bin:$PATH" SHELLFISH_SESSION_STATE="$tmp" \
-  zsh -f "$git_prompt" user_prompt_submit >/dev/null
+: >"$tmp/empty.jsonl"
+GIT_MARKER="$tmp/git-called" PATH="$git_bin:$PATH" SHELLFISH_SESSION="$tmp/empty.jsonl" \
+  zsh -f "$git_prompt" user_prompt_submit 3>"$git_control" >/dev/null
 [[ ! -e $tmp/git-called ]]
 
 # Shell command reporting is best-effort and selects the first candidate with a

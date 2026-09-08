@@ -5,14 +5,7 @@ setopt no_aliases no_bg_nice no_multios pipe_fail
 zmodload zsh/datetime
 source "${0:A:h:h:h:h}/lib/capped.zsh" || exit 1
 
-state="$SHELLFISH_SESSION_STATE/git_environment"
-temp="$state.$$"
 typeset -F deadline=$(( EPOCHREALTIME + SF_PROBE_BUDGET ))
-
-cleanup() {
-  rm -f -- "$temp"
-}
-trap cleanup EXIT INT TERM
 
 typeset branch hash identity commits git_status
 integer probe_status
@@ -34,7 +27,8 @@ probe_status=$?
 (( probe_status != 124 )) || exit 0
 (( probe_status == 0 )) || git_status=''
 
-print -r -- "$identity" >"$temp" && mv -f -- "$temp" "$state" || exit 1
+jq -cn --arg identity "$identity" \
+  '{state:[{name:"git/identity",value:$identity}]}' >&3 || exit 1
 case $identity in
   branch:*) print -r -- "Git branch: ${identity#branch:}" ;;
   commit:*) print -r -- "Git commit: ${identity#commit:} (detached HEAD)" ;;
