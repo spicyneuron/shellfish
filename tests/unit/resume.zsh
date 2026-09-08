@@ -13,6 +13,8 @@ typeset s_assistant="$tmp/assistant.jsonl"
 typeset s_tool_res="$tmp/tool_res.jsonl"
 typeset s_failed="$tmp/failed.jsonl"
 typeset s_bad="$tmp/bad.jsonl"
+typeset s_state_only="$tmp/state_only.jsonl"
+typeset s_state_tail="$tmp/state_tail.jsonl"
 
 make_header() {
   jq -cn '{type:"session",format_version:1,cwd:"/tmp",created:"2026-08-18T10:00:00Z",profile:{request:{model:"claude-3"}},backend:{name:"custom",command:"/test/run",endpoint:"https://example.invalid"}}'
@@ -52,13 +54,23 @@ print -r -- '{"type":"turn_error","message":"Turn interrupted."}' >>"$s_failed"
 # 8. Unreadable file
 print -r -- 'not json' >"$s_bad"
 
+# 9. Header followed only by state
+make_header >"$s_state_only"
+print -r -- '{"type":"state","name":"preview/only","value":true}' >>"$s_state_only"
+
+# 10. State after the latest presentable record
+make_header >"$s_state_tail"
+print -r -- '{"type":"message","role":"user","content":[{"type":"text","text":"latest prompt"}]}' >>"$s_state_tail"
+print -r -- '{"type":"state","name":"preview/first","value":1}' >>"$s_state_tail"
+print -r -- '{"type":"state","name":"preview/last","value":2}' >>"$s_state_tail"
+
 # Loading sessions summarizes records and formats resume labels.
 sf_resume_load "$s_empty" "$s_system" "$s_context" "$s_user" "$s_torn" "$s_assistant" "$s_tool_res" \
-  "$s_failed" "$s_bad"
-(( ${#SF_RESUME_PATHS} == 9 ))
-(( ${#SF_RESUME_TIMES} == 9 ))
-(( ${#SF_RESUME_PAIRS} == 9 ))
-(( ${#SF_RESUME_PREVIEWS} == 9 ))
+  "$s_failed" "$s_bad" "$s_state_only" "$s_state_tail"
+(( ${#SF_RESUME_PATHS} == 11 ))
+(( ${#SF_RESUME_TIMES} == 11 ))
+(( ${#SF_RESUME_PAIRS} == 11 ))
+(( ${#SF_RESUME_PREVIEWS} == 11 ))
 
 assert_equal custom/claude-3 "$SF_RESUME_PAIRS[1]"
 assert_equal '(empty session)' "$SF_RESUME_PREVIEWS[1]"
@@ -71,6 +83,17 @@ assert_equal 'shell exit 2' "$SF_RESUME_PREVIEWS[7]"
 assert_equal 'Turn interrupted.' "$SF_RESUME_PREVIEWS[8]"
 assert_equal '?/?' "$SF_RESUME_PAIRS[9]"
 assert_equal '(unreadable)' "$SF_RESUME_PREVIEWS[9]"
+assert_equal '(empty session)' "$SF_RESUME_PREVIEWS[10]"
+assert_equal 'latest prompt' "$SF_RESUME_PREVIEWS[11]"
+
+# Preview validation cannot load a jq module from the project being resumed.
+mkdir -p "$tmp/project/lib/runtime"
+print -r -- 'def canonical_state(:' >"$tmp/project/lib/runtime/schema.jq"
+(
+  builtin cd "$tmp/project"
+  sf_resume_load "$s_state_tail"
+  assert_equal 'latest prompt' "$SF_RESUME_PREVIEWS[1]"
+)
 
 # A session removed after discovery does not shift later summaries onto its row.
 sf_resume_load "$s_empty" "$tmp/missing.jsonl" "$s_system"
@@ -187,11 +210,14 @@ touch -t 202609040200 "$directory/second.jsonl"
 make_discovery_header /other/path ignored >"$directory/other.jsonl"
 touch -t 202609040300 "$directory/other.jsonl"
 print -r -- '{"not":"a session header"}' >"$directory/corrupt.jsonl"
+make_discovery_header "$(pwd -P)" hidden >"$directory/.internal.jsonl"
 
 sf_session_find 0
 assert_equal 2 "${#SF_SESSION_MATCHES}"
 [[ $SF_SESSION_MATCHES[1] == "$directory/second.jsonl" ]]
 [[ $SF_SESSION_MATCHES[2] == "$directory/first.jsonl" ]]
+[[ ${SF_SESSION_MATCHES[(I)*.internal.jsonl]} == 0 ]] ||
+  fail 'automatic discovery included a leading-dot session'
 sf_session_find 1
 assert_equal 1 "${#SF_SESSION_MATCHES}"
 [[ $SF_SESSION_MATCHES[1] == "$directory/second.jsonl" ]]

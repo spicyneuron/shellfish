@@ -36,8 +36,11 @@ assert_equal sh "$(jq -nr -L "$ROOT" --argjson tools "$summary_tools" '
 typeset replay
 replay=$({
   head -n 1 "$ROOT/tests/fixtures/session/complete.jsonl"
+  print -r -- '{"type":"state","name":"replay/start","value":true}'
   print -r -- '{"type":"message","role":"user","content":[{"type":"text","text":"question"}]}'
+  print -r -- '{"type":"state","name":"replay/middle","value":{"step":2}}'
   print -r -- '{"type":"message","role":"assistant","stop":"end","content":[{"type":"reasoning","text":"first"},{"type":"reasoning","text":""},{"type":"reasoning","text":"second"}]}'
+  print -r -- '{"type":"state","name":"replay/end","value":null}'
 } | jq -jRs -L "$ROOT" -f "$ROOT/libexec/tui/transcript-decode.jq")
 typeset -a replay_fields=( "${(@0)${replay%$'\0'}}" )
 # Replay leads with the frozen runtime from the durable header.
@@ -45,6 +48,14 @@ assert_equal session_update "$replay_fields[1]"
 assert_equal fake-model "$(jq -r '.profile.request.model' <<<"$replay_fields[2]")"
 assert_equal assistant "$replay_fields[15]"
 assert_equal $'first\n\nsecond' "$replay_fields[17]"
+
+if {
+    head -n 1 "$ROOT/tests/fixtures/session/complete.jsonl"
+    print -r -- '{"type":"state","name":"bad name","value":true}'
+  } | jq -jRs -L "$ROOT" -f "$ROOT/libexec/tui/transcript-decode.jq" \
+      >/dev/null 2>&1; then
+  fail 'replay accepted malformed state'
+fi
 
 # tail drops the leading session_update so only display events are compared.
 typeset usage_replay

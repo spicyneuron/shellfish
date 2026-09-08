@@ -17,6 +17,8 @@ A new session is created inside chat, and creation presents as a running turn: `
 
 Each session stores its resolved backend, harness, model, and sandbox settings. A fresh `shellfish` launch uses current configuration. `/new` reuses the active session's settings. Themes and TUI preview settings come from current configuration, so they affect how existing sessions are displayed.
 
+Automatic continue and resume discovery considers non-hidden `*.jsonl` files directly in the project session directory. Leading-dot sessions are internal and remain accessible only by explicit path. Resume previews ignore durable state records and summarize the latest presentable transcript record.
+
 The default harness compacts a conversation approaching its context window into a child session and opens it with the interrupted prompt as an editable draft. See [Compaction](HARNESS.md#compaction) for the threshold and mechanics.
 
 ## Slash commands

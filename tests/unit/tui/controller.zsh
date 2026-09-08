@@ -65,6 +65,13 @@ assert_equal updated/new-model "$SF_PRESENT_IDENTITY"
 assert_equal updated/new-model "$SF_PRESENT_FOOTER"
 assert_equal "$node_types" "${(j:,:)SF_PRESENT_NODE_TYPE}"
 
+# State passes through the live transport without changing presentation.
+sf_tui_transport_reset
+SF_TUI_TRANSPORT_LINES=( '{"type":"state","name":"live/status","value":"ready"}' )
+sf_tui_pending_next
+assert_equal '' "$REPLY"
+assert_equal "$node_types" "${(j:,:)SF_PRESENT_NODE_TYPE}"
+
 if sf_tui_decoded not-supported; then
   fail 'unsupported exec output was accepted'
 fi
