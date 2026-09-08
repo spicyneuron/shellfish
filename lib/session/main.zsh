@@ -3,7 +3,6 @@ setopt no_aliases no_multios pipe_fail
 
 (( $+functions[sf_jq] )) || source "$SF_ROOT/lib/jq.zsh"
 
-typeset -g SF_SESSION_PATH=''
 typeset -gA SF_SESSION=()
 typeset -ga SF_SESSION_RECORDS=()
 typeset -gA SF_HOOK_COUNTS=()
@@ -69,24 +68,24 @@ sf_session_reset() {
 }
 
 sf_session_repair_tail() {
-  local total fragment
-  [[ -s $SF_SESSION_PATH && -n $(tail -c 1 "$SF_SESSION_PATH") ]] || return 0
-  total=$(wc -c <"$SF_SESSION_PATH") || {
-    sf_session_fail "cannot inspect session tail: $SF_SESSION_PATH"
+  local session_path=$1 total fragment
+  [[ -s $session_path && -n $(tail -c 1 "$session_path") ]] || return 0
+  total=$(wc -c <"$session_path") || {
+    sf_session_fail "cannot inspect session tail: $session_path"
     return
   }
-  fragment=$(tail -n 1 "$SF_SESSION_PATH" | wc -c) || {
-    sf_session_fail "cannot inspect session tail: $SF_SESSION_PATH"
+  fragment=$(tail -n 1 "$session_path" | wc -c) || {
+    sf_session_fail "cannot inspect session tail: $session_path"
     return
   }
-  truncate -s "$(( total - fragment ))" "$SF_SESSION_PATH" || {
-    sf_session_fail "cannot repair session tail: $SF_SESSION_PATH"
+  truncate -s "$(( total - fragment ))" "$session_path" || {
+    sf_session_fail "cannot repair session tail: $session_path"
     return
   }
 }
 
 sf_session_prepare() {
-  local runtime=$1 cwd created decoded header id model
+  local runtime=$1 cwd created decoded header model
   SF_SESSION_ERROR=''
   sf_session_reset
   cwd=$(pwd -P) && created=$(date -u '+%Y-%m-%dT%H:%M:%SZ') || {
@@ -119,10 +118,8 @@ sf_session_prepare() {
   for (( index = 3; index < ${#fields}; index += 2 )); do
     SF_HOOK_COUNTS[$fields[index]]=$fields[index+1]
   done
-  id=${SF_SESSION_PATH:t}
   SF_SESSION=(
     runtime "$runtime"
-    id "${id%.jsonl}"
     cwd "$cwd"
     model "$model"
     turn_id 1
@@ -162,7 +159,7 @@ sf_session_read_runtime() {
 
 # Derives session state from the records already held in memory.
 sf_session_project() {
-  local loaded
+  local session_path=$1 loaded
   local -a fields
   SF_SESSION=()
   SF_HOOK_COUNTS=()
@@ -187,14 +184,14 @@ sf_session_project() {
       ($hook | field), (.[0].harness[$hook] // [] | length | tostring | field)),
     ("ok" | field)
   ' 2>/dev/null) || {
-    sf_session_fail "cannot read session: $SF_SESSION_PATH"
+    sf_session_fail "cannot read session: $session_path"
     return
   }
   fields=( "${(@0)${loaded%$'\0'}}" )
   (( ${#fields} >= 9 && $fields[6] >= 0 &&
       (${#fields} - 7 - (2 * fields[6])) % 2 == 0 )) &&
       [[ $fields[5] == (true|false) && $fields[-1] == ok ]] || {
-    sf_session_fail "cannot restore session runtime: $SF_SESSION_PATH"
+    sf_session_fail "cannot restore session runtime: $session_path"
     return
   }
   integer index hook_start=$(( 7 + (2 * fields[6]) ))
@@ -213,34 +210,34 @@ sf_session_project() {
 
 # Replaces the in-memory view with the durable records. Never writes.
 sf_session_read() {
-  local record
+  local session_path=$1 record
   sf_session_reset
   while IFS= read -r record; do
     [[ -n $record ]] || {
       SF_SESSION_RECORDS=()
-      sf_session_fail "cannot read session: $SF_SESSION_PATH"
+      sf_session_fail "cannot read session: $session_path"
       return
     }
     SF_SESSION_RECORDS+=( "$record" )
-  done <"$SF_SESSION_PATH"
+  done <"$session_path"
   (( ${#SF_SESSION_RECORDS} )) || {
-    sf_session_fail "cannot read session: $SF_SESSION_PATH"
+    sf_session_fail "cannot read session: $session_path"
     return
   }
-  sf_session_project || {
+  sf_session_project "$session_path" || {
     SF_SESSION_RECORDS=()
     return 1
   }
 }
 
 sf_session_append() {
-  local record=$1
+  local session_path=$1 record=$2
   (( ${#SF_SESSION_RECORDS} )) || {
     sf_session_fail 'session has not been read'
     return
   }
-  if ! printf '%s\n' "$record" >>"$SF_SESSION_PATH"; then
-    sf_session_fail "cannot append session record: $SF_SESSION_PATH"
+  if ! printf '%s\n' "$record" >>"$session_path"; then
+    sf_session_fail "cannot append session record: $session_path"
     return
   fi
   SF_SESSION_RECORDS+=( "$record" )
@@ -249,7 +246,7 @@ sf_session_append() {
 }
 
 sf_session_update() {
-  local update=$1 decoded header temp error
+  local session_path=$1 update=$2 decoded header temp error
   local -a fields
   integer changed=0
   (( ${#SF_SESSION_RECORDS} )) || {
@@ -283,13 +280,13 @@ sf_session_update() {
     return 0
   fi
   header=$fields[2]
-  temp=$(mktemp "${SF_SESSION_PATH:h}/.${SF_SESSION_PATH:t}.XXXXXX") || {
-    sf_session_fail "cannot prepare session update: $SF_SESSION_PATH"
+  temp=$(mktemp "${session_path:h}/.${session_path:t}.XXXXXX") || {
+    sf_session_fail "cannot prepare session update: $session_path"
     return
   }
   repeat 1; do
     chmod 600 "$temp" || {
-      error="cannot secure session update: $SF_SESSION_PATH"
+      error="cannot secure session update: $session_path"
       break
     }
     {
@@ -297,11 +294,11 @@ sf_session_update() {
       (( ${#SF_SESSION_RECORDS} == 1 )) ||
         printf '%s\n' "${SF_SESSION_RECORDS[@]:1}"
     } >"$temp" || {
-      error="cannot write session update: $SF_SESSION_PATH"
+      error="cannot write session update: $session_path"
       break
     }
-    mv -f -- "$temp" "$SF_SESSION_PATH" || {
-      error="cannot replace session: $SF_SESSION_PATH"
+    mv -f -- "$temp" "$session_path" || {
+      error="cannot replace session: $session_path"
       break
     }
     temp=''
@@ -312,14 +309,14 @@ sf_session_update() {
     sf_session_fail "$error"
     return 1
   fi
-  sf_session_read || return
+  sf_session_read "$session_path" || return
   REPLY=1
 }
 
 # Closes an unfinished turn, reporting appended records in REPLY.
 # Requires a freshly read session.
 sf_session_recover_turn() {
-  local message=${1:-Turn interrupted.} record recovered='' needed
+  local session_path=$1 message=${2:-Turn interrupted.} record recovered='' needed
   local -a pending
   integer index
   REPLY=''
@@ -337,12 +334,12 @@ sf_session_recover_turn() {
     record=$(jq -cn --arg call_id "$pending[index]" --arg name "$pending[index + 1]" \
       '{type:"message",role:"tool_result",call_id:$call_id,name:$name,
        content:"tool call interrupted",exit_code:126}') || return
-    sf_session_append "$record" || return
+    sf_session_append "$session_path" "$record" || return
     [[ -z $recovered ]] || recovered+=$'\n'
     recovered+=$record
   done
   record=$(jq -cn --arg message "$message" '{type:"turn_error",message:$message}') || return
-  sf_session_append "$record" || return
+  sf_session_append "$session_path" "$record" || return
   [[ -z $recovered ]] || recovered+=$'\n'
   recovered+=$record
   REPLY=$recovered
@@ -352,10 +349,10 @@ sf_session_recover_turn() {
 # so a torn trailing line cannot fail it, and the read precedes recovery so a
 # dangling turn is judged against the durable records rather than a stale view.
 sf_session_resync_turn() {
-  local message=${1-}
-  sf_session_repair_tail || return
-  sf_session_read || return
-  sf_session_recover_turn "$message"
+  local session_path=$1 message=${2-}
+  sf_session_repair_tail "$session_path" || return
+  sf_session_read "$session_path" || return
+  sf_session_recover_turn "$session_path" "$message"
 }
 
 sf_session_begin_turn() {
@@ -366,12 +363,11 @@ sf_session_begin_turn() {
     sf_session_fail 'session path must be absolute'
     return
   }
-  SF_SESSION_PATH=$session_path
   [[ -f $session_path && ! -L $session_path ]] || {
     sf_session_fail "invalid session path: $session_path"
     return
   }
-  if ! sf_session_resync_turn; then
+  if ! sf_session_resync_turn "$session_path"; then
     sf_session_reset
     return 1
   fi

@@ -78,7 +78,7 @@ set_prompt_hook() {
   patch=$(jq -cn --arg command "$script" \
     '{harness:{user_prompt_submit:[{command:$command,environment:[]}]}}') || return
   sf_session_begin_turn "$session" || return
-  sf_session_update "$patch" || rc=1
+  sf_session_update "$session" "$patch" || rc=1
   sf_session_reset
   return $rc
 }
@@ -136,7 +136,7 @@ jq -e --arg path "${sandbox_dir:A}" \
   '. == {harness:{sandbox_write_paths:[$path]}}' <<<"$sandbox_patch" >/dev/null ||
   fail "unexpected sandbox patch: $sandbox_patch"
 sf_session_begin_turn "$help_session"
-sf_session_update "$sandbox_patch"
+sf_session_update "$help_session" "$sandbox_patch"
 sf_session_reset
 run_prompt_hook "/sandbox write $sandbox_dir" "$help_session"
 [[ $reply[1] == handled ]]

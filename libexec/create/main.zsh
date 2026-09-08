@@ -17,9 +17,9 @@ sf_create_emit() {
 }
 
 sf_create_interrupt() {
-  local exit_status=$1
+  local exit_status=$1 session=$2
   sf_process_capture_stop
-  rm -f -- "$SF_SESSION_PATH" 2>/dev/null
+  [[ -z $session ]] || rm -f -- "$session" 2>/dev/null
   exit $exit_status
 }
 
@@ -27,7 +27,6 @@ sf_create_session() {
   local session=$1 runtime=$2 system=$3 error=''
   local SF_HOOK_JSONL=$SF_CREATE_JSONL
   typeset -gx SHELLFISH_MODE=create
-  SF_SESSION_PATH=$session
   if ! sf_session_prepare "$runtime"; then
     sf_die "$SF_SESSION_ERROR"
     return 1
@@ -43,7 +42,7 @@ sf_create_session() {
     return 1
   elif ! sf_hooks_session_start "$session"; then
     error=$SF_HOOK_ERROR
-  elif ! sf_hooks_commit sf_create_emit; then
+  elif ! sf_hooks_commit "$session" sf_create_emit; then
     error=$SF_HOOK_ERROR
   fi
   [[ -n $error ]] || return 0
@@ -105,9 +104,9 @@ sf_create_main() {
   source "$SF_ROOT/lib/hooks.zsh"
   source "$SF_ROOT/lib/process.zsh"
   # USR1 is the client's cancellation signal, aimed at this process alone.
-  trap 'sf_create_interrupt 130' INT USR1
-  trap 'sf_create_interrupt 129' HUP
-  trap 'sf_create_interrupt 143' TERM
+  trap 'sf_create_interrupt 130 "$session"' INT USR1
+  trap 'sf_create_interrupt 129 "$session"' HUP
+  trap 'sf_create_interrupt 143 "$session"' TERM
   sf_session_select_path "$requested_out" || {
     sf_die "$SF_SESSION_ERROR"
     return 1

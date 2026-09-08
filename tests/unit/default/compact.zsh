@@ -16,8 +16,8 @@ sf_test_runtime
 SF_TEST_RUNTIME=$(jq -c '.profile.context_window = 100' <<<"$SF_TEST_RUNTIME")
 sf_test_session "$compact_source"
 sf_session_begin_turn "$compact_source"
-sf_session_append '{"type":"message","role":"user","content":[{"type":"text","text":"Hello"}]}'
-sf_session_append '{"type":"message","role":"assistant","stop":"end","content":[{"type":"text","text":"Hi"}],"usage":{"input_tokens":1,"output_tokens":1}}'
+sf_session_append "$compact_source" '{"type":"message","role":"user","content":[{"type":"text","text":"Hello"}]}'
+sf_session_append "$compact_source" '{"type":"message","role":"assistant","stop":"end","content":[{"type":"text","text":"Hi"}],"usage":{"input_tokens":1,"output_tokens":1}}'
 sf_session_reset
 
 # Below the threshold an ordinary prompt is left alone.

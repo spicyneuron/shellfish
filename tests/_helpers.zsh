@@ -104,14 +104,15 @@ sf_test_runtime() {
 }
 
 sf_test_install_prepared() {
+  local session=$1
   printf '%s\n' "${SF_SESSION_RECORDS[@]}" |
-    "$ROOT/bin/shellfish" install-session --session-out "$SF_SESSION_PATH" >/dev/null
+    "$ROOT/bin/shellfish" install-session --session-out "$session" >/dev/null
 }
 
 sf_test_session() {
-  SF_SESSION_PATH=$1
+  local session=$1
   sf_session_prepare "$SF_TEST_RUNTIME" &&
-    sf_session_system "$SF_TEST_SYSTEM" && sf_test_install_prepared
+    sf_session_system "$SF_TEST_SYSTEM" && sf_test_install_prepared "$session"
 }
 
 sf_test_turn() {

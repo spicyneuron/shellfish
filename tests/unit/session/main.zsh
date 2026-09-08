@@ -13,15 +13,14 @@ mkdir -p "$tmp/shadow/lib/runtime"
 print -r -- 'def canonical_session_header(:' >"$tmp/shadow/lib/runtime/schema.jq"
 (
   builtin cd -- "$tmp/shadow"
-  SF_SESSION_PATH=relative.jsonl
   sf_session_prepare "$SF_TEST_RUNTIME"
   assert_equal "$(pwd -P)" "$SF_SESSION[cwd]"
-  sf_test_install_prepared
+  sf_test_install_prepared relative.jsonl
   [[ -f relative.jsonl ]]
   sf_session_read_runtime relative.jsonl
   assert_equal "$SF_TEST_RUNTIME" "$REPLY"
-  sf_session_read
-  sf_session_update '{"profile":{"request":{"model":"shadow-test"}}}'
+  sf_session_read relative.jsonl
+  sf_session_update relative.jsonl '{"profile":{"request":{"model":"shadow-test"}}}'
   sf_session_read_runtime relative.jsonl
   jq -e '.profile.request.model == "shadow-test"' <<<"$REPLY" >/dev/null
   assert_equal "$tmp/shadow" "$PWD"
@@ -36,9 +35,8 @@ sf_session_select_path
 [[ $(stat -f %Lp "$REPLY:h") == 700 ]]
 
 # An installed prepared prefix initializes the first turn state.
-SF_SESSION_PATH=$session
 sf_session_prepare "$SF_TEST_RUNTIME"
-sf_test_install_prepared
+sf_test_install_prepared "$session"
 (( ${#SF_SESSION_RECORDS} == 1 ))
 sf_session_begin_turn "$session"
 jq -e '.profile.request.model == "test-model" and .backend.env_file == ""' \
@@ -55,10 +53,10 @@ jq -e -L "$ROOT" '
 [[ $SF_SESSION[turn_id] == 1 && $SF_SESSION[cwd] == "$PWD" &&
    $SF_SESSION[model] == test-model ]]
 
-sf_session_append '{"type":"message","role":"user","content":[{"type":"text","text":"hello"}]}'
+sf_session_append "$session" '{"type":"message","role":"user","content":[{"type":"text","text":"hello"}]}'
 (( ${#SF_SESSION_RECORDS} == 2 ))
 assert_equal '{"type":"message","role":"user","content":[{"type":"text","text":"hello"}]}' "$SF_SESSION_RECORDS[2]"
-sf_session_append '{"type":"message","role":"assistant","stop":"end","content":[{"type":"text","text":"hi"}],"usage":{"input_tokens":1,"output_tokens":1}}'
+sf_session_append "$session" '{"type":"message","role":"assistant","stop":"end","content":[{"type":"text","text":"hi"}],"usage":{"input_tokens":1,"output_tokens":1}}'
 (( ${#SF_SESSION_RECORDS} == 3 ))
 assert_equal '{"type":"message","role":"assistant","stop":"end","content":[{"type":"text","text":"hi"}],"usage":{"input_tokens":1,"output_tokens":1}}' "$SF_SESSION_RECORDS[3]"
 sf_session_reset
@@ -70,11 +68,11 @@ sf_session_reset
 typeset transcript_before updated_before
 transcript_before=$(tail -n +2 "$session")
 sf_session_begin_turn "$session"
-sf_session_update '{"harness":{"sandbox_read_paths":["/tmp/reference"]}}' ||
+sf_session_update "$session" '{"harness":{"sandbox_read_paths":["/tmp/reference"]}}' ||
   fail "$SF_SESSION_ERROR"
 [[ $REPLY == 1 ]]
 typeset request_update='{"harness":{"sandbox_write_paths":["/tmp/reference"]},"profile":{"request":{"effort":null}}}'
-sf_session_update "$request_update" ||
+sf_session_update "$session" "$request_update" ||
   fail "$SF_SESSION_ERROR"
 [[ $REPLY == 1 ]]
 jq -e '
@@ -85,21 +83,21 @@ jq -e '
 [[ $(tail -n +2 "$session") == "$transcript_before" ]]
 [[ $(stat -f '%Lp' "$session") == 600 ]]
 updated_before=$(cat "$session")
-sf_session_update '{"harness":{"sandbox_write_paths":["/tmp/reference"]}}'
+sf_session_update "$session" '{"harness":{"sandbox_write_paths":["/tmp/reference"]}}'
 [[ $REPLY == 0 && $(cat "$session") == "$updated_before" ]]
-sf_session_update '{"harness":{"sandbox_write_paths":[]}}'
+sf_session_update "$session" '{"harness":{"sandbox_write_paths":[]}}'
 [[ $REPLY == 1 ]]
 jq -e '
   .harness.sandbox_read_paths == ["/tmp/reference"] and
   .harness.sandbox_write_paths == []
 ' <<<"$SF_SESSION[runtime]" >/dev/null
-sf_session_update '{"harness":{"sandbox_write_paths":[]}}'
+sf_session_update "$session" '{"harness":{"sandbox_write_paths":[]}}'
 [[ $REPLY == 0 ]]
 updated_before=$(cat "$session")
-if sf_session_update '{"cwd":"/tmp"}'; then
+if sf_session_update "$session" '{"cwd":"/tmp"}'; then
   fail 'session metadata update succeeded'
 fi
-if sf_session_update '{"harness":{"sandbox":null}}'; then
+if sf_session_update "$session" '{"harness":{"sandbox":null}}'; then
   fail 'invalid runtime update succeeded'
 fi
 [[ $(cat "$session") == "$updated_before" ]]
@@ -109,7 +107,7 @@ jq -e '
   .harness.sandbox_read_paths == ["/tmp/reference"] and
   .harness.sandbox_write_paths == []
 ' <<<"$REPLY" >/dev/null
-if sf_session_update '{}'; then
+if sf_session_update "$session" '{}'; then
   fail 'session update on a closed session succeeded'
 fi
 
@@ -123,15 +121,14 @@ sf_session_reset
 
 # A failed durable append does not extend the synchronized record view.
 typeset write_failure="$tmp/write-failure.jsonl"
-SF_SESSION_PATH=$write_failure
 sf_session_prepare "$SF_TEST_RUNTIME"
-sf_test_install_prepared
+sf_test_install_prepared "$write_failure"
 sf_session_begin_turn "$write_failure"
 integer record_count
 record_count=${#SF_SESSION_RECORDS}
 mv "$write_failure" "$write_failure.saved"
 mkdir "$write_failure"
-if sf_session_append '{"type":"message","role":"user","content":[{"type":"text","text":"not written"}]}'; then
+if sf_session_append "$write_failure" '{"type":"message","role":"user","content":[{"type":"text","text":"not written"}]}'; then
   fail 'append to an unavailable session file succeeded'
 fi
 (( ${#SF_SESSION_RECORDS} == record_count ))
@@ -143,9 +140,9 @@ sf_session_reset
 typeset recovery_sync="$tmp/recovery-sync.jsonl"
 cp "$SF_TEST_SESSIONS/header-only.jsonl" "$recovery_sync"
 sf_session_begin_turn "$recovery_sync"
-sf_session_append '{"type":"message","role":"user","content":[{"type":"text","text":"partial"}]}'
+sf_session_append "$recovery_sync" '{"type":"message","role":"user","content":[{"type":"text","text":"partial"}]}'
 print -rn -- '{"type":"message"' >>"$recovery_sync"
-sf_session_resync_turn
+sf_session_resync_turn "$recovery_sync"
 assert_equal '{"type":"turn_error","message":"Turn interrupted."}' "$REPLY"
 sf_session_reset
 jq -e -s 'length == 3 and .[-1] == {type:"turn_error",message:"Turn interrupted."}' \
@@ -155,10 +152,10 @@ jq -e -s 'length == 3 and .[-1] == {type:"turn_error",message:"Turn interrupted.
 typeset recovery_complete="$tmp/recovery-complete.jsonl"
 cp "$SF_TEST_SESSIONS/header-only.jsonl" "$recovery_complete"
 sf_session_begin_turn "$recovery_complete"
-sf_session_append '{"type":"message","role":"user","content":[{"type":"text","text":"complete"}]}'
+sf_session_append "$recovery_complete" '{"type":"message","role":"user","content":[{"type":"text","text":"complete"}]}'
 print -r -- '{"type":"message","role":"assistant","stop":"end","content":[{"type":"text","text":"done"}]}' \
   >>"$recovery_complete"
-sf_session_resync_turn
+sf_session_resync_turn "$recovery_complete"
 [[ -z $REPLY ]]
 sf_session_reset
 jq -e -s 'length == 3 and .[-1].content[0].text == "done"' "$recovery_complete" >/dev/null
@@ -199,9 +196,8 @@ fi
 # A supplied resolved runtime replaces the direct-test development header.
 typeset configured="$tmp/configured.jsonl"
 SF_TEST_RUNTIME=$(jq -c '.profile.request.model="configured-model"' <<<"$stored_runtime")
-SF_SESSION_PATH=$configured
 sf_session_prepare "$SF_TEST_RUNTIME"
-sf_test_install_prepared
+sf_test_install_prepared "$configured"
 jq -e -s 'length == 1 and .[0].profile.request.model == "configured-model"' \
   "$configured" >/dev/null
 
@@ -233,13 +229,13 @@ done
 typeset native="$tmp/native.jsonl"
 cp "$SF_TEST_SESSIONS/header-only.jsonl" "$native"
 sf_session_begin_turn "$native"
-sf_session_append '{"type":"message","role":"user","content":[{"type":"text","text":"run"}]}'
-sf_session_append '{"type":"message","role":"assistant","stop":"tool_calls","content":[{"type":"tool_call","id":"call_1","name":"shell","input":{}},{"type":"tool_call","id":"call_2","name":"read_file","input":{}}]}'
-sf_session_append '{"type":"message","role":"tool_result","call_id":"call_1","name":"shell","content":"denied","exit_code":126}'
-sf_session_append '{"type":"message","role":"tool_result","call_id":"call_2","name":"read_file","content":"bad","exit_code":1}'
-sf_session_append '{"type":"message","role":"assistant","stop":"length","content":[{"type":"text","text":"partial"}]}'
-sf_session_append '{"type":"context","hook":"stop","script":"fixture","content":"continue"}'
-sf_session_append '{"type":"message","role":"assistant","stop":"end","content":[{"type":"text","text":"halted"}]}'
+sf_session_append "$native" '{"type":"message","role":"user","content":[{"type":"text","text":"run"}]}'
+sf_session_append "$native" '{"type":"message","role":"assistant","stop":"tool_calls","content":[{"type":"tool_call","id":"call_1","name":"shell","input":{}},{"type":"tool_call","id":"call_2","name":"read_file","input":{}}]}'
+sf_session_append "$native" '{"type":"message","role":"tool_result","call_id":"call_1","name":"shell","content":"denied","exit_code":126}'
+sf_session_append "$native" '{"type":"message","role":"tool_result","call_id":"call_2","name":"read_file","content":"bad","exit_code":1}'
+sf_session_append "$native" '{"type":"message","role":"assistant","stop":"length","content":[{"type":"text","text":"partial"}]}'
+sf_session_append "$native" '{"type":"context","hook":"stop","script":"fixture","content":"continue"}'
+sf_session_append "$native" '{"type":"message","role":"assistant","stop":"end","content":[{"type":"text","text":"halted"}]}'
 sf_session_reset
 sf_session_begin_turn "$native"
 sf_session_reset
@@ -248,12 +244,12 @@ sf_session_reset
 typeset interrupted_tools="$tmp/interrupted-tools.jsonl"
 cp "$SF_TEST_SESSIONS/header-only.jsonl" "$interrupted_tools"
 sf_session_begin_turn "$interrupted_tools"
-sf_session_append '{"type":"message","role":"user","content":[{"type":"text","text":"run"}]}'
-sf_session_append '{"type":"message","role":"assistant","stop":"tool_calls","content":[{"type":"tool_call","id":"call_1","name":"shell","input":{}},{"type":"tool_call","id":"call_2","name":"shell","input":{}},{"type":"tool_call","id":"call_3","name":"read_file","input":{}}]}'
-sf_session_append '{"type":"message","role":"tool_result","call_id":"call_1","name":"shell","content":"done","exit_code":0}'
+sf_session_append "$interrupted_tools" '{"type":"message","role":"user","content":[{"type":"text","text":"run"}]}'
+sf_session_append "$interrupted_tools" '{"type":"message","role":"assistant","stop":"tool_calls","content":[{"type":"tool_call","id":"call_1","name":"shell","input":{}},{"type":"tool_call","id":"call_2","name":"shell","input":{}},{"type":"tool_call","id":"call_3","name":"read_file","input":{}}]}'
+sf_session_append "$interrupted_tools" '{"type":"message","role":"tool_result","call_id":"call_1","name":"shell","content":"done","exit_code":0}'
 sf_session_reset
 sf_session_begin_turn "$interrupted_tools"
-sf_session_append '{"type":"message","role":"user","content":[{"type":"text","text":"next"}]}'
+sf_session_append "$interrupted_tools" '{"type":"message","role":"user","content":[{"type":"text","text":"next"}]}'
 sf_session_reset
 jq -e -s '
   .[-5].call_id == "call_1" and .[-5].exit_code == 0 and
@@ -272,5 +268,5 @@ typeset interrupted="$tmp/interrupted.jsonl"
 cp "$SF_TEST_SESSIONS/interrupted.jsonl" "$interrupted"
 sf_session_begin_turn "$interrupted"
 assert_equal '{"type":"turn_error","message":"Turn interrupted."}' "$REPLY"
-sf_session_append '{"type":"message","role":"user","content":[{"type":"text","text":"next"}]}'
+sf_session_append "$interrupted" '{"type":"message","role":"user","content":[{"type":"text","text":"next"}]}'
 sf_session_reset

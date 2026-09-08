@@ -65,8 +65,7 @@ sf_build_request_main() {
     sf_die "invalid session path: $selected"
     return 1
   }
-  SF_SESSION_PATH=$selected
-  sf_session_read || {
+  sf_session_read "$selected" || {
     sf_die "$SF_SESSION_ERROR"
     return 1
   }
@@ -77,7 +76,7 @@ sf_build_request_main() {
     }
     SF_SESSION_RECORDS+=( "$record" )
   done
-  sf_session_project || {
+  sf_session_project "$selected" || {
     sf_die 'build-request received invalid session records'
     return 2
   }

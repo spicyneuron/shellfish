@@ -25,9 +25,10 @@ sf_run_hook() {
   local adapter=$1
   local -a result
   shift
+  local session=$1
   "$adapter" "$@" || return
   result=( "${reply[@]}" )
-  sf_hooks_commit sf_run_emit || return
+  sf_hooks_commit "$session" sf_run_emit || return
   reply=( "${result[@]}" )
 }
 
@@ -44,10 +45,10 @@ sf_run_interrupt() {
 
 # Returns 0 to allow, 1 to deny, and 2 when the decision operation failed.
 sf_run_permission() {
-  local call_id=$1 name=$2 input=$3 id response decision hook_decision hook_reason
+  local session=$1 call_id=$2 name=$3 input=$4 id response decision hook_decision hook_reason
   SF_RUN[permission_reason]=''
   SF_RUN[permission_error]=''
-  if ! sf_run_hook sf_hooks_permission_request "$SF_SESSION_PATH" "$name" "$call_id" "$input"; then
+  if ! sf_run_hook sf_hooks_permission_request "$session" "$name" "$call_id" "$input"; then
     SF_RUN[permission_error]=$SF_HOOK_ERROR
     return 2
   fi
@@ -117,8 +118,9 @@ sf_run_partial_assistant() {
 
 # zsh defers a trap's pending exit until this cleanup call returns.
 sf_run_turn_cleanup() {
-  integer interrupted=$1 error_persisted=0
-  local failure=$2 after=$3 error_message error_record recovered='' partial=''
+  local session=$1
+  integer interrupted=$2 error_persisted=0
+  local failure=$3 after=$4 error_message error_record recovered='' partial=''
 
   sf_tools_cleanup
   sf_hooks_turn_state_cleanup
@@ -130,7 +132,7 @@ sf_run_turn_cleanup() {
     sf_run_partial_assistant
     partial=$REPLY
     if [[ -n $partial ]]; then
-      if sf_session_append "$partial"; then
+      if sf_session_append "$session" "$partial"; then
         recovered=$partial
       else
         failure=$SF_SESSION_ERROR
@@ -146,7 +148,7 @@ sf_run_turn_cleanup() {
     fi
     # An interrupted turn may have written past the in-memory view, so recovery
     # judges the durable records rather than what this process last held.
-    if sf_session_resync_turn "$error_message"; then
+    if sf_session_resync_turn "$session" "$error_message"; then
       if [[ -n $REPLY ]]; then
         [[ -z $recovered ]] || recovered+=$'\n'
         recovered+=$REPLY
@@ -162,7 +164,7 @@ sf_run_turn_cleanup() {
       error_record=$(jq -cn --arg message "$error_message" \
         '{type:"turn_error",message:$message}') || failure='cannot prepare turn error'
       if [[ -n $error_record ]]; then
-        if sf_session_append "$error_record"; then
+        if sf_session_append "$session" "$error_record"; then
           [[ -z $recovered ]] || recovered+=$'\n'
           recovered+=$error_record
           error_persisted=1
@@ -260,7 +262,7 @@ sf_run_turn() {
       failure=$SF_HOOK_ERROR
       return 1
     fi
-    if ! sf_run_hook sf_hooks_user_prompt_submit "$prompt" "$session_path"; then
+    if ! sf_run_hook sf_hooks_user_prompt_submit "$session_path" "$prompt"; then
       failure=$SF_HOOK_ERROR
       return 1
     fi
@@ -285,7 +287,7 @@ sf_run_turn() {
         return
         ;;
       session_update)
-        if ! sf_session_update "$patch"; then
+        if ! sf_session_update "$session_path" "$patch"; then
           failure=$SF_SESSION_ERROR
           return 1
         fi
@@ -300,7 +302,7 @@ sf_run_turn() {
         return
         ;;
     esac
-    if ! sf_session_append "$user_record"; then
+    if ! sf_session_append "$session_path" "$user_record"; then
       failure=$SF_SESSION_ERROR
       return 1
     fi
@@ -357,7 +359,7 @@ sf_run_turn() {
         else
           patch='{"profile":{"context_window":null}}'
         fi
-        if ! sf_session_update "$patch"; then
+        if ! sf_session_update "$session_path" "$patch"; then
           failure=$SF_SESSION_ERROR
           return 1
         fi
@@ -374,7 +376,7 @@ sf_run_turn() {
         return 1
       fi
       assistant=$SF_REQUEST[assistant]
-      if ! sf_session_append "$assistant"; then
+      if ! sf_session_append "$session_path" "$assistant"; then
         failure=$SF_SESSION_ERROR
         return 1
       fi
@@ -463,7 +465,7 @@ sf_run_turn() {
               "$harness_sandbox"
             permission_status=$?
             if (( permission_status == 0 )); then
-              sf_run_permission "$call_id" "$tool_name" "$tool_input" ||
+              sf_run_permission "$session_path" "$call_id" "$tool_name" "$tool_input" ||
                 permission_status=$?
               case $permission_status in
                 0) decision=approved ;;
@@ -488,13 +490,13 @@ sf_run_turn() {
           fi
         fi
         for state in "${SF_TOOL_STATE_RECORDS[@]}"; do
-          if ! sf_session_append "$state"; then
+          if ! sf_session_append "$session_path" "$state"; then
             failure=$SF_SESSION_ERROR
             return 1
           fi
           sf_run_emit "$state"
         done
-        if ! sf_session_append "$result"; then
+        if ! sf_session_append "$session_path" "$result"; then
           failure=$SF_SESSION_ERROR
           return 1
         fi
@@ -507,6 +509,6 @@ sf_run_turn() {
     done
   } always {
     trap - TERM
-    sf_run_turn_cleanup "$SF_RUN[interrupted]" "$failure" "$after"
+    sf_run_turn_cleanup "$session_path" "$SF_RUN[interrupted]" "$failure" "$after"
   }
 }

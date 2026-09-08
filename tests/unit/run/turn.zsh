@@ -319,8 +319,9 @@ SF_ROOT=$ROOT zsh -f -c '
   source "$SF_ROOT/libexec/run/turn.zsh"
   SF_RUN[jsonl]=1
   sf_session_append() {
-    print -rn -- "{\"type\":\"message\"" >>"$SF_SESSION_PATH"
-    sf_session_fail "cannot append session record: $SF_SESSION_PATH"
+    local session=$1
+    print -rn -- "{\"type\":\"message\"" >>"$session"
+    sf_session_fail "cannot append session record: $session"
     return 1
   }
   message="{\"type\":\"message\",\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"partial write\"}]}"
@@ -343,7 +344,7 @@ cmp -s "$tmp/partial-before.jsonl" "$partial_session" ||
 typeset echo_session="$tmp/echo.jsonl"
 sf_test_session "$echo_session"
 sf_session_begin_turn "$echo_session"
-sf_session_append '{"type":"context","hook":"session_start","script":"fixture","content":"startup context"}'
+sf_session_append "$echo_session" '{"type":"context","hook":"session_start","script":"fixture","content":"startup context"}'
 sf_session_reset
 stream=$(sf_test_turn 'plain prompt' "$echo_session")
 print -r -- "$stream" | jq -eRn '

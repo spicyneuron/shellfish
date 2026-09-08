@@ -8,7 +8,7 @@ setopt no_aliases no_bg_nice no_multios pipe_fail
 
 # Prepares prompt context before the user record is committed.
 sf_hooks_user_prompt_submit() {
-  local prompt=$1 session=$2 argument control patch
+  local session=$1 prompt=$2 argument control patch
   local -a decision handoff
   integer operation_status=0 index control_status handoff_requested=0 update_requested=0
 

@@ -414,9 +414,9 @@ sf_hooks_collect_context() {
 }
 
 sf_hooks_commit() {
-  local emit=$1 record
+  local session=$1 emit=$2 record
   for record in "${SF_HOOK_STATE_RECORDS[@]}" "${SF_HOOK_CONTEXT_RECORDS[@]}"; do
-    sf_session_append "$record" || {
+    sf_session_append "$session" "$record" || {
       SF_HOOK_ERROR=$SF_SESSION_ERROR
       return 1
     }

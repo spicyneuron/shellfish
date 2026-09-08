@@ -8,7 +8,6 @@ typeset session="$tmp/session.jsonl"
 typeset tool_dir="$ROOT/share/default/tools/shell"
 sf_test_runtime
 sf_test_session "$session"
-SF_SESSION_PATH=$session
 typeset stored_runtime=$(head -n 1 "$session" | jq -c 'del(.type,.format_version,.cwd,.created)')
 typeset stored_cwd=$(jq -r '.cwd' "$session")
 typeset tool_tools tool_schema tool_cwd=$stored_cwd tool_max_capture tool_sandbox tool_fence

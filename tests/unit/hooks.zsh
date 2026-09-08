@@ -22,14 +22,13 @@ SF_TEST_RUNTIME=$(jq -cn --arg script "$start_script" --arg second "$start_secon
   }
 ')
 export OPENAI_API_KEY=standard-secret CUSTOM_API_KEY=custom-secret
-SF_SESSION_PATH=$start_session
 sf_session_prepare "$SF_TEST_RUNTIME"
-sf_test_install_prepared
+sf_test_install_prepared "$start_session"
 sf_hooks_session_start "$start_session"
 [[ -z $REPLY && ${#reply} == 0 && $SF_HOOK_SCRIPT_RESULTS[4] == local ]]
 [[ $OPENAI_API_KEY == standard-secret && $CUSTOM_API_KEY == custom-secret ]]
 unset OPENAI_API_KEY CUSTOM_API_KEY
-sf_hooks_commit :
+sf_hooks_commit "$start_session" :
 jq -e -s '
   length == 3 and
   .[1] == {type:"context",hook:"session_start",script:"start",content:"startup"} and
@@ -76,16 +75,14 @@ mkdir "$newline_cwd"
 cd "$newline_cwd"
 newline_cwd=$(pwd -P)
 typeset newline_session="$tmp/newline-session.jsonl"
-SF_SESSION_PATH=$newline_session
 sf_session_prepare "$SF_TEST_RUNTIME"
-sf_test_install_prepared
+sf_test_install_prepared "$newline_session"
 sf_hooks_session_start "$newline_session"
-sf_hooks_commit :
+sf_hooks_commit "$newline_session" :
 cd "$previous_cwd"
 jq -e -s --arg cwd "$newline_cwd" '.[0].cwd == $cwd' "$newline_session" >/dev/null
 
 typeset skipped_session="$tmp/skipped-session.jsonl"
-SF_SESSION_PATH=$skipped_session
 sf_session_prepare "$SF_TEST_RUNTIME"
 if SKIP=1 sf_hooks_session_start "$skipped_session"; then
   fail 'session_start skip status was accepted'
@@ -98,7 +95,6 @@ typeset control_session="$tmp/control-session.jsonl"
 make_script start_control 'print -rn -u3 -- $'\''again\0'\''; exit 11'
 SF_TEST_RUNTIME=$(jq -c --arg script "$script" \
   '.harness.session_start = [{command:$script,environment:[]}]' <<<"$SF_TEST_RUNTIME")
-SF_SESSION_PATH=$control_session
 sf_session_prepare "$SF_TEST_RUNTIME"
 if sf_hooks_session_start "$control_session"; then
   fail 'session_start control data was accepted'
@@ -223,14 +219,14 @@ SF_TEST_RUNTIME=$(jq -c --arg script "$stop_script" \
 typeset stop_session="$tmp/stop-session.jsonl"
 sf_test_session "$stop_session"
 sf_session_begin_turn "$stop_session"
-sf_session_append '{"type":"message","role":"user","content":[{"type":"text","text":"hi"}]}'
-sf_session_append '{"type":"message","role":"assistant","stop":"end","content":[{"type":"text","text":"hi"}],"usage":{"input_tokens":1,"output_tokens":1}}'
+sf_session_append "$stop_session" '{"type":"message","role":"user","content":[{"type":"text","text":"hi"}]}'
+sf_session_append "$stop_session" '{"type":"message","role":"assistant","stop":"end","content":[{"type":"text","text":"hi"}],"usage":{"input_tokens":1,"output_tokens":1}}'
 sf_session_reset
 sf_hooks_turn_state_create
 sf_session_begin_turn "$stop_session"
 STOP_ATTEMPT=1 STOP_INPUT=hi STOP_STDOUT=1 sf_hooks_stop "$stop_session" hi 1
 [[ $reply[1] == finish && $SF_HOOK_SCRIPT_RESULTS[4] == local ]]
-sf_hooks_commit :
+sf_hooks_commit "$stop_session" :
 sf_session_reset
 (( $(wc -l <"$stop_session") == 3 ))
 
@@ -238,7 +234,7 @@ sf_session_begin_turn "$stop_session"
 STOP_ATTEMPT=2 STOP_INPUT=hi STOP_SKIP=1 STOP_STDOUT=1 \
   sf_hooks_stop "$stop_session" hi 2
 [[ $reply[1] == continue && $SF_HOOK_SCRIPT_RESULTS[4] == local ]]
-sf_hooks_commit :
+sf_hooks_commit "$stop_session" :
 sf_session_reset
 jq -e -s '.[-1] == {type:"context",hook:"stop",script:"stop",content:"feedback"}' \
   "$stop_session" >/dev/null
