@@ -103,7 +103,7 @@ sf_session_prepare "$SF_TEST_RUNTIME"
 if sf_hooks_session_start "$control_session"; then
   fail 'session_start control data was accepted'
 fi
-[[ $SF_HOOK_ERROR == "hook script returned unexpected control data: $script" ]]
+[[ $SF_HOOK_ERROR == 'hook script returned malformed control data' ]]
 [[ ! -e $control_session ]]
 
 # permission_request scripts receive a canonical envelope and may allow, deny with a reason,
@@ -128,6 +128,7 @@ case $decision in
   deny) print -rn -u3 -- '{"action":"deny","reason":"not authorized\n"}'; exit 11 ;;
   skip) exit 10 ;;
   halt) exit 11 ;;
+  state) print -rn -u3 -- '{"state":[{"name":"permission/check","value":true}]}' ;;
   malformed) print -rn -u3 -- '{"action":"allow","extra":true}'; exit 11 ;;
 esac
 ZSH
@@ -157,6 +158,11 @@ print defer >"$SHELLFISH_TURN_STATE/decision"
 sf_hooks_permission_request "$permission_session" shell call_7 \
   '{"command":"true"}'
 [[ $reply[1] == defer && -z $reply[2] ]]
+print state >"$SHELLFISH_TURN_STATE/decision"
+sf_hooks_permission_request "$permission_session" shell call_7 \
+  '{"command":"true"}'
+[[ $reply[1] == defer && -z $reply[2] &&
+   $SF_HOOK_STATE_RECORDS[1] == '{"type":"state","name":"permission/check","value":true}' ]]
 print halt >"$SHELLFISH_TURN_STATE/decision"
 if sf_hooks_permission_request "$permission_session" shell call_7 \
     '{"command":"true"}'; then

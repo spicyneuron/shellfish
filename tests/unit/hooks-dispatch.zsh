@@ -107,6 +107,30 @@ typeset status_zero=$script
 dispatch_hooks "$empty" 64 1 0 "$status_zero"
 [[ $reply[4] == '{"action":"test"}' ]]
 
+# Common state is staged in script and array order, then removed before
+# hook-specific control is returned to the adapter.
+capture_result state_first 0 '' '' \
+  '{"state":[{"name":"first","value":1},{"name":"second","value":null}]}'
+typeset state_first=$script
+capture_result state_action 0 '' '' \
+  '{"action":"test","state":[{"name":"third","value":{"ok":true}}]}'
+typeset state_action=$script
+dispatch_hooks "$empty" 512 1 0 "$state_first" "$state_action"
+[[ -z $SF_HOOK_SCRIPT_RESULTS[5] &&
+   $SF_HOOK_SCRIPT_RESULTS[10] == '{"action":"test"}' &&
+   $reply[4] == '{"action":"test"}' ]]
+[[ ${(pj:\n:)SF_HOOK_STATE_RECORDS} == $'{"type":"state","name":"first","value":1}\n{"type":"state","name":"second","value":null}\n{"type":"state","name":"third","value":{"ok":true}}' ]]
+
+dispatch_hooks "$empty" 512 0 0 "$state_first"
+[[ ${#SF_HOOK_STATE_RECORDS} == 2 && -z $reply[4] ]]
+
+capture_result empty_control 0 '' '' '{}'
+typeset empty_control=$script
+if dispatch_hooks "$empty" 64 0 0 "$empty_control"; then
+  fail 'empty control for an unsupported hook was accepted'
+fi
+[[ $SF_HOOK_ERROR == "hook script returned unexpected control data: $empty_control" ]]
+
 if dispatch_hooks "$empty" 64 0 0 "$control"; then
   fail 'control for an unsupported hook was accepted'
 fi
@@ -126,6 +150,14 @@ if dispatch_hooks "$empty" 64 1 0 "$multiple"; then
   fail 'multiple JSON control objects were accepted'
 fi
 [[ $SF_HOOK_ERROR == 'hook script returned malformed control data' ]]
+
+capture_result invalid_state 0 '' '' '{"state":[{"name":"bad name","value":1}]}'
+typeset invalid_state=$script
+if dispatch_hooks "$empty" 512 1 0 "$state_first" "$invalid_state"; then
+  fail 'invalid hook state was accepted'
+fi
+[[ $SF_HOOK_ERROR == "hook script returned invalid state control: $invalid_state" &&
+   ${#SF_HOOK_STATE_RECORDS} == 0 && ${#SF_HOOK_SCRIPT_RESULTS} == 0 ]]
 
 # Unexpected exits discard all accumulated candidate output.
 capture_result failed 9 failed detail

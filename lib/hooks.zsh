@@ -12,6 +12,7 @@ typeset -g SF_HOOK_JSONL=0
 typeset -ga SF_HOOK_SCRIPT_RESULTS=()
 typeset -g SF_HOOK_CONTEXT_COUNT=0
 typeset -ga SF_HOOK_CONTEXT_RECORDS=()
+typeset -ga SF_HOOK_STATE_RECORDS=()
 # Preserve inherited hook state across nested turn setup.
 typeset -g SHELLFISH_TURN_STATE=${SHELLFISH_TURN_STATE-}
 typeset -g SHELLFISH_SESSION_STATE=${SHELLFISH_SESSION_STATE-}
@@ -34,6 +35,7 @@ sf_hooks_reset() {
   SF_HOOK_SCRIPT_RESULTS=()
   SF_HOOK_CONTEXT_COUNT=0
   SF_HOOK_CONTEXT_RECORDS=()
+  SF_HOOK_STATE_RECORDS=()
   REPLY=''
   reply=()
 }
@@ -190,9 +192,9 @@ sf_hooks_dispatch() {
   }
   local -a arguments=( "${(@)argv[1,argument_count]}" )
   shift argument_count
-  local -a components=( "$@" ) result results
+  local -a components=( "$@" ) result results states decoded
   local directory script environment_json script_name script_context script_display script_control hook=$SF_HOOK_NAME
-  local origin='' control='' preview
+  local origin='' control='' preview control_error
   integer script_status context_size display_size control_size component_index
   integer perform=1 halted=0
   setopt local_options no_err_exit no_bg_nice
@@ -249,16 +251,55 @@ sf_hooks_dispatch() {
         return
       }
       script_display=$REPLY
+      script_control=''
+      control_error=''
+      case $script_status in
+        0|10|11) ;;
+        *) control_error="hook script failed with status $script_status: $script${script_display:+: $script_display}" ;;
+      esac
+      if [[ -z $control_error ]] && (( control_size )); then
+        script_control=$(jq -cse '
+          if length == 1 and (.[0] | type == "object") then .[0]
+          else error("expected one object") end
+        ' "$result[4]" 2>/dev/null) ||
+          control_error='hook script returned malformed control data'
+        if [[ -z $control_error ]]; then
+          decoded=( "${(@f)$(sf_jq -nc --argjson control "$script_control" '
+            include "lib/runtime/schema";
+            if $control | if has("state") then
+                .state | type == "array" and all(.[];
+                  type == "object" and keys == ["name", "value"] and
+                  ({type:"state"} + . | canonical_state))
+              else true end
+            then
+              ($control |
+                if has("state") then
+                  del(.state) | if length == 0 then null else . end
+                else . end),
+              ($control.state[]? | {type:"state"} + .)
+            else error("invalid state control") end
+          ' 2>/dev/null)}" ) ||
+            control_error="hook script returned invalid state control: $script"
+        fi
+        if [[ -z $control_error ]]; then
+          script_control=$decoded[1]
+          [[ $script_control != null ]] || script_control=''
+          if (( ${#decoded} > 1 )); then
+            states+=( "${(@)decoded[2,-1]}" )
+          fi
+        fi
+      fi
+      if [[ -z $control_error && -n $script_control ]] && (( ! allow_control )); then
+        control_error="hook script returned unexpected control data: $script"
+      fi
       preview=null
       script_name=${script:t}
       [[ $script_name != run ]] || script_name=${script:h:t}
-      if (( SF_HOOK_JSONL && script_status == 0 && control_size == 0 && context_size )) &&
-          [[ $hook == session_start ]]; then
-        sf_hooks_context_record "$hook" "$script_name" "$script_context" '{}' || {
-          sf_hooks_fail "$SF_HOOK_ERROR"
-          return
-        }
-        preview=$REPLY
+      if [[ -z $control_error && $hook == session_start ]] &&
+          (( SF_HOOK_JSONL && script_status == 0 && context_size )); then
+        sf_hooks_context_record "$hook" "$script_name" "$script_context" \
+          "${script_control:-\{\}}" || control_error=$SF_HOOK_ERROR
+        [[ -n $control_error ]] || preview=$REPLY
       fi
       if [[ -n $script_display || $preview != null ]]; then
         sf_hooks_display "$hook" "$script" "$script_display" true "$preview" || {
@@ -266,28 +307,11 @@ sf_hooks_dispatch() {
           return
         }
       fi
-      case $script_status in
-        0|10|11) ;;
-        *)
-          sf_hooks_fail "hook script failed with status $script_status: $script${script_display:+: $script_display}"
-          return
-          ;;
-      esac
-      if (( control_size )) && (( ! allow_control )); then
-        sf_hooks_fail "hook script returned unexpected control data: $script"
+      if [[ -n $control_error ]]; then
+        sf_hooks_fail "$control_error"
         return
       fi
-      script_control=''
-      if (( control_size )); then
-        script_control=$(jq -cse '
-          if length == 1 and (.[0] | type == "object") then .[0]
-          else error("expected one object") end
-        ' "$result[4]" 2>/dev/null) || {
-          sf_hooks_fail 'hook script returned malformed control data'
-          return
-        }
-        control=$script_control
-      fi
+      [[ -z $script_control ]] || control=$script_control
       results+=( "$script" "$script_status" "$script_context" "$script_display" "$script_control" )
       if (( script_status == 10 || script_status == 11 )); then
         [[ -n $origin ]] || origin=$script
@@ -300,6 +324,7 @@ sf_hooks_dispatch() {
     done
 
     SF_HOOK_SCRIPT_RESULTS=( "${results[@]}" )
+    SF_HOOK_STATE_RECORDS=( "${states[@]}" )
   } always {
     rm -rf -- "$directory" 2>/dev/null || true
   }
