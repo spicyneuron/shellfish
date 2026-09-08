@@ -189,6 +189,12 @@ def canonical_context:
   ((has("status") | not) or
     (.status | type == "number" and floor == . and . >= 0 and . <= 255));
 
+def canonical_state:
+  type == "object" and keys == ["name", "type", "value"] and
+  .type == "state" and
+  (.name | type == "string" and length <= 128 and
+    test("^[A-Za-z0-9][A-Za-z0-9_.:/-]*\\z"));
+
 def canonical_request:
   type == "object" and
   keys == ["format_version", "messages", "options", "system", "tools", "transport"] and
@@ -268,7 +274,7 @@ def canonical_session_header($format_version):
 
 def canonical_session_record:
   canonical_user_message or canonical_assistant_message or canonical_tool_result or
-  canonical_context or
+  canonical_context or canonical_state or
   (type == "object" and keys == ["message", "type"] and .type == "turn_error" and
     (.message | nul_free_string) and .message != "") or
   (type == "object" and keys == ["content", "type"] and .type == "system" and
@@ -279,6 +285,7 @@ def session_records_state:
     ({valid:true, next:"user", pending:[], messages:0};
       if (.valid | not) or ($record | canonical_session_record | not) then
         .valid = false
+      elif $record.type == "state" then .
       elif $record.type == "system" then
         if .next == "user" then . else .valid = false end
       elif $record.type == "context" then

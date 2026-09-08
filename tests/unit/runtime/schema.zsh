@@ -217,6 +217,59 @@ for field in label preface truncated; do
   fi
 done
 
+# Canonical state has an exact shape, a bounded opaque name, and any JSON value.
+for state in \
+    '{"type":"state","name":"a","value":null}' \
+    '{"type":"state","name":"agents/a1b2c3","value":{"session":".agent-a1b2c3.jsonl"}}' \
+    '{"type":"state","name":"A0_.:/-","value":[false,1,"text"]}'; do
+  print -r -- "$state" | schema_eval 'canonical_state' >/dev/null
+done
+
+print -r -- "$(jq -cn --arg name "$(printf 'a%.0s' {1..128})" \
+  '{type:"state",name:$name,value:true}')" | schema_eval 'canonical_state' >/dev/null
+
+for state in \
+    '{"type":"state","name":"","value":null}' \
+    '{"type":"state","name":"/leading","value":null}' \
+    '{"type":"state","name":"bad name","value":null}' \
+    '{"type":"state","name":"é","value":null}' \
+    '{"type":"state","name":"line\n","value":null}' \
+    '{"type":"state","name":"name"}' \
+    '{"type":"state","name":"name","value":null,"extra":true}'; do
+  if print -r -- "$state" | schema_eval 'canonical_state' >/dev/null 2>&1; then
+    fail "invalid state record was accepted: $state"
+  fi
+done
+
+if jq -cn --arg name "$(printf 'a%.0s' {1..129})" \
+    '{type:"state",name:$name,value:true}' | schema_eval 'canonical_state' >/dev/null 2>&1; then
+  fail 'state name longer than 128 characters was accepted'
+fi
+
+# State is inert wherever it appears in an otherwise valid conversation.
+print -r -- '[
+  {"type":"state","name":"startup","value":1},
+  {"type":"system","content":"system"},
+  {"type":"context","hook":"session_start","script":"one","content":"context"},
+  {"type":"state","name":"before/user","value":{}},
+  {"type":"message","role":"user","content":[{"type":"text","text":"run"}]},
+  {"type":"state","name":"before-assistant","value":false},
+  {"type":"message","role":"assistant","stop":"tool_calls","content":[
+    {"type":"tool_call","id":"c1","name":"shell","input":{}},
+    {"type":"tool_call","id":"c2","name":"shell","input":{}}]},
+  {"type":"state","name":"between/calls","value":"one"},
+  {"type":"message","role":"tool_result","call_id":"c1","name":"shell","content":"","exit_code":0},
+  {"type":"state","name":"between/results","value":"two"},
+  {"type":"message","role":"tool_result","call_id":"c2","name":"shell","content":"","exit_code":0},
+  {"type":"state","name":"before/final","value":null},
+  {"type":"message","role":"assistant","stop":"end","content":[]},
+  {"type":"state","name":"after/final","value":[1,2]},
+  {"type":"message","role":"user","content":[{"type":"text","text":"again"}]},
+  {"type":"state","name":"before/error","value":true},
+  {"type":"turn_error","message":"failed"},
+  {"type":"state","name":"after/error","value":null}
+]' | schema_eval 'canonical_session_records' >/dev/null
+
 # Canonical session headers require absolute hook paths and valid structures.
 typeset valid_header
 valid_header=$(jq -cn '

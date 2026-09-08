@@ -18,6 +18,22 @@ print -r -- '[
         {role:"assistant",content:[]}]
 ' >/dev/null
 
+# State is omitted without separating adjacent context or visible records.
+print -r -- '[
+  {"type":"message","role":"user","content":[{"type":"text","text":"first"}]},
+  {"type":"state","name":"before/context","value":1},
+  {"type":"context","hook":"user_prompt_submit","script":"one","content":"a"},
+  {"type":"state","name":"between/context","value":null},
+  {"type":"context","hook":"user_prompt_submit","script":"two","content":"b"},
+  {"type":"state","name":"before/user","value":{"nested":true}},
+  {"type":"message","role":"user","content":[{"type":"text","text":"second"}]},
+  {"type":"state","name":"trailing","value":false}
+]' | fold | jq -e '
+  length == 2 and .[0].content[0].text == "first" and
+  .[1].content[0].text ==
+    "<hook name=\"user_prompt_submit\">\n<context script=\"one\">\na\n</context>\n\n<context script=\"two\">\nb\n</context>\n</hook>\n\nsecond"
+' >/dev/null
+
 # A context record merges into the user message that follows it, and the
 # original request text is preserved after the block.
 print -r -- '[

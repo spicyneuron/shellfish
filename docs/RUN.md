@@ -87,7 +87,10 @@ Durable records are:
 - `system`: the concatenated system components.
 - `context`: model-visible hook script output.
 - `message` with role `user`, `assistant`, or `tool_result`. An assistant record carries the turn's token usage when the provider reported it.
+- `state`: `{type:"state",name,value}`, model-invisible durable named state.
 - `turn_error`: `{type:"turn_error",message}`, the failure that ended an accepted turn without an assistant answer. It is never sent to a provider.
+
+A state record has exactly those three fields. Its name is an opaque string of at most 128 ASCII characters matching `^[A-Za-z0-9][A-Za-z0-9_.:/-]*$`. Its value may be any JSON value. The latest record for an exact name is effective, and `null` means the name has no effective value at that transcript position. State records do not affect conversation sequencing and are omitted from provider requests.
 
 A sandboxed tool result includes `sandbox_denial_detected: true` when the tool exits non-zero and sandbox monitoring reports a denied action. The denial and non-zero exit are correlated signals; the denial is not necessarily the cause of the failure.
 

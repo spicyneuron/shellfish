@@ -12,6 +12,8 @@ print -r -- '{"type":"message","role":"user","content":[{"type":"text","text":"o
   >>"$request_session"
 print -r -- '{"type":"message","role":"assistant","stop":"end","content":[{"type":"text","text":"answer"}]}' \
   >>"$request_session"
+print -r -- '{"type":"state","name":"stored/value","value":{"revision":1}}' \
+  >>"$request_session"
 
 # Read-only request commands compose one provider call without claiming or
 # mutating the durable turn.
@@ -26,7 +28,8 @@ zsh -f "$entry" build-request --session "$request_session" --tools '[{}]' \
 request_record=$(jq -cn --arg text 'composed request' \
   '{type:"message",role:"user",content:[{type:"text",text:$text}]}')
 request_digest=$(shasum <"$request_session")
-request=$(print -r -- "$request_record" |
+request=$(printf '%s\n%s\n' \
+  '{"type":"state","name":"continuation/value","value":null}' "$request_record" |
   zsh -f "$entry" build-request --session "$request_session" --tools '[]') ||
   fail 'build-request failed'
 jq -e '

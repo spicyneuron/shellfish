@@ -171,6 +171,20 @@ sf_session_resync_turn
 sf_session_reset
 jq -e -s 'length == 3 and .[-1].content[0].text == "done"' "$recovery_complete" >/dev/null
 
+# State records survive reopening without changing conversation sequencing.
+typeset state_session="$tmp/state-session.jsonl"
+cp "$SF_TEST_SESSIONS/header-only.jsonl" "$state_session"
+print -r -- '{"type":"state","name":"git/identity","value":"first"}' >>"$state_session"
+print -r -- '{"type":"message","role":"user","content":[{"type":"text","text":"hello"}]}' \
+  >>"$state_session"
+print -r -- '{"type":"state","name":"git/identity","value":null}' >>"$state_session"
+print -r -- '{"type":"message","role":"assistant","stop":"end","content":[]}' \
+  >>"$state_session"
+sf_session_begin_turn "$state_session"
+[[ $SF_SESSION[turn_id] == 2 && -z $SF_SESSION_RECOVERY_NEEDED && -z $REPLY ]]
+(( ${#SF_SESSION_RECORDS} == 5 ))
+sf_session_reset
+
 # Opening a valid session preserves its bytes and semantic state.
 typeset exact="$tmp/exact.jsonl" exact_before="$tmp/exact-before.jsonl" exact_header
 exact_header=$(head -n 1 "$SF_TEST_SESSIONS/header-only.jsonl")

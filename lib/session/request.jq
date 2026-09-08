@@ -27,7 +27,8 @@ def context_message($context; $request):
 # Fold roleless context into the next message, or a trailing user message.
 def request_messages:
   reduce .[] as $record ({messages:[], context:[]};
-    if $record.type == "context" then .context += [$record]
+    if $record.type == "state" then .
+    elif $record.type == "context" then .context += [$record]
     elif $record.type == "message" and $record.role == "user" then
       if (.context | length) == 0 then .messages += [$record | del(.type, .usage)]
       else
