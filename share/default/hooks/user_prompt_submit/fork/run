@@ -4,6 +4,7 @@ emulate -R zsh
 setopt extended_glob no_aliases no_multios pipe_fail
 
 typeset submitted='' target=0 base candidate created draft='' resolved
+typeset transcript installed
 typeset -a argv fields
 integer read_status suffix=1 cutoff=0 explicit=0 has_draft=0
 IFS= read -r submitted
@@ -57,43 +58,30 @@ cutoff=$fields[1]
 draft=$fields[2]
 has_draft=$fields[3]
 
+created=$(date -u '+%Y-%m-%dT%H:%M:%SZ') || exit 1
+transcript="$SHELLFISH_TURN_STATE/fork.jsonl"
+if ! jq -ce -s --argjson cutoff "$cutoff" --arg created "$created" '
+  .[0:$cutoff] | .[0].created = $created | .[]
+' "$SHELLFISH_SESSION" >"$transcript"; then
+  print -u2 -r -- 'cannot fork session'
+  exit 10
+fi
+
 base=${SHELLFISH_SESSION%.jsonl}
 base=${base%_fork(|_<->)}
 base="${base}_fork"
-candidate="${base}_${suffix}.jsonl"
-umask 077
-while ! (setopt no_clobber; : >"$candidate") 2>/dev/null; do
+while true; do
+  candidate="${base}_${suffix}.jsonl"
+  installed=$("$SHELLFISH_EXECUTABLE" install-session --session-out "$candidate" \
+    <"$transcript" 2>/dev/null) && break
   if [[ ! -e $candidate && ! -L $candidate ]]; then
     print -u2 -r -- "cannot create fork: $candidate"
     exit 10
   fi
   (( suffix++ ))
-  candidate="${base}_${suffix}.jsonl"
 done
 
-created=$(date -u '+%Y-%m-%dT%H:%M:%SZ') || {
-  rm -f -- "$candidate"
-  exit 1
-}
-if ! jq -ce -s --argjson cutoff "$cutoff" --arg created "$created" '
-  def fork_cutoff($records; $at):
-    if $at > 1 and $records[$at - 1].type == "context" then
-      fork_cutoff($records; $at - 1)
-    else $at end;
-  . as $records |
-  fork_cutoff($records; $cutoff) as $at |
-  .[0:$at] | .[0].created = $created | .[]
-' "$SHELLFISH_SESSION" >"$candidate"; then
-  rm -f -- "$candidate"
-  print -u2 -r -- 'cannot fork session'
-  exit 10
-fi
-chmod 600 "$candidate" || {
-  rm -f -- "$candidate"
-  exit 1
-}
-
-argv=( "$SHELLFISH_EXECUTABLE" --session "$candidate" )
+argv=( "$SHELLFISH_EXECUTABLE" --session "$installed" )
 (( ! has_draft )) || argv+=( --draft "$draft" )
 jq -cn '$ARGS.positional | {action:"handoff",argv:.}' --args -- "${argv[@]}" >&3 || exit 1
 exit 11

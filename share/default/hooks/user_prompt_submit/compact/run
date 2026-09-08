@@ -4,6 +4,7 @@ emulate -R zsh
 setopt extended_glob no_aliases no_multios pipe_fail
 
 typeset submitted draft='' instruction budget request summary created base candidate
+typeset transcript installed
 typeset -a argv
 integer explicit=0 suffix=1
 
@@ -73,11 +74,32 @@ summary=$(print -r -- "$request" |
   exit $?
 }
 
+created=$(date -u '+%Y-%m-%dT%H:%M:%SZ') || {
+  fail_compaction 'cannot create compacted session; keeping the original'
+  exit $?
+}
+transcript="$SHELLFISH_TURN_STATE/compact.jsonl"
+# Startup records without state, then every state record in source order, so the
+# child reconstructs the same effective state without interpreting names.
+if ! jq -ce -s --rawfile summary <(print -rn -- "$summary") --arg created "$created" '
+    . as $records |
+    ([$records | to_entries[] | select(.value.type == "message") | .key] | first) as $start |
+    select($start != null) |
+    ($records[0:$start] | .[0].created = $created) as $startup |
+    ($startup[] | select(.type != "state")),
+    ($records[] | select(.type == "state")),
+    {type:"context",hook:"compact",script:"compact",content:$summary}
+  ' "$SHELLFISH_SESSION" >"$transcript"; then
+  fail_compaction 'cannot create compacted session; keeping the original'
+  exit $?
+fi
+
 base=${SHELLFISH_SESSION%.jsonl}
 base=${base%_compact(|_<->)}
 candidate="${base}_compact.jsonl"
-umask 077
-while ! (setopt no_clobber; : >"$candidate") 2>/dev/null; do
+while true; do
+  installed=$("$SHELLFISH_EXECUTABLE" install-session --session-out "$candidate" \
+    <"$transcript" 2>/dev/null) && break
   if [[ ! -e $candidate && ! -L $candidate ]]; then
     fail_compaction 'cannot create compacted session; keeping the original'
     exit $?
@@ -86,26 +108,7 @@ while ! (setopt no_clobber; : >"$candidate") 2>/dev/null; do
   (( suffix++ ))
 done
 
-created=$(date -u '+%Y-%m-%dT%H:%M:%SZ') || {
-  rm -f -- "$candidate"
-  fail_compaction 'cannot create compacted session; keeping the original'
-  exit $?
-}
-if ! jq -ce -s --rawfile summary <(print -rn -- "$summary") --arg created "$created" '
-    ([to_entries[] | select(.value.type == "message") | .key] | first) as $start |
-    select($start != null) |
-    (.[0:$start] | .[0].created = $created)[],
-    {type:"context",hook:"compact",script:"compact",content:$summary}
-  ' "$SHELLFISH_SESSION" >"$candidate" || ! chmod 600 "$candidate"; then
-  rm -f -- "$candidate"
-  fail_compaction 'cannot create compacted session; keeping the original'
-  exit $?
-fi
-
-argv=( "$SHELLFISH_EXECUTABLE" --session "$candidate" )
+argv=( "$SHELLFISH_EXECUTABLE" --session "$installed" )
 [[ -z $draft ]] || argv+=( --draft "$draft" )
-jq -cn '$ARGS.positional | {action:"handoff",argv:.}' --args -- "${argv[@]}" >&3 || {
-  rm -f -- "$candidate"
-  exit 1
-}
+jq -cn '$ARGS.positional | {action:"handoff",argv:.}' --args -- "${argv[@]}" >&3 || exit 1
 exit 11

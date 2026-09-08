@@ -60,7 +60,7 @@ Most chat commands are bundled scripts on the `user_prompt_submit` hook:
 | `/help`, `/h` | List available commands and editor keys. |
 | `/new` | Create a new session with the active session's settings. |
 | `/copy [N]` | Copy the text of the latest user/agent section, or section `N`, to the local clipboard. |
-| `/fork [N]` | Copy the transcript into a new session at section `N`, resolving an agent section to the following user section and restoring that prompt as an editable draft. Without an index it forks at the current end. |
+| `/fork [N]` | Copy the transcript prefix before section `N` into a new session, resolving an agent section to the following user section and restoring that prompt as an editable draft. Context and state preceding the cutoff are kept exactly as written. Without an index it forks at the current end. |
 | `/compact` | Summarize the conversation into a child session and request a handoff to it. See [Compaction](#compaction). |
 | `/refresh`, `/r` | Rebuild the terminal presentation from the durable session. Fixes layout corruption. |
 | `/verbose`, `/v` | Toggle presentation preview limits. |
@@ -81,7 +81,7 @@ Compaction is a `user_prompt_submit` script that replaces a full conversation wi
 
 `/compact` summarizes on demand. Automatic compaction runs when the most recent measured assistant usage reaches 80% of the frozen `context_window`; an unavailable window disables the automatic threshold.
 
-Compaction creates a sibling child named with a `_compact` suffix without changing the source. The child copies everything before the first user message, the session header, system record, and all committed context, then replaces the conversation with one summary context. A successful script requests a client handoff to the child. Automatic compaction passes the interrupted prompt as an editable draft rather than submitting it. Automatic failures are fail-open and submit the prompt to the source; explicit `/compact` failures stop that command and leave the source active.
+Compaction creates a sibling child named with a `_compact` suffix without changing the source. The child copies everything before the first user message — the session header, system record, and committed startup context — then every state record in source order, and replaces the conversation with one summary context. Both `/fork` and compaction publish their child through [`shellfish install-session`](RUN.md#canonical-transcript-installation), which owns validation, permissions, and atomic installation while the scripts keep their own naming and collision policy. A successful script requests a client handoff to the child. Automatic compaction passes the interrupted prompt as an editable draft rather than submitting it. Automatic failures are fail-open and submit the prompt to the source; explicit `/compact` failures stop that command and leave the source active.
 
 ### Limits
 

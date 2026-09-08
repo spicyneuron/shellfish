@@ -70,10 +70,12 @@ jq -e -s '
   fail 'the compacted child is not a lone summary context'
 
 # Remaining cases exercise compaction policy without repeating request command startup.
+typeset -gx SF_TEST_ENTRY="$ROOT/bin/shellfish"
 cat >"$compact_shellfish" <<'ZSH'
 #!/usr/bin/env zsh
 case $1 in
   build-request) cat ;;
+  install-session) exec "$SF_TEST_ENTRY" "$@" ;;
   send-request)
     cat >/dev/null
     [[ ${SF_TEST_COMPACT_FAIL:-0} == 0 ]] || exit 1
@@ -127,6 +129,37 @@ SHELLFISH_EXECUTABLE="$compact_shellfish" \
   < <(print -n -- 'my next prompt') 2>/dev/null || compact_status=$?
 (( compact_status == 0 )) || fail 'publication failure blocked the prompt'
 [[ ! -s $compact_control ]] || fail 'publication failure requested a handoff'
+
+# Every state record is carried in source order, before the summary and after the
+# startup records, without folding repeated names or dropping a closing null.
+typeset state_source="$tmp/state-source.jsonl"
+head -n 1 "$compact_source" >"$state_source"
+print -r -- \
+  '{"type":"state","name":"git/identity","value":"branch:main"}' \
+  '{"type":"context","hook":"session_start","script":"project_environment","content":"env"}' \
+  '{"type":"message","role":"user","content":[{"type":"text","text":"Hello"}]}' \
+  '{"type":"state","name":"agents/a1b2c3","value":{"session":".agent-a1b2c3.jsonl"}}' \
+  '{"type":"message","role":"assistant","stop":"end","content":[{"type":"text","text":"Hi"}],"usage":{"input_tokens":1,"output_tokens":1}}' \
+  '{"type":"state","name":"git/identity","value":null}' \
+  >>"$state_source"
+typeset state_before=$(shasum <"$state_source")
+compact_status=0
+SHELLFISH_EXECUTABLE="$compact_shellfish" SHELLFISH_SESSION="$state_source" \
+  SHELLFISH_TURN_STATE="$tmp" zsh -f "$compact_hook" user_prompt_submit \
+  3>"$compact_control" < <(print -n -- /compact) 2>/dev/null || compact_status=$?
+(( compact_status == 11 ))
+assert_canonical_session "$tmp/state-source_compact.jsonl"
+jq -e -s '
+  [.[].type] == ["session","context","state","state","state","context"] and
+  [.[] | select(.type == "state") | [.name, .value]] ==
+    [["git/identity","branch:main"],
+     ["agents/a1b2c3",{session:".agent-a1b2c3.jsonl"}],
+     ["git/identity",null]] and
+  .[-1].script == "compact"
+' "$tmp/state-source_compact.jsonl" >/dev/null ||
+  fail 'compaction did not carry state history in source order'
+assert_equal "$state_before" "$(shasum <"$state_source")"
+[[ ! -e $tmp/.agent-a1b2c3.jsonl ]] || fail 'compaction copied a referenced internal session'
 
 # A session with no messages reports rather than compacting.
 compact_status=0

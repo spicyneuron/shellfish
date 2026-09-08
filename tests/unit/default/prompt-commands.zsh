@@ -253,6 +253,32 @@ jq -e -s '
   length == 2 and .[-1].role == "user" and .[-1].content[0].text == "First"
 ' "$tmp/consecutive_fork_1.jsonl" >/dev/null
 
+# A fork is the exact prefix before the selected user: preceding state and
+# context are kept, and the source is untouched.
+typeset state_session="$tmp/state.jsonl"
+head -n 1 "$SF_TEST_SESSIONS/header-only.jsonl" >"$state_session"
+print -r -- \
+  '{"type":"state","name":"git/identity","value":"branch:main"}' \
+  '{"type":"message","role":"user","content":[{"type":"text","text":"First"}]}' \
+  '{"type":"message","role":"assistant","stop":"end","content":[{"type":"text","text":"Answer"}],"usage":{"input_tokens":1,"output_tokens":1}}' \
+  '{"type":"state","name":"agents/a1b2c3","value":{"session":".agent-a1b2c3.jsonl"}}' \
+  '{"type":"context","hook":"user_prompt_submit","script":"git_environment","content":"branch:work"}' \
+  '{"type":"message","role":"user","content":[{"type":"text","text":"Second"}]}' \
+  >>"$state_session"
+typeset state_before=$(shasum <"$state_session")
+fork_status=0
+SHELLFISH_EXECUTABLE="$ROOT/bin/shellfish" SHELLFISH_SESSION="$state_session" \
+  SHELLFISH_TURN_STATE="$tmp" zsh -f "$ROOT/share/default/hooks/user_prompt_submit/fork/run" \
+  user_prompt_submit 3>"$fork_control" < <(print -n -- '/fork 2') || fork_status=$?
+(( fork_status == 11 ))
+jq -e --arg draft Second '.argv[-2:] == ["--draft",$draft]' "$fork_control" >/dev/null
+jq -e -s '
+  [.[].type] == ["session","state","message","message","state","context"] and
+  [.[] | select(.type == "state") | .name] == ["git/identity","agents/a1b2c3"]
+' "$tmp/state_fork_1.jsonl" >/dev/null || fail 'the fork is not the exact prefix'
+assert_equal "$state_before" "$(shasum <"$state_session")"
+[[ ! -e $tmp/.agent-a1b2c3.jsonl ]] || fail 'the fork copied a referenced internal session'
+
 # The bundled shell shortcut records the normalized command and its nested exit
 # status separately from the script's skip status.
 typeset shell_session="$tmp/shell-session.jsonl"
