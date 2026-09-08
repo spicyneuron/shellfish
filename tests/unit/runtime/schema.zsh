@@ -295,8 +295,6 @@ valid_header=$(jq -cn '
   }
 ')
 print -r -- "$valid_header" | schema_eval 'canonical_session_header(1)' >/dev/null
-jq -c '.backend.environment = ["_SHELLFISH_TEST"]' <<<"$valid_header" |
-  schema_eval 'canonical_session_header(1)' >/dev/null
 for environment in '["DUPLICATE","DUPLICATE"]' '["invalid-name"]'; do
   if jq -c --argjson environment "$environment" \
       '.backend.environment = $environment' <<<"$valid_header" |

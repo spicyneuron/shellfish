@@ -12,7 +12,7 @@ setopt no_aliases no_bg_nice no_multios pipe_fail
 (( $+functions[sf_process_stop] )) || source "$SF_ROOT/lib/process.zsh"
 
 typeset -gA SF_RUN=(
-  answer '' committed 0 interrupted 0 permission_count 0 permission_available 0
+  answer '' committed 0 jsonl 0 interrupted 0 permission_count 0 permission_available 0
   signal_status 143
 )
 

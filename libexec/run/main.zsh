@@ -146,6 +146,8 @@ sf_run_main() {
   # USR1 is the client's cancellation signal, aimed at this process alone.
   trap 'SF_RUN[signal_status]=130; kill -TERM $$' INT USR1
   trap 'SF_RUN[signal_status]=129; kill -TERM $$' HUP
+  # An active capture must unwind to clean up its readers; the turn-level flag
+  # then drives durable recovery and the signal-status return below.
   trap 'sf_run_interrupt; (( SF_PROCESS_CAPTURE_INTERRUPTED )) || exit $SF_RUN[signal_status]' TERM
   # Only a JSONL client can answer a permission request on stdin.
   local run_status
