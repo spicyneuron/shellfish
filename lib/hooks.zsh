@@ -209,8 +209,8 @@ sf_hooks_dispatch() {
         }
         if [[ -z $control_error ]]; then
           decoded=( "${reply[@]}" )
-          script_control=$decoded[2]
-          (( ${#decoded} <= 2 )) || states+=( "${(@)decoded[3,-1]}" )
+          script_control=$decoded[1]
+          (( ${#decoded} <= 1 )) || states+=( "${(@)decoded[2,-1]}" )
         fi
       fi
       if [[ -z $control_error && -n $script_control ]] && (( ! allow_control )); then

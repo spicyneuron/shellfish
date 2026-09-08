@@ -32,31 +32,28 @@ sf_create_session() {
   SF_SESSION_PATH=$session
   SF_CREATE_REMOVE_SESSION=0
   if ! sf_session_prepare "$runtime"; then
-    error=$SF_SESSION_ERROR
+    sf_die "$SF_SESSION_ERROR"
+    return 1
   elif ! sf_session_system "$system"; then
-    error=$SF_SESSION_ERROR
+    sf_die "$SF_SESSION_ERROR"
+    return 1
   fi
-  [[ -z $error ]] || { sf_die "$error"; return 1; }
   printf '%s\n' "${SF_SESSION_RECORDS[@]}" |
     "$SF_ENTRY" install-session --session-out "$session" >/dev/null || return 1
   SF_CREATE_REMOVE_SESSION=1
-  if (( SF_CREATE_JSONL )); then
-    printf '%s\n' "${SF_SESSION_RECORDS[@]}" | jq -cs \
-      --arg path "$session" '{type:"_session_prepare",path:$path,records:.}' ||
-      error='cannot emit session preparation'
-  fi
-  if [[ -z $error ]] && ! sf_hooks_session_start "$session"; then
+  if (( SF_CREATE_JSONL )) && ! printf '%s\n' "${SF_SESSION_RECORDS[@]}" | jq -cs \
+      --arg path "$session" '{type:"_session_prepare",path:$path,records:.}'; then
+    error='cannot emit session preparation'
+  elif ! sf_hooks_session_start "$session"; then
+    error=$SF_HOOK_ERROR
+  elif ! sf_hooks_commit sf_create_emit; then
     error=$SF_HOOK_ERROR
   fi
-  if [[ -z $error ]] && ! sf_hooks_commit sf_create_emit; then
-    error=$SF_HOOK_ERROR
-  fi
-  if [[ -n $error ]]; then
-    (( ! SF_CREATE_REMOVE_SESSION )) || rm -f -- "$session" 2>/dev/null
-    sf_session_reset
-    sf_die "$error"
-    return 1
-  fi
+  [[ -n $error ]] || return 0
+  rm -f -- "$session" 2>/dev/null
+  sf_session_reset
+  sf_die "$error"
+  return 1
 }
 
 sf_create_main() {

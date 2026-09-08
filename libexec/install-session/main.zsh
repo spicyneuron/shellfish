@@ -4,7 +4,6 @@ emulate -R zsh
 setopt no_aliases no_bg_nice no_multios pipe_fail
 
 typeset -gr SF_ROOT=${0:A:h:h:h}
-typeset -g SF_INSTALL_DESTINATION=''
 typeset -g SF_INSTALL_TEMP=''
 
 sf_die() {
@@ -17,7 +16,7 @@ sf_install_cleanup() {
 }
 
 sf_install_main() {
-  local requested_out=''
+  local requested_out='' destination
   integer out_explicit=0
 
   while (( $# )); do
@@ -34,13 +33,6 @@ sf_install_main() {
         requested_out=$2
         out_explicit=1
         shift 2
-        ;;
-      --)
-        shift
-        (( ! $# )) || {
-          sf_die 'install-session does not accept arguments'
-          return 2
-        }
         ;;
       *)
         sf_die 'install-session only supports --session-out'
@@ -59,19 +51,20 @@ sf_install_main() {
   }
 
   [[ $requested_out == /* ]] || requested_out="$PWD/$requested_out"
-  SF_INSTALL_DESTINATION=${requested_out:a}
-  [[ ! -e $SF_INSTALL_DESTINATION && ! -L $SF_INSTALL_DESTINATION ]] || {
-    sf_die "session already exists: $SF_INSTALL_DESTINATION"
-    return 1
+  destination=${requested_out:a}
+  # Callers name their own children, so an occupied destination reports status 3
+  # and lets them choose another name.
+  [[ ! -e $destination && ! -L $destination ]] || {
+    sf_die "session already exists: $destination"
+    return 3
   }
 
-  SF_INSTALL_TEMP=$(mktemp \
-    "$SF_INSTALL_DESTINATION:h/.${SF_INSTALL_DESTINATION:t}.XXXXXX") || {
-    sf_die "cannot prepare session installation: $SF_INSTALL_DESTINATION"
+  SF_INSTALL_TEMP=$(mktemp "$destination:h/.${destination:t}.XXXXXX") || {
+    sf_die "cannot prepare session installation: $destination"
     return 1
   }
   chmod 600 "$SF_INSTALL_TEMP" || {
-    sf_die "cannot secure session installation: $SF_INSTALL_DESTINATION"
+    sf_die "cannot secure session installation: $destination"
     return 1
   }
   cat >"$SF_INSTALL_TEMP" || {
@@ -94,15 +87,15 @@ sf_install_main() {
     return 2
   }
 
-  ln -- "$SF_INSTALL_TEMP" "$SF_INSTALL_DESTINATION" 2>/dev/null || {
-    if [[ -e $SF_INSTALL_DESTINATION || -L $SF_INSTALL_DESTINATION ]]; then
-      sf_die "session already exists: $SF_INSTALL_DESTINATION"
-    else
-      sf_die "cannot install session: $SF_INSTALL_DESTINATION"
-    fi
+  ln -- "$SF_INSTALL_TEMP" "$destination" 2>/dev/null || {
+    [[ ! -e $destination && ! -L $destination ]] || {
+      sf_die "session already exists: $destination"
+      return 3
+    }
+    sf_die "cannot install session: $destination"
     return 1
   }
-  print -r -- "$SF_INSTALL_DESTINATION" || return 1
+  print -r -- "$destination" || return 1
 }
 
 trap sf_install_cleanup EXIT

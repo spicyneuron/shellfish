@@ -6,7 +6,7 @@ setopt extended_glob no_aliases no_multios pipe_fail
 typeset submitted draft='' instruction budget request summary created base candidate
 typeset transcript installed
 typeset -a argv
-integer explicit=0 suffix=1
+integer explicit=0 suffix=1 install_status=0
 
 fail_compaction() {
   print -u2 -r -- "$1"
@@ -98,9 +98,12 @@ base=${SHELLFISH_SESSION%.jsonl}
 base=${base%_compact(|_<->)}
 candidate="${base}_compact.jsonl"
 while true; do
+  install_status=0
   installed=$("$SHELLFISH_EXECUTABLE" install-session --session-out "$candidate" \
-    <"$transcript" 2>/dev/null) && break
-  if [[ ! -e $candidate && ! -L $candidate ]]; then
+    <"$transcript" 2>/dev/null) || install_status=$?
+  (( install_status )) || break
+  # Status 3 means the name is taken; anything else is a real failure.
+  if (( install_status != 3 )); then
     fail_compaction 'cannot create compacted session; keeping the original'
     exit $?
   fi

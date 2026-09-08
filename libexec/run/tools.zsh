@@ -246,7 +246,8 @@ sf_tool_execute() {
   {
     input="$capture_dir/input"
     bounded="$capture_dir/result"
-    control_pipe="$capture_dir/control.pipe"
+    sf_process_control_pipe "$capture_dir"
+    control_pipe=$REPLY
     print -r -- "$execution_input" >"$input" || {
       sf_tools_fail 'cannot prepare tool input'
       return
@@ -303,11 +304,11 @@ sf_tool_execute() {
         sf_tools_fail 'tool returned invalid control data'
         return
       }
-      [[ $reply[1] == true && -z $reply[2] ]] || {
+      [[ -z $reply[1] ]] || {
         sf_tools_fail 'tool returned invalid control data'
         return
       }
-      (( ${#reply} <= 2 )) || states=( "${(@)reply[3,-1]}" )
+      (( ${#reply} <= 1 )) || states=( "${(@)reply[2,-1]}" )
     fi
     result_budget=$(( max_capture - control_size ))
     sf_tool_bound_capture "$captured" "$bounded" "$result_budget" || {

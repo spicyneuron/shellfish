@@ -5,6 +5,12 @@ zmodload zsh/system
 typeset -g SF_PROCESS_CAPTURE_PID=''
 typeset -gi SF_PROCESS_CAPTURE_INTERRUPTED=0
 
+# The control pipe is part of the capture contract: a sandboxed caller must
+# expose this path before sf_process_capture creates it.
+sf_process_control_pipe() {
+  REPLY="$1/control.pipe"
+}
+
 sf_process_capture_stream() {
   local pipe=$1 output=$2 callback=$3 chunk notice=''
   integer limit=$4 fd event_fd callback_limit=$(( limit - 1 ))
@@ -42,8 +48,10 @@ sf_process_capture() {
   integer max_capture=$6
   shift 6
   local stdout="$directory/stdout" stderr="$directory/stderr" control="$directory/control"
-  local stdout_pipe="$stdout.pipe" stderr_pipe="$stderr.pipe" control_pipe="$control.pipe"
+  local stdout_pipe="$stdout.pipe" stderr_pipe="$stderr.pipe" control_pipe REPLY
   local -a readers
+  sf_process_control_pipe "$directory"
+  control_pipe=$REPLY
   integer limit=$(( max_capture + 1 )) process_pid process_status reader_status=0 reader
   setopt local_options no_err_exit no_monitor
   SF_PROCESS_CAPTURE_INTERRUPTED=0

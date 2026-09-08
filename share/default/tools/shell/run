@@ -40,8 +40,9 @@ cleanup() {
   command_pid=0
 }
 
-# An EXIT trap alone does not run on a signal, so cancellation needs its own.
-# Without it the command outlives the tool that Shellfish cancelled.
+# Shellfish signals this tool, not the command it supervises, and zsh skips an
+# EXIT trap when a signal kills the shell. Most components need no equivalent;
+# this one owns a model-authored command that may run for its whole timeout.
 trap cleanup EXIT
 trap 'cleanup; exit 143' TERM
 # fd 3 closes before the model-authored command runs so it cannot forge state.

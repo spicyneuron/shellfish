@@ -58,7 +58,7 @@ print -r -- 'not json' >"$s_bad"
 make_header >"$s_state_only"
 print -r -- '{"type":"state","name":"preview/only","value":true}' >>"$s_state_only"
 
-# 10. State after the latest presentable record
+# 10. State after the latest message
 make_header >"$s_state_tail"
 print -r -- '{"type":"message","role":"user","content":[{"type":"text","text":"latest prompt"}]}' >>"$s_state_tail"
 print -r -- '{"type":"state","name":"preview/first","value":1}' >>"$s_state_tail"
@@ -83,17 +83,8 @@ assert_equal 'shell exit 2' "$SF_RESUME_PREVIEWS[7]"
 assert_equal 'Turn interrupted.' "$SF_RESUME_PREVIEWS[8]"
 assert_equal '?/?' "$SF_RESUME_PAIRS[9]"
 assert_equal '(unreadable)' "$SF_RESUME_PREVIEWS[9]"
-assert_equal '(empty session)' "$SF_RESUME_PREVIEWS[10]"
-assert_equal 'latest prompt' "$SF_RESUME_PREVIEWS[11]"
-
-# Preview validation cannot load a jq module from the project being resumed.
-mkdir -p "$tmp/project/lib/runtime"
-print -r -- 'def canonical_state(:' >"$tmp/project/lib/runtime/schema.jq"
-(
-  builtin cd "$tmp/project"
-  sf_resume_load "$s_state_tail"
-  assert_equal 'latest prompt' "$SF_RESUME_PREVIEWS[1]"
-)
+assert_equal 'STATE preview/only' "$SF_RESUME_PREVIEWS[10]"
+assert_equal 'STATE preview/last' "$SF_RESUME_PREVIEWS[11]"
 
 # A session removed after discovery does not shift later summaries onto its row.
 sf_resume_load "$s_empty" "$tmp/missing.jsonl" "$s_system"

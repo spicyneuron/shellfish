@@ -1,8 +1,6 @@
 emulate -R zsh
 setopt no_aliases no_multios pipe_fail
 
-(( $+functions[sf_jq] )) || source "$SF_ROOT/lib/jq.zsh"
-
 typeset -ga SF_RESUME_ALL_PATHS=() SF_RESUME_PATHS=()
 typeset -ga SF_RESUME_TIMES=() SF_RESUME_PAIRS=() SF_RESUME_PREVIEWS=()
 typeset -g SF_RESUME_ERROR=''
@@ -14,7 +12,7 @@ sf_resume_fail() {
 }
 
 sf_resume_load() {
-  local file field header decoded=0
+  local file field header current decoded=0
   local -a lines headers readable raw_lasts
   local -A last_by_file
   SF_RESUME_ERROR=''
@@ -30,26 +28,21 @@ sf_resume_load() {
     fi
     headers+=( "${header:-null}" )
   done
-  # Reduce all readable files in one process while retaining only each file's
-  # latest presentable record. Invalid lines remain visible to summary parsing.
-  if (( ${#readable} )); then
-    raw_lasts=( "${(@0)$(awk '{ print FILENAME; print }' "${readable[@]}" 2>/dev/null |
-      sf_jq -jRn '
-      include "lib/runtime/schema";
-      reduce inputs as $item ({file:null, lasts:{}};
-        if .file == null then .file = $item
-        else
-          .file as $file | .file = null |
-          if (try ($item | fromjson | canonical_state) catch false) then .
-          else .lasts[$file] = $item end
-        end) |
-      .lasts | to_entries[] | .key, "\u0000", .value, "\u0000"
-    ' 2>/dev/null)}" )
-    [[ -n $raw_lasts[-1] ]] || raw_lasts[-1]=()
-    for (( field = 1; field < ${#raw_lasts}; field += 2 )); do
-      last_by_file[$raw_lasts[field]]=$raw_lasts[field+1]
-    done
-  fi
+  # The extra file forces headed output, whose boundaries preserve torn records
+  # without starting a tail process per session.
+  raw_lasts=( "${(@f)$(tail -n 1 -- "${readable[@]}" /dev/null 2>/dev/null)}" )
+  integer expect_record=0
+  for field in "${raw_lasts[@]}"; do
+    if [[ $field == '==> '*' <==' ]]; then
+      [[ $field == '==> /dev/null <==' ]] && break
+      current=${${field#'==> '}%' <=='}
+      last_by_file[$current]=null
+      expect_record=1
+    elif (( expect_record )); then
+      last_by_file[$current]=$field
+      expect_record=0
+    fi
+  done
   for (( file = 1; file <= ${#headers}; file++ )); do
     lines+=( "$headers[file]" "${last_by_file[${SF_RESUME_PATHS[file]}]:-null}" )
   done
@@ -67,6 +60,7 @@ sf_resume_load() {
       elif .type == "session" then "(empty session)"
       elif .type == "system" then "SYSTEM"
       elif .type == "context" then (.hook | ascii_upcase)
+      elif .type == "state" then ("STATE " + (.name | tostring))
       elif .type == "message" and .role == "user" then
         ([.content[]? | select(.type == "text") | .text] | join(""))
       elif .type == "message" and .role == "assistant" then
