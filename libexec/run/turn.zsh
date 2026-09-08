@@ -194,7 +194,7 @@ sf_run_turn() {
   local tools tool_schema max_capture fence backend_environment env_file config_dir name
   local sandbox_read_paths sandbox_write_paths
   local context_output context_line context_window context_window_command update_event adapter_pid
-  local SHELLFISH_TURN_STATE='' SHELLFISH_SESSION_STATE=''
+  local SHELLFISH_TURN_STATE=''
   local -a runtime_fields response_fields tool_calls handoff context_environment
   integer request_count=0 stop_count=0 call_count tool_index response_call_count
   integer harness_sandbox tool_limit request_limit context_window_set
@@ -480,7 +480,7 @@ sf_run_turn() {
             if ! sf_tool_execute "$call_id" "$tool_name" "$execution_input" "$bypass" \
                 "$harness_sandbox" "$decision" "$denial_reason" \
                 "$SF_SESSION[cwd]" "$max_capture" "$fence" "$config_dir" \
-                "$SF_SESSION[id]" "$session_path" "$SF_ENTRY" "$SF_SESSION[runtime]"; then
+                "$session_path" "$SF_ENTRY" "$SF_SESSION[runtime]"; then
               failure=${SF_TOOL_ERROR:-shell tool execution failed}
               return 1
             fi

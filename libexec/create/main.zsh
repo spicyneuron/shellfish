@@ -31,10 +31,7 @@ sf_create_session() {
   typeset -gx SHELLFISH_MODE=create
   SF_SESSION_PATH=$session
   SF_CREATE_REMOVE_SESSION=0
-  SHELLFISH_SESSION_STATE=''
-  if ! sf_hooks_session_state_create; then
-    error=$SF_HOOK_ERROR
-  elif ! sf_session_prepare "$runtime"; then
+  if ! sf_session_prepare "$runtime"; then
     error=$SF_SESSION_ERROR
   elif ! sf_session_system "$system"; then
     error=$SF_SESSION_ERROR

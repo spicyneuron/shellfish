@@ -5,7 +5,7 @@ source "${0:A:h}/_hooks.zsh"
 # session_start runs during session creation, receives its hook name, and
 # commits one attributed context record after the complete chain succeeds.
 typeset start_session="$tmp/start-session.jsonl"
-make_script start '[[ $# == 1 && $1 == session_start ]]; [[ ! -s /dev/stdin && -z ${SHELLFISH_TURN_ID-} ]]; [[ -z ${OPENAI_API_KEY-} && -z ${CUSTOM_API_KEY-} ]]; [[ -n $SHELLFISH_SESSION_ID && $SHELLFISH_MODEL == test && $0 == /* && -d ${0:A:h} ]]; [[ $SHELLFISH_CONFIG_DIR == "$EXPECTED_CONFIG_DIR" ]]; print -n startup; print -n -u2 local; [[ -z $SKIP ]] || exit 10'
+make_script start '[[ $# == 1 && $1 == session_start ]]; [[ ! -s /dev/stdin && -z ${SHELLFISH_TURN_ID-} && -z ${SHELLFISH_TURN_STATE-} ]]; [[ -z ${OPENAI_API_KEY-} && -z ${CUSTOM_API_KEY-} ]]; [[ $SHELLFISH_MODEL == test && $0 == /* && -d ${0:A:h} ]]; [[ $SHELLFISH_CONFIG_DIR == "$EXPECTED_CONFIG_DIR" ]]; print -n startup; print -n -u2 local; [[ -z $SKIP ]] || exit 10'
 typeset start_script=$script
 make_script start_second 'print -n second'
 typeset start_second_script=$script
@@ -23,7 +23,6 @@ SF_TEST_RUNTIME=$(jq -cn --arg script "$start_script" --arg second "$start_secon
 ')
 export OPENAI_API_KEY=standard-secret CUSTOM_API_KEY=custom-secret
 SF_SESSION_PATH=$start_session
-sf_hooks_session_state_create
 sf_session_prepare "$SF_TEST_RUNTIME"
 sf_session_create
 sf_hooks_session_start "$start_session"
@@ -114,11 +113,9 @@ typeset permission_script="$scripts/permission"
 cat >"$permission_script" <<'ZSH'
 #!/usr/bin/env zsh
 [[ $# == 1 && $1 == permission_request ]] || exit 1
-[[ $SHELLFISH_TURN_ID == 1 && $SHELLFISH_SESSION_ID == permission-session ]] || exit 1
+[[ $SHELLFISH_TURN_ID == 1 ]] || exit 1
 [[ $SHELLFISH_MODEL == test && $0 == /* ]] || exit 1
-[[ -d $SHELLFISH_TURN_STATE && -d $SHELLFISH_SESSION_STATE &&
-  $SHELLFISH_SESSION_STATE == */sessions/permission-session &&
-  -d ${0:A:h} ]] || exit 1
+[[ -d $SHELLFISH_TURN_STATE && -d ${0:A:h} ]] || exit 1
 jq -e '. == {turn_id:1,tool_name:"shell",tool_use_id:"call_7",
   tool_input:{command:"true"}}' >/dev/null || exit 1
 print -rn -- ignored
@@ -139,7 +136,6 @@ SF_TEST_RUNTIME=$(jq -c --arg script "$permission_script" '
 ' <<<"$SF_TEST_RUNTIME")
 sf_test_session "$permission_session"
 sf_session_begin_turn "$permission_session"
-SHELLFISH_SESSION_STATE=''
 sf_hooks_turn_state_create
 typeset -gx SHELLFISH_TURN_ID=1
 print allow >"$SHELLFISH_TURN_STATE/decision"

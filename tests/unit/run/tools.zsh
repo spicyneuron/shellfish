@@ -13,6 +13,7 @@ typeset stored_runtime=$(head -n 1 "$session" | jq -c 'del(.type,.format_version
 typeset stored_cwd=$(jq -r '.cwd' "$session")
 typeset tool_tools tool_schema tool_cwd=$stored_cwd tool_max_capture tool_sandbox tool_fence
 typeset tool_read_paths tool_write_paths tool_config_dir='' tool_runtime
+typeset tool_temp=''
 
 load_tools() {
   local runtime=$1
@@ -26,6 +27,7 @@ load_tools() {
   sf_tools_load "$tool_tools" "$tool_cwd" "$tool_sandbox" "$tool_fence" \
     "$tool_read_paths" "$tool_write_paths"
   tool_schema=$REPLY
+  tool_temp=$SF_TOOL_TEMP_DIR
 }
 
 sf_test_tool_execute() {
@@ -46,7 +48,7 @@ sf_test_tool_execute() {
   (( permission_status != 2 )) || return
   sf_tool_execute "$id" "$name" "$execution_input" "$bypass" "$harness_sandbox" \
     "$decision" "$denial_reason" "$tool_cwd" "$tool_max_capture" "$tool_fence" \
-    "$tool_config_dir" "$SF_SESSION[id]" "$session" "$ROOT/bin/shellfish" \
+    "$tool_config_dir" "$session" "$ROOT/bin/shellfish" \
     "$tool_runtime" || return
 }
 
@@ -59,6 +61,7 @@ load_tools "$stored_runtime"
 sf_test_tool_execute '{"id":"unknown_1","name":"unknown","input":{}}' 0
 jq -e '.exit_code == 127 and .content == "tool is not allowed: unknown"' <<<"$REPLY" >/dev/null
 typeset invalid_tools=$(jq -c '.[0].command = "/missing/shellfish-tool"' <<<"$tool_tools")
+typeset first_temp=$tool_temp
 if sf_tools_load "$invalid_tools" "$tool_cwd" "$tool_sandbox" "$tool_fence" \
     "$tool_read_paths" "$tool_write_paths"; then
   fail 'an unavailable tool command was accepted'
@@ -66,14 +69,15 @@ fi
 (( ${#SF_TOOL_COMMAND} == 0 && ${#SF_TOOL_SANDBOX} == 0 &&
    ${#SF_TOOL_ALLOW_BYPASS} == 0 && ${#SF_TOOL_SETTINGS} == 0 )) ||
   fail 'a failed tool load retained executable metadata'
+[[ ! -e $first_temp ]]
 load_tools "$stored_runtime"
 sf_test_tool_execute "$(jq -cn --arg command 'print -rn -- "$HOME"' \
   '{id:"home_1",name:"shell",input:{command:$command}}')" 0
 jq -e --arg home "$HOME" '.content == $home' <<<"$REPLY" >/dev/null
 sf_test_tool_execute "$(jq -cn --arg command 'print -rn -- "$TMPDIR"' \
   '{id:"temp_1",name:"shell",input:{command:$command}}')" 0
-typeset tool_temp=$(jq -r '.content' <<<"$REPLY")
-[[ $tool_temp == "${${TMPDIR:-/tmp}:A}/shellfish-$EUID/tooltemps/session-$SF_SESSION[id]-tmp" ]]
+[[ $(jq -r '.content' <<<"$REPLY") == $tool_temp ]]
+[[ $tool_temp == "${${TMPDIR:-/tmp}:A}/shellfish-$EUID/tooltemps/invocation."* ]]
 assert_equal 700 "$(stat -f %Lp "$tool_temp")"
 sf_temp_directory native "$tool_temp"
 typeset native_temp=$REPLY
@@ -392,3 +396,7 @@ jq -e '.[0].input_schema.properties.request_sandbox_bypass.type == "boolean" and
   (.[0].input_schema.allOf[0].then.required | index("sandbox_bypass_reason")) != null and
   (.[0].description | contains("keep it to one logical operation"))' \
   <<<"$tool_schema" >/dev/null
+
+typeset final_temp=$tool_temp
+sf_tools_cleanup
+[[ ! -e $final_temp ]]

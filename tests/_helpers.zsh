@@ -105,8 +105,7 @@ sf_test_runtime() {
 
 sf_test_session() {
   SF_SESSION_PATH=$1
-  SHELLFISH_SESSION_STATE=''
-  sf_hooks_session_state_create && sf_session_prepare "$SF_TEST_RUNTIME" &&
+  sf_session_prepare "$SF_TEST_RUNTIME" &&
     sf_session_system "$SF_TEST_SYSTEM" && sf_session_create
 }
 

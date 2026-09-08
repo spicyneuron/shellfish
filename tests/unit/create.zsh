@@ -97,27 +97,23 @@ zsh -f "$entry" create --session-out "$tmp/a.jsonl" --session-out "$tmp/b.jsonl"
   fail 'create accepted a repeated --session-out'
 
 # A failing session_start script leaves no transcript and reports its detail.
-# Session state stays a disposable cache even when creation fails.
-typeset hook="$tmp/failing-hook" marker="$tmp/state-marker" hook_config="$tmp/hook.jsonc"
+typeset hook="$tmp/failing-hook" hook_config="$tmp/hook.jsonc"
 mkdir "$hook"
 cat >"$hook/run" <<'ZSH'
 #!/usr/bin/env zsh
-[[ $1 == session_start && -d $SHELLFISH_SESSION_STATE && -z ${SHELLFISH_TURN_STATE-} ]] || exit 2
-print -r -- "$SHELLFISH_SESSION_STATE" >"$SF_TEST_STATE_MARKER"
+[[ $1 == session_start && -z ${SHELLFISH_TURN_STATE-} ]] || exit 2
 print -u2 -r -- 'startup detail'
 exit 9
 ZSH
 chmod +x "$hook/run"
 jq --arg hook "$hook" '.harnesses.machine.session_start=[$hook]' "$config" >"$hook_config"
 typeset failed="$tmp/failed.jsonl" hook_error="$tmp/hook-error"
-SF_TEST_STATE_MARKER="$marker" zsh -f "$entry" create --session-out "$failed" \
+zsh -f "$entry" create --session-out "$failed" \
   --config "$hook_config" >/dev/null 2>"$hook_error" &&
   fail 'a failing session_start script created a session'
 [[ $(<"$hook_error") == *"hook script failed with status 9: ${hook:A}/run: startup detail"* ]] ||
   fail 'create hid the session_start failure'
 [[ ! -e $failed ]] || fail 'create left a transcript behind'
-[[ -d $(<"$marker") && $(<"$marker") == */sessions/failed ]] ||
-  fail 'create did not prepare session state'
 
 # System components concatenate into one ordered record.
 typeset joined="$tmp/joined.jsonl" joined_config="$tmp/joined.jsonc"

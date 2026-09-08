@@ -32,17 +32,6 @@ sf_scratch_category() {
   chmod 700 "$REPLY" || return 1
 }
 
-sf_scratch_directory() {
-  local category=$1 name=$2 directory
-  [[ -n $name && $name != . && $name != .. && $name != */* ]] || return 1
-  sf_scratch_category "$category" || return 1
-  directory="$REPLY/$name"
-  (umask 077; mkdir -- "$directory") 2>/dev/null || :
-  [[ -d $directory && ! -L $directory && -O $directory ]] || return 1
-  chmod 700 "$directory" || return 1
-  REPLY=${directory:A}
-}
-
 sf_scratch_create() {
   local category=$1 prefix=$2 created
   [[ -n $prefix && $prefix != *[^A-Za-z0-9_-]* ]] || return 1

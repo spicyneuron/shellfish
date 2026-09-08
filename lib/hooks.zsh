@@ -14,9 +14,8 @@ typeset -g SF_HOOK_JSONL=0
 typeset -ga SF_HOOK_SCRIPT_RESULTS=()
 typeset -ga SF_HOOK_CONTEXT_RECORDS=()
 typeset -ga SF_HOOK_STATE_RECORDS=()
-# Preserve inherited hook state across nested turn setup.
+# Preserve inherited turn state across nested turn setup.
 typeset -g SHELLFISH_TURN_STATE=${SHELLFISH_TURN_STATE-}
-typeset -g SHELLFISH_SESSION_STATE=${SHELLFISH_SESSION_STATE-}
 typeset -g SHELLFISH_TURN_ID=${SHELLFISH_TURN_ID-}
 typeset -g SF_HOOK_NAME=''
 # Cancellation takes its pending exit at the first nested return, so cleanup
@@ -92,8 +91,8 @@ sf_hooks_capture_one() {
   local hook=$SF_HOOK_NAME name value
   local SF_HOOK_SCRIPT=$script
   local -a fixed_names=(
-    SHELLFISH_SESSION SHELLFISH_SESSION_STATE SHELLFISH_MAX_CAPTURE_BYTES
-    SHELLFISH_SESSION_ID SHELLFISH_MODEL SHELLFISH_EXECUTABLE SHELLFISH_MODE
+    SHELLFISH_SESSION SHELLFISH_MAX_CAPTURE_BYTES SHELLFISH_MODEL
+    SHELLFISH_EXECUTABLE SHELLFISH_MODE
     SHELLFISH_VERBOSE SHELLFISH_CONFIG_DIR SHELLFISH_TURN_ID SHELLFISH_TURN_STATE
   )
   local LC_ALL=C
@@ -248,27 +247,7 @@ sf_hooks_dispatch() {
   reply=( "$perform" "$halted" "$origin" "$control" )
 }
 
-sf_hooks_session_state_create() {
-  [[ -n $SHELLFISH_SESSION_STATE && -d $SHELLFISH_SESSION_STATE ]] && return 0
-  local id=${SHELLFISH_SESSION_ID:-$SF_SESSION[id]}
-  if [[ -z $id && -n $SF_SESSION_PATH ]]; then
-    id=${SF_SESSION_PATH:t}
-    id=${id%.jsonl}
-  fi
-  [[ -n $id && $id != . && $id != .. ]] || {
-    sf_hooks_fail 'cannot derive hook session state'
-    return
-  }
-  sf_scratch_directory sessions "$id" || {
-    sf_hooks_fail 'cannot prepare hook session state'
-    return
-  }
-  SHELLFISH_SESSION_STATE=$REPLY
-  export SHELLFISH_SESSION_STATE
-}
-
 sf_hooks_turn_state_create() {
-  sf_hooks_session_state_create || return
   [[ -z $SHELLFISH_TURN_STATE ]] || return 0
   sf_scratch_create turns turn || {
     sf_hooks_fail 'cannot prepare hook turn state'
@@ -293,18 +272,13 @@ sf_hooks_invoke() {
   local hook=$2
   local SHELLFISH_SESSION=${session:A}
   local SHELLFISH_MAX_CAPTURE_BYTES=$max_capture
-  local SHELLFISH_SESSION_ID=${SHELLFISH_SESSION_ID:-$SF_SESSION[id]}
   local SHELLFISH_MODEL=${SHELLFISH_MODEL:-$SF_SESSION[model]}
   local SHELLFISH_EXECUTABLE=${SF_ENTRY-}
   local SHELLFISH_CONFIG_DIR=${SHELLFISH_CONFIG_DIR-}
   local SHELLFISH_TURN_ID=${SHELLFISH_TURN_ID-}
   local SF_HOOK_NAME=$hook
-  export SHELLFISH_SESSION SHELLFISH_SESSION_STATE SHELLFISH_MAX_CAPTURE_BYTES
-  export SHELLFISH_SESSION_ID SHELLFISH_MODEL SHELLFISH_EXECUTABLE SHELLFISH_CONFIG_DIR
-  [[ -n $SHELLFISH_SESSION_STATE && -d $SHELLFISH_SESSION_STATE ]] || {
-    sf_hooks_fail 'hook session state is not available'
-    return
-  }
+  export SHELLFISH_SESSION SHELLFISH_MAX_CAPTURE_BYTES SHELLFISH_MODEL
+  export SHELLFISH_EXECUTABLE SHELLFISH_CONFIG_DIR
   if [[ $hook == (user_prompt_submit|permission_request|pre_tool_use|post_tool_use|stop) ]]; then
     [[ -n $SHELLFISH_TURN_ID ]] || {
       sf_hooks_fail "$hook hook requires a turn ID"
@@ -341,7 +315,6 @@ sf_hooks_run_chain() {
     (.harness[$hook][]? | .command, (.environment | tojson))
   ' <<<"$SF_SESSION[runtime]")}" ) || return 1
   components=( "${(@)fields[2,-1]}" )
-  local SHELLFISH_SESSION_ID=$SF_SESSION[id]
   local SHELLFISH_MODEL=$SF_SESSION[model]
   local config_file SHELLFISH_CONFIG_DIR=''
   config_file=$(jq -r '.backend.env_file // ""' <<<"$SF_SESSION[runtime]") || return 1

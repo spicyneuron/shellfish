@@ -53,8 +53,8 @@ jq -e -L "$ROOT" '
   canonical_session_header(1) and
   .profile.request.model == "test-model"
 ' <<<"$header" >/dev/null
-[[ $SF_SESSION[id] == session && $SF_SESSION[turn_id] == 1 &&
-   $SF_SESSION[cwd] == "$PWD" && $SF_SESSION[model] == test-model ]]
+[[ $SF_SESSION[turn_id] == 1 && $SF_SESSION[cwd] == "$PWD" &&
+   $SF_SESSION[model] == test-model ]]
 
 sf_session_append '{"type":"message","role":"user","content":[{"type":"text","text":"hello"}]}'
 (( ${#SF_SESSION_RECORDS} == 2 ))
@@ -123,7 +123,7 @@ fi
 
 # Reopening an existing session restores its next turn state.
 sf_session_begin_turn "$session"
-[[ $SF_SESSION[id] == session && $SF_SESSION[turn_id] == 2 ]]
+[[ $SF_SESSION[turn_id] == 2 ]]
 typeset -a reopened=( "${(@f)$(<"$session")}" )
 (( ${#SF_SESSION_RECORDS} == 3 ))
 assert_equal "${(j:\n:)reopened}" "${(j:\n:)SF_SESSION_RECORDS}"

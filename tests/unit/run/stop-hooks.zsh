@@ -23,11 +23,9 @@ cat >"$stop_once" <<'ZSH'
 #!/usr/bin/env zsh
 set -e
 [[ $# == 2 && $1 == stop && $2 == <1-> ]]
-[[ -n $SHELLFISH_SESSION_ID ]] || exit 2
 [[ $SHELLFISH_TURN_ID == 1 ]] || exit 3
 [[ $SHELLFISH_MODEL == test-model ]] || exit 4
 [[ $0 == /* && -d ${0:A:h} ]] || exit 5
-[[ -d $SHELLFISH_SESSION_STATE ]] || exit 7
 [[ ! -e $SHELLFISH_TURN_STATE/inherited ]] || exit 8
 [[ -e $TEST_STATE_PATH ]] || print -rn -- "$SHELLFISH_TURN_STATE" >"$TEST_STATE_PATH"
 input=$(cat)

@@ -30,9 +30,9 @@ repeat:
     if completion allowed: finish turn
 ```
 
-`shellfish create` runs the `session_start` scripts during session preparation and writes the durable session after those scripts succeed. `shellfish run` owns each complete turn through `user_prompt_submit`, provider requests, tools, permissions, cancellation, and recovery.
+`shellfish create` writes the session header and optional system record before it runs the `session_start` scripts. `shellfish run` owns each complete turn through `user_prompt_submit`, provider requests, tools, permissions, cancellation, and recovery.
 
-Scripts in one turn share ephemeral coordination state, and scripts for one session ID share disposable session state (see `SHELLFISH_TURN_STATE` and `SHELLFISH_SESSION_STATE` below). A script runs synchronously. If the operation is cancelled, in-flight script work is terminated with it. Scripts must finish or terminate their own subprocesses before exiting. Daemonizing is unsupported.
+Scripts in one turn share ephemeral coordination state through `SHELLFISH_TURN_STATE`. A script runs synchronously. If the operation is cancelled, in-flight script work is terminated with it. Scripts must finish or terminate their own subprocesses before exiting. Daemonizing is unsupported.
 
 ## Configuring hooks
 
@@ -78,8 +78,6 @@ Every script is invoked with the session working directory as its `PWD` and thes
 | Variable | Meaning |
 | --- | --- |
 | `SHELLFISH_SESSION` | Absolute path of the active session JSONL |
-| `SHELLFISH_SESSION_ID` | Transcript filename without the `.jsonl` suffix |
-| `SHELLFISH_SESSION_STATE` | Absolute path to the disposable, mode-0700 state directory shared by the session ID |
 | `SHELLFISH_MAX_CAPTURE_BYTES` | Combined output byte limit for one script (`harness.max_capture_bytes`) |
 | `SHELLFISH_EXECUTABLE` | Absolute path of the invoked Shellfish executable |
 | `SHELLFISH_MODE` | Owning process: `create` for `session_start`, `run` for every turn hook |
@@ -94,10 +92,6 @@ Scripts on turn-scoped hooks (`user_prompt_submit`, `permission_request`, `pre_t
 `$1` is always the hook name. Remaining argv and stdin are hook-specific (see [Hooks](#hooks)).
 
 `SHELLFISH_TURN_STATE` is private to one turn and removed during turn cleanup. Use it to coordinate across scripts in that turn. For example, a `post_tool_use` script can mark the turn dirty and a `stop` script can consume the marker. It is not exported to `session_start` scripts.
-
-`SHELLFISH_SESSION_STATE` is shared by scripts whose sessions have the same `SHELLFISH_SESSION_ID`. It lives under Shellfish's host temporary root, is retained across ordinary process exits, and is not removed when a turn or chat ends. It is disposable cache state: the host may remove it after a restart or temporary-file cleanup, and a changed `TMPDIR` selects a different location. Scripts must tolerate it being empty. `session_start` receives session state after the transcript header and optional system record are created. Failed session creation does not remove session state.
-
-Both directories are shared writable coordination spaces, not per-script storage. Scripts must namespace files when needed and must account for other Shellfish processes that use the same session ID. Shellfish does not serialize concurrent processes that use the same session or session ID.
 
 ### Output channels
 
@@ -168,7 +162,7 @@ Trailing context, typically `stop` feedback, becomes a synthetic trailing user m
 
 ### `session_start`
 
-Runs once after creation writes the session header and optional system record. It does not run when an existing session is resumed or a turn restarts. stdin is empty and `$1` is `session_start`. There are no further arguments. The script receives `SHELLFISH_SESSION_STATE`, but it does not receive `SHELLFISH_TURN_ID` or `SHELLFISH_TURN_STATE`. Of the environment names declared by configured components, it receives only those selected by its own manifest.
+Runs once after creation writes the session header and optional system record. It does not run when an existing session is resumed or a turn restarts. stdin is empty and `$1` is `session_start`. There are no further arguments. The script does not receive `SHELLFISH_TURN_ID` or `SHELLFISH_TURN_STATE`. Of the environment names declared by configured components, it receives only those selected by its own manifest.
 
 - **stdout** becomes durable `session_start` context. Each script's nonempty stdout is a separately attributed record.
 - **stderr** is shown and discarded.
@@ -263,7 +257,7 @@ Runs immediately before a tool executes. `$1` is `pre_tool_use`. stdin is the sa
 - **fd 3** accepts state.
 - **Default action** is executing the tool. Exit 10 denies the call and continues the script chain. Exit 11 denies the call and halts the chain. Shellfish commits an ordinary `tool_result` with exit code 126, then proceeds to later tool calls in provider order. This policy gate cannot approve sandbox bypass. `permission_request` remains a separate boundary.
 
-Coordinate state beyond denial feedback through `SHELLFISH_TURN_STATE` or `SHELLFISH_SESSION_STATE`. For example, mark a file edit in turn state and consume the marker in a `stop` script.
+Use `SHELLFISH_TURN_STATE` for coordination within the current turn. Request durable cross-turn state through fd 3.
 
 ### `post_tool_use`
 
@@ -287,7 +281,7 @@ Runs after the canonical tool result is durably committed. `$1` is `post_tool_us
 - **fd 3** accepts state.
 - **Default action** is continuing the tool loop. There is no coherent skipped action, so exit 10 or 11 **fails the operation** (it does not skip anything).
 
-A nonzero tool exit is a normal canonical result, not a script failure, so this script still runs. Script failure is an orchestration failure and triggers ordinary turn recovery. Use turn or session state to coordinate observations with `stop`. `post_tool_use` cannot replace results or add model context.
+A nonzero tool exit is a normal canonical result, not a script failure, so this script still runs. Script failure is an orchestration failure and triggers ordinary turn recovery. Use turn state to coordinate observations with `stop`. `post_tool_use` cannot replace results or add model context.
 
 ### `stop`
 
@@ -319,6 +313,5 @@ exit 10
 - Captures are private, bounded, and cleaned on every path.
 - Scripts have no independent timeout. They must terminate themselves. Cancelling the enclosing operation terminates the active script.
 - Scripts inherit the ordinary process environment. Shellfish removes every environment name declared by any component in the frozen runtime, then restores only the names selected by the invoked hook's manifest. The variables documented above are the other Shellfish-specific hook script guarantees.
-- Session state may be shared by concurrent sessions or processes using the same session ID. Scripts must coordinate access when their data requires it.
-- Hook scripts are not transformation middleware. Tool-use scripts cannot modify tool input or result content. They observe and gate. Coordinate policy through turn or session state, not by overloading stdout.
+- Hook scripts are not transformation middleware. Tool-use scripts cannot modify tool input or result content. They observe and gate. Coordinate current-turn policy through turn state, not by overloading stdout.
 - Adding a hook is an adapter change, not a dispatcher change. The dispatcher implements the status table, channel limits, and JSON framing. Each hook owns its control fields, default action, and the consequence of skipping it.

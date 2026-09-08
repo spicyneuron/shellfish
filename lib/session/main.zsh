@@ -243,10 +243,8 @@ sf_session_project() {
   for (( index = hook_start; index < ${#fields}; index += 2 )); do
     SF_HOOK_COUNTS[$fields[index]]=$fields[index+1]
   done
-  local id=${SF_SESSION_PATH:t}
   SF_SESSION=(
     runtime "$fields[1]"
-    id "${id%.jsonl}"
     cwd "$fields[2]"
     model "$fields[3]"
     turn_id "$fields[4]"

@@ -170,13 +170,12 @@ jq -eRn '
 ' <"$cancel_stream" >/dev/null
 (( $(wc -l <"$cancel_session") == records )) ||
   fail 'pre-commit cancellation appended a recovery record'
-# Process exit sweeps transient turn and hook files. Session state remains.
+# Process exit sweeps invocation-scoped temporary files.
 typeset cancel_root="$cancel_temp/shellfish-$EUID"
 typeset category
 typeset -a cancel_leftovers=()
-for category in turns hooks tools backends transport; do
+for category in turns hooks tools tooltemps backends transport; do
   cancel_leftovers+=( "$cancel_root/$category"/*(N) )
 done
 (( ! ${#cancel_leftovers} )) ||
   fail "cancelled turn left temporary files: ${(j:, :)cancel_leftovers:t}"
-[[ -d $cancel_root/sessions/prompt-cancel ]]

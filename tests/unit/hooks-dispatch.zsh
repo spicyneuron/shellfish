@@ -188,14 +188,14 @@ functions -c sf_hooks_capture_real sf_hooks_capture_one
 unfunction sf_hooks_capture_real
 
 # Prepared stdin and argv reach scripts without newline insertion or shell parsing.
-make_script invocation 'print -rn -- "$#|$1|$2|$3|"; cat; print -rn -- "|$PWD|$SHELLFISH_SESSION|$SHELLFISH_MAX_CAPTURE_BYTES|$SHELLFISH_TURN_STATE|$SHELLFISH_SESSION_STATE|$SHELLFISH_SESSION_ID|$SHELLFISH_MODEL|$0|${0:A:h}"'
+make_script invocation 'print -rn -- "$#|$1|$2|$3|"; cat; print -rn -- "|$PWD|$SHELLFISH_SESSION|$SHELLFISH_MAX_CAPTURE_BYTES|$SHELLFISH_TURN_STATE|$SHELLFISH_MODEL|$0|${0:A:h}"'
 typeset invocation=$script
 typeset working="$tmp/working" session="$tmp/session.jsonl" state
 mkdir "$working"
 working=${working:A}
 : >"$session"
 print -rn -- $'first\nsecond\n' >"$input"
-typeset -gA SF_SESSION=(id session-id model model-name cwd "$working" \
+typeset -gA SF_SESSION=(model model-name cwd "$working" \
   runtime '{"backend":{"environment":[],"env_file":""},"harness":{"tools":[]}}')
 typeset -g SHELLFISH_TURN_ID=1
 sf_hooks_turn_state_create
@@ -204,9 +204,8 @@ state=$SHELLFISH_TURN_STATE
 print -n shared >"$state/marker"
 sf_hooks_invoke "$session" "$working" "$input" 4096 0 3 stop '' $'line\nbreak' \
   "$invocation" '[]' || fail "$SF_HOOK_ERROR"
-typeset expected="3|stop||"$'line\nbreak|first\nsecond\n'"|$working|${session:A}|4096|$state|$SHELLFISH_SESSION_STATE|session-id|model-name|$invocation|${invocation:A:h}"
+typeset expected="3|stop||"$'line\nbreak|first\nsecond\n'"|$working|${session:A}|4096|$state|model-name|$invocation|${invocation:A:h}"
 assert_equal "$expected" "$SF_HOOK_SCRIPT_RESULTS[3]"
-assert_equal 700 "$(stat -f %Lp "$SHELLFISH_SESSION_STATE")"
 [[ $(cat "$state/marker") == shared ]]
 [[ $PWD == $original_directory ]]
 make_script hook_only 'print -rn -- "$#|$1|"; cat'
@@ -220,14 +219,10 @@ sf_hooks_invoke "$session" "$working" "$input" 512 0 1 stop "$hook_only" '[]'
 : >"$empty"
 sf_hooks_invoke "$session" "$working" "$empty" 512 0 1 stop "$hook_only" '[]'
 [[ $SF_HOOK_SCRIPT_RESULTS[3] == '1|stop|' ]]
-typeset session_state=$SHELLFISH_SESSION_STATE
-print -n persistent >"$session_state/marker"
 sf_hooks_turn_state_cleanup
 [[ -z $SHELLFISH_TURN_STATE && ! -e $state ]]
-SHELLFISH_SESSION_STATE=''
 sf_hooks_turn_state_create
 typeset next_state=$SHELLFISH_TURN_STATE
-[[ $SHELLFISH_SESSION_STATE == $session_state && $(<$session_state/marker) == persistent ]]
 [[ $next_state != $state && -d $next_state ]]
 
 # A hook receives its selected environment and not names selected by other components.

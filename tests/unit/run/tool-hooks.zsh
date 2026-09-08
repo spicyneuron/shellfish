@@ -35,8 +35,8 @@ cat >"$post_observe" <<'ZSH'
 #!/usr/bin/env zsh
 set -e
 [[ $# == 1 && $1 == post_tool_use ]]
-[[ $SHELLFISH_TURN_ID == 1 && $SHELLFISH_SESSION_ID == tool-observe &&
-  $SHELLFISH_MODEL == test-model && $0 == /* && -d ${0:A:h} ]]
+[[ $SHELLFISH_TURN_ID == 1 && $SHELLFISH_MODEL == test-model &&
+  $0 == /* && -d ${0:A:h} ]]
 input=$(cat)
 call_id=$(jq -r '.tool_use_id' <<<"$input")
 print -rn -- "$input" >"$TEST_OUTPUT_DIR/post-$call_id"
@@ -89,8 +89,8 @@ cat >"$pre_deny" <<'ZSH'
 #!/usr/bin/env zsh
 call_id=$(jq -r '.tool_use_id')
 print -r -- "$call_id" >>"$TEST_OUTPUT_DIR/pre-calls"
-[[ $SHELLFISH_TURN_ID == 1 && $SHELLFISH_SESSION_ID == tool-deny(|-fallback) &&
-  $SHELLFISH_MODEL == test-model && $0 == /* && -d ${0:A:h} ]] || exit 1
+[[ $SHELLFISH_TURN_ID == 1 && $SHELLFISH_MODEL == test-model &&
+  $0 == /* && -d ${0:A:h} ]] || exit 1
 [[ $call_id != call_2 ]] || { [[ -n $NO_FEEDBACK ]] || print -rn -- 'first reason'; exit 10; }
 ZSH
 chmod +x "$pre_deny"
