@@ -8,9 +8,8 @@ export XDG_STATE_HOME="$tmp/state"
 sf_test_runtime
 export SF_TEST_BACKEND_DELAY=0
 
-# Cancelling an executing tool signals the tool process and uses ordinary turn
-# recovery. Shellfish does not hunt descendants, so the command stops only
-# because the shell tool traps the signal and stops it. See docs/CURSED.md.
+# Cancelling an executing tool signals its process group and uses ordinary turn
+# recovery.
 typeset cancel_session="$tmp/tool-cancel.jsonl"
 typeset cancel_stream="$tmp/tool-cancel.stream"
 typeset marker="$tmp/tool-active" exit_marker="$tmp/tool-exit"
@@ -37,6 +36,31 @@ print -r -- "$(<"$cancel_stream")" | jq -eRn '
   }] and $events[-1] == {type:"turn_error",message:"Turn interrupted."}
 ' >/dev/null
 assert_canonical_session "$cancel_session"
+
+# Descendants share the isolated group even when the command creates more than
+# one generation of processes.
+typeset tree_session="$tmp/tool-tree.jsonl" tree_stream="$tmp/tool-tree.stream"
+typeset tree_marker="$tmp/tool-tree-active" tree_pid_file="$tmp/tool-tree-pid"
+typeset tree_command="(sleep 30 & print -r -- \\$! >${(q)tree_pid_file}; wait) & : >${(q)tree_marker}; wait"
+sf_test_session "$tree_session"
+SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_COMMAND="$tree_command" \
+  "$ROOT/bin/shellfish" run --jsonl --session "$tree_session" \
+    < <(print -r -- '{"type":"message","role":"user","content":[{"type":"text","text":"cancel tree"}]}') \
+    >"$tree_stream" &
+pid=$!
+cancel_status=0
+waited=0
+while (( waited++ < 50 )) && [[ ! -s $tree_pid_file ]]; do
+  sleep 0.1
+done
+(( waited <= 50 )) || fail 'tool grandchild did not start'
+integer tree_pid tree_polls=0
+tree_pid=$(<"$tree_pid_file")
+kill -TERM "$pid"
+wait "$pid" || cancel_status=$?
+(( cancel_status == 143 )) || fail 'cancelled tree exec returned the wrong status'
+while (( tree_polls++ < 50 )) && kill -0 "$tree_pid" 2>/dev/null; do sleep 0.01; done
+! kill -0 "$tree_pid" 2>/dev/null || fail 'cancelled tool grandchild survived'
 
 # Cancellation escalates to KILL, and a command that ignores TERM and keeps the
 # capture pipes open cannot hold the turn open with it.
