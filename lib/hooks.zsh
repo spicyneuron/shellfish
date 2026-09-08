@@ -5,6 +5,8 @@ zmodload zsh/system
 (( $+functions[sf_jq] )) || source "$SF_ROOT/lib/jq.zsh"
 (( $+functions[sf_scratch_category] )) || source "$SF_ROOT/lib/scratch.zsh"
 (( $+functions[sf_environment_prepare] )) || source "$SF_ROOT/lib/environment.zsh"
+(( $+functions[sf_process_capture] )) || source "$SF_ROOT/lib/process.zsh"
+(( $+functions[sf_state_control_decode] )) || source "$SF_ROOT/lib/state.zsh"
 
 typeset -g SF_HOOK_ERROR=''
 typeset -g SF_HOOK_JSONL=0
@@ -17,7 +19,6 @@ typeset -g SHELLFISH_TURN_STATE=${SHELLFISH_TURN_STATE-}
 typeset -g SHELLFISH_SESSION_STATE=${SHELLFISH_SESSION_STATE-}
 typeset -g SHELLFISH_TURN_ID=${SHELLFISH_TURN_ID-}
 typeset -g SF_HOOK_NAME=''
-typeset -g SF_HOOK_SCRIPT_PID=''
 # Cancellation takes its pending exit at the first nested return, so cleanup
 # written after that point never runs. These name the paths this process made,
 # never an inherited one, and zshexit removes whatever a cancelled turn left.
@@ -76,6 +77,10 @@ sf_hooks_display() {
     '{type:"_notice",level:"info",title:$script,source:$hook,text:.,complete:$complete}'
 }
 
+sf_hooks_display_preview() {
+  sf_hooks_display "$SF_HOOK_NAME" "$SF_HOOK_SCRIPT" "$1" false
+}
+
 sf_hooks_capture_one() {
   local script=$1 input=$2 directory=$3
   setopt local_options no_monitor
@@ -84,18 +89,13 @@ sf_hooks_capture_one() {
   shift 6
   local -a arguments=( "${(@)argv[1,argument_count]}" )
   local -a environment=( env )
-  local context="$directory/current-context"
-  local display="$directory/current-display"
-  local display_pipe="$directory/current-display-pipe"
-  local control="$directory/current-control"
   local hook=$SF_HOOK_NAME name value
-  local chunk notice=''
+  local SF_HOOK_SCRIPT=$script
   local -a fixed_names=(
     SHELLFISH_SESSION SHELLFISH_SESSION_STATE SHELLFISH_MAX_CAPTURE_BYTES
     SHELLFISH_SESSION_ID SHELLFISH_MODEL SHELLFISH_EXECUTABLE SHELLFISH_MODE
     SHELLFISH_VERBOSE SHELLFISH_CONFIG_DIR SHELLFISH_TURN_ID SHELLFISH_TURN_STATE
   )
-  integer script_status display_fd display_bytes=0 notice_sent=0
   local LC_ALL=C
 
   [[ -n $hook ]] || {
@@ -118,61 +118,11 @@ sf_hooks_capture_one() {
     environment+=( "$name=${(P)name}" )
   done
 
-  rm -f -- "$context" "$display" "$display_pipe" "$control"
-  mkfifo "$display_pipe" || {
-    sf_hooks_fail 'cannot prepare hook display capture'
-    return
-  }
-  "${environment[@]}" "$script" "${arguments[@]}" \
-    <"$input" >"$context" 2>"$display_pipe" 3>"$control" &
-  integer script_pid=$!
-  SF_HOOK_SCRIPT_PID=$script_pid
-  exec {display_fd}<"$display_pipe" || {
-    kill -KILL -- "-$script_pid" 2>/dev/null || kill -KILL "$script_pid" 2>/dev/null || true
-    wait "$script_pid" 2>/dev/null || true
-    SF_HOOK_SCRIPT_PID=''
-    sf_hooks_fail 'cannot read hook display capture'
-    return
-  }
-  : >"$display" || {
-    exec {display_fd}<&-
-    kill -KILL -- "-$script_pid" 2>/dev/null || kill -KILL "$script_pid" 2>/dev/null || true
-    wait "$script_pid" 2>/dev/null || true
-    SF_HOOK_SCRIPT_PID=''
-    sf_hooks_fail 'cannot prepare hook display capture'
-    return
-  }
-  while sysread -i $display_fd -s 4096 chunk; do
-    print -rn -- "$chunk" >>"$display" || {
-      exec {display_fd}<&-
-      kill -KILL -- "-$script_pid" 2>/dev/null || kill -KILL "$script_pid" 2>/dev/null || true
-      wait "$script_pid" 2>/dev/null || true
-      SF_HOOK_SCRIPT_PID=''
-      sf_hooks_fail 'cannot write hook display capture'
+  sf_process_capture "$input" "$directory" "$PWD" separate sf_hooks_display_preview \
+    $max_capture "${environment[@]}" "$script" "${arguments[@]}" || {
+      sf_hooks_fail 'cannot capture hook script output'
       return
     }
-    (( display_bytes += ${#chunk} ))
-    if (( ! notice_sent )); then
-      notice+=$chunk
-      if [[ $notice == *$'\n'* ]] && (( display_bytes <= max_capture )); then
-        notice=${notice%%$'\n'*}$'\n'
-        sf_hooks_display "$hook" "$script" "$notice" false || {
-          exec {display_fd}<&-
-          kill -KILL -- "-$script_pid" 2>/dev/null || kill -KILL "$script_pid" 2>/dev/null || true
-          wait "$script_pid" 2>/dev/null || true
-          SF_HOOK_SCRIPT_PID=''
-          sf_hooks_fail 'cannot emit hook display'
-          return
-        }
-        notice_sent=1
-      fi
-    fi
-  done
-  exec {display_fd}<&-
-  wait "$script_pid"
-  script_status=$?
-  SF_HOOK_SCRIPT_PID=''
-  reply=( "$script_status" "$context" "$display" "$control" )
 }
 
 sf_hooks_dispatch() {
@@ -251,35 +201,17 @@ sf_hooks_dispatch() {
         *) control_error="hook script failed with status $script_status: $script${script_display:+: $script_display}" ;;
       esac
       if [[ -z $control_error ]] && (( control_size )); then
-        script_control=$(jq -cse '
-          if length == 1 and (.[0] | type == "object") then .[0]
-          else error("expected one object") end
-        ' "$result[4]" 2>/dev/null) ||
-          control_error='hook script returned malformed control data'
-        if [[ -z $control_error ]]; then
-          decoded=( "${(@f)$(sf_jq -nc --argjson control "$script_control" '
-            include "lib/runtime/schema";
-            if $control | if has("state") then
-                .state | type == "array" and all(.[];
-                  type == "object" and keys == ["name", "value"] and
-                  ({type:"state"} + . | canonical_state))
-              else true end
-            then
-              ($control |
-                if has("state") then
-                  del(.state) | if length == 0 then null else . end
-                else . end),
-              ($control.state[]? | {type:"state"} + .)
-            else error("invalid state control") end
-          ' 2>/dev/null)}" ) ||
+        sf_state_control_decode "$result[4]" || {
+          if [[ $REPLY == malformed ]]; then
+            control_error='hook script returned malformed control data'
+          else
             control_error="hook script returned invalid state control: $script"
-        fi
-        if [[ -z $control_error ]]; then
-          script_control=$decoded[1]
-          [[ $script_control != null ]] || script_control=''
-          if (( ${#decoded} > 1 )); then
-            states+=( "${(@)decoded[2,-1]}" )
           fi
+        }
+        if [[ -z $control_error ]]; then
+          decoded=( "${reply[@]}" )
+          script_control=$decoded[2]
+          (( ${#decoded} <= 2 )) || states+=( "${(@)decoded[3,-1]}" )
         fi
       fi
       if [[ -z $control_error && -n $script_control ]] && (( ! allow_control )); then

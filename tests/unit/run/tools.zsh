@@ -136,6 +136,78 @@ sf_test_tool_execute "$(jq -cn --arg command "printf '%070d' 0" \
 jq -e '(.content | length) == 64 and (.content | startswith("[output truncated]\n"))' \
   <<<"$REPLY" >/dev/null
 
+# Tool control accepts state only. Its exact bytes reduce the ordinary
+# output budget, and a nonzero tool exit still returns its state.
+typeset state_tool="$tmp/state-tool" state_runtime control
+cat >"$state_tool" <<'ZSH'
+#!/usr/bin/env zsh
+command=$(jq -r '.command' <&0) || exit 2
+case $command in
+  valid)
+    printf '%0100d' 0
+    print -rn -u3 -- '{"state":[{"name":"tools/result","value":7}]}'
+    exit 7
+    ;;
+  empty)
+    print -rn -- empty
+    print -rn -u3 -- '{"state":[]}'
+    ;;
+  malformed)
+    print -rn -u3 -- '{'
+    ;;
+  extra)
+    print -rn -u3 -- '{"action":"bad","state":[]}'
+    ;;
+  overflow)
+    printf '%0100d' 0 >&3
+    ;;
+esac
+ZSH
+chmod +x "$state_tool"
+state_runtime=$(jq -c --arg command "$state_tool" '
+  .harness.tools[0].command=$command
+' <<<"$stored_runtime") || fail 'cannot prepare state tool runtime'
+load_tools "$state_runtime"
+tool_max_capture=96
+control='{"state":[{"name":"tools/result","value":7}]}'
+sf_test_tool_execute '{"id":"state_1","name":"shell","input":{"command":"valid"}}' 0
+jq -e --argjson length "$(( tool_max_capture - ${#control} ))" '
+  .exit_code == 7 and (.content | length) == $length and
+  (.content | startswith("[output truncated]\n"))
+' <<<"$REPLY" >/dev/null || fail 'tool control did not reserve the result budget'
+[[ ${(pj:\n:)SF_TOOL_STATE_RECORDS} == \
+  '{"type":"state","name":"tools/result","value":7}' ]] ||
+  fail 'tool state was not returned canonically'
+sf_test_tool_execute '{"id":"state_empty","name":"shell","input":{"command":"empty"}}' 0
+jq -e '.exit_code == 0 and .content == "empty"' <<<"$REPLY" >/dev/null ||
+  fail 'tool rejected an empty state array'
+[[ ${#SF_TOOL_STATE_RECORDS} == 0 ]]
+
+typeset invalid_control
+for invalid_control in malformed extra; do
+  if sf_test_tool_execute "$(jq -cn --arg command "$invalid_control" \
+      '{id:"invalid_control",name:"shell",input:{command:$command}}')" 0; then
+    fail "tool accepted $invalid_control control"
+  fi
+  [[ ${#SF_TOOL_STATE_RECORDS} == 0 && -z $REPLY ]] ||
+    fail "failed $invalid_control control returned tool state or a result"
+done
+tool_max_capture=32
+if sf_test_tool_execute \
+    '{"id":"control_limit","name":"shell","input":{"command":"overflow"}}' 0; then
+  fail 'tool accepted control beyond its capture budget'
+fi
+[[ $SF_TOOL_ERROR == 'tool control data exceeds capture limit' ]]
+
+# The bundled shell closes tool control before launching model-authored code.
+load_tools "$stored_runtime"
+sf_test_tool_execute "$(jq -cn --arg command \
+  'print -rn -u3 -- leaked 2>/dev/null; print -rn -- closed' \
+  '{id:"closed_control",name:"shell",input:{command:$command}}')" 0
+jq -e '.exit_code == 0 and .content == "closed"' <<<"$REPLY" >/dev/null ||
+  fail 'the bundled shell exposed tool control to its child command'
+[[ ${#SF_TOOL_STATE_RECORDS} == 0 ]]
+
 # Timeout terminates the command and returns the canonical timeout result.
 sf_test_tool_execute "$(jq -cn \
   '{id:"timeout_1",name:"shell",input:{command:"sleep 5",timeout:1}}')" 0
@@ -270,7 +342,7 @@ jq -e --arg temp "$tool_temp" --arg session "$session" \
   --arg executable "$ROOT/bin/shellfish" '
     .content == ($temp + "|" + $temp + "/zsh|" + $session + "|" + $executable)
   ' <<<"$REPLY" >/dev/null
-(( $(grep -Fxc -- '--expose-host-path-rw' "$tmp/fence.args") == 1 + native_grant ))
+(( $(grep -Fxc -- '--expose-host-path-rw' "$tmp/fence.args") == 2 + native_grant ))
 grep -Fx -- "$tool_temp" "$tmp/fence.args" >/dev/null
 (( ! native_grant )) || grep -Fx -- "$native_temp" "$tmp/fence.args" >/dev/null
 assert_equal "${LANG:-C}" "$(<"$tmp/fence.lang")"
@@ -298,7 +370,7 @@ grep -Fx -- "$tool_dir/fence.jsonc" "$tmp/fence.settings" >/dev/null
 grep -Fx -- "$tool_dir/run" "$tmp/fence.args" >/dev/null
 grep -Fx -- "$tmp/read dir" "$tmp/fence.args" >/dev/null
 grep -Fx -- "$tmp/read file" "$tmp/fence.args" >/dev/null
-(( $(grep -Fxc -- '--expose-host-path-rw' "$tmp/fence.args") == 3 + native_grant ))
+(( $(grep -Fxc -- '--expose-host-path-rw' "$tmp/fence.args") == 4 + native_grant ))
 grep -Fx -- "$tool_temp" "$tmp/fence.args" >/dev/null
 (( ! native_grant )) || grep -Fx -- "$native_temp" "$tmp/fence.args" >/dev/null
 grep -Fx -- "$tmp/write dir" "$tmp/fence.args" >/dev/null

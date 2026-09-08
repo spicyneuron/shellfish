@@ -44,7 +44,7 @@ trap cleanup EXIT
 # the tool retains a controlling terminal without owning its foreground group.
 {
   zsh -m -f -c 'exec zsh -f -c "$1" -- "$2"' -- \
-    'trap "" TTOU; exec zsh -f -c "$1"' "$command" 2>&1 &
+    'trap "" TTOU; exec zsh -f -c "$1"' "$command" 3>&- 2>&1 &
 } 2>/dev/null
 command_pid=$!
 zmodload zsh/datetime

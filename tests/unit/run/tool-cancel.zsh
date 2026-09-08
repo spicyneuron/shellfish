@@ -61,3 +61,40 @@ jq -eRn '
   ($events | map(select(.role == "tool_result") | .exit_code)) == [126] and
   $events[-1] == {type:"turn_error",message:"Turn interrupted."}
 ' <"$stubborn_stream" >/dev/null
+
+# State written before cancellation is discarded because the tool did not
+# complete normally.
+typeset state_tool="$tmp/state-tool" state_session="$tmp/tool-state.jsonl"
+typeset state_stream="$tmp/tool-state.stream" state_marker="$tmp/tool-state-active"
+cat >"$state_tool" <<'ZSH'
+#!/usr/bin/env zsh
+cat >/dev/null
+print -rn -u3 -- '{"state":[{"name":"tools/cancelled","value":true}]}'
+: >"$STATE_MARKER"
+trap 'exit 143' TERM
+while true; do sleep 1; done
+ZSH
+chmod +x "$state_tool"
+SF_TEST_RUNTIME=$(jq -c --arg command "$state_tool" '
+  .harness.tools[0].command=$command |
+  .harness.tools[0].manifest.environment=["STATE_MARKER"]
+' <<<"$SF_TEST_RUNTIME") || fail 'cannot prepare cancelled tool state runtime'
+sf_test_session "$state_session"
+STATE_MARKER="$state_marker" SF_TEST_BACKEND_TOOL_CALL=1 \
+  "$ROOT/bin/shellfish" run --jsonl --session "$state_session" \
+    < <(print -r -- '{"type":"message","role":"user","content":[{"type":"text","text":"cancel state tool"}]}') \
+    >"$state_stream" &
+pid=$!
+cancel_status=0
+waited=0
+while (( waited++ < 50 )) && [[ ! -e $state_marker ]]; do
+  sleep 0.1
+done
+(( waited <= 50 )) || fail 'state tool did not start'
+kill -TERM "$pid"
+wait "$pid" || cancel_status=$?
+(( cancel_status == 143 )) || fail 'cancelled state tool returned the wrong status'
+jq -eRn '[inputs | fromjson] | all(.type != "state")' <"$state_stream" >/dev/null ||
+  fail 'cancelled tool state was emitted'
+jq -e -s 'all(.type != "state")' "$state_session" >/dev/null ||
+  fail 'cancelled tool state became durable'

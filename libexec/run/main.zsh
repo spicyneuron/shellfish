@@ -146,11 +146,15 @@ sf_run_main() {
   # USR1 is the client's cancellation signal, aimed at this process alone.
   trap 'SF_RUN[signal_status]=130; kill -TERM $$' INT USR1
   trap 'SF_RUN[signal_status]=129; kill -TERM $$' HUP
-  trap 'sf_run_interrupt; exit $SF_RUN[signal_status]' TERM
+  trap 'sf_run_interrupt; (( SF_PROCESS_CAPTURE_INTERRUPTED )) || exit $SF_RUN[signal_status]' TERM
   # Only a JSONL client can answer a permission request on stdin.
+  local run_status
   sf_run_turn "$input" "$session" "$jsonl" "$prompt"
-  local run_status=$?
+  run_status=$?
   trap - INT USR1 HUP TERM
+  if (( SF_RUN[interrupted] )); then
+    return $SF_RUN[signal_status]
+  fi
   if (( ! jsonl )) && [[ -n $SF_RUN[answer] ]]; then
     print -r -- "$SF_RUN[answer]"
   fi

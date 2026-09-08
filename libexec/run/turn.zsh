@@ -12,7 +12,7 @@ setopt no_aliases no_bg_nice no_multios pipe_fail
 (( $+functions[sf_process_stop] )) || source "$SF_ROOT/lib/process.zsh"
 
 typeset -gA SF_RUN=(
-  answer '' committed 0 jsonl 0 interrupted 0 permission_count 0 permission_available 0
+  answer '' committed 0 interrupted 0 permission_count 0 permission_available 0
   signal_status 143
 )
 
@@ -33,18 +33,12 @@ sf_run_hook() {
 
 sf_run_interrupt() {
   SF_RUN[interrupted]=1
-  SF_TOOL_INTERRUPTED=1
-  if [[ -n $SF_HOOK_SCRIPT_PID ]]; then
-    sf_process_stop "$SF_HOOK_SCRIPT_PID"
-    SF_HOOK_SCRIPT_PID=''
+  if [[ -n $SF_PROCESS_CAPTURE_PID ]]; then
+    sf_process_capture_stop
   fi
   if [[ -n $SF_REQUEST[pid] ]]; then
     sf_process_stop "$SF_REQUEST[pid]"
     SF_REQUEST[pid]=''
-  fi
-  if [[ -n $SF_TOOL_ACTIVE_PID ]]; then
-    sf_process_stop "$SF_TOOL_ACTIVE_PID"
-    SF_TOOL_ACTIVE_PID=''
   fi
 }
 
@@ -193,7 +187,7 @@ sf_run_turn_cleanup() {
 sf_run_turn() {
   local user_record=$1 session_path=$2 permission_available=${3:-0} prompt=$4
   local SF_HOOK_JSONL=$SF_RUN[jsonl]
-  local request assistant stop_input result backend_command opened_records
+  local request assistant stop_input result state backend_command opened_records
   local tool_name call_id tool_input execution_input bypass bypass_reason_valid
   local decision denial_reason hook_action hook_reason
   local runtime_projection response_projection response_field
@@ -493,6 +487,13 @@ sf_run_turn() {
             result=$REPLY
           fi
         fi
+        for state in "${SF_TOOL_STATE_RECORDS[@]}"; do
+          if ! sf_session_append "$state"; then
+            failure=$SF_SESSION_ERROR
+            return 1
+          fi
+          sf_run_emit "$state"
+        done
         if ! sf_session_append "$result"; then
           failure=$SF_SESSION_ERROR
           return 1

@@ -164,6 +164,35 @@ print -r -- "$stream" | jq -eRn '
   all($responses[]; length > 0 and . == [range(0; length)])
 ' >/dev/null
 
+# Tool state becomes durable and visible before its nonzero result.
+typeset state_tool="$tmp/state-tool" state_session="$tmp/state-session.jsonl"
+cat >"$state_tool" <<'ZSH'
+#!/usr/bin/env zsh
+cat >/dev/null
+print -rn -u3 -- '{"state":[{"name":"tools/turn","value":"recorded"}]}'
+print -rn -- failed
+exit 7
+ZSH
+chmod +x "$state_tool"
+SF_TEST_RUNTIME=$(jq -c --arg command "$state_tool" '
+  .harness.tools[0].command=$command
+' <<<"$base_runtime") || fail 'cannot prepare tool state runtime'
+sf_test_session "$state_session"
+stream=$(SF_TEST_BACKEND_TOOL_CALL=1 sf_test_turn 'record tool state' "$state_session")
+print -r -- "$stream" | jq -eRn '
+  [inputs | fromjson | select(.type == "state" or .role? == "tool_result")] ==
+    [{type:"state",name:"tools/turn",value:"recorded"},
+     {type:"message",role:"tool_result",call_id:"call_1",name:"shell",
+      content:"failed",exit_code:7,sandboxed:false}]
+' >/dev/null || fail 'tool state was not emitted before its result'
+jq -es '
+  [.[] | select(.type == "state" or .role? == "tool_result")] ==
+    [{type:"state",name:"tools/turn",value:"recorded"},
+     {type:"message",role:"tool_result",call_id:"call_1",name:"shell",
+      content:"failed",exit_code:7,sandboxed:false}]
+' "$state_session" >/dev/null || fail 'tool state was not durable before its result'
+SF_TEST_RUNTIME=$base_runtime
+
 # The first tool update after visible content marks a presentation boundary,
 # while the call itself remains hidden until the durable assistant record.
 print -r -- "$stream" | jq -eRn '

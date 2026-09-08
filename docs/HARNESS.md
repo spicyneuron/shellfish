@@ -33,6 +33,8 @@ For a new session, repeated `--system TEXT` and `--system-file PATH` inputs repl
 
 Tools are component directories with executable `run` files and JSON manifests. A manifest's optional `environment` array selects configuration values for that tool process. Tools otherwise start with a clean environment. The default harness enables sandboxing with [`fence`](https://github.com/fencesandbox/fence). Its policies constrain project and network access and deny common secret files. When a tool fails and sandbox monitoring reports a blocked action, the durable tool result records that fact for both the model and client presentation. Supported tool calls can request a one-time bypass in interactive clients. Headless execution denies requests that `permission_request` scripts do not decide.
 
+A tool may request durable state by writing one JSON object to fd 3: `{"state":[{"name":"tools/example","value":true}]}`. No other control fields are accepted. Shellfish validates and appends these records after the tool completes and before its durable result, including when the tool exits nonzero. Interrupted tools and tool orchestration failures commit no requested state. Tool wrappers must close fd 3 before launching model-authored or otherwise untrusted child commands; the bundled `shell` tool does so.
+
 Sandboxing applies to opted-in tools. Hook scripts and backend adapters are trusted executables and run with the user's permissions. See [Configuration](CONFIG.md#sandbox-grants) for persistent and one-off path grants.
 
 ### Session context
@@ -83,7 +85,7 @@ Compaction creates a sibling child named with a `_compact` suffix without changi
 
 ### Limits
 
-The bundled harness allows up to 100 provider requests per turn and 25 tool calls per provider response. Tool output is truncated to 32 KiB. Each hook script invocation has a separate 32 KiB budget across stdout, stderr, and fd 3; exceeding it fails the operation. These limits bound accidental loops and oversized context while leaving room for multi-step coding tasks.
+The bundled harness allows up to 100 provider requests per turn and 25 tool calls per provider response. Each tool has a 32 KiB budget shared by its fd-3 control and ordinary output. Control cannot be truncated; valid control uses its exact byte count and ordinary output is truncated to the remaining budget. Each hook script invocation has a separate 32 KiB budget across stdout, stderr, and fd 3; exceeding it fails the operation. These limits bound accidental loops and oversized context while leaving room for multi-step coding tasks.
 
 ## Build a focused harness
 

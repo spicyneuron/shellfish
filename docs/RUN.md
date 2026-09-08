@@ -93,6 +93,8 @@ Durable records are:
 
 A state record has exactly those three fields. Its name is an opaque string of at most 128 ASCII characters matching `^[A-Za-z0-9][A-Za-z0-9_.:/-]*$`. Its value may be any JSON value. The latest record for an exact name is effective, and `null` means the name has no effective value at that transcript position. State records do not affect conversation sequencing and are omitted from provider requests.
 
+Hook state is emitted before context or another durable hook outcome. Tool state is emitted after normal tool completion and before its durable result, including for a nonzero tool exit. Interrupted tools and tool orchestration failures emit no tool state.
+
 A sandboxed tool result includes `sandbox_denial_detected: true` when the tool exits non-zero and sandbox monitoring reports a denied action. The denial and non-zero exit are correlated signals; the denial is not necessarily the cause of the failure.
 
 Transient events currently include:

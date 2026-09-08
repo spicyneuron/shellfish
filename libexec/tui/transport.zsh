@@ -2,6 +2,7 @@ emulate -R zsh
 setopt no_aliases no_bg_nice no_multios pipe_fail
 
 (( $+functions[sf_jq] )) || source "$SF_ROOT/lib/jq.zsh"
+(( $+functions[sf_process_stop] )) || source "$SF_ROOT/lib/process.zsh"
 (( $+functions[sf_scratch_file] )) || source "$SF_ROOT/lib/scratch.zsh"
 
 typeset -ga SF_TUI_TRANSPORT_COMMAND=() SF_TUI_TRANSPORT_LINES=()
@@ -85,7 +86,9 @@ sf_tui_transport_signal() {
 }
 
 sf_tui_transport_stop() {
-  sf_tui_transport_signal
+  local pid=$SF_TUI_TRANSPORT_PID
+  SF_TUI_TRANSPORT_PID=''
+  sf_process_stop "$pid"
   sf_tui_transport_close || true
 }
 

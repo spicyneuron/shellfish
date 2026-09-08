@@ -20,7 +20,7 @@ sf_create_emit() {
 
 sf_create_interrupt() {
   local exit_status=$1
-  sf_process_stop "$SF_HOOK_SCRIPT_PID"
+  sf_process_capture_stop
   (( ! SF_CREATE_REMOVE_SESSION )) || rm -f -- "$SF_SESSION_PATH" 2>/dev/null
   exit $exit_status
 }
