@@ -13,7 +13,7 @@ Interactive chat is the default Shellfish mode. Run `shellfish` from your projec
 - `shellfish --clear` clears the terminal before the first render.
 - `shellfish --verbose` lifts all preview limits for the current chat, showing full reasoning, context, and tool output inline.
 
-A new session is created inside chat, and creation presents as a running turn: `session_start` hooks stream their display, a prompt submitted meanwhile joins the queue and is sent once the session exists, and `ctrl+c` cancels creation without saving a session.
+A new session is created inside chat, and creation presents as a running turn: `session_start` hooks stream their display, a prompt submitted meanwhile joins the queue and is sent once the session exists, and `ctrl+c` cancels creation and requests best-effort cleanup of the published session.
 
 Each session stores its resolved backend, harness, model, and sandbox settings. A fresh `shellfish` launch uses current configuration. `/new` reuses the active session's settings. Themes and TUI preview settings come from current configuration, so they affect how existing sessions are displayed.
 

@@ -169,7 +169,7 @@ Runs once after creation writes the session header and optional system record. I
 - **fd 3** accepts state.
 - **Default action** is finishing creation. Exit 10 or 11 is unsupported and fails session creation without committing hook output.
 
-If a creation script fails or is interrupted by a handled signal, Shellfish removes the new session and reports the failure. Scripts that perform external writes must provide their own idempotency if creation is retried.
+If a creation script fails or is interrupted by a handled signal, Shellfish reports the failure and attempts to remove the new session. This cleanup is best effort and is not guaranteed after abrupt termination. Scripts that perform external writes must provide their own idempotency if creation is retried.
 
 ```sh
 #!/bin/sh

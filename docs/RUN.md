@@ -19,9 +19,9 @@ shellfish create --session-out ./project-session.jsonl
 | `state`, `context` | Durable output from the successful `session_start` chain. |
 | `_session_created` | `path`, after startup hooks finish successfully. |
 
-Creation writes the header and optional system record before running hooks. A successful hook chain appends and emits state followed by context. An empty chain emits only the preparation and creation events. On failure, Shellfish removes the new session, reports diagnostics, exits nonzero, and emits no creation event. Clients must not submit a turn until creation exits successfully.
+Creation writes the header and optional system record before running hooks. A successful hook chain appends and emits state followed by context. An empty chain emits only the preparation and creation events. On startup failure, Shellfish attempts to remove the new session, reports diagnostics, exits nonzero, and emits no creation event. Cleanup is best effort; a valid published session is not removed merely because writing its events or final path to stdout fails. Clients must not submit a turn until creation exits successfully.
 
-As in a turn, `SIGUSR1` is the client's cancellation signal, aimed at the creating process alone so it can stop a running hook script itself. Cancelled creation exits nonzero and removes the new session.
+As in a turn, `SIGUSR1` is the client's cancellation signal, aimed at the creating process alone so it can stop a running hook script itself. Cancelled creation exits nonzero and attempts the same best-effort cleanup as other startup failures; abrupt termination can leave the published session behind.
 
 `--system TEXT` and `--system-file PATH` replace the configured or copied system prompt. Both flags are repeatable and may be mixed; their contents have trailing newlines stripped and are joined in command-line order with a blank line.
 

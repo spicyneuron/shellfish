@@ -6,7 +6,6 @@ setopt no_aliases no_bg_nice no_multios pipe_fail
 typeset -gr SF_ROOT=${0:A:h:h:h}
 typeset -gr SF_ENTRY="$SF_ROOT/bin/shellfish"
 typeset -g SF_CREATE_JSONL=0
-typeset -g SF_CREATE_REMOVE_SESSION=0
 
 sf_die() {
   print -u2 -r -- "shellfish: $*"
@@ -14,14 +13,13 @@ sf_die() {
 }
 
 sf_create_emit() {
-  (( SF_CREATE_JSONL )) && print -r -- "$1"
-  return 0
+  (( SF_CREATE_JSONL )) && print -r -- "$1" || true
 }
 
 sf_create_interrupt() {
   local exit_status=$1
   sf_process_capture_stop
-  (( ! SF_CREATE_REMOVE_SESSION )) || rm -f -- "$SF_SESSION_PATH" 2>/dev/null
+  rm -f -- "$SF_SESSION_PATH" 2>/dev/null
   exit $exit_status
 }
 
@@ -30,7 +28,6 @@ sf_create_session() {
   local SF_HOOK_JSONL=$SF_CREATE_JSONL
   typeset -gx SHELLFISH_MODE=create
   SF_SESSION_PATH=$session
-  SF_CREATE_REMOVE_SESSION=0
   if ! sf_session_prepare "$runtime"; then
     sf_die "$SF_SESSION_ERROR"
     return 1
@@ -40,10 +37,10 @@ sf_create_session() {
   fi
   printf '%s\n' "${SF_SESSION_RECORDS[@]}" |
     "$SF_ENTRY" install-session --session-out "$session" >/dev/null || return 1
-  SF_CREATE_REMOVE_SESSION=1
   if (( SF_CREATE_JSONL )) && ! printf '%s\n' "${SF_SESSION_RECORDS[@]}" | jq -cs \
       --arg path "$session" '{type:"_session_prepare",path:$path,records:.}'; then
-    error='cannot emit session preparation'
+    sf_die 'cannot emit session preparation'
+    return 1
   elif ! sf_hooks_session_start "$session"; then
     error=$SF_HOOK_ERROR
   elif ! sf_hooks_commit sf_create_emit; then
@@ -118,17 +115,10 @@ sf_create_main() {
   session=$REPLY
   sf_create_session "$session" "$runtime" "$system" || return 1
   if (( SF_CREATE_JSONL )); then
-    jq -cn --arg path "$session" '{type:"_session_created",path:$path}' || {
-      rm -f -- "$session" 2>/dev/null
-      return 1
-    }
+    jq -cn --arg path "$session" '{type:"_session_created",path:$path}' || return 1
   else
-    print -r -- "$session" || {
-      rm -f -- "$session" 2>/dev/null
-      return 1
-    }
+    print -r -- "$session" || return 1
   fi
-  SF_CREATE_REMOVE_SESSION=0
 }
 
 sf_create_main "$@"
