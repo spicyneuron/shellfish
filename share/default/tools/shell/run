@@ -29,23 +29,23 @@ timeout=$(print -rn -- "$encoded" | jq -er '.[1]') || {
 stop_process() {
   local pid=$1
   (( pid > 0 )) || return 0
-  kill -TERM -- "-$pid" 2>/dev/null || kill -TERM "$pid" 2>/dev/null || true
+  kill -TERM "$pid" 2>/dev/null || true
   sleep 0.1
-  kill -KILL -- "-$pid" 2>/dev/null || kill -KILL "$pid" 2>/dev/null || true
+  kill -KILL "$pid" 2>/dev/null || true
 }
 
+# Exiting from the TERM trap also runs the EXIT trap, so stopping is idempotent.
 cleanup() {
   stop_process "$command_pid"
+  command_pid=0
 }
 
+# An EXIT trap alone does not run on a signal, so cancellation needs its own.
+# Without it the command outlives the tool that Shellfish cancelled.
 trap cleanup EXIT
-# Monitor mode gives the command its own process group so cancellation reaches
-# its descendants. The command shell ignores background-terminal stops because
-# the tool retains a controlling terminal without owning its foreground group.
-{
-  zsh -m -f -c 'exec zsh -f -c "$1" -- "$2"' -- \
-    'trap "" TTOU; exec zsh -f -c "$1"' "$command" 3>&- 2>&1 &
-} 2>/dev/null
+trap 'cleanup; exit 143' TERM
+# fd 3 closes before the model-authored command runs so it cannot forge state.
+zsh -f -c "$command" 3>&- 2>&1 &
 command_pid=$!
 zmodload zsh/datetime
 typeset -F deadline=$(( EPOCHREALTIME + timeout ))

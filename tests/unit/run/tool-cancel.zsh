@@ -8,8 +8,9 @@ export XDG_STATE_HOME="$tmp/state"
 sf_test_runtime
 export SF_TEST_BACKEND_DELAY=0
 
-# Cancelling an executing tool terminates its process group and uses ordinary
-# turn recovery.
+# Cancelling an executing tool signals the tool process and uses ordinary turn
+# recovery. Shellfish does not hunt descendants, so the command stops only
+# because the shell tool traps the signal and stops it. See docs/CURSED.md.
 typeset cancel_session="$tmp/tool-cancel.jsonl"
 typeset cancel_stream="$tmp/tool-cancel.stream"
 typeset marker="$tmp/tool-active" exit_marker="$tmp/tool-exit"
@@ -37,7 +38,8 @@ print -r -- "$(<"$cancel_stream")" | jq -eRn '
 ' >/dev/null
 assert_canonical_session "$cancel_session"
 
-# Cancellation escalates when a tool ignores TERM instead of hanging indefinitely.
+# Cancellation escalates to KILL, and a command that ignores TERM and keeps the
+# capture pipes open cannot hold the turn open with it.
 typeset stubborn_session="$tmp/tool-stubborn.jsonl"
 typeset stubborn_stream="$tmp/tool-stubborn.stream"
 typeset stubborn_marker="$tmp/tool-stubborn-active"

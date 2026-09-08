@@ -77,12 +77,16 @@ sf_process_capture() {
   wait "$process_pid" 2>/dev/null
   process_status=$?
   SF_PROCESS_CAPTURE_PID=''
+  # A descendant outliving the process keeps the capture pipes open, so a
+  # cancelled turn stops its readers instead of waiting for an EOF that a
+  # process it no longer controls may never send.
+  (( ! SF_PROCESS_CAPTURE_INTERRUPTED )) || kill -TERM $readers 2>/dev/null
   for reader in $readers; do
     wait $reader || reader_status=1
   done
   rm -f -- "$stdout_pipe" "$stderr_pipe" "$control_pipe"
-  (( ! reader_status )) || return 1
   (( ! SF_PROCESS_CAPTURE_INTERRUPTED )) || return 130
+  (( ! reader_status )) || return 1
   reply=( "$process_status" "$stdout" "$stderr" "$control" )
 }
 
@@ -91,50 +95,19 @@ sf_process_capture_stop() {
   sf_process_stop "$SF_PROCESS_CAPTURE_PID"
 }
 
+# Signals one process. Callers spawn without job control, so the target leads no
+# process group and its own descendants are its responsibility. See docs/CURSED.md.
 sf_process_stop() {
-  local pid=$1 target=$1 watchdog line owner child process
-  local -A child_map=()
-  local -a pending children=() fields branch
-  integer alive=0
+  local pid=$1 watchdog
   [[ -n $pid ]] || return 0
-
-  # A coprocess PID is not reliably its process-group ID in noninteractive zsh.
-  for line in "${(@f)$(ps -axo pid=,ppid= 2>/dev/null)}"; do
-    fields=( ${=line} )
-    (( ${#fields} == 2 )) || continue
-    child_map[$fields[2]]+=" $fields[1]"
-  done
-  pending=( "$pid" )
-  while (( ${#pending} )); do
-    owner=$pending[1]
-    pending[1]=()
-    branch=( ${=child_map[$owner]} )
-    for child in "${branch[@]}"; do
-      children=( "$child" "${children[@]}" )
-      pending+=( "$child" )
-    done
-  done
-  kill -TERM -- "-$pid" 2>/dev/null && target="-$pid" || true
-  for process in "${children[@]}" "$pid"; do
-    kill -TERM "$process" 2>/dev/null || true
-    kill -CONT "$process" 2>/dev/null || true
-  done
-  [[ $target == $pid ]] || kill -CONT -- "$target" 2>/dev/null || true
+  kill -TERM "$pid" 2>/dev/null || true
+  kill -CONT "$pid" 2>/dev/null || true
   {
     sleep 0.5
-    kill -KILL -- "$target" 2>/dev/null || kill -KILL "$pid" 2>/dev/null || true
-    for process in "${children[@]}"; do
-      kill -KILL "$process" 2>/dev/null || true
-    done
+    kill -KILL "$pid" 2>/dev/null || true
   } &
   watchdog=$!
   wait "$pid" 2>/dev/null || true
-  for process in "${children[@]}"; do
-    if kill -0 "$process" 2>/dev/null; then
-      alive=1
-      break
-    fi
-  done
-  (( alive )) || kill -TERM "$watchdog" 2>/dev/null || true
+  kill -TERM "$watchdog" 2>/dev/null || true
   wait "$watchdog" 2>/dev/null || true
 }
