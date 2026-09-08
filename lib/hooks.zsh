@@ -297,8 +297,8 @@ sf_hooks_dispatch() {
       [[ $script_name != run ]] || script_name=${script:h:t}
       if [[ -z $control_error && $hook == session_start ]] &&
           (( SF_HOOK_JSONL && script_status == 0 && context_size )); then
-        sf_hooks_context_record "$hook" "$script_name" "$script_context" \
-          "${script_control:-\{\}}" || control_error=$SF_HOOK_ERROR
+        sf_hooks_context_record "$hook" "$script_name" "$script_context" '{}' ||
+          control_error=$SF_HOOK_ERROR
         [[ -n $control_error ]] || preview=$REPLY
       fi
       if [[ -n $script_display || $preview != null ]]; then
