@@ -95,6 +95,9 @@ sf_request_run() {
         fi
         SF_REQUEST_PARTIAL_EVENTS+=( "$event" )
         ;;
+      settle)
+        "$emit" '{"type":"_assistant_settle"}'
+        ;;
       end)
         SF_REQUEST[result]=$(<&p)
         ended=1

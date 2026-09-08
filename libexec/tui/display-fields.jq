@@ -87,7 +87,7 @@ def durable_display_fields($replay; $tools):
       ["assistant", ([.content[] | select(.type == "text") | .text] | join("")),
        $reasoning, $reasoning_tokens]
     else empty end),
-    ["assistant_commit"],
+    ["assistant_settle"],
     (.content[] | select(.type == "tool_call") | . as $call |
       tool_call_display($tools) as $call_display |
       ["tool_call", .id,

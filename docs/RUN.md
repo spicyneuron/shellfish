@@ -101,12 +101,13 @@ Transient events currently include:
 | `_backend_request_start` | A provider request is starting. |
 | `_assistant_delta` | Incremental assistant text for live presentation. |
 | `_assistant_reasoning_delta` | Incremental reasoning text for live presentation. |
+| `_assistant_settle` | Marks visible assistant content ready to settle before a tool call. |
 | `_notice` | A user-facing notice: hook script output, or a failure before the turn was accepted. |
 | `_tool_permission_request` | A sandbox bypass needs a client decision. |
 | `_handoff` | A hook script asks a capable client to run `argv` after the turn exits cleanly. |
 | `_session_update` | A hook-requested update or model-context discovery changed the session; `runtime` is the resulting resolved runtime. |
 
-Text and reasoning deltas carry a zero-based content `index` and a zero-based `seq`. The index identifies the block's position in the later assistant content. The sequence is shared by both delta types and restarted for each provider response, so it orders visible events independently of block identity. Deltas are previews only. Consumers should render committed assistant and reasoning content from the later durable assistant record. Clients should treat unknown transient types as unsupported protocol input and recover from the durable session rather than guessing their meaning.
+Text and reasoning deltas carry a zero-based content `index` and a zero-based `seq`. The index identifies the block's position in the later assistant content. The sequence is shared by both delta types and restarted for each provider response, so it orders visible events independently of block identity. `_assistant_settle` is emitted when the first tool-call update after visible deltas arrives. It lets clients settle that visible content, but does not expose the partial tool call; the call remains unavailable until its durable assistant record. Deltas are previews only. Consumers should render committed assistant and reasoning content from the later durable assistant record. Clients should treat unknown transient types as unsupported protocol input and recover from the durable session rather than guessing their meaning.
 
 Notices have the shape `{type:"_notice",level,title,source,text,complete}`. The level is `info` or `error`. The source attributes the notice, and is empty when there is no attribution. Hook scripts opt into display through stderr: the first newline-terminated line opens an informational notice titled with the script path and attributed to the hook, with `complete:false`. The script's full stderr replaces it with `complete:true` after capture checks succeed. A script that writes no newline emits only the complete notice. Silent hooks emit no activity notices. An interrupted invocation or rejected capture may end without completion, so clients must discard an incomplete notice when the stream fails, ends, or is replayed. Failures are complete error notices.
 

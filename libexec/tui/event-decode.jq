@@ -6,6 +6,8 @@ def event_fields($event_runtime):
     ["assistant_delta", .text]
   elif .type == "_assistant_reasoning_delta" then
     ["assistant_reasoning_delta", .text]
+  elif . == {type:"_assistant_settle"} then
+    ["assistant_settle"]
   elif . == {type:"_backend_request_start"} then
     ["backend_request_start"]
   elif .type == "_notice" and

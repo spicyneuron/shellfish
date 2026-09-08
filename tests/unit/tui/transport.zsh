@@ -29,7 +29,7 @@ sf_tui_transport_next null
 assert_equal 'turn_usage,2 ↑ 1 ↓,,,,,' "${(j:,:)reply}"
 sf_tui_transport_has_pending || fail 'decoded transport tail was not pending'
 sf_tui_transport_next null
-assert_equal 'assistant_commit,,,,,,' "${(j:,:)reply}"
+assert_equal 'assistant_settle,,,,,,' "${(j:,:)reply}"
 if sf_tui_transport_has_pending; then
   fail 'decoded transport batch remained pending'
 fi
@@ -47,7 +47,7 @@ assert_equal "session_update,$updated_runtime,,,,," "${(j:,:)reply}"
 sf_tui_transport_next "$updated_runtime"
 assert_equal 'turn_usage,75 ↑ 5 ↓ 38% of 200 ◔,,,,,' "${(j:,:)reply}"
 sf_tui_transport_next "$updated_runtime"
-assert_equal 'assistant_commit,,,,,,' "${(j:,:)reply}"
+assert_equal 'assistant_settle,,,,,,' "${(j:,:)reply}"
 
 # A batch is accepted atomically; malformed trailing input exposes no prefix.
 SF_TUI_TRANSPORT_LINES=(
