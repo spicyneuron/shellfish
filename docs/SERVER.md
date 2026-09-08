@@ -57,16 +57,16 @@ The server binds to loopback by default. A non-loopback address produces a warni
 The browser opens an authenticated `GET /session`. Each connection receives:
 
 1. The complete durable transcript as it currently stands.
-2. A server-owned `_state` frame marking the end of replay.
+2. A server-owned `_session_status` frame marking the end of replay.
 3. Records and transient events from the active turn.
 
-The `_state` frame has this shape:
+The `_session_status` frame has this shape:
 
 ```json
-{"type":"_state","working":true}
+{"type":"_session_status","working":true}
 ```
 
-`working` reports whether a turn is active. The live `_state` frame that ends a failed turn also carries an `error` field. A cancelled turn exits nonzero by design and is not reported as a failure; its own `turn_error` record states the outcome.
+`working` reports whether a turn is active. The live `_session_status` frame that ends a failed turn also carries an `error` field. A cancelled turn exits nonzero by design and is not reported as a failure; its own `turn_error` record states the outcome.
 
 Reopening `/session` is the only recovery mechanism. It starts another complete replay rather than resuming from an event ID. The endpoint may briefly return `503 Service Unavailable` while a live stream catches up with the session file. Clients should retry.
 
@@ -75,6 +75,8 @@ Only one browser may be attached. A second connection receives `409 Conflict`. A
 Frames are SSE `data:` lines containing one JSON object each, plus `: keepalive` comments. Authentication requires an SSE-capable `fetch` implementation because the browser's native `EventSource` cannot set the authorization header.
 
 Types beginning with an underscore are transient, whether they come from the turn or from the server. Other turn objects are durable session records. Text and reasoning deltas share a zero-based `seq` that restarts for each provider response. The bundled browser ignores those deltas and their settle event and renders the later durable assistant record.
+
+Durable `state` records remain in replay and live streams, but the bundled browser validates and ignores them. They do not create transcript sections or other visible output.
 
 The bundled browser replaces the current incomplete `_notice` with its completed text, leaving the completed notice visible. A turn end, stream failure, or replay discards any incomplete notice with the rest of the uncertain transient state. A durable `turn_error` renders as an error notice, titled by the first line of its message, and ends the current section without taking a section number.
 

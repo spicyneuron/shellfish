@@ -20,6 +20,7 @@ const testAccessCode = "123456"
 
 const userRecord = `{"type":"message","role":"user","content":[{"type":"text","text":"go"}]}`
 const assistantRecord = `{"type":"message","role":"assistant","stop":"end","content":[{"type":"text","text":"done"}]}`
+const stateRecord = `{"type":"state","name":"agents/a1b2c3","value":{"session":".agent-a1b2c3.jsonl"}}`
 
 func workDir(t *testing.T) string {
 	t.Helper()
@@ -280,15 +281,20 @@ func TestNewRejectsInvalidSessionHeader(t *testing.T) {
 	}
 }
 
-// A connection replays the durable session, closes it with a state frame, then
-// forwards what the child emits. The client sees no other ordering.
-func TestReplayThenStateThenLive(t *testing.T) {
+// A connection replays the durable session, closes it with a session-status
+// frame, then forwards what the child emits. Durable state counts toward the
+// live stream handoff and remains present on replay.
+func TestReplayThenSessionStatusThenLive(t *testing.T) {
 	recorded := filepath.Join(t.TempDir(), "input")
+	release := filepath.Join(t.TempDir(), "release")
 	sessionPath := newSession(t, "")
 	base := newTestServer(t, sessionPath, `
 IFS= read -r input
 printf '%s\n' "$input" >'`+recorded+`'
 printf '%s\n' '{"type":"_assistant_delta","text":"do","seq":0}'
+printf '%s\n' '`+stateRecord+`' >>'`+sessionPath+`'
+printf '%s\n' '`+stateRecord+`'
+`+waitFor(release)+`
 printf '%s\n' '`+userRecord+`' >>'`+sessionPath+`'
 printf '%s\n' '`+userRecord+`'
 printf '%s\n' '`+assistantRecord+`' >>'`+sessionPath+`'
@@ -296,18 +302,29 @@ printf '%s\n' '`+assistantRecord+`'
 `)
 	session := openStream(t, base, http.StatusOK)
 	session.expectRaw(t, strings.TrimSuffix(headerLine(t), "\n"))
-	session.expectJSON(t, `{"type":"_state","working":false}`)
+	session.expectJSON(t, `{"type":"_session_status","working":false}`)
 
 	post(t, base+"/turn", userRecord, http.StatusAccepted)
-	session.expectJSON(t, `{"type":"_state","working":true}`,
-		`{"type":"_assistant_delta","text":"do","seq":0}`, userRecord, assistantRecord,
-		`{"type":"_state","working":false}`)
+	session.expectJSON(t, `{"type":"_session_status","working":true}`,
+		`{"type":"_assistant_delta","text":"do","seq":0}`, stateRecord)
+
+	// Reattaching while the child is paused succeeds only if state advanced the
+	// server's durable record count.
+	session.body.Close()
+	session = openStream(t, base, http.StatusOK)
+	session.expectRaw(t, strings.TrimSuffix(headerLine(t), "\n"), stateRecord)
+	session.expectJSON(t, `{"type":"_session_status","working":true}`)
+	if err := os.WriteFile(release, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	session.expectJSON(t, userRecord, assistantRecord,
+		`{"type":"_session_status","working":false}`)
 
 	if got, err := os.ReadFile(recorded); err != nil || string(got) != userRecord+"\n" {
 		t.Fatalf("child input = %q (%v)", got, err)
 	}
 	if got, err := os.ReadFile(sessionPath); err != nil ||
-		string(got) != headerLine(t)+userRecord+"\n"+assistantRecord+"\n" {
+		string(got) != headerLine(t)+stateRecord+"\n"+userRecord+"\n"+assistantRecord+"\n" {
 		t.Fatalf("session = %q (%v)", got, err)
 	}
 }
@@ -344,11 +361,11 @@ func TestCancelCurrentTurn(t *testing.T) {
 
 	session := openStream(t, base, http.StatusOK)
 	session.expectRaw(t, strings.TrimSuffix(headerLine(t), "\n"))
-	session.expectJSON(t, `{"type":"_state","working":false}`)
+	session.expectJSON(t, `{"type":"_session_status","working":false}`)
 	post(t, base+"/turn", userRecord, http.StatusAccepted)
-	session.expectJSON(t, `{"type":"_state","working":true}`)
+	session.expectJSON(t, `{"type":"_session_status","working":true}`)
 	post(t, base+"/cancel", "", http.StatusNoContent)
-	session.expectJSON(t, `{"type":"_state","working":false}`)
+	session.expectJSON(t, `{"type":"_session_status","working":false}`)
 	post(t, base+"/cancel", "", http.StatusConflict)
 }
 
@@ -368,19 +385,19 @@ printf '%s\n' "$response" >'`+recorded+`'
 
 	session := openStream(t, base, http.StatusOK)
 	session.expectRaw(t, strings.TrimSuffix(headerLine(t), "\n"))
-	session.expectJSON(t, `{"type":"_state","working":false}`)
+	session.expectJSON(t, `{"type":"_session_status","working":false}`)
 	post(t, base+"/turn", userRecord, http.StatusAccepted)
-	session.expectJSON(t, `{"type":"_state","working":true}`, permissionRequest)
+	session.expectJSON(t, `{"type":"_session_status","working":true}`, permissionRequest)
 
 	// A reload replays the session and presents the request again.
 	session.body.Close()
 	session = openStream(t, base, http.StatusOK)
 	session.expectRaw(t, strings.TrimSuffix(headerLine(t), "\n"))
-	session.expectJSON(t, `{"type":"_state","working":true}`, permissionRequest)
+	session.expectJSON(t, `{"type":"_session_status","working":true}`, permissionRequest)
 
 	post(t, base+"/permission", decision, http.StatusNoContent)
 	post(t, base+"/permission", decision, http.StatusConflict)
-	session.expectJSON(t, `{"type":"_state","working":false}`)
+	session.expectJSON(t, `{"type":"_session_status","working":false}`)
 	if got, err := os.ReadFile(recorded); err != nil || string(got) != decision+"\n" {
 		t.Fatalf("child decision = %q (%v)", got, err)
 	}
@@ -402,9 +419,9 @@ func TestDrainCancelsPendingPermission(t *testing.T) {
 	session := openStream(t, server.URL, http.StatusOK)
 	defer session.body.Close()
 	session.expectRaw(t, strings.TrimSuffix(headerLine(t), "\n"))
-	session.expectJSON(t, `{"type":"_state","working":false}`)
+	session.expectJSON(t, `{"type":"_session_status","working":false}`)
 	post(t, server.URL+"/turn", userRecord, http.StatusAccepted)
-	session.expectJSON(t, `{"type":"_state","working":true}`, permissionRequest)
+	session.expectJSON(t, `{"type":"_session_status","working":true}`, permissionRequest)
 
 	select {
 	case <-service.beginDrain():
@@ -493,10 +510,10 @@ func TestInvalidEventTerminatesTurn(t *testing.T) {
 		"while :; do sleep 0.05; done\n")
 	session := openStream(t, base, http.StatusOK)
 	session.expectRaw(t, strings.TrimSuffix(headerLine(t), "\n"))
-	session.expectJSON(t, `{"type":"_state","working":false}`)
+	session.expectJSON(t, `{"type":"_session_status","working":false}`)
 	post(t, base+"/turn", userRecord, http.StatusAccepted)
-	session.expectJSON(t, `{"type":"_state","working":true}`,
-		`{"type":"_state","working":false,"error":"turn process failed"}`)
+	session.expectJSON(t, `{"type":"_session_status","working":true}`,
+		`{"type":"_session_status","working":false,"error":"turn process failed"}`)
 }
 
 func TestUnknownPath(t *testing.T) {

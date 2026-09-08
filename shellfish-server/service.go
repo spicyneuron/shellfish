@@ -139,8 +139,8 @@ func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 // streamSession is the client's whole view of the session and its only recovery
-// path. It replays the durable transcript, closes that replay with a _state frame,
-// then forwards what the child emits from there.
+// path. It replays the durable transcript, closes that replay with a
+// _session_status frame, then forwards what the child emits from there.
 func (s *Service) streamSession(w http.ResponseWriter, r *http.Request) {
 	flusher, ok := w.(http.Flusher)
 	if !ok {
@@ -219,10 +219,10 @@ func (s *Service) attach() (chan json.RawMessage, []json.RawMessage, error) {
 		return nil, nil, errStreamSettling
 	}
 	s.recordCount = len(records)
-	// The _state frame closes the replay: everything before it is durable history,
-	// everything after it is happening now. A pending permission request follows,
-	// so a client that reopened mid-turn can still answer it.
-	replay := append(records, stateFrame(s.turn != nil, ""))
+	// The _session_status frame closes the replay: everything before it is durable
+	// history, everything after it is happening now. A pending permission request
+	// follows, so a client that reopened mid-turn can still answer it.
+	replay := append(records, sessionStatusFrame(s.turn != nil, ""))
 	if s.pending != nil {
 		replay = append(replay, s.pending)
 	}
@@ -273,7 +273,7 @@ func (s *Service) postTurn(w http.ResponseWriter, r *http.Request) {
 	active := &turn{cancel: cancel, done: make(chan struct{}),
 		replies: make(chan json.RawMessage, 1)}
 	s.turn = active
-	s.publishLocked(stateFrame(true, ""))
+	s.publishLocked(sessionStatusFrame(true, ""))
 	s.mu.Unlock()
 
 	// The turn outlives the request that submitted it; everything it produces
@@ -295,7 +295,7 @@ func (s *Service) runTurn(ctx context.Context, active *turn, input json.RawMessa
 	}
 	s.turn = nil
 	s.pending = nil
-	s.publishLocked(stateFrame(false, failure))
+	s.publishLocked(sessionStatusFrame(false, failure))
 	s.mu.Unlock()
 	active.cancel()
 	close(active.done)
@@ -416,13 +416,13 @@ func readAction(w http.ResponseWriter, r *http.Request) (json.RawMessage, bool) 
 	return action, true
 }
 
-// stateFrame closes a replay and reports whether a turn is running.
-func stateFrame(working bool, failure string) json.RawMessage {
+// sessionStatusFrame closes a replay and reports whether a turn is running.
+func sessionStatusFrame(working bool, failure string) json.RawMessage {
 	frame, _ := json.Marshal(struct {
 		Type    string `json:"type"`
 		Working bool   `json:"working"`
 		Error   string `json:"error,omitempty"`
-	}{Type: "_state", Working: working, Error: failure})
+	}{Type: "_session_status", Working: working, Error: failure})
 	return frame
 }
 

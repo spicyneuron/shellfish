@@ -1,7 +1,7 @@
 // A browser client for one served session.
 //
 // The session stream is the whole model: it replays the durable transcript,
-// closes that replay with a _state frame, and then carries live exec events.
+// closes that replay with a _session_status frame, then carries live exec events.
 // Reopening it is the only recovery, so this page keeps no state that a replay
 // cannot rebuild and reloads whenever a frame surprises it.
 //
@@ -470,7 +470,18 @@ function apply(frame) {
       const [outcome, ...detail] = safe(frame.message).split("\n");
       return note(detail.join("\n"), "error", outcome);
     }
-    case "_state":
+    case "state":
+      if (
+        typeof frame.name !== "string" || frame.name.length === 0 ||
+        frame.name.length > 128 ||
+        !/[A-Za-z0-9]/.test(frame.name[0]) || /[^A-Za-z0-9_.:/-]/.test(frame.name) ||
+        !Object.hasOwn(frame, "value") ||
+        Object.keys(frame).sort().join(",") !== "name,type,value"
+      ) {
+        throw new Error("invalid state record");
+      }
+      return;
+    case "_session_status":
       return applyState(frame);
     case "_backend_request_start":
       return showIndicator();
