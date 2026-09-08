@@ -118,6 +118,8 @@ zsh -f "$entry" install-session <"$header" >/dev/null 2>&1 &&
   fail 'installer accepted a missing destination option'
 zsh -f "$entry" install-session --session-out '' <"$header" >/dev/null 2>&1 &&
   fail 'installer accepted an empty destination'
+zsh -f "$entry" install-session --output "$tmp/wrong" <"$header" >/dev/null 2>&1 &&
+  fail 'installer accepted an unsupported option'
 zsh -f "$entry" install-session --session-out "$tmp/a" --session-out "$tmp/b" \
   <"$header" >/dev/null 2>&1 && fail 'installer accepted repeated destinations'
 zsh -f "$entry" install-session --session-out "$tmp/extra" argument \

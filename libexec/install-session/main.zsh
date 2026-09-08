@@ -16,35 +16,11 @@ sf_install_cleanup() {
 }
 
 sf_install_main() {
-  local requested_out='' destination
-  integer out_explicit=0
-
-  while (( $# )); do
-    case $1 in
-      --session-out)
-        (( ! out_explicit )) || {
-          sf_die '--session-out may only be specified once'
-          return 2
-        }
-        [[ -n $2 ]] || {
-          sf_die '--session-out requires a nonempty path'
-          return 2
-        }
-        requested_out=$2
-        out_explicit=1
-        shift 2
-        ;;
-      *)
-        sf_die 'install-session only supports --session-out'
-        return 2
-        ;;
-    esac
-  done
-
-  (( out_explicit )) || {
-    sf_die 'install-session requires --session-out'
+  (( $# == 2 )) && [[ $1 == --session-out && -n $2 ]] || {
+    sf_die 'install-session accepts only --session-out PATH'
     return 2
   }
+  local requested_out=$2 destination
   (( $+commands[jq] )) || {
     sf_die 'shellfish requires jq'
     return 2
