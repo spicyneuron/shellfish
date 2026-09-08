@@ -24,7 +24,7 @@ SF_TEST_RUNTIME=$(jq -cn --arg script "$start_script" --arg second "$start_secon
 export OPENAI_API_KEY=standard-secret CUSTOM_API_KEY=custom-secret
 SF_SESSION_PATH=$start_session
 sf_session_prepare "$SF_TEST_RUNTIME"
-sf_session_create
+sf_test_install_prepared
 sf_hooks_session_start "$start_session"
 [[ -z $REPLY && ${#reply} == 0 && $SF_HOOK_SCRIPT_RESULTS[4] == local ]]
 [[ $OPENAI_API_KEY == standard-secret && $CUSTOM_API_KEY == custom-secret ]]
@@ -78,7 +78,7 @@ newline_cwd=$(pwd -P)
 typeset newline_session="$tmp/newline-session.jsonl"
 SF_SESSION_PATH=$newline_session
 sf_session_prepare "$SF_TEST_RUNTIME"
-sf_session_create
+sf_test_install_prepared
 sf_hooks_session_start "$newline_session"
 sf_hooks_commit :
 cd "$previous_cwd"

@@ -35,12 +35,12 @@ sf_create_session() {
     error=$SF_SESSION_ERROR
   elif ! sf_session_system "$system"; then
     error=$SF_SESSION_ERROR
-  elif ! sf_session_create; then
-    error=$SF_SESSION_ERROR
-  else
-    SF_CREATE_REMOVE_SESSION=1
   fi
-  if [[ -z $error ]] && (( SF_CREATE_JSONL )); then
+  [[ -z $error ]] || { sf_die "$error"; return 1; }
+  printf '%s\n' "${SF_SESSION_RECORDS[@]}" |
+    "$SF_ENTRY" install-session --session-out "$session" >/dev/null || return 1
+  SF_CREATE_REMOVE_SESSION=1
+  if (( SF_CREATE_JSONL )); then
     printf '%s\n' "${SF_SESSION_RECORDS[@]}" | jq -cs \
       --arg path "$session" '{type:"_session_prepare",path:$path,records:.}' ||
       error='cannot emit session preparation'
@@ -119,14 +119,6 @@ sf_create_main() {
     return 1
   }
   session=$REPLY
-  [[ ! -s $session ]] || {
-    sf_die "session already exists: $session"
-    return 1
-  }
-  [[ ! -e $session || ( -f $session && ! -L $session ) ]] || {
-    sf_die "invalid session path: $session"
-    return 1
-  }
   sf_create_session "$session" "$runtime" "$system" || return 1
   if (( SF_CREATE_JSONL )); then
     jq -cn --arg path "$session" '{type:"_session_created",path:$path}' || {

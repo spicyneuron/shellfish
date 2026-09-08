@@ -31,6 +31,8 @@ Clients do not embed the agent loop or maintain their own copy of session state.
 
 `shellfish build-request` and `shellfish send-request` expose the narrower provider boundary for read-only composition. They project or execute a request against a session's frozen runtime without mutating the transcript. `shellfish run` remains the owner of durable turns, hook execution, tool execution, and recovery.
 
+`shellfish install-session` is the lower-level publication boundary. It validates and atomically installs a complete caller-constructed transcript without running configuration, hooks, or providers. Session creation and bundled derivation features compose this operation while retaining ownership of their policy.
+
 ## Harnesses bind scripts to the lifecycle
 
 The turn loop is deliberately generic. A harness combines tools, limits, sandbox policy, and shell scripts bound to lifecycle hooks. The default coding behavior is assembled this way rather than built into `shellfish run`.

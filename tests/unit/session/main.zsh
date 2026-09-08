@@ -16,7 +16,7 @@ print -r -- 'def canonical_session_header(:' >"$tmp/shadow/lib/runtime/schema.jq
   SF_SESSION_PATH=relative.jsonl
   sf_session_prepare "$SF_TEST_RUNTIME"
   assert_equal "$(pwd -P)" "$SF_SESSION[cwd]"
-  sf_session_create
+  sf_test_install_prepared
   [[ -f relative.jsonl ]]
   sf_session_read_runtime relative.jsonl
   assert_equal "$SF_TEST_RUNTIME" "$REPLY"
@@ -35,13 +35,12 @@ sf_session_select_path
 [[ $REPLY == "$tmp/state/shellfish/sessions/"*.jsonl ]]
 [[ $(stat -f %Lp "$REPLY:h") == 700 ]]
 
-# Creation exclusively materializes the validated prefix.
+# An installed prepared prefix initializes the first turn state.
 SF_SESSION_PATH=$session
 sf_session_prepare "$SF_TEST_RUNTIME"
-sf_session_create
+sf_test_install_prepared
 (( ${#SF_SESSION_RECORDS} == 1 ))
 sf_session_begin_turn "$session"
-[[ $(stat -f '%Lp' "$session") == 600 ]]
 jq -e '.profile.request.model == "test-model" and .backend.env_file == ""' \
   <<<"$SF_SESSION[runtime]" >/dev/null
 stored_runtime=$SF_SESSION[runtime]
@@ -114,13 +113,6 @@ if sf_session_update '{}'; then
   fail 'session update on a closed session succeeded'
 fi
 
-typeset broken="$tmp/broken.jsonl"
-ln -s "$tmp/missing.jsonl" "$broken"
-SF_SESSION_PATH=$broken
-if sf_session_prepare "$SF_TEST_RUNTIME"; then
-  fail 'prepared creation through a broken symlink'
-fi
-
 # Reopening an existing session restores its next turn state.
 sf_session_begin_turn "$session"
 [[ $SF_SESSION[turn_id] == 2 ]]
@@ -133,7 +125,7 @@ sf_session_reset
 typeset write_failure="$tmp/write-failure.jsonl"
 SF_SESSION_PATH=$write_failure
 sf_session_prepare "$SF_TEST_RUNTIME"
-sf_session_create
+sf_test_install_prepared
 sf_session_begin_turn "$write_failure"
 integer record_count
 record_count=${#SF_SESSION_RECORDS}
@@ -209,7 +201,7 @@ typeset configured="$tmp/configured.jsonl"
 SF_TEST_RUNTIME=$(jq -c '.profile.request.model="configured-model"' <<<"$stored_runtime")
 SF_SESSION_PATH=$configured
 sf_session_prepare "$SF_TEST_RUNTIME"
-sf_session_create
+sf_test_install_prepared
 jq -e -s 'length == 1 and .[0].profile.request.model == "configured-model"' \
   "$configured" >/dev/null
 

@@ -89,10 +89,6 @@ sf_session_prepare() {
   local runtime=$1 cwd created decoded header id model
   SF_SESSION_ERROR=''
   sf_session_reset
-  [[ ! -e $SF_SESSION_PATH && ! -L $SF_SESSION_PATH ]] || {
-    sf_session_fail "cannot create session: $SF_SESSION_PATH"
-    return
-  }
   cwd=$(pwd -P) && created=$(date -u '+%Y-%m-%dT%H:%M:%SZ') || {
     sf_session_fail 'cannot prepare session header'
     return
@@ -142,42 +138,6 @@ sf_session_system() {
   record=$(jq -cn --arg content "$content" '{type:"system",content:$content}') ||
     sf_session_fail 'cannot prepare system record' || return
   SF_SESSION_RECORDS+=( "$record" )
-}
-
-sf_session_create() {
-  local error
-  local -a records
-  (( ${#SF_SESSION_RECORDS} )) || {
-    sf_session_fail 'session is not prepared for creation'
-    return
-  }
-  records=( "${SF_SESSION_RECORDS[@]}" "$@" )
-  printf '%s\n' "${records[@]}" | sf_jq -jes '
-    include "lib/runtime/schema";
-    select(length >= 1) |
-    select(.[0] | canonical_session_header(1)) |
-    select(.[1:] | canonical_session_records)
-  ' >/dev/null 2>&1 || {
-    sf_session_fail 'cannot prepare session records'
-    return
-  }
-  SF_SESSION_RECORDS=( "${records[@]}" )
-  if ! (setopt no_clobber; : >"$SF_SESSION_PATH") 2>/dev/null; then
-    sf_session_fail "cannot create session: $SF_SESSION_PATH"
-    return
-  fi
-  repeat 1; do
-    chmod 600 "$SF_SESSION_PATH" ||
-      { error="cannot secure session: $SF_SESSION_PATH"; break; }
-    if ! printf '%s\n' "${records[@]}" >>"$SF_SESSION_PATH"; then
-      error="cannot write session: $SF_SESSION_PATH"
-      break
-    fi
-  done
-  [[ -n $error ]] || return 0
-  rm -f -- "$SF_SESSION_PATH" 2>/dev/null
-  sf_session_fail "$error"
-  return 1
 }
 
 sf_session_read_runtime() {
