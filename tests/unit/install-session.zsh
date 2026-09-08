@@ -21,7 +21,17 @@ for name in visible.jsonl .agent-a1b2c3.jsonl; do
     fail "installation rejected $name"
 done
 
-# State is inert, while complete conversation sequencing remains required.
+# A recoverable tail is publishable. Ordinary recovery closes the turn later.
+typeset unanswered="$tmp/unanswered-input.jsonl"
+cat "$header" >"$unanswered"
+print -r -- \
+  '{"type":"message","role":"user","content":[{"type":"text","text":"waiting"}]}' \
+  >>"$unanswered"
+zsh -f "$entry" install-session --session-out "$tmp/unanswered.jsonl" <"$unanswered" \
+  >/dev/null || fail 'installation rejected an unanswered user message'
+cmp -s "$unanswered" "$tmp/unanswered.jsonl" || fail 'recoverable transcript was rewritten'
+
+# State is inert, while conversation sequencing remains required.
 typeset complete="$tmp/complete-input.jsonl" complete_output="$tmp/complete.jsonl"
 cat "$header" >"$complete"
 cat >>"$complete" <<'EOF'
@@ -50,9 +60,9 @@ assert_equal sentinel "$(<"$occupied")"
 [[ -f $empty && ! -s $empty && -d $directory && -L $symlink && -L $dangling ]] ||
   fail 'collision cleanup changed an occupied destination'
 
-# Invalid framing, schema versions, records, and incomplete turns publish nothing.
+# Invalid framing, schema versions, records, and sequencing publish nothing.
 typeset invalid="$tmp/invalid-input.jsonl" target="$tmp/rejected.jsonl"
-typeset -a cases=( empty malformed missing-newline blank-line unsupported invalid-record incomplete-user )
+typeset -a cases=( empty malformed missing-newline blank-line unsupported invalid-record unmatched-result )
 typeset -a leftovers
 for case_name in $cases; do
   case $case_name in
@@ -65,10 +75,10 @@ for case_name in $cases; do
       cat "$header" >"$invalid"
       print -r -- '{"type":"state","name":"bad name","value":true}' >>"$invalid"
       ;;
-    incomplete-user)
+    unmatched-result)
       cat "$header" >"$invalid"
       print -r -- \
-        '{"type":"message","role":"user","content":[{"type":"text","text":"waiting"}]}' \
+        '{"type":"message","role":"tool_result","call_id":"call_1","name":"shell","content":"out","exit_code":0}' \
         >>"$invalid"
       ;;
   esac

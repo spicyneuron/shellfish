@@ -88,11 +88,9 @@ sf_install_main() {
       all($lines[0:-1][]; length > 0)) |
     ($lines[0:-1] | map(fromjson)) as $records |
     select($records[0] | canonical_session_header(1)) |
-    ($records[1:] | session_records_state) as $state |
-    select($state.valid and $state.next == "user" and
-      ($state.pending | length) == 0)
+    select($records[1:] | session_records_state | .valid)
   ' "$SF_INSTALL_TEMP" >/dev/null 2>&1 || {
-    sf_die 'install-session requires one complete canonical JSONL transcript on stdin'
+    sf_die 'install-session requires one canonical JSONL transcript on stdin'
     return 2
   }
 
