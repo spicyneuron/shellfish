@@ -34,7 +34,7 @@ assert_equal 3 "$SF_PRESENT_NODE_META[-1]"
 sf_tui_reset
 sf_tui_decoded turn_usage '20 ↑ 4 ↓' 5
 sf_tui_decoded assistant_reasoning_delta current
-sf_tui_decoded assistant_commit
+sf_tui_decoded assistant_settle
 assert_equal 5 "$SF_PRESENT_NODE_META[-1]"
 
 sf_tui_decoded permission_request permission_1 shell pwd 'host access' sh
@@ -324,6 +324,29 @@ integer cursor_node=${SF_PRESENT_CURSOR%%:*}
 functions[sf_tui_markdown_highlight]=$functions[sf_tui_markdown_saved]
 unfunction sf_tui_markdown_saved
 SF_PRESENT_HIGHLIGHT_ENABLED=0
+
+# Settle closes the visible tail before the durable assistant record makes the
+# validated tool available.
+sf_tui_reset
+sf_tui_terminal_reset
+SF_PRESENT_STATE=working
+sf_tui_transport_reset
+SF_TUI_TRANSPORT_LINES=(
+  '{"type":"_assistant_delta","text":"before tool"}'
+  '{"type":"_assistant_settle"}'
+)
+BUFFER=''
+CURSOR=0
+COLUMNS=80
+LINES=8
+DRAWN=''
+sf_tui_heartbeat_tick
+assert_equal closed "$SF_PRESENT_NODE_STATE[-1]"
+[[ $PREDISPLAY == *'before tool'* ]] || fail 'settle did not render the final assistant row'
+(( SF_PRESENT_FLUSH_ROWS )) || fail 'settle did not settle the final assistant row'
+if sf_tui_transport_has_pending; then
+  fail 'settle remained queued after publishing the assistant row'
+fi
 
 # Completed assistant rows drain before the validated tool call is applied,
 # including when the response is taller than one viewport.

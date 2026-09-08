@@ -79,7 +79,7 @@ def tool_call_fields:
 
 def decode_backend_response(valid_event; valid_message):
   foreach inputs as $event
-    (backend_response_state + {seq:0, output:[]};
+    (backend_response_state + {seq:0, visible_unsettled:false, output:[]};
       .output = [] |
       if .ended or ($event | valid_event | not) then halt_error(1)
       else
@@ -90,11 +90,16 @@ def decode_backend_response(valid_event; valid_message):
           .seq as $seq |
           .output = ["delta", "\u0000", ($event | tojson), "\u0000",
             ($event + {seq:$seq} | tojson), "\u0000"] |
-          .seq += 1
+          .seq += 1 |
+          .visible_unsettled = (.visible_unsettled or ($event.text | test("[^\\n]")))
         elif $event.type == "_assistant_reasoning_opaque" then
           .output = ["opaque", "\u0000", ($event | tojson), "\u0000"]
-        elif $event.type == "_turn_usage" or
-            $event.type == "_assistant_tool_call_delta" then
+        elif $event.type == "_assistant_tool_call_delta" then
+          if .visible_unsettled then
+            .output = ["settle", "\u0000"] |
+            .visible_unsettled = false
+          else .output = [] end
+        elif $event.type == "_turn_usage" then
           .output = []
         elif $event.type == "_assistant_response_end" then
           [backend_response_message(valid_message)] as $messages |

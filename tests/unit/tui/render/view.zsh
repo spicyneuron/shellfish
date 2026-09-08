@@ -119,7 +119,7 @@ for close_type in message reasoning; do
             sf_tui_terminal_finish
           done
           (( epoch < 12 )) || fail "open $close_type transition did not settle"
-          sf_tui_event assistant_commit
+          sf_tui_event assistant_settle
           (( ! split )) || sf_tui_repaint ||
             fail "cannot render closed $close_type transition: $trailing/$width/$highlight"
           sf_tui_event tool_call call_1 shell '{}'
@@ -146,7 +146,7 @@ sf_tui_terminal_stage
 sf_tui_terminal_finish
 sf_tui_event assistant_reasoning_delta $'\n\n'
 sf_tui_repaint || fail 'cannot replace a newline-only message with reasoning'
-sf_tui_event assistant_commit
+sf_tui_event assistant_settle
 sf_tui_repaint || fail 'cannot close newline-only reasoning'
 assert_equal 0 "${#SF_PRESENT_NODE_TYPE}"
 LINES=10

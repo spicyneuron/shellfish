@@ -164,6 +164,21 @@ print -r -- "$stream" | jq -eRn '
   all($responses[]; length > 0 and . == [range(0; length)])
 ' >/dev/null
 
+# The first tool update after visible content marks a presentation boundary,
+# while the call itself remains hidden until the durable assistant record.
+print -r -- "$stream" | jq -eRn '
+  [inputs | fromjson] as $events |
+  ($events | map(.type)) as $types |
+  ($types | index("_assistant_settle")) as $settle |
+  ($events | map(if .role? == "assistant" and .stop? == "tool_calls"
+    then .type else null end) | index("message")) as $assistant |
+  ([$events[] | select(.type == "_assistant_settle")] | length) == 1 and
+  $settle != null and
+  $assistant != null and $settle < $assistant and
+  any($events[0:$settle][]; .type == "_assistant_delta") and
+  all($events[]; .type != "_assistant_tool_call_delta")
+' >/dev/null
+
 # Disallowed calls receive ordinary results and the provider continues.
 stream=$(SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_NAME=unknown \
   SF_TEST_BACKEND_TOOL_COUNT=2 sf_test_turn 'request bypass' "$session")

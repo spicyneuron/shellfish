@@ -34,7 +34,7 @@ sf_tui_event user hello
 sf_tui_event user again
 sf_tui_event assistant_delta 'part '
 sf_tui_event assistant_delta done
-sf_tui_event assistant_commit
+sf_tui_event assistant_settle
 
 assert_equal 'section,message,message,section,message' "${(j:,:)SF_PRESENT_NODE_TYPE}"
 assert_equal 'user,user,user,agent,agent' "${(j:,:)SF_PRESENT_NODE_ROLE}"
@@ -60,7 +60,7 @@ assert_equal closed "$SF_PRESENT_NODE_STATE[2]"
 assert_equal 7 "$SF_PRESENT_NODE_META[2]"
 assert_equal open "$SF_PRESENT_NODE_STATE[3]"
 
-sf_tui_event assistant_commit
+sf_tui_event assistant_settle
 sf_tui_event tool_call call_1 shell '{"command":"true"}'
 sf_tui_event tool_call call_2 read_file README.md '' plain
 sf_tui_event tool_permission 'host access'
@@ -109,30 +109,30 @@ sf_tui_event assistant_delta $'\n'
 sf_tui_event assistant_reasoning_delta $'\n\n'
 assert_equal 'section,reasoning' "${(j:,:)SF_PRESENT_NODE_TYPE}"
 assert_equal $'\n\n' "$SF_PRESENT_NODE_BODY[2]"
-sf_tui_event assistant_commit
+sf_tui_event assistant_settle
 assert_equal 0 "${#SF_PRESENT_NODE_TYPE}"
 assert_equal 0 "$SF_PRESENT_SECTION_ID"
 
 sf_tui_event assistant_delta $'answer\n'
 sf_tui_event assistant_delta $'\n'
 sf_tui_set_frontier 2 8
-sf_tui_event assistant_commit
+sf_tui_event assistant_settle
 assert_equal $'answer\n\n' "$SF_PRESENT_NODE_BODY[2]"
 assert_equal 8 "$SF_PRESENT_NODE_FRONTIER[2]"
 
 sf_tui_event assistant_delta $'\nnext'
-sf_tui_event assistant_commit
+sf_tui_event assistant_settle
 assert_equal $'\nnext' "$SF_PRESENT_NODE_BODY[3]"
 
 sf_tui_event backend_request_start
 sf_tui_event assistant_delta $'\n'
-sf_tui_event assistant_commit
+sf_tui_event assistant_settle
 assert_equal 'section,message,message' "${(j:,:)SF_PRESENT_NODE_TYPE}"
 
 sf_tui_reset
 sf_tui_event user hello
 sf_tui_event backend_request_start
-sf_tui_event assistant_commit
+sf_tui_event assistant_settle
 sf_tui_event user again
 assert_equal 'section,message,message' "${(j:,:)SF_PRESENT_NODE_TYPE}"
 assert_equal 1 "$SF_PRESENT_SECTION_ID"
@@ -160,7 +160,7 @@ assert_equal section "$SF_PRESENT_NODE_TYPE[1]"
 sf_tui_reset
 sf_tui_event user $'\n\n  unsafe\e[31m\t\n'
 sf_tui_event assistant_delta $'\n\treply\rtext\n\n'
-sf_tui_event assistant_commit
+sf_tui_event assistant_settle
 assert_equal $'\n\n  unsafe�[31m\t\n' "$SF_PRESENT_NODE_BODY[2]"
 assert_equal $'\n\treply�text\n\n' "$SF_PRESENT_NODE_BODY[4]"
 
@@ -192,7 +192,7 @@ assert_equal 'section,message' "${(j:,:)SF_PRESENT_NODE_TYPE}"
 
 sf_tui_reset
 sf_tui_add activity '' '' '' open
-sf_tui_event assistant_commit
+sf_tui_event assistant_settle
 assert_equal 0 "${#SF_PRESENT_NODE_TYPE}"
 
 sf_tui_reset
@@ -203,8 +203,8 @@ fi
 
 sf_tui_reset
 sf_tui_add notice '' working '' open
-if sf_tui_event assistant_commit; then
-  fail 'closed a non-assistant node on assistant commit'
+if sf_tui_event assistant_settle; then
+  fail 'settled a non-assistant node'
 fi
 
 # A notice that arrives before the agent produced anything releases the section

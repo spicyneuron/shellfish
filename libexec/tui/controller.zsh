@@ -126,10 +126,10 @@ sf_tui_decoded() {
       backend_request_start|assistant_delta|assistant_reasoning_delta|tool_call|tool_result|context)
         sf_tui_event "$type" "$first" "$second" "$third" "$fourth" "$fifth" "$sixth" || return 1
         ;;
-      assistant_commit)
+      assistant_settle)
         [[ -z $SF_PRESENT_REASONING_TOKENS ]] ||
           sf_tui_event reasoning_tokens "$SF_PRESENT_REASONING_TOKENS" || return 1
-        sf_tui_event assistant_commit || return 1
+        sf_tui_event assistant_settle || return 1
         ;;
       turn_usage)
         SF_PRESENT_REASONING_TOKENS=$second
@@ -326,7 +326,7 @@ sf_tui_exec_finish() {
     else
       if (( ${#SF_PRESENT_NODE_TYPE} )) && [[ $SF_PRESENT_NODE_TYPE[-1] == activity &&
           $SF_PRESENT_NODE_STATE[-1] == open ]]; then
-        sf_tui_event assistant_commit || return 1
+        sf_tui_event assistant_settle || return 1
       fi
       SF_PRESENT_STATE=idle
       sf_tui_permission_reset

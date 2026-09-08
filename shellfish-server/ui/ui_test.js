@@ -586,6 +586,7 @@ test("leaves deltas out of the transcript and draws the record once", async () =
     { type: "_assistant_delta", text: "par", seq: 1 },
     { type: "_assistant_reasoning_delta", text: "thinking", seq: 2 },
     { type: "_assistant_delta", text: "tial", seq: 7 },
+    { type: "_assistant_settle" },
   );
   assert.equal(find(page.output, "assistant").length, 0);
   assert.equal(page.output.children.length, drawn);

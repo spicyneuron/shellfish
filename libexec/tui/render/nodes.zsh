@@ -318,7 +318,7 @@ sf_tui_event() {
         SF_PRESENT_NODE_META[index]=$first
       fi
       ;;
-    assistant_commit)
+    assistant_settle)
       (( index )) && [[ $SF_PRESENT_NODE_STATE[index] == open ]] || return 0
       [[ $SF_PRESENT_NODE_TYPE[index] == (activity|message|reasoning) ]] || return 1
       sf_tui_close $index orphan_section
