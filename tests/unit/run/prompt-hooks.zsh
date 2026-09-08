@@ -45,7 +45,10 @@ case $prompt in
     sleep 2
     : >"$PROMPT_EXIT_MARKER"
     ;;
-  *) print -rn -- 'accepted context' ;;
+  *)
+    print -rn -- 'accepted context'
+    print -rn -u3 -- '{"state":[{"name":"prompt/status","value":"accepted"}]}'
+    ;;
 esac
 ZSH
 chmod +x "$prompt_script"
@@ -59,6 +62,8 @@ print -r -- "$stream" | jq -eRn '
   [inputs | fromjson] as $events |
   ($events | any(.type == "_notice") | not) and
   ($events | all(has("context") | not)) and
+  ($events | map(select(.type == "state" or .type == "context" or .role? == "user")) |
+    map(.type)) == ["state","context","message"] and
   ($events | map(select(.type == "context")))[0].content == "accepted context" and
   ($events | map(select(.role == "user")))[0].content[0].text == "accepted" and
   ($events | map(select(.type == "_backend_request_start")) | length) == 1

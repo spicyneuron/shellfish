@@ -21,6 +21,16 @@ sf_run_emit() {
   return 0
 }
 
+sf_run_hook() {
+  local adapter=$1
+  local -a result
+  shift
+  "$adapter" "$@" || return
+  result=( "${reply[@]}" )
+  sf_hooks_commit sf_run_emit || return
+  reply=( "${result[@]}" )
+}
+
 sf_run_interrupt() {
   SF_RUN[interrupted]=1
   SF_TOOL_INTERRUPTED=1
@@ -43,7 +53,7 @@ sf_run_permission() {
   local call_id=$1 name=$2 input=$3 id response decision hook_decision hook_reason
   SF_RUN[permission_reason]=''
   SF_RUN[permission_error]=''
-  if ! sf_hooks_permission_request "$SF_SESSION_PATH" "$name" "$call_id" "$input"; then
+  if ! sf_run_hook sf_hooks_permission_request "$SF_SESSION_PATH" "$name" "$call_id" "$input"; then
     SF_RUN[permission_error]=$SF_HOOK_ERROR
     return 2
   fi
@@ -256,7 +266,7 @@ sf_run_turn() {
       failure=$SF_HOOK_ERROR
       return 1
     fi
-    if ! sf_hooks_user_prompt_submit "$prompt" "$session_path"; then
+    if ! sf_run_hook sf_hooks_user_prompt_submit "$prompt" "$session_path"; then
       failure=$SF_HOOK_ERROR
       return 1
     fi
@@ -271,13 +281,6 @@ sf_run_turn() {
       fi
       tool_schema=$REPLY
     fi
-    for context in "${SF_HOOK_CONTEXT_RECORDS[@]}"; do
-      if ! sf_session_append "$context"; then
-        failure=$SF_SESSION_ERROR
-        return 1
-      fi
-      sf_run_emit "$context"
-    done
     case $hook_action in
       handoff)
         after=$(jq -cn --args '$ARGS.positional |
@@ -416,7 +419,7 @@ sf_run_turn() {
       }
       if [[ $response_fields[1] != tool_calls ]]; then
         (( stop_count += 1 ))
-        if ! sf_hooks_stop "$session_path" "$stop_input" "$stop_count"; then
+        if ! sf_run_hook sf_hooks_stop "$session_path" "$stop_input" "$stop_count"; then
           failure=$SF_HOOK_ERROR
           return 1
         fi
@@ -425,7 +428,6 @@ sf_run_turn() {
           SF_RUN[answer]=$stop_input
           return
         fi
-        sf_run_emit "${(pj:\n:)SF_SESSION_RECORDS[-SF_HOOK_CONTEXT_COUNT,-1]}"
         continue
       fi
       call_count=0
@@ -446,7 +448,7 @@ sf_run_turn() {
           fi
           result=$REPLY
         else
-          if ! sf_hooks_pre_tool_use "$session_path" "$tool_name" "$call_id" "$tool_input"; then
+          if ! sf_run_hook sf_hooks_pre_tool_use "$session_path" "$tool_name" "$call_id" "$tool_input"; then
             failure=$SF_HOOK_ERROR
             return 1
           fi
@@ -496,7 +498,7 @@ sf_run_turn() {
           return 1
         fi
         sf_run_emit "$result"
-        if ! sf_hooks_post_tool_use "$session_path" "$result" "$tool_input"; then
+        if ! sf_run_hook sf_hooks_post_tool_use "$session_path" "$result" "$tool_input"; then
           failure=$SF_HOOK_ERROR
           return 1
         fi

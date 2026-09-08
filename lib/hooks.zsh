@@ -10,7 +10,6 @@ typeset -g SF_HOOK_ERROR=''
 typeset -g SF_HOOK_JSONL=0
 # Ordered script, status, stdout, stderr, and control quintets.
 typeset -ga SF_HOOK_SCRIPT_RESULTS=()
-typeset -g SF_HOOK_CONTEXT_COUNT=0
 typeset -ga SF_HOOK_CONTEXT_RECORDS=()
 typeset -ga SF_HOOK_STATE_RECORDS=()
 # Preserve inherited hook state across nested turn setup.
@@ -33,7 +32,6 @@ zshexit() {
 sf_hooks_reset() {
   SF_HOOK_ERROR=''
   SF_HOOK_SCRIPT_RESULTS=()
-  SF_HOOK_CONTEXT_COUNT=0
   SF_HOOK_CONTEXT_RECORDS=()
   SF_HOOK_STATE_RECORDS=()
   REPLY=''
@@ -68,19 +66,14 @@ sf_hooks_read_capture() {
 }
 
 sf_hooks_display() {
-  local hook=$1 script=$2 text=$3 complete=$4 context=${5:-null}
+  local hook=$1 script=$2 text=$3 complete=$4
   if (( ! SF_HOOK_JSONL )); then
     [[ $complete != true ]] || print -rn -- "$text" >&2
     return 0
   fi
-  # The compact context occupies one line; the remaining bytes are raw display.
-  printf '%s\n%s' "$context" "$text" | jq -Rsc --arg hook "$hook" --arg script "$script" \
-    --argjson complete "$complete" '
-      index("\n") as $end |
-      (.[:$end] | fromjson) as $context | .[$end + 1:] |
-      {type:"_notice",level:"info",title:$script,source:$hook,text:.,complete:$complete} +
-      (if $context == null then {} else {context:$context} end)
-    '
+  print -rn -- "$text" | jq -Rsc --arg hook "$hook" --arg script "$script" \
+    --argjson complete "$complete" \
+    '{type:"_notice",level:"info",title:$script,source:$hook,text:.,complete:$complete}'
 }
 
 sf_hooks_capture_one() {
@@ -193,8 +186,8 @@ sf_hooks_dispatch() {
   local -a arguments=( "${(@)argv[1,argument_count]}" )
   shift argument_count
   local -a components=( "$@" ) result results states decoded
-  local directory script environment_json script_name script_context script_display script_control hook=$SF_HOOK_NAME
-  local origin='' control='' preview control_error
+  local directory script environment_json script_context script_display script_control hook=$SF_HOOK_NAME
+  local origin='' control='' control_error
   integer script_status context_size display_size control_size component_index
   integer perform=1 halted=0
   setopt local_options no_err_exit no_bg_nice
@@ -292,17 +285,8 @@ sf_hooks_dispatch() {
       if [[ -z $control_error && -n $script_control ]] && (( ! allow_control )); then
         control_error="hook script returned unexpected control data: $script"
       fi
-      preview=null
-      script_name=${script:t}
-      [[ $script_name != run ]] || script_name=${script:h:t}
-      if [[ -z $control_error && $hook == session_start ]] &&
-          (( SF_HOOK_JSONL && script_status == 0 && context_size )); then
-        sf_hooks_context_record "$hook" "$script_name" "$script_context" '{}' ||
-          control_error=$SF_HOOK_ERROR
-        [[ -n $control_error ]] || preview=$REPLY
-      fi
-      if [[ -n $script_display || $preview != null ]]; then
-        sf_hooks_display "$hook" "$script" "$script_display" true "$preview" || {
+      if [[ -n $script_display ]]; then
+        sf_hooks_display "$hook" "$script" "$script_display" true || {
           sf_hooks_fail 'cannot complete hook display'
           return
         }
@@ -473,11 +457,7 @@ sf_hooks_run() {
       operation_status=1
     elif [[ $stdout_policy == commit ]] ||
         [[ $stdout_policy == commit_on_skip && $decision[1] == 0 ]]; then
-      if [[ $hook == session_start ]]; then
-        sf_hooks_commit_context "$hook" collect || operation_status=1
-      else
-        sf_hooks_commit_context "$hook" || operation_status=1
-      fi
+      sf_hooks_collect_context "$hook" || operation_status=1
     fi
   fi
   rm -f -- "$input" 2>/dev/null || true
@@ -510,10 +490,9 @@ sf_hooks_context_record() {
   }
 }
 
-sf_hooks_commit_context() {
-  local hook=$1 mode=${2-} context item script control
+sf_hooks_collect_context() {
+  local hook=$1 item script control
   integer index
-  SF_HOOK_CONTEXT_COUNT=0
   SF_HOOK_CONTEXT_RECORDS=()
 
   for (( index = 1; index <= ${#SF_HOOK_SCRIPT_RESULTS}; index += 5 )); do
@@ -526,12 +505,18 @@ sf_hooks_commit_context() {
     control=${control:-'{}'}
     sf_hooks_context_record "$hook" "$script" "$item" "$control" || return
     SF_HOOK_CONTEXT_RECORDS+=( "$REPLY" )
-    (( SF_HOOK_CONTEXT_COUNT += 1 ))
   done
-  [[ $mode == collect ]] && return 0
-  for context in "${SF_HOOK_CONTEXT_RECORDS[@]}"; do
-    sf_session_append "$context" || {
+}
+
+sf_hooks_commit() {
+  local emit=$1 record
+  for record in "${SF_HOOK_STATE_RECORDS[@]}" "${SF_HOOK_CONTEXT_RECORDS[@]}"; do
+    sf_session_append "$record" || {
       SF_HOOK_ERROR=$SF_SESSION_ERROR
+      return 1
+    }
+    "$emit" "$record" || {
+      SF_HOOK_ERROR='cannot emit hook record'
       return 1
     }
   done

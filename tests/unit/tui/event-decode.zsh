@@ -6,6 +6,7 @@ source "${0:A:h:h:h}/_helpers.zsh"
 cat <<'STREAM' |
 {"type":"session","format_version":1,"cwd":"/tmp","created":"2026-01-01T00:00:00Z","profile":{"request":{"model":"test"}},"backend":{"name":"test","command":"/usr/bin/false","endpoint":"https://example.invalid","environment":[],"env_file":"","insecure_tls":false,"http_timeout":30,"http_stall":10},"harness":{"sandbox_read_paths":[],"sandbox_write_paths":[],"fence":"","tools":[],"sandbox":false,"max_requests_per_turn":8,"max_tool_calls_per_request":16,"max_capture_bytes":65536}}
 {"type":"system","content":"instructions"}
+{"type":"state","name":"startup/status","value":"ready"}
 {"type":"_backend_request_start"}
 {"type":"_assistant_reasoning_delta","text":"why","seq":0}
 {"type":"_assistant_delta","text":"hi\n","seq":1}
@@ -83,25 +84,6 @@ order=$(print -r -- '{"type":"turn_error","message":"Hook failed.\ninvalid outpu
     -f "$ROOT/libexec/tui/event-decode.jq" |
   tr '\0' '\n' | sed '/^$/d' | paste -sd, -)
 assert_equal 'notice,error,Hook failed.,invalid output,closed,end,batch_ok' "$order"
-
-typeset invalid
-typeset preview='{"type":"_notice","level":"info","source":"session_start","title":"/tmp/hook/run","text":"done","complete":true,"context":{"type":"context","hook":"session_start","script":"hook","content":"startup context"}}'
-order=$(print -r -- "$preview" |
-  jq -jRs -L "$ROOT" --argjson runtime null -f "$ROOT/libexec/tui/event-decode.jq" |
-  tr '\0' '\n' | sed '/^$/d' | paste -sd, -)
-assert_equal 'context,hook,session_start,startup context,batch_ok' "$order"
-order=$(jq -c 'del(.context)' <<<"$preview" |
-  jq -jRs -L "$ROOT" --argjson runtime null -f "$ROOT/libexec/tui/event-decode.jq" |
-  tr '\0' '\n' | sed '/^$/d' | paste -sd, -)
-assert_equal 'notice,notice,hook,session_start,done,closed,batch_ok' "$order"
-for invalid in '.complete=false' '.level="error"' '.context=null' \
-    '.context.hook="stop"' '.context.script="other"' '.context.script="run"'; do
-  if jq -c "$invalid" <<<"$preview" |
-      jq -jRs -L "$ROOT" --argjson runtime null \
-        -f "$ROOT/libexec/tui/event-decode.jq" >/dev/null 2>&1; then
-    fail "invalid context preview was accepted: $invalid"
-  fi
-done
 
 typeset preparation
 preparation=$(jq -cn --slurpfile records "$SF_TEST_SESSIONS/header-only.jsonl" \
@@ -233,4 +215,10 @@ if print -r -- '{"type":"message","role":"user"}' |
       -f "$ROOT/libexec/tui/event-decode.jq" \
       >/dev/null 2>&1; then
   fail 'malformed canonical exec record was accepted'
+fi
+
+if print -r -- '{"type":"state","name":"bad name","value":true}' |
+    jq -jRs -L "$ROOT" --argjson runtime null \
+      -f "$ROOT/libexec/tui/event-decode.jq" >/dev/null 2>&1; then
+  fail 'malformed state was accepted'
 fi

@@ -32,6 +32,7 @@ set -e
 [[ -e $TEST_STATE_PATH ]] || print -rn -- "$SHELLFISH_TURN_STATE" >"$TEST_STATE_PATH"
 input=$(cat)
 print -r -- "$2|${input//$'\n'/\\n}" >>"$SHELLFISH_TURN_STATE/attempts"
+jq -cn --argjson attempt "$2" '{state:[{name:"stop/attempt",value:$attempt}]}' >&3
 if [[ ! -e $SHELLFISH_TURN_STATE/stopped ]]; then
   : >$SHELLFISH_TURN_STATE/stopped
   print -rn -- feedback
@@ -59,6 +60,9 @@ print -r -- "$stream" | jq -eRn '
   ($events | map(select(.role == "assistant")) | length) == 2 and
   ($events | map(select(.type == "context"))) ==
     [{type:"context",hook:"stop",script:"stop-once",content:"feedback"}] and
+  ($events | map(select(.type == "state" or .type == "context")) |
+    map(if .type == "state" then [.name,.value] else ["context",.content] end)) ==
+    [["stop/attempt",1],["context","feedback"],["stop/attempt",2]] and
   ($events | map(select(.type == "_notice" and .complete) | [.source,(.title|split("/")[-1]),.text])) ==
     [["stop","stop-once","first-local"],["stop","stop-once","second-local"]]
 ' >/dev/null

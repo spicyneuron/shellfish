@@ -28,43 +28,6 @@ EOF
 export XDG_STATE_HOME="$tmp/state"
 typeset entry="$ROOT/bin/shellfish"
 
-# Interrupting a session_start script creates no session. Reopening the
-# session does not retry the script.
-typeset interrupt_script="$tmp/interrupt-start" interrupt_marker="$tmp/interrupt-started"
-mkdir "$interrupt_script"
-cat >"$interrupt_script/run" <<'ZSH'
-#!/usr/bin/env zsh
-[[ $# == 1 && $1 == session_start ]] || exit 1
-print -r -- started >>"$INTERRUPT_MARKER"
-trap 'exit 143' TERM
-zmodload zsh/zselect
-while true; do zselect -t 100; done
-ZSH
-chmod +x "$interrupt_script/run"
-typeset interrupt_config="$tmp/interrupt-start.jsonc"
-jq --arg script "$interrupt_script" '.harnesses.machine.session_start=[$script]' \
-  "$config" >"$interrupt_config"
-typeset interrupt_session="$tmp/interrupted-start.jsonl"
-typeset interrupt_output="$tmp/interrupted-start.out"
-unsetopt BG_NICE
-INTERRUPT_MARKER="$interrupt_marker" zsh -f "$entry" run --config "$interrupt_config" \
-  --session-out "$interrupt_session" ignored >"$interrupt_output" 2>&1 &
-typeset interrupt_pid=$!
-setopt BG_NICE
-integer interrupt_waited=0
-while (( interrupt_waited < 50 )) && [[ ! -s $interrupt_marker ]]; do
-  sleep 0.1
-  (( interrupt_waited += 1 ))
-done
-(( interrupt_waited < 50 )) || fail 'session_start script did not begin'
-kill -TERM "$interrupt_pid" || fail 'session_start script ended before interruption'
-integer interrupt_status=0
-wait "$interrupt_pid" || interrupt_status=$?
-(( interrupt_status == 143 )) ||
-  fail "interrupted session_start reported status $interrupt_status instead of 143: $(<"$interrupt_output")"
-[[ ! -e $interrupt_session ]] || fail 'interrupted session_start created a session'
-(( $(wc -l <"$interrupt_marker") == 1 )) || fail 'session_start ran more than once'
-
 # Client cancellation stops model metadata lookup through the adapter's TERM path.
 typeset model_backend="$tmp/model-backend" model_ready="$tmp/model-ready"
 typeset model_stopped="$tmp/model-stopped" model_config="$tmp/model.jsonc"

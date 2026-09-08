@@ -13,9 +13,9 @@ The agent loop, with hooks marked, is:
 ```text
 resolve runtime
 if creating a session:
-    prepare header and system record
+    create header and system record
     run session_start hook scripts
-    create the complete initial prefix
+    append startup state and context
 open the session for a turn
 run user_prompt_submit hook scripts
 append user
@@ -95,7 +95,7 @@ Scripts on turn-scoped hooks (`user_prompt_submit`, `permission_request`, `pre_t
 
 `SHELLFISH_TURN_STATE` is private to one turn and removed during turn cleanup. Use it to coordinate across scripts in that turn. For example, a `post_tool_use` script can mark the turn dirty and a `stop` script can consume the marker. It is not exported to `session_start` scripts.
 
-`SHELLFISH_SESSION_STATE` is shared by scripts whose sessions have the same `SHELLFISH_SESSION_ID`. It lives under Shellfish's host temporary root, is retained across ordinary process exits, and is not removed when a turn or chat ends. It is disposable cache state: the host may remove it after a restart or temporary-file cleanup, and a changed `TMPDIR` selects a different location. Scripts must tolerate it being empty. `session_start` receives session state before the transcript file is created; failed session creation does not remove that state.
+`SHELLFISH_SESSION_STATE` is shared by scripts whose sessions have the same `SHELLFISH_SESSION_ID`. It lives under Shellfish's host temporary root, is retained across ordinary process exits, and is not removed when a turn or chat ends. It is disposable cache state: the host may remove it after a restart or temporary-file cleanup, and a changed `TMPDIR` selects a different location. Scripts must tolerate it being empty. `session_start` receives session state after the transcript header and optional system record are created. Failed session creation does not remove session state.
 
 Both directories are shared writable coordination spaces, not per-script storage. Scripts must namespace files when needed and must account for other Shellfish processes that use the same session ID. Shellfish does not serialize concurrent processes that use the same session or session ID.
 
@@ -107,13 +107,13 @@ A script communicates through three channels. They are captured separately, but 
 | --- | --- |
 | stdout | Hook data. Often durable `context`; hook-dependent (see below). |
 | stderr | Ephemeral display. Streamed to a live event client while the script runs, never committed, never sent to the model. |
-| fd 3 | One JSON control object on hooks that accept it. |
+| fd 3 | One JSON control object containing common state and any hook-specific fields. |
 
-fd 3 must contain exactly one JSON object. It is captured to a private file and byte-counted before decoding. The dispatcher validates the encoding, and the hook-specific adapter validates the object's fields. Model-facing context remains raw stdout, so ordinary scripts can still use `cat` and pipelines without JSON-encoding their payloads.
+fd 3 must contain exactly one JSON object. Every hook accepts an optional `state` array of `{name,value}` objects. The dispatcher constructs canonical state records and removes `state` before the hook-specific adapter validates the remaining fields. The control capture is private and byte-counted before decoding. Model-facing context remains raw stdout, so ordinary scripts can still use `cat` and pipelines without JSON-encoding their payloads.
 
 Hook scripts opt into live display by writing to stderr. In JSONL mode, the first newline-terminated stderr line opens a notice while the script runs; full stderr replaces it after exit and capture checks. A script that writes no newline is displayed only after exit. Silent scripts produce no activity notices. Without a live event stream, the owning process writes the buffered stderr to its own stderr.
 
-stdout remains buffered while each script runs because its meaning and commit policy depend on the hook. A successful `session_start` script's completed notice can carry its validated stdout as a transient `context` preview before the next script starts. The initial transcript is still written only after the entire chain succeeds. Turn hooks emit model-facing context only after persistence. See [JSONL output](RUN.md#output).
+stdout and state remain staged until the complete chain and hook-specific validation succeed. Shellfish then appends and emits state followed by any model-facing context. A later script failure discards the chain's staged records. See [JSONL output](RUN.md#output).
 
 ### Exit statuses
 
@@ -128,9 +128,9 @@ Skipping is **sticky**: once any script returns 10 or 11, the default action is 
 
 Rules the dispatcher enforces for every script:
 
-- fd 3 must be empty unless the hook accepts control. Nonempty fd 3 must be one JSON object; malformed JSON or another JSON type fails the operation.
+- Nonempty fd 3 must be one JSON object. Every hook accepts common state; other fields must belong to that hook's control vocabulary.
 - stdout is candidate hook data on any successful status; whether it is committed depends on the hook (see below).
-- Successful stdout accumulates across the chain and becomes usable only after the whole chain succeeds. A later failure discards all candidate output.
+- Successful state and stdout accumulate across the chain and become usable only after the whole chain succeeds. A later failure discards all candidate output.
 - When a script exits with an unsupported status, its captured stderr is included in the failure message.
 
 Inner commands can return any status. `jq` exiting 1 would otherwise fail the operation, so translate explicitly. The bundled scripts always end with an explicit `exit 0`, `exit 10`, or `exit 11`.
@@ -141,12 +141,14 @@ Quick reference. "Owner" is the process that runs the chain; "stdin" is the exac
 
 | Hook | Owner | argv (after `$1`) | stdin | stdout | Control (fd 3) | Default / skipped |
 | --- | --- | --- | --- | --- | --- | --- |
-| `session_start` | create | — | empty | durable context | none | finish creation / unsupported (10/11 fails) |
-| `user_prompt_submit` | run | — | exact prompt | durable context | context metadata; optional handoff action with exit 11 | submit prompt / do not submit, optionally hand off |
-| `permission_request` | run | — | tool request envelope JSON | ignored | allow or deny action with exit 11 | defer to adapter / deny, or apply fd 3 |
-| `pre_tool_use` | run | — | tool request envelope JSON | denial feedback on exit 10/11 | none | execute / deny the call |
-| `post_tool_use` | run | — | tool response envelope JSON | must be empty | none | continue / unsupported (10/11 fails) |
-| `stop` | run | `STOP_ATTEMPT` | assistant text | continuation feedback | none | finish turn / commit feedback, request again |
+| `session_start` | create | — | empty | durable context | state | finish creation / unsupported (10/11 fails) |
+| `user_prompt_submit` | run | — | exact prompt | durable context | state; context metadata; optional handoff action with exit 11 | submit prompt / do not submit, optionally hand off |
+| `permission_request` | run | — | tool request envelope JSON | ignored | state; allow or deny action with exit 11 | defer to adapter / deny, or apply fd 3 |
+| `pre_tool_use` | run | — | tool request envelope JSON | denial feedback on exit 10/11 | state | execute / deny the call |
+| `post_tool_use` | run | — | tool response envelope JSON | must be empty | state | continue / unsupported (10/11 fails) |
+| `stop` | run | `STOP_ATTEMPT` | assistant text | continuation feedback | state | finish turn / commit feedback, request again |
+
+A hook requests durable state with `{"state":[{"name":"git/identity","value":"branch:main"}]}`. State composes with the hook-specific fields in the same object. Records retain configured script and array order, and state is appended before the chain's context.
 
 For context-producing hooks, committed stdout becomes a `context` record named for the hook and attributed to the producing script's basename: `{type:"context",hook:"<hook>",script:"<basename>",content:"<stdout>"}`. For `user_prompt_submit`, a `context` object on fd 3 may add `prompt` and `status` to that script's record. `prompt` requires an integer `status` from 0 through 255.
 
@@ -166,14 +168,14 @@ Trailing context, typically `stop` feedback, becomes a synthetic trailing user m
 
 ### `session_start`
 
-Runs once during session preparation. It does not run when an existing session is resumed or a turn restarts. The header and materialized system record are prepared in memory, and script input is constructed from that state and its resolved runtime. The session path does not exist until the complete initial prefix is written after all scripts succeed. stdin is empty and `$1` is `session_start`. There are no further arguments. The script receives `SHELLFISH_SESSION_STATE`, but it does not receive `SHELLFISH_TURN_ID` or `SHELLFISH_TURN_STATE`. Of the environment names declared by configured components, it receives only those selected by its own manifest.
+Runs once after creation writes the session header and optional system record. It does not run when an existing session is resumed or a turn restarts. stdin is empty and `$1` is `session_start`. There are no further arguments. The script receives `SHELLFISH_SESSION_STATE`, but it does not receive `SHELLFISH_TURN_ID` or `SHELLFISH_TURN_STATE`. Of the environment names declared by configured components, it receives only those selected by its own manifest.
 
-- **stdout** becomes durable `session_start` context in the initial session prefix. Each script's nonempty stdout is a separately attributed record.
+- **stdout** becomes durable `session_start` context. Each script's nonempty stdout is a separately attributed record.
 - **stderr** is shown and discarded.
-- **fd 3** is invalid; this hook accepts no control.
-- **Default action** is finishing creation. Exit 10 or 11 is unsupported and fails session creation without committing stdout.
+- **fd 3** accepts state.
+- **Default action** is finishing creation. Exit 10 or 11 is unsupported and fails session creation without committing hook output.
 
-If a creation script fails or is interrupted by a handled signal, Shellfish reports the failure and does not create the session file. Scripts that perform external writes must provide their own idempotency if creation is retried.
+If a creation script fails or is interrupted by a handled signal, Shellfish removes the new session and reports the failure. Scripts that perform external writes must provide their own idempotency if creation is retried.
 
 ```sh
 #!/bin/sh
@@ -190,7 +192,7 @@ Runs in the turn before the ordinary user record is committed, with the exact su
 
 - **stdout** becomes durable `user_prompt_submit` context, pending before the next committed user message.
 - **stderr** is shown and discarded.
-- **fd 3** accepts context metadata on any successful script status and an optional handoff or session-update action with exit 11.
+- **fd 3** accepts state and context metadata on any successful script status, plus an optional handoff or session-update action with exit 11.
 - **Default action** is submitting the literal prompt. Exit 10 or 11 does not submit it; stdout is still committed.
 
 For a blocked prompt, write model-visible context to stdout and a user-only explanation to stderr. There is no separate block-reason channel.
@@ -230,7 +232,7 @@ Runs at the turn's sandbox-bypass decision boundary, only when a tool requests a
 
 - **stdout** is captured but ignored. It is not committed.
 - **stderr** is shown and discarded.
-- **fd 3** is `{"action":"allow"}` or `{"action":"deny","reason":"..."}`. The reason must be nonempty and may not contain a NUL byte. Valid only with exit 11.
+- **fd 3** accepts state on any successful status. `{"action":"allow"}` or `{"action":"deny","reason":"..."}` may accompany state and is valid only with exit 11. The reason must be nonempty and may not contain a NUL byte.
 - **Default action** (exit 0, default still enabled) is to defer: the turn asks its interactive client, or denies headlessly if no reply is available.
 - **Skipped without control** (exit 10) denies.
 - **Skipped with control** (exit 11) applies the fd-3 decision. An invalid decision fails the operation.
@@ -258,7 +260,7 @@ Runs immediately before a tool executes. `$1` is `pre_tool_use`. stdin is the sa
 
 - **stdout** must be empty on exit 0. On exit 10 or 11, nonempty stdout is denial feedback for the model. Shellfish joins feedback from denying scripts with newlines in configured order and uses it as the denied `tool_result` content. When no denying script writes feedback, the result retains the generic denial text naming the first denying script. Stdout never rewrites tool input.
 - **stderr** is shown and discarded.
-- **fd 3** is invalid.
+- **fd 3** accepts state.
 - **Default action** is executing the tool. Exit 10 denies the call and continues the script chain. Exit 11 denies the call and halts the chain. Shellfish commits an ordinary `tool_result` with exit code 126, then proceeds to later tool calls in provider order. This policy gate cannot approve sandbox bypass. `permission_request` remains a separate boundary.
 
 Coordinate state beyond denial feedback through `SHELLFISH_TURN_STATE` or `SHELLFISH_SESSION_STATE`. For example, mark a file edit in turn state and consume the marker in a `stop` script.
@@ -282,7 +284,7 @@ Runs after the canonical tool result is durably committed. `$1` is `post_tool_us
 
 - **stdout** must be empty.
 - **stderr** is shown and discarded.
-- **fd 3** is invalid.
+- **fd 3** accepts state.
 - **Default action** is continuing the tool loop. There is no coherent skipped action, so exit 10 or 11 **fails the operation** (it does not skip anything).
 
 A nonzero tool exit is a normal canonical result, not a script failure, so this script still runs. Script failure is an orchestration failure and triggers ordinary turn recovery. Use turn or session state to coordinate observations with `stop`. `post_tool_use` cannot replace results or add model context.
@@ -293,7 +295,7 @@ Runs after the completed assistant record is committed. `$1` is `stop`, `$2` is 
 
 - **stdout** is continuation feedback, but only when completion is skipped. Exit-0 stdout is **discarded**: permitting completion must not stage feedback.
 - **stderr** is shown and discarded.
-- **fd 3** is invalid.
+- **fd 3** accepts state.
 - **Default action** (exit 0) is finishing the turn.
 - **Skipped** (exit 10 or 11) requires nonempty stdout. That stdout is committed as `stop`-tagged context and forces another provider request within the same turn. Repeated skipped completion is bounded by `harness.max_requests_per_turn`. Scripts can use `$2` to avoid requesting accidental continuation loops.
 
@@ -311,9 +313,9 @@ exit 10
 
 ## Guarantees and limits
 
-- Session transcript records are append-only and authoritative. Hook scripts are trusted user-provided programs, and durable script output must travel through stdout rather than direct transcript mutation. Scripts may request a session update through fd 3 but must not rewrite the header directly.
+- Session transcript records are append-only and authoritative. Hook scripts are trusted user-provided programs. Durable context travels through stdout and durable state through fd 3. Scripts never mutate the transcript directly. Scripts may request a session update through fd 3 but must not rewrite the header directly.
 - Script output is untrusted. stdout is escaped before it reaches the model. It cannot forge tags or inject provider roles.
-- Dispatch is sequential and preserves configured order. A failed chain does not commit partial output. Candidate context is usable only after the whole chain succeeds.
+- Dispatch is sequential and preserves configured order. A failed chain commits no staged state or context.
 - Captures are private, bounded, and cleaned on every path.
 - Scripts have no independent timeout. They must terminate themselves. Cancelling the enclosing operation terminates the active script.
 - Scripts inherit the ordinary process environment. Shellfish removes every environment name declared by any component in the frozen runtime, then restores only the names selected by the invoked hook's manifest. The variables documented above are the other Shellfish-specific hook script guarantees.

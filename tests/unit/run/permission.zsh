@@ -25,7 +25,7 @@ jq -e '. == {turn_id:1,tool_name:"shell",tool_use_id:"call_1",
     sandbox_bypass_reason:"Required by the test fixture"}}' >/dev/null
 print -rn -- ignored
 print -rn -u2 -- reviewed
-print -rn -u3 -- '{"action":"allow"}'
+print -rn -u3 -- '{"action":"allow","state":[{"name":"permission/review","value":"allowed"}]}'
 exit 11
 ZSH
 chmod +x "$permission_allow"
@@ -42,6 +42,8 @@ print -r -- "$stream" | jq -eRn '
   ($events | map(select(.type == "_tool_permission_request")) | length) == 0 and
   ($events | map(select(.type == "_notice" and .complete) | [.source,(.title|split("/")[-1]),.text])) ==
     [["permission_request","permission-allow","reviewed"]] and
+  ($events | map(select(.type == "state" or .role? == "tool_result")) | map(.type)) ==
+    ["state","message"] and
   ($events | map(select(.role == "tool_result"))[0] |
     .exit_code == 0 and .content == "headless")
 ' >/dev/null

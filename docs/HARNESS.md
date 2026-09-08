@@ -37,13 +37,13 @@ Sandboxing applies to opted-in tools. Hook scripts and backend adapters are trus
 
 ### Session context
 
-At the `session_start` hook, three scripts prepare context before the transcript is created:
+After the transcript header and optional system record are created, three `session_start` scripts append startup context:
 
 - `project_environment` reports the host, project tree, available shell commands, and Agent Skills.
 - `git_environment` reports Git context at startup and branch or detached-commit changes before later prompts.
 - `project_instructions` loads the project's `AGENTS.md`, or `CLAUDE.md` when `AGENTS.md` is absent.
 
-This context becomes part of the durable initial session prefix. It is collected once for a new session rather than before every turn.
+This context is appended once for a new session rather than before every turn.
 
 The filesystem listing in `project_environment` and each Git probe use a one-second wall-clock budget so session startup stays fast. A slow filesystem skips the listing but retains the other environment context; a slow Git probe reports no context. Set `SHELLFISH_PROBE_BUDGET` to a positive number of seconds to raise the limit on a slow host; other values are ignored.
 

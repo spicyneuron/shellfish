@@ -11,20 +11,12 @@ def event_fields($event_runtime):
   elif . == {type:"_backend_request_start"} then
     ["backend_request_start"]
   elif .type == "_notice" and
-      (keys - ["context"] == ["complete", "level", "source", "text", "title", "type"]) and
+      keys == ["complete", "level", "source", "text", "title", "type"] and
       ([.title, .source, .text] | all(type == "string")) and
-      (.level | IN("info", "error")) and (.complete | type == "boolean") and
-      (if has("context") then .complete and .level == "info" and
-        (.context | canonical_context) and .context.hook == .source and
-        .context.script == (.title | sub("/run$"; "") | split("/") | last)
-       else true end) then
-    if has("context") then
-      .context | durable_display_fields(false; ($event_runtime.harness.tools // []))
-    else
-      ["notice", (if .level == "error" then "error" else "notice" end),
-       (.title | sub("/run$"; "") | split("/") | last), .source, .text,
-       (if .complete then "closed" else "open" end)]
-    end
+      (.level | IN("info", "error")) and (.complete | type == "boolean") then
+    ["notice", (if .level == "error" then "error" else "notice" end),
+     (.title | sub("/run$"; "") | split("/") | last), .source, .text,
+     (if .complete then "closed" else "open" end)]
   elif .type == "_session_prepare" and
       keys == ["path", "records", "type"] and
       (.path | nul_free_string and startswith("/")) and
@@ -53,7 +45,7 @@ def event_fields($event_runtime):
         (({type:"session",format_version:1,cwd:"/",created:"1970-01-01T00:00:00Z"} + .) |
           canonical_session_header(1))) then
     ["session_update", (.runtime | tojson)]
-  elif canonical_session_header(1) or
+  elif canonical_session_header(1) or canonical_state or
       (.type == "system" and canonical_session_record) then
     empty
   elif canonical_user_message or canonical_assistant_message or

@@ -114,7 +114,7 @@ environment_call=$(jq -cn --arg command '
 ' '{id:"environment_1",name:"shell",input:{command:$command}}') || \
   fail 'cannot prepare tool environment call'
 sf_test_tool_execute "$environment_call" 0
-typeset expected_context="selected|$tool_config_dir|${session:A}|$ROOT/bin/shellfish|$tool_max_capture"
+typeset expected_context="selected|$tool_config_dir|$session|$ROOT/bin/shellfish|$tool_max_capture"
 jq -e --arg expected "$expected_context" '.content == $expected' <<<"$REPLY" >/dev/null
 unset TOOL_SETTING SHELLFISH_CONFIG_DIR SHELLFISH_SESSION SHELLFISH_EXECUTABLE
 unset SHELLFISH_MAX_CAPTURE_BYTES
@@ -266,7 +266,7 @@ load_tools "$(jq -c --arg fence "$tmp/bin/fence" \
 sf_test_tool_execute "$(jq -cn --arg command '
   printf "%s|%s|%s|%s" "$TMPDIR" "$TMPPREFIX" "$SHELLFISH_SESSION" "$SHELLFISH_EXECUTABLE"
 ' '{id:"fence_empty",name:"shell",input:{command:$command}}')" 1
-jq -e --arg temp "$tool_temp" --arg session "${session:A}" \
+jq -e --arg temp "$tool_temp" --arg session "$session" \
   --arg executable "$ROOT/bin/shellfish" '
     .content == ($temp + "|" + $temp + "/zsh|" + $session + "|" + $executable)
   ' <<<"$REPLY" >/dev/null

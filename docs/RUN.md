@@ -10,17 +10,18 @@ shellfish create --session-from path/to/session.jsonl
 shellfish create --session-out ./project-session.jsonl
 ```
 
-`shellfish create --jsonl` streams startup previews instead of printing a path:
+`shellfish create --jsonl` streams startup events instead of printing a path:
 
 | Type | Fields and meaning |
 | --- | --- |
-| `_session_prepare` | `path` and `records` (prepared header and optional system record), before hooks run. |
-| `_notice` | Hook activity and stderr, using the shared notice format below. A completed startup notice may include a `context` preview. |
-| `_session_created` | `path`, after the initial session prefix is written successfully. |
+| `_session_prepare` | `path` and the durable header and optional system record, before hooks run. |
+| `_notice` | Transient hook activity and stderr, using the shared notice format below. |
+| `state`, `context` | Durable output from the successful `session_start` chain. |
+| `_session_created` | `path`, after startup hooks finish successfully. |
 
-These events are all transient. Prepared records and hook content are not durable until creation succeeds. Hooks run sequentially; an empty hook chain emits only the preparation and creation events. On failure, diagnostics go to stderr, the process exits nonzero, and no creation event is emitted. Clients must not submit a turn until creation exits successfully.
+Creation writes the header and optional system record before running hooks. A successful hook chain appends and emits state followed by context. An empty chain emits only the preparation and creation events. On failure, Shellfish removes the new session, reports diagnostics, exits nonzero, and emits no creation event. Clients must not submit a turn until creation exits successfully.
 
-As in a turn, `SIGUSR1` is the client's cancellation signal, aimed at the creating process alone so it can stop a running hook script itself. Cancelled creation exits nonzero and writes no session.
+As in a turn, `SIGUSR1` is the client's cancellation signal, aimed at the creating process alone so it can stop a running hook script itself. Cancelled creation exits nonzero and removes the new session.
 
 `--system TEXT` and `--system-file PATH` replace the configured or copied system prompt. Both flags are repeatable and may be mixed; their contents have trailing newlines stripped and are joined in command-line order with a blank line.
 
@@ -111,7 +112,7 @@ Text and reasoning deltas carry a zero-based content `index` and a zero-based `s
 
 Notices have the shape `{type:"_notice",level,title,source,text,complete}`. The level is `info` or `error`. The source attributes the notice, and is empty when there is no attribution. Hook scripts opt into display through stderr: the first newline-terminated line opens an informational notice titled with the script path and attributed to the hook, with `complete:false`. The script's full stderr replaces it with `complete:true` after capture checks succeed. A script that writes no newline emits only the complete notice. Silent hooks emit no activity notices. An interrupted invocation or rejected capture may end without completion, so clients must discard an incomplete notice when the stream fails, ends, or is replayed. Failures are complete error notices.
 
-A completed informational notice can additionally carry `context`, a canonical context record offered as a transient preview. During creation, a successful startup script's nonempty stdout is validated and attached this way before the next script starts. It becomes durable only when creation succeeds. Ordinary turn hooks do not preview stdout: their policies determine whether it becomes context, and any resulting `context` records are emitted after persistence as usual.
+Hook stdout is not attached to notices. Its lifecycle policy determines whether it becomes durable context after the complete hook chain succeeds.
 
 A permission request has this shape:
 

@@ -204,7 +204,7 @@ state=$SHELLFISH_TURN_STATE
 print -n shared >"$state/marker"
 sf_hooks_invoke "$session" "$working" "$input" 4096 0 3 stop '' $'line\nbreak' \
   "$invocation" '[]' || fail "$SF_HOOK_ERROR"
-typeset expected="3|stop||"$'line\nbreak|first\nsecond\n'"|$working|${session:A}|4096|$state|$SHELLFISH_SESSION_STATE|session-id|model-name|$invocation|${invocation:h}"
+typeset expected="3|stop||"$'line\nbreak|first\nsecond\n'"|$working|${session:A}|4096|$state|$SHELLFISH_SESSION_STATE|session-id|model-name|$invocation|${invocation:A:h}"
 assert_equal "$expected" "$SF_HOOK_SCRIPT_RESULTS[3]"
 assert_equal 700 "$(stat -f %Lp "$SHELLFISH_SESSION_STATE")"
 [[ $(cat "$state/marker") == shared ]]

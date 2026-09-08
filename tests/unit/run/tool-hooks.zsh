@@ -26,6 +26,7 @@ set -e
 input=$(cat)
 call_id=$(jq -r '.tool_use_id' <<<"$input")
 print -rn -- "$input" >"$TEST_OUTPUT_DIR/pre-$call_id"
+jq -cn --arg id "$call_id" '{state:[{name:"tools/pre",value:$id}]}' >&3
 print -rn -u2 -- "pre-local-$call_id"
 ZSH
 chmod +x "$pre_observe"
@@ -39,6 +40,7 @@ set -e
 input=$(cat)
 call_id=$(jq -r '.tool_use_id' <<<"$input")
 print -rn -- "$input" >"$TEST_OUTPUT_DIR/post-$call_id"
+jq -cn --arg id "$call_id" '{state:[{name:"tools/post",value:$id}]}' >&3
 print -rn -u2 -- "post-local-$call_id"
 ZSH
 chmod +x "$post_observe"
@@ -58,6 +60,10 @@ print -r -- "$stream" | jq -eRn '
     map({exit_code,content})) ==
     [{exit_code:7,content:"line\n\n"},
      {exit_code:7,content:"line\n\n"}] and
+  ($events | map(select(.type == "state" or .role? == "tool_result")) |
+    map(if .type == "state" then [.name,.value] else ["result",.call_id] end)) ==
+    [["tools/pre","call_1"],["result","call_1"],["tools/post","call_1"],
+     ["tools/pre","call_2"],["result","call_2"],["tools/post","call_2"]] and
   ($events | map(select(.type == "_notice" and .complete) | {hook:.source,script:(.title|split("/")[-1]),text})) ==
     [{hook:"pre_tool_use",script:"pre-observe",text:"pre-local-call_1"},
      {hook:"post_tool_use",script:"post-observe",text:"post-local-call_1"},

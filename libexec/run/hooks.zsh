@@ -59,7 +59,7 @@ sf_hooks_user_prompt_submit() {
       patch=$(jq -c '.patch' <<<"$control") || operation_status=1
     fi
   done
-  (( operation_status )) || sf_hooks_commit_context user_prompt_submit collect || operation_status=1
+  (( operation_status )) || sf_hooks_collect_context user_prompt_submit || operation_status=1
   if (( operation_status )); then
     [[ -n $SF_HOOK_ERROR ]] || SF_HOOK_ERROR='cannot prepare user_prompt_submit hook script invocation'
     sf_hooks_fail "$SF_HOOK_ERROR"

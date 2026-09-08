@@ -79,6 +79,11 @@ zsh -f "$entry" create --session-from "$created" --session-from "$created" >/dev
 # An occupied destination is never overwritten.
 zsh -f "$entry" create --session-out "$explicit" --config "$config" >/dev/null 2>&1 &&
   fail 'create overwrote an existing session'
+typeset empty="$tmp/empty.jsonl"
+: >"$empty"
+zsh -f "$entry" create --session-out "$empty" --config "$config" >/dev/null 2>&1 &&
+  fail 'create accepted an existing empty destination'
+[[ -f $empty && ! -s $empty ]] || fail 'create removed an existing empty destination'
 
 # Runtime overrides against an existing session stay rejected by config.
 zsh -f "$entry" create --session-from "$created" --model other >/dev/null 2>&1 &&
@@ -169,23 +174,24 @@ zsh -f "$entry" create --session-out "$missing" --config "$missing_config" >/dev
   fail 'a missing system component created a session'
 [[ ! -e $missing ]] || fail 'create left a transcript for a missing component'
 
-# Startup previews reach hooks' observers before the initial prefix is written.
+# Startup notices stream during the chain, then durable hook records follow.
 typeset events="$tmp/events.jsonl" streamed="$tmp/streamed.jsonl"
 typeset first="$tmp/first-hook" silent="$tmp/silent-hook" stream_config="$tmp/stream.jsonc"
 mkdir "$first" "$silent"
 cat >"$first/run" <<'ZSH'
 #!/usr/bin/env zsh
-[[ ! -e $SHELLFISH_SESSION ]] || exit 2
+[[ -f $SHELLFISH_SESSION ]] || exit 2
 jq -se 'length == 1 and .[0].type == "_session_prepare"' \
   "$SF_TEST_EVENTS" >/dev/null || exit 3
 print -r -- 'startup context'
 printf '%*s' "${SF_TEST_CONTEXT_BYTES:-0}" ''
+print -rn -u3 -- '{"state":[{"name":"startup/stream","value":true}]}'
 print -u2 -r -- 'startup display'
 ZSH
 cat >"$silent/run" <<'ZSH'
 #!/usr/bin/env zsh
-[[ ! -e $SHELLFISH_SESSION ]] || exit 2
-jq -se '.[-1].complete == true and .[-1].context.type == "context"' \
+[[ -f $SHELLFISH_SESSION ]] || exit 2
+jq -se '.[-1].complete == true and (.[-1] | has("context") | not)' \
   "$SF_TEST_EVENTS" >/dev/null || exit 3
 ZSH
 chmod +x "$first/run" "$silent/run"
@@ -196,33 +202,36 @@ SF_TEST_EVENTS="$events" zsh -f "$entry" create --jsonl --config "$stream_config
 [[ ! -s $hook_error ]] || fail 'streamed display leaked to stderr'
 jq -se --arg path "$streamed" --arg first "${first:A}/run" \
   --slurpfile session "$streamed" '
-  map(.type) == ["_session_prepare","_notice","_notice","_session_created"] and
+  map(.type) == ["_session_prepare","_notice","_notice","state","context","_session_created"] and
   .[0] == {type:"_session_prepare",path:$path,records:$session[:2]} and
   .[1] == {type:"_notice",level:"info",source:"session_start",title:$first,
     text:"startup display\n",complete:false} and
   .[2].text == "startup display\n" and .[2].complete == true and
-  .[2].context == $session[2] and
-  .[3] == {type:"_session_created",path:$path} and
-  $session[2] == {type:"context",hook:"session_start",script:"first-hook",content:"startup context\n"} and
-  ($session | length == 3)
+  (.[2] | has("context") | not) and
+  .[3] == $session[2] and .[3] ==
+    {type:"state",name:"startup/stream",value:true} and
+  .[4] == $session[3] and .[4] ==
+    {type:"context",hook:"session_start",script:"first-hook",content:"startup context\n"} and
+  .[5] == {type:"_session_created",path:$path} and
+  ($session | length == 4)
 ' "$events" >/dev/null || fail 'invalid creation event sequence or transcript'
 
-# Context previews use the capture budget, not the operating system's argv limit.
+# Startup context uses the capture budget, not the operating system's argv limit.
 typeset large="$tmp/large.jsonl" large_config="$tmp/large.jsonc"
 jq '.harnesses.machine.max_capture_bytes=400000' "$stream_config" >"$large_config"
 SF_TEST_EVENTS="$events" SF_TEST_CONTEXT_BYTES=300000 zsh -f "$entry" create --jsonl \
   --session-out "$large" --config "$large_config" >"$events" 2>"$hook_error" ||
-  fail 'large context preview failed'
-jq -se --slurpfile session "$large" '.[2].context == $session[2] and
-  (.[2].context.content | length == 300016)' "$events" >/dev/null ||
-  fail 'large context preview was truncated'
+  fail 'large startup context failed'
+jq -se --slurpfile session "$large" '.[4] == $session[3] and
+  (.[4].content | length == 300016)' "$events" >/dev/null ||
+  fail 'large startup context was truncated'
 
 # Empty startup has no hook events, including when the system is empty.
 zsh -f "$entry" create --jsonl --config "$config" --system '' >"$events"
 jq -se 'map(.type) == ["_session_prepare","_session_created"] and
   (.[0].records | length == 1)' "$events" >/dev/null || fail 'invalid empty startup stream'
 
-# Failure leaves only previews, never a durable session or completion signal.
+# Failure removes the initial session and emits no durable hook records or completion signal.
 SF_TEST_STATE_MARKER="$marker" zsh -f "$entry" create --jsonl --session-out "$failed" \
   --config "$hook_config" >"$events" 2>"$hook_error" && fail 'streamed failure succeeded'
 [[ ! -e $failed && $(<"$hook_error") == *'hook script failed with status 9:'* ]]
@@ -230,16 +239,16 @@ jq -se 'map(.type) == ["_session_prepare","_notice","_notice"] and
   all(.[]; has("context") | not)' \
   "$events" >/dev/null || fail 'failed creation emitted completion'
 
-# A later failure does not make an earlier context preview durable.
+# A later failure discards an earlier script's staged context.
 jq --arg first "$first" '.harnesses.machine.session_start |= [$first] + .' \
   "$hook_config" >"$stream_config"
 SF_TEST_EVENTS="$events" SF_TEST_STATE_MARKER="$marker" zsh -f "$entry" create --jsonl \
   --session-out "$failed" --config "$stream_config" >"$events" 2>"$hook_error" &&
   fail 'a later startup failure succeeded'
 [[ ! -e $failed && $(<"$hook_error") == *'hook script failed with status 9:'* ]]
-jq -se 'any(.context.content == "startup context\n") and
-  all(.[]; .type != "_session_created")' "$events" >/dev/null ||
-  fail 'later failure lost the preview or reported creation'
+jq -se 'all(.[]; .type != "state" and .type != "context" and
+  .type != "_session_created")' "$events" >/dev/null ||
+  fail 'later failure emitted staged hook records or completion'
 
 # The client's cancellation signal stops the running script and saves nothing.
 typeset slow="$tmp/slow-hook" slow_config="$tmp/slow.jsonc" cancelled="$tmp/cancelled.jsonl"
