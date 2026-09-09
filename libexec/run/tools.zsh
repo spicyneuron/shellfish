@@ -81,7 +81,7 @@ sf_tools_load() {
       ($tools[] | (.name | field), (.command | field),
         (.manifest.sandbox | tostring | field),
         (.manifest.allow_sandbox_bypass // false | tostring | field),
-        ((.settings // "") | field), ((.manifest.environment // []) | tojson | field)),
+        ((.settings // "") | field), ((.manifest.environment // []) | join(" ") | field)),
       ("ok" | field)
   ' 2>/dev/null) || {
     sf_tools_fail 'cannot inspect configured tools'

@@ -207,7 +207,7 @@ sf_run_turn() {
       ($runtime.harness.sandbox_read_paths | tojson | field),
       ($runtime.harness.sandbox_write_paths | tojson | field),
       ($runtime.harness.tools | tojson | field),
-      ($runtime.backend.environment | tojson | field),
+      ($runtime.backend.environment | join(" ") | field),
       ($runtime.backend.env_file | field),
       ($runtime.backend.context_window_command // "" | field),
       (if $runtime.profile | has("context_window") then "1" else "0" end | field),

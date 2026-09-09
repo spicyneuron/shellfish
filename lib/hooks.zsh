@@ -305,15 +305,19 @@ sf_hooks_run_chain() {
   shift 5
   local -a fields components
 
+  # The terminator keeps a trailing empty environment field, which command
+  # substitution would otherwise strip along with the final newline.
   fields=( "${(@f)$(jq -erc --arg hook "$hook" '
     .harness.max_capture_bytes,
-    (.harness[$hook][]? | .command, .display, (.environment | tojson))
+    (.harness[$hook][]? | .command, .display, (.environment | join(" "))),
+    "ok"
   ' <<<"$SF_SESSION[runtime]")}" ) || return 1
-  components=( "${(@)fields[2,-1]}" )
+  [[ $fields[-1] == ok ]] || return 1
+  components=( "${(@)fields[2,-2]}" )
   local SHELLFISH_MODEL=$SF_SESSION[model]
-  local config_file SHELLFISH_CONFIG_DIR=''
-  config_file=$(jq -r '.backend.env_file // ""' <<<"$SF_SESSION[runtime]") || return 1
-  [[ -z $config_file ]] || SHELLFISH_CONFIG_DIR=${config_file:h}
+  local SHELLFISH_CONFIG_DIR=''
+  sf_environment_project "$SF_SESSION[runtime]" || return 1
+  [[ -z $SF_ENVIRONMENT_FILE ]] || SHELLFISH_CONFIG_DIR=${SF_ENVIRONMENT_FILE:h}
   sf_hooks_invoke "$session" "$SF_SESSION[cwd]" "$input" "$fields[1]" \
     "$allow_control" "$argument_count" "$hook" "$@" "${components[@]}"
 }

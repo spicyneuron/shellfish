@@ -13,7 +13,7 @@ dispatch_hooks() {
   shift 4
   local -a components
   for script in "$@"; do
-    components+=( "$script" '' '[]' )
+    components+=( "$script" '' '' )
   done
   sf_hooks_dispatch "$input" "$max_capture" "$allow_control" "$argument_count" \
     "${components[@]}"
@@ -203,7 +203,7 @@ state=$SHELLFISH_TURN_STATE
 [[ $(stat -f %Lp "$state") == 700 ]]
 print -n shared >"$state/marker"
 sf_hooks_invoke "$session" "$working" "$input" 4096 0 3 stop '' $'line\nbreak' \
-  "$invocation" '' '[]' || fail "$SF_HOOK_ERROR"
+  "$invocation" '' '' || fail "$SF_HOOK_ERROR"
 typeset expected="3|stop||"$'line\nbreak|first\nsecond\n'"|$working|${session:A}|4096|$state|model-name|$invocation|${invocation:A:h}"
 assert_equal "$expected" "$SF_HOOK_SCRIPT_RESULTS[3]"
 [[ $(cat "$state/marker") == shared ]]
@@ -213,11 +213,11 @@ typeset hook_only=$script
 print -rn -- $'first\nsecond' >"$input"
 typeset -g SHELLFISH_TURN_ID=1
 typeset -g +x SHELLFISH_TURN_ID
-sf_hooks_invoke "$session" "$working" "$input" 512 0 1 stop "$hook_only" '' '[]'
+sf_hooks_invoke "$session" "$working" "$input" 512 0 1 stop "$hook_only" '' ''
 [[ $SF_HOOK_SCRIPT_RESULTS[3] == $'1|stop|first\nsecond' ]]
 [[ ${(t)SHELLFISH_TURN_ID} != *export* ]]
 : >"$empty"
-sf_hooks_invoke "$session" "$working" "$empty" 512 0 1 stop "$hook_only" '' '[]'
+sf_hooks_invoke "$session" "$working" "$empty" 512 0 1 stop "$hook_only" '' ''
 [[ $SF_HOOK_SCRIPT_RESULTS[3] == '1|stop|' ]]
 sf_hooks_turn_state_cleanup
 [[ -z $SHELLFISH_TURN_STATE && ! -e $state ]]
@@ -231,7 +231,7 @@ export BACKEND_SETTING=backend HOOK_SETTING=hook TOOL_SETTING=tool SHELLFISH_SES
 make_script selected_environment 'print -rn -- "${BACKEND_SETTING-unset}|${HOOK_SETTING-unset}|${TOOL_SETTING-unset}|$SHELLFISH_SESSION"'
 typeset selected_environment=$script
 sf_hooks_invoke "$session" "$working" "$empty" 512 0 1 stop \
-  "$selected_environment" '' '["HOOK_SETTING","SHELLFISH_SESSION"]' || fail "$SF_HOOK_ERROR"
+  "$selected_environment" '' 'HOOK_SETTING SHELLFISH_SESSION' || fail "$SF_HOOK_ERROR"
 assert_equal "unset|hook|unset|${session:A}" "$SF_HOOK_SCRIPT_RESULTS[3]"
 unset BACKEND_SETTING HOOK_SETTING TOOL_SETTING SHELLFISH_SESSION
 
@@ -244,7 +244,7 @@ SF_SESSION[runtime]=$(jq -c --arg path "$tmp/component.env" '
 make_script no_turn 'print -rn -- "${SHELLFISH_TURN_ID-unset}"'
 typeset no_turn=$script
 sf_hooks_invoke "$session" "$working" "$empty" 512 0 1 session_start \
-  "$no_turn" '' '["SHELLFISH_TURN_ID"]' || fail "$SF_HOOK_ERROR"
+  "$no_turn" '' 'SHELLFISH_TURN_ID' || fail "$SF_HOOK_ERROR"
 assert_equal unset "$SF_HOOK_SCRIPT_RESULTS[3]"
 sf_hooks_turn_state_cleanup
 

@@ -88,7 +88,7 @@ sf_send_request_main() {
   backend_projection=$(jq -jrn --argjson runtime "$runtime" '
     def field: ., "\u0000";
     ($runtime.backend.command | field),
-    ($runtime.backend.environment | tojson | field),
+    ($runtime.backend.environment | join(" ") | field),
     ("ok" | field)
   ' 2>/dev/null) || {
     sf_die 'cannot inspect frozen runtime'
