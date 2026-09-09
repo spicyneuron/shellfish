@@ -208,10 +208,11 @@ def runtime_finalize:
   $input.resolved as $args |
   ($prepared.tool_references | length) as $tool_count |
   ($prepared.hook_component_references | length) as $component_count |
-  ($tool_count * 4) as $component_offset |
+  ($tool_count * 5) as $component_offset |
   [range(0; $tool_count) as $index |
-    ($args[($index * 4):][:4]) |
-    {name:.[0],command:.[1],manifest_json:.[2],settings:.[3]}] as $resolved_tools |
+    ($args[($index * 5):][:5]) |
+    {name:.[0],command:.[1],manifest_json:.[2],settings:.[3],
+      settings_readable:(.[4] == "1")}] as $resolved_tools |
   [range(0; $component_count) as $index |
     ($args[($component_offset + ($index * 3)):][:3]) |
     {hook:.[0],command:.[1],manifest_json:.[2]}] as $resolved_components |
@@ -219,13 +220,11 @@ def runtime_finalize:
     ($tool.manifest_json | fromjson |
       select(tool_manifest) //
         error("invalid tool manifest: " + $tool.command)) as $tool_manifest |
-    if $tool_manifest.sandbox and $tool.settings == "" then
-      error("missing tool sandbox settings: " + $tool.command)
-    elif ($tool_manifest.sandbox | not) and $tool.settings != "" then
-      error("unexpected tool sandbox settings: " + $tool.command)
+    if $tool_manifest.sandbox and ($tool.settings_readable | not) then
+      error("cannot read tool sandbox settings: " + $tool.settings)
     else {name:$tool.name,command:$tool.command,
       manifest:$tool_manifest,
-      settings:(if $tool.settings == "" then null else $tool.settings end)} end] as $tools |
+      settings:(if $tool_manifest.sandbox then $tool.settings else null end)} end] as $tools |
   (reduce $resolved_components[] as $component ({};
     ($component.manifest_json | fromjson |
       select(type == "object" and keys == ["environment"] and
@@ -234,6 +233,9 @@ def runtime_finalize:
     .[$component.hook] += [{command:$component.command,
       environment:$hook_manifest.environment}])) as $hooks |
   $prepared.profile as $profile |
+  ((if $profile.harness | has("sandbox") then $profile.harness.sandbox else true end) and
+    any($tools[]; .manifest.sandbox)) as $needs_fence |
+  if $needs_fence and $input.fence == "" then error("sandboxing requires fence") else . end |
   ({
     profile:({request:$prepared.request} +
       (if $profile | has("context_window") then
@@ -249,7 +251,7 @@ def runtime_finalize:
     harness:({
       sandbox_read_paths:(($profile.harness.sandbox_read_paths // []) + $input.sandbox_read_paths),
       sandbox_write_paths:(($profile.harness.sandbox_write_paths // []) + $input.sandbox_write_paths),
-      fence:$input.fence,tools:$tools,
+      fence:(if $needs_fence then $input.fence else "" end),tools:$tools,
       sandbox:(if $profile.harness | has("sandbox")
         then $profile.harness.sandbox else true end),
       max_requests_per_turn:($profile.harness.max_requests_per_turn // 100),

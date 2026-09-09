@@ -496,6 +496,15 @@ jq -e --arg settings "${tmp:A}/config/tools/alpha/fence.jsonc" '
   .harness.tools[1].manifest.sandbox == true and
   .harness.tools[1].settings == $settings' <<<"$REPLY" >/dev/null
 
+(
+  commands[fence]=''
+  if sf_runtime_resolve_from_config "$tmp/config/tooled.jsonc" '' '' '{}' \
+      "$ROOT/tests/fixtures/backend"; then
+    fail 'sandboxed tool without fence was accepted'
+  fi
+  [[ $SF_RUNTIME_ERROR == *'sandboxing requires fence'* ]]
+)
+
 # An unsandboxed harness resolves sandboxed tool settings without requiring fence.
 jq '.harnesses.tooled.sandbox=false' "$tmp/config/tooled.jsonc" \
   >"$tmp/config/unsandboxed-tools.jsonc"

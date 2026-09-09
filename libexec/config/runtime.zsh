@@ -116,6 +116,19 @@ sf_runtime_read_config() {
   REPLY=$raw
 }
 
+sf_runtime_load_config() {
+  local requested_config=$1 config_path defaults raw
+  sf_runtime_config_path "$requested_config"
+  config_path=$REPLY
+  defaults=$(sf_runtime_read_jsonc "$SF_SHARE/default/shellfish.jsonc" 2>/dev/null) || {
+    sf_runtime_fail 'invalid bundled config'
+    return
+  }
+  sf_runtime_read_config "$requested_config" "$config_path" || return
+  raw=$REPLY
+  reply=( "$config_path" "$defaults" "$raw" )
+}
+
 # --verbose lifts every preview limit. Presentation is resolved on each start
 # rather than frozen, so this reaches stored sessions without touching a header.
 sf_runtime_apply_verbose() {
@@ -194,29 +207,26 @@ sf_runtime_resolve_from_config() {
   local requested_config=$1 profile_override=$2 model_override=$3 request_override=$4
   local backend_override=${5-}
   integer skip_system=${6:-0}
-  local config_path config_dir='' raw='{}' defaults decoded prepared presentation
-  local backend_name backend_reference backend_dir backend_base manifest tool_manifest command
+  local config_path config_dir='' raw defaults decoded prepared presentation
+  local backend_name backend_reference backend_dir backend_base manifest command
   local context_window_command=''
   local reference resolved hook hook_manifest external_name final settings fence='' env_file=''
   local home=${HOME-}
   local theme_marker=': shellfish:unknown-theme:'
-  local -a fields tool_entries tool_paths tool_manifests sandbox_flags
+  local -a fields tool_entries loaded
   local -a system_entries component_entries resolved_args
   integer tool_count system_count component_count index tool_index
-  integer needs_fence=0 sandbox_enabled=1
+  integer settings_readable
 
   SF_RUNTIME_ERROR=''
   SF_PRESENTATION=''
   SF_RUNTIME_SYSTEM=''
   REPLY=''
-  sf_runtime_config_path "$requested_config"
-  config_path=$REPLY
-  defaults=$(sf_runtime_read_jsonc "$SF_SHARE/default/shellfish.jsonc" 2>/dev/null) || {
-    sf_runtime_fail 'invalid bundled config'
-    return
-  }
-  sf_runtime_read_config "$requested_config" "$config_path" || return
-  raw=$REPLY
+  sf_runtime_load_config "$requested_config" || return
+  loaded=( "${reply[@]}" )
+  config_path=$loaded[1]
+  defaults=$loaded[2]
+  raw=$loaded[3]
   [[ -z $config_path ]] || config_dir=${config_path:h}
   [[ -z $config_path ]] || env_file=${config_dir:A}/.env
   [[ -z $home ]] || home=${home:A}
@@ -237,8 +247,6 @@ sf_runtime_resolve_from_config() {
       runtime_prepare as $prepared |
       ($prepared | tojson | record),
       ($prepared.presentation | tojson | record),
-      ($prepared.profile.harness |
-        if has("sandbox") then .sandbox else true end | tostring | record),
       ($prepared.backend_name | record),
       ($prepared.backend_reference | record),
       ($prepared.backend_external | tostring | record),
@@ -258,14 +266,13 @@ sf_runtime_resolve_from_config() {
     return
   }
   fields=( "${(@0)${decoded%$'\0'}}" )
-  (( ${#fields} >= 10 )) && [[ $fields[-1] == ok ]] || {
+  (( ${#fields} >= 9 )) && [[ $fields[-1] == ok ]] || {
     sf_runtime_fail 'cannot inspect prepared runtime'
     return
   }
   prepared=$fields[1]
   presentation=$fields[2]
-  [[ $fields[3] == true ]] || sandbox_enabled=0
-  fields=( "${(@)fields[4,-1]}" )
+  fields=( "${(@)fields[3,-1]}" )
   backend_name=$fields[1]
   backend_reference=$fields[2]
   tool_count=$fields[4]
@@ -315,39 +322,11 @@ sf_runtime_resolve_from_config() {
       return
     }
     sf_runtime_read_manifest "$resolved" required || return
-    tool_paths+=( "$resolved" )
-    tool_manifests+=( "$REPLY" )
-  done
-  if (( tool_count )); then
-    decoded=$(jq -jrn --args '
-      ($ARGS.positional[] |
-        ((try fromjson catch null) |
-          if type == "object" then .sandbox == true else false end | tostring), "\u0000"),
-      "ok", "\u0000"
-    ' -- "${tool_manifests[@]}") || {
-      sf_runtime_fail 'cannot inspect tool manifests'
-      return
-    }
-    sandbox_flags=( "${(@0)${decoded%$'\0'}}" )
-    (( ${#sandbox_flags} == tool_count + 1 )) && [[ $sandbox_flags[-1] == ok ]] || {
-      sf_runtime_fail 'cannot inspect tool manifests'
-      return
-    }
-    sandbox_flags[-1]=()
-  fi
-  for (( tool_index = 1; tool_index <= tool_count; tool_index++ )); do
-    resolved=$tool_paths[tool_index]
-    tool_manifest=$tool_manifests[tool_index]
-    settings=''
-    if [[ $sandbox_flags[tool_index] == true ]]; then
-      settings="$resolved/fence.jsonc"
-      [[ -f $settings && -r $settings ]] || {
-        sf_runtime_fail "cannot read tool sandbox settings: $settings"
-        return
-      }
-      (( sandbox_enabled )) && needs_fence=1
-    fi
-    tool_entries+=( "${${resolved%/}:t}" "$resolved/run" "$tool_manifest" "$settings" )
+    settings="$resolved/fence.jsonc"
+    settings_readable=0
+    [[ ! -f $settings || ! -r $settings ]] || settings_readable=1
+    tool_entries+=( "${${resolved%/}:t}" "$resolved/run" "$REPLY" \
+      "$settings" "$settings_readable" )
   done
   while (( ${#system_entries} < system_count )); do
     reference=$fields[index]
@@ -384,15 +363,9 @@ sf_runtime_resolve_from_config() {
     sf_runtime_fail 'cannot inspect prepared runtime'
     return
   }
-  if (( needs_fence )); then
-    [[ -n ${commands[fence]-} ]] || {
-      sf_runtime_fail 'sandboxing requires fence'
-      return
-    }
-    fence=${commands[fence]:A}
-  fi
+  [[ -z ${commands[fence]-} ]] || fence=${commands[fence]:A}
 
-  (( ${#tool_entries} == tool_count * 4 && ${#system_entries} == system_count &&
+  (( ${#tool_entries} == tool_count * 5 && ${#system_entries} == system_count &&
     ${#component_entries} == component_count * 3 )) || {
     sf_runtime_fail 'cannot assemble resolved runtime references'
     return
@@ -424,19 +397,17 @@ sf_runtime_resolve_from_config() {
 }
 
 sf_runtime_restore_presentation() {
-  local requested_config=$1 config_path raw='{}' defaults output
+  local requested_config=$1 config_path raw defaults output
   local invalid_marker=': shellfish:invalid-config'
   local theme_marker=': shellfish:unknown-theme:'
+  local -a loaded
   SF_RUNTIME_ERROR=''
   SF_PRESENTATION=''
-  sf_runtime_config_path "$requested_config"
-  config_path=$REPLY
-  defaults=$(sf_runtime_read_jsonc "$SF_SHARE/default/shellfish.jsonc" 2>/dev/null) || {
-    sf_runtime_fail 'invalid bundled config'
-    return
-  }
-  sf_runtime_read_config "$requested_config" "$config_path" || return
-  raw=$REPLY
+  sf_runtime_load_config "$requested_config" || return
+  loaded=( "${reply[@]}" )
+  config_path=$loaded[1]
+  defaults=$loaded[2]
+  raw=$loaded[3]
   output=$(sf_jq -nce --argjson defaults "$defaults" \
     --argjson raw "$raw" '
       include "libexec/config/runtime";
