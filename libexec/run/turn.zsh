@@ -119,8 +119,8 @@ sf_run_partial_assistant() {
 # zsh defers a trap's pending exit until this cleanup call returns.
 sf_run_turn_cleanup() {
   local session=$1
-  integer interrupted=$2 error_persisted=0
-  local failure=$3 after=$4 error_message error_record recovered='' partial=''
+  integer interrupted=$2
+  local failure=$3 after=$4 error_message recovered='' closed='' partial=''
 
   sf_tools_cleanup
   sf_hooks_turn_state_cleanup
@@ -146,7 +146,8 @@ sf_run_turn_cleanup() {
     fi
     # An interrupted turn may have written past the in-memory view, so recovery
     # judges the durable records rather than what this process last held.
-    if sf_session_resync_turn "$session" "$error_message"; then
+    if sf_session_resync_turn "$session" "$error_message" "$SF_RUN[committed]"; then
+      closed=$REPLY
       if [[ -n $REPLY ]]; then
         [[ -z $recovered ]] || recovered+=$'\n'
         recovered+=$REPLY
@@ -154,29 +155,12 @@ sf_run_turn_cleanup() {
     else
       failure=$SF_SESSION_ERROR
     fi
-    if jq -e '.type == "turn_error"' <<<"$SF_SESSION_RECORDS[-1]" >/dev/null 2>&1; then
-      error_persisted=1
-    fi
-    if (( SF_RUN[committed] )) &&
-        (( ! error_persisted )); then
-      error_record=$(jq -cn --arg message "$error_message" \
-        '{type:"turn_error",message:$message}') || failure='cannot prepare turn error'
-      if [[ -n $error_record ]]; then
-        if sf_session_append "$session" "$error_record"; then
-          [[ -z $recovered ]] || recovered+=$'\n'
-          recovered+=$error_record
-          error_persisted=1
-        else
-          failure=$SF_SESSION_ERROR
-        fi
-      fi
-    fi
   fi
   SF_REQUEST_PARTIAL_EVENTS=()
   [[ -z $recovered ]] || sf_run_emit "$recovered"
   sf_session_reset
   if (( ! interrupted )); then
-    if [[ -n $failure ]] && (( ! error_persisted )); then
+    if [[ -n $failure && -z $closed ]]; then
       sf_run_error "$failure"
     fi
     [[ -n $failure || -z $after ]] || sf_run_emit "$after"

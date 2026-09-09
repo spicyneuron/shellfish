@@ -313,12 +313,12 @@ sf_session_update() {
   REPLY=1
 }
 
-# Closes an unfinished turn, reporting appended records in REPLY.
+# Closes an unfinished or explicitly failed turn, reporting appended records in REPLY.
 # Requires a freshly read session.
 sf_session_recover_turn() {
   local session_path=$1 message=${2:-Turn interrupted.} record recovered='' needed
   local -a pending
-  integer index
+  integer force_error=${3:-0} index
   REPLY=''
   [[ -n $SF_SESSION_RECOVERY_NEEDED ]] || {
     sf_session_fail 'session recovery state is unavailable'
@@ -329,15 +329,17 @@ sf_session_recover_turn() {
   SF_SESSION_RECOVERY_NEEDED=''
   SF_SESSION_PENDING_CALLS=()
   REPLY=''
-  [[ $needed == true ]] || return 0
-  for (( index = 1; index <= ${#pending}; index += 2 )); do
-    record=$(jq -cn --arg call_id "$pending[index]" --arg name "$pending[index + 1]" \
-      '{type:"message",role:"tool_result",call_id:$call_id,name:$name,
-       content:"tool call interrupted",exit_code:126}') || return
-    sf_session_append "$session_path" "$record" || return
-    [[ -z $recovered ]] || recovered+=$'\n'
-    recovered+=$record
-  done
+  [[ $needed == true || force_error -ne 0 ]] || return 0
+  if [[ $needed == true ]]; then
+    for (( index = 1; index <= ${#pending}; index += 2 )); do
+      record=$(jq -cn --arg call_id "$pending[index]" --arg name "$pending[index + 1]" \
+        '{type:"message",role:"tool_result",call_id:$call_id,name:$name,
+         content:"tool call interrupted",exit_code:126}') || return
+      sf_session_append "$session_path" "$record" || return
+      [[ -z $recovered ]] || recovered+=$'\n'
+      recovered+=$record
+    done
+  fi
   record=$(jq -cn --arg message "$message" '{type:"turn_error",message:$message}') || return
   sf_session_append "$session_path" "$record" || return
   [[ -z $recovered ]] || recovered+=$'\n'
@@ -350,9 +352,10 @@ sf_session_recover_turn() {
 # dangling turn is judged against the durable records rather than a stale view.
 sf_session_resync_turn() {
   local session_path=$1 message=${2-}
+  integer force_error=${3:-0}
   sf_session_repair_tail "$session_path" || return
   sf_session_read "$session_path" || return
-  sf_session_recover_turn "$session_path" "$message"
+  sf_session_recover_turn "$session_path" "$message" "$force_error"
 }
 
 sf_session_begin_turn() {

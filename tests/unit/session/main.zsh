@@ -160,6 +160,13 @@ sf_session_resync_turn "$recovery_complete"
 sf_session_reset
 jq -e -s 'length == 3 and .[-1].content[0].text == "done"' "$recovery_complete" >/dev/null
 
+# Recovery can explicitly terminate a turn whose message sequence is complete.
+sf_session_resync_turn "$recovery_complete" 'stop hook failed' 1
+assert_equal '{"type":"turn_error","message":"stop hook failed"}' "$REPLY"
+sf_session_reset
+jq -e -s 'length == 4 and .[-1] == {type:"turn_error",message:"stop hook failed"}' \
+  "$recovery_complete" >/dev/null
+
 # State records survive reopening without changing conversation sequencing.
 typeset state_session="$tmp/state-session.jsonl"
 cp "$SF_TEST_SESSIONS/header-only.jsonl" "$state_session"
