@@ -94,7 +94,7 @@ sf_process_capture_stream() {
 sf_process_wait() {
   local pid=$1 group_file=$2 status_file=$3
   integer group=0 process_status=1
-  wait "$pid" 2>/dev/null
+  wait "$pid" 2>/dev/null || true
   read -r group <"$group_file" 2>/dev/null || group=0
   (( group > 0 )) && kill -KILL -- -$group 2>/dev/null || true
   if read -r process_status <"$status_file" 2>/dev/null && [[ $process_status == <-> ]]; then

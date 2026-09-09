@@ -3,7 +3,7 @@ setopt no_aliases no_bg_nice no_multios pipe_fail
 
 (( $+functions[sf_jq] )) || source "$SF_ROOT/lib/jq.zsh"
 (( $+functions[sf_scratch_create] )) || source "$SF_ROOT/lib/scratch.zsh"
-(( $+functions[sf_process_stop] )) || source "$SF_ROOT/lib/process.zsh"
+(( $+functions[sf_process_isolated_command] )) || source "$SF_ROOT/lib/process.zsh"
 (( $+functions[sf_environment_prepare] )) || source "$SF_ROOT/lib/environment.zsh"
 
 typeset -gA SF_REQUEST=(
