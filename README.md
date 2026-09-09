@@ -33,7 +33,7 @@ The bundled harness is a minimal starting point. The [default harness guide](doc
 
 ## Get started
 
-Shellfish requires `zsh` 5+, `awk`, `curl`, and [`jq`](https://github.com/jqlang/jq). The default harness needs [`fence`](https://github.com/fencesandbox/fence) for sandboxed tools.
+Shellfish requires `zsh` 5+, `awk`, `curl`, and [`jq`](https://github.com/jqlang/jq). On Linux it also requires `setsid`; on macOS it uses the included `script` utility for process-group creation. The default harness needs [`fence`](https://github.com/fencesandbox/fence) for sandboxed tools.
 
 Install via git:
 

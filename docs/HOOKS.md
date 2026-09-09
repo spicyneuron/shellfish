@@ -32,7 +32,7 @@ repeat:
 
 `shellfish create` writes the session header and optional system record before it runs the `session_start` scripts. `shellfish run` owns each complete turn through `user_prompt_submit`, provider requests, tools, permissions, cancellation, and recovery.
 
-Scripts in one turn share ephemeral coordination state through `SHELLFISH_TURN_STATE`. A script runs synchronously. If the operation is cancelled, the running script is terminated but the processes it started are not. Scripts must finish or terminate their own subprocesses before exiting. Daemonizing is unsupported.
+Scripts in one turn share ephemeral coordination state through `SHELLFISH_TURN_STATE`. A script runs synchronously in an isolated process group. Cancellation terminates that group, including ordinary descendants. A script must still finish or terminate its own subprocesses before exiting. Daemonizing or otherwise leaving the process group is unsupported.
 
 ## Configuring hooks
 
@@ -311,7 +311,7 @@ exit 10
 - Script output is untrusted. stdout is escaped before it reaches the model. It cannot forge tags or inject provider roles.
 - Dispatch is sequential and preserves configured order. A failed chain commits no staged state or context.
 - Captures are private, bounded, and cleaned on every path.
-- Scripts have no independent timeout. They must terminate themselves. Cancelling the enclosing operation terminates the active script, but not whatever that script started, and a shell skips its `EXIT` trap when it dies from a signal. A script must not depend on one for anything that matters.
+- Scripts have no independent timeout. They must terminate themselves. Cancelling the enclosing operation terminates the active script's process group. A descendant that explicitly leaves the group may survive, and a shell skips its `EXIT` trap when a signal kills it. A script must not depend on either behavior for anything that matters.
 - Scripts inherit the ordinary process environment. Shellfish removes every environment name declared by any component in the frozen runtime, then restores only the names selected by the invoked hook's manifest. The variables documented above are the other Shellfish-specific hook script guarantees.
 - Hook scripts are not transformation middleware. Tool-use scripts cannot modify tool input or result content. They observe and gate. Coordinate current-turn policy through turn state, not by overloading stdout.
 - Adding a hook is an adapter change, not a dispatcher change. The dispatcher implements the status table, channel limits, and JSON framing. Each hook owns its control fields, default action, and the consequence of skipping it.
