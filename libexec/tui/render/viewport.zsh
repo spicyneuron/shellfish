@@ -27,7 +27,7 @@ sf_tui_collect_highlights() {
 }
 
 sf_tui_viewport() {
-  integer columns=$1 budget=$2 index open_node=0 open_rows=0
+  integer columns=$1 budget=$2 index
   local cursor=${3:-1:0}
   local -a flushed
 
@@ -44,22 +44,10 @@ sf_tui_viewport() {
   sf_tui_collect_highlights ${#SF_PRESENT_ROW_TEXT} || return 1
   SF_PRESENT_VIEWPORT_HIGHLIGHTS=( "${(@)reply}" )
 
-  if (( ${#SF_PRESENT_NODE_TYPE} )) && [[ $SF_PRESENT_NODE_STATE[-1] == open ]]; then
-    open_node=${#SF_PRESENT_NODE_TYPE}
-  fi
   for (( index = 1; index <= ${#SF_PRESENT_ROW_TEXT}; index++ )); do
-    (( SF_PRESENT_ROW_SETTLED[index] )) || break
-    if (( SF_PRESENT_ROW_NODE[index] == open_node )) &&
-        [[ $SF_PRESENT_ROW_KIND[index] != separator ]]; then
-      (( ++open_rows > 1 )) && break
-    fi
+    (( SF_PRESENT_ROW_CLOSED[index] )) || break
     SF_PRESENT_FLUSH_ROWS=$index
   done
-  if (( SF_PRESENT_FLUSH_ROWS )) &&
-      [[ $SF_PRESENT_ROW_KIND[SF_PRESENT_FLUSH_ROWS] == separator ]] &&
-      (( ${#SF_PRESENT_ROW_TEXT} > 1 )); then
-    (( SF_PRESENT_FLUSH_ROWS-- ))
-  fi
   (( SF_PRESENT_FLUSH_ROWS )) || return 0
   flushed=( "${(@)SF_PRESENT_ROW_TEXT[1,SF_PRESENT_FLUSH_ROWS]}" )
   SF_PRESENT_FLUSH_TEXT=${(F)flushed}

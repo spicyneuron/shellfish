@@ -12,9 +12,10 @@ sf_tui_event assistant_delta xyz
 sf_tui_rows 8 20
 assert_equal $'─ user ─\n\nabcdef\n\n─ agent \n\n⠃' "${(F)SF_PRESENT_ROW_TEXT}"
 assert_equal '2:0,2:1,3:0,3:1,4:0,4:1,4:4' "${(j:,:)SF_PRESENT_ROW_CURSOR}"
-assert_equal '1,1,1,1,1,1,0' "${(j:,:)SF_PRESENT_ROW_SETTLED}"
+assert_equal '1,1,1,1,1,1,0' "${(j:,:)SF_PRESENT_ROW_CLOSED}"
 assert_equal "${#SF_PRESENT_ROW_TEXT}" "${#SF_PRESENT_ROW_KIND}"
 assert_equal "${#SF_PRESENT_ROW_TEXT}" "${#SF_PRESENT_ROW_HIGHLIGHTS}"
+assert_equal "${#SF_PRESENT_ROW_TEXT}" "${#SF_PRESENT_ROW_CLOSED}"
 assert_equal "${#SF_PRESENT_ROW_TEXT}" "${#SF_PRESENT_ROW_SOURCE_END}"
 assert_equal '1,2,2,3,3,4,4' "${(j:,:)SF_PRESENT_ROW_NODE}"
 assert_equal 'section.user,separator,message.user,separator,section.agent,separator,message.agent' \
@@ -30,7 +31,7 @@ sf_tui_event assistant_settle
 sf_tui_rows 8 20 4:2
 assert_equal yz "${(F)SF_PRESENT_ROW_TEXT}"
 assert_equal 5:0 "$SF_PRESENT_ROW_CURSOR[-1]"
-assert_equal 1 "$SF_PRESENT_ROW_SETTLED[-1]"
+assert_equal 1 "$SF_PRESENT_ROW_CLOSED[-1]"
 
 sf_tui_reset
 sf_tui_add message agent '' 'hello world' open
@@ -63,13 +64,13 @@ sf_tui_reset
 sf_tui_add message agent '' $'first\nsecond\npartial' open
 sf_tui_set_frontier 1 6
 sf_tui_rows 80 20
-assert_equal '1,0' "${(j:,:)SF_PRESENT_ROW_SETTLED[1,2]}"
+assert_equal '1,0' "${(j:,:)SF_PRESENT_ROW_CLOSED[1,2]}"
 
 sf_tui_reset
 sf_tui_add reasoning agent '' $'\nfirst\nsecond\n' open
 sf_tui_set_frontier 1 7
 sf_tui_rows 80 20
-assert_equal '1,1,0' "${(j:,:)SF_PRESENT_ROW_SETTLED[1,3]}"
+assert_equal '1,1,0' "${(j:,:)SF_PRESENT_ROW_CLOSED[1,3]}"
 
 sf_tui_reset
 sf_tui_event context project_environment session_start '<env>test</env>'
@@ -93,7 +94,7 @@ sf_tui_event tool_call call_open shell run
 sf_tui_rows 80 20
 assert_equal $'│ run\n╰ ⠃' "${(F)SF_PRESENT_ROW_TEXT[-2,-1]}"
 assert_equal 3:0 "$SF_PRESENT_ROW_CURSOR[-1]"
-assert_equal 0 "$SF_PRESENT_ROW_SETTLED[-1]"
+assert_equal 0 "$SF_PRESENT_ROW_CLOSED[-1]"
 sf_tui_event tool_result call_open 0 result
 sf_tui_rows 80 20 3:0
 assert_equal $'╰ result\n  exit 0' "${(F)SF_PRESENT_ROW_TEXT}"
@@ -114,11 +115,11 @@ sf_tui_event assistant_reasoning_delta $'one\ntwo\nthree'
 sf_tui_rows 80 20
 assert_equal $'─ agent ──────────────────────────────────────────────────────────────────── 1 ─\n\n✎ Thinking… ⠃' \
   "${(F)SF_PRESENT_ROW_TEXT}"
-assert_equal 0 "$SF_PRESENT_ROW_SETTLED[-1]"
+assert_equal 0 "$SF_PRESENT_ROW_CLOSED[-1]"
 sf_tui_event assistant_settle
 sf_tui_rows 80 20 2:1
 assert_equal '✎ Thought for ~4 tokens.' "${(F)SF_PRESENT_ROW_TEXT}"
-assert_equal 1 "$SF_PRESENT_ROW_SETTLED[-1]"
+assert_equal 1 "$SF_PRESENT_ROW_CLOSED[-1]"
 
 sf_tui_reset
 sf_tui_event user done
@@ -126,14 +127,14 @@ sf_tui_add activity '' '' '' open
 sf_tui_rows 80 20
 assert_equal $'─ user ───────────────────────────────────────────────────────────────────── 1 ─\n\ndone\n\n⠃' \
   "${(F)SF_PRESENT_ROW_TEXT}"
-assert_equal '0,0' "${(j:,:)SF_PRESENT_ROW_SETTLED[-2,-1]}"
+assert_equal '0,0' "${(j:,:)SF_PRESENT_ROW_CLOSED[-2,-1]}"
 
 sf_tui_reset
 sf_tui_event tool_call call_zero shell 'make test'
 sf_tui_rows 80 20
 assert_equal $'─ agent ──────────────────────────────────────────────────────────────────── 1 ─\n\n⛭ shell\n╰ ⠃' \
   "${(F)SF_PRESENT_ROW_TEXT}"
-assert_equal 0 "$SF_PRESENT_ROW_SETTLED[-1]"
+assert_equal 0 "$SF_PRESENT_ROW_CLOSED[-1]"
 sf_tui_event tool_result call_zero 1 $'failure\ndetail'
 sf_tui_rows 80 20 3:0
 assert_equal '╰ … · exit 1' "${(F)SF_PRESENT_ROW_TEXT}"

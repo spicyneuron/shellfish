@@ -68,8 +68,8 @@ sf_tui_highlight_rows 1 "$SF_PRESENT_ROW_BOUNDARY" 100
 assert_equal 1 "$SF_PRESENT_HIGHLIGHT_ADVANCED"
 assert_equal 12 "$SF_PRESENT_NODE_FRONTIER[1]"
 sf_tui_viewport 5 2
-assert_equal hello "$SF_PRESENT_FLUSH_TEXT"
-assert_equal 1:6 "$SF_PRESENT_FLUSH_CURSOR"
+assert_equal $'hello\nworld' "$SF_PRESENT_FLUSH_TEXT"
+assert_equal 1:12 "$SF_PRESENT_FLUSH_CURSOR"
 
 # A row ending inside an inline construct waits for the row that closes it,
 # unless the held source has outgrown the caller's limit.

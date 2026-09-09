@@ -1,9 +1,11 @@
 emulate -R zsh
 setopt no_aliases no_bg_nice no_multios pipe_fail
 
-typeset -ga SF_PRESENT_ROW_TEXT=() SF_PRESENT_ROW_CURSOR=()
-typeset -ga SF_PRESENT_ROW_KIND=() SF_PRESENT_ROW_HIGHLIGHTS=()
-typeset -ga SF_PRESENT_ROW_SETTLED=()
+# Source formatters expose text, style spans, and closed state to the viewport.
+typeset -ga SF_PRESENT_ROW_TEXT=() SF_PRESENT_ROW_HIGHLIGHTS=()
+typeset -ga SF_PRESENT_ROW_CLOSED=()
+# Cursors, kinds, nodes, and source offsets are private layout bookkeeping.
+typeset -ga SF_PRESENT_ROW_CURSOR=() SF_PRESENT_ROW_KIND=()
 typeset -ga SF_PRESENT_ROW_NODE=()
 typeset -ga SF_PRESENT_ROW_SOURCE_END=()
 typeset -gi SF_PRESENT_PREFIX_VISIBLE=0
@@ -128,14 +130,14 @@ sf_tui_preview_tail() {
 # back to "type". The caller appends the matching row cursor separately.
 sf_tui_row_append() {
   local text=$1 kind=$2 syntax=${5-} style_kind=${7:-$2} style highlight=''
-  integer settled=$3 node=$4 source_end=${6:--1}
+  integer closed=$3 node=$4 source_end=${6:--1}
   style=${SF_PRESENT_STYLE[$style_kind]:-$SF_PRESENT_STYLE[${style_kind%%.*}]}
   [[ -z $style || -z $text ]] || highlight="0 ${#text} $style"
   [[ -z $syntax ]] || highlight+="${highlight:+ }$syntax"
   SF_PRESENT_ROW_TEXT+=( "$text" )
   SF_PRESENT_ROW_KIND+=( "$kind" )
   SF_PRESENT_ROW_HIGHLIGHTS+=( "$highlight" )
-  SF_PRESENT_ROW_SETTLED+=( $settled )
+  SF_PRESENT_ROW_CLOSED+=( $closed )
   SF_PRESENT_ROW_NODE+=( $node )
   SF_PRESENT_ROW_SOURCE_END+=( $source_end )
 }
@@ -167,7 +169,7 @@ sf_tui_cell_width() {
 
 # Render a bounded suffix from an opaque width-independent node cursor.
 sf_tui_rows() {
-  integer columns=$1 budget=$2 node offset length consumed settled start
+  integer columns=$1 budget=$2 node offset length consumed closed start
   integer column size take break_consumed break_length activity withhold withhold_all
   integer withhold_separator
   integer decorated previewed collapsed body_start=-1 body_end=0 preview_used=0 hidden=0
@@ -180,6 +182,7 @@ sf_tui_rows() {
   integer section_id_start section_id_end section_id_row_start section_id_row_end
   integer value_start=-1 value_stop=-1
   integer clamp_start=-1 clamp_stop=-1
+  integer pending_separator=0
   local cursor=${3:-1:0} text part state type heading body spans character run activity_text
   local leading
   local break_text display prefix preview=full head tail exact cursor_value row_highlight
@@ -209,7 +212,7 @@ sf_tui_rows() {
   SF_PRESENT_ROW_CURSOR=()
   SF_PRESENT_ROW_KIND=()
   SF_PRESENT_ROW_HIGHLIGHTS=()
-  SF_PRESENT_ROW_SETTLED=()
+  SF_PRESENT_ROW_CLOSED=()
   SF_PRESENT_ROW_NODE=()
   SF_PRESENT_ROW_SOURCE_END=()
   SF_PRESENT_ROW_BOUNDARY_NODE=0
@@ -445,7 +448,7 @@ sf_tui_rows() {
       fi
       length=${#text}
       (( offset <= length )) || return 1
-      # A settled decorated heading already owns its terminal row. When its
+      # A closed decorated heading already owns its terminal row. When its
       # body arrives later, resume after the newly inserted join newline.
       if [[ $type != tool_result ]] &&
           (( decorated && ! collapsed && body_start > 0 && offset + 1 == body_start )); then
@@ -514,7 +517,7 @@ sf_tui_rows() {
         column=2
       fi
       consumed=0
-      settled=0
+      closed=0
       source_end=-1
       break_consumed=0
       break_length=0
@@ -525,14 +528,14 @@ sf_tui_rows() {
             text=${text[2,-1]}
             consumed=$(( consumed + 1 ))
             offset=$(( offset + 1 ))
-            settled=1
+            closed=1
             break
           fi
           if [[ $character == ' ' ]]; then
             text=${text[2,-1]}
             consumed=$(( consumed + 1 ))
             offset=$(( offset + 1 ))
-            settled=1
+            closed=1
             break
           fi
           sf_tui_cell_width "$character" $column
@@ -545,7 +548,7 @@ sf_tui_rows() {
               part=${part[1,break_length]}
               row_map=( "${(@)break_map}" )
             fi
-            settled=1
+            closed=1
             break
           fi
           display_start=${#part}
@@ -608,7 +611,7 @@ sf_tui_rows() {
           text=${text[2,-1]}
           consumed=$(( consumed + 1 ))
           offset=$(( offset + 1 ))
-          settled=1
+          closed=1
           break
         fi
         sf_tui_cell_width "$character" $column
@@ -624,7 +627,7 @@ sf_tui_rows() {
             part=${part[1,break_length]}
             row_map=( "${(@)break_map}" )
           fi
-          settled=1
+          closed=1
           break
         fi
         if [[ $character == $'\t' ]]; then
@@ -645,15 +648,15 @@ sf_tui_rows() {
         column=$(( column + size ))
       done
       if [[ -z $text && $state == closed ]]; then
-        settled=1
+        closed=1
       fi
-      # Settling is about the frontier; filling is about wrapping. Capture the
+      # Closure is about the frontier; filling is about wrapping. Capture the
       # latter first, because it is what lets the frontier advance at all.
-      complete_row=$settled
+      complete_row=$closed
       if (( ! tail_phase && frontier >= 0 && content_start >= 0 && offset > content_start )); then
         source_end=$(( offset < content_end ? offset - content_start : content_end - content_start ))
         source_end=$(( source_base + source_end ))
-        (( source_end <= frontier )) || settled=0
+        (( source_end <= frontier )) || closed=0
         if (( complete_row )) && [[ $state == open ]]; then
           SF_PRESENT_ROW_BOUNDARY_NODE=$node
           SF_PRESENT_ROW_BOUNDARY=$source_end
@@ -661,14 +664,14 @@ sf_tui_rows() {
       fi
       if (( decorated && ! collapsed && ! tail_phase && body_start < 0 )) &&
           [[ $state == open && $SF_PRESENT_NODE_STATUS[node] != permission ]]; then
-        settled=1
+        closed=1
       fi
       separator_row=0
       if (( node > 1 && start == 0 && ! tail_phase )) && [[ -z $part && $consumed == 1 ]]; then
         separator_row=1
       fi
-      (( ! withhold_all || (separator_row && ! withhold_separator) )) || settled=0
-      if (( withhold && ! settled )) && [[ -z $text ]]; then
+      (( ! withhold_all || (separator_row && ! withhold_separator) )) || closed=0
+      if (( withhold && ! closed )) && [[ -z $text ]]; then
         break
       fi
       transition=0
@@ -786,7 +789,15 @@ sf_tui_rows() {
         projected=( 0 ${#part} "${projected[diff_span + 2]}" )
       fi
       row_highlight="${(j: :)projected}"
-      sf_tui_row_append "$part" "$spans" $settled $node "$row_highlight" $source_end \
+      if (( pending_separator )); then
+        SF_PRESENT_ROW_CLOSED[pending_separator]=1
+        pending_separator=0
+      fi
+      if (( separator_row && closed && ${#SF_PRESENT_ROW_TEXT} )); then
+        pending_separator=$(( ${#SF_PRESENT_ROW_TEXT} + 1 ))
+        closed=0
+      fi
+      sf_tui_row_append "$part" "$spans" $closed $node "$row_highlight" $source_end \
         "$style_kind"
 
       if (( previewed && ! collapsed && ! tail_phase && ! transition )) &&
@@ -830,6 +841,10 @@ sf_tui_rows() {
       row_highlight=''
       if [[ $type == tool_result && $activity_text == ╰* && -n $SF_PRESENT_STYLE[divider] ]]; then
         row_highlight="0 1 $SF_PRESENT_STYLE[divider]"
+      fi
+      if (( pending_separator )); then
+        SF_PRESENT_ROW_CLOSED[pending_separator]=1
+        pending_separator=0
       fi
       sf_tui_row_append "$activity_text" "$spans" 0 $node "$row_highlight"
       SF_PRESENT_ROW_CURSOR+=( "$node:$offset" )
