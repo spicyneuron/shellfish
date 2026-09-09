@@ -96,7 +96,12 @@ jq -e --arg root "$ROOT/share/default/hooks/session_start" \
     ($root + "/project_instructions/run")
   ] and
   .harness.session_start[0].environment == ["SHELLFISH_PROBE_BUDGET"] and
+  .harness.session_start[0].display == "Loading project environment…" and
+  .harness.session_start[1].display == "Loading git environment…" and
   .harness.session_start[2].environment == [] and
+  (.harness.user_prompt_submit[] | select(
+    .command == ($prompt_root + "/user_shell/run")) |
+    .display == "Running shell command…") and
   .harness.user_prompt_submit[-1].command == ($prompt_root + "/git_environment/run") and
   (.backend | has("context_window_command") | not) and
   (.harness.tools | map(.name)) ==
