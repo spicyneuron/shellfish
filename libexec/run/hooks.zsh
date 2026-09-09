@@ -90,8 +90,8 @@ sf_hooks_stop() {
 # Hooks decide sandbox bypass on fd 3 or defer to the run client channel.
 sf_hooks_permission_request() {
   local session=$1 tool_name=$2 call_id=$3 tool_input=$4
-  local input control_count=0
-  local -a result
+  local input decoded control_count=0
+  local -a result fields
   integer operation_status=0 index
 
   SF_HOOK_ERROR=''
@@ -114,27 +114,25 @@ sf_hooks_permission_request() {
     elif (( ! result[2] )); then
       reply=(deny '')
     else
-      jq -ce '
-        if keys == ["action"] and .action == "allow" then true
+      decoded=$(jq -jre '
+        (if keys == ["action"] and .action == "allow" then [.action, ""]
         elif keys == ["action", "reason"] and .action == "deny" and
             (.reason | type == "string" and length > 0 and
               (index("\u0000") | not))
-        then true else error("invalid decision") end
-      ' <<<"$result[4]" >/dev/null 2>&1 || {
+        then [.action, .reason]
+        else error("invalid decision") end) as $fields |
+        ($fields[] | ., "\u0000"), "ok", "\u0000"
+      ' <<<"$result[4]" 2>/dev/null) || {
         SF_HOOK_ERROR='permission_request hook script returned invalid decision'
         operation_status=1
       }
       if (( ! operation_status )); then
-        local permission_decision permission_reason=''
-        permission_decision=$(jq -r '.action' <<<"$result[4]") ||
+        fields=( "${(@0)${decoded%$'\0'}}" )
+        (( ${#fields} == 3 )) && [[ $fields[3] == ok ]] || {
+          SF_HOOK_ERROR='permission_request hook script returned invalid decision'
           operation_status=1
-        if [[ $permission_decision == deny ]]; then
-          permission_reason=$(jq -jr '.reason, "\u0001"' \
-            <<<"$result[4]") ||
-            operation_status=1
-          permission_reason=${permission_reason%$'\1'}
-        fi
-        reply=( "$permission_decision" "$permission_reason" )
+        }
+        (( operation_status )) || reply=( "$fields[1]" "$fields[2]" )
       fi
     fi
   fi
