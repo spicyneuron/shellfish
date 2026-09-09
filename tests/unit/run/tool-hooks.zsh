@@ -56,11 +56,11 @@ stream=$(SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_COUNT=2 \
   sf_test_turn observe "$observe_session")
 print -r -- "$stream" | jq -eRn '
   [inputs | fromjson] as $events |
-  ($events | map(select(.role == "tool_result")) |
+  ($events | map(select(.type == "tool_result")) |
     map({exit_code,content})) ==
     [{exit_code:7,content:"line\n\n"},
      {exit_code:7,content:"line\n\n"}] and
-  ($events | map(select(.type == "state" or .role? == "tool_result")) |
+  ($events | map(select(.type == "state" or .type == "tool_result")) |
     map(if .type == "state" then [.name,.value] else ["result",.call_id] end)) ==
     [["tools/pre","call_1"],["result","call_1"],["tools/post","call_1"],
      ["tools/pre","call_2"],["result","call_2"],["tools/post","call_2"]] and
@@ -78,7 +78,7 @@ jq -e '. == {turn_id:1,tool_name:"shell",tool_use_id:"call_1",
   tool_response:{content:"line\n\n",exit_code:7}}' \
   "$TEST_OUTPUT_DIR/post-call_1" >/dev/null
 jq -e '
-  ([.messages[-4:][].role]) == ["tool_call","tool_result","tool_call","tool_result"]
+  ([.messages[-4:][].type]) == ["tool_call","tool_result","tool_call","tool_result"]
 ' "$request_capture" >/dev/null
 
 # A pre-tool denial creates an ordinary result; later sibling calls still run
@@ -125,8 +125,8 @@ stream=$(SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_COUNT=3 \
   sf_test_turn deny "$deny_session")
 print -r -- "$stream" | jq -eRn '
   [inputs | fromjson] as $events |
-  ($events | map(select(.role == "tool_result") | .exit_code)) == [0,126,0] and
-  ($events | map(select(.role == "tool_result"))[1].content) ==
+  ($events | map(select(.type == "tool_result") | .exit_code)) == [0,126,0] and
+  ($events | map(select(.type == "tool_result"))[1].content) ==
     "first reason\nsecond reason"
 ' >/dev/null
 [[ $(<$TEST_OUTPUT_DIR/pre-calls) == $'call_1\ncall_2\ncall_3' ]]
@@ -140,7 +140,7 @@ sf_test_session "$fallback_session"
 stream=$(NO_FEEDBACK=1 SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_COUNT=2 \
   sf_test_turn deny "$fallback_session")
 print -r -- "$stream" | jq -eRn '
-  [inputs | fromjson | select(.role == "tool_result")][1] as $result |
+  [inputs | fromjson | select(.type == "tool_result")][1] as $result |
   $result.exit_code == 126 and
   ($result.content | contains("pre-deny"))
 ' >/dev/null

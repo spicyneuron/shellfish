@@ -22,33 +22,32 @@ def context_group:
 
 def context_message($context; $request):
   ([$context | context_groups[] | context_group] | join("\n\n")) as $blocks |
-  {role:"user", content:[{type:"text", text:($blocks + "\n\n" + $request)}]};
+  {type:"user", content:[{type:"text", text:($blocks + "\n\n" + $request)}]};
 
-# Fold roleless context into the next message, or a trailing user message.
+# Fold context into the next message, or a trailing user message.
 def request_messages:
   reduce .[] as $record ({messages:[], context:[]};
     if $record.type == "state" then .
-    elif $record.type == "tool_call" then
-      .messages += [{role:"tool_call"} + ($record | del(.type))]
+    elif $record.type == "tool_call" then .messages += [$record]
     elif $record.type == "context" then .context += [$record]
-    elif $record.type == "message" and $record.role == "user" then
-      if (.context | length) == 0 then .messages += [$record | del(.type, .usage)]
+    elif $record.type == "user" then
+      if (.context | length) == 0 then .messages += [$record]
       else
         ([$record.content[] | select(.type == "text") | .text] | join("")) as $request |
         .messages += [context_message(.context; $request)] |
         .context = []
       end
-    elif $record.type == "message" then
+    elif $record.type == "assistant" or $record.type == "tool_result" then
       # Only assistant context stands alone; tool results must stay paired.
-      if $record.role == "assistant" and (.context | length) > 0 then
-        .messages += [context_message(.context; ""), ($record | del(.type, .usage))] |
+      if $record.type == "assistant" and (.context | length) > 0 then
+        .messages += [context_message(.context; ""), ($record | del(.usage))] |
         .context = []
       else .messages += [$record |
-        if .role == "tool_result" and .sandbox_denial_detected? == true then
+        if .type == "tool_result" and .sandbox_denial_detected? == true then
           .content += (if .content == "" then "" else "\n\n" end) +
             "Sandbox notice: A sandbox denial was detected while this tool was running."
         else . end |
-        del(.type, .usage, .sandbox_denial_detected, .sandboxed)] end
+        del(.usage, .sandbox_denial_detected, .sandboxed)] end
     elif ($record.type | IN("system", "session", "turn_error")) then .
     else error("unrecognized session record: " + ($record.type | tostring)) end
   ) as $conversation |

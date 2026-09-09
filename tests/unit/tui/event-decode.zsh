@@ -18,8 +18,8 @@ cat <<'STREAM' |
 {"type":"_notice","level":"error","title":"Turn failed","source":"","text":"recoverable","complete":true}
 {"type":"turn_error","message":"recoverable"}
 {"type":"_handoff","argv":["/usr/bin/env","printf","%s","done"]}
-{"type":"message","role":"user","content":[{"type":"text","text":"hi"}]}
-{"type":"message","role":"assistant","stop":"end","content":[{"type":"text","text":"hi\n"}],"usage":{"input_tokens":14,"output_tokens":2}}
+{"type":"user","content":[{"type":"text","text":"hi"}]}
+{"type":"assistant","stop":"end","content":[{"type":"text","text":"hi\n"}],"usage":{"input_tokens":14,"output_tokens":2}}
 STREAM
   jq -jRs -L "$ROOT" --argjson runtime null \
     -f "$ROOT/libexec/tui/event-decode.jq" >/dev/null
@@ -49,14 +49,14 @@ assert_equal 'tool_call,call_1,shell,{},json,batch_ok' "$order"
 # A committed assistant record reports the turn's usage.
 typeset usage
 usage=$(print -r -- \
-    '{"type":"message","role":"assistant","stop":"end","content":[{"type":"text","text":"hi"}],"usage":{"input_tokens":12400,"cached_tokens":10478,"output_tokens":900}}' |
+    '{"type":"assistant","stop":"end","content":[{"type":"text","text":"hi"}],"usage":{"input_tokens":12400,"cached_tokens":10478,"output_tokens":900}}' |
   jq -jRs -L "$ROOT" --argjson runtime \
     '{"profile":{"context_window":264000}}' -f "$ROOT/libexec/tui/event-decode.jq" |
   tr '\0' '\n' | sed '/^$/d' | paste -sd, -)
 assert_equal 'turn_usage,12k ↑ 85% ⦿ 900 ↓ 5% of 264k ◔,batch_ok' "$usage"
 
 usage=$(print -r -- \
-    '{"type":"message","role":"assistant","stop":"end","content":[{"type":"text","text":"hi"}],"usage":{"input_tokens":100,"cached_tokens":85,"output_tokens":20,"reasoning_tokens":7}}' |
+    '{"type":"assistant","stop":"end","content":[{"type":"text","text":"hi"}],"usage":{"input_tokens":100,"cached_tokens":85,"output_tokens":20,"reasoning_tokens":7}}' |
   jq -jRs -L "$ROOT" --argjson runtime \
     '{"profile":{"context_window":null}}' -f "$ROOT/libexec/tui/event-decode.jq" |
   tr '\0' '\n' | sed '/^$/d' | paste -sd, -)
@@ -166,7 +166,7 @@ order=$(print -r -- \
 assert_equal 'tool_call,call_3,edit_file,notes.json,plain,batch_ok' "$order"
 
 order=$(print -r -- \
-    '{"type":"message","role":"tool_result","call_id":"call_2","name":"edit_file","content":"@@ -1 +1 @@\n-old\n+new","exit_code":0,"sandbox_denial_detected":true}' |
+    '{"type":"tool_result","call_id":"call_2","name":"edit_file","content":"@@ -1 +1 @@\n-old\n+new","exit_code":0,"sandbox_denial_detected":true}' |
   jq -jRs -L "$ROOT" --argjson runtime "$edit_runtime" \
     -f "$ROOT/libexec/tui/event-decode.jq" |
   tr '\0' '\n' | sed '/^$/d' | paste -sd, -)
@@ -214,7 +214,7 @@ if jq -cn --argjson runtime "$(head -n 1 "$ROOT/tests/fixtures/session/header-on
   fail 'session update containing header metadata was accepted'
 fi
 
-if print -r -- '{"type":"message","role":"user"}' |
+if print -r -- '{"type":"user"}' |
     jq -jRs -L "$ROOT" --argjson runtime null \
       -f "$ROOT/libexec/tui/event-decode.jq" \
       >/dev/null 2>&1; then

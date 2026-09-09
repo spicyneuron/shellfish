@@ -96,7 +96,7 @@ assert_equal 'copied answer' "$output"
 cmp -s "$forwarded_session" "$tmp/source-before" || fail 'run modified its source'
 jq -es --slurpfile source "$forwarded_session" '
   .[0].profile == $source[0].profile and .[1] == $source[1] and
-  [.[] | select(.role == "user") | .content[0].text] == ["copied answer"]
+  [.[] | select(.type == "user") | .content[0].text] == ["copied answer"]
 ' "$copied_session" >/dev/null || fail 'run did not copy only the settings and system'
 
 integer conflict_status=0
@@ -117,7 +117,7 @@ zsh -f "$entry" create --session-out "$stream_session" --config "$config" >/dev/
   fail 'stream session create failed'
 typeset -i prefix=$(jq -es 'length' "$stream_session")
 jsonl=$(print -r -- \
-  '{"type":"message","role":"user","content":[{"type":"text","text":"stream answer"}]}' |
+  '{"type":"user","content":[{"type":"text","text":"stream answer"}]}' |
   SF_TEST_BACKEND_DELAY=0 zsh -f "$entry" run --jsonl --config "$config" \
     --session "$stream_session") || fail 'JSONL run failed'
 print -r -- "$jsonl" | jq -eRn -L "$ROOT" '
@@ -126,11 +126,14 @@ print -r -- "$jsonl" | jq -eRn -L "$ROOT" '
   ($events | any(.type == "session") | not) and
   ($events | any(.type == "_assistant_message_delta")) and
   ($events | any(.type == "_turn_usage")) and
-  ($events | any(.type == "message" and .role == "user")) and
-  ($events | any(.type == "message" and .role == "assistant" and (.usage | token_usage)))
+  ($events | any(.type == "user")) and
+  ($events | any(.type == "assistant" and (.usage | token_usage)))
 ' >/dev/null || fail 'JSONL run produced the wrong stream'
 
-print -r -- "$jsonl" | jq -c 'select(.type | IN("session", "system", "message", "context"))' \
+print -r -- "$jsonl" | jq -c -L "$ROOT" '
+  include "lib/runtime/schema";
+  select(canonical_session_header(1) or canonical_session_record)
+' \
   >"$tmp/stream-durable"
 jq -c . "$stream_session" | tail -n +$(( prefix + 1 )) >"$tmp/session-durable"
 cmp -s "$tmp/stream-durable" "$tmp/session-durable" ||
@@ -150,13 +153,13 @@ typeset handoff_config="$tmp/handoff.jsonc" handoff_output="$tmp/handoff.jsonl"
 jq --arg script "$handoff_script" '.harnesses.machine.user_prompt_submit=[$script]' \
   "$config" >"$handoff_config"
 print -r -- \
-  '{"type":"message","role":"user","content":[{"type":"text","text":"handoff"}]}' |
+  '{"type":"user","content":[{"type":"text","text":"handoff"}]}' |
   zsh -f "$entry" run --jsonl --config "$handoff_config" \
   >"$handoff_output" || fail 'JSONL run rejected a handoff'
 jq -eRn '
   [inputs | fromjson] as $events |
   $events[-1] == {type:"_handoff",argv:["/usr/bin/printf","next.jsonl"]} and
-  ($events | any((.type == "_notice" and .level == "error") or .role == "user") | not)
+  ($events | any((.type == "_notice" and .level == "error") or .type == "user") | not)
 ' <"$handoff_output" >/dev/null || fail 'JSONL run discarded the handoff'
 
 # Session creation and its session_start failures belong to shellfish create.
@@ -165,7 +168,7 @@ typeset invalid_path="$tmp/invalid-path" invalid_path_output="$tmp/invalid-path.
 ln -s "$config" "$invalid_path"
 integer invalid_path_status=0
 print -r -- \
-  '{"type":"message","role":"user","content":[{"type":"text","text":"ignored"}]}' |
+  '{"type":"user","content":[{"type":"text","text":"ignored"}]}' |
   zsh -f "$entry" run --jsonl --session "$invalid_path" \
   >"$invalid_path_output" 2>"$tmp/invalid-path.stderr" || invalid_path_status=$?
 (( invalid_path_status == 1 ))

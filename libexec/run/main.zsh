@@ -127,7 +127,7 @@ sf_run_main() {
     sf_run_prompt "${positional[@]}" || return
     prompt=$REPLY
     input=$(jq -cn --arg text "$prompt" \
-      '{type:"message",role:"user",content:[{type:"text",text:$text}]}') || return 1
+      '{type:"user",content:[{type:"text",text:$text}]}') || return 1
   fi
 
   source "$SF_ROOT/lib/session/startup.zsh"

@@ -289,10 +289,10 @@ def test_tall_resume_drains_bounded_backlog():
     lines = [f"resume-{index:03d}" for index in range(1, 201)]
     records = [
         header,
-        {"type": "message", "role": "user", "content": [
+        {"type": "user", "content": [
             {"type": "text", "text": "resume seed"},
         ]},
-        {"type": "message", "role": "assistant", "stop": "end",
+        {"type": "assistant", "stop": "end",
          "content": [{"type": "text", "text": "\n".join(lines)}],
          "usage": {"input_tokens": 1, "output_tokens": 200}},
     ]
@@ -345,7 +345,7 @@ def test_queued_submits_keep_committed_history():
         messages = [
             record["content"][0]["text"]
             for record in records
-            if record.get("role") == "user"
+            if record.get("type") == "user"
         ]
         terminal.wait_for(
             "queued turns to render",

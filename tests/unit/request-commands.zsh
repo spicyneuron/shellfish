@@ -8,9 +8,9 @@ typeset request request_record request_response request_digest
 jq -c --arg command "$SF_TEST_BACKEND" --arg cwd "$tmp" \
   '.backend.command = $command | .cwd = $cwd' \
   "$SF_TEST_SESSIONS/header-only.jsonl" >"$request_session"
-print -r -- '{"type":"message","role":"user","content":[{"type":"text","text":"old"}]}' \
+print -r -- '{"type":"user","content":[{"type":"text","text":"old"}]}' \
   >>"$request_session"
-print -r -- '{"type":"message","role":"assistant","stop":"end","content":[{"type":"text","text":"answer"}]}' \
+print -r -- '{"type":"assistant","stop":"end","content":[{"type":"text","text":"answer"}]}' \
   >>"$request_session"
 print -r -- '{"type":"state","name":"stored/value","value":{"revision":1}}' \
   >>"$request_session"
@@ -26,7 +26,7 @@ zsh -f "$entry" build-request --session "$request_session" --tools '{}' \
 zsh -f "$entry" build-request --session "$request_session" --tools '[{}]' \
   >/dev/null 2>&1 && fail 'build-request accepted an invalid tool schema'
 request_record=$(jq -cn --arg text 'composed request' \
-  '{type:"message",role:"user",content:[{type:"text",text:$text}]}')
+  '{type:"user",content:[{type:"text",text:$text}]}')
 request_digest=$(shasum <"$request_session")
 request=$(printf '%s\n%s\n' \
   '{"type":"state","name":"continuation/value","value":null}' "$request_record" |
@@ -34,14 +34,14 @@ request=$(printf '%s\n%s\n' \
   fail 'build-request failed'
 jq -e '
   .tools == [] and .messages[-1] == {
-    role:"user",content:[{type:"text",text:"composed request"}]
+    type:"user",content:[{type:"text",text:"composed request"}]
   }
 ' <<<"$request" >/dev/null || fail 'build-request produced the wrong request'
 request_response=$(print -r -- "$request" |
   SF_TEST_BACKEND_DELAY=0 zsh -f "$entry" send-request --session "$request_session") ||
   fail 'send-request failed'
 jq -e '
-  .type == "message" and .role == "assistant" and .stop == "end" and
+  .type == "assistant" and .stop == "end" and
   .content == [{type:"text",text:"composed request\n"}]
 ' <<<"$request_response" >/dev/null || fail 'send-request produced the wrong response'
 assert_equal "$request_digest" "$(shasum <"$request_session")"
@@ -61,7 +61,7 @@ print -r -- 'def decode_backend_response(:' >"$tmp/lib/request.jq"
   assert_equal "$tmp" "$PWD"
 )
 
-print -r -- '{"type":"message","role":"assistant","stop":"end","content":[]}' |
+print -r -- '{"type":"assistant","stop":"end","content":[]}' |
   zsh -f "$entry" build-request --session "$request_session" >/dev/null 2>&1 &&
   fail 'build-request accepted an invalid record transition'
 print -r -- '{}' | zsh -f "$entry" send-request --session "$request_session" \

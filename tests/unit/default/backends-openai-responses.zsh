@@ -33,7 +33,7 @@ cat >"$req" <<'EOF'
 {
   "format_version": 1,
   "system": "test",
-  "messages": [{"role":"user","content":[{"type":"text","text":"hello"}]}],
+  "messages": [{"type":"user","content":[{"type":"text","text":"hello"}]}],
   "tools": [],
   "options": {"request":{"model":"gpt-test"}},
   "transport": {"endpoint":"https://api.openai.test","insecure_tls":false,"http_timeout":30,"http_stall":10}
@@ -70,7 +70,7 @@ OPENAI_API_KEY=test zsh -f "$run" <"$req" >"$res"
 jq -e -s -L "$ROOT" '
   include "lib/runtime/schema";
   include "lib/request";
-  assemble_backend_response(canonical_backend_response_events; canonical_assistant_message) == {type:"message",role:"assistant",stop:"length",content:[],usage:{input_tokens:10,output_tokens:5}}
+  assemble_backend_response(canonical_backend_response_events; canonical_assistant_message) == {type:"assistant",stop:"length",content:[],usage:{input_tokens:10,output_tokens:5}}
 ' "$res" >/dev/null
 
 # Codex model metadata comes from the installed CLI's offline bundled catalog.
@@ -86,7 +86,7 @@ cat >"$tmp/codex-request.json" <<'EOF'
 {
   "format_version": 1,
   "system": "test",
-  "messages": [{"role":"user","content":[{"type":"text","text":"hello"}]}],
+  "messages": [{"type":"user","content":[{"type":"text","text":"hello"}]}],
   "tools": [],
   "options": {"request":{"model":"gpt-codex-test"}},
   "transport": {"endpoint":"https://chatgpt.com/backend-api/codex/responses","insecure_tls":false,"http_timeout":30,"http_stall":10}
@@ -168,12 +168,12 @@ cat >"$batch_request" <<'JSON'
   "format_version": 1,
   "system": "test",
   "messages": [
-    {"role":"user","content":[{"type":"text","text":"run both"}]},
-    {"role":"assistant","stop":"tool_calls","content":[{"type":"text","text":"working"}]},
-    {"role":"tool_call","id":"call_1","name":"shell","input":{"command":"pwd"}},
-    {"role":"tool_result","call_id":"call_1","name":"shell","content":"/tmp","exit_code":0},
-    {"role":"tool_call","id":"call_2","name":"shell","input":{"command":"ls"}},
-    {"role":"tool_result","call_id":"call_2","name":"shell","content":"bad","exit_code":1}
+    {"type":"user","content":[{"type":"text","text":"run both"}]},
+    {"type":"assistant","stop":"tool_calls","content":[{"type":"text","text":"working"}]},
+    {"type":"tool_call","id":"call_1","name":"shell","input":{"command":"pwd"}},
+    {"type":"tool_result","call_id":"call_1","name":"shell","content":"/tmp","exit_code":0},
+    {"type":"tool_call","id":"call_2","name":"shell","input":{"command":"ls"}},
+    {"type":"tool_result","call_id":"call_2","name":"shell","content":"bad","exit_code":1}
   ],
   "tools": [],
   "options": {"request":{"model":"gpt-test"}},

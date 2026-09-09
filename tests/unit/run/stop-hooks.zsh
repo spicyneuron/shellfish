@@ -55,7 +55,7 @@ typeset turn_state=$(<$TEST_STATE_PATH)
 [[ ! -d $turn_state ]]
 print -r -- "$stream" | jq -eRn '
   [inputs | fromjson] as $events |
-  ($events | map(select(.role == "assistant")) | length) == 2 and
+  ($events | map(select(.type == "assistant")) | length) == 2 and
   ($events | map(select(.type == "context"))) ==
     [{type:"context",hook:"stop",script:"stop-once",content:"feedback"}] and
   ($events | map(select(.type == "state" or .type == "context")) |
@@ -66,8 +66,8 @@ print -r -- "$stream" | jq -eRn '
 ' >/dev/null
 sf_hooks_turn_state_cleanup
 jq -e '
-  .messages[-2].role == "assistant" and
-  .messages[-1].role == "user" and
+  .messages[-2].type == "assistant" and
+  .messages[-1].type == "user" and
   .messages[-1].content[0].text ==
     "<hook name=\"stop\">\n<context script=\"stop-once\">\nfeedback\n</context>\n</hook>\n\n"
 ' "$request_capture" >/dev/null
@@ -107,7 +107,7 @@ printf 'first\0\x1e\nsecond\n' >"$SHELLFISH_TURN_STATE/expected"
 stream=$(sf_test_turn text "$text_session")
 print -r -- "$stream" | jq -eRn '
   [inputs | fromjson] as $events |
-  ($events | any(.type == "message" and .role == "assistant"))
+  ($events | any(.type == "assistant"))
 ' >/dev/null
 sf_hooks_turn_state_cleanup
 SF_TEST_RUNTIME=$(jq -c --arg backend "$ROOT/tests/fixtures/backend/run" \
@@ -132,9 +132,9 @@ sf_test_session "$tool_stop_session"
 stream=$(sf_test_turn original "$tool_stop_session")
 print -r -- "$stream" | jq -eRn '
   [inputs | fromjson] as $events |
-  ($events | map(select(.role == "assistant") | .stop)) ==
+  ($events | map(select(.type == "assistant") | .stop)) ==
     ["end","tool_calls","end"] and
-  ($events | map(select(.role == "tool_result") | .exit_code)) == [0]
+  ($events | map(select(.type == "tool_result") | .exit_code)) == [0]
 ' >/dev/null
 
 # Repeated skipped completion is bounded by the existing provider request
@@ -166,7 +166,7 @@ typeset cancel_backend="$tmp/cancel-backend"
 cat >"$cancel_backend" <<ZSH
 #!/usr/bin/env zsh
 request=\$(cat)
-if jq -e '.messages[-1].role == "user" and
+if jq -e '.messages[-1].type == "user" and
     (.messages[-1].content[0].text | contains("<hook name=\\"stop\\">\\n<context script=\\"stop-once\\">"))' \
     <<<"\$request" >/dev/null; then
   : >"$cancel_ready"
@@ -185,7 +185,7 @@ typeset cancel_session="$tmp/stop-cancel.jsonl"
 typeset cancel_stream="$tmp/stop-cancel.stream"
 sf_test_session "$cancel_session"
 "$ROOT/bin/shellfish" run --jsonl --session "$cancel_session" \
-  < <(print -r -- '{"type":"message","role":"user","content":[{"type":"text","text":"wait for retry"}]}') \
+  < <(print -r -- '{"type":"user","content":[{"type":"text","text":"wait for retry"}]}') \
   >"$cancel_stream" &
 integer cancel_pid=$! cancel_status=0 cancel_polls=0
 while [[ ! -e $cancel_ready ]] && (( cancel_polls++ < 250 )); do
@@ -202,7 +202,7 @@ wait "$cancel_pid" || cancel_status=$?
 jq -eRn '
   [inputs | fromjson] as $events |
   ($events | map(select(.type == "context" and .hook == "stop")) | length) == 1 and
-  ($events | map(select(.role == "assistant")) | length) == 1
+  ($events | map(select(.type == "assistant")) | length) == 1
 ' <"$cancel_stream" >/dev/null
 assert_canonical_session "$cancel_session"
 jq -e -s '

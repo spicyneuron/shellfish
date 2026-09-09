@@ -20,7 +20,7 @@ print -r -- 'def canonical_session_header(:' >"$tmp/lib/runtime/schema.jq"
 
 SF_TUI_TRANSPORT_LINES=(
   '{"type":"_assistant_message_delta","text":"one"}'
-  '{"type":"message","role":"assistant","stop":"end","content":[{"type":"text","text":"one"}],"usage":{"input_tokens":2,"output_tokens":1}}'
+  '{"type":"assistant","stop":"end","content":[{"type":"text","text":"one"}],"usage":{"input_tokens":2,"output_tokens":1}}'
 )
 sf_tui_transport_next null
 assert_equal 'assistant_message_delta,one,,,,,' "${(j:,:)reply}"
@@ -37,7 +37,7 @@ typeset runtime=$(head -n 1 "$SF_TEST_SESSIONS/header-only.jsonl" |
 typeset updated_runtime=$(jq -c '.profile.context_window = 200' <<<"$runtime")
 SF_TUI_TRANSPORT_LINES=(
   "$(jq -cn --argjson runtime "$updated_runtime" '{type:"_session_update",runtime:$runtime}')"
-  '{"type":"message","role":"assistant","stop":"end","content":[{"type":"text","text":"two"}],"usage":{"input_tokens":75,"output_tokens":5}}'
+  '{"type":"assistant","stop":"end","content":[{"type":"text","text":"two"}],"usage":{"input_tokens":75,"output_tokens":5}}'
 )
 sf_tui_transport_next "$runtime"
 assert_equal "session_update,$updated_runtime,,,,," "${(j:,:)reply}"

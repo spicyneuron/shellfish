@@ -124,7 +124,7 @@ sf_test_turn() {
   typeset -g SF_API_KEY="" SF_API_KEY_SOURCE=""
   SF_RUN[jsonl]=1
   message=$(jq -cn --arg text "$SF_TEST_TURN_PROMPT" \
-    '\''{type:"message",role:"user",content:[{type:"text",text:$text}]}'\'') || exit
+    '\''{type:"user",content:[{type:"text",text:$text}]}'\'') || exit
   sf_run_turn "$message" "$SF_TEST_TURN_SESSION" \
     "$SF_TEST_TURN_PERMISSION" "$SF_TEST_TURN_PROMPT" || true
 '

@@ -17,7 +17,7 @@ typeset command=": >${(q)marker}; sleep 5; : >${(q)exit_marker}"
 sf_test_session "$cancel_session"
 SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_COMMAND="$command" \
   "$ROOT/bin/shellfish" run --jsonl --session "$cancel_session" \
-    < <(print -r -- '{"type":"message","role":"user","content":[{"type":"text","text":"cancel tool"}]}') \
+    < <(print -r -- '{"type":"user","content":[{"type":"text","text":"cancel tool"}]}') \
     >"$cancel_stream" &
 integer pid=$! cancel_status=0 waited=0
 while (( waited++ < 50 )) && [[ ! -e $marker ]]; do
@@ -30,8 +30,8 @@ wait "$pid" || cancel_status=$?
 [[ ! -e $exit_marker ]] || fail 'cancelled tool ran to completion'
 print -r -- "$(<"$cancel_stream")" | jq -eRn '
   [inputs | fromjson] as $events |
-  ($events | map(select(.role == "tool_result"))) == [{
-    type:"message",role:"tool_result",call_id:"call_1",name:"shell",
+  ($events | map(select(.type == "tool_result"))) == [{
+    type:"tool_result",call_id:"call_1",name:"shell",
     content:"tool call interrupted",exit_code:126
   }] and $events[-1] == {type:"turn_error",message:"Turn interrupted."}
 ' >/dev/null
@@ -45,7 +45,7 @@ typeset tree_command="(sleep 30 & print -r -- \\$! >${(q)tree_pid_file}; wait) &
 sf_test_session "$tree_session"
 SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_COMMAND="$tree_command" \
   "$ROOT/bin/shellfish" run --jsonl --session "$tree_session" \
-    < <(print -r -- '{"type":"message","role":"user","content":[{"type":"text","text":"cancel tree"}]}') \
+    < <(print -r -- '{"type":"user","content":[{"type":"text","text":"cancel tree"}]}') \
     >"$tree_stream" &
 pid=$!
 cancel_status=0
@@ -71,7 +71,7 @@ typeset stubborn_command="trap '' TERM; : >${(q)stubborn_marker}; while :; do sl
 sf_test_session "$stubborn_session"
 SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_COMMAND="$stubborn_command" \
   "$ROOT/bin/shellfish" run --jsonl --session "$stubborn_session" \
-    < <(print -r -- '{"type":"message","role":"user","content":[{"type":"text","text":"cancel stubborn tool"}]}') \
+    < <(print -r -- '{"type":"user","content":[{"type":"text","text":"cancel stubborn tool"}]}') \
     >"$stubborn_stream" &
 integer stubborn_pid=$! stubborn_status=0
 waited=0
@@ -84,7 +84,7 @@ wait "$stubborn_pid" || stubborn_status=$?
 (( stubborn_status == 143 )) || fail 'cancelled stubborn exec returned the wrong status'
 jq -eRn '
   [inputs | fromjson] as $events |
-  ($events | map(select(.role == "tool_result") | .exit_code)) == [126] and
+  ($events | map(select(.type == "tool_result") | .exit_code)) == [126] and
   $events[-1] == {type:"turn_error",message:"Turn interrupted."}
 ' <"$stubborn_stream" >/dev/null
 
@@ -108,7 +108,7 @@ SF_TEST_RUNTIME=$(jq -c --arg command "$state_tool" '
 sf_test_session "$state_session"
 STATE_MARKER="$state_marker" SF_TEST_BACKEND_TOOL_CALL=1 \
   "$ROOT/bin/shellfish" run --jsonl --session "$state_session" \
-    < <(print -r -- '{"type":"message","role":"user","content":[{"type":"text","text":"cancel state tool"}]}') \
+    < <(print -r -- '{"type":"user","content":[{"type":"text","text":"cancel state tool"}]}') \
     >"$state_stream" &
 pid=$!
 cancel_status=0

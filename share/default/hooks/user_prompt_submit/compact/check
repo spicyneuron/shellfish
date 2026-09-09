@@ -13,7 +13,7 @@ submitted=${submitted%x}
 # complete assistant turn.
 jq -es '
   .[0].profile.context_window as $window |
-  [.[] | select(.type == "message" and .role == "assistant")] as $assistants |
+  [.[] | select(.type == "assistant")] as $assistants |
   ($assistants | map(select(.usage != null)) | last) as $measured |
   $window != null and $measured != null and
   $assistants[-1].stop != "tool_calls" and

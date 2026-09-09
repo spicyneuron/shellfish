@@ -37,9 +37,9 @@ typeset replay
 replay=$({
   head -n 1 "$ROOT/tests/fixtures/session/complete.jsonl"
   print -r -- '{"type":"state","name":"replay/start","value":true}'
-  print -r -- '{"type":"message","role":"user","content":[{"type":"text","text":"question"}]}'
+  print -r -- '{"type":"user","content":[{"type":"text","text":"question"}]}'
   print -r -- '{"type":"state","name":"replay/middle","value":{"step":2}}'
-  print -r -- '{"type":"message","role":"assistant","stop":"end","content":[{"type":"reasoning","text":"first"},{"type":"reasoning","text":""},{"type":"reasoning","text":"second"}]}'
+  print -r -- '{"type":"assistant","stop":"end","content":[{"type":"reasoning","text":"first"},{"type":"reasoning","text":""},{"type":"reasoning","text":"second"}]}'
   print -r -- '{"type":"state","name":"replay/end","value":null}'
 } | jq -jRs -L "$ROOT" -f "$ROOT/libexec/tui/transcript-decode.jq")
 typeset -a replay_fields=( "${(@0)${replay%$'\0'}}" )
@@ -62,8 +62,8 @@ typeset usage_replay
 usage_replay=$({
   head -n 1 "$ROOT/tests/fixtures/session/complete.jsonl" |
     jq -c '.profile.context_window = 264000'
-  print -r -- '{"type":"message","role":"user","content":[{"type":"text","text":"question"}]}'
-  print -r -- '{"type":"message","role":"assistant","stop":"end","content":[{"type":"text","text":"answer"}],"usage":{"input_tokens":12400,"cached_tokens":10478,"output_tokens":900}}'
+  print -r -- '{"type":"user","content":[{"type":"text","text":"question"}]}'
+  print -r -- '{"type":"assistant","stop":"end","content":[{"type":"text","text":"answer"}],"usage":{"input_tokens":12400,"cached_tokens":10478,"output_tokens":900}}'
 } | jq -jRs -L "$ROOT" -f "$ROOT/libexec/tui/transcript-decode.jq" |
   tr '\0' '\n' | sed '/^$/d' | tail -n +3 | paste -sd, -)
 assert_equal 'user,question,assistant,answer,turn_usage,12k ↑ 85% ⦿ 900 ↓ 5% of 264k ◔,batch_ok' "$usage_replay"

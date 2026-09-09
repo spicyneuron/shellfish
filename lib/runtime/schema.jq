@@ -177,11 +177,11 @@ def canonical_tool_call:
 
 def canonical_tool_result:
   type == "object" and
-  ((keys - ["call_id", "content", "exit_code", "name", "role",
+  ((keys - ["call_id", "content", "exit_code", "name",
     "sandbox_denial_detected", "sandboxed", "type"]) | length == 0) and
-  (["call_id", "content", "exit_code", "name", "role", "type"] - keys |
+  (["call_id", "content", "exit_code", "name", "type"] - keys |
     length == 0) and
-  .type == "message" and .role == "tool_result" and
+  .type == "tool_result" and
   (.call_id | identifier) and (.name | tool_name) and (.content | type == "string") and
   (.exit_code | type == "number" and floor == . and . >= 0 and . <= 255) and
   ((has("sandbox_denial_detected") | not) or .sandbox_denial_detected == true) and
@@ -189,13 +189,14 @@ def canonical_tool_result:
     (.name == "shell" and (.sandboxed | type == "boolean")));
 
 def canonical_user_message:
-  type == "object" and keys == ["content", "role", "type"] and
-  .type == "message" and .role == "user" and
+  type == "object" and keys == ["content", "type"] and .type == "user" and
   (.content | type == "array" and length == 1 and (.[0] | canonical_text)) and
   (.content[0].text | nul_free_string);
 
 def canonical_assistant_message:
-  type == "object" and .type == "message" and .role == "assistant" and
+  type == "object" and .type == "assistant" and
+  ((keys - ["content", "stop", "type", "usage"]) | length == 0) and
+  (["content", "stop", "type"] - keys | length == 0) and
   (.stop | IN("end", "tool_calls", "length")) and
   ((has("usage") | not) or (.usage | token_usage)) and
   # Calls are their own records, appended when each reaches execution.
@@ -224,22 +225,18 @@ def canonical_request:
   .format_version == 1 and (.system | type == "string") and
   (.messages | type == "array" and all(.[];
     type == "object" and
-    if .role == "user" then
-      keys == ["content", "role"] and
-      ((. + {type:"message"}) | canonical_user_message)
-    elif .role == "assistant" then
-      keys == ["content", "role", "stop"] and
+    if .type == "user" then canonical_user_message
+    elif .type == "assistant" then
+      keys == ["content", "stop", "type"] and
       (.content | type == "array" and all(.[];
         if type == "object" and .type == "reasoning" then
           keys == ["text", "type"] or keys == ["opaque", "text", "type"]
         else true end)) and
-      ((. + {type:"message"}) | canonical_assistant_message)
-    elif .role == "tool_call" then
-      keys == ["id", "input", "name", "role"] and
-      ((. + {type:"tool_call"} | del(.role)) | canonical_tool_call)
-    elif .role == "tool_result" then
-      keys == ["call_id", "content", "exit_code", "name", "role"] and
-      ((. + {type:"message"}) | canonical_tool_result)
+      canonical_assistant_message
+    elif .type == "tool_call" then canonical_tool_call
+    elif .type == "tool_result" then
+      keys == ["call_id", "content", "exit_code", "name", "type"] and
+      canonical_tool_result
     else false end)) and
   (.tools | type == "array" and all(.[];
     type == "object" and keys == ["description", "input_schema", "name"] and
@@ -325,17 +322,17 @@ def session_records_state:
         if .next == "user" then .
         elif .next != "result" then .next = "user"
         else .valid = false end
-      elif $record.role == "user" then
+      elif $record.type == "user" then
         if .next == "user" then .next = "assistant" | .messages += 1
         else .valid = false end
-      elif $record.role == "assistant" then
+      elif $record.type == "assistant" then
         if (.next | IN("assistant", "more") | not) then .valid = false
         elif $record.stop == "tool_calls" then .next = "call" | .messages += 1
         else .next = "user" | .messages += 1 end
       elif $record.type == "tool_call" then
         if (.next | IN("call", "more") | not) then .valid = false
         else .call = ($record | {id, name}) | .next = "result" end
-      elif $record.role == "tool_result" then
+      elif $record.type == "tool_result" then
         if .next != "result" or $record.call_id != .call.id or
             $record.name != .call.name then
           .valid = false

@@ -175,7 +175,7 @@ sf_session_project() {
     (.[0] | del(.type, .format_version, .cwd, .created) | tojson | field),
     (.[0].cwd | field),
     (.[0].profile.request.model | field),
-    (([.[] | select(.type == "message" and .role == "user")] | length + 1) |
+    (([.[] | select(.type == "user")] | length + 1) |
       tostring | field),
     ($state.messages > 0 and $state.next != "user" | tostring | field),
     ($state.call.id // "" | field),
@@ -338,14 +338,14 @@ sf_session_recover_turn() {
   if [[ $needed == true ]]; then
     if (( ${#pending} == 2 )); then
       record=$(jq -cn --arg call_id "$pending[1]" --arg name "$pending[2]" \
-        '{type:"message",role:"tool_result",call_id:$call_id,name:$name,
+        '{type:"tool_result",call_id:$call_id,name:$name,
          content:"tool call interrupted",exit_code:126}') || return
       sf_session_append "$session_path" "$record" || return
       recovered=$record
     fi
     for record in "${cancelled[@]}"; do
       result=$(jq -cn --argjson call "$record" \
-        '{type:"message",role:"tool_result",call_id:$call.id,name:$call.name,
+        '{type:"tool_result",call_id:$call.id,name:$call.name,
          content:"tool call cancelled",exit_code:126}') || return
       sf_session_append "$session_path" "$record" || return
       sf_session_append "$session_path" "$result" || return

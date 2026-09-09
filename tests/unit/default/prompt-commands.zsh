@@ -185,7 +185,7 @@ typeset fork_session="$tmp/fork-source_fork.jsonl"
 typeset fork_control="$tmp/fork-control.json"
 integer fork_status=0
 jq -c '
-  if .type == "message" and .role == "user" then
+  if .type == "user" then
     .content[0].text = "Hello\n\n"
   else . end
 ' "$SF_TEST_SESSIONS/complete.jsonl" >"$fork_session"
@@ -220,8 +220,8 @@ cat >"$COPY_OUTPUT"
 EOF
 chmod +x "$copy_bin/pbcopy"
 cat "$SF_TEST_SESSIONS/complete.jsonl" >"$copy_session"
-print -r -- '{"type":"message","role":"user","content":[{"type":"text","text":"Second"}]}' >>"$copy_session"
-print -r -- '{"type":"message","role":"assistant","stop":"end","content":[{"type":"text","text":"Answer"},{"type":"text","text":"Continued\n\n"}],"usage":{"input_tokens":1,"output_tokens":1}}' >>"$copy_session"
+print -r -- '{"type":"user","content":[{"type":"text","text":"Second"}]}' >>"$copy_session"
+print -r -- '{"type":"assistant","stop":"end","content":[{"type":"text","text":"Answer"},{"type":"text","text":"Continued\n\n"}],"usage":{"input_tokens":1,"output_tokens":1}}' >>"$copy_session"
 integer copy_status=0
 COPY_OUTPUT="$copy_output" PATH="$copy_bin:$PATH" SHELLFISH_SESSION="$copy_session" \
   SHELLFISH_TURN_STATE="$tmp" zsh -f "$ROOT/share/default/hooks/user_prompt_submit/copy/run" \
@@ -246,7 +246,7 @@ for target in 2 3; do
   (( fork_status == 11 ))
   jq -e --arg draft Second \
     '.argv[-2:] == ["--draft",$draft]' "$fork_control" >/dev/null
-  jq -e -s '[.[] | select(.type == "message" and .role == "user")] | length == 1' \
+  jq -e -s '[.[] | select(.type == "user")] | length == 1' \
     "$tmp/copy-session_fork_${fork_number}.jsonl" >/dev/null
   (( fork_number++ ))
 done
@@ -255,8 +255,8 @@ done
 typeset consecutive_session="$tmp/consecutive.jsonl"
 head -n 1 "$SF_TEST_SESSIONS/header-only.jsonl" >"$consecutive_session"
 print -r -- \
-  '{"type":"message","role":"user","content":[{"type":"text","text":"First"}]}' \
-  '{"type":"message","role":"user","content":[{"type":"text","text":"Second"}]}' \
+  '{"type":"user","content":[{"type":"text","text":"First"}]}' \
+  '{"type":"user","content":[{"type":"text","text":"Second"}]}' \
   >>"$consecutive_session"
 fork_status=0
 SHELLFISH_EXECUTABLE="$ROOT/bin/shellfish" SHELLFISH_SESSION="$consecutive_session" \
@@ -265,7 +265,7 @@ SHELLFISH_EXECUTABLE="$ROOT/bin/shellfish" SHELLFISH_SESSION="$consecutive_sessi
 (( fork_status == 11 ))
 jq -e --arg draft Second '.argv[-2:] == ["--draft",$draft]' "$fork_control" >/dev/null
 jq -e -s '
-  length == 2 and .[-1].role == "user" and .[-1].content[0].text == "First"
+  length == 2 and .[-1].type == "user" and .[-1].content[0].text == "First"
 ' "$tmp/consecutive_fork_1.jsonl" >/dev/null
 
 # A fork is the exact prefix before the selected user: preceding state and
@@ -274,11 +274,11 @@ typeset state_session="$tmp/state.jsonl"
 head -n 1 "$SF_TEST_SESSIONS/header-only.jsonl" >"$state_session"
 print -r -- \
   '{"type":"state","name":"git/identity","value":"branch:main"}' \
-  '{"type":"message","role":"user","content":[{"type":"text","text":"First"}]}' \
-  '{"type":"message","role":"assistant","stop":"end","content":[{"type":"text","text":"Answer"}],"usage":{"input_tokens":1,"output_tokens":1}}' \
+  '{"type":"user","content":[{"type":"text","text":"First"}]}' \
+  '{"type":"assistant","stop":"end","content":[{"type":"text","text":"Answer"}],"usage":{"input_tokens":1,"output_tokens":1}}' \
   '{"type":"state","name":"agents/a1b2c3","value":{"session":".agent-a1b2c3.jsonl"}}' \
   '{"type":"context","hook":"user_prompt_submit","script":"git_environment","content":"branch:work"}' \
-  '{"type":"message","role":"user","content":[{"type":"text","text":"Second"}]}' \
+  '{"type":"user","content":[{"type":"text","text":"Second"}]}' \
   >>"$state_session"
 typeset state_before=$(shasum <"$state_session")
 fork_status=0
@@ -288,7 +288,7 @@ SHELLFISH_EXECUTABLE="$ROOT/bin/shellfish" SHELLFISH_SESSION="$state_session" \
 (( fork_status == 11 ))
 jq -e --arg draft Second '.argv[-2:] == ["--draft",$draft]' "$fork_control" >/dev/null
 jq -e -s '
-  [.[].type] == ["session","state","message","message","state","context"] and
+  [.[].type] == ["session","state","user","assistant","state","context"] and
   [.[] | select(.type == "state") | .name] == ["git/identity","agents/a1b2c3"]
 ' "$tmp/state_fork_1.jsonl" >/dev/null || fail 'the fork is not the exact prefix'
 assert_equal "$state_before" "$(shasum <"$state_session")"

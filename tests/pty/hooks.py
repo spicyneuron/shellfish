@@ -82,7 +82,7 @@ def test_startup_streams_hooks_and_runs_the_queued_prompt():
             (state / "first_start-release").touch()
             _, records = session.wait_session_records(4, path=session.explicit_session)
             assert [record["type"] for record in records[:2]] == ["session", "context"]
-            assert records[2]["role"] == "user"
+            assert records[2]["type"] == "user"
             assert records[2]["content"][0]["text"] == "initial prompt"
         finally:
             (state / "first_start-release").touch()
@@ -145,8 +145,8 @@ def test_slow_prompt_hook_keeps_ui_active():
         release.touch()
         _, records = session.wait_session_records(3, path=session.explicit_session)
         assert completed.exists()
-        assert records[-2]["role"] == "user"
-        assert records[-1]["role"] == "assistant"
+        assert records[-2]["type"] == "user"
+        assert records[-1]["type"] == "assistant"
     finally:
         release.touch()
         session.close()

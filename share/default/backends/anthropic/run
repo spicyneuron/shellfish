@@ -34,10 +34,10 @@ jq -ce '
     map(if (.content | length) == 0
         then .content = [{type:"text",text:"[no content]"}] else . end);
   def regular_message:
-    if .role == "user" then
+    if .type == "user" then
       {role:"user",content:[.content[] |
         select(.type == "text" and .text != "") | {type:"text",text:.text}]}
-    elif .role == "assistant" then
+    elif .type == "assistant" then
       {role:"assistant",content:[.content[] |
         if .type == "text" then (select(.text != "") | {type:"text",text:.text})
         # Thinking is only accepted back with the signature it was issued with,
@@ -47,7 +47,7 @@ jq -ce '
         elif .type == "reasoning" then (.opaque // empty)
         else error("unsupported assistant content") end]}
     else
-      error("unsupported canonical role")
+      error("unsupported canonical type")
     end;
   (.options.request |
     if has("reasoning") then
@@ -59,7 +59,7 @@ jq -ce '
     else . end |
     if has("max_tokens") then . else . + {max_tokens:16384} end) as $request |
   (reduce .messages[] as $message ({out:[],pending:[]};
-    if $message.role == "tool_result" then
+    if $message.type == "tool_result" then
       .pending += [{
         type:"tool_result",
         tool_use_id:$message.call_id,
@@ -68,7 +68,7 @@ jq -ce '
       }]
     # A call rejoins the assistant message that requested it. Results stay
     # pending meanwhile, so they still batch into one user message after it.
-    elif $message.role == "tool_call" then
+    elif $message.type == "tool_call" then
       .out[-1].content += [{type:"tool_use",
         id:$message.id,name:$message.name,input:$message.input}]
     else

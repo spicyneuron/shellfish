@@ -18,8 +18,8 @@ import (
 
 const testAccessCode = "123456"
 
-const userRecord = `{"type":"message","role":"user","content":[{"type":"text","text":"go"}]}`
-const assistantRecord = `{"type":"message","role":"assistant","stop":"end","content":[{"type":"text","text":"done"}]}`
+const userRecord = `{"type":"user","content":[{"type":"text","text":"go"}]}`
+const assistantRecord = `{"type":"assistant","stop":"end","content":[{"type":"text","text":"done"}]}`
 const stateRecord = `{"type":"state","name":"agents/a1b2c3","value":{"session":".agent-a1b2c3.jsonl"}}`
 
 func workDir(t *testing.T) string {

@@ -53,12 +53,12 @@ jq -e -L "$ROOT" '
 [[ $SF_SESSION[turn_id] == 1 && $SF_SESSION[cwd] == "$PWD" &&
    $SF_SESSION[model] == test-model ]]
 
-sf_session_append "$session" '{"type":"message","role":"user","content":[{"type":"text","text":"hello"}]}'
+sf_session_append "$session" '{"type":"user","content":[{"type":"text","text":"hello"}]}'
 (( ${#SF_SESSION_RECORDS} == 2 ))
-assert_equal '{"type":"message","role":"user","content":[{"type":"text","text":"hello"}]}' "$SF_SESSION_RECORDS[2]"
-sf_session_append "$session" '{"type":"message","role":"assistant","stop":"end","content":[{"type":"text","text":"hi"}],"usage":{"input_tokens":1,"output_tokens":1}}'
+assert_equal '{"type":"user","content":[{"type":"text","text":"hello"}]}' "$SF_SESSION_RECORDS[2]"
+sf_session_append "$session" '{"type":"assistant","stop":"end","content":[{"type":"text","text":"hi"}],"usage":{"input_tokens":1,"output_tokens":1}}'
 (( ${#SF_SESSION_RECORDS} == 3 ))
-assert_equal '{"type":"message","role":"assistant","stop":"end","content":[{"type":"text","text":"hi"}],"usage":{"input_tokens":1,"output_tokens":1}}' "$SF_SESSION_RECORDS[3]"
+assert_equal '{"type":"assistant","stop":"end","content":[{"type":"text","text":"hi"}],"usage":{"input_tokens":1,"output_tokens":1}}' "$SF_SESSION_RECORDS[3]"
 sf_session_reset
 (( ${#SF_SESSION[@]} == 0 && ${#SF_SESSION_RECORDS} == 0 ))
 (( $(wc -l <"$session") == 3 ))
@@ -128,7 +128,7 @@ integer record_count
 record_count=${#SF_SESSION_RECORDS}
 mv "$write_failure" "$write_failure.saved"
 mkdir "$write_failure"
-if sf_session_append "$write_failure" '{"type":"message","role":"user","content":[{"type":"text","text":"not written"}]}'; then
+if sf_session_append "$write_failure" '{"type":"user","content":[{"type":"text","text":"not written"}]}'; then
   fail 'append to an unavailable session file succeeded'
 fi
 (( ${#SF_SESSION_RECORDS} == record_count ))
@@ -140,8 +140,8 @@ sf_session_reset
 typeset recovery_sync="$tmp/recovery-sync.jsonl"
 cp "$SF_TEST_SESSIONS/header-only.jsonl" "$recovery_sync"
 sf_session_begin_turn "$recovery_sync"
-sf_session_append "$recovery_sync" '{"type":"message","role":"user","content":[{"type":"text","text":"partial"}]}'
-print -rn -- '{"type":"message"' >>"$recovery_sync"
+sf_session_append "$recovery_sync" '{"type":"user","content":[{"type":"text","text":"partial"}]}'
+print -rn -- '{"type":"user"' >>"$recovery_sync"
 sf_session_resync_turn "$recovery_sync"
 assert_equal '{"type":"turn_error","message":"Turn interrupted."}' "$REPLY"
 sf_session_reset
@@ -152,8 +152,8 @@ jq -e -s 'length == 3 and .[-1] == {type:"turn_error",message:"Turn interrupted.
 typeset recovery_complete="$tmp/recovery-complete.jsonl"
 cp "$SF_TEST_SESSIONS/header-only.jsonl" "$recovery_complete"
 sf_session_begin_turn "$recovery_complete"
-sf_session_append "$recovery_complete" '{"type":"message","role":"user","content":[{"type":"text","text":"complete"}]}'
-print -r -- '{"type":"message","role":"assistant","stop":"end","content":[{"type":"text","text":"done"}]}' \
+sf_session_append "$recovery_complete" '{"type":"user","content":[{"type":"text","text":"complete"}]}'
+print -r -- '{"type":"assistant","stop":"end","content":[{"type":"text","text":"done"}]}' \
   >>"$recovery_complete"
 sf_session_resync_turn "$recovery_complete"
 [[ -z $REPLY ]]
@@ -171,10 +171,10 @@ jq -e -s 'length == 4 and .[-1] == {type:"turn_error",message:"stop hook failed"
 typeset state_session="$tmp/state-session.jsonl"
 cp "$SF_TEST_SESSIONS/header-only.jsonl" "$state_session"
 print -r -- '{"type":"state","name":"git/identity","value":"first"}' >>"$state_session"
-print -r -- '{"type":"message","role":"user","content":[{"type":"text","text":"hello"}]}' \
+print -r -- '{"type":"user","content":[{"type":"text","text":"hello"}]}' \
   >>"$state_session"
 print -r -- '{"type":"state","name":"git/identity","value":null}' >>"$state_session"
-print -r -- '{"type":"message","role":"assistant","stop":"end","content":[]}' \
+print -r -- '{"type":"assistant","stop":"end","content":[]}' \
   >>"$state_session"
 sf_session_begin_turn "$state_session"
 [[ $SF_SESSION[turn_id] == 2 && -z $SF_SESSION_RECOVERY_NEEDED && -z $REPLY ]]
@@ -220,7 +220,7 @@ fi
 
 # A later reader removes only an incomplete trailing fragment.
 before=$(head -n 3 "$session")
-print -rn -- '{"type":"message"' >>"$session"
+print -rn -- '{"type":"user"' >>"$session"
 sf_session_begin_turn "$session"
 [[ $(cat "$session") == "$before" ]]
 sf_session_reset
@@ -236,15 +236,15 @@ done
 typeset native="$tmp/native.jsonl"
 cp "$SF_TEST_SESSIONS/header-only.jsonl" "$native"
 sf_session_begin_turn "$native"
-sf_session_append "$native" '{"type":"message","role":"user","content":[{"type":"text","text":"run"}]}'
-sf_session_append "$native" '{"type":"message","role":"assistant","stop":"tool_calls","content":[]}'
+sf_session_append "$native" '{"type":"user","content":[{"type":"text","text":"run"}]}'
+sf_session_append "$native" '{"type":"assistant","stop":"tool_calls","content":[]}'
 sf_session_append "$native" '{"type":"tool_call","id":"call_1","name":"shell","input":{}}'
-sf_session_append "$native" '{"type":"message","role":"tool_result","call_id":"call_1","name":"shell","content":"denied","exit_code":126}'
+sf_session_append "$native" '{"type":"tool_result","call_id":"call_1","name":"shell","content":"denied","exit_code":126}'
 sf_session_append "$native" '{"type":"tool_call","id":"call_2","name":"read_file","input":{}}'
-sf_session_append "$native" '{"type":"message","role":"tool_result","call_id":"call_2","name":"read_file","content":"bad","exit_code":1}'
-sf_session_append "$native" '{"type":"message","role":"assistant","stop":"length","content":[{"type":"text","text":"partial"}]}'
+sf_session_append "$native" '{"type":"tool_result","call_id":"call_2","name":"read_file","content":"bad","exit_code":1}'
+sf_session_append "$native" '{"type":"assistant","stop":"length","content":[{"type":"text","text":"partial"}]}'
 sf_session_append "$native" '{"type":"context","hook":"stop","script":"fixture","content":"continue"}'
-sf_session_append "$native" '{"type":"message","role":"assistant","stop":"end","content":[{"type":"text","text":"halted"}]}'
+sf_session_append "$native" '{"type":"assistant","stop":"end","content":[{"type":"text","text":"halted"}]}'
 sf_session_reset
 sf_session_begin_turn "$native"
 sf_session_reset
@@ -253,21 +253,21 @@ sf_session_reset
 typeset interrupted_tools="$tmp/interrupted-tools.jsonl"
 cp "$SF_TEST_SESSIONS/header-only.jsonl" "$interrupted_tools"
 sf_session_begin_turn "$interrupted_tools"
-sf_session_append "$interrupted_tools" '{"type":"message","role":"user","content":[{"type":"text","text":"run"}]}'
-sf_session_append "$interrupted_tools" '{"type":"message","role":"assistant","stop":"tool_calls","content":[]}'
+sf_session_append "$interrupted_tools" '{"type":"user","content":[{"type":"text","text":"run"}]}'
+sf_session_append "$interrupted_tools" '{"type":"assistant","stop":"tool_calls","content":[]}'
 sf_session_append "$interrupted_tools" '{"type":"tool_call","id":"call_1","name":"shell","input":{}}'
-sf_session_append "$interrupted_tools" '{"type":"message","role":"tool_result","call_id":"call_1","name":"shell","content":"done","exit_code":0}'
+sf_session_append "$interrupted_tools" '{"type":"tool_result","call_id":"call_1","name":"shell","content":"done","exit_code":0}'
 sf_session_append "$interrupted_tools" '{"type":"tool_call","id":"call_2","name":"read_file","input":{}}'
 sf_session_reset
 sf_session_begin_turn "$interrupted_tools"
-sf_session_append "$interrupted_tools" '{"type":"message","role":"user","content":[{"type":"text","text":"next"}]}'
+sf_session_append "$interrupted_tools" '{"type":"user","content":[{"type":"text","text":"next"}]}'
 sf_session_reset
 jq -e -s '
   .[-5].call_id == "call_1" and .[-5].exit_code == 0 and
   .[-4] == {type:"tool_call",id:"call_2",name:"read_file",input:{}} and
   .[-3].call_id == "call_2" and .[-3].name == "read_file" and .[-3].exit_code == 126 and
   .[-2] == {type:"turn_error",message:"Turn interrupted."} and
-  .[-1].role == "user" and .[-1].content[0].text == "next"
+  .[-1].type == "user" and .[-1].content[0].text == "next"
 ' "$interrupted_tools" >/dev/null
 cp "$SF_TEST_SESSIONS/invalid-transition.jsonl" "$tmp/invalid-transition.jsonl"
 if sf_session_begin_turn "$tmp/invalid-transition.jsonl"; then
@@ -279,5 +279,5 @@ typeset interrupted="$tmp/interrupted.jsonl"
 cp "$SF_TEST_SESSIONS/interrupted.jsonl" "$interrupted"
 sf_session_begin_turn "$interrupted"
 assert_equal '{"type":"turn_error","message":"Turn interrupted."}' "$REPLY"
-sf_session_append "$interrupted" '{"type":"message","role":"user","content":[{"type":"text","text":"next"}]}'
+sf_session_append "$interrupted" '{"type":"user","content":[{"type":"text","text":"next"}]}'
 sf_session_reset

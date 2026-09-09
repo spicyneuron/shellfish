@@ -35,7 +35,7 @@ cat >"$tmp/config/backends/perf/run" <<'EOF'
 zmodload zsh/datetime
 start=$EPOCHREALTIME
 request=$(cat)
-if "$SHELLFISH_PERF_JQ" -e '.messages[-1].role == "tool_result"' <<<"$request" >/dev/null; then
+if "$SHELLFISH_PERF_JQ" -e '.messages[-1].type == "tool_result"' <<<"$request" >/dev/null; then
   phase=backend_final
   response=$'{"type":"_assistant_message_delta","index":0,"text":"ok"}\n{"type":"_assistant_end","stop":"end"}'
 else

@@ -61,10 +61,10 @@ print -r -- "$stream" | jq -eRn '
   [inputs | fromjson] as $events |
   ($events | any(.type == "_notice") | not) and
   ($events | all(has("context") | not)) and
-  ($events | map(select(.type == "state" or .type == "context" or .role? == "user")) |
-    map(.type)) == ["state","context","message"] and
+  ($events | map(select(.type == "state" or .type == "context" or .type == "user")) |
+    map(.type)) == ["state","context","user"] and
   ($events | map(select(.type == "context")))[0].content == "accepted context" and
-  ($events | map(select(.role == "user")))[0].content[0].text == "accepted" and
+  ($events | map(select(.type == "user")))[0].content[0].text == "accepted" and
   ($events | map(select(.type == "_assistant_start")) | length) == 1
 ' >/dev/null
 
@@ -78,7 +78,7 @@ print -r -- "$stream" | jq -eRn '
   ($display | length) == 1 and
   ($display[0] | .text == "declined display\n" and .complete == true) and
   ($events | any(.type == "_assistant_start") | not) and
-  ($events | any(.role == "user") | not)
+  ($events | any(.type == "user") | not)
 ' >/dev/null
 
 typeset handoff_session="$tmp/handoff.jsonl"
@@ -86,7 +86,7 @@ sf_test_session "$handoff_session"
 stream=$(sf_test_turn /handoff "$handoff_session")
 print -r -- "$stream" | jq -eRn '
   [inputs | fromjson] as $events |
-  ($events | any(.role == "user") | not) and
+  ($events | any(.type == "user") | not) and
   ($events | any(.type == "_assistant_start") | not) and
   $events[-1] == {type:"_handoff",argv:["/usr/bin/printf","next.jsonl"]}
 ' >/dev/null
@@ -96,7 +96,7 @@ sf_test_session "$update_session"
 stream=$(sf_test_turn /update "$update_session")
 print -r -- "$stream" | jq -eRn '
   [inputs | fromjson] as $events |
-  ($events | any(.role == "user") | not) and
+  ($events | any(.type == "user") | not) and
   ($events | any(.type == "_assistant_start") | not) and
   $events[-1].type == "_session_update" and
   $events[-1].runtime.harness.sandbox_write_paths == ["/tmp/reference"]
@@ -112,7 +112,7 @@ sf_test_session "$failure_session"
 stream=$(sf_test_turn /fail "$failure_session")
 print -r -- "$stream" | jq -eRn '
   [inputs | fromjson] as $events |
-  ($events | any(.role == "user") | not) and
+  ($events | any(.type == "user") | not) and
   ($events | any(.type == "_assistant_start") | not) and
   $events[0].type == "_notice" and $events[0].complete == true and
   ($events[-1] | .level == "error" and (.text | contains("prompt-hook")))
@@ -142,7 +142,7 @@ integer records=$(wc -l <"$cancel_session")
 typeset cancel_temp="$tmp/cancel-temp"
 mkdir -p "$cancel_temp"
 TMPDIR="$cancel_temp" "$ROOT/bin/shellfish" run --jsonl --session "$cancel_session" \
-  < <(print -r -- '{"type":"message","role":"user","content":[{"type":"text","text":"/slow"}]}') \
+  < <(print -r -- '{"type":"user","content":[{"type":"text","text":"/slow"}]}') \
   >"$cancel_stream" &
 integer pid=$! cancel_status=0 waited=0
 while (( waited++ < 50 )) && [[ ! -e $PROMPT_MARKER ]]; do
@@ -165,7 +165,7 @@ wait "$pid" || cancel_status=$?
 [[ ! -e $PROMPT_EXIT_MARKER ]] || fail 'cancelled user_prompt_submit hook script ran to completion'
 jq -eRn '
   [inputs | fromjson] as $events |
-  ($events | any(.role == "user" or .role == "assistant") | not) and
+  ($events | any(.type == "user" or .type == "assistant") | not) and
   ($events | any(.type == "_notice" and .complete) | not)
 ' <"$cancel_stream" >/dev/null
 (( $(wc -l <"$cancel_session") == records )) ||

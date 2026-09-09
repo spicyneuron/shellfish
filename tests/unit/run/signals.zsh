@@ -72,7 +72,7 @@ jq -e -s '.[-1] == {type:"turn_error",message:"Cancelled."}' "$model_session" >/
 typeset cancel_session="$tmp/cancel.jsonl" cancel_output="$tmp/cancel.out"
 SF_TEST_BACKEND_DELAY=0.3 zsh -f "$entry" run --jsonl --config "$config" \
   --session-out "$cancel_session" \
-  < <(print -r -- '{"type":"message","role":"user","content":[{"type":"text","text":"alpha beta gamma delta epsilon zeta eta theta"}]}') \
+  < <(print -r -- '{"type":"user","content":[{"type":"text","text":"alpha beta gamma delta epsilon zeta eta theta"}]}') \
   >"$cancel_output" 2>&1 &
 typeset cancel_pid=$!
 # Signal a turn that has demonstrably started, rather than one a loaded machine
@@ -89,7 +89,7 @@ wait "$cancel_pid" || cancel_status=$?
 (( cancel_status == 130 )) || fail 'cancelled exec did not report the signal'
 jq -eRn '
   [inputs | fromjson] as $events |
-  ($events[-2] | .role == "assistant" and .stop == "length" and
+  ($events[-2] | .type == "assistant" and .stop == "length" and
     (.content | any(.type == "text" and .text != "")))
   and $events[-1] == {type:"turn_error",message:"Cancelled."}
 ' <"$cancel_output" >/dev/null || fail 'cancelled exec did not persist partial content'
@@ -125,7 +125,7 @@ jq --arg adapter "$cancel_backend" '.backends.fixture.adapter=$adapter' \
 typeset reasoning_session="$tmp/reasoning-cancel.jsonl" reasoning_output="$tmp/reasoning-cancel.out"
 zsh -f "$entry" run --jsonl --config "$cancel_backend_config" \
   --session-out "$reasoning_session" \
-  < <(print -r -- '{"type":"message","role":"user","content":[{"type":"text","text":"reasoning"}]}') \
+  < <(print -r -- '{"type":"user","content":[{"type":"text","text":"reasoning"}]}') \
   >"$reasoning_output" 2>&1 &
 typeset reasoning_pid=$!
 waited=0
@@ -139,7 +139,7 @@ integer reasoning_status=0
 wait "$reasoning_pid" || reasoning_status=$?
 (( reasoning_status == 143 )) || fail 'cancelled reasoning turn did not report the signal'
 jq -e -s '
-  .[-2] == {type:"message",role:"assistant",stop:"length",content:[{
+  .[-2] == {type:"assistant",stop:"length",content:[{
     type:"reasoning",text:"partial thought",
     opaque:{id:"reasoning_1",encrypted_content:"secret"}
   }]} and .[-1] == {type:"turn_error",message:"Turn interrupted."}
@@ -151,7 +151,7 @@ typeset tool_input_session="$tmp/tool-input-cancel.jsonl" tool_input_output="$tm
 CANCEL_BACKEND_MARKER="$cancel_backend_marker" CANCEL_BACKEND_PID_FILE="$cancel_backend_pid_file" \
   zsh -f "$entry" run --jsonl \
   --config "$cancel_backend_config" --session-out "$tool_input_session" \
-  < <(print -r -- '{"type":"message","role":"user","content":[{"type":"text","text":"tool input"}]}') \
+  < <(print -r -- '{"type":"user","content":[{"type":"text","text":"tool input"}]}') \
   >"$tool_input_output" 2>&1 &
 typeset tool_input_pid=$!
 waited=0
@@ -173,7 +173,7 @@ while (( cancel_child_polls++ < 50 )) && kill -0 "$cancel_child_pid" 2>/dev/null
 done
 ! kill -0 "$cancel_child_pid" 2>/dev/null || fail 'cancelled backend grandchild survived'
 jq -e -s '
-  .[-2] == {type:"message",role:"user",content:[{type:"text",text:"tool input"}]} and
+  .[-2] == {type:"user",content:[{type:"text",text:"tool input"}]} and
   .[-1] == {type:"turn_error",message:"Turn interrupted."} and
   ([.[] | .content[]? | select(.type == "tool_call")] | length) == 0
 ' "$tool_input_session" >/dev/null || fail 'cancelled tool input became durable intent'
@@ -183,15 +183,15 @@ typeset recovered_session="$tmp/recovered.jsonl"
 SF_TEST_BACKEND_DELAY=0 zsh -f "$entry" run --config "$config" \
   --session-out "$recovered_session" seed >/dev/null || fail 'recovery seed failed'
 print -r -- \
-  '{"type":"message","role":"user","content":[{"type":"text","text":"interrupted"}]}' \
+  '{"type":"user","content":[{"type":"text","text":"interrupted"}]}' \
   >>"$recovered_session"
 typeset jsonl
 jsonl=$(print -r -- \
-  '{"type":"message","role":"user","content":[{"type":"text","text":"next"}]}' |
+  '{"type":"user","content":[{"type":"text","text":"next"}]}' |
   SF_TEST_BACKEND_DELAY=0 zsh -f "$entry" run --jsonl --config "$config" \
     --session "$recovered_session") || fail 'recovery run failed'
 print -r -- "$jsonl" | jq -eRn '
   [inputs | fromjson] as $events |
   $events[0] == {type:"turn_error",message:"Turn interrupted."} and
-  ($events[1] | .role == "user")
+  ($events[1] | .type == "user")
 ' >/dev/null || fail 'exec did not start after an unfinished turn'

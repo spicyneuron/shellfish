@@ -204,7 +204,7 @@ def test_startup_records_precede_two_turns():
         session.wait_after(draft_mark, "two", view=session.typed)
         session.send(b"\r")
         _, records = session.wait_session_records(7, path=path)
-        assert [(record.get("role"), record.get("stop")) for record in records[3:]] == [
+        assert [(record.get("type"), record.get("stop")) for record in records[3:]] == [
             ("user", None), ("assistant", "end"),
             ("user", None), ("assistant", "end"),
         ]
@@ -265,7 +265,7 @@ def test_interrupt_drains_partial_recovery():
         _, records = session.wait_session_records(4, path=path)
         assert records[-1] == {"type": "turn_error", "message": "Cancelled."}
         recovered = records[-2]
-        assert recovered["role"] == "assistant" and recovered["stop"] == "length"
+        assert recovered["type"] == "assistant" and recovered["stop"] == "length"
         assert any(
             item["type"] == "reasoning" and item["text"]
             for item in recovered["content"]
@@ -308,11 +308,11 @@ def test_permission_decision_restores_draft():
         session.send(b"X\x0c")
         session.wait_after(edit, draft + "X", view=session.typed)
 
-        results = [record for record in records if record.get("role") == "tool_result"]
+        results = [record for record in records if record.get("type") == "tool_result"]
         assert len(results) == 1
         assert results[0]["exit_code"] == 126
         assert results[0]["content"] == "sandbox bypass denied"
-        users = [record for record in records if record.get("role") == "user"]
+        users = [record for record in records if record.get("type") == "user"]
         assert len(users) == 1
         assert users[0]["content"] == [{"type": "text", "text": prompt}]
         assert draft not in session.explicit_session.read_text()
@@ -337,7 +337,7 @@ def test_permission_ctrl_c_cancels_pending_tools():
         session.send(b"\x03")
         _, records = session.wait_session_records(10, path=session.explicit_session)
         results = [
-            record for record in records if record.get("role") == "tool_result"
+            record for record in records if record.get("type") == "tool_result"
         ]
         assert [(record["call_id"], record["exit_code"]) for record in results] == [
             ("call_1", 126),
@@ -372,7 +372,7 @@ def test_repeated_permission_ctrl_c_exits_after_recovery():
             for line in session.explicit_session.read_text().splitlines()
         ]
         results = [
-            record for record in records if record.get("role") == "tool_result"
+            record for record in records if record.get("type") == "tool_result"
         ]
         assert [record["call_id"] for record in results] == [
             "call_1",
@@ -391,14 +391,14 @@ def test_tool_result_preview_reports_total_tokens():
     rows = [f"preview row {index:02d}" for index in range(1, 7)]
     records = [
         header,
-        {"type": "message", "role": "user", "content": [
+        {"type": "user", "content": [
             {"type": "text", "text": "preview tool result"},
         ]},
-        {"type": "message", "role": "assistant", "stop": "tool_calls",
+        {"type": "assistant", "stop": "tool_calls",
          "content": [], "usage": {"input_tokens": 1, "output_tokens": 1}},
         {"type": "tool_call", "id": "call_1", "name": "read_file",
          "input": {"file_path": "README.md"}},
-        {"type": "message", "role": "tool_result", "call_id": "call_1",
+        {"type": "tool_result", "call_id": "call_1",
          "name": "read_file", "content": "\n".join(rows), "exit_code": 0},
     ]
     session = Session(explicit_session=True, session_records=records)
@@ -489,10 +489,10 @@ def test_sigterm_leaves_terminal_state():
     session_file = Path(config_dir.name) / "tall.jsonl"
     records = [
         header,
-        {"type": "message", "role": "user", "content": [
+        {"type": "user", "content": [
             {"type": "text", "text": "seed"},
         ]},
-        {"type": "message", "role": "assistant", "stop": "end",
+        {"type": "assistant", "stop": "end",
          "content": [{"type": "text", "text": "\n".join(
              f"line-{index:04d}" for index in range(1, 501)
          )}], "usage": {"input_tokens": 1, "output_tokens": 500}},

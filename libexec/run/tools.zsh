@@ -148,7 +148,7 @@ sf_tool_result() {
   SF_TOOL_STATE_RECORDS=()
   REPLY=$(jq -cn --arg call_id "$call_id" --arg name "$name" \
     --arg content "$content" --argjson exit_code "$exit_code" '
-      {type:"message",role:"tool_result",call_id:$call_id,name:$name,
+      {type:"tool_result",call_id:$call_id,name:$name,
        content:$content,exit_code:$exit_code}
   ') || return
 }
@@ -327,7 +327,7 @@ sf_tool_execute() {
     REPLY=$(jq -cn --arg call_id "$id" --arg name "$name" \
       --rawfile content "$bounded" --argjson exit_code "$exit_code" \
       --arg sandboxed "$sandboxed" --arg sandbox_denial_detected "$sandbox_denial_detected" '
-        {type:"message",role:"tool_result",call_id:$call_id,name:$name,
+        {type:"tool_result",call_id:$call_id,name:$name,
          content:$content,exit_code:$exit_code} +
         (if $sandboxed == "" then {} else {sandboxed:($sandboxed == "true")} end) +
         (if $sandbox_denial_detected == "" then {} else {sandbox_denial_detected:true} end)

@@ -42,9 +42,9 @@ print -r -- "$stream" | jq -eRn '
   ($events | map(select(.type == "_tool_permission_request")) | length) == 0 and
   ($events | map(select(.type == "_notice" and .complete) | [.source,(.title|split("/")[-1]),.text])) ==
     [["permission_request","permission-allow","reviewed"]] and
-  ($events | map(select(.type == "state" or .role? == "tool_result")) | map(.type)) ==
-    ["state","message"] and
-  ($events | map(select(.role == "tool_result"))[0] |
+  ($events | map(select(.type == "state" or .type == "tool_result")) | map(.type)) ==
+    ["state","tool_result"] and
+  ($events | map(select(.type == "tool_result"))[0] |
     .exit_code == 0 and .content == "headless")
 ' >/dev/null
 jq -e '
@@ -73,7 +73,7 @@ stream=$(SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_BYPASS=true \
   sf_test_turn 'deny headlessly' "$permission_deny_session")
 print -r -- "$stream" | jq -eRn '
   [inputs | fromjson] as $events |
-  ($events | map(select(.role == "tool_result"))[0] |
+  ($events | map(select(.type == "tool_result"))[0] |
     .exit_code == 126 and .content == "risk too high")
 ' >/dev/null
 
@@ -86,7 +86,7 @@ stream=$(SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_BYPASS=true \
 print -r -- "$stream" | jq -eRn '
   [inputs | fromjson] as $events |
   ($events | map(select(.type == "_tool_permission_request")) | length) == 0 and
-  ($events | map(select(.role == "tool_result"))[0] |
+  ($events | map(select(.type == "tool_result"))[0] |
     .exit_code == 126 and .content == "sandbox bypass denied")
 ' >/dev/null
 assert_equal "$frozen_tools" "$(jq -c '.tools' "$request_capture")"
@@ -107,7 +107,7 @@ print -r -- "$stream" | jq -eRn '
       tool:{call_id:"call_1",name:"shell",
         input:{command:"printf approved",request_sandbox_bypass:true,
           sandbox_bypass_reason:"Required by the test fixture"}}}] and
-  ($events | map(select(.role == "tool_result"))[0] |
+  ($events | map(select(.type == "tool_result"))[0] |
     .exit_code == 0 and .content == "approved")
 ' >/dev/null
 assert_equal "$frozen_tools" "$(jq -c '.tools' "$request_capture")"
@@ -123,7 +123,7 @@ stream=$(SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_BYPASS=true \
 print -r -- "$stream" | jq -eRn '
   [inputs | fromjson] as $events |
   ($events | map(select(.type == "_tool_permission_request")) | length) == 1 and
-  ($events | map(select(.role == "tool_result"))[0] |
+  ($events | map(select(.type == "tool_result"))[0] |
     .exit_code == 126 and .content == "sandbox bypass denied")
 ' >/dev/null
 
@@ -135,7 +135,7 @@ stream=$(SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_BYPASS=true \
 print -r -- "$stream" | jq -eRn '
   [inputs | fromjson] as $events |
   ($events | map(select(.type == "_tool_permission_request")) | length) == 1 and
-  ($events | map(select(.role == "tool_result"))[0] |
+  ($events | map(select(.type == "tool_result"))[0] |
     .exit_code == 126 and .content == "tool call interrupted") and
   ($events | map(select(.type == "turn_error") | .message) |
     any(. == "invalid permission response"))
@@ -149,7 +149,7 @@ stream=$(SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_BYPASS=true \
 print -r -- "$stream" | jq -eRn '
   [inputs | fromjson] as $events |
   ($events | map(select(.type == "_tool_permission_request")) | length) == 1 and
-  ($events | map(select(.role == "tool_result"))[0].exit_code) == 126 and
+  ($events | map(select(.type == "tool_result"))[0].exit_code) == 126 and
   ($events | any(.type == "_notice" and .level == "error") | not)
 ' >/dev/null
 assert_canonical_session "$permission_eof_session" end
@@ -160,7 +160,7 @@ typeset permission_stdin_session="$tmp/permission-stdin.jsonl"
 typeset permission_stdin_stream="$tmp/permission-stdin.stream"
 sf_test_session "$permission_stdin_session"
 printf '%s\n' \
-  '{"type":"message","role":"user","content":[{"type":"text","text":"approve over stdin"}]}' \
+  '{"type":"user","content":[{"type":"text","text":"approve over stdin"}]}' \
   '{"type":"_tool_permission_response","id":"permission_1","decision":"approve"}' |
   SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_BYPASS=true \
     SF_TEST_BACKEND_TOOL_COMMAND='printf approved' \
@@ -168,7 +168,7 @@ printf '%s\n' \
     >"$permission_stdin_stream"
 jq -eRn '
   [inputs | fromjson] as $events |
-  ($events | map(select(.role == "tool_result"))[0] |
+  ($events | map(select(.type == "tool_result"))[0] |
     .exit_code == 0 and .content == "approved")
 ' <"$permission_stdin_stream" >/dev/null
 
@@ -185,7 +185,7 @@ SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_BYPASS=true \
     <"$permission_cancel_fifo" >"$permission_cancel_stream" &
 integer permission_cancel_pid=$! permission_cancel_status=0 waited=0
 exec {permission_cancel_fd}>"$permission_cancel_fifo"
-jq -cn '{type:"message",role:"user",content:[{type:"text",text:"cancel permission"}]}' \
+jq -cn '{type:"user",content:[{type:"text",text:"cancel permission"}]}' \
   >&$permission_cancel_fd
 while (( waited++ < 50 )) &&
     ! grep -q '"_tool_permission_request"' "$permission_cancel_stream" 2>/dev/null; do
@@ -200,7 +200,7 @@ exec {permission_cancel_fd}>&-
 jq -eRn '
   [inputs | fromjson] as $events |
   ($events | map(select(.type == "_tool_permission_request")) | length) == 1 and
-  ($events | map(select(.role == "tool_result") |
+  ($events | map(select(.type == "tool_result") |
     [.call_id, .exit_code])) ==
     [["call_1",126],["call_2",126],["call_3",126]]
 ' <"$permission_cancel_stream" >/dev/null

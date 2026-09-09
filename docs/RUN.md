@@ -43,7 +43,7 @@ printf '%s\n' "Review these changes" | shellfish run
 `--jsonl` exposes the machine interface used by interactive chat and `shellfish-server`:
 
 ```sh
-printf '%s\n' '{"type":"message","role":"user","content":[{"type":"text","text":"Review these changes"}]}' |
+printf '%s\n' '{"type":"user","content":[{"type":"text","text":"Review these changes"}]}' |
   shellfish run --jsonl --session path/to/session.jsonl
 ```
 
@@ -52,10 +52,10 @@ printf '%s\n' '{"type":"message","role":"user","content":[{"type":"text","text":
 The first line on stdin must be exactly one canonical user message:
 
 ```json
-{"type":"message","role":"user","content":[{"type":"text","text":"Review these changes"}]}
+{"type":"user","content":[{"type":"text","text":"Review these changes"}]}
 ```
 
-The object has exactly `type`, `role`, and `content`. `content` contains exactly one text block, and its text may not contain NUL. A prompt argument cannot be combined with `--jsonl`.
+The object has exactly `type` and `content`. `content` contains exactly one text block, and its text may not contain NUL. A prompt argument cannot be combined with `--jsonl`.
 
 Stdin remains open for permission replies. When the turn emits a permission request, a client may write one matching response line:
 
@@ -76,7 +76,7 @@ Stdin remains open for permission replies. When the turn emits a permission requ
 Neither command runs hooks, executes tool calls, or persists its output. Provider tool schemas in a built request are inert. Diagnostics go to stderr and failures return nonzero.
 
 ```sh
-printf '%s\n' '{"type":"message","role":"user","content":[{"type":"text","text":"Summarize this conversation"}]}' |
+printf '%s\n' '{"type":"user","content":[{"type":"text","text":"Summarize this conversation"}]}' |
   shellfish build-request --session path/to/session.jsonl --tools '[]' |
   shellfish send-request --session path/to/session.jsonl
 ```
@@ -93,8 +93,10 @@ Durable records are:
 - `session`: the resolved runtime header, emitted when a new session is created.
 - `system`: the concatenated system components.
 - `context`: model-visible hook script output.
-- `message` with role `user`, `assistant`, or `tool_result`. An assistant record carries the turn's token usage when the provider reported it.
+- `user`: one user prompt.
+- `assistant`: one provider response, including token usage when reported.
 - `tool_call`: `{type:"tool_call",id,name,input}`, one call the assistant requested, appended when it reaches its execution point.
+- `tool_result`: one completed, denied, or interrupted tool call.
 - `state`: `{type:"state",name,value}`, model-invisible durable named state.
 - `turn_error`: `{type:"turn_error",message}`, the failure that ended an accepted turn without an assistant answer. It is never sent to a provider.
 

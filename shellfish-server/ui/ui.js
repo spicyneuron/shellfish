@@ -461,8 +461,11 @@ function apply(frame) {
           .filter(Boolean)
           .join(" · "),
       );
-    case "message":
+    case "user":
+    case "assistant":
       return renderMessage(frame);
+    case "tool_result":
+      return renderResult(frame);
     case "tool_call":
       return renderToolCall(frame);
     case "turn_error": {
@@ -566,10 +569,9 @@ function renderCollapsed(kind, heading, content, secondary) {
 }
 
 function renderMessage(frame) {
-  if (frame.role === "tool_result") return renderResult(frame);
   const parts = frame.content || [];
   const displayChunks = displayTextChunks(parts);
-  if (frame.role === "user") {
+  if (frame.type === "user") {
     hideIndicator();
     section("user");
     const article = record("user", null);
@@ -918,8 +920,7 @@ form.addEventListener("submit", async (event) => {
   working = true;
   showIndicator();
   await act("/turn", {
-    type: "message",
-    role: "user",
+    type: "user",
     content: [{ type: "text", text: value }],
   });
 });

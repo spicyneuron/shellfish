@@ -58,7 +58,7 @@ jq -e --arg read "${tmp:A}/system" --arg write "${tmp:A}/home" '
 
 # --session-from names the session whose header and durable system record are copied.
 print -r -- 'changed configured system' >"$tmp/system/source.md"
-print -r -- '{"type":"message","role":"user","content":[{"type":"text","text":"old"}]}' \
+print -r -- '{"type":"user","content":[{"type":"text","text":"old"}]}' \
   >>"$created"
 reused=$(zsh -f "$entry" create --session-from "$created") || fail 'sourced create failed'
 jq -e -s --slurpfile source "$created" '

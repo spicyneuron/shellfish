@@ -33,22 +33,22 @@ print -r -- '{"type":"context","hook":"env","script":"test","content":"data"}' >
 
 # 4. User message
 make_header >"$s_user"
-print -r -- '{"type":"message","role":"user","content":[{"type":"text","text":"list files"}]}' >>"$s_user"
+print -r -- '{"type":"user","content":[{"type":"text","text":"list files"}]}' >>"$s_user"
 
 make_header >"$s_torn"
-print -n -r -- '{"type":"message","role":"user","content":[' >>"$s_torn"
+print -n -r -- '{"type":"user","content":[' >>"$s_torn"
 
 # 5. Assistant message
 make_header >"$s_assistant"
-print -r -- '{"type":"message","role":"assistant","stop":"end","content":[{"type":"text","text":"here they are"}]}' >>"$s_assistant"
+print -r -- '{"type":"assistant","stop":"end","content":[{"type":"text","text":"here they are"}]}' >>"$s_assistant"
 
 # 6. Tool result with exit code
 make_header >"$s_tool_res"
-print -r -- '{"type":"message","role":"tool_result","call_id":"c1","name":"shell","content":"err","exit_code":2}' >>"$s_tool_res"
+print -r -- '{"type":"tool_result","call_id":"c1","name":"shell","content":"err","exit_code":2}' >>"$s_tool_res"
 
 # 7. Interrupted turn
 make_header >"$s_failed"
-print -r -- '{"type":"message","role":"user","content":[{"type":"text","text":"go"}]}' >>"$s_failed"
+print -r -- '{"type":"user","content":[{"type":"text","text":"go"}]}' >>"$s_failed"
 print -r -- '{"type":"turn_error","message":"Turn interrupted."}' >>"$s_failed"
 
 # 8. Unreadable file
@@ -60,7 +60,7 @@ print -r -- '{"type":"state","name":"preview/only","value":true}' >>"$s_state_on
 
 # 10. State after the latest message
 make_header >"$s_state_tail"
-print -r -- '{"type":"message","role":"user","content":[{"type":"text","text":"latest prompt"}]}' >>"$s_state_tail"
+print -r -- '{"type":"user","content":[{"type":"text","text":"latest prompt"}]}' >>"$s_state_tail"
 print -r -- '{"type":"state","name":"preview/first","value":1}' >>"$s_state_tail"
 print -r -- '{"type":"state","name":"preview/last","value":2}' >>"$s_state_tail"
 

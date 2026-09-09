@@ -34,7 +34,7 @@ cat >"$req" <<'EOF'
 {
   "format_version": 1,
   "system": "test",
-  "messages": [{"role":"user","content":[{"type":"text","text":"hello"}]}],
+  "messages": [{"type":"user","content":[{"type":"text","text":"hello"}]}],
   "tools": [],
   "options": {"request":{"model":"claude-test"}},
   "transport": {"endpoint":"https://api.anthropic.com/v1/messages","insecure_tls":false,"http_timeout":30,"http_stall":10}
@@ -121,12 +121,12 @@ cat >"$batch_request" <<'JSON'
   "format_version": 1,
   "system": "test",
   "messages": [
-    {"role":"user","content":[{"type":"text","text":"run both"}]},
-    {"role":"assistant","stop":"tool_calls","content":[{"type":"text","text":"working"}]},
-    {"role":"tool_call","id":"call_1","name":"shell","input":{"command":"pwd"}},
-    {"role":"tool_result","call_id":"call_1","name":"shell","content":"/tmp","exit_code":0},
-    {"role":"tool_call","id":"call_2","name":"shell","input":{"command":"ls"}},
-    {"role":"tool_result","call_id":"call_2","name":"shell","content":"bad","exit_code":1}
+    {"type":"user","content":[{"type":"text","text":"run both"}]},
+    {"type":"assistant","stop":"tool_calls","content":[{"type":"text","text":"working"}]},
+    {"type":"tool_call","id":"call_1","name":"shell","input":{"command":"pwd"}},
+    {"type":"tool_result","call_id":"call_1","name":"shell","content":"/tmp","exit_code":0},
+    {"type":"tool_call","id":"call_2","name":"shell","input":{"command":"ls"}},
+    {"type":"tool_result","call_id":"call_2","name":"shell","content":"bad","exit_code":1}
   ],
   "tools": [],
   "options": {"request":{"model":"claude-test"}},

@@ -29,9 +29,9 @@ jq -ce --argjson chatgpt_transport "$chatgpt_transport" '
   def text_content:
     [.content[] | select(.type == "text") | .text] | join("");
   def items:
-    if .role == "user" then
+    if .type == "user" then
       [{type:"message",role:"user",content:[{type:"input_text",text:text_content}]}]
-    elif .role == "assistant" then
+    elif .type == "assistant" then
       (text_content) as $text |
       # Reasoning leads, as the API emits it, so each item still precedes the
       # call it belongs to. With nothing stored server-side only an item holding
@@ -42,12 +42,12 @@ jq -ce --argjson chatgpt_transport "$chatgpt_transport" '
       (if $text == "" then [] else
         [{type:"message",role:"assistant",content:[{type:"output_text",text:$text}]}]
        end)
-    elif .role == "tool_call" then
+    elif .type == "tool_call" then
       [{type:"function_call",call_id:.id,name:.name,arguments:(.input | tojson)}]
-    elif .role == "tool_result" then
+    elif .type == "tool_result" then
       [{type:"function_call_output",call_id:.call_id,output:.content}]
     else
-      error("unsupported canonical role")
+      error("unsupported canonical type")
     end;
   (.options.request | if has("max_tokens") then
       if has("max_output_tokens") then del(.max_tokens)

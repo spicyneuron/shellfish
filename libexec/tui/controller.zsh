@@ -344,7 +344,7 @@ sf_tui_turn() {
 
   [[ $SF_PRESENT_STATE == idle ]] || return 1
   input=$(jq -cn --arg prompt "$prompt" \
-    '{type:"message",role:"user",content:[{type:"text",text:$prompt}]}') || return 1
+    '{type:"user",content:[{type:"text",text:$prompt}]}') || return 1
   SF_PRESENT_HANDOFF=()
   SF_PRESENT_EXEC_ERROR_HEADING=''
   SF_PRESENT_EXEC_ERROR_DETAIL=''

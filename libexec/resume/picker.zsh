@@ -61,14 +61,14 @@ sf_resume_load() {
       elif .type == "system" then "SYSTEM"
       elif .type == "context" then (.hook | ascii_upcase)
       elif .type == "state" then ("STATE " + (.name | tostring))
-      elif .type == "message" and .role == "user" then
+      elif .type == "user" then
         ([.content[]? | select(.type == "text") | .text] | join(""))
-      elif .type == "message" and .role == "assistant" then
+      elif .type == "assistant" then
         (([.content[]? |
           if .type == "text" then .text
           elif .type == "tool_call" then .name
           else empty end] | last) // "AGENT")
-      elif .type == "message" and .role == "tool_result" then
+      elif .type == "tool_result" then
         (.name + (if .exit_code == 0 then "" else
           " exit " + (.exit_code | tostring) end))
       elif .type == "turn_error" then .message

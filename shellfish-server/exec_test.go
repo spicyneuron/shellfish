@@ -30,7 +30,7 @@ printf '%s' "$input" >>'`+recorded+`'
 printf '%s\n' '{"type":"_assistant_message_delta","text":"working"}' ''
 `)
 	session := "/sessions/served.jsonl"
-	input := json.RawMessage(`{"type":"message","role":"user","content":[{"type":"text","text":"go"}]}`)
+	input := json.RawMessage(`{"type":"user","content":[{"type":"text","text":"go"}]}`)
 	var events []string
 	err := NewExec(context.Background(), binary, session).Run(context.Background(), input, nil,
 		func(event json.RawMessage) { events = append(events, string(event)) })
@@ -113,7 +113,7 @@ printf '%s\n' "$response" >>'`+recorded+`'
 `)
 	replies := make(chan json.RawMessage, 1)
 	replies <- json.RawMessage(`{"type":"_tool_permission_response","id":"permission_1","decision":"approve"}`)
-	input := json.RawMessage(`{"type":"message","role":"user","content":[{"type":"text","text":"go"}]}`)
+	input := json.RawMessage(`{"type":"user","content":[{"type":"text","text":"go"}]}`)
 	if err := NewExec(context.Background(), binary, "/session").Run(
 		context.Background(), input, replies, func(json.RawMessage) {}); err != nil {
 		t.Fatal(err)

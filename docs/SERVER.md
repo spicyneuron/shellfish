@@ -89,7 +89,7 @@ Every action requires bearer authentication.
 `POST /turn` accepts one canonical user message and returns `202 Accepted`:
 
 ```json
-{"type":"message","role":"user","content":[{"type":"text","text":"Review these changes"}]}
+{"type":"user","content":[{"type":"text","text":"Review these changes"}]}
 ```
 
 The turn continues after the request returns. Its progress appears on `/session`.

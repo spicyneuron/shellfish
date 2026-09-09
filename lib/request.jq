@@ -57,7 +57,7 @@ def backend_response_parts(valid_message):
       else {valid:false, content:null, call:null} end
     end] as $blocks |
   select(all($blocks[]; .valid)) |
-  {message:({type:"message", role:"assistant", stop:$state.stop,
+  {message:({type:"assistant", stop:$state.stop,
              content:[$blocks[].content | select(. != null)]} +
             (if $state.usage == null then {} else {usage:$state.usage} end)),
    calls:[$blocks[].call | select(. != null)]} |

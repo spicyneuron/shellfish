@@ -22,11 +22,11 @@ unset api_key
 jq -ce '
   def text_content: [.content[] | select(.type == "text") | .text] | join("");
   def message:
-    if .role == "user" then {role:"user",content:text_content}
-    elif .role == "assistant" then {role:"assistant",content:text_content}
-    elif .role == "tool_result" then
+    if .type == "user" then {role:"user",content:text_content}
+    elif .type == "assistant" then {role:"assistant",content:text_content}
+    elif .type == "tool_result" then
       {role:"tool",tool_call_id:.call_id,content:.content}
-    else error("unsupported canonical role") end;
+    else error("unsupported canonical type") end;
   (.options.request |
     if has("max_tokens") then
       if has("max_completion_tokens") then del(.max_tokens)
@@ -40,7 +40,7 @@ jq -ce '
   # Calls arrive as their own records and rejoin the assistant message they
   # belong to. A call-only message carries null content, as the API expects.
   (reduce .messages[] as $message ({out:[],assistant:null};
-    if $message.role == "tool_call" then
+    if $message.type == "tool_call" then
       # Results sit between the calls of a batch, so the assistant message a
       # call belongs to is remembered rather than assumed to be the last one.
       .assistant as $index |
@@ -50,7 +50,7 @@ jq -ce '
       (if .out[$index].content == "" then .out[$index].content = null else . end)
     else
       .out += [$message | message] |
-      (if $message.role == "assistant" then .assistant = (.out | length) - 1
+      (if $message.type == "assistant" then .assistant = (.out | length) - 1
        else . end)
     end) | .out) as $messages |
   $options * {model:$options.model,

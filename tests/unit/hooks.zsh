@@ -223,8 +223,8 @@ SF_TEST_RUNTIME=$(jq -c --arg script "$stop_script" \
 typeset stop_session="$tmp/stop-session.jsonl"
 sf_test_session "$stop_session"
 sf_session_begin_turn "$stop_session"
-sf_session_append "$stop_session" '{"type":"message","role":"user","content":[{"type":"text","text":"hi"}]}'
-sf_session_append "$stop_session" '{"type":"message","role":"assistant","stop":"end","content":[{"type":"text","text":"hi"}],"usage":{"input_tokens":1,"output_tokens":1}}'
+sf_session_append "$stop_session" '{"type":"user","content":[{"type":"text","text":"hi"}]}'
+sf_session_append "$stop_session" '{"type":"assistant","stop":"end","content":[{"type":"text","text":"hi"}],"usage":{"input_tokens":1,"output_tokens":1}}'
 sf_session_reset
 sf_hooks_turn_state_create
 sf_session_begin_turn "$stop_session"

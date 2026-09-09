@@ -295,7 +295,7 @@ SF_TUI_TRANSPORT_LINES=(
   '{"type":"_assistant_message_delta","text":"four five six "}'
   '{"type":"_assistant_message_delta","text":"seven eight"}'
   '{"type":"_assistant_end","stop":"end"}'
-  '{"type":"message","role":"assistant","stop":"end","content":[{"type":"text","text":"one two three four five six seven eight"}]}'
+  '{"type":"assistant","stop":"end","content":[{"type":"text","text":"one two three four five six seven eight"}]}'
   '{"type":"context","hook":"project","script":"test","content":"later"}'
 )
 BUFFER=''
@@ -366,7 +366,7 @@ SF_TUI_TRANSPORT_LINES=(
   '{"type":"_assistant_message_delta","text":"one\ntwo\nthree\nfour\nfive\nsix\nseven\nbefore tool"}'
   '{"type":"_assistant_tool_call_delta","index":1,"id":"call_1"}'
   '{"type":"_assistant_end","stop":"tool_calls"}'
-  '{"type":"message","role":"assistant","stop":"tool_calls","content":[{"type":"text","text":"one\ntwo\nthree\nfour\nfive\nsix\nseven\nbefore tool"}]}'
+  '{"type":"assistant","stop":"tool_calls","content":[{"type":"text","text":"one\ntwo\nthree\nfour\nfive\nsix\nseven\nbefore tool"}]}'
   '{"type":"tool_call","id":"call_1","name":"shell","input":{"command":"true"}}'
 )
 BUFFER=''
@@ -389,7 +389,7 @@ sf_tui_transport_reset
 SF_TUI_TRANSPORT_LINES=(
   '{"type":"_assistant_start"}'
   '{"type":"_assistant_end","stop":"tool_calls"}'
-  '{"type":"message","role":"assistant","stop":"tool_calls","content":[]}'
+  '{"type":"assistant","stop":"tool_calls","content":[]}'
   '{"type":"tool_call","id":"call_2","name":"shell","input":{"command":"true"}}'
 )
 sf_tui_heartbeat_tick

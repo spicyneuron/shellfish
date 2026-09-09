@@ -22,25 +22,25 @@ stream=$(sf_test_turn $'two\nwords' "$session")
 print -r -- "$stream" | jq -eRn -L "$ROOT" '
   include "lib/runtime/schema";
   [inputs | fromjson] as $events |
-  ($events | map(select(.type == "message" and .role == "assistant"))[0]) as $assistant |
-  $events[0].role == "user" and
+  ($events | map(select(.type == "assistant"))[0]) as $assistant |
+  $events[0].type == "user" and
   ($events | any(.type == "_assistant_message_delta")) and
   ($events | any(.type == "_turn_usage")) and
   ($assistant.usage | token_usage) and
   ($assistant.usage | has("cached_tokens")) and
-  ($events | map(select(.type == "message")) | length == 2) and
-  ($events | map(select(.type == "message"))[0] | canonical_user_message) and
-  ($events | map(select(.type == "message"))[1] | canonical_assistant_message) and
+  ($events | map(select(.type == "user" or .type == "assistant")) | length == 2) and
+  ($events | map(select(.type == "user"))[0] | canonical_user_message) and
+  ($events | map(select(.type == "assistant"))[0] | canonical_assistant_message) and
   $assistant.stop == "end"
 ' >/dev/null
 jq -e '
   .system == "frozen system" and (.tools | length) == 1 and .tools[0].name == "shell" and
-  .messages == [{role:"user",content:[{type:"text",text:"two\nwords"}]}] and
+  .messages == [{type:"user",content:[{type:"text",text:"two\nwords"}]}] and
   .options.request.model == "test-model"
 ' "$request_capture" >/dev/null
 jq -e -s '
   length == 4 and .[1] == {type:"system",content:"frozen system"} and
-  .[2].role == "user" and .[3].role == "assistant"
+  .[2].type == "user" and .[3].type == "assistant"
 ' "$session" >/dev/null
 
 # A capable backend discovers model context once and freezes it into the session.
@@ -136,7 +136,7 @@ SF_ROOT=$ROOT zsh -f -c '
 ' -- "$session" "$memory_request"
 jq -e '
   .system == "frozen system" and
-  .messages[-1].role == "assistant" and
+  .messages[-1].type == "assistant" and
   .messages[-1].content[0].text == "two\nwords\n"
 ' "$memory_request" >/dev/null
 
@@ -171,15 +171,15 @@ SF_TEST_RUNTIME=$(jq -c --arg command "$state_tool" '
 sf_test_session "$state_session"
 stream=$(SF_TEST_BACKEND_TOOL_CALL=1 sf_test_turn 'record tool state' "$state_session")
 print -r -- "$stream" | jq -eRn '
-  [inputs | fromjson | select(.type == "state" or .role? == "tool_result")] ==
+  [inputs | fromjson | select(.type == "state" or .type == "tool_result")] ==
     [{type:"state",name:"tools/turn",value:"recorded"},
-     {type:"message",role:"tool_result",call_id:"call_1",name:"shell",
+     {type:"tool_result",call_id:"call_1",name:"shell",
       content:"failed",exit_code:7,sandboxed:false}]
 ' >/dev/null || fail 'tool state was not emitted before its result'
 jq -es '
-  [.[] | select(.type == "state" or .role? == "tool_result")] ==
+  [.[] | select(.type == "state" or .type == "tool_result")] ==
     [{type:"state",name:"tools/turn",value:"recorded"},
-     {type:"message",role:"tool_result",call_id:"call_1",name:"shell",
+     {type:"tool_result",call_id:"call_1",name:"shell",
       content:"failed",exit_code:7,sandboxed:false}]
 ' "$state_session" >/dev/null || fail 'tool state was not durable before its result'
 SF_TEST_RUNTIME=$base_runtime
@@ -191,8 +191,8 @@ print -r -- "$stream" | jq -eRn '
   ($events | map(.type)) as $types |
   ($types | index("_assistant_tool_call_delta")) as $call |
   ($types | index("_assistant_end")) as $end |
-  ($events | map(if .role? == "assistant" and .stop? == "tool_calls"
-    then .type else null end) | index("message")) as $assistant |
+  ($events | map(if .type == "assistant" and .stop? == "tool_calls"
+    then .type else null end) | index("assistant")) as $assistant |
   ([$types[] | select(. == "_assistant_end")] | length) ==
     ([$types[] | select(. == "_assistant_start")] | length) and
   $call != null and $end != null and $assistant != null and
@@ -207,7 +207,7 @@ print -r -- "$stream" | jq -eRn '
 stream=$(SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_NAME=unknown \
   SF_TEST_BACKEND_TOOL_COUNT=2 sf_test_turn 'request bypass' "$session")
 print -r -- "$stream" | jq -eRn '
-  [inputs | fromjson | select(.role == "tool_result")] as $results |
+  [inputs | fromjson | select(.type == "tool_result")] as $results |
   ($results | map(.exit_code)) == [127,127]
 ' >/dev/null
 assert_canonical_session "$session" end
@@ -219,7 +219,7 @@ stream=$(SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_BYPASS=true \
   sf_test_turn 'call a helper' "$session")
 print -r -- "$stream" | jq -eRn '
   [inputs | fromjson] as $events |
-  [$events[] | select(.role == "tool_result")] as $results |
+  [$events[] | select(.type == "tool_result")] as $results |
   [$events[] | select(.type == "tool_call")] as $calls |
   ($results | map(.exit_code)) == [0] and
   $results[0].content == "ran\n" and
@@ -234,7 +234,7 @@ stream=$(sf_test_turn 'retry error later' "$session")
 print -r -- "$stream" | jq -eRn '
   [inputs | fromjson] as $events |
   $events[-1].type == "turn_error" and
-  ($events | map(select(.role == "assistant")) | length) == 0 and
+  ($events | map(select(.type == "assistant")) | length) == 0 and
   ($events[-1].message | contains("test backend failure"))
 ' >/dev/null
 jq -e -s '
@@ -271,10 +271,10 @@ stream=$(PARTIAL_CAPTURE="$partial_capture" sf_test_turn 'start' "$partial_respo
 print -r -- "$stream" | jq -eRn -L "$ROOT" '
   include "lib/runtime/schema";
   [inputs | fromjson] as $events |
-  ($events | map(select(.role == "assistant"))[-1]) as $assistant |
+  ($events | map(select(.type == "assistant"))[-1]) as $assistant |
   ($assistant | canonical_assistant_message) and
   $assistant == {
-    type:"message",role:"assistant",stop:"length",content:[
+    type:"assistant",stop:"length",content:[
       {type:"reasoning",text:"partial thought",opaque:{id:"reasoning_1",encrypted_content:"secret"}},
       {type:"text",text:"partial answer"}
     ],
@@ -293,13 +293,13 @@ jq -e -s '
 stream=$(PARTIAL_CAPTURE="$partial_capture" sf_test_turn next "$partial_response_session")
 print -r -- "$stream" | jq -eRn '
   [inputs | fromjson] as $events |
-  ($events | map(select(.role == "assistant"))[-1].content[0].text) == "continued"
+  ($events | map(select(.type == "assistant"))[-1].content[0].text) == "continued"
 ' >/dev/null
 jq -e '
-  .messages[-2] == {role:"assistant",stop:"length",content:[
+  .messages[-2] == {type:"assistant",stop:"length",content:[
     {type:"reasoning",text:"partial thought",opaque:{id:"reasoning_1",encrypted_content:"secret"}},
     {type:"text",text:"partial answer"}
-  ]} and .messages[-1] == {role:"user",content:[{type:"text",text:"next"}]}
+  ]} and .messages[-1] == {type:"user",content:[{type:"text",text:"next"}]}
 ' "$partial_capture" >/dev/null
 SF_TEST_RUNTIME=$saved_runtime
 
@@ -315,11 +315,11 @@ SF_ROOT=$ROOT zsh -f -c '
   SF_RUN[jsonl]=1
   sf_session_append() {
     local session=$1
-    print -rn -- "{\"type\":\"message\"" >>"$session"
+    print -rn -- "{\"type\":\"user\"" >>"$session"
     sf_session_fail "cannot append session record: $session"
     return 1
   }
-  message="{\"type\":\"message\",\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"partial write\"}]}"
+  message="{\"type\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"partial write\"}]}"
   sf_run_turn "$message" "$1" 0 "partial write"
 ' -- "$partial_session" >"$partial_stream" || partial_status=$?
 (( partial_status == 1 )) || fail 'partial append failure exited successfully'
@@ -327,7 +327,8 @@ print -r -- "$(<"$partial_stream")" | jq -eRn '
   [inputs | fromjson] as $events |
   ($events | map(.type)) == ["_notice"] and
   ($events[-1] | .level == "error" and (.text | contains("cannot append session record"))) and
-  ($events | any(.type | IN("session","system","message","context")) | not)
+  ($events | any(.type | IN("session","system","user","assistant","tool_call",
+    "tool_result","context","state","turn_error")) | not)
 ' >/dev/null
 sf_session_begin_turn "$partial_session"
 sf_session_reset
@@ -355,7 +356,7 @@ SF_ROOT=$ROOT SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_COMMAND=": >$tool
   }
   typeset -g SF_API_KEY="" SF_API_KEY_SOURCE=""
   SF_RUN[jsonl]=1
-  message='\''{"type":"message","role":"user","content":[{"type":"text","text":"recover call"}]}'\''
+  message='\''{"type":"user","content":[{"type":"text","text":"recover call"}]}'\''
   sf_run_turn "$message" "$1" 0 "recover call"
 ' -- "$call_append_session" >/dev/null || call_append_status=$?
 (( call_append_status == 1 )) || fail 'tool-call append failure exited successfully'
@@ -363,9 +364,9 @@ SF_ROOT=$ROOT SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_COMMAND=": >$tool
 assert_canonical_session "$call_append_session"
 jq -e -s '
   ([.[] | select(.type == "tool_call")] | length) == 1 and
-  ([.[] | select(.role? == "tool_result")] | length) == 1 and
+  ([.[] | select(.type == "tool_result")] | length) == 1 and
   (.[-3] | .type == "tool_call" and .id == "call_1") and
-  (.[-2] | .role == "tool_result" and .call_id == "call_1" and
+  (.[-2] | .type == "tool_result" and .call_id == "call_1" and
     .content == "tool call cancelled" and .exit_code == 126) and
   .[-1].type == "turn_error"
 ' "$call_append_session" >/dev/null || fail 'recovery did not close the uncommitted call'
@@ -379,7 +380,7 @@ sf_session_append "$echo_session" '{"type":"context","hook":"session_start","scr
 sf_session_reset
 stream=$(sf_test_turn 'plain prompt' "$echo_session")
 print -r -- "$stream" | jq -eRn '
-  [inputs | fromjson | select(.role == "assistant")] as $messages |
+  [inputs | fromjson | select(.type == "assistant")] as $messages |
   $messages[-1].content[-1] == {type:"text",text:"plain prompt\n"}
 ' >/dev/null
 jq -e '
@@ -391,17 +392,17 @@ jq -e '
 stream=$(SF_TEST_BACKEND_TOOL_CALL=1 sf_test_turn 'use a tool' "$session")
 print -r -- "$stream" | jq -eRn '
   [inputs | fromjson] as $events |
-  ($events | map(select(.role == "assistant"))[0] |
+  ($events | map(select(.type == "assistant"))[0] |
     .stop == "tool_calls" and .content[0] == {type:"text",text:"use a tool\n"}) and
-  ($events | map(select(.role == "tool_result"))[0] |
+  ($events | map(select(.type == "tool_result"))[0] |
     .call_id == "call_1" and .exit_code == 0) and
-  ($events | map(select(.role == "assistant"))[-1].stop) == "end"
+  ($events | map(select(.type == "assistant"))[-1].stop) == "end"
 ' >/dev/null
 assert_canonical_session "$session" end
 jq -e '
   (.tools | length) == 1 and .tools[0].name == "shell" and
   (.tools[0].input_schema.properties | has("request_sandbox_bypass") | not) and
-  .messages[-1].role == "tool_result"
+  .messages[-1].type == "tool_result"
 ' "$request_capture" >/dev/null
 
 # Replacing a lorem prompt with the sampler does not discard its tool keyword.
@@ -411,7 +412,7 @@ stream=$(sf_test_turn 'lorem tool' "$lorem_session")
 print -r -- "$stream" | jq -eRn '
   [inputs | fromjson] as $events |
   ($events | any(.type == "_notice" and .level == "error") | not) and
-  ($events | map(select(.role == "assistant"))[0].stop) == "tool_calls" and
-  ($events | map(select(.role == "tool_result")) | length) == 1 and
-  ($events | map(select(.role == "assistant"))[-1].stop) == "end"
+  ($events | map(select(.type == "assistant"))[0].stop) == "tool_calls" and
+  ($events | map(select(.type == "tool_result")) | length) == 1 and
+  ($events | map(select(.type == "assistant"))[-1].stop) == "end"
 ' >/dev/null

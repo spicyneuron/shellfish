@@ -11,28 +11,28 @@ request_eval() {
 }
 
 # Canonical user messages require single text content without NUL bytes.
-print -r -- '{"type":"message","role":"user","content":[{"type":"text","text":"hello"}]}' |
+print -r -- '{"type":"user","content":[{"type":"text","text":"hello"}]}' |
   schema_eval 'canonical_user_message' >/dev/null
 
-if print -r -- '{"type":"message","role":"user","content":[{"type":"text","text":"bad\u0000nul"}]}' |
+if print -r -- '{"type":"user","content":[{"type":"text","text":"bad\u0000nul"}]}' |
     schema_eval 'canonical_user_message' >/dev/null 2>&1; then
   fail 'user message with NUL was accepted'
 fi
 
-if print -r -- '{"type":"message","role":"user","content":[]}' |
+if print -r -- '{"type":"user","content":[]}' |
     schema_eval 'canonical_user_message' >/dev/null 2>&1; then
   fail 'empty user content was accepted'
 fi
 
 # Canonical assistant messages validate stop reasons and content consistency.
-print -r -- '{"type":"message","role":"assistant","stop":"end","content":[{"type":"text","text":"hi"}]}' |
+print -r -- '{"type":"assistant","stop":"end","content":[{"type":"text","text":"hi"}]}' |
   schema_eval 'canonical_assistant_message' >/dev/null
 
-print -r -- '{"type":"message","role":"assistant","stop":"tool_calls","content":[{"type":"text","text":"calling"}]}' |
+print -r -- '{"type":"assistant","stop":"tool_calls","content":[{"type":"text","text":"calling"}]}' |
   schema_eval 'canonical_assistant_message' >/dev/null
 
 # Calls are their own records, so a message may no longer carry one.
-if print -r -- '{"type":"message","role":"assistant","stop":"tool_calls","content":[{"type":"tool_call","id":"c1","name":"shell","input":{}}]}' |
+if print -r -- '{"type":"assistant","stop":"tool_calls","content":[{"type":"tool_call","id":"c1","name":"shell","input":{}}]}' |
     schema_eval 'canonical_assistant_message' >/dev/null 2>&1; then
   fail 'a tool call inside assistant content was accepted'
 fi
@@ -41,21 +41,21 @@ print -r -- '{"type":"tool_call","id":"c1","name":"shell","input":{}}' |
   schema_eval 'canonical_tool_call' >/dev/null
 
 # Cancellation is recovered with ordinary records rather than a durable stop reason.
-if print -r -- '{"type":"message","role":"assistant","stop":"cancelled","content":[{"type":"text","text":"halted"}]}' |
+if print -r -- '{"type":"assistant","stop":"cancelled","content":[{"type":"text","text":"halted"}]}' |
     schema_eval 'canonical_assistant_message' >/dev/null 2>&1; then
   fail 'cancelled assistant stop reason was accepted'
 fi
 
 # A durable error closes an unfinished turn without forging an assistant message.
 print -r -- '[
-  {"type":"message","role":"user","content":[{"type":"text","text":"unfinished"}]},
+  {"type":"user","content":[{"type":"text","text":"unfinished"}]},
   {"type":"turn_error","message":"backend failed"},
-  {"type":"message","role":"user","content":[{"type":"text","text":"next"}]}
+  {"type":"user","content":[{"type":"text","text":"next"}]}
 ]' | schema_eval 'canonical_session_records' >/dev/null
 
 if print -r -- '[
-    {"type":"message","role":"user","content":[{"type":"text","text":"unfinished"}]},
-    {"type":"message","role":"user","content":[{"type":"text","text":"next"}]}
+    {"type":"user","content":[{"type":"text","text":"unfinished"}]},
+    {"type":"user","content":[{"type":"text","text":"next"}]}
   ]' | schema_eval 'canonical_session_records' >/dev/null 2>&1; then
   fail 'consecutive user messages without a turn error were accepted'
 fi
@@ -66,13 +66,13 @@ valid_request=$(jq -cn '{
   format_version:1,
   system:"system",
   messages:[
-    {role:"user",content:[{type:"text",text:"question"}]},
-    {role:"assistant",stop:"tool_calls",content:[
+    {type:"user",content:[{type:"text",text:"question"}]},
+    {type:"assistant",stop:"tool_calls",content:[
       {type:"reasoning",text:"checking",opaque:{signature:"signed"}}
     ]},
-    {role:"tool_call",id:"call_1",name:"shell",input:{command:"pwd"}},
-    {role:"tool_result",call_id:"call_1",name:"shell",content:"/tmp",exit_code:0},
-    {role:"assistant",stop:"end",content:[{type:"text",text:"done"}]}
+    {type:"tool_call",id:"call_1",name:"shell",input:{command:"pwd"}},
+    {type:"tool_result",call_id:"call_1",name:"shell",content:"/tmp",exit_code:0},
+    {type:"assistant",stop:"end",content:[{type:"text",text:"done"}]}
   ],
   tools:[{name:"shell",description:"Run a command",input_schema:{
     type:"object",properties:{command:{type:"string"}},required:["command"]
@@ -145,7 +145,7 @@ jq -cn '[
   {type:"_turn_usage",input_tokens:5,cached_tokens:2,output_tokens:4},
   {type:"_assistant_end",stop:"tool_calls"}
 ]' | request_eval 'assemble_backend_response(canonical_backend_response_events; canonical_assistant_message) == {
-  type:"message",role:"assistant",stop:"tool_calls",
+  type:"assistant",stop:"tool_calls",
   content:[
     {type:"reasoning",text:"think first",opaque:{signature:"signed"}},
     {type:"text",text:"run this"}
@@ -159,7 +159,7 @@ jq -cn '[
   {type:"_assistant_tool_call_delta",index:1,id:"call_1",name:"shell",input:"{\"command\":"},
   {type:"_assistant_end",stop:"length"}
 ]' | request_eval 'assemble_backend_response(canonical_backend_response_events; canonical_assistant_message) == {
-  type:"message",role:"assistant",stop:"length",content:[{type:"text",text:"visible"}]
+  type:"assistant",stop:"length",content:[{type:"text",text:"visible"}]
 }' >/dev/null
 
 for events in \
@@ -176,23 +176,23 @@ for events in \
 done
 
 # Canonical tool results require numeric exit codes from 0 through 255.
-print -r -- '{"type":"message","role":"tool_result","call_id":"c1","name":"shell","content":"out","exit_code":0}' |
+print -r -- '{"type":"tool_result","call_id":"c1","name":"shell","content":"out","exit_code":0}' |
   schema_eval 'canonical_tool_result' >/dev/null
 
-print -r -- '{"type":"message","role":"tool_result","call_id":"c1","name":"shell","content":"out","exit_code":0,"sandbox_denial_detected":true}' |
+print -r -- '{"type":"tool_result","call_id":"c1","name":"shell","content":"out","exit_code":0,"sandbox_denial_detected":true}' |
   schema_eval 'canonical_tool_result' >/dev/null
 
-if print -r -- '{"type":"message","role":"tool_result","call_id":"c1","name":"shell","content":"out","exit_code":0,"sandbox_denial_detected":false}' |
+if print -r -- '{"type":"tool_result","call_id":"c1","name":"shell","content":"out","exit_code":0,"sandbox_denial_detected":false}' |
     schema_eval 'canonical_tool_result' >/dev/null 2>&1; then
   fail 'false sandbox_denial_detected flag was accepted'
 fi
 
-if print -r -- '{"type":"message","role":"tool_result","call_id":"c1","name":"shell","content":"out","exit_code":256}' |
+if print -r -- '{"type":"tool_result","call_id":"c1","name":"shell","content":"out","exit_code":256}' |
     schema_eval 'canonical_tool_result' >/dev/null 2>&1; then
   fail 'invalid exit code was accepted'
 fi
 
-if print -r -- '{"type":"message","role":"tool_result","call_id":"c1","name":"shell","content":"out","exit_code":0,"outcome":"executed"}' |
+if print -r -- '{"type":"tool_result","call_id":"c1","name":"shell","content":"out","exit_code":0,"outcome":"executed"}' |
     schema_eval 'canonical_tool_result' >/dev/null 2>&1; then
   fail 'legacy tool outcome was accepted'
 fi
@@ -249,19 +249,19 @@ print -r -- '[
   {"type":"system","content":"system"},
   {"type":"context","hook":"session_start","script":"one","content":"context"},
   {"type":"state","name":"before/user","value":{}},
-  {"type":"message","role":"user","content":[{"type":"text","text":"run"}]},
+  {"type":"user","content":[{"type":"text","text":"run"}]},
   {"type":"state","name":"before-assistant","value":false},
-  {"type":"message","role":"assistant","stop":"tool_calls","content":[]},
+  {"type":"assistant","stop":"tool_calls","content":[]},
   {"type":"state","name":"before/call","value":"one"},
   {"type":"tool_call","id":"c1","name":"shell","input":{}},
-  {"type":"message","role":"tool_result","call_id":"c1","name":"shell","content":"","exit_code":0},
+  {"type":"tool_result","call_id":"c1","name":"shell","content":"","exit_code":0},
   {"type":"state","name":"between/calls","value":"two"},
   {"type":"tool_call","id":"c2","name":"shell","input":{}},
-  {"type":"message","role":"tool_result","call_id":"c2","name":"shell","content":"","exit_code":0},
+  {"type":"tool_result","call_id":"c2","name":"shell","content":"","exit_code":0},
   {"type":"state","name":"before/final","value":null},
-  {"type":"message","role":"assistant","stop":"end","content":[]},
+  {"type":"assistant","stop":"end","content":[]},
   {"type":"state","name":"after/final","value":[1,2]},
-  {"type":"message","role":"user","content":[{"type":"text","text":"again"}]},
+  {"type":"user","content":[{"type":"text","text":"again"}]},
   {"type":"state","name":"before/error","value":true},
   {"type":"turn_error","message":"failed"},
   {"type":"state","name":"after/error","value":null}

@@ -57,8 +57,7 @@ const HEADER = {
   },
 };
 const ASSISTANT = {
-  type: "message",
-  role: "assistant",
+  type: "assistant",
   stop: "end",
   content: [{ type: "text", text: "committed" }],
   usage: { input_tokens: 10, output_tokens: 2 },
@@ -372,13 +371,11 @@ test("replays the durable session before live work", async () => {
     header,
     { type: "system", content: "instructions" },
     {
-      type: "message",
-      role: "user",
+      type: "user",
       content: [{ type: "text", text: "**hello**" }],
     },
     {
-      type: "message",
-      role: "assistant",
+      type: "assistant",
       stop: "end",
       content: [{ type: "text", text: "welcome" }],
       usage: { input_tokens: 75, cached_tokens: 60, output_tokens: 5 },
@@ -449,8 +446,7 @@ test("shows context usage and preserves cache usage", async () => {
     },
   });
   await page.send({
-    type: "message",
-    role: "assistant",
+    type: "assistant",
     stop: "end",
     content: [{ type: "text", text: "first" }],
     usage: { input_tokens: 12400, cached_tokens: 10478, output_tokens: 900 },
@@ -466,8 +462,7 @@ test("shows context usage and preserves cache usage", async () => {
     },
   });
   await page.send({
-    type: "message",
-    role: "assistant",
+    type: "assistant",
     stop: "end",
     content: [{ type: "text", text: "second" }],
     usage: { input_tokens: 75, output_tokens: 5 },
@@ -478,12 +473,11 @@ test("shows context usage and preserves cache usage", async () => {
 test("copies the latest or selected derived section locally", async () => {
   const page = await idle();
   await page.send(
-    { type: "message", role: "user", content: [{ type: "text", text: "\n  question\t\n" }] },
+    { type: "user", content: [{ type: "text", text: "\n  question\t\n" }] },
     { ...ASSISTANT, stop: "tool_calls", content: [] },
     { type: "tool_call", id: "copy_call", name: "shell", input: {} },
     {
-      type: "message",
-      role: "tool_result",
+      type: "tool_result",
       call_id: "copy_call",
       name: "shell",
       content: "",
@@ -534,7 +528,7 @@ test("puts prompt context under a user heading", async () => {
       script: "add_context",
       content: "injected",
     },
-    { type: "message", role: "user", content: [{ type: "text", text: "prompt" }] },
+    { type: "user", content: [{ type: "text", text: "prompt" }] },
   );
   assert.deepEqual(
     find(page.output, "section").map((heading) => heading.textContent),
@@ -593,8 +587,7 @@ test("leaves deltas out of the transcript and draws the record once", async () =
   const page = await idle();
   await page.send(
     {
-      type: "message",
-      role: "user",
+      type: "user",
       content: [{ type: "text", text: "hello" }],
     },
     { type: "_session_status", working: true },
@@ -630,8 +623,7 @@ test("leaves deltas out of the transcript and draws the record once", async () =
 test("does not strand a divider before a delayed user record", async () => {
   const page = await idle();
   const user = {
-    type: "message",
-    role: "user",
+    type: "user",
     content: [{ type: "text", text: "hello" }],
   };
   await page.send(user, { type: "_session_status", working: true }, user);
@@ -644,8 +636,7 @@ test("does not strand a divider before a delayed user record", async () => {
 test("ends a section on a durable turn error without numbering it", async () => {
   const page = await idle();
   const user = {
-    type: "message",
-    role: "user",
+    type: "user",
     content: [{ type: "text", text: "hello" }],
   };
   await page.send(user, { type: "turn_error", message: "Turn interrupted." }, user);
@@ -817,8 +808,7 @@ test("answers and removes permission prompts", async () => {
     await page.send(
       { type: "_session_status", working: true },
       {
-        type: "message",
-        role: "assistant",
+        type: "assistant",
         stop: "tool_calls",
         content: [],
       },
@@ -860,7 +850,7 @@ test("keeps a tool result together with its sandbox notice", async () => {
   );
   assert.equal(page.cancel.hidden, false);
   await page.send(
-    { type: "message", role: "assistant", stop: "tool_calls", content: [] },
+    { type: "assistant", stop: "tool_calls", content: [] },
     {
       type: "tool_call",
       id: "call_1",
@@ -873,8 +863,7 @@ test("keeps a tool result together with its sandbox notice", async () => {
   assert.equal(page.cancel.hidden, false);
 
   await page.send({
-    type: "message",
-    role: "tool_result",
+    type: "tool_result",
     call_id: "call_1",
     name: "edit_file",
     content: "@@ -1 +1 @@\n-old\n+new",
@@ -904,14 +893,12 @@ test("serializes turn submissions", async () => {
   await page.waitFor(() => page.posts.length === 1, "turn submission");
   assert.deepEqual(page.posts.map((post) => post.path), ["/turn"]);
   assert.deepEqual(page.posts[0].body, {
-    type: "message",
-    role: "user",
+    type: "user",
     content: [{ type: "text", text: "do the thing\nwith detail" }],
   });
   assert.equal(find(page.output, "activity").length, 1);
   await page.send({
-    type: "message",
-    role: "user",
+    type: "user",
     content: [{ type: "text", text: "do the thing\nwith detail" }],
   });
   assert.equal(find(page.output, "activity").length, 1);
@@ -951,8 +938,7 @@ test("reopens the stream when an action is refused", async () => {
 test("styles markdown without hiding its source", async () => {
   const page = await idle();
   await page.send({
-    type: "message",
-    role: "assistant",
+    type: "assistant",
     stop: "end",
     content: [
       {
@@ -1009,8 +995,7 @@ test("styles markdown without hiding its source", async () => {
 test("leaves generated links inert", async () => {
   const page = await idle();
   await page.send({
-    type: "message",
-    role: "assistant",
+    type: "assistant",
     stop: "end",
     content: [
       { type: "text", text: "[docs](https://example.invalid) and [trap](javascript:steal())" },
@@ -1039,8 +1024,7 @@ test("highlights representative language-family syntax", async () => {
     "```",
   ].join("\n");
   await page.send({
-    type: "message",
-    role: "assistant",
+    type: "assistant",
     stop: "end",
     content: [{ type: "text", text: source }],
   });
@@ -1064,8 +1048,7 @@ test("keeps HTML source readable and highlights quoted attributes", async () => 
     "```",
   ].join("\n");
   await page.send({
-    type: "message",
-    role: "assistant",
+    type: "assistant",
     stop: "end",
     content: [{ type: "text", text: source }],
   });
@@ -1079,8 +1062,7 @@ test("keeps HTML source readable and highlights quoted attributes", async () => 
 test("leaves unknown fenced languages readable", async () => {
   const page = await idle();
   await page.send({
-    type: "message",
-    role: "assistant",
+    type: "assistant",
     stop: "end",
     content: [{ type: "text", text: "```constructor\nstill here\n```" }],
   });

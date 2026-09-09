@@ -25,7 +25,7 @@ done
 typeset unanswered="$tmp/unanswered-input.jsonl"
 cat "$header" >"$unanswered"
 print -r -- \
-  '{"type":"message","role":"user","content":[{"type":"text","text":"waiting"}]}' \
+  '{"type":"user","content":[{"type":"text","text":"waiting"}]}' \
   >>"$unanswered"
 zsh -f "$entry" install-session --session-out "$tmp/unanswered.jsonl" <"$unanswered" \
   >/dev/null || fail 'installation rejected an unanswered user message'
@@ -36,8 +36,8 @@ typeset complete="$tmp/complete-input.jsonl" complete_output="$tmp/complete.json
 cat "$header" >"$complete"
 cat >>"$complete" <<'EOF'
 {"type":"state","name":"agents/a1b2c3","value":{"session":".agent-a1b2c3.jsonl"}}
-{"type":"message","role":"user","content":[{"type":"text","text":"hello"}]}
-{"type":"message","role":"assistant","stop":"end","content":[]}
+{"type":"user","content":[{"type":"text","text":"hello"}]}
+{"type":"assistant","stop":"end","content":[]}
 {"type":"state","name":"agents/a1b2c3","value":null}
 EOF
 zsh -f "$entry" install-session --session-out "$complete_output" <"$complete" >/dev/null ||
@@ -78,7 +78,7 @@ for case_name in $cases; do
     unmatched-result)
       cat "$header" >"$invalid"
       print -r -- \
-        '{"type":"message","role":"tool_result","call_id":"call_1","name":"shell","content":"out","exit_code":0}' \
+        '{"type":"tool_result","call_id":"call_1","name":"shell","content":"out","exit_code":0}' \
         >>"$invalid"
       ;;
   esac

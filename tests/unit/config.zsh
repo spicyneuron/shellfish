@@ -299,7 +299,7 @@ jq -cn '{
     fence:"",tools:[],sandbox:false,
     max_requests_per_turn:8,max_tool_calls_per_request:16,max_capture_bytes:65536}
 }' >"$tmp/stored.jsonl"
-echo '{"type":"message","role":"user","content":[{"type":"text","text":"hi"}]}' >>"$tmp/stored.jsonl"
+echo '{"type":"user","content":[{"type":"text","text":"hi"}]}' >>"$tmp/stored.jsonl"
 report=$(zsh -f "$entry" config --config "$config_dir/shellfish.jsonc" --session-from "$tmp/stored.jsonl") || \
   fail 'config session report failed'
 assert_equal auto "$(jq -r '.theme.mode' <<<"$report")" 'config --session-from reports the current theme mode'

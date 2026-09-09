@@ -20,7 +20,8 @@ submitted=${submitted%x}
 case $submitted in
   /compact)
     explicit=1
-    jq -es 'any(.[]; .type == "message")' "$SHELLFISH_SESSION" >/dev/null 2>&1 || {
+    jq -es 'any(.[]; .type == "user" or .type == "assistant")' \
+      "$SHELLFISH_SESSION" >/dev/null 2>&1 || {
       print -u2 -r -- 'nothing to compact yet'
       exit 10
     }
@@ -45,7 +46,7 @@ else
 fi
 instruction=$'<compaction_request>\n\n'"$instruction"$'\n\n</compaction_request>'
 request=$(jq -cn --arg text "$instruction" \
-  '{type:"message",role:"user",content:[{type:"text",text:$text}]}') || {
+  '{type:"user",content:[{type:"text",text:$text}]}') || {
   fail_compaction 'cannot prepare summary request; keeping the original'
   exit $?
 }
@@ -67,7 +68,8 @@ transcript="$SHELLFISH_TURN_STATE/compact.jsonl"
 # child reconstructs the same effective state without interpreting names.
 if ! jq -ce -s --rawfile summary <(print -rn -- "$summary") --arg created "$created" '
     . as $records |
-    ([$records | to_entries[] | select(.value.type == "message") | .key] | first) as $start |
+    ([$records | to_entries[] |
+      select(.value.type == "user" or .value.type == "assistant") | .key] | first) as $start |
     select($start != null) |
     ($records[0:$start] | .[0].created = $created) as $startup |
     ($startup[] | select(.type != "state")),

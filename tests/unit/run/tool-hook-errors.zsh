@@ -35,8 +35,8 @@ sf_test_session "$pre_session"
 stream=$(SF_TEST_BACKEND_TOOL_CALL=1 sf_test_turn fail "$pre_session")
 print -r -- "$stream" | jq -eRn '
   [inputs | fromjson] as $events |
-  ($events | map(select(.role == "tool_result")) | length) == 1 and
-  ($events | map(select(.role == "tool_result"))[0].exit_code) == 126 and
+  ($events | map(select(.type == "tool_result")) | length) == 1 and
+  ($events | map(select(.type == "tool_result"))[0].exit_code) == 126 and
   $events[-1].message == "pre_tool_use hook script wrote unsupported stdout"
 ' >/dev/null
 [[ ! -e $TEST_OUTPUT_DIR/post-ran ]]
@@ -57,8 +57,8 @@ sf_test_session "$post_session"
 stream=$(SF_TEST_BACKEND_TOOL_CALL=1 sf_test_turn fail "$post_session")
 print -r -- "$stream" | jq -eRn '
   [inputs | fromjson] as $events |
-  ($events | map(select(.role == "tool_result")) | length) == 1 and
-  ($events | map(select(.role == "tool_result"))[0].exit_code) == 0 and
+  ($events | map(select(.type == "tool_result")) | length) == 1 and
+  ($events | map(select(.type == "tool_result"))[0].exit_code) == 0 and
   $events[-1].message == "post_tool_use hook script returned unsupported skip status"
 ' >/dev/null
 assert_canonical_session "$post_session"

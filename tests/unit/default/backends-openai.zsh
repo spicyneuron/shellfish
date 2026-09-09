@@ -55,7 +55,7 @@ cat >"$req" <<'EOF'
   "format_version": 1,
   "system": "test system",
   "messages": [
-    {"role":"user","content":[{"type":"text","text":"where are we?"}]}
+    {"type":"user","content":[{"type":"text","text":"where are we?"}]}
   ],
   "tools": [
     {"name":"shell","description":"run shell","input_schema":{"type":"object","properties":{"command":{"type":"string"}}}}
@@ -78,7 +78,7 @@ jq -n -e -L "$ROOT" '
   [inputs] |
   assemble_backend_parts(canonical_backend_response_events; canonical_assistant_message) as $parts |
   ($parts.message | canonical_assistant_message) and
-  ($parts.message.role == "assistant") and
+  ($parts.message.type == "assistant") and
   ($parts.message.stop == "tool_calls") and
   ($parts.message.content == [{type:"text",text:"Let me check."}]) and
   ($parts.calls == [{type:"tool_call",id:"call_123",name:"shell",input:{command:"pwd"}}]) and
@@ -120,7 +120,7 @@ jq -n -e -L "$ROOT" '
   include "lib/runtime/schema";
   include "lib/request";
   [inputs] | assemble_backend_response(canonical_backend_response_events; canonical_assistant_message) ==
-    {type:"message",role:"assistant",stop:"length",content:[]}
+    {type:"assistant",stop:"length",content:[]}
 ' "$res" >/dev/null
 
 # 2. Test compatible backend sending finish_reason: "stop" or missing id on tool calls
@@ -194,12 +194,12 @@ cat >"$batch_request" <<'JSON'
   "format_version": 1,
   "system": "test",
   "messages": [
-    {"role":"user","content":[{"type":"text","text":"run both"}]},
-    {"role":"assistant","stop":"tool_calls","content":[{"type":"text","text":"working"}]},
-    {"role":"tool_call","id":"call_1","name":"shell","input":{"command":"pwd"}},
-    {"role":"tool_result","call_id":"call_1","name":"shell","content":"/tmp","exit_code":0},
-    {"role":"tool_call","id":"call_2","name":"shell","input":{"command":"ls"}},
-    {"role":"tool_result","call_id":"call_2","name":"shell","content":"bad","exit_code":1}
+    {"type":"user","content":[{"type":"text","text":"run both"}]},
+    {"type":"assistant","stop":"tool_calls","content":[{"type":"text","text":"working"}]},
+    {"type":"tool_call","id":"call_1","name":"shell","input":{"command":"pwd"}},
+    {"type":"tool_result","call_id":"call_1","name":"shell","content":"/tmp","exit_code":0},
+    {"type":"tool_call","id":"call_2","name":"shell","input":{"command":"ls"}},
+    {"type":"tool_result","call_id":"call_2","name":"shell","content":"bad","exit_code":1}
   ],
   "tools": [],
   "options": {"request":{"model":"gpt-test"}},

@@ -17,8 +17,8 @@ sf_test_runtime
 SF_TEST_RUNTIME=$(jq -c '.profile.context_window = 100' <<<"$SF_TEST_RUNTIME")
 sf_test_session "$compact_source"
 sf_session_begin_turn "$compact_source"
-sf_session_append "$compact_source" '{"type":"message","role":"user","content":[{"type":"text","text":"Hello"}]}'
-sf_session_append "$compact_source" '{"type":"message","role":"assistant","stop":"end","content":[{"type":"text","text":"Hi"}],"usage":{"input_tokens":1,"output_tokens":1}}'
+sf_session_append "$compact_source" '{"type":"user","content":[{"type":"text","text":"Hello"}]}'
+sf_session_append "$compact_source" '{"type":"assistant","stop":"end","content":[{"type":"text","text":"Hi"}],"usage":{"input_tokens":1,"output_tokens":1}}'
 sf_session_reset
 
 # Below the threshold an ordinary prompt is left alone.
@@ -32,7 +32,7 @@ SHELLFISH_EXECUTABLE="$ROOT/bin/shellfish" SHELLFISH_SESSION="$compact_source" \
 [[ ! -s $compact_display ]] || fail 'a session below the threshold displayed compaction'
 
 # At or above it, the submitted prompt is carried back as a draft.
-jq -c 'if .role == "assistant" then .usage = {input_tokens:75,output_tokens:5} else . end' \
+jq -c 'if .type == "assistant" then .usage = {input_tokens:75,output_tokens:5} else . end' \
   "$compact_source" >"$tmp/compact-above.jsonl"
 mv "$tmp/compact-above.jsonl" "$compact_source"
 typeset compact_before=$(shasum <"$compact_source")
@@ -142,9 +142,9 @@ head -n 1 "$compact_source" >"$state_source"
 print -r -- \
   '{"type":"state","name":"git/identity","value":"branch:main"}' \
   '{"type":"context","hook":"session_start","script":"project_environment","content":"env"}' \
-  '{"type":"message","role":"user","content":[{"type":"text","text":"Hello"}]}' \
+  '{"type":"user","content":[{"type":"text","text":"Hello"}]}' \
   '{"type":"state","name":"agents/a1b2c3","value":{"session":".agent-a1b2c3.jsonl"}}' \
-  '{"type":"message","role":"assistant","stop":"end","content":[{"type":"text","text":"Hi"}],"usage":{"input_tokens":1,"output_tokens":1}}' \
+  '{"type":"assistant","stop":"end","content":[{"type":"text","text":"Hi"}],"usage":{"input_tokens":1,"output_tokens":1}}' \
   '{"type":"state","name":"git/identity","value":null}' \
   >>"$state_source"
 typeset state_before=$(shasum <"$state_source")
