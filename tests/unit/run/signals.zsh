@@ -97,12 +97,16 @@ jq -eRn '
 # Reasoning metadata received before cancellation remains available to the next
 # provider request when visible reasoning is recovered.
 typeset cancel_backend="$tmp/cancel-backend" cancel_backend_marker="$tmp/tool-input"
+typeset cancel_backend_pid_file="$tmp/tool-input-child"
 mkdir "$cancel_backend"
 cp "$ROOT/tests/fixtures/backend/manifest.json" "$cancel_backend/manifest.json"
 cat >"$cancel_backend/run" <<'ZSH'
 #!/usr/bin/env zsh
 request=$(cat)
 prompt=$(jq -r '.messages[-1].content[0].text' <<<"$request")
+if [[ -n ${CANCEL_BACKEND_PID_FILE-} ]]; then
+  (sleep 30 & print -r -- $! >"$CANCEL_BACKEND_PID_FILE"; wait) &
+fi
 if [[ $prompt == reasoning ]]; then
   print -r -- '{"type":"_assistant_reasoning_opaque","index":0,"opaque":{"id":"reasoning_1","encrypted_content":"secret"}}'
   print -r -- '{"type":"_assistant_reasoning_delta","index":0,"text":"partial thought"}'
@@ -144,13 +148,15 @@ jq -e -s '
 # A parseable tool-input prefix is not a completed provider response. Cancelling
 # during it must not commit a call that a later turn could execute.
 typeset tool_input_session="$tmp/tool-input-cancel.jsonl" tool_input_output="$tmp/tool-input-cancel.out"
-CANCEL_BACKEND_MARKER="$cancel_backend_marker" zsh -f "$entry" run --jsonl \
+CANCEL_BACKEND_MARKER="$cancel_backend_marker" CANCEL_BACKEND_PID_FILE="$cancel_backend_pid_file" \
+  zsh -f "$entry" run --jsonl \
   --config "$cancel_backend_config" --session-out "$tool_input_session" \
   < <(print -r -- '{"type":"message","role":"user","content":[{"type":"text","text":"tool input"}]}') \
   >"$tool_input_output" 2>&1 &
 typeset tool_input_pid=$!
 waited=0
-while (( waited < 50 )) && [[ ! -s $cancel_backend_marker ]]; do
+while (( waited < 50 )) &&
+    [[ ! -s $cancel_backend_marker || ! -s $cancel_backend_pid_file ]]; do
   sleep 0.1
   (( waited += 1 ))
 done
@@ -160,6 +166,12 @@ kill -TERM "$tool_input_pid" || fail 'tool-input turn ended before cancellation'
 integer tool_input_status=0
 wait "$tool_input_pid" || tool_input_status=$?
 (( tool_input_status == 143 )) || fail 'cancelled tool-input turn did not report the signal'
+integer cancel_child_pid cancel_child_polls=0
+cancel_child_pid=$(<"$cancel_backend_pid_file")
+while (( cancel_child_polls++ < 50 )) && kill -0 "$cancel_child_pid" 2>/dev/null; do
+  sleep 0.01
+done
+! kill -0 "$cancel_child_pid" 2>/dev/null || fail 'cancelled backend grandchild survived'
 jq -e -s '
   .[-2] == {type:"message",role:"user",content:[{type:"text",text:"tool input"}]} and
   .[-1] == {type:"turn_error",message:"Turn interrupted."} and

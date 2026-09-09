@@ -2,12 +2,12 @@ emulate -R zsh
 setopt no_aliases no_bg_nice no_multios pipe_fail
 
 (( $+functions[sf_jq] )) || source "$SF_ROOT/lib/jq.zsh"
-(( $+functions[sf_scratch_file] )) || source "$SF_ROOT/lib/scratch.zsh"
+(( $+functions[sf_scratch_create] )) || source "$SF_ROOT/lib/scratch.zsh"
 (( $+functions[sf_process_stop] )) || source "$SF_ROOT/lib/process.zsh"
 (( $+functions[sf_environment_prepare] )) || source "$SF_ROOT/lib/environment.zsh"
 
 typeset -gA SF_REQUEST=(
-  assistant '' error '' error_file '' pid '' result '' status_file ''
+  assistant '' directory '' error '' group_file '' pid '' result ''
 )
 typeset -ga SF_REQUEST_PARTIAL_EVENTS=()
 
@@ -30,17 +30,18 @@ sf_request_build() {
 
 sf_request_run() {
   local request=$1 command=$2 runtime=$3 selected=$4 emit=${5:-:}
-  local error_file status_file response_pid event display kind='' name
-  local -a environment=( env )
-  integer process_status=0 adapter_status=1 decoder_status=1 ended=0
+  local directory error_file group_file input_file output_pipe status_file
+  local adapter_pid decoder_pid event display kind='' name
+  local -a environment=( env ) process_command
+  integer adapter_status=1 decoder_status=1 ended=0
 
   SF_REQUEST[assistant]=''
+  SF_REQUEST[directory]=''
   SF_REQUEST[error]=''
-  SF_REQUEST[error_file]=''
+  SF_REQUEST[group_file]=''
   SF_REQUEST_PARTIAL_EVENTS=()
   SF_REQUEST[pid]=''
   SF_REQUEST[result]=''
-  SF_REQUEST[status_file]=''
   sf_environment_prepare "$runtime" "$selected" || {
     SF_REQUEST[error]=$SF_ENVIRONMENT_ERROR
     return 1
@@ -49,32 +50,38 @@ sf_request_run() {
     environment+=( -u "$name" )
   done
   environment+=( "${SF_ENVIRONMENT_VALUES[@]}" )
-  sf_scratch_file backends exec-error || {
-    SF_REQUEST[error]='cannot prepare provider error capture'
+  sf_scratch_create backends request || {
+    SF_REQUEST[error]='cannot prepare provider capture'
     return 1
   }
-  error_file=$REPLY
-  SF_REQUEST[error_file]=$error_file
-  sf_scratch_file backends response-status || {
-    rm -f -- "$error_file"
-    SF_REQUEST[error_file]=''
-    SF_REQUEST[error]='cannot prepare provider status capture'
+  directory=$REPLY
+  error_file="$directory/error"
+  group_file="$directory/process.group"
+  input_file="$directory/input"
+  output_pipe="$directory/output.pipe"
+  status_file="$directory/process.status"
+  SF_REQUEST[directory]=$directory
+  SF_REQUEST[group_file]=$group_file
+  print -r -- "$request" >"$input_file" && mkfifo "$output_pipe" &&
+    sf_process_isolated_command "$group_file" "$status_file" "$PWD" "$input_file" \
+      "$output_pipe" "$error_file" /dev/null separate \
+      "${environment[@]}" "$command" || {
+    rm -rf -- "$directory"
+    SF_REQUEST[directory]=''
+    SF_REQUEST[group_file]=''
+    SF_REQUEST[error]='cannot prepare provider capture'
     return 1
   }
-  status_file=$REPLY
-  SF_REQUEST[status_file]=$status_file
-  coproc {
-    "${environment[@]}" "$command" <<<"$request" 2>"$error_file" |
-      sf_jq -jn --unbuffered '
-        include "lib/runtime/schema";
-        include "lib/request";
-        decode_backend_response(canonical_backend_event; canonical_assistant_message)
-      ' 2>/dev/null
-    local -a child_statuses=( $pipestatus )
-    print -r -- "$child_statuses[1] $child_statuses[2]" >"$status_file"
-  }
-  response_pid=$!
-  SF_REQUEST[pid]=$response_pid
+  process_command=( "${reply[@]}" )
+  "${process_command[@]}" </dev/null >/dev/null 2>&1 &
+  adapter_pid=$!
+  SF_REQUEST[pid]=$adapter_pid
+  coproc sf_jq -jn --unbuffered '
+    include "lib/runtime/schema";
+    include "lib/request";
+    decode_backend_response(canonical_backend_event; canonical_assistant_message)
+  ' <"$output_pipe" 2>/dev/null
+  decoder_pid=$!
   "$emit" '{"type":"_backend_request_start"}'
   # Decoder metadata is NUL-framed; arbitrary stop text ends the response payload.
   while IFS= read -r -d $'\0' kind <&p; do
@@ -107,22 +114,18 @@ sf_request_run() {
     esac
   done
   if [[ $kind == invalid ]]; then
-    sf_process_stop "$response_pid"
-    process_status=1
+    sf_process_stop "$adapter_pid" "$group_file"
   else
-    wait "$response_pid" || process_status=$?
+    sf_process_wait "$adapter_pid" "$group_file" "$status_file" || true
+    adapter_status=$REPLY
   fi
+  decoder_status=0
+  wait "$decoder_pid" || decoder_status=$?
   SF_REQUEST[pid]=''
-  if (( ! process_status )) &&
-      read -r adapter_status decoder_status <"$status_file" 2>/dev/null &&
-      [[ $adapter_status == <-> && $decoder_status == <-> ]]; then
-    :
-  else
+  SF_REQUEST[group_file]=''
+  if [[ $kind == invalid ]]; then
     adapter_status=1
-    decoder_status=1
   fi
-  rm -f -- "$status_file"
-  SF_REQUEST[status_file]=''
   (( decoder_status == 0 )) || kind=invalid
   if [[ $kind != invalid && $adapter_status == 0 ]] && (( ended )); then
     SF_REQUEST[assistant]=${SF_REQUEST[result]%%$'\0'*}
@@ -136,10 +139,10 @@ sf_request_run() {
     else
       SF_REQUEST[error]='backend exited before completing a response'
     fi
-    rm -f -- "$error_file"
-    SF_REQUEST[error_file]=''
+    rm -rf -- "$directory"
+    SF_REQUEST[directory]=''
     return 1
   fi
-  rm -f -- "$error_file"
-  SF_REQUEST[error_file]=''
+  rm -rf -- "$directory"
+  SF_REQUEST[directory]=''
 }

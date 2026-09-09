@@ -37,7 +37,7 @@ sf_process_isolated_command() {
   integer script_set=-1
   runner='source "$1" || exit; shift; sf_process_isolated_run "$@"'
   if [[ $OSTYPE == linux* ]] && (( $+commands[setsid] )); then
-    reply=( "$commands[setsid]" -f -w -- "$commands[zsh]" -f -c "$runner" --
+    reply=( "$commands[setsid]" "$commands[zsh]" -f -c "$runner" --
       "$SF_ROOT/lib/process.zsh" "$group_file" "$status_file" "$working" "$input"
       "$stdout" "$stderr" "$control" "$mode" $script_set "$script_value" "$@" )
   elif [[ $OSTYPE == darwin* && -x /usr/bin/script ]]; then
@@ -91,6 +91,20 @@ sf_process_capture_stream() {
   (( statuses[1] == 0 && statuses[2] == 0 ))
 }
 
+sf_process_wait() {
+  local pid=$1 group_file=$2 status_file=$3
+  integer group=0 process_status=1
+  wait "$pid" 2>/dev/null
+  read -r group <"$group_file" 2>/dev/null || group=0
+  (( group > 0 )) && kill -KILL -- -$group 2>/dev/null || true
+  if read -r process_status <"$status_file" 2>/dev/null && [[ $process_status == <-> ]]; then
+    REPLY=$process_status
+    return 0
+  fi
+  REPLY=1
+  return 1
+}
+
 # Captures one process while retaining at most one byte beyond the configured
 # limit on each channel. The caller interprets the captured channels.
 sf_process_capture() {
@@ -104,7 +118,7 @@ sf_process_capture() {
   control_pipe=$REPLY
   local group_file="$directory/process.group" status_file="$directory/process.status"
   local -a process_command
-  integer limit=$(( max_capture + 1 )) process_pid process_group=0 process_status reader_status=0 reader
+  integer limit=$(( max_capture + 1 )) process_pid process_status reader_status=0 reader
   setopt local_options no_err_exit no_monitor
   SF_PROCESS_CAPTURE_PID=''
   SF_PROCESS_CAPTURE_GROUP_FILE=''
@@ -135,12 +149,8 @@ sf_process_capture() {
   process_pid=$!
   SF_PROCESS_CAPTURE_PID=$process_pid
   SF_PROCESS_CAPTURE_GROUP_FILE=$group_file
-  wait "$process_pid" 2>/dev/null
-  read -r process_group <"$group_file" 2>/dev/null || process_group=0
-  (( process_group > 0 )) && kill -KILL -- -$process_group 2>/dev/null || true
-  if ! read -r process_status <"$status_file" 2>/dev/null || [[ $process_status != <-> ]]; then
-    process_status=1
-  fi
+  sf_process_wait "$process_pid" "$group_file" "$status_file" || true
+  process_status=$REPLY
   SF_PROCESS_CAPTURE_PID=''
   SF_PROCESS_CAPTURE_GROUP_FILE=''
   # An escaped descendant may retain a capture pipe, so cancellation does not

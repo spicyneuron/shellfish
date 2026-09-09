@@ -38,7 +38,7 @@ sf_run_interrupt() {
     sf_process_capture_stop
   fi
   if [[ -n $SF_REQUEST[pid] ]]; then
-    sf_process_stop "$SF_REQUEST[pid]"
+    sf_process_stop "$SF_REQUEST[pid]" "$SF_REQUEST[group_file]"
     SF_REQUEST[pid]=''
   fi
 }
@@ -124,10 +124,8 @@ sf_run_turn_cleanup() {
 
   sf_tools_cleanup
   sf_hooks_turn_state_cleanup
-  [[ -z $SF_REQUEST[error_file] ]] ||
-    rm -f -- "$SF_REQUEST[error_file]" 2>/dev/null || true
-  [[ -z $SF_REQUEST[status_file] ]] ||
-    rm -f -- "$SF_REQUEST[status_file]" 2>/dev/null || true
+  [[ -z $SF_REQUEST[directory] ]] ||
+    rm -rf -- "$SF_REQUEST[directory]" 2>/dev/null || true
   if { (( interrupted )) || [[ -n $failure ]] } && (( ${#SF_SESSION_RECORDS} )); then
     sf_run_partial_assistant
     partial=$REPLY
@@ -195,9 +193,9 @@ sf_run_turn() {
   local runtime_projection response_projection response_field
   local tools tool_schema max_capture fence backend_environment env_file config_dir name
   local sandbox_read_paths sandbox_write_paths
-  local context_output context_line context_window context_window_command update_event adapter_pid
+  local context_output context_window context_window_command context_directory context_input update_event
   local SHELLFISH_TURN_STATE=''
-  local -a runtime_fields response_fields tool_calls handoff context_environment
+  local -a runtime_fields response_fields tool_calls handoff context_environment context_result
   integer request_count=0 stop_count=0 call_count tool_index response_call_count
   integer harness_sandbox tool_limit request_limit context_window_set
   integer permission_status
@@ -332,18 +330,19 @@ sf_run_turn() {
           context_environment+=( -u "$name" )
         done
         context_environment+=( "${SF_ENVIRONMENT_VALUES[@]}" )
-        coproc "${context_environment[@]}" "$context_window_command" \
-          <<<"$request" 2>/dev/null
-        adapter_pid=$!
-        SF_REQUEST[pid]=$adapter_pid
-        while IFS= read -r context_line <&p; do
-          [[ -z $context_output ]] || context_output+=$'\n'
-          context_output+=$context_line
-        done
-        if ! wait "$adapter_pid"; then
-          context_output=''
+        if sf_scratch_create backends context; then
+          context_directory=$REPLY
+          context_input="$context_directory/input"
+          if print -r -- "$request" >"$context_input" &&
+              sf_process_capture "$context_input" "$context_directory" "$PWD" \
+                separate '' $max_capture "${context_environment[@]}" \
+                "$context_window_command"; then
+            context_result=( "${reply[@]}" )
+            (( context_result[1] )) || context_output=$(<"$context_result[2]")
+          fi
+          rm -rf -- "$context_directory"
         fi
-        SF_REQUEST[pid]=''
+        (( ! SF_RUN[interrupted] )) || return 1
         context_window=$(sf_jq -ser '
           include "lib/runtime/schema";
           select(length == 1 and (.[0] | type == "object" and
