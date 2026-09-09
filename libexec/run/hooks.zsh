@@ -90,15 +90,17 @@ sf_hooks_stop() {
 # Hooks decide sandbox bypass on fd 3 or defer to the run client channel.
 sf_hooks_permission_request() {
   local session=$1 tool_name=$2 call_id=$3 tool_input=$4
-  local input decoded control_count=0
+  local input='' decoded control_count=0
   local -a result fields
   integer operation_status=0 index
 
   SF_HOOK_ERROR=''
-  input=$(print -rn -- "$tool_input" | jq -c --argjson turn_id "$SHELLFISH_TURN_ID" \
-    --arg tool_name "$tool_name" --arg tool_use_id "$call_id" \
-    '{turn_id:$turn_id,tool_name:$tool_name,tool_use_id:$tool_use_id,
-      tool_input:.}') || operation_status=1
+  if (( SF_HOOK_COUNTS[permission_request] )); then
+    input=$(print -rn -- "$tool_input" | jq -c --argjson turn_id "$SHELLFISH_TURN_ID" \
+      --arg tool_name "$tool_name" --arg tool_use_id "$call_id" \
+      '{turn_id:$turn_id,tool_name:$tool_name,tool_use_id:$tool_use_id,
+        tool_input:.}') || operation_status=1
+  fi
   (( operation_status )) || sf_hooks_run "$session" permission_request "$input" allow allow 1 1 ||
     operation_status=1
   result=( "${reply[@]}" )
@@ -145,17 +147,19 @@ sf_hooks_permission_request() {
 
 # Gates tool calls and uses script output as denial feedback.
 sf_hooks_pre_tool_use() {
-  local session=$1 tool_name=$2 call_id=$3 tool_input=$4 input reason
+  local session=$1 tool_name=$2 call_id=$3 tool_input=$4 input='' reason
   local -a decision feedback
   integer index
 
-  input=$(print -rn -- "$tool_input" | jq -c --argjson turn_id "$SHELLFISH_TURN_ID" \
-    --arg tool_name "$tool_name" --arg tool_use_id "$call_id" \
-    '{turn_id:$turn_id,tool_name:$tool_name,tool_use_id:$tool_use_id,
-      tool_input:.}') || {
-    sf_hooks_fail 'cannot prepare pre-tool hook input'
-    return
-  }
+  if (( SF_HOOK_COUNTS[pre_tool_use] )); then
+    input=$(print -rn -- "$tool_input" | jq -c --argjson turn_id "$SHELLFISH_TURN_ID" \
+      --arg tool_name "$tool_name" --arg tool_use_id "$call_id" \
+      '{turn_id:$turn_id,tool_name:$tool_name,tool_use_id:$tool_use_id,
+        tool_input:.}') || {
+      sf_hooks_fail 'cannot prepare pre-tool hook input'
+      return
+    }
+  fi
   sf_hooks_run "$session" pre_tool_use "$input" allow allow 0 1 || return
   decision=( "${reply[@]}" )
   for (( index = 1; index <= ${#SF_HOOK_SCRIPT_RESULTS}; index += 5 )); do
@@ -176,17 +180,19 @@ sf_hooks_pre_tool_use() {
 
 # Observes a committed canonical result; stdout and skip statuses are rejected.
 sf_hooks_post_tool_use() {
-  local session=$1 result=$2 tool_input=$3 input
+  local session=$1 result=$2 tool_input=$3 input=''
 
-  input=$({ print -r -- "$tool_input"; print -r -- "$result"; } |
-    jq -cs --argjson turn_id "$SHELLFISH_TURN_ID" '
-      .[0] as $tool_input | .[1] as $result |
-      {turn_id:$turn_id,tool_name:$result.name,tool_use_id:$result.call_id,
-       tool_input:$tool_input,tool_response:($result | {content,exit_code})}
-    ') || {
-    sf_hooks_fail 'cannot prepare post-tool hook input'
-    return
-  }
+  if (( SF_HOOK_COUNTS[post_tool_use] )); then
+    input=$({ print -r -- "$tool_input"; print -r -- "$result"; } |
+      jq -cs --argjson turn_id "$SHELLFISH_TURN_ID" '
+        .[0] as $tool_input | .[1] as $result |
+        {turn_id:$turn_id,tool_name:$result.name,tool_use_id:$result.call_id,
+         tool_input:$tool_input,tool_response:($result | {content,exit_code})}
+      ') || {
+      sf_hooks_fail 'cannot prepare post-tool hook input'
+      return
+    }
+  fi
   sf_hooks_run "$session" post_tool_use "$input" reject reject 0 1 || return
   reply=()
 }
