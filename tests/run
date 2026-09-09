@@ -51,7 +51,7 @@ for suite in $suites; do
 done
 
 for test_file in $tests; do
-  [[ -d $test_file || ( -f $test_file && $test_file == *.(zsh|py|js|go) ) ]] || {
+  [[ -d $test_file || ( -f $test_file && $test_file == *.(zsh|py|js) ) ]] || {
     print -u2 -r -- "Invalid test path: $test_file"
     print -u2 -r -- "Usage: $0 [unit|pty|server|metrics|TEST_PATH ...]"
     exit 2
@@ -120,10 +120,6 @@ run_test() {
       *.zsh) runner=( zsh -f "$file" ) ;;
       *.py)  runner=( python3 "$file" ) ;;
       *.js)  runner=( node --test "$file" ) ;;
-      *.go)
-        directory=${file:h}
-        runner=( go test ./... )
-        ;;
     esac
   fi
   (
