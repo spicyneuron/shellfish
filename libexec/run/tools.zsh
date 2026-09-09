@@ -252,6 +252,10 @@ sf_tool_execute() {
       sf_tools_fail 'cannot prepare tool input'
       return
     }
+    command=(/usr/bin/env -i HOME="$tool_home" "${locale_env[@]}" PATH="$PATH" TERM="${TERM:-dumb}"
+      "${SF_ENVIRONMENT_VALUES[@]}" SHELLFISH_CONFIG_DIR="$config_dir"
+      SHELLFISH_MAX_CAPTURE_BYTES="$max_capture" SHELLFISH_SESSION="$session"
+      SHELLFISH_EXECUTABLE="$executable")
     if (( harness_sandbox )) && [[ $use_sandbox == true && $bypass != true ]]; then
       sf_temp_directory native "$temp" || {
         sf_tools_fail 'cannot resolve native temporary directory'
@@ -259,10 +263,7 @@ sf_tool_execute() {
       }
       native_temp=$REPLY
       sandbox_log="$capture_dir/sandbox.log"
-      command=(/usr/bin/env -i HOME="$tool_home" "${locale_env[@]}" PATH="$PATH" TERM="${TERM:-dumb}"
-        "${SF_ENVIRONMENT_VALUES[@]}" SHELLFISH_CONFIG_DIR="$config_dir"
-        SHELLFISH_MAX_CAPTURE_BYTES="$max_capture" SHELLFISH_SESSION="$session"
-        SHELLFISH_EXECUTABLE="$executable"
+      command+=(
         "$fence" --monitor --fence-log-file "$sandbox_log" --settings "$settings"
         --expose-host-path "$command_path" --expose-host-path-rw "$temp"
         --expose-host-path-rw "$control_pipe")
@@ -277,10 +278,7 @@ sf_tool_execute() {
         -- /usr/bin/env TMPDIR="$temp" TMPPREFIX="$temp/zsh"
         "${commands[zsh]}" -f -c 'exec "$1" 3>"$2"' -- "$command_path" "$control_pipe")
     else
-      command=(/usr/bin/env -i HOME="$tool_home" "${locale_env[@]}" PATH="$PATH" TERM="${TERM:-dumb}"
-        "${SF_ENVIRONMENT_VALUES[@]}" SHELLFISH_CONFIG_DIR="$config_dir"
-        TMPDIR="$temp" TMPPREFIX="$temp/zsh" SHELLFISH_MAX_CAPTURE_BYTES="$max_capture"
-        SHELLFISH_SESSION="$session" SHELLFISH_EXECUTABLE="$executable" "$command_path")
+      command+=( TMPDIR="$temp" TMPPREFIX="$temp/zsh" "$command_path" )
     fi
     sf_process_capture "$input" "$capture_dir" "$cwd" merged '' $max_capture \
       "${command[@]}" || {

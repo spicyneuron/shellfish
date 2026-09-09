@@ -45,10 +45,6 @@ sf_hooks_fail() {
   return 1
 }
 
-sf_hooks_configured() {
-  (( ! ${+SF_HOOK_COUNTS[$1]} || SF_HOOK_COUNTS[$1] > 0 ))
-}
-
 sf_hooks_read_capture() {
   local capture=$1 value=''
   local LC_ALL=C
@@ -330,7 +326,11 @@ sf_hooks_run() {
   [[ $hook != pre_tool_use ]] || label=pre-tool
 
   SF_HOOK_ERROR=''
-  if ! sf_hooks_configured "$hook"; then
+  (( ${+SF_HOOK_COUNTS[$hook]} )) || {
+    sf_hooks_fail "unknown hook: $hook"
+    return
+  }
+  if (( ! SF_HOOK_COUNTS[$hook] )); then
     sf_hooks_reset
     reply=( 1 0 '' '' )
     return 0

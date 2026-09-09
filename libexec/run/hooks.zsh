@@ -149,11 +149,6 @@ sf_hooks_pre_tool_use() {
   local -a decision feedback
   integer index
 
-  if ! sf_hooks_configured pre_tool_use; then
-    sf_hooks_reset
-    reply=( allow '' )
-    return 0
-  fi
   input=$(print -rn -- "$tool_input" | jq -c --argjson turn_id "$SHELLFISH_TURN_ID" \
     --arg tool_name "$tool_name" --arg tool_use_id "$call_id" \
     '{turn_id:$turn_id,tool_name:$tool_name,tool_use_id:$tool_use_id,
@@ -183,10 +178,6 @@ sf_hooks_pre_tool_use() {
 sf_hooks_post_tool_use() {
   local session=$1 result=$2 tool_input=$3 input
 
-  if ! sf_hooks_configured post_tool_use; then
-    sf_hooks_reset
-    return 0
-  fi
   input=$({ print -r -- "$tool_input"; print -r -- "$result"; } |
     jq -cs --argjson turn_id "$SHELLFISH_TURN_ID" '
       .[0] as $tool_input | .[1] as $result |

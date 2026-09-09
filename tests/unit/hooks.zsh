@@ -24,6 +24,10 @@ SF_TEST_RUNTIME=$(jq -cn --arg script "$start_script" --arg second "$start_secon
 export OPENAI_API_KEY=standard-secret CUSTOM_API_KEY=custom-secret
 sf_session_prepare "$SF_TEST_RUNTIME"
 sf_test_install_prepared "$start_session"
+if sf_hooks_run "$start_session" misspelled '' allow allow 0 1; then
+  fail 'unknown hook name was accepted'
+fi
+[[ $SF_HOOK_ERROR == 'unknown hook: misspelled' ]]
 sf_hooks_session_start "$start_session"
 [[ -z $REPLY && ${#reply} == 0 && $SF_HOOK_SCRIPT_RESULTS[4] == local ]]
 [[ $OPENAI_API_KEY == standard-secret && $CUSTOM_API_KEY == custom-secret ]]
