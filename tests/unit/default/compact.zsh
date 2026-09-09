@@ -41,8 +41,10 @@ SF_TEST_BACKEND_DELAY=0 SF_TEST_BACKEND_REQUEST="$compact_request" \
   3>"$compact_control" 2>"$compact_display" \
   < <(print -n -- 'my next prompt') || compact_status=$?
 (( compact_status == 11 ))
-[[ $(head -n 1 "$compact_display") == 'Compacting conversation…' ]] ||
-  fail 'automatic compaction did not display its notice'
+[[ ! -s $compact_display ]] || fail 'compaction wrote unexpected display output'
+jq -e '.display == "Compacting conversation…"' \
+  "${compact_hook:h}/manifest.json" >/dev/null ||
+  fail 'compaction does not declare its display'
 jq -e --arg command "$ROOT/bin/shellfish" \
   --arg child "$tmp/compact-source_compact.jsonl" '
   . == {action:"handoff",argv:[$command,"--session",$child,"--draft","my next prompt"]}

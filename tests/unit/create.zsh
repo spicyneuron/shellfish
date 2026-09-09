@@ -177,7 +177,7 @@ mkdir "$first" "$silent"
 cat >"$first/run" <<'ZSH'
 #!/usr/bin/env zsh
 [[ -f $SHELLFISH_SESSION ]] || exit 2
-jq -se 'length == 1 and .[0].type == "_session_prepare"' \
+jq -se 'map(.type) == ["_session_prepare","_notice"] and .[1].complete == false' \
   "$SF_TEST_EVENTS" >/dev/null || exit 3
 print -r -- 'startup context'
 printf '%*s' "${SF_TEST_CONTEXT_BYTES:-0}" ''
@@ -190,6 +190,7 @@ cat >"$silent/run" <<'ZSH'
 jq -se '.[-1].complete == true and (.[-1] | has("context") | not)' \
   "$SF_TEST_EVENTS" >/dev/null || exit 3
 ZSH
+print -r -- '{"display":"Starting up"}' >"$first/manifest.json"
 chmod +x "$first/run" "$silent/run"
 jq --arg first "$first" --arg silent "$silent" \
   '.harnesses.machine.session_start=[$first,$silent]' "$config" >"$stream_config"
@@ -201,7 +202,7 @@ jq -se --arg path "$streamed" --arg first "${first:A}/run" \
   map(.type) == ["_session_prepare","_notice","_notice","state","context","_session_created"] and
   .[0] == {type:"_session_prepare",path:$path,records:$session[:2]} and
   .[1] == {type:"_notice",level:"info",source:"session_start",title:$first,
-    text:"startup display\n",complete:false} and
+    text:"Starting up",complete:false} and
   .[2].text == "startup display\n" and .[2].complete == true and
   (.[2] | has("context") | not) and
   .[3] == $session[2] and .[3] ==
@@ -231,7 +232,7 @@ jq -se 'map(.type) == ["_session_prepare","_session_created"] and
 SF_TEST_STATE_MARKER="$marker" zsh -f "$entry" create --jsonl --session-out "$failed" \
   --config "$hook_config" >"$events" 2>"$hook_error" && fail 'streamed failure succeeded'
 [[ ! -e $failed && $(<"$hook_error") == *'hook script failed with status 9:'* ]]
-jq -se 'map(.type) == ["_session_prepare","_notice","_notice"] and
+jq -se 'map(.type) == ["_session_prepare","_notice"] and
   all(.[]; has("context") | not)' \
   "$events" >/dev/null || fail 'failed creation emitted completion'
 

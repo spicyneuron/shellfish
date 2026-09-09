@@ -23,7 +23,7 @@ typeset -g SF_TEST_RUNTIME=$(jq -cn --arg script "$prompt_script" '
       environment:[],env_file:"",insecure_tls:false,http_timeout:1,http_stall:1},
     harness:{sandbox_read_paths:[],sandbox_write_paths:[],fence:"",tools:[],sandbox:false,max_requests_per_turn:1,
       max_tool_calls_per_request:1,max_capture_bytes:512,
-      user_prompt_submit:[{command:$script,environment:[]}]}
+      user_prompt_submit:[{command:$script,display:"",environment:[]}]}
   }
 ')
 sf_test_session "$prompt_session"
@@ -62,7 +62,7 @@ jq -e 'select(.type == "context" and .content == "/switchcontext")' \
 
 # A session update is returned to exec for application during the turn.
 SF_TEST_RUNTIME=$(jq -c --arg script "$session_update" '
-  .harness.user_prompt_submit=[{command:$script,environment:[]}]
+  .harness.user_prompt_submit=[{command:$script,display:"",environment:[]}]
 ' <<<"$SF_TEST_RUNTIME")
 typeset update_session="$tmp/update-session.jsonl"
 sf_hooks_turn_state_cleanup
@@ -73,7 +73,7 @@ run_prompt_hook /update "$update_session"
 jq -e '. == {harness:{sandbox_write_paths:["/tmp/reference"]}}' <<<"$reply[2]" >/dev/null
 
 SF_TEST_RUNTIME=$(jq -c --arg script "$invalid_update" '
-  .harness.user_prompt_submit=[{command:$script,environment:[]}]
+  .harness.user_prompt_submit=[{command:$script,display:"",environment:[]}]
 ' <<<"$SF_TEST_RUNTIME")
 typeset invalid_update_session="$tmp/invalid-update-session.jsonl"
 sf_hooks_turn_state_cleanup
@@ -88,7 +88,7 @@ fi
 make_script halt 'print -rn -- halted; exit 11'
 typeset halt=$script
 SF_TEST_RUNTIME=$(jq -c --arg script "$halt" '
-  .harness.user_prompt_submit=[{command:$script,environment:[]}]
+  .harness.user_prompt_submit=[{command:$script,display:"",environment:[]}]
 ' <<<"$SF_TEST_RUNTIME")
 typeset halt_session="$tmp/halt-session.jsonl"
 sf_hooks_turn_state_cleanup
@@ -100,7 +100,7 @@ jq -e 'select(.type == "context" and .content == "halted")' \
   < <(tail -n 1 "$halt_session") >/dev/null
 
 SF_TEST_RUNTIME=$(jq -c --arg script "$nul_argv" '
-  .harness.user_prompt_submit=[{command:$script,environment:[]}]
+  .harness.user_prompt_submit=[{command:$script,display:"",environment:[]}]
 ' <<<"$SF_TEST_RUNTIME")
 typeset nul_session="$tmp/nul-session.jsonl"
 sf_hooks_turn_state_cleanup
@@ -111,7 +111,7 @@ if run_prompt_hook /switch "$nul_session"; then
 fi
 [[ $SF_HOOK_ERROR == 'user_prompt_submit hook script returned invalid control data' ]]
 SF_TEST_RUNTIME=$(jq -c --arg script "$empty_command" '
-  .harness.user_prompt_submit=[{command:$script,environment:[]}]
+  .harness.user_prompt_submit=[{command:$script,display:"",environment:[]}]
 ' <<<"$SF_TEST_RUNTIME")
 typeset empty_command_session="$tmp/empty-command-session.jsonl"
 sf_hooks_turn_state_cleanup
@@ -125,7 +125,7 @@ fi
 make_script invalid_earlier 'print -n earlier; print -rn -u3 -- '\''{"unknown":true}'\''; exit 0'
 typeset invalid_earlier=$script
 SF_TEST_RUNTIME=$(jq -c --arg first "$invalid_earlier" --arg second "$prompt_script" '
-  .harness.user_prompt_submit=([$first,$second] | map({command:.,environment:[]}))
+  .harness.user_prompt_submit=([$first,$second] | map({command:.,display:"",environment:[]}))
 ' <<<"$SF_TEST_RUNTIME")
 typeset invalid_control_session="$tmp/invalid-control-session.jsonl"
 sf_hooks_turn_state_cleanup

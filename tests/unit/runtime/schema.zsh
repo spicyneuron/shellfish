@@ -290,11 +290,15 @@ valid_header=$(jq -cn '
       fence: "", tools: [], sandbox: true,
       max_requests_per_turn: 50, max_tool_calls_per_request: 20,
       max_capture_bytes: 32768,
-      stop: [{command:"/bin/hook",environment:["HOOK_MODE"]}]
+      stop: [{command:"/bin/hook",display:"",environment:["HOOK_MODE"]}]
     }
   }
 ')
 print -r -- "$valid_header" | schema_eval 'canonical_session_header(1)' >/dev/null
+if jq -c '.harness.stop[0].display = "two\nlines"' <<<"$valid_header" |
+    schema_eval 'canonical_session_header(1)' >/dev/null 2>&1; then
+  fail 'a multiline hook display was accepted'
+fi
 for environment in '["DUPLICATE","DUPLICATE"]' '["invalid-name"]'; do
   if jq -c --argjson environment "$environment" \
       '.backend.environment = $environment' <<<"$valid_header" |

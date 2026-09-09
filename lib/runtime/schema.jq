@@ -86,9 +86,13 @@ def hook_names:
   ["session_start", "user_prompt_submit", "permission_request", "pre_tool_use",
    "post_tool_use", "stop"];
 
+def hook_display:
+  type == "string" and (test("[[:cntrl:]]") | not);
+
 def hook_component:
-  type == "object" and keys == ["command", "environment"] and
-  (.command | absolute_path) and (.environment | component_environment);
+  type == "object" and keys == ["command", "display", "environment"] and
+  (.command | absolute_path) and (.display | hook_display) and
+  (.environment | component_environment);
 
 def harness_hooks:
   . as $harness |

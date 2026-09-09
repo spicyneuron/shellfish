@@ -704,6 +704,21 @@ test("updates a live notice in place", async () => {
   assert.equal(findTag(notes[0], "pre")[0].textContent, "Compacting conversation…");
 });
 
+test("discards a live notice that settles with no text", async () => {
+  const page = await idle();
+  await page.send({
+    type: "_notice", level: "info", source: "session_start",
+    title: "/tmp/probe", text: "Inspecting", complete: false,
+  });
+  assert.equal(find(page.output, "note").length, 1);
+
+  await page.send({
+    type: "_notice", level: "info", source: "session_start",
+    title: "/tmp/probe", text: "", complete: true,
+  });
+  assert.equal(find(page.output, "note").length, 0);
+});
+
 test("replaces an incomplete notice with the failure", async () => {
   const page = await idle();
   await page.send({

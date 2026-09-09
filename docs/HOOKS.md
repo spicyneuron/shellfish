@@ -59,15 +59,15 @@ Reference resolution, most-specific first:
 2. `~/...` against `$HOME`;
 3. a relative path under `<config-dir>/hooks/<hook>/`, falling back to `share/default/hooks/<hook>/`.
 
-So `"project_environment"` resolves to the component at `share/default/hooks/session_start/project_environment` unless you shadow it with `~/.config/shellfish/hooks/session_start/project_environment`. Hook references must resolve to component directories with executable `run` files. Resolved command paths and manifest environments are stored in the session header, so later configuration changes do not reinterpret an existing session.
+So `"project_environment"` resolves to the component at `share/default/hooks/session_start/project_environment` unless you shadow it with `~/.config/shellfish/hooks/session_start/project_environment`. Hook references must resolve to component directories with executable `run` files. Resolved command paths and manifest fields are stored in the session header, so later configuration changes do not reinterpret an existing session.
 
-A hook manifest contains only its selected environment names:
+A hook manifest contains its selected environment names and an optional display label:
 
 ```json
-{"environment":["HOOK_MODE"]}
+{"environment":["HOOK_MODE"],"display":"Checking the working tree"}
 ```
 
-The manifest is optional and defaults to an empty list. See [Configure component environments](CONFIG.md#configure-component-environments) for value resolution and isolation.
+The manifest and both fields are optional. `environment` defaults to an empty list. `display` is one control-free line shown while the script runs, and defaults to no label, which keeps the component silent until it exits. See [Configure component environments](CONFIG.md#configure-component-environments) for value resolution and isolation.
 
 ## The hook script contract
 
@@ -100,12 +100,12 @@ A script communicates through three channels. They are captured separately, but 
 | Channel | Meaning |
 | --- | --- |
 | stdout | Hook data. Often durable `context`; hook-dependent (see below). |
-| stderr | Ephemeral display. Streamed to a live event client while the script runs, never committed, never sent to the model. |
+| stderr | Ephemeral display. Sent to a live event client after the script exits, never committed, never sent to the model. |
 | fd 3 | One JSON control object containing common state and any hook-specific fields. |
 
 fd 3 must contain exactly one JSON object. Every hook accepts an optional `state` array of `{name,value}` objects. The dispatcher constructs canonical state records and removes `state` before the hook-specific adapter validates the remaining fields. The control capture is private and byte-counted before decoding. Model-facing context remains raw stdout, so ordinary scripts can still use `cat` and pipelines without JSON-encoding their payloads.
 
-Hook scripts opt into live display by writing to stderr. In JSONL mode, the first newline-terminated stderr line opens a notice while the script runs; full stderr replaces it after exit and capture checks. A script that writes no newline is displayed only after exit. Silent scripts produce no activity notices. Without a live event stream, the owning process writes the buffered stderr to its own stderr.
+Display is one notice that settles in place. In JSONL mode, a component's manifest `display` label opens that notice before the script runs, and the script's stderr replaces the label after exit and capture checks. Without a label, the notice appears only after exit; a component with neither a label nor stderr is silent. Because an empty outcome settles the notice to nothing, a label announces slow work without leaving a row behind. Without a live event stream, the owning process writes the buffered stderr to its own stderr.
 
 stdout and state remain staged until the complete chain and hook-specific validation succeed. Shellfish then appends and emits state followed by any model-facing context. A later script failure discards the chain's staged records. See [JSONL output](RUN.md#output).
 

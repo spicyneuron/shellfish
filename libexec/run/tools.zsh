@@ -280,7 +280,7 @@ sf_tool_execute() {
     else
       command+=( TMPDIR="$temp" TMPPREFIX="$temp/zsh" "$command_path" )
     fi
-    sf_process_capture "$input" "$capture_dir" "$cwd" merged '' $max_capture \
+    sf_process_capture "$input" "$capture_dir" "$cwd" merged $max_capture \
       "${command[@]}" || {
       sf_tools_fail 'cannot capture tool output'
       return

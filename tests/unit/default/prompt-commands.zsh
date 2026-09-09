@@ -26,7 +26,7 @@ SF_TEST_RUNTIME=$(jq -c \
   '.harness.sandbox=true |
    .harness.user_prompt_submit =
      ([$new,$refresh,$verbose,$copy,$fork,$sandbox,$user_shell,$server,$resume,
-       $compact,$help,$after_help] | map({command:.,environment:[]}))' \
+       $compact,$help,$after_help] | map({command:.,display:"",environment:[]}))' \
   <<<"$SF_TEST_RUNTIME")
 sf_test_session "$help_session"
 sf_session_begin_turn "$help_session"
@@ -76,7 +76,7 @@ set_prompt_hook() {
   local session=$1 script=$2 patch
   integer rc=0
   patch=$(jq -cn --arg command "$script" \
-    '{harness:{user_prompt_submit:[{command:$command,environment:[]}]}}') || return
+    '{harness:{user_prompt_submit:[{command:$command,display:"",environment:[]}]}}') || return
   sf_session_begin_turn "$session" || return
   sf_session_update "$session" "$patch" || rc=1
   sf_session_reset
@@ -284,7 +284,7 @@ assert_equal "$state_before" "$(shasum <"$state_session")"
 typeset shell_session="$tmp/shell-session.jsonl"
 SF_TEST_RUNTIME=$(jq -c \
   --arg script "$ROOT/share/default/hooks/user_prompt_submit/user_shell/run" \
-  '.harness.user_prompt_submit=[{command:$script,environment:[]}]' <<<"$SF_TEST_RUNTIME")
+  '.harness.user_prompt_submit=[{command:$script,display:"",environment:[]}]' <<<"$SF_TEST_RUNTIME")
 sf_test_session "$shell_session"
 sf_session_begin_turn "$shell_session"
 sf_session_reset

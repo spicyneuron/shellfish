@@ -62,32 +62,18 @@ sf_process_control_pipe() {
 }
 
 sf_process_capture_stream() {
-  local pipe=$1 output=$2 callback=$3 chunk notice=''
-  integer limit=$4 fd event_fd callback_limit=$(( limit - 1 ))
+  local pipe=$1 output=$2 chunk
+  integer limit=$3 fd
   local LC_ALL=C
 
   exec {fd}<"$pipe" || return
-  exec {event_fd}>&1 || { exec {fd}<&-; return 1; }
   {
     while sysread -i $fd -s 4096 chunk; do
-      if [[ -n $callback ]]; then
-        notice+=$chunk
-        if [[ $notice == *$'\n'* ]]; then
-          notice=${notice%%$'\n'*}$'\n'
-          if (( ${#notice} <= callback_limit )); then
-            "$callback" "$notice" >&$event_fd || return
-          fi
-          callback=''
-        elif (( ${#notice} > callback_limit )); then
-          callback=''
-        fi
-      fi
       print -rn -- "$chunk"
     done
   } | tail -c "$limit" >"$output"
   local -a statuses=( $pipestatus )
   exec {fd}<&-
-  exec {event_fd}>&-
   (( statuses[1] == 0 && statuses[2] == 0 ))
 }
 
@@ -108,9 +94,9 @@ sf_process_wait() {
 # Captures one process while retaining at most one byte beyond the configured
 # limit on each channel. The caller interprets the captured channels.
 sf_process_capture() {
-  local input=$1 directory=$2 working=$3 mode=$4 callback=$5
-  integer max_capture=$6
-  shift 6
+  local input=$1 directory=$2 working=$3 mode=$4
+  integer max_capture=$5
+  shift 5
   local stdout="$directory/stdout" stderr="$directory/stderr" control="$directory/control"
   local stdout_pipe="$stdout.pipe" stderr_pipe="$stderr.pipe" control_pipe REPLY
   local -a readers
@@ -124,7 +110,7 @@ sf_process_capture() {
   SF_PROCESS_CAPTURE_GROUP_FILE=''
   SF_PROCESS_CAPTURE_INTERRUPTED=0
 
-  [[ $mode == separate || ( $mode == merged && -z $callback ) ]] || return 1
+  [[ $mode == (separate|merged) ]] || return 1
   sf_process_isolated_command "$group_file" "$status_file" "$working" "$input" \
     "$stdout_pipe" "$stderr_pipe" "$control_pipe" "$mode" "$@" || return 1
   process_command=( "${reply[@]}" )
@@ -137,12 +123,12 @@ sf_process_capture() {
     : >"$stderr" || return 1
   fi
 
-  sf_process_capture_stream "$stdout_pipe" "$stdout" '' $limit &
+  sf_process_capture_stream "$stdout_pipe" "$stdout" $limit &
   readers+=( $! )
-  sf_process_capture_stream "$control_pipe" "$control" '' $limit &
+  sf_process_capture_stream "$control_pipe" "$control" $limit &
   readers+=( $! )
   if [[ $mode == separate ]]; then
-    sf_process_capture_stream "$stderr_pipe" "$stderr" "$callback" $limit &
+    sf_process_capture_stream "$stderr_pipe" "$stderr" $limit &
     readers+=( $! )
   fi
   "${process_command[@]}" </dev/null >/dev/null 2>&1 &

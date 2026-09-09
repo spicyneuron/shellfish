@@ -227,11 +227,14 @@ def runtime_finalize:
       settings:(if $tool_manifest.sandbox then $tool.settings else null end)} end] as $tools |
   (reduce $resolved_components[] as $component ({};
     ($component.manifest_json | fromjson |
-      select(type == "object" and keys == ["environment"] and
-        (.environment | component_environment)) //
+      select(type == "object" and
+        (keys - ["display", "environment"] | length) == 0 and
+        ((.environment // []) | component_environment) and
+        ((.display // "") | hook_display)) //
       error("invalid hook manifest: " + $component.command)) as $hook_manifest |
     .[$component.hook] += [{command:$component.command,
-      environment:$hook_manifest.environment}])) as $hooks |
+      display:($hook_manifest.display // ""),
+      environment:($hook_manifest.environment // [])}])) as $hooks |
   $prepared.profile as $profile |
   ((if $profile.harness | has("sandbox") then $profile.harness.sandbox else true end) and
     any($tools[]; .manifest.sandbox)) as $needs_fence |

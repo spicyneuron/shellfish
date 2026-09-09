@@ -47,7 +47,6 @@ exit 10
 START_HOOK = r"""#!/usr/bin/env zsh
 typeset directory=${SHELLFISH_SESSION:h} name=${0:h:t}
 : >"$directory/$name-started"
-print -u2 -- "Inspecting $name"
 while [[ ! -e $directory/$name-release ]]; do
   sleep 0.05
 done
@@ -62,6 +61,9 @@ def test_startup_streams_hooks_and_runs_the_queued_prompt():
         script = component / "run"
         script.write_text(START_HOOK)
         script.chmod(0o755)
+        (component / "manifest.json").write_text(
+            json.dumps({"display": "Inspecting first_start"})
+        )
         session = Session(
             explicit_session=True, session_start=[str(component)],
             args=["initial prompt"],
@@ -94,6 +96,9 @@ def test_startup_cancellation_quits_without_a_session():
         script = component / "run"
         script.write_text(START_HOOK)
         script.chmod(0o755)
+        (component / "manifest.json").write_text(
+            json.dumps({"display": "Inspecting slow_start"})
+        )
         session = Session(explicit_session=True, session_start=[str(component)])
         try:
             session.wait_after(0, "Inspecting slow_start")

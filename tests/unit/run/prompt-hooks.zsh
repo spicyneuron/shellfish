@@ -40,7 +40,6 @@ case $prompt in
     ;;
   /slow)
     trap '' TERM
-    print -r -u2 -- 'still working'
     : >"$PROMPT_MARKER"
     sleep 2
     : >"$PROMPT_EXIT_MARKER"
@@ -53,7 +52,7 @@ esac
 ZSH
 chmod +x "$prompt_script"
 SF_TEST_RUNTIME=$(jq -c --arg script "$prompt_script" \
-  '.harness.user_prompt_submit=[{command:$script,environment:[]}]' <<<"$SF_TEST_RUNTIME")
+  '.harness.user_prompt_submit=[{command:$script,display:"",environment:[]}]' <<<"$SF_TEST_RUNTIME")
 
 typeset prompt_session="$tmp/prompt.jsonl"
 sf_test_session "$prompt_session"
@@ -76,9 +75,8 @@ print -r -- "$stream" | jq -eRn '
   [inputs | fromjson] as $events |
   ($events | map(select(.type == "_notice"))) as $display |
   ($events | map(select(.type == "context")))[0].content == "declined context" and
-  ($display | length) == 2 and
-  ($display[0] | .text == "declined display\n" and .complete == false) and
-  ($display[1] | .text == "declined display\n" and .complete == true) and
+  ($display | length) == 1 and
+  ($display[0] | .text == "declined display\n" and .complete == true) and
   ($events | any(.type == "_backend_request_start") | not) and
   ($events | any(.role == "user") | not)
 ' >/dev/null
@@ -116,8 +114,7 @@ print -r -- "$stream" | jq -eRn '
   [inputs | fromjson] as $events |
   ($events | any(.role == "user") | not) and
   ($events | any(.type == "_backend_request_start") | not) and
-  $events[0].type == "_notice" and $events[0].complete == false and
-  $events[1].type == "_notice" and $events[1].complete == true and
+  $events[0].type == "_notice" and $events[0].complete == true and
   ($events[-1] | .level == "error" and (.text | contains("prompt-hook")))
 ' >/dev/null
 
@@ -136,6 +133,9 @@ typeset cancel_session="$tmp/prompt-cancel.jsonl"
 typeset cancel_stream="$tmp/prompt-cancel.stream"
 export PROMPT_MARKER="$tmp/prompt-active"
 export PROMPT_EXIT_MARKER="$tmp/prompt-exit"
+# A declared display announces the script for as long as it runs.
+SF_TEST_RUNTIME=$(jq -c '.harness.user_prompt_submit[0].display="Working…"' \
+  <<<"$SF_TEST_RUNTIME")
 sf_test_session "$cancel_session"
 integer records=$(wc -l <"$cancel_session")
 # A private temp root, since the suite shares one and runs files concurrently.
@@ -150,14 +150,14 @@ while (( waited++ < 50 )) && [[ ! -e $PROMPT_MARKER ]]; do
 done
 (( waited <= 50 )) || fail 'user_prompt_submit hook script did not start'
 waited=0
-while (( waited++ < 50 )) && ! jq -se 'any(.text == "still working\n")' \
+while (( waited++ < 50 )) && ! jq -se 'any(.text == "Working…")' \
     "$cancel_stream" >/dev/null 2>&1; do
   sleep 0.1
 done
-(( waited <= 50 )) || fail 'user_prompt_submit stderr was not streamed'
+(( waited <= 50 )) || fail 'user_prompt_submit display was not announced'
 jq -eRn '
   [inputs | fromjson] == [{type:"_notice",level:"info",source:"user_prompt_submit",
-    title:$script,text:"still working\n",complete:false}]
+    title:$script,text:"Working…",complete:false}]
 ' --arg script "$prompt_script" <"$cancel_stream" >/dev/null
 kill -TERM "$pid"
 wait "$pid" || cancel_status=$?

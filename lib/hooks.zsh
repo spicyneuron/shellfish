@@ -70,10 +70,6 @@ sf_hooks_display() {
     '{type:"_notice",level:"info",title:$script,source:$hook,text:.,complete:$complete}'
 }
 
-sf_hooks_display_preview() {
-  sf_hooks_display "$SF_HOOK_NAME" "$SF_HOOK_SCRIPT" "$1" false
-}
-
 sf_hooks_capture_one() {
   local script=$1 input=$2 directory=$3
   setopt local_options no_monitor
@@ -83,7 +79,6 @@ sf_hooks_capture_one() {
   local -a arguments=( "${(@)argv[1,argument_count]}" )
   local -a environment=( env )
   local hook=$SF_HOOK_NAME name value
-  local SF_HOOK_SCRIPT=$script
   local -a fixed_names=(
     SHELLFISH_SESSION SHELLFISH_MAX_CAPTURE_BYTES SHELLFISH_MODEL
     SHELLFISH_EXECUTABLE SHELLFISH_MODE
@@ -111,7 +106,7 @@ sf_hooks_capture_one() {
     environment+=( "$name=${(P)name}" )
   done
 
-  sf_process_capture "$input" "$directory" "$PWD" separate sf_hooks_display_preview \
+  sf_process_capture "$input" "$directory" "$PWD" separate \
     $max_capture "${environment[@]}" "$script" "${arguments[@]}" || {
       sf_hooks_fail 'cannot capture hook script output'
       return
@@ -129,14 +124,14 @@ sf_hooks_dispatch() {
   local -a arguments=( "${(@)argv[1,argument_count]}" )
   shift argument_count
   local -a components=( "$@" ) result results states decoded
-  local directory script environment_json script_context script_display script_control hook=$SF_HOOK_NAME
+  local directory script environment_json label script_context script_display script_control hook=$SF_HOOK_NAME
   local origin='' control='' control_error
   integer script_status context_size display_size control_size component_index
   integer perform=1 halted=0
   setopt local_options no_err_exit no_bg_nice
 
   sf_hooks_reset
-  (( ${#components} % 2 == 0 )) || {
+  (( ${#components} % 3 == 0 )) || {
     sf_hooks_fail 'cannot inspect configured hook components'
     return
   }
@@ -152,9 +147,15 @@ sf_hooks_dispatch() {
       return
     }
 
-    for (( component_index = 1; component_index <= ${#components}; component_index += 2 )); do
+    for (( component_index = 1; component_index <= ${#components}; component_index += 3 )); do
       script=$components[component_index]
-      environment_json=$components[component_index+1]
+      label=$components[component_index+1]
+      environment_json=$components[component_index+2]
+      # A declared label opens a live notice that the script's stderr settles.
+      [[ -z $label ]] || sf_hooks_display "$hook" "$script" "$label" false || {
+        sf_hooks_fail 'cannot open hook display'
+        return
+      }
       sf_hooks_capture_one "$script" "$input" "$directory" "$max_capture" \
         "$argument_count" "$environment_json" "${arguments[@]}" || return
       result=( "${reply[@]}" )
@@ -210,7 +211,7 @@ sf_hooks_dispatch() {
       if [[ -z $control_error && -n $script_control ]] && (( ! allow_control )); then
         control_error="hook script returned unexpected control data: $script"
       fi
-      if [[ -n $script_display ]]; then
+      if [[ -n $script_display || -n $label ]]; then
         sf_hooks_display "$hook" "$script" "$script_display" true || {
           sf_hooks_fail 'cannot complete hook display'
           return
@@ -306,7 +307,7 @@ sf_hooks_run_chain() {
 
   fields=( "${(@f)$(jq -erc --arg hook "$hook" '
     .harness.max_capture_bytes,
-    (.harness[$hook][]? | .command, (.environment | tojson))
+    (.harness[$hook][]? | .command, .display, (.environment | tojson))
   ' <<<"$SF_SESSION[runtime]")}" ) || return 1
   components=( "${(@)fields[2,-1]}" )
   local SHELLFISH_MODEL=$SF_SESSION[model]

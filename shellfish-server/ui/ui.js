@@ -508,6 +508,13 @@ function apply(frame) {
         return note(safe(frame.text), "error", safe(frame.title), frame.source || undefined);
       }
       hideIndicator();
+      if (frame.complete && !frame.text) {
+        // A declared label with no outcome settles to nothing.
+        if (liveNotice) liveNotice.article.remove();
+        liveNotice = null;
+        if (working) showIndicator();
+        return;
+      }
       if (!liveNotice) {
         const article = record("note", null);
         const title = el(article, "h2");

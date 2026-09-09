@@ -319,7 +319,7 @@ sf_run_turn() {
           context_input="$context_directory/input"
           if print -r -- "$request" >"$context_input" &&
               sf_process_capture "$context_input" "$context_directory" "$PWD" \
-                separate '' $max_capture "${context_environment[@]}" \
+                separate $max_capture "${context_environment[@]}" \
                 "$context_window_command"; then
             context_result=( "${reply[@]}" )
             (( context_result[1] )) || context_output=$(<"$context_result[2]")
