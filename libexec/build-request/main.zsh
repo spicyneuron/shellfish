@@ -11,7 +11,7 @@ sf_die() {
 }
 
 sf_build_request_main() {
-  local requested_session='' requested_tools='[]' selected record
+  local requested_session='' requested_tools='[]' selected
   integer session_explicit=0 tools_explicit=0
 
   while (( $# )); do
@@ -65,20 +65,9 @@ sf_build_request_main() {
     sf_die "invalid session path: $selected"
     return 1
   }
-  sf_session_read "$selected" || {
+  sf_session_read "$selected" /dev/stdin || {
     sf_die "$SF_SESSION_ERROR"
     return 1
-  }
-  while IFS= read -r record; do
-    [[ -n $record ]] || {
-      sf_die 'build-request requires nonempty JSONL records'
-      return 2
-    }
-    SF_SESSION_RECORDS+=( "$record" )
-  done
-  sf_session_project "$selected" || {
-    sf_die 'build-request received invalid session records'
-    return 2
   }
   printf '%s\n' "${SF_SESSION_RECORDS[@]}" |
     sf_request_build "$SF_SESSION[runtime]" "$requested_tools" || {

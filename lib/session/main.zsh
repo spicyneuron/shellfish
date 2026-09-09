@@ -208,18 +208,20 @@ sf_session_project() {
   )
 }
 
-# Replaces the in-memory view with the durable records. Never writes.
+# Replaces the in-memory view with the session and any continuation records. Never writes.
 sf_session_read() {
-  local session_path=$1 record
+  local session_path=$1 input record
   sf_session_reset
-  while IFS= read -r record; do
-    [[ -n $record ]] || {
-      SF_SESSION_RECORDS=()
-      sf_session_fail "cannot read session: $session_path"
-      return
-    }
-    SF_SESSION_RECORDS+=( "$record" )
-  done <"$session_path"
+  for input in "$@"; do
+    while IFS= read -r record; do
+      [[ -n $record ]] || {
+        SF_SESSION_RECORDS=()
+        sf_session_fail "cannot read session: $session_path"
+        return
+      }
+      SF_SESSION_RECORDS+=( "$record" )
+    done <"$input"
+  done
   (( ${#SF_SESSION_RECORDS} )) || {
     sf_session_fail "cannot read session: $session_path"
     return
