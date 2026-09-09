@@ -23,6 +23,7 @@ This project is pre-release. Remove obsolete behavior rather than adding depreca
 ## Working here
 
 - Consult the focused contract before changing a subsystem: `docs/ARCHITECTURE.md`, `docs/RUN.md`, `docs/CONFIG.md`, `docs/HARNESS.md`, `docs/HOOKS.md`, `docs/BACKENDS.md`, or `docs/SERVER.md`.
+- When in doubt, choose the simplest, most minimal implementation. We support the happy path and common cases. We do not need to defend against every theoretical edge case.
 - For code changes, run the nearest focused test first, then bare `./tests/run`. Use `./tests/run pty` only for behavior requiring a terminal and run it outside the sandbox, where PTYs are available. Use `./tests/run server` for `shellfish-server/` changes. Do not run tests for documentation- or comment-only changes.
 - In zsh, avoid names that collide with special parameters such as `status` and `commands`. When a command substitution's exit status matters, declare the variable first and assign it separately.
 - Treat the worktree as shared. Only `git checkout`, `restore`, `reset`, or `stash` with user permission. Never discard or hide another agent's changes.
