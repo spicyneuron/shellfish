@@ -6,11 +6,12 @@ zmodload zsh/datetime
 
 typeset -gr root=${0:A:h:h:h}
 typeset iteration_arg=${1:-5}
-(( $# <= 1 )) && [[ $iteration_arg == <1-> ]] || {
-  print -u2 -r -- "Usage: $0 [positive-iterations]"
+typeset hook_arg=${2:-0}
+(( $# <= 2 )) && [[ $iteration_arg == <1-> && $hook_arg == <0-> ]] || {
+  print -u2 -r -- "Usage: $0 [positive-iterations] [hook-scripts-per-event]"
   exit 2
 }
-integer iterations=$iteration_arg
+integer iterations=$iteration_arg hook_scripts=$hook_arg
 (( $+commands[jq] )) || { print -u2 -r -- 'tests/metrics/run.zsh requires jq'; exit 2; }
 
 print -P -- '%BRun Performance%b (fresh-session phases)'
@@ -59,14 +60,36 @@ print -rn -- 'tool result'
 EOF
 chmod +x "$tmp/bin/jq" "$tmp/config/backends/perf/run" "$tmp/config/tools/perf/run"
 
-cat >"$tmp/config/shellfish.jsonc" <<'EOF'
+# Every event that a turn reaches gets the same number of no-op scripts, so the
+# jq count difference against a zero-hook run is the per-script cost of the hook
+# chain. permission_request is omitted because an unsandboxed tool never fires it.
+typeset -a hook_events=(session_start user_prompt_submit pre_tool_use post_tool_use stop)
+typeset -a component_names=()
+typeset event
+integer script_index
+for (( script_index = 1; script_index <= hook_scripts; script_index++ )); do
+  component_names+=( "\"perf$script_index\"" )
+done
+typeset component_list=${(j:,:)component_names}
+for event in $hook_events; do
+  for (( script_index = 1; script_index <= hook_scripts; script_index++ )); do
+    mkdir -p "$tmp/config/hooks/$event/perf$script_index"
+    cat >"$tmp/config/hooks/$event/perf$script_index/run" <<'EOF'
+#!/usr/bin/env zsh
+cat >/dev/null
+EOF
+    chmod +x "$tmp/config/hooks/$event/perf$script_index/run"
+  done
+done
+
+cat >"$tmp/config/shellfish.jsonc" <<EOF
 {
   "default_profile":"perf",
   "theme_mode":"dark","theme_light":"light","theme_dark":"dark",
   "backends":{"perf":{"adapter":"perf"}},
   "harnesses":{"perf":{"tools":["perf"],"sandbox":false,
-    "session_start":[],"user_prompt_submit":[],"permission_request":[],
-    "pre_tool_use":[],"post_tool_use":[],"stop":[],
+    "session_start":[$component_list],"user_prompt_submit":[$component_list],"permission_request":[],
+    "pre_tool_use":[$component_list],"post_tool_use":[$component_list],"stop":[$component_list],
     "max_requests_per_turn":8,"max_tool_calls_per_request":16,"max_capture_bytes":65536}},
   "profiles":{"perf":{"backend":"perf","harness":"perf","request":{"model":"perf"}}}
 }
@@ -146,4 +169,5 @@ fresh_per_run=$(( fresh_per_run / iterations ))
 steady_per_run=$(( steady_per_run / iterations ))
 printf '\njq processes/run: %.1f fresh session, %.1f steady state (%d total)\n' \
   "$fresh_per_run" "$steady_per_run" "$jq_count"
+printf 'hook scripts/event: %d\n' "$hook_scripts"
 print
