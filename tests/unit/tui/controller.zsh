@@ -70,7 +70,6 @@ assert_equal "$node_types" "${(j:,:)SF_PRESENT_NODE_TYPE}"
 sf_tui_transport_reset
 SF_TUI_TRANSPORT_LINES=( '{"type":"state","name":"live/status","value":"ready"}' )
 sf_tui_pending_next
-assert_equal '' "$REPLY"
 assert_equal "$node_types" "${(j:,:)SF_PRESENT_NODE_TYPE}"
 
 if sf_tui_decoded not-supported; then
@@ -357,8 +356,8 @@ if sf_tui_transport_has_pending; then
   fail 'settle remained queued after publishing the assistant row'
 fi
 
-# Completed assistant rows drain before the validated tool call is applied,
-# including when the response is taller than one viewport.
+# A call is recorded after the message it belongs to, so stream order alone
+# puts the assistant rows ahead of the tool, even past one viewport.
 sf_tui_reset
 sf_tui_terminal_reset
 SF_PRESENT_STATE=working
@@ -367,7 +366,8 @@ SF_TUI_TRANSPORT_LINES=(
   '{"type":"_assistant_message_delta","text":"one\ntwo\nthree\nfour\nfive\nsix\nseven\nbefore tool"}'
   '{"type":"_assistant_tool_call_delta","index":1,"id":"call_1"}'
   '{"type":"_assistant_end","stop":"tool_calls"}'
-  '{"type":"message","role":"assistant","stop":"tool_calls","content":[{"type":"text","text":"one\ntwo\nthree\nfour\nfive\nsix\nseven\nbefore tool"},{"type":"tool_call","id":"call_1","name":"shell","input":{"command":"true"}}]}'
+  '{"type":"message","role":"assistant","stop":"tool_calls","content":[{"type":"text","text":"one\ntwo\nthree\nfour\nfive\nsix\nseven\nbefore tool"}]}'
+  '{"type":"tool_call","id":"call_1","name":"shell","input":{"command":"true"}}'
 )
 BUFFER=''
 CURSOR=0
@@ -375,18 +375,9 @@ COLUMNS=80
 LINES=8
 DRAWN=''
 sf_tui_heartbeat_tick
-(( ! ${#${(M)SF_PRESENT_NODE_TYPE:#tool_call}} )) ||
-  fail 'tool call was applied in the assistant row frame'
-assert_equal '' "$SF_PRESENT_TOOL_CURRENT"
-sf_tui_transport_has_pending || fail 'tool call did not remain queued for the next frame'
-typeset published
-integer tool_ticks=0
-while [[ -z $SF_PRESENT_TOOL_CURRENT ]] && (( ++tool_ticks < 10 )); do
-  published=$DRAWN
-  sf_tui_heartbeat_tick
-done
 assert_equal call_1 "$SF_PRESENT_TOOL_CURRENT"
-[[ $published == *'before tool'* ]] || fail 'tool call preceded the final assistant row'
+(( ${SF_PRESENT_NODE_TYPE[(I)message]} < ${SF_PRESENT_NODE_TYPE[(I)tool_call]} )) ||
+  fail 'tool call preceded the assistant rows'
 if sf_tui_transport_has_pending; then
   fail 'transport events remained after the tool frame'
 fi
@@ -398,7 +389,8 @@ sf_tui_transport_reset
 SF_TUI_TRANSPORT_LINES=(
   '{"type":"_assistant_start"}'
   '{"type":"_assistant_end","stop":"tool_calls"}'
-  '{"type":"message","role":"assistant","stop":"tool_calls","content":[{"type":"tool_call","id":"call_2","name":"shell","input":{"command":"true"}}]}'
+  '{"type":"message","role":"assistant","stop":"tool_calls","content":[]}'
+  '{"type":"tool_call","id":"call_2","name":"shell","input":{"command":"true"}}'
 )
 sf_tui_heartbeat_tick
 assert_equal call_2 "$SF_PRESENT_TOOL_CURRENT"

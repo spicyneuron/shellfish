@@ -86,13 +86,11 @@ def durable_display_fields($replay; $tools):
       (if .usage | has("reasoning_tokens") then (.usage.reasoning_tokens | tostring) else "" end) as $reasoning_tokens |
       ["assistant", ([.content[] | select(.type == "text") | .text] | join("")),
        $reasoning, $reasoning_tokens]
-    else empty end),
-    (.content[] | select(.type == "tool_call") | . as $call |
-      tool_call_display($tools) as $call_display |
-      ["tool_call", .id,
-       .name,
-       $call_display.content,
-       $call_display.summary, $call_display.format])
+    else empty end)
+  elif canonical_tool_call then
+    tool_call_display($tools) as $call_display |
+    ["tool_call", .id, .name,
+     $call_display.content, $call_display.summary, $call_display.format]
   elif canonical_tool_result then
     . as $result |
     ($tools | map(select(.name == $result.name))[0].manifest.display.result //

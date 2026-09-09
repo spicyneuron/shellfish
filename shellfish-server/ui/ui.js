@@ -463,6 +463,8 @@ function apply(frame) {
       );
     case "message":
       return renderMessage(frame);
+    case "tool_call":
+      return renderToolCall(frame);
     case "turn_error": {
       // The failure ends its section without claiming a section number. Its
       // first line is the outcome, and any remaining lines are its detail.
@@ -595,11 +597,21 @@ function renderMessage(frame) {
       collapsible(article, "✎", "Reasoning", reasoning, "reasoning");
     } else if (part.type === "text" && displayChunks[partIndex]) {
       markdown(el(article, "pre", "text"), displayChunks[partIndex]);
-    } else if (part.type === "tool_call") {
-      renderCall(article, part);
     }
   }
   if (frame.usage) showUsage(frame.usage);
+  // A response whose only output was calls has nothing of its own to draw.
+  if (parts.length) place(article);
+  if (working) showIndicator();
+}
+
+// A call is recorded when it reaches execution, so it draws its own record
+// inside the agent section its assistant message opened.
+function renderToolCall(frame) {
+  hideIndicator();
+  section("agent");
+  const article = record("assistant", null);
+  renderCall(article, frame);
   place(article);
   if (working) showIndicator();
 }

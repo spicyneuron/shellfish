@@ -21,15 +21,9 @@ unset api_key
 
 jq -ce '
   def text_content: [.content[] | select(.type == "text") | .text] | join("");
-  def tool_calls: [.content[] | select(.type == "tool_call") |
-    {type:"function",function:{name:.name,arguments:(.input|tojson)},id:.id}];
   def message:
     if .role == "user" then {role:"user",content:text_content}
-    elif .role == "assistant" then
-      (text_content) as $text | (tool_calls) as $calls |
-      {role:"assistant"} +
-      (if $text != "" then {content:$text} elif ($calls|length) > 0 then {content:null} else {content:""} end) +
-      (if ($calls|length)==0 then {} else {tool_calls:$calls} end)
+    elif .role == "assistant" then {role:"assistant",content:text_content}
     elif .role == "tool_result" then
       {role:"tool",tool_call_id:.call_id,content:.content}
     else error("unsupported canonical role") end;
@@ -43,7 +37,22 @@ jq -ce '
       else .reasoning_effort=.reasoning.effort | del(.reasoning) end
     else . end) as $options |
   ($options | if has("stream") then .stream else true end) as $stream |
-  ([.messages[] | message]) as $messages |
+  # Calls arrive as their own records and rejoin the assistant message they
+  # belong to. A call-only message carries null content, as the API expects.
+  (reduce .messages[] as $message ({out:[],assistant:null};
+    if $message.role == "tool_call" then
+      # Results sit between the calls of a batch, so the assistant message a
+      # call belongs to is remembered rather than assumed to be the last one.
+      .assistant as $index |
+      .out[$index].tool_calls = ((.out[$index].tool_calls // []) +
+        [{type:"function",id:$message.id,
+          function:{name:$message.name,arguments:($message.input | tojson)}}]) |
+      (if .out[$index].content == "" then .out[$index].content = null else . end)
+    else
+      .out += [$message | message] |
+      (if $message.role == "assistant" then .assistant = (.out | length) - 1
+       else . end)
+    end) | .out) as $messages |
   $options * {model:$options.model,
     messages:(if .system=="" then $messages else [{role:"system",content:.system}]+$messages end),
     stream:$stream} +

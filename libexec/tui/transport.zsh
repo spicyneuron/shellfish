@@ -22,12 +22,6 @@ sf_tui_transport_reset() {
 }
 
 sf_tui_transport_has_pending() {
-  # A type filter matches only the head of an already decoded batch.
-  if (( $# )); then
-    (( $# == 1 && ${#SF_TUI_TRANSPORT_EVENTS} >= 7 )) || return 1
-    [[ $SF_TUI_TRANSPORT_EVENTS[1] == $1 ]]
-    return
-  fi
   (( ${#SF_TUI_TRANSPORT_EVENTS} || ${#SF_TUI_TRANSPORT_LINES} ))
 }
 

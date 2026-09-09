@@ -41,9 +41,9 @@ jq -ce --argjson chatgpt_transport "$chatgpt_transport" '
         select(type == "object" and has("encrypted_content"))] +
       (if $text == "" then [] else
         [{type:"message",role:"assistant",content:[{type:"output_text",text:$text}]}]
-       end) +
-      [.content[] | select(.type == "tool_call") |
-        {type:"function_call",call_id:.id,name:.name,arguments:(.input | tojson)}]
+       end)
+    elif .role == "tool_call" then
+      [{type:"function_call",call_id:.id,name:.name,arguments:(.input | tojson)}]
     elif .role == "tool_result" then
       [{type:"function_call_output",call_id:.call_id,output:.content}]
     else

@@ -224,18 +224,15 @@ sf_tui_recover() {
   [[ -z $heading ]] || sf_tui_notice error "$heading" "$detail"
 }
 
-# Apply one transport record and name it in REPLY.
+# Apply one transport record.
 sf_tui_pending_next() {
-  local queue_notice applied
+  local queue_notice
   integer transport_status=0
 
-  REPLY=''
   sf_tui_transport_next "${SF_PRESENT_RUNTIME:-null}" || transport_status=$?
   case $transport_status in
     0)
-      applied=$reply[1]
       if sf_tui_decoded "${reply[@]}"; then
-        REPLY=$applied
         return 0
       fi
       ;;

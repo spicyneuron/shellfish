@@ -95,7 +95,6 @@ sf_tui_heartbeat_ready() {
 }
 
 sf_tui_heartbeat_tick() {
-  integer frame_boundary
   # The frame follows the clock, not provider traffic.
   if [[ $SF_PRESENT_STATE == working ]]; then
     SF_PRESENT_ACTIVITY_FRAME=$((
@@ -104,27 +103,11 @@ sf_tui_heartbeat_tick() {
     SF_PRESENT_ACTIVITY=${SF_PRESENT_ACTIVITY_FRAMES[SF_PRESENT_ACTIVITY_FRAME + 1]}
   fi
   while true; do
-    frame_boundary=0
-    # Keep the tool queued until the completed assistant rows ahead of it drain.
-    if (( SF_PRESENT_FLUSH_ROWS )) &&
-        [[ ${SF_PRESENT_NODE_TYPE[-1]-} == (message|reasoning) &&
-        ${SF_PRESENT_NODE_STATE[-1]-} == closed ]] &&
-        sf_tui_transport_has_pending tool_call; then
-      frame_boundary=1
-    elif sf_tui_transport_has_pending; then
-      while sf_tui_transport_has_pending; do
-        sf_tui_pending_next || return 1
-        if [[ $REPLY == (assistant_tool_call_delta|assistant_end) &&
-            ${SF_PRESENT_NODE_TYPE[-1]-} == (message|reasoning) &&
-            ${SF_PRESENT_NODE_STATE[-1]-} == closed ]] &&
-            sf_tui_transport_has_pending tool_call; then
-          frame_boundary=1
-          break
-        fi
-      done
-      (( frame_boundary )) || continue
+    if sf_tui_transport_has_pending; then
+      sf_tui_pending_next || return 1
+      continue
     fi
-    if (( ! frame_boundary )) && sf_tui_transport_is_complete; then
+    if sf_tui_transport_is_complete; then
       sf_tui_exec_finish || return 1
       continue
     fi

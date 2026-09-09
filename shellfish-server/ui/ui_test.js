@@ -479,11 +479,8 @@ test("copies the latest or selected derived section locally", async () => {
   const page = await idle();
   await page.send(
     { type: "message", role: "user", content: [{ type: "text", text: "\n  question\t\n" }] },
-    {
-      ...ASSISTANT,
-      stop: "tool_calls",
-      content: [{ type: "tool_call", id: "copy_call", name: "shell", input: {} }],
-    },
+    { ...ASSISTANT, stop: "tool_calls", content: [] },
+    { type: "tool_call", id: "copy_call", name: "shell", input: {} },
     {
       type: "message",
       role: "tool_result",
@@ -548,39 +545,39 @@ test("puts prompt context under a user heading", async () => {
 
 test("decorates reasoning and tools like the terminal", async () => {
   const page = await idle();
-  await page.send({
-    ...ASSISTANT,
-    stop: "tool_calls",
-    content: [
-      { type: "reasoning", text: "thinking" },
-      {
-        type: "tool_call",
-        id: "call_1",
-        name: "shell",
-        input: { command: "if true; then pwd; fi" },
+  await page.send(
+    {
+      ...ASSISTANT,
+      stop: "tool_calls",
+      content: [{ type: "reasoning", text: "thinking" }],
+    },
+    {
+      type: "tool_call",
+      id: "call_1",
+      name: "shell",
+      input: { command: "if true; then pwd; fi" },
+    },
+    {
+      type: "tool_call",
+      id: "call_2",
+      name: "read_file",
+      input: {
+        file_path: "outside.txt",
+        request_sandbox_bypass: true,
+        sandbox_bypass_reason: "outside project",
       },
-      {
-        type: "tool_call",
-        id: "call_2",
-        name: "read_file",
-        input: {
-          file_path: "outside.txt",
-          request_sandbox_bypass: true,
-          sandbox_bypass_reason: "outside project",
-        },
+    },
+    {
+      type: "tool_call",
+      id: "call_3",
+      name: "fallback",
+      input: {
+        value: 1,
+        request_sandbox_bypass: true,
+        sandbox_bypass_reason: "outside project",
       },
-      {
-        type: "tool_call",
-        id: "call_3",
-        name: "fallback",
-        input: {
-          value: 1,
-          request_sandbox_bypass: true,
-          sandbox_bypass_reason: "outside project",
-        },
-      },
-    ],
-  });
+    },
+  );
   assert.equal(findTag(find(page.output, "reasoning")[0], "summary")[0].textContent, "✎Reasoning");
   const calls = find(page.output, "call");
   assert.equal(findTag(calls[0], "summary")[0].textContent, "⛭shell");
@@ -823,15 +820,9 @@ test("answers and removes permission prompts", async () => {
         type: "message",
         role: "assistant",
         stop: "tool_calls",
-        content: [
-          {
-            type: "tool_call",
-            id: "call_1",
-            name,
-            input,
-          },
-        ],
+        content: [],
       },
+      { type: "tool_call", id: "call_1", name, input },
       {
         type: "_tool_permission_request",
         id: "permission_1",
@@ -868,19 +859,15 @@ test("keeps a tool result together with its sandbox notice", async () => {
     { type: "_assistant_start" },
   );
   assert.equal(page.cancel.hidden, false);
-  await page.send({
-    type: "message",
-    role: "assistant",
-    stop: "tool_calls",
-    content: [
-      {
-        type: "tool_call",
-        id: "call_1",
-        name: "edit_file",
-        input: { file_path: "notes.txt", old_string: "old", new_string: "new" },
-      },
-    ],
-  });
+  await page.send(
+    { type: "message", role: "assistant", stop: "tool_calls", content: [] },
+    {
+      type: "tool_call",
+      id: "call_1",
+      name: "edit_file",
+      input: { file_path: "notes.txt", old_string: "old", new_string: "new" },
+    },
+  );
   assert.equal(find(page.output, "call").length, 1);
   assert.equal(find(page.output, "activity").length, 1);
   assert.equal(page.cancel.hidden, false);

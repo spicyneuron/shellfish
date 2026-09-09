@@ -14,13 +14,20 @@ mkdir -p "$tmp/lib/runtime"
 print -r -- 'def canonical_request(:' >"$tmp/lib/runtime/schema.jq"
 
 cat >"$tmp/curl" <<'EOF'
-#!/bin/sh
+#!/usr/bin/env bash
+while (($#)); do
+  case $1 in
+    --data-binary) cp "${2#@}" "$BACKEND_TEST_BODY" ; shift 2 ;;
+    *) shift ;;
+  esac
+done
 cat "$BACKEND_TEST_RESPONSE"
 printf 200 >&2
 EOF
 chmod +x "$tmp/curl"
 export PATH="$tmp:$PATH"
 export BACKEND_TEST_RESPONSE="$tmp/response"
+export BACKEND_TEST_BODY="$tmp/body"
 
 cat >"$req" <<'EOF'
 {
@@ -148,8 +155,39 @@ OPENAI_API_KEY=test zsh -f "$run" <"$req" >"$res"
 jq -e -s -L "$ROOT" '
   include "lib/runtime/schema";
   include "lib/request";
-  assemble_backend_response(canonical_backend_response_events; canonical_assistant_message) |
-  .stop == "tool_calls" and
-  .content[0] == {type:"reasoning",text:"why",opaque:{type:"reasoning",id:"rs_1",summary:[{type:"summary_text",text:"why"}],encrypted_content:"secret"}} and
-  .content[1] == {type:"tool_call",id:"call_1",name:"shell",input:{command:"pwd"}}
+  assemble_backend_parts(canonical_backend_response_events; canonical_assistant_message) as $parts |
+  ($parts.message.stop == "tool_calls") and
+  ($parts.message.content == [{type:"reasoning",text:"why",opaque:{type:"reasoning",id:"rs_1",summary:[{type:"summary_text",text:"why"}],encrypted_content:"secret"}}]) and
+  ($parts.calls == [{type:"tool_call",id:"call_1",name:"shell",input:{command:"pwd"}}])
 ' "$res" >/dev/null
+
+# A flat call batch maps one item per record, which this API takes directly.
+typeset batch_request="$tmp/batch-request.json"
+cat >"$batch_request" <<'JSON'
+{
+  "format_version": 1,
+  "system": "test",
+  "messages": [
+    {"role":"user","content":[{"type":"text","text":"run both"}]},
+    {"role":"assistant","stop":"tool_calls","content":[{"type":"text","text":"working"}]},
+    {"role":"tool_call","id":"call_1","name":"shell","input":{"command":"pwd"}},
+    {"role":"tool_result","call_id":"call_1","name":"shell","content":"/tmp","exit_code":0},
+    {"role":"tool_call","id":"call_2","name":"shell","input":{"command":"ls"}},
+    {"role":"tool_result","call_id":"call_2","name":"shell","content":"bad","exit_code":1}
+  ],
+  "tools": [],
+  "options": {"request":{"model":"gpt-test"}},
+  "transport": {"endpoint":"https://api.openai.test","insecure_tls":false,"http_timeout":30,"http_stall":10}
+}
+JSON
+cat >"$BACKEND_TEST_RESPONSE" <<'EOF'
+{"status":"completed","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"ok"}]}],"usage":{"input_tokens":1,"output_tokens":1}}
+EOF
+OPENAI_API_KEY=test zsh -f "$run" <"$batch_request" >"$res"
+jq -e '
+  (.input | map(.type)) ==
+    ["message","message","function_call","function_call_output","function_call","function_call_output"] and
+  (.input | map(.call_id) | map(select(. != null))) ==
+    ["call_1","call_1","call_2","call_2"] and
+  .input[2].arguments == "{\"command\":\"pwd\"}"
+' "$BACKEND_TEST_BODY" >/dev/null || fail 'responses did not map a flat call batch'

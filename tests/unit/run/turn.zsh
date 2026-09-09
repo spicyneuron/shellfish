@@ -220,8 +220,7 @@ stream=$(SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_BYPASS=true \
 print -r -- "$stream" | jq -eRn '
   [inputs | fromjson] as $events |
   [$events[] | select(.role == "tool_result")] as $results |
-  [$events[] | select(.role == "assistant") | .content[] |
-    select(.type == "tool_call")] as $calls |
+  [$events[] | select(.type == "tool_call")] as $calls |
   ($results | map(.exit_code)) == [0] and
   $results[0].content == "ran\n" and
   ($calls | length) == 1 and

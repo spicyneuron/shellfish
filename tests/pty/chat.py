@@ -335,7 +335,7 @@ def test_permission_ctrl_c_cancels_pending_tools():
         session.send(b"cancel tools\r")
         session.wait_after(mark, "Allow shell outside of sandbox?")
         session.send(b"\x03")
-        _, records = session.wait_session_records(7, path=session.explicit_session)
+        _, records = session.wait_session_records(10, path=session.explicit_session)
         results = [
             record for record in records if record.get("role") == "tool_result"
         ]
@@ -364,7 +364,7 @@ def test_repeated_permission_ctrl_c_exits_after_recovery():
         session.send(b"cancel and exit\r")
         session.wait_after(mark, "Allow shell outside of sandbox?")
         session.send(b"\x03")
-        session.wait_session_records(7, path=session.explicit_session)
+        session.wait_session_records(10, path=session.explicit_session)
         session.send(b"\x03")
         session.wait_after(mark, "Saved:")
         records = [
@@ -395,9 +395,9 @@ def test_tool_result_preview_reports_total_tokens():
             {"type": "text", "text": "preview tool result"},
         ]},
         {"type": "message", "role": "assistant", "stop": "tool_calls",
-         "content": [{"type": "tool_call", "id": "call_1", "name": "read_file",
-                      "input": {"file_path": "README.md"}}],
-         "usage": {"input_tokens": 1, "output_tokens": 1}},
+         "content": [], "usage": {"input_tokens": 1, "output_tokens": 1}},
+        {"type": "tool_call", "id": "call_1", "name": "read_file",
+         "input": {"file_path": "README.md"}},
         {"type": "message", "role": "tool_result", "call_id": "call_1",
          "name": "read_file", "content": "\n".join(rows), "exit_code": 0},
     ]

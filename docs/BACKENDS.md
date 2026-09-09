@@ -45,7 +45,7 @@ The input has this top-level shape:
 }
 ```
 
-`messages` contains provider-neutral user, assistant, and tool-result messages projected from the durable session. Assistant content may contain text, reasoning with provider-specific `opaque` data, and completed tool calls. `tools` contains canonical tool definitions. `options.request` contains the resolved model and request overrides; the adapter maps supported options to provider fields and should reject conflicting provider-native fields rather than silently producing an ambiguous request. `transport` is authoritative for the exchange.
+`messages` contains provider-neutral entries projected from the durable session, in transcript order. An entry has role `user`, `assistant`, `tool_call`, or `tool_result`. Assistant content may contain text and reasoning with provider-specific `opaque` data. A `tool_call` entry is `{role,id,name,input}` and stands on its own, after the assistant message that requested it and before its result. An adapter regroups these as its protocol requires: Anthropic and OpenAI chat nest calls back into the assistant message, while the OpenAI Responses API takes them as separate items. `tools` contains canonical tool definitions. `options.request` contains the resolved model and request overrides; the adapter maps supported options to provider fields and should reject conflicting provider-native fields rather than silently producing an ambiguous request. `transport` is authoritative for the exchange.
 
 ### Context window lookup
 
@@ -88,7 +88,7 @@ Exec forwards every adapter event to clients verbatim, and emits its own `_assis
 
 ## Assembly and recovery
 
-Exec validates the normalized stream and assembles the canonical assistant message. It rejects conflicting block metadata, invalid tool input, duplicate call IDs, and disagreement between content and the stop reason. The message is appended before hooks, permissions, or tools can act, so an adapter must never execute tool calls itself.
+Exec validates the normalized stream and assembles the canonical assistant message together with the response's ordered tool calls. It rejects conflicting block metadata, invalid tool input, duplicate call IDs, and disagreement between content and the stop reason. The message is appended before hooks, permissions, or tools can act, and each call is appended as its own record when it reaches execution, so an adapter must never execute tool calls itself.
 
 If an adapter fails or is cancelled without successfully completing the response, turn cleanup best-effort preserves accepted visible text and reasoning as an assistant message with `stop: "length"`. Opaque data attached to recovered reasoning is retained for future provider requests, as is the usage the provider reported. Incomplete tool calls are discarded, even when the received tool input is valid JSON. A response with no visible content uses ordinary turn recovery instead.
 

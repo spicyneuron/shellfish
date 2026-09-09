@@ -28,22 +28,24 @@ jq -ce '
   # anything, or one whose only content was thinking that cannot be replayed.
   # A record is permanent, so sending one the API rejects would break every later
   # request too. A message that maps to nothing says so instead.
-  def blocks($mapped):
-    if ($mapped | length) == 0 then [{type:"text",text:"[no content]"}] else $mapped end;
+  # Applied once calls have rejoined their message, so a call-only response is
+  # not mistaken for an empty one.
+  def blocks:
+    map(if (.content | length) == 0
+        then .content = [{type:"text",text:"[no content]"}] else . end);
   def regular_message:
     if .role == "user" then
-      {role:"user",content:blocks([.content[] |
-        select(.type == "text" and .text != "") | {type:"text",text:.text}])}
+      {role:"user",content:[.content[] |
+        select(.type == "text" and .text != "") | {type:"text",text:.text}]}
     elif .role == "assistant" then
-      {role:"assistant",content:blocks([.content[] |
+      {role:"assistant",content:[.content[] |
         if .type == "text" then (select(.text != "") | {type:"text",text:.text})
         # Thinking is only accepted back with the signature it was issued with,
         # so a block that lost its payload is dropped rather than reconstructed
         # unsigned. Order is preserved, which keeps thinking ahead of the text
         # and tool calls the API expects it to precede.
         elif .type == "reasoning" then (.opaque // empty)
-        elif .type == "tool_call" then {type:"tool_use",id:.id,name:.name,input:.input}
-        else error("unsupported assistant content") end])}
+        else error("unsupported assistant content") end]}
     else
       error("unsupported canonical role")
     end;
@@ -64,10 +66,15 @@ jq -ce '
         content:$message.content,
         is_error:(($message.exit_code // 0) != 0)
       }]
+    # A call rejoins the assistant message that requested it. Results stay
+    # pending meanwhile, so they still batch into one user message after it.
+    elif $message.role == "tool_call" then
+      .out[-1].content += [{type:"tool_use",
+        id:$message.id,name:$message.name,input:$message.input}]
     else
       flush_results | .out += [($message | regular_message)]
     end
-  ) | flush_results | .out) as $messages |
+  ) | flush_results | .out | blocks) as $messages |
   ($request * {model:$request.model,messages:$messages,stream:true} +
    (if .system == "" then {} else {system:.system} end) +
    (if (.tools | length) == 0 then {} else {

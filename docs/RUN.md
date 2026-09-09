@@ -94,6 +94,7 @@ Durable records are:
 - `system`: the concatenated system components.
 - `context`: model-visible hook script output.
 - `message` with role `user`, `assistant`, or `tool_result`. An assistant record carries the turn's token usage when the provider reported it.
+- `tool_call`: `{type:"tool_call",id,name,input}`, one call the assistant requested, appended when it reaches its execution point.
 - `state`: `{type:"state",name,value}`, model-invisible durable named state.
 - `turn_error`: `{type:"turn_error",message}`, the failure that ended an accepted turn without an assistant answer. It is never sent to a provider.
 
@@ -121,7 +122,7 @@ Transient events currently include:
 
 `_assistant_start` opens a response and `_assistant_end` closes it. Between them the turn forwards the adapter's events verbatim, in stream order. Deltas carry a zero-based content `index` identifying the block's position in the later assistant content.
 
-Deltas are previews only. Tool-call `input` fragments are raw text, not parsed JSON, and a client must never render or execute a partial call. Consumers should render committed assistant, reasoning, and tool-call content from the durable assistant record. Clients should treat unknown transient types as unsupported protocol input and recover from the durable session rather than guessing their meaning.
+Deltas are previews only. Tool-call `input` fragments are raw text, not parsed JSON, and a client must never render or execute a partial call. Consumers should render committed assistant and reasoning content from the durable assistant record, and each call from its own `tool_call` record. Clients should treat unknown transient types as unsupported protocol input and recover from the durable session rather than guessing their meaning.
 
 Notices have the shape `{type:"_notice",level,title,source,text,complete}`. The level is `info` or `error`. The source attributes the notice, and is empty when there is no attribution. A hook component's manifest `display` label opens an informational notice titled with the script path and attributed to the hook, with `complete:false`, before the script runs. The script's stderr replaces it with `complete:true` after capture checks succeed. A component without a label emits only the complete notice, and one that also writes no stderr emits nothing. A complete notice with empty text settles the open notice to nothing. An interrupted invocation or rejected capture may end without completion, so clients must discard an incomplete notice when the stream fails, ends, or is replayed. Failures are complete error notices.
 
@@ -144,6 +145,6 @@ A successful process exit means the single-turn operation completed cleanly. Thi
 
 A nonzero exit means the operation failed or was interrupted. A failure after the user record is committed is appended and emitted as a durable `turn_error`; its message is the user-facing outcome. `SIGINT` and the client's `SIGUSR1` cancellation signal record `Cancelled.`, while other handled signals record `Turn interrupted.` An earlier failure is reported as an error `_notice` when JSONL output is available. After malformed output, disconnection, cancellation, or process failure, discard uncertain live state and replay the durable session.
 
-If a provider fails or is cancelled after the turn accepted visible text or reasoning, cleanup makes a best-effort append of that content as a canonical assistant message with `stop: "length"`. Otherwise the user message remains unanswered. Cleanup appends error results for any durable tool calls that did not finish. This recovery cannot guarantee persistence after `SIGKILL` or process crash.
+If a provider fails or is cancelled after the turn accepted visible text or reasoning, cleanup makes a best-effort append of that content as a canonical assistant message with `stop: "length"`. Otherwise the user message remains unanswered. Cleanup closes a recorded call that did not finish, and appends a `tool_call` and a cancelled result for each call the response requested that never started. A process killed outright loses the calls it had not yet recorded. This recovery cannot guarantee persistence after `SIGKILL` or process crash.
 
 Do not write presentation or lifecycle records into a session. Transcript records are append-only and owned by Shellfish. Custom clients submit turns through `shellfish run` and use the transcript only for replay and recovery. A hook-requested session update may atomically replace the runtime header.

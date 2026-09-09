@@ -40,7 +40,7 @@ fi
 
 typeset order
 order=$(print -r -- \
-    '{"type":"message","role":"assistant","stop":"tool_calls","content":[{"type":"tool_call","id":"call_1","name":"shell","input":{}}]}' |
+    '{"type":"tool_call","id":"call_1","name":"shell","input":{}}' |
   jq -jRs -L "$ROOT" --argjson runtime null \
     -f "$ROOT/libexec/tui/event-decode.jq" |
   tr '\0' '\n' | sed '/^$/d' | paste -sd, -)
@@ -127,7 +127,7 @@ typeset shell_runtime=$(jq -cn \
   {harness:{tools:[{name:"shell",manifest:$shell[0]}]}}
 ')
 order=$(print -r -- \
-    '{"type":"message","role":"assistant","stop":"tool_calls","content":[{"type":"tool_call","id":"call_2","name":"read_file","input":{"file_path":"outside.txt","request_sandbox_bypass":true,"sandbox_bypass_reason":"test"}}]}' |
+    '{"type":"tool_call","id":"call_2","name":"read_file","input":{"file_path":"outside.txt","request_sandbox_bypass":true,"sandbox_bypass_reason":"test"}}' |
   jq -jRs -L "$ROOT" --argjson runtime "$read_runtime" \
     -f "$ROOT/libexec/tui/event-decode.jq" |
   tr '\0' '\n' | sed '/^$/d' | paste -sd, -)
@@ -159,7 +159,7 @@ typeset edit_runtime=$(jq -cn \
   {harness:{tools:[{name:"edit_file",manifest:$edit[0]}]}}
 ')
 order=$(print -r -- \
-    '{"type":"message","role":"assistant","stop":"tool_calls","content":[{"type":"tool_call","id":"call_3","name":"edit_file","input":{"file_path":"notes.json","old_string":"a","new_string":"b"}}]}' |
+    '{"type":"tool_call","id":"call_3","name":"edit_file","input":{"file_path":"notes.json","old_string":"a","new_string":"b"}}' |
   jq -jRs -L "$ROOT" --argjson runtime "$edit_runtime" \
     -f "$ROOT/libexec/tui/event-decode.jq" |
   tr '\0' '\n' | sed '/^$/d' | paste -sd, -)

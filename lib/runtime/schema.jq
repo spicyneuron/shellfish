@@ -198,13 +198,9 @@ def canonical_assistant_message:
   type == "object" and .type == "message" and .role == "assistant" and
   (.stop | IN("end", "tool_calls", "length")) and
   ((has("usage") | not) or (.usage | token_usage)) and
+  # Calls are their own records, appended when each reaches execution.
   (.content | type == "array" and
-    all(.[]; canonical_text or canonical_reasoning or canonical_tool_call)) and
-  (([.content[] | select(.type == "tool_call")] | length) as $calls |
-    if .stop == "tool_calls" then $calls > 0
-    else $calls == 0 end) and
-  ([.content[] | select(.type == "tool_call") | .id] | length) ==
-  ([.content[] | select(.type == "tool_call") | .id] | unique | length);
+    all(.[]; canonical_text or canonical_reasoning));
 
 def canonical_context:
   type == "object" and
@@ -238,6 +234,9 @@ def canonical_request:
           keys == ["text", "type"] or keys == ["opaque", "text", "type"]
         else true end)) and
       ((. + {type:"message"}) | canonical_assistant_message)
+    elif .role == "tool_call" then
+      keys == ["id", "input", "name", "role"] and
+      ((. + {type:"tool_call"} | del(.role)) | canonical_tool_call)
     elif .role == "tool_result" then
       keys == ["call_id", "content", "exit_code", "name", "role"] and
       ((. + {type:"message"}) | canonical_tool_result)
@@ -300,16 +299,18 @@ def canonical_session_header($format_version):
     (.max_capture_bytes | capture_bytes));
 
 def canonical_session_record:
-  canonical_user_message or canonical_assistant_message or canonical_tool_result or
-  canonical_context or canonical_state or
+  canonical_user_message or canonical_assistant_message or canonical_tool_call or
+  canonical_tool_result or canonical_context or canonical_state or
   (type == "object" and keys == ["message", "type"] and .type == "turn_error" and
     (.message | nul_free_string) and .message != "") or
   (type == "object" and keys == ["content", "type"] and .type == "system" and
     (.content | nul_free_string));
 
+# A batch reads assistant, then call/result pairs. "call" requires the first
+# call, "more" accepts another call or the assistant message that ends the batch.
 def session_records_state:
   reduce .[] as $record
-    ({valid:true, next:"user", pending:[], messages:0};
+    ({valid:true, next:"user", call:null, messages:0};
       if (.valid | not) or ($record | canonical_session_record | not) then
         .valid = false
       elif $record.type == "state" then .
@@ -320,28 +321,25 @@ def session_records_state:
         elif $record.hook != "stop" and .next == "user" then .
         else .valid = false end
       elif $record.type == "turn_error" then
-        if .next == "assistant" then .next = "user"
-        elif .next == "user" then .
+        # A turn error closes any state except one still owing a tool result.
+        if .next == "user" then .
+        elif .next != "result" then .next = "user"
         else .valid = false end
       elif $record.role == "user" then
         if .next == "user" then .next = "assistant" | .messages += 1
         else .valid = false end
       elif $record.role == "assistant" then
-        if .next != "assistant" then .valid = false
-        elif $record.stop == "tool_calls" then
-          .next = "tool" |
-          .pending = [$record.content[] | select(.type == "tool_call") | {id,name}] |
-          .messages += 1
+        if (.next | IN("assistant", "more") | not) then .valid = false
+        elif $record.stop == "tool_calls" then .next = "call" | .messages += 1
         else .next = "user" | .messages += 1 end
+      elif $record.type == "tool_call" then
+        if (.next | IN("call", "more") | not) then .valid = false
+        else .call = ($record | {id, name}) | .next = "result" end
       elif $record.role == "tool_result" then
-        if .next != "tool" or (.pending | length) == 0 or
-            $record.call_id != .pending[0].id or $record.name != .pending[0].name then
+        if .next != "result" or $record.call_id != .call.id or
+            $record.name != .call.name then
           .valid = false
-        else
-          .messages += 1 |
-          .pending = .pending[1:] |
-          if (.pending | length) == 0 then .next = "assistant" else . end
-        end
+        else .messages += 1 | .call = null | .next = "more" end
       else .valid = false end) |
   .;
 

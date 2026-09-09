@@ -15,6 +15,8 @@ typeset -gA SF_RUN=(
   answer '' committed 0 jsonl 0 interrupted 0 permission_count 0 permission_available 0
   signal_status 143
 )
+# Calls the provider requested that have not yet reached their execution point.
+typeset -ga SF_RUN_QUEUED_CALLS=()
 
 sf_run_emit() {
   (( SF_RUN[jsonl] )) && print -r -- "$1"
@@ -30,6 +32,16 @@ sf_run_hook() {
   result=( "${reply[@]}" )
   sf_hooks_commit "$session" sf_run_emit || return
   reply=( "${result[@]}" )
+}
+
+# Persists the head of the queue: the call has cleared its gates or stopped at
+# one, and either way it now belongs to the transcript. Exactly one call is
+# committed per loop iteration, which keeps the queue aligned with the loop.
+sf_run_commit_call() {
+  local session=$1 record=$SF_RUN_QUEUED_CALLS[1]
+  SF_RUN_QUEUED_CALLS=( "${(@)SF_RUN_QUEUED_CALLS[2,-1]}" )
+  sf_session_append "$session" "$record" || return 1
+  sf_run_emit "$record"
 }
 
 sf_run_interrupt() {
@@ -146,7 +158,8 @@ sf_run_turn_cleanup() {
     fi
     # An interrupted turn may have written past the in-memory view, so recovery
     # judges the durable records rather than what this process last held.
-    if sf_session_resync_turn "$session" "$error_message" "$SF_RUN[committed]"; then
+    if sf_session_resync_turn "$session" "$error_message" "$SF_RUN[committed]" \
+        "${(pj:\n:)SF_RUN_QUEUED_CALLS}"; then
       closed=$REPLY
       if [[ -n $REPLY ]]; then
         [[ -z $recovered ]] || recovered+=$'\n'
@@ -157,6 +170,7 @@ sf_run_turn_cleanup() {
     fi
   fi
   SF_REQUEST_PARTIAL_EVENTS=()
+  SF_RUN_QUEUED_CALLS=()
   [[ -z $recovered ]] || sf_run_emit "$recovered"
   sf_session_reset
   if (( ! interrupted )); then
@@ -171,7 +185,7 @@ sf_run_turn_cleanup() {
 sf_run_turn() {
   local user_record=$1 session_path=$2 permission_available=${3:-0} prompt=$4
   local SF_HOOK_JSONL=$SF_RUN[jsonl]
-  local request assistant stop_input result state backend_command opened_records
+  local request assistant stop_input result state backend_command opened_records record
   local tool_name call_id tool_input execution_input bypass bypass_reason_valid
   local decision denial_reason hook_action hook_reason
   local runtime_projection response_projection response_field
@@ -411,6 +425,17 @@ sf_run_turn() {
       fi
       call_count=0
       tool_calls=( "${(@)response_fields[2,-1]}" )
+      SF_RUN_QUEUED_CALLS=()
+      for (( tool_index = 1; tool_index <= ${#tool_calls}; tool_index += 6 )); do
+        record=$(jq -cn --arg id "$tool_calls[tool_index]" \
+          --arg name "$tool_calls[tool_index+1]" \
+          --argjson input "$tool_calls[tool_index+2]" \
+          '{type:"tool_call",id:$id,name:$name,input:$input}') || {
+          failure='cannot prepare tool call record'
+          return 1
+        }
+        SF_RUN_QUEUED_CALLS+=( "$record" )
+      done
       for (( tool_index = 1; tool_index <= ${#tool_calls}; tool_index += 6 )); do
         (( call_count += 1 ))
         call_id=$tool_calls[tool_index]
@@ -420,6 +445,10 @@ sf_run_turn() {
         bypass=$tool_calls[tool_index+4]
         bypass_reason_valid=$tool_calls[tool_index+5]
         if (( call_count > tool_limit )); then
+          if ! sf_run_commit_call "$session_path"; then
+            failure=$SF_SESSION_ERROR
+            return 1
+          fi
           if ! sf_tool_result "$call_id" "$tool_name" \
               "tool call denied: per-response limit is $tool_limit" 126; then
             failure=${SF_TOOL_ERROR:-cannot prepare denied tool result}
@@ -434,6 +463,10 @@ sf_run_turn() {
           hook_action=$reply[1]
           hook_reason=$reply[2]
           if [[ $hook_action == deny ]]; then
+            if ! sf_run_commit_call "$session_path"; then
+              failure=$SF_SESSION_ERROR
+              return 1
+            fi
             if ! sf_tool_result "$call_id" "$tool_name" \
                 "$hook_reason" \
                 126; then
@@ -442,6 +475,12 @@ sf_run_turn() {
             fi
             result=$REPLY
           else
+            # Committed before the permission prompt, which annotates the row
+            # this record creates. A refusal still becomes an ordinary result.
+            if ! sf_run_commit_call "$session_path"; then
+              failure=$SF_SESSION_ERROR
+              return 1
+            fi
             decision=''
             denial_reason=''
             sf_tool_needs_permission "$tool_name" "$bypass" "$bypass_reason_valid" \

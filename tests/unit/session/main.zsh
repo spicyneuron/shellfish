@@ -237,8 +237,10 @@ typeset native="$tmp/native.jsonl"
 cp "$SF_TEST_SESSIONS/header-only.jsonl" "$native"
 sf_session_begin_turn "$native"
 sf_session_append "$native" '{"type":"message","role":"user","content":[{"type":"text","text":"run"}]}'
-sf_session_append "$native" '{"type":"message","role":"assistant","stop":"tool_calls","content":[{"type":"tool_call","id":"call_1","name":"shell","input":{}},{"type":"tool_call","id":"call_2","name":"read_file","input":{}}]}'
+sf_session_append "$native" '{"type":"message","role":"assistant","stop":"tool_calls","content":[]}'
+sf_session_append "$native" '{"type":"tool_call","id":"call_1","name":"shell","input":{}}'
 sf_session_append "$native" '{"type":"message","role":"tool_result","call_id":"call_1","name":"shell","content":"denied","exit_code":126}'
+sf_session_append "$native" '{"type":"tool_call","id":"call_2","name":"read_file","input":{}}'
 sf_session_append "$native" '{"type":"message","role":"tool_result","call_id":"call_2","name":"read_file","content":"bad","exit_code":1}'
 sf_session_append "$native" '{"type":"message","role":"assistant","stop":"length","content":[{"type":"text","text":"partial"}]}'
 sf_session_append "$native" '{"type":"context","hook":"stop","script":"fixture","content":"continue"}'
@@ -247,21 +249,23 @@ sf_session_reset
 sf_session_begin_turn "$native"
 sf_session_reset
 
-# Reopening a session interrupted during a tool batch fills its unanswered calls.
+# Reopening a session interrupted mid-call answers the one recorded call.
 typeset interrupted_tools="$tmp/interrupted-tools.jsonl"
 cp "$SF_TEST_SESSIONS/header-only.jsonl" "$interrupted_tools"
 sf_session_begin_turn "$interrupted_tools"
 sf_session_append "$interrupted_tools" '{"type":"message","role":"user","content":[{"type":"text","text":"run"}]}'
-sf_session_append "$interrupted_tools" '{"type":"message","role":"assistant","stop":"tool_calls","content":[{"type":"tool_call","id":"call_1","name":"shell","input":{}},{"type":"tool_call","id":"call_2","name":"shell","input":{}},{"type":"tool_call","id":"call_3","name":"read_file","input":{}}]}'
+sf_session_append "$interrupted_tools" '{"type":"message","role":"assistant","stop":"tool_calls","content":[]}'
+sf_session_append "$interrupted_tools" '{"type":"tool_call","id":"call_1","name":"shell","input":{}}'
 sf_session_append "$interrupted_tools" '{"type":"message","role":"tool_result","call_id":"call_1","name":"shell","content":"done","exit_code":0}'
+sf_session_append "$interrupted_tools" '{"type":"tool_call","id":"call_2","name":"read_file","input":{}}'
 sf_session_reset
 sf_session_begin_turn "$interrupted_tools"
 sf_session_append "$interrupted_tools" '{"type":"message","role":"user","content":[{"type":"text","text":"next"}]}'
 sf_session_reset
 jq -e -s '
   .[-5].call_id == "call_1" and .[-5].exit_code == 0 and
-  .[-4].call_id == "call_2" and .[-4].exit_code == 126 and
-  .[-3].call_id == "call_3" and .[-3].name == "read_file" and .[-3].exit_code == 126 and
+  .[-4] == {type:"tool_call",id:"call_2",name:"read_file",input:{}} and
+  .[-3].call_id == "call_2" and .[-3].name == "read_file" and .[-3].exit_code == 126 and
   .[-2] == {type:"turn_error",message:"Turn interrupted."} and
   .[-1].role == "user" and .[-1].content[0].text == "next"
 ' "$interrupted_tools" >/dev/null

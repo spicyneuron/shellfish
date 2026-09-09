@@ -75,16 +75,17 @@ grep -Fx 'Authorization: Bearer router-key' "$BACKEND_TEST_HEADERS" >/dev/null
 jq -n -e -L "$ROOT" '
   include "lib/runtime/schema";
   include "lib/request";
-  [inputs] | assemble_backend_response(canonical_backend_response_events; canonical_assistant_message) |
-  canonical_assistant_message and
-  .role == "assistant" and
-  .stop == "tool_calls" and
-  .content[0] == {type:"text",text:"Let me check."} and
-  .content[1] == {type:"tool_call",id:"call_123",name:"shell",input:{command:"pwd"}} and
-  .usage.input_tokens == 10 and
-  .usage.cached_tokens == 8 and
-  .usage.output_tokens == 5 and
-  .usage.reasoning_tokens == 2
+  [inputs] |
+  assemble_backend_parts(canonical_backend_response_events; canonical_assistant_message) as $parts |
+  ($parts.message | canonical_assistant_message) and
+  ($parts.message.role == "assistant") and
+  ($parts.message.stop == "tool_calls") and
+  ($parts.message.content == [{type:"text",text:"Let me check."}]) and
+  ($parts.calls == [{type:"tool_call",id:"call_123",name:"shell",input:{command:"pwd"}}]) and
+  ($parts.message.usage.input_tokens == 10) and
+  ($parts.message.usage.cached_tokens == 8) and
+  ($parts.message.usage.output_tokens == 5) and
+  ($parts.message.usage.reasoning_tokens == 2)
 ' "$res" >/dev/null
 
 # Model metadata normalizes OpenRouter's catalog field without affecting generation.
@@ -133,13 +134,11 @@ OPENAI_API_KEY=test-key zsh -f "$run" <"$req" >"$res"
 jq -n -e -L "$ROOT" '
   include "lib/runtime/schema";
   include "lib/request";
-  [inputs] | assemble_backend_response(canonical_backend_response_events; canonical_assistant_message) |
-  canonical_assistant_message and
-  .stop == "tool_calls" and
-  .content[0].type == "tool_call" and
-  .content[0].name == "shell" and
-  .content[0].id == "call_0" and
-  .content[0].input == {}
+  [inputs] |
+  assemble_backend_parts(canonical_backend_response_events; canonical_assistant_message) as $parts |
+  ($parts.message | canonical_assistant_message) and
+  ($parts.message.stop == "tool_calls") and
+  ($parts.calls == [{type:"tool_call",id:"call_0",name:"shell",input:{}}])
 ' "$res" >/dev/null
 
 # 3. Test non-streaming JSON response
@@ -179,10 +178,46 @@ OPENAI_API_KEY=test-key zsh -f "$run" <"$req" >"$res"
 jq -n -e -L "$ROOT" '
   include "lib/runtime/schema";
   include "lib/request";
-  [inputs] | assemble_backend_response(canonical_backend_response_events; canonical_assistant_message) |
-  canonical_assistant_message and
-  .stop == "tool_calls" and
-  .content[0] == {type:"tool_call",id:"call_abc",name:"shell",input:{command:"ls"}} and
-  .usage.input_tokens == 12 and
-  .usage.output_tokens == 8
+  [inputs] |
+  assemble_backend_parts(canonical_backend_response_events; canonical_assistant_message) as $parts |
+  ($parts.message | canonical_assistant_message) and
+  ($parts.message.stop == "tool_calls") and
+  ($parts.calls == [{type:"tool_call",id:"call_abc",name:"shell",input:{command:"ls"}}]) and
+  ($parts.message.usage.input_tokens == 12) and
+  ($parts.message.usage.output_tokens == 8)
 ' "$res" >/dev/null
+
+# A flat call batch regroups into the shape this provider expects.
+typeset batch_request="$tmp/batch-request.json"
+cat >"$batch_request" <<'JSON'
+{
+  "format_version": 1,
+  "system": "test",
+  "messages": [
+    {"role":"user","content":[{"type":"text","text":"run both"}]},
+    {"role":"assistant","stop":"tool_calls","content":[{"type":"text","text":"working"}]},
+    {"role":"tool_call","id":"call_1","name":"shell","input":{"command":"pwd"}},
+    {"role":"tool_result","call_id":"call_1","name":"shell","content":"/tmp","exit_code":0},
+    {"role":"tool_call","id":"call_2","name":"shell","input":{"command":"ls"}},
+    {"role":"tool_result","call_id":"call_2","name":"shell","content":"bad","exit_code":1}
+  ],
+  "tools": [],
+  "options": {"request":{"model":"gpt-test"}},
+  "transport": {"endpoint":"https://api.openai.com/v1/chat/completions","insecure_tls":false,"http_timeout":30,"http_stall":10}
+}
+JSON
+printf '%s\n' 'data: {"choices":[{"delta":{"content":"ok"},"finish_reason":"stop"}]}' \
+  'data: [DONE]' "" >"$BACKEND_TEST_RESPONSE"
+OPENAI_API_KEY=test-key zsh -f "$run" <"$batch_request" >"$res"
+jq -e '
+  (.messages | map(.role)) == ["system","user","assistant","tool","tool"] and
+  .messages[2].content == "working" and
+  (.messages[2].tool_calls | map(.id)) == ["call_1","call_2"] and
+  .messages[2].tool_calls[0].function == {name:"shell",arguments:"{\"command\":\"pwd\"}"} and
+  (.messages | map(.tool_call_id) | map(select(. != null))) == ["call_1","call_2"]
+' "$BACKEND_TEST_BODY" >/dev/null || fail 'openai did not regroup a call batch'
+
+# A call-only assistant message must send null content, not an empty string.
+jq -c '.messages[1].content = []' "$batch_request" >"$tmp/calls-only.json"
+OPENAI_API_KEY=test-key zsh -f "$run" <"$tmp/calls-only.json" >"$res"
+jq -e '.messages[2].content == null and (.messages[2].tool_calls | length) == 2'   "$BACKEND_TEST_BODY" >/dev/null || fail 'a call-only message did not send null content'

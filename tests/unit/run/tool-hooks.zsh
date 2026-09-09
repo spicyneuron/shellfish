@@ -78,8 +78,7 @@ jq -e '. == {turn_id:1,tool_name:"shell",tool_use_id:"call_1",
   tool_response:{content:"line\n\n",exit_code:7}}' \
   "$TEST_OUTPUT_DIR/post-call_1" >/dev/null
 jq -e '
-  .messages[-2].role == "tool_result" and
-  .messages[-1].role == "tool_result"
+  ([.messages[-4:][].role]) == ["tool_call","tool_result","tool_call","tool_result"]
 ' "$request_capture" >/dev/null
 
 # A pre-tool denial creates an ordinary result; later sibling calls still run

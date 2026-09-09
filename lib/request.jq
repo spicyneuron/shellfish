@@ -42,29 +42,36 @@ def backend_response_update($event):
     .stop = $event.stop | .ended = true
   else .valid = false end;
 
-def backend_response_message(valid_message):
+# Calls leave the message: each becomes its own record once it reaches
+# execution, so the response yields a message and an ordered call list.
+def backend_response_parts(valid_message):
   select(.valid and .ended) |
   . as $state |
   [.blocks | to_entries | sort_by(.key | tonumber)[] | .value |
-    if .type != "tool_call" then {valid:true, content:.}
-    elif $state.stop == "length" then {valid:true, content:null}
-    elif $state.stop != "tool_calls" then {valid:false, content:null}
+    if .type != "tool_call" then {valid:true, content:., call:null}
+    elif $state.stop == "length" then {valid:true, content:null, call:null}
+    elif $state.stop != "tool_calls" then {valid:false, content:null, call:null}
     else (.input_text | if . == "" then {} else try fromjson catch null end) as $input |
       if .id != null and .name != null and ($input | type) == "object" then
-        {valid:true, content:{type, id, name, input:$input}}
-      else {valid:false, content:null} end
+        {valid:true, content:null, call:{type, id, name, input:$input}}
+      else {valid:false, content:null, call:null} end
     end] as $blocks |
   select(all($blocks[]; .valid)) |
-  [$blocks[].content | select(. != null)] as $content |
-  {type:"message", role:"assistant", stop:.stop, content:$content} +
-    (if .usage == null then {} else {usage:.usage} end) |
-  select(valid_message);
+  {message:({type:"message", role:"assistant", stop:$state.stop,
+             content:[$blocks[].content | select(. != null)]} +
+            (if $state.usage == null then {} else {usage:$state.usage} end)),
+   calls:[$blocks[].call | select(. != null)]} |
+  select([.calls[].id] | length == (unique | length)) |
+  select(.message | valid_message);
 
-def assemble_backend_response(valid_events; valid_message):
+def assemble_backend_parts(valid_events; valid_message):
   select(valid_events) |
   reduce .[] as $event
     (backend_response_state; backend_response_update($event)) |
-  backend_response_message(valid_message);
+  backend_response_parts(valid_message);
+
+def assemble_backend_response(valid_events; valid_message):
+  assemble_backend_parts(valid_events; valid_message) | .message;
 
 # The bypass fields pair with the tool schema injected by libexec/run/tools.zsh.
 def tool_call_fields:
@@ -86,15 +93,16 @@ def decode_backend_response(valid_event; valid_message):
         backend_response_update($event) |
         if .valid | not then halt_error(1)
         elif $event.type == "_assistant_end" then
-          [backend_response_message(valid_message)] as $messages |
-          if ($messages | length) != 1 then halt_error(1)
+          [backend_response_parts(valid_message)] as $parts |
+          if ($parts | length) != 1 then halt_error(1)
           else
-            $messages[0] as $message |
+            $parts[0].message as $message |
+            $parts[0].calls as $calls |
             .output = ["end", "\u0000", ($event | tojson), "\u0000",
               ($message | tojson), "\u0000",
               ($message.stop), "\u0000",
-              ([$message.content[] | select(.type == "tool_call")] | length | tostring), "\u0000",
-              ($message.content[] | select(.type == "tool_call") | tool_call_fields),
+              ($calls | length | tostring), "\u0000",
+              ($calls[] | tool_call_fields),
               "ok", "\u0000",
               ([$message.content[] | select(.type == "text") | .text] | join("")), "\u0000"]
           end

@@ -28,6 +28,8 @@ def context_message($context; $request):
 def request_messages:
   reduce .[] as $record ({messages:[], context:[]};
     if $record.type == "state" then .
+    elif $record.type == "tool_call" then
+      .messages += [{role:"tool_call"} + ($record | del(.type))]
     elif $record.type == "context" then .context += [$record]
     elif $record.type == "message" and $record.role == "user" then
       if (.context | length) == 0 then .messages += [$record | del(.type, .usage)]
