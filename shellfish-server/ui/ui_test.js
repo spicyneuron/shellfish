@@ -607,11 +607,11 @@ test("leaves deltas out of the transcript and draws the record once", async () =
 
   // Transient deltas do not alter the durable transcript.
   await page.send(
-    { type: "_assistant_message_delta", text: "", seq: 0 },
-    { type: "_assistant_message_delta", text: "par", seq: 1 },
-    { type: "_assistant_reasoning_delta", text: "thinking", seq: 2 },
-    { type: "_assistant_message_delta", text: "tial", seq: 7 },
-    { type: "_assistant_tool_call_delta", index: 1, id: "call_1", seq: 1 },
+    { type: "_assistant_message_delta", text: "" },
+    { type: "_assistant_message_delta", text: "par" },
+    { type: "_assistant_reasoning_delta", text: "thinking" },
+    { type: "_assistant_message_delta", text: "tial" },
+    { type: "_assistant_tool_call_delta", index: 1, id: "call_1" },
   );
   assert.equal(find(page.output, "assistant").length, 0);
   assert.equal(page.output.children.length, drawn);

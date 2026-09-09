@@ -74,7 +74,7 @@ Only one browser may be attached. A second connection receives `409 Conflict`. A
 
 Frames are SSE `data:` lines containing one JSON object each, plus `: keepalive` comments. Authentication requires an SSE-capable `fetch` implementation because the browser's native `EventSource` cannot set the authorization header.
 
-Types beginning with an underscore are transient, whether they come from the turn or from the server. Other turn objects are durable session records. Assistant deltas share a zero-based `seq` that restarts for each provider response. The bundled browser ignores the deltas and the surrounding `_assistant_start` and `_assistant_end`, and renders the later durable assistant record.
+Types beginning with an underscore are transient, whether they come from the turn or from the server. Other turn objects are durable session records. The bundled browser ignores the assistant deltas and the surrounding `_assistant_start` and `_assistant_end`, and renders the later durable assistant record.
 
 Durable `state` records remain in replay and live streams, but the bundled browser validates and ignores them. They do not create transcript sections or other visible output.
 

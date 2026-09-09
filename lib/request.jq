@@ -79,27 +79,12 @@ def tool_call_fields:
 
 def decode_backend_response(valid_event; valid_message):
   foreach inputs as $event
-    (backend_response_state + {seq:0, output:[]};
+    (backend_response_state + {output:[]};
       .output = [] |
       if .ended or ($event | valid_event | not) then halt_error(1)
       else
         backend_response_update($event) |
         if .valid | not then halt_error(1)
-        elif $event.type == "_assistant_message_delta" or
-            $event.type == "_assistant_reasoning_delta" then
-          .seq as $seq |
-          .output = ["delta", "\u0000", ($event | tojson), "\u0000",
-            ($event + {seq:$seq} | tojson), "\u0000"] |
-          .seq += 1
-        elif $event.type == "_assistant_reasoning_opaque" then
-          .output = ["opaque", "\u0000", ($event | tojson), "\u0000"]
-        elif $event.type == "_assistant_tool_call_delta" then
-          # Forwarded but not retained: recovery discards incomplete calls.
-          .seq as $seq |
-          .output = ["tool_call", "\u0000", ($event + {seq:$seq} | tojson), "\u0000"] |
-          .seq += 1
-        elif $event.type == "_turn_usage" then
-          .output = []
         elif $event.type == "_assistant_end" then
           [backend_response_message(valid_message)] as $messages |
           if ($messages | length) != 1 then halt_error(1)
@@ -113,6 +98,9 @@ def decode_backend_response(valid_event; valid_message):
               "ok", "\u0000",
               ([$message.content[] | select(.type == "text") | .text] | join("")), "\u0000"]
           end
-        else halt_error(1) end
+        else
+          # Every other adapter event passes through unchanged.
+          .output = ["event", "\u0000", ($event | tojson), "\u0000"]
+        end
       end;
       .output[]);

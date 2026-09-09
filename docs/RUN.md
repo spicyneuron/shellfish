@@ -111,13 +111,15 @@ Transient events currently include:
 | `_assistant_message_delta` | Incremental assistant text for live presentation. |
 | `_assistant_reasoning_delta` | Incremental reasoning text for live presentation. |
 | `_assistant_tool_call_delta` | Incremental tool-call fragments, for ordering only. |
+| `_assistant_reasoning_opaque` | Provider reasoning data for later requests; nothing to present. |
+| `_turn_usage` | The provider's latest token usage for this response. |
 | `_assistant_end` | The response is complete; `stop` is its reason. It precedes the durable assistant record. |
 | `_notice` | A user-facing notice: hook script output, or a failure before the turn was accepted. |
 | `_tool_permission_request` | A sandbox bypass needs a client decision. |
 | `_handoff` | A hook script asks a capable client to run `argv` after the turn exits cleanly. |
 | `_session_update` | A hook-requested update or model-context discovery changed the session; `runtime` is the resulting resolved runtime. |
 
-`_assistant_start` opens a response and `_assistant_end` closes it. Deltas carry a zero-based content `index` and a zero-based `seq`. The index identifies the block's position in the later assistant content. The sequence is shared by all three delta types and restarted for each provider response, so it orders live events independently of block identity.
+`_assistant_start` opens a response and `_assistant_end` closes it. Between them the turn forwards the adapter's events verbatim, in stream order. Deltas carry a zero-based content `index` identifying the block's position in the later assistant content.
 
 Deltas are previews only. Tool-call `input` fragments are raw text, not parsed JSON, and a client must never render or execute a partial call. Consumers should render committed assistant, reasoning, and tool-call content from the durable assistant record. Clients should treat unknown transient types as unsupported protocol input and recover from the durable session rather than guessing their meaning.
 

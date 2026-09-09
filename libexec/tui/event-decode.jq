@@ -8,6 +8,9 @@ def event_fields($event_runtime):
     ["assistant_reasoning_delta", .text]
   elif .type == "_assistant_tool_call_delta" then
     ["assistant_tool_call_delta"]
+  elif .type == "_assistant_reasoning_opaque" or .type == "_turn_usage" then
+    # Nothing to present: the durable assistant record carries both.
+    empty
   elif . == {type:"_assistant_start"} then
     ["assistant_start"]
   elif .type == "_assistant_end" and keys == ["stop", "type"] and

@@ -8,9 +8,11 @@ cat <<'STREAM' |
 {"type":"system","content":"instructions"}
 {"type":"state","name":"startup/status","value":"ready"}
 {"type":"_assistant_start"}
-{"type":"_assistant_reasoning_delta","text":"why","seq":0}
-{"type":"_assistant_message_delta","text":"hi\n","seq":1}
-{"type":"_assistant_tool_call_delta","index":2,"id":"call_1","seq":2}
+{"type":"_assistant_reasoning_delta","text":"why"}
+{"type":"_assistant_message_delta","text":"hi\n"}
+{"type":"_assistant_tool_call_delta","index":2,"id":"call_1"}
+{"type":"_assistant_reasoning_opaque","index":0,"opaque":{"signature":"s"}}
+{"type":"_turn_usage","input_tokens":14,"output_tokens":2}
 {"type":"_assistant_end","stop":"end"}
 {"type":"_notice","level":"info","title":"/tmp/check","source":"stop","text":"done","complete":true}
 {"type":"_notice","level":"error","title":"Turn failed","source":"","text":"recoverable","complete":true}
@@ -23,7 +25,7 @@ STREAM
     -f "$ROOT/libexec/tui/event-decode.jq" >/dev/null
 
 typeset response
-response=$(printf '%s\n' '{"type":"_assistant_tool_call_delta","index":0,"id":"call_1","seq":0}' \
+response=$(printf '%s\n' '{"type":"_assistant_tool_call_delta","index":0,"id":"call_1"}' \
     '{"type":"_assistant_end","stop":"tool_calls"}' |
   jq -jRs -L "$ROOT" --argjson runtime null \
     -f "$ROOT/libexec/tui/event-decode.jq" |

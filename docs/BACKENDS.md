@@ -84,13 +84,13 @@ Usage is optional. The latest valid `_turn_usage` before response end becomes th
 
 Exactly one `_assistant_end` must be the final event. Its stop value is `end`, `tool_calls`, or `length`. The response succeeds only when the adapter then exits zero. EOF is never implicit success, and nothing may follow response end.
 
-Exec forwards the delta events and `_assistant_end` to clients, adding a `seq` to each delta. It consumes `_assistant_reasoning_opaque` and `_turn_usage`, and emits its own `_assistant_start`, which no adapter sends.
+Exec forwards every adapter event to clients verbatim, and emits its own `_assistant_start`, which no adapter sends. Clients ignore the event types they do not present.
 
 ## Assembly and recovery
 
 Exec validates the normalized stream and assembles the canonical assistant message. It rejects conflicting block metadata, invalid tool input, duplicate call IDs, and disagreement between content and the stop reason. The message is appended before hooks, permissions, or tools can act, so an adapter must never execute tool calls itself.
 
-If an adapter fails or is cancelled without successfully completing the response, turn cleanup best-effort preserves accepted visible text and reasoning as an assistant message with `stop: "length"`. Opaque data attached to recovered reasoning is retained for future provider requests. Usage and incomplete tool calls are discarded, even when the received tool input is valid JSON. A response with no visible content uses ordinary turn recovery instead.
+If an adapter fails or is cancelled without successfully completing the response, turn cleanup best-effort preserves accepted visible text and reasoning as an assistant message with `stop: "length"`. Opaque data attached to recovered reasoning is retained for future provider requests, as is the usage the provider reported. Incomplete tool calls are discarded, even when the received tool input is valid JSON. A response with no visible content uses ordinary turn recovery instead.
 
 This recovery is not a durability guarantee across `SIGKILL`, process crashes, or machine loss. Provider-specific validation should still fail promptly and write a concise diagnostic to stderr.
 

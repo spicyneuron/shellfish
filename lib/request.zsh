@@ -31,7 +31,7 @@ sf_request_build() {
 sf_request_run() {
   local request=$1 command=$2 runtime=$3 selected=$4 emit=${5:-:}
   local directory error_file group_file input_file output_pipe status_file
-  local adapter_pid decoder_pid event display end_event kind='' name
+  local adapter_pid decoder_pid event end_event kind='' name
   local -a environment=( env ) process_command
   integer adapter_status=1 decoder_status=1 ended=0
 
@@ -86,28 +86,13 @@ sf_request_run() {
   # Decoder metadata is NUL-framed; arbitrary stop text ends the response payload.
   while IFS= read -r -d $'\0' kind <&p; do
     case $kind in
-      delta)
-        if ! IFS= read -r -d $'\0' event <&p ||
-            ! IFS= read -r -d $'\0' display <&p; then
-          kind=invalid
-          break
-        fi
-        SF_REQUEST_PARTIAL_EVENTS+=( "$event" )
-        "$emit" "$display"
-        ;;
-      opaque)
+      event)
         if ! IFS= read -r -d $'\0' event <&p; then
           kind=invalid
           break
         fi
         SF_REQUEST_PARTIAL_EVENTS+=( "$event" )
-        ;;
-      tool_call)
-        if ! IFS= read -r -d $'\0' display <&p; then
-          kind=invalid
-          break
-        fi
-        "$emit" "$display"
+        "$emit" "$event"
         ;;
       end)
         if ! IFS= read -r -d $'\0' end_event <&p; then

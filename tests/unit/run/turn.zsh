@@ -25,7 +25,7 @@ print -r -- "$stream" | jq -eRn -L "$ROOT" '
   ($events | map(select(.type == "message" and .role == "assistant"))[0]) as $assistant |
   $events[0].role == "user" and
   ($events | any(.type == "_assistant_message_delta")) and
-  ($events | any(.type == "_turn_usage") | not) and
+  ($events | any(.type == "_turn_usage")) and
   ($assistant.usage | token_usage) and
   ($assistant.usage | has("cached_tokens")) and
   ($events | map(select(.type == "message")) | length == 2) and
@@ -140,28 +140,19 @@ jq -e '
   .messages[-1].content[0].text == "two\nwords\n"
 ' "$memory_request" >/dev/null
 
-# Reasoning and text deltas share one zero-based sequence per provider response,
-# so a client that observes sequence zero knows it has the response from its
-# beginning.
+# Adapter events reach clients verbatim, in stream order, including the types a
+# client may not present. The turn adds no fields of its own.
 stream=$(sf_test_turn 'think about two words' "$session")
 print -r -- "$stream" | jq -eRn '
   [inputs | fromjson |
-    select(.type | IN("_assistant_message_delta","_assistant_reasoning_delta"))] as $deltas |
-  ($deltas | map(.type) | unique | length) == 2 and
-  ($deltas | map(.index) | unique) == [0,1] and
-  ($deltas | map(.seq)) == [range(0; $deltas | length)]
-' >/dev/null
-
-# Each provider response inside a tool loop restarts the sequence at zero.
-stream=$(SF_TEST_BACKEND_TOOL_CALL=1 sf_test_turn 'call a helper' "$session")
-print -r -- "$stream" | jq -eRn '
-  [inputs | fromjson | select(.type | IN("_assistant_start",
-    "_assistant_message_delta","_assistant_reasoning_delta"))] as $events |
-  ($events | reduce .[] as $event ([];
-    if $event.type == "_assistant_start" then . + [[]]
-    else .[0:-1] + [.[-1] + [$event.seq]] end)) as $responses |
-  ($responses | length) == 2 and
-  all($responses[]; length > 0 and . == [range(0; length)])
+    select(.type | startswith("_assistant_") or . == "_turn_usage")] as $events |
+  ($events | map(.type)) as $types |
+  $types[0] == "_assistant_start" and $types[-1] == "_assistant_end" and
+  ($types | any(. == "_turn_usage")) and
+  ([$events[] | select(.type | endswith("_delta"))] |
+    (map(.type) | unique | length) == 2 and
+    (map(.index) | unique) == [0,1] and
+    all(.[]; keys == ["index","text","type"]))
 ' >/dev/null
 
 # Tool state becomes durable and visible before its nonzero result.
@@ -209,8 +200,7 @@ print -r -- "$stream" | jq -eRn '
   any($events[0:$call][]; .type == "_assistant_message_delta") and
   ($events[$end] | .stop == "tool_calls") and
   all($events[] | select(.type == "_assistant_tool_call_delta");
-    (.seq | type == "number") and (.index | type == "number") and
-    (.input | type == "string"))
+    (.index | type == "number") and (.input | type == "string"))
 ' >/dev/null
 
 # Disallowed calls receive ordinary results and the provider continues.
@@ -288,7 +278,8 @@ print -r -- "$stream" | jq -eRn -L "$ROOT" '
     type:"message",role:"assistant",stop:"length",content:[
       {type:"reasoning",text:"partial thought",opaque:{id:"reasoning_1",encrypted_content:"secret"}},
       {type:"text",text:"partial answer"}
-    ]
+    ],
+    usage:{input_tokens:10,output_tokens:4}
   } and
   ($events[-1].type == "turn_error") and
   ($events[-1].message | contains("partial backend failure"))
@@ -297,7 +288,7 @@ assert_canonical_session "$partial_response_session"
 jq -e -s '
   .[-1].type == "turn_error" and
   (.[-1].message | contains("partial backend failure")) and
-  (.[-2] | has("usage") | not) and
+  (.[-2].usage == {input_tokens:10,output_tokens:4}) and
   (.[-2].content | all(.type != "tool_call"))
 ' "$partial_response_session" >/dev/null
 stream=$(PARTIAL_CAPTURE="$partial_capture" sf_test_turn next "$partial_response_session")

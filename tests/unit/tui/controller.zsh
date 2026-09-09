@@ -342,7 +342,7 @@ SF_PRESENT_STATE=working
 sf_tui_transport_reset
 SF_TUI_TRANSPORT_LINES=(
   '{"type":"_assistant_message_delta","text":"before tool"}'
-  '{"type":"_assistant_tool_call_delta","index":1,"id":"call_1","seq":1}'
+  '{"type":"_assistant_tool_call_delta","index":1,"id":"call_1"}'
 )
 BUFFER=''
 CURSOR=0
@@ -365,7 +365,7 @@ SF_PRESENT_STATE=working
 sf_tui_transport_reset
 SF_TUI_TRANSPORT_LINES=(
   '{"type":"_assistant_message_delta","text":"one\ntwo\nthree\nfour\nfive\nsix\nseven\nbefore tool"}'
-  '{"type":"_assistant_tool_call_delta","index":1,"id":"call_1","seq":1}'
+  '{"type":"_assistant_tool_call_delta","index":1,"id":"call_1"}'
   '{"type":"_assistant_end","stop":"tool_calls"}'
   '{"type":"message","role":"assistant","stop":"tool_calls","content":[{"type":"text","text":"one\ntwo\nthree\nfour\nfive\nsix\nseven\nbefore tool"},{"type":"tool_call","id":"call_1","name":"shell","input":{"command":"true"}}]}'
 )
