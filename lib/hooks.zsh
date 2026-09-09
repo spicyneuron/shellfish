@@ -42,8 +42,6 @@ sf_hooks_fail() {
   local error=$1
   sf_hooks_reset
   SF_HOOK_ERROR=$error
-  REPLY=''
-  reply=()
   return 1
 }
 
