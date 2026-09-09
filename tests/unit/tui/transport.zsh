@@ -12,24 +12,21 @@ mkdir -p "$tmp/lib/runtime"
 print -r -- 'def canonical_session_header(:' >"$tmp/lib/runtime/schema.jq"
 (
   builtin cd -- "$tmp"
-  SF_TUI_TRANSPORT_LINES=( '{"type":"_assistant_delta","text":"shadow"}' )
+  SF_TUI_TRANSPORT_LINES=( '{"type":"_assistant_message_delta","text":"shadow"}' )
   sf_tui_transport_next null
-  assert_equal 'assistant_delta,shadow,,,,,' "${(j:,:)reply}"
+  assert_equal 'assistant_message_delta,shadow,,,,,' "${(j:,:)reply}"
   assert_equal "$tmp" "$PWD"
 )
 
 SF_TUI_TRANSPORT_LINES=(
-  '{"type":"_assistant_delta","text":"one"}'
+  '{"type":"_assistant_message_delta","text":"one"}'
   '{"type":"message","role":"assistant","stop":"end","content":[{"type":"text","text":"one"}],"usage":{"input_tokens":2,"output_tokens":1}}'
 )
 sf_tui_transport_next null
-assert_equal 'assistant_delta,one,,,,,' "${(j:,:)reply}"
+assert_equal 'assistant_message_delta,one,,,,,' "${(j:,:)reply}"
 sf_tui_transport_has_pending || fail 'decoded transport tail was not pending'
 sf_tui_transport_next null
 assert_equal 'turn_usage,2 ↑ 1 ↓,,,,,' "${(j:,:)reply}"
-sf_tui_transport_has_pending || fail 'decoded transport tail was not pending'
-sf_tui_transport_next null
-assert_equal 'assistant_settle,,,,,,' "${(j:,:)reply}"
 if sf_tui_transport_has_pending; then
   fail 'decoded transport batch remained pending'
 fi
@@ -46,12 +43,10 @@ sf_tui_transport_next "$runtime"
 assert_equal "session_update,$updated_runtime,,,,," "${(j:,:)reply}"
 sf_tui_transport_next "$updated_runtime"
 assert_equal 'turn_usage,75 ↑ 5 ↓ 38% of 200 ◔,,,,,' "${(j:,:)reply}"
-sf_tui_transport_next "$updated_runtime"
-assert_equal 'assistant_settle,,,,,,' "${(j:,:)reply}"
 
 # A batch is accepted atomically; malformed trailing input exposes no prefix.
 SF_TUI_TRANSPORT_LINES=(
-  '{"type":"_assistant_delta","text":"speculative"}'
+  '{"type":"_assistant_message_delta","text":"speculative"}'
   broken
 )
 integer next_status=0

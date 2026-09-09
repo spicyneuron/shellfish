@@ -483,13 +483,14 @@ function apply(frame) {
       return;
     case "_session_status":
       return applyState(frame);
-    case "_backend_request_start":
+    case "_assistant_start":
       return showIndicator();
-    case "_assistant_delta":
+    case "_assistant_message_delta":
     case "_assistant_reasoning_delta":
-    case "_assistant_settle":
-      // Provisional output. Assistant text and reasoning are drawn only from
-      // the record that commits them, which arrives on this same stream.
+    case "_assistant_tool_call_delta":
+    case "_assistant_end":
+      // Provisional. Content is drawn only from the record that commits it,
+      // which arrives on this same stream.
       return;
     case "_tool_permission_request":
       return askPermission(frame);

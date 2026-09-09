@@ -124,7 +124,7 @@ print -r -- "$jsonl" | jq -eRn -L "$ROOT" '
   include "lib/runtime/schema";
   [inputs | fromjson] as $events |
   ($events | any(.type == "session") | not) and
-  ($events | any(.type == "_assistant_delta")) and
+  ($events | any(.type == "_assistant_message_delta")) and
   ($events | any(.type == "_turn_usage") | not) and
   ($events | any(.type == "message" and .role == "user")) and
   ($events | any(.type == "message" and .role == "assistant" and (.usage | token_usage)))

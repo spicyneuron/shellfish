@@ -24,7 +24,7 @@ print -r -- "$stream" | jq -eRn -L "$ROOT" '
   [inputs | fromjson] as $events |
   ($events | map(select(.type == "message" and .role == "assistant"))[0]) as $assistant |
   $events[0].role == "user" and
-  ($events | any(.type == "_assistant_delta")) and
+  ($events | any(.type == "_assistant_message_delta")) and
   ($events | any(.type == "_turn_usage") | not) and
   ($assistant.usage | token_usage) and
   ($assistant.usage | has("cached_tokens")) and
@@ -146,7 +146,7 @@ jq -e '
 stream=$(sf_test_turn 'think about two words' "$session")
 print -r -- "$stream" | jq -eRn '
   [inputs | fromjson |
-    select(.type | IN("_assistant_delta","_assistant_reasoning_delta"))] as $deltas |
+    select(.type | IN("_assistant_message_delta","_assistant_reasoning_delta"))] as $deltas |
   ($deltas | map(.type) | unique | length) == 2 and
   ($deltas | map(.index) | unique) == [0,1] and
   ($deltas | map(.seq)) == [range(0; $deltas | length)]
@@ -155,10 +155,10 @@ print -r -- "$stream" | jq -eRn '
 # Each provider response inside a tool loop restarts the sequence at zero.
 stream=$(SF_TEST_BACKEND_TOOL_CALL=1 sf_test_turn 'call a helper' "$session")
 print -r -- "$stream" | jq -eRn '
-  [inputs | fromjson | select(.type | IN("_backend_request_start",
-    "_assistant_delta","_assistant_reasoning_delta"))] as $events |
+  [inputs | fromjson | select(.type | IN("_assistant_start",
+    "_assistant_message_delta","_assistant_reasoning_delta"))] as $events |
   ($events | reduce .[] as $event ([];
-    if $event.type == "_backend_request_start" then . + [[]]
+    if $event.type == "_assistant_start" then . + [[]]
     else .[0:-1] + [.[-1] + [$event.seq]] end)) as $responses |
   ($responses | length) == 2 and
   all($responses[]; length > 0 and . == [range(0; length)])
@@ -193,19 +193,24 @@ jq -es '
 ' "$state_session" >/dev/null || fail 'tool state was not durable before its result'
 SF_TEST_RUNTIME=$base_runtime
 
-# The first tool update after visible content marks a presentation boundary,
-# while the call itself remains hidden until the durable assistant record.
+# Tool-call deltas are forwarded in stream order after visible content, and
+# the response closes before the durable record makes the call available.
 print -r -- "$stream" | jq -eRn '
   [inputs | fromjson] as $events |
   ($events | map(.type)) as $types |
-  ($types | index("_assistant_settle")) as $settle |
+  ($types | index("_assistant_tool_call_delta")) as $call |
+  ($types | index("_assistant_end")) as $end |
   ($events | map(if .role? == "assistant" and .stop? == "tool_calls"
     then .type else null end) | index("message")) as $assistant |
-  ([$events[] | select(.type == "_assistant_settle")] | length) == 1 and
-  $settle != null and
-  $assistant != null and $settle < $assistant and
-  any($events[0:$settle][]; .type == "_assistant_delta") and
-  all($events[]; .type != "_assistant_tool_call_delta")
+  ([$types[] | select(. == "_assistant_end")] | length) ==
+    ([$types[] | select(. == "_assistant_start")] | length) and
+  $call != null and $end != null and $assistant != null and
+  $call < $end and $end < $assistant and
+  any($events[0:$call][]; .type == "_assistant_message_delta") and
+  ($events[$end] | .stop == "tool_calls") and
+  all($events[] | select(.type == "_assistant_tool_call_delta");
+    (.seq | type == "number") and (.index | type == "number") and
+    (.input | type == "string"))
 ' >/dev/null
 
 # Disallowed calls receive ordinary results and the provider continues.
@@ -255,13 +260,13 @@ cat >"$partial_backend" <<'ZSH'
 request=$(cat)
 if jq -e '.messages[-1].content[0].text == "next"' <<<"$request" >/dev/null; then
   print -r -- "$request" >"$PARTIAL_CAPTURE"
-  print -r -- '{"type":"_assistant_delta","index":0,"text":"continued"}'
-  print -r -- '{"type":"_assistant_response_end","stop":"end"}'
+  print -r -- '{"type":"_assistant_message_delta","index":0,"text":"continued"}'
+  print -r -- '{"type":"_assistant_end","stop":"end"}'
   exit
 fi
 print -r -- '{"type":"_assistant_reasoning_delta","index":0,"text":"partial thought"}'
 print -r -- '{"type":"_assistant_reasoning_opaque","index":0,"opaque":{"id":"reasoning_1","encrypted_content":"secret"}}'
-print -r -- '{"type":"_assistant_delta","index":1,"text":"partial answer"}'
+print -r -- '{"type":"_assistant_message_delta","index":1,"text":"partial answer"}'
 print -r -- '{"type":"_assistant_tool_call_delta","index":2,"id":"incomplete","name":"shell","input":"{\"command\":"}'
 print -r -- '{"type":"_turn_usage","input_tokens":10,"output_tokens":4}'
 print -u2 -r -- 'partial backend failure'

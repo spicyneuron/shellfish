@@ -103,7 +103,7 @@ sf_backend_stream --arg control "$SF_BACKEND_CONTROL_PATTERN" '
       else {type:"text", text:.text}
       end];
   def stop_event:
-    {type:"_assistant_response_end",
+    {type:"_assistant_end",
      stop:(if .stop_reason == "tool_use" then "tool_calls"
            elif .stop_reason == "max_tokens" then "length"
            elif .stop_reason == "end_turn" or .stop_reason == "stop_sequence" then "end"
@@ -119,7 +119,7 @@ sf_backend_stream --arg control "$SF_BACKEND_CONTROL_PATTERN" '
   def buffered_response_events($content):
     [$content | to_entries[] |
       .key as $index | .value |
-      if .type == "text" then transient("_assistant_delta";$index;.text)
+      if .type == "text" then transient("_assistant_message_delta";$index;.text)
       elif .type == "thinking" then
         transient("_assistant_reasoning_delta";$index;.thinking),
         {type:"_assistant_reasoning_opaque",index:$index,opaque:.}
@@ -173,7 +173,7 @@ sf_backend_stream --arg control "$SF_BACKEND_CONTROL_PATTERN" '
         $event.delta as $delta |
         if $delta.type == "text_delta" then
           .blocks[$key].text += $delta.text |
-          .out += [transient("_assistant_delta";$event.index;$delta.text)]
+          .out += [transient("_assistant_message_delta";$event.index;$delta.text)]
         elif $delta.type == "thinking_delta" then
           .blocks[$key].thinking += $delta.thinking |
           .out += [transient("_assistant_reasoning_delta";$event.index;$delta.thinking)]

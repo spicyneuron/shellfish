@@ -101,11 +101,11 @@ done
 jq -cn '[
   {type:"_assistant_reasoning_opaque",index:0,opaque:{type:"redacted_thinking",data:"secret"}},
   {type:"_assistant_reasoning_delta",index:0,text:"summary"},
-  {type:"_assistant_delta",index:1,text:"checking"},
+  {type:"_assistant_message_delta",index:1,text:"checking"},
   {type:"_assistant_tool_call_delta",index:2,id:"call_1",name:"shell",input:"{\"command\":"},
   {type:"_assistant_tool_call_delta",index:2,input:"\"pwd\"}"},
   {type:"_turn_usage",input_tokens:10,cached_tokens:4,output_tokens:3},
-  {type:"_assistant_response_end",stop:"tool_calls"}
+  {type:"_assistant_end",stop:"tool_calls"}
 ]' | request_eval 'canonical_backend_response_events' >/dev/null
 
 # Opaque reasoning can exist without display text.
@@ -113,23 +113,23 @@ print -r -- '{"type":"_assistant_reasoning_opaque","index":0,"opaque":{}}' |
   request_eval 'canonical_backend_event' >/dev/null
 
 for event in \
-    '{"type":"_assistant_delta","text":"missing index"}' \
+    '{"type":"_assistant_message_delta","text":"missing index"}' \
     '{"type":"_assistant_tool_call_delta","index":0}' \
     '{"type":"_assistant_tool_call_delta","index":0,"id":"bad id"}' \
-    '{"type":"_assistant_response_end","stop":"cancelled"}'; do
+    '{"type":"_assistant_end","stop":"cancelled"}'; do
   if print -r -- "$event" | request_eval 'canonical_backend_event' >/dev/null 2>&1; then
     fail "invalid backend event was accepted: $event"
   fi
 done
 
 if jq -cn '[
-    {type:"_assistant_response_end",stop:"end"},
-    {type:"_assistant_delta",index:0,text:"late"}
+    {type:"_assistant_end",stop:"end"},
+    {type:"_assistant_message_delta",index:0,text:"late"}
   ]' | request_eval 'canonical_backend_response_events' >/dev/null 2>&1; then
   fail 'backend events after response end were accepted'
 fi
 
-if jq -cn '[{type:"_assistant_delta",index:0,text:"unfinished"}]' |
+if jq -cn '[{type:"_assistant_message_delta",index:0,text:"unfinished"}]' |
     request_eval 'canonical_backend_response_events' >/dev/null 2>&1; then
   fail 'backend response without response end was accepted'
 fi
@@ -139,13 +139,13 @@ jq -cn '[
   {type:"_assistant_tool_call_delta",index:2,id:"call_1",name:"shell",input:"{\"command\":"},
   {type:"_assistant_reasoning_delta",index:0,text:"think "},
   {type:"_turn_usage",input_tokens:5,output_tokens:1},
-  {type:"_assistant_delta",index:1,text:"run "},
+  {type:"_assistant_message_delta",index:1,text:"run "},
   {type:"_assistant_reasoning_opaque",index:0,opaque:{signature:"signed"}},
   {type:"_assistant_tool_call_delta",index:2,input:"\"pwd\"}"},
   {type:"_assistant_reasoning_delta",index:0,text:"first"},
-  {type:"_assistant_delta",index:1,text:"this"},
+  {type:"_assistant_message_delta",index:1,text:"this"},
   {type:"_turn_usage",input_tokens:5,cached_tokens:2,output_tokens:4},
-  {type:"_assistant_response_end",stop:"tool_calls"}
+  {type:"_assistant_end",stop:"tool_calls"}
 ]' | request_eval 'assemble_backend_response(canonical_backend_response_events; canonical_assistant_message) == {
   type:"message",role:"assistant",stop:"tool_calls",
   content:[
@@ -158,19 +158,19 @@ jq -cn '[
 
 # A length-limited response preserves completed content but discards partial calls.
 jq -cn '[
-  {type:"_assistant_delta",index:0,text:"visible"},
+  {type:"_assistant_message_delta",index:0,text:"visible"},
   {type:"_assistant_tool_call_delta",index:1,id:"call_1",name:"shell",input:"{\"command\":"},
-  {type:"_assistant_response_end",stop:"length"}
+  {type:"_assistant_end",stop:"length"}
 ]' | request_eval 'assemble_backend_response(canonical_backend_response_events; canonical_assistant_message) == {
   type:"message",role:"assistant",stop:"length",content:[{type:"text",text:"visible"}]
 }' >/dev/null
 
 for events in \
-    '[{"type":"_assistant_delta","index":0,"text":"text"},{"type":"_assistant_reasoning_delta","index":0,"text":"reason"},{"type":"_assistant_response_end","stop":"end"}]' \
-    '[{"type":"_assistant_reasoning_opaque","index":0,"opaque":{"a":1}},{"type":"_assistant_reasoning_opaque","index":0,"opaque":{"a":2}},{"type":"_assistant_response_end","stop":"end"}]' \
-    '[{"type":"_assistant_tool_call_delta","index":0,"id":"call_1","name":"shell","input":"{}"},{"type":"_assistant_response_end","stop":"end"}]' \
-    '[{"type":"_assistant_tool_call_delta","index":0,"id":"call_1","name":"shell","input":"{"},{"type":"_assistant_response_end","stop":"tool_calls"}]' \
-    '[{"type":"_assistant_tool_call_delta","index":0,"id":"call_1","name":"shell","input":"{}"},{"type":"_assistant_tool_call_delta","index":1,"id":"call_1","name":"shell","input":"{}"},{"type":"_assistant_response_end","stop":"tool_calls"}]'; do
+    '[{"type":"_assistant_message_delta","index":0,"text":"text"},{"type":"_assistant_reasoning_delta","index":0,"text":"reason"},{"type":"_assistant_end","stop":"end"}]' \
+    '[{"type":"_assistant_reasoning_opaque","index":0,"opaque":{"a":1}},{"type":"_assistant_reasoning_opaque","index":0,"opaque":{"a":2}},{"type":"_assistant_end","stop":"end"}]' \
+    '[{"type":"_assistant_tool_call_delta","index":0,"id":"call_1","name":"shell","input":"{}"},{"type":"_assistant_end","stop":"end"}]' \
+    '[{"type":"_assistant_tool_call_delta","index":0,"id":"call_1","name":"shell","input":"{"},{"type":"_assistant_end","stop":"tool_calls"}]' \
+    '[{"type":"_assistant_tool_call_delta","index":0,"id":"call_1","name":"shell","input":"{}"},{"type":"_assistant_tool_call_delta","index":1,"id":"call_1","name":"shell","input":"{}"},{"type":"_assistant_end","stop":"tool_calls"}]'; do
   if print -r -- "$events" | request_eval \
       'assemble_backend_response(canonical_backend_response_events; canonical_assistant_message)' \
       >/dev/null 2>&1; then

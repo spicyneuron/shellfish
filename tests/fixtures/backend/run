@@ -218,11 +218,11 @@ if [[ ${SF_TEST_BACKEND_TOOL_CALL:-0} == 1 || -n $tool_mode ]] || (( keyword_cou
     build_deltas $'Tool complete.\n'
     text="${(j::)deltas}"
     text_tokens=$(( (${#text} + 3) / 4 ))
-    stream_deltas _assistant_delta 0
+    stream_deltas _assistant_message_delta 0
     jq -cn --argjson input "$input_tokens" \
       --argjson cached "$cached_tokens" --argjson output "$text_tokens" '
       {type:"_turn_usage",input_tokens:$input,cached_tokens:$cached,output_tokens:$output},
-      {type:"_assistant_response_end",stop:"end"}
+      {type:"_assistant_end",stop:"end"}
     '
   else
     tool_command=${SF_TEST_BACKEND_TOOL_COMMAND:-true}
@@ -268,7 +268,7 @@ if [[ ${SF_TEST_BACKEND_TOOL_CALL:-0} == 1 || -n $tool_mode ]] || (( keyword_cou
     if (( think )); then
       stream_deltas _assistant_reasoning_delta 0
     fi
-    stream_deltas _assistant_delta $think
+    stream_deltas _assistant_message_delta $think
     text_tokens=$(( (${#text} + 3) / 4 ))
     reasoning_tokens=$(( think ? text_tokens : 0 ))
     output_tokens=$(( text_tokens + reasoning_tokens ))
@@ -313,7 +313,7 @@ if [[ ${SF_TEST_BACKEND_TOOL_CALL:-0} == 1 || -n $tool_mode ]] || (( keyword_cou
         {type:"_assistant_tool_call_delta",index:($call.key + $think + 1),
          id:("call_" + (($call.key + 1) | tostring)),name:$name,
          input:(call_input($call) | tojson)}),
-      {type:"_assistant_response_end",stop:"tool_calls"}
+      {type:"_assistant_end",stop:"tool_calls"}
     ' --arg bypass_reason "$tool_bypass_reason"
   fi
   exit
@@ -323,7 +323,7 @@ fi
 if (( think )); then
   stream_deltas _assistant_reasoning_delta 0
 fi
-stream_deltas _assistant_delta $think
+stream_deltas _assistant_message_delta $think
 text_tokens=$(( (${#text} + 3) / 4 ))
 reasoning_tokens=$(( think ? text_tokens : 0 ))
 output_tokens=$(( text_tokens + reasoning_tokens ))
@@ -332,5 +332,5 @@ jq -cn --argjson input "$input_tokens" \
   --argjson reasoning "$reasoning_tokens" '
   {type:"_turn_usage",input_tokens:$input,cached_tokens:$cached,output_tokens:$output} +
     (if $reasoning > 0 then {reasoning_tokens:$reasoning} else {} end),
-  {type:"_assistant_response_end",stop:"end"}
+  {type:"_assistant_end",stop:"end"}
 '

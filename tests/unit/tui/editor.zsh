@@ -323,7 +323,7 @@ sf_tui_terminal_reset
 sf_tui_add message agent '' before open
 SF_PRESENT_STATE=working
 SF_PRESENT_RENDER_ERROR=''
-SF_TUI_TRANSPORT_EVENTS=( assistant_delta after '' '' '' '' '' )
+SF_TUI_TRANSPORT_EVENTS=( assistant_message_delta after '' '' '' '' '' )
 SF_TUI_TRANSPORT_EOF=0
 KEYS_QUEUED_COUNT=0
 PENDING=0

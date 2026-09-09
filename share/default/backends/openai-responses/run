@@ -166,7 +166,7 @@ sf_backend_stream '
   def buffered_response_events:
     . as $message |
     [.content | to_entries[] | .key as $index | .value |
-      if .type == "text" then transient("_assistant_delta";$index;.text)
+      if .type == "text" then transient("_assistant_message_delta";$index;.text)
       elif .type == "reasoning" then
         (if .text == "" then empty else transient("_assistant_reasoning_delta";$index;.text) end),
         {type:"_assistant_reasoning_opaque",index:$index,opaque:.opaque}
@@ -174,10 +174,10 @@ sf_backend_stream '
         {type:"_assistant_tool_call_delta",index:$index,id:.id,name:.name,input:(.input | tojson)}
       else error("unsupported assistant content") end] +
     (if .usage == null then [] else [{type:"_turn_usage"} + .usage] end) +
-    [{type:"_assistant_response_end",stop:.stop}];
+    [{type:"_assistant_end",stop:.stop}];
   def stream_end_events:
     (if .usage == null then [] else [{type:"_turn_usage"} + .usage] end) +
-    [{type:"_assistant_response_end",stop:.stop}];
+    [{type:"_assistant_end",stop:.stop}];
 
   # A null line ends the stream. A body that never announced itself as a stream
   # is taken whole there, so a provider that ignores the requested streaming mode
@@ -218,7 +218,7 @@ sf_backend_stream '
       elif $event.type == "response.output_text.delta" then
         ($event.delta // "") as $delta |
         .text += $delta |
-        .out += [transient("_assistant_delta";($event.output_index // 0);$delta)]
+        .out += [transient("_assistant_message_delta";($event.output_index // 0);$delta)]
       # Only the summary is streamed, since only the summary is what normalization
       # keeps; raw reasoning deltas would show text the saved message never carries.
       # Parts join the way that normalization joins them, and a part index only

@@ -32,9 +32,9 @@ assert_equal done "$SF_PRESENT_NODE_BODY[-1]"
 sf_tui_reset
 sf_tui_event user hello
 sf_tui_event user again
-sf_tui_event assistant_delta 'part '
-sf_tui_event assistant_delta done
-sf_tui_event assistant_settle
+sf_tui_event assistant_message_delta 'part '
+sf_tui_event assistant_message_delta done
+sf_tui_event assistant_end
 
 assert_equal 'section,message,message,section,message' "${(j:,:)SF_PRESENT_NODE_TYPE}"
 assert_equal 'user,user,user,agent,agent' "${(j:,:)SF_PRESENT_NODE_ROLE}"
@@ -54,13 +54,13 @@ assert_equal 6 "$SF_PRESENT_NODE_FRONTIER[1]"
 sf_tui_reset
 sf_tui_event assistant_reasoning_delta thought
 sf_tui_event reasoning_tokens 7
-sf_tui_event assistant_delta answer
+sf_tui_event assistant_message_delta answer
 assert_equal 'section,reasoning,message' "${(j:,:)SF_PRESENT_NODE_TYPE}"
 assert_equal closed "$SF_PRESENT_NODE_STATE[2]"
 assert_equal 7 "$SF_PRESENT_NODE_META[2]"
 assert_equal open "$SF_PRESENT_NODE_STATE[3]"
 
-sf_tui_event assistant_settle
+sf_tui_event assistant_end
 sf_tui_event tool_call call_1 shell '{"command":"true"}'
 sf_tui_event tool_call call_2 read_file README.md '' plain
 sf_tui_event tool_permission 'host access'
@@ -104,35 +104,35 @@ assert_equal 0 "${#SF_PRESENT_NODE_TYPE}"
 sf_tui_event assistant $'\n\n' $'\n'
 assert_equal 0 "${#SF_PRESENT_NODE_TYPE}"
 
-sf_tui_event backend_request_start
-sf_tui_event assistant_delta $'\n'
+sf_tui_event assistant_start
+sf_tui_event assistant_message_delta $'\n'
 sf_tui_event assistant_reasoning_delta $'\n\n'
 assert_equal 'section,reasoning' "${(j:,:)SF_PRESENT_NODE_TYPE}"
 assert_equal $'\n\n' "$SF_PRESENT_NODE_BODY[2]"
-sf_tui_event assistant_settle
+sf_tui_event assistant_end
 assert_equal 0 "${#SF_PRESENT_NODE_TYPE}"
 assert_equal 0 "$SF_PRESENT_SECTION_ID"
 
-sf_tui_event assistant_delta $'answer\n'
-sf_tui_event assistant_delta $'\n'
+sf_tui_event assistant_message_delta $'answer\n'
+sf_tui_event assistant_message_delta $'\n'
 sf_tui_set_frontier 2 8
-sf_tui_event assistant_settle
+sf_tui_event assistant_end
 assert_equal $'answer\n\n' "$SF_PRESENT_NODE_BODY[2]"
 assert_equal 8 "$SF_PRESENT_NODE_FRONTIER[2]"
 
-sf_tui_event assistant_delta $'\nnext'
-sf_tui_event assistant_settle
+sf_tui_event assistant_message_delta $'\nnext'
+sf_tui_event assistant_end
 assert_equal $'\nnext' "$SF_PRESENT_NODE_BODY[3]"
 
-sf_tui_event backend_request_start
-sf_tui_event assistant_delta $'\n'
-sf_tui_event assistant_settle
+sf_tui_event assistant_start
+sf_tui_event assistant_message_delta $'\n'
+sf_tui_event assistant_end
 assert_equal 'section,message,message' "${(j:,:)SF_PRESENT_NODE_TYPE}"
 
 sf_tui_reset
 sf_tui_event user hello
-sf_tui_event backend_request_start
-sf_tui_event assistant_settle
+sf_tui_event assistant_start
+sf_tui_event assistant_end
 sf_tui_event user again
 assert_equal 'section,message,message' "${(j:,:)SF_PRESENT_NODE_TYPE}"
 assert_equal 1 "$SF_PRESENT_SECTION_ID"
@@ -159,8 +159,8 @@ assert_equal section "$SF_PRESENT_NODE_TYPE[1]"
 
 sf_tui_reset
 sf_tui_event user $'\n\n  unsafe\e[31m\t\n'
-sf_tui_event assistant_delta $'\n\treply\rtext\n\n'
-sf_tui_event assistant_settle
+sf_tui_event assistant_message_delta $'\n\treply\rtext\n\n'
+sf_tui_event assistant_end
 assert_equal $'\n\n  unsafe�[31m\t\n' "$SF_PRESENT_NODE_BODY[2]"
 assert_equal $'\n\treply�text\n\n' "$SF_PRESENT_NODE_BODY[4]"
 
@@ -171,28 +171,28 @@ assert_equal 'section,reasoning' "${(j:,:)SF_PRESENT_NODE_TYPE}"
 
 sf_tui_reset
 sf_tui_add activity '' '' '' open
-sf_tui_event backend_request_start
+sf_tui_event assistant_start
 assert_equal 'section,activity' "${(j:,:)SF_PRESENT_NODE_TYPE}"
 assert_equal 'agent,agent' "${(j:,:)SF_PRESENT_NODE_ROLE}"
 assert_equal open "$SF_PRESENT_NODE_STATE[-1]"
-sf_tui_event assistant_delta answer
+sf_tui_event assistant_message_delta answer
 assert_equal 'section,message' "${(j:,:)SF_PRESENT_NODE_TYPE}"
 
 sf_tui_reset
 sf_tui_section agent
 sf_tui_add tool_result agent shell result
-sf_tui_event backend_request_start
+sf_tui_event assistant_start
 assert_equal 'section,tool_result,activity' "${(j:,:)SF_PRESENT_NODE_TYPE}"
 assert_equal agent "$SF_PRESENT_NODE_ROLE[-1]"
 
 sf_tui_reset
 sf_tui_add activity '' '' '' open
-sf_tui_event assistant_delta answer
+sf_tui_event assistant_message_delta answer
 assert_equal 'section,message' "${(j:,:)SF_PRESENT_NODE_TYPE}"
 
 sf_tui_reset
 sf_tui_add activity '' '' '' open
-sf_tui_event assistant_settle
+sf_tui_event assistant_end
 assert_equal 0 "${#SF_PRESENT_NODE_TYPE}"
 
 sf_tui_reset
@@ -203,7 +203,7 @@ fi
 
 sf_tui_reset
 sf_tui_add notice '' working '' open
-if sf_tui_event assistant_settle; then
+if sf_tui_event assistant_end; then
   fail 'settled a non-assistant node'
 fi
 
@@ -211,7 +211,7 @@ fi
 # it would otherwise strand, since a reload never rebuilds an empty section.
 sf_tui_reset
 sf_tui_event user ask
-sf_tui_event backend_request_start
+sf_tui_event assistant_start
 assert_equal 'section,message,section,activity' "${(j:,:)SF_PRESENT_NODE_TYPE}"
 assert_equal 2 "$SF_PRESENT_SECTION_ID"
 sf_tui_notice error 'Turn failed' 'backend failed'
@@ -519,8 +519,8 @@ sf_tui_markdown_highlight '_also_plain_text_ and **bold**'
 span_texts '_also_plain_text_ and **bold**'
 assert_equal '_also_plain_text_,**bold**' "$REPLY"
 SF_PRESENT_HIGHLIGHT_SPANS=()
-sf_tui_markdown_highlight '_assistant_response_end and _italic_'
-span_texts '_assistant_response_end and _italic_'
+sf_tui_markdown_highlight '_assistant_end and _italic_'
+span_texts '_assistant_end and _italic_'
 assert_equal _italic_ "$REPLY"
 assert_equal 0 "$SF_PRESENT_HIGHLIGHT_INLINE_OPEN"
 sf_tui_markdown_highlight $'```js\nconst x = 3;'

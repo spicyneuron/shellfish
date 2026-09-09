@@ -37,10 +37,10 @@ start=$EPOCHREALTIME
 request=$(cat)
 if "$SHELLFISH_PERF_JQ" -e '.messages[-1].role == "tool_result"' <<<"$request" >/dev/null; then
   phase=backend_final
-  response=$'{"type":"_assistant_delta","index":0,"text":"ok"}\n{"type":"_assistant_response_end","stop":"end"}'
+  response=$'{"type":"_assistant_message_delta","index":0,"text":"ok"}\n{"type":"_assistant_end","stop":"end"}'
 else
   phase=backend_tool_call
-  response=$'{"type":"_assistant_tool_call_delta","index":0,"id":"perf_call","name":"perf","input":"{}"}\n{"type":"_assistant_response_end","stop":"tool_calls"}'
+  response=$'{"type":"_assistant_tool_call_delta","index":0,"id":"perf_call","name":"perf","input":"{}"}\n{"type":"_assistant_end","stop":"tool_calls"}'
 fi
 printf '%s\t%s\t%.9f\n' "$SHELLFISH_PERF_RUN" "$phase" "$(( (EPOCHREALTIME - start) * 1000 ))" \
   >>"$SHELLFISH_PERF_METRICS"

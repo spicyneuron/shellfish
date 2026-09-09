@@ -8,7 +8,7 @@ typeset presentation='{"tui":{"preview_lines_reasoning":"full","preview_lines_co
 sf_tui_rows_config "$presentation"
 
 sf_tui_event user abcdef
-sf_tui_event assistant_delta xyz
+sf_tui_event assistant_message_delta xyz
 sf_tui_rows 8 20
 assert_equal $'─ user ─\n\nabcdef\n\n─ agent \n\n⠃' "${(F)SF_PRESENT_ROW_TEXT}"
 assert_equal '2:0,2:1,3:0,3:1,4:0,4:1,4:4' "${(j:,:)SF_PRESENT_ROW_CURSOR}"
@@ -27,7 +27,7 @@ assert_equal $'─ user ─\n' "${(F)SF_PRESENT_ROW_TEXT}"
 sf_tui_rows 8 20 2:1
 assert_equal $'abcdef\n\n─ agent \n\n⠃' "${(F)SF_PRESENT_ROW_TEXT}"
 
-sf_tui_event assistant_settle
+sf_tui_event assistant_end
 sf_tui_rows 8 20 4:2
 assert_equal yz "${(F)SF_PRESENT_ROW_TEXT}"
 assert_equal 5:0 "$SF_PRESENT_ROW_CURSOR[-1]"
@@ -116,7 +116,7 @@ sf_tui_rows 80 20
 assert_equal $'─ agent ──────────────────────────────────────────────────────────────────── 1 ─\n\n✎ Thinking… ⠃' \
   "${(F)SF_PRESENT_ROW_TEXT}"
 assert_equal 0 "$SF_PRESENT_ROW_CLOSED[-1]"
-sf_tui_event assistant_settle
+sf_tui_event assistant_end
 sf_tui_rows 80 20 2:1
 assert_equal '✎ Thought for ~4 tokens.' "${(F)SF_PRESENT_ROW_TEXT}"
 assert_equal 1 "$SF_PRESENT_ROW_CLOSED[-1]"
@@ -174,7 +174,7 @@ sf_tui_rows 80 20
 assert_equal $'─ agent ──────────────────────────────────────────────────────────────────── 1 ─\n\n✎ Reasoning\n  first\n  … ~3 tokens ⠃' \
   "${(F)SF_PRESENT_ROW_TEXT}"
 sf_tui_event reasoning_tokens 4
-sf_tui_event assistant_settle
+sf_tui_event assistant_end
 sf_tui_rows 80 20
 assert_equal $'─ agent ──────────────────────────────────────────────────────────────────── 1 ─\n\n✎ Reasoning\n  first\n  … Thought for ~4 tokens.' \
   "${(F)SF_PRESENT_ROW_TEXT}"

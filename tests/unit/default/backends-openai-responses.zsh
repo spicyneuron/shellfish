@@ -130,7 +130,7 @@ for event expected in \
     fail 'provider failure was accepted'
   fi
   grep -Fq -- "$expected" "$tmp/error" || fail 'provider failure details were lost'
-  jq -e -s '. == [{type:"_assistant_delta",index:0,text:"partial"}]' "$res" >/dev/null
+  jq -e -s '. == [{type:"_assistant_message_delta",index:0,text:"partial"}]' "$res" >/dev/null
 done
 
 # Streaming reasoning metadata and tool arguments retain provider output indexes.

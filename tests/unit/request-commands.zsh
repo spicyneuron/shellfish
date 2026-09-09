@@ -93,16 +93,16 @@ typeset invalid_backend="$tmp/invalid-backend" invalid_session="$tmp/invalid-ses
 cat >"$invalid_backend" <<'ZSH'
 #!/usr/bin/env zsh
 cat >/dev/null
-print -r -- '{"type":"_assistant_delta","index":0,"text":"partial"}'
+print -r -- '{"type":"_assistant_message_delta","index":0,"text":"partial"}'
 case $SF_TEST_INVALID_STREAM in
   malformed) print -r -- '{' ;;
   late)
-    print -r -- '{"type":"_assistant_response_end","stop":"end"}'
-    print -r -- '{"type":"_assistant_delta","index":0,"text":"late"}'
+    print -r -- '{"type":"_assistant_end","stop":"end"}'
+    print -r -- '{"type":"_assistant_message_delta","index":0,"text":"late"}'
     ;;
   assembly)
     print -r -- '{"type":"_assistant_tool_call_delta","index":1,"id":"bad","name":"shell","input":"{"}'
-    print -r -- '{"type":"_assistant_response_end","stop":"tool_calls"}'
+    print -r -- '{"type":"_assistant_end","stop":"tool_calls"}'
     ;;
 esac
 ZSH

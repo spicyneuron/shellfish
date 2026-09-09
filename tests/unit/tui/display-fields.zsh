@@ -66,7 +66,7 @@ usage_replay=$({
   print -r -- '{"type":"message","role":"assistant","stop":"end","content":[{"type":"text","text":"answer"}],"usage":{"input_tokens":12400,"cached_tokens":10478,"output_tokens":900}}'
 } | jq -jRs -L "$ROOT" -f "$ROOT/libexec/tui/transcript-decode.jq" |
   tr '\0' '\n' | sed '/^$/d' | tail -n +3 | paste -sd, -)
-assert_equal 'user,question,assistant,answer,assistant_settle,turn_usage,12k ↑ 85% ⦿ 900 ↓ 5% of 264k ◔,batch_ok' "$usage_replay"
+assert_equal 'user,question,assistant,answer,turn_usage,12k ↑ 85% ⦿ 900 ↓ 5% of 264k ◔,batch_ok' "$usage_replay"
 jq -e '
   .harness.tools[0].manifest.display.result.content == ["$result_full"] and
   .harness.tools[1].manifest.display.result.content == ["$result_preview", "$exit_code"] and

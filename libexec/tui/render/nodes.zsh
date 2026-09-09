@@ -282,7 +282,7 @@ sf_tui_event() {
 
   if (( index )) && [[ $SF_PRESENT_NODE_TYPE[index] == activity &&
       $SF_PRESENT_NODE_STATE[index] == open &&
-      $type == (system|user|backend_request_start|assistant|tool_call|context) ]]; then
+      $type == (system|user|assistant_start|assistant|tool_call|context) ]]; then
     sf_tui_close $index || return 1
     index=${#SF_PRESENT_NODE_TYPE}
   fi
@@ -292,7 +292,7 @@ sf_tui_event() {
       sf_tui_section $type || return 1
       sf_tui_add message $type '' "$first"
       ;;
-    backend_request_start)
+    assistant_start)
       sf_tui_section agent || return 1
       sf_tui_add activity agent '' '' open
       ;;
@@ -306,7 +306,7 @@ sf_tui_event() {
         sf_tui_add message agent '' "$first"
       fi
       ;;
-    assistant_delta)
+    assistant_message_delta)
       sf_tui_stream message "$first"
       ;;
     assistant_reasoning_delta)
@@ -318,7 +318,7 @@ sf_tui_event() {
         SF_PRESENT_NODE_META[index]=$first
       fi
       ;;
-    assistant_settle)
+    assistant_tool_call_delta|assistant_end)
       (( index )) && [[ $SF_PRESENT_NODE_STATE[index] == open ]] || return 0
       [[ $SF_PRESENT_NODE_TYPE[index] == (activity|message|reasoning) ]] || return 1
       sf_tui_close $index orphan_section

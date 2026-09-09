@@ -14,18 +14,19 @@ sf_tui_heartbeat_arm() { return 0; }
 SF_PRESENT_SESSION="$tmp/session.jsonl"
 SF_PRESENT_STATE=working
 sf_tui_add activity '' '' '' open
-sf_tui_decoded backend_request_start
+sf_tui_decoded assistant_start
 assert_equal 'section,activity' "${(j:,:)SF_PRESENT_NODE_TYPE}"
 assert_equal agent "$SF_PRESENT_NODE_ROLE[-1]"
-sf_tui_decoded assistant_delta 'part '
+sf_tui_decoded assistant_message_delta 'part '
 sf_tui_decoded assistant_reasoning_delta thought
-sf_tui_decoded assistant_delta done
+sf_tui_decoded assistant_message_delta done
 sf_tui_decoded turn_usage '14 ↑ 2 ↓' 1
 assert_equal 'section,message,reasoning,message' "${(j:,:)SF_PRESENT_NODE_TYPE}"
 assert_equal "${SF_PRESENT_IDENTITY} · 14 ↑ 2 ↓" "$SF_PRESENT_FOOTER"
-assert_equal 1 "$SF_PRESENT_REASONING_TOKENS"
 assert_equal '' "$SF_PRESENT_NODE_META[3]"
 
+# Reasoning tokens reach an open reasoning node only, and never carry across
+# responses.
 sf_tui_reset
 sf_tui_decoded assistant_reasoning_delta current
 sf_tui_decoded turn_usage '20 ↑ 4 ↓' 3
@@ -34,8 +35,8 @@ assert_equal 3 "$SF_PRESENT_NODE_META[-1]"
 sf_tui_reset
 sf_tui_decoded turn_usage '20 ↑ 4 ↓' 5
 sf_tui_decoded assistant_reasoning_delta current
-sf_tui_decoded assistant_settle
-assert_equal 5 "$SF_PRESENT_NODE_META[-1]"
+sf_tui_decoded assistant_end
+assert_equal '' "$SF_PRESENT_NODE_META[-1]"
 
 sf_tui_decoded permission_request permission_1 shell pwd 'host access' sh
 assert_equal permission "$SF_PRESENT_STATE"
@@ -110,9 +111,9 @@ assert_equal notice "${(j:,:)SF_PRESENT_NODE_TYPE}"
 assert_equal '' "$SF_PRESENT_LAST_ROLE"
 
 sf_tui_reset
-sf_tui_event assistant_delta before
+sf_tui_event assistant_message_delta before
 sf_tui_notice warning 'Heads up' detail
-sf_tui_event assistant_delta after
+sf_tui_event assistant_message_delta after
 assert_equal 'section,message,notice,message' "${(j:,:)SF_PRESENT_NODE_TYPE}"
 assert_equal agent "$SF_PRESENT_LAST_ROLE"
 assert_equal closed "$SF_PRESENT_NODE_STATE[2]"
@@ -224,7 +225,7 @@ sf_tui_terminal_stage
 sf_tui_terminal_finish
 typeset flushed=$PREDISPLAY
 [[ $flushed == *Hello* ]] || fail 'recovery setup did not flush its prefix'
-sf_tui_event assistant_delta speculative
+sf_tui_event assistant_message_delta speculative
 SF_PRESENT_SESSION=$tmp/recover.jsonl
 SF_PRESENT_STATE=working
 sf_tui_transport_reset
@@ -291,9 +292,10 @@ SF_PRESENT_STATE=working
 SF_PRESENT_ACTION=''
 sf_tui_transport_reset
 SF_TUI_TRANSPORT_LINES=(
-  '{"type":"_assistant_delta","text":"one two three "}'
-  '{"type":"_assistant_delta","text":"four five six "}'
-  '{"type":"_assistant_delta","text":"seven eight"}'
+  '{"type":"_assistant_message_delta","text":"one two three "}'
+  '{"type":"_assistant_message_delta","text":"four five six "}'
+  '{"type":"_assistant_message_delta","text":"seven eight"}'
+  '{"type":"_assistant_end","stop":"end"}'
   '{"type":"message","role":"assistant","stop":"end","content":[{"type":"text","text":"one two three four five six seven eight"}]}'
   '{"type":"context","hook":"project","script":"test","content":"later"}'
 )
@@ -332,15 +334,15 @@ functions[sf_tui_markdown_highlight]=$functions[sf_tui_markdown_saved]
 unfunction sf_tui_markdown_saved
 SF_PRESENT_HIGHLIGHT_ENABLED=0
 
-# Settle closes the visible tail before the durable assistant record makes the
-# validated tool available.
+# A tool-call delta closes the visible tail before the durable assistant
+# record makes the validated tool available.
 sf_tui_reset
 sf_tui_terminal_reset
 SF_PRESENT_STATE=working
 sf_tui_transport_reset
 SF_TUI_TRANSPORT_LINES=(
-  '{"type":"_assistant_delta","text":"before tool"}'
-  '{"type":"_assistant_settle"}'
+  '{"type":"_assistant_message_delta","text":"before tool"}'
+  '{"type":"_assistant_tool_call_delta","index":1,"id":"call_1","seq":1}'
 )
 BUFFER=''
 CURSOR=0
@@ -362,7 +364,9 @@ sf_tui_terminal_reset
 SF_PRESENT_STATE=working
 sf_tui_transport_reset
 SF_TUI_TRANSPORT_LINES=(
-  '{"type":"_assistant_delta","text":"one\ntwo\nthree\nfour\nfive\nsix\nseven\nbefore tool"}'
+  '{"type":"_assistant_message_delta","text":"one\ntwo\nthree\nfour\nfive\nsix\nseven\nbefore tool"}'
+  '{"type":"_assistant_tool_call_delta","index":1,"id":"call_1","seq":1}'
+  '{"type":"_assistant_end","stop":"tool_calls"}'
   '{"type":"message","role":"assistant","stop":"tool_calls","content":[{"type":"text","text":"one\ntwo\nthree\nfour\nfive\nsix\nseven\nbefore tool"},{"type":"tool_call","id":"call_1","name":"shell","input":{"command":"true"}}]}'
 )
 BUFFER=''
@@ -392,7 +396,8 @@ sf_tui_reset
 sf_tui_terminal_reset
 sf_tui_transport_reset
 SF_TUI_TRANSPORT_LINES=(
-  '{"type":"_backend_request_start"}'
+  '{"type":"_assistant_start"}'
+  '{"type":"_assistant_end","stop":"tool_calls"}'
   '{"type":"message","role":"assistant","stop":"tool_calls","content":[{"type":"tool_call","id":"call_2","name":"shell","input":{"command":"true"}}]}'
 )
 sf_tui_heartbeat_tick
@@ -537,7 +542,7 @@ assert_equal next "$SF_PRESENT_SUBMITTED"
 # durable transcript, reports the recovery, and clears the live-render latch.
 sf_tui_reset
 sf_tui_terminal_reset
-sf_tui_event assistant_delta speculative
+sf_tui_event assistant_message_delta speculative
 SF_PRESENT_SESSION="$tmp/recover.jsonl"
 SF_PRESENT_STATE=working
 SF_PRESENT_RENDER_ERROR='Live rendering failed.'
@@ -600,7 +605,7 @@ SF_PRESENT_STATE=working
 sf_tui_submit early
 assert_equal repaint "$REPLY"
 assert_equal early "${(j:,:)SF_PRESENT_QUEUE}"
-if sf_tui_decoded backend_request_start; then
+if sf_tui_decoded assistant_start; then
   fail 'creation accepted a turn event'
 fi
 sf_tui_decoded session_created "$tmp/new.jsonl"

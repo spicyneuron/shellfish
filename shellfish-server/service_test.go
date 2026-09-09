@@ -291,7 +291,7 @@ func TestReplayThenSessionStatusThenLive(t *testing.T) {
 	base := newTestServer(t, sessionPath, `
 IFS= read -r input
 printf '%s\n' "$input" >'`+recorded+`'
-printf '%s\n' '{"type":"_assistant_delta","text":"do","seq":0}'
+printf '%s\n' '{"type":"_assistant_message_delta","text":"do","seq":0}'
 printf '%s\n' '`+stateRecord+`' >>'`+sessionPath+`'
 printf '%s\n' '`+stateRecord+`'
 `+waitFor(release)+`
@@ -306,7 +306,7 @@ printf '%s\n' '`+assistantRecord+`'
 
 	post(t, base+"/turn", userRecord, http.StatusAccepted)
 	session.expectJSON(t, `{"type":"_session_status","working":true}`,
-		`{"type":"_assistant_delta","text":"do","seq":0}`, stateRecord)
+		`{"type":"_assistant_message_delta","text":"do","seq":0}`, stateRecord)
 
 	// Reattaching while the child is paused succeeds only if state advanced the
 	// server's durable record count.

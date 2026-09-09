@@ -137,7 +137,7 @@ def content_index:
 
 def canonical_backend_event:
   type == "object" and
-  if .type == "_assistant_delta" or .type == "_assistant_reasoning_delta" then
+  if .type == "_assistant_message_delta" or .type == "_assistant_reasoning_delta" then
     keys == ["index", "text", "type"] and (.index | content_index) and
     (.text | type == "string")
   elif .type == "_assistant_reasoning_opaque" then
@@ -153,14 +153,14 @@ def canonical_backend_event:
     (if has("input") then .input | type == "string" else true end)
   elif .type == "_turn_usage" then
     del(.type) | token_usage
-  elif .type == "_assistant_response_end" then
+  elif .type == "_assistant_end" then
     keys == ["stop", "type"] and (.stop | IN("end", "tool_calls", "length"))
   else false end;
 
 def canonical_backend_response_events:
   type == "array" and length > 0 and all(.[]; canonical_backend_event) and
-  .[-1].type == "_assistant_response_end" and
-  ([.[] | select(.type == "_assistant_response_end")] | length) == 1;
+  .[-1].type == "_assistant_end" and
+  ([.[] | select(.type == "_assistant_end")] | length) == 1;
 
 def canonical_text:
   type == "object" and keys == ["text", "type"] and

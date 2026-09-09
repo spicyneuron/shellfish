@@ -65,7 +65,7 @@ print -r -- "$stream" | jq -eRn '
     map(.type)) == ["state","context","message"] and
   ($events | map(select(.type == "context")))[0].content == "accepted context" and
   ($events | map(select(.role == "user")))[0].content[0].text == "accepted" and
-  ($events | map(select(.type == "_backend_request_start")) | length) == 1
+  ($events | map(select(.type == "_assistant_start")) | length) == 1
 ' >/dev/null
 
 typeset decline_session="$tmp/decline.jsonl"
@@ -77,7 +77,7 @@ print -r -- "$stream" | jq -eRn '
   ($events | map(select(.type == "context")))[0].content == "declined context" and
   ($display | length) == 1 and
   ($display[0] | .text == "declined display\n" and .complete == true) and
-  ($events | any(.type == "_backend_request_start") | not) and
+  ($events | any(.type == "_assistant_start") | not) and
   ($events | any(.role == "user") | not)
 ' >/dev/null
 
@@ -87,7 +87,7 @@ stream=$(sf_test_turn /handoff "$handoff_session")
 print -r -- "$stream" | jq -eRn '
   [inputs | fromjson] as $events |
   ($events | any(.role == "user") | not) and
-  ($events | any(.type == "_backend_request_start") | not) and
+  ($events | any(.type == "_assistant_start") | not) and
   $events[-1] == {type:"_handoff",argv:["/usr/bin/printf","next.jsonl"]}
 ' >/dev/null
 
@@ -97,7 +97,7 @@ stream=$(sf_test_turn /update "$update_session")
 print -r -- "$stream" | jq -eRn '
   [inputs | fromjson] as $events |
   ($events | any(.role == "user") | not) and
-  ($events | any(.type == "_backend_request_start") | not) and
+  ($events | any(.type == "_assistant_start") | not) and
   $events[-1].type == "_session_update" and
   $events[-1].runtime.harness.sandbox_write_paths == ["/tmp/reference"]
 ' >/dev/null
@@ -113,7 +113,7 @@ stream=$(sf_test_turn /fail "$failure_session")
 print -r -- "$stream" | jq -eRn '
   [inputs | fromjson] as $events |
   ($events | any(.role == "user") | not) and
-  ($events | any(.type == "_backend_request_start") | not) and
+  ($events | any(.type == "_assistant_start") | not) and
   $events[0].type == "_notice" and $events[0].complete == true and
   ($events[-1] | .level == "error" and (.text | contains("prompt-hook")))
 ' >/dev/null

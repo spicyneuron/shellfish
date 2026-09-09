@@ -107,7 +107,7 @@ sf_run_partial_assistant() {
   (( ${#SF_REQUEST_PARTIAL_EVENTS} )) || return 0
   REPLY=$({
     printf '%s\n' "${SF_REQUEST_PARTIAL_EVENTS[@]}"
-    print -r -- '{"type":"_assistant_response_end","stop":"length"}'
+    print -r -- '{"type":"_assistant_end","stop":"length"}'
   } | sf_jq -cse '
     include "lib/runtime/schema";
     include "lib/request";

@@ -64,14 +64,14 @@ Model lookup is separate from the normalized response stream. The script must no
 Every stdout line must be exactly one of these event shapes:
 
 ```json
-{"type":"_assistant_delta","index":0,"text":"answer"}
+{"type":"_assistant_message_delta","index":0,"text":"answer"}
 {"type":"_assistant_reasoning_delta","index":1,"text":"summary"}
 {"type":"_assistant_reasoning_opaque","index":1,"opaque":{}}
 {"type":"_assistant_tool_call_delta","index":2,"id":"call_1"}
 {"type":"_assistant_tool_call_delta","index":2,"name":"shell","input":"{\"command\":\""}
 {"type":"_assistant_tool_call_delta","index":2,"input":"echo ok\"}"}
 {"type":"_turn_usage","input_tokens":10,"output_tokens":4,"cached_tokens":2,"reasoning_tokens":1}
-{"type":"_assistant_response_end","stop":"tool_calls"}
+{"type":"_assistant_end","stop":"tool_calls"}
 ```
 
 Content indexes are bounded non-negative integers. They identify blocks in the canonical assistant content and determine its final order. Updates with the same index must describe the same content type. Text, reasoning text, and tool input are append-only fragments; a non-streaming adapter may emit one complete fragment per block.
@@ -82,7 +82,9 @@ A tool-call update must contain at least one of `id`, `name`, or `input`. The ID
 
 Usage is optional. The latest valid `_turn_usage` before response end becomes the assistant message's canonical usage. Token counts are non-negative integers; cached tokens cannot exceed input tokens.
 
-Exactly one `_assistant_response_end` must be the final event. Its stop value is `end`, `tool_calls`, or `length`. The response succeeds only when the adapter then exits zero. EOF is never implicit success, and nothing may follow response end.
+Exactly one `_assistant_end` must be the final event. Its stop value is `end`, `tool_calls`, or `length`. The response succeeds only when the adapter then exits zero. EOF is never implicit success, and nothing may follow response end.
+
+Exec forwards the delta events and `_assistant_end` to clients, adding a `seq` to each delta. It consumes `_assistant_reasoning_opaque` and `_turn_usage`, and emits its own `_assistant_start`, which no adapter sends.
 
 ## Assembly and recovery
 

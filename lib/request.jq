@@ -4,7 +4,7 @@ def backend_response_state:
 def backend_response_update($event):
   ($event.index? | tostring) as $index |
   if (.valid | not) or .ended then .valid = false
-  elif $event.type == "_assistant_delta" then
+  elif $event.type == "_assistant_message_delta" then
     if .blocks[$index] == null then
       .blocks[$index] = {type:"text", text:$event.text}
     elif .blocks[$index].type == "text" then
@@ -38,7 +38,7 @@ def backend_response_update($event):
       .blocks[$index].input_text += ($event.input? // "")
     end
   elif $event.type == "_turn_usage" then .usage = ($event | del(.type))
-  elif $event.type == "_assistant_response_end" then
+  elif $event.type == "_assistant_end" then
     .stop = $event.stop | .ended = true
   else .valid = false end;
 
@@ -79,34 +79,34 @@ def tool_call_fields:
 
 def decode_backend_response(valid_event; valid_message):
   foreach inputs as $event
-    (backend_response_state + {seq:0, visible_unsettled:false, output:[]};
+    (backend_response_state + {seq:0, output:[]};
       .output = [] |
       if .ended or ($event | valid_event | not) then halt_error(1)
       else
         backend_response_update($event) |
         if .valid | not then halt_error(1)
-        elif $event.type == "_assistant_delta" or
+        elif $event.type == "_assistant_message_delta" or
             $event.type == "_assistant_reasoning_delta" then
           .seq as $seq |
           .output = ["delta", "\u0000", ($event | tojson), "\u0000",
             ($event + {seq:$seq} | tojson), "\u0000"] |
-          .seq += 1 |
-          .visible_unsettled = (.visible_unsettled or ($event.text | test("[^\\n]")))
+          .seq += 1
         elif $event.type == "_assistant_reasoning_opaque" then
           .output = ["opaque", "\u0000", ($event | tojson), "\u0000"]
         elif $event.type == "_assistant_tool_call_delta" then
-          if .visible_unsettled then
-            .output = ["settle", "\u0000"] |
-            .visible_unsettled = false
-          else .output = [] end
+          # Forwarded but not retained: recovery discards incomplete calls.
+          .seq as $seq |
+          .output = ["tool_call", "\u0000", ($event + {seq:$seq} | tojson), "\u0000"] |
+          .seq += 1
         elif $event.type == "_turn_usage" then
           .output = []
-        elif $event.type == "_assistant_response_end" then
+        elif $event.type == "_assistant_end" then
           [backend_response_message(valid_message)] as $messages |
           if ($messages | length) != 1 then halt_error(1)
           else
             $messages[0] as $message |
-            .output = ["end", "\u0000", ($message | tojson), "\u0000",
+            .output = ["end", "\u0000", ($event | tojson), "\u0000",
+              ($message | tojson), "\u0000",
               ($message.stop), "\u0000",
               ([$message.content[] | select(.type == "tool_call")] | length | tostring), "\u0000",
               ($message.content[] | select(.type == "tool_call") | tool_call_fields),

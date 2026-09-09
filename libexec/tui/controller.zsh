@@ -10,7 +10,6 @@ typeset -g SF_PRESENT_PERMISSION_TOOL='' SF_PRESENT_PERMISSION_TEXT=''
 typeset -g SF_PRESENT_PERMISSION_LANGUAGE=''
 typeset -gi SF_PRESENT_PERMISSION_PREVIEW_LENGTH=0
 typeset -gi SF_PRESENT_EXIT_STATUS=0
-typeset -g SF_PRESENT_REASONING_TOKENS=''
 typeset -g SF_PRESENT_EXEC_ERROR_HEADING='' SF_PRESENT_EXEC_ERROR_DETAIL=''
 # Set when the turn persisted its own failure, which the reload then replays.
 typeset -gi SF_PRESENT_TURN_ERROR=0
@@ -123,16 +122,11 @@ sf_tui_decoded() {
         SF_PRESENT_SESSION=$first
         SF_TUI_TRANSPORT_COMMAND=( "$SF_ENTRY" run --jsonl --session "$first" )
         ;;
-      backend_request_start|assistant_delta|assistant_reasoning_delta|tool_call|tool_result|context)
+      assistant_start|assistant_message_delta|assistant_reasoning_delta| \
+      assistant_tool_call_delta|assistant_end|tool_call|tool_result|context)
         sf_tui_event "$type" "$first" "$second" "$third" "$fourth" "$fifth" "$sixth" || return 1
         ;;
-      assistant_settle)
-        [[ -z $SF_PRESENT_REASONING_TOKENS ]] ||
-          sf_tui_event reasoning_tokens "$SF_PRESENT_REASONING_TOKENS" || return 1
-        sf_tui_event assistant_settle || return 1
-        ;;
       turn_usage)
-        SF_PRESENT_REASONING_TOKENS=$second
         sf_tui_footer_usage "$first"
         [[ -z $second ]] || sf_tui_event reasoning_tokens "$second" || return 1
         ;;
@@ -326,7 +320,7 @@ sf_tui_exec_finish() {
     else
       if (( ${#SF_PRESENT_NODE_TYPE} )) && [[ $SF_PRESENT_NODE_TYPE[-1] == activity &&
           $SF_PRESENT_NODE_STATE[-1] == open ]]; then
-        sf_tui_event assistant_settle || return 1
+        sf_tui_event assistant_end || return 1
       fi
       SF_PRESENT_STATE=idle
       sf_tui_permission_reset
@@ -355,7 +349,6 @@ sf_tui_turn() {
   input=$(jq -cn --arg prompt "$prompt" \
     '{type:"message",role:"user",content:[{type:"text",text:$prompt}]}') || return 1
   SF_PRESENT_HANDOFF=()
-  SF_PRESENT_REASONING_TOKENS=''
   SF_PRESENT_EXEC_ERROR_HEADING=''
   SF_PRESENT_EXEC_ERROR_DETAIL=''
   SF_PRESENT_TURN_ERROR=0

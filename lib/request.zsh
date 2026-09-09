@@ -31,7 +31,7 @@ sf_request_build() {
 sf_request_run() {
   local request=$1 command=$2 runtime=$3 selected=$4 emit=${5:-:}
   local directory error_file group_file input_file output_pipe status_file
-  local adapter_pid decoder_pid event display kind='' name
+  local adapter_pid decoder_pid event display end_event kind='' name
   local -a environment=( env ) process_command
   integer adapter_status=1 decoder_status=1 ended=0
 
@@ -82,7 +82,7 @@ sf_request_run() {
     decode_backend_response(canonical_backend_event; canonical_assistant_message)
   ' <"$output_pipe" 2>/dev/null
   decoder_pid=$!
-  "$emit" '{"type":"_backend_request_start"}'
+  "$emit" '{"type":"_assistant_start"}'
   # Decoder metadata is NUL-framed; arbitrary stop text ends the response payload.
   while IFS= read -r -d $'\0' kind <&p; do
     case $kind in
@@ -102,10 +102,18 @@ sf_request_run() {
         fi
         SF_REQUEST_PARTIAL_EVENTS+=( "$event" )
         ;;
-      settle)
-        "$emit" '{"type":"_assistant_settle"}'
+      tool_call)
+        if ! IFS= read -r -d $'\0' display <&p; then
+          kind=invalid
+          break
+        fi
+        "$emit" "$display"
         ;;
       end)
+        if ! IFS= read -r -d $'\0' end_event <&p; then
+          kind=invalid
+          break
+        fi
         SF_REQUEST[result]=$(<&p)
         ended=1
         break
@@ -131,6 +139,8 @@ sf_request_run() {
     SF_REQUEST[assistant]=${SF_REQUEST[result]%%$'\0'*}
     [[ -z $SF_REQUEST[assistant] ]] || SF_REQUEST_PARTIAL_EVENTS=()
   fi
+  # A completed response is announced only once the adapter also exits zero.
+  [[ -z $SF_REQUEST[assistant] ]] || "$emit" "$end_event"
   if [[ $kind == invalid || $adapter_status != 0 || -z $SF_REQUEST[assistant] ]]; then
     if [[ -s $error_file ]]; then
       SF_REQUEST[error]=$(LC_ALL=C tr -s '[:cntrl:]' ' ' <"$error_file" | cut -c 1-1000)

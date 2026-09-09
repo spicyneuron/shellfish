@@ -2,14 +2,17 @@ include "lib/runtime/schema";
 include "libexec/tui/display-fields";
 
 def event_fields($event_runtime):
-  if .type == "_assistant_delta" then
-    ["assistant_delta", .text]
+  if .type == "_assistant_message_delta" then
+    ["assistant_message_delta", .text]
   elif .type == "_assistant_reasoning_delta" then
     ["assistant_reasoning_delta", .text]
-  elif . == {type:"_assistant_settle"} then
-    ["assistant_settle"]
-  elif . == {type:"_backend_request_start"} then
-    ["backend_request_start"]
+  elif .type == "_assistant_tool_call_delta" then
+    ["assistant_tool_call_delta"]
+  elif . == {type:"_assistant_start"} then
+    ["assistant_start"]
+  elif .type == "_assistant_end" and keys == ["stop", "type"] and
+      (.stop | IN("end", "tool_calls", "length")) then
+    ["assistant_end"]
   elif .type == "_notice" and
       keys == ["complete", "level", "source", "text", "title", "type"] and
       ([.title, .source, .text] | all(type == "string")) and

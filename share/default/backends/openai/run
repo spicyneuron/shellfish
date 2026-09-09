@@ -74,7 +74,7 @@ sf_backend_stream '
       {type:"_assistant_tool_call_delta",index:((.key | tonumber) + 2),
        id:(.value.id // ("call_" + .key))} +
       (if (.value.name // "") == "" then {} else {name:.value.name} end)] +
-    [{type:"_assistant_response_end",
+    [{type:"_assistant_end",
       stop:(if .finish_reason == "length" or .finish_reason == "max_tokens" then "length"
             elif (.calls | length) > 0 then "tool_calls"
             else "end" end)}];
@@ -93,7 +93,7 @@ sf_backend_stream '
           arguments:$call.function.arguments}) |
       .out +=
         (if $reasoning=="" then [] else [transient("_assistant_reasoning_delta";0;$reasoning)] end) +
-        (if $text=="" then [] else [transient("_assistant_delta";1;$text)] end) +
+        (if $text=="" then [] else [transient("_assistant_message_delta";1;$text)] end) +
         [($message.tool_calls // []) | to_entries[] | tool_delta(.key;.value)] +
         (if .usage==null then [] else [(.usage|usage)] end) + response_end |
       .done=true
@@ -126,7 +126,7 @@ sf_backend_stream '
              (if $reasoning=="" then . else .reasoning += $reasoning |
                 .out += [transient("_assistant_reasoning_delta";0;$reasoning)] end) |
              (if $text=="" then . else .text += $text |
-                .out += [transient("_assistant_delta";1;$text)] end) |
+                .out += [transient("_assistant_message_delta";1;$text)] end) |
              reduce ($delta.tool_calls // [])[] as $call (.;
                (($call.index // 0)|tostring) as $key |
                .out += [tool_delta(($call.index // 0);$call)] |

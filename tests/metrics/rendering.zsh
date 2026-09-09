@@ -27,7 +27,7 @@ sf_tui_rows_config '{"tui":{"preview_lines_reasoning":"full","preview_lines_cont
 # Mirror the editor heartbeat: repaint, then flush every settled row before
 # taking the next delta, or the benchmark measures only the first screenful.
 present_feed() {
-  sf_tui_event assistant_delta "$1"
+  sf_tui_event assistant_message_delta "$1"
   sf_tui_viewport $columns $budget "$SF_PRESENT_CURSOR"
   while (( SF_PRESENT_FLUSH_ROWS )); do
     sf_tui_terminal_stage

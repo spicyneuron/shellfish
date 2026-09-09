@@ -78,7 +78,7 @@ typeset cancel_pid=$!
 # Signal a turn that has demonstrably started, rather than one a loaded machine
 # may not have reached yet.
 integer waited=0
-while (( waited < 50 )) && ! grep -q '_assistant_delta' "$cancel_output" 2>/dev/null; do
+while (( waited < 50 )) && ! grep -q '_assistant_message_delta' "$cancel_output" 2>/dev/null; do
   sleep 0.1
   (( waited += 1 ))
 done

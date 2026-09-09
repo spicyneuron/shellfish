@@ -27,7 +27,7 @@ func TestExecInvokesShellfish(t *testing.T) {
 	binary := fakeShellfish(t, `printf '%s\n' "$*" >'`+recorded+`'
 IFS= read -r input
 printf '%s' "$input" >>'`+recorded+`'
-printf '%s\n' '{"type":"_assistant_delta","text":"working"}' ''
+printf '%s\n' '{"type":"_assistant_message_delta","text":"working"}' ''
 `)
 	session := "/sessions/served.jsonl"
 	input := json.RawMessage(`{"type":"message","role":"user","content":[{"type":"text","text":"go"}]}`)
@@ -42,7 +42,7 @@ printf '%s\n' '{"type":"_assistant_delta","text":"working"}' ''
 		t.Fatalf("invocation = %q, want %q (%v)", invocation, want, err)
 	}
 	// Blank lines are skipped and surrounding whitespace never reaches a client.
-	if len(events) != 1 || events[0] != `{"type":"_assistant_delta","text":"working"}` {
+	if len(events) != 1 || events[0] != `{"type":"_assistant_message_delta","text":"working"}` {
 		t.Fatalf("events = %q", events)
 	}
 }

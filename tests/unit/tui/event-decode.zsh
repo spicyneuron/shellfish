@@ -7,10 +7,11 @@ cat <<'STREAM' |
 {"type":"session","format_version":1,"cwd":"/tmp","created":"2026-01-01T00:00:00Z","profile":{"request":{"model":"test"}},"backend":{"name":"test","command":"/usr/bin/false","endpoint":"https://example.invalid","environment":[],"env_file":"","insecure_tls":false,"http_timeout":30,"http_stall":10},"harness":{"sandbox_read_paths":[],"sandbox_write_paths":[],"fence":"","tools":[],"sandbox":false,"max_requests_per_turn":8,"max_tool_calls_per_request":16,"max_capture_bytes":65536}}
 {"type":"system","content":"instructions"}
 {"type":"state","name":"startup/status","value":"ready"}
-{"type":"_backend_request_start"}
+{"type":"_assistant_start"}
 {"type":"_assistant_reasoning_delta","text":"why","seq":0}
-{"type":"_assistant_delta","text":"hi\n","seq":1}
-{"type":"_assistant_settle"}
+{"type":"_assistant_message_delta","text":"hi\n","seq":1}
+{"type":"_assistant_tool_call_delta","index":2,"id":"call_1","seq":2}
+{"type":"_assistant_end","stop":"end"}
 {"type":"_notice","level":"info","title":"/tmp/check","source":"stop","text":"done","complete":true}
 {"type":"_notice","level":"error","title":"Turn failed","source":"","text":"recoverable","complete":true}
 {"type":"turn_error","message":"recoverable"}
@@ -21,14 +22,15 @@ STREAM
   jq -jRs -L "$ROOT" --argjson runtime null \
     -f "$ROOT/libexec/tui/event-decode.jq" >/dev/null
 
-typeset settle
-settle=$(print -r -- '{"type":"_assistant_settle"}' |
+typeset response
+response=$(printf '%s\n' '{"type":"_assistant_tool_call_delta","index":0,"id":"call_1","seq":0}' \
+    '{"type":"_assistant_end","stop":"tool_calls"}' |
   jq -jRs -L "$ROOT" --argjson runtime null \
     -f "$ROOT/libexec/tui/event-decode.jq" |
   tr '\0' '\n' | sed '/^$/d' | paste -sd, -)
-assert_equal 'assistant_settle,batch_ok' "$settle"
+assert_equal 'assistant_tool_call_delta,assistant_end,batch_ok' "$response"
 
-if print -r -- '{"type":"_backend_request_start","unexpected":true}' |
+if print -r -- '{"type":"_assistant_start","unexpected":true}' |
     jq -jRs -L "$ROOT" --argjson runtime null \
       -f "$ROOT/libexec/tui/event-decode.jq" >/dev/null 2>&1; then
   fail 'malformed backend request start was accepted'
@@ -40,23 +42,23 @@ order=$(print -r -- \
   jq -jRs -L "$ROOT" --argjson runtime null \
     -f "$ROOT/libexec/tui/event-decode.jq" |
   tr '\0' '\n' | sed '/^$/d' | paste -sd, -)
-assert_equal 'assistant_settle,tool_call,call_1,shell,{},json,batch_ok' "$order"
+assert_equal 'tool_call,call_1,shell,{},json,batch_ok' "$order"
 
-# A committed assistant record reports the turn's usage before it settles.
+# A committed assistant record reports the turn's usage.
 typeset usage
 usage=$(print -r -- \
     '{"type":"message","role":"assistant","stop":"end","content":[{"type":"text","text":"hi"}],"usage":{"input_tokens":12400,"cached_tokens":10478,"output_tokens":900}}' |
   jq -jRs -L "$ROOT" --argjson runtime \
     '{"profile":{"context_window":264000}}' -f "$ROOT/libexec/tui/event-decode.jq" |
   tr '\0' '\n' | sed '/^$/d' | paste -sd, -)
-assert_equal 'turn_usage,12k ↑ 85% ⦿ 900 ↓ 5% of 264k ◔,assistant_settle,batch_ok' "$usage"
+assert_equal 'turn_usage,12k ↑ 85% ⦿ 900 ↓ 5% of 264k ◔,batch_ok' "$usage"
 
 usage=$(print -r -- \
     '{"type":"message","role":"assistant","stop":"end","content":[{"type":"text","text":"hi"}],"usage":{"input_tokens":100,"cached_tokens":85,"output_tokens":20,"reasoning_tokens":7}}' |
   jq -jRs -L "$ROOT" --argjson runtime \
     '{"profile":{"context_window":null}}' -f "$ROOT/libexec/tui/event-decode.jq" |
   tr '\0' '\n' | sed '/^$/d' | paste -sd, -)
-assert_equal 'turn_usage,100 ↑ 85% ⦿ 20 ↓,7,assistant_settle,batch_ok' "$usage"
+assert_equal 'turn_usage,100 ↑ 85% ⦿ 20 ↓,7,batch_ok' "$usage"
 
 # Transient notices and durable turn errors decode into the same notice fields.
 order=$(jq -cn --arg text 'provider request limit reached: 50' \
@@ -127,7 +129,7 @@ order=$(print -r -- \
   jq -jRs -L "$ROOT" --argjson runtime "$read_runtime" \
     -f "$ROOT/libexec/tui/event-decode.jq" |
   tr '\0' '\n' | sed '/^$/d' | paste -sd, -)
-assert_equal 'assistant_settle,tool_call,call_2,read_file,outside.txt · unsandboxed,plain,batch_ok' "$order"
+assert_equal 'tool_call,call_2,read_file,outside.txt · unsandboxed,plain,batch_ok' "$order"
 
 order=$(print -r -- \
     '{"type":"context","hook":"user_prompt_submit","script":"hook name","prompt":"prompt","status":0,"content":"body"}' |
@@ -159,7 +161,7 @@ order=$(print -r -- \
   jq -jRs -L "$ROOT" --argjson runtime "$edit_runtime" \
     -f "$ROOT/libexec/tui/event-decode.jq" |
   tr '\0' '\n' | sed '/^$/d' | paste -sd, -)
-assert_equal 'assistant_settle,tool_call,call_3,edit_file,notes.json,plain,batch_ok' "$order"
+assert_equal 'tool_call,call_3,edit_file,notes.json,plain,batch_ok' "$order"
 
 order=$(print -r -- \
     '{"type":"message","role":"tool_result","call_id":"call_2","name":"edit_file","content":"@@ -1 +1 @@\n-old\n+new","exit_code":0,"sandbox_denial_detected":true}' |

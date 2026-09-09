@@ -607,11 +607,11 @@ test("leaves deltas out of the transcript and draws the record once", async () =
 
   // Transient deltas do not alter the durable transcript.
   await page.send(
-    { type: "_assistant_delta", text: "", seq: 0 },
-    { type: "_assistant_delta", text: "par", seq: 1 },
+    { type: "_assistant_message_delta", text: "", seq: 0 },
+    { type: "_assistant_message_delta", text: "par", seq: 1 },
     { type: "_assistant_reasoning_delta", text: "thinking", seq: 2 },
-    { type: "_assistant_delta", text: "tial", seq: 7 },
-    { type: "_assistant_settle" },
+    { type: "_assistant_message_delta", text: "tial", seq: 7 },
+    { type: "_assistant_tool_call_delta", index: 1, id: "call_1", seq: 1 },
   );
   assert.equal(find(page.output, "assistant").length, 0);
   assert.equal(page.output.children.length, drawn);
@@ -865,7 +865,7 @@ test("keeps a tool result together with its sandbox notice", async () => {
   const page = await idle();
   await page.send(
     { type: "_session_status", working: true },
-    { type: "_backend_request_start" },
+    { type: "_assistant_start" },
   );
   assert.equal(page.cancel.hidden, false);
   await page.send({
@@ -928,7 +928,7 @@ test("serializes turn submissions", async () => {
     content: [{ type: "text", text: "do the thing\nwith detail" }],
   });
   assert.equal(find(page.output, "activity").length, 1);
-  await page.send({ type: "_backend_request_start" });
+  await page.send({ type: "_assistant_start" });
   assert.equal(page.cancel.hidden, false);
   // A second message waits until the session status says the turn has ended.
   assert.equal(page.entry.disabled, false);

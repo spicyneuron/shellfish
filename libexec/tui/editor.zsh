@@ -114,7 +114,7 @@ sf_tui_heartbeat_tick() {
     elif sf_tui_transport_has_pending; then
       while sf_tui_transport_has_pending; do
         sf_tui_pending_next || return 1
-        if [[ $REPLY == assistant_settle &&
+        if [[ $REPLY == (assistant_tool_call_delta|assistant_end) &&
             ${SF_PRESENT_NODE_TYPE[-1]-} == (message|reasoning) &&
             ${SF_PRESENT_NODE_STATE[-1]-} == closed ]] &&
             sf_tui_transport_has_pending tool_call; then
