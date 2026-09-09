@@ -9,10 +9,16 @@ sf_config_fail() {
 }
 
 sf_config_init_private() {
-  local requested_config=$1 sandbox=${2-} config_path dir home=${HOME-} json_line line
+  local requested_config=$1 sandbox=${2-} config_path dir home=${HOME-} json json_line line name
   local env_example="$SF_SHARE/template/example.env"
-  local read_json template="$SF_SHARE/template/shellfish.jsonc" temp write_json
-  integer replaced=0
+  local template="$SF_SHARE/template/shellfish.jsonc" temp
+  # Each template grant comment maps to the harness field replacing it. A field
+  # with no paths is left out of grants, so its comment survives.
+  local -A markers=(
+    '        // Paths outside the project that sandboxed tools may read' sandbox_read_paths
+    '        // Paths outside the project that sandboxed tools may read and write' sandbox_write_paths
+  )
+  local -A grants=()
 
   SF_CONFIG_ERROR=''
   sf_runtime_config_path "$requested_config"
@@ -46,64 +52,40 @@ sf_config_init_private() {
   }
   if [[ -n $sandbox ]]; then
     [[ -z $home ]] || home=${home:A}
-    read_json=$(jq -e --arg home "$home" '.sandbox_read_paths |
-      map(if $home != "" and startswith($home + "/") then "~/" + ltrimstr($home + "/") else . end)' \
-      <<<"$sandbox") || {
-      rm -f -- "$temp"
-      sf_config_fail 'cannot prepare sandbox grants'
-      return
-    }
-    write_json=$(jq -e --arg home "$home" '.sandbox_write_paths |
-      map(if $home != "" and startswith($home + "/") then "~/" + ltrimstr($home + "/") else . end)' \
-      <<<"$sandbox") || {
-      rm -f -- "$temp"
-      sf_config_fail 'cannot prepare sandbox grants'
-      return
-    }
-    {
-      while IFS= read -r line || [[ -n $line ]]; do
-        case $line in
-          '        // Paths outside the project that sandboxed tools may read')
-            if [[ $read_json == '[]' ]]; then
-              print -r -- "$line"
-            else
-              while IFS= read -r json_line; do
-                [[ $json_line == '[' || $json_line == ']' ]] || print -r -- "      $json_line"
-              done <<<"$read_json"
-            fi
-            (( replaced++ ))
-            ;;
-          '        // Paths outside the project that sandboxed tools may read and write')
-            if [[ $write_json == '[]' ]]; then
-              print -r -- "$line"
-            else
-              while IFS= read -r json_line; do
-                [[ $json_line == '[' || $json_line == ']' ]] || print -r -- "      $json_line"
-              done <<<"$write_json"
-            fi
-            (( replaced++ ))
-            ;;
-          *) print -r -- "$line" ;;
-        esac
-      done <"$template"
-    } >"$temp" || replaced=0
-    (( replaced == 2 )) || {
-      rm -f -- "$temp"
-      sf_config_fail 'cannot prepare sandbox grants'
-      return
-    }
-  else
-    cp -- "$template" "$temp" || {
-      rm -f -- "$temp"
-      sf_config_fail "cannot create config: $config_path"
-      return
-    }
+    for name in ${(v)markers}; do
+      json=$(jq -e --arg home "$home" --arg name "$name" '.[$name] |
+        map(if $home != "" and startswith($home + "/")
+          then "~/" + ltrimstr($home + "/") else . end)' <<<"$sandbox") || {
+        rm -f -- "$temp"
+        sf_config_fail 'cannot prepare sandbox grants'
+        return
+      }
+      [[ $json == '[]' ]] || grants[$name]=$json
+    done
   fi
-  if ! ln -- "$temp" "$config_path"; then
+  {
+    while IFS= read -r line || [[ -n $line ]]; do
+      name=${markers[$line]-}
+      if [[ -z $name ]] || (( ! ${+grants[$name]} )); then
+        print -r -- "$line"
+        continue
+      fi
+      # jq indents elements two columns, so six more align them with the
+      # eight-column comment they replace.
+      while IFS= read -r json_line; do
+        [[ $json_line == '[' || $json_line == ']' ]] || print -r -- "      $json_line"
+      done <<<"$grants[$name]"
+    done <"$template"
+  } >"$temp" || {
     rm -f -- "$temp"
     sf_config_fail "cannot create config: $config_path"
     return
-  fi
+  }
+  ln -- "$temp" "$config_path" || {
+    rm -f -- "$temp"
+    sf_config_fail "cannot create config: $config_path"
+    return
+  }
   rm -f -- "$temp"
   REPLY=$config_path
 }
