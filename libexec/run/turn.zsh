@@ -39,8 +39,8 @@ sf_run_hook() {
 # committed per loop iteration, which keeps the queue aligned with the loop.
 sf_run_commit_call() {
   local session=$1 record=$SF_RUN_QUEUED_CALLS[1]
-  SF_RUN_QUEUED_CALLS=( "${(@)SF_RUN_QUEUED_CALLS[2,-1]}" )
   sf_session_append "$session" "$record" || return 1
+  SF_RUN_QUEUED_CALLS=( "${(@)SF_RUN_QUEUED_CALLS[2,-1]}" )
   sf_run_emit "$record"
 }
 

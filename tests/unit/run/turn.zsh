@@ -334,6 +334,42 @@ sf_session_reset
 cmp -s "$tmp/partial-before.jsonl" "$partial_session" ||
   fail 'opening did not repair the partial append'
 
+# A torn tool-call append is repaired and recovered without executing the tool.
+typeset call_append_session="$tmp/call-append.jsonl"
+typeset tool_marker="$tmp/tool-ran"
+integer call_append_status=0
+sf_test_session "$call_append_session"
+SF_ROOT=$ROOT SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_COMMAND=": >$tool_marker" \
+  zsh -f -c '
+  source "$SF_ROOT/libexec/run/turn.zsh"
+  functions[sf_test_session_append]=$functions[sf_session_append]
+  integer append_failed=0
+  sf_session_append() {
+    if (( ! append_failed )) && jq -e '\''.type == "tool_call"'\'' <<<$2 >/dev/null; then
+      append_failed=1
+      print -rn -- '\''{"type":"tool_call"'\'' >>"$1"
+      sf_session_fail "cannot append session record: $1"
+      return 1
+    fi
+    sf_test_session_append "$@"
+  }
+  typeset -g SF_API_KEY="" SF_API_KEY_SOURCE=""
+  SF_RUN[jsonl]=1
+  message='\''{"type":"message","role":"user","content":[{"type":"text","text":"recover call"}]}'\''
+  sf_run_turn "$message" "$1" 0 "recover call"
+' -- "$call_append_session" >/dev/null || call_append_status=$?
+(( call_append_status == 1 )) || fail 'tool-call append failure exited successfully'
+[[ ! -e $tool_marker ]] || fail 'tool ran after its call failed to append'
+assert_canonical_session "$call_append_session"
+jq -e -s '
+  ([.[] | select(.type == "tool_call")] | length) == 1 and
+  ([.[] | select(.role? == "tool_result")] | length) == 1 and
+  (.[-3] | .type == "tool_call" and .id == "call_1") and
+  (.[-2] | .role == "tool_result" and .call_id == "call_1" and
+    .content == "tool call cancelled" and .exit_code == 126) and
+  .[-1].type == "turn_error"
+' "$call_append_session" >/dev/null || fail 'recovery did not close the uncommitted call'
+
 # Configured system text and session-start context reach the provider request,
 # but the fixture echoes only the submitted prompt.
 typeset echo_session="$tmp/echo.jsonl"
