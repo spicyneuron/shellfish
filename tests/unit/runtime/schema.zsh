@@ -295,10 +295,25 @@ valid_header=$(jq -cn '
   }
 ')
 print -r -- "$valid_header" | schema_eval 'canonical_session_header(1)' >/dev/null
+valid_header=$(jq -c '.harness.user_prompt_submit=[{
+  command:"/bin/prompt",display:"",environment:[],match:{pattern:"^!"},
+  help:{usage:"!COMMAND",description:"Run a shell command"}
+}]' <<<"$valid_header")
+print -r -- "$valid_header" | schema_eval 'canonical_session_header(1)' >/dev/null
 if jq -c '.harness.stop[0].display = "two\nlines"' <<<"$valid_header" |
     schema_eval 'canonical_session_header(1)' >/dev/null 2>&1; then
   fail 'a multiline hook display was accepted'
 fi
+for patch in \
+  '.harness.stop[0].match={pattern:"x"}' \
+  '.harness.user_prompt_submit[0].match.pattern="["' \
+  '.harness.user_prompt_submit[0].help.extra="x"' \
+  'del(.harness.user_prompt_submit[0].match)'; do
+  if jq -c "$patch" <<<"$valid_header" |
+      schema_eval 'canonical_session_header(1)' >/dev/null 2>&1; then
+    fail "invalid hook selection metadata was accepted: $patch"
+  fi
+done
 # Runtime projections hand these names to zsh as a space separated list, so a
 # name containing a space would corrupt it.
 for environment in '["DUPLICATE","DUPLICATE"]' '["invalid-name"]' '["HAS SPACE"]'; do

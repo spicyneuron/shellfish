@@ -18,11 +18,6 @@ submitted=$(cat; printf x)
 submitted=${submitted%x}
 
 case $submitted in
-  /help|/h)
-    print -r -- $'113\t/compact\tSummarize this session into a new one' \
-      >>"$SHELLFISH_TURN_STATE/help.tsv"
-    exit 0
-    ;;
   /compact)
     explicit=1
     jq -es 'any(.[]; .type == "message")' "$SHELLFISH_SESSION" >/dev/null 2>&1 || {
@@ -31,16 +26,6 @@ case $submitted in
     }
     ;;
   *)
-    # Automatic compaction uses the most recent measured response only after a
-    # complete assistant turn.
-    jq -es '
-      .[0].profile.context_window as $window |
-      [.[] | select(.type == "message" and .role == "assistant")] as $assistants |
-      ($assistants | map(select(.usage != null)) | last) as $measured |
-      $window != null and $measured != null and
-      $assistants[-1].stop != "tool_calls" and
-      (($measured.usage.input_tokens + $measured.usage.output_tokens) / $window) >= 0.8
-    ' "$SHELLFISH_SESSION" >/dev/null 2>&1 || exit 0
     draft=$submitted
     ;;
 esac

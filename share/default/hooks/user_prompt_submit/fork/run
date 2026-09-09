@@ -11,10 +11,6 @@ IFS= read -r submitted
 read_status=$?
 
 case "$read_status:$submitted" in
-  1:/help|1:/h)
-    print -r -- $'112\t/fork [N]\tFork at the following user section (default: current end)' >>"$SHELLFISH_TURN_STATE/help.tsv"
-    exit 0
-    ;;
   1:/fork) ;;
   1:'/fork '*)
     explicit=1

@@ -1,0 +1,1 @@
+{"match":{"pattern":"^/server\\z"},"help":{"usage":"/server","description":"Serve this session in a browser"}}

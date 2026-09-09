@@ -101,7 +101,17 @@ jq -e --arg root "$ROOT/share/default/hooks/session_start" \
   .harness.session_start[2].environment == [] and
   (.harness.user_prompt_submit[] | select(
     .command == ($prompt_root + "/user_shell/run")) |
-    .display == "Running shell command…") and
+    .display == "Running shell command…" and
+    .match == {pattern:"^![^\\n]*\\z"} and
+    .help == {usage:"!COMMAND",description:"Run COMMAND and stage its output as context"}) and
+  (.harness.user_prompt_submit[] | select(
+    .command == ($prompt_root + "/compact/run")) |
+    .match == {command:($prompt_root + "/compact/check")} and
+    .help.usage == "/compact") and
+  (.harness.user_prompt_submit[] | select(
+    .command == ($prompt_root + "/help/run")) |
+    .match == {pattern:"^/(help|h)\\z"} and (has("help") | not)) and
+  .harness.user_prompt_submit[0].command == ($prompt_root + "/help/run") and
   .harness.user_prompt_submit[-1].command == ($prompt_root + "/git_environment/run") and
   (.backend | has("context_window_command") | not) and
   (.harness.tools | map(.name)) ==
@@ -319,11 +329,20 @@ chmod +x "$tmp/config/hooks/user_prompt_submit/help/run"
 cat >"$tmp/config/hooks/user_prompt_submit/help/manifest.jsonc" <<'JSON'
 {
   // Imported only for this component.
-  "environment": ["HELP_FORMAT"]
+  "environment": ["HELP_FORMAT"],
+  "match": {"pattern": "^/(help|h)\\z"},
+  "help": {
+    "usage": "/help, /h",
+    "description": "Show help"
+  }
 }
 JSON
 print -r -- '#!/bin/sh' >"$tmp/config/hooks/user_prompt_submit/shell/run"
 chmod +x "$tmp/config/hooks/user_prompt_submit/shell/run"
+print -r -- '#!/bin/sh' >"$tmp/config/hooks/user_prompt_submit/shell/check"
+chmod +x "$tmp/config/hooks/user_prompt_submit/shell/check"
+print -r -- '{"match":{"command":"check"}}' \
+  >"$tmp/config/hooks/user_prompt_submit/shell/manifest.json"
 print -r -- '#!/bin/sh' >"$tmp/config/hooks/stop/gate/run"
 chmod +x "$tmp/config/hooks/stop/gate/run"
 cat >"$tmp/config/hooked.jsonc" <<JSON
@@ -338,8 +357,10 @@ JSON
 sf_runtime_resolve_from_config "$tmp/config/hooked.jsonc" '' '' '{}' "$ROOT/tests/fixtures/backend"
 jq -e --arg base "${tmp:A}/config/hooks" '
   .harness.user_prompt_submit == [
-    {command:($base + "/user_prompt_submit/help/run"),display:"",environment:["HELP_FORMAT"]},
-    {command:($base + "/user_prompt_submit/shell/run"),display:"",environment:[]}
+    {command:($base + "/user_prompt_submit/help/run"),display:"",environment:["HELP_FORMAT"],
+      match:{pattern:"^/(help|h)\\z"},help:{usage:"/help, /h",description:"Show help"}},
+    {command:($base + "/user_prompt_submit/shell/run"),display:"",environment:[],
+      match:{command:($base + "/user_prompt_submit/shell/check")}}
   ] and .harness.stop == [{command:($base + "/stop/gate/run"),display:"",environment:[]}]
 ' <<<"$REPLY" >/dev/null
 
@@ -349,6 +370,13 @@ if sf_runtime_resolve_from_config "$tmp/config/hooked.jsonc" '' '' '{}' "$ROOT/t
 fi
 [[ $SF_RUNTIME_ERROR == 'invalid user_prompt_submit hook: help' ]]
 chmod +x "$tmp/config/hooks/user_prompt_submit/help/run"
+
+chmod -x "$tmp/config/hooks/user_prompt_submit/shell/check"
+if sf_runtime_resolve_from_config "$tmp/config/hooked.jsonc" '' '' '{}' "$ROOT/tests/fixtures/backend"; then
+  fail 'non-executable hook match command was accepted'
+fi
+[[ $SF_RUNTIME_ERROR == 'invalid user_prompt_submit hook match command: shell' ]]
+chmod +x "$tmp/config/hooks/user_prompt_submit/shell/check"
 
 cat >"$tmp/config/malformed-hooks.jsonc" <<'JSON'
 {"harnesses":{"bad":{"stop":"gate"}}}

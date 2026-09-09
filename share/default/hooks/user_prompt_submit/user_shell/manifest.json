@@ -1,1 +1,1 @@
-{"display":"Running shell command…"}
+{"match":{"pattern":"^![^\\n]*\\z"},"display":"Running shell command…","help":{"usage":"!COMMAND","description":"Run COMMAND and stage its output as context"}}

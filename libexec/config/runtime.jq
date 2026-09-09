@@ -228,13 +228,21 @@ def runtime_finalize:
   (reduce $resolved_components[] as $component ({};
     ($component.manifest_json | fromjson |
       select(type == "object" and
-        (keys - ["display", "environment"] | length) == 0 and
+        (keys - (if $component.hook == "user_prompt_submit"
+          then ["display", "environment", "help", "match"]
+          else ["display", "environment"] end) | length) == 0 and
         ((.environment // []) | component_environment) and
-        ((.display // "") | hook_display)) //
+        ((.display // "") | hook_display) and
+        (if has("match") then .match | hook_match else true end) and
+        (if has("help") then
+           has("match") and (.help | hook_help)
+         else true end)) //
       error("invalid hook manifest: " + $component.command)) as $hook_manifest |
-    .[$component.hook] += [{command:$component.command,
+    .[$component.hook] += [({command:$component.command,
       display:($hook_manifest.display // ""),
-      environment:($hook_manifest.environment // [])}])) as $hooks |
+      environment:($hook_manifest.environment // [])} +
+      (if $hook_manifest | has("match") then {match:$hook_manifest.match} else {} end) +
+      (if $hook_manifest | has("help") then {help:$hook_manifest.help} else {} end))])) as $hooks |
   $prepared.profile as $profile |
   ((if $profile.harness | has("sandbox") then $profile.harness.sandbox else true end) and
     any($tools[]; .manifest.sandbox)) as $needs_fence |

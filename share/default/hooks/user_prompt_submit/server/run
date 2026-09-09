@@ -9,10 +9,6 @@ IFS= read -r submitted
 read_status=$?
 
 case "$read_status:$submitted" in
-  1:/help|1:/h)
-    print -r -- $'998\t/server\tServe this session in a browser' >>"$SHELLFISH_TURN_STATE/help.tsv"
-    exit 0
-    ;;
   1:/server)
     jq -cn --arg path "$SHELLFISH_SESSION" \
       '{action:"handoff",argv:["shellfish-server","--session",$path]}' >&3 || exit 1

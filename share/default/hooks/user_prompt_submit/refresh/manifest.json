@@ -1,0 +1,1 @@
+{"match":{"pattern":"^/(refresh|r)\\z"},"help":{"usage":"/refresh, /r","description":"Rerender current session; fix layout"}}

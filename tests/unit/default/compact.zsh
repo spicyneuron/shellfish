@@ -2,9 +2,10 @@
 
 source "${0:A:h:h}/_hooks.zsh"
 
-# Compaction is one hook invocation that composes the read-only request commands,
-# publishes a canonical child, and returns an ordinary handoff.
+# Selected compaction composes the read-only request commands, publishes a
+# canonical child, and returns an ordinary handoff.
 typeset compact_hook="$ROOT/share/default/hooks/user_prompt_submit/compact/run"
+typeset compact_check="$ROOT/share/default/hooks/user_prompt_submit/compact/check"
 typeset compact_source="$tmp/compact-source.jsonl"
 typeset compact_control="$tmp/compact-control.json"
 typeset compact_shellfish="$tmp/compact-shellfish"
@@ -23,10 +24,10 @@ sf_session_reset
 # Below the threshold an ordinary prompt is left alone.
 : >"$compact_control"
 SHELLFISH_EXECUTABLE="$ROOT/bin/shellfish" SHELLFISH_SESSION="$compact_source" \
-  SHELLFISH_TURN_STATE="$tmp" zsh -f "$compact_hook" user_prompt_submit \
-  3>"$compact_control" 2>"$compact_display" \
+  SHELLFISH_TURN_STATE="$tmp" zsh -f "$compact_check" user_prompt_submit \
+  2>"$compact_display" \
   < <(print -n -- 'ordinary prompt') || compact_status=$?
-(( compact_status == 0 )) || fail 'a session below the threshold was compacted'
+(( compact_status == 1 )) || fail 'a session below the threshold selected compaction'
 [[ ! -s $compact_control ]] || fail 'a session below the threshold requested a handoff'
 [[ ! -s $compact_display ]] || fail 'a session below the threshold displayed compaction'
 
@@ -35,6 +36,8 @@ jq -c 'if .role == "assistant" then .usage = {input_tokens:75,output_tokens:5} e
   "$compact_source" >"$tmp/compact-above.jsonl"
 mv "$tmp/compact-above.jsonl" "$compact_source"
 typeset compact_before=$(shasum <"$compact_source")
+SHELLFISH_SESSION="$compact_source" zsh -f "$compact_check" user_prompt_submit \
+  < <(print -n -- 'my next prompt') || fail 'threshold did not select compaction'
 SF_TEST_BACKEND_DELAY=0 SF_TEST_BACKEND_REQUEST="$compact_request" \
   SHELLFISH_EXECUTABLE="$ROOT/bin/shellfish" SHELLFISH_SESSION="$compact_source" \
   SHELLFISH_TURN_STATE="$tmp" zsh -f "$compact_hook" user_prompt_submit \

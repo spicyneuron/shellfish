@@ -124,14 +124,15 @@ sf_hooks_dispatch() {
   local -a arguments=( "${(@)argv[1,argument_count]}" )
   shift argument_count
   local -a components=( "$@" ) result results states decoded
-  local directory script environment_json label script_context script_display script_control hook=$SF_HOOK_NAME
+  local directory script selector environment_json label
+  local script_context script_display script_control hook=$SF_HOOK_NAME
   local origin='' control='' control_error
-  integer script_status context_size display_size control_size component_index
+  integer script_status selector_status context_size display_size control_size component_index
   integer perform=1 halted=0
   setopt local_options no_err_exit no_bg_nice
 
   sf_hooks_reset
-  (( ${#components} % 3 == 0 )) || {
+  (( ${#components} % 4 == 0 )) || {
     sf_hooks_fail 'cannot inspect configured hook components'
     return
   }
@@ -147,10 +148,29 @@ sf_hooks_dispatch() {
       return
     }
 
-    for (( component_index = 1; component_index <= ${#components}; component_index += 3 )); do
+    for (( component_index = 1; component_index <= ${#components}; component_index += 4 )); do
       script=$components[component_index]
       label=$components[component_index+1]
-      environment_json=$components[component_index+2]
+      selector=$components[component_index+2]
+      environment_json=$components[component_index+3]
+      if [[ -n $selector ]]; then
+        sf_hooks_capture_one "$selector" "$input" "$directory" "$max_capture" \
+          "$argument_count" "$environment_json" "${arguments[@]}" || return
+        result=( "${reply[@]}" )
+        selector_status=$result[1]
+        if [[ -s $result[2] || -s $result[3] || -s $result[4] ]]; then
+          sf_hooks_fail "hook match command wrote output: $selector"
+          return
+        fi
+        case $selector_status in
+          0) ;;
+          1) continue ;;
+          *)
+            sf_hooks_fail "hook match command failed with status $selector_status: $selector"
+            return
+            ;;
+        esac
+      fi
       # A declared label opens a live notice that the script's stderr settles.
       [[ -z $label ]] || sf_hooks_display "$hook" "$script" "$label" false || {
         sf_hooks_fail 'cannot open hook display'
@@ -303,13 +323,18 @@ sf_hooks_run_chain() {
   local session=$1 input=$2 hook=$3
   integer allow_control=$4 argument_count=$5
   shift 5
-  local -a fields components
+  local -a fields components input_option=( --arg input '' )
+
+  [[ $hook != user_prompt_submit ]] || input_option=( --rawfile input "$input" )
 
   # The terminator keeps a trailing empty environment field, which command
   # substitution would otherwise strip along with the final newline.
-  fields=( "${(@f)$(jq -erc --arg hook "$hook" '
+  fields=( "${(@f)$(jq -erc --arg hook "$hook" "${input_option[@]}" '
     .harness.max_capture_bytes,
-    (.harness[$hook][]? | .command, .display, (.environment | join(" "))),
+    (.harness[$hook][]? | . as $component |
+      select(($component.match.pattern? // "") == "" or
+        ($input | test($component.match.pattern))) |
+      .command, .display, (.match.command? // ""), (.environment | join(" "))),
     "ok"
   ' <<<"$SF_SESSION[runtime]")}" ) || return 1
   [[ $fields[-1] == ok ]] || return 1

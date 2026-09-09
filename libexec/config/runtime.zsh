@@ -210,7 +210,7 @@ sf_runtime_resolve_from_config() {
   local config_path config_dir='' raw defaults decoded prepared presentation
   local backend_name backend_reference backend_dir backend_base manifest command
   local context_window_command=''
-  local reference resolved hook hook_manifest external_name final settings fence='' env_file=''
+  local reference resolved hook hook_manifest selector external_name final settings fence='' env_file=''
   local home=${HOME-}
   local theme_marker=': shellfish:unknown-theme:'
   local -a fields tool_entries loaded
@@ -357,6 +357,20 @@ sf_runtime_resolve_from_config() {
     }
     sf_runtime_read_manifest "$resolved" optional || return
     hook_manifest=$REPLY
+    selector=$(jq -r '
+      if (.match? | type) == "object" and (.match | keys) == ["command"] and
+          (.match.command | type) == "string"
+      then .match.command else "" end
+    ' <<<"$hook_manifest") || return
+    if [[ -n $selector ]]; then
+      if [[ $selector != [A-Za-z0-9]* || $selector == *[^A-Za-z0-9_.-]* ||
+          ! -f $resolved/$selector || ! -x $resolved/$selector ]]; then
+        sf_runtime_fail "invalid $hook hook match command: $reference"
+        return
+      fi
+      hook_manifest=$(jq -c --arg command "$resolved/$selector" \
+        '.match.command = $command' <<<"$hook_manifest") || return
+    fi
     component_entries+=( "$hook" "$resolved/run" "$hook_manifest" )
   done
   (( index == ${#fields} )) || {

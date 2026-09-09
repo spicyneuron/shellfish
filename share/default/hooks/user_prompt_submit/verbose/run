@@ -9,10 +9,6 @@ IFS= read -r submitted
 read_status=$?
 
 case "$read_status:$submitted" in
-  1:/help|1:/h)
-    print -r -- $'111\t/verbose, /v\tToggle full previews' >>"$SHELLFISH_TURN_STATE/help.tsv"
-    exit 0
-    ;;
   1:/verbose|1:/v)
     if (( ${SHELLFISH_VERBOSE:-0} )); then
       jq -cn --arg command "$SHELLFISH_EXECUTABLE" --arg path "$SHELLFISH_SESSION" \

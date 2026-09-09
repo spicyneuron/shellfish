@@ -4,9 +4,8 @@ source "${0:A:h:h}/_hooks.zsh"
 
 sf_test_runtime
 
-# The bundled command scripts append TSV rows to $SHELLFISH_TURN_STATE/help.tsv.
-# The help script sorts and displays them, then halts before unrelated scripts.
-# Verify structural properties rather than exact text.
+# The bundled help script reads frozen command metadata, then halts before
+# unrelated prompt components.
 typeset help_session="$tmp/help-session.jsonl"
 make_script after_help ': >"$SHELLFISH_TURN_STATE/after-help"'
 typeset after_help=$script
@@ -24,9 +23,23 @@ SF_TEST_RUNTIME=$(jq -c \
   --arg compact "$ROOT/share/default/hooks/user_prompt_submit/compact/run" \
   --arg after_help "$after_help" \
   '.harness.sandbox=true |
-   .harness.user_prompt_submit =
-     ([$new,$refresh,$verbose,$copy,$fork,$sandbox,$user_shell,$server,$resume,
-       $compact,$help,$after_help] | map({command:.,display:"",environment:[]}))' \
+   def command($command;$match;$usage;$description):
+     {command:$command,display:"",environment:[],match:{pattern:$match},
+      help:{usage:$usage,description:$description}};
+   .harness.user_prompt_submit = [
+     {command:$help,display:"",environment:[],match:{pattern:"^/(help|h)\\z"}},
+     command($refresh;"^/(refresh|r)\\z";"/refresh, /r";"Rerender current session; fix layout"),
+     command($verbose;"^/(verbose|v)\\z";"/verbose, /v";"Toggle full previews"),
+     command($new;"^/new\\z";"/new";"Start a new session with the same settings"),
+     command($copy;"^/copy( [^\\n]*)?\\z";"/copy [N]";"Copy the latest or selected user/agent section"),
+     command($fork;"^/fork( [^\\n]*)?\\z";"/fork [N]";"Fork at the following user section (default: current end)"),
+     command($sandbox;"^/sandbox( [^\\n]*)?\\z";"/sandbox [OP DIR]";"List or update session sandbox grants"),
+     command($user_shell;"^![^\\n]*\\z";"!COMMAND";"Run COMMAND and stage its output as context"),
+     command($server;"^/server\\z";"/server";"Serve this session in a browser"),
+     command($resume;"^/resume\\z";"/resume";"Switch to a session for this directory"),
+     command($compact;"^/compact\\z";"/compact";"Summarize this session into a new one"),
+     {command:$after_help,display:"",environment:[]}
+   ]' \
   <<<"$SF_TEST_RUNTIME")
 sf_test_session "$help_session"
 sf_session_begin_turn "$help_session"
@@ -48,22 +61,24 @@ for key in '↑, ↓' '/queue drop <N>' '/queue clear' '/new' '/refresh, /r' '/v
     '/quit, /q'; do
   [[ $help_display == *"$key"* ]]
 done
-# Rows remain sorted by their configured order through /quit.
+# Component rows follow configured order between framework rows and /quit.
 typeset -a help_lines=( "${(@f)help_display}" )
-integer control_idx history_idx drop_idx queue_idx bang_idx new_idx quit_idx i
+integer control_idx history_idx drop_idx queue_idx refresh_idx new_idx bang_idx quit_idx i
 for (( i = 1; i <= ${#help_lines}; i++ )); do
   [[ $help_lines[i] == *'ctrl+c'* ]] && control_idx=$i
   [[ $help_lines[i] == *'↑, ↓'* ]] && history_idx=$i
   [[ $help_lines[i] == *'/queue drop <N>'* ]] && drop_idx=$i
   [[ $help_lines[i] == *'/queue clear'* ]] && queue_idx=$i
+  [[ $help_lines[i] == *'/refresh, /r'* ]] && refresh_idx=$i
   [[ $help_lines[i] == *'!COMMAND'* ]] && bang_idx=$i
   [[ $help_lines[i] == *'/new'* ]] && new_idx=$i
   [[ $help_lines[i] == *'/quit, /q'* ]] && quit_idx=$i
 done
-(( control_idx > 0 && history_idx > 0 && drop_idx > 0 && queue_idx > 0 && bang_idx > 0 &&
-   new_idx > 0 && quit_idx > 0 ))
-(( control_idx < history_idx && history_idx < bang_idx && bang_idx < drop_idx &&
-   drop_idx < queue_idx && queue_idx < new_idx && new_idx < quit_idx ))
+(( control_idx > 0 && history_idx > 0 && drop_idx > 0 && queue_idx > 0 &&
+   refresh_idx > 0 && new_idx > 0 && bang_idx > 0 && quit_idx > 0 ))
+(( control_idx < history_idx && history_idx < drop_idx && drop_idx < queue_idx &&
+   queue_idx < refresh_idx && refresh_idx < new_idx && new_idx < bang_idx &&
+   bang_idx < quit_idx ))
 typeset control_prefix=${help_lines[control_idx]#ctrl+c}
 typeset history_prefix=${help_lines[history_idx]#'↑, ↓'}
 control_prefix=${control_prefix%%[^ ]*}

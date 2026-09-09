@@ -1,0 +1,1 @@
+{"match":{"pattern":"^/copy( [^\\n]*)?\\z"},"help":{"usage":"/copy [N]","description":"Copy the latest or selected user/agent section"}}

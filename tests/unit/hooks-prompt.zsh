@@ -38,6 +38,36 @@ jq -eRs '
     content:"first\nsecond\ncontext"}
 ' "$prompt_session" >/dev/null
 
+# Prompt matching skips a component before invocation and continues in configured order.
+typeset select_session="$tmp/select-session.jsonl" select_marker="$tmp/unmatched"
+typeset select_events="$tmp/select-events"
+make_script unmatched ': >"$SELECT_MARKER"'
+typeset unmatched=$script saved_runtime=$SF_TEST_RUNTIME
+SF_TEST_RUNTIME=$(jq -c --arg unmatched "$unmatched" --arg prompt "$prompt_script" '
+  .harness.user_prompt_submit = [
+    {command:$unmatched,display:"Must not display",environment:[],match:{pattern:"^!"}},
+    {command:$prompt,display:"",environment:[],match:{pattern:"^ordinary$"}}
+  ]
+' <<<"$SF_TEST_RUNTIME")
+sf_test_session "$select_session"
+SF_HOOK_JSONL=1 SELECT_MARKER="$select_marker" \
+  run_prompt_hook ordinary "$select_session" >"$select_events"
+[[ ! -e $select_marker ]]
+[[ ! -s $select_events ]]
+jq -e 'select(.type == "context" and .script == "prompt" and
+  .content == "ordinarycontext")' < <(tail -n 1 "$select_session") >/dev/null
+SF_TEST_RUNTIME=$(jq -c --arg unmatched "$unmatched" '
+  .harness.user_prompt_submit = [
+    {command:$unmatched,display:"Must not display",environment:[],
+      match:{pattern:"^ordinary\\z"}}
+  ]
+' <<<"$SF_TEST_RUNTIME")
+SF_HOOK_JSONL=1 SELECT_MARKER="$select_marker" \
+  run_prompt_hook $'ordinary\n' "$select_session" >"$select_events"
+[[ ! -e $select_marker ]]
+[[ ! -s $select_events ]]
+SF_TEST_RUNTIME=$saved_runtime
+
 SKIP=1 run_prompt_hook command "$prompt_session"
 [[ ${#reply} == 1 && $reply[1] == handled ]]
 [[ -z ${SHELLFISH_TURN_ID-} ]]

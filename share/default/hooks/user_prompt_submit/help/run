@@ -3,7 +3,7 @@
 emulate -R zsh
 setopt no_aliases no_multios pipe_fail
 
-typeset submitted=''
+typeset submitted='' header
 integer read_status
 IFS= read -r submitted
 read_status=$?
@@ -12,29 +12,28 @@ case "$read_status:$submitted" in
   *) exit 0 ;;
 esac
 
-# Framework rows for commands that have no dedicated script. Command scripts run
-# earlier in the chain and append their own rows to the same file.
-{
-  print -r -- $'10\tshift+enter\tAdd a line instead of sending the message'
-  print -r -- $'20\tctrl+c\tCancel an active request; otherwise exit'
-  print -r -- $'30\t↑, ↓\tNavigate prompt history'
-  print -r -- $'100\t/queue drop <N>\tDiscard queued prompt'
-  print -r -- $'101\t/queue clear\tDiscard all queued prompts'
-  print -r -- $'1000\t/quit, /q\tExit'
-} >>"$SHELLFISH_TURN_STATE/help.tsv"
+IFS= read -r header <"$SHELLFISH_SESSION" || exit 1
 
-sort -s -t$'\t' -k1,1n "$SHELLFISH_TURN_STATE/help.tsv" |
-  LC_ALL=C awk -F'\t' '
+{
+  print -r -- $'shift+enter\tAdd a line instead of sending the message'
+  print -r -- $'ctrl+c\tCancel an active request; otherwise exit'
+  print -r -- $'↑, ↓\tNavigate prompt history'
+  print -r -- $'/queue drop <N>\tDiscard queued prompt'
+  print -r -- $'/queue clear\tDiscard all queued prompts'
+  jq -r '.harness.user_prompt_submit[] |
+    select(.help? != null) | [.help.usage, .help.description] | @tsv' \
+    <<<"$header" || exit 1
+  print -r -- $'/quit, /q\tExit'
+} | LC_ALL=C awk -F'\t' '
     function chars(text, copy) {
       copy=text
       gsub(/[\200-\277]/,"",copy)
       return length(copy)
     }
-    { key[NR]=$2; desc[NR]=$3 }
+    { key[NR]=$1; desc[NR]=$2 }
     END {
       max=0
       for (i=1;i<=NR;i++) { l=chars(key[i]); if (l>max) max=l }
       for (i=1;i<=NR;i++) printf "%s%*s  %s\n", key[i], max-chars(key[i]), "", desc[i]
     }' >&2
-rm -f -- "$SHELLFISH_TURN_STATE/help.tsv"
 exit 11

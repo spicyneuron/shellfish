@@ -69,6 +69,28 @@ A hook manifest contains its selected environment names and an optional display 
 
 The manifest and both fields are optional. `environment` defaults to an empty list. `display` is one control-free line shown while the script runs, and defaults to no label, which keeps the component silent until it exits. See [Configure component environments](CONFIG.md#configure-component-environments) for value resolution and isolation.
 
+Components on `user_prompt_submit` may also declare `match`. Selected components retain configured order, and selection occurs before a component's display or `run` script:
+
+```json
+{"match":{"pattern":"^/review\\z"}}
+```
+
+`pattern` is a nonempty jq regular expression tested against the exact prompt. All pattern selectors are evaluated together without starting component processes. For conditions that need session state or other program logic, `match` may instead name an executable in the component directory:
+
+```json
+{"match":{"command":"check"}}
+```
+
+The resolved absolute selector path is frozen in the session header. The selector receives the same stdin, argv, working directory, and environment as `run`. It must write no output; status 0 selects the component, status 1 skips it, and any other status fails the hook. Components without `match` always run. Selection fields are rejected on other hooks.
+
+A prompt component that declares `match` may advertise itself to harness-provided help with `help`. This metadata is also frozen in the header and has no core behavior:
+
+```json
+{"match":{"pattern":"^/review\\z"},"help":{"usage":"/review","description":"Review the current changes"}}
+```
+
+Both help strings must be nonempty, control-free lines, and `help` requires `match`.
+
 ## The hook script contract
 
 ### Invocation

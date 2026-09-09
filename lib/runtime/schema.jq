@@ -89,16 +89,39 @@ def hook_names:
 def hook_display:
   type == "string" and (test("[[:cntrl:]]") | not);
 
+def hook_match:
+  type == "object" and
+  if keys == ["pattern"] then
+    .pattern as $pattern |
+    ($pattern | type == "string" and length > 0 and
+      (test("[[:cntrl:]]") | not)) and
+    (try ("" | test($pattern) | type == "boolean") catch false)
+  elif keys == ["command"] then .command | absolute_path
+  else false end;
+
+def hook_help:
+  type == "object" and keys == ["description", "usage"] and
+  (.usage | hook_display and length > 0) and
+  (.description | hook_display and length > 0);
+
 def hook_component:
-  type == "object" and keys == ["command", "display", "environment"] and
+  type == "object" and
+  (keys - ["command", "display", "environment", "help", "match"] | length) == 0 and
+  has("command") and has("display") and has("environment") and
   (.command | absolute_path) and (.display | hook_display) and
-  (.environment | component_environment);
+  (.environment | component_environment) and
+  (if has("match") then .match | hook_match else true end) and
+  (if has("help") then .help | hook_help else true end);
 
 def harness_hooks:
   . as $harness |
   all(hook_names[]; . as $hook |
     ($harness | has($hook) | not) or
-    ($harness[$hook] | type == "array" and all(.[]; hook_component)));
+    ($harness[$hook] | type == "array" and all(.[];
+      hook_component and
+      (if $hook == "user_prompt_submit" then
+         (has("help") | not) or has("match")
+       else ((has("match") or has("help")) | not) end))));
 
 def token_usage:
   type == "object" and

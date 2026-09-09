@@ -1,0 +1,1 @@
+{"match":{"pattern":"^/fork( [^\\n]*)?\\z"},"help":{"usage":"/fork [N]","description":"Fork at the following user section (default: current end)"}}
