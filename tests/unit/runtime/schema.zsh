@@ -299,7 +299,9 @@ if jq -c '.harness.stop[0].display = "two\nlines"' <<<"$valid_header" |
     schema_eval 'canonical_session_header(1)' >/dev/null 2>&1; then
   fail 'a multiline hook display was accepted'
 fi
-for environment in '["DUPLICATE","DUPLICATE"]' '["invalid-name"]'; do
+# Runtime projections hand these names to zsh as a space separated list, so a
+# name containing a space would corrupt it.
+for environment in '["DUPLICATE","DUPLICATE"]' '["invalid-name"]' '["HAS SPACE"]'; do
   if jq -c --argjson environment "$environment" \
       '.backend.environment = $environment' <<<"$valid_header" |
       schema_eval 'canonical_session_header(1)' >/dev/null 2>&1; then
