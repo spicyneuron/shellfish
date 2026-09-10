@@ -23,17 +23,6 @@ sf_run_emit() {
   return 0
 }
 
-sf_run_hook() {
-  local adapter=$1
-  local -a result
-  shift
-  local session=$1
-  "$adapter" "$@" || return
-  result=( "${reply[@]}" )
-  sf_hooks_commit "$session" sf_run_emit || return
-  reply=( "${result[@]}" )
-}
-
 # Persists the head of the queue: the call has cleared its gates or stopped at
 # one, and either way it now belongs to the transcript. Exactly one call is
 # committed per loop iteration, which keeps the queue aligned with the loop.
@@ -60,7 +49,7 @@ sf_run_permission() {
   local session=$1 call_id=$2 name=$3 input=$4 id response decision hook_decision hook_reason
   SF_RUN[permission_reason]=''
   SF_RUN[permission_error]=''
-  if ! sf_run_hook sf_hooks_permission_request "$session" "$name" "$call_id" "$input"; then
+  if ! sf_hooks_permission_request "$session" "$name" "$call_id" "$input"; then
     SF_RUN[permission_error]=$SF_HOOK_ERROR
     return 2
   fi
@@ -106,6 +95,7 @@ sf_run_permission() {
 }
 
 sf_run_error() {
+  (( ! SF_RUN[jsonl] || ! SF_HOOK_ERROR_EMITTED )) || return 0
   if (( SF_RUN[jsonl] )); then
     sf_run_emit "$(jq -cn --arg message "$1" \
       '{type:"_notice",level:"error",title:"Turn failed",source:"",text:$message,complete:true}')"
@@ -202,6 +192,7 @@ sf_run_turn() {
   SF_RUN[permission_count]=0
   SF_RUN[permission_available]=$permission_available
   SF_RUN[committed]=0
+  SF_HOOK_ERROR_EMITTED=0
   if ! sf_session_begin_turn "$session_path"; then
     sf_run_error "$SF_SESSION_ERROR"
     return 1
@@ -258,7 +249,7 @@ sf_run_turn() {
       failure=$SF_HOOK_ERROR
       return 1
     fi
-    if ! sf_run_hook sf_hooks_user_prompt_submit "$session_path" "$prompt"; then
+    if ! sf_hooks_user_prompt_submit "$session_path" "$prompt"; then
       failure=$SF_HOOK_ERROR
       return 1
     fi
@@ -412,7 +403,7 @@ sf_run_turn() {
       }
       if [[ $response_fields[1] != tool_calls ]]; then
         (( stop_count += 1 ))
-        if ! sf_run_hook sf_hooks_stop "$session_path" "$stop_input" "$stop_count"; then
+        if ! sf_hooks_stop "$session_path" "$stop_input" "$stop_count"; then
           failure=$SF_HOOK_ERROR
           return 1
         fi
@@ -456,7 +447,7 @@ sf_run_turn() {
           fi
           result=$REPLY
         else
-          if ! sf_run_hook sf_hooks_pre_tool_use "$session_path" "$tool_name" "$call_id" "$tool_input"; then
+          if ! sf_hooks_pre_tool_use "$session_path" "$tool_name" "$call_id" "$tool_input"; then
             failure=$SF_HOOK_ERROR
             return 1
           fi
@@ -523,7 +514,7 @@ sf_run_turn() {
           return 1
         fi
         sf_run_emit "$result"
-        if ! sf_run_hook sf_hooks_post_tool_use "$session_path" "$result" "$tool_input"; then
+        if ! sf_hooks_post_tool_use "$session_path" "$result" "$tool_input"; then
           failure=$SF_HOOK_ERROR
           return 1
         fi

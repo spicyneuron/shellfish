@@ -170,14 +170,14 @@ zsh -f "$entry" create --session-out "$missing" --config "$missing_config" >/dev
   fail 'a missing system component created a session'
 [[ ! -e $missing ]] || fail 'create left a transcript for a missing component'
 
-# Startup notices stream during the chain, then durable hook records follow.
+# Startup components stream their lifecycle around immediate durable records.
 typeset events="$tmp/events.jsonl" streamed="$tmp/streamed.jsonl"
 typeset first="$tmp/first-hook" silent="$tmp/silent-hook" stream_config="$tmp/stream.jsonc"
 mkdir "$first" "$silent"
 cat >"$first/run" <<'ZSH'
 #!/usr/bin/env zsh
 [[ -f $SHELLFISH_SESSION ]] || exit 2
-jq -se 'map(.type) == ["_session_prepare","_notice"] and .[1].complete == false' \
+jq -se 'map(.type) == ["_session_prepare","_hook_start"]' \
   "$SF_TEST_EVENTS" >/dev/null || exit 3
 print -r -- 'startup context'
 printf '%*s' "${SF_TEST_CONTEXT_BYTES:-0}" ''
@@ -187,8 +187,12 @@ ZSH
 cat >"$silent/run" <<'ZSH'
 #!/usr/bin/env zsh
 [[ -f $SHELLFISH_SESSION ]] || exit 2
-jq -se '.[-1].complete == true and (.[-1] | has("context") | not)' \
+jq -se 'map(.type) == ["_session_prepare","_hook_start","state","context",
+  "_hook_end","_hook_start"]' \
   "$SF_TEST_EVENTS" >/dev/null || exit 3
+jq -se '.[-2] == {type:"state",name:"startup/stream",value:true} and
+  .[-1].type == "context" and .[-1].script == "first-hook"' \
+  "$SHELLFISH_SESSION" >/dev/null || exit 4
 ZSH
 print -r -- '{"display":"Starting up"}' >"$first/manifest.json"
 chmod +x "$first/run" "$silent/run"
@@ -197,19 +201,21 @@ jq --arg first "$first" --arg silent "$silent" \
 SF_TEST_EVENTS="$events" zsh -f "$entry" create --jsonl --config "$stream_config" \
   --session-out "$streamed" >"$events" 2>"$hook_error" || fail 'streamed creation failed'
 [[ ! -s $hook_error ]] || fail 'streamed display leaked to stderr'
-jq -se --arg path "$streamed" --arg first "${first:A}/run" \
+jq -se --arg path "$streamed" \
   --slurpfile session "$streamed" '
-  map(.type) == ["_session_prepare","_notice","_notice","state","context","_session_created"] and
+  map(.type) == ["_session_prepare","_hook_start","state","context","_hook_end",
+    "_hook_start","_hook_end","_session_created"] and
   .[0] == {type:"_session_prepare",path:$path,records:$session[:2]} and
-  .[1] == {type:"_notice",level:"info",source:"session_start",title:$first,
-    text:"Starting up",complete:false} and
-  .[2].text == "startup display\n" and .[2].complete == true and
-  (.[2] | has("context") | not) and
-  .[3] == $session[2] and .[3] ==
+  .[1] == {type:"_hook_start",hook:"session_start",script:"first-hook",
+    text:"Starting up"} and
+  .[2] == $session[2] and .[2] ==
     {type:"state",name:"startup/stream",value:true} and
-  .[4] == $session[3] and .[4] ==
+  .[3] == $session[3] and .[3] ==
     {type:"context",hook:"session_start",script:"first-hook",content:"startup context\n"} and
-  .[5] == {type:"_session_created",path:$path} and
+  .[4] == {type:"_hook_end",text:"startup display\n",error:false} and
+  .[5] == {type:"_hook_start",hook:"session_start",script:"silent-hook",text:""} and
+  .[6] == {type:"_hook_end",text:"",error:false} and
+  .[7] == {type:"_session_created",path:$path} and
   ($session | length == 4)
 ' "$events" >/dev/null || fail 'invalid creation event sequence or transcript'
 
@@ -219,8 +225,8 @@ jq '.harnesses.machine.max_capture_bytes=400000' "$stream_config" >"$large_confi
 SF_TEST_EVENTS="$events" SF_TEST_CONTEXT_BYTES=300000 zsh -f "$entry" create --jsonl \
   --session-out "$large" --config "$large_config" >"$events" 2>"$hook_error" ||
   fail 'large startup context failed'
-jq -se --slurpfile session "$large" '.[4] == $session[3] and
-  (.[4].content | length == 300016)' "$events" >/dev/null ||
+jq -se --slurpfile session "$large" '.[3] == $session[3] and
+  (.[3].content | length == 300016)' "$events" >/dev/null ||
   fail 'large startup context was truncated'
 
 # Empty startup has no hook events, including when the system is empty.
@@ -228,24 +234,27 @@ zsh -f "$entry" create --jsonl --config "$config" --system '' >"$events"
 jq -se 'map(.type) == ["_session_prepare","_session_created"] and
   (.[0].records | length == 1)' "$events" >/dev/null || fail 'invalid empty startup stream'
 
-# Failure removes the initial session and emits no durable hook records or completion signal.
+# Failure removes the initial session and settles the active component as an error.
 SF_TEST_STATE_MARKER="$marker" zsh -f "$entry" create --jsonl --session-out "$failed" \
   --config "$hook_config" >"$events" 2>"$hook_error" && fail 'streamed failure succeeded'
 [[ ! -e $failed && $(<"$hook_error") == *'hook script failed with status 9:'* ]]
-jq -se 'map(.type) == ["_session_prepare","_notice"] and
+jq -se 'map(.type) == ["_session_prepare","_hook_start","_hook_end"] and
+  .[-1].error == true and
   all(.[]; has("context") | not)' \
   "$events" >/dev/null || fail 'failed creation emitted completion'
 
-# A later failure discards an earlier script's staged context.
+# A later failure leaves the earlier component's emitted records as a valid prefix.
 jq --arg first "$first" '.harnesses.machine.session_start |= [$first] + .' \
   "$hook_config" >"$stream_config"
 SF_TEST_EVENTS="$events" SF_TEST_STATE_MARKER="$marker" zsh -f "$entry" create --jsonl \
   --session-out "$failed" --config "$stream_config" >"$events" 2>"$hook_error" &&
   fail 'a later startup failure succeeded'
 [[ ! -e $failed && $(<"$hook_error") == *'hook script failed with status 9:'* ]]
-jq -se 'all(.[]; .type != "state" and .type != "context" and
-  .type != "_session_created")' "$events" >/dev/null ||
-  fail 'later failure emitted staged hook records or completion'
+jq -se '
+  map(.type) == ["_session_prepare","_hook_start","state","context","_hook_end",
+    "_hook_start","_hook_end"] and .[-1].error == true and
+  all(.[]; .type != "_session_created")
+' "$events" >/dev/null || fail 'later failure lost the completed hook prefix'
 
 # The client's cancellation signal stops the running script and saves nothing.
 typeset slow="$tmp/slow-hook" slow_config="$tmp/slow.jsonc" cancelled="$tmp/cancelled.jsonl"

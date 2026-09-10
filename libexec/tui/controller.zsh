@@ -413,7 +413,7 @@ sf_tui_controller() {
     sf_tui_reset
     sf_tui_session_update "$reply[2]"
     [[ -z $system ]] || sf_tui_event system "$system" || return 1
-    # Creation presents as a running turn, so hook notices and the spinner
+    # Creation presents as a running turn, so hook activity and the spinner
     # land in the nodes a turn would use.
     sf_tui_add activity '' '' '' open || return 1
   else

@@ -10,10 +10,8 @@ zmodload zsh/system
 
 typeset -g SF_HOOK_ERROR=''
 typeset -g SF_HOOK_JSONL=0
-# Ordered script, status, stdout, stderr, and control quintets.
-typeset -ga SF_HOOK_SCRIPT_RESULTS=()
-typeset -ga SF_HOOK_CONTEXT_RECORDS=()
-typeset -ga SF_HOOK_STATE_RECORDS=()
+typeset -g SF_HOOK_ERROR_EMITTED=0
+typeset -g SF_HOOK_COMPONENT_VALIDATOR=''
 # Preserve inherited turn state across nested turn setup.
 typeset -g SHELLFISH_TURN_STATE=${SHELLFISH_TURN_STATE-}
 typeset -g SHELLFISH_TURN_ID=${SHELLFISH_TURN_ID-}
@@ -31,9 +29,6 @@ zshexit() {
 
 sf_hooks_reset() {
   SF_HOOK_ERROR=''
-  SF_HOOK_SCRIPT_RESULTS=()
-  SF_HOOK_CONTEXT_RECORDS=()
-  SF_HOOK_STATE_RECORDS=()
   REPLY=''
   reply=()
 }
@@ -59,15 +54,40 @@ sf_hooks_read_capture() {
   REPLY=$value
 }
 
-sf_hooks_display() {
-  local hook=$1 script=$2 text=$3 complete=$4
+sf_hooks_start() {
+  local hook=$1 script=$2 text=$3
+  (( SF_HOOK_JSONL )) || return 0
+  jq -cn --arg hook "$hook" --arg script "$script" --arg text "$text" \
+    '{type:"_hook_start",hook:$hook,script:$script,text:$text}' || return
+}
+
+sf_hooks_end() {
+  local text=$1 error=$2 display=$3
   if (( ! SF_HOOK_JSONL )); then
-    [[ $complete != true ]] || print -rn -- "$text" >&2
+    [[ -z $display ]] || print -rn -- "$display" >&2
     return 0
   fi
-  print -rn -- "$text" | jq -Rsc --arg hook "$hook" --arg script "$script" \
-    --argjson complete "$complete" \
-    '{type:"_notice",level:"info",title:$script,source:$hook,text:.,complete:$complete}'
+  print -rn -- "$text" | jq -Rsc --argjson error "$error" \
+    '{type:"_hook_end",text:.,error:$error}'
+}
+
+sf_hooks_append() {
+  local session=$1 record=$2
+  sf_session_append "$session" "$record" || {
+    SF_HOOK_ERROR=$SF_SESSION_ERROR
+    return 1
+  }
+  if (( SF_HOOK_JSONL )) && ! print -r -- "$record"; then
+    SF_HOOK_ERROR='cannot emit hook record'
+    return 1
+  fi
+}
+
+sf_hooks_active_fail() {
+  local error=$1 display=${2-}
+  SF_HOOK_ERROR_EMITTED=1
+  sf_hooks_end "$error" true "$display" || error='cannot complete hook display'
+  sf_hooks_fail "$error"
 }
 
 sf_hooks_capture_one() {
@@ -123,11 +143,13 @@ sf_hooks_dispatch() {
   }
   local -a arguments=( "${(@)argv[1,argument_count]}" )
   shift argument_count
-  local -a components=( "$@" ) result results states decoded
-  local directory script selector environment_json label
+  local -a components=( "$@" ) result component_states decoded
+  local directory script script_name selector environment_json label record context_record context_control
   local script_context script_display script_control hook=$SF_HOOK_NAME
   local origin='' control='' control_error
-  integer script_status selector_status context_size display_size control_size component_index
+  local stdout_policy=$SF_HOOK_STDOUT_POLICY
+  local skip_policy=$SF_HOOK_SKIP_POLICY
+  integer script_status selector_status context_size display_size control_size component_index has_context=0
   integer perform=1 halted=0
   setopt local_options no_err_exit no_bg_nice
 
@@ -153,6 +175,7 @@ sf_hooks_dispatch() {
       label=$components[component_index+1]
       selector=$components[component_index+2]
       environment_json=$components[component_index+3]
+      component_states=()
       if [[ -n $selector ]]; then
         sf_hooks_capture_one "$selector" "$input" "$directory" "$max_capture" \
           "$argument_count" "$environment_json" "${arguments[@]}" || return
@@ -171,40 +194,45 @@ sf_hooks_dispatch() {
             ;;
         esac
       fi
-      # A declared label opens a live notice that the script's stderr settles.
-      [[ -z $label ]] || sf_hooks_display "$hook" "$script" "$label" false || {
+      script_name=$script
+      [[ ${script_name:t} != run ]] || script_name=${script_name:h}
+      script_name=${script_name:t}
+      sf_hooks_start "$hook" "$script_name" "$label" || {
         sf_hooks_fail 'cannot open hook display'
         return
       }
       sf_hooks_capture_one "$script" "$input" "$directory" "$max_capture" \
-        "$argument_count" "$environment_json" "${arguments[@]}" || return
+        "$argument_count" "$environment_json" "${arguments[@]}" || {
+        sf_hooks_active_fail "$SF_HOOK_ERROR"
+        return
+      }
       result=( "${reply[@]}" )
       script_status=$result[1]
 
       context_size=$(wc -c <"$result[2]") || {
-        sf_hooks_fail "cannot inspect hook script context: $script"
+        sf_hooks_active_fail "cannot inspect hook script context: $script"
         return
       }
       display_size=$(wc -c <"$result[3]") || {
-        sf_hooks_fail "cannot inspect hook script display: $script"
+        sf_hooks_active_fail "cannot inspect hook script display: $script"
         return
       }
       control_size=$(wc -c <"$result[4]") || {
-        sf_hooks_fail "cannot inspect hook script control: $script"
+        sf_hooks_active_fail "cannot inspect hook script control: $script"
         return
       }
       (( context_size + display_size + control_size <= max_capture )) || {
-        sf_hooks_fail "hook script output exceeds capture limit: $script"
+        sf_hooks_active_fail "hook script output exceeds capture limit: $script"
         return
       }
 
       sf_hooks_read_capture "$result[2]" "$context_size" || {
-        sf_hooks_fail "cannot read hook script context: $script"
+        sf_hooks_active_fail "cannot read hook script context: $script"
         return
       }
       script_context=$REPLY
       sf_hooks_read_capture "$result[3]" "$display_size" || {
-        sf_hooks_fail "cannot read hook script display: $script"
+        sf_hooks_active_fail "cannot read hook script display: $script"
         return
       }
       script_display=$REPLY
@@ -225,24 +253,59 @@ sf_hooks_dispatch() {
         if [[ -z $control_error ]]; then
           decoded=( "${reply[@]}" )
           script_control=$decoded[1]
-          (( ${#decoded} <= 1 )) || states+=( "${(@)decoded[2,-1]}" )
+          component_states=( "${(@)decoded[2,-1]}" )
         fi
       fi
       if [[ -z $control_error && -n $script_control ]] && (( ! allow_control )); then
         control_error="hook script returned unexpected control data: $script"
       fi
-      if [[ -n $script_display || -n $label ]]; then
-        sf_hooks_display "$hook" "$script" "$script_display" true || {
-          sf_hooks_fail 'cannot complete hook display'
-          return
-        }
+      if [[ -z $control_error && $stdout_policy == reject && -n $script_context ]]; then
+        control_error="$hook hook script wrote unsupported stdout"
+      fi
+      if [[ -z $control_error && $skip_policy == reject && $script_status != 0 ]]; then
+        control_error="$hook hook script returned unsupported skip status"
+      fi
+      if [[ -z $control_error && -n $SF_HOOK_COMPONENT_VALIDATOR ]]; then
+        "$SF_HOOK_COMPONENT_VALIDATOR" "$script" "$script_status" \
+          "$script_context" "$script_control" || control_error=$SF_HOOK_ERROR
       fi
       if [[ -n $control_error ]]; then
-        sf_hooks_fail "$control_error"
+        sf_hooks_active_fail "$control_error" "$script_display"
         return
       fi
+      context_record=''
+      if [[ -n $script_context ]] && { [[ $stdout_policy == commit ]] ||
+          [[ $stdout_policy == commit_on_skip && $script_status != 0 ]]; }; then
+        context_control=${script_control:-'{}'}
+        sf_hooks_context_record "$hook" "$script_name" "$script_context" \
+          "$context_control" || {
+          sf_hooks_active_fail "$SF_HOOK_ERROR" "$script_display"
+          return
+        }
+        context_record=$REPLY
+        has_context=1
+      fi
+      for record in "${component_states[@]}"; do
+        if [[ -n ${SF_HOOK_SESSION-} ]]; then
+          sf_hooks_append "$SF_HOOK_SESSION" "$record" || {
+            sf_hooks_active_fail "$SF_HOOK_ERROR" "$script_display"
+            return
+          }
+        fi
+      done
+      if [[ -n $context_record ]]; then
+        if [[ -n ${SF_HOOK_SESSION-} ]]; then
+          sf_hooks_append "$SF_HOOK_SESSION" "$context_record" || {
+            sf_hooks_active_fail "$SF_HOOK_ERROR" "$script_display"
+            return
+          }
+        fi
+      fi
+      sf_hooks_end "${script_display:-$script_context}" false "$script_display" || {
+        sf_hooks_fail 'cannot complete hook display'
+        return
+      }
       [[ -z $script_control ]] || control=$script_control
-      results+=( "$script" "$script_status" "$script_context" "$script_display" "$script_control" )
       if (( script_status == 10 || script_status == 11 )); then
         [[ -n $origin ]] || origin=$script
         perform=0
@@ -253,8 +316,10 @@ sf_hooks_dispatch() {
       fi
     done
 
-    SF_HOOK_SCRIPT_RESULTS=( "${results[@]}" )
-    SF_HOOK_STATE_RECORDS=( "${states[@]}" )
+    if (( ! perform )) && [[ $skip_policy == require_context ]] && (( ! has_context )); then
+      sf_hooks_fail "$hook hook script skipped completion without feedback"
+      return
+    fi
   } always {
     rm -rf -- "$directory" 2>/dev/null || true
   }
@@ -349,10 +414,13 @@ sf_hooks_run_chain() {
 
 sf_hooks_run() {
   local session=$1 hook=$2 content=$3 stdout_policy=$4 skip_policy=$5
-  integer allow_control=$6 argument_count=$7 operation_status=0 index has_context=0
+  integer allow_control=$6 argument_count=$7 operation_status=0
   shift 7
   local input label=$hook
   local -a decision
+  local SF_HOOK_SESSION=$session
+  local SF_HOOK_STDOUT_POLICY=$stdout_policy
+  local SF_HOOK_SKIP_POLICY=$skip_policy
   [[ $hook != pre_tool_use ]] || label=pre-tool
 
   SF_HOOK_ERROR=''
@@ -375,24 +443,6 @@ sf_hooks_run() {
   (( operation_status )) || sf_hooks_run_chain "$session" "$input" "$hook" \
     "$allow_control" "$argument_count" "$@" || operation_status=1
   decision=( "${reply[@]}" )
-  if (( ! operation_status )); then
-    for (( index = 3; index <= ${#SF_HOOK_SCRIPT_RESULTS}; index += 5 )); do
-      [[ -z $SF_HOOK_SCRIPT_RESULTS[index] ]] || { has_context=1; break; }
-    done
-    if [[ $stdout_policy == reject && $has_context == 1 ]]; then
-      SF_HOOK_ERROR="$hook hook script wrote unsupported stdout"
-      operation_status=1
-    elif (( ! decision[1] )) && [[ $skip_policy == reject ]]; then
-      SF_HOOK_ERROR="$hook hook script returned unsupported skip status"
-      operation_status=1
-    elif (( ! decision[1] )) && [[ $skip_policy == require_context && $has_context == 0 ]]; then
-      SF_HOOK_ERROR="$hook hook script skipped completion without feedback"
-      operation_status=1
-    elif [[ $stdout_policy == commit ]] ||
-        [[ $stdout_policy == commit_on_skip && $decision[1] == 0 ]]; then
-      sf_hooks_collect_context "$hook" || operation_status=1
-    fi
-  fi
   rm -f -- "$input" 2>/dev/null || true
   SF_HOOK_INPUT_TEMP=''
   if (( operation_status )); then
@@ -421,38 +471,6 @@ sf_hooks_context_record() {
     SF_HOOK_ERROR="hook script returned invalid context control: $script"
     return 1
   }
-}
-
-sf_hooks_collect_context() {
-  local hook=$1 item script control
-  integer index
-  SF_HOOK_CONTEXT_RECORDS=()
-
-  for (( index = 1; index <= ${#SF_HOOK_SCRIPT_RESULTS}; index += 5 )); do
-    item=$SF_HOOK_SCRIPT_RESULTS[index+2]
-    [[ -n $item ]] || continue
-    script=$SF_HOOK_SCRIPT_RESULTS[index]
-    [[ ${script:t} != run ]] || script=${script:h}
-    script=${script:t}
-    control=$SF_HOOK_SCRIPT_RESULTS[index+4]
-    control=${control:-'{}'}
-    sf_hooks_context_record "$hook" "$script" "$item" "$control" || return
-    SF_HOOK_CONTEXT_RECORDS+=( "$REPLY" )
-  done
-}
-
-sf_hooks_commit() {
-  local session=$1 emit=$2 record
-  for record in "${SF_HOOK_STATE_RECORDS[@]}" "${SF_HOOK_CONTEXT_RECORDS[@]}"; do
-    sf_session_append "$session" "$record" || {
-      SF_HOOK_ERROR=$SF_SESSION_ERROR
-      return 1
-    }
-    "$emit" "$record" || {
-      SF_HOOK_ERROR='cannot emit hook record'
-      return 1
-    }
-  done
 }
 
 # Runs once during session preparation.

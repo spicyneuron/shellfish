@@ -14,10 +14,9 @@ The agent loop, with hooks marked, is:
 resolve runtime
 if creating a session:
     create header and system record
-    run session_start hook scripts
-    append startup state and context
+    for each session_start component: run, validate, append state and context
 open the session for a turn
-run user_prompt_submit hook scripts
+run and apply user_prompt_submit components in order
 append user
 repeat:
     build request
@@ -127,9 +126,9 @@ A script communicates through three channels. They are captured separately, but 
 
 fd 3 must contain exactly one JSON object. Every hook accepts an optional `state` array of `{name,value}` objects. The dispatcher constructs canonical state records and removes `state` before the hook-specific adapter validates the remaining fields. The control capture is private and byte-counted before decoding. Model-facing context remains raw stdout, so ordinary scripts can still use `cat` and pipelines without JSON-encoding their payloads.
 
-Display is one notice that settles in place. In JSONL mode, a component's manifest `display` label opens that notice before the script runs, and the script's stderr replaces the label after exit and capture checks. Without a label, the notice appears only after exit; a component with neither a label nor stderr is silent. Because an empty outcome settles the notice to nothing, a label announces slow work without leaving a row behind. Without a live event stream, the owning process writes the buffered stderr to its own stderr.
+In JSONL mode, `_hook_start` opens the component with its manifest `display` text before the script runs. After validation, `_hook_end` settles it with stderr when nonempty, otherwise stdout. An empty result removes the live presentation. A component failure closes the same presentation as an error. Without a live event stream, the owning process writes buffered stderr to its own stderr.
 
-stdout and state remain staged until the complete chain and hook-specific validation succeed. Shellfish then appends and emits state followed by any model-facing context. A later script failure discards the chain's staged records. See [JSONL output](RUN.md#output).
+After one component validates, Shellfish appends and emits its state followed by any model-facing context before closing it and selecting the next component. A later failure leaves that valid durable prefix intact. See [JSONL output](RUN.md#output).
 
 ### Exit statuses
 
@@ -146,7 +145,7 @@ Rules the dispatcher enforces for every script:
 
 - Nonempty fd 3 must be one JSON object. Every hook accepts common state; other fields must belong to that hook's control vocabulary.
 - stdout is candidate hook data on any successful status; whether it is committed depends on the hook (see below).
-- Successful state and stdout accumulate across the chain and become usable only after the whole chain succeeds. A later failure discards all candidate output.
+- Validated state and hook-dependent context become durable before the next component runs.
 - When a script exits with an unsupported status, its captured stderr is included in the failure message.
 
 Inner commands can return any status. `jq` exiting 1 would otherwise fail the operation, so translate explicitly. The bundled scripts always end with an explicit `exit 0`, `exit 10`, or `exit 11`.
@@ -331,7 +330,7 @@ exit 10
 
 - Session transcript records are append-only and authoritative. Hook scripts are trusted user-provided programs. Durable context travels through stdout and durable state through fd 3. Scripts never mutate the transcript directly. Scripts may request a session update through fd 3 but must not rewrite the header directly.
 - Script output is untrusted. stdout is escaped before it reaches the model. It cannot forge tags or inject provider roles.
-- Dispatch is sequential and preserves configured order. A failed chain commits no staged state or context.
+- Dispatch is sequential and preserves configured order. Each validated component commits before the next starts.
 - Captures are private, bounded, and cleaned on every path.
 - Scripts have no independent timeout. They must terminate themselves. Cancelling the enclosing operation terminates the active script's process group. A descendant that explicitly leaves the group may survive, and a shell skips its `EXIT` trap when a signal kills it. A script must not depend on either behavior for anything that matters.
 - Scripts inherit the ordinary process environment. Shellfish removes every environment name declared by any component in the frozen runtime, then restores only the names selected by the invoked hook's manifest. The variables documented above are the other Shellfish-specific hook script guarantees.

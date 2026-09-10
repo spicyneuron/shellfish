@@ -61,8 +61,8 @@ print -r -- "$stream" | jq -eRn '
   ($events | map(select(.type == "state" or .type == "context")) |
     map(if .type == "state" then [.name,.value] else ["context",.content] end)) ==
     [["stop/attempt",1],["context","feedback"],["stop/attempt",2]] and
-  ($events | map(select(.type == "_notice" and .complete) | [.source,(.title|split("/")[-1]),.text])) ==
-    [["stop","stop-once","first-local"],["stop","stop-once","second-local"]]
+  ($events | map(select(.type == "_hook_end") | .text)) ==
+    ["first-local","second-local"]
 ' >/dev/null
 sf_hooks_turn_state_cleanup
 jq -e '

@@ -6,11 +6,36 @@ setopt no_aliases no_bg_nice no_multios pipe_fail
 (( $+functions[sf_jq] )) || source "$SF_ROOT/lib/jq.zsh"
 (( $+functions[sf_hooks_run] )) || source "$SF_ROOT/lib/hooks.zsh"
 
+sf_hooks_user_prompt_validate() {
+  local control=$4
+  integer script_status=$2
+  [[ -z $control ]] || sf_jq -e --argjson status "$script_status" '
+    include "lib/runtime/schema";
+    (keys - ["action", "argv", "context", "patch"] | length) == 0 and
+    (({type:"context",hook:"user_prompt_submit",script:"script",content:""} +
+      (.context // {})) | canonical_context) and
+    (if has("action") then
+       $status == 11 and
+       (if .action == "handoff" then
+          (has("patch") | not) and
+          (.argv | type == "array" and length > 0 and
+            (.[0] | length > 0) and
+            all(.[]; type == "string" and (index("\u0000") | not)))
+        elif .action == "session_update" then
+          (has("argv") | not) and (.patch | type == "object")
+        else false end)
+     else ((has("argv") or has("patch")) | not) end)
+  ' <<<$control >/dev/null || {
+    SF_HOOK_ERROR='user_prompt_submit hook script returned invalid control data'
+    return 1
+  }
+}
+
 # Prepares prompt context before the user record is committed.
 sf_hooks_user_prompt_submit() {
   local session=$1 prompt=$2 argument control patch
   local -a decision handoff
-  integer operation_status=0 index control_status handoff_requested=0 update_requested=0
+  integer operation_status=0 handoff_requested=0 update_requested=0
 
   SF_HOOK_ERROR=''
   unset SHELLFISH_TURN_ID
@@ -21,45 +46,22 @@ sf_hooks_user_prompt_submit() {
     return
   }
   export SHELLFISH_TURN_ID
-  sf_hooks_run "$session" user_prompt_submit "$prompt" allow allow 1 1 ||
+  local SF_HOOK_COMPONENT_VALIDATOR=sf_hooks_user_prompt_validate
+  sf_hooks_run "$session" user_prompt_submit "$prompt" commit allow 1 1 ||
     operation_status=1
   decision=( "${reply[@]}" )
-  for (( index = 1; ! operation_status && index <= ${#SF_HOOK_SCRIPT_RESULTS}; index += 5 )); do
-    control=$SF_HOOK_SCRIPT_RESULTS[index+4]
-    [[ -n $control ]] || continue
-    control_status=$SF_HOOK_SCRIPT_RESULTS[index+1]
-    if ! sf_jq -e --argjson status "$control_status" '
-          include "lib/runtime/schema";
-          (keys - ["action", "argv", "context", "patch"] | length) == 0 and
-          (({type:"context",hook:"user_prompt_submit",script:"script",content:""} +
-            (.context // {})) | canonical_context) and
-          (if has("action") then
-             $status == 11 and
-             (if .action == "handoff" then
-                (has("patch") | not) and
-                (.argv | type == "array" and length > 0 and
-                  (.[0] | length > 0) and
-                  all(.[]; type == "string" and (index("\u0000") | not)))
-              elif .action == "session_update" then
-                (has("argv") | not) and (.patch | type == "object")
-              else false end)
-           else ((has("argv") or has("patch")) | not) end)
-      ' <<<"$control" >/dev/null; then
-      SF_HOOK_ERROR='user_prompt_submit hook script returned invalid control data'
-      operation_status=1
-    elif (( control_status == 11 )) &&
-        jq -e '.action? == "handoff"' <<<"$control" >/dev/null; then
-      handoff_requested=1
-      while IFS= read -r -d $'\0' argument; do
-        handoff+=( "$argument" )
-      done < <(jq -j '.argv[] | ., "\u0000"' <<<"$control")
-    elif (( control_status == 11 )) &&
-        jq -e '.action? == "session_update"' <<<"$control" >/dev/null; then
-      update_requested=1
-      patch=$(jq -c '.patch' <<<"$control") || operation_status=1
-    fi
-  done
-  (( operation_status )) || sf_hooks_collect_context user_prompt_submit || operation_status=1
+  control=$decision[4]
+  if (( ! operation_status && ! decision[1] && decision[2] )) &&
+      jq -e '.action? == "handoff"' <<<"$control" >/dev/null; then
+    handoff_requested=1
+    while IFS= read -r -d $'\0' argument; do
+      handoff+=( "$argument" )
+    done < <(jq -j '.argv[] | ., "\u0000"' <<<"$control")
+  elif (( ! operation_status && ! decision[1] && decision[2] )) &&
+      jq -e '.action? == "session_update"' <<<"$control" >/dev/null; then
+    update_requested=1
+    patch=$(jq -c '.patch' <<<"$control") || operation_status=1
+  fi
   if (( operation_status )); then
     [[ -n $SF_HOOK_ERROR ]] || SF_HOOK_ERROR='cannot prepare user_prompt_submit hook script invocation'
     sf_hooks_fail "$SF_HOOK_ERROR"
@@ -88,11 +90,26 @@ sf_hooks_stop() {
 }
 
 # Hooks decide sandbox bypass on fd 3 or defer to the run client channel.
+sf_hooks_permission_validate() {
+  local control=$4
+  integer script_status=$2
+  [[ -z $control ]] && return 0
+  (( script_status == 11 )) && jq -e '
+    (keys == ["action"] and .action == "allow") or
+    (keys == ["action", "reason"] and .action == "deny" and
+      (.reason | type == "string" and length > 0 and
+        (index("\u0000") | not)))
+  ' <<<$control >/dev/null || {
+    SF_HOOK_ERROR='permission_request hook script returned invalid decision'
+    return 1
+  }
+}
+
 sf_hooks_permission_request() {
   local session=$1 tool_name=$2 call_id=$3 tool_input=$4
-  local input='' decoded control_count=0
+  local input='' decoded
   local -a result fields
-  integer operation_status=0 index
+  integer operation_status=0
 
   SF_HOOK_ERROR=''
   if (( SF_HOOK_COUNTS[permission_request] )); then
@@ -101,17 +118,12 @@ sf_hooks_permission_request() {
       '{turn_id:$turn_id,tool_name:$tool_name,tool_use_id:$tool_use_id,
         tool_input:.}') || operation_status=1
   fi
-  (( operation_status )) || sf_hooks_run "$session" permission_request "$input" allow allow 1 1 ||
+  local SF_HOOK_COMPONENT_VALIDATOR=sf_hooks_permission_validate
+  (( operation_status )) || sf_hooks_run "$session" permission_request "$input" ignore allow 1 1 ||
     operation_status=1
   result=( "${reply[@]}" )
   if (( ! operation_status )); then
-    for (( index = 1; index <= ${#SF_HOOK_SCRIPT_RESULTS}; index += 5 )); do
-      [[ -z $SF_HOOK_SCRIPT_RESULTS[index+4] ]] || (( control_count += 1 ))
-    done
-    if (( control_count > 0 && (! result[2] || control_count != 1) )); then
-      SF_HOOK_ERROR='permission_request hook script returned invalid decision'
-      operation_status=1
-    elif (( result[1] )); then
+    if (( result[1] )); then
       reply=(defer '')
     elif (( ! result[2] )); then
       reply=(deny '')
@@ -146,10 +158,19 @@ sf_hooks_permission_request() {
 }
 
 # Gates tool calls and uses script output as denial feedback.
+sf_hooks_pre_tool_validate() {
+  local context=$3
+  integer script_status=$2
+  (( script_status != 0 )) || [[ -z $context ]] || {
+    SF_HOOK_ERROR='pre_tool_use hook script wrote unsupported stdout'
+    return 1
+  }
+  [[ -z $context ]] || SF_HOOK_FEEDBACK+=( "$context" )
+}
+
 sf_hooks_pre_tool_use() {
   local session=$1 tool_name=$2 call_id=$3 tool_input=$4 input='' reason
-  local -a decision feedback
-  integer index
+  local -a decision SF_HOOK_FEEDBACK=()
 
   if (( SF_HOOK_COUNTS[pre_tool_use] )); then
     input=$(print -rn -- "$tool_input" | jq -c --argjson turn_id "$SHELLFISH_TURN_ID" \
@@ -160,20 +181,13 @@ sf_hooks_pre_tool_use() {
       return
     }
   fi
-  sf_hooks_run "$session" pre_tool_use "$input" allow allow 0 1 || return
+  local SF_HOOK_COMPONENT_VALIDATOR=sf_hooks_pre_tool_validate
+  sf_hooks_run "$session" pre_tool_use "$input" ignore allow 0 1 || return
   decision=( "${reply[@]}" )
-  for (( index = 1; index <= ${#SF_HOOK_SCRIPT_RESULTS}; index += 5 )); do
-    [[ -n $SF_HOOK_SCRIPT_RESULTS[index+2] ]] || continue
-    if (( SF_HOOK_SCRIPT_RESULTS[index+1] == 0 )); then
-      sf_hooks_fail 'pre_tool_use hook script wrote unsupported stdout'
-      return 1
-    fi
-    feedback+=( "$SF_HOOK_SCRIPT_RESULTS[index+2]" )
-  done
   if (( decision[1] )); then
     reply=(allow '')
   else
-    reason=${(pj:\n:)feedback}
+    reason=${(pj:\n:)SF_HOOK_FEEDBACK}
     reply=(deny "${reason:-tool call denied by pre_tool_use hook: ${decision[3]:t}}")
   fi
 }

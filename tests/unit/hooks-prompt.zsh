@@ -39,7 +39,8 @@ jq -eRs '
 ' "$prompt_session" >/dev/null
 
 # Prompt matching skips a component before invocation and continues in configured order.
-typeset select_session="$tmp/select-session.jsonl" select_marker="$tmp/unmatched"
+typeset select_session="$tmp/select-session.jsonl" select_newline_session="$tmp/select-newline-session.jsonl"
+typeset select_marker="$tmp/unmatched"
 typeset select_events="$tmp/select-events"
 make_script unmatched ': >"$SELECT_MARKER"'
 typeset unmatched=$script saved_runtime=$SF_TEST_RUNTIME
@@ -53,7 +54,11 @@ sf_test_session "$select_session"
 SF_HOOK_JSONL=1 SELECT_MARKER="$select_marker" \
   run_prompt_hook ordinary "$select_session" >"$select_events"
 [[ ! -e $select_marker ]]
-[[ ! -s $select_events ]]
+jq -e -s '
+  map(.type) == ["_hook_start","context","_hook_end"] and
+  .[0] == {type:"_hook_start",hook:"user_prompt_submit",script:"prompt",text:""} and
+  .[1].script == "prompt" and .[2] == {type:"_hook_end",text:"ordinarycontext",error:false}
+' "$select_events" >/dev/null
 jq -e 'select(.type == "context" and .script == "prompt" and
   .content == "ordinarycontext")' < <(tail -n 1 "$select_session") >/dev/null
 SF_TEST_RUNTIME=$(jq -c --arg unmatched "$unmatched" '
@@ -62,8 +67,9 @@ SF_TEST_RUNTIME=$(jq -c --arg unmatched "$unmatched" '
       match:{pattern:"^ordinary\\z"}}
   ]
 ' <<<"$SF_TEST_RUNTIME")
+sf_test_session "$select_newline_session"
 SF_HOOK_JSONL=1 SELECT_MARKER="$select_marker" \
-  run_prompt_hook $'ordinary\n' "$select_session" >"$select_events"
+  run_prompt_hook $'ordinary\n' "$select_newline_session" >"$select_events"
 [[ ! -e $select_marker ]]
 [[ ! -s $select_events ]]
 SF_TEST_RUNTIME=$saved_runtime
@@ -71,7 +77,6 @@ SF_TEST_RUNTIME=$saved_runtime
 SKIP=1 run_prompt_hook command "$prompt_session"
 [[ ${#reply} == 1 && $reply[1] == handled ]]
 [[ -z ${SHELLFISH_TURN_ID-} ]]
-[[ $SF_HOOK_SCRIPT_RESULTS[4] == blocked ]]
 jq -e 'select(.type == "context" and .content == "commandcontext")' \
   < <(tail -n 1 "$prompt_session") >/dev/null
 META=1 run_prompt_hook '!false' "$prompt_session"
@@ -83,7 +88,7 @@ BINARY=1 run_prompt_hook binary "$prompt_session"
 [[ ${#reply} == 1 && $reply[1] == proceed ]]
 jq -e 'select(.type == "context" and .content == "binarycontext\u0000tail")' \
   < <(tail -n 1 "$prompt_session") >/dev/null
-# The caller commits context returned with a handoff.
+# Context emitted with a handoff is already durable.
 CONTROL="$tmp/switched.jsonl" run_prompt_hook /switch "$prompt_session"
 [[ ${#reply} == 3 && $reply[1] == handoff && $reply[2] == /usr/bin/printf &&
    $reply[3] == "$tmp/switched.jsonl" ]]

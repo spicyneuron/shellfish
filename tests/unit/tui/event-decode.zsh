@@ -7,6 +7,8 @@ cat <<'STREAM' |
 {"type":"session","format_version":1,"cwd":"/tmp","created":"2026-01-01T00:00:00Z","profile":{"request":{"model":"test"}},"backend":{"name":"test","command":"/usr/bin/false","endpoint":"https://example.invalid","environment":[],"env_file":"","insecure_tls":false,"http_timeout":30,"http_stall":10},"harness":{"sandbox_read_paths":[],"sandbox_write_paths":[],"fence":"","tools":[],"sandbox":false,"max_requests_per_turn":8,"max_tool_calls_per_request":16,"max_capture_bytes":65536}}
 {"type":"system","content":"instructions"}
 {"type":"state","name":"startup/status","value":"ready"}
+{"type":"_hook_start","hook":"session_start","script":"environment","text":"Inspecting"}
+{"type":"_hook_end","text":"ready","error":false}
 {"type":"_assistant_start"}
 {"type":"_assistant_reasoning_delta","text":"why"}
 {"type":"_assistant_message_delta","text":"hi\n"}
@@ -109,6 +111,10 @@ for invalid in '.path="relative"' '.path="/bad\u0000path"' '.records=[]' \
 done
 
 for invalid in '{"type":"turn_error","message":1}' \
+    '{"type":"_hook_start","hook":"stop","script":"check"}' \
+    '{"type":"_hook_start","hook":"unknown","script":"check","text":""}' \
+    '{"type":"_hook_start","hook":"stop","script":"","text":""}' \
+    '{"type":"_hook_end","text":"done","error":"false"}' \
     '{"type":"_notice","level":"warn","title":"t","source":"","text":"x","complete":true}' \
     '{"type":"_notice","level":"error","title":"t","source":"","text":"x"}'; do
   if print -r -- "$invalid" |

@@ -499,6 +499,29 @@ function apply(frame) {
       // Provisional. Content is drawn only from the record that commits it,
       // which arrives on this same stream.
       return;
+    case "_hook_start":
+      if (
+        ![
+          "session_start", "user_prompt_submit", "permission_request",
+          "pre_tool_use", "post_tool_use", "stop",
+        ].includes(frame.hook) ||
+        typeof frame.script !== "string" || !frame.script ||
+        /[\u0000-\u001f\u007f-\u009f]/.test(frame.script) ||
+        typeof frame.text !== "string" ||
+        /[\u0000-\u001f\u007f-\u009f]/.test(frame.text) ||
+        Object.keys(frame).sort().join(",") !== "hook,script,text,type"
+      ) {
+        throw new Error("invalid hook start");
+      }
+      return;
+    case "_hook_end":
+      if (
+        typeof frame.text !== "string" || typeof frame.error !== "boolean" ||
+        Object.keys(frame).sort().join(",") !== "error,text,type"
+      ) {
+        throw new Error("invalid hook end");
+      }
+      return;
     case "_tool_permission_request":
       return askPermission(frame);
     case "_notice": {

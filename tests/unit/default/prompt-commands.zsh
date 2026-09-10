@@ -6,7 +6,8 @@ sf_test_runtime
 
 # The bundled help script reads frozen command metadata, then halts before
 # unrelated prompt components.
-typeset help_session="$tmp/help-session.jsonl"
+typeset help_session="$tmp/help-session.jsonl" hook_events="$tmp/hook-events.jsonl"
+typeset -g SF_TEST_HOOK_EVENTS=$hook_events
 make_script after_help ': >"$SHELLFISH_TURN_STATE/after-help"'
 typeset after_help=$script
 SF_TEST_RUNTIME=$(jq -c \
@@ -49,10 +50,7 @@ run_prompt_hook /help "$help_session"
 [[ $reply[1] == handled ]]
 [[ ! -e $SHELLFISH_TURN_STATE/after-help ]]
 typeset help_display=''
-integer result_index
-for (( result_index = 4; result_index <= ${#SF_HOOK_SCRIPT_RESULTS}; result_index += 5 )); do
-  [[ -z $SF_HOOK_SCRIPT_RESULTS[result_index] ]] || help_display=$SF_HOOK_SCRIPT_RESULTS[result_index]
-done
+help_display=$(jq -r 'select(.type == "_hook_end") | .text' "$hook_events")
 [[ $help_display == 'shift+enter'* ]]
 (( ${#help_display} > 20 ))
 # Every command key appears in the formatted output.
@@ -135,9 +133,7 @@ mkdir "$sandbox_dir"
 set_prompt_hook "$help_session" "$ROOT/share/default/hooks/user_prompt_submit/sandbox/run"
 run_prompt_hook /sandbox "$help_session"
 [[ $reply[1] == handled ]]
-for (( result_index = 4; result_index <= ${#SF_HOOK_SCRIPT_RESULTS}; result_index += 5 )); do
-  [[ -z $SF_HOOK_SCRIPT_RESULTS[result_index] ]] || sandbox_display=$SF_HOOK_SCRIPT_RESULTS[result_index]
-done
+sandbox_display=$(jq -r 'select(.type == "_hook_end") | .text' "$hook_events")
 [[ $sandbox_display == *'Sandbox: enabled'* && $sandbox_display == *'Read grants:'* &&
    $sandbox_display == *'Write grants:'* ]]
 run_prompt_hook "/sandbox +w $sandbox_dir" "$help_session"
@@ -173,9 +169,7 @@ set_prompt_hook "$disabled_session" "$ROOT/share/default/hooks/user_prompt_submi
 run_prompt_hook "/sandbox +r $sandbox_dir" "$disabled_session"
 [[ $reply[1] == handled ]]
 sandbox_display=''
-for (( result_index = 4; result_index <= ${#SF_HOOK_SCRIPT_RESULTS}; result_index += 5 )); do
-  [[ -z $SF_HOOK_SCRIPT_RESULTS[result_index] ]] || sandbox_display=$SF_HOOK_SCRIPT_RESULTS[result_index]
-done
+sandbox_display=$(jq -r 'select(.type == "_hook_end") | .text' "$hook_events")
 [[ $sandbox_display == *disabled* ]] || fail 'disabled sandbox did not display its state'
 
 sf_hooks_turn_state_cleanup

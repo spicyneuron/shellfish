@@ -11,6 +11,13 @@ def event_fields($event_runtime):
   elif .type == "_assistant_reasoning_opaque" or .type == "_turn_usage" then
     # Nothing to present: the durable assistant record carries both.
     empty
+  elif .type == "_hook_start" and keys == ["hook", "script", "text", "type"] and
+      (.hook as $hook | hook_names | index($hook) != null) and
+      (.script | nonempty_control_free_string) and (.text | hook_display) then
+    empty
+  elif .type == "_hook_end" and keys == ["error", "text", "type"] and
+      (.error | type == "boolean") and (.text | type == "string") then
+    empty
   elif . == {type:"_assistant_start"} then
     ["assistant_start"]
   elif .type == "_assistant_end" and keys == ["stop", "type"] and

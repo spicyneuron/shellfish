@@ -42,8 +42,6 @@ sf_create_session() {
     return 1
   elif ! sf_hooks_session_start "$session"; then
     error=$SF_HOOK_ERROR
-  elif ! sf_hooks_commit "$session" sf_create_emit; then
-    error=$SF_HOOK_ERROR
   fi
   [[ -n $error ]] || return 0
   rm -f -- "$session" 2>/dev/null

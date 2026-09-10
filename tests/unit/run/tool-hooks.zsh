@@ -64,11 +64,8 @@ print -r -- "$stream" | jq -eRn '
     map(if .type == "state" then [.name,.value] else ["result",.call_id] end)) ==
     [["tools/pre","call_1"],["result","call_1"],["tools/post","call_1"],
      ["tools/pre","call_2"],["result","call_2"],["tools/post","call_2"]] and
-  ($events | map(select(.type == "_notice" and .complete) | {hook:.source,script:(.title|split("/")[-1]),text})) ==
-    [{hook:"pre_tool_use",script:"pre-observe",text:"pre-local-call_1"},
-     {hook:"post_tool_use",script:"post-observe",text:"post-local-call_1"},
-     {hook:"pre_tool_use",script:"pre-observe",text:"pre-local-call_2"},
-     {hook:"post_tool_use",script:"post-observe",text:"post-local-call_2"}]
+  ($events | map(select(.type == "_hook_end") | .text)) ==
+    ["pre-local-call_1","post-local-call_1","pre-local-call_2","post-local-call_2"]
 ' >/dev/null
 jq -e '. == {turn_id:1,tool_name:"shell",tool_use_id:"call_1",
   tool_input:{command:"printf '\''line\\n\\n'\''; exit 7"}}' \

@@ -40,8 +40,7 @@ stream=$(SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_BYPASS=true \
 print -r -- "$stream" | jq -eRn '
   [inputs | fromjson] as $events |
   ($events | map(select(.type == "_tool_permission_request")) | length) == 0 and
-  ($events | map(select(.type == "_notice" and .complete) | [.source,(.title|split("/")[-1]),.text])) ==
-    [["permission_request","permission-allow","reviewed"]] and
+  ($events | map(select(.type == "_hook_end") | .text)) == ["reviewed"] and
   ($events | map(select(.type == "state" or .type == "tool_result")) | map(.type)) ==
     ["state","tool_result"] and
   ($events | map(select(.type == "tool_result"))[0] |

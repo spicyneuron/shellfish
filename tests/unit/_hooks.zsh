@@ -23,8 +23,13 @@ run_prompt_hook() {
   integer operation_status=0
 
   sf_session_begin_turn "$session" || return
-  sf_hooks_user_prompt_submit "$session" "$prompt" || operation_status=1
-  (( operation_status )) || sf_hooks_commit "$session" : || operation_status=1
+  if [[ -n ${SF_TEST_HOOK_EVENTS-} ]]; then
+    local SF_HOOK_JSONL=1
+    sf_hooks_user_prompt_submit "$session" "$prompt" >"$SF_TEST_HOOK_EVENTS" ||
+      operation_status=1
+  else
+    sf_hooks_user_prompt_submit "$session" "$prompt" || operation_status=1
+  fi
   sf_session_reset
   return $operation_status
 }

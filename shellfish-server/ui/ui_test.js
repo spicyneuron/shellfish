@@ -597,6 +597,8 @@ test("leaves deltas out of the transcript and draws the record once", async () =
 
   // Transient deltas do not alter the durable transcript.
   await page.send(
+    { type: "_hook_start", hook: "stop", script: "check", text: "Checking" },
+    { type: "_hook_end", text: "done", error: false },
     { type: "_assistant_message_delta", text: "" },
     { type: "_assistant_message_delta", text: "par" },
     { type: "_assistant_reasoning_delta", text: "thinking" },

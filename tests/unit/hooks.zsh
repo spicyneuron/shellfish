@@ -3,7 +3,7 @@
 source "${0:A:h}/_hooks.zsh"
 
 # session_start runs during session creation, receives its hook name, and
-# commits one attributed context record after the complete chain succeeds.
+# commits each attributed context record before the next component runs.
 typeset start_session="$tmp/start-session.jsonl"
 make_script start '[[ $# == 1 && $1 == session_start ]]; [[ ! -s /dev/stdin && -z ${SHELLFISH_TURN_ID-} && -z ${SHELLFISH_TURN_STATE-} ]]; [[ -z ${OPENAI_API_KEY-} && -z ${CUSTOM_API_KEY-} ]]; [[ $SHELLFISH_MODEL == test && $0 == /* && -d ${0:A:h} ]]; [[ $SHELLFISH_CONFIG_DIR == "$EXPECTED_CONFIG_DIR" ]]; print -n startup; print -n -u2 local; [[ -z $SKIP ]] || exit 10'
 typeset start_script=$script
@@ -29,10 +29,9 @@ if sf_hooks_run "$start_session" misspelled '' allow allow 0 1; then
 fi
 [[ $SF_HOOK_ERROR == 'unknown hook: misspelled' ]]
 sf_hooks_session_start "$start_session"
-[[ -z $REPLY && ${#reply} == 0 && $SF_HOOK_SCRIPT_RESULTS[4] == local ]]
+[[ -z $REPLY && ${#reply} == 0 ]]
 [[ $OPENAI_API_KEY == standard-secret && $CUSTOM_API_KEY == custom-secret ]]
 unset OPENAI_API_KEY CUSTOM_API_KEY
-sf_hooks_commit "$start_session" :
 jq -e -s '
   length == 3 and
   .[1] == {type:"context",hook:"session_start",script:"start",content:"startup"} and
@@ -82,7 +81,6 @@ typeset newline_session="$tmp/newline-session.jsonl"
 sf_session_prepare "$SF_TEST_RUNTIME"
 sf_test_install_prepared "$newline_session"
 sf_hooks_session_start "$newline_session"
-sf_hooks_commit "$newline_session" :
 cd "$previous_cwd"
 jq -e -s --arg cwd "$newline_cwd" '.[0].cwd == $cwd' "$newline_session" >/dev/null
 
@@ -141,7 +139,7 @@ typeset -gx SHELLFISH_TURN_ID=1
 print allow >"$SHELLFISH_TURN_STATE/decision"
 sf_hooks_permission_request "$permission_session" shell call_7 \
   '{"command":"true"}'
-[[ $reply[1] == allow && -z $reply[2] && $SF_HOOK_SCRIPT_RESULTS[4] == local ]]
+[[ $reply[1] == allow && -z $reply[2] ]]
 (( $(wc -l <"$permission_session") == 1 ))
 print deny >"$SHELLFISH_TURN_STATE/decision"
 sf_hooks_permission_request "$permission_session" shell call_7 \
@@ -158,8 +156,9 @@ sf_hooks_permission_request "$permission_session" shell call_7 \
 print state >"$SHELLFISH_TURN_STATE/decision"
 sf_hooks_permission_request "$permission_session" shell call_7 \
   '{"command":"true"}'
-[[ $reply[1] == defer && -z $reply[2] &&
-   $SF_HOOK_STATE_RECORDS[1] == '{"type":"state","name":"permission/check","value":true}' ]]
+[[ $reply[1] == defer && -z $reply[2] ]]
+jq -e -s '.[-1] == {type:"state",name:"permission/check",value:true}' \
+  "$permission_session" >/dev/null
 print halt >"$SHELLFISH_TURN_STATE/decision"
 if sf_hooks_permission_request "$permission_session" shell call_7 \
     '{"command":"true"}'; then
@@ -229,16 +228,14 @@ sf_session_reset
 sf_hooks_turn_state_create
 sf_session_begin_turn "$stop_session"
 STOP_ATTEMPT=1 STOP_INPUT=hi STOP_STDOUT=1 sf_hooks_stop "$stop_session" hi 1
-[[ $reply[1] == finish && $SF_HOOK_SCRIPT_RESULTS[4] == local ]]
-sf_hooks_commit "$stop_session" :
+[[ $reply[1] == finish ]]
 sf_session_reset
 (( $(wc -l <"$stop_session") == 3 ))
 
 sf_session_begin_turn "$stop_session"
 STOP_ATTEMPT=2 STOP_INPUT=hi STOP_SKIP=1 STOP_STDOUT=1 \
   sf_hooks_stop "$stop_session" hi 2
-[[ $reply[1] == continue && $SF_HOOK_SCRIPT_RESULTS[4] == local ]]
-sf_hooks_commit "$stop_session" :
+[[ $reply[1] == continue ]]
 sf_session_reset
 jq -e -s '.[-1] == {type:"context",hook:"stop",script:"stop",content:"feedback"}' \
   "$stop_session" >/dev/null

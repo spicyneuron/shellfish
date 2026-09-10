@@ -5,13 +5,23 @@ typeset -g SF_HOOK_NAME=test_hook
 typeset -gA SF_SESSION=(runtime '{"backend":{"environment":[],"env_file":""},"harness":{"tools":[]}}')
 
 typeset input="$tmp/input" empty="$tmp/empty" original_directory=$PWD
+typeset -a component_results=()
+typeset -g SF_HOOK_SESSION=''
+typeset -g SF_HOOK_STDOUT_POLICY=ignore
+typeset -g SF_HOOK_SKIP_POLICY=allow
 print -rn -- '{"sample":"test"}' >"$input"
 : >"$empty"
+
+capture_component() {
+  component_results+=( "$1" "$2" "$3" "$4" )
+}
+typeset -g SF_HOOK_COMPONENT_VALIDATOR=capture_component
 
 dispatch_hooks() {
   local input=$1 max_capture=$2 allow_control=$3 argument_count=$4 script
   shift 4
   local -a components
+  component_results=()
   for script in "$@"; do
     components+=( "$script" '' '' '' )
   done
@@ -30,10 +40,10 @@ make_script mixed 'cat; print -rn -- $'\''\0tail\n'\''; print -rn -u2 -- $'\''lo
 typeset mixed=$script
 dispatch_hooks "$input" 64 0 0 "$mixed"
 [[ -z $REPLY ]]
-(( ${#SF_HOOK_SCRIPT_RESULTS} == 5 ))
-[[ $SF_HOOK_SCRIPT_RESULTS[1] == "$mixed" && $SF_HOOK_SCRIPT_RESULTS[2] == 0 ]]
-[[ $SF_HOOK_SCRIPT_RESULTS[3] == $'{"sample":"test"}\0tail\n' ]]
-[[ $SF_HOOK_SCRIPT_RESULTS[4] == $'local\n' && -z $SF_HOOK_SCRIPT_RESULTS[5] ]]
+(( ${#component_results} == 4 ))
+[[ $component_results[1] == "$mixed" && $component_results[2] == 0 ]]
+[[ $component_results[3] == $'{"sample":"test"}\0tail\n' ]]
+[[ -z $component_results[4] ]]
 (( reply[1] ))
 
 # Policy cases consume captured files; subprocess coverage remains above and below.
@@ -64,27 +74,29 @@ typeset context_only=$script
 capture_result display_only 0 '' from-stderr
 typeset display_only=$script
 dispatch_hooks "$empty" 64 0 0 "$context_only" "$display_only"
-(( ${#SF_HOOK_SCRIPT_RESULTS} == 10 ))
-[[ $SF_HOOK_SCRIPT_RESULTS[1] == "$context_only" && $SF_HOOK_SCRIPT_RESULTS[3] == from-stdout &&
-   -z $SF_HOOK_SCRIPT_RESULTS[4] ]]
-[[ $SF_HOOK_SCRIPT_RESULTS[6] == "$display_only" && -z $SF_HOOK_SCRIPT_RESULTS[8] &&
-   $SF_HOOK_SCRIPT_RESULTS[9] == from-stderr ]]
+(( ${#component_results} == 8 ))
+[[ $component_results[1] == "$context_only" && $component_results[3] == from-stdout ]]
+[[ $component_results[5] == "$display_only" && -z $component_results[7] ]]
 
 # A match command is silent, selects with status 0, and skips with status 1.
 capture_result selector 1
 typeset selector=$script
+component_results=()
 sf_hooks_dispatch "$empty" 64 0 0 "$context_only" '' "$selector" ''
-(( ${#SF_HOOK_SCRIPT_RESULTS} == 0 ))
+(( ${#component_results} == 0 ))
 capture_status[$selector]=0
+component_results=()
 sf_hooks_dispatch "$empty" 64 0 0 "$context_only" '' "$selector" ''
-[[ $SF_HOOK_SCRIPT_RESULTS[1] == "$context_only" ]]
+[[ $component_results[1] == "$context_only" ]]
 capture_display[$selector]=unexpected
+component_results=()
 if sf_hooks_dispatch "$empty" 64 0 0 "$context_only" '' "$selector" ''; then
   fail 'a match command that wrote output was accepted'
 fi
 [[ $SF_HOOK_ERROR == "hook match command wrote output: $selector" ]]
 capture_display[$selector]=''
 capture_status[$selector]=2
+component_results=()
 if sf_hooks_dispatch "$empty" 64 0 0 "$context_only" '' "$selector" ''; then
   fail 'a failed match command was accepted'
 fi
@@ -98,11 +110,11 @@ typeset later=$script
 dispatch_hooks "$empty" 64 0 0 "$skip" "$later"
 (( ! reply[1] ))
 [[ -z $REPLY && $reply[3] == "$skip" ]]
-(( ${#SF_HOOK_SCRIPT_RESULTS} == 10 ))
-[[ $SF_HOOK_SCRIPT_RESULTS[1] == "$skip" && $SF_HOOK_SCRIPT_RESULTS[2] == 10 &&
-   $SF_HOOK_SCRIPT_RESULTS[3] == first ]]
-[[ $SF_HOOK_SCRIPT_RESULTS[6] == "$later" && $SF_HOOK_SCRIPT_RESULTS[7] == 0 &&
-   $SF_HOOK_SCRIPT_RESULTS[8] == second ]]
+(( ${#component_results} == 8 ))
+[[ $component_results[1] == "$skip" && $component_results[2] == 10 &&
+   $component_results[3] == first ]]
+[[ $component_results[5] == "$later" && $component_results[6] == 0 &&
+   $component_results[7] == second ]]
 
 # Status 11 stops the chain and preserves structured JSON control.
 capture_result control 11 before '' '{"action":"handoff","argv":["one","","line\\nbreak"]}'
@@ -127,8 +139,7 @@ typeset status_zero=$script
 dispatch_hooks "$empty" 64 1 0 "$status_zero"
 [[ $reply[4] == '{"action":"test"}' ]]
 
-# Common state is staged in script and array order, then removed before
-# hook-specific control is returned to the adapter.
+# Common state is removed before hook-specific control reaches the adapter.
 capture_result state_first 0 '' '' \
   '{"state":[{"name":"first","value":1},{"name":"second","value":null}]}'
 typeset state_first=$script
@@ -136,13 +147,12 @@ capture_result state_action 0 '' '' \
   '{"action":"test","state":[{"name":"third","value":{"ok":true}}]}'
 typeset state_action=$script
 dispatch_hooks "$empty" 512 1 0 "$state_first" "$state_action"
-[[ -z $SF_HOOK_SCRIPT_RESULTS[5] &&
-   $SF_HOOK_SCRIPT_RESULTS[10] == '{"action":"test"}' &&
+[[ -z $component_results[4] &&
+   $component_results[8] == '{"action":"test"}' &&
    $reply[4] == '{"action":"test"}' ]]
-[[ ${(pj:\n:)SF_HOOK_STATE_RECORDS} == $'{"type":"state","name":"first","value":1}\n{"type":"state","name":"second","value":null}\n{"type":"state","name":"third","value":{"ok":true}}' ]]
 
 dispatch_hooks "$empty" 512 0 0 "$state_first"
-[[ ${#SF_HOOK_STATE_RECORDS} == 2 && -z $reply[4] ]]
+[[ -z $reply[4] ]]
 
 capture_result empty_control 0 '' '' '{}'
 typeset empty_control=$script
@@ -177,9 +187,9 @@ if dispatch_hooks "$empty" 512 1 0 "$state_first" "$invalid_state"; then
   fail 'invalid hook state was accepted'
 fi
 [[ $SF_HOOK_ERROR == "hook script returned invalid state control: $invalid_state" &&
-   ${#SF_HOOK_STATE_RECORDS} == 0 && ${#SF_HOOK_SCRIPT_RESULTS} == 0 ]]
+   ${#component_results} == 4 ]]
 
-# Unexpected exits discard all accumulated candidate output.
+# A later unexpected exit leaves earlier completed components intact.
 capture_result failed 9 failed detail
 typeset failed=$script
 if dispatch_hooks "$empty" 64 0 0 "$later" "$failed"; then
@@ -187,7 +197,7 @@ if dispatch_hooks "$empty" 64 0 0 "$later" "$failed"; then
 fi
 [[ $SF_HOOK_ERROR == "hook script failed with status 9: $failed: detail" ]]
 [[ -z $REPLY && ${#reply} == 0 ]]
-(( ${#SF_HOOK_SCRIPT_RESULTS} == 0 ))
+(( ${#component_results} == 4 ))
 
 # Each script receives its own combined output budget.
 capture_result forty 0 "${(l:40::0:)""}"
@@ -195,7 +205,7 @@ typeset forty=$script
 capture_result thirty 0 "${(l:30::0:)""}"
 typeset thirty=$script
 dispatch_hooks "$empty" 64 0 0 "$forty" "$thirty"
-(( ${#SF_HOOK_SCRIPT_RESULTS} == 10 ))
+(( ${#component_results} == 8 ))
 
 capture_result combined_overflow 0 "${(l:40::0:)""}" "${(l:25::0:)""}"
 typeset combined_overflow=$script
@@ -222,10 +232,11 @@ sf_hooks_turn_state_create
 state=$SHELLFISH_TURN_STATE
 [[ $(stat -f %Lp "$state") == 700 ]]
 print -n shared >"$state/marker"
+component_results=()
 sf_hooks_invoke "$session" "$working" "$input" 4096 0 3 stop '' $'line\nbreak' \
   "$invocation" '' '' '' || fail "$SF_HOOK_ERROR"
 typeset expected="3|stop||"$'line\nbreak|first\nsecond\n'"|$working|${session:A}|4096|$state|model-name|$invocation|${invocation:A:h}"
-assert_equal "$expected" "$SF_HOOK_SCRIPT_RESULTS[3]"
+assert_equal "$expected" "$component_results[3]"
 [[ $(cat "$state/marker") == shared ]]
 [[ $PWD == $original_directory ]]
 make_script hook_only 'print -rn -- "$#|$1|"; cat'
@@ -233,12 +244,14 @@ typeset hook_only=$script
 print -rn -- $'first\nsecond' >"$input"
 typeset -g SHELLFISH_TURN_ID=1
 typeset -g +x SHELLFISH_TURN_ID
+component_results=()
 sf_hooks_invoke "$session" "$working" "$input" 512 0 1 stop "$hook_only" '' '' ''
-[[ $SF_HOOK_SCRIPT_RESULTS[3] == $'1|stop|first\nsecond' ]]
+[[ $component_results[3] == $'1|stop|first\nsecond' ]]
 [[ ${(t)SHELLFISH_TURN_ID} != *export* ]]
 : >"$empty"
+component_results=()
 sf_hooks_invoke "$session" "$working" "$empty" 512 0 1 stop "$hook_only" '' '' ''
-[[ $SF_HOOK_SCRIPT_RESULTS[3] == '1|stop|' ]]
+[[ $component_results[3] == '1|stop|' ]]
 sf_hooks_turn_state_cleanup
 [[ -z $SHELLFISH_TURN_STATE && ! -e $state ]]
 sf_hooks_turn_state_create
@@ -250,9 +263,10 @@ SF_SESSION[runtime]='{"backend":{"environment":["BACKEND_SETTING"],"env_file":""
 export BACKEND_SETTING=backend HOOK_SETTING=hook TOOL_SETTING=tool SHELLFISH_SESSION=external
 make_script selected_environment 'print -rn -- "${BACKEND_SETTING-unset}|${HOOK_SETTING-unset}|${TOOL_SETTING-unset}|$SHELLFISH_SESSION"'
 typeset selected_environment=$script
+component_results=()
 sf_hooks_invoke "$session" "$working" "$empty" 512 0 1 stop \
   "$selected_environment" '' '' 'HOOK_SETTING SHELLFISH_SESSION' || fail "$SF_HOOK_ERROR"
-assert_equal "unset|hook|unset|${session:A}" "$SF_HOOK_SCRIPT_RESULTS[3]"
+assert_equal "unset|hook|unset|${session:A}" "$component_results[3]"
 unset BACKEND_SETTING HOOK_SETTING TOOL_SETTING SHELLFISH_SESSION
 
 # Turn-only fixed context remains absent from session_start even when selected.
@@ -263,9 +277,10 @@ SF_SESSION[runtime]=$(jq -c --arg path "$tmp/component.env" '
 ' <<<"$SF_SESSION[runtime]")
 make_script no_turn 'print -rn -- "${SHELLFISH_TURN_ID-unset}"'
 typeset no_turn=$script
+component_results=()
 sf_hooks_invoke "$session" "$working" "$empty" 512 0 1 session_start \
   "$no_turn" '' '' 'SHELLFISH_TURN_ID' || fail "$SF_HOOK_ERROR"
-assert_equal unset "$SF_HOOK_SCRIPT_RESULTS[3]"
+assert_equal unset "$component_results[3]"
 sf_hooks_turn_state_cleanup
 
 assert_no_hook_captures
