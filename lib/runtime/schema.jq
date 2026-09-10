@@ -119,6 +119,7 @@ def harness_hooks:
     ($harness | has($hook) | not) or
     ($harness[$hook] | type == "array" and all(.[];
       hook_component and
+      ($hook != "permission_request" or .display == "") and
       (if $hook == "user_prompt_submit" then
          (has("help") | not) or has("match")
        else ((has("match") or has("help")) | not) end))));

@@ -297,6 +297,17 @@ valid_header=$(jq -c '.harness.user_prompt_submit=[{
   help:{usage:"!COMMAND",description:"Run a shell command"}
 }]' <<<"$valid_header")
 print -r -- "$valid_header" | schema_eval 'canonical_session_header(1)' >/dev/null
+typeset permission_header
+permission_header=$(jq -c '.harness.permission_request=[{
+  command:"/bin/permission",display:"",environment:[]
+}]' <<<"$valid_header")
+print -r -- "$permission_header" |
+  schema_eval 'canonical_session_header(1)' >/dev/null
+if jq -c '.harness.permission_request[0].display="Checking permission"' \
+    <<<"$permission_header" |
+    schema_eval 'canonical_session_header(1)' >/dev/null 2>&1; then
+  fail 'permission hook running label was accepted in a canonical runtime'
+fi
 if jq -c '.harness.stop[0].display = "two\nlines"' <<<"$valid_header" |
     schema_eval 'canonical_session_header(1)' >/dev/null 2>&1; then
   fail 'a multiline hook display was accepted'

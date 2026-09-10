@@ -66,7 +66,7 @@ A hook manifest contains its selected environment names and an optional display 
 {"environment":["HOOK_MODE"],"display":"Checking the working tree"}
 ```
 
-The manifest and both fields are optional. `environment` defaults to an empty list. `display` is one control-free line shown while the script runs, and defaults to no label, which keeps the component silent until it exits. See [Configure component environments](CONFIG.md#configure-component-environments) for value resolution and isolation.
+The manifest and both fields are optional. `environment` defaults to an empty list. `display` is one control-free line shown while the script runs, and defaults to no label, which keeps the component silent until it exits. A `permission_request` component cannot have a running label because it runs within a live tool operation; its manifest must omit `display` or set it to an empty string. See [Configure component environments](CONFIG.md#configure-component-environments) for value resolution and isolation.
 
 Components on `user_prompt_submit` may also declare `match`. Selected components retain configured order, and selection occurs before a component's display or `run` script:
 

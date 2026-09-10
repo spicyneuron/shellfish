@@ -3,7 +3,7 @@
 source "${0:A:h:h:h}/_helpers.zsh"
 sf_test_source libexec/config/runtime.zsh lib/environment.zsh lib/session/main.zsh
 
-typeset config runtime tool_name jsonc
+typeset config runtime tool_name jsonc hook display
 sf_test_tmp runtime
 mkdir -p "$tmp/config" "$tmp/home"
 export HOME="${tmp:A}/home"
@@ -395,6 +395,50 @@ if sf_runtime_resolve_from_config "$tmp/config/unknown-hook.jsonc" '' '' '{}' \
   fail 'unknown hook name was accepted'
 fi
 [[ $SF_RUNTIME_ERROR == *'invalid config at $["harnesses"]["bad"]["before_prompt"]: unknown field'* ]]
+
+# Permission policy runs inside live tool presentation, so it cannot have a
+# running label. Empty and omitted labels remain valid, as do ordinary labels.
+mkdir -p "$tmp/config/hooks/permission_request/empty" \
+  "$tmp/config/hooks/permission_request/omitted" "$tmp/config/hooks/stop/labeled"
+for hook in permission_request/empty permission_request/omitted stop/labeled; do
+  print -r -- '#!/bin/sh' >"$tmp/config/hooks/$hook/run"
+  chmod +x "$tmp/config/hooks/$hook/run"
+done
+print -r -- '{"display":""}' >"$tmp/config/hooks/permission_request/empty/manifest.json"
+print -r -- '{}' >"$tmp/config/hooks/permission_request/omitted/manifest.json"
+print -r -- '{"display":"Finishing"}' >"$tmp/config/hooks/stop/labeled/manifest.json"
+cat >"$tmp/config/hook-display.jsonc" <<'JSON'
+{
+  "profiles":{"default":{"harness":"display","request":{"model":"m"}}},
+  "harnesses":{"display":{
+    "permission_request":["empty","omitted"],
+    "stop":["labeled"]
+  }}
+}
+JSON
+sf_runtime_resolve_from_config "$tmp/config/hook-display.jsonc" '' '' '{}' \
+  "$ROOT/tests/fixtures/backend"
+jq -e '
+  (.harness.permission_request | map(.display)) == ["", ""] and
+  .harness.stop[0].display == "Finishing"
+' <<<"$REPLY" >/dev/null
+
+print -r -- '{"display":"Checking permission"}' \
+  >"$tmp/config/hooks/permission_request/empty/manifest.json"
+if sf_runtime_resolve_from_config "$tmp/config/hook-display.jsonc" '' '' '{}' \
+    "$ROOT/tests/fixtures/backend"; then
+  fail 'permission hook running label was accepted during configuration resolution'
+fi
+[[ $SF_RUNTIME_ERROR == *'invalid hook manifest:'*'/permission_request/empty/run' ]]
+
+for display in null false; do
+  print -r -- "{\"display\":$display}" \
+    >"$tmp/config/hooks/permission_request/empty/manifest.json"
+  if sf_runtime_resolve_from_config "$tmp/config/hook-display.jsonc" '' '' '{}' \
+      "$ROOT/tests/fixtures/backend"; then
+    fail "non-string permission hook display was accepted: $display"
+  fi
+done
 
 # A default config reached through a symlink resolves components beside the real
 # config file, consistently with an explicit config path.

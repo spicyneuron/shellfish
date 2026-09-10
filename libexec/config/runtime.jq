@@ -232,14 +232,17 @@ def runtime_finalize:
           then ["display", "environment", "help", "match"]
           else ["display", "environment"] end) | length) == 0 and
         ((.environment // []) | component_environment) and
-        ((.display // "") | hook_display) and
+        (if has("display") then .display | hook_display else true end) and
+        ($component.hook != "permission_request" or
+          (has("display") | not) or .display == "") and
         (if has("match") then .match | hook_match else true end) and
         (if has("help") then
            has("match") and (.help | hook_help)
          else true end)) //
       error("invalid hook manifest: " + $component.command)) as $hook_manifest |
     .[$component.hook] += [({command:$component.command,
-      display:($hook_manifest.display // ""),
+      display:(if $hook_manifest | has("display")
+        then $hook_manifest.display else "" end),
       environment:($hook_manifest.environment // [])} +
       (if $hook_manifest | has("match") then {match:$hook_manifest.match} else {} end) +
       (if $hook_manifest | has("help") then {help:$hook_manifest.help} else {} end))])) as $hooks |

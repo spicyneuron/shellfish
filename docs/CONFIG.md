@@ -108,6 +108,8 @@ Harnesses choose tools, hooks, sandbox policy, and turn limits. They do not have
 
 This example reads its system component from `system/review.md` under the configuration directory. Hook names and behavior are defined in [`HOOKS.md`](HOOKS.md). Tool directories contain an executable `run` and a `manifest.json` or `manifest.jsonc`. Sandboxed tools also contain `fence.jsonc`. Tool processes receive `SHELLFISH_CONFIG_DIR`, the directory containing the resolved config file or its prospective default location. They also receive `SHELLFISH_SESSION`, `SHELLFISH_EXECUTABLE`, and `SHELLFISH_MAX_CAPTURE_BYTES` for the active invocation.
 
+Hook manifests may provide running display labels except on `permission_request`; permission hooks must omit `display` or set it to an empty string.
+
 ## Resolve component references
 
 System components, tools, hooks, and backend adapters accept these reference forms:
