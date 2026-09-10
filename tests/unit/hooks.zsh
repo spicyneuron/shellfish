@@ -164,13 +164,13 @@ if sf_hooks_permission_request "$permission_session" shell call_7 \
     '{"command":"true"}'; then
   fail 'permission halt without a decision was accepted'
 fi
-[[ $SF_HOOK_ERROR == 'permission_request hook script returned invalid decision' ]]
+[[ $SF_HOOK_ERROR == 'permission_request hook script returned invalid decision: local' ]]
 print malformed >"$SHELLFISH_TURN_STATE/decision"
 if sf_hooks_permission_request "$permission_session" shell call_7 \
     '{"command":"true"}'; then
   fail 'malformed permission decision was accepted'
 fi
-[[ $SF_HOOK_ERROR == 'permission_request hook script returned invalid decision' ]]
+[[ $SF_HOOK_ERROR == 'permission_request hook script returned invalid decision: local' ]]
 sf_session_reset
 sf_hooks_turn_state_cleanup
 

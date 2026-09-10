@@ -117,8 +117,8 @@ Transient events currently include:
 | `_assistant_reasoning_opaque` | Provider reasoning data for later requests; nothing to present. |
 | `_turn_usage` | The provider's latest token usage for this response. |
 | `_assistant_end` | The response is complete; `stop` is its reason. It precedes the durable assistant record. |
-| `_hook_start` | A selected hook component is about to run. |
-| `_hook_end` | The current hook component validated or failed. |
+| `_hook_start` | A selected ordinary hook component is about to run. |
+| `_hook_end` | The current ordinary hook component validated or failed. |
 | `_notice` | Unattributed user-facing information or failure. |
 | `_tool_permission_request` | A sandbox bypass needs a client decision. |
 | `_handoff` | A hook script asks a capable client to run `argv` after the turn exits cleanly. |
@@ -128,7 +128,7 @@ Transient events currently include:
 
 Deltas are previews only. Tool-call `input` fragments are raw text, not parsed JSON, and a client must never render or execute a partial call. Consumers should render committed assistant and reasoning content from the durable assistant record, and each call from its own `tool_call` record. Clients should treat unknown transient types as unsupported protocol input and recover from the durable session rather than guessing their meaning.
 
-`_hook_start` has `{type,hook,script,text}`, where `text` is the component's manifest display string. Every selected component emits a start, including a component with an empty display string. Its validated state and context records follow immediately. `_hook_end` has `{type,text,error}`. Nonempty stderr supplies its text; otherwise stdout does. Empty text removes the live presentation. `error` is true when a failure belongs to that component. The end event relies on stream order and carries no correlation ID.
+`_hook_start` has `{type,hook,script,text}`, where `text` is the component's manifest display string. Every selected ordinary component emits a start, including a component with an empty display string. Its validated state and context records follow immediately. `_hook_end` has `{type,text,error}`. Nonempty stderr supplies its text; otherwise stdout does. Empty text removes the live presentation. `error` is true when a failure belongs to that component. The end event relies on stream order and carries no correlation ID. `permission_request` components emit neither lifecycle event nor successful stderr; their failures use the ordinary turn-failure path.
 
 Notices have the shape `{type:"_notice",level,title,source,text,complete}`. They are one-shot events after this change: core notices have no component source and are complete. Hook activity never uses `_notice`.
 
@@ -147,7 +147,7 @@ A permission request has this shape:
 
 A successful process exit means the single-turn operation completed cleanly. This includes a `user_prompt_submit` script that deliberately blocks submission or requests a handoff. Tool commands may return nonzero results without making the turn itself fail.
 
-A nonzero exit means the operation failed or was interrupted. A failure after the user record is committed is appended and emitted as a durable `turn_error`; its message is the user-facing outcome. `SIGINT` and the client's `SIGUSR1` cancellation signal record `Cancelled.`, while other handled signals record `Turn interrupted.` An earlier component-attributable failure is reported by `_hook_end`; an unattributed failure uses an error `_notice` when JSONL output is available. After malformed output, disconnection, cancellation, or process failure, discard uncertain live state and replay the durable session.
+A nonzero exit means the operation failed or was interrupted. A failure after the user record is committed is appended and emitted as a durable `turn_error`; its message is the user-facing outcome. `SIGINT` and the client's `SIGUSR1` cancellation signal record `Cancelled.`, while other handled signals record `Turn interrupted.` A failure attributed to an ordinary hook component is also reported by `_hook_end`; permission hooks emit no display event. An otherwise unpersisted failure uses an error `_notice` when JSONL output is available. After malformed output, disconnection, cancellation, or process failure, discard uncertain live state and replay the durable session.
 
 If a provider fails or is cancelled after the turn accepted visible text or reasoning, cleanup makes a best-effort append of that content as a canonical assistant message with `stop: "length"`. Otherwise the user message remains unanswered. Cleanup closes a recorded call that did not finish, and appends a `tool_call` and a cancelled result for each call the response requested that never started. A process killed outright loses the calls it had not yet recorded. This recovery cannot guarantee persistence after `SIGKILL` or process crash.
 

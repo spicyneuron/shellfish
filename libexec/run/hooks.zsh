@@ -119,6 +119,7 @@ sf_hooks_permission_request() {
         tool_input:.}') || operation_status=1
   fi
   local SF_HOOK_COMPONENT_VALIDATOR=sf_hooks_permission_validate
+  local SF_HOOK_DISPLAY=0
   (( operation_status )) || sf_hooks_run "$session" permission_request "$input" ignore allow 1 1 ||
     operation_status=1
   result=( "${reply[@]}" )

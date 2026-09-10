@@ -126,7 +126,7 @@ A script communicates through three channels. They are captured separately, but 
 
 fd 3 must contain exactly one JSON object. Every hook accepts an optional `state` array of `{name,value}` objects. The dispatcher constructs canonical state records and removes `state` before the hook-specific adapter validates the remaining fields. The control capture is private and byte-counted before decoding. Model-facing context remains raw stdout, so ordinary scripts can still use `cat` and pipelines without JSON-encoding their payloads.
 
-In JSONL mode, `_hook_start` opens the component with its manifest `display` text before the script runs. After validation, `_hook_end` settles it with stderr when nonempty, otherwise stdout. An empty result removes the live presentation. A component failure closes the same presentation as an error. Without a live event stream, the owning process writes buffered stderr to its own stderr.
+In JSONL mode, `_hook_start` opens an ordinary component with its manifest `display` text before the script runs. After validation, `_hook_end` settles it with stderr when nonempty, otherwise stdout. An empty result removes the live presentation. A component failure closes the same presentation as an error. Without a live event stream, the owning process writes buffered stderr to its own stderr. Permission components are presentation-silent and emit neither lifecycle event nor successful stderr.
 
 After one component validates, Shellfish appends and emits its state followed by any model-facing context before closing it and selecting the next component. A later failure leaves that valid durable prefix intact. See [JSONL output](RUN.md#output).
 
@@ -245,8 +245,10 @@ Runs at the turn's sandbox-bypass decision boundary, only when a tool requests a
 }
 ```
 
+Permission components emit no hook lifecycle presentation. A failure uses the ordinary turn-failure path, and valid state remains durable whether a component allows, denies, or defers.
+
 - **stdout** is captured but ignored. It is not committed.
-- **stderr** is shown and discarded.
+- **stderr** is captured and discarded on success. A component failure includes it in the turn-failure diagnostic.
 - **fd 3** accepts state on any successful status. `{"action":"allow"}` or `{"action":"deny","reason":"..."}` may accompany state and is valid only with exit 11. The reason must be nonempty and may not contain a NUL byte.
 - **Default action** (exit 0, default still enabled) is to defer: the turn asks its interactive client, or denies headlessly if no reply is available.
 - **Skipped without control** (exit 10) denies.

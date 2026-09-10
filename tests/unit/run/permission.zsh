@@ -15,7 +15,7 @@ export SF_TEST_BACKEND_DELAY=0
 export SF_TEST_BACKEND_REQUEST="$request_capture"
 
 # A configured permission_request script exposes bypass approval without an interactive
-# adapter. Its decision precedes the existing UI path and its stderr stays local.
+# adapter. Its decision precedes the existing UI path and its presentation is silent.
 typeset permission_allow="$tmp/permission-allow"
 cat >"$permission_allow" <<'ZSH'
 #!/usr/bin/env zsh
@@ -40,7 +40,7 @@ stream=$(SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_BYPASS=true \
 print -r -- "$stream" | jq -eRn '
   [inputs | fromjson] as $events |
   ($events | map(select(.type == "_tool_permission_request")) | length) == 0 and
-  ($events | map(select(.type == "_hook_end") | .text)) == ["reviewed"] and
+  ($events | all(.type != "_hook_start" and .type != "_hook_end")) and
   ($events | map(select(.type == "state" or .type == "tool_result")) | map(.type)) ==
     ["state","tool_result"] and
   ($events | map(select(.type == "tool_result"))[0] |
@@ -106,6 +106,8 @@ print -r -- "$stream" | jq -eRn '
       tool:{call_id:"call_1",name:"shell",
         input:{command:"printf approved",request_sandbox_bypass:true,
           sandbox_bypass_reason:"Required by the test fixture"}}}] and
+  ($events | map(select(.type | IN("tool_call", "_tool_permission_request", "tool_result"))) |
+    map(.type)) == ["tool_call", "_tool_permission_request", "tool_result"] and
   ($events | map(select(.type == "tool_result"))[0] |
     .exit_code == 0 and .content == "approved")
 ' >/dev/null
@@ -205,22 +207,59 @@ jq -eRn '
 ' <"$permission_cancel_stream" >/dev/null
 assert_canonical_session "$permission_cancel_session"
 
-# Malformed hook control fails the turn rather than silently becoming denial.
-typeset permission_invalid="$tmp/permission-invalid"
-cat >"$permission_invalid" <<'ZSH'
+# Permission hook failure uses ordinary turn failure, closes the durable call,
+# and retains stderr in the diagnostic without opening hook presentation.
+typeset permission_failure="$tmp/permission-failure"
+cat >"$permission_failure" <<'ZSH'
 #!/usr/bin/env zsh
-print -rn -u3 -- '{"action":"allow","extra":true}'
-exit 11
+print -rn -u2 -- 'review failed'
+exit 7
 ZSH
-chmod +x "$permission_invalid"
-SF_TEST_RUNTIME=$(jq -c --arg hook "$permission_invalid" \
+chmod +x "$permission_failure"
+SF_TEST_RUNTIME=$(jq -c --arg hook "$permission_failure" \
   '.harness.permission_request=[{command:$hook,display:"",environment:[]}]' <<<"$SF_TEST_RUNTIME")
-typeset permission_invalid_session="$tmp/permission-invalid.jsonl"
-sf_test_session "$permission_invalid_session"
+typeset permission_failure_session="$tmp/permission-failure.jsonl"
+sf_test_session "$permission_failure_session"
 stream=$(SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_BYPASS=true \
-  sf_test_turn 'invalid review' "$permission_invalid_session")
+  sf_test_turn 'failed review' "$permission_failure_session")
 print -r -- "$stream" | jq -eRn '
   [inputs | fromjson] as $events |
-  ($events | map(select(.type == "turn_error") | .message) |
-    any(. == "permission_request hook script returned invalid decision"))
+  ($events | all(.type != "_hook_start" and .type != "_hook_end")) and
+  ($events | map(select(.type | IN("tool_call", "tool_result", "turn_error"))) |
+    map(.type)) == ["tool_call", "tool_result", "turn_error"] and
+  ($events | map(select(.type == "tool_result"))[0] |
+    .call_id == "call_1" and .exit_code == 126) and
+  ($events[-1].message | contains("hook script failed with status 7") and
+    contains("review failed"))
 ' >/dev/null
+assert_canonical_session "$permission_failure_session"
+
+# If cleanup cannot persist that failure, the unattributed fallback notice
+# remains available because the silent hook did not claim to display it.
+typeset permission_persist_session="$tmp/permission-persist.jsonl"
+typeset permission_persist_stream="$tmp/permission-persist.stream"
+integer permission_persist_status=0
+sf_test_session "$permission_persist_session"
+SF_ROOT=$ROOT SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_BYPASS=true \
+  zsh -f -c '
+  source "$SF_ROOT/libexec/run/turn.zsh"
+  functions[sf_test_session_append]=$functions[sf_session_append]
+  sf_session_append() {
+    if jq -e '\''.type == "tool_result"'\'' <<<$2 >/dev/null; then
+      sf_session_fail "cannot persist permission failure: $1"
+      return 1
+    fi
+    sf_test_session_append "$@"
+  }
+  SF_RUN[jsonl]=1
+  message='\''{"type":"user","content":[{"type":"text","text":"fail persistence"}]}'\''
+  sf_run_turn "$message" "$1" 0 "fail persistence"
+' -- "$permission_persist_session" >"$permission_persist_stream" ||
+  permission_persist_status=$?
+(( permission_persist_status == 1 )) || fail 'permission persistence failure exited successfully'
+jq -eRn '
+  [inputs | fromjson] as $events |
+  ($events | all(.type != "_hook_start" and .type != "_hook_end")) and
+  ($events[-1] | .type == "_notice" and .level == "error" and
+    (.text | contains("cannot persist permission failure")))
+' <"$permission_persist_stream" >/dev/null

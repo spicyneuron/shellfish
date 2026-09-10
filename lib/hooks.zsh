@@ -10,6 +10,7 @@ zmodload zsh/system
 
 typeset -g SF_HOOK_ERROR=''
 typeset -g SF_HOOK_JSONL=0
+typeset -g SF_HOOK_DISPLAY=1
 typeset -g SF_HOOK_ERROR_EMITTED=0
 typeset -g SF_HOOK_COMPONENT_VALIDATOR=''
 # Preserve inherited turn state across nested turn setup.
@@ -56,13 +57,14 @@ sf_hooks_read_capture() {
 
 sf_hooks_start() {
   local hook=$1 script=$2 text=$3
-  (( SF_HOOK_JSONL )) || return 0
+  (( SF_HOOK_DISPLAY && SF_HOOK_JSONL )) || return 0
   jq -cn --arg hook "$hook" --arg script "$script" --arg text "$text" \
     '{type:"_hook_start",hook:$hook,script:$script,text:$text}' || return
 }
 
 sf_hooks_end() {
   local text=$1 error=$2 display=$3
+  (( SF_HOOK_DISPLAY )) || return 0
   if (( ! SF_HOOK_JSONL )); then
     [[ -z $display ]] || print -rn -- "$display" >&2
     return 0
@@ -85,8 +87,12 @@ sf_hooks_append() {
 
 sf_hooks_active_fail() {
   local error=$1 display=${2-}
-  SF_HOOK_ERROR_EMITTED=1
-  sf_hooks_end "$error" true "$display" || error='cannot complete hook display'
+  if (( SF_HOOK_DISPLAY )); then
+    SF_HOOK_ERROR_EMITTED=1
+    sf_hooks_end "$error" true "$display" || error='cannot complete hook display'
+  elif [[ -n $display ]]; then
+    error+=": $display"
+  fi
   sf_hooks_fail "$error"
 }
 
@@ -240,7 +246,12 @@ sf_hooks_dispatch() {
       control_error=''
       case $script_status in
         0|10|11) ;;
-        *) control_error="hook script failed with status $script_status: $script${script_display:+: $script_display}" ;;
+        *)
+          control_error="hook script failed with status $script_status: $script"
+          if (( SF_HOOK_DISPLAY )) && [[ -n $script_display ]]; then
+            control_error+=": $script_display"
+          fi
+          ;;
       esac
       if [[ -z $control_error ]] && (( control_size )); then
         sf_state_control_decode "$result[4]" || {
