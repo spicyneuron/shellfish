@@ -93,7 +93,11 @@ sf_hooks_stop() {
 sf_hooks_permission_validate() {
   local control=$4
   integer script_status=$2
-  [[ -z $control ]] && return 0
+  if [[ -z $control ]]; then
+    (( script_status != 11 )) && return 0
+    SF_HOOK_ERROR='permission_request hook script returned invalid decision'
+    return 1
+  fi
   (( script_status == 11 )) && jq -e '
     (keys == ["action"] and .action == "allow") or
     (keys == ["action", "reason"] and .action == "deny" and
@@ -128,26 +132,10 @@ sf_hooks_permission_request() {
     elif (( ! result[2] )); then
       reply=(deny '')
     else
-      decoded=$(jq -jre '
-        (if keys == ["action"] and .action == "allow" then [.action, ""]
-        elif keys == ["action", "reason"] and .action == "deny" and
-            (.reason | type == "string" and length > 0 and
-              (index("\u0000") | not))
-        then [.action, .reason]
-        else error("invalid decision") end) as $fields |
-        ($fields[] | ., "\u0000"), "ok", "\u0000"
-      ' <<<"$result[4]" 2>/dev/null) || {
-        SF_HOOK_ERROR='permission_request hook script returned invalid decision'
-        operation_status=1
-      }
-      if (( ! operation_status )); then
-        fields=( "${(@0)${decoded%$'\0'}}" )
-        (( ${#fields} == 3 )) && [[ $fields[3] == ok ]] || {
-          SF_HOOK_ERROR='permission_request hook script returned invalid decision'
-          operation_status=1
-        }
-        (( operation_status )) || reply=( "$fields[1]" "$fields[2]" )
-      fi
+      decoded=$(jq -jr '(.action, (.reason // ""), "ok") | ., "\u0000"' \
+        <<<"$result[4]") || operation_status=1
+      fields=( "${(@0)${decoded%$'\0'}}" )
+      (( operation_status )) || reply=( "$fields[1]" "$fields[2]" )
     fi
   fi
   if (( operation_status )); then
