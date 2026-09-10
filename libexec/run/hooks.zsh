@@ -3,17 +3,13 @@
 emulate -R zsh
 setopt no_aliases no_bg_nice no_multios pipe_fail
 
-(( $+functions[sf_jq] )) || source "$SF_ROOT/lib/jq.zsh"
 (( $+functions[sf_hooks_run] )) || source "$SF_ROOT/lib/hooks.zsh"
 
 sf_hooks_user_prompt_validate() {
   local control=$4
   integer script_status=$2
-  [[ -z $control ]] || sf_jq -e --argjson status "$script_status" '
-    include "lib/runtime/schema";
+  [[ -z $control ]] || jq -e --argjson status "$script_status" '
     (keys - ["action", "argv", "context", "patch"] | length) == 0 and
-    (({type:"context",hook:"user_prompt_submit",script:"script",content:""} +
-      (.context // {})) | canonical_context) and
     (if has("action") then
        $status == 11 and
        (if .action == "handoff" then
