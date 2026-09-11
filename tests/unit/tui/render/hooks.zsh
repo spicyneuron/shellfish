@@ -126,3 +126,18 @@ SF_PRESENT_STYLE=()
 sf_tui_event user retry
 assert_equal user "$SF_PRESENT_ROLE[-1]"
 assert_equal 2 "$SF_PRESENT_SECTION[-1]"
+
+# A hook result taller than one commit rescans from the state its committed
+# prefix reached, so the rows that follow are still inside the fence.
+sf_tui_reset
+sf_tui_terminal_reset
+SF_PRESENT_STYLE=( hook_model_context context 'syntax.string' string 'syntax.fence' fence )
+sf_tui_event hook_result hook test $'```sh\necho "alpha"\necho "beta"\necho "gamma"\n```'
+sf_tui_transcript 20 4 || fail 'rendering a tall hook result failed'
+sf_tui_terminal_stage || fail 'staging a tall hook result failed'
+sf_tui_terminal_finish || fail 'committing a tall hook result failed'
+sf_tui_terminal_restore
+view 20 20
+[[ "${(j: :)SF_PRESENT_VIEWPORT_HIGHLIGHTS}" == *string* ]] ||
+  fail "partially committed hook context lost its fence state: $REPLY"
+SF_PRESENT_STYLE=()

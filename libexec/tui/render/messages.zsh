@@ -68,10 +68,11 @@ sf_tui_reasoning_grow() {
   sf_tui_formatter_set_field $index 10 $(( REPLY + added ))
 }
 
-# The leading chrome a formatter draws when it opens a role: spacing, then
-# "─ role " padded out to the width with the section number closing it when the
-# role takes one. A number that cannot fit leaves a plain rule rather than a
-# truncated one. A formatter that opens no role draws only the spacing.
+# The leading chrome a formatter draws when it opens a role: the spacing above
+# it, then "─ role " padded out to the width with the section number closing it
+# when the role takes one, then the blank row beneath. A number that cannot fit
+# leaves a plain rule rather than a truncated one, and a formatter that opens no
+# role draws only the spacing.
 #
 # Spans are emitted outermost first. The number sits inside the trailing rule,
 # so its style has to come after the divider's to survive: region_highlight

@@ -106,8 +106,8 @@ sf_tui_formatter_drop() {
 # remaining suffix needs.
 sf_tui_formatter_consume() {
   integer whole=$1 source=$2 leading=$3 body_rows=$4
-  integer trim body_source committed_field spent_field
-  local kind state continuation body segment
+  integer body_source committed_field spent_field
+  local kind state continuation body trimmed segment
   (( ${#SF_PRESENT_KIND} )) || return 1
   if (( whole )); then
     sf_tui_formatter_drop 1
@@ -116,10 +116,11 @@ sf_tui_formatter_consume() {
   kind=$SF_PRESENT_KIND[1]
   [[ $kind == (message|reasoning|hook_model_context|hook_user_context|error|tool_call|tool_result) ]] ||
     return 1
-  (( source >= 0 && source <= ${#SF_PRESENT_TEXT[1]} )) || return 1
-  if (( source )); then
-    SF_PRESENT_TEXT[1]=${SF_PRESENT_TEXT[1][source + 1,-1]}
-  fi
+  # Kept whole, because a formatter continuing a scan has to measure the prefix
+  # this commit takes, not what is left after it.
+  body=$SF_PRESENT_TEXT[1]
+  (( source >= 0 && source <= ${#body} )) || return 1
+  (( ! source )) || SF_PRESENT_TEXT[1]=${body[source + 1,-1]}
   (( ! leading )) || {
     SF_PRESENT_ROLE[1]=''
     SF_PRESENT_SECTION[1]=''
@@ -146,20 +147,19 @@ sf_tui_formatter_consume() {
       # Hook context is complete, so it carries no scan cache; only the state
       # the committed prefix reached has to survive for its suffix.
       if [[ $kind == hook_model_context ]]; then
-        body=$SF_PRESENT_TEXT[1]
-        trim=${#body}
         sf_tui_formatter_data 1 6 || return 1
         state=$REPLY
         sf_tui_formatter_data 1 7 || return 1
         continuation=$REPLY
-        # Blank lines the formatter trimmed are consumed with the rows either
-        # side of the body, so the scanned prefix is measured against the body.
-        body=${body#"${body%%[!$'\n']*}"}
-        trim=$(( source - (trim - ${#body}) ))
-        body=${body%"${body##*[!$'\n']}"}
-        body_source=$(( trim < ${#body} ? trim : ${#body} ))
+        # Blank lines the formatter trimmed are consumed by the rows either
+        # side of the body, so the committed prefix is measured against the
+        # trimmed body rather than the record.
+        trimmed=${body#"${body%%[!$'\n']*}"}
+        body_source=$(( source - (${#body} - ${#trimmed}) ))
+        trimmed=${trimmed%"${trimmed##*[!$'\n']}"}
+        (( body_source <= ${#trimmed} )) || body_source=${#trimmed}
         if (( body_source > 0 )); then
-          segment=${body[1,body_source]}
+          segment=${trimmed[1,body_source]}
           SF_PRESENT_HIGHLIGHT_SPANS=()
           sf_tui_markdown_highlight "$segment" 0 "$state" "${continuation:-0}"
           continuation=0

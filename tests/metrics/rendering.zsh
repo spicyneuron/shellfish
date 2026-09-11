@@ -22,13 +22,11 @@ source "$root/libexec/tui/render/main.zsh"
 # synchronized output stays quiet.
 typeset -g PREDISPLAY='' POSTDISPLAY='' BUFFER='' CURSOR=0
 
-# Styles make the renderer project spans rather than skipping that work, and
-# full previews keep it from eliding a body.
+# Styles make the renderer project spans rather than skipping that work. The
+# preview defaults are already full, so no body is elided.
 SF_PRESENT_STYLE=( message 'fg=7' divider 'fg=8' 'section.agent' bold
-  reasoning 'fg=4' clamp 'fg=8' activity 'fg=8'
+  clamp 'fg=8' activity 'fg=8'
   'syntax.strong' bold 'syntax.heading' 'bold,underline' 'syntax.code' 'fg=2' )
-SF_PRESENT_PREVIEW_REASONING=full
-SF_PRESENT_PREVIEW_CONTEXT=full
 
 # Wrap to 80 columns, with the row budget a normal window leaves after the
 # prompt chrome repaint reserves.
@@ -94,7 +92,6 @@ measure_case() {
     elapsed=$(( (EPOCHREALTIME - start) * 1000 ))
     (( iteration > 1 && elapsed >= minimum )) || minimum=$elapsed
     (( total += elapsed ))
-    sf_tui_event assistant_end
   done
   printf '%-21s %7d %9.3f %9.3f\n' \
     "$label" ${#deltas} $(( total / iterations )) $minimum
