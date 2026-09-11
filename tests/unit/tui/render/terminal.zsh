@@ -96,7 +96,7 @@ sf_tui_reset
 sf_tui_terminal_reset
 sf_tui_rows_config '{"tui":{"preview_lines_context":1}}'
 sf_tui_section user
-sf_tui_event hook_model_context hook project $'alpha beta\ngamma\ndelta'
+sf_tui_event hook_result hook project $'alpha beta\ngamma\ndelta'
 sf_tui_viewport 16 4 "$SF_PRESENT_CURSOR"
 assert_equal '2:t:0:1' "$SF_PRESENT_FLUSH_CURSOR"
 sf_tui_terminal_stage

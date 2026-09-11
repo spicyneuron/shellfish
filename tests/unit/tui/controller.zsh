@@ -38,6 +38,7 @@ sf_tui_decoded assistant_reasoning_delta 0 current
 sf_tui_decoded assistant_end
 assert_equal '' "$SF_PRESENT_NODE_META[-1]"
 
+sf_tui_event tool_call permission_call shell pwd
 sf_tui_decoded permission_request permission_1 shell pwd 'host access' sh
 assert_equal permission "$SF_PRESENT_STATE"
 assert_equal permission_1 "$SF_PRESENT_PERMISSION_ID"
@@ -45,8 +46,8 @@ assert_equal shell "$SF_PRESENT_PERMISSION_TOOL"
 assert_equal $'pwd\n\nReason: host access' "$SF_PRESENT_PERMISSION_TEXT"
 assert_equal sh "$SF_PRESENT_PERMISSION_LANGUAGE"
 assert_equal 3 "$SF_PRESENT_PERMISSION_PREVIEW_LENGTH"
-assert_equal notice "$SF_PRESENT_NODE_TYPE[-1]"
-assert_equal 'Permission: shell' "$SF_PRESENT_NODE_HEADING[-1]"
+assert_equal tool_result "$SF_PRESENT_NODE_TYPE[-1]"
+assert_equal permission "$SF_PRESENT_NODE_STATUS[-1]"
 
 SF_PRESENT_STATE=working
 SF_PRESENT_PERMISSION_ID=''
@@ -76,7 +77,7 @@ assert_equal "$node_types" "${(j:,:)SF_PRESENT_NODE_TYPE}"
 sf_tui_reset
 sf_tui_add activity '' '' '' open
 sf_tui_decoded hook_activity session_start project 'Inspecting project'
-assert_equal notice "$SF_PRESENT_NODE_TYPE[-1]"
+assert_equal hook_activity "$SF_PRESENT_NODE_TYPE[-1]"
 assert_equal 'Inspecting project' "$SF_PRESENT_NODE_HEADING[-1]"
 assert_equal open "$SF_PRESENT_NODE_STATE[-1]"
 sf_tui_decoded hook_activity
@@ -110,39 +111,13 @@ functions[sf_tui_transport_stop]=$functions[sf_tui_transport_stop_saved]
 functions[sf_tui_recover]=$functions[sf_tui_recover_saved]
 unfunction sf_tui_transport_signal_saved sf_tui_transport_stop_saved sf_tui_recover_saved
 
-# A notice is role-agnostic. It closes a live tail without creating a system
-# section or changing which message role owns the surrounding section.
-sf_tui_reset
-sf_tui_terminal_reset
-sf_tui_add activity '' '' '' open
-sf_tui_notice warning 'Before response'
-assert_equal notice "${(j:,:)SF_PRESENT_NODE_TYPE}"
-assert_equal '' "$SF_PRESENT_LAST_ROLE"
-
-sf_tui_reset
-sf_tui_event assistant_message_delta 0 before
-sf_tui_notice warning 'Heads up' detail
-sf_tui_event assistant_message_delta 1 after
-assert_equal 'section,message,notice,message' "${(j:,:)SF_PRESENT_NODE_TYPE}"
-assert_equal agent "$SF_PRESENT_LAST_ROLE"
-assert_equal closed "$SF_PRESENT_NODE_STATE[2]"
-BUFFER=''
-CURSOR=0
-sf_tui_viewport 80 20 "$SF_PRESENT_CURSOR"
-sf_tui_terminal_stage
-sf_tui_terminal_finish
-[[ $PREDISPLAY == *$'ℹ Heads up\n  detail'* ]] || fail 'Notice did not survive flushing'
-sf_tui_reload "$SF_TEST_SESSIONS/complete.jsonl" || fail "$SF_PRESENT_ERROR"
-assert_equal 0 "${#${(M)SF_PRESENT_NODE_TYPE:#notice}}"
-assert_equal "${SF_PRESENT_IDENTITY} · 1 ↑ 1 ↓" "$SF_PRESENT_FOOTER"
-
 # Hook displays split a live tool into contiguous presentation segments. The
 # result still completes the resumed segment.
 sf_tui_reset
 sf_tui_terminal_reset
 sf_tui_event tool_call call_1 shell '{"command":"true"}'
-sf_tui_decoded hook_user_context progress pre_tool_use working
-assert_equal 'section,tool_call,tool_result,notice,tool_result' "${(j:,:)SF_PRESENT_NODE_TYPE}"
+sf_tui_decoded hook_result progress pre_tool_use '' working
+assert_equal 'section,tool_call,tool_result,hook_user_context,tool_result' "${(j:,:)SF_PRESENT_NODE_TYPE}"
 assert_equal progress "$SF_PRESENT_NODE_HEADING[4]"
 assert_equal pre_tool_use "$SF_PRESENT_NODE_META[4]"
 assert_equal '' "$SF_PRESENT_NODE_STATUS[3]"
@@ -164,7 +139,7 @@ assert_equal denied "$SF_PRESENT_NODE_BODY[3]"
 sf_tui_reset
 sf_tui_event tool_call call_1 shell '{"command":"false"}'
 sf_tui_decoded error failed
-assert_equal 'section,tool_call,tool_result,notice' "${(j:,:)SF_PRESENT_NODE_TYPE}"
+assert_equal 'section,tool_call,tool_result,error' "${(j:,:)SF_PRESENT_NODE_TYPE}"
 assert_equal '' "$SF_PRESENT_NODE_STATUS[3]"
 assert_equal closed "$SF_PRESENT_NODE_STATE[3]"
 assert_equal error "$SF_PRESENT_NODE_ROLE[4]"
@@ -177,26 +152,26 @@ sf_tui_reset
 SF_PRESENT_EXEC_ERROR_HEADING=''
 sf_tui_event user first
 sf_tui_decoded error 'Turn failed' 'Turn interrupted.' end
-assert_equal 'section,message,notice' "${(j:,:)SF_PRESENT_NODE_TYPE}"
+assert_equal 'section,message,error' "${(j:,:)SF_PRESENT_NODE_TYPE}"
 assert_equal 1 "$SF_PRESENT_SECTION_ID"
 assert_equal '' "$SF_PRESENT_EXEC_ERROR_HEADING"
 sf_tui_event user second
-assert_equal 'section,message,notice,section,message' "${(j:,:)SF_PRESENT_NODE_TYPE}"
+assert_equal 'section,message,error,section,message' "${(j:,:)SF_PRESENT_NODE_TYPE}"
 assert_equal 2 "$SF_PRESENT_SECTION_ID"
 
 # Sequential tool calls remain completable across pre- and post-hook script output.
 sf_tui_reset
 sf_tui_event tool_call call_1 shell one
 sf_tui_event tool_call call_2 shell two
-sf_tui_decoded hook_user_context pre pre_tool_use first
+sf_tui_decoded hook_result pre pre_tool_use '' first
 sf_tui_event tool_result call_1 0 first
-sf_tui_decoded hook_user_context post post_tool_use first-done
-sf_tui_decoded hook_user_context pre pre_tool_use second
+sf_tui_decoded hook_result post post_tool_use '' first-done
+sf_tui_decoded hook_result pre pre_tool_use '' second
 sf_tui_event tool_result call_2 0 second
-sf_tui_decoded hook_user_context post post_tool_use second-done
+sf_tui_decoded hook_result post post_tool_use '' second-done
 integer completed_tools=0 notices=0 node
 for (( node = 1; node <= ${#SF_PRESENT_NODE_TYPE}; node++ )); do
-  if [[ $SF_PRESENT_NODE_TYPE[node] == notice ]]; then
+  if [[ $SF_PRESENT_NODE_TYPE[node] == hook_user_context ]]; then
     (( ++notices ))
   elif [[ $SF_PRESENT_NODE_TYPE[node] == tool_result && $SF_PRESENT_NODE_STATUS[node] == 0 ]]; then
     (( ++completed_tools ))
@@ -211,10 +186,10 @@ assert_equal '' "$SF_PRESENT_TOOL_CURRENT"
 sf_tui_reset
 sf_tui_event tool_call call_live shell run
 sf_tui_decoded hook_activity pre_tool_use progress Checking
-assert_equal 'section,tool_call,tool_result,notice' "${(j:,:)SF_PRESENT_NODE_TYPE}"
+assert_equal 'section,tool_call,tool_result,hook_activity' "${(j:,:)SF_PRESENT_NODE_TYPE}"
 assert_equal open "$SF_PRESENT_NODE_STATE[-1]"
-sf_tui_decoded hook_user_context progress pre_tool_use $'Checking policy\n'
-assert_equal 'section,tool_call,tool_result,notice,tool_result' "${(j:,:)SF_PRESENT_NODE_TYPE}"
+sf_tui_decoded hook_result progress pre_tool_use '' $'Checking policy\n'
+assert_equal 'section,tool_call,tool_result,hook_user_context,tool_result' "${(j:,:)SF_PRESENT_NODE_TYPE}"
 assert_equal closed "$SF_PRESENT_NODE_STATE[4]"
 assert_equal $'Checking policy\n' "$SF_PRESENT_NODE_BODY[4]"
 assert_equal open "$SF_PRESENT_NODE_STATE[5]"
@@ -268,7 +243,7 @@ assert_equal '' "$SF_PRESENT_PERMISSION_LANGUAGE"
 assert_equal 0 "$SF_PRESENT_PERMISSION_PREVIEW_LENGTH"
 assert_equal '' "$SF_PRESENT_PERMISSION_DRAFT"
 assert_equal 0 "$SF_PRESENT_PERMISSION_CURSOR"
-assert_equal notice "$SF_PRESENT_NODE_TYPE[-1]"
+assert_equal error "$SF_PRESENT_NODE_TYPE[-1]"
 assert_equal 'Exec sent invalid JSONL.' "$SF_PRESENT_NODE_HEADING[-1]"
 [[ ${(j:\n:)SF_PRESENT_NODE_BODY} != *speculative* ]] ||
   fail 'recovery retained speculative presentation text'
@@ -328,13 +303,13 @@ if sf_tui_transport_has_pending; then
   fail 'transport events remained after the heartbeat batch'
 fi
 assert_equal closed "$SF_PRESENT_NODE_STATE[2]"
-injections=( ${(M)SF_PRESENT_NODE_TYPE:#injection} )
+injections=( ${(M)SF_PRESENT_NODE_TYPE:#hook_model_context} )
 assert_equal 1 "${#injections}"
 assert_equal '' "$SF_PRESENT_ACTION"
 assert_equal 0 "$SF_PRESENT_PENDING_ROWS"
 [[ $ZLE_CALLS != *accept-line* ]] ||
   fail 'transport batch left the active editor'
-integer context_node=${SF_PRESENT_NODE_TYPE[(i)injection]}
+integer context_node=${SF_PRESENT_NODE_TYPE[(i)hook_model_context]}
 integer cursor_node=${SF_PRESENT_CURSOR%%:*}
 (( cursor_node < context_node )) ||
   fail 'later context crossed the bounded assistant viewport'
@@ -491,7 +466,7 @@ SF_TUI_TRANSPORT_EOF=1
 SF_TUI_TRANSPORT_EXIT_STATUS=130
 sf_tui_heartbeat_tick
 assert_equal idle "$SF_PRESENT_STATE"
-assert_equal notice "$SF_PRESENT_NODE_TYPE[-1]"
+assert_equal error "$SF_PRESENT_NODE_TYPE[-1]"
 assert_equal 'Cancelled.' "$SF_PRESENT_NODE_HEADING[-1]"
 assert_equal '' "$SF_PRESENT_NODE_BODY[-1]"
 
@@ -612,6 +587,6 @@ for code in 0 9; do
   SF_TUI_TRANSPORT_EXIT_DETAIL='startup failure'
   sf_tui_exec_finish
   assert_equal stopped "$SF_PRESENT_STATE"
-  assert_equal notice "${(j:,:)SF_PRESENT_NODE_TYPE}"
+  assert_equal error "${(j:,:)SF_PRESENT_NODE_TYPE}"
   assert_equal 'Session creation failed.' "$SF_PRESENT_NODE_HEADING[-1]"
 done

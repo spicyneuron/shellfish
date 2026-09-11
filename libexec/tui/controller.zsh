@@ -115,7 +115,7 @@ sf_tui_decoded() {
   local encoded preview reason
   # Only creation events are legal before a durable session exists.
   [[ -n $SF_PRESENT_SESSION ||
-      $type == (hook_activity|hook_model_context|hook_user_context|error|session_created) ]] ||
+      $type == (hook_activity|hook_result|error|session_created) ]] ||
     return 1
   case $type in
       session_created)
@@ -125,7 +125,7 @@ sf_tui_decoded() {
         ;;
       assistant_start|assistant_message_delta|assistant_reasoning_delta| \
       assistant_reasoning_opaque|assistant_tool_call_delta|assistant_end| \
-      tool_call|tool_result|hook_activity|hook_model_context|hook_user_context)
+      tool_call|tool_result|hook_activity|hook_result)
         sf_tui_event "$type" "$first" "$second" "$third" "$fourth" "$fifth" "$sixth" || return 1
         ;;
       turn_usage)
@@ -151,9 +151,7 @@ sf_tui_decoded() {
         sf_tui_editor_permission open
         SF_PRESENT_STATE=permission
         sf_tui_event tool_permission || return 1
-        if (( ! REPLY )); then
-          sf_tui_notice notice "Permission: $second" "$SF_PRESENT_PERMISSION_TEXT" || return 1
-        fi
+        (( REPLY )) || return 1
         ;;
       handoff)
         (( ! ${#SF_PRESENT_HANDOFF} )) || return 1

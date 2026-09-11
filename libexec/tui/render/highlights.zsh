@@ -82,8 +82,9 @@ sf_tui_theme_config() {
        "section.system":("fg=" + .system_heading + ",bold"),
        reasoning:("fg=" + .reasoning),
        tool_call:("fg=" + .tool), tool_result:("fg=" + .tool),
-       injection:("fg=" + .context),
-       notice:("fg=" + .muted), "notice.error":("fg=" + .error),
+       hook_model_context:("fg=" + .context),
+       hook_activity:("fg=" + .muted), hook_user_context:("fg=" + .muted),
+       error:("fg=" + .error),
        activity:("fg=" + .muted), divider:("fg=" + .divider),
        clamp:("fg=" + .muted),
        footer:("fg=" + .footer),
@@ -669,7 +670,7 @@ sf_tui_highlight_update() {
 
   for (( node = 1; node <= ${#SF_PRESENT_NODE_TYPE}; node++ )); do
     case $SF_PRESENT_NODE_TYPE[node] in
-      message|reasoning|injection) language=markdown ;;
+      message|reasoning|hook_model_context) language=markdown ;;
       tool_call) language=${SF_PRESENT_NODE_FORMAT[node]:-json} ;;
       tool_result) language=${SF_PRESENT_NODE_FORMAT[node]:-plain} ;;
       *) continue ;;

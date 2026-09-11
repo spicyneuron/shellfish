@@ -106,7 +106,7 @@ sf_tui_preview_tail() {
         fi
       fi
       ;;
-    injection)
+    hook_model_context)
       (( ! hidden )) || REPLY="  … ~$tokens tokens"
       ;;
   esac
@@ -274,40 +274,40 @@ sf_tui_rows() {
           preview=$SF_PRESENT_PREVIEW_TOOL_RESULT
           [[ $SF_PRESENT_NODE_META[node] != full ]] || preview=full
           ;;
-        injection)
+        hook_model_context)
           decorated=1
           preview=$SF_PRESENT_PREVIEW_CONTEXT
           head="↪ $heading"
           ;;
-        notice)
+        hook_activity|hook_user_context|error)
           decorated=1
-          if [[ $SF_PRESENT_NODE_ROLE[node] == error ]]; then
+          if [[ $type == error ]]; then
             head="✕ $heading"
+          elif [[ $type == hook_activity ]]; then
+            head=$heading
           else
             head="ℹ $heading"
           fi
-          if [[ $state == open ]]; then
-            # A live notice rewrites itself when it settles, so nothing it
-            # renders is final while it is open.
+          if [[ $type == hook_activity ]]; then
             activity=1
             withhold_all=1
           fi
           ;;
         *) return 1 ;;
       esac
-      if [[ $type == (tool_call|injection|notice) ]]; then
+      if [[ $type == (tool_call|hook_model_context|hook_user_context|error) ]]; then
         [[ -z $SF_PRESENT_NODE_META[node] ]] || head+=" · $SF_PRESENT_NODE_META[node]"
         value_start=2
         title_value=$heading
         value_stop=$(( value_start + ${#title_value} ))
       fi
-      if [[ $type == (tool_call|tool_result|injection|notice) ]]; then
+      if [[ $type == (tool_call|tool_result|hook_model_context|hook_activity|hook_user_context|error) ]]; then
         previewed=1
         leading=${body%%[!$'\n']*}
         source_base=${#leading}
         body=${body#"$leading"}
         body=${body%"${body##*[!$'\n']}"}
-        if [[ $preview == 0 && $type != notice ]]; then
+        if [[ $preview == 0 && $type != (hook_activity|hook_user_context|error) ]]; then
           collapsed=1
           if [[ $type != (tool_call|tool_result) ]]; then
             sf_tui_token_count "$body"
@@ -329,7 +329,7 @@ sf_tui_rows() {
           fi
           case $type in
             tool_result) [[ -z $body ]] || clamp_start=2 ;;
-            injection) [[ -z $body ]] || clamp_start=$(( ${#head} + 1 )) ;;
+            hook_model_context) [[ -z $body ]] || clamp_start=$(( ${#head} + 1 )) ;;
           esac
           if (( clamp_start >= 0 )); then
             clamp_stop=${#text}
@@ -363,7 +363,8 @@ sf_tui_rows() {
       if [[ $type != (message|reasoning) ]] && (( ! collapsed && ${#body} )); then
         case $type in
           tool_result) content_start=0 ;;
-          tool_call|injection|notice) content_start=$(( ${#text} - ${#body} )) ;;
+          tool_call|hook_model_context|hook_activity|hook_user_context|error)
+            content_start=$(( ${#text} - ${#body} )) ;;
         esac
         if (( content_start >= 0 )); then
           content_end=$(( content_start + ${#body} ))

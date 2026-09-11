@@ -73,7 +73,7 @@ sf_tui_rows 80 20
 assert_equal '1,1,0' "${(j:,:)SF_PRESENT_ROW_CLOSED[1,3]}"
 
 sf_tui_reset
-sf_tui_event hook_model_context project_environment session_start '<env>test</env>'
+sf_tui_event hook_result project_environment session_start '<env>test</env>'
 sf_tui_event user ''
 sf_tui_rows 80 20
 assert_equal $'↪ project_environment · session_start\n  <env>test</env>' \
@@ -152,7 +152,7 @@ sf_tui_rows 80 20
 assert_equal $'⛭ read_file\n╰' "${(F)SF_PRESENT_ROW_TEXT[-2,-1]}"
 
 sf_tui_reset
-sf_tui_event hook_model_context project_environment session_start $'one\ntwo'
+sf_tui_event hook_result project_environment session_start $'one\ntwo'
 sf_tui_rows 80 20
 assert_equal '↪ project_environment · session_start · ~2 tokens' "${(F)SF_PRESENT_ROW_TEXT}"
 
@@ -180,7 +180,7 @@ assert_equal $'─ agent ──────────────────�
   "${(F)SF_PRESENT_ROW_TEXT}"
 
 sf_tui_reset
-sf_tui_event hook_model_context hook project $'alpha beta\ngamma\ndelta'
+sf_tui_event hook_result hook project $'alpha beta\ngamma\ndelta'
 sf_tui_rows 16 20
 assert_equal $'↪ hook · project\n  alpha beta\n  … ~6 tokens' "${(F)SF_PRESENT_ROW_TEXT}"
 
@@ -245,14 +245,14 @@ SF_PRESENT_STYLE[syntax.removed]=''
 SF_PRESENT_HIGHLIGHT_ENABLED=0
 
 sf_tui_reset
-sf_tui_add notice notice 'Heads up' detail
-sf_tui_add notice error Failed broken
+sf_tui_event hook_result hook project '' detail
+sf_tui_error Failed broken
 sf_tui_rows 80 20
-assert_equal $'ℹ Heads up\n  detail\n\n✕ Failed\n  broken' "${(F)SF_PRESENT_ROW_TEXT}"
+assert_equal $'ℹ hook · project\n  detail\n\n✕ Failed\n  broken' "${(F)SF_PRESENT_ROW_TEXT}"
 
 sf_tui_rows_config '{"tui":{"preview_lines_context":"full"}}'
 sf_tui_reset
-sf_tui_event hook_model_context hook h 'alpha beta gamma'
+sf_tui_event hook_result hook h 'alpha beta gamma'
 sf_tui_rows 12 20
 assert_equal $'↪ hook · h\n  alpha beta\n  gamma' "${(F)SF_PRESENT_ROW_TEXT}"
 
@@ -357,7 +357,8 @@ fi
 # Semantic row styling resolves "type.role" before falling back to "type", and
 # leaves blank separator rows unstyled.
 SF_PRESENT_STYLE=( divider 'fg=8' section.user 'fg=1,bold' message 'fg=2'
-  reasoning 'fg=3' tool_call 'fg=4' tool_result 'fg=4' injection 'fg=5' notice 'fg=6'
+  reasoning 'fg=3' tool_call 'fg=4' tool_result 'fg=4' hook_model_context 'fg=5' \
+  hook_user_context 'fg=6' error 'fg=6'
   clamp 'fg=7' muted 'fg=9' )
 sf_tui_reset
 sf_tui_event user hello
@@ -397,17 +398,17 @@ assert_equal 'reasoning.agent' "$SF_PRESENT_ROW_KIND[3]"
 assert_equal '0 11 fg=3' "$SF_PRESENT_ROW_HIGHLIGHTS[3]"
 
 sf_tui_reset
-sf_tui_event hook_model_context hook project body
+sf_tui_event hook_result hook project body
 sf_tui_event tool_call call shell command unsandboxed
 sf_tui_event tool_result call hidden result
-sf_tui_add notice notice 'Heads up' detail
+sf_tui_event hook_result hook project '' detail
 sf_tui_rows 80 20
 assert_equal '0 16 fg=5 2 6 fg=5,bold' \
-  "$SF_PRESENT_ROW_HIGHLIGHTS[${SF_PRESENT_ROW_KIND[(i)injection.system]}]"
+  "$SF_PRESENT_ROW_HIGHLIGHTS[${SF_PRESENT_ROW_KIND[(i)hook_model_context.system]}]"
 assert_equal '0 21 fg=4 2 7 fg=4,bold' \
   "$SF_PRESENT_ROW_HIGHLIGHTS[${SF_PRESENT_ROW_KIND[(i)tool_call.agent]}]"
-assert_equal '0 10 fg=6 2 10 fg=6,bold' \
-  "$SF_PRESENT_ROW_HIGHLIGHTS[${SF_PRESENT_ROW_KIND[(i)notice.notice]}]"
+assert_equal '0 16 fg=6 2 6 fg=6,bold' \
+  "$SF_PRESENT_ROW_HIGHLIGHTS[${SF_PRESENT_ROW_KIND[(i)hook_user_context.notice]}]"
 assert_equal '0 9 fg=4 0 1 fg=8' \
   "$SF_PRESENT_ROW_HIGHLIGHTS[${SF_PRESENT_ROW_TEXT[(i)│ command]}]"
 assert_equal '0 8 fg=4 0 1 fg=8' \
@@ -421,13 +422,13 @@ assert_equal '0 3 fg=4 0 1 fg=8' \
 
 SF_PRESENT_PREVIEW_CONTEXT=0
 sf_tui_reset
-sf_tui_event hook_model_context 'hook name' project body
+sf_tui_event hook_result 'hook name' project body
 sf_tui_rows 80 20
 assert_equal '↪ hook name · project · ~1 tokens' "$SF_PRESENT_ROW_TEXT[1]"
 assert_equal '0 33 fg=5 2 11 fg=5,bold 22 33 fg=7' "$SF_PRESENT_ROW_HIGHLIGHTS[1]"
 SF_PRESENT_PREVIEW_CONTEXT=1
 sf_tui_reset
-sf_tui_event hook_model_context 'hook name' project "${(l:400::x:)}"
+sf_tui_event hook_result 'hook name' project "${(l:400::x:)}"
 sf_tui_rows 80 20
 assert_equal '0 15 fg=5 0 15 fg=7' "$SF_PRESENT_ROW_HIGHLIGHTS[-1]"
 SF_PRESENT_PREVIEW_CONTEXT=0
@@ -450,7 +451,7 @@ assert_equal '0 8 fg=4' \
 sf_tui_reset
 sf_tui_event tool_call wrapped very_long_tool_name body
 sf_tui_event tool_result wrapped hidden result
-sf_tui_add notice notice 'Long notice heading' detail
+sf_tui_event hook_result 'Long notice heading' project '' detail
 sf_tui_rows 8 20
 assert_equal '0 8 fg=4 0 8 fg=4,bold' \
   "$SF_PRESENT_ROW_HIGHLIGHTS[${SF_PRESENT_ROW_TEXT[(i)very_lon]}]"

@@ -132,10 +132,8 @@ sf_tui_close() {
   if [[ $SF_PRESENT_NODE_TYPE[index] == (message|reasoning) && $body != *[!$'\n']* ]]; then
     body=''
   fi
-  if [[ ( $SF_PRESENT_NODE_TYPE[index] == (activity|message|reasoning) &&
-      -z $SF_PRESENT_NODE_HEADING[index] && -z $body ) ||
-      ( $SF_PRESENT_NODE_TYPE[index] == notice &&
-      $SF_PRESENT_NODE_ROLE[index] == notice && -z $body ) ]]; then
+  if [[ $SF_PRESENT_NODE_TYPE[index] == (activity|hook_activity|message|reasoning) &&
+      -z $SF_PRESENT_NODE_HEADING[index] && -z $body ]]; then
     end=$(( index - 1 ))
     if [[ ${2-} == orphan_section && $index -gt 1 &&
         $SF_PRESENT_NODE_TYPE[index-1] == section ]]; then
@@ -312,11 +310,8 @@ sf_tui_event() {
     hook_activity)
       sf_tui_hook_activity "$first" "$second" "$third"
       ;;
-    hook_model_context)
-      sf_tui_hook_model_context "$first" "$second" "$third"
-      ;;
-    hook_user_context)
-      sf_tui_hook_user_context "$first" "$second" "$third"
+    hook_result)
+      sf_tui_hook_result "$first" "$second" "$third" "$fourth"
       ;;
     error)
       sf_tui_error "$first" "$second" || return 1

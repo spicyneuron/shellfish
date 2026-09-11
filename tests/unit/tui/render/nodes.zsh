@@ -9,8 +9,8 @@ sf_tui_event user hello
 sf_tui_reset
 sf_tui_event system instructions
 sf_tui_event hook_activity session_start hook 'Loading startup context'
-sf_tui_event hook_model_context hook session_start 'startup context'
-assert_equal 'section,message,injection' "${(j:,:)SF_PRESENT_NODE_TYPE}"
+sf_tui_event hook_result hook session_start 'startup context'
+assert_equal 'section,message,hook_model_context' "${(j:,:)SF_PRESENT_NODE_TYPE}"
 assert_equal 'startup context' "$SF_PRESENT_NODE_BODY[-1]"
 assert_equal closed "$SF_PRESENT_NODE_STATE[-1]"
 
@@ -22,7 +22,7 @@ assert_equal 0 "${#SF_PRESENT_NODE_TYPE}"
 sf_tui_event tool_call call_1 shell '{}'
 sf_tui_event hook_activity pre_tool_use silent working
 sf_tui_event hook_activity
-assert_equal 0 "${#${(M)SF_PRESENT_NODE_TYPE:#notice}}"
+assert_equal 0 "${#${(M)SF_PRESENT_NODE_TYPE:#hook_activity}}"
 assert_equal tool_result "$SF_PRESENT_NODE_TYPE[-1]"
 assert_equal '' "$SF_PRESENT_NODE_META[-1]"
 sf_tui_event tool_result call_1 0 done
@@ -101,18 +101,18 @@ sf_tui_event assistant_tool_call_delta 3
 assert_equal closed "$SF_PRESENT_NODE_STATE[-1]"
 
 sf_tui_reset
-sf_tui_event hook_model_context project_environment session_start '<env>test</env>'
+sf_tui_event hook_result project_environment session_start '<env>test</env>'
 sf_tui_event user ''
-assert_equal 'injection,section,message' "${(j:,:)SF_PRESENT_NODE_TYPE}"
+assert_equal 'hook_model_context,section,message' "${(j:,:)SF_PRESENT_NODE_TYPE}"
 assert_equal session_start "$SF_PRESENT_NODE_META[1]"
 assert_equal project_environment "$SF_PRESENT_NODE_HEADING[1]"
 assert_equal '' "$SF_PRESENT_NODE_BODY[3]"
 
 sf_tui_reset
 sf_tui_event user hello
-sf_tui_event hook_model_context hook prompt injected
+sf_tui_event hook_result hook prompt injected
 sf_tui_event user again
-assert_equal 'section,message,injection,message' "${(j:,:)SF_PRESENT_NODE_TYPE}"
+assert_equal 'section,message,hook_model_context,message' "${(j:,:)SF_PRESENT_NODE_TYPE}"
 
 sf_tui_reset
 sf_tui_event assistant_start
@@ -208,25 +208,25 @@ assert_equal 0 "${#SF_PRESENT_NODE_TYPE}"
 
 sf_tui_reset
 sf_tui_add message agent '' '' open
-if sf_tui_add notice '' error failed; then
+if sf_tui_add error error failed; then
   fail 'accepted a node after an open tail'
 fi
 
 sf_tui_reset
-sf_tui_add notice '' working '' open
+sf_tui_add hook_activity notice working '' open
 if sf_tui_event assistant_end; then
   fail 'settled a non-assistant node'
 fi
 
-# A notice that arrives before the agent produced anything releases the section
+# An error before the agent produced anything releases the section
 # it would otherwise strand, since a reload never rebuilds an empty section.
 sf_tui_reset
 sf_tui_event user ask
 sf_tui_event assistant_start
 assert_equal 'section,message,section,activity' "${(j:,:)SF_PRESENT_NODE_TYPE}"
 assert_equal 2 "$SF_PRESENT_SECTION_ID"
-sf_tui_notice error 'Turn failed' 'backend failed'
-assert_equal 'section,message,notice' "${(j:,:)SF_PRESENT_NODE_TYPE}"
+sf_tui_error 'Turn failed' 'backend failed'
+assert_equal 'section,message,error' "${(j:,:)SF_PRESENT_NODE_TYPE}"
 assert_equal 1 "$SF_PRESENT_SECTION_ID"
 
 sf_test_tmp presentation
@@ -243,7 +243,7 @@ cp "$SF_TEST_SESSIONS/header-only.jsonl" "$tmp/session.jsonl"
 )
 
 sf_tui_reload "$SF_TEST_SESSIONS/tool-paired.jsonl" || fail "$SF_PRESENT_ERROR"
-assert_equal 'section,message,section,tool_call,tool_result,tool_call,tool_result,message,injection' \
+assert_equal 'section,message,section,tool_call,tool_result,tool_call,tool_result,message,hook_model_context' \
   "${(j:,:)SF_PRESENT_NODE_TYPE}"
 assert_equal 'Use both tools' "$SF_PRESENT_NODE_BODY[2]"
 assert_equal Done "$SF_PRESENT_NODE_BODY[8]"
@@ -256,12 +256,12 @@ sf_tui_reload "$SF_TEST_SESSIONS/header-only.jsonl" || fail "$SF_PRESENT_ERROR"
 assert_equal test/fake-model "$SF_PRESENT_FOOTER"
 assert_equal fake-model "$(jq -r '.profile.request.model' <<<"$SF_PRESENT_RUNTIME")"
 
-# A durable turn error replays as an error notice and releases its section, so a
+# A durable turn error replays as an error and releases its section, so a
 # later record opens a numbered one rather than joining the failed turn.
 cp "$SF_TEST_SESSIONS/interrupted.jsonl" "$tmp/failed.jsonl"
 print -r -- '{"type":"turn_error","message":"Turn interrupted."}' >>"$tmp/failed.jsonl"
 sf_tui_reload "$tmp/failed.jsonl" || fail "$SF_PRESENT_ERROR"
-assert_equal 'section,message,notice' "${(j:,:)SF_PRESENT_NODE_TYPE}"
+assert_equal 'section,message,error' "${(j:,:)SF_PRESENT_NODE_TYPE}"
 assert_equal error "$SF_PRESENT_NODE_ROLE[3]"
 assert_equal 'Turn interrupted.' "$SF_PRESENT_NODE_HEADING[3]"
 assert_equal '' "$SF_PRESENT_NODE_BODY[3]"
@@ -309,7 +309,7 @@ assert_equal 'fg=#555555,bold' "$SF_PRESENT_STYLE[section.user]"
 assert_equal 'fg=#777777' "$SF_PRESENT_STYLE[message]"
 assert_equal 'fg=#333333' "$SF_PRESENT_STYLE[divider]"
 assert_equal 'fg=#222222' "$SF_PRESENT_STYLE[clamp]"
-assert_equal 'fg=#666666' "$SF_PRESENT_STYLE[notice.error]"
+assert_equal 'fg=#666666' "$SF_PRESENT_STYLE[error]"
 assert_equal 'fg=#444444' "$SF_PRESENT_STYLE[prompt]"
 assert_equal 'fg=#448844' "$SF_PRESENT_STYLE[prompt_waiting]"
 assert_equal 'fg=#222222' "$SF_PRESENT_STYLE[permission]"

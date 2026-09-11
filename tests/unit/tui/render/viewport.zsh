@@ -104,15 +104,15 @@ assert_equal 0 "$SF_PRESENT_FLUSH_ROWS"
 sf_tui_highlight_rows 1 5 100
 assert_equal 0 "$SF_PRESENT_HIGHLIGHT_ADVANCED"
 
-# A live notice settles by rewriting its own rows, so it is held out of
+# Hook activity is held out of
 # scrollback until it closes.
 sf_tui_reset
-sf_tui_notice notice 'Compacting…' '' open
+sf_tui_hook_activity user_prompt_submit compact 'Compacting…'
 sf_tui_viewport 80 20
 assert_equal 0 "$SF_PRESENT_FLUSH_ROWS"
-sf_tui_notice notice 'Session compacted' 'Original saved.'
+sf_tui_event hook_result compact user_prompt_submit '' 'Original saved.'
 sf_tui_viewport 80 20
-assert_equal $'ℹ Session compacted\n  Original saved.' "$SF_PRESENT_FLUSH_TEXT"
+assert_equal $'ℹ compact · user_prompt_submit\n  Original saved.' "$SF_PRESENT_FLUSH_TEXT"
 
 SF_PRESENT_ROW_TEXT=( alpha beta )
 SF_PRESENT_ROW_HIGHLIGHTS=( '0 5 bold' '1 3 fg=2' )

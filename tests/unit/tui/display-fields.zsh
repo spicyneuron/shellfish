@@ -89,20 +89,20 @@ jq -e '
 typeset framed
 framed=$(jq -nj -L "$ROOT" '
   include "libexec/tui/display-fields";
-  [["notice", "before\u0000after"]] | emit_display_batch
+  [["sample", "before\u0000after"]] | emit_display_batch
 ' | tr '\0' '\n' | paste -sd, -)
-assert_equal 'notice,before�after,,,,,,batch_ok,,,,,,' "$framed"
+assert_equal 'sample,before�after,,,,,,batch_ok,,,,,,' "$framed"
 
 if jq -nj -L "$ROOT" '
     include "libexec/tui/display-fields";
-    [["notice", "a", "b", "c", "d", "e", "f", "g"]] | emit_display_batch
+    [["sample", "a", "b", "c", "d", "e", "f", "g"]] | emit_display_batch
   ' >/dev/null 2>&1; then
   fail 'an oversized display event was accepted'
 fi
 
 if jq -nj -L "$ROOT" '
     include "libexec/tui/display-fields";
-    [["notice", 1]] | emit_display_batch
+    [["sample", 1]] | emit_display_batch
   ' >/dev/null 2>&1; then
   fail 'a non-string display field was accepted'
 fi
