@@ -79,6 +79,20 @@ sf_tui_chrome() {
   SF_PRESENT_CHROME_HIGHLIGHTS+=( $start $(( start + length )) "$style" )
 }
 
+# The view for a client that can no longer draw the transcript. It calls no part
+# of the failed renderer, so the offer to refresh or exit always survives.
+sf_tui_stopped_view() {
+  PREDISPLAY=$'\n'"Shellfish stopped: ${SF_PRESENT_ERROR:-unknown failure}"$'\n\n'
+  if [[ -n $SF_PRESENT_SESSION ]]; then
+    PREDISPLAY+=$'Submit /refresh to rebuild from the session, or /quit to leave.'
+  else
+    PREDISPLAY+=$'Submit /quit to leave.'
+  fi
+  PREDISPLAY+=$'\n\n❯ '
+  POSTDISPLAY=''
+  region_highlight=()
+}
+
 sf_tui_update_highlights() {
   local set=${1:-view}
   local -a spans

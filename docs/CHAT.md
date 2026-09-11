@@ -49,8 +49,10 @@ The TUI collapses long records to a configurable line count. `tui.preview_lines_
 
 ## Recovery
 
-Chat renders from an in-memory presentation transcript during a normal turn. If something goes wrong (malformed output, cancellation, process failure), chat discards the live state and reloads the durable session JSONL. Committed scrollback is never rewritten. You can always recover the ground truth by reopening the session or running `/refresh`.
+Chat renders from an in-memory presentation transcript during a normal turn. Ordinary outcomes — a failed tool, a durable `turn_error`, cancellation, a failed exec process — are reported where they happen and chat stays usable.
+
+A failure chat cannot draw its way past stops it instead: the renderer fails, exec sends output chat cannot apply, or a permission decision cannot be delivered. The stopped view reports the failure without the renderer that failed, and the editor keeps working, so `/refresh` and `/quit` still answer. Both are client commands rather than hooks, so they need no turn. `/refresh` reopens the session with `shellfish --clear --session PATH`, rebuilding the whole chat from the durable JSONL and keeping nothing from the presentation that failed; it is the same command that fixes layout corruption during a normal session. Chat never reconciles live presentation against the session file, and committed scrollback is never rewritten. A failure before a session exists has nothing to rebuild from, so it reports and exits.
 
 ## Architecture
 
-Interactive chat is a controller around one `shellfish create --jsonl` startup and single `shellfish run --jsonl` turns. Durable session JSONL is the source of truth for session and turn lifecycle. Chat owns only transient input, presentation, terminal rendering, and visual reconciliation. Presentation is resolved from current configuration on each start, never from the session. The session layer handles hooks, provider requests, tool execution, persistence, and recovery.
+Interactive chat is a controller around one `shellfish create --jsonl` startup and single `shellfish run --jsonl` turns. Durable session JSONL is the source of truth for session and turn lifecycle. Chat owns only transient input, presentation, and terminal rendering. Presentation is resolved from current configuration on each start, never from the session. The session layer handles hooks, provider requests, tool execution, persistence, and recovery.

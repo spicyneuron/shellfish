@@ -6,6 +6,7 @@ sf_test_source libexec/tui/render/nodes.zsh libexec/tui/render/highlights.zsh \
   libexec/tui/render/terminal.zsh libexec/tui/render/view.zsh \
   libexec/tui/transport.zsh libexec/tui/editor.zsh libexec/tui/controller.zsh
 sf_test_tmp controller
+typeset SF_ENTRY="$ROOT/bin/shellfish"
 
 # Keep unit tests PTY-free; the real worker lifecycle is covered by tests/pty.
 sf_tui_heartbeat_arm() { return 0; }
@@ -170,29 +171,16 @@ assert_equal 'hook_user_context,section,tool_call,tool_result,hook_user_context,
   "${(j:,:)SF_PRESENT_NODE_TYPE}"
 assert_equal '' "$SF_PRESENT_TOOL_CALL"
 
-# Malformed bounded-exec output converges on authoritative reload rather than
-# retaining the speculative live tail.
+# Malformed exec output stops the chat. The live transcript cannot be trusted
+# past it, and only the durable session can replace it.
 cp "$SF_TEST_SESSIONS/complete.jsonl" "$tmp/recover.jsonl"
 sf_tui_reload "$tmp/recover.jsonl" || fail "$SF_PRESENT_ERROR"
 sf_tui_terminal_reset
-BUFFER=''
-CURSOR=0
-sf_tui_viewport 20 3 "$SF_PRESENT_CURSOR"
-sf_tui_terminal_stage
-sf_tui_terminal_finish
-typeset flushed=$PREDISPLAY
-[[ $flushed == *Hello* ]] || fail 'recovery setup did not flush its prefix'
 sf_tui_event assistant_message_delta 0 speculative
 SF_PRESENT_SESSION=$tmp/recover.jsonl
 SF_PRESENT_STATE=working
 sf_tui_transport_reset
-SF_PRESENT_PERMISSION_ID=stale
-SF_PRESENT_PERMISSION_TOOL=stale
-SF_PRESENT_PERMISSION_TEXT=stale
-SF_PRESENT_PERMISSION_LANGUAGE=stale
-SF_PRESENT_PERMISSION_PREVIEW_LENGTH=5
-SF_PRESENT_PERMISSION_DRAFT=stale
-SF_PRESENT_PERMISSION_CURSOR=5
+SF_PRESENT_QUEUE=( queued )
 typeset -g BUFFER='' CURSOR=0 PREDISPLAY='' POSTDISPLAY='' ZLE_CALLS='' DRAWN=''
 zle() {
   ZLE_CALLS+="${ZLE_CALLS:+,}$*"
@@ -201,44 +189,35 @@ zle() {
 exec {SF_TUI_TRANSPORT_OUTPUT_FD}< <(print -r -- broken)
 sf_tui_exec_ready "$SF_TUI_TRANSPORT_OUTPUT_FD"
 assert_equal working "$SF_PRESENT_STATE"
-assert_equal 1 "${#SF_TUI_TRANSPORT_LINES}"
-while [[ $SF_PRESENT_STATE == working ]] && sf_tui_transport_has_pending; do
-  (( SF_PRESENT_PENDING_ROWS )) || sf_tui_heartbeat_tick
-  if (( SF_PRESENT_PENDING_ROWS )); then
-    sf_tui_line_finish
-    sf_tui_line_init
-  fi
-done
-assert_equal idle "$SF_PRESENT_STATE"
-assert_equal '' "$SF_PRESENT_PERMISSION_ID"
-assert_equal '' "$SF_PRESENT_PERMISSION_TOOL"
-assert_equal '' "$SF_PRESENT_PERMISSION_TEXT"
-assert_equal '' "$SF_PRESENT_PERMISSION_LANGUAGE"
-assert_equal 0 "$SF_PRESENT_PERMISSION_PREVIEW_LENGTH"
-assert_equal '' "$SF_PRESENT_PERMISSION_DRAFT"
-assert_equal 0 "$SF_PRESENT_PERMISSION_CURSOR"
-assert_equal error "$SF_PRESENT_NODE_TYPE[-1]"
-assert_equal 'Exec sent invalid JSONL.' "$SF_PRESENT_NODE_HEADING[-1]"
-[[ ${(j:\n:)SF_PRESENT_NODE_BODY} != *speculative* ]] ||
-  fail 'recovery retained speculative presentation text'
-sf_tui_viewport 80 20 "$SF_PRESENT_CURSOR"
-[[ $SF_PRESENT_VIEWPORT_TEXT != *Hello* ]] ||
-  fail 'recovery repainted the flushed durable prefix'
-[[ $ZLE_CALLS == *'-R'* ]] ||
-  fail 'recovery did not repaint ZLE'
-
-# An unmatched speculative prefix cannot survive authoritative recovery. Its
-# saved cursor points past everything that remains and must be reset as well.
-sf_tui_reset
-sf_tui_terminal_reset
-SF_PRESENT_SESSION=$tmp/recover.jsonl
-SF_PRESENT_PREFIX_VISIBLE=1
-sf_tui_add message agent '' 'streamed text that never reached the session' open
-SF_PRESENT_CURSOR='1:30'
-sf_tui_recover 'Cancelled.' || fail 'recovery rejected an unmatched open prefix'
-assert_equal 1:0 "$SF_PRESENT_CURSOR"
-sf_tui_viewport 80 20 "$SF_PRESENT_CURSOR" ||
-  fail 'recovery left a cursor the viewport cannot render'
+sf_tui_heartbeat_tick
+assert_equal stopped "$SF_PRESENT_STATE"
+assert_equal 'exec sent invalid JSONL' "$SF_PRESENT_ERROR"
+assert_equal 0 "${#SF_PRESENT_QUEUE}"
+[[ $PREDISPLAY == *'Shellfish stopped: exec sent invalid JSONL'* ]] ||
+  fail 'the stopped view did not report the failure'
+[[ $PREDISPLAY == *'/refresh'* && $PREDISPLAY == *'/quit'* ]] ||
+  fail 'the stopped view did not say which prompts it accepts'
+# Draining what the child already sent cannot return to the failed renderer.
+SF_TUI_TRANSPORT_EOF=1
+SF_TUI_TRANSPORT_EXIT_STATUS=1
+sf_tui_heartbeat_tick
+assert_equal stopped "$SF_PRESENT_STATE"
+# A stopped chat runs no prompt, but still answers the two client commands.
+sf_tui_submit 'what happened?'
+assert_equal ignore "$REPLY"
+assert_equal '' "$SF_PRESENT_ACTION"
+sf_tui_submit /refresh
+assert_equal quit "$REPLY"
+assert_equal handoff "$SF_PRESENT_ACTION"
+assert_equal "$SF_ENTRY --clear --session $tmp/recover.jsonl" \
+  "${(j: :)SF_PRESENT_HANDOFF}"
+SF_PRESENT_ACTION=''
+SF_PRESENT_HANDOFF=()
+sf_tui_submit /q
+assert_equal quit "$SF_PRESENT_ACTION"
+SF_PRESENT_ACTION=''
+SF_PRESENT_STATE=idle
+SF_PRESENT_ERROR=''
 
 # Buffered transport records are applied as one semantic batch after older rows
 # stop flushing. The bounded viewport still sends their display rows to
@@ -406,8 +385,8 @@ assert_equal 'Exec process failed.' "$SF_PRESENT_NODE_HEADING[-1]"
 [[ $SF_PRESENT_NODE_BODY[-1] == *'Discarded 1 queued prompt.'* ]] ||
   fail 'exec failure did not report discarded queued prompts'
 
-# A persisted turn error replaces the exit report: the reloaded transcript ends
-# with the failure, so recovery adds no second notice and chat stays usable.
+# A persisted turn error is the whole outcome, so completion adds no second
+# report and chat stays usable.
 sf_tui_reset
 sf_tui_terminal_reset
 cp "$SF_TEST_SESSIONS/interrupted.jsonl" "$tmp/failed.jsonl"
@@ -419,13 +398,16 @@ SF_TUI_TRANSPORT_LINES=( '{"type":"turn_error","message":"test backend failure"}
 SF_TUI_TRANSPORT_EOF=1
 SF_TUI_TRANSPORT_EXIT_STATUS=1
 SF_TUI_TRANSPORT_EXIT_DETAIL='test backend failure'
+DRAWN=''
 sf_tui_heartbeat_tick
 assert_equal idle "$SF_PRESENT_STATE"
-assert_equal 'test backend failure' "$SF_PRESENT_NODE_HEADING[-1]"
-assert_equal '' "$SF_PRESENT_NODE_BODY[-1]"
+[[ $DRAWN == *'test backend failure'* ]] ||
+  fail 'the durable turn error was not rendered'
+[[ ${(j:,:)SF_PRESENT_NODE_HEADING} != *'Exec process failed.'* ]] ||
+  fail 'completion reported the failure a second time'
 
-# A persisted cancellation is the complete user-facing outcome. The cancelling
-# state does not add a second notice after authoritative recovery.
+# A persisted cancellation is the complete user-facing outcome, so the
+# cancelling state adds nothing to it.
 sf_tui_reset
 sf_tui_terminal_reset
 cp "$SF_TEST_SESSIONS/interrupted.jsonl" "$tmp/cancelled.jsonl"
@@ -438,95 +420,75 @@ SF_TUI_TRANSPORT_LINES=(
 )
 SF_TUI_TRANSPORT_EOF=1
 SF_TUI_TRANSPORT_EXIT_STATUS=130
+DRAWN=''
 sf_tui_heartbeat_tick
 assert_equal idle "$SF_PRESENT_STATE"
-assert_equal error "$SF_PRESENT_NODE_TYPE[-1]"
-assert_equal 'Cancelled.' "$SF_PRESENT_NODE_HEADING[-1]"
-assert_equal '' "$SF_PRESENT_NODE_BODY[-1]"
+[[ $DRAWN == *'Cancelled.'* ]] || fail 'the durable cancellation was not rendered'
+[[ ${(j:,:)SF_PRESENT_NODE_HEADING} != *Cancelled* ]] ||
+  fail 'completion reported the cancellation a second time'
 
-# A terminated exec can replace a flushed and closed speculative assistant
-# prefix during turn recovery. Chat resets that live tail and remains usable.
+# A terminated exec ends the turn as an ordinary failure, and chat stays usable.
 sf_tui_reset
 sf_tui_terminal_reset
 SF_PRESENT_SESSION="$tmp/recover.jsonl"
-SF_PRESENT_PREFIX_VISIBLE=1
-sf_tui_add message agent '' 'speculative streamed prefix'
-SF_PRESENT_CURSOR='1:12'
 SF_PRESENT_STATE=working
 SF_TUI_TRANSPORT_EOF=1
 SF_TUI_TRANSPORT_EXIT_STATUS=143
 SF_TUI_TRANSPORT_EXIT_DETAIL=''
 sf_tui_exec_finish
 assert_equal idle "$SF_PRESENT_STATE"
-assert_equal 1:0 "$SF_PRESENT_CURSOR"
 assert_equal 'Exec process terminated.' "$SF_PRESENT_NODE_HEADING[-1]"
 assert_equal 'Terminated by signal 15.' "$SF_PRESENT_NODE_BODY[-1]"
 sf_tui_submit next
 assert_equal submit "$REPLY"
 assert_equal next "$SF_PRESENT_SUBMITTED"
 
-# A renderer failure does not abort a successful turn. Completion reloads the
-# durable transcript, reports the recovery, and clears the live-render latch.
-sf_tui_reset
-sf_tui_terminal_reset
-sf_tui_event assistant_message_delta 0 speculative
-SF_PRESENT_SESSION="$tmp/recover.jsonl"
-SF_PRESENT_STATE=working
-SF_PRESENT_RENDER_ERROR='Live rendering failed.'
-SF_PRESENT_QUEUE=()
-SF_PRESENT_HANDOFF=()
-SF_TUI_TRANSPORT_EOF=1
-SF_TUI_TRANSPORT_EXIT_STATUS=0
-SF_TUI_TRANSPORT_EXIT_DETAIL=''
-sf_tui_exec_finish
-assert_equal idle "$SF_PRESENT_STATE"
-assert_equal '' "$SF_PRESENT_RENDER_ERROR"
-assert_equal 'Live rendering failed.' "$SF_PRESENT_NODE_HEADING[-1]"
-assert_equal 'The completed turn was reloaded.' "$SF_PRESENT_NODE_BODY[-1]"
-[[ ${(j:\n:)SF_PRESENT_NODE_BODY} != *speculative* ]] ||
-  fail 'render recovery retained speculative presentation text'
-
-# If the durable transcript cannot be reloaded, the chat stops instead of
-# resuming from the invalid live presentation.
-SF_PRESENT_SESSION="$tmp/missing.jsonl"
-SF_PRESENT_STATE=working
-SF_PRESENT_RENDER_ERROR='Live rendering failed.'
-SF_TUI_TRANSPORT_EOF=1
-SF_TUI_TRANSPORT_EXIT_STATUS=0
-sf_tui_exec_finish
-assert_equal stopped "$SF_PRESENT_STATE"
-assert_equal '' "$SF_PRESENT_RENDER_ERROR"
-
-# A permission prompt cannot be reviewed safely without rendering. Stop the
-# waiting child, reload durable state, and report discarded queued prompts.
+# A permission prompt cannot be answered once the child is gone. The chat stops
+# rather than guessing what the undecided turn did.
 sf_tui_reset
 sf_tui_terminal_reset
 SF_PRESENT_SESSION="$tmp/recover.jsonl"
 SF_PRESENT_STATE=permission
-SF_PRESENT_RENDER_ERROR='Live rendering failed.'
-SF_PRESENT_QUEUE=( queued )
-ZLE_CALLS=''
-sf_tui_pre_redraw
-assert_equal idle "$SF_PRESENT_STATE"
-assert_equal '' "$SF_PRESENT_RENDER_ERROR"
-assert_equal 0 "${#SF_PRESENT_QUEUE}"
-assert_equal 'Live rendering failed.' "$SF_PRESENT_NODE_HEADING[-1]"
-[[ $SF_PRESENT_NODE_BODY[-1] == *'Turn stopped before a permission decision.'* ]] ||
-  fail 'permission render failure omitted its stop reason'
-[[ $SF_PRESENT_NODE_BODY[-1] == *'Discarded 1 queued prompt.'* ]] ||
-  fail 'permission render failure omitted its discarded queue'
-[[ $ZLE_CALLS == *'turn stopped before permission.'* ]] ||
-  fail 'permission render failure was not shown in ZLE'
+SF_PRESENT_PERMISSION_ID=permission_1
+functions[sf_tui_transport_reply_saved]=$functions[sf_tui_transport_reply]
+sf_tui_transport_reply() { return 1; }
+if sf_tui_answer_permission approve; then
+  fail 'an undeliverable decision was accepted'
+fi
+functions[sf_tui_transport_reply]=$functions[sf_tui_transport_reply_saved]
+unfunction sf_tui_transport_reply_saved
+assert_equal stopped "$SF_PRESENT_STATE"
+assert_equal 'cannot answer permission' "$SF_PRESENT_ERROR"
+assert_equal '' "$SF_PRESENT_PERMISSION_ID"
+SF_PRESENT_STATE=idle
+SF_PRESENT_ERROR=''
 
 SF_PRESENT_QUEUE=( one two )
 sf_tui_discard_queue
 assert_equal 'Discarded 2 queued prompts. Use ↑↓ keys to recover.' "$REPLY"
 assert_equal 0 "${#SF_PRESENT_QUEUE}"
 
+# A queued client command is answered by the client, never sent as a prompt.
+sf_tui_reset
+sf_tui_terminal_reset
+SF_PRESENT_SESSION="$tmp/recover.jsonl"
+SF_PRESENT_STATE=working
+SF_PRESENT_ACTION=''
+SF_PRESENT_HANDOFF=()
+SF_PRESENT_QUEUE=( /refresh )
+SF_TUI_TRANSPORT_EOF=1
+SF_TUI_TRANSPORT_EXIT_STATUS=0
+sf_tui_exec_finish
+assert_equal handoff "$SF_PRESENT_ACTION"
+assert_equal "$SF_ENTRY --clear --session $tmp/recover.jsonl" \
+  "${(j: :)SF_PRESENT_HANDOFF}"
+assert_equal 0 "${#${(M)SF_PRESENT_NODE_TYPE:#message}}"
+SF_PRESENT_ACTION=''
+SF_PRESENT_HANDOFF=()
+
 # Creation queues prompts and rejects turn events until it announces a session.
 sf_tui_reset
 sf_tui_terminal_reset
-typeset SF_ENTRY="$ROOT/bin/shellfish"
 SF_PRESENT_SESSION=''
 SF_PRESENT_STATE=working
 sf_tui_submit early
@@ -543,12 +505,12 @@ if sf_tui_decoded session_created "$tmp/second.jsonl"; then
 fi
 SF_TUI_TRANSPORT_EOF=1
 SF_TUI_TRANSPORT_EXIT_STATUS=0
-SF_PRESENT_RENDER_ERROR=''
 sf_tui_exec_finish
 assert_equal queued "$SF_PRESENT_STATE"
 assert_equal early "$SF_PRESENT_SUBMITTED"
 
-# Creation that announced nothing fails, and has no transcript to reload.
+# Creation that announced nothing leaves no session to rebuild from, so the
+# chat stops with the failure and offers only to quit.
 for code in 0 9; do
   sf_tui_reset
   sf_tui_terminal_reset
@@ -561,6 +523,7 @@ for code in 0 9; do
   SF_TUI_TRANSPORT_EXIT_DETAIL='startup failure'
   sf_tui_exec_finish
   assert_equal stopped "$SF_PRESENT_STATE"
-  assert_equal error "${(j:,:)SF_PRESENT_NODE_TYPE}"
-  assert_equal 'Session creation failed.' "$SF_PRESENT_NODE_HEADING[-1]"
+  [[ $SF_PRESENT_ERROR == 'Session creation failed.'* ]] ||
+    fail "creation failure reported $SF_PRESENT_ERROR"
+  [[ $POSTDISPLAY != *'[r]'* ]] || fail 'refresh was offered without a session'
 done

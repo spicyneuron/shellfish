@@ -22,18 +22,6 @@ sf_tui_permission_reset() {
   SF_PRESENT_PERMISSION_PREVIEW_LENGTH=0
 }
 
-sf_tui_render_permission_stop() {
-  local heading=$SF_PRESENT_RENDER_ERROR detail='Turn stopped before a permission decision.'
-  sf_tui_transport_stop
-  sf_tui_discard_queue
-  [[ -z $REPLY ]] || detail+=$'\n'$REPLY
-  if sf_tui_recover "$heading" "$detail"; then
-    SF_PRESENT_STATE=idle
-  else
-    SF_PRESENT_STATE=stopped
-  fi
-}
-
 TRAPTERM() {
   sf_tui_terminal_sync_end force
   [[ $SF_PRESENT_STATE == idle ]] || sf_tui_transport_stop
@@ -48,6 +36,24 @@ sf_tui_discard_queue() {
   REPLY="Discarded $count queued prompt"
   (( count == 1 )) || REPLY+='s'
   REPLY+='. Use ↑↓ keys to recover.'
+}
+
+# Leaving and rebuilding the client are its own lifecycle rather than the
+# session's, so it answers these without a turn. That keeps them working when a
+# stopped chat can no longer run one, and keeps a queued one out of the provider
+# request it would otherwise become.
+sf_tui_client_command() {
+  case $1 in
+    /quit|/q)
+      SF_PRESENT_ACTION=quit
+      ;;
+    /refresh|/r)
+      [[ -n $SF_PRESENT_SESSION ]] || return 1
+      SF_PRESENT_HANDOFF=( "$SF_ENTRY" --clear --session "$SF_PRESENT_SESSION" )
+      SF_PRESENT_ACTION=handoff
+      ;;
+    *) return 1 ;;
+  esac
 }
 
 sf_tui_submit() {
@@ -74,24 +80,9 @@ sf_tui_submit() {
     REPLY=repaint
     return
   fi
-  # Leaving and rebuilding the client are its own lifecycle rather than the
-  # session's, so they are answered here instead of by a harness hook. That also
-  # keeps them available when a stopped chat can no longer run a turn.
-  if [[ $SF_PRESENT_STATE == (idle|stopped) ]]; then
-    case $submitted in
-      /quit|/q)
-        SF_PRESENT_ACTION=quit
-        REPLY=quit
-        return
-        ;;
-      /refresh|/r)
-        [[ -n $SF_PRESENT_SESSION ]] || return 0
-        SF_PRESENT_HANDOFF=( "$SF_ENTRY" --clear --session "$SF_PRESENT_SESSION" )
-        SF_PRESENT_ACTION=handoff
-        REPLY=quit
-        return
-        ;;
-    esac
+  if [[ $SF_PRESENT_STATE == (idle|stopped) ]] && sf_tui_client_command "$submitted"; then
+    REPLY=quit
+    return
   fi
   [[ $SF_PRESENT_STATE == idle && -n $submitted ]] || return 0
   SF_PRESENT_SUBMITTED=$submitted
@@ -179,62 +170,8 @@ sf_tui_decoded() {
   esac
 }
 
-sf_tui_recover() {
-  local heading=$1 detail=${2-}
-  local type role node_heading body meta state cursor=$SF_PRESENT_CURSOR
-  integer visible=$SF_PRESENT_PREFIX_VISIBLE index match=0 allow_reset=${3:-0}
-  sf_tui_transport_reset
-  SF_PRESENT_RENDER_ERROR=''
-  sf_tui_permission_reset
-  sf_tui_editor_permission discard
-  if [[ -z $SF_PRESENT_SESSION ]]; then
-    # Creation left no transcript, so the failure is all there is to present.
-    sf_tui_reset
-    SF_PRESENT_CURSOR='1:0'
-    sf_tui_error "$heading" "$detail" || return 1
-    return 1
-  fi
-  if (( visible && ${#SF_PRESENT_NODE_TYPE} )); then
-    type=$SF_PRESENT_NODE_TYPE[1]
-    role=$SF_PRESENT_NODE_ROLE[1]
-    node_heading=$SF_PRESENT_NODE_HEADING[1]
-    body=$SF_PRESENT_NODE_BODY[1]
-    meta=$SF_PRESENT_NODE_META[1]
-    state=$SF_PRESENT_NODE_STATE[1]
-  fi
-  sf_tui_reload "$SF_PRESENT_SESSION" || return 1
-  if (( visible )); then
-    if [[ -n $type ]]; then
-      for (( index = 1; index <= ${#SF_PRESENT_NODE_TYPE}; index++ )); do
-        if [[ $SF_PRESENT_NODE_TYPE[index] == $type &&
-            $SF_PRESENT_NODE_ROLE[index] == $role &&
-            $SF_PRESENT_NODE_HEADING[index] == $node_heading &&
-            $SF_PRESENT_NODE_BODY[index] == $body &&
-            $SF_PRESENT_NODE_META[index] == $meta ]]; then
-          match=$index
-          break
-        fi
-      done
-    fi
-    if (( match )); then
-      sf_tui_drop $(( match - 1 )) || return 1
-      # The cursor is an offset into the node the prefix stopped at, so it
-      # outlives the reload only when that node does.
-      SF_PRESENT_CURSOR=$cursor
-    elif [[ -z $type || $state == open ]] || (( allow_reset )); then
-      sf_tui_reset
-      SF_PRESENT_CURSOR='1:0'
-    else
-      SF_PRESENT_ERROR='cannot reconcile presentation with flushed scrollback'
-      return 1
-    fi
-  fi
-  [[ -z $heading ]] || sf_tui_error "$heading" "$detail"
-}
-
 # Apply one transport record.
 sf_tui_pending_next() {
-  local queue_notice
   integer transport_status=0
 
   sf_tui_transport_next "${SF_PRESENT_RUNTIME:-null}" || transport_status=$?
@@ -246,19 +183,16 @@ sf_tui_pending_next() {
       ;;
     1) return 0 ;;
   esac
+  # The live transcript cannot be trusted past a record the client could not
+  # apply, and only the durable session can replace it.
   sf_tui_transport_stop
   sf_tui_discard_queue
-  queue_notice=$REPLY
-  if sf_tui_recover 'Exec sent invalid JSONL.' "$queue_notice"; then
-    SF_PRESENT_STATE=idle
-  else
-    SF_PRESENT_STATE=stopped
-  fi
+  sf_tui_stop 'exec sent invalid JSONL'
   return 0
 }
 
 sf_tui_exec_finish() {
-  local heading detail exit_detail render_error=$SF_PRESENT_RENDER_ERROR
+  local heading detail exit_detail
   integer exit_status cancelled=0 turn_error=$SF_PRESENT_TURN_ERROR
   sf_tui_transport_result || return 1
   exit_status=$reply[1]
@@ -271,7 +205,7 @@ sf_tui_exec_finish() {
   [[ $SF_PRESENT_STATE != cancelling ]] || cancelled=1
   if (( exit_status || cancelled )); then
     if (( turn_error )); then
-      # The reloaded transcript ends with the persisted failure.
+      # The transcript already ends with the durable failure.
       heading=''
     elif (( cancelled && ! exit_status )); then
       # A completed worker wins the cancellation race.
@@ -299,31 +233,30 @@ sf_tui_exec_finish() {
         detail+=$REPLY
       fi
     fi
-    if sf_tui_recover "$heading" "$detail" "$(( cancelled || exit_status == 143 ))"; then
-      SF_PRESENT_STATE=idle
-    else
-      SF_PRESENT_STATE=stopped
+    if [[ -z $SF_PRESENT_SESSION ]]; then
+      # Creation left no session, so there is nothing to continue from.
+      sf_tui_stop "$heading" "$detail"
+      return 0
     fi
+    sf_tui_transport_reset
+    sf_tui_permission_reset
+    sf_tui_editor_permission discard
+    SF_PRESENT_STATE=idle
+    [[ -z $heading ]] || sf_tui_error "$heading" "$detail" || return 1
   else
-    if [[ -n $render_error ]]; then
-      if sf_tui_recover "$render_error" 'The completed turn was reloaded.'; then
-        SF_PRESENT_STATE=idle
-      else
-        SF_PRESENT_STATE=stopped
-      fi
-    else
-      sf_tui_activity_stop || return 1
-      SF_PRESENT_STATE=idle
-      sf_tui_permission_reset
-    fi
-    if [[ $SF_PRESENT_STATE == idle ]] && (( ${#SF_PRESENT_HANDOFF} )); then
+    sf_tui_activity_stop || return 1
+    SF_PRESENT_STATE=idle
+    sf_tui_permission_reset
+    if (( ${#SF_PRESENT_HANDOFF} )); then
       sf_tui_discard_queue
       SF_PRESENT_ACTION=handoff
-    elif [[ $SF_PRESENT_STATE == idle ]] && (( ${#SF_PRESENT_QUEUE} )); then
+    elif (( ${#SF_PRESENT_QUEUE} )); then
       SF_PRESENT_SUBMITTED=$SF_PRESENT_QUEUE[1]
       SF_PRESENT_QUEUE=( "${(@)SF_PRESENT_QUEUE[2,-1]}" )
-      SF_PRESENT_STATE=queued
-      sf_tui_event user "$SF_PRESENT_SUBMITTED" || return 1
+      if ! sf_tui_client_command "$SF_PRESENT_SUBMITTED"; then
+        SF_PRESENT_STATE=queued
+        sf_tui_event user "$SF_PRESENT_SUBMITTED" || return 1
+      fi
     fi
   fi
 }
@@ -341,13 +274,11 @@ sf_tui_turn() {
     '{type:"user",content:[{type:"text",text:$prompt}]}') || return 1
   SF_PRESENT_HANDOFF=()
   SF_PRESENT_TURN_ERROR=0
-  SF_PRESENT_RENDER_ERROR=''
   SF_PRESENT_ACTIVITY_FRAME=0
   SF_PRESENT_ACTIVITY=${SF_PRESENT_ACTIVITY_FRAMES[1]}
   SF_PRESENT_STATE=working
   sf_tui_activity_start || { SF_PRESENT_STATE=idle; return 1; }
   if ! sf_tui_transport_start "$input" sf_tui_exec_ready; then
-    sf_tui_reload "$SF_PRESENT_SESSION" || true
     SF_PRESENT_STATE=idle
     SF_PRESENT_ERROR=$SF_TUI_TRANSPORT_ERROR
     return 1
@@ -358,13 +289,11 @@ sf_tui_answer_permission() {
   local decision=$1
   [[ $SF_PRESENT_STATE == permission && $decision == (approve|deny) ]] || return 1
   if ! sf_tui_transport_reply "$SF_PRESENT_PERMISSION_ID" "$decision"; then
+    # The turn is waiting on a decision this client can no longer deliver.
     sf_tui_transport_stop
     sf_tui_editor_permission restore
-    if sf_tui_recover 'Cannot answer permission.'; then
-      SF_PRESENT_STATE=idle
-    else
-      SF_PRESENT_STATE=stopped
-    fi
+    sf_tui_permission_reset
+    sf_tui_stop 'cannot answer permission'
     return 1
   fi
   sf_tui_permission_reset
@@ -385,7 +314,6 @@ sf_tui_controller() {
   SF_PRESENT_SUBMITTED=''
   SF_PRESENT_QUEUE=()
   SF_PRESENT_EXIT_STATUS=0
-  SF_PRESENT_RENDER_ERROR=''
   sf_tui_terminal_reset
   zmodload zsh/zle || { SF_PRESENT_ERROR='cannot load ZLE'; return 1; }
   bindkey -e
@@ -455,9 +383,7 @@ sf_tui_controller() {
         ;;
       handoff|quit) break ;;
       *)
-        editor_error="Chat editor exited unexpectedly (status $editor_status, state $SF_PRESENT_STATE"
-        [[ -z $SF_PRESENT_RENDER_ERROR ]] || editor_error+=", render: $SF_PRESENT_RENDER_ERROR"
-        editor_error+=').'
+        editor_error="Chat editor exited unexpectedly (status $editor_status, state $SF_PRESENT_STATE)."
         [[ -z $SF_PRESENT_ERROR ]] || editor_error="$SF_PRESENT_ERROR"$'\n'"$editor_error"
         SF_PRESENT_ERROR=$editor_error
         exit_status=1

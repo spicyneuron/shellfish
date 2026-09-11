@@ -309,8 +309,8 @@ sf_tui_bind
 [[ $(bindkey -M sf-permission $'\e') == *sf_tui_escape ]] ||
   fail 'permission keymap leaves escape an unresolved prefix'
 
-# A live repaint failure is reported once, cannot stage partial renderer state,
-# and leaves the heartbeat draining transport until the turn completes.
+# A repaint failure stops the chat: the renderer is never called again, nothing
+# partial is staged, and the stopped view offers the durable session instead.
 typeset saved_repaint=$functions[sf_tui_repaint]
 typeset -gi failed_repaints=0
 sf_tui_repaint() {
@@ -321,8 +321,8 @@ sf_tui_repaint() {
 sf_tui_reset
 sf_tui_terminal_reset
 sf_tui_event assistant_message_delta 0 before
+SF_PRESENT_SESSION=/tmp/stopped.jsonl
 SF_PRESENT_STATE=working
-SF_PRESENT_RENDER_ERROR=''
 SF_TUI_TRANSPORT_EVENTS=( assistant_message_delta 0 after '' '' '' '' )
 SF_TUI_TRANSPORT_EOF=0
 KEYS_QUEUED_COUNT=0
@@ -331,33 +331,51 @@ ZLE_CALLS=()
 sf_tui_heartbeat_tick
 assert_equal 1 "$failed_repaints"
 assert_equal 0 "$SF_PRESENT_FLUSH_ROWS"
-assert_equal beforeafter "$SF_PRESENT_NODE_BODY[-1]"
-assert_equal 0 "${#SF_TUI_TRANSPORT_EVENTS}"
-assert_equal 'Live rendering failed.' "$SF_PRESENT_RENDER_ERROR"
-[[ $ZLE_CALLS == *'-M Live rendering failed. Waiting for turn to finish.'* ]] ||
-  fail 'live render failure was not shown in ZLE'
+assert_equal 0 "$SF_PRESENT_PENDING_ROWS"
+assert_equal stopped "$SF_PRESENT_STATE"
+assert_equal 'cannot render chat' "$SF_PRESENT_ERROR"
+[[ $PREDISPLAY == *'cannot render chat'* ]] ||
+  fail 'the stopped view did not report the render failure'
+[[ $PREDISPLAY == *'/refresh'* && $PREDISPLAY == *'/quit'* ]] ||
+  fail 'the stopped view did not say which prompts it accepts'
+# The editor still edits, so the commands it names can actually be typed.
+BUFFER=/refresh
+CURSOR=8
 sf_tui_pre_redraw
+assert_equal /refresh "$BUFFER"
+assert_equal 8 "$CURSOR"
+BUFFER=''
+CURSOR=0
+# Nothing reaches the failed renderer again, whatever else the editor does.
+sf_tui_pre_redraw
+sf_tui_line_init
+sf_tui_heartbeat_tick
 assert_equal 1 "$failed_repaints"
 functions[sf_tui_repaint]=$saved_repaint
-SF_PRESENT_RENDER_ERROR=''
+SF_PRESENT_STATE=idle
+SF_PRESENT_ERROR=''
 
-# A failed repaint or terminal stage cannot release the prompt as submitted.
+# A failed repaint or terminal stage stops instead of releasing the prompt.
+sf_tui_reset
+sf_tui_terminal_reset
 saved_repaint=$functions[sf_tui_repaint]
 sf_tui_repaint() { return 1; }
 SF_PRESENT_STATE=idle
 SF_PRESENT_ACTION=''
 BUFFER=unstageable
-if sf_tui_accept; then
-  fail 'submit succeeded when repaint failed'
-fi
+sf_tui_accept || fail "accept reported a failure"
 assert_equal '' "$SF_PRESENT_ACTION"
+assert_equal stopped "$SF_PRESENT_STATE"
 functions[sf_tui_repaint]=$saved_repaint
+SF_PRESENT_STATE=idle
 
 saved_stage=$functions[sf_tui_terminal_stage]
 sf_tui_terminal_stage() { return 1; }
 BUFFER=unstageable
-if sf_tui_accept; then
-  fail 'submit succeeded when terminal staging failed'
-fi
+sf_tui_accept || fail "accept reported a failure"
 assert_equal '' "$SF_PRESENT_ACTION"
+assert_equal stopped "$SF_PRESENT_STATE"
+assert_equal 'cannot stage chat rows' "$SF_PRESENT_ERROR"
 functions[sf_tui_terminal_stage]=$saved_stage
+SF_PRESENT_STATE=idle
+SF_PRESENT_ERROR=''

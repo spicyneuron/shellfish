@@ -14,27 +14,32 @@ typeset -g SF_PRESENT_HISTORY_DRAFT=''
 typeset -gi SF_PRESENT_HISTORY_CURSOR=0 SF_PRESENT_HISTORY_NO=0
 typeset -gi SF_PRESENT_HISTORY_LIMIT=100
 typeset -ga SF_PRESENT_HISTORY=()
-typeset -g SF_PRESENT_RENDER_ERROR=''
 KEYTIMEOUT=5
 
+# A client failure the renderer cannot survive ends the turn loop. The editor
+# keeps working, so the stopped chat still accepts the two client commands that
+# rebuild it from the durable session or leave.
+sf_tui_stop() {
+  SF_PRESENT_ERROR=$1
+  [[ -z ${2-} ]] || SF_PRESENT_ERROR+=$'\n'${2}
+  SF_PRESENT_STATE=stopped
+  SF_PRESENT_EXIT_STATUS=1
+  SF_PRESENT_FLUSH_ROWS=0
+  sf_tui_heartbeat_stop
+  sf_tui_terminal_sync_end force
+  sf_tui_stopped_view
+}
+
+# Returns nonzero once the chat is stopped, having drawn the stopped view.
 sf_tui_repaint_checked() {
-  if [[ -z $SF_PRESENT_RENDER_ERROR ]]; then
-    sf_tui_repaint && return 0
-    SF_PRESENT_FLUSH_ROWS=0
-    if [[ $SF_PRESENT_STATE != (working|cancelling|permission) ]]; then
-      SF_PRESENT_STATE=stopped
-      SF_PRESENT_ERROR='cannot render chat'
-      zle -M 'Rendering failed. Press Ctrl-C to exit.'
-      return 1
-    fi
-    SF_PRESENT_RENDER_ERROR='Live rendering failed.'
+  if [[ $SF_PRESENT_STATE == stopped ]]; then
+    sf_tui_stopped_view
+    return 1
   fi
-  if [[ $SF_PRESENT_STATE == permission ]]; then
-    sf_tui_render_permission_stop
-    zle -M 'Live rendering failed; turn stopped before permission.'
-  else
-    zle -M "$SF_PRESENT_RENDER_ERROR Waiting for turn to finish."
+  if sf_tui_repaint; then
+    return 0
   fi
+  sf_tui_stop 'cannot render chat'
   return 1
 }
 
@@ -103,6 +108,12 @@ sf_tui_heartbeat_tick() {
     SF_PRESENT_ACTIVITY=${SF_PRESENT_ACTIVITY_FRAMES[SF_PRESENT_ACTIVITY_FRAME + 1]}
   fi
   while true; do
+    # A stopped chat has no working renderer to drain events back into.
+    if [[ $SF_PRESENT_STATE == stopped ]]; then
+      sf_tui_stopped_view
+      zle -R
+      return 0
+    fi
     if sf_tui_transport_has_pending; then
       sf_tui_pending_next || return 1
       continue
@@ -112,12 +123,10 @@ sf_tui_heartbeat_tick() {
       continue
     fi
     if ! sf_tui_repaint_checked; then
-      if [[ -z $SF_PRESENT_RENDER_ERROR && $SF_PRESENT_STATE == idle ]]; then
-        continue
-      fi
-      [[ -n $SF_PRESENT_RENDER_ERROR ]] || return 1
+      zle -R
+      return 0
     fi
-    if [[ -z $SF_PRESENT_RENDER_ERROR ]] && (( SF_PRESENT_FLUSH_ROWS )); then
+    if (( SF_PRESENT_FLUSH_ROWS )); then
       sf_tui_terminal_stage || return 1
       # Hold the frame so the commit and the redraw beneath it land together.
       sf_tui_terminal_sync_start
@@ -140,16 +149,16 @@ sf_tui_heartbeat_tick() {
       sf_tui_heartbeat_arm drain
       return
     fi
-    if [[ -n $SF_PRESENT_RENDER_ERROR ]]; then
-      zle -M "$SF_PRESENT_RENDER_ERROR Waiting for turn to finish."
-    else
-      zle -R
-    fi
+    zle -R
     # Release a synchronized update even when no rows were committed.
     sf_tui_terminal_sync_end
     if [[ $SF_PRESENT_ACTION == handoff ]]; then
       sf_tui_terminal_sync_end force
       return 2
+    elif [[ $SF_PRESENT_ACTION == quit ]]; then
+      # A queued /quit leaves through the editor, like a typed one.
+      zle accept-line
+      return 0
     elif [[ $SF_PRESENT_STATE == queued ]]; then
       SF_PRESENT_STATE=idle
       sf_tui_turn "$SF_PRESENT_SUBMITTED" || return 1
@@ -166,13 +175,8 @@ sf_tui_line_init() {
   sf_tui_terminal_restore
   sf_tui_transport_watch sf_tui_exec_ready
   if ! sf_tui_repaint_checked; then
-    if [[ -z $SF_PRESENT_RENDER_ERROR && $SF_PRESENT_STATE == idle ]]; then
-      sf_tui_repaint_checked || return 1
-    else
-      [[ -n $SF_PRESENT_RENDER_ERROR ]] || return 1
-      sf_tui_heartbeat_arm
-      return 0
-    fi
+    zle -R
+    return 0
   fi
   if (( SF_PRESENT_FLUSH_ROWS )) && [[ $SF_PRESENT_STATE != working ]]; then
     sf_tui_terminal_stage || return 1
@@ -213,15 +217,7 @@ sf_tui_pre_redraw() {
       $BUFFER != $SF_PRESENT_HISTORY[$SF_PRESENT_HISTORY_NO] ]]; then
     sf_tui_history_reset
   fi
-  if ! sf_tui_repaint_checked; then
-    if [[ -z $SF_PRESENT_RENDER_ERROR && $SF_PRESENT_STATE == idle ]]; then
-      sf_tui_repaint_checked || return 1
-    else
-      [[ -n $SF_PRESENT_RENDER_ERROR ]] || return 1
-      sf_tui_heartbeat_arm
-      return 0
-    fi
-  fi
+  sf_tui_repaint_checked || return 0
   sf_tui_heartbeat_arm
 }
 
@@ -276,7 +272,7 @@ sf_tui_accept() {
       sf_tui_history_reset
       BUFFER=''
       CURSOR=0
-      [[ -n $SF_PRESENT_RENDER_ERROR ]] || sf_tui_repaint_checked
+      sf_tui_repaint_checked
       zle -R
       ;;
     quit) zle accept-line ;;
@@ -288,9 +284,10 @@ sf_tui_accept() {
       BUFFER=''
       CURSOR=0
       SF_PRESENT_ACTION=submit
-      if ! sf_tui_repaint || ! sf_tui_terminal_stage; then
+      if ! sf_tui_repaint_checked || ! sf_tui_terminal_stage; then
         SF_PRESENT_ACTION=''
-        return 1
+        [[ $SF_PRESENT_STATE == stopped ]] || sf_tui_stop 'cannot stage chat rows'
+        return 0
       fi
       zle accept-line
       ;;
@@ -468,7 +465,6 @@ sf_tui_bind() {
   SF_PRESENT_PERMISSION_DRAFT=''
   SF_PRESENT_PERMISSION_CURSOR=0
   SF_PRESENT_HEARTBEAT_FD=''
-  SF_PRESENT_RENDER_ERROR=''
   SF_PRESENT_VERTICAL_COLUMN=-1
   sf_tui_history_reset
   zle -N sf_tui_exec_ready
