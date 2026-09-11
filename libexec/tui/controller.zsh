@@ -74,12 +74,26 @@ sf_tui_submit() {
     REPLY=repaint
     return
   fi
-  [[ $SF_PRESENT_STATE == idle && -n $submitted ]] || return 0
-  if [[ $submitted == (/quit|/q) ]]; then
-    SF_PRESENT_ACTION=quit
-    REPLY=quit
-    return
+  # Leaving and rebuilding the client are its own lifecycle rather than the
+  # session's, so they are answered here instead of by a harness hook. That also
+  # keeps them available when a stopped chat can no longer run a turn.
+  if [[ $SF_PRESENT_STATE == (idle|stopped) ]]; then
+    case $submitted in
+      /quit|/q)
+        SF_PRESENT_ACTION=quit
+        REPLY=quit
+        return
+        ;;
+      /refresh|/r)
+        [[ -n $SF_PRESENT_SESSION ]] || return 0
+        SF_PRESENT_HANDOFF=( "$SF_ENTRY" --clear --session "$SF_PRESENT_SESSION" )
+        SF_PRESENT_ACTION=handoff
+        REPLY=quit
+        return
+        ;;
+    esac
   fi
+  [[ $SF_PRESENT_STATE == idle && -n $submitted ]] || return 0
   SF_PRESENT_SUBMITTED=$submitted
   sf_tui_record_prompt "$submitted"
   sf_tui_event user "$submitted" || return 1

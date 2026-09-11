@@ -37,6 +37,6 @@ Clients do not embed the agent loop or maintain their own copy of session state.
 
 The turn loop is deliberately generic. A harness combines tools, limits, sandbox policy, and shell scripts bound to lifecycle hooks. The default coding behavior is assembled this way rather than built into `shellfish run`.
 
-Project discovery, slash commands, permission policy, tool review, and stop-time continuation are all harness behavior. The core still owns event ordering, validation, persistence, recovery, and cleanup. Hook scripts can influence a turn at defined points, but they do not redefine the state machine.
+Project discovery, slash commands, permission policy, tool review, and stop-time continuation are all harness behavior. The exception is the handful of commands that act on the client itself rather than the session, such as quitting and refreshing the display; a client owns those so they survive a session it can no longer run. The core still owns event ordering, validation, persistence, recovery, and cleanup. Hook scripts can influence a turn at defined points, but they do not redefine the state machine.
 
 Tools may run inside the configured sandbox. Hook scripts and backend adapters are trusted programs that run with the user's permissions. The scoped API key is passed only to the backend adapter.

@@ -64,14 +64,15 @@ Most chat commands are bundled scripts on the `user_prompt_submit` hook:
 | `/copy [N]` | Copy the text of the latest user/agent section, or section `N`, to the local clipboard. |
 | `/fork [N]` | Copy the transcript prefix before section `N` into a new session, resolving an agent section to the following user section and restoring that prompt as an editable draft. Context and state preceding the cutoff are kept exactly as written. Without an index it forks at the current end. |
 | `/compact` | Summarize the conversation into a child session and request a handoff to it. See [Compaction](#compaction). |
-| `/refresh`, `/r` | Rebuild the terminal presentation from the durable session. Fixes layout corruption. |
 | `/verbose`, `/v` | Toggle presentation preview limits. |
 | `/sandbox [OP DIR]` | List the session's sandbox path grants, or update them in place. |
 | `/resume` | Switch to another session in the same project. |
 | `/server` | Hand the current session to the optional `shellfish-server` process. |
 | `! command` | Run a shell command and inject its input and output as context. |
 
-The commands that replace the current session — `/new`, `/fork`, `/compact`, `/refresh`, `/verbose`, `/resume`, and `/server` — do not switch in place. They request a [handoff](HOOKS.md#user_prompt_submit): chat exits and relaunches Shellfish, usually with a new session path.
+`/refresh`, `/r` and `/quit`, `/q` are not hooks. They concern the client's own lifecycle rather than the session, so the client answers them directly and keeps answering them when a turn can no longer run. See [Recovery](CHAT.md#recovery).
+
+The commands that replace the current session — `/new`, `/fork`, `/compact`, `/verbose`, `/resume`, and `/server` — do not switch in place. They request a [handoff](HOOKS.md#user_prompt_submit): chat exits and relaunches Shellfish, usually with a new session path.
 
 `/sandbox read DIR` and `/sandbox write DIR` add a grant, `-read` and `-write` remove one; `+` is accepted when adding, and signed forms may abbreviate the operation to `r` or `w`. Additions must name an existing directory. Paths beginning with `~/` use `HOME`, relative paths use the session working directory, and stored additions are canonical absolute paths. Read and write lists remain independent, and removing an exact child grant does not restrict access inherited from a granted parent. After an update, the client refreshes its runtime without replaying the transcript.
 

@@ -23,6 +23,7 @@ IFS= read -r header <"$SHELLFISH_SESSION" || exit 1
   jq -r '.harness.user_prompt_submit[] |
     select(.help? != null) | [.help.usage, .help.description] | @tsv' \
     <<<"$header" || exit 1
+  print -r -- $'/refresh, /r\tRerender current session; fix layout'
   print -r -- $'/quit, /q\tExit'
 } | LC_ALL=C awk -F'\t' '
     function chars(text, copy) {

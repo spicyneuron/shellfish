@@ -13,7 +13,6 @@ typeset after_help=$script
 SF_TEST_RUNTIME=$(jq -c \
   --arg help "$ROOT/share/default/hooks/user_prompt_submit/help/run" \
   --arg new "$ROOT/share/default/hooks/user_prompt_submit/new/run" \
-  --arg refresh "$ROOT/share/default/hooks/user_prompt_submit/refresh/run" \
   --arg verbose "$ROOT/share/default/hooks/user_prompt_submit/verbose/run" \
   --arg copy "$ROOT/share/default/hooks/user_prompt_submit/copy/run" \
   --arg fork "$ROOT/share/default/hooks/user_prompt_submit/fork/run" \
@@ -29,7 +28,6 @@ SF_TEST_RUNTIME=$(jq -c \
       help:{usage:$usage,description:$description}};
    .harness.user_prompt_submit = [
      {command:$help,display:"",environment:[],match:{pattern:"^/(help|h)\\z"}},
-     command($refresh;"^/(refresh|r)\\z";"/refresh, /r";"Rerender current session; fix layout"),
      command($verbose;"^/(verbose|v)\\z";"/verbose, /v";"Toggle full previews"),
      command($new;"^/new\\z";"/new";"Start a new session with the same settings"),
      command($copy;"^/copy( [^\\n]*)?\\z";"/copy [N]";"Copy the latest or selected user/agent section"),
@@ -59,24 +57,27 @@ for key in '↑, ↓' '/queue drop <N>' '/queue clear' '/new' '/refresh, /r' '/v
     '/quit, /q'; do
   [[ $help_display == *"$key"* ]]
 done
-# Component rows follow configured order between framework rows and /quit.
+# Component rows follow configured order between the framework rows and the
+# client's own commands, which close the list.
 typeset -a help_lines=( "${(@f)help_display}" )
-integer control_idx history_idx drop_idx queue_idx refresh_idx new_idx bang_idx quit_idx i
+integer control_idx history_idx drop_idx queue_idx verbose_idx new_idx bang_idx
+integer refresh_idx quit_idx i
 for (( i = 1; i <= ${#help_lines}; i++ )); do
   [[ $help_lines[i] == *'ctrl+c'* ]] && control_idx=$i
   [[ $help_lines[i] == *'↑, ↓'* ]] && history_idx=$i
   [[ $help_lines[i] == *'/queue drop <N>'* ]] && drop_idx=$i
   [[ $help_lines[i] == *'/queue clear'* ]] && queue_idx=$i
-  [[ $help_lines[i] == *'/refresh, /r'* ]] && refresh_idx=$i
+  [[ $help_lines[i] == *'/verbose, /v'* ]] && verbose_idx=$i
   [[ $help_lines[i] == *'!COMMAND'* ]] && bang_idx=$i
   [[ $help_lines[i] == *'/new'* ]] && new_idx=$i
+  [[ $help_lines[i] == *'/refresh, /r'* ]] && refresh_idx=$i
   [[ $help_lines[i] == *'/quit, /q'* ]] && quit_idx=$i
 done
 (( control_idx > 0 && history_idx > 0 && drop_idx > 0 && queue_idx > 0 &&
-   refresh_idx > 0 && new_idx > 0 && bang_idx > 0 && quit_idx > 0 ))
+   verbose_idx > 0 && new_idx > 0 && bang_idx > 0 && refresh_idx > 0 && quit_idx > 0 ))
 (( control_idx < history_idx && history_idx < drop_idx && drop_idx < queue_idx &&
-   queue_idx < refresh_idx && refresh_idx < new_idx && new_idx < bang_idx &&
-   bang_idx < quit_idx ))
+   queue_idx < verbose_idx && verbose_idx < new_idx && new_idx < bang_idx &&
+   bang_idx < refresh_idx && refresh_idx < quit_idx ))
 typeset control_prefix=${help_lines[control_idx]#ctrl+c}
 typeset history_prefix=${help_lines[history_idx]#'↑, ↓'}
 control_prefix=${control_prefix%%[^ ]*}
@@ -100,11 +101,6 @@ set_prompt_hook "$help_session" "$ROOT/share/default/hooks/user_prompt_submit/ne
 run_prompt_hook /new "$help_session"
 [[ $reply[1] == handoff && $reply[2] == "$ROOT/bin/shellfish" &&
    $reply[3] == --session-from && $reply[4] == "${help_session:A}" ]]
-
-set_prompt_hook "$help_session" "$ROOT/share/default/hooks/user_prompt_submit/refresh/run"
-run_prompt_hook /refresh "$help_session"
-[[ $reply[1] == handoff && $reply[2] == "$ROOT/bin/shellfish" &&
-   $reply[3] == --clear && $reply[4] == --session && $reply[5] == "${help_session:A}" ]]
 
 # /verbose reloads the same session and toggles the preview limits.
 set_prompt_hook "$help_session" "$ROOT/share/default/hooks/user_prompt_submit/verbose/run"
