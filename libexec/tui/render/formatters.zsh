@@ -107,7 +107,7 @@ sf_tui_formatter_drop() {
 sf_tui_formatter_consume() {
   integer whole=$1 source=$2 leading=$3 body_rows=$4
   integer body_source committed_field spent_field
-  local kind state continuation body trimmed segment
+  local kind state continuation record trimmed segment
   (( ${#SF_PRESENT_KIND} )) || return 1
   if (( whole )); then
     sf_tui_formatter_drop 1
@@ -116,11 +116,11 @@ sf_tui_formatter_consume() {
   kind=$SF_PRESENT_KIND[1]
   [[ $kind == (message|reasoning|hook_model_context|hook_user_context|error|tool_call|tool_result) ]] ||
     return 1
-  # Kept whole, because a formatter continuing a scan has to measure the prefix
-  # this commit takes, not what is left after it.
-  body=$SF_PRESENT_TEXT[1]
-  (( source >= 0 && source <= ${#body} )) || return 1
-  (( ! source )) || SF_PRESENT_TEXT[1]=${body[source + 1,-1]}
+  # The content as it stood before this commit. A formatter continuing a scan
+  # measures the prefix the commit took, not what is left after it.
+  record=$SF_PRESENT_TEXT[1]
+  (( source >= 0 && source <= ${#record} )) || return 1
+  (( ! source )) || SF_PRESENT_TEXT[1]=${record[source + 1,-1]}
   (( ! leading )) || {
     SF_PRESENT_ROLE[1]=''
     SF_PRESENT_SECTION[1]=''
@@ -154,17 +154,18 @@ sf_tui_formatter_consume() {
         # Blank lines the formatter trimmed are consumed by the rows either
         # side of the body, so the committed prefix is measured against the
         # trimmed body rather than the record.
-        trimmed=${body#"${body%%[!$'\n']*}"}
-        body_source=$(( source - (${#body} - ${#trimmed}) ))
+        trimmed=${record#"${record%%[!$'\n']*}"}
+        body_source=$(( source - (${#record} - ${#trimmed}) ))
         trimmed=${trimmed%"${trimmed##*[!$'\n']}"}
         (( body_source <= ${#trimmed} )) || body_source=${#trimmed}
         if (( body_source > 0 )); then
           segment=${trimmed[1,body_source]}
           SF_PRESENT_HIGHLIGHT_SPANS=()
           sf_tui_markdown_highlight "$segment" 0 "$state" "${continuation:-0}"
+          state=$REPLY
           continuation=0
           [[ $segment[-1] == $'\n' ]] || continuation=1
-          sf_tui_formatter_set_field 1 6 "$REPLY" || return 1
+          sf_tui_formatter_set_field 1 6 "$state" || return 1
           sf_tui_formatter_set_field 1 7 "$continuation" || return 1
         fi
       fi
@@ -178,8 +179,7 @@ sf_tui_formatter_consume() {
     tool_call|tool_result)
       # A commit always takes the heading or rail with it, so what remains
       # continues under plain indentation.
-      committed_field=6
-      spent_field=8
+      committed_field=6 spent_field=8
       [[ $kind == tool_result ]] || { committed_field=4; spent_field=5; }
       sf_tui_formatter_data 1 $spent_field || return 1
       sf_tui_formatter_set_field 1 $spent_field $(( REPLY + body_rows )) || return 1
