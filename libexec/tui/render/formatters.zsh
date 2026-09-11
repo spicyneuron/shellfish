@@ -3,11 +3,11 @@ setopt no_aliases no_bg_nice no_multios pipe_fail
 
 (( $+functions[sf_jq] )) || source "$SF_ROOT/lib/jq.zsh"
 
-# The presentation input boundary. Everything below is stable across the
-# renderer replacement: the controller and transcript replay both deliver
-# normalized events here, and the frozen runtime arrives through session
-# updates. The ordered formatter list that consumes these events is being
-# reimplemented; sf_tui_event validates its contract but renders nothing yet.
+# The presentation input boundary: the controller and transcript replay both
+# deliver normalized events here, and the frozen runtime arrives through session
+# updates. sf_tui_event is the only thing that may drive the formatter list
+# below. It validates the event contract today; the content formatters bring
+# the calls that build the list.
 
 typeset -g SF_PRESENT_ERROR=''
 # The frozen session runtime, established by transcript replay and refreshed by
@@ -15,9 +15,111 @@ typeset -g SF_PRESENT_ERROR=''
 typeset -g SF_PRESENT_RUNTIME='null'
 typeset -g SF_PRESENT_IDENTITY='' SF_PRESENT_FOOTER=''
 
-# Discards retained presentation before a rebuild. The ordered formatter list it
-# clears is being reimplemented, so there is nothing to drop yet.
-sf_tui_reset() { : }
+# Presentation is one ordered list of formatters awaiting commitment. At most
+# the tail is live; every earlier entry is final and can only be dropped once
+# committed. KIND selects which formatter owns the entry, and TEXT is the
+# logical content it has left to render — the substrate a successful commit
+# consumes from.
+typeset -ga SF_PRESENT_KIND=() SF_PRESENT_TEXT=()
+typeset -gi SF_PRESENT_LIVE=0
+# Leading role chrome is not a formatter of its own. ROLE names the role an
+# entry opened, SECTION the number that came with it, and PRIOR the role in
+# force beforehand, which is what retraction restores. Holding PRIOR per entry
+# is what lets the role survive dropping everything before it.
+typeset -ga SF_PRESENT_ROLE=() SF_PRESENT_SECTION=() SF_PRESENT_PRIOR=()
+typeset -g SF_PRESENT_LAST_ROLE=''
+typeset -gi SF_PRESENT_SECTION_ID=0
+
+# Appends a formatter. A live tail must be settled or retracted first, so a
+# caller that forgets a transition fails here rather than silently growing a
+# second mutable entry. REPLY is the new index.
+sf_tui_formatter_append() {
+  local kind=$1 mode=${2:-final}
+  (( ! SF_PRESENT_LIVE )) || return 1
+  [[ $mode == (live|final) ]] || return 1
+  [[ -n $kind ]] || return 1
+  SF_PRESENT_KIND+=( "$kind" )
+  SF_PRESENT_TEXT+=( '' )
+  SF_PRESENT_ROLE+=( '' )
+  SF_PRESENT_SECTION+=( '' )
+  SF_PRESENT_PRIOR+=( '' )
+  REPLY=${#SF_PRESENT_KIND}
+  [[ $mode == final ]] || SF_PRESENT_LIVE=$REPLY
+}
+
+# Claims leading role chrome for an entry. Entering a role already in force
+# claims nothing, so only the first visible formatter of a run owns the rule.
+sf_tui_formatter_role() {
+  integer index=$1
+  local role=$2
+  (( index > 0 && index <= ${#SF_PRESENT_KIND} )) || return 1
+  # Claiming twice would take a second section number and lose the role the
+  # first claim displaced, drifting the numbering far from the cause.
+  [[ -z $SF_PRESENT_ROLE[index] ]] || return 1
+  [[ -n $role ]] || return 1
+  [[ $SF_PRESENT_LAST_ROLE != $role ]] || return 0
+  SF_PRESENT_ROLE[index]=$role
+  SF_PRESENT_PRIOR[index]=$SF_PRESENT_LAST_ROLE
+  if [[ $role == (user|agent) ]]; then
+    (( ++SF_PRESENT_SECTION_ID ))
+    SF_PRESENT_SECTION[index]=$SF_PRESENT_SECTION_ID
+  fi
+  SF_PRESENT_LAST_ROLE=$role
+}
+
+sf_tui_formatter_settle() {
+  (( SF_PRESENT_LIVE )) || return 1
+  SF_PRESENT_LIVE=0
+}
+
+# Removes the live tail along with any role chrome it owns. A retracted section
+# releases its number so the next one reuses it, which is what keeps numbering
+# contiguous when a formatter turns out to have no visible content.
+sf_tui_formatter_retract() {
+  integer index=${#SF_PRESENT_KIND}
+  (( index && SF_PRESENT_LIVE == index )) || return 1
+  if [[ -n $SF_PRESENT_ROLE[index] ]]; then
+    [[ -z $SF_PRESENT_SECTION[index] ]] || (( --SF_PRESENT_SECTION_ID ))
+    SF_PRESENT_LAST_ROLE=$SF_PRESENT_PRIOR[index]
+  fi
+  SF_PRESENT_LIVE=0
+  sf_tui_formatter_keep 1 $(( index - 1 ))
+}
+
+# Drops a committed prefix. The live tail is never part of it.
+sf_tui_formatter_drop() {
+  integer count=$1 total=${#SF_PRESENT_KIND}
+  (( count >= 0 && count <= total )) || return 1
+  (( count )) || return 0
+  (( ! SF_PRESENT_LIVE || SF_PRESENT_LIVE > count )) || return 1
+  sf_tui_formatter_keep $(( count + 1 )) $total
+  (( ! SF_PRESENT_LIVE )) || (( SF_PRESENT_LIVE -= count ))
+}
+
+# Private to this file's list operations. Every per-entry array belongs here,
+# so a new field that skips this list silently drifts out of step with its kind.
+sf_tui_formatter_keep() {
+  integer first=$1 last=$2
+  local name
+  local -a values
+  for name in SF_PRESENT_KIND SF_PRESENT_TEXT SF_PRESENT_ROLE \
+      SF_PRESENT_SECTION SF_PRESENT_PRIOR; do
+    values=( "${(@P)name}" )
+    if (( last < first || first > ${#values} )); then
+      set -A "$name"
+    else
+      set -A "$name" "${(@)values[first,last]}"
+    fi
+  done
+}
+
+# Discards retained presentation before a rebuild.
+sf_tui_reset() {
+  SF_PRESENT_LIVE=0
+  sf_tui_formatter_keep 1 0
+  SF_PRESENT_LAST_ROLE=''
+  SF_PRESENT_SECTION_ID=0
+}
 
 sf_tui_footer_usage() { SF_PRESENT_FOOTER="${SF_PRESENT_IDENTITY} · $1"; }
 
