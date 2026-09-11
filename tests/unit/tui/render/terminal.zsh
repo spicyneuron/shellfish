@@ -35,7 +35,9 @@ assert_equal draft "$BUFFER"
 assert_equal 3 "$CURSOR"
 assert_equal 0 "${#SF_PRESENT_PENDING_HIGHLIGHTS}"
 
-sf_tui_event assistant one
+sf_tui_event assistant_start
+sf_tui_event assistant_message_delta 0 one
+sf_tui_event assistant_end
 sf_tui_viewport 80 20 "$SF_PRESENT_CURSOR"
 assert_equal $'\n─ agent ──────────────────────────────────────────────────────────────────── 2 ─\n\none' "$SF_PRESENT_VIEWPORT_TEXT"
 
@@ -60,7 +62,9 @@ sf_tui_terminal_reset
 BUFFER=''
 CURSOR=0
 sf_tui_event user hi
-sf_tui_event assistant 'one two three four five six seven eight nine ten'
+sf_tui_event assistant_start
+sf_tui_event assistant_message_delta 0 'one two three four five six seven eight nine ten'
+sf_tui_event assistant_end
 typeset drained=''
 integer steps=0
 while true; do

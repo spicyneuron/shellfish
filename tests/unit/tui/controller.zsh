@@ -17,9 +17,9 @@ sf_tui_add activity '' '' '' open
 sf_tui_decoded assistant_start
 assert_equal 'section,activity' "${(j:,:)SF_PRESENT_NODE_TYPE}"
 assert_equal agent "$SF_PRESENT_NODE_ROLE[-1]"
-sf_tui_decoded assistant_message_delta 'part '
-sf_tui_decoded assistant_reasoning_delta thought
-sf_tui_decoded assistant_message_delta done
+sf_tui_decoded assistant_message_delta 0 'part '
+sf_tui_decoded assistant_reasoning_delta 1 thought
+sf_tui_decoded assistant_message_delta 2 done
 sf_tui_decoded turn_usage '14 ↑ 2 ↓' 1
 assert_equal 'section,message,reasoning,message' "${(j:,:)SF_PRESENT_NODE_TYPE}"
 assert_equal "${SF_PRESENT_IDENTITY} · 14 ↑ 2 ↓" "$SF_PRESENT_FOOTER"
@@ -28,13 +28,13 @@ assert_equal '' "$SF_PRESENT_NODE_META[3]"
 # Reasoning tokens reach an open reasoning node only, and never carry across
 # responses.
 sf_tui_reset
-sf_tui_decoded assistant_reasoning_delta current
+sf_tui_decoded assistant_reasoning_delta 0 current
 sf_tui_decoded turn_usage '20 ↑ 4 ↓' 3
 assert_equal 3 "$SF_PRESENT_NODE_META[-1]"
 
 sf_tui_reset
 sf_tui_decoded turn_usage '20 ↑ 4 ↓' 5
-sf_tui_decoded assistant_reasoning_delta current
+sf_tui_decoded assistant_reasoning_delta 0 current
 sf_tui_decoded assistant_end
 assert_equal '' "$SF_PRESENT_NODE_META[-1]"
 
@@ -120,9 +120,9 @@ assert_equal notice "${(j:,:)SF_PRESENT_NODE_TYPE}"
 assert_equal '' "$SF_PRESENT_LAST_ROLE"
 
 sf_tui_reset
-sf_tui_event assistant_message_delta before
+sf_tui_event assistant_message_delta 0 before
 sf_tui_notice warning 'Heads up' detail
-sf_tui_event assistant_message_delta after
+sf_tui_event assistant_message_delta 1 after
 assert_equal 'section,message,notice,message' "${(j:,:)SF_PRESENT_NODE_TYPE}"
 assert_equal agent "$SF_PRESENT_LAST_ROLE"
 assert_equal closed "$SF_PRESENT_NODE_STATE[2]"
@@ -234,7 +234,7 @@ sf_tui_terminal_stage
 sf_tui_terminal_finish
 typeset flushed=$PREDISPLAY
 [[ $flushed == *Hello* ]] || fail 'recovery setup did not flush its prefix'
-sf_tui_event assistant_message_delta speculative
+sf_tui_event assistant_message_delta 0 speculative
 SF_PRESENT_SESSION=$tmp/recover.jsonl
 SF_PRESENT_STATE=working
 sf_tui_transport_reset
@@ -301,9 +301,9 @@ SF_PRESENT_STATE=working
 SF_PRESENT_ACTION=''
 sf_tui_transport_reset
 SF_TUI_TRANSPORT_LINES=(
-  '{"type":"_assistant_message_delta","text":"one two three "}'
-  '{"type":"_assistant_message_delta","text":"four five six "}'
-  '{"type":"_assistant_message_delta","text":"seven eight"}'
+  '{"type":"_assistant_message_delta","index":0,"text":"one two three "}'
+  '{"type":"_assistant_message_delta","index":0,"text":"four five six "}'
+  '{"type":"_assistant_message_delta","index":0,"text":"seven eight"}'
   '{"type":"_assistant_end","stop":"end"}'
   '{"type":"assistant","stop":"end","content":[{"type":"text","text":"one two three four five six seven eight"}]}'
   '{"type":"hook_result","hook":"project","script":"test","model_context":"later"}'
@@ -350,7 +350,7 @@ sf_tui_terminal_reset
 SF_PRESENT_STATE=working
 sf_tui_transport_reset
 SF_TUI_TRANSPORT_LINES=(
-  '{"type":"_assistant_message_delta","text":"before tool"}'
+  '{"type":"_assistant_message_delta","index":0,"text":"before tool"}'
   '{"type":"_assistant_tool_call_delta","index":1,"id":"call_1"}'
 )
 BUFFER=''
@@ -373,7 +373,7 @@ sf_tui_terminal_reset
 SF_PRESENT_STATE=working
 sf_tui_transport_reset
 SF_TUI_TRANSPORT_LINES=(
-  '{"type":"_assistant_message_delta","text":"one\ntwo\nthree\nfour\nfive\nsix\nseven\nbefore tool"}'
+  '{"type":"_assistant_message_delta","index":0,"text":"one\ntwo\nthree\nfour\nfive\nsix\nseven\nbefore tool"}'
   '{"type":"_assistant_tool_call_delta","index":1,"id":"call_1"}'
   '{"type":"_assistant_end","stop":"tool_calls"}'
   '{"type":"assistant","stop":"tool_calls","content":[{"type":"text","text":"one\ntwo\nthree\nfour\nfive\nsix\nseven\nbefore tool"}]}'
@@ -521,7 +521,7 @@ assert_equal next "$SF_PRESENT_SUBMITTED"
 # durable transcript, reports the recovery, and clears the live-render latch.
 sf_tui_reset
 sf_tui_terminal_reset
-sf_tui_event assistant_message_delta speculative
+sf_tui_event assistant_message_delta 0 speculative
 SF_PRESENT_SESSION="$tmp/recover.jsonl"
 SF_PRESENT_STATE=working
 SF_PRESENT_RENDER_ERROR='Live rendering failed.'

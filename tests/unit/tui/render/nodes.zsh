@@ -32,8 +32,8 @@ assert_equal done "$SF_PRESENT_NODE_BODY[-1]"
 sf_tui_reset
 sf_tui_event user hello
 sf_tui_event user again
-sf_tui_event assistant_message_delta 'part '
-sf_tui_event assistant_message_delta done
+sf_tui_event assistant_message_delta 0 'part '
+sf_tui_event assistant_message_delta 0 done
 sf_tui_event assistant_end
 
 assert_equal 'section,message,message,section,message' "${(j:,:)SF_PRESENT_NODE_TYPE}"
@@ -52,9 +52,9 @@ sf_tui_close 1
 assert_equal 6 "$SF_PRESENT_NODE_FRONTIER[1]"
 
 sf_tui_reset
-sf_tui_event assistant_reasoning_delta thought
+sf_tui_event assistant_reasoning_delta 0 thought
 sf_tui_event reasoning_tokens 7
-sf_tui_event assistant_message_delta answer
+sf_tui_event assistant_message_delta 1 answer
 assert_equal 'section,reasoning,message' "${(j:,:)SF_PRESENT_NODE_TYPE}"
 assert_equal closed "$SF_PRESENT_NODE_STATE[2]"
 assert_equal 7 "$SF_PRESENT_NODE_META[2]"
@@ -83,6 +83,24 @@ assert_equal tool_call "$SF_PRESENT_NODE_TYPE[6]"
 assert_equal plain "$SF_PRESENT_NODE_FORMAT[6]"
 assert_equal tool_result "$SF_PRESENT_NODE_TYPE[7]"
 
+# Source indexes preserve adjacent blocks of the same visible kind.
+sf_tui_reset
+sf_tui_event assistant_start
+sf_tui_event assistant_message_delta 0 first
+sf_tui_event assistant_message_delta 1 second
+assert_equal 'section,message,message' "${(j:,:)SF_PRESENT_NODE_TYPE}"
+assert_equal closed "$SF_PRESENT_NODE_STATE[2]"
+assert_equal open "$SF_PRESENT_NODE_STATE[3]"
+
+# Opaque reasoning and tool-call blocks are nonvisual source-order boundaries.
+sf_tui_event assistant_reasoning_opaque 2
+assert_equal closed "$SF_PRESENT_NODE_STATE[3]"
+sf_tui_event assistant_reasoning_delta 2 thought 9
+assert_equal reasoning "$SF_PRESENT_NODE_TYPE[-1]"
+assert_equal 9 "$SF_PRESENT_NODE_META[-1]"
+sf_tui_event assistant_tool_call_delta 3
+assert_equal closed "$SF_PRESENT_NODE_STATE[-1]"
+
 sf_tui_reset
 sf_tui_event context project_environment session_start '<env>test</env>'
 sf_tui_event user ''
@@ -98,34 +116,28 @@ sf_tui_event user again
 assert_equal 'section,message,injection,message' "${(j:,:)SF_PRESENT_NODE_TYPE}"
 
 sf_tui_reset
-sf_tui_event assistant ''
-assert_equal 0 "${#SF_PRESENT_NODE_TYPE}"
-
-sf_tui_event assistant $'\n\n' $'\n'
-assert_equal 0 "${#SF_PRESENT_NODE_TYPE}"
-
 sf_tui_event assistant_start
-sf_tui_event assistant_message_delta $'\n'
-sf_tui_event assistant_reasoning_delta $'\n\n'
+sf_tui_event assistant_message_delta 0 $'\n'
+sf_tui_event assistant_reasoning_delta 1 $'\n\n'
 assert_equal 'section,reasoning' "${(j:,:)SF_PRESENT_NODE_TYPE}"
 assert_equal $'\n\n' "$SF_PRESENT_NODE_BODY[2]"
 sf_tui_event assistant_end
 assert_equal 0 "${#SF_PRESENT_NODE_TYPE}"
 assert_equal 0 "$SF_PRESENT_SECTION_ID"
 
-sf_tui_event assistant_message_delta $'answer\n'
-sf_tui_event assistant_message_delta $'\n'
+sf_tui_event assistant_message_delta 0 $'answer\n'
+sf_tui_event assistant_message_delta 0 $'\n'
 sf_tui_set_frontier 2 8
 sf_tui_event assistant_end
 assert_equal $'answer\n\n' "$SF_PRESENT_NODE_BODY[2]"
 assert_equal 8 "$SF_PRESENT_NODE_FRONTIER[2]"
 
-sf_tui_event assistant_message_delta $'\nnext'
+sf_tui_event assistant_message_delta 0 $'\nnext'
 sf_tui_event assistant_end
 assert_equal $'\nnext' "$SF_PRESENT_NODE_BODY[3]"
 
 sf_tui_event assistant_start
-sf_tui_event assistant_message_delta $'\n'
+sf_tui_event assistant_message_delta 0 $'\n'
 sf_tui_event assistant_end
 assert_equal 'section,message,message' "${(j:,:)SF_PRESENT_NODE_TYPE}"
 
@@ -159,14 +171,14 @@ assert_equal section "$SF_PRESENT_NODE_TYPE[1]"
 
 sf_tui_reset
 sf_tui_event user $'\n\n  unsafe\e[31m\t\n'
-sf_tui_event assistant_message_delta $'\n\treply\rtext\n\n'
+sf_tui_event assistant_message_delta 0 $'\n\treply\rtext\n\n'
 sf_tui_event assistant_end
 assert_equal $'\n\n  unsafe�[31m\t\n' "$SF_PRESENT_NODE_BODY[2]"
 assert_equal $'\n\treply�text\n\n' "$SF_PRESENT_NODE_BODY[4]"
 
 sf_tui_reset
 sf_tui_add activity '' '' '' open
-sf_tui_event assistant_reasoning_delta thought
+sf_tui_event assistant_reasoning_delta 0 thought
 assert_equal 'section,reasoning' "${(j:,:)SF_PRESENT_NODE_TYPE}"
 
 sf_tui_reset
@@ -175,7 +187,7 @@ sf_tui_event assistant_start
 assert_equal 'section,activity' "${(j:,:)SF_PRESENT_NODE_TYPE}"
 assert_equal 'agent,agent' "${(j:,:)SF_PRESENT_NODE_ROLE}"
 assert_equal open "$SF_PRESENT_NODE_STATE[-1]"
-sf_tui_event assistant_message_delta answer
+sf_tui_event assistant_message_delta 0 answer
 assert_equal 'section,message' "${(j:,:)SF_PRESENT_NODE_TYPE}"
 
 sf_tui_reset
@@ -187,7 +199,7 @@ assert_equal agent "$SF_PRESENT_NODE_ROLE[-1]"
 
 sf_tui_reset
 sf_tui_add activity '' '' '' open
-sf_tui_event assistant_message_delta answer
+sf_tui_event assistant_message_delta 0 answer
 assert_equal 'section,message' "${(j:,:)SF_PRESENT_NODE_TYPE}"
 
 sf_tui_reset

@@ -320,10 +320,10 @@ sf_tui_repaint() {
 }
 sf_tui_reset
 sf_tui_terminal_reset
-sf_tui_add message agent '' before open
+sf_tui_event assistant_message_delta 0 before
 SF_PRESENT_STATE=working
 SF_PRESENT_RENDER_ERROR=''
-SF_TUI_TRANSPORT_EVENTS=( assistant_message_delta after '' '' '' '' '' )
+SF_TUI_TRANSPORT_EVENTS=( assistant_message_delta 0 after '' '' '' '' )
 SF_TUI_TRANSPORT_EOF=0
 KEYS_QUEUED_COUNT=0
 PENDING=0

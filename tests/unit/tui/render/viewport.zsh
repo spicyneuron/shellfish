@@ -16,7 +16,7 @@ assert_equal '' "$SF_PRESENT_FLUSH_TEXT"
 assert_equal 2:1 "$SF_PRESENT_FLUSH_CURSOR"
 assert_equal 1 "$SF_PRESENT_FLUSH_ROWS"
 
-sf_tui_event assistant_message_delta $'first\npartial'
+sf_tui_event assistant_message_delta 0 $'first\npartial'
 sf_tui_viewport 80 20 3:0
 assert_equal $'\n─ agent ──────────────────────────────────────────────────────────────────── 2 ─\n\nfirst\n⠃' "$SF_PRESENT_VIEWPORT_TEXT"
 assert_equal $'\n─ agent ──────────────────────────────────────────────────────────────────── 2 ─\n\nfirst' "$SF_PRESENT_FLUSH_TEXT"

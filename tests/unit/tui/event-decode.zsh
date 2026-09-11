@@ -10,8 +10,8 @@ cat <<'STREAM' |
 {"type":"_hook_activity","hook":"session_start","script":"environment","text":"Inspecting"}
 {"type":"_hook_activity","text":""}
 {"type":"_assistant_start"}
-{"type":"_assistant_reasoning_delta","text":"why"}
-{"type":"_assistant_message_delta","text":"hi\n"}
+{"type":"_assistant_reasoning_delta","index":0,"text":"why"}
+{"type":"_assistant_message_delta","index":1,"text":"hi\n"}
 {"type":"_assistant_tool_call_delta","index":2,"id":"call_1"}
 {"type":"_assistant_reasoning_opaque","index":0,"opaque":{"signature":"s"}}
 {"type":"_turn_usage","input_tokens":14,"output_tokens":2}
@@ -31,7 +31,7 @@ response=$(printf '%s\n' '{"type":"_assistant_tool_call_delta","index":0,"id":"c
   jq -jRs -L "$ROOT" --argjson runtime null \
     -f "$ROOT/libexec/tui/event-decode.jq" |
   tr '\0' '\n' | sed '/^$/d' | paste -sd, -)
-assert_equal 'assistant_tool_call_delta,assistant_end,batch_ok' "$response"
+assert_equal 'assistant_tool_call_delta,0,assistant_end,batch_ok' "$response"
 
 if print -r -- '{"type":"_assistant_start","unexpected":true}' |
     jq -jRs -L "$ROOT" --argjson runtime null \
@@ -95,6 +95,7 @@ for invalid in '.path="relative"' '.path="/bad\u0000path"' '.records=[]' \
 done
 
 for invalid in '{"type":"turn_error","message":1}' \
+    '{"type":"_assistant_message_delta","text":"missing index"}' \
     '{"type":"_hook_activity","hook":"unknown","script":"check","text":"Working"}' \
     '{"type":"_hook_activity","hook":"stop","script":"","text":"Working"}' \
     '{"type":"_hook_activity","hook":"stop","script":"check","text":""}'; do

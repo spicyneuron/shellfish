@@ -39,15 +39,26 @@ replay=$({
   print -r -- '{"type":"state","name":"replay/start","value":true}'
   print -r -- '{"type":"user","content":[{"type":"text","text":"question"}]}'
   print -r -- '{"type":"state","name":"replay/middle","value":{"step":2}}'
-  print -r -- '{"type":"assistant","stop":"end","content":[{"type":"reasoning","text":"first"},{"type":"reasoning","text":""},{"type":"reasoning","text":"second"}]}'
+  print -r -- '{"type":"assistant","stop":"end","content":[{"type":"reasoning","text":"first"},{"type":"reasoning","text":""},{"type":"reasoning","text":"second"},{"type":"text","text":"answer"},{"type":"reasoning","text":"last"}]}'
   print -r -- '{"type":"state","name":"replay/end","value":null}'
 } | jq -jRs -L "$ROOT" -f "$ROOT/libexec/tui/transcript-decode.jq")
 typeset -a replay_fields=( "${(@0)${replay%$'\0'}}" )
 # Replay leads with the frozen runtime from the durable header.
 assert_equal session_update "$replay_fields[1]"
 assert_equal fake-model "$(jq -r '.profile.request.model' <<<"$replay_fields[2]")"
-assert_equal assistant "$replay_fields[15]"
-assert_equal $'first\n\nsecond' "$replay_fields[17]"
+assert_equal assistant_start "$replay_fields[15]"
+assert_equal assistant_reasoning_delta "$replay_fields[22]"
+assert_equal 0 "$replay_fields[23]"
+assert_equal first "$replay_fields[24]"
+assert_equal assistant_reasoning_delta "$replay_fields[29]"
+assert_equal 1 "$replay_fields[30]"
+assert_equal assistant_reasoning_delta "$replay_fields[36]"
+assert_equal second "$replay_fields[38]"
+assert_equal assistant_message_delta "$replay_fields[43]"
+assert_equal answer "$replay_fields[45]"
+assert_equal assistant_reasoning_delta "$replay_fields[50]"
+assert_equal last "$replay_fields[52]"
+assert_equal assistant_end "$replay_fields[57]"
 
 if {
     head -n 1 "$ROOT/tests/fixtures/session/complete.jsonl"
@@ -63,10 +74,10 @@ usage_replay=$({
   head -n 1 "$ROOT/tests/fixtures/session/complete.jsonl" |
     jq -c '.profile.context_window = 264000'
   print -r -- '{"type":"user","content":[{"type":"text","text":"question"}]}'
-  print -r -- '{"type":"assistant","stop":"end","content":[{"type":"text","text":"answer"}],"usage":{"input_tokens":12400,"cached_tokens":10478,"output_tokens":900}}'
+  print -r -- '{"type":"assistant","stop":"end","content":[{"type":"reasoning","text":"why"},{"type":"text","text":"answer"}],"usage":{"input_tokens":12400,"cached_tokens":10478,"output_tokens":900,"reasoning_tokens":9}}'
 } | jq -jRs -L "$ROOT" -f "$ROOT/libexec/tui/transcript-decode.jq" |
   tr '\0' '\n' | sed '/^$/d' | tail -n +3 | paste -sd, -)
-assert_equal 'user,question,assistant,answer,turn_usage,12k ↑ 85% ⦿ 900 ↓ 5% of 264k ◔,batch_ok' "$usage_replay"
+assert_equal 'user,question,assistant_start,assistant_reasoning_delta,0,why,9,assistant_message_delta,1,answer,assistant_end,turn_usage,12k ↑ 85% ⦿ 900 ↓ 5% of 264k ◔,9,batch_ok' "$usage_replay"
 jq -e '
   .harness.tools[0].manifest.display.result.content == ["$result_full"] and
   .harness.tools[1].manifest.display.result.content == ["$result_preview", "$exit_code"] and

@@ -122,7 +122,8 @@ sf_tui_decoded() {
         SF_TUI_TRANSPORT_COMMAND=( "$SF_ENTRY" run --jsonl --session "$first" )
         ;;
       assistant_start|assistant_message_delta|assistant_reasoning_delta| \
-      assistant_tool_call_delta|assistant_end|tool_call|tool_result|context)
+      assistant_reasoning_opaque|assistant_tool_call_delta|assistant_end| \
+      tool_call|tool_result|context)
         sf_tui_event "$type" "$first" "$second" "$third" "$fourth" "$fifth" "$sixth" || return 1
         ;;
       turn_usage)

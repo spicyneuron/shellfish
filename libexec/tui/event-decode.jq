@@ -2,14 +2,16 @@ include "lib/runtime/schema";
 include "libexec/tui/display-fields";
 
 def event_fields($event_runtime):
-  if .type == "_assistant_message_delta" then
-    ["assistant_message_delta", .text]
-  elif .type == "_assistant_reasoning_delta" then
-    ["assistant_reasoning_delta", .text]
-  elif .type == "_assistant_tool_call_delta" then
-    ["assistant_tool_call_delta"]
-  elif .type == "_assistant_reasoning_opaque" or .type == "_turn_usage" then
-    # Nothing to present: the durable assistant record carries both.
+  if .type == "_assistant_message_delta" and canonical_backend_event then
+    ["assistant_message_delta", (.index | tostring), .text]
+  elif .type == "_assistant_reasoning_delta" and canonical_backend_event then
+    ["assistant_reasoning_delta", (.index | tostring), .text]
+  elif .type == "_assistant_tool_call_delta" and canonical_backend_event then
+    ["assistant_tool_call_delta", (.index | tostring)]
+  elif .type == "_assistant_reasoning_opaque" and canonical_backend_event then
+    ["assistant_reasoning_opaque", (.index | tostring)]
+  elif .type == "_turn_usage" and canonical_backend_event then
+    # Usage is committed with the durable assistant record.
     empty
   elif .type == "_hook_activity" and keys == ["hook", "script", "text", "type"] and
       (.hook as $hook | hook_names | index($hook) != null) and

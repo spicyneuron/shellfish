@@ -124,7 +124,7 @@ Transient events currently include:
 
 `_assistant_start` opens a response and `_assistant_end` closes it. Between them the turn forwards the adapter's events verbatim, in stream order. Deltas carry a zero-based content `index` identifying the block's position in the later assistant content.
 
-Deltas are previews only. Tool-call `input` fragments are raw text, not parsed JSON, and a client must never render or execute a partial call. Consumers should render committed assistant and reasoning content from the durable assistant record, and each call from its own `tool_call` record. Clients should treat unknown transient types as unsupported protocol input and recover from the durable session rather than guessing their meaning.
+Deltas are previews only. Tool-call `input` fragments are raw text, not parsed JSON, and a client must never render or execute a partial call. Live consumers may present indexed assistant and reasoning deltas, then use the durable assistant record as confirmation without rendering the same content again. Replay renders that durable content in recorded block order. Each call renders from its own `tool_call` record. Clients should treat unknown transient types as unsupported protocol input and recover from the durable session rather than guessing their meaning.
 
 Nonempty `_hook_activity` has `{type,hook,script,text}` and is emitted only when a selected ordinary component has a configured display label. A later activity replaces it. A durable `hook_result` or process completion replaces it; a displayed component that succeeds without a result emits `{type:"_hook_activity",text:""}`. `permission_request` components emit neither activity nor a result.
 

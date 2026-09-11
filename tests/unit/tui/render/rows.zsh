@@ -8,7 +8,7 @@ typeset presentation='{"tui":{"preview_lines_reasoning":"full","preview_lines_co
 sf_tui_rows_config "$presentation"
 
 sf_tui_event user abcdef
-sf_tui_event assistant_message_delta xyz
+sf_tui_event assistant_message_delta 0 xyz
 sf_tui_rows 8 20
 assert_equal $'─ user ─\n\nabcdef\n\n─ agent \n\n⠃' "${(F)SF_PRESENT_ROW_TEXT}"
 assert_equal '2:0,2:1,3:0,3:1,4:0,4:1,4:4' "${(j:,:)SF_PRESENT_ROW_CURSOR}"
@@ -49,7 +49,7 @@ sf_tui_rows 80 20
 assert_equal $'hello\n⠃' "${(F)SF_PRESENT_ROW_TEXT}"
 assert_equal 8 "$SF_PRESENT_ROW_SOURCE_END[1]"
 assert_equal $'\n\nhello\n\n' "$SF_PRESENT_NODE_BODY[1]"
-sf_tui_stream message world
+sf_tui_append 1 world
 sf_tui_close 1
 sf_tui_rows 80 20
 assert_equal $'hello\n\nworld' "${(F)SF_PRESENT_ROW_TEXT}"
@@ -111,7 +111,7 @@ assert_equal '  exit 1 · sandbox denial detected' "$SF_PRESENT_ROW_TEXT[-1]"
 presentation='{"tui":{"preview_lines_reasoning":0,"preview_lines_context":0,"preview_lines_tool_call":0,"preview_lines_tool_result":0}}'
 sf_tui_rows_config "$presentation"
 sf_tui_reset
-sf_tui_event assistant_reasoning_delta $'one\ntwo\nthree'
+sf_tui_event assistant_reasoning_delta 0 $'one\ntwo\nthree'
 sf_tui_rows 80 20
 assert_equal $'─ agent ──────────────────────────────────────────────────────────────────── 1 ─\n\n✎ Thinking… ⠃' \
   "${(F)SF_PRESENT_ROW_TEXT}"
@@ -169,7 +169,7 @@ assert_equal '… ~2 tokens' "$SF_PRESENT_ROW_TEXT[-1]"
 presentation='{"tui":{"preview_lines_reasoning":1,"preview_lines_context":1,"preview_lines_tool_call":1,"preview_lines_tool_result":1}}'
 sf_tui_rows_config "$presentation"
 sf_tui_reset
-sf_tui_event assistant_reasoning_delta $'first\nsecond'
+sf_tui_event assistant_reasoning_delta 0 $'first\nsecond'
 sf_tui_rows 80 20
 assert_equal $'─ agent ──────────────────────────────────────────────────────────────────── 1 ─\n\n✎ Reasoning\n  first\n  … ~3 tokens ⠃' \
   "${(F)SF_PRESENT_ROW_TEXT}"
@@ -370,7 +370,9 @@ sf_tui_rows 20 20
 assert_equal '─ user ───────── 1 ─' "$SF_PRESENT_ROW_TEXT[1]"
 assert_equal '0 2 fg=8 2 7 fg=1,bold 7 20 fg=8 17 18 fg=9' "$SF_PRESENT_ROW_HIGHLIGHTS[1]"
 
-sf_tui_event assistant reply
+sf_tui_event assistant_start
+sf_tui_event assistant_message_delta 0 reply
+sf_tui_event assistant_end
 sf_tui_rows 20 20
 integer agent_section=${SF_PRESENT_ROW_KIND[(i)section.agent]}
 assert_equal '─ agent ──────── 2 ─' "$SF_PRESENT_ROW_TEXT[agent_section]"
@@ -389,7 +391,7 @@ assert_equal '0 5 fg=2' \
   "$SF_PRESENT_ROW_HIGHLIGHTS[${SF_PRESENT_ROW_KIND[(i)message.system]}]"
 
 sf_tui_reset
-sf_tui_event assistant_reasoning_delta thinking
+sf_tui_event assistant_reasoning_delta 0 thinking
 sf_tui_rows 20 20
 assert_equal 'reasoning.agent' "$SF_PRESENT_ROW_KIND[3]"
 assert_equal '0 11 fg=3' "$SF_PRESENT_ROW_HIGHLIGHTS[3]"

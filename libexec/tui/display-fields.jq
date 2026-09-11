@@ -80,13 +80,23 @@ def durable_display_fields($replay; $tools):
   elif canonical_user_message then
     if $replay then ["user", .content[0].text] else empty end
   elif canonical_assistant_message then
-    (if $replay then
-      ([(.content[] | select(.type == "reasoning" and .text != "") | .text)] |
-        join("\n\n")) as $reasoning |
-      (if .usage | has("reasoning_tokens") then (.usage.reasoning_tokens | tostring) else "" end) as $reasoning_tokens |
-      ["assistant", ([.content[] | select(.type == "text") | .text] | join("")),
-       $reasoning, $reasoning_tokens]
-    else empty end)
+    if $replay then
+      . as $message |
+      (.content | to_entries) as $content |
+      ([$content[] | select(.value.type == "reasoning" and
+        (.value.text | test("[^\\n]"))) | .key]) as $reasoning |
+      ["assistant_start"],
+      ($content[] |
+        if .value.type == "text" then
+          ["assistant_message_delta", (.key | tostring), .value.text]
+        else
+          ["assistant_reasoning_delta", (.key | tostring), .value.text] +
+          (if ($reasoning | length) == 1 and .key == $reasoning[0] and
+              $message.usage.reasoning_tokens? != null
+           then [($message.usage.reasoning_tokens | tostring)] else [] end)
+        end),
+      ["assistant_end"]
+    else empty end
   elif canonical_tool_call then
     tool_call_display($tools) as $call_display |
     ["tool_call", .id, .name,

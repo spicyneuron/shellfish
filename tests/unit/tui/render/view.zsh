@@ -108,9 +108,9 @@ for close_type in message reasoning; do
           COLUMNS=$width
           LINES=20
           if [[ $close_type == message ]]; then
-            sf_tui_event assistant_message_delta "hello$suffix"
+            sf_tui_event assistant_message_delta 0 "hello$suffix"
           else
-            sf_tui_event assistant_reasoning_delta "thought$suffix"
+            sf_tui_event assistant_reasoning_delta 0 "thought$suffix"
           fi
           for epoch in {1..12}; do
             sf_tui_repaint || fail "cannot render open $close_type transition: $trailing/$split/$width/$highlight"
@@ -139,12 +139,12 @@ sf_tui_reset
 sf_tui_terminal_reset
 LINES=3
 sf_tui_event assistant_start
-sf_tui_event assistant_message_delta $'\n'
+sf_tui_event assistant_message_delta 0 $'\n'
 sf_tui_repaint || fail 'cannot render a newline-only message'
 (( SF_PRESENT_FLUSH_ROWS )) || fail 'newline-only message did not stage a prefix'
 sf_tui_terminal_stage
 sf_tui_terminal_finish
-sf_tui_event assistant_reasoning_delta $'\n\n'
+sf_tui_event assistant_reasoning_delta 1 $'\n\n'
 sf_tui_repaint || fail 'cannot replace a newline-only message with reasoning'
 sf_tui_event assistant_end
 sf_tui_repaint || fail 'cannot close newline-only reasoning'
