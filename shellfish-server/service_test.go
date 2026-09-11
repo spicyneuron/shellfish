@@ -516,6 +516,22 @@ func TestInvalidEventTerminatesTurn(t *testing.T) {
 		`{"type":"_session_status","working":false,"error":"turn process failed"}`)
 }
 
+// A failure with no durable outcome exists only as the child's stderr, so the
+// status frame that ends the turn carries it.
+func TestFailureReportsChildDiagnostics(t *testing.T) {
+	base := newTestServer(t, newSession(t, ""),
+		"IFS= read -r input\nprintf 'cannot append to session\\n' >&2\nexit 1\n")
+	session := openStream(t, base, http.StatusOK)
+	session.expectRaw(t, strings.TrimSuffix(headerLine(t), "\n"))
+	session.expectJSON(t, `{"type":"_session_status","working":false}`)
+	post(t, base+"/turn", userRecord, http.StatusAccepted)
+	session.expectJSON(t, `{"type":"_session_status","working":true}`)
+	frame := session.next(t)
+	if !strings.Contains(frame, "cannot append to session") {
+		t.Fatalf("frame = %s, want the child's diagnostics", frame)
+	}
+}
+
 func TestUnknownPath(t *testing.T) {
 	base := newTestServer(t, newSession(t, ""), "")
 	if response := request(t, http.MethodGet, base+"/turn", ""); response.StatusCode != http.StatusNotFound {

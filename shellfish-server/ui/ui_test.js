@@ -504,18 +504,36 @@ test("copies the latest or selected derived section locally", async () => {
   assert.equal(page.posts.length, 0);
 });
 
-test("labels context with its script, hook, and prompt", async () => {
+test("labels hook context with its script, hook, and prompt", async () => {
   const page = await idle();
   await page.send({
-    type: "context",
+    type: "hook_result",
     hook: "session_start",
     script: "project_environment",
     prompt: "  project\n context ",
     status: 0,
-    content: "environment",
+    model_context: "environment",
   });
   const summary = findTag(find(page.output, "context")[0], "summary")[0];
   assert.equal(summary.textContent, "↪project_environment · session_start · project context");
+});
+
+// Model context is reference material for the agent; user context is the script
+// speaking to the reader, so it stays out of the fold and follows it.
+test("shows hook user context after its model context", async () => {
+  const page = await idle();
+  await page.send({
+    type: "hook_result",
+    hook: "stop",
+    script: "\u0001check",
+    model_context: "keep going",
+    user_context: "checked 3 files",
+  });
+  assert.equal(find(page.output, "context").length, 1);
+  const shown = find(page.output, "note")[0];
+  assert.equal(page.output.children.indexOf(shown), 1);
+  assert.equal(findTag(shown, "h2")[0].textContent, "ℹ�check · stop");
+  assert.equal(findTag(shown, "pre")[0].textContent, "checked 3 files");
 });
 
 test("puts prompt context under a user heading", async () => {
@@ -523,10 +541,10 @@ test("puts prompt context under a user heading", async () => {
   await page.send(
     { type: "_session_status", working: true },
     {
-      type: "context",
+      type: "hook_result",
       hook: "user_prompt_submit",
       script: "add_context",
-      content: "injected",
+      model_context: "injected",
     },
     { type: "user", content: [{ type: "text", text: "prompt" }] },
   );
@@ -597,8 +615,6 @@ test("leaves deltas out of the transcript and draws the record once", async () =
 
   // Transient deltas do not alter the durable transcript.
   await page.send(
-    { type: "_hook_start", hook: "stop", script: "check", text: "Checking" },
-    { type: "_hook_end", text: "done", error: false },
     { type: "_assistant_message_delta", text: "" },
     { type: "_assistant_message_delta", text: "par" },
     { type: "_assistant_reasoning_delta", text: "thinking" },
@@ -651,91 +667,66 @@ test("ends a section on a durable turn error without numbering it", async () => 
   assert.equal(findTag(shown, "pre").length, 0);
 });
 
-test("separates notice titles from their bodies", async () => {
-  const page = await idle();
-  await page.send(
-    {
-      type: "_notice", level: "info", source: "stop",
-      title: "/tmp/\u0001check", text: "done", complete: true,
-    },
-    {
-      type: "_notice", level: "error", source: "",
-      title: "Turn failed", text: "recoverable", complete: true,
-    },
-  );
-  const notes = find(page.output, "note");
-  assert.equal(findTag(notes[0], "h2")[0].textContent, "ℹ\ufffdcheck · stop");
-  assert.equal(findTag(findTag(notes[0], "h2")[0], "strong")[0].textContent, "\ufffdcheck");
-  assert.equal(findTag(notes[0], "pre")[0].textContent, "done");
-  assert.equal(findTag(notes[1], "h2")[0].textContent, "✕Turn failed");
-  assert.equal(findTag(notes[1], "pre")[0].textContent, "recoverable");
-});
-
-test("updates a live notice in place", async () => {
+test("labels running hook activity with its script and hook", async () => {
   const page = await idle();
   await page.send(
     { type: "_session_status", working: true },
-    {
-      type: "_notice", level: "info", source: "user_prompt_submit",
-      title: "/tmp/compact", text: "Compacting\n", complete: false,
-    },
+    { type: "_hook_activity", hook: "user_prompt_submit", script: "compact", text: "Compacting" },
   );
   let notes = find(page.output, "note");
   assert.equal(notes.length, 1);
-  assert.equal(findTag(notes[0], "pre")[0].textContent, "Compacting\n");
+  assert.equal(findTag(notes[0], "h2")[0].textContent, "\u2139compact \u00b7 user_prompt_submit");
+  assert.equal(findTag(notes[0], "pre")[0].textContent, "Compacting");
   assert.equal(find(page.output, "activity").length, 1);
 
+  // A later label replaces the standing one instead of stacking beneath it.
   await page.send({
-    type: "_notice", level: "info", source: "user_prompt_submit",
-    title: "/tmp/compact", text: "Compacting conversation…", complete: true,
+    type: "_hook_activity", hook: "user_prompt_submit", script: "compact",
+    text: "Compacting conversation\u2026",
   });
   notes = find(page.output, "note");
   assert.equal(notes.length, 1);
-  assert.equal(findTag(notes[0], "pre")[0].textContent, "Compacting conversation…");
+  assert.equal(findTag(notes[0], "pre")[0].textContent, "Compacting conversation\u2026");
 });
 
-test("discards a live notice that settles with no text", async () => {
+test("replaces hook activity with its durable result", async () => {
+  const page = await idle();
+  await page.send(
+    { type: "_hook_activity", hook: "stop", script: "check", text: "Checking" },
+    { type: "hook_result", hook: "stop", script: "check", user_context: "checked 3 files" },
+  );
+  const notes = find(page.output, "note");
+  assert.equal(notes.length, 1);
+  assert.equal(findTag(notes[0], "pre")[0].textContent, "checked 3 files");
+});
+
+test("clears hook activity that ends without a result", async () => {
   const page = await idle();
   await page.send({
-    type: "_notice", level: "info", source: "session_start",
-    title: "/tmp/probe", text: "Inspecting", complete: false,
+    type: "_hook_activity", hook: "session_start", script: "probe", text: "Inspecting",
   });
   assert.equal(find(page.output, "note").length, 1);
 
-  await page.send({
-    type: "_notice", level: "info", source: "session_start",
-    title: "/tmp/probe", text: "", complete: true,
-  });
+  await page.send({ type: "_hook_activity", text: "" });
   assert.equal(find(page.output, "note").length, 0);
 });
 
-test("replaces an incomplete notice with the failure", async () => {
-  const page = await idle();
-  await page.send({
-    type: "_notice", level: "info", source: "stop",
-    title: "/tmp/check", text: "Checking", complete: false,
-  });
-  await page.send({
-    type: "_notice", level: "error", source: "",
-    title: "Turn failed", text: "hook script failed", complete: true,
-  });
-  const notes = find(page.output, "note");
-  assert.equal(notes.length, 1);
-  assert.equal(findTag(notes[0], "h2")[0].textContent, "✕Turn failed");
-  assert.equal(findTag(notes[0], "pre")[0].textContent, "hook script failed");
-});
-
-test("discards an incomplete notice when a turn ends", async () => {
+test("replaces standing hook activity with a process failure", async () => {
   const page = await idle();
   await page.send(
     { type: "_session_status", working: true },
+    { type: "_hook_activity", hook: "stop", script: "check", text: "Checking" },
     {
-      type: "_notice", level: "info", source: "user_prompt_submit",
-      title: "/tmp/check", text: "Checking", complete: false,
+      type: "_session_status", working: false,
+      error: "turn process failed: exit status 1: hook script failed",
     },
-    { type: "_session_status", working: false },
   );
-  assert.equal(find(page.output, "note").length, 0);
+  const notes = find(page.output, "note");
+  assert.equal(notes.length, 1);
+  assert.equal(
+    findTag(notes[0], "h2")[0].textContent,
+    "\u2715turn process failed: exit status 1: hook script failed",
+  );
   assert.equal(find(page.output, "activity").length, 0);
 });
 
@@ -767,15 +758,16 @@ test("preserves drafts from unsupported handoffs", async () => {
   assert.equal(page.entry.value, "--draft");
 });
 
-test("shows a failure notice without interpreting its text", async () => {
+test("splits a process failure into its outcome and detail", async () => {
   const page = await idle();
-  const text = "provider request limit reached: 50";
   await page.send({
-    type: "_notice", level: "error", source: "", title: "Turn failed", text, complete: true,
+    type: "_session_status",
+    working: false,
+    error: "turn process failed\nprovider request limit reached: 50",
   });
   const shown = find(page.output, "note").at(-1);
-  assert.equal(findTag(findTag(shown, "h2")[0], "strong")[0].textContent, "Turn failed");
-  assert.equal(findTag(shown, "pre")[0].textContent, text);
+  assert.equal(findTag(findTag(shown, "h2")[0], "strong")[0].textContent, "turn process failed");
+  assert.equal(findTag(shown, "pre")[0].textContent, "provider request limit reached: 50");
 });
 
 test("reopens the stream when it ends", async () => {

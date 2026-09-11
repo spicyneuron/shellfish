@@ -48,8 +48,8 @@ let contextWindow = null;
 let sectionChunks = [];
 // Tool calls waiting for their result, by call ID.
 const calls = new Map();
-// The current incomplete notice, or null.
-let liveNotice = null;
+// The note standing in for a running hook, or null.
+let hookActivity = null;
 // Each tool's display policy from the session header, by tool name.
 const toolDisplay = new Map();
 const INPUT_FALLBACK = { content: ["$input_json"], format: "json" };
@@ -169,6 +169,12 @@ function hideIndicator() {
   }
   indicator.article.remove();
   indicator = null;
+}
+
+// A hook's running label lasts only as long as the hook does.
+function clearHookActivity() {
+  if (hookActivity) hookActivity.remove();
+  hookActivity = null;
 }
 
 function collapsible(parent, sigil, heading, text, kind, secondary) {
@@ -446,21 +452,30 @@ function apply(frame) {
     case "system":
       section("system");
       return renderCollapsed("system", "system prompt", frame.content);
-    case "context":
+    case "hook_result":
+      clearHookActivity();
       if (frame.hook === "user_prompt_submit") {
         hideIndicator();
         section("user");
       }
-      return renderCollapsed(
-        "context",
-        frame.script,
-        frame.content,
-        [frame.hook, frame.prompt]
-          .filter((value) => value !== undefined)
-          .map((value) => safe(value).replace(/\s+/g, " ").trim())
-          .filter(Boolean)
-          .join(" · "),
-      );
+      // Model context is the agent's reference material; user context is the
+      // script talking to the reader, and stays out of that fold.
+      if (frame.model_context !== undefined) {
+        renderCollapsed(
+          "context",
+          frame.script,
+          frame.model_context,
+          [frame.hook, frame.prompt]
+            .filter((value) => value !== undefined)
+            .map((value) => safe(value).replace(/\s+/g, " ").trim())
+            .filter(Boolean)
+            .join(" · "),
+        );
+      }
+      if (frame.user_context !== undefined) {
+        note(frame.user_context, null, frame.script, frame.hook);
+      }
+      return;
     case "user":
     case "assistant":
       return renderMessage(frame);
@@ -472,6 +487,7 @@ function apply(frame) {
       // The failure ends its section without claiming a section number. Its
       // first line is the outcome, and any remaining lines are its detail.
       lastRole = null;
+      clearHookActivity();
       const [outcome, ...detail] = safe(frame.message).split("\n");
       return note(detail.join("\n"), "error", outcome);
     }
@@ -499,11 +515,18 @@ function apply(frame) {
       // Provisional. Content is drawn only from the record that commits it,
       // which arrives on this same stream.
       return;
-    case "_hook_start":
+    case "_hook_activity": {
+      if (frame.text === "") {
+        if (Object.keys(frame).sort().join(",") !== "text,type") {
+          throw new Error("invalid hook activity");
+        }
+        clearHookActivity();
+        return;
+      }
       if (
         ![
-          "session_start", "user_prompt_submit", "permission_request",
-          "pre_tool_use", "post_tool_use", "stop",
+          "session_start", "user_prompt_submit", "pre_tool_use",
+          "post_tool_use", "stop",
         ].includes(frame.hook) ||
         typeof frame.script !== "string" || !frame.script ||
         /[\u0000-\u001f\u007f-\u009f]/.test(frame.script) ||
@@ -511,53 +534,20 @@ function apply(frame) {
         /[\u0000-\u001f\u007f-\u009f]/.test(frame.text) ||
         Object.keys(frame).sort().join(",") !== "hook,script,text,type"
       ) {
-        throw new Error("invalid hook start");
+        throw new Error("invalid hook activity");
       }
-      return;
-    case "_hook_end":
-      if (
-        typeof frame.text !== "string" || typeof frame.error !== "boolean" ||
-        Object.keys(frame).sort().join(",") !== "error,text,type"
-      ) {
-        throw new Error("invalid hook end");
-      }
-      return;
-    case "_tool_permission_request":
-      return askPermission(frame);
-    case "_notice": {
-      if (
-        typeof frame.level !== "string" || typeof frame.title !== "string" ||
-        typeof frame.source !== "string" || typeof frame.text !== "string" ||
-        typeof frame.complete !== "boolean" ||
-        Object.keys(frame).sort().join(",") !== "complete,level,source,text,title,type"
-      ) {
-        throw new Error("invalid notice");
-      }
-      if (frame.level === "error") {
-        if (liveNotice) liveNotice.article.remove();
-        liveNotice = null;
-        return note(safe(frame.text), "error", safe(frame.title), frame.source || undefined);
-      }
+      // One hook runs at a time, so a later label replaces the standing one.
+      clearHookActivity();
       hideIndicator();
-      if (frame.complete && !frame.text) {
-        // A declared label with no outcome settles to nothing.
-        if (liveNotice) liveNotice.article.remove();
-        liveNotice = null;
-        if (working) showIndicator();
-        return;
-      }
-      if (!liveNotice) {
-        const article = record("note", null);
-        const title = el(article, "h2");
-        summary(title, "ℹ", safe(frame.title).split("/").pop(), frame.source || undefined);
-        liveNotice = { article, body: el(article, "pre") };
-        place(article);
-      }
-      liveNotice.body.textContent = safe(frame.text);
-      if (frame.complete) liveNotice = null;
+      hookActivity = record("note", null);
+      summary(el(hookActivity, "h2"), "ℹ", frame.script, frame.hook);
+      el(hookActivity, "pre", null, safe(frame.text));
+      place(hookActivity);
       if (working) showIndicator();
       return;
     }
+    case "_tool_permission_request":
+      return askPermission(frame);
     case "_handoff": {
       // A hook asked to replace the process, which only a terminal can honour.
       const index = Array.isArray(frame.argv)
@@ -684,11 +674,14 @@ function applyState(frame) {
     showIndicator();
   } else {
     hideIndicator();
-    if (liveNotice) liveNotice.article.remove();
-    liveNotice = null;
+    clearHookActivity();
     clearPermission();
   }
-  if (frame.error) note(frame.error, "error");
+  if (frame.error) {
+    // A process failure arrives as its own diagnostics, read like a turn error.
+    const [outcome, ...detail] = safe(frame.error).split("\n");
+    note(detail.join("\n"), "error", outcome);
+  }
   refresh();
   if (!working) entry.focus();
 }
@@ -844,7 +837,7 @@ function reload(from) {
 function reset() {
   output.replaceChildren();
   calls.clear();
-  liveNotice = null;
+  hookActivity = null;
   indicator = null;
   lastRole = null;
   sectionId = 0;

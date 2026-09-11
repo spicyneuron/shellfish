@@ -66,7 +66,7 @@ The `_session_status` frame has this shape:
 {"type":"_session_status","working":true}
 ```
 
-`working` reports whether a turn is active. The live `_session_status` frame that ends a failed turn also carries an `error` field. A cancelled turn exits nonzero by design and is not reported as a failure; its own `turn_error` record states the outcome.
+`working` reports whether a turn is active. The live `_session_status` frame that ends a failed turn also carries an `error` field describing the failure, including the tail of the turn process's diagnostics when it wrote any. This is the boundary for a failure with no durable outcome, which exists only as that stderr. A cancelled turn exits nonzero by design and is not reported as a failure; its own `turn_error` record states the outcome.
 
 Reopening `/session` is the only recovery mechanism. It starts another complete replay rather than resuming from an event ID. The endpoint may briefly return `503 Service Unavailable` while a live stream catches up with the session file. Clients should retry.
 
@@ -78,7 +78,7 @@ Types beginning with an underscore are transient, whether they come from the tur
 
 Durable `state` records remain in replay and live streams, but the bundled browser validates and ignores them. They do not create transcript sections or other visible output.
 
-The bundled browser accepts ordered `_hook_start` and `_hook_end` lifecycle events; hook-specific presentation is defined separately from one-shot `_notice` messages. A turn end, stream failure, or replay discards uncertain transient state. A durable `turn_error` renders as an error notice, titled by the first line of its message, and ends the current section without taking a section number.
+The bundled browser shows a nonempty `_hook_activity` as a running note and clears it on the empty event, a durable `hook_result`, a turn error, or the end of the turn. A `hook_result` folds `model_context` away as collapsed context and shows `user_context` as an informational note after it. A turn end, stream failure, or replay discards uncertain transient state. A durable `turn_error` renders as an error notice, titled by the first line of its message, and ends the current section without taking a section number.
 
 The server relays `_handoff` events but does not execute their argv or switch sessions. The bundled browser reports the unsupported handoff. If argv includes `--draft`, it restores that value into an empty prompt editor; if the editor already contains newer text, it preserves that text and displays the handoff draft separately. The browser therefore remains attached to the source session after commands such as `/new`, `/fork`, `/resume`, and `/compact`.
 

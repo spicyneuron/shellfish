@@ -129,8 +129,8 @@ func (e *Exec) Run(ctx context.Context, input json.RawMessage, replies <-chan js
 	return nil
 }
 
-// tailBuffer keeps the most recent diagnostics from a child's stderr. Only the
-// tail matters: it is logged for debugging, never sent to a client.
+// tailBuffer keeps the most recent diagnostics from a child's stderr, bounded
+// because a child can write any amount of it before it fails.
 type tailBuffer struct {
 	limit     int
 	data      []byte

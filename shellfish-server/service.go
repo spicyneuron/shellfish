@@ -290,8 +290,13 @@ func (s *Service) runTurn(ctx context.Context, active *turn, input json.RawMessa
 	})
 	s.mu.Lock()
 	failure := ""
-	if active.failed || (err != nil && !active.cancelled) {
+	switch {
+	case active.failed:
 		failure = "turn process failed"
+	case err != nil && !active.cancelled:
+		// A failure with no durable outcome exists only as the child's
+		// diagnostics, so they are what the browser has to show.
+		failure = err.Error()
 	}
 	s.turn = nil
 	s.pending = nil
