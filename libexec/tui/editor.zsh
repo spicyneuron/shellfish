@@ -439,7 +439,6 @@ sf_tui_insert() {
 }
 
 sf_tui_interrupt() {
-  local intent
   if [[ $SF_PRESENT_STATE == (idle|stopped) && -n $BUFFER ]]; then
     BUFFER=''
     CURSOR=0
@@ -447,9 +446,7 @@ sf_tui_interrupt() {
     return
   fi
   sf_tui_cancel || return 1
-  intent=$REPLY
-  [[ $intent != reset ]] || zle reset-prompt
-  if [[ $intent == quit ]]; then
+  if [[ $REPLY == quit ]]; then
     zle accept-line
   else
     zle -R

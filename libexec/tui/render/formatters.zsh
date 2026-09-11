@@ -154,9 +154,9 @@ sf_tui_formatter_consume() {
         # Blank lines the formatter trimmed are consumed by the rows either
         # side of the body, so the committed prefix is measured against the
         # trimmed body rather than the record.
-        trimmed=${record#"${record%%[!$'\n']*}"}
-        body_source=$(( source - (${#record} - ${#trimmed}) ))
-        trimmed=${trimmed%"${trimmed##*[!$'\n']}"}
+        sf_tui_format_trim "$record"
+        trimmed=$REPLY
+        body_source=$(( source - SF_FORMAT_TRIM_LEADING ))
         (( body_source <= ${#trimmed} )) || body_source=${#trimmed}
         if (( body_source > 0 )); then
           segment=${trimmed[1,body_source]}

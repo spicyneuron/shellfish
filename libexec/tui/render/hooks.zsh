@@ -102,8 +102,7 @@ sf_tui_error_append() {
 }
 
 sf_tui_format_hook() {
-  integer index=$1 columns=$2 visible hidden=0 leading
-  integer raw_length=${#SF_PRESENT_TEXT[index]}
+  integer index=$1 columns=$2 visible hidden=0
   local kind=$SF_PRESENT_KIND[index] body=$SF_PRESENT_TEXT[index]
   local first second head preview=full configured=full clamp committed total
   local state continuation
@@ -135,9 +134,8 @@ sf_tui_format_hook() {
     *) return 1 ;;
   esac
 
-  body=${body#"${body%%[!$'\n']*}"}
-  leading=$(( raw_length - ${#body} ))
-  body=${body%"${body##*[!$'\n']}"}
+  sf_tui_format_trim "$body"
+  body=$REPLY
   if [[ $kind == (hook_model_context|hook_user_context) ]]; then
     sf_tui_formatter_data $index 3 || return 1
     committed=$REPLY
@@ -152,8 +150,8 @@ sf_tui_format_hook() {
     sf_tui_formatter_data $index 5 || return 1
     total=$REPLY
   else
-    sf_tui_formatter_data $index 2 || return 1
-    committed=$REPLY
+    # An error keeps its committed flag in field 2.
+    committed=$second
   fi
   if [[ $committed != 1 ]]; then
     (( index == 1 && ! SF_PRESENT_PREFIX_VISIBLE )) || sf_tui_format_blank
@@ -161,7 +159,8 @@ sf_tui_format_hook() {
   # A configured zero preview collapses the estimate into the heading. A budget
   # merely spent by earlier commits keeps the ordinary clamp below it.
   if [[ $configured == 0 && -n $body ]]; then
-    clamp=" · ~$(( (total + 3) / 4 )) tokens"
+    sf_tui_token_count "$total"
+    clamp=" · ~$REPLY tokens"
     if [[ $committed != 1 ]]; then
       sf_tui_format_head $columns "$head$clamp" "$kind" 2 \
         $(( 2 + ${#first} )) ${#head} || return 1
@@ -187,11 +186,10 @@ sf_tui_format_hook() {
       hidden=1
     fi
     sf_tui_format_body $visible "$kind"
-    sf_tui_format_edges $(( SF_FORMAT_LEADING + 1 )) $leading \
-      $(( raw_length - leading - ${#body} )) ${#body}
+    sf_tui_format_edges $(( SF_FORMAT_LEADING + 1 )) ${#body}
     if (( hidden )); then
-      clamp="  … ~$(( (total + 3) / 4 )) tokens"
-      sf_tui_format_styled $columns "$clamp" "$kind" clamp || return 1
+      sf_tui_token_count "$total"
+      sf_tui_format_styled $columns "  … ~$REPLY tokens" "$kind" clamp || return 1
     fi
   fi
   SF_FORMAT_SAFE=${#SF_FORMAT_ROWS}

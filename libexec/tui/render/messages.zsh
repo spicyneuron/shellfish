@@ -9,6 +9,10 @@ setopt no_aliases no_bg_nice no_multios pipe_fail
 
 typeset -ga SF_FORMAT_ROWS=() SF_FORMAT_SPANS=() SF_FORMAT_CONSUMED=()
 typeset -gi SF_FORMAT_SAFE=0 SF_FORMAT_LEADING=0 SF_FORMAT_BODY_ROWS=0
+# What the most recent sf_tui_format_trim took off each end. They are logical
+# content no row displays, so sf_tui_format_edges hands them back to the rows
+# either side of the body.
+typeset -gi SF_FORMAT_TRIM_LEADING=0 SF_FORMAT_TRIM_TRAILING=0
 # Scratch for one row's spans while a formatter builds them.
 typeset -ga SF_FORMAT_SPAN=()
 # At most this many stable rows wait for an incomplete inline construct. Older
@@ -116,6 +120,21 @@ sf_tui_format_start() {
   SF_FORMAT_SAFE=0
   SF_FORMAT_LEADING=0
   SF_FORMAT_BODY_ROWS=0
+  SF_FORMAT_TRIM_LEADING=0
+  SF_FORMAT_TRIM_TRAILING=0
+}
+
+# Strips the blank lines either side of a body into REPLY, recording how many
+# characters came off each end. A leading run is the previous turn's spacing and
+# a trailing run has nothing to display yet, but both are still logical content
+# that a commit has to consume.
+sf_tui_format_trim() {
+  local head=${1%%[!$'\n']*} tail
+  REPLY=${1#"$head"}
+  tail=${REPLY##*[!$'\n']}
+  REPLY=${REPLY%"$tail"}
+  SF_FORMAT_TRIM_LEADING=${#head}
+  SF_FORMAT_TRIM_TRAILING=${#tail}
 }
 
 # Appends one zero-based span to SF_FORMAT_SPAN when its style is configured,
@@ -130,9 +149,8 @@ sf_tui_span() {
 # Renders user, system, or assistant text. Complete records are wholly safe;
 # live assistant text reports only its stable wrapped prefix.
 sf_tui_format_message() {
-  integer index=$1 columns=$2 live stable visible chrome leading hidden=0
-  integer raw_length=${#SF_PRESENT_TEXT[index]}
-  local body=$SF_PRESENT_TEXT[index] role preview tail committed
+  integer index=$1 columns=$2 live stable visible chrome hidden=0
+  local body=$SF_PRESENT_TEXT[index] role preview committed
 
   sf_tui_format_start
 
@@ -141,16 +159,14 @@ sf_tui_format_message() {
   sf_tui_formatter_data $index 5 || return 1
   committed=$REPLY
   live=$(( SF_PRESENT_LIVE == index ))
-  # Leading blank lines are the previous turn's spacing, and a trailing run
-  # collapses to nothing. System context keeps its source shape.
+  # System context keeps its source shape. A live stream keeps one trailing
+  # newline, so text arriving after it starts on the row it belongs to.
   if [[ $role != system ]]; then
-    body=${body#"${body%%[!$'\n']*}"}
-    leading=$(( raw_length - ${#body} ))
-    tail=${body##*[!$'\n']}
-    if (( live )) && [[ -n $tail ]]; then
-      body=${body%"$tail"}$'\n'
-    else
-      body=${body%"$tail"}
+    sf_tui_format_trim "$body"
+    body=$REPLY
+    if (( live && SF_FORMAT_TRIM_TRAILING )); then
+      body+=$'\n'
+      SF_FORMAT_TRIM_TRAILING=$(( SF_FORMAT_TRIM_TRAILING - 1 ))
     fi
   fi
 
@@ -187,10 +203,9 @@ sf_tui_format_message() {
   fi
   (( ! live )) || visible=$stable
   sf_tui_format_body $visible message
-  sf_tui_format_edges $(( chrome + 1 )) $leading \
-    $(( raw_length - leading - ${#body} )) ${#body}
+  sf_tui_format_edges $(( chrome + 1 )) ${#body}
   if [[ $role == system && $preview != full ]] && (( hidden )); then
-    sf_tui_token_count "$body"
+    sf_tui_token_count ${#body}
     sf_tui_format_styled $columns "… ~$REPLY tokens" message clamp || return 1
   elif (( live )); then
     sf_tui_format_styled $columns "$SF_PRESENT_ACTIVITY" message || return 1
@@ -198,7 +213,7 @@ sf_tui_format_message() {
   if (( ! live )); then
     SF_FORMAT_SAFE=${#SF_FORMAT_ROWS}
   elif (( stable )); then
-    sf_tui_markdown_advance $index "$body" $chrome $stable $columns $leading || return 1
+    sf_tui_markdown_advance $index "$body" $chrome $stable $columns || return 1
     (( ! REPLY )) || SF_FORMAT_SAFE=$(( chrome + REPLY ))
   fi
 }
@@ -207,16 +222,14 @@ sf_tui_format_message() {
 # rows as safe. Its summary and clamp remain unsafe until settlement.
 sf_tui_format_reasoning() {
   integer index=$1 columns=$2 live stable visible chrome hidden=0 closed_line=0
-  integer raw_length=${#SF_PRESENT_TEXT[index]} leading
   local body=$SF_PRESENT_TEXT[index] exact preview committed expanded total
   local tail tokens
 
   sf_tui_format_start
   live=$(( SF_PRESENT_LIVE == index ))
   [[ $body != *$'\n' ]] || closed_line=1
-  body=${body#"${body%%[!$'\n']*}"}
-  leading=$(( raw_length - ${#body} ))
-  body=${body%"${body##*[!$'\n']}"}
+  sf_tui_format_trim "$body"
+  body=$REPLY
   sf_tui_formatter_data $index 1 || return 1
   exact=$REPLY
   sf_tui_formatter_data $index 5 || return 1
@@ -228,11 +241,8 @@ sf_tui_format_reasoning() {
   preview=$REPLY
   sf_tui_formatter_data $index 12 || return 1
   expanded=$REPLY
-  if [[ -n $exact ]]; then
-    tokens=$exact
-  else
-    tokens=$(( (${total:-0} + 3) / 4 ))
-  fi
+  sf_tui_token_count "$total" "$exact"
+  tokens=$REPLY
 
   [[ $committed == 1 ]] || sf_tui_format_rule $index $columns
 
@@ -268,8 +278,7 @@ sf_tui_format_reasoning() {
     hidden=1
   fi
   sf_tui_format_body $visible reasoning
-  sf_tui_format_edges $(( chrome + 1 )) $leading \
-    $(( raw_length - leading - ${#body} )) ${#body}
+  sf_tui_format_edges $(( chrome + 1 )) ${#body}
   if (( live )); then
     if (( hidden )); then tail="  … ~$tokens tokens $SF_PRESENT_ACTIVITY"
     else tail="  $SF_PRESENT_ACTIVITY"; fi
@@ -283,7 +292,7 @@ sf_tui_format_reasoning() {
     SF_FORMAT_SAFE=${#SF_FORMAT_ROWS}
   elif (( stable )); then
     (( stable <= visible )) || stable=$visible
-    sf_tui_markdown_advance $index "$body" $chrome $stable $columns $leading || return 1
+    sf_tui_markdown_advance $index "$body" $chrome $stable $columns || return 1
     (( ! REPLY )) || SF_FORMAT_SAFE=$(( chrome + REPLY ))
   fi
 }
@@ -344,12 +353,12 @@ sf_tui_markdown_cached() {
 # Row consumption counts the blank lines the formatter trimmed off its body, so
 # the leading run comes back off the offsets scanning works in.
 sf_tui_markdown_advance() {
-  integer index=$1 chrome=$3 rows=$4 width=$5 leading=${6:-0}
+  integer index=$1 chrome=$3 rows=$4 width=$5
   integer frontier target row continuation=0
   local text=$2 state cached segment next_state base_state base_continuation
   local -a scanned
   REPLY=0
-  sf_tui_markdown_target $chrome $rows $leading ${#text}
+  sf_tui_markdown_target $chrome $rows ${#text}
   target=$REPLY
   sf_tui_formatter_data $index 2 || return 1
   frontier=${REPLY:-0}
@@ -382,7 +391,7 @@ sf_tui_markdown_advance() {
   if (( SF_PRESENT_HIGHLIGHT_INLINE_OPEN )); then
     rows=$(( rows > SF_PRESENT_HOLD_ROWS ? rows - SF_PRESENT_HOLD_ROWS : 0 ))
     (( rows )) || { SF_PRESENT_HIGHLIGHT_SPANS=( ${=cached} ); return 0; }
-    sf_tui_markdown_target $chrome $rows $leading ${#text}
+    sf_tui_markdown_target $chrome $rows ${#text}
     target=$REPLY
     if (( target <= frontier )); then
       SF_PRESENT_HIGHLIGHT_SPANS=( ${=cached} )
@@ -405,13 +414,13 @@ sf_tui_markdown_advance() {
   REPLY=$rows
 }
 
-# How far into the body the first $2 body rows reach.
+# How far into the body of $3 characters the first $2 body rows reach.
 sf_tui_markdown_target() {
-  integer chrome=$1 rows=$2 leading=$3 length=$4 row target=0
+  integer chrome=$1 rows=$2 length=$3 row target=0
   for (( row = 1; row <= rows; row++ )); do
     target=$(( target + SF_FORMAT_CONSUMED[chrome + row] ))
   done
-  target=$(( target > leading ? target - leading : 0 ))
+  target=$(( target > SF_FORMAT_TRIM_LEADING ? target - SF_FORMAT_TRIM_LEADING : 0 ))
   REPLY=$(( target < length ? target : length ))
 }
 
@@ -484,20 +493,20 @@ sf_tui_format_preview() {
   REPLY=$(( configured > spent ? configured - spent : 0 ))
 }
 
-# Absorbs the blank lines a formatter trimmed off its body into the rows that
-# consume the body's first and last characters, so committing those rows
-# consumes every character they stand for. The trailing run only belongs to the
-# last row once the whole body has been wrapped.
+# Absorbs the trimmed blank lines into the rows that consume the body's first
+# and last characters, so committing those rows consumes every character they
+# stand for. Body rows start at $1 and the wrapped body is $2 characters long;
+# the trailing run only belongs to the last row once all of it has been wrapped.
 sf_tui_format_edges() {
-  integer first=$1 leading=$2 trailing=$3 length=$4 row consumed=0
+  integer first=$1 length=$2 row consumed=0
   integer last=${#SF_FORMAT_CONSUMED}
   (( last >= first )) || return 0
   for (( row = first; row <= last; row++ )); do
     consumed=$(( consumed + SF_FORMAT_CONSUMED[row] ))
   done
-  SF_FORMAT_CONSUMED[first]=$(( SF_FORMAT_CONSUMED[first] + leading ))
+  SF_FORMAT_CONSUMED[first]=$(( SF_FORMAT_CONSUMED[first] + SF_FORMAT_TRIM_LEADING ))
   (( consumed == length )) || return 0
-  SF_FORMAT_CONSUMED[last]=$(( SF_FORMAT_CONSUMED[last] + trailing ))
+  SF_FORMAT_CONSUMED[last]=$(( SF_FORMAT_CONSUMED[last] + SF_FORMAT_TRIM_TRAILING ))
 }
 
 sf_tui_format_blank() {

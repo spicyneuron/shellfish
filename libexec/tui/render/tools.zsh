@@ -38,7 +38,7 @@ sf_tui_tool_call() {
 
 sf_tui_tool_result() {
   local id=$1 code=${2-} content=${3-} format=${4:-plain}
-  local full=${5-} sandbox=${6-} expected trimmed
+  local full=${5-} sandbox=${6-} expected
   integer index=${#SF_PRESENT_KIND}
   sf_tui_tool_pending || return 1
   sf_tui_formatter_data $index 1 || return 1
@@ -48,8 +48,8 @@ sf_tui_tool_result() {
   SF_PRESENT_TEXT[index]=$REPLY
   # The clamp stands for content the preview never renders, so its estimate is
   # taken from the whole result rather than from what is left to draw.
-  trimmed=${REPLY#"${REPLY%%[!$'\n']*}"}
-  sf_tui_token_count "${trimmed%"${trimmed##*[!$'\n']}"}"
+  sf_tui_format_trim "$REPLY"
+  sf_tui_token_count ${#REPLY}
   sf_tui_formatter_set_data $index "$id" "$code" "$format" "$full" "$sandbox" \
     '' "$REPLY" 0 || return 1
   sf_tui_formatter_settle || return 1
@@ -158,17 +158,15 @@ sf_tui_format_tool_body() {
 }
 
 sf_tui_format_tool() {
-  integer index=$1 columns=$2 hidden=0 live leading
-  integer raw_length=${#SF_PRESENT_TEXT[index]}
-  local kind=$SF_PRESENT_KIND[index] body=$SF_PRESENT_TEXT[index]
+  integer index=$1 columns=$2 hidden=0 live
+  local kind=$SF_PRESENT_KIND[index] body
   local first second format full sandbox preview configured notes tail overlay
   local committed total
 
   sf_tui_format_start
   live=$(( SF_PRESENT_LIVE == index ))
-  body=${body#"${body%%[!$'\n']*}"}
-  leading=$(( raw_length - ${#body} ))
-  body=${body%"${body##*[!$'\n']}"}
+  sf_tui_format_trim "$SF_PRESENT_TEXT[index]"
+  body=$REPLY
 
   sf_tui_formatter_data $index 1 || return 1
   first=$REPLY
@@ -195,8 +193,7 @@ sf_tui_format_tool() {
         return 1
       hidden=$REPLY
       SF_FORMAT_BODY_ROWS=$(( ${#SF_FORMAT_ROWS} - SF_FORMAT_LEADING ))
-      sf_tui_format_edges $(( SF_FORMAT_LEADING + 1 )) $leading \
-        $(( raw_length - leading - ${#body} )) ${#body}
+      sf_tui_format_edges $(( SF_FORMAT_LEADING + 1 )) ${#body}
       if (( hidden )); then
         sf_tui_format_styled $columns '│ …' tool_call clamp || return 1
       fi
@@ -248,7 +245,7 @@ sf_tui_format_tool() {
       "$format" "$preview" || return 1
     hidden=$REPLY
     SF_FORMAT_BODY_ROWS=${#SF_FORMAT_ROWS}
-    sf_tui_format_edges 1 $leading $(( raw_length - leading - ${#body} )) ${#body}
+    sf_tui_format_edges 1 ${#body}
     sf_tui_tool_notes "$second" "$sandbox"
     notes=$REPLY
     if (( hidden )); then
