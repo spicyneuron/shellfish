@@ -107,7 +107,7 @@ sf_tui_hook_layout() {
       head="↪ $heading"
       ;;
     hook_user_context) head="ℹ $heading" ;;
-    *) head="✕ $heading" ;;
+    error) head="✕ $heading" ;;
   esac
   [[ -z $SF_PRESENT_NODE_META[formatter] ]] || head+=" · $SF_PRESENT_NODE_META[formatter]"
   value_stop=$(( value_start + ${#heading} ))

@@ -79,10 +79,10 @@ sf_tui_preview_tail() {
     fi
     return
   fi
+  # Every other type dispatched above, so what remains is one tool result.
   sf_tui_token_count "$body"
   tokens=$REPLY
   REPLY=''
-  [[ $type == tool_result ]] || return 0
   if [[ $state == open ]]; then
     [[ $SF_PRESENT_NODE_STATUS[node] == permission ]] || {
       if (( hidden )); then
