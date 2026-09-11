@@ -171,40 +171,6 @@ sf_tui_append() {
   SF_PRESENT_NODE_BODY[index]+=$REPLY
 }
 
-sf_tui_assistant_boundary() {
-  local source_index=$1
-  integer index=${#SF_PRESENT_NODE_TYPE}
-
-  if [[ $SF_PRESENT_ASSISTANT_INDEX != $source_index ]]; then
-    if (( index )) && [[ $SF_PRESENT_NODE_STATE[index] == open ]]; then
-      [[ $SF_PRESENT_NODE_TYPE[index] == (activity|message|reasoning) ]] || return 1
-      sf_tui_close $index orphan_section || return 1
-    fi
-    SF_PRESENT_ASSISTANT_INDEX=$source_index
-  fi
-}
-
-sf_tui_stream() {
-  local type=$1 source_index=$2 text=${3-}
-  integer index=${#SF_PRESENT_NODE_TYPE}
-  sf_tui_assistant_boundary "$source_index" || return 1
-  [[ -n $text ]] || return 0
-  index=${#SF_PRESENT_NODE_TYPE}
-
-  if (( ! index )) || [[ $SF_PRESENT_NODE_TYPE[index] != $type ||
-      $SF_PRESENT_NODE_STATE[index] != open ]]; then
-    if (( index )) && [[ $SF_PRESENT_NODE_STATE[index] == open ]]; then
-      [[ $SF_PRESENT_NODE_TYPE[index] == (activity|message|reasoning) ]] || return 1
-      sf_tui_close $index || return 1
-    fi
-    sf_tui_section agent || return 1
-    sf_tui_add "$type" agent '' '' open || return 1
-    index=$REPLY
-  fi
-  sf_tui_append $index "$text" || return 1
-  REPLY=$index
-}
-
 sf_tui_tool_open() {
   local id=$SF_PRESENT_TOOL_CURRENT
   if [[ -z $id ]]; then
@@ -289,6 +255,9 @@ sf_tui_session_update() {
   SF_PRESENT_FOOTER=$SF_PRESENT_IDENTITY
 }
 
+(( $+functions[sf_tui_user_message] )) ||
+  source "$SF_ROOT/libexec/tui/render/messages.zsh"
+
 sf_tui_event() {
   local type=$1 first=${2-} second=${3-} third=${4-} fourth=${5-} fifth=${6-} sixth=${7-}
   integer index=${#SF_PRESENT_NODE_TYPE}
@@ -302,25 +271,20 @@ sf_tui_event() {
 
   case $type in
     system|user)
-      sf_tui_section $type || return 1
-      sf_tui_add message $type '' "$first"
+      if [[ $type == system ]]; then
+        sf_tui_system_message "$first"
+      else
+        sf_tui_user_message "$first"
+      fi
       ;;
     assistant_start)
-      SF_PRESENT_ASSISTANT_INDEX=''
-      sf_tui_section agent || return 1
-      sf_tui_add activity agent '' '' open
+      sf_tui_assistant_start
       ;;
     assistant_message_delta)
-      sf_tui_stream message "$first" "$second"
+      sf_tui_assistant_text "$first" "$second"
       ;;
     assistant_reasoning_delta)
-      sf_tui_stream reasoning "$first" "$second" || return 1
-      if [[ -n $third ]]; then
-        index=${#SF_PRESENT_NODE_TYPE}
-        [[ $index -gt 0 && $SF_PRESENT_NODE_TYPE[index] == reasoning &&
-          $SF_PRESENT_NODE_STATE[index] == open ]] || return 1
-        SF_PRESENT_NODE_META[index]=$third
-      fi
+      sf_tui_reasoning "$first" "$second" "$third"
       ;;
     reasoning_tokens)
       if [[ -n $first && $index -gt 0 && $SF_PRESENT_NODE_TYPE[index] == reasoning &&
@@ -329,16 +293,13 @@ sf_tui_event() {
       fi
       ;;
     assistant_reasoning_opaque)
-      sf_tui_assistant_boundary "$first"
+      sf_tui_assistant_block "$first"
       ;;
     assistant_tool_call_delta)
-      sf_tui_assistant_boundary "$first"
+      sf_tui_assistant_block "$first"
       ;;
     assistant_end)
-      SF_PRESENT_ASSISTANT_INDEX=''
-      (( index )) && [[ $SF_PRESENT_NODE_STATE[index] == open ]] || return 0
-      [[ $SF_PRESENT_NODE_TYPE[index] == (activity|message|reasoning) ]] || return 1
-      sf_tui_close $index orphan_section
+      sf_tui_assistant_end
       ;;
     tool_call)
       SF_PRESENT_TOOL_HEADING[$first]=$second
