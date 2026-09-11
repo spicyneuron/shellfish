@@ -43,9 +43,9 @@ spans; assert_equal '2 5 bold' "$REPLY"
 sf_tui_wrap 5 'hello world' '│ '
 rows; assert_equal '│ hel|│ lo|│ wor|│ ld' "$REPLY"
 
-# Offsets count characters rather than cells, so a wide character and a
-# combining mark each keep one offset even though they occupy two cells and
-# none. Escapes rather than literals: a combining mark is invisible in source.
+# Offsets count characters, not cells, so a wide character and a combining mark
+# each keep one offset while occupying two cells and none. Written as escapes
+# because a combining mark is invisible in source.
 sf_tui_wrap 80 $'ab\u754ce\u0301x' '' 2 5 standout
 rows; assert_equal $'ab\u754ce\u0301x' "$REPLY"
 spans; assert_equal '2 5 standout' "$REPLY"
@@ -68,10 +68,8 @@ integer total=0
 for count in ${(s:,:)REPLY}; do (( total += count )); done
 assert_equal 19 "$total"
 
-# Every rejected call leaves nothing behind, so a caller that skips the return
-# value reads no rows rather than the previous call's. A prefix that cannot fit
-# its own row is rejected because it would otherwise never make progress, and a
-# call missing its prefix would otherwise read its own arguments as spans.
+# A rejected call clears its outputs before validating, so a caller that skips
+# the return value reads nothing rather than the previous call's rows.
 reject() {
   sf_tui_wrap 80 kept ''
   if sf_tui_wrap "$@"; then
@@ -91,9 +89,8 @@ rows; assert_equal $'界|界' "$REPLY"
 sf_tui_wrap 3 $'界界' '│ '
 rows; assert_equal $'│ 界|│ 界' "$REPLY"
 
-# No content means no rows, even with chrome: whether a heading deserves a row
-# of its own is the formatter's decision, not wrapping's. A trailing newline
-# terminates its row rather than opening a blank one.
+# No content means no rows, even with chrome: whether a heading deserves a row is
+# the formatter's decision. A trailing newline ends its row, not opens one.
 sf_tui_wrap 80 '' '  '
 assert_equal 0 "${#SF_WRAP_ROWS}"
 sf_tui_wrap 80 $'one\n' ''

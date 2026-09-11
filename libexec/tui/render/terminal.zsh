@@ -1,16 +1,16 @@
 emulate -R zsh
 setopt no_aliases no_bg_nice no_multios pipe_fail
 
-# The terminal commit boundary. Rows reach scrollback through exactly two
-# mechanisms, both preserved here: a descriptor commit (zle -R then zle -I)
-# during a turn, and an epoch accept-line while idle. Committed output is
-# temporary — row text and style spans only. Nothing here retains a cursor into
-# formatter content; a repaint stages the rows it decided are safe, and only a
-# successful commit lets the caller apply the consumption those rows represent.
+# The terminal commit boundary. Rows reach scrollback through two mechanisms: a
+# descriptor commit (`zle -R` then `zle -I`) during a turn, and an epoch
+# accept-line while idle. Committed output is temporary, row text and style spans
+# only. Nothing here retains a cursor into formatter content. A repaint stages
+# the rows it decided are safe, and only a successful commit lets the caller
+# consume them.
 
 # The rows the last repaint decided may leave the viewport, with the spans that
 # style them and the formatter-local consumption they represent. A repaint fills
-# these; only the editor stages and commits them.
+# these, and only the editor stages and commits them.
 typeset -g SF_PRESENT_SAFE_TEXT=''
 typeset -ga SF_PRESENT_SAFE_HIGHLIGHTS=()
 typeset -ga SF_PRESENT_SAFE_CONSUME=()

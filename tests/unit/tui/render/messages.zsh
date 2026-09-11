@@ -67,8 +67,7 @@ assert_equal 0 "$SF_PRESENT_SECTION_ID"
 sf_tui_event user visible
 assert_equal 1 "$SF_PRESENT_SECTION[1]"
 
-# Wrapping is the formatter's, at the width repaint gives it, and rewrapping is
-# all a resize costs.
+# Wrapping follows the width repaint gives, so a resize only rewraps.
 sf_tui_reset
 sf_tui_event user 'alpha beta gamma'
 view 12 20
@@ -76,15 +75,14 @@ assert_equal $'─ user ─ 1 ─\n\nalpha beta\ngamma' "$REPLY"
 view 8 20
 assert_equal $'─ user ─\n\nalpha\nbeta\ngamma' "$REPLY"
 
-# Only the last rows fit the budget, and the viewport keeps the tail.
+# The viewport keeps the last rows the budget allows.
 sf_tui_reset
 sf_tui_event user $'one\ntwo\nthree\nfour'
 view 79 3
 assert_equal $'two\nthree\nfour' "$REPLY"
 
-# A complete record cannot change, so every row it renders is safe. The safe
-# count covers all retained rows, not just the drawn ones: rows above the
-# budget are precisely the ones on their way to scrollback.
+# A complete record is wholly safe, counting retained rows above the budget
+# that are on their way to scrollback.
 sf_tui_reset
 sf_tui_event user hello
 sf_tui_transcript 79 20
@@ -110,8 +108,8 @@ assert_equal 1 "$sliced[-1]"
 
 SF_PRESENT_STYLE=()
 
-# Staging freezes both rows and formatter-local consumption. Until terminal
-# finish confirms the commit, resize and repaint leave the source untouched.
+# Staging consumes nothing. Only terminal finish drops committed content, so a
+# resize between the two still rewraps all of it.
 sf_tui_reset
 sf_tui_terminal_reset
 sf_tui_event assistant_start
@@ -159,9 +157,8 @@ drained+=$PREDISPLAY
 assert_equal $'─ agent \n\none\ntail\ntwo\nlast' "$drained"
 assert_equal 0 "${#SF_PRESENT_KIND}"
 
-# Character consumption follows logical source while wrapping follows cells.
-# A tab's projected spaces and a wide character keep their styles in the
-# temporary commit, and neither source character can reappear afterward.
+# Consumption counts logical source while wrapping counts cells, so a tab's
+# projected spaces and a wide character commit once and never reappear.
 SF_PRESENT_STYLE=( message 'fg=1' syntax.strong bold )
 sf_tui_reset
 sf_tui_terminal_reset
@@ -184,9 +181,9 @@ sf_tui_transcript 6 20
   fail 'the temporary commit lost staged source'
 SF_PRESENT_STYLE=()
 
-# Reasoning consumes its heading once and keeps the whole-block estimate for
-# its final summary. Committed rows spend the preview budget, so the clamp goes
-# on standing for the content it hid instead of draining it a window at a time.
+# Reasoning consumes its heading once and keeps the whole-block estimate for the
+# summary. Committed rows spend the preview budget, so the clamp stays instead of
+# draining a window at a time.
 sf_tui_reset
 sf_tui_terminal_reset
 SF_PRESENT_PREVIEW_REASONING=1

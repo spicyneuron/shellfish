@@ -458,8 +458,8 @@ function apply(frame) {
         hideIndicator();
         section("user");
       }
-      // Model context is the agent's reference material; user context is the
-      // script talking to the reader, and stays out of that fold.
+      // Model context is reference material and folds away. User context is the
+      // script talking to the reader and stays open.
       if (frame.model_context !== undefined) {
         renderCollapsed(
           "context",

@@ -6,8 +6,7 @@ sf_test_source libexec/tui/render/formatters.zsh
 kinds() { REPLY="${(j:,:)SF_PRESENT_KIND}" }
 
 # Every parallel array must stay the same length, or an entry's fields drift
-# apart from its kind. Checked against each operation that resizes the list,
-# since that is where a field left out of sf_tui_formatter_keep would show.
+# apart from its kind. Checked against each list-resizing operation.
 aligned() {
   local name
   for name in SF_PRESENT_TEXT SF_PRESENT_DATA SF_PRESENT_ROLE SF_PRESENT_SECTION \
@@ -31,8 +30,8 @@ if sf_tui_formatter_settle; then
   fail 'settled without a live tail'
 fi
 
-# Content follows its own entry through every list operation, and only the live
-# tail retracts. Dropping shifts the live index rather than losing track of it.
+# Content follows its own entry through every list operation, only the live tail
+# retracts, and dropping shifts the live index.
 sf_tui_reset
 sf_tui_formatter_append message
 SF_PRESENT_TEXT[REPLY]=first
@@ -57,10 +56,9 @@ if sf_tui_formatter_retract; then
   fail 'retracted a settled formatter'
 fi
 
-# The first formatter entering a role owns its rule; a later one in the same
-# role owns nothing, so the rule is drawn once. Retracting releases the section
-# number and restores the role the entry displaced, even after everything
-# before it was committed and dropped.
+# The first formatter entering a role owns its rule and a later one owns nothing.
+# Retracting releases the section number and restores the displaced role, even
+# after everything before it was dropped.
 sf_tui_reset
 sf_tui_formatter_append message
 sf_tui_formatter_role $REPLY user

@@ -24,9 +24,9 @@ sf_tui_rows_config() {
   SF_PRESENT_PREVIEW_TOOL_RESULT=$limits[4]
 }
 
-# Shared display estimate over a character count: providers do not report token
-# counts for every content block, so presentation uses about four characters per
-# token. An exact count from the provider replaces the estimate.
+# Display token estimate. Providers report counts for only some content blocks,
+# so presentation assumes four characters per token, replaced by an exact count
+# when the provider gives one.
 sf_tui_token_count() {
   integer characters=${1:-0}
   if [[ -n ${2-} ]]; then

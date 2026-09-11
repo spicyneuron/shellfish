@@ -147,9 +147,8 @@ assert_equal 0 "$SF_PRESENT_LIVE"
 view
 assert_tail $'⛭ shell\n│ run\n╰\n\n✕ Failed\n  broken'
 
-# A tool taller than one commit batch drains in source order: the rail opens the
-# result once, every row commits exactly once, and what is left goes on
-# rendering until the formatter is gone.
+# A tool taller than one commit batch drains in source order, with every row
+# committed exactly once.
 sf_tui_reset
 sf_tui_terminal_reset
 sf_tui_event tool_call tall shell 'make test' '' sh

@@ -2,11 +2,10 @@ emulate -R zsh
 setopt no_aliases no_bg_nice no_multios pipe_fail
 
 # Wraps logical text into terminal rows and projects source spans onto them.
-# Pure: formatters call it with their own content and chrome, and nothing here
-# retains state between calls.
+# Pure: nothing here retains state between calls.
 #
-# Offsets are characters, not cells, because that is what ZLE's region_highlight
-# counts. Cells only decide where a row ends.
+# Offsets are characters, not cells, because ZLE's region_highlight counts
+# characters. Cells only decide where a row ends.
 
 typeset -ga SF_WRAP_ROWS=() SF_WRAP_SPANS=() SF_WRAP_CONSUMED=()
 
@@ -21,8 +20,8 @@ typeset -ga SF_WRAP_ROWS=() SF_WRAP_SPANS=() SF_WRAP_CONSUMED=()
 # SF_WRAP_CONSUMED[row] is how much of TEXT that row accounts for, so a caller
 # committing a row prefix knows exactly what to drop.
 sf_tui_wrap() {
-  # Cleared before anything can reject the call, so a caller that ignores the
-  # return value reads nothing rather than the previous call's rows.
+  # Cleared before any rejection, so a caller that ignores the return value
+  # reads nothing rather than the previous call's rows.
   SF_WRAP_ROWS=()
   SF_WRAP_SPANS=()
   SF_WRAP_CONSUMED=()

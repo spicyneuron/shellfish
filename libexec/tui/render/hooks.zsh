@@ -1,8 +1,7 @@
 emulate -R zsh
 setopt no_aliases no_bg_nice no_multios pipe_fail
 
-# Transient activity and complete hook or error output. These formatters own
-# their spacing, wrapping, highlighting, previews, and safe-row decisions.
+# Transient activity and complete hook or error output.
 
 sf_tui_activity_start() {
   SF_PRESENT_WORK_ACTIVE=1

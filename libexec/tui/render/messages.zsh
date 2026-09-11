@@ -4,8 +4,7 @@ setopt no_aliases no_bg_nice no_multios pipe_fail
 # Message formatters, and the row primitives every formatter shares. A formatter
 # renders one entry's uncommitted suffix at the current width and returns rows,
 # per-row spans, per-row consumption, and a count of leading safe rows. Repaint
-# concatenates those; nothing here writes to the terminal or knows what came
-# before it beyond the role already in force.
+# concatenates those; nothing here writes to the terminal.
 
 typeset -ga SF_FORMAT_ROWS=() SF_FORMAT_SPANS=() SF_FORMAT_CONSUMED=()
 typeset -gi SF_FORMAT_SAFE=0 SF_FORMAT_LEADING=0 SF_FORMAT_BODY_ROWS=0
@@ -19,18 +18,15 @@ typeset -ga SF_FORMAT_SPAN=()
 # rows keep draining with best-effort styling instead of pinning a tall stream.
 typeset -gi SF_PRESENT_HOLD_ROWS=10
 
-# Message and reasoning share data fields 2 through 9: the scanned Markdown
+# Message and reasoning share data fields 2 through 9: the Markdown scan
 # frontier, its scan state, cached source spans, whether leading chrome
 # committed, the continuation flag, the width those spans were scanned at, and
-# the state and continuation a rescan restarts from. Field 1 and anything past
-# 9 belong to the owning kind, so the shared scan helpers need no per-kind
-# field arithmetic.
+# the state and continuation a rescan restarts from. Field 1 is the role, and
+# anything past 9 belongs to the owning kind.
 #
-# Field 1 is the role. A complete record with nothing but blank lines is not
-# presentation: it takes no entry, no role rule, and no section number, so
-# numbering stays contiguous rather than leaving a gap where an invisible
-# message sat. A live entry is still created, because its content has not
-# arrived yet.
+# A complete record of nothing but blank lines takes no entry, so it claims no
+# role rule and leaves no gap in the section numbering. A live entry still gets
+# one, since its content has not arrived yet.
 sf_tui_message_append() {
   local role=$1 text=$2 mode=${3:-final}
   integer index
@@ -64,23 +60,20 @@ sf_tui_reasoning_tokens() {
   sf_tui_formatter_set_field $1 1 "$2"
 }
 
-# The whole-block character total the summary estimates from has to survive the
-# content itself being committed away.
+# The whole-block character total the summary estimates from has to outlive the
+# content itself.
 sf_tui_reasoning_grow() {
   integer index=$1 added=$2
   sf_tui_formatter_data $index 10 || return 1
   sf_tui_formatter_set_field $index 10 $(( REPLY + added ))
 }
 
-# The leading chrome a formatter draws when it opens a role: the spacing above
-# it, then "─ role " padded out to the width with the section number closing it
-# when the role takes one, then the blank row beneath. A number that cannot fit
-# leaves a plain rule rather than a truncated one, and a formatter that opens no
-# role draws only the spacing.
+# The leading chrome a formatter draws when it opens a role: spacing, then
+# "─ role " padded out to the width, closing with the section number when the
+# role takes one, then a blank row.
 #
-# Spans are emitted outermost first. The number sits inside the trailing rule,
-# so its style has to come after the divider's to survive: region_highlight
-# applies spans in order and the last one covering a character wins.
+# region_highlight applies spans in order and the last one covering a character
+# wins, so the number inside the trailing rule must be styled after the rule.
 sf_tui_format_rule() {
   integer index=$1 columns=$2 title_start title_end number_start=-1
   local role=$SF_PRESENT_ROLE[index] number=$SF_PRESENT_SECTION[index] text
@@ -125,9 +118,8 @@ sf_tui_format_start() {
 }
 
 # Strips the blank lines either side of a body into REPLY, recording how many
-# characters came off each end. A leading run is the previous turn's spacing and
-# a trailing run has nothing to display yet, but both are still logical content
-# that a commit has to consume.
+# characters came off each end. Neither is displayed, but both are logical
+# content a commit still has to consume.
 sf_tui_format_trim() {
   local head=${1%%[!$'\n']*} tail
   REPLY=${1#"$head"}
@@ -160,7 +152,7 @@ sf_tui_format_message() {
   committed=$REPLY
   live=$(( SF_PRESENT_LIVE == index ))
   # System context keeps its source shape. A live stream keeps one trailing
-  # newline, so text arriving after it starts on the row it belongs to.
+  # newline so text arriving after it starts on its own row.
   if [[ $role != system ]]; then
     sf_tui_format_trim "$body"
     body=$REPLY
@@ -347,11 +339,8 @@ sf_tui_markdown_cached() {
   SF_PRESENT_HIGHLIGHT_SPANS=( "${(@)carried}" "${(@)fresh}" )
 }
 
-# Advances through stable body rows. An unresolved inline construct holds the
-# last bounded row suffix; past that bound, its older rows use best-effort style.
-#
-# Row consumption counts the blank lines the formatter trimmed off its body, so
-# the leading run comes back off the offsets scanning works in.
+# Advances the Markdown frontier through stable body rows. Row offsets come from
+# SF_FORMAT_CONSUMED, minus the leading run this formatter trimmed.
 sf_tui_markdown_advance() {
   integer index=$1 chrome=$3 rows=$4 width=$5
   integer frontier target row continuation=0
@@ -482,9 +471,9 @@ sf_tui_format_head() {
   sf_tui_format_chrome $columns "$text" "$kind" "${(@)source}"
 }
 
-# What is left of a preview budget. Rows that committed have already spent part
-# of it, so the clamp goes on standing for the content the preview withheld
-# rather than drawing the next window of it.
+# What is left of a preview budget. Committed rows already spent part of it, so
+# the clamp stands for the content the preview withheld rather than for the next
+# window of it.
 sf_tui_format_preview() {
   local configured=$1
   integer spent=$2

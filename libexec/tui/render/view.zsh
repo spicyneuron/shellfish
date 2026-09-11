@@ -11,14 +11,9 @@ typeset -ga SF_PRESENT_VIEWPORT_HIGHLIGHTS=()
 # The contiguous run of leading rows that could leave the viewport.
 typeset -gi SF_PRESENT_SAFE_PREFIX=0
 
-# Renders the retained formatters at the current width, keeping the last
-# $budget rows. Repaint concatenates what the formatters return; it does not
-# lay anything out itself.
-#
-# The safe prefix is contiguous from the front: it grows while every formatter
-# so far has reported all of its rows safe, and stops at the first that has
-# not. A formatter with an unsafe row therefore pins everything after it, which
-# is what keeps committed scrollback in source order.
+# Concatenates the retained formatters rendered at the current width, keeping the
+# last $budget rows. Layout belongs entirely to the formatters. An unsafe row
+# pins everything after it, keeping committed scrollback in source order.
 sf_tui_transcript() {
   integer columns=$1 budget=$2 index row offset pinned=0 start safe_offset=0
   integer safe take source leading body_rows whole staged=0 staging=1
@@ -26,9 +21,9 @@ sf_tui_transcript() {
 
   SF_PRESENT_VIEWPORT_TEXT=''
   SF_PRESENT_VIEWPORT_HIGHLIGHTS=()
-  # How many leading rows could be committed, over all retained content rather
-  # than only what is drawn. The staging globals below hold what fits one
-  # commit, together with the formatter-local consumption those rows represent.
+  # How many leading rows could be committed, counted over all retained content
+  # rather than only what is drawn. The staging globals below hold what fits one
+  # commit, with the formatter consumption those rows represent.
   SF_PRESENT_SAFE_PREFIX=0
   SF_PRESENT_SAFE_TEXT=''
   SF_PRESENT_SAFE_HIGHLIGHTS=()
@@ -73,9 +68,8 @@ sf_tui_transcript() {
       (( ! take && ! whole )) ||
         SF_PRESENT_SAFE_CONSUME+=( "$whole:$source:$leading:$body_rows" )
       staged=$(( staged + take ))
-      # Anything less than the whole formatter pins what follows it: staging is
-      # one contiguous run from the front, so a later formatter can never
-      # overtake an earlier one into scrollback.
+      # A formatter that does not fit entirely ends the run, so staged rows
+      # stay contiguous.
       (( take == ${#SF_FORMAT_ROWS} )) || staging=0
     fi
     if (( ! pinned )); then
@@ -226,10 +220,9 @@ sf_tui_repaint() {
   local queue_item queue_line queue_text=''
   local prompt_style=prompt
   local choices='[a]pprove  [d]eny (default)'
-  # Both rules and the glyph are one block and always share a style. Idle is the
-  # only state where a prompt submits directly, so it marks the turn as waiting.
-  # An accepted prompt repaints before the controller can leave idle, so a submit
-  # in flight already belongs to the turn.
+  # Idle with no submit in flight is the only moment waiting on input. An
+  # accepted prompt repaints before the controller leaves idle, so a submit
+  # already belongs to its turn.
   if [[ $SF_PRESENT_STATE == idle && ${SF_PRESENT_ACTION-} != submit ]]; then
     prompt_style=prompt_waiting
   fi

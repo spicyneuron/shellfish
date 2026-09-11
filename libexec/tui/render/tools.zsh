@@ -1,14 +1,13 @@
 emulate -R zsh
 setopt no_aliases no_bg_nice no_multios pipe_fail
 
-# A call is final when appended. Its following result stays live through
-# permission and execution, and stores the one call ID presentation expects.
+# A call is final when appended. Its result stays live through permission and
+# execution and holds the call ID the durable record must match.
 #
-# Call data is name, summary, content format, whether its heading has been
-# committed, and how many preview rows earlier commits spent. Result data is the
-# call ID, exit status, content format, the full flag, the sandbox note, whether
-# its rail has been committed, the token estimate for its whole content, and the
-# preview rows it has spent.
+# Call data: name, summary, content format, whether the heading committed, and
+# preview rows spent. Result data: call ID, exit status, content format, full
+# flag, sandbox note, whether the rail committed, whole-content token estimate,
+# and preview rows spent.
 
 sf_tui_tool_pending() {
   integer index=${#SF_PRESENT_KIND}
@@ -46,8 +45,8 @@ sf_tui_tool_result() {
   [[ $id == "$expected" ]] || return 1
   sf_tui_safe "$content"
   SF_PRESENT_TEXT[index]=$REPLY
-  # The clamp stands for content the preview never renders, so its estimate is
-  # taken from the whole result rather than from what is left to draw.
+  # The clamp stands for content the preview never renders, so its estimate
+  # comes from the whole result, not from what is left to draw.
   sf_tui_format_trim "$REPLY"
   sf_tui_token_count ${#REPLY}
   sf_tui_formatter_set_data $index "$id" "$code" "$format" "$full" "$sandbox" \
@@ -220,8 +219,8 @@ sf_tui_format_tool() {
   if (( live )) && [[ $second == permission ]]; then
     return 0
   fi
-  # A configured zero preview collapses the result onto its rail. A budget
-  # merely spent by earlier commits keeps the ordinary clamp instead.
+  # A zero preview collapses the result onto its rail. A budget merely spent by
+  # earlier commits keeps the ordinary clamp instead.
   if [[ $configured == 0 ]]; then
     tail='╰'
     overlay=''
@@ -237,8 +236,8 @@ sf_tui_format_tool() {
     fi
     sf_tui_format_styled $columns "$tail" tool_result "$overlay" || return 1
   elif [[ -n $body ]]; then
-    # The rail opens the result once. After a partial commit took it, the
-    # remaining rows continue under plain indentation.
+    # The rail opens the result once. After a partial commit took it, remaining
+    # rows continue under plain indentation.
     tail='╰'
     [[ $committed != 1 ]] || tail=''
     sf_tui_format_tool_body $columns "$body" '  ' "$tail" tool_result \
@@ -260,7 +259,7 @@ sf_tui_format_tool() {
     sf_tui_tool_notes "$second" "$sandbox"
     notes=$REPLY
     # A drained result already opened its rail, so its notes close it under the
-    # same indentation the committed rows used.
+    # indentation the committed rows used.
     if [[ $committed == 1 ]]; then
       [[ -z $notes ]] || sf_tui_format_styled $columns "  $notes" tool_result ||
         return 1

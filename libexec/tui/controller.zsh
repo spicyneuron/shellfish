@@ -38,10 +38,8 @@ sf_tui_discard_queue() {
   REPLY+='. Use ↑↓ keys to recover.'
 }
 
-# Leaving and rebuilding the client are its own lifecycle rather than the
-# session's, so it answers these without a turn. That keeps them working when a
-# stopped chat can no longer run one, and keeps a queued one out of the provider
-# request it would otherwise become.
+# Client lifecycle rather than session input: answered without a turn, so these
+# still work on a stopped chat and never reach the provider as a prompt.
 sf_tui_client_command() {
   case $1 in
     /quit|/q)

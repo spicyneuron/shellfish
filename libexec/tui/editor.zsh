@@ -16,9 +16,8 @@ typeset -gi SF_PRESENT_HISTORY_LIMIT=100
 typeset -ga SF_PRESENT_HISTORY=()
 KEYTIMEOUT=5
 
-# A client failure the renderer cannot survive ends the turn loop. The editor
-# keeps working, so the stopped chat still accepts the two client commands that
-# rebuild it from the durable session or leave.
+# A renderer failure ends the turn loop but not the editor, so the stopped chat
+# still accepts /refresh and /quit.
 sf_tui_stop() {
   SF_PRESENT_ERROR=$1
   [[ -z ${2-} ]] || SF_PRESENT_ERROR+=$'\n'${2}
@@ -101,8 +100,8 @@ sf_tui_heartbeat_ready() {
   sf_tui_heartbeat_tick || tick_status=$?
   (( ! tick_status )) && return 0
   (( tick_status != 2 )) || sf_tui_handoff_exec
-  # A live turn still needs draining, even degraded. Anything else cannot
-  # recover by itself, so stop instead of repainting the failure every interval.
+  # A live turn can still drain, even degraded. Anything else cannot recover on
+  # its own, so stop rather than repaint the failure every interval.
   [[ $SF_PRESENT_STATE == (working|cancelling) ]] || sf_tui_heartbeat_stop
   return $tick_status
 }
@@ -138,10 +137,9 @@ sf_tui_heartbeat_tick() {
       sf_tui_terminal_stage || return 1
       # Hold the frame so the commit and the redraw beneath it land together.
       sf_tui_terminal_sync_start
-      # Draw the settled rows as the whole display, styling included, then hand
-      # the frame to the terminal: `zle -I` leaves what is drawn on screen and
-      # continues below it, which commits exactly those rows to scrollback. The
-      # editor rebuilds from there, so a scroll cannot desynchronise it.
+      # `zle -I` keeps what is drawn and continues below it, so drawing the
+      # settled rows as the whole display commits exactly those to scrollback.
+      # The editor rebuilds from there, so a scroll cannot desynchronise it.
       sf_tui_draw_pending || return 1
       if ! zle -R || ! zle -I; then
         sf_tui_stop 'cannot commit chat rows'

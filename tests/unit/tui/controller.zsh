@@ -81,8 +81,8 @@ functions[sf_tui_transport_stop]=$functions[sf_tui_transport_stop_saved]
 functions[sf_tui_recover]=$functions[sf_tui_recover_saved]
 unfunction sf_tui_transport_signal_saved sf_tui_transport_stop_saved sf_tui_recover_saved
 
-# Malformed exec output stops the chat. The live transcript cannot be trusted
-# past it, and only the durable session can replace it.
+# Malformed exec output stops the chat, since only the durable session can
+# replace a transcript the client could not apply.
 cp "$SF_TEST_SESSIONS/complete.jsonl" "$tmp/recover.jsonl"
 sf_tui_reload "$tmp/recover.jsonl" || fail "$SF_PRESENT_ERROR"
 sf_tui_terminal_reset
@@ -158,10 +158,9 @@ assert_equal 0 "$SF_PRESENT_PENDING_ROWS"
 [[ $ZLE_CALLS != *accept-line* ]] ||
   fail 'transport batch left the active editor'
 
-# Every frame shape drains completely in one heartbeat: a live tool-call delta
-# after streamed text, the durable call that confirms it, and a tool-only
-# response carrying no assistant content. Presentation order is the renderer's
-# contract and is covered by tests/pty.
+# Every frame shape drains in one heartbeat: a live tool-call delta after streamed
+# text, the durable call that confirms it, and a tool-only response. Rendered
+# order is covered by tests/pty.
 typeset -a frames=(
   '{"type":"_assistant_message_delta","index":0,"text":"before tool"}
 {"type":"_assistant_tool_call_delta","index":1,"id":"call_1"}'
