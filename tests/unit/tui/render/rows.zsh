@@ -408,7 +408,7 @@ assert_equal '0 16 fg=5 2 6 fg=5,bold' \
 assert_equal '0 21 fg=4 2 7 fg=4,bold' \
   "$SF_PRESENT_ROW_HIGHLIGHTS[${SF_PRESENT_ROW_KIND[(i)tool_call.agent]}]"
 assert_equal '0 16 fg=6 2 6 fg=6,bold' \
-  "$SF_PRESENT_ROW_HIGHLIGHTS[${SF_PRESENT_ROW_KIND[(i)hook_user_context.notice]}]"
+  "$SF_PRESENT_ROW_HIGHLIGHTS[${SF_PRESENT_ROW_KIND[(i)hook_user_context]}]"
 assert_equal '0 9 fg=4 0 1 fg=8' \
   "$SF_PRESENT_ROW_HIGHLIGHTS[${SF_PRESENT_ROW_TEXT[(i)│ command]}]"
 assert_equal '0 8 fg=4 0 1 fg=8' \

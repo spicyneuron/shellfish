@@ -1,12 +1,26 @@
 emulate -R zsh
 setopt no_aliases no_bg_nice no_multios pipe_fail
 
+# Standalone activity runs while work is active and no content formatter is live.
+sf_tui_activity_start() {
+  sf_tui_add activity '' '' '' open
+}
+
+sf_tui_activity_stop() {
+  integer index=${#SF_PRESENT_NODE_TYPE}
+  (( index )) && [[ $SF_PRESENT_NODE_TYPE[index] == activity &&
+    $SF_PRESENT_NODE_STATE[index] == open ]] || return 0
+  sf_tui_close $index orphan_section
+}
+
 sf_tui_user_message() {
+  sf_tui_activity_stop || return 1
   sf_tui_section user || return 1
   sf_tui_add message user '' "$1"
 }
 
 sf_tui_system_message() {
+  sf_tui_activity_stop || return 1
   sf_tui_section system || return 1
   sf_tui_add message system '' "$1"
 }
@@ -47,6 +61,7 @@ sf_tui_assistant_stream() {
 
 sf_tui_assistant_start() {
   SF_PRESENT_ASSISTANT_INDEX=''
+  sf_tui_activity_stop || return 1
   sf_tui_section agent || return 1
   sf_tui_add activity agent '' '' open
 }

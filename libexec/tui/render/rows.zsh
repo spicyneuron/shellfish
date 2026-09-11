@@ -65,6 +65,10 @@ sf_tui_preview_tail() {
     sf_tui_message_preview_tail $node $hidden
     return
   fi
+  if [[ $type == (hook_activity|hook_model_context|hook_user_context|error) ]]; then
+    sf_tui_hook_preview_tail $node $hidden
+    return
+  fi
   body=${body#"${body%%[!$'\n']*}"}
   body=${body%"${body##*[!$'\n']}"}
   if [[ $type == tool_call ]]; then
@@ -78,38 +82,32 @@ sf_tui_preview_tail() {
   sf_tui_token_count "$body"
   tokens=$REPLY
   REPLY=''
-  case $type in
-    tool_result)
-      if [[ $state == open ]]; then
-        [[ $SF_PRESENT_NODE_STATUS[node] == permission ]] || {
-          if (( hidden )); then
-            REPLY="  … ~$tokens tokens $SF_PRESENT_ACTIVITY"
-          else
-            REPLY="╰ $SF_PRESENT_ACTIVITY"
-          fi
-        }
+  [[ $type == tool_result ]] || return 0
+  if [[ $state == open ]]; then
+    [[ $SF_PRESENT_NODE_STATUS[node] == permission ]] || {
+      if (( hidden )); then
+        REPLY="  … ~$tokens tokens $SF_PRESENT_ACTIVITY"
       else
-        sf_tui_result_notes $node
-        notes=$REPLY
-        REPLY=''
-        (( ! hidden )) || REPLY="  … ~$tokens tokens"
-        if [[ -n $notes ]]; then
-          if [[ -n $REPLY ]]; then
-            REPLY+=" · $notes"
-          elif [[ -z $body ]]; then
-            REPLY="╰ $notes"
-          else
-            REPLY="  $notes"
-          fi
-        elif [[ -z $body ]]; then
-          REPLY='╰'
-        fi
+        REPLY="╰ $SF_PRESENT_ACTIVITY"
       fi
-      ;;
-    hook_model_context)
-      (( ! hidden )) || REPLY="  … ~$tokens tokens"
-      ;;
-  esac
+    }
+  else
+    sf_tui_result_notes $node
+    notes=$REPLY
+    REPLY=''
+    (( ! hidden )) || REPLY="  … ~$tokens tokens"
+    if [[ -n $notes ]]; then
+      if [[ -n $REPLY ]]; then
+        REPLY+=" · $notes"
+      elif [[ -z $body ]]; then
+        REPLY="╰ $notes"
+      else
+        REPLY="  $notes"
+      fi
+    elif [[ -z $body ]]; then
+      REPLY='╰'
+    fi
+  fi
 }
 
 # Appends a row with semantic style spans, resolving "type.role" before falling
@@ -274,47 +272,28 @@ sf_tui_rows() {
           preview=$SF_PRESENT_PREVIEW_TOOL_RESULT
           [[ $SF_PRESENT_NODE_META[node] != full ]] || preview=full
           ;;
-        hook_model_context)
-          decorated=1
-          preview=$SF_PRESENT_PREVIEW_CONTEXT
-          head="↪ $heading"
-          ;;
-        hook_activity|hook_user_context|error)
-          decorated=1
-          if [[ $type == error ]]; then
-            head="✕ $heading"
-          elif [[ $type == hook_activity ]]; then
-            head=$heading
-          else
-            head="ℹ $heading"
-          fi
-          if [[ $type == hook_activity ]]; then
-            activity=1
-            withhold_all=1
-          fi
+        hook_activity|hook_model_context|hook_user_context|error)
+          sf_tui_hook_layout $node || return 1
           ;;
         *) return 1 ;;
       esac
-      if [[ $type == (tool_call|hook_model_context|hook_user_context|error) ]]; then
+      if [[ $type == tool_call ]]; then
         [[ -z $SF_PRESENT_NODE_META[node] ]] || head+=" · $SF_PRESENT_NODE_META[node]"
         value_start=2
         title_value=$heading
         value_stop=$(( value_start + ${#title_value} ))
       fi
-      if [[ $type == (tool_call|tool_result|hook_model_context|hook_activity|hook_user_context|error) ]]; then
+      if [[ $type == (tool_call|tool_result) ]]; then
         previewed=1
         leading=${body%%[!$'\n']*}
         source_base=${#leading}
         body=${body#"$leading"}
         body=${body%"${body##*[!$'\n']}"}
-        if [[ $preview == 0 && $type != (hook_activity|hook_user_context|error) ]]; then
+        if [[ $preview == 0 ]]; then
           collapsed=1
-          if [[ $type != (tool_call|tool_result) ]]; then
-            sf_tui_token_count "$body"
-          fi
           if [[ $type == tool_call ]]; then
             text=$head
-          elif [[ $type == tool_result ]]; then
+          else
             text='╰'
             [[ -z $body ]] || text+=' …'
             if [[ $state == open ]]; then
@@ -323,16 +302,10 @@ sf_tui_rows() {
               sf_tui_result_notes $node
               [[ -z $REPLY ]] || text+=" · $REPLY"
             fi
-          else
-            text=$head
-            [[ -z $body ]] || text+=" · ~$REPLY tokens"
-          fi
-          case $type in
-            tool_result) [[ -z $body ]] || clamp_start=2 ;;
-            hook_model_context) [[ -z $body ]] || clamp_start=$(( ${#head} + 1 )) ;;
-          esac
-          if (( clamp_start >= 0 )); then
-            clamp_stop=${#text}
+            if [[ -n $body ]]; then
+              clamp_start=2
+              clamp_stop=${#text}
+            fi
           fi
           [[ $state != open ]] || withhold_all=1
         else
@@ -360,17 +333,15 @@ sf_tui_rows() {
         preview_used=0
         continue
       fi
-      if [[ $type != (message|reasoning) ]] && (( ! collapsed && ${#body} )); then
-        case $type in
-          tool_result) content_start=0 ;;
-          tool_call|hook_model_context|hook_activity|hook_user_context|error)
-            content_start=$(( ${#text} - ${#body} )) ;;
-        esac
-        if (( content_start >= 0 )); then
-          content_end=$(( content_start + ${#body} ))
+      if [[ $type == (tool_call|tool_result) ]] && (( ! collapsed && ${#body} )); then
+        if [[ $type == tool_result ]]; then
+          content_start=0
+        else
+          content_start=$(( ${#text} - ${#body} ))
         fi
+        content_end=$(( content_start + ${#body} ))
       fi
-      if [[ $type != (message|reasoning|tool_result) ]]; then
+      if [[ $type == (section|activity|tool_call) ]]; then
         if (( node != 1 || SF_PRESENT_PREFIX_VISIBLE )); then
           text=$'\n'$text
           if (( value_start >= 0 )); then
@@ -390,7 +361,7 @@ sf_tui_rows() {
           fi
         fi
       fi
-      if [[ $type != (message|reasoning) ]] && (( previewed && ! collapsed && ${#body} )); then
+      if [[ $type == (tool_call|tool_result) ]] && (( ! collapsed && ${#body} )); then
         body_start=$(( ${#text} - ${#body} ))
         body_end=${#text}
       fi

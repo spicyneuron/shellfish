@@ -213,7 +213,7 @@ if sf_tui_add error error failed; then
 fi
 
 sf_tui_reset
-sf_tui_add hook_activity notice working '' open
+sf_tui_add hook_activity '' working '' open
 if sf_tui_event assistant_end; then
   fail 'settled a non-assistant node'
 fi

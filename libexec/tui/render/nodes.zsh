@@ -210,13 +210,6 @@ sf_tui_event() {
   local type=$1 first=${2-} second=${3-} third=${4-} fourth=${5-} fifth=${6-} sixth=${7-}
   integer index=${#SF_PRESENT_NODE_TYPE}
 
-  if (( index )) && [[ $SF_PRESENT_NODE_TYPE[index] == activity &&
-      $SF_PRESENT_NODE_STATE[index] == open &&
-      $type == (system|user|assistant_start|tool_call|context) ]]; then
-    sf_tui_close $index || return 1
-    index=${#SF_PRESENT_NODE_TYPE}
-  fi
-
   case $type in
     system|user)
       if [[ $type == system ]]; then
@@ -250,6 +243,7 @@ sf_tui_event() {
       sf_tui_assistant_end
       ;;
     tool_call)
+      sf_tui_activity_stop || return 1
       SF_PRESENT_TOOL_HEADING[$first]=$second
       sf_tui_safe "$third"
       SF_PRESENT_TOOL_CONTENT[$first]=$REPLY

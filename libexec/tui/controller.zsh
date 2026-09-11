@@ -298,10 +298,7 @@ sf_tui_exec_finish() {
         SF_PRESENT_STATE=stopped
       fi
     else
-      if (( ${#SF_PRESENT_NODE_TYPE} )) && [[ $SF_PRESENT_NODE_TYPE[-1] == activity &&
-          $SF_PRESENT_NODE_STATE[-1] == open ]]; then
-        sf_tui_event assistant_end || return 1
-      fi
+      sf_tui_activity_stop || return 1
       SF_PRESENT_STATE=idle
       sf_tui_permission_reset
     fi
@@ -334,7 +331,7 @@ sf_tui_turn() {
   SF_PRESENT_ACTIVITY_FRAME=0
   SF_PRESENT_ACTIVITY=${SF_PRESENT_ACTIVITY_FRAMES[1]}
   SF_PRESENT_STATE=working
-  sf_tui_add activity '' '' '' open || { SF_PRESENT_STATE=idle; return 1; }
+  sf_tui_activity_start || { SF_PRESENT_STATE=idle; return 1; }
   if ! sf_tui_transport_start "$input" sf_tui_exec_ready; then
     sf_tui_reload "$SF_PRESENT_SESSION" || true
     SF_PRESENT_STATE=idle
@@ -396,7 +393,7 @@ sf_tui_controller() {
     [[ -z $system ]] || sf_tui_event system "$system" || return 1
     # Creation presents as a running turn, so hook activity and the spinner
     # land in the nodes a turn would use.
-    sf_tui_add activity '' '' '' open || return 1
+    sf_tui_activity_start || return 1
   else
     sf_tui_reload "$session" || return 1
   fi
