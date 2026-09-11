@@ -79,7 +79,7 @@ sf_tui_preview_tail() {
     fi
     return
   fi
-  # Every other type dispatched above, so what remains is one tool result.
+  # Every other type is dispatched above, so what remains is one tool result.
   sf_tui_token_count "$body"
   tokens=$REPLY
   REPLY=''

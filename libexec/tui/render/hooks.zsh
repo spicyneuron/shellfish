@@ -127,18 +127,16 @@ sf_tui_hook_layout() {
   elif [[ -n $body ]]; then
     text+=$'\n'$body
   fi
-  if (( ! collapsed && ${#body} )); then
-    content_start=$(( ${#text} - ${#body} ))
-    content_end=$(( content_start + ${#body} ))
-  fi
   if (( formatter != 1 || SF_PRESENT_PREFIX_VISIBLE )); then
     text=$'\n'$text
-    (( value_start < 0 )) || (( value_start++, value_stop++ ))
+    (( value_start++, value_stop++ ))
     (( clamp_start < 0 )) || (( clamp_start++, clamp_stop++ ))
-    (( content_start < 0 )) || (( content_start++, content_end++ ))
   fi
+  # Hook body rows are the whole indented content, so both spans cover it.
   if (( ! collapsed && ${#body} )); then
-    body_start=$(( ${#text} - ${#body} ))
-    body_end=${#text}
+    content_start=$(( ${#text} - ${#body} ))
+    content_end=${#text}
+    body_start=$content_start
+    body_end=$content_end
   fi
 }
