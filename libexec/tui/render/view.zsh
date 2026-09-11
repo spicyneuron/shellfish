@@ -35,6 +35,9 @@ sf_tui_transcript() {
     case $SF_PRESENT_KIND[index] in
       message) sf_tui_format_message $index $columns || return 1 ;;
       reasoning) sf_tui_format_reasoning $index $columns || return 1 ;;
+      activity|hook_activity|hook_model_context|hook_user_context|error)
+        sf_tui_format_hook $index $columns || return 1
+        ;;
       *) return 1 ;;
     esac
     for (( row = 1; row <= ${#SF_FORMAT_ROWS}; row++ )); do

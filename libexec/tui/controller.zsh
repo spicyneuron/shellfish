@@ -202,6 +202,7 @@ sf_tui_exec_finish() {
     exit_detail='Create did not confirm session creation.'
   fi
   [[ $SF_PRESENT_STATE != cancelling ]] || cancelled=1
+  sf_tui_event activity_stop || return 1
   if (( exit_status || cancelled )); then
     if (( turn_error )); then
       # The transcript already ends with the durable failure.
@@ -243,7 +244,6 @@ sf_tui_exec_finish() {
     SF_PRESENT_STATE=idle
     [[ -z $heading ]] || sf_tui_event error "$heading" "$detail" || return 1
   else
-    sf_tui_event activity_stop || return 1
     SF_PRESENT_STATE=idle
     sf_tui_permission_reset
     if (( ${#SF_PRESENT_HANDOFF} )); then

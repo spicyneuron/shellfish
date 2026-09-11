@@ -10,7 +10,8 @@ kinds() { REPLY="${(j:,:)SF_PRESENT_KIND}" }
 # since that is where a field left out of sf_tui_formatter_keep would show.
 aligned() {
   local name
-  for name in SF_PRESENT_TEXT SF_PRESENT_ROLE SF_PRESENT_SECTION SF_PRESENT_PRIOR; do
+  for name in SF_PRESENT_TEXT SF_PRESENT_DATA SF_PRESENT_ROLE SF_PRESENT_SECTION \
+      SF_PRESENT_PRIOR; do
     (( ${#${(@P)name}} == ${#SF_PRESENT_KIND} )) ||
       fail "$name has ${#${(@P)name}} entries for ${#SF_PRESENT_KIND} formatters: $1"
   done

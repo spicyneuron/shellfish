@@ -114,7 +114,9 @@ def durable_display_fields($replay; $tools):
       (if ($display.content | index("$result_full")) != null then "full" else "" end),
       (if .sandbox_denial_detected? == true then "sandbox_denial" else "" end)]
   elif canonical_hook_result then
-    ([.hook, .prompt?] | display_summary) as $meta |
+    ([.hook, .prompt?,
+      (if has("status") then "status " + (.status | tostring) else null end)] |
+      display_summary) as $meta |
     ["hook_result", .script, $meta, (.model_context // ""), (.user_context // "")]
   else
     empty

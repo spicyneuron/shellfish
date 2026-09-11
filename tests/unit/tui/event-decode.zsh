@@ -126,7 +126,7 @@ order=$(print -r -- \
   jq -jRs -L "$ROOT" --argjson runtime null \
     -f "$ROOT/libexec/tui/event-decode.jq" |
   tr '\0' '\n' | sed '/^$/d' | paste -sd, -)
-assert_equal 'hook_result,hook name,user_prompt_submit · prompt,model body,user body,batch_ok' "$order"
+assert_equal 'hook_result,hook name,user_prompt_submit · prompt · status 0,model body,user body,batch_ok' "$order"
 
 order=$(printf '%s\n' \
     '{"type":"_hook_activity","hook":"stop","script":"check","text":"Checking"}' \

@@ -3,7 +3,7 @@
 source "${0:A:h:h:h}/_helpers.zsh"
 sf_test_source libexec/tui/render/formatters.zsh libexec/tui/render/highlights.zsh \
   libexec/tui/render/text.zsh libexec/tui/render/wrap.zsh \
-  libexec/tui/render/messages.zsh \
+  libexec/tui/render/messages.zsh libexec/tui/render/hooks.zsh \
   libexec/tui/render/terminal.zsh libexec/tui/render/view.zsh \
   libexec/tui/transport.zsh libexec/tui/editor.zsh libexec/tui/controller.zsh
 sf_test_tmp controller
@@ -202,6 +202,7 @@ assert_equal second "$SF_PRESENT_QUEUE[1]"
 # A completed turn wins a cancellation race, while queued prompts are still discarded.
 sf_tui_reset
 sf_tui_terminal_reset
+sf_tui_event activity_start
 SF_PRESENT_SESSION="$tmp/recover.jsonl"
 SF_PRESENT_STATE=cancelling
 SF_PRESENT_QUEUE=( speculative )
@@ -211,6 +212,22 @@ SF_TUI_TRANSPORT_EXIT_DETAIL=''
 sf_tui_exec_finish
 assert_equal idle "$SF_PRESENT_STATE"
 assert_equal 0 "${#SF_PRESENT_QUEUE}"
+assert_equal error "$SF_PRESENT_KIND[-1]"
+
+# Successful cancellation without a queued-prompt diagnostic still clears
+# standalone activity at process completion.
+sf_tui_reset
+sf_tui_terminal_reset
+sf_tui_event activity_start
+SF_PRESENT_SESSION="$tmp/recover.jsonl"
+SF_PRESENT_STATE=cancelling
+SF_PRESENT_QUEUE=()
+SF_TUI_TRANSPORT_EOF=1
+SF_TUI_TRANSPORT_EXIT_STATUS=0
+SF_TUI_TRANSPORT_EXIT_DETAIL=''
+sf_tui_exec_finish
+assert_equal idle "$SF_PRESENT_STATE"
+assert_equal 0 "${#SF_PRESENT_KIND}"
 
 # An uncertain exec boundary discards follow-up prompts before recovery.
 sf_tui_reset

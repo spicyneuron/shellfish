@@ -24,7 +24,7 @@ typeset -g SF_PRESENT_IDENTITY='' SF_PRESENT_FOOTER=''
 # opaque here. Keeping it in one slot is what stops per-type fields becoming a
 # second set of parallel arrays the store has to know about.
 typeset -ga SF_PRESENT_KIND=() SF_PRESENT_TEXT=() SF_PRESENT_DATA=()
-typeset -gi SF_PRESENT_LIVE=0
+typeset -gi SF_PRESENT_LIVE=0 SF_PRESENT_WORK_ACTIVE=0
 # Leading role chrome is not a formatter of its own. ROLE names the role an
 # entry opened, SECTION the number that came with it, and PRIOR the role in
 # force beforehand, which is what retraction restores. Holding PRIOR per entry
@@ -121,6 +121,7 @@ sf_tui_formatter_keep() {
 # Discards retained presentation before a rebuild.
 sf_tui_reset() {
   SF_PRESENT_LIVE=0
+  SF_PRESENT_WORK_ACTIVE=0
   sf_tui_formatter_keep 1 0
   SF_PRESENT_LAST_ROLE=''
   SF_PRESENT_SECTION_ID=0
@@ -176,16 +177,20 @@ sf_tui_session_update() {
 #     "end" closes the turn so the next record opens a new section.
 sf_tui_event() {
   local type=$1 first=${2-} second=${3-} third=${4-}
+  local fourth=${5-}
   integer index=${#SF_PRESENT_KIND}
   case $type in
     user)
+      sf_tui_activity_retract || return 1
       sf_tui_message_append user "$first" || return 1
       ;;
     system)
+      sf_tui_activity_retract || return 1
       sf_tui_message_append system "$first" || return 1
       ;;
     assistant_start)
       SF_PRESENT_ASSISTANT_INDEX=''
+      sf_tui_activity_retract || return 1
       sf_tui_message_append agent '' live || return 1
       ;;
     assistant_message_delta)
@@ -202,20 +207,36 @@ sf_tui_event() {
       ;;
     assistant_reasoning_opaque|assistant_tool_call_delta)
       sf_tui_assistant_boundary "$first" || return 1
+      sf_tui_activity_resume || return 1
       ;;
     assistant_end)
       SF_PRESENT_ASSISTANT_INDEX=''
       sf_tui_assistant_close || return 1
+      sf_tui_activity_resume || return 1
       ;;
-    activity_start|activity_stop|tool_call|tool_result| \
-    tool_permission|tool_permission_clear|hook_activity|hook_result|error) ;;
+    activity_start)
+      sf_tui_activity_start || return 1
+      ;;
+    activity_stop)
+      sf_tui_activity_stop || return 1
+      ;;
+    hook_activity)
+      sf_tui_hook_activity "$first" "$second" "$third" || return 1
+      ;;
+    hook_result)
+      sf_tui_hook_result "$first" "$second" "$third" "$fourth" || return 1
+      ;;
+    error)
+      sf_tui_error_append "$first" "$second" || return 1
+      ;;
+    tool_call|tool_result|tool_permission|tool_permission_clear) ;;
     *) return 1 ;;
   esac
 }
 
 # Settles the current assistant block, or retracts it when the stream never
-# produced visible content. Only assistant message and reasoning entries use
-# this transition until the later hook and tool formatters arrive.
+# produced visible content. Other live formatter kinds have their own
+# transitions.
 sf_tui_assistant_close() {
   integer index=${#SF_PRESENT_KIND}
   (( SF_PRESENT_LIVE )) || return 0
@@ -234,6 +255,7 @@ sf_tui_assistant_close() {
 sf_tui_assistant_boundary() {
   local source_index=$1 kind=${2-}
   integer index=${#SF_PRESENT_KIND}
+  sf_tui_activity_retract || return 1
   if [[ $SF_PRESENT_ASSISTANT_INDEX != $source_index ]] ||
       { (( SF_PRESENT_LIVE )) && [[ -n $kind && $SF_PRESENT_KIND[index] != $kind ]]; }; then
     sf_tui_assistant_close || return 1
