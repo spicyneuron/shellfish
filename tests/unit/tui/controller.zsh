@@ -111,21 +111,18 @@ functions[sf_tui_transport_stop]=$functions[sf_tui_transport_stop_saved]
 functions[sf_tui_recover]=$functions[sf_tui_recover_saved]
 unfunction sf_tui_transport_signal_saved sf_tui_transport_stop_saved sf_tui_recover_saved
 
-# Hook displays split a live tool into contiguous presentation segments. The
-# result still completes the resumed segment.
+# Pre-tool hook output precedes the durable call it belongs to.
 sf_tui_reset
 sf_tui_terminal_reset
-sf_tui_event tool_call call_1 shell '{"command":"true"}'
 sf_tui_decoded hook_result progress pre_tool_use '' working
-assert_equal 'section,tool_call,tool_result,hook_user_context,tool_result' "${(j:,:)SF_PRESENT_NODE_TYPE}"
-assert_equal progress "$SF_PRESENT_NODE_HEADING[4]"
-assert_equal pre_tool_use "$SF_PRESENT_NODE_META[4]"
-assert_equal '' "$SF_PRESENT_NODE_STATUS[3]"
-assert_equal closed "$SF_PRESENT_NODE_STATE[3]"
-assert_equal open "$SF_PRESENT_NODE_STATE[5]"
+sf_tui_event tool_call call_1 shell '{"command":"true"}'
+assert_equal 'hook_user_context,section,tool_call,tool_result' "${(j:,:)SF_PRESENT_NODE_TYPE}"
+assert_equal progress "$SF_PRESENT_NODE_HEADING[1]"
+assert_equal pre_tool_use "$SF_PRESENT_NODE_META[1]"
+assert_equal open "$SF_PRESENT_NODE_STATE[4]"
 sf_tui_event tool_result call_1 0 done
-assert_equal done "$SF_PRESENT_NODE_BODY[5]"
-assert_equal closed "$SF_PRESENT_NODE_STATE[5]"
+assert_equal done "$SF_PRESENT_NODE_BODY[4]"
+assert_equal closed "$SF_PRESENT_NODE_STATE[4]"
 
 # A detected sandbox denial rides its own result rather than interrupting the tool.
 sf_tui_reset
@@ -143,8 +140,7 @@ assert_equal 'section,tool_call,tool_result,error' "${(j:,:)SF_PRESENT_NODE_TYPE
 assert_equal '' "$SF_PRESENT_NODE_STATUS[3]"
 assert_equal closed "$SF_PRESENT_NODE_STATE[3]"
 assert_equal error "$SF_PRESENT_NODE_ROLE[4]"
-assert_equal 0 "${#SF_PRESENT_TOOL_ORDER}"
-assert_equal '' "$SF_PRESENT_TOOL_CURRENT"
+assert_equal '' "$SF_PRESENT_TOOL_CALL"
 
 # A durable turn error closes its section without taking a section number, so the
 # next accepted record opens a numbered one.
@@ -159,42 +155,20 @@ sf_tui_event user second
 assert_equal 'section,message,error,section,message' "${(j:,:)SF_PRESENT_NODE_TYPE}"
 assert_equal 2 "$SF_PRESENT_SECTION_ID"
 
-# Sequential tool calls remain completable across pre- and post-hook script output.
+# Consecutive calls stay sequential across their pre- and post-hook output.
 sf_tui_reset
-sf_tui_event tool_call call_1 shell one
-sf_tui_event tool_call call_2 shell two
+sf_tui_decoded hook_activity pre_tool_use progress Checking
 sf_tui_decoded hook_result pre pre_tool_use '' first
+sf_tui_event tool_call call_1 shell one
 sf_tui_event tool_result call_1 0 first
 sf_tui_decoded hook_result post post_tool_use '' first-done
 sf_tui_decoded hook_result pre pre_tool_use '' second
+sf_tui_event tool_call call_2 shell two
 sf_tui_event tool_result call_2 0 second
 sf_tui_decoded hook_result post post_tool_use '' second-done
-integer completed_tools=0 notices=0 node
-for (( node = 1; node <= ${#SF_PRESENT_NODE_TYPE}; node++ )); do
-  if [[ $SF_PRESENT_NODE_TYPE[node] == hook_user_context ]]; then
-    (( ++notices ))
-  elif [[ $SF_PRESENT_NODE_TYPE[node] == tool_result && $SF_PRESENT_NODE_STATUS[node] == 0 ]]; then
-    (( ++completed_tools ))
-  fi
-done
-assert_equal 4 "$notices"
-assert_equal 2 "$completed_tools"
-assert_equal 0 "${#SF_PRESENT_TOOL_ORDER}"
-assert_equal '' "$SF_PRESENT_TOOL_CURRENT"
-
-# Hook output replaces its live activity and resumes the interrupted tool.
-sf_tui_reset
-sf_tui_event tool_call call_live shell run
-sf_tui_decoded hook_activity pre_tool_use progress Checking
-assert_equal 'section,tool_call,tool_result,hook_activity' "${(j:,:)SF_PRESENT_NODE_TYPE}"
-assert_equal open "$SF_PRESENT_NODE_STATE[-1]"
-sf_tui_decoded hook_result progress pre_tool_use '' $'Checking policy\n'
-assert_equal 'section,tool_call,tool_result,hook_user_context,tool_result' "${(j:,:)SF_PRESENT_NODE_TYPE}"
-assert_equal closed "$SF_PRESENT_NODE_STATE[4]"
-assert_equal $'Checking policy\n' "$SF_PRESENT_NODE_BODY[4]"
-assert_equal open "$SF_PRESENT_NODE_STATE[5]"
-assert_equal pre_tool_use "$SF_PRESENT_NODE_META[4]"
-sf_tui_event tool_result call_live 0 allowed
+assert_equal 'hook_user_context,section,tool_call,tool_result,hook_user_context,hook_user_context,tool_call,tool_result,hook_user_context' \
+  "${(j:,:)SF_PRESENT_NODE_TYPE}"
+assert_equal '' "$SF_PRESENT_TOOL_CALL"
 
 # Malformed bounded-exec output converges on authoritative reload rather than
 # retaining the speculative live tail.
@@ -359,7 +333,7 @@ COLUMNS=80
 LINES=8
 DRAWN=''
 sf_tui_heartbeat_tick
-assert_equal call_1 "$SF_PRESENT_TOOL_CURRENT"
+assert_equal call_1 "$SF_PRESENT_TOOL_CALL"
 (( ${SF_PRESENT_NODE_TYPE[(I)message]} < ${SF_PRESENT_NODE_TYPE[(I)tool_call]} )) ||
   fail 'tool call preceded the assistant rows'
 if sf_tui_transport_has_pending; then
@@ -377,7 +351,7 @@ SF_TUI_TRANSPORT_LINES=(
   '{"type":"tool_call","id":"call_2","name":"shell","input":{"command":"true"}}'
 )
 sf_tui_heartbeat_tick
-assert_equal call_2 "$SF_PRESENT_TOOL_CURRENT"
+assert_equal call_2 "$SF_PRESENT_TOOL_CALL"
 if sf_tui_transport_has_pending; then
   fail 'tool-only response paused for an empty frame'
 fi

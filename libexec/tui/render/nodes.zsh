@@ -3,7 +3,8 @@ setopt no_aliases no_bg_nice no_multios pipe_fail
 
 (( $+functions[sf_jq] )) || source "$SF_ROOT/lib/jq.zsh"
 
-# The presentation transcript. Only this file mutates these arrays.
+# The presentation transcript. This file owns the shared add, append, close, and
+# drop operations; each formatter owns the entries it creates.
 typeset -ga SF_PRESENT_NODE_TYPE=() SF_PRESENT_NODE_ROLE=()
 typeset -ga SF_PRESENT_NODE_HEADING=() SF_PRESENT_NODE_BODY=()
 typeset -ga SF_PRESENT_NODE_META=() SF_PRESENT_NODE_STATE=()
@@ -13,10 +14,6 @@ typeset -ga SF_PRESENT_NODE_SANDBOX_DENIAL=()
 # A formatter enables the node frontier before body rows can flush. A negative
 # frontier preserves ordinary row settlement.
 typeset -ga SF_PRESENT_NODE_FRONTIER=()
-typeset -gA SF_PRESENT_TOOL_HEADING=() SF_PRESENT_TOOL_CONTENT=()
-typeset -gA SF_PRESENT_TOOL_SUMMARY=() SF_PRESENT_TOOL_FORMAT=()
-typeset -ga SF_PRESENT_TOOL_ORDER=()
-typeset -g SF_PRESENT_TOOL_CURRENT=''
 typeset -g SF_PRESENT_ERROR='' SF_PRESENT_LAST_ROLE=''
 typeset -gi SF_PRESENT_SECTION_ID=0
 typeset -g SF_PRESENT_ASSISTANT_INDEX=''
@@ -41,12 +38,7 @@ sf_tui_safe() {
 
 sf_tui_reset() {
   sf_tui_drop ${#SF_PRESENT_NODE_TYPE}
-  SF_PRESENT_TOOL_HEADING=()
-  SF_PRESENT_TOOL_CONTENT=()
-  SF_PRESENT_TOOL_SUMMARY=()
-  SF_PRESENT_TOOL_FORMAT=()
-  SF_PRESENT_TOOL_ORDER=()
-  SF_PRESENT_TOOL_CURRENT=''
+  SF_PRESENT_TOOL_CALL=''
   SF_PRESENT_ASSISTANT_INDEX=''
   SF_PRESENT_LAST_ROLE=''
   SF_PRESENT_SECTION_ID=0
@@ -169,27 +161,6 @@ sf_tui_append() {
   SF_PRESENT_NODE_BODY[index]+=$REPLY
 }
 
-sf_tui_tool_open() {
-  local id=$SF_PRESENT_TOOL_CURRENT
-  if [[ -z $id ]]; then
-    id=${SF_PRESENT_TOOL_ORDER[1]-}
-    [[ -n $id ]] || return 0
-  fi
-  if (( ${#SF_PRESENT_NODE_TYPE} )) && [[ $SF_PRESENT_NODE_STATE[-1] == open ]]; then
-    [[ -n $SF_PRESENT_TOOL_CURRENT && $SF_PRESENT_NODE_TYPE[-1] == tool_result ]] || return 1
-    return 0
-  fi
-  sf_tui_section agent || return 1
-  if [[ -z $SF_PRESENT_TOOL_CURRENT ]]; then
-    sf_tui_add tool_call agent "$SF_PRESENT_TOOL_HEADING[$id]" \
-      "$SF_PRESENT_TOOL_CONTENT[$id]" || return 1
-    SF_PRESENT_NODE_META[REPLY]=$SF_PRESENT_TOOL_SUMMARY[$id]
-    SF_PRESENT_NODE_FORMAT[REPLY]=$SF_PRESENT_TOOL_FORMAT[$id]
-  fi
-  sf_tui_add tool_result agent '' '' open || return 1
-  SF_PRESENT_TOOL_CURRENT=$id
-}
-
 sf_tui_footer_usage() {
   SF_PRESENT_FOOTER="${SF_PRESENT_IDENTITY} · $1"
 }
@@ -205,6 +176,8 @@ sf_tui_session_update() {
   source "$SF_ROOT/libexec/tui/render/messages.zsh"
 (( $+functions[sf_tui_hook_activity] )) ||
   source "$SF_ROOT/libexec/tui/render/hooks.zsh"
+(( $+functions[sf_tui_tool_call] )) ||
+  source "$SF_ROOT/libexec/tui/render/tools.zsh"
 
 sf_tui_event() {
   local type=$1 first=${2-} second=${3-} third=${4-} fourth=${5-} fifth=${6-} sixth=${7-}
@@ -243,63 +216,16 @@ sf_tui_event() {
       sf_tui_assistant_end
       ;;
     tool_call)
-      sf_tui_activity_stop || return 1
-      SF_PRESENT_TOOL_HEADING[$first]=$second
-      sf_tui_safe "$third"
-      SF_PRESENT_TOOL_CONTENT[$first]=$REPLY
-      SF_PRESENT_TOOL_SUMMARY[$first]=$fourth
-      SF_PRESENT_TOOL_FORMAT[$first]=${fifth:-json}
-      SF_PRESENT_TOOL_ORDER+=( "$first" )
-      sf_tui_tool_open
+      sf_tui_tool_call "$first" "$second" "$third" "$fourth" "$fifth"
       ;;
     tool_result)
-      [[ -n ${SF_PRESENT_TOOL_HEADING[$first]+yes} ]] || return 1
-      [[ $SF_PRESENT_TOOL_CURRENT == $first && $index == ${#SF_PRESENT_NODE_TYPE} &&
-        $SF_PRESENT_NODE_TYPE[index] == tool_result &&
-        $SF_PRESENT_NODE_STATE[index] == open ]] || return 1
-      sf_tui_append $index "$third" || return 1
-      SF_PRESENT_NODE_STATUS[index]=$second
-      SF_PRESENT_NODE_FORMAT[index]=$fourth
-      SF_PRESENT_NODE_META[index]=$fifth
-      SF_PRESENT_NODE_SANDBOX_DENIAL[index]=$sixth
-      sf_tui_close $index || return 1
-      unset "SF_PRESENT_TOOL_HEADING[$first]" "SF_PRESENT_TOOL_CONTENT[$first]" \
-        "SF_PRESENT_TOOL_SUMMARY[$first]" "SF_PRESENT_TOOL_FORMAT[$first]"
-      SF_PRESENT_TOOL_ORDER=( "${(@)SF_PRESENT_TOOL_ORDER[2,-1]}" )
-      SF_PRESENT_TOOL_CURRENT=''
-      sf_tui_tool_open
-      ;;
-    tool_segment_close)
-      [[ $first == (continue|abandon) && -n $SF_PRESENT_TOOL_CURRENT &&
-          $SF_PRESENT_NODE_TYPE[index] == tool_result &&
-          $SF_PRESENT_NODE_STATE[index] == open ]] || return 1
-      sf_tui_close $index || return 1
-      if [[ $first == abandon ]]; then
-        SF_PRESENT_TOOL_HEADING=()
-        SF_PRESENT_TOOL_CONTENT=()
-        SF_PRESENT_TOOL_SUMMARY=()
-        SF_PRESENT_TOOL_FORMAT=()
-        SF_PRESENT_TOOL_ORDER=()
-        SF_PRESENT_TOOL_CURRENT=''
-      fi
+      sf_tui_tool_result "$first" "$second" "$third" "$fourth" "$fifth" "$sixth"
       ;;
     tool_permission)
-      REPLY=0
-      if [[ -n $SF_PRESENT_TOOL_CURRENT && $SF_PRESENT_NODE_TYPE[index] == tool_result &&
-          $SF_PRESENT_NODE_STATE[index] == open ]]; then
-        sf_tui_safe "$first"
-        SF_PRESENT_NODE_BODY[index]=$REPLY
-        SF_PRESENT_NODE_STATUS[index]=permission
-        REPLY=1
-      fi
+      sf_tui_tool_permission "$first"
       ;;
     tool_permission_clear)
-      if [[ $SF_PRESENT_NODE_TYPE[index] == tool_result &&
-          $SF_PRESENT_NODE_STATE[index] == open &&
-          $SF_PRESENT_NODE_STATUS[index] == permission ]]; then
-        SF_PRESENT_NODE_BODY[index]=''
-        SF_PRESENT_NODE_STATUS[index]=''
-      fi
+      sf_tui_tool_permission_clear
       ;;
     hook_activity)
       sf_tui_hook_activity "$first" "$second" "$third"

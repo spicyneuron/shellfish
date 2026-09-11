@@ -46,67 +46,15 @@ sf_tui_token_count() {
   fi
 }
 
-# The notes trailing a completed tool result, in transcript order.
-sf_tui_result_notes() {
-  integer node=$1
-  local code=$SF_PRESENT_NODE_STATUS[node]
-  local -a notes=()
-  [[ -z $code || $code == hidden ]] || notes+=( "exit $code" )
-  [[ -z $SF_PRESENT_NODE_SANDBOX_DENIAL[node] ]] || notes+=( 'sandbox denial detected' )
-  REPLY=${(j: · :)notes}
-}
-
+# The clamp, summary, or activity one formatter trails its body with.
 sf_tui_preview_tail() {
-  integer node=$1 hidden=$2
-  local type=$SF_PRESENT_NODE_TYPE[node] state=$SF_PRESENT_NODE_STATE[node]
-  local body=$SF_PRESENT_NODE_BODY[node]
-  local tokens notes
+  local type=$SF_PRESENT_NODE_TYPE[$1]
   if [[ $type == (message|reasoning) ]]; then
-    sf_tui_message_preview_tail $node $hidden
-    return
-  fi
-  if [[ $type == (hook_activity|hook_model_context|hook_user_context|error) ]]; then
-    sf_tui_hook_preview_tail $node $hidden
-    return
-  fi
-  body=${body#"${body%%[!$'\n']*}"}
-  body=${body%"${body##*[!$'\n']}"}
-  if [[ $type == tool_call ]]; then
-    if (( hidden )); then
-      REPLY='│ …'
-    else
-      REPLY=''
-    fi
-    return
-  fi
-  # Every other type is dispatched above, so what remains is one tool result.
-  sf_tui_token_count "$body"
-  tokens=$REPLY
-  REPLY=''
-  if [[ $state == open ]]; then
-    [[ $SF_PRESENT_NODE_STATUS[node] == permission ]] || {
-      if (( hidden )); then
-        REPLY="  … ~$tokens tokens $SF_PRESENT_ACTIVITY"
-      else
-        REPLY="╰ $SF_PRESENT_ACTIVITY"
-      fi
-    }
+    sf_tui_message_preview_tail "$1" "$2"
+  elif [[ $type == (tool_call|tool_result) ]]; then
+    sf_tui_tool_preview_tail "$1" "$2"
   else
-    sf_tui_result_notes $node
-    notes=$REPLY
-    REPLY=''
-    (( ! hidden )) || REPLY="  … ~$tokens tokens"
-    if [[ -n $notes ]]; then
-      if [[ -n $REPLY ]]; then
-        REPLY+=" · $notes"
-      elif [[ -z $body ]]; then
-        REPLY="╰ $notes"
-      else
-        REPLY="  $notes"
-      fi
-    elif [[ -z $body ]]; then
-      REPLY='╰'
-    fi
+    sf_tui_hook_preview_tail "$1" "$2"
   fi
 }
 
@@ -170,7 +118,7 @@ sf_tui_rows() {
   local cursor=${3:-1:0} text part state type heading body spans character run activity_text
   local leading
   local break_text display prefix preview=full head tail cursor_value row_highlight
-  local style_kind divider_style title_style clamp_style title_value
+  local style_kind divider_style title_style clamp_style
   local -a cursor_parts row_map break_map source_spans projected characters
 
   (( columns > 0 && budget > 0 )) || return 1
@@ -262,108 +210,30 @@ sf_tui_rows() {
         message|reasoning)
           sf_tui_message_layout $node || return 1
           ;;
-        tool_call)
-          decorated=1
-          preview=$SF_PRESENT_PREVIEW_TOOL_CALL
-          head="⛭ $heading"
-          ;;
-        tool_result)
-          decorated=1
-          preview=$SF_PRESENT_PREVIEW_TOOL_RESULT
-          [[ $SF_PRESENT_NODE_META[node] != full ]] || preview=full
+        tool_call|tool_result)
+          sf_tui_tool_layout $node || return 1
           ;;
         hook_activity|hook_model_context|hook_user_context|error)
           sf_tui_hook_layout $node || return 1
           ;;
         *) return 1 ;;
       esac
-      if [[ $type == tool_call ]]; then
-        [[ -z $SF_PRESENT_NODE_META[node] ]] || head+=" · $SF_PRESENT_NODE_META[node]"
-        value_start=2
-        title_value=$heading
-        value_stop=$(( value_start + ${#title_value} ))
-      fi
-      if [[ $type == (tool_call|tool_result) ]]; then
-        previewed=1
-        leading=${body%%[!$'\n']*}
-        source_base=${#leading}
-        body=${body#"$leading"}
-        body=${body%"${body##*[!$'\n']}"}
-        if [[ $preview == 0 ]]; then
-          collapsed=1
-          if [[ $type == tool_call ]]; then
-            text=$head
-          else
-            text='╰'
-            [[ -z $body ]] || text+=' …'
-            if [[ $state == open ]]; then
-              text+=" $SF_PRESENT_ACTIVITY"
-            else
-              sf_tui_result_notes $node
-              [[ -z $REPLY ]] || text+=" · $REPLY"
-            fi
-            if [[ -n $body ]]; then
-              clamp_start=2
-              clamp_stop=${#text}
-            fi
-          fi
-          [[ $state != open ]] || withhold_all=1
-        else
-          if [[ $type == tool_result ]]; then
-            text=$body
-          else
-            text=$head
-            if [[ -n $body ]]; then
-              text+=$'\n'$body
-            fi
-          fi
-          [[ $type != tool_result || $SF_PRESENT_NODE_STATUS[node] != permission ]] || withhold_all=1
-          if [[ $state == open && -z $body ]] && (( ! withhold_all )); then
-            sf_tui_preview_tail $node 0
-            if [[ -n $REPLY ]]; then
-              activity=1
-              activity_text=$REPLY
-            fi
-          fi
-        fi
-      fi
       if (( skip )); then
         (( node++ ))
         offset=0
         preview_used=0
         continue
       fi
-      if [[ $type == (tool_call|tool_result) ]] && (( ! collapsed && ${#body} )); then
-        if [[ $type == tool_result ]]; then
-          content_start=0
-        else
-          content_start=$(( ${#text} - ${#body} ))
-        fi
-        content_end=$(( content_start + ${#body} ))
-      fi
-      if [[ $type == (section|activity|tool_call) ]]; then
-        if (( node != 1 || SF_PRESENT_PREFIX_VISIBLE )); then
-          text=$'\n'$text
-          if (( value_start >= 0 )); then
-            (( value_start++, value_stop++ ))
-          fi
-          if (( clamp_start >= 0 )); then
-            (( clamp_start++, clamp_stop++ ))
-          fi
-          if (( content_start >= 0 )); then
-            (( content_start++, content_end++ ))
-          fi
-          if [[ $type == section ]]; then
-            (( section_start++, section_end++ ))
-            if (( section_id_start >= 0 )); then
-              (( section_id_start++, section_id_end++ ))
-            fi
+      # Sections and standalone activity carry only their own leading blank row.
+      if [[ $type == (section|activity) ]] &&
+          (( node != 1 || SF_PRESENT_PREFIX_VISIBLE )); then
+        text=$'\n'$text
+        if [[ $type == section ]]; then
+          (( section_start++, section_end++ ))
+          if (( section_id_start >= 0 )); then
+            (( section_id_start++, section_id_end++ ))
           fi
         fi
-      fi
-      if [[ $type == (tool_call|tool_result) ]] && (( ! collapsed && ${#body} )); then
-        body_start=$(( ${#text} - ${#body} ))
-        body_end=${#text}
       fi
       length=${#text}
       (( offset <= length )) || return 1

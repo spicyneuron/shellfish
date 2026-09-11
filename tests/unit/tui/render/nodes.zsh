@@ -14,19 +14,26 @@ assert_equal 'section,message,hook_model_context' "${(j:,:)SF_PRESENT_NODE_TYPE}
 assert_equal 'startup context' "$SF_PRESENT_NODE_BODY[-1]"
 assert_equal closed "$SF_PRESENT_NODE_STATE[-1]"
 
-# Hook activity disappears on completion, including while a tool is suspended.
+# Hook activity disappears on completion, leaving no spacing behind.
 sf_tui_reset
 sf_tui_event hook_activity session_start silent working
 sf_tui_event hook_activity
 assert_equal 0 "${#SF_PRESENT_NODE_TYPE}"
-sf_tui_event tool_call call_1 shell '{}'
+
+# A call and its pending result are one sequential pair.
+sf_tui_reset
 sf_tui_event hook_activity pre_tool_use silent working
 sf_tui_event hook_activity
-assert_equal 0 "${#${(M)SF_PRESENT_NODE_TYPE:#hook_activity}}"
-assert_equal tool_result "$SF_PRESENT_NODE_TYPE[-1]"
-assert_equal '' "$SF_PRESENT_NODE_META[-1]"
+sf_tui_event tool_call call_1 shell '{}'
+assert_equal 'section,tool_call,tool_result' "${(j:,:)SF_PRESENT_NODE_TYPE}"
+assert_equal open "$SF_PRESENT_NODE_STATE[-1]"
 sf_tui_event tool_result call_1 0 done
 assert_equal done "$SF_PRESENT_NODE_BODY[-1]"
+assert_equal closed "$SF_PRESENT_NODE_STATE[-1]"
+assert_equal '' "$SF_PRESENT_TOOL_CALL"
+if sf_tui_event tool_result call_1 0 again; then
+  fail 'accepted a result without a pending call'
+fi
 
 sf_tui_reset
 sf_tui_event user hello
@@ -61,7 +68,6 @@ assert_equal open "$SF_PRESENT_NODE_STATE[3]"
 
 sf_tui_event assistant_end
 sf_tui_event tool_call call_1 shell '{"command":"true"}'
-sf_tui_event tool_call call_2 read_file README.md '' plain
 sf_tui_event tool_permission 'host access'
 assert_equal 1 "$REPLY"
 assert_equal permission "$SF_PRESENT_NODE_STATUS[5]"
@@ -77,6 +83,7 @@ assert_equal tool_result "$SF_PRESENT_NODE_TYPE[5]"
 assert_equal ok "$SF_PRESENT_NODE_BODY[5]"
 assert_equal 0 "$SF_PRESENT_NODE_STATUS[5]"
 assert_equal closed "$SF_PRESENT_NODE_STATE[5]"
+sf_tui_event tool_call call_2 read_file README.md '' plain
 sf_tui_event tool_result call_2 0 contents
 assert_equal tool_call "$SF_PRESENT_NODE_TYPE[6]"
 assert_equal plain "$SF_PRESENT_NODE_FORMAT[6]"
