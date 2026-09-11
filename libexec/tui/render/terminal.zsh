@@ -60,10 +60,10 @@ sf_tui_terminal_sync_end() {
   return 0
 }
 
-# Freeze the safe rows the last repaint produced, together with the draft they
-# will be committed above. The reimplementation must also stage the formatter
-# consumption these rows represent, so that sf_tui_terminal_finish can apply it
-# and a failed commit can discard it.
+# Freezes the safe rows the last repaint produced, the formatter consumption
+# they represent, and the draft they will be committed above. Only
+# sf_tui_terminal_finish applies that consumption, so a commit that never
+# happens leaves every formatter as it was.
 sf_tui_terminal_stage() {
   (( ! SF_PRESENT_PENDING_ROWS )) || return 1
   (( SF_PRESENT_SAFE_ROWS )) || return 1

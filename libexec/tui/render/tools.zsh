@@ -89,17 +89,6 @@ sf_tui_tool_notes() {
   REPLY=${(j: · :)notes}
 }
 
-sf_tui_tool_highlight() {
-  local body=$1 format=$2
-  SF_PRESENT_HIGHLIGHT_SPANS=()
-  case $format in
-    plain) ;;
-    file_diff) sf_tui_diff_highlight "$body" ;;
-    markdown|md) sf_tui_markdown_highlight "$body" ;;
-    *) sf_tui_code_highlight "$body" "$format" ;;
-  esac
-}
-
 sf_tui_tool_pad() {
   local text=$1 character padded=$1
   integer columns=$2 width=0
@@ -123,7 +112,13 @@ sf_tui_format_tool_body() {
   local base_style=${SF_PRESENT_STYLE[$kind]-} rail_style=${SF_PRESENT_STYLE[divider]-}
   local -a projected=() spans=()
 
-  sf_tui_tool_highlight "$body" "$format" || return 1
+  SF_PRESENT_HIGHLIGHT_SPANS=()
+  case $format in
+    plain) ;;
+    file_diff) sf_tui_diff_highlight "$body" ;;
+    markdown|md) sf_tui_markdown_highlight "$body" ;;
+    *) sf_tui_code_highlight "$body" "$format" ;;
+  esac
   sf_tui_wrap $columns "$body" "$prefix" "${(@)SF_PRESENT_HIGHLIGHT_SPANS}" || return 1
   limit=${#SF_WRAP_ROWS}
   if [[ $preview != full ]] && (( limit > preview )); then
@@ -158,49 +153,8 @@ sf_tui_format_tool_body() {
     SF_FORMAT_ROWS+=( "$text" )
     SF_FORMAT_SPANS+=( "${(j: :)spans}" )
     SF_FORMAT_CONSUMED+=( $SF_WRAP_CONSUMED[row] )
-    SF_FORMAT_SOURCE+=( $SF_WRAP_CONSUMED[row] )
   done
   REPLY=$hidden
-}
-
-sf_tui_format_tool_head() {
-  integer columns=$1 name_end row
-  local name=$2 summary=$3 text
-  local base_style=${SF_PRESENT_STYLE[tool_call]-}
-  local -a source=() spans=()
-  text="⛭ $name${summary:+ · $summary}"
-  name_end=$(( 2 + ${#name} ))
-  [[ -z $base_style ]] || source=( 2 $name_end "$base_style,bold" )
-  sf_tui_wrap $columns "$text" '' "${(@)source}" || return 1
-  for (( row = 1; row <= ${#SF_WRAP_ROWS}; row++ )); do
-    spans=()
-    [[ -z $base_style || -z $SF_WRAP_ROWS[row] ]] ||
-      spans+=( 0 ${#SF_WRAP_ROWS[row]} "$base_style" )
-    SF_FORMAT_ROWS+=( "$SF_WRAP_ROWS[row]" )
-    SF_FORMAT_SPANS+=( "${(j: :)spans} $SF_WRAP_SPANS[row]" )
-    SF_FORMAT_CONSUMED+=( 0 )
-    SF_FORMAT_SOURCE+=( 0 )
-  done
-}
-
-sf_tui_format_tool_line() {
-  integer columns=$1 row
-  local text=$2 kind=$3 overlay=${4-}
-  local base_style=${SF_PRESENT_STYLE[$kind]-}
-  local rail_style=${SF_PRESENT_STYLE[divider]-} overlay_style=${SF_PRESENT_STYLE[$overlay]-}
-  local -a source=() spans=()
-  [[ -z $overlay_style ]] || source+=( 0 ${#text} "$overlay_style" )
-  [[ -z $rail_style || $text != (│|╰)* ]] || source+=( 0 1 "$rail_style" )
-  sf_tui_wrap $columns "$text" '' "${(@)source}" || return 1
-  for (( row = 1; row <= ${#SF_WRAP_ROWS}; row++ )); do
-    spans=()
-    [[ -z $base_style || -z $SF_WRAP_ROWS[row] ]] ||
-      spans+=( 0 ${#SF_WRAP_ROWS[row]} "$base_style" )
-    SF_FORMAT_ROWS+=( "$SF_WRAP_ROWS[row]" )
-    SF_FORMAT_SPANS+=( "${(j: :)spans} $SF_WRAP_SPANS[row]" )
-    SF_FORMAT_CONSUMED+=( 0 )
-    SF_FORMAT_SOURCE+=( 0 )
-  done
 }
 
 sf_tui_format_tool() {
@@ -210,13 +164,7 @@ sf_tui_format_tool() {
   local first second format full sandbox preview configured notes tail overlay
   local committed total
 
-  SF_FORMAT_ROWS=()
-  SF_FORMAT_SPANS=()
-  SF_FORMAT_CONSUMED=()
-  SF_FORMAT_SOURCE=()
-  SF_FORMAT_SAFE=0
-  SF_FORMAT_LEADING=0
-  SF_FORMAT_BODY_ROWS=0
+  sf_tui_format_start
   live=$(( SF_PRESENT_LIVE == index ))
   body=${body#"${body%%[!$'\n']*}"}
   leading=$(( raw_length - ${#body} ))
@@ -233,15 +181,9 @@ sf_tui_format_tool() {
     sf_tui_formatter_data $index 4 || return 1
     committed=$REPLY
     if [[ $committed != 1 ]]; then
-      (( index == 1 && ! SF_PRESENT_PREFIX_VISIBLE )) || sf_tui_format_blank
-      if [[ -n $SF_PRESENT_ROLE[index] ]]; then
-        sf_tui_message_rule $index $columns
-        SF_FORMAT_ROWS+=( "$REPLY" )
-        SF_FORMAT_CONSUMED+=( 0 )
-        SF_FORMAT_SOURCE+=( 0 )
-        sf_tui_format_blank
-      fi
-      sf_tui_format_tool_head $columns "$first" "$second" || return 1
+      sf_tui_format_rule $index $columns
+      sf_tui_format_head $columns "⛭ $first${second:+ · $second}" tool_call 2 \
+        $(( 2 + ${#first} )) || return 1
     fi
     SF_FORMAT_LEADING=${#SF_FORMAT_ROWS}
     configured=$SF_PRESENT_PREVIEW_TOOL_CALL
@@ -256,7 +198,7 @@ sf_tui_format_tool() {
       sf_tui_format_edges $(( SF_FORMAT_LEADING + 1 )) $leading \
         $(( raw_length - leading - ${#body} )) ${#body}
       if (( hidden )); then
-        sf_tui_format_tool_line $columns '│ …' tool_call clamp || return 1
+        sf_tui_format_styled $columns '│ …' tool_call clamp || return 1
       fi
     fi
     SF_FORMAT_SAFE=${#SF_FORMAT_ROWS}
@@ -296,7 +238,7 @@ sf_tui_format_tool() {
       sf_tui_tool_notes "$second" "$sandbox"
       [[ -z $REPLY ]] || tail+=" · $REPLY"
     fi
-    sf_tui_format_tool_line $columns "$tail" tool_result "$overlay" || return 1
+    sf_tui_format_styled $columns "$tail" tool_result "$overlay" || return 1
   elif [[ -n $body ]]; then
     # The rail opens the result once. After a partial commit took it, the
     # remaining rows continue under plain indentation.
@@ -311,22 +253,22 @@ sf_tui_format_tool() {
     notes=$REPLY
     if (( hidden )); then
       tail="  … ~${total:-0} tokens${notes:+ · $notes}"
-      sf_tui_format_tool_line $columns "$tail" tool_result clamp || return 1
+      sf_tui_format_styled $columns "$tail" tool_result clamp || return 1
     elif [[ -n $notes ]]; then
-      sf_tui_format_tool_line $columns "  $notes" tool_result || return 1
+      sf_tui_format_styled $columns "  $notes" tool_result || return 1
     fi
   elif (( live )); then
-    sf_tui_format_tool_line $columns "╰ $SF_PRESENT_ACTIVITY" tool_result || return 1
+    sf_tui_format_styled $columns "╰ $SF_PRESENT_ACTIVITY" tool_result || return 1
   else
     sf_tui_tool_notes "$second" "$sandbox"
     notes=$REPLY
     # A drained result already opened its rail, so its notes close it under the
     # same indentation the committed rows used.
     if [[ $committed == 1 ]]; then
-      [[ -z $notes ]] || sf_tui_format_tool_line $columns "  $notes" tool_result ||
+      [[ -z $notes ]] || sf_tui_format_styled $columns "  $notes" tool_result ||
         return 1
     else
-      sf_tui_format_tool_line $columns "╰${notes:+ $notes}" tool_result || return 1
+      sf_tui_format_styled $columns "╰${notes:+ $notes}" tool_result || return 1
     fi
   fi
   (( live )) || SF_FORMAT_SAFE=${#SF_FORMAT_ROWS}

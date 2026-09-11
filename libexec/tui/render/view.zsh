@@ -60,10 +60,10 @@ sf_tui_transcript() {
           SF_PRESENT_SAFE_TEXT+=$'\n'
           safe_offset=$(( safe_offset + 1 ))
         fi
-        sf_tui_safe_shift_spans $safe_offset "$SF_FORMAT_SPANS[row]"
+        sf_tui_shift_spans SF_PRESENT_SAFE_HIGHLIGHTS $safe_offset "$SF_FORMAT_SPANS[row]"
         SF_PRESENT_SAFE_TEXT+="$SF_FORMAT_ROWS[row]"
         safe_offset=$(( safe_offset + ${#SF_FORMAT_ROWS[row]} ))
-        source=$(( source + ${SF_FORMAT_SOURCE[row]:-0} ))
+        source=$(( source + ${SF_FORMAT_CONSUMED[row]:-0} ))
       done
       leading=$(( take >= SF_FORMAT_LEADING && SF_FORMAT_LEADING > 0 ))
       body_rows=$(( take > SF_FORMAT_LEADING ? take - SF_FORMAT_LEADING : 0 ))
@@ -97,31 +97,24 @@ sf_tui_transcript() {
   for (( row = 1; row <= ${#rows}; row++ )); do
     (( row == 1 )) || SF_PRESENT_VIEWPORT_TEXT+=$'\n'
     (( row == 1 )) || offset=$(( offset + 1 ))
-    sf_tui_shift_spans $offset "$spans[row]"
+    sf_tui_shift_spans SF_PRESENT_VIEWPORT_HIGHLIGHTS $offset "$spans[row]"
     SF_PRESENT_VIEWPORT_TEXT+=$rows[row]
     offset=$(( offset + ${#rows[row]} ))
   done
   SF_PRESENT_SAFE_ROWS=$staged
 }
 
-sf_tui_safe_shift_spans() {
-  integer base=$1 index
-  local -a parts=( ${=2} )
-  for (( index = 1; index <= ${#parts}; index += 3 )); do
-    SF_PRESENT_SAFE_HIGHLIGHTS+=(
-      $(( base + parts[index] )) $(( base + parts[index + 1] )) "$parts[index + 2]" )
-  done
-}
-
-# Appends one row's zero-based spans to the viewport, moved to where the row
-# actually sits in PREDISPLAY.
+# Appends one row's zero-based spans to the array named by $1, moved to where
+# the row actually sits in the text that array styles.
 sf_tui_shift_spans() {
-  integer base=$1 index
-  local -a parts=( ${=2} )
+  local name=$1
+  integer base=$2 index
+  local -a parts=( ${=3} ) shifted=()
   for (( index = 1; index <= ${#parts}; index += 3 )); do
-    SF_PRESENT_VIEWPORT_HIGHLIGHTS+=(
+    shifted+=(
       $(( base + parts[index] )) $(( base + parts[index + 1] )) "$parts[index + 2]" )
   done
+  set -A "$name" "${(@P)name}" "${(@)shifted}"
 }
 
 sf_tui_chat_start() {

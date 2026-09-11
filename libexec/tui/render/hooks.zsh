@@ -101,42 +101,14 @@ sf_tui_error_append() {
   SF_PRESENT_LAST_ROLE=error
 }
 
-sf_tui_format_hook_head() {
-  integer columns=$1 value_start=$4 value_end=$5 clamp_start=${6:--1} row
-  local text=$2 kind=$3 style=${SF_PRESENT_STYLE[$3]-}
-  local clamp_style=${SF_PRESENT_STYLE[clamp]-}
-  local -a source=() spans=()
-
-  [[ -z $style ]] || source+=( $value_start $value_end "$style,bold" )
-  [[ -z $clamp_style ]] || (( clamp_start < 0 )) ||
-    source+=( $clamp_start ${#text} "$clamp_style" )
-  sf_tui_wrap $columns "$text" '' "${(@)source}" || return 1
-  for (( row = 1; row <= ${#SF_WRAP_ROWS}; row++ )); do
-    spans=()
-    [[ -z $style || -z $SF_WRAP_ROWS[row] ]] ||
-      spans=( 0 ${#SF_WRAP_ROWS[row]} "$style" )
-    SF_FORMAT_ROWS+=( "$SF_WRAP_ROWS[row]" )
-    SF_FORMAT_SPANS+=( "${(j: :)spans} $SF_WRAP_SPANS[row]" )
-    SF_FORMAT_CONSUMED+=( 0 )
-    SF_FORMAT_SOURCE+=( 0 )
-  done
-}
-
 sf_tui_format_hook() {
-  integer index=$1 columns=$2 row visible hidden=0 leading
+  integer index=$1 columns=$2 visible hidden=0 leading
   integer raw_length=${#SF_PRESENT_TEXT[index]}
   local kind=$SF_PRESENT_KIND[index] body=$SF_PRESENT_TEXT[index]
-  local first second head preview=full configured=full style clamp committed total
+  local first second head preview=full configured=full clamp committed total
   local state continuation
-  local -a spans=()
 
-  SF_FORMAT_ROWS=()
-  SF_FORMAT_SPANS=()
-  SF_FORMAT_CONSUMED=()
-  SF_FORMAT_SOURCE=()
-  SF_FORMAT_SAFE=0
-  SF_FORMAT_LEADING=0
-  SF_FORMAT_BODY_ROWS=0
+  sf_tui_format_start
 
   sf_tui_formatter_data $index 1 || return 1
   first=$REPLY
@@ -151,7 +123,7 @@ sf_tui_format_hook() {
       ;;
     hook_activity)
       (( index == 1 && ! SF_PRESENT_PREFIX_VISIBLE )) || sf_tui_format_blank
-      sf_tui_format_hook_head $columns "$body" hook_activity 0 ${#body} || return 1
+      sf_tui_format_head $columns "$body" hook_activity 0 ${#body} || return 1
       sf_tui_format_styled $columns "$SF_PRESENT_ACTIVITY" hook_activity || return 1
       return
       ;;
@@ -191,12 +163,12 @@ sf_tui_format_hook() {
   if [[ $configured == 0 && -n $body ]]; then
     clamp=" · ~$(( (total + 3) / 4 )) tokens"
     if [[ $committed != 1 ]]; then
-      sf_tui_format_hook_head $columns "$head$clamp" "$kind" 2 \
+      sf_tui_format_head $columns "$head$clamp" "$kind" 2 \
         $(( 2 + ${#first} )) ${#head} || return 1
     fi
     body=''
   elif [[ $committed != 1 ]]; then
-    sf_tui_format_hook_head $columns "$head" "$kind" 2 $(( 2 + ${#first} )) || return 1
+    sf_tui_format_head $columns "$head" "$kind" 2 $(( 2 + ${#first} )) || return 1
   fi
   SF_FORMAT_LEADING=${#SF_FORMAT_ROWS}
   if [[ -n $body ]]; then
@@ -214,17 +186,7 @@ sf_tui_format_hook() {
       visible=$preview
       hidden=1
     fi
-    style=${SF_PRESENT_STYLE[$kind]-}
-    for (( row = 1; row <= visible; row++ )); do
-      spans=()
-      [[ -z $style || -z $SF_WRAP_ROWS[row] ]] ||
-        spans=( 0 ${#SF_WRAP_ROWS[row]} "$style" )
-      SF_FORMAT_ROWS+=( "$SF_WRAP_ROWS[row]" )
-      SF_FORMAT_SPANS+=( "${(j: :)spans} $SF_WRAP_SPANS[row]" )
-      SF_FORMAT_CONSUMED+=( $SF_WRAP_CONSUMED[row] )
-      SF_FORMAT_SOURCE+=( $SF_WRAP_CONSUMED[row] )
-    done
-    SF_FORMAT_BODY_ROWS=$visible
+    sf_tui_format_body $visible "$kind"
     sf_tui_format_edges $(( SF_FORMAT_LEADING + 1 )) $leading \
       $(( raw_length - leading - ${#body} )) ${#body}
     if (( hidden )); then
