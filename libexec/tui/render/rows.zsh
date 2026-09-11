@@ -59,9 +59,12 @@ sf_tui_result_notes() {
 sf_tui_preview_tail() {
   integer node=$1 hidden=$2
   local type=$SF_PRESENT_NODE_TYPE[node] state=$SF_PRESENT_NODE_STATE[node]
-  local role=$SF_PRESENT_NODE_ROLE[node]
   local body=$SF_PRESENT_NODE_BODY[node]
-  local exact='' tokens notes
+  local tokens notes
+  if [[ $type == (message|reasoning) ]]; then
+    sf_tui_message_preview_tail $node $hidden
+    return
+  fi
   body=${body#"${body%%[!$'\n']*}"}
   body=${body%"${body##*[!$'\n']}"}
   if [[ $type == tool_call ]]; then
@@ -72,27 +75,10 @@ sf_tui_preview_tail() {
     fi
     return
   fi
-  [[ $type != reasoning ]] || exact=$SF_PRESENT_NODE_META[node]
-  sf_tui_token_count "$body" "$exact"
+  sf_tui_token_count "$body"
   tokens=$REPLY
   REPLY=''
   case $type in
-    message)
-      [[ $role != system || ! hidden ]] || REPLY="… ~$tokens tokens"
-      ;;
-    reasoning)
-      if [[ $state == open ]]; then
-        if (( hidden )); then
-          REPLY="  … ~$tokens tokens $SF_PRESENT_ACTIVITY"
-        else
-          REPLY="  $SF_PRESENT_ACTIVITY"
-        fi
-      elif (( hidden )); then
-        REPLY="  … Thought for ~$tokens tokens."
-      else
-        REPLY="  Thought for ~$tokens tokens."
-      fi
-      ;;
     tool_result)
       if [[ $state == open ]]; then
         [[ $SF_PRESENT_NODE_STATUS[node] == permission ]] || {
@@ -182,10 +168,10 @@ sf_tui_rows() {
   integer section_id_start section_id_end section_id_row_start section_id_row_end
   integer value_start=-1 value_stop=-1
   integer clamp_start=-1 clamp_stop=-1
-  integer pending_separator=0
+  integer pending_separator=0 skip=0
   local cursor=${3:-1:0} text part state type heading body spans character run activity_text
   local leading
-  local break_text display prefix preview=full head tail exact cursor_value row_highlight
+  local break_text display prefix preview=full head tail cursor_value row_highlight
   local style_kind divider_style title_style clamp_style title_value
   local -a cursor_parts row_map break_map source_spans projected characters
 
@@ -245,19 +231,9 @@ sf_tui_rows() {
     value_stop=-1
     clamp_start=-1
     clamp_stop=-1
+    skip=0
     head=''
     preview=full
-
-    if [[ $type == message && $SF_PRESENT_NODE_ROLE[node] != system ]]; then
-      leading=${body%%[!$'\n']*}
-      source_base=${#leading}
-      body=${body#"$leading"}
-      if [[ $body == *$'\n' ]]; then
-        # One final newline settles the text row; additional ones are blank rows.
-        tail=${body##*[!$'\n']}
-        body=${body%"$tail"}$'\n'
-      fi
-    fi
 
     if (( tail_phase )); then
       sf_tui_preview_tail $node $hidden
@@ -285,28 +261,8 @@ sf_tui_rows() {
             (( ${#text} < columns )) && text+=${(l:$(( columns - ${#text} ))::─:)""}
           fi
           ;;
-        message)
-          text=$body
-          if [[ $SF_PRESENT_NODE_ROLE[node] == system ]]; then
-            previewed=1
-            preview=$SF_PRESENT_PREVIEW_CONTEXT
-            if [[ $preview == 0 && -n $body ]]; then
-              sf_tui_token_count "$body"
-              text="… ~$REPLY tokens"
-              collapsed=1
-              clamp_start=0
-              clamp_stop=${#text}
-            fi
-          fi
-          if [[ $state == open ]]; then
-            activity=1
-            withhold=1
-          fi
-          ;;
-        reasoning)
-          decorated=1
-          preview=$SF_PRESENT_PREVIEW_REASONING
-          head='✎ Reasoning'
+        message|reasoning)
+          sf_tui_message_layout $node || return 1
           ;;
         tool_call)
           decorated=1
@@ -345,7 +301,7 @@ sf_tui_rows() {
         title_value=$heading
         value_stop=$(( value_start + ${#title_value} ))
       fi
-      if (( decorated )); then
+      if [[ $type == (tool_call|tool_result|injection|notice) ]]; then
         previewed=1
         leading=${body%%[!$'\n']*}
         source_base=${#leading}
@@ -354,17 +310,9 @@ sf_tui_rows() {
         if [[ $preview == 0 && $type != notice ]]; then
           collapsed=1
           if [[ $type != (tool_call|tool_result) ]]; then
-            exact=''
-            [[ $type != reasoning ]] || exact=$SF_PRESENT_NODE_META[node]
-            sf_tui_token_count "$body" "$exact"
+            sf_tui_token_count "$body"
           fi
-          if [[ $type == reasoning ]]; then
-            if [[ $state == open ]]; then
-              text="✎ Thinking… $SF_PRESENT_ACTIVITY"
-            else
-              text="✎ Thought for ~$REPLY tokens."
-            fi
-          elif [[ $type == tool_call ]]; then
+          if [[ $type == tool_call ]]; then
             text=$head
           elif [[ $type == tool_result ]]; then
             text='╰'
@@ -380,7 +328,6 @@ sf_tui_rows() {
             [[ -z $body ]] || text+=" · ~$REPLY tokens"
           fi
           case $type in
-            reasoning) clamp_start=0 ;;
             tool_result) [[ -z $body ]] || clamp_start=2 ;;
             injection) [[ -z $body ]] || clamp_start=$(( ${#head} + 1 )) ;;
           esac
@@ -407,22 +354,22 @@ sf_tui_rows() {
           fi
         fi
       fi
-      if [[ $type == message && -z $text ]] && (( ! activity )); then
+      if (( skip )); then
         (( node++ ))
         offset=0
         preview_used=0
         continue
       fi
-      if (( ! collapsed && ${#body} )); then
+      if [[ $type != (message|reasoning) ]] && (( ! collapsed && ${#body} )); then
         case $type in
-          message|tool_result) content_start=0 ;;
-          reasoning|tool_call|injection|notice) content_start=$(( ${#text} - ${#body} )) ;;
+          tool_result) content_start=0 ;;
+          tool_call|injection|notice) content_start=$(( ${#text} - ${#body} )) ;;
         esac
         if (( content_start >= 0 )); then
           content_end=$(( content_start + ${#body} ))
         fi
       fi
-      if [[ $type != tool_result ]]; then
+      if [[ $type != (message|reasoning|tool_result) ]]; then
         if (( node != 1 || SF_PRESENT_PREFIX_VISIBLE )); then
           text=$'\n'$text
           if (( value_start >= 0 )); then
@@ -442,7 +389,7 @@ sf_tui_rows() {
           fi
         fi
       fi
-      if (( previewed && ! collapsed && ${#body} )); then
+      if [[ $type != (message|reasoning) ]] && (( previewed && ! collapsed && ${#body} )); then
         body_start=$(( ${#text} - ${#body} ))
         body_end=${#text}
       fi
