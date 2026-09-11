@@ -72,6 +72,16 @@ SF_TUI_TRANSPORT_LINES=( '{"type":"state","name":"live/status","value":"ready"}'
 sf_tui_pending_next
 assert_equal "$node_types" "${(j:,:)SF_PRESENT_NODE_TYPE}"
 
+# Hook activity replaces the standalone spinner and clears without leaving a node.
+sf_tui_reset
+sf_tui_add activity '' '' '' open
+sf_tui_decoded notice notice 'Inspecting project' session_start '' open
+assert_equal notice "$SF_PRESENT_NODE_TYPE[-1]"
+assert_equal 'Inspecting project' "$SF_PRESENT_NODE_HEADING[-1]"
+assert_equal open "$SF_PRESENT_NODE_STATE[-1]"
+sf_tui_decoded notice notice '' '' '' closed
+assert_equal 0 "${#SF_PRESENT_NODE_TYPE}"
+
 if sf_tui_decoded not-supported; then
   fail 'unsupported exec output was accepted'
 fi
@@ -296,7 +306,7 @@ SF_TUI_TRANSPORT_LINES=(
   '{"type":"_assistant_message_delta","text":"seven eight"}'
   '{"type":"_assistant_end","stop":"end"}'
   '{"type":"assistant","stop":"end","content":[{"type":"text","text":"one two three four five six seven eight"}]}'
-  '{"type":"context","hook":"project","script":"test","content":"later"}'
+  '{"type":"hook_result","hook":"project","script":"test","model_context":"later"}'
 )
 BUFFER=''
 CURSOR=0
@@ -448,26 +458,6 @@ assert_equal 'Exec process failed.' "$SF_PRESENT_NODE_HEADING[-1]"
 [[ $SF_PRESENT_NODE_BODY[-1] == *'Discarded 1 queued prompt.'* ]] ||
   fail 'exec failure did not report discarded queued prompts'
 
-# A decoded exec error survives authoritative recovery and takes precedence over
-# the child process's generic nonzero exit.
-sf_tui_reset
-sf_tui_terminal_reset
-SF_PRESENT_SESSION="$tmp/recover.jsonl"
-SF_PRESENT_STATE=working
-sf_tui_transport_reset
-SF_TUI_TRANSPORT_LINES=(
-  '{"type":"_notice","level":"error","title":"Turn failed","source":"","text":"backend emitted an invalid event stream","complete":true}'
-  '{"type":"_notice","level":"error","title":"Turn failed","source":"","text":"cannot append session record: /tmp/recover.jsonl","complete":true}'
-)
-SF_TUI_TRANSPORT_EOF=1
-SF_TUI_TRANSPORT_EXIT_STATUS=1
-SF_TUI_TRANSPORT_EXIT_DETAIL='backend emitted an invalid event stream'
-sf_tui_heartbeat_tick
-assert_equal idle "$SF_PRESENT_STATE"
-assert_equal 'Turn failed' "$SF_PRESENT_NODE_HEADING[-1]"
-assert_equal $'backend emitted an invalid event stream\ncannot append session record: /tmp/recover.jsonl' \
-  "$SF_PRESENT_NODE_BODY[-1]"
-
 # A persisted turn error replaces the exit report: the reloaded transcript ends
 # with the failure, so recovery adds no second notice and chat stays usable.
 sf_tui_reset
@@ -496,7 +486,6 @@ SF_PRESENT_SESSION="$tmp/cancelled.jsonl"
 SF_PRESENT_STATE=cancelling
 sf_tui_transport_reset
 SF_TUI_TRANSPORT_LINES=(
-  '{"type":"_notice","level":"error","title":"Turn failed","source":"","text":"transient detail","complete":true}'
   '{"type":"turn_error","message":"Cancelled."}'
 )
 SF_TUI_TRANSPORT_EOF=1
@@ -506,8 +495,6 @@ assert_equal idle "$SF_PRESENT_STATE"
 assert_equal notice "$SF_PRESENT_NODE_TYPE[-1]"
 assert_equal 'Cancelled.' "$SF_PRESENT_NODE_HEADING[-1]"
 assert_equal '' "$SF_PRESENT_NODE_BODY[-1]"
-[[ ${(j:\n:)SF_PRESENT_NODE_HEADING} != *'Turn failed'* ]] ||
-  fail 'durable cancellation retained a transient error notice'
 
 # A terminated exec can replace a flushed and closed speculative assistant
 # prefix during turn recovery. Chat resets that live tail and remains usable.

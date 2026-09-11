@@ -11,25 +11,18 @@ def event_fields($event_runtime):
   elif .type == "_assistant_reasoning_opaque" or .type == "_turn_usage" then
     # Nothing to present: the durable assistant record carries both.
     empty
-  elif .type == "_hook_start" and keys == ["hook", "script", "text", "type"] and
+  elif .type == "_hook_activity" and keys == ["hook", "script", "text", "type"] and
       (.hook as $hook | hook_names | index($hook) != null) and
-      (.script | nonempty_control_free_string) and (.text | hook_display) then
-    empty
-  elif .type == "_hook_end" and keys == ["error", "text", "type"] and
-      (.error | type == "boolean") and (.text | type == "string") then
-    empty
+      (.script | nonempty_control_free_string) and
+      (.text | hook_display and length > 0) then
+    ["notice", "notice", .text, .hook, "", "open"]
+  elif . == {type:"_hook_activity",text:""} then
+    ["notice", "notice", "", "", "", "closed"]
   elif . == {type:"_assistant_start"} then
     ["assistant_start"]
   elif .type == "_assistant_end" and keys == ["stop", "type"] and
       (.stop | IN("end", "tool_calls", "length")) then
     ["assistant_end"]
-  elif .type == "_notice" and
-      keys == ["complete", "level", "source", "text", "title", "type"] and
-      ([.title, .source, .text] | all(type == "string")) and
-      (.level | IN("info", "error")) and (.complete | type == "boolean") then
-    ["notice", (if .level == "error" then "error" else "notice" end),
-     (.title | sub("/run$"; "") | split("/") | last), .source, .text,
-     (if .complete then "closed" else "open" end)]
   elif .type == "_session_prepare" and
       keys == ["path", "records", "type"] and
       (.path | nul_free_string and startswith("/")) and
@@ -62,7 +55,7 @@ def event_fields($event_runtime):
       (.type == "system" and canonical_session_record) then
     empty
   elif canonical_user_message or canonical_assistant_message or
-      canonical_tool_call or canonical_tool_result or canonical_context or
+      canonical_tool_call or canonical_tool_result or canonical_hook_result or
       (.type == "turn_error" and canonical_session_record) then
     # Usage is committed with its assistant record rather than streamed.
     (select(canonical_assistant_message and has("usage")) | .usage |

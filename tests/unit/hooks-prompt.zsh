@@ -10,11 +10,13 @@ make_script session_update 'print -rn -u3 -- '\''{"action":"session_update","pat
 typeset session_update=$script
 make_script invalid_update 'print -rn -u3 -- '\''{"action":"session_update","patch":[]}'\''; exit 11'
 typeset invalid_update=$script
+make_script metadata_only 'print -rn -u3 -- '\''{"context":{"prompt":"false","status":1}}'\''; exit 10'
+typeset metadata_only=$script
 
 # The user_prompt_submit hook preserves exact prompt bytes.
 typeset prompt_session="$tmp/prompt-session.jsonl"
 typeset prompt_script
-make_script prompt '[[ $1 == user_prompt_submit && $SHELLFISH_TURN_ID == 1 ]]; [[ $SHELLFISH_SESSION == /* && $SHELLFISH_MODEL == test ]]; [[ $0 == /* && -d ${0:A:h} && -d $SHELLFISH_TURN_STATE ]]; cat; print -n context; [[ -z $CONTROL ]] || { jq -cn --arg path "$CONTROL" '\''{action:"handoff",argv:["/usr/bin/printf",$path]}'\'' >&3; exit 11 }; [[ -z $META ]] || { print -rn -u3 -- '\''{"context":{"prompt":"false","status":1}}'\''; exit 10 }; [[ -z $BINARY ]] || print -rn -- $'\''\0tail'\''; [[ -z $SKIP ]] || { print -rn -u2 -- blocked; exit 10; }'
+make_script prompt '[[ $1 == user_prompt_submit && $SHELLFISH_TURN_ID == 1 ]]; [[ $SHELLFISH_SESSION == /* && $SHELLFISH_MODEL == test ]]; [[ $0 == /* && -d ${0:A:h} && -d $SHELLFISH_TURN_STATE ]]; cat; print -n context; [[ -z $CONTROL ]] || { jq -cn --arg path "$CONTROL" '\''{action:"handoff",argv:["/usr/bin/printf",$path]}'\'' >&3; exit 11 }; [[ -z $META ]] || { print -rn -u3 -- '\''{"context":{"prompt":"false","status":1}}'\''; exit 10 }; [[ -z $BINARY ]] || { print -rn -- $'\''\0tail'\''; print -rn -u3 -- '\''{"state":[{"name":"binary/context","value":true}]}'\''; }; [[ -z $SKIP ]] || { print -rn -u2 -- blocked; exit 10; }'
 prompt_script=$script
 typeset -g SF_TEST_RUNTIME=$(jq -cn --arg script "$prompt_script" '
   {
@@ -34,8 +36,8 @@ typeset accepted_turn=$SHELLFISH_TURN_ID
 [[ $accepted_turn == 1 && ${(t)SHELLFISH_TURN_ID} != *export* ]]
 jq -eRs '
   [split("\n")[] | select(length > 0) | fromjson] as $records |
-  $records[-1] == {type:"context",hook:"user_prompt_submit",script:"prompt",
-    content:"first\nsecond\ncontext"}
+  $records[-1] == {type:"hook_result",hook:"user_prompt_submit",script:"prompt",
+    model_context:"first\nsecond\ncontext"}
 ' "$prompt_session" >/dev/null
 
 # Prompt matching skips a component before invocation and continues in configured order.
@@ -55,12 +57,11 @@ SF_HOOK_JSONL=1 SELECT_MARKER="$select_marker" \
   run_prompt_hook ordinary "$select_session" >"$select_events"
 [[ ! -e $select_marker ]]
 jq -e -s '
-  map(.type) == ["_hook_start","context","_hook_end"] and
-  .[0] == {type:"_hook_start",hook:"user_prompt_submit",script:"prompt",text:""} and
-  .[1].script == "prompt" and .[2] == {type:"_hook_end",text:"ordinarycontext",error:false}
+  . == [{type:"hook_result",hook:"user_prompt_submit",script:"prompt",
+    model_context:"ordinarycontext"}]
 ' "$select_events" >/dev/null
-jq -e 'select(.type == "context" and .script == "prompt" and
-  .content == "ordinarycontext")' < <(tail -n 1 "$select_session") >/dev/null
+jq -e 'select(.type == "hook_result" and .script == "prompt" and
+  .model_context == "ordinarycontext")' < <(tail -n 1 "$select_session") >/dev/null
 SF_TEST_RUNTIME=$(jq -c --arg unmatched "$unmatched" '
   .harness.user_prompt_submit = [
     {command:$unmatched,display:"Must not display",environment:[],
@@ -77,22 +78,25 @@ SF_TEST_RUNTIME=$saved_runtime
 SKIP=1 run_prompt_hook command "$prompt_session"
 [[ ${#reply} == 1 && $reply[1] == handled ]]
 [[ -z ${SHELLFISH_TURN_ID-} ]]
-jq -e 'select(.type == "context" and .content == "commandcontext")' \
+jq -e 'select(.type == "hook_result" and .model_context == "commandcontext" and
+  .user_context == "blocked")' \
   < <(tail -n 1 "$prompt_session") >/dev/null
 META=1 run_prompt_hook '!false' "$prompt_session"
 jq -e '
-  select(.type == "context" and .script == "prompt" and
-    .prompt == "false" and .status == 1 and .content == "!falsecontext")
+  select(.type == "hook_result" and .script == "prompt" and
+    .prompt == "false" and .status == 1 and .model_context == "!falsecontext")
 ' < <(tail -n 1 "$prompt_session") >/dev/null
 BINARY=1 run_prompt_hook binary "$prompt_session"
 [[ ${#reply} == 1 && $reply[1] == proceed ]]
-jq -e 'select(.type == "context" and .content == "binarycontext\u0000tail")' \
+jq -e 'select(.type == "hook_result" and .model_context == "binarycontext\u0000tail")' \
   < <(tail -n 1 "$prompt_session") >/dev/null
-# Context emitted with a handoff is already durable.
+jq -e -s '.[-2] == {type:"state",name:"binary/context",value:true}' \
+  "$prompt_session" >/dev/null
+# Model context emitted with a handoff is already durable.
 CONTROL="$tmp/switched.jsonl" run_prompt_hook /switch "$prompt_session"
 [[ ${#reply} == 3 && $reply[1] == handoff && $reply[2] == /usr/bin/printf &&
    $reply[3] == "$tmp/switched.jsonl" ]]
-jq -e 'select(.type == "context" and .content == "/switchcontext")' \
+jq -e 'select(.type == "hook_result" and .model_context == "/switchcontext")' \
   < <(tail -n 1 "$prompt_session") >/dev/null
 
 # A session update is returned to exec for application during the turn.
@@ -119,6 +123,19 @@ if run_prompt_hook /update "$invalid_update_session"; then
 fi
 [[ $SF_HOOK_ERROR == 'user_prompt_submit hook script returned invalid control data' ]]
 
+# Prompt and status metadata require model context in the same result.
+SF_TEST_RUNTIME=$(jq -c --arg script "$metadata_only" '
+  .harness.user_prompt_submit=[{command:$script,display:"",environment:[]}]
+' <<<"$SF_TEST_RUNTIME")
+typeset metadata_session="$tmp/metadata-session.jsonl"
+sf_hooks_turn_state_cleanup
+sf_test_session "$metadata_session"
+sf_hooks_turn_state_create
+if run_prompt_hook /metadata "$metadata_session"; then
+  fail 'context metadata without model context was accepted'
+fi
+[[ $SF_HOOK_ERROR == 'user_prompt_submit hook script returned invalid control data' ]]
+
 # Exit 11 may halt the remaining prompt scripts without requesting a handoff.
 make_script halt 'print -rn -- halted; exit 11'
 typeset halt=$script
@@ -131,7 +148,7 @@ sf_test_session "$halt_session"
 sf_hooks_turn_state_create
 run_prompt_hook /halt "$halt_session"
 [[ ${#reply} == 1 && $reply[1] == handled ]]
-jq -e 'select(.type == "context" and .content == "halted")' \
+jq -e 'select(.type == "hook_result" and .model_context == "halted")' \
   < <(tail -n 1 "$halt_session") >/dev/null
 
 SF_TEST_RUNTIME=$(jq -c --arg script "$nul_argv" '

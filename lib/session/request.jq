@@ -7,7 +7,7 @@ def context_item:
   "<context script=\"" + (.script | xml_escape) + "\"" +
   (if has("prompt") then " prompt=\"" + (.prompt | xml_escape) + "\"" else "" end) +
   (if has("status") then " status=\"" + (.status | tostring) + "\"" else "" end) +
-  ">\n" + (.content | xml_escape) + "\n</context>";
+  ">\n" + (.model_context | xml_escape) + "\n</context>";
 
 def context_groups:
   reduce .[] as $record ([];
@@ -24,12 +24,13 @@ def context_message($context; $request):
   ([$context | context_groups[] | context_group] | join("\n\n")) as $blocks |
   {type:"user", content:[{type:"text", text:($blocks + "\n\n" + $request)}]};
 
-# Fold context into the next message, or a trailing user message.
+# Fold model context into the next message, or a trailing user message.
 def request_messages:
   reduce .[] as $record ({messages:[], context:[]};
     if $record.type == "state" then .
     elif $record.type == "tool_call" then .messages += [$record]
-    elif $record.type == "context" then .context += [$record]
+    elif $record.type == "hook_result" then
+      if $record.model_context? != null then .context += [$record] else . end
     elif $record.type == "user" then
       if (.context | length) == 0 then .messages += [$record]
       else

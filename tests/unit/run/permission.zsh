@@ -40,7 +40,7 @@ stream=$(SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_BYPASS=true \
 print -r -- "$stream" | jq -eRn '
   [inputs | fromjson] as $events |
   ($events | map(select(.type == "_tool_permission_request")) | length) == 0 and
-  ($events | all(.type != "_hook_start" and .type != "_hook_end")) and
+  ($events | all(.type != "_hook_activity" and .type != "hook_result")) and
   ($events | map(select(.type == "state" or .type == "tool_result")) | map(.type)) ==
     ["state","tool_result"] and
   ($events | map(select(.type == "tool_result"))[0] |
@@ -53,7 +53,7 @@ jq -e '
 ' "$request_capture" >/dev/null
 # Tool projection comes only from frozen runtime, so every client sees these tools.
 typeset frozen_tools=$(jq -c '.tools' "$request_capture")
-jq -e -s 'all(.[]; .type != "context")' "$permission_allow_session" >/dev/null
+jq -e -s 'all(.[]; .type != "hook_result")' "$permission_allow_session" >/dev/null
 
 # A script denial uses its reason without consulting the UI. With no configured
 # permission_request script and no UI, exec denies a bypass request.
@@ -150,8 +150,7 @@ stream=$(SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_BYPASS=true \
 print -r -- "$stream" | jq -eRn '
   [inputs | fromjson] as $events |
   ($events | map(select(.type == "_tool_permission_request")) | length) == 1 and
-  ($events | map(select(.type == "tool_result"))[0].exit_code) == 126 and
-  ($events | any(.type == "_notice" and .level == "error") | not)
+  ($events | map(select(.type == "tool_result"))[0].exit_code) == 126
 ' >/dev/null
 assert_canonical_session "$permission_eof_session" end
 
@@ -224,7 +223,7 @@ stream=$(SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_BYPASS=true \
   sf_test_turn 'failed review' "$permission_failure_session")
 print -r -- "$stream" | jq -eRn '
   [inputs | fromjson] as $events |
-  ($events | all(.type != "_hook_start" and .type != "_hook_end")) and
+  ($events | all(.type != "_hook_activity" and .type != "hook_result")) and
   ($events | map(select(.type | IN("tool_call", "tool_result", "turn_error"))) |
     map(.type)) == ["tool_call", "tool_result", "turn_error"] and
   ($events | map(select(.type == "tool_result"))[0] |
@@ -238,6 +237,7 @@ assert_canonical_session "$permission_failure_session"
 # remains available because the silent hook did not claim to display it.
 typeset permission_persist_session="$tmp/permission-persist.jsonl"
 typeset permission_persist_stream="$tmp/permission-persist.stream"
+typeset permission_persist_error="$tmp/permission-persist.stderr"
 integer permission_persist_status=0
 sf_test_session "$permission_persist_session"
 SF_ROOT=$ROOT SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_BYPASS=true \
@@ -254,12 +254,12 @@ SF_ROOT=$ROOT SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_BYPASS=true \
   SF_RUN[jsonl]=1
   message='\''{"type":"user","content":[{"type":"text","text":"fail persistence"}]}'\''
   sf_run_turn "$message" "$1" 0 "fail persistence"
-' -- "$permission_persist_session" >"$permission_persist_stream" ||
+' -- "$permission_persist_session" >"$permission_persist_stream" 2>"$permission_persist_error" ||
   permission_persist_status=$?
 (( permission_persist_status == 1 )) || fail 'permission persistence failure exited successfully'
 jq -eRn '
   [inputs | fromjson] as $events |
-  ($events | all(.type != "_hook_start" and .type != "_hook_end")) and
-  ($events[-1] | .type == "_notice" and .level == "error" and
-    (.text | contains("cannot persist permission failure")))
+  ($events | all(.type != "_hook_activity" and .type != "hook_result"))
 ' <"$permission_persist_stream" >/dev/null
+[[ $(<"$permission_persist_error") == *'cannot persist permission failure'* ]] ||
+  fail 'permission persistence failure omitted stderr diagnostic'

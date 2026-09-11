@@ -74,7 +74,7 @@ if ! jq -ce -s --rawfile summary <(print -rn -- "$summary") --arg created "$crea
     ($records[0:$start] | .[0].created = $created) as $startup |
     ($startup[] | select(.type != "state")),
     ($records[] | select(.type == "state")),
-    {type:"context",hook:"compact",script:"compact",content:$summary}
+    {type:"hook_result",hook:"compact",script:"compact",model_context:$summary}
   ' "$SHELLFISH_SESSION" >"$transcript"; then
   fail_compaction 'cannot create compacted session; keeping the original'
   exit $?

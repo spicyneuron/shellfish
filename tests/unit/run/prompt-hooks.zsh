@@ -59,12 +59,10 @@ sf_test_session "$prompt_session"
 stream=$(sf_test_turn accepted "$prompt_session")
 print -r -- "$stream" | jq -eRn '
   [inputs | fromjson] as $events |
-  ($events | any(.type == "_notice") | not) and
-  ($events | map(select(.type | startswith("_hook_"))) | map(.type)) ==
-    ["_hook_start","_hook_end"] and
-  ($events | map(select(.type == "state" or .type == "context" or .type == "user")) |
-    map(.type)) == ["state","context","user"] and
-  ($events | map(select(.type == "context")))[0].content == "accepted context" and
+  ($events | any(.type | startswith("_hook_")) | not) and
+  ($events | map(select(.type == "state" or .type == "hook_result" or .type == "user")) |
+    map(.type)) == ["state","hook_result","user"] and
+  ($events | map(select(.type == "hook_result")))[0].model_context == "accepted context" and
   ($events | map(select(.type == "user")))[0].content[0].text == "accepted" and
   ($events | map(select(.type == "_assistant_start")) | length) == 1
 ' >/dev/null
@@ -74,9 +72,9 @@ sf_test_session "$decline_session"
 stream=$(sf_test_turn /decline "$decline_session")
 print -r -- "$stream" | jq -eRn '
   [inputs | fromjson] as $events |
-  ($events | map(select(.type == "context")))[0].content == "declined context" and
-  ($events | map(select(.type == "_hook_end")))[0] ==
-    {type:"_hook_end",text:"declined display\n",error:false} and
+  ($events | map(select(.type == "hook_result")))[0] ==
+    {type:"hook_result",hook:"user_prompt_submit",script:"prompt-hook",
+      model_context:"declined context",user_context:"declined display\n"} and
   ($events | any(.type == "_assistant_start") | not) and
   ($events | any(.type == "user") | not)
 ' >/dev/null
@@ -103,20 +101,15 @@ print -r -- "$stream" | jq -eRn '
 ' >/dev/null
 jq -e -s '
   .[0].harness.sandbox_write_paths == ["/tmp/reference"] and
-  .[1] == {type:"context",hook:"user_prompt_submit",script:"prompt-hook",
-    content:"update context"}
+  .[1] == {type:"hook_result",hook:"user_prompt_submit",script:"prompt-hook",
+    model_context:"update context"}
 ' "$update_session" >/dev/null
 
-typeset failure_session="$tmp/prompt-failure.jsonl"
+typeset failure_session="$tmp/prompt-failure.jsonl" failure_error="$tmp/prompt-failure.stderr"
 sf_test_session "$failure_session"
-stream=$(sf_test_turn /fail "$failure_session")
-print -r -- "$stream" | jq -eRn '
-  [inputs | fromjson] as $events |
-  ($events | any(.type == "user") | not) and
-  ($events | any(.type == "_assistant_start") | not) and
-  ($events | map(.type)) == ["_hook_start","_hook_end"] and
-  ($events[-1] | .error and (.text | contains("prompt-hook")))
-' >/dev/null
+stream=$(sf_test_turn /fail "$failure_session" 2>"$failure_error")
+[[ -z $stream ]] || fail 'prompt hook failure emitted JSONL'
+[[ $(<"$failure_error") == *'prompt-hook'* ]] || fail 'prompt hook failure omitted stderr diagnostic'
 
 typeset plain_failure_session="$tmp/prompt-plain-failure.jsonl" plain_error
 integer plain_status=0
@@ -126,18 +119,15 @@ plain_error=$(zsh -f "$ROOT/bin/shellfish" run --session "$plain_failure_session
 (( plain_status == 1 ))
 [[ $plain_error == *'hook script failed with status 1:'*prompt-hook* ]]
 
-typeset overflow_session="$tmp/prompt-overflow.jsonl"
+typeset overflow_session="$tmp/prompt-overflow.jsonl" overflow_error="$tmp/prompt-overflow.stderr"
 sf_test_session "$overflow_session"
-stream=$(sf_test_turn /overflow "$overflow_session")
-print -r -- "$stream" | jq -eRn '
-  [inputs | fromjson] as $events |
-  ($events | map(.type)) == ["_hook_start","_hook_end"] and
-  ($events[-1] | .error and
-    (.text | contains("hook script output exceeds capture limit")))
-' >/dev/null
+stream=$(sf_test_turn /overflow "$overflow_session" 2>"$overflow_error")
+[[ -z $stream ]] || fail 'prompt hook overflow emitted JSONL'
+[[ $(<"$overflow_error") == *'hook script output exceeds capture limit'* ]] ||
+  fail 'prompt hook overflow omitted stderr diagnostic'
 
 typeset cancel_session="$tmp/prompt-cancel.jsonl"
-typeset cancel_stream="$tmp/prompt-cancel.stream"
+typeset cancel_stream="$tmp/prompt-cancel.stream" cancel_error="$tmp/prompt-cancel.stderr"
 export PROMPT_MARKER="$tmp/prompt-active"
 export PROMPT_EXIT_MARKER="$tmp/prompt-exit"
 # A declared display announces the script for as long as it runs.
@@ -150,7 +140,7 @@ typeset cancel_temp="$tmp/cancel-temp"
 mkdir -p "$cancel_temp"
 TMPDIR="$cancel_temp" "$ROOT/bin/shellfish" run --jsonl --session "$cancel_session" \
   < <(print -r -- '{"type":"user","content":[{"type":"text","text":"/slow"}]}') \
-  >"$cancel_stream" &
+  >"$cancel_stream" 2>"$cancel_error" &
 integer pid=$! cancel_status=0 waited=0
 while (( waited++ < 50 )) && [[ ! -e $PROMPT_MARKER ]]; do
   sleep 0.1
@@ -163,7 +153,7 @@ while (( waited++ < 50 )) && ! jq -se 'any(.text == "Working…")' \
 done
 (( waited <= 50 )) || fail 'user_prompt_submit display was not announced'
 jq -eRn '
-  [inputs | fromjson] == [{type:"_hook_start",hook:"user_prompt_submit",
+  [inputs | fromjson] == [{type:"_hook_activity",hook:"user_prompt_submit",
     script:"prompt-hook",text:"Working…"}]
 ' <"$cancel_stream" >/dev/null
 kill -TERM "$pid"
@@ -173,9 +163,10 @@ wait "$pid" || cancel_status=$?
 jq -eRn '
   [inputs | fromjson] as $events |
   ($events | any(.type == "user" or .type == "assistant") | not) and
-  ($events | map(.type)) == ["_hook_start","_hook_end"] and
-  $events[-1].error == true
+  ($events | map(.type)) == ["_hook_activity"]
 ' <"$cancel_stream" >/dev/null
+[[ $(<"$cancel_error") == *'Turn interrupted.'* ]] ||
+  fail 'pre-commit cancellation omitted stderr diagnostic'
 (( $(wc -l <"$cancel_session") == records )) ||
   fail 'pre-commit cancellation appended a recovery record'
 # Process exit sweeps invocation-scoped temporary files.

@@ -197,20 +197,31 @@ if print -r -- '{"type":"tool_result","call_id":"c1","name":"shell","content":"o
   fail 'legacy tool outcome was accepted'
 fi
 
-# Canonical context records accept valid optional fields and reject unknown ones.
-print -r -- '{"type":"context","hook":"env","content":"data","script":"add_env","prompt":"pwd","status":0}' |
-  schema_eval 'canonical_context' >/dev/null
+# Canonical hook results require attribution and at least one nonempty context.
+for result in \
+    '{"type":"hook_result","hook":"env","script":"add_env","model_context":"data","prompt":"pwd","status":0}' \
+    '{"type":"hook_result","hook":"env","script":"add_env","user_context":"shown"}' \
+    '{"type":"hook_result","hook":"env","script":"add_env","model_context":"data","user_context":"shown"}'; do
+  print -r -- "$result" | schema_eval 'canonical_hook_result' >/dev/null
+done
 
-if print -r -- '{"type":"context","hook":"env","content":"data"}' |
-    schema_eval 'canonical_context' >/dev/null 2>&1; then
-  fail 'context without a script was accepted'
-fi
+for result in \
+    '{"type":"hook_result","hook":"env","model_context":"data"}' \
+    '{"type":"hook_result","hook":"env","script":"add_env"}' \
+    '{"type":"hook_result","hook":"env","script":"add_env","model_context":""}' \
+    '{"type":"hook_result","hook":"env","script":"add_env","user_context":""}' \
+    '{"type":"hook_result","hook":"env","script":"add_env","user_context":"shown","status":0}' \
+    '{"type":"hook_result","hook":"env","script":"add_env","model_context":"data","prompt":"pwd"}'; do
+  if print -r -- "$result" | schema_eval 'canonical_hook_result' >/dev/null 2>&1; then
+    fail "invalid hook result was accepted: $result"
+  fi
+done
 
-for field in label preface truncated; do
+for field in content label preface truncated; do
   if jq -cn --arg field "$field" \
-      '{type:"context",hook:"env",script:"add_env",content:"data"} + {($field):true}' |
-      schema_eval 'canonical_context' >/dev/null 2>&1; then
-    fail "context with unknown $field field was accepted"
+      '{type:"hook_result",hook:"env",script:"add_env",model_context:"data"} + {($field):true}' |
+      schema_eval 'canonical_hook_result' >/dev/null 2>&1; then
+    fail "hook result with unknown $field field was accepted"
   fi
 done
 
@@ -247,19 +258,23 @@ fi
 print -r -- '[
   {"type":"state","name":"startup","value":1},
   {"type":"system","content":"system"},
-  {"type":"context","hook":"session_start","script":"one","content":"context"},
+  {"type":"hook_result","hook":"session_start","script":"one","model_context":"context"},
   {"type":"state","name":"before/user","value":{}},
   {"type":"user","content":[{"type":"text","text":"run"}]},
   {"type":"state","name":"before-assistant","value":false},
   {"type":"assistant","stop":"tool_calls","content":[]},
+  {"type":"hook_result","hook":"pre_tool_use","script":"observe","user_context":"before call"},
   {"type":"state","name":"before/call","value":"one"},
   {"type":"tool_call","id":"c1","name":"shell","input":{}},
+  {"type":"hook_result","hook":"observe","script":"fixture","user_context":"between pair"},
   {"type":"tool_result","call_id":"c1","name":"shell","content":"","exit_code":0},
+  {"type":"hook_result","hook":"post_tool_use","script":"observe","user_context":"after result"},
   {"type":"state","name":"between/calls","value":"two"},
   {"type":"tool_call","id":"c2","name":"shell","input":{}},
   {"type":"tool_result","call_id":"c2","name":"shell","content":"","exit_code":0},
   {"type":"state","name":"before/final","value":null},
   {"type":"assistant","stop":"end","content":[]},
+  {"type":"hook_result","hook":"stop","script":"observe","user_context":"finished"},
   {"type":"state","name":"after/final","value":[1,2]},
   {"type":"user","content":[{"type":"text","text":"again"}]},
   {"type":"state","name":"before/error","value":true},

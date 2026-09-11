@@ -6,10 +6,15 @@ setopt no_aliases no_bg_nice no_multios pipe_fail
 (( $+functions[sf_hooks_run] )) || source "$SF_ROOT/lib/hooks.zsh"
 
 sf_hooks_user_prompt_validate() {
-  local control=$4
-  integer script_status=$2
-  [[ -z $control ]] || jq -e --argjson status "$script_status" '
+  local context=$3 control=$4
+  integer script_status=$2 has_context=0
+  [[ -z $context ]] || has_context=1
+  [[ -z $control ]] || jq -e --argjson has_context "$has_context" \
+    --argjson status "$script_status" '
     (keys - ["action", "argv", "context", "patch"] | length) == 0 and
+    ((.context? // {}) | type == "object" and
+      (keys - ["prompt", "status"] | length) == 0) and
+    (((.context? // {}) | length) == 0 or $has_context == 1) and
     (if has("action") then
        $status == 11 and
        (if .action == "handoff" then
@@ -119,7 +124,7 @@ sf_hooks_permission_request() {
         tool_input:.}') || operation_status=1
   fi
   local SF_HOOK_COMPONENT_VALIDATOR=sf_hooks_permission_validate
-  local SF_HOOK_DISPLAY=0
+  local SF_HOOK_VISIBLE=0
   (( operation_status )) || sf_hooks_run "$session" permission_request "$input" ignore allow 1 1 ||
     operation_status=1
   result=( "${reply[@]}" )

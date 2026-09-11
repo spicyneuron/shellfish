@@ -15,13 +15,13 @@ shellfish create --session-out ./project-session.jsonl
 | Type | Fields and meaning |
 | --- | --- |
 | `_session_prepare` | `path` and the durable header and optional system record, before hooks run. |
-| `_hook_start`, `_hook_end` | One selected startup component's live lifecycle. |
-| `state`, `context` | Durable output from each validated `session_start` component. |
+| `_hook_activity` | A selected startup component's nonempty configured running label, or a short empty event that clears it. |
+| `state`, `hook_result` | Durable output from each validated `session_start` component. |
 | `_session_created` | `path`, after startup hooks finish successfully. |
 
-Creation writes the header and optional system record before running hooks. Each component opens, runs, validates, appends and emits state followed by context, then closes before the next component starts. An empty chain emits only the preparation and creation events. On startup failure, Shellfish attempts to remove the new session, reports diagnostics, exits nonzero, and emits no creation event. Cleanup is best effort; a valid published session is not removed merely because writing its events or final path to stdout fails. Clients must not submit a turn until creation exits successfully.
+Creation writes the header and optional system record before running hooks. Each component runs, validates, appends and emits state followed by any result, then selects the next component. An empty chain emits only the preparation and creation events. On startup failure, Shellfish attempts to remove the new session, writes the diagnostic to stderr, exits nonzero, and emits no creation event. Cleanup is best effort; a valid published session is not removed merely because writing its events or final path to stdout fails. Clients must not submit a turn until creation exits successfully.
 
-As in a turn, `SIGUSR1` is the client's cancellation signal, aimed at the creating process alone so it can stop a running hook script itself. Cancelled creation exits nonzero and attempts the same best-effort cleanup as other startup failures; abrupt termination can leave the published session behind.
+As in a turn, `SIGUSR1` is the client's cancellation signal, aimed at the creating process alone so it can stop a running hook script itself. Cancelled JSONL creation writes its diagnostic to stderr, exits nonzero, and attempts the same best-effort cleanup as other startup failures; abrupt termination can leave the published session behind.
 
 `--system TEXT` and `--system-file PATH` replace the configured or copied system prompt. Both flags are repeatable and may be mixed; their contents have trailing newlines stripped and are joined in command-line order with a blank line.
 
@@ -92,7 +92,7 @@ Durable records are:
 
 - `session`: the resolved runtime header, emitted when a new session is created.
 - `system`: the concatenated system components.
-- `context`: model-visible hook script output.
+- `hook_result`: attributed hook output with optional nonempty `model_context` and `user_context`; at least one is present.
 - `user`: one user prompt.
 - `assistant`: one provider response, including token usage when reported.
 - `tool_call`: `{type:"tool_call",id,name,input}`, one call the assistant requested, appended when it reaches its execution point.
@@ -102,7 +102,7 @@ Durable records are:
 
 A state record has exactly those three fields. Its name is an opaque string of at most 128 ASCII characters matching `^[A-Za-z0-9][A-Za-z0-9_.:/-]*$`. Its value may be any JSON value. The latest record for an exact name is effective, and `null` means the name has no effective value at that transcript position. State records do not affect conversation sequencing and are omitted from provider requests.
 
-Hook state is emitted before context or another durable hook outcome. Tool state is emitted after normal tool completion and before its durable result, including for a nonzero tool exit. Interrupted tools and tool orchestration failures emit no tool state.
+Hook state is emitted before its `hook_result` or another durable hook outcome. Tool state is emitted after normal tool completion and before its durable result, including for a nonzero tool exit. Interrupted tools and tool orchestration failures emit no tool state.
 
 A sandboxed tool result includes `sandbox_denial_detected: true` when the tool exits non-zero and sandbox monitoring reports a denied action. The denial and non-zero exit are correlated signals; the denial is not necessarily the cause of the failure.
 
@@ -117,9 +117,7 @@ Transient events currently include:
 | `_assistant_reasoning_opaque` | Provider reasoning data for later requests; nothing to present. |
 | `_turn_usage` | The provider's latest token usage for this response. |
 | `_assistant_end` | The response is complete; `stop` is its reason. It precedes the durable assistant record. |
-| `_hook_start` | A selected ordinary hook component is about to run. |
-| `_hook_end` | The current ordinary hook component validated or failed. |
-| `_notice` | Unattributed user-facing information or failure. |
+| `_hook_activity` | A selected ordinary hook component's configured running label, or an empty clear event. |
 | `_tool_permission_request` | A sandbox bypass needs a client decision. |
 | `_handoff` | A hook script asks a capable client to run `argv` after the turn exits cleanly. |
 | `_session_update` | A hook-requested update or model-context discovery changed the session; `runtime` is the resulting resolved runtime. |
@@ -128,9 +126,7 @@ Transient events currently include:
 
 Deltas are previews only. Tool-call `input` fragments are raw text, not parsed JSON, and a client must never render or execute a partial call. Consumers should render committed assistant and reasoning content from the durable assistant record, and each call from its own `tool_call` record. Clients should treat unknown transient types as unsupported protocol input and recover from the durable session rather than guessing their meaning.
 
-`_hook_start` has `{type,hook,script,text}`, where `text` is the component's manifest display string. Every selected ordinary component emits a start, including a component with an empty display string. Its validated state and context records follow immediately. `_hook_end` has `{type,text,error}`. Nonempty stderr supplies its text; otherwise stdout does. Empty text removes the live presentation. `error` is true when a failure belongs to that component. The end event relies on stream order and carries no correlation ID. `permission_request` components emit neither lifecycle event nor successful stderr; their failures use the ordinary turn-failure path.
-
-Notices have the shape `{type:"_notice",level,title,source,text,complete}`. They are one-shot events after this change: core notices have no component source and are complete. Hook activity never uses `_notice`.
+Nonempty `_hook_activity` has `{type,hook,script,text}` and is emitted only when a selected ordinary component has a configured display label. A later activity replaces it. A durable `hook_result` or process completion replaces it; a displayed component that succeeds without a result emits `{type:"_hook_activity",text:""}`. `permission_request` components emit neither activity nor a result.
 
 A permission request has this shape:
 
@@ -147,7 +143,7 @@ A permission request has this shape:
 
 A successful process exit means the single-turn operation completed cleanly. This includes a `user_prompt_submit` script that deliberately blocks submission or requests a handoff. Tool commands may return nonzero results without making the turn itself fail.
 
-A nonzero exit means the operation failed or was interrupted. A failure after the user record is committed is appended and emitted as a durable `turn_error`; its message is the user-facing outcome. `SIGINT` and the client's `SIGUSR1` cancellation signal record `Cancelled.`, while other handled signals record `Turn interrupted.` A failure attributed to an ordinary hook component is also reported by `_hook_end`; permission hooks emit no display event. An otherwise unpersisted failure uses an error `_notice` when JSONL output is available. After malformed output, disconnection, cancellation, or process failure, discard uncertain live state and replay the durable session.
+A nonzero exit means the operation failed or was interrupted. A failure after the user record is committed is appended and emitted as a durable `turn_error`; its message is the user-facing outcome. `SIGINT` and the client's `SIGUSR1` cancellation signal record `Cancelled.`, while other handled signals record `Turn interrupted.` A failure without a durable turn outcome writes its diagnostic to stderr. After malformed output, disconnection, cancellation, or process failure, discard uncertain live state and replay the durable session.
 
 If a provider fails or is cancelled after the turn accepted visible text or reasoning, cleanup makes a best-effort append of that content as a canonical assistant message with `stop: "length"`. Otherwise the user message remains unanswered. Cleanup closes a recorded call that did not finish, and appends a `tool_call` and a cancelled result for each call the response requested that never started. A process killed outright loses the calls it had not yet recorded. This recovery cannot guarantee persistence after `SIGKILL` or process crash.
 

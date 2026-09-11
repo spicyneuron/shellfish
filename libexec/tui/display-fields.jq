@@ -103,9 +103,13 @@ def durable_display_fields($replay; $tools):
        then .content else "" end), $display.format,
       (if ($display.content | index("$result_full")) != null then "full" else "" end),
       (if .sandbox_denial_detected? == true then "sandbox_denial" else "" end)]
-  elif canonical_context then
-    ["context", .script,
-      ([.hook, .prompt?] | display_summary), .content]
+  elif canonical_hook_result then
+    . as $result |
+    ([.hook, .prompt?] | display_summary) as $meta |
+    (select(has("model_context")) |
+      ["context", .script, $meta, .model_context]),
+    ($result | select(has("user_context")) |
+      ["notice", "notice", .script, $meta, .user_context, "closed"])
   else
     empty
   end;

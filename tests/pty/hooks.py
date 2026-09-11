@@ -81,7 +81,9 @@ def test_startup_streams_hooks_and_runs_the_queued_prompt():
 
             (state / "first_start-release").touch()
             _, records = session.wait_session_records(4, path=session.explicit_session)
-            assert [record["type"] for record in records[:2]] == ["session", "context"]
+            assert [record["type"] for record in records[:2]] == [
+                "session", "hook_result"
+            ]
             assert records[2]["type"] == "user"
             assert records[2]["content"][0]["text"] == "initial prompt"
         finally:

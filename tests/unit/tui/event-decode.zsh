@@ -7,8 +7,8 @@ cat <<'STREAM' |
 {"type":"session","format_version":1,"cwd":"/tmp","created":"2026-01-01T00:00:00Z","profile":{"request":{"model":"test"}},"backend":{"name":"test","command":"/usr/bin/false","endpoint":"https://example.invalid","environment":[],"env_file":"","insecure_tls":false,"http_timeout":30,"http_stall":10},"harness":{"sandbox_read_paths":[],"sandbox_write_paths":[],"fence":"","tools":[],"sandbox":false,"max_requests_per_turn":8,"max_tool_calls_per_request":16,"max_capture_bytes":65536}}
 {"type":"system","content":"instructions"}
 {"type":"state","name":"startup/status","value":"ready"}
-{"type":"_hook_start","hook":"session_start","script":"environment","text":"Inspecting"}
-{"type":"_hook_end","text":"ready","error":false}
+{"type":"_hook_activity","hook":"session_start","script":"environment","text":"Inspecting"}
+{"type":"_hook_activity","text":""}
 {"type":"_assistant_start"}
 {"type":"_assistant_reasoning_delta","text":"why"}
 {"type":"_assistant_message_delta","text":"hi\n"}
@@ -16,8 +16,7 @@ cat <<'STREAM' |
 {"type":"_assistant_reasoning_opaque","index":0,"opaque":{"signature":"s"}}
 {"type":"_turn_usage","input_tokens":14,"output_tokens":2}
 {"type":"_assistant_end","stop":"end"}
-{"type":"_notice","level":"info","title":"/tmp/check","source":"stop","text":"done","complete":true}
-{"type":"_notice","level":"error","title":"Turn failed","source":"","text":"recoverable","complete":true}
+{"type":"hook_result","hook":"stop","script":"check","model_context":"for model","user_context":"for user"}
 {"type":"turn_error","message":"recoverable"}
 {"type":"_handoff","argv":["/usr/bin/env","printf","%s","done"]}
 {"type":"user","content":[{"type":"text","text":"hi"}]}
@@ -64,21 +63,6 @@ usage=$(print -r -- \
   tr '\0' '\n' | sed '/^$/d' | paste -sd, -)
 assert_equal 'turn_usage,100 ↑ 85% ⦿ 20 ↓,7,batch_ok' "$usage"
 
-# Transient notices and durable turn errors decode into the same notice fields.
-order=$(jq -cn --arg text 'provider request limit reached: 50' \
-    '{type:"_notice",level:"error",title:"Turn failed",source:"",text:$text,complete:true}' |
-  jq -jRs -L "$ROOT" --argjson runtime null \
-    -f "$ROOT/libexec/tui/event-decode.jq" |
-  tr '\0' '\n' | sed '/^$/d' | paste -sd, -)
-assert_equal 'notice,error,Turn failed,provider request limit reached: 50,closed,batch_ok' "$order"
-
-order=$(print -r -- \
-    '{"type":"_notice","level":"info","title":"/tmp/hooks/check/run","source":"stop","text":"working","complete":false}' |
-  jq -jRs -L "$ROOT" --argjson runtime null \
-    -f "$ROOT/libexec/tui/event-decode.jq" |
-  tr '\0' '\n' | sed '/^$/d' | paste -sd, -)
-assert_equal 'notice,notice,check,stop,working,open,batch_ok' "$order"
-
 order=$(print -r -- '{"type":"turn_error","message":"Turn interrupted."}' |
   jq -jRs -L "$ROOT" --argjson runtime null \
     -f "$ROOT/libexec/tui/event-decode.jq" |
@@ -101,7 +85,7 @@ order=$(print -r -- "$preparation" |
 [[ $order == $'session_prepare\n'*$'\nstartup system\n'* ]] ||
   fail 'preparation did not expose its runtime and system'
 for invalid in '.path="relative"' '.path="/bad\u0000path"' '.records=[]' \
-    '.records[1]={type:"context",hook:"session_start",script:"hook",content:"early"}' \
+    '.records[1]={type:"hook_result",hook:"session_start",script:"hook",model_context:"early"}' \
     '.presentation={}'; do
   if jq -c "$invalid" <<<"$preparation" |
       jq -jRs -L "$ROOT" --argjson runtime null \
@@ -111,16 +95,13 @@ for invalid in '.path="relative"' '.path="/bad\u0000path"' '.records=[]' \
 done
 
 for invalid in '{"type":"turn_error","message":1}' \
-    '{"type":"_hook_start","hook":"stop","script":"check"}' \
-    '{"type":"_hook_start","hook":"unknown","script":"check","text":""}' \
-    '{"type":"_hook_start","hook":"stop","script":"","text":""}' \
-    '{"type":"_hook_end","text":"done","error":"false"}' \
-    '{"type":"_notice","level":"warn","title":"t","source":"","text":"x","complete":true}' \
-    '{"type":"_notice","level":"error","title":"t","source":"","text":"x"}'; do
+    '{"type":"_hook_activity","hook":"unknown","script":"check","text":"Working"}' \
+    '{"type":"_hook_activity","hook":"stop","script":"","text":"Working"}' \
+    '{"type":"_hook_activity","hook":"stop","script":"check","text":""}'; do
   if print -r -- "$invalid" |
       jq -jRs -L "$ROOT" --argjson runtime null \
         -f "$ROOT/libexec/tui/event-decode.jq" >/dev/null 2>&1; then
-    fail "invalid notice was accepted: $invalid"
+    fail "invalid event was accepted: $invalid"
   fi
 done
 
@@ -140,11 +121,19 @@ order=$(print -r -- \
 assert_equal 'tool_call,call_2,read_file,outside.txt · unsandboxed,plain,batch_ok' "$order"
 
 order=$(print -r -- \
-    '{"type":"context","hook":"user_prompt_submit","script":"hook name","prompt":"prompt","status":0,"content":"body"}' |
+    '{"type":"hook_result","hook":"user_prompt_submit","script":"hook name","prompt":"prompt","status":0,"model_context":"model body","user_context":"user body"}' |
   jq -jRs -L "$ROOT" --argjson runtime null \
     -f "$ROOT/libexec/tui/event-decode.jq" |
   tr '\0' '\n' | sed '/^$/d' | paste -sd, -)
-assert_equal 'context,hook name,user_prompt_submit · prompt,body,batch_ok' "$order"
+assert_equal 'context,hook name,user_prompt_submit · prompt,model body,notice,notice,hook name,user_prompt_submit · prompt,user body,closed,batch_ok' "$order"
+
+order=$(printf '%s\n' \
+    '{"type":"_hook_activity","hook":"stop","script":"check","text":"Checking"}' \
+    '{"type":"_hook_activity","text":""}' |
+  jq -jRs -L "$ROOT" --argjson runtime null \
+    -f "$ROOT/libexec/tui/event-decode.jq" |
+  tr '\0' '\n' | sed '/^$/d' | paste -sd, -)
+assert_equal 'notice,notice,Checking,stop,open,notice,notice,closed,batch_ok' "$order"
 
 order=$(print -r -- \
     '{"type":"_tool_permission_request","id":"permission_1","reason":"host access","tool":{"name":"shell","input":{"command":"echo hi","request_sandbox_bypass":true}}}' |

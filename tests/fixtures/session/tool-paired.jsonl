@@ -6,4 +6,4 @@
 {"type":"tool_call","id":"call_2","name":"shell","input":{"command":"make test"}}
 {"type":"tool_result","call_id":"call_2","name":"shell","content":"failed\u001b[31m","exit_code":1}
 {"type":"assistant","stop":"end","content":[{"type":"text","text":"Done"}],"usage":{"input_tokens":2,"output_tokens":1}}
-{"type":"context","hook":"project","script":"test","content":"Use fixtures."}
+{"type":"hook_result","hook":"project","script":"test","model_context":"Use fixtures."}

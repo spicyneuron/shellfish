@@ -204,12 +204,18 @@ def canonical_assistant_message:
   (.content | type == "array" and
     all(.[]; canonical_text or canonical_reasoning));
 
-def canonical_context:
+def canonical_hook_result:
   type == "object" and
-  (keys - ["content", "hook", "prompt", "script", "status", "type"] | length) == 0 and
-  .type == "context" and (.hook | element_name) and
-  (.content | type == "string") and
+  (keys - ["hook", "model_context", "prompt", "script", "status", "type",
+    "user_context"] | length) == 0 and
+  .type == "hook_result" and (.hook | element_name) and
   (.script | nonempty_control_free_string) and
+  (has("model_context") or has("user_context")) and
+  ((has("model_context") | not) or
+    (.model_context | type == "string" and length > 0)) and
+  ((has("user_context") | not) or
+    (.user_context | type == "string" and length > 0)) and
+  (((has("prompt") or has("status")) | not) or has("model_context")) and
   ((has("prompt") | not) or ((.prompt | nul_free_string and length > 0) and has("status"))) and
   ((has("status") | not) or
     (.status | type == "number" and floor == . and . >= 0 and . <= 255));
@@ -298,7 +304,7 @@ def canonical_session_header($format_version):
 
 def canonical_session_record:
   canonical_user_message or canonical_assistant_message or canonical_tool_call or
-  canonical_tool_result or canonical_context or canonical_state or
+  canonical_tool_result or canonical_hook_result or canonical_state or
   (type == "object" and keys == ["message", "type"] and .type == "turn_error" and
     (.message | nul_free_string) and .message != "") or
   (type == "object" and keys == ["content", "type"] and .type == "system" and
@@ -314,10 +320,10 @@ def session_records_state:
       elif $record.type == "state" then .
       elif $record.type == "system" then
         if .next == "user" then . else .valid = false end
-      elif $record.type == "context" then
-        if $record.hook == "stop" and .next == "user" then .next = "assistant"
-        elif $record.hook != "stop" and .next == "user" then .
-        else .valid = false end
+      elif $record.type == "hook_result" then
+        if $record.hook == "stop" and $record.model_context? != null and
+            .next == "user" then .next = "assistant"
+        else . end
       elif $record.type == "turn_error" then
         # A turn error closes any state except one still owing a tool result.
         if .next == "user" then .

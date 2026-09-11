@@ -68,9 +68,9 @@ jq -e --rawfile prompt "$ROOT/share/default/hooks/user_prompt_submit/compact/com
 ' "$compact_request" >/dev/null || fail 'compaction did not use its structured prompt and budget'
 assert_canonical_session "$tmp/compact-source_compact.jsonl"
 jq -e -s '
-  [.[].type] == ["session","context"] and
+  [.[].type] == ["session","hook_result"] and
   .[1].hook == "compact" and .[1].script == "compact" and
-  (.[1].content | length) > 0
+  (.[1].model_context | length) > 0
 ' "$tmp/compact-source_compact.jsonl" >/dev/null ||
   fail 'the compacted child is not a lone summary context'
 
@@ -141,7 +141,7 @@ typeset state_source="$tmp/state-source.jsonl"
 head -n 1 "$compact_source" >"$state_source"
 print -r -- \
   '{"type":"state","name":"git/identity","value":"branch:main"}' \
-  '{"type":"context","hook":"session_start","script":"project_environment","content":"env"}' \
+  '{"type":"hook_result","hook":"session_start","script":"project_environment","model_context":"env"}' \
   '{"type":"user","content":[{"type":"text","text":"Hello"}]}' \
   '{"type":"state","name":"agents/a1b2c3","value":{"session":".agent-a1b2c3.jsonl"}}' \
   '{"type":"assistant","stop":"end","content":[{"type":"text","text":"Hi"}],"usage":{"input_tokens":1,"output_tokens":1}}' \
@@ -155,7 +155,7 @@ SHELLFISH_EXECUTABLE="$compact_shellfish" SHELLFISH_SESSION="$state_source" \
 (( compact_status == 11 ))
 assert_canonical_session "$tmp/state-source_compact.jsonl"
 jq -e -s '
-  [.[].type] == ["session","context","state","state","state","context"] and
+  [.[].type] == ["session","hook_result","state","state","state","hook_result"] and
   [.[] | select(.type == "state") | [.name, .value]] ==
     [["git/identity","branch:main"],
      ["agents/a1b2c3",{session:".agent-a1b2c3.jsonl"}],

@@ -94,16 +94,6 @@ sf_run_permission() {
   return 1
 }
 
-sf_run_error() {
-  (( ! SF_RUN[jsonl] || ! SF_HOOK_ERROR_EMITTED )) || return 0
-  if (( SF_RUN[jsonl] )); then
-    sf_run_emit "$(jq -cn --arg message "$1" \
-      '{type:"_notice",level:"error",title:"Turn failed",source:"",text:$message,complete:true}')"
-  else
-    print -r -u2 -- "$1"
-  fi
-}
-
 sf_run_partial_assistant() {
   REPLY=''
   (( ${#SF_REQUEST_PARTIAL_EVENTS} )) || return 0
@@ -163,9 +153,11 @@ sf_run_turn_cleanup() {
   SF_RUN_QUEUED_CALLS=()
   [[ -z $recovered ]] || sf_run_emit "$recovered"
   sf_session_reset
-  if (( ! interrupted )); then
+  if (( interrupted )); then
+    [[ -n $recovered ]] || print -r -u2 -- "$error_message"
+  else
     if [[ -n $failure && -z $closed ]]; then
-      sf_run_error "$failure"
+      print -r -u2 -- "$failure"
     fi
     [[ -n $failure || -z $after ]] || sf_run_emit "$after"
     [[ -z $failure ]]
@@ -192,9 +184,8 @@ sf_run_turn() {
   SF_RUN[permission_count]=0
   SF_RUN[permission_available]=$permission_available
   SF_RUN[committed]=0
-  SF_HOOK_ERROR_EMITTED=0
   if ! sf_session_begin_turn "$session_path"; then
-    sf_run_error "$SF_SESSION_ERROR"
+    print -r -u2 -- "$SF_SESSION_ERROR"
     return 1
   fi
   opened_records=$REPLY

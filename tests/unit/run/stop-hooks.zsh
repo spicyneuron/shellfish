@@ -16,7 +16,7 @@ export SF_TEST_BACKEND_DELAY=0
 export SF_TEST_BACKEND_REQUEST="$request_capture"
 
 # A skipped stop commits attributed feedback and forces one more request. Its
-# stderr uses attributed ephemeral notices, while stdout from the later
+# stderr is durable user context, while stdout from the later
 # status-0 invocation is discarded.
 typeset stop_once="$tmp/stop-once"
 cat >"$stop_once" <<'ZSH'
@@ -56,13 +56,15 @@ typeset turn_state=$(<$TEST_STATE_PATH)
 print -r -- "$stream" | jq -eRn '
   [inputs | fromjson] as $events |
   ($events | map(select(.type == "assistant")) | length) == 2 and
-  ($events | map(select(.type == "context"))) ==
-    [{type:"context",hook:"stop",script:"stop-once",content:"feedback"}] and
-  ($events | map(select(.type == "state" or .type == "context")) |
-    map(if .type == "state" then [.name,.value] else ["context",.content] end)) ==
-    [["stop/attempt",1],["context","feedback"],["stop/attempt",2]] and
-  ($events | map(select(.type == "_hook_end") | .text)) ==
-    ["first-local","second-local"]
+  ($events | map(select(.type == "hook_result"))) ==
+    [{type:"hook_result",hook:"stop",script:"stop-once",model_context:"feedback",
+      user_context:"first-local"},
+     {type:"hook_result",hook:"stop",script:"stop-once",user_context:"second-local"}] and
+  ($events | map(select(.type == "state" or .type == "hook_result")) |
+    map(if .type == "state" then [.name,.value]
+      else ["result",(.model_context // ""),(.user_context // "")] end)) ==
+    [["stop/attempt",1],["result","feedback","first-local"],
+     ["stop/attempt",2],["result","","second-local"]]
 ' >/dev/null
 sf_hooks_turn_state_cleanup
 jq -e '
@@ -72,8 +74,8 @@ jq -e '
     "<hook name=\"stop\">\n<context script=\"stop-once\">\nfeedback\n</context>\n</hook>\n\n"
 ' "$request_capture" >/dev/null
 jq -e -s '
-  ([.[] | select(.type == "context")] | length) == 1 and
-  ([.[] | select(.content? == "discarded")] | length) == 0
+  ([.[] | select(.type == "hook_result")] | length) == 2 and
+  ([.[] | select(.model_context? == "discarded")] | length) == 0
 ' "$stop_session" >/dev/null
 sf_hooks_turn_state_cleanup
 
@@ -154,7 +156,7 @@ sf_test_session "$limit_session"
 stream=$(sf_test_turn bounded "$limit_session")
 print -r -- "$stream" | jq -eRn '
   [inputs | fromjson] as $events |
-  ($events | map(select(.type == "context")) | length) == 1 and
+  ($events | map(select(.type == "hook_result" and .model_context? != null)) | length) == 1 and
   $events[-1] == {type:"turn_error",message:"provider request limit reached: 1"}
 ' >/dev/null
 assert_canonical_session "$limit_session"
@@ -201,10 +203,10 @@ wait "$cancel_pid" || cancel_status=$?
 (( cancel_status == 143 ))
 jq -eRn '
   [inputs | fromjson] as $events |
-  ($events | map(select(.type == "context" and .hook == "stop")) | length) == 1 and
+  ($events | map(select(.type == "hook_result" and .hook == "stop" and .model_context? != null)) | length) == 1 and
   ($events | map(select(.type == "assistant")) | length) == 1
 ' <"$cancel_stream" >/dev/null
 assert_canonical_session "$cancel_session"
 jq -e -s '
-  ([.[] | select(.type == "context" and .hook == "stop")] | length) == 1
+  ([.[] | select(.type == "hook_result" and .hook == "stop" and .model_context? != null)] | length) == 1
 ' "$cancel_session" >/dev/null

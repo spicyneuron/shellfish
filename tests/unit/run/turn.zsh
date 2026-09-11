@@ -306,7 +306,7 @@ SF_TEST_RUNTIME=$saved_runtime
 # A partial append failure is fatal and emits no uncommitted durable record.
 # The next reader repairs the fragment.
 typeset partial_session="$tmp/partial.jsonl"
-typeset partial_stream="$tmp/partial.stream"
+typeset partial_stream="$tmp/partial.stream" partial_error="$tmp/partial.stderr"
 integer partial_status=0
 sf_test_session "$partial_session"
 cp "$partial_session" "$tmp/partial-before.jsonl"
@@ -321,15 +321,11 @@ SF_ROOT=$ROOT zsh -f -c '
   }
   message="{\"type\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"partial write\"}]}"
   sf_run_turn "$message" "$1" 0 "partial write"
-' -- "$partial_session" >"$partial_stream" || partial_status=$?
+' -- "$partial_session" >"$partial_stream" 2>"$partial_error" || partial_status=$?
 (( partial_status == 1 )) || fail 'partial append failure exited successfully'
-print -r -- "$(<"$partial_stream")" | jq -eRn '
-  [inputs | fromjson] as $events |
-  ($events | map(.type)) == ["_notice"] and
-  ($events[-1] | .level == "error" and (.text | contains("cannot append session record"))) and
-  ($events | any(.type | IN("session","system","user","assistant","tool_call",
-    "tool_result","context","state","turn_error")) | not)
-' >/dev/null
+[[ ! -s $partial_stream ]]
+[[ $(<"$partial_error") == *'cannot append session record'* ]] ||
+  fail 'partial append failure omitted stderr diagnostic'
 sf_session_begin_turn "$partial_session"
 sf_session_reset
 cmp -s "$tmp/partial-before.jsonl" "$partial_session" ||
@@ -376,7 +372,7 @@ jq -e -s '
 typeset echo_session="$tmp/echo.jsonl"
 sf_test_session "$echo_session"
 sf_session_begin_turn "$echo_session"
-sf_session_append "$echo_session" '{"type":"context","hook":"session_start","script":"fixture","content":"startup context"}'
+sf_session_append "$echo_session" '{"type":"hook_result","hook":"session_start","script":"fixture","model_context":"startup context"}'
 sf_session_reset
 stream=$(sf_test_turn 'plain prompt' "$echo_session")
 print -r -- "$stream" | jq -eRn '
@@ -411,7 +407,6 @@ sf_test_session "$lorem_session"
 stream=$(sf_test_turn 'lorem tool' "$lorem_session")
 print -r -- "$stream" | jq -eRn '
   [inputs | fromjson] as $events |
-  ($events | any(.type == "_notice" and .level == "error") | not) and
   ($events | map(select(.type == "assistant"))[0].stop) == "tool_calls" and
   ($events | map(select(.type == "tool_result")) | length) == 1 and
   ($events | map(select(.type == "assistant"))[-1].stop) == "end"

@@ -17,7 +17,7 @@ export SF_TEST_BACKEND_DELAY=0
 export SF_TEST_BACKEND_REQUEST="$request_capture"
 
 # pre_tool_use and post_tool_use scripts receive canonical envelopes. A nonzero
-# tool exit remains an executed result, and stderr remains a transient hook display.
+# tool exit remains an executed result, and stderr becomes durable user context.
 typeset pre_observe="$tmp/pre-observe"
 cat >"$pre_observe" <<'ZSH'
 #!/usr/bin/env zsh
@@ -64,9 +64,10 @@ print -r -- "$stream" | jq -eRn '
     map(if .type == "state" then [.name,.value] else ["result",.call_id] end)) ==
     [["tools/pre","call_1"],["result","call_1"],["tools/post","call_1"],
      ["tools/pre","call_2"],["result","call_2"],["tools/post","call_2"]] and
-  ($events | map(select(.type == "_hook_end") | .text)) ==
+  ($events | map(select(.type == "hook_result") | .user_context)) ==
     ["pre-local-call_1","post-local-call_1","pre-local-call_2","post-local-call_2"]
 ' >/dev/null
+assert_canonical_session "$observe_session"
 jq -e '. == {turn_id:1,tool_name:"shell",tool_use_id:"call_1",
   tool_input:{command:"printf '\''line\\n\\n'\''; exit 7"}}' \
   "$TEST_OUTPUT_DIR/pre-call_1" >/dev/null

@@ -78,6 +78,20 @@ dispatch_hooks "$empty" 64 0 0 "$context_only" "$display_only"
 [[ $component_results[1] == "$context_only" && $component_results[3] == from-stdout ]]
 [[ $component_results[5] == "$display_only" && -z $component_results[7] ]]
 
+# A configured label emits activity, then an exact clear when no result replaces it.
+capture_result displayed_empty 0
+typeset displayed_empty=$script activity_events
+SF_HOOK_JSONL=1
+activity_events=$(sf_hooks_dispatch "$empty" 64 0 0 \
+  "$displayed_empty" 'Working' '' '')
+SF_HOOK_JSONL=0
+print -r -- "$activity_events" | jq -eRn '
+  [inputs | fromjson] == [
+    {type:"_hook_activity",hook:"test_hook",script:"displayed_empty",text:"Working"},
+    {type:"_hook_activity",text:""}
+  ]
+' >/dev/null
+
 # A match command is silent, selects with status 0, and skips with status 1.
 capture_result selector 1
 typeset selector=$script

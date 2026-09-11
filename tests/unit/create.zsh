@@ -170,14 +170,14 @@ zsh -f "$entry" create --session-out "$missing" --config "$missing_config" >/dev
   fail 'a missing system component created a session'
 [[ ! -e $missing ]] || fail 'create left a transcript for a missing component'
 
-# Startup components stream their lifecycle around immediate durable records.
+# Startup components stream configured activity around immediate durable records.
 typeset events="$tmp/events.jsonl" streamed="$tmp/streamed.jsonl"
 typeset first="$tmp/first-hook" silent="$tmp/silent-hook" stream_config="$tmp/stream.jsonc"
 mkdir "$first" "$silent"
 cat >"$first/run" <<'ZSH'
 #!/usr/bin/env zsh
 [[ -f $SHELLFISH_SESSION ]] || exit 2
-jq -se 'map(.type) == ["_session_prepare","_hook_start"]' \
+jq -se 'map(.type) == ["_session_prepare","_hook_activity"]' \
   "$SF_TEST_EVENTS" >/dev/null || exit 3
 print -r -- 'startup context'
 printf '%*s' "${SF_TEST_CONTEXT_BYTES:-0}" ''
@@ -187,11 +187,10 @@ ZSH
 cat >"$silent/run" <<'ZSH'
 #!/usr/bin/env zsh
 [[ -f $SHELLFISH_SESSION ]] || exit 2
-jq -se 'map(.type) == ["_session_prepare","_hook_start","state","context",
-  "_hook_end","_hook_start"]' \
+jq -se 'map(.type) == ["_session_prepare","_hook_activity","state","hook_result"]' \
   "$SF_TEST_EVENTS" >/dev/null || exit 3
 jq -se '.[-2] == {type:"state",name:"startup/stream",value:true} and
-  .[-1].type == "context" and .[-1].script == "first-hook"' \
+  .[-1].type == "hook_result" and .[-1].script == "first-hook"' \
   "$SHELLFISH_SESSION" >/dev/null || exit 4
 ZSH
 print -r -- '{"display":"Starting up"}' >"$first/manifest.json"
@@ -203,19 +202,17 @@ SF_TEST_EVENTS="$events" zsh -f "$entry" create --jsonl --config "$stream_config
 [[ ! -s $hook_error ]] || fail 'streamed display leaked to stderr'
 jq -se --arg path "$streamed" \
   --slurpfile session "$streamed" '
-  map(.type) == ["_session_prepare","_hook_start","state","context","_hook_end",
-    "_hook_start","_hook_end","_session_created"] and
+  map(.type) == ["_session_prepare","_hook_activity","state","hook_result",
+    "_session_created"] and
   .[0] == {type:"_session_prepare",path:$path,records:$session[:2]} and
-  .[1] == {type:"_hook_start",hook:"session_start",script:"first-hook",
+  .[1] == {type:"_hook_activity",hook:"session_start",script:"first-hook",
     text:"Starting up"} and
   .[2] == $session[2] and .[2] ==
     {type:"state",name:"startup/stream",value:true} and
   .[3] == $session[3] and .[3] ==
-    {type:"context",hook:"session_start",script:"first-hook",content:"startup context\n"} and
-  .[4] == {type:"_hook_end",text:"startup display\n",error:false} and
-  .[5] == {type:"_hook_start",hook:"session_start",script:"silent-hook",text:""} and
-  .[6] == {type:"_hook_end",text:"",error:false} and
-  .[7] == {type:"_session_created",path:$path} and
+    {type:"hook_result",hook:"session_start",script:"first-hook",
+      model_context:"startup context\n",user_context:"startup display\n"} and
+  .[4] == {type:"_session_created",path:$path} and
   ($session | length == 4)
 ' "$events" >/dev/null || fail 'invalid creation event sequence or transcript'
 
@@ -226,7 +223,7 @@ SF_TEST_EVENTS="$events" SF_TEST_CONTEXT_BYTES=300000 zsh -f "$entry" create --j
   --session-out "$large" --config "$large_config" >"$events" 2>"$hook_error" ||
   fail 'large startup context failed'
 jq -se --slurpfile session "$large" '.[3] == $session[3] and
-  (.[3].content | length == 300016)' "$events" >/dev/null ||
+  (.[3].model_context | length == 300016)' "$events" >/dev/null ||
   fail 'large startup context was truncated'
 
 # Empty startup has no hook events, including when the system is empty.
@@ -234,13 +231,11 @@ zsh -f "$entry" create --jsonl --config "$config" --system '' >"$events"
 jq -se 'map(.type) == ["_session_prepare","_session_created"] and
   (.[0].records | length == 1)' "$events" >/dev/null || fail 'invalid empty startup stream'
 
-# Failure removes the initial session and settles the active component as an error.
+# Failure removes the initial session and reports through stderr.
 SF_TEST_STATE_MARKER="$marker" zsh -f "$entry" create --jsonl --session-out "$failed" \
   --config "$hook_config" >"$events" 2>"$hook_error" && fail 'streamed failure succeeded'
 [[ ! -e $failed && $(<"$hook_error") == *'hook script failed with status 9:'* ]]
-jq -se 'map(.type) == ["_session_prepare","_hook_start","_hook_end"] and
-  .[-1].error == true and
-  all(.[]; has("context") | not)' \
+jq -se 'map(.type) == ["_session_prepare"]' \
   "$events" >/dev/null || fail 'failed creation emitted completion'
 
 # A later failure leaves the earlier component's emitted records as a valid prefix.
@@ -251,8 +246,7 @@ SF_TEST_EVENTS="$events" SF_TEST_STATE_MARKER="$marker" zsh -f "$entry" create -
   fail 'a later startup failure succeeded'
 [[ ! -e $failed && $(<"$hook_error") == *'hook script failed with status 9:'* ]]
 jq -se '
-  map(.type) == ["_session_prepare","_hook_start","state","context","_hook_end",
-    "_hook_start","_hook_end"] and .[-1].error == true and
+  map(.type) == ["_session_prepare","_hook_activity","state","hook_result"] and
   all(.[]; .type != "_session_created")
 ' "$events" >/dev/null || fail 'later failure lost the completed hook prefix'
 
@@ -286,7 +280,9 @@ wait "$create_pid" || cancel_status=$?
 : >"$SLOW_RELEASE"
 sleep 0.3
 [[ ! -e $SLOW_EXIT_MARKER ]] || fail 'cancelled session_start hook script ran to completion'
-jq -se 'all(.[]; .type != "_session_created")' "$events" >/dev/null ||
-  fail 'cancelled creation announced a session'
+jq -se '
+  all(.[]; .type != "_session_created")
+' "$events" >/dev/null || fail 'cancelled creation did not emit its final error'
+[[ -s $hook_error ]] || fail 'cancelled creation omitted stderr diagnostic'
 
 print -r -- ok

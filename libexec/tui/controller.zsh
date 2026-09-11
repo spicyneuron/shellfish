@@ -10,7 +10,6 @@ typeset -g SF_PRESENT_PERMISSION_TOOL='' SF_PRESENT_PERMISSION_TEXT=''
 typeset -g SF_PRESENT_PERMISSION_LANGUAGE=''
 typeset -gi SF_PRESENT_PERMISSION_PREVIEW_LENGTH=0
 typeset -gi SF_PRESENT_EXIT_STATUS=0
-typeset -g SF_PRESENT_EXEC_ERROR_HEADING='' SF_PRESENT_EXEC_ERROR_DETAIL=''
 # Set when the turn persisted its own failure, which the reload then replays.
 typeset -gi SF_PRESENT_TURN_ERROR=0
 typeset -g SF_PRESENT_TTY=''
@@ -132,13 +131,7 @@ sf_tui_decoded() {
         ;;
       notice)
         sf_tui_event notice "$first" "$second" "$third" "$fourth" "$fifth" "$sixth" || return 1
-        if [[ $sixth == end ]]; then
-          SF_PRESENT_TURN_ERROR=1
-        elif [[ $first == error ]]; then
-          [[ -n $SF_PRESENT_EXEC_ERROR_HEADING ]] || SF_PRESENT_EXEC_ERROR_HEADING=$second
-          [[ -z $SF_PRESENT_EXEC_ERROR_DETAIL ]] || SF_PRESENT_EXEC_ERROR_DETAIL+=$'\n'
-          SF_PRESENT_EXEC_ERROR_DETAIL+=$fourth
-        fi
+        [[ $sixth != end ]] || SF_PRESENT_TURN_ERROR=1
         ;;
       permission_request)
         [[ $SF_PRESENT_STATE == working && -z $SF_PRESENT_PERMISSION_ID ]] || return 1
@@ -251,13 +244,10 @@ sf_tui_pending_next() {
 
 sf_tui_exec_finish() {
   local heading detail exit_detail render_error=$SF_PRESENT_RENDER_ERROR
-  local exec_heading=$SF_PRESENT_EXEC_ERROR_HEADING exec_detail=$SF_PRESENT_EXEC_ERROR_DETAIL
   integer exit_status cancelled=0 turn_error=$SF_PRESENT_TURN_ERROR
   sf_tui_transport_result || return 1
   exit_status=$reply[1]
   exit_detail=$reply[2]
-  SF_PRESENT_EXEC_ERROR_HEADING=''
-  SF_PRESENT_EXEC_ERROR_DETAIL=''
   SF_PRESENT_TURN_ERROR=0
   if [[ -z $SF_PRESENT_SESSION ]] && (( ! exit_status )); then
     exit_status=1
@@ -266,16 +256,8 @@ sf_tui_exec_finish() {
   [[ $SF_PRESENT_STATE != cancelling ]] || cancelled=1
   if (( exit_status || cancelled )); then
     if (( turn_error )); then
-      # The reloaded transcript ends with the persisted failure. Exec only
-      # reports a failure notice when it could not persist one.
+      # The reloaded transcript ends with the persisted failure.
       heading=''
-    elif [[ -n $exec_heading ]]; then
-      heading=$exec_heading
-      detail=$exec_detail
-      if [[ -n $exit_detail && $detail != *"$exit_detail"* ]]; then
-        [[ -z $detail ]] || detail+=$'\n'
-        detail+=$exit_detail
-      fi
     elif (( cancelled && ! exit_status )); then
       # A completed worker wins the cancellation race.
       heading=''
@@ -346,8 +328,6 @@ sf_tui_turn() {
   input=$(jq -cn --arg prompt "$prompt" \
     '{type:"user",content:[{type:"text",text:$prompt}]}') || return 1
   SF_PRESENT_HANDOFF=()
-  SF_PRESENT_EXEC_ERROR_HEADING=''
-  SF_PRESENT_EXEC_ERROR_DETAIL=''
   SF_PRESENT_TURN_ERROR=0
   SF_PRESENT_RENDER_ERROR=''
   SF_PRESENT_ACTIVITY_FRAME=0

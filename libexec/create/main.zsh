@@ -18,7 +18,12 @@ sf_create_emit() {
 
 sf_create_interrupt() {
   local exit_status=$1 session=$2
-  sf_process_capture_stop
+  if (( exit_status == 130 )); then
+    sf_die 'Cancelled.' || true
+  else
+    sf_die 'Session creation interrupted.' || true
+  fi
+  sf_process_capture_stop || true
   [[ -z $session ]] || rm -f -- "$session" 2>/dev/null
   exit $exit_status
 }

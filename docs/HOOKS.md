@@ -14,7 +14,7 @@ The agent loop, with hooks marked, is:
 resolve runtime
 if creating a session:
     create header and system record
-    for each session_start component: run, validate, append state and context
+    for each session_start component: run, validate, append state and hook result
 open the session for a turn
 run and apply user_prompt_submit components in order
 append user
@@ -120,15 +120,15 @@ A script communicates through three channels. They are captured separately, but 
 
 | Channel | Meaning |
 | --- | --- |
-| stdout | Hook data. Often durable `context`; hook-dependent (see below). |
-| stderr | Ephemeral display. Sent to a live event client after the script exits, never committed, never sent to the model. |
+| stdout | Hook data. Often durable model context; hook-dependent (see below). |
+| stderr | Durable user-only output from a successful ordinary hook; never sent to the model. |
 | fd 3 | One JSON control object containing common state and any hook-specific fields. |
 
 fd 3 must contain exactly one JSON object. Every hook accepts an optional `state` array of `{name,value}` objects. The dispatcher constructs canonical state records and removes `state` before the hook-specific adapter validates the remaining fields. The control capture is private and byte-counted before decoding. Model-facing context remains raw stdout, so ordinary scripts can still use `cat` and pipelines without JSON-encoding their payloads.
 
-In JSONL mode, `_hook_start` opens an ordinary component with its manifest `display` text before the script runs. After validation, `_hook_end` settles it with stderr when nonempty, otherwise stdout. An empty result removes the live presentation. A component failure closes the same presentation as an error. Without a live event stream, the owning process writes buffered stderr to its own stderr. Permission components are presentation-silent and emit neither lifecycle event nor successful stderr.
+In JSONL mode, an ordinary component with a nonempty manifest `display` emits `_hook_activity` before the script runs. A successful `hook_result` or process completion replaces that activity. A displayed component that succeeds without a result emits the short `{type:"_hook_activity",text:""}` event to clear it. Components with an empty label emit no activity event. Without a live event stream, the owning process also writes successful stderr to its own stderr. Permission components are presentation-silent and discard successful stderr.
 
-After one component validates, Shellfish appends and emits its state followed by any model-facing context before closing it and selecting the next component. A later failure leaves that valid durable prefix intact. See [JSONL output](RUN.md#output).
+After one component validates, Shellfish appends and emits its state followed by one result containing any model-facing stdout and user-facing stderr, then selects the next component. A later failure leaves that valid durable prefix intact. See [JSONL output](RUN.md#output).
 
 ### Exit statuses
 
@@ -145,7 +145,7 @@ Rules the dispatcher enforces for every script:
 
 - Nonempty fd 3 must be one JSON object. Every hook accepts common state; other fields must belong to that hook's control vocabulary.
 - stdout is candidate hook data on any successful status; whether it is committed depends on the hook (see below).
-- Validated state and hook-dependent context become durable before the next component runs.
+- Validated state and any hook result become durable before the next component runs.
 - When a script exits with an unsupported status, its captured stderr is included in the failure message.
 
 Inner commands can return any status. `jq` exiting 1 would otherwise fail the operation, so translate explicitly. The bundled scripts always end with an explicit `exit 0`, `exit 10`, or `exit 11`.
@@ -163,11 +163,11 @@ Quick reference. "Owner" is the process that runs the chain; "stdin" is the exac
 | `post_tool_use` | run | — | tool response envelope JSON | must be empty | state | continue / unsupported (10/11 fails) |
 | `stop` | run | `STOP_ATTEMPT` | assistant text | continuation feedback | state | finish turn / commit feedback, request again |
 
-A hook requests durable state with `{"state":[{"name":"git/identity","value":"branch:main"}]}`. State composes with the hook-specific fields in the same object. Records retain configured script and array order, and state is appended before the chain's context.
+A hook requests durable state with `{"state":[{"name":"git/identity","value":"branch:main"}]}`. State composes with the hook-specific fields in the same object. Records retain configured script and array order, and state is appended before the component's result.
 
-For context-producing hooks, committed stdout becomes a `context` record named for the hook and attributed to the producing script's basename: `{type:"context",hook:"<hook>",script:"<basename>",content:"<stdout>"}`. For `user_prompt_submit`, a `context` object on fd 3 may add `prompt` and `status` to that script's record. `prompt` requires an integer `status` from 0 through 255.
+Successful ordinary-hook output becomes one attributed `hook_result`. Accepted stdout is `model_context`; nonempty stderr is `user_context`. Empty channels are omitted, and a component with neither channel produces no result. For example: `{type:"hook_result",hook:"user_prompt_submit",script:"user_shell",model_context:"output",user_context:"shown",prompt:"git status",status:0}`. A `context` object on fd 3 may add `prompt` and `status` when `model_context` exists. `prompt` requires an integer `status` from 0 through 255.
 
-The request builder groups adjacent context records from the same hook into an escaped XML block. Each producing script becomes a nested `context` element; `script`, and when present `prompt` and `status`, are attributes:
+The request builder ignores `user_context` and groups adjacent results with `model_context` from the same hook into an escaped XML block. Each producing script becomes a nested `context` element; `script`, and when present `prompt` and `status`, are attributes:
 
 ```xml
 <hook name="user_prompt_submit">
@@ -186,7 +186,7 @@ Trailing context, typically `stop` feedback, becomes a synthetic trailing user m
 Runs once after creation writes the session header and optional system record. It does not run when an existing session is resumed or a turn restarts. stdin is empty and `$1` is `session_start`. There are no further arguments. The script does not receive `SHELLFISH_TURN_ID` or `SHELLFISH_TURN_STATE`. Of the environment names declared by configured components, it receives only those selected by its own manifest.
 
 - **stdout** becomes durable `session_start` context. Each script's nonempty stdout is a separately attributed record.
-- **stderr** is shown and discarded.
+- **stderr** becomes durable user-only output.
 - **fd 3** accepts state.
 - **Default action** is finishing creation. Exit 10 or 11 is unsupported and fails session creation without committing hook output.
 
@@ -206,7 +206,7 @@ exit 0
 Runs in the turn before the ordinary user record is committed, with the exact submitted prompt on stdin, `$1` = `user_prompt_submit`, and the shared exports including the reserved `SHELLFISH_TURN_ID`. If submission proceeds, scripts on later turn hooks reuse that turn ID. If submission is blocked, Shellfish discards it. Scripts on this hook can implement prompt commands.
 
 - **stdout** becomes durable `user_prompt_submit` context, pending before the next committed user message.
-- **stderr** is shown and discarded.
+- **stderr** becomes durable user-only output.
 - **fd 3** accepts state and context metadata on any successful script status, plus an optional handoff or session-update action with exit 11.
 - **Default action** is submitting the literal prompt. Exit 10 or 11 does not submit it; stdout is still committed.
 
@@ -276,7 +276,7 @@ exit 11
 Runs immediately before a tool executes. `$1` is `pre_tool_use`. stdin is the same canonical tool request envelope used by `permission_request`.
 
 - **stdout** must be empty on exit 0. On exit 10 or 11, nonempty stdout is denial feedback for the model. Shellfish joins feedback from denying scripts with newlines in configured order and uses it as the denied `tool_result` content. When no denying script writes feedback, the result retains the generic denial text naming the first denying script. Stdout never rewrites tool input.
-- **stderr** is shown and discarded.
+- **stderr** becomes durable user-only output.
 - **fd 3** accepts state.
 - **Default action** is executing the tool. Exit 10 denies the call and continues the script chain. Exit 11 denies the call and halts the chain. Shellfish commits an ordinary `tool_result` with exit code 126, then proceeds to later tool calls in provider order. This policy gate cannot approve sandbox bypass. `permission_request` remains a separate boundary.
 
@@ -300,7 +300,7 @@ Runs after the canonical tool result is durably committed. `$1` is `post_tool_us
 ```
 
 - **stdout** must be empty.
-- **stderr** is shown and discarded.
+- **stderr** becomes durable user-only output.
 - **fd 3** accepts state.
 - **Default action** is continuing the tool loop. There is no coherent skipped action, so exit 10 or 11 **fails the operation** (it does not skip anything).
 
@@ -311,10 +311,10 @@ A nonzero tool exit is a normal canonical result, not a script failure, so this 
 Runs after the completed assistant record is committed. `$1` is `stop`, `$2` is the one-based stop-attempt count for the current turn, and stdin is the last assistant message's text blocks concatenated in content order. Non-text blocks are omitted.
 
 - **stdout** is continuation feedback, but only when completion is skipped. Exit-0 stdout is **discarded**: permitting completion must not stage feedback.
-- **stderr** is shown and discarded.
+- **stderr** becomes durable user-only output.
 - **fd 3** accepts state.
 - **Default action** (exit 0) is finishing the turn.
-- **Skipped** (exit 10 or 11) requires nonempty stdout. That stdout is committed as `stop`-tagged context and forces another provider request within the same turn. Repeated skipped completion is bounded by `harness.max_requests_per_turn`. Scripts can use `$2` to avoid requesting accidental continuation loops.
+- **Skipped** (exit 10 or 11) requires nonempty stdout. That stdout is committed as `stop` model context and forces another provider request within the same turn. Repeated skipped completion is bounded by `harness.max_requests_per_turn`. Scripts can use `$2` to avoid requesting accidental continuation loops.
 
 Exit 10 runs later stop scripts. Exit 11 halts the chain. Both commit feedback and continue. Cancellation stops future work without undoing committed records.
 

@@ -72,10 +72,10 @@ def test_sandbox_updates_without_reload():
             grant_path = str(Path(grant).resolve())
             assert grant_path in records[0]["harness"]["sandbox_write_paths"]
             assert records[1:] == [{
-                "type": "context",
+                "type": "hook_result",
                 "hook": "user_prompt_submit",
                 "script": "sandbox",
-                "content": f"Session sandbox write grant added: {grant_path}\n",
+                "model_context": f"Session sandbox write grant added: {grant_path}\n",
             }]
         finally:
             session.close()
@@ -173,7 +173,7 @@ def test_startup_records_precede_two_turns():
         path, records = session.wait_session_records(3, path=session.explicit_session)
         assert records[0]["type"] == "session"
         assert records[1] == {"type": "system", "content": "startup system prompt"}
-        assert records[2]["type"] == "context"
+        assert records[2]["type"] == "hook_result"
         assert records[2]["hook"] == "session_start"
         assert records[2]["script"] == "project_environment"
         banner = (
@@ -183,7 +183,10 @@ def test_startup_records_precede_two_turns():
         )
         for token in banner:
             session.wait_after(0, token)
-        transcript = ("startup system prompt", "project_environment · session_start")
+        transcript = (
+            "startup system prompt",
+            "Loading project environment… · session_start",
+        )
         for token in transcript:
             session.wait_after(0, token)
         visible = session.visible()

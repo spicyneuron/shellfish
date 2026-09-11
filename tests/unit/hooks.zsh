@@ -3,7 +3,7 @@
 source "${0:A:h}/_hooks.zsh"
 
 # session_start runs during session creation, receives its hook name, and
-# commits each attributed context record before the next component runs.
+# commits each attributed hook result before the next component runs.
 typeset start_session="$tmp/start-session.jsonl"
 make_script start '[[ $# == 1 && $1 == session_start ]]; [[ ! -s /dev/stdin && -z ${SHELLFISH_TURN_ID-} && -z ${SHELLFISH_TURN_STATE-} ]]; [[ -z ${OPENAI_API_KEY-} && -z ${CUSTOM_API_KEY-} ]]; [[ $SHELLFISH_MODEL == test && $0 == /* && -d ${0:A:h} ]]; [[ $SHELLFISH_CONFIG_DIR == "$EXPECTED_CONFIG_DIR" ]]; print -n startup; print -n -u2 local; [[ -z $SKIP ]] || exit 10'
 typeset start_script=$script
@@ -34,8 +34,10 @@ sf_hooks_session_start "$start_session"
 unset OPENAI_API_KEY CUSTOM_API_KEY
 jq -e -s '
   length == 3 and
-  .[1] == {type:"context",hook:"session_start",script:"start",content:"startup"} and
-  .[2] == {type:"context",hook:"session_start",script:"start_second",content:"second"}
+  .[1] == {type:"hook_result",hook:"session_start",script:"start",
+    model_context:"startup",user_context:"local"} and
+  .[2] == {type:"hook_result",hook:"session_start",script:"start_second",
+    model_context:"second"}
 ' "$start_session" >/dev/null
 
 # CLI entry runs session_start scripts once and does not rerun them for an existing session.
@@ -89,7 +91,7 @@ sf_session_prepare "$SF_TEST_RUNTIME"
 if SKIP=1 sf_hooks_session_start "$skipped_session"; then
   fail 'session_start skip status was accepted'
 fi
-[[ $SF_HOOK_ERROR == 'session_start hook script returned unsupported skip status' ]]
+[[ $SF_HOOK_ERROR == 'session_start hook script returned unsupported skip status: local' ]]
 [[ ! -e $skipped_session ]]
 
 # Startup has no control vocabulary, including when a script stops its chain.
@@ -230,14 +232,15 @@ sf_session_begin_turn "$stop_session"
 STOP_ATTEMPT=1 STOP_INPUT=hi STOP_STDOUT=1 sf_hooks_stop "$stop_session" hi 1
 [[ $reply[1] == finish ]]
 sf_session_reset
-(( $(wc -l <"$stop_session") == 3 ))
+(( $(wc -l <"$stop_session") == 4 ))
 
 sf_session_begin_turn "$stop_session"
 STOP_ATTEMPT=2 STOP_INPUT=hi STOP_SKIP=1 STOP_STDOUT=1 \
   sf_hooks_stop "$stop_session" hi 2
 [[ $reply[1] == continue ]]
 sf_session_reset
-jq -e -s '.[-1] == {type:"context",hook:"stop",script:"stop",content:"feedback"}' \
+jq -e -s '.[-1] == {type:"hook_result",hook:"stop",script:"stop",
+  model_context:"feedback",user_context:"local"}' \
   "$stop_session" >/dev/null
 
 sf_session_begin_turn "$stop_session"
