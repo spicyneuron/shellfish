@@ -75,11 +75,11 @@ assert_equal "$node_types" "${(j:,:)SF_PRESENT_NODE_TYPE}"
 # Hook activity replaces the standalone spinner and clears without leaving a node.
 sf_tui_reset
 sf_tui_add activity '' '' '' open
-sf_tui_decoded notice notice 'Inspecting project' session_start '' open
+sf_tui_decoded hook_activity session_start project 'Inspecting project'
 assert_equal notice "$SF_PRESENT_NODE_TYPE[-1]"
 assert_equal 'Inspecting project' "$SF_PRESENT_NODE_HEADING[-1]"
 assert_equal open "$SF_PRESENT_NODE_STATE[-1]"
-sf_tui_decoded notice notice '' '' '' closed
+sf_tui_decoded hook_activity
 assert_equal 0 "${#SF_PRESENT_NODE_TYPE}"
 
 if sf_tui_decoded not-supported; then
@@ -141,7 +141,7 @@ assert_equal "${SF_PRESENT_IDENTITY} · 1 ↑ 1 ↓" "$SF_PRESENT_FOOTER"
 sf_tui_reset
 sf_tui_terminal_reset
 sf_tui_event tool_call call_1 shell '{"command":"true"}'
-sf_tui_decoded notice notice progress pre_tool_use working closed
+sf_tui_decoded hook_user_context progress pre_tool_use working
 assert_equal 'section,tool_call,tool_result,notice,tool_result' "${(j:,:)SF_PRESENT_NODE_TYPE}"
 assert_equal progress "$SF_PRESENT_NODE_HEADING[4]"
 assert_equal pre_tool_use "$SF_PRESENT_NODE_META[4]"
@@ -163,7 +163,7 @@ assert_equal denied "$SF_PRESENT_NODE_BODY[3]"
 # An execution error abandons rather than resumes the live tool.
 sf_tui_reset
 sf_tui_event tool_call call_1 shell '{"command":"false"}'
-sf_tui_decoded notice error failed '' '' closed
+sf_tui_decoded error failed
 assert_equal 'section,tool_call,tool_result,notice' "${(j:,:)SF_PRESENT_NODE_TYPE}"
 assert_equal '' "$SF_PRESENT_NODE_STATUS[3]"
 assert_equal closed "$SF_PRESENT_NODE_STATE[3]"
@@ -176,7 +176,7 @@ assert_equal '' "$SF_PRESENT_TOOL_CURRENT"
 sf_tui_reset
 SF_PRESENT_EXEC_ERROR_HEADING=''
 sf_tui_event user first
-sf_tui_decoded notice error 'Turn failed' '' 'Turn interrupted.' closed end
+sf_tui_decoded error 'Turn failed' 'Turn interrupted.' end
 assert_equal 'section,message,notice' "${(j:,:)SF_PRESENT_NODE_TYPE}"
 assert_equal 1 "$SF_PRESENT_SECTION_ID"
 assert_equal '' "$SF_PRESENT_EXEC_ERROR_HEADING"
@@ -188,12 +188,12 @@ assert_equal 2 "$SF_PRESENT_SECTION_ID"
 sf_tui_reset
 sf_tui_event tool_call call_1 shell one
 sf_tui_event tool_call call_2 shell two
-sf_tui_decoded notice notice pre pre_tool_use first closed
+sf_tui_decoded hook_user_context pre pre_tool_use first
 sf_tui_event tool_result call_1 0 first
-sf_tui_decoded notice notice post post_tool_use first-done closed
-sf_tui_decoded notice notice pre pre_tool_use second closed
+sf_tui_decoded hook_user_context post post_tool_use first-done
+sf_tui_decoded hook_user_context pre pre_tool_use second
 sf_tui_event tool_result call_2 0 second
-sf_tui_decoded notice notice post post_tool_use second-done closed
+sf_tui_decoded hook_user_context post post_tool_use second-done
 integer completed_tools=0 notices=0 node
 for (( node = 1; node <= ${#SF_PRESENT_NODE_TYPE}; node++ )); do
   if [[ $SF_PRESENT_NODE_TYPE[node] == notice ]]; then
@@ -207,14 +207,13 @@ assert_equal 2 "$completed_tools"
 assert_equal 0 "${#SF_PRESENT_TOOL_ORDER}"
 assert_equal '' "$SF_PRESENT_TOOL_CURRENT"
 
-# A live hook display updates one notice and resumes the interrupted tool only
-# after the hook invocation completes.
+# Hook output replaces its live activity and resumes the interrupted tool.
 sf_tui_reset
 sf_tui_event tool_call call_live shell run
-sf_tui_decoded notice notice progress pre_tool_use $'Checking\n' open
+sf_tui_decoded hook_activity pre_tool_use progress Checking
 assert_equal 'section,tool_call,tool_result,notice' "${(j:,:)SF_PRESENT_NODE_TYPE}"
 assert_equal open "$SF_PRESENT_NODE_STATE[-1]"
-sf_tui_decoded notice notice progress pre_tool_use $'Checking policy\n' closed
+sf_tui_decoded hook_user_context progress pre_tool_use $'Checking policy\n'
 assert_equal 'section,tool_call,tool_result,notice,tool_result' "${(j:,:)SF_PRESENT_NODE_TYPE}"
 assert_equal closed "$SF_PRESENT_NODE_STATE[4]"
 assert_equal $'Checking policy\n' "$SF_PRESENT_NODE_BODY[4]"
@@ -607,7 +606,7 @@ for code in 0 9; do
   SF_PRESENT_SESSION=''
   SF_PRESENT_STATE=working
   SF_PRESENT_QUEUE=()
-  sf_tui_event notice notice hook session_start working open
+  sf_tui_event hook_activity session_start hook working
   SF_TUI_TRANSPORT_EOF=1
   SF_TUI_TRANSPORT_EXIT_STATUS=$code
   SF_TUI_TRANSPORT_EXIT_DETAIL='startup failure'

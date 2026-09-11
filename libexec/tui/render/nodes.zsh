@@ -192,58 +192,6 @@ sf_tui_tool_open() {
   SF_PRESENT_TOOL_CURRENT=$id
 }
 
-sf_tui_notice() {
-  local severity=$1 heading=$2 body=${3-} state=${4:-closed}
-  integer index=${#SF_PRESENT_NODE_TYPE} notice_index resume_tool=0
-  if (( index )) && [[ $SF_PRESENT_NODE_STATE[index] == open ]]; then
-    # A live notice settles in place, so its outcome replaces its own row.
-    if [[ $SF_PRESENT_NODE_TYPE[index] == notice ]]; then
-      sf_tui_safe "$heading"; SF_PRESENT_NODE_HEADING[index]=$REPLY
-      sf_tui_safe "$body"; SF_PRESENT_NODE_BODY[index]=$REPLY
-      SF_PRESENT_NODE_ROLE[index]=$severity
-      notice_index=$index
-      [[ $state == open ]] || sf_tui_close $index || return 1
-      (( ${#SF_PRESENT_NODE_TYPE} >= index )) || notice_index=0
-      if [[ $state != open && -n $SF_PRESENT_TOOL_CURRENT ]]; then
-        if [[ $severity == error ]]; then
-          SF_PRESENT_TOOL_HEADING=()
-          SF_PRESENT_TOOL_CONTENT=()
-          SF_PRESENT_TOOL_SUMMARY=()
-          SF_PRESENT_TOOL_FORMAT=()
-          SF_PRESENT_TOOL_ORDER=()
-          SF_PRESENT_TOOL_CURRENT=''
-        else
-          sf_tui_tool_open || return 1
-        fi
-      fi
-      REPLY=$notice_index
-      return 0
-    fi
-    if [[ $SF_PRESENT_NODE_TYPE[index] == tool_result ]]; then
-      if [[ $severity == error ]]; then
-        sf_tui_event tool_segment_close abandon || return 1
-      else
-        sf_tui_event tool_segment_close continue || return 1
-        resume_tool=1
-      fi
-    else
-      [[ $SF_PRESENT_NODE_TYPE[index] == (activity|message|reasoning) ]] || return 1
-      # A notice may arrive before the agent produced anything, and an empty
-      # section would then survive a reload that never rebuilds it.
-      sf_tui_close $index orphan_section || return 1
-    fi
-  fi
-  notice_index=0
-  if [[ $state == open || $severity != notice || -n $body ]]; then
-    sf_tui_add notice "$severity" "$heading" "$body" "$state" || return 1
-    notice_index=$REPLY
-  fi
-  if (( resume_tool )) && [[ $state != open ]]; then
-    sf_tui_tool_open || return 1
-  fi
-  REPLY=$notice_index
-}
-
 sf_tui_footer_usage() {
   SF_PRESENT_FOOTER="${SF_PRESENT_IDENTITY} · $1"
 }
@@ -257,6 +205,8 @@ sf_tui_session_update() {
 
 (( $+functions[sf_tui_user_message] )) ||
   source "$SF_ROOT/libexec/tui/render/messages.zsh"
+(( $+functions[sf_tui_hook_activity] )) ||
+  source "$SF_ROOT/libexec/tui/render/hooks.zsh"
 
 sf_tui_event() {
   local type=$1 first=${2-} second=${3-} third=${4-} fourth=${5-} fifth=${6-} sixth=${7-}
@@ -359,20 +309,18 @@ sf_tui_event() {
         SF_PRESENT_NODE_STATUS[index]=''
       fi
       ;;
-    context)
-      if (( index )) && [[ $SF_PRESENT_NODE_TYPE[index] == notice &&
-          $SF_PRESENT_NODE_ROLE[index] == notice && $SF_PRESENT_NODE_STATE[index] == open ]]; then
-        SF_PRESENT_NODE_BODY[index]=''
-        sf_tui_close $index || return 1
-      fi
-      sf_tui_add injection system "$first" "$third" || return 1
-      SF_PRESENT_NODE_META[REPLY]=$second
+    hook_activity)
+      sf_tui_hook_activity "$first" "$second" "$third"
       ;;
-    notice)
-      sf_tui_notice "$first" "$second" "$fourth" "$fifth" || return 1
-      (( ! REPLY )) || SF_PRESENT_NODE_META[REPLY]=$third
-      # A durable failure ends its section without taking a section number.
-      [[ $sixth != end ]] || SF_PRESENT_LAST_ROLE=''
+    hook_model_context)
+      sf_tui_hook_model_context "$first" "$second" "$third"
+      ;;
+    hook_user_context)
+      sf_tui_hook_user_context "$first" "$second" "$third"
+      ;;
+    error)
+      sf_tui_error "$first" "$second" || return 1
+      [[ $third != end ]] || SF_PRESENT_LAST_ROLE=''
       ;;
     *) return 1 ;;
   esac

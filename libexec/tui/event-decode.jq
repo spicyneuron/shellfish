@@ -17,9 +17,9 @@ def event_fields($event_runtime):
       (.hook as $hook | hook_names | index($hook) != null) and
       (.script | nonempty_control_free_string) and
       (.text | hook_display and length > 0) then
-    ["notice", "notice", .text, .hook, "", "open"]
+    ["hook_activity", .hook, .script, .text]
   elif . == {type:"_hook_activity",text:""} then
-    ["notice", "notice", "", "", "", "closed"]
+    ["hook_activity"]
   elif . == {type:"_assistant_start"} then
     ["assistant_start"]
   elif .type == "_assistant_end" and keys == ["stop", "type"] and

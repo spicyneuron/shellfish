@@ -67,13 +67,13 @@ order=$(print -r -- '{"type":"turn_error","message":"Turn interrupted."}' |
   jq -jRs -L "$ROOT" --argjson runtime null \
     -f "$ROOT/libexec/tui/event-decode.jq" |
   tr '\0' '\n' | sed '/^$/d' | paste -sd, -)
-assert_equal 'notice,error,Turn interrupted.,closed,end,batch_ok' "$order"
+assert_equal 'error,Turn interrupted.,end,batch_ok' "$order"
 
 order=$(print -r -- '{"type":"turn_error","message":"Hook failed.\ninvalid output"}' |
   jq -jRs -L "$ROOT" --argjson runtime null \
     -f "$ROOT/libexec/tui/event-decode.jq" |
   tr '\0' '\n' | sed '/^$/d' | paste -sd, -)
-assert_equal 'notice,error,Hook failed.,invalid output,closed,end,batch_ok' "$order"
+assert_equal 'error,Hook failed.,invalid output,end,batch_ok' "$order"
 
 typeset preparation
 preparation=$(jq -cn --slurpfile records "$SF_TEST_SESSIONS/header-only.jsonl" \
@@ -126,7 +126,7 @@ order=$(print -r -- \
   jq -jRs -L "$ROOT" --argjson runtime null \
     -f "$ROOT/libexec/tui/event-decode.jq" |
   tr '\0' '\n' | sed '/^$/d' | paste -sd, -)
-assert_equal 'context,hook name,user_prompt_submit · prompt,model body,notice,notice,hook name,user_prompt_submit · prompt,user body,closed,batch_ok' "$order"
+assert_equal 'hook_model_context,hook name,user_prompt_submit · prompt,model body,hook_user_context,hook name,user_prompt_submit · prompt,user body,batch_ok' "$order"
 
 order=$(printf '%s\n' \
     '{"type":"_hook_activity","hook":"stop","script":"check","text":"Checking"}' \
@@ -134,7 +134,7 @@ order=$(printf '%s\n' \
   jq -jRs -L "$ROOT" --argjson runtime null \
     -f "$ROOT/libexec/tui/event-decode.jq" |
   tr '\0' '\n' | sed '/^$/d' | paste -sd, -)
-assert_equal 'notice,notice,Checking,stop,open,notice,notice,closed,batch_ok' "$order"
+assert_equal 'hook_activity,stop,check,Checking,hook_activity,batch_ok' "$order"
 
 order=$(print -r -- \
     '{"type":"_tool_permission_request","id":"permission_1","reason":"host access","tool":{"name":"shell","input":{"command":"echo hi","request_sandbox_bypass":true}}}' |

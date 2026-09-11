@@ -114,7 +114,9 @@ sf_tui_decoded() {
   local type=$1 first=${2-} second=${3-} third=${4-} fourth=${5-} fifth=${6-} sixth=${7-}
   local encoded preview reason
   # Only creation events are legal before a durable session exists.
-  [[ -n $SF_PRESENT_SESSION || $type == (notice|context|session_created) ]] || return 1
+  [[ -n $SF_PRESENT_SESSION ||
+      $type == (hook_activity|hook_model_context|hook_user_context|error|session_created) ]] ||
+    return 1
   case $type in
       session_created)
         [[ -z $SF_PRESENT_SESSION ]] || return 1
@@ -123,16 +125,16 @@ sf_tui_decoded() {
         ;;
       assistant_start|assistant_message_delta|assistant_reasoning_delta| \
       assistant_reasoning_opaque|assistant_tool_call_delta|assistant_end| \
-      tool_call|tool_result|context)
+      tool_call|tool_result|hook_activity|hook_model_context|hook_user_context)
         sf_tui_event "$type" "$first" "$second" "$third" "$fourth" "$fifth" "$sixth" || return 1
         ;;
       turn_usage)
         sf_tui_footer_usage "$first"
         [[ -z $second ]] || sf_tui_event reasoning_tokens "$second" || return 1
         ;;
-      notice)
-        sf_tui_event notice "$first" "$second" "$third" "$fourth" "$fifth" "$sixth" || return 1
-        [[ $sixth != end ]] || SF_PRESENT_TURN_ERROR=1
+      error)
+        sf_tui_event error "$first" "$second" "$third" || return 1
+        [[ $third != end ]] || SF_PRESENT_TURN_ERROR=1
         ;;
       permission_request)
         [[ $SF_PRESENT_STATE == working && -z $SF_PRESENT_PERMISSION_ID ]] || return 1
@@ -177,7 +179,7 @@ sf_tui_recover() {
     # Creation left no transcript, so the failure is all there is to present.
     sf_tui_reset
     SF_PRESENT_CURSOR='1:0'
-    sf_tui_notice error "$heading" "$detail" || return 1
+    sf_tui_error "$heading" "$detail" || return 1
     return 1
   fi
   if (( visible && ${#SF_PRESENT_NODE_TYPE} )); then
@@ -215,7 +217,7 @@ sf_tui_recover() {
       return 1
     fi
   fi
-  [[ -z $heading ]] || sf_tui_notice error "$heading" "$detail"
+  [[ -z $heading ]] || sf_tui_error "$heading" "$detail"
 }
 
 # Apply one transport record.
