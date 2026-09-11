@@ -32,6 +32,7 @@ typeset -gi SF_PRESENT_LIVE=0
 typeset -ga SF_PRESENT_ROLE=() SF_PRESENT_SECTION=() SF_PRESENT_PRIOR=()
 typeset -g SF_PRESENT_LAST_ROLE=''
 typeset -gi SF_PRESENT_SECTION_ID=0
+typeset -g SF_PRESENT_ASSISTANT_INDEX=''
 
 # Appends a formatter. A live tail must be settled or retracted first, so a
 # caller that forgets a transition fails here rather than silently growing a
@@ -123,6 +124,7 @@ sf_tui_reset() {
   sf_tui_formatter_keep 1 0
   SF_PRESENT_LAST_ROLE=''
   SF_PRESENT_SECTION_ID=0
+  SF_PRESENT_ASSISTANT_INDEX=''
 }
 
 # Per-type fields, set and read only by the formatter that owns the entry.
@@ -173,16 +175,91 @@ sf_tui_session_update() {
 #   error HEADING DETAIL [end]
 #     "end" closes the turn so the next record opens a new section.
 sf_tui_event() {
-  case $1 in
+  local type=$1 first=${2-} second=${3-} third=${4-}
+  integer index=${#SF_PRESENT_KIND}
+  case $type in
     user)
-      sf_tui_message_append user "$2" || return 1
+      sf_tui_message_append user "$first" || return 1
       ;;
-    activity_start|activity_stop|system|assistant_start|assistant_end| \
-    assistant_message_delta|assistant_reasoning_delta|assistant_reasoning_opaque| \
-    assistant_tool_call_delta|reasoning_tokens|tool_call|tool_result| \
+    system)
+      sf_tui_message_append system "$first" || return 1
+      ;;
+    assistant_start)
+      SF_PRESENT_ASSISTANT_INDEX=''
+      sf_tui_message_append agent '' live || return 1
+      ;;
+    assistant_message_delta)
+      sf_tui_assistant_stream message "$first" "$second" || return 1
+      ;;
+    assistant_reasoning_delta)
+      sf_tui_assistant_stream reasoning "$first" "$second" "$third" || return 1
+      ;;
+    reasoning_tokens)
+      if [[ -n $first && $index -gt 0 && $SF_PRESENT_LIVE == $index &&
+          $SF_PRESENT_KIND[index] == reasoning ]]; then
+        sf_tui_reasoning_tokens $index "$first" || return 1
+      fi
+      ;;
+    assistant_reasoning_opaque|assistant_tool_call_delta)
+      sf_tui_assistant_boundary "$first" || return 1
+      ;;
+    assistant_end)
+      SF_PRESENT_ASSISTANT_INDEX=''
+      sf_tui_assistant_close || return 1
+      ;;
+    activity_start|activity_stop|tool_call|tool_result| \
     tool_permission|tool_permission_clear|hook_activity|hook_result|error) ;;
     *) return 1 ;;
   esac
+}
+
+# Settles the current assistant block, or retracts it when the stream never
+# produced visible content. Only assistant message and reasoning entries use
+# this transition until the later hook and tool formatters arrive.
+sf_tui_assistant_close() {
+  integer index=${#SF_PRESENT_KIND}
+  (( SF_PRESENT_LIVE )) || return 0
+  (( SF_PRESENT_LIVE == index )) || return 1
+  [[ $SF_PRESENT_KIND[index] == (message|reasoning) ]] || return 1
+  if [[ $SF_PRESENT_TEXT[index] == *[!$'\n']* ]]; then
+    sf_tui_formatter_settle
+  else
+    sf_tui_formatter_retract
+  fi
+}
+
+# A source-index or visible-kind transition closes the prior block before the
+# successor is appended. Opaque blocks call the same boundary without creating
+# presentation of their own.
+sf_tui_assistant_boundary() {
+  local source_index=$1 kind=${2-}
+  integer index=${#SF_PRESENT_KIND}
+  if [[ $SF_PRESENT_ASSISTANT_INDEX != $source_index ]] ||
+      { (( SF_PRESENT_LIVE )) && [[ -n $kind && $SF_PRESENT_KIND[index] != $kind ]]; }; then
+    sf_tui_assistant_close || return 1
+    SF_PRESENT_ASSISTANT_INDEX=$source_index
+  fi
+}
+
+sf_tui_assistant_stream() {
+  local kind=$1 source_index=$2 text=${3-} exact=${4-}
+  integer index
+  sf_tui_assistant_boundary "$source_index" "$kind" || return 1
+  index=${#SF_PRESENT_KIND}
+  if (( ! SF_PRESENT_LIVE )); then
+    if [[ $kind == message ]]; then
+      sf_tui_message_append agent '' live || return 1
+    else
+      sf_tui_reasoning_append live || return 1
+    fi
+    index=$REPLY
+  fi
+  [[ $SF_PRESENT_KIND[index] == $kind ]] || return 1
+  if [[ -n $text ]]; then
+    sf_tui_safe "$text"
+    SF_PRESENT_TEXT[index]+=$REPLY
+  fi
+  [[ $kind != reasoning || -z $exact ]] || sf_tui_reasoning_tokens $index "$exact"
 }
 
 sf_tui_reload() {

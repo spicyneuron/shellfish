@@ -108,3 +108,186 @@ done
 assert_equal 1 "$sliced[-1]"
 
 SF_PRESENT_STYLE=()
+
+# System context owns its preview and whole-content estimate. A zero preview is
+# only the clamp; a positive preview counts wrapped body rows, not its chrome.
+sf_tui_reset
+SF_PRESENT_PREVIEW_CONTEXT=0
+sf_tui_event system $'one\ntwo'
+view 79 20
+[[ $REPLY == $'─ system '*$'\n\n… ~2 tokens' ]] || fail "collapsed system: $REPLY"
+assert_equal 3 "$SF_PRESENT_SAFE_PREFIX"
+view 8 20
+for row in "${(@f)REPLY}"; do
+  (( ${#row} <= 8 )) || fail "narrow system row overflowed: $row"
+done
+
+sf_tui_reset
+SF_PRESENT_PREVIEW_CONTEXT=1
+sf_tui_event system $'first row\nsecond row\nthird row'
+view 79 20
+[[ $REPLY == $'─ system '*$'\n\nfirst row\n… ~8 tokens' ]] || fail "previewed system: $REPLY"
+assert_equal 4 "$SF_PRESENT_SAFE_PREFIX"
+
+# Assistant start owns agent chrome and activity, but none of it is safe until
+# stable content exists. Ending an empty stream retracts both chrome and number.
+sf_tui_reset
+SF_PRESENT_PREVIEW_CONTEXT=full
+sf_tui_event assistant_start
+view 12 20
+assert_equal $'─ agent  1 ─\n\n⠃' "$REPLY"
+assert_equal 0 "$SF_PRESENT_SAFE_PREFIX"
+sf_tui_event assistant_end
+sf_tui_event user next
+view 12 20
+[[ $REPLY == $'─ user '*$' 1 ─\n\nnext' ]] || fail "empty assistant retraction: $REPLY"
+
+# Live assistant text shows only complete wrapped rows. The mutable tail is
+# represented by activity until settlement, when it appears exactly once.
+sf_tui_reset
+sf_tui_event assistant_start
+sf_tui_event assistant_message_delta 0 'hello world'
+view 8 20
+assert_equal $'─ agent \n\nhello\n⠃' "$REPLY"
+assert_equal 3 "$SF_PRESENT_SAFE_PREFIX"
+sf_tui_event assistant_end
+view 8 20
+assert_equal $'─ agent \n\nhello\nworld' "$REPLY"
+assert_equal 4 "$SF_PRESENT_SAFE_PREFIX"
+
+# A newline closes the partial line immediately, so the body row joins the safe
+# prefix even though the formatter remains live for more content.
+sf_tui_reset
+sf_tui_event assistant_start
+sf_tui_event assistant_message_delta 0 $'answer\n'
+view 20 20
+[[ $REPLY == *$'\n\nanswer\n⠃' ]] || fail "newline-closed assistant row: $REPLY"
+assert_equal 3 "$SF_PRESENT_SAFE_PREFIX"
+
+# Adjacent blocks of the same visible kind remain separate, and visible or
+# opaque kind transitions settle the preceding source block in order.
+sf_tui_reset
+sf_tui_event assistant_start
+sf_tui_event assistant_message_delta 0 first
+sf_tui_event assistant_message_delta 1 second
+view 79 20
+[[ $REPLY == *$'\n\nfirst\n\n⠃' && $REPLY != *second* ]] ||
+  fail "adjacent assistant blocks: $REPLY"
+sf_tui_event assistant_reasoning_opaque 2
+view 79 20
+[[ $REPLY == *$'\n\nfirst\n\nsecond' ]] || fail "opaque reasoning boundary: $REPLY"
+sf_tui_event assistant_reasoning_delta 3 thought 9
+view 79 20
+[[ $REPLY == *$'✎ Reasoning\n  thought\n  ⠃' ]] || fail "reasoning transition: $REPLY"
+sf_tui_event assistant_tool_call_delta 4
+view 79 20
+[[ $REPLY == *'Thought for ~9 tokens.' ]] || fail "tool-call boundary: $REPLY"
+
+# Expanded reasoning displays its partial tail but keeps it unsafe. A preview
+# clamp owns activity while live and uses the exact whole-block total at end.
+sf_tui_reset
+SF_PRESENT_PREVIEW_REASONING=1
+sf_tui_event assistant_start
+sf_tui_event assistant_reasoning_delta 0 $'first\nsecond'
+view 79 20
+[[ $REPLY == $'─ agent '*$' 1 ─\n\n✎ Reasoning\n  first\n  … ~3 tokens ⠃' ]] ||
+  fail "live reasoning preview: $REPLY"
+assert_equal 4 "$SF_PRESENT_SAFE_PREFIX"
+sf_tui_event reasoning_tokens 4
+sf_tui_event assistant_end
+view 79 20
+[[ $REPLY == $'─ agent '*$' 1 ─\n\n✎ Reasoning\n  first\n  … Thought for ~4 tokens.' ]] ||
+  fail "settled reasoning preview: $REPLY"
+assert_equal 5 "$SF_PRESENT_SAFE_PREFIX"
+
+# A collapsed reasoning block remains wholly unsafe while live, then settles
+# as one summary. Newline-only streamed blocks retract on transition.
+sf_tui_reset
+SF_PRESENT_PREVIEW_REASONING=0
+sf_tui_event assistant_start
+sf_tui_event assistant_reasoning_delta 0 thought
+view 79 20
+[[ $REPLY == *$'✎ Thinking… ⠃' ]] || fail "live collapsed reasoning: $REPLY"
+assert_equal 0 "$SF_PRESENT_SAFE_PREFIX"
+sf_tui_event assistant_end
+view 79 20
+[[ $REPLY == *$'✎ Thought for ~2 tokens.' ]] || fail "settled collapsed reasoning: $REPLY"
+
+sf_tui_reset
+sf_tui_event assistant_start
+sf_tui_event assistant_message_delta 0 $'\n'
+sf_tui_event assistant_reasoning_delta 1 $'\n\n'
+sf_tui_event assistant_end
+sf_tui_event user visible
+view 79 20
+[[ $REPLY == $'─ user '*$' 1 ─\n\nvisible' ]] || fail "newline-only retraction: $REPLY"
+
+# An incomplete inline construct holds only a bounded suffix of stable rows;
+# a tall stream still drains. Open fences do not withhold otherwise safe rows.
+sf_tui_reset
+SF_PRESENT_PREVIEW_REASONING=full
+sf_tui_event assistant_start
+sf_tui_event assistant_message_delta 0 '**open word word tail'
+view 10 20
+assert_equal 0 "$SF_PRESENT_SAFE_PREFIX"
+sf_tui_reset
+sf_tui_event assistant_start
+sf_tui_event assistant_message_delta 0 \
+  '**open word word word word word word word word word word word word word word word word word word word word tail'
+view 10 40
+(( SF_PRESENT_SAFE_PREFIX > 0 )) || fail 'a tall inline stream did not drain'
+sf_tui_reset
+sf_tui_event assistant_start
+sf_tui_event assistant_message_delta 0 $'```js\nconst x = 1;\ntail'
+view 20 20
+(( SF_PRESENT_SAFE_PREFIX > 0 )) || fail 'an open fence withheld stable rows'
+
+# Chunk boundaries do not change nested Markdown styling.
+SF_PRESENT_STYLE=( message m syntax.heading h syntax.strong s )
+sf_tui_reset
+sf_tui_event assistant_start
+sf_tui_event assistant_message_delta 0 '# A **bold '
+view 12 40
+sf_tui_event assistant_message_delta 0 'heading that wraps** '
+view 12 40
+sf_tui_event assistant_message_delta 0 'and keeps growing'
+view 12 40
+typeset chunked_text=$SF_PRESENT_VIEWPORT_TEXT
+typeset chunked_spans="${(j:|:)SF_PRESENT_VIEWPORT_HIGHLIGHTS}"
+sf_tui_reset
+sf_tui_event assistant_start
+sf_tui_event assistant_message_delta 0 '# A **bold heading that wraps** and keeps growing'
+view 12 40
+assert_equal "$chunked_text" "$SF_PRESENT_VIEWPORT_TEXT"
+assert_equal "$chunked_spans" "${(j:|:)SF_PRESENT_VIEWPORT_HIGHLIGHTS}"
+SF_PRESENT_STYLE=()
+
+# Scan continuation is formatter-local: growing a long line does work
+# proportional to new content rather than rescanning its retained prefix.
+sf_tui_reset
+typeset -gi scanned=0
+functions[sf_tui_markdown_saved]=$functions[sf_tui_markdown_highlight]
+sf_tui_markdown_highlight() {
+  scanned=$(( scanned + ${#1} ))
+  sf_tui_markdown_saved "$@"
+}
+sf_tui_event assistant_start
+for (( span = 1; span <= 24; span++ )); do
+  sf_tui_event assistant_message_delta 0 'lorem ipsum '
+  view 20 20
+done
+(( scanned <= 24 * 12 * 3 )) || fail "rescanned growing Markdown: $scanned"
+functions[sf_tui_markdown_highlight]=$functions[sf_tui_markdown_saved]
+unfunction sf_tui_markdown_saved
+
+# Reasoning clamps retain the formatter's base style and apply the clamp style
+# afterward.
+SF_PRESENT_STYLE=( message 'fg=1' reasoning 'fg=2' clamp 'fg=3' )
+SF_PRESENT_PREVIEW_REASONING=1
+sf_tui_reset
+sf_tui_event assistant_start
+sf_tui_event assistant_reasoning_delta 0 $'first\nsecond'
+sf_tui_transcript 20 20 || fail 'styled reasoning clamp did not render'
+[[ ${(j:|:)SF_PRESENT_VIEWPORT_HIGHLIGHTS} == *'fg=2'*'fg=3'* ]] ||
+  fail 'reasoning clamp styles were not layered'
+SF_PRESENT_STYLE=()

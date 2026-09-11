@@ -77,9 +77,8 @@ sf_tui_background_mode() { return 1 }
 sf_tui_theme_config "$auto_config" || fail 'an unanswered probe should fall back to dark'
 assert_equal dark "$SF_PRESENT_BACKGROUND"
 
-# Scanning needs an active theme: a span only exists where a style is configured.
+# A scan emits spans only where the active theme configures a style.
 sf_tui_theme_config "$theme_config" || fail "theme setup failed: $SF_PRESENT_HIGHLIGHT_ERROR"
-assert_equal 1 "$SF_PRESENT_HIGHLIGHT_ENABLED"
 
 span_texts() {
   local source=$1

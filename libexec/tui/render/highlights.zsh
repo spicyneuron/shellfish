@@ -11,7 +11,6 @@ typeset -gi SF_PRESENT_HIGHLIGHT_INLINE_OPEN=0 SF_PRESENT_HIGHLIGHT_BLOCK_OPEN=0
 # back from "type.role" to "type". An empty map disables all styling.
 typeset -gA SF_PRESENT_STYLE=()
 typeset -g SF_PRESENT_BACKGROUND=''
-typeset -gi SF_PRESENT_HIGHLIGHT_ENABLED=0
 
 # Returns light or dark from the terminal's OSC 11 default-background reply. A
 # terminal that does not implement OSC 11 cannot hold startup indefinitely.
@@ -58,7 +57,6 @@ sf_tui_theme_config() {
 
   SF_PRESENT_STYLE=()
   SF_PRESENT_HIGHLIGHT_ERROR=''
-  SF_PRESENT_HIGHLIGHT_ENABLED=0
   [[ ${TERM-} != dumb && -z ${NO_COLOR-} ]] || return 0
   while IFS= read -r -d '' key && IFS= read -r -d '' value; do
     values[$key]=$value
@@ -127,7 +125,6 @@ sf_tui_theme_config() {
     [[ $key == $mode.* ]] || continue
     SF_PRESENT_STYLE[${key#$mode.}]=$values[$key]
   done
-  SF_PRESENT_HIGHLIGHT_ENABLED=1
 }
 
 # Append one zero-based semantic span when its configured style is active.
@@ -533,4 +530,3 @@ sf_tui_diff_highlight() {
     index=$(( end <= length ? end + 1 : length + 1 ))
   done
 }
-

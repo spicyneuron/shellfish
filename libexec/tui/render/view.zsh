@@ -34,6 +34,7 @@ sf_tui_transcript() {
   for (( index = 1; index <= ${#SF_PRESENT_KIND}; index++ )); do
     case $SF_PRESENT_KIND[index] in
       message) sf_tui_format_message $index $columns || return 1 ;;
+      reasoning) sf_tui_format_reasoning $index $columns || return 1 ;;
       *) return 1 ;;
     esac
     for (( row = 1; row <= ${#SF_FORMAT_ROWS}; row++ )); do

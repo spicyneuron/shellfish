@@ -24,6 +24,17 @@ sf_tui_rows_config() {
   SF_PRESENT_PREVIEW_TOOL_RESULT=$limits[4]
 }
 
+# Shared display estimate: providers do not report token counts for every
+# content block, so presentation uses about four characters per token.
+sf_tui_token_count() {
+  local text=$1 exact=${2-}
+  if [[ -n $exact ]]; then
+    REPLY=$exact
+  else
+    REPLY=$(( (${#text} + 3) / 4 ))
+  fi
+}
+
 # Replaces control characters with U+FFFD, keeping the two whitespace controls
 # that presentation lays out itself.
 sf_tui_safe() {
