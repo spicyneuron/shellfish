@@ -20,7 +20,10 @@ typeset -g SF_PRESENT_IDENTITY='' SF_PRESENT_FOOTER=''
 # committed. KIND selects which formatter owns the entry, and TEXT is the
 # logical content it has left to render — the substrate a successful commit
 # consumes from.
-typeset -ga SF_PRESENT_KIND=() SF_PRESENT_TEXT=()
+# DATA is whatever the owning formatter needs beyond its text, NUL-joined and
+# opaque here. Keeping it in one slot is what stops per-type fields becoming a
+# second set of parallel arrays the store has to know about.
+typeset -ga SF_PRESENT_KIND=() SF_PRESENT_TEXT=() SF_PRESENT_DATA=()
 typeset -gi SF_PRESENT_LIVE=0
 # Leading role chrome is not a formatter of its own. ROLE names the role an
 # entry opened, SECTION the number that came with it, and PRIOR the role in
@@ -40,6 +43,7 @@ sf_tui_formatter_append() {
   [[ -n $kind ]] || return 1
   SF_PRESENT_KIND+=( "$kind" )
   SF_PRESENT_TEXT+=( '' )
+  SF_PRESENT_DATA+=( '' )
   SF_PRESENT_ROLE+=( '' )
   SF_PRESENT_SECTION+=( '' )
   SF_PRESENT_PRIOR+=( '' )
@@ -102,7 +106,7 @@ sf_tui_formatter_keep() {
   integer first=$1 last=$2
   local name
   local -a values
-  for name in SF_PRESENT_KIND SF_PRESENT_TEXT SF_PRESENT_ROLE \
+  for name in SF_PRESENT_KIND SF_PRESENT_TEXT SF_PRESENT_DATA SF_PRESENT_ROLE \
       SF_PRESENT_SECTION SF_PRESENT_PRIOR; do
     values=( "${(@P)name}" )
     if (( last < first || first > ${#values} )); then
@@ -119,6 +123,24 @@ sf_tui_reset() {
   sf_tui_formatter_keep 1 0
   SF_PRESENT_LAST_ROLE=''
   SF_PRESENT_SECTION_ID=0
+}
+
+# Per-type fields, set and read only by the formatter that owns the entry.
+sf_tui_formatter_set_data() {
+  integer index=$1
+  shift
+  (( index > 0 && index <= ${#SF_PRESENT_KIND} )) || return 1
+  SF_PRESENT_DATA[index]=${(pj:\0:)@}
+}
+
+# REPLY is field $2, counting from one, or empty when the entry has no such
+# field. Reading past the end is normal: a formatter grows its data over time.
+sf_tui_formatter_data() {
+  integer index=$1 field=$2
+  local -a fields
+  (( index > 0 && index <= ${#SF_PRESENT_KIND} )) || return 1
+  fields=( "${(@ps:\0:)SF_PRESENT_DATA[index]}" )
+  REPLY=${fields[field]-}
 }
 
 sf_tui_footer_usage() { SF_PRESENT_FOOTER="${SF_PRESENT_IDENTITY} · $1"; }
@@ -152,7 +174,10 @@ sf_tui_session_update() {
 #     "end" closes the turn so the next record opens a new section.
 sf_tui_event() {
   case $1 in
-    activity_start|activity_stop|system|user|assistant_start|assistant_end| \
+    user)
+      sf_tui_message_append user "$2" || return 1
+      ;;
+    activity_start|activity_stop|system|assistant_start|assistant_end| \
     assistant_message_delta|assistant_reasoning_delta|assistant_reasoning_opaque| \
     assistant_tool_call_delta|reasoning_tokens|tool_call|tool_result| \
     tool_permission|tool_permission_clear|hook_activity|hook_result|error) ;;

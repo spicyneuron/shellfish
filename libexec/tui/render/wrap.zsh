@@ -46,7 +46,7 @@ sf_tui_wrap() {
   prefix_width=0
   for character in ${(s::)prefix}; do
     sf_tui_cell_width "$character" $prefix_width
-    (( prefix_width += REPLY ))
+    prefix_width=$(( prefix_width + REPLY ))
   done
   (( prefix_width < columns )) || return 1
 
@@ -78,7 +78,7 @@ sf_tui_wrap() {
       else
         sf_tui_wrap_emit $(( index - row_start ))
         row_start=$index
-        (( index-- ))
+        index=$(( index - 1 ))
       fi
       sf_tui_wrap_start
       continue
@@ -98,7 +98,7 @@ sf_tui_wrap() {
       break_display=${#display}
       break_source=$index
     fi
-    (( column += width ))
+    column=$(( column + width ))
   done
   (( row_start > total )) || sf_tui_wrap_emit $(( total - row_start + 1 ))
 }
