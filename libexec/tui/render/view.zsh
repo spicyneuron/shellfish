@@ -38,6 +38,7 @@ sf_tui_transcript() {
       activity|hook_activity|hook_model_context|hook_user_context|error)
         sf_tui_format_hook $index $columns || return 1
         ;;
+      tool_call|tool_result) sf_tui_format_tool $index $columns || return 1 ;;
       *) return 1 ;;
     esac
     for (( row = 1; row <= ${#SF_FORMAT_ROWS}; row++ )); do

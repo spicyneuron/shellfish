@@ -4,6 +4,7 @@ source "${0:A:h:h:h}/_helpers.zsh"
 sf_test_source libexec/tui/render/formatters.zsh libexec/tui/render/highlights.zsh \
   libexec/tui/render/text.zsh libexec/tui/render/wrap.zsh \
   libexec/tui/render/messages.zsh libexec/tui/render/hooks.zsh \
+  libexec/tui/render/tools.zsh \
   libexec/tui/render/terminal.zsh libexec/tui/render/view.zsh \
   libexec/tui/transport.zsh libexec/tui/editor.zsh libexec/tui/controller.zsh
 sf_test_tmp controller
@@ -184,6 +185,7 @@ for frame in "${frames[@]}"; do
   if sf_tui_transport_has_pending; then
     fail "a heartbeat left part of a frame pending: $frame"
   fi
+  [[ $SF_PRESENT_STATE != stopped ]] || fail "a heartbeat rejected its frame: $frame"
 done
 
 # Successful completion stages the FIFO head as the next ordinary user turn.

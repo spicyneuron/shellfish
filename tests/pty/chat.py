@@ -185,7 +185,7 @@ def test_startup_records_precede_two_turns():
             session.wait_after(0, token)
         transcript = (
             "startup system prompt",
-            "Loading project environment… · session_start",
+            "Loading project environment…",
         )
         for token in transcript:
             session.wait_after(0, token)

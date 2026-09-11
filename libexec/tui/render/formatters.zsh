@@ -177,7 +177,7 @@ sf_tui_session_update() {
 #     "end" closes the turn so the next record opens a new section.
 sf_tui_event() {
   local type=$1 first=${2-} second=${3-} third=${4-}
-  local fourth=${5-}
+  local fourth=${5-} fifth=${6-} sixth=${7-}
   integer index=${#SF_PRESENT_KIND}
   case $type in
     user)
@@ -211,6 +211,7 @@ sf_tui_event() {
       ;;
     assistant_end)
       SF_PRESENT_ASSISTANT_INDEX=''
+      sf_tui_activity_retract || return 1
       sf_tui_assistant_close || return 1
       sf_tui_activity_resume || return 1
       ;;
@@ -227,9 +228,25 @@ sf_tui_event() {
       sf_tui_hook_result "$first" "$second" "$third" "$fourth" || return 1
       ;;
     error)
+      if (( SF_PRESENT_LIVE == index && index > 0 )) &&
+          [[ $SF_PRESENT_KIND[index] == tool_result ]]; then
+        sf_tui_tool_abandon || return 1
+      fi
       sf_tui_error_append "$first" "$second" || return 1
       ;;
-    tool_call|tool_result|tool_permission|tool_permission_clear) ;;
+    tool_call)
+      sf_tui_tool_call "$first" "$second" "$third" "$fourth" "$fifth" || return 1
+      ;;
+    tool_result)
+      sf_tui_tool_result "$first" "$second" "$third" "$fourth" "$fifth" "$sixth" ||
+        return 1
+      ;;
+    tool_permission)
+      sf_tui_tool_permission || return 1
+      ;;
+    tool_permission_clear)
+      sf_tui_tool_permission_clear || return 1
+      ;;
     *) return 1 ;;
   esac
 }
