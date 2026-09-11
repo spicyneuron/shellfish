@@ -16,10 +16,14 @@ assert_equal 3 "$CURSOR"
 SF_PRESENT_SAFE_TEXT=$'hello\n'
 SF_PRESENT_SAFE_ROWS=1
 SF_PRESENT_SAFE_HIGHLIGHTS=( 0 5 bold )
+SF_PRESENT_SAFE_CONSUME=( '1:5:1:1' )
+typeset -ga CONSUMED=()
+sf_tui_formatter_consume() { CONSUMED+=( "$*" ); }
 sf_tui_terminal_stage || fail 'staging safe rows failed'
 assert_equal draft "$SF_PRESENT_DRAFT"
 assert_equal 3 "$SF_PRESENT_DRAFT_CURSOR"
 assert_equal '0 5 bold' "${(j: :)SF_PRESENT_PENDING_HIGHLIGHTS}"
+assert_equal '1:5:1:1' "$SF_PRESENT_PENDING_CONSUME[1]"
 assert_equal 0 "$SF_PRESENT_SAFE_ROWS"
 SF_PRESENT_SAFE_ROWS=1
 if sf_tui_terminal_stage; then
@@ -34,6 +38,7 @@ assert_equal $'hello\n' "$PREDISPLAY"
 assert_equal '' "$BUFFER"
 assert_equal 0 "$SF_PRESENT_PENDING_ROWS"
 assert_equal 1 "$SF_PRESENT_PREFIX_VISIBLE"
+assert_equal '1 5 1 1' "$CONSUMED[1]"
 
 sf_tui_terminal_restore
 assert_equal draft "$BUFFER"

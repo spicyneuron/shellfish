@@ -77,12 +77,13 @@ assert_equal $'↪ prompt · user_prompt_submit · git status · status 0\n  **b
 assert_equal 7 "$SF_PRESENT_SAFE_PREFIX"
 sf_tui_event activity_stop
 
-# Both context channels use the context preview and count the whole content.
+# Model context uses the context preview and counts the whole content. User
+# context is the script's own message to the user and is never clamped.
 sf_tui_reset
 SF_PRESENT_PREVIEW_CONTEXT=1
 sf_tui_event hook_result hook test $'first\nsecond' $'third\nfourth'
 view 79 20
-assert_equal $'↪ hook · test\n  first\n  … ~3 tokens\n\nℹ hook · test\n  third\n  … ~3 tokens' "$REPLY"
+assert_equal $'↪ hook · test\n  first\n  … ~3 tokens\n\nℹ hook · test\n  third\n  fourth' "$REPLY"
 assert_equal 7 "$SF_PRESENT_SAFE_PREFIX"
 SF_PRESENT_PREVIEW_CONTEXT=full
 
@@ -91,8 +92,8 @@ sf_tui_reset
 SF_PRESENT_PREVIEW_CONTEXT=0
 sf_tui_event hook_result hook test $'first\nsecond' $'third\nfourth'
 view 79 20
-assert_equal $'↪ hook · test · ~3 tokens\n\nℹ hook · test · ~3 tokens' "$REPLY"
-assert_equal 3 "$SF_PRESENT_SAFE_PREFIX"
+assert_equal $'↪ hook · test · ~3 tokens\n\nℹ hook · test\n  third\n  fourth' "$REPLY"
+assert_equal 5 "$SF_PRESENT_SAFE_PREFIX"
 SF_PRESENT_PREVIEW_CONTEXT=full
 
 # Model context is Markdown-styled; user context remains literal plain text.

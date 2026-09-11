@@ -101,6 +101,129 @@ sf_tui_formatter_drop() {
   (( ! SF_PRESENT_LIVE )) || (( SF_PRESENT_LIVE -= count ))
 }
 
+# Applies one formatter-local commit from the head of the ordered list. A
+# formatter that committed all of its rows leaves whole; otherwise it drops the
+# logical content those rows covered and keeps the continuation metadata its
+# remaining suffix needs.
+sf_tui_formatter_consume() {
+  integer whole=$1 source=$2 leading=$3 body_rows=$4
+  integer raw_length body_source trim
+  local kind state exact total continuation expanded role committed width body segment
+  integer spent
+  (( ${#SF_PRESENT_KIND} )) || return 1
+  if (( whole )); then
+    sf_tui_formatter_drop 1
+    return
+  fi
+  kind=$SF_PRESENT_KIND[1]
+  [[ $kind == (message|reasoning|hook_model_context|hook_user_context|error|tool_call|tool_result) ]] ||
+    return 1
+  (( source >= 0 && source <= ${#SF_PRESENT_TEXT[1]} )) || return 1
+  if [[ $kind == hook_model_context ]]; then
+    body=$SF_PRESENT_TEXT[1]
+    raw_length=${#body}
+    body=${body#"${body%%[!$'\n']*}"}
+    trim=$(( raw_length - ${#body} ))
+    body=${body%"${body##*[!$'\n']}"}
+    body_source=$(( source > trim ? source - trim : 0 ))
+    (( body_source <= ${#body} )) || body_source=${#body}
+    sf_tui_formatter_data 1 6 || return 1
+    state=$REPLY
+    sf_tui_formatter_data 1 7 || return 1
+    continuation=$REPLY
+    if (( body_source )); then
+      segment=${body[1,body_source]}
+      SF_PRESENT_HIGHLIGHT_SPANS=()
+      sf_tui_markdown_highlight "$segment" 0 "$state" "${continuation:-0}"
+      state=$REPLY
+      continuation=0
+      [[ $segment[-1] == $'\n' ]] || continuation=1
+    fi
+  fi
+  if (( source )); then
+    if (( source == ${#SF_PRESENT_TEXT[1]} )); then
+      SF_PRESENT_TEXT[1]=''
+    else
+      SF_PRESENT_TEXT[1]=${SF_PRESENT_TEXT[1][source + 1,-1]}
+    fi
+  fi
+  (( ! leading )) || {
+    SF_PRESENT_ROLE[1]=''
+    SF_PRESENT_SECTION[1]=''
+    SF_PRESENT_PRIOR[1]=''
+  }
+  case $kind in
+    message)
+      sf_tui_formatter_data 1 3 || return 1
+      state=$REPLY
+      sf_tui_formatter_data 1 1 || return 1
+      role=$REPLY
+      sf_tui_formatter_data 1 6 || return 1
+      continuation=$REPLY
+      sf_tui_formatter_data 1 5 || return 1
+      committed=$REPLY
+      sf_tui_formatter_data 1 7 || return 1
+      width=$REPLY
+      sf_tui_formatter_set_data 1 "$role" 0 "$state" '' \
+        "$(( leading || committed ))" "$continuation" "$width" "$state" "$continuation"
+      ;;
+    reasoning)
+      sf_tui_formatter_data 1 3 || return 1
+      state=$REPLY
+      sf_tui_formatter_data 1 1 || return 1
+      exact=$REPLY
+      sf_tui_formatter_data 1 6 || return 1
+      total=$REPLY
+      sf_tui_formatter_data 1 7 || return 1
+      continuation=$REPLY
+      sf_tui_formatter_data 1 8 || return 1
+      spent=$(( REPLY + body_rows ))
+      sf_tui_formatter_data 1 9 || return 1
+      expanded=$REPLY
+      sf_tui_formatter_data 1 5 || return 1
+      committed=$REPLY
+      sf_tui_formatter_data 1 10 || return 1
+      width=$REPLY
+      sf_tui_formatter_set_data 1 "$exact" 0 "$state" '' \
+        "$(( leading || committed ))" "$total" "$continuation" "$spent" "$expanded" \
+        "$width" "$state" "$continuation"
+      ;;
+    hook_model_context|hook_user_context)
+      local script meta
+      sf_tui_formatter_data 1 1 || return 1
+      script=$REPLY
+      sf_tui_formatter_data 1 2 || return 1
+      meta=$REPLY
+      sf_tui_formatter_data 1 3 || return 1
+      committed=$REPLY
+      sf_tui_formatter_data 1 4 || return 1
+      spent=$(( REPLY + body_rows ))
+      sf_tui_formatter_data 1 5 || return 1
+      total=$REPLY
+      [[ $kind == hook_model_context ]] || { state=''; continuation=0; }
+      sf_tui_formatter_set_data 1 "$script" "$meta" "$(( leading || committed ))" \
+        "$spent" "$total" "$state" "$continuation"
+      ;;
+    error)
+      local heading
+      sf_tui_formatter_data 1 1 || return 1
+      heading=$REPLY
+      sf_tui_formatter_data 1 2 || return 1
+      committed=$REPLY
+      sf_tui_formatter_set_data 1 "$heading" "$(( leading || committed ))"
+      ;;
+    tool_call|tool_result)
+      integer committed_field=6 spent_field=8
+      # A commit always takes the heading or rail with it, so what remains
+      # continues under plain indentation.
+      [[ $kind == tool_result ]] || { committed_field=4; spent_field=5; }
+      sf_tui_formatter_data 1 $spent_field || return 1
+      sf_tui_formatter_set_field 1 $spent_field $(( REPLY + body_rows )) || return 1
+      sf_tui_formatter_set_field 1 $committed_field 1
+      ;;
+  esac
+}
+
 # Private to this file's list operations. Every per-entry array belongs here,
 # so a new field that skips this list silently drifts out of step with its kind.
 sf_tui_formatter_keep() {
@@ -134,6 +257,20 @@ sf_tui_formatter_set_data() {
   shift
   (( index > 0 && index <= ${#SF_PRESENT_KIND} )) || return 1
   SF_PRESENT_DATA[index]=${(pj:\0:)@}
+}
+
+# Replaces one per-type field, leaving the rest of the entry's data alone.
+# Writing past the end grows the data with empty fields, which is how a
+# formatter adds metadata it did not need when it was appended.
+sf_tui_formatter_set_field() {
+  integer index=$1 field=$2
+  local value=$3
+  local -a fields
+  (( index > 0 && index <= ${#SF_PRESENT_KIND} )) || return 1
+  (( field > 0 )) || return 1
+  fields=( "${(@ps:\0:)SF_PRESENT_DATA[index]}" )
+  fields[field]=$value
+  SF_PRESENT_DATA[index]=${(pj:\0:)fields}
 }
 
 # REPLY is field $2, counting from one, or empty when the entry has no such
@@ -297,6 +434,7 @@ sf_tui_assistant_stream() {
   if [[ -n $text ]]; then
     sf_tui_safe "$text"
     SF_PRESENT_TEXT[index]+=$REPLY
+    [[ $kind != reasoning ]] || sf_tui_reasoning_grow $index ${#REPLY} || return 1
   fi
   [[ $kind != reasoning || -z $exact ]] || sf_tui_reasoning_tokens $index "$exact"
 }

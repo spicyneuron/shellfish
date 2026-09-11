@@ -20,16 +20,19 @@ typeset -gi SF_PRESENT_SAFE_PREFIX=0
 # not. A formatter with an unsafe row therefore pins everything after it, which
 # is what keeps committed scrollback in source order.
 sf_tui_transcript() {
-  integer columns=$1 budget=$2 index row offset pinned=0 start
+  integer columns=$1 budget=$2 index row offset pinned=0 start safe_offset=0
+  integer safe take source leading body_rows whole staged=0 staging=1
   local -a rows=() spans=()
 
   SF_PRESENT_VIEWPORT_TEXT=''
   SF_PRESENT_VIEWPORT_HIGHLIGHTS=()
   # How many leading rows could be committed, over all retained content rather
-  # than only what is drawn. Kept apart from the staging globals the editor
-  # commits from: staging also needs the formatter-local consumption these rows
-  # represent, and committing without it would repeat them.
+  # than only what is drawn. The staging globals below hold what fits one
+  # commit, together with the formatter-local consumption those rows represent.
   SF_PRESENT_SAFE_PREFIX=0
+  SF_PRESENT_SAFE_TEXT=''
+  SF_PRESENT_SAFE_HIGHLIGHTS=()
+  SF_PRESENT_SAFE_CONSUME=()
 
   for (( index = 1; index <= ${#SF_PRESENT_KIND}; index++ )); do
     case $SF_PRESENT_KIND[index] in
@@ -45,6 +48,36 @@ sf_tui_transcript() {
       rows+=( "$SF_FORMAT_ROWS[row]" )
       spans+=( "$SF_FORMAT_SPANS[row]" )
     done
+    if (( staging )); then
+      safe=$SF_FORMAT_SAFE
+      take=$(( safe < budget - staged ? safe : budget - staged ))
+      # Leading chrome commits with the content it introduces.
+      (( take >= SF_FORMAT_LEADING )) || take=0
+      whole=$(( SF_PRESENT_LIVE != index && take == ${#SF_FORMAT_ROWS} ))
+      source=0
+      for (( row = 1; row <= take; row++ )); do
+        if (( row != 1 || staged )); then
+          SF_PRESENT_SAFE_TEXT+=$'\n'
+          safe_offset=$(( safe_offset + 1 ))
+        fi
+        sf_tui_safe_shift_spans $safe_offset "$SF_FORMAT_SPANS[row]"
+        SF_PRESENT_SAFE_TEXT+="$SF_FORMAT_ROWS[row]"
+        safe_offset=$(( safe_offset + ${#SF_FORMAT_ROWS[row]} ))
+        source=$(( source + ${SF_FORMAT_SOURCE[row]:-0} ))
+      done
+      leading=$(( take >= SF_FORMAT_LEADING && SF_FORMAT_LEADING > 0 ))
+      body_rows=$(( take > SF_FORMAT_LEADING ? take - SF_FORMAT_LEADING : 0 ))
+      (( body_rows <= SF_FORMAT_BODY_ROWS )) || body_rows=$SF_FORMAT_BODY_ROWS
+      # A final formatter with nothing left to draw still has to leave, or it
+      # would sit at the head of the list forever.
+      (( ! take && ! whole )) ||
+        SF_PRESENT_SAFE_CONSUME+=( "$whole:$source:$leading:$body_rows" )
+      staged=$(( staged + take ))
+      # Anything less than the whole formatter pins what follows it: staging is
+      # one contiguous run from the front, so a later formatter can never
+      # overtake an earlier one into scrollback.
+      (( take == ${#SF_FORMAT_ROWS} )) || staging=0
+    fi
     if (( ! pinned )); then
       SF_PRESENT_SAFE_PREFIX=$(( SF_PRESENT_SAFE_PREFIX + SF_FORMAT_SAFE ))
       (( SF_FORMAT_SAFE == ${#SF_FORMAT_ROWS} )) || pinned=1
@@ -67,6 +100,16 @@ sf_tui_transcript() {
     sf_tui_shift_spans $offset "$spans[row]"
     SF_PRESENT_VIEWPORT_TEXT+=$rows[row]
     offset=$(( offset + ${#rows[row]} ))
+  done
+  SF_PRESENT_SAFE_ROWS=$staged
+}
+
+sf_tui_safe_shift_spans() {
+  integer base=$1 index
+  local -a parts=( ${=2} )
+  for (( index = 1; index <= ${#parts}; index += 3 )); do
+    SF_PRESENT_SAFE_HIGHLIGHTS+=(
+      $(( base + parts[index] )) $(( base + parts[index + 1] )) "$parts[index + 2]" )
   done
 }
 

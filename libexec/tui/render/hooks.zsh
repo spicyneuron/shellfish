@@ -81,7 +81,7 @@ sf_tui_hook_append() {
   sf_tui_formatter_append "$kind" || return 1
   index=$REPLY
   SF_PRESENT_TEXT[index]=$text
-  sf_tui_formatter_set_data $index "$script" "$meta"
+  sf_tui_formatter_set_data $index "$script" "$meta" 0 0 ${#text} '' 0
 }
 
 sf_tui_error_append() {
@@ -96,7 +96,7 @@ sf_tui_error_append() {
   sf_tui_formatter_append error || return 1
   index=$REPLY
   SF_PRESENT_TEXT[index]=$detail
-  sf_tui_formatter_set_data $index "$heading"
+  sf_tui_formatter_set_data $index "$heading" 0
   # Errors close the current role without drawing a role rule of their own.
   SF_PRESENT_LAST_ROLE=error
 }
@@ -118,44 +118,45 @@ sf_tui_format_hook_head() {
     SF_FORMAT_ROWS+=( "$SF_WRAP_ROWS[row]" )
     SF_FORMAT_SPANS+=( "${(j: :)spans} $SF_WRAP_SPANS[row]" )
     SF_FORMAT_CONSUMED+=( 0 )
+    SF_FORMAT_SOURCE+=( 0 )
   done
 }
 
 sf_tui_format_hook() {
-  integer index=$1 columns=$2 row visible hidden=0
+  integer index=$1 columns=$2 row visible hidden=0 leading
+  integer raw_length=${#SF_PRESENT_TEXT[index]}
   local kind=$SF_PRESENT_KIND[index] body=$SF_PRESENT_TEXT[index]
-  local first second head preview=full style clamp
+  local first second head preview=full configured=full style clamp committed total
+  local state continuation
   local -a spans=()
 
   SF_FORMAT_ROWS=()
   SF_FORMAT_SPANS=()
   SF_FORMAT_CONSUMED=()
+  SF_FORMAT_SOURCE=()
   SF_FORMAT_SAFE=0
+  SF_FORMAT_LEADING=0
+  SF_FORMAT_BODY_ROWS=0
 
   sf_tui_formatter_data $index 1 || return 1
   first=$REPLY
   sf_tui_formatter_data $index 2 || return 1
   second=$REPLY
 
-  (( index == 1 && ! SF_PRESENT_PREFIX_VISIBLE )) || sf_tui_format_blank
   case $kind in
     activity)
+      (( index == 1 && ! SF_PRESENT_PREFIX_VISIBLE )) || sf_tui_format_blank
       sf_tui_format_styled $columns "$SF_PRESENT_ACTIVITY" activity || return 1
       return
       ;;
     hook_activity)
+      (( index == 1 && ! SF_PRESENT_PREFIX_VISIBLE )) || sf_tui_format_blank
       sf_tui_format_hook_head $columns "$body" hook_activity 0 ${#body} || return 1
       sf_tui_format_styled $columns "$SF_PRESENT_ACTIVITY" hook_activity || return 1
       return
       ;;
-    hook_model_context)
-      head="↪ $first${second:+ · $second}"
-      preview=$SF_PRESENT_PREVIEW_CONTEXT
-      ;;
-    hook_user_context)
-      head="ℹ $first${second:+ · $second}"
-      preview=$SF_PRESENT_PREVIEW_CONTEXT
-      ;;
+    hook_model_context) head="↪ $first${second:+ · $second}" ;;
+    hook_user_context) head="ℹ $first${second:+ · $second}" ;;
     error)
       head="✕ $first"
       ;;
@@ -163,19 +164,50 @@ sf_tui_format_hook() {
   esac
 
   body=${body#"${body%%[!$'\n']*}"}
+  leading=$(( raw_length - ${#body} ))
   body=${body%"${body##*[!$'\n']}"}
-  if [[ $preview == 0 && -n $body ]]; then
-    sf_tui_token_count "$SF_PRESENT_TEXT[index]"
-    clamp=" · ~$REPLY tokens"
-    sf_tui_format_hook_head $columns "$head$clamp" "$kind" 2 \
-      $(( 2 + ${#first} )) ${#head} || return 1
-    body=''
+  if [[ $kind == (hook_model_context|hook_user_context) ]]; then
+    sf_tui_formatter_data $index 3 || return 1
+    committed=$REPLY
+    sf_tui_formatter_data $index 4 || return 1
+    # Model context shares the context preview with system records. User
+    # context is the script talking to the user, so it is shown in full.
+    if [[ $kind == hook_model_context ]]; then
+      configured=$SF_PRESENT_PREVIEW_CONTEXT
+      sf_tui_format_preview "$configured" "$REPLY"
+      preview=$REPLY
+    fi
+    sf_tui_formatter_data $index 5 || return 1
+    total=$REPLY
   else
+    sf_tui_formatter_data $index 2 || return 1
+    committed=$REPLY
+  fi
+  if [[ $committed != 1 ]]; then
+    (( index == 1 && ! SF_PRESENT_PREFIX_VISIBLE )) || sf_tui_format_blank
+  fi
+  # A configured zero preview collapses the estimate into the heading. A budget
+  # merely spent by earlier commits keeps the ordinary clamp below it.
+  if [[ $configured == 0 && -n $body ]]; then
+    clamp=" · ~$(( (total + 3) / 4 )) tokens"
+    if [[ $committed != 1 ]]; then
+      sf_tui_format_hook_head $columns "$head$clamp" "$kind" 2 \
+        $(( 2 + ${#first} )) ${#head} || return 1
+    fi
+    body=''
+  elif [[ $committed != 1 ]]; then
     sf_tui_format_hook_head $columns "$head" "$kind" 2 $(( 2 + ${#first} )) || return 1
   fi
+  SF_FORMAT_LEADING=${#SF_FORMAT_ROWS}
   if [[ -n $body ]]; then
     SF_PRESENT_HIGHLIGHT_SPANS=()
-    [[ $kind != hook_model_context ]] || sf_tui_markdown_highlight "$body"
+    if [[ $kind == hook_model_context ]]; then
+      sf_tui_formatter_data $index 6 || return 1
+      state=$REPLY
+      sf_tui_formatter_data $index 7 || return 1
+      continuation=$REPLY
+      sf_tui_markdown_highlight "$body" 0 "$state" "${continuation:-0}"
+    fi
     sf_tui_wrap $columns "$body" '  ' "${(@)SF_PRESENT_HIGHLIGHT_SPANS}" || return 1
     visible=${#SF_WRAP_ROWS}
     if [[ $preview != full ]] && (( visible > preview )); then
@@ -190,10 +222,13 @@ sf_tui_format_hook() {
       SF_FORMAT_ROWS+=( "$SF_WRAP_ROWS[row]" )
       SF_FORMAT_SPANS+=( "${(j: :)spans} $SF_WRAP_SPANS[row]" )
       SF_FORMAT_CONSUMED+=( $SF_WRAP_CONSUMED[row] )
+      SF_FORMAT_SOURCE+=( $SF_WRAP_CONSUMED[row] )
     done
+    SF_FORMAT_BODY_ROWS=$visible
+    sf_tui_format_edges $(( SF_FORMAT_LEADING + 1 )) $leading \
+      $(( raw_length - leading - ${#body} )) ${#body}
     if (( hidden )); then
-      sf_tui_token_count "$SF_PRESENT_TEXT[index]"
-      clamp="  … ~$REPLY tokens"
+      clamp="  … ~$(( (total + 3) / 4 )) tokens"
       sf_tui_format_styled $columns "$clamp" "$kind" clamp || return 1
     fi
   fi

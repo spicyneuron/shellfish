@@ -110,6 +110,110 @@ assert_equal 1 "$sliced[-1]"
 
 SF_PRESENT_STYLE=()
 
+# Staging freezes both rows and formatter-local consumption. Until terminal
+# finish confirms the commit, resize and repaint leave the source untouched.
+sf_tui_reset
+sf_tui_terminal_reset
+sf_tui_event assistant_start
+sf_tui_event assistant_message_delta 0 'alpha beta gamma'
+sf_tui_transcript 8 20
+assert_equal 4 "$SF_PRESENT_SAFE_ROWS"
+assert_equal '0:11:1:2' "$SF_PRESENT_SAFE_CONSUME[1]"
+sf_tui_terminal_stage
+assert_equal 'alpha beta gamma' "$SF_PRESENT_TEXT[1]"
+sf_tui_transcript 5 20
+assert_equal 'alpha beta gamma' "$SF_PRESENT_TEXT[1]"
+sf_tui_terminal_finish
+assert_equal gamma "$SF_PRESENT_TEXT[1]"
+sf_tui_terminal_restore
+sf_tui_transcript 5 20
+assert_equal '⠃' "$SF_PRESENT_VIEWPORT_TEXT"
+sf_tui_event assistant_end
+sf_tui_transcript 5 20
+assert_equal gamma "$SF_PRESENT_VIEWPORT_TEXT"
+
+# Successive stream commits consume each row once, including chrome on only
+# the first commit and the partial tail only after assistant settlement.
+sf_tui_reset
+sf_tui_terminal_reset
+sf_tui_event assistant_start
+sf_tui_event assistant_message_delta 0 $'one\ntail'
+sf_tui_transcript 8 20
+sf_tui_terminal_stage
+sf_tui_terminal_finish
+typeset drained=$PREDISPLAY
+drained+=$'\n'
+sf_tui_terminal_restore
+sf_tui_event assistant_message_delta 0 $'\ntwo\nlast'
+sf_tui_transcript 8 20
+sf_tui_terminal_stage
+sf_tui_terminal_finish
+drained+=$PREDISPLAY
+drained+=$'\n'
+sf_tui_terminal_restore
+sf_tui_event assistant_end
+sf_tui_transcript 8 20
+sf_tui_terminal_stage
+sf_tui_terminal_finish
+drained+=$PREDISPLAY
+assert_equal $'─ agent \n\none\ntail\ntwo\nlast' "$drained"
+assert_equal 0 "${#SF_PRESENT_KIND}"
+
+# Character consumption follows logical source while wrapping follows cells.
+# A tab's projected spaces and a wide character keep their styles in the
+# temporary commit, and neither source character can reappear afterward.
+SF_PRESENT_STYLE=( message 'fg=1' syntax.strong bold )
+sf_tui_reset
+sf_tui_terminal_reset
+sf_tui_event assistant_start
+sf_tui_event assistant_message_delta 0 $'界\t**bold** tail'
+sf_tui_transcript 10 20
+[[ $SF_PRESENT_SAFE_TEXT == *'界      '* ]] ||
+  fail "tab or wide character was not staged: $SF_PRESENT_SAFE_TEXT"
+[[ ${(j: :)SF_PRESENT_SAFE_HIGHLIGHTS} == *bold* ]] ||
+  fail 'staged Markdown lost its style span'
+typeset committed=$SF_PRESENT_SAFE_TEXT
+sf_tui_terminal_stage
+sf_tui_terminal_finish
+sf_tui_terminal_restore
+sf_tui_event assistant_end
+sf_tui_transcript 6 20
+[[ $SF_PRESENT_VIEWPORT_TEXT != *界* && $SF_PRESENT_VIEWPORT_TEXT != *bold* ]] ||
+  fail 'committed wide or styled source reappeared after resize'
+[[ $committed == *界* && $committed == *bold* ]] ||
+  fail 'the temporary commit lost staged source'
+SF_PRESENT_STYLE=()
+
+# Reasoning consumes its heading once and keeps the whole-block estimate for
+# its final summary. Committed rows spend the preview budget, so the clamp goes
+# on standing for the content it hid instead of draining it a window at a time.
+sf_tui_reset
+sf_tui_terminal_reset
+SF_PRESENT_PREVIEW_REASONING=1
+sf_tui_event assistant_start
+sf_tui_event assistant_reasoning_delta 0 $'first\nsecond\nthird'
+sf_tui_transcript 20 20
+[[ $SF_PRESENT_SAFE_TEXT == *'✎ Reasoning'*first* ]] ||
+  fail 'reasoning did not stage its safe leading rows'
+sf_tui_terminal_stage
+sf_tui_terminal_finish
+sf_tui_terminal_restore
+sf_tui_transcript 10 20
+[[ $SF_PRESENT_VIEWPORT_TEXT != *Reasoning* && $SF_PRESENT_VIEWPORT_TEXT != *second* ]] ||
+  fail 'resize restored consumed chrome or drained hidden rows'
+[[ $SF_PRESENT_VIEWPORT_TEXT == *'~5'* ]] ||
+  fail 'partial reasoning lost its whole-content estimate'
+sf_tui_event assistant_end
+sf_tui_transcript 10 20
+[[ $SF_PRESENT_VIEWPORT_TEXT == *'~5'* ]] ||
+  fail 'settled reasoning lost retained formatter metadata'
+sf_tui_terminal_stage
+sf_tui_terminal_finish
+[[ $PREDISPLAY != *second* ]] || fail 'a clamp committed the rows it hid'
+assert_equal 0 "${#SF_PRESENT_KIND}"
+SF_PRESENT_PREVIEW_REASONING=full
+sf_tui_terminal_reset
+
 # System context owns its preview and whole-content estimate. A zero preview is
 # only the clamp; a positive preview counts wrapped body rows, not its chrome.
 sf_tui_reset

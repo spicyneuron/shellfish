@@ -317,6 +317,16 @@ sf_tui_controller() {
   zmodload zsh/zle || { SF_PRESENT_ERROR='cannot load ZLE'; return 1; }
   bindkey -e
   sf_tui_bind
+  # Previews and styles belong to the formatters replay is about to build, so
+  # presentation configuration is resolved before any content exists.
+  sf_tui_rows_config "$presentation" || {
+    SF_PRESENT_ERROR='cannot read presentation configuration'
+    return 1
+  }
+  sf_tui_theme_config "$presentation" || {
+    SF_PRESENT_ERROR=$SF_PRESENT_HIGHLIGHT_ERROR
+    return 1
+  }
   if [[ $session_mode == startup ]]; then
     SF_PRESENT_STATE=working
     sf_tui_transport_start '' sf_tui_exec_ready || {
@@ -338,14 +348,6 @@ sf_tui_controller() {
   else
     sf_tui_reload "$session" || return 1
   fi
-  sf_tui_rows_config "$presentation" || {
-    SF_PRESENT_ERROR='cannot read presentation configuration'
-    return 1
-  }
-  sf_tui_theme_config "$presentation" || {
-    SF_PRESENT_ERROR=$SF_PRESENT_HIGHLIGHT_ERROR
-    return 1
-  }
   sf_tui_chat_start "$session_mode" "$session" || {
     SF_PRESENT_ERROR='cannot render startup banner'
     return 1

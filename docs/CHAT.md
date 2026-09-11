@@ -45,7 +45,9 @@ If you submit a prompt while a turn is still running, it is queued and sent auto
 
 ## Preview limits
 
-The TUI collapses long records to a configurable line count. `tui.preview_lines_reasoning`, `preview_lines_context`, `preview_lines_tool_call`, and `preview_lines_tool_result` control how many lines each record type shows in the collapsed view. Set any value to `"full"` to show the entire record, or use `--verbose` to lift all limits for the current chat.
+The TUI collapses long records to a configurable line count. `tui.preview_lines_reasoning`, `preview_lines_context`, `preview_lines_tool_call`, and `preview_lines_tool_result` control how many lines each record type shows in the collapsed view. `preview_lines_context` covers system records and hook model context; hook user context is the script's own message to you and is always shown in full. Set any value to `"full"` to show the entire record, or use `--verbose` to lift all limits for the current chat.
+
+Collapsing is presentation only. A clamp hides the rest of a record rather than feeding it to scrollback a window at a time, but the whole record stays in the session, so reopening with `--verbose` shows all of it.
 
 ## Recovery
 

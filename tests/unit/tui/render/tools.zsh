@@ -146,3 +146,56 @@ assert_equal 'tool_call,tool_result,error' "${(j:,:)SF_PRESENT_KIND}"
 assert_equal 0 "$SF_PRESENT_LIVE"
 view
 assert_tail $'⛭ shell\n│ run\n╰\n\n✕ Failed\n  broken'
+
+# A tool taller than one commit batch drains in source order: the rail opens the
+# result once, every row commits exactly once, and what is left goes on
+# rendering until the formatter is gone.
+sf_tui_reset
+sf_tui_terminal_reset
+sf_tui_event tool_call tall shell 'make test' '' sh
+sf_tui_event tool_result tall 0 $'one\ntwo\nthree\nfour' plain
+typeset drained=''
+integer batch
+for batch in 1 2 3; do
+  sf_tui_transcript 20 4 || fail 'rendering a tall tool failed'
+  (( ! SF_PRESENT_SAFE_ROWS )) || {
+    sf_tui_terminal_stage || fail 'staging a tall tool failed'
+    sf_tui_terminal_finish || fail 'committing a tall tool failed'
+    drained+=$PREDISPLAY$'\n'
+    sf_tui_terminal_restore
+  }
+done
+assert_equal 0 "${#SF_PRESENT_KIND}"
+assert_equal $'─ agent ──────── 1 ─\n\n⛭ shell\n│ make test\n╰ one\n  two\n  three\n  four\n  exit 0' \
+  "${drained%$'\n'}"
+
+# A preview clamp hides rows instead of draining them one window at a time.
+sf_tui_reset
+sf_tui_terminal_reset
+SF_PRESENT_PREVIEW_TOOL_RESULT=1
+sf_tui_event tool_call clamped shell 'make test' '' sh
+sf_tui_event tool_result clamped 0 $'one\ntwo\nthree' plain
+sf_tui_transcript 20 20 || fail 'rendering a clamped tool failed'
+sf_tui_terminal_stage || fail 'staging a clamped tool failed'
+sf_tui_terminal_finish || fail 'committing a clamped tool failed'
+[[ $PREDISPLAY == *$'╰ one\n  … ~'* && $PREDISPLAY != *two* ]] ||
+  fail "clamped tool commit: $PREDISPLAY"
+assert_equal 0 "${#SF_PRESENT_KIND}"
+SF_PRESENT_PREVIEW_TOOL_RESULT=full
+
+# Committed preview rows spend the budget without collapsing the result: what
+# is left keeps the ordinary clamp and its whole-content estimate.
+sf_tui_reset
+sf_tui_terminal_reset
+SF_PRESENT_PREVIEW_TOOL_RESULT=2
+sf_tui_event tool_call spent shell 'make test' '' sh
+sf_tui_event tool_result spent 0 $'one\ntwo\nthree\nfour' plain
+sf_tui_transcript 20 6 || fail 'rendering a spent preview failed'
+sf_tui_terminal_stage || fail 'staging a spent preview failed'
+sf_tui_terminal_finish || fail 'committing a spent preview failed'
+[[ $PREDISPLAY == *$'╰ one\n  two' && $PREDISPLAY != *three* ]] ||
+  fail "spent preview commit: $PREDISPLAY"
+sf_tui_terminal_restore
+view
+assert_equal $'  … ~5 tokens · exit 0' "$REPLY"
+SF_PRESENT_PREVIEW_TOOL_RESULT=full

@@ -19,12 +19,15 @@ typeset -g SF_PRESENT_FOOTER=test/model
 typeset -gi COLUMNS=80 LINES=10
 typeset -ga ZLE_CALLS=()
 typeset -g COMMITTED=''
+typeset -gi ZLE_FAIL_ACCEPT=0 ZLE_FAIL_INVALIDATE=0
 # A commit hands its rows to the terminal by leaving them drawn when the display
 # is invalidated, so that is the moment worth capturing.
 zle() {
   ZLE_CALL="$*"
   ZLE_CALLS+=( "$*" )
   [[ $1 != -I ]] || COMMITTED=$PREDISPLAY$BUFFER$POSTDISPLAY
+  [[ $1 != -I ]] || (( ! ZLE_FAIL_INVALIDATE )) || return 1
+  [[ $1 != accept-line ]] || (( ! ZLE_FAIL_ACCEPT )) || return 1
 }
 sf_tui_answer_permission() {
   assert_equal approve "$1"
@@ -34,15 +37,15 @@ sf_tui_answer_permission() {
 
 # Safe rows found while idle commit through the epoch accept-line, which saves
 # the draft, hands exactly those rows to the terminal, and leaves no chrome.
-SF_PRESENT_SAFE_TEXT=$'hello\n'
-SF_PRESENT_SAFE_ROWS=1
+sf_tui_event user hello
 sf_tui_line_init
 assert_equal epoch "$SF_PRESENT_ACTION"
 assert_equal accept-line "$ZLE_CALL"
 assert_equal draft "$SF_PRESENT_DRAFT"
 
 sf_tui_line_finish
-assert_equal $'hello\n' "$PREDISPLAY"
+[[ $PREDISPLAY == *$'─ user '*$' 1 ─\n\nhello' ]] ||
+  fail "epoch did not commit the user formatter: $PREDISPLAY"
 assert_equal '' "$POSTDISPLAY"
 assert_equal 0 "$SF_PRESENT_PENDING_ROWS"
 assert_equal 1 "$SF_PRESENT_SYNC_ACTIVE"
@@ -64,8 +67,6 @@ SF_PRESENT_DRAFT_SAVED=1
 SF_PRESENT_ACTION=''
 ZLE_CALL=''
 # An accepted prompt commits the rows the repaint staged for it.
-SF_PRESENT_SAFE_TEXT=$'\nprompt'
-SF_PRESENT_SAFE_ROWS=2
 sf_tui_accept
 assert_equal submit "$SF_PRESENT_ACTION"
 assert_equal prompt "$SF_PRESENT_SUBMITTED"
@@ -194,8 +195,7 @@ BUFFER=draft
 CURSOR=3
 ZLE_CALLS=()
 COMMITTED=''
-SF_PRESENT_SAFE_TEXT=$'one\ntwo\n'
-SF_PRESENT_SAFE_ROWS=2
+sf_tui_event user $'one\ntwo'
 sf_tui_heartbeat_tick
 assert_equal '' "$SF_PRESENT_ACTION"
 assert_equal 0 "$SF_PRESENT_PENDING_ROWS"
@@ -206,6 +206,31 @@ assert_equal 3 "$CURSOR"
   fail 'heartbeat committed editor chrome to scrollback'
 [[ ${(j: :)ZLE_CALLS} != *accept-line* ]] ||
   fail 'descriptor heartbeat left the active editor'
+
+# Neither commit mechanism consumes formatter content when ZLE rejects the
+# operation. The stopped view remains available without retrying that content.
+sf_tui_reset
+sf_tui_terminal_reset
+sf_tui_event user retained
+SF_PRESENT_STATE=working
+ZLE_FAIL_INVALIDATE=1
+sf_tui_heartbeat_tick
+ZLE_FAIL_INVALIDATE=0
+assert_equal stopped "$SF_PRESENT_STATE"
+assert_equal retained "$SF_PRESENT_TEXT[1]"
+
+sf_tui_reset
+sf_tui_terminal_reset
+sf_tui_event user retained
+SF_PRESENT_STATE=idle
+SF_PRESENT_ERROR=''
+ZLE_FAIL_ACCEPT=1
+sf_tui_line_init
+ZLE_FAIL_ACCEPT=0
+assert_equal stopped "$SF_PRESENT_STATE"
+assert_equal retained "$SF_PRESENT_TEXT[1]"
+SF_PRESENT_STATE=idle
+SF_PRESENT_ERROR=''
 
 # A heartbeat that finds no safe rows repaints and releases the synchronized
 # update rather than holding it across the rest of the turn.

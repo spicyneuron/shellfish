@@ -43,6 +43,14 @@ sf_tui_repaint_checked() {
   return 1
 }
 
+sf_tui_draw_pending() {
+  PREDISPLAY=$SF_PRESENT_PENDING_TEXT
+  BUFFER=''
+  CURSOR=0
+  POSTDISPLAY=''
+  sf_tui_update_highlights pending
+}
+
 sf_tui_heartbeat_worker() {
   emulate -L zsh
   zmodload zsh/zselect || exit
@@ -134,13 +142,11 @@ sf_tui_heartbeat_tick() {
       # the frame to the terminal: `zle -I` leaves what is drawn on screen and
       # continues below it, which commits exactly those rows to scrollback. The
       # editor rebuilds from there, so a scroll cannot desynchronise it.
-      PREDISPLAY=$SF_PRESENT_PENDING_TEXT
-      BUFFER=''
-      CURSOR=0
-      POSTDISPLAY=''
-      sf_tui_update_highlights pending || return 1
-      zle -R
-      zle -I
+      sf_tui_draw_pending || return 1
+      if ! zle -R || ! zle -I; then
+        sf_tui_stop 'cannot commit chat rows'
+        return 0
+      fi
       sf_tui_terminal_finish || return 1
       sf_tui_terminal_restore
       sf_tui_repaint_checked || return 1
@@ -181,7 +187,11 @@ sf_tui_line_init() {
   if (( SF_PRESENT_SAFE_ROWS )) && [[ $SF_PRESENT_STATE != working ]]; then
     sf_tui_terminal_stage || return 1
     SF_PRESENT_ACTION=epoch
-    zle accept-line
+    sf_tui_draw_pending || return 1
+    if ! zle accept-line; then
+      SF_PRESENT_ACTION=''
+      sf_tui_stop 'cannot commit chat rows'
+    fi
   elif [[ $SF_PRESENT_STATE == queued ]]; then
     SF_PRESENT_DRAFT=$BUFFER
     SF_PRESENT_DRAFT_CURSOR=$CURSOR
@@ -197,7 +207,10 @@ sf_tui_line_init() {
 
 sf_tui_line_finish() {
   integer pending=$SF_PRESENT_PENDING_ROWS
-  sf_tui_terminal_finish
+  if ! sf_tui_terminal_finish; then
+    sf_tui_stop 'cannot commit chat rows'
+    return 0
+  fi
   if (( pending )); then
     sf_tui_update_highlights pending || return 1
     zle -R
@@ -289,7 +302,11 @@ sf_tui_accept() {
         [[ $SF_PRESENT_STATE == stopped ]] || sf_tui_stop 'cannot stage chat rows'
         return 0
       fi
-      zle accept-line
+      sf_tui_draw_pending || return 1
+      if ! zle accept-line; then
+        SF_PRESENT_ACTION=''
+        sf_tui_stop 'cannot commit chat rows'
+      fi
       ;;
     *) return 1 ;;
   esac
