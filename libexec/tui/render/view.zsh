@@ -8,23 +8,17 @@ typeset -ga SF_PRESENT_CHROME_HIGHLIGHTS=()
 # from the start of PREDISPLAY.
 typeset -g SF_PRESENT_VIEWPORT_TEXT=''
 typeset -ga SF_PRESENT_VIEWPORT_HIGHLIGHTS=()
-# The contiguous run of leading rows that could leave the viewport.
-typeset -gi SF_PRESENT_SAFE_PREFIX=0
 
 # Concatenates the retained formatters rendered at the current width, keeping the
 # last $budget rows. Layout belongs entirely to the formatters. An unsafe row
 # pins everything after it, keeping committed scrollback in source order.
 sf_tui_transcript() {
-  integer columns=$1 budget=$2 index row offset pinned=0 start safe_offset=0
+  integer columns=$1 budget=$2 index row offset start safe_offset=0
   integer safe take source leading body_rows whole staged=0 staging=1
   local -a rows=() spans=()
 
   SF_PRESENT_VIEWPORT_TEXT=''
   SF_PRESENT_VIEWPORT_HIGHLIGHTS=()
-  # How many leading rows could be committed, counted over all retained content
-  # rather than only what is drawn. The staging globals below hold what fits one
-  # commit, with the formatter consumption those rows represent.
-  SF_PRESENT_SAFE_PREFIX=0
   SF_PRESENT_SAFE_TEXT=''
   SF_PRESENT_SAFE_HIGHLIGHTS=()
   SF_PRESENT_SAFE_CONSUME=()
@@ -72,15 +66,10 @@ sf_tui_transcript() {
       # stay contiguous.
       (( take == ${#SF_FORMAT_ROWS} )) || staging=0
     fi
-    if (( ! pinned )); then
-      SF_PRESENT_SAFE_PREFIX=$(( SF_PRESENT_SAFE_PREFIX + SF_FORMAT_SAFE ))
-      (( SF_FORMAT_SAFE == ${#SF_FORMAT_ROWS} )) || pinned=1
-    fi
   done
 
-  # The budget bounds what is drawn, not what may be committed. Rows above it
-  # are the ones on their way to scrollback, so clipping the safe count here
-  # would stop the viewport ever draining.
+  # The safe commit batch is built above; the viewport keeps only the last rows
+  # that fit its budget.
   if (( ${#rows} > budget )); then
     start=$(( ${#rows} - budget + 1 ))
     rows=( "${(@)rows[start,-1]}" )

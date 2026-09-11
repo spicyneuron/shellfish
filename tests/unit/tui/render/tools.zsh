@@ -43,7 +43,7 @@ assert_equal 'tool_call,tool_result' "${(j:,:)SF_PRESENT_KIND}"
 assert_equal 2 "$SF_PRESENT_LIVE"
 view
 assert_equal $'─ agent ──────────────────────────────────────────────────────────────────── 1 ─\n\n⛭ shell · build · unsandboxed\n│ make test\n╰ ⠃' "$REPLY"
-assert_equal 4 "$SF_PRESENT_SAFE_PREFIX"
+assert_equal 4 "$SF_PRESENT_SAFE_ROWS"
 
 # The pending tail validates the next durable result without an ID-indexed
 # store. A mismatch changes nothing; settlement resumes standalone activity.
@@ -55,7 +55,7 @@ sf_tui_event tool_result call_1 1 $'failed\ndetail' plain '' sandbox_denial
 assert_equal 'tool_call,tool_result,activity' "${(j:,:)SF_PRESENT_KIND}"
 view
 assert_equal $'─ agent ──────────────────────────────────────────────────────────────────── 1 ─\n\n⛭ shell · build · unsandboxed\n│ make test\n╰ failed\n  detail\n  exit 1 · sandbox denial detected\n\n⠃' "$REPLY"
-assert_equal 7 "$SF_PRESENT_SAFE_PREFIX"
+assert_equal 7 "$SF_PRESENT_SAFE_ROWS"
 sf_tui_event activity_stop
 
 # Permission mutates only the pending result: its activity disappears while
@@ -66,7 +66,7 @@ sf_tui_event tool_call permission shell pwd '' sh
 sf_tui_event tool_permission
 view
 assert_tail $'⛭ shell\n│ pwd'
-assert_equal 4 "$SF_PRESENT_SAFE_PREFIX"
+assert_equal 4 "$SF_PRESENT_SAFE_ROWS"
 sf_tui_event tool_permission_clear
 view
 assert_tail $'⛭ shell\n│ pwd\n╰ ⠃'

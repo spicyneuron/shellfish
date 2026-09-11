@@ -22,7 +22,7 @@ sf_tui_event activity_start
 assert_equal activity "$SF_PRESENT_KIND[1]"
 view 79 20
 assert_equal '⠃' "$REPLY"
-assert_equal 0 "$SF_PRESENT_SAFE_PREFIX"
+assert_equal 0 "$SF_PRESENT_SAFE_ROWS"
 sf_tui_event assistant_start
 assert_equal message "${(j:,:)SF_PRESENT_KIND}"
 sf_tui_event assistant_end
@@ -54,7 +54,7 @@ sf_tui_event hook_activity user_prompt_submit prompt Checking
 assert_equal 1 "${#SF_PRESENT_KIND}"
 view 79 20
 assert_equal $'Checking\n⠃' "$REPLY"
-assert_equal 0 "$SF_PRESENT_SAFE_PREFIX"
+assert_equal 0 "$SF_PRESENT_SAFE_ROWS"
 [[ "${(j: :)SF_PRESENT_VIEWPORT_HIGHLIGHTS}" == *'muted,bold'* ]] ||
   fail 'hook activity label lost its emphasis'
 sf_tui_event hook_activity
@@ -74,7 +74,7 @@ sf_tui_event hook_result prompt 'user_prompt_submit · git status · status 0' \
 assert_equal 'hook_model_context,hook_user_context,activity' "${(j:,:)SF_PRESENT_KIND}"
 view 79 20
 assert_equal $'↪ prompt · user_prompt_submit · git status · status 0\n  **branch**\n  second line\n\nℹ prompt · user_prompt_submit · git status · status 0\n  local note\n  next\n\n⠃' "$REPLY"
-assert_equal 7 "$SF_PRESENT_SAFE_PREFIX"
+assert_equal 7 "$SF_PRESENT_SAFE_ROWS"
 sf_tui_event activity_stop
 
 # Model context uses the context preview and counts the whole content. User
@@ -84,7 +84,7 @@ SF_PRESENT_PREVIEW_CONTEXT=1
 sf_tui_event hook_result hook test $'first\nsecond' $'third\nfourth'
 view 79 20
 assert_equal $'↪ hook · test\n  first\n  … ~3 tokens\n\nℹ hook · test\n  third\n  fourth' "$REPLY"
-assert_equal 7 "$SF_PRESENT_SAFE_PREFIX"
+assert_equal 7 "$SF_PRESENT_SAFE_ROWS"
 SF_PRESENT_PREVIEW_CONTEXT=full
 
 # A zero-row preview collapses the whole-content estimate into its heading.
@@ -93,7 +93,7 @@ SF_PRESENT_PREVIEW_CONTEXT=0
 sf_tui_event hook_result hook test $'first\nsecond' $'third\nfourth'
 view 79 20
 assert_equal $'↪ hook · test · ~3 tokens\n\nℹ hook · test\n  third\n  fourth' "$REPLY"
-assert_equal 5 "$SF_PRESENT_SAFE_PREFIX"
+assert_equal 5 "$SF_PRESENT_SAFE_ROWS"
 SF_PRESENT_PREVIEW_CONTEXT=full
 
 # Model context is Markdown-styled; user context remains literal plain text.
@@ -119,7 +119,7 @@ assert_equal 'message,error' "${(j:,:)SF_PRESENT_KIND}"
 view 79 20
 [[ $REPLY == *$'partial\n\n✕ Failed\n  detail one\n  detail two' ]] ||
   fail "error output: $REPLY"
-assert_equal 7 "$SF_PRESENT_SAFE_PREFIX"
+assert_equal 7 "$SF_PRESENT_SAFE_ROWS"
 [[ "${(j: :)SF_PRESENT_VIEWPORT_HIGHLIGHTS}" == *errorstyle* ]] ||
   fail 'error output lost its style'
 SF_PRESENT_STYLE=()

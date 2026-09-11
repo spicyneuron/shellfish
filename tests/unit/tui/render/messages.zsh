@@ -81,14 +81,13 @@ sf_tui_event user $'one\ntwo\nthree\nfour'
 view 79 3
 assert_equal $'two\nthree\nfour' "$REPLY"
 
-# A complete record is wholly safe, counting retained rows above the budget
-# that are on their way to scrollback.
+# A complete record is wholly safe, while each commit stays within its budget.
 sf_tui_reset
 sf_tui_event user hello
 sf_tui_transcript 79 20
-assert_equal 3 "$SF_PRESENT_SAFE_PREFIX"
+assert_equal 3 "$SF_PRESENT_SAFE_ROWS"
 sf_tui_transcript 79 2
-assert_equal 3 "$SF_PRESENT_SAFE_PREFIX"
+assert_equal 2 "$SF_PRESENT_SAFE_ROWS"
 assert_equal $'\nhello' "$SF_PRESENT_VIEWPORT_TEXT"
 
 # Spans land on the text they claim, after the rows move into PREDISPLAY.
@@ -218,7 +217,7 @@ SF_PRESENT_PREVIEW_CONTEXT=0
 sf_tui_event system $'one\ntwo'
 view 79 20
 [[ $REPLY == $'─ system '*$'\n\n… ~2 tokens' ]] || fail "collapsed system: $REPLY"
-assert_equal 3 "$SF_PRESENT_SAFE_PREFIX"
+assert_equal 3 "$SF_PRESENT_SAFE_ROWS"
 view 8 20
 for row in "${(@f)REPLY}"; do
   (( ${#row} <= 8 )) || fail "narrow system row overflowed: $row"
@@ -229,7 +228,7 @@ SF_PRESENT_PREVIEW_CONTEXT=1
 sf_tui_event system $'first row\nsecond row\nthird row'
 view 79 20
 [[ $REPLY == $'─ system '*$'\n\nfirst row\n… ~8 tokens' ]] || fail "previewed system: $REPLY"
-assert_equal 4 "$SF_PRESENT_SAFE_PREFIX"
+assert_equal 4 "$SF_PRESENT_SAFE_ROWS"
 
 # Assistant start owns agent chrome and activity, but none of it is safe until
 # stable content exists. Ending an empty stream retracts both chrome and number.
@@ -238,7 +237,7 @@ SF_PRESENT_PREVIEW_CONTEXT=full
 sf_tui_event assistant_start
 view 12 20
 assert_equal $'─ agent  1 ─\n\n⠃' "$REPLY"
-assert_equal 0 "$SF_PRESENT_SAFE_PREFIX"
+assert_equal 0 "$SF_PRESENT_SAFE_ROWS"
 sf_tui_event assistant_end
 sf_tui_event user next
 view 12 20
@@ -251,11 +250,11 @@ sf_tui_event assistant_start
 sf_tui_event assistant_message_delta 0 'hello world'
 view 8 20
 assert_equal $'─ agent \n\nhello\n⠃' "$REPLY"
-assert_equal 3 "$SF_PRESENT_SAFE_PREFIX"
+assert_equal 3 "$SF_PRESENT_SAFE_ROWS"
 sf_tui_event assistant_end
 view 8 20
 assert_equal $'─ agent \n\nhello\nworld' "$REPLY"
-assert_equal 4 "$SF_PRESENT_SAFE_PREFIX"
+assert_equal 4 "$SF_PRESENT_SAFE_ROWS"
 
 # A newline closes the partial line immediately, so the body row joins the safe
 # prefix even though the formatter remains live for more content.
@@ -264,7 +263,7 @@ sf_tui_event assistant_start
 sf_tui_event assistant_message_delta 0 $'answer\n'
 view 20 20
 [[ $REPLY == *$'\n\nanswer\n⠃' ]] || fail "newline-closed assistant row: $REPLY"
-assert_equal 3 "$SF_PRESENT_SAFE_PREFIX"
+assert_equal 3 "$SF_PRESENT_SAFE_ROWS"
 
 # Adjacent blocks of the same visible kind remain separate, and visible or
 # opaque kind transitions settle the preceding source block in order.
@@ -294,13 +293,13 @@ sf_tui_event assistant_reasoning_delta 0 $'first\nsecond'
 view 79 20
 [[ $REPLY == $'─ agent '*$' 1 ─\n\n✎ Reasoning\n  first\n  … ~3 tokens ⠃' ]] ||
   fail "live reasoning preview: $REPLY"
-assert_equal 4 "$SF_PRESENT_SAFE_PREFIX"
+assert_equal 4 "$SF_PRESENT_SAFE_ROWS"
 sf_tui_event reasoning_tokens 4
 sf_tui_event assistant_end
 view 79 20
 [[ $REPLY == $'─ agent '*$' 1 ─\n\n✎ Reasoning\n  first\n  … Thought for ~4 tokens.' ]] ||
   fail "settled reasoning preview: $REPLY"
-assert_equal 5 "$SF_PRESENT_SAFE_PREFIX"
+assert_equal 5 "$SF_PRESENT_SAFE_ROWS"
 
 # A collapsed reasoning block remains wholly unsafe while live, then settles
 # as one summary. Newline-only streamed blocks retract on transition.
@@ -310,7 +309,7 @@ sf_tui_event assistant_start
 sf_tui_event assistant_reasoning_delta 0 thought
 view 79 20
 [[ $REPLY == *$'✎ Thinking… ⠃' ]] || fail "live collapsed reasoning: $REPLY"
-assert_equal 0 "$SF_PRESENT_SAFE_PREFIX"
+assert_equal 0 "$SF_PRESENT_SAFE_ROWS"
 sf_tui_event assistant_end
 view 79 20
 [[ $REPLY == *$'✎ Thought for ~2 tokens.' ]] || fail "settled collapsed reasoning: $REPLY"
@@ -331,18 +330,18 @@ SF_PRESENT_PREVIEW_REASONING=full
 sf_tui_event assistant_start
 sf_tui_event assistant_message_delta 0 '**open word word tail'
 view 10 20
-assert_equal 0 "$SF_PRESENT_SAFE_PREFIX"
+assert_equal 0 "$SF_PRESENT_SAFE_ROWS"
 sf_tui_reset
 sf_tui_event assistant_start
 sf_tui_event assistant_message_delta 0 \
   '**open word word word word word word word word word word word word word word word word word word word word tail'
 view 10 40
-(( SF_PRESENT_SAFE_PREFIX > 0 )) || fail 'a tall inline stream did not drain'
+(( SF_PRESENT_SAFE_ROWS > 0 )) || fail 'a tall inline stream did not drain'
 sf_tui_reset
 sf_tui_event assistant_start
 sf_tui_event assistant_message_delta 0 $'```js\nconst x = 1;\ntail'
 view 20 20
-(( SF_PRESENT_SAFE_PREFIX > 0 )) || fail 'an open fence withheld stable rows'
+(( SF_PRESENT_SAFE_ROWS > 0 )) || fail 'an open fence withheld stable rows'
 
 # Chunk boundaries do not change nested Markdown styling.
 SF_PRESENT_STYLE=( message m syntax.heading h syntax.strong s )
