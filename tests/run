@@ -43,7 +43,6 @@ for suite in $suites; do
     server) tests+=( "$project_dir/shellfish-server/ui/ui_test.js" "$project_dir/shellfish-server" ) ;;
     metrics)
       "$test_dir/metrics/run.zsh" || exit
-      "$test_dir/metrics/rendering.zsh" || exit
       "$test_dir/metrics/loc.zsh" || exit
       exit
       ;;

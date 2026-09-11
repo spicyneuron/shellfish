@@ -24,7 +24,7 @@ sf_tui_stop() {
   [[ -z ${2-} ]] || SF_PRESENT_ERROR+=$'\n'${2}
   SF_PRESENT_STATE=stopped
   SF_PRESENT_EXIT_STATUS=1
-  SF_PRESENT_FLUSH_ROWS=0
+  SF_PRESENT_SAFE_ROWS=0
   sf_tui_heartbeat_stop
   sf_tui_terminal_sync_end force
   sf_tui_stopped_view
@@ -126,7 +126,7 @@ sf_tui_heartbeat_tick() {
       zle -R
       return 0
     fi
-    if (( SF_PRESENT_FLUSH_ROWS )); then
+    if (( SF_PRESENT_SAFE_ROWS )); then
       sf_tui_terminal_stage || return 1
       # Hold the frame so the commit and the redraw beneath it land together.
       sf_tui_terminal_sync_start
@@ -178,7 +178,7 @@ sf_tui_line_init() {
     zle -R
     return 0
   fi
-  if (( SF_PRESENT_FLUSH_ROWS )) && [[ $SF_PRESENT_STATE != working ]]; then
+  if (( SF_PRESENT_SAFE_ROWS )) && [[ $SF_PRESENT_STATE != working ]]; then
     sf_tui_terminal_stage || return 1
     SF_PRESENT_ACTION=epoch
     zle accept-line

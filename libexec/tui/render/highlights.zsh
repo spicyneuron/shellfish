@@ -12,17 +12,6 @@ typeset -gi SF_PRESENT_HIGHLIGHT_INLINE_OPEN=0 SF_PRESENT_HIGHLIGHT_BLOCK_OPEN=0
 typeset -gA SF_PRESENT_STYLE=()
 typeset -g SF_PRESENT_BACKGROUND=''
 typeset -gi SF_PRESENT_HIGHLIGHT_ENABLED=0
-# Cached syntax spans per node, parallel to the presentation nodes but
-# deliberately outside them: nodes stay semantic, these are colors.
-typeset -ga SF_PRESENT_HIGHLIGHT_CACHE=()
-typeset -ga SF_PRESENT_HIGHLIGHT_CACHE_LANGUAGE=() SF_PRESENT_HIGHLIGHT_CACHE_STATE=()
-# START is the first retained source offset. STATE is the scan mode in force at
-# the node's frontier, which is where the next scan resumes.
-typeset -ga SF_PRESENT_HIGHLIGHT_CACHE_START=()
-# The scan mode a pending scan would leave behind, and whether the last release
-# moved a frontier and so needs the rows projected again.
-typeset -g SF_PRESENT_HIGHLIGHT_NEXT_STATE=''
-typeset -gi SF_PRESENT_HIGHLIGHT_ADVANCED=0
 
 # Returns light or dark from the terminal's OSC 11 default-background reply. A
 # terminal that does not implement OSC 11 cannot hold startup indefinitely.
@@ -139,121 +128,6 @@ sf_tui_theme_config() {
     SF_PRESENT_STYLE[${key#$mode.}]=$values[$key]
   done
   SF_PRESENT_HIGHLIGHT_ENABLED=1
-}
-
-# Drops the oldest $1 cache entries so they stay aligned with the nodes they
-# describe. Dropping every entry is how a transcript rebuild clears the cache.
-sf_tui_highlight_drop() {
-  integer count=$1
-  (( count > 0 )) || return 0
-  if (( count >= ${#SF_PRESENT_HIGHLIGHT_CACHE} )); then
-    SF_PRESENT_HIGHLIGHT_CACHE=()
-    SF_PRESENT_HIGHLIGHT_CACHE_LANGUAGE=()
-    SF_PRESENT_HIGHLIGHT_CACHE_STATE=()
-    SF_PRESENT_HIGHLIGHT_CACHE_START=()
-    return 0
-  fi
-  SF_PRESENT_HIGHLIGHT_CACHE=( "${(@)SF_PRESENT_HIGHLIGHT_CACHE[count + 1,-1]}" )
-  SF_PRESENT_HIGHLIGHT_CACHE_LANGUAGE=(
-    "${(@)SF_PRESENT_HIGHLIGHT_CACHE_LANGUAGE[count + 1,-1]}" )
-  SF_PRESENT_HIGHLIGHT_CACHE_STATE=(
-    "${(@)SF_PRESENT_HIGHLIGHT_CACHE_STATE[count + 1,-1]}" )
-  SF_PRESENT_HIGHLIGHT_CACHE_START=(
-    "${(@)SF_PRESENT_HIGHLIGHT_CACHE_START[count + 1,-1]}" )
-}
-
-# Retains only spans still ahead of a flushed boundary. Flushed rows are gone
-# from the viewport, so the source behind them cannot be styled again.
-sf_tui_highlight_prune() {
-  integer node=$1 offset=$2 index start end
-  local -a spans=()
-  (( node > 0 && node <= ${#SF_PRESENT_NODE_TYPE} && offset >= 0 &&
-      offset <= ${#SF_PRESENT_NODE_BODY[node]} )) || return 1
-  [[ -n ${SF_PRESENT_HIGHLIGHT_CACHE_LANGUAGE[node]-} ]] || return 0
-  (( offset > ${SF_PRESENT_HIGHLIGHT_CACHE_START[node]:-0} )) || return 0
-  SF_PRESENT_HIGHLIGHT_SPANS=( ${(s: :)${SF_PRESENT_HIGHLIGHT_CACHE[node]-}} )
-  for (( index = 1; index <= ${#SF_PRESENT_HIGHLIGHT_SPANS}; index += 3 )); do
-    start=${SF_PRESENT_HIGHLIGHT_SPANS[index]}
-    end=${SF_PRESENT_HIGHLIGHT_SPANS[index + 1]}
-    (( end > offset )) || continue
-    (( start >= offset )) || start=$offset
-    spans+=( $start $end "${SF_PRESENT_HIGHLIGHT_SPANS[index + 2]}" )
-  done
-  SF_PRESENT_HIGHLIGHT_CACHE[node]="${(j: :)spans}"
-  SF_PRESENT_HIGHLIGHT_CACHE_START[node]=$offset
-}
-
-# Scans one bounded segment, resuming at the node's frontier. Committed source
-# is never revisited, so the scan mode is carried across the boundary instead
-# of being recovered by rescanning the line that produced it.
-sf_tui_highlight_scan() {
-  integer node=$1 target=$2 frontier continuation=0
-  local body=$SF_PRESENT_NODE_BODY[node] language segment state
-  SF_PRESENT_HIGHLIGHT_SPANS=()
-  SF_PRESENT_HIGHLIGHT_INLINE_OPEN=0
-  # Cleared before the early return: a node that scans nothing must not leave
-  # the previous node's scan mode standing for its own commit to store.
-  SF_PRESENT_HIGHLIGHT_NEXT_STATE=''
-  frontier=${SF_PRESENT_NODE_FRONTIER[node]:--1}
-  (( frontier >= 0 )) || frontier=0
-  (( target > frontier )) || return 0
-  language=${SF_PRESENT_HIGHLIGHT_CACHE_LANGUAGE[node]-}
-  segment=${body[frontier + 1,target]}
-  state=${SF_PRESENT_HIGHLIGHT_CACHE_STATE[node]-}
-  (( frontier == 0 )) || [[ ${body[frontier]} == $'\n' ]] || continuation=1
-  case $language in
-    markdown)
-      sf_tui_markdown_highlight "$segment" $frontier "$state" $continuation
-      SF_PRESENT_HIGHLIGHT_NEXT_STATE=$REPLY
-      ;;
-    diff) sf_tui_diff_highlight "$segment" $frontier ;;
-    plain) ;;
-    *)
-      sf_tui_code_highlight "$segment" "$language" $frontier "${state:-0}"
-      SF_PRESENT_HIGHLIGHT_NEXT_STATE=$SF_PRESENT_HIGHLIGHT_BLOCK_OPEN
-      ;;
-  esac
-}
-
-# Appends the scanned spans and releases the boundary they cover. The guard
-# reads the frontier unset rather than treating it as zero, so a node with
-# nothing to scan yet still moves from unset to zero here. That is what lets
-# wrapping start reporting row boundaries for it at all.
-sf_tui_highlight_commit() {
-  integer node=$1 target=$2 retain index start end
-  local -a spans
-  (( target > ${SF_PRESENT_NODE_FRONTIER[node]:--1} )) || return 0
-  retain=${SF_PRESENT_HIGHLIGHT_CACHE_START[node]:-0}
-  spans=( ${(s: :)${SF_PRESENT_HIGHLIGHT_CACHE[node]-}} )
-  for (( index = 1; index <= ${#SF_PRESENT_HIGHLIGHT_SPANS}; index += 3 )); do
-    start=${SF_PRESENT_HIGHLIGHT_SPANS[index]}
-    end=${SF_PRESENT_HIGHLIGHT_SPANS[index + 1]}
-    (( end > retain )) || continue
-    (( start >= retain )) || start=$retain
-    spans+=( $start $end "${SF_PRESENT_HIGHLIGHT_SPANS[index + 2]}" )
-  done
-  SF_PRESENT_HIGHLIGHT_CACHE[node]="${(j: :)spans}"
-  SF_PRESENT_HIGHLIGHT_CACHE_STATE[node]=$SF_PRESENT_HIGHLIGHT_NEXT_STATE
-  sf_tui_set_frontier $node $target
-}
-
-# Releases one filled visual row of a growing line. A row ending inside an
-# inline construct is withheld so the next row can close it, up to a limit the
-# caller sizes from the viewport: a flushed row can never be restyled.
-sf_tui_highlight_rows() {
-  integer node=$1 boundary=$2 limit=$3 frontier
-  SF_PRESENT_HIGHLIGHT_ADVANCED=0
-  (( SF_PRESENT_HIGHLIGHT_ENABLED )) || return 0
-  (( node > 0 && node <= ${#SF_PRESENT_NODE_TYPE} )) || return 1
-  # Only Markdown resumes mid-line; a code or diff line is styled as a whole.
-  [[ ${SF_PRESENT_HIGHLIGHT_CACHE_LANGUAGE[node]-} == markdown ]] || return 0
-  frontier=${SF_PRESENT_NODE_FRONTIER[node]:--1}
-  (( frontier >= 0 && boundary > frontier &&
-      boundary <= ${#SF_PRESENT_NODE_BODY[node]} )) || return 0
-  sf_tui_highlight_scan $node $boundary || return 1
-  (( ! SF_PRESENT_HIGHLIGHT_INLINE_OPEN || boundary - frontier > limit )) || return 0
-  sf_tui_highlight_commit $node $boundary || return 1
-  SF_PRESENT_HIGHLIGHT_ADVANCED=1
 }
 
 # Append one zero-based semantic span when its configured style is active.
@@ -660,39 +534,3 @@ sf_tui_diff_highlight() {
   done
 }
 
-# Advances every node's highlighting through its last complete line. A line that
-# is still growing is left alone here; only a filled visual row releases part of
-# one, through sf_tui_highlight_rows.
-sf_tui_highlight_update() {
-  integer node target
-  local body complete language
-  (( SF_PRESENT_HIGHLIGHT_ENABLED )) || return 0
-
-  for (( node = 1; node <= ${#SF_PRESENT_NODE_TYPE}; node++ )); do
-    case $SF_PRESENT_NODE_TYPE[node] in
-      message|reasoning|hook_model_context) language=markdown ;;
-      tool_call) language=${SF_PRESENT_NODE_FORMAT[node]:-json} ;;
-      tool_result) language=${SF_PRESENT_NODE_FORMAT[node]:-plain} ;;
-      *) continue ;;
-    esac
-    [[ $language != file_diff ]] || language=diff
-    [[ $language != md ]] || language=markdown
-    # A node's format is fixed when it is created, so this only ever runs the
-    # first time a node is seen, when its frontier is still unset.
-    if [[ ${SF_PRESENT_HIGHLIGHT_CACHE_LANGUAGE[node]-} != $language ]]; then
-      SF_PRESENT_HIGHLIGHT_CACHE[node]=''
-      SF_PRESENT_HIGHLIGHT_CACHE_LANGUAGE[node]=$language
-      SF_PRESENT_HIGHLIGHT_CACHE_STATE[node]=''
-      SF_PRESENT_HIGHLIGHT_CACHE_START[node]=0
-    fi
-    body=$SF_PRESENT_NODE_BODY[node]
-    if [[ $SF_PRESENT_NODE_STATE[node] == closed ]]; then
-      target=${#body}
-    else
-      complete=${body%$'\n'*}
-      [[ $complete == $body ]] && target=0 || target=$(( ${#complete} + 1 ))
-    fi
-    sf_tui_highlight_scan $node $target || return 1
-    sf_tui_highlight_commit $node $target || return 1
-  done
-}

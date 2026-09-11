@@ -1,8 +1,8 @@
 #!/usr/bin/env zsh
 
 source "${0:A:h:h:h}/_helpers.zsh"
-sf_test_source libexec/tui/render/nodes.zsh libexec/tui/render/highlights.zsh \
-  libexec/tui/render/rows.zsh libexec/tui/render/viewport.zsh \
+sf_test_source libexec/tui/render/formatters.zsh libexec/tui/render/highlights.zsh \
+  libexec/tui/render/text.zsh \
   libexec/tui/render/terminal.zsh libexec/tui/render/view.zsh \
   libexec/tui/transport.zsh libexec/tui/editor.zsh libexec/tui/controller.zsh
 sf_test_tmp controller
@@ -14,32 +14,13 @@ sf_tui_heartbeat_arm() { return 0; }
 # Turn events are only legal once a session exists.
 SF_PRESENT_SESSION="$tmp/session.jsonl"
 SF_PRESENT_STATE=working
-sf_tui_add activity '' '' '' open
 sf_tui_decoded assistant_start
-assert_equal 'section,activity' "${(j:,:)SF_PRESENT_NODE_TYPE}"
-assert_equal agent "$SF_PRESENT_NODE_ROLE[-1]"
 sf_tui_decoded assistant_message_delta 0 'part '
 sf_tui_decoded assistant_reasoning_delta 1 thought
 sf_tui_decoded assistant_message_delta 2 done
 sf_tui_decoded turn_usage '14 ↑ 2 ↓' 1
-assert_equal 'section,message,reasoning,message' "${(j:,:)SF_PRESENT_NODE_TYPE}"
 assert_equal "${SF_PRESENT_IDENTITY} · 14 ↑ 2 ↓" "$SF_PRESENT_FOOTER"
-assert_equal '' "$SF_PRESENT_NODE_META[3]"
 
-# Reasoning tokens reach an open reasoning node only, and never carry across
-# responses.
-sf_tui_reset
-sf_tui_decoded assistant_reasoning_delta 0 current
-sf_tui_decoded turn_usage '20 ↑ 4 ↓' 3
-assert_equal 3 "$SF_PRESENT_NODE_META[-1]"
-
-sf_tui_reset
-sf_tui_decoded turn_usage '20 ↑ 4 ↓' 5
-sf_tui_decoded assistant_reasoning_delta 0 current
-sf_tui_decoded assistant_end
-assert_equal '' "$SF_PRESENT_NODE_META[-1]"
-
-sf_tui_event tool_call permission_call shell pwd
 sf_tui_decoded permission_request permission_1 shell pwd 'host access' sh
 assert_equal permission "$SF_PRESENT_STATE"
 assert_equal permission_1 "$SF_PRESENT_PERMISSION_ID"
@@ -47,15 +28,12 @@ assert_equal shell "$SF_PRESENT_PERMISSION_TOOL"
 assert_equal $'pwd\n\nReason: host access' "$SF_PRESENT_PERMISSION_TEXT"
 assert_equal sh "$SF_PRESENT_PERMISSION_LANGUAGE"
 assert_equal 3 "$SF_PRESENT_PERMISSION_PREVIEW_LENGTH"
-assert_equal tool_result "$SF_PRESENT_NODE_TYPE[-1]"
-assert_equal permission "$SF_PRESENT_NODE_STATUS[-1]"
 
 SF_PRESENT_STATE=working
 SF_PRESENT_PERMISSION_ID=''
 sf_tui_decoded handoff '["/tmp/custom command","","arg"]'
 assert_equal '/tmp/custom command,,arg' "${(j:,:)SF_PRESENT_HANDOFF}"
 
-typeset node_types="${(j:,:)SF_PRESENT_NODE_TYPE}"
 typeset updated_runtime
 updated_runtime=$(jq -c '
   del(.type,.format_version,.cwd,.created) |
@@ -66,23 +44,12 @@ sf_tui_decoded session_update "$updated_runtime"
 assert_equal "$updated_runtime" "$SF_PRESENT_RUNTIME"
 assert_equal updated/new-model "$SF_PRESENT_IDENTITY"
 assert_equal updated/new-model "$SF_PRESENT_FOOTER"
-assert_equal "$node_types" "${(j:,:)SF_PRESENT_NODE_TYPE}"
 
-# State passes through the live transport without changing presentation.
+# State passes through the live transport without stopping the chat.
 sf_tui_transport_reset
 SF_TUI_TRANSPORT_LINES=( '{"type":"state","name":"live/status","value":"ready"}' )
-sf_tui_pending_next
-assert_equal "$node_types" "${(j:,:)SF_PRESENT_NODE_TYPE}"
-
-# Hook activity replaces the standalone spinner and clears without leaving a node.
-sf_tui_reset
-sf_tui_add activity '' '' '' open
-sf_tui_decoded hook_activity session_start project 'Inspecting project'
-assert_equal hook_activity "$SF_PRESENT_NODE_TYPE[-1]"
-assert_equal 'Inspecting project' "$SF_PRESENT_NODE_HEADING[-1]"
-assert_equal open "$SF_PRESENT_NODE_STATE[-1]"
-sf_tui_decoded hook_activity
-assert_equal 0 "${#SF_PRESENT_NODE_TYPE}"
+sf_tui_pending_next || fail 'a live state record was rejected'
+assert_equal working "$SF_PRESENT_STATE"
 
 if sf_tui_decoded not-supported; then
   fail 'unsupported exec output was accepted'
@@ -112,65 +79,6 @@ functions[sf_tui_transport_stop]=$functions[sf_tui_transport_stop_saved]
 functions[sf_tui_recover]=$functions[sf_tui_recover_saved]
 unfunction sf_tui_transport_signal_saved sf_tui_transport_stop_saved sf_tui_recover_saved
 
-# Pre-tool hook output precedes the durable call it belongs to.
-sf_tui_reset
-sf_tui_terminal_reset
-sf_tui_decoded hook_result progress pre_tool_use '' working
-sf_tui_event tool_call call_1 shell '{"command":"true"}'
-assert_equal 'hook_user_context,section,tool_call,tool_result' "${(j:,:)SF_PRESENT_NODE_TYPE}"
-assert_equal progress "$SF_PRESENT_NODE_HEADING[1]"
-assert_equal pre_tool_use "$SF_PRESENT_NODE_META[1]"
-assert_equal open "$SF_PRESENT_NODE_STATE[4]"
-sf_tui_event tool_result call_1 0 done
-assert_equal done "$SF_PRESENT_NODE_BODY[4]"
-assert_equal closed "$SF_PRESENT_NODE_STATE[4]"
-
-# A detected sandbox denial rides its own result rather than interrupting the tool.
-sf_tui_reset
-sf_tui_event tool_call call_1 shell '{"command":"true"}'
-sf_tui_decoded tool_result call_1 1 denied '' '' sandbox_denial
-assert_equal 'section,tool_call,tool_result' "${(j:,:)SF_PRESENT_NODE_TYPE}"
-assert_equal sandbox_denial "$SF_PRESENT_NODE_SANDBOX_DENIAL[3]"
-assert_equal denied "$SF_PRESENT_NODE_BODY[3]"
-
-# An execution error abandons rather than resumes the live tool.
-sf_tui_reset
-sf_tui_event tool_call call_1 shell '{"command":"false"}'
-sf_tui_decoded error failed
-assert_equal 'section,tool_call,tool_result,error' "${(j:,:)SF_PRESENT_NODE_TYPE}"
-assert_equal '' "$SF_PRESENT_NODE_STATUS[3]"
-assert_equal closed "$SF_PRESENT_NODE_STATE[3]"
-assert_equal error "$SF_PRESENT_NODE_ROLE[4]"
-assert_equal '' "$SF_PRESENT_TOOL_CALL"
-
-# A durable turn error closes its section without taking a section number, so the
-# next accepted record opens a numbered one.
-sf_tui_reset
-SF_PRESENT_EXEC_ERROR_HEADING=''
-sf_tui_event user first
-sf_tui_decoded error 'Turn failed' 'Turn interrupted.' end
-assert_equal 'section,message,error' "${(j:,:)SF_PRESENT_NODE_TYPE}"
-assert_equal 1 "$SF_PRESENT_SECTION_ID"
-assert_equal '' "$SF_PRESENT_EXEC_ERROR_HEADING"
-sf_tui_event user second
-assert_equal 'section,message,error,section,message' "${(j:,:)SF_PRESENT_NODE_TYPE}"
-assert_equal 2 "$SF_PRESENT_SECTION_ID"
-
-# Consecutive calls stay sequential across their pre- and post-hook output.
-sf_tui_reset
-sf_tui_decoded hook_activity pre_tool_use progress Checking
-sf_tui_decoded hook_result pre pre_tool_use '' first
-sf_tui_event tool_call call_1 shell one
-sf_tui_event tool_result call_1 0 first
-sf_tui_decoded hook_result post post_tool_use '' first-done
-sf_tui_decoded hook_result pre pre_tool_use '' second
-sf_tui_event tool_call call_2 shell two
-sf_tui_event tool_result call_2 0 second
-sf_tui_decoded hook_result post post_tool_use '' second-done
-assert_equal 'hook_user_context,section,tool_call,tool_result,hook_user_context,hook_user_context,tool_call,tool_result,hook_user_context' \
-  "${(j:,:)SF_PRESENT_NODE_TYPE}"
-assert_equal '' "$SF_PRESENT_TOOL_CALL"
-
 # Malformed exec output stops the chat. The live transcript cannot be trusted
 # past it, and only the durable session can replace it.
 cp "$SF_TEST_SESSIONS/complete.jsonl" "$tmp/recover.jsonl"
@@ -181,10 +89,9 @@ SF_PRESENT_SESSION=$tmp/recover.jsonl
 SF_PRESENT_STATE=working
 sf_tui_transport_reset
 SF_PRESENT_QUEUE=( queued )
-typeset -g BUFFER='' CURSOR=0 PREDISPLAY='' POSTDISPLAY='' ZLE_CALLS='' DRAWN=''
+typeset -g BUFFER='' CURSOR=0 PREDISPLAY='' POSTDISPLAY='' ZLE_CALLS=''
 zle() {
   ZLE_CALLS+="${ZLE_CALLS:+,}$*"
-  [[ $1 != -I ]] || DRAWN=$PREDISPLAY$BUFFER$POSTDISPLAY
 }
 exec {SF_TUI_TRANSPORT_OUTPUT_FD}< <(print -r -- broken)
 sf_tui_exec_ready "$SF_TUI_TRANSPORT_OUTPUT_FD"
@@ -219,9 +126,8 @@ SF_PRESENT_ACTION=''
 SF_PRESENT_STATE=idle
 SF_PRESENT_ERROR=''
 
-# Buffered transport records are applied as one semantic batch after older rows
-# stop flushing. The bounded viewport still sends their display rows to
-# scrollback in source order.
+# Buffered transport records are applied as one semantic batch, leaving nothing
+# pending and never taking the line away from the active editor.
 sf_tui_reset
 sf_tui_terminal_reset
 SF_PRESENT_STATE=working
@@ -240,105 +146,48 @@ CURSOR=0
 COLUMNS=12
 LINES=10
 ZLE_CALLS=''
-typeset -a injections
-typeset -gi assistant_highlight_calls=0
-functions[sf_tui_markdown_saved]=$functions[sf_tui_markdown_highlight]
-SF_PRESENT_HIGHLIGHT_ENABLED=1
-sf_tui_markdown_highlight() {
-  [[ $1 != 'one two three four five six seven eight' ]] ||
-    (( ++assistant_highlight_calls ))
-  sf_tui_markdown_saved "$@"
-}
 
 sf_tui_heartbeat_tick
-assert_equal 1 "$assistant_highlight_calls"
 if sf_tui_transport_has_pending; then
   fail 'transport events remained after the heartbeat batch'
 fi
-assert_equal closed "$SF_PRESENT_NODE_STATE[2]"
-injections=( ${(M)SF_PRESENT_NODE_TYPE:#hook_model_context} )
-assert_equal 1 "${#injections}"
 assert_equal '' "$SF_PRESENT_ACTION"
 assert_equal 0 "$SF_PRESENT_PENDING_ROWS"
 [[ $ZLE_CALLS != *accept-line* ]] ||
   fail 'transport batch left the active editor'
-integer context_node=${SF_PRESENT_NODE_TYPE[(i)hook_model_context]}
-integer cursor_node=${SF_PRESENT_CURSOR%%:*}
-(( cursor_node < context_node )) ||
-  fail 'later context crossed the bounded assistant viewport'
-functions[sf_tui_markdown_highlight]=$functions[sf_tui_markdown_saved]
-unfunction sf_tui_markdown_saved
-SF_PRESENT_HIGHLIGHT_ENABLED=0
 
-# A tool-call delta closes the visible tail before the durable assistant
-# record makes the validated tool available.
-sf_tui_reset
-sf_tui_terminal_reset
-SF_PRESENT_STATE=working
-sf_tui_transport_reset
-SF_TUI_TRANSPORT_LINES=(
-  '{"type":"_assistant_message_delta","index":0,"text":"before tool"}'
-  '{"type":"_assistant_tool_call_delta","index":1,"id":"call_1"}'
+# Every frame shape drains completely in one heartbeat: a live tool-call delta
+# after streamed text, the durable call that confirms it, and a tool-only
+# response carrying no assistant content. Presentation order is the renderer's
+# contract and is covered by tests/pty.
+typeset -a frames=(
+  '{"type":"_assistant_message_delta","index":0,"text":"before tool"}
+{"type":"_assistant_tool_call_delta","index":1,"id":"call_1"}'
+  '{"type":"_assistant_message_delta","index":0,"text":"before tool"}
+{"type":"_assistant_tool_call_delta","index":1,"id":"call_1"}
+{"type":"_assistant_end","stop":"tool_calls"}
+{"type":"assistant","stop":"tool_calls","content":[{"type":"text","text":"before tool"}]}
+{"type":"tool_call","id":"call_1","name":"shell","input":{"command":"true"}}'
+  '{"type":"_assistant_start"}
+{"type":"_assistant_end","stop":"tool_calls"}
+{"type":"assistant","stop":"tool_calls","content":[]}
+{"type":"tool_call","id":"call_2","name":"shell","input":{"command":"true"}}'
 )
-BUFFER=''
-CURSOR=0
-COLUMNS=80
-LINES=8
-DRAWN=''
-sf_tui_heartbeat_tick
-assert_equal closed "$SF_PRESENT_NODE_STATE[-1]"
-[[ $PREDISPLAY == *'before tool'* ]] || fail 'settle did not render the final assistant row'
-(( SF_PRESENT_FLUSH_ROWS )) || fail 'settle did not settle the final assistant row'
-if sf_tui_transport_has_pending; then
-  fail 'settle remained queued after publishing the assistant row'
-fi
-
-# A call is recorded after the message it belongs to, so stream order alone
-# puts the assistant rows ahead of the tool, even past one viewport.
-sf_tui_reset
-sf_tui_terminal_reset
-SF_PRESENT_STATE=working
-sf_tui_transport_reset
-SF_TUI_TRANSPORT_LINES=(
-  '{"type":"_assistant_message_delta","index":0,"text":"one\ntwo\nthree\nfour\nfive\nsix\nseven\nbefore tool"}'
-  '{"type":"_assistant_tool_call_delta","index":1,"id":"call_1"}'
-  '{"type":"_assistant_end","stop":"tool_calls"}'
-  '{"type":"assistant","stop":"tool_calls","content":[{"type":"text","text":"one\ntwo\nthree\nfour\nfive\nsix\nseven\nbefore tool"}]}'
-  '{"type":"tool_call","id":"call_1","name":"shell","input":{"command":"true"}}'
-)
-BUFFER=''
-CURSOR=0
-COLUMNS=80
-LINES=8
-DRAWN=''
-sf_tui_heartbeat_tick
-assert_equal call_1 "$SF_PRESENT_TOOL_CALL"
-(( ${SF_PRESENT_NODE_TYPE[(I)message]} < ${SF_PRESENT_NODE_TYPE[(I)tool_call]} )) ||
-  fail 'tool call preceded the assistant rows'
-if sf_tui_transport_has_pending; then
-  fail 'transport events remained after the tool frame'
-fi
-
-# A tool-only response has no assistant row to publish first.
-sf_tui_reset
-sf_tui_terminal_reset
-sf_tui_transport_reset
-SF_TUI_TRANSPORT_LINES=(
-  '{"type":"_assistant_start"}'
-  '{"type":"_assistant_end","stop":"tool_calls"}'
-  '{"type":"assistant","stop":"tool_calls","content":[]}'
-  '{"type":"tool_call","id":"call_2","name":"shell","input":{"command":"true"}}'
-)
-sf_tui_heartbeat_tick
-assert_equal call_2 "$SF_PRESENT_TOOL_CALL"
-if sf_tui_transport_has_pending; then
-  fail 'tool-only response paused for an empty frame'
-fi
+for frame in "${frames[@]}"; do
+  sf_tui_reset
+  sf_tui_terminal_reset
+  SF_PRESENT_STATE=working
+  sf_tui_transport_reset
+  SF_TUI_TRANSPORT_LINES=( "${(@f)frame}" )
+  sf_tui_heartbeat_tick
+  if sf_tui_transport_has_pending; then
+    fail "a heartbeat left part of a frame pending: $frame"
+  fi
+done
 
 # Successful completion stages the FIFO head as the next ordinary user turn.
 sf_tui_reset
 sf_tui_terminal_reset
-sf_tui_add activity '' '' '' open
 SF_PRESENT_STATE=working
 SF_PRESENT_QUEUE=( first second )
 SF_PRESENT_HANDOFF=()
@@ -348,8 +197,6 @@ sf_tui_exec_finish
 assert_equal queued "$SF_PRESENT_STATE"
 assert_equal first "$SF_PRESENT_SUBMITTED"
 assert_equal second "$SF_PRESENT_QUEUE[1]"
-assert_equal user "$SF_PRESENT_NODE_ROLE[-1]"
-assert_equal first "$SF_PRESENT_NODE_BODY[-1]"
 
 # A completed turn wins a cancellation race, while queued prompts are still discarded.
 sf_tui_reset
@@ -363,9 +210,6 @@ SF_TUI_TRANSPORT_EXIT_DETAIL=''
 sf_tui_exec_finish
 assert_equal idle "$SF_PRESENT_STATE"
 assert_equal 0 "${#SF_PRESENT_QUEUE}"
-[[ $SF_PRESENT_NODE_HEADING[-1] == 'Discarded 1 queued prompt.'* ]] ||
-  fail 'completed cancellation race did not report discarded queued prompts'
-assert_equal '' "$SF_PRESENT_NODE_BODY[-1]"
 
 # An uncertain exec boundary discards follow-up prompts before recovery.
 sf_tui_reset
@@ -379,11 +223,6 @@ SF_TUI_TRANSPORT_EXIT_DETAIL='backend failed'
 sf_tui_exec_finish
 assert_equal 0 "${#SF_PRESENT_QUEUE}"
 assert_equal idle "$SF_PRESENT_STATE"
-assert_equal 'Exec process failed.' "$SF_PRESENT_NODE_HEADING[-1]"
-[[ $SF_PRESENT_NODE_BODY[-1] == *'backend failed'* ]] ||
-  fail 'exec failure omitted process stderr'
-[[ $SF_PRESENT_NODE_BODY[-1] == *'Discarded 1 queued prompt.'* ]] ||
-  fail 'exec failure did not report discarded queued prompts'
 
 # A persisted turn error is the whole outcome, so completion adds no second
 # report and chat stays usable.
@@ -398,13 +237,8 @@ SF_TUI_TRANSPORT_LINES=( '{"type":"turn_error","message":"test backend failure"}
 SF_TUI_TRANSPORT_EOF=1
 SF_TUI_TRANSPORT_EXIT_STATUS=1
 SF_TUI_TRANSPORT_EXIT_DETAIL='test backend failure'
-DRAWN=''
 sf_tui_heartbeat_tick
 assert_equal idle "$SF_PRESENT_STATE"
-[[ $DRAWN == *'test backend failure'* ]] ||
-  fail 'the durable turn error was not rendered'
-[[ ${(j:,:)SF_PRESENT_NODE_HEADING} != *'Exec process failed.'* ]] ||
-  fail 'completion reported the failure a second time'
 
 # A persisted cancellation is the complete user-facing outcome, so the
 # cancelling state adds nothing to it.
@@ -420,12 +254,8 @@ SF_TUI_TRANSPORT_LINES=(
 )
 SF_TUI_TRANSPORT_EOF=1
 SF_TUI_TRANSPORT_EXIT_STATUS=130
-DRAWN=''
 sf_tui_heartbeat_tick
 assert_equal idle "$SF_PRESENT_STATE"
-[[ $DRAWN == *'Cancelled.'* ]] || fail 'the durable cancellation was not rendered'
-[[ ${(j:,:)SF_PRESENT_NODE_HEADING} != *Cancelled* ]] ||
-  fail 'completion reported the cancellation a second time'
 
 # A terminated exec ends the turn as an ordinary failure, and chat stays usable.
 sf_tui_reset
@@ -437,8 +267,6 @@ SF_TUI_TRANSPORT_EXIT_STATUS=143
 SF_TUI_TRANSPORT_EXIT_DETAIL=''
 sf_tui_exec_finish
 assert_equal idle "$SF_PRESENT_STATE"
-assert_equal 'Exec process terminated.' "$SF_PRESENT_NODE_HEADING[-1]"
-assert_equal 'Terminated by signal 15.' "$SF_PRESENT_NODE_BODY[-1]"
 sf_tui_submit next
 assert_equal submit "$REPLY"
 assert_equal next "$SF_PRESENT_SUBMITTED"
@@ -482,7 +310,6 @@ sf_tui_exec_finish
 assert_equal handoff "$SF_PRESENT_ACTION"
 assert_equal "$SF_ENTRY --clear --session $tmp/recover.jsonl" \
   "${(j: :)SF_PRESENT_HANDOFF}"
-assert_equal 0 "${#${(M)SF_PRESENT_NODE_TYPE:#message}}"
 SF_PRESENT_ACTION=''
 SF_PRESENT_HANDOFF=()
 

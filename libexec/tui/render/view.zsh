@@ -4,9 +4,9 @@ setopt no_aliases no_bg_nice no_multios pipe_fail
 # Transient chrome spans are rebuilt by each repaint and indexed across the
 # whole displayed string, so they cover POSTDISPLAY as well as PREDISPLAY.
 typeset -ga SF_PRESENT_CHROME_HIGHLIGHTS=()
-# The most rows whose styling may wait on an inline construct closing. Past this
-# the text is styled as it stands, so a full viewport always drains.
-typeset -gi SF_PRESENT_HOLD_ROWS=10
+# Spans over the rendered transcript, rebuilt by each repaint and indexed from
+# the start of PREDISPLAY.
+typeset -ga SF_PRESENT_VIEWPORT_HIGHLIGHTS=()
 
 sf_tui_chat_start() {
   local session_mode=$1 session=$2 tools sandbox line
@@ -140,18 +140,12 @@ sf_tui_repaint() {
   fi
   (( rows > reserve )) || rows=$(( reserve + 1 ))
   budget=$(( rows - reserve ))
-  sf_tui_highlight_update || return 1
-  sf_tui_viewport $columns $budget "$SF_PRESENT_CURSOR" || return 1
-  # Wrapping is what discovers a filled row, so a growing line can only be
-  # highlighted after the pass that found its boundary, and only then repainted.
-  if (( SF_PRESENT_ROW_BOUNDARY_NODE )); then
-    sf_tui_highlight_rows $SF_PRESENT_ROW_BOUNDARY_NODE $SF_PRESENT_ROW_BOUNDARY \
-      $(( columns * (budget < SF_PRESENT_HOLD_ROWS ? budget : SF_PRESENT_HOLD_ROWS) )) || return 1
-    if (( SF_PRESENT_HIGHLIGHT_ADVANCED )); then
-      sf_tui_viewport $columns $budget "$SF_PRESENT_CURSOR" || return 1
-    fi
-  fi
-  PREDISPLAY=$SF_PRESENT_VIEWPORT_TEXT
+  # The transcript half of repaint is being reimplemented. It must render the
+  # retained formatters into PREDISPLAY at $columns within $budget rows, add
+  # their spans to SF_PRESENT_VIEWPORT_HIGHLIGHTS, and hand the safe prefix to
+  # the staging globals terminal.zsh declares. $budget has no other reader yet.
+  SF_PRESENT_VIEWPORT_HIGHLIGHTS=()
+  PREDISPLAY=''
   if [[ -n $PREDISPLAY ]]; then
     PREDISPLAY+=$'\n'
     # The tail reserves the blank row that a fully flushable viewport paints from

@@ -156,7 +156,6 @@ sf_tui_decoded() {
         sf_tui_editor_permission open
         SF_PRESENT_STATE=permission
         sf_tui_event tool_permission || return 1
-        (( REPLY )) || return 1
         ;;
       handoff)
         (( ! ${#SF_PRESENT_HANDOFF} )) || return 1
@@ -242,9 +241,9 @@ sf_tui_exec_finish() {
     sf_tui_permission_reset
     sf_tui_editor_permission discard
     SF_PRESENT_STATE=idle
-    [[ -z $heading ]] || sf_tui_error "$heading" "$detail" || return 1
+    [[ -z $heading ]] || sf_tui_event error "$heading" "$detail" || return 1
   else
-    sf_tui_activity_stop || return 1
+    sf_tui_event activity_stop || return 1
     SF_PRESENT_STATE=idle
     sf_tui_permission_reset
     if (( ${#SF_PRESENT_HANDOFF} )); then
@@ -277,7 +276,7 @@ sf_tui_turn() {
   SF_PRESENT_ACTIVITY_FRAME=0
   SF_PRESENT_ACTIVITY=${SF_PRESENT_ACTIVITY_FRAMES[1]}
   SF_PRESENT_STATE=working
-  sf_tui_activity_start || { SF_PRESENT_STATE=idle; return 1; }
+  sf_tui_event activity_start || { SF_PRESENT_STATE=idle; return 1; }
   if ! sf_tui_transport_start "$input" sf_tui_exec_ready; then
     SF_PRESENT_STATE=idle
     SF_PRESENT_ERROR=$SF_TUI_TRANSPORT_ERROR
@@ -334,8 +333,8 @@ sf_tui_controller() {
     sf_tui_session_update "$reply[2]"
     [[ -z $system ]] || sf_tui_event system "$system" || return 1
     # Creation presents as a running turn, so hook activity and the spinner
-    # land in the nodes a turn would use.
-    sf_tui_activity_start || return 1
+    # land in the formatters a turn would use.
+    sf_tui_event activity_start || return 1
   else
     sf_tui_reload "$session" || return 1
   fi

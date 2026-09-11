@@ -1,8 +1,8 @@
 #!/usr/bin/env zsh
 
 source "${0:A:h:h:h}/_helpers.zsh"
-sf_test_source libexec/tui/render/nodes.zsh libexec/tui/render/highlights.zsh \
-  libexec/tui/render/rows.zsh libexec/tui/render/viewport.zsh \
+sf_test_source libexec/tui/render/formatters.zsh libexec/tui/render/highlights.zsh \
+  libexec/tui/render/text.zsh \
   libexec/tui/render/terminal.zsh libexec/tui/render/view.zsh \
   libexec/tui/transport.zsh libexec/tui/editor.zsh libexec/tui/controller.zsh
 
@@ -30,17 +30,19 @@ sf_tui_answer_permission() {
   CURSOR=3
 }
 
-sf_tui_event user hello
+# Safe rows found while idle commit through the epoch accept-line, which saves
+# the draft, hands exactly those rows to the terminal, and leaves no chrome.
+SF_PRESENT_SAFE_TEXT=$'hello\n'
+SF_PRESENT_SAFE_ROWS=1
 sf_tui_line_init
 assert_equal epoch "$SF_PRESENT_ACTION"
 assert_equal accept-line "$ZLE_CALL"
 assert_equal draft "$SF_PRESENT_DRAFT"
-assert_equal $'─ user ──────────────────────────────────────────────────────────────────── 1 ─\n\nhello\n\n───────────────────────────────────────────────────────────────────────────────\n❯ ' "$PREDISPLAY"
 
 sf_tui_line_finish
-assert_equal $'─ user ──────────────────────────────────────────────────────────────────── 1 ─\n\nhello' "$PREDISPLAY"
+assert_equal $'hello\n' "$PREDISPLAY"
 assert_equal '' "$POSTDISPLAY"
-assert_equal 1:0 "$SF_PRESENT_CURSOR"
+assert_equal 0 "$SF_PRESENT_PENDING_ROWS"
 assert_equal 1 "$SF_PRESENT_SYNC_ACTIVE"
 assert_equal -R "$ZLE_CALL"
 
@@ -58,15 +60,17 @@ SF_PRESENT_DRAFT=prompt
 SF_PRESENT_DRAFT_CURSOR=6
 SF_PRESENT_DRAFT_SAVED=1
 SF_PRESENT_ACTION=''
-SF_PRESENT_LAST_ROLE=agent
 ZLE_CALL=''
+# An accepted prompt commits the rows the repaint staged for it.
+SF_PRESENT_SAFE_TEXT=$'\nprompt'
+SF_PRESENT_SAFE_ROWS=2
 sf_tui_accept
 assert_equal submit "$SF_PRESENT_ACTION"
 assert_equal prompt "$SF_PRESENT_SUBMITTED"
 assert_equal 1 "$SF_PRESENT_DRAFT_SAVED"
 assert_equal accept-line "$ZLE_CALL"
 sf_tui_line_finish
-assert_equal $'\n─ user ──────────────────────────────────────────────────────────────────── 2 ─\n\nprompt' "$PREDISPLAY"
+assert_equal $'\nprompt' "$PREDISPLAY"
 assert_equal '' "$BUFFER"
 assert_equal -R "$ZLE_CALL"
 
@@ -177,36 +181,34 @@ assert_equal $'first\n' "$LBUFFER"
 
 sf_tui_reset
 sf_tui_terminal_reset
-sf_tui_add message agent '' $'one\ntwo\nthree\nfour\nfive\nsix'
 SF_PRESENT_STATE=working
 SF_PRESENT_ACTION=''
 typeset -gi KEYS_QUEUED_COUNT=0 PENDING=0
 COLUMNS=80
 LINES=10
-# Each heartbeat commits one bounded batch to scrollback, without leaving the
-# active editor and without spilling editor chrome into it.
+# Safe rows found during a turn commit through the descriptor mechanism, which
+# restores the draft, stays in the active editor, and spills no editor chrome.
 BUFFER=draft
 CURSOR=3
 ZLE_CALLS=()
 COMMITTED=''
+SF_PRESENT_SAFE_TEXT=$'one\ntwo\n'
+SF_PRESENT_SAFE_ROWS=2
 sf_tui_heartbeat_tick
 assert_equal '' "$SF_PRESENT_ACTION"
 assert_equal 0 "$SF_PRESENT_PENDING_ROWS"
 assert_equal draft "$BUFFER"
 assert_equal 3 "$CURSOR"
-[[ $COMMITTED == *one* ]] || fail 'heartbeat did not commit the settled rows'
+[[ $COMMITTED == *one* ]] || fail 'heartbeat did not commit the safe rows'
 [[ $COMMITTED != *❯* && $COMMITTED != *test/model* ]] ||
   fail 'heartbeat committed editor chrome to scrollback'
 [[ ${(j: :)ZLE_CALLS} != *accept-line* ]] ||
   fail 'descriptor heartbeat left the active editor'
-sf_tui_heartbeat_tick
-assert_equal 0 "${#SF_PRESENT_NODE_TYPE}"
 
-# A heartbeat that finds only a mutable tail repaints and releases the
-# synchronized update rather than holding it across the rest of the turn.
+# A heartbeat that finds no safe rows repaints and releases the synchronized
+# update rather than holding it across the rest of the turn.
 sf_tui_reset
 sf_tui_terminal_reset
-sf_tui_add message agent '' partial open
 SF_PRESENT_STATE=working
 SF_PRESENT_SYNC_ACTIVE=1
 ZLE_CALLS=()
@@ -215,17 +217,15 @@ assert_equal 1 "${#ZLE_CALLS}"
 assert_equal '-R' "$ZLE_CALLS[-1]"
 assert_equal 0 "$SF_PRESENT_SYNC_ACTIVE"
 
-# Each heartbeat advances and repaints the activity pulse.
+# Each heartbeat advances the activity pulse.
 sf_tui_reset
 sf_tui_terminal_reset
-sf_tui_add activity '' '' '' open
 SF_PRESENT_STATE=working
 SF_PRESENT_ACTIVITY_FRAME=0
 SF_PRESENT_ACTIVITY=${SF_PRESENT_ACTIVITY_FRAMES[1]}
 typeset activity=$SF_PRESENT_ACTIVITY
 sf_tui_heartbeat_tick
 [[ $SF_PRESENT_ACTIVITY != $activity ]] || fail 'activity frame did not advance'
-[[ $PREDISPLAY == *$SF_PRESENT_ACTIVITY* ]] || fail 'activity frame was not repainted'
 
 # Active-turn submits enter a transient FIFO and are available through history.
 sf_tui_reset
@@ -315,7 +315,7 @@ typeset saved_repaint=$functions[sf_tui_repaint]
 typeset -gi failed_repaints=0
 sf_tui_repaint() {
   (( ++failed_repaints ))
-  SF_PRESENT_FLUSH_ROWS=3
+  SF_PRESENT_SAFE_ROWS=3
   return 1
 }
 sf_tui_reset
@@ -330,7 +330,7 @@ PENDING=0
 ZLE_CALLS=()
 sf_tui_heartbeat_tick
 assert_equal 1 "$failed_repaints"
-assert_equal 0 "$SF_PRESENT_FLUSH_ROWS"
+assert_equal 0 "$SF_PRESENT_SAFE_ROWS"
 assert_equal 0 "$SF_PRESENT_PENDING_ROWS"
 assert_equal stopped "$SF_PRESENT_STATE"
 assert_equal 'cannot render chat' "$SF_PRESENT_ERROR"
