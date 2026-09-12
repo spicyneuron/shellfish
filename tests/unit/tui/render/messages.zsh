@@ -90,6 +90,32 @@ sf_tui_transcript 79 2
 assert_equal 2 "$SF_PRESENT_SAFE_ROWS"
 assert_equal $'\nhello' "$SF_PRESENT_VIEWPORT_TEXT"
 
+# A staging pass stops at the end of the safe run rather than formatting the
+# transcript behind it, so it stages exactly what a full pass would and leaves
+# the viewport to the repaint that follows the commit.
+sf_tui_reset
+sf_tui_event user $'one\ntwo\nthree'
+sf_tui_event user $'four\nfive\nsix'
+sf_tui_transcript 79 4
+typeset staged_text=$SF_PRESENT_SAFE_TEXT staged_rows=$SF_PRESENT_SAFE_ROWS
+typeset staged_consume="${(j: :)SF_PRESENT_SAFE_CONSUME}"
+(( staged_rows )) || fail 'the full pass staged nothing to compare'
+[[ -n $SF_PRESENT_VIEWPORT_TEXT ]] || fail 'the full pass drew no viewport to skip'
+sf_tui_transcript 79 4 stage
+assert_equal "$staged_text" "$SF_PRESENT_SAFE_TEXT"
+assert_equal "$staged_rows" "$SF_PRESENT_SAFE_ROWS"
+assert_equal "$staged_consume" "${(j: :)SF_PRESENT_SAFE_CONSUME}"
+assert_equal '' "$SF_PRESENT_VIEWPORT_TEXT"
+
+# With nothing to commit there is no repaint behind the staging pass, so it
+# builds the viewport itself. A budget under the leading rule stages nothing.
+sf_tui_transcript 79 1
+typeset drawn=$SF_PRESENT_VIEWPORT_TEXT
+assert_equal 0 "$SF_PRESENT_SAFE_ROWS"
+[[ -n $drawn ]] || fail 'the full pass drew no viewport to compare'
+sf_tui_transcript 79 1 stage
+assert_equal "$drawn" "$SF_PRESENT_VIEWPORT_TEXT"
+
 # Spans land on the text they claim, after the rows move into PREDISPLAY.
 sf_tui_reset
 SF_PRESENT_STYLE=( divider 'fg=8' section.user 'fg=1' muted 'fg=7' )

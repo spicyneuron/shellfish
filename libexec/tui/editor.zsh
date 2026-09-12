@@ -35,7 +35,7 @@ sf_tui_repaint_checked() {
     sf_tui_stopped_view
     return 1
   fi
-  if sf_tui_repaint; then
+  if sf_tui_repaint "${1-}"; then
     return 0
   fi
   sf_tui_stop 'cannot render chat'
@@ -129,7 +129,7 @@ sf_tui_heartbeat_tick() {
       sf_tui_exec_finish || return 1
       continue
     fi
-    if ! sf_tui_repaint_checked; then
+    if ! sf_tui_repaint_checked stage; then
       zle -R
       return 0
     fi
@@ -176,13 +176,18 @@ sf_tui_heartbeat_tick() {
 }
 
 sf_tui_line_init() {
+  # A working turn draws its viewport instead of committing, so it needs a full
+  # pass. The same mode gates the commit below, so the two cannot disagree and
+  # draw a viewport a staging pass left out.
+  local mode=''
   sf_tui_terminal_restore
   sf_tui_transport_watch sf_tui_exec_ready
-  if ! sf_tui_repaint_checked; then
+  [[ $SF_PRESENT_STATE == working ]] || mode=stage
+  if ! sf_tui_repaint_checked "$mode"; then
     zle -R
     return 0
   fi
-  if (( SF_PRESENT_SAFE_ROWS )) && [[ $SF_PRESENT_STATE != working ]]; then
+  if (( SF_PRESENT_SAFE_ROWS )) && [[ $mode == stage ]]; then
     sf_tui_terminal_stage || return 1
     SF_PRESENT_ACTION=epoch
     sf_tui_draw_pending || return 1

@@ -12,9 +12,16 @@ typeset -ga SF_PRESENT_VIEWPORT_HIGHLIGHTS=()
 # Concatenates the retained formatters rendered at the current width, keeping the
 # last $budget rows. Layout belongs entirely to the formatters. An unsafe row
 # pins everything after it, keeping committed scrollback in source order.
+#
+# A "stage" pass owes the caller only the safe batch, so it stops at the end of
+# the staged run instead of formatting the whole retained transcript behind it.
+# Its caller commits that batch and repaints, and that repaint builds the
+# viewport this pass skipped. Staging nothing means no commit and no repaint
+# follows, so it falls back to a full pass.
 sf_tui_transcript() {
   integer columns=$1 budget=$2 index row offset start safe_offset=0
   integer safe take source leading body_rows whole staged=0 staging=1
+  local mode=${3-}
   local -a rows=() spans=()
 
   SF_PRESENT_VIEWPORT_TEXT=''
@@ -66,7 +73,14 @@ sf_tui_transcript() {
       # stay contiguous.
       (( take == ${#SF_FORMAT_ROWS} )) || staging=0
     fi
+    [[ $mode != stage ]] || (( staging )) || break
   done
+  SF_PRESENT_SAFE_ROWS=$staged
+  if [[ $mode == stage ]]; then
+    (( ! staged )) || return 0
+    sf_tui_transcript $columns $budget
+    return
+  fi
 
   # The safe commit batch is built above; the viewport keeps only the last rows
   # that fit its budget.
@@ -84,7 +98,6 @@ sf_tui_transcript() {
     SF_PRESENT_VIEWPORT_TEXT+=$rows[row]
     offset=$(( offset + ${#rows[row]} ))
   done
-  SF_PRESENT_SAFE_ROWS=$staged
 }
 
 # Appends one row's zero-based spans to the array named by $1, moved to where
@@ -203,6 +216,7 @@ sf_tui_update_highlights() {
 }
 
 sf_tui_repaint() {
+  local mode=${1-}
   integer columns=${COLUMNS:-0} rows=${LINES:-0} budget reserve=6
   integer index queue_shown queue_limit start queue_head=0 history_item=0 history_label=0
   local prompt_divider_top prompt_divider_bottom label preview
@@ -231,7 +245,10 @@ sf_tui_repaint() {
   fi
   (( rows > reserve )) || rows=$(( reserve + 1 ))
   budget=$(( rows - reserve ))
-  sf_tui_transcript $columns $budget || return 1
+  sf_tui_transcript $columns $budget "$mode" || return 1
+  # A staging pass that produced a batch has no viewport to draw. Its caller
+  # commits the batch as the whole display and repaints beneath it.
+  [[ $mode != stage ]] || (( ! SF_PRESENT_SAFE_ROWS )) || return 0
   PREDISPLAY=$SF_PRESENT_VIEWPORT_TEXT
   if [[ -n $PREDISPLAY ]]; then
     PREDISPLAY+=$'\n'
