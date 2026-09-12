@@ -29,7 +29,7 @@ file_mode() {
   printf '%03o' $(( stat_result[1] & 8#777 ))
 }
 
-# Config initialization.
+# Initialize default and custom configs.
 typeset init_home="$tmp/init-home"
 typeset init_config="$init_home/config/shellfish/shellfish.jsonc"
 (
@@ -80,7 +80,7 @@ assert_equal 640 "$(file_mode "${custom_config:h}/example.env")" \
 assert_equal 750 "$(file_mode "${custom_config:h}/system")" \
   'config init changed permissions on an existing component directory'
 
-# Configured sandbox paths must be absolute and survive runtime resolution.
+# Resolve configured sandbox paths.
 typeset sandbox_config="$tmp/sandbox.jsonc"
 mkdir "$tmp/read" "$tmp/write"
 jq --arg read "$tmp/read" --arg write "$tmp/write" '
@@ -98,7 +98,7 @@ jq '.harnesses.default.sandbox_read_paths = ["relative"]' \
 zsh -f "$entry" config --config "$tmp/invalid-path.jsonc" >/dev/null 2>&1 && \
   fail 'relative sandbox path was accepted'
 
-# Sandbox flags accept files, directories, relative paths, and home-relative paths.
+# Accept sandbox path flags.
 mkdir "$tmp/added"
 touch "$tmp/read-file"
 report=$(cd "$tmp" && zsh -f "$entry" config --config "$sandbox_config" \
@@ -119,7 +119,7 @@ HOME="$tmp" zsh -f "$entry" config --config "$sandbox_config" \
 zsh -f "$entry" config --config "$sandbox_config" \
   --sandbox-read "$tmp/missing" >/dev/null 2>&1 && fail '--sandbox-read accepted a missing path'
 
-# Automatic sandbox grants.
+# Detect automatic sandbox grants.
 typeset detector_bin="$tmp/detectors"
 typeset detector_root="$tmp/detected"
 typeset git_root="$detector_root/git-config"
@@ -242,8 +242,7 @@ jq -e '.harnesses.default.sandbox_read_paths == [] and
   < <(source "$ROOT/libexec/config/runtime.zsh"; sf_runtime_read_jsonc "$empty_auto_config") \
   >/dev/null || fail 'empty automatic sandbox config is invalid'
 
-# `shellfish config` reports resolved runtime, plus the theme
-# palettes and TUI limits a session does not store.
+# Reports include current presentation settings outside the session runtime.
 report=$(zsh -f "$entry" config --config "$config_dir/shellfish.jsonc") ||
   fail 'config report failed'
 assert_equal gpt-4o "$(jq -r '.profile.request.model' <<<"$report")" 'config reports the model'
@@ -258,12 +257,12 @@ jq -e --arg root "$ROOT" '
     ($root + "/share/default/system/tools.md")]
 ' <<<"$report" >/dev/null || fail 'config did not resolve system paths'
 
-# Runtime overrides reach the report the same way they reach a new session.
+# Apply runtime overrides to reports.
 report=$(zsh -f "$entry" config --config "$config_dir/shellfish.jsonc" -m claude-3) || \
   fail 'config report with override failed'
 assert_equal claude-3 "$(jq -r '.profile.request.model' <<<"$report")" 'config applies --model'
 
-# Config resolves system references without reading them; creation owns materialization.
+# Config resolves system paths; create reads them.
 jq '.profiles.agent.system = ["missing.md"]' "$config_dir/shellfish.jsonc" \
   >"$tmp/missing-configured-system.jsonc"
 report=$(zsh -f "$entry" config --config "$tmp/missing-configured-system.jsonc") || \
@@ -273,7 +272,7 @@ jq -e --arg path "$ROOT/share/default/system/missing.md" '.profile.system == [$p
 zsh -f "$entry" config --config "$config_dir/shellfish.jsonc" \
   --system replacement >/dev/null 2>&1 && fail 'config accepted create-owned --system'
 
-# A stored session supplies its runtime. Themes and limits come from current config.
+# Stored sessions retain runtime but use current presentation settings.
 jq -cn '{
   type:"session",format_version:1,cwd:"/tmp",created:"2026-08-18T00:00:00Z",
   profile:{request:{model:"stored-model"},system:[]},
@@ -296,7 +295,8 @@ if zsh -f "$entry" config --config "$config_dir/shellfish.jsonc" \
     --session-from "$tmp/stored.jsonl" --sandbox-write "$tmp/extra" >/dev/null 2>&1; then
   fail '--sandbox-write overrode an existing session'
 fi
-# --verbose lifts every preview limit without altering the stored runtime.
+
+# Lift preview limits with verbose reports.
 report=$(zsh -f "$entry" config --config "$config_dir/shellfish.jsonc" --verbose) || \
   fail 'config verbose report failed'
 assert_equal 'full full full full' \
@@ -310,7 +310,7 @@ assert_equal full "$(jq -r '.tui.preview_lines_context' <<<"$report")" \
 assert_equal stored-model "$(jq -r '.profile.request.model' <<<"$report")" \
   '--verbose leaves the stored runtime alone'
 
-# --continue and --resume are rejected.
+# Reject session-selection routes.
 integer exit_code=0
 zsh -f "$entry" config --continue >/dev/null 2>&1 || exit_code=$?
 (( exit_code == 2 )) || fail '--continue not rejected for config'
@@ -321,13 +321,13 @@ exit_code=0
 zsh -f "$entry" config --clear >/dev/null 2>&1 || exit_code=$?
 (( exit_code == 2 )) || fail '--clear not rejected for config'
 
-# Runtime overrides cannot be used with an existing session.
+# Reject overrides for stored sessions.
 exit_code=0
 zsh -f "$entry" config --config "$config_dir/shellfish.jsonc" --session-from "$tmp/stored.jsonl" -m other \
   >/dev/null 2>&1 || exit_code=$?
 (( exit_code == 2 )) || fail 'overrides not rejected with --session-from'
 
-# A profile that cannot resolve fails the same way starting a session would.
+# Reject unresolved profiles.
 exit_code=0
 zsh -f "$entry" config --config "$config_dir/shellfish.jsonc" -p default >/dev/null 2>&1 || exit_code=$?
 (( exit_code == 1 )) || fail 'unresolvable profile did not fail'

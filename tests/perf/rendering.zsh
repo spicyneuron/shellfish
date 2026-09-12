@@ -17,18 +17,14 @@ integer characters=4096 format_lines=64 columns=80 budget=45
 typeset -g SF_ROOT=$root
 source "$root/libexec/tui/render/main.zsh"
 
-# ZLE parameters the commit boundary writes to. Nothing here runs under ZLE, so
-# synchronized output stays quiet.
+# Fake ZLE state keeps terminal commits quiet.
 typeset -g PREDISPLAY='' POSTDISPLAY='' BUFFER='' CURSOR=0
 
-# Syntax styles make formatted cases project spans. Plain text remains the
-# unstyled layout baseline. Preview defaults are full, so no body is elided.
 SF_PRESENT_STYLE=( 'syntax.added' 'fg=2,bg=22' 'syntax.removed' 'fg=1,bg=52'
   'syntax.strong' bold 'syntax.heading' 'bold,underline' 'syntax.code' 'fg=2'
   'syntax.string' 'fg=2' 'syntax.number' 'fg=3' 'syntax.keyword' 'fg=5' )
 
-# Resume drains final records through staging passes, then builds the viewport
-# only when no safe batch remains.
+# Drain safe batches before building the viewport.
 present_drain() {
   while true; do
     sf_tui_transcript $columns $budget stage

@@ -3,8 +3,7 @@
 source "${0:A:h:h:h:h}/_helpers.zsh"
 sf_test_source libexec/tui/render/highlights.zsh
 
-# Theme resolution supplies both chrome and semantic syntax styles, and stays
-# inert when the environment refuses color.
+# Theme resolution covers chrome and syntax styles.
 unset NO_COLOR
 TERM=xterm-256color
 typeset -g theme_config='{"theme":{"mode":"dark","light":{"name":"l","palette":{
@@ -55,8 +54,7 @@ else
   fail 'a dumb terminal should disable styling rather than fail'
 fi
 
-# theme.mode:auto resolves through the background probe, caches the answer for
-# the process, and falls back to dark when the terminal does not reply.
+# Auto mode caches the background probe and defaults to dark.
 typeset -g auto_config=${theme_config/'"mode":"dark"'/'"mode":"auto"'}
 [[ $auto_config == *'"mode":"auto"'* ]] || fail 'auto theme fixture was not built'
 typeset -gi probe_calls=0
@@ -77,7 +75,6 @@ sf_tui_background_mode() { return 1 }
 sf_tui_theme_config "$auto_config" || fail 'an unanswered probe should fall back to dark'
 assert_equal dark "$SF_PRESENT_BACKGROUND"
 
-# A scan emits spans only where the active theme configures a style.
 sf_tui_theme_config "$theme_config" || fail "theme setup failed: $SF_PRESENT_HIGHLIGHT_ERROR"
 
 span_texts() {
@@ -92,8 +89,7 @@ span_texts() {
   REPLY="${(j:,:)texts}"
 }
 
-# Common languages share semantic token kinds and keep character offsets before
-# multibyte source text. Unknown languages remain plain.
+# Syntax offsets count characters before multibyte text.
 typeset code='é const x = "text"; // note'
 SF_PRESENT_HIGHLIGHT_SPANS=()
 sf_tui_code_highlight "$code" js
@@ -158,8 +154,7 @@ assert_equal $'# Head,**bold**,[link](url),`code`,```js,const,3,```' "$REPLY"
 assert_equal '0,6,bold,underline,7,15,bold' \
   "${(j:,:)SF_PRESENT_HIGHLIGHT_SPANS[1,6]}"
 
-# Table punctuation stays in the source but is muted. Inline constructs keep
-# their own styles, and neither escaped nor inline-code pipes become separators.
+# Escaped and inline-code pipes are not table separators.
 SF_PRESENT_HIGHLIGHT_SPANS=()
 sf_tui_markdown_highlight '| Name | Status |'
 span_texts '| Name | Status |'
@@ -196,8 +191,7 @@ sf_tui_markdown_highlight "$markdown"
 span_texts "$markdown"
 assert_equal $'```js,const,\t```' "$REPLY"
 
-# A continuation fragment is not a line, so line-leading syntax stays plain and
-# the block mode it inherited still applies.
+# Continuations inherit block mode without line-leading syntax.
 SF_PRESENT_HIGHLIGHT_SPANS=()
 sf_tui_markdown_highlight '- not a list marker' 0 '' 1
 assert_equal 0 "${#SF_PRESENT_HIGHLIGHT_SPANS}"
@@ -217,30 +211,28 @@ SF_PRESENT_HIGHLIGHT_SPANS=()
 sf_tui_markdown_highlight 'const x = 3;' 0 $'```\tjs' 1
 span_texts 'const x = 3;'
 assert_equal 'const,3' "$REPLY"
-# A closing fence is a whole line, so a fragment that resembles one leaves the
-# block mode open where a real line start would close it.
+# Fence fragments preserve block mode.
 sf_tui_markdown_highlight '```' 0 $'```\tjs\t0' 1
 assert_equal $'```\tjs\t0' "$REPLY"
 sf_tui_markdown_highlight $'```\n' 0 $'```\tjs\t0' 0
 assert_equal '' "$REPLY"
 
-# An unclosed inline construct is reported so a caller can withhold the row; a
-# block mode is carried in the state instead and never reports open.
+# Unclosed inline constructs withhold their row.
 sf_tui_markdown_highlight 'a **bold start'
 assert_equal 1 "$SF_PRESENT_HIGHLIGHT_INLINE_OPEN"
 sf_tui_markdown_highlight 'a **bold start** done'
 assert_equal 0 "$SF_PRESENT_HIGHLIGHT_INLINE_OPEN"
 sf_tui_markdown_highlight 'a `code start'
 assert_equal 1 "$SF_PRESENT_HIGHLIGHT_INLINE_OPEN"
-# A newline closes the question, whatever the line left dangling.
+# Newlines close inline constructs.
 sf_tui_markdown_highlight $'a **bold start\n'
 assert_equal 0 "$SF_PRESENT_HIGHLIGHT_INLINE_OPEN"
-# Multiplication is not emphasis: a delimiter followed by a space cannot open.
+# Multiplication is not emphasis.
 SF_PRESENT_HIGHLIGHT_SPANS=()
 sf_tui_markdown_highlight 'value * other * last'
 assert_equal 0 "${#SF_PRESENT_HIGHLIGHT_SPANS}"
 assert_equal 0 "$SF_PRESENT_HIGHLIGHT_INLINE_OPEN"
-# Emphasis and strong tags require outer word boundaries.
+# Emphasis requires word boundaries.
 SF_PRESENT_HIGHLIGHT_SPANS=()
 sf_tui_markdown_highlight 'plain_old_text and plain**old**text'
 assert_equal 0 "${#SF_PRESENT_HIGHLIGHT_SPANS}"
@@ -259,8 +251,7 @@ sf_tui_markdown_highlight $'```js\nconst x = 3;'
 assert_equal 0 "$SF_PRESENT_HIGHLIGHT_INLINE_OPEN"
 assert_equal $'```\tjs\t0' "$REPLY"
 
-# A block comment is a mode, not a wait: it carries across the boundary that
-# interrupted it and keeps styling until something closes it.
+# Block comments carry styling state across chunks.
 SF_PRESENT_HIGHLIGHT_SPANS=()
 sf_tui_code_highlight '/* opened' js
 assert_equal 1 "$SF_PRESENT_HIGHLIGHT_BLOCK_OPEN"
@@ -282,7 +273,7 @@ sf_tui_code_highlight 'still inside""" return 1' python 0 1
 assert_equal 0 "$SF_PRESENT_HIGHLIGHT_BLOCK_OPEN"
 span_texts 'still inside""" return 1'
 assert_equal 'still inside""",return,1' "$REPLY"
-# An open block never reports as an open inline construct, so it never waits.
+# Open blocks do not wait.
 sf_tui_markdown_highlight $'```js\n/* opened\n'
 assert_equal 0 "$SF_PRESENT_HIGHLIGHT_INLINE_OPEN"
 assert_equal $'```\tjs\t1' "$REPLY"

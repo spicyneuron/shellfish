@@ -5,8 +5,7 @@ sf_test_source libexec/tui/render/formatters.zsh
 
 kinds() { REPLY="${(j:,:)SF_PRESENT_KIND}" }
 
-# Every parallel array must stay the same length, or an entry's fields drift
-# apart from its kind. Checked against each list-resizing operation.
+# Formatter arrays must stay aligned.
 aligned() {
   local name
   for name in SF_PRESENT_TEXT SF_PRESENT_DATA SF_PRESENT_ROLE SF_PRESENT_SECTION \
@@ -16,8 +15,7 @@ aligned() {
   done
 }
 
-# Only the tail may be live, so a transition that forgets to settle fails
-# rather than leaving two mutable entries behind.
+# Only the tail may be live.
 sf_tui_reset
 sf_tui_formatter_append message final || fail 'a final formatter was rejected'
 sf_tui_formatter_append reasoning live || fail 'a live formatter was rejected'
@@ -30,8 +28,7 @@ if sf_tui_formatter_settle; then
   fail 'settled without a live tail'
 fi
 
-# Content follows its own entry through every list operation, only the live tail
-# retracts, and dropping shifts the live index.
+# List changes preserve entry alignment and the live index.
 sf_tui_reset
 sf_tui_formatter_append message
 SF_PRESENT_TEXT[REPLY]=first
@@ -56,9 +53,7 @@ if sf_tui_formatter_retract; then
   fail 'retracted a settled formatter'
 fi
 
-# The first formatter entering a role owns its rule and a later one owns nothing.
-# Retracting releases the section number and restores the displaced role, even
-# after everything before it was dropped.
+# Retracting releases the live formatter's role and section.
 sf_tui_reset
 sf_tui_formatter_append message
 sf_tui_formatter_role $REPLY user
@@ -83,8 +78,7 @@ sf_tui_formatter_retract
 assert_equal user "$SF_PRESENT_LAST_ROLE"
 assert_equal 1 "$SF_PRESENT_SECTION_ID"
 
-# A role outside the numbered pair takes no number, and a reset clears the list
-# and the role state together so a rebuilt transcript numbers from the start.
+# Unnumbered roles reset with formatter state.
 sf_tui_reset
 sf_tui_formatter_append message live
 sf_tui_formatter_role $REPLY system

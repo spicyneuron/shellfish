@@ -3,7 +3,7 @@
 source "${0:A:h:h:h}/_helpers.zsh"
 sf_test_tmp default-environment
 
-# Short bundled probes preserve command results and share an absolute deadline.
+# Enforce shared probe deadlines.
 (
   source "$ROOT/share/default/lib/capped.zsh"
   zmodload zsh/datetime
@@ -28,6 +28,7 @@ sf_test_tmp default-environment
   [[ ! -e $tmp/capped-called ]]
 )
 
+# Report project environment.
 typeset environment_script="$ROOT/share/default/hooks/session_start/project_environment/run"
 typeset environment_bin="$tmp/environment-bin"
 typeset environment_output
@@ -52,8 +53,7 @@ environment_output=$(PATH="$environment_bin:$PATH" zsh -f "$environment_script" 
 [[ $environment_output == *'Available commands:'* ]]
 [[ $environment_output == *'Available agent skills.'* ]]
 
-# git_environment records identity only after a fast, successful startup probe.
-# Later prompt probes read the transcript and record each identity transition once.
+# Record Git identity transitions.
 typeset git_start="$ROOT/share/default/hooks/session_start/git_environment/run"
 typeset git_prompt="$ROOT/share/default/hooks/user_prompt_submit/git_environment/run"
 typeset git_bin="$tmp/git-environment-bin" git_state="$tmp/git-state"
@@ -134,8 +134,7 @@ GIT_MARKER="$tmp/git-called" PATH="$git_bin:$PATH" SHELLFISH_SESSION="$tmp/empty
   zsh -f "$git_prompt" user_prompt_submit 3>"$git_control" >/dev/null
 [[ ! -e $tmp/git-called ]]
 
-# Shell command reporting is best-effort and selects the first candidate with a
-# usable version within the combined project environment context.
+# Report usable command versions.
 typeset shell_commands_bin="$tmp/shell-commands-bin"
 typeset shell_commands_output shell_commands_rows
 mkdir "$shell_commands_bin"

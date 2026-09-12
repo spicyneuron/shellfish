@@ -15,9 +15,7 @@ view() {
   REPLY=$SF_PRESENT_VIEWPORT_TEXT
 }
 
-# Standalone activity is an unsafe tail and disappears when content arrives.
-# Ending the provider stream does not recreate it; follow-on work owns its own
-# activity presentation.
+# Standalone activity is an unsafe tail.
 sf_tui_reset
 sf_tui_terminal_reset
 sf_tui_event activity_start
@@ -32,8 +30,7 @@ assert_equal 0 "${#SF_PRESENT_KIND}"
 sf_tui_event activity_stop
 assert_equal 0 "${#SF_PRESENT_KIND}"
 
-# A nonvisual assistant block resumes standalone activity, and the next visible
-# block retracts it before opening its own live formatter.
+# Visible blocks replace activity; opaque blocks resume it.
 sf_tui_event activity_start
 sf_tui_event assistant_start
 sf_tui_event assistant_message_delta 0 before
@@ -46,8 +43,7 @@ assert_equal 'message,message' "${(j:,:)SF_PRESENT_KIND}"
 sf_tui_event activity_stop
 sf_tui_reset
 
-# Hook activity replaces standalone activity, updates in place, and leaves no
-# spacing behind when a displayed hook completes without output.
+# Hook activity replaces standalone activity in place.
 SF_PRESENT_STYLE=( hook_activity muted )
 sf_tui_event activity_start
 sf_tui_event hook_activity session_start project Inspecting
@@ -67,8 +63,7 @@ sf_tui_event activity_stop
 assert_equal 0 "${#SF_PRESENT_KIND}"
 SF_PRESENT_STYLE=()
 
-# A result removes only current activity and appends model output before user
-# output. Both complete formatters are immediately safe.
+# Hook results append model context before user context.
 sf_tui_event activity_start
 sf_tui_event hook_activity user_prompt_submit prompt Running
 sf_tui_event hook_result prompt 'user_prompt_submit · git status · status 0' \
@@ -79,8 +74,7 @@ assert_equal $'↪ prompt · user_prompt_submit · git status · status 0\n  **b
 assert_equal 7 "$SF_PRESENT_SAFE_ROWS"
 sf_tui_event activity_stop
 
-# Model context uses the context preview and counts the whole content. User
-# context is the script's own message to the user and is never clamped.
+# Only model context uses the preview limit.
 sf_tui_reset
 SF_PRESENT_PREVIEW_CONTEXT=1
 sf_tui_event hook_result hook test $'first\nsecond' $'third\nfourth'
@@ -89,7 +83,7 @@ assert_equal $'↪ hook · test\n  first\n  … ~3 tokens\n\nℹ hook · test\n 
 assert_equal 7 "$SF_PRESENT_SAFE_ROWS"
 SF_PRESENT_PREVIEW_CONTEXT=full
 
-# A zero-row preview collapses the whole-content estimate into its heading.
+# Zero previews collapse model context.
 sf_tui_reset
 SF_PRESENT_PREVIEW_CONTEXT=0
 sf_tui_event hook_result hook test $'first\nsecond' $'third\nfourth'
@@ -98,7 +92,7 @@ assert_equal $'↪ hook · test · ~3 tokens\n\nℹ hook · test\n  third\n  fou
 assert_equal 5 "$SF_PRESENT_SAFE_ROWS"
 SF_PRESENT_PREVIEW_CONTEXT=full
 
-# Model context is Markdown-styled; user context remains literal plain text.
+# User context remains plain text.
 sf_tui_reset
 SF_PRESENT_STYLE=( hook_model_context context hook_user_context muted
   'syntax.strong' bold )
@@ -110,8 +104,7 @@ integer bold_count=${#${(M)SF_PRESENT_VIEWPORT_HIGHLIGHTS:#bold}}
 assert_equal 1 "$bold_count"
 SF_PRESENT_STYLE=()
 
-# Errors close live output, style their outcome and detail, and force the next
-# user record to open a fresh numbered role section.
+# Errors close the turn before the next numbered section.
 sf_tui_reset
 SF_PRESENT_STYLE=( error errorstyle )
 sf_tui_event assistant_start
@@ -129,8 +122,7 @@ sf_tui_event user retry
 assert_equal user "$SF_PRESENT_ROLE[-1]"
 assert_equal 2 "$SF_PRESENT_SECTION[-1]"
 
-# A hook result taller than one commit rescans from the state its committed
-# prefix reached, so the rows that follow are still inside the fence.
+# Partial commits preserve Markdown fence state.
 sf_tui_reset
 sf_tui_terminal_reset
 SF_PRESENT_STYLE=( hook_model_context context 'syntax.string' string 'syntax.fence' fence )

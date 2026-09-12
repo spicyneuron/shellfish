@@ -8,7 +8,7 @@ typeset context_window="$ROOT/share/default/backends/anthropic/context_window"
 typeset req="$tmp/request.json"
 typeset res="$tmp/output.jsonl"
 
-# Adapter module lookup must ignore the caller's working tree.
+# Ignore caller-local adapter modules.
 mkdir -p "$tmp/lib/runtime"
 print -r -- 'def canonical_request(:' >"$tmp/lib/runtime/schema.jq"
 
@@ -56,14 +56,14 @@ assert_usage() {
   ' "$res" >/dev/null
 }
 
-# Buffered response.
+# Parse buffered responses.
 cat >"$BACKEND_TEST_RESPONSE" <<'EOF'
 {"content":[{"type":"text","text":"ok"}],"stop_reason":"end_turn","usage":{"input_tokens":10,"cache_creation_input_tokens":5,"cache_read_input_tokens":85,"output_tokens":7,"output_tokens_details":{"thinking_tokens":3}}}
 EOF
 (builtin cd -- "$tmp" && ANTHROPIC_API_KEY=test zsh -f "$run" <"$req" >"$res")
 assert_usage
 
-# Streaming usage arrives in separate start and delta events.
+# Combine streamed usage events.
 cat >"$BACKEND_TEST_RESPONSE" <<'EOF'
 data: {"type":"message_start","message":{"usage":{"input_tokens":10,"cache_creation_input_tokens":5,"cache_read_input_tokens":85,"output_tokens":0}}}
 data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}
@@ -75,7 +75,7 @@ EOF
 ANTHROPIC_API_KEY=test zsh -f "$run" <"$req" >"$res"
 assert_usage
 
-# Streaming thinking payloads and tool input retain content-block indexes.
+# Preserve streamed reasoning and calls.
 cat >"$BACKEND_TEST_RESPONSE" <<'EOF'
 data: {"type":"message_start","message":{"usage":{"input_tokens":10,"output_tokens":0}}}
 data: {"type":"content_block_start","index":0,"content_block":{"type":"thinking","thinking":"","signature":""}}
@@ -99,7 +99,7 @@ jq -e -s -L "$ROOT" '
   ($parts.calls == [{type:"tool_call",id:"call_1",name:"shell",input:{command:"pwd"}}])
 ' "$res" >/dev/null
 
-# Model metadata uses the provider's authoritative maximum input count.
+# Read Anthropic model limits.
 cat >"$BACKEND_TEST_RESPONSE" <<'EOF'
 {"data":[{"id":"other","max_input_tokens":1000},{"id":"claude-test","max_input_tokens":200000,"max_tokens":64000}]}
 EOF
@@ -114,7 +114,7 @@ if ANTHROPIC_API_KEY=test zsh -f "$context_window" <"$req" >"$res"; then
   fail 'unknown model context was reported as available'
 fi
 
-# A flat call batch regroups into the shape this provider expects.
+# Regroup flat call batches.
 typeset batch_request="$tmp/batch-request.json"
 cat >"$batch_request" <<'JSON'
 {
@@ -148,7 +148,7 @@ jq -e '
   (.messages[2].content | map(.is_error)) == [false,true]
 ' "$BACKEND_TEST_BODY" >/dev/null || fail 'anthropic did not regroup a call batch'
 
-# A response whose only output was calls keeps its calls instead of a placeholder.
+# Preserve call-only messages.
 jq -c '.messages[1].content = []' "$batch_request" >"$tmp/calls-only.json"
 ANTHROPIC_API_KEY=test zsh -f "$run" <"$tmp/calls-only.json" >"$res"
 jq -e '(.messages[1].content | map(.type)) == ["tool_use","tool_use"]'   "$BACKEND_TEST_BODY" >/dev/null || fail 'a call-only message was treated as empty'

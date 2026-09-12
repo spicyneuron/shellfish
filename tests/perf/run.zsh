@@ -47,8 +47,7 @@ print -rn -- 'tool result'
 EOF
 chmod +x "$tmp/bin/jq" "$tmp/config/backends/perf/run" "$tmp/config/tools/perf/run"
 
-# Exercise each hook reached by the turn with one no-op script. The unsandboxed
-# tool does not reach permission_request.
+# The unsandboxed tool skips permission_request.
 typeset -a hook_events=(session_start user_prompt_submit pre_tool_use post_tool_use stop)
 typeset event
 for event in $hook_events; do
@@ -101,7 +100,6 @@ for (( iteration = 1; iteration <= iterations; iteration++ )); do
   }
 done
 
-# A second turn separates opening an existing session from creating one.
 for (( iteration = 1; iteration <= iterations; iteration++ )); do
   typeset -gx SHELLFISH_PERF_RUN="existing-$iteration"
   start=$EPOCHREALTIME

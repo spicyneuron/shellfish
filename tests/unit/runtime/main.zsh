@@ -33,6 +33,7 @@ cat >"$config" <<'JSON'
 }
 JSON
 
+# JSONC parsing preserves comment-like strings.
 cat >"$tmp/config/string-values.jsonc" <<'JSON'
 {
   // line comment
@@ -52,6 +53,7 @@ jq -e '. == {
   path:"C:\\Users\\shellfish\\shellfish.jsonc"
 }' <<<"$jsonc" >/dev/null
 
+# CLI request options override the profile.
 sf_runtime_resolve_from_config "$config" '' 'cli-model' '{"temperature":0.7,"seed":4}'
 runtime=$REPLY
 jq -e --arg command "$ROOT/share/default/backends/openai/run" '
@@ -72,6 +74,7 @@ jq -e --arg command "$ROOT/share/default/backends/openai/run" '
   }
 ' <<<"$runtime" >/dev/null
 
+# Backend overrides select their adapter.
 sf_runtime_resolve_from_config "$config" '' 'cli-model' '{}' custom-responses
 jq -e '
   .backend.name == "custom-responses" and
@@ -84,6 +87,7 @@ jq -e '
   .tui.preview_lines_context == 2
 ' <<<"$SF_PRESENTATION" >/dev/null
 
+# Empty configs use bundled defaults.
 print -r -- '{}' >"$tmp/config/empty.jsonc"
 sf_runtime_resolve_from_config "$tmp/config/empty.jsonc" '' 'default-model' '{}' \
   "$ROOT/tests/fixtures/backend"
@@ -126,13 +130,14 @@ jq -e --arg root "$ROOT/share/default/hooks/session_start" \
     .settings == ($tools + "/fetch_url/fence.jsonc"))
 ' <<<"$REPLY" >/dev/null
 
+# Bundled backend names resolve adapters.
 sf_runtime_resolve_from_config "$tmp/config/empty.jsonc" '' 'gpt-codex-test' '{}' codex
 jq -e '
   .backend.name == "codex" and
   (.backend.context_window_command | endswith("/share/default/backends/codex/context_window"))
 ' <<<"$REPLY" >/dev/null
 
-# Runtime resolution gives new and existing sessions the same boundary.
+# New and stored runtimes share a boundary.
 sf_runtime_resolve '' "$config" '' 'boundary-model' '{}' '' 1
 jq -e '.profile.request.model == "boundary-model"' <<<"$REPLY" >/dev/null
 jq -e '.theme_mode == "light" and .themes.light.text == "#123456"' \
@@ -145,7 +150,7 @@ jq -cn --argjson runtime "$runtime" '
 sf_runtime_resolve "$session" "$config" '' '' '{}' '' 0
 assert_equal "$runtime" "$REPLY" 'runtime resolution reads the frozen runtime'
 
-# Relative session paths retain their meaning while jq uses installed modules.
+# Relative sessions keep caller paths while jq uses installed modules.
 mkdir -p "$tmp/shadow/lib/runtime" "$tmp/shadow/libexec/config"
 print -r -- 'def canonical_session_header(:' >"$tmp/shadow/lib/runtime/schema.jq"
 print -r -- 'def runtime_prepare(:' >"$tmp/shadow/libexec/config/runtime.jq"
@@ -160,6 +165,7 @@ print -r -- '{"type":"system","content":"shadow system"}' >>"$tmp/shadow/session
   assert_equal "$tmp/shadow" "$PWD"
 )
 
+# Stored sessions reject runtime overrides.
 jq -e '.theme_mode == "light" and .themes.light.text == "#123456"' \
   <<<"$SF_PRESENTATION" >/dev/null
 integer resolve_status=0
@@ -167,7 +173,7 @@ sf_runtime_resolve "$session" "$config" '' changed '{}' '' 1 || resolve_status=$
 (( resolve_status == 2 ))
 [[ $SF_RUNTIME_ERROR == 'runtime overrides cannot be used with an existing session' ]]
 
-# Stored runtimes with hook scripts do not require HOME or XDG_STATE_HOME.
+# Stored runtimes do not depend on home directories.
 integer had_home=${+HOME} had_state_home=${+XDG_STATE_HOME}
 typeset saved_home=${HOME-} saved_state_home=${XDG_STATE_HOME-}
 typeset hooked_session="$tmp/hooked.jsonl"
@@ -182,8 +188,7 @@ if (( had_home )); then export HOME=$saved_home; else unset HOME; fi
 if (( had_state_home )); then export XDG_STATE_HOME=$saved_state_home
 else unset XDG_STATE_HOME; fi
 
-# Reopening reads only current presentation keys. Unrelated invalid profile
-# data does not prevent a stored runtime from being presented.
+# Reopening validates only presentation config.
 cat >"$tmp/config/presentation.jsonc" <<'JSON'
 {
   "profiles": "ignored while reopening",
@@ -211,13 +216,14 @@ if sf_runtime_resolve_from_config "$tmp/config/missing-theme.jsonc" '' 'model' '
 fi
 [[ $SF_RUNTIME_ERROR == 'unknown theme: missing' ]]
 
+# CLI backend paths override configuration.
 sf_runtime_resolve_from_config "$config" work '' '{}' "$ROOT/tests/fixtures/backend"
 jq -e '
   .backend.endpoint == "https://example.invalid/test" and
   (.backend.command | endswith("/tests/fixtures/backend/run"))
 ' <<<"$REPLY" >/dev/null
 
-# Relative external backend paths remain relative to the working directory.
+# Relative backend paths use the caller directory.
 mkdir -p "$tmp/fixtures"
 ln -s "$ROOT/tests/fixtures/backend" "$tmp/fixtures/backend"
 (
@@ -227,6 +233,7 @@ ln -s "$ROOT/tests/fixtures/backend" "$tmp/fixtures/backend"
     '.backend.command == $command' <<<"$REPLY" >/dev/null
 )
 
+# Default profiles can extend bundled defaults.
 cat >"$tmp/config/default-extend.jsonc" <<JSON
 {
   "profiles": {
@@ -245,6 +252,7 @@ jq -e '
   (.backend.command | endswith("/tests/fixtures/backend/run"))
 ' <<<"$REPLY" >/dev/null
 
+# Missing default configs use bundled defaults.
 mkdir "$tmp/empty-config"
 (
   export XDG_CONFIG_HOME="$tmp/empty-config"
@@ -255,10 +263,12 @@ mkdir "$tmp/empty-config"
   ' <<<"$REPLY" >/dev/null
 )
 
+# Invalid backend paths fail.
 if sf_runtime_resolve_from_config "$config" work '' '{}' "$tmp/not-a-backend"; then
   fail 'invalid CLI backend path was accepted'
 fi
 
+# Config errors identify their source.
 if sf_runtime_resolve_from_config "$tmp/missing.jsonc" '' '' '{}'; then
   fail 'explicit missing config was accepted'
 fi
@@ -289,6 +299,7 @@ if sf_runtime_resolve_from_config "$tmp/config/invalid-field.jsonc" '' '' '{}'; 
 fi
 [[ $SF_RUNTIME_ERROR == *'invalid config at $["profiles"]["work"]["legacy_backend"]: unknown field'* ]]
 
+# Home-relative sandbox paths expand safely.
 cat >"$tmp/config/home-paths.jsonc" <<'JSON'
 {
   "profiles":{"default":{"extend":"default","harness":"home"}},
@@ -313,6 +324,7 @@ jq -e --arg read "${tmp:A}/home/reference" --arg write "${tmp:A}/home/output" '
   [[ $SF_RUNTIME_ERROR == *'cannot expand ~ without HOME'* ]]
 )
 
+# Presentation config is validated independently.
 cat >"$tmp/config/invalid-presentation.jsonc" <<'JSON'
 {"tui":{"preview_lines_context":-1}}
 JSON
@@ -321,8 +333,7 @@ if sf_runtime_restore_presentation "$tmp/config/invalid-presentation.jsonc"; the
 fi
 [[ $SF_RUNTIME_ERROR == *'invalid config at $["tui"]["preview_lines_context"]: must be full or a non-negative integer'* ]]
 
-# Hook script references preserve hook and configured order, prefer the config
-# directory, and freeze as absolute executables inside the harness.
+# Hook references preserve order and prefer configured scripts.
 mkdir -p "$tmp/config/hooks/user_prompt_submit/help" \
   "$tmp/config/hooks/user_prompt_submit/shell" "$tmp/config/hooks/stop/gate"
 print -r -- '#!/bin/sh' >"$tmp/config/hooks/user_prompt_submit/help/run"
@@ -397,8 +408,7 @@ if sf_runtime_resolve_from_config "$tmp/config/unknown-hook.jsonc" '' '' '{}' \
 fi
 [[ $SF_RUNTIME_ERROR == *'invalid config at $["harnesses"]["bad"]["before_prompt"]: unknown field'* ]]
 
-# Permission policy runs inside live tool presentation, so it cannot have a
-# running label. Empty and omitted labels remain valid, as do ordinary labels.
+# Permission hooks cannot display a running label.
 mkdir -p "$tmp/config/hooks/permission_request/empty" \
   "$tmp/config/hooks/permission_request/omitted" "$tmp/config/hooks/stop/labeled"
 for hook in permission_request/empty permission_request/omitted stop/labeled; do
@@ -441,8 +451,7 @@ for display in null false; do
   fi
 done
 
-# A default config reached through a symlink resolves components beside the real
-# config file, consistently with an explicit config path.
+# Components resolve beside a symlinked config's target.
 mkdir -p "$tmp/symlink-config-home/shellfish" "$tmp/config-target/system"
 print -r -- 'linked prompt' >"$tmp/config-target/system/linked.md"
 cat >"$tmp/config-target/shellfish.jsonc" <<'JSON'
@@ -461,7 +470,7 @@ ln -s "$tmp/config-target/shellfish.jsonc" \
   ' <<<"$REPLY" >/dev/null
 )
 
-# System references resolve to ordered absolute paths without reading them.
+# System references resolve without reading prompt files.
 mkdir -p "$tmp/config/system"
 print -r -- 'first' >"$tmp/config/system/first.md"
 print -r -- 'second' >"$tmp/config/system/second.md"
@@ -483,13 +492,14 @@ jq -e --arg fallback "$ROOT/share/default/system/second.md" \
   '.profile.system[1] == $fallback' <<<"$REPLY" >/dev/null ||
   fail 'missing prompt path was not resolved'
 
-# The template's readonly profile resolves its bundled nested prompt.
+# Template profiles resolve bundled prompts.
 sf_runtime_read_jsonc "$ROOT/share/template/shellfish.jsonc" >"$tmp/config/readonly.jsonc"
 sf_runtime_resolve_from_config "$tmp/config/readonly.jsonc" 'readonly' 'm' '{}' \
   "$ROOT/tests/fixtures/backend"
 jq -e --arg path "$ROOT/share/default/system/readonly.md" '.profile.system == [$path]' \
   <<<"$REPLY" >/dev/null || fail 'bundled prompt path was not resolved'
 
+# Missing hook references fail.
 cat >"$tmp/config/missing-hook.jsonc" <<'JSON'
 {
   "profiles":{"default":{"harness":"bad","request":{"model":"m"}}},
@@ -502,9 +512,7 @@ if sf_runtime_resolve_from_config "$tmp/config/missing-hook.jsonc" '' '' '{}' \
 fi
 [[ $SF_RUNTIME_ERROR == 'invalid stop hook: missing' ]]
 
-# A configured script wins over a bundled script with the same name. Removing it
-# exercises bundled fallback. Use an isolated root so this adds no production
-# script.
+# Configured scripts override bundled scripts.
 mkdir -p "$tmp/root/share/default/hooks/stop/bundled" "$tmp/hooks/stop/bundled"
 ln -s "$ROOT/lib" "$tmp/root/lib"
 ln -s "$ROOT/libexec" "$tmp/root/libexec"
@@ -531,7 +539,7 @@ jq -e --arg path "${tmp:A}/root/share/default/hooks/stop/bundled/run" \
 SF_ROOT=$ROOT
 SF_SHARE=$ROOT/share
 
-# Tool references resolve to executable and settings paths with manifests in configured order.
+# Tool references preserve configured order.
 mkdir -p "$tmp/config/tools"
 for tool_name in alpha beta gamma delta epsilon; do
   mkdir "$tmp/config/tools/$tool_name"
@@ -564,7 +572,7 @@ fi
 [[ $SF_RUNTIME_ERROR == "multiple component manifests: ${tmp:A}/config/tools/beta" ]]
 rm "$tmp/config/tools/beta/manifest.json"
 
-# A sandboxed tool resolves only once its package carries fence settings.
+# Sandboxed tools require fence settings.
 jq -n '{description:"sandboxed",input_schema:{type:"object"},sandbox:true}' \
   >"$tmp/config/tools/alpha/manifest.json"
 if sf_runtime_resolve_from_config "$tmp/config/tooled.jsonc" '' '' '{}' "$ROOT/tests/fixtures/backend"; then
@@ -587,7 +595,7 @@ jq -e --arg settings "${tmp:A}/config/tools/alpha/fence.jsonc" '
   [[ $SF_RUNTIME_ERROR == *'sandboxing requires fence'* ]]
 )
 
-# An unsandboxed harness resolves sandboxed tool settings without requiring fence.
+# Unsandboxed harnesses do not require fence.
 jq '.harnesses.tooled.sandbox=false' "$tmp/config/tooled.jsonc" \
   >"$tmp/config/unsandboxed-tools.jsonc"
 (
@@ -597,7 +605,7 @@ jq '.harnesses.tooled.sandbox=false' "$tmp/config/tooled.jsonc" \
   jq -e '.harness.sandbox == false and .harness.fence == ""' <<<"$REPLY" >/dev/null
 )
 
-# Environment values remain external and exported values take precedence over .env.
+# Exported environment values override the env file.
 export OPENAI_API_KEY='from-environment'
 export ANTHROPIC_API_KEY='other-component'
 sf_runtime_resolve_from_config "$config" work '' '{}'
@@ -609,8 +617,7 @@ sf_environment_prepare "$runtime" OPENAI_API_KEY
 [[ $runtime != *from-environment* ]]
 unset OPENAI_API_KEY ANTHROPIC_API_KEY
 
-# The resolved .env path is asserted above. Use a non-secret fixture name here
-# because the bundled tool sandbox intentionally denies all .env access.
+# Environment values load from env files.
 typeset environment_file="$tmp/config/environment.fixture"
 cat >"$environment_file" <<'ENV'
 export OPENAI_API_KEY = "from-file"

@@ -9,7 +9,7 @@ typeset codex_context_window="$ROOT/share/default/backends/codex/context_window"
 typeset req="$tmp/request.json"
 typeset res="$tmp/output.jsonl"
 
-# Adapter module lookup must ignore the caller's working tree.
+# Ignore caller-local adapter modules.
 mkdir -p "$tmp/lib/runtime"
 print -r -- 'def canonical_request(:' >"$tmp/lib/runtime/schema.jq"
 
@@ -55,14 +55,14 @@ assert_usage() {
   ' "$res" >/dev/null
 }
 
-# Buffered response.
+# Parse buffered responses.
 cat >"$BACKEND_TEST_RESPONSE" <<'EOF'
 {"status":"completed","output":[{"type":"message","content":[{"type":"output_text","text":"ok"}]}],"usage":{"input_tokens":100,"input_tokens_details":{"cached_tokens":85},"output_tokens":7,"output_tokens_details":{"reasoning_tokens":3}}}
 EOF
 (builtin cd -- "$tmp" && OPENAI_API_KEY=test zsh -f "$run" <"$req" >"$res")
 assert_usage
 
-# An incomplete response discards partial function-call arguments.
+# Discard incomplete call arguments.
 cat >"$BACKEND_TEST_RESPONSE" <<'EOF'
 {"status":"incomplete","output":[{"type":"function_call","call_id":"call_cut","name":"shell","arguments":"{\"command\":"}],"usage":{"input_tokens":10,"output_tokens":5}}
 EOF
@@ -73,7 +73,7 @@ jq -e -s -L "$ROOT" '
   assemble_backend_response(canonical_backend_response_events; canonical_assistant_message) == {type:"assistant",stop:"length",content:[],usage:{input_tokens:10,output_tokens:5}}
 ' "$res" >/dev/null
 
-# Codex model metadata comes from the installed CLI's offline bundled catalog.
+# Read Codex model limits.
 cat >"$tmp/codex" <<'EOF'
 #!/bin/sh
 printf '%s\n' "$*" >"$CODEX_TEST_ARGS"
@@ -104,7 +104,7 @@ if zsh -f "$codex_context_window" <"$tmp/codex-request.json" >"$res"; then
   fail 'unknown Codex model context was reported as available'
 fi
 
-# Streaming response.
+# Parse streamed responses.
 cat >"$BACKEND_TEST_RESPONSE" <<'EOF'
 data: {"type":"response.output_text.delta","delta":"ok"}
 data: {"type":"response.completed","response":{"status":"completed","output":[],"usage":{"input_tokens":100,"input_tokens_details":{"cached_tokens":85},"output_tokens":7,"output_tokens_details":{"reasoning_tokens":3}}}}
@@ -113,14 +113,14 @@ EOF
 OPENAI_API_KEY=test zsh -f "$run" <"$req" >"$res"
 assert_usage
 
-# Codex keeps relative credential paths in the caller's directory.
+# Resolve relative Codex credentials.
 cat >"$tmp/auth.json" <<'EOF'
 {"auth_mode":"chatgpt","tokens":{"access_token":"test-token","account_id":"test-account"}}
 EOF
 (builtin cd -- "$tmp" && CODEX_HOME=. zsh -f "$codex_run" <"$tmp/codex-request.json" >"$res")
 assert_usage
 
-# Provider failures retain streamed text but never complete the response.
+# Preserve partial output on failure.
 typeset event expected
 for event expected in \
   '{"type":"response.failed","response":{"error":{"code":"server_error","message":"Please retry"}}}' \
@@ -140,7 +140,7 @@ for event expected in \
   jq -e -s '. == [{type:"_assistant_message_delta",index:0,text:"partial"}]' "$res" >/dev/null
 done
 
-# Streaming reasoning metadata and tool arguments retain provider output indexes.
+# Preserve streamed reasoning and calls.
 cat >"$BACKEND_TEST_RESPONSE" <<'EOF'
 data: {"type":"response.reasoning_summary_text.delta","output_index":0,"item_id":"rs_1","summary_index":0,"delta":"why"}
 data: {"type":"response.output_item.done","output_index":0,"item":{"type":"reasoning","id":"rs_1","summary":[{"type":"summary_text","text":"why"}],"encrypted_content":"secret"}}
@@ -161,7 +161,7 @@ jq -e -s -L "$ROOT" '
   ($parts.calls == [{type:"tool_call",id:"call_1",name:"shell",input:{command:"pwd"}}])
 ' "$res" >/dev/null
 
-# A flat call batch maps one item per record, which this API takes directly.
+# Map flat call batches.
 typeset batch_request="$tmp/batch-request.json"
 cat >"$batch_request" <<'JSON'
 {

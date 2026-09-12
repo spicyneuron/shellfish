@@ -1,8 +1,5 @@
 #!/usr/bin/env python3
-"""Chat UI scenarios in a real pty: startup records, tools, editing, shutdown.
-
-`user_prompt_submit` script scenarios live in hooks.py; the Session harness in _session.py.
-"""
+"""Chat UI scenarios in a real pty."""
 import fcntl
 import json
 import os
@@ -104,8 +101,6 @@ def test_zle_multiline_editing():
         while "accepted" not in session.visible(mark) and time.monotonic() < end:
             session.pump()
         assert "accepted" in session.visible(mark)
-        # A draft typed after the turn proves the editor is still live. This is
-        # keystroke echo rather than rendered output, so it needs that view.
         session.send(b"draftX")
         session.wait_after(mark, "draftX", view=session.typed)
     finally:
@@ -239,8 +234,7 @@ def test_activity_input_does_not_delay_interrupt():
         session.send(b"delay response\r")
         session.wait_session_records(2, path=session.explicit_session)
 
-        # Keep ordinary input adjacent to the interrupt. The heartbeat prefix
-        # must forward both rather than consume either sequence.
+        # The heartbeat must forward adjacent input and interrupt bytes.
         session.send(b"draft\x03")
         session.wait_after(mark, "Cancelled.", timeout=1.5)
         edit = len(session.output)
@@ -388,7 +382,6 @@ def test_repeated_permission_ctrl_c_exits_after_recovery():
 
 
 def test_tool_result_preview_reports_total_tokens():
-    """Configured previews hide later rows and report whole-node tokens."""
     fixture = Path(__file__).resolve().parents[1] / "fixtures/session/tool-paired.jsonl"
     header = json.loads(fixture.read_text().splitlines()[0])
     rows = [f"preview row {index:02d}" for index in range(1, 7)]
@@ -450,7 +443,7 @@ def test_actionless_editor_return_is_not_a_clean_exit():
         session.send(b"delay response\r")
         session.wait_session_records(2)
         mark = len(session.output)
-        # Emacs Ctrl-O accepts the editor buffer without setting a chat action.
+        # Ctrl-O returns without setting a chat action.
         session.send(b"\x0f")
         session.wait_after(mark, "Chat editor exited unexpectedly", timeout=3)
         visible = session.visible(mark)

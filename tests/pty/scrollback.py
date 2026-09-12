@@ -1,12 +1,5 @@
 #!/usr/bin/env python3
-"""What the chat UI commits to terminal scrollback, and in what state.
-
-Everything here turns on telling committed scrollback from the live frame, which
-is why these render with a real emulator: stripping CSI with a regex cannot make
-that distinction, and it is the whole question. Sets the window size too, without
-which the shell reads 0x0 from stty and silently disables both wrapping and
-flushing, so nothing under test runs.
-"""
+"""Chat UI scrollback scenarios in a terminal emulator."""
 import json
 import os
 import re
@@ -17,16 +10,14 @@ from pathlib import Path
 try:
     import pyte
 except ImportError:
-    # The only tests that need a terminal emulator, and the suite otherwise
-    # depends on nothing. Skip rather than fail so a bare checkout stays green.
+    # pyte is optional outside this suite.
     print("SKIP scrollback: pyte is not installed (pip install pyte)")
     sys.exit(0)
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _session import ROWS, COLUMNS, Session, run  # noqa: E402
 
-# Enough words that the agent block alone overflows the window. That is the last
-# overflow site: the user block above it is committed before the turn starts.
+# Enough words for the agent block to overflow the window.
 WORDS = [f"w{index:03d}" for index in range(1, 201)]
 SESSION_FIXTURE = Path(__file__).resolve().parents[1] / "fixtures/session/complete.jsonl"
 QUEUE_HOOK = r"""#!/usr/bin/env zsh
@@ -39,7 +30,7 @@ IFS= read -r <"${SHELLFISH_SESSION:h}/queue-release"
 
 
 class Recorder(pyte.Screen):
-    """Screen that keeps the lines it scrolls away, which is scrollback."""
+    """Screen that retains scrolled rows."""
 
     def __init__(self, *args, **kwargs):
         self.scrolled = []
@@ -50,8 +41,7 @@ class Recorder(pyte.Screen):
         top, bottom = self.margins or (0, self.lines - 1)
         if self.cursor.y == bottom:
             self.scrolled.append(self.display[top])
-            # Styling is only provable from the cells; display[] is text alone,
-            # and a committed row is the only place styling can be lost.
+            # Cells retain styling that display[] omits.
             row = self.buffer[top]
             self.scrolled_cells.append([row[x] for x in range(self.columns)])
         super().index()
@@ -63,8 +53,6 @@ class Terminal:
         self.screen = Recorder(COLUMNS, ROWS)
         self.stream = pyte.ByteStream(self.screen)
         self.consumed = 0
-        # The clamp governs the output region, not the draft: a typed message
-        # taller than the window still overflows, and one test below types one.
         self.watch_overflow = False
         self.agent_committed_mid_turn = False
         self.deleted_during_turn = False
@@ -81,25 +69,16 @@ class Terminal:
                 and not self.turn_finished()
             ):
                 self.deleted_during_turn = True
-        # A widget that errors writes straight to the terminal, which both shows
-        # in the transcript and desynchronises ZLE's idea of the frame, so it
-        # duplicates rows as well. Any such message carries a ":zle:" prefix.
-        # Checked against the raw stream, because the frame it corrupts is also
-        # what scrolls the evidence away.
+        # Widget errors can corrupt the frame before it scrolls away.
         assert b":zle:" not in self.session.output, self.dump()
-        # ZLE's marker for a frame taller than the window, whose hidden rows are
-        # lost for real. Checked on every pump, since the next frame erases it.
+        # Catch ZLE's transient marker for lost hidden rows.
         if self.watch_overflow:
             assert ">...." not in self.frame(), self.dump()
-        # Progressive commit is only true while the turn runs, so it is latched
-        # on every pump rather than waited for. Waiting cannot express it: the
-        # condition stops holding the moment the turn ends, so a poll landing
-        # after that would block until the timeout on something already decided.
+        # Latch the transient mid-turn commit state.
         if not self.turn_finished() and "agent" in self.scrollback().lower():
             self.agent_committed_mid_turn = True
 
     def turn_finished(self):
-        """True once usage is visible and EOF has cleared activity."""
         frame = self.frame()
         return (
             re.search(r" · [\d.]+[km]? ↑", frame) is not None
@@ -107,20 +86,13 @@ class Terminal:
         )
 
     def frame(self):
-        """Live frame, with wrapped rows rejoined.
-
-        Rows are padded to the full width, so joining without separators puts
-        back anything the terminal split at a wrap without running short lines
-        together.
-        """
+        """Return the live frame with padded wrapped rows rejoined."""
         return "".join(self.screen.display)
 
     def scrollback(self):
-        """Rows that have scrolled off, which is what was committed."""
         return "".join(self.screen.scrolled)
 
     def committed_style(self, role):
-        """First cell of the committed heading row for `role`, or None."""
         for text, cells in zip(self.screen.scrolled, self.screen.scrolled_cells):
             start = text.lower().find(f"─ {role} ─")
             if start >= 0:
@@ -137,11 +109,6 @@ class Terminal:
         )
 
     def wait_for(self, what, predicate, timeout=10):
-        """Poll until `predicate` holds, naming `what` if it never does.
-
-        The timeout stays under tests/run's own (30s by default), which would
-        otherwise be free to kill the test part-way through writing its dump.
-        """
         end = time.monotonic() + timeout
         while time.monotonic() < end:
             self.pump()
@@ -151,29 +118,20 @@ class Terminal:
 
 
 def test_tall_turn_loses_neither_text_nor_draft():
-    # Settling is line-granular, so a one-word-per-line echo is what lets the
-    # turn commit while it streams, and the delay has to be fast enough that
-    # commits chain across editor entries instead of arriving in one chunk.
+    # Stream one word per line across multiple commit epochs.
     session = Session(env={"SF_TEST_BACKEND_LINE_WORDS": "1",
                            "SF_TEST_BACKEND_DELAY": "0.005"})
     terminal = Terminal(session)
     try:
-        # Synchronise on content, and never bundle Enter with the text: the draft
-        # has to echo first, or the key lands in whatever frame is being flushed.
+        # Let the draft echo before Enter changes frames.
         session.send(" ".join(WORDS).encode())
         terminal.wait_for("the draft to echo",
                           lambda: WORDS[-1] in terminal.everything())
         session.send(b"\r")
-        # Writing Enter is not ZLE reading it: until it does, the frame is still
-        # the unclamped draft and legitimately overflows. Start watching at the
-        # first frame that cannot be the draft any more, which is the one where
-        # the prompt has become committed transcript.
+        # Watch overflow only after the unclamped draft commits.
         terminal.wait_for("the prompt to commit",
                           lambda: "─ user" in terminal.scrollback().lower())
-        # Only the path is wanted, so wait for the file rather than a record
-        # count. The third record is the final assistant message, so waiting for
-        # it would mean waiting for the turn to end, which the next wait and this
-        # whole test require not to have happened.
+        # Waiting for the final record would end the mid-turn observation.
         session_path, _ = session.wait_session_records(1)
         terminal.wait_for(
             "the turn to start",
@@ -181,21 +139,13 @@ def test_tall_turn_loses_neither_text_nor_draft():
             and not terminal.turn_finished(),
         )
         terminal.watch_overflow = True
-        # Progressive commit: the agent's own early words reach scrollback while
-        # the turn is still working. Waiting for the agent heading to scroll off
-        # is what distinguishes them from the echo of the user block above.
+        # The agent heading distinguishes its output from the user echo.
         terminal.wait_for("the agent block to commit",
                           lambda: "agent" in terminal.scrollback().lower())
-        # The wait above is also satisfied by the flush ending the turn, so the
-        # latch is what carries the real claim: the heading reached scrollback
-        # while the turn still had work left. This test's premise is a stream
-        # slower than the epochs committing it, so a starved machine fails here.
         assert terminal.agent_committed_mid_turn, (
             "agent block reached scrollback only once the turn was over, so "
             "nothing here shows commits landing progressively" + terminal.dump())
-        # One character must not strand the heartbeat it interrupted. Require
-        # visible stream progress before sending another key, then keep typing
-        # through the remaining epochs so the draft spans their commits.
+        # Require stream progress between keys across commit epochs.
         def echoed_words():
             text = terminal.everything()
             return sum(text.count(word) >= 2 for word in WORDS)
@@ -224,16 +174,11 @@ def test_tall_turn_loses_neither_text_nor_draft():
         assert "done" not in terminal.scrollback(), (
             "draft reached scrollback" + terminal.dump()
         )
-        # One turn has committed and the next has not started, so each heading
-        # stands in scrollback exactly once. A second copy would mean an epoch
-        # recommitted what an earlier one had already flushed. Checked here
-        # rather than at the end, where the count depends on how much of the
-        # second turn happens to have scrolled off.
+        # Count headings before the second turn changes scrollback.
         for heading in ("user", "agent"):
             count = terminal.scrollback().lower().count(f"─ {heading} ─")
             assert count == 1, f"{heading} committed {count} times" + terminal.dump()
-        # Text the clamp held back is not lost, only undisplayed: submitting
-        # flushes what is left into scrollback a screen at a time.
+        # Submitting flushes output withheld by the clamp.
         session.send(b"\r")
         session.wait_session_records(5, path=session_path)
         terminal.wait_for(
@@ -244,10 +189,7 @@ def test_tall_turn_loses_neither_text_nor_draft():
             and terminal.everything().lower().count("─ agent ─") == 2,
         )
 
-        # Every word was committed twice, once in the user block and once in the
-        # agent's echo of it, so a word seen only once means one of the two was
-        # lost. Repaint duplication can only add copies, so undercounting is the
-        # only direction that proves anything.
+        # Each word appears in both the user block and agent echo.
         text = terminal.everything()
         lost = [word for word in WORDS if text.count(word) < 2]
         assert not lost, (
@@ -259,7 +201,6 @@ def test_tall_turn_loses_neither_text_nor_draft():
 
 
 def test_committed_headings_keep_style():
-    """A committed heading retains the semantic style painted by ZLE."""
     session = Session(env={"SF_TEST_BACKEND_LINE_WORDS": "1",
                            "SF_TEST_BACKEND_DELAY": "0.001"})
     terminal = Terminal(session)
@@ -284,7 +225,6 @@ def test_committed_headings_keep_style():
 
 
 def test_tall_resume_drains_bounded_backlog():
-    """A resumed closed node drains completely without duplication."""
     header = json.loads(SESSION_FIXTURE.read_text().splitlines()[0])
     lines = [f"resume-{index:03d}" for index in range(1, 201)]
     records = [
@@ -318,7 +258,6 @@ def test_tall_resume_drains_bounded_backlog():
 
 
 def test_queued_submits_keep_committed_history():
-    """Queued submits execute in order without disturbing committed output."""
     session = Session(hooks={"hold_queue": QUEUE_HOOK})
     terminal = Terminal(session)
     try:

@@ -15,8 +15,7 @@ print -r -- '{"type":"assistant","stop":"end","content":[{"type":"text","text":"
 print -r -- '{"type":"state","name":"stored/value","value":{"revision":1}}' \
   >>"$request_session"
 
-# Read-only request commands compose one provider call without claiming or
-# mutating the durable turn.
+# Compose requests without mutating sessions.
 print -r -- '{}' | zsh -f "$entry" build-request --session "$tmp/missing.jsonl" \
   >/dev/null 2>&1 && fail 'build-request accepted a missing session'
 print -r -- '{}' | zsh -f "$entry" send-request --session "$tmp/missing.jsonl" \
@@ -46,7 +45,7 @@ jq -e '
 ' <<<"$request_response" >/dev/null || fail 'send-request produced the wrong response'
 assert_equal "$request_digest" "$(shasum <"$request_session")"
 
-# Request projection and response decoding ignore working-directory modules.
+# jq modules resolve from the installation root.
 mkdir -p "$tmp/lib/runtime"
 print -r -- 'def canonical_request(:' >"$tmp/lib/runtime/schema.jq"
 print -r -- 'def decode_backend_response(:' >"$tmp/lib/request.jq"
@@ -88,7 +87,7 @@ print -r -- "$failing_request" |
 [[ $(<"$tmp/send-request-error") == *'test backend failure'* ]] ||
   fail 'send-request hid the backend error'
 
-# The response decoder rejects malformed JSON and events after response end.
+# Reject invalid backend event streams.
 typeset invalid_backend="$tmp/invalid-backend" invalid_session="$tmp/invalid-session.jsonl"
 cat >"$invalid_backend" <<'ZSH'
 #!/usr/bin/env zsh

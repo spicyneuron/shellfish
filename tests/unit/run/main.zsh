@@ -33,8 +33,7 @@ export XDG_STATE_HOME="$tmp/state"
 typeset entry="$ROOT/bin/shellfish"
 typeset output
 
-# Turn subprocesses preserve the chat's verbose override, but do not trust
-# arbitrary inherited values.
+# Verbose mode is normalized for hooks.
 typeset verbose_script="$tmp/verbose-hook" verbose_config="$tmp/verbose-config.json"
 mkdir "$verbose_script"
 cat >"$verbose_script/run" <<'EOF'
@@ -52,27 +51,29 @@ SF_VERBOSE_MARKER="$tmp/verbose-invalid" SHELLFISH_VERBOSE=invalid \
   zsh -f "$entry" run --config "$verbose_config" test || fail 'normalized run failed'
 assert_equal 0 "$(<"$tmp/verbose-invalid")"
 
-# Plain mode prints only the final assistant text.
+# Plain mode prints only the answer.
 output=$(SF_TEST_BACKEND_DELAY=0 zsh -f "$entry" run --config "$config" 'plain answer') || \
   fail 'plain run failed'
 assert_equal 'plain answer' "$output" 'plain run prints only the answer'
 
+# Recoverable failures exit unsuccessfully.
 integer failed_status=0
 SF_TEST_BACKEND_DELAY=0 zsh -f "$entry" run --config "$config" \
   'retry error later' >/dev/null 2>&1 || failed_status=$?
 (( failed_status == 1 )) || fail 'recoverable turn failure exited successfully'
 
+# Standard input supplies the prompt.
 output=$(print -rn -- 'piped answer' |
   SF_TEST_BACKEND_DELAY=0 zsh -f "$entry" run --config "$config") || \
   fail 'piped run failed'
 assert_equal 'piped answer' "$output" 'run accepts standard input'
 
+# Positional prompt words are joined.
 output=$(SF_TEST_BACKEND_DELAY=0 zsh -f "$entry" run --config "$config" \
   several prompt words) || fail 'multi-argument run failed'
 assert_equal 'several prompt words' "$output" 'run joins positional prompt words'
 
-# An option run does not own reaches shellfish create with its value intact,
-# and that value is not mistaken for the prompt that follows it.
+# Create options preserve their values.
 typeset forwarded_session="$tmp/forwarded.jsonl"
 output=$(SF_TEST_BACKEND_DELAY=0 zsh -f "$entry" run --session-out "$forwarded_session" \
   --config "$config" --model forwarded-model --system 'forwarded system' \
@@ -86,7 +87,7 @@ head -n 1 "$forwarded_session" | jq -e '
 jq -e 'select(.type == "system" and .content == "forwarded system")' \
   "$forwarded_session" >/dev/null || fail 'run did not create the overridden system record'
 
-# Reusing settings creates a separate session without replaying source messages.
+# Session reuse copies only runtime settings.
 typeset copied_session="$tmp/copied.jsonl"
 cp "$forwarded_session" "$tmp/source-before"
 output=$(SF_TEST_BACKEND_DELAY=0 zsh -f "$entry" run \
@@ -100,6 +101,7 @@ jq -es --slurpfile source "$forwarded_session" '
   [.[] | select(.type == "user") | .content[0].text] == ["copied answer"]
 ' "$copied_session" >/dev/null || fail 'run did not reuse the stored runtime'
 
+# Session source options are exclusive.
 integer conflict_status=0
 zsh -f "$entry" run --session "$forwarded_session" \
   --session-from "$forwarded_session" ignored >/dev/null 2>&1 || conflict_status=$?
@@ -111,8 +113,7 @@ output=$(zsh -f "$entry" run --session "$forwarded_session" \
 [[ $output == *'--session may only be specified once'* && $conflict_status == 2 ]] ||
   fail 'run did not recognize -s as a repeated session'
 
-# JSONL exposes the canonical turn stream through EOF and process status. The
-# session prefix is created before the turn and is not replayed onto the stream.
+# JSONL streams only new turn events.
 typeset jsonl stream_session="$tmp/stream.jsonl"
 zsh -f "$entry" create --session-out "$stream_session" --config "$config" >/dev/null ||
   fail 'stream session create failed'
@@ -140,7 +141,7 @@ jq -c . "$stream_session" | tail -n +$(( prefix + 1 )) >"$tmp/session-durable"
 cmp -s "$tmp/stream-durable" "$tmp/session-durable" ||
   fail 'JSONL durable events differ from the appended session records'
 
-# A bounded turn emits an arbitrary command handoff and completes cleanly.
+# JSONL emits command handoffs.
 typeset handoff_script="$tmp/handoff"
 mkdir "$handoff_script"
 cat >"$handoff_script/run" <<'ZSH'
@@ -163,8 +164,7 @@ jq -eRn '
   ($events | any(.type == "user") | not)
 ' <"$handoff_output" >/dev/null || fail 'JSONL run discarded the handoff'
 
-# Session creation and its session_start failures belong to shellfish create.
-
+# Invalid session paths fail cleanly.
 typeset invalid_path="$tmp/invalid-path" invalid_path_output="$tmp/invalid-path.out"
 ln -s "$config" "$invalid_path"
 integer invalid_path_status=0
@@ -177,6 +177,7 @@ print -r -- \
 [[ $(<"$tmp/invalid-path.stderr") == *"invalid session path: $invalid_path"* ]] ||
   fail 'JSONL prepare failure omitted stderr diagnostic'
 
+# Invalid input combinations are rejected.
 integer exit_code=0
 print -n piped | zsh -f "$entry" run --config "$config" argument >/dev/null 2>&1 || \
   exit_code=$?

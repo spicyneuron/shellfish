@@ -51,7 +51,7 @@ sf_test_tool_execute() {
     "$tool_runtime" || return
 }
 
-# Tool execution preserves the caller's home in its otherwise clean environment.
+# Tools load into an isolated environment.
 load_tools "$stored_runtime"
 [[ $SF_TOOL_COMMAND[shell] == "$tool_dir/run" &&
    $SF_TOOL_SANDBOX[shell] == true && $SF_TOOL_ALLOW_BYPASS[shell] == true &&
@@ -102,7 +102,7 @@ jq -e --arg config "$XDG_CONFIG_HOME" '.content == $config' <<<"$REPLY" >/dev/nu
 export HOME=$caller_home
 unset XDG_CONFIG_HOME
 
-# A tool receives its selected environment, with fixed context taking precedence.
+# Fixed tool context overrides selected environment.
 typeset environment_runtime environment_call
 tool_config_dir="$tmp/fixed-config"
 export TOOL_SETTING=selected SHELLFISH_CONFIG_DIR=external SHELLFISH_SESSION=external
@@ -124,7 +124,7 @@ unset SHELLFISH_MAX_CAPTURE_BYTES
 tool_config_dir=''
 load_tools "$stored_runtime"
 
-# Capture preserves trailing newlines and retains only the configured byte tail.
+# Capture keeps trailing newlines and the configured byte tail.
 sf_test_tool_execute "$(jq -cn --arg command "printf 'line\\n\\n'" \
   '{id:"capture_1",name:"shell",input:{command:$command}}')" 0
 jq -e '.content == "line\n\n" and .sandboxed == false' \
@@ -139,8 +139,7 @@ sf_test_tool_execute "$(jq -cn --arg command "printf '%070d' 0" \
 jq -e '(.content | length) == 64 and (.content | startswith("[output truncated]\n"))' \
   <<<"$REPLY" >/dev/null
 
-# Tool control accepts state only. Its exact bytes reduce the ordinary
-# output budget, and a nonzero tool exit still returns its state.
+# Control bytes count against the output budget.
 typeset state_tool="$tmp/state-tool" state_runtime control
 cat >"$state_tool" <<'ZSH'
 #!/usr/bin/env zsh
@@ -202,7 +201,7 @@ if sf_test_tool_execute \
 fi
 [[ $SF_TOOL_ERROR == 'tool control data exceeds capture limit' ]]
 
-# The bundled shell closes tool control before launching model-authored code.
+# Shell commands cannot write tool control.
 load_tools "$stored_runtime"
 sf_test_tool_execute "$(jq -cn --arg command \
   'print -rn -u3 -- leaked 2>/dev/null; print -rn -- closed' \
@@ -211,18 +210,18 @@ jq -e '.exit_code == 0 and .content == "closed"' <<<"$REPLY" >/dev/null ||
   fail 'the bundled shell exposed tool control to its child command'
 [[ ${#SF_TOOL_STATE_RECORDS} == 0 ]]
 
-# Timeout terminates the command and returns the canonical timeout result.
+# Timeouts return canonical results.
 sf_test_tool_execute "$(jq -cn \
   '{id:"timeout_1",name:"shell",input:{command:"sleep 5",timeout:1}}')" 0
 jq -e '.exit_code == 124 and (.content | contains("timed out after 1 seconds"))' \
   <<<"$REPLY" >/dev/null
 
-# A tool terminated by a signal is a completed tool call, not an exec cancellation.
+# Signals complete tool calls.
 sf_test_tool_execute "$(jq -cn \
   '{id:"signal_1",name:"shell",input:{command:"kill -TERM $$"}}')" 0
 jq -e '.exit_code == 143 and .sandboxed == false' <<<"$REPLY" >/dev/null
 
-# A sandboxed bypass executes only with an approval decision from its caller.
+# Sandbox bypasses require approval.
 typeset sandbox_runtime denied_runtime
 sandbox_runtime=$(jq -c --arg fence "${commands[fence]:A}" \
   '.harness.sandbox=true | .harness.fence=$fence' <<<"$stored_runtime") || \
@@ -254,7 +253,7 @@ sf_tool_needs_permission shell true false 1 &&
   fail 'a bypass request without a reason was accepted'
 (( $? == 2 )) || fail 'a missing bypass reason did not report invalid input'
 
-# Several tools project their schemas together and share one capture bound.
+# Configured tools share capture limits.
 typeset file_runtime=$(jq -cn --argjson base "$stored_runtime" \
   --arg root "$ROOT/share/default/tools" \
   --slurpfile read "$ROOT/share/default/tools/read_file/manifest.json" \
@@ -288,7 +287,7 @@ jq -e '.content | length == 64 and startswith("[output truncated]\n")' \
   <<<"$REPLY" >/dev/null
 tool_max_capture=$(jq -r '.harness.max_capture_bytes' <<<"$file_runtime")
 
-# Sandboxed execution gives Fence the package policy path and runtime grants.
+# Fence receives tool policy and runtime grants.
 mkdir "$tmp/bin"
 cat >"$tmp/bin/fence" <<'ZSH'
 #!/usr/bin/env zsh

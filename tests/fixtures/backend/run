@@ -9,19 +9,16 @@ typeset cleanup_path cleanup_dir temp_root tool_bypass_reason
 typeset -a parts deltas
 integer keyword_count delay_match think error_count lorem delta_index input_tokens cached_tokens
 integer text_tokens output_tokens reasoning_tokens
-# Words per echoed line. Zero keeps the prompt's own line breaks, which is what
-# every test but scrollback.py's tall-turn case wants.
+# Zero preserves the prompt's line breaks.
 integer wrap=${SF_TEST_BACKEND_LINE_WORDS:-0}
 typeset delay=${SF_TEST_BACKEND_DELAY:-0.02}
 typeset delay_match_seconds=${SF_TEST_BACKEND_DELAY_MATCH_SECONDS:-5}
 request=$(cat)
 input_tokens=$(( (${#request} + 3) / 4 ))
-# Keep cache-hit presentation exercised in fixture-backed frontends.
+# Exercise cache-hit presentation.
 cached_tokens=$(( input_tokens * 85 / 100 ))
 [[ -z ${SF_TEST_BACKEND_REQUEST-} ]] || print -r -- "$request" >"$SF_TEST_BACKEND_REQUEST"
-# The system field is deliberately ignored. Session-start context is useful in
-# the captured request but noisy in the echo, so strip those generated blocks
-# before deriving the text and its keyword counts.
+# Strip generated session context from the echoed user text.
 decoded=$(jq -rj '
   def echo_text:
     gsub("<hook name=\\\"session_start\\\">\\n(?:<context(?: [^>]*)?>\\n[^<]*\\n</context>\\n*)+</hook>\\n*"; "");
@@ -138,13 +135,8 @@ EOF
   )
 fi
 
-# Split $1 into one delta per word, honouring $wrap. The echo keeps the prompt's
-# own line structure, blank lines included, or a multi-line prompt comes back as
-# one run-on blob and nothing that depends on line breaks -- markdown blocks,
-# settling, the clamp -- can be judged by eye. SF_TEST_BACKEND_LINE_WORDS replaces
-# that structure with a fixed number of words per line. Every line ends with a
-# newline below, so a prompt that already ended with one splits to an empty final
-# field and would echo a blank line it never had.
+# Split text into word deltas while preserving line structure unless wrapped.
+# Drop the split artifact from a trailing newline.
 build_deltas() {
   typeset in_line
   typeset -a in_lines in_words
@@ -170,10 +162,7 @@ build_deltas() {
   done
 }
 
-# Stream $deltas as $1-typed events, one per word with the configured delay, so
-# the streamed text and the final message content are the same string by
-# construction. Every assistant result streams -- tool calls and their follow-up
-# included -- not just reasoning.
+# Stream every assistant result with the configured delay.
 stream_deltas() {
   typeset delta_type=$1
   integer content_index=$2 index
@@ -272,8 +261,7 @@ if [[ ${SF_TEST_BACKEND_TOOL_CALL:-0} == 1 || -n $tool_mode ]] || (( keyword_cou
     text_tokens=$(( (${#text} + 3) / 4 ))
     reasoning_tokens=$(( think ? text_tokens : 0 ))
     output_tokens=$(( text_tokens + reasoning_tokens ))
-    # Tool-call message shares $text and the tool params with the streamed deltas.
-    # Keyword-driven call n prints n indexed completion lines.
+    # Keep tool-call text identical to the streamed message.
     jq -cn --arg text "$text" --arg command "$tool_command" \
       --arg name "$tool_name" \
       --argjson tool_input "$tool_input" \
@@ -319,7 +307,6 @@ if [[ ${SF_TEST_BACKEND_TOOL_CALL:-0} == 1 || -n $tool_mode ]] || (( keyword_cou
   exit
 fi
 
-# A "think" prompt echoes the whole message as reasoning before the text.
 if (( think )); then
   stream_deltas _assistant_reasoning_delta 0
 fi

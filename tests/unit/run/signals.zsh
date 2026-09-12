@@ -28,7 +28,7 @@ EOF
 export XDG_STATE_HOME="$tmp/state"
 typeset entry="$ROOT/bin/shellfish"
 
-# Client cancellation stops model metadata lookup through the adapter's TERM path.
+# Cancellation stops context discovery.
 typeset model_backend="$tmp/model-backend" model_ready="$tmp/model-ready"
 typeset model_stopped="$tmp/model-stopped" model_config="$tmp/model.jsonc"
 mkdir "$model_backend"
@@ -68,15 +68,14 @@ wait "$model_pid" || model_status=$?
 jq -e -s '.[-1] == {type:"turn_error",message:"Cancelled."}' "$model_session" >/dev/null ||
   fail 'cancelled model metadata lookup did not persist its outcome'
 
-# SIGINT stops exec, persists partial assistant content, and records cancellation.
+# SIGINT persists partial assistant content.
 typeset cancel_session="$tmp/cancel.jsonl" cancel_output="$tmp/cancel.out"
 SF_TEST_BACKEND_DELAY=0.3 zsh -f "$entry" run --jsonl --config "$config" \
   --session-out "$cancel_session" \
   < <(print -r -- '{"type":"user","content":[{"type":"text","text":"alpha beta gamma delta epsilon zeta eta theta"}]}') \
   >"$cancel_output" 2>&1 &
 typeset cancel_pid=$!
-# Signal a turn that has demonstrably started, rather than one a loaded machine
-# may not have reached yet.
+# Wait for streaming before signaling.
 integer waited=0
 while (( waited < 50 )) && ! grep -q '_assistant_message_delta' "$cancel_output" 2>/dev/null; do
   sleep 0.1
@@ -94,8 +93,7 @@ jq -eRn '
   and $events[-1] == {type:"turn_error",message:"Cancelled."}
 ' <"$cancel_output" >/dev/null || fail 'cancelled exec did not persist partial content'
 
-# Reasoning metadata received before cancellation remains available to the next
-# provider request when visible reasoning is recovered.
+# Cancellation preserves reasoning metadata.
 typeset cancel_backend="$tmp/cancel-backend" cancel_backend_marker="$tmp/tool-input"
 typeset cancel_backend_pid_file="$tmp/tool-input-child"
 mkdir "$cancel_backend"
@@ -145,8 +143,7 @@ jq -e -s '
   }]} and .[-1] == {type:"turn_error",message:"Turn interrupted."}
 ' "$reasoning_session" >/dev/null || fail 'cancelled reasoning was not recovered'
 
-# A parseable tool-input prefix is not a completed provider response. Cancelling
-# during it must not commit a call that a later turn could execute.
+# Partial tool input remains transient.
 typeset tool_input_session="$tmp/tool-input-cancel.jsonl" tool_input_output="$tmp/tool-input-cancel.out"
 CANCEL_BACKEND_MARKER="$cancel_backend_marker" CANCEL_BACKEND_PID_FILE="$cancel_backend_pid_file" \
   zsh -f "$entry" run --jsonl \
@@ -178,7 +175,7 @@ jq -e -s '
   ([.[] | .content[]? | select(.type == "tool_call")] | length) == 0
 ' "$tool_input_session" >/dev/null || fail 'cancelled tool input became durable intent'
 
-# A turn that never finished can be followed by a new user turn.
+# Interrupted sessions accept another turn.
 typeset recovered_session="$tmp/recovered.jsonl"
 SF_TEST_BACKEND_DELAY=0 zsh -f "$entry" run --config "$config" \
   --session-out "$recovered_session" seed >/dev/null || fail 'recovery seed failed'

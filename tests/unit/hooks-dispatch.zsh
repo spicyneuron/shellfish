@@ -29,13 +29,12 @@ dispatch_hooks() {
     "${components[@]}"
 }
 
-# An empty chain performs its default and produces no output.
+# Run empty chains silently.
 dispatch_hooks "$empty" 64 0 0
 (( reply[1] ))
 [[ -z $REPLY && -z $reply[3] && -z $reply[4] ]]
 
-# stdin is one complete document, and mixed output preserves bytes including a
-# trailing newline and NUL.
+# Captures preserve exact stdin, trailing newlines, and NULs.
 make_script mixed 'cat; print -rn -- $'\''\0tail\n'\''; print -rn -u2 -- $'\''local\n'\''; exit 0'
 typeset mixed=$script
 dispatch_hooks "$input" 64 0 0 "$mixed"
@@ -46,7 +45,7 @@ dispatch_hooks "$input" 64 0 0 "$mixed"
 [[ -z $component_results[4] ]]
 (( reply[1] ))
 
-# Policy cases consume captured files; subprocess coverage remains above and below.
+# Capture hook policy cases.
 functions -c sf_hooks_capture_one sf_hooks_capture_real
 typeset -A capture_status=() capture_context=() capture_display=() capture_control=()
 capture_result() {
@@ -68,7 +67,7 @@ sf_hooks_capture_one() {
   reply=( "${capture_status[$target]}" "$context" "$display" "$control" )
 }
 
-# Each script retains its attribution and independently captured channels.
+# Preserve per-script attribution.
 capture_result context_only 0 from-stdout
 typeset context_only=$script
 capture_result display_only 0 '' from-stderr
@@ -78,7 +77,7 @@ dispatch_hooks "$empty" 64 0 0 "$context_only" "$display_only"
 [[ $component_results[1] == "$context_only" && $component_results[3] == from-stdout ]]
 [[ $component_results[5] == "$display_only" && -z $component_results[7] ]]
 
-# A configured label emits activity, then an exact clear when no result replaces it.
+# Clear unmatched activity labels.
 capture_result displayed_empty 0
 typeset displayed_empty=$script activity_events
 SF_HOOK_JSONL=1
@@ -92,7 +91,7 @@ print -r -- "$activity_events" | jq -eRn '
   ]
 ' >/dev/null
 
-# A match command is silent, selects with status 0, and skips with status 1.
+# Match status 0 selects; status 1 skips.
 capture_result selector 1
 typeset selector=$script
 component_results=()
@@ -116,7 +115,7 @@ if sf_hooks_dispatch "$empty" 64 0 0 "$context_only" '' "$selector" ''; then
 fi
 [[ $SF_HOOK_ERROR == "hook match command failed with status 2: $selector" ]]
 
-# Status 10 skips sticky default behavior while later scripts continue in order.
+# Status 10 clears the default and continues.
 capture_result skip 10 first
 typeset skip=$script
 capture_result later 0 second
@@ -130,7 +129,7 @@ dispatch_hooks "$empty" 64 0 0 "$skip" "$later"
 [[ $component_results[5] == "$later" && $component_results[6] == 0 &&
    $component_results[7] == second ]]
 
-# Status 11 stops the chain and preserves structured JSON control.
+# Status 11 halts with control.
 capture_result control 11 before '' '{"action":"handoff","argv":["one","","line\\nbreak"]}'
 typeset control=$script
 capture_result forbidden 0 forbidden
@@ -146,14 +145,13 @@ dispatch_hooks "$empty" 64 0 0 "$halt" "$forbidden"
 (( ! reply[1] ))
 [[ -z $REPLY && $reply[3] == "$halt" && -z $reply[4] ]]
 
-# Structured control is accepted on any successful status when the hook allows
-# it, and rejected when the caller disallows it.
+# Validate control when allowed.
 capture_result status_zero 0 '' '' '{"action":"test"}'
 typeset status_zero=$script
 dispatch_hooks "$empty" 64 1 0 "$status_zero"
 [[ $reply[4] == '{"action":"test"}' ]]
 
-# Common state is removed before hook-specific control reaches the adapter.
+# Common state is stripped before adapter validation.
 capture_result state_first 0 '' '' \
   '{"state":[{"name":"first","value":1},{"name":"second","value":null}]}'
 typeset state_first=$script
@@ -180,7 +178,7 @@ if dispatch_hooks "$empty" 64 0 0 "$control"; then
 fi
 [[ $SF_HOOK_ERROR == "hook script returned unexpected control data: $control" ]]
 
-# Invalid JSON is malformed and never reaches an adapter.
+# Reject malformed control JSON.
 capture_result malformed 11 '' '' argument
 typeset malformed=$script
 if dispatch_hooks "$empty" 64 1 0 "$malformed"; then
@@ -203,7 +201,7 @@ fi
 [[ $SF_HOOK_ERROR == "hook script returned invalid state control: $invalid_state" &&
    ${#component_results} == 4 ]]
 
-# A later unexpected exit leaves earlier completed components intact.
+# Preserve results before later failures.
 capture_result failed 9 failed detail
 typeset failed=$script
 if dispatch_hooks "$empty" 64 0 0 "$later" "$failed"; then
@@ -213,7 +211,7 @@ fi
 [[ -z $REPLY && ${#reply} == 0 ]]
 (( ${#component_results} == 4 ))
 
-# Each script receives its own combined output budget.
+# Capture budgets apply per script across all channels.
 capture_result forty 0 "${(l:40::0:)""}"
 typeset forty=$script
 capture_result thirty 0 "${(l:30::0:)""}"
@@ -231,7 +229,7 @@ fi
 functions -c sf_hooks_capture_real sf_hooks_capture_one
 unfunction sf_hooks_capture_real
 
-# Prepared stdin and argv reach scripts without newline insertion or shell parsing.
+# Invocation preserves stdin and argv without shell parsing.
 make_script invocation 'print -rn -- "$#|$1|$2|$3|"; cat; print -rn -- "|$PWD|$SHELLFISH_SESSION|$SHELLFISH_MAX_CAPTURE_BYTES|$SHELLFISH_TURN_STATE|$SHELLFISH_MODEL|$0|${0:A:h}"'
 typeset invocation=$script
 typeset working="$tmp/working" session="$tmp/session.jsonl" state
@@ -272,7 +270,7 @@ sf_hooks_turn_state_create
 typeset next_state=$SHELLFISH_TURN_STATE
 [[ $next_state != $state && -d $next_state ]]
 
-# A hook receives its selected environment and not names selected by other components.
+# Hooks receive only their selected environment.
 SF_SESSION[runtime]='{"backend":{"environment":["BACKEND_SETTING"],"env_file":""},"harness":{"tools":[{"manifest":{"environment":["HOOK_SETTING","TOOL_SETTING","SHELLFISH_SESSION"]}}]}}'
 export BACKEND_SETTING=backend HOOK_SETTING=hook TOOL_SETTING=tool SHELLFISH_SESSION=external
 make_script selected_environment 'print -rn -- "${BACKEND_SETTING-unset}|${HOOK_SETTING-unset}|${TOOL_SETTING-unset}|$SHELLFISH_SESSION"'
@@ -283,7 +281,7 @@ sf_hooks_invoke "$session" "$working" "$empty" 512 0 1 stop \
 assert_equal "unset|hook|unset|${session:A}" "$component_results[3]"
 unset BACKEND_SETTING HOOK_SETTING TOOL_SETTING SHELLFISH_SESSION
 
-# Turn-only fixed context remains absent from session_start even when selected.
+# session_start cannot import turn-only context.
 print -r -- 'SHELLFISH_TURN_ID=external' >"$tmp/component.env"
 SF_SESSION[runtime]=$(jq -c --arg path "$tmp/component.env" '
   .backend.env_file=$path |

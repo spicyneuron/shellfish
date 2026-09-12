@@ -6,13 +6,12 @@ sf_test_tmp terminal
 
 typeset -g BUFFER=draft CURSOR=3 PREDISPLAY=old POSTDISPLAY=footer
 
-# Restoring without a saved draft leaves the editor alone.
+# Restore without a draft is inert.
 sf_tui_terminal_restore
 assert_equal draft "$BUFFER"
 assert_equal 3 "$CURSOR"
 
-# Staging freezes the draft the rows will be committed above, and refuses to
-# stage twice before a commit clears the pending rows.
+# Staging saves the draft until pending rows commit.
 SF_PRESENT_SAFE_TEXT=$'hello\n'
 SF_PRESENT_SAFE_ROWS=1
 SF_PRESENT_SAFE_HIGHLIGHTS=( 0 5 bold )
@@ -29,8 +28,7 @@ if sf_tui_terminal_stage; then
 fi
 SF_PRESENT_SAFE_ROWS=0
 
-# Committing hands the rows to ZLE, clears the pending state, and records that
-# something now sits above the prompt.
+# Finish commits staged rows.
 sf_tui_terminal_finish
 assert_equal $'hello\n' "$PREDISPLAY"
 assert_equal '' "$BUFFER"
@@ -43,13 +41,12 @@ assert_equal draft "$BUFFER"
 assert_equal 3 "$CURSOR"
 assert_equal 0 "$SF_PRESENT_DRAFT_SAVED"
 
-# Nothing staged is not a failure; a commit with no pending rows is a no-op.
+# Finishing without rows is inert.
 PREDISPLAY=kept
 sf_tui_terminal_finish || fail 'an empty commit should succeed'
 assert_equal kept "$PREDISPLAY"
 
-# Forced synchronized-output cleanup emits the terminator once when cleanup
-# paths converge.
+# Forced sync cleanup emits one terminator.
 SF_PRESENT_SYNC_ACTIVE=1
 sf_tui_terminal_sync_end force >"$tmp/sync"
 assert_equal 0 "$SF_PRESENT_SYNC_ACTIVE"

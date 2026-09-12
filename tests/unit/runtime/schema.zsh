@@ -10,7 +10,7 @@ request_eval() {
   jq -L "$ROOT" -e 'include "lib/runtime/schema"; include "lib/request"; '"$1"
 }
 
-# Canonical user messages require single text content without NUL bytes.
+# User messages require one safe text block.
 print -r -- '{"type":"user","content":[{"type":"text","text":"hello"}]}' |
   schema_eval 'canonical_user_message' >/dev/null
 
@@ -24,14 +24,14 @@ if print -r -- '{"type":"user","content":[]}' |
   fail 'empty user content was accepted'
 fi
 
-# Canonical assistant messages validate stop reasons and content consistency.
+# Assistant messages enforce stop semantics.
 print -r -- '{"type":"assistant","stop":"end","content":[{"type":"text","text":"hi"}]}' |
   schema_eval 'canonical_assistant_message' >/dev/null
 
 print -r -- '{"type":"assistant","stop":"tool_calls","content":[{"type":"text","text":"calling"}]}' |
   schema_eval 'canonical_assistant_message' >/dev/null
 
-# Calls are their own records, so a message may no longer carry one.
+# Tool calls are separate records.
 if print -r -- '{"type":"assistant","stop":"tool_calls","content":[{"type":"tool_call","id":"c1","name":"shell","input":{}}]}' |
     schema_eval 'canonical_assistant_message' >/dev/null 2>&1; then
   fail 'a tool call inside assistant content was accepted'
@@ -40,13 +40,13 @@ fi
 print -r -- '{"type":"tool_call","id":"c1","name":"shell","input":{}}' |
   schema_eval 'canonical_tool_call' >/dev/null
 
-# Cancellation is recovered with ordinary records rather than a durable stop reason.
+# Recovery records represent cancellation.
 if print -r -- '{"type":"assistant","stop":"cancelled","content":[{"type":"text","text":"halted"}]}' |
     schema_eval 'canonical_assistant_message' >/dev/null 2>&1; then
   fail 'cancelled assistant stop reason was accepted'
 fi
 
-# A durable error closes an unfinished turn without forging an assistant message.
+# Turn errors separate unfinished turns.
 print -r -- '[
   {"type":"user","content":[{"type":"text","text":"unfinished"}]},
   {"type":"turn_error","message":"backend failed"},
@@ -60,7 +60,7 @@ if print -r -- '[
   fail 'consecutive user messages without a turn error were accepted'
 fi
 
-# Canonical requests use exact projected message and tool wrappers.
+# Requests require canonical projected fields.
 typeset valid_request
 valid_request=$(jq -cn '{
   format_version:1,
@@ -95,7 +95,7 @@ for filter in \
   fi
 done
 
-# Backend response events carry indexed content updates and one terminal response end.
+# Backend streams require canonical ordering.
 jq -cn '[
   {type:"_assistant_reasoning_opaque",index:0,opaque:{type:"redacted_thinking",data:"secret"}},
   {type:"_assistant_reasoning_delta",index:0,text:"summary"},
@@ -106,7 +106,7 @@ jq -cn '[
   {type:"_assistant_end",stop:"tool_calls"}
 ]' | request_eval 'canonical_backend_response_events' >/dev/null
 
-# Opaque reasoning can exist without display text.
+# Opaque reasoning needs no display text.
 print -r -- '{"type":"_assistant_reasoning_opaque","index":0,"opaque":{}}' |
   request_eval 'canonical_backend_event' >/dev/null
 
@@ -132,7 +132,7 @@ if jq -cn '[{type:"_assistant_message_delta",index:0,text:"unfinished"}]' |
   fail 'backend response without response end was accepted'
 fi
 
-# Assembly orders indexed blocks, joins deltas, retains opaque data, and uses final usage.
+# Response assembly orders and joins blocks.
 jq -cn '[
   {type:"_assistant_tool_call_delta",index:2,id:"call_1",name:"shell",input:"{\"command\":"},
   {type:"_assistant_reasoning_delta",index:0,text:"think "},
@@ -153,7 +153,7 @@ jq -cn '[
   usage:{input_tokens:5,cached_tokens:2,output_tokens:4}
 }' >/dev/null
 
-# A length-limited response preserves completed content but discards partial calls.
+# Length stops discard partial calls.
 jq -cn '[
   {type:"_assistant_message_delta",index:0,text:"visible"},
   {type:"_assistant_tool_call_delta",index:1,id:"call_1",name:"shell",input:"{\"command\":"},
@@ -175,7 +175,7 @@ for events in \
   fi
 done
 
-# Canonical tool results require numeric exit codes from 0 through 255.
+# Tool results require valid exit codes.
 print -r -- '{"type":"tool_result","call_id":"c1","name":"shell","content":"out","exit_code":0}' |
   schema_eval 'canonical_tool_result' >/dev/null
 
@@ -197,7 +197,7 @@ if print -r -- '{"type":"tool_result","call_id":"c1","name":"shell","content":"o
   fail 'legacy tool outcome was accepted'
 fi
 
-# Canonical hook results require attribution and at least one nonempty context.
+# Hook results require attributed context.
 for result in \
     '{"type":"hook_result","hook":"env","script":"add_env","model_context":"data","prompt":"pwd","status":0}' \
     '{"type":"hook_result","hook":"env","script":"add_env","user_context":"shown"}' \
@@ -225,7 +225,7 @@ for field in content label preface truncated; do
   fi
 done
 
-# Canonical state has an exact shape, a bounded opaque name, and any JSON value.
+# State records require canonical names.
 for state in \
     '{"type":"state","name":"a","value":null}' \
     '{"type":"state","name":"agents/a1b2c3","value":{"session":".agent-a1b2c3.jsonl"}}' \
@@ -254,7 +254,7 @@ if jq -cn --arg name "$(printf 'a%.0s' {1..129})" \
   fail 'state name longer than 128 characters was accepted'
 fi
 
-# State is inert wherever it appears in an otherwise valid conversation.
+# State records do not affect conversation sequencing.
 print -r -- '[
   {"type":"state","name":"startup","value":1},
   {"type":"system","content":"system"},
@@ -282,7 +282,7 @@ print -r -- '[
   {"type":"state","name":"after/error","value":null}
 ]' | schema_eval 'canonical_session_records' >/dev/null
 
-# Canonical session headers require absolute hook paths and valid structures.
+# Session headers require canonical runtimes.
 typeset valid_header
 valid_header=$(jq -cn '
   {
@@ -337,8 +337,7 @@ for patch in \
     fail "invalid hook selection metadata was accepted: $patch"
   fi
 done
-# Runtime projections hand these names to zsh as a space separated list, so a
-# name containing a space would corrupt it.
+# Environment names must survive space-separated zsh projection.
 for environment in '["DUPLICATE","DUPLICATE"]' '["invalid-name"]' '["HAS SPACE"]'; do
   if jq -c --argjson environment "$environment" \
       '.backend.environment = $environment' <<<"$valid_header" |
@@ -356,7 +355,7 @@ for system in '["relative.md"]' '"/system/prompt.md"'; do
   fi
 done
 
-# Relative hook paths in session headers are rejected.
+# Hook paths must be absolute.
 if jq -c '.harness.stop[0].command = "relative/hook"' <<<"$valid_header" |
     schema_eval 'canonical_session_header(1)' >/dev/null 2>&1; then
   fail 'relative hook path was accepted in session header'
@@ -366,7 +365,7 @@ if jq -c '.harness.sandbox_read_paths = ["relative"]' <<<"$valid_header" |
   fail 'relative sandbox read path was accepted in session header'
 fi
 
-# Tool manifests validate schema, display references, and bypass rules.
+# Tool manifests validate display and sandboxing.
 typeset valid_manifest
 valid_manifest=$(jq -cn '
   {
@@ -436,7 +435,7 @@ for field in request_sandbox_bypass sandbox_bypass_reason; do
   fi
 done
 
-# A tool manifest with allow_sandbox_bypass=true but sandbox=false is rejected.
+# Sandbox bypass requires sandboxing.
 if jq -c '.sandbox = false' <<<"$valid_manifest" |
     schema_eval 'tool_manifest' >/dev/null 2>&1; then
   fail 'allow_sandbox_bypass with sandbox=false was accepted'

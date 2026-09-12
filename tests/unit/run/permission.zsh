@@ -14,8 +14,7 @@ sf_test_runtime "$system_file"
 export SF_TEST_BACKEND_DELAY=0
 export SF_TEST_BACKEND_REQUEST="$request_capture"
 
-# A configured permission_request script exposes bypass approval without an interactive
-# adapter. Its decision precedes the existing UI path and its presentation is silent.
+# Permission hooks can allow bypasses.
 typeset permission_allow="$tmp/permission-allow"
 cat >"$permission_allow" <<'ZSH'
 #!/usr/bin/env zsh
@@ -51,12 +50,10 @@ jq -e '
   (.tools[0].input_schema.properties.request_sandbox_bypass.description |
     contains("interactive") | not)
 ' "$request_capture" >/dev/null
-# Tool projection comes only from frozen runtime, so every client sees these tools.
 typeset frozen_tools=$(jq -c '.tools' "$request_capture")
 jq -e -s 'all(.[]; .type != "hook_result")' "$permission_allow_session" >/dev/null
 
-# A script denial uses its reason without consulting the UI. With no configured
-# permission_request script and no UI, exec denies a bypass request.
+# Permission hooks can deny bypasses.
 typeset permission_deny="$tmp/permission-deny"
 cat >"$permission_deny" <<'ZSH'
 #!/usr/bin/env zsh
@@ -76,6 +73,7 @@ print -r -- "$stream" | jq -eRn '
     .exit_code == 126 and .content == "risk too high")
 ' >/dev/null
 
+# Missing reviewers deny bypasses.
 SF_TEST_RUNTIME=$(jq 'del(.harness.permission_request)' \
   <<<"$SF_TEST_RUNTIME")
 typeset permission_fallback_session="$tmp/permission-fallback.jsonl"
@@ -90,9 +88,7 @@ print -r -- "$stream" | jq -eRn '
 ' >/dev/null
 assert_equal "$frozen_tools" "$(jq -c '.tools' "$request_capture")"
 
-# A reply channel advertises bypass and applies the next stdin line. Approve
-# executes; deny uses the fallback reason; a malformed reply or a closed channel
-# fails the turn rather than silently becoming denial.
+# Frontend replies can approve bypasses.
 typeset permission_approve_session="$tmp/permission-approve.jsonl"
 sf_test_session "$permission_approve_session"
 stream=$(SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_BYPASS=true \
@@ -112,10 +108,10 @@ print -r -- "$stream" | jq -eRn '
     .exit_code == 0 and .content == "approved")
 ' >/dev/null
 assert_equal "$frozen_tools" "$(jq -c '.tools' "$request_capture")"
-# Permission traffic never becomes durable.
 jq -se 'all(.[]; .type != "_tool_permission_request" and
   .type != "_tool_permission_response")' "$permission_approve_session" >/dev/null
 
+# Frontend replies can deny bypasses.
 typeset permission_reply_deny_session="$tmp/permission-reply-deny.jsonl"
 sf_test_session "$permission_reply_deny_session"
 stream=$(SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_BYPASS=true \
@@ -128,6 +124,7 @@ print -r -- "$stream" | jq -eRn '
     .exit_code == 126 and .content == "sandbox bypass denied")
 ' >/dev/null
 
+# Invalid permission replies fail the turn.
 typeset permission_invalid_reply_session="$tmp/permission-invalid-reply.jsonl"
 sf_test_session "$permission_invalid_reply_session"
 stream=$(SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_BYPASS=true \
@@ -143,6 +140,7 @@ print -r -- "$stream" | jq -eRn '
 ' >/dev/null
 assert_canonical_session "$permission_invalid_reply_session"
 
+# Closed reply channels deny bypasses.
 typeset permission_eof_session="$tmp/permission-eof.jsonl"
 sf_test_session "$permission_eof_session"
 stream=$(SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_BYPASS=true \
@@ -154,8 +152,7 @@ print -r -- "$stream" | jq -eRn '
 ' >/dev/null
 assert_canonical_session "$permission_eof_session" end
 
-# The user record and the reply share one stdin, so the prompt read must take
-# a single line and leave the rest for the reply channel.
+# The prompt and permission reply share stdin.
 typeset permission_stdin_session="$tmp/permission-stdin.jsonl"
 typeset permission_stdin_stream="$tmp/permission-stdin.stream"
 sf_test_session "$permission_stdin_session"
@@ -172,8 +169,7 @@ jq -eRn '
     .exit_code == 0 and .content == "approved")
 ' <"$permission_stdin_stream" >/dev/null
 
-# Cancellation while awaiting a frontend decision closes every pending durable
-# tool call canonically and does not leave the session or reply channel owned.
+# Cancellation closes pending tool calls.
 typeset permission_cancel_session="$tmp/permission-cancel.jsonl"
 typeset permission_cancel_stream="$tmp/permission-cancel.stream"
 typeset permission_cancel_fifo="$tmp/permission-cancel.fifo"
@@ -206,8 +202,7 @@ jq -eRn '
 ' <"$permission_cancel_stream" >/dev/null
 assert_canonical_session "$permission_cancel_session"
 
-# Permission hook failure uses ordinary turn failure, closes the durable call,
-# and retains stderr in the diagnostic without opening hook presentation.
+# Permission hook failures close calls.
 typeset permission_failure="$tmp/permission-failure"
 cat >"$permission_failure" <<'ZSH'
 #!/usr/bin/env zsh
@@ -233,8 +228,7 @@ print -r -- "$stream" | jq -eRn '
 ' >/dev/null
 assert_canonical_session "$permission_failure_session"
 
-# If cleanup cannot persist that failure, the unattributed fallback notice
-# remains available because the silent hook did not claim to display it.
+# Persistence failures retain diagnostics.
 typeset permission_persist_session="$tmp/permission-persist.jsonl"
 typeset permission_persist_stream="$tmp/permission-persist.stream"
 typeset permission_persist_error="$tmp/permission-persist.stderr"

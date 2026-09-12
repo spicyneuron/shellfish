@@ -7,21 +7,20 @@ typeset entry="$ROOT/bin/shellfish"
 typeset header="$SF_TEST_SESSIONS/header-only.jsonl"
 typeset output="$tmp/output.jsonl" installed
 
-# Installation preserves a complete transcript byte for byte and reports its
-# absolute destination.
+# Preserve canonical transcripts exactly.
 installed=$(zsh -f "$entry" install-session --session-out "$output" <"$header") ||
   fail 'canonical installation failed'
 assert_equal "$output" "$installed"
 cmp -s "$header" "$output" || fail 'installation changed transcript bytes'
 [[ $(stat -f '%Lp' "$output") == 600 ]] || fail 'installed session mode is not 0600'
 
-# Visible and feature-owned leading-dot names are both ordinary destinations.
+# Accept visible and hidden destinations.
 for name in visible.jsonl .agent-a1b2c3.jsonl; do
   zsh -f "$entry" install-session --session-out "$tmp/$name" <"$header" >/dev/null ||
     fail "installation rejected $name"
 done
 
-# A recoverable tail is publishable. Ordinary recovery closes the turn later.
+# Recoverable tails remain publishable.
 typeset unanswered="$tmp/unanswered-input.jsonl"
 cat "$header" >"$unanswered"
 print -r -- \
@@ -31,7 +30,7 @@ zsh -f "$entry" install-session --session-out "$tmp/unanswered.jsonl" <"$unanswe
   >/dev/null || fail 'installation rejected an unanswered user message'
 cmp -s "$unanswered" "$tmp/unanswered.jsonl" || fail 'recoverable transcript was rewritten'
 
-# State is inert, while conversation sequencing remains required.
+# State records do not affect conversation sequencing.
 typeset complete="$tmp/complete-input.jsonl" complete_output="$tmp/complete.jsonl"
 cat "$header" >"$complete"
 cat >>"$complete" <<'EOF'
@@ -44,7 +43,7 @@ zsh -f "$entry" install-session --session-out "$complete_output" <"$complete" >/
   fail 'installation rejected complete state-bearing transcript'
 cmp -s "$complete" "$complete_output" || fail 'complete transcript was rewritten'
 
-# Existing files, directories, and symlinks are never replaced or removed.
+# Preserve all occupied destinations.
 typeset occupied="$tmp/occupied.jsonl" empty="$tmp/empty.jsonl" directory="$tmp/directory.jsonl"
 typeset symlink="$tmp/symlink.jsonl" dangling="$tmp/dangling.jsonl"
 print -r -- sentinel >"$occupied"
@@ -60,7 +59,7 @@ assert_equal sentinel "$(<"$occupied")"
 [[ -f $empty && ! -s $empty && -d $directory && -L $symlink && -L $dangling ]] ||
   fail 'collision cleanup changed an occupied destination'
 
-# Invalid framing, schema versions, records, and sequencing publish nothing.
+# Publish no invalid transcripts.
 typeset invalid="$tmp/invalid-input.jsonl" target="$tmp/rejected.jsonl"
 typeset -a cases=( empty malformed missing-newline blank-line unsupported invalid-record unmatched-result )
 typeset -a leftovers
@@ -89,7 +88,7 @@ for case_name in $cases; do
   (( ! ${#leftovers} )) || fail "$case_name input left a temporary file"
 done
 
-# A destination created after validation begins wins the publication race.
+# A racing destination wins publication.
 typeset fifo="$tmp/input.fifo" raced="$tmp/raced.jsonl" race_error="$tmp/race-error"
 typeset release="$tmp/release"
 mkfifo "$fifo"
@@ -113,7 +112,7 @@ assert_equal sentinel "$(<"$raced")"
 leftovers=( "$tmp"/.raced.jsonl.*(N) )
 (( ! ${#leftovers} )) || fail 'collision left a temporary file'
 
-# Argument validation happens without consuming or publishing input.
+# Validate arguments before reading input.
 zsh -f "$entry" install-session <"$header" >/dev/null 2>&1 &&
   fail 'installer accepted a missing destination option'
 zsh -f "$entry" install-session --session-out '' <"$header" >/dev/null 2>&1 &&

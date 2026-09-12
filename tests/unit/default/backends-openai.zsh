@@ -11,7 +11,7 @@ typeset req="$tmp/request.json"
 typeset res="$tmp/response.json"
 typeset body="$tmp/body.json"
 
-# Adapter module lookup must ignore the caller's working tree.
+# Ignore caller-local adapter modules.
 mkdir -p "$tmp/lib/runtime"
 print -r -- 'def canonical_request(:' >"$tmp/lib/runtime/schema.jq"
 
@@ -38,7 +38,7 @@ export BACKEND_TEST_HEADERS="$tmp/headers"
 export BACKEND_TEST_RESPONSE="$tmp/sse.txt"
 export BACKEND_TEST_ARGS="$tmp/curl-args"
 
-# 1. Test streaming with fragmented tool call, missing type in delta, omitted id in later chunks
+# Assemble fragmented tool calls.
 printf "%s\n" \
   'data: {"choices":[{"delta":{"role":"assistant","content":""},"finish_reason":null}]}' \
   'data: {"choices":[{"delta":{"content":"Let me "},"finish_reason":null}]}' \
@@ -67,7 +67,7 @@ EOF
 
 (builtin cd -- "$tmp" && OPENAI_API_KEY=test-key zsh -f "$run" <"$req" >"$res")
 
-# OpenRouter owns its user-facing credential name and delegates the protocol.
+# Use OpenRouter credentials.
 (builtin cd -- "$tmp" && OPENROUTER_API_KEY=router-key zsh -f "$openrouter_run" \
   <"$req" >"$res")
 grep -Fx 'Authorization: Bearer router-key' "$BACKEND_TEST_HEADERS" >/dev/null
@@ -88,7 +88,7 @@ jq -n -e -L "$ROOT" '
   ($parts.message.usage.reasoning_tokens == 2)
 ' "$res" >/dev/null
 
-# Model metadata normalizes OpenRouter's catalog field without affecting generation.
+# Normalize model catalog limits.
 cat >"$BACKEND_TEST_RESPONSE" <<'EOF'
 {"data":[{"id":"other","context_length":1000},{"id":"gpt-4o","context_length":128000}]}
 EOF
@@ -110,7 +110,7 @@ if OPENAI_API_KEY=test-key zsh -f "$context_window" <"$req" >"$res"; then
   fail 'missing model context was reported as available'
 fi
 
-# A length stop discards partial tool state rather than completing a call.
+# Discard calls stopped by length.
 printf "%s\n" \
   'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_cut","function":{"name":"shell","arguments":"{\"command\":"}}]},"finish_reason":"length"}]}' \
   'data: [DONE]' \
@@ -123,7 +123,7 @@ jq -n -e -L "$ROOT" '
     {type:"assistant",stop:"length",content:[]}
 ' "$res" >/dev/null
 
-# 2. Test compatible backend sending finish_reason: "stop" or missing id on tool calls
+# Supply missing call identifiers.
 printf "%s\n" \
   'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"name":"shell","arguments":"{}"}}]},"finish_reason":"stop"}]}' \
   'data: [DONE]' \
@@ -141,7 +141,7 @@ jq -n -e -L "$ROOT" '
   ($parts.calls == [{type:"tool_call",id:"call_0",name:"shell",input:{}}])
 ' "$res" >/dev/null
 
-# 3. Test non-streaming JSON response
+# Parse buffered JSON responses.
 cat >"$BACKEND_TEST_RESPONSE" <<'EOF'
 {
   "id": "chatcmpl-1",
@@ -187,7 +187,7 @@ jq -n -e -L "$ROOT" '
   ($parts.message.usage.output_tokens == 8)
 ' "$res" >/dev/null
 
-# A flat call batch regroups into the shape this provider expects.
+# Regroup flat call batches.
 typeset batch_request="$tmp/batch-request.json"
 cat >"$batch_request" <<'JSON'
 {
@@ -217,7 +217,7 @@ jq -e '
   (.messages | map(.tool_call_id) | map(select(. != null))) == ["call_1","call_2"]
 ' "$BACKEND_TEST_BODY" >/dev/null || fail 'openai did not regroup a call batch'
 
-# A call-only assistant message must send null content, not an empty string.
+# Encode call-only messages as null.
 jq -c '.messages[1].content = []' "$batch_request" >"$tmp/calls-only.json"
 OPENAI_API_KEY=test-key zsh -f "$run" <"$tmp/calls-only.json" >"$res"
 jq -e '.messages[2].content == null and (.messages[2].tool_calls | length) == 2'   "$BACKEND_TEST_BODY" >/dev/null || fail 'a call-only message did not send null content'

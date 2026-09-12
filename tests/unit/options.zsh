@@ -1,19 +1,13 @@
 #!/usr/bin/env zsh
 
-# lib/options.zsh declares the arity of the options shellfish config owns so
-# that forwarding components never guess. It is only correct while it matches
-# the parser it describes, so this check derives both the option names and
-# their arity from libexec/config/main.zsh.
+# Derive config option arity and compare it with the forwarding table.
 
 source "${0:A:h:h}/_helpers.zsh"
 sf_test_source lib/options.zsh
 
-# Arms a forwarding component must not pass through: the end-of-options
-# separator, and the options it owns itself.
 typeset -a not_forwarded=( -- --init --verbose )
 
-# Each case arm names its options, and its shift consumes the option plus its
-# values, so "shift 2" is arity 1 and a bare "shift" is arity 0.
+# A shift count includes the option itself.
 typeset -A parsed=()
 typeset name arity
 while read -r name arity; do

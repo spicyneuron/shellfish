@@ -1,8 +1,4 @@
-"""Shared pty harness. Imported by the scenario files, never run.
-
-Starts the app under a real pty, since the chat UI disables wrapping
-and scrollback flushing when stty reports no window size.
-"""
+"""Shared pty harness for chat scenarios."""
 import fcntl
 import json
 import os
@@ -26,9 +22,7 @@ TEST_BACKEND = str(ROOT / "tests" / "fixtures" / "backend")
 CSI = re.compile(rb"\x1b\[[0-?]*[ -/]*[@-~]")
 OSC = re.compile(rb"\x1b\].*?(?:\x07|\x1b\\)", re.S)
 
-# Distinct colours per surface so a probe can tell a styled heading from an
-# unstyled one, and from the markdown around it. Without a theme the app leaves
-# every style empty and the whole highlighting path goes untested.
+# Distinct colors make semantic styling observable.
 THEME = {
     "muted": "#8b949e", "divider": "#8b949e",
     "footer": "#8b949e", "prompt": "#8b949e", "prompt_waiting": "#a5d6ff",
@@ -43,12 +37,7 @@ THEME = {
 
 
 def run(label, tests):
-    """Runs every scenario and exits non-zero if any failed.
-
-    Scenarios are independent, each with its own app process, so one failure
-    must not hide the rest. A hang still ends the file at the runner's timeout.
-    Reports on stdout, in order with whatever the scenarios print there.
-    """
+    """Run every independent scenario before reporting failures."""
     failures = 0
     for test in tests:
         try:
@@ -77,8 +66,7 @@ class Session:
         self.config_file = config_dir / "shellfish.jsonc"
         config = {
             "default_profile": "development",
-            # Pinned rather than "auto", which probes the terminal for its
-            # background in raw mode and has nothing here to answer it.
+            # Avoid an interactive terminal background probe.
             "theme_mode": "dark",
             "theme_light": "theme",
             "theme_dark": "theme",
@@ -103,9 +91,7 @@ class Session:
             hook_dir = config_dir / "hooks" / "user_prompt_submit"
             hook_dir.mkdir(parents=True)
             for name, body in hooks.items():
-                # A bodyless entry names a bundled script: with nothing written
-                # here the reference falls through to share/default/hooks, so the
-                # shipped script runs rather than a copy that could drift from it.
+                # Bodyless entries resolve to bundled hooks.
                 if body is None:
                     continue
                 component = hook_dir / name
@@ -132,9 +118,6 @@ class Session:
             self.explicit_session.write_text(
                 "".join(json.dumps(record) + "\n" for record in session_records)
             )
-        # `pty.fork()` raises `OSError: out of pty devices` under a sandboxed
-        # shell that withholds ptys; run the pty suite outside such a sandbox.
-        # Not a regression in the code under test.
         pid, fd = pty.fork()
         if pid == 0:
             env = os.environ.copy()
@@ -151,7 +134,7 @@ class Session:
             os.chdir(self.project_dir)
             argv = [APP, "--config", str(self.config_file)]
             if self.explicit_session:
-                # --session resumes; a path with no transcript needs --session-out.
+                # Empty paths require --session-out; existing paths resume.
                 flag = (
                     "--session"
                     if self.explicit_session.exists()
@@ -162,8 +145,7 @@ class Session:
             os.execve(APP, argv, env)
         self.pid = pid
         self.fd = fd
-        # Without a window size the shell reads 0x0 from stty and silently
-        # disables wrapping and scrollback flushing.
+        # A 0x0 window disables wrapping and scrollback flushing.
         fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", ROWS, COLUMNS, 0, 0))
         attrs = termios.tcgetattr(fd)
         attrs[3] |= termios.TOSTOP
@@ -214,7 +196,6 @@ class Session:
         raise AssertionError(f"did not render a ready prompt\n{self.visible(start)[-1500:]}")
 
     def settle(self, seconds=0.3):
-        """Pump past creation, which runs as a turn and queues submitted prompts."""
         end = time.monotonic() + seconds
         while time.monotonic() < end:
             self.pump()
@@ -227,19 +208,14 @@ class Session:
         return OSC.sub(b"", CSI.sub(b"", output)).replace(b"\r", line_break).decode("utf-8", "replace")
 
     def visible(self, start=0):
-        """Rendered output, with a repainted line reading as a new one."""
         return self._stripped(start, b"\n")
 
     def typed(self, start=0):
-        """Keystroke echo. ZLE repaints a character at a time, returning to the
-        column with a carriage return between each, so visible() would break a
-        single typed word across as many lines as it has characters."""
+        """Return ZLE keystroke echo without repaint boundaries."""
         return self._stripped(start, b"")
 
     def wait_session_records(self, count, timeout=3, path=None):
-        # No path globs the session directory, where a session the app chose for
-        # itself lands. Falling back to explicit_session would defeat the /new
-        # test, which asks precisely whether a different file appeared there.
+        # No path means the app must choose a single session file.
         end = time.monotonic() + timeout
         while time.monotonic() < end:
             paths = (

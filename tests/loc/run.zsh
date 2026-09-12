@@ -20,8 +20,7 @@ typeset -r row_format='%-24s %7d %9d %9d %10d %9d\n'
 typeset divider
 divider=$(printf $head_format ------------------------ ------- --------- --------- ---------- ---------)
 
-# tokei picks the language from the file extension, so a file it would skip is
-# counted through a staged copy carrying an extension it recognizes.
+# Give extensionless and JSONC files extensions tokei recognizes.
 group() {
   local label=$1 file copy index
   local -a files=() counts=()
@@ -73,7 +72,6 @@ server=( "$root"/shellfish-server/*.go(N.) )
 server_tests=( ${(M)server:#*_test.go} "$root"/shellfish-server/ui/**/*_test.js(N.) )
 client=( ${client:#*_test.js} )
 server=( ${server:#*_test.go} )
-# Every file under tests/ is test source, apart from fixture data.
 shell_tests=( "$root"/tests/**/*(N.) )
 shell_tests=( ${shell_tests:#*.(json|jsonl|pyc)} )
 

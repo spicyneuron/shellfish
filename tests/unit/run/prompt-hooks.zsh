@@ -9,7 +9,6 @@ export XDG_STATE_HOME="$tmp/state"
 sf_test_runtime
 export SF_TEST_BACKEND_DELAY=0
 
-# Exec derives the turn ID and owns user_prompt_submit script decisions.
 typeset prompt_script="$tmp/prompt-hook"
 cat >"$prompt_script" <<'ZSH'
 #!/usr/bin/env zsh
@@ -54,6 +53,7 @@ chmod +x "$prompt_script"
 SF_TEST_RUNTIME=$(jq -c --arg script "$prompt_script" \
   '.harness.user_prompt_submit=[{command:$script,display:"",environment:[]}]' <<<"$SF_TEST_RUNTIME")
 
+# Accepted prompts persist hook context.
 typeset prompt_session="$tmp/prompt.jsonl"
 sf_test_session "$prompt_session"
 stream=$(sf_test_turn accepted "$prompt_session")
@@ -67,6 +67,7 @@ print -r -- "$stream" | jq -eRn '
   ($events | map(select(.type == "_assistant_start")) | length) == 1
 ' >/dev/null
 
+# Declined prompts stop before generation.
 typeset decline_session="$tmp/decline.jsonl"
 sf_test_session "$decline_session"
 stream=$(sf_test_turn /decline "$decline_session")
@@ -79,6 +80,7 @@ print -r -- "$stream" | jq -eRn '
   ($events | any(.type == "user") | not)
 ' >/dev/null
 
+# Prompt hooks can hand off execution.
 typeset handoff_session="$tmp/handoff.jsonl"
 sf_test_session "$handoff_session"
 stream=$(sf_test_turn /handoff "$handoff_session")
@@ -89,6 +91,7 @@ print -r -- "$stream" | jq -eRn '
   $events[-1] == {type:"_handoff",argv:["/usr/bin/printf","next.jsonl"]}
 ' >/dev/null
 
+# Prompt hooks can update sessions.
 typeset update_session="$tmp/update.jsonl"
 sf_test_session "$update_session"
 stream=$(sf_test_turn /update "$update_session")
@@ -105,12 +108,14 @@ jq -e -s '
     model_context:"update context"}
 ' "$update_session" >/dev/null
 
+# JSONL hook failures use stderr.
 typeset failure_session="$tmp/prompt-failure.jsonl" failure_error="$tmp/prompt-failure.stderr"
 sf_test_session "$failure_session"
 stream=$(sf_test_turn /fail "$failure_session" 2>"$failure_error")
 [[ -z $stream ]] || fail 'prompt hook failure emitted JSONL'
 [[ $(<"$failure_error") == *'prompt-hook'* ]] || fail 'prompt hook failure omitted stderr diagnostic'
 
+# Plain hook failures return diagnostics.
 typeset plain_failure_session="$tmp/prompt-plain-failure.jsonl" plain_error
 integer plain_status=0
 sf_test_session "$plain_failure_session"
@@ -119,6 +124,7 @@ plain_error=$(zsh -f "$ROOT/bin/shellfish" run --session "$plain_failure_session
 (( plain_status == 1 ))
 [[ $plain_error == *'hook script failed with status 1:'*prompt-hook* ]]
 
+# Hook output respects capture limits.
 typeset overflow_session="$tmp/prompt-overflow.jsonl" overflow_error="$tmp/prompt-overflow.stderr"
 sf_test_session "$overflow_session"
 stream=$(sf_test_turn /overflow "$overflow_session" 2>"$overflow_error")
@@ -126,16 +132,16 @@ stream=$(sf_test_turn /overflow "$overflow_session" 2>"$overflow_error")
 [[ $(<"$overflow_error") == *'hook script output exceeds capture limit'* ]] ||
   fail 'prompt hook overflow omitted stderr diagnostic'
 
+# Cancellation stops active prompt hooks.
 typeset cancel_session="$tmp/prompt-cancel.jsonl"
 typeset cancel_stream="$tmp/prompt-cancel.stream" cancel_error="$tmp/prompt-cancel.stderr"
 export PROMPT_MARKER="$tmp/prompt-active"
 export PROMPT_EXIT_MARKER="$tmp/prompt-exit"
-# A declared display announces the script for as long as it runs.
 SF_TEST_RUNTIME=$(jq -c '.harness.user_prompt_submit[0].display="Working…"' \
   <<<"$SF_TEST_RUNTIME")
 sf_test_session "$cancel_session"
 integer records=$(wc -l <"$cancel_session")
-# A private temp root, since the suite shares one and runs files concurrently.
+# Isolate temp files from concurrent tests.
 typeset cancel_temp="$tmp/cancel-temp"
 mkdir -p "$cancel_temp"
 TMPDIR="$cancel_temp" "$ROOT/bin/shellfish" run --jsonl --session "$cancel_session" \
@@ -169,7 +175,6 @@ jq -eRn '
   fail 'pre-commit cancellation omitted stderr diagnostic'
 (( $(wc -l <"$cancel_session") == records )) ||
   fail 'pre-commit cancellation appended a recovery record'
-# Process exit sweeps invocation-scoped temporary files.
 typeset cancel_root="$cancel_temp/shellfish-$EUID"
 typeset category
 typeset -a cancel_leftovers=()

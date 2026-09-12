@@ -1,8 +1,6 @@
 #!/usr/bin/env zsh
 
-# Replay behavior at the input boundary: sf_tui_reload turns a durable session
-# into the same ordered event tuples live presentation receives. These assert the
-# tuples themselves, so they hold across any presentation implementation.
+# Reload translates durable records into presentation events.
 
 source "${0:A:h:h:h:h}/_helpers.zsh"
 sf_test_source libexec/tui/render/formatters.zsh libexec/tui/render/highlights.zsh
@@ -12,9 +10,7 @@ typeset -ga SF_TEST_EVENTS=()
 sf_tui_event() { SF_TEST_EVENTS+=( "${(j:|:)@}" ); }
 replayed() { REPLY="${(F)SF_TEST_EVENTS}" }
 
-# Replay opens relative session paths before changing jq's working directory. A
-# broken module under the session's own directory would be loaded if jq resolved
-# it against the caller's copy.
+# Relative sessions resolve before jq changes directories.
 mkdir -p "$tmp/lib/runtime"
 print -r -- 'def canonical_session_header(:' >"$tmp/lib/runtime/schema.jq"
 cp "$SF_TEST_SESSIONS/header-only.jsonl" "$tmp/session.jsonl"
@@ -25,8 +21,7 @@ cp "$SF_TEST_SESSIONS/header-only.jsonl" "$tmp/session.jsonl"
   assert_equal "$tmp" "$PWD"
 )
 
-# Durable records replay in recorded order, pairing each tool call with its
-# result and keeping hook output after the assistant text it follows.
+# Records replay in durable order.
 SF_TEST_EVENTS=()
 typeset esc=$'\e'
 sf_tui_reload "$SF_TEST_SESSIONS/tool-paired.jsonl" || fail "$SF_PRESENT_ERROR"
@@ -44,16 +39,14 @@ assistant_message_delta|0|Done||||
 assistant_end||||||
 hook_result|test|project|Use fixtures.|||" "$REPLY"
 
-# Replay is the only source of the runtime, so it initializes the frozen profile
-# from the durable header and clears any usage the previous session left behind.
+# The header replaces stale runtime state.
 SF_PRESENT_IDENTITY=stale/model
 SF_PRESENT_FOOTER='stale/model · stale usage'
 sf_tui_reload "$SF_TEST_SESSIONS/header-only.jsonl" || fail "$SF_PRESENT_ERROR"
 assert_equal test/fake-model "$SF_PRESENT_FOOTER"
 assert_equal fake-model "$(jq -r '.profile.request.model' <<<"$SF_PRESENT_RUNTIME")"
 
-# A durable turn error replays as an error that ends its turn, so a later record
-# opens a new section rather than joining the failed one.
+# Turn errors end their replayed turn.
 SF_TEST_EVENTS=()
 cp "$SF_TEST_SESSIONS/interrupted.jsonl" "$tmp/failed.jsonl"
 print -r -- '{"type":"turn_error","message":"Turn interrupted."}' >>"$tmp/failed.jsonl"
@@ -68,8 +61,7 @@ if sf_tui_reload "$tmp/invalid.jsonl"; then
   fail 'accepted an invalid durable transcript'
 fi
 
-# Replay is the only source of the runtime, so a malformed header leaves the
-# client nothing to present.
+# Malformed headers cannot be presented.
 jq -c 'del(.backend)' "$SF_TEST_SESSIONS/header-only.jsonl" >"$tmp/bad-header.jsonl"
 if sf_tui_reload "$tmp/bad-header.jsonl"; then
   fail 'accepted a malformed session header'

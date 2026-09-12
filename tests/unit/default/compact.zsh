@@ -2,8 +2,7 @@
 
 source "${0:A:h:h}/_hooks.zsh"
 
-# Selected compaction composes the read-only request commands, publishes a
-# canonical child, and returns an ordinary handoff.
+# Compact into a canonical child.
 typeset compact_hook="$ROOT/share/default/hooks/user_prompt_submit/compact/run"
 typeset compact_check="$ROOT/share/default/hooks/user_prompt_submit/compact/check"
 typeset compact_source="$tmp/compact-source.jsonl"
@@ -21,7 +20,7 @@ sf_session_append "$compact_source" '{"type":"user","content":[{"type":"text","t
 sf_session_append "$compact_source" '{"type":"assistant","stop":"end","content":[{"type":"text","text":"Hi"}],"usage":{"input_tokens":1,"output_tokens":1}}'
 sf_session_reset
 
-# Below the threshold an ordinary prompt is left alone.
+# Ignore sessions below threshold.
 : >"$compact_control"
 SHELLFISH_EXECUTABLE="$ROOT/bin/shellfish" SHELLFISH_SESSION="$compact_source" \
   SHELLFISH_TURN_STATE="$tmp" zsh -f "$compact_check" user_prompt_submit \
@@ -31,7 +30,7 @@ SHELLFISH_EXECUTABLE="$ROOT/bin/shellfish" SHELLFISH_SESSION="$compact_source" \
 [[ ! -s $compact_control ]] || fail 'a session below the threshold requested a handoff'
 [[ ! -s $compact_display ]] || fail 'a session below the threshold displayed compaction'
 
-# At or above it, the submitted prompt is carried back as a draft.
+# Preserve automatic prompts as drafts.
 jq -c 'if .type == "assistant" then .usage = {input_tokens:75,output_tokens:5} else . end' \
   "$compact_source" >"$tmp/compact-above.jsonl"
 mv "$tmp/compact-above.jsonl" "$compact_source"
@@ -74,7 +73,6 @@ jq -e -s '
 ' "$tmp/compact-source_compact.jsonl" >/dev/null ||
   fail 'the compacted child is not a lone summary context'
 
-# Remaining cases exercise compaction policy without repeating request command startup.
 typeset -gx SF_TEST_ENTRY="$ROOT/bin/shellfish"
 cat >"$compact_shellfish" <<'ZSH'
 #!/usr/bin/env zsh
@@ -91,7 +89,7 @@ esac
 ZSH
 chmod +x "$compact_shellfish"
 
-# /compact creates a numbered sibling and hands off without a draft.
+# Compact explicitly without a draft.
 compact_status=0
 SHELLFISH_EXECUTABLE="$compact_shellfish" \
   SHELLFISH_SESSION="$compact_source" \
@@ -104,8 +102,7 @@ assert_equal \
     '{action:"handoff",argv:[$command,"--session",$child]}')" \
   "$(<"$compact_control")"
 
-# Summary failure is fail-open for an automatic trigger and handled for an
-# explicit command. Neither path requests a handoff or creates a child.
+# Fail open on summary errors.
 : >"$compact_control"
 compact_status=0
 SF_TEST_COMPACT_FAIL=1 SHELLFISH_EXECUTABLE="$compact_shellfish" \
@@ -122,8 +119,7 @@ SF_TEST_COMPACT_FAIL=1 SHELLFISH_EXECUTABLE="$compact_shellfish" \
 (( compact_status == 10 )) || fail 'explicit summary failure was not handled'
 [[ ! -s $compact_control ]] || fail 'explicit summary failure requested a handoff'
 
-# Publication failure is also fail-open and preserves an automatic prompt. The
-# source name fits the filesystem component limit while its compact sibling does not.
+# Fail open on publication errors.
 typeset compact_long="$tmp/${(l:245::a:)}.jsonl"
 cp "$compact_source" "$compact_long"
 : >"$compact_control"
@@ -135,8 +131,7 @@ SHELLFISH_EXECUTABLE="$compact_shellfish" \
 (( compact_status == 0 )) || fail 'publication failure blocked the prompt'
 [[ ! -s $compact_control ]] || fail 'publication failure requested a handoff'
 
-# Every state record is carried in source order, before the summary and after the
-# startup records, without folding repeated names or dropping a closing null.
+# Preserve ordered state history.
 typeset state_source="$tmp/state-source.jsonl"
 head -n 1 "$compact_source" >"$state_source"
 print -r -- \
@@ -166,7 +161,7 @@ jq -e -s '
 assert_equal "$state_before" "$(shasum <"$state_source")"
 [[ ! -e $tmp/.agent-a1b2c3.jsonl ]] || fail 'compaction copied a referenced internal session'
 
-# A session with no messages reports rather than compacting.
+# Reject sessions without messages.
 compact_status=0
 SHELLFISH_EXECUTABLE="$ROOT/bin/shellfish" \
   SHELLFISH_SESSION="$tmp/compact-source_compact.jsonl" SHELLFISH_TURN_STATE="$tmp" \

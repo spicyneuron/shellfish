@@ -189,8 +189,7 @@ def test_prompt_hook_hands_off_to_another_session():
 
 
 def test_prompt_hook_hands_off_to_new_session():
-    # /new hands off with the current session as its settings source. Start from
-    # an explicit path so the newly allocated session file is unambiguous.
+    # An explicit path distinguishes the newly allocated session.
     session = Session(explicit_session=True, hooks={"new": None})
     try:
         config = json.loads(session.config_file.read_text())

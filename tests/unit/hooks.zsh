@@ -2,8 +2,7 @@
 
 source "${0:A:h}/_hooks.zsh"
 
-# session_start runs during session creation, receives its hook name, and
-# commits each attributed hook result before the next component runs.
+# session_start commits each result before the next component.
 typeset start_session="$tmp/start-session.jsonl"
 make_script start '[[ $# == 1 && $1 == session_start ]]; [[ ! -s /dev/stdin && -z ${SHELLFISH_TURN_ID-} && -z ${SHELLFISH_TURN_STATE-} ]]; [[ -z ${OPENAI_API_KEY-} && -z ${CUSTOM_API_KEY-} ]]; [[ $SHELLFISH_MODEL == test && $0 == /* && -d ${0:A:h} ]]; [[ $SHELLFISH_CONFIG_DIR == "$EXPECTED_CONFIG_DIR" ]]; print -n startup; print -n -u2 local; [[ -z $SKIP ]] || exit 10'
 typeset start_script=$script
@@ -40,7 +39,7 @@ jq -e -s '
     model_context:"second"}
 ' "$start_session" >/dev/null
 
-# CLI entry runs session_start scripts once and does not rerun them for an existing session.
+# Run session_start only for creation.
 typeset resume_session="$tmp/resume-session.jsonl"
 typeset resume_marker="$tmp/resume-marker" resume_config="$tmp/resume-shellfish.jsonc"
 typeset resume_hook="$tmp/resume"
@@ -74,7 +73,7 @@ RESUME_MARKER=$resume_marker SF_TEST_BACKEND_DELAY=0 zsh -f "$SF_ENTRY" run \
   fail 'existing-session CLI entry failed'
 (( $(wc -l <"$resume_marker") == 1 )) || fail 'session_start script ran more than once'
 
-# Hook projection preserves a session working directory containing a newline.
+# Preserve newline-containing working directories.
 typeset newline_cwd="$tmp/"$'line\nbreak' previous_cwd=$PWD
 mkdir "$newline_cwd"
 cd "$newline_cwd"
@@ -94,7 +93,7 @@ fi
 [[ $SF_HOOK_ERROR == 'session_start hook script returned unsupported skip status: local' ]]
 [[ ! -e $skipped_session ]]
 
-# Startup has no control vocabulary, including when a script stops its chain.
+# Reject startup control data.
 typeset control_session="$tmp/control-session.jsonl"
 make_script start_control 'print -rn -u3 -- $'\''again\0'\''; exit 11'
 SF_TEST_RUNTIME=$(jq -c --arg script "$script" \
@@ -106,8 +105,7 @@ fi
 [[ $SF_HOOK_ERROR == 'hook script returned malformed control data' ]]
 [[ ! -e $control_session ]]
 
-# permission_request scripts receive a canonical envelope and may allow, deny with a reason,
-# deny by status alone, or defer. Their stdout is never committed.
+# Permission hooks may allow, deny, or defer; stdout is transient.
 typeset permission_session="$tmp/permission-session.jsonl"
 typeset permission_script="$scripts/permission"
 cat >"$permission_script" <<'ZSH'
@@ -176,7 +174,7 @@ fi
 sf_session_reset
 sf_hooks_turn_state_cleanup
 
-# Exit 10 continues the permission chain, so a later halting fd-3 decision wins.
+# Exit 10 defers to later permission hooks.
 typeset permission_chain_session="$tmp/permission-chain-session.jsonl"
 make_script permission_chain_skip 'exit 10'
 typeset permission_chain_skip=$script
@@ -214,9 +212,7 @@ run_prompt_hook ordinary "$plain_session"
 (( $(wc -l <"$plain_session") == 1 ))
 sf_hooks_turn_state_cleanup
 
-# stop scripts observe a completed assistant. A status-0 script's stdout is
-# discarded; only a skipped completion commits stdout as continuation feedback,
-# and a skip without feedback is a contract error.
+# Stop feedback is durable only when completion is skipped.
 make_script stop '[[ $# == 2 && $1 == stop && $2 == "$STOP_ATTEMPT" && "$(cat)" == "$STOP_INPUT" ]] || exit 1; print -rn -u2 -- local; [[ -z $STOP_STDOUT ]] || print -rn -- feedback; [[ -z $STOP_SKIP ]] || exit 10'
 typeset stop_script=$script
 SF_TEST_RUNTIME=$(jq -c --arg script "$stop_script" \

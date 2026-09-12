@@ -4,8 +4,7 @@ source "${0:A:h:h}/_hooks.zsh"
 
 sf_test_runtime
 
-# The bundled help script reads frozen command metadata, then halts before
-# unrelated prompt components.
+# Render ordered command help.
 typeset help_session="$tmp/help-session.jsonl" hook_events="$tmp/hook-events.jsonl"
 typeset -g SF_TEST_HOOK_EVENTS=$hook_events
 make_script after_help ': >"$SHELLFISH_TURN_STATE/after-help"'
@@ -51,14 +50,11 @@ typeset help_display=''
 help_display=$(jq -r 'select(.type == "hook_result") | .user_context // empty' "$hook_events")
 [[ $help_display == 'shift+enter'* ]]
 (( ${#help_display} > 20 ))
-# Every command key appears in the formatted output.
 for key in '↑, ↓' '/queue drop <N>' '/queue clear' '/new' '/refresh, /r' '/verbose, /v' \
     '/copy [N]' '/fork [N]' '/sandbox [OP DIR]' '!COMMAND' '/server' '/resume' '/compact' \
     '/quit, /q'; do
   [[ $help_display == *"$key"* ]]
 done
-# Component rows follow configured order between the framework rows and the
-# client's own commands, which close the list.
 typeset -a help_lines=( "${(@f)help_display}" )
 integer control_idx history_idx drop_idx queue_idx verbose_idx new_idx bang_idx
 integer refresh_idx quit_idx i
@@ -97,12 +93,13 @@ set_prompt_hook() {
   return $rc
 }
 
+# Start a related session.
 set_prompt_hook "$help_session" "$ROOT/share/default/hooks/user_prompt_submit/new/run"
 run_prompt_hook /new "$help_session"
 [[ $reply[1] == handoff && $reply[2] == "$ROOT/bin/shellfish" &&
    $reply[3] == --session-from && $reply[4] == "${help_session:A}" ]]
 
-# /verbose reloads the same session and toggles the preview limits.
+# Toggle verbose previews.
 set_prompt_hook "$help_session" "$ROOT/share/default/hooks/user_prompt_submit/verbose/run"
 unset SHELLFISH_VERBOSE
 run_prompt_hook /verbose "$help_session"
@@ -113,17 +110,19 @@ SHELLFISH_VERBOSE=1 run_prompt_hook /verbose "$help_session"
 [[ $reply[1] == handoff && $reply[2] == "$ROOT/bin/shellfish" &&
    $reply[3] == --clear && $reply[4] == --session && $reply[5] == "${help_session:A}" ]]
 
+# Serve the current session.
 set_prompt_hook "$help_session" "$ROOT/share/default/hooks/user_prompt_submit/server/run"
 run_prompt_hook /server "$help_session"
 [[ $reply[1] == handoff && $reply[2] == shellfish-server &&
    $reply[3] == --session && $reply[4] == "${help_session:A}" ]]
 
+# Resume the current directory.
 set_prompt_hook "$help_session" "$ROOT/share/default/hooks/user_prompt_submit/resume/run"
 run_prompt_hook /resume "$help_session"
 [[ $reply[1] == handoff && $reply[2] == "$ROOT/bin/shellfish" &&
    $reply[3] == --resume ]]
 
-# /sandbox lists grants or requests a minimal in-place runtime update.
+# Update sandbox grants.
 typeset sandbox_display='' sandbox_patch sandbox_dir="$tmp/output with spaces"
 mkdir "$sandbox_dir"
 set_prompt_hook "$help_session" "$ROOT/share/default/hooks/user_prompt_submit/sandbox/run"
@@ -155,6 +154,7 @@ jq -se --arg path "${sandbox_dir:A}" '
 ' "$help_session" >/dev/null || fail 'sandbox removal did not commit model context'
 jq -e '. == {harness:{sandbox_write_paths:[]}}' <<<"$reply[2]" >/dev/null
 
+# Report a disabled sandbox.
 typeset disabled_session="$tmp/disabled-session.jsonl" enabled_runtime=$SF_TEST_RUNTIME
 SF_TEST_RUNTIME=$(jq -c '.harness.sandbox=false' <<<"$SF_TEST_RUNTIME")
 sf_hooks_turn_state_cleanup
@@ -170,7 +170,7 @@ sandbox_display=$(jq -r 'select(.type == "hook_result") | .user_context // empty
 
 sf_hooks_turn_state_cleanup
 
-# Forking a fork starts a numbered sequence instead of repeating the suffix.
+# Number forks of forks.
 typeset fork_session="$tmp/fork-source_fork.jsonl"
 typeset fork_control="$tmp/fork-control.json"
 integer fork_status=0
@@ -201,7 +201,7 @@ jq -e --arg command "$ROOT/bin/shellfish" \
   --arg path "$tmp/fork-source_fork_2.jsonl" \
   '. == {action:"handoff",argv:[$command,"--session",$path]}' "$fork_control" >/dev/null
 
-# /copy addresses derived user/agent sections and defaults to the latest one.
+# Copy selected transcript sections.
 typeset copy_bin="$tmp/copy-bin" copy_output="$tmp/copied" copy_session="$tmp/copy-session.jsonl"
 mkdir "$copy_bin"
 cat >"$copy_bin/pbcopy" <<'EOF'
@@ -226,7 +226,7 @@ COPY_OUTPUT="$copy_output" PATH="$copy_bin:$PATH" SHELLFISH_SESSION="$copy_sessi
 print -n -- $'Answer\n\nContinued\n\n' >"$tmp/copy-expected"
 cmp "$tmp/copy-expected" "$copy_output" >/dev/null || fail 'copy did not preserve assistant text'
 
-# Agent section 2 and following user section 3 resolve to the same fork boundary.
+# Resolve adjacent fork sections.
 integer fork_number=1
 for target in 2 3; do
   fork_status=0
@@ -241,7 +241,7 @@ for target in 2 3; do
   (( fork_number++ ))
 done
 
-# Consecutive unanswered prompts remain distinct user sections.
+# Preserve consecutive user sections.
 typeset consecutive_session="$tmp/consecutive.jsonl"
 head -n 1 "$SF_TEST_SESSIONS/header-only.jsonl" >"$consecutive_session"
 print -r -- \
@@ -258,8 +258,7 @@ jq -e -s '
   length == 2 and .[-1].type == "user" and .[-1].content[0].text == "First"
 ' "$tmp/consecutive_fork_1.jsonl" >/dev/null
 
-# A fork is the exact prefix before the selected user: preceding state and
-# context are kept, and the source is untouched.
+# Fork the exact transcript prefix.
 typeset state_session="$tmp/state.jsonl"
 head -n 1 "$SF_TEST_SESSIONS/header-only.jsonl" >"$state_session"
 print -r -- \
@@ -284,8 +283,7 @@ jq -e -s '
 assert_equal "$state_before" "$(shasum <"$state_session")"
 [[ ! -e $tmp/.agent-a1b2c3.jsonl ]] || fail 'the fork copied a referenced internal session'
 
-# The bundled shell shortcut records the normalized command and its nested exit
-# status separately from the script's skip status.
+# Record shell shortcut results.
 typeset shell_session="$tmp/shell-session.jsonl"
 SF_TEST_RUNTIME=$(jq -c \
   --arg script "$ROOT/share/default/hooks/user_prompt_submit/user_shell/run" \

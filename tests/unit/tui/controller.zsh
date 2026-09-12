@@ -10,10 +10,10 @@ sf_test_source libexec/tui/render/formatters.zsh libexec/tui/render/highlights.z
 sf_test_tmp controller
 typeset SF_ENTRY="$ROOT/bin/shellfish"
 
-# Keep unit tests PTY-free; the real worker lifecycle is covered by tests/pty.
+# Avoid the PTY worker.
 sf_tui_heartbeat_arm() { return 0; }
 
-# Turn events are only legal once a session exists.
+# Decode turn events.
 SF_PRESENT_SESSION="$tmp/session.jsonl"
 SF_PRESENT_STATE=working
 sf_tui_decoded assistant_start
@@ -23,6 +23,7 @@ sf_tui_decoded assistant_message_delta 2 done
 sf_tui_decoded turn_usage '14 ↑ 2 ↓' 1
 assert_equal "${SF_PRESENT_IDENTITY} · 14 ↑ 2 ↓" "$SF_PRESENT_FOOTER"
 
+# Decode permission requests.
 sf_tui_decoded permission_request permission_1 shell pwd 'host access' sh
 assert_equal permission "$SF_PRESENT_STATE"
 assert_equal permission_1 "$SF_PRESENT_PERMISSION_ID"
@@ -31,11 +32,13 @@ assert_equal $'pwd\n\nReason: host access' "$SF_PRESENT_PERMISSION_TEXT"
 assert_equal sh "$SF_PRESENT_PERMISSION_LANGUAGE"
 assert_equal 3 "$SF_PRESENT_PERMISSION_PREVIEW_LENGTH"
 
+# Decode handoffs.
 SF_PRESENT_STATE=working
 SF_PRESENT_PERMISSION_ID=''
 sf_tui_decoded handoff '["/tmp/custom command","","arg"]'
 assert_equal '/tmp/custom command,,arg' "${(j:,:)SF_PRESENT_HANDOFF}"
 
+# Apply runtime updates.
 typeset updated_runtime
 updated_runtime=$(jq -c '
   del(.type,.format_version,.cwd,.created) |
@@ -47,17 +50,18 @@ assert_equal "$updated_runtime" "$SF_PRESENT_RUNTIME"
 assert_equal updated/new-model "$SF_PRESENT_IDENTITY"
 assert_equal updated/new-model "$SF_PRESENT_FOOTER"
 
-# State passes through the live transport without stopping the chat.
+# Pass through live state.
 sf_tui_transport_reset
 SF_TUI_TRANSPORT_LINES=( '{"type":"state","name":"live/status","value":"ready"}' )
 sf_tui_pending_next || fail 'a live state record was rejected'
 assert_equal working "$SF_PRESENT_STATE"
 
+# Reject unsupported events.
 if sf_tui_decoded not-supported; then
   fail 'unsupported exec output was accepted'
 fi
 
-# Cancellation keeps the transport open so exec can emit durable recovery before EOF.
+# Cancel active turns.
 typeset -gi cancel_signals=0 cancel_stops=0 cancel_reloads=0
 functions[sf_tui_transport_signal_saved]=$functions[sf_tui_transport_signal]
 functions[sf_tui_transport_stop_saved]=$functions[sf_tui_transport_stop]
@@ -81,8 +85,7 @@ functions[sf_tui_transport_stop]=$functions[sf_tui_transport_stop_saved]
 functions[sf_tui_recover]=$functions[sf_tui_recover_saved]
 unfunction sf_tui_transport_signal_saved sf_tui_transport_stop_saved sf_tui_recover_saved
 
-# Malformed exec output stops the chat, since only the durable session can
-# replace a transcript the client could not apply.
+# Stop on malformed output.
 cp "$SF_TEST_SESSIONS/complete.jsonl" "$tmp/recover.jsonl"
 sf_tui_reload "$tmp/recover.jsonl" || fail "$SF_PRESENT_ERROR"
 sf_tui_terminal_reset
@@ -106,12 +109,12 @@ assert_equal 0 "${#SF_PRESENT_QUEUE}"
   fail 'the stopped view did not report the failure'
 [[ $PREDISPLAY == *'/refresh'* && $PREDISPLAY == *'/quit'* ]] ||
   fail 'the stopped view did not say which prompts it accepts'
-# Draining what the child already sent cannot return to the failed renderer.
+# Preserve stopped state at EOF.
 SF_TUI_TRANSPORT_EOF=1
 SF_TUI_TRANSPORT_EXIT_STATUS=1
 sf_tui_heartbeat_tick
 assert_equal stopped "$SF_PRESENT_STATE"
-# A stopped chat runs no prompt, but still answers the two client commands.
+# Restrict stopped prompts.
 sf_tui_submit 'what happened?'
 assert_equal ignore "$REPLY"
 assert_equal '' "$SF_PRESENT_ACTION"
@@ -128,8 +131,7 @@ SF_PRESENT_ACTION=''
 SF_PRESENT_STATE=idle
 SF_PRESENT_ERROR=''
 
-# Buffered transport records are applied as one semantic batch, leaving nothing
-# pending and never taking the line away from the active editor.
+# Apply buffered events atomically.
 sf_tui_reset
 sf_tui_terminal_reset
 SF_PRESENT_STATE=working
@@ -158,9 +160,7 @@ assert_equal 0 "$SF_PRESENT_PENDING_ROWS"
 [[ $ZLE_CALLS != *accept-line* ]] ||
   fail 'transport batch left the active editor'
 
-# Every frame shape drains in one heartbeat: a live tool-call delta after streamed
-# text, the durable call that confirms it, and a tool-only response. Rendered
-# order is covered by tests/pty.
+# Drain all frame shapes.
 typeset -a frames=(
   '{"type":"_assistant_message_delta","index":0,"text":"before tool"}
 {"type":"_assistant_tool_call_delta","index":1,"id":"call_1"}'
@@ -187,7 +187,7 @@ for frame in "${frames[@]}"; do
   [[ $SF_PRESENT_STATE != stopped ]] || fail "a heartbeat rejected its frame: $frame"
 done
 
-# Successful completion stages the FIFO head as the next ordinary user turn.
+# Start the next queued turn.
 sf_tui_reset
 sf_tui_terminal_reset
 SF_PRESENT_STATE=working
@@ -200,7 +200,7 @@ assert_equal queued "$SF_PRESENT_STATE"
 assert_equal first "$SF_PRESENT_SUBMITTED"
 assert_equal second "$SF_PRESENT_QUEUE[1]"
 
-# A completed turn wins a cancellation race, while queued prompts are still discarded.
+# Resolve cancellation races.
 sf_tui_reset
 sf_tui_terminal_reset
 sf_tui_event activity_start
@@ -215,8 +215,7 @@ assert_equal idle "$SF_PRESENT_STATE"
 assert_equal 0 "${#SF_PRESENT_QUEUE}"
 assert_equal error "$SF_PRESENT_KIND[-1]"
 
-# Successful cancellation without a queued-prompt diagnostic still clears
-# standalone activity at process completion.
+# Clear cancelled activity.
 sf_tui_reset
 sf_tui_terminal_reset
 sf_tui_event activity_start
@@ -230,7 +229,7 @@ sf_tui_exec_finish
 assert_equal idle "$SF_PRESENT_STATE"
 assert_equal 0 "${#SF_PRESENT_KIND}"
 
-# An uncertain exec boundary discards follow-up prompts before recovery.
+# Discard queues after uncertain exits.
 sf_tui_reset
 sf_tui_terminal_reset
 SF_PRESENT_SESSION="$tmp/recover.jsonl"
@@ -243,8 +242,7 @@ sf_tui_exec_finish
 assert_equal 0 "${#SF_PRESENT_QUEUE}"
 assert_equal idle "$SF_PRESENT_STATE"
 
-# A persisted turn error is the whole outcome, so completion adds no second
-# report and chat stays usable.
+# Preserve persisted turn errors.
 sf_tui_reset
 sf_tui_terminal_reset
 cp "$SF_TEST_SESSIONS/interrupted.jsonl" "$tmp/failed.jsonl"
@@ -259,8 +257,7 @@ SF_TUI_TRANSPORT_EXIT_DETAIL='test backend failure'
 sf_tui_heartbeat_tick
 assert_equal idle "$SF_PRESENT_STATE"
 
-# A persisted cancellation is the complete user-facing outcome, so the
-# cancelling state adds nothing to it.
+# Preserve persisted cancellations.
 sf_tui_reset
 sf_tui_terminal_reset
 cp "$SF_TEST_SESSIONS/interrupted.jsonl" "$tmp/cancelled.jsonl"
@@ -276,7 +273,7 @@ SF_TUI_TRANSPORT_EXIT_STATUS=130
 sf_tui_heartbeat_tick
 assert_equal idle "$SF_PRESENT_STATE"
 
-# A terminated exec ends the turn as an ordinary failure, and chat stays usable.
+# Recover from terminated execs.
 sf_tui_reset
 sf_tui_terminal_reset
 SF_PRESENT_SESSION="$tmp/recover.jsonl"
@@ -290,8 +287,7 @@ sf_tui_submit next
 assert_equal submit "$REPLY"
 assert_equal next "$SF_PRESENT_SUBMITTED"
 
-# A permission prompt cannot be answered once the child is gone. The chat stops
-# rather than guessing what the undecided turn did.
+# Stop on failed permission replies.
 sf_tui_reset
 sf_tui_terminal_reset
 SF_PRESENT_SESSION="$tmp/recover.jsonl"
@@ -310,12 +306,13 @@ assert_equal '' "$SF_PRESENT_PERMISSION_ID"
 SF_PRESENT_STATE=idle
 SF_PRESENT_ERROR=''
 
+# Discard queued prompts.
 SF_PRESENT_QUEUE=( one two )
 sf_tui_discard_queue
 assert_equal 'Discarded 2 queued prompts. Use ↑↓ keys to recover.' "$REPLY"
 assert_equal 0 "${#SF_PRESENT_QUEUE}"
 
-# A queued client command is answered by the client, never sent as a prompt.
+# Run queued client commands.
 sf_tui_reset
 sf_tui_terminal_reset
 SF_PRESENT_SESSION="$tmp/recover.jsonl"
@@ -332,7 +329,7 @@ assert_equal "$SF_ENTRY --clear --session $tmp/recover.jsonl" \
 SF_PRESENT_ACTION=''
 SF_PRESENT_HANDOFF=()
 
-# Creation queues prompts and rejects turn events until it announces a session.
+# Queue prompts during creation.
 sf_tui_reset
 sf_tui_terminal_reset
 SF_PRESENT_SESSION=''
@@ -355,8 +352,7 @@ sf_tui_exec_finish
 assert_equal queued "$SF_PRESENT_STATE"
 assert_equal early "$SF_PRESENT_SUBMITTED"
 
-# Creation that announced nothing leaves no session to rebuild from, so the
-# chat stops with the failure and offers only to quit.
+# Stop failed session creation.
 for code in 0 9; do
   sf_tui_reset
   sf_tui_terminal_reset

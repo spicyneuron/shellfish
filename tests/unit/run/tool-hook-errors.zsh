@@ -11,8 +11,7 @@ mkdir "$TEST_OUTPUT_DIR"
 sf_test_runtime
 export SF_TEST_BACKEND_DELAY=0
 
-# Observer stdout and post-tool skip statuses are contract errors. Exec
-# preserves already committed records and closes unanswered tool calls.
+# Pre-hook stdout fails the turn.
 typeset pre_stdout="$tmp/pre-stdout"
 cat >"$pre_stdout" <<'ZSH'
 #!/usr/bin/env zsh
@@ -42,6 +41,7 @@ print -r -- "$stream" | jq -eRn '
 [[ ! -e $TEST_OUTPUT_DIR/post-ran ]]
 assert_canonical_session "$pre_session"
 
+# Post-hook skips fail the turn.
 typeset post_skip="$tmp/post-skip"
 cat >"$post_skip" <<'ZSH'
 #!/usr/bin/env zsh

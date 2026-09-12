@@ -15,9 +15,7 @@ sf_test_runtime "$system_file"
 export SF_TEST_BACKEND_DELAY=0
 export SF_TEST_BACKEND_REQUEST="$request_capture"
 
-# A skipped stop commits attributed feedback and forces one more request. Its
-# stderr is durable user context, while stdout from the later
-# status-0 invocation is discarded.
+# Stop feedback triggers another request.
 typeset stop_once="$tmp/stop-once"
 cat >"$stop_once" <<'ZSH'
 #!/usr/bin/env zsh
@@ -79,8 +77,7 @@ jq -e -s '
 ' "$stop_session" >/dev/null
 sf_hooks_turn_state_cleanup
 
-# Stop stdin concatenates only the last assistant's text blocks and preserves
-# control characters and trailing newlines. The attempt count starts at one.
+# Stop hooks receive exact assistant text.
 typeset text_backend="$tmp/text-backend"
 cat >"$text_backend" <<'ZSH'
 #!/usr/bin/env zsh
@@ -115,8 +112,7 @@ sf_hooks_turn_state_cleanup
 SF_TEST_RUNTIME=$(jq -c --arg backend "$ROOT/tests/fixtures/backend/run" \
   '.backend.command=$backend' <<<"$SF_TEST_RUNTIME")
 
-# Continuation feedback may lead to tools; the ordinary tool loop remains in
-# the same bounded turn and stop runs again after the final assistant.
+# Stop retries can execute tools.
 typeset tool_stop="$tmp/stop-feedback"
 cat >"$tool_stop" <<'ZSH'
 #!/usr/bin/env zsh
@@ -139,8 +135,7 @@ print -r -- "$stream" | jq -eRn '
   ($events | map(select(.type == "tool_result") | .exit_code)) == [0]
 ' >/dev/null
 
-# Repeated skipped completion is bounded by the existing provider request
-# limit. Exhaustion keeps the committed assistant and feedback.
+# Stop retries respect request limits.
 typeset stop_always="$tmp/stop-always"
 cat >"$stop_always" <<'ZSH'
 #!/usr/bin/env zsh
@@ -161,8 +156,7 @@ print -r -- "$stream" | jq -eRn '
 ' >/dev/null
 assert_canonical_session "$limit_session"
 
-# Cancellation after feedback commit stops the retry without rolling back the
-# completed assistant or stop context.
+# Cancellation preserves committed stop feedback.
 typeset cancel_ready="$tmp/cancel-ready"
 typeset cancel_backend="$tmp/cancel-backend"
 cat >"$cancel_backend" <<ZSH

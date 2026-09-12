@@ -8,8 +8,7 @@ export XDG_STATE_HOME="$tmp/state"
 sf_test_runtime
 export SF_TEST_BACKEND_DELAY=0
 
-# Cancelling an executing tool signals its process group and uses ordinary turn
-# recovery.
+# Cancellation stops an active tool.
 typeset cancel_session="$tmp/tool-cancel.jsonl"
 typeset cancel_stream="$tmp/tool-cancel.stream"
 typeset marker="$tmp/tool-active" exit_marker="$tmp/tool-exit"
@@ -37,8 +36,7 @@ print -r -- "$(<"$cancel_stream")" | jq -eRn '
 ' >/dev/null
 assert_canonical_session "$cancel_session"
 
-# Descendants share the isolated group even when the command creates more than
-# one generation of processes.
+# Cancellation stops tool descendants.
 typeset tree_session="$tmp/tool-tree.jsonl" tree_stream="$tmp/tool-tree.stream"
 typeset tree_marker="$tmp/tool-tree-active" tree_pid_file="$tmp/tool-tree-pid"
 typeset tree_command="(sleep 30 & print -r -- \\$! >${(q)tree_pid_file}; wait) & : >${(q)tree_marker}; wait"
@@ -62,8 +60,7 @@ wait "$pid" || cancel_status=$?
 while (( tree_polls++ < 50 )) && kill -0 "$tree_pid" 2>/dev/null; do sleep 0.01; done
 ! kill -0 "$tree_pid" 2>/dev/null || fail 'cancelled tool grandchild survived'
 
-# Cancellation escalates to KILL, and a command that ignores TERM and keeps the
-# capture pipes open cannot hold the turn open with it.
+# Cancellation kills TERM-resistant tools.
 typeset stubborn_session="$tmp/tool-stubborn.jsonl"
 typeset stubborn_stream="$tmp/tool-stubborn.stream"
 typeset stubborn_marker="$tmp/tool-stubborn-active"
@@ -88,8 +85,7 @@ jq -eRn '
   $events[-1] == {type:"turn_error",message:"Turn interrupted."}
 ' <"$stubborn_stream" >/dev/null
 
-# State written before cancellation is discarded because the tool did not
-# complete normally.
+# Cancelled tool state is discarded.
 typeset state_tool="$tmp/state-tool" state_session="$tmp/tool-state.jsonl"
 typeset state_stream="$tmp/tool-state.stream" state_marker="$tmp/tool-state-active"
 cat >"$state_tool" <<'ZSH'

@@ -20,51 +20,51 @@ make_header() {
   jq -cn '{type:"session",format_version:1,cwd:"/tmp",created:"2026-08-18T10:00:00Z",profile:{request:{model:"claude-3"}},backend:{name:"custom",command:"/test/run",endpoint:"https://example.invalid"}}'
 }
 
-# 1. Header only
+# Header-only session.
 make_header >"$s_empty"
 
-# 2. System message
+# System preview.
 make_header >"$s_system"
 print -r -- '{"type":"system","content":"Instructions"}' >>"$s_system"
 
-# 3. Context record
+# Hook context preview.
 make_header >"$s_context"
 print -r -- '{"type":"hook_result","hook":"env","script":"test","model_context":"data"}' >>"$s_context"
 
-# 4. User message
+# User and torn previews.
 make_header >"$s_user"
 print -r -- '{"type":"user","content":[{"type":"text","text":"list files"}]}' >>"$s_user"
 
 make_header >"$s_torn"
 print -n -r -- '{"type":"user","content":[' >>"$s_torn"
 
-# 5. Assistant message
+# Assistant preview.
 make_header >"$s_assistant"
 print -r -- '{"type":"assistant","stop":"end","content":[{"type":"text","text":"here they are"}]}' >>"$s_assistant"
 
-# 6. Tool result with exit code
+# Tool result preview.
 make_header >"$s_tool_res"
 print -r -- '{"type":"tool_result","call_id":"c1","name":"shell","content":"err","exit_code":2}' >>"$s_tool_res"
 
-# 7. Interrupted turn
+# Interrupted turn preview.
 make_header >"$s_failed"
 print -r -- '{"type":"user","content":[{"type":"text","text":"go"}]}' >>"$s_failed"
 print -r -- '{"type":"turn_error","message":"Turn interrupted."}' >>"$s_failed"
 
-# 8. Unreadable file
+# Unreadable session preview.
 print -r -- 'not json' >"$s_bad"
 
-# 9. Header followed only by state
+# State-only preview.
 make_header >"$s_state_only"
 print -r -- '{"type":"state","name":"preview/only","value":true}' >>"$s_state_only"
 
-# 10. State after the latest message
+# Trailing state preview.
 make_header >"$s_state_tail"
 print -r -- '{"type":"user","content":[{"type":"text","text":"latest prompt"}]}' >>"$s_state_tail"
 print -r -- '{"type":"state","name":"preview/first","value":1}' >>"$s_state_tail"
 print -r -- '{"type":"state","name":"preview/last","value":2}' >>"$s_state_tail"
 
-# Loading sessions summarizes records and formats resume labels.
+# Summarize resume candidates.
 sf_resume_load "$s_empty" "$s_system" "$s_context" "$s_user" "$s_torn" "$s_assistant" "$s_tool_res" \
   "$s_failed" "$s_bad" "$s_state_only" "$s_state_tail"
 (( ${#SF_RESUME_PATHS} == 11 ))
@@ -86,13 +86,13 @@ assert_equal '(unreadable)' "$SF_RESUME_PREVIEWS[9]"
 assert_equal 'STATE preview/only' "$SF_RESUME_PREVIEWS[10]"
 assert_equal 'STATE preview/last' "$SF_RESUME_PREVIEWS[11]"
 
-# A session removed after discovery does not shift later summaries onto its row.
+# Missing sessions retain their row.
 sf_resume_load "$s_empty" "$tmp/missing.jsonl" "$s_system"
 assert_equal '(unreadable)' "$SF_RESUME_PREVIEWS[2]"
 assert_equal SYSTEM "$SF_RESUME_PREVIEWS[3]"
 sf_resume_load "$s_empty" "$s_system" "$s_context" "$s_user" "$s_torn" "$s_assistant" "$s_tool_res" "$s_bad"
 
-# sf_resume_update_display sets PREDISPLAY with the numbered candidate list.
+# Render the candidate list.
 zle() { :; }
 COLUMNS=60
 sf_resume_update_display
@@ -103,8 +103,7 @@ sf_resume_update_display
 [[ $PREDISPLAY == *'↑/↓ select  ←/→ page  0–9 jump  Enter resumes  Esc cancels'* ]]
 for line in ${(f)PREDISPLAY}; do (( ${#line} < COLUMNS )); done
 
-# Each highlight must cover exactly the text it decorates, so a span whose
-# offsets drift off its row fails even when the attributes are still correct.
+# Highlight offsets must match their text.
 span_text() {
   local -a span=( ${=1} )
   REPLY=${PREDISPLAY[${span[1]#P} + 1,${span[2]}]}
@@ -119,7 +118,7 @@ span_text "$region_highlight[3]"
 assert_equal '↑/↓ select  ←/→ page  0–9 jump  Enter resumes  Esc cancels' "$REPLY"
 [[ $region_highlight[3] == *' fg=8' ]]
 
-# The preview receives space unused by the backend/model column.
+# Expand previews into unused space.
 (
   SF_RESUME_PATHS=( "$s_empty" )
   SF_RESUME_TIMES=( '2026-08-18 10:00' )
@@ -130,7 +129,7 @@ assert_equal '↑/↓ select  ←/→ page  0–9 jump  Enter resumes  Esc cance
   [[ $PREDISPLAY == *'12345678901234567890'* ]]
 )
 
-# Very narrow displays preserve preview space by truncating backend/model.
+# Preserve previews on narrow displays.
 (
   SF_RESUME_PATHS=( "$s_empty" )
   SF_RESUME_TIMES=( '2026-08-18 10:00' )
@@ -141,18 +140,18 @@ assert_equal '↑/↓ select  ←/→ page  0–9 jump  Enter resumes  Esc cance
   [[ $PREDISPLAY == *'…  P'$'\n'* ]]
 )
 
-# Arrow movement changes the highlighted default without editing a buffer.
+# Move the highlighted selection.
 KEYS=$'\e[B'
 sf_resume_move
 assert_equal 2 "$SF_RESUME_SELECTED"
 [[ $PREDISPLAY == *$'\n› 2  '* ]]
 
-# Accept uses the highlighted row.
+# Accept the highlighted row.
 BUFFER=''
 sf_resume_accept
 assert_equal 2 "$BUFFER"
 
-# Pages summarize ten sessions at a time, and 0 selects the tenth row.
+# Page and jump through candidates.
 SF_RESUME_ALL_PATHS=( "$s_empty" "$s_system" "$s_context" "$s_user" "$s_torn"
   "$s_assistant" "$s_tool_res" "$s_bad" "$s_empty" "$s_system" "$s_context" )
 SF_RESUME_LIMIT=10
@@ -171,11 +170,11 @@ sf_resume_change_page
 assert_equal 0 "$SF_RESUME_PAGE"
 (( ${#SF_RESUME_PATHS} == 10 ))
 
-# Cancel marks cancellation.
+# Cancel selection.
 sf_resume_cancel
 assert_equal 1 "$SF_RESUME_CANCELLED"
 
-# The public resume routes own selection and forward the remaining TUI arguments.
+# Route resume selection publicly.
 sf_test_tmp resume-command
 typeset entry="$ROOT/bin/shellfish" directory error
 integer exit_code=0

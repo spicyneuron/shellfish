@@ -16,8 +16,7 @@ sf_test_runtime "$system_file"
 export SF_TEST_BACKEND_DELAY=0
 export SF_TEST_BACKEND_REQUEST="$request_capture"
 
-# pre_tool_use and post_tool_use scripts receive canonical envelopes. A nonzero
-# tool exit remains an executed result, and stderr becomes durable user context.
+# Tool observers receive canonical envelopes.
 typeset pre_observe="$tmp/pre-observe"
 cat >"$pre_observe" <<'ZSH'
 #!/usr/bin/env zsh
@@ -79,8 +78,7 @@ jq -e '
   ([.messages[-4:][].type]) == ["tool_call","tool_result","tool_call","tool_result"]
 ' "$request_capture" >/dev/null
 
-# A pre-tool denial creates an ordinary result; later sibling calls still run
-# and post-tool observers see every committed result.
+# Pre-hook denials preserve sibling calls.
 typeset pre_deny="$tmp/pre-deny"
 cat >"$pre_deny" <<'ZSH'
 #!/usr/bin/env zsh
@@ -133,6 +131,7 @@ print -r -- "$stream" | jq -eRn '
 [[ $(<$TEST_OUTPUT_DIR/post-calls) == \
   $'call_1|0\ncall_2|126\ncall_3|0' ]]
 
+# Empty denials use fallback feedback.
 typeset fallback_session="$tmp/tool-deny-fallback.jsonl"
 sf_test_session "$fallback_session"
 stream=$(NO_FEEDBACK=1 SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_COUNT=2 \

@@ -32,6 +32,7 @@ make_skill "$home/.agents/skills" personal 'personal skill'
 make_skill "$project/.agents/skills" hidden 'must not be advertised' true
 make_skill "$project/.agents/skills" bad_name 'invalid skill'
 
+# Discover valid skills by precedence.
 HOME="$home" sf_skills_discover "$ROOT/share/default" "$config" "$project"
 typeset -A descriptions skill_paths
 integer index
@@ -46,6 +47,7 @@ done
 [[ -n ${descriptions[skill-creator]-} ]]
 [[ -z ${descriptions[hidden]-} && -z ${descriptions[bad_name]-} ]]
 
+# Load only valid advertised skills.
 loaded=$(cd "$project" && print -rn -- '{"name":"shared"}' | HOME="$home" \
   SHELLFISH_CONFIG_DIR="$config" zsh -f "$tool")
 [[ $loaded == "Skill directory: ${project:A}/.agents/skills/shared"*$'# shared instructions'* ]]

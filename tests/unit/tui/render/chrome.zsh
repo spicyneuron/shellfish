@@ -51,8 +51,7 @@ typeset permission_prompt=$'─ Allow shell outside of sandbox? ─────�
 [[ $POSTDISPLAY == $'\n─'* ]] || fail 'permission prompt omitted its trailing blank line'
 SF_PRESENT_STATE=idle
 
-# Chrome offsets index PREDISPLAY + BUFFER + POSTDISPLAY, so confirm each span
-# actually covers the text it claims rather than trusting the arithmetic.
+# Chrome offsets index PREDISPLAY + BUFFER + POSTDISPLAY.
 SF_PRESENT_STYLE=( divider 'fg=8' prompt_waiting 'fg=2' prompt 'fg=4' footer 'fg=5'
   muted 'fg=7' permission 'fg=4' syntax.string 'fg=6' )
 sf_tui_reset
@@ -76,8 +75,7 @@ assert_equal "${(l:79::─:)""}|❯ |${(l:79::─:)""}|test/model · 1 ↑ 2 ↓
   "${(j:|:)chrome_sliced}"
 assert_equal 'fg=2,fg=2,fg=2,fg=5' "${(j:,:)chrome_styled}"
 
-# Neither an accepted prompt, which repaints before the controller can leave
-# idle, nor a live turn, which queues instead, is waiting on input.
+# Accepted and live prompts are not waiting.
 for SF_PRESENT_ACTION SF_PRESENT_STATE in submit idle '' working; do
   sf_tui_repaint
   chrome_styled=()
@@ -108,7 +106,6 @@ assert_equal '[a]pprove  [d]eny (default)' "$chrome_sliced[3]"
 assert_equal 'fg=4' "$chrome_styled[3]"
 assert_equal "${(l:79::─:)""}" "$chrome_sliced[4]"
 assert_equal 'fg=4' "$chrome_styled[4]"
-# The labelled top rule is the same divider as the bottom, so it shares a style.
 assert_equal 79 ${#chrome_sliced[1]}
 [[ $chrome_sliced[1] == '─ Allow shell outside of sandbox? '─* ]] ||
   fail "top rule: $chrome_sliced[1]"
@@ -116,7 +113,7 @@ assert_equal "$chrome_styled[4]" "$chrome_styled[1]"
 [[ ${(j:,:)chrome_sliced} != *'"host"'* ]] || fail 'permission reason was syntax highlighted'
 SF_PRESENT_STATE=idle
 
-# The queue divider, title, and items carry their respective styles.
+# Queue chrome uses distinct styles.
 SF_PRESENT_QUEUE=( $'first queued\ncontinued' )
 sf_tui_repaint
 chrome_display="$PREDISPLAY$BUFFER$POSTDISPLAY"

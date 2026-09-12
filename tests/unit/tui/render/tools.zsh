@@ -30,8 +30,7 @@ has_span() {
   return 1
 }
 
-# A call replaces standalone activity and owns a final heading/body followed by
-# one pending result. Only the call rows are safe while execution is pending.
+# A pending result keeps only its call rows safe.
 sf_tui_reset
 sf_tui_terminal_reset
 sf_tui_event activity_start
@@ -45,8 +44,7 @@ view
 assert_equal $'─ agent ──────────────────────────────────────────────────────────────────── 1 ─\n\n⛭ shell · build · unsandboxed\n│ make test\n╰ ⠃' "$REPLY"
 assert_equal 4 "$SF_PRESENT_SAFE_ROWS"
 
-# The pending tail validates the next durable result without an ID-indexed
-# store. A mismatch changes nothing; settlement resumes standalone activity.
+# Only the pending call ID can settle the tail.
 if sf_tui_event tool_result wrong 0 result plain; then
   fail 'a result settled the wrong pending call'
 fi
@@ -58,8 +56,7 @@ assert_equal $'─ agent ──────────────────�
 assert_equal 7 "$SF_PRESENT_SAFE_ROWS"
 sf_tui_event activity_stop
 
-# Permission mutates only the pending result: its activity disappears while
-# the prompt owns interaction, then returns after the decision is delivered.
+# Permission temporarily hides pending-result activity.
 sf_tui_reset
 sf_tui_event activity_start
 sf_tui_event tool_call permission shell pwd '' sh
@@ -79,8 +76,7 @@ view
   fail "denied result order: $REPLY"
 sf_tui_event activity_stop
 
-# Zero previews collapse tool content into formatter-owned rows. A completed
-# empty hidden result still closes its call rail.
+# Zero previews collapse content but preserve the call rail.
 sf_tui_reset
 SF_PRESENT_PREVIEW_TOOL_CALL=0
 SF_PRESENT_PREVIEW_TOOL_RESULT=0
@@ -104,8 +100,7 @@ assert_tail $'⛭ read_file\n╰'
 SF_PRESENT_PREVIEW_TOOL_CALL=full
 SF_PRESENT_PREVIEW_TOOL_RESULT=full
 
-# Independent call/result previews clamp wrapped rows and count the complete
-# result. A result marked full overrides the configured result limit.
+# Call and result previews clamp independently.
 sf_tui_reset
 SF_PRESENT_PREVIEW_TOOL_CALL=1
 SF_PRESENT_PREVIEW_TOOL_RESULT=1
@@ -121,8 +116,7 @@ assert_tail $'⛭ edit_file\n│ path\n╰ one\n  two\n  three'
 SF_PRESENT_PREVIEW_TOOL_CALL=full
 SF_PRESENT_PREVIEW_TOOL_RESULT=full
 
-# Diff syntax follows wrapped result rows and pads background spans to the
-# terminal width, including the closing rail.
+# Diff backgrounds fill wrapped rows.
 sf_tui_reset
 SF_PRESENT_STYLE=( tool_call tool tool_result tool divider rail \
   'syntax.added' 'fg=green,bg=darkgreen' \
@@ -138,7 +132,7 @@ has_span 'fg=green,bg=darkgreen' 12 ||
   fail 'added diff rows did not fill their background'
 SF_PRESENT_STYLE=()
 
-# A turn failure settles a pending result before appending its error.
+# Turn failures settle pending results.
 sf_tui_reset
 sf_tui_event tool_call abandoned shell run '' sh
 sf_tui_event error Failed broken end
@@ -147,8 +141,7 @@ assert_equal 0 "$SF_PRESENT_LIVE"
 view
 assert_tail $'⛭ shell\n│ run\n╰\n\n✕ Failed\n  broken'
 
-# A tool taller than one commit batch drains in source order, with every row
-# committed exactly once.
+# Tall tools drain once in source order.
 sf_tui_reset
 sf_tui_terminal_reset
 sf_tui_event tool_call tall shell 'make test' '' sh
@@ -168,7 +161,7 @@ assert_equal 0 "${#SF_PRESENT_KIND}"
 assert_equal $'─ agent ──────── 1 ─\n\n⛭ shell\n│ make test\n╰ one\n  two\n  three\n  four\n  exit 0' \
   "${drained%$'\n'}"
 
-# A preview clamp hides rows instead of draining them one window at a time.
+# Preview clamps do not drain windows.
 sf_tui_reset
 sf_tui_terminal_reset
 SF_PRESENT_PREVIEW_TOOL_RESULT=1
@@ -182,8 +175,7 @@ sf_tui_terminal_finish || fail 'committing a clamped tool failed'
 assert_equal 0 "${#SF_PRESENT_KIND}"
 SF_PRESENT_PREVIEW_TOOL_RESULT=full
 
-# Committed preview rows spend the budget without collapsing the result: what
-# is left keeps the ordinary clamp and its whole-content estimate.
+# Committed rows spend the preview budget.
 sf_tui_reset
 sf_tui_terminal_reset
 SF_PRESENT_PREVIEW_TOOL_RESULT=2

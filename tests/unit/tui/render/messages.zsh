@@ -18,8 +18,7 @@ typeset -gi SF_PRESENT_HISTORY_NO=0
 
 view() { sf_tui_transcript "$@" || fail 'rendering the transcript failed'; REPLY=$SF_PRESENT_VIEWPORT_TEXT }
 
-# The first message of a role opens its rule, carrying the section number. The
-# rule fills the width exactly so it meets the prompt divider below it.
+# The first message opens a full-width numbered role rule.
 sf_tui_reset
 sf_tui_terminal_reset
 sf_tui_event user hello
@@ -27,21 +26,19 @@ view 79 20
 assert_equal $'─ user ──────────────────────────────────────────────────────────────────── 1 ─\n\nhello' "$REPLY"
 assert_equal 79 "${#${REPLY%%$'\n'*}}"
 
-# A second message in the same role opens no rule: the role is already in
-# force, so only its own blank row separates it from what came before.
+# Repeated roles omit the rule.
 sf_tui_event user again
 view 79 20
 assert_equal $'─ user ──────────────────────────────────────────────────────────────────── 1 ─\n\nhello\n\nagain' "$REPLY"
 
-# Entering a different role opens a numbered rule of its own.
+# Role changes open a new rule.
 sf_tui_reset
 sf_tui_event user first
 sf_tui_message_append agent reply
 view 79 20
 [[ $REPLY == *$'\n\n─ agent ─'*$' 2 ─\n\nreply' ]] || fail "agent rule: $REPLY"
 
-# A rule that cannot fit its number stays a plain rule rather than a truncated
-# one, and never overruns the width.
+# Narrow rules omit numbers before overflowing.
 sf_tui_reset
 sf_tui_event user hi
 view 12 20
@@ -55,15 +52,13 @@ sf_tui_event user hi
 view 8 20
 assert_equal $'─ user ─\n\nhi' "$REPLY"
 
-# Spacing belongs to the formatter: leading blank lines are the previous turn's
-# and a trailing run collapses, so a body is framed by exactly one blank row.
+# Message spacing collapses blank runs.
 sf_tui_reset
 sf_tui_event user $'\n\n  spaced  \n\n\n'
 view 79 20
 [[ $REPLY == *$'\n\n  spaced  ' ]] || fail "trimmed body: $REPLY"
 
-# A complete record with nothing visible takes no entry at all, so it leaves
-# neither a stray rule nor a gap in the section numbering.
+# Empty records do not consume sections.
 sf_tui_reset
 sf_tui_event user $'\n\n'
 assert_equal 0 "${#SF_PRESENT_KIND}"
@@ -71,7 +66,7 @@ assert_equal 0 "$SF_PRESENT_SECTION_ID"
 sf_tui_event user visible
 assert_equal 1 "$SF_PRESENT_SECTION[1]"
 
-# Formatting uses the current width, then settled rows keep that width.
+# Settled rows retain their formatted width.
 sf_tui_reset
 sf_tui_event user 'alpha beta gamma'
 view 12 20
@@ -83,13 +78,13 @@ sf_tui_event user 'alpha beta gamma'
 view 8 20
 assert_equal $'─ user ─\n\nalpha\nbeta\ngamma' "$REPLY"
 
-# The viewport keeps the last rows the budget allows.
+# Viewports keep the last rows.
 sf_tui_reset
 sf_tui_event user $'one\ntwo\nthree\nfour'
 view 79 3
 assert_equal $'two\nthree\nfour' "$REPLY"
 
-# A complete record is wholly safe, while each commit stays within its budget.
+# Commits stay within their row budget.
 sf_tui_reset
 sf_tui_event user hello
 sf_tui_transcript 79 20
@@ -98,9 +93,7 @@ sf_tui_transcript 79 2
 assert_equal 2 "$SF_PRESENT_SAFE_ROWS"
 assert_equal $'\nhello' "$SF_PRESENT_VIEWPORT_TEXT"
 
-# A staging pass stops at the end of the safe run rather than formatting the
-# transcript behind it, so it stages exactly what a full pass would and leaves
-# the viewport to the repaint that follows the commit.
+# Staging stops after the safe prefix and skips the viewport.
 sf_tui_reset
 sf_tui_event user $'one\ntwo\nthree'
 sf_tui_event user $'four\nfive\nsix'
@@ -113,8 +106,7 @@ assert_equal "$staged_text" "$SF_PRESENT_SAFE_TEXT"
 assert_equal "$staged_rows" "$SF_PRESENT_SAFE_ROWS"
 assert_equal '' "$SF_PRESENT_VIEWPORT_TEXT"
 
-# With nothing to commit there is no repaint behind the staging pass, so it
-# builds the viewport itself. A budget under the leading rule stages nothing.
+# Empty staging still builds the viewport.
 sf_tui_transcript 79 1
 typeset drawn=$SF_PRESENT_VIEWPORT_TEXT
 assert_equal 0 "$SF_PRESENT_SAFE_ROWS"
@@ -122,8 +114,7 @@ assert_equal 0 "$SF_PRESENT_SAFE_ROWS"
 sf_tui_transcript 79 1 stage
 assert_equal "$drawn" "$SF_PRESENT_VIEWPORT_TEXT"
 
-# A closed record crosses the formatter boundary once. Draining its settled
-# rows in small blocks never returns to the formatter.
+# Settled records format once while draining.
 sf_tui_reset
 typeset -gi format_calls=0
 typeset saved_format_message=$functions[sf_tui_format_message] tall_message=''
@@ -147,7 +138,7 @@ assert_equal 0 "${#SF_PRESENT_KIND}"
 functions[sf_tui_format_message]=$saved_format_message
 unfunction sf_tui_format_message_saved
 
-# Spans land on the text they claim, after the rows move into PREDISPLAY.
+# Highlight spans follow committed text.
 sf_tui_reset
 SF_PRESENT_STYLE=( divider 'fg=8' section.user 'fg=1' muted 'fg=7' )
 sf_tui_event user hello
@@ -158,14 +149,11 @@ for (( span = 1; span <= ${#SF_PRESENT_VIEWPORT_HIGHLIGHTS}; span += 3 )); do
   sliced+=( "${SF_PRESENT_VIEWPORT_TEXT[SF_PRESENT_VIEWPORT_HIGHLIGHTS[span] + 1,SF_PRESENT_VIEWPORT_HIGHLIGHTS[span + 1]]}" )
 done
 [[ ${sliced[(r)user ]} == 'user ' ]] || fail "role title span: ${(j:|:)sliced}"
-# The number sits inside the trailing divider, so its style has to be applied
-# last or the divider would cover it.
 assert_equal 1 "$sliced[-1]"
 
 SF_PRESENT_STYLE=()
 
-# Formatting advances settled source once. Staging leaves the settled-row cursor
-# unchanged, and a resize affects only the live tail.
+# Resizing affects only the live tail.
 sf_tui_reset
 sf_tui_terminal_reset
 sf_tui_event assistant_start
@@ -187,8 +175,7 @@ sf_tui_event assistant_end
 sf_tui_transcript 5 20
 assert_equal gamma "$SF_PRESENT_VIEWPORT_TEXT"
 
-# Successive stream commits consume each row once, including chrome on only
-# the first commit and the partial tail only after assistant settlement.
+# Stream commits consume each row once.
 sf_tui_reset
 sf_tui_terminal_reset
 sf_tui_event assistant_start
@@ -214,8 +201,7 @@ drained+=$PREDISPLAY
 assert_equal $'─ agent \n\none\ntail\ntwo\nlast' "$drained"
 assert_equal 0 "${#SF_PRESENT_KIND}"
 
-# Consumption counts logical source while wrapping counts cells, so a tab's
-# projected spaces and a wide character commit once and never reappear.
+# Logical source consumption survives cell-width changes.
 SF_PRESENT_STYLE=( message 'fg=1' syntax.strong bold )
 sf_tui_reset
 sf_tui_terminal_reset
@@ -238,9 +224,7 @@ sf_tui_transcript 6 20
   fail 'the temporary commit lost staged source'
 SF_PRESENT_STYLE=()
 
-# Reasoning consumes its heading once and keeps the whole-block estimate for the
-# summary. Committed rows spend the preview budget, so the clamp stays instead of
-# draining a window at a time.
+# Reasoning commits spend preview rows but retain the total estimate.
 sf_tui_reset
 sf_tui_terminal_reset
 SF_PRESENT_PREVIEW_REASONING=1
@@ -268,8 +252,7 @@ assert_equal 0 "${#SF_PRESENT_KIND}"
 SF_PRESENT_PREVIEW_REASONING=full
 sf_tui_terminal_reset
 
-# System context owns its preview and whole-content estimate. A zero preview is
-# only the clamp; a positive preview counts wrapped body rows, not its chrome.
+# Context previews count body rows, not chrome.
 sf_tui_reset
 SF_PRESENT_PREVIEW_CONTEXT=0
 sf_tui_event system $'one\ntwo'
@@ -290,8 +273,7 @@ view 79 20
 [[ $REPLY == $'─ system '*$'\n\nfirst row\n… ~8 tokens' ]] || fail "previewed system: $REPLY"
 assert_equal 4 "$SF_PRESENT_SAFE_ROWS"
 
-# Assistant start owns agent chrome and activity, but none of it is safe until
-# stable content exists. Ending an empty stream retracts both chrome and number.
+# Empty assistant streams retract their chrome and section.
 sf_tui_reset
 SF_PRESENT_PREVIEW_CONTEXT=full
 sf_tui_event assistant_start
@@ -303,8 +285,7 @@ sf_tui_event user next
 view 12 20
 [[ $REPLY == $'─ user '*$' 1 ─\n\nnext' ]] || fail "empty assistant retraction: $REPLY"
 
-# Live assistant text shows only complete wrapped rows. The mutable tail is
-# represented by activity until settlement, when it appears exactly once.
+# Live messages expose only complete wrapped rows.
 sf_tui_reset
 sf_tui_event assistant_start
 sf_tui_event assistant_message_delta 0 'hello world'
@@ -316,8 +297,7 @@ view 8 20
 assert_equal $'─ agent \n\nhello\nworld' "$REPLY"
 assert_equal 4 "$SF_PRESENT_SAFE_ROWS"
 
-# A newline closes the partial line immediately, so the body row joins the safe
-# prefix even though the formatter remains live for more content.
+# A newline makes the current live row safe.
 sf_tui_reset
 sf_tui_event assistant_start
 sf_tui_event assistant_message_delta 0 $'answer\n'
@@ -330,8 +310,7 @@ view 20 20
 [[ $REPLY == *$'─ agent '*$' 1 ─\n\nanswer\n\n─ user '*$' 2 ─\n\nnext' ]] ||
   fail "settled assistant role retracted: $REPLY"
 
-# Adjacent blocks of the same visible kind remain separate, and visible or
-# opaque kind transitions settle the preceding source block in order.
+# Block transitions settle preceding source in order.
 sf_tui_reset
 sf_tui_event assistant_start
 sf_tui_event assistant_message_delta 0 first
@@ -349,8 +328,7 @@ sf_tui_event assistant_tool_call_delta 4
 view 79 20
 [[ $REPLY == *'Thought for ~9 tokens.' ]] || fail "tool-call boundary: $REPLY"
 
-# Expanded reasoning displays its partial tail but keeps it unsafe. A preview
-# clamp owns activity while live and uses the exact whole-block total at end.
+# Live reasoning tails remain unsafe.
 sf_tui_reset
 SF_PRESENT_PREVIEW_REASONING=1
 sf_tui_event assistant_start
@@ -366,8 +344,7 @@ view 79 20
   fail "settled reasoning preview: $REPLY"
 assert_equal 5 "$SF_PRESENT_SAFE_ROWS"
 
-# A collapsed reasoning block remains wholly unsafe while live, then settles
-# as one summary. Newline-only streamed blocks retract on transition.
+# Collapsed reasoning settles as one summary.
 sf_tui_reset
 SF_PRESENT_PREVIEW_REASONING=0
 sf_tui_event assistant_start
@@ -388,8 +365,7 @@ sf_tui_event user visible
 view 79 20
 [[ $REPLY == $'─ user '*$' 1 ─\n\nvisible' ]] || fail "newline-only retraction: $REPLY"
 
-# An incomplete inline construct holds only a bounded suffix of stable rows;
-# a tall stream still drains. Open fences do not withhold otherwise safe rows.
+# Incomplete inline syntax withholds only a bounded suffix.
 sf_tui_reset
 SF_PRESENT_PREVIEW_REASONING=full
 sf_tui_event assistant_start
@@ -408,7 +384,7 @@ sf_tui_event assistant_message_delta 0 $'```js\nconst x = 1;\ntail'
 view 20 20
 (( SF_PRESENT_SAFE_ROWS > 0 )) || fail 'an open fence withheld stable rows'
 
-# Chunk boundaries do not change nested Markdown styling.
+# Markdown styling is independent of chunk boundaries.
 SF_PRESENT_STYLE=( message m syntax.heading h syntax.strong s )
 sf_tui_reset
 sf_tui_event assistant_start
@@ -428,8 +404,7 @@ assert_equal "$chunked_text" "$SF_PRESENT_VIEWPORT_TEXT"
 assert_equal "$chunked_spans" "${(j:|:)SF_PRESENT_VIEWPORT_HIGHLIGHTS}"
 SF_PRESENT_STYLE=()
 
-# Scan continuation is formatter-local: growing a long line does work
-# proportional to new content rather than rescanning its retained prefix.
+# Scan continuation avoids rescanning retained prefixes.
 sf_tui_reset
 typeset -gi scanned=0
 functions[sf_tui_markdown_saved]=$functions[sf_tui_markdown_highlight]
@@ -446,8 +421,7 @@ done
 functions[sf_tui_markdown_highlight]=$functions[sf_tui_markdown_saved]
 unfunction sf_tui_markdown_saved
 
-# Reasoning clamps retain the formatter's base style and apply the clamp style
-# afterward.
+# Clamp styling layers over reasoning styling.
 SF_PRESENT_STYLE=( message 'fg=1' reasoning 'fg=2' clamp 'fg=3' )
 SF_PRESENT_PREVIEW_REASONING=1
 sf_tui_reset

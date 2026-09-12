@@ -4,20 +4,20 @@ source "${0:A:h:h:h}/_helpers.zsh"
 sf_test_source share/default/backends/_backend.zsh
 sf_test_tmp backends
 
-# Setup creates files with restrictive permissions.
+# Create private backend files.
 sf_backend_setup test_backend
 [[ $SF_BACKEND_TEMP_DIR == "${${TMPDIR:-/tmp}:A}/shellfish-$EUID/backends/test_backend."* ]]
 assert_equal 600 "$(stat -f %Lp "$SF_BACKEND_HEADERS_FILE")"
 
-# Empty credential is a no-op.
+# Ignore empty credentials.
 sf_backend_credential Authorization ''
 [[ ! -s $SF_BACKEND_HEADERS_FILE ]]
 
-# Valid credential appends header.
+# Append valid credentials.
 sf_backend_credential Authorization 'Bearer secret-token'
 assert_equal 'Authorization: Bearer secret-token' "$(<"$SF_BACKEND_HEADERS_FILE")"
 
-# Control characters in credentials are rejected.
+# Reject credential control characters.
 integer operation_status=0
 (
   sf_backend_credential Authorization $'Bearer bad\nnewline'
@@ -25,7 +25,7 @@ integer operation_status=0
 (( operation_status != 0 )) || fail 'invalid authentication value was accepted'
 [[ "$(<"$tmp/cred-err")" == *"invalid authentication value"* ]]
 
-# The request supplies the model and transport every adapter consumes.
+# Read model and transport settings.
 cat >"$SF_BACKEND_REQUEST_FILE" <<'JSON'
 {"options":{"request":{"model":"test-model"}},
  "transport":{"endpoint":"https://api.example.com/v1","insecure_tls":true,
@@ -35,19 +35,19 @@ sf_backend_request
 assert_equal test-model "$SF_BACKEND_MODEL"
 assert_equal https://api.example.com/v1 "$SF_BACKEND_ENDPOINT"
 
-# An adapter's own predicate rejects request options it cannot translate.
+# Reject unsupported request options.
 operation_status=0
 sf_backend_request '.options.request | has("model") | not' || operation_status=$?
 (( operation_status != 0 )) || fail 'untranslatable request options were accepted'
 
-# A request without a model is rejected before any predicate runs.
+# Require a model.
 print -r -- '{"transport":{"endpoint":"https://api.example.com/v1","insecure_tls":true,"http_timeout":60,"http_stall":10}}' \
   >"$SF_BACKEND_REQUEST_FILE"
 operation_status=0
 sf_backend_request '.options.request | has("stream_options") | not' || operation_status=$?
 (( operation_status != 0 )) || fail 'request without a model was accepted'
 
-# Curl arguments construction includes headers, timeouts, and insecure flags.
+# Build curl transport arguments.
 sf_backend_curl_args
 [[ "${SF_BACKEND_CURL_ARGS[*]}" == *'--url https://api.example.com/v1'* ]]
 [[ "${SF_BACKEND_CURL_ARGS[*]}" == *"--max-time 60"* ]]
@@ -55,7 +55,7 @@ sf_backend_curl_args
 [[ "${SF_BACKEND_CURL_ARGS[*]}" == *"--header @$SF_BACKEND_HEADERS_FILE"* ]]
 [[ "${SF_BACKEND_CURL_ARGS[*]}" == *"--insecure"* ]]
 
-# Curl connection and resolution failures report dedicated messages.
+# Report curl transport failures.
 print -rn -- 000 >"$SF_BACKEND_STATUS_FILE"
 for code expected in \
     6 'could not resolve the provider host' \
@@ -70,12 +70,12 @@ for code expected in \
   [[ "$(<"$tmp/curl-err")" == *"$expected (curl status $code)"* ]]
 done
 
-# A success status finishes without reporting an error.
+# Accept successful HTTP responses.
 print -r -- '200' >"$SF_BACKEND_STATUS_FILE"
 print -r -- '{"error":{"message":"overloaded"}}' >"$SF_BACKEND_RESPONSE_FILE"
 sf_backend_finish 0 0 0
 
-# HTTP 401 with headers reports credential rejection.
+# Report rejected credentials.
 print -r -- '401' >"$SF_BACKEND_STATUS_FILE"
 print -r -- '{"error":{"message":"invalid api key"}}' >"$SF_BACKEND_RESPONSE_FILE"
 operation_status=0
@@ -85,7 +85,7 @@ operation_status=0
 (( operation_status != 0 )) || fail 'HTTP 401 with credentials was accepted'
 [[ "$(<"$tmp/http-err")" == *"credentials rejected (HTTP 401): invalid api key"* ]]
 
-# HTTP 401 without headers reports missing API key.
+# Report missing credentials.
 : >"$SF_BACKEND_HEADERS_FILE"
 operation_status=0
 (
@@ -94,7 +94,7 @@ operation_status=0
 (( operation_status != 0 )) || fail 'HTTP 401 without credentials was accepted'
 [[ "$(<"$tmp/http-no-key")" == *"no API key was supplied"* ]]
 
-# HTTP 500 reports error status and message.
+# Report HTTP errors.
 print -r -- '500' >"$SF_BACKEND_STATUS_FILE"
 print -r -- '{"error":{"message":"internal error"}}' >"$SF_BACKEND_RESPONSE_FILE"
 operation_status=0
@@ -104,7 +104,7 @@ operation_status=0
 (( operation_status != 0 )) || fail 'HTTP 500 was accepted'
 [[ "$(<"$tmp/http-500")" == *"HTTP 500: internal error"* ]]
 
-# Normalizer failure reports normalizer error output.
+# Report normalizer failures.
 print -r -- '200' >"$SF_BACKEND_STATUS_FILE"
 print -r -- 'malformed stream chunk' >"$SF_BACKEND_NORMALIZER_ERROR_FILE"
 operation_status=0

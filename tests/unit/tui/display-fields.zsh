@@ -2,6 +2,7 @@
 
 source "${0:A:h:h:h}/_helpers.zsh"
 
+# Resolve tool display fields.
 typeset summary_tools=$(jq -cn \
   --slurpfile edit "$ROOT/share/default/tools/edit_file/manifest.json" \
   --slurpfile shell "$ROOT/share/default/tools/shell/manifest.json" '
@@ -33,6 +34,8 @@ assert_equal sh "$(jq -nr -L "$ROOT" --argjson tools "$summary_tools" '
   include "libexec/tui/display-fields";
   {name:"shell",input:{command:"true"}} | tool_call_display($tools.harness.tools).format
 ')"
+
+# Decode replay fields.
 typeset replay
 replay=$({
   head -n 1 "$ROOT/tests/fixtures/session/complete.jsonl"
@@ -43,7 +46,6 @@ replay=$({
   print -r -- '{"type":"state","name":"replay/end","value":null}'
 } | jq -jRs -L "$ROOT" -f "$ROOT/libexec/tui/transcript-decode.jq")
 typeset -a replay_fields=( "${(@0)${replay%$'\0'}}" )
-# Replay leads with the frozen runtime from the durable header.
 assert_equal session_update "$replay_fields[1]"
 assert_equal fake-model "$(jq -r '.profile.request.model' <<<"$replay_fields[2]")"
 assert_equal assistant_start "$replay_fields[15]"
@@ -60,6 +62,7 @@ assert_equal assistant_reasoning_delta "$replay_fields[50]"
 assert_equal last "$replay_fields[52]"
 assert_equal assistant_end "$replay_fields[57]"
 
+# Reject malformed replay state.
 if {
     head -n 1 "$ROOT/tests/fixtures/session/complete.jsonl"
     print -r -- '{"type":"state","name":"bad name","value":true}'
@@ -68,7 +71,7 @@ if {
   fail 'replay accepted malformed state'
 fi
 
-# tail drops the leading session_update so only display events are compared.
+# Decode replay usage.
 typeset usage_replay
 usage_replay=$({
   head -n 1 "$ROOT/tests/fixtures/session/complete.jsonl" |
@@ -78,6 +81,8 @@ usage_replay=$({
 } | jq -jRs -L "$ROOT" -f "$ROOT/libexec/tui/transcript-decode.jq" |
   tr '\0' '\n' | sed '/^$/d' | tail -n +3 | paste -sd, -)
 assert_equal 'user,question,assistant_start,assistant_reasoning_delta,0,why,9,assistant_message_delta,1,answer,assistant_end,turn_usage,12k ↑ 85% ⦿ 900 ↓ 5% of 264k ◔,9,batch_ok' "$usage_replay"
+
+# Load manifest display variables.
 jq -e '
   .harness.tools[0].manifest.display.result.content == ["$result_full"] and
   .harness.tools[1].manifest.display.result.content == ["$result_preview", "$exit_code"] and
@@ -85,7 +90,7 @@ jq -e '
     {content:["$command"],format:"sh"}
 ' <<<"$summary_tools" >/dev/null || fail 'tool result display variables were not loaded'
 
-# Short events are padded to the fixed width; the batch always ends in a marker.
+# Sanitize framed fields.
 typeset framed
 framed=$(jq -nj -L "$ROOT" '
   include "libexec/tui/display-fields";
@@ -93,6 +98,7 @@ framed=$(jq -nj -L "$ROOT" '
 ' | tr '\0' '\n' | paste -sd, -)
 assert_equal 'sample,before�after,,,,,,batch_ok,,,,,,' "$framed"
 
+# Reject oversized display events.
 if jq -nj -L "$ROOT" '
     include "libexec/tui/display-fields";
     [["sample", "a", "b", "c", "d", "e", "f", "g"]] | emit_display_batch
@@ -100,6 +106,7 @@ if jq -nj -L "$ROOT" '
   fail 'an oversized display event was accepted'
 fi
 
+# Reject non-string display fields.
 if jq -nj -L "$ROOT" '
     include "libexec/tui/display-fields";
     [["sample", 1]] | emit_display_batch

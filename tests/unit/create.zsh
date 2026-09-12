@@ -31,21 +31,21 @@ EOF
 typeset entry="$ROOT/bin/shellfish"
 typeset created reused explicit
 
-# Current configuration produces a complete idle session prefix.
+# Create a complete idle session.
 created=$(zsh -f "$entry" create --config "$config") || fail 'create failed'
 [[ -f $created && $created == /* ]] || fail 'create did not print an absolute session path'
 jq -es 'length == 2 and .[0].type == "session" and
   .[1] == {type:"system",content:"initial system"}' \
   "$created" >/dev/null || fail 'create did not write the initial session prefix'
 
-# --session-out selects the destination; the runtime still comes from configuration.
+# Select an explicit destination.
 explicit="$tmp/explicit.jsonl"
 assert_equal "$explicit" \
   "$(zsh -f "$entry" create --session-out "$explicit" --config "$config")" \
   'create ignored --session-out'
 jq -es 'length == 2' "$explicit" >/dev/null || fail 'create did not populate --session-out'
 
-# Sandbox grants are forwarded to config unread and frozen into the header.
+# Freeze forwarded sandbox grants.
 typeset granted="$tmp/granted.jsonl"
 zsh -f "$entry" create --session-out "$granted" --config "$config" \
   --sandbox-read "${tmp:A}/system" --sandbox-write "${tmp:A}/home" >/dev/null || \
@@ -56,7 +56,7 @@ jq -e --arg read "${tmp:A}/system" --arg write "${tmp:A}/home" '
   (.harness.sandbox_write_paths | index($write)) != null
 ' "$granted" >/dev/null || fail 'create did not store forwarded sandbox grants'
 
-# --session-from reuses the stored runtime and rematerializes its system paths.
+# Derived sessions reuse runtime and reread system paths.
 print -r -- 'changed configured system' >"$tmp/system/source.md"
 print -r -- '{"type":"user","content":[{"type":"text","text":"old"}]}' \
   >>"$created"
@@ -66,7 +66,7 @@ jq -e -s --slurpfile source "$created" '
   (.[0] | del(.created)) == ($source[0] | del(.created))
 ' "$reused" >/dev/null || fail 'create did not reuse the stored runtime'
 
-# Source paths must be present, nonempty, and specified once.
+# Validate source paths.
 zsh -f "$entry" create --session-from "$tmp/absent.jsonl" >/dev/null 2>&1 &&
   fail 'create accepted a missing source'
 zsh -f "$entry" create --session-from '' >/dev/null 2>&1 &&
@@ -76,7 +76,7 @@ zsh -f "$entry" create --session-from >/dev/null 2>&1 &&
 zsh -f "$entry" create --session-from "$created" --session-from "$created" >/dev/null 2>&1 &&
   fail 'create accepted repeated sources'
 
-# An occupied destination is never overwritten.
+# Preserve occupied destinations.
 zsh -f "$entry" create --session-out "$explicit" --config "$config" >/dev/null 2>&1 &&
   fail 'create overwrote an existing session'
 typeset empty="$tmp/empty.jsonl"
@@ -85,18 +85,18 @@ zsh -f "$entry" create --session-out "$empty" --config "$config" >/dev/null 2>&1
   fail 'create accepted an existing empty destination'
 [[ -f $empty && ! -s $empty ]] || fail 'create removed an existing empty destination'
 
-# Runtime overrides against an existing session stay rejected by config.
+# Reject overrides for stored sessions.
 zsh -f "$entry" create --session-from "$created" --model other >/dev/null 2>&1 &&
   fail 'create accepted a runtime override with --session-from'
 
-# Options create does not own are forwarded unparsed.
+# Forward unowned options.
 zsh -f "$entry" create --config "$tmp/missing.jsonc" >/dev/null 2>&1 &&
   fail 'create accepted an unreadable config'
 zsh -f "$entry" create --session-out >/dev/null 2>&1 && fail 'create accepted a bare --session-out'
 zsh -f "$entry" create --session-out "$tmp/a.jsonl" --session-out "$tmp/b.jsonl" >/dev/null 2>&1 &&
   fail 'create accepted a repeated --session-out'
 
-# A failing session_start script leaves no transcript and reports its detail.
+# Clean up failed startup hooks.
 typeset hook="$tmp/failing-hook" hook_config="$tmp/hook.jsonc"
 mkdir "$hook"
 cat >"$hook/run" <<'ZSH'
@@ -115,7 +115,7 @@ zsh -f "$entry" create --session-out "$failed" \
   fail 'create hid the session_start failure'
 [[ ! -e $failed ]] || fail 'create left a transcript behind'
 
-# System components concatenate into one ordered record.
+# Join system components in order.
 typeset joined="$tmp/joined.jsonl" joined_config="$tmp/joined.jsonc"
 printf 'first prompt\n\n\n' >"$tmp/system/first.md"
 printf 'second prompt\n' >"$tmp/system/second.md"
@@ -125,7 +125,7 @@ zsh -f "$entry" create --session-out "$joined" --config "$joined_config" >/dev/n
 jq -se 'length == 2 and .[1] == {type:"system",content:"first prompt\n\nsecond prompt"}' \
   "$joined" >/dev/null || fail 'create did not join the system components'
 
-# Command-line system inputs replace the profile list and retain mixed order.
+# Preserve mixed system override order.
 typeset override="$tmp/override.jsonl" override_file="$tmp/override.md" derived
 printf 'file prompt\n' >"$override_file"
 zsh -f "$entry" create --session-out "$override" --config "$config" \
@@ -152,7 +152,7 @@ zsh -f "$entry" create --session-out "$derived_override" --session-from "$overri
 jq -se 'length == 2 and .[1] == {type:"system",content:"--session-out"}' \
   "$derived_override" >/dev/null || fail 'derived create did not apply the system override'
 
-# Empty overrides clear configured prompts without adding separators.
+# Clear prompts with empty overrides.
 typeset empty_file="$tmp/empty.md" empty_session
 printf '\n\n' >"$empty_file"
 for source in --config --session-from; do
@@ -163,7 +163,7 @@ for source in --config --session-from; do
   jq -se 'length == 1' "$empty_session" >/dev/null || fail 'empty override retained a system record'
 done
 
-# An unreadable component fails without creating a transcript.
+# Reject unreadable system components.
 typeset missing="$tmp/missing.jsonl" missing_config="$tmp/missing.jsonc"
 jq --arg path "$tmp/absent.md" '.profiles.machine.system=[$path]' "$config" >"$missing_config"
 zsh -f "$entry" create --session-out "$missing" --config "$missing_config" >/dev/null 2>&1 &&
@@ -174,7 +174,7 @@ zsh -f "$entry" create --session-out "$missing" --config "$config" \
   fail 'create accepted a missing system override file'
 [[ ! -e $missing ]] || fail 'missing system override left a transcript'
 
-# Configured and override files are read by create, including binary validation.
+# Reject binary system components.
 typeset binary="$tmp/binary.jsonl" binary_file="$tmp/binary.md"
 printf 'before\0after\n' >"$binary_file"
 for source in configured override; do
@@ -193,7 +193,7 @@ for source in configured override; do
   [[ ! -e $binary ]] || fail 'binary system input left a transcript'
 done
 
-# Startup components stream configured activity around immediate durable records.
+# Startup records are durable before the next component runs.
 typeset events="$tmp/events.jsonl" streamed="$tmp/streamed.jsonl"
 typeset first="$tmp/first-hook" silent="$tmp/silent-hook" stream_config="$tmp/stream.jsonc"
 mkdir "$first" "$silent"
@@ -239,7 +239,7 @@ jq -se --arg path "$streamed" \
   ($session | length == 4)
 ' "$events" >/dev/null || fail 'invalid creation event sequence or transcript'
 
-# Startup context uses the capture budget, not the operating system's argv limit.
+# Context uses the capture budget, not argv.
 typeset large="$tmp/large.jsonl" large_config="$tmp/large.jsonc"
 jq '.harnesses.machine.max_capture_bytes=400000' "$stream_config" >"$large_config"
 SF_TEST_EVENTS="$events" SF_TEST_CONTEXT_BYTES=300000 zsh -f "$entry" create --jsonl \
@@ -249,19 +249,19 @@ jq -se --slurpfile session "$large" '.[3] == $session[3] and
   (.[3].model_context | length == 300016)' "$events" >/dev/null ||
   fail 'large startup context was truncated'
 
-# Empty startup has no hook events, including when the system is empty.
+# Emit no events for empty startup.
 zsh -f "$entry" create --jsonl --config "$config" --system '' >"$events"
 jq -se 'map(.type) == ["_session_prepare","_session_created"] and
   (.[0].records | length == 1)' "$events" >/dev/null || fail 'invalid empty startup stream'
 
-# Failure removes the initial session and reports through stderr.
+# Report startup failure on stderr.
 SF_TEST_STATE_MARKER="$marker" zsh -f "$entry" create --jsonl --session-out "$failed" \
   --config "$hook_config" >"$events" 2>"$hook_error" && fail 'streamed failure succeeded'
 [[ ! -e $failed && $(<"$hook_error") == *'hook script failed with status 9:'* ]]
 jq -se 'map(.type) == ["_session_prepare"]' \
   "$events" >/dev/null || fail 'failed creation emitted completion'
 
-# A later failure leaves the earlier component's emitted records as a valid prefix.
+# Later failures preserve completed records.
 jq --arg first "$first" '.harnesses.machine.session_start |= [$first] + .' \
   "$hook_config" >"$stream_config"
 SF_TEST_EVENTS="$events" SF_TEST_STATE_MARKER="$marker" zsh -f "$entry" create --jsonl \
@@ -273,7 +273,7 @@ jq -se '
   all(.[]; .type != "_session_created")
 ' "$events" >/dev/null || fail 'later failure lost the completed hook prefix'
 
-# The client's cancellation signal stops the running script and saves nothing.
+# Cancel running startup scripts.
 typeset slow="$tmp/slow-hook" slow_config="$tmp/slow.jsonc" cancelled="$tmp/cancelled.jsonl"
 export SLOW_MARKER="$tmp/slow-active" SLOW_RELEASE="$tmp/slow-release"
 export SLOW_EXIT_MARKER="$tmp/slow-exit"
@@ -281,7 +281,7 @@ mkdir "$slow"
 cat >"$slow/run" <<'ZSH'
 #!/usr/bin/env zsh
 : >"$SLOW_MARKER"
-# Released rather than timed: a sleeping script looks stopped either way.
+# Release detects scripts that survive cancellation.
 while [[ ! -e $SLOW_RELEASE ]]; do
   sleep 0.05
 done

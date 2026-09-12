@@ -13,7 +13,7 @@ typeset invalid_update=$script
 make_script metadata_only 'print -rn -u3 -- '\''{"context":{"prompt":"false","status":1}}'\''; exit 10'
 typeset metadata_only=$script
 
-# The user_prompt_submit hook preserves exact prompt bytes.
+# Preserve exact prompt bytes.
 typeset prompt_session="$tmp/prompt-session.jsonl"
 typeset prompt_script
 make_script prompt '[[ $1 == user_prompt_submit && $SHELLFISH_TURN_ID == 1 ]]; [[ $SHELLFISH_SESSION == /* && $SHELLFISH_MODEL == test ]]; [[ $0 == /* && -d ${0:A:h} && -d $SHELLFISH_TURN_STATE ]]; cat; print -n context; [[ -z $CONTROL ]] || { jq -cn --arg path "$CONTROL" '\''{action:"handoff",argv:["/usr/bin/printf",$path]}'\'' >&3; exit 11 }; [[ -z $META ]] || { print -rn -u3 -- '\''{"context":{"prompt":"false","status":1}}'\''; exit 10 }; [[ -z $BINARY ]] || { print -rn -- $'\''\0tail'\''; print -rn -u3 -- '\''{"state":[{"name":"binary/context","value":true}]}'\''; }; [[ -z $SKIP ]] || { print -rn -u2 -- blocked; exit 10; }'
@@ -40,7 +40,7 @@ jq -eRs '
     model_context:"first\nsecond\ncontext"}
 ' "$prompt_session" >/dev/null
 
-# Prompt matching skips a component before invocation and continues in configured order.
+# Prompt matching occurs before invocation.
 typeset select_session="$tmp/select-session.jsonl" select_newline_session="$tmp/select-newline-session.jsonl"
 typeset select_marker="$tmp/unmatched"
 typeset select_events="$tmp/select-events"
@@ -92,14 +92,14 @@ jq -e 'select(.type == "hook_result" and .model_context == "binarycontext\u0000t
   < <(tail -n 1 "$prompt_session") >/dev/null
 jq -e -s '.[-2] == {type:"state",name:"binary/context",value:true}' \
   "$prompt_session" >/dev/null
-# Model context emitted with a handoff is already durable.
+# Handoff model context is already durable.
 CONTROL="$tmp/switched.jsonl" run_prompt_hook /switch "$prompt_session"
 [[ ${#reply} == 3 && $reply[1] == handoff && $reply[2] == /usr/bin/printf &&
    $reply[3] == "$tmp/switched.jsonl" ]]
 jq -e 'select(.type == "hook_result" and .model_context == "/switchcontext")' \
   < <(tail -n 1 "$prompt_session") >/dev/null
 
-# A session update is returned to exec for application during the turn.
+# Return session updates to exec.
 SF_TEST_RUNTIME=$(jq -c --arg script "$session_update" '
   .harness.user_prompt_submit=[{command:$script,display:"",environment:[]}]
 ' <<<"$SF_TEST_RUNTIME")
@@ -123,7 +123,7 @@ if run_prompt_hook /update "$invalid_update_session"; then
 fi
 [[ $SF_HOOK_ERROR == 'user_prompt_submit hook script returned invalid control data' ]]
 
-# Prompt and status metadata require model context in the same result.
+# Prompt metadata requires model context.
 SF_TEST_RUNTIME=$(jq -c --arg script "$metadata_only" '
   .harness.user_prompt_submit=[{command:$script,display:"",environment:[]}]
 ' <<<"$SF_TEST_RUNTIME")
@@ -136,7 +136,7 @@ if run_prompt_hook /metadata "$metadata_session"; then
 fi
 [[ $SF_HOOK_ERROR == 'user_prompt_submit hook script returned invalid control data' ]]
 
-# Exit 11 may halt the remaining prompt scripts without requesting a handoff.
+# Halt remaining prompt hooks.
 make_script halt 'print -rn -- halted; exit 11'
 typeset halt=$script
 SF_TEST_RUNTIME=$(jq -c --arg script "$halt" '

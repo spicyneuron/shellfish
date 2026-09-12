@@ -3,7 +3,7 @@
 source "${0:A:h:h:h}/_helpers.zsh"
 sf_test_tmp default-tools-web
 
-# The web fetch tool validates its input and sends only fixed Reader options to curl.
+# Fetch validated URLs through Reader.
 mkdir "$tmp/jina-bin"
 cat >"$tmp/jina-bin/curl" <<'ZSH'
 #!/usr/bin/env zsh
@@ -41,7 +41,7 @@ jq -e '
   .filesystem.defaultDenyRead == true
 ' "$ROOT/share/default/tools/fetch_url/fence.jsonc" >/dev/null
 
-# The web search tool makes one fixed anonymous MCP call and decodes its SSE result.
+# Search through the Exa MCP endpoint.
 mkdir "$tmp/exa-bin"
 cat >"$tmp/exa-bin/curl" <<'ZSH'
 #!/usr/bin/env zsh

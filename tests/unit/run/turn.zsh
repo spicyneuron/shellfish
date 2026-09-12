@@ -15,7 +15,7 @@ sf_test_runtime "$system_file"
 export SF_TEST_BACKEND_DELAY=0
 export SF_TEST_BACKEND_REQUEST="$request_capture"
 
-# Startup materializes the header and system hook before a turn.
+# Startup materializes the session runtime.
 sf_test_session "$session"
 
 stream=$(sf_test_turn $'two\nwords' "$session")
@@ -43,7 +43,7 @@ jq -e -s '
   .[2].type == "user" and .[3].type == "assistant"
 ' "$session" >/dev/null
 
-# A capable backend discovers model context once and freezes it into the session.
+# Context discovery is frozen once.
 typeset model_backend="$tmp/model-backend" context_backend="$tmp/context-backend"
 typeset model_calls="$tmp/model-calls"
 typeset base_runtime=$SF_TEST_RUNTIME
@@ -77,7 +77,7 @@ jq -e 'select(.type == "session") | .profile.context_window == 128000' \
 sf_test_turn second "$discovered_session" >/dev/null
 (( $(wc -l <"$model_calls") == 1 ))
 
-# A configured context window is authoritative and skips backend discovery.
+# Configured context skips discovery.
 SF_TEST_RUNTIME=$(jq -c --arg command "$model_backend" --arg context "$context_backend" '
   .backend.command=$command | .backend.context_window_command=$context |
   .profile.context_window=200000
@@ -91,7 +91,7 @@ print -r -- "$stream" | jq -eRn '
 ' >/dev/null
 [[ ! -e $model_calls ]]
 
-# An explicit null disables backend discovery too.
+# Null context disables discovery.
 SF_TEST_RUNTIME=$(jq -c --arg command "$model_backend" --arg context "$context_backend" '
   .backend.command=$command | .backend.context_window_command=$context |
   .profile.context_window=null
@@ -101,7 +101,7 @@ sf_test_session "$disabled_session"
 sf_test_turn first "$disabled_session" >/dev/null
 [[ ! -e $model_calls ]]
 
-# Unavailable metadata does not fail generation and is not retried.
+# Missing context is not retried.
 SF_TEST_RUNTIME=$(jq -c --arg command "$model_backend" --arg context "$context_backend" \
   '.backend.command=$command | .backend.context_window_command=$context' <<<"$base_runtime")
 typeset unavailable_session="$tmp/unavailable.jsonl"
@@ -121,7 +121,7 @@ sf_session_read_runtime "$unavailable_session"
 jq -e '.profile.context_window == null' <<<"$REPLY" >/dev/null
 SF_TEST_RUNTIME=$base_runtime
 
-# Provider projection uses the synchronized records and does not reread disk.
+# Requests use synchronized in-memory records.
 typeset memory_request="$tmp/memory-request.json"
 SF_ROOT=$ROOT zsh -f -c '
   source "$SF_ROOT/libexec/run/turn.zsh"
@@ -140,8 +140,7 @@ jq -e '
   .messages[-1].content[0].text == "two\nwords\n"
 ' "$memory_request" >/dev/null
 
-# Adapter events reach clients verbatim, in stream order, including the types a
-# client may not present. The turn adds no fields of its own.
+# Adapter events retain stream order.
 stream=$(sf_test_turn 'think about two words' "$session")
 print -r -- "$stream" | jq -eRn '
   [inputs | fromjson |
@@ -155,7 +154,7 @@ print -r -- "$stream" | jq -eRn '
     all(.[]; keys == ["index","text","type"]))
 ' >/dev/null
 
-# Tool state becomes durable and visible before its nonzero result.
+# Tool state precedes failed results.
 typeset state_tool="$tmp/state-tool" state_session="$tmp/state-session.jsonl"
 cat >"$state_tool" <<'ZSH'
 #!/usr/bin/env zsh
@@ -170,6 +169,7 @@ SF_TEST_RUNTIME=$(jq -c --arg command "$state_tool" '
 ' <<<"$base_runtime") || fail 'cannot prepare tool state runtime'
 sf_test_session "$state_session"
 stream=$(SF_TEST_BACKEND_TOOL_CALL=1 sf_test_turn 'record tool state' "$state_session")
+# Tool-call deltas precede durable calls.
 print -r -- "$stream" | jq -eRn '
   [inputs | fromjson | select(.type == "state" or .type == "tool_result")] ==
     [{type:"state",name:"tools/turn",value:"recorded"},
@@ -184,8 +184,6 @@ jq -es '
 ' "$state_session" >/dev/null || fail 'tool state was not durable before its result'
 SF_TEST_RUNTIME=$base_runtime
 
-# Tool-call deltas are forwarded in stream order after visible content, and
-# the response closes before the durable record makes the call available.
 print -r -- "$stream" | jq -eRn '
   [inputs | fromjson] as $events |
   ($events | map(.type)) as $types |
@@ -203,7 +201,7 @@ print -r -- "$stream" | jq -eRn '
     (.index | type == "number") and (.input | type == "string"))
 ' >/dev/null
 
-# Disallowed calls receive ordinary results and the provider continues.
+# Unknown tools return ordinary results.
 stream=$(SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_NAME=unknown \
   SF_TEST_BACKEND_TOOL_COUNT=2 sf_test_turn 'request bypass' "$session")
 print -r -- "$stream" | jq -eRn '
@@ -212,8 +210,7 @@ print -r -- "$stream" | jq -eRn '
 ' >/dev/null
 assert_canonical_session "$session" end
 
-# Reserved bypass fields stay in the transcript but never reach the tool, which
-# rejects input it does not declare.
+# Bypass fields stay outside tool input.
 stream=$(SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_BYPASS=true \
   SF_TEST_BACKEND_TOOL_COMMAND='print -r -- ran' \
   sf_test_turn 'call a helper' "$session")
@@ -229,7 +226,7 @@ print -r -- "$stream" | jq -eRn '
   $calls[0].input.command == "print -r -- ran"
 ' >/dev/null
 
-# Provider failure durably closes the committed user turn with its exact error.
+# Provider failures close committed turns.
 stream=$(sf_test_turn 'retry error later' "$session")
 print -r -- "$stream" | jq -eRn '
   [inputs | fromjson] as $events |
@@ -241,8 +238,7 @@ jq -e -s '
   .[-1].type == "turn_error" and (.[-1].message | contains("test backend failure"))
 ' "$session" >/dev/null
 
-# Visible content from an incomplete provider response is committed for replay,
-# while incomplete tool intent and usage remain transient.
+# Partial responses retain visible content.
 typeset partial_backend="$tmp/partial-backend" partial_capture="$tmp/partial-request.json"
 cat >"$partial_backend" <<'ZSH'
 #!/usr/bin/env zsh
@@ -303,8 +299,7 @@ jq -e '
 ' "$partial_capture" >/dev/null
 SF_TEST_RUNTIME=$saved_runtime
 
-# A partial append failure is fatal and emits no uncommitted durable record.
-# The next reader repairs the fragment.
+# Readers repair partial appends.
 typeset partial_session="$tmp/partial.jsonl"
 typeset partial_stream="$tmp/partial.stream" partial_error="$tmp/partial.stderr"
 integer partial_status=0
@@ -331,7 +326,7 @@ sf_session_reset
 cmp -s "$tmp/partial-before.jsonl" "$partial_session" ||
   fail 'opening did not repair the partial append'
 
-# A torn tool-call append is repaired and recovered without executing the tool.
+# Torn tool calls recover without execution.
 typeset call_append_session="$tmp/call-append.jsonl"
 typeset tool_marker="$tmp/tool-ran"
 integer call_append_status=0
@@ -367,8 +362,7 @@ jq -e -s '
   .[-1].type == "turn_error"
 ' "$call_append_session" >/dev/null || fail 'recovery did not close the uncommitted call'
 
-# Configured system text and session-start context reach the provider request,
-# but the fixture echoes only the submitted prompt.
+# System and hook context reach providers.
 typeset echo_session="$tmp/echo.jsonl"
 sf_test_session "$echo_session"
 sf_session_begin_turn "$echo_session"
@@ -384,7 +378,7 @@ jq -e '
   (.messages[-1].content[0].text | contains("<hook name=\"session_start\">\n<context script=\"fixture\">"))
 ' "$request_capture" >/dev/null
 
-# A tool response commits its call and result before the provider continues.
+# Tool results precede provider continuation.
 stream=$(SF_TEST_BACKEND_TOOL_CALL=1 sf_test_turn 'use a tool' "$session")
 print -r -- "$stream" | jq -eRn '
   [inputs | fromjson] as $events |
@@ -401,7 +395,7 @@ jq -e '
   .messages[-1].type == "tool_result"
 ' "$request_capture" >/dev/null
 
-# Replacing a lorem prompt with the sampler does not discard its tool keyword.
+# Sampling preserves tool keywords.
 typeset lorem_session="$tmp/lorem.jsonl"
 sf_test_session "$lorem_session"
 stream=$(sf_test_turn 'lorem tool' "$lorem_session")

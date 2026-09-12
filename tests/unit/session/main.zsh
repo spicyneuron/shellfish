@@ -8,7 +8,7 @@ sf_test_tmp session
 session="$tmp/session.jsonl"
 sf_test_runtime
 
-# Working-directory modules cannot shadow the installed session schema.
+# Caller modules cannot shadow the installed schema.
 mkdir -p "$tmp/shadow/lib/runtime"
 print -r -- 'def canonical_session_header(:' >"$tmp/shadow/lib/runtime/schema.jq"
 (
@@ -26,15 +26,17 @@ print -r -- 'def canonical_session_header(:' >"$tmp/shadow/lib/runtime/schema.jq
   assert_equal "$tmp/shadow" "$PWD"
 )
 
+# Explicit session paths become absolute.
 sf_session_select_path "$tmp/relative.jsonl"
 [[ $REPLY == "$tmp/relative.jsonl" ]]
 
+# Default sessions use the state directory.
 typeset -g XDG_STATE_HOME="$tmp/state"
 sf_session_select_path
 [[ $REPLY == "$tmp/state/shellfish/sessions/"*.jsonl ]]
 [[ $(stat -f %Lp "$REPLY:h") == 700 ]]
 
-# An installed prepared prefix initializes the first turn state.
+# Prepared sessions initialize turn state.
 sf_session_prepare "$SF_TEST_RUNTIME"
 sf_test_install_prepared "$session"
 (( ${#SF_SESSION_RECORDS} == 1 ))
@@ -63,8 +65,7 @@ sf_session_reset
 (( ${#SF_SESSION[@]} == 0 && ${#SF_SESSION_RECORDS} == 0 ))
 (( $(wc -l <"$session") == 3 ))
 
-# Runtime updates replace only the header while retaining the transcript,
-# restrictive file mode, and synchronized state.
+# Runtime updates preserve transcript bytes and file mode.
 typeset transcript_before updated_before
 transcript_before=$(tail -n +2 "$session")
 sf_session_begin_turn "$session"
@@ -111,7 +112,7 @@ if sf_session_update "$session" '{}'; then
   fail 'session update on a closed session succeeded'
 fi
 
-# Reopening an existing session restores its next turn state.
+# Reopening restores the next turn.
 sf_session_begin_turn "$session"
 [[ $SF_SESSION[turn_id] == 2 ]]
 typeset -a reopened=( "${(@f)$(<"$session")}" )
@@ -119,7 +120,7 @@ typeset -a reopened=( "${(@f)$(<"$session")}" )
 assert_equal "${(j:\n:)reopened}" "${(j:\n:)SF_SESSION_RECORDS}"
 sf_session_reset
 
-# A failed durable append does not extend the synchronized record view.
+# Failed appends do not alter the in-memory record view.
 typeset write_failure="$tmp/write-failure.jsonl"
 sf_session_prepare "$SF_TEST_RUNTIME"
 sf_test_install_prepared "$write_failure"
@@ -136,7 +137,7 @@ rmdir "$write_failure"
 mv "$write_failure.saved" "$write_failure"
 sf_session_reset
 
-# Recovery repairs the durable transcript before inspecting it.
+# Recovery repairs the durable transcript.
 typeset recovery_sync="$tmp/recovery-sync.jsonl"
 cp "$SF_TEST_SESSIONS/header-only.jsonl" "$recovery_sync"
 sf_session_begin_turn "$recovery_sync"
@@ -148,7 +149,7 @@ sf_session_reset
 jq -e -s 'length == 3 and .[-1] == {type:"turn_error",message:"Turn interrupted."}' \
   "$recovery_sync" >/dev/null
 
-# Recovery reloads complete writes missing from the in-memory view.
+# Recovery reloads complete writes.
 typeset recovery_complete="$tmp/recovery-complete.jsonl"
 cp "$SF_TEST_SESSIONS/header-only.jsonl" "$recovery_complete"
 sf_session_begin_turn "$recovery_complete"
@@ -160,14 +161,14 @@ sf_session_resync_turn "$recovery_complete"
 sf_session_reset
 jq -e -s 'length == 3 and .[-1].content[0].text == "done"' "$recovery_complete" >/dev/null
 
-# Recovery can explicitly terminate a turn whose message sequence is complete.
+# Recovery can terminate complete turns.
 sf_session_resync_turn "$recovery_complete" 'stop hook failed' 1
 assert_equal '{"type":"turn_error","message":"stop hook failed"}' "$REPLY"
 sf_session_reset
 jq -e -s 'length == 4 and .[-1] == {type:"turn_error",message:"stop hook failed"}' \
   "$recovery_complete" >/dev/null
 
-# State records survive reopening without changing conversation sequencing.
+# State survives reopening.
 typeset state_session="$tmp/state-session.jsonl"
 cp "$SF_TEST_SESSIONS/header-only.jsonl" "$state_session"
 print -r -- '{"type":"state","name":"git/identity","value":"first"}' >>"$state_session"
@@ -181,7 +182,7 @@ sf_session_begin_turn "$state_session"
 (( ${#SF_SESSION_RECORDS} == 5 ))
 sf_session_reset
 
-# Opening a valid session preserves its bytes and semantic state.
+# Opening preserves valid session bytes.
 typeset exact="$tmp/exact.jsonl" exact_before="$tmp/exact-before.jsonl" exact_header
 exact_header=$(head -n 1 "$SF_TEST_SESSIONS/header-only.jsonl")
 print -r -- "  $exact_header  " >"$exact"
@@ -191,7 +192,7 @@ assert_equal fake-model "$SF_SESSION[model]"
 sf_session_reset
 cmp -s "$exact_before" "$exact" || fail 'opening a valid session rewrote its bytes'
 
-# Every physical line must contain a record; jq whitespace skipping is not enough.
+# Blank physical lines are invalid despite jq whitespace handling.
 typeset blank="$tmp/blank.jsonl"
 cp "$SF_TEST_SESSIONS/header-only.jsonl" "$blank"
 print >>"$blank"
@@ -200,7 +201,7 @@ if sf_session_begin_turn "$blank"; then
 fi
 (( ${#SF_SESSION_RECORDS} == 0 ))
 
-# A supplied resolved runtime replaces the direct-test development header.
+# Prepared runtimes set the session profile.
 typeset configured="$tmp/configured.jsonl"
 SF_TEST_RUNTIME=$(jq -c '.profile.request.model="configured-model"' <<<"$stored_runtime")
 sf_session_prepare "$SF_TEST_RUNTIME"
@@ -210,7 +211,7 @@ jq -e -s 'length == 1 and .[0].profile.request.model == "configured-model"' \
 
 SF_TEST_RUNTIME=''
 
-# Opening rejects noncanonical durable records.
+# Opening rejects noncanonical records.
 typeset invalid_record="$tmp/invalid-record.jsonl"
 cp "$SF_TEST_SESSIONS/header-only.jsonl" "$invalid_record"
 print -r -- '{"type":"hook_result","hook":"test","script":"","model_context":"bad"}' >>"$invalid_record"
@@ -218,21 +219,21 @@ if sf_session_begin_turn "$invalid_record"; then
   fail 'session with an invalid durable record was accepted'
 fi
 
-# A later reader removes only an incomplete trailing fragment.
+# Readers trim incomplete trailing records.
 before=$(head -n 3 "$session")
 print -rn -- '{"type":"user"' >>"$session"
 sf_session_begin_turn "$session"
 [[ $(cat "$session") == "$before" ]]
 sf_session_reset
 
-# Static fixtures pin canonical durable formats the core must accept.
+# Durable fixtures remain canonical.
 for fixture in header-only complete tool-complete; do
   cp "$SF_TEST_SESSIONS/$fixture.jsonl" "$tmp/$fixture.jsonl"
   sf_session_begin_turn "$tmp/$fixture.jsonl"
   sf_session_reset
 done
 
-# A provider-order tool sequence remains valid across reopen.
+# Tool sequences survive reopening.
 typeset native="$tmp/native.jsonl"
 cp "$SF_TEST_SESSIONS/header-only.jsonl" "$native"
 sf_session_begin_turn "$native"
@@ -249,7 +250,7 @@ sf_session_reset
 sf_session_begin_turn "$native"
 sf_session_reset
 
-# Reopening a session interrupted mid-call answers the one recorded call.
+# Recovery answers an interrupted pending tool call.
 typeset interrupted_tools="$tmp/interrupted-tools.jsonl"
 cp "$SF_TEST_SESSIONS/header-only.jsonl" "$interrupted_tools"
 sf_session_begin_turn "$interrupted_tools"
@@ -269,12 +270,14 @@ jq -e -s '
   .[-2] == {type:"turn_error",message:"Turn interrupted."} and
   .[-1].type == "user" and .[-1].content[0].text == "next"
 ' "$interrupted_tools" >/dev/null
+
+# Invalid transitions fail on open.
 cp "$SF_TEST_SESSIONS/invalid-transition.jsonl" "$tmp/invalid-transition.jsonl"
 if sf_session_begin_turn "$tmp/invalid-transition.jsonl"; then
   fail 'invalid transition fixture was accepted'
 fi
 
-# A committed user without an assistant remains valid for the next turn.
+# Interrupted users allow another turn.
 typeset interrupted="$tmp/interrupted.jsonl"
 cp "$SF_TEST_SESSIONS/interrupted.jsonl" "$interrupted"
 sf_session_begin_turn "$interrupted"
