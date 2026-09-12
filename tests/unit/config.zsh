@@ -242,8 +242,8 @@ jq -e '.harnesses.default.sandbox_read_paths == [] and
   < <(source "$ROOT/libexec/config/runtime.zsh"; sf_runtime_read_jsonc "$empty_auto_config") \
   >/dev/null || fail 'empty automatic sandbox config is invalid'
 
-# `shellfish config` reports the runtime a new session would store, plus the
-# theme palettes and TUI limits a session does not store.
+# `shellfish config` reports resolved runtime and creation paths, plus the theme
+# palettes and TUI limits a session does not store.
 report=$(zsh -f "$entry" config --config "$config_dir/shellfish.jsonc") ||
   fail 'config report failed'
 assert_equal gpt-4o "$(jq -r '.profile.request.model' <<<"$report")" 'config reports the model'
@@ -253,41 +253,25 @@ assert_equal light "$(jq -r '.theme.light.name' <<<"$report")" 'config names the
 assert_equal true "$(jq -r '.theme.dark.palette | has("error")' <<<"$report")" \
   'config hydrates theme palettes'
 assert_equal 2 "$(jq -r '.tui.preview_lines_context' <<<"$report")" 'config reports TUI limits'
+jq -e --arg root "$ROOT" '
+  .system == [($root + "/share/default/system/general.md"),
+    ($root + "/share/default/system/tools.md")]
+' <<<"$report" >/dev/null || fail 'config did not resolve system paths'
 
 # Runtime overrides reach the report the same way they reach a new session.
 report=$(zsh -f "$entry" config --config "$config_dir/shellfish.jsonc" -m claude-3) || \
   fail 'config report with override failed'
 assert_equal claude-3 "$(jq -r '.profile.request.model' <<<"$report")" 'config applies --model'
 
-# System inputs replace configured components and preserve their mixed order.
-print -r -- 'file prompt' >"$tmp/system-override.md"
-report=$(cd "$tmp" && zsh -f "$entry" config --config "$config_dir/shellfish.jsonc" \
-  --system 'first prompt' --system-file system-override.md --system $'last\nprompt') || \
-  fail 'config report with system overrides failed'
-jq -e '
-  .system == "first prompt\n\nfile prompt\n\nlast\nprompt" and
-  (.profile | has("system") | not)
-' <<<"$report" >/dev/null || fail 'config did not materialize ordered system overrides'
-zsh -f "$entry" config --config "$config_dir/shellfish.jsonc" \
-  --system-file "$tmp/missing-system.md" >/dev/null 2>&1 && \
-  fail '--system-file accepted an unreadable file'
+# Config resolves system references without reading them; creation owns materialization.
 jq '.profiles.agent.system = ["missing.md"]' "$config_dir/shellfish.jsonc" \
   >"$tmp/missing-configured-system.jsonc"
-report=$(zsh -f "$entry" config --config "$tmp/missing-configured-system.jsonc" \
-  --system replacement) || fail 'system override resolved a replaced configured file'
-jq -e '.system == "replacement" and (.profile | has("system") | not)' <<<"$report" \
-  >/dev/null || fail 'system override did not replace an unreadable configured component'
-
-printf 'before\0after\n' >"$tmp/system-override.md"
-jq --arg file "$tmp/system-override.md" '.profiles.agent.system = [$file]' \
-  "$config_dir/shellfish.jsonc" >"$tmp/binary-system.jsonc"
-for source in configured override; do
-  typeset -a system_args=( --config "$tmp/binary-system.jsonc" )
-  [[ $source != override ]] || system_args+=( --system-file "$tmp/system-override.md" )
-  report=$(zsh -f "$entry" config "${system_args[@]}" 2>&1) &&
-    fail 'a system file containing NUL bytes was silently truncated'
-  [[ $report == *'system prompt must not contain NUL bytes'* ]] || fail "$report"
-done
+report=$(zsh -f "$entry" config --config "$tmp/missing-configured-system.jsonc") || \
+  fail 'config tried to read a system component'
+jq -e --arg path "$ROOT/share/default/system/missing.md" '.system == [$path]' <<<"$report" \
+  >/dev/null || fail 'config did not resolve the missing system path'
+zsh -f "$entry" config --config "$config_dir/shellfish.jsonc" \
+  --system replacement >/dev/null 2>&1 && fail 'config accepted create-owned --system'
 
 # A stored session supplies its runtime. Themes and limits come from current config.
 jq -cn '{
@@ -305,17 +289,13 @@ report=$(zsh -f "$entry" config --config "$config_dir/shellfish.jsonc" --session
 assert_equal auto "$(jq -r '.theme.mode' <<<"$report")" 'config --session-from reports the current theme mode'
 assert_equal 2 "$(jq -r '.tui.preview_lines_context' <<<"$report")" \
   'config --session-from reports current TUI limits'
+jq -e '.system == []' <<<"$report" >/dev/null || \
+  fail 'config copied a stored system message into its report'
 mkdir "$tmp/extra"
 if zsh -f "$entry" config --config "$config_dir/shellfish.jsonc" \
     --session-from "$tmp/stored.jsonl" --sandbox-write "$tmp/extra" >/dev/null 2>&1; then
   fail '--sandbox-write overrode an existing session'
 fi
-report=$(zsh -f "$entry" config --config "$config_dir/shellfish.jsonc" \
-  --session-from "$tmp/stored.jsonl" --system replacement) ||
-  fail 'config rejected a system replacement for derived settings'
-jq -e '.system == "replacement" and .profile.request.model == "stored-model"' \
-  <<<"$report" >/dev/null || fail 'config did not replace the derived system prompt'
-
 # --verbose lifts every preview limit without altering the stored runtime.
 report=$(zsh -f "$entry" config --config "$config_dir/shellfish.jsonc" --verbose) || \
   fail 'config verbose report failed'

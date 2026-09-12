@@ -7,6 +7,8 @@ typeset -gr SF_ROOT=${0:A:h:h:h}
 typeset -gr SF_ENTRY="$SF_ROOT/bin/shellfish"
 typeset -g SF_CREATE_JSONL=0
 
+source "$SF_ROOT/lib/jq.zsh"
+
 sf_die() {
   print -u2 -r -- "shellfish: $*"
   return 1
@@ -14,6 +16,17 @@ sf_die() {
 
 sf_create_emit() {
   (( SF_CREATE_JSONL )) && print -r -- "$1" || true
+}
+
+sf_create_read_system() {
+  local requested=$1 path=$1
+  if [[ $path == '~/'* ]]; then
+    [[ -n ${HOME-} ]] || { sf_die "cannot expand system file without HOME: $requested"; return 2; }
+    path="$HOME/${path#\~/}"
+  fi
+  [[ $path == /* ]] || path="$PWD/$path"
+  [[ -f $path && -r $path ]] || { sf_die "cannot read system file: $requested"; return 2; }
+  REPLY=$(<"$path")
 }
 
 sf_create_interrupt() {
@@ -56,9 +69,10 @@ sf_create_session() {
 }
 
 sf_create_main() {
-  local requested_out='' report runtime session system
-  local -a forwarded=()
-  integer report_status=0 take=0
+  local requested_out='' requested_source='' report runtime session system
+  local system_text projection
+  local -a forwarded=() system_parts=() system_paths=()
+  integer report_status=0 take=0 system_explicit=0
   source "$SF_ROOT/lib/options.zsh"
 
   while (( $# )); do
@@ -73,11 +87,25 @@ sf_create_main() {
         requested_out=$2
         shift 2
         ;;
+      --system|--system-file)
+        (( $# >= 2 )) || { sf_die "$1 requires a value"; return 2; }
+        if [[ $1 == --system-file ]]; then
+          [[ -n $2 ]] || { sf_die '--system-file requires a nonempty path'; return 2; }
+          sf_create_read_system "$2" || return
+          system_text=$REPLY
+        else
+          system_text=$(print -rn -- "$2")
+        fi
+        [[ -z $system_text ]] || system_parts+=( "$system_text" )
+        system_explicit=1
+        shift 2
+        ;;
       *)
         # Forward option values with their option so that a value that looks
         # like --session-out is not read as one.
-        take=$(( ${SF_CONFIG_OPTIONS[$1]:-0} + 1 ))
+        take=$(( ${SF_CREATE_OPTIONS[$1]:-0} + 1 ))
         (( $# >= take )) || { sf_die "$1 requires a value"; return 2; }
+        [[ $1 != --session-from ]] || requested_source=$2
         forwarded+=( "${@:1:$take}" )
         shift $take
         ;;
@@ -97,11 +125,28 @@ sf_create_main() {
     sf_die 'cannot resolve the session runtime'
     return 1
   }
-  system=$(jq -j '.system + "\u0000"' <<<"$report") || {
-    sf_die 'cannot resolve the system prompt'
-    return 1
-  }
-  system=${system%$'\0'}
+  if (( ! system_explicit )); then
+    if [[ -n $requested_source ]]; then
+      system_text=$(sed -n '2{p;q;}' <"$requested_source" | sf_jq -jse '
+        include "lib/runtime/schema";
+        (if length == 0 then "" else
+          .[0] | select(canonical_session_record) |
+          if .type == "system" then .content else "" end
+        end) + "\u0000"
+      ') || { sf_die "cannot read session system record: $requested_source"; return 1; }
+      system_text=${system_text%$'\0'}
+      [[ -z $system_text ]] || system_parts+=( "$system_text" )
+    else
+      projection=$(jq -jr '.system[] | ., "\u0000"' <<<"$report") ||
+        sf_die 'cannot resolve system paths' || return
+      system_paths=( ${(@0)projection} )
+      for system_text in "${system_paths[@]}"; do
+        sf_create_read_system "$system_text" || return
+        [[ -z $REPLY ]] || system_parts+=( "$REPLY" )
+      done
+    fi
+  fi
+  system=${(pj:\n\n:)system_parts}
 
   source "$SF_ROOT/lib/session/main.zsh"
   source "$SF_ROOT/lib/hooks.zsh"

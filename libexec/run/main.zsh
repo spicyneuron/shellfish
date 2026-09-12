@@ -65,9 +65,9 @@ sf_run_main() {
         break
         ;;
       -*)
-        # config owns these; forward them unread. Selecting a config file is not
-        # a runtime override.
-        arity=${SF_CONFIG_OPTIONS[$1]-}
+        # Creation owns these; forward them unread. Selecting a config file is
+        # not a runtime override.
+        arity=${SF_CREATE_OPTIONS[$1]-}
         [[ -n $arity ]] || { sf_die "unknown argument: $1"; return 2; }
         take=$(( arity + 1 ))
         (( $# >= take )) || { sf_die "$1 requires a value"; return 2; }

@@ -169,6 +169,29 @@ jq --arg path "$tmp/absent.md" '.profiles.machine.system=[$path]' "$config" >"$m
 zsh -f "$entry" create --session-out "$missing" --config "$missing_config" >/dev/null 2>&1 &&
   fail 'a missing system component created a session'
 [[ ! -e $missing ]] || fail 'create left a transcript for a missing component'
+zsh -f "$entry" create --session-out "$missing" --config "$config" \
+  --system-file "$tmp/absent.md" >/dev/null 2>&1 &&
+  fail 'create accepted a missing system override file'
+[[ ! -e $missing ]] || fail 'missing system override left a transcript'
+
+# Configured and override files are read by create, including binary validation.
+typeset binary="$tmp/binary.jsonl" binary_file="$tmp/binary.md"
+printf 'before\0after\n' >"$binary_file"
+for source in configured override; do
+  typeset -a binary_args=( --session-out "$binary" --config "$config" )
+  if [[ $source == configured ]]; then
+    jq --arg file "$binary_file" '.profiles.machine.system=[$file]' \
+      "$config" >"$tmp/binary-config.jsonc"
+    binary_args=( --session-out "$binary" --config "$tmp/binary-config.jsonc" )
+  else
+    binary_args+=( --system-file "$binary_file" )
+  fi
+  typeset binary_error=''
+  binary_error=$(zsh -f "$entry" create "${binary_args[@]}" 2>&1) &&
+    fail 'create accepted a system file containing NUL bytes'
+  [[ $binary_error == *'system content must not contain NUL bytes'* ]] || fail "$binary_error"
+  [[ ! -e $binary ]] || fail 'binary system input left a transcript'
+done
 
 # Startup components stream configured activity around immediate durable records.
 typeset events="$tmp/events.jsonl" streamed="$tmp/streamed.jsonl"

@@ -5,7 +5,7 @@ setopt no_aliases no_multios pipe_fail
 
 typeset -g SF_RUNTIME_ERROR=''
 typeset -g SF_PRESENTATION=''
-typeset -g SF_RUNTIME_SYSTEM=''
+typeset -g SF_RUNTIME_SYSTEM_PATHS='[]'
 typeset -g SF_RUNTIME_VERBOSE=0
 typeset -g SF_RUNTIME_SANDBOX_GRANTS='{"sandbox_read_paths":[],"sandbox_write_paths":[]}'
 
@@ -162,11 +162,11 @@ sf_runtime_reference() {
 sf_runtime_resolve() {
   local session_path=$1 requested_config=$2 requested_profile=$3
   local requested_model=$4 requested_request=$5 requested_backend=$6 runtime
-  integer runtime_override=${7:-0} skip_system=${8:-0}
+  integer runtime_override=${7:-0}
 
   SF_RUNTIME_ERROR=''
   SF_PRESENTATION=''
-  SF_RUNTIME_SYSTEM=''
+  SF_RUNTIME_SYSTEM_PATHS='[]'
   REPLY=''
   if [[ -n $session_path ]]; then
     if (( runtime_override )); then
@@ -178,36 +178,18 @@ sf_runtime_resolve() {
       return
     }
     runtime=$REPLY
-    if (( ! skip_system )); then
-      # A session's system record, when it has one, is the first record after
-      # the header. Any other record there means the session has no prompt.
-      SF_RUNTIME_SYSTEM=$(sed -n '2{p;q;}' <"$session_path" |
-        sf_jq -jse '
-        include "lib/runtime/schema";
-        (if length == 0 then "" else
-          .[0] | select(canonical_session_record) |
-          if .type == "system" then .content else "" end
-        end) + "\u0000"
-      ') || {
-        sf_runtime_fail "cannot read session system record: $session_path"
-        return
-      }
-      SF_RUNTIME_SYSTEM=${SF_RUNTIME_SYSTEM%$'\0'}
-    fi
     sf_runtime_restore_presentation "$requested_config" || return
     REPLY=$runtime
   else
     sf_runtime_resolve_from_config "$requested_config" "$requested_profile" \
-      "$requested_model" "$requested_request" "$requested_backend" \
-      "$skip_system" || return
+      "$requested_model" "$requested_request" "$requested_backend" || return
   fi
 }
 
 sf_runtime_resolve_from_config() {
   local requested_config=$1 profile_override=$2 model_override=$3 request_override=$4
   local backend_override=${5-}
-  integer skip_system=${6:-0}
-  local config_path config_dir='' raw defaults decoded prepared presentation
+  local config_path config_dir='' raw defaults decoded prepared presentation system_paths
   local backend_name backend_reference backend_dir backend_base manifest command
   local context_window_command=''
   local reference resolved hook hook_manifest selector external_name final settings fence='' env_file=''
@@ -220,7 +202,7 @@ sf_runtime_resolve_from_config() {
 
   SF_RUNTIME_ERROR=''
   SF_PRESENTATION=''
-  SF_RUNTIME_SYSTEM=''
+  SF_RUNTIME_SYSTEM_PATHS='[]'
   REPLY=''
   sf_runtime_load_config "$requested_config" || return
   loaded=( "${reply[@]}" )
@@ -236,13 +218,13 @@ sf_runtime_resolve_from_config() {
   decoded=$(sf_jq -jnre --argjson defaults "$defaults" \
     --argjson raw "$raw" --arg profile_override "$profile_override" \
     --arg model_override "$model_override" --argjson request_override "$request_override" \
-    --arg backend_override "$backend_override" --argjson skip_system "$skip_system" \
+    --arg backend_override "$backend_override" \
     --arg external_backend_name "$external_name" --arg home "$home" '
       include "libexec/config/runtime";
       def record: ., "\u0000";
       {defaults:$defaults,raw:$raw,profile_override:$profile_override,
        model_override:$model_override,request_override:$request_override,
-       backend_override:$backend_override,skip_system:$skip_system,
+       backend_override:$backend_override,
        external_backend_name:$external_backend_name,home:$home} |
       runtime_prepare as $prepared |
       ($prepared | tojson | record),
@@ -336,11 +318,7 @@ sf_runtime_resolve_from_config() {
       return
     }
     resolved=$REPLY
-    [[ -f $resolved && -r $resolved ]] || {
-      sf_runtime_fail "cannot read system component: $reference"
-      return
-    }
-    system_entries+=( "$(<"$resolved")" )
+    system_entries+=( "$resolved" )
   done
   while (( ${#component_entries} / 3 < component_count )); do
     hook=$fields[index]
@@ -384,8 +362,11 @@ sf_runtime_resolve_from_config() {
     sf_runtime_fail 'cannot assemble resolved runtime references'
     return
   }
-  system_entries=( "${(@)system_entries:#}" )
-  SF_RUNTIME_SYSTEM=${(pj:\n\n:)system_entries}
+  system_paths=$(jq -cn --args '$ARGS.positional' -- "${system_entries[@]}") || {
+    sf_runtime_fail 'cannot prepare resolved system paths'
+    return
+  }
+  SF_RUNTIME_SYSTEM_PATHS=$system_paths
   resolved_args=( "${tool_entries[@]}" "${component_entries[@]}" )
   final=$(sf_jq -cnce --argjson prepared "$prepared" \
     --arg manifest "$manifest" --arg command "$command" \
@@ -397,10 +378,7 @@ sf_runtime_resolve_from_config() {
       ({prepared:$prepared,manifest:$manifest,command:$command,
         context_window_command:$context_window_command,fence:$fence,
         env_file:$env_file,resolved:$ARGS.positional} + $grants) |
-      runtime_finalize as $result |
-      ({type:"session",format_version:1,cwd:"/",created:"1970-01-01T00:00:00Z"} +
-        $result.runtime) | select(canonical_session_header(1)) |
-      $result.runtime
+      runtime_finalize | .runtime
     ' "${resolved_args[@]}" 2>&1) || {
     sf_runtime_validation_error "$final" "cannot finalize runtime"
     return
@@ -441,11 +419,11 @@ sf_runtime_restore_presentation() {
   sf_runtime_apply_verbose
 }
 
-# Prints the resolved runtime with unfrozen theme palettes and TUI limits.
+# Prints the resolved runtime with creation-only system paths and unfrozen presentation.
 sf_runtime_report() {
   local runtime=$1
   jq -ne --argjson runtime "$runtime" --argjson presentation "$SF_PRESENTATION" \
-    --arg system "$SF_RUNTIME_SYSTEM" '
+    --argjson system "$SF_RUNTIME_SYSTEM_PATHS" '
     $runtime + {
       system: $system,
       theme: {

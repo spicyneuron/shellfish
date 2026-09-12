@@ -155,7 +155,7 @@ print -r -- '{"type":"system","content":"shadow system"}' >>"$tmp/shadow/session
   jq -e '.profile.request.model == "shadow-model"' <<<"$REPLY" >/dev/null
   sf_runtime_resolve session.jsonl "$config" '' '' '{}' '' 0
   assert_equal "$runtime" "$REPLY"
-  assert_equal 'shadow system' "$SF_RUNTIME_SYSTEM"
+  assert_equal '[]' "$SF_RUNTIME_SYSTEM_PATHS"
   assert_equal "$tmp/shadow" "$PWD"
 )
 
@@ -457,10 +457,11 @@ ln -s "$tmp/config-target/shellfish.jsonc" \
   jq -e --arg env "${tmp:A}/config-target/.env" '
     (.profile | has("system") | not) and .backend.env_file == $env
   ' <<<"$REPLY" >/dev/null
-  [[ $SF_RUNTIME_SYSTEM == 'linked prompt' ]]
+  jq -e --arg path "${tmp:A}/config-target/system/linked.md" '. == [$path]' \
+    <<<"$SF_RUNTIME_SYSTEM_PATHS" >/dev/null
 )
 
-# System references resolve to one ordered materialized string.
+# System references resolve to ordered absolute paths without reading them.
 mkdir -p "$tmp/config/system"
 print -r -- 'first' >"$tmp/config/system/first.md"
 print -r -- 'second' >"$tmp/config/system/second.md"
@@ -471,19 +472,22 @@ cat >"$tmp/config/system.jsonc" <<'JSON'
 JSON
 sf_runtime_resolve_from_config "$tmp/config/system.jsonc" '' '' '{}' \
   "$ROOT/tests/fixtures/backend"
-[[ $SF_RUNTIME_SYSTEM == $'first\n\nsecond' ]] || fail 'system components were not materialized'
+jq -e --arg first "${tmp:A}/config/system/first.md" \
+  --arg second "${tmp:A}/config/system/second.md" \
+  '. == [$first,$second]' <<<"$SF_RUNTIME_SYSTEM_PATHS" >/dev/null ||
+  fail 'system component paths were not resolved'
 rm "$tmp/config/system/second.md"
-if sf_runtime_resolve_from_config "$tmp/config/system.jsonc" '' '' '{}' \
-    "$ROOT/tests/fixtures/backend"; then
-  fail 'missing prompt file was accepted'
-fi
+sf_runtime_resolve_from_config "$tmp/config/system.jsonc" '' '' '{}' \
+  "$ROOT/tests/fixtures/backend" || fail 'config tried to read a missing prompt file'
+jq -e --arg fallback "$ROOT/share/default/system/second.md" '.[1] == $fallback' \
+  <<<"$SF_RUNTIME_SYSTEM_PATHS" >/dev/null || fail 'missing prompt path was not resolved'
 
 # The template's readonly profile resolves its bundled nested prompt.
 sf_runtime_read_jsonc "$ROOT/share/template/shellfish.jsonc" >"$tmp/config/readonly.jsonc"
 sf_runtime_resolve_from_config "$tmp/config/readonly.jsonc" 'readonly' 'm' '{}' \
   "$ROOT/tests/fixtures/backend"
-[[ $SF_RUNTIME_SYSTEM == "$(<"$ROOT/share/default/system/readonly.md")" ]] ||
-  fail 'bundled nested prompt was not materialized'
+jq -e --arg path "$ROOT/share/default/system/readonly.md" '. == [$path]' \
+  <<<"$SF_RUNTIME_SYSTEM_PATHS" >/dev/null || fail 'bundled prompt path was not resolved'
 
 cat >"$tmp/config/missing-hook.jsonc" <<'JSON'
 {

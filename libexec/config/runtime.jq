@@ -182,7 +182,7 @@ def runtime_prepare:
       ($validated | {theme_mode,theme_light,theme_dark,tui,themes} |
       with_entries(select(.value != null)))) | presentation_finish),
     tool_references:($profile.harness.tools // []),
-    system_references:(if $input.skip_system == 1 then [] else $profile.system // [] end),
+    system_references:($profile.system // []),
     hook_component_references:[hook_names[] as $hook |
       ($profile.harness[$hook] // [])[] | {hook:$hook,reference:.}]
   };

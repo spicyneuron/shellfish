@@ -31,15 +31,17 @@ done < <(awk '
 
 for name in ${(k)parsed}; do
   if (( ${not_forwarded[(Ie)$name]} )); then continue; fi
-  (( ${+SF_CONFIG_OPTIONS[$name]} )) || \
+  (( ${+SF_CREATE_OPTIONS[$name]} )) || \
     fail "libexec/config/main.zsh parses $name but lib/options.zsh omits it"
-  [[ $SF_CONFIG_OPTIONS[$name] == $parsed[$name] ]] || \
-    fail "lib/options.zsh gives $name arity $SF_CONFIG_OPTIONS[$name], config takes $parsed[$name]"
+  [[ $SF_CREATE_OPTIONS[$name] == $parsed[$name] ]] || \
+    fail "lib/options.zsh gives $name arity $SF_CREATE_OPTIONS[$name], config takes $parsed[$name]"
 done
 
-for name in ${(k)SF_CONFIG_OPTIONS}; do
-  (( ${+parsed[$name]} )) || \
+for name in ${(k)SF_CREATE_OPTIONS}; do
+  [[ $name == (--system|--system-file) ]] || (( ${+parsed[$name]} )) || \
     fail "lib/options.zsh declares $name but libexec/config/main.zsh does not parse it"
 done
+[[ $SF_CREATE_OPTIONS[--system] == 1 && $SF_CREATE_OPTIONS[--system-file] == 1 ]] ||
+  fail 'creation options give system inputs the wrong arity'
 
 print -r -- ok

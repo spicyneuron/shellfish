@@ -97,7 +97,6 @@ sf_session_prepare() {
       include "lib/runtime/schema";
       def field: ., "\u0000";
       ({type:"session",format_version:1,cwd:$cwd,created:$created} + $runtime) |
-      select(canonical_session_header(1)) |
       (tojson | field),
       (.profile.request.model | field),
       (hook_names[] as $hook |
@@ -132,6 +131,7 @@ sf_session_system() {
   local content=${1-} record
   SF_SESSION_ERROR=''
   [[ -n $content ]] || return 0
+  [[ $content != *$'\0'* ]] || sf_session_fail 'system content must not contain NUL bytes' || return
   record=$(jq -cn --arg content "$content" '{type:"system",content:$content}') ||
     sf_session_fail 'cannot prepare system record' || return
   SF_SESSION_RECORDS+=( "$record" )
