@@ -29,6 +29,7 @@ sf_request_build() {
 }
 
 sf_request_run() {
+  setopt local_options no_bg_nice
   local request=$1 command=$2 runtime=$3 selected=$4 emit=${5:-:}
   local directory error_file group_file input_file output_pipe status_file
   local adapter_pid decoder_pid event end_event kind='' name
