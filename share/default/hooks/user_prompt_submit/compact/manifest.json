@@ -1,1 +1,8 @@
-{"match":{"command":"check"},"display":"Compacting conversation…","help":{"usage":"/compact","description":"Summarize this session into a new one"}}
+{
+  "match": { "command": "check" },
+  "display": "Compacting conversation…",
+  "help": {
+    "usage": "/compact",
+    "description": "Summarize this session into a new one"
+  }
+}

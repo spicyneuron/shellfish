@@ -1,1 +1,7 @@
-{"match":{"pattern":"^/new\\z"},"help":{"usage":"/new","description":"Start a new session with the same settings"}}
+{
+  "match": { "pattern": "^/new\\z" },
+  "help": {
+    "usage": "/new",
+    "description": "Start a new session with the same settings"
+  }
+}

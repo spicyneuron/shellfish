@@ -1,1 +1,1 @@
-{"match":{"pattern":"^/(help|h)\\z"}}
+{ "match": { "pattern": "^/(help|h)\\z" } }

@@ -1,1 +1,7 @@
-{"match":{"pattern":"^/resume\\z"},"help":{"usage":"/resume","description":"Switch to a session for this directory"}}
+{
+  "match": { "pattern": "^/resume\\z" },
+  "help": {
+    "usage": "/resume",
+    "description": "Switch to a session for this directory"
+  }
+}

@@ -1,1 +1,7 @@
-{"match":{"pattern":"^/sandbox( [^\\n]*)?\\z"},"help":{"usage":"/sandbox [OP DIR]","description":"List or update session sandbox grants"}}
+{
+  "match": { "pattern": "^/sandbox( [^\\n]*)?\\z" },
+  "help": {
+    "usage": "/sandbox [OP DIR]",
+    "description": "List or update session sandbox grants"
+  }
+}
