@@ -301,6 +301,7 @@ sf_tui_accept() {
         return 0
       fi
       sf_tui_draw_pending || return 1
+      sf_tui_terminal_sync_start
       if ! zle accept-line; then
         SF_PRESENT_ACTION=''
         sf_tui_stop 'cannot commit chat rows'
