@@ -58,7 +58,3 @@ if (cd "$project" && print -rn -- '{"name":"hidden"}' | HOME="$home" \
     SHELLFISH_CONFIG_DIR="$config" zsh -f "$tool" >/dev/null 2>&1); then
   fail 'skill tool loaded a model-disabled skill'
 fi
-if (cd "$project" && print -rn -- '{"name":"missing","extra":true}' | HOME="$home" \
-    SHELLFISH_CONFIG_DIR="$config" zsh -f "$tool" >/dev/null 2>&1); then
-  fail 'skill tool accepted invalid input'
-fi

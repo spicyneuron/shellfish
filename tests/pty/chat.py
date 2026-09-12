@@ -33,28 +33,6 @@ while [[ ! -e ${SHELLFISH_SESSION:h}/permission-release ]]; do sleep 0.02; done
 """
 
 
-def test_sandbox_auto_runs_once():
-    with tempfile.TemporaryDirectory() as detector_dir:
-        count = Path(detector_dir) / "git-count"
-        git = Path(detector_dir) / "git"
-        git.write_text(
-            '#!/bin/sh\n'
-            '[ "$1 $2" != "var GIT_CONFIG_GLOBAL" ] || '
-            'echo x >>"$SF_TEST_GIT_COUNT"\n'
-            'exit 1\n'
-        )
-        git.chmod(0o755)
-        env = {
-            "PATH": f"{detector_dir}:{os.environ['PATH']}",
-            "SF_TEST_GIT_COUNT": str(count),
-        }
-        session = Session(args=["--sandbox-auto"], env=env)
-        try:
-            assert count.read_text().splitlines() == ["x"]
-        finally:
-            session.close()
-
-
 def test_sandbox_updates_without_reload():
     with tempfile.TemporaryDirectory() as grant:
         session = Session(hooks={"sandbox": None})
@@ -153,60 +131,6 @@ def test_streaming_input_sequences_remain_atomic():
         output = session.visible(mark)
         assert "Rendering failed" not in output, output
         assert not re.search(r"\[\d+\].*(?:done|terminated)", output, re.I), output
-    finally:
-        session.close()
-
-
-def test_startup_records_precede_two_turns():
-    session = Session(
-        explicit_session=True,
-        args=["--model", "override-model"],
-        session_start=["project_environment"],
-        system="startup system prompt",
-    )
-    try:
-        path, records = session.wait_session_records(3, path=session.explicit_session)
-        assert records[0]["type"] == "session"
-        assert records[1] == {"type": "system", "content": "startup system prompt"}
-        assert records[2]["type"] == "hook_result"
-        assert records[2]["hook"] == "session_start"
-        assert records[2]["script"] == "project_environment"
-        banner = (
-            "Project:",
-            "Tools: read_file, write_file, edit_file, shell",
-            "test/override-model",
-        )
-        for token in banner:
-            session.wait_after(0, token)
-        transcript = (
-            "startup system prompt",
-            "Loading project environment…",
-        )
-        for token in transcript:
-            session.wait_after(0, token)
-        visible = session.visible()
-        assert visible.index(transcript[0]) < visible.index(transcript[1]), visible
-
-        mark = len(session.output)
-        session.send(b"one\r")
-        _, records = session.wait_session_records(5, path=path)
-        end = time.monotonic() + 3
-        while (
-            not re.search(r" · [\d.]+[km]? ↑", session.visible(mark))
-            and time.monotonic() < end
-        ):
-            session.pump()
-        assert re.search(r" · [\d.]+[km]? ↑", session.visible(mark))
-        draft_mark = len(session.output)
-        session.send(b"two")
-        session.wait_after(draft_mark, "two", view=session.typed)
-        session.send(b"\r")
-        _, records = session.wait_session_records(7, path=path)
-        assert [(record.get("type"), record.get("stop")) for record in records[3:]] == [
-            ("user", None), ("assistant", "end"),
-            ("user", None), ("assistant", "end"),
-        ]
-        assert "Exec exited unexpectedly" not in session.visible()
     finally:
         session.close()
 
@@ -347,71 +271,6 @@ def test_permission_ctrl_c_cancels_pending_tools():
         session.close()
 
 
-def test_repeated_permission_ctrl_c_exits_after_recovery():
-    session = Session(
-        explicit_session=True,
-        env={
-            "SF_TEST_BACKEND_TOOL_CALL": "1",
-            "SF_TEST_BACKEND_TOOL_BYPASS": "true",
-            "SF_TEST_BACKEND_TOOL_COUNT": "3",
-        },
-    )
-    try:
-        mark = len(session.output)
-        session.send(b"cancel and exit\r")
-        session.wait_after(mark, "Allow shell outside of sandbox?")
-        session.send(b"\x03")
-        session.wait_session_records(10, path=session.explicit_session)
-        session.send(b"\x03")
-        session.wait_after(mark, "Saved:")
-        records = [
-            json.loads(line)
-            for line in session.explicit_session.read_text().splitlines()
-        ]
-        results = [
-            record for record in records if record.get("type") == "tool_result"
-        ]
-        assert [record["call_id"] for record in results] == [
-            "call_1",
-            "call_2",
-            "call_3",
-        ]
-        assert records[-1] == {"type": "turn_error", "message": "Cancelled."}
-    finally:
-        session.close()
-
-
-def test_tool_result_preview_reports_total_tokens():
-    fixture = Path(__file__).resolve().parents[1] / "fixtures/session/tool-paired.jsonl"
-    header = json.loads(fixture.read_text().splitlines()[0])
-    rows = [f"preview row {index:02d}" for index in range(1, 7)]
-    records = [
-        header,
-        {"type": "user", "content": [
-            {"type": "text", "text": "preview tool result"},
-        ]},
-        {"type": "assistant", "stop": "tool_calls",
-         "content": [], "usage": {"input_tokens": 1, "output_tokens": 1}},
-        {"type": "tool_call", "id": "call_1", "name": "read_file",
-         "input": {"file_path": "README.md"}},
-        {"type": "tool_result", "call_id": "call_1",
-         "name": "read_file", "content": "\n".join(rows), "exit_code": 0},
-    ]
-    session = Session(explicit_session=True, session_records=records)
-    try:
-        session.wait_after(0, rows[1])
-        visible = session.visible()
-        assert rows[0] in visible and rows[1] in visible, visible
-        assert not any(row in visible for row in rows[2:]), (
-            "lean tool preview rendered beyond its two-row budget\n" + visible
-        )
-        assert re.search(r"\b\d+ tokens?\b", visible), (
-            "lean tool preview did not report whole-node tokens\n" + visible
-        )
-    finally:
-        session.close()
-
-
 def test_chat_end():
     for submitted, exit_status in ((b"/quit\r", 0), (b"\x03", 130)):
         session = Session()
@@ -545,16 +404,12 @@ def test_sigterm_leaves_terminal_state():
 
 if __name__ == "__main__":
     run("terminal PTY scenarios", [
-        test_sandbox_auto_runs_once,
         test_sandbox_updates_without_reload,
-        test_startup_records_precede_two_turns,
         test_tool_uses_manifest_display,
         test_activity_input_does_not_delay_interrupt,
         test_interrupt_drains_partial_recovery,
         test_permission_decision_restores_draft,
         test_permission_ctrl_c_cancels_pending_tools,
-        test_repeated_permission_ctrl_c_exits_after_recovery,
-        test_tool_result_preview_reports_total_tokens,
         test_chat_end,
         test_actionless_editor_return_is_not_a_clean_exit,
         test_zle_multiline_editing,

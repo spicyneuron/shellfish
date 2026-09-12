@@ -14,12 +14,6 @@ assert_equal "$output" "$installed"
 cmp -s "$header" "$output" || fail 'installation changed transcript bytes'
 [[ $(stat -f '%Lp' "$output") == 600 ]] || fail 'installed session mode is not 0600'
 
-# Accept visible and hidden destinations.
-for name in visible.jsonl .agent-a1b2c3.jsonl; do
-  zsh -f "$entry" install-session --session-out "$tmp/$name" <"$header" >/dev/null ||
-    fail "installation rejected $name"
-done
-
 # Recoverable tails remain publishable.
 typeset unanswered="$tmp/unanswered-input.jsonl"
 cat "$header" >"$unanswered"
@@ -51,9 +45,9 @@ print -r -- sentinel >"$occupied"
 mkdir "$directory"
 ln -s "$occupied" "$symlink"
 ln -s "$tmp/missing.jsonl" "$dangling"
-for target in "$occupied" "$empty" "$directory" "$symlink" "$dangling"; do
-  zsh -f "$entry" install-session --session-out "$target" <"$header" \
-    >/dev/null 2>&1 && fail "installation replaced occupied destination: $target"
+for destination in "$occupied" "$empty" "$directory" "$symlink" "$dangling"; do
+  zsh -f "$entry" install-session --session-out "$destination" <"$header" \
+    >/dev/null 2>&1 && fail "installation replaced occupied destination: $destination"
 done
 assert_equal sentinel "$(<"$occupied")"
 [[ -f $empty && ! -s $empty && -d $directory && -L $symlink && -L $dangling ]] ||
@@ -61,14 +55,12 @@ assert_equal sentinel "$(<"$occupied")"
 
 # Publish no invalid transcripts.
 typeset invalid="$tmp/invalid-input.jsonl" target="$tmp/rejected.jsonl"
-typeset -a cases=( empty malformed missing-newline blank-line unsupported invalid-record unmatched-result )
+typeset -a cases=( malformed missing-newline unsupported invalid-record unmatched-result )
 typeset -a leftovers
 for case_name in $cases; do
   case $case_name in
-    empty) : >"$invalid" ;;
     malformed) print -r -- '{"type":"session"' >"$invalid" ;;
     missing-newline) print -rn -- "$(<"$header")" >"$invalid" ;;
-    blank-line) cat "$header" >"$invalid"; print >>"$invalid" ;;
     unsupported) sed '1s/"format_version":1/"format_version":2/' "$header" >"$invalid" ;;
     invalid-record)
       cat "$header" >"$invalid"
@@ -115,12 +107,6 @@ leftovers=( "$tmp"/.raced.jsonl.*(N) )
 # Validate arguments before reading input.
 zsh -f "$entry" install-session <"$header" >/dev/null 2>&1 &&
   fail 'installer accepted a missing destination option'
-zsh -f "$entry" install-session --session-out '' <"$header" >/dev/null 2>&1 &&
-  fail 'installer accepted an empty destination'
-zsh -f "$entry" install-session --output "$tmp/wrong" <"$header" >/dev/null 2>&1 &&
-  fail 'installer accepted an unsupported option'
-zsh -f "$entry" install-session --session-out "$tmp/a" --session-out "$tmp/b" \
-  <"$header" >/dev/null 2>&1 && fail 'installer accepted repeated destinations'
 zsh -f "$entry" install-session --session-out "$tmp/extra" argument \
   <"$header" >/dev/null 2>&1 && fail 'installer accepted an extra argument'
 

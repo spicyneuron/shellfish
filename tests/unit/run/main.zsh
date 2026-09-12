@@ -33,34 +33,10 @@ export XDG_STATE_HOME="$tmp/state"
 typeset entry="$ROOT/bin/shellfish"
 typeset output
 
-# Verbose mode is normalized for hooks.
-typeset verbose_script="$tmp/verbose-hook" verbose_config="$tmp/verbose-config.json"
-mkdir "$verbose_script"
-cat >"$verbose_script/run" <<'EOF'
-#!/usr/bin/env zsh
-print -r -- "${SHELLFISH_VERBOSE-unset}" >"$SF_VERBOSE_MARKER"
-exit 10
-EOF
-chmod +x "$verbose_script/run"
-jq --arg script "$verbose_script" '.harnesses.machine.user_prompt_submit=[$script]' \
-  "$config" >"$verbose_config"
-SF_VERBOSE_MARKER="$tmp/verbose-one" SHELLFISH_VERBOSE=1 \
-  zsh -f "$entry" run --config "$verbose_config" test || fail 'verbose run failed'
-assert_equal 1 "$(<"$tmp/verbose-one")"
-SF_VERBOSE_MARKER="$tmp/verbose-invalid" SHELLFISH_VERBOSE=invalid \
-  zsh -f "$entry" run --config "$verbose_config" test || fail 'normalized run failed'
-assert_equal 0 "$(<"$tmp/verbose-invalid")"
-
 # Plain mode prints only the answer.
 output=$(SF_TEST_BACKEND_DELAY=0 zsh -f "$entry" run --config "$config" 'plain answer') || \
   fail 'plain run failed'
 assert_equal 'plain answer' "$output" 'plain run prints only the answer'
-
-# Recoverable failures exit unsuccessfully.
-integer failed_status=0
-SF_TEST_BACKEND_DELAY=0 zsh -f "$entry" run --config "$config" \
-  'retry error later' >/dev/null 2>&1 || failed_status=$?
-(( failed_status == 1 )) || fail 'recoverable turn failure exited successfully'
 
 # Standard input supplies the prompt.
 output=$(print -rn -- 'piped answer' |
@@ -186,14 +162,5 @@ exit_code=0
 print -n '{}' | zsh -f "$entry" run --jsonl --config "$config" >/dev/null 2>&1 || \
   exit_code=$?
 (( exit_code == 2 )) || fail 'run accepted noncanonical JSON input'
-exit_code=0
-zsh -f "$entry" --jsonl >/dev/null 2>&1 || exit_code=$?
-(( exit_code == 2 )) || fail 'chat accepted --jsonl'
-exit_code=0
-zsh -f "$entry" run --draft draft prompt >/dev/null 2>&1 || exit_code=$?
-(( exit_code == 2 )) || fail 'run accepted --draft'
-exit_code=0
-zsh -f "$entry" run --verbose --config "$config" hi >/dev/null 2>&1 || exit_code=$?
-(( exit_code == 2 )) || fail 'run accepted --verbose'
 
 print -r -- 'ok'

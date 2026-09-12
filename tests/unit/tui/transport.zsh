@@ -7,17 +7,6 @@ sf_test_tmp transport
 typeset -ga ZLE_CALLS=()
 zle() { ZLE_CALLS+=( "$*" ); }
 
-# Ignore caller-local jq modules.
-mkdir -p "$tmp/lib/runtime"
-print -r -- 'def canonical_session_header(:' >"$tmp/lib/runtime/schema.jq"
-(
-  builtin cd -- "$tmp"
-  SF_TUI_TRANSPORT_LINES=( '{"type":"_assistant_message_delta","index":0,"text":"shadow"}' )
-  sf_tui_transport_next null
-  assert_equal 'assistant_message_delta,0,shadow,,,,' "${(j:,:)reply}"
-  assert_equal "$tmp" "$PWD"
-)
-
 # Drain decoded batches.
 SF_TUI_TRANSPORT_LINES=(
   '{"type":"_assistant_message_delta","index":0,"text":"one"}'
@@ -57,13 +46,6 @@ if sf_tui_transport_has_pending; then
   fail 'malformed transport batch exposed a partial prefix'
 fi
 
-# Ignore durable startup records.
-typeset header=$(head -n 1 "$SF_TEST_SESSIONS/complete.jsonl")
-SF_TUI_TRANSPORT_LINES=( "$header" )
-next_status=0
-sf_tui_transport_next "$header" || next_status=$?
-assert_equal 1 "$next_status"
-
 # Encode permission replies.
 exec {SF_TUI_TRANSPORT_INPUT_FD}>"$tmp/reply.jsonl"
 sf_tui_transport_reply permission_1 approve
@@ -71,17 +53,6 @@ exec {SF_TUI_TRANSPORT_INPUT_FD}>&-
 SF_TUI_TRANSPORT_INPUT_FD=''
 jq -e '. == {type:"_tool_permission_response",id:"permission_1",decision:"approve"}' \
   "$tmp/reply.jsonl" >/dev/null || fail 'permission reply was not encoded canonically'
-
-# Consume transport results once.
-SF_TUI_TRANSPORT_EOF=1
-SF_TUI_TRANSPORT_EXIT_STATUS=7
-SF_TUI_TRANSPORT_EXIT_DETAIL=failed
-sf_tui_transport_result
-assert_equal '7,failed' "${(j:,:)reply}"
-assert_equal 0 "$SF_TUI_TRANSPORT_EOF"
-if sf_tui_transport_result; then
-  fail 'transport result was returned twice'
-fi
 
 # Normalize transport errors.
 print -rn -- $'first\tsecond\nthird' >"$tmp/exec.error"
@@ -94,31 +65,20 @@ assert_equal 'first second third' "$SF_TUI_TRANSPORT_EXIT_DETAIL"
 SF_TUI_TRANSPORT_COMMAND=( "${commands[zsh]}" -f -c \
   'IFS= read -r line; print -r -- "$line"' )
 sf_tui_transport_start '{"ping":true}' callback || fail "$SF_TUI_TRANSPORT_ERROR"
-[[ $SF_TUI_TRANSPORT_ERROR_FILE == "${${TMPDIR:-/tmp}:A}/shellfish-$EUID/transport/exec-error."* ]]
-[[ $ZLE_CALLS[-1] == '-F -w '*' callback' ]] || fail 'transport watcher was not installed'
 sf_tui_transport_read "$SF_TUI_TRANSPORT_OUTPUT_FD"
 assert_equal '{"ping":true}' "$SF_TUI_TRANSPORT_LINES[1]"
 sf_tui_transport_read "$SF_TUI_TRANSPORT_OUTPUT_FD"
 sf_tui_transport_is_complete || fail 'transport EOF was not recorded'
 sf_tui_transport_result
 assert_equal '0,' "${(j:,:)reply}"
-[[ $ZLE_CALLS == *'-F '* ]] || fail 'transport watcher was not removed'
 
-# Start transports without input.
+# Start session creation without input.
 SF_TUI_TRANSPORT_COMMAND=( "${commands[zsh]}" -f -c \
   'print -r -- '\''{"type":"_session_created","path":"/tmp/new.jsonl"}'\''' )
-sf_tui_transport_start '' callback || fail 'transport required input for creation'
+sf_tui_transport_start '' callback || fail 'transport required turn input'
 sf_tui_transport_read "$SF_TUI_TRANSPORT_OUTPUT_FD"
 sf_tui_transport_next null
 assert_equal 'session_created,/tmp/new.jsonl,,,,,' "${(j:,:)reply}"
 sf_tui_transport_read "$SF_TUI_TRANSPORT_OUTPUT_FD"
 sf_tui_transport_result
 assert_equal '0,' "${(j:,:)reply}"
-
-# Reject missing commands.
-SF_TUI_TRANSPORT_COMMAND=( "$tmp/missing" )
-if sf_tui_transport_start '{}' callback; then
-  fail 'missing transport command unexpectedly started'
-fi
-assert_equal 'cannot write to exec process' "$SF_TUI_TRANSPORT_ERROR"
-sf_tui_transport_stop

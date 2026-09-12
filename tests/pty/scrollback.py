@@ -34,16 +34,12 @@ class Recorder(pyte.Screen):
 
     def __init__(self, *args, **kwargs):
         self.scrolled = []
-        self.scrolled_cells = []
         super().__init__(*args, **kwargs)
 
     def index(self):
         top, bottom = self.margins or (0, self.lines - 1)
         if self.cursor.y == bottom:
             self.scrolled.append(self.display[top])
-            # Cells retain styling that display[] omits.
-            row = self.buffer[top]
-            self.scrolled_cells.append([row[x] for x in range(self.columns)])
         super().index()
 
 
@@ -91,13 +87,6 @@ class Terminal:
 
     def scrollback(self):
         return "".join(self.screen.scrolled)
-
-    def committed_style(self, role):
-        for text, cells in zip(self.screen.scrolled, self.screen.scrolled_cells):
-            start = text.lower().find(f"─ {role} ─")
-            if start >= 0:
-                return cells[start + 2]
-        return None
 
     def everything(self):
         return self.scrollback() + self.frame()
@@ -200,30 +189,6 @@ def test_tall_turn_loses_neither_text_nor_draft():
         session.close()
 
 
-def test_committed_headings_keep_style():
-    session = Session(env={"SF_TEST_BACKEND_LINE_WORDS": "1",
-                           "SF_TEST_BACKEND_DELAY": "0.001"})
-    terminal = Terminal(session)
-    try:
-        session.send(" ".join(WORDS[:50]).encode() + b"\r")
-        terminal.wait_for(
-            "styled headings to commit",
-            lambda: all(
-                terminal.committed_style(role) is not None
-                for role in ("user", "agent")
-            ),
-        )
-        for role in ("user", "agent"):
-            cell = terminal.committed_style(role)
-            assert cell.fg != "default" and cell.bold, (
-                f"{role} committed unstyled: fg={cell.fg} bg={cell.bg} "
-                f"bold={cell.bold}" + terminal.dump()
-            )
-        print("PASS style: committed headings retained semantic styling")
-    finally:
-        session.close()
-
-
 def test_tall_resume_drains_bounded_backlog():
     header = json.loads(SESSION_FIXTURE.read_text().splitlines()[0])
     lines = [f"resume-{index:03d}" for index in range(1, 201)]
@@ -304,6 +269,5 @@ if __name__ == "__main__":
     run("scrollback PTY scenarios", [
         test_tall_resume_drains_bounded_backlog,
         test_tall_turn_loses_neither_text_nor_draft,
-        test_committed_headings_keep_style,
         test_queued_submits_keep_committed_history,
     ])

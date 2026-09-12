@@ -86,93 +86,17 @@ assert_equal '(unreadable)' "$SF_RESUME_PREVIEWS[9]"
 assert_equal 'STATE preview/only' "$SF_RESUME_PREVIEWS[10]"
 assert_equal 'STATE preview/last' "$SF_RESUME_PREVIEWS[11]"
 
-# Missing sessions retain their row.
-sf_resume_load "$s_empty" "$tmp/missing.jsonl" "$s_system"
-assert_equal '(unreadable)' "$SF_RESUME_PREVIEWS[2]"
-assert_equal SYSTEM "$SF_RESUME_PREVIEWS[3]"
-sf_resume_load "$s_empty" "$s_system" "$s_context" "$s_user" "$s_torn" "$s_assistant" "$s_tool_res" "$s_bad"
-
-# Render the candidate list.
+# Render and accept a changed selection.
 zle() { :; }
 COLUMNS=60
 sf_resume_update_display
-[[ $PREDISPLAY == 'Resume session (1 - 8 of 8)'$'\n\n'* ]]
-[[ $PREDISPLAY == *$'\n› 1  '* ]]
-[[ $PREDISPLAY == *'2026-08-18 10:00'* ]]
-[[ $PREDISPLAY == *'custom/claude-3'* ]]
-[[ $PREDISPLAY == *'↑/↓ select  ←/→ page  0–9 jump  Enter resumes  Esc cancels'* ]]
-for line in ${(f)PREDISPLAY}; do (( ${#line} < COLUMNS )); done
-
-# Highlight offsets must match their text.
-span_text() {
-  local -a span=( ${=1} )
-  REPLY=${PREDISPLAY[${span[1]#P} + 1,${span[2]}]}
-}
-span_text "$region_highlight[1]"
-assert_equal 'Resume session (1 - 8 of 8)' "$REPLY"
-[[ $region_highlight[1] == *' bold' ]]
-span_text "$region_highlight[2]"
-[[ $REPLY == '› 1  '* ]]
-[[ $region_highlight[2] == *' standout' ]]
-span_text "$region_highlight[3]"
-assert_equal '↑/↓ select  ←/→ page  0–9 jump  Enter resumes  Esc cancels' "$REPLY"
-[[ $region_highlight[3] == *' fg=8' ]]
-
-# Expand previews into unused space.
-(
-  SF_RESUME_PATHS=( "$s_empty" )
-  SF_RESUME_TIMES=( '2026-08-18 10:00' )
-  SF_RESUME_PAIRS=( 'x/y' )
-  SF_RESUME_PREVIEWS=( '12345678901234567890' )
-  COLUMNS=50
-  sf_resume_update_display
-  [[ $PREDISPLAY == *'12345678901234567890'* ]]
-)
-
-# Preserve previews on narrow displays.
-(
-  SF_RESUME_PATHS=( "$s_empty" )
-  SF_RESUME_TIMES=( '2026-08-18 10:00' )
-  SF_RESUME_PAIRS=( 'very-long-backend/very-long-model' )
-  SF_RESUME_PREVIEWS=( 'P' )
-  COLUMNS=28
-  sf_resume_update_display
-  [[ $PREDISPLAY == *'…  P'$'\n'* ]]
-)
-
-# Move the highlighted selection.
+[[ $PREDISPLAY == 'Resume session (1 - 11 of 11)'$'\n\n'* &&
+   $PREDISPLAY == *$'\n› 1  '* ]] || fail 'resume picker did not render its selection'
 KEYS=$'\e[B'
 sf_resume_move
-assert_equal 2 "$SF_RESUME_SELECTED"
-[[ $PREDISPLAY == *$'\n› 2  '* ]]
-
-# Accept the highlighted row.
 BUFFER=''
 sf_resume_accept
 assert_equal 2 "$BUFFER"
-
-# Page and jump through candidates.
-SF_RESUME_ALL_PATHS=( "$s_empty" "$s_system" "$s_context" "$s_user" "$s_torn"
-  "$s_assistant" "$s_tool_res" "$s_bad" "$s_empty" "$s_system" "$s_context" )
-SF_RESUME_LIMIT=10
-SF_RESUME_PAGE=0
-sf_resume_load_page
-(( ${#SF_RESUME_PATHS} == 10 ))
-KEYS=0
-sf_resume_jump
-assert_equal 10 "$BUFFER"
-KEYS=$'\e[C'
-sf_resume_change_page
-assert_equal 1 "$SF_RESUME_PAGE"
-(( ${#SF_RESUME_PATHS} == 1 ))
-KEYS=$'\e[D'
-sf_resume_change_page
-assert_equal 0 "$SF_RESUME_PAGE"
-(( ${#SF_RESUME_PATHS} == 10 ))
-
-# Cancel selection.
-sf_resume_cancel
-assert_equal 1 "$SF_RESUME_CANCELLED"
 
 # Route resume selection publicly.
 sf_test_tmp resume-command

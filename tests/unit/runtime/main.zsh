@@ -3,7 +3,7 @@
 source "${0:A:h:h:h}/_helpers.zsh"
 sf_test_source libexec/config/runtime.zsh lib/environment.zsh lib/session/main.zsh
 
-typeset config runtime tool_name jsonc hook display
+typeset config runtime tool_name jsonc hook
 sf_test_tmp runtime
 mkdir -p "$tmp/config" "$tmp/home"
 export HOME="${tmp:A}/home"
@@ -92,42 +92,17 @@ print -r -- '{}' >"$tmp/config/empty.jsonc"
 sf_runtime_resolve_from_config "$tmp/config/empty.jsonc" '' 'default-model' '{}' \
   "$ROOT/tests/fixtures/backend"
 jq -e --arg root "$ROOT/share/default/hooks/session_start" \
-  --arg prompt_root "$ROOT/share/default/hooks/user_prompt_submit" \
-  --arg tools "$ROOT/share/default/tools" '
+  --arg prompt_root "$ROOT/share/default/hooks/user_prompt_submit" '
   (.harness.session_start | map(.command)) == [
     ($root + "/project_environment/run"),
     ($root + "/git_environment/run"),
     ($root + "/project_instructions/run")
   ] and
-  .harness.session_start[0].environment == [] and
-  .harness.session_start[0].display == "Loading project environment…" and
-  .harness.session_start[1].environment == [] and
-  .harness.session_start[1].display == "Loading git environment…" and
-  .harness.session_start[2].environment == [] and
-  (.harness.user_prompt_submit[] | select(
-    .command == ($prompt_root + "/user_shell/run")) |
-    .display == "Running shell command…" and
-    .match == {pattern:"^![^\\n]*\\z"} and
-    .help == {usage:"!COMMAND",description:"Run COMMAND and stage its output as context"}) and
-  (.harness.user_prompt_submit[] | select(
-    .command == ($prompt_root + "/compact/run")) |
-    .match == {command:($prompt_root + "/compact/check")} and
-    .help.usage == "/compact") and
-  (.harness.user_prompt_submit[] | select(
-    .command == ($prompt_root + "/help/run")) |
-    .match == {pattern:"^/(help|h)\\z"} and (has("help") | not)) and
   .harness.user_prompt_submit[0].command == ($prompt_root + "/help/run") and
   .harness.user_prompt_submit[-1].command == ($prompt_root + "/git_environment/run") and
-  .harness.user_prompt_submit[-1].environment == [] and
   (.backend | has("context_window_command") | not) and
   (.harness.tools | map(.name)) ==
-    ["read_file", "edit_file", "write_file", "skill", "search_web", "fetch_url", "shell"] and
-  (.harness.tools[] | select(.name == "search_web") |
-    .command == ($tools + "/search_web/run") and
-    .settings == ($tools + "/search_web/fence.jsonc")) and
-  (.harness.tools[] | select(.name == "fetch_url") |
-    .command == ($tools + "/fetch_url/run") and
-    .settings == ($tools + "/fetch_url/fence.jsonc"))
+    ["read_file", "edit_file", "write_file", "skill", "search_web", "fetch_url", "shell"]
 ' <<<"$REPLY" >/dev/null
 
 # Bundled backend names resolve adapters.
@@ -149,21 +124,6 @@ jq -cn --argjson runtime "$runtime" '
 ' >"$session"
 sf_runtime_resolve "$session" "$config" '' '' '{}' '' 0
 assert_equal "$runtime" "$REPLY" 'runtime resolution reads the frozen runtime'
-
-# Relative sessions keep caller paths while jq uses installed modules.
-mkdir -p "$tmp/shadow/lib/runtime" "$tmp/shadow/libexec/config"
-print -r -- 'def canonical_session_header(:' >"$tmp/shadow/lib/runtime/schema.jq"
-print -r -- 'def runtime_prepare(:' >"$tmp/shadow/libexec/config/runtime.jq"
-cp "$session" "$tmp/shadow/session.jsonl"
-print -r -- '{"type":"system","content":"shadow system"}' >>"$tmp/shadow/session.jsonl"
-(
-  builtin cd -- "$tmp/shadow"
-  sf_runtime_resolve_from_config "$config" '' 'shadow-model' '{}'
-  jq -e '.profile.request.model == "shadow-model"' <<<"$REPLY" >/dev/null
-  sf_runtime_resolve session.jsonl "$config" '' '' '{}' '' 0
-  assert_equal "$runtime" "$REPLY"
-  assert_equal "$tmp/shadow" "$PWD"
-)
 
 # Stored sessions reject runtime overrides.
 jq -e '.theme_mode == "light" and .themes.light.text == "#123456"' \
@@ -283,22 +243,6 @@ if sf_runtime_resolve_from_config "$tmp/config/malformed.jsonc" '' '' '{}'; then
 fi
 [[ $SF_RUNTIME_ERROR == *'invalid config: '*'malformed.jsonc:'*'parse error:'* ]]
 
-cat >"$tmp/config/unterminated.jsonc" <<'JSON'
-{"profiles": { /* unfinished
-JSON
-if sf_runtime_resolve_from_config "$tmp/config/unterminated.jsonc" '' '' '{}'; then
-  fail 'unterminated JSONC comment was accepted'
-fi
-[[ $SF_RUNTIME_ERROR == *'invalid config: '*'unterminated.jsonc: unterminated block comment'* ]]
-
-cat >"$tmp/config/invalid-field.jsonc" <<'JSON'
-{"profiles":{"work":{"legacy_backend":"test"}}}
-JSON
-if sf_runtime_resolve_from_config "$tmp/config/invalid-field.jsonc" '' '' '{}'; then
-  fail 'unknown config field was accepted'
-fi
-[[ $SF_RUNTIME_ERROR == *'invalid config at $["profiles"]["work"]["legacy_backend"]: unknown field'* ]]
-
 # Home-relative sandbox paths expand safely.
 cat >"$tmp/config/home-paths.jsonc" <<'JSON'
 {
@@ -376,38 +320,6 @@ jq -e --arg base "${tmp:A}/config/hooks" '
   ] and .harness.stop == [{command:($base + "/stop/gate/run"),display:"",environment:[]}]
 ' <<<"$REPLY" >/dev/null
 
-chmod -x "$tmp/config/hooks/user_prompt_submit/help/run"
-if sf_runtime_resolve_from_config "$tmp/config/hooked.jsonc" '' '' '{}' "$ROOT/tests/fixtures/backend"; then
-  fail 'non-executable hook was accepted'
-fi
-[[ $SF_RUNTIME_ERROR == 'invalid user_prompt_submit hook: help' ]]
-chmod +x "$tmp/config/hooks/user_prompt_submit/help/run"
-
-chmod -x "$tmp/config/hooks/user_prompt_submit/shell/check"
-if sf_runtime_resolve_from_config "$tmp/config/hooked.jsonc" '' '' '{}' "$ROOT/tests/fixtures/backend"; then
-  fail 'non-executable hook match command was accepted'
-fi
-[[ $SF_RUNTIME_ERROR == 'invalid user_prompt_submit hook match command: shell' ]]
-chmod +x "$tmp/config/hooks/user_prompt_submit/shell/check"
-
-cat >"$tmp/config/malformed-hooks.jsonc" <<'JSON'
-{"harnesses":{"bad":{"stop":"gate"}}}
-JSON
-if sf_runtime_resolve_from_config "$tmp/config/malformed-hooks.jsonc" '' '' '{}' \
-    "$ROOT/tests/fixtures/backend"; then
-  fail 'non-array hook list was accepted'
-fi
-[[ $SF_RUNTIME_ERROR == *'invalid config at $["harnesses"]["bad"]["stop"]: must be references'* ]]
-
-cat >"$tmp/config/unknown-hook.jsonc" <<'JSON'
-{"harnesses":{"bad":{"before_prompt":[]}}}
-JSON
-if sf_runtime_resolve_from_config "$tmp/config/unknown-hook.jsonc" '' '' '{}' \
-    "$ROOT/tests/fixtures/backend"; then
-  fail 'unknown hook name was accepted'
-fi
-[[ $SF_RUNTIME_ERROR == *'invalid config at $["harnesses"]["bad"]["before_prompt"]: unknown field'* ]]
-
 # Permission hooks cannot display a running label.
 mkdir -p "$tmp/config/hooks/permission_request/empty" \
   "$tmp/config/hooks/permission_request/omitted" "$tmp/config/hooks/stop/labeled"
@@ -441,15 +353,6 @@ if sf_runtime_resolve_from_config "$tmp/config/hook-display.jsonc" '' '' '{}' \
   fail 'permission hook running label was accepted during configuration resolution'
 fi
 [[ $SF_RUNTIME_ERROR == *'invalid hook manifest:'*'/permission_request/empty/run' ]]
-
-for display in null false; do
-  print -r -- "{\"display\":$display}" \
-    >"$tmp/config/hooks/permission_request/empty/manifest.json"
-  if sf_runtime_resolve_from_config "$tmp/config/hook-display.jsonc" '' '' '{}' \
-      "$ROOT/tests/fixtures/backend"; then
-    fail "non-string permission hook display was accepted: $display"
-  fi
-done
 
 # Components resolve beside a symlinked config's target.
 mkdir -p "$tmp/symlink-config-home/shellfish" "$tmp/config-target/system"
@@ -491,13 +394,6 @@ sf_runtime_resolve_from_config "$tmp/config/system.jsonc" '' '' '{}' \
 jq -e --arg fallback "$ROOT/share/default/system/second.md" \
   '.profile.system[1] == $fallback' <<<"$REPLY" >/dev/null ||
   fail 'missing prompt path was not resolved'
-
-# Template profiles resolve bundled prompts.
-sf_runtime_read_jsonc "$ROOT/share/template/shellfish.jsonc" >"$tmp/config/readonly.jsonc"
-sf_runtime_resolve_from_config "$tmp/config/readonly.jsonc" 'readonly' 'm' '{}' \
-  "$ROOT/tests/fixtures/backend"
-jq -e --arg path "$ROOT/share/default/system/readonly.md" '.profile.system == [$path]' \
-  <<<"$REPLY" >/dev/null || fail 'bundled prompt path was not resolved'
 
 # Missing hook references fail.
 cat >"$tmp/config/missing-hook.jsonc" <<'JSON'

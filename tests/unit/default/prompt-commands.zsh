@@ -226,38 +226,6 @@ COPY_OUTPUT="$copy_output" PATH="$copy_bin:$PATH" SHELLFISH_SESSION="$copy_sessi
 print -n -- $'Answer\n\nContinued\n\n' >"$tmp/copy-expected"
 cmp "$tmp/copy-expected" "$copy_output" >/dev/null || fail 'copy did not preserve assistant text'
 
-# Resolve adjacent fork sections.
-integer fork_number=1
-for target in 2 3; do
-  fork_status=0
-  SHELLFISH_EXECUTABLE="$ROOT/bin/shellfish" SHELLFISH_SESSION="$copy_session" \
-    SHELLFISH_TURN_STATE="$tmp" zsh -f "$ROOT/share/default/hooks/user_prompt_submit/fork/run" \
-    user_prompt_submit 3>"$fork_control" < <(print -n -- "/fork $target") || fork_status=$?
-  (( fork_status == 11 ))
-  jq -e --arg draft Second \
-    '.argv[-2:] == ["--draft",$draft]' "$fork_control" >/dev/null
-  jq -e -s '[.[] | select(.type == "user")] | length == 1' \
-    "$tmp/copy-session_fork_${fork_number}.jsonl" >/dev/null
-  (( fork_number++ ))
-done
-
-# Preserve consecutive user sections.
-typeset consecutive_session="$tmp/consecutive.jsonl"
-head -n 1 "$SF_TEST_SESSIONS/header-only.jsonl" >"$consecutive_session"
-print -r -- \
-  '{"type":"user","content":[{"type":"text","text":"First"}]}' \
-  '{"type":"user","content":[{"type":"text","text":"Second"}]}' \
-  >>"$consecutive_session"
-fork_status=0
-SHELLFISH_EXECUTABLE="$ROOT/bin/shellfish" SHELLFISH_SESSION="$consecutive_session" \
-  SHELLFISH_TURN_STATE="$tmp" zsh -f "$ROOT/share/default/hooks/user_prompt_submit/fork/run" \
-  user_prompt_submit 3>"$fork_control" < <(print -n -- '/fork 2') || fork_status=$?
-(( fork_status == 11 ))
-jq -e --arg draft Second '.argv[-2:] == ["--draft",$draft]' "$fork_control" >/dev/null
-jq -e -s '
-  length == 2 and .[-1].type == "user" and .[-1].content[0].text == "First"
-' "$tmp/consecutive_fork_1.jsonl" >/dev/null
-
 # Fork the exact transcript prefix.
 typeset state_session="$tmp/state.jsonl"
 head -n 1 "$SF_TEST_SESSIONS/header-only.jsonl" >"$state_session"

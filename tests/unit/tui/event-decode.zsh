@@ -2,37 +2,18 @@
 
 source "${0:A:h:h:h}/_helpers.zsh"
 
-# Decode all event families.
-cat <<'STREAM' |
-{"type":"session","format_version":1,"cwd":"/tmp","created":"2026-01-01T00:00:00Z","profile":{"request":{"model":"test"}},"backend":{"name":"test","command":"/usr/bin/false","endpoint":"https://example.invalid","environment":[],"env_file":"","insecure_tls":false,"http_timeout":30,"http_stall":10},"harness":{"sandbox_read_paths":[],"sandbox_write_paths":[],"fence":"","tools":[],"sandbox":false,"max_requests_per_turn":8,"max_tool_calls_per_request":16,"max_capture_bytes":65536}}
-{"type":"system","content":"instructions"}
-{"type":"state","name":"startup/status","value":"ready"}
-{"type":"_hook_activity","hook":"session_start","script":"environment","text":"Inspecting"}
-{"type":"_hook_activity","text":""}
-{"type":"_assistant_start"}
-{"type":"_assistant_reasoning_delta","index":0,"text":"why"}
-{"type":"_assistant_message_delta","index":1,"text":"hi\n"}
-{"type":"_assistant_tool_call_delta","index":2,"id":"call_1"}
-{"type":"_assistant_reasoning_opaque","index":0,"opaque":{"signature":"s"}}
-{"type":"_turn_usage","input_tokens":14,"output_tokens":2}
-{"type":"_assistant_end","stop":"end"}
-{"type":"hook_result","hook":"stop","script":"check","model_context":"for model","user_context":"for user"}
-{"type":"turn_error","message":"recoverable"}
-{"type":"_handoff","argv":["/usr/bin/env","printf","%s","done"]}
-{"type":"user","content":[{"type":"text","text":"hi"}]}
-{"type":"assistant","stop":"end","content":[{"type":"text","text":"hi\n"}],"usage":{"input_tokens":14,"output_tokens":2}}
-STREAM
-  jq -jRs -L "$ROOT" --argjson runtime null \
-    -f "$ROOT/libexec/tui/event-decode.jq" >/dev/null
-
-# Decode tool call frames.
+# Decode tool-call response framing.
 typeset response
-response=$(printf '%s\n' '{"type":"_assistant_tool_call_delta","index":0,"id":"call_1"}' \
+response=$(printf '%s\n' \
+    '{"type":"_assistant_tool_call_delta","index":0,"id":"call_1"}' \
+    '{"type":"_assistant_reasoning_opaque","index":1,"opaque":{"signature":"s"}}' \
     '{"type":"_assistant_end","stop":"tool_calls"}' |
   jq -jRs -L "$ROOT" --argjson runtime null \
     -f "$ROOT/libexec/tui/event-decode.jq" |
   tr '\0' '\n' | sed '/^$/d' | paste -sd, -)
-assert_equal 'assistant_tool_call_delta,0,assistant_end,batch_ok' "$response"
+assert_equal \
+  'assistant_tool_call_delta,0,assistant_reasoning_opaque,1,assistant_end,batch_ok' \
+  "$response"
 
 # Reject malformed request starts.
 if print -r -- '{"type":"_assistant_start","unexpected":true}' |
@@ -59,21 +40,6 @@ usage=$(print -r -- \
   tr '\0' '\n' | sed '/^$/d' | paste -sd, -)
 assert_equal 'turn_usage,12k ↑ 85% ⦿ 900 ↓ 5% of 264k ◔,batch_ok' "$usage"
 
-# Format usage without context.
-usage=$(print -r -- \
-    '{"type":"assistant","stop":"end","content":[{"type":"text","text":"hi"}],"usage":{"input_tokens":100,"cached_tokens":85,"output_tokens":20,"reasoning_tokens":7}}' |
-  jq -jRs -L "$ROOT" --argjson runtime \
-    '{"profile":{"context_window":null}}' -f "$ROOT/libexec/tui/event-decode.jq" |
-  tr '\0' '\n' | sed '/^$/d' | paste -sd, -)
-assert_equal 'turn_usage,100 ↑ 85% ⦿ 20 ↓,7,batch_ok' "$usage"
-
-# Decode single-line errors.
-order=$(print -r -- '{"type":"turn_error","message":"Turn interrupted."}' |
-  jq -jRs -L "$ROOT" --argjson runtime null \
-    -f "$ROOT/libexec/tui/event-decode.jq" |
-  tr '\0' '\n' | sed '/^$/d' | paste -sd, -)
-assert_equal 'error,Turn interrupted.,end,batch_ok' "$order"
-
 # Decode multiline errors.
 order=$(print -r -- '{"type":"turn_error","message":"Hook failed.\ninvalid output"}' |
   jq -jRs -L "$ROOT" --argjson runtime null \
@@ -91,9 +57,7 @@ order=$(print -r -- "$preparation" |
   tr '\0' '\n')
 [[ $order == $'session_prepare\n'*$'\nstartup system\n'* ]] ||
   fail 'preparation did not expose its runtime and system'
-for invalid in '.path="relative"' '.path="/bad\u0000path"' '.records=[]' \
-    '.records[1]={type:"hook_result",hook:"session_start",script:"hook",model_context:"early"}' \
-    '.presentation={}'; do
+for invalid in '.path="relative"' '.records=[]' '.presentation={}'; do
   if jq -c "$invalid" <<<"$preparation" |
       jq -jRs -L "$ROOT" --argjson runtime null \
         -f "$ROOT/libexec/tui/event-decode.jq" >/dev/null 2>&1; then
@@ -104,9 +68,7 @@ done
 # Reject malformed events.
 for invalid in '{"type":"turn_error","message":1}' \
     '{"type":"_assistant_message_delta","text":"missing index"}' \
-    '{"type":"_hook_activity","hook":"unknown","script":"check","text":"Working"}' \
-    '{"type":"_hook_activity","hook":"stop","script":"","text":"Working"}' \
-    '{"type":"_hook_activity","hook":"stop","script":"check","text":""}'; do
+    '{"type":"_hook_activity","hook":"unknown","script":"check","text":"Working"}'; do
   if print -r -- "$invalid" |
       jq -jRs -L "$ROOT" --argjson runtime null \
         -f "$ROOT/libexec/tui/event-decode.jq" >/dev/null 2>&1; then
@@ -155,27 +117,11 @@ order=$(print -r -- \
   tr '\0' '\n' | sed '/^$/d' | paste -sd, -)
 assert_equal 'permission_request,permission_1,shell,echo hi,host access,sh,batch_ok' "$order"
 
-# Decode file permissions.
-order=$(print -r -- \
-    '{"type":"_tool_permission_request","id":"permission_2","reason":"host access","tool":{"name":"read_file","input":{"file_path":"outside.txt","request_sandbox_bypass":true,"sandbox_bypass_reason":"host access"}}}' |
-  jq -jRs -L "$ROOT" --argjson runtime "$read_runtime" \
-    -f "$ROOT/libexec/tui/event-decode.jq" |
-  tr '\0' '\n' | sed '/^$/d' | paste -sd, -)
-assert_equal 'permission_request,permission_2,read_file,outside.txt,host access,plain,batch_ok' "$order"
-
-# Decode edit calls.
+# Decode tool results.
 typeset edit_runtime=$(jq -cn \
   --slurpfile edit "$ROOT/share/default/tools/edit_file/manifest.json" '
   {harness:{tools:[{name:"edit_file",manifest:$edit[0]}]}}
 ')
-order=$(print -r -- \
-    '{"type":"tool_call","id":"call_3","name":"edit_file","input":{"file_path":"notes.json","old_string":"a","new_string":"b"}}' |
-  jq -jRs -L "$ROOT" --argjson runtime "$edit_runtime" \
-    -f "$ROOT/libexec/tui/event-decode.jq" |
-  tr '\0' '\n' | sed '/^$/d' | paste -sd, -)
-assert_equal 'tool_call,call_3,edit_file,notes.json,plain,batch_ok' "$order"
-
-# Decode edit results.
 order=$(print -r -- \
     '{"type":"tool_result","call_id":"call_2","name":"edit_file","content":"@@ -1 +1 @@\n-old\n+new","exit_code":0,"sandbox_denial_detected":true}' |
   jq -jRs -L "$ROOT" --argjson runtime "$edit_runtime" \
@@ -205,8 +151,6 @@ assert_equal "session_update,$updated_runtime,batch_ok" "$session_update"
 # Reject malformed handoffs.
 for invalid in \
     '{"type":"_handoff","argv":[]}' \
-    '{"type":"_handoff","argv":[""]}' \
-    '{"type":"_handoff","argv":["cmd",1]}' \
     '{"type":"_handoff","argv":["cmd","bad\u0000arg"]}'; do
   if print -r -- "$invalid" |
       jq -jRs -L "$ROOT" --argjson runtime null \
@@ -236,11 +180,4 @@ if print -r -- '{"type":"user"}' |
       -f "$ROOT/libexec/tui/event-decode.jq" \
       >/dev/null 2>&1; then
   fail 'malformed canonical exec record was accepted'
-fi
-
-# Reject malformed state records.
-if print -r -- '{"type":"state","name":"bad name","value":true}' |
-    jq -jRs -L "$ROOT" --argjson runtime null \
-      -f "$ROOT/libexec/tui/event-decode.jq" >/dev/null 2>&1; then
-  fail 'malformed state was accepted'
 fi

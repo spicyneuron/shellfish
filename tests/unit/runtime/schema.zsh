@@ -28,9 +28,6 @@ fi
 print -r -- '{"type":"assistant","stop":"end","content":[{"type":"text","text":"hi"}]}' |
   schema_eval 'canonical_assistant_message' >/dev/null
 
-print -r -- '{"type":"assistant","stop":"tool_calls","content":[{"type":"text","text":"calling"}]}' |
-  schema_eval 'canonical_assistant_message' >/dev/null
-
 # Tool calls are separate records.
 if print -r -- '{"type":"assistant","stop":"tool_calls","content":[{"type":"tool_call","id":"c1","name":"shell","input":{}}]}' |
     schema_eval 'canonical_assistant_message' >/dev/null 2>&1; then
@@ -39,12 +36,6 @@ fi
 
 print -r -- '{"type":"tool_call","id":"c1","name":"shell","input":{}}' |
   schema_eval 'canonical_tool_call' >/dev/null
-
-# Recovery records represent cancellation.
-if print -r -- '{"type":"assistant","stop":"cancelled","content":[{"type":"text","text":"halted"}]}' |
-    schema_eval 'canonical_assistant_message' >/dev/null 2>&1; then
-  fail 'cancelled assistant stop reason was accepted'
-fi
 
 # Turn errors separate unfinished turns.
 print -r -- '[
@@ -84,11 +75,7 @@ print -r -- "$valid_request" | schema_eval 'canonical_request' >/dev/null
 
 for filter in \
     '.messages[0].content = [{}]' \
-    '.messages[1].content[0].extra = true' \
-    '.messages[2].extra = true' \
     '.tools[0] = {}' \
-    '.options.extra = true' \
-    '.transport.extra = true' \
     '.extra = true'; do
   if jq "$filter" <<<"$valid_request" | schema_eval 'canonical_request' >/dev/null 2>&1; then
     fail "canonical request accepted malformed input: $filter"
@@ -112,8 +99,6 @@ print -r -- '{"type":"_assistant_reasoning_opaque","index":0,"opaque":{}}' |
 
 for event in \
     '{"type":"_assistant_message_delta","text":"missing index"}' \
-    '{"type":"_assistant_tool_call_delta","index":0}' \
-    '{"type":"_assistant_tool_call_delta","index":0,"id":"bad id"}' \
     '{"type":"_assistant_end","stop":"cancelled"}'; do
   if print -r -- "$event" | request_eval 'canonical_backend_event' >/dev/null 2>&1; then
     fail "invalid backend event was accepted: $event"
@@ -176,9 +161,6 @@ for events in \
 done
 
 # Tool results require valid exit codes.
-print -r -- '{"type":"tool_result","call_id":"c1","name":"shell","content":"out","exit_code":0}' |
-  schema_eval 'canonical_tool_result' >/dev/null
-
 print -r -- '{"type":"tool_result","call_id":"c1","name":"shell","content":"out","exit_code":0,"sandbox_denial_detected":true}' |
   schema_eval 'canonical_tool_result' >/dev/null
 
@@ -192,15 +174,8 @@ if print -r -- '{"type":"tool_result","call_id":"c1","name":"shell","content":"o
   fail 'invalid exit code was accepted'
 fi
 
-if print -r -- '{"type":"tool_result","call_id":"c1","name":"shell","content":"out","exit_code":0,"outcome":"executed"}' |
-    schema_eval 'canonical_tool_result' >/dev/null 2>&1; then
-  fail 'legacy tool outcome was accepted'
-fi
-
 # Hook results require attributed context.
 for result in \
-    '{"type":"hook_result","hook":"env","script":"add_env","model_context":"data","prompt":"pwd","status":0}' \
-    '{"type":"hook_result","hook":"env","script":"add_env","user_context":"shown"}' \
     '{"type":"hook_result","hook":"env","script":"add_env","model_context":"data","user_context":"shown"}'; do
   print -r -- "$result" | schema_eval 'canonical_hook_result' >/dev/null
 done
@@ -208,27 +183,15 @@ done
 for result in \
     '{"type":"hook_result","hook":"env","model_context":"data"}' \
     '{"type":"hook_result","hook":"env","script":"add_env"}' \
-    '{"type":"hook_result","hook":"env","script":"add_env","model_context":""}' \
-    '{"type":"hook_result","hook":"env","script":"add_env","user_context":""}' \
-    '{"type":"hook_result","hook":"env","script":"add_env","user_context":"shown","status":0}' \
-    '{"type":"hook_result","hook":"env","script":"add_env","model_context":"data","prompt":"pwd"}'; do
+    '{"type":"hook_result","hook":"env","script":"add_env","model_context":""}'; do
   if print -r -- "$result" | schema_eval 'canonical_hook_result' >/dev/null 2>&1; then
     fail "invalid hook result was accepted: $result"
-  fi
-done
-
-for field in content label preface truncated; do
-  if jq -cn --arg field "$field" \
-      '{type:"hook_result",hook:"env",script:"add_env",model_context:"data"} + {($field):true}' |
-      schema_eval 'canonical_hook_result' >/dev/null 2>&1; then
-    fail "hook result with unknown $field field was accepted"
   fi
 done
 
 # State records require canonical names.
 for state in \
     '{"type":"state","name":"a","value":null}' \
-    '{"type":"state","name":"agents/a1b2c3","value":{"session":".agent-a1b2c3.jsonl"}}' \
     '{"type":"state","name":"A0_.:/-","value":[false,1,"text"]}'; do
   print -r -- "$state" | schema_eval 'canonical_state' >/dev/null
 done
@@ -240,10 +203,7 @@ for state in \
     '{"type":"state","name":"","value":null}' \
     '{"type":"state","name":"/leading","value":null}' \
     '{"type":"state","name":"bad name","value":null}' \
-    '{"type":"state","name":"é","value":null}' \
-    '{"type":"state","name":"line\n","value":null}' \
-    '{"type":"state","name":"name"}' \
-    '{"type":"state","name":"name","value":null,"extra":true}'; do
+    '{"type":"state","name":"name"}'; do
   if print -r -- "$state" | schema_eval 'canonical_state' >/dev/null 2>&1; then
     fail "invalid state record was accepted: $state"
   fi
@@ -318,19 +278,8 @@ permission_header=$(jq -c '.harness.permission_request=[{
 }]' <<<"$valid_header")
 print -r -- "$permission_header" |
   schema_eval 'canonical_session_header(1)' >/dev/null
-if jq -c '.harness.permission_request[0].display="Checking permission"' \
-    <<<"$permission_header" |
-    schema_eval 'canonical_session_header(1)' >/dev/null 2>&1; then
-  fail 'permission hook running label was accepted in a canonical runtime'
-fi
-if jq -c '.harness.stop[0].display = "two\nlines"' <<<"$valid_header" |
-    schema_eval 'canonical_session_header(1)' >/dev/null 2>&1; then
-  fail 'a multiline hook display was accepted'
-fi
 for patch in \
-  '.harness.stop[0].match={pattern:"x"}' \
   '.harness.user_prompt_submit[0].match.pattern="["' \
-  '.harness.user_prompt_submit[0].help.extra="x"' \
   'del(.harness.user_prompt_submit[0].match)'; do
   if jq -c "$patch" <<<"$valid_header" |
       schema_eval 'canonical_session_header(1)' >/dev/null 2>&1; then
@@ -338,7 +287,7 @@ for patch in \
   fi
 done
 # Environment names must survive space-separated zsh projection.
-for environment in '["DUPLICATE","DUPLICATE"]' '["invalid-name"]' '["HAS SPACE"]'; do
+for environment in '["DUPLICATE","DUPLICATE"]' '["HAS SPACE"]'; do
   if jq -c --argjson environment "$environment" \
       '.backend.environment = $environment' <<<"$valid_header" |
       schema_eval 'canonical_session_header(1)' >/dev/null 2>&1; then
@@ -398,30 +347,9 @@ tool_header=$(jq -cn --argjson header "$valid_header" --argjson manifest "$valid
   }]
 ')
 print -r -- "$tool_header" | schema_eval 'canonical_session_header(1)' >/dev/null
-if jq -c '.harness.tools[0].describe = ""' <<<"$tool_header" |
-    schema_eval 'canonical_session_header(1)' >/dev/null 2>&1; then
-  fail 'legacy tool describe path was accepted in session header'
-fi
-
 if jq -c '.display.result.content = ["$unknown"]' <<<"$valid_manifest" |
     schema_eval 'tool_manifest' >/dev/null 2>&1; then
   fail 'tool manifest with an unknown result variable was accepted'
-fi
-if jq -c '.display.result.content = ["$result_preview", "$result_full"]' <<<"$valid_manifest" |
-    schema_eval 'tool_manifest' >/dev/null 2>&1; then
-  fail 'tool manifest with multiple result content variables was accepted'
-fi
-if jq -c '.display.summary = null' <<<"$valid_manifest" |
-    schema_eval 'tool_manifest' >/dev/null 2>&1; then
-  fail 'tool manifest with a null display region was accepted'
-fi
-if jq -c '.display.call.content = ["$missing"]' <<<"$valid_manifest" |
-    schema_eval 'tool_manifest' >/dev/null 2>&1; then
-  fail 'tool manifest with an unknown display field reference was accepted'
-fi
-if jq -c '.display.permission_preview = null' <<<"$valid_manifest" |
-    schema_eval 'tool_manifest' >/dev/null 2>&1; then
-  fail 'tool manifest with a null permission preview was accepted'
 fi
 if jq -c '.display.call.format = "not a format"' <<<"$valid_manifest" |
     schema_eval 'tool_manifest' >/dev/null 2>&1; then

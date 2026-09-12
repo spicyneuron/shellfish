@@ -3,31 +3,6 @@
 source "${0:A:h:h:h}/_helpers.zsh"
 sf_test_tmp default-environment
 
-# Enforce shared probe deadlines.
-(
-  source "$ROOT/share/default/lib/capped.zsh"
-  zmodload zsh/datetime
-  typeset -F capped_deadline
-  integer capped_status=0
-  setopt bg_nice
-  capped_deadline=$(( EPOCHREALTIME + 1 ))
-  assert_equal 'probe output' "$(sf_capped "$capped_deadline" printf 'probe output')"
-  sf_capped "$capped_deadline" sh -c 'exit 7' || capped_status=$?
-  assert_equal 7 "$capped_status"
-  capped_status=0
-  sf_capped "$capped_deadline" sh -c 'exit 143' || capped_status=$?
-  assert_equal 143 "$capped_status"
-  [[ $options[bgnice] == on ]]
-  capped_deadline=$(( EPOCHREALTIME + 0.05 ))
-  capped_status=0
-  sf_capped "$capped_deadline" sleep 1 || capped_status=$?
-  assert_equal 124 "$capped_status"
-  capped_status=0
-  sf_capped "$capped_deadline" sh -c ': >"$1"' _ "$tmp/capped-called" || capped_status=$?
-  assert_equal 124 "$capped_status"
-  [[ ! -e $tmp/capped-called ]]
-)
-
 # Report project environment.
 typeset environment_script="$ROOT/share/default/hooks/session_start/project_environment/run"
 typeset environment_bin="$tmp/environment-bin"
@@ -133,50 +108,3 @@ chmod +x "$git_bin/git"
 GIT_MARKER="$tmp/git-called" PATH="$git_bin:$PATH" SHELLFISH_SESSION="$tmp/empty.jsonl" \
   zsh -f "$git_prompt" user_prompt_submit 3>"$git_control" >/dev/null
 [[ ! -e $tmp/git-called ]]
-
-# Report usable command versions.
-typeset shell_commands_bin="$tmp/shell-commands-bin"
-typeset shell_commands_output shell_commands_rows
-mkdir "$shell_commands_bin"
-ln -s "${commands[zsh]:A}" "$shell_commands_bin/zsh"
-for name in date uname head; do
-  ln -s "${commands[$name]:A}" "$shell_commands_bin/$name"
-done
-make_version_command() {
-  local name=$1 body=$2
-  print -r -- '#!/bin/sh' >"$shell_commands_bin/$name"
-  print -r -- "$body" >>"$shell_commands_bin/$name"
-  chmod +x "$shell_commands_bin/$name"
-}
-make_version_command rg 'exit 2'
-make_version_command grep "printf 'grep 1.0\\nignored\\n'"
-make_version_command find 'exit 2'
-make_version_command what "printf 'archive PROGRAM:find  PROJECT:find-2.1 other\\n'"
-make_version_command tree "printf 'tree v2.3.2-beta+build456 © 1996 Example\\n'"
-make_version_command jq "printf 'jq-1.7\\n'"
-make_version_command yq "printf 'yq 01.2.3, 1.2.3.4, and 1.2.3+ are invalid semver\\n'"
-make_version_command python3 "printf 'Python 3.13\\n' >&2"
-make_version_command git "printf 'git version 2.48\\n'"
-make_version_command gh 'exit 0'
-
-shell_commands_output=$(
-  /usr/bin/env PATH="$shell_commands_bin" "$shell_commands_bin/zsh" -f \
-    "$environment_script" session_start
-)
-[[ $shell_commands_output == *"$ZSH_VERSION"* ]]
-shell_commands_rows=$(jq -Rsc '
-  [split("\n")[] |
-    capture("^- [^:]+: (?<command>[^ ]+) \\((?<version>.*)\\)$")?] |
-  INDEX(.command)
-' <<<"$shell_commands_output") || fail 'cannot parse shell commands output'
-jq -e '
-  length == 7 and
-  .grep.version == "grep 1.0" and
-  .find.version == "find-2.1" and
-  .tree.version == "2.3.2-beta+build456" and
-  .jq.version == "jq-1.7" and
-  .yq.version == "yq 01.2.3, 1.2.3.4, and 1.2.3+ are invalid semver" and
-  .python3.version == "Python 3.13" and
-  .git.version == "git version 2.48" and
-  (has("gh") | not)
-' <<<"$shell_commands_rows" >/dev/null

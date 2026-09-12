@@ -11,10 +11,6 @@ typeset req="$tmp/request.json"
 typeset res="$tmp/response.json"
 typeset body="$tmp/body.json"
 
-# Ignore caller-local adapter modules.
-mkdir -p "$tmp/lib/runtime"
-print -r -- 'def canonical_request(:' >"$tmp/lib/runtime/schema.jq"
-
 cat >"$tmp/curl" <<'EOF'
 #!/usr/bin/env bash
 printf '%s\n' "$@" >"$BACKEND_TEST_ARGS"

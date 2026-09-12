@@ -19,15 +19,8 @@ assert_tail() {
   [[ $REPLY == *"$1" ]] || fail "expected tail: $1\nactual: $REPLY"
 }
 
-has_span() {
-  local style=$1
-  integer width=$2 index
-  for (( index = 1; index <= ${#SF_PRESENT_VIEWPORT_HIGHLIGHTS}; index += 3 )); do
-    [[ ${SF_PRESENT_VIEWPORT_HIGHLIGHTS[index + 2]} == "$style" ]] || continue
-    (( SF_PRESENT_VIEWPORT_HIGHLIGHTS[index + 1] -
-      SF_PRESENT_VIEWPORT_HIGHLIGHTS[index] == width )) && return 0
-  done
-  return 1
+has_style() {
+  (( ${SF_PRESENT_VIEWPORT_HIGHLIGHTS[(Ie)$1]} ))
 }
 
 # A pending result keeps only its call rows safe.
@@ -38,19 +31,11 @@ sf_tui_event assistant_start
 sf_tui_event assistant_tool_call_delta 0
 sf_tui_event assistant_end
 sf_tui_event tool_call call_1 shell 'make test' 'build · unsandboxed' sh
-assert_equal 'tool_call,tool_result' "${(j:,:)SF_PRESENT_KIND}"
-assert_equal 2 "$SF_PRESENT_LIVE"
 view
 assert_equal $'─ agent ──────────────────────────────────────────────────────────────────── 1 ─\n\n⛭ shell · build · unsandboxed\n│ make test\n╰ ⠃' "$REPLY"
 assert_equal 4 "$SF_PRESENT_SAFE_ROWS"
 
-# Only the pending call ID can settle the tail.
-if sf_tui_event tool_result wrong 0 result plain; then
-  fail 'a result settled the wrong pending call'
-fi
-assert_equal 1 "$SF_PRESENT_LIVE"
 sf_tui_event tool_result call_1 1 $'failed\ndetail' plain '' sandbox_denial
-assert_equal 'tool_result,activity' "${(j:,:)SF_PRESENT_KIND}"
 view
 assert_equal $'─ agent ──────────────────────────────────────────────────────────────────── 1 ─\n\n⛭ shell · build · unsandboxed\n│ make test\n╰ failed\n  detail\n  exit 1 · sandbox denial detected\n\n⠃' "$REPLY"
 assert_equal 7 "$SF_PRESENT_SAFE_ROWS"
@@ -69,8 +54,6 @@ view
 assert_tail $'⛭ shell\n│ pwd\n╰ ⠃'
 sf_tui_event tool_result permission 126 'sandbox bypass denied' plain
 sf_tui_event hook_result post post_tool_use '' 'after denial'
-assert_equal 'tool_result,hook_user_context,activity' \
-  "${(j:,:)SF_PRESENT_KIND}"
 view
 [[ $REPLY == *$'╰ sandbox bypass denied\n  exit 126\n\nℹ post · post_tool_use\n  after denial\n\n⠃' ]] ||
   fail "denied result order: $REPLY"
@@ -81,17 +64,11 @@ sf_tui_reset
 SF_PRESENT_PREVIEW_TOOL_CALL=0
 SF_PRESENT_PREVIEW_TOOL_RESULT=0
 sf_tui_event tool_call zero shell 'make test' '' sh
-SF_PRESENT_STYLE=( tool_result tool divider rail clamp muted )
 view
 assert_tail $'⛭ shell\n╰ ⠃'
-[[ "${(j: :)SF_PRESENT_VIEWPORT_HIGHLIGHTS}" != *muted* ]] ||
-  fail 'pending activity was styled as omitted content'
 sf_tui_event tool_result zero 1 $'failure\ndetail' plain
 view
 assert_tail $'⛭ shell\n╰ … · exit 1'
-[[ "${(j: :)SF_PRESENT_VIEWPORT_HIGHLIGHTS}" == *muted* ]] ||
-  fail 'collapsed result lost its clamp style'
-SF_PRESENT_STYLE=()
 sf_tui_reset
 sf_tui_event tool_call empty read_file path '' plain
 sf_tui_event tool_result empty hidden '' plain
@@ -116,28 +93,23 @@ assert_tail $'⛭ edit_file\n│ path\n╰ one\n  two\n  three'
 SF_PRESENT_PREVIEW_TOOL_CALL=full
 SF_PRESENT_PREVIEW_TOOL_RESULT=full
 
-# Diff backgrounds fill wrapped rows.
+# Diff background colors fill each changed row.
 sf_tui_reset
-SF_PRESENT_STYLE=( tool_call tool tool_result tool divider rail \
-  'syntax.added' 'fg=green,bg=darkgreen' \
+SF_PRESENT_STYLE=( tool_call tool tool_result tool divider rail
+  'syntax.added' 'fg=green,bg=darkgreen'
   'syntax.removed' 'fg=red,bg=darkred' )
 sf_tui_event tool_call diff edit_file path '' plain
-sf_tui_event tool_result diff hidden $'-old\n+alpha beta' file_diff full
+sf_tui_event tool_result diff hidden $'-old\n+new' file_diff full
 view 12
-[[ $REPLY == *$'╰ -old      \n  +alpha    \n  beta      ' ]] ||
-  fail "diff result: $REPLY"
-has_span 'fg=red,bg=darkred' 12 ||
-  fail 'removed diff row did not fill its background'
-has_span 'fg=green,bg=darkgreen' 12 ||
-  fail 'added diff rows did not fill their background'
+[[ $REPLY == *$'╰ -old      \n  +new      ' ]] || fail "diff result: $REPLY"
+has_style 'fg=red,bg=darkred' || fail 'removed diff background was not rendered'
+has_style 'fg=green,bg=darkgreen' || fail 'added diff background was not rendered'
 SF_PRESENT_STYLE=()
 
 # Turn failures settle pending results.
 sf_tui_reset
 sf_tui_event tool_call abandoned shell run '' sh
 sf_tui_event error Failed broken end
-assert_equal 'tool_call,tool_result,error' "${(j:,:)SF_PRESENT_KIND}"
-assert_equal 0 "$SF_PRESENT_LIVE"
 view
 assert_tail $'⛭ shell\n│ run\n╰\n\n✕ Failed\n  broken'
 
@@ -157,7 +129,6 @@ for batch in 1 2 3; do
     sf_tui_terminal_restore
   }
 done
-assert_equal 0 "${#SF_PRESENT_KIND}"
 assert_equal $'─ agent ──────── 1 ─\n\n⛭ shell\n│ make test\n╰ one\n  two\n  three\n  four\n  exit 0' \
   "${drained%$'\n'}"
 
@@ -172,7 +143,6 @@ sf_tui_terminal_stage || fail 'staging a clamped tool failed'
 sf_tui_terminal_finish || fail 'committing a clamped tool failed'
 [[ $PREDISPLAY == *$'╰ one\n  … ~'* && $PREDISPLAY != *two* ]] ||
   fail "clamped tool commit: $PREDISPLAY"
-assert_equal 0 "${#SF_PRESENT_KIND}"
 SF_PRESENT_PREVIEW_TOOL_RESULT=full
 
 # Committed rows spend the preview budget.

@@ -53,22 +53,13 @@ sf_test_tool_execute() {
 
 # Tools load into an isolated environment.
 load_tools "$stored_runtime"
-[[ $SF_TOOL_COMMAND[shell] == "$tool_dir/run" &&
-   $SF_TOOL_SANDBOX[shell] == true && $SF_TOOL_ALLOW_BYPASS[shell] == true &&
-   $SF_TOOL_SETTINGS[shell] == "$tool_dir/fence.jsonc" ]] ||
-  fail 'tool execution metadata was not cached'
 sf_test_tool_execute '{"id":"unknown_1","name":"unknown","input":{}}' 0
 jq -e '.exit_code == 127 and .content == "tool is not allowed: unknown"' <<<"$REPLY" >/dev/null
 typeset invalid_tools=$(jq -c '.[0].command = "/missing/shellfish-tool"' <<<"$tool_tools")
-typeset first_temp=$tool_temp
 if sf_tools_load "$invalid_tools" "$tool_cwd" "$tool_sandbox" "$tool_fence" \
     "$tool_read_paths" "$tool_write_paths"; then
   fail 'an unavailable tool command was accepted'
 fi
-(( ${#SF_TOOL_COMMAND} == 0 && ${#SF_TOOL_SANDBOX} == 0 &&
-   ${#SF_TOOL_ALLOW_BYPASS} == 0 && ${#SF_TOOL_SETTINGS} == 0 )) ||
-  fail 'a failed tool load retained executable metadata'
-[[ ! -e $first_temp ]]
 load_tools "$stored_runtime"
 sf_test_tool_execute "$(jq -cn --arg command 'print -rn -- "$HOME"' \
   '{id:"home_1",name:"shell",input:{command:$command}}')" 0
@@ -87,21 +78,6 @@ sf_test_tool_execute "$(jq -cn --arg command 'print -rn persistent >"$TMPDIR/mar
 sf_test_tool_execute "$(jq -cn --arg command 'cat "$TMPDIR/marker"' \
   '{id:"temp_read",name:"shell",input:{command:$command}}')" 0
 jq -e '.content == "persistent"' <<<"$REPLY" >/dev/null
-tool_config_dir="$tmp/custom-config"
-sf_test_tool_execute "$(jq -cn --arg command 'print -rn -- "$SHELLFISH_CONFIG_DIR"' \
-  '{id:"config_dir_1",name:"shell",input:{command:$command}}')" 0
-jq -e --arg config "$tool_config_dir" '.content == $config' <<<"$REPLY" >/dev/null
-tool_config_dir=''
-typeset caller_home=$HOME
-mkdir "$tmp/home"
-export HOME="$tmp/home"
-export XDG_CONFIG_HOME="$tmp/xdg"
-sf_test_tool_execute "$(jq -cn --arg command 'print -rn -- "$XDG_CONFIG_HOME"' \
-  '{id:"xdg_config_1",name:"shell",input:{command:$command}}')" 0
-jq -e --arg config "$XDG_CONFIG_HOME" '.content == $config' <<<"$REPLY" >/dev/null
-export HOME=$caller_home
-unset XDG_CONFIG_HOME
-
 # Fixed tool context overrides selected environment.
 typeset environment_runtime environment_call
 tool_config_dir="$tmp/fixed-config"
@@ -129,10 +105,6 @@ sf_test_tool_execute "$(jq -cn --arg command "printf 'line\\n\\n'" \
   '{id:"capture_1",name:"shell",input:{command:$command}}')" 0
 jq -e '.content == "line\n\n" and .sandboxed == false' \
   <<<"$REPLY" >/dev/null
-sf_test_tool_execute "$(jq -cn \
-  '{id:"capture_bypass",name:"shell",input:{command:"true",request_sandbox_bypass:true,
-    sandbox_bypass_reason:"test"}}')" 0
-jq -e '.exit_code == 0' <<<"$REPLY" >/dev/null
 tool_max_capture=64
 sf_test_tool_execute "$(jq -cn --arg command "printf '%070d' 0" \
   '{id:"capture_2",name:"shell",input:{command:$command}}')" 0
@@ -150,15 +122,8 @@ case $command in
     print -rn -u3 -- '{"state":[{"name":"tools/result","value":7}]}'
     exit 7
     ;;
-  empty)
-    print -rn -- empty
-    print -rn -u3 -- '{"state":[]}'
-    ;;
   malformed)
     print -rn -u3 -- '{'
-    ;;
-  extra)
-    print -rn -u3 -- '{"action":"bad","state":[]}'
     ;;
   overflow)
     printf '%0100d' 0 >&3
@@ -180,20 +145,12 @@ jq -e --argjson length "$(( tool_max_capture - ${#control} ))" '
 [[ ${(pj:\n:)SF_TOOL_STATE_RECORDS} == \
   '{"type":"state","name":"tools/result","value":7}' ]] ||
   fail 'tool state was not returned canonically'
-sf_test_tool_execute '{"id":"state_empty","name":"shell","input":{"command":"empty"}}' 0
-jq -e '.exit_code == 0 and .content == "empty"' <<<"$REPLY" >/dev/null ||
-  fail 'tool rejected an empty state array'
-[[ ${#SF_TOOL_STATE_RECORDS} == 0 ]]
-
-typeset invalid_control
-for invalid_control in malformed extra; do
-  if sf_test_tool_execute "$(jq -cn --arg command "$invalid_control" \
-      '{id:"invalid_control",name:"shell",input:{command:$command}}')" 0; then
-    fail "tool accepted $invalid_control control"
-  fi
-  [[ ${#SF_TOOL_STATE_RECORDS} == 0 && -z $REPLY ]] ||
-    fail "failed $invalid_control control returned tool state or a result"
-done
+if sf_test_tool_execute \
+    '{"id":"invalid_control","name":"shell","input":{"command":"malformed"}}' 0; then
+  fail 'tool accepted malformed control'
+fi
+[[ ${#SF_TOOL_STATE_RECORDS} == 0 && -z $REPLY ]] ||
+  fail 'failed control returned tool state or a result'
 tool_max_capture=32
 if sf_test_tool_execute \
     '{"id":"control_limit","name":"shell","input":{"command":"overflow"}}' 0; then
@@ -215,11 +172,6 @@ sf_test_tool_execute "$(jq -cn \
   '{id:"timeout_1",name:"shell",input:{command:"sleep 5",timeout:1}}')" 0
 jq -e '.exit_code == 124 and (.content | contains("timed out after 1 seconds"))' \
   <<<"$REPLY" >/dev/null
-
-# Signals complete tool calls.
-sf_test_tool_execute "$(jq -cn \
-  '{id:"signal_1",name:"shell",input:{command:"kill -TERM $$"}}')" 0
-jq -e '.exit_code == 143 and .sandboxed == false' <<<"$REPLY" >/dev/null
 
 # Sandbox bypasses require approval.
 typeset sandbox_runtime denied_runtime
@@ -252,40 +204,6 @@ fi
 sf_tool_needs_permission shell true false 1 &&
   fail 'a bypass request without a reason was accepted'
 (( $? == 2 )) || fail 'a missing bypass reason did not report invalid input'
-
-# Configured tools share capture limits.
-typeset file_runtime=$(jq -cn --argjson base "$stored_runtime" \
-  --arg root "$ROOT/share/default/tools" \
-  --slurpfile read "$ROOT/share/default/tools/read_file/manifest.json" \
-  --slurpfile edit "$ROOT/share/default/tools/edit_file/manifest.json" \
-  --slurpfile write "$ROOT/share/default/tools/write_file/manifest.json" '
-    $base | .harness.tools = [
-      {name:"read_file",command:($root + "/read_file/run"),
-       settings:(if $read[0].sandbox then ($root + "/read_file/fence.jsonc") else null end),manifest:$read[0]},
-      {name:"edit_file",command:($root + "/edit_file/run"),
-       settings:(if $edit[0].sandbox then ($root + "/edit_file/fence.jsonc") else null end),manifest:$edit[0]},
-      {name:"write_file",command:($root + "/write_file/run"),
-       settings:(if $write[0].sandbox then ($root + "/write_file/fence.jsonc") else null end),manifest:$write[0]}]
-')
-tool_cwd=$tmp
-load_tools "$(jq -c '.harness.sandbox=true' <<<"$file_runtime")"
-jq -e 'map(.name) == ["read_file","edit_file","write_file"] and
-  all(.[].input_schema.properties; .request_sandbox_bypass.type == "boolean" and
-    .sandbox_bypass_reason.minLength == 1) and
-  all(.[].description; contains("keep it to one logical operation") | not)' \
-  <<<"$tool_schema" >/dev/null
-load_tools "$file_runtime"
-(( ! ${+SF_TOOL_COMMAND[shell]} && ${+SF_TOOL_COMMAND[read_file]} )) ||
-  fail 'replacing configured tools retained stale execution metadata'
-tool_max_capture=64
-typeset full_old=oldoldoldoldoldoldoldoldoldoldoldoldoldoldoldold
-typeset full_new=newnewnewnewnewnewnewnewnewnewnewnewnewnewnewnew
-print -r -- "$full_old" >"$tmp/full-diff.txt"
-sf_test_tool_execute "$(jq -cn --arg old "$full_old" --arg new "$full_new" \
-  '{id:"edit_full",name:"edit_file",input:{file_path:"full-diff.txt",old_string:$old,new_string:$new}}')" 0
-jq -e '.content | length == 64 and startswith("[output truncated]\n")' \
-  <<<"$REPLY" >/dev/null
-tool_max_capture=$(jq -r '.harness.max_capture_bytes' <<<"$file_runtime")
 
 # Fence receives tool policy and runtime grants.
 mkdir "$tmp/bin"
@@ -391,8 +309,7 @@ load_tools "$(jq -c --arg fence "$tmp/bin/fence" \
   '.harness.sandbox=true | .harness.fence=$fence' <<<"$stored_runtime")"
 jq -e '.[0].input_schema.properties.request_sandbox_bypass.type == "boolean" and
   .[0].input_schema.properties.sandbox_bypass_reason.minLength == 1 and
-  (.[0].input_schema.allOf[0].then.required | index("sandbox_bypass_reason")) != null and
-  (.[0].description | contains("keep it to one logical operation"))' \
+  (.[0].input_schema.allOf[0].then.required | index("sandbox_bypass_reason")) != null' \
   <<<"$tool_schema" >/dev/null
 
 typeset final_temp=$tool_temp

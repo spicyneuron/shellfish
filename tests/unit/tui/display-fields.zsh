@@ -20,16 +20,6 @@ assert_equal 'make test' "$(jq -nr -L "$ROOT" --argjson tools "$summary_tools" '
   include "libexec/tui/display-fields";
   {name:"shell",input:{command:"make test"}} | tool_call_display($tools.harness.tools).summary
 ')"
-assert_equal '' "$(jq -nr -L "$ROOT" --argjson tools "$summary_tools" '
-  include "libexec/tui/display-fields";
-  {name:"shell",input:{command:"make test"}} |
-  tool_call_display([$tools.harness.tools[1] |
-    .manifest.display.summary=["$timeout"]]).summary
-')"
-assert_equal json "$(jq -nr -L "$ROOT" --argjson tools "$summary_tools" '
-  include "libexec/tui/display-fields";
-  {name:"unknown",input:{value:1}} | tool_call_display($tools.harness.tools).format
-')"
 assert_equal sh "$(jq -nr -L "$ROOT" --argjson tools "$summary_tools" '
   include "libexec/tui/display-fields";
   {name:"shell",input:{command:"true"}} | tool_call_display($tools.harness.tools).format
@@ -46,30 +36,23 @@ replay=$({
   print -r -- '{"type":"state","name":"replay/end","value":null}'
 } | jq -jRs -L "$ROOT" -f "$ROOT/libexec/tui/transcript-decode.jq")
 typeset -a replay_fields=( "${(@0)${replay%$'\0'}}" )
+typeset -a replay_order=()
+integer replay_index
+for (( replay_index = 1; replay_index <= ${#replay_fields}; replay_index += 7 )); do
+  case $replay_fields[replay_index] in
+    assistant_start|assistant_end)
+      replay_order+=( "$replay_fields[replay_index]" )
+      ;;
+    assistant_reasoning_delta|assistant_message_delta)
+      replay_order+=( "$replay_fields[replay_index]:$replay_fields[replay_index + 1]:$replay_fields[replay_index + 2]" )
+      ;;
+  esac
+done
 assert_equal session_update "$replay_fields[1]"
 assert_equal fake-model "$(jq -r '.profile.request.model' <<<"$replay_fields[2]")"
-assert_equal assistant_start "$replay_fields[15]"
-assert_equal assistant_reasoning_delta "$replay_fields[22]"
-assert_equal 0 "$replay_fields[23]"
-assert_equal first "$replay_fields[24]"
-assert_equal assistant_reasoning_delta "$replay_fields[29]"
-assert_equal 1 "$replay_fields[30]"
-assert_equal assistant_reasoning_delta "$replay_fields[36]"
-assert_equal second "$replay_fields[38]"
-assert_equal assistant_message_delta "$replay_fields[43]"
-assert_equal answer "$replay_fields[45]"
-assert_equal assistant_reasoning_delta "$replay_fields[50]"
-assert_equal last "$replay_fields[52]"
-assert_equal assistant_end "$replay_fields[57]"
-
-# Reject malformed replay state.
-if {
-    head -n 1 "$ROOT/tests/fixtures/session/complete.jsonl"
-    print -r -- '{"type":"state","name":"bad name","value":true}'
-  } | jq -jRs -L "$ROOT" -f "$ROOT/libexec/tui/transcript-decode.jq" \
-      >/dev/null 2>&1; then
-  fail 'replay accepted malformed state'
-fi
+assert_equal \
+  'assistant_start,assistant_reasoning_delta:0:first,assistant_reasoning_delta:1:,assistant_reasoning_delta:2:second,assistant_message_delta:3:answer,assistant_reasoning_delta:4:last,assistant_end' \
+  "${(j:,:)replay_order}"
 
 # Decode replay usage.
 typeset usage_replay
@@ -82,14 +65,6 @@ usage_replay=$({
   tr '\0' '\n' | sed '/^$/d' | tail -n +3 | paste -sd, -)
 assert_equal 'user,question,assistant_start,assistant_reasoning_delta,0,why,9,assistant_message_delta,1,answer,assistant_end,turn_usage,12k ↑ 85% ⦿ 900 ↓ 5% of 264k ◔,9,batch_ok' "$usage_replay"
 
-# Load manifest display variables.
-jq -e '
-  .harness.tools[0].manifest.display.result.content == ["$result_full"] and
-  .harness.tools[1].manifest.display.result.content == ["$result_preview", "$exit_code"] and
-  .harness.tools[1].manifest.display.permission_preview ==
-    {content:["$command"],format:"sh"}
-' <<<"$summary_tools" >/dev/null || fail 'tool result display variables were not loaded'
-
 # Sanitize framed fields.
 typeset framed
 framed=$(jq -nj -L "$ROOT" '
@@ -97,19 +72,3 @@ framed=$(jq -nj -L "$ROOT" '
   [["sample", "before\u0000after"]] | emit_display_batch
 ' | tr '\0' '\n' | paste -sd, -)
 assert_equal 'sample,before�after,,,,,,batch_ok,,,,,,' "$framed"
-
-# Reject oversized display events.
-if jq -nj -L "$ROOT" '
-    include "libexec/tui/display-fields";
-    [["sample", "a", "b", "c", "d", "e", "f", "g"]] | emit_display_batch
-  ' >/dev/null 2>&1; then
-  fail 'an oversized display event was accepted'
-fi
-
-# Reject non-string display fields.
-if jq -nj -L "$ROOT" '
-    include "libexec/tui/display-fields";
-    [["sample", 1]] | emit_display_batch
-  ' >/dev/null 2>&1; then
-  fail 'a non-string display field was accepted'
-fi

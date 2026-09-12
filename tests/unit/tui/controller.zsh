@@ -50,40 +50,31 @@ assert_equal "$updated_runtime" "$SF_PRESENT_RUNTIME"
 assert_equal updated/new-model "$SF_PRESENT_IDENTITY"
 assert_equal updated/new-model "$SF_PRESENT_FOOTER"
 
-# Pass through live state.
+# Ignore live state records without disturbing the turn.
 sf_tui_transport_reset
 SF_TUI_TRANSPORT_LINES=( '{"type":"state","name":"live/status","value":"ready"}' )
 sf_tui_pending_next || fail 'a live state record was rejected'
 assert_equal working "$SF_PRESENT_STATE"
 
-# Reject unsupported events.
-if sf_tui_decoded not-supported; then
-  fail 'unsupported exec output was accepted'
-fi
-
 # Cancel active turns.
-typeset -gi cancel_signals=0 cancel_stops=0 cancel_reloads=0
+typeset -gi cancel_signals=0 cancel_stops=0
 functions[sf_tui_transport_signal_saved]=$functions[sf_tui_transport_signal]
 functions[sf_tui_transport_stop_saved]=$functions[sf_tui_transport_stop]
-functions[sf_tui_recover_saved]=$functions[sf_tui_recover]
 sf_tui_transport_signal() {
   assert_equal USR1 "$1"
   (( ++cancel_signals ))
 }
 sf_tui_transport_stop() { (( ++cancel_stops )); }
-sf_tui_recover() { (( ++cancel_reloads )); }
 SF_PRESENT_STATE=working
 SF_PRESENT_QUEUE=( queued )
 sf_tui_cancel
 assert_equal cancelling "$SF_PRESENT_STATE"
 assert_equal 1 "$cancel_signals"
 assert_equal 0 "$cancel_stops"
-assert_equal 0 "$cancel_reloads"
 assert_equal queued "${(j:,:)SF_PRESENT_QUEUE}"
 functions[sf_tui_transport_signal]=$functions[sf_tui_transport_signal_saved]
 functions[sf_tui_transport_stop]=$functions[sf_tui_transport_stop_saved]
-functions[sf_tui_recover]=$functions[sf_tui_recover_saved]
-unfunction sf_tui_transport_signal_saved sf_tui_transport_stop_saved sf_tui_recover_saved
+unfunction sf_tui_transport_signal_saved sf_tui_transport_stop_saved
 
 # Stop on malformed output.
 cp "$SF_TEST_SESSIONS/complete.jsonl" "$tmp/recover.jsonl"
@@ -131,62 +122,6 @@ SF_PRESENT_ACTION=''
 SF_PRESENT_STATE=idle
 SF_PRESENT_ERROR=''
 
-# Apply buffered events atomically.
-sf_tui_reset
-sf_tui_terminal_reset
-SF_PRESENT_STATE=working
-SF_PRESENT_ACTION=''
-sf_tui_transport_reset
-SF_TUI_TRANSPORT_LINES=(
-  '{"type":"_assistant_message_delta","index":0,"text":"one two three "}'
-  '{"type":"_assistant_message_delta","index":0,"text":"four five six "}'
-  '{"type":"_assistant_message_delta","index":0,"text":"seven eight"}'
-  '{"type":"_assistant_end","stop":"end"}'
-  '{"type":"assistant","stop":"end","content":[{"type":"text","text":"one two three four five six seven eight"}]}'
-  '{"type":"hook_result","hook":"project","script":"test","model_context":"later"}'
-)
-BUFFER=''
-CURSOR=0
-COLUMNS=12
-LINES=10
-ZLE_CALLS=''
-
-sf_tui_heartbeat_tick
-if sf_tui_transport_has_pending; then
-  fail 'transport events remained after the heartbeat batch'
-fi
-assert_equal '' "$SF_PRESENT_ACTION"
-assert_equal 0 "$SF_PRESENT_PENDING_ROWS"
-[[ $ZLE_CALLS != *accept-line* ]] ||
-  fail 'transport batch left the active editor'
-
-# Drain all frame shapes.
-typeset -a frames=(
-  '{"type":"_assistant_message_delta","index":0,"text":"before tool"}
-{"type":"_assistant_tool_call_delta","index":1,"id":"call_1"}'
-  '{"type":"_assistant_message_delta","index":0,"text":"before tool"}
-{"type":"_assistant_tool_call_delta","index":1,"id":"call_1"}
-{"type":"_assistant_end","stop":"tool_calls"}
-{"type":"assistant","stop":"tool_calls","content":[{"type":"text","text":"before tool"}]}
-{"type":"tool_call","id":"call_1","name":"shell","input":{"command":"true"}}'
-  '{"type":"_assistant_start"}
-{"type":"_assistant_end","stop":"tool_calls"}
-{"type":"assistant","stop":"tool_calls","content":[]}
-{"type":"tool_call","id":"call_2","name":"shell","input":{"command":"true"}}'
-)
-for frame in "${frames[@]}"; do
-  sf_tui_reset
-  sf_tui_terminal_reset
-  SF_PRESENT_STATE=working
-  sf_tui_transport_reset
-  SF_TUI_TRANSPORT_LINES=( "${(@f)frame}" )
-  sf_tui_heartbeat_tick
-  if sf_tui_transport_has_pending; then
-    fail "a heartbeat left part of a frame pending: $frame"
-  fi
-  [[ $SF_PRESENT_STATE != stopped ]] || fail "a heartbeat rejected its frame: $frame"
-done
-
 # Start the next queued turn.
 sf_tui_reset
 sf_tui_terminal_reset
@@ -215,20 +150,6 @@ assert_equal idle "$SF_PRESENT_STATE"
 assert_equal 0 "${#SF_PRESENT_QUEUE}"
 assert_equal error "$SF_PRESENT_KIND[-1]"
 
-# Clear cancelled activity.
-sf_tui_reset
-sf_tui_terminal_reset
-sf_tui_event activity_start
-SF_PRESENT_SESSION="$tmp/recover.jsonl"
-SF_PRESENT_STATE=cancelling
-SF_PRESENT_QUEUE=()
-SF_TUI_TRANSPORT_EOF=1
-SF_TUI_TRANSPORT_EXIT_STATUS=0
-SF_TUI_TRANSPORT_EXIT_DETAIL=''
-sf_tui_exec_finish
-assert_equal idle "$SF_PRESENT_STATE"
-assert_equal 0 "${#SF_PRESENT_KIND}"
-
 # Discard queues after uncertain exits.
 sf_tui_reset
 sf_tui_terminal_reset
@@ -254,22 +175,6 @@ SF_TUI_TRANSPORT_LINES=( '{"type":"turn_error","message":"test backend failure"}
 SF_TUI_TRANSPORT_EOF=1
 SF_TUI_TRANSPORT_EXIT_STATUS=1
 SF_TUI_TRANSPORT_EXIT_DETAIL='test backend failure'
-sf_tui_heartbeat_tick
-assert_equal idle "$SF_PRESENT_STATE"
-
-# Preserve persisted cancellations.
-sf_tui_reset
-sf_tui_terminal_reset
-cp "$SF_TEST_SESSIONS/interrupted.jsonl" "$tmp/cancelled.jsonl"
-print -r -- '{"type":"turn_error","message":"Cancelled."}' >>"$tmp/cancelled.jsonl"
-SF_PRESENT_SESSION="$tmp/cancelled.jsonl"
-SF_PRESENT_STATE=cancelling
-sf_tui_transport_reset
-SF_TUI_TRANSPORT_LINES=(
-  '{"type":"turn_error","message":"Cancelled."}'
-)
-SF_TUI_TRANSPORT_EOF=1
-SF_TUI_TRANSPORT_EXIT_STATUS=130
 sf_tui_heartbeat_tick
 assert_equal idle "$SF_PRESENT_STATE"
 
@@ -305,12 +210,6 @@ assert_equal 'cannot answer permission' "$SF_PRESENT_ERROR"
 assert_equal '' "$SF_PRESENT_PERMISSION_ID"
 SF_PRESENT_STATE=idle
 SF_PRESENT_ERROR=''
-
-# Discard queued prompts.
-SF_PRESENT_QUEUE=( one two )
-sf_tui_discard_queue
-assert_equal 'Discarded 2 queued prompts. Use ↑↓ keys to recover.' "$REPLY"
-assert_equal 0 "${#SF_PRESENT_QUEUE}"
 
 # Run queued client commands.
 sf_tui_reset

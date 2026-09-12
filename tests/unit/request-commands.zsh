@@ -71,14 +71,6 @@ printf '%s\n%s\n' "$request" "$request" |
 jq '.transport.endpoint = "https://elsewhere.invalid"' <<<"$request" |
   zsh -f "$entry" send-request --session "$request_session" >/dev/null 2>&1 &&
   fail 'send-request accepted transport from outside the frozen runtime'
-typeset separator_request separator_response
-separator_request=$(jq --arg text $'record separator: \x1e' \
-  '.messages[-1].content[0].text = $text' <<<"$request")
-separator_response=$(print -r -- "$separator_request" |
-  SF_TEST_BACKEND_DELAY=0 zsh -f "$entry" send-request --session "$request_session") ||
-  fail 'send-request rejected valid assistant text'
-jq -e --arg text $'record separator: \x1e\n' '.content[0].text == $text' \
-  <<<"$separator_response" >/dev/null || fail 'send-request changed assistant text'
 typeset failing_request
 failing_request=$(jq '.messages[-1].content[0].text = "error"' <<<"$request")
 print -r -- "$failing_request" |

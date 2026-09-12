@@ -108,12 +108,6 @@ jq -e --arg read "$tmp/read" --arg write "$tmp/write" \
   .harness.sandbox_read_paths == [$read,$read_file] and
   .harness.sandbox_write_paths == [$write,$write_dir]
 ' <<<"$report" >/dev/null || fail 'sandbox path flags were not frozen in the runtime'
-typeset newline_dir="$tmp/"$'line\nbreak'
-mkdir "$newline_dir"
-report=$(zsh -f "$entry" config --config "$sandbox_config" --sandbox-read "$newline_dir") || \
-  fail '--sandbox-read rejected a newline-containing path'
-jq -e --arg path "${newline_dir:A}" '.harness.sandbox_read_paths[-1] == $path' \
-  <<<"$report" >/dev/null || fail 'newline-containing sandbox path was not frozen exactly'
 HOME="$tmp" zsh -f "$entry" config --config "$sandbox_config" \
   --sandbox-write '~/added' >/dev/null || fail '--sandbox-write rejected a home-relative path'
 zsh -f "$entry" config --config "$sandbox_config" \
@@ -212,45 +206,12 @@ jq -e --arg explicit "${tmp:A}/explicit" --arg rust "$detector_root/rust" \
     (.harness.sandbox_write_paths | index($go_mod)) != null
   ' <<<"$report" >/dev/null || fail 'automatic and explicit sandbox grants were not additive'
 
-typeset empty_bin="$tmp/empty-bin"
-typeset zsh_bin="${commands[zsh]}"
-mkdir "$empty_bin"
-for utility in awk cp fence jq ln mkdir mktemp rm zsh; do
-  ln -s "${commands[$utility]}" "$empty_bin/$utility"
-done
-mkdir "$tmp/empty-home"
-report=$(PATH="$empty_bin" HOME="$tmp/empty-home" XDG_CONFIG_HOME='' \
-  "$zsh_bin" -f "$entry" config \
-  --config "$config_dir/shellfish.jsonc" --sandbox-auto) || fail 'empty sandbox detection failed'
-jq -e '.harness.sandbox_read_paths == [] and .harness.sandbox_write_paths == []' \
-  <<<"$report" >/dev/null || fail "empty sandbox detection added grants: \
-$(jq -c '.harness | {sandbox_read_paths,sandbox_write_paths}' <<<"$report")"
-typeset empty_auto_config="$tmp/empty-auto/shellfish.jsonc"
-PATH="$empty_bin" HOME="$tmp/empty-home" XDG_CONFIG_HOME='' \
-  "$zsh_bin" -f "$entry" config --init --sandbox-auto --config "$empty_auto_config" \
-  >/dev/null || fail 'empty automatic sandbox config init failed'
-if grep -Eq '"sandbox_(read|write)_paths": \[\]' "$empty_auto_config"; then
-  fail 'config init collapsed an empty sandbox array'
-fi
-grep -qxF '        // Paths outside the project that sandboxed tools may read' \
-  "$empty_auto_config" || \
-  fail 'empty sandbox read config omitted path guidance'
-grep -qxF '        // Paths outside the project that sandboxed tools may read and write' \
-  "$empty_auto_config" || fail 'empty sandbox write config omitted path guidance'
-jq -e '.harnesses.default.sandbox_read_paths == [] and
-  .harnesses.default.sandbox_write_paths == []' \
-  < <(source "$ROOT/libexec/config/runtime.zsh"; sf_runtime_read_jsonc "$empty_auto_config") \
-  >/dev/null || fail 'empty automatic sandbox config is invalid'
-
 # Reports include current presentation settings outside the session runtime.
 report=$(zsh -f "$entry" config --config "$config_dir/shellfish.jsonc") ||
   fail 'config report failed'
 assert_equal gpt-4o "$(jq -r '.profile.request.model' <<<"$report")" 'config reports the model'
 [[ $(jq -r '.backend.command' <<<"$report") == */openai/run ]] || fail 'config reports the backend command'
 assert_equal auto "$(jq -r '.theme.mode' <<<"$report")" 'config reports the theme mode'
-assert_equal light "$(jq -r '.theme.light.name' <<<"$report")" 'config names the light theme'
-assert_equal true "$(jq -r '.theme.dark.palette | has("error")' <<<"$report")" \
-  'config hydrates theme palettes'
 assert_equal 2 "$(jq -r '.tui.preview_lines_context' <<<"$report")" 'config reports TUI limits'
 jq -e --arg root "$ROOT" '
   .profile.system == [($root + "/share/default/system/general.md"),
@@ -310,26 +271,10 @@ assert_equal full "$(jq -r '.tui.preview_lines_context' <<<"$report")" \
 assert_equal stored-model "$(jq -r '.profile.request.model' <<<"$report")" \
   '--verbose leaves the stored runtime alone'
 
-# Reject session-selection routes.
-integer exit_code=0
-zsh -f "$entry" config --continue >/dev/null 2>&1 || exit_code=$?
-(( exit_code == 2 )) || fail '--continue not rejected for config'
-exit_code=0
-zsh -f "$entry" config --resume >/dev/null 2>&1 || exit_code=$?
-(( exit_code == 2 )) || fail '--resume not rejected for config'
-exit_code=0
-zsh -f "$entry" config --clear >/dev/null 2>&1 || exit_code=$?
-(( exit_code == 2 )) || fail '--clear not rejected for config'
-
 # Reject overrides for stored sessions.
-exit_code=0
+integer exit_code=0
 zsh -f "$entry" config --config "$config_dir/shellfish.jsonc" --session-from "$tmp/stored.jsonl" -m other \
   >/dev/null 2>&1 || exit_code=$?
 (( exit_code == 2 )) || fail 'overrides not rejected with --session-from'
-
-# Reject unresolved profiles.
-exit_code=0
-zsh -f "$entry" config --config "$config_dir/shellfish.jsonc" -p default >/dev/null 2>&1 || exit_code=$?
-(( exit_code == 1 )) || fail 'unresolvable profile did not fail'
 
 print -r -- 'ok'

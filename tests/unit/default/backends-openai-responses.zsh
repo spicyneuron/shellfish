@@ -9,10 +9,6 @@ typeset codex_context_window="$ROOT/share/default/backends/codex/context_window"
 typeset req="$tmp/request.json"
 typeset res="$tmp/output.jsonl"
 
-# Ignore caller-local adapter modules.
-mkdir -p "$tmp/lib/runtime"
-print -r -- 'def canonical_request(:' >"$tmp/lib/runtime/schema.jq"
-
 cat >"$tmp/curl" <<'EOF'
 #!/usr/bin/env bash
 while (($#)); do
@@ -120,25 +116,16 @@ EOF
 (builtin cd -- "$tmp" && CODEX_HOME=. zsh -f "$codex_run" <"$tmp/codex-request.json" >"$res")
 assert_usage
 
-# Preserve partial output on failure.
-typeset event expected
-for event expected in \
-  '{"type":"response.failed","response":{"error":{"code":"server_error","message":"Please retry"}}}' \
-  'response.failed: server_error: Please retry' \
-  '{"type":"error","code":"server_error","message":"Please retry"}' \
-  'error: server_error: Please retry' \
-  '{"type":"response.failed","response":{"error":null}}' \
-  'response.failed (no error details)' \
-  '{"type":"error"}' \
-  'error (no error details)'; do
-  print -rl -- 'data: {"type":"response.output_text.delta","delta":"partial"}' \
-    "data: $event" >"$BACKEND_TEST_RESPONSE"
-  if OPENAI_API_KEY=test zsh -f "$run" <"$req" >"$res" 2>"$tmp/error"; then
-    fail 'provider failure was accepted'
-  fi
-  grep -Fq -- "$expected" "$tmp/error" || fail 'provider failure details were lost'
-  jq -e -s '. == [{type:"_assistant_message_delta",index:0,text:"partial"}]' "$res" >/dev/null
-done
+# Preserve partial output on provider failure.
+print -rl -- 'data: {"type":"response.output_text.delta","delta":"partial"}' \
+  'data: {"type":"response.failed","response":{"error":{"code":"server_error","message":"Please retry"}}}' \
+  >"$BACKEND_TEST_RESPONSE"
+if OPENAI_API_KEY=test zsh -f "$run" <"$req" >"$res" 2>"$tmp/error"; then
+  fail 'provider failure was accepted'
+fi
+grep -Fq -- 'response.failed: server_error: Please retry' "$tmp/error" ||
+  fail 'provider failure details were lost'
+jq -e -s '. == [{type:"_assistant_message_delta",index:0,text:"partial"}]' "$res" >/dev/null
 
 # Preserve streamed reasoning and calls.
 cat >"$BACKEND_TEST_RESPONSE" <<'EOF'

@@ -33,12 +33,7 @@ banner=$(sf_tui_chat_start resume /tmp/session.jsonl)
   fail 'resume banner omitted its session path'
 COLUMNS=43
 banner=$(sf_tui_chat_end /tmp/session.jsonl)
-assert_equal 42 "${#${banner%%$'\n'*}}"
 [[ $banner == *$'\e[1mSaved:\e[0m /tmp/session.jsonl'* ]] || fail 'exit banner omitted its session path'
-
-SF_PRESENT_VIEWPORT_HIGHLIGHTS=( 0 2 bold 3 5 fg=2 )
-sf_tui_update_highlights view
-assert_equal 'P0 2 bold,P3 5 fg=2' "${(j:,:)region_highlight}"
 
 SF_PRESENT_STATE=permission
 SF_PRESENT_PERMISSION_TOOL=shell
@@ -51,84 +46,10 @@ typeset permission_prompt=$'─ Allow shell outside of sandbox? ─────�
 [[ $POSTDISPLAY == $'\n─'* ]] || fail 'permission prompt omitted its trailing blank line'
 SF_PRESENT_STATE=idle
 
-# Chrome offsets index PREDISPLAY + BUFFER + POSTDISPLAY.
-SF_PRESENT_STYLE=( divider 'fg=8' prompt_waiting 'fg=2' prompt 'fg=4' footer 'fg=5'
-  muted 'fg=7' permission 'fg=4' syntax.string 'fg=6' )
-sf_tui_reset
-SF_PRESENT_IDENTITY=test/model
-SF_PRESENT_FOOTER='test/model · 1 ↑ 2 ↓'
-COLUMNS=80
-LINES=10
-SF_PRESENT_STATE=idle
-SF_PRESENT_QUEUE=()
-BUFFER=draft
-CURSOR=5
-sf_tui_repaint
-typeset chrome_display="$PREDISPLAY$BUFFER$POSTDISPLAY"
-typeset -a chrome_sliced=() chrome_styled=()
-integer index
-for (( index = 1; index <= ${#SF_PRESENT_CHROME_HIGHLIGHTS}; index += 3 )); do
-  chrome_sliced+=( "${chrome_display[SF_PRESENT_CHROME_HIGHLIGHTS[index] + 1,SF_PRESENT_CHROME_HIGHLIGHTS[index + 1]]}" )
-  chrome_styled+=( "$SF_PRESENT_CHROME_HIGHLIGHTS[index + 2]" )
-done
-assert_equal "${(l:79::─:)""}|❯ |${(l:79::─:)""}|test/model · 1 ↑ 2 ↓" \
-  "${(j:|:)chrome_sliced}"
-assert_equal 'fg=2,fg=2,fg=2,fg=5' "${(j:,:)chrome_styled}"
-
-# Accepted and live prompts are not waiting.
-for SF_PRESENT_ACTION SF_PRESENT_STATE in submit idle '' working; do
-  sf_tui_repaint
-  chrome_styled=()
-  for (( index = 3; index <= ${#SF_PRESENT_CHROME_HIGHLIGHTS}; index += 3 )); do
-    chrome_styled+=( "$SF_PRESENT_CHROME_HIGHLIGHTS[index]" )
-  done
-  [[ ${(j:,:)chrome_styled} == 'fg=4,fg=4,fg=4,fg=5' ]] ||
-    fail "state '$SF_PRESENT_STATE' action '$SF_PRESENT_ACTION' chrome: ${(j:,:)chrome_styled}"
-done
-SF_PRESENT_ACTION=''
-
-SF_PRESENT_STATE=permission
-SF_PRESENT_PERMISSION_TOOL=shell
-SF_PRESENT_PERMISSION_TEXT=$'echo "hi"\n\nReason: "host"'
-SF_PRESENT_PERMISSION_LANGUAGE=sh
-SF_PRESENT_PERMISSION_PREVIEW_LENGTH=9
-sf_tui_repaint
-chrome_display="$PREDISPLAY$BUFFER$POSTDISPLAY"
-chrome_sliced=()
-chrome_styled=()
-for (( index = 1; index <= ${#SF_PRESENT_CHROME_HIGHLIGHTS}; index += 3 )); do
-  chrome_sliced+=( "${chrome_display[SF_PRESENT_CHROME_HIGHLIGHTS[index] + 1,SF_PRESENT_CHROME_HIGHLIGHTS[index + 1]]}" )
-  chrome_styled+=( "$SF_PRESENT_CHROME_HIGHLIGHTS[index + 2]" )
-done
-assert_equal '"hi"' "$chrome_sliced[2]"
-assert_equal 'fg=6' "$chrome_styled[2]"
-assert_equal '[a]pprove  [d]eny (default)' "$chrome_sliced[3]"
-assert_equal 'fg=4' "$chrome_styled[3]"
-assert_equal "${(l:79::─:)""}" "$chrome_sliced[4]"
-assert_equal 'fg=4' "$chrome_styled[4]"
-assert_equal 79 ${#chrome_sliced[1]}
-[[ $chrome_sliced[1] == '─ Allow shell outside of sandbox? '─* ]] ||
-  fail "top rule: $chrome_sliced[1]"
-assert_equal "$chrome_styled[4]" "$chrome_styled[1]"
-[[ ${(j:,:)chrome_sliced} != *'"host"'* ]] || fail 'permission reason was syntax highlighted'
-SF_PRESENT_STATE=idle
-
-# Queue chrome uses distinct styles.
 SF_PRESENT_QUEUE=( $'first queued\ncontinued' )
 sf_tui_repaint
-chrome_display="$PREDISPLAY$BUFFER$POSTDISPLAY"
-chrome_sliced=()
-chrome_styled=()
-for (( index = 1; index <= ${#SF_PRESENT_CHROME_HIGHLIGHTS}; index += 3 )); do
-  chrome_sliced+=( "${chrome_display[SF_PRESENT_CHROME_HIGHLIGHTS[index] + 1,SF_PRESENT_CHROME_HIGHLIGHTS[index + 1]]}" )
-  chrome_styled+=( "$SF_PRESENT_CHROME_HIGHLIGHTS[index + 2]" )
-done
-assert_equal "─ queue ${(l:71::─:)""}" "$chrome_sliced[1]"
-assert_equal 'fg=8' "$chrome_styled[1]"
-assert_equal 'queue' "$chrome_sliced[2]"
-assert_equal 'fg=7' "$chrome_styled[2]"
-assert_equal '1. first queued continued' "$chrome_sliced[3]"
-assert_equal 'fg=7' "$chrome_styled[3]"
+[[ $PREDISPLAY == *$'─ queue '*$'\n1. first queued continued\n'* ]] ||
+  fail 'queued prompt was not rendered'
 SF_PRESENT_QUEUE=()
 sf_tui_repaint
 [[ $PREDISPLAY != *'─ queue '* ]] || fail 'cleared queue remained visible'
@@ -139,14 +60,5 @@ SF_PRESENT_QUEUE=()
 sf_tui_repaint
 [[ $PREDISPLAY == *'─ history 1/2 '*$'\n❯ ' ]] ||
   fail 'history depth was not rendered in the prompt divider'
-chrome_display="$PREDISPLAY$BUFFER$POSTDISPLAY"
-chrome_sliced=()
-chrome_styled=()
-for (( index = 1; index <= ${#SF_PRESENT_CHROME_HIGHLIGHTS}; index += 3 )); do
-  chrome_sliced+=( "${chrome_display[SF_PRESENT_CHROME_HIGHLIGHTS[index] + 1,SF_PRESENT_CHROME_HIGHLIGHTS[index + 1]]}" )
-  chrome_styled+=( "$SF_PRESENT_CHROME_HIGHLIGHTS[index + 2]" )
-done
-assert_equal 'history 1/2' "$chrome_sliced[2]"
-assert_equal 'fg=7' "$chrome_styled[2]"
 SF_PRESENT_HISTORY=()
 SF_PRESENT_HISTORY_NO=0

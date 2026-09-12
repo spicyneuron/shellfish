@@ -22,7 +22,7 @@ TEST_BACKEND = str(ROOT / "tests" / "fixtures" / "backend")
 CSI = re.compile(rb"\x1b\[[0-?]*[ -/]*[@-~]")
 OSC = re.compile(rb"\x1b\].*?(?:\x07|\x1b\\)", re.S)
 
-# Distinct colors make semantic styling observable.
+# Use a stable theme instead of host presentation settings.
 THEME = {
     "muted": "#8b949e", "divider": "#8b949e",
     "footer": "#8b949e", "prompt": "#8b949e", "prompt_waiting": "#a5d6ff",
@@ -54,8 +54,7 @@ def run(label, tests):
 
 class Session:
     def __init__(self, explicit_session=False, hooks=None, env=None, args=None,
-                 session_start=None, system=None, session_records=None,
-                 sandbox=True):
+                 session_start=None, session_records=None):
         env_overrides = env or {}
         self.state_home = tempfile.TemporaryDirectory()
         self.project_home = tempfile.TemporaryDirectory(prefix="shellfish-pty.")
@@ -74,7 +73,7 @@ class Session:
             "harnesses": {
                 "test": {
                     "tools": ["read_file", "write_file", "edit_file", "shell"],
-                    "sandbox": sandbox,
+                    "sandbox": True,
                 }
             },
             "profiles": {
@@ -101,11 +100,6 @@ class Session:
                 script.chmod(0o755)
         if session_start:
             config["harnesses"]["test"]["session_start"] = session_start
-        if system is not None:
-            system_dir = config_dir / "system"
-            system_dir.mkdir(parents=True, exist_ok=True)
-            (system_dir / "startup.md").write_text(system)
-            config["profiles"]["development"]["system"] = ["startup.md"]
         self.config_file.write_text(json.dumps(config))
         self.explicit_session = (
             Path(self.state_home.name) / "explicit.jsonl"

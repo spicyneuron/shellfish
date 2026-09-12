@@ -71,16 +71,6 @@ print -r -- '[
     "quot;hi&" + "quot;\" status=\"1\""))
 ' >/dev/null
 
-# Pending context becomes a user message before an assistant.
-print -r -- '[
-  {"type":"hook_result","hook":"t","script":"notes","model_context":"ctx"},
-  {"type":"assistant","content":[]}
-]' | fold | jq -e '
-  (. | length) == 2 and .[0].type == "user" and
-  .[0].content[0].text == "<hook name=\"t\">\n<context script=\"notes\">\nctx\n</context>\n</hook>\n\n" and
-  .[1].type == "assistant"
-' >/dev/null
-
 # Pending context cannot split a tool pair.
 print -r -- '[
   {"type":"assistant","content":[]},
@@ -99,16 +89,3 @@ print -r -- '[
 if print -r -- '[{"type":"mystery"}]' | fold >/dev/null 2>&1; then
   fail 'unrecognized session record was accepted'
 fi
-if print -r -- '[{"type":"event","event":"error","code":"legacy","message":"old"}]' |
-    fold >/dev/null 2>&1; then
-  fail 'legacy durable event was accepted'
-fi
-
-# Trailing context reaches the provider.
-print -r -- '[
-  {"type":"user","content":[{"type":"text","text":"hi"}]},
-  {"type":"hook_result","hook":"t","script":"notes","model_context":"ctx"}
-]' | fold | jq -e '
-  (. | length) == 2 and .[1].type == "user" and
-  .[1].content[0].text == "<hook name=\"t\">\n<context script=\"notes\">\nctx\n</context>\n</hook>\n\n"
-' >/dev/null

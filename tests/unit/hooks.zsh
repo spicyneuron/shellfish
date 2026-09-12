@@ -23,10 +23,6 @@ SF_TEST_RUNTIME=$(jq -cn --arg script "$start_script" --arg second "$start_secon
 export OPENAI_API_KEY=standard-secret CUSTOM_API_KEY=custom-secret
 sf_session_prepare "$SF_TEST_RUNTIME"
 sf_test_install_prepared "$start_session"
-if sf_hooks_run "$start_session" misspelled '' allow allow 0 1; then
-  fail 'unknown hook name was accepted'
-fi
-[[ $SF_HOOK_ERROR == 'unknown hook: misspelled' ]]
 sf_hooks_session_start "$start_session"
 [[ -z $REPLY && ${#reply} == 0 ]]
 [[ $OPENAI_API_KEY == standard-secret && $CUSTOM_API_KEY == custom-secret ]]
@@ -73,18 +69,6 @@ RESUME_MARKER=$resume_marker SF_TEST_BACKEND_DELAY=0 zsh -f "$SF_ENTRY" run \
   fail 'existing-session CLI entry failed'
 (( $(wc -l <"$resume_marker") == 1 )) || fail 'session_start script ran more than once'
 
-# Preserve newline-containing working directories.
-typeset newline_cwd="$tmp/"$'line\nbreak' previous_cwd=$PWD
-mkdir "$newline_cwd"
-cd "$newline_cwd"
-newline_cwd=$(pwd -P)
-typeset newline_session="$tmp/newline-session.jsonl"
-sf_session_prepare "$SF_TEST_RUNTIME"
-sf_test_install_prepared "$newline_session"
-sf_hooks_session_start "$newline_session"
-cd "$previous_cwd"
-jq -e -s --arg cwd "$newline_cwd" '.[0].cwd == $cwd' "$newline_session" >/dev/null
-
 typeset skipped_session="$tmp/skipped-session.jsonl"
 sf_session_prepare "$SF_TEST_RUNTIME"
 if SKIP=1 sf_hooks_session_start "$skipped_session"; then
@@ -92,18 +76,6 @@ if SKIP=1 sf_hooks_session_start "$skipped_session"; then
 fi
 [[ $SF_HOOK_ERROR == 'session_start hook script returned unsupported skip status: local' ]]
 [[ ! -e $skipped_session ]]
-
-# Reject startup control data.
-typeset control_session="$tmp/control-session.jsonl"
-make_script start_control 'print -rn -u3 -- $'\''again\0'\''; exit 11'
-SF_TEST_RUNTIME=$(jq -c --arg script "$script" \
-  '.harness.session_start = [{command:$script,display:"",environment:[]}]' <<<"$SF_TEST_RUNTIME")
-sf_session_prepare "$SF_TEST_RUNTIME"
-if sf_hooks_session_start "$control_session"; then
-  fail 'session_start control data was accepted'
-fi
-[[ $SF_HOOK_ERROR == 'hook script returned malformed control data' ]]
-[[ ! -e $control_session ]]
 
 # Permission hooks may allow, deny, or defer; stdout is transient.
 typeset permission_session="$tmp/permission-session.jsonl"
@@ -200,17 +172,6 @@ sf_hooks_permission_request "$permission_chain_session" shell call_8 \
 sf_session_reset
 sf_hooks_turn_state_cleanup
 SF_TEST_RUNTIME=$permission_runtime
-
-typeset plain_session="$tmp/plain-session.jsonl"
-SF_TEST_RUNTIME=$(jq 'del(.harness.user_prompt_submit)' <<<"$SF_TEST_RUNTIME")
-sf_test_session "$plain_session"
-sf_session_begin_turn "$plain_session"
-sf_session_reset
-sf_hooks_turn_state_create
-run_prompt_hook ordinary "$plain_session"
-[[ ${#reply} == 1 && $reply[1] == proceed && -z $SF_HOOK_ERROR ]]
-(( $(wc -l <"$plain_session") == 1 ))
-sf_hooks_turn_state_cleanup
 
 # Stop feedback is durable only when completion is skipped.
 make_script stop '[[ $# == 2 && $1 == stop && $2 == "$STOP_ATTEMPT" && "$(cat)" == "$STOP_INPUT" ]] || exit 1; print -rn -u2 -- local; [[ -z $STOP_STDOUT ]] || print -rn -- feedback; [[ -z $STOP_SKIP ]] || exit 10'

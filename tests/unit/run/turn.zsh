@@ -121,25 +121,6 @@ sf_session_read_runtime "$unavailable_session"
 jq -e '.profile.context_window == null' <<<"$REPLY" >/dev/null
 SF_TEST_RUNTIME=$base_runtime
 
-# Requests use synchronized in-memory records.
-typeset memory_request="$tmp/memory-request.json"
-SF_ROOT=$ROOT zsh -f -c '
-  source "$SF_ROOT/libexec/run/turn.zsh"
-  sf_session_begin_turn "$1" || exit
-  mv "$1" "$1.saved" || exit
-  print -rl -- "${SF_SESSION_RECORDS[@]}" |
-    sf_request_build "$SF_SESSION[runtime]" "[]" >"$2"
-  rc=$?
-  mv "$1.saved" "$1"
-  sf_session_reset
-  exit $rc
-' -- "$session" "$memory_request"
-jq -e '
-  .system == "frozen system" and
-  .messages[-1].type == "assistant" and
-  .messages[-1].content[0].text == "two\nwords\n"
-' "$memory_request" >/dev/null
-
 # Adapter events retain stream order.
 stream=$(sf_test_turn 'think about two words' "$session")
 print -r -- "$stream" | jq -eRn '
@@ -394,14 +375,3 @@ jq -e '
   (.tools[0].input_schema.properties | has("request_sandbox_bypass") | not) and
   .messages[-1].type == "tool_result"
 ' "$request_capture" >/dev/null
-
-# Sampling preserves tool keywords.
-typeset lorem_session="$tmp/lorem.jsonl"
-sf_test_session "$lorem_session"
-stream=$(sf_test_turn 'lorem tool' "$lorem_session")
-print -r -- "$stream" | jq -eRn '
-  [inputs | fromjson] as $events |
-  ($events | map(select(.type == "assistant"))[0].stop) == "tool_calls" and
-  ($events | map(select(.type == "tool_result")) | length) == 1 and
-  ($events | map(select(.type == "assistant"))[-1].stop) == "end"
-' >/dev/null

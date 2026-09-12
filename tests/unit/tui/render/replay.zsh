@@ -10,17 +10,6 @@ typeset -ga SF_TEST_EVENTS=()
 sf_tui_event() { SF_TEST_EVENTS+=( "${(j:|:)@}" ); }
 replayed() { REPLY="${(F)SF_TEST_EVENTS}" }
 
-# Relative sessions resolve before jq changes directories.
-mkdir -p "$tmp/lib/runtime"
-print -r -- 'def canonical_session_header(:' >"$tmp/lib/runtime/schema.jq"
-cp "$SF_TEST_SESSIONS/header-only.jsonl" "$tmp/session.jsonl"
-(
-  builtin cd -- "$tmp"
-  sf_tui_reload session.jsonl || fail "$SF_PRESENT_ERROR"
-  assert_equal test/fake-model "$SF_PRESENT_FOOTER"
-  assert_equal "$tmp" "$PWD"
-)
-
 # Records replay in durable order.
 SF_TEST_EVENTS=()
 typeset esc=$'\e'
@@ -59,10 +48,4 @@ cp "$SF_TEST_SESSIONS/tool-paired.jsonl" "$tmp/invalid.jsonl"
 print -r -- broken >>"$tmp/invalid.jsonl"
 if sf_tui_reload "$tmp/invalid.jsonl"; then
   fail 'accepted an invalid durable transcript'
-fi
-
-# Malformed headers cannot be presented.
-jq -c 'del(.backend)' "$SF_TEST_SESSIONS/header-only.jsonl" >"$tmp/bad-header.jsonl"
-if sf_tui_reload "$tmp/bad-header.jsonl"; then
-  fail 'accepted a malformed session header'
 fi

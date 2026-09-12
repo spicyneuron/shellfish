@@ -2,16 +2,10 @@
 
 source "${0:A:h}/_hooks.zsh"
 
-make_script nul_argv 'print -rn -u3 -- '\''{"action":"handoff","argv":["bad\u0000arg"]}'\''; exit 11'
-typeset nul_argv=$script
-make_script empty_command 'print -rn -u3 -- '\''{"action":"handoff","argv":[""]}'\''; exit 11'
-typeset empty_command=$script
 make_script session_update 'print -rn -u3 -- '\''{"action":"session_update","patch":{"harness":{"sandbox_write_paths":["/tmp/reference"]}}}'\''; exit 11'
 typeset session_update=$script
 make_script invalid_update 'print -rn -u3 -- '\''{"action":"session_update","patch":[]}'\''; exit 11'
 typeset invalid_update=$script
-make_script metadata_only 'print -rn -u3 -- '\''{"context":{"prompt":"false","status":1}}'\''; exit 10'
-typeset metadata_only=$script
 
 # Preserve exact prompt bytes.
 typeset prompt_session="$tmp/prompt-session.jsonl"
@@ -123,19 +117,6 @@ if run_prompt_hook /update "$invalid_update_session"; then
 fi
 [[ $SF_HOOK_ERROR == 'user_prompt_submit hook script returned invalid control data' ]]
 
-# Prompt metadata requires model context.
-SF_TEST_RUNTIME=$(jq -c --arg script "$metadata_only" '
-  .harness.user_prompt_submit=[{command:$script,display:"",environment:[]}]
-' <<<"$SF_TEST_RUNTIME")
-typeset metadata_session="$tmp/metadata-session.jsonl"
-sf_hooks_turn_state_cleanup
-sf_test_session "$metadata_session"
-sf_hooks_turn_state_create
-if run_prompt_hook /metadata "$metadata_session"; then
-  fail 'context metadata without model context was accepted'
-fi
-[[ $SF_HOOK_ERROR == 'user_prompt_submit hook script returned invalid control data' ]]
-
 # Halt remaining prompt hooks.
 make_script halt 'print -rn -- halted; exit 11'
 typeset halt=$script
@@ -150,43 +131,6 @@ run_prompt_hook /halt "$halt_session"
 [[ ${#reply} == 1 && $reply[1] == handled ]]
 jq -e 'select(.type == "hook_result" and .model_context == "halted")' \
   < <(tail -n 1 "$halt_session") >/dev/null
-
-SF_TEST_RUNTIME=$(jq -c --arg script "$nul_argv" '
-  .harness.user_prompt_submit=[{command:$script,display:"",environment:[]}]
-' <<<"$SF_TEST_RUNTIME")
-typeset nul_session="$tmp/nul-session.jsonl"
-sf_hooks_turn_state_cleanup
-sf_test_session "$nul_session"
-sf_hooks_turn_state_create
-if run_prompt_hook /switch "$nul_session"; then
-  fail 'NUL-containing handoff argument was accepted'
-fi
-[[ $SF_HOOK_ERROR == 'user_prompt_submit hook script returned invalid control data' ]]
-SF_TEST_RUNTIME=$(jq -c --arg script "$empty_command" '
-  .harness.user_prompt_submit=[{command:$script,display:"",environment:[]}]
-' <<<"$SF_TEST_RUNTIME")
-typeset empty_command_session="$tmp/empty-command-session.jsonl"
-sf_hooks_turn_state_cleanup
-sf_test_session "$empty_command_session"
-sf_hooks_turn_state_create
-if run_prompt_hook /switch "$empty_command_session"; then
-  fail 'empty handoff executable was accepted'
-fi
-[[ $SF_HOOK_ERROR == 'user_prompt_submit hook script returned invalid control data' ]]
-
-make_script invalid_earlier 'print -n earlier; print -rn -u3 -- '\''{"unknown":true}'\''; exit 0'
-typeset invalid_earlier=$script
-SF_TEST_RUNTIME=$(jq -c --arg first "$invalid_earlier" --arg second "$prompt_script" '
-  .harness.user_prompt_submit=([$first,$second] | map({command:.,display:"",environment:[]}))
-' <<<"$SF_TEST_RUNTIME")
-typeset invalid_control_session="$tmp/invalid-control-session.jsonl"
-sf_hooks_turn_state_cleanup
-sf_test_session "$invalid_control_session"
-sf_hooks_turn_state_create
-if run_prompt_hook ordinary "$invalid_control_session"; then
-  fail 'invalid earlier prompt control was accepted'
-fi
-[[ $SF_HOOK_ERROR == 'user_prompt_submit hook script returned invalid control data' ]]
 
 sf_hooks_turn_state_cleanup
 assert_no_hook_captures

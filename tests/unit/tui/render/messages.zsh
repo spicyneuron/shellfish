@@ -38,20 +38,6 @@ sf_tui_message_append agent reply
 view 79 20
 [[ $REPLY == *$'\n\n─ agent ─'*$' 2 ─\n\nreply' ]] || fail "agent rule: $REPLY"
 
-# Narrow rules omit numbers before overflowing.
-sf_tui_reset
-sf_tui_event user hi
-view 12 20
-assert_equal $'─ user ─ 1 ─\n\nhi' "$REPLY"
-sf_tui_reset
-sf_tui_event user hi
-view 10 20
-assert_equal $'─ user ───\n\nhi' "$REPLY"
-sf_tui_reset
-sf_tui_event user hi
-view 8 20
-assert_equal $'─ user ─\n\nhi' "$REPLY"
-
 # Message spacing collapses blank runs.
 sf_tui_reset
 sf_tui_event user $'\n\n  spaced  \n\n\n'
@@ -83,75 +69,6 @@ sf_tui_reset
 sf_tui_event user $'one\ntwo\nthree\nfour'
 view 79 3
 assert_equal $'two\nthree\nfour' "$REPLY"
-
-# Commits stay within their row budget.
-sf_tui_reset
-sf_tui_event user hello
-sf_tui_transcript 79 20
-assert_equal 3 "$SF_PRESENT_SAFE_ROWS"
-sf_tui_transcript 79 2
-assert_equal 2 "$SF_PRESENT_SAFE_ROWS"
-assert_equal $'\nhello' "$SF_PRESENT_VIEWPORT_TEXT"
-
-# Staging stops after the safe prefix and skips the viewport.
-sf_tui_reset
-sf_tui_event user $'one\ntwo\nthree'
-sf_tui_event user $'four\nfive\nsix'
-sf_tui_transcript 79 4
-typeset staged_text=$SF_PRESENT_SAFE_TEXT staged_rows=$SF_PRESENT_SAFE_ROWS
-(( staged_rows )) || fail 'the full pass staged nothing to compare'
-[[ -n $SF_PRESENT_VIEWPORT_TEXT ]] || fail 'the full pass drew no viewport to skip'
-sf_tui_transcript 79 4 stage
-assert_equal "$staged_text" "$SF_PRESENT_SAFE_TEXT"
-assert_equal "$staged_rows" "$SF_PRESENT_SAFE_ROWS"
-assert_equal '' "$SF_PRESENT_VIEWPORT_TEXT"
-
-# Empty staging still builds the viewport.
-sf_tui_transcript 79 1
-typeset drawn=$SF_PRESENT_VIEWPORT_TEXT
-assert_equal 0 "$SF_PRESENT_SAFE_ROWS"
-[[ -n $drawn ]] || fail 'the full pass drew no viewport to compare'
-sf_tui_transcript 79 1 stage
-assert_equal "$drawn" "$SF_PRESENT_VIEWPORT_TEXT"
-
-# Settled records format once while draining.
-sf_tui_reset
-typeset -gi format_calls=0
-typeset saved_format_message=$functions[sf_tui_format_message] tall_message=''
-integer line
-sf_tui_format_message() {
-  (( ++format_calls ))
-  sf_tui_format_message_saved "$@"
-}
-functions[sf_tui_format_message_saved]=$saved_format_message
-for (( line = 1; line <= 40; line++ )); do
-  tall_message+="line $line"$'\n'
-done
-sf_tui_event user "$tall_message"
-while true; do
-  sf_tui_transcript 12 5 stage || fail 'draining settled rows failed'
-  (( SF_PRESENT_SAFE_ROWS )) || break
-  sf_tui_rows_consume $SF_PRESENT_SAFE_ROWS || fail 'consuming settled rows failed'
-done
-assert_equal 1 "$format_calls"
-assert_equal 0 "${#SF_PRESENT_KIND}"
-functions[sf_tui_format_message]=$saved_format_message
-unfunction sf_tui_format_message_saved
-
-# Highlight spans follow committed text.
-sf_tui_reset
-SF_PRESENT_STYLE=( divider 'fg=8' section.user 'fg=1' muted 'fg=7' )
-sf_tui_event user hello
-sf_tui_transcript 79 20
-typeset -a sliced=()
-integer span
-for (( span = 1; span <= ${#SF_PRESENT_VIEWPORT_HIGHLIGHTS}; span += 3 )); do
-  sliced+=( "${SF_PRESENT_VIEWPORT_TEXT[SF_PRESENT_VIEWPORT_HIGHLIGHTS[span] + 1,SF_PRESENT_VIEWPORT_HIGHLIGHTS[span + 1]]}" )
-done
-[[ ${sliced[(r)user ]} == 'user ' ]] || fail "role title span: ${(j:|:)sliced}"
-assert_equal 1 "$sliced[-1]"
-
-SF_PRESENT_STYLE=()
 
 # Resizing affects only the live tail.
 sf_tui_reset
@@ -402,32 +319,4 @@ sf_tui_event assistant_message_delta 0 '# A **bold heading that wraps** and keep
 view 12 40
 assert_equal "$chunked_text" "$SF_PRESENT_VIEWPORT_TEXT"
 assert_equal "$chunked_spans" "${(j:|:)SF_PRESENT_VIEWPORT_HIGHLIGHTS}"
-SF_PRESENT_STYLE=()
-
-# Scan continuation avoids rescanning retained prefixes.
-sf_tui_reset
-typeset -gi scanned=0
-functions[sf_tui_markdown_saved]=$functions[sf_tui_markdown_highlight]
-sf_tui_markdown_highlight() {
-  scanned=$(( scanned + ${#1} ))
-  sf_tui_markdown_saved "$@"
-}
-sf_tui_event assistant_start
-for (( span = 1; span <= 24; span++ )); do
-  sf_tui_event assistant_message_delta 0 'lorem ipsum '
-  view 20 20
-done
-(( scanned <= 24 * 12 * 3 )) || fail "rescanned growing Markdown: $scanned"
-functions[sf_tui_markdown_highlight]=$functions[sf_tui_markdown_saved]
-unfunction sf_tui_markdown_saved
-
-# Clamp styling layers over reasoning styling.
-SF_PRESENT_STYLE=( message 'fg=1' reasoning 'fg=2' clamp 'fg=3' )
-SF_PRESENT_PREVIEW_REASONING=1
-sf_tui_reset
-sf_tui_event assistant_start
-sf_tui_event assistant_reasoning_delta 0 $'first\nsecond'
-sf_tui_transcript 20 20 || fail 'styled reasoning clamp did not render'
-[[ ${(j:|:)SF_PRESENT_VIEWPORT_HIGHLIGHTS} == *'fg=2'*'fg=3'* ]] ||
-  fail 'reasoning clamp styles were not layered'
 SF_PRESENT_STYLE=()

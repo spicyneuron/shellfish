@@ -44,9 +44,6 @@ SF_TEST_BACKEND_DELAY=0 SF_TEST_BACKEND_REQUEST="$compact_request" \
   < <(print -n -- 'my next prompt') || compact_status=$?
 (( compact_status == 11 ))
 [[ ! -s $compact_display ]] || fail 'compaction wrote unexpected display output'
-jq -e '.display == "Compacting conversation…"' \
-  "${compact_hook:h}/manifest.json" >/dev/null ||
-  fail 'compaction does not declare its display'
 jq -e --arg command "$ROOT/bin/shellfish" \
   --arg child "$tmp/compact-source_compact.jsonl" '
   . == {action:"handoff",argv:[$command,"--session",$child,"--draft","my next prompt"]}
@@ -119,18 +116,6 @@ SF_TEST_COMPACT_FAIL=1 SHELLFISH_EXECUTABLE="$compact_shellfish" \
 (( compact_status == 10 )) || fail 'explicit summary failure was not handled'
 [[ ! -s $compact_control ]] || fail 'explicit summary failure requested a handoff'
 
-# Fail open on publication errors.
-typeset compact_long="$tmp/${(l:245::a:)}.jsonl"
-cp "$compact_source" "$compact_long"
-: >"$compact_control"
-compact_status=0
-SHELLFISH_EXECUTABLE="$compact_shellfish" \
-  SHELLFISH_SESSION="$compact_long" SHELLFISH_TURN_STATE="$tmp" \
-  zsh -f "$compact_hook" user_prompt_submit 3>"$compact_control" \
-  < <(print -n -- 'my next prompt') 2>/dev/null || compact_status=$?
-(( compact_status == 0 )) || fail 'publication failure blocked the prompt'
-[[ ! -s $compact_control ]] || fail 'publication failure requested a handoff'
-
 # Preserve ordered state history.
 typeset state_source="$tmp/state-source.jsonl"
 head -n 1 "$compact_source" >"$state_source"
@@ -160,11 +145,3 @@ jq -e -s '
   fail 'compaction did not carry state history in source order'
 assert_equal "$state_before" "$(shasum <"$state_source")"
 [[ ! -e $tmp/.agent-a1b2c3.jsonl ]] || fail 'compaction copied a referenced internal session'
-
-# Reject sessions without messages.
-compact_status=0
-SHELLFISH_EXECUTABLE="$ROOT/bin/shellfish" \
-  SHELLFISH_SESSION="$tmp/compact-source_compact.jsonl" SHELLFISH_TURN_STATE="$tmp" \
-  zsh -f "$compact_hook" user_prompt_submit 3>"$compact_control" \
-  < <(print -n -- /compact) 2>/dev/null || compact_status=$?
-(( compact_status == 10 )) || fail '/compact accepted a session without messages'

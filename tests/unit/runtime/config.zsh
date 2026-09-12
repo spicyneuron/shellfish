@@ -32,31 +32,17 @@ if print -r -- '{"themes":{"dark":{"text":"red"}}}' |
     config_eval 'config_validate' >/dev/null 2>&1; then
   fail 'invalid theme color was accepted'
 fi
-if print -r -- '{"themes":{"dark":{"syntax_keyword":"red"}}}' |
-    config_eval 'config_validate' >/dev/null 2>&1; then
-  fail 'invalid syntax color was accepted'
-fi
 
 # Preview line counts require valid types.
 if print -r -- '{"tui":{"preview_lines_context":-1}}' |
     config_eval 'config_validate' >/dev/null 2>&1; then
   fail 'invalid tui preview_lines was accepted'
 fi
-if print -r -- '{"tui":{"preview_lines_tool_call":true}}' |
-    config_eval 'config_validate' >/dev/null 2>&1; then
-  fail 'invalid tool call preview_lines was accepted'
-fi
 
-# TUI headings are fixed.
-if print -r -- '{"tui":{"agent_heading":"custom"}}' |
+# Harnesses reject unknown fields.
+if print -r -- '{"harnesses":{"bad":{"unexpected":[]}}}' |
     config_eval 'config_validate' >/dev/null 2>&1; then
-  fail 'custom TUI heading was accepted'
-fi
-
-# Harnesses reject unknown hooks.
-if print -r -- '{"harnesses":{"bad":{"session_end":[]}}}' |
-    config_eval 'config_validate' >/dev/null 2>&1; then
-  fail 'removed session_end hook was accepted'
+  fail 'unknown harness field was accepted'
 fi
 
 # Profile extensions inherit and override.

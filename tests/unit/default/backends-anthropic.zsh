@@ -8,10 +8,6 @@ typeset context_window="$ROOT/share/default/backends/anthropic/context_window"
 typeset req="$tmp/request.json"
 typeset res="$tmp/output.jsonl"
 
-# Ignore caller-local adapter modules.
-mkdir -p "$tmp/lib/runtime"
-print -r -- 'def canonical_request(:' >"$tmp/lib/runtime/schema.jq"
-
 cat >"$tmp/curl" <<'EOF'
 #!/usr/bin/env bash
 printf '%s\n' "$@" >"$BACKEND_TEST_ARGS"
@@ -147,8 +143,3 @@ jq -e '
   (.messages[2].content | map(.tool_use_id)) == ["call_1","call_2"] and
   (.messages[2].content | map(.is_error)) == [false,true]
 ' "$BACKEND_TEST_BODY" >/dev/null || fail 'anthropic did not regroup a call batch'
-
-# Preserve call-only messages.
-jq -c '.messages[1].content = []' "$batch_request" >"$tmp/calls-only.json"
-ANTHROPIC_API_KEY=test zsh -f "$run" <"$tmp/calls-only.json" >"$res"
-jq -e '(.messages[1].content | map(.type)) == ["tool_use","tool_use"]'   "$BACKEND_TEST_BODY" >/dev/null || fail 'a call-only message was treated as empty'

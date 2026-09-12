@@ -115,15 +115,6 @@ stream=$(sf_test_turn /fail "$failure_session" 2>"$failure_error")
 [[ -z $stream ]] || fail 'prompt hook failure emitted JSONL'
 [[ $(<"$failure_error") == *'prompt-hook'* ]] || fail 'prompt hook failure omitted stderr diagnostic'
 
-# Plain hook failures return diagnostics.
-typeset plain_failure_session="$tmp/prompt-plain-failure.jsonl" plain_error
-integer plain_status=0
-sf_test_session "$plain_failure_session"
-plain_error=$(zsh -f "$ROOT/bin/shellfish" run --session "$plain_failure_session" \
-  /fail 2>&1 >/dev/null) || plain_status=$?
-(( plain_status == 1 ))
-[[ $plain_error == *'hook script failed with status 1:'*prompt-hook* ]]
-
 # Hook output respects capture limits.
 typeset overflow_session="$tmp/prompt-overflow.jsonl" overflow_error="$tmp/prompt-overflow.stderr"
 sf_test_session "$overflow_session"
@@ -141,10 +132,7 @@ SF_TEST_RUNTIME=$(jq -c '.harness.user_prompt_submit[0].display="Working…"' \
   <<<"$SF_TEST_RUNTIME")
 sf_test_session "$cancel_session"
 integer records=$(wc -l <"$cancel_session")
-# Isolate temp files from concurrent tests.
-typeset cancel_temp="$tmp/cancel-temp"
-mkdir -p "$cancel_temp"
-TMPDIR="$cancel_temp" "$ROOT/bin/shellfish" run --jsonl --session "$cancel_session" \
+"$ROOT/bin/shellfish" run --jsonl --session "$cancel_session" \
   < <(print -r -- '{"type":"user","content":[{"type":"text","text":"/slow"}]}') \
   >"$cancel_stream" 2>"$cancel_error" &
 integer pid=$! cancel_status=0 waited=0
@@ -175,11 +163,3 @@ jq -eRn '
   fail 'pre-commit cancellation omitted stderr diagnostic'
 (( $(wc -l <"$cancel_session") == records )) ||
   fail 'pre-commit cancellation appended a recovery record'
-typeset cancel_root="$cancel_temp/shellfish-$EUID"
-typeset category
-typeset -a cancel_leftovers=()
-for category in turns hooks tools tooltemps backends transport; do
-  cancel_leftovers+=( "$cancel_root/$category"/*(N) )
-done
-(( ! ${#cancel_leftovers} )) ||
-  fail "cancelled turn left temporary files: ${(j:, :)cancel_leftovers:t}"

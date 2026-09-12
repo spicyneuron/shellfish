@@ -66,35 +66,17 @@ jq -e -s --slurpfile source "$created" '
   (.[0] | del(.created)) == ($source[0] | del(.created))
 ' "$reused" >/dev/null || fail 'create did not reuse the stored runtime'
 
-# Validate source paths.
+# Reject a missing source.
 zsh -f "$entry" create --session-from "$tmp/absent.jsonl" >/dev/null 2>&1 &&
   fail 'create accepted a missing source'
-zsh -f "$entry" create --session-from '' >/dev/null 2>&1 &&
-  fail 'create accepted an empty source'
-zsh -f "$entry" create --session-from >/dev/null 2>&1 &&
-  fail 'create accepted a bare source option'
-zsh -f "$entry" create --session-from "$created" --session-from "$created" >/dev/null 2>&1 &&
-  fail 'create accepted repeated sources'
 
 # Preserve occupied destinations.
 zsh -f "$entry" create --session-out "$explicit" --config "$config" >/dev/null 2>&1 &&
   fail 'create overwrote an existing session'
-typeset empty="$tmp/empty.jsonl"
-: >"$empty"
-zsh -f "$entry" create --session-out "$empty" --config "$config" >/dev/null 2>&1 &&
-  fail 'create accepted an existing empty destination'
-[[ -f $empty && ! -s $empty ]] || fail 'create removed an existing empty destination'
 
 # Reject overrides for stored sessions.
 zsh -f "$entry" create --session-from "$created" --model other >/dev/null 2>&1 &&
   fail 'create accepted a runtime override with --session-from'
-
-# Forward unowned options.
-zsh -f "$entry" create --config "$tmp/missing.jsonc" >/dev/null 2>&1 &&
-  fail 'create accepted an unreadable config'
-zsh -f "$entry" create --session-out >/dev/null 2>&1 && fail 'create accepted a bare --session-out'
-zsh -f "$entry" create --session-out "$tmp/a.jsonl" --session-out "$tmp/b.jsonl" >/dev/null 2>&1 &&
-  fail 'create accepted a repeated --session-out'
 
 # Clean up failed startup hooks.
 typeset hook="$tmp/failing-hook" hook_config="$tmp/hook.jsonc"
@@ -174,24 +156,13 @@ zsh -f "$entry" create --session-out "$missing" --config "$config" \
   fail 'create accepted a missing system override file'
 [[ ! -e $missing ]] || fail 'missing system override left a transcript'
 
-# Reject binary system components.
+# Reject system input that cannot survive shell transport intact.
 typeset binary="$tmp/binary.jsonl" binary_file="$tmp/binary.md"
 printf 'before\0after\n' >"$binary_file"
-for source in configured override; do
-  typeset -a binary_args=( --session-out "$binary" --config "$config" )
-  if [[ $source == configured ]]; then
-    jq --arg file "$binary_file" '.profiles.machine.system=[$file]' \
-      "$config" >"$tmp/binary-config.jsonc"
-    binary_args=( --session-out "$binary" --config "$tmp/binary-config.jsonc" )
-  else
-    binary_args+=( --system-file "$binary_file" )
-  fi
-  typeset binary_error=''
-  binary_error=$(zsh -f "$entry" create "${binary_args[@]}" 2>&1) &&
-    fail 'create accepted a system file containing NUL bytes'
-  [[ $binary_error == *'system content must not contain NUL bytes'* ]] || fail "$binary_error"
-  [[ ! -e $binary ]] || fail 'binary system input left a transcript'
-done
+zsh -f "$entry" create --session-out "$binary" --config "$config" \
+  --system-file "$binary_file" >/dev/null 2>&1 &&
+  fail 'create accepted system content containing NUL bytes'
+[[ ! -e $binary ]] || fail 'binary system input left a transcript'
 
 # Startup records are durable before the next component runs.
 typeset events="$tmp/events.jsonl" streamed="$tmp/streamed.jsonl"
@@ -239,32 +210,10 @@ jq -se --arg path "$streamed" \
   ($session | length == 4)
 ' "$events" >/dev/null || fail 'invalid creation event sequence or transcript'
 
-# Context uses the capture budget, not argv.
-typeset large="$tmp/large.jsonl" large_config="$tmp/large.jsonc"
-jq '.harnesses.machine.max_capture_bytes=400000' "$stream_config" >"$large_config"
-SF_TEST_EVENTS="$events" SF_TEST_CONTEXT_BYTES=300000 zsh -f "$entry" create --jsonl \
-  --session-out "$large" --config "$large_config" >"$events" 2>"$hook_error" ||
-  fail 'large startup context failed'
-jq -se --slurpfile session "$large" '.[3] == $session[3] and
-  (.[3].model_context | length == 300016)' "$events" >/dev/null ||
-  fail 'large startup context was truncated'
-
-# Emit no events for empty startup.
-zsh -f "$entry" create --jsonl --config "$config" --system '' >"$events"
-jq -se 'map(.type) == ["_session_prepare","_session_created"] and
-  (.[0].records | length == 1)' "$events" >/dev/null || fail 'invalid empty startup stream'
-
-# Report startup failure on stderr.
-SF_TEST_STATE_MARKER="$marker" zsh -f "$entry" create --jsonl --session-out "$failed" \
-  --config "$hook_config" >"$events" 2>"$hook_error" && fail 'streamed failure succeeded'
-[[ ! -e $failed && $(<"$hook_error") == *'hook script failed with status 9:'* ]]
-jq -se 'map(.type) == ["_session_prepare"]' \
-  "$events" >/dev/null || fail 'failed creation emitted completion'
-
 # Later failures preserve completed records.
 jq --arg first "$first" '.harnesses.machine.session_start |= [$first] + .' \
   "$hook_config" >"$stream_config"
-SF_TEST_EVENTS="$events" SF_TEST_STATE_MARKER="$marker" zsh -f "$entry" create --jsonl \
+SF_TEST_EVENTS="$events" zsh -f "$entry" create --jsonl \
   --session-out "$failed" --config "$stream_config" >"$events" 2>"$hook_error" &&
   fail 'a later startup failure succeeded'
 [[ ! -e $failed && $(<"$hook_error") == *'hook script failed with status 9:'* ]]

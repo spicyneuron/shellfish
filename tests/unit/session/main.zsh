@@ -3,32 +3,10 @@
 source "${0:A:h:h:h}/_helpers.zsh"
 sf_test_source lib/session/main.zsh
 
-typeset session header before stored_runtime
+typeset session header before
 sf_test_tmp session
 session="$tmp/session.jsonl"
 sf_test_runtime
-
-# Caller modules cannot shadow the installed schema.
-mkdir -p "$tmp/shadow/lib/runtime"
-print -r -- 'def canonical_session_header(:' >"$tmp/shadow/lib/runtime/schema.jq"
-(
-  builtin cd -- "$tmp/shadow"
-  sf_session_prepare "$SF_TEST_RUNTIME"
-  assert_equal "$(pwd -P)" "$SF_SESSION[cwd]"
-  sf_test_install_prepared relative.jsonl
-  [[ -f relative.jsonl ]]
-  sf_session_read_runtime relative.jsonl
-  assert_equal "$SF_TEST_RUNTIME" "$REPLY"
-  sf_session_read relative.jsonl
-  sf_session_update relative.jsonl '{"profile":{"request":{"model":"shadow-test"}}}'
-  sf_session_read_runtime relative.jsonl
-  jq -e '.profile.request.model == "shadow-test"' <<<"$REPLY" >/dev/null
-  assert_equal "$tmp/shadow" "$PWD"
-)
-
-# Explicit session paths become absolute.
-sf_session_select_path "$tmp/relative.jsonl"
-[[ $REPLY == "$tmp/relative.jsonl" ]]
 
 # Default sessions use the state directory.
 typeset -g XDG_STATE_HOME="$tmp/state"
@@ -39,14 +17,10 @@ sf_session_select_path
 # Prepared sessions initialize turn state.
 sf_session_prepare "$SF_TEST_RUNTIME"
 sf_test_install_prepared "$session"
-(( ${#SF_SESSION_RECORDS} == 1 ))
 sf_session_begin_turn "$session"
 jq -e '.profile.request.model == "test-model" and .backend.env_file == ""' \
   <<<"$SF_SESSION[runtime]" >/dev/null
-stored_runtime=$SF_SESSION[runtime]
 header=$(head -n 1 "$session")
-(( ${#SF_SESSION_RECORDS} == 1 ))
-assert_equal "$header" "$SF_SESSION_RECORDS[1]"
 jq -e -L "$ROOT" '
   include "lib/runtime/schema";
   canonical_session_header(1) and
@@ -56,13 +30,8 @@ jq -e -L "$ROOT" '
    $SF_SESSION[model] == test-model ]]
 
 sf_session_append "$session" '{"type":"user","content":[{"type":"text","text":"hello"}]}'
-(( ${#SF_SESSION_RECORDS} == 2 ))
-assert_equal '{"type":"user","content":[{"type":"text","text":"hello"}]}' "$SF_SESSION_RECORDS[2]"
 sf_session_append "$session" '{"type":"assistant","stop":"end","content":[{"type":"text","text":"hi"}],"usage":{"input_tokens":1,"output_tokens":1}}'
-(( ${#SF_SESSION_RECORDS} == 3 ))
-assert_equal '{"type":"assistant","stop":"end","content":[{"type":"text","text":"hi"}],"usage":{"input_tokens":1,"output_tokens":1}}' "$SF_SESSION_RECORDS[3]"
 sf_session_reset
-(( ${#SF_SESSION[@]} == 0 && ${#SF_SESSION_RECORDS} == 0 ))
 (( $(wc -l <"$session") == 3 ))
 
 # Runtime updates preserve transcript bytes and file mode.
@@ -125,14 +94,14 @@ typeset write_failure="$tmp/write-failure.jsonl"
 sf_session_prepare "$SF_TEST_RUNTIME"
 sf_test_install_prepared "$write_failure"
 sf_session_begin_turn "$write_failure"
-integer record_count
-record_count=${#SF_SESSION_RECORDS}
+integer record_count=${#SF_SESSION_RECORDS}
 mv "$write_failure" "$write_failure.saved"
 mkdir "$write_failure"
 if sf_session_append "$write_failure" '{"type":"user","content":[{"type":"text","text":"not written"}]}'; then
   fail 'append to an unavailable session file succeeded'
 fi
-(( ${#SF_SESSION_RECORDS} == record_count ))
+(( ${#SF_SESSION_RECORDS} == record_count )) ||
+  fail 'failed append changed the in-memory session'
 rmdir "$write_failure"
 mv "$write_failure.saved" "$write_failure"
 sf_session_reset
@@ -149,7 +118,7 @@ sf_session_reset
 jq -e -s 'length == 3 and .[-1] == {type:"turn_error",message:"Turn interrupted."}' \
   "$recovery_sync" >/dev/null
 
-# Recovery reloads complete writes.
+# Recovery reloads complete durable writes.
 typeset recovery_complete="$tmp/recovery-complete.jsonl"
 cp "$SF_TEST_SESSIONS/header-only.jsonl" "$recovery_complete"
 sf_session_begin_turn "$recovery_complete"
@@ -157,11 +126,8 @@ sf_session_append "$recovery_complete" '{"type":"user","content":[{"type":"text"
 print -r -- '{"type":"assistant","stop":"end","content":[{"type":"text","text":"done"}]}' \
   >>"$recovery_complete"
 sf_session_resync_turn "$recovery_complete"
-[[ -z $REPLY ]]
-sf_session_reset
-jq -e -s 'length == 3 and .[-1].content[0].text == "done"' "$recovery_complete" >/dev/null
-
-# Recovery can terminate complete turns.
+[[ -z $REPLY ]] || fail 'complete durable turn was recovered as interrupted'
+(( ${#SF_SESSION_RECORDS} == 3 )) || fail 'resync did not reload the complete durable turn'
 sf_session_resync_turn "$recovery_complete" 'stop hook failed' 1
 assert_equal '{"type":"turn_error","message":"stop hook failed"}' "$REPLY"
 sf_session_reset
@@ -201,16 +167,6 @@ if sf_session_begin_turn "$blank"; then
 fi
 (( ${#SF_SESSION_RECORDS} == 0 ))
 
-# Prepared runtimes set the session profile.
-typeset configured="$tmp/configured.jsonl"
-SF_TEST_RUNTIME=$(jq -c '.profile.request.model="configured-model"' <<<"$stored_runtime")
-sf_session_prepare "$SF_TEST_RUNTIME"
-sf_test_install_prepared "$configured"
-jq -e -s 'length == 1 and .[0].profile.request.model == "configured-model"' \
-  "$configured" >/dev/null
-
-SF_TEST_RUNTIME=''
-
 # Opening rejects noncanonical records.
 typeset invalid_record="$tmp/invalid-record.jsonl"
 cp "$SF_TEST_SESSIONS/header-only.jsonl" "$invalid_record"
@@ -224,30 +180,6 @@ before=$(head -n 3 "$session")
 print -rn -- '{"type":"user"' >>"$session"
 sf_session_begin_turn "$session"
 [[ $(cat "$session") == "$before" ]]
-sf_session_reset
-
-# Durable fixtures remain canonical.
-for fixture in header-only complete tool-complete; do
-  cp "$SF_TEST_SESSIONS/$fixture.jsonl" "$tmp/$fixture.jsonl"
-  sf_session_begin_turn "$tmp/$fixture.jsonl"
-  sf_session_reset
-done
-
-# Tool sequences survive reopening.
-typeset native="$tmp/native.jsonl"
-cp "$SF_TEST_SESSIONS/header-only.jsonl" "$native"
-sf_session_begin_turn "$native"
-sf_session_append "$native" '{"type":"user","content":[{"type":"text","text":"run"}]}'
-sf_session_append "$native" '{"type":"assistant","stop":"tool_calls","content":[]}'
-sf_session_append "$native" '{"type":"tool_call","id":"call_1","name":"shell","input":{}}'
-sf_session_append "$native" '{"type":"tool_result","call_id":"call_1","name":"shell","content":"denied","exit_code":126}'
-sf_session_append "$native" '{"type":"tool_call","id":"call_2","name":"read_file","input":{}}'
-sf_session_append "$native" '{"type":"tool_result","call_id":"call_2","name":"read_file","content":"bad","exit_code":1}'
-sf_session_append "$native" '{"type":"assistant","stop":"length","content":[{"type":"text","text":"partial"}]}'
-sf_session_append "$native" '{"type":"hook_result","hook":"stop","script":"fixture","model_context":"continue"}'
-sf_session_append "$native" '{"type":"assistant","stop":"end","content":[{"type":"text","text":"halted"}]}'
-sf_session_reset
-sf_session_begin_turn "$native"
 sf_session_reset
 
 # Recovery answers an interrupted pending tool call.

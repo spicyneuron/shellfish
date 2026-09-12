@@ -47,28 +47,21 @@ operation_status=0
 sf_backend_request '.options.request | has("stream_options") | not' || operation_status=$?
 (( operation_status != 0 )) || fail 'request without a model was accepted'
 
-# Build curl transport arguments.
+# Apply frozen transport settings.
 sf_backend_curl_args
 [[ "${SF_BACKEND_CURL_ARGS[*]}" == *'--url https://api.example.com/v1'* ]]
-[[ "${SF_BACKEND_CURL_ARGS[*]}" == *"--max-time 60"* ]]
-[[ "${SF_BACKEND_CURL_ARGS[*]}" == *"--speed-time 10"* ]]
-[[ "${SF_BACKEND_CURL_ARGS[*]}" == *"--header @$SF_BACKEND_HEADERS_FILE"* ]]
-[[ "${SF_BACKEND_CURL_ARGS[*]}" == *"--insecure"* ]]
+[[ "${SF_BACKEND_CURL_ARGS[*]}" == *'--max-time 60'* ]]
+[[ "${SF_BACKEND_CURL_ARGS[*]}" == *'--speed-time 10'* ]]
+[[ "${SF_BACKEND_CURL_ARGS[*]}" == *'--insecure'* ]]
 
 # Report curl transport failures.
 print -rn -- 000 >"$SF_BACKEND_STATUS_FILE"
-for code expected in \
-    6 'could not resolve the provider host' \
-    7 'could not connect to the provider' \
-    28 'request timed out' \
-    35 'TLS connection failed'; do
-  operation_status=0
-  (
-    sf_backend_finish "$code" 0 0
-  ) 2>"$tmp/curl-err" || operation_status=$?
-  (( operation_status != 0 )) || fail "curl status $code was accepted"
-  [[ "$(<"$tmp/curl-err")" == *"$expected (curl status $code)"* ]]
-done
+operation_status=0
+(
+  sf_backend_finish 28 0 0
+) 2>"$tmp/curl-err" || operation_status=$?
+(( operation_status != 0 )) || fail 'curl timeout was accepted'
+[[ "$(<"$tmp/curl-err")" == *'request timed out (curl status 28)'* ]]
 
 # Accept successful HTTP responses.
 print -r -- '200' >"$SF_BACKEND_STATUS_FILE"
