@@ -517,16 +517,15 @@ sf_tui_markdown_highlight() {
 
 sf_tui_diff_highlight() {
   local source=$1 line kind
-  integer base=${2:-0} length=${#source} index=1 end
-  while (( index <= length )); do
-    end=$index
-    while (( end <= length )) && [[ ${source[end]} != $'\n' ]]; do (( ++end )); done
-    line=${source[index,end - 1]}
+  local -a lines=( "${(@ps:\n:)source}" )
+  integer base=${2:-0} start=$base
+  [[ -n $lines[-1] ]] || lines[-1]=()
+  for line in "${lines[@]}"; do
     kind=''
     if [[ $line == '+'* && $line != '+++'* ]]; then kind=added
     elif [[ $line == '-'* && $line != '---'* ]]; then kind=removed
     fi
-    [[ -z $kind ]] || sf_tui_highlight_span $(( base + index - 1 )) $(( base + end - 1 )) $kind
-    index=$(( end <= length ? end + 1 : length + 1 ))
+    [[ -z $kind ]] || sf_tui_highlight_span $start $(( start + ${#line} )) $kind
+    (( start += ${#line} + 1 ))
   done
 }

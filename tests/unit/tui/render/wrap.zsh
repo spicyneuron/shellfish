@@ -96,3 +96,8 @@ assert_equal 0 "${#SF_WRAP_ROWS}"
 sf_tui_wrap 80 $'one\n' ''
 rows; assert_equal one "$REPLY"
 consumed; assert_equal 4 "$REPLY"
+
+# Ordered overlapping spans advance with wrapped source without losing a
+# shorter span nested inside one that continues onto the next row.
+sf_tui_wrap 3 abcdef '' 0 6 base 0 2 early 3 6 late
+spans; assert_equal '0 3 base 0 2 early|0 3 base 0 3 late' "$REPLY"

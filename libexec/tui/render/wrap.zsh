@@ -15,7 +15,8 @@ typeset -ga SF_WRAP_ROWS=() SF_WRAP_SPANS=() SF_WRAP_CONSUMED=()
 # break at a space when one has content before it, otherwise mid-character-run;
 # a break space is consumed and occupies no display offset. A newline ends its
 # row and is consumed with it. Input spans are zero-based half-open ranges over
-# TEXT; output spans are zero-based over the row, including PREFIX.
+# TEXT and ordered by start; output spans are zero-based over the row, including
+# PREFIX.
 #
 # SF_WRAP_CONSUMED[row] is how much of TEXT that row accounts for, so a caller
 # committing a row prefix knows exactly what to drop.
@@ -33,7 +34,7 @@ sf_tui_wrap() {
   (( ${#spans} % 3 == 0 && columns > 0 )) || return 1
   local character
   integer index total width column break_display break_source
-  integer prefix_width prefix_length row_start
+  integer prefix_width prefix_length row_start span_head=1
   # Display characters of the row being built, and the source index each came
   # from. A tab emits several display characters for one source character;
   # prefix characters have no source and carry 0.
@@ -59,8 +60,12 @@ sf_tui_wrap() {
       sf_tui_wrap_start
       continue
     fi
-    sf_tui_cell_width "$character" $column
-    width=$REPLY
+    if [[ $character == [[:ascii:]] && $character != $'\t' ]]; then
+      width=1
+    else
+      sf_tui_cell_width "$character" $column
+      width=$REPLY
+    fi
     if (( column + width > columns && ${#display} > prefix_length )); then
       if [[ $character == ' ' ]]; then
         # The space that overflows is the break: absorb it rather than carrying
@@ -114,11 +119,18 @@ sf_tui_wrap_start() {
 
 # Closes the row held in $display, projecting every span that touches it.
 sf_tui_wrap_emit() {
-  integer consumed=$1 span first last position
+  integer consumed=$1 span first last position first_source last_source
   local -a projected=()
   SF_WRAP_ROWS+=( "${(j::)display}" )
   SF_WRAP_CONSUMED+=( $consumed )
-  for (( span = 1; span <= ${#spans}; span += 3 )); do
+  first_source=${source[prefix_length + 1]:-0}
+  last_source=${source[-1]:-0}
+  while (( span_head <= ${#spans} && spans[span_head + 1] < first_source )); do
+    (( span_head += 3 ))
+  done
+  for (( span = span_head; span <= ${#spans}; span += 3 )); do
+    (( spans[span] < last_source )) || break
+    (( spans[span + 1] >= first_source )) || continue
     first=0
     last=0
     # Source indexes ascend across the row, so the scan can stop at the first
