@@ -16,7 +16,8 @@ sf_session_fail() {
 }
 
 sf_session_directory() {
-  local root cwd scope
+  local LC_ALL=C root cwd scope
+  setopt local_options extended_glob
   if [[ -n ${XDG_STATE_HOME-} ]]; then
     root="$XDG_STATE_HOME/shellfish/sessions"
   elif [[ -n ${HOME-} ]]; then
@@ -29,11 +30,7 @@ sf_session_directory() {
     sf_session_fail 'cannot resolve the working directory'
     return
   }
-  scope=$(jq -rn --arg cwd "$cwd" '$cwd | gsub("[^A-Za-z0-9]+"; "_")') &&
-      [[ -n $scope ]] || {
-    sf_session_fail 'cannot derive the session scope'
-    return
-  }
+  scope=${cwd//[^A-Za-z0-9]##/_}
   REPLY="$root/$scope"
 }
 
