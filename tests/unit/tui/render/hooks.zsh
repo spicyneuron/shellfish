@@ -55,7 +55,7 @@ assert_equal hook_activity "${(j:,:)SF_PRESENT_KIND}"
 sf_tui_event hook_activity user_prompt_submit prompt Checking
 assert_equal 1 "${#SF_PRESENT_KIND}"
 view 79 20
-assert_equal $'Checking\n⠃' "$REPLY"
+assert_equal $'ℹ Checking\n⠃' "$REPLY"
 assert_equal 0 "$SF_PRESENT_SAFE_ROWS"
 [[ "${(j: :)SF_PRESENT_VIEWPORT_HIGHLIGHTS}" == *'muted,bold'* ]] ||
   fail 'hook activity label lost its emphasis'
