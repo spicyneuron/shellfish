@@ -46,8 +46,12 @@ sf_tui_reset
 sf_tui_event user hi
 view 12 20
 assert_equal $'─ user ─ 1 ─\n\nhi' "$REPLY"
+sf_tui_reset
+sf_tui_event user hi
 view 10 20
 assert_equal $'─ user ───\n\nhi' "$REPLY"
+sf_tui_reset
+sf_tui_event user hi
 view 8 20
 assert_equal $'─ user ─\n\nhi' "$REPLY"
 
@@ -67,11 +71,15 @@ assert_equal 0 "$SF_PRESENT_SECTION_ID"
 sf_tui_event user visible
 assert_equal 1 "$SF_PRESENT_SECTION[1]"
 
-# Wrapping follows the width repaint gives, so a resize only rewraps.
+# Formatting uses the current width, then settled rows keep that width.
 sf_tui_reset
 sf_tui_event user 'alpha beta gamma'
 view 12 20
 assert_equal $'─ user ─ 1 ─\n\nalpha beta\ngamma' "$REPLY"
+view 8 20
+assert_equal $'─ user ─ 1 ─\n\nalpha beta\ngamma' "$REPLY"
+sf_tui_reset
+sf_tui_event user 'alpha beta gamma'
 view 8 20
 assert_equal $'─ user ─\n\nalpha\nbeta\ngamma' "$REPLY"
 
@@ -98,13 +106,11 @@ sf_tui_event user $'one\ntwo\nthree'
 sf_tui_event user $'four\nfive\nsix'
 sf_tui_transcript 79 4
 typeset staged_text=$SF_PRESENT_SAFE_TEXT staged_rows=$SF_PRESENT_SAFE_ROWS
-typeset staged_consume="${(j: :)SF_PRESENT_SAFE_CONSUME}"
 (( staged_rows )) || fail 'the full pass staged nothing to compare'
 [[ -n $SF_PRESENT_VIEWPORT_TEXT ]] || fail 'the full pass drew no viewport to skip'
 sf_tui_transcript 79 4 stage
 assert_equal "$staged_text" "$SF_PRESENT_SAFE_TEXT"
 assert_equal "$staged_rows" "$SF_PRESENT_SAFE_ROWS"
-assert_equal "$staged_consume" "${(j: :)SF_PRESENT_SAFE_CONSUME}"
 assert_equal '' "$SF_PRESENT_VIEWPORT_TEXT"
 
 # With nothing to commit there is no repaint behind the staging pass, so it
@@ -115,6 +121,31 @@ assert_equal 0 "$SF_PRESENT_SAFE_ROWS"
 [[ -n $drawn ]] || fail 'the full pass drew no viewport to compare'
 sf_tui_transcript 79 1 stage
 assert_equal "$drawn" "$SF_PRESENT_VIEWPORT_TEXT"
+
+# A closed record crosses the formatter boundary once. Draining its settled
+# rows in small blocks never returns to the formatter.
+sf_tui_reset
+typeset -gi format_calls=0
+typeset saved_format_message=$functions[sf_tui_format_message] tall_message=''
+integer line
+sf_tui_format_message() {
+  (( ++format_calls ))
+  sf_tui_format_message_saved "$@"
+}
+functions[sf_tui_format_message_saved]=$saved_format_message
+for (( line = 1; line <= 40; line++ )); do
+  tall_message+="line $line"$'\n'
+done
+sf_tui_event user "$tall_message"
+while true; do
+  sf_tui_transcript 12 5 stage || fail 'draining settled rows failed'
+  (( SF_PRESENT_SAFE_ROWS )) || break
+  sf_tui_rows_consume $SF_PRESENT_SAFE_ROWS || fail 'consuming settled rows failed'
+done
+assert_equal 1 "$format_calls"
+assert_equal 0 "${#SF_PRESENT_KIND}"
+functions[sf_tui_format_message]=$saved_format_message
+unfunction sf_tui_format_message_saved
 
 # Spans land on the text they claim, after the rows move into PREDISPLAY.
 sf_tui_reset
@@ -133,20 +164,21 @@ assert_equal 1 "$sliced[-1]"
 
 SF_PRESENT_STYLE=()
 
-# Staging consumes nothing. Only terminal finish drops committed content, so a
-# resize between the two still rewraps all of it.
+# Formatting advances settled source once. Staging leaves the settled-row cursor
+# unchanged, and a resize affects only the live tail.
 sf_tui_reset
 sf_tui_terminal_reset
 sf_tui_event assistant_start
 sf_tui_event assistant_message_delta 0 'alpha beta gamma'
 sf_tui_transcript 8 20
 assert_equal 4 "$SF_PRESENT_SAFE_ROWS"
-assert_equal '0:11:1:2' "$SF_PRESENT_SAFE_CONSUME[1]"
+assert_equal gamma "$SF_PRESENT_TEXT[1]"
 sf_tui_terminal_stage
-assert_equal 'alpha beta gamma' "$SF_PRESENT_TEXT[1]"
+assert_equal 1 "$SF_PRESENT_ROW_HEAD"
 sf_tui_transcript 5 20
-assert_equal 'alpha beta gamma' "$SF_PRESENT_TEXT[1]"
+assert_equal gamma "$SF_PRESENT_TEXT[1]"
 sf_tui_terminal_finish
+assert_equal 1 "$SF_PRESENT_ROW_HEAD"
 assert_equal gamma "$SF_PRESENT_TEXT[1]"
 sf_tui_terminal_restore
 sf_tui_transcript 5 20
@@ -244,6 +276,8 @@ sf_tui_event system $'one\ntwo'
 view 79 20
 [[ $REPLY == $'─ system '*$'\n\n… ~2 tokens' ]] || fail "collapsed system: $REPLY"
 assert_equal 3 "$SF_PRESENT_SAFE_ROWS"
+sf_tui_reset
+sf_tui_event system $'one\ntwo'
 view 8 20
 for row in "${(@f)REPLY}"; do
   (( ${#row} <= 8 )) || fail "narrow system row overflowed: $row"
@@ -290,6 +324,11 @@ sf_tui_event assistant_message_delta 0 $'answer\n'
 view 20 20
 [[ $REPLY == *$'\n\nanswer\n⠃' ]] || fail "newline-closed assistant row: $REPLY"
 assert_equal 3 "$SF_PRESENT_SAFE_ROWS"
+sf_tui_event assistant_end
+sf_tui_event user next
+view 20 20
+[[ $REPLY == *$'─ agent '*$' 1 ─\n\nanswer\n\n─ user '*$' 2 ─\n\nnext' ]] ||
+  fail "settled assistant role retracted: $REPLY"
 
 # Adjacent blocks of the same visible kind remain separate, and visible or
 # opaque kind transitions settle the preceding source block in order.

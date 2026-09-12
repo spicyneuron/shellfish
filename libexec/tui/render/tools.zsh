@@ -4,10 +4,8 @@ setopt no_aliases no_bg_nice no_multios pipe_fail
 # A call is final when appended. Its result stays live through permission and
 # execution and holds the call ID the durable record must match.
 #
-# Call data: name, summary, content format, whether the heading committed, and
-# preview rows spent. Result data: call ID, exit status, content format, full
-# flag, sandbox note, whether the rail committed, whole-content token estimate,
-# and preview rows spent.
+# Call data: name, summary, and content format. Result data: call ID, exit
+# status, content format, full flag, sandbox note, and whole-content estimate.
 
 sf_tui_tool_pending() {
   integer index=${#SF_PRESENT_KIND}
@@ -28,11 +26,11 @@ sf_tui_tool_call() {
   sf_tui_formatter_append tool_call || return 1
   index=$REPLY
   SF_PRESENT_TEXT[index]=$content
-  sf_tui_formatter_set_data $index "$name" "$summary" "$format" '' 0 || return 1
+  sf_tui_formatter_set_data $index "$name" "$summary" "$format" || return 1
   sf_tui_formatter_role $index agent || return 1
   sf_tui_formatter_append tool_result live || return 1
   index=$REPLY
-  sf_tui_formatter_set_data $index "$id" '' plain '' '' '' 0 0 || return 1
+  sf_tui_formatter_set_data $index "$id" '' plain '' '' 0 || return 1
 }
 
 sf_tui_tool_result() {
@@ -50,7 +48,7 @@ sf_tui_tool_result() {
   sf_tui_format_trim "$REPLY"
   sf_tui_token_count ${#REPLY}
   sf_tui_formatter_set_data $index "$id" "$code" "$format" "$full" "$sandbox" \
-    '' "$REPLY" 0 || return 1
+    "$REPLY" || return 1
   sf_tui_formatter_settle || return 1
   sf_tui_activity_resume
 }
@@ -59,7 +57,7 @@ sf_tui_tool_permission() {
   integer index=${#SF_PRESENT_KIND}
   sf_tui_tool_pending || return 0
   sf_tui_formatter_data $index 1 || return 1
-  sf_tui_formatter_set_data $index "$REPLY" permission plain '' '' '' 0 0
+  sf_tui_formatter_set_data $index "$REPLY" permission plain '' '' 0
 }
 
 sf_tui_tool_permission_clear() {
@@ -70,7 +68,7 @@ sf_tui_tool_permission_clear() {
   [[ $REPLY == permission ]] || return 0
   sf_tui_formatter_data $index 1 || return 1
   id=$REPLY
-  sf_tui_formatter_set_data $index "$id" '' plain '' '' '' 0 0
+  sf_tui_formatter_set_data $index "$id" '' plain '' '' 0
 }
 
 # A turn error closes a result where execution stopped. Normal cancellation
@@ -160,7 +158,7 @@ sf_tui_format_tool() {
   integer index=$1 columns=$2 hidden=0 live
   local kind=$SF_PRESENT_KIND[index] body
   local first second format full sandbox preview configured notes tail overlay
-  local committed total
+  local total
 
   sf_tui_format_start
   live=$(( SF_PRESENT_LIVE == index ))
@@ -175,18 +173,12 @@ sf_tui_format_tool() {
   format=$REPLY
 
   if [[ $kind == tool_call ]]; then
-    sf_tui_formatter_data $index 4 || return 1
-    committed=$REPLY
-    if [[ $committed != 1 ]]; then
-      sf_tui_format_rule $index $columns
-      sf_tui_format_head $columns "⛭ $first${second:+ · $second}" tool_call 2 \
-        $(( 2 + ${#first} )) || return 1
-    fi
+    sf_tui_format_rule $index $columns
+    sf_tui_format_head $columns "⛭ $first${second:+ · $second}" tool_call 2 \
+      $(( 2 + ${#first} )) || return 1
     SF_FORMAT_LEADING=${#SF_FORMAT_ROWS}
     configured=$SF_PRESENT_PREVIEW_TOOL_CALL
-    sf_tui_formatter_data $index 5 || return 1
-    sf_tui_format_preview "$configured" "$REPLY"
-    preview=$REPLY
+    preview=$configured
     if [[ -n $body && $configured != 0 ]]; then
       sf_tui_format_tool_body $columns "$body" '│ ' '' tool_call "$format" "$preview" ||
         return 1
@@ -207,14 +199,10 @@ sf_tui_format_tool() {
   sf_tui_formatter_data $index 5 || return 1
   sandbox=$REPLY
   sf_tui_formatter_data $index 6 || return 1
-  committed=$REPLY
-  sf_tui_formatter_data $index 7 || return 1
   total=$REPLY
-  sf_tui_formatter_data $index 8 || return 1
   configured=$SF_PRESENT_PREVIEW_TOOL_RESULT
   [[ $full != full ]] || configured=full
-  sf_tui_format_preview "$configured" "$REPLY"
-  preview=$REPLY
+  preview=$configured
 
   if (( live )) && [[ $second == permission ]]; then
     return 0
@@ -236,10 +224,7 @@ sf_tui_format_tool() {
     fi
     sf_tui_format_styled $columns "$tail" tool_result "$overlay" || return 1
   elif [[ -n $body ]]; then
-    # The rail opens the result once. After a partial commit took it, remaining
-    # rows continue under plain indentation.
     tail='╰'
-    [[ $committed != 1 ]] || tail=''
     sf_tui_format_tool_body $columns "$body" '  ' "$tail" tool_result \
       "$format" "$preview" || return 1
     hidden=$REPLY
@@ -258,14 +243,7 @@ sf_tui_format_tool() {
   else
     sf_tui_tool_notes "$second" "$sandbox"
     notes=$REPLY
-    # A drained result already opened its rail, so its notes close it under the
-    # indentation the committed rows used.
-    if [[ $committed == 1 ]]; then
-      [[ -z $notes ]] || sf_tui_format_styled $columns "  $notes" tool_result ||
-        return 1
-    else
-      sf_tui_format_styled $columns "╰${notes:+ $notes}" tool_result || return 1
-    fi
+    sf_tui_format_styled $columns "╰${notes:+ $notes}" tool_result || return 1
   fi
   (( live )) || SF_FORMAT_SAFE=${#SF_FORMAT_ROWS}
 }

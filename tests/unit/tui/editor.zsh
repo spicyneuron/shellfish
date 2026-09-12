@@ -48,7 +48,7 @@ assert_equal draft "$SF_PRESENT_DRAFT"
 
 sf_tui_line_finish
 [[ $PREDISPLAY == *$'─ user '*$' 1 ─\n\nhello' ]] ||
-  fail "epoch did not commit the user formatter: $PREDISPLAY"
+  fail "epoch did not commit the user rows: $PREDISPLAY"
 assert_equal '' "$POSTDISPLAY"
 assert_equal 0 "$SF_PRESENT_PENDING_ROWS"
 assert_equal 1 "$SF_PRESENT_SYNC_ACTIVE"
@@ -214,8 +214,8 @@ assert_equal 1 "$ZLE_COMMIT_SYNC"
 [[ ${(j: :)ZLE_CALLS} != *accept-line* ]] ||
   fail 'descriptor heartbeat left the active editor'
 
-# Neither commit mechanism consumes formatter content when ZLE rejects the
-# operation. The stopped view remains available without retrying that content.
+# Neither commit mechanism consumes settled rows when ZLE rejects the operation.
+# The stopped view remains available without retrying formatter work.
 sf_tui_reset
 sf_tui_terminal_reset
 sf_tui_event user retained
@@ -224,7 +224,7 @@ ZLE_FAIL_INVALIDATE=1
 sf_tui_heartbeat_tick
 ZLE_FAIL_INVALIDATE=0
 assert_equal stopped "$SF_PRESENT_STATE"
-assert_equal retained "$SF_PRESENT_TEXT[1]"
+[[ ${(F)SF_PRESENT_ROW_TEXT} == *retained* ]] || fail 'failed descriptor commit lost settled rows'
 
 sf_tui_reset
 sf_tui_terminal_reset
@@ -235,7 +235,7 @@ ZLE_FAIL_ACCEPT=1
 sf_tui_line_init
 ZLE_FAIL_ACCEPT=0
 assert_equal stopped "$SF_PRESENT_STATE"
-assert_equal retained "$SF_PRESENT_TEXT[1]"
+[[ ${(F)SF_PRESENT_ROW_TEXT} == *retained* ]] || fail 'failed epoch commit lost settled rows'
 SF_PRESENT_STATE=idle
 SF_PRESENT_ERROR=''
 

@@ -80,7 +80,7 @@ sf_tui_hook_append() {
   sf_tui_formatter_append "$kind" || return 1
   index=$REPLY
   SF_PRESENT_TEXT[index]=$text
-  sf_tui_formatter_set_data $index "$script" "$meta" 0 0 ${#text} '' 0
+  sf_tui_formatter_set_data $index "$script" "$meta" ${#text}
 }
 
 sf_tui_error_append() {
@@ -95,7 +95,7 @@ sf_tui_error_append() {
   sf_tui_formatter_append error || return 1
   index=$REPLY
   SF_PRESENT_TEXT[index]=$detail
-  sf_tui_formatter_set_data $index "$heading" 0
+  sf_tui_formatter_set_data $index "$heading"
   # Errors close the current role without drawing a role rule of their own.
   SF_PRESENT_LAST_ROLE=error
 }
@@ -103,8 +103,7 @@ sf_tui_error_append() {
 sf_tui_format_hook() {
   integer index=$1 columns=$2 visible hidden=0
   local kind=$SF_PRESENT_KIND[index] body=$SF_PRESENT_TEXT[index]
-  local first second head preview=full configured=full clamp committed total
-  local state continuation
+  local first second head preview=full configured=full clamp total
 
   sf_tui_format_start
 
@@ -115,12 +114,12 @@ sf_tui_format_hook() {
 
   case $kind in
     activity)
-      (( index == 1 && ! SF_PRESENT_PREFIX_VISIBLE )) || sf_tui_format_blank
+      sf_tui_format_at_start || sf_tui_format_blank
       sf_tui_format_styled $columns "$SF_PRESENT_ACTIVITY" activity || return 1
       return
       ;;
     hook_activity)
-      (( index == 1 && ! SF_PRESENT_PREFIX_VISIBLE )) || sf_tui_format_blank
+      sf_tui_format_at_start || sf_tui_format_blank
       sf_tui_format_head $columns "$body" hook_activity 0 ${#body} || return 1
       sf_tui_format_styled $columns "$SF_PRESENT_ACTIVITY" hook_activity || return 1
       return
@@ -136,47 +135,30 @@ sf_tui_format_hook() {
   sf_tui_format_trim "$body"
   body=$REPLY
   if [[ $kind == (hook_model_context|hook_user_context) ]]; then
-    sf_tui_formatter_data $index 3 || return 1
-    committed=$REPLY
-    sf_tui_formatter_data $index 4 || return 1
     # Model context shares the context preview with system records. User
     # context is the script talking to the user, so it is shown in full.
     if [[ $kind == hook_model_context ]]; then
       configured=$SF_PRESENT_PREVIEW_CONTEXT
-      sf_tui_format_preview "$configured" "$REPLY"
-      preview=$REPLY
+      preview=$configured
     fi
-    sf_tui_formatter_data $index 5 || return 1
+    sf_tui_formatter_data $index 3 || return 1
     total=$REPLY
-  else
-    # An error keeps its committed flag in field 2.
-    committed=$second
   fi
-  if [[ $committed != 1 ]]; then
-    (( index == 1 && ! SF_PRESENT_PREFIX_VISIBLE )) || sf_tui_format_blank
-  fi
-  # A configured zero preview collapses the estimate into the heading. A budget
-  # merely spent by earlier commits keeps the ordinary clamp below it.
+  sf_tui_format_at_start || sf_tui_format_blank
   if [[ $configured == 0 && -n $body ]]; then
     sf_tui_token_count "$total"
     clamp=" · ~$REPLY tokens"
-    if [[ $committed != 1 ]]; then
-      sf_tui_format_head $columns "$head$clamp" "$kind" 2 \
-        $(( 2 + ${#first} )) ${#head} || return 1
-    fi
+    sf_tui_format_head $columns "$head$clamp" "$kind" 2 \
+      $(( 2 + ${#first} )) ${#head} || return 1
     body=''
-  elif [[ $committed != 1 ]]; then
+  else
     sf_tui_format_head $columns "$head" "$kind" 2 $(( 2 + ${#first} )) || return 1
   fi
   SF_FORMAT_LEADING=${#SF_FORMAT_ROWS}
   if [[ -n $body ]]; then
     SF_PRESENT_HIGHLIGHT_SPANS=()
     if [[ $kind == hook_model_context ]]; then
-      sf_tui_formatter_data $index 6 || return 1
-      state=$REPLY
-      sf_tui_formatter_data $index 7 || return 1
-      continuation=$REPLY
-      sf_tui_markdown_highlight "$body" 0 "$state" "${continuation:-0}"
+      sf_tui_markdown_highlight "$body"
     fi
     sf_tui_wrap $columns "$body" '  ' "${(@)SF_PRESENT_HIGHLIGHT_SPANS}" || return 1
     visible=${#SF_WRAP_ROWS}

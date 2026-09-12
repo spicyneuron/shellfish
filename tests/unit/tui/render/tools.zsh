@@ -50,9 +50,9 @@ assert_equal 4 "$SF_PRESENT_SAFE_ROWS"
 if sf_tui_event tool_result wrong 0 result plain; then
   fail 'a result settled the wrong pending call'
 fi
-assert_equal 2 "$SF_PRESENT_LIVE"
+assert_equal 1 "$SF_PRESENT_LIVE"
 sf_tui_event tool_result call_1 1 $'failed\ndetail' plain '' sandbox_denial
-assert_equal 'tool_call,tool_result,activity' "${(j:,:)SF_PRESENT_KIND}"
+assert_equal 'tool_result,activity' "${(j:,:)SF_PRESENT_KIND}"
 view
 assert_equal $'─ agent ──────────────────────────────────────────────────────────────────── 1 ─\n\n⛭ shell · build · unsandboxed\n│ make test\n╰ failed\n  detail\n  exit 1 · sandbox denial detected\n\n⠃' "$REPLY"
 assert_equal 7 "$SF_PRESENT_SAFE_ROWS"
@@ -72,7 +72,7 @@ view
 assert_tail $'⛭ shell\n│ pwd\n╰ ⠃'
 sf_tui_event tool_result permission 126 'sandbox bypass denied' plain
 sf_tui_event hook_result post post_tool_use '' 'after denial'
-assert_equal 'tool_call,tool_result,hook_user_context,activity' \
+assert_equal 'tool_result,hook_user_context,activity' \
   "${(j:,:)SF_PRESENT_KIND}"
 view
 [[ $REPLY == *$'╰ sandbox bypass denied\n  exit 126\n\nℹ post · post_tool_use\n  after denial\n\n⠃' ]] ||
@@ -196,5 +196,5 @@ sf_tui_terminal_finish || fail 'committing a spent preview failed'
   fail "spent preview commit: $PREDISPLAY"
 sf_tui_terminal_restore
 view
-assert_equal $'  … ~5 tokens · exit 0' "$REPLY"
+assert_equal $'  … ~5 tokens · exit\n0' "$REPLY"
 SF_PRESENT_PREVIEW_TOOL_RESULT=full

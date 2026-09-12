@@ -12,17 +12,22 @@ typeset -g SF_PRESENT_ERROR=''
 typeset -g SF_PRESENT_RUNTIME='null'
 typeset -g SF_PRESENT_IDENTITY='' SF_PRESENT_FOOTER=''
 
-# One ordered list of formatters awaiting commitment. At most the tail is live;
-# every earlier entry is final and can only be dropped once committed. KIND
-# selects the owning formatter and TEXT is the logical content it has left to
-# render, which a successful commit consumes. DATA is whatever else that formatter
-# needs, NUL-joined and opaque here.
+# One ordered list of formatter inputs. At most the tail is live; every earlier
+# entry is final and leaves this list after producing rows. KIND selects the
+# formatter, TEXT is source not yet settled into rows, and DATA is its private
+# state, NUL-joined and opaque here.
 typeset -ga SF_PRESENT_KIND=() SF_PRESENT_TEXT=() SF_PRESENT_DATA=()
 typeset -gi SF_PRESENT_LIVE=0 SF_PRESENT_WORK_ACTIVE=0
+# Wrapped rows that have left their formatter but not yet reached terminal
+# scrollback. HEAD advances through them without moving the remaining rows.
+typeset -ga SF_PRESENT_ROW_TEXT=() SF_PRESENT_ROW_SPANS=()
+typeset -ga SF_PRESENT_ROW_READY=()
+typeset -gi SF_PRESENT_ROW_HEAD=1
 # Leading role chrome belongs to an entry rather than to a formatter of its own.
 # ROLE is the role the entry opened, SECTION the number it took, and PRIOR the
 # role in force beforehand, which retraction restores.
 typeset -ga SF_PRESENT_ROLE=() SF_PRESENT_SECTION=() SF_PRESENT_PRIOR=()
+typeset -ga SF_PRESENT_EMITTED=()
 typeset -g SF_PRESENT_LAST_ROLE=''
 typeset -gi SF_PRESENT_SECTION_ID=0
 typeset -g SF_PRESENT_ASSISTANT_INDEX=''
@@ -40,6 +45,7 @@ sf_tui_formatter_append() {
   SF_PRESENT_ROLE+=( '' )
   SF_PRESENT_SECTION+=( '' )
   SF_PRESENT_PRIOR+=( '' )
+  SF_PRESENT_EMITTED+=( 0 )
   REPLY=${#SF_PRESENT_KIND}
   [[ $mode == final ]] || SF_PRESENT_LIVE=$REPLY
 }
@@ -74,6 +80,7 @@ sf_tui_formatter_settle() {
 sf_tui_formatter_retract() {
   integer index=${#SF_PRESENT_KIND}
   (( index && SF_PRESENT_LIVE == index )) || return 1
+  (( ! SF_PRESENT_EMITTED[index] )) || return 1
   if [[ -n $SF_PRESENT_ROLE[index] ]]; then
     [[ -z $SF_PRESENT_SECTION[index] ]] || (( --SF_PRESENT_SECTION_ID ))
     SF_PRESENT_LAST_ROLE=$SF_PRESENT_PRIOR[index]
@@ -82,7 +89,7 @@ sf_tui_formatter_retract() {
   sf_tui_formatter_keep 1 $(( index - 1 ))
 }
 
-# Drops a committed prefix. The live tail is never part of it.
+# Drops a formatted prefix. The live tail is never part of it.
 sf_tui_formatter_drop() {
   integer count=$1 total=${#SF_PRESENT_KIND}
   (( count >= 0 && count <= total )) || return 1
@@ -92,22 +99,15 @@ sf_tui_formatter_drop() {
   (( ! SF_PRESENT_LIVE )) || (( SF_PRESENT_LIVE -= count ))
 }
 
-# Applies one formatter-local commit to the head of the list. Committing every
-# row drops the entry, otherwise it keeps the content and metadata its
-# uncommitted suffix needs.
-sf_tui_formatter_consume() {
-  integer whole=$1 source=$2 leading=$3 body_rows=$4
-  integer body_source committed_field spent_field
-  local kind state continuation record trimmed segment
+# Advances the live formatter past source that has become settled rows. The
+# rows themselves are retained separately until the terminal commits them.
+sf_tui_formatter_advance() {
+  integer source=$1 leading=$2 body_rows=$3
+  local kind state continuation record
   (( ${#SF_PRESENT_KIND} )) || return 1
-  if (( whole )); then
-    sf_tui_formatter_drop 1
-    return
-  fi
   kind=$SF_PRESENT_KIND[1]
-  [[ $kind == (message|reasoning|hook_model_context|hook_user_context|error|tool_call|tool_result) ]] ||
-    return 1
-  # A scan continuation measures the prefix the commit took, not what is left.
+  [[ $kind == (message|reasoning) ]] || return 1
+  # A scan continuation measures the prefix that settled, not what is left.
   record=$SF_PRESENT_TEXT[1]
   (( source >= 0 && source <= ${#record} )) || return 1
   (( ! source )) || SF_PRESENT_TEXT[1]=${record[source + 1,-1]}
@@ -116,65 +116,20 @@ sf_tui_formatter_consume() {
     SF_PRESENT_SECTION[1]=''
     SF_PRESENT_PRIOR[1]=''
   }
-  case $kind in
-    message|reasoning)
-      # Reset the frontier and spans with the prefix they covered, but carry the
-      # state that prefix reached into the base: a resize rescans from zero.
-      sf_tui_formatter_data 1 3 || return 1
-      state=$REPLY
-      sf_tui_formatter_data 1 6 || return 1
-      continuation=$REPLY
-      sf_tui_formatter_set_field 1 2 0 || return 1
-      sf_tui_formatter_set_field 1 4 '' || return 1
-      sf_tui_formatter_set_field 1 8 "$state" || return 1
-      sf_tui_formatter_set_field 1 9 "$continuation" || return 1
-      (( ! leading )) || sf_tui_formatter_set_field 1 5 1 || return 1
-      [[ $kind == reasoning ]] || return 0
-      sf_tui_formatter_data 1 11 || return 1
-      sf_tui_formatter_set_field 1 11 $(( REPLY + body_rows ))
-      ;;
-    hook_model_context|hook_user_context)
-      # Complete records carry no scan cache, so only the state the committed
-      # prefix reached survives into the suffix.
-      if [[ $kind == hook_model_context ]]; then
-        sf_tui_formatter_data 1 6 || return 1
-        state=$REPLY
-        sf_tui_formatter_data 1 7 || return 1
-        continuation=$REPLY
-        # Trimmed blank lines are consumed by the rows either side of the body,
-        # so the prefix is measured against the trimmed body.
-        sf_tui_format_trim "$record"
-        trimmed=$REPLY
-        body_source=$(( source - SF_FORMAT_TRIM_LEADING ))
-        (( body_source <= ${#trimmed} )) || body_source=${#trimmed}
-        if (( body_source > 0 )); then
-          segment=${trimmed[1,body_source]}
-          SF_PRESENT_HIGHLIGHT_SPANS=()
-          sf_tui_markdown_highlight "$segment" 0 "$state" "${continuation:-0}"
-          state=$REPLY
-          continuation=0
-          [[ $segment[-1] == $'\n' ]] || continuation=1
-          sf_tui_formatter_set_field 1 6 "$state" || return 1
-          sf_tui_formatter_set_field 1 7 "$continuation" || return 1
-        fi
-      fi
-      (( ! leading )) || sf_tui_formatter_set_field 1 3 1 || return 1
-      sf_tui_formatter_data 1 4 || return 1
-      sf_tui_formatter_set_field 1 4 $(( REPLY + body_rows ))
-      ;;
-    error)
-      (( ! leading )) || sf_tui_formatter_set_field 1 2 1
-      ;;
-    tool_call|tool_result)
-      # A commit always takes the heading or rail with it, so what remains
-      # continues under plain indentation.
-      committed_field=6 spent_field=8
-      [[ $kind == tool_result ]] || { committed_field=4; spent_field=5; }
-      sf_tui_formatter_data 1 $spent_field || return 1
-      sf_tui_formatter_set_field 1 $spent_field $(( REPLY + body_rows )) || return 1
-      sf_tui_formatter_set_field 1 $committed_field 1
-      ;;
-  esac
+  # Reset the frontier and spans with the prefix they covered, but carry the
+  # state that prefix reached into the base: a resize rescans from zero.
+  sf_tui_formatter_data 1 3 || return 1
+  state=$REPLY
+  sf_tui_formatter_data 1 6 || return 1
+  continuation=$REPLY
+  sf_tui_formatter_set_field 1 2 0 || return 1
+  sf_tui_formatter_set_field 1 4 '' || return 1
+  sf_tui_formatter_set_field 1 8 "$state" || return 1
+  sf_tui_formatter_set_field 1 9 "$continuation" || return 1
+  (( ! leading )) || sf_tui_formatter_set_field 1 5 1 || return 1
+  [[ $kind == reasoning ]] || return 0
+  sf_tui_formatter_data 1 11 || return 1
+  sf_tui_formatter_set_field 1 11 $(( REPLY + body_rows ))
 }
 
 # Private to this file's list operations. Every per-entry array belongs here or
@@ -184,7 +139,7 @@ sf_tui_formatter_keep() {
   local name
   local -a values
   for name in SF_PRESENT_KIND SF_PRESENT_TEXT SF_PRESENT_DATA SF_PRESENT_ROLE \
-      SF_PRESENT_SECTION SF_PRESENT_PRIOR; do
+      SF_PRESENT_SECTION SF_PRESENT_PRIOR SF_PRESENT_EMITTED; do
     values=( "${(@P)name}" )
     if (( last < first || first > ${#values} )); then
       set -A "$name"
@@ -199,6 +154,12 @@ sf_tui_reset() {
   SF_PRESENT_LIVE=0
   SF_PRESENT_WORK_ACTIVE=0
   sf_tui_formatter_keep 1 0
+  SF_PRESENT_ROW_TEXT=()
+  SF_PRESENT_ROW_SPANS=()
+  SF_PRESENT_ROW_READY=()
+  SF_PRESENT_ROW_HEAD=1
+  SF_PRESENT_LIVE_ROW_TEXT=()
+  SF_PRESENT_LIVE_ROW_SPANS=()
   SF_PRESENT_LAST_ROLE=''
   SF_PRESENT_SECTION_ID=0
   SF_PRESENT_ASSISTANT_INDEX=''
@@ -346,7 +307,7 @@ sf_tui_assistant_close() {
   (( SF_PRESENT_LIVE )) || return 0
   (( SF_PRESENT_LIVE == index )) || return 1
   [[ $SF_PRESENT_KIND[index] == (message|reasoning) ]] || return 1
-  if [[ $SF_PRESENT_TEXT[index] == *[!$'\n']* ]]; then
+  if (( SF_PRESENT_EMITTED[index] )) || [[ $SF_PRESENT_TEXT[index] == *[!$'\n']* ]]; then
     sf_tui_formatter_settle
   else
     sf_tui_formatter_retract

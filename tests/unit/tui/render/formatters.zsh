@@ -10,7 +10,7 @@ kinds() { REPLY="${(j:,:)SF_PRESENT_KIND}" }
 aligned() {
   local name
   for name in SF_PRESENT_TEXT SF_PRESENT_DATA SF_PRESENT_ROLE SF_PRESENT_SECTION \
-      SF_PRESENT_PRIOR; do
+      SF_PRESENT_PRIOR SF_PRESENT_EMITTED; do
     (( ${#${(@P)name}} == ${#SF_PRESENT_KIND} )) ||
       fail "$name has ${#${(@P)name}} entries for ${#SF_PRESENT_KIND} formatters: $1"
   done
@@ -44,7 +44,7 @@ aligned 'after appending'
 if sf_tui_formatter_drop 3; then
   fail 'dropped the live tail'
 fi
-sf_tui_formatter_drop 1 || fail 'dropping a committed prefix failed'
+sf_tui_formatter_drop 1 || fail 'dropping a formatted prefix failed'
 aligned 'after dropping'
 assert_equal 2 "$SF_PRESENT_LIVE"
 kinds; assert_equal 'reasoning,tool_call' "$REPLY"
@@ -73,6 +73,12 @@ sf_tui_formatter_append reasoning live
 sf_tui_formatter_role $REPLY agent
 assert_equal 2 "$SF_PRESENT_SECTION[3]"
 sf_tui_formatter_drop 2
+SF_PRESENT_EMITTED[1]=1
+if sf_tui_formatter_retract; then
+  fail 'retracted a formatter after it emitted rows'
+fi
+assert_equal 1 "$SF_PRESENT_LIVE"
+SF_PRESENT_EMITTED[1]=0
 sf_tui_formatter_retract
 assert_equal user "$SF_PRESENT_LAST_ROLE"
 assert_equal 1 "$SF_PRESENT_SECTION_ID"

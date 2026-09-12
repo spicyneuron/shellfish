@@ -68,6 +68,10 @@ sf_tui_reasoning_grow() {
   sf_tui_formatter_set_field $index 10 $(( REPLY + added ))
 }
 
+sf_tui_format_at_start() {
+  (( SF_PRESENT_ROW_HEAD > ${#SF_PRESENT_ROW_TEXT} && ! SF_PRESENT_PREFIX_VISIBLE ))
+}
+
 # The leading chrome a formatter draws when it opens a role: spacing, then
 # "─ role " padded out to the width, closing with the section number when the
 # role takes one, then a blank row.
@@ -77,7 +81,7 @@ sf_tui_reasoning_grow() {
 sf_tui_format_rule() {
   integer index=$1 columns=$2 title_start title_end number_start=-1
   local role=$SF_PRESENT_ROLE[index] number=$SF_PRESENT_SECTION[index] text
-  (( index == 1 && ! SF_PRESENT_PREFIX_VISIBLE )) || sf_tui_format_blank
+  sf_tui_format_at_start || sf_tui_format_blank
   [[ -n $role ]] || return 0
   SF_FORMAT_SPAN=()
   text="─ $role "

@@ -8,95 +8,138 @@ typeset -ga SF_PRESENT_CHROME_HIGHLIGHTS=()
 # from the start of PREDISPLAY.
 typeset -g SF_PRESENT_VIEWPORT_TEXT=''
 typeset -ga SF_PRESENT_VIEWPORT_HIGHLIGHTS=()
+typeset -ga SF_PRESENT_LIVE_ROW_TEXT=() SF_PRESENT_LIVE_ROW_SPANS=()
 
-# Concatenates the retained formatters rendered at the current width, keeping the
-# last $budget rows. Layout belongs entirely to the formatters. An unsafe row
-# pins everything after it, keeping committed scrollback in source order.
-#
-# A "stage" pass owes the caller only the safe batch, so it stops at the end of
-# the staged run instead of formatting the whole retained transcript behind it.
-# Its caller commits that batch and repaints, and that repaint builds the
-# viewport this pass skipped. Staging nothing means no commit and no repaint
-# follows, so it falls back to a full pass.
+# Moves formatter output across the formatting boundary. Final entries become
+# settled rows in one pass. A live tail retains only source for rows that can
+# still change; every safe row is advanced out of that source immediately.
+sf_tui_rows_prepare() {
+  integer columns=$1 row safe source leading body_rows final index
+  SF_PRESENT_LIVE_ROW_TEXT=()
+  SF_PRESENT_LIVE_ROW_SPANS=()
+  final=$(( SF_PRESENT_LIVE ? SF_PRESENT_LIVE - 1 : ${#SF_PRESENT_KIND} ))
+  for (( index = 1; index <= final; index++ )); do
+    sf_tui_format_entry $index $columns || return 1
+    sf_tui_rows_append ${#SF_FORMAT_ROWS} $SF_FORMAT_LEADING
+  done
+  (( ! final )) || sf_tui_formatter_drop $final || return 1
+  (( SF_PRESENT_LIVE )) || return 0
+
+  sf_tui_format_entry 1 $columns || return 1
+  safe=$SF_FORMAT_SAFE
+  (( safe >= SF_FORMAT_LEADING )) || safe=0
+  if (( safe )); then
+    sf_tui_rows_append $safe $SF_FORMAT_LEADING
+    SF_PRESENT_EMITTED[1]=1
+    source=0
+    for (( row = 1; row <= safe; row++ )); do
+      source=$(( source + ${SF_FORMAT_CONSUMED[row]:-0} ))
+    done
+    leading=$(( SF_FORMAT_LEADING > 0 ))
+    body_rows=$(( safe > SF_FORMAT_LEADING ? safe - SF_FORMAT_LEADING : 0 ))
+    (( body_rows <= SF_FORMAT_BODY_ROWS )) || body_rows=$SF_FORMAT_BODY_ROWS
+    sf_tui_formatter_advance $source $leading $body_rows || return 1
+  fi
+  for (( row = safe + 1; row <= ${#SF_FORMAT_ROWS}; row++ )); do
+    SF_PRESENT_LIVE_ROW_TEXT+=( "$SF_FORMAT_ROWS[row]" )
+    SF_PRESENT_LIVE_ROW_SPANS+=( "$SF_FORMAT_SPANS[row]" )
+  done
+}
+
+sf_tui_format_entry() {
+  integer index=$1 columns=$2
+  case $SF_PRESENT_KIND[index] in
+    message) sf_tui_format_message $index $columns ;;
+    reasoning) sf_tui_format_reasoning $index $columns ;;
+    activity|hook_activity|hook_model_context|hook_user_context|error)
+      sf_tui_format_hook $index $columns ;;
+    tool_call|tool_result) sf_tui_format_tool $index $columns ;;
+    *) return 1 ;;
+  esac
+}
+
+# Appends the first $1 scratch rows to the settled queue. READY marks legal
+# commit endpoints so role chrome cannot be split from the content it opens.
+sf_tui_rows_append() {
+  integer count=$1 leading=$2 row
+  for (( row = 1; row <= count; row++ )); do
+    SF_PRESENT_ROW_TEXT+=( "$SF_FORMAT_ROWS[row]" )
+    SF_PRESENT_ROW_SPANS+=( "$SF_FORMAT_SPANS[row]" )
+    SF_PRESENT_ROW_READY+=( $(( ! leading || row >= leading )) )
+  done
+}
+
+sf_tui_rows_consume() {
+  integer count=$1 row available=$(( ${#SF_PRESENT_ROW_TEXT} - SF_PRESENT_ROW_HEAD + 1 ))
+  (( count >= 0 && count <= available )) || return 1
+  for (( row = SF_PRESENT_ROW_HEAD; row < SF_PRESENT_ROW_HEAD + count; row++ )); do
+    SF_PRESENT_ROW_TEXT[row]=''
+    SF_PRESENT_ROW_SPANS[row]=''
+    SF_PRESENT_ROW_READY[row]=0
+  done
+  SF_PRESENT_ROW_HEAD=$(( SF_PRESENT_ROW_HEAD + count ))
+  if (( SF_PRESENT_ROW_HEAD > ${#SF_PRESENT_ROW_TEXT} )); then
+    SF_PRESENT_ROW_TEXT=()
+    SF_PRESENT_ROW_SPANS=()
+    SF_PRESENT_ROW_READY=()
+    SF_PRESENT_ROW_HEAD=1
+  fi
+}
+
+# Selects already formatted rows for the viewport and for the next scrollback
+# block. No formatter participates after sf_tui_rows_prepare returns.
 sf_tui_transcript() {
-  integer columns=$1 budget=$2 index row offset start safe_offset=0
-  integer safe take source leading body_rows whole staged=0 staging=1
-  local mode=${3-}
-  local -a rows=() spans=()
+  integer columns=$1 budget=$2 stable take row index total start offset=0 safe_offset=0
+  local mode=${3-} text spans
 
   SF_PRESENT_VIEWPORT_TEXT=''
   SF_PRESENT_VIEWPORT_HIGHLIGHTS=()
   SF_PRESENT_SAFE_TEXT=''
   SF_PRESENT_SAFE_HIGHLIGHTS=()
-  SF_PRESENT_SAFE_CONSUME=()
-
-  for (( index = 1; index <= ${#SF_PRESENT_KIND}; index++ )); do
-    case $SF_PRESENT_KIND[index] in
-      message) sf_tui_format_message $index $columns || return 1 ;;
-      reasoning) sf_tui_format_reasoning $index $columns || return 1 ;;
-      activity|hook_activity|hook_model_context|hook_user_context|error)
-        sf_tui_format_hook $index $columns || return 1
-        ;;
-      tool_call|tool_result) sf_tui_format_tool $index $columns || return 1 ;;
-      *) return 1 ;;
-    esac
-    for (( row = 1; row <= ${#SF_FORMAT_ROWS}; row++ )); do
-      rows+=( "$SF_FORMAT_ROWS[row]" )
-      spans+=( "$SF_FORMAT_SPANS[row]" )
-    done
-    if (( staging )); then
-      safe=$SF_FORMAT_SAFE
-      take=$(( safe < budget - staged ? safe : budget - staged ))
-      # Leading chrome commits with the content it introduces.
-      (( take >= SF_FORMAT_LEADING )) || take=0
-      whole=$(( SF_PRESENT_LIVE != index && take == ${#SF_FORMAT_ROWS} ))
-      source=0
-      for (( row = 1; row <= take; row++ )); do
-        if (( row != 1 || staged )); then
-          SF_PRESENT_SAFE_TEXT+=$'\n'
-          safe_offset=$(( safe_offset + 1 ))
-        fi
-        sf_tui_shift_spans SF_PRESENT_SAFE_HIGHLIGHTS $safe_offset "$SF_FORMAT_SPANS[row]"
-        SF_PRESENT_SAFE_TEXT+="$SF_FORMAT_ROWS[row]"
-        safe_offset=$(( safe_offset + ${#SF_FORMAT_ROWS[row]} ))
-        source=$(( source + ${SF_FORMAT_CONSUMED[row]:-0} ))
-      done
-      leading=$(( take >= SF_FORMAT_LEADING && SF_FORMAT_LEADING > 0 ))
-      body_rows=$(( take > SF_FORMAT_LEADING ? take - SF_FORMAT_LEADING : 0 ))
-      (( body_rows <= SF_FORMAT_BODY_ROWS )) || body_rows=$SF_FORMAT_BODY_ROWS
-      # A final formatter with nothing left to draw still has to leave, or it
-      # would sit at the head of the list forever.
-      (( ! take && ! whole )) ||
-        SF_PRESENT_SAFE_CONSUME+=( "$whole:$source:$leading:$body_rows" )
-      staged=$(( staged + take ))
-      # A formatter that does not fit entirely ends the run, so staged rows
-      # stay contiguous.
-      (( take == ${#SF_FORMAT_ROWS} )) || staging=0
-    fi
-    [[ $mode != stage ]] || (( staging )) || break
+  SF_PRESENT_SAFE_ROWS=0
+  sf_tui_rows_prepare $columns || return 1
+  stable=$(( ${#SF_PRESENT_ROW_TEXT} - SF_PRESENT_ROW_HEAD + 1 ))
+  (( stable > 0 )) || stable=0
+  take=$(( stable < budget ? stable : budget ))
+  while (( take )) && (( ! SF_PRESENT_ROW_READY[SF_PRESENT_ROW_HEAD + take - 1] )); do
+    take=$(( take - 1 ))
   done
-  SF_PRESENT_SAFE_ROWS=$staged
-  if [[ $mode == stage ]]; then
-    (( ! staged )) || return 0
-    sf_tui_transcript $columns $budget
-    return
+  for (( row = 0; row < take; row++ )); do
+    index=$(( SF_PRESENT_ROW_HEAD + row ))
+    text=$SF_PRESENT_ROW_TEXT[index]
+    spans=$SF_PRESENT_ROW_SPANS[index]
+    (( row == 0 )) || {
+      SF_PRESENT_SAFE_TEXT+=$'\n'
+      safe_offset=$(( safe_offset + 1 ))
+    }
+    sf_tui_shift_spans SF_PRESENT_SAFE_HIGHLIGHTS $safe_offset "$spans"
+    SF_PRESENT_SAFE_TEXT+=$text
+    safe_offset=$(( safe_offset + ${#text} ))
+  done
+  SF_PRESENT_SAFE_ROWS=$take
+  if [[ $mode == stage ]] && (( take )); then
+    return 0
   fi
 
-  # The safe commit batch is built above; the viewport keeps only the last rows
-  # that fit its budget.
-  if (( ${#rows} > budget )); then
-    start=$(( ${#rows} - budget + 1 ))
-    rows=( "${(@)rows[start,-1]}" )
-    spans=( "${(@)spans[start,-1]}" )
-  fi
-
-  offset=0
-  for (( row = 1; row <= ${#rows}; row++ )); do
-    (( row == 1 )) || SF_PRESENT_VIEWPORT_TEXT+=$'\n'
-    (( row == 1 )) || offset=$(( offset + 1 ))
-    sf_tui_shift_spans SF_PRESENT_VIEWPORT_HIGHLIGHTS $offset "$spans[row]"
-    SF_PRESENT_VIEWPORT_TEXT+=$rows[row]
-    offset=$(( offset + ${#rows[row]} ))
+  total=$(( stable + ${#SF_PRESENT_LIVE_ROW_TEXT} ))
+  start=$(( total > budget ? total - budget + 1 : 1 ))
+  for (( row = start; row <= total; row++ )); do
+    if (( row <= stable )); then
+      index=$(( SF_PRESENT_ROW_HEAD + row - 1 ))
+      text=$SF_PRESENT_ROW_TEXT[index]
+      spans=$SF_PRESENT_ROW_SPANS[index]
+    else
+      index=$(( row - stable ))
+      text=$SF_PRESENT_LIVE_ROW_TEXT[index]
+      spans=$SF_PRESENT_LIVE_ROW_SPANS[index]
+    fi
+    (( row == start )) || {
+      SF_PRESENT_VIEWPORT_TEXT+=$'\n'
+      offset=$(( offset + 1 ))
+    }
+    sf_tui_shift_spans SF_PRESENT_VIEWPORT_HIGHLIGHTS $offset "$spans"
+    SF_PRESENT_VIEWPORT_TEXT+=$text
+    offset=$(( offset + ${#text} ))
   done
 }
 
