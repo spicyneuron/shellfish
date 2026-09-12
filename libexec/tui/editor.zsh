@@ -47,7 +47,9 @@ sf_tui_draw_pending() {
   BUFFER=''
   CURSOR=0
   POSTDISPLAY=''
-  sf_tui_update_highlights pending
+  sf_tui_update_highlights pending || return 1
+  # Hold the commit and the redraw beneath it in one terminal update.
+  sf_tui_terminal_sync_start
 }
 
 sf_tui_heartbeat_worker() {
@@ -135,8 +137,6 @@ sf_tui_heartbeat_tick() {
     fi
     if (( SF_PRESENT_SAFE_ROWS )); then
       sf_tui_terminal_stage || return 1
-      # Hold the frame so the commit and the redraw beneath it land together.
-      sf_tui_terminal_sync_start
       # `zle -I` keeps what is drawn and continues below it, so drawing the
       # settled rows as the whole display commits exactly those to scrollback.
       # The editor rebuilds from there, so a scroll cannot desynchronise it.
@@ -306,7 +306,6 @@ sf_tui_accept() {
         return 0
       fi
       sf_tui_draw_pending || return 1
-      sf_tui_terminal_sync_start
       if ! zle accept-line; then
         SF_PRESENT_ACTION=''
         sf_tui_stop 'cannot commit chat rows'

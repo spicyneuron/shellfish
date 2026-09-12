@@ -19,15 +19,16 @@ typeset -g SF_PRESENT_FOOTER=test/model
 typeset -gi COLUMNS=80 LINES=10
 typeset -ga ZLE_CALLS=()
 typeset -g COMMITTED=''
-typeset -gi ZLE_ACCEPT_SYNC=0 ZLE_FAIL_ACCEPT=0 ZLE_FAIL_INVALIDATE=0
+typeset -gi ZLE_COMMIT_SYNC=0
+typeset -gi ZLE_FAIL_ACCEPT=0 ZLE_FAIL_INVALIDATE=0
 # A commit hands its rows to the terminal by leaving them drawn when the display
 # is invalidated, so that is the moment worth capturing.
 zle() {
   ZLE_CALL="$*"
   ZLE_CALLS+=( "$*" )
   [[ $1 != -I ]] || COMMITTED=$PREDISPLAY$BUFFER$POSTDISPLAY
+  [[ $1 != (-I|accept-line) ]] || ZLE_COMMIT_SYNC=$SF_PRESENT_SYNC_ACTIVE
   [[ $1 != -I ]] || (( ! ZLE_FAIL_INVALIDATE )) || return 1
-  [[ $1 != accept-line ]] || ZLE_ACCEPT_SYNC=$SF_PRESENT_SYNC_ACTIVE
   [[ $1 != accept-line ]] || (( ! ZLE_FAIL_ACCEPT )) || return 1
 }
 sf_tui_answer_permission() {
@@ -42,6 +43,7 @@ sf_tui_event user hello
 sf_tui_line_init
 assert_equal epoch "$SF_PRESENT_ACTION"
 assert_equal accept-line "$ZLE_CALL"
+assert_equal 1 "$ZLE_COMMIT_SYNC"
 assert_equal draft "$SF_PRESENT_DRAFT"
 
 sf_tui_line_finish
@@ -67,14 +69,14 @@ SF_PRESENT_DRAFT_CURSOR=6
 SF_PRESENT_DRAFT_SAVED=1
 SF_PRESENT_ACTION=''
 ZLE_CALL=''
-ZLE_ACCEPT_SYNC=0
+ZLE_COMMIT_SYNC=0
 # An accepted prompt commits the rows the repaint staged for it.
 sf_tui_accept
 assert_equal submit "$SF_PRESENT_ACTION"
 assert_equal prompt "$SF_PRESENT_SUBMITTED"
 assert_equal 1 "$SF_PRESENT_DRAFT_SAVED"
 assert_equal accept-line "$ZLE_CALL"
-assert_equal 1 "$ZLE_ACCEPT_SYNC"
+assert_equal 1 "$ZLE_COMMIT_SYNC"
 sf_tui_line_finish
 assert_equal $'\nprompt' "$PREDISPLAY"
 assert_equal '' "$BUFFER"
@@ -198,6 +200,7 @@ BUFFER=draft
 CURSOR=3
 ZLE_CALLS=()
 COMMITTED=''
+ZLE_COMMIT_SYNC=0
 sf_tui_event user $'one\ntwo'
 sf_tui_heartbeat_tick
 assert_equal '' "$SF_PRESENT_ACTION"
@@ -207,6 +210,7 @@ assert_equal 3 "$CURSOR"
 [[ $COMMITTED == *one* ]] || fail 'heartbeat did not commit the safe rows'
 [[ $COMMITTED != *❯* && $COMMITTED != *test/model* ]] ||
   fail 'heartbeat committed editor chrome to scrollback'
+assert_equal 1 "$ZLE_COMMIT_SYNC"
 [[ ${(j: :)ZLE_CALLS} != *accept-line* ]] ||
   fail 'descriptor heartbeat left the active editor'
 

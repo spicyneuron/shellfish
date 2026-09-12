@@ -84,7 +84,6 @@ sf_tui_terminal_finish() {
   local record
   local -a fields
   (( SF_PRESENT_PENDING_ROWS )) || return 0
-  sf_tui_terminal_sync_start
   PREDISPLAY=$SF_PRESENT_PENDING_TEXT
   BUFFER=''
   CURSOR=0
