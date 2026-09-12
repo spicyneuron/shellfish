@@ -264,9 +264,11 @@ def canonical_session_header($format_version):
   type == "object" and .type == "session" and .format_version == $format_version and
   (.cwd | absolute_nul_free_path) and (.created | type == "string") and
   (.profile | type == "object" and
-    ((keys - ["context_window", "request"]) | length == 0) and
+    ((keys - ["context_window", "request", "system"]) | length == 0) and
     (["request"] - keys | length == 0) and
     (.request | type == "object" and (.model | model_name)) and
+    ((has("system") | not) or
+      (.system | type == "array" and all(.[]; absolute_nul_free_path))) and
     (if has("context_window") then
       .context_window == null or (.context_window | positive_integer)
     else true end)) and

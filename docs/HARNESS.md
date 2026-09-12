@@ -17,9 +17,9 @@ The system prompt is a profile field, not a harness field. The bundled `default`
 - `general.md` defines communication and context-handling conventions.
 - `tools.md` defines tool-use conventions.
 
-These files live under `share/default/system/`; a user configuration can select different files or shadow bundled files by name. When a session is created, they are read in order, stripped of trailing newlines, and joined with a blank line into the session's single durable system record. The source paths are not stored in the session header. `--session-from PATH` copies the durable system record, so later file changes affect only sessions created from configuration.
+These files live under `share/default/system/`; a user configuration can select different files or shadow bundled files by name. Their resolved paths are stored in the session header. When a session is created, the files are read in order, stripped of trailing newlines, and joined with a blank line into the session's single durable system record. `--session-from PATH` reuses the stored paths and materializes a new record, so file changes affect sessions derived later.
 
-For a new session, repeated `--system TEXT` and `--system-file PATH` inputs replace the configured or copied system prompt. Mixed inputs retain command-line order.
+For a new session, repeated `--system TEXT` and `--system-file PATH` inputs replace the configured prompt for that creation. Mixed inputs retain command-line order. These one-off inputs do not replace the stored component paths.
 
 ### Tools
 

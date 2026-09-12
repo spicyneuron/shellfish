@@ -5,7 +5,6 @@ setopt no_aliases no_multios pipe_fail
 
 typeset -g SF_RUNTIME_ERROR=''
 typeset -g SF_PRESENTATION=''
-typeset -g SF_RUNTIME_SYSTEM_PATHS='[]'
 typeset -g SF_RUNTIME_VERBOSE=0
 typeset -g SF_RUNTIME_SANDBOX_GRANTS='{"sandbox_read_paths":[],"sandbox_write_paths":[]}'
 
@@ -166,7 +165,6 @@ sf_runtime_resolve() {
 
   SF_RUNTIME_ERROR=''
   SF_PRESENTATION=''
-  SF_RUNTIME_SYSTEM_PATHS='[]'
   REPLY=''
   if [[ -n $session_path ]]; then
     if (( runtime_override )); then
@@ -202,7 +200,6 @@ sf_runtime_resolve_from_config() {
 
   SF_RUNTIME_ERROR=''
   SF_PRESENTATION=''
-  SF_RUNTIME_SYSTEM_PATHS='[]'
   REPLY=''
   sf_runtime_load_config "$requested_config" || return
   loaded=( "${reply[@]}" )
@@ -366,18 +363,17 @@ sf_runtime_resolve_from_config() {
     sf_runtime_fail 'cannot prepare resolved system paths'
     return
   }
-  SF_RUNTIME_SYSTEM_PATHS=$system_paths
   resolved_args=( "${tool_entries[@]}" "${component_entries[@]}" )
   final=$(sf_jq -cnce --argjson prepared "$prepared" \
     --arg manifest "$manifest" --arg command "$command" \
     --arg context_window_command "$context_window_command" --arg fence "$fence" \
-    --arg env_file "$env_file" \
+    --arg env_file "$env_file" --argjson system "$system_paths" \
     --argjson grants "$SF_RUNTIME_SANDBOX_GRANTS" --args '
       include "libexec/config/runtime";
       include "lib/runtime/schema";
       ({prepared:$prepared,manifest:$manifest,command:$command,
         context_window_command:$context_window_command,fence:$fence,
-        env_file:$env_file,resolved:$ARGS.positional} + $grants) |
+        env_file:$env_file,system:$system,resolved:$ARGS.positional} + $grants) |
       runtime_finalize | .runtime
     ' "${resolved_args[@]}" 2>&1) || {
     sf_runtime_validation_error "$final" "cannot finalize runtime"
@@ -419,13 +415,11 @@ sf_runtime_restore_presentation() {
   sf_runtime_apply_verbose
 }
 
-# Prints the resolved runtime with creation-only system paths and unfrozen presentation.
+# Prints the resolved runtime with unfrozen presentation.
 sf_runtime_report() {
   local runtime=$1
-  jq -ne --argjson runtime "$runtime" --argjson presentation "$SF_PRESENTATION" \
-    --argjson system "$SF_RUNTIME_SYSTEM_PATHS" '
+  jq -ne --argjson runtime "$runtime" --argjson presentation "$SF_PRESENTATION" '
     $runtime + {
-      system: $system,
       theme: {
         mode: $presentation.theme_mode,
         light: {name: $presentation.theme_light,

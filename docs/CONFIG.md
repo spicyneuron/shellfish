@@ -149,7 +149,7 @@ For chat and `run`, automatic grants are frozen into a new session like other ru
 
 ## Existing sessions
 
-A session retains the resolved backend, harness, request, and sandbox settings stored in its header. Ordinary runtime overrides cannot be applied when opening an existing session. Themes and TUI preview settings come from the current configuration.
+A session retains the resolved backend, harness, request, sandbox settings, and system component paths stored in its header. Ordinary runtime overrides cannot be applied when opening an existing session. Themes and TUI preview settings come from the current configuration.
 
 Hook-requested session updates merge recursively into the header during the current turn. Arrays, scalars, and `null` replace the existing value, and the result must remain a canonical session runtime. Updates to different fields compose, while updates that replace the same scalar or array are last-writer-wins.
 

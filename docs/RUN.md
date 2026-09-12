@@ -2,7 +2,7 @@
 
 `shellfish run` runs a single agent turn. A turn begins with one user message and may contain multiple provider requests, tool calls, permission decisions, and continuations requested by `stop` scripts.
 
-`shellfish create` creates an idle session from current configuration and prints its absolute path. `--session-from PATH` copies an existing session's frozen runtime and system record, without messages or context. Creation runs the new session's `session_start` scripts. `--session-out PATH` selects the destination instead of the state directory.
+`shellfish create` creates an idle session from current configuration and prints its absolute path. `--session-from PATH` reuses an existing session's frozen runtime without its messages or context. Creation re-reads the system component paths stored in that runtime, then runs the new session's `session_start` scripts. `--session-out PATH` selects the destination instead of the state directory.
 
 ```sh
 shellfish create
@@ -23,7 +23,7 @@ Creation writes the header and optional system record before running hooks. Each
 
 As in a turn, `SIGUSR1` is the client's cancellation signal, aimed at the creating process alone so it can stop a running hook script itself. Cancelled JSONL creation writes its diagnostic to stderr, exits nonzero, and attempts the same best-effort cleanup as other startup failures; abrupt termination can leave the published session behind.
 
-`--system TEXT` and `--system-file PATH` replace the configured or copied system prompt. Both flags are repeatable and may be mixed; their contents have trailing newlines stripped and are joined in command-line order with a blank line.
+`--system TEXT` and `--system-file PATH` replace the configured system prompt for that creation. Both flags are repeatable and may be mixed; their contents have trailing newlines stripped and are joined in command-line order with a blank line. They do not replace the component paths stored in the header, so a later `--session-from` re-reads those paths rather than inheriting the one-off override.
 
 Chat and `shellfish run` use an existing session with `--session PATH`. Otherwise they create one through `shellfish create`, accepting `--session-from` and `--session-out`. Neither creation flag can be combined with `--session`.
 

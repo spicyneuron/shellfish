@@ -56,15 +56,15 @@ jq -e --arg read "${tmp:A}/system" --arg write "${tmp:A}/home" '
   (.harness.sandbox_write_paths | index($write)) != null
 ' "$granted" >/dev/null || fail 'create did not store forwarded sandbox grants'
 
-# --session-from names the session whose header and durable system record are copied.
+# --session-from reuses the stored runtime and rematerializes its system paths.
 print -r -- 'changed configured system' >"$tmp/system/source.md"
 print -r -- '{"type":"user","content":[{"type":"text","text":"old"}]}' \
   >>"$created"
 reused=$(zsh -f "$entry" create --session-from "$created") || fail 'sourced create failed'
 jq -e -s --slurpfile source "$created" '
-  length == 2 and .[1] == {type:"system",content:"initial system"} and
+  length == 2 and .[1] == {type:"system",content:"changed configured system"} and
   (.[0] | del(.created)) == ($source[0] | del(.created))
-' "$reused" >/dev/null || fail 'create did not copy the source header and system record'
+' "$reused" >/dev/null || fail 'create did not reuse the stored runtime'
 
 # Source paths must be present, nonempty, and specified once.
 zsh -f "$entry" create --session-from "$tmp/absent.jsonl" >/dev/null 2>&1 &&
@@ -133,7 +133,7 @@ zsh -f "$entry" create --session-out "$override" --config "$config" \
   >/dev/null || fail 'create rejected system overrides'
 jq -se '
   length == 2 and
-  (.[0].profile | has("system") | not) and
+  (.[0].profile.system | length) == 1 and
   .[1] == {type:"system",content:"inline\nprompt\n\nfile prompt\n\nlast prompt"}
 ' "$override" >/dev/null || fail 'create did not materialize ordered system overrides'
 printf 'updated file prompt\n' >"$override_file"
@@ -141,18 +141,18 @@ jq -c 'if .type == "system" then .content += "\n\n" else . end' "$override" \
   >"$tmp/stored-system.jsonl"
 mv "$tmp/stored-system.jsonl" "$override"
 derived=$(zsh -f "$entry" create --session-from "$override") || \
-  fail 'create did not copy the durable system record'
+  fail 'create did not reuse the stored system paths'
 jq -se '
   length == 2 and
-  .[1] == {type:"system",content:"inline\nprompt\n\nfile prompt\n\nlast prompt\n\n"}
-' "$derived" >/dev/null || fail 'create did not preserve the durable system record'
+  .[1] == {type:"system",content:"changed configured system"}
+' "$derived" >/dev/null || fail 'create did not rematerialize the stored system paths'
 typeset derived_override="$tmp/derived-override.jsonl"
 zsh -f "$entry" create --session-out "$derived_override" --session-from "$override" \
   --system '--session-out' >/dev/null || fail 'derived create rejected option-looking system text'
 jq -se 'length == 2 and .[1] == {type:"system",content:"--session-out"}' \
-  "$derived_override" >/dev/null || fail 'derived create did not replace the copied system record'
+  "$derived_override" >/dev/null || fail 'derived create did not apply the system override'
 
-# Empty overrides clear configured and copied prompts without adding separators.
+# Empty overrides clear configured prompts without adding separators.
 typeset empty_file="$tmp/empty.md" empty_session
 printf '\n\n' >"$empty_file"
 for source in --config --session-from; do

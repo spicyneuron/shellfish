@@ -69,7 +69,7 @@ sf_create_session() {
 }
 
 sf_create_main() {
-  local requested_out='' requested_source='' report runtime session system
+  local requested_out='' report runtime session system
   local system_text projection
   local -a forwarded=() system_parts=() system_paths=()
   integer report_status=0 take=0 system_explicit=0
@@ -105,7 +105,6 @@ sf_create_main() {
         # like --session-out is not read as one.
         take=$(( ${SF_CREATE_OPTIONS[$1]:-0} + 1 ))
         (( $# >= take )) || { sf_die "$1 requires a value"; return 2; }
-        [[ $1 != --session-from ]] || requested_source=$2
         forwarded+=( "${@:1:$take}" )
         shift $take
         ;;
@@ -121,30 +120,18 @@ sf_create_main() {
   # of runtime overrides against --session-from.
   report=$("$SF_ENTRY" config "${forwarded[@]}") || report_status=$?
   (( ! report_status )) || return $report_status
-  runtime=$(jq -ce 'del(.theme, .tui, .system)' <<<"$report") || {
+  runtime=$(jq -ce 'del(.theme, .tui)' <<<"$report") || {
     sf_die 'cannot resolve the session runtime'
     return 1
   }
   if (( ! system_explicit )); then
-    if [[ -n $requested_source ]]; then
-      system_text=$(sed -n '2{p;q;}' <"$requested_source" | sf_jq -jse '
-        include "lib/runtime/schema";
-        (if length == 0 then "" else
-          .[0] | select(canonical_session_record) |
-          if .type == "system" then .content else "" end
-        end) + "\u0000"
-      ') || { sf_die "cannot read session system record: $requested_source"; return 1; }
-      system_text=${system_text%$'\0'}
-      [[ -z $system_text ]] || system_parts+=( "$system_text" )
-    else
-      projection=$(jq -jr '.system[] | ., "\u0000"' <<<"$report") ||
-        sf_die 'cannot resolve system paths' || return
-      system_paths=( ${(@0)projection} )
-      for system_text in "${system_paths[@]}"; do
-        sf_create_read_system "$system_text" || return
-        [[ -z $REPLY ]] || system_parts+=( "$REPLY" )
-      done
-    fi
+    projection=$(jq -jr '.profile.system[] | ., "\u0000"' <<<"$report") ||
+      sf_die 'cannot resolve system paths' || return
+    system_paths=( ${(@0)projection} )
+    for system_text in "${system_paths[@]}"; do
+      sf_create_read_system "$system_text" || return
+      [[ -z $REPLY ]] || system_parts+=( "$REPLY" )
+    done
   fi
   system=${(pj:\n\n:)system_parts}
 

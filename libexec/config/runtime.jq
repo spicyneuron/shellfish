@@ -251,7 +251,7 @@ def runtime_finalize:
     any($tools[]; .manifest.sandbox)) as $needs_fence |
   if $needs_fence and $input.fence == "" then error("sandboxing requires fence") else . end |
   ({
-    profile:({request:$prepared.request} +
+    profile:({request:$prepared.request,system:$input.system} +
       (if $profile | has("context_window") then
         {context_window:$profile.context_window} else {} end)),
     backend:{name:$prepared.backend_name,command:$command,env_file:$input.env_file,

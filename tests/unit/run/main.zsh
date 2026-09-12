@@ -80,13 +80,13 @@ output=$(SF_TEST_BACKEND_DELAY=0 zsh -f "$entry" run --session-out "$forwarded_s
 assert_equal 'plain answer' "$output" 'run keeps the prompt after a forwarded value'
 head -n 1 "$forwarded_session" | jq -e '
   .profile.request.model == "forwarded-model" and
-  (.profile | has("system") | not)
+  (.profile.system | length) == 1
 ' \
   >/dev/null || fail 'a forwarded option value did not reach the new session'
 jq -e 'select(.type == "system" and .content == "forwarded system")' \
   "$forwarded_session" >/dev/null || fail 'run did not create the overridden system record'
 
-# Copying settings creates a separate session without replaying source messages.
+# Reusing settings creates a separate session without replaying source messages.
 typeset copied_session="$tmp/copied.jsonl"
 cp "$forwarded_session" "$tmp/source-before"
 output=$(SF_TEST_BACKEND_DELAY=0 zsh -f "$entry" run \
@@ -95,9 +95,10 @@ output=$(SF_TEST_BACKEND_DELAY=0 zsh -f "$entry" run \
 assert_equal 'copied answer' "$output"
 cmp -s "$forwarded_session" "$tmp/source-before" || fail 'run modified its source'
 jq -es --slurpfile source "$forwarded_session" '
-  .[0].profile == $source[0].profile and .[1] == $source[1] and
+  .[0].profile == $source[0].profile and
+  .[1] == {type:"system",content:"initial system"} and
   [.[] | select(.type == "user") | .content[0].text] == ["copied answer"]
-' "$copied_session" >/dev/null || fail 'run did not copy only the settings and system'
+' "$copied_session" >/dev/null || fail 'run did not reuse the stored runtime'
 
 integer conflict_status=0
 zsh -f "$entry" run --session "$forwarded_session" \

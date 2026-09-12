@@ -242,7 +242,7 @@ jq -e '.harnesses.default.sandbox_read_paths == [] and
   < <(source "$ROOT/libexec/config/runtime.zsh"; sf_runtime_read_jsonc "$empty_auto_config") \
   >/dev/null || fail 'empty automatic sandbox config is invalid'
 
-# `shellfish config` reports resolved runtime and creation paths, plus the theme
+# `shellfish config` reports resolved runtime, plus the theme
 # palettes and TUI limits a session does not store.
 report=$(zsh -f "$entry" config --config "$config_dir/shellfish.jsonc") ||
   fail 'config report failed'
@@ -254,7 +254,7 @@ assert_equal true "$(jq -r '.theme.dark.palette | has("error")' <<<"$report")" \
   'config hydrates theme palettes'
 assert_equal 2 "$(jq -r '.tui.preview_lines_context' <<<"$report")" 'config reports TUI limits'
 jq -e --arg root "$ROOT" '
-  .system == [($root + "/share/default/system/general.md"),
+  .profile.system == [($root + "/share/default/system/general.md"),
     ($root + "/share/default/system/tools.md")]
 ' <<<"$report" >/dev/null || fail 'config did not resolve system paths'
 
@@ -268,7 +268,7 @@ jq '.profiles.agent.system = ["missing.md"]' "$config_dir/shellfish.jsonc" \
   >"$tmp/missing-configured-system.jsonc"
 report=$(zsh -f "$entry" config --config "$tmp/missing-configured-system.jsonc") || \
   fail 'config tried to read a system component'
-jq -e --arg path "$ROOT/share/default/system/missing.md" '.system == [$path]' <<<"$report" \
+jq -e --arg path "$ROOT/share/default/system/missing.md" '.profile.system == [$path]' <<<"$report" \
   >/dev/null || fail 'config did not resolve the missing system path'
 zsh -f "$entry" config --config "$config_dir/shellfish.jsonc" \
   --system replacement >/dev/null 2>&1 && fail 'config accepted create-owned --system'
@@ -276,7 +276,7 @@ zsh -f "$entry" config --config "$config_dir/shellfish.jsonc" \
 # A stored session supplies its runtime. Themes and limits come from current config.
 jq -cn '{
   type:"session",format_version:1,cwd:"/tmp",created:"2026-08-18T00:00:00Z",
-  profile:{request:{model:"stored-model"}},
+  profile:{request:{model:"stored-model"},system:[]},
   backend:{name:"test",command:"/bin/true",endpoint:"https://example.invalid",
     environment:[],env_file:"",insecure_tls:false,http_timeout:30,http_stall:10},
   harness:{sandbox_read_paths:[],sandbox_write_paths:[],
@@ -289,8 +289,8 @@ report=$(zsh -f "$entry" config --config "$config_dir/shellfish.jsonc" --session
 assert_equal auto "$(jq -r '.theme.mode' <<<"$report")" 'config --session-from reports the current theme mode'
 assert_equal 2 "$(jq -r '.tui.preview_lines_context' <<<"$report")" \
   'config --session-from reports current TUI limits'
-jq -e '.system == []' <<<"$report" >/dev/null || \
-  fail 'config copied a stored system message into its report'
+jq -e '.profile.system == []' <<<"$report" >/dev/null || \
+  fail 'config did not report stored system paths'
 mkdir "$tmp/extra"
 if zsh -f "$entry" config --config "$config_dir/shellfish.jsonc" \
     --session-from "$tmp/stored.jsonl" --sandbox-write "$tmp/extra" >/dev/null 2>&1; then

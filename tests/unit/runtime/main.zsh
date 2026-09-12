@@ -63,7 +63,7 @@ jq -e --arg command "$ROOT/share/default/backends/openai/run" '
   (.backend.env_file | endswith("/config/.env")) and
   .backend.endpoint == "https://api.openai.com/v1/chat/completions" and
   .backend.environment == ["OPENAI_API_KEY"] and
-  (.profile | has("system") | not) and
+  .profile.system == [] and
   .harness == {
     sandbox_read_paths:[],sandbox_write_paths:[],
     fence:"",tools:[],sandbox:true,
@@ -155,7 +155,6 @@ print -r -- '{"type":"system","content":"shadow system"}' >>"$tmp/shadow/session
   jq -e '.profile.request.model == "shadow-model"' <<<"$REPLY" >/dev/null
   sf_runtime_resolve session.jsonl "$config" '' '' '{}' '' 0
   assert_equal "$runtime" "$REPLY"
-  assert_equal '[]' "$SF_RUNTIME_SYSTEM_PATHS"
   assert_equal "$tmp/shadow" "$PWD"
 )
 
@@ -454,11 +453,10 @@ ln -s "$tmp/config-target/shellfish.jsonc" \
 (
   export XDG_CONFIG_HOME="$tmp/symlink-config-home"
   sf_runtime_resolve_from_config '' '' '' '{}' "$ROOT/tests/fixtures/backend"
-  jq -e --arg env "${tmp:A}/config-target/.env" '
-    (.profile | has("system") | not) and .backend.env_file == $env
+  jq -e --arg env "${tmp:A}/config-target/.env" \
+    --arg path "${tmp:A}/config-target/system/linked.md" '
+    .profile.system == [$path] and .backend.env_file == $env
   ' <<<"$REPLY" >/dev/null
-  jq -e --arg path "${tmp:A}/config-target/system/linked.md" '. == [$path]' \
-    <<<"$SF_RUNTIME_SYSTEM_PATHS" >/dev/null
 )
 
 # System references resolve to ordered absolute paths without reading them.
@@ -474,20 +472,21 @@ sf_runtime_resolve_from_config "$tmp/config/system.jsonc" '' '' '{}' \
   "$ROOT/tests/fixtures/backend"
 jq -e --arg first "${tmp:A}/config/system/first.md" \
   --arg second "${tmp:A}/config/system/second.md" \
-  '. == [$first,$second]' <<<"$SF_RUNTIME_SYSTEM_PATHS" >/dev/null ||
+  '.profile.system == [$first,$second]' <<<"$REPLY" >/dev/null ||
   fail 'system component paths were not resolved'
 rm "$tmp/config/system/second.md"
 sf_runtime_resolve_from_config "$tmp/config/system.jsonc" '' '' '{}' \
   "$ROOT/tests/fixtures/backend" || fail 'config tried to read a missing prompt file'
-jq -e --arg fallback "$ROOT/share/default/system/second.md" '.[1] == $fallback' \
-  <<<"$SF_RUNTIME_SYSTEM_PATHS" >/dev/null || fail 'missing prompt path was not resolved'
+jq -e --arg fallback "$ROOT/share/default/system/second.md" \
+  '.profile.system[1] == $fallback' <<<"$REPLY" >/dev/null ||
+  fail 'missing prompt path was not resolved'
 
 # The template's readonly profile resolves its bundled nested prompt.
 sf_runtime_read_jsonc "$ROOT/share/template/shellfish.jsonc" >"$tmp/config/readonly.jsonc"
 sf_runtime_resolve_from_config "$tmp/config/readonly.jsonc" 'readonly' 'm' '{}' \
   "$ROOT/tests/fixtures/backend"
-jq -e --arg path "$ROOT/share/default/system/readonly.md" '. == [$path]' \
-  <<<"$SF_RUNTIME_SYSTEM_PATHS" >/dev/null || fail 'bundled prompt path was not resolved'
+jq -e --arg path "$ROOT/share/default/system/readonly.md" '.profile.system == [$path]' \
+  <<<"$REPLY" >/dev/null || fail 'bundled prompt path was not resolved'
 
 cat >"$tmp/config/missing-hook.jsonc" <<'JSON'
 {

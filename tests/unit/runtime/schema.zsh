@@ -347,10 +347,14 @@ for environment in '["DUPLICATE","DUPLICATE"]' '["invalid-name"]' '["HAS SPACE"]
   fi
 done
 
-if jq -c '.profile.system = []' <<<"$valid_header" |
-    schema_eval 'canonical_session_header(1)' >/dev/null 2>&1; then
-  fail 'system sources were accepted in a session header'
-fi
+print -r -- "$valid_header" | jq -c '.profile.system = ["/system/prompt.md"]' |
+  schema_eval 'canonical_session_header(1)' >/dev/null
+for system in '["relative.md"]' '"/system/prompt.md"'; do
+  if jq -c --argjson system "$system" '.profile.system = $system' <<<"$valid_header" |
+      schema_eval 'canonical_session_header(1)' >/dev/null 2>&1; then
+    fail "invalid system paths were accepted in a session header: $system"
+  fi
+done
 
 # Relative hook paths in session headers are rejected.
 if jq -c '.harness.stop[0].command = "relative/hook"' <<<"$valid_header" |
