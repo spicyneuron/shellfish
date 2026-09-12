@@ -187,7 +187,7 @@ sf_runtime_resolve() {
 sf_runtime_resolve_from_config() {
   local requested_config=$1 profile_override=$2 model_override=$3 request_override=$4
   local backend_override=${5-}
-  local config_path config_dir='' raw defaults decoded prepared presentation system_paths
+  local config_path config_dir='' raw defaults decoded prepared presentation system_paths='[]'
   local backend_name backend_reference backend_dir backend_base manifest command
   local context_window_command=''
   local reference resolved hook hook_manifest selector external_name final settings fence='' env_file=''
@@ -332,11 +332,14 @@ sf_runtime_resolve_from_config() {
     }
     sf_runtime_read_manifest "$resolved" optional || return
     hook_manifest=$REPLY
-    selector=$(jq -r '
-      if (.match? | type) == "object" and (.match | keys) == ["command"] and
-          (.match.command | type) == "string"
-      then .match.command else "" end
-    ' <<<"$hook_manifest") || return
+    selector=''
+    if [[ $hook_manifest == *'"match":'* ]]; then
+      selector=$(jq -r '
+        if (.match? | type) == "object" and (.match | keys) == ["command"] and
+            (.match.command | type) == "string"
+        then .match.command else "" end
+      ' <<<"$hook_manifest") || return
+    fi
     if [[ -n $selector ]]; then
       if [[ $selector != [A-Za-z0-9]* || $selector == *[^A-Za-z0-9_.-]* ||
           ! -f $resolved/$selector || ! -x $resolved/$selector ]]; then
@@ -359,10 +362,12 @@ sf_runtime_resolve_from_config() {
     sf_runtime_fail 'cannot assemble resolved runtime references'
     return
   }
-  system_paths=$(jq -cn --args '$ARGS.positional' -- "${system_entries[@]}") || {
-    sf_runtime_fail 'cannot prepare resolved system paths'
-    return
-  }
+  if (( ${#system_entries} )); then
+    system_paths=$(jq -cn --args '$ARGS.positional' -- "${system_entries[@]}") || {
+      sf_runtime_fail 'cannot prepare resolved system paths'
+      return
+    }
+  fi
   resolved_args=( "${tool_entries[@]}" "${component_entries[@]}" )
   final=$(sf_jq -cnce --argjson prepared "$prepared" \
     --arg manifest "$manifest" --arg command "$command" \

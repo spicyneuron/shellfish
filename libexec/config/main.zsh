@@ -134,13 +134,15 @@ sf_config_main() {
       return 1
     }
   fi
-  # Explicit grants precede detected ones. Read paths are passed before write
-  # paths, so their count splits the positional arguments.
-  SF_RUNTIME_SANDBOX_GRANTS=$(jq -cn --argjson detected "$sandbox_detected" \
-    --argjson reads "${#sandbox_read_paths}" --args '
-      {sandbox_read_paths: ($ARGS.positional[:$reads] + $detected.sandbox_read_paths),
-       sandbox_write_paths: ($ARGS.positional[$reads:] + $detected.sandbox_write_paths)}
-    ' -- "${sandbox_read_paths[@]}" "${sandbox_write_paths[@]}") || return 1
+  if (( sandbox_auto_requested || ${#sandbox_read_paths} || ${#sandbox_write_paths} )); then
+    # Explicit grants precede detected ones. Read paths are passed before write
+    # paths, so their count splits the positional arguments.
+    SF_RUNTIME_SANDBOX_GRANTS=$(jq -cn --argjson detected "$sandbox_detected" \
+      --argjson reads "${#sandbox_read_paths}" --args '
+        {sandbox_read_paths: ($ARGS.positional[:$reads] + $detected.sandbox_read_paths),
+         sandbox_write_paths: ($ARGS.positional[$reads:] + $detected.sandbox_write_paths)}
+      ' -- "${sandbox_read_paths[@]}" "${sandbox_write_paths[@]}") || return 1
+  fi
 
   if (( init_requested )); then
     if (( sandbox_auto_requested || ${#sandbox_read_paths} || ${#sandbox_write_paths} )); then
