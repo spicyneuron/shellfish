@@ -16,6 +16,8 @@ view() {
 }
 
 # Standalone activity is an unsafe tail and disappears when content arrives.
+# Ending the provider stream does not recreate it; follow-on work owns its own
+# activity presentation.
 sf_tui_reset
 sf_tui_terminal_reset
 sf_tui_event activity_start
@@ -26,7 +28,7 @@ assert_equal 0 "$SF_PRESENT_SAFE_ROWS"
 sf_tui_event assistant_start
 assert_equal message "${(j:,:)SF_PRESENT_KIND}"
 sf_tui_event assistant_end
-assert_equal activity "${(j:,:)SF_PRESENT_KIND}"
+assert_equal 0 "${#SF_PRESENT_KIND}"
 sf_tui_event activity_stop
 assert_equal 0 "${#SF_PRESENT_KIND}"
 
@@ -40,7 +42,7 @@ assert_equal 'message,activity' "${(j:,:)SF_PRESENT_KIND}"
 sf_tui_event assistant_message_delta 2 after
 assert_equal 'message,message' "${(j:,:)SF_PRESENT_KIND}"
 sf_tui_event assistant_end
-assert_equal 'message,message,activity' "${(j:,:)SF_PRESENT_KIND}"
+assert_equal 'message,message' "${(j:,:)SF_PRESENT_KIND}"
 sf_tui_event activity_stop
 sf_tui_reset
 

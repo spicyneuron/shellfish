@@ -302,7 +302,6 @@ sf_tui_event() {
       SF_PRESENT_ASSISTANT_INDEX=''
       sf_tui_activity_retract || return 1
       sf_tui_assistant_close || return 1
-      sf_tui_activity_resume || return 1
       ;;
     activity_start)
       sf_tui_activity_start || return 1
