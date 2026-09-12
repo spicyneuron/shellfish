@@ -7,7 +7,7 @@ Usage:
   shellfish run [OPTIONS] [PROMPT]   Run exactly one agent turn
   shellfish config [OPTIONS]         Inspect or initialize configuration
 
-Options:
+New sessions:
   -p, --profile NAME    Select a configured profile
   -b, --backend NAME    Override the backend name or path
   -m, --model MODEL     Override the model
@@ -17,14 +17,14 @@ Options:
   --sandbox-auto        Grant detected development-tool paths
   --sandbox-read PATH   Give sandboxed tools read-only access (repeatable)
   --sandbox-write PATH  Give sandboxed tools read-write access (repeatable)
+  --config FILE         Use another configuration file
 
-Session shortcuts:
+Existing sessions:
   -c, --continue [OPTIONS] [PROMPT]      Continue the most recent session here
   -r, --resume [OPTIONS] [PROMPT]        Pick a session from this directory
   -s, --session PATH [OPTIONS] [PROMPT]  Open a specific session
 
-Configuration:
-  --config FILE         Use another configuration file
+Global config:
   --init                Create the user configuration directory; combine with
                         --sandbox-auto to save detected sandbox grants
 
