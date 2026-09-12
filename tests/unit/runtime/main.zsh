@@ -95,8 +95,9 @@ jq -e --arg root "$ROOT/share/default/hooks/session_start" \
     ($root + "/git_environment/run"),
     ($root + "/project_instructions/run")
   ] and
-  .harness.session_start[0].environment == ["SHELLFISH_PROBE_BUDGET"] and
+  .harness.session_start[0].environment == [] and
   .harness.session_start[0].display == "Loading project environment…" and
+  .harness.session_start[1].environment == [] and
   .harness.session_start[1].display == "Loading git environment…" and
   .harness.session_start[2].environment == [] and
   (.harness.user_prompt_submit[] | select(
@@ -113,6 +114,7 @@ jq -e --arg root "$ROOT/share/default/hooks/session_start" \
     .match == {pattern:"^/(help|h)\\z"} and (has("help") | not)) and
   .harness.user_prompt_submit[0].command == ($prompt_root + "/help/run") and
   .harness.user_prompt_submit[-1].command == ($prompt_root + "/git_environment/run") and
+  .harness.user_prompt_submit[-1].environment == [] and
   (.backend | has("context_window_command") | not) and
   (.harness.tools | map(.name)) ==
     ["read_file", "edit_file", "write_file", "skill", "search_web", "fetch_url", "shell"] and

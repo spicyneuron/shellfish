@@ -49,7 +49,7 @@ After the transcript header and optional system record are created, three `sessi
 
 This context is appended once for a new session rather than before every turn.
 
-The filesystem listing in `project_environment` and each Git probe use a one-second wall-clock budget so session startup stays fast. A slow filesystem skips the listing but retains the other environment context; a slow Git probe reports no context. Set `SHELLFISH_PROBE_BUDGET` to a positive number of seconds to raise the limit on a slow host; other values are ignored.
+The filesystem listing in `project_environment` and each Git probe use a one-second wall-clock budget so environment collection stays fast. A slow filesystem skips the listing but retains the other environment context; a slow Git probe reports no context.
 
 Skills are discovered in descending precedence from `./.agents/skills/`, the resolved configuration directory's `skills/`, `~/.agents/skills/`, and bundled `share/default/skills/`. Each skill directory contains a `SKILL.md` whose frontmatter supplies its matching `name` and `description`. Invalid skills and skills with `disable-model-invocation: true` are unavailable to the model. The advertised catalog is recorded when the session is created; the `skill` tool reads the selected file when invoked.
 
