@@ -72,6 +72,7 @@ The `openai` backend also supports compatible services by setting `endpoint` in 
 ## Documentation
 
 - [`docs/CONFIG.md`](docs/CONFIG.md): Configure profiles, backends, harnesses, components, and sandbox grants.
+- [`docs/SESSIONS.md`](docs/SESSIONS.md): Understand session structure, creation, frozen runtime, derivation, and recovery.
 - [`docs/HARNESS.md`](docs/HARNESS.md): Understand the harness role and the bundled defaults.
 - [`docs/CHAT.md`](docs/CHAT.md): Use interactive chat, slash commands, and keybindings.
 - [`docs/HOOKS.md`](docs/HOOKS.md): Write custom lifecycle hooks.

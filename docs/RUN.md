@@ -2,13 +2,15 @@
 
 `shellfish run` runs a single agent turn. A turn begins with one user message and may contain multiple provider requests, tool calls, permission decisions, and continuations requested by `stop` scripts.
 
-`shellfish create` creates an idle session from current configuration and prints its absolute path. `--session-from PATH` reuses an existing session's frozen runtime without its messages or context. Creation re-reads the system component paths stored in that runtime, then runs the new session's `session_start` scripts. `--session-out PATH` selects the destination instead of the state directory.
+`shellfish create` creates an idle session and prints its absolute path. `--session-from PATH` derives one from an existing session's runtime without its messages or startup context. `--session-out PATH` selects the destination instead of the state directory. See [`SESSIONS.md`](SESSIONS.md) for session structure, creation, and derivation semantics.
 
 ```sh
 shellfish create
 shellfish create --session-from path/to/session.jsonl
 shellfish create --session-out ./project-session.jsonl
 ```
+
+## Session creation protocol
 
 `shellfish create --jsonl` streams startup events instead of printing a path:
 
@@ -19,11 +21,11 @@ shellfish create --session-out ./project-session.jsonl
 | `state`, `hook_result` | Durable output from each validated `session_start` component. |
 | `_session_created` | `path`, after startup hooks finish successfully. |
 
-Creation writes the header and optional system record before running hooks. Each component runs, validates, appends and emits state followed by any result, then selects the next component. An empty chain emits only the preparation and creation events. On startup failure, Shellfish attempts to remove the new session, writes the diagnostic to stderr, exits nonzero, and emits no creation event. Cleanup is best effort; a valid published session is not removed merely because writing its events or final path to stdout fails. Clients must not submit a turn until creation exits successfully.
+Durable startup records are appended before they are emitted. An empty hook chain emits only preparation and creation events. A failed startup emits no creation event. Clients must not submit a turn until creation exits successfully.
 
 As in a turn, `SIGUSR1` is the client's cancellation signal, aimed at the creating process alone so it can stop a running hook script itself. Cancelled JSONL creation writes its diagnostic to stderr, exits nonzero, and attempts the same best-effort cleanup as other startup failures; abrupt termination can leave the published session behind.
 
-`--system TEXT` and `--system-file PATH` replace the configured system prompt for that creation. Both flags are repeatable and may be mixed; their contents have trailing newlines stripped and are joined in command-line order with a blank line. They do not replace the component paths stored in the header, so a later `--session-from` re-reads those paths rather than inheriting the one-off override.
+`--system TEXT` and `--system-file PATH` replace the configured system prompt for that creation. Both flags are repeatable and may be mixed; their contents have trailing newlines stripped and are joined in command-line order with a blank line.
 
 Chat and `shellfish run` use an existing session with `--session PATH`. Otherwise they create one through `shellfish create`, accepting `--session-from` and `--session-out`. Neither creation flag can be combined with `--session`.
 

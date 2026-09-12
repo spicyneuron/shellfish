@@ -149,12 +149,12 @@ For chat and `run`, automatic grants are frozen into a new session like other ru
 
 ## Existing sessions
 
-A session retains the resolved backend, harness, request, sandbox settings, and system component paths stored in its header. Ordinary runtime overrides cannot be applied when opening an existing session. Themes and TUI preview settings come from the current configuration.
-
-Hook-requested session updates merge recursively into the header during the current turn. Arrays, scalars, and `null` replace the existing value, and the result must remain a canonical session runtime. Updates to different fields compose, while updates that replace the same scalar or array are last-writer-wins.
+A session retains its resolved runtime instead of reinterpreting current configuration. Ordinary runtime overrides therefore cannot be applied when opening one. Themes and TUI preview settings remain current client configuration and are not stored in the session.
 
 Use the session path to inspect that combination:
 
 ```sh
 shellfish config --session-from path/to/session.jsonl
 ```
+
+See [`SESSIONS.md`](SESSIONS.md) for the header boundary, system prompt materialization, runtime updates, and derivation semantics.
