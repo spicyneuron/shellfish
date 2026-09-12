@@ -103,6 +103,7 @@ shellfish-server
 ./tests/run          # shell tests
 ./tests/run pty      # terminal integration tests
 ./tests/run server   # browser and Go server tests
-./tests/run metrics  # performance and source size reports
+./tests/run perf     # performance reports
+./tests/run loc      # source size report
 ./tests/run unit/session/main.zsh unit/runtime/main.zsh
 ```

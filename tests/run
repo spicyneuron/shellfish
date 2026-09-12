@@ -27,7 +27,7 @@ mkdir -p -- "$TMPDIR" || exit 1
 
 if (( $# == 0 )); then
   suites=( unit )
-elif (( $# == 1 )) && [[ $1 == (unit|pty|server|metrics) ]]; then
+elif (( $# == 1 )) && [[ $1 == (unit|pty|server|perf|loc) ]]; then
   suites=( $1 )
 else
   for test_path in "$@"; do
@@ -41,10 +41,13 @@ for suite in $suites; do
     unit) tests+=( $test_dir/unit/**/*.zsh(N.) ) ;;
     pty)  tests+=( $test_dir/pty/**/*.py(N.) ) ;;
     server) tests+=( "$project_dir/shellfish-server/ui/ui_test.js" "$project_dir/shellfish-server" ) ;;
-    metrics)
-      "$test_dir/metrics/run.zsh" || exit
-      "$test_dir/metrics/rendering.zsh" || exit
-      "$test_dir/metrics/loc.zsh" || exit
+    perf)
+      "$test_dir/perf/run.zsh" || exit
+      "$test_dir/perf/rendering.zsh" || exit
+      exit
+      ;;
+    loc)
+      "$test_dir/loc/run.zsh" || exit
       exit
       ;;
   esac
@@ -53,7 +56,7 @@ done
 for test_file in $tests; do
   [[ -d $test_file || ( -f $test_file && $test_file == *.(zsh|py|js) ) ]] || {
     print -u2 -r -- "Invalid test path: $test_file"
-    print -u2 -r -- "Usage: $0 [unit|pty|server|metrics|TEST_PATH ...]"
+    print -u2 -r -- "Usage: $0 [unit|pty|server|perf|loc|TEST_PATH ...]"
     exit 2
   }
 done
