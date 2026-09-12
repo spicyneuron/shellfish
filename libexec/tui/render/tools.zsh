@@ -1,12 +1,6 @@
 emulate -R zsh
 setopt no_aliases no_bg_nice no_multios pipe_fail
 
-# A call is final when appended. Its result stays live through permission and
-# execution and holds the call ID the durable record must match.
-#
-# Call data: name, summary, and content format. Result data: call ID, exit
-# status, content format, full flag, sandbox note, and whole-content estimate.
-
 sf_tui_tool_pending() {
   integer index=${#SF_PRESENT_KIND}
   (( SF_PRESENT_LIVE == index && index > 0 )) &&
@@ -14,6 +8,7 @@ sf_tui_tool_pending() {
 }
 
 sf_tui_tool_call() {
+  # Calls settle immediately; result tails stay live through execution.
   local id=$1 name=$2 content=${3-} summary=${4-} format=${5:-json}
   integer index
   sf_tui_hook_interrupt || return 1
@@ -43,8 +38,7 @@ sf_tui_tool_result() {
   [[ $id == "$expected" ]] || return 1
   sf_tui_safe "$content"
   SF_PRESENT_TEXT[index]=$REPLY
-  # The clamp stands for content the preview never renders, so its estimate
-  # comes from the whole result, not from what is left to draw.
+  # Clamp estimates use the whole result.
   sf_tui_format_trim "$REPLY"
   sf_tui_token_count ${#REPLY}
   sf_tui_formatter_set_data $index "$id" "$code" "$format" "$full" "$sandbox" \
@@ -71,8 +65,6 @@ sf_tui_tool_permission_clear() {
   sf_tui_formatter_set_data $index "$id" '' plain '' '' 0
 }
 
-# A turn error closes a result where execution stopped. Normal cancellation
-# supplies durable results before its error, so this is only the failure edge.
 sf_tui_tool_abandon() {
   sf_tui_tool_pending || return 0
   sf_tui_formatter_settle
@@ -104,8 +96,7 @@ sf_tui_tool_pad() {
   REPLY=$padded
 }
 
-# Appends wrapped syntax content. PREFIX supplies the two-column rail space;
-# FIRST_RAIL replaces its first character only on the first output row.
+# FIRST_RAIL replaces the first prefix character on the first row.
 sf_tui_format_tool_body() {
   integer columns=$1 row span has_background limit hidden=0
   local body=$2 prefix=$3 first_rail=$4 kind=$5 format=$6 text style
@@ -211,8 +202,6 @@ sf_tui_format_tool() {
   if (( live )) && [[ $second == permission ]]; then
     return 0
   fi
-  # A zero preview collapses the result onto its rail. A budget merely spent by
-  # earlier commits keeps the ordinary clamp instead.
   if [[ $configured == 0 ]]; then
     tail='╰'
     overlay=''

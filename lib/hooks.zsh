@@ -12,13 +12,10 @@ typeset -g SF_HOOK_ERROR=''
 typeset -g SF_HOOK_JSONL=0
 typeset -g SF_HOOK_VISIBLE=1
 typeset -g SF_HOOK_COMPONENT_VALIDATOR=''
-# Preserve inherited turn state across nested turn setup.
 typeset -g SHELLFISH_TURN_STATE=${SHELLFISH_TURN_STATE-}
 typeset -g SHELLFISH_TURN_ID=${SHELLFISH_TURN_ID-}
 typeset -g SF_HOOK_NAME=''
-# Cancellation takes its pending exit at the first nested return, so cleanup
-# written after that point never runs. These name the paths this process made,
-# never an inherited one, and zshexit removes whatever a cancelled turn left.
+# Track only scratch paths created by this process for cancellation cleanup.
 typeset -g SF_HOOK_TURN_STATE_TEMP=''
 typeset -g SF_HOOK_INPUT_TEMP=''
 
@@ -396,8 +393,7 @@ sf_hooks_run_chain() {
 
   [[ $hook != user_prompt_submit ]] || input_option=( --rawfile input "$input" )
 
-  # The terminator keeps a trailing empty environment field, which command
-  # substitution would otherwise strip along with the final newline.
+  # Preserve a trailing empty environment field through command substitution.
   fields=( "${(@f)$(jq -erc --arg hook "$hook" "${input_option[@]}" '
     .harness.max_capture_bytes,
     (.harness[$hook][]? | . as $component |
@@ -479,7 +475,6 @@ sf_hooks_result_record() {
   }
 }
 
-# Runs once during session preparation.
 sf_hooks_session_start() {
   sf_hooks_run "$1" session_start '' commit reject 0 1 || return
   reply=()

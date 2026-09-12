@@ -101,8 +101,7 @@ sf_create_main() {
         shift 2
         ;;
       *)
-        # Forward option values with their option so that a value that looks
-        # like --session-out is not read as one.
+        # Keep an option with its value when the value resembles an option.
         take=$(( ${SF_CREATE_OPTIONS[$1]:-0} + 1 ))
         (( $# >= take )) || { sf_die "$1 requires a value"; return 2; }
         forwarded+=( "${@:1:$take}" )
@@ -116,8 +115,6 @@ sf_create_main() {
     return 2
   }
 
-  # Configuration resolution belongs to shellfish config, including its rejection
-  # of runtime overrides against --session-from.
   report=$("$SF_ENTRY" config "${forwarded[@]}") || report_status=$?
   (( ! report_status )) || return $report_status
   runtime=$(jq -ce 'del(.theme, .tui)' <<<"$report") || {
@@ -138,7 +135,6 @@ sf_create_main() {
   source "$SF_ROOT/lib/session/main.zsh"
   source "$SF_ROOT/lib/hooks.zsh"
   source "$SF_ROOT/lib/process.zsh"
-  # USR1 is the client's cancellation signal, aimed at this process alone.
   trap 'sf_create_interrupt 130 "$session"' INT USR1
   trap 'sf_create_interrupt 129 "$session"' HUP
   trap 'sf_create_interrupt 143 "$session"' TERM

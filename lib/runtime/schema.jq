@@ -200,7 +200,7 @@ def canonical_assistant_message:
   (["content", "stop", "type"] - keys | length == 0) and
   (.stop | IN("end", "tool_calls", "length")) and
   ((has("usage") | not) or (.usage | token_usage)) and
-  # Calls are their own records, appended when each reaches execution.
+  # Calls become separate records at execution.
   (.content | type == "array" and
     all(.[]; canonical_text or canonical_reasoning));
 
@@ -312,8 +312,7 @@ def canonical_session_record:
   (type == "object" and keys == ["content", "type"] and .type == "system" and
     (.content | nul_free_string));
 
-# A batch reads assistant, then call/result pairs. "call" requires the first
-# call, "more" accepts another call or the assistant message that ends the batch.
+# A tool-calling assistant message is followed by call/result pairs.
 def session_records_state:
   reduce .[] as $record
     ({valid:true, next:"user", call:null, messages:0};
@@ -327,7 +326,7 @@ def session_records_state:
             .next == "user" then .next = "assistant"
         else . end
       elif $record.type == "turn_error" then
-        # A turn error closes any state except one still owing a tool result.
+        # Turn errors cannot replace an owed tool result.
         if .next == "user" then .
         elif .next != "result" then .next = "user"
         else .valid = false end

@@ -1,9 +1,6 @@
 emulate -R zsh
 setopt no_aliases no_bg_nice no_multios pipe_fail
 
-# Shared text utilities and presentation configuration, independent of what is
-# being rendered.
-
 typeset -g SF_PRESENT_PREVIEW_REASONING=full SF_PRESENT_PREVIEW_CONTEXT=full
 typeset -g SF_PRESENT_PREVIEW_TOOL_CALL=full SF_PRESENT_PREVIEW_TOOL_RESULT=full
 typeset -ga SF_PRESENT_ACTIVITY_FRAMES=( ⠃ ⠁ ⠁ ⠃ ⠆ ⡄ ⡀ ⡀ ⡄ ⠆ )
@@ -24,9 +21,6 @@ sf_tui_rows_config() {
   SF_PRESENT_PREVIEW_TOOL_RESULT=$limits[4]
 }
 
-# Display token estimate. Providers report counts for only some content blocks,
-# so presentation assumes four characters per token, replaced by an exact count
-# when the provider gives one.
 sf_tui_token_count() {
   integer characters=${1:-0}
   if [[ -n ${2-} ]]; then
@@ -36,8 +30,6 @@ sf_tui_token_count() {
   fi
 }
 
-# Replaces control characters with U+FFFD, keeping the two whitespace controls
-# that presentation lays out itself.
 sf_tui_safe() {
   local character text=$1
   local -a characters
@@ -52,8 +44,6 @@ sf_tui_safe() {
   done
 }
 
-# Terminal cells occupied by one character at $2 columns into the row. Tabs
-# advance to the next eight-column stop, so width depends on that position.
 sf_tui_cell_width() {
   local character=$1
   integer column=$2 code

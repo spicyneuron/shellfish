@@ -3,37 +3,25 @@ setopt no_aliases no_bg_nice no_multios pipe_fail
 
 (( $+functions[sf_jq] )) || source "$SF_ROOT/lib/jq.zsh"
 
-# The presentation input boundary. The controller and transcript replay both feed
-# normalized events here, and sf_tui_event is the only caller that may drive the
-# formatter list below.
-
 typeset -g SF_PRESENT_ERROR=''
-# The frozen session runtime, refreshed by live session updates.
 typeset -g SF_PRESENT_RUNTIME='null'
 typeset -g SF_PRESENT_IDENTITY='' SF_PRESENT_FOOTER=''
 
-# One ordered list of formatter inputs. At most the tail is live; every earlier
-# entry is final and leaves this list after producing rows. KIND selects the
-# formatter, TEXT is source not yet settled into rows, and DATA is its private
-# state, NUL-joined and opaque here.
+# Only the formatter tail may be live; DATA is NUL-joined private state.
 typeset -ga SF_PRESENT_KIND=() SF_PRESENT_TEXT=() SF_PRESENT_DATA=()
 typeset -gi SF_PRESENT_LIVE=0 SF_PRESENT_WORK_ACTIVE=0
-# Wrapped rows that have left their formatter but not yet reached terminal
-# scrollback. HEAD advances through them without moving the remaining rows.
+# Rows remain here until committed to terminal scrollback.
 typeset -ga SF_PRESENT_ROW_TEXT=() SF_PRESENT_ROW_SPANS=()
 typeset -ga SF_PRESENT_ROW_READY=()
 typeset -gi SF_PRESENT_ROW_HEAD=1
-# Leading role chrome belongs to an entry rather than to a formatter of its own.
-# ROLE is the role the entry opened, SECTION the number it took, and PRIOR the
-# role in force beforehand, which retraction restores.
+# PRIOR restores the role displaced by a retracted entry.
 typeset -ga SF_PRESENT_ROLE=() SF_PRESENT_SECTION=() SF_PRESENT_PRIOR=()
 typeset -ga SF_PRESENT_EMITTED=()
 typeset -g SF_PRESENT_LAST_ROLE=''
 typeset -gi SF_PRESENT_SECTION_ID=0
 typeset -g SF_PRESENT_ASSISTANT_INDEX=''
 
-# Appends a formatter. Fails on a live tail, so a caller that forgets to settle
-# a transition cannot grow a second mutable entry. REPLY is the new index.
+# Refuses a second live formatter and returns the new index.
 sf_tui_formatter_append() {
   local kind=$1 mode=${2:-final}
   (( ! SF_PRESENT_LIVE )) || return 1
@@ -50,14 +38,11 @@ sf_tui_formatter_append() {
   [[ $mode == final ]] || SF_PRESENT_LIVE=$REPLY
 }
 
-# Claims leading role chrome for an entry. A role already in force claims
-# nothing, so only the first formatter of a run owns its rule.
+# Only the first formatter in a role run owns its rule.
 sf_tui_formatter_role() {
   integer index=$1
   local role=$2
   (( index > 0 && index <= ${#SF_PRESENT_KIND} )) || return 1
-  # Reclaiming would take a second section number and lose the role the first
-  # claim displaced.
   [[ -z $SF_PRESENT_ROLE[index] ]] || return 1
   [[ -n $role ]] || return 1
   [[ $SF_PRESENT_LAST_ROLE != $role ]] || return 0
@@ -75,8 +60,7 @@ sf_tui_formatter_settle() {
   SF_PRESENT_LIVE=0
 }
 
-# Removes the live tail with any role chrome it owns, releasing its section
-# number so numbering stays contiguous when a formatter had nothing visible.
+# Retracting an unrendered role releases its section number.
 sf_tui_formatter_retract() {
   integer index=${#SF_PRESENT_KIND}
   (( index && SF_PRESENT_LIVE == index )) || return 1
@@ -89,7 +73,6 @@ sf_tui_formatter_retract() {
   sf_tui_formatter_keep 1 $(( index - 1 ))
 }
 
-# Drops a formatted prefix. The live tail is never part of it.
 sf_tui_formatter_drop() {
   integer count=$1 total=${#SF_PRESENT_KIND}
   (( count >= 0 && count <= total )) || return 1
@@ -99,15 +82,13 @@ sf_tui_formatter_drop() {
   (( ! SF_PRESENT_LIVE )) || (( SF_PRESENT_LIVE -= count ))
 }
 
-# Advances the live formatter past source that has become settled rows. The
-# rows themselves are retained separately until the terminal commits them.
+# Advance settled source while retaining its rows for terminal commit.
 sf_tui_formatter_advance() {
   integer source=$1 leading=$2 body_rows=$3
   local kind state continuation record
   (( ${#SF_PRESENT_KIND} )) || return 1
   kind=$SF_PRESENT_KIND[1]
   [[ $kind == (message|reasoning) ]] || return 1
-  # A scan continuation measures the prefix that settled, not what is left.
   record=$SF_PRESENT_TEXT[1]
   (( source >= 0 && source <= ${#record} )) || return 1
   (( ! source )) || SF_PRESENT_TEXT[1]=${record[source + 1,-1]}
@@ -116,8 +97,7 @@ sf_tui_formatter_advance() {
     SF_PRESENT_SECTION[1]=''
     SF_PRESENT_PRIOR[1]=''
   }
-  # Reset the frontier and spans with the prefix they covered, but carry the
-  # state that prefix reached into the base: a resize rescans from zero.
+  # A resize rescans from the state reached by the settled prefix.
   sf_tui_formatter_data 1 3 || return 1
   state=$REPLY
   sf_tui_formatter_data 1 6 || return 1
@@ -132,8 +112,7 @@ sf_tui_formatter_advance() {
   sf_tui_formatter_set_field 1 11 $(( REPLY + body_rows ))
 }
 
-# Private to this file's list operations. Every per-entry array belongs here or
-# it drifts out of step with its kind.
+# Keep all per-entry arrays aligned.
 sf_tui_formatter_keep() {
   integer first=$1 last=$2
   local name
@@ -149,7 +128,6 @@ sf_tui_formatter_keep() {
   done
 }
 
-# Discards retained presentation before a rebuild.
 sf_tui_reset() {
   SF_PRESENT_LIVE=0
   SF_PRESENT_WORK_ACTIVE=0
@@ -165,7 +143,6 @@ sf_tui_reset() {
   SF_PRESENT_ASSISTANT_INDEX=''
 }
 
-# Per-type fields, set and read only by the formatter that owns the entry.
 sf_tui_formatter_set_data() {
   integer index=$1
   shift
@@ -173,8 +150,7 @@ sf_tui_formatter_set_data() {
   SF_PRESENT_DATA[index]=${(pj:\0:)@}
 }
 
-# Replaces one per-type field. Writing past the end grows the data with empty
-# fields, which is how a formatter adds metadata it did not need at append.
+# Writing past the end grows the private data fields.
 sf_tui_formatter_set_field() {
   integer index=$1 field=$2
   local value=$3
@@ -186,8 +162,6 @@ sf_tui_formatter_set_field() {
   SF_PRESENT_DATA[index]=${(pj:\0:)fields}
 }
 
-# REPLY is field $2, counting from one, or empty when absent. Reading past the
-# end is normal: formatters grow their data over time.
 sf_tui_formatter_data() {
   integer index=$1 field=$2
   local -a fields
@@ -204,27 +178,8 @@ sf_tui_session_update() {
   SF_PRESENT_FOOTER=$SF_PRESENT_IDENTITY
 }
 
-# Every normalized event presentation consumes. An unknown type is a protocol
-# error and fails the caller. Tuples come from display-fields.jq and
-# event-decode.jq padded to seven fields; the rest are synthesized by the
-# controller.
-#
-#   activity_start                            activity_stop
-#   system TEXT                               user TEXT
-#   assistant_start                           assistant_end
-#   assistant_message_delta INDEX TEXT
-#   assistant_reasoning_delta INDEX TEXT [TOKENS]
-#   assistant_reasoning_opaque INDEX          assistant_tool_call_delta INDEX
-#   reasoning_tokens TOKENS
-#   tool_call ID NAME CONTENT SUMMARY FORMAT
-#   tool_result CALL_ID STATUS CONTENT FORMAT FULL SANDBOX_DENIAL
-#     STATUS is an exit code, empty while pending, or "hidden" for no footer.
-#   tool_permission                           tool_permission_clear
-#   hook_activity HOOK SCRIPT TEXT            hook_activity
-#     The no-argument form clears activity that ended without a result.
-#   hook_result SCRIPT META MODEL_CONTEXT USER_CONTEXT
-#   error HEADING DETAIL [end]
-#     "end" closes the turn so the next record opens a new section.
+# Event tuples are padded to seven fields. Unknown types fail.
+# Tool status is an exit code, empty while pending, or "hidden".
 sf_tui_event() {
   local type=$1 first=${2-} second=${3-} third=${4-}
   local fourth=${5-} fifth=${6-} sixth=${7-}
@@ -300,8 +255,6 @@ sf_tui_event() {
   esac
 }
 
-# Settles the live assistant block, or retracts it when the stream produced
-# nothing visible. Other live kinds have their own transitions.
 sf_tui_assistant_close() {
   integer index=${#SF_PRESENT_KIND}
   (( SF_PRESENT_LIVE )) || return 0
@@ -314,8 +267,7 @@ sf_tui_assistant_close() {
   fi
 }
 
-# A source-index or visible-kind transition closes the prior block before its
-# successor is appended. Opaque blocks cross the same boundary with no output.
+# Source or visible-kind transitions close the prior block.
 sf_tui_assistant_boundary() {
   local source_index=$1 kind=${2-}
   integer index=${#SF_PRESENT_KIND}

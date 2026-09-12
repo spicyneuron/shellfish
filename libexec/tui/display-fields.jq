@@ -31,8 +31,7 @@ def display_summary:
       select(. != "")) |
   join(" · ");
 
-# Each event is a leading type and up to six fields, padded to a fixed width so
-# readers can take them in fixed-size groups.
+# Emit fixed-width, NUL-delimited event fields.
 def emit_display_batch:
   (.[], ["batch_ok"]) |
   if length < 1 or length > 7 or any(.[]; type != "string") then
@@ -73,8 +72,6 @@ def durable_display_fields($replay; $tools):
   if .type == "system" and $replay then
     ["system", .content]
   elif .type == "turn_error" then
-    # The failure closes its section without claiming a section number. Its
-    # first line is the outcome, and any remaining lines are its detail.
     (.message | split("\n")) as $lines |
     ["error", $lines[0], ($lines[1:] | join("\n")), "end"]
   elif canonical_user_message then
@@ -105,7 +102,7 @@ def durable_display_fields($replay; $tools):
     . as $result |
     ($tools | map(select(.name == $result.name))[0].manifest.display.result //
       {content:["$result_preview"],format:"plain"}) as $display |
-    # An empty status denotes a pending call; hidden denotes a completed call without a footer.
+    # "hidden" completes a call without a footer.
     ["tool_result", .call_id,
       (if ($display.content | index("$exit_code")) != null or .exit_code != 0
        then (.exit_code | tostring) else "hidden" end),

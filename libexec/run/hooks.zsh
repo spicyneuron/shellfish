@@ -1,5 +1,3 @@
-# Turn hook policy: how a turn uses hook status, stdout, and control data.
-
 emulate -R zsh
 setopt no_aliases no_bg_nice no_multios pipe_fail
 
@@ -32,7 +30,6 @@ sf_hooks_user_prompt_validate() {
   }
 }
 
-# Prepares prompt context before the user record is committed.
 sf_hooks_user_prompt_submit() {
   local session=$1 prompt=$2 argument control patch
   local -a decision handoff
@@ -84,13 +81,12 @@ sf_hooks_user_prompt_submit() {
   fi
 }
 
-# A skipped completion makes stdout durable feedback; status-0 output is discarded.
+# Only skipped completion output becomes durable feedback.
 sf_hooks_stop() {
   sf_hooks_run "$1" stop "$2" commit_on_skip require_context 0 2 "$3" || return
   if (( reply[1] )); then reply=(finish); else reply=(continue); fi
 }
 
-# Hooks decide sandbox bypass on fd 3 or defer to the run client channel.
 sf_hooks_permission_validate() {
   local control=$4
   integer script_status=$2
@@ -147,7 +143,7 @@ sf_hooks_permission_request() {
   fi
 }
 
-# Gates tool calls and uses script output as denial feedback.
+# Only failed hook output becomes denial feedback.
 sf_hooks_pre_tool_validate() {
   local context=$3
   integer script_status=$2
@@ -182,7 +178,7 @@ sf_hooks_pre_tool_use() {
   fi
 }
 
-# Observes a committed canonical result; stdout and skip statuses are rejected.
+# Post-tool hooks cannot emit output or skip.
 sf_hooks_post_tool_use() {
   local session=$1 result=$2 tool_input=$3 input=''
 

@@ -11,7 +11,6 @@ def event_fields($event_runtime):
   elif .type == "_assistant_reasoning_opaque" and canonical_backend_event then
     ["assistant_reasoning_opaque", (.index | tostring)]
   elif .type == "_turn_usage" and canonical_backend_event then
-    # Usage is committed with the durable assistant record.
     empty
   elif .type == "_hook_activity" and keys == ["hook", "script", "text", "type"] and
       (.hook as $hook | hook_names | index($hook) != null) and
@@ -59,7 +58,6 @@ def event_fields($event_runtime):
   elif canonical_user_message or canonical_assistant_message or
       canonical_tool_call or canonical_tool_result or canonical_hook_result or
       (.type == "turn_error" and canonical_session_record) then
-    # Usage is committed with its assistant record rather than streamed.
     (select(canonical_assistant_message and has("usage")) | .usage |
       turn_usage_fields($event_runtime.profile.context_window // null)),
     durable_display_fields(false; ($event_runtime.harness.tools // []))

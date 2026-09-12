@@ -75,8 +75,6 @@ sf_tui_main() {
         break
         ;;
       -*)
-        # Creation owns these; forward them unread. Selecting a config file is
-        # not a runtime override, and chat also reports presentation from it.
         arity=${SF_CREATE_OPTIONS[$1]-}
         [[ -n $arity ]] || { sf_die "unknown argument: $1"; return 2; }
         take=$(( arity + 1 ))
@@ -138,7 +136,6 @@ sf_tui_main() {
     session_mode=resume
     presentation_args=( --session-from "$session" "${presentation_args[@]}" )
   fi
-  # Presentation is never frozen, so chat resolves it per start for either mode.
   presentation=$("$SF_ENTRY" config "${presentation_args[@]}") || config_status=$?
   (( ! config_status )) || return $config_status
 

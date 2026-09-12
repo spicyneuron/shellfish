@@ -6,8 +6,6 @@ setopt no_aliases no_multios pipe_fail
 typeset -g SF_ENVIRONMENT_ERROR=''
 typeset -ga SF_ENVIRONMENT_NAMES=()
 typeset -ga SF_ENVIRONMENT_VALUES=()
-# The runtime that SF_ENVIRONMENT_NAMES and SF_ENVIRONMENT_FILE describe. A
-# session update replaces the frozen runtime, which changes this key.
 typeset -g SF_ENVIRONMENT_RUNTIME=''
 typeset -g SF_ENVIRONMENT_FILE=''
 
@@ -16,8 +14,6 @@ sf_environment_fail() {
   return 1
 }
 
-# Declared names and the env file depend only on the frozen runtime, so every
-# component in a turn shares one projection.
 sf_environment_project() {
   local runtime=$1 projection
   local -a fields
@@ -42,8 +38,7 @@ sf_environment_project() {
   SF_ENVIRONMENT_RUNTIME=$runtime
 }
 
-# Selected names arrive space separated. The canonical session header validates
-# every declared name, so none of them can contain a space.
+# Canonical environment names cannot contain spaces.
 sf_environment_prepare() {
   local runtime=$1 selected=$2 line key value name
   local -a selected_names

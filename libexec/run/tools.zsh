@@ -176,7 +176,7 @@ sf_tool_bound_capture() {
   tail -c "$room" "$captured" >>"$result"
 }
 
-# Reports whether a call needs approval. The caller owns the decision.
+# Returns 0 when sandbox bypass needs approval.
 sf_tool_needs_permission() {
   local name=$1 bypass=$2 reason_valid=$3
   integer harness_sandbox=$4
@@ -221,7 +221,6 @@ sf_tool_execute() {
     sf_tool_result "$id" "$name" 'sandbox bypass is not allowed' 126
     return
   fi
-  # Sandbox bypass requires an explicit approval decision.
   if [[ $bypass == true && $decision != approved ]]; then
     sf_tool_result "$id" "$name" "${denial_reason:-sandbox bypass denied}" 126
     return
@@ -313,8 +312,7 @@ sf_tool_execute() {
       sf_tools_fail 'cannot bound tool output'
       return
     }
-    # Process startup denials are logged even on success, so only report a
-    # denial when it accompanies a failure.
+    # Ignore fence startup denials from successful tools.
     if [[ $exit_code != 0 && -n $sandbox_log && -f $sandbox_log ]] &&
       grep -Fq ' ✗ ' "$sandbox_log"; then
       sandbox_denial_detected=true

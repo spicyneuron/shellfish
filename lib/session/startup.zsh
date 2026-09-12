@@ -6,10 +6,7 @@ setopt no_aliases no_bg_nice no_multios pipe_fail
 typeset -g SF_SESSION_STARTUP_ERROR=''
 typeset -gA SF_SESSION_OPEN=( path '' mode '' )
 
-# Resolves which session a client attaches to. A requested session must already
-# exist; otherwise one is created from the remaining options. Creation belongs
-# to shellfish create, which reports its own failures and prints the path it
-# chose. The frozen runtime stays in the transcript.
+# Resume a requested session or delegate creation to shellfish create.
 sf_session_open() {
   local requested=$1
   integer override=$2

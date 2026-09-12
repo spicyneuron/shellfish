@@ -12,8 +12,7 @@ sf_config_init_private() {
   local requested_config=$1 sandbox=${2-} config_path dir home=${HOME-} json json_line line name
   local env_example="$SF_SHARE/template/example.env"
   local template="$SF_SHARE/template/shellfish.jsonc" temp
-  # Each template grant comment maps to the harness field replacing it. A field
-  # with no paths is left out of grants, so its comment survives.
+  # Preserve template grant comments for empty fields.
   local -A markers=(
     '        // Paths outside the project that sandboxed tools may read' sandbox_read_paths
     '        // Paths outside the project that sandboxed tools may read and write' sandbox_write_paths
@@ -70,8 +69,7 @@ sf_config_init_private() {
         print -r -- "$line"
         continue
       fi
-      # jq indents elements two columns, so six more align them with the
-      # eight-column comment they replace.
+      # Align jq's two-column indent with the replaced template comment.
       while IFS= read -r json_line; do
         [[ $json_line == '[' || $json_line == ']' ]] || print -r -- "      $json_line"
       done <<<"$grants[$name]"

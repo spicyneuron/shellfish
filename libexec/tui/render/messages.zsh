@@ -1,32 +1,18 @@
 emulate -R zsh
 setopt no_aliases no_bg_nice no_multios pipe_fail
 
-# Message formatters, and the row primitives every formatter shares. A formatter
-# renders one entry's uncommitted suffix at the current width and returns rows,
-# per-row spans, per-row consumption, and a count of leading safe rows. Repaint
-# concatenates those; nothing here writes to the terminal.
+# Formatters return rows, spans, source consumption, and a safe prefix.
 
 typeset -ga SF_FORMAT_ROWS=() SF_FORMAT_SPANS=() SF_FORMAT_CONSUMED=()
 typeset -gi SF_FORMAT_SAFE=0 SF_FORMAT_LEADING=0 SF_FORMAT_BODY_ROWS=0
-# What the most recent sf_tui_format_trim took off each end. They are logical
-# content no row displays, so sf_tui_format_edges hands them back to the rows
-# either side of the body.
+# Trimmed characters remain logical source consumption.
 typeset -gi SF_FORMAT_TRIM_LEADING=0 SF_FORMAT_TRIM_TRAILING=0
-# Scratch for one row's spans while a formatter builds them.
 typeset -ga SF_FORMAT_SPAN=()
-# At most this many stable rows wait for an incomplete inline construct. Older
-# rows keep draining with best-effort styling instead of pinning a tall stream.
+# Limit rows held for an incomplete inline construct.
 typeset -gi SF_PRESENT_HOLD_ROWS=10
 
-# Message and reasoning share data fields 2 through 9: the Markdown scan
-# frontier, its scan state, cached source spans, whether leading chrome
-# committed, the continuation flag, the width those spans were scanned at, and
-# the state and continuation a rescan restarts from. Field 1 is the role, and
-# anything past 9 belongs to the owning kind.
-#
-# A complete record of nothing but blank lines takes no entry, so it claims no
-# role rule and leaves no gap in the section numbering. A live entry still gets
-# one, since its content has not arrived yet.
+# Field 1 is the role, fields 2-9 hold shared Markdown state, and later fields
+# are kind-specific. Blank final records do not claim a section.
 sf_tui_message_append() {
   local role=$1 text=$2 mode=${3:-final}
   integer index
@@ -42,9 +28,8 @@ sf_tui_message_append() {
   REPLY=$index
 }
 
-# Field 1 is the exact token count when the provider reports one. Fields 10
-# through 12 are the whole-block character total, the preview rows earlier
-# commits spent, and whether the body is expanded.
+# Reasoning uses field 1 for exact tokens and fields 10-12 for total characters,
+# spent preview rows, and expansion.
 sf_tui_reasoning_append() {
   local mode=${1:-final}
   integer index expanded=1
@@ -60,8 +45,6 @@ sf_tui_reasoning_tokens() {
   sf_tui_formatter_set_field $1 1 "$2"
 }
 
-# The whole-block character total the summary estimates from has to outlive the
-# content itself.
 sf_tui_reasoning_grow() {
   integer index=$1 added=$2
   sf_tui_formatter_data $index 10 || return 1
@@ -72,12 +55,8 @@ sf_tui_format_at_start() {
   (( SF_PRESENT_ROW_HEAD > ${#SF_PRESENT_ROW_TEXT} && ! SF_PRESENT_PREFIX_VISIBLE ))
 }
 
-# The leading chrome a formatter draws when it opens a role: spacing, then
-# "─ role " padded out to the width, closing with the section number when the
-# role takes one, then a blank row.
-#
-# region_highlight applies spans in order and the last one covering a character
-# wins, so the number inside the trailing rule must be styled after the rule.
+# Role rules optionally end with a section number.
+# Later highlight spans win, so style the section number last.
 sf_tui_format_rule() {
   integer index=$1 columns=$2 title_start title_end number_start=-1
   local role=$SF_PRESENT_ROLE[index] number=$SF_PRESENT_SECTION[index] text
@@ -96,7 +75,6 @@ sf_tui_format_rule() {
   (( ${#text} <= columns )) || text=${text[1,columns]}
   (( title_end <= ${#text} )) || title_end=${#text}
   title_start=$(( ${#text} < 2 ? ${#text} : 2 ))
-  # The rules either side of the title are one divider, so they share a style.
   sf_tui_span 0 $title_start divider
   sf_tui_span $title_end ${#text} divider
   sf_tui_span $title_start $title_end "section.$role"
@@ -108,8 +86,6 @@ sf_tui_format_rule() {
   sf_tui_format_blank
 }
 
-# Clears the outputs before a formatter renders, so a formatter that fails
-# part-way leaves nothing rather than the previous one's rows.
 sf_tui_format_start() {
   SF_FORMAT_ROWS=()
   SF_FORMAT_SPANS=()
@@ -121,9 +97,7 @@ sf_tui_format_start() {
   SF_FORMAT_TRIM_TRAILING=0
 }
 
-# Strips the blank lines either side of a body into REPLY, recording how many
-# characters came off each end. Neither is displayed, but both are logical
-# content a commit still has to consume.
+# Trim outer blank lines while recording their source length.
 sf_tui_format_trim() {
   local head=${1%%[!$'\n']*} tail
   REPLY=${1#"$head"}
@@ -133,8 +107,6 @@ sf_tui_format_trim() {
   SF_FORMAT_TRIM_TRAILING=${#tail}
 }
 
-# Appends one zero-based span to SF_FORMAT_SPAN when its style is configured,
-# resolving "kind.role" before falling back to "kind".
 sf_tui_span() {
   local style=${SF_PRESENT_STYLE[$3]:-$SF_PRESENT_STYLE[${3%%.*}]}
   integer start=$1 end=$2
@@ -142,8 +114,7 @@ sf_tui_span() {
   SF_FORMAT_SPAN+=( $start $end "$style" )
 }
 
-# Renders user, system, or assistant text. Complete records are wholly safe;
-# live assistant text reports only its stable wrapped prefix.
+# Live messages expose only their stable wrapped prefix.
 sf_tui_format_message() {
   integer index=$1 columns=$2 live stable visible chrome hidden=0
   local body=$SF_PRESENT_TEXT[index] role preview committed
@@ -155,8 +126,7 @@ sf_tui_format_message() {
   sf_tui_formatter_data $index 5 || return 1
   committed=$REPLY
   live=$(( SF_PRESENT_LIVE == index ))
-  # System context keeps its source shape. A live stream keeps one trailing
-  # newline so text arriving after it starts on its own row.
+  # Do not trim system text; retain one trailing newline for other live messages.
   if [[ $role != system ]]; then
     sf_tui_format_trim "$body"
     body=$REPLY
@@ -214,8 +184,7 @@ sf_tui_format_message() {
   fi
 }
 
-# Reasoning displays its mutable final row but only reports complete wrapped
-# rows as safe. Its summary and clamp remain unsafe until settlement.
+# Only complete reasoning rows are safe while live.
 sf_tui_format_reasoning() {
   integer index=$1 columns=$2 live stable visible chrome hidden=0 closed_line=0
   local body=$SF_PRESENT_TEXT[index] exact preview committed expanded total
@@ -293,8 +262,7 @@ sf_tui_format_reasoning() {
   fi
 }
 
-# Scans only the suffix after this formatter's stable frontier. Cached spans
-# remain source-relative, so wrapping and resize can project them afresh.
+# Cached spans stay source-relative across wrapping and resize.
 sf_tui_markdown_cached() {
   integer index=$1 columns=$3 frontier continuation=0
   local text=$2 state cached segment saved_continuation width
@@ -343,8 +311,6 @@ sf_tui_markdown_cached() {
   SF_PRESENT_HIGHLIGHT_SPANS=( "${(@)carried}" "${(@)fresh}" )
 }
 
-# Advances the Markdown frontier through stable body rows. Row offsets come from
-# SF_FORMAT_CONSUMED, minus the leading run this formatter trimmed.
 sf_tui_markdown_advance() {
   integer index=$1 chrome=$3 rows=$4 width=$5
   integer frontier target row continuation=0
@@ -407,7 +373,6 @@ sf_tui_markdown_advance() {
   REPLY=$rows
 }
 
-# How far into the body of $3 characters the first $2 body rows reach.
 sf_tui_markdown_target() {
   integer chrome=$1 rows=$2 length=$3 row target=0
   for (( row = 1; row <= rows; row++ )); do
@@ -417,8 +382,6 @@ sf_tui_markdown_target() {
   REPLY=$(( target < length ? target : length ))
 }
 
-# Appends the first $1 wrapped rows as body content, styled with $2 and carrying
-# the source each row consumes.
 sf_tui_format_body() {
   integer limit=$1 row
   local style=${SF_PRESENT_STYLE[$2]-}
@@ -433,9 +396,7 @@ sf_tui_format_body() {
   SF_FORMAT_BODY_ROWS=$limit
 }
 
-# Appends chrome rows: text a formatter owns rather than logical content, so it
-# consumes nothing. Style $3 covers every row, and any trailing arguments are
-# source spans projected onto the wrap.
+# Chrome rows consume no source.
 sf_tui_format_chrome() {
   integer columns=$1 row
   local text=$2 style=${SF_PRESENT_STYLE[$3]-}
@@ -451,8 +412,6 @@ sf_tui_format_chrome() {
   done
 }
 
-# One chrome line: an optional overlay style over the whole text, and the
-# divider style on a leading rail character.
 sf_tui_format_styled() {
   integer columns=$1
   local text=$2 kind=$3 overlay=${SF_PRESENT_STYLE[${4-}]-}
@@ -463,8 +422,6 @@ sf_tui_format_styled() {
   sf_tui_format_chrome $columns "$text" "$kind" "${(@)source}"
 }
 
-# A heading whose attributed value is emphasized, with an optional clamp from
-# $6 to the end of the text.
 sf_tui_format_head() {
   integer columns=$1 value_start=$4 value_end=$5 clamp_start=${6:--1}
   local text=$2 kind=$3 style=${SF_PRESENT_STYLE[$3]-}
@@ -475,9 +432,6 @@ sf_tui_format_head() {
   sf_tui_format_chrome $columns "$text" "$kind" "${(@)source}"
 }
 
-# What is left of a preview budget. Committed rows already spent part of it, so
-# the clamp stands for the content the preview withheld rather than for the next
-# window of it.
 sf_tui_format_preview() {
   local configured=$1
   integer spent=$2
@@ -486,10 +440,7 @@ sf_tui_format_preview() {
   REPLY=$(( configured > spent ? configured - spent : 0 ))
 }
 
-# Absorbs the trimmed blank lines into the rows that consume the body's first
-# and last characters, so committing those rows consumes every character they
-# stand for. Body rows start at $1 and the wrapped body is $2 characters long;
-# the trailing run only belongs to the last row once all of it has been wrapped.
+# Charge trimmed edges to the first and fully wrapped last body rows.
 sf_tui_format_edges() {
   integer first=$1 length=$2 row consumed=0
   integer last=${#SF_FORMAT_CONSUMED}

@@ -16,8 +16,7 @@ typeset -gi SF_PRESENT_HISTORY_LIMIT=100
 typeset -ga SF_PRESENT_HISTORY=()
 KEYTIMEOUT=5
 
-# A renderer failure ends the turn loop but not the editor, so the stopped chat
-# still accepts /refresh and /quit.
+# Keep the editor alive for /refresh and /quit after renderer failure.
 sf_tui_stop() {
   SF_PRESENT_ERROR=$1
   [[ -z ${2-} ]] || SF_PRESENT_ERROR+=$'\n'${2}
@@ -29,7 +28,6 @@ sf_tui_stop() {
   sf_tui_stopped_view
 }
 
-# Returns nonzero once the chat is stopped, having drawn the stopped view.
 sf_tui_repaint_checked() {
   if [[ $SF_PRESENT_STATE == stopped ]]; then
     sf_tui_stopped_view
@@ -48,7 +46,6 @@ sf_tui_draw_pending() {
   CURSOR=0
   POSTDISPLAY=''
   sf_tui_update_highlights pending || return 1
-  # Hold the commit and the redraw beneath it in one terminal update.
   sf_tui_terminal_sync_start
 }
 
@@ -102,14 +99,12 @@ sf_tui_heartbeat_ready() {
   sf_tui_heartbeat_tick || tick_status=$?
   (( ! tick_status )) && return 0
   (( tick_status != 2 )) || sf_tui_handoff_exec
-  # A live turn can still drain, even degraded. Anything else cannot recover on
-  # its own, so stop rather than repaint the failure every interval.
+  # Only an active turn can keep draining after a tick failure.
   [[ $SF_PRESENT_STATE == (working|cancelling) ]] || sf_tui_heartbeat_stop
   return $tick_status
 }
 
 sf_tui_heartbeat_tick() {
-  # The frame follows the clock, not provider traffic.
   if [[ $SF_PRESENT_STATE == working ]]; then
     SF_PRESENT_ACTIVITY_FRAME=$((
       (SF_PRESENT_ACTIVITY_FRAME + 1) % ${#SF_PRESENT_ACTIVITY_FRAMES}
@@ -117,7 +112,6 @@ sf_tui_heartbeat_tick() {
     SF_PRESENT_ACTIVITY=${SF_PRESENT_ACTIVITY_FRAMES[SF_PRESENT_ACTIVITY_FRAME + 1]}
   fi
   while true; do
-    # A stopped chat has no working renderer to drain events back into.
     if [[ $SF_PRESENT_STATE == stopped ]]; then
       sf_tui_stopped_view
       zle -R
@@ -137,9 +131,7 @@ sf_tui_heartbeat_tick() {
     fi
     if (( SF_PRESENT_SAFE_ROWS )); then
       sf_tui_terminal_stage || return 1
-      # `zle -I` keeps what is drawn and continues below it, so drawing the
-      # settled rows as the whole display commits exactly those to scrollback.
-      # The editor rebuilds from there, so a scroll cannot desynchronise it.
+      # Commit settled rows as the entire display, then rebuild below them.
       sf_tui_draw_pending || return 1
       if ! zle -R || ! zle -I; then
         sf_tui_stop 'cannot commit chat rows'
@@ -154,13 +146,11 @@ sf_tui_heartbeat_tick() {
       return
     fi
     zle -R
-    # Release a synchronized update even when no rows were committed.
     sf_tui_terminal_sync_end
     if [[ $SF_PRESENT_ACTION == handoff ]]; then
       sf_tui_terminal_sync_end force
       return 2
     elif [[ $SF_PRESENT_ACTION == quit ]]; then
-      # A queued /quit leaves through the editor, like a typed one.
       zle accept-line
       return 0
     elif [[ $SF_PRESENT_STATE == queued ]]; then
@@ -176,9 +166,7 @@ sf_tui_heartbeat_tick() {
 }
 
 sf_tui_line_init() {
-  # A working turn draws its viewport instead of committing, so it needs a full
-  # pass. The same mode gates the commit below, so the two cannot disagree and
-  # draw a viewport a staging pass left out.
+  # Working turns render a viewport; other states stage commits.
   local mode=''
   sf_tui_terminal_restore
   sf_tui_transport_watch sf_tui_exec_ready
@@ -352,7 +340,6 @@ sf_tui_history_move() {
   fi
 }
 
-# Move by rendered rows, crossing into history only beyond the buffer edges.
 sf_tui_move_vertical() {
   integer direction=$1 columns=${COLUMNS:-0} row column index width
   integer current_row current_column target_row target_column best=-1 distance best_distance=-1
@@ -363,7 +350,6 @@ sf_tui_move_vertical() {
     return
   fi
 
-  # The sf-present buffer starts after the two-cell "❯ " prompt.
   row=$(( 2 / columns ))
   column=$(( 2 % columns ))
   rows=( $row )
@@ -456,11 +442,7 @@ sf_tui_interrupt() {
   fi
 }
 
-# Escape cannot be told from the start of an arrow key without an idle window,
-# and a streaming turn never provides one, so it cannot carry cancellation:
-# Ctrl-C does. It stays bound all the same, because an escape with no exact
-# binding leaves the editor waiting for the rest of a sequence that never
-# arrives, and the next key then completes a meta binding instead.
+# Bind Escape exactly so ZLE does not wait for a longer sequence.
 sf_tui_escape() {
   zle -R
 }
@@ -471,7 +453,7 @@ sf_tui_handoff_exec() {
   zle -I
   stty "$SF_PRESENT_TTY" 2>/dev/null || true
   print
-  # A fresh interactive shell prevents the next controller inheriting active ZLE state.
+  # Do not inherit active ZLE state.
   exec zsh -f -i "${SF_PRESENT_HANDOFF[@]}" </dev/tty >/dev/tty 2>/dev/tty
   print -u2 -r -- 'Cannot execute handoff.'
   exit 1

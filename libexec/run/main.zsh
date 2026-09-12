@@ -65,8 +65,7 @@ sf_run_main() {
         break
         ;;
       -*)
-        # Creation owns these; forward them unread. Selecting a config file is
-        # not a runtime override.
+        # Creation owns these; only --config is not an override.
         arity=${SF_CREATE_OPTIONS[$1]-}
         [[ -n $arity ]] || { sf_die "unknown argument: $1"; return 2; }
         take=$(( arity + 1 ))
@@ -90,7 +89,7 @@ sf_run_main() {
     sf_die 'shellfish requires jq'
     return 2
   }
-  # Trust an inherited verbose override only as the exact value chat exports.
+  # Trust only an inherited SHELLFISH_VERBOSE=1.
   if [[ ${SHELLFISH_VERBOSE-0} == 1 ]]; then
     typeset -gx SHELLFISH_VERBOSE=1
   else
@@ -143,13 +142,10 @@ sf_run_main() {
   SF_RUN[jsonl]=$jsonl
 
   typeset -gx SHELLFISH_MODE=run
-  # USR1 is the client's cancellation signal, aimed at this process alone.
   trap 'SF_RUN[signal_status]=130; kill -TERM $$' INT USR1
   trap 'SF_RUN[signal_status]=129; kill -TERM $$' HUP
-  # An active capture must unwind to clean up its readers; the turn-level flag
-  # then drives durable recovery and the signal-status return below.
+  # Let active capture cleanup finish before exiting.
   trap 'sf_run_interrupt; (( SF_PROCESS_CAPTURE_INTERRUPTED )) || exit $SF_RUN[signal_status]' TERM
-  # Only a JSONL client can answer a permission request on stdin.
   local run_status
   sf_run_turn "$input" "$session" "$jsonl" "$prompt"
   run_status=$?

@@ -28,8 +28,7 @@ sf_resume_load() {
     fi
     headers+=( "${header:-null}" )
   done
-  # The extra file forces headed output, whose boundaries preserve torn records
-  # without starting a tail process per session.
+  # /dev/null forces headers without running one tail per session.
   raw_lasts=( "${(@f)$(tail -n 1 -- "${readable[@]}" /dev/null 2>/dev/null)}" )
   integer expect_record=0
   for field in "${raw_lasts[@]}"; do
@@ -153,8 +152,7 @@ sf_resume_update_display() {
   PREDISPLAY="$output"$'\n'"$footer"$'\n'
   POSTDISPLAY=''
   BUFFER=''
-  # Attributes are fixed because resume bypasses themed rendering.
-  # Offsets index PREDISPLAY, which holds output plus the footer line.
+  # Highlight offsets index PREDISPLAY, including its footer.
   region_highlight=(
     "P0 ${#heading} bold"
     "P$selected_start $selected_end standout"
@@ -215,8 +213,7 @@ sf_resume_ignore() {
   return 0
 }
 
-# Runs resume in its own editor because ZLE widgets cannot reenter ZLE.
-# Returns 130 on cancellation; otherwise places the selected path in REPLY.
+# ZLE cannot reenter itself; cancellation returns 130.
 sf_resume_run() {
   local choice='' saved_tty=''
   SF_RESUME_CANCELLED=0
@@ -253,7 +250,7 @@ sf_resume_run() {
   local digit
   for digit in {0..9}; do bindkey -M sf-resume "$digit" sf_resume_jump; done
 
-  # ZLE leaves ISIG enabled, so Ctrl-C must be read as editor input.
+  # Disable ISIG so ZLE receives Ctrl-C.
   saved_tty=$(stty -g 2>/dev/null) || saved_tty=''
   [[ -z $saved_tty ]] || stty intr undef 2>/dev/null || true
   vared -M sf-resume -p '' choice || SF_RESUME_CANCELLED=1

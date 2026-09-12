@@ -1,5 +1,3 @@
-# Bounded non-interactive execution.
-
 emulate -R zsh
 setopt no_aliases no_bg_nice no_multios pipe_fail
 
@@ -15,7 +13,6 @@ typeset -gA SF_RUN=(
   answer '' committed 0 jsonl 0 interrupted 0 permission_count 0 permission_available 0
   signal_status 143
 )
-# Calls the provider requested that have not yet reached their execution point.
 typeset -ga SF_RUN_QUEUED_CALLS=()
 
 sf_run_emit() {
@@ -23,9 +20,7 @@ sf_run_emit() {
   return 0
 }
 
-# Persists the head of the queue: the call has cleared its gates or stopped at
-# one, and either way it now belongs to the transcript. Exactly one call is
-# committed per loop iteration, which keeps the queue aligned with the loop.
+# Commit one queued call at its execution gate.
 sf_run_commit_call() {
   local session=$1 record=$SF_RUN_QUEUED_CALLS[1]
   sf_session_append "$session" "$record" || return 1
@@ -131,13 +126,11 @@ sf_run_turn_cleanup() {
     if (( ! interrupted )); then
       error_message=$failure
     elif (( SF_RUN[signal_status] == 130 )); then
-      # INT and the client's USR1 cancellation both report this status.
       error_message='Cancelled.'
     else
       error_message='Turn interrupted.'
     fi
-    # An interrupted turn may have written past the in-memory view, so recovery
-    # judges the durable records rather than what this process last held.
+    # Recovery trusts durable records over the interrupted in-memory view.
     if sf_session_resync_turn "$session" "$error_message" "$SF_RUN[committed]" \
         "${(pj:\n:)SF_RUN_QUEUED_CALLS}"; then
       closed=$REPLY
@@ -457,8 +450,7 @@ sf_run_turn() {
             fi
             result=$REPLY
           else
-            # Committed before the permission prompt, which annotates the row
-            # this record creates. A refusal still becomes an ordinary result.
+            # Commit before prompting so the prompt can annotate this call.
             if ! sf_run_commit_call "$session_path"; then
               failure=$SF_SESSION_ERROR
               return 1

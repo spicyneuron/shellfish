@@ -3,8 +3,7 @@ setopt no_aliases pipe_fail
 
 (( $+functions[sf_jq] )) || source "$SF_ROOT/lib/jq.zsh"
 
-# Decodes common producer state and returns any remaining control followed by
-# canonical state records. Empty remaining control means state was the only key.
+# Return remaining control in REPLY and canonical state records in reply.
 sf_state_control_decode() {
   local capture=$1 control output
   REPLY=''

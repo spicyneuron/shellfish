@@ -67,8 +67,7 @@ sf_tui_transport_signal() {
   local signal=${1:-TERM}
   if [[ -n $SF_TUI_TRANSPORT_PID ]]; then
     if [[ $signal == USR1 ]]; then
-      # Cancellation reaches the turn owner alone, which stops its own children.
-      # USR1 sent to the group would kill them before they can clean up.
+      # Let the turn owner stop its children cleanly.
       kill -USR1 "$SF_TUI_TRANSPORT_PID" 2>/dev/null || true
     else
       kill -"$signal" -- "-$SF_TUI_TRANSPORT_PID" 2>/dev/null ||
@@ -120,7 +119,7 @@ sf_tui_transport_start() {
   coproc :
   (( ! had_monitor )) || setopt monitor
   (( ! had_bg_nice )) || setopt bg_nice
-  # A fast exec exit must turn a broken initial pipe into a startup error.
+  # Treat a fast exit that breaks initial input as a startup failure.
   if [[ -n $input ]] && ! (
     trap '' PIPE
     print -r -- "$input" >&$SF_TUI_TRANSPORT_INPUT_FD 2>/dev/null
@@ -154,7 +153,7 @@ sf_tui_transport_read() {
   fi
 }
 
-# Returns 0 with one event in reply, 1 when empty, and 2 for malformed output.
+# Returns 0 for an event, 1 when empty, and 2 for malformed output.
 sf_tui_transport_next() {
   local runtime=${1:-null} events
   local -a decoded fields

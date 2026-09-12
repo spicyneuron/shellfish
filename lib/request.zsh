@@ -83,7 +83,7 @@ sf_request_run() {
   ' <"$output_pipe" 2>/dev/null
   decoder_pid=$!
   "$emit" '{"type":"_assistant_start"}'
-  # Decoder metadata is NUL-framed; arbitrary stop text ends the response payload.
+  # NUL framing keeps arbitrary stop text inside the response payload.
   while IFS= read -r -d $'\0' kind <&p; do
     case $kind in
       event)
@@ -124,7 +124,7 @@ sf_request_run() {
     SF_REQUEST[assistant]=${SF_REQUEST[result]%%$'\0'*}
     [[ -z $SF_REQUEST[assistant] ]] || SF_REQUEST_PARTIAL_EVENTS=()
   fi
-  # A completed response is announced only once the adapter also exits zero.
+  # Announce completion only after a clean adapter exit.
   [[ -z $SF_REQUEST[assistant] ]] || "$emit" "$end_event"
   if [[ $kind == invalid || $adapter_status != 0 || -z $SF_REQUEST[assistant] ]]; then
     if [[ -s $error_file ]]; then

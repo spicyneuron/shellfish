@@ -1,18 +1,13 @@
 emulate -R zsh
 setopt no_aliases no_bg_nice no_multios pipe_fail
 
-# Transient chrome spans are rebuilt by each repaint and indexed across the
-# whole displayed string, so they cover POSTDISPLAY as well as PREDISPLAY.
+# Chrome spans cover the full display; viewport spans start at PREDISPLAY.
 typeset -ga SF_PRESENT_CHROME_HIGHLIGHTS=()
-# The rendered transcript and its spans, rebuilt by each repaint and indexed
-# from the start of PREDISPLAY.
 typeset -g SF_PRESENT_VIEWPORT_TEXT=''
 typeset -ga SF_PRESENT_VIEWPORT_HIGHLIGHTS=()
 typeset -ga SF_PRESENT_LIVE_ROW_TEXT=() SF_PRESENT_LIVE_ROW_SPANS=()
 
-# Moves formatter output across the formatting boundary. Final entries become
-# settled rows in one pass. A live tail retains only source for rows that can
-# still change; every safe row is advanced out of that source immediately.
+# Final entries settle; the live tail retains only mutable source.
 sf_tui_rows_prepare() {
   integer columns=$1 row safe source leading body_rows final index
   SF_PRESENT_LIVE_ROW_TEXT=()
@@ -58,8 +53,7 @@ sf_tui_format_entry() {
   esac
 }
 
-# Appends the first $1 scratch rows to the settled queue. READY marks legal
-# commit endpoints so role chrome cannot be split from the content it opens.
+# READY prevents committing role chrome without its content.
 sf_tui_rows_append() {
   integer count=$1 leading=$2 row
   for (( row = 1; row <= count; row++ )); do
@@ -86,8 +80,6 @@ sf_tui_rows_consume() {
   fi
 }
 
-# Selects already formatted rows for the viewport and for the next scrollback
-# block. No formatter participates after sf_tui_rows_prepare returns.
 sf_tui_transcript() {
   integer columns=$1 budget=$2 stable take row index total start offset=0 safe_offset=0
   local mode=${3-} text spans
@@ -143,8 +135,6 @@ sf_tui_transcript() {
   done
 }
 
-# Appends one row's zero-based spans to the array named by $1, moved to where
-# the row actually sits in the text that array styles.
 sf_tui_shift_spans() {
   local name=$1
   integer base=$2 index
@@ -227,8 +217,7 @@ sf_tui_chrome() {
   SF_PRESENT_CHROME_HIGHLIGHTS+=( $start $(( start + length )) "$style" )
 }
 
-# The view for a client that can no longer draw the transcript. It calls no part
-# of the failed renderer, so the offer to refresh or exit always survives.
+# This view must not call the failed renderer.
 sf_tui_stopped_view() {
   PREDISPLAY=$'\n'"Shellfish stopped: ${SF_PRESENT_ERROR:-unknown failure}"$'\n\n'
   if [[ -n $SF_PRESENT_SESSION ]]; then
@@ -266,16 +255,12 @@ sf_tui_repaint() {
   local queue_item queue_line queue_text=''
   local prompt_style=prompt
   local choices='[a]pprove  [d]eny (default)'
-  # Idle with no submit in flight is the only moment waiting on input. An
-  # accepted prompt repaints before the controller leaves idle, so a submit
-  # already belongs to its turn.
   if [[ $SF_PRESENT_STATE == idle && ${SF_PRESENT_ACTION-} != submit ]]; then
     prompt_style=prompt_waiting
   fi
   SF_PRESENT_CHROME_HIGHLIGHTS=()
   (( columns > 0 )) || columns=80
   columns=$(( columns > 1 ? columns - 1 : 1 ))
-  # Reserve the transient chrome and ZLE headroom outside the viewport.
   if [[ $SF_PRESENT_STATE == permission ]]; then
     reserve=$(( 11 + ${#${SF_PRESENT_PERMISSION_TEXT//[^$'\n']}} ))
   fi
@@ -289,20 +274,16 @@ sf_tui_repaint() {
   (( rows > reserve )) || rows=$(( reserve + 1 ))
   budget=$(( rows - reserve ))
   sf_tui_transcript $columns $budget "$mode" || return 1
-  # A staging pass that produced a batch has no viewport to draw. Its caller
-  # commits the batch as the whole display and repaints beneath it.
+  # A nonempty staging pass commits instead of drawing a viewport.
   [[ $mode != stage ]] || (( ! SF_PRESENT_SAFE_ROWS )) || return 0
   PREDISPLAY=$SF_PRESENT_VIEWPORT_TEXT
   if [[ -n $PREDISPLAY ]]; then
     PREDISPLAY+=$'\n'
-    # The tail reserves the blank row that a fully flushable viewport paints from
-    # the prefix, so flushing rows to scrollback never moves the prompt.
+    # Reserve a row so scrollback commits do not move the prompt.
     PREDISPLAY+=$'\n'
   elif (( SF_PRESENT_PREFIX_VISIBLE )); then
     PREDISPLAY=$'\n'
   fi
-  # The two rules are one divider bracketing the buffer, so they always share a
-  # style. ZLE splits them because only the top one precedes the edited line.
   prompt_divider_top=${(l:columns::─:)""}
   prompt_divider_bottom=$prompt_divider_top
   if [[ $SF_PRESENT_STATE == permission ]]; then

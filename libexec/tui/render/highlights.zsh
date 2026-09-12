@@ -3,17 +3,11 @@ setopt no_aliases no_bg_nice no_multios pipe_fail
 
 typeset -ga SF_PRESENT_HIGHLIGHT_SPANS=()
 typeset -g SF_PRESENT_HIGHLIGHT_ERROR=''
-# Set when a scan ends on an inline construct that a later row may still close.
-# Other modes are carried in the scan state instead and never withhold a row:
-# they change which rules apply until something closes them.
+# An open inline construct withholds its final row.
 typeset -gi SF_PRESENT_HIGHLIGHT_INLINE_OPEN=0 SF_PRESENT_HIGHLIGHT_BLOCK_OPEN=0
-# Semantic styles keyed by row kind and by transient chrome name. Row kinds fall
-# back from "type.role" to "type". An empty map disables all styling.
 typeset -gA SF_PRESENT_STYLE=()
 typeset -g SF_PRESENT_BACKGROUND=''
 
-# Returns light or dark from the terminal's OSC 11 default-background reply. A
-# terminal that does not implement OSC 11 cannot hold startup indefinitely.
 sf_tui_background_mode() {
   local tty saved answer='' character previous=''
   integer index red green blue luminance
@@ -25,8 +19,6 @@ sf_tui_background_mode() {
     return 1
   fi
   printf '\e]11;?\a' >&$tty
-  # OSC replies end in either BEL or ST. Bound both the reply length and the
-  # wait: nothing beyond an RGB OSC 11 response is useful here.
   for (( index = 0; index < 64; index++ )); do
     IFS= read -r -k 1 -t 0.05 -u $tty character || break
     answer+=$character
@@ -38,8 +30,7 @@ sf_tui_background_mode() {
   stty "$saved" <&$tty 2>/dev/null || true
   exec {tty}>&-
 
-  # OSC 11 specifies RGB components at any equal precision. Use the first two
-  # hex digits of each component.
+  # Use the first byte of each equal-precision OSC 11 component.
   [[ $answer =~ $'\e]11;rgb:'([[:xdigit:]]{2})[[:xdigit:]]*/([[:xdigit:]]{2})[[:xdigit:]]*/([[:xdigit:]]{2}) ]] ||
     return 1
   red=$(( 16#${match[1]} ))
@@ -49,8 +40,6 @@ sf_tui_background_mode() {
   if (( luminance >= 1280000 )); then REPLY=light; else REPLY=dark; fi
 }
 
-# Resolve the active palette into semantic styles.
-# Leaves everything empty when the terminal or environment refuses color.
 sf_tui_theme_config() {
   local presentation=${1:-\{\}} mode key value
   local -A values
@@ -105,16 +94,13 @@ sf_tui_theme_config() {
 
   mode=$values[mode]
   if [[ $mode == auto ]]; then
-    # Probing queries the terminal in raw mode, so it happens once per process
-    # rather than on every presentation change.
     [[ -n $SF_PRESENT_BACKGROUND ]] ||
       { sf_tui_background_mode && SF_PRESENT_BACKGROUND=$REPLY } ||
       SF_PRESENT_BACKGROUND=dark
     mode=$SF_PRESENT_BACKGROUND
   fi
 
-  # Palettes and syntax spans are hex. Terminals without direct color need the
-  # approximation module, which would otherwise downgrade true color output.
+  # nearcolor approximates hex palettes when true color is not declared.
   if [[ ${COLORTERM-} != (truecolor|24bit) ]]; then
     zmodload zsh/nearcolor 2>/dev/null || {
       SF_PRESENT_HIGHLIGHT_ERROR='cannot load zsh/nearcolor'
@@ -127,7 +113,6 @@ sf_tui_theme_config() {
   done
 }
 
-# Append one zero-based semantic span when its configured style is active.
 sf_tui_highlight_span() {
   integer start=$1 end=$2
   local style=${SF_PRESENT_STYLE[syntax.$3]-}
@@ -135,8 +120,6 @@ sf_tui_highlight_span() {
   SF_PRESENT_HIGHLIGHT_SPANS+=( $start $end "$style" )
 }
 
-# Highlight enough of common languages to distinguish comments, strings,
-# numbers, keywords, shell options, and markup tags. Unknown languages remain plain text.
 sf_tui_code_highlight() {
   local source=$1 language=$2 quotes='"' line_comment='' block_start='' block_end=''
   local block_kind=comment words='' character quote token
@@ -323,11 +306,7 @@ sf_tui_code_highlight() {
   done
 }
 
-# Scans Markdown from a boundary that may fall mid-line. $3 carries the scan
-# mode across that boundary and $4 marks the source as the continuation of a line
-# already scanned, so line-leading syntax is not matched against a fragment.
-# Returns the scan mode in REPLY. An unclosed inline construct is reported
-# separately because it is the only state for which a caller withholds a row.
+# $3 carries scan state; $4 prevents line-leading matches on fragments.
 sf_tui_markdown_highlight() {
   local source=$1 state=${3-} line fence='' delimiter='' language='' close
   local character suffix rest kind boundary=$state trimmed pipes
@@ -347,8 +326,7 @@ sf_tui_markdown_highlight() {
     comment=${fields[3]:-0}
   fi
   SF_PRESENT_HIGHLIGHT_INLINE_OPEN=0
-  # One split keeps the scan linear in the segment. A trailing newline leaves an
-  # empty final field that stands for no line, so only a non-empty one is kept.
+  # A trailing newline's empty field is not another line.
   lines=( "${(@ps:\n:)source}" )
   [[ -n $lines[-1] ]] || lines[-1]=()
   for line in "${lines[@]}"; do
@@ -357,8 +335,7 @@ sf_tui_markdown_highlight() {
     complete_line=$(( end <= length ))
     inline=1
     table_line=$(( index == 1 && continuation && table_continuation ))
-    # A fence opens or closes only on a whole line, so a continuation fragment
-    # stays inside whatever mode it inherited.
+    # Fences open and close only on whole lines.
     starts_line=$(( index > 1 || ! continuation ))
     if [[ -n $fence ]]; then
       inline=0
@@ -408,10 +385,8 @@ sf_tui_markdown_highlight() {
         line=${line[match_end + 1,-1]}
         (( base += match_end ))
       fi
-      # Inline syntax never spans a newline, so each line decides this afresh.
       SF_PRESENT_HIGHLIGHT_INLINE_OPEN=0
       cursor=1
-      # A line holding no delimiter has nothing for the scan below to find.
       [[ $line == *[\`\*_\[]* || ( $table_line == 1 && $line == *\|* ) ]] ||
         cursor=$(( ${#line} + 1 ))
       while (( cursor <= ${#line} )); do
@@ -431,7 +406,6 @@ sf_tui_markdown_highlight() {
             cursor=$(( content + ${#delimiter} ))
             continue
           fi
-          # A delimiter with no close yet may still be closed by the next row.
           [[ -n $suffix && $suffix[1] == ' ' ]] || SF_PRESENT_HIGHLIGHT_INLINE_OPEN=1
         fi
         if [[ $character == '[' && ${line[cursor,-1]} =~ '^\[[^]]+\]\([^[:space:])]+\)' ]]; then
@@ -456,7 +430,6 @@ sf_tui_markdown_highlight() {
           count=1
         fi
         if [[ -n $delimiter ]]; then
-          # Emphasis delimiters need non-space content and outer word boundaries.
           if { (( cursor > 1 )) && [[ ${line[cursor - 1]} == [[:alnum:]] ]]; } ||
               [[ -z ${line[cursor + count]-} ||
               ${line[cursor + count]} == [[:space:]] ]]; then
@@ -498,9 +471,7 @@ sf_tui_markdown_highlight() {
         (( ++cursor ))
       done
     fi
-    # The scan mode is reported for the last complete line, which is where a
-    # caller resumes. A completed line also closes any inline construct left
-    # dangling on it.
+    # Only the last complete line contributes resumable state.
     if (( complete_line )); then
       if [[ -n $fence ]] && (( ! inline )); then
         boundary="$fence"$'\t'"$language"$'\t'"$comment"

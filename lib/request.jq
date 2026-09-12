@@ -42,8 +42,7 @@ def backend_response_update($event):
     .stop = $event.stop | .ended = true
   else .valid = false end;
 
-# Calls leave the message: each becomes its own record once it reaches
-# execution, so the response yields a message and an ordered call list.
+# Separate assistant content from ordered tool calls.
 def backend_response_parts(valid_message):
   select(.valid and .ended) |
   . as $state |
@@ -73,7 +72,7 @@ def assemble_backend_parts(valid_events; valid_message):
 def assemble_backend_response(valid_events; valid_message):
   assemble_backend_parts(valid_events; valid_message) | .message;
 
-# The bypass fields pair with the tool schema injected by libexec/run/tools.zsh.
+# Project model input, executable input, and sandbox-bypass fields.
 def tool_call_fields:
   (.id, "\u0000", .name, "\u0000", (.input | tojson), "\u0000",
    (.input | del(.request_sandbox_bypass, .sandbox_bypass_reason) | tojson), "\u0000",
@@ -107,7 +106,6 @@ def decode_backend_response(valid_event; valid_message):
               ([$message.content[] | select(.type == "text") | .text] | join("")), "\u0000"]
           end
         else
-          # Every other adapter event passes through unchanged.
           .output = ["event", "\u0000", ($event | tojson), "\u0000"]
         end
       end;

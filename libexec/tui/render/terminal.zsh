@@ -1,23 +1,13 @@
 emulate -R zsh
 setopt no_aliases no_bg_nice no_multios pipe_fail
 
-# The terminal commit boundary. Rows reach scrollback through two mechanisms: a
-# descriptor commit (`zle -R` then `zle -I`) during a turn, and an epoch
-# accept-line while idle. Committed output is temporary, row text and style spans
-# only. Nothing here retains a cursor into formatter content. A repaint stages
-# the rows it decided are safe, and only a successful commit lets the caller
-# consume them.
-
-# The rows the last repaint decided may leave the viewport, with the spans that
-# style them and the formatter-local consumption they represent. A repaint fills
-# these, and only the editor stages and commits them.
+# Only a successful terminal commit consumes staged rows.
 typeset -g SF_PRESENT_SAFE_TEXT=''
 typeset -ga SF_PRESENT_SAFE_HIGHLIGHTS=()
 typeset -gi SF_PRESENT_SAFE_ROWS=0
 typeset -g SF_PRESENT_PENDING_TEXT=''
 typeset -ga SF_PRESENT_PENDING_HIGHLIGHTS=()
 typeset -gi SF_PRESENT_PENDING_ROWS=0
-# Whether anything has been committed above the prompt yet.
 typeset -gi SF_PRESENT_PREFIX_VISIBLE=0
 typeset -g SF_PRESENT_DRAFT=''
 typeset -gi SF_PRESENT_DRAFT_CURSOR=0 SF_PRESENT_DRAFT_SAVED=0
@@ -56,9 +46,6 @@ sf_tui_terminal_sync_end() {
   return 0
 }
 
-# Freezes the safe rows the last repaint produced and the draft they will be
-# committed above. The rows have already left their formatter; only a successful
-# terminal commit advances the settled-row cursor.
 sf_tui_terminal_stage() {
   (( ! SF_PRESENT_PENDING_ROWS )) || return 1
   (( SF_PRESENT_SAFE_ROWS )) || return 1
@@ -71,9 +58,6 @@ sf_tui_terminal_stage() {
   SF_PRESENT_SAFE_ROWS=0
 }
 
-# Advance presentation state after the caller commits the staged rows. An
-# accepted line supplies its newline; a descriptor commit leaves the rows drawn
-# and invalidates the display.
 sf_tui_terminal_finish() {
   (( SF_PRESENT_PENDING_ROWS )) || return 0
   PREDISPLAY=$SF_PRESENT_PENDING_TEXT

@@ -2,7 +2,7 @@ def xml_escape:
   gsub("&"; "&amp;") | gsub("<"; "&lt;") | gsub(">"; "&gt;") |
   gsub("\""; "&quot;");
 
-# Schema-constrained tags and XML-escaped text prevent forged blocks.
+# Constrained tags and XML escaping prevent forged context blocks.
 def context_item:
   "<context script=\"" + (.script | xml_escape) + "\"" +
   (if has("prompt") then " prompt=\"" + (.prompt | xml_escape) + "\"" else "" end) +
@@ -24,7 +24,6 @@ def context_message($context; $request):
   ([$context | context_groups[] | context_group] | join("\n\n")) as $blocks |
   {type:"user", content:[{type:"text", text:($blocks + "\n\n" + $request)}]};
 
-# Fold model context into the next message, or a trailing user message.
 def request_messages:
   reduce .[] as $record ({messages:[], context:[]};
     if $record.type == "state" then .
@@ -39,7 +38,7 @@ def request_messages:
         .context = []
       end
     elif $record.type == "assistant" or $record.type == "tool_result" then
-      # Only assistant context stands alone; tool results must stay paired.
+      # Tool results must stay paired with their assistant message.
       if $record.type == "assistant" and (.context | length) > 0 then
         .messages += [context_message(.context; ""), ($record | del(.usage))] |
         .context = []

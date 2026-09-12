@@ -135,8 +135,7 @@ sf_config_main() {
     }
   fi
   if (( sandbox_auto_requested || ${#sandbox_read_paths} || ${#sandbox_write_paths} )); then
-    # Explicit grants precede detected ones. Read paths are passed before write
-    # paths, so their count splits the positional arguments.
+    # The read count splits explicit read and write path arguments.
     SF_RUNTIME_SANDBOX_GRANTS=$(jq -cn --argjson detected "$sandbox_detected" \
       --argjson reads "${#sandbox_read_paths}" --args '
         {sandbox_read_paths: ($ARGS.positional[:$reads] + $detected.sandbox_read_paths),

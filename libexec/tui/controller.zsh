@@ -2,7 +2,6 @@ emulate -R zsh
 setopt no_aliases no_bg_nice no_multios pipe_fail
 
 typeset -ga SF_PRESENT_HANDOFF=() SF_PRESENT_QUEUE=()
-# The durable session, empty until creation announces one.
 typeset -g SF_PRESENT_SESSION=''
 typeset -g SF_PRESENT_ACTION='' SF_PRESENT_SUBMITTED=''
 typeset -g SF_PRESENT_STATE=idle SF_PRESENT_PERMISSION_ID=''
@@ -10,7 +9,6 @@ typeset -g SF_PRESENT_PERMISSION_TOOL='' SF_PRESENT_PERMISSION_TEXT=''
 typeset -g SF_PRESENT_PERMISSION_LANGUAGE=''
 typeset -gi SF_PRESENT_PERMISSION_PREVIEW_LENGTH=0
 typeset -gi SF_PRESENT_EXIT_STATUS=0
-# Set when the turn persisted its own failure, which the reload then replays.
 typeset -gi SF_PRESENT_TURN_ERROR=0
 typeset -g SF_PRESENT_TTY=''
 
@@ -38,8 +36,6 @@ sf_tui_discard_queue() {
   REPLY+='. Use ↑↓ keys to recover.'
 }
 
-# Client lifecycle rather than session input: answered without a turn, so these
-# still work on a stopped chat and never reach the provider as a prompt.
 sf_tui_client_command() {
   case $1 in
     /quit|/q)
@@ -116,7 +112,7 @@ sf_tui_cancel() {
 sf_tui_decoded() {
   local type=$1 first=${2-} second=${3-} third=${4-} fourth=${5-} fifth=${6-} sixth=${7-}
   local encoded preview reason
-  # Only creation events are legal before a durable session exists.
+  # Before creation, accept only creation-stream events.
   [[ -n $SF_PRESENT_SESSION ||
       $type == (hook_activity|hook_result|error|session_created) ]] ||
     return 1
@@ -167,7 +163,6 @@ sf_tui_decoded() {
   esac
 }
 
-# Apply one transport record.
 sf_tui_pending_next() {
   integer transport_status=0
 
@@ -180,8 +175,7 @@ sf_tui_pending_next() {
       ;;
     1) return 0 ;;
   esac
-  # The live transcript cannot be trusted past a record the client could not
-  # apply, and only the durable session can replace it.
+  # Reload is the only recovery from invalid live output.
   sf_tui_transport_stop
   sf_tui_discard_queue
   sf_tui_stop 'exec sent invalid JSONL'
@@ -203,10 +197,8 @@ sf_tui_exec_finish() {
   sf_tui_event activity_stop || return 1
   if (( exit_status || cancelled )); then
     if (( turn_error )); then
-      # The transcript already ends with the durable failure.
       heading=''
     elif (( cancelled && ! exit_status )); then
-      # A completed worker wins the cancellation race.
       heading=''
     elif (( cancelled )); then
       heading='Cancelled.'
@@ -232,7 +224,6 @@ sf_tui_exec_finish() {
       fi
     fi
     if [[ -z $SF_PRESENT_SESSION ]]; then
-      # Creation left no session, so there is nothing to continue from.
       sf_tui_stop "$heading" "$detail"
       return 0
     fi
@@ -286,7 +277,6 @@ sf_tui_answer_permission() {
   local decision=$1
   [[ $SF_PRESENT_STATE == permission && $decision == (approve|deny) ]] || return 1
   if ! sf_tui_transport_reply "$SF_PRESENT_PERMISSION_ID" "$decision"; then
-    # The turn is waiting on a decision this client can no longer deliver.
     sf_tui_transport_stop
     sf_tui_editor_permission restore
     sf_tui_permission_reset
@@ -315,8 +305,7 @@ sf_tui_controller() {
   zmodload zsh/zle || { SF_PRESENT_ERROR='cannot load ZLE'; return 1; }
   bindkey -e
   sf_tui_bind
-  # Previews and styles belong to the formatters replay is about to build, so
-  # presentation configuration is resolved before any content exists.
+  # Configure formatters before replay creates content.
   sf_tui_rows_config "$presentation" || {
     SF_PRESENT_ERROR='cannot read presentation configuration'
     return 1
@@ -340,8 +329,6 @@ sf_tui_controller() {
     sf_tui_reset
     sf_tui_session_update "$reply[2]"
     [[ -z $system ]] || sf_tui_event system "$system" || return 1
-    # Creation presents as a running turn, so hook activity and the spinner
-    # land in the formatters a turn would use.
     sf_tui_event activity_start || return 1
   else
     sf_tui_reload "$session" || return 1

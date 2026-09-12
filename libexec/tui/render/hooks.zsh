@@ -1,8 +1,6 @@
 emulate -R zsh
 setopt no_aliases no_bg_nice no_multios pipe_fail
 
-# Transient activity and complete hook or error output.
-
 sf_tui_activity_start() {
   SF_PRESENT_WORK_ACTIVE=1
   sf_tui_activity_resume
@@ -26,8 +24,6 @@ sf_tui_activity_retract() {
   sf_tui_formatter_retract
 }
 
-# A later label updates the same unsafe tail. Starting custom activity replaces
-# standalone activity or closes the assistant content that preceded the hook.
 sf_tui_hook_activity() {
   local text=${3-}
   integer index=${#SF_PRESENT_KIND}
@@ -96,7 +92,6 @@ sf_tui_error_append() {
   index=$REPLY
   SF_PRESENT_TEXT[index]=$detail
   sf_tui_formatter_set_data $index "$heading"
-  # Errors close the current role without drawing a role rule of their own.
   SF_PRESENT_LAST_ROLE=error
 }
 
@@ -135,8 +130,6 @@ sf_tui_format_hook() {
   sf_tui_format_trim "$body"
   body=$REPLY
   if [[ $kind == (hook_model_context|hook_user_context) ]]; then
-    # Model context shares the context preview with system records. User
-    # context is the script talking to the user, so it is shown in full.
     if [[ $kind == hook_model_context ]]; then
       configured=$SF_PRESENT_PREVIEW_CONTEXT
       preview=$configured

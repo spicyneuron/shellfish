@@ -123,7 +123,6 @@ sf_session_prepare() {
   SF_SESSION_RECORDS=( "$header" )
 }
 
-# Adds a materialized system record to a prepared session.
 sf_session_system() {
   local content=${1-} record
   SF_SESSION_ERROR=''
@@ -154,7 +153,6 @@ sf_session_read_runtime() {
   }
 }
 
-# Derives session state from the records already held in memory.
 sf_session_project() {
   local session_path=$1 loaded
   local -a fields
@@ -204,7 +202,6 @@ sf_session_project() {
   )
 }
 
-# Replaces the in-memory view with the session and any continuation records. Never writes.
 sf_session_read() {
   local session_path=$1 input record
   sf_session_reset
@@ -311,10 +308,8 @@ sf_session_update() {
   REPLY=1
 }
 
-# Closes an unfinished or explicitly failed turn, reporting appended records in REPLY.
-# Requires a freshly read session.
-# $4 holds tool_call records for queued calls that never ran. Each is closed with
-# a cancelled result so the transcript still reports every call the model made.
+# Requires a freshly read session and reports appended records in REPLY.
+# Queued calls receive cancelled results when an unfinished turn closes.
 sf_session_recover_turn() {
   local session_path=$1 message=${2:-Turn interrupted.} record result recovered='' needed
   local -a pending cancelled
@@ -331,7 +326,6 @@ sf_session_recover_turn() {
   SF_SESSION_PENDING_CALL=()
   REPLY=''
   [[ $needed == true || force_error -ne 0 ]] || return 0
-  # Both only apply mid-batch, which is exactly when recovery is needed.
   if [[ $needed == true ]]; then
     if (( ${#pending} == 2 )); then
       record=$(jq -cn --arg call_id "$pending[1]" --arg name "$pending[2]" \
@@ -357,9 +351,7 @@ sf_session_recover_turn() {
   REPLY=$recovered
 }
 
-# Adopts the durable transcript as the in-memory view. Repair precedes the read
-# so a torn trailing line cannot fail it, and the read precedes recovery so a
-# dangling turn is judged against the durable records rather than a stale view.
+# Repair torn tails before rereading; recover from the durable view.
 sf_session_resync_turn() {
   local session_path=$1 message=${2-} cancelled=${4-}
   integer force_error=${3:-0}

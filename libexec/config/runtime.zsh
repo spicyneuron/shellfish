@@ -128,8 +128,7 @@ sf_runtime_load_config() {
   reply=( "$config_path" "$defaults" "$raw" )
 }
 
-# --verbose lifts every preview limit. Presentation is resolved on each start
-# rather than frozen, so this reaches stored sessions without touching a header.
+# Presentation remains unfrozen, so --verbose also affects stored sessions.
 sf_runtime_apply_verbose() {
   local updated
   (( SF_RUNTIME_VERBOSE )) || return 0
@@ -420,7 +419,6 @@ sf_runtime_restore_presentation() {
   sf_runtime_apply_verbose
 }
 
-# Prints the resolved runtime with unfrozen presentation.
 sf_runtime_report() {
   local runtime=$1
   jq -ne --argjson runtime "$runtime" --argjson presentation "$SF_PRESENTATION" '

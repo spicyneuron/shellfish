@@ -55,8 +55,7 @@ sf_process_isolated_command() {
   fi
 }
 
-# The control pipe is part of the capture contract: a sandboxed caller must
-# expose this path before sf_process_capture creates it.
+# Sandboxes must expose the control pipe before capture creates it.
 sf_process_control_pipe() {
   REPLY="$1/control.pipe"
 }
@@ -91,8 +90,7 @@ sf_process_wait() {
   return 1
 }
 
-# Captures one process while retaining at most one byte beyond the configured
-# limit on each channel. The caller interprets the captured channels.
+# Capture at most one byte beyond each channel's configured limit.
 sf_process_capture() {
   local input=$1 directory=$2 working=$3 mode=$4
   integer max_capture=$5
@@ -139,8 +137,7 @@ sf_process_capture() {
   process_status=$REPLY
   SF_PROCESS_CAPTURE_PID=''
   SF_PROCESS_CAPTURE_GROUP_FILE=''
-  # An escaped descendant may retain a capture pipe, so cancellation does not
-  # rely on EOF from a process outside the isolated group.
+  # Kill readers because escaped descendants may retain capture pipes.
   (( ! SF_PROCESS_CAPTURE_INTERRUPTED )) || kill -TERM $readers 2>/dev/null
   for reader in $readers; do
     wait $reader || reader_status=1

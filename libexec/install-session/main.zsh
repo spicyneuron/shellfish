@@ -28,8 +28,7 @@ sf_install_main() {
 
   [[ $requested_out == /* ]] || requested_out="$PWD/$requested_out"
   destination=${requested_out:a}
-  # Callers name their own children, so an occupied destination reports status 3
-  # and lets them choose another name.
+  # Status 3 lets callers retry an occupied destination.
   [[ ! -e $destination && ! -L $destination ]] || {
     sf_die "session already exists: $destination"
     return 3
