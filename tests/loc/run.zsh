@@ -62,15 +62,17 @@ group() {
   done
 }
 
-typeset -a core terminal harness server shell_tests server_tests
+typeset -a core terminal harness client server shell_tests server_tests
 
 core=( "$root/bin/shellfish" "$root"/(lib|libexec)/**/*.(zsh|jq)(N.) )
 core=( ${core:#$root/libexec/(tui|resume)/*} )
 terminal=( "$root"/libexec/(tui|resume)/**/*.(zsh|jq|awk)(N.) )
 harness=( "$root"/share/default/**/*(N.) )
-server=( "$root"/shellfish-server/**/*.(go|js|css|html)(N.) )
-server_tests=( ${(M)server:#*_test.(go|js)} )
-server=( ${server:#*_test.(go|js)} )
+client=( "$root"/shellfish-server/ui/**/*.(js|css|html)(N.) )
+server=( "$root"/shellfish-server/*.go(N.) )
+server_tests=( ${(M)server:#*_test.go} "$root"/shellfish-server/ui/**/*_test.js(N.) )
+client=( ${client:#*_test.js} )
+server=( ${server:#*_test.go} )
 # Every file under tests/ is test source, apart from fixture data.
 shell_tests=( "$root"/tests/**/*(N.) )
 shell_tests=( ${shell_tests:#*.(json|jsonl|pyc)} )
@@ -81,8 +83,15 @@ print -r -- $divider
 group 'Core' $core
 group 'Default harness' $harness
 group 'Terminal client' $terminal
-group 'Server and client' $server
 print -r -- $divider
+printf $row_format Total $totals
+
+totals=(0 0 0 0 0)
+print -P -- '\n%BServer, client, and tests%b'
+printf $head_format Group Files Lines Code Comments Blanks
+print -r -- $divider
+group 'Server' $server
+group 'Browser client' $client
 group 'Shell tests' $shell_tests
 group 'Server tests' $server_tests
 print -r -- $divider
