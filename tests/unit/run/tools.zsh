@@ -51,7 +51,8 @@ sf_test_tool_execute() {
     "$tool_runtime" || return
 }
 
-# Tools load into an isolated environment.
+# Unsandboxed tools inherit the local environment.
+export AMBIENT_TOOL_SETTING=ambient
 load_tools "$stored_runtime"
 sf_test_tool_execute '{"id":"unknown_1","name":"unknown","input":{}}' 0
 jq -e '.exit_code == 127 and .content == "tool is not allowed: unknown"' <<<"$REPLY" >/dev/null
@@ -61,6 +62,9 @@ if sf_tools_load "$invalid_tools" "$tool_cwd" "$tool_sandbox" "$tool_fence" \
   fail 'an unavailable tool command was accepted'
 fi
 load_tools "$stored_runtime"
+sf_test_tool_execute "$(jq -cn --arg command 'print -rn -- "$AMBIENT_TOOL_SETTING"' \
+  '{id:"ambient_1",name:"shell",input:{command:$command}}')" 0
+jq -e '.content == "ambient"' <<<"$REPLY" >/dev/null
 sf_test_tool_execute "$(jq -cn --arg command 'print -rn -- "$HOME"' \
   '{id:"home_1",name:"shell",input:{command:$command}}')" 0
 jq -e --arg home "$HOME" '.content == $home' <<<"$REPLY" >/dev/null
@@ -180,7 +184,7 @@ sandbox_runtime=$(jq -c --arg fence "${commands[fence]:A}" \
   fail 'cannot prepare sandbox runtime'
 load_tools "$sandbox_runtime"
 typeset bypass_call=$(jq -cn \
-  '{id:"bypass_1",name:"shell",input:{command:"true",request_sandbox_bypass:true,
+  '{id:"bypass_1",name:"shell",input:{command:"print -rn -- $AMBIENT_TOOL_SETTING",request_sandbox_bypass:true,
     sandbox_bypass_reason:"test"}}')
 sf_tool_needs_permission shell true true 1
 sf_test_tool_execute "$bypass_call" 1
@@ -197,7 +201,7 @@ load_tools "$sandbox_runtime"
 sf_test_tool_execute "$bypass_call" 1 denied 'hook said no'
 jq -e '.exit_code == 126 and .content == "hook said no"' <<<"$REPLY" >/dev/null
 sf_test_tool_execute "$bypass_call" 1 approved
-jq -e '.exit_code == 0 and .sandboxed == false' <<<"$REPLY" >/dev/null
+jq -e '.exit_code == 0 and .content == "ambient" and .sandboxed == false' <<<"$REPLY" >/dev/null
 if sf_tool_needs_permission shell false false 1; then
   fail 'a call without a bypass request asked for permission'
 fi
@@ -256,11 +260,11 @@ grep -Fx -- "$ROOT/share/default/tools/fetch_url/fence.jsonc" "$tmp/fence.settin
 load_tools "$(jq -c --arg fence "$tmp/bin/fence" \
   '.harness.sandbox=true | .harness.fence=$fence' <<<"$stored_runtime")"
 sf_test_tool_execute "$(jq -cn --arg command '
-  printf "%s|%s|%s|%s" "$TMPDIR" "$TMPPREFIX" "$SHELLFISH_SESSION" "$SHELLFISH_EXECUTABLE"
+  printf "%s|%s|%s|%s|%s" "${AMBIENT_TOOL_SETTING-unset}" "$TMPDIR" "$TMPPREFIX" "$SHELLFISH_SESSION" "$SHELLFISH_EXECUTABLE"
 ' '{id:"fence_empty",name:"shell",input:{command:$command}}')" 1
 jq -e --arg temp "$tool_temp" --arg session "$session" \
   --arg executable "$ROOT/bin/shellfish" '
-    .content == ($temp + "|" + $temp + "/zsh|" + $session + "|" + $executable)
+    .content == ("unset|" + $temp + "|" + $temp + "/zsh|" + $session + "|" + $executable)
   ' <<<"$REPLY" >/dev/null
 (( $(grep -Fxc -- '--expose-host-path-rw' "$tmp/fence.args") == 2 + native_grant ))
 grep -Fx -- "$tool_temp" "$tmp/fence.args" >/dev/null

@@ -251,11 +251,11 @@ sf_tool_execute() {
       sf_tools_fail 'cannot prepare tool input'
       return
     }
-    command=(/usr/bin/env -i HOME="$tool_home" "${locale_env[@]}" PATH="$PATH" TERM="${TERM:-dumb}"
-      "${SF_ENVIRONMENT_VALUES[@]}" SHELLFISH_CONFIG_DIR="$config_dir"
-      SHELLFISH_MAX_CAPTURE_BYTES="$max_capture" SHELLFISH_SESSION="$session"
-      SHELLFISH_EXECUTABLE="$executable")
     if (( harness_sandbox )) && [[ $use_sandbox == true && $bypass != true ]]; then
+      command=(/usr/bin/env -i HOME="$tool_home" "${locale_env[@]}" PATH="$PATH" TERM="${TERM:-dumb}"
+        "${SF_ENVIRONMENT_VALUES[@]}" SHELLFISH_CONFIG_DIR="$config_dir"
+        SHELLFISH_MAX_CAPTURE_BYTES="$max_capture" SHELLFISH_SESSION="$session"
+        SHELLFISH_EXECUTABLE="$executable")
       sf_temp_directory native "$temp" || {
         sf_tools_fail 'cannot resolve native temporary directory'
         return
@@ -277,7 +277,10 @@ sf_tool_execute() {
         -- /usr/bin/env TMPDIR="$temp" TMPPREFIX="$temp/zsh"
         "${commands[zsh]}" -f -c 'exec "$1" 3>"$2"' -- "$command_path" "$control_pipe")
     else
-      command+=( TMPDIR="$temp" TMPPREFIX="$temp/zsh" "$command_path" )
+      command=(/usr/bin/env HOME="$tool_home" "${locale_env[@]}" PATH="$PATH" TERM="${TERM:-dumb}"
+        "${SF_ENVIRONMENT_VALUES[@]}" SHELLFISH_CONFIG_DIR="$config_dir"
+        SHELLFISH_MAX_CAPTURE_BYTES="$max_capture" SHELLFISH_SESSION="$session"
+        SHELLFISH_EXECUTABLE="$executable" TMPDIR="$temp" TMPPREFIX="$temp/zsh" "$command_path")
     fi
     sf_process_capture "$input" "$capture_dir" "$cwd" merged $max_capture \
       "${command[@]}" || {

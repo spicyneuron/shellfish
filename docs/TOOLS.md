@@ -37,7 +37,7 @@ Combined stdout and stderr become the tool result content. The process exit stat
 
 Each turn receives a private temporary directory through `TMPDIR` and `TMPPREFIX`. Its tool calls share that directory, and Shellfish removes it during turn cleanup.
 
-Tools start with a clean environment containing basic process values, selected component variables, and:
+Sandboxed tools start with a clean environment. Tools running without a sandbox inherit Shellfish's local environment. Both receive selected component variables and:
 
 | Variable | Meaning |
 | --- | --- |

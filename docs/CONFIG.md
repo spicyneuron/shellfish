@@ -55,7 +55,7 @@ See [`BACKENDS.md`](BACKENDS.md) for the adapter contract.
 
 Backend, tool, and hook manifests declare component-specific environment variables. Values are resolved from exported variables and then `.env`; missing values remain unset. Names and the `.env` location are frozen in the session, while values remain external and are resolved for each invocation.
 
-Hooks are trusted control-plane scripts. They inherit the ordinary process environment, and their manifests select additional values to load from `.env`. Backend adapters receive only their selected component variables. Model-facing tools start with a clean environment and receive only their selected values and fixed Shellfish tool context.
+Hooks are trusted control-plane scripts. They inherit the ordinary process environment, and their manifests select additional values to load from `.env`. Backend adapters receive only their selected component variables. Sandboxed model-facing tools start with a clean environment; unsandboxed tools inherit the ordinary process environment. Both receive their selected values and fixed Shellfish tool context.
 
 ## Customize a harness
 
