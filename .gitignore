@@ -4,3 +4,4 @@ __pycache__
 _REFERENCE/
 _TODO/
 /bin/shellfish-server
+/unslop/logs/

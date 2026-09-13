@@ -1,0 +1,84 @@
+#!/usr/bin/env zsh
+
+emulate -R zsh
+setopt no_aliases no_multios pipe_fail
+
+typeset script_dir=${0:A:h} project_dir=${script_dir:h}
+typeset timestamp log file
+typeset -a files
+integer run_status=0 failed=0
+
+(( $+commands[shellfish] )) || {
+  print -u2 -r -- 'shellfish is not on PATH'
+  exit 2
+}
+git -C "$project_dir" rev-parse --is-inside-work-tree >/dev/null 2>&1 || {
+  print -u2 -r -- "not a Git worktree: $project_dir"
+  exit 2
+}
+[[ -r $script_dir/unslop.md ]] || {
+  print -u2 -r -- "cannot read system prompt: $script_dir/unslop.md"
+  exit 2
+}
+
+while IFS= read -r -d $'\0' file; do
+  # Unlike filename generation, * spans slashes in a case pattern.
+  case $file in
+    bin/shellfish | \
+    lib/*.zsh | \
+    lib/*.jq | \
+    libexec/*.zsh | \
+    libexec/*.jq | \
+    share/default/*.zsh | \
+    share/default/*/run | \
+    share/default/*/check | \
+    share/default/*/context_window | \
+    shellfish-server/*.go | \
+    shellfish-server/ui/*.js | \
+    shellfish-server/ui/*.css | \
+    shellfish-server/ui/*.html | \
+    tests/run | \
+    tests/*.zsh | \
+    tests/*.py)
+      [[ $file != tests/fixtures/* ]] && files+=( "$file" )
+      ;;
+  esac
+done < <(git -C "$project_dir" ls-files -z)
+
+(( ${#files} )) || {
+  print -u2 -r -- 'no source files found'
+  exit 1
+}
+
+timestamp=$(date -u '+%Y%m%dT%H%M%SZ') || exit 1
+log="$script_dir/logs/$timestamp.md"
+mkdir -p -- "$log:h" || exit 1
+[[ ! -e $log ]] || {
+  print -u2 -r -- "log already exists: $log"
+  exit 1
+}
+: >"$log" || exit 1
+
+cd -- "$project_dir" || exit 1
+for file in $files; do
+  print -u2 -r -- "unslop: $file"
+  {
+    print -r -- "# $file"
+    print
+  } >>"$log" || exit 1
+
+  run_status=0
+  shellfish run "$@" --system-file "$script_dir/unslop.md" -- "$file" \
+    >>"$log" || run_status=$?
+  if (( run_status )); then
+    (( ++failed ))
+    print -r -- "Run failed with exit status $run_status." >>"$log"
+  fi
+  print >>"$log"
+done
+
+print -r -- "$log"
+(( failed == 0 )) || {
+  print -u2 -r -- "$failed of ${#files} runs failed"
+  exit 1
+}
