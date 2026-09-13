@@ -24,7 +24,6 @@ git -C "$project_dir" rev-parse --is-inside-work-tree >/dev/null 2>&1 || {
 while IFS= read -r -d $'\0' file; do
   # Unlike filename generation, * spans slashes in a case pattern.
   case $file in
-    bin/shellfish | \
     lib/*.zsh | \
     lib/*.jq | \
     libexec/*.zsh | \
