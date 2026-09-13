@@ -31,7 +31,7 @@ if ! jq -ce -s '
   ([.[] | select(.type == "user")] | first) as $first |
   ([.[] | select(.type == "assistant")] | last) as $last |
   ([$last.content[]? | select(.type == "text") | .text] | join("")) as $reply |
-  select($first != null and $last != null and ($reply | length > 0)) |
+  select($first != null and $last != null) |
   {first_user_message:$first.content[0].text, final_assistant_response:$reply}
 ' "$SHELLFISH_SESSION" >"$boundary" 2>/dev/null; then
   fail_compaction 'nothing to compact yet'

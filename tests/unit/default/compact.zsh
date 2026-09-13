@@ -91,7 +91,33 @@ jq -e -s '
 ' "$tmp/compact-source_compact.jsonl" >/dev/null ||
   fail 'the compacted child did not preserve its timeline and boundary messages'
 
-# Require a complete conversation before asking the model for a summary.
+# Compact a cancelled turn, which trails a reply without prose.
+typeset cancelled_source="$tmp/cancelled-source.jsonl"
+head -n 1 "$compact_source" >"$cancelled_source"
+print -r -- \
+  '{"type":"user","content":[{"type":"text","text":"Read the docs"}]}' \
+  '{"type":"assistant","stop":"end","content":[{"type":"text","text":"Done reading"}],"usage":{"input_tokens":1,"output_tokens":1}}' \
+  '{"type":"user","content":[{"type":"text","text":"Keep going"}]}' \
+  '{"type":"assistant","stop":"tool_calls","content":[{"type":"text","text":"\n\n"}],"usage":{"input_tokens":75,"output_tokens":5}}' \
+  '{"type":"tool_call","id":"call_1","name":"shell","input":{"command":"true"}}' \
+  '{"type":"tool_result","call_id":"call_1","name":"shell","content":"tool call cancelled","exit_code":126}' \
+  '{"type":"turn_error","message":"Cancelled."}' \
+  >>"$cancelled_source"
+assert_canonical_session "$cancelled_source"
+SHELLFISH_SESSION="$cancelled_source" zsh -f "$compact_check" user_prompt_submit \
+  < <(print -n -- 'after cancelling') ||
+  fail 'a cancelled turn did not select compaction'
+
+compact_status=0
+SHELLFISH_EXECUTABLE="$compact_shellfish" SHELLFISH_SESSION="$cancelled_source" \
+  SHELLFISH_TURN_STATE="$tmp" zsh -f "$compact_hook" user_prompt_submit \
+  3>"$compact_control" 2>"$compact_display" \
+  < <(print -n -- /compact) || compact_status=$?
+(( compact_status == 11 )) || fail 'a cancelled turn did not compact explicitly'
+[[ ! -s $compact_display ]] || fail 'compacting a cancelled turn wrote display output'
+assert_canonical_session "$tmp/cancelled-source_compact.jsonl"
+
+# Require a session past its first turn before asking the model for a summary.
 for incomplete in empty user-only assistant-only; do
   typeset incomplete_source="$tmp/$incomplete.jsonl"
   head -n 1 "$compact_source" >"$incomplete_source"
