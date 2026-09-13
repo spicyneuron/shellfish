@@ -2,98 +2,75 @@
 
 A harness defines how Shellfish behaves as an agent. It combines tools, lifecycle hooks, sandbox policy, and turn limits around the shared execution loop. A profile selects a harness together with a backend, a system prompt, and model request settings.
 
-The core owns the parts that must remain consistent: event ordering, persistence, recovery, and cleanup. The harness supplies the coding behavior and workflow policy. This separation lets a different harness turn the same runtime into a reviewer, research assistant, or project-specific agent without replacing the turn machinery.
-
-Harnesses are resolved when a session is created and stored in its header. Changing a harness affects new sessions, not existing ones.
+The core owns event ordering, persistence, recovery, and cleanup. The harness supplies tools and workflow policy. Harnesses are frozen when a session is created, so changes affect new sessions rather than existing ones.
 
 ## Default coding harness
 
-The bundled `default` harness is intentionally small. It provides project context, general-purpose tools, interactive commands, and conservative sandboxing. Its complete configuration lives in [`share/default/shellfish.jsonc`](../share/default/shellfish.jsonc).
+The bundled `default` harness provides project context, general-purpose coding tools, interactive commands, compaction, and conservative sandboxing. Its configuration and components under [`share/default/`](../share/default/) are the authoritative reference.
 
 ### System prompt
 
-The system prompt is a profile field, not a harness field. The bundled `default` profile lists two components:
+The system prompt belongs to the profile rather than the harness, so the same harness can support different roles. Shellfish materializes the selected system components when it creates a session. Later file changes do not alter that session's prompt.
 
-- `general.md` defines communication and context-handling conventions.
-- `tools.md` defines tool-use conventions.
-
-These files live under `share/default/system/`; a user configuration can select different files or shadow bundled files by name. Their resolved paths are stored in the session header. When a session is created, the files are read in order, stripped of trailing newlines, and joined with a blank line into the session's single durable system record. `--session-from PATH` reuses the stored paths and materializes a new record, so file changes affect sessions derived later.
-
-For a new session, repeated `--system TEXT` and `--system-file PATH` inputs replace the configured prompt for that creation. Mixed inputs retain command-line order. These one-off inputs do not replace the stored component paths.
+| Component | Role |
+| --- | --- |
+| `general.md` | Communication, execution, and context-handling guidance |
+| `tools.md` | Conventions for using the bundled tools |
 
 ### Tools
 
-- `read_file` reads project text files with line numbers.
-- `edit_file` makes targeted replacements in existing project text files.
-- `write_file` creates new project text files.
-- `skill` loads instructions for an advertised Agent Skill.
-- `search_web` uses Exa's anonymous MCP endpoint to search the web.
-- `fetch_url` uses Jina Reader to fetch an HTTP(S) website as Markdown.
-- `shell` runs one zsh command in the session working directory.
+Tools are executable components with model-facing JSON schemas. The default tools cover file access, shell commands, web access, and Agent Skills.
 
-Tools are component directories with executable `run` files and JSON manifests. A manifest's optional `environment` array selects configuration values for that tool process. Tools otherwise start with a clean environment. Their `TMPDIR` is private to one `shellfish run`, shared by its tool calls, and removed during turn cleanup. The default harness enables sandboxing with [`fence`](https://github.com/fencesandbox/fence). Its policies constrain project and network access and deny common secret files. When a tool fails and sandbox monitoring reports a blocked action, the durable tool result records that fact for both the model and client presentation. Supported tool calls can request a one-time bypass in interactive clients. Headless execution denies requests that `permission_request` scripts do not decide.
+| Component | Role |
+| --- | --- |
+| `read_file` | Read project text with line numbers |
+| `edit_file` | Make targeted replacements in existing text files |
+| `write_file` | Create text files |
+| `skill` | Load an advertised Agent Skill |
+| `search_web` | Search the web |
+| `fetch_url` | Fetch a web page as Markdown |
+| `shell` | Run a zsh command in the session working directory |
 
-Each tool runs in an isolated process group. Completion and cancellation remove ordinary descendants left in that group. Daemonizing or otherwise leaving the group is unsupported.
-
-A tool may request durable state by writing one JSON object to fd 3: `{"state":[{"name":"tools/example","value":true}]}`. No other control fields are accepted. Shellfish validates and appends these records after the tool completes and before its durable result, including when the tool exits nonzero. Interrupted tools and tool orchestration failures commit no requested state. Tool wrappers must close fd 3 before launching model-authored or otherwise untrusted child commands; the bundled `shell` tool does so.
-
-Sandboxing applies to opted-in tools. Hook scripts and backend adapters are trusted executables and run with the user's permissions. See [Configuration](CONFIG.md#sandbox-grants) for persistent and one-off path grants.
+Tools start with a restricted environment and may run inside the configured [`fence`](https://github.com/fencesandbox/fence) sandbox. Interactive clients can ask the user to approve a supported one-time bypass. Hook scripts and backend adapters remain trusted and unsandboxed. See [Tools](TOOLS.md) for the component contract and [Sandbox grants](CONFIG.md#sandbox-grants) for persistent access.
 
 ### Session context
 
-After the transcript header and optional system record are created, three `session_start` scripts append startup context:
+At session creation, startup hooks add project, Git, instruction, and available-skill context. This context is recorded once rather than rediscovered before every turn.
 
-- `project_environment` reports the host, project tree, available shell commands, and Agent Skills.
-- `git_environment` reports Git context at startup and branch or detached-commit changes before later prompts.
-- `project_instructions` loads the project's `AGENTS.md`, or `CLAUDE.md` when `AGENTS.md` is absent.
-
-This context is appended once for a new session rather than before every turn.
-
-The filesystem listing in `project_environment` and each Git probe use a one-second wall-clock budget so environment collection stays fast. A slow filesystem skips the listing but retains the other environment context; a slow Git probe reports no context.
-
-Skills are discovered in descending precedence from `./.agents/skills/`, the resolved configuration directory's `skills/`, `~/.agents/skills/`, and bundled `share/default/skills/`. Each skill directory contains a `SKILL.md` whose frontmatter supplies its matching `name` and `description`. Invalid skills and skills with `disable-model-invocation: true` are unavailable to the model. The advertised catalog is recorded when the session is created; the `skill` tool reads the selected file when invoked.
+| Component | Role |
+| --- | --- |
+| `project_environment` | Host, project tree, available commands, and skills |
+| `git_environment` | Repository and branch context |
+| `project_instructions` | Project `AGENTS.md`, falling back to `CLAUDE.md` |
 
 ### Interactive commands
 
-Most chat commands are bundled scripts on the `user_prompt_submit` hook:
+Most slash commands are `user_prompt_submit` hooks supplied by the harness. They provide help, session creation and derivation, sandbox updates, shell context, presentation changes, and server handoff. Run `/help` for the current command set.
 
-| Command | Description |
+| Component | Role |
 | --- | --- |
-| `/help`, `/h` | List available commands and editor keys. |
-| `/new` | Create a new session with the active session's settings. |
-| `/copy [N]` | Copy the text of the latest user/agent section, or section `N`, to the local clipboard. |
-| `/fork [N]` | Copy the transcript prefix before section `N` into a new session, resolving an agent section to the following user section and restoring that prompt as an editable draft. Context and state preceding the cutoff are kept exactly as written. Without an index it forks at the current end. |
-| `/compact` | Summarize the conversation into a child session and request a handoff to it. See [Compaction](#compaction). |
-| `/verbose`, `/v` | Toggle presentation preview limits. |
-| `/sandbox [OP DIR]` | List the session's sandbox path grants, or update them in place. |
-| `/resume` | Switch to another session in the same project. |
-| `/server` | Hand the current session to the optional `shellfish-server` process. |
-| `! command` | Run a shell command and inject its input and output as context. |
+| `help` | Show available commands and editor keys |
+| `verbose` | Toggle full presentation previews |
+| `new` | Start a session with the active runtime |
+| `copy` | Copy a conversation section to the clipboard |
+| `fork` | Derive a session from a transcript prefix |
+| `sandbox` | Inspect or update session sandbox grants |
+| `user_shell` | Run `!` commands and add their output as context |
+| `server` | Hand the session to `shellfish-server` |
+| `resume` | Choose another project session |
+| `compact` | Summarize the conversation into a child session |
+| `git_environment` | Add context when Git identity changes |
 
-`/refresh`, `/r` and `/quit`, `/q` are not hooks. They concern the client's own lifecycle rather than the session, so the client answers them directly and keeps answering them when a turn can no longer run. See [Recovery](CHAT.md#recovery).
-
-The commands that replace the current session — `/new`, `/fork`, `/compact`, `/verbose`, `/resume`, and `/server` — do not switch in place. They request a [handoff](HOOKS.md#user_prompt_submit): chat exits and relaunches Shellfish, usually with a new session path.
-
-`/sandbox read DIR` and `/sandbox write DIR` add a grant, `-read` and `-write` remove one; `+` is accepted when adding, and signed forms may abbreviate the operation to `r` or `w`. Additions must name an existing directory. Paths beginning with `~/` use `HOME`, relative paths use the session working directory, and stored additions are canonical absolute paths. Read and write lists remain independent, and removing an exact child grant does not restrict access inherited from a granted parent. After an update, the client refreshes its runtime without replaying the transcript.
-
-These features are harness behavior, not special cases in the agent loop. A custom harness can omit them, replace them, or bind other scripts to the same hook.
+Commands that replace the active session request a [handoff](HOOKS.md#user_prompt_submit) for the client to perform. Client lifecycle commands such as `/refresh` and `/quit` are not hooks. A custom harness can omit or replace the bundled commands without changing the agent loop.
 
 ### Compaction
 
-Compaction is a `user_prompt_submit` script that replaces a full conversation with a chronological summary in a child session. It composes `shellfish build-request` and `shellfish send-request` with tools disabled, so the single summary request runs no hooks and executes no tools. The summary carries unfinished work and current status within the chronology rather than as separate sections.
+Once a session has completed its first turn, `/compact` can summarize it into a child session without changing the source. The summary carries unfinished work and current status within its chronology. The default harness can also compact automatically as the conversation approaches a known context-window limit.
 
-`/compact` summarizes on demand. Automatic compaction runs when the most recent measured assistant usage reaches 80% of the frozen `context_window`; an unavailable window disables the automatic threshold.
-
-Compaction requires at least one user message and a final assistant response containing text. It creates a sibling child named with a `_compact` suffix without changing the source. The child copies everything before the first user message — the session header, system record, and committed startup context — then every state record in source order, and replaces the conversation with one `<compacted_context>`. That context contains the complete first user message in `<first_user_message>`, the model's chronological summary in `<timeline>`, and the complete final assistant response in `<final_assistant_response>`. The escaped boundary messages remain inert quoted context, not synthetic conversation turns. Both `/fork` and compaction publish their child through [`shellfish install-session`](RUN.md#canonical-transcript-installation), which owns validation, permissions, and atomic installation while the scripts keep their own naming and collision policy. A successful script requests a client handoff to the child. Automatic compaction passes the interrupted prompt as an editable draft rather than submitting it. Automatic failures are fail-open and submit the prompt to the source; explicit `/compact` failures stop that command and leave the source active.
-
-### Limits
-
-The bundled harness allows up to 100 provider requests per turn and 25 tool calls per provider response. Each tool has a 32 KiB budget shared by its fd-3 control and ordinary output. Control cannot be truncated; valid control uses its exact byte count and ordinary output is truncated to the remaining budget. Each hook script invocation has a separate 32 KiB budget across stdout, stderr, and fd 3; exceeding it fails the operation. These limits bound accidental loops and oversized context while leaving room for multi-step coding tasks.
+Successful compaction asks the client to open the child. Automatic compaction preserves the interrupted prompt as an editable draft. Harnesses bound provider requests per turn, tool calls per response, and captured component output.
 
 ## Build a focused harness
 
-A harness can be smaller than the default. For example, a review harness might expose only `read_file`, retain the project context scripts, and keep sandboxing enabled, with a review-specific system prompt set on the profile that selects it. Harnesses do not inherit from one another, so each named harness lists the capabilities it needs.
+A focused harness exposes only the tools and hooks its role requires. Harnesses do not inherit, and the profile that selects one supplies its system prompt and backend settings.
 
-The configuration template includes a `readonly` harness with the `read_file` and `shell_readonly` tools, selected by a `readonly` profile that uses the bundled `readonly.md` system component.
-
-See [Customize a harness](CONFIG.md#customize-a-harness) for a configuration example, component lookup rules, and sandbox grants. See [Hooks](HOOKS.md) for lifecycle payloads, control decisions, and environment guarantees.
+See [Customize a harness](CONFIG.md#customize-a-harness) for configuration and component lookup, and [Hooks](HOOKS.md) for the lifecycle contract.

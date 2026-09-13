@@ -71,15 +71,16 @@ The `openai` backend also supports compatible services by setting `endpoint` in 
 
 ## Documentation
 
+- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md): Design intent and opinionated boundaries.
 - [`docs/CONFIG.md`](docs/CONFIG.md): Configure profiles, backends, harnesses, components, and sandbox grants.
 - [`docs/SESSIONS.md`](docs/SESSIONS.md): Understand session structure, creation, frozen runtime, derivation, and recovery.
 - [`docs/HARNESS.md`](docs/HARNESS.md): Understand the harness role and the bundled defaults.
-- [`docs/CHAT.md`](docs/CHAT.md): Use interactive chat, slash commands, and keybindings.
+- [`docs/TOOLS.md`](docs/TOOLS.md): Write custom tools and configure their sandbox contract.
 - [`docs/HOOKS.md`](docs/HOOKS.md): Write custom lifecycle hooks.
 - [`docs/BACKENDS.md`](docs/BACKENDS.md): Write provider backend adapters.
+- [`docs/CHAT.md`](docs/CHAT.md): Use interactive chat, slash commands, and keybindings.
 - [`docs/RUN.md`](docs/RUN.md): Integrate with the single-turn JSONL interface.
 - [`docs/SERVER.md`](docs/SERVER.md): Serve a session for remote access.
-- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md): Design intent and opinionated boundaries.
 - [`docs/CURSED.md`](docs/CURSED.md): Hard-won lessons and ~~hacks~~ clever workarounds.
 
 ## Server (experimental)

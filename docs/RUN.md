@@ -2,13 +2,20 @@
 
 `shellfish run` runs a single agent turn. A turn begins with one user message and may contain multiple provider requests, tool calls, permission decisions, and continuations requested by `stop` scripts.
 
-`shellfish create` creates an idle session and prints its absolute path. `--session-from PATH` derives one from an existing session's runtime without its messages or startup context. `--session-out PATH` selects the destination instead of the state directory. See [`SESSIONS.md`](SESSIONS.md) for session structure, creation, and derivation semantics.
+Ordinary mode accepts prompt text and prints the final assistant text:
 
 ```sh
-shellfish create
-shellfish create --session-from path/to/session.jsonl
-shellfish create --session-out ./project-session.jsonl
+shellfish run "Review these changes"
 ```
+
+`--jsonl` exposes the machine interface used by interactive chat and `shellfish-server`:
+
+```sh
+printf '%s\n' '{"type":"user","content":[{"type":"text","text":"Review these changes"}]}' |
+  shellfish run --jsonl --session path/to/session.jsonl
+```
+
+`shellfish create` creates an idle session and prints its absolute path. `--session-from PATH` derives one from an existing session's runtime, while `--session-out PATH` selects its destination. See [`SESSIONS.md`](SESSIONS.md) for session semantics.
 
 ## Session creation protocol
 
@@ -21,33 +28,15 @@ shellfish create --session-out ./project-session.jsonl
 | `state`, `hook_result` | Durable output from each validated `session_start` component. |
 | `_session_created` | `path`, after startup hooks finish successfully. |
 
-Durable startup records are appended before they are emitted. An empty hook chain emits only preparation and creation events. A failed startup emits no creation event. Clients must not submit a turn until creation exits successfully.
+Durable startup records are appended before emission. A failed startup emits no `_session_created`; clients must wait for successful process exit before submitting a turn. Cancellation exits nonzero and attempts to remove the incomplete session.
 
-As in a turn, `SIGUSR1` is the client's cancellation signal, aimed at the creating process alone so it can stop a running hook script itself. Cancelled JSONL creation writes its diagnostic to stderr, exits nonzero, and attempts the same best-effort cleanup as other startup failures; abrupt termination can leave the published session behind.
-
-`--system TEXT` and `--system-file PATH` replace the configured system prompt for that creation. Both flags are repeatable and may be mixed; their contents have trailing newlines stripped and are joined in command-line order with a blank line.
-
-Chat and `shellfish run` use an existing session with `--session PATH`. Otherwise they create one through `shellfish create`, accepting `--session-from` and `--session-out`. Neither creation flag can be combined with `--session`.
+`--system` and `--system-file` replace the configured system prompt for that creation. Chat and `run` accept the same creation options when they are not opening an existing `--session`.
 
 ## Canonical transcript installation
 
-`shellfish install-session --session-out PATH` reads one canonical JSONL transcript from stdin and prints the installed absolute path. It preserves the supplied bytes, runs no hooks, and does not resolve configuration. The transcript needs a canonical header and valid record sequencing, but may end at any point a durable session can, including an unanswered user message or unfinished tool calls. The next `shellfish run` closes such a turn through ordinary [recovery](#completion-and-recovery).
+`shellfish install-session --session-out PATH` validates and atomically publishes a caller-constructed transcript without resolving configuration or running hooks. It preserves the supplied bytes, refuses an existing destination, and prints the installed path.
 
-Installation refuses an existing file, directory, or symlink and exits with status 3, so a caller that names its own children can retry under another name. It publishes the validated transcript atomically with mode 0600. Destination naming and transcript derivation belong to the calling feature.
-
-Ordinary run accepts prompt text and prints the final assistant text:
-
-```sh
-shellfish run "Review these changes"
-printf '%s\n' "Review these changes" | shellfish run
-```
-
-`--jsonl` exposes the machine interface used by interactive chat and `shellfish-server`:
-
-```sh
-printf '%s\n' '{"type":"user","content":[{"type":"text","text":"Review these changes"}]}' |
-  shellfish run --jsonl --session path/to/session.jsonl
-```
+The transcript may end at any valid durable boundary, including an unfinished turn. The next `shellfish run` applies ordinary [recovery](#completion-and-recovery). Naming and derivation policy belong to the caller.
 
 ## Input
 
@@ -57,7 +46,7 @@ The first line on stdin must be exactly one canonical user message:
 {"type":"user","content":[{"type":"text","text":"Review these changes"}]}
 ```
 
-The object has exactly `type` and `content`. `content` contains exactly one text block, and its text may not contain NUL. A prompt argument cannot be combined with `--jsonl`.
+The object contains exactly one text block. A prompt argument cannot be combined with `--jsonl`.
 
 Stdin remains open for permission replies. When the turn emits a permission request, a client may write one matching response line:
 
@@ -65,17 +54,17 @@ Stdin remains open for permission replies. When the turn emits a permission requ
 {"type":"_tool_permission_response","id":"permission_1","decision":"approve"}
 ```
 
-`decision` is `approve` or `deny`, and `id` must match the pending request. A client must preserve line framing and send no unrelated input. If no interactive client or `permission_request` script decides a sandbox bypass, the turn denies it.
+`decision` is `approve` or `deny`, and `id` must match the pending request. Clients must preserve line framing and send no unrelated input. Without a client or hook decision, the turn denies the bypass.
 
 ## Read-only request composition
 
 `shellfish build-request` and `shellfish send-request` expose the provider-request boundary without opening a durable turn. Both require `--session` and read the selected session without recovery or mutation.
 
-`build-request` reads zero or more additional durable records as JSONL on stdin, validates them as a continuation of the selected session, and writes one canonical backend request. `--tools` accepts a JSON array of provider tool schemas and defaults to `[]`.
+`build-request` validates optional additional durable records as a continuation of the session and writes one canonical backend request. `--tools` supplies provider tool schemas.
 
-`send-request` reads one canonical backend request on stdin. It requires the request and transport options to match the session's frozen runtime, resolves the backend's selected environment, validates the adapter event stream, and writes one canonical assistant message.
+`send-request` validates one canonical backend request against the session's frozen runtime, invokes its adapter, and writes one canonical assistant message.
 
-Neither command runs hooks, executes tool calls, or persists its output. Provider tool schemas in a built request are inert. Diagnostics go to stderr and failures return nonzero.
+Neither command runs hooks, executes tool calls, or persists output. Tool schemas and returned calls remain inert.
 
 ```sh
 printf '%s\n' '{"type":"user","content":[{"type":"text","text":"Summarize this conversation"}]}' |
@@ -90,23 +79,19 @@ Stdout contains one compact JSON object per line in source order. Objects fall i
 - Types without a leading underscore are durable session records. The turn appends each record to the session before emitting it.
 - Types beginning with `_` are transient events. They support live presentation and control and are never session records.
 
-Durable records are:
+| Durable type | Meaning |
+| --- | --- |
+| `session` | Resolved runtime header |
+| `system` | Materialized system prompt |
+| `hook_result` | Attributed model or user context from a hook |
+| `user` | User prompt |
+| `assistant` | Complete provider response and optional usage |
+| `tool_call` | Complete assistant-requested call at its execution point |
+| `tool_result` | Completed, denied, or interrupted call result |
+| `state` | Model-invisible durable named state |
+| `turn_error` | Failure or cancellation ending an accepted turn |
 
-- `session`: the resolved runtime header, emitted when a new session is created.
-- `system`: the concatenated system components.
-- `hook_result`: attributed hook output with optional nonempty `model_context` and `user_context`; at least one is present.
-- `user`: one user prompt.
-- `assistant`: one provider response, including token usage when reported.
-- `tool_call`: `{type:"tool_call",id,name,input}`, one call the assistant requested, appended when it reaches its execution point.
-- `tool_result`: one completed, denied, or interrupted tool call.
-- `state`: `{type:"state",name,value}`, model-invisible durable named state.
-- `turn_error`: `{type:"turn_error",message}`, the failure that ended an accepted turn without an assistant answer. It is never sent to a provider.
-
-A state record has exactly those three fields. Its name is an opaque string of at most 128 ASCII characters matching `^[A-Za-z0-9][A-Za-z0-9_.:/-]*$`. Its value may be any JSON value. The latest record for an exact name is effective, and `null` means the name has no effective value at that transcript position. State records do not affect conversation sequencing and are omitted from provider requests.
-
-Hook state is emitted before its `hook_result` or another durable hook outcome. Tool state is emitted after normal tool completion and before its durable result, including for a nonzero tool exit. Interrupted tools and tool orchestration failures emit no tool state.
-
-A sandboxed tool result includes `sandbox_denial_detected: true` when the tool exits non-zero and sandbox monitoring reports a denied action. The denial and non-zero exit are correlated signals; the denial is not necessarily the cause of the failure.
+For an exact state name, the latest value is effective and `null` clears it. State does not affect conversation sequencing or provider requests. A failed sandboxed tool may mark its result with `sandbox_denial_detected`.
 
 Transient events currently include:
 
@@ -124,11 +109,7 @@ Transient events currently include:
 | `_handoff` | A hook script asks a capable client to run `argv` after the turn exits cleanly. |
 | `_session_update` | A hook-requested update or model-context discovery changed the session; `runtime` is the resulting resolved runtime. |
 
-`_assistant_start` opens a response and `_assistant_end` closes it. Between them the turn forwards the adapter's events verbatim, in stream order. Deltas carry a zero-based content `index` identifying the block's position in the later assistant content.
-
-Deltas are previews only. Tool-call `input` fragments are raw text, not parsed JSON, and a client must never render or execute a partial call. Live consumers may present indexed assistant and reasoning deltas, then use the durable assistant record as confirmation without rendering the same content again. Replay renders that durable content in recorded block order. Each call renders from its own `tool_call` record. Clients should treat unknown transient types as unsupported protocol input and recover from the durable session rather than guessing their meaning.
-
-Nonempty `_hook_activity` has `{type,hook,script,text}` and is emitted only when a selected ordinary component has a configured display label. A later activity replaces it. A durable `hook_result` or process completion replaces it; a displayed component that succeeds without a result emits `{type:"_hook_activity",text:""}`. `permission_request` components emit neither activity nor a result.
+`_assistant_start` and `_assistant_end` bound one provider response. Indexed deltas are previews of the later durable assistant record. Partial tool calls are inert and must never be executed. On unknown or malformed transient input, clients recover by replaying the durable session rather than guessing.
 
 A permission request has this shape:
 
@@ -143,10 +124,8 @@ A permission request has this shape:
 
 ## Completion and recovery
 
-A successful process exit means the single-turn operation completed cleanly. This includes a `user_prompt_submit` script that deliberately blocks submission or requests a handoff. Tool commands may return nonzero results without making the turn itself fail.
+A zero exit means the operation completed cleanly, including a hook that deliberately blocked submission or requested a handoff. A tool may return a nonzero result without failing the turn itself.
 
-A nonzero exit means the operation failed or was interrupted. A failure after the user record is committed is appended and emitted as a durable `turn_error`; its message is the user-facing outcome. `SIGINT` and the client's `SIGUSR1` cancellation signal record `Cancelled.`, while other handled signals record `Turn interrupted.` A failure without a durable turn outcome writes its diagnostic to stderr. After malformed output, disconnection, cancellation, or process failure, discard uncertain live state and replay the durable session.
+After an accepted turn fails or is cancelled, Shellfish appends a durable `turn_error`. It first preserves any recoverable partial assistant response and closes unfinished tool calls the response requested. Recovery is best effort and cannot cover abrupt process or machine loss.
 
-If a provider fails or is cancelled after the turn accepted visible text or reasoning, cleanup makes a best-effort append of that content as a canonical assistant message with `stop: "length"`. Otherwise the user message remains unanswered. Cleanup closes a recorded call that did not finish, and appends a `tool_call` and a cancelled result for each call the response requested that never started. A process killed outright loses the calls it had not yet recorded. This recovery cannot guarantee persistence after `SIGKILL` or process crash.
-
-Do not write presentation or lifecycle records into a session. Transcript records are append-only and owned by Shellfish. Custom clients submit turns through `shellfish run` and use the transcript only for replay and recovery. A hook-requested session update may atomically replace the runtime header.
+After any uncertain live outcome, clients discard transient state and replay the session. They never append presentation or lifecycle events themselves; transcript mutation belongs to Shellfish.
