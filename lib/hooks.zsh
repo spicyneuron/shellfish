@@ -100,9 +100,6 @@ sf_hooks_capture_one() {
     sf_hooks_fail "$SF_ENVIRONMENT_ERROR"
     return
   }
-  for name in $SF_ENVIRONMENT_NAMES; do
-    environment+=( -u "$name" )
-  done
   for value in $SF_ENVIRONMENT_VALUES; do
     name=${value%%=*}
     (( ${fixed_names[(Ie)$name]} )) || environment+=( "$value" )

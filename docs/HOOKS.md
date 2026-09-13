@@ -40,7 +40,7 @@ Each hook is configured on a harness as an ordered list of component references.
 }
 ```
 
-A manifest can select component-specific environment variables and a running display label:
+A manifest can select component-specific values to load from `.env` and set a running display label:
 
 ```json
 {"environment":["HOOK_MODE"],"display":"Checking the working tree"}

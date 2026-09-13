@@ -4,7 +4,7 @@ source "${0:A:h}/_hooks.zsh"
 
 # session_start commits each result before the next component.
 typeset start_session="$tmp/start-session.jsonl"
-make_script start '[[ $# == 1 && $1 == session_start ]]; [[ ! -s /dev/stdin && -z ${SHELLFISH_TURN_ID-} && -z ${SHELLFISH_TURN_STATE-} ]]; [[ -z ${OPENAI_API_KEY-} && -z ${CUSTOM_API_KEY-} ]]; [[ $SHELLFISH_MODEL == test && $0 == /* && -d ${0:A:h} ]]; [[ $SHELLFISH_CONFIG_DIR == "$EXPECTED_CONFIG_DIR" ]]; print -n startup; print -n -u2 local; [[ -z $SKIP ]] || exit 10'
+make_script start '[[ $# == 1 && $1 == session_start ]]; [[ ! -s /dev/stdin && -z ${SHELLFISH_TURN_ID-} && -z ${SHELLFISH_TURN_STATE-} ]]; [[ $OPENAI_API_KEY == standard-secret && $CUSTOM_API_KEY == custom-secret ]] || exit 1; [[ $SHELLFISH_MODEL == test && $0 == /* && -d ${0:A:h} ]]; [[ $SHELLFISH_CONFIG_DIR == "$EXPECTED_CONFIG_DIR" ]]; print -n startup; print -n -u2 local; [[ -z $SKIP ]] || exit 10'
 typeset start_script=$script
 make_script start_second 'print -n second'
 typeset start_second_script=$script
@@ -26,7 +26,6 @@ sf_test_install_prepared "$start_session"
 sf_hooks_session_start "$start_session"
 [[ -z $REPLY && ${#reply} == 0 ]]
 [[ $OPENAI_API_KEY == standard-secret && $CUSTOM_API_KEY == custom-secret ]]
-unset OPENAI_API_KEY CUSTOM_API_KEY
 jq -e -s '
   length == 3 and
   .[1] == {type:"hook_result",hook:"session_start",script:"start",
@@ -76,6 +75,7 @@ if SKIP=1 sf_hooks_session_start "$skipped_session"; then
 fi
 [[ $SF_HOOK_ERROR == 'session_start hook script returned unsupported skip status: local' ]]
 [[ ! -e $skipped_session ]]
+unset OPENAI_API_KEY CUSTOM_API_KEY
 
 # Permission hooks may allow, deny, or defer; stdout is transient.
 typeset permission_session="$tmp/permission-session.jsonl"

@@ -250,15 +250,15 @@ sf_hooks_turn_state_create
 typeset next_state=$SHELLFISH_TURN_STATE
 [[ $next_state != $state && -d $next_state ]]
 
-# Hooks receive only their selected environment.
+# Hooks inherit exported values, import selected values, and receive authoritative context.
 SF_SESSION[runtime]='{"backend":{"environment":["BACKEND_SETTING"],"env_file":""},"harness":{"tools":[{"manifest":{"environment":["HOOK_SETTING","TOOL_SETTING","SHELLFISH_SESSION"]}}]}}'
 export BACKEND_SETTING=backend HOOK_SETTING=hook TOOL_SETTING=tool SHELLFISH_SESSION=external
-make_script selected_environment 'print -rn -- "${BACKEND_SETTING-unset}|${HOOK_SETTING-unset}|${TOOL_SETTING-unset}|$SHELLFISH_SESSION"'
-typeset selected_environment=$script
+make_script inherited_environment 'print -rn -- "${BACKEND_SETTING-unset}|${HOOK_SETTING-unset}|${TOOL_SETTING-unset}|$SHELLFISH_SESSION"'
+typeset inherited_environment=$script
 component_results=()
 sf_hooks_invoke "$session" "$working" "$empty" 512 0 1 stop \
-  "$selected_environment" '' '' 'HOOK_SETTING SHELLFISH_SESSION' || fail "$SF_HOOK_ERROR"
-assert_equal "unset|hook|unset|${session:A}" "$component_results[3]"
+  "$inherited_environment" '' '' 'HOOK_SETTING SHELLFISH_SESSION' || fail "$SF_HOOK_ERROR"
+assert_equal "backend|hook|tool|${session:A}" "$component_results[3]"
 unset BACKEND_SETTING HOOK_SETTING TOOL_SETTING SHELLFISH_SESSION
 
 # session_start cannot import turn-only context.
