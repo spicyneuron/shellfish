@@ -142,8 +142,8 @@ cat >"$tmp/auth.json" <<'EOF'
 EOF
 (builtin cd -- "$tmp" && CODEX_HOME=. zsh -f "$codex_run" <"$tmp/codex-request.json" >"$res")
 assert_usage
-jq -e '.max_output_tokens == 42' "$BACKEND_TEST_BODY" >/dev/null ||
-  fail 'Codex dropped the normalized output limit'
+jq -e 'has("max_output_tokens") | not' "$BACKEND_TEST_BODY" >/dev/null ||
+  fail 'Codex sent an unsupported output limit'
 
 # Preserve partial output on provider failure.
 print -rl -- 'data: {"type":"response.output_text.delta","delta":"partial"}' \

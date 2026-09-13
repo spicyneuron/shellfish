@@ -41,6 +41,8 @@ Shellfish starts `run` once per provider request. The adapter receives one canon
 
 `messages` contains provider-neutral conversation records in transcript order. `tools` contains tool definitions. `options.request` contains common request parameters and provider-specific settings. Bundled adapters normalize familiar variants, then emit the provider's wire format. Token limits prefer `max_output_tokens`, then `max_completion_tokens`, then `max_tokens`; `reasoning_effort` overrides `reasoning.effort`; and `response_schema` replaces the provider's native structured-output setting. `transport` is authoritative for the exchange.
 
+The Codex adapter omits output limits because the ChatGPT Codex endpoint rejects the Responses API's `max_output_tokens` field.
+
 Unrelated provider-specific settings pass through unchanged.
 
 ## Response contract

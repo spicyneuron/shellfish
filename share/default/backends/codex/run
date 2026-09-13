@@ -27,8 +27,11 @@ sf_backend_request '(.options.request | has("reasoning") | not) or
 # for here rather than in the shared Responses backend, which points at whatever
 # model a provider configures; this transport is pinned to one Codex endpoint.
 # The summary is forced after raw options are applied; effort stays the caller's.
+# The endpoint rejects max_output_tokens, so remove every common limit alias
+# before the Responses adapter can normalize one into that field.
 jq -c '.options.request |=
-  (. + {reasoning:((.reasoning // {} | if . == {effort:""} then {} else . end) * {summary:"auto"})})' \
+  (del(.max_tokens,.max_completion_tokens,.max_output_tokens) |
+   .reasoning = ((.reasoning // {} | if . == {effort:""} then {} else . end) * {summary:"auto"}))' \
   "$SF_BACKEND_REQUEST_FILE" >"$prepared_file" || sf_backend_die "cannot prepare canonical request"
 
 command -v codex >/dev/null 2>&1 || sf_backend_die "Codex CLI is not installed"
