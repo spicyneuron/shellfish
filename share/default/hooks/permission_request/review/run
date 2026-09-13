@@ -5,9 +5,9 @@ setopt extended_glob no_aliases no_multios pipe_fail
 
 integer output_tokens=1024
 integer request_seconds=45
-local request header context_window budget system base records transcript backend_request response result
-local state_name=''
-local -a candidates
+local request header active_header context_window budget system base records transcript
+local backend_request response result selected_runtime state_name='' name
+local -a candidates parent_environment reviewer_environment send_command
 
 permission_deny() {
   local reason=${1//$'\n'/ } control
@@ -82,6 +82,21 @@ PROMPT
 
 header=$(head -n 1 -- "$SHELLFISH_SESSION") ||
   permission_deny 'Permission review could not inspect the active runtime.'
+active_header=$header
+parent_environment=( "${(@f)$(jq -r '.backend.environment[]' <<<"$active_header")}" ) ||
+  permission_deny 'Permission review could not inspect the active backend environment.'
+parent_environment=( "${(@)parent_environment:#}" )
+if [[ -n ${SHELLFISH_PERMISSION_PROFILE-} ]]; then
+  selected_runtime=$("$SHELLFISH_EXECUTABLE" config --profile \
+    "$SHELLFISH_PERMISSION_PROFILE" 2>/dev/null) ||
+    permission_deny 'Permission review could not resolve its selected profile.'
+  header=$(jq -cn --argjson header "$header" --argjson runtime "$selected_runtime" '
+    $header | .profile=$runtime.profile | .backend=$runtime.backend
+  ') || permission_deny 'Permission review could not apply its selected profile.'
+fi
+reviewer_environment=( "${(@f)$(jq -r '.backend.environment[]' <<<"$header")}" ) ||
+  permission_deny 'Permission review could not inspect the reviewer backend environment.'
+reviewer_environment=( "${(@)reviewer_environment:#}" )
 context_window=$(jq -er '.profile.context_window | select(type == "number" and floor == . and . > 1024)' \
   <<<"$header" 2>/dev/null) ||
   permission_deny 'Permission review has no usable context limit.'
@@ -171,8 +186,15 @@ if ! "$SHELLFISH_EXECUTABLE" build-request --session "$transcript" --tools '[]' 
     >"$backend_request" 2>/dev/null; then
   permission_deny 'Permission review could not build the provider request.'
 fi
-response=$("$SHELLFISH_EXECUTABLE" send-request --session "$transcript" \
-  <"$backend_request" 2>/dev/null) || permission_deny 'Permission review provider request failed.'
+send_command=( env )
+if [[ -n ${SHELLFISH_PERMISSION_PROFILE-} ]]; then
+  for name in $parent_environment; do
+    (( ${reviewer_environment[(Ie)$name]} )) || send_command+=( -u "$name" )
+  done
+fi
+send_command+=( "$SHELLFISH_EXECUTABLE" send-request --session "$transcript" )
+response=$("${send_command[@]}" <"$backend_request" 2>/dev/null) ||
+  permission_deny 'Permission review provider request failed.'
 
 result=$(jq -cer '
   select(type == "object" and .type == "assistant" and .stop == "end" and

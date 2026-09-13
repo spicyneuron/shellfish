@@ -5,12 +5,18 @@ source "${0:A:h:h}/_hooks.zsh"
 typeset hook="$ROOT/share/default/hooks/permission_request/review/run"
 typeset session="$tmp/review.jsonl" control="$tmp/control.json"
 typeset wrapper="$tmp/shellfish" captured="$tmp/request.json" mode_file="$tmp/mode"
+typeset profile_report="$tmp/profile.json" config_call="$tmp/config-call"
 typeset request reason classification risk authorization expected long_id
 integer hook_status=0
 
 cat >"$wrapper" <<'ZSH'
 #!/usr/bin/env zsh
 case $1 in
+  config)
+    print -r -- "$*" >"$SF_TEST_CONFIG_CALL"
+    [[ -s $SF_TEST_PROFILE ]] || exit 1
+    cat "$SF_TEST_PROFILE"
+    ;;
   build-request)
     request=$("$SF_TEST_ENTRY" "$@") || exit
     print -r -- "$request" >"$SF_TEST_CAPTURE"
@@ -18,7 +24,17 @@ case $1 in
     ;;
   send-request)
     cat >/dev/null
-    [[ ${REVIEW_API_KEY-} == exported-secret ]] || exit 3
+    case $SF_TEST_EXPECT_REVIEWER in
+      selected)
+        [[ -z ${REVIEW_API_KEY-} && ${ALT_API_KEY-} == alt-secret ]] || exit 3
+        ;;
+      credentialless)
+        [[ -z ${REVIEW_API_KEY-} && -z ${ALT_API_KEY-} ]] || exit 3
+        ;;
+      *)
+        [[ ${REVIEW_API_KEY-} == exported-secret ]] || exit 3
+        ;;
+    esac
     mode=$(<"$SF_TEST_MODE")
     [[ $mode != failure ]] || exit 1
     case $mode in
@@ -74,6 +90,8 @@ run_review() {
   : >"$control"
   hook_status=0
   SF_TEST_ENTRY="$ROOT/bin/shellfish" SF_TEST_CAPTURE="$captured" SF_TEST_MODE="$mode_file" \
+    SF_TEST_PROFILE="$profile_report" SF_TEST_CONFIG_CALL="$config_call" \
+    SF_TEST_EXPECT_REVIEWER="${SF_TEST_EXPECT_REVIEWER-}" \
     SHELLFISH_EXECUTABLE="$wrapper" SHELLFISH_SESSION="$session" \
     SHELLFISH_TURN_STATE="$tmp" SHELLFISH_TURN_ID=6 \
     zsh -f "$hook" permission_request 3>"$control" <<<"$request" || hook_status=$?
@@ -114,6 +132,48 @@ jq -e -s --slurpfile active "$session" '
   [.[].type] == ["session","system","user"]
 ' "$tmp/permission-review.jsonl" >/dev/null
 assert_canonical_session "$tmp/permission-review.jsonl"
+
+# An explicit reviewer profile supplies inference settings only.
+jq -se '
+  .[0] |
+  .profile = {context_window:30000,
+    request:{model:"review-model",max_tokens:9000,temperature:0.7}} |
+  .backend |= (.name="review" | .endpoint="https://review.invalid/v1" |
+    .environment=["ALT_API_KEY"] | .http_timeout=80) |
+  {profile,backend,harness}
+' "$session" >"$profile_report"
+export ALT_API_KEY=alt-secret
+SHELLFISH_PERMISSION_PROFILE=reviewer SF_TEST_EXPECT_REVIEWER=selected run_review valid
+(( hook_status == 11 ))
+[[ $(<"$config_call") == 'config --profile reviewer' ]]
+jq -e '
+  .options.request == {model:"review-model",max_tokens:1024,temperature:0.7} and
+  .transport.endpoint == "https://review.invalid/v1" and .transport.http_timeout == 45
+' "$captured" >/dev/null
+jq -e -s --slurpfile active "$session" '
+  .[0].cwd == $active[0].cwd and .[0].profile.request.model == "review-model" and
+  .[0].backend.name == "review" and .[0].backend.environment == ["ALT_API_KEY"] and
+  .[0].harness.tools == [] and .[0].harness.permission_request == []
+' "$tmp/permission-review.jsonl" >/dev/null
+
+# Credentialless reviewer profiles still remove parent backend credentials.
+unset ALT_API_KEY
+jq '.backend.environment=[]' "$profile_report" >"$tmp/credentialless.json"
+mv "$tmp/credentialless.json" "$profile_report"
+SHELLFISH_PERMISSION_PROFILE=local SF_TEST_EXPECT_REVIEWER=credentialless run_review valid
+(( hook_status == 11 ))
+jq -e '.action == "allow"' "$control" >/dev/null
+
+# Explicit profile resolution fails closed without using parent inference settings.
+: >"$profile_report"
+SHELLFISH_PERMISSION_PROFILE=missing SF_TEST_EXPECT_REVIEWER=selected run_review valid
+(( hook_status == 11 ))
+jq -e '.action == "deny" and
+  .reason == "Permission review could not resolve its selected profile." and
+  .state[0].value == {risk:null,authorization:null,decision:"deny",
+    reason:"Permission review could not resolve its selected profile."}
+' "$control" >/dev/null
+unset ALT_API_KEY
 
 # Authorization must meet or exceed risk; null always denies.
 typeset -A rank=( low 1 medium 2 high 3 )
