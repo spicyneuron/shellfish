@@ -5,7 +5,7 @@ source "${0:A:h:h}/_hooks.zsh"
 typeset hook="$ROOT/share/default/hooks/permission_request/review/run"
 typeset session="$tmp/review.jsonl" control="$tmp/control.json"
 typeset wrapper="$tmp/shellfish" captured="$tmp/request.json" mode_file="$tmp/mode"
-typeset request response reason
+typeset request reason classification risk authorization expected
 integer hook_status=0
 
 cat >"$wrapper" <<'ZSH'
@@ -79,11 +79,10 @@ run_review() {
     zsh -f "$hook" permission_request 3>"$control" <<<"$request" || hook_status=$?
 }
 
-# A valid classification is deliberately denied until comparison policy lands.
+# A valid classification is resolved by the hook, never by the reviewer.
 run_review valid
 (( hook_status == 11 ))
-jq -e '. == {action:"deny",reason:"Explicitly authorized, bounded local change."}' \
-  "$control" >/dev/null
+jq -e '. == {action:"allow"}' "$control" >/dev/null
 jq -e --argjson tool "$request" '
   . as $backend |
   ($backend.messages[0].content[0].text | fromjson) as $context |
@@ -111,6 +110,29 @@ jq -e -s --slurpfile active "$session" '
   [.[].type] == ["session","system","user"]
 ' "$tmp/permission-review.jsonl" >/dev/null
 assert_canonical_session "$tmp/permission-review.jsonl"
+
+# Authorization must meet or exceed risk; null always denies.
+typeset -A rank=( low 1 medium 2 high 3 )
+for risk in low medium high; do
+  for authorization in low medium high null; do
+    if [[ $authorization == null ]]; then
+      classification=$(jq -cn --arg risk "$risk" \
+        '{risk:$risk,authorization:null,reason:"Matrix reason."}')
+      expected=deny
+    else
+      classification=$(jq -cn --arg risk "$risk" --arg authorization "$authorization" \
+        '{risk:$risk,authorization:$authorization,reason:"Matrix reason."}')
+      (( rank[$authorization] >= rank[$risk] )) && expected=allow || expected=deny
+    fi
+    run_review "$classification"
+    (( hook_status == 11 ))
+    if [[ $expected == allow ]]; then
+      jq -e '. == {action:"allow"}' "$control" >/dev/null
+    else
+      jq -e '. == {action:"deny",reason:"Matrix reason."}' "$control" >/dev/null
+    fi
+  done
+done
 
 # Backend and response failures deny with hook-owned feedback.
 for mode in failure length prose \

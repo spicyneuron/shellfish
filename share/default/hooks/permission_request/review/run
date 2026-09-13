@@ -16,6 +16,20 @@ permission_deny() {
   exit 11
 }
 
+permission_resolve() {
+  local classification=$1 control
+  control=$(jq -cn --argjson classification "$classification" '
+    {low:1,medium:2,high:3} as $rank |
+    if $classification.authorization != null and
+        $rank[$classification.authorization] >= $rank[$classification.risk]
+    then {action:"allow"}
+    else {action:"deny",reason:$classification.reason}
+    end
+  ') || exit 1
+  print -rn -u3 -- "$control" || exit 1
+  exit 11
+}
+
 [[ $1 == permission_request && $# == 1 ]] || permission_deny 'Permission review received an invalid invocation.'
 [[ -r $SHELLFISH_SESSION && -d $SHELLFISH_TURN_STATE ]] ||
   permission_deny 'Permission review could not read the active turn.'
@@ -157,4 +171,4 @@ result=$(jq -cer '
       (test("[[:cntrl:]]") | not)))
 ' <<<"$response" 2>/dev/null) || permission_deny 'Permission review returned an invalid classification.'
 
-permission_deny "$(jq -r '.reason' <<<"$result")"
+permission_resolve "$result"
