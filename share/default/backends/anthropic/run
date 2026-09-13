@@ -99,7 +99,7 @@ jq -ce '
 
 sf_backend_curl_args
 SF_BACKEND_CURL_ARGS+=(--header 'anthropic-version: 2023-06-01')
-sf_backend_stream --arg control "$SF_BACKEND_CONTROL_PATTERN" '
+sf_backend_stream '.error.message?' --arg control "$SF_BACKEND_CONTROL_PATTERN" '
   def transient($type;$index;$text): {type:$type,index:$index,text:$text};
   def usage_event:
     {type:"_turn_usage",

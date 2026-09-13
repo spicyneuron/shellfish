@@ -58,7 +58,7 @@ sf_backend_curl_args
 print -rn -- 000 >"$SF_BACKEND_STATUS_FILE"
 operation_status=0
 (
-  sf_backend_finish 28 0 0
+  sf_backend_finish '.error.message?' 28 0 0
 ) 2>"$tmp/curl-err" || operation_status=$?
 (( operation_status != 0 )) || fail 'curl timeout was accepted'
 [[ "$(<"$tmp/curl-err")" == *'request timed out (curl status 28)'* ]]
@@ -66,14 +66,14 @@ operation_status=0
 # Accept successful HTTP responses.
 print -r -- '200' >"$SF_BACKEND_STATUS_FILE"
 print -r -- '{"error":{"message":"overloaded"}}' >"$SF_BACKEND_RESPONSE_FILE"
-sf_backend_finish 0 0 0
+sf_backend_finish '.error.message?' 0 0 0
 
 # Report rejected credentials.
 print -r -- '401' >"$SF_BACKEND_STATUS_FILE"
 print -r -- '{"error":{"message":"invalid api key"}}' >"$SF_BACKEND_RESPONSE_FILE"
 operation_status=0
 (
-  sf_backend_finish 0 0 0
+  sf_backend_finish '.error.message?' 0 0 0
 ) 2>"$tmp/http-err" || operation_status=$?
 (( operation_status != 0 )) || fail 'HTTP 401 with credentials was accepted'
 [[ "$(<"$tmp/http-err")" == *"credentials rejected (HTTP 401): invalid api key"* ]]
@@ -82,7 +82,7 @@ operation_status=0
 : >"$SF_BACKEND_HEADERS_FILE"
 operation_status=0
 (
-  sf_backend_finish 0 0 0
+  sf_backend_finish '.error.message?' 0 0 0
 ) 2>"$tmp/http-no-key" || operation_status=$?
 (( operation_status != 0 )) || fail 'HTTP 401 without credentials was accepted'
 [[ "$(<"$tmp/http-no-key")" == *"no API key was supplied"* ]]
@@ -92,17 +92,27 @@ print -r -- '500' >"$SF_BACKEND_STATUS_FILE"
 print -r -- '{"error":{"message":"internal error"}}' >"$SF_BACKEND_RESPONSE_FILE"
 operation_status=0
 (
-  sf_backend_finish 0 0 0
+  sf_backend_finish '.error.message?' 0 0 0
 ) 2>"$tmp/http-500" || operation_status=$?
 (( operation_status != 0 )) || fail 'HTTP 500 was accepted'
 [[ "$(<"$tmp/http-500")" == *"HTTP 500: internal error"* ]]
+
+# Apply the adapter's error selector.
+print -r -- '400' >"$SF_BACKEND_STATUS_FILE"
+print -r -- '{"detail":"unsupported parameter"}' >"$SF_BACKEND_RESPONSE_FILE"
+operation_status=0
+(
+  sf_backend_finish '.detail?' 0 0 0
+) 2>"$tmp/http-400" || operation_status=$?
+(( operation_status != 0 )) || fail 'HTTP 400 was accepted'
+[[ "$(<"$tmp/http-400")" == *"HTTP 400: unsupported parameter"* ]]
 
 # Report normalizer failures.
 print -r -- '200' >"$SF_BACKEND_STATUS_FILE"
 print -r -- 'malformed stream chunk' >"$SF_BACKEND_NORMALIZER_ERROR_FILE"
 operation_status=0
 (
-  sf_backend_finish 0 0 1
+  sf_backend_finish '.error.message?' 0 0 1
 ) 2>"$tmp/norm-err" || operation_status=$?
 (( operation_status != 0 )) || fail 'normalizer failure was accepted'
 [[ "$(<"$tmp/norm-err")" == *"cannot normalize API response: malformed stream chunk"* ]]

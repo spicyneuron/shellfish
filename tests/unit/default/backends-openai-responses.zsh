@@ -18,7 +18,7 @@ while (($#)); do
   esac
 done
 cat "$BACKEND_TEST_RESPONSE"
-printf 200 >&2
+printf %s "${BACKEND_TEST_STATUS:-200}" >&2
 EOF
 chmod +x "$tmp/curl"
 export PATH="$tmp:$PATH"
@@ -66,6 +66,24 @@ jq -e '
   .text.format == {type:"json_schema",name:"shellfish_response",strict:true,
     schema:{type:"object",required:["answer"],properties:{answer:{type:"string"}}}}
 ' "$BACKEND_TEST_BODY" >/dev/null || fail 'responses did not normalize common request parameters'
+
+# Report the ChatGPT transport's top-level error detail.
+print -r -- '{"detail":"unsupported parameter"}' >"$BACKEND_TEST_RESPONSE"
+if BACKEND_TEST_STATUS=400 OPENAI_API_KEY=test zsh -f "$run" <"$req" \
+    >"$res" 2>"$tmp/error"; then
+  fail 'Responses HTTP error was accepted'
+fi
+grep -Fq -- 'HTTP 400: unsupported parameter' "$tmp/error" ||
+  fail 'Responses HTTP error detail was lost'
+
+# Reject empty completions instead of completing an empty assistant.
+print -r -- '{"status":"completed","output":[]}' >"$BACKEND_TEST_RESPONSE"
+if OPENAI_API_KEY=test zsh -f "$run" <"$req" >"$res" 2>"$tmp/error"; then
+  fail 'empty completion was accepted'
+fi
+grep -Fq -- 'empty completed response' "$tmp/error" ||
+  fail 'empty completion did not report a normalization error'
+[[ ! -s $res ]] || fail 'empty completion emitted assistant events'
 
 # Discard incomplete call arguments.
 cat >"$BACKEND_TEST_RESPONSE" <<'EOF'

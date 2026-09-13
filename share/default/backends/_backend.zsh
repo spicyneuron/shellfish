@@ -98,21 +98,27 @@ sf_backend_context_curl_args() {
 # quote; nothing reads that copy when the exchange succeeds. With the body on
 # stdout the status travels on stderr, written last, so the three characters it
 # ends with are the code. The normalizer's stderr is captured so sf_backend_finish
-# can report a concise protocol or normalization reason.
+# can report a concise protocol or normalization reason. The first argument is
+# the adapter's jq filter for extracting an HTTP error message.
 sf_backend_stream() {
+  local error_filter=$1
   local -a statuses
+  shift
   set +e
   curl "${SF_BACKEND_CURL_ARGS[@]}" 2>"$SF_BACKEND_STATUS_FILE" |
     tee "$SF_BACKEND_RESPONSE_FILE" |
     jq -nRrc --unbuffered "$@" 2>"$SF_BACKEND_NORMALIZER_ERROR_FILE"
   statuses=( $pipestatus )
   set -e
-  sf_backend_finish "${statuses[@]}"
+  sf_backend_finish "$error_filter" "${statuses[@]}"
 }
 
 sf_backend_finish() {
-  local -a statuses=( "$@" )
+  local error_filter=$1
+  local -a statuses
   local stage http_status message diagnostic
+  shift
+  statuses=( "$@" )
   for stage in $statuses; do
     (( stage < 128 )) || exit $stage
   done
@@ -137,9 +143,10 @@ sf_backend_finish() {
   if [[ $http_status != 2* ]]; then
     message=$(jq -Rrsc '
       def safe: gsub("[\\x{0000}-\\x{001f}\\x{007f}-\\x{009f}]"; "�");
+      def error_message: '"$error_filter"';
       . as $raw | ([splits("\\n") | sub("\\r$"; "") | select(startswith("data:")) |
-        sub("^data:[ ]?"; "") | fromjson? | .error.message?] | first) as $stream |
-      (($raw | fromjson? | .error.message?) // $stream // "") |
+        sub("^data:[ ]?"; "") | fromjson? | error_message] | first) as $stream |
+      (($raw | fromjson? | error_message) // $stream // "") |
       if type == "string" then safe else "" end
     ' <$SF_BACKEND_RESPONSE_FILE 2>/dev/null) || message=''
     if [[ $http_status == 401 || $http_status == 403 ]]; then

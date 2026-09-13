@@ -70,7 +70,7 @@ jq -ce '
 ' "$SF_BACKEND_REQUEST_FILE" >"$SF_BACKEND_BODY_FILE" || sf_backend_die 'cannot translate canonical request'
 
 sf_backend_curl_args
-sf_backend_stream '
+sf_backend_stream '.error.message?' '
   def transient($type;$index;$text): {type:$type,index:$index,text:$text};
   def usage:
     {type:"_turn_usage",input_tokens:(.prompt_tokens // 0),output_tokens:(.completion_tokens // 0)} +

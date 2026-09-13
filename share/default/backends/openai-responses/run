@@ -82,7 +82,7 @@ jq -ce '
 ' "$SF_BACKEND_REQUEST_FILE" >"$SF_BACKEND_BODY_FILE" || sf_backend_die 'cannot translate canonical request'
 
 sf_backend_curl_args
-sf_backend_stream '
+sf_backend_stream '(.error.message? // .detail?)' '
   def transient($type;$index;$text): {type:$type,index:$index,text:$text};
   def usage_event:
     {type:"_turn_usage"} + .;
@@ -123,12 +123,15 @@ sf_backend_stream '
 
   def normalized:
     # A body carrying an error is not a response, however much of one it looks
-    # like. Nothing else here would reject it: an error object has no output and
-    # no status, which would otherwise normalize into an empty completed turn.
-    if .error? != null then error("API error") else . end |
+    # like. Require the response envelope too, so another failure shape cannot
+    # normalize into an empty completed turn.
+    if .error? != null then error("API error")
+    elif ((.status | IN("completed", "incomplete")) and
+          (.output | type == "array")) then .
+    else error("unsupported response") end |
     (.usage // null) as $usage |
-    (.status // "completed") as $status |
-    [(.output // [])[] |
+    .status as $status |
+    [.output[] |
       if .type == "message" then
         .content[]? |
         select(.type == "output_text") |
@@ -151,15 +154,17 @@ sf_backend_stream '
       else empty end
     ] as $content |
     ([$content[] | select(.type == "tool_call")] | length) as $calls |
+    if $status == "completed" and ($content | length) == 0 then
+      error("empty completed response")
+    else . end |
     ({
       type: "message",
         role: "assistant",
         content: $content,
         stop:
-          (if .status == "incomplete" then "length"
+          (if $status == "incomplete" then "length"
            elif $calls > 0 then "tool_calls"
-           elif (.status // "completed") == "completed" then "end"
-           else error("unsupported response status") end)
+           else "end" end)
     } + if $usage == null then {} else {
       usage: {
         input_tokens: $usage.input_tokens,
