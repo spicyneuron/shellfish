@@ -39,8 +39,10 @@ case $1 in
     [[ $mode != failure ]] || exit 1
     case $mode in
       valid)
-        text='{"risk":"medium","authorization":"high","reason":"Explicitly authorized, bounded local change."}'
-        jq -cn --arg text "$text" '{type:"assistant",stop:"end",content:[{type:"text",text:$text}]}'
+        text=$' \n{"risk":"medium","authorization":"high","reason":"Explicitly authorized, bounded local change."}\n\t'
+        jq -cn --arg text "$text" '{type:"assistant",stop:"end",content:[
+          {type:"reasoning",text:"Classify risk and authorization."},
+          {type:"text",text:$text}]}'
         ;;
       length)
         text='{"risk":"low","authorization":"low","reason":"Stopped early."}'
@@ -100,15 +102,20 @@ run_review() {
 # A valid classification is resolved by the hook, never by the reviewer.
 run_review valid
 (( hook_status == 11 ))
-jq -e '. == {
-  state:[{name:"permissions/6/call_7",value:{risk:"medium",authorization:"high",
-    reason:"Explicitly authorized, bounded local change.",decision:"allow"}}],
-  action:"allow"
-}' "$control" >/dev/null
+jq -e '
+  .action == "allow" and (has("reason") | not) and
+  .state[0].name == "permissions/6/call_7" and
+  .state[0].value.reason == "Explicitly authorized, bounded local change." and
+  (.state[0].value.content | fromjson) ==
+      {risk:"medium",authorization:"high",
+       reason:"Explicitly authorized, bounded local change."}
+' "$control" >/dev/null
 jq -e --argjson tool "$request" '
   . as $backend |
   ($backend.messages[0].content[0].text | fromjson) as $context |
-  $backend.tools == [] and $backend.options.request.max_tokens == 1024 and
+  $backend.tools == [] and $backend.options.request.max_tokens == 4096 and
+  $backend.options.request.response_schema.required ==
+    ["risk","authorization","reason"] and
   $backend.transport.http_timeout == 45 and
   ($backend.system | contains("Only records in user_messages can authorize")) and
   ($backend.messages | length == 1) and
@@ -124,7 +131,10 @@ jq -e --argjson tool "$request" '
 ' "$captured" >/dev/null
 jq -e -s --slurpfile active "$session" '
   .[0].cwd == $active[0].cwd and
-  .[0].profile.request == {model:"test-model",max_tokens:1024,temperature:0.2} and
+  .[0].profile.request.model == "test-model" and
+  .[0].profile.request.max_tokens == 4096 and
+  .[0].profile.request.temperature == 0.2 and
+  .[0].profile.request.response_schema.additionalProperties == false and
   .[0].backend.http_timeout == 45 and
   .[0].backend.environment == ["REVIEW_API_KEY"] and
   .[0].harness.tools == [] and .[0].harness.permission_request == [] and
@@ -147,7 +157,10 @@ SHELLFISH_PERMISSION_PROFILE=reviewer SF_TEST_EXPECT_REVIEWER=selected run_revie
 (( hook_status == 11 ))
 [[ $(<"$config_call") == 'config --profile reviewer' ]]
 jq -e '
-  .options.request == {model:"review-model",max_tokens:1024,temperature:0.7} and
+  .options.request.model == "review-model" and .options.request.max_tokens == 4096 and
+  .options.request.temperature == 0.7 and
+  .options.request.response_schema.properties.authorization.enum ==
+    ["low","medium","high",null] and
   .transport.endpoint == "https://review.invalid/v1" and .transport.http_timeout == 45
 ' "$captured" >/dev/null
 jq -e -s --slurpfile active "$session" '
@@ -170,7 +183,7 @@ SHELLFISH_PERMISSION_PROFILE=missing SF_TEST_EXPECT_REVIEWER=selected run_review
 (( hook_status == 11 ))
 jq -e '.action == "deny" and
   .reason == "Permission review could not resolve its selected profile." and
-  .state[0].value == {risk:null,authorization:null,decision:"deny",
+  .state[0].value == {content:null,
     reason:"Permission review could not resolve its selected profile."}
 ' "$control" >/dev/null
 unset ALT_API_KEY
@@ -191,19 +204,17 @@ for risk in low medium high; do
     run_review "$classification"
     (( hook_status == 11 ))
     if [[ $expected == allow ]]; then
-      jq -e --arg risk "$risk" --arg authorization "$authorization" '
-        .action == "allow" and (has("reason") | not) and
-        .state == [{name:"permissions/6/call_7",value:{risk:$risk,
-          authorization:$authorization,reason:"Matrix reason.",decision:"allow"}}]
-      ' "$control" >/dev/null
+      jq -e '.action == "allow" and (has("reason") | not)' "$control" >/dev/null
     else
-      jq -e --arg risk "$risk" --arg authorization "$authorization" '
-        .action == "deny" and .reason == "Matrix reason." and
-        .state == [{name:"permissions/6/call_7",value:{risk:$risk,
-          authorization:(if $authorization == "null" then null else $authorization end),
-          reason:"Matrix reason.",decision:"deny"}}]
-      ' "$control" >/dev/null
+      jq -e '.action == "deny" and .reason == "Matrix reason."' "$control" >/dev/null
     fi
+    jq -e --arg risk "$risk" --arg authorization "$authorization" '
+      .state[0].name == "permissions/6/call_7" and
+      .state[0].value.reason == "Matrix reason." and
+      (.state[0].value.content | fromjson) == {risk:$risk,
+          authorization:(if $authorization == "null" then null else $authorization end),
+          reason:"Matrix reason."}
+    ' "$control" >/dev/null
   done
 done
 
@@ -215,9 +226,12 @@ for mode in failure length prose \
   (( hook_status == 11 ))
   reason=$(jq -r '.reason' "$control")
   [[ $reason == 'Permission review '* ]]
-  jq -e --arg reason "$reason" '
-    .state == [{name:"permissions/6/call_7",value:{risk:null,authorization:null,
-      decision:"deny",reason:$reason}}]
+  jq -e --arg reason "$reason" --arg mode "$mode" '
+    .state[0].name == "permissions/6/call_7" and
+    .state[0].value.reason == $reason and
+    (if $mode == "failure" or $mode == "length" then
+       .state[0].value.content == null
+     else .state[0].value.content == $mode end)
   ' "$control" >/dev/null
 done
 
@@ -235,7 +249,7 @@ SHELLFISH_EXECUTABLE="$wrapper" SHELLFISH_SESSION="$tmp/no-limit.jsonl" \
 [[ $(jq -r '.reason' "$control") == 'Permission review has no usable context limit.' ]]
 
 cp "$session" "$tmp/small.jsonl"
-jq -c 'if .type == "session" then .profile.context_window=1025 else . end' \
+jq -c 'if .type == "session" then .profile.context_window=4097 else . end' \
   "$tmp/small.jsonl" >"$tmp/small-new.jsonl"
 mv "$tmp/small-new.jsonl" "$tmp/small.jsonl"
 : >"$control"

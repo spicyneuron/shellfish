@@ -3,20 +3,24 @@
 emulate -R zsh
 setopt extended_glob no_aliases no_multios pipe_fail
 
-integer output_tokens=1024
-integer request_seconds=45
+integer output_tokens=4096
+integer request_seconds=60
 local request header active_header context_window budget system base records transcript
 local backend_request response result selected_runtime state_name='' name
+local review_content=''
+integer review_content_set=0
 local -a candidates parent_environment reviewer_environment send_command
 
 permission_deny() {
   local reason=${1//$'\n'/ } control
   reason=${reason//$'\r'/ }
   reason=${reason[1,1000]}
-  control=$(jq -cn --arg name "$state_name" --arg reason "$reason" '
+  control=$(jq -cn --arg name "$state_name" --arg reason "$reason" \
+      --arg content "$review_content" --argjson content_set "$review_content_set" '
     {action:"deny",reason:$reason} +
     (if $name == "" then {} else
-      {state:[{name:$name,value:{risk:null,authorization:null,decision:"deny",reason:$reason}}]}
+      {state:[{name:$name,value:{
+        content:(if $content_set == 1 then $content else null end),reason:$reason}}]}
     end)
   ') || exit 1
   print -rn -u3 -- "$control" || exit 1
@@ -25,12 +29,14 @@ permission_deny() {
 
 permission_resolve() {
   local classification=$1 control
-  control=$(jq -cn --arg name "$state_name" --argjson classification "$classification" '
+  control=$(jq -cn --arg name "$state_name" --argjson classification "$classification" \
+      --arg content "$review_content" '
     {low:1,medium:2,high:3} as $rank |
     (if $classification.authorization != null and
         $rank[$classification.authorization] >= $rank[$classification.risk]
      then "allow" else "deny" end) as $decision |
-    {state:[{name:$name,value:($classification + {decision:$decision})}],action:$decision} +
+    {state:[{name:$name,value:{content:$content,reason:$classification.reason}}],
+      action:$decision} +
     (if $decision == "deny" then {reason:$classification.reason} else {} end)
   ') || exit 1
   print -rn -u3 -- "$control" || exit 1
@@ -97,8 +103,10 @@ fi
 reviewer_environment=( "${(@f)$(jq -r '.backend.environment[]' <<<"$header")}" ) ||
   permission_deny 'Permission review could not inspect the reviewer backend environment.'
 reviewer_environment=( "${(@)reviewer_environment:#}" )
-context_window=$(jq -er '.profile.context_window | select(type == "number" and floor == . and . > 1024)' \
-  <<<"$header" 2>/dev/null) ||
+context_window=$(jq -er --argjson output_tokens "$output_tokens" '
+  .profile.context_window |
+  select(type == "number" and floor == . and . > $output_tokens)
+' <<<"$header" 2>/dev/null) ||
   permission_deny 'Permission review has no usable context limit.'
 budget=$(( (context_window - output_tokens) * 4 ))
 
@@ -167,8 +175,19 @@ transcript="$SHELLFISH_TURN_STATE/permission-review.jsonl"
 if ! jq -cn --argjson header "$header" --arg system "$system" --argjson context "$base" \
     --argjson output_tokens "$output_tokens" --argjson request_seconds "$request_seconds" '
   ($header |
-    .profile.request |= (del(.max_output_tokens,.max_completion_tokens) |
-      .max_tokens = ([.max_tokens // $output_tokens,$output_tokens] | min)) |
+    .profile.request |= (
+      .max_tokens = ([.max_output_tokens // .max_completion_tokens //
+        .max_tokens // $output_tokens,$output_tokens] | min) |
+      del(.max_output_tokens,.max_completion_tokens) |
+      .response_schema = {
+        type:"object",additionalProperties:false,
+        required:["risk","authorization","reason"],
+        properties:{
+          risk:{enum:["low","medium","high"]},
+          authorization:{enum:["low","medium","high",null]},
+          reason:{type:"string",minLength:1,maxLength:1000}
+        }
+      }) |
     .profile.system = [] |
     .backend.http_timeout = ([.backend.http_timeout,$request_seconds] | min) |
     .harness |= (.tools=[] | .sandbox=false | .sandbox_read_paths=[] |
@@ -196,15 +215,19 @@ send_command+=( "$SHELLFISH_EXECUTABLE" send-request --session "$transcript" )
 response=$("${send_command[@]}" <"$backend_request" 2>/dev/null) ||
   permission_deny 'Permission review provider request failed.'
 
-result=$(jq -cer '
+review_content=$(jq -er '
   select(type == "object" and .type == "assistant" and .stop == "end" and
-    (.content | length == 1) and .content[0].type == "text") |
-  .content[0].text | fromjson |
+    ([.content[] | select(.type == "text")] | length) == 1) |
+  [.content[] | select(.type == "text")][0].text
+' <<<"$response" 2>/dev/null) || permission_deny 'Permission review returned an invalid classification.'
+review_content_set=1
+result=$(jq -ncer --arg content "$review_content" '
+  $content | gsub("^\\s+|\\s+$"; "") | fromjson |
   select(type == "object" and keys == ["authorization","reason","risk"] and
     (.risk | IN("low","medium","high")) and
     (.authorization == null or (.authorization | IN("low","medium","high"))) and
     (.reason | type == "string" and length > 0 and length <= 1000 and
       (test("[[:cntrl:]]") | not)))
-' <<<"$response" 2>/dev/null) || permission_deny 'Permission review returned an invalid classification.'
+' 2>/dev/null) || permission_deny 'Permission review returned an invalid classification.'
 
 permission_resolve "$result"
