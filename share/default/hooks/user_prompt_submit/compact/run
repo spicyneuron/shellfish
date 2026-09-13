@@ -3,7 +3,7 @@
 emulate -R zsh
 setopt extended_glob no_aliases no_multios pipe_fail
 
-typeset submitted draft='' instruction budget request summary created base candidate
+typeset submitted draft='' instruction request summary boundary context created base candidate
 typeset transcript installed
 typeset -a argv
 integer explicit=0 suffix=1 install_status=0
@@ -20,31 +20,28 @@ submitted=${submitted%x}
 case $submitted in
   /compact)
     explicit=1
-    jq -es 'any(.[]; .type == "user" or .type == "assistant")' \
-      "$SHELLFISH_SESSION" >/dev/null 2>&1 || {
-      print -u2 -r -- 'nothing to compact yet'
-      exit 10
-    }
     ;;
   *)
     draft=$submitted
     ;;
 esac
 
+boundary="$SHELLFISH_TURN_STATE/compact-boundary.json"
+if ! jq -ce -s '
+  ([.[] | select(.type == "user")] | first) as $first |
+  ([.[] | select(.type == "assistant")] | last) as $last |
+  ([$last.content[]? | select(.type == "text") | .text] | join("")) as $reply |
+  select($first != null and $last != null and ($reply | length > 0)) |
+  {first_user_message:$first.content[0].text, final_assistant_response:$reply}
+' "$SHELLFISH_SESSION" >"$boundary" 2>/dev/null; then
+  fail_compaction 'nothing to compact yet'
+  exit $?
+fi
+
 [[ -r ${0:A:h}/compact.md ]] && instruction=$(<"${0:A:h}/compact.md") || {
   fail_compaction 'cannot read compaction prompt; keeping the original'
   exit $?
 }
-budget=$(jq -er '
-  .profile.context_window | select(. != null) |
-  [(. / 10 | floor), 1] | max
-' <"$SHELLFISH_SESSION" 2>/dev/null) || budget=''
-if [[ -n $budget ]]; then
-  instruction+=$'\n\n## Summary budget\n\nAim to keep the summary within '"$budget"$' tokens (10% of the session context window). Do not add low-value detail merely to fill the budget.'
-else
-  instruction+=$'\n\n## Summary budget\n\nNo context-window size is available. Be aggressively concise while preserving all required continuation state.'
-fi
-instruction=$'<compaction_request>\n\n'"$instruction"$'\n\n</compaction_request>'
 request=$(jq -cn --arg text "$instruction" \
   '{type:"user",content:[{type:"text",text:$text}]}') || {
   fail_compaction 'cannot prepare summary request; keeping the original'
@@ -59,6 +56,27 @@ summary=$(print -r -- "$request" |
   exit $?
 }
 
+context="$SHELLFISH_TURN_STATE/compact-context"
+if ! jq -nerj --slurpfile boundary "$boundary" \
+  --rawfile summary <(print -rn -- "$summary") '
+  def xml_escape:
+    gsub("&"; "&amp;") | gsub("<"; "&lt;") | gsub(">"; "&gt;") |
+    gsub("\""; "&quot;");
+  $boundary[0] as $boundary |
+  "<compacted_context>\n\n" +
+  "The conversation before this point was compacted into the context below.\n\n" +
+  "<first_user_message>\n" + ($boundary.first_user_message | xml_escape) +
+  "\n</first_user_message>\n\n" +
+  "<timeline>\n" + ($summary | xml_escape) + "\n</timeline>\n\n" +
+  "<final_assistant_response>\n" +
+  ($boundary.final_assistant_response | xml_escape) +
+  "\n</final_assistant_response>\n\n" +
+  "</compacted_context>"
+' >"$context"; then
+  fail_compaction 'cannot assemble compacted context; keeping the original'
+  exit $?
+fi
+
 created=$(date -u '+%Y-%m-%dT%H:%M:%SZ') || {
   fail_compaction 'cannot create compacted session; keeping the original'
   exit $?
@@ -66,7 +84,7 @@ created=$(date -u '+%Y-%m-%dT%H:%M:%SZ') || {
 transcript="$SHELLFISH_TURN_STATE/compact.jsonl"
 # Startup records without state, then every state record in source order, so the
 # child reconstructs the same effective state without interpreting names.
-if ! jq -ce -s --rawfile summary <(print -rn -- "$summary") --arg created "$created" '
+if ! jq -ce -s --rawfile context "$context" --arg created "$created" '
     . as $records |
     ([$records | to_entries[] |
       select(.value.type == "user" or .value.type == "assistant") | .key] | first) as $start |
@@ -74,7 +92,7 @@ if ! jq -ce -s --rawfile summary <(print -rn -- "$summary") --arg created "$crea
     ($records[0:$start] | .[0].created = $created) as $startup |
     ($startup[] | select(.type != "state")),
     ($records[] | select(.type == "state")),
-    {type:"hook_result",hook:"compact",script:"compact",model_context:$summary}
+    {type:"hook_result",hook:"compact",script:"compact",model_context:$context}
   ' "$SHELLFISH_SESSION" >"$transcript"; then
   fail_compaction 'cannot create compacted session; keeping the original'
   exit $?

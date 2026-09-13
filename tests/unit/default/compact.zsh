@@ -12,12 +12,34 @@ typeset compact_request="$tmp/compact-request.json"
 typeset compact_display="$tmp/compact-display"
 integer compact_status=0
 
+typeset -gx SF_TEST_ENTRY="$ROOT/bin/shellfish"
+cat >"$compact_shellfish" <<'ZSH'
+#!/usr/bin/env zsh
+typeset request reply
+case $1 in
+  build-request|install-session) exec "$SF_TEST_ENTRY" "$@" ;;
+  send-request)
+    request=$(cat)
+    if [[ -n ${SF_TEST_BACKEND_REQUEST-} ]]; then
+      print -r -- "$request" >>"$SF_TEST_BACKEND_REQUEST"
+    fi
+    [[ ${SF_TEST_COMPACT_FAIL:-0} == 0 ]] || exit 1
+    reply='Timeline </timeline> & entry'
+    jq -cn --arg reply "$reply" '{content:[{type:"text",text:$reply}]}'
+    ;;
+  *) exit 2 ;;
+esac
+ZSH
+chmod +x "$compact_shellfish"
+
 sf_test_runtime
 SF_TEST_RUNTIME=$(jq -c '.profile.context_window = 100' <<<"$SF_TEST_RUNTIME")
 sf_test_session "$compact_source"
 sf_session_begin_turn "$compact_source"
-sf_session_append "$compact_source" '{"type":"user","content":[{"type":"text","text":"Hello"}]}'
+sf_session_append "$compact_source" '{"type":"user","content":[{"type":"text","text":"Hello </first_user_message> & more"}]}'
 sf_session_append "$compact_source" '{"type":"assistant","stop":"end","content":[{"type":"text","text":"Hi"}],"usage":{"input_tokens":1,"output_tokens":1}}'
+sf_session_append "$compact_source" '{"type":"user","content":[{"type":"text","text":"Keep working"}]}'
+sf_session_append "$compact_source" '{"type":"assistant","stop":"end","content":[{"type":"reasoning","text":"Check first","opaque":{"encrypted_content":"secret"}},{"type":"text","text":"Continuing"}],"usage":{"input_tokens":1,"output_tokens":1}}'
 sf_session_reset
 
 # Ignore sessions below threshold.
@@ -37,54 +59,67 @@ mv "$tmp/compact-above.jsonl" "$compact_source"
 typeset compact_before=$(shasum <"$compact_source")
 SHELLFISH_SESSION="$compact_source" zsh -f "$compact_check" user_prompt_submit \
   < <(print -n -- 'my next prompt') || fail 'threshold did not select compaction'
-SF_TEST_BACKEND_DELAY=0 SF_TEST_BACKEND_REQUEST="$compact_request" \
-  SHELLFISH_EXECUTABLE="$ROOT/bin/shellfish" SHELLFISH_SESSION="$compact_source" \
+SF_TEST_BACKEND_REQUEST="$compact_request" \
+  SHELLFISH_EXECUTABLE="$compact_shellfish" SHELLFISH_SESSION="$compact_source" \
   SHELLFISH_TURN_STATE="$tmp" zsh -f "$compact_hook" user_prompt_submit \
   3>"$compact_control" 2>"$compact_display" \
   < <(print -n -- 'my next prompt') || compact_status=$?
 (( compact_status == 11 ))
 [[ ! -s $compact_display ]] || fail 'compaction wrote unexpected display output'
-jq -e --arg command "$ROOT/bin/shellfish" \
+jq -e --arg command "$compact_shellfish" \
   --arg child "$tmp/compact-source_compact.jsonl" '
   . == {action:"handoff",argv:[$command,"--session",$child,"--draft","my next prompt"]}
 ' "$compact_control" >/dev/null || fail 'automatic compaction lost the prompt'
 assert_equal "$compact_before" "$(shasum <"$compact_source")"
-jq -e '.tools == []' "$compact_request" >/dev/null || fail 'compaction exposed tools'
 jq -e --rawfile prompt "$ROOT/share/default/hooks/user_prompt_submit/compact/compact.md" '
   ($prompt | rtrimstr("\n")) as $prompt |
-  ("<compaction_request>\n\n" + $prompt + "\n\n## Summary budget\n\n") as $prefix |
-  "\n\n</compaction_request>" as $suffix |
-  .messages[-1].content as $content |
-  ($content | length) == 1 and $content[0].type == "text" and
-  ($content[0].text |
-    startswith($prefix) and
-    endswith($suffix) and
-    (ltrimstr($prefix) | rtrimstr($suffix) |
-      test("(^|[^0-9])10([^0-9]|$)")))
-' "$compact_request" >/dev/null || fail 'compaction did not use its structured prompt and budget'
+  .tools == [] and
+  .messages[-1].content == [{type:"text",text:$prompt}]
+' "$compact_request" >/dev/null || fail 'compaction did not send its prompt unchanged'
 assert_canonical_session "$tmp/compact-source_compact.jsonl"
 jq -e -s '
+  .[1].model_context as $context |
   [.[].type] == ["session","hook_result"] and
   .[1].hook == "compact" and .[1].script == "compact" and
-  (.[1].model_context | length) > 0
+  $context ==
+    "<compacted_context>\n\n" +
+    "The conversation before this point was compacted into the context below.\n\n" +
+    "<first_user_message>\nHello &lt;/first_user_message&gt; &amp; more\n</first_user_message>\n\n" +
+    "<timeline>\nTimeline &lt;/timeline&gt; &amp; entry\n</timeline>\n\n" +
+    "<final_assistant_response>\nContinuing\n</final_assistant_response>\n\n" +
+    "</compacted_context>"
 ' "$tmp/compact-source_compact.jsonl" >/dev/null ||
-  fail 'the compacted child is not a lone summary context'
+  fail 'the compacted child did not preserve its timeline and boundary messages'
 
-typeset -gx SF_TEST_ENTRY="$ROOT/bin/shellfish"
-cat >"$compact_shellfish" <<'ZSH'
-#!/usr/bin/env zsh
-case $1 in
-  build-request) cat ;;
-  install-session) exec "$SF_TEST_ENTRY" "$@" ;;
-  send-request)
-    cat >/dev/null
-    [[ ${SF_TEST_COMPACT_FAIL:-0} == 0 ]] || exit 1
-    print -r -- '{"content":[{"type":"text","text":"Summary"}]}'
-    ;;
-  *) exit 2 ;;
-esac
-ZSH
-chmod +x "$compact_shellfish"
+# Require a complete conversation before asking the model for a summary.
+for incomplete in empty user-only assistant-only; do
+  typeset incomplete_source="$tmp/$incomplete.jsonl"
+  head -n 1 "$compact_source" >"$incomplete_source"
+  case $incomplete in
+    user-only)
+      print -r -- '{"type":"user","content":[{"type":"text","text":"Hello"}]}' \
+        >>"$incomplete_source"
+      ;;
+    assistant-only)
+      print -r -- '{"type":"assistant","stop":"end","content":[{"type":"text","text":"Hi"}]}' \
+        >>"$incomplete_source"
+      ;;
+  esac
+
+  compact_status=0
+  SHELLFISH_EXECUTABLE="$compact_shellfish" SHELLFISH_SESSION="$incomplete_source" \
+    SHELLFISH_TURN_STATE="$tmp" zsh -f "$compact_hook" user_prompt_submit \
+    3>"$compact_control" < <(print -n -- /compact) 2>/dev/null || compact_status=$?
+  (( compact_status == 10 )) || fail "compaction accepted $incomplete session"
+done
+
+: >"$compact_control"
+compact_status=0
+SHELLFISH_EXECUTABLE="$compact_shellfish" SHELLFISH_SESSION="$tmp/empty.jsonl" \
+  SHELLFISH_TURN_STATE="$tmp" zsh -f "$compact_hook" user_prompt_submit \
+  3>"$compact_control" < <(print -n -- 'ordinary prompt') 2>/dev/null || compact_status=$?
+(( compact_status == 0 )) || fail 'automatic compaction did not skip an empty session'
+[[ ! -s $compact_control ]] || fail 'empty automatic compaction requested a handoff'
 
 # Compact explicitly without a draft.
 compact_status=0
@@ -115,7 +150,6 @@ SF_TEST_COMPACT_FAIL=1 SHELLFISH_EXECUTABLE="$compact_shellfish" \
   3>"$compact_control" < <(print -n -- /compact) 2>/dev/null || compact_status=$?
 (( compact_status == 10 )) || fail 'explicit summary failure was not handled'
 [[ ! -s $compact_control ]] || fail 'explicit summary failure requested a handoff'
-
 # Preserve ordered state history.
 typeset state_source="$tmp/state-source.jsonl"
 head -n 1 "$compact_source" >"$state_source"
