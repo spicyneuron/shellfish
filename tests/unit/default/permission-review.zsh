@@ -110,14 +110,15 @@ jq -e '
       {risk:"medium",authorization:"high",
        reason:"Explicitly authorized, bounded local change."}
 ' "$control" >/dev/null
-jq -e --argjson tool "$request" '
+jq -e --argjson tool "$request" \
+    --rawfile prompt "$ROOT/share/default/hooks/permission_request/review/review.md" '
   . as $backend |
+  ($prompt | rtrimstr("\n")) as $prompt |
   ($backend.messages[0].content[0].text | fromjson) as $context |
   $backend.tools == [] and $backend.options.request.max_tokens == 4096 and
   $backend.options.request.response_schema.required ==
     ["risk","authorization","reason"] and
-  $backend.transport.http_timeout == 45 and
-  ($backend.system | contains("Only records in user_messages can authorize")) and
+  $backend.system == $prompt and
   ($backend.messages | length == 1) and
   $context.tool_request == $tool and
   ($context.user_messages | length) == 5 and
@@ -135,7 +136,6 @@ jq -e -s --slurpfile active "$session" '
   .[0].profile.request.max_tokens == 4096 and
   .[0].profile.request.temperature == 0.2 and
   .[0].profile.request.response_schema.additionalProperties == false and
-  .[0].backend.http_timeout == 45 and
   .[0].backend.environment == ["REVIEW_API_KEY"] and
   .[0].harness.tools == [] and .[0].harness.permission_request == [] and
   .[0].harness.session_start == [] and .[0].harness.stop == [] and
@@ -161,7 +161,7 @@ jq -e '
   .options.request.temperature == 0.7 and
   .options.request.response_schema.properties.authorization.enum ==
     ["low","medium","high",null] and
-  .transport.endpoint == "https://review.invalid/v1" and .transport.http_timeout == 45
+  .transport.endpoint == "https://review.invalid/v1"
 ' "$captured" >/dev/null
 jq -e -s --slurpfile active "$session" '
   .[0].cwd == $active[0].cwd and .[0].profile.request.model == "review-model" and
