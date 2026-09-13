@@ -54,6 +54,10 @@ request=$(jq -ce --argjson turn "$SHELLFISH_TURN_ID" '
 state_name=$(jq -r --argjson turn "$SHELLFISH_TURN_ID" '
   "permissions/\($turn)/\(.tool_use_id)"
 ' <<<"$request") || permission_deny 'Permission review could not prepare state.'
+if (( ${#state_name} > 128 )); then
+  state_name=''
+  permission_deny 'Permission review cannot store this tool request identifier.'
+fi
 
 system=$(cat <<'PROMPT'
 You review a coding agent's request to bypass its tool sandbox. Return only one JSON object with exactly these fields:

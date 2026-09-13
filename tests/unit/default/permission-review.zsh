@@ -5,7 +5,7 @@ source "${0:A:h:h}/_hooks.zsh"
 typeset hook="$ROOT/share/default/hooks/permission_request/review/run"
 typeset session="$tmp/review.jsonl" control="$tmp/control.json"
 typeset wrapper="$tmp/shellfish" captured="$tmp/request.json" mode_file="$tmp/mode"
-typeset request reason classification risk authorization expected
+typeset request reason classification risk authorization expected long_id
 integer hook_status=0
 
 cat >"$wrapper" <<'ZSH'
@@ -185,3 +185,18 @@ SHELLFISH_EXECUTABLE="$wrapper" SHELLFISH_SESSION="$tmp/small.jsonl" \
   zsh -f "$hook" permission_request 3>"$control" <<<"$request" || hook_status=$?
 (( hook_status == 11 ))
 [[ $(jq -r '.reason' "$control") == *'exceed the review context limit.' ]]
+
+# A canonical call ID that cannot fit a state name still denies with valid control.
+long_id=${(l:120::x:)}
+request=$(jq -cn --arg id "$long_id" '
+  {turn_id:6,tool_name:"shell",tool_use_id:$id,tool_input:{command:"setup"}}
+')
+: >"$control"
+hook_status=0
+SHELLFISH_EXECUTABLE="$wrapper" SHELLFISH_SESSION="$session" \
+  SHELLFISH_TURN_STATE="$tmp" SHELLFISH_TURN_ID=6 \
+  zsh -f "$hook" permission_request 3>"$control" <<<"$request" || hook_status=$?
+(( hook_status == 11 ))
+jq -e '.action == "deny" and (has("state") | not) and
+  .reason == "Permission review cannot store this tool request identifier."' \
+  "$control" >/dev/null
