@@ -82,7 +82,11 @@ run_review() {
 # A valid classification is resolved by the hook, never by the reviewer.
 run_review valid
 (( hook_status == 11 ))
-jq -e '. == {action:"allow"}' "$control" >/dev/null
+jq -e '. == {
+  state:[{name:"permissions/6/call_7",value:{risk:"medium",authorization:"high",
+    reason:"Explicitly authorized, bounded local change.",decision:"allow"}}],
+  action:"allow"
+}' "$control" >/dev/null
 jq -e --argjson tool "$request" '
   . as $backend |
   ($backend.messages[0].content[0].text | fromjson) as $context |
@@ -127,9 +131,18 @@ for risk in low medium high; do
     run_review "$classification"
     (( hook_status == 11 ))
     if [[ $expected == allow ]]; then
-      jq -e '. == {action:"allow"}' "$control" >/dev/null
+      jq -e --arg risk "$risk" --arg authorization "$authorization" '
+        .action == "allow" and (has("reason") | not) and
+        .state == [{name:"permissions/6/call_7",value:{risk:$risk,
+          authorization:$authorization,reason:"Matrix reason.",decision:"allow"}}]
+      ' "$control" >/dev/null
     else
-      jq -e '. == {action:"deny",reason:"Matrix reason."}' "$control" >/dev/null
+      jq -e --arg risk "$risk" --arg authorization "$authorization" '
+        .action == "deny" and .reason == "Matrix reason." and
+        .state == [{name:"permissions/6/call_7",value:{risk:$risk,
+          authorization:(if $authorization == "null" then null else $authorization end),
+          reason:"Matrix reason.",decision:"deny"}}]
+      ' "$control" >/dev/null
     fi
   done
 done
@@ -142,6 +155,10 @@ for mode in failure length prose \
   (( hook_status == 11 ))
   reason=$(jq -r '.reason' "$control")
   [[ $reason == 'Permission review '* ]]
+  jq -e --arg reason "$reason" '
+    .state == [{name:"permissions/6/call_7",value:{risk:null,authorization:null,
+      decision:"deny",reason:$reason}}]
+  ' "$control" >/dev/null
 done
 
 # Missing capacity and an oversized mandatory request fail before inference.

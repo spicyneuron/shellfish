@@ -57,7 +57,7 @@ jq -e -s 'all(.[]; .type != "hook_result")' "$permission_allow_session" >/dev/nu
 typeset permission_deny="$tmp/permission-deny"
 cat >"$permission_deny" <<'ZSH'
 #!/usr/bin/env zsh
-print -rn -u3 -- '{"action":"deny","reason":"risk too high"}'
+print -rn -u3 -- '{"action":"deny","reason":"risk too high","state":[{"name":"permissions/1/call_1","value":{"risk":null,"authorization":null,"decision":"deny","reason":"risk too high"}}]}'
 exit 11
 ZSH
 chmod +x "$permission_deny"
@@ -69,6 +69,11 @@ stream=$(SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_BYPASS=true \
   sf_test_turn 'deny headlessly' "$permission_deny_session")
 print -r -- "$stream" | jq -eRn '
   [inputs | fromjson] as $events |
+  ($events | map(select(.type == "state" or .type == "tool_result")) |
+    map(.type)) == ["state","tool_result"] and
+  ($events | map(select(.type == "state"))[0]) ==
+    {type:"state",name:"permissions/1/call_1",value:{risk:null,authorization:null,
+      decision:"deny",reason:"risk too high"}} and
   ($events | map(select(.type == "tool_result"))[0] |
     .exit_code == 126 and .content == "risk too high")
 ' >/dev/null

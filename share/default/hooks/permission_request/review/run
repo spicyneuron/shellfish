@@ -6,25 +6,32 @@ setopt extended_glob no_aliases no_multios pipe_fail
 integer output_tokens=1024
 integer request_seconds=45
 local request header context_window budget system base records transcript backend_request response result
+local state_name=''
 local -a candidates
 
 permission_deny() {
-  local reason=${1//$'\n'/ }
+  local reason=${1//$'\n'/ } control
   reason=${reason//$'\r'/ }
   reason=${reason[1,1000]}
-  jq -cn --arg reason "$reason" '{action:"deny",reason:$reason}' >&3 || exit 1
+  control=$(jq -cn --arg name "$state_name" --arg reason "$reason" '
+    {action:"deny",reason:$reason} +
+    (if $name == "" then {} else
+      {state:[{name:$name,value:{risk:null,authorization:null,decision:"deny",reason:$reason}}]}
+    end)
+  ') || exit 1
+  print -rn -u3 -- "$control" || exit 1
   exit 11
 }
 
 permission_resolve() {
   local classification=$1 control
-  control=$(jq -cn --argjson classification "$classification" '
+  control=$(jq -cn --arg name "$state_name" --argjson classification "$classification" '
     {low:1,medium:2,high:3} as $rank |
-    if $classification.authorization != null and
+    (if $classification.authorization != null and
         $rank[$classification.authorization] >= $rank[$classification.risk]
-    then {action:"allow"}
-    else {action:"deny",reason:$classification.reason}
-    end
+     then "allow" else "deny" end) as $decision |
+    {state:[{name:$name,value:($classification + {decision:$decision})}],action:$decision} +
+    (if $decision == "deny" then {reason:$classification.reason} else {} end)
   ') || exit 1
   print -rn -u3 -- "$control" || exit 1
   exit 11
@@ -44,6 +51,9 @@ request=$(jq -ce --argjson turn "$SHELLFISH_TURN_ID" '
     (.tool_use_id | type == "string" and test("^[A-Za-z0-9_-]+$")) and
     (.tool_input | type == "object"))
 ' <<<"$request" 2>/dev/null) || permission_deny 'Permission review received an invalid tool request.'
+state_name=$(jq -r --argjson turn "$SHELLFISH_TURN_ID" '
+  "permissions/\($turn)/\(.tool_use_id)"
+' <<<"$request") || permission_deny 'Permission review could not prepare state.'
 
 system=$(cat <<'PROMPT'
 You review a coding agent's request to bypass its tool sandbox. Return only one JSON object with exactly these fields:
