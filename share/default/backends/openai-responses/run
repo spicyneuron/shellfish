@@ -8,9 +8,6 @@ source "${0:A:h:h}/_backend.zsh"
 
 api_key=${OPENAI_API_KEY-}
 account_id=${SHELLFISH_RESPONSES_ACCOUNT_ID-}
-# The ChatGPT Codex transport rejects the Responses output-limit field.
-chatgpt_transport=false
-[[ -z $account_id ]] || chatgpt_transport=true
 unset OPENAI_API_KEY SHELLFISH_RESPONSES_ACCOUNT_ID
 
 sf_backend_setup openai-responses
@@ -25,7 +22,7 @@ sf_backend_credential 'Authorization' "${api_key:+Bearer $api_key}"
 sf_backend_credential 'ChatGPT-Account-ID' "$account_id"
 unset api_key account_id
 
-jq -ce --argjson chatgpt_transport "$chatgpt_transport" '
+jq -ce '
   def text_content:
     [.content[] | select(.type == "text") | .text] | join("");
   def items:
@@ -49,19 +46,30 @@ jq -ce --argjson chatgpt_transport "$chatgpt_transport" '
     else
       error("unsupported canonical type")
     end;
-  (.options.request | if has("max_tokens") then
-      if has("max_output_tokens") then del(.max_tokens)
-      else .max_output_tokens = .max_tokens | del(.max_tokens) end
+  (.options.request |
+    if has("response_schema") then
+      .response_schema as $schema |
+      del(.response_schema) |
+      .text = ((.text // {}) + {format:{type:"json_schema",
+        name:"shellfish_response",strict:true,schema:$schema}})
+    else . end |
+    (if has("max_output_tokens") then .max_output_tokens
+     elif has("max_completion_tokens") then .max_completion_tokens
+     else .max_tokens end) as $max_tokens |
+    del(.max_tokens,.max_output_tokens,.max_completion_tokens) |
+    if $max_tokens != null then .max_output_tokens=$max_tokens else . end |
+    if has("reasoning_effort") then
+      .reasoning = ((.reasoning // {}) + {effort:.reasoning_effort}) |
+      del(.reasoning_effort)
     else . end |
     if .reasoning == {effort:""} then del(.reasoning) else . end) as $request |
-  (($request * {
+  ($request * {
     model: $request.model,
     instructions: .system,
     input: [.messages[] | items[]],
     store: false,
     stream: true
-  }) |
-  if $chatgpt_transport then del(.max_output_tokens) else . end) +
+  }) +
   (if (.tools | length) == 0 then {} else {
     tools: [.tools[] |
       {type:"function",name:.name,description:.description,parameters:.input_schema}]

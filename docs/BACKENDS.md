@@ -39,9 +39,9 @@ Shellfish starts `run` once per provider request. The adapter receives one canon
 }
 ```
 
-`messages` contains provider-neutral conversation records in transcript order. `tools` contains tool definitions. `options.request` contains the resolved model and provider request overrides. `transport` is authoritative for the exchange.
+`messages` contains provider-neutral conversation records in transcript order. `tools` contains tool definitions. `options.request` contains common request parameters and provider-specific settings. Bundled adapters normalize familiar variants, then emit the provider's wire format. Token limits prefer `max_output_tokens`, then `max_completion_tokens`, then `max_tokens`; `reasoning_effort` overrides `reasoning.effort`; and `response_schema` replaces the provider's native structured-output setting. `transport` is authoritative for the exchange.
 
-The adapter maps these values into the provider's protocol and should reject ambiguous or conflicting provider-native options.
+Unrelated provider-specific settings pass through unchanged.
 
 ## Response contract
 

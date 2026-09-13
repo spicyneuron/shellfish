@@ -31,7 +31,10 @@ cat >"$req" <<'EOF'
   "system": "test",
   "messages": [{"type":"user","content":[{"type":"text","text":"hello"}]}],
   "tools": [],
-  "options": {"request":{"model":"gpt-test"}},
+  "options": {"request":{"model":"gpt-test","max_tokens":10,"max_output_tokens":99,
+    "max_completion_tokens":88,"reasoning":{"effort":"medium"},"reasoning_effort":"low",
+    "text":{"verbosity":"low","format":{"type":"text"}},
+    "response_schema":{"type":"object","required":["answer"],"properties":{"answer":{"type":"string"}}}}},
   "transport": {"endpoint":"https://api.openai.test","insecure_tls":false,"http_timeout":30,"http_stall":10}
 }
 EOF
@@ -57,6 +60,12 @@ cat >"$BACKEND_TEST_RESPONSE" <<'EOF'
 EOF
 (builtin cd -- "$tmp" && OPENAI_API_KEY=test zsh -f "$run" <"$req" >"$res")
 assert_usage
+jq -e '
+  (.response_schema | not) and .max_output_tokens == 99 and
+  .reasoning.effort == "low" and .text.verbosity == "low" and
+  .text.format == {type:"json_schema",name:"shellfish_response",strict:true,
+    schema:{type:"object",required:["answer"],properties:{answer:{type:"string"}}}}
+' "$BACKEND_TEST_BODY" >/dev/null || fail 'responses did not normalize common request parameters'
 
 # Discard incomplete call arguments.
 cat >"$BACKEND_TEST_RESPONSE" <<'EOF'
@@ -84,7 +93,7 @@ cat >"$tmp/codex-request.json" <<'EOF'
   "system": "test",
   "messages": [{"type":"user","content":[{"type":"text","text":"hello"}]}],
   "tools": [],
-  "options": {"request":{"model":"gpt-codex-test"}},
+  "options": {"request":{"model":"gpt-codex-test","max_tokens":42}},
   "transport": {"endpoint":"https://chatgpt.com/backend-api/codex/responses","insecure_tls":false,"http_timeout":30,"http_stall":10}
 }
 EOF
@@ -115,6 +124,8 @@ cat >"$tmp/auth.json" <<'EOF'
 EOF
 (builtin cd -- "$tmp" && CODEX_HOME=. zsh -f "$codex_run" <"$tmp/codex-request.json" >"$res")
 assert_usage
+jq -e '.max_output_tokens == 42' "$BACKEND_TEST_BODY" >/dev/null ||
+  fail 'Codex dropped the normalized output limit'
 
 # Preserve partial output on provider failure.
 print -rl -- 'data: {"type":"response.output_text.delta","delta":"partial"}' \

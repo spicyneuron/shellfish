@@ -32,7 +32,12 @@ cat >"$req" <<'EOF'
   "system": "test",
   "messages": [{"type":"user","content":[{"type":"text","text":"hello"}]}],
   "tools": [],
-  "options": {"request":{"model":"claude-test"}},
+  "options": {"request":{"model":"claude-test","max_tokens":10,
+    "max_completion_tokens":88,"max_output_tokens":99,
+    "reasoning":{"effort":"high"},"reasoning_effort":"medium",
+    "thinking":{"type":"disabled"},
+    "output_config":{"foo":"keep","effort":"low","format":{"type":"text"}},
+    "response_schema":{"type":"object","required":["answer"],"properties":{"answer":{"type":"string"}}}}},
   "transport": {"endpoint":"https://api.anthropic.com/v1/messages","insecure_tls":false,"http_timeout":30,"http_stall":10}
 }
 EOF
@@ -58,6 +63,12 @@ cat >"$BACKEND_TEST_RESPONSE" <<'EOF'
 EOF
 (builtin cd -- "$tmp" && ANTHROPIC_API_KEY=test zsh -f "$run" <"$req" >"$res")
 assert_usage
+jq -e '
+  (.response_schema | not) and .max_tokens == 99 and
+  .thinking == {type:"adaptive"} and
+  .output_config == {foo:"keep",effort:"medium",format:{type:"json_schema",
+    schema:{type:"object",required:["answer"],properties:{answer:{type:"string"}}}}}
+' "$BACKEND_TEST_BODY" >/dev/null || fail 'anthropic did not normalize common request parameters'
 
 # Combine streamed usage events.
 cat >"$BACKEND_TEST_RESPONSE" <<'EOF'

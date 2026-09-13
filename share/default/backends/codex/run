@@ -15,8 +15,8 @@ typeset codex_home auth_file credentials
 typeset access_token='' account_id=''
 cat >"$SF_BACKEND_REQUEST_FILE"
 
-# The request body carries backend-neutral fields as well as Codex options.
-# Codex accepts only reasoning; the Responses adapter owns the generated body.
+# The Responses adapter translates common parameters and owns the generated body.
+# Codex validates the reasoning option it augments below.
 sf_backend_request '(.options.request | has("reasoning") | not) or
   (.options.request.reasoning | type == "object")' ||
   sf_backend_die 'invalid request'

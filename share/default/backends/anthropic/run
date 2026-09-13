@@ -50,14 +50,29 @@ jq -ce '
       error("unsupported canonical type")
     end;
   (.options.request |
+    if has("response_schema") then
+      .response_schema as $schema |
+      del(.response_schema) |
+      .output_config = ((.output_config // {}) +
+        {format:{type:"json_schema",schema:$schema}})
+    else . end |
+    if has("reasoning_effort") then
+      .reasoning = ((.reasoning // {}) + {effort:.reasoning_effort}) |
+      del(.reasoning_effort)
+    else . end |
     if has("reasoning") then
-      if has("thinking") then del(.reasoning)
-      else . + {thinking:{type:"adaptive"}} +
-        (if .reasoning.effort == null then {} else {output_config:{effort:.reasoning.effort}} end) |
-        del(.reasoning)
+      .reasoning as $reasoning | del(.reasoning) |
+      .thinking={type:"adaptive"} |
+      if $reasoning.effort == null then del(.output_config.effort)
+      else .output_config = ((.output_config // {}) + {effort:$reasoning.effort})
       end
     else . end |
-    if has("max_tokens") then . else . + {max_tokens:16384} end) as $request |
+    (if has("max_output_tokens") then .max_output_tokens
+     elif has("max_completion_tokens") then .max_completion_tokens
+     elif has("max_tokens") then .max_tokens
+     else 16384 end) as $max_tokens |
+    del(.max_tokens,.max_output_tokens,.max_completion_tokens) |
+    .max_tokens=$max_tokens) as $request |
   (reduce .messages[] as $message ({out:[],pending:[]};
     if $message.type == "tool_result" then
       .pending += [{

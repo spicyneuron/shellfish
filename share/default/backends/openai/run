@@ -28,14 +28,20 @@ jq -ce '
       {role:"tool",tool_call_id:.call_id,content:.content}
     else error("unsupported canonical type") end;
   (.options.request |
-    if has("max_tokens") then
-      if has("max_completion_tokens") then del(.max_tokens)
-      else .max_completion_tokens=.max_tokens | del(.max_tokens) end
+    if has("response_schema") then
+      .response_schema as $schema |
+      del(.response_schema,.response_format) |
+      .response_format={type:"json_schema",json_schema:{
+        name:"shellfish_response",strict:true,schema:$schema}}
     else . end |
-    if has("reasoning") then
-      if has("reasoning_effort") then del(.reasoning)
-      else .reasoning_effort=.reasoning.effort | del(.reasoning) end
-    else . end) as $options |
+    (if has("max_output_tokens") then .max_output_tokens
+     elif has("max_completion_tokens") then .max_completion_tokens
+     else .max_tokens end) as $max_tokens |
+    del(.max_tokens,.max_output_tokens,.max_completion_tokens) |
+    if $max_tokens != null then .max_completion_tokens=$max_tokens else . end |
+    (if has("reasoning_effort") then .reasoning_effort else .reasoning.effort end) as $effort |
+    del(.reasoning,.reasoning_effort) |
+    if $effort != null then .reasoning_effort=$effort else . end) as $options |
   ($options | if has("stream") then .stream else true end) as $stream |
   # Calls arrive as their own records and rejoin the assistant message they
   # belong to. A call-only message carries null content, as the API expects.

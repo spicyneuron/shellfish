@@ -56,7 +56,11 @@ cat >"$req" <<'EOF'
   "tools": [
     {"name":"shell","description":"run shell","input_schema":{"type":"object","properties":{"command":{"type":"string"}}}}
   ],
-  "options":{"request":{"model":"gpt-4o"}},
+  "options":{"request":{"model":"gpt-4o","max_tokens":10,"max_completion_tokens":99,
+    "max_output_tokens":77,
+    "reasoning":{"effort":"medium"},"reasoning_effort":"low",
+    "response_format":{"type":"json_object"},
+    "response_schema":{"type":"object","required":["answer"],"properties":{"answer":{"type":"string"}}}}},
   "transport":{"endpoint":"https://api.openai.com/v1/chat/completions","insecure_tls":false,"http_timeout":30,"http_stall":10}
 }
 EOF
@@ -67,6 +71,13 @@ EOF
 (builtin cd -- "$tmp" && OPENROUTER_API_KEY=router-key zsh -f "$openrouter_run" \
   <"$req" >"$res")
 grep -Fx 'Authorization: Bearer router-key' "$BACKEND_TEST_HEADERS" >/dev/null
+jq -e '
+  (.response_schema | not) and .max_completion_tokens == 77 and
+  .reasoning_effort == "low" and
+  .response_format == {type:"json_schema",json_schema:{name:"shellfish_response",
+    strict:true,schema:{type:"object",required:["answer"],
+      properties:{answer:{type:"string"}}}}}
+' "$BACKEND_TEST_BODY" >/dev/null || fail 'openai did not normalize common request parameters'
 
 jq -n -e -L "$ROOT" '
   include "lib/runtime/schema";
