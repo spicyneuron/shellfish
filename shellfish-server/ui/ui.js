@@ -50,8 +50,16 @@ let sectionChunks = [];
 const calls = new Map();
 // The note standing in for a running hook, or null.
 let hookActivity = null;
-// Each tool's manifest from the session header, by tool name.
-const toolManifests = new Map();
+// Each tool's render templates from the session header, by tool name.
+const toolTemplatesByName = new Map();
+const DEFAULT_TOOL_TEMPLATES = {
+  render: {
+    user_before: "${tool}\n${input}",
+    user_after: "${tool}\n${output.stdout}${output.stderr}\nexit ${output.exit_code}",
+    model_after: "${output.stdout}${output.stderr}\nexit ${output.exit_code}",
+  },
+  permission_preview: "${input}",
+};
 
 // -------------------------------------------------------------------- the DOM
 
@@ -225,10 +233,8 @@ function renderToolView(parent, template, name, input, output) {
   }
 }
 
-function toolManifest(name) {
-  const manifest = toolManifests.get(name);
-  if (!manifest) throw new Error("unknown tool: " + name);
-  return manifest;
+function toolTemplates(name) {
+  return toolTemplatesByName.get(name) || DEFAULT_TOOL_TEMPLATES;
 }
 
 // -------------------------------------------------------------------- markdown
@@ -424,9 +430,13 @@ function applyRuntime(runtime) {
   const backend = safe((runtime.backend || {}).name);
   contextWindow = (runtime.profile || {}).context_window ?? null;
   model.textContent = backend ? backend + "/" + name : name;
-  toolManifests.clear();
+  toolTemplatesByName.clear();
   for (const tool of (runtime.harness || {}).tools || []) {
-    toolManifests.set(tool.name, tool.manifest || {});
+    const manifest = tool.manifest || {};
+    toolTemplatesByName.set(tool.name, {
+      render: manifest.render,
+      permission_preview: manifest.permission_preview,
+    });
   }
 }
 
@@ -615,8 +625,8 @@ function renderToolCall(frame) {
   const article = record("assistant", null);
   const call = el(article, "pre", "call");
   el(call, "span", "sigil", "⛭ ");
-  const manifest = toolManifest(frame.name);
-  renderToolView(call, manifest.render.user_before, frame.name, frame.input, null);
+  const templates = toolTemplates(frame.name);
+  renderToolView(call, templates.render.user_before, frame.name, frame.input, null);
   calls.set(frame.id, call);
   place(article);
   if (working) showIndicator();
@@ -628,11 +638,11 @@ function renderResult(frame) {
   if (!call) throw new Error("tool result has no call");
   hideIndicator();
   calls.delete(frame.call_id);
-  const manifest = toolManifest(frame.name);
+  const templates = toolTemplates(frame.name);
   call.className = "call";
   call.replaceChildren();
   el(call, "span", "sigil", "⛭ ");
-  renderToolView(call, manifest.render.user_after, frame.name, frame.input, frame);
+  renderToolView(call, templates.render.user_after, frame.name, frame.input, frame);
   place(call);
   if (working) showIndicator();
 }
@@ -684,9 +694,9 @@ function askPermission(frame) {
   pending = frame.id;
   const tool = frame.tool || {};
   const article = record("permission", "Run " + safe(tool.name) + " outside of sandbox?");
-  const manifest = toolManifest(tool.name);
+  const templates = toolTemplates(tool.name);
   el(article, "pre", "input", safe(renderTool(
-    manifest.permission_preview,
+    templates.permission_preview,
     tool.name,
     tool.input,
     null,

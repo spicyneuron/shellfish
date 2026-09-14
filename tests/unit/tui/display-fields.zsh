@@ -31,6 +31,15 @@ assert_equal 'make test' "$(jq -nr -L "$ROOT" --argjson tools "$tools" '
   {record:{name:"shell",input:{command:"make test"}},tools:$tools.harness.tools} |
   render_tool_permission
 ')"
+assert_equal $'unknown\n{"value":1}' "$(jq -nr -L "$ROOT" '
+  include "lib/render";
+  {record:{name:"unknown",input:{value:1}},tools:[]} | render_tool_before
+')"
+assert_equal $'unknown\ndenied\nexit 127' "$(jq -nr -L "$ROOT" '
+  include "lib/render";
+  {record:{name:"unknown",input:{value:1},stdout:"",stderr:"denied",exit_code:127},
+    tools:[]} | render_tool_after
+')"
 
 # Decode replay fields.
 typeset replay

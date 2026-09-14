@@ -27,6 +27,8 @@ A tool directory contains an executable `run`, a `manifest.json` or `manifest.js
 
 A manifest defines complete `user_before`, `user_after`, and `model_after` templates. Templates use one-pass `${...}` substitution for the tool name, input, and raw output fields. Permission preview is a separate template because permission is a distinct transient view. See the manifests under [`share/default/tools/`](../share/default/tools/) for examples.
 
+If a provider requests an undeclared tool, Shellfish uses a plain default template so the call and its rejection remain visible to the user and model.
+
 See [Configuration](CONFIG.md#customize-a-harness) for component lookup and environment value resolution.
 
 ## Process contract

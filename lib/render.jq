@@ -30,6 +30,19 @@ def render_input:
     with_entries(.key = "input." + .key | .value |= render_value)
   else {} end);
 
+def default_tool_templates:
+  {render:{
+    user_before:"${tool}\n${input}",
+    user_after:"${tool}\n${output.stdout}${output.stderr}\nexit ${output.exit_code}",
+    model_after:"${output.stdout}${output.stderr}\nexit ${output.exit_code}"
+  },permission_preview:"${input}"};
+
+def render_tool_templates:
+  . as $render |
+  ([$render.tools[] | select(.name == $render.name) |
+    .manifest | {render,permission_preview}][0] //
+    default_tool_templates);
+
 def render_tool:
   . as $render |
   ({tool:$render.name} + ($render.input | render_input) +
@@ -56,7 +69,8 @@ def render_tool_view:
 def render_tool_before_spec:
   .tools as $tools |
   .record as $call |
-  ($tools[] | select(.name == $call.name) | .manifest.render.user_before) as $template |
+  ({tools:$tools,name:$call.name} | render_tool_templates |
+    .render.user_before) as $template |
   {template:$template,name:$call.name,
     input:($call.input | del(.request_sandbox_bypass, .sandbox_bypass_reason)),
     output:null};
@@ -70,7 +84,8 @@ def render_tool_before_view:
 def render_tool_after_spec:
   .tools as $tools |
   .record as $result |
-  ($tools[] | select(.name == $result.name) | .manifest.render.user_after) as $template |
+  ({tools:$tools,name:$result.name} | render_tool_templates |
+    .render.user_after) as $template |
   {template:$template,name:$result.name,input:$result.input,output:$result};
 
 def render_tool_after:
@@ -82,7 +97,8 @@ def render_tool_after_view:
 def render_tool_permission:
   .tools as $tools |
   .record as $call |
-  ($tools[] | select(.name == $call.name) | .manifest.permission_preview) as $template |
+  ({tools:$tools,name:$call.name} | render_tool_templates |
+    .permission_preview) as $template |
   {template:$template,name:$call.name,
     input:($call.input | del(.request_sandbox_bypass, .sandbox_bypass_reason)),
     output:null} | render_tool;

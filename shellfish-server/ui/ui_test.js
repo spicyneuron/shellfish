@@ -52,17 +52,6 @@ const HEADER = {
           permission_preview: "${input.file_path}",
         },
       },
-      {
-        name: "fallback",
-        manifest: {
-          render: {
-            user_before: "${tool}\n${input}",
-            user_after: "${tool}\n${output.stdout}${output.stderr}",
-            model_after: "${output.stdout}${output.stderr}",
-          },
-          permission_preview: "${input}",
-        },
-      },
     ],
   },
 };
@@ -594,7 +583,7 @@ test("renders complete live tool views like the terminal", async () => {
     {
       type: "tool_call",
       id: "call_3",
-      name: "fallback",
+      name: "unknown",
       input: {
         value: 1,
         request_sandbox_bypass: true,
@@ -610,7 +599,20 @@ test("renders complete live tool views like the terminal", async () => {
   assert.equal(calls[1].textContent, "⛭ read_file · outside.txt");
   assert.equal(findTag(calls[1], "strong")[0].textContent, "read_file");
   assert.equal(findTag(calls[1], "strong").length, 1);
-  assert.equal(calls[2].textContent, '⛭ fallback\n{"value":1}');
+  assert.equal(calls[2].textContent, '⛭ unknown\n{"value":1}');
+  await page.send({
+    type: "tool_result",
+    call_id: "call_3",
+    name: "unknown",
+    input: { value: 1 },
+    stdout: "",
+    stderr: "tool is not allowed: unknown",
+    exit_code: 127,
+  });
+  assert.equal(
+    calls[2].textContent,
+    '⛭ unknown\ntool is not allowed: unknown\nexit 127',
+  );
 });
 
 test("leaves deltas out of the transcript and draws the record once", async () => {

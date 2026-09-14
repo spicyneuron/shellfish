@@ -24,10 +24,9 @@ sf_request_build() {
       messages:($records | request_messages | map(
         if .type == "tool_result" then
           . as $result |
-          ([$runtime.harness.tools[] |
-            select(.name == $result.name) | .manifest.render.model_after][0] // null) as $template |
-          .content = (if $template == null then .stdout + .stderr
-            else {template:$template,name:.name,input:.input,output:.} | render_tool end) |
+          ({tools:$runtime.harness.tools,name:$result.name} | render_tool_templates |
+            .render.model_after) as $template |
+          .content = ({template:$template,name:.name,input:.input,output:.} | render_tool) |
           del(.input, .stdout, .stderr)
         else . end)),
       tools:$tools,
