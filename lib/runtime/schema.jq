@@ -12,16 +12,24 @@ def component_environment:
 def nul_free_string:
   type == "string" and (index("\u0000") | not);
 
+def script_template($input_variables; $output):
+  type == "string" and (index("\u0000") | not) and
+  (gsub("\\$\\{[^{}]+\\}"; "") | index("${") | not) and
+  ([scan("\\$\\{([^{}]+)\\}")[0]] | all(.[];
+    . == "script" or . == "input" or
+    (if $input_variables == null then test("^input\\.[A-Za-z_][A-Za-z0-9_]*$")
+     else . as $name | $input_variables | index($name) != null end) or
+    ($output and IN("output.stdout", "output.stderr", "output.exit_code"))));
+
+def script_render($input_variables):
+  type == "object" and keys == ["model_after", "user_after", "user_before"] and
+  (.user_before | script_template($input_variables; false)) and
+  (.user_after | script_template($input_variables; true)) and
+  (.model_after | script_template($input_variables; true));
+
 def tool_manifest:
   . as $manifest |
-  def template($variables):
-    type == "string" and (index("\u0000") | not) and
-    (gsub("\\$\\{[^{}]+\\}"; "") | index("${") | not) and
-    ([scan("\\$\\{([^{}]+)\\}")[0]] |
-      all(.[]; . as $name | $variables | index($name) != null));
   (.input_schema.properties // {} | keys | map("input." + .)) as $input_variables |
-  (["tool", "input"] + $input_variables) as $before |
-  ($before + ["output.stdout", "output.stderr", "output.exit_code"]) as $after |
   type == "object" and
   ((keys - ["allow_sandbox_bypass", "description", "environment",
     "input_schema", "permission_preview", "render", "sandbox"]) | length == 0) and
@@ -34,12 +42,8 @@ def tool_manifest:
       has("request_sandbox_bypass") or has("sandbox_bypass_reason") | not) and
     ((.required // []) |
       index("request_sandbox_bypass") == null and index("sandbox_bypass_reason") == null)) and
-  (.render | type == "object" and
-    keys == ["model_after", "user_after", "user_before"] and
-    (.user_before | template($before)) and
-    (.user_after | template($after)) and
-    (.model_after | template($after))) and
-  (.permission_preview | template($before)) and
+  (.render | script_render($input_variables)) and
+  (.permission_preview | script_template($input_variables; false)) and
   ((.environment // []) | component_environment) and
   (.sandbox | type == "boolean") and
   ((.allow_sandbox_bypass // false) | type == "boolean") and

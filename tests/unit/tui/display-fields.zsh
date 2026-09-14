@@ -23,8 +23,8 @@ assert_equal $'shell\nmake test' "$(jq -nr -L "$ROOT" --argjson tools "$tools" '
 assert_equal '{"text":"shell · shell","identity_start":8}' \
   "$(jq -nc -L "$ROOT" '
     include "lib/render";
-    {template:"${input.command} · ${tool}",name:"shell",
-      input:{command:"shell"},output:null} | render_tool_view
+    {template:"${input.command} · ${script}",script:"shell",
+      input:{command:"shell"},output:null} | render_script_view
   ')"
 assert_equal 'make test' "$(jq -nr -L "$ROOT" --argjson tools "$tools" '
   include "lib/render";

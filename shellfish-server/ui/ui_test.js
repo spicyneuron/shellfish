@@ -23,8 +23,8 @@ const HEADER = {
         name: "shell",
         manifest: {
           render: {
-            user_before: "${tool}\n${input.command}",
-            user_after: "${tool}\n${input.command}\n${output.stdout}${output.stderr}\nexit ${output.exit_code}",
+            user_before: "${script}\n${input.command}",
+            user_after: "${script}\n${input.command}\n${output.stdout}${output.stderr}\nexit ${output.exit_code}",
             model_after: "${output.stdout}${output.stderr}\nexit ${output.exit_code}",
           },
           permission_preview: "${input.command}",
@@ -34,8 +34,8 @@ const HEADER = {
         name: "read_file",
         manifest: {
           render: {
-            user_before: "${tool} · ${input.file_path}",
-            user_after: "${tool} · ${input.file_path}\n${output.stdout}${output.stderr}",
+            user_before: "${script} · ${input.file_path}",
+            user_after: "${script} · ${input.file_path}\n${output.stdout}${output.stderr}",
             model_after: "${output.stdout}${output.stderr}",
           },
           permission_preview: "${input.file_path}",
@@ -45,8 +45,8 @@ const HEADER = {
         name: "edit_file",
         manifest: {
           render: {
-            user_before: "${tool} · ${input.file_path}",
-            user_after: "${tool} · ${input.file_path}\n${output.stdout}${output.stderr}",
+            user_before: "${script} · ${input.file_path}",
+            user_after: "${script} · ${input.file_path}\n${output.stdout}${output.stderr}",
             model_after: "${output.stdout}${output.stderr}",
           },
           permission_preview: "${input.file_path}",

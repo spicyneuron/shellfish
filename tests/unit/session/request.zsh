@@ -10,7 +10,7 @@ fold() {
     if .type == "tool_result" then
       . as $result |
       ($tools[] | select(.name == $result.name) | .manifest.render.model_after) as $template |
-      .content = ({template:$template,name:.name,input:.input,output:.} | render_tool) |
+      .content = ({template:$template,script:.name,input:.input,output:.} | render_script) |
       del(.input, .stdout, .stderr)
     else . end)'
 }

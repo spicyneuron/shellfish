@@ -26,7 +26,7 @@ sf_request_build() {
           . as $result |
           ({tools:$runtime.harness.tools,name:$result.name} | render_tool_templates |
             .render.model_after) as $template |
-          .content = ({template:$template,name:.name,input:.input,output:.} | render_tool) |
+          .content = ({template:$template,script:.name,input:.input,output:.} | render_script) |
           del(.input, .stdout, .stderr)
         else . end)),
       tools:$tools,

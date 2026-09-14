@@ -9,8 +9,8 @@
     }
   },
   "render": {
-    "user_before": "${tool} · ${input.url}",
-    "user_after": "${tool} · ${input.url}\n${output.stdout}${output.stderr}",
+    "user_before": "${script} · ${input.url}",
+    "user_after": "${script} · ${input.url}\n${output.stdout}${output.stderr}",
     "model_after": "${output.stdout}${output.stderr}"
   },
   "permission_preview": "${input.url}",

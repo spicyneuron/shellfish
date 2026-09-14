@@ -32,8 +32,8 @@ def render_input:
 
 def default_tool_templates:
   {render:{
-    user_before:"${tool}\n${input}",
-    user_after:"${tool}\n${output.stdout}${output.stderr}\nexit ${output.exit_code}",
+    user_before:"${script}\n${input}",
+    user_after:"${script}\n${output.stdout}${output.stderr}\nexit ${output.exit_code}",
     model_after:"${output.stdout}${output.stderr}\nexit ${output.exit_code}"
   },permission_preview:"${input}"};
 
@@ -43,9 +43,9 @@ def render_tool_templates:
     .manifest | {render,permission_preview}][0] //
     default_tool_templates);
 
-def render_tool:
+def render_script:
   . as $render |
-  ({tool:$render.name} + ($render.input | render_input) +
+  ({script:$render.script} + ($render.input | render_input) +
     (if $render.output == null then {}
      else {
        "output.stdout":$render.output.stdout,
@@ -54,51 +54,51 @@ def render_tool:
      } end)) as $variables |
   {template:$render.template,variables:$variables} | render_template;
 
-def render_tool_identity_start:
-  if .template | contains("${tool}") then
+def render_script_identity_start:
+  if .template | contains("${script}") then
     . as $render |
-    {template:($render.template | split("${tool}")[0]),name:$render.name,
-      input:$render.input,output:$render.output} | render_tool | length
+    {template:($render.template | split("${script}")[0]),script:$render.script,
+      input:$render.input,output:$render.output} | render_script | length
   else -1 end;
 
-def render_tool_view:
+def render_script_view:
   . as $render |
-  {text:($render | render_tool),
-   identity_start:($render | render_tool_identity_start)};
+  {text:($render | render_script),
+   identity_start:($render | render_script_identity_start)};
 
 def render_tool_before_spec:
   .tools as $tools |
   .record as $call |
   ({tools:$tools,name:$call.name} | render_tool_templates |
     .render.user_before) as $template |
-  {template:$template,name:$call.name,
+  {template:$template,script:$call.name,
     input:($call.input | del(.request_sandbox_bypass, .sandbox_bypass_reason)),
     output:null};
 
 def render_tool_before:
-  render_tool_before_spec | render_tool;
+  render_tool_before_spec | render_script;
 
 def render_tool_before_view:
-  render_tool_before_spec | render_tool_view;
+  render_tool_before_spec | render_script_view;
 
 def render_tool_after_spec:
   .tools as $tools |
   .record as $result |
   ({tools:$tools,name:$result.name} | render_tool_templates |
     .render.user_after) as $template |
-  {template:$template,name:$result.name,input:$result.input,output:$result};
+  {template:$template,script:$result.name,input:$result.input,output:$result};
 
 def render_tool_after:
-  render_tool_after_spec | render_tool;
+  render_tool_after_spec | render_script;
 
 def render_tool_after_view:
-  render_tool_after_spec | render_tool_view;
+  render_tool_after_spec | render_script_view;
 
 def render_tool_permission:
   .tools as $tools |
   .record as $call |
   ({tools:$tools,name:$call.name} | render_tool_templates |
     .permission_preview) as $template |
-  {template:$template,name:$call.name,
+  {template:$template,script:$call.name,
     input:($call.input | del(.request_sandbox_bypass, .sandbox_bypass_reason)),
-    output:null} | render_tool;
+    output:null} | render_script;

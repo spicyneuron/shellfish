@@ -15,20 +15,20 @@ render_eval() {
 }
 
 # Render templates validate placeholders and substitute only the template source.
-print -r -- '"${tool}\n${input.command}"' |
-render_eval '{template:.,variables:["tool", "input.command"]} | render_template_valid' >/dev/null
-assert_equal $'shell\necho ${tool}' "$(print -r -- '"${tool}\necho ${input.command}"' |
-  render_eval '{template:.,variables:{"tool":"shell","input.command":"${tool}"}} | render_template')"
+print -r -- '"${script}\n${input.command}"' |
+render_eval '{template:.,variables:["script", "input.command"]} | render_template_valid' >/dev/null
+assert_equal $'shell\necho ${script}' "$(print -r -- '"${script}\necho ${input.command}"' |
+  render_eval '{template:.,variables:{"script":"shell","input.command":"${script}"}} | render_template')"
 
-for template in '"${unknown}"' '"${tool"' '"${}"' '"bad\u0000text"'; do
+for template in '"${unknown}"' '"${script"' '"${}"' '"bad\u0000text"'; do
   if print -r -- "$template" |
-      render_eval 'render_template_valid(["tool"])' >/dev/null 2>&1; then
+      render_eval 'render_template_valid(["script"])' >/dev/null 2>&1; then
     fail "invalid render template was accepted: $template"
   fi
 done
 
-if print -r -- '"${tool}"' |
-    render_eval '{template:.,variables:{"tool":1}} | render_template' >/dev/null 2>&1; then
+if print -r -- '"${script}"' |
+    render_eval '{template:.,variables:{"script":1}} | render_template' >/dev/null 2>&1; then
   fail 'render template accepted a non-string variable'
 fi
 
@@ -347,8 +347,8 @@ valid_manifest=$(jq -cn '
       required: ["command"]
     },
     render: {
-      user_before: "${tool}\n${input.command}",
-      user_after: "${tool}\n${input.command}\n${output.stdout}${output.stderr}",
+      user_before: "${script}\n${input.command}",
+      user_after: "${script}\n${input.command}\n${output.stdout}${output.stderr}",
       model_after: "${output.stdout}${output.stderr}\nexit ${output.exit_code}"
     },
     permission_preview: "${input.command}",

@@ -54,8 +54,8 @@ let hookActivity = null;
 const toolTemplatesByName = new Map();
 const DEFAULT_TOOL_TEMPLATES = {
   render: {
-    user_before: "${tool}\n${input}",
-    user_after: "${tool}\n${output.stdout}${output.stderr}\nexit ${output.exit_code}",
+    user_before: "${script}\n${input}",
+    user_after: "${script}\n${output.stdout}${output.stderr}\nexit ${output.exit_code}",
     model_after: "${output.stdout}${output.stderr}\nexit ${output.exit_code}",
   },
   permission_preview: "${input}",
@@ -207,15 +207,26 @@ function renderTemplate(template, values) {
   return template.replace(/\$\{([^{}]+)\}/g, (_, name) => values[name]);
 }
 
-function renderTool(template, name, input, output) {
-  const shown = { ...input };
-  delete shown.request_sandbox_bypass;
-  delete shown.sandbox_bypass_reason;
-  const values = { tool: name, input: JSON.stringify(shown) };
-  for (const [key, value] of Object.entries(shown)) {
-    values["input." + key] = value === null ? "" :
-      typeof value === "string" ? value : JSON.stringify(value);
+function inputValues(input) {
+  const values = { input: renderValue(input) };
+  if (input && typeof input === "object" && !Array.isArray(input)) {
+    for (const [key, value] of Object.entries(input)) {
+      values["input." + key] = renderValue(value);
+    }
   }
+  return values;
+}
+
+function renderIdentityView(parent, template, token, identity, render) {
+  const parts = template.split(token);
+  for (let index = 0; index < parts.length; index++) {
+    parent.append(document.createTextNode(safe(render(parts[index]))));
+    if (index < parts.length - 1) el(parent, "strong", null, safe(identity));
+  }
+}
+
+function renderScript(template, script, input, output) {
+  const values = { script, ...inputValues(input) };
   if (output) {
     values["output.stdout"] = output.stdout;
     values["output.stderr"] = output.stderr;
@@ -224,17 +235,26 @@ function renderTool(template, name, input, output) {
   return renderTemplate(template, values);
 }
 
-function renderToolView(parent, template, name, input, output) {
-  const token = "${tool}";
-  const parts = template.split(token);
-  for (let index = 0; index < parts.length; index++) {
-    parent.append(document.createTextNode(safe(renderTool(parts[index], name, input, output))));
-    if (index < parts.length - 1) el(parent, "strong", null, safe(name));
-  }
+function renderScriptView(parent, template, script, input, output) {
+  renderIdentityView(parent, template, "${script}", script, (part) =>
+    renderScript(part, script, input, output),
+  );
+}
+
+function toolInput(input) {
+  const shown = { ...input };
+  delete shown.request_sandbox_bypass;
+  delete shown.sandbox_bypass_reason;
+  return shown;
 }
 
 function toolTemplates(name) {
   return toolTemplatesByName.get(name) || DEFAULT_TOOL_TEMPLATES;
+}
+
+function renderValue(value) {
+  if (value === null) return "";
+  return typeof value === "string" ? value : JSON.stringify(value);
 }
 
 // -------------------------------------------------------------------- markdown
@@ -626,7 +646,8 @@ function renderToolCall(frame) {
   const call = el(article, "pre", "call");
   el(call, "span", "sigil", "⛭ ");
   const templates = toolTemplates(frame.name);
-  renderToolView(call, templates.render.user_before, frame.name, frame.input, null);
+  renderScriptView(call, templates.render.user_before, frame.name,
+    toolInput(frame.input), null);
   calls.set(frame.id, call);
   place(article);
   if (working) showIndicator();
@@ -642,7 +663,8 @@ function renderResult(frame) {
   call.className = "call";
   call.replaceChildren();
   el(call, "span", "sigil", "⛭ ");
-  renderToolView(call, templates.render.user_after, frame.name, frame.input, frame);
+  renderScriptView(call, templates.render.user_after, frame.name,
+    toolInput(frame.input), frame);
   place(call);
   if (working) showIndicator();
 }
@@ -695,10 +717,10 @@ function askPermission(frame) {
   const tool = frame.tool || {};
   const article = record("permission", "Run " + safe(tool.name) + " outside of sandbox?");
   const templates = toolTemplates(tool.name);
-  el(article, "pre", "input", safe(renderTool(
+  el(article, "pre", "input", safe(renderScript(
     templates.permission_preview,
     tool.name,
-    tool.input,
+    toolInput(tool.input),
     null,
   )));
   if (frame.reason) el(article, "pre", "reason", "Reason: " + safe(frame.reason));
