@@ -25,6 +25,7 @@ sf_capped() {
   wait "$pid" || command_status=$?
   kill -TERM "$timer" 2>/dev/null || true
   wait "$timer" 2>/dev/null || timer_status=$?
-  (( timer_status == 0 )) && return 124
+  # The timer only proves the deadline passed, not that the command was killed.
+  (( timer_status == 0 && command_status != 0 )) && return 124
   return "$command_status"
 }
