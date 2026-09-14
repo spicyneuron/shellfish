@@ -70,7 +70,7 @@ def request_messages:
         {type:"tool_call",id:$record.call_id,name:$record.name,input:$record.input},
         ($record | del(.input, .stdout, .stderr) | .content = $content)
       ]
-    elif ($record.type | IN("system", "session", "turn_error")) then .
+    elif ($record.type | IN("system", "session", "error")) then .
     else error("unrecognized session record: " + ($record.type | tostring)) end
   ) as $conversation |
   if ($conversation.context | length) == 0 then $conversation.messages

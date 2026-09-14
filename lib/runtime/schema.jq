@@ -296,8 +296,8 @@ def canonical_session_header($format_version):
 def canonical_session_record:
   canonical_user_message or canonical_assistant_message or canonical_tool_result or
   canonical_hook_result or canonical_state or
-  (type == "object" and keys == ["message", "type"] and .type == "turn_error" and
-    (.message | nul_free_string) and .message != "") or
+  (type == "object" and keys == ["type", "user_text"] and .type == "error" and
+    (.user_text | nul_free_string) and .user_text != "") or
   (type == "object" and keys == ["content", "type"] and .type == "system" and
     (.content | nul_free_string));
 
@@ -315,8 +315,8 @@ def session_records_state:
         if $record.hook == "stop" and $record.exit_code != 0 and
             $record.stdout != "" and .next == "user" then .next = "assistant"
         else . end
-      elif $record.type == "turn_error" then
-        if .next == "user" then . else .next = "user" | .call_ids = [] end
+      elif $record.type == "error" then
+        .next = "user" | .call_ids = []
       elif $record.type == "user" then
         if .next == "user" then .next = "assistant" | .messages += 1
         else .valid = false end

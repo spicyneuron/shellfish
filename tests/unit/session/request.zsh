@@ -28,7 +28,7 @@ print -r -- '[
   {"type":"session"},
   {"type":"system","content":"ignored"},
   {"type":"user","content":[{"type":"text","text":"hi"}]},
-  {"type":"turn_error","message":"ignored"},
+  {"type":"error","user_text":"ignored"},
   {"type":"assistant","content":[],"usage":{"input_tokens":1}}
 ]' | fold | jq -e '
   . == [{type:"user",content:[{type:"text",text:"hi"}]},
@@ -134,7 +134,7 @@ print -r -- '[
 print -r -- '[
   {"type":"assistant","stop":"tool_calls","content":[]},
   {"type":"hook_result","hook":"pre_tool_use","script":"guard","tool_use_id":"c1","model_context":"orphan"},
-  {"type":"turn_error","message":"interrupted"},
+  {"type":"error","user_text":"interrupted"},
   {"type":"user","content":[{"type":"text","text":"next"}]}
 ]' | fold | jq -e '
   [.[].type] == ["user"] and .[0].content[0].text == "next"
@@ -144,7 +144,7 @@ print -r -- '[
 print -r -- '[
   {"type":"user","content":[{"type":"text","text":"first"}]},
   {"type":"assistant","stop":"tool_calls","content":[{"type":"text","text":"orphan"}]},
-  {"type":"turn_error","message":"interrupted"},
+  {"type":"error","user_text":"interrupted"},
   {"type":"user","content":[{"type":"text","text":"next"}]}
 ]' | fold | jq -e '
   [.[].type] == ["user","user"] and .[1].content[0].text == "next"

@@ -113,9 +113,9 @@ sf_session_begin_turn "$recovery_sync"
 sf_session_append "$recovery_sync" '{"type":"user","content":[{"type":"text","text":"partial"}]}'
 print -rn -- '{"type":"user"' >>"$recovery_sync"
 sf_session_resync_turn "$recovery_sync"
-assert_equal '{"type":"turn_error","message":"Turn interrupted."}' "$REPLY"
+assert_equal '{"type":"error","user_text":"Turn interrupted."}' "$REPLY"
 sf_session_reset
-jq -e -s 'length == 3 and .[-1] == {type:"turn_error",message:"Turn interrupted."}' \
+jq -e -s 'length == 3 and .[-1] == {type:"error",user_text:"Turn interrupted."}' \
   "$recovery_sync" >/dev/null
 
 # Recovery reloads complete durable writes.
@@ -129,9 +129,9 @@ sf_session_resync_turn "$recovery_complete"
 [[ -z $REPLY ]] || fail 'complete durable turn was recovered as interrupted'
 (( ${#SF_SESSION_RECORDS} == 3 )) || fail 'resync did not reload the complete durable turn'
 sf_session_resync_turn "$recovery_complete" 'stop hook failed' 1
-assert_equal '{"type":"turn_error","message":"stop hook failed"}' "$REPLY"
+assert_equal '{"type":"error","user_text":"stop hook failed"}' "$REPLY"
 sf_session_reset
-jq -e -s 'length == 4 and .[-1] == {type:"turn_error",message:"stop hook failed"}' \
+jq -e -s 'length == 4 and .[-1] == {type:"error",user_text:"stop hook failed"}' \
   "$recovery_complete" >/dev/null
 
 # State survives reopening.
@@ -194,7 +194,7 @@ sf_session_begin_turn "$interrupted_tools"
 sf_session_append "$interrupted_tools" '{"type":"user","content":[{"type":"text","text":"next"}]}'
 sf_session_reset
 jq -e -s '
-  .[-2] == {type:"turn_error",message:"Turn interrupted."} and
+  .[-2] == {type:"error",user_text:"Turn interrupted."} and
   (.[-3] | .type == "tool_result" and .call_id == "call_1" and .exit_code == 0) and
   .[-1].type == "user" and .[-1].content[0].text == "next"
 ' "$interrupted_tools" >/dev/null
@@ -214,7 +214,7 @@ sf_session_resync_turn "$repeated_calls" interrupted 1 \
 sf_session_reset
 jq -e -s '
   ([.[] | select(.type == "tool_result" and .call_id == "call_1")] | length) == 2 and
-  .[-2].stderr == "tool call interrupted" and .[-1].type == "turn_error"
+  .[-2].stderr == "tool call interrupted" and .[-1].type == "error"
 ' "$repeated_calls" >/dev/null
 
 # A result committed before queue removal is not duplicated during cleanup.
@@ -229,7 +229,7 @@ sf_session_resync_turn "$committed_result" interrupted 1 \
 sf_session_reset
 jq -e -s '
   ([.[] | select(.type == "tool_result" and .call_id == "call_2")] | length) == 1 and
-  .[-1].type == "turn_error"
+  .[-1].type == "error"
 ' "$committed_result" >/dev/null
 
 # Invalid transitions fail on open.
@@ -242,6 +242,6 @@ fi
 typeset interrupted="$tmp/interrupted.jsonl"
 cp "$SF_TEST_SESSIONS/interrupted.jsonl" "$interrupted"
 sf_session_begin_turn "$interrupted"
-assert_equal '{"type":"turn_error","message":"Turn interrupted."}' "$REPLY"
+assert_equal '{"type":"error","user_text":"Turn interrupted."}' "$REPLY"
 sf_session_append "$interrupted" '{"type":"user","content":[{"type":"text","text":"next"}]}'
 sf_session_reset

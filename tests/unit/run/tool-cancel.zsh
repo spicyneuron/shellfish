@@ -32,7 +32,7 @@ print -r -- "$(<"$cancel_stream")" | jq -eRn '
   ($events | map(select(.type == "tool_result"))) == [{
     type:"tool_result",call_id:"call_1",name:"shell",
     input:{command:$command},stdout:"",stderr:"tool call interrupted",exit_code:126
-  }] and $events[-1] == {type:"turn_error",message:"Turn interrupted."}
+  }] and $events[-1] == {type:"error",user_text:"Turn interrupted."}
 ' --arg command "$command" >/dev/null
 assert_canonical_session "$cancel_session"
 
@@ -82,7 +82,7 @@ wait "$stubborn_pid" || stubborn_status=$?
 jq -eRn '
   [inputs | fromjson] as $events |
   ($events | map(select(.type == "tool_result") | .exit_code)) == [126] and
-  $events[-1] == {type:"turn_error",message:"Turn interrupted."}
+  $events[-1] == {type:"error",user_text:"Turn interrupted."}
 ' <"$stubborn_stream" >/dev/null
 
 # Cancelled tool state is discarded.

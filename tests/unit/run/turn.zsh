@@ -212,12 +212,12 @@ print -r -- "$stream" | jq -eRn '
 stream=$(sf_test_turn 'retry error later' "$session")
 print -r -- "$stream" | jq -eRn '
   [inputs | fromjson] as $events |
-  $events[-1].type == "turn_error" and
+  $events[-1].type == "error" and
   ($events | map(select(.type == "assistant")) | length) == 0 and
-  ($events[-1].message | contains("test backend failure"))
+  ($events[-1].user_text | contains("test backend failure"))
 ' >/dev/null
 jq -e -s '
-  .[-1].type == "turn_error" and (.[-1].message | contains("test backend failure"))
+  .[-1].type == "error" and (.[-1].user_text | contains("test backend failure"))
 ' "$session" >/dev/null
 
 # Partial responses retain visible content.
@@ -258,13 +258,13 @@ print -r -- "$stream" | jq -eRn -L "$ROOT" '
     ],
     usage:{input_tokens:10,output_tokens:4}
   } and
-  ($events[-1].type == "turn_error") and
-  ($events[-1].message | contains("partial backend failure"))
+  ($events[-1].type == "error") and
+  ($events[-1].user_text | contains("partial backend failure"))
 ' >/dev/null
 assert_canonical_session "$partial_response_session"
 jq -e -s '
-  .[-1].type == "turn_error" and
-  (.[-1].message | contains("partial backend failure")) and
+  .[-1].type == "error" and
+  (.[-1].user_text | contains("partial backend failure")) and
   (.[-2].usage == {input_tokens:10,output_tokens:4}) and
   (.[-2].content | all(.type != "tool_call"))
 ' "$partial_response_session" >/dev/null
@@ -338,7 +338,7 @@ SF_ROOT=$ROOT SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_COMMAND=": >$tool
 assert_canonical_session "$call_append_session"
 jq -e -s '
   all(.[]; .type != "tool_result") and
-  .[-1].type == "turn_error"
+  .[-1].type == "error"
 ' "$call_append_session" >/dev/null || fail 'recovery retained an uncommitted call'
 
 # A committed assistant is authoritative even when its append reports failure.
@@ -371,7 +371,7 @@ jq -e -s '
   .[-3].stop == "tool_calls" and
   (.[-2] | .type == "tool_result" and .call_id == "call_1" and
     .stderr == "tool call cancelled" and .exit_code == 126) and
-  .[-1].type == "turn_error"
+  .[-1].type == "error"
 ' "$committed_append_session" >/dev/null ||
   fail 'recovery did not close calls from a committed assistant'
 

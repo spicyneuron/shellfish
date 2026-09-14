@@ -108,32 +108,34 @@ jq -e -s --arg script "$prompt_script" '
     input:"/update",stdout:"update context",stderr:"",exit_code:11}
 ' "$update_session" >/dev/null
 
-# JSONL hook failures use stderr.
-typeset failure_session="$tmp/prompt-failure.jsonl" failure_error="$tmp/prompt-failure.stderr"
+# JSONL hook failures append a durable error before user acceptance.
+typeset failure_session="$tmp/prompt-failure.jsonl"
 sf_test_session "$failure_session"
-stream=$(sf_test_turn /fail "$failure_session" 2>"$failure_error")
+stream=$(sf_test_turn /fail "$failure_session")
 print -r -- "$stream" | jq -eRn --arg script "$prompt_script" '
   [inputs | fromjson] == [{type:"_hook_activity",hook:"user_prompt_submit",
     script:$script,input:"/fail"},
     {type:"hook_result",hook:"user_prompt_submit",script:$script,input:"/fail",
-      stdout:"",stderr:"prompt failure\n",exit_code:1}]
+      stdout:"",stderr:"prompt failure\n",exit_code:1},
+    {type:"error",user_text:("hook script failed with status 1: " + $script +
+      ": prompt failure\n")}]
 ' >/dev/null
-[[ $(<"$failure_error") == *'prompt-hook'* ]] || fail 'prompt hook failure omitted stderr diagnostic'
+jq -e -s '.[-1].type == "error" and all(.[]; .type != "user")' \
+  "$failure_session" >/dev/null
 
 # Hook output respects capture limits.
-typeset overflow_session="$tmp/prompt-overflow.jsonl" overflow_error="$tmp/prompt-overflow.stderr"
+typeset overflow_session="$tmp/prompt-overflow.jsonl"
 sf_test_session "$overflow_session"
-stream=$(sf_test_turn /overflow "$overflow_session" 2>"$overflow_error")
+stream=$(sf_test_turn /overflow "$overflow_session")
 print -r -- "$stream" | jq -eRn --arg script "$prompt_script" '
   [inputs | fromjson] == [{type:"_hook_activity",hook:"user_prompt_submit",
-    script:$script,input:"/overflow"}]
+    script:$script,input:"/overflow"},
+    {type:"error",user_text:("hook script output exceeds capture limit: " + $script)}]
 ' >/dev/null
-[[ $(<"$overflow_error") == *'hook script output exceeds capture limit'* ]] ||
-  fail 'prompt hook overflow omitted stderr diagnostic'
 
 # Cancellation stops active prompt hooks.
 typeset cancel_session="$tmp/prompt-cancel.jsonl"
-typeset cancel_stream="$tmp/prompt-cancel.stream" cancel_error="$tmp/prompt-cancel.stderr"
+typeset cancel_stream="$tmp/prompt-cancel.stream"
 export PROMPT_MARKER="$tmp/prompt-active"
 export PROMPT_EXIT_MARKER="$tmp/prompt-exit"
 SF_TEST_RUNTIME=$(jq -c '.harness.user_prompt_submit[0].render.user_before="Working…"' \
@@ -142,7 +144,7 @@ sf_test_session "$cancel_session"
 integer records=$(wc -l <"$cancel_session")
 "$ROOT/bin/shellfish" run --jsonl --session "$cancel_session" \
   < <(print -r -- '{"type":"user","content":[{"type":"text","text":"/slow"}]}') \
-  >"$cancel_stream" 2>"$cancel_error" &
+  >"$cancel_stream" 2>/dev/null &
 integer pid=$! cancel_status=0 waited=0
 while (( waited++ < 50 )) && [[ ! -e $PROMPT_MARKER ]]; do
   sleep 0.1
@@ -165,9 +167,8 @@ wait "$pid" || cancel_status=$?
 jq -eRn '
   [inputs | fromjson] as $events |
   ($events | any(.type == "user" or .type == "assistant") | not) and
-  ($events | map(.type)) == ["_hook_activity"]
+  ($events | map(.type)) == ["_hook_activity", "error"] and
+  $events[-1].user_text == "Turn interrupted."
 ' <"$cancel_stream" >/dev/null
-[[ $(<"$cancel_error") == *'Turn interrupted.'* ]] ||
-  fail 'pre-commit cancellation omitted stderr diagnostic'
-(( $(wc -l <"$cancel_session") == records )) ||
-  fail 'pre-commit cancellation appended a recovery record'
+(( $(wc -l <"$cancel_session") == records + 1 )) ||
+  fail 'pre-user cancellation did not append an error'

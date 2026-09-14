@@ -39,8 +39,8 @@ var errStreamSettling = errors.New("session file is ahead of the stream")
 // Service proxies one authenticated browser onto one Shellfish session: it
 // replays the durable transcript, relays one exec child's JSONL, and hands turn,
 // cancellation, and permission actions back to that child. The meaning of a
-// transcript belongs to exec and its presentation to the browser, so neither is
-// interpreted here.
+// transcript belongs to exec and its presentation to the browser. The service
+// distinguishes framing and whether a durable error settled a failed child.
 type Service struct {
 	sessionPath string
 	accessCode  string
@@ -65,6 +65,8 @@ type turn struct {
 	replies chan json.RawMessage
 	// Set by the child's own reader goroutine and read once Run has returned.
 	failed bool
+	// Whether the latest child event is a durable error carrying its failure.
+	endedWithError bool
 	// Set under the service lock when the stop was deliberate. A cancelled turn
 	// exits nonzero by design, and its transcript already states the outcome.
 	cancelled bool
@@ -293,7 +295,7 @@ func (s *Service) runTurn(ctx context.Context, active *turn, input json.RawMessa
 	switch {
 	case active.failed:
 		failure = "turn process failed"
-	case err != nil && !active.cancelled:
+	case err != nil && !active.cancelled && !active.endedWithError:
 		// A failure with no durable outcome exists only as the child's
 		// diagnostics, so they are what the browser has to show.
 		failure = err.Error()
@@ -307,9 +309,8 @@ func (s *Service) runTurn(ctx context.Context, active *turn, input json.RawMessa
 	log.Printf("turn finished failure=%q err=%v", failure, err)
 }
 
-// forward relays one child event. Only its type matters here: a record advances
-// the transcript a later replay must match, a permission request stays pending
-// until it is answered, and the rest passes straight through.
+// forward relays one child event. Its type identifies durable progress, error
+// settlement, and permission requests; the rest passes straight through.
 func (s *Service) forward(active *turn, event json.RawMessage) {
 	// Nothing more from a child already declared invalid reaches the client.
 	if active.failed {
@@ -328,6 +329,7 @@ func (s *Service) forward(active *turn, event json.RawMessage) {
 	kind := envelope.Type
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	active.endedWithError = kind == "error"
 	switch {
 	case kind == "_tool_permission_request":
 		s.pending = frame

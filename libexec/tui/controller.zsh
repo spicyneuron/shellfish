@@ -9,7 +9,7 @@ typeset -g SF_PRESENT_PERMISSION_TOOL='' SF_PRESENT_PERMISSION_TEXT=''
 typeset -g SF_PRESENT_PERMISSION_LANGUAGE=''
 typeset -gi SF_PRESENT_PERMISSION_PREVIEW_LENGTH=0
 typeset -gi SF_PRESENT_EXIT_STATUS=0
-typeset -gi SF_PRESENT_TURN_ERROR=0
+typeset -gi SF_PRESENT_ERROR_SETTLED=0
 typeset -g SF_PRESENT_TTY=''
 
 sf_tui_permission_reset() {
@@ -112,6 +112,7 @@ sf_tui_cancel() {
 sf_tui_decoded() {
   local type=$1 first=${2-} second=${3-} third=${4-} fourth=${5-} fifth=${6-} sixth=${7-}
   local encoded preview reason
+  [[ $type == error ]] || SF_PRESENT_ERROR_SETTLED=0
   # Before creation, accept only creation-stream events.
   [[ -n $SF_PRESENT_SESSION ||
       $type == (hook_call|hook_result|error|session_created) ]] ||
@@ -133,7 +134,7 @@ sf_tui_decoded() {
         ;;
       error)
         sf_tui_event error "$first" "$second" "$third" || return 1
-        [[ $third != end ]] || SF_PRESENT_TURN_ERROR=1
+        [[ $third != end ]] || SF_PRESENT_ERROR_SETTLED=1
         ;;
       permission_request)
         [[ $SF_PRESENT_STATE == working && -z $SF_PRESENT_PERMISSION_ID ]] || return 1
@@ -184,11 +185,11 @@ sf_tui_pending_next() {
 
 sf_tui_exec_finish() {
   local heading detail exit_detail
-  integer exit_status cancelled=0 turn_error=$SF_PRESENT_TURN_ERROR
+  integer exit_status cancelled=0 settled_error=$SF_PRESENT_ERROR_SETTLED
   sf_tui_transport_result || return 1
   exit_status=$reply[1]
   exit_detail=$reply[2]
-  SF_PRESENT_TURN_ERROR=0
+  SF_PRESENT_ERROR_SETTLED=0
   if [[ -z $SF_PRESENT_SESSION ]] && (( ! exit_status )); then
     exit_status=1
     exit_detail='Create did not confirm session creation.'
@@ -196,7 +197,7 @@ sf_tui_exec_finish() {
   [[ $SF_PRESENT_STATE != cancelling ]] || cancelled=1
   sf_tui_event activity_stop || return 1
   if (( exit_status || cancelled )); then
-    if (( turn_error )); then
+    if (( settled_error )); then
       heading=''
     elif (( cancelled && ! exit_status )); then
       heading=''
@@ -261,7 +262,7 @@ sf_tui_turn() {
   input=$(jq -cn --arg prompt "$prompt" \
     '{type:"user",content:[{type:"text",text:$prompt}]}') || return 1
   SF_PRESENT_HANDOFF=()
-  SF_PRESENT_TURN_ERROR=0
+  SF_PRESENT_ERROR_SETTLED=0
   SF_PRESENT_ACTIVITY_FRAME=0
   SF_PRESENT_ACTIVITY=${SF_PRESENT_ACTIVITY_FRAMES[1]}
   SF_PRESENT_STATE=working

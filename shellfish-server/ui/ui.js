@@ -566,12 +566,12 @@ function apply(frame) {
       return renderMessage(frame);
     case "tool_result":
       return renderResult(frame);
-    case "turn_error": {
+    case "error": {
       // The failure ends its section without claiming a section number. Its
       // first line is the outcome, and any remaining lines are its detail.
       lastRole = null;
       clearHookActivity();
-      const [outcome, ...detail] = safe(frame.message).split("\n");
+      const [outcome, ...detail] = safe(frame.user_text).split("\n");
       return note(detail.join("\n"), "error", outcome);
     }
     case "state":
@@ -826,7 +826,7 @@ function applyState(frame) {
     clearPermission();
   }
   if (frame.error) {
-    // A process failure arrives as its own diagnostics, read like a turn error.
+    // A process failure arrives as its own diagnostics, read like a durable error.
     const [outcome, ...detail] = safe(frame.error).split("\n");
     note(detail.join("\n"), "error", outcome);
   }

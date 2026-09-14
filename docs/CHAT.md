@@ -33,4 +33,4 @@ The TUI collapses long reasoning and context according to current preview settin
 
 ## Recovery
 
-Failed tools, cancellation, and ordinary turn errors are reported without closing chat. If presentation becomes unusable, `/refresh` reopens the session and rebuilds the display from its durable transcript. `/quit` remains available without running a turn.
+Failed tools and durable failures or cancellations are reported without closing chat. If presentation becomes unusable, `/refresh` reopens the session and rebuilds the display from its durable transcript. `/quit` remains available without running a turn.

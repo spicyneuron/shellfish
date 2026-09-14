@@ -73,7 +73,7 @@ def event_fields:
       (if ({runtime:$event_runtime,record:.} | render_hook_model) == ""
        then "0" else "1" end), (.tool_use_id // "")]
   elif canonical_user_message or canonical_assistant_message or
-      (.type == "turn_error" and canonical_session_record) then
+      (.type == "error" and canonical_session_record) then
     (select(canonical_assistant_message and has("usage")) | .usage |
       turn_usage_fields($event_runtime.profile.context_window // null)),
     ({record:.,replay:false} | durable_display_fields)

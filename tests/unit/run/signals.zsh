@@ -65,7 +65,7 @@ integer model_status=0
 wait "$model_pid" || model_status=$?
 (( model_status == 130 )) || fail 'cancelled model metadata lookup reported the wrong status'
 [[ -s $model_stopped ]] || fail 'cancelled model metadata adapter was not stopped cleanly'
-jq -e -s '.[-1] == {type:"turn_error",message:"Cancelled."}' "$model_session" >/dev/null ||
+jq -e -s '.[-1] == {type:"error",user_text:"Cancelled."}' "$model_session" >/dev/null ||
   fail 'cancelled model metadata lookup did not persist its outcome'
 
 # SIGINT persists partial assistant content.
@@ -90,7 +90,7 @@ jq -eRn '
   [inputs | fromjson] as $events |
   ($events[-2] | .type == "assistant" and .stop == "length" and
     (.content | any(.type == "text" and .text != "")))
-  and $events[-1] == {type:"turn_error",message:"Cancelled."}
+  and $events[-1] == {type:"error",user_text:"Cancelled."}
 ' <"$cancel_output" >/dev/null || fail 'cancelled exec did not persist partial content'
 
 # Cancellation preserves reasoning metadata.
@@ -140,7 +140,7 @@ jq -e -s '
   .[-2] == {type:"assistant",stop:"length",content:[{
     type:"reasoning",text:"partial thought",
     opaque:{id:"reasoning_1",encrypted_content:"secret"}
-  }]} and .[-1] == {type:"turn_error",message:"Turn interrupted."}
+  }]} and .[-1] == {type:"error",user_text:"Turn interrupted."}
 ' "$reasoning_session" >/dev/null || fail 'cancelled reasoning was not recovered'
 
 # Partial tool input remains transient.
@@ -171,7 +171,7 @@ done
 ! kill -0 "$cancel_child_pid" 2>/dev/null || fail 'cancelled backend grandchild survived'
 jq -e -s '
   .[-2] == {type:"user",content:[{type:"text",text:"tool input"}]} and
-  .[-1] == {type:"turn_error",message:"Turn interrupted."} and
+  .[-1] == {type:"error",user_text:"Turn interrupted."} and
   ([.[] | .content[]? | select(.type == "tool_call")] | length) == 0
 ' "$tool_input_session" >/dev/null || fail 'cancelled tool input became durable intent'
 
@@ -189,6 +189,6 @@ jsonl=$(print -r -- \
     --session "$recovered_session") || fail 'recovery run failed'
 print -r -- "$jsonl" | jq -eRn '
   [inputs | fromjson] as $events |
-  $events[0] == {type:"turn_error",message:"Turn interrupted."} and
+  $events[0] == {type:"error",user_text:"Turn interrupted."} and
   ($events[1] | .type == "user")
 ' >/dev/null || fail 'exec did not start after an unfinished turn'

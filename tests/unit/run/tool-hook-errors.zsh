@@ -27,6 +27,7 @@ print -r -- "$stream" | jq -eRn '
   [inputs | fromjson] as $events |
   ($events | map(select(.type == "tool_result")) | length) == 1 and
   ($events | map(select(.type == "tool_result"))[0].exit_code) == 0 and
-  $events[-1].message == "post_tool_use hook script returned unsupported skip status"
+  $events[-1] == {type:"error",
+    user_text:"post_tool_use hook script returned unsupported skip status"}
 ' >/dev/null
 assert_canonical_session "$post_session"

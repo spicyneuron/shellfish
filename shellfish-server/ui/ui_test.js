@@ -809,7 +809,7 @@ test("does not strand a divider before a delayed user record", async () => {
   );
 });
 
-test("ends a section on a durable turn error without numbering it", async () => {
+test("ends a section on a durable error without numbering it", async () => {
   const page = await idle();
   const user = {
     type: "user",
@@ -817,7 +817,7 @@ test("ends a section on a durable turn error without numbering it", async () => 
   };
   await page.send(
     user,
-    { type: "turn_error", message: "Turn interrupted." },
+    { type: "error", user_text: "Turn interrupted." },
     user,
   );
   assert.deepEqual(

@@ -41,8 +41,8 @@ def durable_display_fields:
   .record |
   if .type == "system" and $replay then
     ["system", .content]
-  elif .type == "turn_error" then
-    (.message | split("\n")) as $lines |
+  elif .type == "error" then
+    (.user_text | split("\n")) as $lines |
     ["error", $lines[0], ($lines[1:] | join("\n")), "end"]
   elif .type == "user" then
     if $replay then ["user", .content[0].text] else empty end

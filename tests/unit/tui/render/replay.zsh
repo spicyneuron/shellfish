@@ -66,10 +66,10 @@ sf_tui_reload "$SF_TEST_SESSIONS/header-only.jsonl" || fail "$SF_PRESENT_ERROR"
 assert_equal test/fake-model "$SF_PRESENT_FOOTER"
 assert_equal fake-model "$(jq -r '.profile.request.model' <<<"$SF_PRESENT_RUNTIME")"
 
-# Turn errors end their replayed turn.
+# Errors end their replayed turn.
 SF_TEST_EVENTS=()
 cp "$SF_TEST_SESSIONS/interrupted.jsonl" "$tmp/failed.jsonl"
-print -r -- '{"type":"turn_error","message":"Turn interrupted."}' >>"$tmp/failed.jsonl"
+print -r -- '{"type":"error","user_text":"Turn interrupted."}' >>"$tmp/failed.jsonl"
 sf_tui_reload "$tmp/failed.jsonl" || fail "$SF_PRESENT_ERROR"
 replayed
 assert_equal 'user|Please continue|||||

@@ -142,7 +142,7 @@ print -r -- "$stream" | jq -eRn '
   ($events | map(select(.type == "_tool_permission_request")) | length) == 1 and
   ($events | map(select(.type == "tool_result"))[0] |
     .exit_code == 126 and .stderr == "tool call interrupted") and
-  ($events | map(select(.type == "turn_error") | .message) |
+  ($events | map(select(.type == "error") | .user_text) |
     any(. == "invalid permission response"))
 ' >/dev/null
 assert_canonical_session "$permission_invalid_reply_session"
@@ -235,11 +235,11 @@ print -r -- "$stream" | jq -eRn --arg script "$permission_failure" '
         sandbox_bypass_reason:"Required by the test fixture"}},
     stdout:"",stderr:"review failed",exit_code:7,tool_use_id:"call_1"
   }] and
-  ($events | map(select(.type | IN("_tool_activity", "tool_result", "turn_error"))) |
-    map(.type)) == ["_tool_activity", "tool_result", "turn_error"] and
+  ($events | map(select(.type | IN("_tool_activity", "tool_result", "error"))) |
+    map(.type)) == ["_tool_activity", "tool_result", "error"] and
   ($events | map(select(.type == "tool_result"))[0] |
     .call_id == "call_1" and .exit_code == 126) and
-  ($events[-1].message | contains("hook script failed with status 7") and
+  ($events[-1].user_text | contains("hook script failed with status 7") and
     contains("review failed"))
 ' >/dev/null
 assert_canonical_session "$permission_failure_session"

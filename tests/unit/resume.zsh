@@ -49,7 +49,7 @@ print -r -- '{"type":"tool_result","call_id":"c1","name":"shell","input":{},"std
 # Interrupted turn preview.
 make_header >"$s_failed"
 print -r -- '{"type":"user","content":[{"type":"text","text":"go"}]}' >>"$s_failed"
-print -r -- '{"type":"turn_error","message":"Turn interrupted."}' >>"$s_failed"
+print -r -- '{"type":"error","user_text":"Turn interrupted."}' >>"$s_failed"
 
 # Unreadable session preview.
 print -r -- 'not json' >"$s_bad"

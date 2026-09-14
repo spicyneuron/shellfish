@@ -163,20 +163,25 @@ sf_tui_exec_finish
 assert_equal 0 "${#SF_PRESENT_QUEUE}"
 assert_equal idle "$SF_PRESENT_STATE"
 
-# Preserve persisted turn errors.
+# Preserve persisted errors.
 sf_tui_reset
 sf_tui_terminal_reset
 cp "$SF_TEST_SESSIONS/interrupted.jsonl" "$tmp/failed.jsonl"
-print -r -- '{"type":"turn_error","message":"test backend failure"}' >>"$tmp/failed.jsonl"
+print -r -- '{"type":"error","user_text":"test backend failure"}' >>"$tmp/failed.jsonl"
 SF_PRESENT_SESSION="$tmp/failed.jsonl"
 SF_PRESENT_STATE=working
 sf_tui_transport_reset
-SF_TUI_TRANSPORT_LINES=( '{"type":"turn_error","message":"test backend failure"}' )
+SF_TUI_TRANSPORT_LINES=( '{"type":"error","user_text":"test backend failure"}' )
 SF_TUI_TRANSPORT_EOF=1
 SF_TUI_TRANSPORT_EXIT_STATUS=1
 SF_TUI_TRANSPORT_EXIT_DETAIL='test backend failure'
 sf_tui_heartbeat_tick
 assert_equal idle "$SF_PRESENT_STATE"
+
+# Later activity makes an earlier recovered error non-final.
+sf_tui_decoded error 'Turn interrupted.' '' end
+sf_tui_decoded assistant_start
+(( ! SF_PRESENT_ERROR_SETTLED )) || fail 'later activity retained a recovered error'
 
 # Recover from terminated execs.
 sf_tui_reset

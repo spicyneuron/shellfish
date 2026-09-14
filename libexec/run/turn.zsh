@@ -10,7 +10,7 @@ setopt no_aliases no_bg_nice no_multios pipe_fail
 (( $+functions[sf_process_stop] )) || source "$SF_ROOT/lib/process.zsh"
 
 typeset -gA SF_RUN=(
-  answer '' committed 0 jsonl 0 interrupted 0 permission_count 0 permission_available 0
+  answer '' jsonl 0 interrupted 0 permission_count 0 permission_available 0
   signal_status 143 active_call ''
 )
 typeset -ga SF_RUN_QUEUED_CALLS=()
@@ -128,7 +128,7 @@ sf_run_turn_cleanup() {
       error_message='Turn interrupted.'
     fi
     # Recovery trusts durable records over the interrupted in-memory view.
-    if sf_session_resync_turn "$session" "$error_message" "$SF_RUN[committed]" \
+    if sf_session_resync_turn "$session" "$error_message" 1 \
         "${(pj:\n:)SF_RUN_QUEUED_CALLS}" "$SF_RUN[active_call]"; then
       closed=$REPLY
       if [[ -n $REPLY ]]; then
@@ -174,7 +174,6 @@ sf_run_turn() {
 
   SF_RUN[permission_count]=0
   SF_RUN[permission_available]=$permission_available
-  SF_RUN[committed]=0
   SF_RUN[active_call]=''
   if ! sf_session_begin_turn "$session_path"; then
     print -r -u2 -- "$SF_SESSION_ERROR"
@@ -276,7 +275,6 @@ sf_run_turn() {
       failure=$SF_SESSION_ERROR
       return 1
     fi
-    SF_RUN[committed]=1
     sf_run_emit "$user_record"
 
     while true; do

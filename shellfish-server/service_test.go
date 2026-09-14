@@ -20,6 +20,9 @@ const testAccessCode = "123456"
 
 const userRecord = `{"type":"user","content":[{"type":"text","text":"go"}]}`
 const assistantRecord = `{"type":"assistant","stop":"end","content":[{"type":"text","text":"done"}]}`
+const toolAssistantRecord = `{"type":"assistant","stop":"tool_calls","content":[]}`
+const errorRecord = `{"type":"error","user_text":"backend failed"}`
+const hookActivity = `{"type":"_hook_activity","hook":"user_prompt_submit","script":"/hooks/check/run","input":"go"}`
 const stateRecord = `{"type":"state","name":"agents/a1b2c3","value":{"session":".agent-a1b2c3.jsonl"}}`
 
 func workDir(t *testing.T) string {
@@ -529,6 +532,36 @@ func TestFailureReportsChildDiagnostics(t *testing.T) {
 	frame := session.next(t)
 	if !strings.Contains(frame, "cannot append to session") {
 		t.Fatalf("frame = %s, want the child's diagnostics", frame)
+	}
+}
+
+func TestDurableErrorSuppressesChildDiagnostics(t *testing.T) {
+	sessionPath := newSession(t, "")
+	base := newTestServer(t, sessionPath, "IFS= read -r input\n"+
+		`printf '%s\n' '`+errorRecord+`' >>'`+sessionPath+`'`+"\n"+
+		`printf '%s\n' '`+errorRecord+`'`+"\nexit 1\n")
+	session := openStream(t, base, http.StatusOK)
+	session.expectRaw(t, strings.TrimSuffix(headerLine(t), "\n"))
+	session.expectJSON(t, `{"type":"_session_status","working":false}`)
+	post(t, base+"/turn", userRecord, http.StatusAccepted)
+	session.expectJSON(t, `{"type":"_session_status","working":true}`, errorRecord,
+		`{"type":"_session_status","working":false}`)
+}
+
+func TestActivityAfterRecoveredErrorReportsChildDiagnostics(t *testing.T) {
+	sessionPath := newSession(t, userRecord+"\n"+toolAssistantRecord+"\n")
+	base := newTestServer(t, sessionPath, "IFS= read -r input\n"+
+		`printf '%s\n' '`+errorRecord+`' >>'`+sessionPath+`'`+"\n"+
+		`printf '%s\n' '`+errorRecord+`' '`+hookActivity+`'`+"\nexit 1\n")
+	session := openStream(t, base, http.StatusOK)
+	session.expectRaw(t, strings.TrimSuffix(headerLine(t), "\n"))
+	session.expectJSON(t, userRecord, toolAssistantRecord,
+		`{"type":"_session_status","working":false}`)
+	post(t, base+"/turn", userRecord, http.StatusAccepted)
+	session.expectJSON(t, `{"type":"_session_status","working":true}`, errorRecord,
+		hookActivity)
+	if frame := session.next(t); !strings.Contains(frame, "turn process failed") {
+		t.Fatalf("frame = %s, want process failure", frame)
 	}
 }
 

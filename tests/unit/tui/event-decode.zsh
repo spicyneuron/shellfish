@@ -45,7 +45,7 @@ usage=$(print -r -- \
 assert_equal 'turn_usage,12k ↑ 85% ⦿ 900 ↓ 5% of 264k ◔,batch_ok' "$usage"
 
 # Decode multiline errors.
-order=$(print -r -- '{"type":"turn_error","message":"Hook failed.\ninvalid output"}' |
+order=$(print -r -- '{"type":"error","user_text":"Hook failed.\ninvalid output"}' |
   jq -jRs -L "$ROOT" --argjson runtime null \
     -f "$ROOT/libexec/tui/event-decode.jq" |
   tr '\0' '\n' | sed '/^$/d' | paste -sd, -)
@@ -70,7 +70,7 @@ for invalid in '.path="relative"' '.records=[]' '.presentation={}'; do
 done
 
 # Reject malformed events.
-for invalid in '{"type":"turn_error","message":1}' \
+for invalid in '{"type":"error","user_text":1}' \
     '{"type":"_assistant_message_delta","text":"missing index"}' \
     '{"type":"_hook_activity","hook":"unknown","script":"/hooks/check/run","input":""}' \
     '{"type":"_hook_activity","hook":"stop","script":"check","input":""}'; do

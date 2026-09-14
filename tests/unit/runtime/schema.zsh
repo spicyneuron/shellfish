@@ -59,10 +59,11 @@ fi
 print -r -- '{"type":"tool_call","id":"c1","name":"shell","input":{}}' |
   schema_eval 'canonical_tool_call' >/dev/null
 
-# Turn errors separate unfinished turns.
+# Errors are valid at idle boundaries and close unfinished turns.
 print -r -- '[
+  {"type":"error","user_text":"failed before input"},
   {"type":"user","content":[{"type":"text","text":"unfinished"}]},
-  {"type":"turn_error","message":"backend failed"},
+  {"type":"error","user_text":"backend failed"},
   {"type":"user","content":[{"type":"text","text":"next"}]}
 ]' | schema_eval 'canonical_session_records' >/dev/null
 
@@ -70,7 +71,7 @@ if print -r -- '[
     {"type":"user","content":[{"type":"text","text":"unfinished"}]},
     {"type":"user","content":[{"type":"text","text":"next"}]}
   ]' | schema_eval 'canonical_session_records' >/dev/null 2>&1; then
-  fail 'consecutive user messages without a turn error were accepted'
+  fail 'consecutive user messages without an error were accepted'
 fi
 
 # Requests require canonical projected fields.
@@ -260,7 +261,7 @@ print -r -- '[
   {"type":"state","name":"after/final","value":[1,2]},
   {"type":"user","content":[{"type":"text","text":"again"}]},
   {"type":"state","name":"before/error","value":true},
-  {"type":"turn_error","message":"failed"},
+  {"type":"error","user_text":"failed"},
   {"type":"state","name":"after/error","value":null}
 ]' | schema_eval 'canonical_session_records' >/dev/null
 

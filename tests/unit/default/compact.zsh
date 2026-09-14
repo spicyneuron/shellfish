@@ -100,7 +100,7 @@ print -r -- \
   '{"type":"user","content":[{"type":"text","text":"Keep going"}]}' \
   '{"type":"assistant","stop":"tool_calls","content":[{"type":"text","text":"\n\n"}],"usage":{"input_tokens":75,"output_tokens":5}}' \
   '{"type":"tool_result","call_id":"call_1","name":"shell","input":{"command":"true"},"stdout":"","stderr":"tool call cancelled","exit_code":126}' \
-  '{"type":"turn_error","message":"Cancelled."}' \
+  '{"type":"error","user_text":"Cancelled."}' \
   >>"$cancelled_source"
 assert_canonical_session "$cancelled_source"
 SHELLFISH_SESSION="$cancelled_source" zsh -f "$compact_check" user_prompt_submit \

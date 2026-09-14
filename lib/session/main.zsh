@@ -304,7 +304,7 @@ sf_session_update() {
 # Requires a freshly read session and reports appended records in REPLY.
 # Queued calls receive cancelled results when an unfinished turn closes.
 sf_session_recover_turn() {
-  local session_path=$1 message=${2:-Turn interrupted.} record result recovered='' needed
+  local session_path=$1 user_text=${2:-Turn interrupted.} record result recovered='' needed
   local cancelled=${4-} active=${5-} call_id accepts_results
   local -a settled
   integer force_error=${3:-0}
@@ -341,7 +341,7 @@ sf_session_recover_turn() {
       recovered+=$result
     done
   fi
-  record=$(jq -cn --arg message "$message" '{type:"turn_error",message:$message}') || return
+  record=$(jq -cn --arg user_text "$user_text" '{type:"error",user_text:$user_text}') || return
   sf_session_append "$session_path" "$record" || return
   [[ -z $recovered ]] || recovered+=$'\n'
   recovered+=$record
@@ -350,11 +350,11 @@ sf_session_recover_turn() {
 
 # Repair torn tails before rereading; recover from the durable view.
 sf_session_resync_turn() {
-  local session_path=$1 message=${2-} cancelled=${4-} active=${5-}
+  local session_path=$1 user_text=${2-} cancelled=${4-} active=${5-}
   integer force_error=${3:-0}
   sf_session_repair_tail "$session_path" || return
   sf_session_read "$session_path" || return
-  sf_session_recover_turn "$session_path" "$message" "$force_error" "$cancelled" "$active"
+  sf_session_recover_turn "$session_path" "$user_text" "$force_error" "$cancelled" "$active"
 }
 
 sf_session_begin_turn() {
