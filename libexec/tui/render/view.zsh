@@ -204,7 +204,8 @@ sf_tui_chat_end() {
   divider=${(l:divider_width::─:)""}
   print -r -- "$divider"
   print
-  print -r -- $'\e[1mSaved:\e[0m' "$session"
+  print -r -- $'\e[1mResume with:\e[0m'
+  print -r -- "shellfish -s ${(q)session}"
   print
   print -r -- "${messages[RANDOM % ${#messages} + 1]}"
 }

@@ -32,8 +32,12 @@ banner=$(sf_tui_chat_start resume /tmp/session.jsonl)
 [[ $banner == *$'\e[1mSession:\e[0m /tmp/session.jsonl'* ]] ||
   fail 'resume banner omitted its session path'
 COLUMNS=43
+banner=$(sf_tui_chat_end $'/tmp/my sessions/test.jsonl')
+[[ $banner == *"shellfish -s /tmp/my\\ sessions/test.jsonl"* ]] ||
+  fail 'exit banner did not quote a session path with spaces'
 banner=$(sf_tui_chat_end /tmp/session.jsonl)
-[[ $banner == *$'\e[1mSaved:\e[0m /tmp/session.jsonl'* ]] || fail 'exit banner omitted its session path'
+[[ $banner == *$'\e[1mResume with:\e[0m'$'\n'"shellfish -s /tmp/session.jsonl"* ]] ||
+  fail 'exit banner omitted its resume command'
 
 SF_PRESENT_STATE=permission
 SF_PRESENT_PERMISSION_TOOL=shell

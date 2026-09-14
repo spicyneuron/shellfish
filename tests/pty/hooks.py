@@ -111,7 +111,7 @@ def test_startup_cancellation_quits_without_a_session():
             end = time.monotonic() + 0.2
             while time.monotonic() < end:
                 session.pump()
-            assert "Saved:" not in session.visible(), session.visible()
+            assert "Resume with:" not in session.visible(), session.visible()
         finally:
             (session.explicit_session.parent / "slow_start-release").touch()
             session.close()

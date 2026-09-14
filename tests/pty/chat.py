@@ -281,7 +281,7 @@ def test_chat_end():
             session.send(submitted)
             session.wait_after(mark, str(path))
             visible = session.visible(mark)
-            assert "Saved:" in visible, visible
+            assert "Resume with:" in visible, visible
             assert "❯" not in visible
             assert re.search(r"─{13,}", visible), visible
             end = time.monotonic() + 3
@@ -307,7 +307,7 @@ def test_actionless_editor_return_is_not_a_clean_exit():
         session.wait_after(mark, "Chat editor exited unexpectedly", timeout=3)
         visible = session.visible(mark)
         assert "state working" in visible, visible
-        assert "Saved:" not in visible, visible
+        assert "Resume with:" not in visible, visible
         end = time.monotonic() + 3
         result = None
         while result is None and time.monotonic() < end:
