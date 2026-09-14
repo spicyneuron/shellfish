@@ -6,7 +6,7 @@ setopt extended_glob no_aliases no_multios pipe_fail
 integer input_tokens=32768
 integer output_tokens=4096
 integer request_seconds=60
-local request header active_header context_window budget system base records transcript
+local request header active_header budget system base records transcript
 local backend_request response result selected_runtime state_name='' name
 local review_content=''
 integer review_content_set=0
@@ -86,13 +86,11 @@ fi
 reviewer_environment=( "${(@f)$(jq -r '.backend.environment[]' <<<"$header")}" ) ||
   permission_deny 'Permission review could not inspect the reviewer backend environment.'
 reviewer_environment=( "${(@)reviewer_environment:#}" )
-context_window=$(jq -er --argjson output_tokens "$output_tokens" '
-  .profile.context_window |
-  select(type == "number" and floor == . and . > $output_tokens)
-' <<<"$header" 2>/dev/null) ||
-  permission_deny 'Permission review has no usable context limit.'
-budget=$(( (context_window - output_tokens < input_tokens ?
-  context_window - output_tokens : input_tokens) * 4 ))
+# A known context limit clamps the fixed input budget; an unknown one leaves it intact.
+budget=$(jq --argjson input_tokens "$input_tokens" --argjson output_tokens "$output_tokens" '
+  [(.profile.context_window | numbers | select(floor == .) | . - $output_tokens),
+    $input_tokens] | min * 4
+' <<<"$header")
 
 # The fixed context identifies the session's standing instructions and exact target.
 # Timeline records are admitted backward without gaps, then emitted chronologically.

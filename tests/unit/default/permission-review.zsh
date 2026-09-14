@@ -102,7 +102,7 @@ run_review() {
   SF_TEST_ENTRY="$ROOT/bin/shellfish" SF_TEST_CAPTURE="$captured" SF_TEST_MODE="$mode_file" \
     SF_TEST_PROFILE="$profile_report" SF_TEST_CONFIG_CALL="$config_call" \
     SF_TEST_EXPECT_REVIEWER="${SF_TEST_EXPECT_REVIEWER-}" \
-    SHELLFISH_EXECUTABLE="$wrapper" SHELLFISH_SESSION="$session" \
+    SHELLFISH_EXECUTABLE="$wrapper" SHELLFISH_SESSION="${2:-$session}" \
     SHELLFISH_TURN_STATE="$tmp" SHELLFISH_TURN_ID=6 \
     zsh -f "$hook" permission_request 3>"$control" <<<"$request" || hook_status=$?
 }
@@ -248,19 +248,16 @@ for mode in failure length prose \
   ' "$control" >/dev/null
 done
 
-# Missing capacity and an oversized mandatory request fail before inference.
+# An unknown context limit reviews against the fixed input budget.
 cp "$session" "$tmp/no-limit.jsonl"
 jq -c 'if .type == "session" then .profile.context_window=null else . end' \
   "$tmp/no-limit.jsonl" >"$tmp/no-limit-new.jsonl"
 mv "$tmp/no-limit-new.jsonl" "$tmp/no-limit.jsonl"
-: >"$control"
-hook_status=0
-SHELLFISH_EXECUTABLE="$wrapper" SHELLFISH_SESSION="$tmp/no-limit.jsonl" \
-  SHELLFISH_TURN_STATE="$tmp" SHELLFISH_TURN_ID=6 \
-  zsh -f "$hook" permission_request 3>"$control" <<<"$request" || hook_status=$?
+run_review valid "$tmp/no-limit.jsonl"
 (( hook_status == 11 ))
-[[ $(jq -r '.reason' "$control") == 'Permission review has no usable context limit.' ]]
+jq -e '.action == "allow"' "$control" >/dev/null
 
+# An oversized mandatory request fails before inference.
 cp "$session" "$tmp/small.jsonl"
 jq -c 'if .type == "session" then .profile.context_window=4097 else . end' \
   "$tmp/small.jsonl" >"$tmp/small-new.jsonl"
