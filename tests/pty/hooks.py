@@ -62,7 +62,11 @@ def test_startup_streams_hooks_and_runs_the_queued_prompt():
         script.write_text(START_HOOK)
         script.chmod(0o755)
         (component / "manifest.json").write_text(
-            json.dumps({"display": "Inspecting first_start"})
+            json.dumps({"render": {
+                "user_before": "Inspecting ${script}",
+                "user_after": "${script}",
+                "model_after": "${output.stdout}",
+            }})
         )
         session = Session(
             explicit_session=True, session_start=[str(component)],
@@ -99,7 +103,11 @@ def test_startup_cancellation_quits_without_a_session():
         script.write_text(START_HOOK)
         script.chmod(0o755)
         (component / "manifest.json").write_text(
-            json.dumps({"display": "Inspecting slow_start"})
+            json.dumps({"render": {
+                "user_before": "Inspecting ${script}",
+                "user_after": "${script}",
+                "model_after": "${output.stdout}",
+            }})
         )
         session = Session(explicit_session=True, session_start=[str(component)])
         try:
@@ -145,7 +153,8 @@ def test_slow_prompt_hook_keeps_ui_active():
         assert not completed.exists()
 
         release.touch()
-        _, records = session.wait_session_records(3, path=session.explicit_session)
+        # The hook's own record precedes the turn it released.
+        _, records = session.wait_session_records(4, path=session.explicit_session)
         assert completed.exists()
         assert records[-2]["type"] == "user"
         assert records[-1]["type"] == "assistant"
@@ -183,7 +192,10 @@ def test_prompt_hook_hands_off_to_another_session():
             json.loads(line)
             for line in session.explicit_session.read_text().splitlines()
         ]
-        assert len(original) == 1, original
+        # The redirect is recorded, but no turn is.
+        assert [record["type"] for record in original] == [
+            "session", "hook_result",
+        ], original
     finally:
         session.close()
 

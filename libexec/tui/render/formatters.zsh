@@ -225,16 +225,18 @@ sf_tui_event() {
     activity_stop)
       sf_tui_activity_stop || return 1
       ;;
-    hook_activity)
-      sf_tui_hook_activity "$first" "$second" "$third" || return 1
+    hook_call)
+      sf_tui_hook_call "$first" "$second" "$third" "$fourth" || return 1
       ;;
     hook_result)
-      sf_tui_hook_result "$first" "$second" "$third" "$fourth" || return 1
+      sf_tui_hook_result "$first" "$second" "$third" "$fourth" "$fifth" || return 1
       ;;
     error)
-      if (( SF_PRESENT_LIVE == index && index > 0 )) &&
-          [[ $SF_PRESENT_KIND[index] == tool ]]; then
-        sf_tui_tool_abandon || return 1
+      if (( SF_PRESENT_LIVE == index && index > 0 )); then
+        case $SF_PRESENT_KIND[index] in
+          tool) sf_tui_tool_abandon || return 1 ;;
+          hook) sf_tui_hook_abandon || return 1 ;;
+        esac
       fi
       sf_tui_error_append "$first" "$second" || return 1
       ;;

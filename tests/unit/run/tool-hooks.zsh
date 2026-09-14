@@ -44,8 +44,8 @@ print -rn -u2 -- "post-local-$call_id"
 ZSH
 chmod +x "$post_observe"
 SF_TEST_RUNTIME=$(jq -c --arg pre "$pre_observe" --arg post "$post_observe" '
-  .harness.pre_tool_use=[{command:$pre,display:"",environment:[]}] |
-  .harness.post_tool_use=[{command:$post,display:"",environment:[]}] |
+  .harness.pre_tool_use=[{command:$pre,environment:[],render:{user_before:"",user_after:"",model_after:"${output.stdout}"}}] |
+  .harness.post_tool_use=[{command:$post,environment:[],render:{user_before:"",user_after:"",model_after:"${output.stdout}"}}] |
   .harness.sandbox=false
 ' <<<"$SF_TEST_RUNTIME")
 typeset observe_session="$tmp/tool-observe.jsonl"
@@ -63,7 +63,7 @@ print -r -- "$stream" | jq -eRn '
     map(if .type == "state" then [.name,.value] else ["result",.call_id] end)) ==
     [["tools/pre","call_1"],["result","call_1"],["tools/post","call_1"],
      ["tools/pre","call_2"],["result","call_2"],["tools/post","call_2"]] and
-  ($events | map(select(.type == "hook_result") | .user_context)) ==
+  ($events | map(select(.type == "hook_result") | .stderr) | map(select(length > 0))) ==
     ["pre-local-call_1","post-local-call_1","pre-local-call_2","post-local-call_2"]
 ' >/dev/null
 assert_canonical_session "$observe_session"
@@ -112,8 +112,8 @@ ZSH
 chmod +x "$post_log"
 SF_TEST_RUNTIME=$(jq -c --arg pre "$pre_deny" --arg later "$pre_later" \
   --arg never "$pre_never" --arg post "$post_log" '
-  .harness.pre_tool_use=([$pre,$later,$never] | map({command:.,display:"",environment:[]})) |
-  .harness.post_tool_use=[{command:$post,display:"",environment:[]}]
+  .harness.pre_tool_use=([$pre,$later,$never] | map({command:.,environment:[],render:{user_before:"",user_after:"",model_after:"${output.stdout}"}})) |
+  .harness.post_tool_use=[{command:$post,environment:[],render:{user_before:"",user_after:"",model_after:"${output.stdout}"}}]
 ' <<<"$SF_TEST_RUNTIME")
 typeset deny_session="$tmp/tool-deny.jsonl"
 sf_test_session "$deny_session"

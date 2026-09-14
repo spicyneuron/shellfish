@@ -4,19 +4,41 @@
   "type": "object",
   "additionalProperties": false,
   "properties": {
-    "$schema": {"type": "string"},
-    "default_profile": {"$ref": "#/$defs/name"},
-    "theme_mode": {"enum": ["auto", "light", "dark"]},
-    "theme_light": {"$ref": "#/$defs/name"},
-    "theme_dark": {"$ref": "#/$defs/name"},
-    "backends": {"$ref": "#/$defs/named_backends"},
-    "harnesses": {"$ref": "#/$defs/named_harnesses"},
-    "themes": {"$ref": "#/$defs/named_themes"},
-    "tui": {"$ref": "#/$defs/tui"},
+    "$schema": {
+      "type": "string"
+    },
+    "default_profile": {
+      "$ref": "#/$defs/name"
+    },
+    "theme_mode": {
+      "enum": ["auto", "light", "dark"]
+    },
+    "theme_light": {
+      "$ref": "#/$defs/name"
+    },
+    "theme_dark": {
+      "$ref": "#/$defs/name"
+    },
+    "backends": {
+      "$ref": "#/$defs/named_backends"
+    },
+    "harnesses": {
+      "$ref": "#/$defs/named_harnesses"
+    },
+    "themes": {
+      "$ref": "#/$defs/named_themes"
+    },
+    "tui": {
+      "$ref": "#/$defs/tui"
+    },
     "profiles": {
       "type": "object",
-      "propertyNames": {"$ref": "#/$defs/name"},
-      "additionalProperties": {"$ref": "#/$defs/profile"}
+      "propertyNames": {
+        "$ref": "#/$defs/name"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/profile"
+      }
     }
   },
   "$defs": {
@@ -36,8 +58,14 @@
     },
     "preview_lines": {
       "oneOf": [
-        {"type": "integer", "minimum": 0, "maximum": 2147483647},
-        {"const": "full"}
+        {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 2147483647
+        },
+        {
+          "const": "full"
+        }
       ]
     },
     "capture_bytes": {
@@ -51,7 +79,9 @@
     },
     "environment": {
       "type": "array",
-      "items": {"$ref": "#/$defs/environment_name"},
+      "items": {
+        "$ref": "#/$defs/environment_name"
+      },
       "uniqueItems": true
     },
     "endpoint": {
@@ -60,7 +90,9 @@
     },
     "component_list": {
       "type": "array",
-      "items": {"$ref": "#/$defs/reference"}
+      "items": {
+        "$ref": "#/$defs/reference"
+      }
     },
     "sandbox_path_list": {
       "type": "array",
@@ -78,55 +110,127 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "text": {"$ref": "#/$defs/color"},
-        "muted": {"$ref": "#/$defs/color"},
-        "divider": {"$ref": "#/$defs/color"},
-        "footer": {"$ref": "#/$defs/color"},
-        "prompt": {"$ref": "#/$defs/color"},
-        "prompt_waiting": {"$ref": "#/$defs/color"},
-        "system": {"$ref": "#/$defs/color"},
-        "context": {"$ref": "#/$defs/color"},
-        "user": {"$ref": "#/$defs/color"},
-        "agent": {"$ref": "#/$defs/color"},
-        "activity": {"$ref": "#/$defs/color"},
-        "link": {"$ref": "#/$defs/color"},
-        "code": {"$ref": "#/$defs/color"},
-        "tool": {"$ref": "#/$defs/color"},
-        "reasoning": {"$ref": "#/$defs/color"},
-        "error": {"$ref": "#/$defs/color"},
-        "syntax_comment": {"$ref": "#/$defs/color"},
-        "syntax_keyword": {"$ref": "#/$defs/color"},
-        "syntax_string": {"$ref": "#/$defs/color"},
-        "syntax_number": {"$ref": "#/$defs/color"},
-        "syntax_tag": {"$ref": "#/$defs/color"},
-        "diff_added": {"$ref": "#/$defs/color"},
-        "diff_added_background": {"$ref": "#/$defs/color"},
-        "diff_removed": {"$ref": "#/$defs/color"},
-        "diff_removed_background": {"$ref": "#/$defs/color"},
-        "permission": {"$ref": "#/$defs/color"}
+        "text": {
+          "$ref": "#/$defs/color"
+        },
+        "muted": {
+          "$ref": "#/$defs/color"
+        },
+        "divider": {
+          "$ref": "#/$defs/color"
+        },
+        "footer": {
+          "$ref": "#/$defs/color"
+        },
+        "prompt": {
+          "$ref": "#/$defs/color"
+        },
+        "prompt_waiting": {
+          "$ref": "#/$defs/color"
+        },
+        "system": {
+          "$ref": "#/$defs/color"
+        },
+        "context": {
+          "$ref": "#/$defs/color"
+        },
+        "user": {
+          "$ref": "#/$defs/color"
+        },
+        "agent": {
+          "$ref": "#/$defs/color"
+        },
+        "activity": {
+          "$ref": "#/$defs/color"
+        },
+        "link": {
+          "$ref": "#/$defs/color"
+        },
+        "code": {
+          "$ref": "#/$defs/color"
+        },
+        "tool": {
+          "$ref": "#/$defs/color"
+        },
+        "reasoning": {
+          "$ref": "#/$defs/color"
+        },
+        "error": {
+          "$ref": "#/$defs/color"
+        },
+        "syntax_comment": {
+          "$ref": "#/$defs/color"
+        },
+        "syntax_keyword": {
+          "$ref": "#/$defs/color"
+        },
+        "syntax_string": {
+          "$ref": "#/$defs/color"
+        },
+        "syntax_number": {
+          "$ref": "#/$defs/color"
+        },
+        "syntax_tag": {
+          "$ref": "#/$defs/color"
+        },
+        "diff_added": {
+          "$ref": "#/$defs/color"
+        },
+        "diff_added_background": {
+          "$ref": "#/$defs/color"
+        },
+        "diff_removed": {
+          "$ref": "#/$defs/color"
+        },
+        "diff_removed_background": {
+          "$ref": "#/$defs/color"
+        },
+        "permission": {
+          "$ref": "#/$defs/color"
+        }
       }
     },
     "named_themes": {
       "type": "object",
-      "propertyNames": {"$ref": "#/$defs/name"},
-      "additionalProperties": {"$ref": "#/$defs/theme"}
+      "propertyNames": {
+        "$ref": "#/$defs/name"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/theme"
+      }
     },
     "backend": {
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "adapter": {"$ref": "#/$defs/reference"},
-        "endpoint": {"$ref": "#/$defs/endpoint"},
-        "environment": {"$ref": "#/$defs/environment"},
-        "insecure_tls": {"type": "boolean"},
-        "http_timeout": {"$ref": "#/$defs/positive_integer"},
-        "http_stall": {"$ref": "#/$defs/positive_integer"}
+        "adapter": {
+          "$ref": "#/$defs/reference"
+        },
+        "endpoint": {
+          "$ref": "#/$defs/endpoint"
+        },
+        "environment": {
+          "$ref": "#/$defs/environment"
+        },
+        "insecure_tls": {
+          "type": "boolean"
+        },
+        "http_timeout": {
+          "$ref": "#/$defs/positive_integer"
+        },
+        "http_stall": {
+          "$ref": "#/$defs/positive_integer"
+        }
       }
     },
     "named_backends": {
       "type": "object",
-      "propertyNames": {"$ref": "#/$defs/name"},
-      "additionalProperties": {"$ref": "#/$defs/backend"}
+      "propertyNames": {
+        "$ref": "#/$defs/name"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/backend"
+      }
     },
     "harness": {
       "type": "object",
@@ -134,55 +238,110 @@
       "properties": {
         "tools": {
           "type": "array",
-          "items": {"$ref": "#/$defs/reference"},
+          "items": {
+            "$ref": "#/$defs/reference"
+          },
           "uniqueItems": true
         },
-        "sandbox": {"type": "boolean"},
-        "sandbox_read_paths": {"$ref": "#/$defs/sandbox_path_list"},
-        "sandbox_write_paths": {"$ref": "#/$defs/sandbox_path_list"},
-        "session_start": {"$ref": "#/$defs/component_list"},
-        "user_prompt_submit": {"$ref": "#/$defs/component_list"},
-        "permission_request": {"$ref": "#/$defs/component_list"},
-        "pre_tool_use": {"$ref": "#/$defs/component_list"},
-        "post_tool_use": {"$ref": "#/$defs/component_list"},
-        "stop": {"$ref": "#/$defs/component_list"},
-        "max_requests_per_turn": {"$ref": "#/$defs/positive_integer"},
-        "max_tool_calls_per_request": {"$ref": "#/$defs/positive_integer"},
-        "max_capture_bytes": {"$ref": "#/$defs/capture_bytes"}
+        "sandbox": {
+          "type": "boolean"
+        },
+        "sandbox_read_paths": {
+          "$ref": "#/$defs/sandbox_path_list"
+        },
+        "sandbox_write_paths": {
+          "$ref": "#/$defs/sandbox_path_list"
+        },
+        "session_start": {
+          "$ref": "#/$defs/component_list"
+        },
+        "user_prompt_submit": {
+          "$ref": "#/$defs/component_list"
+        },
+        "permission_request": {
+          "$ref": "#/$defs/component_list"
+        },
+        "pre_tool_use": {
+          "$ref": "#/$defs/component_list"
+        },
+        "post_tool_use": {
+          "$ref": "#/$defs/component_list"
+        },
+        "stop": {
+          "$ref": "#/$defs/component_list"
+        },
+        "max_requests_per_turn": {
+          "$ref": "#/$defs/positive_integer"
+        },
+        "max_tool_calls_per_request": {
+          "$ref": "#/$defs/positive_integer"
+        },
+        "max_capture_bytes": {
+          "$ref": "#/$defs/capture_bytes"
+        }
       }
     },
     "named_harnesses": {
       "type": "object",
-      "propertyNames": {"$ref": "#/$defs/name"},
-      "additionalProperties": {"$ref": "#/$defs/harness"}
+      "propertyNames": {
+        "$ref": "#/$defs/name"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/harness"
+      }
     },
     "request": {
       "type": "object",
       "additionalProperties": true,
       "properties": {
-        "model": {"type": "string", "minLength": 1, "pattern": "^[^\u0000-\u001f\u007f-]+$"}
+        "model": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[^\u0000-\u001f\u007f-]+$"
+        }
       }
     },
     "tui": {
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "preview_lines_reasoning": {"$ref": "#/$defs/preview_lines"},
-        "preview_lines_context": {"$ref": "#/$defs/preview_lines"}
+        "preview_lines_reasoning": {
+          "$ref": "#/$defs/preview_lines"
+        },
+        "preview_lines_context": {
+          "$ref": "#/$defs/preview_lines"
+        }
       }
     },
     "profile": {
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "extend": {"$ref": "#/$defs/name"},
-        "backend": {"$ref": "#/$defs/name"},
-        "harness": {"$ref": "#/$defs/name"},
-        "system": {"$ref": "#/$defs/component_list"},
-        "context_window": {
-          "anyOf": [{"$ref": "#/$defs/positive_integer"}, {"type": "null"}]
+        "extend": {
+          "$ref": "#/$defs/name"
         },
-        "request": {"$ref": "#/$defs/request"}
+        "backend": {
+          "$ref": "#/$defs/name"
+        },
+        "harness": {
+          "$ref": "#/$defs/name"
+        },
+        "system": {
+          "$ref": "#/$defs/component_list"
+        },
+        "context_window": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/positive_integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "request": {
+          "$ref": "#/$defs/request"
+        }
       }
     }
   }

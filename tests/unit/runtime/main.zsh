@@ -140,7 +140,9 @@ typeset hooked_session="$tmp/hooked.jsonl"
 jq -cn --argjson runtime "$runtime" '
   {type:"session",format_version:1,cwd:"/",
    created:"2026-08-18T00:00:00Z"} +
-  ($runtime | .harness.stop=[{command:"/bin/hook",display:"",environment:[]}])
+  ($runtime | .harness.stop=[{command:"/bin/hook",environment:[],render:{
+    user_before:"${script}",user_after:"${script}\n${output.stdout}${output.stderr}",
+    model_after:"${output.stdout}"}}])
 ' >"$hooked_session"
 unset HOME XDG_STATE_HOME
 sf_runtime_resolve "$hooked_session" "$config" '' '' '{}' '' 0 >/dev/null
@@ -312,12 +314,14 @@ cat >"$tmp/config/hooked.jsonc" <<JSON
 JSON
 sf_runtime_resolve_from_config "$tmp/config/hooked.jsonc" '' '' '{}' "$ROOT/tests/fixtures/backend"
 jq -e --arg base "${tmp:A}/config/hooks" '
+  {user_before:"",user_after:"",model_after:"${output.stdout}"} as $render |
   .harness.user_prompt_submit == [
-    {command:($base + "/user_prompt_submit/help/run"),display:"",environment:["HELP_FORMAT"],
+    {command:($base + "/user_prompt_submit/help/run"),environment:["HELP_FORMAT"],render:$render,
       match:{pattern:"^/(help|h)\\z"},help:{usage:"/help, /h",description:"Show help"}},
-    {command:($base + "/user_prompt_submit/shell/run"),display:"",environment:[],
+    {command:($base + "/user_prompt_submit/shell/run"),environment:[],render:$render,
       match:{command:($base + "/user_prompt_submit/shell/check")}}
-  ] and .harness.stop == [{command:($base + "/stop/gate/run"),display:"",environment:[]}]
+  ] and .harness.stop ==
+    [{command:($base + "/stop/gate/run"),environment:[],render:$render}]
 ' <<<"$REPLY" >/dev/null
 
 # Permission hooks cannot display a running label.
@@ -327,9 +331,9 @@ for hook in permission_request/empty permission_request/omitted stop/labeled; do
   print -r -- '#!/bin/sh' >"$tmp/config/hooks/$hook/run"
   chmod +x "$tmp/config/hooks/$hook/run"
 done
-print -r -- '{"display":""}' >"$tmp/config/hooks/permission_request/empty/manifest.json"
+print -r -- '{"render":{"user_before":"","user_after":"","model_after":""}}' >"$tmp/config/hooks/permission_request/empty/manifest.json"
 print -r -- '{}' >"$tmp/config/hooks/permission_request/omitted/manifest.json"
-print -r -- '{"display":"Finishing"}' >"$tmp/config/hooks/stop/labeled/manifest.json"
+print -r -- '{"render":{"user_before":"${script} · Finishing","user_after":"${script}","model_after":"${output.stdout}"}}' >"$tmp/config/hooks/stop/labeled/manifest.json"
 cat >"$tmp/config/hook-display.jsonc" <<'JSON'
 {
   "profiles":{"default":{"harness":"display","request":{"model":"m"}}},
@@ -342,11 +346,11 @@ JSON
 sf_runtime_resolve_from_config "$tmp/config/hook-display.jsonc" '' '' '{}' \
   "$ROOT/tests/fixtures/backend"
 jq -e '
-  (.harness.permission_request | map(.display)) == ["", ""] and
-  .harness.stop[0].display == "Finishing"
+  (.harness.permission_request | map(.render.user_before)) == ["", ""] and
+  .harness.stop[0].render.user_before == "${script} · Finishing"
 ' <<<"$REPLY" >/dev/null
 
-print -r -- '{"display":"Checking permission"}' \
+print -r -- '{"render":{"user_before":"${script}","user_after":"","model_after":""}}' \
   >"$tmp/config/hooks/permission_request/empty/manifest.json"
 if sf_runtime_resolve_from_config "$tmp/config/hook-display.jsonc" '' '' '{}' \
     "$ROOT/tests/fixtures/backend"; then
@@ -427,11 +431,11 @@ SF_ROOT="$tmp/root"
 SF_SHARE="$tmp/root/share"
 sf_runtime_resolve_from_config "$tmp/bundled.jsonc" '' '' '{}' "$ROOT/tests/fixtures/backend"
 jq -e --arg path "${tmp:A}/hooks/stop/bundled/run" \
-  '.harness.stop == [{command:$path,display:"",environment:[]}]' <<<"$REPLY" >/dev/null
+  '.harness.stop == [{command:$path,environment:[],render:{user_before:"",user_after:"",model_after:"${output.stdout}"}}]' <<<"$REPLY" >/dev/null
 rm -rf -- "$tmp/hooks/stop/bundled"
 sf_runtime_resolve_from_config "$tmp/bundled.jsonc" '' '' '{}' "$ROOT/tests/fixtures/backend"
 jq -e --arg path "${tmp:A}/root/share/default/hooks/stop/bundled/run" \
-  '.harness.stop == [{command:$path,display:"",environment:[]}]' <<<"$REPLY" >/dev/null
+  '.harness.stop == [{command:$path,environment:[],render:{user_before:"",user_after:"",model_after:"${output.stdout}"}}]' <<<"$REPLY" >/dev/null
 SF_ROOT=$ROOT
 SF_SHARE=$ROOT/share
 
@@ -509,7 +513,7 @@ jq '.harnesses.tooled.sandbox=false' "$tmp/config/tooled.jsonc" \
 export OPENAI_API_KEY='from-environment'
 export ANTHROPIC_API_KEY='other-component'
 sf_runtime_resolve_from_config "$config" work '' '{}'
-runtime=$(jq -c '.harness.stop=[{command:"/bin/hook",display:"",environment:["ANTHROPIC_API_KEY"]}]' \
+runtime=$(jq -c '.harness.stop=[{command:"/bin/hook",environment:["ANTHROPIC_API_KEY"],render:{user_before:"",user_after:"",model_after:"${output.stdout}"}}]' \
   <<<"$REPLY")
 sf_environment_prepare "$runtime" OPENAI_API_KEY
 [[ ${(j: :)SF_ENVIRONMENT_NAMES} == 'ANTHROPIC_API_KEY OPENAI_API_KEY' ]]

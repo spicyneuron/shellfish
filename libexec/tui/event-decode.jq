@@ -15,13 +15,14 @@ def event_fields:
     ["assistant_reasoning_opaque", (.index | tostring)]
   elif .type == "_turn_usage" and canonical_backend_event then
     empty
-  elif .type == "_hook_activity" and keys == ["hook", "script", "text", "type"] and
+  elif .type == "_hook_activity" and keys == ["hook", "input", "script", "type"] and
       (.hook as $hook | hook_names | index($hook) != null) and
       (.script | nonempty_control_free_string) and
-      (.text | hook_display and length > 0) then
-    ["hook_activity", .hook, .script, .text]
-  elif . == {type:"_hook_activity",text:""} then
-    ["hook_activity"]
+      (.input | type == "string" or type == "object") then
+    ({record:.,runtime:$event_runtime} | render_hook_before_view) as $view |
+    if $view.text == "" then empty
+    else ["hook_call", .hook, .script, $view.text,
+      ($view.identity_start | tostring)] end
   elif . == {type:"_assistant_start"} then
     ["assistant_start"]
   elif .type == "_assistant_end" and keys == ["stop", "type"] and
@@ -59,13 +60,20 @@ def event_fields:
   elif canonical_session_header(1) or canonical_state or
       (.type == "system" and canonical_session_record) then
     empty
-  elif canonical_tool_call then
+  elif canonical_tool_activity then
     ({record:.,tools:($event_runtime.harness.tools // [])} | render_tool_before_view) as $view |
-    ["tool_call", .id, $view.text, .name, ($view.identity_start | tostring)]
+    ["tool_call", .call_id, $view.text, .name, ($view.identity_start | tostring)]
   elif canonical_tool_result then
     ({record:.,tools:($event_runtime.harness.tools // [])} | render_tool_after_view) as $view |
     ["tool_result", .call_id, $view.text, .name, ($view.identity_start | tostring)]
-  elif canonical_user_message or canonical_assistant_message or canonical_hook_result or
+  elif canonical_hook_result then
+    ({record:.,runtime:$event_runtime} | render_hook_after_view) as $view |
+    ["hook_result", .hook, .script, $view.text,
+      ($view.identity_start | tostring),
+      (if hook_model_visible and
+          (({runtime:$event_runtime,record:.} | render_hook_model) | length > 0)
+       then "1" else "0" end)]
+  elif canonical_user_message or canonical_assistant_message or
       (.type == "turn_error" and canonical_session_record) then
     (select(canonical_assistant_message and has("usage")) | .usage |
       turn_usage_fields($event_runtime.profile.context_window // null)),

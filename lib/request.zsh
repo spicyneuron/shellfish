@@ -17,7 +17,12 @@ sf_request_build() {
     include "lib/runtime/schema";
     include "lib/render";
     include "lib/session/request";
-    . as $records |
+    map(if .type == "hook_result" then
+      . as $result |
+      if $result | hook_model_visible then
+        .model_context = ({runtime:$runtime,record:$result} | render_hook_model)
+      else . end
+    else . end) as $records |
     {
       format_version:1,
       system:([$records[] | select(.type == "system") | .content] | join("\n\n")),

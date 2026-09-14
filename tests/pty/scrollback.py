@@ -245,7 +245,8 @@ def test_queued_submits_keep_committed_history():
             and "three" in terminal.frame(),
         )
         release.write_text("\n")
-        _, records = session.wait_session_records(7, path=path)
+        # Each turn records its prompt hook alongside the user and assistant.
+        _, records = session.wait_session_records(10, path=path)
         messages = [
             record["content"][0]["text"]
             for record in records

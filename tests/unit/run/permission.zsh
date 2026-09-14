@@ -29,7 +29,7 @@ exit 11
 ZSH
 chmod +x "$permission_allow"
 SF_TEST_RUNTIME=$(jq -c --arg hook "$permission_allow" '
-  .harness.sandbox=true | .harness.permission_request=[{command:$hook,display:"",environment:[]}]
+  .harness.sandbox=true | .harness.permission_request=[{command:$hook,environment:[],render:{user_before:"",user_after:"",model_after:""}}]
 ' <<<"$SF_TEST_RUNTIME")
 typeset permission_allow_session="$tmp/permission-allow.jsonl"
 sf_test_session "$permission_allow_session"
@@ -39,7 +39,8 @@ stream=$(SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_BYPASS=true \
 print -r -- "$stream" | jq -eRn '
   [inputs | fromjson] as $events |
   ($events | map(select(.type == "_tool_permission_request")) | length) == 0 and
-  ($events | all(.type != "_hook_activity" and .type != "hook_result")) and
+  ($events | all(.type != "_hook_activity")) and
+  ($events | map(select(.type == "hook_result")) | length) == 1 and
   ($events | map(select(.type == "state" or .type == "tool_result")) | map(.type)) ==
     ["state","tool_result"] and
   ($events | map(select(.type == "tool_result"))[0] |
@@ -51,7 +52,8 @@ jq -e '
     contains("interactive") | not)
 ' "$request_capture" >/dev/null
 typeset frozen_tools=$(jq -c '.tools' "$request_capture")
-jq -e -s 'all(.[]; .type != "hook_result")' "$permission_allow_session" >/dev/null
+jq -e -s '([.[] | select(.type == "hook_result")] | length) == 1' \
+  "$permission_allow_session" >/dev/null
 
 # Permission hooks can deny bypasses.
 typeset permission_deny="$tmp/permission-deny"
@@ -62,7 +64,7 @@ exit 11
 ZSH
 chmod +x "$permission_deny"
 SF_TEST_RUNTIME=$(jq -c --arg hook "$permission_deny" \
-  '.harness.permission_request=[{command:$hook,display:"",environment:[]}]' <<<"$SF_TEST_RUNTIME")
+  '.harness.permission_request=[{command:$hook,environment:[],render:{user_before:"",user_after:"",model_after:""}}]' <<<"$SF_TEST_RUNTIME")
 typeset permission_deny_session="$tmp/permission-deny.jsonl"
 sf_test_session "$permission_deny_session"
 stream=$(SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_BYPASS=true \
@@ -107,8 +109,8 @@ print -r -- "$stream" | jq -eRn '
       tool:{call_id:"call_1",name:"shell",
         input:{command:"printf approved",request_sandbox_bypass:true,
           sandbox_bypass_reason:"Required by the test fixture"}}}] and
-  ($events | map(select(.type | IN("tool_call", "_tool_permission_request", "tool_result"))) |
-    map(.type)) == ["tool_call", "_tool_permission_request", "tool_result"] and
+  ($events | map(select(.type | IN("_tool_activity", "_tool_permission_request", "tool_result"))) |
+    map(.type)) == ["_tool_activity", "_tool_permission_request", "tool_result"] and
   ($events | map(select(.type == "tool_result"))[0] |
     .exit_code == 0 and .stdout == "approved" and .stderr == "")
 ' >/dev/null
@@ -218,7 +220,7 @@ exit 7
 ZSH
 chmod +x "$permission_failure"
 SF_TEST_RUNTIME=$(jq -c --arg hook "$permission_failure" \
-  '.harness.permission_request=[{command:$hook,display:"",environment:[]}]' <<<"$SF_TEST_RUNTIME")
+  '.harness.permission_request=[{command:$hook,environment:[],render:{user_before:"",user_after:"",model_after:""}}]' <<<"$SF_TEST_RUNTIME")
 typeset permission_failure_session="$tmp/permission-failure.jsonl"
 sf_test_session "$permission_failure_session"
 stream=$(SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_BYPASS=true \
@@ -226,8 +228,8 @@ stream=$(SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_BYPASS=true \
 print -r -- "$stream" | jq -eRn '
   [inputs | fromjson] as $events |
   ($events | all(.type != "_hook_activity" and .type != "hook_result")) and
-  ($events | map(select(.type | IN("tool_call", "tool_result", "turn_error"))) |
-    map(.type)) == ["tool_call", "tool_result", "turn_error"] and
+  ($events | map(select(.type | IN("_tool_activity", "tool_result", "turn_error"))) |
+    map(.type)) == ["_tool_activity", "tool_result", "turn_error"] and
   ($events | map(select(.type == "tool_result"))[0] |
     .call_id == "call_1" and .exit_code == 126) and
   ($events[-1].message | contains("hook script failed with status 7") and

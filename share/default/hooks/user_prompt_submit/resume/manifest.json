@@ -1,5 +1,12 @@
 {
-  "match": { "pattern": "^/resume\\z" },
+  "match": {
+    "pattern": "^/resume\\z"
+  },
+  "render": {
+    "user_before": "",
+    "user_after": "${script}\n${output.stdout}${output.stderr}",
+    "model_after": "${output.stdout}"
+  },
   "help": {
     "usage": "/resume",
     "description": "Switch to a session for this directory"

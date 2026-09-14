@@ -8,7 +8,6 @@ typeset -ga SF_SESSION_RECORDS=()
 typeset -gA SF_HOOK_COUNTS=()
 typeset -g SF_SESSION_ERROR=''
 typeset -g SF_SESSION_RECOVERY_NEEDED=''
-typeset -ga SF_SESSION_PENDING_CALL=()
 
 sf_session_fail() {
   SF_SESSION_ERROR=$1
@@ -61,7 +60,6 @@ sf_session_reset() {
   SF_SESSION_RECORDS=()
   SF_HOOK_COUNTS=()
   SF_SESSION_RECOVERY_NEEDED=''
-  SF_SESSION_PENDING_CALL=()
 }
 
 sf_session_repair_tail() {
@@ -159,7 +157,6 @@ sf_session_project() {
   SF_SESSION=()
   SF_HOOK_COUNTS=()
   SF_SESSION_RECOVERY_NEEDED=''
-  SF_SESSION_PENDING_CALL=()
   loaded=$(printf '%s\n' "${SF_SESSION_RECORDS[@]}" | sf_jq -jes '
     include "lib/runtime/schema";
     def field: ., "\u0000";
@@ -173,9 +170,6 @@ sf_session_project() {
     (([.[] | select(.type == "user")] | length + 1) |
       tostring | field),
     ($state.messages > 0 and $state.next != "user" | tostring | field),
-    ($state.call.id // "" | field),
-    ($state.call.name // "" | field),
-    ($state.call.input // {} | tojson | field),
     (hook_names[] as $hook |
       ($hook | field), (.[0].harness[$hook] // [] | length | tostring | field)),
     ("ok" | field)
@@ -184,16 +178,14 @@ sf_session_project() {
     return
   }
   fields=( "${(@0)${loaded%$'\0'}}" )
-  (( ${#fields} >= 9 && (${#fields} - 9) % 2 == 0 )) &&
+  (( ${#fields} >= 6 && (${#fields} - 6) % 2 == 0 )) &&
       [[ $fields[5] == (true|false) && $fields[-1] == ok ]] || {
     sf_session_fail "cannot restore session runtime: $session_path"
     return
   }
   integer index
   SF_SESSION_RECOVERY_NEEDED=$fields[5]
-  [[ -z $fields[6] ]] ||
-    SF_SESSION_PENDING_CALL=( "$fields[6]" "$fields[7]" "$fields[8]" )
-  for (( index = 9; index < ${#fields}; index += 2 )); do
+  for (( index = 6; index < ${#fields}; index += 2 )); do
     SF_HOOK_COUNTS[$fields[index]]=$fields[index+1]
   done
   SF_SESSION=(
@@ -239,7 +231,6 @@ sf_session_append() {
   fi
   SF_SESSION_RECORDS+=( "$record" )
   SF_SESSION_RECOVERY_NEEDED=''
-  SF_SESSION_PENDING_CALL=()
 }
 
 sf_session_update() {
@@ -314,38 +305,40 @@ sf_session_update() {
 # Queued calls receive cancelled results when an unfinished turn closes.
 sf_session_recover_turn() {
   local session_path=$1 message=${2:-Turn interrupted.} record result recovered='' needed
-  local -a pending cancelled
+  local cancelled=${4-} active=${5-} call_id accepts_results
+  local -a settled
   integer force_error=${3:-0}
-  cancelled=( ${(f)4} )
   REPLY=''
   [[ -n $SF_SESSION_RECOVERY_NEEDED ]] || {
     sf_session_fail 'session recovery state is unavailable'
     return
   }
   needed=$SF_SESSION_RECOVERY_NEEDED
-  pending=( "${SF_SESSION_PENDING_CALL[@]}" )
   SF_SESSION_RECOVERY_NEEDED=''
-  SF_SESSION_PENDING_CALL=()
   REPLY=''
   [[ $needed == true || force_error -ne 0 ]] || return 0
-  if [[ $needed == true ]]; then
-    if (( ${#pending} == 3 )); then
-      record=$(jq -cn --arg call_id "$pending[1]" --arg name "$pending[2]" \
-        --argjson input "$pending[3]" \
-        '{type:"tool_result",call_id:$call_id,name:$name,
-         input:$input,stdout:"",stderr:"tool call interrupted",exit_code:126}') || return
-      sf_session_append "$session_path" "$record" || return
-      recovered=$record
-    fi
-    for record in "${cancelled[@]}"; do
-      result=$(jq -cn --argjson call "$record" \
+  accepts_results=$(printf '%s\n' "${SF_SESSION_RECORDS[@]:1}" | sf_jq -s '
+    include "lib/runtime/schema";
+    session_records_state | (.valid and (.next | IN("result", "more")))
+  ' 2>/dev/null) || return
+  if [[ $needed == true && $accepts_results == true ]]; then
+    settled=( ${(f)$(printf '%s\n' "${SF_SESSION_RECORDS[@]}" | jq -rs '
+      reduce .[] as $record ([];
+        if $record.type == "assistant" then []
+        elif $record.type == "tool_result" then . + [$record.call_id]
+        else . end)[]
+    ' 2>/dev/null)} )
+    for record in ${(f)cancelled}; do
+      call_id=$(jq -r '.id' <<<$record) || return
+      (( ${settled[(Ie)$call_id]} )) && continue
+      result=$(jq -cn --argjson call "$record" --arg active "$active" \
         '{type:"tool_result",call_id:$call.id,name:$call.name,
-         input:($call.input | del(.request_sandbox_bypass, .sandbox_bypass_reason)),
-         stdout:"",stderr:"tool call cancelled",exit_code:126}') || return
-      sf_session_append "$session_path" "$record" || return
+         input:$call.execution_input,stdout:"",
+         stderr:(if $call.id == $active then "tool call interrupted"
+                 else "tool call cancelled" end),exit_code:126}') || return
       sf_session_append "$session_path" "$result" || return
       [[ -z $recovered ]] || recovered+=$'\n'
-      recovered+=$record$'\n'$result
+      recovered+=$result
     done
   fi
   record=$(jq -cn --arg message "$message" '{type:"turn_error",message:$message}') || return
@@ -357,11 +350,11 @@ sf_session_recover_turn() {
 
 # Repair torn tails before rereading; recover from the durable view.
 sf_session_resync_turn() {
-  local session_path=$1 message=${2-} cancelled=${4-}
+  local session_path=$1 message=${2-} cancelled=${4-} active=${5-}
   integer force_error=${3:-0}
   sf_session_repair_tail "$session_path" || return
   sf_session_read "$session_path" || return
-  sf_session_recover_turn "$session_path" "$message" "$force_error" "$cancelled"
+  sf_session_recover_turn "$session_path" "$message" "$force_error" "$cancelled" "$active"
 }
 
 sf_session_begin_turn() {

@@ -1,7 +1,7 @@
 #!/usr/bin/env zsh
 
 source "${0:A:h}/_hooks.zsh"
-typeset -g SF_HOOK_NAME=test_hook
+typeset -g SF_HOOK_NAME=session_start
 typeset -gA SF_SESSION=(runtime '{"backend":{"environment":[],"env_file":""},"harness":{"tools":[]}}')
 
 typeset input="$tmp/input" empty="$tmp/empty" original_directory=$PWD
@@ -23,7 +23,7 @@ dispatch_hooks() {
   local -a components
   component_results=()
   for script in "$@"; do
-    components+=( "$script" '' '' '' )
+    components+=( "$script" '' '' )
   done
   sf_hooks_dispatch "$input" "$max_capture" "$allow_control" "$argument_count" \
     "${components[@]}"
@@ -77,17 +77,16 @@ dispatch_hooks "$empty" 64 0 0 "$context_only" "$display_only"
 [[ $component_results[1] == "$context_only" && $component_results[3] == from-stdout ]]
 [[ $component_results[5] == "$display_only" && -z $component_results[7] ]]
 
-# Clear unmatched activity labels.
+# Activity carries raw input for manifest rendering.
 capture_result displayed_empty 0
 typeset displayed_empty=$script activity_events
 SF_HOOK_JSONL=1
 activity_events=$(sf_hooks_dispatch "$empty" 64 0 0 \
-  "$displayed_empty" 'Working' '' '')
+  "$displayed_empty" '' '')
 SF_HOOK_JSONL=0
 print -r -- "$activity_events" | jq -eRn '
   [inputs | fromjson] == [
-    {type:"_hook_activity",hook:"test_hook",script:"displayed_empty",text:"Working"},
-    {type:"_hook_activity",text:""}
+    {type:"_hook_activity",hook:"session_start",script:"displayed_empty",input:""}
   ]
 ' >/dev/null
 
@@ -95,22 +94,22 @@ print -r -- "$activity_events" | jq -eRn '
 capture_result selector 1
 typeset selector=$script
 component_results=()
-sf_hooks_dispatch "$empty" 64 0 0 "$context_only" '' "$selector" ''
+sf_hooks_dispatch "$empty" 64 0 0 "$context_only" "$selector" ''
 (( ${#component_results} == 0 ))
 capture_status[$selector]=0
 component_results=()
-sf_hooks_dispatch "$empty" 64 0 0 "$context_only" '' "$selector" ''
+sf_hooks_dispatch "$empty" 64 0 0 "$context_only" "$selector" ''
 [[ $component_results[1] == "$context_only" ]]
 capture_display[$selector]=unexpected
 component_results=()
-if sf_hooks_dispatch "$empty" 64 0 0 "$context_only" '' "$selector" ''; then
+if sf_hooks_dispatch "$empty" 64 0 0 "$context_only" "$selector" ''; then
   fail 'a match command that wrote output was accepted'
 fi
 [[ $SF_HOOK_ERROR == "hook match command wrote output: $selector" ]]
 capture_display[$selector]=''
 capture_status[$selector]=2
 component_results=()
-if sf_hooks_dispatch "$empty" 64 0 0 "$context_only" '' "$selector" ''; then
+if sf_hooks_dispatch "$empty" 64 0 0 "$context_only" "$selector" ''; then
   fail 'a failed match command was accepted'
 fi
 [[ $SF_HOOK_ERROR == "hook match command failed with status 2: $selector" ]]
@@ -226,7 +225,7 @@ state=$SHELLFISH_TURN_STATE
 print -n shared >"$state/marker"
 component_results=()
 sf_hooks_invoke "$session" "$working" "$input" 4096 0 3 stop '' $'line\nbreak' \
-  "$invocation" '' '' '' || fail "$SF_HOOK_ERROR"
+  "$invocation" '' '' || fail "$SF_HOOK_ERROR"
 typeset expected="3|stop||"$'line\nbreak|first\nsecond\n'"|$working|${session:A}|4096|$state|model-name|$invocation|${invocation:A:h}"
 assert_equal "$expected" "$component_results[3]"
 [[ $(cat "$state/marker") == shared ]]
@@ -237,13 +236,13 @@ print -rn -- $'first\nsecond' >"$input"
 typeset -g SHELLFISH_TURN_ID=1
 typeset -g +x SHELLFISH_TURN_ID
 component_results=()
-sf_hooks_invoke "$session" "$working" "$input" 512 0 1 stop "$hook_only" '' '' ''
+sf_hooks_invoke "$session" "$working" "$input" 512 0 1 stop "$hook_only" '' ''
 [[ $component_results[3] == $'1|stop|first\nsecond' ]]
 [[ ${(t)SHELLFISH_TURN_ID} != *export* ]]
 [[ ${(t)SHELLFISH_TURN_STATE} != *export* ]]
 : >"$empty"
 component_results=()
-sf_hooks_invoke "$session" "$working" "$empty" 512 0 1 stop "$hook_only" '' '' ''
+sf_hooks_invoke "$session" "$working" "$empty" 512 0 1 stop "$hook_only" '' ''
 [[ $component_results[3] == '1|stop|' ]]
 sf_hooks_turn_state_cleanup
 [[ -z $SHELLFISH_TURN_STATE && ! -e $state ]]
@@ -259,7 +258,7 @@ make_script inherited_environment 'print -rn -- "${BACKEND_SETTING-unset}|${HOOK
 typeset inherited_environment=$script
 component_results=()
 sf_hooks_invoke "$session" "$working" "$empty" 512 0 1 stop \
-  "$inherited_environment" '' '' 'HOOK_SETTING SHELLFISH_SESSION' || fail "$SF_HOOK_ERROR"
+  "$inherited_environment" '' 'HOOK_SETTING SHELLFISH_SESSION' || fail "$SF_HOOK_ERROR"
 assert_equal "backend|hook|tool|${session:A}" "$component_results[3]"
 unset BACKEND_SETTING HOOK_SETTING TOOL_SETTING SHELLFISH_SESSION
 
@@ -273,7 +272,7 @@ make_script no_turn 'print -rn -- "${SHELLFISH_TURN_ID-unset}"'
 typeset no_turn=$script
 component_results=()
 sf_hooks_invoke "$session" "$working" "$empty" 512 0 1 session_start \
-  "$no_turn" '' '' 'SHELLFISH_TURN_ID' || fail "$SF_HOOK_ERROR"
+  "$no_turn" '' 'SHELLFISH_TURN_ID' || fail "$SF_HOOK_ERROR"
 assert_equal unset "$component_results[3]"
 sf_hooks_turn_state_cleanup
 

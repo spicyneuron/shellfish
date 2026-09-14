@@ -198,10 +198,11 @@ stream=$(SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_BYPASS=true \
 print -r -- "$stream" | jq -eRn '
   [inputs | fromjson] as $events |
   [$events[] | select(.type == "tool_result")] as $results |
-  [$events[] | select(.type == "tool_call")] as $calls |
+  [$events[] | select(.type == "_tool_activity")] as $calls |
   ($results | map(.exit_code)) == [0] and
   $results[0].stdout == "ran\n" and $results[0].stderr == "" and
   ($calls | length) == 1 and
+  $calls[0].call_id == "call_1" and
   $calls[0].input.request_sandbox_bypass == true and
   ($calls[0].input.sandbox_bypass_reason | length) > 0 and
   $calls[0].input.command == "print -r -- ran"
@@ -307,7 +308,7 @@ sf_session_reset
 cmp -s "$tmp/partial-before.jsonl" "$partial_session" ||
   fail 'opening did not repair the partial append'
 
-# Torn tool calls recover without execution.
+# A torn assistant commit discards its in-memory calls without execution.
 typeset call_append_session="$tmp/call-append.jsonl"
 typeset tool_marker="$tmp/tool-ran"
 integer call_append_status=0
@@ -318,9 +319,10 @@ SF_ROOT=$ROOT SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_COMMAND=": >$tool
   functions[sf_test_session_append]=$functions[sf_session_append]
   integer append_failed=0
   sf_session_append() {
-    if (( ! append_failed )) && jq -e '\''.type == "tool_call"'\'' <<<$2 >/dev/null; then
+    if (( ! append_failed )) &&
+        jq -e '\''.type == "assistant" and .stop == "tool_calls"'\'' <<<$2 >/dev/null; then
       append_failed=1
-      print -rn -- '\''{"type":"tool_call"'\'' >>"$1"
+      print -rn -- '\''{"type":"assistant"'\'' >>"$1"
       sf_session_fail "cannot append session record: $1"
       return 1
     fi
@@ -331,32 +333,62 @@ SF_ROOT=$ROOT SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_COMMAND=": >$tool
   message='\''{"type":"user","content":[{"type":"text","text":"recover call"}]}'\''
   sf_run_turn "$message" "$1" 0 "recover call"
 ' -- "$call_append_session" >/dev/null || call_append_status=$?
-(( call_append_status == 1 )) || fail 'tool-call append failure exited successfully'
-[[ ! -e $tool_marker ]] || fail 'tool ran after its call failed to append'
+(( call_append_status == 1 )) || fail 'assistant append failure exited successfully'
+[[ ! -e $tool_marker ]] || fail 'tool ran after its assistant failed to append'
 assert_canonical_session "$call_append_session"
 jq -e -s '
-  ([.[] | select(.type == "tool_call")] | length) == 1 and
-  ([.[] | select(.type == "tool_result")] | length) == 1 and
-  (.[-3] | .type == "tool_call" and .id == "call_1") and
-  (.[-2] | .type == "tool_result" and .call_id == "call_1" and
-    .stdout == "" and .stderr == "tool call cancelled" and .exit_code == 126) and
+  all(.[]; .type != "tool_result") and
   .[-1].type == "turn_error"
-' "$call_append_session" >/dev/null || fail 'recovery did not close the uncommitted call'
+' "$call_append_session" >/dev/null || fail 'recovery retained an uncommitted call'
+
+# A committed assistant is authoritative even when its append reports failure.
+typeset committed_append_session="$tmp/committed-append.jsonl"
+integer committed_append_status=0
+sf_test_session "$committed_append_session"
+SF_ROOT=$ROOT SF_TEST_BACKEND_TOOL_CALL=1 \
+  zsh -f -c '
+  source "$SF_ROOT/libexec/run/turn.zsh"
+  functions[sf_test_session_append]=$functions[sf_session_append]
+  integer append_failed=0
+  sf_session_append() {
+    if (( ! append_failed )) &&
+        jq -e '\''.type == "assistant" and .stop == "tool_calls"'\'' <<<$2 >/dev/null; then
+      append_failed=1
+      sf_test_session_append "$@" || return
+      sf_session_fail "reported assistant append failure"
+      return 1
+    fi
+    sf_test_session_append "$@"
+  }
+  typeset -g SF_API_KEY="" SF_API_KEY_SOURCE=""
+  SF_RUN[jsonl]=1
+  message='\''{"type":"user","content":[{"type":"text","text":"close calls"}]}'\''
+  sf_run_turn "$message" "$1" 0 "close calls"
+' -- "$committed_append_session" >/dev/null || committed_append_status=$?
+(( committed_append_status == 1 )) || fail 'reported assistant append failure exited successfully'
+assert_canonical_session "$committed_append_session"
+jq -e -s '
+  .[-3].stop == "tool_calls" and
+  (.[-2] | .type == "tool_result" and .call_id == "call_1" and
+    .stderr == "tool call cancelled" and .exit_code == 126) and
+  .[-1].type == "turn_error"
+' "$committed_append_session" >/dev/null ||
+  fail 'recovery did not close calls from a committed assistant'
 
 # System and hook context reach providers.
 typeset echo_session="$tmp/echo.jsonl"
 sf_test_session "$echo_session"
 sf_session_begin_turn "$echo_session"
-sf_session_append "$echo_session" '{"type":"hook_result","hook":"session_start","script":"fixture","model_context":"startup context"}'
+sf_session_append "$echo_session" '{"type":"hook_result","hook":"session_start","script":"fixture","input":"","stdout":"startup context","stderr":"","exit_code":0}'
 sf_session_reset
 stream=$(sf_test_turn 'plain prompt' "$echo_session")
 print -r -- "$stream" | jq -eRn '
   [inputs | fromjson | select(.type == "assistant")] as $messages |
-  $messages[-1].content[-1] == {type:"text",text:"plain prompt\n"}
+  $messages[-1].content[-1] == {type:"text",text:"startup context\n\nplain prompt\n"}
 ' >/dev/null
 jq -e '
   .system == "frozen system" and
-  (.messages[-1].content[0].text | contains("<hook name=\"session_start\">\n<context script=\"fixture\">"))
+  .messages[-1].content[0].text == "startup context\n\nplain prompt"
 ' "$request_capture" >/dev/null
 
 # Tool results precede provider continuation.

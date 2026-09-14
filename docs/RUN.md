@@ -86,7 +86,6 @@ Stdout contains one compact JSON object per line in source order. Objects fall i
 | `hook_result` | Attributed model or user context from a hook |
 | `user` | User prompt |
 | `assistant` | Complete provider response and optional usage |
-| `tool_call` | Complete assistant-requested call at its execution point |
 | `tool_result` | Completed, denied, or interrupted call result |
 | `state` | Model-invisible durable named state |
 | `turn_error` | Failure or cancellation ending an accepted turn |
@@ -105,6 +104,7 @@ Transient events currently include:
 | `_turn_usage` | The provider's latest token usage for this response. |
 | `_assistant_end` | The response is complete; `stop` is its reason. It precedes the durable assistant record. |
 | `_hook_activity` | A selected ordinary hook component's configured running label, or an empty clear event. |
+| `_tool_activity` | A validated tool call is being processed. |
 | `_tool_permission_request` | A sandbox bypass needs a client decision. |
 | `_handoff` | A hook script asks a capable client to run `argv` after the turn exits cleanly. |
 | `_session_update` | A hook-requested update or model-context discovery changed the session; `runtime` is the resulting resolved runtime. |
@@ -126,6 +126,8 @@ A permission request has this shape:
 
 A zero exit means the operation completed cleanly, including a hook that deliberately blocked submission or requested a handoff. A tool may return a nonzero result without failing the turn itself.
 
-After an accepted turn fails or is cancelled, Shellfish appends a durable `turn_error`. It first preserves any recoverable partial assistant response and closes unfinished tool calls the response requested. Recovery is best effort and cannot cover abrupt process or machine loss.
+After an accepted turn fails or is cancelled, Shellfish appends a durable `turn_error`. It first preserves any recoverable partial assistant response and records cancelled results for calls still owned by that process. Each settled `tool_result` is self-contained; provider requests reconstruct its matching call immediately before it.
+
+Abrupt process or machine loss may leave a tool-calling assistant response without settled results. Such an orphan is omitted from later provider history because its calls and any uncertain external effects were never made durable.
 
 After any uncertain live outcome, clients discard transient state and replay the session. They never append presentation or lifecycle events themselves; transcript mutation belongs to Shellfish.

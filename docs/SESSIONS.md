@@ -28,4 +28,4 @@ The header is frozen against ambient configuration, but it is not immutable. Con
 
 ## Durability and recovery
 
-Every durable prefix must be valid, including one left by an interrupted turn. Tool calls remain inert until the complete assistant response is validated and appended. After interruption or uncertain live output, clients discard their transient state and replay the session. See [`RUN.md`](RUN.md#completion-and-recovery) for recovery behavior.
+Every durable prefix must be valid, including one left by an interrupted turn. Tool calls remain inert until the complete assistant response is validated and appended. Only settled tool results are durable; each contains enough data to reconstruct its provider call. After interruption or uncertain live output, clients discard their transient state and replay the session. See [`RUN.md`](RUN.md#completion-and-recovery) for recovery behavior.

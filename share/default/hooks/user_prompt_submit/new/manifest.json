@@ -1,5 +1,12 @@
 {
-  "match": { "pattern": "^/new\\z" },
+  "match": {
+    "pattern": "^/new\\z"
+  },
+  "render": {
+    "user_before": "",
+    "user_after": "${script}\n${output.stdout}${output.stderr}",
+    "model_after": "${output.stdout}"
+  },
   "help": {
     "usage": "/new",
     "description": "Start a new session with the same settings"

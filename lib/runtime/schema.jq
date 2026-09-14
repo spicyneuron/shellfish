@@ -71,9 +71,6 @@ def hook_names:
   ["session_start", "user_prompt_submit", "permission_request", "pre_tool_use",
    "post_tool_use", "stop"];
 
-def hook_display:
-  type == "string" and (test("[[:cntrl:]]") | not);
-
 def hook_match:
   type == "object" and
   if keys == ["pattern"] then
@@ -84,16 +81,22 @@ def hook_match:
   elif keys == ["command"] then .command | absolute_path
   else false end;
 
+def hook_text:
+  type == "string" and (test("[[:cntrl:]]") | not);
+
 def hook_help:
   type == "object" and keys == ["description", "usage"] and
-  (.usage | hook_display and length > 0) and
-  (.description | hook_display and length > 0);
+  (.usage | hook_text and length > 0) and
+  (.description | hook_text and length > 0);
+
+def hook_render:
+  script_render(null);
 
 def hook_component:
   type == "object" and
-  (keys - ["command", "display", "environment", "help", "match"] | length) == 0 and
-  has("command") and has("display") and has("environment") and
-  (.command | absolute_path) and (.display | hook_display) and
+  (keys - ["command", "environment", "help", "match", "render"] | length) == 0 and
+  has("command") and has("environment") and has("render") and
+  (.command | absolute_path) and (.render | hook_render) and
   (.environment | component_environment) and
   (if has("match") then .match | hook_match else true end) and
   (if has("help") then .help | hook_help else true end);
@@ -104,7 +107,8 @@ def harness_hooks:
     ($harness | has($hook) | not) or
     ($harness[$hook] | type == "array" and all(.[];
       hook_component and
-      ($hook != "permission_request" or .display == "") and
+      ($hook != "permission_request" or
+        .render == {user_before:"",user_after:"",model_after:""}) and
       (if $hook == "user_prompt_submit" then
          (has("help") | not) or has("match")
        else ((has("match") or has("help")) | not) end))));
@@ -161,6 +165,11 @@ def canonical_tool_call:
   .type == "tool_call" and (.id | identifier) and (.name | tool_name) and
   (.input | type == "object");
 
+def canonical_tool_activity:
+  type == "object" and keys == ["call_id", "input", "name", "type"] and
+  .type == "_tool_activity" and (.call_id | identifier) and
+  (.name | tool_name) and (.input | type == "object");
+
 def canonical_tool_result:
   type == "object" and
   keys == ["call_id", "exit_code", "input", "name", "stderr", "stdout", "type"] and
@@ -180,25 +189,26 @@ def canonical_assistant_message:
   (["content", "stop", "type"] - keys | length == 0) and
   (.stop | IN("end", "tool_calls", "length")) and
   ((has("usage") | not) or (.usage | token_usage)) and
-  # Calls become separate records at execution.
+  # Calls remain in memory until their settled results are recorded.
   (.content | type == "array" and
     all(.[]; canonical_text or canonical_reasoning));
 
 def canonical_hook_result:
   type == "object" and
-  (keys - ["hook", "model_context", "prompt", "script", "status", "type",
-    "user_context"] | length) == 0 and
-  .type == "hook_result" and (.hook | element_name) and
+  keys == ["exit_code", "hook", "input", "script", "stderr", "stdout", "type"] and
+  .type == "hook_result" and
+  (.hook as $hook | hook_names | index($hook) != null) and
   (.script | nonempty_control_free_string) and
-  (has("model_context") or has("user_context")) and
-  ((has("model_context") | not) or
-    (.model_context | type == "string" and length > 0)) and
-  ((has("user_context") | not) or
-    (.user_context | type == "string" and length > 0)) and
-  (((has("prompt") or has("status")) | not) or has("model_context")) and
-  ((has("prompt") | not) or ((.prompt | nul_free_string and length > 0) and has("status"))) and
-  ((has("status") | not) or
-    (.status | type == "number" and floor == . and . >= 0 and . <= 255));
+  (.input | type == "string" or type == "object") and
+  (.stdout | type == "string") and (.stderr | type == "string") and
+  (.exit_code | type == "number" and floor == . and . >= 0 and . <= 255);
+
+# Which hook results address the model. A stop hook speaks only when a nonzero
+# exit skipped completion.
+def hook_model_visible:
+  (.hook == "session_start" and .exit_code == 0) or
+  .hook == "user_prompt_submit" or
+  (.hook == "stop" and .exit_code != 0);
 
 def canonical_state:
   type == "object" and keys == ["name", "type", "value"] and
@@ -287,49 +297,42 @@ def canonical_session_header($format_version):
     (.max_capture_bytes | capture_bytes));
 
 def canonical_session_record:
-  canonical_user_message or canonical_assistant_message or canonical_tool_call or
-  canonical_tool_result or canonical_hook_result or canonical_state or
+  canonical_user_message or canonical_assistant_message or canonical_tool_result or
+  canonical_hook_result or canonical_state or
   (type == "object" and keys == ["message", "type"] and .type == "turn_error" and
     (.message | nul_free_string) and .message != "") or
   (type == "object" and keys == ["content", "type"] and .type == "system" and
     (.content | nul_free_string));
 
-# A tool-calling assistant message is followed by call/result pairs.
+# A tool-calling assistant message may be followed by settled results.
 def session_records_state:
   reduce .[] as $record
-    ({valid:true, next:"user", call:null, messages:0};
+    ({valid:true, next:"user", call_ids:[], messages:0};
       if (.valid | not) or ($record | canonical_session_record | not) then
         .valid = false
       elif $record.type == "state" then .
       elif $record.type == "system" then
         if .next == "user" then . else .valid = false end
       elif $record.type == "hook_result" then
-        if $record.hook == "stop" and $record.model_context? != null and
-            .next == "user" then .next = "assistant"
+        # Feedback resumes the turn; empty stdout would have failed the hook.
+        if $record.hook == "stop" and ($record | hook_model_visible) and
+            $record.stdout != "" and .next == "user" then .next = "assistant"
         else . end
       elif $record.type == "turn_error" then
-        # Turn errors cannot replace an owed tool result.
-        if .next == "user" then .
-        elif .next != "result" then .next = "user"
-        else .valid = false end
+        if .next == "user" then . else .next = "user" | .call_ids = [] end
       elif $record.type == "user" then
         if .next == "user" then .next = "assistant" | .messages += 1
         else .valid = false end
       elif $record.type == "assistant" then
         if (.next | IN("assistant", "more") | not) then .valid = false
-        elif $record.stop == "tool_calls" then .next = "call" | .messages += 1
-        else .next = "user" | .messages += 1 end
-      elif $record.type == "tool_call" then
-        if (.next | IN("call", "more") | not) then .valid = false
-        else .call = ($record |
-          {id, name,input:(.input |
-            del(.request_sandbox_bypass, .sandbox_bypass_reason))}) |
-          .next = "result" end
+        elif $record.stop == "tool_calls" then
+          .next = "result" | .call_ids = [] | .messages += 1
+        else .next = "user" | .call_ids = [] | .messages += 1 end
       elif $record.type == "tool_result" then
-        if .next != "result" or $record.call_id != .call.id or
-            $record.name != .call.name or $record.input != .call.input then
+        if (.next | IN("result", "more") | not) or
+            (.call_ids | index($record.call_id)) != null then
           .valid = false
-        else .messages += 1 | .call = null | .next = "more" end
+        else .messages += 1 | .call_ids += [$record.call_id] | .next = "more" end
       else .valid = false end) |
   .;
 

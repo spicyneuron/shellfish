@@ -50,7 +50,10 @@ def test_sandbox_updates_without_reload():
                 "type": "hook_result",
                 "hook": "user_prompt_submit",
                 "script": "sandbox",
-                "model_context": f"Session sandbox write grant added: {grant_path}\n",
+                "input": f"/sandbox +w {grant}",
+                "stdout": f"Session sandbox write grant added: {grant_path}\n",
+                "stderr": "",
+                "exit_code": 11,
             }]
         finally:
             session.close()
@@ -223,7 +226,8 @@ def test_permission_decision_restores_draft():
         session.wait_after(mark, "Allow shell outside of sandbox?")
         session.send(b"d")
 
-        _, records = session.wait_session_records(5, path=session.explicit_session)
+        # The prompt hook's own record precedes the turn.
+        _, records = session.wait_session_records(6, path=session.explicit_session)
         session.wait_after(mark, "Tool complete.")
         edit = len(session.output)
         session.send(b"X\x0c")
@@ -232,7 +236,7 @@ def test_permission_decision_restores_draft():
         results = [record for record in records if record.get("type") == "tool_result"]
         assert len(results) == 1
         assert results[0]["exit_code"] == 126
-        assert results[0]["content"] == "sandbox bypass denied"
+        assert results[0]["stderr"] == "sandbox bypass denied"
         users = [record for record in records if record.get("type") == "user"]
         assert len(users) == 1
         assert users[0]["content"] == [{"type": "text", "text": prompt}]

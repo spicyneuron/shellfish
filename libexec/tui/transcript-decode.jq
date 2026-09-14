@@ -27,12 +27,19 @@ else
     $records[0].harness.tools as $tools |
     ["session_update", ($records[0] | {backend, harness, profile} | tojson)],
     ($records[1:][] |
-      if .type == "tool_call" then
-        ({record:.,tools:$tools} | render_tool_before_view) as $view |
-        ["tool_call", .id, $view.text, .name, ($view.identity_start | tostring)]
-      elif .type == "tool_result" then
+      if .type == "tool_result" then
+        ({record:.,tools:$tools} | render_tool_before_view) as $before |
         ({record:.,tools:$tools} | render_tool_after_view) as $view |
+        ["tool_call", .call_id, $before.text, .name,
+          ($before.identity_start | tostring)],
         ["tool_result", .call_id, $view.text, .name, ($view.identity_start | tostring)]
+      elif .type == "hook_result" then
+        ({record:.,runtime:$records[0]} | render_hook_after_view) as $view |
+        ["hook_result", .hook, .script, $view.text,
+          ($view.identity_start | tostring),
+          (if hook_model_visible and
+              (({runtime:$records[0],record:.} | render_hook_model) | length > 0)
+           then "1" else "0" end)]
       else {record:.,replay:true} | durable_display_fields end),
     ([$records[1:][] | select(canonical_assistant_message and has("usage"))] |
       last? | select(. != null) | .usage |

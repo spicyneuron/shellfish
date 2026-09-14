@@ -17,7 +17,7 @@ SF_TEST_RUNTIME=$(jq -cn --arg script "$start_script" --arg second "$start_secon
       environment:["CUSTOM_API_KEY"],env_file:$env_file,insecure_tls:false,http_timeout:1,http_stall:1},
     harness:{sandbox_read_paths:[],sandbox_write_paths:[],fence:"",tools:[],sandbox:false,max_requests_per_turn:1,
       max_tool_calls_per_request:1,max_capture_bytes:512,
-      session_start:([$script,$second] | map({command:.,display:"",environment:[]}))}
+      session_start:([$script,$second] | map({command:.,environment:[],render:{user_before:"",user_after:"",model_after:"${output.stdout}"}}))}
   }
 ')
 export OPENAI_API_KEY=standard-secret CUSTOM_API_KEY=custom-secret
@@ -29,9 +29,9 @@ sf_hooks_session_start "$start_session"
 jq -e -s '
   length == 3 and
   .[1] == {type:"hook_result",hook:"session_start",script:"start",
-    model_context:"startup",user_context:"local"} and
+    input:"",stdout:"startup",stderr:"local",exit_code:0} and
   .[2] == {type:"hook_result",hook:"session_start",script:"start_second",
-    model_context:"second"}
+    input:"",stdout:"second",stderr:"",exit_code:0}
 ' "$start_session" >/dev/null
 
 # Run session_start only for creation.
@@ -102,7 +102,7 @@ esac
 ZSH
 chmod +x "$permission_script"
 SF_TEST_RUNTIME=$(jq -c --arg script "$permission_script" '
-  .harness.permission_request=[{command:$script,display:"",environment:[]}] | del(.harness.session_start)
+  .harness.permission_request=[{command:$script,environment:[],render:{user_before:"",user_after:"",model_after:""}}] | del(.harness.session_start)
 ' <<<"$SF_TEST_RUNTIME")
 sf_test_session "$permission_session"
 sf_session_begin_turn "$permission_session"
@@ -112,7 +112,7 @@ print allow >"$SHELLFISH_TURN_STATE/decision"
 sf_hooks_permission_request "$permission_session" shell call_7 \
   '{"command":"true"}'
 [[ $reply[1] == allow && -z $reply[2] ]]
-(( $(wc -l <"$permission_session") == 1 ))
+(( $(wc -l <"$permission_session") == 2 ))
 print deny >"$SHELLFISH_TURN_STATE/decision"
 sf_hooks_permission_request "$permission_session" shell call_7 \
   '{"command":"true"}'
@@ -129,7 +129,8 @@ print state >"$SHELLFISH_TURN_STATE/decision"
 sf_hooks_permission_request "$permission_session" shell call_7 \
   '{"command":"true"}'
 [[ $reply[1] == defer && -z $reply[2] ]]
-jq -e -s '.[-1] == {type:"state",name:"permission/check",value:true}' \
+jq -e -s '.[-2] == {type:"state",name:"permission/check",value:true} and
+  .[-1].type == "hook_result"' \
   "$permission_session" >/dev/null
 print halt >"$SHELLFISH_TURN_STATE/decision"
 if sf_hooks_permission_request "$permission_session" shell call_7 \
@@ -156,7 +157,7 @@ typeset permission_chain_decide=$script
 typeset permission_runtime=$SF_TEST_RUNTIME
 SF_TEST_RUNTIME=$(jq -c \
   --arg skip "$permission_chain_skip" --arg decide "$permission_chain_decide" \
-  '.harness.permission_request=([$skip,$decide] | map({command:.,display:"",environment:[]}))' <<<"$SF_TEST_RUNTIME")
+  '.harness.permission_request=([$skip,$decide] | map({command:.,environment:[],render:{user_before:"",user_after:"",model_after:""}}))' <<<"$SF_TEST_RUNTIME")
 sf_test_session "$permission_chain_session"
 sf_session_begin_turn "$permission_chain_session"
 sf_hooks_turn_state_create
@@ -177,7 +178,7 @@ SF_TEST_RUNTIME=$permission_runtime
 make_script stop '[[ $# == 2 && $1 == stop && $2 == "$STOP_ATTEMPT" && "$(cat)" == "$STOP_INPUT" ]] || exit 1; print -rn -u2 -- local; [[ -z $STOP_STDOUT ]] || print -rn -- feedback; [[ -z $STOP_SKIP ]] || exit 10'
 typeset stop_script=$script
 SF_TEST_RUNTIME=$(jq -c --arg script "$stop_script" \
-  '.harness.stop=[{command:$script,display:"",environment:[]}]' <<<"$SF_TEST_RUNTIME")
+  '.harness.stop=[{command:$script,environment:[],render:{user_before:"",user_after:"",model_after:"${output.stdout}"}}]' <<<"$SF_TEST_RUNTIME")
 typeset stop_session="$tmp/stop-session.jsonl"
 sf_test_session "$stop_session"
 sf_session_begin_turn "$stop_session"
@@ -197,7 +198,7 @@ STOP_ATTEMPT=2 STOP_INPUT=hi STOP_SKIP=1 STOP_STDOUT=1 \
 [[ $reply[1] == continue ]]
 sf_session_reset
 jq -e -s '.[-1] == {type:"hook_result",hook:"stop",script:"stop",
-  model_context:"feedback",user_context:"local"}' \
+  input:"hi",stdout:"feedback",stderr:"local",exit_code:10}' \
   "$stop_session" >/dev/null
 
 sf_session_begin_turn "$stop_session"

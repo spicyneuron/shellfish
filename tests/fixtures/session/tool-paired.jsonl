@@ -1,9 +1,7 @@
 {"type":"session","format_version":1,"cwd":"/fixture","created":"2025-01-01T00:00:00Z","profile":{"request":{"model":"fake-model"}},"backend":{"name":"test","command":"/usr/bin/false","endpoint":"https://example.invalid","environment":[],"env_file":"","insecure_tls":false,"http_timeout":30,"http_stall":10},"harness":{"sandbox_read_paths":[],"sandbox_write_paths":[],"fence":"","tools":[],"sandbox":false,"max_requests_per_turn":8,"max_tool_calls_per_request":16,"max_capture_bytes":65536}}
 {"type":"user","content":[{"type":"text","text":"Use both tools"}]}
 {"type":"assistant","stop":"tool_calls","content":[],"usage":{"input_tokens":1,"output_tokens":1}}
-{"type":"tool_call","id":"call_1","name":"read_file","input":{"file_path":"README.md"}}
 {"type":"tool_result","call_id":"call_1","name":"read_file","input":{"file_path":"README.md"},"stdout":"contents\nsecond line","stderr":"","exit_code":0}
-{"type":"tool_call","id":"call_2","name":"shell","input":{"command":"make test"}}
 {"type":"tool_result","call_id":"call_2","name":"shell","input":{"command":"make test"},"stdout":"failed\u001b[31m","stderr":"","exit_code":1}
 {"type":"assistant","stop":"end","content":[{"type":"text","text":"Done"}],"usage":{"input_tokens":2,"output_tokens":1}}
-{"type":"hook_result","hook":"project","script":"test","model_context":"Use fixtures."}
+{"type":"hook_result","hook":"session_start","script":"test","input":"","stdout":"Use fixtures.","stderr":"","exit_code":0}

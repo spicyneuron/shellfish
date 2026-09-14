@@ -22,14 +22,14 @@ if print -r -- '{"type":"_assistant_start","unexpected":true}' |
   fail 'malformed backend request start was accepted'
 fi
 
-# Decode tool calls.
+# Decode tool activity.
 typeset order shell_runtime
 shell_runtime=$(jq -cn \
   --slurpfile shell "$ROOT/share/default/tools/shell/manifest.json" '
   {harness:{tools:[{name:"shell",manifest:$shell[0]}]}}
 ')
 order=$(print -r -- \
-    '{"type":"tool_call","id":"call_1","name":"shell","input":{"command":"true"}}' |
+    '{"type":"_tool_activity","call_id":"call_1","name":"shell","input":{"command":"true"}}' |
   jq -jRs -L "$ROOT" --argjson runtime "$shell_runtime" \
     -f "$ROOT/libexec/tui/event-decode.jq" |
   tr '\0' '\n' | sed '/^$/d' | paste -sd, -)
@@ -72,7 +72,7 @@ done
 # Reject malformed events.
 for invalid in '{"type":"turn_error","message":1}' \
     '{"type":"_assistant_message_delta","text":"missing index"}' \
-    '{"type":"_hook_activity","hook":"unknown","script":"check","text":"Working"}'; do
+    '{"type":"_hook_activity","hook":"unknown","script":"check","input":""}'; do
   if print -r -- "$invalid" |
       jq -jRs -L "$ROOT" --argjson runtime null \
         -f "$ROOT/libexec/tui/event-decode.jq" >/dev/null 2>&1; then
@@ -86,28 +86,36 @@ typeset read_runtime=$(jq -cn \
   {harness:{tools:[{name:"read_file",manifest:$read[0]}]}}
 ')
 order=$(print -r -- \
-    '{"type":"tool_call","id":"call_2","name":"read_file","input":{"file_path":"outside.txt","request_sandbox_bypass":true,"sandbox_bypass_reason":"test"}}' |
+    '{"type":"_tool_activity","call_id":"call_2","name":"read_file","input":{"file_path":"outside.txt","request_sandbox_bypass":true,"sandbox_bypass_reason":"test"}}' |
   jq -jRs -L "$ROOT" --argjson runtime "$read_runtime" \
     -f "$ROOT/libexec/tui/event-decode.jq" |
   tr '\0' '\n' | sed '/^$/d' | paste -sd, -)
 assert_equal 'tool_call,call_2,read_file · outside.txt,read_file,0,batch_ok' "$order"
 
-# Decode hook results.
+# Decode hook replacement views.
+typeset hook_runtime='{"harness":{"stop":[{"command":"/hooks/check/run","environment":[],"render":{"user_before":"${script} · ${input}","user_after":"${script} · ${output.stdout}${output.stderr} (${output.exit_code})","model_after":"${output.stdout}"}}]}}'
 order=$(print -r -- \
-    '{"type":"hook_result","hook":"user_prompt_submit","script":"hook name","prompt":"prompt","status":0,"model_context":"model body","user_context":"user body"}' |
-  jq -jRs -L "$ROOT" --argjson runtime null \
+    '{"type":"hook_result","hook":"stop","script":"check","input":"answer","stdout":"model body","stderr":"user body","exit_code":10}' |
+  jq -jRs -L "$ROOT" --argjson runtime "$hook_runtime" \
     -f "$ROOT/libexec/tui/event-decode.jq" |
   tr '\0' '\n' | sed '/^$/d' | paste -sd, -)
-assert_equal 'hook_result,hook name,user_prompt_submit · prompt · status 0,model body,user body,batch_ok' "$order"
+assert_equal 'hook_result,stop,check,check · model bodyuser body (10),0,1,batch_ok' "$order"
+
+# A stop hook that let the turn end contributes no model context.
+order=$(print -r -- \
+    '{"type":"hook_result","hook":"stop","script":"check","input":"answer","stdout":"model body","stderr":"user body","exit_code":0}' |
+  jq -jRs -L "$ROOT" --argjson runtime "$hook_runtime" \
+    -f "$ROOT/libexec/tui/event-decode.jq" |
+  tr '\0' '\n' | sed '/^$/d' | paste -sd, -)
+assert_equal 'hook_result,stop,check,check · model bodyuser body (0),0,0,batch_ok' "$order"
 
 # Decode hook activity.
-order=$(printf '%s\n' \
-    '{"type":"_hook_activity","hook":"stop","script":"check","text":"Checking"}' \
-    '{"type":"_hook_activity","text":""}' |
-  jq -jRs -L "$ROOT" --argjson runtime null \
+order=$(print -r -- \
+    '{"type":"_hook_activity","hook":"stop","script":"check","input":"answer"}' |
+  jq -jRs -L "$ROOT" --argjson runtime "$hook_runtime" \
     -f "$ROOT/libexec/tui/event-decode.jq" |
   tr '\0' '\n' | sed '/^$/d' | paste -sd, -)
-assert_equal 'hook_activity,stop,check,Checking,hook_activity,batch_ok' "$order"
+assert_equal 'hook_call,stop,check,check · answer,0,batch_ok' "$order"
 
 # Decode shell permissions.
 order=$(print -r -- \

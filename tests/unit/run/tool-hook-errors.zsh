@@ -26,8 +26,8 @@ cat >/dev/null
 ZSH
 chmod +x "$post_never"
 SF_TEST_RUNTIME=$(jq -c --arg pre "$pre_stdout" --arg post "$post_never" '
-  .harness.pre_tool_use=[{command:$pre,display:"",environment:[]}] |
-  .harness.post_tool_use=[{command:$post,display:"",environment:[]}]
+  .harness.pre_tool_use=[{command:$pre,environment:[],render:{user_before:"",user_after:"",model_after:"${output.stdout}"}}] |
+  .harness.post_tool_use=[{command:$post,environment:[],render:{user_before:"",user_after:"",model_after:"${output.stdout}"}}]
 ' <<<"$SF_TEST_RUNTIME")
 typeset pre_session="$tmp/pre-failure.jsonl"
 sf_test_session "$pre_session"
@@ -50,7 +50,7 @@ exit 10
 ZSH
 chmod +x "$post_skip"
 SF_TEST_RUNTIME=$(jq -c --arg hook "$post_skip" '
-  del(.harness.pre_tool_use) | .harness.post_tool_use=[{command:$hook,display:"",environment:[]}]
+  del(.harness.pre_tool_use) | .harness.post_tool_use=[{command:$hook,environment:[],render:{user_before:"",user_after:"",model_after:"${output.stdout}"}}]
 ' <<<"$SF_TEST_RUNTIME")
 typeset post_session="$tmp/post-failure.jsonl"
 sf_test_session "$post_session"

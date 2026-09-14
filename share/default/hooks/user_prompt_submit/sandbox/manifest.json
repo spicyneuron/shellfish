@@ -1,5 +1,12 @@
 {
-  "match": { "pattern": "^/sandbox( [^\\n]*)?\\z" },
+  "match": {
+    "pattern": "^/sandbox( [^\\n]*)?\\z"
+  },
+  "render": {
+    "user_before": "",
+    "user_after": "${script}\n${output.stdout}${output.stderr}",
+    "model_after": "${output.stdout}"
+  },
   "help": {
     "usage": "/sandbox [OP DIR]",
     "description": "List or update session sandbox grants"

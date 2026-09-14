@@ -42,51 +42,60 @@ view 79 20
 sf_tui_event activity_stop
 sf_tui_reset
 
-# Hook activity replaces standalone activity in place.
+# Hook results replace their live view and settle it.
 sf_tui_event activity_start
-sf_tui_event hook_activity session_start project Inspecting
-sf_tui_event hook_activity user_prompt_submit prompt Checking
-SF_PRESENT_STYLE[hook_activity]='fg=#111111'
+sf_tui_event hook_call session_start project $'project · Inspecting\nfiles' 0
+SF_PRESENT_STYLE[hook]='fg=#111111'
 SF_PRESENT_STYLE[activity]='fg=#222222'
 view 79 20
-assert_equal $'ℹ Checking\n⠃' "$REPLY"
+assert_equal $'ℹ project · Inspecting\n│ files\n╰ ⠃' "$REPLY"
 (( ${SF_PRESENT_VIEWPORT_HIGHLIGHTS[(Ie)fg=#111111]} )) ||
   fail 'hook notice did not retain its own style'
 (( ${SF_PRESENT_VIEWPORT_HIGHLIGHTS[(Ie)fg=#222222]} )) ||
   fail 'hook activity did not use the agent style'
-unset 'SF_PRESENT_STYLE[hook_activity]' 'SF_PRESENT_STYLE[activity]'
-assert_equal 0 "$SF_PRESENT_SAFE_ROWS"
-sf_tui_event hook_activity
+sf_tui_event hook_result session_start project $'project · Ready\nresult' 0
+view 79 20
+assert_equal $'ℹ project · Ready\n╰ result\n\n⠃' "$REPLY"
+assert_equal 2 "$SF_PRESENT_SAFE_ROWS"
+unset 'SF_PRESENT_STYLE[hook]' 'SF_PRESENT_STYLE[activity]'
+sf_tui_event activity_stop
+
+# An empty final view retracts its live predecessor.
+sf_tui_reset
+sf_tui_event activity_start
+sf_tui_event hook_call stop check 'check' 0
+sf_tui_event hook_result stop check '' -1
 view 79 20
 assert_equal '⠃' "$REPLY"
+assert_equal 0 "$SF_PRESENT_SAFE_ROWS"
 sf_tui_event activity_stop
 
-# Hook results append model context before user context.
-sf_tui_event activity_start
-sf_tui_event hook_activity user_prompt_submit prompt Running
-sf_tui_event hook_result prompt 'user_prompt_submit · git status · status 0' \
-  $'**branch**\nsecond line' $'local note\nnext'
+# Replayed results append already settled.
+sf_tui_reset
+sf_tui_event hook_result user_prompt_submit prompt $'prompt\nfirst\nsecond' 0
 view 79 20
-assert_equal $'↪ prompt · user_prompt_submit · git status · status 0\n  **branch**\n  second line\n\nℹ prompt · user_prompt_submit · git status · status 0\n  local note\n  next\n\n⠃' "$REPLY"
-assert_equal 7 "$SF_PRESENT_SAFE_ROWS"
-sf_tui_event activity_stop
+assert_equal $'ℹ prompt\n│ first\n╰ second' "$REPLY"
+assert_equal 3 "$SF_PRESENT_SAFE_ROWS"
 
-# Only model context uses the preview limit.
+# A hook that fed the model is marked as reference material and previewed.
 sf_tui_reset
 SF_PRESENT_PREVIEW_CONTEXT=1
-sf_tui_event hook_result hook test $'first\nsecond' $'third\nfourth'
+sf_tui_event hook_result session_start probe $'probe\nfirst\nsecond\nthird' 0 1
 view 79 20
-assert_equal $'↪ hook · test\n  first\n  … ~3 tokens\n\nℹ hook · test\n  third\n  fourth' "$REPLY"
-assert_equal 7 "$SF_PRESENT_SAFE_ROWS"
-SF_PRESENT_PREVIEW_CONTEXT=full
+assert_equal $'↪ probe\n│ first\n╰ … ~6 tokens' "$REPLY"
 
-# Zero previews collapse model context.
+# A hook that spoke only to the reader is a notice, shown whole.
+sf_tui_reset
+sf_tui_event hook_result stop check $'check\nfirst\nsecond\nthird' 0 0
+view 79 20
+assert_equal $'ℹ check\n│ first\n│ second\n╰ third' "$REPLY"
+
+# A zero budget keeps the identity row alone.
 sf_tui_reset
 SF_PRESENT_PREVIEW_CONTEXT=0
-sf_tui_event hook_result hook test $'first\nsecond' $'third\nfourth'
+sf_tui_event hook_result user_prompt_submit prompt $'prompt\nfirst\nsecond' 0 1
 view 79 20
-assert_equal $'↪ hook · test · ~3 tokens\n\nℹ hook · test\n  third\n  fourth' "$REPLY"
-assert_equal 5 "$SF_PRESENT_SAFE_ROWS"
+assert_equal $'↪ prompt\n╰ … ~5 tokens' "$REPLY"
 SF_PRESENT_PREVIEW_CONTEXT=full
 
 # Errors close the turn before the next numbered section.
@@ -102,16 +111,13 @@ sf_tui_event user retry
 view 79 20
 [[ $REPLY == *$'─ user '*$' 2 ─\n\nretry' ]] || fail "post-error section: $REPLY"
 
-# Partial commits preserve Markdown fence state.
+# Tall settled hooks can drain through a short terminal budget.
 sf_tui_reset
 sf_tui_terminal_reset
-SF_PRESENT_STYLE=( hook_model_context context 'syntax.string' string 'syntax.fence' fence )
-sf_tui_event hook_result hook test $'```sh\necho "alpha"\necho "beta"\necho "gamma"\n```'
+sf_tui_event hook_result stop check $'check\none\ntwo\nthree\nfour' 0
 sf_tui_transcript 20 4 || fail 'rendering a tall hook result failed'
 sf_tui_terminal_stage || fail 'staging a tall hook result failed'
 sf_tui_terminal_finish || fail 'committing a tall hook result failed'
 sf_tui_terminal_restore
 view 20 20
-[[ "${(j: :)SF_PRESENT_VIEWPORT_HIGHLIGHTS}" == *string* ]] ||
-  fail "partially committed hook context lost its fence state: $REPLY"
-SF_PRESENT_STYLE=()
+[[ $REPLY == *four ]] || fail "tall hook result did not drain: $REPLY"

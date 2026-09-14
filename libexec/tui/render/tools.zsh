@@ -56,10 +56,8 @@ sf_tui_tool_abandon() {
 }
 
 sf_tui_format_tool() {
-  integer index=$1 columns=$2 row limit live offset chrome identity_start
-  local body name stage text
-  local base_style=${SF_PRESENT_STYLE[tool]-} rail_style=${SF_PRESENT_STYLE[divider]-}
-  local -a projected=() spans=()
+  integer index=$1 columns=$2 live identity_start spinner
+  local body name stage
 
   sf_tui_format_start
   live=$(( SF_PRESENT_LIVE == index ))
@@ -71,39 +69,8 @@ sf_tui_format_tool() {
   stage=$REPLY
   sf_tui_formatter_data $index 4 || return 1
   identity_start=$REPLY
-  sf_tui_format_rule $index $columns
-  chrome=${#SF_FORMAT_ROWS}
-  SF_PRESENT_HIGHLIGHT_SPANS=()
-  offset=$(( identity_start - SF_FORMAT_TRIM_LEADING ))
-  if (( offset >= 0 && offset + ${#name} <= ${#body} )); then
-    SF_PRESENT_HIGHLIGHT_SPANS+=( $offset ${#name} bold )
-  fi
-  sf_tui_wrap $columns "$body" '│ ' "${(@)SF_PRESENT_HIGHLIGHT_SPANS}" || return 1
-  limit=${#SF_WRAP_ROWS}
-  for (( row = 1; row <= limit; row++ )); do
-    text=$SF_WRAP_ROWS[row]
-    if (( row == 1 )); then
-      text="⛭${text[2,-1]}"
-    elif (( ! live && row == limit )); then
-      text="╰${text[2,-1]}"
-    fi
-    projected=( ${=SF_WRAP_SPANS[row]} )
-    spans=()
-    [[ -z $base_style || -z $text ]] || spans+=( 0 ${#text} "$base_style" )
-    [[ -z $rail_style || $text != (│|╰)* ]] || spans+=( 0 1 "$rail_style" )
-    spans+=( "${(@)projected}" )
-    SF_FORMAT_ROWS+=( "$text" )
-    SF_FORMAT_SPANS+=( "${(j: :)spans}" )
-    SF_FORMAT_CONSUMED+=( $SF_WRAP_CONSUMED[row] )
-  done
-  if (( live )); then
-    if [[ $stage != permission ]]; then
-      sf_tui_format_styled $columns "╰ $SF_PRESENT_ACTIVITY" tool '' activity || return 1
-    fi
-  elif (( limit <= 1 )); then
-    sf_tui_format_styled $columns '╰' tool || return 1
-  fi
-  SF_FORMAT_LEADING=$(( ${#SF_FORMAT_ROWS} > chrome ? chrome + 1 : chrome ))
-  SF_FORMAT_BODY_ROWS=$limit
-  (( live )) || SF_FORMAT_SAFE=${#SF_FORMAT_ROWS}
+  spinner=$live
+  [[ $stage != permission ]] || spinner=0
+  sf_tui_format_execution $index $columns '⛭' tool "$name" $identity_start \
+    $live $spinner "$body"
 }

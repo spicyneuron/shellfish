@@ -53,6 +53,36 @@ const HEADER = {
         },
       },
     ],
+    session_start: [
+      {
+        command: "/hooks/session_start/probe/run",
+        render: {
+          user_before: "${script} · Inspecting",
+          user_after: "${script}\n${output.stdout}",
+          model_after: "${output.stdout}",
+        },
+      },
+    ],
+    user_prompt_submit: [
+      {
+        command: "/hooks/user_prompt_submit/compact/run",
+        render: {
+          user_before: "${script} · Compacting",
+          user_after: "${script}\n${output.stdout}",
+          model_after: "${output.stdout}",
+        },
+      },
+    ],
+    stop: [
+      {
+        command: "/hooks/stop/check/run",
+        render: {
+          user_before: "${script} · Checking",
+          user_after: "${script}\n${output.stderr}",
+          model_after: "${output.stdout}",
+        },
+      },
+    ],
   },
 };
 const ASSISTANT = {
@@ -103,7 +133,9 @@ class Element {
 
   remove() {
     if (!this.parent) return;
-    this.parent.children = this.parent.children.filter((child) => child !== this);
+    this.parent.children = this.parent.children.filter(
+      (child) => child !== this,
+    );
     this.parent = null;
   }
 
@@ -150,7 +182,9 @@ class Element {
 
 // find returns every element carrying a class, in document order.
 function find(node, className) {
-  return collect(node, (current) => current.className.split(" ").includes(className));
+  return collect(node, (current) =>
+    current.className.split(" ").includes(className),
+  );
 }
 
 function findTag(node, tag) {
@@ -175,8 +209,25 @@ function collect(node, matches) {
 function load(savedCode, initialSessionStatus = 200) {
   const body = new Element("body");
   const elements = new Map();
-  for (const id of ["output", "prompt", "code", "entry", "label", "model", "usage", "cancel", "detach"]) {
-    const tag = id === "prompt" ? "form" : id === "code" ? "input" : id === "entry" ? "textarea" : "div";
+  for (const id of [
+    "output",
+    "prompt",
+    "code",
+    "entry",
+    "label",
+    "model",
+    "usage",
+    "cancel",
+    "detach",
+  ]) {
+    const tag =
+      id === "prompt"
+        ? "form"
+        : id === "code"
+          ? "input"
+          : id === "entry"
+            ? "textarea"
+            : "div";
     const element = new Element(tag);
     element.value = "";
     elements.set(id, element);
@@ -188,7 +239,9 @@ function load(savedCode, initialSessionStatus = 200) {
   const opens = [];
   const copied = [];
   const timers = [];
-  const storage = new Map(savedCode === undefined ? [] : [["shellfish.access-code", savedCode]]);
+  const storage = new Map(
+    savedCode === undefined ? [] : [["shellfish.access-code", savedCode]],
+  );
   let reloads = 0;
   let queue = [];
   let waiting = [];
@@ -219,7 +272,8 @@ function load(savedCode, initialSessionStatus = 200) {
         body: sessionStatus === 200 ? { getReader: () => reader } : null,
       };
     }
-    const body = options.body === undefined ? undefined : JSON.parse(options.body);
+    const body =
+      options.body === undefined ? undefined : JSON.parse(options.body);
     posts.push({ path: target, body, authorization });
     return { ok: actionStatus < 400, status: actionStatus };
   };
@@ -291,7 +345,10 @@ function load(savedCode, initialSessionStatus = 200) {
     },
     async send(...frames) {
       for (const frame of frames) {
-        deliver({ done: false, value: encoder.encode("data: " + JSON.stringify(frame) + "\n\n") });
+        deliver({
+          done: false,
+          value: encoder.encode("data: " + JSON.stringify(frame) + "\n\n"),
+        });
       }
       await waitFor(
         () => queue.length === 0 && (waiting.length === 1 || timers.length > 0),
@@ -379,7 +436,11 @@ test("replays the durable session before live work", async () => {
       content: [{ type: "text", text: "welcome" }],
       usage: { input_tokens: 75, cached_tokens: 60, output_tokens: 5 },
     },
-    { type: "state", name: "agents/a1b2c3", value: { session: ".agent-a1b2c3.jsonl" } },
+    {
+      type: "state",
+      name: "agents/a1b2c3",
+      value: { session: ".agent-a1b2c3.jsonl" },
+    },
     { type: "_session_status", working: false },
   );
   assert.deepEqual(
@@ -388,7 +449,10 @@ test("replays the durable session before live work", async () => {
   );
   assert.equal(find(page.output, "user").length, 1);
   assert.equal(find(page.output, "user")[0].textContent, "**hello**");
-  assert.equal(findTag(find(page.output, "user")[0], "strong")[0].textContent, "**hello**");
+  assert.equal(
+    findTag(find(page.output, "user")[0], "strong")[0].textContent,
+    "**hello**",
+  );
   assert.equal(page.model.textContent, "test/test-model");
   assert.equal(page.usage.textContent, " · 75 ↑ 80% ⦿ 5 ↓ 38% of 200 ◔");
 });
@@ -474,7 +538,7 @@ test("copies the latest or selected derived section locally", async () => {
   await page.send(
     { type: "user", content: [{ type: "text", text: "\n  question\t\n" }] },
     { ...ASSISTANT, stop: "tool_calls", content: [] },
-    { type: "tool_call", id: "copy_call", name: "shell", input: {} },
+    { type: "_tool_activity", call_id: "copy_call", name: "shell", input: {} },
     {
       type: "tool_result",
       call_id: "copy_call",
@@ -495,46 +559,75 @@ test("copies the latest or selected derived section locally", async () => {
     { type: "_session_status", working: false },
   );
   assert.equal(find(page.output, "user")[0].textContent, "  question\t");
-  assert.equal(find(page.output, "assistant")[1].textContent, "\tanswercontinued");
+  assert.equal(
+    find(page.output, "assistant")[1].textContent,
+    "\tanswercontinued",
+  );
   page.submit("/copy 1");
-  await page.waitFor(() => page.copied.length === 1, "selected clipboard write");
+  await page.waitFor(
+    () => page.copied.length === 1,
+    "selected clipboard write",
+  );
   page.submit("/copy");
   await page.waitFor(() => page.copied.length === 2, "latest clipboard write");
-  assert.deepEqual(page.copied, ["\n  question\t\n", "\n\n\n\tanswer\n\ncontinued\n\n"]);
-  assert.equal(findTag(find(page.output, "note")[0], "h2")[0].textContent, "ℹCopied.");
+  assert.deepEqual(page.copied, [
+    "\n  question\t\n",
+    "\n\n\n\tanswer\n\ncontinued\n\n",
+  ]);
+  assert.equal(
+    findTag(find(page.output, "note")[0], "h2")[0].textContent,
+    "ℹCopied.",
+  );
   assert.equal(page.posts.length, 0);
 });
 
-test("labels hook context with its script, hook, and prompt", async () => {
+// The sigil marks whether the hook fed the model, not what is shown below it.
+test("marks a hook that fed the model", async () => {
   const page = await idle();
   await page.send({
     type: "hook_result",
     hook: "session_start",
-    script: "project_environment",
-    prompt: "  project\n context ",
-    status: 0,
-    model_context: "environment",
+    script: "probe",
+    input: "",
+    stdout: "environment",
+    stderr: "",
+    exit_code: 0,
   });
-  const summary = findTag(find(page.output, "context")[0], "summary")[0];
-  assert.equal(summary.textContent, "↪project_environment · session_start · project context");
+  const shown = findTag(find(page.output, "note")[0], "pre")[0];
+  assert.equal(shown.textContent, "↪ probe\nenvironment");
 });
 
-// Model context is reference material for the agent; user context is the script
-// speaking to the reader, so it stays out of the fold and follows it.
-test("shows hook user context after its model context", async () => {
+test("marks a hook that spoke only to the reader", async () => {
   const page = await idle();
   await page.send({
     type: "hook_result",
     hook: "stop",
-    script: "\u0001check",
-    model_context: "keep going",
-    user_context: "checked 3 files",
+    script: "check",
+    input: "",
+    stdout: "",
+    stderr: "checked 3 files",
+    exit_code: 0,
   });
-  assert.equal(find(page.output, "context").length, 1);
-  const shown = find(page.output, "note")[0];
-  assert.equal(page.output.children.indexOf(shown), 1);
-  assert.equal(findTag(shown, "h2")[0].textContent, "ℹ�check · stop");
-  assert.equal(findTag(shown, "pre")[0].textContent, "checked 3 files");
+  const shown = findTag(find(page.output, "note")[0], "pre")[0];
+  assert.deepEqual(
+    findTag(shown, "strong").map((node) => node.textContent),
+    ["check"],
+  );
+  assert.equal(shown.textContent, "ℹ check\nchecked 3 files");
+});
+
+test("a hook with no display template renders nothing", async () => {
+  const page = await idle();
+  await page.send({
+    type: "hook_result",
+    hook: "post_tool_use",
+    script: "unconfigured",
+    input: {},
+    stdout: "quiet",
+    stderr: "",
+    exit_code: 0,
+  });
+  assert.equal(find(page.output, "note").length, 0);
 });
 
 test("puts prompt context under a user heading", async () => {
@@ -544,8 +637,11 @@ test("puts prompt context under a user heading", async () => {
     {
       type: "hook_result",
       hook: "user_prompt_submit",
-      script: "add_context",
-      model_context: "injected",
+      script: "compact",
+      input: "prompt",
+      stdout: "injected",
+      stderr: "",
+      exit_code: 0,
     },
     { type: "user", content: [{ type: "text", text: "prompt" }] },
   );
@@ -565,14 +661,14 @@ test("renders complete live tool views like the terminal", async () => {
       content: [{ type: "reasoning", text: "thinking" }],
     },
     {
-      type: "tool_call",
-      id: "call_1",
+      type: "_tool_activity",
+      call_id: "call_1",
       name: "shell",
       input: { command: "if true; then pwd; fi" },
     },
     {
-      type: "tool_call",
-      id: "call_2",
+      type: "_tool_activity",
+      call_id: "call_2",
       name: "read_file",
       input: {
         file_path: "outside.txt",
@@ -581,8 +677,8 @@ test("renders complete live tool views like the terminal", async () => {
       },
     },
     {
-      type: "tool_call",
-      id: "call_3",
+      type: "_tool_activity",
+      call_id: "call_3",
       name: "unknown",
       input: {
         value: 1,
@@ -591,7 +687,10 @@ test("renders complete live tool views like the terminal", async () => {
       },
     },
   );
-  assert.equal(findTag(find(page.output, "reasoning")[0], "summary")[0].textContent, "✎Reasoning");
+  assert.equal(
+    findTag(find(page.output, "reasoning")[0], "summary")[0].textContent,
+    "✎Reasoning",
+  );
   const calls = find(page.output, "call");
   assert.equal(calls[0].textContent, "⛭ shell\nif true; then pwd; fi");
   assert.equal(findTag(calls[0], "strong")[0].textContent, "shell");
@@ -611,7 +710,7 @@ test("renders complete live tool views like the terminal", async () => {
   });
   assert.equal(
     calls[2].textContent,
-    '⛭ unknown\ntool is not allowed: unknown\nexit 127',
+    "⛭ unknown\ntool is not allowed: unknown\nexit 127",
   );
 });
 
@@ -671,7 +770,11 @@ test("ends a section on a durable turn error without numbering it", async () => 
     type: "user",
     content: [{ type: "text", text: "hello" }],
   };
-  await page.send(user, { type: "turn_error", message: "Turn interrupted." }, user);
+  await page.send(
+    user,
+    { type: "turn_error", message: "Turn interrupted." },
+    user,
+  );
   assert.deepEqual(
     find(page.output, "section").map((heading) => heading.textContent),
     ["user1", "user2"],
@@ -681,57 +784,68 @@ test("ends a section on a durable turn error without numbering it", async () => 
   assert.equal(findTag(shown, "pre").length, 0);
 });
 
-test("labels running hook activity with its script and hook", async () => {
+test("labels running hook activity from its template", async () => {
   const page = await idle();
   await page.send(
     { type: "_session_status", working: true },
-    { type: "_hook_activity", hook: "user_prompt_submit", script: "compact", text: "Compacting" },
+    {
+      type: "_hook_activity",
+      hook: "user_prompt_submit",
+      script: "compact",
+      input: "/compact",
+    },
   );
   let notes = find(page.output, "note");
   assert.equal(notes.length, 1);
-  assert.equal(findTag(notes[0], "h2")[0].textContent, "\u2139compact \u00b7 user_prompt_submit");
-  assert.equal(findTag(notes[0], "pre")[0].textContent, "Compacting");
+  assert.equal(
+    findTag(notes[0], "pre")[0].textContent,
+    "ℹ compact · Compacting",
+  );
   assert.equal(find(page.output, "activity").length, 1);
 
-  // A later label replaces the standing one instead of stacking beneath it.
+  // One hook runs at a time, so a later label replaces the standing one.
   await page.send({
-    type: "_hook_activity", hook: "user_prompt_submit", script: "compact",
-    text: "Compacting conversation\u2026",
+    type: "_hook_activity",
+    hook: "session_start",
+    script: "probe",
+    input: "",
   });
   notes = find(page.output, "note");
   assert.equal(notes.length, 1);
-  assert.equal(findTag(notes[0], "pre")[0].textContent, "Compacting conversation\u2026");
+  assert.equal(findTag(notes[0], "pre")[0].textContent, "ℹ probe · Inspecting");
 });
 
 test("replaces hook activity with its durable result", async () => {
   const page = await idle();
   await page.send(
-    { type: "_hook_activity", hook: "stop", script: "check", text: "Checking" },
-    { type: "hook_result", hook: "stop", script: "check", user_context: "checked 3 files" },
+    { type: "_hook_activity", hook: "stop", script: "check", input: "" },
+    {
+      type: "hook_result",
+      hook: "stop",
+      script: "check",
+      input: "",
+      stdout: "",
+      stderr: "checked 3 files",
+      exit_code: 0,
+    },
   );
+  // A stop hook that let the turn end speaks only to the reader.
   const notes = find(page.output, "note");
   assert.equal(notes.length, 1);
-  assert.equal(findTag(notes[0], "pre")[0].textContent, "checked 3 files");
-});
-
-test("clears hook activity that ends without a result", async () => {
-  const page = await idle();
-  await page.send({
-    type: "_hook_activity", hook: "session_start", script: "probe", text: "Inspecting",
-  });
-  assert.equal(find(page.output, "note").length, 1);
-
-  await page.send({ type: "_hook_activity", text: "" });
-  assert.equal(find(page.output, "note").length, 0);
+  assert.equal(
+    findTag(notes[0], "pre")[0].textContent,
+    "ℹ check\nchecked 3 files",
+  );
 });
 
 test("replaces standing hook activity with a process failure", async () => {
   const page = await idle();
   await page.send(
     { type: "_session_status", working: true },
-    { type: "_hook_activity", hook: "stop", script: "check", text: "Checking" },
+    { type: "_hook_activity", hook: "stop", script: "check", input: "" },
     {
-      type: "_session_status", working: false,
+      type: "_session_status",
+      working: false,
       error: "turn process failed: exit status 1: hook script failed",
     },
   );
@@ -748,7 +862,13 @@ test("preserves drafts from unsupported handoffs", async () => {
   const page = await idle();
   await page.send({
     type: "_handoff",
-    argv: ["shellfish", "--session", "/tmp/child.jsonl", "--draft", "first\nline"],
+    argv: [
+      "shellfish",
+      "--session",
+      "/tmp/child.jsonl",
+      "--draft",
+      "first\nline",
+    ],
   });
   assert.equal(page.entry.value, "first\nline");
   assert.equal(
@@ -757,7 +877,10 @@ test("preserves drafts from unsupported handoffs", async () => {
   );
 
   page.entry.value = "newer draft";
-  await page.send({ type: "_handoff", argv: ["shellfish", "--draft", "intercepted prompt"] });
+  await page.send({
+    type: "_handoff",
+    argv: ["shellfish", "--draft", "intercepted prompt"],
+  });
   assert.equal(page.entry.value, "newer draft");
   const notes = find(page.output, "note");
   assert.equal(findTag(notes[1], "h2")[0].textContent, "ℹHandoff draft");
@@ -768,7 +891,10 @@ test("preserves drafts from unsupported handoffs", async () => {
   );
 
   page.entry.value = "";
-  await page.send({ type: "_handoff", argv: ["shellfish", "--draft", "--draft"] });
+  await page.send({
+    type: "_handoff",
+    argv: ["shellfish", "--draft", "--draft"],
+  });
   assert.equal(page.entry.value, "--draft");
 });
 
@@ -780,8 +906,14 @@ test("splits a process failure into its outcome and detail", async () => {
     error: "turn process failed\nprovider request limit reached: 50",
   });
   const shown = find(page.output, "note").at(-1);
-  assert.equal(findTag(findTag(shown, "h2")[0], "strong")[0].textContent, "turn process failed");
-  assert.equal(findTag(shown, "pre")[0].textContent, "provider request limit reached: 50");
+  assert.equal(
+    findTag(findTag(shown, "h2")[0], "strong")[0].textContent,
+    "turn process failed",
+  );
+  assert.equal(
+    findTag(shown, "pre")[0].textContent,
+    "provider request limit reached: 50",
+  );
 });
 
 test("reopens the stream when it ends", async () => {
@@ -803,7 +935,13 @@ test("retries a refused connection", async () => {
 
 test("answers and removes permission prompts", async () => {
   for (const [decision, button, name, input, preview] of [
-    ["approve", 0, "shell", { command: "ls", request_sandbox_bypass: true }, "ls"],
+    [
+      "approve",
+      0,
+      "shell",
+      { command: "ls", request_sandbox_bypass: true },
+      "ls",
+    ],
     [
       "deny",
       1,
@@ -820,7 +958,7 @@ test("answers and removes permission prompts", async () => {
         stop: "tool_calls",
         content: [],
       },
-      { type: "tool_call", id: "call_1", name, input },
+      { type: "_tool_activity", call_id: "call_1", name, input },
       {
         type: "_tool_permission_request",
         id: "permission_1",
@@ -829,7 +967,10 @@ test("answers and removes permission prompts", async () => {
       },
     );
     const request = find(page.output, "permission")[0];
-    assert.match(request.textContent, new RegExp("Run " + name + " outside of sandbox\\?"));
+    assert.match(
+      request.textContent,
+      new RegExp("Run " + name + " outside of sandbox\\?"),
+    );
     assert.equal(find(request, "input")[0].textContent, preview);
     assert.match(request.textContent, /Reason: not allowed by policy/);
     assert.equal(find(request, "input")[0].tagName, "pre");
@@ -841,7 +982,11 @@ test("answers and removes permission prompts", async () => {
     assert.deepEqual(page.posts, [
       {
         path: "/permission",
-        body: { type: "_tool_permission_response", id: "permission_1", decision },
+        body: {
+          type: "_tool_permission_response",
+          id: "permission_1",
+          decision,
+        },
         authorization: "Bearer 123456",
       },
     ]);
@@ -860,8 +1005,8 @@ test("replaces a live tool view with its complete plain result", async () => {
   await page.send(
     { type: "assistant", stop: "tool_calls", content: [] },
     {
-      type: "tool_call",
-      id: "call_1",
+      type: "_tool_activity",
+      call_id: "call_1",
       name: "edit_file",
       input: { file_path: "notes.txt", old_string: "old", new_string: "new" },
     },
@@ -881,7 +1026,10 @@ test("replaces a live tool view with its complete plain result", async () => {
   });
   const call = find(page.output, "call")[0];
   assert.equal(call.tagName, "pre");
-  assert.equal(call.textContent, "⛭ edit_file · notes.txt\n@@ -1 +1 @@\n-old\n+new");
+  assert.equal(
+    call.textContent,
+    "⛭ edit_file · notes.txt\n@@ -1 +1 @@\n-old\n+new",
+  );
   assert.equal(findTag(call, "strong")[0].textContent, "edit_file");
   assert.equal(find(page.output, "note").length, 0);
   assert.equal(find(page.output, "activity").length, 1);
@@ -896,7 +1044,10 @@ test("serializes turn submissions", async () => {
   page.entry.value += "\nwith detail";
   page.entry.dispatch("keydown", { key: "Enter", shiftKey: false });
   await page.waitFor(() => page.posts.length === 1, "turn submission");
-  assert.deepEqual(page.posts.map((post) => post.path), ["/turn"]);
+  assert.deepEqual(
+    page.posts.map((post) => post.path),
+    ["/turn"],
+  );
   assert.deepEqual(page.posts[0].body, {
     type: "user",
     content: [{ type: "text", text: "do the thing\nwith detail" }],
@@ -923,7 +1074,10 @@ test("cancels an active turn", async () => {
   assert.equal(page.cancel.hidden, false);
   page.cancel.dispatch("click");
   await page.waitFor(() => page.posts.length === 2, "turn cancellation");
-  assert.deepEqual(page.posts.map((post) => post.path), ["/turn", "/cancel"]);
+  assert.deepEqual(
+    page.posts.map((post) => post.path),
+    ["/turn", "/cancel"],
+  );
   assert.equal(page.posts[1].body, undefined);
 
   await page.send({ type: "_session_status", working: false });
@@ -968,22 +1122,25 @@ test("styles markdown without hiding its source", async () => {
     ],
   });
   const text = find(page.output, "text")[0];
-  assert.equal(text.textContent, [
-    "## Heading",
-    "",
-    "A line with **bold**, *italic*, and `code`.",
-    "The user_prompt_submit hook keeps its underscores; _italic_ works.",
-    "",
-    "- first",
-    "- second",
-    "",
-    "> quoted",
-    "",
-    "```sh",
-    "# comment",
-    'echo "hello"',
-    "```",
-  ].join("\n"));
+  assert.equal(
+    text.textContent,
+    [
+      "## Heading",
+      "",
+      "A line with **bold**, *italic*, and `code`.",
+      "The user_prompt_submit hook keeps its underscores; _italic_ works.",
+      "",
+      "- first",
+      "- second",
+      "",
+      "> quoted",
+      "",
+      "```sh",
+      "# comment",
+      'echo "hello"',
+      "```",
+    ].join("\n"),
+  );
   assert.equal(findTag(text, "strong")[0].textContent, "## Heading");
   assert.equal(findTag(text, "strong")[0].className, "heading");
   assert.equal(findTag(text, "strong")[1].textContent, "**bold**");
@@ -994,7 +1151,10 @@ test("styles markdown without hiding its source", async () => {
   assert.equal(findTag(text, "code")[0].textContent, "`code`");
   assert.equal(find(text, "comment")[0].textContent, "# comment");
   assert.equal(find(text, "string")[0].textContent, '"hello"');
-  assert.deepEqual(find(text, "fence").map((node) => node.textContent), ["```sh", "```"]);
+  assert.deepEqual(
+    find(text, "fence").map((node) => node.textContent),
+    ["```sh", "```"],
+  );
 });
 
 test("leaves generated links inert", async () => {
@@ -1003,12 +1163,18 @@ test("leaves generated links inert", async () => {
     type: "assistant",
     stop: "end",
     content: [
-      { type: "text", text: "[docs](https://example.invalid) and [trap](javascript:steal())" },
+      {
+        type: "text",
+        text: "[docs](https://example.invalid) and [trap](javascript:steal())",
+      },
     ],
   });
   const text = find(page.output, "text")[0];
   assert.equal(findTag(text, "a").length, 0);
-  assert.equal(find(text, "link")[0].textContent, "[docs](https://example.invalid)");
+  assert.equal(
+    find(text, "link")[0].textContent,
+    "[docs](https://example.invalid)",
+  );
   assert.equal(
     text.textContent,
     "[docs](https://example.invalid) and [trap](javascript:steal())",
@@ -1035,11 +1201,19 @@ test("highlights representative language-family syntax", async () => {
   });
   const text = find(page.output, "text")[0];
   assert.equal(text.textContent, source);
-  assert.ok(find(text, "word").some((node) => node.textContent === "interface"));
+  assert.ok(
+    find(text, "word").some((node) => node.textContent === "interface"),
+  );
   assert.ok(find(text, "tag").some((node) => node.textContent === "child-key"));
   assert.ok(find(text, "number").some((node) => node.textContent === "12"));
-  assert.ok(find(text, "string").some((node) => node.textContent.includes("second line")));
-  assert.ok(find(text, "comment").some((node) => node.textContent === "# not: a key"));
+  assert.ok(
+    find(text, "string").some((node) =>
+      node.textContent.includes("second line"),
+    ),
+  );
+  assert.ok(
+    find(text, "comment").some((node) => node.textContent === "# not: a key"),
+  );
 });
 
 test("keeps HTML source readable and highlights quoted attributes", async () => {
@@ -1061,7 +1235,9 @@ test("keeps HTML source readable and highlights quoted attributes", async () => 
   assert.equal(text.textContent, source);
   assert.equal(findTag(text, "main").length, 0);
   assert.ok(find(text, "tag").some((node) => node.textContent === "<main"));
-  assert.ok(find(text, "string").some((node) => node.textContent === '"a > b"'));
+  assert.ok(
+    find(text, "string").some((node) => node.textContent === '"a > b"'),
+  );
 });
 
 test("leaves unknown fenced languages readable", async () => {
@@ -1071,7 +1247,10 @@ test("leaves unknown fenced languages readable", async () => {
     stop: "end",
     content: [{ type: "text", text: "```constructor\nstill here\n```" }],
   });
-  assert.equal(find(page.output, "text")[0].textContent, "```constructor\nstill here\n```");
+  assert.equal(
+    find(page.output, "text")[0].textContent,
+    "```constructor\nstill here\n```",
+  );
 });
 
 test("reopens the stream on an unexpected frame", async () => {

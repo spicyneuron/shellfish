@@ -64,11 +64,6 @@ def durable_display_fields:
         end),
       ["assistant_end"]
     else empty end
-  elif .type == "hook_result" then
-    ([.hook, .prompt?,
-      (if has("status") then "status " + (.status | tostring) else null end)] |
-      display_summary) as $meta |
-    ["hook_result", .script, $meta, (.model_context // ""), (.user_context // "")]
   else
     empty
   end;

@@ -65,7 +65,6 @@ sf_resume_load() {
       elif .type == "assistant" then
         (([.content[]? |
           if .type == "text" then .text
-          elif .type == "tool_call" then .name
           else empty end] | last) // "AGENT")
       elif .type == "tool_result" then
         (.name + (if .exit_code == 0 then "" else

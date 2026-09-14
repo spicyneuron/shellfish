@@ -114,7 +114,7 @@ sf_tui_decoded() {
   local encoded preview reason
   # Before creation, accept only creation-stream events.
   [[ -n $SF_PRESENT_SESSION ||
-      $type == (hook_activity|hook_result|error|session_created) ]] ||
+      $type == (hook_call|hook_result|error|session_created) ]] ||
     return 1
   case $type in
       session_created)
@@ -124,7 +124,7 @@ sf_tui_decoded() {
         ;;
       assistant_start|assistant_message_delta|assistant_reasoning_delta| \
       assistant_reasoning_opaque|assistant_tool_call_delta|assistant_end| \
-      tool_call|tool_result|hook_activity|hook_result)
+      tool_call|tool_result|hook_call|hook_result)
         sf_tui_event "$type" "$first" "$second" "$third" "$fourth" "$fifth" "$sixth" || return 1
         ;;
       turn_usage)

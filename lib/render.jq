@@ -102,3 +102,44 @@ def render_tool_permission:
   {template:$template,script:$call.name,
     input:($call.input | del(.request_sandbox_bypass, .sandbox_bypass_reason)),
     output:null} | render_script;
+def default_hook_templates:
+  if .hook == "permission_request" then
+    {user_before:"",user_after:"",model_after:""}
+  else
+    {user_before:"",user_after:"",model_after:"${output.stdout}"}
+  end;
+
+def render_hook_templates:
+  . as $render |
+  ([$render.hooks[$render.hook][]? |
+    select((.command | split("/") |
+      if .[-1] == "run" then .[-2] else .[-1] end) == $render.script) |
+    .render][0] // ($render | default_hook_templates));
+
+def render_hook_before_spec:
+  .runtime as $runtime |
+  .record as $activity |
+  ({hooks:$runtime.harness,hook:$activity.hook,script:$activity.script} |
+    render_hook_templates | .user_before) as $template |
+  {template:$template,script:$activity.script,input:$activity.input,output:null};
+
+def render_hook_before_view:
+  render_hook_before_spec | render_script_view;
+
+def render_hook_after_spec:
+  .runtime as $runtime |
+  .record as $result |
+  ({hooks:$runtime.harness,hook:$result.hook,script:$result.script} |
+    render_hook_templates | .user_after) as $template |
+  {template:$template,script:$result.script,input:$result.input,output:$result};
+
+def render_hook_after_view:
+  render_hook_after_spec | render_script_view;
+
+def render_hook_model:
+  .runtime as $runtime |
+  .record as $result |
+  ({hooks:$runtime.harness,hook:$result.hook,script:$result.script} |
+    render_hook_templates | .model_after) as $template |
+  {template:$template,script:$result.script,input:$result.input,output:$result} |
+  render_script;

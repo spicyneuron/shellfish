@@ -258,7 +258,7 @@ for code in 0 9; do
   SF_PRESENT_SESSION=''
   SF_PRESENT_STATE=working
   SF_PRESENT_QUEUE=()
-  sf_tui_event hook_activity session_start hook working
+  sf_tui_event hook_call session_start hook working 0
   SF_TUI_TRANSPORT_EOF=1
   SF_TUI_TRANSPORT_EXIT_STATUS=$code
   SF_TUI_TRANSPORT_EXIT_DETAIL='startup failure'

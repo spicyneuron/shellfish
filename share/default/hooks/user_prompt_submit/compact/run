@@ -92,7 +92,8 @@ if ! jq -ce -s --rawfile context "$context" --arg created "$created" '
     ($records[0:$start] | .[0].created = $created) as $startup |
     ($startup[] | select(.type != "state")),
     ($records[] | select(.type == "state")),
-    {type:"hook_result",hook:"compact",script:"compact",model_context:$context}
+    {type:"hook_result",hook:"session_start",script:"compact",input:"",
+      stdout:$context,stderr:"",exit_code:0}
   ' "$SHELLFISH_SESSION" >"$transcript"; then
   fail_compaction 'cannot create compacted session; keeping the original'
   exit $?

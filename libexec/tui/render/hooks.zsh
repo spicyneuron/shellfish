@@ -24,59 +24,62 @@ sf_tui_activity_retract() {
   sf_tui_formatter_retract
 }
 
-sf_tui_hook_activity() {
-  local text=${3-}
-  integer index=${#SF_PRESENT_KIND}
-  if [[ -z $text ]]; then
-    (( SF_PRESENT_LIVE == index && index > 0 )) || return 0
-    [[ $SF_PRESENT_KIND[index] == hook_activity ]] || return 0
-    sf_tui_formatter_retract || return 1
-    sf_tui_activity_resume
-    return
-  fi
-  sf_tui_safe "$text"
-  text=$REPLY
-  if (( SF_PRESENT_LIVE == index && index > 0 )) &&
-      [[ $SF_PRESENT_KIND[index] == hook_activity ]]; then
-    SF_PRESENT_TEXT[index]=$text
-    return
-  fi
-  sf_tui_hook_interrupt || return 1
-  sf_tui_formatter_append hook_activity live || return 1
-  index=$REPLY
-  SF_PRESENT_TEXT[index]=$text
-}
-
 sf_tui_hook_interrupt() {
   integer index=${#SF_PRESENT_KIND}
   (( SF_PRESENT_LIVE )) || return 0
   (( SF_PRESENT_LIVE == index )) || return 1
   case $SF_PRESENT_KIND[index] in
-    activity|hook_activity) sf_tui_formatter_retract ;;
+    activity) sf_tui_formatter_retract ;;
     message|reasoning) sf_tui_assistant_close ;;
     *) return 1 ;;
   esac
 }
 
-sf_tui_hook_result() {
-  local script=$1 meta=$2 model=${3-} user=${4-}
+sf_tui_hook_pending() {
+  integer index=${#SF_PRESENT_KIND}
+  (( SF_PRESENT_LIVE == index && index > 0 )) &&
+    [[ $SF_PRESENT_KIND[index] == hook ]]
+}
+
+sf_tui_hook_append() {
+  local fed_model=$1 hook=$2 script=$3 content=$4 identity_start=$5 live=${6-}
+  integer index
+  sf_tui_safe "$content"
+  content=$REPLY
+  sf_tui_safe "$script"
+  script=$REPLY
+  sf_tui_formatter_append hook $live || return 1
+  index=$REPLY
+  SF_PRESENT_TEXT[index]=$content
+  sf_tui_formatter_set_data $index "$hook" "$script" "$identity_start" "$fed_model"
+}
+
+# A running hook has produced no output yet, so it never carries model context.
+sf_tui_hook_call() {
   sf_tui_hook_interrupt || return 1
-  [[ -z $model ]] || sf_tui_hook_append hook_model_context "$script" "$meta" "$model" ||
-    return 1
-  [[ -z $user ]] || sf_tui_hook_append hook_user_context "$script" "$meta" "$user" ||
+  sf_tui_hook_append 0 "$1" "$2" "${3-}" "${4:--1}" live
+}
+
+sf_tui_hook_result() {
+  local hook=$1 script=$2 content=${3-} identity_start=${4:--1} fed_model=${5:-0}
+  local expected
+  if sf_tui_hook_pending; then
+    sf_tui_formatter_data ${#SF_PRESENT_KIND} 1 || return 1
+    expected=$REPLY
+    [[ $hook == "$expected" ]] || return 1
+    sf_tui_formatter_retract || return 1
+  else
+    sf_tui_hook_interrupt || return 1
+  fi
+  [[ -z $content ]] ||
+    sf_tui_hook_append "$fed_model" "$hook" "$script" "$content" "$identity_start" ||
     return 1
   sf_tui_activity_resume
 }
 
-sf_tui_hook_append() {
-  local kind=$1 script=$2 meta=$3 text=$4
-  integer index
-  sf_tui_safe "$text"
-  text=$REPLY
-  sf_tui_formatter_append "$kind" || return 1
-  index=$REPLY
-  SF_PRESENT_TEXT[index]=$text
-  sf_tui_formatter_set_data $index "$script" "$meta" ${#text}
+sf_tui_hook_abandon() {
+  sf_tui_hook_pending || return 0
+  sf_tui_formatter_settle
 }
 
 sf_tui_error_append() {
@@ -96,75 +99,57 @@ sf_tui_error_append() {
 }
 
 sf_tui_format_hook() {
-  integer index=$1 columns=$2 visible hidden=0
+  integer index=$1 columns=$2 live identity_start
   local kind=$SF_PRESENT_KIND[index] body=$SF_PRESENT_TEXT[index]
-  local first second head preview=full configured=full clamp total
+  local first head script glyph preview
 
   sf_tui_format_start
 
   sf_tui_formatter_data $index 1 || return 1
   first=$REPLY
-  sf_tui_formatter_data $index 2 || return 1
-  second=$REPLY
-
   case $kind in
     activity)
       sf_tui_format_at_start || sf_tui_format_blank
       sf_tui_format_styled $columns "$SF_PRESENT_ACTIVITY" activity || return 1
       return
       ;;
-    hook_activity)
-      sf_tui_format_at_start || sf_tui_format_blank
-      sf_tui_format_head $columns "ℹ $body" hook_activity 2 $(( 2 + ${#body} )) || return 1
-      sf_tui_format_styled $columns "$SF_PRESENT_ACTIVITY" hook_activity '' activity || return 1
-      return
-      ;;
-    hook_model_context) head="↪ $first${second:+ · $second}" ;;
-    hook_user_context) head="ℹ $first${second:+ · $second}" ;;
     error)
       head="✕ $first"
+      ;;
+    hook)
+      live=$(( SF_PRESENT_LIVE == index ))
+      sf_tui_format_trim "$body"
+      body=$REPLY
+      sf_tui_formatter_data $index 2 || return 1
+      script=$REPLY
+      sf_tui_formatter_data $index 3 || return 1
+      identity_start=$REPLY
+      sf_tui_formatter_data $index 4 || return 1
+      # Only a hook that fed the model is reference material worth previewing.
+      if [[ $REPLY == 1 ]]; then
+        glyph='↪'
+        preview=$SF_PRESENT_PREVIEW_CONTEXT
+      else
+        glyph='ℹ'
+        preview=full
+      fi
+      sf_tui_format_execution $index $columns "$glyph" hook "$script" \
+        $identity_start $live $live "$body" "$preview"
+      return
       ;;
     *) return 1 ;;
   esac
 
   sf_tui_format_trim "$body"
   body=$REPLY
-  if [[ $kind == (hook_model_context|hook_user_context) ]]; then
-    if [[ $kind == hook_model_context ]]; then
-      configured=$SF_PRESENT_PREVIEW_CONTEXT
-      preview=$configured
-    fi
-    sf_tui_formatter_data $index 3 || return 1
-    total=$REPLY
-  fi
   sf_tui_format_at_start || sf_tui_format_blank
-  if [[ $configured == 0 && -n $body ]]; then
-    sf_tui_token_count "$total"
-    clamp=" · ~$REPLY tokens"
-    sf_tui_format_head $columns "$head$clamp" "$kind" 2 \
-      $(( 2 + ${#first} )) ${#head} || return 1
-    body=''
-  else
-    sf_tui_format_head $columns "$head" "$kind" 2 $(( 2 + ${#first} )) || return 1
-  fi
+  sf_tui_format_head $columns "$head" "$kind" 2 $(( 2 + ${#first} )) || return 1
   SF_FORMAT_LEADING=${#SF_FORMAT_ROWS}
   if [[ -n $body ]]; then
     SF_PRESENT_HIGHLIGHT_SPANS=()
-    if [[ $kind == hook_model_context ]]; then
-      sf_tui_markdown_highlight "$body"
-    fi
     sf_tui_wrap $columns "$body" '  ' "${(@)SF_PRESENT_HIGHLIGHT_SPANS}" || return 1
-    visible=${#SF_WRAP_ROWS}
-    if [[ $preview != full ]] && (( visible > preview )); then
-      visible=$preview
-      hidden=1
-    fi
-    sf_tui_format_body $visible "$kind"
+    sf_tui_format_body ${#SF_WRAP_ROWS} "$kind"
     sf_tui_format_edges $(( SF_FORMAT_LEADING + 1 )) ${#body}
-    if (( hidden )); then
-      sf_tui_token_count "$total"
-      sf_tui_format_styled $columns "  … ~$REPLY tokens" "$kind" clamp || return 1
-    fi
   fi
   SF_FORMAT_SAFE=${#SF_FORMAT_ROWS}
 }

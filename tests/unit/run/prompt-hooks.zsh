@@ -51,7 +51,7 @@ esac
 ZSH
 chmod +x "$prompt_script"
 SF_TEST_RUNTIME=$(jq -c --arg script "$prompt_script" \
-  '.harness.user_prompt_submit=[{command:$script,display:"",environment:[]}]' <<<"$SF_TEST_RUNTIME")
+  '.harness.user_prompt_submit=[{command:$script,environment:[],render:{user_before:"",user_after:"",model_after:"${output.stdout}"}}]' <<<"$SF_TEST_RUNTIME")
 
 # Accepted prompts persist hook context.
 typeset prompt_session="$tmp/prompt.jsonl"
@@ -59,10 +59,10 @@ sf_test_session "$prompt_session"
 stream=$(sf_test_turn accepted "$prompt_session")
 print -r -- "$stream" | jq -eRn '
   [inputs | fromjson] as $events |
-  ($events | any(.type | startswith("_hook_")) | not) and
+  ($events | map(select(.type == "_hook_activity")) | length) == 1 and
   ($events | map(select(.type == "state" or .type == "hook_result" or .type == "user")) |
     map(.type)) == ["state","hook_result","user"] and
-  ($events | map(select(.type == "hook_result")))[0].model_context == "accepted context" and
+  ($events | map(select(.type == "hook_result")))[0].stdout == "accepted context" and
   ($events | map(select(.type == "user")))[0].content[0].text == "accepted" and
   ($events | map(select(.type == "_assistant_start")) | length) == 1
 ' >/dev/null
@@ -75,7 +75,7 @@ print -r -- "$stream" | jq -eRn '
   [inputs | fromjson] as $events |
   ($events | map(select(.type == "hook_result")))[0] ==
     {type:"hook_result",hook:"user_prompt_submit",script:"prompt-hook",
-      model_context:"declined context",user_context:"declined display\n"} and
+      input:"/decline",stdout:"declined context",stderr:"declined display\n",exit_code:10} and
   ($events | any(.type == "_assistant_start") | not) and
   ($events | any(.type == "user") | not)
 ' >/dev/null
@@ -105,21 +105,27 @@ print -r -- "$stream" | jq -eRn '
 jq -e -s '
   .[0].harness.sandbox_write_paths == ["/tmp/reference"] and
   .[1] == {type:"hook_result",hook:"user_prompt_submit",script:"prompt-hook",
-    model_context:"update context"}
+    input:"/update",stdout:"update context",stderr:"",exit_code:11}
 ' "$update_session" >/dev/null
 
 # JSONL hook failures use stderr.
 typeset failure_session="$tmp/prompt-failure.jsonl" failure_error="$tmp/prompt-failure.stderr"
 sf_test_session "$failure_session"
 stream=$(sf_test_turn /fail "$failure_session" 2>"$failure_error")
-[[ -z $stream ]] || fail 'prompt hook failure emitted JSONL'
+print -r -- "$stream" | jq -eRn '
+  [inputs | fromjson] == [{type:"_hook_activity",hook:"user_prompt_submit",
+    script:"prompt-hook",input:"/fail"}]
+' >/dev/null
 [[ $(<"$failure_error") == *'prompt-hook'* ]] || fail 'prompt hook failure omitted stderr diagnostic'
 
 # Hook output respects capture limits.
 typeset overflow_session="$tmp/prompt-overflow.jsonl" overflow_error="$tmp/prompt-overflow.stderr"
 sf_test_session "$overflow_session"
 stream=$(sf_test_turn /overflow "$overflow_session" 2>"$overflow_error")
-[[ -z $stream ]] || fail 'prompt hook overflow emitted JSONL'
+print -r -- "$stream" | jq -eRn '
+  [inputs | fromjson] == [{type:"_hook_activity",hook:"user_prompt_submit",
+    script:"prompt-hook",input:"/overflow"}]
+' >/dev/null
 [[ $(<"$overflow_error") == *'hook script output exceeds capture limit'* ]] ||
   fail 'prompt hook overflow omitted stderr diagnostic'
 
@@ -128,7 +134,7 @@ typeset cancel_session="$tmp/prompt-cancel.jsonl"
 typeset cancel_stream="$tmp/prompt-cancel.stream" cancel_error="$tmp/prompt-cancel.stderr"
 export PROMPT_MARKER="$tmp/prompt-active"
 export PROMPT_EXIT_MARKER="$tmp/prompt-exit"
-SF_TEST_RUNTIME=$(jq -c '.harness.user_prompt_submit[0].display="Working…"' \
+SF_TEST_RUNTIME=$(jq -c '.harness.user_prompt_submit[0].render.user_before="Working…"' \
   <<<"$SF_TEST_RUNTIME")
 sf_test_session "$cancel_session"
 integer records=$(wc -l <"$cancel_session")
@@ -141,14 +147,14 @@ while (( waited++ < 50 )) && [[ ! -e $PROMPT_MARKER ]]; do
 done
 (( waited <= 50 )) || fail 'user_prompt_submit hook script did not start'
 waited=0
-while (( waited++ < 50 )) && ! jq -se 'any(.text == "Working…")' \
+while (( waited++ < 50 )) && ! jq -se 'any(.type == "_hook_activity" and .input == "/slow")' \
     "$cancel_stream" >/dev/null 2>&1; do
   sleep 0.1
 done
 (( waited <= 50 )) || fail 'user_prompt_submit display was not announced'
 jq -eRn '
   [inputs | fromjson] == [{type:"_hook_activity",hook:"user_prompt_submit",
-    script:"prompt-hook",text:"Working…"}]
+    script:"prompt-hook",input:"/slow"}]
 ' <"$cancel_stream" >/dev/null
 kill -TERM "$pid"
 wait "$pid" || cancel_status=$?

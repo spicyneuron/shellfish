@@ -1,51 +1,32 @@
-include "lib/render";
-
-def xml_escape:
-  gsub("&"; "&amp;") | gsub("<"; "&lt;") | gsub(">"; "&gt;") |
-  gsub("\""; "&quot;");
-
-# Constrained tags and XML escaping prevent forged context blocks.
-def context_item:
-  "<context script=\"" + (.script | xml_escape) + "\"" +
-  (if has("prompt") then " prompt=\"" + (.prompt | xml_escape) + "\"" else "" end) +
-  (if has("status") then " status=\"" + (.status | tostring) + "\"" else "" end) +
-  ">\n" + (.model_context | xml_escape) + "\n</context>";
-
-def context_groups:
-  reduce .[] as $record ([];
-    if length > 0 and .[-1][0].hook == $record.hook then
-      .[-1] += [$record]
-    else . += [[$record]] end);
-
-def context_group:
-  .[0].hook as $hook |
-  "<hook name=\"" + $hook + "\">\n" + ([.[] | context_item] | join("\n\n")) +
-  "\n</hook>";
-
 def context_message($context; $request):
-  ([$context | context_groups[] | context_group] | join("\n\n")) as $blocks |
+  ([$context[].model_context | select(length > 0)] | join("\n\n")) as $blocks |
   {type:"user", content:[{type:"text", text:($blocks + "\n\n" + $request)}]};
 
 def request_messages:
-  reduce .[] as $record ({messages:[], context:[]};
+  reduce .[] as $record ({messages:[], context:[], pending:null};
     if $record.type == "state" then .
-    elif $record.type == "tool_call" then .messages += [$record]
     elif $record.type == "hook_result" then
-      if $record.model_context? != null then .context += [$record] else . end
+      if ($record.model_context? // "") != "" then .context += [$record] else . end
     elif $record.type == "user" then
+      .pending = null |
       if (.context | length) == 0 then .messages += [$record]
       else
         ([$record.content[] | select(.type == "text") | .text] | join("")) as $request |
         .messages += [context_message(.context; $request)] |
         .context = []
       end
-    elif $record.type == "assistant" or $record.type == "tool_result" then
-      # Tool results must stay paired with their assistant message.
-      if $record.type == "assistant" and (.context | length) > 0 then
-        .messages += [context_message(.context; ""), ($record | del(.usage))] |
-        .context = []
-      else .messages += [$record |
-        if .type == "assistant" then del(.usage) else . end] end
+    elif $record.type == "assistant" then
+      if (.context | length) > 0 then
+        .messages += [context_message(.context; "")] | .context = []
+      else . end |
+      if $record.stop == "tool_calls" then .pending = ($record | del(.usage))
+      else .pending = null | .messages += [$record | del(.usage)] end
+    elif $record.type == "tool_result" then
+      if .pending != null then .messages += [.pending] | .pending = null else . end |
+      .messages += [
+        {type:"tool_call",id:$record.call_id,name:$record.name,input:$record.input},
+        $record
+      ]
     elif ($record.type | IN("system", "session", "turn_error")) then .
     else error("unrecognized session record: " + ($record.type | tostring)) end
   ) as $conversation |

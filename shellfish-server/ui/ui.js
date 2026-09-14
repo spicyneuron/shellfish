@@ -50,8 +50,9 @@ let sectionChunks = [];
 const calls = new Map();
 // The note standing in for a running hook, or null.
 let hookActivity = null;
-// Each tool's render templates from the session header, by tool name.
+// Render templates from the session header.
 const toolTemplatesByName = new Map();
+const hookTemplatesByName = new Map();
 const DEFAULT_TOOL_TEMPLATES = {
   render: {
     user_before: "${script}\n${input}",
@@ -59,6 +60,13 @@ const DEFAULT_TOOL_TEMPLATES = {
     model_after: "${output.stdout}${output.stderr}\nexit ${output.exit_code}",
   },
   permission_preview: "${input}",
+};
+// Defaults cover hooks a session no longer configures. Permission hooks are
+// never model-facing, so one form serves every hook.
+const DEFAULT_HOOK_TEMPLATES = {
+  user_before: "",
+  user_after: "",
+  model_after: "${output.stdout}",
 };
 
 // -------------------------------------------------------------------- the DOM
@@ -78,7 +86,9 @@ function trimBoundaryNewlines(text) {
 }
 
 function displayTextChunks(parts) {
-  const chunks = parts.map((part) => part.type === "text" ? String(part.text ?? "") : null);
+  const chunks = parts.map((part) =>
+    part.type === "text" ? String(part.text ?? "") : null,
+  );
   let first = 0;
   while (first < chunks.length) {
     if (chunks[first] === null) {
@@ -114,7 +124,8 @@ function el(parent, tag, className, text) {
 // there, without moving one who has scrolled away.
 function place(node) {
   const pinned =
-    output.scrollHeight - output.scrollTop - output.clientHeight < FOLLOW_DISTANCE;
+    output.scrollHeight - output.scrollTop - output.clientHeight <
+    FOLLOW_DISTANCE;
   if (!node.isConnected) output.append(node);
   if (pinned) output.scrollTop = output.scrollHeight;
 }
@@ -179,7 +190,7 @@ function hideIndicator() {
 
 // A hook's running label lasts only as long as the hook does.
 function clearHookActivity() {
-  if (hookActivity) hookActivity.remove();
+  if (hookActivity) hookActivity.article.remove();
   hookActivity = null;
 }
 
@@ -257,6 +268,21 @@ function renderValue(value) {
   return typeof value === "string" ? value : JSON.stringify(value);
 }
 
+function hookTemplates(hook, script) {
+  return (
+    hookTemplatesByName.get(hook + "\0" + script) || DEFAULT_HOOK_TEMPLATES
+  );
+}
+
+// Mirrors hook_model_visible: which results a turn feeds back to the model.
+function hookModelVisible(frame) {
+  return (
+    (frame.hook === "session_start" && frame.exit_code === 0) ||
+    frame.hook === "user_prompt_submit" ||
+    (frame.hook === "stop" && frame.exit_code !== 0)
+  );
+}
+
 // -------------------------------------------------------------------- markdown
 
 const FENCE = /^ {0,3}(```+|~~~+)[ \t]*(\S*)/;
@@ -274,9 +300,13 @@ function markdown(parent, text) {
     const fence = FENCE.exec(line);
     if (fence) {
       markup(parent, line, "fence");
-      if (index < lines.length - 1) parent.append(document.createTextNode("\n"));
+      if (index < lines.length - 1)
+        parent.append(document.createTextNode("\n"));
       const code = [];
-      while (++index < lines.length && !lines[index].trimStart().startsWith(fence[1])) {
+      while (
+        ++index < lines.length &&
+        !lines[index].trimStart().startsWith(fence[1])
+      ) {
         code.push(lines[index]);
       }
       highlight(parent, code.join("\n"), fence[2]);
@@ -284,13 +314,16 @@ function markdown(parent, text) {
         parent.append(document.createTextNode("\n"));
         markup(parent, lines[index], "fence");
       }
-      if (index < lines.length - 1) parent.append(document.createTextNode("\n"));
+      if (index < lines.length - 1)
+        parent.append(document.createTextNode("\n"));
       continue;
     }
     const leader = LEADER.exec(line);
     if (leader) {
       parent.append(document.createTextNode(leader[1]));
-      const content = leader[2].startsWith("#") ? el(parent, "strong", "heading") : parent;
+      const content = leader[2].startsWith("#")
+        ? el(parent, "strong", "heading")
+        : parent;
       markup(content, leader[2] + leader[3]);
       inline(content, leader[4]);
     } else {
@@ -305,8 +338,9 @@ function markup(parent, text, kind) {
 }
 
 function inline(parent, text) {
-  for (let match; (match = INLINE.exec(text)); ) {
-    if (match.index) parent.append(document.createTextNode(text.slice(0, match.index)));
+  for (let match; (match = INLINE.exec(text));) {
+    if (match.index)
+      parent.append(document.createTextNode(text.slice(0, match.index)));
     if (match[3]) {
       el(parent, "span", "link", match[3]);
       text = text.slice(match.index + match[0].length);
@@ -315,14 +349,20 @@ function inline(parent, text) {
     const delimiter = match[1] || match[4] || match[6];
     const content = match[2] ?? match[5] ?? match[7];
     const before = text[match.index - 1];
-    if (delimiter.startsWith("_") && /[\p{L}\p{N}]/u.test(before || "") &&
-        /[\p{L}\p{N}]/u.test(content[0])) {
+    if (
+      delimiter.startsWith("_") &&
+      /[\p{L}\p{N}]/u.test(before || "") &&
+      /[\p{L}\p{N}]/u.test(content[0])
+    ) {
       const end = match.index + delimiter.length;
       parent.append(document.createTextNode(text.slice(match.index, end)));
       text = text.slice(end);
       continue;
     }
-    const formatted = el(parent, match[1] ? "code" : match[4] ? "strong" : "em");
+    const formatted = el(
+      parent,
+      match[1] ? "code" : match[4] ? "strong" : "em",
+    );
     markup(formatted, delimiter);
     inline(formatted, content);
     markup(formatted, delimiter);
@@ -339,25 +379,33 @@ const LANGUAGES = {
   js: {
     comments: ["//.*", "/\\*[\\s\\S]*?\\*/"],
     quotes: "\"'`",
-    words: "async|await|boolean|break|case|catch|class|const|continue|default|delete|do|else|enum|export|extends|false|finally|for|from|function|if|implements|import|in|instanceof|interface|let|new|null|number|of|private|protected|public|readonly|return|string|super|switch|this|throw|true|try|type|typeof|undefined|var|void|while|yield",
+    words:
+      "async|await|boolean|break|case|catch|class|const|continue|default|delete|do|else|enum|export|extends|false|finally|for|from|function|if|implements|import|in|instanceof|interface|let|new|null|number|of|private|protected|public|readonly|return|string|super|switch|this|throw|true|try|type|typeof|undefined|var|void|while|yield",
   },
   sh: {
     comments: ["#.*"],
     quotes: "\"'",
-    words: "case|do|done|elif|else|esac|export|fi|for|function|if|in|local|return|then|until|while",
+    words:
+      "case|do|done|elif|else|esac|export|fi|for|function|if|in|local|return|then|until|while",
   },
   go: {
     comments: ["//.*", "/\\*[\\s\\S]*?\\*/"],
     quotes: "\"'`",
-    words: "break|case|chan|const|continue|default|defer|else|fallthrough|false|for|func|go|goto|if|import|interface|map|nil|package|range|return|select|struct|switch|true|type|var",
+    words:
+      "break|case|chan|const|continue|default|defer|else|fallthrough|false|for|func|go|goto|if|import|interface|map|nil|package|range|return|select|struct|switch|true|type|var",
   },
   python: {
     comments: ["#.*"],
     strings: ['"""[\\s\\S]*?"""'],
     quotes: "\"'",
-    words: "and|as|assert|async|await|break|class|continue|def|del|elif|else|except|False|finally|for|from|global|if|import|in|is|lambda|None|nonlocal|not|or|pass|raise|return|True|try|while|with|yield",
+    words:
+      "and|as|assert|async|await|break|class|continue|def|del|elif|else|except|False|finally|for|from|global|if|import|in|is|lambda|None|nonlocal|not|or|pass|raise|return|True|try|while|with|yield",
   },
-  json: { comments: ["//.*", "/\\*[\\s\\S]*?\\*/"], quotes: '"', words: "true|false|null" },
+  json: {
+    comments: ["//.*", "/\\*[\\s\\S]*?\\*/"],
+    quotes: '"',
+    words: "true|false|null",
+  },
   yaml: {
     comments: ["#.*"],
     keys: "[A-Za-z0-9_.-]+",
@@ -373,9 +421,21 @@ const LANGUAGES = {
 };
 
 const ALIASES = {
-  javascript: "js", typescript: "js", ts: "js", jsx: "js", tsx: "js", node: "js",
-  bash: "sh", zsh: "sh", shell: "sh", console: "sh", py: "python", yml: "yaml",
-  jsonc: "json", xml: "html", svg: "html",
+  javascript: "js",
+  typescript: "js",
+  ts: "js",
+  jsx: "js",
+  tsx: "js",
+  node: "js",
+  bash: "sh",
+  zsh: "sh",
+  shell: "sh",
+  console: "sh",
+  py: "python",
+  yml: "yaml",
+  jsonc: "json",
+  xml: "html",
+  svg: "html",
 };
 
 const patterns = new Map();
@@ -391,7 +451,9 @@ function pattern(name) {
           language.keys ? "^[ \\t]*(" + language.keys + ")(?=[ \\t]*:)" : null,
           ...language.comments,
           ...(language.strings || []),
-          ...quotes.map((quote) => quote + "(?:\\\\.|[^" + quote + "\\\\])*" + quote),
+          ...quotes.map(
+            (quote) => quote + "(?:\\\\.|[^" + quote + "\\\\])*" + quote,
+          ),
           ...(language.tags || []),
           "\\b\\d[\\w.]*",
           language.words ? "\\b(?:" + language.words + ")\\b" : null,
@@ -426,7 +488,8 @@ function highlight(parent, code, language) {
   for (const match of code.matchAll(pattern(name))) {
     const token = match[1] || match[0];
     const index = match.index + match[0].length - token.length;
-    if (index > last) parent.append(document.createTextNode(code.slice(last, index)));
+    if (index > last)
+      parent.append(document.createTextNode(code.slice(last, index)));
     let kind = match[1] ? "tag" : tokenKind(token, LANGUAGES[name]);
     if (name === "html") {
       if (token === ">" || token === "/>") {
@@ -451,12 +514,27 @@ function applyRuntime(runtime) {
   contextWindow = (runtime.profile || {}).context_window ?? null;
   model.textContent = backend ? backend + "/" + name : name;
   toolTemplatesByName.clear();
+  hookTemplatesByName.clear();
   for (const tool of (runtime.harness || {}).tools || []) {
     const manifest = tool.manifest || {};
     toolTemplatesByName.set(tool.name, {
       render: manifest.render,
       permission_preview: manifest.permission_preview,
     });
+  }
+  for (const hook of [
+    "session_start",
+    "user_prompt_submit",
+    "permission_request",
+    "pre_tool_use",
+    "post_tool_use",
+    "stop",
+  ]) {
+    for (const component of (runtime.harness || {})[hook] || []) {
+      const parts = component.command.split("/");
+      const script = parts.at(-1) === "run" ? parts.at(-2) : parts.at(-1);
+      hookTemplatesByName.set(hook + "\0" + script, component.render);
+    }
   }
 }
 
@@ -470,36 +548,16 @@ function apply(frame) {
       section("system");
       return renderCollapsed("system", "system prompt", frame.content);
     case "hook_result":
-      clearHookActivity();
       if (frame.hook === "user_prompt_submit") {
         hideIndicator();
         section("user");
       }
-      // Model context is reference material and folds away. User context is the
-      // script talking to the reader and stays open.
-      if (frame.model_context !== undefined) {
-        renderCollapsed(
-          "context",
-          frame.script,
-          frame.model_context,
-          [frame.hook, frame.prompt]
-            .filter((value) => value !== undefined)
-            .map((value) => safe(value).replace(/\s+/g, " ").trim())
-            .filter(Boolean)
-            .join(" · "),
-        );
-      }
-      if (frame.user_context !== undefined) {
-        note(frame.user_context, null, frame.script, frame.hook);
-      }
-      return;
+      return renderHookResult(frame);
     case "user":
     case "assistant":
       return renderMessage(frame);
     case "tool_result":
       return renderResult(frame);
-    case "tool_call":
-      return renderToolCall(frame);
     case "turn_error": {
       // The failure ends its section without claiming a section number. Its
       // first line is the outcome, and any remaining lines are its detail.
@@ -510,9 +568,11 @@ function apply(frame) {
     }
     case "state":
       if (
-        typeof frame.name !== "string" || frame.name.length === 0 ||
+        typeof frame.name !== "string" ||
+        frame.name.length === 0 ||
         frame.name.length > 128 ||
-        !/[A-Za-z0-9]/.test(frame.name[0]) || /[^A-Za-z0-9_.:/-]/.test(frame.name) ||
+        !/[A-Za-z0-9]/.test(frame.name[0]) ||
+        /[^A-Za-z0-9_.:/-]/.test(frame.name) ||
         !Object.hasOwn(frame, "value") ||
         Object.keys(frame).sort().join(",") !== "name,type,value"
       ) {
@@ -533,36 +593,62 @@ function apply(frame) {
       // which arrives on this same stream.
       return;
     case "_hook_activity": {
-      if (frame.text === "") {
-        if (Object.keys(frame).sort().join(",") !== "text,type") {
-          throw new Error("invalid hook activity");
-        }
-        clearHookActivity();
-        return;
-      }
       if (
         ![
-          "session_start", "user_prompt_submit", "pre_tool_use",
-          "post_tool_use", "stop",
+          "session_start",
+          "user_prompt_submit",
+          "pre_tool_use",
+          "post_tool_use",
+          "stop",
         ].includes(frame.hook) ||
-        typeof frame.script !== "string" || !frame.script ||
+        typeof frame.script !== "string" ||
+        !frame.script ||
         /[\u0000-\u001f\u007f-\u009f]/.test(frame.script) ||
-        typeof frame.text !== "string" ||
-        /[\u0000-\u001f\u007f-\u009f]/.test(frame.text) ||
-        Object.keys(frame).sort().join(",") !== "hook,script,text,type"
+        !(
+          typeof frame.input === "string" ||
+          (frame.input &&
+            typeof frame.input === "object" &&
+            !Array.isArray(frame.input))
+        ) ||
+        Object.keys(frame).sort().join(",") !== "hook,input,script,type"
       ) {
         throw new Error("invalid hook activity");
       }
-      // One hook runs at a time, so a later label replaces the standing one.
       clearHookActivity();
       hideIndicator();
-      hookActivity = record("note", null);
-      summary(el(hookActivity, "h2"), "ℹ", frame.script, frame.hook);
-      el(hookActivity, "pre", null, safe(frame.text));
-      place(hookActivity);
+      const template = hookTemplates(frame.hook, frame.script).user_before;
+      const text = renderScript(template, frame.script, frame.input, null);
+      if (text) {
+        const article = record("note", null);
+        const content = el(article, "pre", "call");
+        el(content, "span", "sigil", "ℹ ");
+        renderScriptView(
+          content,
+          template,
+          frame.script,
+          frame.input,
+          null,
+        );
+        hookActivity = { article, hook: frame.hook, script: frame.script };
+        place(article);
+      }
       if (working) showIndicator();
       return;
     }
+    case "_tool_activity":
+      if (
+        typeof frame.call_id !== "string" ||
+        !frame.call_id ||
+        typeof frame.name !== "string" ||
+        !frame.name ||
+        !frame.input ||
+        typeof frame.input !== "object" ||
+        Array.isArray(frame.input) ||
+        Object.keys(frame).sort().join(",") !== "call_id,input,name,type"
+      ) {
+        throw new Error("invalid tool activity");
+      }
+      return renderToolCall({ ...frame, id: frame.call_id });
     case "_tool_permission_request":
       return askPermission(frame);
     case "_handoff": {
@@ -579,7 +665,10 @@ function apply(frame) {
           note(draft, null, "Handoff draft");
         }
       }
-      return note("the turn requested a handoff, which a served session cannot run", "error");
+      return note(
+        "the turn requested a handoff, which a served session cannot run",
+        "error",
+      );
     }
     case "_session_update":
       return applyRuntime(frame.runtime);
@@ -609,7 +698,10 @@ function renderMessage(frame) {
       .filter((part) => part.type === "text")
       .map((part) => part.text)
       .join("");
-    markdown(el(article, "pre", "text"), displayChunks.filter((text) => text !== null).join(""));
+    markdown(
+      el(article, "pre", "text"),
+      displayChunks.filter((text) => text !== null).join(""),
+    );
     sectionChunks[sectionId - 1] = [text];
     place(article);
     if (working) showIndicator();
@@ -618,13 +710,16 @@ function renderMessage(frame) {
   hideIndicator();
   section("agent");
   const article = record("assistant", null);
-  const chunks = parts.filter((part) => part.type === "text").map((part) => part.text);
+  const chunks = parts
+    .filter((part) => part.type === "text")
+    .map((part) => part.text);
   const index = sectionId - 1;
   if (sectionChunks[index] === undefined) sectionChunks[index] = [];
   sectionChunks[index].push(...chunks);
   for (let partIndex = 0; partIndex < parts.length; partIndex++) {
     const part = parts[partIndex];
-    const reasoning = part.type === "reasoning" ? trimBoundaryNewlines(part.text) : "";
+    const reasoning =
+      part.type === "reasoning" ? trimBoundaryNewlines(part.text) : "";
     if (reasoning) {
       collapsible(article, "✎", "Reasoning", reasoning, "reasoning");
     } else if (part.type === "text" && displayChunks[partIndex]) {
@@ -655,8 +750,10 @@ function renderToolCall(frame) {
 
 // A result belongs to the call it names.
 function renderResult(frame) {
+  if (!calls.has(frame.call_id)) {
+    renderToolCall({ ...frame, id: frame.call_id });
+  }
   const call = calls.get(frame.call_id);
-  if (!call) throw new Error("tool result has no call");
   hideIndicator();
   calls.delete(frame.call_id);
   const templates = toolTemplates(frame.name);
@@ -666,6 +763,53 @@ function renderResult(frame) {
   renderScriptView(call, templates.render.user_after, frame.name,
     toolInput(frame.input), frame);
   place(call);
+  if (working) showIndicator();
+}
+
+function renderHookResult(frame) {
+  hideIndicator();
+  if (hookActivity) {
+    if (
+      hookActivity.hook !== frame.hook ||
+      hookActivity.script !== frame.script
+    ) {
+      throw new Error("hook result does not match activity");
+    }
+    clearHookActivity();
+  }
+  const templates = hookTemplates(frame.hook, frame.script);
+  const text = renderScript(
+    templates.user_after,
+    frame.script,
+    frame.input,
+    frame,
+  );
+  if (!text) {
+    if (working) showIndicator();
+    return;
+  }
+  // The sigil marks whether the hook fed the model, not what is shown below it.
+  const sigil =
+    hookModelVisible(frame) &&
+    renderScript(
+      templates.model_after,
+      frame.script,
+      frame.input,
+      frame,
+    )
+      ? "↪"
+      : "ℹ";
+  const article = record("note", null);
+  const content = el(article, "pre", "call");
+  el(content, "span", "sigil", sigil + " ");
+  renderScriptView(
+    content,
+    templates.user_after,
+    frame.script,
+    frame.input,
+    frame,
+  );
+  place(article);
   if (working) showIndicator();
 }
 
@@ -697,16 +841,27 @@ function compactTokens(value) {
 
 function showUsage(tokens) {
   const context = contextWindow
-    ? " " + Math.round((tokens.input_tokens * 100) / contextWindow) +
-      "% of " + compactTokens(contextWindow) + " ◔"
+    ? " " +
+      Math.round((tokens.input_tokens * 100) / contextWindow) +
+      "% of " +
+      compactTokens(contextWindow) +
+      " ◔"
     : "";
   const cached =
     tokens.cached_tokens && tokens.input_tokens
-      ? " " + Math.round((tokens.cached_tokens * 100) / tokens.input_tokens) + "% ⦿"
+      ? " " +
+        Math.round((tokens.cached_tokens * 100) / tokens.input_tokens) +
+        "% ⦿"
       : "";
   usage.textContent =
-    " · " + compactTokens(tokens.input_tokens) + " ↑" + cached + " " +
-    compactTokens(tokens.output_tokens) + " ↓" + context;
+    " · " +
+    compactTokens(tokens.input_tokens) +
+    " ↑" +
+    cached +
+    " " +
+    compactTokens(tokens.output_tokens) +
+    " ↓" +
+    context;
 }
 
 // ---------------------------------------------------------------- permissions
@@ -715,7 +870,10 @@ function askPermission(frame) {
   hideIndicator();
   pending = frame.id;
   const tool = frame.tool || {};
-  const article = record("permission", "Run " + safe(tool.name) + " outside of sandbox?");
+  const article = record(
+    "permission",
+    "Run " + safe(tool.name) + " outside of sandbox?",
+  );
   const templates = toolTemplates(tool.name);
   el(article, "pre", "input", safe(renderScript(
     templates.permission_preview,
@@ -744,7 +902,8 @@ async function decide(decision, article) {
 }
 
 function clearPermission() {
-  for (const article of output.querySelectorAll(".permission")) article.remove();
+  for (const article of output.querySelectorAll(".permission"))
+    article.remove();
   pending = null;
 }
 

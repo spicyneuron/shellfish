@@ -170,7 +170,7 @@ fi
 # Opening rejects noncanonical records.
 typeset invalid_record="$tmp/invalid-record.jsonl"
 cp "$SF_TEST_SESSIONS/header-only.jsonl" "$invalid_record"
-print -r -- '{"type":"hook_result","hook":"test","script":"","model_context":"bad"}' >>"$invalid_record"
+print -r -- '{"type":"hook_result","hook":"session_start","script":"","input":"","stdout":"bad","stderr":"","exit_code":0}' >>"$invalid_record"
 if sf_session_begin_turn "$invalid_record"; then
   fail 'session with an invalid durable record was accepted'
 fi
@@ -182,26 +182,55 @@ sf_session_begin_turn "$session"
 [[ $(cat "$session") == "$before" ]]
 sf_session_reset
 
-# Recovery answers an interrupted pending tool call.
+# Recovery closes an interrupted tool continuation without inventing outcomes.
 typeset interrupted_tools="$tmp/interrupted-tools.jsonl"
 cp "$SF_TEST_SESSIONS/header-only.jsonl" "$interrupted_tools"
 sf_session_begin_turn "$interrupted_tools"
 sf_session_append "$interrupted_tools" '{"type":"user","content":[{"type":"text","text":"run"}]}'
 sf_session_append "$interrupted_tools" '{"type":"assistant","stop":"tool_calls","content":[]}'
-sf_session_append "$interrupted_tools" '{"type":"tool_call","id":"call_1","name":"shell","input":{}}'
 sf_session_append "$interrupted_tools" '{"type":"tool_result","call_id":"call_1","name":"shell","input":{},"stdout":"done","stderr":"","exit_code":0}'
-sf_session_append "$interrupted_tools" '{"type":"tool_call","id":"call_2","name":"read_file","input":{}}'
 sf_session_reset
 sf_session_begin_turn "$interrupted_tools"
 sf_session_append "$interrupted_tools" '{"type":"user","content":[{"type":"text","text":"next"}]}'
 sf_session_reset
 jq -e -s '
-  .[-5].call_id == "call_1" and .[-5].exit_code == 0 and
-  .[-4] == {type:"tool_call",id:"call_2",name:"read_file",input:{}} and
-  .[-3].call_id == "call_2" and .[-3].name == "read_file" and .[-3].exit_code == 126 and
   .[-2] == {type:"turn_error",message:"Turn interrupted."} and
+  (.[-3] | .type == "tool_result" and .call_id == "call_1" and .exit_code == 0) and
   .[-1].type == "user" and .[-1].content[0].text == "next"
 ' "$interrupted_tools" >/dev/null
+
+# Queue recovery compares only results below the owning assistant response.
+typeset repeated_calls="$tmp/repeated-calls.jsonl"
+cp "$SF_TEST_SESSIONS/header-only.jsonl" "$repeated_calls"
+sf_session_begin_turn "$repeated_calls"
+sf_session_append "$repeated_calls" '{"type":"user","content":[{"type":"text","text":"first"}]}'
+sf_session_append "$repeated_calls" '{"type":"assistant","stop":"tool_calls","content":[]}'
+sf_session_append "$repeated_calls" '{"type":"tool_result","call_id":"call_1","name":"shell","input":{},"stdout":"done","stderr":"","exit_code":0}'
+sf_session_append "$repeated_calls" '{"type":"assistant","stop":"end","content":[]}'
+sf_session_append "$repeated_calls" '{"type":"user","content":[{"type":"text","text":"second"}]}'
+sf_session_append "$repeated_calls" '{"type":"assistant","stop":"tool_calls","content":[]}'
+sf_session_resync_turn "$repeated_calls" interrupted 1 \
+  '{"id":"call_1","name":"shell","input":{},"execution_input":{}}' call_1
+sf_session_reset
+jq -e -s '
+  ([.[] | select(.type == "tool_result" and .call_id == "call_1")] | length) == 2 and
+  .[-2].stderr == "tool call interrupted" and .[-1].type == "turn_error"
+' "$repeated_calls" >/dev/null
+
+# A result committed before queue removal is not duplicated during cleanup.
+typeset committed_result="$tmp/committed-result.jsonl"
+cp "$SF_TEST_SESSIONS/header-only.jsonl" "$committed_result"
+sf_session_begin_turn "$committed_result"
+sf_session_append "$committed_result" '{"type":"user","content":[{"type":"text","text":"run"}]}'
+sf_session_append "$committed_result" '{"type":"assistant","stop":"tool_calls","content":[]}'
+sf_session_append "$committed_result" '{"type":"tool_result","call_id":"call_2","name":"shell","input":{},"stdout":"done","stderr":"","exit_code":0}'
+sf_session_resync_turn "$committed_result" interrupted 1 \
+  '{"id":"call_2","name":"shell","input":{},"execution_input":{}}' call_2
+sf_session_reset
+jq -e -s '
+  ([.[] | select(.type == "tool_result" and .call_id == "call_2")] | length) == 1 and
+  .[-1].type == "turn_error"
+' "$committed_result" >/dev/null
 
 # Invalid transitions fail on open.
 cp "$SF_TEST_SESSIONS/invalid-transition.jsonl" "$tmp/invalid-transition.jsonl"

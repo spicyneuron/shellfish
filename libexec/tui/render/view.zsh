@@ -46,7 +46,7 @@ sf_tui_format_entry() {
   case $SF_PRESENT_KIND[index] in
     message) sf_tui_format_message $index $columns ;;
     reasoning) sf_tui_format_reasoning $index $columns ;;
-    activity|hook_activity|hook_model_context|hook_user_context|error)
+    activity|hook|error)
       sf_tui_format_hook $index $columns ;;
     tool) sf_tui_format_tool $index $columns ;;
     *) return 1 ;;

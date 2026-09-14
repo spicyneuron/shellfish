@@ -78,9 +78,9 @@ jq -e --rawfile prompt "$ROOT/share/default/hooks/user_prompt_submit/compact/com
 ' "$compact_request" >/dev/null || fail 'compaction did not send its prompt unchanged'
 assert_canonical_session "$tmp/compact-source_compact.jsonl"
 jq -e -s '
-  .[1].model_context as $context |
+  .[1].stdout as $context |
   [.[].type] == ["session","hook_result"] and
-  .[1].hook == "compact" and .[1].script == "compact" and
+  .[1].hook == "session_start" and .[1].script == "compact" and
   $context ==
     "<compacted_context>\n\n" +
     "The conversation before this point was compacted into the context below.\n\n" +
@@ -99,7 +99,6 @@ print -r -- \
   '{"type":"assistant","stop":"end","content":[{"type":"text","text":"Done reading"}],"usage":{"input_tokens":1,"output_tokens":1}}' \
   '{"type":"user","content":[{"type":"text","text":"Keep going"}]}' \
   '{"type":"assistant","stop":"tool_calls","content":[{"type":"text","text":"\n\n"}],"usage":{"input_tokens":75,"output_tokens":5}}' \
-  '{"type":"tool_call","id":"call_1","name":"shell","input":{"command":"true"}}' \
   '{"type":"tool_result","call_id":"call_1","name":"shell","input":{"command":"true"},"stdout":"","stderr":"tool call cancelled","exit_code":126}' \
   '{"type":"turn_error","message":"Cancelled."}' \
   >>"$cancelled_source"
@@ -181,7 +180,7 @@ typeset state_source="$tmp/state-source.jsonl"
 head -n 1 "$compact_source" >"$state_source"
 print -r -- \
   '{"type":"state","name":"git/identity","value":"branch:main"}' \
-  '{"type":"hook_result","hook":"session_start","script":"project_environment","model_context":"env"}' \
+  '{"type":"hook_result","hook":"session_start","script":"project_environment","input":"","stdout":"env","stderr":"","exit_code":0}' \
   '{"type":"user","content":[{"type":"text","text":"Hello"}]}' \
   '{"type":"state","name":"agents/a1b2c3","value":{"session":".agent-a1b2c3.jsonl"}}' \
   '{"type":"assistant","stop":"end","content":[{"type":"text","text":"Hi"}],"usage":{"input_tokens":1,"output_tokens":1}}' \

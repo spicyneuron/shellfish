@@ -40,7 +40,7 @@ print -rn -u2 -- second-local
 ZSH
 chmod +x "$stop_once"
 SF_TEST_RUNTIME=$(jq -c --arg hook "$stop_once" \
-  '.harness.stop=[{command:$hook,display:"",environment:[]}]' <<<"$SF_TEST_RUNTIME")
+  '.harness.stop=[{command:$hook,environment:[],render:{user_before:"",user_after:"",model_after:"${output.stdout}"}}]' <<<"$SF_TEST_RUNTIME")
 typeset stop_session="$tmp/stop.jsonl"
 sf_test_session "$stop_session"
 sf_hooks_turn_state_create
@@ -55,25 +55,25 @@ print -r -- "$stream" | jq -eRn '
   [inputs | fromjson] as $events |
   ($events | map(select(.type == "assistant")) | length) == 2 and
   ($events | map(select(.type == "hook_result"))) ==
-    [{type:"hook_result",hook:"stop",script:"stop-once",model_context:"feedback",
-      user_context:"first-local"},
-     {type:"hook_result",hook:"stop",script:"stop-once",user_context:"second-local"}] and
+    [{type:"hook_result",hook:"stop",script:"stop-once",input:"original\n",
+      stdout:"feedback",stderr:"first-local",exit_code:10},
+     {type:"hook_result",hook:"stop",script:"stop-once",input:"feedback\n\n",
+      stdout:"discarded",stderr:"second-local",exit_code:0}] and
   ($events | map(select(.type == "state" or .type == "hook_result")) |
     map(if .type == "state" then [.name,.value]
-      else ["result",(.model_context // ""),(.user_context // "")] end)) ==
+      else ["result",.stdout,.stderr] end)) ==
     [["stop/attempt",1],["result","feedback","first-local"],
-     ["stop/attempt",2],["result","","second-local"]]
+     ["stop/attempt",2],["result","discarded","second-local"]]
 ' >/dev/null
 sf_hooks_turn_state_cleanup
 jq -e '
   .messages[-2].type == "assistant" and
   .messages[-1].type == "user" and
-  .messages[-1].content[0].text ==
-    "<hook name=\"stop\">\n<context script=\"stop-once\">\nfeedback\n</context>\n</hook>\n\n"
+  .messages[-1].content[0].text == "feedback\n\n"
 ' "$request_capture" >/dev/null
 jq -e -s '
   ([.[] | select(.type == "hook_result")] | length) == 2 and
-  ([.[] | select(.model_context? == "discarded")] | length) == 0
+  ([.[] | select(.stdout == "discarded")] | length) == 1
 ' "$stop_session" >/dev/null
 sf_hooks_turn_state_cleanup
 
@@ -97,7 +97,7 @@ cmp -s /dev/stdin "$SHELLFISH_TURN_STATE/expected"
 ZSH
 chmod +x "$text_stop"
 SF_TEST_RUNTIME=$(jq -c --arg hook "$text_stop" --arg backend "$text_backend" '
-  .harness.stop=[{command:$hook,display:"",environment:[]}] | .backend.command=$backend
+  .harness.stop=[{command:$hook,environment:[],render:{user_before:"",user_after:"",model_after:"${output.stdout}"}}] | .backend.command=$backend
 ' <<<"$SF_TEST_RUNTIME")
 typeset text_session="$tmp/stop-text.jsonl"
 sf_test_session "$text_session"
@@ -124,7 +124,7 @@ fi
 ZSH
 chmod +x "$tool_stop"
 SF_TEST_RUNTIME=$(jq -c --arg hook "$tool_stop" \
-  '.harness.stop=[{command:$hook,display:"",environment:[]}]' <<<"$SF_TEST_RUNTIME")
+  '.harness.stop=[{command:$hook,environment:[],render:{user_before:"",user_after:"",model_after:"${output.stdout}"}}]' <<<"$SF_TEST_RUNTIME")
 typeset tool_stop_session="$tmp/stop-tool.jsonl"
 sf_test_session "$tool_stop_session"
 stream=$(sf_test_turn original "$tool_stop_session")
@@ -144,14 +144,14 @@ exit 10
 ZSH
 chmod +x "$stop_always"
 SF_TEST_RUNTIME=$(jq -c --arg hook "$stop_always" \
-  '.harness.stop=[{command:$hook,display:"",environment:[]}] | .harness.max_requests_per_turn=1' \
+  '.harness.stop=[{command:$hook,environment:[],render:{user_before:"",user_after:"",model_after:"${output.stdout}"}}] | .harness.max_requests_per_turn=1' \
   <<<"$SF_TEST_RUNTIME")
 typeset limit_session="$tmp/stop-limit.jsonl"
 sf_test_session "$limit_session"
 stream=$(sf_test_turn bounded "$limit_session")
 print -r -- "$stream" | jq -eRn '
   [inputs | fromjson] as $events |
-  ($events | map(select(.type == "hook_result" and .model_context? != null)) | length) == 1 and
+  ($events | map(select(.type == "hook_result" and .stdout == "again")) | length) == 1 and
   $events[-1] == {type:"turn_error",message:"provider request limit reached: 1"}
 ' >/dev/null
 assert_canonical_session "$limit_session"
@@ -163,7 +163,7 @@ cat >"$cancel_backend" <<ZSH
 #!/usr/bin/env zsh
 request=\$(cat)
 if jq -e '.messages[-1].type == "user" and
-    (.messages[-1].content[0].text | contains("<hook name=\\"stop\\">\\n<context script=\\"stop-once\\">"))' \
+    .messages[-1].content[0].text == "feedback\\n\\n"' \
     <<<"\$request" >/dev/null; then
   : >"$cancel_ready"
   sleep 10
@@ -175,7 +175,7 @@ ZSH
 chmod +x "$cancel_backend"
 
 SF_TEST_RUNTIME=$(jq -c --arg hook "$stop_once" --arg backend "$cancel_backend" '
-  .harness.stop=[{command:$hook,display:"",environment:[]}] | .harness.max_requests_per_turn=8 | .backend.command=$backend
+  .harness.stop=[{command:$hook,environment:[],render:{user_before:"",user_after:"",model_after:"${output.stdout}"}}] | .harness.max_requests_per_turn=8 | .backend.command=$backend
 ' <<<"$SF_TEST_RUNTIME")
 typeset cancel_session="$tmp/stop-cancel.jsonl"
 typeset cancel_stream="$tmp/stop-cancel.stream"
@@ -197,10 +197,10 @@ wait "$cancel_pid" || cancel_status=$?
 (( cancel_status == 143 ))
 jq -eRn '
   [inputs | fromjson] as $events |
-  ($events | map(select(.type == "hook_result" and .hook == "stop" and .model_context? != null)) | length) == 1 and
+  ($events | map(select(.type == "hook_result" and .hook == "stop" and .stdout == "feedback")) | length) == 1 and
   ($events | map(select(.type == "assistant")) | length) == 1
 ' <"$cancel_stream" >/dev/null
 assert_canonical_session "$cancel_session"
 jq -e -s '
-  ([.[] | select(.type == "hook_result" and .hook == "stop" and .model_context? != null)] | length) == 1
+  ([.[] | select(.type == "hook_result" and .hook == "stop" and .stdout == "feedback")] | length) == 1
 ' "$cancel_session" >/dev/null

@@ -1,4 +1,5 @@
 include "lib/runtime/schema";
+include "lib/render";
 
 def config_error($path; $message):
   error("invalid config at $" + ($path | map("[" + tojson + "]") | join("")) + ": " + $message);
@@ -225,23 +226,24 @@ def runtime_finalize:
       manifest:$tool_manifest,
       settings:(if $tool_manifest.sandbox then $tool.settings else null end)} end] as $tools |
   (reduce $resolved_components[] as $component ({};
-    ($component.manifest_json | fromjson |
+    ($component.manifest_json | fromjson) as $manifest |
+    (($manifest | if type == "object" then .render else null end) //
+      ({hook:$component.hook} | default_hook_templates)) as $render |
+    ($manifest |
       select(type == "object" and
         (keys - (if $component.hook == "user_prompt_submit"
-          then ["display", "environment", "help", "match"]
-          else ["display", "environment"] end) | length) == 0 and
+          then ["environment", "help", "match", "render"]
+          else ["environment", "render"] end) | length) == 0 and
         ((.environment // []) | component_environment) and
-        (if has("display") then .display | hook_display else true end) and
+        ($render | hook_render) and
         ($component.hook != "permission_request" or
-          (has("display") | not) or .display == "") and
+          $render == {user_before:"",user_after:"",model_after:""}) and
         (if has("match") then .match | hook_match else true end) and
         (if has("help") then
            has("match") and (.help | hook_help)
          else true end)) //
       error("invalid hook manifest: " + $component.command)) as $hook_manifest |
-    .[$component.hook] += [({command:$component.command,
-      display:(if $hook_manifest | has("display")
-        then $hook_manifest.display else "" end),
+    .[$component.hook] += [({command:$component.command,render:$render,
       environment:($hook_manifest.environment // [])} +
       (if $hook_manifest | has("match") then {match:$hook_manifest.match} else {} end) +
       (if $hook_manifest | has("help") then {help:$hook_manifest.help} else {} end))])) as $hooks |

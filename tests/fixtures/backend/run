@@ -18,12 +18,9 @@ input_tokens=$(( (${#request} + 3) / 4 ))
 # Exercise cache-hit presentation.
 cached_tokens=$(( input_tokens * 85 / 100 ))
 [[ -z ${SF_TEST_BACKEND_REQUEST-} ]] || print -r -- "$request" >"$SF_TEST_BACKEND_REQUEST"
-# Strip generated session context from the echoed user text.
 decoded=$(jq -rj '
-  def echo_text:
-    gsub("<hook name=\\\"session_start\\\">\\n(?:<context(?: [^>]*)?>\\n[^<]*\\n</context>\\n*)+</hook>\\n*"; "");
   ([.messages[] | select(.type == "user") |
-    [.content[] | select(.type == "text") | .text] | join("")] | last // "" | echo_text) as $text |
+    [.content[] | select(.type == "text") | .text] | join("")] | last // "") as $text |
   $text, "\u0000",
   ([$text | scan("\\b(?:tool|TOOL)\\b")] | length | tostring), "\u0000",
   (if ($text | test("\\b(?:delay|DELAY)\\b")) then "1" else "0" end), "\u0000",

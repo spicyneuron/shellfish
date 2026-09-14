@@ -11,7 +11,7 @@ setopt no_aliases no_bg_nice no_multios pipe_fail
 
 typeset -gA SF_RUN=(
   answer '' committed 0 jsonl 0 interrupted 0 permission_count 0 permission_available 0
-  signal_status 143
+  signal_status 143 active_call ''
 )
 typeset -ga SF_RUN_QUEUED_CALLS=()
 
@@ -20,12 +20,9 @@ sf_run_emit() {
   return 0
 }
 
-# Commit one queued call at its execution gate.
-sf_run_commit_call() {
-  local session=$1 record=$SF_RUN_QUEUED_CALLS[1]
-  sf_session_append "$session" "$record" || return 1
+sf_run_finish_call() {
   SF_RUN_QUEUED_CALLS=( "${(@)SF_RUN_QUEUED_CALLS[2,-1]}" )
-  sf_run_emit "$record"
+  SF_RUN[active_call]=''
 }
 
 sf_run_interrupt() {
@@ -132,7 +129,7 @@ sf_run_turn_cleanup() {
     fi
     # Recovery trusts durable records over the interrupted in-memory view.
     if sf_session_resync_turn "$session" "$error_message" "$SF_RUN[committed]" \
-        "${(pj:\n:)SF_RUN_QUEUED_CALLS}"; then
+        "${(pj:\n:)SF_RUN_QUEUED_CALLS}" "$SF_RUN[active_call]"; then
       closed=$REPLY
       if [[ -n $REPLY ]]; then
         [[ -z $recovered ]] || recovered+=$'\n'
@@ -144,6 +141,7 @@ sf_run_turn_cleanup() {
   fi
   SF_REQUEST_PARTIAL_EVENTS=()
   SF_RUN_QUEUED_CALLS=()
+  SF_RUN[active_call]=''
   [[ -z $recovered ]] || sf_run_emit "$recovered"
   sf_session_reset
   if (( interrupted )); then
@@ -177,6 +175,7 @@ sf_run_turn() {
   SF_RUN[permission_count]=0
   SF_RUN[permission_available]=$permission_available
   SF_RUN[committed]=0
+  SF_RUN[active_call]=''
   if ! sf_session_begin_turn "$session_path"; then
     print -r -u2 -- "$SF_SESSION_ERROR"
     return 1
@@ -348,11 +347,6 @@ sf_run_turn() {
         return 1
       fi
       assistant=$SF_REQUEST[assistant]
-      if ! sf_session_append "$session_path" "$assistant"; then
-        failure=$SF_SESSION_ERROR
-        return 1
-      fi
-      sf_run_emit "$assistant"
       response_projection=${SF_REQUEST[result]#*$'\0'}
       response_fields=()
       for (( tool_index = 0; tool_index < 2; tool_index += 1 )); do
@@ -385,6 +379,26 @@ sf_run_turn() {
         failure='cannot inspect provider response'
         return 1
       }
+      SF_RUN_QUEUED_CALLS=()
+      if [[ $response_fields[1] == tool_calls ]]; then
+        tool_calls=( "${(@)response_fields[2,-1]}" )
+        for (( tool_index = 1; tool_index <= ${#tool_calls}; tool_index += 6 )); do
+          record=$(jq -cn --arg id "$tool_calls[tool_index]" \
+            --arg name "$tool_calls[tool_index+1]" \
+            --argjson input "$tool_calls[tool_index+2]" \
+            --argjson execution_input "$tool_calls[tool_index+3]" \
+            '{id:$id,name:$name,input:$input,execution_input:$execution_input}') || {
+            failure='cannot prepare tool call queue'
+            return 1
+          }
+          SF_RUN_QUEUED_CALLS+=( "$record" )
+        done
+      fi
+      if ! sf_session_append "$session_path" "$assistant"; then
+        failure=$SF_SESSION_ERROR
+        return 1
+      fi
+      sf_run_emit "$assistant"
       if [[ $response_fields[1] != tool_calls ]]; then
         (( stop_count += 1 ))
         if ! sf_hooks_stop "$session_path" "$stop_input" "$stop_count"; then
@@ -400,17 +414,6 @@ sf_run_turn() {
       fi
       call_count=0
       tool_calls=( "${(@)response_fields[2,-1]}" )
-      SF_RUN_QUEUED_CALLS=()
-      for (( tool_index = 1; tool_index <= ${#tool_calls}; tool_index += 6 )); do
-        record=$(jq -cn --arg id "$tool_calls[tool_index]" \
-          --arg name "$tool_calls[tool_index+1]" \
-          --argjson input "$tool_calls[tool_index+2]" \
-          '{type:"tool_call",id:$id,name:$name,input:$input}') || {
-          failure='cannot prepare tool call record'
-          return 1
-        }
-        SF_RUN_QUEUED_CALLS+=( "$record" )
-      done
       for (( tool_index = 1; tool_index <= ${#tool_calls}; tool_index += 6 )); do
         (( call_count += 1 ))
         call_id=$tool_calls[tool_index]
@@ -419,11 +422,15 @@ sf_run_turn() {
         execution_input=$tool_calls[tool_index+3]
         bypass=$tool_calls[tool_index+4]
         bypass_reason_valid=$tool_calls[tool_index+5]
+        SF_RUN[active_call]=$call_id
+        record=$(jq -cn --arg call_id "$call_id" --arg name "$tool_name" \
+          --argjson input "$tool_input" \
+          '{type:"_tool_activity",call_id:$call_id,name:$name,input:$input}') || {
+          failure='cannot prepare tool activity'
+          return 1
+        }
+        sf_run_emit "$record"
         if (( call_count > tool_limit )); then
-          if ! sf_run_commit_call "$session_path"; then
-            failure=$SF_SESSION_ERROR
-            return 1
-          fi
           if ! sf_tool_result "$call_id" "$tool_name" \
               "$execution_input" \
               "tool call denied: per-response limit is $tool_limit" 126; then
@@ -439,10 +446,6 @@ sf_run_turn() {
           hook_action=$reply[1]
           hook_reason=$reply[2]
           if [[ $hook_action == deny ]]; then
-            if ! sf_run_commit_call "$session_path"; then
-              failure=$SF_SESSION_ERROR
-              return 1
-            fi
             if ! sf_tool_result "$call_id" "$tool_name" \
                 "$execution_input" \
                 "$hook_reason" \
@@ -452,11 +455,6 @@ sf_run_turn() {
             fi
             result=$REPLY
           else
-            # Commit before prompting so the prompt can annotate this call.
-            if ! sf_run_commit_call "$session_path"; then
-              failure=$SF_SESSION_ERROR
-              return 1
-            fi
             decision=''
             denial_reason=''
             sf_tool_needs_permission "$tool_name" "$bypass" "$bypass_reason_valid" \
@@ -499,6 +497,7 @@ sf_run_turn() {
           return 1
         fi
         sf_run_emit "$result"
+        sf_run_finish_call
         if ! sf_hooks_post_tool_use "$session_path" "$result" "$tool_input"; then
           failure=$SF_HOOK_ERROR
           return 1

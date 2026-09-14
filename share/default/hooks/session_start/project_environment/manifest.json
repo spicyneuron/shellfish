@@ -1,1 +1,7 @@
-{"display":"Loading project environment…"}
+{
+  "render": {
+    "user_before": "${script} · Loading project environment…",
+    "user_after": "${script}\n${output.stdout}${output.stderr}",
+    "model_after": "${output.stdout}"
+  }
+}

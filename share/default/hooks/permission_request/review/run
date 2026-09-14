@@ -6,7 +6,7 @@ setopt extended_glob no_aliases no_multios pipe_fail
 integer input_tokens=32768
 integer output_tokens=4096
 integer request_seconds=60
-local request header active_header budget system base records transcript
+local request header active_header active_response budget system base records transcript projected
 local backend_request response result selected_runtime state_name='' name
 local review_content=''
 integer review_content_set=0
@@ -92,47 +92,46 @@ budget=$(jq --argjson input_tokens "$input_tokens" --argjson output_tokens "$out
     $input_tokens] | min * 4
 ' <<<"$header")
 
-# The fixed context identifies the session's standing instructions and exact target.
-# Timeline records are admitted backward without gaps, then emitted chronologically.
-records=$(jq -cse --argjson request "$request" '
-  to_entries as $entries |
+projected=$("$SHELLFISH_EXECUTABLE" build-request --session "$SHELLFISH_SESSION" \
+  --tools '[]' 2>/dev/null) ||
+  permission_deny 'Permission review could not project the active context.'
+active_response=$(jq -sc '
+  reduce .[] as $record ({assistant:null,settled:false};
+    if $record.type == "assistant" then
+      {assistant:($record | del(.usage)),settled:false}
+    elif $record.type == "tool_result" and .assistant != null then
+      .settled = true
+    else . end) |
+  select(.assistant.stop == "tool_calls")
+' "$SHELLFISH_SESSION" 2>/dev/null) ||
+  permission_deny 'Permission review could not inspect the active response.'
+
+# The first user message retains startup context. Later messages are admitted
+# backward without gaps, then emitted chronologically.
+records=$(jq -cn --argjson request "$request" --argjson projected "$projected" \
+  --argjson active "$active_response" '
+  ($projected.messages | to_entries) as $entries |
   ([ $entries[] | select(.value.type == "user") | .key ] | first) as $first_user |
-  ([ $entries[] | select(.value.type == "tool_call" and
-      .value.id == $request.tool_use_id) | .key ] | last) as $target_index |
-  select($first_user != null and $target_index != null and $target_index >= $first_user) |
-  $entries[$target_index].value as $target |
-  select($target.name == $request.tool_name and $target.input == $request.tool_input) |
+  select($first_user != null) |
   {
-    system_message:([
-      $entries[] | select(.key < $first_user and .value.type == "system") |
-      .value.content
-    ] | last),
-    startup_context:[
-      $entries[] | select(.key < $first_user and .value.type == "hook_result" and
-        .value.hook == "session_start" and .value.model_context? != null) | .value |
-      {hook,script,content:.model_context}
-    ],
-    target_tool_call:$target,
+    system_message:($projected.system | if length > 0 then . else null end),
+    startup_context:$entries[$first_user].value,
+    target_tool_call:{type:"tool_call",id:$request.tool_use_id,
+      name:$request.tool_name,input:$request.tool_input},
     candidates:([
-      $entries[] | select(.key < $target_index) | .value as $record |
-      if $record.type == "user" then $record
-      elif $record.type == "assistant" then
-        {type:"assistant",stop:$record.stop,
-          content:[$record.content[] | select(.type == "text")]}
-      elif $record.type == "tool_call" or $record.type == "tool_result" then $record
-      elif $record.type == "hook_result" and $record.hook != "session_start" and
-          $record.model_context? != null then
-        {type:"hook_context",hook:$record.hook,script:$record.script,
-          content:$record.model_context}
-      else empty end
+      ($entries[] | select(.key > $first_user) | .value),
+      ($active.assistant | select($active.settled | not)) |
+      if .type == "assistant" then
+        {type,stop,content:[.content[] | select(.type == "text")]}
+      else . end
     ] | reverse)
   }
-' "$SHELLFISH_SESSION" 2>/dev/null) ||
+' 2>/dev/null) ||
   permission_deny 'Permission review could not project the active context.'
 
 base=$(jq -cn --argjson records "$records" '
   {startup_context:$records.startup_context,recent_timeline:[],
-    target_tool_call:$records.target_tool_call} +
+   target_tool_call:$records.target_tool_call} +
   (if $records.system_message == null then {} else
     {system_message:$records.system_message} end)
 ') || permission_deny 'Permission review could not prepare context.'

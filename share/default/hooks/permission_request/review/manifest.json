@@ -1,1 +1,8 @@
-{"environment":["SHELLFISH_PERMISSION_PROFILE"]}
+{
+  "environment": ["SHELLFISH_PERMISSION_PROFILE"],
+  "render": {
+    "user_before": "",
+    "user_after": "",
+    "model_after": ""
+  }
+}
