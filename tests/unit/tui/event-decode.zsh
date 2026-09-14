@@ -72,7 +72,8 @@ done
 # Reject malformed events.
 for invalid in '{"type":"turn_error","message":1}' \
     '{"type":"_assistant_message_delta","text":"missing index"}' \
-    '{"type":"_hook_activity","hook":"unknown","script":"check","input":""}'; do
+    '{"type":"_hook_activity","hook":"unknown","script":"/hooks/check/run","input":""}' \
+    '{"type":"_hook_activity","hook":"stop","script":"check","input":""}'; do
   if print -r -- "$invalid" |
       jq -jRs -L "$ROOT" --argjson runtime null \
         -f "$ROOT/libexec/tui/event-decode.jq" >/dev/null 2>&1; then
@@ -95,27 +96,44 @@ assert_equal 'tool_call,call_2,read_file · outside.txt,read_file,0,batch_ok' "$
 # Decode hook replacement views.
 typeset hook_runtime='{"harness":{"stop":[{"command":"/hooks/check/run","environment":[],"render":{"user_before":"${script} · ${input}","user_after":"${script} · ${output.stdout}${output.stderr} (${output.exit_code})","model_after":"${output.stdout}"}}]}}'
 order=$(print -r -- \
-    '{"type":"hook_result","hook":"stop","script":"check","input":"answer","stdout":"model body","stderr":"user body","exit_code":10}' |
+    '{"type":"hook_result","hook":"stop","script":"/hooks/check/run","input":"answer","stdout":"model body","stderr":"user body","exit_code":10}' |
   jq -jRs -L "$ROOT" --argjson runtime "$hook_runtime" \
     -f "$ROOT/libexec/tui/event-decode.jq" |
   tr '\0' '\n' | sed '/^$/d' | paste -sd, -)
-assert_equal 'hook_result,stop,check,check · model bodyuser body (10),0,1,batch_ok' "$order"
+assert_equal 'hook_result,stop,/hooks/check/run,check · model bodyuser body (10),0,1,batch_ok' "$order"
 
 # A stop hook that let the turn end contributes no model context.
 order=$(print -r -- \
-    '{"type":"hook_result","hook":"stop","script":"check","input":"answer","stdout":"model body","stderr":"user body","exit_code":0}' |
+    '{"type":"hook_result","hook":"stop","script":"/hooks/check/run","input":"answer","stdout":"model body","stderr":"user body","exit_code":0}' |
   jq -jRs -L "$ROOT" --argjson runtime "$hook_runtime" \
     -f "$ROOT/libexec/tui/event-decode.jq" |
   tr '\0' '\n' | sed '/^$/d' | paste -sd, -)
-assert_equal 'hook_result,stop,check,check · model bodyuser body (0),0,0,batch_ok' "$order"
+assert_equal 'hook_result,stop,/hooks/check/run,check · model bodyuser body (0),0,0,batch_ok' "$order"
 
 # Decode hook activity.
 order=$(print -r -- \
-    '{"type":"_hook_activity","hook":"stop","script":"check","input":"answer"}' |
+    '{"type":"_hook_activity","hook":"stop","script":"/hooks/check/run","input":"answer"}' |
   jq -jRs -L "$ROOT" --argjson runtime "$hook_runtime" \
     -f "$ROOT/libexec/tui/event-decode.jq" |
   tr '\0' '\n' | sed '/^$/d' | paste -sd, -)
-assert_equal 'hook_call,stop,check,check · answer,0,batch_ok' "$order"
+assert_equal 'hook_call,stop,/hooks/check/run,check · answer,0,batch_ok' "$order"
+
+# Exact commands select templates even when their display identities collide.
+hook_runtime='{"harness":{"stop":[{"command":"/one/check/run","environment":[],"render":{"user_before":"one ${script}","user_after":"one ${script}","model_after":""}},{"command":"/two/check/run","environment":[],"render":{"user_before":"two ${script}","user_after":"two ${script}","model_after":""}}]}}'
+order=$(print -r -- \
+    '{"type":"_hook_activity","hook":"stop","script":"/two/check/run","input":""}' |
+  jq -jRs -L "$ROOT" --argjson runtime "$hook_runtime" \
+    -f "$ROOT/libexec/tui/event-decode.jq" |
+  tr '\0' '\n' | sed '/^$/d' | paste -sd, -)
+assert_equal 'hook_call,stop,/two/check/run,two check,4,batch_ok' "$order"
+
+# Results whose command left the runtime use the default render contract.
+order=$(print -r -- \
+    '{"type":"hook_result","hook":"session_start","script":"/removed/probe/run","input":"","stdout":"context","stderr":"","exit_code":0}' |
+  jq -jRs -L "$ROOT" --argjson runtime '{"harness":{}}' \
+    -f "$ROOT/libexec/tui/event-decode.jq" |
+  tr '\0' '\n' | sed '/^$/d' | paste -sd, -)
+assert_equal 'hook_result,session_start,/removed/probe/run,-1,1,batch_ok' "$order"
 
 # Decode shell permissions.
 order=$(print -r -- \

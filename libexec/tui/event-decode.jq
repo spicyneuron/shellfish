@@ -17,7 +17,7 @@ def event_fields:
     empty
   elif .type == "_hook_activity" and keys == ["hook", "input", "script", "type"] and
       (.hook as $hook | hook_names | index($hook) != null) and
-      (.script | nonempty_control_free_string) and
+      (.script | absolute_path) and
       (.input | type == "string" or type == "object") then
     ({record:.,runtime:$event_runtime} | render_hook_before_view) as $view |
     if $view.text == "" then empty

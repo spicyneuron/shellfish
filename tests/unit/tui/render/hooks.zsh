@@ -44,7 +44,7 @@ sf_tui_reset
 
 # Hook results replace their live view and settle it.
 sf_tui_event activity_start
-sf_tui_event hook_call session_start project $'project · Inspecting\nfiles' 0
+sf_tui_event hook_call session_start /hooks/project/run $'project · Inspecting\nfiles' 0
 SF_PRESENT_STYLE[hook]='fg=#111111'
 SF_PRESENT_STYLE[activity]='fg=#222222'
 view 79 20
@@ -53,7 +53,7 @@ assert_equal $'ℹ project · Inspecting\n│ files\n╰ ⠃' "$REPLY"
   fail 'hook notice did not retain its own style'
 (( ${SF_PRESENT_VIEWPORT_HIGHLIGHTS[(Ie)fg=#222222]} )) ||
   fail 'hook activity did not use the agent style'
-sf_tui_event hook_result session_start project $'project · Ready\nresult' 0
+sf_tui_event hook_result session_start /hooks/project/run $'project · Ready\nresult' 0
 view 79 20
 assert_equal $'ℹ project · Ready\n╰ result\n\n⠃' "$REPLY"
 assert_equal 2 "$SF_PRESENT_SAFE_ROWS"
@@ -63,8 +63,8 @@ sf_tui_event activity_stop
 # An empty final view retracts its live predecessor.
 sf_tui_reset
 sf_tui_event activity_start
-sf_tui_event hook_call stop check 'check' 0
-sf_tui_event hook_result stop check '' -1
+sf_tui_event hook_call stop /hooks/check/run 'check' 0
+sf_tui_event hook_result stop /hooks/check/run '' -1
 view 79 20
 assert_equal '⠃' "$REPLY"
 assert_equal 0 "$SF_PRESENT_SAFE_ROWS"
@@ -72,7 +72,7 @@ sf_tui_event activity_stop
 
 # Replayed results append already settled.
 sf_tui_reset
-sf_tui_event hook_result user_prompt_submit prompt $'prompt\nfirst\nsecond' 0
+sf_tui_event hook_result user_prompt_submit /hooks/prompt/run $'prompt\nfirst\nsecond' 0
 view 79 20
 assert_equal $'ℹ prompt\n│ first\n╰ second' "$REPLY"
 assert_equal 3 "$SF_PRESENT_SAFE_ROWS"
@@ -80,20 +80,20 @@ assert_equal 3 "$SF_PRESENT_SAFE_ROWS"
 # A hook that fed the model is marked as reference material and previewed.
 sf_tui_reset
 SF_PRESENT_PREVIEW_CONTEXT=1
-sf_tui_event hook_result session_start probe $'probe\nfirst\nsecond\nthird' 0 1
+sf_tui_event hook_result session_start /hooks/probe/run $'probe\nfirst\nsecond\nthird' 0 1
 view 79 20
 assert_equal $'↪ probe\n│ first\n╰ … ~6 tokens' "$REPLY"
 
 # A hook that spoke only to the reader is a notice, shown whole.
 sf_tui_reset
-sf_tui_event hook_result stop check $'check\nfirst\nsecond\nthird' 0 0
+sf_tui_event hook_result stop /hooks/check/run $'check\nfirst\nsecond\nthird' 0 0
 view 79 20
 assert_equal $'ℹ check\n│ first\n│ second\n╰ third' "$REPLY"
 
 # A zero budget keeps the identity row alone.
 sf_tui_reset
 SF_PRESENT_PREVIEW_CONTEXT=0
-sf_tui_event hook_result user_prompt_submit prompt $'prompt\nfirst\nsecond' 0 1
+sf_tui_event hook_result user_prompt_submit /hooks/prompt/run $'prompt\nfirst\nsecond' 0 1
 view 79 20
 assert_equal $'↪ prompt\n╰ … ~5 tokens' "$REPLY"
 SF_PRESENT_PREVIEW_CONTEXT=full
@@ -114,7 +114,7 @@ view 79 20
 # Tall settled hooks can drain through a short terminal budget.
 sf_tui_reset
 sf_tui_terminal_reset
-sf_tui_event hook_result stop check $'check\none\ntwo\nthree\nfour' 0
+sf_tui_event hook_result stop /hooks/check/run $'check\none\ntwo\nthree\nfour' 0
 sf_tui_transcript 20 4 || fail 'rendering a tall hook result failed'
 sf_tui_terminal_stage || fail 'staging a tall hook result failed'
 sf_tui_terminal_finish || fail 'committing a tall hook result failed'

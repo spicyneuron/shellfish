@@ -29,7 +29,7 @@ print -r -- '{"type":"system","content":"Instructions"}' >>"$s_system"
 
 # Hook context preview.
 make_header >"$s_context"
-print -r -- '{"type":"hook_result","hook":"session_start","script":"test","input":"","stdout":"data","stderr":"","exit_code":0}' >>"$s_context"
+print -r -- '{"type":"hook_result","hook":"session_start","script":"/hooks/test/run","input":"","stdout":"data","stderr":"","exit_code":0}' >>"$s_context"
 
 # User and torn previews.
 make_header >"$s_user"

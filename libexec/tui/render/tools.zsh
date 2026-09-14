@@ -25,7 +25,10 @@ sf_tui_tool_call() {
 sf_tui_tool_result() {
   local id=$1 content=${2-} name=${3-} identity_start=${4:--1} expected
   integer index=${#SF_PRESENT_KIND}
-  sf_tui_tool_pending || return 1
+  if ! sf_tui_tool_pending; then
+    sf_tui_tool_call "$id" '' "$name" -1 || return 1
+    index=${#SF_PRESENT_KIND}
+  fi
   sf_tui_formatter_data $index 1 || return 1
   expected=$REPLY
   [[ $id == "$expected" ]] || return 1

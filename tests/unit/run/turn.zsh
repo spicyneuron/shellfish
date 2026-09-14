@@ -379,7 +379,7 @@ jq -e -s '
 typeset echo_session="$tmp/echo.jsonl"
 sf_test_session "$echo_session"
 sf_session_begin_turn "$echo_session"
-sf_session_append "$echo_session" '{"type":"hook_result","hook":"session_start","script":"fixture","input":"","stdout":"startup context","stderr":"","exit_code":0}'
+sf_session_append "$echo_session" '{"type":"hook_result","hook":"session_start","script":"/hooks/fixture/run","input":"","stdout":"startup context","stderr":"","exit_code":0}'
 sf_session_reset
 stream=$(sf_test_turn 'plain prompt' "$echo_session")
 print -r -- "$stream" | jq -eRn '

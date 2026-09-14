@@ -43,13 +43,18 @@ def test_sandbox_updates_without_reload():
             session.wait_after(mark, "Session sandbox write grant added", timeout=5)
             session.wait_ready(mark, timeout=5)
             assert "Project:" not in session.visible(mark)
-            records = [json.loads(line) for line in path.read_text().splitlines()]
             grant_path = str(Path(grant).resolve())
+            end = time.monotonic() + 3
+            while time.monotonic() < end:
+                records = [json.loads(line) for line in path.read_text().splitlines()]
+                if grant_path in records[0]["harness"]["sandbox_write_paths"]:
+                    break
+                session.pump()
             assert grant_path in records[0]["harness"]["sandbox_write_paths"]
             assert records[1:] == [{
                 "type": "hook_result",
                 "hook": "user_prompt_submit",
-                "script": "sandbox",
+                "script": records[0]["harness"]["user_prompt_submit"][0]["command"],
                 "input": f"/sandbox +w {grant}",
                 "stdout": f"Session sandbox write grant added: {grant_path}\n",
                 "stderr": "",
@@ -260,7 +265,7 @@ def test_permission_ctrl_c_cancels_pending_tools():
         session.send(b"cancel tools\r")
         session.wait_after(mark, "Allow shell outside of sandbox?")
         session.send(b"\x03")
-        _, records = session.wait_session_records(10, path=session.explicit_session)
+        _, records = session.wait_session_records(7, path=session.explicit_session)
         results = [
             record for record in records if record.get("type") == "tool_result"
         ]

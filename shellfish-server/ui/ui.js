@@ -268,10 +268,15 @@ function renderValue(value) {
   return typeof value === "string" ? value : JSON.stringify(value);
 }
 
-function hookTemplates(hook, script) {
+function hookTemplates(hook, command) {
   return (
-    hookTemplatesByName.get(hook + "\0" + script) || DEFAULT_HOOK_TEMPLATES
+    hookTemplatesByName.get(hook + "\0" + command) || DEFAULT_HOOK_TEMPLATES
   );
+}
+
+function scriptIdentity(command) {
+  const parts = command.split("/");
+  return parts.at(-1) === "run" ? parts.at(-2) : parts.at(-1);
 }
 
 // Mirrors hook_model_visible: which results a turn feeds back to the model.
@@ -531,9 +536,7 @@ function applyRuntime(runtime) {
     "stop",
   ]) {
     for (const component of (runtime.harness || {})[hook] || []) {
-      const parts = component.command.split("/");
-      const script = parts.at(-1) === "run" ? parts.at(-2) : parts.at(-1);
-      hookTemplatesByName.set(hook + "\0" + script, component.render);
+      hookTemplatesByName.set(hook + "\0" + component.command, component.render);
     }
   }
 }
@@ -602,7 +605,7 @@ function apply(frame) {
           "stop",
         ].includes(frame.hook) ||
         typeof frame.script !== "string" ||
-        !frame.script ||
+        !frame.script.startsWith("/") ||
         /[\u0000-\u001f\u007f-\u009f]/.test(frame.script) ||
         !(
           typeof frame.input === "string" ||
@@ -616,8 +619,9 @@ function apply(frame) {
       }
       clearHookActivity();
       hideIndicator();
+      const script = scriptIdentity(frame.script);
       const template = hookTemplates(frame.hook, frame.script).user_before;
-      const text = renderScript(template, frame.script, frame.input, null);
+      const text = renderScript(template, script, frame.input, null);
       if (text) {
         const article = record("note", null);
         const content = el(article, "pre", "call");
@@ -625,7 +629,7 @@ function apply(frame) {
         renderScriptView(
           content,
           template,
-          frame.script,
+          script,
           frame.input,
           null,
         );
@@ -778,9 +782,10 @@ function renderHookResult(frame) {
     clearHookActivity();
   }
   const templates = hookTemplates(frame.hook, frame.script);
+  const script = scriptIdentity(frame.script);
   const text = renderScript(
     templates.user_after,
-    frame.script,
+    script,
     frame.input,
     frame,
   );
@@ -793,7 +798,7 @@ function renderHookResult(frame) {
     hookModelVisible(frame) &&
     renderScript(
       templates.model_after,
-      frame.script,
+      script,
       frame.input,
       frame,
     )
@@ -805,7 +810,7 @@ function renderHookResult(frame) {
   renderScriptView(
     content,
     templates.user_after,
-    frame.script,
+    script,
     frame.input,
     frame,
   );

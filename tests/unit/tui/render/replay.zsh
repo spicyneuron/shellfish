@@ -40,7 +40,7 @@ exit 1|shell|0||
 assistant_start||||||
 assistant_message_delta|0|Done||||
 assistant_end||||||
-hook_result|session_start|test||-1|1|" "$REPLY"
+hook_result|session_start|/hooks/test/run||-1|1|" "$REPLY"
 
 # The header replaces stale runtime state.
 SF_PRESENT_IDENTITY=stale/model

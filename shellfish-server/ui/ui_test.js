@@ -82,6 +82,14 @@ const HEADER = {
           model_after: "${output.stdout}",
         },
       },
+      {
+        command: "/other/stop/check/run",
+        render: {
+          user_before: "wrong template",
+          user_after: "wrong template",
+          model_after: "",
+        },
+      },
     ],
   },
 };
@@ -587,7 +595,7 @@ test("marks a hook that fed the model", async () => {
   await page.send({
     type: "hook_result",
     hook: "session_start",
-    script: "probe",
+    script: "/hooks/session_start/probe/run",
     input: "",
     stdout: "environment",
     stderr: "",
@@ -602,7 +610,7 @@ test("marks a hook that spoke only to the reader", async () => {
   await page.send({
     type: "hook_result",
     hook: "stop",
-    script: "check",
+    script: "/hooks/stop/check/run",
     input: "",
     stdout: "",
     stderr: "checked 3 files",
@@ -621,7 +629,7 @@ test("a hook with no display template renders nothing", async () => {
   await page.send({
     type: "hook_result",
     hook: "post_tool_use",
-    script: "unconfigured",
+    script: "/hooks/post_tool_use/unconfigured/run",
     input: {},
     stdout: "quiet",
     stderr: "",
@@ -637,7 +645,7 @@ test("puts prompt context under a user heading", async () => {
     {
       type: "hook_result",
       hook: "user_prompt_submit",
-      script: "compact",
+      script: "/hooks/user_prompt_submit/compact/run",
       input: "prompt",
       stdout: "injected",
       stderr: "",
@@ -791,7 +799,7 @@ test("labels running hook activity from its template", async () => {
     {
       type: "_hook_activity",
       hook: "user_prompt_submit",
-      script: "compact",
+      script: "/hooks/user_prompt_submit/compact/run",
       input: "/compact",
     },
   );
@@ -807,7 +815,7 @@ test("labels running hook activity from its template", async () => {
   await page.send({
     type: "_hook_activity",
     hook: "session_start",
-    script: "probe",
+    script: "/hooks/session_start/probe/run",
     input: "",
   });
   notes = find(page.output, "note");
@@ -818,11 +826,16 @@ test("labels running hook activity from its template", async () => {
 test("replaces hook activity with its durable result", async () => {
   const page = await idle();
   await page.send(
-    { type: "_hook_activity", hook: "stop", script: "check", input: "" },
+    {
+      type: "_hook_activity",
+      hook: "stop",
+      script: "/hooks/stop/check/run",
+      input: "",
+    },
     {
       type: "hook_result",
       hook: "stop",
-      script: "check",
+      script: "/hooks/stop/check/run",
       input: "",
       stdout: "",
       stderr: "checked 3 files",
@@ -842,7 +855,12 @@ test("replaces standing hook activity with a process failure", async () => {
   const page = await idle();
   await page.send(
     { type: "_session_status", working: true },
-    { type: "_hook_activity", hook: "stop", script: "check", input: "" },
+    {
+      type: "_hook_activity",
+      hook: "stop",
+      script: "/hooks/stop/check/run",
+      input: "",
+    },
     {
       type: "_session_status",
       working: false,

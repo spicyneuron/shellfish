@@ -133,8 +133,8 @@ sandbox_display=$(jq -r 'select(.type == "hook_result") | .stderr' "$hook_events
    $sandbox_display == *'Write grants:'* ]]
 run_prompt_hook "/sandbox +w $sandbox_dir" "$help_session"
 [[ $reply[1] == session_update ]]
-jq -se --arg path "${sandbox_dir:A}" '
-  [.[] | select(.type == "hook_result" and .hook == "user_prompt_submit" and .script == "sandbox")]
+jq -se --arg path "${sandbox_dir:A}" --arg script "$ROOT/share/default/hooks/user_prompt_submit/sandbox/run" '
+  [.[] | select(.type == "hook_result" and .hook == "user_prompt_submit" and .script == $script)]
     | .[-1].stdout | contains("added") and contains($path)
 ' "$help_session" >/dev/null || fail 'sandbox add did not commit model context'
 sandbox_patch=$reply[2]
@@ -148,8 +148,8 @@ run_prompt_hook "/sandbox write $sandbox_dir" "$help_session"
 [[ $reply[1] == handled ]]
 run_prompt_hook "/sandbox -w $sandbox_dir" "$help_session"
 [[ $reply[1] == session_update ]]
-jq -se --arg path "${sandbox_dir:A}" '
-  [.[] | select(.type == "hook_result" and .hook == "user_prompt_submit" and .script == "sandbox")]
+jq -se --arg path "${sandbox_dir:A}" --arg script "$ROOT/share/default/hooks/user_prompt_submit/sandbox/run" '
+  [.[] | select(.type == "hook_result" and .hook == "user_prompt_submit" and .script == $script)]
     | .[-1].stdout | contains("removed") and contains($path)
 ' "$help_session" >/dev/null || fail 'sandbox removal did not commit model context'
 jq -e '. == {harness:{sandbox_write_paths:[]}}' <<<"$reply[2]" >/dev/null
@@ -234,7 +234,7 @@ print -r -- \
   '{"type":"user","content":[{"type":"text","text":"First"}]}' \
   '{"type":"assistant","stop":"end","content":[{"type":"text","text":"Answer"}],"usage":{"input_tokens":1,"output_tokens":1}}' \
   '{"type":"state","name":"agents/a1b2c3","value":{"session":".agent-a1b2c3.jsonl"}}' \
-  '{"type":"hook_result","hook":"user_prompt_submit","script":"git_environment","input":"","stdout":"branch:work","stderr":"","exit_code":0}' \
+  '{"type":"hook_result","hook":"user_prompt_submit","script":"/hooks/git_environment/run","input":"","stdout":"branch:work","stderr":"","exit_code":0}' \
   '{"type":"user","content":[{"type":"text","text":"Second"}]}' \
   >>"$state_session"
 typeset state_before=$(shasum <"$state_session")
@@ -266,9 +266,9 @@ typeset shell_command='[[ -n $HOME ]] || exit 8; env | grep -Eq '\''^SHELLFISH_(
 run_prompt_hook "!$shell_command" "$shell_session"
 [[ $reply[1] == handled ]]
 [[ -d $shell_state_dir ]]
-jq -e --arg input "!$shell_command" '
+jq -e --arg input "!$shell_command" --arg script "$ROOT/share/default/hooks/user_prompt_submit/user_shell/run" '
   select(.type == "hook_result" and .hook == "user_prompt_submit" and
-    .script == "user_shell" and .input == $input and .exit_code == 10 and
+    .script == $script and .input == $input and .exit_code == 10 and
     (.stdout | contains("output")) and (.stdout | contains("(exit 7)")))
 ' < <(tail -n 1 "$shell_session") >/dev/null
 sf_hooks_turn_state_cleanup

@@ -70,9 +70,9 @@ SF_TEST_SYSTEM='fixed system'
 export REVIEW_API_KEY=exported-secret
 sf_test_session "$session"
 sf_session_append "$session" \
-  '{"type":"hook_result","hook":"session_start","script":"project_instructions","input":"","stdout":"startup constraint","stderr":"","exit_code":0}'
+  '{"type":"hook_result","hook":"session_start","script":"/hooks/project_instructions/run","input":"","stdout":"startup constraint","stderr":"","exit_code":0}'
 sf_session_append "$session" \
-  '{"type":"hook_result","hook":"user_prompt_submit","script":"project_environment","input":"","stdout":"prompt context","stderr":"","exit_code":0}'
+  '{"type":"hook_result","hook":"user_prompt_submit","script":"/hooks/project_environment/run","input":"","stdout":"prompt context","stderr":"","exit_code":0}'
 for index in 1 2 3 4 5; do
   sf_session_append "$session" \
     "$(jq -cn --arg text "earlier user $index" '{type:"user",content:[{type:"text",text:$text}]}')"

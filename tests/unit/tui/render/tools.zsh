@@ -41,6 +41,12 @@ assert_tail $'⛭ shell · failed\n│ detail\n╰ exit 1\n\n⠃'
 assert_equal 5 "$SF_PRESENT_SAFE_ROWS"
 sf_tui_event activity_stop
 
+# A queued cancellation has no running activity, but its result is still complete.
+sf_tui_reset
+sf_tui_event tool_result queued 'shell · cancelled' shell 0
+view
+assert_tail $'⛭ shell · cancelled\n╰'
+
 # Permission hides only the live spinner; normal rendering remains intact.
 sf_tui_reset
 sf_tui_event activity_start

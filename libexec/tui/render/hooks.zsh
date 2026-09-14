@@ -46,8 +46,6 @@ sf_tui_hook_append() {
   integer index
   sf_tui_safe "$content"
   content=$REPLY
-  sf_tui_safe "$script"
-  script=$REPLY
   sf_tui_formatter_append hook $live || return 1
   index=$REPLY
   SF_PRESENT_TEXT[index]=$content
@@ -67,6 +65,9 @@ sf_tui_hook_result() {
     sf_tui_formatter_data ${#SF_PRESENT_KIND} 1 || return 1
     expected=$REPLY
     [[ $hook == "$expected" ]] || return 1
+    sf_tui_formatter_data ${#SF_PRESENT_KIND} 2 || return 1
+    expected=$REPLY
+    [[ $script == "$expected" ]] || return 1
     sf_tui_formatter_retract || return 1
   else
     sf_tui_hook_interrupt || return 1
@@ -101,7 +102,7 @@ sf_tui_error_append() {
 sf_tui_format_hook() {
   integer index=$1 columns=$2 live identity_start
   local kind=$SF_PRESENT_KIND[index] body=$SF_PRESENT_TEXT[index]
-  local first head script glyph preview
+  local first head command script glyph preview
 
   sf_tui_format_start
 
@@ -121,6 +122,10 @@ sf_tui_format_hook() {
       sf_tui_format_trim "$body"
       body=$REPLY
       sf_tui_formatter_data $index 2 || return 1
+      command=$REPLY
+      script=${command:t}
+      [[ $script != run ]] || script=${command:h:t}
+      sf_tui_safe "$script"
       script=$REPLY
       sf_tui_formatter_data $index 3 || return 1
       identity_start=$REPLY
