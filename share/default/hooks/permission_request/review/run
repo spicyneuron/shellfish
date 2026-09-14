@@ -3,6 +3,7 @@
 emulate -R zsh
 setopt extended_glob no_aliases no_multios pipe_fail
 
+integer input_tokens=32768
 integer output_tokens=4096
 integer request_seconds=60
 local request header active_header context_window budget system base records transcript
@@ -90,67 +91,73 @@ context_window=$(jq -er --argjson output_tokens "$output_tokens" '
   select(type == "number" and floor == . and . > $output_tokens)
 ' <<<"$header" 2>/dev/null) ||
   permission_deny 'Permission review has no usable context limit.'
-budget=$(( (context_window - output_tokens) * 4 ))
+budget=$(( (context_window - output_tokens < input_tokens ?
+  context_window - output_tokens : input_tokens) * 4 ))
 
-base=$(jq -cn --argjson tool_request "$request" '
-  {tool_request:$tool_request,user_messages:[],current_turn:[],startup_constraints:[]}
-') || permission_deny 'Permission review could not prepare context.'
-
-# Each candidate remains a complete source record. The current user and exact tool
-# request are mandatory; optional records are admitted newest-first.
-records=$(jq -cse '
+# The fixed context identifies the session's standing instructions and exact target.
+# Timeline records are admitted backward without gaps, then emitted chronologically.
+records=$(jq -cse --argjson request "$request" '
   to_entries as $entries |
-  ([ $entries[] | select(.value.type == "user") | .key ]) as $user_indexes |
-  ($user_indexes | first) as $first_user |
-  ($user_indexes | last) as $current_user |
-  select($current_user != null) |
+  ([ $entries[] | select(.value.type == "user") | .key ] | first) as $first_user |
+  ([ $entries[] | select(.value.type == "tool_call" and
+      .value.id == $request.tool_use_id) | .key ] | last) as $target_index |
+  select($first_user != null and $target_index != null and $target_index >= $first_user) |
+  $entries[$target_index].value as $target |
+  select($target.name == $request.tool_name and $target.input == $request.tool_input) |
   {
-    current_user:$entries[$current_user].value,
+    system_message:([
+      $entries[] | select(.key < $first_user and .value.type == "system") |
+      .value.content
+    ] | last),
+    startup_context:[
+      $entries[] | select(.key < $first_user and .value.type == "hook_result" and
+        .value.hook == "session_start" and .value.model_context? != null) | .value |
+      {hook,script,content:.model_context}
+    ],
+    target_tool_call:$target,
     candidates:([
-      $entries[] |
-      .key as $index | .value as $record |
-      if $index < $current_user and $record.type == "user" then
-        {index:$index,section:"user_messages",record:$record}
-      elif $index > $current_user and $record.type == "assistant" then
-        {index:$index,section:"current_turn",record:{type:"assistant",stop:$record.stop,
-          content:[$record.content[] | select(.type == "text")]}}
-      elif $index > $current_user and ($record.type == "tool_call" or $record.type == "tool_result") then
-        {index:$index,section:"current_turn",record:$record}
-      elif $index < $first_user and ($record.type == "system" or
-          ($record.type == "hook_result" and $record.model_context? != null)) then
-        {index:$index,section:"startup_constraints",record:
-          (if $record.type == "system" then $record else
-            {type:"hook_context",hook:$record.hook,script:$record.script,content:$record.model_context} end)}
+      $entries[] | select(.key < $target_index) | .value as $record |
+      if $record.type == "user" then $record
+      elif $record.type == "assistant" then
+        {type:"assistant",stop:$record.stop,
+          content:[$record.content[] | select(.type == "text")]}
+      elif $record.type == "tool_call" or $record.type == "tool_result" then $record
+      elif $record.type == "hook_result" and $record.hook != "session_start" and
+          $record.model_context? != null then
+        {type:"hook_context",hook:$record.hook,script:$record.script,
+          content:$record.model_context}
       else empty end
-    ] | sort_by(.index) | reverse)
+    ] | reverse)
   }
 ' "$SHELLFISH_SESSION" 2>/dev/null) ||
   permission_deny 'Permission review could not project the active context.'
 
-base=$(jq -cn --argjson base "$base" --argjson records "$records" '
-  $base | .user_messages = [$records.current_user]
+base=$(jq -cn --argjson records "$records" '
+  {startup_context:$records.startup_context,recent_timeline:[],
+    target_tool_call:$records.target_tool_call} +
+  (if $records.system_message == null then {} else
+    {system_message:$records.system_message} end)
 ') || permission_deny 'Permission review could not prepare context.'
 
 integer base_bytes
 base_bytes=$(jq -cn --arg system "$system" --argjson context "$base" \
   '($system | utf8bytelength) + ($context | tojson | utf8bytelength)') ||
   permission_deny 'Permission review could not measure required context.'
-(( base_bytes <= budget )) || permission_deny 'The tool request and current user message exceed the review context limit.'
+(( base_bytes <= budget )) ||
+  permission_deny 'Required permission review context exceeds the review context limit.'
 
 candidates=( "${(@f)$(jq -c '.candidates[]' <<<"$records")}" ) ||
   permission_deny 'Permission review could not inspect optional context.'
-integer users=1 candidate_bytes
+integer candidate_bytes
 for candidate in $candidates; do
-  [[ $(jq -r '.section' <<<"$candidate") != user_messages || $users -lt 5 ]] || continue
   context=$(jq -cn --argjson context "$base" --argjson candidate "$candidate" '
-    $context | .[$candidate.section] = ([$candidate.record] + .[$candidate.section])
+    $context | .recent_timeline = ([$candidate] + .recent_timeline)
   ') || permission_deny 'Permission review could not assemble context.'
   candidate_bytes=$(jq -cn --arg system "$system" --argjson context "$context" \
     '($system | utf8bytelength) + ($context | tojson | utf8bytelength)') ||
     permission_deny 'Permission review could not measure optional context.'
-  (( candidate_bytes <= budget )) || continue
+  (( candidate_bytes <= budget )) || break
   base=$context
-  [[ $(jq -r '.section' <<<"$candidate") != user_messages ]] || (( users++ ))
 done
 
 transcript="$SHELLFISH_TURN_STATE/permission-review.jsonl"
