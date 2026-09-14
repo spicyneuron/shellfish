@@ -45,7 +45,8 @@ func (e *Exec) Run(ctx context.Context, input json.RawMessage, replies <-chan js
 	}()
 	args := []string{"run", "--jsonl", "--session", e.session}
 	child := exec.CommandContext(ctx, e.binary, args...)
-	child.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	// Detach from terminal job control while retaining a group for forced cleanup.
+	child.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	grace := cancelGracePeriod
 	var processMu sync.Mutex
 	processExited := false

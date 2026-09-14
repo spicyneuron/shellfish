@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"syscall"
@@ -43,6 +45,51 @@ printf '%s\n' '{"type":"_assistant_message_delta","text":"working"}' ''
 	}
 	// Blank lines are skipped and surrounding whitespace never reaches a client.
 	if len(events) != 1 || events[0] != `{"type":"_assistant_message_delta","text":"working"}` {
+		t.Fatalf("events = %q", events)
+	}
+}
+
+func TestExecDetachesTurnFromControllingTerminal(t *testing.T) {
+	if os.Getenv("SHELLFISH_EXEC_PTY_HELPER") != "1" {
+		if runtime.GOOS != "darwin" {
+			t.Skip("PTY regression uses the macOS script interface")
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		command := exec.CommandContext(ctx, "/usr/bin/script", "-q", "-e", "/dev/null",
+			os.Args[0], "-test.run=^TestExecDetachesTurnFromControllingTerminal$")
+		command.Env = append(os.Environ(), "SHELLFISH_EXEC_PTY_HELPER=1")
+		output, err := command.CombinedOutput()
+		if ctx.Err() != nil {
+			t.Fatal("turn stopped under terminal job control")
+		}
+		if err != nil {
+			t.Fatalf("PTY helper failed: %v: %s", err, output)
+		}
+		return
+	}
+	tty, err := os.Open("/dev/tty")
+	if err != nil {
+		t.Fatal("PTY helper has no controlling terminal")
+	}
+	_ = tty.Close()
+	binary := fakeShellfish(t, `
+terminal=$(ps -o tty= -p $$ | tr -d ' ')
+if [ "$terminal" != "??" ]; then
+  printf 'turn retained controlling terminal %s\n' "$terminal" >&2
+  exit 1
+fi
+IFS= read -r input
+printf '%s\n' '{"type":"_assistant_start"}'
+`)
+	var events []string
+	err = NewExec(context.Background(), binary, "/session").Run(
+		context.Background(), json.RawMessage(`{}`), nil,
+		func(event json.RawMessage) { events = append(events, string(event)) })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 1 || events[0] != `{"type":"_assistant_start"}` {
 		t.Fatalf("events = %q", events)
 	}
 }
