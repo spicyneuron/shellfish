@@ -46,8 +46,15 @@ sf_tui_reset
 sf_tui_event activity_start
 sf_tui_event hook_activity session_start project Inspecting
 sf_tui_event hook_activity user_prompt_submit prompt Checking
+SF_PRESENT_STYLE[hook_activity]='fg=#111111'
+SF_PRESENT_STYLE[activity]='fg=#222222'
 view 79 20
 assert_equal $'ℹ Checking\n⠃' "$REPLY"
+(( ${SF_PRESENT_VIEWPORT_HIGHLIGHTS[(Ie)fg=#111111]} )) ||
+  fail 'hook notice did not retain its own style'
+(( ${SF_PRESENT_VIEWPORT_HIGHLIGHTS[(Ie)fg=#222222]} )) ||
+  fail 'hook activity did not use the agent style'
+unset 'SF_PRESENT_STYLE[hook_activity]' 'SF_PRESENT_STYLE[activity]'
 assert_equal 0 "$SF_PRESENT_SAFE_ROWS"
 sf_tui_event hook_activity
 view 79 20

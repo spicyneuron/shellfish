@@ -328,31 +328,31 @@ details.call {
 }
 
 .record.activity {
-  color: var(--muted);
+  color: var(--agent-heading);
 }
 
 .record.activity pre::before {
   content: "⠃";
-  animation: activity 1s step-end infinite;
+  animation: activity 1.2s step-end infinite;
 }
 
 @keyframes activity {
-  10%, 20% {
+  8.333%, 16.667%, 25% {
     content: "⠁";
   }
-  30% {
+  33.333% {
     content: "⠃";
   }
-  40% {
+  41.667% {
     content: "⠆";
   }
-  50%, 80% {
+  50%, 83.333% {
     content: "⡄";
   }
-  60%, 70% {
+  58.333%, 66.667%, 75% {
     content: "⡀";
   }
-  90% {
+  91.667% {
     content: "⠆";
   }
 }

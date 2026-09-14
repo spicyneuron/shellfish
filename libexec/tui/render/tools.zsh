@@ -215,7 +215,7 @@ sf_tui_format_tool() {
       sf_tui_tool_notes "$second" "$sandbox"
       [[ -z $REPLY ]] || tail+=" · $REPLY"
     fi
-    sf_tui_format_styled $columns "$tail" tool_result "$overlay" || return 1
+    sf_tui_format_styled $columns "$tail" tool_result "$overlay" activity || return 1
   elif [[ -n $body ]]; then
     tail='╰'
     sf_tui_format_tool_body $columns "$body" '  ' "$tail" tool_result \
@@ -232,7 +232,7 @@ sf_tui_format_tool() {
       sf_tui_format_styled $columns "  $notes" tool_result || return 1
     fi
   elif (( live )); then
-    sf_tui_format_styled $columns "╰ $SF_PRESENT_ACTIVITY" tool_result || return 1
+    sf_tui_format_styled $columns "╰ $SF_PRESENT_ACTIVITY" tool_result '' activity || return 1
   else
     sf_tui_tool_notes "$second" "$sandbox"
     notes=$REPLY

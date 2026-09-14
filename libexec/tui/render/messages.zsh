@@ -142,7 +142,7 @@ sf_tui_format_message() {
 
   if [[ -z $body ]]; then
     if (( live )); then
-      sf_tui_format_styled $columns "$SF_PRESENT_ACTIVITY" message || return 1
+      sf_tui_format_styled $columns "$SF_PRESENT_ACTIVITY" message '' activity || return 1
     else
       SF_FORMAT_SAFE=${#SF_FORMAT_ROWS}
     fi
@@ -174,7 +174,7 @@ sf_tui_format_message() {
     sf_tui_token_count ${#body}
     sf_tui_format_styled $columns "… ~$REPLY tokens" message clamp || return 1
   elif (( live )); then
-    sf_tui_format_styled $columns "$SF_PRESENT_ACTIVITY" message || return 1
+    sf_tui_format_styled $columns "$SF_PRESENT_ACTIVITY" message '' activity || return 1
   fi
   if (( ! live )); then
     SF_FORMAT_SAFE=${#SF_FORMAT_ROWS}
@@ -214,7 +214,7 @@ sf_tui_format_reasoning() {
   if [[ $expanded != 1 ]]; then
     if (( live )); then tail="✎ Thinking… $SF_PRESENT_ACTIVITY"
     else tail="✎ Thought for ~$tokens tokens."; fi
-    sf_tui_format_styled $columns "$tail" reasoning clamp || return 1
+    sf_tui_format_styled $columns "$tail" reasoning clamp activity || return 1
     (( ! live )) && SF_FORMAT_SAFE=${#SF_FORMAT_ROWS}
     return 0
   fi
@@ -251,7 +251,7 @@ sf_tui_format_reasoning() {
     if (( hidden )); then tail="  … Thought for ~$tokens tokens."
     else tail="  Thought for ~$tokens tokens."; fi
   fi
-  sf_tui_format_styled $columns "$tail" reasoning clamp || return 1
+  sf_tui_format_styled $columns "$tail" reasoning clamp activity || return 1
 
   if (( ! live )); then
     SF_FORMAT_SAFE=${#SF_FORMAT_ROWS}
@@ -413,11 +413,15 @@ sf_tui_format_chrome() {
 }
 
 sf_tui_format_styled() {
-  integer columns=$1
+  integer columns=$1 start
   local text=$2 kind=$3 overlay=${SF_PRESENT_STYLE[${4-}]-}
-  local rail=${SF_PRESENT_STYLE[divider]-}
+  local suffix=${SF_PRESENT_STYLE[${5-}]-} rail=${SF_PRESENT_STYLE[divider]-}
   local -a source=()
   [[ -z $overlay ]] || source+=( 0 ${#text} "$overlay" )
+  if [[ -n $suffix && $text == *"$SF_PRESENT_ACTIVITY" ]]; then
+    start=$(( ${#text} - ${#SF_PRESENT_ACTIVITY} ))
+    source+=( $start ${#text} "$suffix" )
+  fi
   [[ -z $rail || $text != (│|╰)* ]] || source+=( 0 1 "$rail" )
   sf_tui_format_chrome $columns "$text" "$kind" "${(@)source}"
 }

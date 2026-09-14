@@ -3,7 +3,7 @@ setopt no_aliases no_bg_nice no_multios pipe_fail
 
 typeset -g SF_PRESENT_PREVIEW_REASONING=full SF_PRESENT_PREVIEW_CONTEXT=full
 typeset -g SF_PRESENT_PREVIEW_TOOL_CALL=full SF_PRESENT_PREVIEW_TOOL_RESULT=full
-typeset -ga SF_PRESENT_ACTIVITY_FRAMES=( ⠃ ⠁ ⠁ ⠃ ⠆ ⡄ ⡀ ⡀ ⡄ ⠆ )
+typeset -ga SF_PRESENT_ACTIVITY_FRAMES=( ⠃ ⠁ ⠁ ⠁ ⠃ ⠆ ⡄ ⡀ ⡀ ⡀ ⡄ ⠆ )
 typeset -g SF_PRESENT_ACTIVITY=${SF_PRESENT_ACTIVITY_FRAMES[1]}
 
 sf_tui_rows_config() {

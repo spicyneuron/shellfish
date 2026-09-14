@@ -61,7 +61,7 @@ sf_tui_theme_config() {
        hook_model_context:("fg=" + .context),
        hook_activity:("fg=" + .muted), hook_user_context:("fg=" + .muted),
        error:("fg=" + .error),
-       activity:("fg=" + .muted), divider:("fg=" + .divider),
+       activity:("fg=" + .agent_heading), divider:("fg=" + .divider),
        clamp:("fg=" + .muted),
        footer:("fg=" + .footer),
        prompt:("fg=" + .prompt),

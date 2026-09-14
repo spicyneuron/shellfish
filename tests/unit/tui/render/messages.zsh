@@ -16,6 +16,9 @@ typeset -gi SF_PRESENT_PERMISSION_PREVIEW_LENGTH=0
 typeset -ga SF_PRESENT_QUEUE=() SF_PRESENT_HISTORY=()
 typeset -gi SF_PRESENT_HISTORY_NO=0
 
+assert_equal '⠃,⠁,⠁,⠁,⠃,⠆,⡄,⡀,⡀,⡀,⡄,⠆' \
+  "${(j:,:)SF_PRESENT_ACTIVITY_FRAMES}"
+
 view() { sf_tui_transcript "$@" || fail 'rendering the transcript failed'; REPLY=$SF_PRESENT_VIEWPORT_TEXT }
 
 # The first message opens a full-width numbered role rule.
@@ -86,8 +89,12 @@ sf_tui_terminal_finish
 assert_equal 1 "$SF_PRESENT_ROW_HEAD"
 assert_equal gamma "$SF_PRESENT_TEXT[1]"
 sf_tui_terminal_restore
+SF_PRESENT_STYLE[activity]='fg=#2a2a2a'
 sf_tui_transcript 5 20
 assert_equal '⠃' "$SF_PRESENT_VIEWPORT_TEXT"
+(( ${SF_PRESENT_VIEWPORT_HIGHLIGHTS[(Ie)fg=#2a2a2a]} )) ||
+  fail 'live activity did not use the agent style'
+unset 'SF_PRESENT_STYLE[activity]'
 sf_tui_event assistant_end
 sf_tui_transcript 5 20
 assert_equal gamma "$SF_PRESENT_VIEWPORT_TEXT"

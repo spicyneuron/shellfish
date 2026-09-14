@@ -116,7 +116,7 @@ sf_tui_format_hook() {
     hook_activity)
       sf_tui_format_at_start || sf_tui_format_blank
       sf_tui_format_head $columns "ℹ $body" hook_activity 2 $(( 2 + ${#body} )) || return 1
-      sf_tui_format_styled $columns "$SF_PRESENT_ACTIVITY" hook_activity || return 1
+      sf_tui_format_styled $columns "$SF_PRESENT_ACTIVITY" hook_activity '' activity || return 1
       return
       ;;
     hook_model_context) head="↪ $first${second:+ · $second}" ;;
