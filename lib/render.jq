@@ -23,6 +23,10 @@ def render_value:
   elif type == "string" then .
   else tojson end;
 
+def render_script_identity:
+  split("/") |
+  if .[-1] == "run" then .[-2] else .[-1] end;
+
 def render_input:
   . as $input |
   {input:($input | render_value)} +
@@ -112,16 +116,16 @@ def default_hook_templates:
 def render_hook_templates:
   . as $render |
   ([$render.hooks[$render.hook][]? |
-    select((.command | split("/") |
-      if .[-1] == "run" then .[-2] else .[-1] end) == $render.script) |
+    select(.command == $render.command) |
     .render][0] // ($render | default_hook_templates));
 
 def render_hook_before_spec:
   .runtime as $runtime |
   .record as $activity |
-  ({hooks:$runtime.harness,hook:$activity.hook,script:$activity.script} |
+  ({hooks:$runtime.harness,hook:$activity.hook,command:$activity.script} |
     render_hook_templates | .user_before) as $template |
-  {template:$template,script:$activity.script,input:$activity.input,output:null};
+  {template:$template,script:($activity.script | render_script_identity),
+    input:$activity.input,output:null};
 
 def render_hook_before_view:
   render_hook_before_spec | render_script_view;
@@ -129,9 +133,10 @@ def render_hook_before_view:
 def render_hook_after_spec:
   .runtime as $runtime |
   .record as $result |
-  ({hooks:$runtime.harness,hook:$result.hook,script:$result.script} |
+  ({hooks:$runtime.harness,hook:$result.hook,command:$result.script} |
     render_hook_templates | .user_after) as $template |
-  {template:$template,script:$result.script,input:$result.input,output:$result};
+  {template:$template,script:($result.script | render_script_identity),
+    input:$result.input,output:$result};
 
 def render_hook_after_view:
   render_hook_after_spec | render_script_view;
@@ -139,7 +144,8 @@ def render_hook_after_view:
 def render_hook_model:
   .runtime as $runtime |
   .record as $result |
-  ({hooks:$runtime.harness,hook:$result.hook,script:$result.script} |
+  ({hooks:$runtime.harness,hook:$result.hook,command:$result.script} |
     render_hook_templates | .model_after) as $template |
-  {template:$template,script:$result.script,input:$result.input,output:$result} |
+  {template:$template,script:($result.script | render_script_identity),
+    input:$result.input,output:$result} |
   render_script;

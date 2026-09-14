@@ -116,6 +116,7 @@ sf_hooks_permission_request() {
   fi
   local SF_HOOK_COMPONENT_VALIDATOR=sf_hooks_permission_validate
   local SF_HOOK_VISIBLE=0
+  local SF_HOOK_TOOL_USE_ID=$call_id
   (( operation_status )) || sf_hooks_run "$session" permission_request "$input" ignore allow 1 1 ||
     operation_status=1
   result=( "${reply[@]}" )
@@ -163,6 +164,7 @@ sf_hooks_pre_tool_use() {
     }
   fi
   local SF_HOOK_COMPONENT_VALIDATOR=sf_hooks_pre_tool_validate
+  local SF_HOOK_TOOL_USE_ID=$call_id
   sf_hooks_run "$session" pre_tool_use "$input" ignore allow 0 1 || return
   decision=( "${reply[@]}" )
   if (( decision[1] )); then
@@ -175,7 +177,7 @@ sf_hooks_pre_tool_use() {
 
 # Post-tool hooks cannot emit output or skip.
 sf_hooks_post_tool_use() {
-  local session=$1 result=$2 tool_input=$3 input=''
+  local session=$1 result=$2 tool_input=$3 input='' SF_HOOK_TOOL_USE_ID
 
   if (( SF_HOOK_COUNTS[post_tool_use] )); then
     input=$({ print -r -- "$tool_input"; print -r -- "$result"; } |
@@ -189,6 +191,10 @@ sf_hooks_post_tool_use() {
       return
     }
   fi
+  SF_HOOK_TOOL_USE_ID=$(jq -r '.call_id' <<<$result) || {
+    sf_hooks_fail 'cannot prepare post-tool hook input'
+    return
+  }
   sf_hooks_run "$session" post_tool_use "$input" reject reject 0 1 || return
   reply=()
 }

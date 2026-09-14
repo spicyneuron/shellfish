@@ -28,9 +28,9 @@ run_prompt_hook $'first\nsecond\n' "$prompt_session"
 [[ ${#reply} == 1 && $reply[1] == proceed ]]
 typeset accepted_turn=$SHELLFISH_TURN_ID
 [[ $accepted_turn == 1 && ${(t)SHELLFISH_TURN_ID} != *export* ]]
-jq -eRs '
+jq -eRs --arg script "$prompt_script" '
   [split("\n")[] | select(length > 0) | fromjson] as $records |
-  $records[-1] == {type:"hook_result",hook:"user_prompt_submit",script:"prompt",
+  $records[-1] == {type:"hook_result",hook:"user_prompt_submit",script:$script,
     input:"first\nsecond\n",stdout:"first\nsecond\ncontext",stderr:"",exit_code:0}
 ' "$prompt_session" >/dev/null
 
@@ -50,12 +50,12 @@ sf_test_session "$select_session"
 SF_HOOK_JSONL=1 SELECT_MARKER="$select_marker" \
   run_prompt_hook ordinary "$select_session" >"$select_events"
 [[ ! -e $select_marker ]]
-jq -e -s '
-  . == [{type:"_hook_activity",hook:"user_prompt_submit",script:"prompt",input:"ordinary"},
-    {type:"hook_result",hook:"user_prompt_submit",script:"prompt",input:"ordinary",
+jq -e -s --arg script "$prompt_script" '
+  . == [{type:"_hook_activity",hook:"user_prompt_submit",script:$script,input:"ordinary"},
+    {type:"hook_result",hook:"user_prompt_submit",script:$script,input:"ordinary",
       stdout:"ordinarycontext",stderr:"",exit_code:0}]
 ' "$select_events" >/dev/null
-jq -e 'select(.type == "hook_result" and .script == "prompt" and
+jq -e --arg script "$prompt_script" 'select(.type == "hook_result" and .script == $script and
   .stdout == "ordinarycontext")' < <(tail -n 1 "$select_session") >/dev/null
 SF_TEST_RUNTIME=$(jq -c --arg unmatched "$unmatched" '
   .harness.user_prompt_submit = [

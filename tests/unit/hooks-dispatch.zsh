@@ -84,9 +84,9 @@ SF_HOOK_JSONL=1
 activity_events=$(sf_hooks_dispatch "$empty" 64 0 0 \
   "$displayed_empty" '' '')
 SF_HOOK_JSONL=0
-print -r -- "$activity_events" | jq -eRn '
+print -r -- "$activity_events" | jq -eRn --arg script "$displayed_empty" '
   [inputs | fromjson] == [
-    {type:"_hook_activity",hook:"session_start",script:"displayed_empty",input:""}
+    {type:"_hook_activity",hook:"session_start",script:$script,input:""}
   ]
 ' >/dev/null
 

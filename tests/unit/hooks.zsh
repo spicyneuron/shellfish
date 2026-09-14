@@ -26,11 +26,11 @@ sf_test_install_prepared "$start_session"
 sf_hooks_session_start "$start_session"
 [[ -z $REPLY && ${#reply} == 0 ]]
 [[ $OPENAI_API_KEY == standard-secret && $CUSTOM_API_KEY == custom-secret ]]
-jq -e -s '
+jq -e -s --arg start "$start_script" --arg second "$start_second_script" '
   length == 3 and
-  .[1] == {type:"hook_result",hook:"session_start",script:"start",
+  .[1] == {type:"hook_result",hook:"session_start",script:$start,
     input:"",stdout:"startup",stderr:"local",exit_code:0} and
-  .[2] == {type:"hook_result",hook:"session_start",script:"start_second",
+  .[2] == {type:"hook_result",hook:"session_start",script:$second,
     input:"",stdout:"second",stderr:"",exit_code:0}
 ' "$start_session" >/dev/null
 
@@ -70,11 +70,15 @@ RESUME_MARKER=$resume_marker SF_TEST_BACKEND_DELAY=0 zsh -f "$SF_ENTRY" run \
 
 typeset skipped_session="$tmp/skipped-session.jsonl"
 sf_session_prepare "$SF_TEST_RUNTIME"
+sf_test_install_prepared "$skipped_session"
 if SKIP=1 sf_hooks_session_start "$skipped_session"; then
   fail 'session_start skip status was accepted'
 fi
 [[ $SF_HOOK_ERROR == 'session_start hook script returned unsupported skip status: local' ]]
-[[ ! -e $skipped_session ]]
+jq -e -s --arg script "$start_script" '
+  .[-1] == {type:"hook_result",hook:"session_start",script:$script,
+    input:"",stdout:"startup",stderr:"local",exit_code:10}
+' "$skipped_session" >/dev/null
 unset OPENAI_API_KEY CUSTOM_API_KEY
 
 # Permission hooks may allow, deny, or defer; stdout is transient.
@@ -197,7 +201,7 @@ STOP_ATTEMPT=2 STOP_INPUT=hi STOP_SKIP=1 STOP_STDOUT=1 \
   sf_hooks_stop "$stop_session" hi 2
 [[ $reply[1] == continue ]]
 sf_session_reset
-jq -e -s '.[-1] == {type:"hook_result",hook:"stop",script:"stop",
+jq -e -s --arg script "$stop_script" '.[-1] == {type:"hook_result",hook:"stop",script:$script,
   input:"hi",stdout:"feedback",stderr:"local",exit_code:10}' \
   "$stop_session" >/dev/null
 

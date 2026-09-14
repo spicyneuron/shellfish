@@ -195,13 +195,19 @@ def canonical_assistant_message:
 
 def canonical_hook_result:
   type == "object" and
-  keys == ["exit_code", "hook", "input", "script", "stderr", "stdout", "type"] and
+  (keys == ["exit_code", "hook", "input", "script", "stderr", "stdout", "type"] or
+   keys == ["exit_code", "hook", "input", "script", "stderr", "stdout",
+     "tool_use_id", "type"]) and
   .type == "hook_result" and
   (.hook as $hook | hook_names | index($hook) != null) and
-  (.script | nonempty_control_free_string) and
+  (.script | absolute_path) and
   (.input | type == "string" or type == "object") and
   (.stdout | type == "string") and (.stderr | type == "string") and
-  (.exit_code | type == "number" and floor == . and . >= 0 and . <= 255);
+  (.exit_code | type == "number" and floor == . and . >= 0 and . <= 255) and
+  (if has("tool_use_id") then
+     (.hook | IN("permission_request", "pre_tool_use", "post_tool_use")) and
+     (.tool_use_id | identifier)
+   else true end);
 
 # Which hook results address the model. A stop hook speaks only when a nonzero
 # exit skipped completion.

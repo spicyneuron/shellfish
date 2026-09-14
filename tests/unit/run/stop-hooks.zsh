@@ -51,13 +51,13 @@ stream=$(sf_test_turn original "$stop_session")
 [[ -s $TEST_STATE_PATH ]] || fail 'stop script did not report its state directory'
 typeset turn_state=$(<$TEST_STATE_PATH)
 [[ ! -d $turn_state ]]
-print -r -- "$stream" | jq -eRn '
+print -r -- "$stream" | jq -eRn --arg script "$stop_once" '
   [inputs | fromjson] as $events |
   ($events | map(select(.type == "assistant")) | length) == 2 and
   ($events | map(select(.type == "hook_result"))) ==
-    [{type:"hook_result",hook:"stop",script:"stop-once",input:"original\n",
+    [{type:"hook_result",hook:"stop",script:$script,input:"original\n",
       stdout:"feedback",stderr:"first-local",exit_code:10},
-     {type:"hook_result",hook:"stop",script:"stop-once",input:"feedback\n\n",
+     {type:"hook_result",hook:"stop",script:$script,input:"feedback\n\n",
       stdout:"discarded",stderr:"second-local",exit_code:0}] and
   ($events | map(select(.type == "state" or .type == "hook_result")) |
     map(if .type == "state" then [.name,.value]

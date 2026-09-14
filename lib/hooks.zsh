@@ -127,7 +127,7 @@ sf_hooks_dispatch() {
   local -a arguments=( "${(@)argv[1,argument_count]}" )
   shift argument_count
   local -a components=( "$@" ) result component_states decoded
-  local directory script script_name selector environment_json record result_record input_json
+  local directory script selector environment_json record result_record input_json
   local script_context script_user script_control hook=$SF_HOOK_NAME
   local origin='' control='' control_error
   local stdout_policy=$SF_HOOK_STDOUT_POLICY
@@ -187,10 +187,7 @@ sf_hooks_dispatch() {
             ;;
         esac
       fi
-      script_name=$script
-      [[ ${script_name:t} != run ]] || script_name=${script_name:h}
-      script_name=${script_name:t}
-      sf_hooks_activity "$hook" "$script_name" "$input_json" || {
+      sf_hooks_activity "$hook" "$script" "$input_json" || {
         sf_hooks_fail 'cannot open hook display'
         return
       }
@@ -229,6 +226,12 @@ sf_hooks_dispatch() {
         return
       }
       script_user=$REPLY
+      sf_hooks_result_record "$hook" "$script" "$input_json" \
+        "$result[2]" "$result[3]" "$script_status" || {
+        sf_hooks_active_fail "$SF_HOOK_ERROR" "$script_user"
+        return
+      }
+      result_record=$REPLY
       script_control=''
       control_error=''
       case $script_status in
@@ -251,6 +254,18 @@ sf_hooks_dispatch() {
           component_states=( "${(@)decoded[2,-1]}" )
         fi
       fi
+      if [[ -n ${SF_HOOK_SESSION-} ]]; then
+        for record in "${component_states[@]}"; do
+          sf_hooks_append "$SF_HOOK_SESSION" "$record" || {
+            sf_hooks_active_fail "$SF_HOOK_ERROR" "$script_user"
+            return
+          }
+        done
+        sf_hooks_append "$SF_HOOK_SESSION" "$result_record" || {
+          sf_hooks_active_fail "$SF_HOOK_ERROR" "$script_user"
+          return
+        }
+      fi
       if [[ -z $control_error && -n $script_control ]] && (( ! allow_control )); then
         control_error="hook script returned unexpected control data: $script"
       fi
@@ -271,28 +286,6 @@ sf_hooks_dispatch() {
       if [[ -n $script_context ]] && { [[ $stdout_policy == commit ]] ||
           [[ $stdout_policy == commit_on_skip && $script_status != 0 ]]; }; then
         has_model=1
-      fi
-      sf_hooks_result_record "$hook" "$script_name" "$input_json" \
-        "$result[2]" "$result[3]" "$script_status" || {
-        sf_hooks_active_fail "$SF_HOOK_ERROR" "$script_user"
-        return
-      }
-      result_record=$REPLY
-      for record in "${component_states[@]}"; do
-        if [[ -n ${SF_HOOK_SESSION-} ]]; then
-          sf_hooks_append "$SF_HOOK_SESSION" "$record" || {
-            sf_hooks_active_fail "$SF_HOOK_ERROR" "$script_user"
-            return
-          }
-        fi
-      done
-      if [[ -n $result_record ]]; then
-        if [[ -n ${SF_HOOK_SESSION-} ]]; then
-          sf_hooks_append "$SF_HOOK_SESSION" "$result_record" || {
-            sf_hooks_active_fail "$SF_HOOK_ERROR" "$script_user"
-            return
-          }
-        fi
       fi
       if (( ! SF_HOOK_JSONL )) && (( SF_HOOK_VISIBLE )) && [[ -n $script_user ]]; then
         print -rn -- "$script_user" >&2 || {
@@ -454,10 +447,12 @@ sf_hooks_result_record() {
   integer exit_code=$6
   REPLY=$(sf_jq -nc --arg hook "$hook" --arg script "$script" \
       --argjson input "$input" --rawfile stdout "$stdout_file" \
-      --rawfile stderr "$stderr_file" --argjson exit_code "$exit_code" '
+      --rawfile stderr "$stderr_file" --argjson exit_code "$exit_code" \
+      --arg tool_use_id "${SF_HOOK_TOOL_USE_ID-}" '
         include "lib/runtime/schema";
         {type:"hook_result",hook:$hook,script:$script,input:$input,
-          stdout:$stdout,stderr:$stderr,exit_code:$exit_code} as $result |
+          stdout:$stdout,stderr:$stderr,exit_code:$exit_code} +
+        (if $tool_use_id == "" then {} else {tool_use_id:$tool_use_id} end) as $result |
         if ($result | canonical_hook_result)
         then $result
         else error("invalid hook result") end
