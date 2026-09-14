@@ -382,13 +382,16 @@ sf_session_begin_turn "$echo_session"
 sf_session_append "$echo_session" '{"type":"hook_result","hook":"session_start","script":"/hooks/fixture/run","input":"","stdout":"startup context","stderr":"","exit_code":0}'
 sf_session_reset
 stream=$(sf_test_turn 'plain prompt' "$echo_session")
-print -r -- "$stream" | jq -eRn '
+typeset startup_context='<hook name="session_start">
+<context script="fixture">startup context</context>
+</hook>'
+print -r -- "$stream" | jq -eRn --arg context "$startup_context" '
   [inputs | fromjson | select(.type == "assistant")] as $messages |
-  $messages[-1].content[-1] == {type:"text",text:"startup context\n\nplain prompt\n"}
+  $messages[-1].content[-1] == {type:"text",text:($context + "\n\nplain prompt\n")}
 ' >/dev/null
-jq -e '
+jq -e --arg context "$startup_context" '
   .system == "frozen system" and
-  .messages[-1].content[0].text == "startup context\n\nplain prompt"
+  .messages[-1].content[0].text == $context + "\n\nplain prompt"
 ' "$request_capture" >/dev/null
 
 # Tool results precede provider continuation.

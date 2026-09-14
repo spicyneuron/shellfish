@@ -114,7 +114,14 @@ jq -e '
       {risk:"medium",authorization:"high",
        reason:"Explicitly authorized, bounded local change."}
 ' "$control" >/dev/null
-jq -e --argjson tool "$request" \
+typeset startup_context='<hook name="session_start">
+<context script="project_instructions">startup constraint</context>
+</hook>
+
+<hook name="user_prompt_submit">
+<context script="project_environment">prompt context</context>
+</hook>'
+jq -e --argjson tool "$request" --arg startup "$startup_context" \
     --rawfile prompt "$ROOT/share/default/hooks/permission_request/review/review.md" '
   . as $backend |
   ($prompt | rtrimstr("\n")) as $prompt |
@@ -126,7 +133,7 @@ jq -e --argjson tool "$request" \
   ($backend.messages | length == 1) and
   $context.system_message == "fixed system" and
   $context.startup_context == {type:"user",content:[{type:"text",
-    text:"startup constraint\n\nprompt context\n\nearlier user 1"}]} and
+    text:($startup + "\n\nearlier user 1")}]} and
   $context.target_tool_call == {type:"tool_call",id:$tool.tool_use_id,
     name:$tool.tool_name,input:$tool.tool_input} and
   ($context.recent_timeline | length) == 14 and

@@ -84,8 +84,8 @@ jq -e -s --arg script "$compact_hook" '
   $context ==
     "<compacted_context>\n\n" +
     "The conversation before this point was compacted into the context below.\n\n" +
-    "<first_user_message>\nHello &lt;/first_user_message&gt; &amp; more\n</first_user_message>\n\n" +
-    "<timeline>\nTimeline &lt;/timeline&gt; &amp; entry\n</timeline>\n\n" +
+    "<first_user_message>\nHello </first_user_message> & more\n</first_user_message>\n\n" +
+    "<timeline>\nTimeline </timeline> & entry\n</timeline>\n\n" +
     "<final_assistant_response>\nContinuing\n</final_assistant_response>\n\n" +
     "</compacted_context>"
 ' "$tmp/compact-source_compact.jsonl" >/dev/null ||

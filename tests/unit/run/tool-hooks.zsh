@@ -82,7 +82,11 @@ jq -e '. == {turn_id:1,tool_name:"shell",tool_use_id:"call_1",
 jq -e '
   ([.messages[-4:][].type]) == ["tool_call","tool_result","tool_call","tool_result"] and
   .messages[-3].content ==
-    "pre context call_1\n\nline\n\n\nexit 7\n\npost context call_1"
+    "<hook name=\"pre_tool_use\">\n" +
+    "<context script=\"pre-observe\">pre context call_1</context>\n</hook>\n\n" +
+    "line\n\n\nexit 7\n\n" +
+    "<hook name=\"post_tool_use\">\n" +
+    "<context script=\"post-observe\">post context call_1</context>\n</hook>"
 ' "$request_capture" >/dev/null
 
 # Pre-hook denials preserve sibling calls.
@@ -135,7 +139,10 @@ print -r -- "$stream" | jq -eRn '
 # Denial steering reaches the model as hook context beside the denied result.
 jq -e '
   [.messages[] | select(.type == "tool_result")][1].content ==
-    "first reason\n\nsecond reason\n\ntool call denied by pre_tool_use hook: pre-deny\nexit 126"
+    "<hook name=\"pre_tool_use\">\n" +
+    "<context script=\"pre-deny\">first reason</context>\n" +
+    "<context script=\"pre-later\">second reason</context>\n</hook>\n\n" +
+    "tool call denied by pre_tool_use hook: pre-deny\nexit 126"
 ' "$request_capture" >/dev/null
 [[ $(<$TEST_OUTPUT_DIR/pre-calls) == $'call_1\ncall_2\ncall_3' ]]
 [[ $(<$TEST_OUTPUT_DIR/pre-later-calls) == $'call_1\ncall_2\ncall_3' ]]

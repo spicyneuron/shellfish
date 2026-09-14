@@ -51,13 +51,16 @@ stream=$(sf_test_turn original "$stop_session")
 [[ -s $TEST_STATE_PATH ]] || fail 'stop script did not report its state directory'
 typeset turn_state=$(<$TEST_STATE_PATH)
 [[ ! -d $turn_state ]]
-print -r -- "$stream" | jq -eRn --arg script "$stop_once" '
+typeset stop_context='<hook name="stop">
+<context script="stop-once">feedback</context>
+</hook>'
+print -r -- "$stream" | jq -eRn --arg script "$stop_once" --arg context "$stop_context" '
   [inputs | fromjson] as $events |
   ($events | map(select(.type == "assistant")) | length) == 2 and
   ($events | map(select(.type == "hook_result"))) ==
     [{type:"hook_result",hook:"stop",script:$script,input:"original\n",
       stdout:"feedback",stderr:"first-local",exit_code:10},
-     {type:"hook_result",hook:"stop",script:$script,input:"feedback\n\n",
+     {type:"hook_result",hook:"stop",script:$script,input:($context + "\n"),
       stdout:"discarded",stderr:"second-local",exit_code:0}] and
   ($events | map(select(.type == "state" or .type == "hook_result")) |
     map(if .type == "state" then [.name,.value]
@@ -66,10 +69,10 @@ print -r -- "$stream" | jq -eRn --arg script "$stop_once" '
      ["stop/attempt",2],["result","discarded","second-local"]]
 ' >/dev/null
 sf_hooks_turn_state_cleanup
-jq -e '
+jq -e --arg context "$stop_context" '
   .messages[-2].type == "assistant" and
   .messages[-1].type == "user" and
-  .messages[-1].content[0].text == "feedback\n\n"
+  .messages[-1].content[0].text == $context
 ' "$request_capture" >/dev/null
 jq -e -s '
   ([.[] | select(.type == "hook_result")] | length) == 2 and
@@ -159,11 +162,13 @@ assert_canonical_session "$limit_session"
 # Cancellation preserves committed stop feedback.
 typeset cancel_ready="$tmp/cancel-ready"
 typeset cancel_backend="$tmp/cancel-backend"
+typeset cancel_context="$tmp/cancel-context"
+print -rn -- "$stop_context" >"$cancel_context"
 cat >"$cancel_backend" <<ZSH
 #!/usr/bin/env zsh
 request=\$(cat)
-if jq -e '.messages[-1].type == "user" and
-    .messages[-1].content[0].text == "feedback\\n\\n"' \
+if jq -e --rawfile context "$cancel_context" '.messages[-1].type == "user" and
+    .messages[-1].content[0].text == \$context' \
     <<<"\$request" >/dev/null; then
   : >"$cancel_ready"
   sleep 10

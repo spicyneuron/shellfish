@@ -59,17 +59,13 @@ summary=$(print -r -- "$request" |
 context="$SHELLFISH_TURN_STATE/compact-context"
 if ! jq -nerj --slurpfile boundary "$boundary" \
   --rawfile summary <(print -rn -- "$summary") '
-  def xml_escape:
-    gsub("&"; "&amp;") | gsub("<"; "&lt;") | gsub(">"; "&gt;") |
-    gsub("\""; "&quot;");
   $boundary[0] as $boundary |
   "<compacted_context>\n\n" +
   "The conversation before this point was compacted into the context below.\n\n" +
-  "<first_user_message>\n" + ($boundary.first_user_message | xml_escape) +
+  "<first_user_message>\n" + $boundary.first_user_message +
   "\n</first_user_message>\n\n" +
-  "<timeline>\n" + ($summary | xml_escape) + "\n</timeline>\n\n" +
-  "<final_assistant_response>\n" +
-  ($boundary.final_assistant_response | xml_escape) +
+  "<timeline>\n" + $summary + "\n</timeline>\n\n" +
+  "<final_assistant_response>\n" + $boundary.final_assistant_response +
   "\n</final_assistant_response>\n\n" +
   "</compacted_context>"
 ' >"$context"; then
