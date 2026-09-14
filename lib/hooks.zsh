@@ -10,7 +10,6 @@ zmodload zsh/system
 
 typeset -g SF_HOOK_ERROR=''
 typeset -g SF_HOOK_JSONL=0
-typeset -g SF_HOOK_VISIBLE=1
 typeset -g SF_HOOK_COMPONENT_VALIDATOR=''
 typeset -g SHELLFISH_TURN_STATE=${SHELLFISH_TURN_STATE-}
 typeset -g SHELLFISH_TURN_ID=${SHELLFISH_TURN_ID-}
@@ -53,7 +52,7 @@ sf_hooks_read_capture() {
 
 sf_hooks_activity() {
   local hook=$1 script=$2 input=$3
-  (( SF_HOOK_VISIBLE && SF_HOOK_JSONL )) || return 0
+  (( SF_HOOK_JSONL )) || return 0
   jq -cn --arg hook "$hook" --arg script "$script" --argjson input "$input" \
     '{type:"_hook_activity",hook:$hook,script:$script,input:$input}'
 }
@@ -130,9 +129,8 @@ sf_hooks_dispatch() {
   local directory script selector environment_json record result_record input_json
   local script_context script_user script_control hook=$SF_HOOK_NAME
   local origin='' control='' control_error
-  local stdout_policy=$SF_HOOK_STDOUT_POLICY
   local skip_policy=$SF_HOOK_SKIP_POLICY
-  integer script_status selector_status context_size user_size control_size component_index has_model=0
+  integer script_status selector_status context_size user_size control_size component_index feedback=0
   integer perform=1 halted=0
   setopt local_options no_err_exit no_bg_nice
 
@@ -226,12 +224,17 @@ sf_hooks_dispatch() {
         return
       }
       script_user=$REPLY
-      sf_hooks_result_record "$hook" "$script" "$input_json" \
-        "$result[2]" "$result[3]" "$script_status" || {
-        sf_hooks_active_fail "$SF_HOOK_ERROR" "$script_user"
-        return
-      }
-      result_record=$REPLY
+      # A hook that captured nothing has nothing to render, so it leaves no
+      # durable trace. Deliberate state records still persist.
+      result_record=''
+      if (( context_size + user_size )); then
+        sf_hooks_result_record "$hook" "$script" "$input_json" \
+          "$result[2]" "$result[3]" "$script_status" || {
+          sf_hooks_active_fail "$SF_HOOK_ERROR" "$script_user"
+          return
+        }
+        result_record=$REPLY
+      fi
       script_control=''
       control_error=''
       case $script_status in
@@ -261,16 +264,14 @@ sf_hooks_dispatch() {
             return
           }
         done
-        sf_hooks_append "$SF_HOOK_SESSION" "$result_record" || {
+        [[ -z $result_record ]] ||
+          sf_hooks_append "$SF_HOOK_SESSION" "$result_record" || {
           sf_hooks_active_fail "$SF_HOOK_ERROR" "$script_user"
           return
         }
       fi
       if [[ -z $control_error && -n $script_control ]] && (( ! allow_control )); then
         control_error="hook script returned unexpected control data: $script"
-      fi
-      if [[ -z $control_error && $stdout_policy == reject && -n $script_context ]]; then
-        control_error="$hook hook script wrote unsupported stdout"
       fi
       if [[ -z $control_error && $skip_policy == reject && $script_status != 0 ]]; then
         control_error="$hook hook script returned unsupported skip status"
@@ -283,11 +284,8 @@ sf_hooks_dispatch() {
         sf_hooks_active_fail "$control_error" "$script_user"
         return
       fi
-      if [[ -n $script_context ]] && { [[ $stdout_policy == commit ]] ||
-          [[ $stdout_policy == commit_on_skip && $script_status != 0 ]]; }; then
-        has_model=1
-      fi
-      if (( ! SF_HOOK_JSONL )) && (( SF_HOOK_VISIBLE )) && [[ -n $script_user ]]; then
+      (( script_status == 0 )) || [[ -z $script_context ]] || feedback=1
+      if (( ! SF_HOOK_JSONL )) && [[ -n $script_user ]]; then
         print -rn -- "$script_user" >&2 || {
           sf_hooks_fail 'cannot write hook output'
           return
@@ -304,7 +302,7 @@ sf_hooks_dispatch() {
       fi
     done
 
-    if (( ! perform )) && [[ $skip_policy == require_context ]] && (( ! has_model )); then
+    if (( ! perform )) && [[ $skip_policy == require_context ]] && (( ! feedback )); then
       sf_hooks_fail "$hook hook script skipped completion without feedback"
       return
     fi
@@ -401,13 +399,12 @@ sf_hooks_run_chain() {
 }
 
 sf_hooks_run() {
-  local session=$1 hook=$2 content=$3 stdout_policy=$4 skip_policy=$5
-  integer allow_control=$6 argument_count=$7 operation_status=0
-  shift 7
+  local session=$1 hook=$2 content=$3 skip_policy=$4
+  integer allow_control=$5 argument_count=$6 operation_status=0
+  shift 6
   local input label=$hook
   local -a decision
   local SF_HOOK_SESSION=$session
-  local SF_HOOK_STDOUT_POLICY=$stdout_policy
   local SF_HOOK_SKIP_POLICY=$skip_policy
   [[ $hook != pre_tool_use ]] || label=pre-tool
 
@@ -463,6 +460,6 @@ sf_hooks_result_record() {
 }
 
 sf_hooks_session_start() {
-  sf_hooks_run "$1" session_start '' commit reject 0 1 || return
+  sf_hooks_run "$1" session_start '' reject 0 1 || return
   reply=()
 }

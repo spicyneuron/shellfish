@@ -61,8 +61,7 @@ const DEFAULT_TOOL_TEMPLATES = {
   },
   permission_preview: "${input}",
 };
-// Defaults cover hooks a session no longer configures. Permission hooks are
-// never model-facing, so one form serves every hook.
+// Defaults cover hooks a session no longer configures.
 const DEFAULT_HOOK_TEMPLATES = {
   user_before: "",
   user_after: "",
@@ -190,7 +189,7 @@ function hideIndicator() {
 
 // A hook's running label lasts only as long as the hook does.
 function clearHookActivity() {
-  if (hookActivity) hookActivity.article.remove();
+  if (hookActivity) hookActivity.remove();
   hookActivity = null;
 }
 
@@ -277,15 +276,6 @@ function hookTemplates(hook, command) {
 function scriptIdentity(command) {
   const parts = command.split("/");
   return parts.at(-1) === "run" ? parts.at(-2) : parts.at(-1);
-}
-
-// Mirrors hook_model_visible: which results a turn feeds back to the model.
-function hookModelVisible(frame) {
-  return (
-    (frame.hook === "session_start" && frame.exit_code === 0) ||
-    frame.hook === "user_prompt_submit" ||
-    (frame.hook === "stop" && frame.exit_code !== 0)
-  );
 }
 
 // -------------------------------------------------------------------- markdown
@@ -633,7 +623,7 @@ function apply(frame) {
           frame.input,
           null,
         );
-        hookActivity = { article, hook: frame.hook, script: frame.script };
+        hookActivity = article;
         place(article);
       }
       if (working) showIndicator();
@@ -770,17 +760,11 @@ function renderResult(frame) {
   if (working) showIndicator();
 }
 
+// A silent script records no result, so a pending label may belong to an
+// earlier one. Either way it is transient and gives way to this result.
 function renderHookResult(frame) {
   hideIndicator();
-  if (hookActivity) {
-    if (
-      hookActivity.hook !== frame.hook ||
-      hookActivity.script !== frame.script
-    ) {
-      throw new Error("hook result does not match activity");
-    }
-    clearHookActivity();
-  }
+  clearHookActivity();
   const templates = hookTemplates(frame.hook, frame.script);
   const script = scriptIdentity(frame.script);
   const text = renderScript(
@@ -794,16 +778,9 @@ function renderHookResult(frame) {
     return;
   }
   // The sigil marks whether the hook fed the model, not what is shown below it.
-  const sigil =
-    hookModelVisible(frame) &&
-    renderScript(
-      templates.model_after,
-      script,
-      frame.input,
-      frame,
-    )
-      ? "↪"
-      : "ℹ";
+  const sigil = renderScript(templates.model_after, script, frame.input, frame)
+    ? "↪"
+    : "ℹ";
   const article = record("note", null);
   const content = el(article, "pre", "call");
   el(content, "span", "sigil", sigil + " ");

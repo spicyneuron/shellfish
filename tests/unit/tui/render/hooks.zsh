@@ -70,6 +70,15 @@ assert_equal '⠃' "$REPLY"
 assert_equal 0 "$SF_PRESENT_SAFE_ROWS"
 sf_tui_event activity_stop
 
+# A silent script leaves its running view for the next result to retract.
+sf_tui_reset
+sf_tui_event activity_start
+sf_tui_event hook_call session_start /hooks/silent/run 'silent · Working' 0
+sf_tui_event hook_result session_start /hooks/loud/run $'loud\nresult' 0
+view 79 20
+assert_equal $'ℹ loud\n╰ result\n\n⠃' "$REPLY"
+sf_tui_event activity_stop
+
 # Replayed results append already settled.
 sf_tui_reset
 sf_tui_event hook_result user_prompt_submit /hooks/prompt/run $'prompt\nfirst\nsecond' 0

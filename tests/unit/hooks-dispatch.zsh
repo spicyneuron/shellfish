@@ -7,7 +7,6 @@ typeset -gA SF_SESSION=(runtime '{"backend":{"environment":[],"env_file":""},"ha
 typeset input="$tmp/input" empty="$tmp/empty" original_directory=$PWD
 typeset -a component_results=()
 typeset -g SF_HOOK_SESSION=''
-typeset -g SF_HOOK_STDOUT_POLICY=ignore
 typeset -g SF_HOOK_SKIP_POLICY=allow
 print -rn -- '{"sample":"test"}' >"$input"
 : >"$empty"

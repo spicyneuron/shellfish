@@ -58,16 +58,11 @@ sf_tui_hook_call() {
   sf_tui_hook_append 0 "$1" "$2" "${3-}" "${4:--1}" live
 }
 
+# A silent script records no result, so a pending block may belong to an
+# earlier one. Either way it is transient and gives way to this result.
 sf_tui_hook_result() {
   local hook=$1 script=$2 content=${3-} identity_start=${4:--1} fed_model=${5:-0}
-  local expected
   if sf_tui_hook_pending; then
-    sf_tui_formatter_data ${#SF_PRESENT_KIND} 1 || return 1
-    expected=$REPLY
-    [[ $hook == "$expected" ]] || return 1
-    sf_tui_formatter_data ${#SF_PRESENT_KIND} 2 || return 1
-    expected=$REPLY
-    [[ $script == "$expected" ]] || return 1
     sf_tui_formatter_retract || return 1
   else
     sf_tui_hook_interrupt || return 1

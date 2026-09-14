@@ -153,8 +153,8 @@ def test_slow_prompt_hook_keeps_ui_active():
         assert not completed.exists()
 
         release.touch()
-        # The hook's own record precedes the turn it released.
-        _, records = session.wait_session_records(4, path=session.explicit_session)
+        # The silent hook records nothing; only the turn it released persists.
+        _, records = session.wait_session_records(3, path=session.explicit_session)
         assert completed.exists()
         assert records[-2]["type"] == "user"
         assert records[-1]["type"] == "assistant"
@@ -192,10 +192,8 @@ def test_prompt_hook_hands_off_to_another_session():
             json.loads(line)
             for line in session.explicit_session.read_text().splitlines()
         ]
-        # The redirect is recorded, but no turn is.
-        assert [record["type"] for record in original] == [
-            "session", "hook_result",
-        ], original
+        # The silent redirect leaves the original session at its header.
+        assert [record["type"] for record in original] == ["session"], original
     finally:
         session.close()
 

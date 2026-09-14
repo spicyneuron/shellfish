@@ -851,6 +851,33 @@ test("replaces hook activity with its durable result", async () => {
   );
 });
 
+test("retracts a silent script's label for the next result", async () => {
+  const page = await idle();
+  await page.send(
+    {
+      type: "_hook_activity",
+      hook: "session_start",
+      script: "/hooks/session_start/probe/run",
+      input: "",
+    },
+    {
+      type: "hook_result",
+      hook: "stop",
+      script: "/hooks/stop/check/run",
+      input: "",
+      stdout: "",
+      stderr: "checked 3 files",
+      exit_code: 0,
+    },
+  );
+  const notes = find(page.output, "note");
+  assert.equal(notes.length, 1);
+  assert.equal(
+    findTag(notes[0], "pre")[0].textContent,
+    "ℹ check\nchecked 3 files",
+  );
+});
+
 test("replaces standing hook activity with a process failure", async () => {
   const page = await idle();
   await page.send(

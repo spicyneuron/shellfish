@@ -18,22 +18,14 @@ sf_request_build() {
     include "lib/render";
     include "lib/session/request";
     map(if .type == "hook_result" then
-      . as $result |
-      if $result | hook_model_visible then
-        .model_context = ({runtime:$runtime,record:$result} | render_hook_model)
-      else . end
+      .model_context = ({runtime:$runtime,record:.} | render_hook_model)
+    elif .type == "tool_result" then
+      .content = ({tools:$runtime.harness.tools,record:.} | render_tool_model)
     else . end) as $records |
     {
       format_version:1,
       system:([$records[] | select(.type == "system") | .content] | join("\n\n")),
-      messages:($records | request_messages | map(
-        if .type == "tool_result" then
-          . as $result |
-          ({tools:$runtime.harness.tools,name:$result.name} | render_tool_templates |
-            .render.model_after) as $template |
-          .content = ({template:$template,script:.name,input:.input,output:.} | render_script) |
-          del(.input, .stdout, .stderr)
-        else . end)),
+      messages:($records | request_messages),
       tools:$tools,
       options:{request:$runtime.profile.request},
       transport:($runtime.backend | {endpoint,insecure_tls,http_timeout,http_stall})

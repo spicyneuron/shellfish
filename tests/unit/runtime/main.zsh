@@ -324,7 +324,7 @@ jq -e --arg base "${tmp:A}/config/hooks" '
     [{command:($base + "/stop/gate/run"),environment:[],render:$render}]
 ' <<<"$REPLY" >/dev/null
 
-# Permission hooks cannot display a running label.
+# Permission hooks render like any other script.
 mkdir -p "$tmp/config/hooks/permission_request/empty" \
   "$tmp/config/hooks/permission_request/omitted" "$tmp/config/hooks/stop/labeled"
 for hook in permission_request/empty permission_request/omitted stop/labeled; do
@@ -350,13 +350,13 @@ jq -e '
   .harness.stop[0].render.user_before == "${script} · Finishing"
 ' <<<"$REPLY" >/dev/null
 
-print -r -- '{"render":{"user_before":"${script}","user_after":"","model_after":""}}' \
+print -r -- '{"render":{"user_before":"${script}","user_after":"","model_after":"${output.stdout}"}}' \
   >"$tmp/config/hooks/permission_request/empty/manifest.json"
-if sf_runtime_resolve_from_config "$tmp/config/hook-display.jsonc" '' '' '{}' \
-    "$ROOT/tests/fixtures/backend"; then
-  fail 'permission hook running label was accepted during configuration resolution'
-fi
-[[ $SF_RUNTIME_ERROR == *'invalid hook manifest:'*'/permission_request/empty/run' ]]
+sf_runtime_resolve_from_config "$tmp/config/hook-display.jsonc" '' '' '{}' \
+  "$ROOT/tests/fixtures/backend"
+jq -e '.harness.permission_request[0].render ==
+  {user_before:"${script}",user_after:"",model_after:"${output.stdout}"}
+' <<<"$REPLY" >/dev/null
 
 # Components resolve beside a symlinked config's target.
 mkdir -p "$tmp/symlink-config-home/shellfish" "$tmp/config-target/system"

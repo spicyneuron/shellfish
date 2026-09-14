@@ -231,8 +231,8 @@ def test_permission_decision_restores_draft():
         session.wait_after(mark, "Allow shell outside of sandbox?")
         session.send(b"d")
 
-        # The prompt hook's own record precedes the turn.
-        _, records = session.wait_session_records(6, path=session.explicit_session)
+        # The silent prompt hook records nothing before the turn.
+        _, records = session.wait_session_records(5, path=session.explicit_session)
         session.wait_after(mark, "Tool complete.")
         edit = len(session.output)
         session.send(b"X\x0c")

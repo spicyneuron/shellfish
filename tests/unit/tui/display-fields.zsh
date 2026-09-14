@@ -13,12 +13,12 @@ typeset tools=$(jq -cn \
 assert_equal 'edit_file · notes.txt' "$(jq -nr -L "$ROOT" --argjson tools "$tools" '
   include "lib/render";
   {record:{name:"edit_file",input:{file_path:"notes.txt"}},tools:$tools.harness.tools} |
-  render_tool_before
+  render_tool_before_view | .text
 ')"
 assert_equal $'shell\nmake test' "$(jq -nr -L "$ROOT" --argjson tools "$tools" '
   include "lib/render";
   {record:{name:"shell",input:{command:"make test"}},tools:$tools.harness.tools} |
-  render_tool_before
+  render_tool_before_view | .text
 ')"
 assert_equal '{"text":"shell · shell","identity_start":8}' \
   "$(jq -nc -L "$ROOT" '
@@ -33,12 +33,12 @@ assert_equal 'make test' "$(jq -nr -L "$ROOT" --argjson tools "$tools" '
 ')"
 assert_equal $'unknown\n{"value":1}' "$(jq -nr -L "$ROOT" '
   include "lib/render";
-  {record:{name:"unknown",input:{value:1}},tools:[]} | render_tool_before
+  {record:{name:"unknown",input:{value:1}},tools:[]} | render_tool_before_view | .text
 ')"
 assert_equal $'unknown\ndenied\nexit 127' "$(jq -nr -L "$ROOT" '
   include "lib/render";
   {record:{name:"unknown",input:{value:1},stdout:"",stderr:"denied",exit_code:127},
-    tools:[]} | render_tool_after
+    tools:[]} | render_tool_after_view | .text
 ')"
 
 # Decode replay fields.

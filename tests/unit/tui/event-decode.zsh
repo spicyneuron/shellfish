@@ -102,13 +102,22 @@ order=$(print -r -- \
   tr '\0' '\n' | sed '/^$/d' | paste -sd, -)
 assert_equal 'hook_result,stop,/hooks/check/run,check · model bodyuser body (10),0,1,batch_ok' "$order"
 
-# A stop hook that let the turn end contributes no model context.
+# Any completed hook may address the model.
 order=$(print -r -- \
     '{"type":"hook_result","hook":"stop","script":"/hooks/check/run","input":"answer","stdout":"model body","stderr":"user body","exit_code":0}' |
   jq -jRs -L "$ROOT" --argjson runtime "$hook_runtime" \
     -f "$ROOT/libexec/tui/event-decode.jq" |
   tr '\0' '\n' | sed '/^$/d' | paste -sd, -)
-assert_equal 'hook_result,stop,/hooks/check/run,check · model bodyuser body (0),0,0,batch_ok' "$order"
+assert_equal 'hook_result,stop,/hooks/check/run,check · model bodyuser body (0),0,1,batch_ok' "$order"
+
+# An empty model rendering contributes no model context.
+order=$(print -r -- \
+    '{"type":"hook_result","hook":"stop","script":"/hooks/check/run","input":"answer","stdout":"model body","stderr":"user body","exit_code":10}' |
+  jq -jRs -L "$ROOT" \
+    --argjson runtime "$(jq -c '.harness.stop[0].render.model_after = ""' <<<"$hook_runtime")" \
+    -f "$ROOT/libexec/tui/event-decode.jq" |
+  tr '\0' '\n' | sed '/^$/d' | paste -sd, -)
+assert_equal 'hook_result,stop,/hooks/check/run,check · model bodyuser body (10),0,0,batch_ok' "$order"
 
 # Decode hook activity.
 order=$(print -r -- \

@@ -107,8 +107,6 @@ def harness_hooks:
     ($harness | has($hook) | not) or
     ($harness[$hook] | type == "array" and all(.[];
       hook_component and
-      ($hook != "permission_request" or
-        .render == {user_before:"",user_after:"",model_after:""}) and
       (if $hook == "user_prompt_submit" then
          (has("help") | not) or has("match")
        else ((has("match") or has("help")) | not) end))));
@@ -208,13 +206,6 @@ def canonical_hook_result:
      (.hook | IN("permission_request", "pre_tool_use", "post_tool_use")) and
      (.tool_use_id | identifier)
    else true end);
-
-# Which hook results address the model. A stop hook speaks only when a nonzero
-# exit skipped completion.
-def hook_model_visible:
-  (.hook == "session_start" and .exit_code == 0) or
-  .hook == "user_prompt_submit" or
-  (.hook == "stop" and .exit_code != 0);
 
 def canonical_state:
   type == "object" and keys == ["name", "type", "value"] and
@@ -321,7 +312,7 @@ def session_records_state:
         if .next == "user" then . else .valid = false end
       elif $record.type == "hook_result" then
         # Feedback resumes the turn; empty stdout would have failed the hook.
-        if $record.hook == "stop" and ($record | hook_model_visible) and
+        if $record.hook == "stop" and $record.exit_code != 0 and
             $record.stdout != "" and .next == "user" then .next = "assistant"
         else . end
       elif $record.type == "turn_error" then

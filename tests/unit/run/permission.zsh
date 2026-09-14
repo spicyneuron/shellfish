@@ -39,7 +39,7 @@ stream=$(SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_BYPASS=true \
 print -r -- "$stream" | jq -eRn '
   [inputs | fromjson] as $events |
   ($events | map(select(.type == "_tool_permission_request")) | length) == 0 and
-  ($events | all(.type != "_hook_activity")) and
+  ($events | map(select(.type == "_hook_activity")) | length) == 1 and
   ($events | map(select(.type == "hook_result")) | length) == 1 and
   ($events | map(select(.type == "state" or .type == "tool_result")) | map(.type)) ==
     ["state","tool_result"] and
@@ -227,7 +227,7 @@ stream=$(SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_BYPASS=true \
   sf_test_turn 'failed review' "$permission_failure_session")
 print -r -- "$stream" | jq -eRn --arg script "$permission_failure" '
   [inputs | fromjson] as $events |
-  ($events | all(.type != "_hook_activity")) and
+  ($events | map(select(.type == "_hook_activity")) | length) == 1 and
   ($events | map(select(.type == "hook_result"))) == [{
     type:"hook_result",hook:"permission_request",script:$script,
     input:{turn_id:1,tool_name:"shell",tool_use_id:"call_1",

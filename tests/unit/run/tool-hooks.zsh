@@ -27,6 +27,7 @@ call_id=$(jq -r '.tool_use_id' <<<"$input")
 print -rn -- "$input" >"$TEST_OUTPUT_DIR/pre-$call_id"
 jq -cn --arg id "$call_id" '{state:[{name:"tools/pre",value:$id}]}' >&3
 print -rn -u2 -- "pre-local-$call_id"
+print -rn -- "pre context $call_id"
 ZSH
 chmod +x "$pre_observe"
 typeset post_observe="$tmp/post-observe"
@@ -41,6 +42,7 @@ call_id=$(jq -r '.tool_use_id' <<<"$input")
 print -rn -- "$input" >"$TEST_OUTPUT_DIR/post-$call_id"
 jq -cn --arg id "$call_id" '{state:[{name:"tools/post",value:$id}]}' >&3
 print -rn -u2 -- "post-local-$call_id"
+print -rn -- "post context $call_id"
 ZSH
 chmod +x "$post_observe"
 SF_TEST_RUNTIME=$(jq -c --arg pre "$pre_observe" --arg post "$post_observe" '
@@ -76,8 +78,11 @@ jq -e '. == {turn_id:1,tool_name:"shell",tool_use_id:"call_1",
   tool_input:{command:"printf '\''line\\n\\n'\''; exit 7"},
   tool_response:{stdout:"line\n\n",stderr:"",exit_code:7}}' \
   "$TEST_OUTPUT_DIR/post-call_1" >/dev/null
+# Correlated hook context joins its own tool result in lifecycle order.
 jq -e '
-  ([.messages[-4:][].type]) == ["tool_call","tool_result","tool_call","tool_result"]
+  ([.messages[-4:][].type]) == ["tool_call","tool_result","tool_call","tool_result"] and
+  .messages[-3].content ==
+    "pre context call_1\n\nline\n\n\nexit 7\n\npost context call_1"
 ' "$request_capture" >/dev/null
 
 # Pre-hook denials preserve sibling calls.
@@ -88,7 +93,7 @@ call_id=$(jq -r '.tool_use_id')
 print -r -- "$call_id" >>"$TEST_OUTPUT_DIR/pre-calls"
 [[ $SHELLFISH_TURN_ID == 1 && $SHELLFISH_MODEL == test-model &&
   $0 == /* && -d ${0:A:h} ]] || exit 1
-[[ $call_id != call_2 ]] || { [[ -n $NO_FEEDBACK ]] || print -rn -- 'first reason'; exit 10; }
+[[ $call_id != call_2 ]] || { print -rn -- 'first reason'; exit 10 }
 ZSH
 chmod +x "$pre_deny"
 typeset pre_later="$tmp/pre-later"
@@ -96,7 +101,7 @@ cat >"$pre_later" <<'ZSH'
 #!/usr/bin/env zsh
 call_id=$(jq -r '.tool_use_id')
 print -r -- "$call_id" >>"$TEST_OUTPUT_DIR/pre-later-calls"
-[[ $call_id != call_2 ]] || { [[ -n $NO_FEEDBACK ]] || print -rn -- 'second reason'; exit 11; }
+[[ $call_id != call_2 ]] || { print -rn -- 'second reason'; exit 11 }
 ZSH
 chmod +x "$pre_later"
 typeset pre_never="$tmp/pre-never"
@@ -125,21 +130,15 @@ print -r -- "$stream" | jq -eRn '
   [inputs | fromjson] as $events |
   ($events | map(select(.type == "tool_result") | .exit_code)) == [0,126,0] and
   ($events | map(select(.type == "tool_result"))[1].stderr) ==
-    "first reason\nsecond reason"
+    "tool call denied by pre_tool_use hook: pre-deny"
 ' >/dev/null
+# Denial steering reaches the model as hook context beside the denied result.
+jq -e '
+  [.messages[] | select(.type == "tool_result")][1].content ==
+    "first reason\n\nsecond reason\n\ntool call denied by pre_tool_use hook: pre-deny\nexit 126"
+' "$request_capture" >/dev/null
 [[ $(<$TEST_OUTPUT_DIR/pre-calls) == $'call_1\ncall_2\ncall_3' ]]
 [[ $(<$TEST_OUTPUT_DIR/pre-later-calls) == $'call_1\ncall_2\ncall_3' ]]
 [[ $(<$TEST_OUTPUT_DIR/pre-never-calls) == $'call_1\ncall_3' ]]
 [[ $(<$TEST_OUTPUT_DIR/post-calls) == \
   $'call_1|0\ncall_2|126\ncall_3|0' ]]
-
-# Empty denials use fallback feedback.
-typeset fallback_session="$tmp/tool-deny-fallback.jsonl"
-sf_test_session "$fallback_session"
-stream=$(NO_FEEDBACK=1 SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_COUNT=2 \
-  sf_test_turn deny "$fallback_session")
-print -r -- "$stream" | jq -eRn '
-  [inputs | fromjson | select(.type == "tool_result")][1] as $result |
-  $result.exit_code == 126 and
-  ($result.stderr | contains("pre-deny"))
-' >/dev/null

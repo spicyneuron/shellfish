@@ -70,82 +70,51 @@ def render_script_view:
   {text:($render | render_script),
    identity_start:($render | render_script_identity_start)};
 
-def render_tool_before_spec:
-  .tools as $tools |
-  .record as $call |
-  ({tools:$tools,name:$call.name} | render_tool_templates |
-    .render.user_before) as $template |
-  {template:$template,script:$call.name,
-    input:($call.input | del(.request_sandbox_bypass, .sandbox_bypass_reason)),
-    output:null};
+# A call or activity record carries no captured output; a result carries its own.
+def render_output:
+  if has("stdout") then . else null end;
 
-def render_tool_before:
-  render_tool_before_spec | render_script;
+def render_tool_spec(channel):
+  .record as $record |
+  {template:({tools:.tools,name:$record.name} | render_tool_templates | channel),
+   script:$record.name,
+   input:($record.input | del(.request_sandbox_bypass, .sandbox_bypass_reason)),
+   output:($record | render_output)};
 
 def render_tool_before_view:
-  render_tool_before_spec | render_script_view;
-
-def render_tool_after_spec:
-  .tools as $tools |
-  .record as $result |
-  ({tools:$tools,name:$result.name} | render_tool_templates |
-    .render.user_after) as $template |
-  {template:$template,script:$result.name,input:$result.input,output:$result};
-
-def render_tool_after:
-  render_tool_after_spec | render_script;
+  render_tool_spec(.render.user_before) | render_script_view;
 
 def render_tool_after_view:
-  render_tool_after_spec | render_script_view;
+  render_tool_spec(.render.user_after) | render_script_view;
+
+def render_tool_model:
+  render_tool_spec(.render.model_after) | render_script;
 
 def render_tool_permission:
-  .tools as $tools |
-  .record as $call |
-  ({tools:$tools,name:$call.name} | render_tool_templates |
-    .permission_preview) as $template |
-  {template:$template,script:$call.name,
-    input:($call.input | del(.request_sandbox_bypass, .sandbox_bypass_reason)),
-    output:null} | render_script;
-def default_hook_templates:
-  if .hook == "permission_request" then
-    {user_before:"",user_after:"",model_after:""}
-  else
-    {user_before:"",user_after:"",model_after:"${output.stdout}"}
-  end;
+  render_tool_spec(.permission_preview) | render_script;
+
+def default_hook_render:
+  {user_before:"",user_after:"",model_after:"${output.stdout}"};
 
 def render_hook_templates:
   . as $render |
   ([$render.hooks[$render.hook][]? |
     select(.command == $render.command) |
-    .render][0] // ($render | default_hook_templates));
+    .render][0] // default_hook_render);
 
-def render_hook_before_spec:
-  .runtime as $runtime |
-  .record as $activity |
-  ({hooks:$runtime.harness,hook:$activity.hook,command:$activity.script} |
-    render_hook_templates | .user_before) as $template |
-  {template:$template,script:($activity.script | render_script_identity),
-    input:$activity.input,output:null};
+def render_hook_spec(channel):
+  .record as $record |
+  {template:({hooks:.runtime.harness,hook:$record.hook,command:$record.script} |
+     render_hook_templates | channel),
+   script:($record.script | render_script_identity),
+   input:$record.input,
+   output:($record | render_output)};
 
 def render_hook_before_view:
-  render_hook_before_spec | render_script_view;
-
-def render_hook_after_spec:
-  .runtime as $runtime |
-  .record as $result |
-  ({hooks:$runtime.harness,hook:$result.hook,command:$result.script} |
-    render_hook_templates | .user_after) as $template |
-  {template:$template,script:($result.script | render_script_identity),
-    input:$result.input,output:$result};
+  render_hook_spec(.user_before) | render_script_view;
 
 def render_hook_after_view:
-  render_hook_after_spec | render_script_view;
+  render_hook_spec(.user_after) | render_script_view;
 
 def render_hook_model:
-  .runtime as $runtime |
-  .record as $result |
-  ({hooks:$runtime.harness,hook:$result.hook,command:$result.script} |
-    render_hook_templates | .model_after) as $template |
-  {template:$template,script:($result.script | render_script_identity),
-    input:$result.input,output:$result} |
-  render_script;
+  render_hook_spec(.model_after) | render_script;

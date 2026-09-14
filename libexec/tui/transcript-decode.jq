@@ -37,9 +37,8 @@ else
         ({record:.,runtime:$records[0]} | render_hook_after_view) as $view |
         ["hook_result", .hook, .script, $view.text,
           ($view.identity_start | tostring),
-          (if hook_model_visible and
-              (({runtime:$records[0],record:.} | render_hook_model) | length > 0)
-           then "1" else "0" end)]
+          (if ({runtime:$records[0],record:.} | render_hook_model) == ""
+           then "0" else "1" end)]
       else {record:.,replay:true} | durable_display_fields end),
     ([$records[1:][] | select(canonical_assistant_message and has("usage"))] |
       last? | select(. != null) | .usage |

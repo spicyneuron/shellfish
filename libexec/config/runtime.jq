@@ -228,7 +228,7 @@ def runtime_finalize:
   (reduce $resolved_components[] as $component ({};
     ($component.manifest_json | fromjson) as $manifest |
     (($manifest | if type == "object" then .render else null end) //
-      ({hook:$component.hook} | default_hook_templates)) as $render |
+      default_hook_render) as $render |
     ($manifest |
       select(type == "object" and
         (keys - (if $component.hook == "user_prompt_submit"
@@ -236,8 +236,6 @@ def runtime_finalize:
           else ["environment", "render"] end) | length) == 0 and
         ((.environment // []) | component_environment) and
         ($render | hook_render) and
-        ($component.hook != "permission_request" or
-          $render == {user_before:"",user_after:"",model_after:""}) and
         (if has("match") then .match | hook_match else true end) and
         (if has("help") then
            has("match") and (.help | hook_help)

@@ -70,9 +70,8 @@ def event_fields:
     ({record:.,runtime:$event_runtime} | render_hook_after_view) as $view |
     ["hook_result", .hook, .script, $view.text,
       ($view.identity_start | tostring),
-      (if hook_model_visible and
-          (({runtime:$event_runtime,record:.} | render_hook_model) | length > 0)
-       then "1" else "0" end)]
+      (if ({runtime:$event_runtime,record:.} | render_hook_model) == ""
+       then "0" else "1" end)]
   elif canonical_user_message or canonical_assistant_message or
       (.type == "turn_error" and canonical_session_record) then
     (select(canonical_assistant_message and has("usage")) | .usage |

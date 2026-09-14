@@ -197,7 +197,7 @@ SF_TEST_EVENTS="$events" zsh -f "$entry" create --jsonl --config "$stream_config
 jq -se --arg path "$streamed" --arg first "${first:A}/run" --arg silent "${silent:A}/run" \
   --slurpfile session "$streamed" '
   map(.type) == ["_session_prepare","_hook_activity","state","hook_result",
-    "_hook_activity","hook_result","_session_created"] and
+    "_hook_activity","_session_created"] and
   .[0] == {type:"_session_prepare",path:$path,records:$session[:2]} and
   .[1] == {type:"_hook_activity",hook:"session_start",script:$first,
     input:""} and
@@ -206,13 +206,11 @@ jq -se --arg path "$streamed" --arg first "${first:A}/run" --arg silent "${silen
   .[3] == $session[3] and .[3] ==
     {type:"hook_result",hook:"session_start",script:$first,input:"",
       stdout:"startup context\n",stderr:"startup display\n",exit_code:0} and
+  # A hook that captured nothing records no result.
   .[4] == {type:"_hook_activity",hook:"session_start",script:$silent,
     input:""} and
-  .[5] == $session[4] and .[5] ==
-    {type:"hook_result",hook:"session_start",script:$silent,input:"",
-      stdout:"",stderr:"",exit_code:0} and
-  .[6] == {type:"_session_created",path:$path} and
-  ($session | length == 5)
+  .[5] == {type:"_session_created",path:$path} and
+  ($session | length == 4)
 ' "$events" >/dev/null || fail 'invalid creation event sequence or transcript'
 
 # Later failures preserve completed records.

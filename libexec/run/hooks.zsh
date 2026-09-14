@@ -40,7 +40,7 @@ sf_hooks_user_prompt_submit() {
   }
   export SHELLFISH_TURN_ID
   local SF_HOOK_COMPONENT_VALIDATOR=sf_hooks_user_prompt_validate
-  sf_hooks_run "$session" user_prompt_submit "$prompt" commit allow 1 1 ||
+  sf_hooks_run "$session" user_prompt_submit "$prompt" allow 1 1 ||
     operation_status=1
   decision=( "${reply[@]}" )
   control=$decision[4]
@@ -76,9 +76,9 @@ sf_hooks_user_prompt_submit() {
   fi
 }
 
-# Only skipped completion output becomes durable feedback.
+# Skipping completion requires feedback that can resume the turn.
 sf_hooks_stop() {
-  sf_hooks_run "$1" stop "$2" commit_on_skip require_context 0 2 "$3" || return
+  sf_hooks_run "$1" stop "$2" require_context 0 2 "$3" || return
   if (( reply[1] )); then reply=(finish); else reply=(continue); fi
 }
 
@@ -115,9 +115,8 @@ sf_hooks_permission_request() {
         tool_input:.}') || operation_status=1
   fi
   local SF_HOOK_COMPONENT_VALIDATOR=sf_hooks_permission_validate
-  local SF_HOOK_VISIBLE=0
   local SF_HOOK_TOOL_USE_ID=$call_id
-  (( operation_status )) || sf_hooks_run "$session" permission_request "$input" ignore allow 1 1 ||
+  (( operation_status )) || sf_hooks_run "$session" permission_request "$input" allow 1 1 ||
     operation_status=1
   result=( "${reply[@]}" )
   if (( ! operation_status )); then
@@ -139,20 +138,9 @@ sf_hooks_permission_request() {
   fi
 }
 
-# Only failed hook output becomes denial feedback.
-sf_hooks_pre_tool_validate() {
-  local context=$3
-  integer script_status=$2
-  (( script_status != 0 )) || [[ -z $context ]] || {
-    SF_HOOK_ERROR='pre_tool_use hook script wrote unsupported stdout'
-    return 1
-  }
-  [[ -z $context ]] || SF_HOOK_FEEDBACK+=( "$context" )
-}
-
 sf_hooks_pre_tool_use() {
-  local session=$1 tool_name=$2 call_id=$3 tool_input=$4 input='' reason
-  local -a decision SF_HOOK_FEEDBACK=()
+  local session=$1 tool_name=$2 call_id=$3 tool_input=$4 input='' origin
+  local -a decision
 
   if (( SF_HOOK_COUNTS[pre_tool_use] )); then
     input=$(print -rn -- "$tool_input" | jq -c --argjson turn_id "$SHELLFISH_TURN_ID" \
@@ -163,19 +151,20 @@ sf_hooks_pre_tool_use() {
       return
     }
   fi
-  local SF_HOOK_COMPONENT_VALIDATOR=sf_hooks_pre_tool_validate
   local SF_HOOK_TOOL_USE_ID=$call_id
-  sf_hooks_run "$session" pre_tool_use "$input" ignore allow 0 1 || return
+  sf_hooks_run "$session" pre_tool_use "$input" allow 0 1 || return
   decision=( "${reply[@]}" )
   if (( decision[1] )); then
     reply=(allow '')
   else
-    reason=${(pj:\n:)SF_HOOK_FEEDBACK}
-    reply=(deny "${reason:-tool call denied by pre_tool_use hook: ${decision[3]:t}}")
+    # Steering belongs to the hook's own model context, not the tool result.
+    origin=$decision[3]
+    [[ ${origin:t} != run ]] || origin=${origin:h}
+    reply=(deny "tool call denied by pre_tool_use hook: ${origin:t}")
   fi
 }
 
-# Post-tool hooks cannot emit output or skip.
+# Post-tool hooks cannot skip.
 sf_hooks_post_tool_use() {
   local session=$1 result=$2 tool_input=$3 input='' SF_HOOK_TOOL_USE_ID
 
@@ -195,6 +184,6 @@ sf_hooks_post_tool_use() {
     sf_hooks_fail 'cannot prepare post-tool hook input'
     return
   }
-  sf_hooks_run "$session" post_tool_use "$input" reject reject 0 1 || return
+  sf_hooks_run "$session" post_tool_use "$input" reject 0 1 || return
   reply=()
 }

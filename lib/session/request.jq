@@ -1,12 +1,24 @@
-def context_message($context; $request):
-  ([$context[].model_context | select(length > 0)] | join("\n\n")) as $blocks |
-  {type:"user", content:[{type:"text", text:($blocks + "\n\n" + $request)}]};
+def join_context($parts):
+  [$parts[] | select(. != "")] | join("\n\n");
 
+def context_message($context; $request):
+  {type:"user", content:[{type:"text", text:(join_context($context) + "\n\n" + $request)}]};
+
+# Hook context correlated to a tool call joins that call's result; uncorrelated
+# context waits for the next message. Correlated context with no settled result
+# is dropped rather than delivered out of place.
 def request_messages:
-  reduce .[] as $record ({messages:[], context:[], pending:null};
+  reduce .[] as $record
+    ({messages:[], context:[], pending:null, tool_context:{}, tool_index:{}};
     if $record.type == "state" then .
     elif $record.type == "hook_result" then
-      if ($record.model_context? // "") != "" then .context += [$record] else . end
+      ($record.model_context // "") as $context |
+      ($record.tool_use_id // "") as $call_id |
+      if $context == "" then .
+      elif $call_id == "" then .context += [$context]
+      elif .tool_index[$call_id] != null then
+        .messages[.tool_index[$call_id]].content |= join_context([., $context])
+      else .tool_context[$call_id] += [$context] end
     elif $record.type == "user" then
       .pending = null |
       if (.context | length) == 0 then .messages += [$record]
@@ -19,13 +31,17 @@ def request_messages:
       if (.context | length) > 0 then
         .messages += [context_message(.context; "")] | .context = []
       else . end |
+      # Call IDs are unique only within one response.
+      .tool_context = {} | .tool_index = {} |
       if $record.stop == "tool_calls" then .pending = ($record | del(.usage))
       else .pending = null | .messages += [$record | del(.usage)] end
     elif $record.type == "tool_result" then
       if .pending != null then .messages += [.pending] | .pending = null else . end |
+      ((.tool_context[$record.call_id] // []) + [$record.content]) as $content |
+      .tool_index[$record.call_id] = (.messages | length) + 1 |
       .messages += [
         {type:"tool_call",id:$record.call_id,name:$record.name,input:$record.input},
-        $record
+        ($record | del(.input, .stdout, .stderr) | .content = join_context($content))
       ]
     elif ($record.type | IN("system", "session", "turn_error")) then .
     else error("unrecognized session record: " + ($record.type | tostring)) end
