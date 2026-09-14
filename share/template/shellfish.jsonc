@@ -29,6 +29,13 @@
   // standalone and do not inherit its hooks or settings.
   "harnesses": {
     "default": {
+      // Hook lists replace the bundled lists. Uncomment to customize.
+      // "session_start": ["project_environment", "git_environment", "project_instructions"],
+      // "user_prompt_submit": ["help", "verbose", "new", "copy", "fork", "sandbox", "user_shell", "server", "resume", "compact", "git_environment"],
+      // "permission_request": ["review"],
+      // "pre_tool_use": [],
+      // "post_tool_use": [],
+      // "stop": [],
       "sandbox_read_paths": [
         // Paths outside the project that sandboxed tools may read
       ],

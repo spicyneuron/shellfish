@@ -47,6 +47,7 @@
       // payloads, exit statuses, and environment guarantees.
       "session_start": ["project_environment", "git_environment", "project_instructions"],
       "user_prompt_submit": ["help", "verbose", "new", "copy", "fork", "sandbox", "user_shell", "server", "resume", "compact", "git_environment"],
+      // Opt in to agentic permission review with ["review"].
       "permission_request": [],
       "pre_tool_use": [],
       "post_tool_use": [],
