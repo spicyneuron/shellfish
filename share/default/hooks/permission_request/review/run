@@ -33,7 +33,7 @@ permission_resolve() {
   control=$(jq -cn --arg name "$state_name" --argjson classification "$classification" \
       --arg content "$review_content" '
     {low:1,medium:2,high:3} as $rank |
-    (if $classification.authorization != null and
+    (if $classification.authorization != "unknown" and
         $rank[$classification.authorization] >= $rank[$classification.risk]
      then "allow" else "deny" end) as $decision |
     {state:[{name:$name,value:{content:$content,reason:$classification.reason}}],
@@ -173,7 +173,7 @@ if ! jq -cn --argjson header "$header" --arg system "$system" --argjson context 
         required:["risk","authorization","reason"],
         properties:{
           risk:{enum:["low","medium","high"]},
-          authorization:{enum:["low","medium","high",null]},
+          authorization:{enum:["low","medium","high","unknown"]},
           reason:{type:"string",minLength:1,maxLength:1000}
         }
       }) |
@@ -214,7 +214,7 @@ result=$(jq -ncer --arg content "$review_content" '
   $content | gsub("^\\s+|\\s+$"; "") | fromjson |
   select(type == "object" and keys == ["authorization","reason","risk"] and
     (.risk | IN("low","medium","high")) and
-    (.authorization == null or (.authorization | IN("low","medium","high"))) and
+    (.authorization | IN("low","medium","high","unknown")) and
     (.reason | type == "string" and length > 0 and length <= 1000 and
       (test("[[:cntrl:]]") | not)))
 ' 2>/dev/null) || permission_deny 'Permission review returned an invalid classification.'

@@ -175,7 +175,7 @@ jq -e '
   .options.request.model == "review-model" and .options.request.max_tokens == 4096 and
   .options.request.temperature == 0.7 and
   .options.request.response_schema.properties.authorization.enum ==
-    ["low","medium","high",null] and
+    ["low","medium","high","unknown"] and
   .transport.endpoint == "https://review.invalid/v1"
 ' "$captured" >/dev/null
 jq -e -s --slurpfile active "$session" '
@@ -203,17 +203,15 @@ jq -e '.action == "deny" and
 ' "$control" >/dev/null
 unset ALT_API_KEY
 
-# Authorization must meet or exceed risk; null always denies.
+# Authorization must meet or exceed risk; unknown always denies.
 typeset -A rank=( low 1 medium 2 high 3 )
 for risk in low medium high; do
-  for authorization in low medium high null; do
-    if [[ $authorization == null ]]; then
-      classification=$(jq -cn --arg risk "$risk" \
-        '{risk:$risk,authorization:null,reason:"Matrix reason."}')
+  for authorization in low medium high unknown; do
+    classification=$(jq -cn --arg risk "$risk" --arg authorization "$authorization" \
+      '{risk:$risk,authorization:$authorization,reason:"Matrix reason."}')
+    if [[ $authorization == unknown ]]; then
       expected=deny
     else
-      classification=$(jq -cn --arg risk "$risk" --arg authorization "$authorization" \
-        '{risk:$risk,authorization:$authorization,reason:"Matrix reason."}')
       (( rank[$authorization] >= rank[$risk] )) && expected=allow || expected=deny
     fi
     run_review "$classification"
@@ -227,8 +225,7 @@ for risk in low medium high; do
       .state[0].name == "permissions/6/call_7" and
       .state[0].value.reason == "Matrix reason." and
       (.state[0].value.content | fromjson) == {risk:$risk,
-          authorization:(if $authorization == "null" then null else $authorization end),
-          reason:"Matrix reason."}
+          authorization:$authorization,reason:"Matrix reason."}
     ' "$control" >/dev/null
   done
 done
@@ -236,7 +233,8 @@ done
 # Backend and response failures deny with hook-owned feedback.
 for mode in failure length prose \
   '{"risk":"low","authorization":"low","reason":"ok","extra":true}' \
-  '{"risk":"high","authorization":null,"reason":"bad\nreason"}'; do
+  '{"risk":"high","authorization":null,"reason":"No authorization."}' \
+  '{"risk":"high","authorization":"unknown","reason":"bad\nreason"}'; do
   run_review "$mode"
   (( hook_status == 11 ))
   reason=$(jq -r '.reason' "$control")
