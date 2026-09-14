@@ -31,14 +31,9 @@ sf_tui_hook_interrupt() {
   case $SF_PRESENT_KIND[index] in
     activity) sf_tui_formatter_retract ;;
     message|reasoning) sf_tui_assistant_close ;;
+    hook) sf_tui_formatter_settle ;;
     *) return 1 ;;
   esac
-}
-
-sf_tui_hook_pending() {
-  integer index=${#SF_PRESENT_KIND}
-  (( SF_PRESENT_LIVE == index && index > 0 )) &&
-    [[ $SF_PRESENT_KIND[index] == hook ]]
 }
 
 sf_tui_hook_append() {
@@ -54,7 +49,15 @@ sf_tui_hook_append() {
 
 # A running hook has produced no output yet, so it never carries model context.
 sf_tui_hook_call() {
-  sf_tui_hook_interrupt || return 1
+  if sf_tui_formatter_pending tool; then
+    sf_tui_tool_view "$2" "${3-}" "${4:--1}" || return 1
+    return
+  fi
+  if sf_tui_formatter_pending hook; then
+    sf_tui_formatter_retract || return 1
+  else
+    sf_tui_hook_interrupt || return 1
+  fi
   sf_tui_hook_append 0 "$1" "$2" "${3-}" "${4:--1}" live
 }
 
@@ -62,7 +65,19 @@ sf_tui_hook_call() {
 # earlier one. Either way it is transient and gives way to this result.
 sf_tui_hook_result() {
   local hook=$1 script=$2 content=${3-} identity_start=${4:--1} fed_model=${5:-0}
-  if sf_tui_hook_pending; then
+  local tool_use_id=${6-} pending_id
+  if [[ -n $tool_use_id ]] && sf_tui_formatter_pending tool; then
+    sf_tui_formatter_data ${#SF_PRESENT_KIND} 1 || return 1
+    pending_id=$REPLY
+    [[ $tool_use_id == "$pending_id" ]] || return 1
+    if [[ -n $content ]]; then
+      sf_tui_tool_view "$script" "$content" "$identity_start" || return 1
+    else
+      sf_tui_tool_restore || return 1
+    fi
+    return
+  fi
+  if sf_tui_formatter_pending hook; then
     sf_tui_formatter_retract || return 1
   else
     sf_tui_hook_interrupt || return 1
@@ -74,7 +89,7 @@ sf_tui_hook_result() {
 }
 
 sf_tui_hook_abandon() {
-  sf_tui_hook_pending || return 0
+  sf_tui_formatter_pending hook || return 0
   sf_tui_formatter_settle
 }
 

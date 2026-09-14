@@ -25,8 +25,20 @@ else
     error("invalid session")
   else
     $records[0].harness.tools as $tools |
+    # Before-result hook views were transient edits to the live tool block.
+    # Only correlated results after their tool result replay as notes.
+    (reduce $records[1:][] as $record (
+      {calls:{}, records:[]};
+      if $record.type == "assistant" then
+        .calls = {} | .records += [$record]
+      elif $record.type == "tool_result" then
+        .calls[$record.call_id] = true | .records += [$record]
+      elif $record.type == "hook_result" and $record.tool_use_id? != null and
+          (.calls[$record.tool_use_id] // false | not) then .
+      else .records += [$record] end
+    ).records) as $display_records |
     ["session_update", ($records[0] | {backend, harness, profile} | tojson)],
-    ($records[1:][] |
+    ($display_records[] |
       if .type == "tool_result" then
         ({record:.,tools:$tools} | render_tool_before_view) as $before |
         ({record:.,tools:$tools} | render_tool_after_view) as $view |
@@ -38,7 +50,7 @@ else
         ["hook_result", .hook, .script, $view.text,
           ($view.identity_start | tostring),
           (if ({runtime:$records[0],record:.} | render_hook_model) == ""
-           then "0" else "1" end)]
+           then "0" else "1" end), (.tool_use_id // "")]
       else {record:.,replay:true} | durable_display_fields end),
     ([$records[1:][] | select(canonical_assistant_message and has("usage"))] |
       last? | select(. != null) | .usage |

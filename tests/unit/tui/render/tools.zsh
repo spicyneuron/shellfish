@@ -41,6 +41,21 @@ assert_tail $'⛭ shell · failed\n│ detail\n╰ exit 1\n\n⠃'
 assert_equal 5 "$SF_PRESENT_SAFE_ROWS"
 sf_tui_event activity_stop
 
+# Correlated hooks borrow the live tool block until the tool settles it.
+sf_tui_reset
+sf_tui_event activity_start
+sf_tui_event tool_call hooked $'shell\nmake test' shell 0
+sf_tui_event hook_call pre_tool_use /hooks/guard/run $'guard\nchecking' 0
+view
+assert_tail $'⛭ guard\n│ checking\n╰ ⠃'
+sf_tui_event hook_result pre_tool_use /hooks/guard/run $'guard\napproved' 0 1 hooked
+view
+assert_tail $'⛭ guard\n│ approved\n╰ ⠃'
+sf_tui_event tool_result hooked $'shell\nmake test\ndone' shell 0
+view
+assert_tail $'⛭ shell\n│ make test\n╰ done\n\n⠃'
+sf_tui_event activity_stop
+
 # A queued cancellation has no running activity, but its result is still complete.
 sf_tui_reset
 sf_tui_event tool_result queued 'shell · cancelled' shell 0

@@ -46,8 +46,9 @@ let sectionId = 0;
 let contextWindow = null;
 // Text chunks by derived section ID, used by the local /copy command.
 let sectionChunks = [];
-// Tool calls waiting for their result, by call ID.
+// Live tool nodes by call ID, and IDs settled in the current response.
 const calls = new Map();
+const settledCalls = new Set();
 // The note standing in for a running hook, or null.
 let hookActivity = null;
 // Render templates from the session header.
@@ -187,7 +188,7 @@ function hideIndicator() {
   indicator = null;
 }
 
-// A hook's running label lasts only as long as the hook does.
+// The next hook or settled result retracts a running hook label.
 function clearHookActivity() {
   if (hookActivity) hookActivity.remove();
   hookActivity = null;
@@ -251,6 +252,12 @@ function renderScriptView(parent, template, script, input, output) {
   );
 }
 
+function renderExecution(parent, sigil, template, script, input, output) {
+  parent.replaceChildren();
+  el(parent, "span", "sigil", sigil + " ");
+  renderScriptView(parent, template, script, input, output);
+}
+
 function toolInput(input) {
   const shown = { ...input };
   delete shown.request_sandbox_bypass;
@@ -260,6 +267,12 @@ function toolInput(input) {
 
 function toolTemplates(name) {
   return toolTemplatesByName.get(name) || DEFAULT_TOOL_TEMPLATES;
+}
+
+function restoreToolView(call) {
+  const { frame, templates } = call;
+  renderExecution(call, "⛭", templates.render.user_before, frame.name,
+    toolInput(frame.input), null);
 }
 
 function renderValue(value) {
@@ -548,6 +561,8 @@ function apply(frame) {
       return renderHookResult(frame);
     case "user":
     case "assistant":
+      calls.clear();
+      settledCalls.clear();
       return renderMessage(frame);
     case "tool_result":
       return renderResult(frame);
@@ -590,6 +605,7 @@ function apply(frame) {
         ![
           "session_start",
           "user_prompt_submit",
+          "permission_request",
           "pre_tool_use",
           "post_tool_use",
           "stop",
@@ -613,16 +629,15 @@ function apply(frame) {
       const template = hookTemplates(frame.hook, frame.script).user_before;
       const text = renderScript(template, script, frame.input, null);
       if (text) {
+        const call = calls.get(frame.input?.tool_use_id);
+        if (call) {
+          renderExecution(call, "⛭", template, script, frame.input, null);
+          if (working) showIndicator();
+          return;
+        }
         const article = record("note", null);
         const content = el(article, "pre", "call");
-        el(content, "span", "sigil", "ℹ ");
-        renderScriptView(
-          content,
-          template,
-          script,
-          frame.input,
-          null,
-        );
+        renderExecution(content, "ℹ", template, script, frame.input, null);
         hookActivity = article;
         place(article);
       }
@@ -733,10 +748,10 @@ function renderToolCall(frame) {
   section("agent");
   const article = record("assistant", null);
   const call = el(article, "pre", "call");
-  el(call, "span", "sigil", "⛭ ");
   const templates = toolTemplates(frame.name);
-  renderScriptView(call, templates.render.user_before, frame.name,
-    toolInput(frame.input), null);
+  call.frame = frame;
+  call.templates = templates;
+  restoreToolView(call);
   calls.set(frame.id, call);
   place(article);
   if (working) showIndicator();
@@ -750,11 +765,9 @@ function renderResult(frame) {
   const call = calls.get(frame.call_id);
   hideIndicator();
   calls.delete(frame.call_id);
+  settledCalls.add(frame.call_id);
   const templates = toolTemplates(frame.name);
-  call.className = "call";
-  call.replaceChildren();
-  el(call, "span", "sigil", "⛭ ");
-  renderScriptView(call, templates.render.user_after, frame.name,
+  renderExecution(call, "⛭", templates.render.user_after, frame.name,
     toolInput(frame.input), frame);
   place(call);
   if (working) showIndicator();
@@ -773,6 +786,19 @@ function renderHookResult(frame) {
     frame.input,
     frame,
   );
+  const call = calls.get(frame.tool_use_id);
+  if (call) {
+    if (text) {
+      renderExecution(call, "⛭", templates.user_after, script,
+        frame.input, frame);
+    } else restoreToolView(call);
+    if (working) showIndicator();
+    return;
+  }
+  if (frame.tool_use_id && !settledCalls.has(frame.tool_use_id)) {
+    if (working) showIndicator();
+    return;
+  }
   if (!text) {
     if (working) showIndicator();
     return;
@@ -783,13 +809,8 @@ function renderHookResult(frame) {
     : "ℹ";
   const article = record("note", null);
   const content = el(article, "pre", "call");
-  el(content, "span", "sigil", sigil + " ");
-  renderScriptView(
-    content,
-    templates.user_after,
-    script,
-    frame.input,
-    frame,
+  renderExecution(
+    content, sigil, templates.user_after, script, frame.input, frame,
   );
   place(article);
   if (working) showIndicator();
@@ -984,6 +1005,7 @@ function reload(from) {
 function reset() {
   output.replaceChildren();
   calls.clear();
+  settledCalls.clear();
   hookActivity = null;
   indicator = null;
   lastRole = null;

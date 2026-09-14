@@ -42,6 +42,23 @@ assistant_message_delta|0|Done||||
 assistant_end||||||
 hook_result|session_start|/hooks/test/run||-1|1|" "$REPLY"
 
+# Replay omits correlated hook views that preceded the tool result, but keeps
+# later hook notes.
+{
+  head -n 1 "$tmp/tools.jsonl"
+  print -r -- '{"type":"user","content":[{"type":"text","text":"run it"}]}'
+  print -r -- '{"type":"assistant","stop":"tool_calls","content":[]}'
+  print -r -- '{"type":"hook_result","hook":"pre_tool_use","script":"/hooks/pre/run","input":{},"stdout":"before","stderr":"","exit_code":0,"tool_use_id":"call_1"}'
+  print -r -- '{"type":"tool_result","call_id":"call_1","name":"shell","input":{"command":"true"},"stdout":"done","stderr":"","exit_code":0}'
+  print -r -- '{"type":"hook_result","hook":"post_tool_use","script":"/hooks/post/run","input":{},"stdout":"after","stderr":"","exit_code":0,"tool_use_id":"call_1"}'
+} >"$tmp/correlated.jsonl"
+SF_TEST_EVENTS=()
+sf_tui_reload "$tmp/correlated.jsonl" || fail "$SF_PRESENT_ERROR"
+replayed
+[[ $REPLY != *'/hooks/pre/run'* ]] || fail "replayed pre-tool hook: $REPLY"
+[[ $REPLY == *'hook_result|post_tool_use|/hooks/post/run||-1|1|call_1'* ]] ||
+  fail "missing replayed post-tool hook: $REPLY"
+
 # The header replaces stale runtime state.
 SF_PRESENT_IDENTITY=stale/model
 SF_PRESENT_FOOTER='stale/model · stale usage'

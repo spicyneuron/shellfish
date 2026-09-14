@@ -73,6 +73,16 @@ const HEADER = {
         },
       },
     ],
+    pre_tool_use: [
+      {
+        command: "/hooks/pre_tool_use/guard/run",
+        render: {
+          user_before: "${script}\nchecking",
+          user_after: "${script}\n${output.stderr}",
+          model_after: "${output.stdout}",
+        },
+      },
+    ],
     stop: [
       {
         command: "/hooks/stop/check/run",
@@ -98,6 +108,12 @@ const ASSISTANT = {
   stop: "end",
   content: [{ type: "text", text: "committed" }],
   usage: { input_tokens: 10, output_tokens: 2 },
+};
+const TOOL_HOOK_INPUT = {
+  turn_id: "turn_1",
+  tool_name: "shell",
+  tool_use_id: "call_1",
+  tool_input: { command: "true" },
 };
 
 // ----------------------------------------------------------------------- DOM
@@ -438,6 +454,26 @@ test("replays the durable session before live work", async () => {
       type: "user",
       content: [{ type: "text", text: "**hello**" }],
     },
+    { type: "assistant", stop: "tool_calls", content: [] },
+    {
+      type: "hook_result",
+      hook: "pre_tool_use",
+      script: "/hooks/pre_tool_use/guard/run",
+      input: TOOL_HOOK_INPUT,
+      stdout: "approved",
+      stderr: "checked",
+      exit_code: 0,
+      tool_use_id: "call_1",
+    },
+    {
+      type: "tool_result",
+      call_id: "call_1",
+      name: "shell",
+      input: { command: "true" },
+      stdout: "done",
+      stderr: "",
+      exit_code: 0,
+    },
     {
       type: "assistant",
       stop: "end",
@@ -463,6 +499,7 @@ test("replays the durable session before live work", async () => {
   );
   assert.equal(page.model.textContent, "test/test-model");
   assert.equal(page.usage.textContent, " · 75 ↑ 80% ⦿ 5 ↓ 38% of 200 ◔");
+  assert.equal(find(page.output, "note").length, 0);
 });
 
 test("accepts canonical state without rendering it", async () => {
@@ -1059,6 +1096,27 @@ test("replaces a live tool view with its complete plain result", async () => {
   assert.equal(find(page.output, "call").length, 1);
   assert.equal(find(page.output, "activity").length, 1);
   assert.equal(page.cancel.hidden, false);
+
+  await page.send(
+    {
+      type: "_hook_activity",
+      hook: "pre_tool_use",
+      script: "/hooks/pre_tool_use/guard/run",
+      input: TOOL_HOOK_INPUT,
+    },
+    {
+      type: "hook_result",
+      hook: "pre_tool_use",
+      script: "/hooks/pre_tool_use/guard/run",
+      input: TOOL_HOOK_INPUT,
+      stdout: "approved",
+      stderr: "checked",
+      exit_code: 0,
+      tool_use_id: "call_1",
+    },
+  );
+  assert.equal(find(page.output, "call")[0].textContent, "⛭ guard\nchecked");
+  assert.equal(find(page.output, "note").length, 0);
 
   await page.send({
     type: "tool_result",

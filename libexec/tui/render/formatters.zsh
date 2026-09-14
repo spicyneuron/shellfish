@@ -60,6 +60,12 @@ sf_tui_formatter_settle() {
   SF_PRESENT_LIVE=0
 }
 
+sf_tui_formatter_pending() {
+  integer index=${#SF_PRESENT_KIND}
+  (( SF_PRESENT_LIVE == index && index > 0 )) &&
+    [[ $SF_PRESENT_KIND[index] == $1 ]]
+}
+
 # Retracting an unrendered role releases its section number.
 sf_tui_formatter_retract() {
   integer index=${#SF_PRESENT_KIND}
@@ -186,15 +192,18 @@ sf_tui_event() {
   integer index=${#SF_PRESENT_KIND}
   case $type in
     user)
+      sf_tui_hook_interrupt || return 1
       sf_tui_activity_retract || return 1
       sf_tui_message_append user "$first" || return 1
       ;;
     system)
+      sf_tui_hook_interrupt || return 1
       sf_tui_activity_retract || return 1
       sf_tui_message_append system "$first" || return 1
       ;;
     assistant_start)
       SF_PRESENT_ASSISTANT_INDEX=''
+      sf_tui_hook_interrupt || return 1
       sf_tui_activity_retract || return 1
       sf_tui_message_append agent '' live || return 1
       ;;
@@ -229,7 +238,7 @@ sf_tui_event() {
       sf_tui_hook_call "$first" "$second" "$third" "$fourth" || return 1
       ;;
     hook_result)
-      sf_tui_hook_result "$first" "$second" "$third" "$fourth" "$fifth" || return 1
+      sf_tui_hook_result "$first" "$second" "$third" "$fourth" "$fifth" "$sixth" || return 1
       ;;
     error)
       if (( SF_PRESENT_LIVE == index && index > 0 )); then

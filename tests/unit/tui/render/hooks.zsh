@@ -70,14 +70,23 @@ assert_equal '⠃' "$REPLY"
 assert_equal 0 "$SF_PRESENT_SAFE_ROWS"
 sf_tui_event activity_stop
 
-# A silent script leaves its running view for the next result to retract.
+# A later hook replaces a silent script's running view.
 sf_tui_reset
 sf_tui_event activity_start
 sf_tui_event hook_call session_start /hooks/silent/run 'silent · Working' 0
+sf_tui_event hook_call session_start /hooks/loud/run 'loud · Working' 0
 sf_tui_event hook_result session_start /hooks/loud/run $'loud\nresult' 0
 view 79 20
 assert_equal $'ℹ loud\n╰ result\n\n⠃' "$REPLY"
 sf_tui_event activity_stop
+
+# A following durable event retains a silent script's running view.
+sf_tui_reset
+sf_tui_event hook_call session_start /hooks/silent/run 'silent · Working' 0
+sf_tui_event user ready
+view 79 20
+[[ $REPLY == $'ℹ silent · Working\n╰\n\n─ user '*$' 1 ─\n\nready' ]] ||
+  fail "following message did not retain hook view: $REPLY"
 
 # Replayed results append already settled.
 sf_tui_reset
