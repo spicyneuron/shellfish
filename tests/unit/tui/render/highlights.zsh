@@ -8,8 +8,8 @@ unset NO_COLOR
 TERM=xterm-256color
 typeset -g theme_config='{"theme":{"mode":"dark","light":{"name":"l","palette":{
   "muted":"#111111","divider":"#111111","footer":"#111111",
-    "prompt":"#111111","prompt_waiting":"#111111","system_heading":"#111111","context":"#111111",
-    "user_heading":"#111111","agent_heading":"#111111","tool":"#111111",
+    "prompt":"#111111","prompt_waiting":"#111111","system":"#111111","context":"#111111",
+    "user":"#111111","agent":"#111111","activity":"#111111","link":"#111111","code":"#111111","tool":"#111111",
     "reasoning":"#111111","error":"#111111","diff_added":"#111111",
     "syntax_comment":"#111112","syntax_keyword":"#111113",
     "syntax_string":"#111114","syntax_number":"#111115",
@@ -17,8 +17,8 @@ typeset -g theme_config='{"theme":{"mode":"dark","light":{"name":"l","palette":{
     "diff_added_background":"#111111","diff_removed":"#111111",
     "diff_removed_background":"#111111","permission":"#111111"}},
   "dark":{"name":"d","palette":{"text":"#777777","muted":"#222222","divider":"#333333","footer":"#222222",
-    "prompt":"#444444","prompt_waiting":"#448844","system_heading":"#222222","context":"#222222",
-    "user_heading":"#555555","agent_heading":"#2a2a2a","tool":"#222222",
+    "prompt":"#444444","prompt_waiting":"#448844","system":"#232323","context":"#222222",
+    "user":"#555555","agent":"#2a2a2a","activity":"#2b2b2b","link":"#565656","code":"#575757","tool":"#222222",
     "reasoning":"#222222","error":"#666666","diff_added":"#222222",
     "syntax_comment":"#222223","syntax_keyword":"#222224",
     "syntax_string":"#222225","syntax_number":"#222226",
@@ -29,7 +29,10 @@ typeset -g theme_config='{"theme":{"mode":"dark","light":{"name":"l","palette":{
 sf_tui_theme_config "$theme_config" || fail "theme setup failed: $SF_PRESENT_HIGHLIGHT_ERROR"
 assert_equal 'fg=#555555,bold' "$SF_PRESENT_STYLE[section.user]"
 assert_equal 'fg=#2a2a2a,bold' "$SF_PRESENT_STYLE[section.agent]"
-assert_equal 'fg=#2a2a2a' "$SF_PRESENT_STYLE[activity]"
+assert_equal 'fg=#232323,bold' "$SF_PRESENT_STYLE[section.system]"
+assert_equal 'fg=#2b2b2b' "$SF_PRESENT_STYLE[activity]"
+assert_equal 'fg=#565656,underline' "$SF_PRESENT_STYLE[syntax.link]"
+assert_equal 'fg=#575757' "$SF_PRESENT_STYLE[syntax.code]"
 assert_equal 'fg=#222222' "$SF_PRESENT_STYLE[hook_activity]"
 assert_equal 'fg=#777777' "$SF_PRESENT_STYLE[message]"
 assert_equal 'fg=#666666' "$SF_PRESENT_STYLE[error]"

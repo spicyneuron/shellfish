@@ -12,7 +12,7 @@ def config_assert($valid; $path; $message):
 
 def config_theme($path):
   ["text", "muted", "divider", "footer", "prompt", "prompt_waiting",
-   "system_heading", "context", "user_heading", "agent_heading", "tool",
+   "system", "context", "user", "agent", "activity", "link", "code", "tool",
    "reasoning", "error", "syntax_comment", "syntax_keyword", "syntax_string",
    "syntax_number", "syntax_tag", "diff_added", "diff_added_background",
    "diff_removed", "diff_removed_background", "permission"] as $colors |
