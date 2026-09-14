@@ -130,12 +130,10 @@
     }
   },
 
-  // TUI preview settings: how many lines of each record type to show in the
-  // collapsed view. "full" shows the whole record. Disabled by --verbose.
+  // TUI preview settings for reasoning and context. "full" shows the whole
+  // record. Disabled by --verbose.
   "tui": {
     "preview_lines_reasoning": 0,
-    "preview_lines_context": 2,
-    "preview_lines_tool_call": 1,
-    "preview_lines_tool_result": 2
+    "preview_lines_context": 2
   }
 }

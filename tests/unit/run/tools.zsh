@@ -55,7 +55,8 @@ sf_test_tool_execute() {
 export AMBIENT_TOOL_SETTING=ambient
 load_tools "$stored_runtime"
 sf_test_tool_execute '{"id":"unknown_1","name":"unknown","input":{}}' 0
-jq -e '.exit_code == 127 and .content == "tool is not allowed: unknown"' <<<"$REPLY" >/dev/null
+jq -e '.exit_code == 127 and .stdout == "" and
+  .stderr == "tool is not allowed: unknown" and .input == {}' <<<"$REPLY" >/dev/null
 typeset invalid_tools=$(jq -c '.[0].command = "/missing/shellfish-tool"' <<<"$tool_tools")
 if sf_tools_load "$invalid_tools" "$tool_cwd" "$tool_sandbox" "$tool_fence" \
     "$tool_read_paths" "$tool_write_paths"; then
@@ -64,13 +65,13 @@ fi
 load_tools "$stored_runtime"
 sf_test_tool_execute "$(jq -cn --arg command 'print -rn -- "$AMBIENT_TOOL_SETTING"' \
   '{id:"ambient_1",name:"shell",input:{command:$command}}')" 0
-jq -e '.content == "ambient"' <<<"$REPLY" >/dev/null
+jq -e '.stdout == "ambient" and .stderr == ""' <<<"$REPLY" >/dev/null
 sf_test_tool_execute "$(jq -cn --arg command 'print -rn -- "$HOME"' \
   '{id:"home_1",name:"shell",input:{command:$command}}')" 0
-jq -e --arg home "$HOME" '.content == $home' <<<"$REPLY" >/dev/null
+jq -e --arg home "$HOME" '.stdout == $home' <<<"$REPLY" >/dev/null
 sf_test_tool_execute "$(jq -cn --arg command 'print -rn -- "$TMPDIR"' \
   '{id:"temp_1",name:"shell",input:{command:$command}}')" 0
-[[ $(jq -r '.content' <<<"$REPLY") == $tool_temp ]]
+[[ $(jq -r '.stdout' <<<"$REPLY") == $tool_temp ]]
 [[ $tool_temp == "${${TMPDIR:-/tmp}:A}/shellfish-$EUID/tooltemps/invocation."* ]]
 assert_equal 700 "$(stat -f %Lp "$tool_temp")"
 sf_temp_directory native "$tool_temp"
@@ -81,7 +82,7 @@ sf_test_tool_execute "$(jq -cn --arg command 'print -rn persistent >"$TMPDIR/mar
   '{id:"temp_write",name:"shell",input:{command:$command}}')" 0
 sf_test_tool_execute "$(jq -cn --arg command 'cat "$TMPDIR/marker"' \
   '{id:"temp_read",name:"shell",input:{command:$command}}')" 0
-jq -e '.content == "persistent"' <<<"$REPLY" >/dev/null
+jq -e '.stdout == "persistent"' <<<"$REPLY" >/dev/null
 # Fixed tool context overrides selected environment.
 typeset environment_runtime environment_call
 tool_config_dir="$tmp/fixed-config"
@@ -98,7 +99,7 @@ environment_call=$(jq -cn --arg command '
   fail 'cannot prepare tool environment call'
 sf_test_tool_execute "$environment_call" 0
 typeset expected_context="selected|$tool_config_dir|$session|$ROOT/bin/shellfish|$tool_max_capture"
-jq -e --arg expected "$expected_context" '.content == $expected' <<<"$REPLY" >/dev/null
+jq -e --arg expected "$expected_context" '.stdout == $expected' <<<"$REPLY" >/dev/null
 unset TOOL_SETTING SHELLFISH_CONFIG_DIR SHELLFISH_SESSION SHELLFISH_EXECUTABLE
 unset SHELLFISH_MAX_CAPTURE_BYTES
 tool_config_dir=''
@@ -107,12 +108,12 @@ load_tools "$stored_runtime"
 # Capture keeps trailing newlines and the configured byte tail.
 sf_test_tool_execute "$(jq -cn --arg command "printf 'line\\n\\n'" \
   '{id:"capture_1",name:"shell",input:{command:$command}}')" 0
-jq -e '.content == "line\n\n" and .sandboxed == false' \
+jq -e '.stdout == "line\n\n" and .stderr == ""' \
   <<<"$REPLY" >/dev/null
 tool_max_capture=64
 sf_test_tool_execute "$(jq -cn --arg command "printf '%070d' 0" \
   '{id:"capture_2",name:"shell",input:{command:$command}}')" 0
-jq -e '(.content | length) == 64 and (.content | startswith("[output truncated]\n"))' \
+jq -e '(.stdout | length) == 64 and (.stdout | startswith("[output truncated]\n"))' \
   <<<"$REPLY" >/dev/null
 
 # Control bytes count against the output budget.
@@ -143,8 +144,8 @@ tool_max_capture=96
 control='{"state":[{"name":"tools/result","value":7}]}'
 sf_test_tool_execute '{"id":"state_1","name":"shell","input":{"command":"valid"}}' 0
 jq -e --argjson length "$(( tool_max_capture - ${#control} ))" '
-  .exit_code == 7 and (.content | length) == $length and
-  (.content | startswith("[output truncated]\n"))
+  .exit_code == 7 and (.stdout | length) == $length and
+  (.stdout | startswith("[output truncated]\n"))
 ' <<<"$REPLY" >/dev/null || fail 'tool control did not reserve the result budget'
 [[ ${(pj:\n:)SF_TOOL_STATE_RECORDS} == \
   '{"type":"state","name":"tools/result","value":7}' ]] ||
@@ -167,14 +168,14 @@ load_tools "$stored_runtime"
 sf_test_tool_execute "$(jq -cn --arg command \
   'print -rn -u3 -- leaked 2>/dev/null; print -rn -- closed' \
   '{id:"closed_control",name:"shell",input:{command:$command}}')" 0
-jq -e '.exit_code == 0 and .content == "closed"' <<<"$REPLY" >/dev/null ||
+jq -e '.exit_code == 0 and .stdout == "closed" and .stderr == ""' <<<"$REPLY" >/dev/null ||
   fail 'the bundled shell exposed tool control to its child command'
 [[ ${#SF_TOOL_STATE_RECORDS} == 0 ]]
 
 # Timeouts return canonical results.
 sf_test_tool_execute "$(jq -cn \
   '{id:"timeout_1",name:"shell",input:{command:"sleep 5",timeout:1}}')" 0
-jq -e '.exit_code == 124 and (.content | contains("timed out after 1 seconds"))' \
+jq -e '.exit_code == 124 and (.stderr | contains("timed out after 1 seconds"))' \
   <<<"$REPLY" >/dev/null
 
 # Sandbox bypasses require approval.
@@ -188,20 +189,20 @@ typeset bypass_call=$(jq -cn \
     sandbox_bypass_reason:"test"}}')
 sf_tool_needs_permission shell true true 1
 sf_test_tool_execute "$bypass_call" 1
-jq -e '.exit_code == 126 and .content == "sandbox bypass denied"' \
+jq -e '.exit_code == 126 and .stderr == "sandbox bypass denied"' \
   <<<"$REPLY" >/dev/null
 denied_runtime=$(jq -c --arg path "$tmp" '
   .backend.env_file=$path | .harness.tools[0].manifest.environment=["TOOL_SETTING"]
 ' <<<"$sandbox_runtime") || fail 'cannot prepare denied tool runtime'
 load_tools "$denied_runtime"
 sf_test_tool_execute "$bypass_call" 1
-jq -e '.exit_code == 126 and .content == "sandbox bypass denied"' \
+jq -e '.exit_code == 126 and .stderr == "sandbox bypass denied"' \
   <<<"$REPLY" >/dev/null || fail 'denied tool resolved its environment'
 load_tools "$sandbox_runtime"
 sf_test_tool_execute "$bypass_call" 1 denied 'hook said no'
-jq -e '.exit_code == 126 and .content == "hook said no"' <<<"$REPLY" >/dev/null
+jq -e '.exit_code == 126 and .stderr == "hook said no"' <<<"$REPLY" >/dev/null
 sf_test_tool_execute "$bypass_call" 1 approved
-jq -e '.exit_code == 0 and .content == "ambient" and .sandboxed == false' <<<"$REPLY" >/dev/null
+jq -e '.exit_code == 0 and .stdout == "ambient" and .stderr == ""' <<<"$REPLY" >/dev/null
 if sf_tool_needs_permission shell false false 1; then
   fail 'a call without a bypass request asked for permission'
 fi
@@ -255,7 +256,7 @@ load_tools "$(jq -c --arg fence "$tmp/bin/fence" \
   '.harness.sandbox=true | .harness.fence=$fence' <<<"$fetch_runtime")"
 sf_test_tool_execute \
   '{"id":"fetch_1","name":"fetch_url","input":{"url":"https://example.com"}}' 1
-jq -e '.exit_code == 0 and .content == "# sandboxed markdown\n"' <<<"$REPLY" >/dev/null
+jq -e '.exit_code == 0 and .stdout == "# sandboxed markdown\n"' <<<"$REPLY" >/dev/null
 grep -Fx -- "$ROOT/share/default/tools/fetch_url/fence.jsonc" "$tmp/fence.settings" >/dev/null
 load_tools "$(jq -c --arg fence "$tmp/bin/fence" \
   '.harness.sandbox=true | .harness.fence=$fence' <<<"$stored_runtime")"
@@ -264,7 +265,7 @@ sf_test_tool_execute "$(jq -cn --arg command '
 ' '{id:"fence_empty",name:"shell",input:{command:$command}}')" 1
 jq -e --arg temp "$tool_temp" --arg session "$session" \
   --arg executable "$ROOT/bin/shellfish" '
-    .content == ("unset|" + $temp + "|" + $temp + "/zsh|" + $session + "|" + $executable)
+    .stdout == ("unset|" + $temp + "|" + $temp + "/zsh|" + $session + "|" + $executable)
   ' <<<"$REPLY" >/dev/null
 (( $(grep -Fxc -- '--expose-host-path-rw' "$tmp/fence.args") == 2 + native_grant ))
 grep -Fx -- "$tool_temp" "$tmp/fence.args" >/dev/null
@@ -285,7 +286,7 @@ load_tools "$(jq -c --arg fence "$tmp/bin/fence" --arg read_dir "$tmp/read dir" 
   .harness.sandbox_write_paths=[$write_dir,$write_file]' <<<"$stored_runtime")"
 sf_test_tool_execute "$(jq -cn --arg command 'printf fenced' \
   '{id:"fence_1",name:"shell",input:{command:$command}}')" 1
-jq -e '.content == "fenced" and .sandboxed == true' \
+jq -e '.stdout == "fenced" and .stderr == ""' \
   <<<"$REPLY" >/dev/null
 grep -Fx -- '--monitor' "$tmp/fence.args" >/dev/null
 grep -Fx -- '--fence-log-file' "$tmp/fence.args" >/dev/null
@@ -302,11 +303,11 @@ grep -Fx -- "$tmp/write file" "$tmp/fence.args" >/dev/null
 touch "$tmp/fence.violate"
 sf_test_tool_execute "$(jq -cn --arg command 'printf blocked; exit 3' \
   '{id:"fence_blocked",name:"shell",input:{command:$command}}')" 1
-jq -e '.content == "blocked" and .sandboxed == true and .sandbox_denial_detected == true' \
+jq -e '.stdout == "blocked" and .stderr == ""' \
   <<<"$REPLY" >/dev/null
 sf_test_tool_execute "$(jq -cn --arg command 'printf noisy' \
   '{id:"fence_noise",name:"shell",input:{command:$command}}')" 1
-jq -e '.content == "noisy" and .sandboxed == true and (has("sandbox_denial_detected") | not)' \
+jq -e '.stdout == "noisy" and .stderr == ""' \
   <<<"$REPLY" >/dev/null
 rm "$tmp/fence.violate"
 load_tools "$(jq -c --arg fence "$tmp/bin/fence" \

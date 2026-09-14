@@ -1,4 +1,5 @@
 include "lib/runtime/schema";
+include "lib/render";
 include "libexec/tui/display-fields";
 
 def durable_prefix:
@@ -25,7 +26,14 @@ else
   else
     $records[0].harness.tools as $tools |
     ["session_update", ($records[0] | {backend, harness, profile} | tojson)],
-    ($records[1:][] | durable_display_fields(true; $tools)),
+    ($records[1:][] |
+      if .type == "tool_call" then
+        ({record:.,tools:$tools} | render_tool_before_view) as $view |
+        ["tool_call", .id, $view.text, .name, ($view.identity_start | tostring)]
+      elif .type == "tool_result" then
+        ({record:.,tools:$tools} | render_tool_after_view) as $view |
+        ["tool_result", .call_id, $view.text, .name, ($view.identity_start | tostring)]
+      else {record:.,replay:true} | durable_display_fields end),
     ([$records[1:][] | select(canonical_assistant_message and has("usage"))] |
       last? | select(. != null) | .usage |
       turn_usage_fields($records[0].profile.context_window // null))

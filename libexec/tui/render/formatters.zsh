@@ -233,17 +233,16 @@ sf_tui_event() {
       ;;
     error)
       if (( SF_PRESENT_LIVE == index && index > 0 )) &&
-          [[ $SF_PRESENT_KIND[index] == tool_result ]]; then
+          [[ $SF_PRESENT_KIND[index] == tool ]]; then
         sf_tui_tool_abandon || return 1
       fi
       sf_tui_error_append "$first" "$second" || return 1
       ;;
     tool_call)
-      sf_tui_tool_call "$first" "$second" "$third" "$fourth" "$fifth" || return 1
+      sf_tui_tool_call "$first" "$second" "$third" "$fourth" || return 1
       ;;
     tool_result)
-      sf_tui_tool_result "$first" "$second" "$third" "$fourth" "$fifth" "$sixth" ||
-        return 1
+      sf_tui_tool_result "$first" "$second" "$third" "$fourth" || return 1
       ;;
     tool_permission)
       sf_tui_tool_permission || return 1

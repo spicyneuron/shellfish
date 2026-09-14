@@ -175,6 +175,7 @@ sf_session_project() {
     ($state.messages > 0 and $state.next != "user" | tostring | field),
     ($state.call.id // "" | field),
     ($state.call.name // "" | field),
+    ($state.call.input // {} | tojson | field),
     (hook_names[] as $hook |
       ($hook | field), (.[0].harness[$hook] // [] | length | tostring | field)),
     ("ok" | field)
@@ -183,15 +184,16 @@ sf_session_project() {
     return
   }
   fields=( "${(@0)${loaded%$'\0'}}" )
-  (( ${#fields} >= 8 && (${#fields} - 8) % 2 == 0 )) &&
+  (( ${#fields} >= 9 && (${#fields} - 9) % 2 == 0 )) &&
       [[ $fields[5] == (true|false) && $fields[-1] == ok ]] || {
     sf_session_fail "cannot restore session runtime: $session_path"
     return
   }
   integer index
   SF_SESSION_RECOVERY_NEEDED=$fields[5]
-  [[ -z $fields[6] ]] || SF_SESSION_PENDING_CALL=( "$fields[6]" "$fields[7]" )
-  for (( index = 8; index < ${#fields}; index += 2 )); do
+  [[ -z $fields[6] ]] ||
+    SF_SESSION_PENDING_CALL=( "$fields[6]" "$fields[7]" "$fields[8]" )
+  for (( index = 9; index < ${#fields}; index += 2 )); do
     SF_HOOK_COUNTS[$fields[index]]=$fields[index+1]
   done
   SF_SESSION=(
@@ -327,17 +329,19 @@ sf_session_recover_turn() {
   REPLY=''
   [[ $needed == true || force_error -ne 0 ]] || return 0
   if [[ $needed == true ]]; then
-    if (( ${#pending} == 2 )); then
+    if (( ${#pending} == 3 )); then
       record=$(jq -cn --arg call_id "$pending[1]" --arg name "$pending[2]" \
+        --argjson input "$pending[3]" \
         '{type:"tool_result",call_id:$call_id,name:$name,
-         content:"tool call interrupted",exit_code:126}') || return
+         input:$input,stdout:"",stderr:"tool call interrupted",exit_code:126}') || return
       sf_session_append "$session_path" "$record" || return
       recovered=$record
     fi
     for record in "${cancelled[@]}"; do
       result=$(jq -cn --argjson call "$record" \
         '{type:"tool_result",call_id:$call.id,name:$call.name,
-         content:"tool call cancelled",exit_code:126}') || return
+         input:($call.input | del(.request_sandbox_bypass, .sandbox_bypass_reason)),
+         stdout:"",stderr:"tool call cancelled",exit_code:126}') || return
       sf_session_append "$session_path" "$record" || return
       sf_session_append "$session_path" "$result" || return
       [[ -z $recovered ]] || recovered+=$'\n'

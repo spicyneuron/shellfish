@@ -98,8 +98,7 @@ def config_validate:
     config_assert($name | profile_name; ["themes", $name]; "invalid name") |
     .value |= config_theme(["themes", $name])) | from_entries) else . end |
   if has("tui") then .tui |= (
-    ["preview_lines_reasoning", "preview_lines_context", "preview_lines_tool_call",
-      "preview_lines_tool_result"] as $preview_fields |
+    ["preview_lines_reasoning", "preview_lines_context"] as $preview_fields |
     config_object(["tui"]; $preview_fields) |
     reduce $preview_fields[] as $field (.;
       config_assert((has($field) | not) or (.[$field] |

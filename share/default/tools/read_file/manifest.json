@@ -10,12 +10,12 @@
       "limit": {"type": "integer", "minimum": 1, "default": 500, "description": "Maximum number of lines to return"}
     }
   },
-  "display": {
-    "summary": ["$file_path"],
-    "call": {"content": [], "format": "plain"},
-    "permission_preview": {"content": ["$file_path"], "format": "plain"},
-    "result": {"content": ["$result_preview"], "format": "plain"}
+  "render": {
+    "user_before": "${tool} · ${input.file_path}",
+    "user_after": "${tool} · ${input.file_path}\n${output.stdout}${output.stderr}",
+    "model_after": "${output.stdout}${output.stderr}"
   },
+  "permission_preview": "${input.file_path}",
   "sandbox": true,
   "allow_sandbox_bypass": true
 }

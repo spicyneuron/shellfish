@@ -1,3 +1,5 @@
+include "lib/render";
+
 def xml_escape:
   gsub("&"; "&amp;") | gsub("<"; "&lt;") | gsub(">"; "&gt;") |
   gsub("\""; "&quot;");
@@ -43,11 +45,7 @@ def request_messages:
         .messages += [context_message(.context; ""), ($record | del(.usage))] |
         .context = []
       else .messages += [$record |
-        if .type == "tool_result" and .sandbox_denial_detected? == true then
-          .content += (if .content == "" then "" else "\n\n" end) +
-            "Sandbox notice: A sandbox denial was detected while this tool was running."
-        else . end |
-        del(.usage, .sandbox_denial_detected, .sandboxed)] end
+        if .type == "assistant" then del(.usage) else . end] end
     elif ($record.type | IN("system", "session", "turn_error")) then .
     else error("unrecognized session record: " + ($record.type | tostring)) end
   ) as $conversation |

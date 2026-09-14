@@ -15,12 +15,21 @@ sf_request_build() {
   local runtime=$1 tools=$2
   sf_jq -sce --argjson runtime "$runtime" --argjson tools "$tools" '
     include "lib/runtime/schema";
+    include "lib/render";
     include "lib/session/request";
     . as $records |
     {
       format_version:1,
       system:([$records[] | select(.type == "system") | .content] | join("\n\n")),
-      messages:($records | request_messages),
+      messages:($records | request_messages | map(
+        if .type == "tool_result" then
+          . as $result |
+          ([$runtime.harness.tools[] |
+            select(.name == $result.name) | .manifest.render.model_after][0] // null) as $template |
+          .content = (if $template == null then .stdout + .stderr
+            else {template:$template,name:.name,input:.input,output:.} | render_tool end) |
+          del(.input, .stdout, .stderr)
+        else . end)),
       tools:$tools,
       options:{request:$runtime.profile.request},
       transport:($runtime.backend | {endpoint,insecure_tls,http_timeout,http_stall})

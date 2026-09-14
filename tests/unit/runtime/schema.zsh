@@ -10,6 +10,28 @@ request_eval() {
   jq -L "$ROOT" -e 'include "lib/runtime/schema"; include "lib/request"; '"$1"
 }
 
+render_eval() {
+  jq -L "$ROOT" -er 'include "lib/render"; '"$1"
+}
+
+# Render templates validate placeholders and substitute only the template source.
+print -r -- '"${tool}\n${input.command}"' |
+render_eval '{template:.,variables:["tool", "input.command"]} | render_template_valid' >/dev/null
+assert_equal $'shell\necho ${tool}' "$(print -r -- '"${tool}\necho ${input.command}"' |
+  render_eval '{template:.,variables:{"tool":"shell","input.command":"${tool}"}} | render_template')"
+
+for template in '"${unknown}"' '"${tool"' '"${}"' '"bad\u0000text"'; do
+  if print -r -- "$template" |
+      render_eval 'render_template_valid(["tool"])' >/dev/null 2>&1; then
+    fail "invalid render template was accepted: $template"
+  fi
+done
+
+if print -r -- '"${tool}"' |
+    render_eval '{template:.,variables:{"tool":1}} | render_template' >/dev/null 2>&1; then
+  fail 'render template accepted a non-string variable'
+fi
+
 # User messages require one safe text block.
 print -r -- '{"type":"user","content":[{"type":"text","text":"hello"}]}' |
   schema_eval 'canonical_user_message' >/dev/null
@@ -160,18 +182,18 @@ for events in \
   fi
 done
 
-# Tool results require valid exit codes.
-print -r -- '{"type":"tool_result","call_id":"c1","name":"shell","content":"out","exit_code":0,"sandbox_denial_detected":true}' |
+# Tool results require raw input and output channels.
+print -r -- '{"type":"tool_result","call_id":"c1","name":"shell","input":{},"stdout":"out","stderr":"","exit_code":0}' |
   schema_eval 'canonical_tool_result' >/dev/null
 
-if print -r -- '{"type":"tool_result","call_id":"c1","name":"shell","content":"out","exit_code":0,"sandbox_denial_detected":false}' |
-    schema_eval 'canonical_tool_result' >/dev/null 2>&1; then
-  fail 'false sandbox_denial_detected flag was accepted'
-fi
-
-if print -r -- '{"type":"tool_result","call_id":"c1","name":"shell","content":"out","exit_code":256}' |
+if print -r -- '{"type":"tool_result","call_id":"c1","name":"shell","input":{},"stdout":"out","stderr":"","exit_code":256}' |
     schema_eval 'canonical_tool_result' >/dev/null 2>&1; then
   fail 'invalid exit code was accepted'
+fi
+
+if print -r -- '{"type":"tool_result","call_id":"c1","name":"shell","content":"out","exit_code":0}' |
+    schema_eval 'canonical_tool_result' >/dev/null 2>&1; then
+  fail 'legacy merged tool output was accepted'
 fi
 
 # Hook results require attributed context.
@@ -227,11 +249,11 @@ print -r -- '[
   {"type":"state","name":"before/call","value":"one"},
   {"type":"tool_call","id":"c1","name":"shell","input":{}},
   {"type":"hook_result","hook":"observe","script":"fixture","user_context":"between pair"},
-  {"type":"tool_result","call_id":"c1","name":"shell","content":"","exit_code":0},
+  {"type":"tool_result","call_id":"c1","name":"shell","input":{},"stdout":"","stderr":"","exit_code":0},
   {"type":"hook_result","hook":"post_tool_use","script":"observe","user_context":"after result"},
   {"type":"state","name":"between/calls","value":"two"},
   {"type":"tool_call","id":"c2","name":"shell","input":{}},
-  {"type":"tool_result","call_id":"c2","name":"shell","content":"","exit_code":0},
+  {"type":"tool_result","call_id":"c2","name":"shell","input":{},"stdout":"","stderr":"","exit_code":0},
   {"type":"state","name":"before/final","value":null},
   {"type":"assistant","stop":"end","content":[]},
   {"type":"hook_result","hook":"stop","script":"observe","user_context":"finished"},
@@ -314,7 +336,7 @@ if jq -c '.harness.sandbox_read_paths = ["relative"]' <<<"$valid_header" |
   fail 'relative sandbox read path was accepted in session header'
 fi
 
-# Tool manifests validate display and sandboxing.
+# Tool manifests validate rendering and sandboxing.
 typeset valid_manifest
 valid_manifest=$(jq -cn '
   {
@@ -324,12 +346,12 @@ valid_manifest=$(jq -cn '
       properties: {command: {type: "string"}},
       required: ["command"]
     },
-    display: {
-      summary: [],
-      call: {content: ["$command"], format: "sh"},
-      permission_preview: {content: ["$command"], format: "sh"},
-      result: {content: ["$result_full", "$exit_code"], format: "plain"}
+    render: {
+      user_before: "${tool}\n${input.command}",
+      user_after: "${tool}\n${input.command}\n${output.stdout}${output.stderr}",
+      model_after: "${output.stdout}${output.stderr}\nexit ${output.exit_code}"
     },
+    permission_preview: "${input.command}",
     sandbox: true,
     allow_sandbox_bypass: true
   }
@@ -347,13 +369,13 @@ tool_header=$(jq -cn --argjson header "$valid_header" --argjson manifest "$valid
   }]
 ')
 print -r -- "$tool_header" | schema_eval 'canonical_session_header(1)' >/dev/null
-if jq -c '.display.result.content = ["$unknown"]' <<<"$valid_manifest" |
+if jq -c '.render.user_after = "${unknown}"' <<<"$valid_manifest" |
     schema_eval 'tool_manifest' >/dev/null 2>&1; then
   fail 'tool manifest with an unknown result variable was accepted'
 fi
-if jq -c '.display.call.format = "not a format"' <<<"$valid_manifest" |
+if jq -c '.render.user_before = "${output.stdout}"' <<<"$valid_manifest" |
     schema_eval 'tool_manifest' >/dev/null 2>&1; then
-  fail 'tool manifest with an invalid display format was accepted'
+  fail 'tool manifest used output before execution'
 fi
 
 for field in request_sandbox_bypass sandbox_bypass_reason; do

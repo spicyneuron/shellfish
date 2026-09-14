@@ -144,12 +144,12 @@ sf_tools_load() {
 }
 
 sf_tool_result() {
-  local call_id=$1 name=$2 content=$3 exit_code=$4
+  local call_id=$1 name=$2 input=$3 stderr=$4 exit_code=$5
   SF_TOOL_STATE_RECORDS=()
   REPLY=$(jq -cn --arg call_id "$call_id" --arg name "$name" \
-    --arg content "$content" --argjson exit_code "$exit_code" '
+    --argjson input "$input" --arg stderr "$stderr" --argjson exit_code "$exit_code" '
       {type:"tool_result",call_id:$call_id,name:$name,
-       content:$content,exit_code:$exit_code}
+       input:$input,stdout:"",stderr:$stderr,exit_code:$exit_code}
   ') || return
 }
 
@@ -196,10 +196,10 @@ sf_tool_execute() {
   local config_dir=${11-} session=${12-} executable=${13-} runtime=${14-}
   local tool_home=${HOME:-$cwd}
   local sandboxed use_sandbox allow_bypass settings
-  local capture_dir input captured bounded control control_pipe temp native_temp command_path sandbox_log
-  local expose sandbox_denial_detected=''
+  local capture_dir input stdout stderr bounded_stdout bounded_stderr control control_pipe
+  local temp native_temp command_path sandbox_log expose
   local -a command locale_env states result
-  integer exit_code control_size result_budget
+  integer exit_code control_size result_budget stderr_size
   setopt local_options no_err_exit
   SF_TOOL_ERROR=''
   SF_TOOL_STATE_RECORDS=()
@@ -209,7 +209,7 @@ sf_tool_execute() {
   [[ -z $LC_CTYPE ]] || locale_env+=( LC_CTYPE="$LC_CTYPE" )
   [[ -z ${XDG_CONFIG_HOME-} ]] || locale_env+=( XDG_CONFIG_HOME="$XDG_CONFIG_HOME" )
   if (( ! ${+SF_TOOL_COMMAND[$name]} )); then
-    sf_tool_result "$id" "$name" "tool is not allowed: $name" 127
+    sf_tool_result "$id" "$name" "$execution_input" "tool is not allowed: $name" 127
     return
   fi
   command_path=$SF_TOOL_COMMAND[$name]
@@ -218,11 +218,12 @@ sf_tool_execute() {
   settings=$SF_TOOL_SETTINGS[$name]
   (( harness_sandbox )) || bypass=false
   if [[ $bypass == invalid || ( $bypass == true && $allow_bypass != true ) ]]; then
-    sf_tool_result "$id" "$name" 'sandbox bypass is not allowed' 126
+    sf_tool_result "$id" "$name" "$execution_input" 'sandbox bypass is not allowed' 126
     return
   fi
   if [[ $bypass == true && $decision != approved ]]; then
-    sf_tool_result "$id" "$name" "${denial_reason:-sandbox bypass denied}" 126
+    sf_tool_result "$id" "$name" "$execution_input" \
+      "${denial_reason:-sandbox bypass denied}" 126
     return
   fi
   sf_environment_prepare "$runtime" "$SF_TOOL_ENVIRONMENT[$name]" || {
@@ -244,7 +245,8 @@ sf_tool_execute() {
   SF_TOOL_CAPTURE_DIR=$capture_dir
   {
     input="$capture_dir/input"
-    bounded="$capture_dir/result"
+    bounded_stdout="$capture_dir/stdout.bounded"
+    bounded_stderr="$capture_dir/stderr.bounded"
     sf_process_control_pipe "$capture_dir"
     control_pipe=$REPLY
     print -r -- "$execution_input" >"$input" || {
@@ -282,14 +284,15 @@ sf_tool_execute() {
         SHELLFISH_MAX_CAPTURE_BYTES="$max_capture" SHELLFISH_SESSION="$session"
         SHELLFISH_EXECUTABLE="$executable" TMPDIR="$temp" TMPPREFIX="$temp/zsh" "$command_path")
     fi
-    sf_process_capture "$input" "$capture_dir" "$cwd" merged $max_capture \
+    sf_process_capture "$input" "$capture_dir" "$cwd" separate $max_capture \
       "${command[@]}" || {
       sf_tools_fail 'cannot capture tool output'
       return
     }
     result=( "${reply[@]}" )
     exit_code=$result[1]
-    captured=$result[2]
+    stdout=$result[2]
+    stderr=$result[3]
     control=$result[4]
     control_size=$(wc -c <"$control") || {
       sf_tools_fail 'cannot inspect tool control data'
@@ -311,27 +314,24 @@ sf_tool_execute() {
       (( ${#reply} <= 1 )) || states=( "${(@)reply[2,-1]}" )
     fi
     result_budget=$(( max_capture - control_size ))
-    sf_tool_bound_capture "$captured" "$bounded" "$result_budget" || {
+    sf_tool_bound_capture "$stderr" "$bounded_stderr" "$result_budget" || {
       sf_tools_fail 'cannot bound tool output'
       return
     }
-    # Ignore fence startup denials from successful tools.
-    if [[ $exit_code != 0 && -n $sandbox_log && -f $sandbox_log ]] &&
-      grep -Fq ' ✗ ' "$sandbox_log"; then
-      sandbox_denial_detected=true
-    fi
-    sandboxed=''
-    if [[ $name == shell ]]; then
-      sandboxed=false
-      (( harness_sandbox )) && [[ $use_sandbox == true && $bypass != true ]] && sandboxed=true
-    fi
+    stderr_size=$(wc -c <"$bounded_stderr") || {
+      sf_tools_fail 'cannot inspect tool output'
+      return
+    }
+    sf_tool_bound_capture "$stdout" "$bounded_stdout" \
+      $(( result_budget - stderr_size )) || {
+      sf_tools_fail 'cannot bound tool output'
+      return
+    }
     REPLY=$(jq -cn --arg call_id "$id" --arg name "$name" \
-      --rawfile content "$bounded" --argjson exit_code "$exit_code" \
-      --arg sandboxed "$sandboxed" --arg sandbox_denial_detected "$sandbox_denial_detected" '
+      --argjson input "$execution_input" --rawfile stdout "$bounded_stdout" \
+      --rawfile stderr "$bounded_stderr" --argjson exit_code "$exit_code" '
         {type:"tool_result",call_id:$call_id,name:$name,
-         content:$content,exit_code:$exit_code} +
-        (if $sandboxed == "" then {} else {sandboxed:($sandboxed == "true")} end) +
-        (if $sandbox_denial_detected == "" then {} else {sandbox_denial_detected:true} end)
+         input:$input,stdout:$stdout,stderr:$stderr,exit_code:$exit_code}
     ') || return
     SF_TOOL_STATE_RECORDS=( "${states[@]}" )
   } always {

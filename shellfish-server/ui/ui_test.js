@@ -22,37 +22,47 @@ const HEADER = {
       {
         name: "shell",
         manifest: {
-          display: {
-            summary: [],
-            call: { content: ["$command"], format: "sh" },
-            permission_preview: { content: ["$command"], format: "sh" },
-            result: { content: ["$result_preview", "$exit_code"], format: "plain" },
+          render: {
+            user_before: "${tool}\n${input.command}",
+            user_after: "${tool}\n${input.command}\n${output.stdout}${output.stderr}\nexit ${output.exit_code}",
+            model_after: "${output.stdout}${output.stderr}\nexit ${output.exit_code}",
           },
+          permission_preview: "${input.command}",
         },
       },
       {
         name: "read_file",
         manifest: {
-          display: {
-            summary: ["$file_path"],
-            call: { content: [], format: "plain" },
-            permission_preview: { content: ["$file_path"], format: "plain" },
-            result: { content: ["$result_preview"], format: "plain" },
+          render: {
+            user_before: "${tool} · ${input.file_path}",
+            user_after: "${tool} · ${input.file_path}\n${output.stdout}${output.stderr}",
+            model_after: "${output.stdout}${output.stderr}",
           },
+          permission_preview: "${input.file_path}",
         },
       },
       {
         name: "edit_file",
         manifest: {
-          display: {
-            summary: ["$file_path"],
-            call: { content: [], format: "plain" },
-            permission_preview: { content: ["$file_path"], format: "plain" },
-            result: { content: ["$result_full"], format: "file_diff" },
+          render: {
+            user_before: "${tool} · ${input.file_path}",
+            user_after: "${tool} · ${input.file_path}\n${output.stdout}${output.stderr}",
+            model_after: "${output.stdout}${output.stderr}",
           },
+          permission_preview: "${input.file_path}",
         },
       },
-      { name: "fallback", manifest: {} },
+      {
+        name: "fallback",
+        manifest: {
+          render: {
+            user_before: "${tool}\n${input}",
+            user_after: "${tool}\n${output.stdout}${output.stderr}",
+            model_after: "${output.stdout}${output.stderr}",
+          },
+          permission_preview: "${input}",
+        },
+      },
     ],
   },
 };
@@ -480,7 +490,9 @@ test("copies the latest or selected derived section locally", async () => {
       type: "tool_result",
       call_id: "copy_call",
       name: "shell",
-      content: "",
+      input: {},
+      stdout: "",
+      stderr: "",
       exit_code: 0,
     },
     {
@@ -555,7 +567,7 @@ test("puts prompt context under a user heading", async () => {
   assert.equal(find(page.output, "activity").length, 1);
 });
 
-test("decorates reasoning and tools like the terminal", async () => {
+test("renders complete live tool views like the terminal", async () => {
   const page = await idle();
   await page.send(
     {
@@ -592,13 +604,13 @@ test("decorates reasoning and tools like the terminal", async () => {
   );
   assert.equal(findTag(find(page.output, "reasoning")[0], "summary")[0].textContent, "✎Reasoning");
   const calls = find(page.output, "call");
-  assert.equal(findTag(calls[0], "summary")[0].textContent, "⛭shell");
-  assert.equal(find(calls[0], "input")[0].textContent, "if true; then pwd; fi");
-  assert.equal(find(calls[0], "word").length, 3);
-  assert.equal(findTag(calls[1], "summary")[0].textContent, "⛭read_file · outside.txt · unsandboxed");
-  assert.equal(find(calls[1], "input")[0].textContent, "");
-  assert.equal(findTag(calls[2], "summary")[0].textContent, "⛭fallback · unsandboxed");
-  assert.equal(find(calls[2], "input")[0].textContent, '{"value":1}');
+  assert.equal(calls[0].textContent, "⛭ shell\nif true; then pwd; fi");
+  assert.equal(findTag(calls[0], "strong")[0].textContent, "shell");
+  assert.equal(find(calls[0], "word").length, 0);
+  assert.equal(calls[1].textContent, "⛭ read_file · outside.txt");
+  assert.equal(findTag(calls[1], "strong")[0].textContent, "read_file");
+  assert.equal(findTag(calls[1], "strong").length, 1);
+  assert.equal(calls[2].textContent, '⛭ fallback\n{"value":1}');
 });
 
 test("leaves deltas out of the transcript and draws the record once", async () => {
@@ -819,7 +831,7 @@ test("answers and removes permission prompts", async () => {
     assert.equal(find(request, "input")[0].textContent, preview);
     assert.match(request.textContent, /Reason: not allowed by policy/);
     assert.equal(find(request, "input")[0].tagName, "pre");
-    assert.match(findTag(find(page.output, "call")[0], "summary")[0].textContent, /unsandboxed$/);
+    assert.equal(find(page.output, "call").length, 1);
     assert.equal(page.cancel.hidden, false);
 
     find(page.output, "actions")[0].children[button].dispatch("click");
@@ -836,7 +848,7 @@ test("answers and removes permission prompts", async () => {
   }
 });
 
-test("keeps a tool result together with its sandbox notice", async () => {
+test("replaces a live tool view with its complete plain result", async () => {
   const page = await idle();
   await page.send(
     { type: "_session_status", working: true },
@@ -860,18 +872,15 @@ test("keeps a tool result together with its sandbox notice", async () => {
     type: "tool_result",
     call_id: "call_1",
     name: "edit_file",
-    content: "@@ -1 +1 @@\n-old\n+new",
+    input: { file_path: "notes.txt", old_string: "old", new_string: "new" },
+    stdout: "@@ -1 +1 @@\n-old\n+new",
+    stderr: "",
     exit_code: 0,
-    sandbox_denial_detected: true,
   });
   const call = find(page.output, "call")[0];
-  const result = find(call, "result");
-  assert.equal(result.length, 1);
-  assert.equal(result[0].tagName, "pre");
-  assert.match(result[0].textContent, /\+new$/);
-  assert.equal(find(result[0], "diff-removed").length, 1);
-  assert.equal(find(result[0], "diff-added").length, 1);
-  assert.equal(find(result[0], "notes")[0].textContent, "sandbox denial detected");
+  assert.equal(call.tagName, "pre");
+  assert.equal(call.textContent, "⛭ edit_file · notes.txt\n@@ -1 +1 @@\n-old\n+new");
+  assert.equal(findTag(call, "strong")[0].textContent, "edit_file");
   assert.equal(find(page.output, "note").length, 0);
   assert.equal(find(page.output, "activity").length, 1);
   assert.equal(page.cancel.hidden, false);

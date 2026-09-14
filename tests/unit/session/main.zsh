@@ -189,7 +189,7 @@ sf_session_begin_turn "$interrupted_tools"
 sf_session_append "$interrupted_tools" '{"type":"user","content":[{"type":"text","text":"run"}]}'
 sf_session_append "$interrupted_tools" '{"type":"assistant","stop":"tool_calls","content":[]}'
 sf_session_append "$interrupted_tools" '{"type":"tool_call","id":"call_1","name":"shell","input":{}}'
-sf_session_append "$interrupted_tools" '{"type":"tool_result","call_id":"call_1","name":"shell","content":"done","exit_code":0}'
+sf_session_append "$interrupted_tools" '{"type":"tool_result","call_id":"call_1","name":"shell","input":{},"stdout":"done","stderr":"","exit_code":0}'
 sf_session_append "$interrupted_tools" '{"type":"tool_call","id":"call_2","name":"read_file","input":{}}'
 sf_session_reset
 sf_session_begin_turn "$interrupted_tools"

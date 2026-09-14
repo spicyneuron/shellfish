@@ -12,17 +12,13 @@ typeset iteration_arg=${2:-5}
   exit 2
 }
 integer turns=$turns_arg iterations=$iteration_arg
-integer characters=4096 format_lines=64 columns=80 budget=45
+integer characters=4096 tool_lines=64 columns=80 budget=45
 
 typeset -g SF_ROOT=$root
 source "$root/libexec/tui/render/main.zsh"
 
 # Fake ZLE state keeps terminal commits quiet.
 typeset -g PREDISPLAY='' POSTDISPLAY='' BUFFER='' CURSOR=0
-
-SF_PRESENT_STYLE=( 'syntax.added' 'fg=2,bg=22' 'syntax.removed' 'fg=1,bg=52'
-  'syntax.strong' bold 'syntax.heading' 'bold,underline' 'syntax.code' 'fg=2'
-  'syntax.string' 'fg=2' 'syntax.number' 'fg=3' 'syntax.keyword' 'fg=5' )
 
 # Drain safe batches before building the viewport.
 present_drain() {
@@ -35,41 +31,20 @@ present_drain() {
   done
 }
 
-build_format() {
-  local format=$1 line block=''
-  local -a lines
-  case $format in
-    plain) lines=(
-      'Ordinary prose exercises wrapping without syntax highlighting.'
-      'Short sentences include commas, periods, and repeated words.'
-      'Stable synthetic text keeps benchmark input reproducible.'
-      'Each source line occupies the same fixed character width.'
-    ) ;;
-    markdown) lines=(
-      '# Heading with **strong text** and ordinary prose'
-      '- A list item includes *emphasis* and more plain words.'
-      '`inline code` and [a link](https://example.test) appear here.'
-      '> A quoted sentence exercises another Markdown span.'
-    ) ;;
-    json) lines=(
-      '{"id":1,"name":"alpha","active":true,"value":null}'
-      '{"id":2,"name":"beta","active":false,"value":12}'
-      '{"id":3,"name":"gamma","active":true,"value":34}'
-      '{"id":4,"name":"delta","active":false,"value":56}'
-    ) ;;
-    diff) lines=(
-      '@@ -10,3 +10,3 @@ render_sample'
-      ' context line retained by both versions'
-      '-removed line with representative source text'
-      '+added line with representative source text'
-    ) ;;
-  esac
+build_tool_text() {
+  local line block=''
+  local -a lines=(
+    'Ordinary prose exercises wrapping without syntax highlighting.'
+    'Short sentences include commas, periods, and repeated words.'
+    'Stable synthetic text keeps benchmark input reproducible.'
+    'Each source line occupies the same fixed character width.'
+  )
   for line in $lines; do
     printf -v line '%-63.63s\n' "$line"
     block+=$line
   done
   REPLY=''
-  repeat $(( format_lines / ${#lines} )); do REPLY+=$block; done
+  repeat $(( tool_lines / ${#lines} )); do REPLY+=$block; done
 }
 
 build_session() {
@@ -82,14 +57,14 @@ build_session() {
   done >>"$session"
 }
 
-run_format() {
-  local format=$1 content=$2
+run_tool() {
+  local content=$1
   sf_tui_reset
   sf_tui_terminal_reset
-  sf_tui_event tool_call diff edit_file path '' plain
-  sf_tui_event tool_result diff hidden "$content" "$format" full
+  sf_tui_event tool_call diff 'edit_file · path' edit_file 0
+  sf_tui_event tool_result diff "$content" edit_file -1
   float start=$EPOCHREALTIME
-  sf_tui_transcript $columns $(( format_lines + 10 ))
+  sf_tui_transcript $columns $(( tool_lines + 10 ))
   REPLY=$(( (EPOCHREALTIME - start) * 1000 ))
 }
 
@@ -117,13 +92,12 @@ measure_case() {
   reply=( $(( total / iterations )) $minimum $maximum )
 }
 
-measure_format() {
-  local label=$1 content_type=$2 format=$3
-  build_format $content_type
+measure_tool() {
+  build_tool_text
   local content=$REPLY
-  measure_case run_format $format "$content"
+  measure_case run_tool "$content"
   printf '%-21s %6d %10.3f %9.3f %9.3f\n' \
-    "$label" $iterations $reply
+    'Plain tool text' $iterations $reply
 }
 
 typeset tmp
@@ -132,13 +106,10 @@ trap 'rm -rf -- "$tmp"' EXIT
 build_session "$tmp/session-$turns.jsonl" $turns
 build_session "$tmp/session-$(( turns * 2 )).jsonl" $(( turns * 2 ))
 
-print -P -- "%BFormat rendering ($characters characters, $columns columns)%b"
-printf '%-21s %6s %10s %9s %9s\n' Format Runs 'Mean (ms)' 'Min (ms)' 'Max (ms)'
+print -P -- "%BTool rendering ($characters characters, $columns columns)%b"
+printf '%-21s %6s %10s %9s %9s\n' Case Runs 'Mean (ms)' 'Min (ms)' 'Max (ms)'
 printf '%-21s %6s %10s %9s %9s\n' --------------------- ------ ---------- --------- ---------
-measure_format 'Plain text' plain plain
-measure_format Markdown markdown markdown
-measure_format JSON json json
-measure_format Diff diff file_diff
+measure_tool
 print
 
 print -P -- "%BResume presentation ($columns columns, ${budget}-row viewport)%b"

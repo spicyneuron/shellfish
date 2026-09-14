@@ -9,11 +9,11 @@
       "num_results": {"type": "integer", "minimum": 1, "maximum": 10, "description": "Number of results to return (default: 10)"}
     }
   },
-  "display": {
-    "summary": ["$query"],
-    "call": {"content": [], "format": "plain"},
-    "permission_preview": {"content": ["$query"], "format": "plain"},
-    "result": {"content": ["$result_preview"], "format": "md"}
+  "render": {
+    "user_before": "${tool} · ${input.query}",
+    "user_after": "${tool} · ${input.query}\n${output.stdout}${output.stderr}",
+    "model_after": "${output.stdout}${output.stderr}"
   },
+  "permission_preview": "${input.query}",
   "sandbox": true
 }

@@ -133,9 +133,7 @@ sf_runtime_apply_verbose() {
   local updated
   (( SF_RUNTIME_VERBOSE )) || return 0
   updated=$(jq -c '.tui.preview_lines_reasoning = "full" |
-    .tui.preview_lines_context = "full" |
-    .tui.preview_lines_tool_call = "full" |
-    .tui.preview_lines_tool_result = "full"' <<<"$SF_PRESENTATION") || {
+    .tui.preview_lines_context = "full"' <<<"$SF_PRESENTATION") || {
     sf_runtime_fail 'cannot apply verbose preview limits'
     return
   }

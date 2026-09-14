@@ -2,7 +2,6 @@ emulate -R zsh
 setopt no_aliases no_bg_nice no_multios pipe_fail
 
 typeset -g SF_PRESENT_PREVIEW_REASONING=full SF_PRESENT_PREVIEW_CONTEXT=full
-typeset -g SF_PRESENT_PREVIEW_TOOL_CALL=full SF_PRESENT_PREVIEW_TOOL_RESULT=full
 typeset -ga SF_PRESENT_ACTIVITY_FRAMES=( ⠃ ⠁ ⠁ ⠁ ⠃ ⠆ ⡄ ⡀ ⡀ ⡀ ⡄ ⠆ )
 typeset -g SF_PRESENT_ACTIVITY=${SF_PRESENT_ACTIVITY_FRAMES[1]}
 
@@ -10,15 +9,11 @@ sf_tui_rows_config() {
   local config=${1:-\{\}} values
   local -a limits
   values=$(jq -r '[.tui.preview_lines_reasoning // "full",
-    .tui.preview_lines_context // "full",
-    .tui.preview_lines_tool_call // "full",
-    .tui.preview_lines_tool_result // "full"][]' <<<"$config") || return 1
+    .tui.preview_lines_context // "full"][]' <<<"$config") || return 1
   limits=( "${(@f)values}" )
-  (( ${#limits} == 4 )) || return 1
+  (( ${#limits} == 2 )) || return 1
   SF_PRESENT_PREVIEW_REASONING=$limits[1]
   SF_PRESENT_PREVIEW_CONTEXT=$limits[2]
-  SF_PRESENT_PREVIEW_TOOL_CALL=$limits[3]
-  SF_PRESENT_PREVIEW_TOOL_RESULT=$limits[4]
 }
 
 sf_tui_token_count() {

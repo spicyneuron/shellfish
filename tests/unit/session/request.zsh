@@ -3,7 +3,16 @@
 source "${0:A:h:h:h}/_helpers.zsh"
 
 fold() {
-  jq -L "$ROOT" -c 'include "lib/session/request"; request_messages'
+  jq -L "$ROOT" -c --argjson tools '[{
+    "name":"shell",
+    "manifest":{"render":{"model_after":"${output.stdout}${output.stderr}"}}
+  }]' 'include "lib/render"; include "lib/session/request"; request_messages | map(
+    if .type == "tool_result" then
+      . as $result |
+      ($tools[] | select(.name == $result.name) | .manifest.render.model_after) as $template |
+      .content = ({template:$template,name:.name,input:.input,output:.} | render_tool) |
+      del(.input, .stdout, .stderr)
+    else . end)'
 }
 
 # Conversation records drop storage fields.
@@ -76,12 +85,12 @@ print -r -- '[
   {"type":"assistant","content":[]},
   {"type":"hook_result","hook":"t","script":"notes","model_context":"ctx"},
   {"type":"tool_result","call_id":"c1","name":"shell",
-   "content":"out","exit_code":0,"sandbox_denial_detected":true,"sandboxed":true},
+   "input":{},"stdout":"out","stderr":"err","exit_code":0},
   {"type":"user","content":[{"type":"text","text":"next"}]}
 ]' | fold | jq -e '
   [.[].type] == ["assistant","tool_result","user"] and
-  (.[1] | has("sandbox_denial_detected", "sandboxed") | not) and
-  .[1].content == "out\n\nSandbox notice: A sandbox denial was detected while this tool was running." and
+  (.[1] | has("input", "stdout", "stderr") | not) and
+  .[1].content == "outerr" and
   .[2].content[0].text == "<hook name=\"t\">\n<context script=\"notes\">\nctx\n</context>\n</hook>\n\nnext"
 ' >/dev/null
 

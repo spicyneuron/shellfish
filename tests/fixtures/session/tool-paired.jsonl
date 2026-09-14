@@ -2,8 +2,8 @@
 {"type":"user","content":[{"type":"text","text":"Use both tools"}]}
 {"type":"assistant","stop":"tool_calls","content":[],"usage":{"input_tokens":1,"output_tokens":1}}
 {"type":"tool_call","id":"call_1","name":"read_file","input":{"file_path":"README.md"}}
-{"type":"tool_result","call_id":"call_1","name":"read_file","content":"contents\nsecond line","exit_code":0}
+{"type":"tool_result","call_id":"call_1","name":"read_file","input":{"file_path":"README.md"},"stdout":"contents\nsecond line","stderr":"","exit_code":0}
 {"type":"tool_call","id":"call_2","name":"shell","input":{"command":"make test"}}
-{"type":"tool_result","call_id":"call_2","name":"shell","content":"failed\u001b[31m","exit_code":1}
+{"type":"tool_result","call_id":"call_2","name":"shell","input":{"command":"make test"},"stdout":"failed\u001b[31m","stderr":"","exit_code":1}
 {"type":"assistant","stop":"end","content":[{"type":"text","text":"Done"}],"usage":{"input_tokens":2,"output_tokens":1}}
 {"type":"hook_result","hook":"project","script":"test","model_context":"Use fixtures."}

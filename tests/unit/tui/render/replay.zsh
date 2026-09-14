@@ -13,16 +13,30 @@ replayed() { REPLY="${(F)SF_TEST_EVENTS}" }
 # Records replay in durable order.
 SF_TEST_EVENTS=()
 typeset esc=$'\e'
-sf_tui_reload "$SF_TEST_SESSIONS/tool-paired.jsonl" || fail "$SF_PRESENT_ERROR"
+{
+  head -n 1 "$SF_TEST_SESSIONS/tool-paired.jsonl" | jq -c \
+    --slurpfile read "$ROOT/share/default/tools/read_file/manifest.json" \
+    --slurpfile shell "$ROOT/share/default/tools/shell/manifest.json" \
+    '.harness.tools = [
+      {name:"read_file",command:"/bin/true",settings:"/tmp/settings",manifest:$read[0]},
+      {name:"shell",command:"/bin/true",settings:"/tmp/settings",manifest:$shell[0]}]'
+  tail -n +2 "$SF_TEST_SESSIONS/tool-paired.jsonl"
+} >"$tmp/tools.jsonl"
+sf_tui_reload "$tmp/tools.jsonl" || fail "$SF_PRESENT_ERROR"
 replayed
 assert_equal "user|Use both tools|||||
 assistant_start||||||
 assistant_end||||||
-tool_call|call_1|read_file|{\"file_path\":\"README.md\"}||json|
-tool_result|call_1|hidden|contents
-second line|plain||
-tool_call|call_2|shell|{\"command\":\"make test\"}||json|
-tool_result|call_2|1|failed${esc}[31m|plain||
+tool_call|call_1|read_file · README.md|read_file|0||
+tool_result|call_1|read_file · README.md
+contents
+second line|read_file|0||
+tool_call|call_2|shell
+make test|shell|0||
+tool_result|call_2|shell
+make test
+failed${esc}[31m
+exit 1|shell|0||
 assistant_start||||||
 assistant_message_delta|0|Done||||
 assistant_end||||||
@@ -44,7 +58,7 @@ replayed
 assert_equal 'user|Please continue|||||
 error|Turn interrupted.||end|||' "$REPLY"
 
-cp "$SF_TEST_SESSIONS/tool-paired.jsonl" "$tmp/invalid.jsonl"
+cp "$tmp/tools.jsonl" "$tmp/invalid.jsonl"
 print -r -- broken >>"$tmp/invalid.jsonl"
 if sf_tui_reload "$tmp/invalid.jsonl"; then
   fail 'accepted an invalid durable transcript'

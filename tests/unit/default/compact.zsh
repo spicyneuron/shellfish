@@ -100,7 +100,7 @@ print -r -- \
   '{"type":"user","content":[{"type":"text","text":"Keep going"}]}' \
   '{"type":"assistant","stop":"tool_calls","content":[{"type":"text","text":"\n\n"}],"usage":{"input_tokens":75,"output_tokens":5}}' \
   '{"type":"tool_call","id":"call_1","name":"shell","input":{"command":"true"}}' \
-  '{"type":"tool_result","call_id":"call_1","name":"shell","content":"tool call cancelled","exit_code":126}' \
+  '{"type":"tool_result","call_id":"call_1","name":"shell","input":{"command":"true"},"stdout":"","stderr":"tool call cancelled","exit_code":126}' \
   '{"type":"turn_error","message":"Cancelled."}' \
   >>"$cancelled_source"
 assert_canonical_session "$cancelled_source"

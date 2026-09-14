@@ -25,7 +25,7 @@ A tool directory contains an executable `run`, a `manifest.json` or `manifest.js
 
 `description`, `input_schema`, and `sandbox` are required. The input schema must describe an object. `environment` selects component-specific variables and defaults to empty. `allow_sandbox_bypass` defaults to false and is valid only for a sandboxed tool.
 
-A manifest may include `display` settings for interactive clients. Its summary, call, and permission previews can interpolate input fields or `$input_json`. Its result preview can use `$result_preview`, `$result_full`, and `$exit_code`. See the manifests under [`share/default/tools/`](../share/default/tools/) for examples.
+A manifest defines complete `user_before`, `user_after`, and `model_after` templates. Templates use one-pass `${...}` substitution for the tool name, input, and raw output fields. Permission preview is a separate template because permission is a distinct transient view. See the manifests under [`share/default/tools/`](../share/default/tools/) for examples.
 
 See [Configuration](CONFIG.md#customize-a-harness) for component lookup and environment value resolution.
 
@@ -33,7 +33,7 @@ See [Configuration](CONFIG.md#customize-a-harness) for component lookup and envi
 
 Shellfish runs `run` with no arguments from the session working directory. stdin contains the complete tool input as one JSON object. Tool scripts must validate this input before using it.
 
-Combined stdout and stderr become the tool result content. The process exit status becomes the result exit code. A nonzero exit is a normal tool result and does not itself fail the turn.
+Stdout and stderr remain separate in the tool result. The result also records the exact input given to the tool and its exit code. A nonzero exit is a normal tool result and does not itself fail the turn.
 
 Each turn receives a private temporary directory through `TMPDIR` and `TMPPREFIX`. Its tool calls share that directory, and Shellfish removes it during turn cleanup.
 

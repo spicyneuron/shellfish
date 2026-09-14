@@ -442,7 +442,9 @@ for tool_name in alpha beta gamma delta epsilon; do
   print -r -- '#!/bin/sh' >"$tmp/config/tools/$tool_name/run"
   chmod +x "$tmp/config/tools/$tool_name/run"
   jq -n --arg description "$tool_name tool" \
-    '{description:$description,input_schema:{type:"object"},sandbox:false}' \
+    '{description:$description,input_schema:{type:"object"},sandbox:false,
+      render:{user_before:"${tool}",user_after:"${tool}",model_after:"${output.stdout}${output.stderr}"},
+      permission_preview:"${input}"}' \
     >"$tmp/config/tools/$tool_name/manifest.json"
 done
 mv "$tmp/config/tools/beta/manifest.json" "$tmp/config/tools/beta/manifest.jsonc"
@@ -469,7 +471,9 @@ fi
 rm "$tmp/config/tools/beta/manifest.json"
 
 # Sandboxed tools require fence settings.
-jq -n '{description:"sandboxed",input_schema:{type:"object"},sandbox:true}' \
+jq -n '{description:"sandboxed",input_schema:{type:"object"},sandbox:true,
+  render:{user_before:"${tool}",user_after:"${tool}",model_after:"${output.stdout}${output.stderr}"},
+  permission_preview:"${input}"}' \
   >"$tmp/config/tools/alpha/manifest.json"
 if sf_runtime_resolve_from_config "$tmp/config/tooled.jsonc" '' '' '{}' "$ROOT/tests/fixtures/backend"; then
   fail 'sandboxed tool without fence settings was accepted'

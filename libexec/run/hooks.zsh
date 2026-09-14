@@ -187,7 +187,8 @@ sf_hooks_post_tool_use() {
       jq -cs --argjson turn_id "$SHELLFISH_TURN_ID" '
         .[0] as $tool_input | .[1] as $result |
         {turn_id:$turn_id,tool_name:$result.name,tool_use_id:$result.call_id,
-         tool_input:$tool_input,tool_response:($result | {content,exit_code})}
+         tool_input:$tool_input,
+         tool_response:($result | {stdout,stderr,exit_code})}
       ') || {
       sf_hooks_fail 'cannot prepare post-tool hook input'
       return

@@ -2,27 +2,34 @@
 
 source "${0:A:h:h:h}/_helpers.zsh"
 
-# Resolve tool display fields.
-typeset summary_tools=$(jq -cn \
+# Render tool views.
+typeset tools=$(jq -cn \
   --slurpfile edit "$ROOT/share/default/tools/edit_file/manifest.json" \
   --slurpfile shell "$ROOT/share/default/tools/shell/manifest.json" '
     {harness:{tools:[
       {name:"edit_file",manifest:$edit[0]},
-      {name:"shell",manifest:($shell[0] |
-        .display.summary=["$command"])}]}}
+      {name:"shell",manifest:$shell[0]}]}}
 ')
-assert_equal notes.txt "$(jq -nr -L "$ROOT" --argjson tools "$summary_tools" '
-  include "libexec/tui/display-fields";
-  {name:"edit_file",input:{file_path:"notes.txt",old_string:"large",new_string:"secret"}} |
-  tool_call_display($tools.harness.tools).summary
+assert_equal 'edit_file · notes.txt' "$(jq -nr -L "$ROOT" --argjson tools "$tools" '
+  include "lib/render";
+  {record:{name:"edit_file",input:{file_path:"notes.txt"}},tools:$tools.harness.tools} |
+  render_tool_before
 ')"
-assert_equal 'make test' "$(jq -nr -L "$ROOT" --argjson tools "$summary_tools" '
-  include "libexec/tui/display-fields";
-  {name:"shell",input:{command:"make test"}} | tool_call_display($tools.harness.tools).summary
+assert_equal $'shell\nmake test' "$(jq -nr -L "$ROOT" --argjson tools "$tools" '
+  include "lib/render";
+  {record:{name:"shell",input:{command:"make test"}},tools:$tools.harness.tools} |
+  render_tool_before
 ')"
-assert_equal sh "$(jq -nr -L "$ROOT" --argjson tools "$summary_tools" '
-  include "libexec/tui/display-fields";
-  {name:"shell",input:{command:"true"}} | tool_call_display($tools.harness.tools).format
+assert_equal '{"text":"shell · shell","identity_start":8}' \
+  "$(jq -nc -L "$ROOT" '
+    include "lib/render";
+    {template:"${input.command} · ${tool}",name:"shell",
+      input:{command:"shell"},output:null} | render_tool_view
+  ')"
+assert_equal 'make test' "$(jq -nr -L "$ROOT" --argjson tools "$tools" '
+  include "lib/render";
+  {record:{name:"shell",input:{command:"make test"}},tools:$tools.harness.tools} |
+  render_tool_permission
 ')"
 
 # Decode replay fields.

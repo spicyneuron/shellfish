@@ -50,10 +50,8 @@ let sectionChunks = [];
 const calls = new Map();
 // The note standing in for a running hook, or null.
 let hookActivity = null;
-// Each tool's display policy from the session header, by tool name.
-const toolDisplay = new Map();
-const INPUT_FALLBACK = { content: ["$input_json"], format: "json" };
-const RESULT_FALLBACK = { content: ["$result_preview"], format: "plain" };
+// Each tool's manifest from the session header, by tool name.
+const toolManifests = new Map();
 
 // -------------------------------------------------------------------- the DOM
 
@@ -197,51 +195,40 @@ function note(text, kind, heading, secondary) {
   if (working) showIndicator();
 }
 
-function inputDisplay(input, content) {
-  return content
-    .map((part) => {
-      if (!part.startsWith("$")) return part;
-      const field = part.slice(1);
-      if (field === "input_json") {
-        const shown = { ...input };
-        delete shown.request_sandbox_bypass;
-        delete shown.sandbox_bypass_reason;
-        return JSON.stringify(shown);
-      }
-      if (!Object.hasOwn(input, field) || input[field] === null) return "";
-      return typeof input[field] === "string" ? input[field] : JSON.stringify(input[field]);
-    })
-    .join("");
+function renderTemplate(template, values) {
+  return template.replace(/\$\{([^{}]+)\}/g, (_, name) => values[name]);
 }
 
-function renderFormatted(parent, text, format) {
-  if (format === "md" || format === "markdown") {
-    markdown(parent, text);
-    return;
+function renderTool(template, name, input, output) {
+  const shown = { ...input };
+  delete shown.request_sandbox_bypass;
+  delete shown.sandbox_bypass_reason;
+  const values = { tool: name, input: JSON.stringify(shown) };
+  for (const [key, value] of Object.entries(shown)) {
+    values["input." + key] = value === null ? "" :
+      typeof value === "string" ? value : JSON.stringify(value);
   }
-  if (format === "diff" || format === "file_diff") {
-    for (const line of text.match(/[^\n]*(?:\n|$)/g)) {
-      if (!line) continue;
-      const className = line.startsWith("+") && !line.startsWith("+++")
-        ? "diff-added"
-        : line.startsWith("-") && !line.startsWith("---")
-          ? "diff-removed"
-          : null;
-      if (className) el(parent, "span", className, line);
-      else parent.append(document.createTextNode(line));
-    }
-    return;
+  if (output) {
+    values["output.stdout"] = output.stdout;
+    values["output.stderr"] = output.stderr;
+    values["output.exit_code"] = String(output.exit_code);
   }
-  highlight(parent, text, format);
+  return renderTemplate(template, values);
 }
 
-function renderPreview(parent, input, preview) {
-  const block = el(parent, "pre", "input");
-  renderFormatted(block, safe(inputDisplay(input, preview.content)), preview.format);
+function renderToolView(parent, template, name, input, output) {
+  const token = "${tool}";
+  const parts = template.split(token);
+  for (let index = 0; index < parts.length; index++) {
+    parent.append(document.createTextNode(safe(renderTool(parts[index], name, input, output))));
+    if (index < parts.length - 1) el(parent, "strong", null, safe(name));
+  }
 }
 
-function toolPolicy(name) {
-  return toolDisplay.get(name) || {};
+function toolManifest(name) {
+  const manifest = toolManifests.get(name);
+  if (!manifest) throw new Error("unknown tool: " + name);
+  return manifest;
 }
 
 // -------------------------------------------------------------------- markdown
@@ -437,9 +424,9 @@ function applyRuntime(runtime) {
   const backend = safe((runtime.backend || {}).name);
   contextWindow = (runtime.profile || {}).context_window ?? null;
   model.textContent = backend ? backend + "/" + name : name;
-  toolDisplay.clear();
+  toolManifests.clear();
   for (const tool of (runtime.harness || {}).tools || []) {
-    toolDisplay.set(tool.name, ((tool.manifest || {}).display || {}));
+    toolManifests.set(tool.name, tool.manifest || {});
   }
 }
 
@@ -626,23 +613,13 @@ function renderToolCall(frame) {
   hideIndicator();
   section("agent");
   const article = record("assistant", null);
-  renderCall(article, frame);
+  const call = el(article, "pre", "call");
+  el(call, "span", "sigil", "⛭ ");
+  const manifest = toolManifest(frame.name);
+  renderToolView(call, manifest.render.user_before, frame.name, frame.input, null);
+  calls.set(frame.id, call);
   place(article);
   if (working) showIndicator();
-}
-
-function renderCall(parent, call) {
-  const details = el(parent, "details", "call");
-  const display = toolPolicy(call.name);
-  const parts = (display.summary || []).map((part) => inputDisplay(call.input, [part]));
-  if (call.input.request_sandbox_bypass === true) parts.push("unsandboxed");
-  const secondary = parts
-    .map((part) => part.replace(/\s+/g, " ").trim())
-    .filter(Boolean)
-    .join(" · ");
-  summary(el(details, "summary"), "⛭", call.name, secondary || undefined);
-  renderPreview(details, call.input, display.call || INPUT_FALLBACK);
-  calls.set(call.id, details);
 }
 
 // A result belongs to the call it names.
@@ -651,19 +628,11 @@ function renderResult(frame) {
   if (!call) throw new Error("tool result has no call");
   hideIndicator();
   calls.delete(frame.call_id);
-  const display = toolPolicy(frame.name).result || RESULT_FALLBACK;
-  const result = el(call, "pre", frame.exit_code ? "result failed" : "result");
-  const notes = [];
-  if (display.content.includes("$exit_code") || frame.exit_code !== 0) {
-    notes.push("exit " + frame.exit_code);
-  }
-  if (frame.sandbox_denial_detected === true) notes.push("sandbox denial detected");
-  if (notes.length) {
-    el(result, "span", frame.exit_code ? "notes failed" : "notes", notes.join(" · "));
-  }
-  if (display.content.includes("$result_preview") || display.content.includes("$result_full")) {
-    renderFormatted(el(result, "span", "content"), safe(frame.content), display.format);
-  }
+  const manifest = toolManifest(frame.name);
+  call.className = "call";
+  call.replaceChildren();
+  el(call, "span", "sigil", "⛭ ");
+  renderToolView(call, manifest.render.user_after, frame.name, frame.input, frame);
   place(call);
   if (working) showIndicator();
 }
@@ -715,8 +684,13 @@ function askPermission(frame) {
   pending = frame.id;
   const tool = frame.tool || {};
   const article = record("permission", "Run " + safe(tool.name) + " outside of sandbox?");
-  const preview = toolPolicy(tool.name).permission_preview || INPUT_FALLBACK;
-  renderPreview(article, tool.input, preview);
+  const manifest = toolManifest(tool.name);
+  el(article, "pre", "input", safe(renderTool(
+    manifest.permission_preview,
+    tool.name,
+    tool.input,
+    null,
+  )));
   if (frame.reason) el(article, "pre", "reason", "Reason: " + safe(frame.reason));
   const actions = el(article, "div", "actions");
   for (const decision of ["approve", "deny"]) {

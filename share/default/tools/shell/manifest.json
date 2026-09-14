@@ -15,12 +15,12 @@
       }
     }
   },
-  "display": {
-    "summary": [],
-    "call": {"content": ["$command"], "format": "sh"},
-    "permission_preview": {"content": ["$command"], "format": "sh"},
-    "result": {"content": ["$result_preview", "$exit_code"], "format": "plain"}
+  "render": {
+    "user_before": "${tool}\n${input.command}",
+    "user_after": "${tool}\n${input.command}\n${output.stdout}${output.stderr}\nexit ${output.exit_code}",
+    "model_after": "${output.stdout}${output.stderr}\nexit ${output.exit_code}"
   },
+  "permission_preview": "${input.command}",
   "sandbox": true,
   "allow_sandbox_bypass": true
 }

@@ -8,11 +8,11 @@
       "name": {"type": "string", "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$", "maxLength": 64, "description": "Skill name from the available agent skills context"}
     }
   },
-  "display": {
-    "summary": ["$name"],
-    "call": {"content": [], "format": "plain"},
-    "permission_preview": {"content": ["$name"], "format": "plain"},
-    "result": {"content": ["$result_preview"], "format": "markdown"}
+  "render": {
+    "user_before": "${tool} · ${input.name}",
+    "user_after": "${tool} · ${input.name}\n${output.stdout}${output.stderr}",
+    "model_after": "${output.stdout}${output.stderr}"
   },
+  "permission_preview": "${input.name}",
   "sandbox": false
 }

@@ -57,7 +57,7 @@ sf_tui_theme_config() {
        "section.agent":("fg=" + .agent + ",bold"),
        "section.system":("fg=" + .system + ",bold"),
        reasoning:("fg=" + .reasoning),
-       tool_call:("fg=" + .tool), tool_result:("fg=" + .tool),
+       tool:("fg=" + .tool),
        hook_model_context:("fg=" + .context),
        hook_activity:("fg=" + .muted), hook_user_context:("fg=" + .muted),
        error:("fg=" + .error),

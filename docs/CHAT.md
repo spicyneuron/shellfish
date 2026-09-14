@@ -29,7 +29,7 @@ During a permission request, the keymap switches to accept `a` (approve) or `d` 
 
 ## Presentation
 
-The TUI collapses long reasoning, context, and tool records according to current preview settings. This affects presentation only; complete content remains in the session. Start chat with `--verbose` to show everything inline.
+The TUI collapses long reasoning and context according to current preview settings. Tool templates are always shown in full. Start chat with `--verbose` to expand reasoning and context inline.
 
 ## Recovery
 

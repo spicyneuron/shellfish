@@ -1,7 +1,10 @@
 include "lib/runtime/schema";
+include "lib/render";
 include "libexec/tui/display-fields";
 
-def event_fields($event_runtime):
+def event_fields:
+  .runtime as $event_runtime |
+  .event |
   if .type == "_assistant_message_delta" and canonical_backend_event then
     ["assistant_message_delta", (.index | tostring), .text]
   elif .type == "_assistant_reasoning_delta" and canonical_backend_event then
@@ -36,11 +39,12 @@ def event_fields($event_runtime):
       (.path | nul_free_string and startswith("/")) then
     ["session_created", .path]
   elif .type == "_tool_permission_request" then
-    (.tool | tool_permission_display($event_runtime.harness.tools // [])) as $preview |
+    ({record:.tool,tools:($event_runtime.harness.tools // [])} |
+      render_tool_permission) as $preview |
      ["permission_request", .id, .tool.name,
-      (if ($preview.content | length) > 1000
-       then $preview.content[0:1000] + "…" else $preview.content end),
-      .reason, $preview.format]
+      (if ($preview | length) > 1000
+       then $preview[0:1000] + "…" else $preview end),
+      .reason, "plain"]
   elif .type == "_handoff" and
       (.argv | type == "array" and length > 0 and
        (.[0] | type == "string" and length > 0) and
@@ -55,12 +59,17 @@ def event_fields($event_runtime):
   elif canonical_session_header(1) or canonical_state or
       (.type == "system" and canonical_session_record) then
     empty
-  elif canonical_user_message or canonical_assistant_message or
-      canonical_tool_call or canonical_tool_result or canonical_hook_result or
+  elif canonical_tool_call then
+    ({record:.,tools:($event_runtime.harness.tools // [])} | render_tool_before_view) as $view |
+    ["tool_call", .id, $view.text, .name, ($view.identity_start | tostring)]
+  elif canonical_tool_result then
+    ({record:.,tools:($event_runtime.harness.tools // [])} | render_tool_after_view) as $view |
+    ["tool_result", .call_id, $view.text, .name, ($view.identity_start | tostring)]
+  elif canonical_user_message or canonical_assistant_message or canonical_hook_result or
       (.type == "turn_error" and canonical_session_record) then
     (select(canonical_assistant_message and has("usage")) | .usage |
       turn_usage_fields($event_runtime.profile.context_window // null)),
-    durable_display_fields(false; ($event_runtime.harness.tools // []))
+    ({record:.,replay:false} | durable_display_fields)
   else
     error("unsupported exec event")
   end;
@@ -69,7 +78,7 @@ split("\n") | map(select(length > 0) | fromjson) |
 reduce .[] as $event (
   {runtime:$runtime, fields:[]};
   .runtime as $event_runtime |
-  ([$event | event_fields($event_runtime)]) as $fields |
+  ([{event:$event,runtime:$event_runtime} | event_fields]) as $fields |
   .fields += $fields |
   if $event.type == "_session_update" then .runtime = $event.runtime
   elif $event.type == "_session_prepare" then .runtime = $event.records[0]

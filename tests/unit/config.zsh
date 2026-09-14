@@ -260,9 +260,9 @@ fi
 # Lift preview limits with verbose reports.
 report=$(zsh -f "$entry" config --config "$config_dir/shellfish.jsonc" --verbose) || \
   fail 'config verbose report failed'
-assert_equal 'full full full full' \
-  "$(jq -r '[.tui.preview_lines_reasoning, .tui.preview_lines_context,
-    .tui.preview_lines_tool_call, .tui.preview_lines_tool_result] | join(" ")' <<<"$report")" \
+assert_equal 'full full' \
+  "$(jq -r '[.tui.preview_lines_reasoning, .tui.preview_lines_context] |
+    join(" ")' <<<"$report")" \
   '--verbose lifts every preview limit'
 report=$(zsh -f "$entry" config --config "$config_dir/shellfish.jsonc" \
   --session-from "$tmp/stored.jsonl" --verbose) || fail 'config verbose session report failed'

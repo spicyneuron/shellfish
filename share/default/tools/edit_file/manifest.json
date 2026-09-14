@@ -11,12 +11,12 @@
       "replace_all": {"type": "boolean", "default": false, "description": "Replace every occurrence of old_string; by default, exactly one occurrence is required"}
     }
   },
-  "display": {
-    "summary": ["$file_path"],
-    "call": {"content": [], "format": "plain"},
-    "permission_preview": {"content": ["$file_path"], "format": "plain"},
-    "result": {"content": ["$result_full"], "format": "file_diff"}
+  "render": {
+    "user_before": "${tool} · ${input.file_path}",
+    "user_after": "${tool} · ${input.file_path}\n${output.stdout}${output.stderr}",
+    "model_after": "${output.stdout}${output.stderr}"
   },
+  "permission_preview": "${input.file_path}",
   "sandbox": true,
   "allow_sandbox_bypass": true
 }

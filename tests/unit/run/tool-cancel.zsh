@@ -31,9 +31,9 @@ print -r -- "$(<"$cancel_stream")" | jq -eRn '
   [inputs | fromjson] as $events |
   ($events | map(select(.type == "tool_result"))) == [{
     type:"tool_result",call_id:"call_1",name:"shell",
-    content:"tool call interrupted",exit_code:126
+    input:{command:$command},stdout:"",stderr:"tool call interrupted",exit_code:126
   }] and $events[-1] == {type:"turn_error",message:"Turn interrupted."}
-' >/dev/null
+' --arg command "$command" >/dev/null
 assert_canonical_session "$cancel_session"
 
 # Cancellation stops tool descendants.

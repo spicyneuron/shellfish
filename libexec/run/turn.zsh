@@ -425,6 +425,7 @@ sf_run_turn() {
             return 1
           fi
           if ! sf_tool_result "$call_id" "$tool_name" \
+              "$execution_input" \
               "tool call denied: per-response limit is $tool_limit" 126; then
             failure=${SF_TOOL_ERROR:-cannot prepare denied tool result}
             return 1
@@ -443,6 +444,7 @@ sf_run_turn() {
               return 1
             fi
             if ! sf_tool_result "$call_id" "$tool_name" \
+                "$execution_input" \
                 "$hook_reason" \
                 126; then
               failure=${SF_TOOL_ERROR:-cannot prepare denied tool result}

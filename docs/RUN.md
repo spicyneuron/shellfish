@@ -91,7 +91,7 @@ Stdout contains one compact JSON object per line in source order. Objects fall i
 | `state` | Model-invisible durable named state |
 | `turn_error` | Failure or cancellation ending an accepted turn |
 
-For an exact state name, the latest value is effective and `null` clears it. State does not affect conversation sequencing or provider requests. A failed sandboxed tool may mark its result with `sandbox_denial_detected`.
+For an exact state name, the latest value is effective and `null` clears it. State does not affect conversation sequencing or provider requests.
 
 Transient events currently include:
 

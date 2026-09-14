@@ -8,11 +8,11 @@
       "url": {"type": "string", "minLength": 1, "description": "HTTP(S) URL to fetch"}
     }
   },
-  "display": {
-    "summary": ["$url"],
-    "call": {"content": [], "format": "plain"},
-    "permission_preview": {"content": ["$url"], "format": "plain"},
-    "result": {"content": ["$result_preview"], "format": "md"}
+  "render": {
+    "user_before": "${tool} · ${input.url}",
+    "user_after": "${tool} · ${input.url}\n${output.stdout}${output.stderr}",
+    "model_after": "${output.stdout}${output.stderr}"
   },
+  "permission_preview": "${input.url}",
   "sandbox": true
 }

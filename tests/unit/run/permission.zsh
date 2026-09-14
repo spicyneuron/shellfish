@@ -43,7 +43,7 @@ print -r -- "$stream" | jq -eRn '
   ($events | map(select(.type == "state" or .type == "tool_result")) | map(.type)) ==
     ["state","tool_result"] and
   ($events | map(select(.type == "tool_result"))[0] |
-    .exit_code == 0 and .content == "headless")
+    .exit_code == 0 and .stdout == "headless" and .stderr == "")
 ' >/dev/null
 jq -e '
   .tools[0].input_schema.properties.request_sandbox_bypass.type == "boolean" and
@@ -75,7 +75,7 @@ print -r -- "$stream" | jq -eRn '
     {type:"state",name:"permissions/1/call_1",
       value:{content:null,reason:"risk too high"}} and
   ($events | map(select(.type == "tool_result"))[0] |
-    .exit_code == 126 and .content == "risk too high")
+    .exit_code == 126 and .stderr == "risk too high")
 ' >/dev/null
 
 # Missing reviewers deny bypasses.
@@ -89,7 +89,7 @@ print -r -- "$stream" | jq -eRn '
   [inputs | fromjson] as $events |
   ($events | map(select(.type == "_tool_permission_request")) | length) == 0 and
   ($events | map(select(.type == "tool_result"))[0] |
-    .exit_code == 126 and .content == "sandbox bypass denied")
+    .exit_code == 126 and .stderr == "sandbox bypass denied")
 ' >/dev/null
 assert_equal "$frozen_tools" "$(jq -c '.tools' "$request_capture")"
 
@@ -110,7 +110,7 @@ print -r -- "$stream" | jq -eRn '
   ($events | map(select(.type | IN("tool_call", "_tool_permission_request", "tool_result"))) |
     map(.type)) == ["tool_call", "_tool_permission_request", "tool_result"] and
   ($events | map(select(.type == "tool_result"))[0] |
-    .exit_code == 0 and .content == "approved")
+    .exit_code == 0 and .stdout == "approved" and .stderr == "")
 ' >/dev/null
 assert_equal "$frozen_tools" "$(jq -c '.tools' "$request_capture")"
 jq -se 'all(.[]; .type != "_tool_permission_request" and
@@ -126,7 +126,7 @@ print -r -- "$stream" | jq -eRn '
   [inputs | fromjson] as $events |
   ($events | map(select(.type == "_tool_permission_request")) | length) == 1 and
   ($events | map(select(.type == "tool_result"))[0] |
-    .exit_code == 126 and .content == "sandbox bypass denied")
+    .exit_code == 126 and .stderr == "sandbox bypass denied")
 ' >/dev/null
 
 # Invalid permission replies fail the turn.
@@ -139,7 +139,7 @@ print -r -- "$stream" | jq -eRn '
   [inputs | fromjson] as $events |
   ($events | map(select(.type == "_tool_permission_request")) | length) == 1 and
   ($events | map(select(.type == "tool_result"))[0] |
-    .exit_code == 126 and .content == "tool call interrupted") and
+    .exit_code == 126 and .stderr == "tool call interrupted") and
   ($events | map(select(.type == "turn_error") | .message) |
     any(. == "invalid permission response"))
 ' >/dev/null
@@ -171,7 +171,7 @@ printf '%s\n' \
 jq -eRn '
   [inputs | fromjson] as $events |
   ($events | map(select(.type == "tool_result"))[0] |
-    .exit_code == 0 and .content == "approved")
+    .exit_code == 0 and .stdout == "approved" and .stderr == "")
 ' <"$permission_stdin_stream" >/dev/null
 
 # Cancellation closes pending tool calls.
@@ -203,7 +203,9 @@ jq -eRn '
   ($events | map(select(.type == "_tool_permission_request")) | length) == 1 and
   ($events | map(select(.type == "tool_result") |
     [.call_id, .exit_code])) ==
-    [["call_1",126],["call_2",126],["call_3",126]]
+    [["call_1",126],["call_2",126],["call_3",126]] and
+  all($events[] | select(.type == "tool_result");
+    .input | has("request_sandbox_bypass", "sandbox_bypass_reason") | not)
 ' <"$permission_cancel_stream" >/dev/null
 assert_canonical_session "$permission_cancel_session"
 

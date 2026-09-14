@@ -1,5 +1,3 @@
-include "lib/runtime/schema";
-
 def compact_tokens:
   if . < 1000 then tostring
   elif . < 10000 then
@@ -38,45 +36,17 @@ def emit_display_batch:
     error("invalid display fields")
   else (. + ["", "", "", "", "", ""])[0:7][] | display_nul_safe, "\u0000" end;
 
-def tool_input_display($call; $content):
-  [$content[] |
-    if startswith("$") then
-      .[1:] as $field |
-      if $field == "input_json" then
-        ($call.input | del(.request_sandbox_bypass, .sandbox_bypass_reason) | tojson)
-      elif $call.input | has($field) then
-        $call.input[$field] |
-        if . == null then "" elif type == "string" then . else tojson end
-      else ""
-      end
-    else . end] | join("");
-
-def tool_call_display($tools):
-  . as $call |
-  ($tools | map(select(.name == $call.name))[0].manifest // null) as $manifest |
-  ($manifest.display.summary // []) as $summary |
-  ($manifest.display.call // {content:["$input_json"],format:"json"}) as $preview |
-  {summary:([$summary[] | tool_input_display($call; [.])] +
-      [if $call.input.request_sandbox_bypass? == true then "unsandboxed" else "" end] |
-      display_summary),
-   content:tool_input_display($call; $preview.content),
-   format:$preview.format};
-
-def tool_permission_display($tools):
-  . as $call |
-  ($tools | map(select(.name == $call.name))[0].manifest.display.permission_preview //
-    {content:["$input_json"],format:"json"}) as $preview |
-  {content:tool_input_display($call; $preview.content), format:$preview.format};
-
-def durable_display_fields($replay; $tools):
+def durable_display_fields:
+  .replay as $replay |
+  .record |
   if .type == "system" and $replay then
     ["system", .content]
   elif .type == "turn_error" then
     (.message | split("\n")) as $lines |
     ["error", $lines[0], ($lines[1:] | join("\n")), "end"]
-  elif canonical_user_message then
+  elif .type == "user" then
     if $replay then ["user", .content[0].text] else empty end
-  elif canonical_assistant_message then
+  elif .type == "assistant" then
     if $replay then
       . as $message |
       (.content | to_entries) as $content |
@@ -94,23 +64,7 @@ def durable_display_fields($replay; $tools):
         end),
       ["assistant_end"]
     else empty end
-  elif canonical_tool_call then
-    tool_call_display($tools) as $call_display |
-    ["tool_call", .id, .name,
-     $call_display.content, $call_display.summary, $call_display.format]
-  elif canonical_tool_result then
-    . as $result |
-    ($tools | map(select(.name == $result.name))[0].manifest.display.result //
-      {content:["$result_preview"],format:"plain"}) as $display |
-    # "hidden" completes a call without a footer.
-    ["tool_result", .call_id,
-      (if ($display.content | index("$exit_code")) != null or .exit_code != 0
-       then (.exit_code | tostring) else "hidden" end),
-      (if any($display.content[]; . == "$result_preview" or . == "$result_full")
-       then .content else "" end), $display.format,
-      (if ($display.content | index("$result_full")) != null then "full" else "" end),
-      (if .sandbox_denial_detected? == true then "sandbox_denial" else "" end)]
-  elif canonical_hook_result then
+  elif .type == "hook_result" then
     ([.hook, .prompt?,
       (if has("status") then "status " + (.status | tostring) else null end)] |
       display_summary) as $meta |

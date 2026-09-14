@@ -14,27 +14,17 @@ def nul_free_string:
 
 def tool_manifest:
   . as $manifest |
-  def input_display($properties):
-    type == "array" and all(.[]; nul_free_string) and
-    all(.[] | select(startswith("$"));
-      .[1:] as $field |
-      $field == "input_json" or ($field != "" and ($properties | has($field))));
-  def display_format:
-    type == "string" and test("^[A-Za-z][A-Za-z0-9_+-]*$");
-  def input_preview($properties):
-    type == "object" and keys == ["content", "format"] and
-    (.content | input_display($properties)) and (.format | display_format);
-  def result_display:
-    type == "array" and
-    all(.[]; IN("$result_preview", "$result_full", "$exit_code")) and
-    length == (unique | length) and
-    ([.[] | select(. == "$result_preview" or . == "$result_full")] | length) <= 1;
-  def result_preview:
-    type == "object" and keys == ["content", "format"] and
-    (.content | result_display) and (.format | display_format);
+  def template($variables):
+    type == "string" and (index("\u0000") | not) and
+    (gsub("\\$\\{[^{}]+\\}"; "") | index("${") | not) and
+    ([scan("\\$\\{([^{}]+)\\}")[0]] |
+      all(.[]; . as $name | $variables | index($name) != null));
+  (.input_schema.properties // {} | keys | map("input." + .)) as $input_variables |
+  (["tool", "input"] + $input_variables) as $before |
+  ($before + ["output.stdout", "output.stderr", "output.exit_code"]) as $after |
   type == "object" and
-  ((keys - ["allow_sandbox_bypass", "description", "display", "environment",
-    "input_schema", "sandbox"]) | length == 0) and
+  ((keys - ["allow_sandbox_bypass", "description", "environment",
+    "input_schema", "permission_preview", "render", "sandbox"]) | length == 0) and
   (.description | nul_free_string and length > 0) and
   (.input_schema | type == "object" and .type == "object" and
     ((.properties // {}) | type == "object") and
@@ -44,21 +34,12 @@ def tool_manifest:
       has("request_sandbox_bypass") or has("sandbox_bypass_reason") | not) and
     ((.required // []) |
       index("request_sandbox_bypass") == null and index("sandbox_bypass_reason") == null)) and
-  ((if has("display") then .display else {} end) as $display |
-    (.input_schema.properties // {}) as $properties |
-    ($display | type == "object" and
-      (keys - ["summary", "call", "permission_preview", "result"] | length) == 0 and
-      ((if $display | has("summary") then $display.summary else [] end) |
-        input_display($properties)) and
-      ((if $display | has("call") then $display.call
-        else {content:["$input_json"],format:"json"} end) |
-        input_preview($properties)) and
-      ((if $display | has("permission_preview") then $display.permission_preview
-        else {content:["$input_json"],format:"json"} end) |
-        input_preview($properties)) and
-      ((if $display | has("result") then $display.result
-        else {content:["$result_preview"],format:"plain"} end) |
-        result_preview))) and
+  (.render | type == "object" and
+    keys == ["model_after", "user_after", "user_before"] and
+    (.user_before | template($before)) and
+    (.user_after | template($after)) and
+    (.model_after | template($after))) and
+  (.permission_preview | template($before)) and
   ((.environment // []) | component_environment) and
   (.sandbox | type == "boolean") and
   ((.allow_sandbox_bypass // false) | type == "boolean") and
@@ -178,16 +159,11 @@ def canonical_tool_call:
 
 def canonical_tool_result:
   type == "object" and
-  ((keys - ["call_id", "content", "exit_code", "name",
-    "sandbox_denial_detected", "sandboxed", "type"]) | length == 0) and
-  (["call_id", "content", "exit_code", "name", "type"] - keys |
-    length == 0) and
+  keys == ["call_id", "exit_code", "input", "name", "stderr", "stdout", "type"] and
   .type == "tool_result" and
-  (.call_id | identifier) and (.name | tool_name) and (.content | type == "string") and
-  (.exit_code | type == "number" and floor == . and . >= 0 and . <= 255) and
-  ((has("sandbox_denial_detected") | not) or .sandbox_denial_detected == true) and
-  ((has("sandboxed") | not) or
-    (.name == "shell" and (.sandboxed | type == "boolean")));
+  (.call_id | identifier) and (.name | tool_name) and (.input | type == "object") and
+  (.stdout | type == "string") and (.stderr | type == "string") and
+  (.exit_code | type == "number" and floor == . and . >= 0 and . <= 255);
 
 def canonical_user_message:
   type == "object" and keys == ["content", "type"] and .type == "user" and
@@ -243,7 +219,9 @@ def canonical_request:
     elif .type == "tool_call" then canonical_tool_call
     elif .type == "tool_result" then
       keys == ["call_id", "content", "exit_code", "name", "type"] and
-      canonical_tool_result
+      (.call_id | identifier) and (.name | tool_name) and
+      (.content | type == "string") and
+      (.exit_code | type == "number" and floor == . and . >= 0 and . <= 255)
     else false end)) and
   (.tools | type == "array" and all(.[];
     type == "object" and keys == ["description", "input_schema", "name"] and
@@ -339,10 +317,13 @@ def session_records_state:
         else .next = "user" | .messages += 1 end
       elif $record.type == "tool_call" then
         if (.next | IN("call", "more") | not) then .valid = false
-        else .call = ($record | {id, name}) | .next = "result" end
+        else .call = ($record |
+          {id, name,input:(.input |
+            del(.request_sandbox_bypass, .sandbox_bypass_reason))}) |
+          .next = "result" end
       elif $record.type == "tool_result" then
         if .next != "result" or $record.call_id != .call.id or
-            $record.name != .call.name then
+            $record.name != .call.name or $record.input != .call.input then
           .valid = false
         else .messages += 1 | .call = null | .next = "more" end
       else .valid = false end) |

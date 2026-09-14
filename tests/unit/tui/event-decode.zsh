@@ -22,14 +22,18 @@ if print -r -- '{"type":"_assistant_start","unexpected":true}' |
   fail 'malformed backend request start was accepted'
 fi
 
-# Decode generic tool calls.
-typeset order
+# Decode tool calls.
+typeset order shell_runtime
+shell_runtime=$(jq -cn \
+  --slurpfile shell "$ROOT/share/default/tools/shell/manifest.json" '
+  {harness:{tools:[{name:"shell",manifest:$shell[0]}]}}
+')
 order=$(print -r -- \
-    '{"type":"tool_call","id":"call_1","name":"shell","input":{}}' |
-  jq -jRs -L "$ROOT" --argjson runtime null \
+    '{"type":"tool_call","id":"call_1","name":"shell","input":{"command":"true"}}' |
+  jq -jRs -L "$ROOT" --argjson runtime "$shell_runtime" \
     -f "$ROOT/libexec/tui/event-decode.jq" |
   tr '\0' '\n' | sed '/^$/d' | paste -sd, -)
-assert_equal 'tool_call,call_1,shell,{},json,batch_ok' "$order"
+assert_equal 'tool_call,call_1,shell,true,shell,0,batch_ok' "$order"
 
 # Format usage with context.
 typeset usage
@@ -81,16 +85,12 @@ typeset read_runtime=$(jq -cn \
   --slurpfile read "$ROOT/share/default/tools/read_file/manifest.json" '
   {harness:{tools:[{name:"read_file",manifest:$read[0]}]}}
 ')
-typeset shell_runtime=$(jq -cn \
-  --slurpfile shell "$ROOT/share/default/tools/shell/manifest.json" '
-  {harness:{tools:[{name:"shell",manifest:$shell[0]}]}}
-')
 order=$(print -r -- \
     '{"type":"tool_call","id":"call_2","name":"read_file","input":{"file_path":"outside.txt","request_sandbox_bypass":true,"sandbox_bypass_reason":"test"}}' |
   jq -jRs -L "$ROOT" --argjson runtime "$read_runtime" \
     -f "$ROOT/libexec/tui/event-decode.jq" |
   tr '\0' '\n' | sed '/^$/d' | paste -sd, -)
-assert_equal 'tool_call,call_2,read_file,outside.txt · unsandboxed,plain,batch_ok' "$order"
+assert_equal 'tool_call,call_2,read_file · outside.txt,read_file,0,batch_ok' "$order"
 
 # Decode hook results.
 order=$(print -r -- \
@@ -115,7 +115,7 @@ order=$(print -r -- \
   jq -jRs -L "$ROOT" --argjson runtime "$shell_runtime" \
     -f "$ROOT/libexec/tui/event-decode.jq" |
   tr '\0' '\n' | sed '/^$/d' | paste -sd, -)
-assert_equal 'permission_request,permission_1,shell,echo hi,host access,sh,batch_ok' "$order"
+assert_equal 'permission_request,permission_1,shell,echo hi,host access,plain,batch_ok' "$order"
 
 # Decode tool results.
 typeset edit_runtime=$(jq -cn \
@@ -123,11 +123,11 @@ typeset edit_runtime=$(jq -cn \
   {harness:{tools:[{name:"edit_file",manifest:$edit[0]}]}}
 ')
 order=$(print -r -- \
-    '{"type":"tool_result","call_id":"call_2","name":"edit_file","content":"@@ -1 +1 @@\n-old\n+new","exit_code":0,"sandbox_denial_detected":true}' |
+    '{"type":"tool_result","call_id":"call_2","name":"edit_file","input":{"file_path":"notes.txt"},"stdout":"@@ -1 +1 @@\n-old\n+new","stderr":"","exit_code":0}' |
   jq -jRs -L "$ROOT" --argjson runtime "$edit_runtime" \
     -f "$ROOT/libexec/tui/event-decode.jq" |
   tr '\0' '\n' | sed '/^$/d' | paste -sd, -)
-assert_equal 'tool_result,call_2,hidden,@@ -1 +1 @@,-old,+new,file_diff,full,sandbox_denial,batch_ok' "$order"
+assert_equal 'tool_result,call_2,edit_file · notes.txt,@@ -1 +1 @@,-old,+new,edit_file,0,batch_ok' "$order"
 
 # Decode handoffs.
 typeset handoff

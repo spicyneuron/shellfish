@@ -168,9 +168,7 @@
       "additionalProperties": false,
       "properties": {
         "preview_lines_reasoning": {"$ref": "#/$defs/preview_lines"},
-        "preview_lines_context": {"$ref": "#/$defs/preview_lines"},
-        "preview_lines_tool_call": {"$ref": "#/$defs/preview_lines"},
-        "preview_lines_tool_result": {"$ref": "#/$defs/preview_lines"}
+        "preview_lines_context": {"$ref": "#/$defs/preview_lines"}
       }
     },
     "profile": {

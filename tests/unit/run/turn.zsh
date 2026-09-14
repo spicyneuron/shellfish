@@ -155,13 +155,13 @@ print -r -- "$stream" | jq -eRn '
   [inputs | fromjson | select(.type == "state" or .type == "tool_result")] ==
     [{type:"state",name:"tools/turn",value:"recorded"},
      {type:"tool_result",call_id:"call_1",name:"shell",
-      content:"failed",exit_code:7,sandboxed:false}]
+      input:{command:"true"},stdout:"failed",stderr:"",exit_code:7}]
 ' >/dev/null || fail 'tool state was not emitted before its result'
 jq -es '
   [.[] | select(.type == "state" or .type == "tool_result")] ==
     [{type:"state",name:"tools/turn",value:"recorded"},
      {type:"tool_result",call_id:"call_1",name:"shell",
-      content:"failed",exit_code:7,sandboxed:false}]
+      input:{command:"true"},stdout:"failed",stderr:"",exit_code:7}]
 ' "$state_session" >/dev/null || fail 'tool state was not durable before its result'
 SF_TEST_RUNTIME=$base_runtime
 
@@ -200,7 +200,7 @@ print -r -- "$stream" | jq -eRn '
   [$events[] | select(.type == "tool_result")] as $results |
   [$events[] | select(.type == "tool_call")] as $calls |
   ($results | map(.exit_code)) == [0] and
-  $results[0].content == "ran\n" and
+  $results[0].stdout == "ran\n" and $results[0].stderr == "" and
   ($calls | length) == 1 and
   $calls[0].input.request_sandbox_bypass == true and
   ($calls[0].input.sandbox_bypass_reason | length) > 0 and
@@ -339,7 +339,7 @@ jq -e -s '
   ([.[] | select(.type == "tool_result")] | length) == 1 and
   (.[-3] | .type == "tool_call" and .id == "call_1") and
   (.[-2] | .type == "tool_result" and .call_id == "call_1" and
-    .content == "tool call cancelled" and .exit_code == 126) and
+    .stdout == "" and .stderr == "tool call cancelled" and .exit_code == 126) and
   .[-1].type == "turn_error"
 ' "$call_append_session" >/dev/null || fail 'recovery did not close the uncommitted call'
 

@@ -118,7 +118,7 @@ A response envelope adds the committed result:
   "tool_name": "shell",
   "tool_use_id": "call_1",
   "tool_input": {"command": "true"},
-  "tool_response": {"content": "", "exit_code": 0}
+  "tool_response": {"stdout": "", "stderr": "", "exit_code": 0}
 }
 ```
 
