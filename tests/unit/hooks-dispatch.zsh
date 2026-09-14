@@ -240,6 +240,7 @@ component_results=()
 sf_hooks_invoke "$session" "$working" "$input" 512 0 1 stop "$hook_only" '' '' ''
 [[ $component_results[3] == $'1|stop|first\nsecond' ]]
 [[ ${(t)SHELLFISH_TURN_ID} != *export* ]]
+[[ ${(t)SHELLFISH_TURN_STATE} != *export* ]]
 : >"$empty"
 component_results=()
 sf_hooks_invoke "$session" "$working" "$empty" 512 0 1 stop "$hook_only" '' '' ''
@@ -249,6 +250,7 @@ sf_hooks_turn_state_cleanup
 sf_hooks_turn_state_create
 typeset next_state=$SHELLFISH_TURN_STATE
 [[ $next_state != $state && -d $next_state ]]
+[[ ${(t)SHELLFISH_TURN_STATE} != *export* ]]
 
 # Hooks inherit exported values, import selected values, and receive authoritative context.
 SF_SESSION[runtime]='{"backend":{"environment":["BACKEND_SETTING"],"env_file":""},"harness":{"tools":[{"manifest":{"environment":["HOOK_SETTING","TOOL_SETTING","SHELLFISH_SESSION"]}}]}}'
@@ -274,5 +276,12 @@ sf_hooks_invoke "$session" "$working" "$empty" 512 0 1 session_start \
   "$no_turn" '' '' 'SHELLFISH_TURN_ID' || fail "$SF_HOOK_ERROR"
 assert_equal unset "$component_results[3]"
 sf_hooks_turn_state_cleanup
+
+# Cleanup only removes turn state created by this process.
+typeset inherited_state="$tmp/inherited-turn-state"
+mkdir "$inherited_state"
+SHELLFISH_TURN_STATE=$inherited_state
+sf_hooks_turn_state_cleanup
+[[ -z $SHELLFISH_TURN_STATE && -d $inherited_state ]]
 
 assert_no_hook_captures
