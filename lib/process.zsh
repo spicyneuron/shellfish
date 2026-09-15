@@ -138,11 +138,12 @@ sf_process_run() {
   decoded=$(jq -jre '
     def path: type == "string" and startswith("/") and (index("\u0000") | not);
     def strings: type == "array" and all(.[]; type == "string" and (index("\u0000") | not));
+    def environment: strings and all(.[]; test("^[A-Za-z_][A-Za-z0-9_]*="));
     def field: ., "\u0000";
     select(type == "object" and
       keys == ["arguments","cwd","environment","executable","max_capture_bytes","sandbox","stdin"] and
       (.executable | path) and (.stdin | path) and (.cwd | path) and
-      (.arguments | strings) and (.environment | strings) and
+      (.arguments | strings) and (.environment | environment) and
       (.max_capture_bytes | type == "number" and floor == . and . > 0) and
       (.sandbox == null or (.sandbox | type == "object" and
         keys == ["arguments","executable"] and (.executable | path) and (.arguments | strings)))) |
@@ -190,16 +191,17 @@ sf_process_run() {
     sf_process_fail 'invalid process request'
     return
   }
-  [[ -x $executable && -f $stdin && -r $stdin && -d $working && -x $working ]] || {
+  [[ -f $executable && -x $executable && -f $stdin && -r $stdin &&
+      -d $working && -x $working ]] || {
     sf_process_fail 'process request is unavailable'
     return
   }
-  [[ -z $sandbox_executable || -x $sandbox_executable ]] || {
+  [[ -z $sandbox_executable || ( -f $sandbox_executable && -x $sandbox_executable ) ]] || {
     sf_process_fail 'process sandbox is unavailable'
     return
   }
 
-  command=( /usr/bin/env "${environment[@]}" "$executable" "${arguments[@]}" )
+  command=( /usr/bin/env -- "${environment[@]}" "$executable" "${arguments[@]}" )
   [[ -z $sandbox_executable ]] ||
     command=( "$sandbox_executable" "${sandbox_arguments[@]}" -- "${command[@]}" )
   sf_process_isolated_command "$group_file" "$status_file" "$working" "$stdin" \
@@ -224,9 +226,14 @@ sf_process_run() {
     process_pid=$!
     trap 'signal_status=130; sf_process_stop "$process_pid" "$group_file"' INT
     trap 'signal_status=143; sf_process_stop "$process_pid" "$group_file"' TERM
-    sf_process_wait "$process_pid" "$group_file" "$status_file" || true
-    process_status=$REPLY
-    (( ! signal_status )) || process_status=$signal_status
+    if sf_process_wait "$process_pid" "$group_file" "$status_file"; then
+      process_status=$REPLY
+    elif (( signal_status )); then
+      process_status=$signal_status
+    else
+      sf_process_fail 'cannot read process status'
+      return
+    fi
     for reader in $readers; do
       wait $reader || reader_status=1
     done

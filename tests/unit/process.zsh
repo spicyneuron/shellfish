@@ -69,7 +69,7 @@ request=$(jq -cn --arg executable "$command" --arg stdin "$input_file" \
   }')
 sf_process_run "$request" "$sandbox_capture" || fail "$SF_PROCESS_ERROR"
 jq -Rsc --arg command "$command" '
-  split("\n")[:-1] == ["wrap","--","/usr/bin/env","RUNNER_VALUE=sandboxed",$command,"sandboxed"]
+  split("\n")[:-1] == ["wrap","--","/usr/bin/env","--","RUNNER_VALUE=sandboxed",$command,"sandboxed"]
 ' "$sandbox_log" >/dev/null || fail 'runner assembled the sandbox command incorrectly'
 
 # Each channel stops after one byte beyond its limit.
@@ -139,3 +139,54 @@ fi
 [[ -n $SF_PROCESS_ERROR ]] || fail 'runner omitted its machinery error'
 [[ -z $(find "$tmp/failure" -mindepth 1 -print -quit) ]] ||
   fail 'runner left files after a machinery failure'
+
+# Environment entries are assignments, never env options or commands.
+for invalid_environment in '["-i"]' '["PATH"]' '["9BAD=value"]'; do
+  request=$(jq -cn --arg executable "$command" --arg stdin "$input_file" \
+    --arg cwd "$tmp" --argjson environment "$invalid_environment" '{
+      executable:$executable,arguments:[],stdin:$stdin,cwd:$cwd,
+      environment:$environment,sandbox:null,max_capture_bytes:16
+    }')
+  mkdir "$tmp/failure-environment-${#invalid_environment}"
+  if sf_process_run "$request" "$tmp/failure-environment-${#invalid_environment}"; then
+    fail "runner accepted invalid environment: $invalid_environment"
+  fi
+done
+
+# Executables and sandbox launchers must be regular files.
+for invalid_field in executable sandbox; do
+  mkdir "$tmp/failure-$invalid_field"
+  request=$(jq -cn --arg executable "$command" --arg stdin "$input_file" \
+    --arg cwd "$tmp" --arg invalid "$tmp" --arg field "$invalid_field" '{
+      executable:(if $field == "executable" then $invalid else $executable end),
+      arguments:[],stdin:$stdin,cwd:$cwd,environment:[],max_capture_bytes:16,
+      sandbox:(if $field == "sandbox" then {executable:$invalid,arguments:[]} else null end)
+    }')
+  if sf_process_run "$request" "$tmp/failure-$invalid_field"; then
+    fail "runner accepted a directory as $invalid_field"
+  fi
+done
+
+# A launched isolation wrapper that omits status is a machinery failure.
+typeset no_status="$tmp/no-status" no_status_capture="$tmp/no-status-capture"
+cat >"$no_status" <<'ZSH'
+#!/usr/bin/env zsh
+print -rn -- '' >"$1"
+print -rn -- '' >"$2"
+print -rn -- '' >"$3"
+ZSH
+chmod +x "$no_status"
+sf_process_isolated_command() {
+  reply=( "$no_status" "$5" "$6" "$7" )
+}
+mkdir "$no_status_capture"
+request=$(jq -cn --arg executable "$command" --arg stdin "$input_file" \
+  --arg cwd "$tmp" '{
+    executable:$executable,arguments:[],stdin:$stdin,cwd:$cwd,
+    environment:[],sandbox:null,max_capture_bytes:16
+  }')
+if sf_process_run "$request" "$no_status_capture"; then
+  fail 'runner returned a command result without an isolation status'
+fi
+[[ $SF_PROCESS_ERROR == 'cannot read process status' ]] ||
+  fail 'runner misdiagnosed a missing isolation status'
