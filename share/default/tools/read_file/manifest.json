@@ -10,12 +10,6 @@
       "limit": {"type": "integer", "minimum": 1, "default": 500, "description": "Maximum number of lines to return"}
     }
   },
-  "render": {
-    "user_before": "${script} · ${input.file_path}",
-    "user_after": "${script} · ${input.file_path}\n${output.stdout}${output.stderr}",
-    "model_after": "${output.stdout}${output.stderr}"
-  },
-  "permission_preview": "${input.file_path}",
   "sandbox": true,
   "allow_sandbox_bypass": true
 }

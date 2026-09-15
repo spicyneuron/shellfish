@@ -15,12 +15,6 @@
       }
     }
   },
-  "render": {
-    "user_before": "${script}\n${input.command}",
-    "user_after": "${script}\n${input.command}\n${output.stdout}${output.stderr}\nexit ${output.exit_code}",
-    "model_after": "${output.stdout}${output.stderr}\nexit ${output.exit_code}"
-  },
-  "permission_preview": "${input.command}",
   "sandbox": true,
   "allow_sandbox_bypass": true
 }

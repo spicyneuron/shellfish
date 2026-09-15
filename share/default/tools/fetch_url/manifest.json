@@ -8,11 +8,5 @@
       "url": {"type": "string", "minLength": 1, "description": "HTTP(S) URL to fetch"}
     }
   },
-  "render": {
-    "user_before": "${script} · ${input.url}",
-    "user_after": "${script} · ${input.url}\n${output.stdout}${output.stderr}",
-    "model_after": "${output.stdout}${output.stderr}"
-  },
-  "permission_preview": "${input.url}",
   "sandbox": true
 }

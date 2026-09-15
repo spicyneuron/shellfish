@@ -1,5 +1,4 @@
 include "lib/runtime/schema";
-include "lib/render";
 
 def config_error($path; $message):
   error("invalid config at $" + ($path | map("[" + tojson + "]") | join("")) + ": " + $message);
@@ -227,21 +226,18 @@ def runtime_finalize:
       settings:(if $tool_manifest.sandbox then $tool.settings else null end)} end] as $tools |
   (reduce $resolved_components[] as $component ({};
     ($component.manifest_json | fromjson) as $manifest |
-    (($manifest | if type == "object" then .render else null end) //
-      default_hook_render) as $render |
     ($manifest |
       select(type == "object" and
         (keys - (if $component.hook == "user_prompt_submit"
-          then ["environment", "help", "match", "render"]
-          else ["environment", "render"] end) | length) == 0 and
+          then ["environment", "help", "match"]
+          else ["environment"] end) | length) == 0 and
         ((.environment // []) | component_environment) and
-        ($render | hook_render) and
         (if has("match") then .match | hook_match else true end) and
         (if has("help") then
            has("match") and (.help | hook_help)
          else true end)) //
       error("invalid hook manifest: " + $component.command)) as $hook_manifest |
-    .[$component.hook] += [({command:$component.command,render:$render,
+    .[$component.hook] += [({command:$component.command,
       environment:($hook_manifest.environment // [])} +
       (if $hook_manifest | has("match") then {match:$hook_manifest.match} else {} end) +
       (if $hook_manifest | has("help") then {help:$hook_manifest.help} else {} end))])) as $hooks |

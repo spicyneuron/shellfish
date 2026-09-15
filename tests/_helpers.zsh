@@ -115,18 +115,3 @@ sf_test_session() {
   sf_session_prepare "$SF_TEST_RUNTIME" &&
     sf_session_system "$SF_TEST_SYSTEM" && sf_test_install_prepared "$session"
 }
-
-sf_test_turn() {
-  local prompt=$1 session=$2 permission_available=${3:-0} reply=${4-}
-  { [[ -z $reply ]] || print -r -- "$reply" } |
-    SF_ROOT=$ROOT SF_TEST_TURN_PROMPT=$prompt SF_TEST_TURN_SESSION=$session \
-    SF_TEST_TURN_PERMISSION=$permission_available zsh -f -c '
-  source "$SF_ROOT/libexec/run/turn.zsh"
-  typeset -g SF_API_KEY="" SF_API_KEY_SOURCE=""
-  SF_RUN[jsonl]=1
-  message=$(jq -cn --arg text "$SF_TEST_TURN_PROMPT" \
-    '\''{type:"user",content:[{type:"text",text:$text}]}'\'') || exit
-  sf_run_turn "$message" "$SF_TEST_TURN_SESSION" \
-    "$SF_TEST_TURN_PERMISSION" "$SF_TEST_TURN_PROMPT" || true
-'
-}

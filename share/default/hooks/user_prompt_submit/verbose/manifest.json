@@ -2,11 +2,6 @@
   "match": {
     "pattern": "^/(verbose|v)\\z"
   },
-  "render": {
-    "user_before": "",
-    "user_after": "${script}\n${output.stdout}${output.stderr}",
-    "model_after": "${output.stdout}"
-  },
   "help": {
     "usage": "/verbose, /v",
     "description": "Toggle full previews"

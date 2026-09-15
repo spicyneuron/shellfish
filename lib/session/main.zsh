@@ -5,7 +5,6 @@ setopt no_aliases no_multios pipe_fail
 
 typeset -gA SF_SESSION=()
 typeset -ga SF_SESSION_RECORDS=()
-typeset -gA SF_HOOK_COUNTS=()
 typeset -g SF_SESSION_ERROR=''
 
 sf_session_fail() {
@@ -57,7 +56,6 @@ sf_session_select_path() {
 sf_session_reset() {
   SF_SESSION=()
   SF_SESSION_RECORDS=()
-  SF_HOOK_COUNTS=()
 }
 
 sf_session_repair_tail() {
@@ -92,24 +90,18 @@ sf_session_prepare() {
       ({type:"session",format_version:1,cwd:$cwd,created:$created} + $runtime) |
       (tojson | field),
       (.profile.request.model | field),
-      (hook_names[] as $hook |
-        ($hook | field), (.harness[$hook] // [] | length | tostring | field)),
       ("ok" | field)
     ') || {
     sf_session_fail 'cannot prepare session header'
     return
   }
   local -a fields=( "${(@0)${decoded%$'\0'}}" )
-  (( ${#fields} >= 5 && (${#fields} - 3) % 2 == 0 )) && [[ $fields[-1] == ok ]] || {
+  (( ${#fields} == 3 )) && [[ $fields[3] == ok ]] || {
     sf_session_fail 'cannot prepare session header'
     return
   }
   header=$fields[1]
   model=$fields[2]
-  integer index
-  for (( index = 3; index < ${#fields}; index += 2 )); do
-    SF_HOOK_COUNTS[$fields[index]]=$fields[index+1]
-  done
   SF_SESSION=(
     runtime "$runtime"
     cwd "$cwd"
@@ -153,7 +145,6 @@ sf_session_project() {
   local session_path=$1 loaded
   local -a fields
   SF_SESSION=()
-  SF_HOOK_COUNTS=()
   loaded=$(printf '%s\n' "${SF_SESSION_RECORDS[@]}" | sf_jq -jes '
     include "lib/runtime/schema";
     include "lib/session/read";
@@ -167,22 +158,16 @@ sf_session_project() {
     (.[0].profile.request.model | field),
     (([.[] | select(.type == "user")] | length + 1) |
       tostring | field),
-    (hook_names[] as $hook |
-      ($hook | field), (.[0].harness[$hook] // [] | length | tostring | field)),
     ("ok" | field)
   ' 2>/dev/null) || {
     sf_session_fail "cannot read session: $session_path"
     return
   }
   fields=( "${(@0)${loaded%$'\0'}}" )
-  (( ${#fields} >= 5 && (${#fields} - 5) % 2 == 0 )) && [[ $fields[-1] == ok ]] || {
+  (( ${#fields} == 5 )) && [[ $fields[5] == ok ]] || {
     sf_session_fail "cannot restore session runtime: $session_path"
     return
   }
-  integer index
-  for (( index = 5; index < ${#fields}; index += 2 )); do
-    SF_HOOK_COUNTS[$fields[index]]=$fields[index+1]
-  done
   SF_SESSION=(
     runtime "$fields[1]"
     cwd "$fields[2]"

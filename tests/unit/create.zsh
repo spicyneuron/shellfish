@@ -187,7 +187,7 @@ jq -se '.[-2] == {type:"state",name:"startup/stream",value:true} and
   .[-1].type == "hook_result" and (.[-1].executable | endswith("/first-hook/run"))' \
   "$SHELLFISH_SESSION" >/dev/null || exit 4
 ZSH
-print -r -- '{"render":{"user_before":"Starting up","user_after":"${script}\n${output.stdout}${output.stderr}","model_after":"${output.stdout}"}}' >"$first/manifest.json"
+print -r -- '{}' >"$first/manifest.json"
 chmod +x "$first/run" "$silent/run"
 jq --arg first "$first" --arg silent "$silent" \
   '.harnesses.machine.session_start=[$first,$silent]' "$config" >"$stream_config"
@@ -200,7 +200,7 @@ jq -se --arg path "$streamed" --arg first "${first:A}/run" --arg silent "${silen
     "_hook_activity","_session_created"] and
   .[0] == {type:"_session_prepare",path:$path,records:$session[:2]} and
   (.[1] | del(.id)) == {type:"_hook_activity",hook:"session_start",name:"first-hook",
-    executable:$first,input:"",user_text:"Starting up"} and
+    executable:$first,input:""} and
   .[2] == $session[2] and .[2] ==
     {type:"state",name:"startup/stream",value:true} and
   .[3] == $session[3] and

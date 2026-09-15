@@ -2,11 +2,6 @@
   "match": {
     "command": "check"
   },
-  "render": {
-    "user_before": "${script} · Compacting conversation…",
-    "user_after": "${script}\n${output.stdout}${output.stderr}",
-    "model_after": "${output.stdout}"
-  },
   "help": {
     "usage": "/compact",
     "description": "Summarize this session into a new one"

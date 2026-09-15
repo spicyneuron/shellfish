@@ -11,28 +11,6 @@ request_eval() {
     include "lib/request"; '"$1"
 }
 
-render_eval() {
-  jq -L "$ROOT" -er 'include "lib/render"; '"$1"
-}
-
-# Render templates validate placeholders and substitute only the template source.
-print -r -- '"${script}\n${input.command}"' |
-render_eval '{template:.,variables:["script", "input.command"]} | render_template_valid' >/dev/null
-assert_equal $'shell\necho ${script}' "$(print -r -- '"${script}\necho ${input.command}"' |
-  render_eval '{template:.,variables:{"script":"shell","input.command":"${script}"}} | render_template')"
-
-for template in '"${unknown}"' '"${script"' '"${}"' '"bad\u0000text"'; do
-  if print -r -- "$template" |
-      render_eval 'render_template_valid(["script"])' >/dev/null 2>&1; then
-    fail "invalid render template was accepted: $template"
-  fi
-done
-
-if print -r -- '"${script}"' |
-    render_eval '{template:.,variables:{"script":1}} | render_template' >/dev/null 2>&1; then
-  fail 'render template accepted a non-string variable'
-fi
-
 # Request messages require one safe text block.
 print -r -- '{"type":"user","content":[{"type":"text","text":"hello"}]}' |
   schema_eval 'request_user_message' >/dev/null
@@ -184,21 +162,19 @@ valid_header=$(jq -cn '
       fence: "", tools: [], sandbox: true,
       max_requests_per_turn: 50, max_tool_calls_per_request: 20,
       max_capture_bytes: 32768,
-      stop: [{command:"/bin/hook",environment:["HOOK_MODE"],render:{
-        user_before:"${script}",user_after:"${script}",model_after:"${output.stdout}"}}]
+      stop: [{command:"/bin/hook",environment:["HOOK_MODE"]}]
     }
   }
 ')
 print -r -- "$valid_header" | schema_eval 'canonical_session_header(1)' >/dev/null
 valid_header=$(jq -c '.harness.user_prompt_submit=[{
-  command:"/bin/prompt",environment:[],render:{
-    user_before:"${script}",user_after:"${script}",model_after:"${output.stdout}"},match:{pattern:"^!"},
+  command:"/bin/prompt",environment:[],match:{pattern:"^!"},
   help:{usage:"!COMMAND",description:"Run a shell command"}
 }]' <<<"$valid_header")
 print -r -- "$valid_header" | schema_eval 'canonical_session_header(1)' >/dev/null
 typeset permission_header
 permission_header=$(jq -c '.harness.permission_request=[{
-  command:"/bin/permission",environment:[],render:{user_before:"",user_after:"",model_after:""}
+  command:"/bin/permission",environment:[]
 }]' <<<"$valid_header")
 print -r -- "$permission_header" |
   schema_eval 'canonical_session_header(1)' >/dev/null
@@ -238,7 +214,7 @@ if jq -c '.harness.sandbox_read_paths = ["relative"]' <<<"$valid_header" |
   fail 'relative sandbox read path was accepted in session header'
 fi
 
-# Tool manifests validate rendering and sandboxing.
+# Tool manifests validate sandboxing.
 typeset valid_manifest
 valid_manifest=$(jq -cn '
   {
@@ -248,12 +224,6 @@ valid_manifest=$(jq -cn '
       properties: {command: {type: "string"}},
       required: ["command"]
     },
-    render: {
-      user_before: "${script}\n${input.command}",
-      user_after: "${script}\n${input.command}\n${output.stdout}${output.stderr}",
-      model_after: "${output.stdout}${output.stderr}\nexit ${output.exit_code}"
-    },
-    permission_preview: "${input.command}",
     sandbox: true,
     allow_sandbox_bypass: true
   }
@@ -271,15 +241,6 @@ tool_header=$(jq -cn --argjson header "$valid_header" --argjson manifest "$valid
   }]
 ')
 print -r -- "$tool_header" | schema_eval 'canonical_session_header(1)' >/dev/null
-if jq -c '.render.user_after = "${unknown}"' <<<"$valid_manifest" |
-    schema_eval 'tool_manifest' >/dev/null 2>&1; then
-  fail 'tool manifest with an unknown result variable was accepted'
-fi
-if jq -c '.render.user_before = "${output.stdout}"' <<<"$valid_manifest" |
-    schema_eval 'tool_manifest' >/dev/null 2>&1; then
-  fail 'tool manifest used output before execution'
-fi
-
 for field in request_sandbox_bypass sandbox_bypass_reason; do
   if jq -c --arg field "$field" '.input_schema.properties[$field] = {type:"string"}' \
       <<<"$valid_manifest" | schema_eval 'tool_manifest' >/dev/null 2>&1; then

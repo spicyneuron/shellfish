@@ -2,11 +2,6 @@
   "match": {
     "pattern": "^![^\\n]*\\z"
   },
-  "render": {
-    "user_before": "${script} · Running shell command…",
-    "user_after": "${script}\n${output.stdout}${output.stderr}",
-    "model_after": "${output.stdout}"
-  },
   "help": {
     "usage": "!COMMAND",
     "description": "Run COMMAND and stage its output as context"
