@@ -170,7 +170,7 @@ fi
 # Opening rejects noncanonical records.
 typeset invalid_record="$tmp/invalid-record.jsonl"
 cp "$SF_TEST_SESSIONS/header-only.jsonl" "$invalid_record"
-print -r -- '{"type":"hook_result","hook":"session_start","script":"","input":"","stdout":"bad","stderr":"","exit_code":0}' >>"$invalid_record"
+print -r -- '{"type":"hook_result","hook":"session_start","id":"","name":"bad","input":"","exit_code":0}' >>"$invalid_record"
 if sf_session_begin_turn "$invalid_record"; then
   fail 'session with an invalid durable record was accepted'
 fi

@@ -197,18 +197,19 @@ if print -r -- '{"type":"tool_result","call_id":"c1","name":"shell","content":"o
   fail 'legacy merged tool output was accepted'
 fi
 
-# Hook results retain raw input and output channels.
-print -r -- '{"type":"hook_result","hook":"session_start","script":"/hooks/add_env","input":"","stdout":"data","stderr":"shown","exit_code":0}' |
+# Hook results carry execution identity and ready text.
+print -r -- '{"type":"hook_result","hook":"session_start","id":"h1_1","name":"add_env","input":"","executable":"/hooks/add_env","user_text":"shown","model_text":"data","exit_code":0}' |
   schema_eval 'canonical_hook_result' >/dev/null
-print -r -- '{"type":"hook_result","hook":"pre_tool_use","script":"/hooks/check","input":{},"stdout":"","stderr":"","exit_code":0,"tool_use_id":"c1"}' |
+print -r -- '{"type":"hook_result","hook":"pre_tool_use","id":"h2_1","name":"check","input":{},"executable":"/hooks/check","exit_code":0,"tool_use_id":"c1"}' |
   schema_eval 'canonical_hook_result' >/dev/null
 
 for result in \
-    '{"type":"hook_result","hook":"unknown","script":"/hooks/add_env","input":"","stdout":"","stderr":"","exit_code":0}' \
-    '{"type":"hook_result","hook":"session_start","script":"add_env","input":"","stdout":"","stderr":"","exit_code":0}' \
-    '{"type":"hook_result","hook":"session_start","script":"/hooks/add_env","stdout":"","stderr":"","exit_code":0}' \
-    '{"type":"hook_result","hook":"session_start","script":"/hooks/add_env","input":[],"stdout":"","stderr":"","exit_code":0}' \
-    '{"type":"hook_result","hook":"session_start","script":"/hooks/add_env","input":"","stdout":"","stderr":"","exit_code":0,"tool_use_id":"c1"}'; do
+    '{"type":"hook_result","hook":"unknown","id":"h1","name":"add_env","input":"","exit_code":0}' \
+    '{"type":"hook_result","hook":"session_start","id":"bad id","name":"add_env","input":"","exit_code":0}' \
+    '{"type":"hook_result","hook":"session_start","id":"h1","name":"add_env","exit_code":0}' \
+    '{"type":"hook_result","hook":"session_start","id":"h1","name":"add_env","input":[],"exit_code":0}' \
+    '{"type":"hook_result","hook":"session_start","id":"h1","name":"add_env","input":"","exit_code":0,"tool_use_id":"c1"}' \
+    '{"type":"hook_result","hook":"session_start","id":"h1","name":"add_env","input":"","exit_code":0,"user_text":""}'; do
   if print -r -- "$result" | schema_eval 'canonical_hook_result' >/dev/null 2>&1; then
     fail "invalid hook result was accepted: $result"
   fi
@@ -243,21 +244,21 @@ fi
 print -r -- '[
   {"type":"state","name":"startup","value":1},
   {"type":"system","content":"system"},
-  {"type":"hook_result","hook":"session_start","script":"/hooks/one","input":"","stdout":"context","stderr":"","exit_code":0},
+  {"type":"hook_result","hook":"session_start","id":"h1","name":"one","input":"","model_text":"context","exit_code":0},
   {"type":"state","name":"before/user","value":{}},
   {"type":"user","content":[{"type":"text","text":"run"}]},
   {"type":"state","name":"before-assistant","value":false},
   {"type":"assistant","stop":"tool_calls","content":[]},
-  {"type":"hook_result","hook":"pre_tool_use","script":"/hooks/observe","input":{},"stdout":"","stderr":"before call","exit_code":0,"tool_use_id":"c1"},
+  {"type":"hook_result","hook":"pre_tool_use","id":"h2","name":"observe","input":{},"user_text":"before call","exit_code":0,"tool_use_id":"c1"},
   {"type":"state","name":"before/call","value":"one"},
-  {"type":"hook_result","hook":"post_tool_use","script":"/hooks/fixture","input":{},"stdout":"","stderr":"between pair","exit_code":0,"tool_use_id":"c1"},
+  {"type":"hook_result","hook":"post_tool_use","id":"h3","name":"fixture","input":{},"user_text":"between pair","exit_code":0,"tool_use_id":"c1"},
   {"type":"tool_result","call_id":"c1","name":"shell","input":{},"stdout":"","stderr":"","exit_code":0},
-  {"type":"hook_result","hook":"post_tool_use","script":"/hooks/observe","input":{},"stdout":"","stderr":"after result","exit_code":0,"tool_use_id":"c1"},
+  {"type":"hook_result","hook":"post_tool_use","id":"h4","name":"observe","input":{},"user_text":"after result","exit_code":0,"tool_use_id":"c1"},
   {"type":"state","name":"between/calls","value":"two"},
   {"type":"tool_result","call_id":"c2","name":"shell","input":{},"stdout":"","stderr":"","exit_code":0},
   {"type":"state","name":"before/final","value":null},
   {"type":"assistant","stop":"end","content":[]},
-  {"type":"hook_result","hook":"stop","script":"/hooks/observe","input":"","stdout":"","stderr":"finished","exit_code":0},
+  {"type":"hook_result","hook":"stop","id":"h5","name":"observe","input":"","user_text":"finished","exit_code":0},
   {"type":"state","name":"after/final","value":[1,2]},
   {"type":"user","content":[{"type":"text","text":"again"}]},
   {"type":"state","name":"before/error","value":true},

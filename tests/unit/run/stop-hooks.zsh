@@ -54,19 +54,24 @@ typeset turn_state=$(<$TEST_STATE_PATH)
 typeset stop_context='<hook name="stop">
 <context script="stop-once">feedback</context>
 </hook>'
-print -r -- "$stream" | jq -eRn --arg script "$stop_once" --arg context "$stop_context" '
+print -r -- "$stream" | jq -eRn --arg executable "$stop_once" --arg context "$stop_context" '
   [inputs | fromjson] as $events |
   ($events | map(select(.type == "assistant")) | length) == 2 and
-  ($events | map(select(.type == "hook_result"))) ==
-    [{type:"hook_result",hook:"stop",script:$script,input:"original\n",
-      stdout:"feedback",stderr:"first-local",exit_code:10},
-     {type:"hook_result",hook:"stop",script:$script,input:($context + "\n"),
-      stdout:"discarded",stderr:"second-local",exit_code:0}] and
-  ($events | map(select(.type == "state" or .type == "hook_result")) |
-    map(if .type == "state" then [.name,.value]
-      else ["result",.stdout,.stderr] end)) ==
-    [["stop/attempt",1],["result","feedback","first-local"],
-     ["stop/attempt",2],["result","discarded","second-local"]]
+  (($events | map(select(.type == "hook_result"))) as $results |
+    ($results | length) == 2 and ($results | map(.id) | unique | length) == 2 and
+    ($results | map(del(.id,.model_text))) ==
+      [{type:"hook_result",hook:"stop",name:"stop-once",input:"original\n",
+        executable:$executable,exit_code:10},
+       {type:"hook_result",hook:"stop",name:"stop-once",input:($context + "\n"),
+        executable:$executable,exit_code:0}] and
+    $results[0].model_text == $context and
+    ($results[1].model_text | contains("discarded")) and
+    ($events | map(select(.type == "state" or .type == "hook_result")) |
+      map(if .type == "state" then [.name,.value]
+        else ["result",(.model_text | contains("feedback")),
+          (.model_text | contains("discarded"))] end)) ==
+      [["stop/attempt",1],["result",true,false],
+       ["stop/attempt",2],["result",false,true]])
 ' >/dev/null
 sf_hooks_turn_state_cleanup
 jq -e --arg context "$stop_context" '
@@ -76,7 +81,7 @@ jq -e --arg context "$stop_context" '
 ' "$request_capture" >/dev/null
 jq -e -s '
   ([.[] | select(.type == "hook_result")] | length) == 2 and
-  ([.[] | select(.stdout == "discarded")] | length) == 1
+  ([.[] | select((.model_text? // "") | contains("discarded"))] | length) == 1
 ' "$stop_session" >/dev/null
 sf_hooks_turn_state_cleanup
 
@@ -154,7 +159,8 @@ sf_test_session "$limit_session"
 stream=$(sf_test_turn bounded "$limit_session")
 print -r -- "$stream" | jq -eRn '
   [inputs | fromjson] as $events |
-  ($events | map(select(.type == "hook_result" and .stdout == "again")) | length) == 1 and
+  ($events | map(select(.type == "hook_result" and
+    ((.model_text? // "") | contains("again")))) | length) == 1 and
   $events[-1] == {type:"error",user_text:"provider request limit reached: 1"}
 ' >/dev/null
 assert_canonical_session "$limit_session"
@@ -202,10 +208,12 @@ wait "$cancel_pid" || cancel_status=$?
 (( cancel_status == 143 ))
 jq -eRn '
   [inputs | fromjson] as $events |
-  ($events | map(select(.type == "hook_result" and .hook == "stop" and .stdout == "feedback")) | length) == 1 and
+  ($events | map(select(.type == "hook_result" and .hook == "stop" and
+    ((.model_text? // "") | contains("feedback")))) | length) == 1 and
   ($events | map(select(.type == "assistant")) | length) == 1
 ' <"$cancel_stream" >/dev/null
 assert_canonical_session "$cancel_session"
 jq -e -s '
-  ([.[] | select(.type == "hook_result" and .hook == "stop" and .stdout == "feedback")] | length) == 1
+  ([.[] | select(.type == "hook_result" and .hook == "stop" and
+    ((.model_text? // "") | contains("feedback")))] | length) == 1
 ' "$cancel_session" >/dev/null

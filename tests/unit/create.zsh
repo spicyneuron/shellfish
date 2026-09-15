@@ -184,7 +184,7 @@ cat >"$silent/run" <<'ZSH'
 jq -se 'map(.type) == ["_session_prepare","_hook_activity","state","hook_result",
   "_hook_activity"]' "$SF_TEST_EVENTS" >/dev/null || exit 3
 jq -se '.[-2] == {type:"state",name:"startup/stream",value:true} and
-  .[-1].type == "hook_result" and (.[-1].script | endswith("/first-hook/run"))' \
+  .[-1].type == "hook_result" and (.[-1].executable | endswith("/first-hook/run"))' \
   "$SHELLFISH_SESSION" >/dev/null || exit 4
 ZSH
 print -r -- '{"render":{"user_before":"Starting up","user_after":"${script}\n${output.stdout}${output.stderr}","model_after":"${output.stdout}"}}' >"$first/manifest.json"
@@ -199,16 +199,21 @@ jq -se --arg path "$streamed" --arg first "${first:A}/run" --arg silent "${silen
   map(.type) == ["_session_prepare","_hook_activity","state","hook_result",
     "_hook_activity","_session_created"] and
   .[0] == {type:"_session_prepare",path:$path,records:$session[:2]} and
-  .[1] == {type:"_hook_activity",hook:"session_start",script:$first,
-    input:""} and
+  (.[1] | del(.id)) == {type:"_hook_activity",hook:"session_start",name:"first-hook",
+    executable:$first,input:"",user_text:"Starting up"} and
   .[2] == $session[2] and .[2] ==
     {type:"state",name:"startup/stream",value:true} and
-  .[3] == $session[3] and .[3] ==
-    {type:"hook_result",hook:"session_start",script:$first,input:"",
-      stdout:"startup context\n",stderr:"startup display\n",exit_code:0} and
+  .[3] == $session[3] and
+  .[3].type == "hook_result" and .[3].hook == "session_start" and
+  .[3].name == "first-hook" and .[3].executable == $first and .[3].input == "" and
+  .[3].exit_code == 0 and
+  (.[3].user_text | contains("startup context")) and
+  (.[3].user_text | contains("startup display")) and
+  (.[3].model_text | contains("startup context\n")) and
+  .[1].id == .[3].id and
   # A hook that captured nothing records no result.
-  .[4] == {type:"_hook_activity",hook:"session_start",script:$silent,
-    input:""} and
+  (.[4] | del(.id)) == {type:"_hook_activity",hook:"session_start",name:"silent-hook",
+    executable:$silent,input:""} and
   .[5] == {type:"_session_created",path:$path} and
   ($session | length == 4)
 ' "$events" >/dev/null || fail 'invalid creation event sequence or transcript'
@@ -222,8 +227,7 @@ SF_TEST_EVENTS="$events" zsh -f "$entry" create --jsonl \
 [[ ! -e $failed && $(<"$hook_error") == *'hook script failed with status 9:'* ]]
 jq -se '
   map(.type) == ["_session_prepare","_hook_activity","state","hook_result",
-    "_hook_activity","hook_result"] and
-  .[-1].exit_code == 9 and
+    "_hook_activity"] and
   all(.[]; .type != "_session_created")
 ' "$events" >/dev/null || fail 'later failure lost the completed hook prefix'
 

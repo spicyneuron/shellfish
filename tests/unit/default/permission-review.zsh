@@ -69,10 +69,19 @@ SF_TEST_RUNTIME=$(jq -c --arg hook "$hook" '
 SF_TEST_SYSTEM='fixed system'
 export REVIEW_API_KEY=exported-secret
 sf_test_session "$session"
-sf_session_append "$session" \
-  '{"type":"hook_result","hook":"session_start","script":"/hooks/project_instructions/run","input":"","stdout":"startup constraint","stderr":"","exit_code":0}'
-sf_session_append "$session" \
-  '{"type":"hook_result","hook":"user_prompt_submit","script":"/hooks/project_environment/run","input":"","stdout":"prompt context","stderr":"","exit_code":0}'
+typeset startup_context='<hook name="session_start">
+<context script="project_instructions">startup constraint</context>
+</hook>
+
+<hook name="user_prompt_submit">
+<context script="project_environment">prompt context</context>
+</hook>'
+sf_session_append "$session" "$(jq -cn --arg text "${startup_context%%$'\n\n'*}" '
+  {type:"hook_result",hook:"session_start",id:"h1_1",name:"project_instructions",
+   input:"",executable:"/hooks/project_instructions/run",model_text:$text,exit_code:0}')"
+sf_session_append "$session" "$(jq -cn --arg text "${startup_context##*$'\n\n'}" '
+  {type:"hook_result",hook:"user_prompt_submit",id:"h2_1",name:"project_environment",
+   input:"",executable:"/hooks/project_environment/run",model_text:$text,exit_code:0}')"
 for index in 1 2 3 4 5; do
   sf_session_append "$session" \
     "$(jq -cn --arg text "earlier user $index" '{type:"user",content:[{type:"text",text:$text}]}')"
@@ -114,13 +123,6 @@ jq -e '
       {risk:"medium",authorization:"high",
        reason:"Explicitly authorized, bounded local change."}
 ' "$control" >/dev/null
-typeset startup_context='<hook name="session_start">
-<context script="project_instructions">startup constraint</context>
-</hook>
-
-<hook name="user_prompt_submit">
-<context script="project_environment">prompt context</context>
-</hook>'
 jq -e --argjson tool "$request" --arg startup "$startup_context" \
     --rawfile prompt "$ROOT/share/default/hooks/permission_request/review/review.md" '
   . as $backend |

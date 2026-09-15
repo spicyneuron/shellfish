@@ -72,8 +72,9 @@ done
 # Reject malformed events.
 for invalid in '{"type":"error","user_text":1}' \
     '{"type":"_assistant_message_delta","text":"missing index"}' \
-    '{"type":"_hook_activity","hook":"unknown","script":"/hooks/check/run","input":""}' \
-    '{"type":"_hook_activity","hook":"stop","script":"check","input":""}'; do
+    '{"type":"_hook_activity","hook":"unknown","id":"h1","name":"check","input":""}' \
+    '{"type":"_hook_activity","hook":"stop","id":"bad id","name":"check","input":""}' \
+    '{"type":"_hook_activity","hook":"stop","id":"h1","name":"","input":""}'; do
   if print -r -- "$invalid" |
       jq -jRs -L "$ROOT" --argjson runtime null \
         -f "$ROOT/libexec/tui/event-decode.jq" >/dev/null 2>&1; then
@@ -93,56 +94,45 @@ order=$(print -r -- \
   tr '\0' '\n' | sed '/^$/d' | paste -sd, -)
 assert_equal 'tool_call,call_2,read_file · outside.txt,read_file,0,batch_ok' "$order"
 
-# Decode hook replacement views.
-typeset hook_runtime='{"harness":{"stop":[{"command":"/hooks/check/run","environment":[],"render":{"user_before":"${script} · ${input}","user_after":"${script} · ${output.stdout}${output.stderr} (${output.exit_code})","model_after":"${output.stdout}"}}]}}'
+# Hook results carry ready text; a leading name is highlightable.
 order=$(print -r -- \
-    '{"type":"hook_result","hook":"stop","script":"/hooks/check/run","input":"answer","stdout":"model body","stderr":"user body","exit_code":10}' |
-  jq -jRs -L "$ROOT" --argjson runtime "$hook_runtime" \
+    '{"type":"hook_result","hook":"stop","id":"h1_1","name":"check","input":"answer","executable":"/hooks/check/run","user_text":"check · body (10)","model_text":"body","exit_code":10}' |
+  jq -jRs -L "$ROOT" --argjson runtime '{}' \
     -f "$ROOT/libexec/tui/event-decode.jq" |
   tr '\0' '\n' | sed '/^$/d' | paste -sd, -)
-assert_equal 'hook_result,stop,/hooks/check/run,check · model bodyuser body (10),0,1,batch_ok' "$order"
+assert_equal 'hook_result,stop,/hooks/check/run,check · body (10),0,1,batch_ok' "$order"
 
-# Any completed hook may address the model.
+# Text that does not begin with the name is not highlighted, and absent model
+# text marks the result model-invisible.
 order=$(print -r -- \
-    '{"type":"hook_result","hook":"stop","script":"/hooks/check/run","input":"answer","stdout":"model body","stderr":"user body","exit_code":0}' |
-  jq -jRs -L "$ROOT" --argjson runtime "$hook_runtime" \
+    '{"type":"hook_result","hook":"stop","id":"h1_2","name":"check","input":"answer","executable":"/hooks/check/run","user_text":"· body (0)","exit_code":0}' |
+  jq -jRs -L "$ROOT" --argjson runtime '{}' \
     -f "$ROOT/libexec/tui/event-decode.jq" |
   tr '\0' '\n' | sed '/^$/d' | paste -sd, -)
-assert_equal 'hook_result,stop,/hooks/check/run,check · model bodyuser body (0),0,1,batch_ok' "$order"
+assert_equal 'hook_result,stop,/hooks/check/run,· body (0),-1,0,batch_ok' "$order"
 
-# An empty model rendering contributes no model context.
+# A result without user text still settles its activity, and an unresolved
+# command falls back to the logical name.
 order=$(print -r -- \
-    '{"type":"hook_result","hook":"stop","script":"/hooks/check/run","input":"answer","stdout":"model body","stderr":"user body","exit_code":10}' |
-  jq -jRs -L "$ROOT" \
-    --argjson runtime "$(jq -c '.harness.stop[0].render.model_after = ""' <<<"$hook_runtime")" \
+    '{"type":"hook_result","hook":"session_start","id":"h1_3","name":"probe","input":"","model_text":"context","exit_code":0}' |
+  jq -jRs -L "$ROOT" --argjson runtime '{}' \
     -f "$ROOT/libexec/tui/event-decode.jq" |
   tr '\0' '\n' | sed '/^$/d' | paste -sd, -)
-assert_equal 'hook_result,stop,/hooks/check/run,check · model bodyuser body (10),0,0,batch_ok' "$order"
+assert_equal 'hook_result,session_start,probe,-1,1,batch_ok' "$order"
 
-# Decode hook activity.
+# Hook activity reuses the same ready text, and silent activity is not shown.
 order=$(print -r -- \
-    '{"type":"_hook_activity","hook":"stop","script":"/hooks/check/run","input":"answer"}' |
-  jq -jRs -L "$ROOT" --argjson runtime "$hook_runtime" \
+    '{"type":"_hook_activity","hook":"stop","id":"h1_4","name":"check","input":"answer","executable":"/hooks/check/run","user_text":"check · answer"}' |
+  jq -jRs -L "$ROOT" --argjson runtime '{}' \
     -f "$ROOT/libexec/tui/event-decode.jq" |
   tr '\0' '\n' | sed '/^$/d' | paste -sd, -)
 assert_equal 'hook_call,stop,/hooks/check/run,check · answer,0,batch_ok' "$order"
-
-# Exact commands select templates even when their display identities collide.
-hook_runtime='{"harness":{"stop":[{"command":"/one/check/run","environment":[],"render":{"user_before":"one ${script}","user_after":"one ${script}","model_after":""}},{"command":"/two/check/run","environment":[],"render":{"user_before":"two ${script}","user_after":"two ${script}","model_after":""}}]}}'
 order=$(print -r -- \
-    '{"type":"_hook_activity","hook":"stop","script":"/two/check/run","input":""}' |
-  jq -jRs -L "$ROOT" --argjson runtime "$hook_runtime" \
+    '{"type":"_hook_activity","hook":"stop","id":"h1_5","name":"check","input":"answer","executable":"/hooks/check/run"}' |
+  jq -jRs -L "$ROOT" --argjson runtime '{}' \
     -f "$ROOT/libexec/tui/event-decode.jq" |
   tr '\0' '\n' | sed '/^$/d' | paste -sd, -)
-assert_equal 'hook_call,stop,/two/check/run,two check,4,batch_ok' "$order"
-
-# Results whose command left the runtime use the default render contract.
-order=$(print -r -- \
-    '{"type":"hook_result","hook":"session_start","script":"/removed/probe/run","input":"","stdout":"context","stderr":"","exit_code":0}' |
-  jq -jRs -L "$ROOT" --argjson runtime '{"harness":{}}' \
-    -f "$ROOT/libexec/tui/event-decode.jq" |
-  tr '\0' '\n' | sed '/^$/d' | paste -sd, -)
-assert_equal 'hook_result,session_start,/removed/probe/run,-1,1,batch_ok' "$order"
+assert_equal 'batch_ok' "$order"
 
 # Decode shell permissions.
 order=$(print -r -- \

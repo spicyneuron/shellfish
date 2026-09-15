@@ -192,8 +192,13 @@ def test_prompt_hook_hands_off_to_another_session():
             json.loads(line)
             for line in session.explicit_session.read_text().splitlines()
         ]
-        # The silent redirect leaves the original session at its header.
-        assert [record["type"] for record in original] == ["session"], original
+        # The silent redirect leaves the original session at its header, plus
+        # the settled decision that redirected it.
+        assert [record["type"] for record in original] == [
+            "session",
+            "hook_result",
+        ], original
+        assert "user_text" not in original[1] and "model_text" not in original[1]
     finally:
         session.close()
 

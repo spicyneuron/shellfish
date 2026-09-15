@@ -23,10 +23,6 @@ def render_value:
   elif type == "string" then .
   else tojson end;
 
-def render_script_identity:
-  split("/") |
-  if .[-1] == "run" then .[-2] else .[-1] end;
-
 def render_input:
   . as $input |
   {input:($input | render_value)} +
@@ -96,25 +92,8 @@ def render_tool_permission:
 def default_hook_render:
   {user_before:"",user_after:"",model_after:"${output.stdout}"};
 
-def render_hook_templates:
-  . as $render |
-  ([$render.hooks[$render.hook][]? |
-    select(.command == $render.command) |
-    .render][0] // default_hook_render);
-
-def render_hook_spec(channel):
-  .record as $record |
-  {template:({hooks:.runtime.harness,hook:$record.hook,command:$record.script} |
-     render_hook_templates | channel),
-   script:($record.script | render_script_identity),
-   input:$record.input,
-   output:($record | render_output)};
-
-def render_hook_before_view:
-  render_hook_spec(.user_before) | render_script_view;
-
-def render_hook_after_view:
-  render_hook_spec(.user_after) | render_script_view;
-
-def render_hook_model:
-  render_hook_spec(.model_after) | render_script;
+def render_hook:
+  . as $hook |
+  reduce ["user_before", "user_after", "model_after"][] as $channel ({};
+    .[$channel] = ({template:$hook.render[$channel],script:$hook.name,
+      input:$hook.input,output:$hook.output} | render_script));

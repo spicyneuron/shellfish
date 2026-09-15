@@ -193,15 +193,18 @@ def canonical_assistant_message:
 
 def canonical_hook_result:
   type == "object" and
-  (keys == ["exit_code", "hook", "input", "script", "stderr", "stdout", "type"] or
-   keys == ["exit_code", "hook", "input", "script", "stderr", "stdout",
-     "tool_use_id", "type"]) and
+  ((keys - ["executable", "exit_code", "hook", "id", "input", "model_text",
+    "name", "tool_use_id", "type", "user_text"]) | length == 0) and
+  (["exit_code", "hook", "id", "input", "name", "type"] - keys | length == 0) and
   .type == "hook_result" and
   (.hook as $hook | hook_names | index($hook) != null) and
-  (.script | absolute_path) and
+  (.id | identifier) and
+  (.name | nul_free_string and length > 0) and
   (.input | type == "string" or type == "object") and
-  (.stdout | type == "string") and (.stderr | type == "string") and
   (.exit_code | type == "number" and floor == . and . >= 0 and . <= 255) and
+  (if has("executable") then .executable | absolute_path else true end) and
+  (if has("user_text") then .user_text | type == "string" and length > 0 else true end) and
+  (if has("model_text") then .model_text | type == "string" and length > 0 else true end) and
   (if has("tool_use_id") then
      (.hook | IN("permission_request", "pre_tool_use", "post_tool_use")) and
      (.tool_use_id | identifier)
@@ -304,17 +307,21 @@ def canonical_session_record:
 # A tool-calling assistant message may be followed by settled results.
 def session_records_state:
   reduce .[] as $record
-    ({valid:true, next:"user", call_ids:[], messages:0};
+    ({valid:true, next:"user", call_ids:[], hook_ids:[], messages:0};
       if (.valid | not) or ($record | canonical_session_record | not) then
         .valid = false
       elif $record.type == "state" then .
       elif $record.type == "system" then
         if .next == "user" then . else .valid = false end
       elif $record.type == "hook_result" then
-        # Feedback resumes the turn; empty stdout would have failed the hook.
-        if $record.hook == "stop" and $record.exit_code != 0 and
-            $record.stdout != "" and .next == "user" then .next = "assistant"
-        else . end
+        if (.hook_ids | index($record.id)) != null then .valid = false
+        else
+          .hook_ids += [$record.id] |
+          # Feedback resumes the turn; empty model text would have failed the hook.
+          if $record.hook == "stop" and $record.exit_code != 0 and
+              ($record.model_text // "") != "" and .next == "user" then .next = "assistant"
+          else . end
+        end
       elif $record.type == "error" then
         .next = "user" | .call_ids = []
       elif $record.type == "user" then

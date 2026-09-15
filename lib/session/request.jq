@@ -1,31 +1,13 @@
 def join_context($parts):
   [$parts[] | select(. != "")] | join("\n\n");
 
-# Core-owned provenance around script-owned bodies: adjacent entries from one
-# hook share a group. Bodies stay verbatim; hook scripts are trusted, and tool
-# results carry the same content unescaped.
-def context_envelope($entries):
-  (reduce $entries[] as $entry ([];
-    if length > 0 and .[-1].hook == $entry.hook then .[-1].entries += [$entry]
-    else . + [{hook:$entry.hook, entries:[$entry]}] end)) as $groups |
-  [$groups[] |
-    "<hook name=\"" + .hook + "\">\n" +
-    ([.entries[] | "<context script=\"" + .script + "\">" + .body + "</context>"] |
-      join("\n")) +
-    "\n</hook>"] |
-  join("\n\n");
-
 def context_message($entries; $request):
   {type:"user",
-   content:[{type:"text", text:join_context([context_envelope($entries), $request])}]};
-
-def hook_entry($record; $body):
-  {hook:$record.hook, script:$record.script, body:$body};
+   content:[{type:"text", text:join_context([$entries[], $request])}]};
 
 # Lifecycle order around the tool's own rendering.
 def call_content($call):
-  join_context([context_envelope($call.pre // []), $call.body,
-    context_envelope($call.post // [])]);
+  join_context([($call.pre // [])[], $call.body, ($call.post // [])[]]);
 
 # Hook context correlated to a tool call joins that call's result; uncorrelated
 # context waits for the next message. Correlated context with no settled result
@@ -35,14 +17,14 @@ def request_messages:
     ({messages:[], context:[], pending:null, calls:{}};
     if $record.type == "state" then .
     elif $record.type == "hook_result" then
-      ($record.model_context // "") as $body |
+      ($record.model_text // "") as $body |
       ($record.tool_use_id // "") as $call_id |
       if $body == "" then .
-      elif $call_id == "" then .context += [hook_entry($record; $body)]
+      elif $call_id == "" then .context += [$body]
       elif .calls[$call_id].index == null then
-        .calls[$call_id].pre += [hook_entry($record; $body)]
+        .calls[$call_id].pre += [$body]
       else
-        .calls[$call_id].post += [hook_entry($record; $body)] |
+        .calls[$call_id].post += [$body] |
         .messages[.calls[$call_id].index].content = call_content(.calls[$call_id])
       end
     elif $record.type == "user" then

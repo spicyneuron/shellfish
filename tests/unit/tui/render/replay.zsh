@@ -48,9 +48,9 @@ hook_result|session_start|/hooks/test/run||-1|1|" "$REPLY"
   head -n 1 "$tmp/tools.jsonl"
   print -r -- '{"type":"user","content":[{"type":"text","text":"run it"}]}'
   print -r -- '{"type":"assistant","stop":"tool_calls","content":[]}'
-  print -r -- '{"type":"hook_result","hook":"pre_tool_use","script":"/hooks/pre/run","input":{},"stdout":"before","stderr":"","exit_code":0,"tool_use_id":"call_1"}'
+  print -r -- '{"type":"hook_result","hook":"pre_tool_use","id":"h1_1","name":"pre","input":{},"executable":"/hooks/pre/run","model_text":"before","exit_code":0,"tool_use_id":"call_1"}'
   print -r -- '{"type":"tool_result","call_id":"call_1","name":"shell","input":{"command":"true"},"stdout":"done","stderr":"","exit_code":0}'
-  print -r -- '{"type":"hook_result","hook":"post_tool_use","script":"/hooks/post/run","input":{},"stdout":"after","stderr":"","exit_code":0,"tool_use_id":"call_1"}'
+  print -r -- '{"type":"hook_result","hook":"post_tool_use","id":"h1_2","name":"post","input":{},"executable":"/hooks/post/run","model_text":"after","exit_code":0,"tool_use_id":"call_1"}'
 } >"$tmp/correlated.jsonl"
 SF_TEST_EVENTS=()
 sf_tui_reload "$tmp/correlated.jsonl" || fail "$SF_PRESENT_ERROR"

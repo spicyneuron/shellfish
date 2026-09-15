@@ -65,8 +65,11 @@ print -r -- "$stream" | jq -eRn '
     map(if .type == "state" then [.name,.value] else ["result",.call_id] end)) ==
     [["tools/pre","call_1"],["result","call_1"],["tools/post","call_1"],
      ["tools/pre","call_2"],["result","call_2"],["tools/post","call_2"]] and
-  ($events | map(select(.type == "hook_result") | .stderr) | map(select(length > 0))) ==
-    ["pre-local-call_1","post-local-call_1","pre-local-call_2","post-local-call_2"] and
+  ($events | map(select(.type == "hook_result") | [.name, .model_text])) ==
+    [["pre-observe","<hook name=\"pre_tool_use\">\n<context script=\"pre-observe\">pre context call_1</context>\n</hook>"],
+     ["post-observe","<hook name=\"post_tool_use\">\n<context script=\"post-observe\">post context call_1</context>\n</hook>"],
+     ["pre-observe","<hook name=\"pre_tool_use\">\n<context script=\"pre-observe\">pre context call_2</context>\n</hook>"],
+     ["post-observe","<hook name=\"post_tool_use\">\n<context script=\"post-observe\">post context call_2</context>\n</hook>"]] and
   all($events[] | select(.type == "hook_result");
     .tool_use_id == (.input.tool_use_id))
 ' >/dev/null
@@ -140,7 +143,8 @@ print -r -- "$stream" | jq -eRn '
 jq -e '
   [.messages[] | select(.type == "tool_result")][1].content ==
     "<hook name=\"pre_tool_use\">\n" +
-    "<context script=\"pre-deny\">first reason</context>\n" +
+    "<context script=\"pre-deny\">first reason</context>\n</hook>\n\n" +
+    "<hook name=\"pre_tool_use\">\n" +
     "<context script=\"pre-later\">second reason</context>\n</hook>\n\n" +
     "tool call denied by pre_tool_use hook: pre-deny\nexit 126"
 ' "$request_capture" >/dev/null

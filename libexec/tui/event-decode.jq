@@ -15,14 +15,17 @@ def event_fields:
     ["assistant_reasoning_opaque", (.index | tostring)]
   elif .type == "_turn_usage" and canonical_backend_event then
     empty
-  elif .type == "_hook_activity" and keys == ["hook", "input", "script", "type"] and
+  elif .type == "_hook_activity" and
+      ((keys - ["executable", "hook", "id", "input", "name", "type", "user_text"]) |
+        length == 0) and
+      (["hook", "id", "input", "name", "type"] - keys | length == 0) and
       (.hook as $hook | hook_names | index($hook) != null) and
-      (.script | absolute_path) and
+      (.id | identifier) and (.name | type == "string" and length > 0) and
       (.input | type == "string" or type == "object") then
-    ({record:.,runtime:$event_runtime} | render_hook_before_view) as $view |
-    if $view.text == "" then empty
-    else ["hook_call", .hook, .script, $view.text,
-      ($view.identity_start | tostring)] end
+    .name as $name | (.user_text // "") as $text |
+    if $text == "" then empty
+    else ["hook_call", .hook, (.executable // .name), $text,
+      (if $text | startswith($name) then "0" else "-1" end)] end
   elif . == {type:"_assistant_start"} then
     ["assistant_start"]
   elif .type == "_assistant_end" and keys == ["stop", "type"] and
@@ -67,11 +70,11 @@ def event_fields:
     ({record:.,tools:($event_runtime.harness.tools // [])} | render_tool_after_view) as $view |
     ["tool_result", .call_id, $view.text, .name, ($view.identity_start | tostring)]
   elif canonical_hook_result then
-    ({record:.,runtime:$event_runtime} | render_hook_after_view) as $view |
-    ["hook_result", .hook, .script, $view.text,
-      ($view.identity_start | tostring),
-      (if ({runtime:$event_runtime,record:.} | render_hook_model) == ""
-       then "0" else "1" end), (.tool_use_id // "")]
+    .name as $name | (.user_text // "") as $text |
+    ["hook_result", .hook, (.executable // .name), $text,
+      (if $text | startswith($name) then "0" else "-1" end),
+      (if (.model_text // "") == "" then "0" else "1" end),
+      (.tool_use_id // "")]
   elif canonical_user_message or canonical_assistant_message or
       (.type == "error" and canonical_session_record) then
     (select(canonical_assistant_message and has("usage")) | .usage |

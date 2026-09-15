@@ -81,7 +81,7 @@ transcript="$SHELLFISH_TURN_STATE/compact.jsonl"
 # Startup records without state, then every state record in source order, so the
 # child reconstructs the same effective state without interpreting names.
 if ! jq -ce -s --rawfile context "$context" --arg created "$created" \
-    --arg script "${0:A}" '
+    --arg executable "${0:A}" '
     . as $records |
     ([$records | to_entries[] |
       select(.value.type == "user" or .value.type == "assistant") | .key] | first) as $start |
@@ -89,8 +89,15 @@ if ! jq -ce -s --rawfile context "$context" --arg created "$created" \
     ($records[0:$start] | .[0].created = $created) as $startup |
     ($startup[] | select(.type != "state")),
     ($records[] | select(.type == "state")),
-    {type:"hook_result",hook:"session_start",script:$script,input:"",
-      stdout:$context,stderr:"",exit_code:0}
+    # Repeated compaction carries the previous summary forward, so count them.
+    ([$records[] | select(.type == "hook_result" and .name == "compact")] |
+      length | tostring) as $round |
+    # This context reaches the model through the successor session, so its
+    # attribution must match the envelope the core applies to hook output.
+    {type:"hook_result",hook:"session_start",id:("compact_" + $round),
+      name:"compact",input:"",executable:$executable,exit_code:0,
+      model_text:("<hook name=\"session_start\">\n<context script=\"compact\">" +
+        $context + "</context>\n</hook>")}
   ' "$SHELLFISH_SESSION" >"$transcript"; then
   fail_compaction 'cannot create compacted session; keeping the original'
   exit $?

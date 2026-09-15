@@ -14,6 +14,7 @@ typeset -g SF_HOOK_COMPONENT_VALIDATOR=''
 typeset -g SHELLFISH_TURN_STATE=${SHELLFISH_TURN_STATE-}
 typeset -g SHELLFISH_TURN_ID=${SHELLFISH_TURN_ID-}
 typeset -g SF_HOOK_NAME=''
+typeset -g SF_HOOK_INVOCATION=0
 # Track only scratch paths created by this process for cancellation cleanup.
 typeset -g SF_HOOK_TURN_STATE_TEMP=''
 typeset -g SF_HOOK_INPUT_TEMP=''
@@ -51,10 +52,43 @@ sf_hooks_read_capture() {
 }
 
 sf_hooks_activity() {
-  local hook=$1 script=$2 input=$3
+  local hook=$1 id=$2 name=$3 input=$4 executable=$5 rendered=$6
   (( SF_HOOK_JSONL )) || return 0
-  jq -cn --arg hook "$hook" --arg script "$script" --argjson input "$input" \
-    '{type:"_hook_activity",hook:$hook,script:$script,input:$input}'
+  jq -cn --arg hook "$hook" --arg id "$id" --arg name "$name" \
+    --argjson input "$input" --arg executable "$executable" \
+    --argjson rendered "$rendered" '
+      {type:"_hook_activity",hook:$hook,id:$id,name:$name,input:$input,
+       executable:$executable} +
+      (if $rendered.user_before == "" then {} else
+        {user_text:$rendered.user_before} end)'
+}
+
+# Durable position plus this process's invocation order. One process owns a
+# turn, so that pair is unique within the session without a durable allocator.
+sf_hooks_id() {
+  integer lines=0
+  (( ++SF_HOOK_INVOCATION ))
+  if [[ -n ${SF_HOOK_SESSION-} ]]; then
+    lines=$(wc -l <"$SF_HOOK_SESSION") || return
+  fi
+  REPLY="h${lines}_${SF_HOOK_INVOCATION}"
+}
+
+# Every template variable must resolve, so a hook that has not run yet renders
+# against empty output rather than against no output at all.
+sf_hooks_render() {
+  local render=$1 name=$2 input=$3 stdout_file=${4-} stderr_file=${5-}
+  integer exit_code=${6:-0}
+  local output='{"stdout":"","stderr":"","exit_code":0}'
+  [[ -z $stdout_file ]] || output=$(jq -nc \
+    --rawfile stdout "$stdout_file" --rawfile stderr "$stderr_file" \
+    --argjson exit_code "$exit_code" \
+    '{stdout:$stdout,stderr:$stderr,exit_code:$exit_code}') || return 1
+  REPLY=$(sf_jq -nc --argjson render "$render" --arg name "$name" \
+    --argjson input "$input" --argjson output "$output" '
+      include "lib/render";
+      {render:$render,name:$name,input:$input,output:$output} | render_hook
+    ') || return 1
 }
 
 sf_hooks_append() {
@@ -126,7 +160,8 @@ sf_hooks_dispatch() {
   local -a arguments=( "${(@)argv[1,argument_count]}" )
   shift argument_count
   local -a components=( "$@" ) result component_states decoded
-  local directory script selector environment_json record result_record input_json
+  local directory script name id selector environment_json render record
+  local result_record input_json rendered
   local script_context script_user script_control hook=$SF_HOOK_NAME
   local origin='' control='' control_error
   local skip_policy=$SF_HOOK_SKIP_POLICY
@@ -135,7 +170,7 @@ sf_hooks_dispatch() {
   setopt local_options no_err_exit no_bg_nice
 
   sf_hooks_reset
-  (( ${#components} % 3 == 0 )) || {
+  (( ${#components} % 4 == 0 )) || {
     sf_hooks_fail 'cannot inspect configured hook components'
     return
   }
@@ -162,10 +197,11 @@ sf_hooks_dispatch() {
       }
     fi
 
-    for (( component_index = 1; component_index <= ${#components}; component_index += 3 )); do
+    for (( component_index = 1; component_index <= ${#components}; component_index += 4 )); do
       script=$components[component_index]
       selector=$components[component_index+1]
       environment_json=$components[component_index+2]
+      render=$components[component_index+3]
       component_states=()
       if [[ -n $selector ]]; then
         sf_hooks_capture_one "$selector" "$input" "$directory" "$max_capture" \
@@ -185,7 +221,21 @@ sf_hooks_dispatch() {
             ;;
         esac
       fi
-      sf_hooks_activity "$hook" "$script" "$input_json" || {
+      name=$script
+      [[ ${name:t} != run ]] || name=${name:h}
+      name=${name:t}
+      sf_hooks_id || {
+        sf_hooks_fail 'cannot allocate hook invocation ID'
+        return
+      }
+      id=$REPLY
+      sf_hooks_render "$render" "$name" "$input_json" || {
+        sf_hooks_fail "cannot render hook activity: $script"
+        return
+      }
+      rendered=$REPLY
+      sf_hooks_activity "$hook" "$id" "$name" "$input_json" "$script" \
+        "$rendered" || {
         sf_hooks_fail 'cannot open hook display'
         return
       }
@@ -224,17 +274,6 @@ sf_hooks_dispatch() {
         return
       }
       script_user=$REPLY
-      # A hook that captured nothing has nothing to render, so it leaves no
-      # durable trace. Deliberate state records still persist.
-      result_record=''
-      if (( context_size + user_size )); then
-        sf_hooks_result_record "$hook" "$script" "$input_json" \
-          "$result[2]" "$result[3]" "$script_status" || {
-          sf_hooks_active_fail "$SF_HOOK_ERROR" "$script_user"
-          return
-        }
-        result_record=$REPLY
-      fi
       script_control=''
       control_error=''
       case $script_status in
@@ -257,19 +296,6 @@ sf_hooks_dispatch() {
           component_states=( "${(@)decoded[2,-1]}" )
         fi
       fi
-      if [[ -n ${SF_HOOK_SESSION-} ]]; then
-        for record in "${component_states[@]}"; do
-          sf_hooks_append "$SF_HOOK_SESSION" "$record" || {
-            sf_hooks_active_fail "$SF_HOOK_ERROR" "$script_user"
-            return
-          }
-        done
-        [[ -z $result_record ]] ||
-          sf_hooks_append "$SF_HOOK_SESSION" "$result_record" || {
-          sf_hooks_active_fail "$SF_HOOK_ERROR" "$script_user"
-          return
-        }
-      fi
       if [[ -z $control_error && -n $script_control ]] && (( ! allow_control )); then
         control_error="hook script returned unexpected control data: $script"
       fi
@@ -284,9 +310,42 @@ sf_hooks_dispatch() {
         sf_hooks_active_fail "$control_error" "$script_user"
         return
       fi
-      (( script_status == 0 )) || [[ -z $script_context ]] || feedback=1
-      if (( ! SF_HOOK_JSONL )) && [[ -n $script_user ]]; then
-        print -rn -- "$script_user" >&2 || {
+      sf_hooks_render "$render" "$name" "$input_json" "$result[2]" "$result[3]" \
+        "$script_status" || {
+        sf_hooks_active_fail "cannot render hook result: $script" "$script_user"
+        return
+      }
+      rendered=$REPLY
+      result_record=''
+      if jq -e --argjson status "$script_status" '
+          $status != 0 or .user_after != "" or .model_after != ""' \
+          <<<$rendered >/dev/null; then
+        sf_hooks_result_record "$hook" "$id" "$name" "$script" "$input_json" \
+          "$rendered" "$script_status" || {
+          sf_hooks_active_fail "$SF_HOOK_ERROR" "$script_user"
+          return
+        }
+        result_record=$REPLY
+      fi
+      if [[ -n ${SF_HOOK_SESSION-} ]]; then
+        for record in "${component_states[@]}"; do
+          sf_hooks_append "$SF_HOOK_SESSION" "$record" || {
+            sf_hooks_active_fail "$SF_HOOK_ERROR" "$script_user"
+            return
+          }
+        done
+        [[ -z $result_record ]] ||
+          sf_hooks_append "$SF_HOOK_SESSION" "$result_record" || {
+          sf_hooks_active_fail "$SF_HOOK_ERROR" "$script_user"
+          return
+        }
+      fi
+      if (( script_status != 0 )) && jq -e '.model_after != ""' <<<$rendered \
+          >/dev/null; then
+        feedback=1
+      fi
+      if (( ! SF_HOOK_JSONL )); then
+        jq -j '.user_after' <<<$rendered >&2 || {
           sf_hooks_fail 'cannot write hook output'
           return
         }
@@ -382,10 +441,11 @@ sf_hooks_run_chain() {
   # Preserve a trailing empty environment field through command substitution.
   fields=( "${(@f)$(jq -erc --arg hook "$hook" "${input_option[@]}" '
     .harness.max_capture_bytes,
-    (.harness[$hook][]? | . as $component |
+      (.harness[$hook][]? | . as $component |
       select(($component.match.pattern? // "") == "" or
         ($input | test($component.match.pattern))) |
-      .command, (.match.command? // ""), (.environment | join(" "))),
+      .command, (.match.command? // ""), (.environment | join(" ")),
+      (.render | tojson)),
     "ok"
   ' <<<"$SF_SESSION[runtime]")}" ) || return 1
   [[ $fields[-1] == ok ]] || return 1
@@ -440,21 +500,26 @@ sf_hooks_run() {
 }
 
 sf_hooks_result_record() {
-  local hook=$1 script=$2 input=$3 stdout_file=$4 stderr_file=$5
-  integer exit_code=$6
-  REPLY=$(sf_jq -nc --arg hook "$hook" --arg script "$script" \
-      --argjson input "$input" --rawfile stdout "$stdout_file" \
-      --rawfile stderr "$stderr_file" --argjson exit_code "$exit_code" \
+  local hook=$1 id=$2 name=$3 executable=$4 input=$5 rendered=$6
+  integer exit_code=$7
+  REPLY=$(sf_jq -nc --arg hook "$hook" --arg id "$id" --arg name "$name" \
+      --arg executable "$executable" --argjson input "$input" \
+      --argjson rendered "$rendered" --argjson exit_code "$exit_code" \
       --arg tool_use_id "${SF_HOOK_TOOL_USE_ID-}" '
         include "lib/runtime/schema";
-        {type:"hook_result",hook:$hook,script:$script,input:$input,
-          stdout:$stdout,stderr:$stderr,exit_code:$exit_code} +
+        {type:"hook_result",hook:$hook,id:$id,name:$name,input:$input,
+          executable:$executable,exit_code:$exit_code} +
+        (if $rendered.user_after == "" then {} else
+          {user_text:$rendered.user_after} end) +
+        (if $rendered.model_after == "" then {} else
+          {model_text:("<hook name=\"" + $hook + "\">\n<context script=\"" +
+            $name + "\">" + $rendered.model_after + "</context>\n</hook>")} end) +
         (if $tool_use_id == "" then {} else {tool_use_id:$tool_use_id} end) as $result |
         if ($result | canonical_hook_result)
         then $result
         else error("invalid hook result") end
       ') || {
-    SF_HOOK_ERROR="hook script returned invalid result: $script"
+    SF_HOOK_ERROR="hook script returned invalid result: $executable"
     return 1
   }
 }

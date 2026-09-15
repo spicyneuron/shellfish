@@ -17,10 +17,7 @@ sf_request_build() {
     include "lib/runtime/schema";
     include "lib/render";
     include "lib/session/request";
-    map(if .type == "hook_result" then
-      .model_context = ({runtime:$runtime,record:.} | render_hook_model) |
-      .script |= render_script_identity
-    elif .type == "tool_result" then
+    map(if .type == "tool_result" then
       .content = ({tools:$runtime.harness.tools,record:.} | render_tool_model)
     else . end) as $records |
     {

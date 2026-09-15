@@ -225,16 +225,11 @@ typeset permission_failure_session="$tmp/permission-failure.jsonl"
 sf_test_session "$permission_failure_session"
 stream=$(SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_BYPASS=true \
   sf_test_turn 'failed review' "$permission_failure_session")
-print -r -- "$stream" | jq -eRn --arg script "$permission_failure" '
+print -r -- "$stream" | jq -eRn '
   [inputs | fromjson] as $events |
   ($events | map(select(.type == "_hook_activity")) | length) == 1 and
-  ($events | map(select(.type == "hook_result"))) == [{
-    type:"hook_result",hook:"permission_request",script:$script,
-    input:{turn_id:1,tool_name:"shell",tool_use_id:"call_1",
-      tool_input:{command:"true",request_sandbox_bypass:true,
-        sandbox_bypass_reason:"Required by the test fixture"}},
-    stdout:"",stderr:"review failed",exit_code:7,tool_use_id:"call_1"
-  }] and
+  # A failed hook is diagnosed as an error; it settles no result.
+  ($events | map(select(.type == "hook_result"))) == [] and
   ($events | map(select(.type | IN("_tool_activity", "tool_result", "error"))) |
     map(.type)) == ["_tool_activity", "tool_result", "error"] and
   ($events | map(select(.type == "tool_result"))[0] |

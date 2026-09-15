@@ -23,10 +23,10 @@ SF_TEST_RUNTIME=$(jq -c \
   --arg after_help "$after_help" \
   '.harness.sandbox=true |
    def command($command;$match;$usage;$description):
-     {command:$command,environment:[],render:{user_before:"",user_after:"",model_after:"${output.stdout}"},match:{pattern:$match},
+     {command:$command,environment:[],render:{user_before:"",user_after:"${output.stderr}",model_after:"${output.stdout}"},match:{pattern:$match},
       help:{usage:$usage,description:$description}};
    .harness.user_prompt_submit = [
-     {command:$help,environment:[],render:{user_before:"",user_after:"",model_after:"${output.stdout}"},match:{pattern:"^/(help|h)\\z"}},
+     {command:$help,environment:[],render:{user_before:"",user_after:"${output.stderr}",model_after:"${output.stdout}"},match:{pattern:"^/(help|h)\\z"}},
      command($verbose;"^/(verbose|v)\\z";"/verbose, /v";"Toggle full previews"),
      command($new;"^/new\\z";"/new";"Start a new session with the same settings"),
      command($copy;"^/copy( [^\\n]*)?\\z";"/copy [N]";"Copy the latest or selected user/agent section"),
@@ -47,7 +47,7 @@ run_prompt_hook /help "$help_session"
 [[ $reply[1] == handled ]]
 [[ ! -e $SHELLFISH_TURN_STATE/after-help ]]
 typeset help_display=''
-help_display=$(jq -r 'select(.type == "hook_result") | .stderr' "$hook_events")
+  help_display=$(jq -r 'select(.type == "hook_result") | .user_text' "$hook_events")
 [[ $help_display == 'shift+enter'* ]]
 (( ${#help_display} > 20 ))
 for key in '↑, ↓' '/queue drop <N>' '/queue clear' '/new' '/refresh, /r' '/verbose, /v' \
@@ -86,7 +86,7 @@ set_prompt_hook() {
   local session=$1 script=$2 patch
   integer rc=0
   patch=$(jq -cn --arg command "$script" \
-    '{harness:{user_prompt_submit:[{command:$command,environment:[],render:{user_before:"",user_after:"",model_after:"${output.stdout}"}}]}}') || return
+    '{harness:{user_prompt_submit:[{command:$command,environment:[],render:{user_before:"",user_after:"${output.stderr}",model_after:"${output.stdout}"}}]}}') || return
   sf_session_begin_turn "$session" || return
   sf_session_update "$session" "$patch" || rc=1
   sf_session_reset
@@ -128,14 +128,14 @@ mkdir "$sandbox_dir"
 set_prompt_hook "$help_session" "$ROOT/share/default/hooks/user_prompt_submit/sandbox/run"
 run_prompt_hook /sandbox "$help_session"
 [[ $reply[1] == handled ]]
-sandbox_display=$(jq -r 'select(.type == "hook_result") | .stderr' "$hook_events")
+sandbox_display=$(jq -r 'select(.type == "hook_result") | .user_text // ""' "$hook_events")
 [[ $sandbox_display == *'Sandbox: enabled'* && $sandbox_display == *'Read grants:'* &&
    $sandbox_display == *'Write grants:'* ]]
 run_prompt_hook "/sandbox +w $sandbox_dir" "$help_session"
 [[ $reply[1] == session_update ]]
 jq -se --arg path "${sandbox_dir:A}" --arg script "$ROOT/share/default/hooks/user_prompt_submit/sandbox/run" '
-  [.[] | select(.type == "hook_result" and .hook == "user_prompt_submit" and .script == $script)]
-    | .[-1].stdout | contains("added") and contains($path)
+  [.[] | select(.type == "hook_result" and .hook == "user_prompt_submit" and .executable == $script)]
+    | .[-1].model_text | contains("added") and contains($path)
 ' "$help_session" >/dev/null || fail 'sandbox add did not commit model context'
 sandbox_patch=$reply[2]
 jq -e --arg path "${sandbox_dir:A}" \
@@ -149,8 +149,8 @@ run_prompt_hook "/sandbox write $sandbox_dir" "$help_session"
 run_prompt_hook "/sandbox -w $sandbox_dir" "$help_session"
 [[ $reply[1] == session_update ]]
 jq -se --arg path "${sandbox_dir:A}" --arg script "$ROOT/share/default/hooks/user_prompt_submit/sandbox/run" '
-  [.[] | select(.type == "hook_result" and .hook == "user_prompt_submit" and .script == $script)]
-    | .[-1].stdout | contains("removed") and contains($path)
+  [.[] | select(.type == "hook_result" and .hook == "user_prompt_submit" and .executable == $script)]
+    | .[-1].model_text | contains("removed") and contains($path)
 ' "$help_session" >/dev/null || fail 'sandbox removal did not commit model context'
 jq -e '. == {harness:{sandbox_write_paths:[]}}' <<<"$reply[2]" >/dev/null
 
@@ -165,7 +165,7 @@ set_prompt_hook "$disabled_session" "$ROOT/share/default/hooks/user_prompt_submi
 run_prompt_hook "/sandbox +r $sandbox_dir" "$disabled_session"
 [[ $reply[1] == handled ]]
 sandbox_display=''
-sandbox_display=$(jq -r 'select(.type == "hook_result") | .stderr' "$hook_events")
+sandbox_display=$(jq -r 'select(.type == "hook_result") | .user_text // ""' "$hook_events")
 [[ $sandbox_display == *disabled* ]] || fail 'disabled sandbox did not display its state'
 
 sf_hooks_turn_state_cleanup
@@ -234,7 +234,7 @@ print -r -- \
   '{"type":"user","content":[{"type":"text","text":"First"}]}' \
   '{"type":"assistant","stop":"end","content":[{"type":"text","text":"Answer"}],"usage":{"input_tokens":1,"output_tokens":1}}' \
   '{"type":"state","name":"agents/a1b2c3","value":{"session":".agent-a1b2c3.jsonl"}}' \
-  '{"type":"hook_result","hook":"user_prompt_submit","script":"/hooks/git_environment/run","input":"","stdout":"branch:work","stderr":"","exit_code":0}' \
+  '{"type":"hook_result","hook":"user_prompt_submit","id":"git","name":"git_environment","input":"","executable":"/hooks/git_environment/run","model_text":"branch:work","exit_code":0}' \
   '{"type":"user","content":[{"type":"text","text":"Second"}]}' \
   >>"$state_session"
 typeset state_before=$(shasum <"$state_session")
@@ -268,8 +268,8 @@ run_prompt_hook "!$shell_command" "$shell_session"
 [[ -d $shell_state_dir ]]
 jq -e --arg input "!$shell_command" --arg script "$ROOT/share/default/hooks/user_prompt_submit/user_shell/run" '
   select(.type == "hook_result" and .hook == "user_prompt_submit" and
-    .script == $script and .input == $input and .exit_code == 10 and
-    (.stdout | contains("output")) and (.stdout | contains("(exit 7)")))
+    .executable == $script and .input == $input and .exit_code == 10 and
+    (.model_text | contains("output")) and (.model_text | contains("(exit 7)")))
 ' < <(tail -n 1 "$shell_session") >/dev/null
 sf_hooks_turn_state_cleanup
 unset SHELLFISH_MODE SHELLFISH_VERBOSE

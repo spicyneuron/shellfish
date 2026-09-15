@@ -379,12 +379,14 @@ jq -e -s '
 typeset echo_session="$tmp/echo.jsonl"
 sf_test_session "$echo_session"
 sf_session_begin_turn "$echo_session"
-sf_session_append "$echo_session" '{"type":"hook_result","hook":"session_start","script":"/hooks/fixture/run","input":"","stdout":"startup context","stderr":"","exit_code":0}'
-sf_session_reset
-stream=$(sf_test_turn 'plain prompt' "$echo_session")
 typeset startup_context='<hook name="session_start">
 <context script="fixture">startup context</context>
 </hook>'
+sf_session_append "$echo_session" "$(jq -cn --arg text "$startup_context" '
+  {type:"hook_result",hook:"session_start",id:"h1_1",name:"fixture",input:"",
+   executable:"/hooks/fixture/run",model_text:$text,exit_code:0}')"
+sf_session_reset
+stream=$(sf_test_turn 'plain prompt' "$echo_session")
 print -r -- "$stream" | jq -eRn --arg context "$startup_context" '
   [inputs | fromjson | select(.type == "assistant")] as $messages |
   $messages[-1].content[-1] == {type:"text",text:($context + "\n\nplain prompt\n")}

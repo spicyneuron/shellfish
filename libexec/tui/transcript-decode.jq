@@ -46,11 +46,11 @@ else
           ($before.identity_start | tostring)],
         ["tool_result", .call_id, $view.text, .name, ($view.identity_start | tostring)]
       elif .type == "hook_result" then
-        ({record:.,runtime:$records[0]} | render_hook_after_view) as $view |
-        ["hook_result", .hook, .script, $view.text,
-          ($view.identity_start | tostring),
-          (if ({runtime:$records[0],record:.} | render_hook_model) == ""
-           then "0" else "1" end), (.tool_use_id // "")]
+        .name as $name | (.user_text // "") as $text |
+        ["hook_result", .hook, (.executable // .name), $text,
+          (if $text | startswith($name) then "0" else "-1" end),
+          (if (.model_text // "") == "" then "0" else "1" end),
+          (.tool_use_id // "")]
       else {record:.,replay:true} | durable_display_fields end),
     ([$records[1:][] | select(canonical_assistant_message and has("usage"))] |
       last? | select(. != null) | .usage |

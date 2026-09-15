@@ -28,10 +28,12 @@ sf_hooks_session_start "$start_session"
 [[ $OPENAI_API_KEY == standard-secret && $CUSTOM_API_KEY == custom-secret ]]
 jq -e -s --arg start "$start_script" --arg second "$start_second_script" '
   length == 3 and
-  .[1] == {type:"hook_result",hook:"session_start",script:$start,
-    input:"",stdout:"startup",stderr:"local",exit_code:0} and
-  .[2] == {type:"hook_result",hook:"session_start",script:$second,
-    input:"",stdout:"second",stderr:"",exit_code:0}
+  .[1].hook == "session_start" and .[1].name == "start" and
+  .[1].executable == $start and .[1].input == "" and .[1].exit_code == 0 and
+  (.[1].model_text | contains("startup")) and
+  .[2].hook == "session_start" and .[2].name == "start_second" and
+  .[2].executable == $second and .[2].input == "" and .[2].exit_code == 0 and
+  (.[2].model_text | contains("second")) and .[1].id != .[2].id
 ' "$start_session" >/dev/null
 
 # Run session_start only for creation.
@@ -75,10 +77,7 @@ if SKIP=1 sf_hooks_session_start "$skipped_session"; then
   fail 'session_start skip status was accepted'
 fi
 [[ $SF_HOOK_ERROR == 'session_start hook script returned unsupported skip status: local' ]]
-jq -e -s --arg script "$start_script" '
-  .[-1] == {type:"hook_result",hook:"session_start",script:$script,
-    input:"",stdout:"startup",stderr:"local",exit_code:10}
-' "$skipped_session" >/dev/null
+jq -e -s 'length == 1' "$skipped_session" >/dev/null
 unset OPENAI_API_KEY CUSTOM_API_KEY
 
 # Permission hooks may allow, deny, or defer; stdout is transient.
@@ -133,8 +132,8 @@ print state >"$SHELLFISH_TURN_STATE/decision"
 sf_hooks_permission_request "$permission_session" shell call_7 \
   '{"command":"true"}'
 [[ $reply[1] == defer && -z $reply[2] ]]
-jq -e -s '.[-2] == {type:"state",name:"permission/check",value:true} and
-  .[-1].type == "hook_result"' \
+jq -e -s '.[-1] == {type:"state",name:"permission/check",value:true} and
+  ([.[] | select(.type == "hook_result")] | length) == 3' \
   "$permission_session" >/dev/null
 print halt >"$SHELLFISH_TURN_STATE/decision"
 if sf_hooks_permission_request "$permission_session" shell call_7 \
@@ -201,8 +200,10 @@ STOP_ATTEMPT=2 STOP_INPUT=hi STOP_SKIP=1 STOP_STDOUT=1 \
   sf_hooks_stop "$stop_session" hi 2
 [[ $reply[1] == continue ]]
 sf_session_reset
-jq -e -s --arg script "$stop_script" '.[-1] == {type:"hook_result",hook:"stop",script:$script,
-  input:"hi",stdout:"feedback",stderr:"local",exit_code:10}' \
+jq -e -s --arg executable "$stop_script" '.[-1].hook == "stop" and
+  .[-1].name == "stop" and .[-1].executable == $executable and
+  .[-1].input == "hi" and .[-1].exit_code == 10 and
+  (.[-1].model_text | contains("feedback"))' \
   "$stop_session" >/dev/null
 
 sf_session_begin_turn "$stop_session"
