@@ -36,7 +36,6 @@ sf_create_interrupt() {
   else
     sf_die 'Session creation interrupted.' || true
   fi
-  sf_process_capture_stop || true
   [[ -z $session ]] || rm -f -- "$session" 2>/dev/null
   exit $exit_status
 }
@@ -134,7 +133,6 @@ sf_create_main() {
 
   source "$SF_ROOT/lib/session/main.zsh"
   source "$SF_ROOT/lib/hooks.zsh"
-  source "$SF_ROOT/lib/process.zsh"
   trap 'sf_create_interrupt 130 "$session"' INT USR1
   trap 'sf_create_interrupt 129 "$session"' HUP
   trap 'sf_create_interrupt 143 "$session"' TERM

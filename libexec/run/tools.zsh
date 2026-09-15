@@ -1,15 +1,9 @@
 emulate -R zsh
 setopt no_aliases no_bg_nice no_multios pipe_fail
 
-(( $+functions[sf_scratch_create] )) || source "$SF_ROOT/lib/scratch.zsh"
-(( $+functions[sf_environment_prepare] )) || source "$SF_ROOT/lib/environment.zsh"
 (( $+functions[sf_jq] )) || source "$SF_ROOT/lib/jq.zsh"
-(( $+functions[sf_process_capture] )) || source "$SF_ROOT/lib/process.zsh"
-(( $+functions[sf_state_control_decode] )) || source "$SF_ROOT/lib/state.zsh"
 
 typeset -g SF_TOOL_ERROR=''
-typeset -g SF_TOOL_CAPTURE_DIR=''
-typeset -g SF_TOOL_TEMP_DIR=''
 typeset -g SF_TOOL_OUTPUT=''
 typeset -gA SF_TOOL_COMMAND=()
 typeset -gA SF_TOOL_SANDBOX=()
@@ -31,13 +25,12 @@ sf_tools_fail() {
 sf_tools_load() {
   local tools=$1 cwd=$2 harness_sandbox=$3 fence=${4-}
   local sandbox_read_paths=$5 sandbox_write_paths=$6
-  local command name projected sandbox allow_bypass settings environment temp_dir schema
+  local command name projected sandbox allow_bypass settings environment schema
   local render
   local -a fields read_paths write_paths
   local -A tool_command tool_sandbox tool_allow_bypass tool_settings tool_environment
   local -A tool_render
   integer index=1 read_count write_count sandboxed_tools=0
-  sf_tools_cleanup
   SF_TOOL_ERROR=''
   REPLY=''
   SF_TOOL_COMMAND=()
@@ -136,11 +129,6 @@ sf_tools_load() {
       return
     }
   fi
-  sf_scratch_create tooltemps invocation || {
-    sf_tools_fail 'cannot prepare tool temporary directory'
-    return
-  }
-  temp_dir=$REPLY
   SF_TOOL_COMMAND=( "${(@kv)tool_command}" )
   SF_TOOL_SANDBOX=( "${(@kv)tool_sandbox}" )
   SF_TOOL_ALLOW_BYPASS=( "${(@kv)tool_allow_bypass}" )
@@ -149,7 +137,6 @@ sf_tools_load() {
   SF_TOOL_RENDER=( "${(@kv)tool_render}" )
   SF_TOOL_READ_PATHS=( "${read_paths[@]}" )
   SF_TOOL_WRITE_PATHS=( "${write_paths[@]}" )
-  SF_TOOL_TEMP_DIR=$temp_dir
   REPLY=$schema
 }
 
@@ -202,29 +189,6 @@ sf_tool_settle() {
   }
 }
 
-sf_tools_cleanup() {
-  [[ -z $SF_TOOL_CAPTURE_DIR ]] || rm -rf -- "$SF_TOOL_CAPTURE_DIR" 2>/dev/null || true
-  [[ -z $SF_TOOL_TEMP_DIR ]] || rm -rf -- "$SF_TOOL_TEMP_DIR" 2>/dev/null || true
-  SF_TOOL_CAPTURE_DIR=''
-  SF_TOOL_TEMP_DIR=''
-}
-
-sf_tool_bound_capture() {
-  local captured=$1 result=$2 max_capture=$3 bytes marker=$'[output truncated]\n' room
-  bytes=$(wc -c <"$captured") || return
-  if (( bytes <= max_capture )); then
-    cat "$captured" >"$result"
-    return
-  fi
-  if (( max_capture <= ${#marker} )); then
-    print -rn -- "${marker[1,max_capture]}" >"$result"
-    return
-  fi
-  room=$(( max_capture - ${#marker} ))
-  printf '%s' "$marker" >"$result" || return
-  tail -c "$room" "$captured" >>"$result"
-}
-
 # Returns 0 when sandbox bypass needs approval.
 sf_tool_needs_permission() {
   local name=$1 bypass=$2 reason_valid=$3
@@ -235,153 +199,5 @@ sf_tool_needs_permission() {
   [[ $reason_valid == true ]] || {
     sf_tools_fail 'sandbox bypass reason is required'
     return 2
-  }
-}
-
-sf_tool_execute() {
-  local id=$1 name=$2 execution_input=$3 bypass=$4
-  integer harness_sandbox=$5
-  local decision=${6-} denial_reason=${7-} cwd=$8 max_capture=$9 fence=${10}
-  local config_dir=${11-} session=${12-} executable=${13-} runtime=${14-}
-  local tool_home=${HOME:-$cwd}
-  local sandboxed use_sandbox allow_bypass settings
-  local capture_dir input stdout stderr bounded_stdout bounded_stderr control control_pipe
-  local temp native_temp command_path sandbox_log expose
-  local -a command locale_env states result
-  integer exit_code control_size result_budget stderr_size
-  setopt local_options no_err_exit
-  SF_TOOL_ERROR=''
-  SF_TOOL_STATE_RECORDS=()
-  SF_TOOL_OUTPUT=''
-  REPLY=''
-  locale_env=( LANG="${LANG:-C}" )
-  [[ -z $LC_ALL ]] || locale_env+=( LC_ALL="$LC_ALL" )
-  [[ -z $LC_CTYPE ]] || locale_env+=( LC_CTYPE="$LC_CTYPE" )
-  [[ -z ${XDG_CONFIG_HOME-} ]] || locale_env+=( XDG_CONFIG_HOME="$XDG_CONFIG_HOME" )
-  if (( ! ${+SF_TOOL_COMMAND[$name]} )); then
-    sf_tool_refused "tool is not allowed: $name" 127
-    return
-  fi
-  command_path=$SF_TOOL_COMMAND[$name]
-  use_sandbox=$SF_TOOL_SANDBOX[$name]
-  allow_bypass=$SF_TOOL_ALLOW_BYPASS[$name]
-  settings=$SF_TOOL_SETTINGS[$name]
-  (( harness_sandbox )) || bypass=false
-  if [[ $bypass == invalid || ( $bypass == true && $allow_bypass != true ) ]]; then
-    sf_tool_refused 'sandbox bypass is not allowed' 126
-    return
-  fi
-  if [[ $bypass == true && $decision != approved ]]; then
-    sf_tool_refused "${denial_reason:-sandbox bypass denied}" 126
-    return
-  fi
-  sf_environment_prepare "$runtime" "$SF_TOOL_ENVIRONMENT[$name]" || {
-    sf_tools_fail "$SF_ENVIRONMENT_ERROR"
-    return
-  }
-  [[ -n $SF_TOOL_TEMP_DIR && -d $SF_TOOL_TEMP_DIR ]] || {
-    sf_tools_fail 'cannot prepare tool temporary directory'
-    return
-  }
-  temp=$SF_TOOL_TEMP_DIR
-  [[ -z $SF_TOOL_CAPTURE_DIR ]] || rm -rf -- "$SF_TOOL_CAPTURE_DIR" 2>/dev/null || true
-  SF_TOOL_CAPTURE_DIR=''
-  sf_scratch_create tools tool || {
-    sf_tools_fail 'cannot prepare tool capture'
-    return
-  }
-  capture_dir=$REPLY
-  SF_TOOL_CAPTURE_DIR=$capture_dir
-  {
-    input="$capture_dir/input"
-    bounded_stdout="$capture_dir/stdout.bounded"
-    bounded_stderr="$capture_dir/stderr.bounded"
-    sf_process_control_pipe "$capture_dir"
-    control_pipe=$REPLY
-    print -r -- "$execution_input" >"$input" || {
-      sf_tools_fail 'cannot prepare tool input'
-      return
-    }
-    if (( harness_sandbox )) && [[ $use_sandbox == true && $bypass != true ]]; then
-      command=(/usr/bin/env -i HOME="$tool_home" "${locale_env[@]}" PATH="$PATH" TERM="${TERM:-dumb}"
-        "${SF_ENVIRONMENT_VALUES[@]}" SHELLFISH_CONFIG_DIR="$config_dir"
-        SHELLFISH_MAX_CAPTURE_BYTES="$max_capture" SHELLFISH_SESSION="$session"
-        SHELLFISH_EXECUTABLE="$executable")
-      sf_temp_directory native "$temp" || {
-        sf_tools_fail 'cannot resolve native temporary directory'
-        return
-      }
-      native_temp=$REPLY
-      sandbox_log="$capture_dir/sandbox.log"
-      command+=(
-        "$fence" --monitor --fence-log-file "$sandbox_log" --settings "$settings"
-        --expose-host-path "$command_path" --expose-host-path-rw "$temp"
-        --expose-host-path-rw "$control_pipe")
-      [[ $native_temp == $temp ]] || command+=( --expose-host-path-rw "$native_temp" )
-      for expose in "${SF_TOOL_READ_PATHS[@]}"; do
-        command+=( --expose-host-path "$expose" )
-      done
-      for expose in "${SF_TOOL_WRITE_PATHS[@]}"; do
-        command+=( --expose-host-path-rw "$expose" )
-      done
-      command+=(
-        -- /usr/bin/env TMPDIR="$temp" TMPPREFIX="$temp/zsh"
-        "${commands[zsh]}" -f -c 'exec "$1" 3>"$2"' -- "$command_path" "$control_pipe")
-    else
-      command=(/usr/bin/env HOME="$tool_home" "${locale_env[@]}" PATH="$PATH" TERM="${TERM:-dumb}"
-        "${SF_ENVIRONMENT_VALUES[@]}" SHELLFISH_CONFIG_DIR="$config_dir"
-        SHELLFISH_MAX_CAPTURE_BYTES="$max_capture" SHELLFISH_SESSION="$session"
-        SHELLFISH_EXECUTABLE="$executable" TMPDIR="$temp" TMPPREFIX="$temp/zsh" "$command_path")
-    fi
-    sf_process_capture "$input" "$capture_dir" "$cwd" separate $max_capture \
-      "${command[@]}" || {
-      sf_tools_fail 'cannot capture tool output'
-      return
-    }
-    result=( "${reply[@]}" )
-    exit_code=$result[1]
-    stdout=$result[2]
-    stderr=$result[3]
-    control=$result[4]
-    control_size=$(wc -c <"$control") || {
-      sf_tools_fail 'cannot inspect tool control data'
-      return
-    }
-    (( control_size <= max_capture )) || {
-      sf_tools_fail 'tool control data exceeds capture limit'
-      return
-    }
-    if (( control_size )); then
-      sf_state_control_decode "$control" || {
-        sf_tools_fail 'tool returned invalid control data'
-        return
-      }
-      [[ -z $reply[1] ]] || {
-        sf_tools_fail 'tool returned invalid control data'
-        return
-      }
-      (( ${#reply} <= 1 )) || states=( "${(@)reply[2,-1]}" )
-    fi
-    result_budget=$(( max_capture - control_size ))
-    sf_tool_bound_capture "$stderr" "$bounded_stderr" "$result_budget" || {
-      sf_tools_fail 'cannot bound tool output'
-      return
-    }
-    stderr_size=$(wc -c <"$bounded_stderr") || {
-      sf_tools_fail 'cannot inspect tool output'
-      return
-    }
-    sf_tool_bound_capture "$stdout" "$bounded_stdout" \
-      $(( result_budget - stderr_size )) || {
-      sf_tools_fail 'cannot bound tool output'
-      return
-    }
-    SF_TOOL_OUTPUT=$(jq -cn --rawfile stdout "$bounded_stdout" \
-      --rawfile stderr "$bounded_stderr" --argjson exit_code "$exit_code" \
-      '{stdout:$stdout,stderr:$stderr,exit_code:$exit_code}') || return
-    SF_TOOL_STATE_RECORDS=( "${states[@]}" )
-  } always {
-    rm -rf -- "$capture_dir" 2>/dev/null || true
-    SF_TOOL_CAPTURE_DIR=''
   }
 }

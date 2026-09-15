@@ -1,12 +1,8 @@
 emulate -R zsh
 setopt no_aliases no_bg_nice no_multios pipe_fail
-zmodload zsh/system
 
 (( $+functions[sf_jq] )) || source "$SF_ROOT/lib/jq.zsh"
 (( $+functions[sf_scratch_category] )) || source "$SF_ROOT/lib/scratch.zsh"
-(( $+functions[sf_environment_prepare] )) || source "$SF_ROOT/lib/environment.zsh"
-(( $+functions[sf_process_capture] )) || source "$SF_ROOT/lib/process.zsh"
-(( $+functions[sf_state_control_decode] )) || source "$SF_ROOT/lib/state.zsh"
 
 typeset -g SF_HOOK_ERROR=''
 typeset -g SF_HOOK_JSONL=0
@@ -18,13 +14,10 @@ typeset -gi SF_HOOK_ID=0
 # A tool-lifecycle hook contributes to the owning call instead of settling.
 typeset -gi SF_HOOK_COLLECT=0
 typeset -ga SF_HOOK_CONTEXTS=()
-# Track only scratch paths created by this process for cancellation cleanup.
 typeset -g SF_HOOK_TURN_STATE_TEMP=''
-typeset -g SF_HOOK_INPUT_TEMP=''
 
 zshexit() {
   [[ -z $SF_HOOK_TURN_STATE_TEMP ]] || rm -rf -- "$SF_HOOK_TURN_STATE_TEMP" 2>/dev/null || true
-  [[ -z $SF_HOOK_INPUT_TEMP ]] || rm -f -- "$SF_HOOK_INPUT_TEMP" 2>/dev/null || true
 }
 
 sf_hooks_reset() {
@@ -38,20 +31,6 @@ sf_hooks_fail() {
   sf_hooks_reset
   SF_HOOK_ERROR=$error
   return 1
-}
-
-sf_hooks_read_capture() {
-  local capture=$1 value=''
-  local LC_ALL=C
-  integer bytes=$2 fd
-  if (( bytes )); then
-    exec {fd}<"$capture" || return
-    sysread -i $fd -s $bytes value
-    integer read_status=$?
-    exec {fd}<&-
-    (( read_status == 0 && ${#value} == bytes )) || return 1
-  fi
-  REPLY=$value
 }
 
 sf_hooks_activity() {
@@ -112,294 +91,6 @@ sf_hooks_append() {
   fi
 }
 
-sf_hooks_active_fail() {
-  local error=$1 detail=${2-}
-  [[ -z $detail ]] || error+=": $detail"
-  sf_hooks_fail "$error"
-}
-
-sf_hooks_capture_one() {
-  local script=$1 input=$2 directory=$3
-  setopt local_options no_monitor
-  integer max_capture=$4 argument_count=$5
-  local environment_json=$6
-  shift 6
-  local -a arguments=( "${(@)argv[1,argument_count]}" )
-  local -a environment=( env )
-  local hook=$SF_HOOK_NAME name value
-  local -a fixed_names=(
-    SHELLFISH_SESSION SHELLFISH_MAX_CAPTURE_BYTES SHELLFISH_MODEL
-    SHELLFISH_EXECUTABLE SHELLFISH_MODE
-    SHELLFISH_VERBOSE SHELLFISH_CONFIG_DIR SHELLFISH_TURN_ID SHELLFISH_TURN_STATE
-  )
-  local LC_ALL=C
-
-  [[ -n $hook ]] || {
-    sf_hooks_fail 'hook name is not available'
-    return
-  }
-  sf_environment_prepare "$SF_SESSION[runtime]" "$environment_json" || {
-    sf_hooks_fail "$SF_ENVIRONMENT_ERROR"
-    return
-  }
-  for value in $SF_ENVIRONMENT_VALUES; do
-    name=${value%%=*}
-    (( ${fixed_names[(Ie)$name]} )) || environment+=( "$value" )
-  done
-  for name in $fixed_names; do
-    [[ ${parameters[$name]-} == *export* ]] || continue
-    environment+=( "$name=${(P)name}" )
-  done
-
-  sf_process_capture "$input" "$directory" "$PWD" separate \
-    $max_capture "${environment[@]}" "$script" "${arguments[@]}" || {
-      sf_hooks_fail 'cannot capture hook script output'
-      return
-    }
-}
-
-sf_hooks_dispatch() {
-  local input=$1
-  integer max_capture=$2 allow_control=$3 argument_count=$4
-  shift 4
-  (( argument_count >= 0 && argument_count <= $# )) || {
-    sf_hooks_fail 'invalid hook argument count'
-    return
-  }
-  local -a arguments=( "${(@)argv[1,argument_count]}" )
-  shift argument_count
-  local -a components=( "$@" ) result component_states decoded
-  local directory script name id selector environment_json render record
-  local result_record input_json rendered contribution update
-  local script_context script_user script_control hook=$SF_HOOK_NAME
-  local origin='' control='' control_error
-  local skip_policy=$SF_HOOK_SKIP_POLICY
-  integer script_status selector_status context_size user_size control_size component_index feedback=0
-  integer perform=1 halted=0
-  setopt local_options no_err_exit no_bg_nice
-
-  sf_hooks_reset
-  (( ${#components} % 4 == 0 )) || {
-    sf_hooks_fail 'cannot inspect configured hook components'
-    return
-  }
-
-  sf_scratch_create hooks capture || {
-    sf_hooks_fail 'cannot prepare hook captures'
-    return
-  }
-  directory=$REPLY
-  {
-    [[ -f $input ]] || {
-      sf_hooks_fail 'cannot prepare hook input'
-      return
-    }
-    if [[ $hook == (permission_request|pre_tool_use|post_tool_use) ]]; then
-      input_json=$(jq -c . <"$input") || {
-        sf_hooks_fail "cannot decode $hook hook input"
-        return
-      }
-    else
-      input_json=$(jq -Rsc . <"$input") || {
-        sf_hooks_fail "cannot decode $hook hook input"
-        return
-      }
-    fi
-
-    for (( component_index = 1; component_index <= ${#components}; component_index += 4 )); do
-      script=$components[component_index]
-      selector=$components[component_index+1]
-      environment_json=$components[component_index+2]
-      render=$components[component_index+3]
-      component_states=()
-      if [[ -n $selector ]]; then
-        sf_hooks_capture_one "$selector" "$input" "$directory" "$max_capture" \
-          "$argument_count" "$environment_json" "${arguments[@]}" || return
-        result=( "${reply[@]}" )
-        selector_status=$result[1]
-        if [[ -s $result[2] || -s $result[3] || -s $result[4] ]]; then
-          sf_hooks_fail "hook match command wrote output: $selector"
-          return
-        fi
-        case $selector_status in
-          0) ;;
-          1) continue ;;
-          *)
-            sf_hooks_fail "hook match command failed with status $selector_status: $selector"
-            return
-            ;;
-        esac
-      fi
-      name=$script
-      [[ ${name:t} != run ]] || name=${name:h}
-      name=${name:t}
-      sf_hooks_id || {
-        sf_hooks_fail 'cannot allocate hook invocation ID'
-        return
-      }
-      id=$REPLY
-      sf_hooks_render "$hook" "$render" "$name" "$input_json" || {
-        sf_hooks_fail "cannot render hook activity: $script"
-        return
-      }
-      rendered=$REPLY
-      sf_hooks_activity "$hook" "$id" "$name" "$input_json" "$script" \
-        "$rendered" || {
-        sf_hooks_fail 'cannot open hook display'
-        return
-      }
-      sf_hooks_capture_one "$script" "$input" "$directory" "$max_capture" \
-        "$argument_count" "$environment_json" "${arguments[@]}" || {
-        sf_hooks_active_fail "$SF_HOOK_ERROR"
-        return
-      }
-      result=( "${reply[@]}" )
-      script_status=$result[1]
-
-      context_size=$(wc -c <"$result[2]") || {
-        sf_hooks_active_fail "cannot inspect hook script context: $script"
-        return
-      }
-      user_size=$(wc -c <"$result[3]") || {
-        sf_hooks_active_fail "cannot inspect hook script stderr: $script"
-        return
-      }
-      control_size=$(wc -c <"$result[4]") || {
-        sf_hooks_active_fail "cannot inspect hook script control: $script"
-        return
-      }
-      (( context_size + user_size + control_size <= max_capture )) || {
-        sf_hooks_active_fail "hook script output exceeds capture limit: $script"
-        return
-      }
-
-      sf_hooks_read_capture "$result[2]" "$context_size" || {
-        sf_hooks_active_fail "cannot read hook script context: $script"
-        return
-      }
-      script_context=$REPLY
-      sf_hooks_read_capture "$result[3]" "$user_size" || {
-        sf_hooks_active_fail "cannot read hook script stderr: $script"
-        return
-      }
-      script_user=$REPLY
-      script_control=''
-      control_error=''
-      case $script_status in
-        0|10|11) ;;
-        *)
-          control_error="hook script failed with status $script_status: $script"
-          ;;
-      esac
-      if [[ -z $control_error ]] && (( control_size )); then
-        sf_state_control_decode "$result[4]" || {
-          if [[ $REPLY == malformed ]]; then
-            control_error='hook script returned malformed control data'
-          else
-            control_error="hook script returned invalid state control: $script"
-          fi
-        }
-        if [[ -z $control_error ]]; then
-          decoded=( "${reply[@]}" )
-          script_control=$decoded[1]
-          component_states=( "${(@)decoded[2,-1]}" )
-        fi
-      fi
-      if [[ -z $control_error && -n $script_control ]] && (( ! allow_control )); then
-        control_error="hook script returned unexpected control data: $script"
-      fi
-      if [[ -z $control_error && $skip_policy == reject && $script_status != 0 ]]; then
-        control_error="$hook hook script returned unsupported skip status"
-      fi
-      if [[ -z $control_error && -n $SF_HOOK_COMPONENT_VALIDATOR ]]; then
-        "$SF_HOOK_COMPONENT_VALIDATOR" "$script" "$script_status" \
-          "$script_context" "$script_control" || control_error=$SF_HOOK_ERROR
-      fi
-      if [[ -n $control_error ]]; then
-        sf_hooks_active_fail "$control_error" "$script_user"
-        return
-      fi
-      sf_hooks_render "$hook" "$render" "$name" "$input_json" "$result[2]" \
-        "$result[3]" "$script_status" || {
-        sf_hooks_active_fail "cannot render hook result: $script" "$script_user"
-        return
-      }
-      rendered=$REPLY
-      result_record=''
-      if (( SF_HOOK_COLLECT )); then
-        # The owning tool call settles this contribution, so only the user-facing
-        # update is transient here.
-        contribution=$(jq -r '.model_text' <<<$rendered) || {
-          sf_hooks_active_fail 'cannot decode hook rendering' "$script_user"
-          return
-        }
-        [[ -z $contribution ]] || SF_HOOK_CONTEXTS+=( "$contribution" )
-        update=$(jq -c 'if .user_after == "" then empty
-          else .user_before = .user_after end' <<<$rendered) || {
-          sf_hooks_active_fail 'cannot decode hook rendering' "$script_user"
-          return
-        }
-        [[ -z $update ]] ||
-          sf_hooks_activity "$hook" "$id" "$name" "$input_json" "$script" \
-            "$update" || {
-          sf_hooks_active_fail 'cannot update hook display' "$script_user"
-          return
-        }
-      elif jq -e --argjson status "$script_status" '
-          $status != 0 or .user_after != "" or .model_after != ""' \
-          <<<$rendered >/dev/null; then
-        sf_hooks_result_record "$hook" "$id" "$name" "$script" "$input_json" \
-          "$rendered" "$script_status" || {
-          sf_hooks_active_fail "$SF_HOOK_ERROR" "$script_user"
-          return
-        }
-        result_record=$REPLY
-      fi
-      if [[ -n ${SF_HOOK_SESSION-} ]]; then
-        for record in "${component_states[@]}"; do
-          sf_hooks_append "$SF_HOOK_SESSION" "$record" || {
-            sf_hooks_active_fail "$SF_HOOK_ERROR" "$script_user"
-            return
-          }
-        done
-        [[ -z $result_record ]] ||
-          sf_hooks_append "$SF_HOOK_SESSION" "$result_record" || {
-          sf_hooks_active_fail "$SF_HOOK_ERROR" "$script_user"
-          return
-        }
-      fi
-      if (( script_status != 0 )) && jq -e '.model_after != ""' <<<$rendered \
-          >/dev/null; then
-        feedback=1
-      fi
-      if (( ! SF_HOOK_JSONL )); then
-        jq -j '.user_after' <<<$rendered >&2 || {
-          sf_hooks_fail 'cannot write hook output'
-          return
-        }
-      fi
-      [[ -z $script_control ]] || control=$script_control
-      if (( script_status == 10 || script_status == 11 )); then
-        [[ -n $origin ]] || origin=$script
-        perform=0
-      fi
-      if (( script_status == 11 )); then
-        halted=1
-        break
-      fi
-    done
-
-    if (( ! perform )) && [[ $skip_policy == require_context ]] && (( ! feedback )); then
-      sf_hooks_fail "$hook hook script skipped completion without feedback"
-      return
-    fi
-  } always {
-    rm -rf -- "$directory" 2>/dev/null || true
-  }
-  REPLY=''
-  reply=( "$perform" "$halted" "$origin" "$control" )
-}
-
 sf_hooks_turn_state_create() {
   [[ -z $SHELLFISH_TURN_STATE ]] || return 0
   sf_scratch_create turns turn || {
@@ -417,83 +108,8 @@ sf_hooks_turn_state_cleanup() {
   unset SHELLFISH_TURN_STATE
 }
 
-sf_hooks_invoke() {
-  local session=$1 working_directory=$2 input=${3:A}
-  integer max_capture=$4 allow_control=$5
-  shift 5
-  local previous_directory=$PWD
-  local hook=$2
-  local SHELLFISH_SESSION=${session:A}
-  local SHELLFISH_MAX_CAPTURE_BYTES=$max_capture
-  local SHELLFISH_MODEL=${SHELLFISH_MODEL:-$SF_SESSION[model]}
-  local SHELLFISH_EXECUTABLE=${SF_ENTRY-}
-  local SHELLFISH_CONFIG_DIR=${SHELLFISH_CONFIG_DIR-}
-  local SHELLFISH_TURN_ID=${SHELLFISH_TURN_ID-}
-  local SHELLFISH_TURN_STATE=${SHELLFISH_TURN_STATE-}
-  local SF_HOOK_NAME=$hook
-  export SHELLFISH_SESSION SHELLFISH_MAX_CAPTURE_BYTES SHELLFISH_MODEL
-  export SHELLFISH_EXECUTABLE SHELLFISH_CONFIG_DIR
-  if [[ $hook == (user_prompt_submit|permission_request|pre_tool_use|post_tool_use|stop) ]]; then
-    [[ -n $SHELLFISH_TURN_ID ]] || {
-      sf_hooks_fail "$hook hook requires a turn ID"
-      return
-    }
-    [[ -n $SHELLFISH_TURN_STATE && -d $SHELLFISH_TURN_STATE ]] || {
-      sf_hooks_fail 'hook turn state is not available'
-      return
-    }
-    export SHELLFISH_TURN_ID SHELLFISH_TURN_STATE
-  else
-    SHELLFISH_TURN_ID=''
-    SHELLFISH_TURN_STATE=''
-    typeset +x SHELLFISH_TURN_ID SHELLFISH_TURN_STATE
-  fi
-  cd -- "$working_directory" || {
-    sf_hooks_fail 'cannot enter session working directory'
-    return
-  }
-  sf_hooks_dispatch "$input" "$max_capture" "$allow_control" "$@"
-  integer invocation_status=$?
-  cd -- "$previous_directory" || return 1
-  return $invocation_status
-}
-
-sf_hooks_run_chain() {
-  local session=$1 input=$2 hook=$3
-  integer allow_control=$4 argument_count=$5
-  shift 5
-  local -a fields components input_option=( --arg input '' )
-
-  [[ $hook != user_prompt_submit ]] || input_option=( --rawfile input "$input" )
-
-  # Preserve a trailing empty environment field through command substitution.
-  fields=( "${(@f)$(jq -erc --arg hook "$hook" "${input_option[@]}" '
-    .harness.max_capture_bytes,
-      (.harness[$hook][]? | . as $component |
-      select(($component.match.pattern? // "") == "" or
-        ($input | test($component.match.pattern))) |
-      .command, (.match.command? // ""), (.environment | join(" ")),
-      (.render | tojson)),
-    "ok"
-  ' <<<"$SF_SESSION[runtime]")}" ) || return 1
-  [[ $fields[-1] == ok ]] || return 1
-  components=( "${(@)fields[2,-2]}" )
-  local SHELLFISH_MODEL=$SF_SESSION[model]
-  local SHELLFISH_CONFIG_DIR=''
-  sf_environment_project "$SF_SESSION[runtime]" || return 1
-  [[ -z $SF_ENVIRONMENT_FILE ]] || SHELLFISH_CONFIG_DIR=${SF_ENVIRONMENT_FILE:h}
-  sf_hooks_invoke "$session" "$SF_SESSION[cwd]" "$input" "$fields[1]" \
-    "$allow_control" "$argument_count" "$hook" "$@" "${components[@]}"
-}
-
 sf_hooks_run() {
-  local session=$1 hook=$2 content=$3 skip_policy=$4
-  integer allow_control=$5 argument_count=$6 operation_status=0
-  shift 6
-  local input label=$hook
-  local -a decision
-  local SF_HOOK_SESSION=$session
-  local SF_HOOK_SKIP_POLICY=$skip_policy
+  local hook=$2 label=$2
   [[ $hook != pre_tool_use ]] || label=pre-tool
 
   SF_HOOK_ERROR=''
@@ -506,25 +122,7 @@ sf_hooks_run() {
     reply=( 1 0 '' '' )
     return 0
   fi
-  sf_scratch_file hooks input || {
-    sf_hooks_fail "cannot prepare $label hook input"
-    return
-  }
-  input=$REPLY
-  SF_HOOK_INPUT_TEMP=$input
-  print -rn -- "$content" >"$input" || operation_status=1
-  (( operation_status )) || sf_hooks_run_chain "$session" "$input" "$hook" \
-    "$allow_control" "$argument_count" "$@" || operation_status=1
-  decision=( "${reply[@]}" )
-  rm -f -- "$input" 2>/dev/null || true
-  SF_HOOK_INPUT_TEMP=''
-  if (( operation_status )); then
-    [[ -n $SF_HOOK_ERROR ]] || SF_HOOK_ERROR="cannot prepare $label hook script invocation"
-    sf_hooks_fail "$SF_HOOK_ERROR"
-    return 1
-  fi
-  REPLY=''
-  reply=( "${decision[@]}" )
+  sf_hooks_fail "$label hooks are unavailable"
 }
 
 sf_hooks_result_record() {

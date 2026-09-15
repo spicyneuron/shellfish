@@ -300,21 +300,17 @@ sf_session_update() {
 # A failed turn closes even where the durable view already reads as idle.
 sf_session_recover_turn() {
   local session_path=$1 user_text=${2:-Turn interrupted.} closing record recovered=''
-  local known=${4:-[]}
   integer failed=${3:-0}
   REPLY=''
   closing=$(printf '%s\n' "${SF_SESSION_RECORDS[@]:1}" |
-    sf_jq -sc --arg user_text "$user_text" --argjson failed "$failed" \
-      --argjson known "$known" '
+    sf_jq -sc --arg user_text "$user_text" --argjson failed "$failed" '
       include "lib/session/read";
       session_run |
       select(.next != "user" or $failed != 0) |
       (.calls[] as $call |
-        ([$known[] | select(.id == $call.id and .name == $call.name and
-          .input == $call.input)][0] //
-          ($call | {type:"tool_result", id, name, input, exit_code:126,
-            user_text:"tool call outcome unknown",
-            model_text:"tool call outcome unknown"}))),
+        ($call | {type:"tool_result", id, name, input, exit_code:126,
+          user_text:"tool call outcome unknown",
+          model_text:"tool call outcome unknown"})),
       {type:"error", user_text:$user_text}
     ') || {
     sf_session_fail "cannot close the interrupted turn: $session_path"
@@ -331,11 +327,10 @@ sf_session_recover_turn() {
 # Repair torn tails before rereading; close the turn from the durable view.
 sf_session_resync_turn() {
   local session_path=$1 user_text=${2-}
-  local known=${4:-[]}
   integer failed=${3:-0}
   sf_session_repair_tail "$session_path" || return
   sf_session_read "$session_path" || return
-  sf_session_recover_turn "$session_path" "$user_text" "$failed" "$known"
+  sf_session_recover_turn "$session_path" "$user_text" "$failed"
 }
 
 sf_session_begin_turn() {

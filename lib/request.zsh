@@ -7,7 +7,7 @@ setopt no_aliases no_bg_nice no_multios pipe_fail
 (( $+functions[sf_environment_prepare] )) || source "$SF_ROOT/lib/environment.zsh"
 
 typeset -gA SF_REQUEST=(
-  assistant '' directory '' error '' group_file '' pid '' result ''
+  assistant '' directory '' error '' group_file '' pid ''
 )
 typeset -ga SF_REQUEST_PARTIAL_EVENTS=()
 
@@ -32,7 +32,7 @@ sf_request_run() {
   setopt local_options no_bg_nice
   local request=$1 command=$2 runtime=$3 selected=$4 emit=${5:-:}
   local directory error_file group_file input_file output_pipe status_file
-  local adapter_pid decoder_pid event end_event kind='' name
+  local adapter_pid decoder_pid assistant event end_event kind='' name
   local -a environment=( env ) process_command
   integer adapter_status=1 decoder_status=1 ended=0
 
@@ -42,7 +42,6 @@ sf_request_run() {
   SF_REQUEST[group_file]=''
   SF_REQUEST_PARTIAL_EVENTS=()
   SF_REQUEST[pid]=''
-  SF_REQUEST[result]=''
   sf_environment_prepare "$runtime" "$selected" || {
     SF_REQUEST[error]=$SF_ENVIRONMENT_ERROR
     return 1
@@ -97,11 +96,11 @@ sf_request_run() {
         "$emit" "$event"
         ;;
       end)
-        if ! IFS= read -r -d $'\0' end_event <&p; then
+        if ! IFS= read -r -d $'\0' end_event <&p ||
+            ! IFS= read -r -d $'\0' assistant <&p; then
           kind=invalid
           break
         fi
-        SF_REQUEST[result]=$(<&p)
         ended=1
         break
         ;;
@@ -123,7 +122,7 @@ sf_request_run() {
   fi
   (( decoder_status == 0 )) || kind=invalid
   if [[ $kind != invalid && $adapter_status == 0 ]] && (( ended )); then
-    SF_REQUEST[assistant]=${SF_REQUEST[result]%%$'\0'*}
+    SF_REQUEST[assistant]=$assistant
     [[ -z $SF_REQUEST[assistant] ]] || SF_REQUEST_PARTIAL_EVENTS=()
   fi
   # Announce completion only after a clean adapter exit.

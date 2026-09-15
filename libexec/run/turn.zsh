@@ -3,7 +3,6 @@ setopt no_aliases no_bg_nice no_multios pipe_fail
 
 (( $+functions[sf_jq] )) || source "$SF_ROOT/lib/jq.zsh"
 (( $+functions[sf_session_begin_turn] )) || source "$SF_ROOT/lib/session/main.zsh"
-(( $+functions[sf_environment_prepare] )) || source "$SF_ROOT/lib/environment.zsh"
 (( $+functions[sf_hooks_user_prompt_submit] )) || source "$SF_ROOT/libexec/run/hooks.zsh"
 (( $+functions[sf_tools_load] )) || source "$SF_ROOT/libexec/run/tools.zsh"
 (( $+functions[sf_request_run] )) || source "$SF_ROOT/lib/request.zsh"
@@ -11,26 +10,16 @@ setopt no_aliases no_bg_nice no_multios pipe_fail
 
 typeset -gA SF_RUN=(
   answer '' jsonl 0 interrupted 0 permission_count 0 permission_available 0
-  signal_status 143 active_call '' active_outcome 0
+  signal_status 143
 )
-typeset -ga SF_RUN_QUEUED_CALLS=()
 
 sf_run_emit() {
   (( SF_RUN[jsonl] )) && print -r -- "$1"
   return 0
 }
 
-sf_run_finish_call() {
-  SF_RUN_QUEUED_CALLS=( "${(@)SF_RUN_QUEUED_CALLS[2,-1]}" )
-  SF_RUN[active_call]=''
-  SF_RUN[active_outcome]=0
-}
-
 sf_run_interrupt() {
   SF_RUN[interrupted]=1
-  if [[ -n $SF_PROCESS_CAPTURE_PID ]]; then
-    sf_process_capture_stop
-  fi
   if [[ -n $SF_REQUEST[pid] ]]; then
     sf_process_stop "$SF_REQUEST[pid]" "$SF_REQUEST[group_file]"
     SF_REQUEST[pid]=''
@@ -108,37 +97,7 @@ sf_run_turn_cleanup() {
   local session=$1
   integer interrupted=$2
   local failure=$3 after=$4 error_message recovered='' closed='' partial=''
-  local queued fixed reason before='[]' after_context='[]'
-  local -a known=()
 
-  for queued in "${SF_RUN_QUEUED_CALLS[@]}"; do
-    if jq -e --arg id "$SF_RUN[active_call]" '.id == $id' <<<$queued >/dev/null; then
-      if (( SF_RUN[active_outcome] )); then
-        before=${before_contexts:-[]}
-        after_context=$(jq -nc '$ARGS.positional' --args -- "${SF_HOOK_CONTEXTS[@]}")
-      else
-        reason='tool call interrupted'
-        sf_tool_refused "$reason" 126
-        before=$(jq -nc '$ARGS.positional' --args -- "${SF_HOOK_CONTEXTS[@]}")
-      fi
-    else
-      reason='tool call cancelled'
-      sf_tool_refused "$reason" 126
-      before='[]'
-    fi
-    if sf_tool_settle \
-        "$(jq -r '.id' <<<$queued)" \
-        "$(jq -r '.name' <<<$queued)" \
-        "$(jq -c '.input' <<<$queued)" \
-        "$SF_TOOL_OUTPUT" "$before" "$after_context"; then
-      known+=( "$REPLY" )
-    fi
-    before='[]'
-    after_context='[]'
-  done
-  fixed=$(printf '%s\n' "${known[@]}" | jq -sc .) || fixed='[]'
-
-  sf_tools_cleanup
   sf_hooks_turn_state_cleanup
   [[ -z $SF_REQUEST[directory] ]] ||
     rm -rf -- "$SF_REQUEST[directory]" 2>/dev/null || true
@@ -160,7 +119,7 @@ sf_run_turn_cleanup() {
       error_message='Turn interrupted.'
     fi
     # Close from the durable view; the interrupted in-memory view is not trusted.
-    if sf_session_resync_turn "$session" "$error_message" 1 "$fixed"; then
+    if sf_session_resync_turn "$session" "$error_message" 1; then
       closed=$REPLY
       if [[ -n $REPLY ]]; then
         [[ -z $recovered ]] || recovered+=$'\n'
@@ -171,9 +130,6 @@ sf_run_turn_cleanup() {
     fi
   fi
   SF_REQUEST_PARTIAL_EVENTS=()
-  SF_RUN_QUEUED_CALLS=()
-  SF_RUN[active_call]=''
-  SF_RUN[active_outcome]=0
   [[ -z $recovered ]] || sf_run_emit "$recovered"
   sf_session_reset
   if (( interrupted )); then
@@ -190,25 +146,19 @@ sf_run_turn_cleanup() {
 sf_run_turn() {
   local user_record=$1 session_path=$2 permission_available=${3:-0} prompt=$4
   local SF_HOOK_JSONL=$SF_RUN[jsonl]
-  local request assistant stop_input result state backend_command opened_records record
-  local tool_name call_id tool_input execution_input bypass bypass_reason_valid
-  local decision denial_reason hook_action hook_reason
-  local before_contexts after_contexts
-  local runtime_projection response_projection response_field
-  local tools tool_schema max_capture fence backend_environment env_file config_dir name
+  local request assistant backend_command opened_records
+  local hook_action
+  local runtime_projection
+  local tools tool_schema fence backend_environment env_file config_dir
   local sandbox_read_paths sandbox_write_paths
-  local context_output context_window context_window_command context_directory context_input update_event
   local SHELLFISH_TURN_STATE=''
-  local -a runtime_fields response_fields tool_calls handoff context_environment context_result
-  integer request_count=0 stop_count=0 call_count tool_index response_call_count
-  integer harness_sandbox tool_limit request_limit context_window_set
-  integer permission_status
+  local -a runtime_fields handoff
+  integer request_count=0
+  integer harness_sandbox request_limit
   local failure='' after='' patch=''
 
   SF_RUN[permission_count]=0
   SF_RUN[permission_available]=$permission_available
-  SF_RUN[active_call]=''
-  SF_RUN[active_outcome]=0
   if ! sf_session_begin_turn "$session_path"; then
     print -r -u2 -- "$SF_SESSION_ERROR"
     return 1
@@ -221,40 +171,32 @@ sf_run_turn() {
       def field: ., "\u0000";
       ($runtime.backend.command | field),
       (if $runtime.harness.sandbox then "1" else "0" end | field),
-      ($runtime.harness.max_tool_calls_per_request | tostring | field),
       ($runtime.harness.max_requests_per_turn | tostring | field),
-      ($runtime.harness.max_capture_bytes | tostring | field),
       ($runtime.harness.fence | field),
       ($runtime.harness.sandbox_read_paths | tojson | field),
       ($runtime.harness.sandbox_write_paths | tojson | field),
       ($runtime.harness.tools | tojson | field),
       ($runtime.backend.environment | join(" ") | field),
       ($runtime.backend.env_file | field),
-      ($runtime.backend.context_window_command // "" | field),
-      (if $runtime.profile | has("context_window") then "1" else "0" end | field),
       ("ok" | field)
     ' 2>/dev/null) || {
       failure='cannot inspect frozen runtime'
       return 1
     }
     runtime_fields=( "${(@0)${runtime_projection%$'\0'}}" )
-    (( ${#runtime_fields} == 14 )) && [[ $runtime_fields[14] == ok ]] || {
+    (( ${#runtime_fields} == 10 )) && [[ $runtime_fields[10] == ok ]] || {
       failure='cannot inspect frozen runtime'
       return 1
     }
     backend_command=$runtime_fields[1]
     harness_sandbox=$runtime_fields[2]
-    tool_limit=$runtime_fields[3]
-    request_limit=$runtime_fields[4]
-    max_capture=$runtime_fields[5]
-    fence=$runtime_fields[6]
-    sandbox_read_paths=$runtime_fields[7]
-    sandbox_write_paths=$runtime_fields[8]
-    tools=$runtime_fields[9]
-    backend_environment=$runtime_fields[10]
-    env_file=$runtime_fields[11]
-    context_window_command=$runtime_fields[12]
-    context_window_set=$runtime_fields[13]
+    request_limit=$runtime_fields[3]
+    fence=$runtime_fields[4]
+    sandbox_read_paths=$runtime_fields[5]
+    sandbox_write_paths=$runtime_fields[6]
+    tools=$runtime_fields[7]
+    backend_environment=$runtime_fields[8]
+    env_file=$runtime_fields[9]
     config_dir=''
     [[ -z $env_file ]] || config_dir=${env_file:h}
     [[ -d $SF_SESSION[cwd] && -x $SF_SESSION[cwd] ]] || {
@@ -322,228 +264,19 @@ sf_run_turn() {
         failure='cannot prepare provider request'
         return 1
       }
-      if (( request_count == 1 && ! context_window_set )) &&
-          [[ -n $context_window_command ]]; then
-        context_output=''
-        sf_environment_prepare "$SF_SESSION[runtime]" "$backend_environment" || {
-          failure=$SF_ENVIRONMENT_ERROR
-          return 1
-        }
-        context_environment=( env )
-        for name in $SF_ENVIRONMENT_NAMES; do
-          context_environment+=( -u "$name" )
-        done
-        context_environment+=( "${SF_ENVIRONMENT_VALUES[@]}" )
-        if sf_scratch_create backends context; then
-          context_directory=$REPLY
-          context_input="$context_directory/input"
-          if print -r -- "$request" >"$context_input" &&
-              sf_process_capture "$context_input" "$context_directory" "$PWD" \
-                separate $max_capture "${context_environment[@]}" \
-                "$context_window_command"; then
-            context_result=( "${reply[@]}" )
-            (( context_result[1] )) || context_output=$(<"$context_result[2]")
-          fi
-          rm -rf -- "$context_directory"
-        fi
-        (( ! SF_RUN[interrupted] )) || return 1
-        context_window=$(sf_jq -ser '
-          include "lib/runtime/schema";
-          select(length == 1 and (.[0] | type == "object" and
-            keys == ["context_window"] and (.context_window | positive_integer))) |
-          .[0].context_window
-        ' <<<"$context_output" 2>/dev/null) || context_window=''
-        if [[ -n $context_window ]]; then
-          patch=$(jq -cn --argjson context_window "$context_window" \
-            '{profile:{context_window:$context_window}}') || {
-            failure='cannot prepare context window update'
-            return 1
-          }
-        else
-          patch='{"profile":{"context_window":null}}'
-        fi
-        if ! sf_session_update "$session_path" "$patch"; then
-          failure=$SF_SESSION_ERROR
-          return 1
-        fi
-        update_event=$(jq -cn --argjson runtime "$SF_SESSION[runtime]" \
-          '{type:"_session_update",runtime:$runtime}') || {
-          failure='cannot prepare context window update'
-          return 1
-        }
-        sf_run_emit "$update_event"
-      fi
       if ! sf_request_run "$request" "$backend_command" "$SF_SESSION[runtime]" \
           "$backend_environment" sf_run_emit; then
         failure=$SF_REQUEST[error]
         return 1
       fi
       assistant=$SF_REQUEST[assistant]
-      response_projection=${SF_REQUEST[result]#*$'\0'}
-      response_fields=()
-      for (( tool_index = 0; tool_index < 2; tool_index += 1 )); do
-        [[ $response_projection == *$'\0'* ]] || break
-        response_field=${response_projection%%$'\0'*}
-        response_projection=${response_projection#*$'\0'}
-        response_fields+=( "$response_field" )
-      done
-      if (( ${#response_fields} == 2 )) && [[ $response_fields[2] == <-> ]]; then
-        response_call_count=$response_fields[2]
-      else
-        response_call_count=-1
-      fi
-      response_fields=( "$response_fields[1]" )
-      for (( tool_index = 0; tool_index < response_call_count * 6; tool_index += 1 )); do
-        [[ $response_projection == *$'\0'* ]] || break
-        response_field=${response_projection%%$'\0'*}
-        response_projection=${response_projection#*$'\0'}
-        response_fields+=( "$response_field" )
-      done
-      [[ $response_projection == ok$'\0'* &&
-          $response_projection == *$'\0' ]] || {
-        failure='cannot inspect provider response'
-        return 1
-      }
-      response_projection=${response_projection#*$'\0'}
-      stop_input=${response_projection%$'\0'}
-      (( response_call_count >= 0 &&
-          ${#response_fields} == 1 + response_call_count * 6 )) || {
-        failure='cannot inspect provider response'
-        return 1
-      }
-      SF_RUN_QUEUED_CALLS=()
-      if [[ $response_fields[1] == tool_calls ]]; then
-        tool_calls=( "${(@)response_fields[2,-1]}" )
-        for (( tool_index = 1; tool_index <= ${#tool_calls}; tool_index += 6 )); do
-          record=$(jq -cn --arg id "$tool_calls[tool_index]" \
-            --arg name "$tool_calls[tool_index+1]" \
-            --argjson input "$tool_calls[tool_index+2]" \
-            --argjson execution_input "$tool_calls[tool_index+3]" \
-            '{id:$id,name:$name,input:$input,execution_input:$execution_input}') || {
-            failure='cannot prepare tool call queue'
-            return 1
-          }
-          SF_RUN_QUEUED_CALLS+=( "$record" )
-        done
-      fi
       if ! sf_session_append "$session_path" "$assistant"; then
         failure=$SF_SESSION_ERROR
         return 1
       fi
       sf_run_emit "$assistant"
-      if [[ $response_fields[1] != tool_calls ]]; then
-        (( stop_count += 1 ))
-        if ! sf_hooks_stop "$session_path" "$stop_input" "$stop_count"; then
-          failure=$SF_HOOK_ERROR
-          return 1
-        fi
-        hook_action=$reply[1]
-        if [[ $hook_action == finish ]]; then
-          SF_RUN[answer]=$stop_input
-          return
-        fi
-        continue
-      fi
-      call_count=0
-      tool_calls=( "${(@)response_fields[2,-1]}" )
-      for (( tool_index = 1; tool_index <= ${#tool_calls}; tool_index += 6 )); do
-        (( call_count += 1 ))
-        call_id=$tool_calls[tool_index]
-        tool_name=$tool_calls[tool_index+1]
-        tool_input=$tool_calls[tool_index+2]
-        execution_input=$tool_calls[tool_index+3]
-        bypass=$tool_calls[tool_index+4]
-        bypass_reason_valid=$tool_calls[tool_index+5]
-        SF_RUN[active_call]=$call_id
-        SF_RUN[active_outcome]=0
-        if ! sf_tool_preview "$call_id" "$tool_name" "$tool_input"; then
-          failure='cannot prepare tool activity'
-          return 1
-        fi
-        record=$(jq -c '{type:"_tool_activity",id,name,input} +
-          (if .user_text == "" then {} else {user_text} end)' <<<"$REPLY") || {
-          failure='cannot prepare tool activity'
-          return 1
-        }
-        sf_run_emit "$record"
-        SF_HOOK_CONTEXTS=()
-        if (( call_count > tool_limit )); then
-          if ! sf_tool_refused \
-              "tool call denied: per-response limit is $tool_limit" 126; then
-            failure=${SF_TOOL_ERROR:-cannot prepare denied tool result}
-            return 1
-          fi
-        else
-          if ! sf_hooks_pre_tool_use "$session_path" "$tool_name" "$call_id" "$tool_input"; then
-            failure=$SF_HOOK_ERROR
-            return 1
-          fi
-          hook_action=$reply[1]
-          hook_reason=$reply[2]
-          if [[ $hook_action == deny ]]; then
-            if ! sf_tool_refused "$hook_reason" 126; then
-              failure=${SF_TOOL_ERROR:-cannot prepare denied tool result}
-              return 1
-            fi
-          else
-            decision=''
-            denial_reason=''
-            sf_tool_needs_permission "$tool_name" "$bypass" "$bypass_reason_valid" \
-              "$harness_sandbox"
-            permission_status=$?
-            if (( permission_status == 0 )); then
-              sf_run_permission "$session_path" "$call_id" "$tool_name" "$tool_input" ||
-                permission_status=$?
-              case $permission_status in
-                0) decision=approved ;;
-                1) denial_reason=$SF_RUN[permission_reason] ;;
-                *)
-                  failure=$SF_RUN[permission_error]
-                  return 1
-                  ;;
-              esac
-            elif (( permission_status == 2 )); then
-              failure=$SF_TOOL_ERROR
-              return 1
-            fi
-            if ! sf_tool_execute "$call_id" "$tool_name" "$execution_input" "$bypass" \
-                "$harness_sandbox" "$decision" "$denial_reason" \
-                "$SF_SESSION[cwd]" "$max_capture" "$fence" "$config_dir" \
-                "$session_path" "$SF_ENTRY" "$SF_SESSION[runtime]"; then
-              failure=${SF_TOOL_ERROR:-shell tool execution failed}
-              return 1
-            fi
-          fi
-        fi
-        SF_RUN[active_outcome]=1
-        before_contexts=$(jq -nc '$ARGS.positional' --args -- "${SF_HOOK_CONTEXTS[@]}")
-        SF_HOOK_CONTEXTS=()
-        for state in "${SF_TOOL_STATE_RECORDS[@]}"; do
-          if ! sf_session_append "$session_path" "$state"; then
-            failure=$SF_SESSION_ERROR
-            return 1
-          fi
-          sf_run_emit "$state"
-        done
-        # Post hooks see the settled output before the call becomes durable, so a
-        # failure here still settles the call with the context accepted so far.
-        sf_hooks_post_tool_use "$session_path" "$call_id" "$tool_name" \
-          "$tool_input" "$SF_TOOL_OUTPUT" || failure=$SF_HOOK_ERROR
-        after_contexts=$(jq -nc '$ARGS.positional' --args -- "${SF_HOOK_CONTEXTS[@]}")
-        if ! sf_tool_settle "$call_id" "$tool_name" "$tool_input" \
-            "$SF_TOOL_OUTPUT" "$before_contexts" "$after_contexts"; then
-          failure=${SF_TOOL_ERROR:-cannot settle tool result}
-          return 1
-        fi
-        result=$REPLY
-        if ! sf_session_append "$session_path" "$result"; then
-          failure=$SF_SESSION_ERROR
-          return 1
-        fi
-        sf_run_emit "$result"
-        sf_run_finish_call
-        [[ -z $failure ]] || return 1
-      done
+      failure='turn orchestration is unavailable'
+      return 1
     done
   } always {
     trap - TERM

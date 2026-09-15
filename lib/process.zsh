@@ -2,10 +2,6 @@ emulate -R zsh
 setopt no_aliases no_bg_nice no_multios pipe_fail
 zmodload zsh/system
 
-typeset -g SF_PROCESS_CAPTURE_PID=''
-typeset -g SF_PROCESS_CAPTURE_GROUP_FILE=''
-typeset -gi SF_PROCESS_CAPTURE_INTERRUPTED=0
-
 sf_process_isolated_run() {
   emulate -L zsh
   setopt no_aliases no_bg_nice no_monitor no_multios
@@ -55,27 +51,6 @@ sf_process_isolated_command() {
   fi
 }
 
-# Sandboxes must expose the control pipe before capture creates it.
-sf_process_control_pipe() {
-  REPLY="$1/control.pipe"
-}
-
-sf_process_capture_stream() {
-  local pipe=$1 output=$2 chunk
-  integer limit=$3 fd
-  local LC_ALL=C
-
-  exec {fd}<"$pipe" || return
-  {
-    while sysread -i $fd -s 4096 chunk; do
-      print -rn -- "$chunk"
-    done
-  } | tail -c "$limit" >"$output"
-  local -a statuses=( $pipestatus )
-  exec {fd}<&-
-  (( statuses[1] == 0 && statuses[2] == 0 ))
-}
-
 sf_process_wait() {
   local pid=$1 group_file=$2 status_file=$3
   integer group=0 process_status=1
@@ -89,69 +64,6 @@ sf_process_wait() {
   fi
   REPLY=1
   return 1
-}
-
-# Capture at most one byte beyond each channel's configured limit.
-sf_process_capture() {
-  local input=$1 directory=$2 working=$3 mode=$4
-  integer max_capture=$5
-  shift 5
-  local stdout="$directory/stdout" stderr="$directory/stderr" control="$directory/control"
-  local stdout_pipe="$stdout.pipe" stderr_pipe="$stderr.pipe" control_pipe REPLY
-  local -a readers
-  sf_process_control_pipe "$directory"
-  control_pipe=$REPLY
-  local group_file="$directory/process.group" status_file="$directory/process.status"
-  local -a process_command
-  integer limit=$(( max_capture + 1 )) process_pid process_status reader_status=0 reader
-  setopt local_options no_err_exit no_monitor
-  SF_PROCESS_CAPTURE_PID=''
-  SF_PROCESS_CAPTURE_GROUP_FILE=''
-  SF_PROCESS_CAPTURE_INTERRUPTED=0
-
-  [[ $mode == (separate|merged) ]] || return 1
-  sf_process_isolated_command "$group_file" "$status_file" "$working" "$input" \
-    "$stdout_pipe" "$stderr_pipe" "$control_pipe" "$mode" "$@" || return 1
-  process_command=( "${reply[@]}" )
-  rm -f -- "$stdout" "$stderr" "$control" "$group_file" "$status_file" \
-    "$stdout_pipe" "$stderr_pipe" "$control_pipe"
-  mkfifo "$stdout_pipe" "$control_pipe" || return 1
-  if [[ $mode == separate ]]; then
-    mkfifo "$stderr_pipe" || return 1
-  else
-    : >"$stderr" || return 1
-  fi
-
-  sf_process_capture_stream "$stdout_pipe" "$stdout" $limit &
-  readers+=( $! )
-  sf_process_capture_stream "$control_pipe" "$control" $limit &
-  readers+=( $! )
-  if [[ $mode == separate ]]; then
-    sf_process_capture_stream "$stderr_pipe" "$stderr" $limit &
-    readers+=( $! )
-  fi
-  "${process_command[@]}" </dev/null >/dev/null 2>&1 &
-  process_pid=$!
-  SF_PROCESS_CAPTURE_PID=$process_pid
-  SF_PROCESS_CAPTURE_GROUP_FILE=$group_file
-  sf_process_wait "$process_pid" "$group_file" "$status_file" || true
-  process_status=$REPLY
-  SF_PROCESS_CAPTURE_PID=''
-  SF_PROCESS_CAPTURE_GROUP_FILE=''
-  # Kill readers because escaped descendants may retain capture pipes.
-  (( ! SF_PROCESS_CAPTURE_INTERRUPTED )) || kill -TERM $readers 2>/dev/null
-  for reader in $readers; do
-    wait $reader || reader_status=1
-  done
-  rm -f -- "$stdout_pipe" "$stderr_pipe" "$control_pipe" "$group_file" "$status_file"
-  (( ! SF_PROCESS_CAPTURE_INTERRUPTED )) || return 130
-  (( ! reader_status )) || return 1
-  reply=( "$process_status" "$stdout" "$stderr" "$control" )
-}
-
-sf_process_capture_stop() {
-  SF_PROCESS_CAPTURE_INTERRUPTED=1
-  sf_process_stop "$SF_PROCESS_CAPTURE_PID" "$SF_PROCESS_CAPTURE_GROUP_FILE"
 }
 
 sf_process_stop() {
