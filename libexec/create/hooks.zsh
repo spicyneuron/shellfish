@@ -7,15 +7,6 @@ sf_create_event() {
   (( ! SF_CREATE_JSONL )) || print -r -- "$1"
 }
 
-sf_create_hook_id() {
-  local maximum
-  maximum=$(printf '%s\n' "${SF_SESSION_RECORDS[@]:1}" | jq -Rs '
-    [split("\n")[] | fromjson? | select(.type == "hook_result") | .id | tonumber] |
-    max // 0
-  ') || return
-  REPLY=$(( maximum + 1 ))
-}
-
 sf_create_append() {
   sf_session_append "$1" "$2" || return
   sf_create_event "$2"
@@ -44,18 +35,13 @@ sf_create_start_hooks() {
     [[ -z $error ]] || break
     sf_hook_name "$command"
     name=$REPLY
-    sf_create_hook_id || { error='cannot allocate hook invocation ID'; break; }
+    sf_hook_next_id || { error='cannot allocate hook invocation ID'; break; }
     id=$REPLY
-    running=$(sf_jq -nr --arg template "$running" --arg name "$name" '
-      include "lib/render";
-      render_running($template;$name;"")
-    ') || { error="cannot render hook activity: $command"; break; }
-    activity=$(jq -cn --arg id "$id" --arg name "$name" --arg executable "$command" \
-      --arg running "$running" '
-        {type:"_hook_activity",hook:"session_start",id:$id,name:$name,input:"",
-         executable:$executable} +
-        (if $running == "" then {} else {user_text:$running} end)
-      ') || { error='cannot prepare hook activity'; break; }
+    sf_hook_activity session_start "$id" "$name" "$command" '""' "$running" || {
+      error="cannot prepare hook activity: $command"
+      break
+    }
+    activity=$REPLY
     sf_create_event "$activity" || { error='cannot emit hook activity'; break; }
     integer invoke_status=0
     sf_hook_invoke "$session" "$SF_SESSION[runtime]" "$component" \
@@ -73,15 +59,11 @@ sf_create_start_hooks() {
       sf_create_append "$session" "$record" || { error=$SF_SESSION_ERROR; break 2; }
     done
     if jq -e '.exit_code != 0 or .stdout != "" or .stderr != ""' <<<"$outcome" >/dev/null; then
-      record=$(sf_jq -cn --arg id "$id" --arg name "$name" --arg executable "$command" \
-        --argjson outcome "$outcome" '
-          include "lib/session/read";
-          ({type:"hook_result",lifecycle:"session_start",id:$id,name:$name,input:"",
-            executable:$executable,exit_code:$outcome.exit_code} +
-           (if $outcome.stderr == "" then {} else {user_text:$outcome.stderr} end) +
-           (if $outcome.stdout == "" then {} else {model_text:$outcome.stdout} end)) as $result |
-          if $result | canonical_hook_result then $result else error("invalid result") end
-        ') || { error="hook script returned invalid result: $command"; break; }
+      sf_hook_result session_start "$id" "$name" "$command" '""' "$outcome" || {
+        error="hook script returned invalid result: $command"
+        break
+      }
+      record=$REPLY
       sf_create_append "$session" "$record" || { error=$SF_SESSION_ERROR; break; }
     fi
     if [[ -n $(jq -r '.control_error // empty' <<<"$outcome") ]]; then

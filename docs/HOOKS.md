@@ -142,7 +142,7 @@ Runs before the user record is committed.
 - **stdin:** exact submitted prompt
 - **stdout:** durable model context immediately before the prompt
 - **stderr:** durable user-only output
-- **fd 3:** state, optional `{"context":{"prompt":"...","status":0}}` metadata with nonempty stdout where status is 0–255, and with exit 11, `{"action":"handoff","argv":[...]}` containing a complete command or `{"action":"session_update","patch":{...}}`
+- **fd 3:** state, and with exit 11, `{"action":"handoff","argv":[...]}` containing a complete command or `{"action":"session_update","patch":{...}}`
 - **Exit 0:** submit the literal prompt
 - **Exit 10:** block submission and continue the hook chain
 - **Exit 11:** block submission, halt the chain, and optionally apply its action

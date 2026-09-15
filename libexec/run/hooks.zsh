@@ -13,42 +13,6 @@ sf_run_append() {
   sf_run_emit "$2"
 }
 
-sf_run_hook_id() {
-  local maximum
-  maximum=$(printf '%s\n' "${SF_SESSION_RECORDS[@]:1}" | jq -Rs '
-    [split("\n")[] | fromjson? | select(.type == "hook_result") | .id | tonumber] |
-    max // 0
-  ') || return
-  REPLY=$(( maximum + 1 ))
-}
-
-sf_run_hook_activity() {
-  local lifecycle=$1 id=$2 name=$3 executable=$4 input=$5 template=$6 running
-  running=$(sf_jq -nr --arg template "$template" --arg name "$name" --argjson input "$input" '
-    include "lib/render";
-    render_running($template;$name;$input)
-  ') || return
-  REPLY=$(jq -cn --arg lifecycle "$lifecycle" --arg id "$id" --arg name "$name" \
-    --arg executable "$executable" --argjson input "$input" --arg running "$running" '
-      {type:"_hook_activity",hook:$lifecycle,id:$id,name:$name,input:$input,
-       executable:$executable} +
-      (if $running == "" then {} else {user_text:$running} end)
-    ')
-}
-
-sf_run_hook_record() {
-  local lifecycle=$1 id=$2 name=$3 executable=$4 input=$5 outcome=$6
-  REPLY=$(sf_jq -cn --arg lifecycle "$lifecycle" --arg id "$id" --arg name "$name" \
-    --arg executable "$executable" --argjson input "$input" --argjson outcome "$outcome" '
-      include "lib/session/read";
-      ({type:"hook_result",lifecycle:$lifecycle,id:$id,name:$name,input:$input,
-        executable:$executable,exit_code:$outcome.exit_code} +
-       (if $outcome.stderr == "" then {} else {user_text:$outcome.stderr} end) +
-       (if $outcome.stdout == "" then {} else {model_text:$outcome.stdout} end)) as $result |
-      if $result | canonical_hook_result then $result else error("invalid result") end
-    ' 2>/dev/null)
-}
-
 sf_run_hook_control() {
   local lifecycle=$1 outcome=$2
   REPLY=$(jq -c --arg lifecycle "$lifecycle" '
@@ -62,12 +26,7 @@ sf_run_hook_control() {
             ($control.action == "session_update" and ($control | keys) == ["action","patch"] and
              ($control.patch | type == "object"))) then $control
         else error("invalid control") end
-      elif $control == {} or
-          (($control | keys) == ["context"] and
-           ($control.context | type == "object" and keys == ["prompt","status"] and
-            (.prompt | type == "string") and
-            (.status | type == "number" and floor == . and . >= 0 and . <= 255)))
-      then $control else error("invalid control") end
+      elif $control == {} then $control else error("invalid control") end
     elif $lifecycle == "permission_request" and $outcome.exit_code == 11 then
       if ($control.action == "allow" and ($control | keys) == ["action"]) or
           ($control.action == "deny" and
@@ -142,9 +101,9 @@ sf_run_hooks() {
     command=$(jq -r '.command' <<<"$component") || { error="cannot inspect $lifecycle hook"; break; }
     sf_hook_name "$command"
     name=$REPLY
-    sf_run_hook_id || { error='cannot allocate hook invocation ID'; break; }
+    sf_hook_next_id || { error='cannot allocate hook invocation ID'; break; }
     id=$REPLY
-    sf_run_hook_activity "$lifecycle" "$id" "$name" "$command" "$input_json" \
+    sf_hook_activity "$lifecycle" "$id" "$name" "$command" "$input_json" \
       "$(jq -r '.running' <<<"$component")" || { error='cannot prepare hook activity'; break; }
     activity=$REPLY
     sf_run_emit "$activity" || { error='cannot emit hook activity'; break; }
@@ -166,7 +125,7 @@ sf_run_hooks() {
       sf_run_append "$session" "$record" || { error=$SF_RUN_HOOK_ERROR; break 2; }
     done
     if jq -e '.exit_code != 0 or .stdout != "" or .stderr != ""' <<<"$outcome" >/dev/null; then
-      sf_run_hook_record "$lifecycle" "$id" "$name" "$command" "$input_json" "$outcome" || {
+      sf_hook_result "$lifecycle" "$id" "$name" "$command" "$input_json" "$outcome" || {
         error="hook script returned invalid result: $command"
         break
       }

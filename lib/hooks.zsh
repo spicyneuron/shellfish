@@ -19,6 +19,42 @@ sf_hook_name() {
   REPLY=${name:t}
 }
 
+sf_hook_next_id() {
+  local maximum
+  maximum=$(printf '%s\n' "${SF_SESSION_RECORDS[@]:1}" | jq -Rs '
+    [split("\n")[] | fromjson? | select(.type == "hook_result") | .id | tonumber] |
+    max // 0
+  ') || return
+  REPLY=$(( maximum + 1 ))
+}
+
+sf_hook_activity() {
+  local lifecycle=$1 id=$2 name=$3 executable=$4 input=$5 template=$6 running
+  running=$(sf_jq -nr --arg template "$template" --arg name "$name" --argjson input "$input" '
+    include "lib/render";
+    render_running($template;$name;$input)
+  ') || return
+  REPLY=$(jq -cn --arg lifecycle "$lifecycle" --arg id "$id" --arg name "$name" \
+    --arg executable "$executable" --argjson input "$input" --arg running "$running" '
+      {type:"_hook_activity",hook:$lifecycle,id:$id,name:$name,input:$input,
+       executable:$executable} +
+      (if $running == "" then {} else {user_text:$running} end)
+    ')
+}
+
+sf_hook_result() {
+  local lifecycle=$1 id=$2 name=$3 executable=$4 input=$5 outcome=$6
+  REPLY=$(sf_jq -cn --arg lifecycle "$lifecycle" --arg id "$id" --arg name "$name" \
+    --arg executable "$executable" --argjson input "$input" --argjson outcome "$outcome" '
+      include "lib/session/read";
+      ({type:"hook_result",lifecycle:$lifecycle,id:$id,name:$name,input:$input,
+        executable:$executable,exit_code:$outcome.exit_code} +
+       (if $outcome.stderr == "" then {} else {user_text:$outcome.stderr} end) +
+       (if $outcome.stdout == "" then {} else {model_text:$outcome.stdout} end)) as $result |
+      if $result | canonical_hook_result then $result else error("invalid result") end
+    ' 2>/dev/null)
+}
+
 # Run one hook command and return its captured channels plus decoded state.
 sf_hook_invoke() {
   setopt local_options no_err_exit
