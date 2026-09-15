@@ -28,14 +28,6 @@ assert_equal $'unknown\ndenied\nexit 127' \
   "$(render_channel unknown '{"value":1}' \
     '{"stdout":"","stderr":"denied","exit_code":127}' user_after)"
 
-# A leading name is highlightable; anything else is not.
-assert_equal 0 "$(jq -nr -L "$ROOT" '
-  include "libexec/tui/display-fields";
-  {name:"shell",user_text:"shell · ok"} | execution_offset')"
-assert_equal -1 "$(jq -nr -L "$ROOT" '
-  include "libexec/tui/display-fields";
-  {name:"shell",user_text:"· ok"} | execution_offset')"
-
 # Decode replay fields.
 typeset replay
 replay=$({

@@ -40,19 +40,18 @@ sf_tui_safe() {
 }
 
 sf_tui_format_execution() {
-  integer index=$1 columns=$2 identity_start=$6 live=$7 spinner=$8
-  integer row limit offset chrome total hidden=0
-  local glyph=$3 kind=$4 script=$5 body=$9 preview=${10:-full} text
+  integer index=$1 columns=$2 live=$6 spinner=$7
+  integer row limit chrome total hidden=0
+  local glyph=$3 kind=$4 name=$5 body=$8 preview=${9:-full} text
   local base_style=${SF_PRESENT_STYLE[$kind]-} rail_style=${SF_PRESENT_STYLE[divider]-}
   local -a projected=() spans=()
 
   sf_tui_format_rule $index $columns
   chrome=${#SF_FORMAT_ROWS}
   SF_PRESENT_HIGHLIGHT_SPANS=()
-  offset=$(( identity_start - SF_FORMAT_TRIM_LEADING ))
-  if (( offset >= 0 && offset + ${#script} <= ${#body} )); then
-    SF_PRESENT_HIGHLIGHT_SPANS+=( $offset ${#script} bold )
-  fi
+  # Emphasize a leading name only; never locate one mid-text.
+  [[ -z $name || $body != $name* ]] ||
+    SF_PRESENT_HIGHLIGHT_SPANS+=( 0 ${#name} bold )
   sf_tui_wrap $columns "$body" '│ ' "${(@)SF_PRESENT_HIGHLIGHT_SPANS}" || return 1
   total=${#SF_WRAP_ROWS}
   limit=$total

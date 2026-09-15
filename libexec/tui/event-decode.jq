@@ -21,10 +21,8 @@ def event_fields:
       (.hook as $hook | hook_names | index($hook) != null) and
       (.id | identifier) and (.name | type == "string" and length > 0) and
       (.input | type == "string" or type == "object") then
-    .name as $name | (.user_text // "") as $text |
-    if $text == "" then empty
-    else ["hook_call", .hook, (.executable // .name), $text,
-      (if $text | startswith($name) then "0" else "-1" end)] end
+    if (.user_text // "") == "" then empty
+    else ["hook_call", .id, .user_text, .name, "notice"] end
   elif . == {type:"_assistant_start"} then
     ["assistant_start"]
   elif .type == "_assistant_end" and keys == ["stop", "type"] and
@@ -62,12 +60,11 @@ def event_fields:
       (.type == "system" and canonical_session_record) then
     empty
   elif canonical_tool_activity then
-    ["tool_call", .id, (.user_text // ""), .name, execution_offset]
+    ["tool_call", .id, (.user_text // ""), .name, "tool"]
   elif canonical_tool_result then
-    ["tool_result", .id, (.user_text // ""), .name, execution_offset]
+    ["tool_result", .id, (.user_text // ""), .name, "tool"]
   elif canonical_hook_result then
-    ["hook_result", .hook, (.executable // .name), (.user_text // ""),
-      execution_offset, (if (.model_text // "") == "" then "0" else "1" end)]
+    ["hook_result", .id, (.user_text // ""), .name, hook_display_class]
   elif canonical_user_message or canonical_assistant_message or
       (.type == "error" and canonical_session_record) then
     (select(canonical_assistant_message and has("usage")) | .usage |

@@ -47,8 +47,8 @@ sf_tui_format_entry() {
     message) sf_tui_format_message $index $columns ;;
     reasoning) sf_tui_format_reasoning $index $columns ;;
     activity|hook|error)
-      sf_tui_format_hook $index $columns ;;
-    tool) sf_tui_format_tool $index $columns ;;
+      sf_tui_format_notice $index $columns ;;
+    execution) sf_tui_format_execution_block $index $columns ;;
     *) return 1 ;;
   esac
 }

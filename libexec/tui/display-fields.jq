@@ -20,10 +20,10 @@ def turn_usage_fields($context_window):
       else "" end)),
    (if has("reasoning_tokens") then (.reasoning_tokens | tostring) else "" end)];
 
-# The client may emphasize a leading name; it never locates one mid-text.
-def execution_offset:
-  . as $record |
-  if ($record.user_text // "") | startswith($record.name) then "0" else "-1" end;
+# Context feeds the model and is reference material worth clamping; a notice
+# speaks only to the reader, so it is shown whole.
+def hook_display_class:
+  if (.model_text // "") == "" then "notice" else "context" end;
 
 def display_nul_safe:
   gsub("\u0000"; "�");

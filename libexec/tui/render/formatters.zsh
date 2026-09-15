@@ -192,18 +192,18 @@ sf_tui_event() {
   integer index=${#SF_PRESENT_KIND}
   case $type in
     user)
-      sf_tui_hook_interrupt || return 1
+      sf_tui_live_interrupt || return 1
       sf_tui_activity_retract || return 1
       sf_tui_message_append user "$first" || return 1
       ;;
     system)
-      sf_tui_hook_interrupt || return 1
+      sf_tui_live_interrupt || return 1
       sf_tui_activity_retract || return 1
       sf_tui_message_append system "$first" || return 1
       ;;
     assistant_start)
       SF_PRESENT_ASSISTANT_INDEX=''
-      sf_tui_hook_interrupt || return 1
+      sf_tui_live_interrupt || return 1
       sf_tui_activity_retract || return 1
       sf_tui_message_append agent '' live || return 1
       ;;
@@ -235,31 +235,29 @@ sf_tui_event() {
       sf_tui_activity_stop || return 1
       ;;
     hook_call)
-      sf_tui_hook_call "$first" "$second" "$third" "$fourth" || return 1
+      sf_tui_execution_call "$first" "$second" "$third" "$fourth" || return 1
       ;;
     hook_result)
-      sf_tui_hook_result "$first" "$second" "$third" "$fourth" "$fifth" || return 1
+      sf_tui_execution_settle "$first" "$second" "$third" "$fourth" || return 1
       ;;
     error)
       if (( SF_PRESENT_LIVE == index && index > 0 )); then
-        case $SF_PRESENT_KIND[index] in
-          tool) sf_tui_tool_abandon || return 1 ;;
-          hook) sf_tui_hook_abandon || return 1 ;;
-        esac
+        [[ $SF_PRESENT_KIND[index] != execution ]] ||
+          sf_tui_execution_abandon || return 1
       fi
       sf_tui_error_append "$first" "$second" || return 1
       ;;
     tool_call)
-      sf_tui_tool_call "$first" "$second" "$third" "$fourth" || return 1
+      sf_tui_execution_open "$first" "$third" "$second" "$fourth" || return 1
       ;;
     tool_result)
-      sf_tui_tool_result "$first" "$second" "$third" "$fourth" || return 1
+      sf_tui_execution_settle "$first" "$second" "$third" "$fourth" || return 1
       ;;
     tool_permission)
-      sf_tui_tool_permission || return 1
+      sf_tui_execution_permission || return 1
       ;;
     tool_permission_clear)
-      sf_tui_tool_permission_clear || return 1
+      sf_tui_execution_permission_clear || return 1
       ;;
     *) return 1 ;;
   esac

@@ -30,14 +30,14 @@ assistant_end||||||
 tool_result|call_1|read_file
 contents
 second line
-exit 0|read_file|0||
+exit 0|read_file|tool||
 tool_result|call_2|shell
 failed${esc}[31m
-exit 1|shell|0||
+exit 1|shell|tool||
 assistant_start||||||
 assistant_message_delta|0|Done||||
 assistant_end||||||
-hook_result|session_start|/hooks/test/run||-1|1|" "$REPLY"
+hook_result|h1_1||test|context||" "$REPLY"
 
 # The header replaces stale runtime state.
 SF_PRESENT_IDENTITY=stale/model

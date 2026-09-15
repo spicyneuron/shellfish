@@ -29,7 +29,7 @@ order=$(print -r -- \
   jq -jRs -L "$ROOT" --argjson runtime '{}' \
     -f "$ROOT/libexec/tui/event-decode.jq" |
   tr '\0' '\n' | sed '/^$/d' | paste -sd, -)
-assert_equal 'tool_call,call_1,shell,true,shell,0,batch_ok' "$order"
+assert_equal 'tool_call,call_1,shell,true,shell,tool,batch_ok' "$order"
 
 # Format usage with context.
 typeset usage
@@ -84,41 +84,31 @@ order=$(print -r -- \
   jq -jRs -L "$ROOT" --argjson runtime '{}' \
     -f "$ROOT/libexec/tui/event-decode.jq" |
   tr '\0' '\n' | sed '/^$/d' | paste -sd, -)
-assert_equal 'tool_call,call_2,read_file · outside.txt,read_file,0,batch_ok' "$order"
+assert_equal 'tool_call,call_2,read_file · outside.txt,read_file,tool,batch_ok' "$order"
 
-# Hook results carry ready text; a leading name is highlightable.
+# Hook results and activity decode to id, ready text, and name alone.
 order=$(print -r -- \
     '{"type":"hook_result","hook":"stop","id":"h1_1","name":"check","input":"answer","executable":"/hooks/check/run","user_text":"check · body (10)","model_text":"body","exit_code":10}' |
   jq -jRs -L "$ROOT" --argjson runtime '{}' \
     -f "$ROOT/libexec/tui/event-decode.jq" |
   tr '\0' '\n' | sed '/^$/d' | paste -sd, -)
-assert_equal 'hook_result,stop,/hooks/check/run,check · body (10),0,1,batch_ok' "$order"
+assert_equal 'hook_result,h1_1,check · body (10),check,context,batch_ok' "$order"
 
-# Text that does not begin with the name is not highlighted, and absent model
-# text marks the result model-invisible.
-order=$(print -r -- \
-    '{"type":"hook_result","hook":"stop","id":"h1_2","name":"check","input":"answer","executable":"/hooks/check/run","user_text":"· body (0)","exit_code":0}' |
-  jq -jRs -L "$ROOT" --argjson runtime '{}' \
-    -f "$ROOT/libexec/tui/event-decode.jq" |
-  tr '\0' '\n' | sed '/^$/d' | paste -sd, -)
-assert_equal 'hook_result,stop,/hooks/check/run,· body (0),-1,0,batch_ok' "$order"
-
-# A result without user text still settles its activity, and an unresolved
-# command falls back to the logical name.
+# A result with no user text still settles its activity.
 order=$(print -r -- \
     '{"type":"hook_result","hook":"session_start","id":"h1_3","name":"probe","input":"","model_text":"context","exit_code":0}' |
   jq -jRs -L "$ROOT" --argjson runtime '{}' \
     -f "$ROOT/libexec/tui/event-decode.jq" |
   tr '\0' '\n' | sed '/^$/d' | paste -sd, -)
-assert_equal 'hook_result,session_start,probe,-1,1,batch_ok' "$order"
+assert_equal 'hook_result,h1_3,probe,context,batch_ok' "$order"
 
-# Hook activity reuses the same ready text, and silent activity is not shown.
+# Silent activity is not shown at all.
 order=$(print -r -- \
     '{"type":"_hook_activity","hook":"stop","id":"h1_4","name":"check","input":"answer","executable":"/hooks/check/run","user_text":"check · answer"}' |
   jq -jRs -L "$ROOT" --argjson runtime '{}' \
     -f "$ROOT/libexec/tui/event-decode.jq" |
   tr '\0' '\n' | sed '/^$/d' | paste -sd, -)
-assert_equal 'hook_call,stop,/hooks/check/run,check · answer,0,batch_ok' "$order"
+assert_equal 'hook_call,h1_4,check · answer,check,notice,batch_ok' "$order"
 order=$(print -r -- \
     '{"type":"_hook_activity","hook":"stop","id":"h1_5","name":"check","input":"answer","executable":"/hooks/check/run"}' |
   jq -jRs -L "$ROOT" --argjson runtime '{}' \
@@ -140,7 +130,7 @@ order=$(print -r -- \
   jq -jRs -L "$ROOT" --argjson runtime '{}' \
     -f "$ROOT/libexec/tui/event-decode.jq" |
   tr '\0' '\n' | sed '/^$/d' | paste -sd, -)
-assert_equal 'tool_result,call_2,edit_file · notes.txt,@@ -1 +1 @@,-old,+new,edit_file,0,batch_ok' "$order"
+assert_equal 'tool_result,call_2,edit_file · notes.txt,@@ -1 +1 @@,-old,+new,edit_file,tool,batch_ok' "$order"
 
 # Decode handoffs.
 typeset handoff

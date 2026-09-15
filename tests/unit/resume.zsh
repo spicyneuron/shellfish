@@ -29,7 +29,7 @@ print -r -- '{"type":"system","content":"Instructions"}' >>"$s_system"
 
 # Hook context preview.
 make_header >"$s_context"
-print -r -- '{"type":"hook_result","hook":"session_start","id":"h1_1","name":"test","input":"","executable":"/hooks/test/run","model_text":"data","exit_code":0}' >>"$s_context"
+print -r -- '{"type":"hook_result","hook":"session_start","id":"h1_1","name":"test","input":"","executable":"/hooks/test/run","user_text":"test · loaded","model_text":"data","exit_code":0}' >>"$s_context"
 
 # User and torn previews.
 make_header >"$s_user"
@@ -75,7 +75,7 @@ sf_resume_load "$s_empty" "$s_system" "$s_context" "$s_user" "$s_torn" "$s_assis
 assert_equal custom/claude-3 "$SF_RESUME_PAIRS[1]"
 assert_equal '(empty session)' "$SF_RESUME_PREVIEWS[1]"
 assert_equal SYSTEM "$SF_RESUME_PREVIEWS[2]"
-assert_equal SESSION_START "$SF_RESUME_PREVIEWS[3]"
+assert_equal 'test · loaded' "$SF_RESUME_PREVIEWS[3]"
 assert_equal 'list files' "$SF_RESUME_PREVIEWS[4]"
 assert_equal '(unreadable)' "$SF_RESUME_PREVIEWS[5]"
 assert_equal 'here they are' "$SF_RESUME_PREVIEWS[6]"

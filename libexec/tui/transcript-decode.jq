@@ -28,10 +28,9 @@ else
     ["session_update", ($records[0] | {backend, harness, profile} | tojson)],
     ($records[1:][] |
       if .type == "tool_result" then
-        ["tool_result", .id, (.user_text // ""), .name, execution_offset]
+        ["tool_result", .id, (.user_text // ""), .name, "tool"]
       elif .type == "hook_result" then
-        ["hook_result", .hook, (.executable // .name), (.user_text // ""),
-          execution_offset, (if (.model_text // "") == "" then "0" else "1" end)]
+        ["hook_result", .id, (.user_text // ""), .name, hook_display_class]
       else {record:.,replay:true} | durable_display_fields end),
     ([$records[1:][] | select(canonical_assistant_message and has("usage"))] |
       last? | select(. != null) | .usage |

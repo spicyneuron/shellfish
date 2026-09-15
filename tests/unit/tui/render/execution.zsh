@@ -3,8 +3,8 @@
 source "${0:A:h:h:h:h}/_helpers.zsh"
 sf_test_source libexec/tui/render/formatters.zsh libexec/tui/render/highlights.zsh \
   libexec/tui/render/text.zsh libexec/tui/render/wrap.zsh \
-  libexec/tui/render/messages.zsh libexec/tui/render/hooks.zsh \
-  libexec/tui/render/tools.zsh libexec/tui/render/terminal.zsh \
+  libexec/tui/render/messages.zsh libexec/tui/render/notices.zsh \
+  libexec/tui/render/execution.zsh libexec/tui/render/terminal.zsh \
   libexec/tui/render/view.zsh
 
 typeset -gi COLUMNS=80 LINES=10
@@ -30,12 +30,12 @@ sf_tui_event activity_start
 sf_tui_event assistant_start
 sf_tui_event assistant_tool_call_delta 0
 sf_tui_event assistant_end
-sf_tui_event tool_call call_1 'shell · make test' shell 0
+sf_tui_event tool_call call_1 'shell · make test' shell tool
 view
 assert_tail $'⛭ shell · make test\n╰ ⠃'
 assert_equal 0 "$SF_PRESENT_SAFE_ROWS"
 
-sf_tui_event tool_result call_1 $'shell · failed\ndetail\nexit 1' shell 0
+sf_tui_event tool_result call_1 $'shell · failed\ndetail\nexit 1' shell tool
 view
 assert_tail $'⛭ shell · failed\n│ detail\n╰ exit 1\n\n⠃'
 assert_equal 5 "$SF_PRESENT_SAFE_ROWS"
@@ -44,35 +44,35 @@ sf_tui_event activity_stop
 # Lifecycle hook activity borrows the live tool block until the tool settles it.
 sf_tui_reset
 sf_tui_event activity_start
-sf_tui_event tool_call hooked $'shell\nmake test' shell 0
-sf_tui_event hook_call pre_tool_use /hooks/guard/run $'guard\nchecking' 0
+sf_tui_event tool_call hooked $'shell\nmake test' shell tool
+sf_tui_event hook_call h1 $'guard\nchecking' guard notice
 view
 assert_tail $'⛭ guard\n│ checking\n╰ ⠃'
-sf_tui_event hook_call pre_tool_use /hooks/guard/run $'guard\napproved' 0
+sf_tui_event hook_call h1 $'guard\napproved' guard notice
 view
 assert_tail $'⛭ guard\n│ approved\n╰ ⠃'
-sf_tui_event tool_result hooked $'shell\nmake test\ndone' shell 0
+sf_tui_event tool_result hooked $'shell\nmake test\ndone' shell tool
 view
 assert_tail $'⛭ shell\n│ make test\n╰ done\n\n⠃'
 sf_tui_event activity_stop
 
 # A queued cancellation has no running activity, but its result is still complete.
 sf_tui_reset
-sf_tui_event tool_result queued 'shell · cancelled' shell 0
+sf_tui_event tool_result queued 'shell · cancelled' shell tool
 view
 assert_tail $'⛭ shell · cancelled\n╰'
 
 # Permission hides only the live spinner; normal rendering remains intact.
 sf_tui_reset
 sf_tui_event activity_start
-sf_tui_event tool_call permission $'shell · pwd\nwaiting' shell 0
+sf_tui_event tool_call permission $'shell · pwd\nwaiting' shell tool
 sf_tui_event tool_permission
 view
 assert_tail $'⛭ shell · pwd\n│ waiting'
 sf_tui_event tool_permission_clear
 view
 assert_tail $'⛭ shell · pwd\n│ waiting\n╰ ⠃'
-sf_tui_event tool_result permission 'shell · sandbox bypass denied' shell 0
+sf_tui_event tool_result permission 'shell · sandbox bypass denied' shell tool
 view
 assert_tail $'⛭ shell · sandbox bypass denied\n╰\n\n⠃'
 sf_tui_event activity_stop
@@ -82,8 +82,8 @@ sf_tui_reset
 SF_PRESENT_STYLE=( tool tool divider rail
   'syntax.added' 'fg=green,bg=darkgreen'
   'syntax.removed' 'fg=red,bg=darkred' )
-sf_tui_event tool_call diff 'edit_file · path' edit_file 0
-sf_tui_event tool_result diff $'edit_file · path\n-old\n+new' edit_file 0
+sf_tui_event tool_call diff 'edit_file · path' edit_file tool
+sf_tui_event tool_result diff $'edit_file · path\n-old\n+new' edit_file tool
 view 20
 assert_tail $'⛭ edit_file · path\n│ -old\n╰ +new'
 ! has_style 'fg=red,bg=darkred' || fail 'tool text received diff highlighting'
@@ -92,7 +92,7 @@ SF_PRESENT_STYLE=()
 
 # Turn failures settle pending results.
 sf_tui_reset
-sf_tui_event tool_call abandoned 'shell · run' shell 0
+sf_tui_event tool_call abandoned 'shell · run' shell tool
 sf_tui_event error Failed broken end
 view
 assert_tail $'⛭ shell · run\n╰\n\n✕ Failed\n  broken'
@@ -100,8 +100,8 @@ assert_tail $'⛭ shell · run\n╰\n\n✕ Failed\n  broken'
 # Settled tools taller than the terminal budget drain in source order.
 sf_tui_reset
 sf_tui_terminal_reset
-sf_tui_event tool_call tall 'shell · one' shell 0
-sf_tui_event tool_result tall $'shell · one\ntwo\nthree\nfour\nfive' shell 0
+sf_tui_event tool_call tall 'shell · one' shell tool
+sf_tui_event tool_result tall $'shell · one\ntwo\nthree\nfour\nfive' shell tool
 typeset drained=''
 integer batch
 for batch in 1 2 3; do
