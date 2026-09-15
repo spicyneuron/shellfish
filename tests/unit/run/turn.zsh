@@ -32,7 +32,7 @@ cat >"$backend" <<'ZSH'
 #!/usr/bin/env zsh
 request=$(cat)
 if jq -e '.messages | any(.type == "tool_result")' <<<"$request" >/dev/null; then
-  jq -e --arg order "$TOOL_ORDER" '
+  jq -e '
     .messages[-4:] == [
       {type:"tool_call",id:"call_1",name:"ordered",input:{value:"first"}},
       {type:"tool_result",call_id:"call_1",name:"ordered",content:"first\nexit 0",exit_code:0},
@@ -59,7 +59,7 @@ print -rn -- "$value"
 ZSH
 chmod +x "$backend" "$tool"
 SF_TEST_RUNTIME=$(jq -c --arg backend "$backend" --arg tool "$tool" '
-  .backend.command=$backend |
+  .backend.command=$backend | .backend.environment=["TOOL_ORDER"] |
   .harness.tools=[{
     name:"ordered",command:$tool,settings:null,
     manifest:{
@@ -72,6 +72,7 @@ SF_TEST_RUNTIME=$(jq -c --arg backend "$backend" --arg tool "$tool" '
         model:"${output.stdout}${output.stderr}\nexit ${output.exit_code}",
         permission:"${input}"
       },
+      environment:["TOOL_ORDER"],
       sandbox:false
     }
   }]

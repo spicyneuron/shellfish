@@ -157,7 +157,7 @@ ZSH
 chmod +x "$stop_backend" "$stop_hook"
 export STOP_INPUT=$stop_input REQUEST_COUNT=$request_count
 SF_TEST_RUNTIME=$(jq -c --arg backend "$stop_backend" --arg hook "$stop_hook" '
-  .backend.command=$backend |
+  .backend.command=$backend | .backend.environment=["REQUEST_COUNT"] |
   .harness.user_prompt_submit=[] |
   .harness.stop=[{command:$hook,environment:["STOP_INPUT"]}]
 ' <<<"$SF_TEST_RUNTIME")
