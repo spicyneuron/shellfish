@@ -145,3 +145,24 @@ print -rn -- '{"type":"user"' >>"$session"
 sf_session_begin_turn "$session"
 [[ $(cat "$session") == "$before" ]]
 sf_session_reset
+
+# Reopening settles unresolved calls as unknown outcomes and closes the turn.
+typeset unresolved="$tmp/unresolved.jsonl"
+cp "$SF_TEST_SESSIONS/header-only.jsonl" "$unresolved"
+print -rl -- \
+  '{"type":"user","content":[{"type":"text","text":"run"}]}' \
+  '{"type":"assistant","stop":"tool_calls","content":[{"type":"tool_call","id":"call_1","name":"shell","input":{"command":"ls"}},{"type":"tool_call","id":"call_2","name":"shell","input":{"command":"pwd"}}]}' \
+  '{"type":"tool_result","id":"call_1","name":"shell","input":{"command":"ls"},"exit_code":0,"model_text":"out"}' \
+  >>"$unresolved"
+sf_session_begin_turn "$unresolved"
+print -r -- "$REPLY" | jq -se '. == [
+  {type:"tool_result",id:"call_2",name:"shell",input:{command:"pwd"},exit_code:126,
+   user_text:"tool call outcome unknown",model_text:"tool call outcome unknown"},
+  {type:"error",user_text:"Turn interrupted."}
+]' >/dev/null || fail 'reopening did not close the turn with fixed outcomes'
+(( ${#SF_SESSION_RECORDS} == 6 )) || fail 'recovery did not append to the durable view'
+sf_session_reset
+jq -e -s '.[3].model_text == "out"' "$unresolved" >/dev/null ||
+  fail 'recovery rewrote a known outcome'
+tail -n +2 "$unresolved" | jq -L "$ROOT" -sce 'include "lib/session/read"; session_load' \
+  >/dev/null || fail 'recovery left an invalid transcript'
