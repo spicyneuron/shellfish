@@ -64,7 +64,7 @@ sf_request_run() {
   SF_REQUEST[group_file]=$group_file
   print -r -- "$request" >"$input_file" && mkfifo "$output_pipe" &&
     sf_process_isolated_command "$group_file" "$status_file" "$PWD" "$input_file" \
-      "$output_pipe" "$error_file" /dev/null separate \
+      "$output_pipe" "$error_file" /dev/null \
       "${environment[@]}" "$command" || {
     rm -rf -- "$directory"
     SF_REQUEST[directory]=''
