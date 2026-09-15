@@ -156,9 +156,12 @@ sf_session_project() {
   SF_HOOK_COUNTS=()
   loaded=$(printf '%s\n' "${SF_SESSION_RECORDS[@]}" | sf_jq -jes '
     include "lib/runtime/schema";
+    include "lib/session/read";
     def field: ., "\u0000";
     select(length >= 1) |
     select(.[0] | canonical_session_header(1)) |
+    # Loading validates the transcript; the fields below project the header.
+    (.[1:] | session_load) as $durable |
     (.[0] | del(.type, .format_version, .cwd, .created) | tojson | field),
     (.[0].cwd | field),
     (.[0].profile.request.model | field),
@@ -292,12 +295,47 @@ sf_session_update() {
   REPLY=1
 }
 
-# Repair torn tails before rereading. Turn closure returns with the reader.
-sf_session_resync_turn() {
-  local session_path=$1
+# Requires a freshly read session and reports appended records in REPLY. An
+# unfinished turn settles its unresolved calls with fixed text, then closes.
+# A failed turn closes even where the durable view already reads as idle.
+sf_session_recover_turn() {
+  local session_path=$1 user_text=${2:-Turn interrupted.} closing record recovered=''
+  local known=${4:-[]}
+  integer failed=${3:-0}
   REPLY=''
+  closing=$(printf '%s\n' "${SF_SESSION_RECORDS[@]:1}" |
+    sf_jq -sc --arg user_text "$user_text" --argjson failed "$failed" \
+      --argjson known "$known" '
+      include "lib/session/read";
+      session_run |
+      select(.next != "user" or $failed != 0) |
+      (.calls[] as $call |
+        ([$known[] | select(.id == $call.id and .name == $call.name and
+          .input == $call.input)][0] //
+          ($call | {type:"tool_result", id, name, input, exit_code:126,
+            user_text:"tool call outcome unknown",
+            model_text:"tool call outcome unknown"}))),
+      {type:"error", user_text:$user_text}
+    ') || {
+    sf_session_fail "cannot close the interrupted turn: $session_path"
+    return
+  }
+  for record in ${(f)closing}; do
+    sf_session_append "$session_path" "$record" || return
+    [[ -z $recovered ]] || recovered+=$'\n'
+    recovered+=$record
+  done
+  REPLY=$recovered
+}
+
+# Repair torn tails before rereading; close the turn from the durable view.
+sf_session_resync_turn() {
+  local session_path=$1 user_text=${2-}
+  local known=${4:-[]}
+  integer failed=${3:-0}
   sf_session_repair_tail "$session_path" || return
-  sf_session_read "$session_path"
+  sf_session_read "$session_path" || return
+  sf_session_recover_turn "$session_path" "$user_text" "$failed" "$known"
 }
 
 sf_session_begin_turn() {

@@ -45,14 +45,15 @@ EOF
 assert_usage() {
   jq -e -s -L "$ROOT" '
     include "lib/runtime/schema";
+    include "lib/session/read";
     include "lib/request";
     map(select(.type == "_turn_usage"))[0] as $event |
-    assemble_backend_response(canonical_backend_response_events; canonical_assistant_message) as $message |
+    assemble_backend_response(canonical_backend_response_events; canonical_response) as $message |
     ($event | del(.type)) == {
       input_tokens:100, output_tokens:7, cached_tokens:85, reasoning_tokens:3
     } and
     $message.usage == ($event | del(.type)) and
-    ($message | canonical_assistant_message) and
+    ($message | canonical_response) and
     $message.content[0] == {type:"text",text:"ok"}
   ' "$res" >/dev/null
 }
@@ -99,11 +100,13 @@ EOF
 ANTHROPIC_API_KEY=test zsh -f "$run" <"$req" >"$res"
 jq -e -s -L "$ROOT" '
   include "lib/runtime/schema";
+  include "lib/session/read";
   include "lib/request";
-  assemble_backend_parts(canonical_backend_response_events; canonical_assistant_message) as $parts |
-  ($parts.message.stop == "tool_calls") and
-  ($parts.message.content == [{type:"reasoning",text:"why",opaque:{type:"thinking",thinking:"why",signature:"signed"}}]) and
-  ($parts.calls == [{type:"tool_call",id:"call_1",name:"shell",input:{command:"pwd"}}])
+  assemble_backend_response(canonical_backend_response_events; canonical_response) as $message |
+  ($message.stop == "tool_calls") and
+  ($message.content == [
+    {type:"reasoning",text:"why",opaque:{type:"thinking",thinking:"why",signature:"signed"}},
+    {type:"tool_call",id:"call_1",name:"shell",input:{command:"pwd"}}])
 ' "$res" >/dev/null
 
 # Read Anthropic model limits.

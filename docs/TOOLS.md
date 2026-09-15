@@ -33,9 +33,9 @@ See [Configuration](CONFIG.md#customize-a-harness) for component lookup and envi
 
 ## Process contract
 
-Shellfish runs `run` with no arguments from the session working directory. stdin contains the complete tool input as one JSON object. Tool scripts must validate this input before using it.
+Shellfish runs `run` with no arguments from the session working directory. stdin contains the tool input as one JSON object, with sandbox-bypass control fields removed. Tool scripts must validate this input before using it.
 
-Stdout and stderr remain separate in the tool result. The result also records the exact input given to the tool and its exit code. A nonzero exit is a normal tool result and does not itself fail the turn.
+Shellfish captures stdout and stderr separately, then renders them into optional user- and model-facing result text; raw capture is not durable. The result repeats the model's exact call input and records its exit code. A nonzero exit is a normal tool result and does not itself fail the turn.
 
 Each turn receives a private temporary directory through `TMPDIR` and `TMPPREFIX`. Its tool calls share that directory, and Shellfish removes it during turn cleanup.
 

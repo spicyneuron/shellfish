@@ -21,6 +21,7 @@ sf_test_session "$session"
 stream=$(sf_test_turn $'two\nwords' "$session")
 print -r -- "$stream" | jq -eRn -L "$ROOT" '
   include "lib/runtime/schema";
+  include "lib/session/read";
   [inputs | fromjson] as $events |
   ($events | map(select(.type == "assistant"))[0]) as $assistant |
   $events[0].type == "user" and
@@ -30,7 +31,7 @@ print -r -- "$stream" | jq -eRn -L "$ROOT" '
   ($assistant.usage | has("cached_tokens")) and
   ($events | map(select(.type == "user" or .type == "assistant")) | length == 2) and
   ($events | map(select(.type == "user"))[0] | canonical_user_message) and
-  ($events | map(select(.type == "assistant"))[0] | canonical_assistant_message) and
+  ($events | map(select(.type == "assistant"))[0] | canonical_response) and
   $assistant.stop == "end"
 ' >/dev/null
 jq -e '
@@ -250,11 +251,12 @@ sf_test_session "$partial_response_session"
 stream=$(PARTIAL_CAPTURE="$partial_capture" sf_test_turn 'start' "$partial_response_session")
 print -r -- "$stream" | jq -eRn -L "$ROOT" '
   include "lib/runtime/schema";
+  include "lib/session/read";
   [inputs | fromjson] as $events |
   ($events | map(select(.type == "assistant"))[-1]) as $assistant |
-  ($assistant | canonical_assistant_message) and
+  ($assistant | canonical_response) and
   $assistant == {
-    type:"assistant",stop:"length",content:[
+    type:"assistant",stop:"cancelled",content:[
       {type:"reasoning",text:"partial thought",opaque:{id:"reasoning_1",encrypted_content:"secret"}},
       {type:"text",text:"partial answer"}
     ],
@@ -276,7 +278,7 @@ print -r -- "$stream" | jq -eRn '
   ($events | map(select(.type == "assistant"))[-1].content[0].text) == "continued"
 ' >/dev/null
 jq -e '
-  .messages[-2] == {type:"assistant",stop:"length",content:[
+  .messages[-2] == {type:"assistant",stop:"cancelled",content:[
     {type:"reasoning",text:"partial thought",opaque:{id:"reasoning_1",encrypted_content:"secret"}},
     {type:"text",text:"partial answer"}
   ]} and .messages[-1] == {type:"user",content:[{type:"text",text:"next"}]}
@@ -385,7 +387,7 @@ typeset startup_context='<hook name="session_start">
 <context script="fixture">startup context</context>
 </hook>'
 sf_session_append "$echo_session" "$(jq -cn --arg text "$startup_context" '
-  {type:"hook_result",hook:"session_start",id:"h1_1",name:"fixture",input:"",
+  {type:"hook_result",lifecycle:"session_start",id:"1",name:"fixture",input:"",
    executable:"/hooks/fixture/run",model_text:$text,exit_code:0}')"
 sf_session_reset
 stream=$(sf_test_turn 'plain prompt' "$echo_session")

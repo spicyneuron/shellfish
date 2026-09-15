@@ -126,8 +126,8 @@ A permission request has this shape:
 
 A zero exit means the operation completed cleanly, including a hook that deliberately blocked submission or requested a handoff. A tool may return a nonzero result without failing the turn itself.
 
-After a run fails or is cancelled against a writable session, Shellfish appends a durable `error`. It first preserves any recoverable partial assistant response and records cancelled results for calls still owned by that process. Each settled `tool_result` is self-contained; provider requests reconstruct its matching call immediately before it. Errors are replayed to users but omitted from provider requests.
+After a run fails or is cancelled against a writable session, Shellfish appends a durable `error`. It first preserves any recoverable partial assistant response and settles calls still owned by that process: a known outcome is preserved, an active call is interrupted, and later calls are cancelled. Provider requests derive each call and result from this validated transcript. Errors are replayed to users but omitted from provider requests.
 
-Abrupt process or machine loss may leave a tool-calling assistant response without settled results. Such an orphan is omitted from later provider history because its calls and any uncertain external effects were never made durable.
+Abrupt process or machine loss may leave a tool-calling assistant response without settled results. The next turn records each unresolved call as an unknown outcome and closes the interrupted turn before accepting new work.
 
 After any uncertain live outcome, clients discard transient state and replay the session. They never append presentation or lifecycle events themselves; transcript mutation belongs to Shellfish.

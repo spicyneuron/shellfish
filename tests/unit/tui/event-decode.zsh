@@ -68,9 +68,9 @@ done
 # Reject malformed events.
 for invalid in '{"type":"error","user_text":1}' \
     '{"type":"_assistant_message_delta","text":"missing index"}' \
-    '{"type":"_hook_activity","hook":"unknown","id":"h1","name":"check","input":""}' \
+    '{"type":"_hook_activity","hook":"unknown","id":"1","name":"check","input":""}' \
     '{"type":"_hook_activity","hook":"stop","id":"bad id","name":"check","input":""}' \
-    '{"type":"_hook_activity","hook":"stop","id":"h1","name":"","input":""}'; do
+    '{"type":"_hook_activity","hook":"stop","id":"1","name":"","input":""}'; do
   if print -r -- "$invalid" |
       jq -jRs -L "$ROOT" --argjson runtime null \
         -f "$ROOT/libexec/tui/event-decode.jq" >/dev/null 2>&1; then
@@ -88,29 +88,29 @@ assert_equal 'tool_call,call_2,read_file · outside.txt,read_file,tool,batch_ok'
 
 # Hook results and activity decode to id, ready text, and name alone.
 order=$(print -r -- \
-    '{"type":"hook_result","hook":"stop","id":"h1_1","name":"check","input":"answer","executable":"/hooks/check/run","user_text":"check · body (10)","model_text":"body","exit_code":10}' |
+    '{"type":"hook_result","lifecycle":"stop","id":"1","name":"check","input":"answer","executable":"/hooks/check/run","user_text":"check · body (10)","model_text":"body","exit_code":10}' |
   jq -jRs -L "$ROOT" --argjson runtime '{}' \
     -f "$ROOT/libexec/tui/event-decode.jq" |
   tr '\0' '\n' | sed '/^$/d' | paste -sd, -)
-assert_equal 'hook_result,h1_1,check · body (10),check,context,batch_ok' "$order"
+assert_equal 'hook_result,1,check · body (10),check,context,batch_ok' "$order"
 
 # A result with no user text still settles its activity.
 order=$(print -r -- \
-    '{"type":"hook_result","hook":"session_start","id":"h1_3","name":"probe","input":"","model_text":"context","exit_code":0}' |
+    '{"type":"hook_result","lifecycle":"session_start","id":"3","name":"probe","input":"","model_text":"context","exit_code":0}' |
   jq -jRs -L "$ROOT" --argjson runtime '{}' \
     -f "$ROOT/libexec/tui/event-decode.jq" |
   tr '\0' '\n' | sed '/^$/d' | paste -sd, -)
-assert_equal 'hook_result,h1_3,probe,context,batch_ok' "$order"
+assert_equal 'hook_result,3,probe,context,batch_ok' "$order"
 
 # Silent activity is not shown at all.
 order=$(print -r -- \
-    '{"type":"_hook_activity","hook":"stop","id":"h1_4","name":"check","input":"answer","executable":"/hooks/check/run","user_text":"check · answer"}' |
+    '{"type":"_hook_activity","hook":"stop","id":"4","name":"check","input":"answer","executable":"/hooks/check/run","user_text":"check · answer"}' |
   jq -jRs -L "$ROOT" --argjson runtime '{}' \
     -f "$ROOT/libexec/tui/event-decode.jq" |
   tr '\0' '\n' | sed '/^$/d' | paste -sd, -)
-assert_equal 'hook_call,h1_4,check · answer,check,notice,batch_ok' "$order"
+assert_equal 'hook_call,4,check · answer,check,notice,batch_ok' "$order"
 order=$(print -r -- \
-    '{"type":"_hook_activity","hook":"stop","id":"h1_5","name":"check","input":"answer","executable":"/hooks/check/run"}' |
+    '{"type":"_hook_activity","hook":"stop","id":"5","name":"check","input":"answer","executable":"/hooks/check/run"}' |
   jq -jRs -L "$ROOT" --argjson runtime '{}' \
     -f "$ROOT/libexec/tui/event-decode.jq" |
   tr '\0' '\n' | sed '/^$/d' | paste -sd, -)

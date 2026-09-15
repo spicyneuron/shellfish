@@ -17,7 +17,7 @@ sf_state_control_decode() {
     return 1
   }
   output=$(sf_jq -jnre --argjson control "$control" '
-    include "lib/runtime/schema";
+    include "lib/session/read";
     def field: ., "\u0000";
     if $control | if has("state") then
         .state | type == "array" and all(.[];

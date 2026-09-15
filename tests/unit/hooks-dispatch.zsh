@@ -89,7 +89,7 @@ print -r -- "$activity_events" | jq -eRn --arg executable "$displayed_empty" '
   $events == [
     {type:"_hook_activity",hook:"session_start",id:$events[0].id,name:"displayed_empty",
       input:"",executable:$executable,user_text:"Starting"}
-  ] and ($events[0].id | test("^h[0-9]+_[0-9]+$"))
+  ] and ($events[0].id | test("^[1-9][0-9]*$"))
 ' >/dev/null
 
 # Match status 0 selects; status 1 skips.

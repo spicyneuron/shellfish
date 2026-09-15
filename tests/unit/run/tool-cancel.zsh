@@ -29,7 +29,7 @@ wait "$pid" || cancel_status=$?
 [[ ! -e $exit_marker ]] || fail 'cancelled tool ran to completion'
 print -r -- "$(<"$cancel_stream")" | jq -eRn '
   [inputs | fromjson] as $events |
-  ($events | map(select(.type == "tool_result"))) == [{
+  ($events | map(select(.type == "tool_result") | del(.executable))) == [{
     type:"tool_result",id:"call_1",name:"shell",input:{command:$command},
     exit_code:126,
     user_text:("shell\n" + $command + "\ntool call interrupted\nexit 126"),

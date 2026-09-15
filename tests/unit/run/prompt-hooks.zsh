@@ -76,7 +76,7 @@ print -r -- "$stream" | jq -eRn --arg executable "$prompt_script" '
   [inputs | fromjson] as $events |
   ($events | map(select(.type == "hook_result")))[0] as $result |
   ($result | del(.id,.model_text)) ==
-    {type:"hook_result",hook:"user_prompt_submit",name:"prompt-hook",
+    {type:"hook_result",lifecycle:"user_prompt_submit",name:"prompt-hook",
       input:"/decline",executable:$executable,exit_code:10} and
   ($result.model_text | contains("declined context")) and
   ($events | any(.type == "_assistant_start") | not) and
@@ -108,7 +108,7 @@ print -r -- "$stream" | jq -eRn '
 jq -e -s --arg executable "$prompt_script" '
   .[0].harness.sandbox_write_paths == ["/tmp/reference"] and
   (.[1] | del(.id,.model_text)) ==
-    {type:"hook_result",hook:"user_prompt_submit",name:"prompt-hook",
+    {type:"hook_result",lifecycle:"user_prompt_submit",name:"prompt-hook",
       input:"/update",executable:$executable,exit_code:11} and
   (.[1].model_text | contains("update context"))
 ' "$update_session" >/dev/null
@@ -169,7 +169,7 @@ jq -eRn --arg executable "$prompt_script" '
   $events[0].hook == "user_prompt_submit" and $events[0].name == "prompt-hook" and
   $events[0].input == "/slow" and $events[0].executable == $executable and
   $events[0].user_text == "Working…" and
-  ($events[0].id | test("^h[0-9]+_[0-9]+$"))
+  ($events[0].id | test("^[1-9][0-9]*$"))
 ' <"$cancel_stream" >/dev/null
 kill -TERM "$pid"
 wait "$pid" || cancel_status=$?

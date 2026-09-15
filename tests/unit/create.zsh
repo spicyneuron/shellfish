@@ -204,7 +204,7 @@ jq -se --arg path "$streamed" --arg first "${first:A}/run" --arg silent "${silen
   .[2] == $session[2] and .[2] ==
     {type:"state",name:"startup/stream",value:true} and
   .[3] == $session[3] and
-  .[3].type == "hook_result" and .[3].hook == "session_start" and
+  .[3].type == "hook_result" and .[3].lifecycle == "session_start" and
   .[3].name == "first-hook" and .[3].executable == $first and .[3].input == "" and
   .[3].exit_code == 0 and
   (.[3].user_text | contains("startup context")) and

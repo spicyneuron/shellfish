@@ -31,10 +31,10 @@ typeset accepted_turn=$SHELLFISH_TURN_ID
 jq -eRs --arg executable "$prompt_script" '
   [split("\n")[] | select(length > 0) | fromjson] as $records |
   $records[-1] as $result |
-  ($result | del(.id)) == {type:"hook_result",hook:"user_prompt_submit",name:"prompt",
+  ($result | del(.id)) == {type:"hook_result",lifecycle:"user_prompt_submit",name:"prompt",
     input:"first\nsecond\n",executable:$executable,exit_code:0,
     model_text:"<hook name=\"user_prompt_submit\">\n<context script=\"prompt\">first\nsecond\ncontext</context>\n</hook>"} and
-  ($result.id | test("^h[0-9]+_[0-9]+$"))
+  ($result.id | test("^[1-9][0-9]*$"))
 ' "$prompt_session" >/dev/null
 
 # Prompt matching occurs before invocation.
@@ -57,7 +57,7 @@ jq -e -s --arg executable "$prompt_script" '
   length == 2 and .[0].id == .[1].id and
   (.[0] | del(.id)) == {type:"_hook_activity",hook:"user_prompt_submit",name:"prompt",
     input:"ordinary",executable:$executable} and
-  (.[1] | del(.id,.model_text)) == {type:"hook_result",hook:"user_prompt_submit",
+  (.[1] | del(.id,.model_text)) == {type:"hook_result",lifecycle:"user_prompt_submit",
     name:"prompt",input:"ordinary",executable:$executable,exit_code:0} and
   .[1].model_text == "<hook name=\"user_prompt_submit\">\n<context script=\"prompt\">ordinarycontext</context>\n</hook>"
 ' "$select_events" >/dev/null

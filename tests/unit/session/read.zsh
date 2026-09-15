@@ -97,10 +97,11 @@ print -r -- '[
 
 # Trailing context waits for the next real user request.
 print -r -- '[
+  {"type":"user","content":[{"type":"text","text":"go"}]},
   {"type":"assistant","stop":"end","content":[]},
   {"type":"hook_result","lifecycle":"stop","id":"1","name":"observe","input":"","exit_code":0,"model_text":"NOTE"}
 ]' | messages | jq -e '
-  [.[].type] == ["assistant","user"] and .[1].content[0].text == "NOTE"
+  [.[].type] == ["user","assistant","user"] and .[2].content[0].text == "NOTE"
 ' >/dev/null || fail 'unconsumed context did not reach the request'
 
 # Stop feedback continues the turn with a request that consumes its context.
@@ -144,6 +145,7 @@ typeset -a invalid=(
   'a relative executable' '[{"type":"hook_result","lifecycle":"stop","id":"1","name":"observe",
      "input":"","executable":"hooks/observe","exit_code":0}]'
   'a hook without a lifecycle' '[{"type":"hook_result","id":"1","name":"observe","input":"","exit_code":0}]'
+  'an unknown hook lifecycle' '[{"type":"hook_result","lifecycle":"other","id":"1","name":"observe","input":"","exit_code":0}]'
   'a nondecimal hook identifier' '[{"type":"hook_result","lifecycle":"stop","id":"first","name":"observe","input":"","exit_code":0}]'
   'a zero hook identifier' '[{"type":"hook_result","lifecycle":"stop","id":"0","name":"observe","input":"","exit_code":0}]'
   'a repeated hook identifier' '[
@@ -151,6 +153,8 @@ typeset -a invalid=(
      {"type":"hook_result","lifecycle":"stop","id":"1","name":"observe","input":"","exit_code":0}]'
   'an empty error' '[{"type":"error","user_text":""}]'
   'an error carrying model text' '[{"type":"error","user_text":"failed","model_text":"failed"}]'
+  'reasoning with an extra field' '[{"type":"user","content":[{"type":"text","text":"a"}]},
+     {"type":"assistant","stop":"end","content":[{"type":"reasoning","text":"why","extra":true}]}]'
   'consecutive user requests' '[{"type":"user","content":[{"type":"text","text":"a"}]},
      {"type":"user","content":[{"type":"text","text":"b"}]}]'
   'a user request during a tool sequence' '[{"type":"user","content":[{"type":"text","text":"a"}]},
@@ -167,3 +171,60 @@ for (( index = 1; index <= ${#invalid}; index += 2 )); do
     fail "the reader accepted $invalid[index]"
   fi
 done
+
+# Settled results share one base, and state names stay addressable.
+settling() {
+  print -r -- '[{"type":"user","content":[{"type":"text","text":"a"}]},
+    {"type":"assistant","stop":"tool_calls","content":[
+      {"type":"tool_call","id":"c1","name":"shell","input":{}}]},'"$1"']'
+}
+
+settling '{"type":"tool_result","id":"c1","name":"shell","input":{},"executable":"/tools/shell/run","user_text":"shown","model_text":"out","exit_code":0}' |
+  load >/dev/null || fail 'the reader rejected a fully described tool result'
+
+typeset -a malformed_results=(
+  'an out-of-range exit code' '{"type":"tool_result","id":"c1","name":"shell","input":{},"exit_code":256}'
+  'raw capture fields' '{"type":"tool_result","id":"c1","name":"shell","input":{},"stdout":"out","stderr":"","exit_code":0}'
+  'a result without input' '{"type":"tool_result","id":"c1","name":"shell","content":"out","exit_code":0}'
+  'a hook lifecycle on a tool result' '{"type":"tool_result","id":"c1","name":"shell","input":{},"exit_code":0,"lifecycle":"stop"}'
+)
+for (( index = 1; index <= ${#malformed_results}; index += 2 )); do
+  if settling "$malformed_results[index + 1]" | load >/dev/null 2>&1; then
+    fail "the reader accepted $malformed_results[index]"
+  fi
+done
+
+typeset -a shapes=(
+  '{"type":"hook_result","lifecycle":"session_start","id":"1","name":"add_env","input":"","executable":"/hooks/add_env","user_text":"shown","model_text":"data","exit_code":0}'
+  '{"type":"hook_result","lifecycle":"pre_tool_use","id":"2","name":"check","input":{},"exit_code":0}'
+  '{"type":"state","name":"a","value":null}'
+  '{"type":"state","name":"A0_.:/-","value":[false,1,"text"]}'
+)
+for (( index = 1; index <= ${#shapes}; index += 1 )); do
+  print -r -- "[$shapes[index]]" | load >/dev/null ||
+    fail "the reader rejected $shapes[index]"
+done
+
+typeset -a malformed=(
+  'a hook without input' '{"type":"hook_result","lifecycle":"session_start","id":"1","name":"add_env","exit_code":0}'
+  'array hook input' '{"type":"hook_result","lifecycle":"session_start","id":"1","name":"add_env","input":[],"exit_code":0}'
+  'a tool identifier on a hook' '{"type":"hook_result","lifecycle":"session_start","id":"1","name":"add_env","input":"","exit_code":0,"tool_use_id":"c1"}'
+  'empty hook user text' '{"type":"hook_result","lifecycle":"session_start","id":"1","name":"add_env","input":"","exit_code":0,"user_text":""}'
+  'an unnamed state record' '{"type":"state","name":"","value":null}'
+  'a state name opening with a separator' '{"type":"state","name":"/leading","value":null}'
+  'a spaced state name' '{"type":"state","name":"bad name","value":null}'
+  'a state record without a value' '{"type":"state","name":"name"}'
+)
+for (( index = 1; index <= ${#malformed}; index += 2 )); do
+  if print -r -- "[$malformed[index + 1]]" | load >/dev/null 2>&1; then
+    fail "the reader accepted $malformed[index]"
+  fi
+done
+
+print -r -- "[$(jq -cn --arg name "$(printf 'a%.0s' {1..128})" \
+  '{type:"state",name:$name,value:true}')]" | load >/dev/null ||
+  fail 'the reader rejected a state name of the maximum length'
+if print -r -- "[$(jq -cn --arg name "$(printf 'a%.0s' {1..129})" \
+    '{type:"state",name:$name,value:true}')]" | load >/dev/null 2>&1; then
+  fail 'the reader accepted an overlong state name'
+fi

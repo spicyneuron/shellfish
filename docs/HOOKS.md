@@ -169,7 +169,7 @@ Runs immediately before a tool.
 - **argv:** `pre_tool_use`
 - **stdin:** tool request envelope
 - **stdout:** must be empty on exit 0 and becomes model-visible denial feedback on exit 10 or 11
-- **stderr:** durable user-only output
+- **stderr:** user-only output
 - **fd 3:** state
 - **Exit 0:** execute the tool
 - **Exit 10:** deny the tool and continue the hook chain
@@ -179,17 +179,17 @@ This hook can observe and gate input but cannot rewrite it or approve a sandbox 
 
 ### `post_tool_use`
 
-Runs after the canonical tool result is committed, including when the tool exits nonzero.
+Runs after the tool completes but before its result is committed, including when the tool exits nonzero.
 
 - **argv:** `post_tool_use`
 - **stdin:** tool response envelope
-- **stdout:** must be empty
-- **stderr:** durable user-only output
+- **stdout:** available to the configured result templates
+- **stderr:** user-only output
 - **fd 3:** state
 - **Exit 0:** continue the tool loop
 - **Exit 10 or 11:** unsupported and fail the turn
 
-This hook cannot replace the result or add model context.
+This hook cannot replace the tool outcome. Its rendered model context is folded into the result before commit; its user-facing update is transient.
 
 ### `stop`
 

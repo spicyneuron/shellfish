@@ -14,7 +14,7 @@ typeset -g SF_HOOK_COMPONENT_VALIDATOR=''
 typeset -g SHELLFISH_TURN_STATE=${SHELLFISH_TURN_STATE-}
 typeset -g SHELLFISH_TURN_ID=${SHELLFISH_TURN_ID-}
 typeset -g SF_HOOK_NAME=''
-typeset -g SF_HOOK_INVOCATION=0
+typeset -gi SF_HOOK_ID=0
 # A tool-lifecycle hook contributes to the owning call instead of settling.
 typeset -gi SF_HOOK_COLLECT=0
 typeset -ga SF_HOOK_CONTEXTS=()
@@ -66,15 +66,17 @@ sf_hooks_activity() {
         {user_text:$rendered.user_before} end)'
 }
 
-# Durable position plus this process's invocation order. One process owns a
-# turn, so that pair is unique within the session without a durable allocator.
 sf_hooks_id() {
-  integer lines=0
-  (( ++SF_HOOK_INVOCATION ))
+  local maximum=0
   if [[ -n ${SF_HOOK_SESSION-} ]]; then
-    lines=$(wc -l <"$SF_HOOK_SESSION") || return
+    maximum=$(jq -Rrs '
+      [split("\n")[] | fromjson? | select(.type == "hook_result") | .id | tonumber] |
+      max // 0
+    ' "$SF_HOOK_SESSION") || return
   fi
-  REPLY="h${lines}_${SF_HOOK_INVOCATION}"
+  [[ $maximum == <-> ]] || return 1
+  (( maximum > SF_HOOK_ID )) && SF_HOOK_ID=$maximum
+  REPLY=$(( ++SF_HOOK_ID ))
 }
 
 # Every template variable must resolve, so a hook that has not run yet renders
@@ -531,8 +533,8 @@ sf_hooks_result_record() {
   REPLY=$(sf_jq -nc --arg hook "$hook" --arg id "$id" --arg name "$name" \
       --arg executable "$executable" --argjson input "$input" \
       --argjson rendered "$rendered" --argjson exit_code "$exit_code" '
-        include "lib/runtime/schema";
-        {type:"hook_result",hook:$hook,id:$id,name:$name,input:$input,
+        include "lib/session/read";
+        {type:"hook_result",lifecycle:$hook,id:$id,name:$name,input:$input,
           executable:$executable,exit_code:$exit_code} +
         (if $rendered.user_after == "" then {} else
           {user_text:$rendered.user_after} end) +

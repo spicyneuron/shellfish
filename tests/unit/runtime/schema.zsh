@@ -7,7 +7,8 @@ schema_eval() {
 }
 
 request_eval() {
-  jq -L "$ROOT" -e 'include "lib/runtime/schema"; include "lib/request"; '"$1"
+  jq -L "$ROOT" -e 'include "lib/runtime/schema"; include "lib/session/read";
+    include "lib/request"; '"$1"
 }
 
 render_eval() {
@@ -32,26 +33,26 @@ if print -r -- '"${script}"' |
   fail 'render template accepted a non-string variable'
 fi
 
-# User messages require one safe text block.
+# Request messages require one safe text block.
 print -r -- '{"type":"user","content":[{"type":"text","text":"hello"}]}' |
-  schema_eval 'canonical_user_message' >/dev/null
+  schema_eval 'request_user_message' >/dev/null
 
 if print -r -- '{"type":"user","content":[{"type":"text","text":"bad\u0000nul"}]}' |
-    schema_eval 'canonical_user_message' >/dev/null 2>&1; then
+    schema_eval 'request_user_message' >/dev/null 2>&1; then
   fail 'user message with NUL was accepted'
 fi
 
 if print -r -- '{"type":"user","content":[]}' |
-    schema_eval 'canonical_user_message' >/dev/null 2>&1; then
+    schema_eval 'request_user_message' >/dev/null 2>&1; then
   fail 'empty user content was accepted'
 fi
 
-# Assistant messages enforce stop semantics.
+# Request responses carry no calls in content.
 print -r -- '{"type":"assistant","stop":"end","content":[{"type":"text","text":"hi"}]}' |
-  schema_eval 'canonical_assistant_message' >/dev/null
+  schema_eval 'request_assistant_message' >/dev/null
 
 print -r -- '{"type":"tool_call","id":"c1","name":"shell","input":{}}' |
-  schema_eval 'canonical_tool_call' >/dev/null
+  schema_eval 'request_tool_call' >/dev/null
 
 # Requests require canonical projected fields.
 typeset valid_request
@@ -119,7 +120,7 @@ if jq -cn '[{type:"_assistant_message_delta",index:0,text:"unfinished"}]' |
   fail 'backend response without response end was accepted'
 fi
 
-# Response assembly orders and joins blocks.
+# Response assembly orders and joins blocks, keeping calls inert in content.
 jq -cn '[
   {type:"_assistant_tool_call_delta",index:2,id:"call_1",name:"shell",input:"{\"command\":"},
   {type:"_assistant_reasoning_delta",index:0,text:"think "},
@@ -131,11 +132,12 @@ jq -cn '[
   {type:"_assistant_message_delta",index:1,text:"this"},
   {type:"_turn_usage",input_tokens:5,cached_tokens:2,output_tokens:4},
   {type:"_assistant_end",stop:"tool_calls"}
-]' | request_eval 'assemble_backend_response(canonical_backend_response_events; canonical_assistant_message) == {
+]' | request_eval 'assemble_backend_response(canonical_backend_response_events; canonical_response) == {
   type:"assistant",stop:"tool_calls",
   content:[
     {type:"reasoning",text:"think first",opaque:{signature:"signed"}},
-    {type:"text",text:"run this"}
+    {type:"text",text:"run this"},
+    {type:"tool_call",id:"call_1",name:"shell",input:{command:"pwd"}}
   ],
   usage:{input_tokens:5,cached_tokens:2,output_tokens:4}
 }' >/dev/null
@@ -145,7 +147,7 @@ jq -cn '[
   {type:"_assistant_message_delta",index:0,text:"visible"},
   {type:"_assistant_tool_call_delta",index:1,id:"call_1",name:"shell",input:"{\"command\":"},
   {type:"_assistant_end",stop:"length"}
-]' | request_eval 'assemble_backend_response(canonical_backend_response_events; canonical_assistant_message) == {
+]' | request_eval 'assemble_backend_response(canonical_backend_response_events; canonical_response) == {
   type:"assistant",stop:"length",content:[{type:"text",text:"visible"}]
 }' >/dev/null
 
@@ -156,66 +158,11 @@ for events in \
     '[{"type":"_assistant_tool_call_delta","index":0,"id":"call_1","name":"shell","input":"{"},{"type":"_assistant_end","stop":"tool_calls"}]' \
     '[{"type":"_assistant_tool_call_delta","index":0,"id":"call_1","name":"shell","input":"{}"},{"type":"_assistant_tool_call_delta","index":1,"id":"call_1","name":"shell","input":"{}"},{"type":"_assistant_end","stop":"tool_calls"}]'; do
   if print -r -- "$events" | request_eval \
-      'assemble_backend_response(canonical_backend_response_events; canonical_assistant_message)' \
+      'assemble_backend_response(canonical_backend_response_events; canonical_response)' \
       >/dev/null 2>&1; then
     fail "invalid backend response was assembled: $events"
   fi
 done
-
-# Hook and tool results share one settled base.
-print -r -- '{"type":"tool_result","id":"c1","name":"shell","input":{},"executable":"/tools/shell/run","user_text":"shown","model_text":"out","exit_code":0}' |
-  schema_eval 'canonical_tool_result' >/dev/null
-print -r -- '{"type":"hook_result","hook":"session_start","id":"h1_1","name":"add_env","input":"","executable":"/hooks/add_env","user_text":"shown","model_text":"data","exit_code":0}' |
-  schema_eval 'canonical_hook_result' >/dev/null
-print -r -- '{"type":"hook_result","hook":"pre_tool_use","id":"h2_1","name":"check","input":{},"exit_code":0}' |
-  schema_eval 'canonical_hook_result' >/dev/null
-
-for result in \
-    '{"type":"tool_result","id":"c1","name":"shell","input":{},"exit_code":256}' \
-    '{"type":"tool_result","id":"c1","name":"shell","input":{},"stdout":"out","stderr":"","exit_code":0}' \
-    '{"type":"tool_result","id":"c1","name":"shell","content":"out","exit_code":0}' \
-    '{"type":"tool_result","id":"c1","name":"shell","input":{},"exit_code":0,"hook":"stop"}'; do
-  if print -r -- "$result" | schema_eval 'canonical_tool_result' >/dev/null 2>&1; then
-    fail "invalid tool result was accepted: $result"
-  fi
-done
-
-for result in \
-    '{"type":"hook_result","hook":"unknown","id":"h1","name":"add_env","input":"","exit_code":0}' \
-    '{"type":"hook_result","hook":"session_start","id":"bad id","name":"add_env","input":"","exit_code":0}' \
-    '{"type":"hook_result","hook":"session_start","id":"h1","name":"add_env","exit_code":0}' \
-    '{"type":"hook_result","hook":"session_start","id":"h1","name":"add_env","input":[],"exit_code":0}' \
-    '{"type":"hook_result","hook":"session_start","id":"h1","name":"add_env","input":"","exit_code":0,"tool_use_id":"c1"}' \
-    '{"type":"hook_result","hook":"session_start","id":"h1","name":"add_env","input":"","exit_code":0,"user_text":""}'; do
-  if print -r -- "$result" | schema_eval 'canonical_hook_result' >/dev/null 2>&1; then
-    fail "invalid hook result was accepted: $result"
-  fi
-done
-
-# State records require canonical names.
-for state in \
-    '{"type":"state","name":"a","value":null}' \
-    '{"type":"state","name":"A0_.:/-","value":[false,1,"text"]}'; do
-  print -r -- "$state" | schema_eval 'canonical_state' >/dev/null
-done
-
-print -r -- "$(jq -cn --arg name "$(printf 'a%.0s' {1..128})" \
-  '{type:"state",name:$name,value:true}')" | schema_eval 'canonical_state' >/dev/null
-
-for state in \
-    '{"type":"state","name":"","value":null}' \
-    '{"type":"state","name":"/leading","value":null}' \
-    '{"type":"state","name":"bad name","value":null}' \
-    '{"type":"state","name":"name"}'; do
-  if print -r -- "$state" | schema_eval 'canonical_state' >/dev/null 2>&1; then
-    fail "invalid state record was accepted: $state"
-  fi
-done
-
-if jq -cn --arg name "$(printf 'a%.0s' {1..129})" \
-    '{type:"state",name:$name,value:true}' | schema_eval 'canonical_state' >/dev/null 2>&1; then
-  fail 'state name longer than 128 characters was accepted'
-fi
 
 # Session headers require canonical runtimes.
 typeset valid_header

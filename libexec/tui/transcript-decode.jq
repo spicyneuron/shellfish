@@ -1,4 +1,5 @@
 include "lib/runtime/schema";
+include "lib/session/read";
 include "libexec/tui/display-fields";
 
 def durable_prefix:
@@ -22,8 +23,7 @@ else
   then
     error("invalid session")
   else
-    # Before-result hook views were transient edits to the live tool block.
-    # Only correlated results after their tool result replay as notes.
+    ($records[1:] | session_load) as $durable |
     ["session_update", ($records[0] | {backend, harness, profile} | tojson)],
     ($records[1:][] |
       if .type == "tool_result" then

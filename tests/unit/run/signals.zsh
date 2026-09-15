@@ -88,7 +88,7 @@ wait "$cancel_pid" || cancel_status=$?
 (( cancel_status == 130 )) || fail 'cancelled exec did not report the signal'
 jq -eRn '
   [inputs | fromjson] as $events |
-  ($events[-2] | .type == "assistant" and .stop == "length" and
+  ($events[-2] | .type == "assistant" and .stop == "cancelled" and
     (.content | any(.type == "text" and .text != "")))
   and $events[-1] == {type:"error",user_text:"Cancelled."}
 ' <"$cancel_output" >/dev/null || fail 'cancelled exec did not persist partial content'
@@ -137,7 +137,7 @@ integer reasoning_status=0
 wait "$reasoning_pid" || reasoning_status=$?
 (( reasoning_status == 143 )) || fail 'cancelled reasoning turn did not report the signal'
 jq -e -s '
-  .[-2] == {type:"assistant",stop:"length",content:[{
+  .[-2] == {type:"assistant",stop:"cancelled",content:[{
     type:"reasoning",text:"partial thought",
     opaque:{id:"reasoning_1",encrypted_content:"secret"}
   }]} and .[-1] == {type:"error",user_text:"Turn interrupted."}

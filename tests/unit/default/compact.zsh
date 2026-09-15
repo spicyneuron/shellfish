@@ -82,7 +82,7 @@ jq -e -s --arg executable "$compact_hook" '
     sub("^<hook name=\\\"session_start\\\">\\n<context script=\\\"compact\\\">"; "") |
     sub("</context>\\n</hook>$"; "")) as $context |
   [.[].type] == ["session","hook_result"] and
-  .[1].hook == "session_start" and .[1].executable == $executable and
+  .[1].lifecycle == "session_start" and .[1].executable == $executable and
   $context ==
     "<compacted_context>\n\n" +
     "The conversation before this point was compacted into the context below.\n\n" +
@@ -100,7 +100,7 @@ print -r -- \
   '{"type":"user","content":[{"type":"text","text":"Read the docs"}]}' \
   '{"type":"assistant","stop":"end","content":[{"type":"text","text":"Done reading"}],"usage":{"input_tokens":1,"output_tokens":1}}' \
   '{"type":"user","content":[{"type":"text","text":"Keep going"}]}' \
-  '{"type":"assistant","stop":"tool_calls","content":[{"type":"text","text":"\n\n"}],"usage":{"input_tokens":75,"output_tokens":5}}' \
+  '{"type":"assistant","stop":"tool_calls","content":[{"type":"text","text":"\n\n"},{"type":"tool_call","id":"call_1","name":"shell","input":{"command":"true"}}],"usage":{"input_tokens":75,"output_tokens":5}}' \
   '{"type":"tool_result","id":"call_1","name":"shell","input":{"command":"true"},"exit_code":126,"user_text":"shell\ntool call cancelled\nexit 126","model_text":"tool call cancelled\nexit 126"}' \
   '{"type":"error","user_text":"Cancelled."}' \
   >>"$cancelled_source"
@@ -182,7 +182,7 @@ typeset state_source="$tmp/state-source.jsonl"
 head -n 1 "$compact_source" >"$state_source"
 print -r -- \
   '{"type":"state","name":"git/identity","value":"branch:main"}' \
-  '{"type":"hook_result","hook":"session_start","id":"project","name":"project_environment","input":"","executable":"/hooks/project_environment/run","model_text":"env","exit_code":0}' \
+  '{"type":"hook_result","lifecycle":"session_start","id":"1","name":"project_environment","input":"","executable":"/hooks/project_environment/run","model_text":"env","exit_code":0}' \
   '{"type":"user","content":[{"type":"text","text":"Hello"}]}' \
   '{"type":"state","name":"agents/a1b2c3","value":{"session":".agent-a1b2c3.jsonl"}}' \
   '{"type":"assistant","stop":"end","content":[{"type":"text","text":"Hi"}],"usage":{"input_tokens":1,"output_tokens":1}}' \

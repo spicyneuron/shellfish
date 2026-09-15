@@ -16,7 +16,9 @@ client ─ user prompt ─▶ │  read session  │
 
 ## The transcript is the state
 
-A session JSONL file is the agent's only durable state. The first row freezes runtime settings. Then every record after it is an append-only log of messages and events.
+A session JSONL file is the agent's only durable state. The first row freezes runtime settings. Every record after it belongs to one append-only transcript. A complete assistant response keeps its ordered text, reasoning, and inert tool calls together; later result records settle those calls exactly.
+
+One session reader defines record validity and ordering, then derives pending work and provider messages from that transcript. Recovery and request construction do not maintain competing session models.
 
 ## A turn is the unit of execution
 

@@ -81,18 +81,19 @@ jq -e '
 
 jq -n -e -L "$ROOT" '
   include "lib/runtime/schema";
+  include "lib/session/read";
   include "lib/request";
   [inputs] |
-  assemble_backend_parts(canonical_backend_response_events; canonical_assistant_message) as $parts |
-  ($parts.message | canonical_assistant_message) and
-  ($parts.message.type == "assistant") and
-  ($parts.message.stop == "tool_calls") and
-  ($parts.message.content == [{type:"text",text:"Let me check."}]) and
-  ($parts.calls == [{type:"tool_call",id:"call_123",name:"shell",input:{command:"pwd"}}]) and
-  ($parts.message.usage.input_tokens == 10) and
-  ($parts.message.usage.cached_tokens == 8) and
-  ($parts.message.usage.output_tokens == 5) and
-  ($parts.message.usage.reasoning_tokens == 2)
+  assemble_backend_response(canonical_backend_response_events; canonical_response) as $message |
+  ($message | canonical_response) and
+  ($message.type == "assistant") and
+  ($message.stop == "tool_calls") and
+  ($message.content == [{type:"text",text:"Let me check."},
+    {type:"tool_call",id:"call_123",name:"shell",input:{command:"pwd"}}]) and
+  ($message.usage.input_tokens == 10) and
+  ($message.usage.cached_tokens == 8) and
+  ($message.usage.output_tokens == 5) and
+  ($message.usage.reasoning_tokens == 2)
 ' "$res" >/dev/null
 
 # Normalize model catalog limits.
@@ -125,8 +126,9 @@ printf "%s\n" \
 OPENAI_API_KEY=test-key zsh -f "$run" <"$req" >"$res"
 jq -n -e -L "$ROOT" '
   include "lib/runtime/schema";
+  include "lib/session/read";
   include "lib/request";
-  [inputs] | assemble_backend_response(canonical_backend_response_events; canonical_assistant_message) ==
+  [inputs] | assemble_backend_response(canonical_backend_response_events; canonical_response) ==
     {type:"assistant",stop:"length",content:[]}
 ' "$res" >/dev/null
 
@@ -140,12 +142,13 @@ OPENAI_API_KEY=test-key zsh -f "$run" <"$req" >"$res"
 
 jq -n -e -L "$ROOT" '
   include "lib/runtime/schema";
+  include "lib/session/read";
   include "lib/request";
   [inputs] |
-  assemble_backend_parts(canonical_backend_response_events; canonical_assistant_message) as $parts |
-  ($parts.message | canonical_assistant_message) and
-  ($parts.message.stop == "tool_calls") and
-  ($parts.calls == [{type:"tool_call",id:"call_0",name:"shell",input:{}}])
+  assemble_backend_response(canonical_backend_response_events; canonical_response) as $message |
+  ($message | canonical_response) and
+  ($message.stop == "tool_calls") and
+  ($message.content == [{type:"tool_call",id:"call_0",name:"shell",input:{}}])
 ' "$res" >/dev/null
 
 # Parse buffered JSON responses.
@@ -184,14 +187,15 @@ OPENAI_API_KEY=test-key zsh -f "$run" <"$req" >"$res"
 
 jq -n -e -L "$ROOT" '
   include "lib/runtime/schema";
+  include "lib/session/read";
   include "lib/request";
   [inputs] |
-  assemble_backend_parts(canonical_backend_response_events; canonical_assistant_message) as $parts |
-  ($parts.message | canonical_assistant_message) and
-  ($parts.message.stop == "tool_calls") and
-  ($parts.calls == [{type:"tool_call",id:"call_abc",name:"shell",input:{command:"ls"}}]) and
-  ($parts.message.usage.input_tokens == 12) and
-  ($parts.message.usage.output_tokens == 8)
+  assemble_backend_response(canonical_backend_response_events; canonical_response) as $message |
+  ($message | canonical_response) and
+  ($message.stop == "tool_calls") and
+  ($message.content == [{type:"tool_call",id:"call_abc",name:"shell",input:{command:"ls"}}]) and
+  ($message.usage.input_tokens == 12) and
+  ($message.usage.output_tokens == 8)
 ' "$res" >/dev/null
 
 # Regroup flat call batches.

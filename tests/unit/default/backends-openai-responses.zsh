@@ -42,14 +42,15 @@ EOF
 assert_usage() {
   jq -e -s -L "$ROOT" '
     include "lib/runtime/schema";
+    include "lib/session/read";
     include "lib/request";
     map(select(.type == "_turn_usage"))[0] as $event |
-    assemble_backend_response(canonical_backend_response_events; canonical_assistant_message) as $message |
+    assemble_backend_response(canonical_backend_response_events; canonical_response) as $message |
     ($event | del(.type)) == {
       input_tokens:100, output_tokens:7, cached_tokens:85, reasoning_tokens:3
     } and
     $message.usage == ($event | del(.type)) and
-    ($message | canonical_assistant_message) and
+    ($message | canonical_response) and
     $message.content[0] == {type:"text",text:"ok"}
   ' "$res" >/dev/null
 }
@@ -92,8 +93,9 @@ EOF
 OPENAI_API_KEY=test zsh -f "$run" <"$req" >"$res"
 jq -e -s -L "$ROOT" '
   include "lib/runtime/schema";
+  include "lib/session/read";
   include "lib/request";
-  assemble_backend_response(canonical_backend_response_events; canonical_assistant_message) == {type:"assistant",stop:"length",content:[],usage:{input_tokens:10,output_tokens:5}}
+  assemble_backend_response(canonical_backend_response_events; canonical_response) == {type:"assistant",stop:"length",content:[],usage:{input_tokens:10,output_tokens:5}}
 ' "$res" >/dev/null
 
 # Read Codex model limits.
@@ -170,11 +172,13 @@ EOF
 OPENAI_API_KEY=test zsh -f "$run" <"$req" >"$res"
 jq -e -s -L "$ROOT" '
   include "lib/runtime/schema";
+  include "lib/session/read";
   include "lib/request";
-  assemble_backend_parts(canonical_backend_response_events; canonical_assistant_message) as $parts |
-  ($parts.message.stop == "tool_calls") and
-  ($parts.message.content == [{type:"reasoning",text:"why",opaque:{type:"reasoning",id:"rs_1",summary:[{type:"summary_text",text:"why"}],encrypted_content:"secret"}}]) and
-  ($parts.calls == [{type:"tool_call",id:"call_1",name:"shell",input:{command:"pwd"}}])
+  assemble_backend_response(canonical_backend_response_events; canonical_response) as $message |
+  ($message.stop == "tool_calls") and
+  ($message.content == [
+    {type:"reasoning",text:"why",opaque:{type:"reasoning",id:"rs_1",summary:[{type:"summary_text",text:"why"}],encrypted_content:"secret"}},
+    {type:"tool_call",id:"call_1",name:"shell",input:{command:"pwd"}}])
 ' "$res" >/dev/null
 
 # Map flat call batches.

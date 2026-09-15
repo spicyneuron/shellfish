@@ -11,7 +11,7 @@ setopt no_aliases no_bg_nice no_multios pipe_fail
 
 typeset -gA SF_RUN=(
   answer '' jsonl 0 interrupted 0 permission_count 0 permission_available 0
-  signal_status 143 active_call ''
+  signal_status 143 active_call '' active_outcome 0
 )
 typeset -ga SF_RUN_QUEUED_CALLS=()
 
@@ -23,6 +23,7 @@ sf_run_emit() {
 sf_run_finish_call() {
   SF_RUN_QUEUED_CALLS=( "${(@)SF_RUN_QUEUED_CALLS[2,-1]}" )
   SF_RUN[active_call]=''
+  SF_RUN[active_outcome]=0
 }
 
 sf_run_interrupt() {
@@ -94,9 +95,11 @@ sf_run_partial_assistant() {
     print -r -- '{"type":"_assistant_end","stop":"length"}'
   } | sf_jq -cse '
     include "lib/runtime/schema";
+    include "lib/session/read";
     include "lib/request";
-    assemble_backend_response(canonical_backend_response_events; canonical_assistant_message) |
-    select(any(.content[]; (.type == "text" or .type == "reasoning") and .text != ""))
+    assemble_backend_response(canonical_backend_response_events; canonical_response) |
+    select(any(.content[]; (.type == "text" or .type == "reasoning") and .text != "")) |
+    .stop = "cancelled"
   ' 2>/dev/null) || REPLY=''
 }
 
@@ -105,6 +108,35 @@ sf_run_turn_cleanup() {
   local session=$1
   integer interrupted=$2
   local failure=$3 after=$4 error_message recovered='' closed='' partial=''
+  local queued fixed reason before='[]' after_context='[]'
+  local -a known=()
+
+  for queued in "${SF_RUN_QUEUED_CALLS[@]}"; do
+    if jq -e --arg id "$SF_RUN[active_call]" '.id == $id' <<<$queued >/dev/null; then
+      if (( SF_RUN[active_outcome] )); then
+        before=${before_contexts:-[]}
+        after_context=$(jq -nc '$ARGS.positional' --args -- "${SF_HOOK_CONTEXTS[@]}")
+      else
+        reason='tool call interrupted'
+        sf_tool_refused "$reason" 126
+        before=$(jq -nc '$ARGS.positional' --args -- "${SF_HOOK_CONTEXTS[@]}")
+      fi
+    else
+      reason='tool call cancelled'
+      sf_tool_refused "$reason" 126
+      before='[]'
+    fi
+    if sf_tool_settle \
+        "$(jq -r '.id' <<<$queued)" \
+        "$(jq -r '.name' <<<$queued)" \
+        "$(jq -c '.input' <<<$queued)" \
+        "$SF_TOOL_OUTPUT" "$before" "$after_context"; then
+      known+=( "$REPLY" )
+    fi
+    before='[]'
+    after_context='[]'
+  done
+  fixed=$(printf '%s\n' "${known[@]}" | jq -sc .) || fixed='[]'
 
   sf_tools_cleanup
   sf_hooks_turn_state_cleanup
@@ -127,8 +159,8 @@ sf_run_turn_cleanup() {
     else
       error_message='Turn interrupted.'
     fi
-    # Reload the durable view; the interrupted in-memory view is not trusted.
-    if sf_session_resync_turn "$session"; then
+    # Close from the durable view; the interrupted in-memory view is not trusted.
+    if sf_session_resync_turn "$session" "$error_message" 1 "$fixed"; then
       closed=$REPLY
       if [[ -n $REPLY ]]; then
         [[ -z $recovered ]] || recovered+=$'\n'
@@ -141,6 +173,7 @@ sf_run_turn_cleanup() {
   SF_REQUEST_PARTIAL_EVENTS=()
   SF_RUN_QUEUED_CALLS=()
   SF_RUN[active_call]=''
+  SF_RUN[active_outcome]=0
   [[ -z $recovered ]] || sf_run_emit "$recovered"
   sf_session_reset
   if (( interrupted )); then
@@ -175,6 +208,7 @@ sf_run_turn() {
   SF_RUN[permission_count]=0
   SF_RUN[permission_available]=$permission_available
   SF_RUN[active_call]=''
+  SF_RUN[active_outcome]=0
   if ! sf_session_begin_turn "$session_path"; then
     print -r -u2 -- "$SF_SESSION_ERROR"
     return 1
@@ -421,6 +455,7 @@ sf_run_turn() {
         bypass=$tool_calls[tool_index+4]
         bypass_reason_valid=$tool_calls[tool_index+5]
         SF_RUN[active_call]=$call_id
+        SF_RUN[active_outcome]=0
         if ! sf_tool_preview "$call_id" "$tool_name" "$tool_input"; then
           failure='cannot prepare tool activity'
           return 1
@@ -480,6 +515,9 @@ sf_run_turn() {
             fi
           fi
         fi
+        SF_RUN[active_outcome]=1
+        before_contexts=$(jq -nc '$ARGS.positional' --args -- "${SF_HOOK_CONTEXTS[@]}")
+        SF_HOOK_CONTEXTS=()
         for state in "${SF_TOOL_STATE_RECORDS[@]}"; do
           if ! sf_session_append "$session_path" "$state"; then
             failure=$SF_SESSION_ERROR
@@ -487,8 +525,6 @@ sf_run_turn() {
           fi
           sf_run_emit "$state"
         done
-        before_contexts=$(jq -nc '$ARGS.positional' --args -- "${SF_HOOK_CONTEXTS[@]}")
-        SF_HOOK_CONTEXTS=()
         # Post hooks see the settled output before the call becomes durable, so a
         # failure here still settles the call with the context accepted so far.
         sf_hooks_post_tool_use "$session_path" "$call_id" "$tool_name" \

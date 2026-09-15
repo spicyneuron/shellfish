@@ -60,9 +60,9 @@ print -r -- "$stream" | jq -eRn --arg executable "$stop_once" --arg context "$st
   (($events | map(select(.type == "hook_result"))) as $results |
     ($results | length) == 2 and ($results | map(.id) | unique | length) == 2 and
     ($results | map(del(.id,.model_text))) ==
-      [{type:"hook_result",hook:"stop",name:"stop-once",input:"original\n",
+      [{type:"hook_result",lifecycle:"stop",name:"stop-once",input:"original\n",
         executable:$executable,exit_code:10},
-       {type:"hook_result",hook:"stop",name:"stop-once",input:($context + "\n"),
+       {type:"hook_result",lifecycle:"stop",name:"stop-once",input:($context + "\n"),
         executable:$executable,exit_code:0}] and
     $results[0].model_text == $context and
     ($results[1].model_text | contains("discarded")) and
@@ -208,12 +208,12 @@ wait "$cancel_pid" || cancel_status=$?
 (( cancel_status == 143 ))
 jq -eRn '
   [inputs | fromjson] as $events |
-  ($events | map(select(.type == "hook_result" and .hook == "stop" and
+  ($events | map(select(.type == "hook_result" and .lifecycle == "stop" and
     ((.model_text? // "") | contains("feedback")))) | length) == 1 and
   ($events | map(select(.type == "assistant")) | length) == 1
 ' <"$cancel_stream" >/dev/null
 assert_canonical_session "$cancel_session"
 jq -e -s '
-  ([.[] | select(.type == "hook_result" and .hook == "stop" and
+  ([.[] | select(.type == "hook_result" and .lifecycle == "stop" and
     ((.model_text? // "") | contains("feedback")))] | length) == 1
 ' "$cancel_session" >/dev/null

@@ -66,13 +66,14 @@ fail() {
   return 1
 }
 
-# The optional stop reason must match the final record. Record validity and
-# ordering return with the session reader.
+# The optional stop reason must match the final record.
 assert_canonical_session() {
   local session=$1 stop=${2-}
   jq -L "$ROOT" -e -s --arg stop "$stop" '
     include "lib/runtime/schema";
+    include "lib/session/read";
     (.[0] | canonical_session_header(1)) and
+    (.[1:] | session_load | true) and
     ($stop == "" or .[-1].stop == $stop)
   ' "$session" >/dev/null || {
     sf_test_detail=( "not a canonical session${stop:+ ending in stop \"$stop\"}: $session" )

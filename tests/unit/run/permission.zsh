@@ -205,10 +205,14 @@ jq -eRn '
   [inputs | fromjson] as $events |
   ($events | map(select(.type == "_tool_permission_request")) | length) == 1 and
   ($events | map(select(.type == "tool_result") |
-    [.id, .exit_code])) ==
-    [["call_1",126],["call_2",126],["call_3",126]] and
-  all($events[] | select(.type == "tool_result");
-    .input | has("request_sandbox_bypass", "sandbox_bypass_reason") | not)
+    [.id, .exit_code, .model_text])) ==
+    [["call_1",126,"tool call interrupted\nexit 126"],
+     ["call_2",126,"tool call cancelled\nexit 126"],
+     ["call_3",126,"tool call cancelled\nexit 126"]] and
+  ($events | map(select(.type == "tool_result") | .input)) == [
+    {command:"true",request_sandbox_bypass:true,
+      sandbox_bypass_reason:"Required by the test fixture"},
+    {command:"true"},{command:"true"}]
 ' <"$permission_cancel_stream" >/dev/null
 assert_canonical_session "$permission_cancel_session"
 

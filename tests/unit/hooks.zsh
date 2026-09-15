@@ -28,10 +28,10 @@ sf_hooks_session_start "$start_session"
 [[ $OPENAI_API_KEY == standard-secret && $CUSTOM_API_KEY == custom-secret ]]
 jq -e -s --arg start "$start_script" --arg second "$start_second_script" '
   length == 3 and
-  .[1].hook == "session_start" and .[1].name == "start" and
+  .[1].lifecycle == "session_start" and .[1].name == "start" and
   .[1].executable == $start and .[1].input == "" and .[1].exit_code == 0 and
   (.[1].model_text | contains("startup")) and
-  .[2].hook == "session_start" and .[2].name == "start_second" and
+  .[2].lifecycle == "session_start" and .[2].name == "start_second" and
   .[2].executable == $second and .[2].input == "" and .[2].exit_code == 0 and
   (.[2].model_text | contains("second")) and .[1].id != .[2].id
 ' "$start_session" >/dev/null
@@ -201,7 +201,7 @@ STOP_ATTEMPT=2 STOP_INPUT=hi STOP_SKIP=1 STOP_STDOUT=1 \
   sf_hooks_stop "$stop_session" hi 2
 [[ $reply[1] == continue ]]
 sf_session_reset
-jq -e -s --arg executable "$stop_script" '.[-1].hook == "stop" and
+jq -e -s --arg executable "$stop_script" '.[-1].lifecycle == "stop" and
   .[-1].name == "stop" and .[-1].executable == $executable and
   .[-1].input == "hi" and .[-1].exit_code == 10 and
   (.[-1].model_text | contains("feedback"))' \

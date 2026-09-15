@@ -42,35 +42,30 @@ def backend_response_update($event):
     .stop = $event.stop | .ended = true
   else .valid = false end;
 
-# Separate assistant content from ordered tool calls.
-def backend_response_parts(valid_message):
+# One complete response: ordered content with inert tool calls.
+def backend_response_record(valid_message):
   select(.valid and .ended) |
   . as $state |
   [.blocks | to_entries | sort_by(.key | tonumber)[] | .value |
-    if .type != "tool_call" then {valid:true, content:., call:null}
-    elif $state.stop == "length" then {valid:true, content:null, call:null}
-    elif $state.stop != "tool_calls" then {valid:false, content:null, call:null}
+    if .type != "tool_call" then {valid:true, entry:.}
+    elif $state.stop == "length" then {valid:true, entry:null}
+    elif $state.stop != "tool_calls" then {valid:false, entry:null}
     else (.input_text | if . == "" then {} else try fromjson catch null end) as $input |
       if .id != null and .name != null and ($input | type) == "object" then
-        {valid:true, content:null, call:{type, id, name, input:$input}}
-      else {valid:false, content:null, call:null} end
+        {valid:true, entry:{type, id, name, input:$input}}
+      else {valid:false, entry:null} end
     end] as $blocks |
   select(all($blocks[]; .valid)) |
-  {message:({type:"assistant", stop:$state.stop,
-             content:[$blocks[].content | select(. != null)]} +
-            (if $state.usage == null then {} else {usage:$state.usage} end)),
-   calls:[$blocks[].call | select(. != null)]} |
-  select([.calls[].id] | length == (unique | length)) |
-  select(.message | valid_message);
+  ({type:"assistant", stop:$state.stop,
+    content:[$blocks[].entry | select(. != null)]} +
+   (if $state.usage == null then {} else {usage:$state.usage} end)) |
+  select(valid_message);
 
-def assemble_backend_parts(valid_events; valid_message):
+def assemble_backend_response(valid_events; valid_message):
   select(valid_events) |
   reduce .[] as $event
     (backend_response_state; backend_response_update($event)) |
-  backend_response_parts(valid_message);
-
-def assemble_backend_response(valid_events; valid_message):
-  assemble_backend_parts(valid_events; valid_message) | .message;
+  backend_response_record(valid_message);
 
 # Project model input, executable input, and sandbox-bypass fields.
 def tool_call_fields:
@@ -92,11 +87,11 @@ def decode_backend_response(valid_event; valid_message):
         backend_response_update($event) |
         if .valid | not then halt_error(1)
         elif $event.type == "_assistant_end" then
-          [backend_response_parts(valid_message)] as $parts |
-          if ($parts | length) != 1 then halt_error(1)
+          [backend_response_record(valid_message)] as $records |
+          if ($records | length) != 1 then halt_error(1)
           else
-            $parts[0].message as $message |
-            $parts[0].calls as $calls |
+            $records[0] as $message |
+            [$message.content[] | select(.type == "tool_call")] as $calls |
             .output = ["end", "\u0000", ($event | tojson), "\u0000",
               ($message | tojson), "\u0000",
               ($message.stop), "\u0000",

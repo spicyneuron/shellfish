@@ -58,7 +58,7 @@ def durable_display_fields:
       ([$content[] | select(.value.type == "reasoning" and
         (.value.text | test("[^\\n]"))) | .key]) as $reasoning |
       ["assistant_start"],
-      ($content[] |
+      ($content[] | select(.value.type == "text" or .value.type == "reasoning") |
         if .value.type == "text" then
           ["assistant_message_delta", (.key | tostring), .value.text]
         else

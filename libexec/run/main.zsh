@@ -107,7 +107,7 @@ sf_run_main() {
       return 2
     }
     input_projection=$(sf_jq -jre '
-      include "lib/runtime/schema";
+      include "lib/session/read";
       def field: ., "\u0000";
       select(canonical_user_message) |
       (tojson | field), (.content[0].text | field), ("ok" | field)

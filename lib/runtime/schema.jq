@@ -150,15 +150,15 @@ def canonical_backend_response_events:
   .[-1].type == "_assistant_end" and
   ([.[] | select(.type == "_assistant_end")] | length) == 1;
 
-def canonical_text:
+def request_text:
   type == "object" and keys == ["text", "type"] and
   .type == "text" and (.text | type == "string");
 
-def canonical_reasoning:
+def request_reasoning:
   type == "object" and .type == "reasoning" and (.text | type == "string") and
   ((has("opaque") | not) or (.opaque | type == "object"));
 
-def canonical_tool_call:
+def request_tool_call:
   type == "object" and keys == ["id", "input", "name", "type"] and
   .type == "tool_call" and (.id | identifier) and (.name | tool_name) and
   (.input | type == "object");
@@ -171,48 +171,19 @@ def canonical_tool_activity:
   (.name | tool_name) and (.input | type == "object") and
   (if has("user_text") then .user_text | type == "string" and length > 0 else true end);
 
-# Hook and tool results share one settled base; only identity and input differ.
-def canonical_execution_result($extra):
-  type == "object" and
-  ((keys - (["executable", "exit_code", "id", "input", "model_text", "name",
-    "type", "user_text"] + $extra)) | length == 0) and
-  ((["exit_code", "id", "input", "name", "type"] - keys) | length == 0) and
-  (.id | identifier) and
-  (.exit_code | type == "number" and floor == . and . >= 0 and . <= 255) and
-  (if has("executable") then .executable | absolute_path else true end) and
-  (if has("user_text") then .user_text | type == "string" and length > 0 else true end) and
-  (if has("model_text") then .model_text | type == "string" and length > 0 else true end);
-
-def canonical_tool_result:
-  canonical_execution_result([]) and .type == "tool_result" and
-  (.name | tool_name) and (.input | type == "object");
-
-def canonical_user_message:
+def request_user_message:
   type == "object" and keys == ["content", "type"] and .type == "user" and
-  (.content | type == "array" and length == 1 and (.[0] | canonical_text)) and
+  (.content | type == "array" and length == 1 and (.[0] | request_text)) and
   (.content[0].text | nul_free_string);
 
-# Provider-facing response shape; durable record validity lives in the reader.
-def canonical_assistant_message:
+def request_assistant_message:
   type == "object" and .type == "assistant" and
   ((keys - ["content", "stop", "type", "usage"]) | length == 0) and
   (["content", "stop", "type"] - keys | length == 0) and
-  (.stop | IN("end", "tool_calls", "length")) and
+  (.stop | IN("end", "tool_calls", "length", "cancelled")) and
   ((has("usage") | not) or (.usage | token_usage)) and
   (.content | type == "array" and
-    all(.[]; canonical_text or canonical_reasoning));
-
-def canonical_hook_result:
-  canonical_execution_result(["hook"]) and .type == "hook_result" and
-  (.hook as $hook | hook_names | index($hook) != null) and
-  (.name | nul_free_string and length > 0) and
-  (.input | type == "string" or type == "object");
-
-def canonical_state:
-  type == "object" and keys == ["name", "type", "value"] and
-  .type == "state" and
-  (.name | type == "string" and length <= 128 and
-    test("^[A-Za-z0-9][A-Za-z0-9_.:/-]*\\z"));
+    all(.[]; request_text or request_reasoning));
 
 def canonical_request:
   type == "object" and
@@ -220,15 +191,15 @@ def canonical_request:
   .format_version == 1 and (.system | type == "string") and
   (.messages | type == "array" and all(.[];
     type == "object" and
-    if .type == "user" then canonical_user_message
+    if .type == "user" then request_user_message
     elif .type == "assistant" then
       keys == ["content", "stop", "type"] and
       (.content | type == "array" and all(.[];
         if type == "object" and .type == "reasoning" then
           keys == ["text", "type"] or keys == ["opaque", "text", "type"]
         else true end)) and
-      canonical_assistant_message
-    elif .type == "tool_call" then canonical_tool_call
+      request_assistant_message
+    elif .type == "tool_call" then request_tool_call
     elif .type == "tool_result" then
       keys == ["call_id", "content", "exit_code", "name", "type"] and
       (.call_id | identifier) and (.name | tool_name) and
@@ -293,11 +264,3 @@ def canonical_session_header($format_version):
     (.max_requests_per_turn | positive_integer) and
     (.max_tool_calls_per_request | positive_integer) and
     (.max_capture_bytes | capture_bytes));
-
-def canonical_system:
-  type == "object" and keys == ["content", "type"] and .type == "system" and
-  (.content | nul_free_string);
-
-def canonical_error:
-  type == "object" and keys == ["type", "user_text"] and .type == "error" and
-  (.user_text | nul_free_string) and .user_text != "";

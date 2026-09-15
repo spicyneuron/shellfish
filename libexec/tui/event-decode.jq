@@ -1,4 +1,5 @@
 include "lib/runtime/schema";
+include "lib/session/read";
 include "libexec/tui/display-fields";
 
 def event_fields:
@@ -64,8 +65,8 @@ def event_fields:
     ["tool_result", .id, (.user_text // ""), .name, "tool"]
   elif canonical_hook_result then
     ["hook_result", .id, (.user_text // ""), .name, hook_display_class]
-  elif canonical_user_message or canonical_assistant_message or canonical_error then
-    (select(canonical_assistant_message and has("usage")) | .usage |
+  elif canonical_user_message or canonical_response or canonical_error then
+    (select(canonical_response and has("usage")) | .usage |
       turn_usage_fields($event_runtime.profile.context_window // null)),
     ({record:.,replay:false} | durable_display_fields)
   else

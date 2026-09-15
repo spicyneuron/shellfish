@@ -8,7 +8,7 @@ The first record is the session header: session metadata and a snapshot of the r
 
 An optional `system` record follows with the materialized prompt used by provider requests. Startup context and turns follow as durable records.
 
-Records after the header are append-only. Provider deltas, hook activity, permission prompts, and other live events are transient and never enter the file.
+Records after the header are append-only. Each complete provider response is one `assistant` record whose ordered content may include text, reasoning, and inert tool calls. Tool outcomes and durable hook context use distinct result types. Provider deltas, hook activity, permission prompts, and other live events are transient and never enter the file.
 
 ## Lifecycle
 
@@ -28,4 +28,6 @@ The header is frozen against ambient configuration, but it is not immutable. Con
 
 ## Durability and recovery
 
-Every durable prefix must be valid, including one left by an interrupted turn. Tool calls remain inert until the complete assistant response is validated and appended. Only settled tool results are durable; each contains enough data to reconstruct its provider call. After interruption or uncertain live output, clients discard their transient state and replay the session. See [`RUN.md`](RUN.md#completion-and-recovery) for recovery behavior.
+Every durable prefix must be valid, including one left by an interrupted turn. Tool calls remain inert until the complete assistant response is validated and appended. A tool result exactly identifies and repeats the input of the call it settles.
+
+The turn process closes interrupted work from what it knows: an active call is interrupted, later calls are cancelled, and completed outcomes are preserved. Reopening an unfinished session records unresolved calls as unknown outcomes, then closes the failed turn. Clients discard uncertain transient state and replay the session. See [`RUN.md`](RUN.md#completion-and-recovery) for recovery behavior.

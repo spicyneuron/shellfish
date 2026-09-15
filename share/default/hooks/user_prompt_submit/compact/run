@@ -89,12 +89,12 @@ if ! jq -ce -s --rawfile context "$context" --arg created "$created" \
     ($records[0:$start] | .[0].created = $created) as $startup |
     ($startup[] | select(.type != "state")),
     ($records[] | select(.type == "state")),
-    # Repeated compaction carries the previous summary forward, so count them.
-    ([$records[] | select(.type == "hook_result" and .name == "compact")] |
-      length | tostring) as $round |
+    # Carried startup hooks keep their identifiers, so continue past them.
+    (([$startup[] | select(.type == "hook_result") | .id | tonumber] | max // 0) + 1 |
+      tostring) as $id |
     # This context reaches the model through the successor session, so its
     # attribution must match the envelope the core applies to hook output.
-    {type:"hook_result",hook:"session_start",id:("compact_" + $round),
+    {type:"hook_result",lifecycle:"session_start",id:$id,
       name:"compact",input:"",executable:$executable,exit_code:0,
       model_text:("<hook name=\"session_start\">\n<context script=\"compact\">" +
         $context + "</context>\n</hook>")}

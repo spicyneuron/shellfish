@@ -50,12 +50,14 @@ sf_install_main() {
   source "$SF_ROOT/lib/jq.zsh"
   sf_jq -Rse '
     include "lib/runtime/schema";
+    include "lib/session/read";
     select(endswith("\n")) |
     split("\n") as $lines |
     select($lines[-1] == "" and ($lines[0:-1] | length > 0) and
       all($lines[0:-1][]; length > 0)) |
     ($lines[0:-1] | map(fromjson)) as $records |
-    select($records[0] | canonical_session_header(1))
+    select($records[0] | canonical_session_header(1)) |
+    select($records[1:] | session_load)
   ' "$SF_INSTALL_TEMP" >/dev/null 2>&1 || {
     sf_die 'install-session requires one canonical JSONL transcript on stdin'
     return 2

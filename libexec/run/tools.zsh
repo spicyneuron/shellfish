@@ -184,7 +184,7 @@ sf_tool_settle() {
     --arg executable "${SF_TOOL_COMMAND[$name]-}" \
     --argjson before "$before" --argjson after "$after" '
       include "lib/render";
-      include "lib/runtime/schema";
+      include "lib/session/read";
       (render_tool($render; $name; $input; $output) | render_execution) as $rendered |
       ([$before[], $rendered.model_after, $after[]] |
         map(select(. != "")) | join("\n\n")) as $model |
