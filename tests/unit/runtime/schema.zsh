@@ -224,6 +224,12 @@ valid_manifest=$(jq -cn '
       properties: {command: {type: "string"}},
       required: ["command"]
     },
+    render: {
+      running: "${name}\n${input.command}",
+      user: "${name}\n${output.stdout}${output.stderr}\nexit ${output.exit_code}",
+      model: "${output.stdout}${output.stderr}\nexit ${output.exit_code}",
+      permission: "${input.command}"
+    },
     sandbox: true,
     allow_sandbox_bypass: true
   }
@@ -233,6 +239,15 @@ for manifest in "$ROOT"/share/default/tools/*/manifest.json; do
   schema_eval 'tool_manifest' <"$manifest" >/dev/null ||
     fail "invalid bundled tool manifest: $manifest"
 done
+
+if jq -c '.render = {user_before:"",user_after:"",model_after:""}' \
+    <<<"$valid_manifest" | schema_eval 'tool_manifest' >/dev/null 2>&1; then
+  fail 'tool manifest accepted the deleted render vocabulary'
+fi
+if jq -c '.render.running = "${output.stdout}"' <<<"$valid_manifest" |
+    schema_eval 'tool_manifest' >/dev/null 2>&1; then
+  fail 'tool manifest used output in its running text'
+fi
 
 typeset tool_header
 tool_header=$(jq -cn --argjson header "$valid_header" --argjson manifest "$valid_manifest" '

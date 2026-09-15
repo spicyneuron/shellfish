@@ -115,3 +115,11 @@ sf_test_session() {
   sf_session_prepare "$SF_TEST_RUNTIME" &&
     sf_session_system "$SF_TEST_SYSTEM" && sf_test_install_prepared "$session"
 }
+
+sf_test_run() {
+  local prompt=$1 session=$2 reply=${3-}
+  {
+    jq -cn --arg text "$prompt" '{type:"user",content:[{type:"text",text:$text}]}'
+    [[ -z $reply ]] || print -r -- "$reply"
+  } | "$ROOT/bin/shellfish" run --jsonl --session "$session"
+}
