@@ -8,5 +8,11 @@
       "name": {"type": "string", "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$", "maxLength": 64, "description": "Skill name from the available agent skills context"}
     }
   },
+  "render": {
+    "running": "${name} · ${input.name}",
+    "user": "${name} · ${input.name}\n${output.stdout}${output.stderr}",
+    "model": "${output.stdout}${output.stderr}",
+    "permission": "${input.name}"
+  },
   "sandbox": false
 }

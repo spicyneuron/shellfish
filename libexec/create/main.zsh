@@ -36,6 +36,31 @@ sf_create_interrupt() {
   exit $exit_status
 }
 
+sf_create_session() {
+  local session=$1 runtime=$2 system=$3 error=''
+  typeset -gx SHELLFISH_MODE=create
+  sf_session_prepare "$runtime" && sf_session_system "$system" || {
+    sf_die "$SF_SESSION_ERROR"
+    return 1
+  }
+  printf '%s\n' "${SF_SESSION_RECORDS[@]}" |
+    "$SF_ENTRY" install-session --session-out "$session" >/dev/null || return 1
+  if (( SF_CREATE_JSONL )); then
+    printf '%s\n' "${SF_SESSION_RECORDS[@]}" | jq -cs --arg path "$session" \
+      '{type:"_session_prepare",path:$path,records:.}' || {
+      sf_die 'cannot emit session preparation'
+      return 1
+    }
+  fi
+  source "$SF_ROOT/libexec/create/hooks.zsh"
+  sf_create_start_hooks "$session" || error=$?
+  (( ! error )) || {
+    rm -f -- "$session" 2>/dev/null
+    sf_session_reset
+    return $error
+  }
+}
+
 sf_create_main() {
   local requested_out='' report runtime session system
   local system_text projection
@@ -101,6 +126,7 @@ sf_create_main() {
   system=${(pj:\n\n:)system_parts}
 
   source "$SF_ROOT/lib/session/main.zsh"
+  source "$SF_ROOT/lib/scratch.zsh"
   trap 'sf_create_interrupt 130 "$session"' INT USR1
   trap 'sf_create_interrupt 129 "$session"' HUP
   trap 'sf_create_interrupt 143 "$session"' TERM
@@ -109,8 +135,21 @@ sf_create_main() {
     return 1
   }
   session=$REPLY
-  sf_die 'session startup is unavailable'
-  return 1
+  local create_status=0
+  sf_create_session "$session" "$runtime" "$system" || create_status=$?
+  if (( create_status )); then
+    if (( create_status == 130 )); then
+      sf_die 'Cancelled.' || true
+    elif (( create_status == 129 || create_status == 143 )); then
+      sf_die 'Session creation interrupted.' || true
+    fi
+    return $create_status
+  fi
+  if (( SF_CREATE_JSONL )); then
+    jq -cn --arg path "$session" '{type:"_session_created",path:$path}' || return 1
+  else
+    print -r -- "$session" || return 1
+  fi
 }
 
 sf_create_main "$@"

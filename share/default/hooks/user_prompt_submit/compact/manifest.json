@@ -1,4 +1,5 @@
 {
+  "running": "compact · Compacting conversation…",
   "match": {
     "command": "check"
   },

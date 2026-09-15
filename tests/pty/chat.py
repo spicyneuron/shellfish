@@ -57,13 +57,12 @@ def test_sandbox_updates_without_reload():
             assert result.pop("id")
             assert result == {
                 "type": "hook_result",
-                "hook": "user_prompt_submit",
+                "lifecycle": "user_prompt_submit",
                 "name": "sandbox",
                 "executable": records[0]["harness"]["user_prompt_submit"][0]["command"],
                 "input": f"/sandbox +w {grant}",
-                "user_text": f"sandbox\n{granted}",
-                "model_text": '<hook name="user_prompt_submit">\n'
-                f'<context script="sandbox">{granted}</context>\n</hook>',
+                "user_text": granted,
+                "model_text": granted,
                 "exit_code": 11,
             }
         finally:
@@ -200,7 +199,7 @@ def test_interrupt_drains_partial_recovery():
         _, records = session.wait_session_records(4, path=path)
         assert records[-1] == {"type": "error", "user_text": "Cancelled."}
         recovered = records[-2]
-        assert recovered["type"] == "assistant" and recovered["stop"] == "length"
+        assert recovered["type"] == "assistant" and recovered["stop"] == "cancelled"
         assert any(
             item["type"] == "reasoning" and item["text"]
             for item in recovered["content"]

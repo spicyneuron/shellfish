@@ -137,7 +137,21 @@ sf_run_main() {
     return $open_status
   fi
 
-  sf_die 'turn orchestration is unavailable'
+  local session=$SF_SESSION_OPEN[path]
+  source "$SF_ROOT/libexec/run/turn.zsh"
+  SF_RUN[jsonl]=$jsonl
+  typeset -gx SHELLFISH_MODE=run
+  trap 'SF_RUN[signal_status]=130; kill -TERM $$' INT USR1
+  trap 'SF_RUN[signal_status]=129; kill -TERM $$' HUP
+  trap '(( SF_RUN[signal_status] )) || SF_RUN[signal_status]=143;
+    sf_run_interrupt "$SF_RUN[signal_status]"; exit $SF_RUN[signal_status]' TERM
+  sf_run_turn "$input" "$session" "$prompt"
+  local run_status=$?
+  trap - INT USR1 HUP TERM
+  if (( ! jsonl )) && [[ -n $SF_RUN[answer] ]]; then
+    print -r -- "$SF_RUN[answer]"
+  fi
+  return $run_status
 }
 
 sf_run_main "$@"

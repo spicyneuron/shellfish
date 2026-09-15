@@ -1,5 +1,5 @@
 emulate -R zsh
-setopt no_aliases pipe_fail
+setopt no_aliases no_multios pipe_fail
 
 (( $+functions[sf_jq] )) || source "$SF_ROOT/lib/jq.zsh"
 

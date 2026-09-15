@@ -17,15 +17,21 @@ A tool directory contains an executable `run`, a `manifest.json` or `manifest.js
       "path": {"type": "string", "minLength": 1}
     }
   },
+  "render": {
+    "running": "${name} · ${input.path}",
+    "user": "${name} · ${input.path}\n${output.stdout}${output.stderr}",
+    "model": "${output.stdout}${output.stderr}",
+    "permission": "${input.path}"
+  },
   "sandbox": true,
   "allow_sandbox_bypass": true,
   "environment": ["TOOL_SETTING"]
 }
 ```
 
-`description`, `input_schema`, and `sandbox` are required. The input schema must describe an object. `environment` selects component-specific variables and defaults to empty. `allow_sandbox_bypass` defaults to false and is valid only for a sandboxed tool.
+`description`, `input_schema`, `render`, and `sandbox` are required. The input schema must describe an object. `environment` selects component-specific variables and defaults to empty. `allow_sandbox_bypass` defaults to false and is valid only for a sandboxed tool.
 
-A manifest defines complete `user_before`, `user_after`, and `model_after` templates. Templates use one-pass `${...}` substitution for the tool name, input, and raw output fields. Permission preview is a separate template because permission is a distinct transient view. See the manifests under [`share/default/tools/`](../share/default/tools/) for examples.
+A manifest defines `running` and `permission` templates before execution and `user` and `model` templates for the result. Empty rendered text is omitted. Templates use one-pass `${...}` substitution with `name`, `input`, `input.FIELD`, `output.stdout`, `output.stderr`, and `output.exit_code`. Output variables are available only to result templates. See the manifests under [`share/default/tools/`](../share/default/tools/) for examples.
 
 If a provider requests an undeclared tool, Shellfish uses a plain default template so the call and its rejection remain visible to the user and model.
 

@@ -8,5 +8,11 @@
       "url": {"type": "string", "minLength": 1, "description": "HTTP(S) URL to fetch"}
     }
   },
+  "render": {
+    "running": "${name} · ${input.url}",
+    "user": "${name} · ${input.url}\n${output.stdout}${output.stderr}",
+    "model": "${output.stdout}${output.stderr}",
+    "permission": "${input.url}"
+  },
   "sandbox": true
 }

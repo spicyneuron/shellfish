@@ -99,14 +99,7 @@ class Session:
                 script = component / "run"
                 script.write_text(body)
                 script.chmod(0o755)
-                # Hooks display nothing unless they ask to; these speak on stderr.
-                (component / "manifest.json").write_text(json.dumps({
-                    "render": {
-                        "user_before": "",
-                        "user_after": "${output.stderr}",
-                        "model_after": "${output.stdout}",
-                    }
-                }))
+                (component / "manifest.json").write_text("{}")
         if session_start:
             config["harnesses"]["test"]["session_start"] = session_start
         self.config_file.write_text(json.dumps(config))

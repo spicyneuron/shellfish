@@ -12,10 +12,27 @@ def component_environment:
 def nul_free_string:
   type == "string" and (index("\u0000") | not);
 
+def script_template($input_variables; $output):
+  type == "string" and (index("\u0000") | not) and
+  (gsub("\\$\\{[^{}]+\\}"; "") | index("${") | not) and
+  ([scan("\\$\\{([^{}]+)\\}")[0]] | all(.[];
+    . == "name" or . == "input" or
+    (if $input_variables == null then test("^input\\.[A-Za-z_][A-Za-z0-9_]*$")
+     else . as $name | $input_variables | index($name) != null end) or
+    ($output and IN("output.stdout", "output.stderr", "output.exit_code"))));
+
+def tool_render($input_variables):
+  type == "object" and keys == ["model", "permission", "running", "user"] and
+  (.running | script_template($input_variables; false)) and
+  (.permission | script_template($input_variables; false)) and
+  (.user | script_template($input_variables; true)) and
+  (.model | script_template($input_variables; true));
+
 def tool_manifest:
+  (.input_schema.properties // {} | keys | map("input." + .)) as $input_variables |
   type == "object" and
   ((keys - ["allow_sandbox_bypass", "description", "environment",
-    "input_schema", "sandbox"]) | length == 0) and
+    "input_schema", "render", "sandbox"]) | length == 0) and
   (.description | nul_free_string and length > 0) and
   (.input_schema | type == "object" and .type == "object" and
     ((.properties // {}) | type == "object") and
@@ -25,6 +42,7 @@ def tool_manifest:
       has("request_sandbox_bypass") or has("sandbox_bypass_reason") | not) and
     ((.required // []) |
       index("request_sandbox_bypass") == null and index("sandbox_bypass_reason") == null)) and
+  (.render | tool_render($input_variables)) and
   ((.environment // []) | component_environment) and
   (.sandbox | type == "boolean") and
   ((.allow_sandbox_bypass // false) | type == "boolean") and
@@ -72,9 +90,10 @@ def hook_help:
 
 def hook_component:
   type == "object" and
-  (keys - ["command", "environment", "help", "match"] | length) == 0 and
-  has("command") and has("environment") and
+  (keys - ["command", "environment", "help", "match", "running"] | length) == 0 and
+  has("command") and has("environment") and has("running") and
   (.command | absolute_path) and
+  (.running | script_template(null; false)) and
   (.environment | component_environment) and
   (if has("match") then .match | hook_match else true end) and
   (if has("help") then .help | hook_help else true end);

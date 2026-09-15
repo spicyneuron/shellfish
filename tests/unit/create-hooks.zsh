@@ -36,7 +36,7 @@ export START_INPUT=$input
 zsh -f "$entry" create --jsonl --config "$config" --session-out "$session" \
   >"$stream" || fail 'session_start hook failed'
 [[ ! -s $input ]] || fail 'session_start hook received nonempty stdin'
-jq -eRn --arg session "$session" --arg executable "$hook/run" '
+jq -eRn --arg session "$session" --arg executable "${hook:A}/run" '
   [inputs | fromjson] as $events |
   ($events | any(.type == "_hook_activity" and .hook == "session_start" and
     .user_text == "Starting up")) and

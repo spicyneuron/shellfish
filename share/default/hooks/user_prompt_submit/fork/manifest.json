@@ -1,4 +1,5 @@
 {
+  "running": "fork · Forking session…",
   "match": {
     "pattern": "^/fork( [^\\n]*)?\\z"
   },

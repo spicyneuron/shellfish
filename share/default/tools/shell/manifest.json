@@ -15,6 +15,12 @@
       }
     }
   },
+  "render": {
+    "running": "${name}\n${input.command}",
+    "user": "${name}\n${input.command}\n${output.stdout}${output.stderr}\nexit ${output.exit_code}",
+    "model": "${output.stdout}${output.stderr}\nexit ${output.exit_code}",
+    "permission": "${input.command}"
+  },
   "sandbox": true,
   "allow_sandbox_bypass": true
 }

@@ -43,7 +43,7 @@ Each hook is configured on a harness as an ordered list of component references.
 A manifest can select component-specific values to load from `.env` and set a running display label:
 
 ```json
-{"environment":["HOOK_MODE"],"display":"Checking the working tree"}
+{"environment":["HOOK_MODE"],"running":"Checking the working tree"}
 ```
 
 `user_prompt_submit` components may also declare a regular-expression or executable `match` selector and optional help metadata:
@@ -74,8 +74,8 @@ Scripts communicate through three bounded channels:
 
 | Channel | Meaning |
 | --- | --- |
-| stdout | Hook-specific data, usually durable model context |
-| stderr | Durable user-only output from successful ordinary hooks |
+| stdout | Durable model context, preserved verbatim |
+| stderr | Durable user-only output, preserved verbatim |
 | fd 3 | One JSON control object for durable state and hook-specific decisions |
 
 fd 3, when used, must contain exactly one object. Every hook accepts `{"state":[{"name":"example","value":true}]}`. Additional control fields depend on the hook. State names are at most 128 characters and match `^[A-Za-z0-9][A-Za-z0-9_.:/-]*$`. Valid state and hook output become durable in that order before the next component runs. Scripts never write the transcript directly.
@@ -102,7 +102,7 @@ Skipping is sticky: after one script returns 10 or 11, a later zero does not res
 | `post_tool_use` | tool response JSON | continue | unsupported |
 | `stop` | final assistant text | finish turn | add feedback and continue |
 
-Successful ordinary-hook stdout becomes attributed model context. Stderr becomes attributed user-only output. Shellfish escapes model context and keeps it distinct from human messages.
+Hook stdout becomes attributed model context. Stderr becomes attributed user-only output. These meanings do not change with lifecycle or exit status.
 
 Tool hooks receive canonical envelopes. A request envelope has:
 
@@ -155,8 +155,8 @@ Runs when a tool requests a supported sandbox bypass. This decision is separate 
 
 - **argv:** `permission_request`
 - **stdin:** tool request envelope
-- **stdout:** ignored
-- **stderr:** ignored on success and included in failure diagnostics
+- **stdout:** durable model context
+- **stderr:** durable user-only output
 - **fd 3:** state, and with exit 11, `{"action":"allow"}` or `{"action":"deny","reason":"..."}`
 - **Exit 0:** defer to an interactive client, or deny if none can answer
 - **Exit 10:** deny and continue the hook chain
@@ -168,7 +168,7 @@ Runs immediately before a tool.
 
 - **argv:** `pre_tool_use`
 - **stdin:** tool request envelope
-- **stdout:** must be empty on exit 0 and becomes model-visible denial feedback on exit 10 or 11
+- **stdout:** durable model context
 - **stderr:** user-only output
 - **fd 3:** state
 - **Exit 0:** execute the tool
@@ -183,13 +183,13 @@ Runs after the tool completes but before its result is committed, including when
 
 - **argv:** `post_tool_use`
 - **stdin:** tool response envelope
-- **stdout:** available to the configured result templates
+- **stdout:** durable model context before the tool result
 - **stderr:** user-only output
 - **fd 3:** state
 - **Exit 0:** continue the tool loop
 - **Exit 10 or 11:** unsupported and fail the turn
 
-This hook cannot replace the tool outcome. Its rendered model context is folded into the result before commit; its user-facing update is transient.
+This hook cannot replace the tool outcome. Its state and hook result are committed before the tool result.
 
 ### `stop`
 
@@ -197,7 +197,7 @@ Runs after a completed assistant record.
 
 - **argv:** `stop STOP_ATTEMPT`, with a one-based attempt count
 - **stdin:** text blocks from the final assistant message, concatenated in content order
-- **stdout:** discarded on exit 0 and required continuation feedback on exit 10 or 11
+- **stdout:** durable model context
 - **stderr:** durable user-only output
 - **fd 3:** state
 - **Exit 0:** finish the turn
@@ -206,7 +206,7 @@ Runs after a completed assistant record.
 
 ## Guarantees and limits
 
-- Hook scripts are trusted programs, but their model-facing output is escaped before request projection.
+- Hook scripts are trusted programs, but their output remains attributed hook context rather than a human message.
 - Dispatch is sequential and preserves configured order.
 - Captures are private and bounded by `SHELLFISH_MAX_CAPTURE_BYTES`. Exceeding the combined budget fails the operation.
 - Scripts have no independent timeout and must finish their own subprocesses.

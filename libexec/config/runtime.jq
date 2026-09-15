@@ -226,18 +226,20 @@ def runtime_finalize:
       settings:(if $tool_manifest.sandbox then $tool.settings else null end)} end] as $tools |
   (reduce $resolved_components[] as $component ({};
     ($component.manifest_json | fromjson) as $manifest |
+    ($manifest.running // "") as $running |
     ($manifest |
       select(type == "object" and
         (keys - (if $component.hook == "user_prompt_submit"
-          then ["environment", "help", "match"]
-          else ["environment"] end) | length) == 0 and
+          then ["environment", "help", "match", "running"]
+          else ["environment", "running"] end) | length) == 0 and
         ((.environment // []) | component_environment) and
+        ($running | script_template(null; false)) and
         (if has("match") then .match | hook_match else true end) and
         (if has("help") then
            has("match") and (.help | hook_help)
          else true end)) //
       error("invalid hook manifest: " + $component.command)) as $hook_manifest |
-    .[$component.hook] += [({command:$component.command,
+    .[$component.hook] += [({command:$component.command,running:$running,
       environment:($hook_manifest.environment // [])} +
       (if $hook_manifest | has("match") then {match:$hook_manifest.match} else {} end) +
       (if $hook_manifest | has("help") then {help:$hook_manifest.help} else {} end))])) as $hooks |

@@ -58,7 +58,7 @@ sf_process_isolated_command() {
 sf_process_wait() {
   local pid=$1 group_file=$2 status_file=$3
   integer group=0 process_status=1
-  wait "$pid" || true
+  wait "$pid" 2>/dev/null || true
   [[ -r $group_file ]] && read -r group <"$group_file" 2>/dev/null || group=0
   (( group > 0 )) && kill -KILL -- -$group 2>/dev/null || true
   if [[ -r $status_file ]] && read -r process_status <"$status_file" 2>/dev/null &&
@@ -224,7 +224,8 @@ sf_process_run() {
     readers+=( $! )
     "${process_command[@]}" </dev/null >/dev/null 2>&1 &
     process_pid=$!
-    trap 'signal_status=130; sf_process_stop "$process_pid" "$group_file"' INT
+    trap 'signal_status=130; sf_process_stop "$process_pid" "$group_file"' INT USR1
+    trap 'signal_status=129; sf_process_stop "$process_pid" "$group_file"' HUP
     trap 'signal_status=143; sf_process_stop "$process_pid" "$group_file"' TERM
     if sf_process_wait "$process_pid" "$group_file" "$status_file"; then
       process_status=$REPLY
@@ -258,7 +259,7 @@ sf_process_run() {
     }
     complete=1
   } always {
-    trap - INT TERM
+    trap - INT USR1 HUP TERM
     (( process_pid == 0 || complete )) || sf_process_stop "$process_pid" "$group_file"
     (( complete )) || {
       for reader in $readers; do kill -TERM $reader 2>/dev/null; wait $reader 2>/dev/null; done

@@ -4,7 +4,7 @@ emulate -R zsh
 setopt extended_glob no_aliases no_multios pipe_fail
 
 typeset submitted='' body operation candidate grant_path header grants updated patch field
-typeset action access
+typeset action access message
 typeset usage='usage: /sandbox {read|write|+read|+write|+r|+w|-read|-write|-r|-w} DIR'
 integer read_status
 IFS= read -r submitted
@@ -99,10 +99,12 @@ updated=$(jq -c --arg action "$action" --arg path "$grant_path" '
 patch=$(jq -cn --arg field "$field" --argjson paths "$updated" \
   '{harness:{($field):$paths}}') || exit 1
 if [[ $action == add ]]; then
-  print -r -- "Session sandbox $access grant added: $grant_path"
+  message="Session sandbox $access grant added: $grant_path"
 else
-  print -r -- "Session sandbox $access grant removed: $grant_path"
+  message="Session sandbox $access grant removed: $grant_path"
 fi
+print -r -- "$message"
+print -u2 -r -- "$message"
 
 jq -cn --argjson patch "$patch" \
   '{action:"session_update",patch:$patch}' >&3 || exit 1
