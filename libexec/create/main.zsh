@@ -14,10 +14,6 @@ sf_die() {
   return 1
 }
 
-sf_create_emit() {
-  (( SF_CREATE_JSONL )) && print -r -- "$1" || true
-}
-
 sf_create_read_system() {
   local requested=$1 path=$1
   if [[ $path == '~/'* ]]; then
