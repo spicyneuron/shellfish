@@ -30,8 +30,10 @@ wait "$pid" || cancel_status=$?
 print -r -- "$(<"$cancel_stream")" | jq -eRn '
   [inputs | fromjson] as $events |
   ($events | map(select(.type == "tool_result"))) == [{
-    type:"tool_result",call_id:"call_1",name:"shell",
-    input:{command:$command},stdout:"",stderr:"tool call interrupted",exit_code:126
+    type:"tool_result",id:"call_1",name:"shell",input:{command:$command},
+    exit_code:126,
+    user_text:("shell\n" + $command + "\ntool call interrupted\nexit 126"),
+    model_text:"tool call interrupted\nexit 126"
   }] and $events[-1] == {type:"error",user_text:"Turn interrupted."}
 ' --arg command "$command" >/dev/null
 assert_canonical_session "$cancel_session"

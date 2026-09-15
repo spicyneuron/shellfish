@@ -60,10 +60,10 @@ sf_run_permission() {
   fi
   (( SF_RUN[permission_count] += 1 ))
   id="permission_$SF_RUN[permission_count]"
-  jq -cn --arg id "$id" --arg call_id "$call_id" --arg name "$name" \
-    --argjson input "$input" \
-    '{type:"_tool_permission_request",id:$id,reason:$input.sandbox_bypass_reason,
-      tool:{call_id:$call_id,name:$name,input:$input}}' || {
+  sf_tool_preview "$call_id" "$name" "$input" &&
+    jq -c --arg id "$id" '{type:"_tool_permission_request",id:$id,
+      reason:.input.sandbox_bypass_reason,preview,
+      tool:{id,name,input}}' <<<"$REPLY" || {
       SF_RUN[permission_error]='cannot prepare permission request'
       return 2
     }
@@ -161,6 +161,7 @@ sf_run_turn() {
   local request assistant stop_input result state backend_command opened_records record
   local tool_name call_id tool_input execution_input bypass bypass_reason_valid
   local decision denial_reason hook_action hook_reason
+  local before_contexts after_contexts
   local runtime_projection response_projection response_field
   local tools tool_schema max_capture fence backend_environment env_file config_dir name
   local sandbox_read_paths sandbox_write_paths
@@ -421,21 +422,23 @@ sf_run_turn() {
         bypass=$tool_calls[tool_index+4]
         bypass_reason_valid=$tool_calls[tool_index+5]
         SF_RUN[active_call]=$call_id
-        record=$(jq -cn --arg call_id "$call_id" --arg name "$tool_name" \
-          --argjson input "$tool_input" \
-          '{type:"_tool_activity",call_id:$call_id,name:$name,input:$input}') || {
+        if ! sf_tool_preview "$call_id" "$tool_name" "$tool_input"; then
+          failure='cannot prepare tool activity'
+          return 1
+        fi
+        record=$(jq -c '{type:"_tool_activity",id,name,input} +
+          (if .user_text == "" then {} else {user_text} end)' <<<"$REPLY") || {
           failure='cannot prepare tool activity'
           return 1
         }
         sf_run_emit "$record"
+        SF_HOOK_CONTEXTS=()
         if (( call_count > tool_limit )); then
-          if ! sf_tool_result "$call_id" "$tool_name" \
-              "$execution_input" \
+          if ! sf_tool_refused \
               "tool call denied: per-response limit is $tool_limit" 126; then
             failure=${SF_TOOL_ERROR:-cannot prepare denied tool result}
             return 1
           fi
-          result=$REPLY
         else
           if ! sf_hooks_pre_tool_use "$session_path" "$tool_name" "$call_id" "$tool_input"; then
             failure=$SF_HOOK_ERROR
@@ -444,14 +447,10 @@ sf_run_turn() {
           hook_action=$reply[1]
           hook_reason=$reply[2]
           if [[ $hook_action == deny ]]; then
-            if ! sf_tool_result "$call_id" "$tool_name" \
-                "$execution_input" \
-                "$hook_reason" \
-                126; then
+            if ! sf_tool_refused "$hook_reason" 126; then
               failure=${SF_TOOL_ERROR:-cannot prepare denied tool result}
               return 1
             fi
-            result=$REPLY
           else
             decision=''
             denial_reason=''
@@ -480,7 +479,6 @@ sf_run_turn() {
               failure=${SF_TOOL_ERROR:-shell tool execution failed}
               return 1
             fi
-            result=$REPLY
           fi
         fi
         for state in "${SF_TOOL_STATE_RECORDS[@]}"; do
@@ -490,16 +488,26 @@ sf_run_turn() {
           fi
           sf_run_emit "$state"
         done
+        before_contexts=$(jq -nc '$ARGS.positional' --args -- "${SF_HOOK_CONTEXTS[@]}")
+        SF_HOOK_CONTEXTS=()
+        # Post hooks see the settled output before the call becomes durable, so a
+        # failure here still settles the call with the context accepted so far.
+        sf_hooks_post_tool_use "$session_path" "$call_id" "$tool_name" \
+          "$tool_input" "$SF_TOOL_OUTPUT" || failure=$SF_HOOK_ERROR
+        after_contexts=$(jq -nc '$ARGS.positional' --args -- "${SF_HOOK_CONTEXTS[@]}")
+        if ! sf_tool_settle "$call_id" "$tool_name" "$tool_input" \
+            "$SF_TOOL_OUTPUT" "$before_contexts" "$after_contexts"; then
+          failure=${SF_TOOL_ERROR:-cannot settle tool result}
+          return 1
+        fi
+        result=$REPLY
         if ! sf_session_append "$session_path" "$result"; then
           failure=$SF_SESSION_ERROR
           return 1
         fi
         sf_run_emit "$result"
         sf_run_finish_call
-        if ! sf_hooks_post_tool_use "$session_path" "$result" "$tool_input"; then
-          failure=$SF_HOOK_ERROR
-          return 1
-        fi
+        [[ -z $failure ]] || return 1
       done
     done
   } always {

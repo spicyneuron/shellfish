@@ -27,37 +27,17 @@ replayed
 assert_equal "user|Use both tools|||||
 assistant_start||||||
 assistant_end||||||
-tool_call|call_1|read_file · README.md|read_file|0||
-tool_result|call_1|read_file · README.md
+tool_result|call_1|read_file
 contents
-second line|read_file|0||
-tool_call|call_2|shell
-make test|shell|0||
+second line
+exit 0|read_file|0||
 tool_result|call_2|shell
-make test
 failed${esc}[31m
 exit 1|shell|0||
 assistant_start||||||
 assistant_message_delta|0|Done||||
 assistant_end||||||
 hook_result|session_start|/hooks/test/run||-1|1|" "$REPLY"
-
-# Replay omits correlated hook views that preceded the tool result, but keeps
-# later hook notes.
-{
-  head -n 1 "$tmp/tools.jsonl"
-  print -r -- '{"type":"user","content":[{"type":"text","text":"run it"}]}'
-  print -r -- '{"type":"assistant","stop":"tool_calls","content":[]}'
-  print -r -- '{"type":"hook_result","hook":"pre_tool_use","id":"h1_1","name":"pre","input":{},"executable":"/hooks/pre/run","model_text":"before","exit_code":0,"tool_use_id":"call_1"}'
-  print -r -- '{"type":"tool_result","call_id":"call_1","name":"shell","input":{"command":"true"},"stdout":"done","stderr":"","exit_code":0}'
-  print -r -- '{"type":"hook_result","hook":"post_tool_use","id":"h1_2","name":"post","input":{},"executable":"/hooks/post/run","model_text":"after","exit_code":0,"tool_use_id":"call_1"}'
-} >"$tmp/correlated.jsonl"
-SF_TEST_EVENTS=()
-sf_tui_reload "$tmp/correlated.jsonl" || fail "$SF_PRESENT_ERROR"
-replayed
-[[ $REPLY != *'/hooks/pre/run'* ]] || fail "replayed pre-tool hook: $REPLY"
-[[ $REPLY == *'hook_result|post_tool_use|/hooks/post/run||-1|1|call_1'* ]] ||
-  fail "missing replayed post-tool hook: $REPLY"
 
 # The header replaces stale runtime state.
 SF_PRESENT_IDENTITY=stale/model

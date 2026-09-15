@@ -22,15 +22,11 @@ if print -r -- '{"type":"_assistant_start","unexpected":true}' |
   fail 'malformed backend request start was accepted'
 fi
 
-# Decode tool activity.
-typeset order shell_runtime
-shell_runtime=$(jq -cn \
-  --slurpfile shell "$ROOT/share/default/tools/shell/manifest.json" '
-  {harness:{tools:[{name:"shell",manifest:$shell[0]}]}}
-')
+# Decode tool activity from ready text.
+typeset order
 order=$(print -r -- \
-    '{"type":"_tool_activity","call_id":"call_1","name":"shell","input":{"command":"true"}}' |
-  jq -jRs -L "$ROOT" --argjson runtime "$shell_runtime" \
+    '{"type":"_tool_activity","id":"call_1","name":"shell","input":{"command":"true"},"user_text":"shell\ntrue"}' |
+  jq -jRs -L "$ROOT" --argjson runtime '{}' \
     -f "$ROOT/libexec/tui/event-decode.jq" |
   tr '\0' '\n' | sed '/^$/d' | paste -sd, -)
 assert_equal 'tool_call,call_1,shell,true,shell,0,batch_ok' "$order"
@@ -83,13 +79,9 @@ for invalid in '{"type":"error","user_text":1}' \
 done
 
 # Decode unsandboxed tool calls.
-typeset read_runtime=$(jq -cn \
-  --slurpfile read "$ROOT/share/default/tools/read_file/manifest.json" '
-  {harness:{tools:[{name:"read_file",manifest:$read[0]}]}}
-')
 order=$(print -r -- \
-    '{"type":"_tool_activity","call_id":"call_2","name":"read_file","input":{"file_path":"outside.txt","request_sandbox_bypass":true,"sandbox_bypass_reason":"test"}}' |
-  jq -jRs -L "$ROOT" --argjson runtime "$read_runtime" \
+    '{"type":"_tool_activity","id":"call_2","name":"read_file","input":{"file_path":"outside.txt","request_sandbox_bypass":true,"sandbox_bypass_reason":"test"},"user_text":"read_file · outside.txt"}' |
+  jq -jRs -L "$ROOT" --argjson runtime '{}' \
     -f "$ROOT/libexec/tui/event-decode.jq" |
   tr '\0' '\n' | sed '/^$/d' | paste -sd, -)
 assert_equal 'tool_call,call_2,read_file · outside.txt,read_file,0,batch_ok' "$order"
@@ -136,20 +128,16 @@ assert_equal 'batch_ok' "$order"
 
 # Decode shell permissions.
 order=$(print -r -- \
-    '{"type":"_tool_permission_request","id":"permission_1","reason":"host access","tool":{"name":"shell","input":{"command":"echo hi","request_sandbox_bypass":true}}}' |
-  jq -jRs -L "$ROOT" --argjson runtime "$shell_runtime" \
+    '{"type":"_tool_permission_request","id":"permission_1","reason":"host access","preview":"echo hi","tool":{"id":"call_1","name":"shell","input":{"command":"echo hi","request_sandbox_bypass":true}}}' |
+  jq -jRs -L "$ROOT" --argjson runtime '{}' \
     -f "$ROOT/libexec/tui/event-decode.jq" |
   tr '\0' '\n' | sed '/^$/d' | paste -sd, -)
 assert_equal 'permission_request,permission_1,shell,echo hi,host access,plain,batch_ok' "$order"
 
 # Decode tool results.
-typeset edit_runtime=$(jq -cn \
-  --slurpfile edit "$ROOT/share/default/tools/edit_file/manifest.json" '
-  {harness:{tools:[{name:"edit_file",manifest:$edit[0]}]}}
-')
 order=$(print -r -- \
-    '{"type":"tool_result","call_id":"call_2","name":"edit_file","input":{"file_path":"notes.txt"},"stdout":"@@ -1 +1 @@\n-old\n+new","stderr":"","exit_code":0}' |
-  jq -jRs -L "$ROOT" --argjson runtime "$edit_runtime" \
+    '{"type":"tool_result","id":"call_2","name":"edit_file","input":{"file_path":"notes.txt"},"exit_code":0,"user_text":"edit_file · notes.txt\n@@ -1 +1 @@\n-old\n+new","model_text":"@@ -1 +1 @@\n-old\n+new"}' |
+  jq -jRs -L "$ROOT" --argjson runtime '{}' \
     -f "$ROOT/libexec/tui/event-decode.jq" |
   tr '\0' '\n' | sed '/^$/d' | paste -sd, -)
 assert_equal 'tool_result,call_2,edit_file · notes.txt,@@ -1 +1 @@,-old,+new,edit_file,0,batch_ok' "$order"

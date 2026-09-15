@@ -2,44 +2,39 @@
 
 source "${0:A:h:h:h}/_helpers.zsh"
 
-# Render tool views.
+# Render tool channels from manifests, with a default for unknown tools.
 typeset tools=$(jq -cn \
   --slurpfile edit "$ROOT/share/default/tools/edit_file/manifest.json" \
   --slurpfile shell "$ROOT/share/default/tools/shell/manifest.json" '
-    {harness:{tools:[
-      {name:"edit_file",manifest:$edit[0]},
-      {name:"shell",manifest:$shell[0]}]}}
+    [{name:"edit_file",manifest:$edit[0]},{name:"shell",manifest:$shell[0]}]
 ')
-assert_equal 'edit_file · notes.txt' "$(jq -nr -L "$ROOT" --argjson tools "$tools" '
-  include "lib/render";
-  {record:{name:"edit_file",input:{file_path:"notes.txt"}},tools:$tools.harness.tools} |
-  render_tool_before_view | .text
-')"
-assert_equal $'shell\nmake test' "$(jq -nr -L "$ROOT" --argjson tools "$tools" '
-  include "lib/render";
-  {record:{name:"shell",input:{command:"make test"}},tools:$tools.harness.tools} |
-  render_tool_before_view | .text
-')"
-assert_equal '{"text":"shell · shell","identity_start":8}' \
-  "$(jq -nc -L "$ROOT" '
+render_channel() {
+  jq -nr -L "$ROOT" --argjson tools "$tools" --arg name "$1" \
+    --argjson input "$2" --argjson output "${3:-null}" --arg channel "$4" '
     include "lib/render";
-    {template:"${input.command} · ${script}",script:"shell",
-      input:{command:"shell"},output:null} | render_script_view
-  ')"
-assert_equal 'make test' "$(jq -nr -L "$ROOT" --argjson tools "$tools" '
-  include "lib/render";
-  {record:{name:"shell",input:{command:"make test"}},tools:$tools.harness.tools} |
-  render_tool_permission
-')"
-assert_equal $'unknown\n{"value":1}' "$(jq -nr -L "$ROOT" '
-  include "lib/render";
-  {record:{name:"unknown",input:{value:1}},tools:[]} | render_tool_before_view | .text
-')"
-assert_equal $'unknown\ndenied\nexit 127' "$(jq -nr -L "$ROOT" '
-  include "lib/render";
-  {record:{name:"unknown",input:{value:1},stdout:"",stderr:"denied",exit_code:127},
-    tools:[]} | render_tool_after_view | .text
-')"
+    (render_tool(tool_render($tools; $name); $name; $input;
+      ($output // {stdout:"",stderr:"",exit_code:0})) | render_execution)[$channel]
+  '
+}
+assert_equal 'edit_file · notes.txt' \
+  "$(render_channel edit_file '{"file_path":"notes.txt"}' '' user_before)"
+assert_equal $'shell\nmake test' \
+  "$(render_channel shell '{"command":"make test"}' '' user_before)"
+assert_equal 'make test' \
+  "$(render_channel shell '{"command":"make test"}' '' permission_preview)"
+assert_equal $'unknown\n{"value":1}' \
+  "$(render_channel unknown '{"value":1}' '' user_before)"
+assert_equal $'unknown\ndenied\nexit 127' \
+  "$(render_channel unknown '{"value":1}' \
+    '{"stdout":"","stderr":"denied","exit_code":127}' user_after)"
+
+# A leading name is highlightable; anything else is not.
+assert_equal 0 "$(jq -nr -L "$ROOT" '
+  include "libexec/tui/display-fields";
+  {name:"shell",user_text:"shell · ok"} | execution_offset')"
+assert_equal -1 "$(jq -nr -L "$ROOT" '
+  include "libexec/tui/display-fields";
+  {name:"shell",user_text:"· ok"} | execution_offset')"
 
 # Decode replay fields.
 typeset replay

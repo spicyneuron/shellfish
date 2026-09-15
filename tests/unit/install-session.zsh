@@ -69,7 +69,7 @@ for case_name in $cases; do
     unmatched-result)
       cat "$header" >"$invalid"
       print -r -- \
-        '{"type":"tool_result","call_id":"call_1","name":"shell","input":{},"stdout":"out","stderr":"","exit_code":0}' \
+        '{"type":"tool_result","id":"call_1","name":"shell","input":{},"exit_code":0,"user_text":"shell\nout\nexit 0","model_text":"out\nexit 0"}' \
         >>"$invalid"
       ;;
   esac

@@ -238,7 +238,7 @@ sf_tui_event() {
       sf_tui_hook_call "$first" "$second" "$third" "$fourth" || return 1
       ;;
     hook_result)
-      sf_tui_hook_result "$first" "$second" "$third" "$fourth" "$fifth" "$sixth" || return 1
+      sf_tui_hook_result "$first" "$second" "$third" "$fourth" "$fifth" || return 1
       ;;
     error)
       if (( SF_PRESENT_LIVE == index && index > 0 )); then

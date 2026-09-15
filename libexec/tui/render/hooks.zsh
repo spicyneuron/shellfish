@@ -65,18 +65,6 @@ sf_tui_hook_call() {
 # earlier one. Either way it is transient and gives way to this result.
 sf_tui_hook_result() {
   local hook=$1 script=$2 content=${3-} identity_start=${4:--1} fed_model=${5:-0}
-  local tool_use_id=${6-} pending_id
-  if [[ -n $tool_use_id ]] && sf_tui_formatter_pending tool; then
-    sf_tui_formatter_data ${#SF_PRESENT_KIND} 1 || return 1
-    pending_id=$REPLY
-    [[ $tool_use_id == "$pending_id" ]] || return 1
-    if [[ -n $content ]]; then
-      sf_tui_tool_view "$script" "$content" "$identity_start" || return 1
-    else
-      sf_tui_tool_restore || return 1
-    fi
-    return
-  fi
   if sf_tui_formatter_pending hook; then
     sf_tui_formatter_retract || return 1
   else

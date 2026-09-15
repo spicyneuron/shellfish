@@ -36,6 +36,7 @@ sf_test_session "$permission_allow_session"
 stream=$(SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_BYPASS=true \
   SF_TEST_BACKEND_TOOL_COMMAND='printf headless' \
   sf_test_turn 'review headlessly' "$permission_allow_session")
+print -r -- "$stream" | jq -c 'select(.type=="tool_result" or .type=="hook_result" or .type=="state")' ; exit 9
 print -r -- "$stream" | jq -eRn '
   [inputs | fromjson] as $events |
   ($events | map(select(.type == "_tool_permission_request")) | length) == 0 and
@@ -87,6 +88,7 @@ typeset permission_fallback_session="$tmp/permission-fallback.jsonl"
 sf_test_session "$permission_fallback_session"
 stream=$(SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_BYPASS=true \
   sf_test_turn 'deny without adapter' "$permission_fallback_session")
+print -r -- "$stream" | jq -c 'select(.type=="tool_result" or .type=="hook_result" or .type=="state")' ; exit 9
 print -r -- "$stream" | jq -eRn '
   [inputs | fromjson] as $events |
   ($events | map(select(.type == "_tool_permission_request")) | length) == 0 and

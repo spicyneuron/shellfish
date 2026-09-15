@@ -164,17 +164,28 @@ def canonical_tool_call:
   (.input | type == "object");
 
 def canonical_tool_activity:
-  type == "object" and keys == ["call_id", "input", "name", "type"] and
-  .type == "_tool_activity" and (.call_id | identifier) and
-  (.name | tool_name) and (.input | type == "object");
+  type == "object" and
+  ((keys - ["id", "input", "name", "type", "user_text"]) | length == 0) and
+  ((["id", "input", "name", "type"] - keys) | length == 0) and
+  .type == "_tool_activity" and (.id | identifier) and
+  (.name | tool_name) and (.input | type == "object") and
+  (if has("user_text") then .user_text | type == "string" and length > 0 else true end);
+
+# Hook and tool results share one settled base; only identity and input differ.
+def canonical_execution_result($extra):
+  type == "object" and
+  ((keys - (["executable", "exit_code", "id", "input", "model_text", "name",
+    "type", "user_text"] + $extra)) | length == 0) and
+  ((["exit_code", "id", "input", "name", "type"] - keys) | length == 0) and
+  (.id | identifier) and
+  (.exit_code | type == "number" and floor == . and . >= 0 and . <= 255) and
+  (if has("executable") then .executable | absolute_path else true end) and
+  (if has("user_text") then .user_text | type == "string" and length > 0 else true end) and
+  (if has("model_text") then .model_text | type == "string" and length > 0 else true end);
 
 def canonical_tool_result:
-  type == "object" and
-  keys == ["call_id", "exit_code", "input", "name", "stderr", "stdout", "type"] and
-  .type == "tool_result" and
-  (.call_id | identifier) and (.name | tool_name) and (.input | type == "object") and
-  (.stdout | type == "string") and (.stderr | type == "string") and
-  (.exit_code | type == "number" and floor == . and . >= 0 and . <= 255);
+  canonical_execution_result([]) and .type == "tool_result" and
+  (.name | tool_name) and (.input | type == "object");
 
 def canonical_user_message:
   type == "object" and keys == ["content", "type"] and .type == "user" and
@@ -192,23 +203,10 @@ def canonical_assistant_message:
     all(.[]; canonical_text or canonical_reasoning));
 
 def canonical_hook_result:
-  type == "object" and
-  ((keys - ["executable", "exit_code", "hook", "id", "input", "model_text",
-    "name", "tool_use_id", "type", "user_text"]) | length == 0) and
-  (["exit_code", "hook", "id", "input", "name", "type"] - keys | length == 0) and
-  .type == "hook_result" and
+  canonical_execution_result(["hook"]) and .type == "hook_result" and
   (.hook as $hook | hook_names | index($hook) != null) and
-  (.id | identifier) and
   (.name | nul_free_string and length > 0) and
-  (.input | type == "string" or type == "object") and
-  (.exit_code | type == "number" and floor == . and . >= 0 and . <= 255) and
-  (if has("executable") then .executable | absolute_path else true end) and
-  (if has("user_text") then .user_text | type == "string" and length > 0 else true end) and
-  (if has("model_text") then .model_text | type == "string" and length > 0 else true end) and
-  (if has("tool_use_id") then
-     (.hook | IN("permission_request", "pre_tool_use", "post_tool_use")) and
-     (.tool_use_id | identifier)
-   else true end);
+  (.input | type == "string" or type == "object");
 
 def canonical_state:
   type == "object" and keys == ["name", "type", "value"] and
@@ -334,9 +332,9 @@ def session_records_state:
         else .next = "user" | .call_ids = [] | .messages += 1 end
       elif $record.type == "tool_result" then
         if (.next | IN("result", "more") | not) or
-            (.call_ids | index($record.call_id)) != null then
+            (.call_ids | index($record.id)) != null then
           .valid = false
-        else .messages += 1 | .call_ids += [$record.call_id] | .next = "more" end
+        else .messages += 1 | .call_ids += [$record.id] | .next = "more" end
       else .valid = false end) |
   .;
 

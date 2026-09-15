@@ -325,17 +325,26 @@ sf_session_recover_turn() {
     settled=( ${(f)$(printf '%s\n' "${SF_SESSION_RECORDS[@]}" | jq -rs '
       reduce .[] as $record ([];
         if $record.type == "assistant" then []
-        elif $record.type == "tool_result" then . + [$record.call_id]
+        elif $record.type == "tool_result" then . + [$record.id]
         else . end)[]
     ' 2>/dev/null)} )
     for record in ${(f)cancelled}; do
       call_id=$(jq -r '.id' <<<$record) || return
       (( ${settled[(Ie)$call_id]} )) && continue
-      result=$(jq -cn --argjson call "$record" --arg active "$active" \
-        '{type:"tool_result",call_id:$call.id,name:$call.name,
-         input:$call.execution_input,stdout:"",
-         stderr:(if $call.id == $active then "tool call interrupted"
-                 else "tool call cancelled" end),exit_code:126}') || return
+      result=$(sf_jq -cn --argjson call "$record" --arg active "$active" \
+        --argjson tools "$(jq -c '.harness.tools' <<<"$SF_SESSION[runtime]")" '
+          include "lib/render";
+          (if $call.id == $active then "tool call interrupted"
+           else "tool call cancelled" end) as $reason |
+          (render_tool(tool_render($tools; $call.name); $call.name;
+            $call.execution_input; {stdout:"",stderr:$reason,exit_code:126}) |
+            render_execution) as $rendered |
+          {type:"tool_result",id:$call.id,name:$call.name,
+           input:$call.execution_input,exit_code:126} +
+          (if $rendered.user_after == "" then {} else
+            {user_text:$rendered.user_after} end) +
+          (if $rendered.model_after == "" then {} else
+            {model_text:$rendered.model_after} end)') || return
       sf_session_append "$session_path" "$result" || return
       [[ -z $recovered ]] || recovered+=$'\n'
       recovered+=$result

@@ -49,14 +49,15 @@ sf_test_tool_execute() {
     "$decision" "$denial_reason" "$tool_cwd" "$tool_max_capture" "$tool_fence" \
     "$tool_config_dir" "$session" "$ROOT/bin/shellfish" \
     "$tool_runtime" || return
+  REPLY=$SF_TOOL_OUTPUT
 }
 
 # Unsandboxed tools inherit the local environment.
 export AMBIENT_TOOL_SETTING=ambient
 load_tools "$stored_runtime"
 sf_test_tool_execute '{"id":"unknown_1","name":"unknown","input":{}}' 0
-jq -e '.exit_code == 127 and .stdout == "" and
-  .stderr == "tool is not allowed: unknown" and .input == {}' <<<"$REPLY" >/dev/null
+jq -e '. == {stdout:"",stderr:"tool is not allowed: unknown",exit_code:127}' \
+  <<<"$REPLY" >/dev/null
 typeset invalid_tools=$(jq -c '.[0].command = "/missing/shellfish-tool"' <<<"$tool_tools")
 if sf_tools_load "$invalid_tools" "$tool_cwd" "$tool_sandbox" "$tool_fence" \
     "$tool_read_paths" "$tool_write_paths"; then

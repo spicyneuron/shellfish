@@ -183,25 +183,23 @@ for events in \
   fi
 done
 
-# Tool results require raw input and output channels.
-print -r -- '{"type":"tool_result","call_id":"c1","name":"shell","input":{},"stdout":"out","stderr":"","exit_code":0}' |
+# Hook and tool results share one settled base.
+print -r -- '{"type":"tool_result","id":"c1","name":"shell","input":{},"executable":"/tools/shell/run","user_text":"shown","model_text":"out","exit_code":0}' |
   schema_eval 'canonical_tool_result' >/dev/null
-
-if print -r -- '{"type":"tool_result","call_id":"c1","name":"shell","input":{},"stdout":"out","stderr":"","exit_code":256}' |
-    schema_eval 'canonical_tool_result' >/dev/null 2>&1; then
-  fail 'invalid exit code was accepted'
-fi
-
-if print -r -- '{"type":"tool_result","call_id":"c1","name":"shell","content":"out","exit_code":0}' |
-    schema_eval 'canonical_tool_result' >/dev/null 2>&1; then
-  fail 'legacy merged tool output was accepted'
-fi
-
-# Hook results carry execution identity and ready text.
 print -r -- '{"type":"hook_result","hook":"session_start","id":"h1_1","name":"add_env","input":"","executable":"/hooks/add_env","user_text":"shown","model_text":"data","exit_code":0}' |
   schema_eval 'canonical_hook_result' >/dev/null
-print -r -- '{"type":"hook_result","hook":"pre_tool_use","id":"h2_1","name":"check","input":{},"executable":"/hooks/check","exit_code":0,"tool_use_id":"c1"}' |
+print -r -- '{"type":"hook_result","hook":"pre_tool_use","id":"h2_1","name":"check","input":{},"exit_code":0}' |
   schema_eval 'canonical_hook_result' >/dev/null
+
+for result in \
+    '{"type":"tool_result","id":"c1","name":"shell","input":{},"exit_code":256}' \
+    '{"type":"tool_result","id":"c1","name":"shell","input":{},"stdout":"out","stderr":"","exit_code":0}' \
+    '{"type":"tool_result","id":"c1","name":"shell","content":"out","exit_code":0}' \
+    '{"type":"tool_result","id":"c1","name":"shell","input":{},"exit_code":0,"hook":"stop"}'; do
+  if print -r -- "$result" | schema_eval 'canonical_tool_result' >/dev/null 2>&1; then
+    fail "invalid tool result was accepted: $result"
+  fi
+done
 
 for result in \
     '{"type":"hook_result","hook":"unknown","id":"h1","name":"add_env","input":"","exit_code":0}' \
@@ -249,13 +247,10 @@ print -r -- '[
   {"type":"user","content":[{"type":"text","text":"run"}]},
   {"type":"state","name":"before-assistant","value":false},
   {"type":"assistant","stop":"tool_calls","content":[]},
-  {"type":"hook_result","hook":"pre_tool_use","id":"h2","name":"observe","input":{},"user_text":"before call","exit_code":0,"tool_use_id":"c1"},
   {"type":"state","name":"before/call","value":"one"},
-  {"type":"hook_result","hook":"post_tool_use","id":"h3","name":"fixture","input":{},"user_text":"between pair","exit_code":0,"tool_use_id":"c1"},
-  {"type":"tool_result","call_id":"c1","name":"shell","input":{},"stdout":"","stderr":"","exit_code":0},
-  {"type":"hook_result","hook":"post_tool_use","id":"h4","name":"observe","input":{},"user_text":"after result","exit_code":0,"tool_use_id":"c1"},
+  {"type":"tool_result","id":"c1","name":"shell","input":{},"model_text":"out","exit_code":0},
   {"type":"state","name":"between/calls","value":"two"},
-  {"type":"tool_result","call_id":"c2","name":"shell","input":{},"stdout":"","stderr":"","exit_code":0},
+  {"type":"tool_result","id":"c2","name":"shell","input":{},"exit_code":0},
   {"type":"state","name":"before/final","value":null},
   {"type":"assistant","stop":"end","content":[]},
   {"type":"hook_result","hook":"stop","id":"h5","name":"observe","input":"","user_text":"finished","exit_code":0},

@@ -247,7 +247,7 @@ def test_permission_decision_restores_draft():
         results = [record for record in records if record.get("type") == "tool_result"]
         assert len(results) == 1
         assert results[0]["exit_code"] == 126
-        assert results[0]["stderr"] == "sandbox bypass denied"
+        assert results[0]["model_text"] == "sandbox bypass denied\nexit 126"
         users = [record for record in records if record.get("type") == "user"]
         assert len(users) == 1
         assert users[0]["content"] == [{"type": "text", "text": prompt}]
@@ -275,7 +275,7 @@ def test_permission_ctrl_c_cancels_pending_tools():
         results = [
             record for record in records if record.get("type") == "tool_result"
         ]
-        assert [(record["call_id"], record["exit_code"]) for record in results] == [
+        assert [(record["id"], record["exit_code"]) for record in results] == [
             ("call_1", 126),
             ("call_2", 126),
             ("call_3", 126),

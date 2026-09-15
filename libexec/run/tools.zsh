@@ -10,11 +10,13 @@ setopt no_aliases no_bg_nice no_multios pipe_fail
 typeset -g SF_TOOL_ERROR=''
 typeset -g SF_TOOL_CAPTURE_DIR=''
 typeset -g SF_TOOL_TEMP_DIR=''
+typeset -g SF_TOOL_OUTPUT=''
 typeset -gA SF_TOOL_COMMAND=()
 typeset -gA SF_TOOL_SANDBOX=()
 typeset -gA SF_TOOL_ALLOW_BYPASS=()
 typeset -gA SF_TOOL_SETTINGS=()
 typeset -gA SF_TOOL_ENVIRONMENT=()
+typeset -gA SF_TOOL_RENDER=()
 typeset -ga SF_TOOL_READ_PATHS=()
 typeset -ga SF_TOOL_WRITE_PATHS=()
 typeset -ga SF_TOOL_STATE_RECORDS=()
@@ -30,8 +32,10 @@ sf_tools_load() {
   local tools=$1 cwd=$2 harness_sandbox=$3 fence=${4-}
   local sandbox_read_paths=$5 sandbox_write_paths=$6
   local command name projected sandbox allow_bypass settings environment temp_dir schema
+  local render
   local -a fields read_paths write_paths
   local -A tool_command tool_sandbox tool_allow_bypass tool_settings tool_environment
+  local -A tool_render
   integer index=1 read_count write_count sandboxed_tools=0
   sf_tools_cleanup
   SF_TOOL_ERROR=''
@@ -41,15 +45,17 @@ sf_tools_load() {
   SF_TOOL_ALLOW_BYPASS=()
   SF_TOOL_SETTINGS=()
   SF_TOOL_ENVIRONMENT=()
+  SF_TOOL_RENDER=()
   SF_TOOL_READ_PATHS=()
   SF_TOOL_WRITE_PATHS=()
   [[ -d $cwd ]] || {
     sf_tools_fail "session working directory is unavailable: $cwd"
     return
   }
-  projected=$(jq -jrn --argjson tools "$tools" \
+  projected=$(sf_jq -jrn --argjson tools "$tools" \
     --argjson harness_sandbox "$harness_sandbox" \
     --argjson reads "$sandbox_read_paths" --argjson writes "$sandbox_write_paths" '
+      include "lib/render";
       def field: ., "\u0000";
       def bypass_available($manifest):
         ($harness_sandbox == 1) and $manifest.sandbox and
@@ -81,7 +87,8 @@ sf_tools_load() {
       ($tools[] | (.name | field), (.command | field),
         (.manifest.sandbox | tostring | field),
         (.manifest.allow_sandbox_bypass // false | tostring | field),
-        ((.settings // "") | field), ((.manifest.environment // []) | join(" ") | field)),
+        ((.settings // "") | field), ((.manifest.environment // []) | join(" ") | field),
+        (tool_render($tools; .name) | tojson | field)),
       ("ok" | field)
   ' 2>/dev/null) || {
     sf_tools_fail 'cannot inspect configured tools'
@@ -96,7 +103,7 @@ sf_tools_load() {
   read_count=$fields[2]
   write_count=$fields[3]
   index=$(( read_count + write_count + 4 ))
-  (( index <= ${#fields} && (${#fields} - index) % 6 == 0 )) || {
+  (( index <= ${#fields} && (${#fields} - index) % 7 == 0 )) || {
     sf_tools_fail 'cannot inspect configured tools'
     return
   }
@@ -109,7 +116,8 @@ sf_tools_load() {
     allow_bypass=$fields[index+3]
     settings=$fields[index+4]
     environment=$fields[index+5]
-    (( index += 6 ))
+    render=$fields[index+6]
+    (( index += 7 ))
     [[ -x $command ]] || {
       sf_tools_fail "tool command is not executable: $command"
       return
@@ -119,6 +127,7 @@ sf_tools_load() {
     tool_allow_bypass[$name]=$allow_bypass
     tool_settings[$name]=$settings
     tool_environment[$name]=$environment
+    tool_render[$name]=$render
     [[ $sandbox != true ]] || sandboxed_tools=1
   done
   if (( harness_sandbox && sandboxed_tools )); then
@@ -137,20 +146,60 @@ sf_tools_load() {
   SF_TOOL_ALLOW_BYPASS=( "${(@kv)tool_allow_bypass}" )
   SF_TOOL_SETTINGS=( "${(@kv)tool_settings}" )
   SF_TOOL_ENVIRONMENT=( "${(@kv)tool_environment}" )
+  SF_TOOL_RENDER=( "${(@kv)tool_render}" )
   SF_TOOL_READ_PATHS=( "${read_paths[@]}" )
   SF_TOOL_WRITE_PATHS=( "${write_paths[@]}" )
   SF_TOOL_TEMP_DIR=$temp_dir
   REPLY=$schema
 }
 
-sf_tool_result() {
-  local call_id=$1 name=$2 input=$3 stderr=$4 exit_code=$5
+# Activity and permission previews render before the call produces output.
+sf_tool_preview() {
+  local id=$1 name=$2 input=$3
+  REPLY=$(sf_jq -cn --arg id "$id" --arg name "$name" --argjson input "$input" \
+    --argjson render "${SF_TOOL_RENDER[$name]:-null}" '
+      include "lib/render";
+      (render_tool($render; $name; $input; {stdout:"",stderr:"",exit_code:0}) |
+        render_execution) as $rendered |
+      {id:$id,name:$name,input:$input,
+       user_text:$rendered.user_before,preview:$rendered.permission_preview}
+  ') || return 1
+}
+
+# A refused call never runs, so its outcome is the reason alone.
+sf_tool_refused() {
+  local stderr=$1
+  integer exit_code=$2
   SF_TOOL_STATE_RECORDS=()
-  REPLY=$(jq -cn --arg call_id "$call_id" --arg name "$name" \
-    --argjson input "$input" --arg stderr "$stderr" --argjson exit_code "$exit_code" '
-      {type:"tool_result",call_id:$call_id,name:$name,
-       input:$input,stdout:"",stderr:$stderr,exit_code:$exit_code}
-  ') || return
+  SF_TOOL_OUTPUT=$(jq -cn --arg stderr "$stderr" --argjson exit_code "$exit_code" \
+    '{stdout:"",stderr:$stderr,exit_code:$exit_code}') || return
+}
+
+# The single durable form for every outcome: rendered once here, with hook
+# contributions folded around the tool's own model text in lifecycle order.
+sf_tool_settle() {
+  local id=$1 name=$2 input=$3 output=$4 before=$5 after=$6
+  REPLY=$(sf_jq -cn --arg id "$id" --arg name "$name" --argjson input "$input" \
+    --argjson output "$output" --argjson render "${SF_TOOL_RENDER[$name]:-null}" \
+    --arg executable "${SF_TOOL_COMMAND[$name]-}" \
+    --argjson before "$before" --argjson after "$after" '
+      include "lib/render";
+      include "lib/runtime/schema";
+      (render_tool($render; $name; $input; $output) | render_execution) as $rendered |
+      ([$before[], $rendered.model_after, $after[]] |
+        map(select(. != "")) | join("\n\n")) as $model |
+      ({type:"tool_result",id:$id,name:$name,input:$input,
+        exit_code:$output.exit_code} +
+       (if $executable == "" then {} else {executable:$executable} end) +
+       (if $rendered.user_after == "" then {} else
+         {user_text:$rendered.user_after} end) +
+       (if $model == "" then {} else {model_text:$model} end)) as $result |
+      if ($result | canonical_tool_result) then $result
+      else error("invalid tool result") end
+  ') || {
+    sf_tools_fail "cannot render tool result: $name"
+    return 1
+  }
 }
 
 sf_tools_cleanup() {
@@ -203,13 +252,14 @@ sf_tool_execute() {
   setopt local_options no_err_exit
   SF_TOOL_ERROR=''
   SF_TOOL_STATE_RECORDS=()
+  SF_TOOL_OUTPUT=''
   REPLY=''
   locale_env=( LANG="${LANG:-C}" )
   [[ -z $LC_ALL ]] || locale_env+=( LC_ALL="$LC_ALL" )
   [[ -z $LC_CTYPE ]] || locale_env+=( LC_CTYPE="$LC_CTYPE" )
   [[ -z ${XDG_CONFIG_HOME-} ]] || locale_env+=( XDG_CONFIG_HOME="$XDG_CONFIG_HOME" )
   if (( ! ${+SF_TOOL_COMMAND[$name]} )); then
-    sf_tool_result "$id" "$name" "$execution_input" "tool is not allowed: $name" 127
+    sf_tool_refused "tool is not allowed: $name" 127
     return
   fi
   command_path=$SF_TOOL_COMMAND[$name]
@@ -218,12 +268,11 @@ sf_tool_execute() {
   settings=$SF_TOOL_SETTINGS[$name]
   (( harness_sandbox )) || bypass=false
   if [[ $bypass == invalid || ( $bypass == true && $allow_bypass != true ) ]]; then
-    sf_tool_result "$id" "$name" "$execution_input" 'sandbox bypass is not allowed' 126
+    sf_tool_refused 'sandbox bypass is not allowed' 126
     return
   fi
   if [[ $bypass == true && $decision != approved ]]; then
-    sf_tool_result "$id" "$name" "$execution_input" \
-      "${denial_reason:-sandbox bypass denied}" 126
+    sf_tool_refused "${denial_reason:-sandbox bypass denied}" 126
     return
   fi
   sf_environment_prepare "$runtime" "$SF_TOOL_ENVIRONMENT[$name]" || {
@@ -327,12 +376,9 @@ sf_tool_execute() {
       sf_tools_fail 'cannot bound tool output'
       return
     }
-    REPLY=$(jq -cn --arg call_id "$id" --arg name "$name" \
-      --argjson input "$execution_input" --rawfile stdout "$bounded_stdout" \
-      --rawfile stderr "$bounded_stderr" --argjson exit_code "$exit_code" '
-        {type:"tool_result",call_id:$call_id,name:$name,
-         input:$input,stdout:$stdout,stderr:$stderr,exit_code:$exit_code}
-    ') || return
+    SF_TOOL_OUTPUT=$(jq -cn --rawfile stdout "$bounded_stdout" \
+      --rawfile stderr "$bounded_stderr" --argjson exit_code "$exit_code" \
+      '{stdout:$stdout,stderr:$stderr,exit_code:$exit_code}') || return
     SF_TOOL_STATE_RECORDS=( "${states[@]}" )
   } always {
     rm -rf -- "$capture_dir" 2>/dev/null || true

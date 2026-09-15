@@ -101,7 +101,7 @@ print -r -- \
   '{"type":"assistant","stop":"end","content":[{"type":"text","text":"Done reading"}],"usage":{"input_tokens":1,"output_tokens":1}}' \
   '{"type":"user","content":[{"type":"text","text":"Keep going"}]}' \
   '{"type":"assistant","stop":"tool_calls","content":[{"type":"text","text":"\n\n"}],"usage":{"input_tokens":75,"output_tokens":5}}' \
-  '{"type":"tool_result","call_id":"call_1","name":"shell","input":{"command":"true"},"stdout":"","stderr":"tool call cancelled","exit_code":126}' \
+  '{"type":"tool_result","id":"call_1","name":"shell","input":{"command":"true"},"exit_code":126,"user_text":"shell\ntool call cancelled\nexit 126","model_text":"tool call cancelled\nexit 126"}' \
   '{"type":"error","user_text":"Cancelled."}' \
   >>"$cancelled_source"
 assert_canonical_session "$cancelled_source"

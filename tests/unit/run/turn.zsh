@@ -151,17 +151,19 @@ SF_TEST_RUNTIME=$(jq -c --arg command "$state_tool" '
 sf_test_session "$state_session"
 stream=$(SF_TEST_BACKEND_TOOL_CALL=1 sf_test_turn 'record tool state' "$state_session")
 # Tool-call deltas precede durable calls.
-print -r -- "$stream" | jq -eRn '
+print -r -- "$stream" | jq -eRn --arg tool "$state_tool" '
   [inputs | fromjson | select(.type == "state" or .type == "tool_result")] ==
     [{type:"state",name:"tools/turn",value:"recorded"},
-     {type:"tool_result",call_id:"call_1",name:"shell",
-      input:{command:"true"},stdout:"failed",stderr:"",exit_code:7}]
+     {type:"tool_result",id:"call_1",name:"shell",input:{command:"true"},
+      executable:$tool,exit_code:7,
+      user_text:"shell\ntrue\nfailed\nexit 7",model_text:"failed\nexit 7"}]
 ' >/dev/null || fail 'tool state was not emitted before its result'
-jq -es '
+jq -es --arg tool "$state_tool" '
   [.[] | select(.type == "state" or .type == "tool_result")] ==
     [{type:"state",name:"tools/turn",value:"recorded"},
-     {type:"tool_result",call_id:"call_1",name:"shell",
-      input:{command:"true"},stdout:"failed",stderr:"",exit_code:7}]
+     {type:"tool_result",id:"call_1",name:"shell",input:{command:"true"},
+      executable:$tool,exit_code:7,
+      user_text:"shell\ntrue\nfailed\nexit 7",model_text:"failed\nexit 7"}]
 ' "$state_session" >/dev/null || fail 'tool state was not durable before its result'
 SF_TEST_RUNTIME=$base_runtime
 
@@ -200,9 +202,9 @@ print -r -- "$stream" | jq -eRn '
   [$events[] | select(.type == "tool_result")] as $results |
   [$events[] | select(.type == "_tool_activity")] as $calls |
   ($results | map(.exit_code)) == [0] and
-  $results[0].stdout == "ran\n" and $results[0].stderr == "" and
+  $results[0].model_text == "ran\n\nexit 0" and
   ($calls | length) == 1 and
-  $calls[0].call_id == "call_1" and
+  $calls[0].id == "call_1" and
   $calls[0].input.request_sandbox_bypass == true and
   ($calls[0].input.sandbox_bypass_reason | length) > 0 and
   $calls[0].input.command == "print -r -- ran"
@@ -369,8 +371,8 @@ SF_ROOT=$ROOT SF_TEST_BACKEND_TOOL_CALL=1 \
 assert_canonical_session "$committed_append_session"
 jq -e -s '
   .[-3].stop == "tool_calls" and
-  (.[-2] | .type == "tool_result" and .call_id == "call_1" and
-    .stderr == "tool call cancelled" and .exit_code == 126) and
+  (.[-2] | .type == "tool_result" and .id == "call_1" and
+    .model_text == "tool call cancelled\nexit 126" and .exit_code == 126) and
   .[-1].type == "error"
 ' "$committed_append_session" >/dev/null ||
   fail 'recovery did not close calls from a committed assistant'
@@ -403,7 +405,7 @@ print -r -- "$stream" | jq -eRn '
   ($events | map(select(.type == "assistant"))[0] |
     .stop == "tool_calls" and .content[0] == {type:"text",text:"use a tool\n"}) and
   ($events | map(select(.type == "tool_result"))[0] |
-    .call_id == "call_1" and .exit_code == 0) and
+    .id == "call_1" and .exit_code == 0) and
   ($events | map(select(.type == "assistant"))[-1].stop) == "end"
 ' >/dev/null
 assert_canonical_session "$session" end

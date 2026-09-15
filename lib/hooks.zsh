@@ -15,6 +15,9 @@ typeset -g SHELLFISH_TURN_STATE=${SHELLFISH_TURN_STATE-}
 typeset -g SHELLFISH_TURN_ID=${SHELLFISH_TURN_ID-}
 typeset -g SF_HOOK_NAME=''
 typeset -g SF_HOOK_INVOCATION=0
+# A tool-lifecycle hook contributes to the owning call instead of settling.
+typeset -gi SF_HOOK_COLLECT=0
+typeset -ga SF_HOOK_CONTEXTS=()
 # Track only scratch paths created by this process for cancellation cleanup.
 typeset -g SF_HOOK_TURN_STATE_TEMP=''
 typeset -g SF_HOOK_INPUT_TEMP=''
@@ -77,17 +80,21 @@ sf_hooks_id() {
 # Every template variable must resolve, so a hook that has not run yet renders
 # against empty output rather than against no output at all.
 sf_hooks_render() {
-  local render=$1 name=$2 input=$3 stdout_file=${4-} stderr_file=${5-}
-  integer exit_code=${6:-0}
+  local hook=$1 render=$2 name=$3 input=$4 stdout_file=${5-} stderr_file=${6-}
+  integer exit_code=${7:-0}
   local output='{"stdout":"","stderr":"","exit_code":0}'
   [[ -z $stdout_file ]] || output=$(jq -nc \
     --rawfile stdout "$stdout_file" --rawfile stderr "$stderr_file" \
     --argjson exit_code "$exit_code" \
     '{stdout:$stdout,stderr:$stderr,exit_code:$exit_code}') || return 1
-  REPLY=$(sf_jq -nc --argjson render "$render" --arg name "$name" \
+  REPLY=$(sf_jq -nc --argjson render "$render" --arg hook "$hook" --arg name "$name" \
     --argjson input "$input" --argjson output "$output" '
       include "lib/render";
-      {render:$render,name:$name,input:$input,output:$output} | render_hook
+      ({render:$render,name:$name,input:$input,output:$output} |
+        render_execution) as $rendered |
+      $rendered + {model_text:(if $rendered.model_after == "" then "" else
+        "<hook name=\"" + $hook + "\">\n<context script=\"" + $name + "\">" +
+        $rendered.model_after + "</context>\n</hook>" end)}
     ') || return 1
 }
 
@@ -161,7 +168,7 @@ sf_hooks_dispatch() {
   shift argument_count
   local -a components=( "$@" ) result component_states decoded
   local directory script name id selector environment_json render record
-  local result_record input_json rendered
+  local result_record input_json rendered contribution update
   local script_context script_user script_control hook=$SF_HOOK_NAME
   local origin='' control='' control_error
   local skip_policy=$SF_HOOK_SKIP_POLICY
@@ -229,7 +236,7 @@ sf_hooks_dispatch() {
         return
       }
       id=$REPLY
-      sf_hooks_render "$render" "$name" "$input_json" || {
+      sf_hooks_render "$hook" "$render" "$name" "$input_json" || {
         sf_hooks_fail "cannot render hook activity: $script"
         return
       }
@@ -310,14 +317,33 @@ sf_hooks_dispatch() {
         sf_hooks_active_fail "$control_error" "$script_user"
         return
       fi
-      sf_hooks_render "$render" "$name" "$input_json" "$result[2]" "$result[3]" \
-        "$script_status" || {
+      sf_hooks_render "$hook" "$render" "$name" "$input_json" "$result[2]" \
+        "$result[3]" "$script_status" || {
         sf_hooks_active_fail "cannot render hook result: $script" "$script_user"
         return
       }
       rendered=$REPLY
       result_record=''
-      if jq -e --argjson status "$script_status" '
+      if (( SF_HOOK_COLLECT )); then
+        # The owning tool call settles this contribution, so only the user-facing
+        # update is transient here.
+        contribution=$(jq -r '.model_text' <<<$rendered) || {
+          sf_hooks_active_fail 'cannot decode hook rendering' "$script_user"
+          return
+        }
+        [[ -z $contribution ]] || SF_HOOK_CONTEXTS+=( "$contribution" )
+        update=$(jq -c 'if .user_after == "" then empty
+          else .user_before = .user_after end' <<<$rendered) || {
+          sf_hooks_active_fail 'cannot decode hook rendering' "$script_user"
+          return
+        }
+        [[ -z $update ]] ||
+          sf_hooks_activity "$hook" "$id" "$name" "$input_json" "$script" \
+            "$update" || {
+          sf_hooks_active_fail 'cannot update hook display' "$script_user"
+          return
+        }
+      elif jq -e --argjson status "$script_status" '
           $status != 0 or .user_after != "" or .model_after != ""' \
           <<<$rendered >/dev/null; then
         sf_hooks_result_record "$hook" "$id" "$name" "$script" "$input_json" \
@@ -504,17 +530,14 @@ sf_hooks_result_record() {
   integer exit_code=$7
   REPLY=$(sf_jq -nc --arg hook "$hook" --arg id "$id" --arg name "$name" \
       --arg executable "$executable" --argjson input "$input" \
-      --argjson rendered "$rendered" --argjson exit_code "$exit_code" \
-      --arg tool_use_id "${SF_HOOK_TOOL_USE_ID-}" '
+      --argjson rendered "$rendered" --argjson exit_code "$exit_code" '
         include "lib/runtime/schema";
         {type:"hook_result",hook:$hook,id:$id,name:$name,input:$input,
           executable:$executable,exit_code:$exit_code} +
         (if $rendered.user_after == "" then {} else
           {user_text:$rendered.user_after} end) +
-        (if $rendered.model_after == "" then {} else
-          {model_text:("<hook name=\"" + $hook + "\">\n<context script=\"" +
-            $name + "\">" + $rendered.model_after + "</context>\n</hook>")} end) +
-        (if $tool_use_id == "" then {} else {tool_use_id:$tool_use_id} end) as $result |
+        (if $rendered.model_text == "" then {} else
+          {model_text:$rendered.model_text} end) as $result |
         if ($result | canonical_hook_result)
         then $result
         else error("invalid hook result") end

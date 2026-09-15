@@ -101,6 +101,15 @@ sf_hooks_permission_validate() {
   }
 }
 
+# Every tool hook sees the same call, with settled output added only afterward.
+sf_hooks_tool_input() {
+  local id=$1 name=$2 tool_input=$3 output=${4-}
+  REPLY=$(print -rn -- "$tool_input" | jq -c --argjson turn_id "$SHELLFISH_TURN_ID" \
+    --arg id "$id" --arg name "$name" --argjson output "${output:-null}" '
+      {turn_id:$turn_id,tool:({id:$id,name:$name,input:.} +
+        (if $output == null then {} else {output:$output} end))}') || return 1
+}
+
 sf_hooks_permission_request() {
   local session=$1 tool_name=$2 call_id=$3 tool_input=$4
   local input='' decoded
@@ -109,13 +118,11 @@ sf_hooks_permission_request() {
 
   SF_HOOK_ERROR=''
   if (( SF_HOOK_COUNTS[permission_request] )); then
-    input=$(print -rn -- "$tool_input" | jq -c --argjson turn_id "$SHELLFISH_TURN_ID" \
-      --arg tool_name "$tool_name" --arg tool_use_id "$call_id" \
-      '{turn_id:$turn_id,tool_name:$tool_name,tool_use_id:$tool_use_id,
-        tool_input:.}') || operation_status=1
+    sf_hooks_tool_input "$call_id" "$tool_name" "$tool_input" &&
+      input=$REPLY || operation_status=1
   fi
   local SF_HOOK_COMPONENT_VALIDATOR=sf_hooks_permission_validate
-  local SF_HOOK_TOOL_USE_ID=$call_id
+  integer SF_HOOK_COLLECT=1
   (( operation_status )) || sf_hooks_run "$session" permission_request "$input" allow 1 1 ||
     operation_status=1
   result=( "${reply[@]}" )
@@ -143,15 +150,12 @@ sf_hooks_pre_tool_use() {
   local -a decision
 
   if (( SF_HOOK_COUNTS[pre_tool_use] )); then
-    input=$(print -rn -- "$tool_input" | jq -c --argjson turn_id "$SHELLFISH_TURN_ID" \
-      --arg tool_name "$tool_name" --arg tool_use_id "$call_id" \
-      '{turn_id:$turn_id,tool_name:$tool_name,tool_use_id:$tool_use_id,
-        tool_input:.}') || {
+    sf_hooks_tool_input "$call_id" "$tool_name" "$tool_input" && input=$REPLY || {
       sf_hooks_fail 'cannot prepare pre-tool hook input'
       return
     }
   fi
-  local SF_HOOK_TOOL_USE_ID=$call_id
+  integer SF_HOOK_COLLECT=1
   sf_hooks_run "$session" pre_tool_use "$input" allow 0 1 || return
   decision=( "${reply[@]}" )
   if (( decision[1] )); then
@@ -166,24 +170,16 @@ sf_hooks_pre_tool_use() {
 
 # Post-tool hooks cannot skip.
 sf_hooks_post_tool_use() {
-  local session=$1 result=$2 tool_input=$3 input='' SF_HOOK_TOOL_USE_ID
+  local session=$1 call_id=$2 tool_name=$3 tool_input=$4 output=$5 input=''
 
   if (( SF_HOOK_COUNTS[post_tool_use] )); then
-    input=$({ print -r -- "$tool_input"; print -r -- "$result"; } |
-      jq -cs --argjson turn_id "$SHELLFISH_TURN_ID" '
-        .[0] as $tool_input | .[1] as $result |
-        {turn_id:$turn_id,tool_name:$result.name,tool_use_id:$result.call_id,
-         tool_input:$tool_input,
-         tool_response:($result | {stdout,stderr,exit_code})}
-      ') || {
+    sf_hooks_tool_input "$call_id" "$tool_name" "$tool_input" "$output" &&
+      input=$REPLY || {
       sf_hooks_fail 'cannot prepare post-tool hook input'
       return
     }
   fi
-  SF_HOOK_TOOL_USE_ID=$(jq -r '.call_id' <<<$result) || {
-    sf_hooks_fail 'cannot prepare post-tool hook input'
-    return
-  }
+  integer SF_HOOK_COLLECT=1
   sf_hooks_run "$session" post_tool_use "$input" reject 0 1 || return
   reply=()
 }

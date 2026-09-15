@@ -23,7 +23,7 @@ cat >"$pre_observe" <<'ZSH'
 set -e
 [[ $# == 1 && $1 == pre_tool_use ]]
 input=$(cat)
-call_id=$(jq -r '.tool_use_id' <<<"$input")
+call_id=$(jq -r '.tool.id' <<<"$input")
 print -rn -- "$input" >"$TEST_OUTPUT_DIR/pre-$call_id"
 jq -cn --arg id "$call_id" '{state:[{name:"tools/pre",value:$id}]}' >&3
 print -rn -u2 -- "pre-local-$call_id"
@@ -38,7 +38,7 @@ set -e
 [[ $SHELLFISH_TURN_ID == 1 && $SHELLFISH_MODEL == test-model &&
   $0 == /* && -d ${0:A:h} ]]
 input=$(cat)
-call_id=$(jq -r '.tool_use_id' <<<"$input")
+call_id=$(jq -r '.tool.id' <<<"$input")
 print -rn -- "$input" >"$TEST_OUTPUT_DIR/post-$call_id"
 jq -cn --arg id "$call_id" '{state:[{name:"tools/post",value:$id}]}' >&3
 print -rn -u2 -- "post-local-$call_id"
@@ -55,33 +55,28 @@ sf_test_session "$observe_session"
 stream=$(SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_COUNT=2 \
   SF_TEST_BACKEND_TOOL_COMMAND="printf 'line\\n\\n'; exit 7" \
   sf_test_turn observe "$observe_session")
+# Lifecycle hooks settle nothing of their own; their model text folds into the
+# owning call, and every state record still lands in lifecycle order.
 print -r -- "$stream" | jq -eRn '
   [inputs | fromjson] as $events |
-  ($events | map(select(.type == "tool_result")) |
-    map({exit_code,stdout,stderr})) ==
-    [{exit_code:7,stdout:"line\n\n",stderr:""},
-     {exit_code:7,stdout:"line\n\n",stderr:""}] and
+  ($events | map(select(.type == "hook_result"))) == [] and
   ($events | map(select(.type == "state" or .type == "tool_result")) |
-    map(if .type == "state" then [.name,.value] else ["result",.call_id] end)) ==
-    [["tools/pre","call_1"],["result","call_1"],["tools/post","call_1"],
-     ["tools/pre","call_2"],["result","call_2"],["tools/post","call_2"]] and
-  ($events | map(select(.type == "hook_result") | [.name, .model_text])) ==
-    [["pre-observe","<hook name=\"pre_tool_use\">\n<context script=\"pre-observe\">pre context call_1</context>\n</hook>"],
-     ["post-observe","<hook name=\"post_tool_use\">\n<context script=\"post-observe\">post context call_1</context>\n</hook>"],
-     ["pre-observe","<hook name=\"pre_tool_use\">\n<context script=\"pre-observe\">pre context call_2</context>\n</hook>"],
-     ["post-observe","<hook name=\"post_tool_use\">\n<context script=\"post-observe\">post context call_2</context>\n</hook>"]] and
-  all($events[] | select(.type == "hook_result");
-    .tool_use_id == (.input.tool_use_id))
+    map(if .type == "state" then [.name,.value] else ["result",.id] end)) ==
+    [["tools/pre","call_1"],["tools/post","call_1"],["result","call_1"],
+     ["tools/pre","call_2"],["tools/post","call_2"],["result","call_2"]] and
+  ($events | map(select(.type == "tool_result") | [.exit_code, .model_text])) ==
+    [[7,"<hook name=\"pre_tool_use\">\n<context script=\"pre-observe\">pre context call_1</context>\n</hook>\n\nline\n\n\nexit 7\n\n<hook name=\"post_tool_use\">\n<context script=\"post-observe\">post context call_1</context>\n</hook>"],
+     [7,"<hook name=\"pre_tool_use\">\n<context script=\"pre-observe\">pre context call_2</context>\n</hook>\n\nline\n\n\nexit 7\n\n<hook name=\"post_tool_use\">\n<context script=\"post-observe\">post context call_2</context>\n</hook>"]]
 ' >/dev/null
 assert_canonical_session "$observe_session"
-jq -e '. == {turn_id:1,tool_name:"shell",tool_use_id:"call_1",
-  tool_input:{command:"printf '\''line\\n\\n'\''; exit 7"}}' \
+jq -e '. == {turn_id:1,tool:{id:"call_1",name:"shell",
+  input:{command:"printf '\''line\\n\\n'\''; exit 7"}}}' \
   "$TEST_OUTPUT_DIR/pre-call_1" >/dev/null
-jq -e '. == {turn_id:1,tool_name:"shell",tool_use_id:"call_1",
-  tool_input:{command:"printf '\''line\\n\\n'\''; exit 7"},
-  tool_response:{stdout:"line\n\n",stderr:"",exit_code:7}}' \
+jq -e '. == {turn_id:1,tool:{id:"call_1",name:"shell",
+  input:{command:"printf '\''line\\n\\n'\''; exit 7"},
+  output:{stdout:"line\n\n",stderr:"",exit_code:7}}}' \
   "$TEST_OUTPUT_DIR/post-call_1" >/dev/null
-# Correlated hook context joins its own tool result in lifecycle order.
+# The settled result carries that folded context straight into the request.
 jq -e '
   ([.messages[-4:][].type]) == ["tool_call","tool_result","tool_call","tool_result"] and
   .messages[-3].content ==
@@ -96,7 +91,7 @@ jq -e '
 typeset pre_deny="$tmp/pre-deny"
 cat >"$pre_deny" <<'ZSH'
 #!/usr/bin/env zsh
-call_id=$(jq -r '.tool_use_id')
+call_id=$(jq -r '.tool.id')
 print -r -- "$call_id" >>"$TEST_OUTPUT_DIR/pre-calls"
 [[ $SHELLFISH_TURN_ID == 1 && $SHELLFISH_MODEL == test-model &&
   $0 == /* && -d ${0:A:h} ]] || exit 1
@@ -106,7 +101,7 @@ chmod +x "$pre_deny"
 typeset pre_later="$tmp/pre-later"
 cat >"$pre_later" <<'ZSH'
 #!/usr/bin/env zsh
-call_id=$(jq -r '.tool_use_id')
+call_id=$(jq -r '.tool.id')
 print -r -- "$call_id" >>"$TEST_OUTPUT_DIR/pre-later-calls"
 [[ $call_id != call_2 ]] || { print -rn -- 'second reason'; exit 11 }
 ZSH
@@ -114,13 +109,13 @@ chmod +x "$pre_later"
 typeset pre_never="$tmp/pre-never"
 cat >"$pre_never" <<'ZSH'
 #!/usr/bin/env zsh
-jq -r '.tool_use_id' >>"$TEST_OUTPUT_DIR/pre-never-calls"
+jq -r '.tool.id' >>"$TEST_OUTPUT_DIR/pre-never-calls"
 ZSH
 chmod +x "$pre_never"
 typeset post_log="$tmp/post-log"
 cat >"$post_log" <<'ZSH'
 #!/usr/bin/env zsh
-jq -r '[.tool_use_id,(.tool_response.exit_code | tostring)] | join("|")' \
+jq -r '[.tool.id,(.tool.output.exit_code | tostring)] | join("|")' \
   >>"$TEST_OUTPUT_DIR/post-calls"
 ZSH
 chmod +x "$post_log"
@@ -136,8 +131,8 @@ stream=$(SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_COUNT=3 \
 print -r -- "$stream" | jq -eRn '
   [inputs | fromjson] as $events |
   ($events | map(select(.type == "tool_result") | .exit_code)) == [0,126,0] and
-  ($events | map(select(.type == "tool_result"))[1].stderr) ==
-    "tool call denied by pre_tool_use hook: pre-deny"
+  ($events | map(select(.type == "tool_result"))[1].model_text |
+    endswith("tool call denied by pre_tool_use hook: pre-deny\nexit 126"))
 ' >/dev/null
 # Denial steering reaches the model as hook context beside the denied result.
 jq -e '

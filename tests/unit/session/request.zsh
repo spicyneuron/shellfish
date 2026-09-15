@@ -3,13 +3,7 @@
 source "${0:A:h:h:h}/_helpers.zsh"
 
 fold() {
-  jq -L "$ROOT" -c --argjson tools '[{
-    "name":"shell",
-    "manifest":{"render":{"model_after":"${output.stdout}${output.stderr}"}}
-  }]' 'include "lib/render"; include "lib/session/request";
-    map(if .type == "tool_result" then
-      .content = ({tools:$tools,record:.} | render_tool_model)
-    else . end) | request_messages'
+  jq -L "$ROOT" -c 'include "lib/session/request"; request_messages'
 }
 
 # Conversation records drop storage fields.
@@ -67,57 +61,27 @@ print -r -- '[
   .[0].content[0].text == "<note>a && b</note>\n\nhi"
 ' >/dev/null
 
-# Pending context cannot split a tool pair.
+# Pending context cannot split a tool pair, and a result supplies its own text.
 print -r -- '[
   {"type":"assistant","stop":"tool_calls","content":[]},
   {"type":"hook_result","model_text":"CTX"},
-  {"type":"tool_result","call_id":"c1","name":"shell",
-   "input":{},"stdout":"out","stderr":"err","exit_code":0},
+  {"type":"tool_result","id":"c1","name":"shell","input":{},
+   "model_text":"out","exit_code":0},
   {"type":"user","content":[{"type":"text","text":"next"}]}
 ]' | fold | jq -e '
   [.[].type] == ["assistant","tool_call","tool_result","user"] and
   .[1] == {type:"tool_call",id:"c1",name:"shell",input:{}} and
-  (.[2] | has("input", "stdout", "stderr") | not) and
-  .[2].content == "outerr" and
+  (.[2] | has("input", "model_text") | not) and
+  .[2].content == "out" and
   .[3].content[0].text == "CTX\n\nnext"
 ' >/dev/null
 
-# Correlated context surrounds its own tool result in lifecycle order.
+# A result without model text still reconstructs its pair.
 print -r -- '[
   {"type":"assistant","stop":"tool_calls","content":[]},
-  {"type":"hook_result","tool_use_id":"c1","model_text":"PRE"},
-  {"type":"hook_result","tool_use_id":"c1","model_text":"PERMISSION"},
-  {"type":"tool_result","call_id":"c1","name":"shell",
-   "input":{},"stdout":"out","stderr":"","exit_code":0},
-  {"type":"hook_result","tool_use_id":"c1","model_text":"POST"},
-  {"type":"user","content":[{"type":"text","text":"next"}]}
+  {"type":"tool_result","id":"c1","name":"shell","input":{},"exit_code":1}
 ]' | fold | jq -e '
-  [.[].type] == ["assistant","tool_call","tool_result","user"] and
-  .[2].content == "PRE\n\nPERMISSION\n\nout\n\nPOST" and
-  .[3].content[0].text == "next"
-' >/dev/null
-
-# A reused call ID correlates within its own response.
-print -r -- '[
-  {"type":"assistant","stop":"tool_calls","content":[]},
-  {"type":"tool_result","call_id":"c1","name":"shell",
-   "input":{},"stdout":"first","stderr":"","exit_code":0},
-  {"type":"assistant","stop":"tool_calls","content":[]},
-  {"type":"hook_result","tool_use_id":"c1","model_text":"SECOND PRE"},
-  {"type":"tool_result","call_id":"c1","name":"shell",
-   "input":{},"stdout":"second","stderr":"","exit_code":0}
-]' | fold | jq -e '
-  [.[] | select(.type == "tool_result") | .content] == ["first", "SECOND PRE\n\nsecond"]
-' >/dev/null
-
-# Correlated context without a settled result is dropped.
-print -r -- '[
-  {"type":"assistant","stop":"tool_calls","content":[]},
-  {"type":"hook_result","tool_use_id":"c1","model_text":"ORPHAN"},
-  {"type":"error","user_text":"interrupted"},
-  {"type":"user","content":[{"type":"text","text":"next"}]}
-]' | fold | jq -e '
-  [.[].type] == ["user"] and .[0].content[0].text == "next"
+  [.[].type] == ["assistant","tool_call","tool_result"] and .[2].content == ""
 ' >/dev/null
 
 # A tool-calling assistant without settled results is omitted.

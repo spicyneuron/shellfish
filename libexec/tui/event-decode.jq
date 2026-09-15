@@ -1,5 +1,4 @@
 include "lib/runtime/schema";
-include "lib/render";
 include "libexec/tui/display-fields";
 
 def event_fields:
@@ -43,8 +42,7 @@ def event_fields:
       (.path | nul_free_string and startswith("/")) then
     ["session_created", .path]
   elif .type == "_tool_permission_request" then
-    ({record:.tool,tools:($event_runtime.harness.tools // [])} |
-      render_tool_permission) as $preview |
+    (.preview // "") as $preview |
      ["permission_request", .id, .tool.name,
       (if ($preview | length) > 1000
        then $preview[0:1000] + "…" else $preview end),
@@ -64,17 +62,12 @@ def event_fields:
       (.type == "system" and canonical_session_record) then
     empty
   elif canonical_tool_activity then
-    ({record:.,tools:($event_runtime.harness.tools // [])} | render_tool_before_view) as $view |
-    ["tool_call", .call_id, $view.text, .name, ($view.identity_start | tostring)]
+    ["tool_call", .id, (.user_text // ""), .name, execution_offset]
   elif canonical_tool_result then
-    ({record:.,tools:($event_runtime.harness.tools // [])} | render_tool_after_view) as $view |
-    ["tool_result", .call_id, $view.text, .name, ($view.identity_start | tostring)]
+    ["tool_result", .id, (.user_text // ""), .name, execution_offset]
   elif canonical_hook_result then
-    .name as $name | (.user_text // "") as $text |
-    ["hook_result", .hook, (.executable // .name), $text,
-      (if $text | startswith($name) then "0" else "-1" end),
-      (if (.model_text // "") == "" then "0" else "1" end),
-      (.tool_use_id // "")]
+    ["hook_result", .hook, (.executable // .name), (.user_text // ""),
+      execution_offset, (if (.model_text // "") == "" then "0" else "1" end)]
   elif canonical_user_message or canonical_assistant_message or
       (.type == "error" and canonical_session_record) then
     (select(canonical_assistant_message and has("usage")) | .usage |

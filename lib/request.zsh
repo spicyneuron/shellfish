@@ -15,11 +15,8 @@ sf_request_build() {
   local runtime=$1 tools=$2
   sf_jq -sce --argjson runtime "$runtime" --argjson tools "$tools" '
     include "lib/runtime/schema";
-    include "lib/render";
     include "lib/session/request";
-    map(if .type == "tool_result" then
-      .content = ({tools:$runtime.harness.tools,record:.} | render_tool_model)
-    else . end) as $records |
+    . as $records |
     {
       format_version:1,
       system:([$records[] | select(.type == "system") | .content] | join("\n\n")),

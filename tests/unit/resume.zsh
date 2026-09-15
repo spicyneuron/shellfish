@@ -44,7 +44,7 @@ print -r -- '{"type":"assistant","stop":"end","content":[{"type":"text","text":"
 
 # Tool result preview.
 make_header >"$s_tool_res"
-print -r -- '{"type":"tool_result","call_id":"c1","name":"shell","input":{},"stdout":"","stderr":"err","exit_code":2}' >>"$s_tool_res"
+print -r -- '{"type":"tool_result","id":"c1","name":"shell","input":{},"exit_code":2,"user_text":"shell\nerr\nexit 2","model_text":"err\nexit 2"}' >>"$s_tool_res"
 
 # Interrupted turn preview.
 make_header >"$s_failed"

@@ -89,8 +89,8 @@ cat >"$permission_script" <<'ZSH'
 [[ $SHELLFISH_TURN_ID == 1 ]] || exit 1
 [[ $SHELLFISH_MODEL == test && $0 == /* ]] || exit 1
 [[ -d $SHELLFISH_TURN_STATE && -d ${0:A:h} ]] || exit 1
-jq -e '. == {turn_id:1,tool_name:"shell",tool_use_id:"call_7",
-  tool_input:{command:"true"}}' >/dev/null || exit 1
+jq -e '. == {turn_id:1,tool:{id:"call_7",name:"shell",
+  input:{command:"true"}}}' >/dev/null || exit 1
 print -rn -- ignored
 print -rn -u2 -- local
 decision=$(cat "$SHELLFISH_TURN_STATE/decision")
@@ -115,7 +115,8 @@ print allow >"$SHELLFISH_TURN_STATE/decision"
 sf_hooks_permission_request "$permission_session" shell call_7 \
   '{"command":"true"}'
 [[ $reply[1] == allow && -z $reply[2] ]]
-(( $(wc -l <"$permission_session") == 2 ))
+# A tool-lifecycle hook contributes to its call, so it settles nothing here.
+(( $(wc -l <"$permission_session") == 1 ))
 print deny >"$SHELLFISH_TURN_STATE/decision"
 sf_hooks_permission_request "$permission_session" shell call_7 \
   '{"command":"true"}'
@@ -133,7 +134,7 @@ sf_hooks_permission_request "$permission_session" shell call_7 \
   '{"command":"true"}'
 [[ $reply[1] == defer && -z $reply[2] ]]
 jq -e -s '.[-1] == {type:"state",name:"permission/check",value:true} and
-  ([.[] | select(.type == "hook_result")] | length) == 3' \
+  ([.[] | select(.type == "hook_result")] | length) == 0' \
   "$permission_session" >/dev/null
 print halt >"$SHELLFISH_TURN_STATE/decision"
 if sf_hooks_permission_request "$permission_session" shell call_7 \

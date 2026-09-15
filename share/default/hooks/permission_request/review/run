@@ -51,15 +51,15 @@ permission_resolve() {
 request=$(cat; printf x)
 request=${request%x}
 request=$(jq -ce --argjson turn "$SHELLFISH_TURN_ID" '
-  select(type == "object" and
-    keys == ["tool_input","tool_name","tool_use_id","turn_id"] and
+  select(type == "object" and keys == ["tool","turn_id"] and
     .turn_id == $turn and
-    (.tool_name | type == "string" and test("^[A-Za-z_][A-Za-z0-9_-]*$")) and
-    (.tool_use_id | type == "string" and test("^[A-Za-z0-9_-]+$")) and
-    (.tool_input | type == "object"))
+    (.tool | keys == ["id","input","name"] and
+      (.name | type == "string" and test("^[A-Za-z_][A-Za-z0-9_-]*$")) and
+      (.id | type == "string" and test("^[A-Za-z0-9_-]+$")) and
+      (.input | type == "object")))
 ' <<<"$request" 2>/dev/null) || permission_deny 'Permission review received an invalid tool request.'
 state_name=$(jq -r --argjson turn "$SHELLFISH_TURN_ID" '
-  "permissions/\($turn)/\(.tool_use_id)"
+  "permissions/\($turn)/\(.tool.id)"
 ' <<<"$request") || permission_deny 'Permission review could not prepare state.'
 if (( ${#state_name} > 128 )); then
   state_name=''
@@ -116,8 +116,8 @@ records=$(jq -cn --argjson request "$request" --argjson projected "$projected" \
   {
     system_message:($projected.system | if length > 0 then . else null end),
     startup_context:$entries[$first_user].value,
-    target_tool_call:{type:"tool_call",id:$request.tool_use_id,
-      name:$request.tool_name,input:$request.tool_input},
+    target_tool_call:{type:"tool_call",id:$request.tool.id,
+      name:$request.tool.name,input:$request.tool.input},
     candidates:([
       ($entries[] | select(.key > $first_user) | .value),
       ($active.assistant | select($active.settled | not)) |
