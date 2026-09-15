@@ -5,14 +5,6 @@ source "$SF_ROOT/lib/hooks.zsh"
 
 typeset -g SF_RUN_HOOK_ERROR=''
 
-sf_run_append() {
-  sf_session_append "$1" "$2" || {
-    SF_RUN_HOOK_ERROR=$SF_SESSION_ERROR
-    return 1
-  }
-  sf_run_emit "$2"
-}
-
 sf_run_hook_control() {
   local lifecycle=$1 outcome=$2
   REPLY=$(jq -c --arg lifecycle "$lifecycle" '
@@ -122,14 +114,14 @@ sf_run_hooks() {
     state_projection=$(jq -c '.states[]' <<<"$outcome") || { error='cannot inspect hook state'; break; }
     states=( ${(@f)state_projection} )
     for record in "${states[@]}"; do
-      sf_run_append "$session" "$record" || { error=$SF_RUN_HOOK_ERROR; break 2; }
+      sf_run_append "$session" "$record" || { error=$REPLY; break 2; }
     done
     if jq -e '.exit_code != 0 or .stdout != "" or .stderr != ""' <<<"$outcome" >/dev/null; then
       sf_hook_result "$lifecycle" "$id" "$name" "$command" "$input_json" "$outcome" || {
         error="hook script returned invalid result: $command"
         break
       }
-      sf_run_append "$session" "$REPLY" || { error=$SF_RUN_HOOK_ERROR; break; }
+      sf_run_append "$session" "$REPLY" || { error=$REPLY; break; }
     fi
     sf_run_hook_control "$lifecycle" "$outcome" || {
       error="$lifecycle hook returned invalid control: $command"
