@@ -9,8 +9,7 @@ setopt no_aliases no_bg_nice no_multios pipe_fail
 (( $+functions[sf_process_stop] )) || source "$SF_ROOT/lib/process.zsh"
 
 typeset -gA SF_RUN=(
-  answer '' jsonl 0 interrupted 0 permission_count 0 permission_available 0
-  signal_status 143
+  jsonl 0 interrupted 0 signal_status 143
 )
 
 sf_run_emit() {
@@ -24,56 +23,6 @@ sf_run_interrupt() {
     sf_process_stop "$SF_REQUEST[pid]" "$SF_REQUEST[group_file]"
     SF_REQUEST[pid]=''
   fi
-}
-
-# Returns 0 to allow, 1 to deny, and 2 when the decision operation failed.
-sf_run_permission() {
-  local session=$1 call_id=$2 name=$3 input=$4 id response decision hook_decision hook_reason
-  SF_RUN[permission_reason]=''
-  SF_RUN[permission_error]=''
-  if ! sf_hooks_permission_request "$session" "$name" "$call_id" "$input"; then
-    SF_RUN[permission_error]=$SF_HOOK_ERROR
-    return 2
-  fi
-  hook_decision=$reply[1]
-  hook_reason=$reply[2]
-  case $hook_decision in
-    allow) return 0 ;;
-    deny)
-      SF_RUN[permission_reason]=${hook_reason:-sandbox bypass denied}
-      return 1
-      ;;
-  esac
-  if (( ! SF_RUN[permission_available] )); then
-    SF_RUN[permission_reason]='sandbox bypass denied'
-    return 1
-  fi
-  (( SF_RUN[permission_count] += 1 ))
-  id="permission_$SF_RUN[permission_count]"
-  sf_tool_preview "$call_id" "$name" "$input" &&
-    jq -c --arg id "$id" '{type:"_tool_permission_request",id:$id,
-      reason:.input.sandbox_bypass_reason,preview,
-      tool:{id,name,input}}' <<<"$REPLY" || {
-      SF_RUN[permission_error]='cannot prepare permission request'
-      return 2
-    }
-  if ! IFS= read -r response; then
-    decision=deny
-  else
-    decision=$(jq -er --arg id "$id" '
-      select(type == "object" and keys == ["decision","id","type"] and
-        .type == "_tool_permission_response" and .id == $id and
-        (.decision | IN("approve","deny"))) | .decision
-    ' <<<$response 2>/dev/null) || {
-      SF_RUN[permission_error]='invalid permission response'
-      return 2
-    }
-  fi
-  if [[ $decision == approve ]]; then
-    return 0
-  fi
-  SF_RUN[permission_reason]='sandbox bypass denied'
-  return 1
 }
 
 sf_run_partial_assistant() {
@@ -144,8 +93,7 @@ sf_run_turn_cleanup() {
 }
 
 sf_run_turn() {
-  local user_record=$1 session_path=$2 permission_available=${3:-0} prompt=$4
-  local SF_HOOK_JSONL=$SF_RUN[jsonl]
+  local user_record=$1 session_path=$2 prompt=$3
   local request assistant backend_command opened_records
   local hook_action
   local runtime_projection
@@ -157,8 +105,6 @@ sf_run_turn() {
   integer harness_sandbox request_limit
   local failure='' after='' patch=''
 
-  SF_RUN[permission_count]=0
-  SF_RUN[permission_available]=$permission_available
   if ! sf_session_begin_turn "$session_path"; then
     print -r -u2 -- "$SF_SESSION_ERROR"
     return 1

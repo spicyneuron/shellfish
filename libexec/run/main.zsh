@@ -146,14 +146,11 @@ sf_run_main() {
   trap 'SF_RUN[signal_status]=129; kill -TERM $$' HUP
   trap 'sf_run_interrupt; exit $SF_RUN[signal_status]' TERM
   local run_status
-  sf_run_turn "$input" "$session" "$jsonl" "$prompt"
+  sf_run_turn "$input" "$session" "$prompt"
   run_status=$?
   trap - INT USR1 HUP TERM
   if (( SF_RUN[interrupted] )); then
     return $SF_RUN[signal_status]
-  fi
-  if (( ! jsonl )) && [[ -n $SF_RUN[answer] ]]; then
-    print -r -- "$SF_RUN[answer]"
   fi
   return $run_status
 }

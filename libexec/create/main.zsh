@@ -42,7 +42,6 @@ sf_create_interrupt() {
 
 sf_create_session() {
   local session=$1 runtime=$2 system=$3 error=''
-  local SF_HOOK_JSONL=$SF_CREATE_JSONL
   typeset -gx SHELLFISH_MODE=create
   if ! sf_session_prepare "$runtime"; then
     sf_die "$SF_SESSION_ERROR"
