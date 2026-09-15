@@ -106,34 +106,6 @@ rmdir "$write_failure"
 mv "$write_failure.saved" "$write_failure"
 sf_session_reset
 
-# Recovery repairs the durable transcript.
-typeset recovery_sync="$tmp/recovery-sync.jsonl"
-cp "$SF_TEST_SESSIONS/header-only.jsonl" "$recovery_sync"
-sf_session_begin_turn "$recovery_sync"
-sf_session_append "$recovery_sync" '{"type":"user","content":[{"type":"text","text":"partial"}]}'
-print -rn -- '{"type":"user"' >>"$recovery_sync"
-sf_session_resync_turn "$recovery_sync"
-assert_equal '{"type":"error","user_text":"Turn interrupted."}' "$REPLY"
-sf_session_reset
-jq -e -s 'length == 3 and .[-1] == {type:"error",user_text:"Turn interrupted."}' \
-  "$recovery_sync" >/dev/null
-
-# Recovery reloads complete durable writes.
-typeset recovery_complete="$tmp/recovery-complete.jsonl"
-cp "$SF_TEST_SESSIONS/header-only.jsonl" "$recovery_complete"
-sf_session_begin_turn "$recovery_complete"
-sf_session_append "$recovery_complete" '{"type":"user","content":[{"type":"text","text":"complete"}]}'
-print -r -- '{"type":"assistant","stop":"end","content":[{"type":"text","text":"done"}]}' \
-  >>"$recovery_complete"
-sf_session_resync_turn "$recovery_complete"
-[[ -z $REPLY ]] || fail 'complete durable turn was recovered as interrupted'
-(( ${#SF_SESSION_RECORDS} == 3 )) || fail 'resync did not reload the complete durable turn'
-sf_session_resync_turn "$recovery_complete" 'stop hook failed' 1
-assert_equal '{"type":"error","user_text":"stop hook failed"}' "$REPLY"
-sf_session_reset
-jq -e -s 'length == 4 and .[-1] == {type:"error",user_text:"stop hook failed"}' \
-  "$recovery_complete" >/dev/null
-
 # State survives reopening.
 typeset state_session="$tmp/state-session.jsonl"
 cp "$SF_TEST_SESSIONS/header-only.jsonl" "$state_session"
@@ -144,7 +116,7 @@ print -r -- '{"type":"state","name":"git/identity","value":null}' >>"$state_sess
 print -r -- '{"type":"assistant","stop":"end","content":[]}' \
   >>"$state_session"
 sf_session_begin_turn "$state_session"
-[[ $SF_SESSION[turn_id] == 2 && -z $SF_SESSION_RECOVERY_NEEDED && -z $REPLY ]]
+[[ $SF_SESSION[turn_id] == 2 && -z $REPLY ]]
 (( ${#SF_SESSION_RECORDS} == 5 ))
 sf_session_reset
 
@@ -167,81 +139,9 @@ if sf_session_begin_turn "$blank"; then
 fi
 (( ${#SF_SESSION_RECORDS} == 0 ))
 
-# Opening rejects noncanonical records.
-typeset invalid_record="$tmp/invalid-record.jsonl"
-cp "$SF_TEST_SESSIONS/header-only.jsonl" "$invalid_record"
-print -r -- '{"type":"hook_result","hook":"session_start","id":"","name":"bad","input":"","exit_code":0}' >>"$invalid_record"
-if sf_session_begin_turn "$invalid_record"; then
-  fail 'session with an invalid durable record was accepted'
-fi
-
 # Readers trim incomplete trailing records.
 before=$(head -n 3 "$session")
 print -rn -- '{"type":"user"' >>"$session"
 sf_session_begin_turn "$session"
 [[ $(cat "$session") == "$before" ]]
-sf_session_reset
-
-# Recovery closes an interrupted tool continuation without inventing outcomes.
-typeset interrupted_tools="$tmp/interrupted-tools.jsonl"
-cp "$SF_TEST_SESSIONS/header-only.jsonl" "$interrupted_tools"
-sf_session_begin_turn "$interrupted_tools"
-sf_session_append "$interrupted_tools" '{"type":"user","content":[{"type":"text","text":"run"}]}'
-sf_session_append "$interrupted_tools" '{"type":"assistant","stop":"tool_calls","content":[]}'
-sf_session_append "$interrupted_tools" '{"type":"tool_result","id":"call_1","name":"shell","input":{},"exit_code":0,"user_text":"shell\ndone\nexit 0","model_text":"done\nexit 0"}'
-sf_session_reset
-sf_session_begin_turn "$interrupted_tools"
-sf_session_append "$interrupted_tools" '{"type":"user","content":[{"type":"text","text":"next"}]}'
-sf_session_reset
-jq -e -s '
-  .[-2] == {type:"error",user_text:"Turn interrupted."} and
-  (.[-3] | .type == "tool_result" and .id == "call_1" and .exit_code == 0) and
-  .[-1].type == "user" and .[-1].content[0].text == "next"
-' "$interrupted_tools" >/dev/null
-
-# Queue recovery compares only results below the owning assistant response.
-typeset repeated_calls="$tmp/repeated-calls.jsonl"
-cp "$SF_TEST_SESSIONS/header-only.jsonl" "$repeated_calls"
-sf_session_begin_turn "$repeated_calls"
-sf_session_append "$repeated_calls" '{"type":"user","content":[{"type":"text","text":"first"}]}'
-sf_session_append "$repeated_calls" '{"type":"assistant","stop":"tool_calls","content":[]}'
-sf_session_append "$repeated_calls" '{"type":"tool_result","id":"call_1","name":"shell","input":{},"exit_code":0,"user_text":"shell\ndone\nexit 0","model_text":"done\nexit 0"}'
-sf_session_append "$repeated_calls" '{"type":"assistant","stop":"end","content":[]}'
-sf_session_append "$repeated_calls" '{"type":"user","content":[{"type":"text","text":"second"}]}'
-sf_session_append "$repeated_calls" '{"type":"assistant","stop":"tool_calls","content":[]}'
-sf_session_resync_turn "$repeated_calls" interrupted 1 \
-  '{"id":"call_1","name":"shell","input":{},"execution_input":{}}' call_1
-sf_session_reset
-jq -e -s '
-  ([.[] | select(.type == "tool_result" and .id == "call_1")] | length) == 2 and
-  (.[-2].model_text | startswith("tool call interrupted")) and .[-1].type == "error"
-' "$repeated_calls" >/dev/null
-
-# A result committed before queue removal is not duplicated during cleanup.
-typeset committed_result="$tmp/committed-result.jsonl"
-cp "$SF_TEST_SESSIONS/header-only.jsonl" "$committed_result"
-sf_session_begin_turn "$committed_result"
-sf_session_append "$committed_result" '{"type":"user","content":[{"type":"text","text":"run"}]}'
-sf_session_append "$committed_result" '{"type":"assistant","stop":"tool_calls","content":[]}'
-sf_session_append "$committed_result" '{"type":"tool_result","id":"call_2","name":"shell","input":{},"exit_code":0,"user_text":"shell\ndone\nexit 0","model_text":"done\nexit 0"}'
-sf_session_resync_turn "$committed_result" interrupted 1 \
-  '{"id":"call_2","name":"shell","input":{},"execution_input":{}}' call_2
-sf_session_reset
-jq -e -s '
-  ([.[] | select(.type == "tool_result" and .id == "call_2")] | length) == 1 and
-  .[-1].type == "error"
-' "$committed_result" >/dev/null
-
-# Invalid transitions fail on open.
-cp "$SF_TEST_SESSIONS/invalid-transition.jsonl" "$tmp/invalid-transition.jsonl"
-if sf_session_begin_turn "$tmp/invalid-transition.jsonl"; then
-  fail 'invalid transition fixture was accepted'
-fi
-
-# Interrupted users allow another turn.
-typeset interrupted="$tmp/interrupted.jsonl"
-cp "$SF_TEST_SESSIONS/interrupted.jsonl" "$interrupted"
-sf_session_begin_turn "$interrupted"
-assert_equal '{"type":"error","user_text":"Turn interrupted."}' "$REPLY"
-sf_session_append "$interrupted" '{"type":"user","content":[{"type":"text","text":"next"}]}'
 sf_session_reset

@@ -108,10 +108,7 @@ print -r -- "$jsonl" | jq -eRn -L "$ROOT" '
   ($events | any(.type == "assistant" and (.usage | token_usage)))
 ' >/dev/null || fail 'JSONL run produced the wrong stream'
 
-print -r -- "$jsonl" | jq -c -L "$ROOT" '
-  include "lib/runtime/schema";
-  select(canonical_session_header(1) or canonical_session_record)
-' \
+print -r -- "$jsonl" | jq -c 'select(.type | startswith("_") | not)' \
   >"$tmp/stream-durable"
 jq -c . "$stream_session" | tail -n +$(( prefix + 1 )) >"$tmp/session-durable"
 cmp -s "$tmp/stream-durable" "$tmp/session-durable" ||

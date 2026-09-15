@@ -127,9 +127,8 @@ sf_run_turn_cleanup() {
     else
       error_message='Turn interrupted.'
     fi
-    # Recovery trusts durable records over the interrupted in-memory view.
-    if sf_session_resync_turn "$session" "$error_message" 1 \
-        "${(pj:\n:)SF_RUN_QUEUED_CALLS}" "$SF_RUN[active_call]"; then
+    # Reload the durable view; the interrupted in-memory view is not trusted.
+    if sf_session_resync_turn "$session"; then
       closed=$REPLY
       if [[ -n $REPLY ]]; then
         [[ -z $recovered ]] || recovered+=$'\n'

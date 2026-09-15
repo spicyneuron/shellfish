@@ -55,8 +55,7 @@ sf_install_main() {
     select($lines[-1] == "" and ($lines[0:-1] | length > 0) and
       all($lines[0:-1][]; length > 0)) |
     ($lines[0:-1] | map(fromjson)) as $records |
-    select($records[0] | canonical_session_header(1)) |
-    select($records[1:] | session_records_state | .valid)
+    select($records[0] | canonical_session_header(1))
   ' "$SF_INSTALL_TEMP" >/dev/null 2>&1 || {
     sf_die 'install-session requires one canonical JSONL transcript on stdin'
     return 2

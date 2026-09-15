@@ -11,23 +11,6 @@ typeset -gA SF_REQUEST=(
 )
 typeset -ga SF_REQUEST_PARTIAL_EVENTS=()
 
-sf_request_build() {
-  local runtime=$1 tools=$2
-  sf_jq -sce --argjson runtime "$runtime" --argjson tools "$tools" '
-    include "lib/runtime/schema";
-    include "lib/session/request";
-    . as $records |
-    {
-      format_version:1,
-      system:([$records[] | select(.type == "system") | .content] | join("\n\n")),
-      messages:($records | request_messages),
-      tools:$tools,
-      options:{request:$runtime.profile.request},
-      transport:($runtime.backend | {endpoint,insecure_tls,http_timeout,http_stall})
-    } | select(canonical_request)
-  '
-}
-
 sf_request_run() {
   setopt local_options no_bg_nice
   local request=$1 command=$2 runtime=$3 selected=$4 emit=${5:-:}

@@ -50,29 +50,8 @@ fi
 print -r -- '{"type":"assistant","stop":"end","content":[{"type":"text","text":"hi"}]}' |
   schema_eval 'canonical_assistant_message' >/dev/null
 
-# Tool calls are separate records.
-if print -r -- '{"type":"assistant","stop":"tool_calls","content":[{"type":"tool_call","id":"c1","name":"shell","input":{}}]}' |
-    schema_eval 'canonical_assistant_message' >/dev/null 2>&1; then
-  fail 'a tool call inside assistant content was accepted'
-fi
-
 print -r -- '{"type":"tool_call","id":"c1","name":"shell","input":{}}' |
   schema_eval 'canonical_tool_call' >/dev/null
-
-# Errors are valid at idle boundaries and close unfinished turns.
-print -r -- '[
-  {"type":"error","user_text":"failed before input"},
-  {"type":"user","content":[{"type":"text","text":"unfinished"}]},
-  {"type":"error","user_text":"backend failed"},
-  {"type":"user","content":[{"type":"text","text":"next"}]}
-]' | schema_eval 'canonical_session_records' >/dev/null
-
-if print -r -- '[
-    {"type":"user","content":[{"type":"text","text":"unfinished"}]},
-    {"type":"user","content":[{"type":"text","text":"next"}]}
-  ]' | schema_eval 'canonical_session_records' >/dev/null 2>&1; then
-  fail 'consecutive user messages without an error were accepted'
-fi
 
 # Requests require canonical projected fields.
 typeset valid_request
@@ -237,29 +216,6 @@ if jq -cn --arg name "$(printf 'a%.0s' {1..129})" \
     '{type:"state",name:$name,value:true}' | schema_eval 'canonical_state' >/dev/null 2>&1; then
   fail 'state name longer than 128 characters was accepted'
 fi
-
-# State records do not affect conversation sequencing.
-print -r -- '[
-  {"type":"state","name":"startup","value":1},
-  {"type":"system","content":"system"},
-  {"type":"hook_result","hook":"session_start","id":"h1","name":"one","input":"","model_text":"context","exit_code":0},
-  {"type":"state","name":"before/user","value":{}},
-  {"type":"user","content":[{"type":"text","text":"run"}]},
-  {"type":"state","name":"before-assistant","value":false},
-  {"type":"assistant","stop":"tool_calls","content":[]},
-  {"type":"state","name":"before/call","value":"one"},
-  {"type":"tool_result","id":"c1","name":"shell","input":{},"model_text":"out","exit_code":0},
-  {"type":"state","name":"between/calls","value":"two"},
-  {"type":"tool_result","id":"c2","name":"shell","input":{},"exit_code":0},
-  {"type":"state","name":"before/final","value":null},
-  {"type":"assistant","stop":"end","content":[]},
-  {"type":"hook_result","hook":"stop","id":"h5","name":"observe","input":"","user_text":"finished","exit_code":0},
-  {"type":"state","name":"after/final","value":[1,2]},
-  {"type":"user","content":[{"type":"text","text":"again"}]},
-  {"type":"state","name":"before/error","value":true},
-  {"type":"error","user_text":"failed"},
-  {"type":"state","name":"after/error","value":null}
-]' | schema_eval 'canonical_session_records' >/dev/null
 
 # Session headers require canonical runtimes.
 typeset valid_header

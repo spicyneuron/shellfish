@@ -55,23 +55,13 @@ assert_equal sentinel "$(<"$occupied")"
 
 # Publish no invalid transcripts.
 typeset invalid="$tmp/invalid-input.jsonl" target="$tmp/rejected.jsonl"
-typeset -a cases=( malformed missing-newline unsupported invalid-record unmatched-result )
+typeset -a cases=( malformed missing-newline unsupported )
 typeset -a leftovers
 for case_name in $cases; do
   case $case_name in
     malformed) print -r -- '{"type":"session"' >"$invalid" ;;
     missing-newline) print -rn -- "$(<"$header")" >"$invalid" ;;
     unsupported) sed '1s/"format_version":1/"format_version":2/' "$header" >"$invalid" ;;
-    invalid-record)
-      cat "$header" >"$invalid"
-      print -r -- '{"type":"state","name":"bad name","value":true}' >>"$invalid"
-      ;;
-    unmatched-result)
-      cat "$header" >"$invalid"
-      print -r -- \
-        '{"type":"tool_result","id":"call_1","name":"shell","input":{},"exit_code":0,"user_text":"shell\nout\nexit 0","model_text":"out\nexit 0"}' \
-        >>"$invalid"
-      ;;
   esac
   zsh -f "$entry" install-session --session-out "$target" <"$invalid" \
     >/dev/null 2>&1 && fail "installation accepted $case_name input"

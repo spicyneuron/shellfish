@@ -192,13 +192,13 @@ def canonical_user_message:
   (.content | type == "array" and length == 1 and (.[0] | canonical_text)) and
   (.content[0].text | nul_free_string);
 
+# Provider-facing response shape; durable record validity lives in the reader.
 def canonical_assistant_message:
   type == "object" and .type == "assistant" and
   ((keys - ["content", "stop", "type", "usage"]) | length == 0) and
   (["content", "stop", "type"] - keys | length == 0) and
   (.stop | IN("end", "tool_calls", "length")) and
   ((has("usage") | not) or (.usage | token_usage)) and
-  # Calls remain in memory until their settled results are recorded.
   (.content | type == "array" and
     all(.[]; canonical_text or canonical_reasoning));
 
@@ -294,49 +294,10 @@ def canonical_session_header($format_version):
     (.max_tool_calls_per_request | positive_integer) and
     (.max_capture_bytes | capture_bytes));
 
-def canonical_session_record:
-  canonical_user_message or canonical_assistant_message or canonical_tool_result or
-  canonical_hook_result or canonical_state or
-  (type == "object" and keys == ["type", "user_text"] and .type == "error" and
-    (.user_text | nul_free_string) and .user_text != "") or
-  (type == "object" and keys == ["content", "type"] and .type == "system" and
-    (.content | nul_free_string));
+def canonical_system:
+  type == "object" and keys == ["content", "type"] and .type == "system" and
+  (.content | nul_free_string);
 
-# A tool-calling assistant message may be followed by settled results.
-def session_records_state:
-  reduce .[] as $record
-    ({valid:true, next:"user", call_ids:[], hook_ids:[], messages:0};
-      if (.valid | not) or ($record | canonical_session_record | not) then
-        .valid = false
-      elif $record.type == "state" then .
-      elif $record.type == "system" then
-        if .next == "user" then . else .valid = false end
-      elif $record.type == "hook_result" then
-        if (.hook_ids | index($record.id)) != null then .valid = false
-        else
-          .hook_ids += [$record.id] |
-          # Feedback resumes the turn; empty model text would have failed the hook.
-          if $record.hook == "stop" and $record.exit_code != 0 and
-              ($record.model_text // "") != "" and .next == "user" then .next = "assistant"
-          else . end
-        end
-      elif $record.type == "error" then
-        .next = "user" | .call_ids = []
-      elif $record.type == "user" then
-        if .next == "user" then .next = "assistant" | .messages += 1
-        else .valid = false end
-      elif $record.type == "assistant" then
-        if (.next | IN("assistant", "more") | not) then .valid = false
-        elif $record.stop == "tool_calls" then
-          .next = "result" | .call_ids = [] | .messages += 1
-        else .next = "user" | .call_ids = [] | .messages += 1 end
-      elif $record.type == "tool_result" then
-        if (.next | IN("result", "more") | not) or
-            (.call_ids | index($record.id)) != null then
-          .valid = false
-        else .messages += 1 | .call_ids += [$record.id] | .next = "more" end
-      else .valid = false end) |
-  .;
-
-def canonical_session_records:
-  session_records_state | .valid;
+def canonical_error:
+  type == "object" and keys == ["type", "user_text"] and .type == "error" and
+  (.user_text | nul_free_string) and .user_text != "";

@@ -33,7 +33,7 @@ def event_fields:
       (.path | nul_free_string and startswith("/")) and
       (.records | type == "array" and (length == 1 or length == 2) and
         (.[0] | canonical_session_header(1)) and
-        all(.[1:][]; .type == "system" and canonical_session_record)) then
+        all(.[1:][]; canonical_system)) then
     ["session_prepare", (.records[0] | {backend,harness,profile} | tojson),
      (.records[1].content // "")]
   elif .type == "_session_created" and keys == ["path", "type"] and
@@ -56,8 +56,7 @@ def event_fields:
         (({type:"session",format_version:1,cwd:"/",created:"1970-01-01T00:00:00Z"} + .) |
           canonical_session_header(1))) then
     ["session_update", (.runtime | tojson)]
-  elif canonical_session_header(1) or canonical_state or
-      (.type == "system" and canonical_session_record) then
+  elif canonical_session_header(1) or canonical_state or canonical_system then
     empty
   elif canonical_tool_activity then
     ["tool_call", .id, (.user_text // ""), .name, "tool"]
@@ -65,8 +64,7 @@ def event_fields:
     ["tool_result", .id, (.user_text // ""), .name, "tool"]
   elif canonical_hook_result then
     ["hook_result", .id, (.user_text // ""), .name, hook_display_class]
-  elif canonical_user_message or canonical_assistant_message or
-      (.type == "error" and canonical_session_record) then
+  elif canonical_user_message or canonical_assistant_message or canonical_error then
     (select(canonical_assistant_message and has("usage")) | .usage |
       turn_usage_fields($event_runtime.profile.context_window // null)),
     ({record:.,replay:false} | durable_display_fields)
