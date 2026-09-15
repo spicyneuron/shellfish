@@ -7,10 +7,11 @@ sf_test_tmp process
 typeset command="$tmp/command" input_file="$tmp/input"
 cat >"$command" <<'ZSH'
 #!/usr/bin/env zsh
+unsetopt bg_nice
 input=$(<&0)
 sleep 30 &
 child=$!
-print -rn -- "$PWD|$RUNNER_VALUE|$1|$input|$child"
+print -rn -- "${PWD:A}|$RUNNER_VALUE|$1|$input|$child"
 print -rn -u2 -- error
 print -rn -u3 -- '{"state":[]}'
 exit 7
@@ -20,6 +21,7 @@ print -rn -- input >"$input_file"
 
 typeset capture="$tmp/basic" request result stdout stderr control child
 mkdir "$capture"
+capture=${capture:A}
 request=$(jq -cn --arg executable "$command" --arg stdin "$input_file" \
   --arg cwd "$tmp" '{
     executable:$executable,arguments:["argument"],stdin:$stdin,cwd:$cwd,
@@ -28,17 +30,17 @@ request=$(jq -cn --arg executable "$command" --arg stdin "$input_file" \
 sf_process_run "$request" "$capture" || { fail "$SF_PROCESS_ERROR"; exit 1; }
 result=$REPLY
 jq -e --arg capture "$capture" '
-  . == {
-    exit_code:7,interrupted:false,
-    stdout:{path:($capture + "/stdout"),bytes:.stdout.bytes,overflow:false},
-    stderr:{path:($capture + "/stderr"),bytes:5,overflow:false},
-    control:{path:($capture + "/control"),bytes:12,overflow:false}
-  } and .stdout.bytes > 0
+  keys == ["control","exit_code","interrupted","stderr","stdout"] and
+  .exit_code == 7 and .interrupted == false and
+  .stdout.path == ($capture + "/stdout") and .stdout.bytes > 0 and
+  .stdout.overflow == false and
+  .stderr == {path:($capture + "/stderr"),bytes:5,overflow:false} and
+  .control == {path:($capture + "/control"),bytes:12,overflow:false}
 ' <<<"$result" >/dev/null || fail 'runner returned an invalid result'
 stdout=$(jq -r '.stdout.path' <<<"$result")
 stderr=$(jq -r '.stderr.path' <<<"$result")
 control=$(jq -r '.control.path' <<<"$result")
-[[ $(<"$stdout") == "$tmp|ambient|argument|input|"* ]] ||
+[[ $(<"$stdout") == "${tmp:A}|ambient|argument|input|"* ]] ||
   fail 'runner changed command input, cwd, environment, or arguments'
 [[ $(<"$stderr") == error && $(<"$control") == '{"state":[]}' ]] ||
   fail 'runner mixed capture channels'
@@ -96,6 +98,7 @@ typeset interrupt="$tmp/interrupt" marker="$tmp/started" child_file="$tmp/child"
 typeset interrupt_capture="$tmp/interrupt-capture" interrupt_result="$tmp/interrupt-result"
 cat >"$interrupt" <<'ZSH'
 #!/usr/bin/env zsh
+unsetopt bg_nice
 : >"$STARTED"
 sleep 30 &
 print -r -- $! >"$CHILD_FILE"
@@ -118,7 +121,7 @@ while (( waited++ < 100 )) && [[ ! -s $child_file ]]; do sleep 0.02; done
 [[ -s $child_file ]] || fail 'runner command did not start'
 kill -TERM "$runner"
 wait "$runner" || fail 'runner did not settle an interrupted command'
-jq -e '.interrupted == true' "$interrupt_result" >/dev/null ||
+jq -e '.exit_code == 143 and .interrupted == true' "$interrupt_result" >/dev/null ||
   fail 'runner did not report interruption'
 child=$(<"$child_file")
 ! kill -0 "$child" 2>/dev/null || fail 'runner left an interrupted descendant alive'
