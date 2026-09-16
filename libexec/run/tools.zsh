@@ -42,7 +42,7 @@ sf_run_tool_component() {
 
 sf_run_tool_render() {
   local component=$1 name=$2 input=$3 output=$4
-  local render='{"initial_user_text":"${name}\n${input}","user_text":"${name}\n${output.stdout}${output.stderr}\nexit ${output.exit_code}","model_text":"${output.stdout}${output.stderr}\nexit ${output.exit_code}","permission_user_text":"${input}"}'
+  local render='{"initial_user_text":"${name} ${input}","user_text":"${name} ${input}\n${output.stdout}${output.stderr}","model_text":"${output.stdout}${output.stderr}","permission_user_text":"${input}"}'
   [[ -z $component ]] || render=$(jq -c '.manifest.render' <<<"$component") || return
   REPLY=$(sf_jq -cn --argjson render "$render" --arg name "$name" \
     --argjson input "$input" --argjson output "$output" '

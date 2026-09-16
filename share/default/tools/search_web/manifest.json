@@ -9,11 +9,5 @@
       "num_results": {"type": "integer", "minimum": 1, "maximum": 10, "description": "Number of results to return (default: 10)"}
     }
   },
-  "render": {
-    "initial_user_text": "${name} · ${input.query}",
-    "user_text": "${name} · ${input.query}\n${output.stdout}${output.stderr}",
-    "model_text": "${output.stdout}${output.stderr}",
-    "permission_user_text": "${input.query}"
-  },
   "sandbox": true
 }

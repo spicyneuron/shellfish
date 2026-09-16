@@ -397,7 +397,7 @@ sf_tui_format_execution() {
   sf_tui_format_trim "$SF_LIVE_TEXT"
   body=$REPLY
   [[ -z $SF_LIVE_NAME || $body == "$SF_LIVE_NAME" ||
-    $body == "$SF_LIVE_NAME"$'\n'* || $body == "$SF_LIVE_NAME ·"* ]] ||
+    $body == "$SF_LIVE_NAME"$'\n'* || $body == "$SF_LIVE_NAME "* ]] ||
     body="$SF_LIVE_NAME"$'\n'"$body"
   case $SF_LIVE_CLASS in
     tool) glyph='⛭'; preview=full ;;

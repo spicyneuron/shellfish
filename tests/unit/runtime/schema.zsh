@@ -235,6 +235,14 @@ valid_manifest=$(jq -cn '
   }
 ')
 print -r -- "$valid_manifest" | schema_eval 'tool_manifest' >/dev/null
+print -r -- "$valid_manifest" | jq -c 'del(.render)' |
+  schema_eval 'tool_manifest' >/dev/null || fail 'tool manifest required render overrides'
+print -r -- "$valid_manifest" | jq -c '.render = {model_text:""}' |
+  schema_eval 'tool_manifest' >/dev/null || fail 'tool manifest rejected a partial render override'
+if print -r -- "$valid_manifest" | jq -c '.render = null' |
+    schema_eval 'tool_manifest' >/dev/null 2>&1; then
+  fail 'tool manifest accepted null render overrides'
+fi
 for manifest in "$ROOT"/share/default/tools/*/manifest.json; do
   schema_eval 'tool_manifest' <"$manifest" >/dev/null ||
     fail "invalid bundled tool manifest: $manifest"
@@ -248,7 +256,6 @@ if jq -c '.render.initial_user_text = "${output.stdout}"' <<<"$valid_manifest" |
     schema_eval 'tool_manifest' >/dev/null 2>&1; then
   fail 'tool manifest used output in its initial user text'
 fi
-
 typeset tool_header
 tool_header=$(jq -cn --argjson header "$valid_header" --argjson manifest "$valid_manifest" '
   $header | .harness.tools = [{
@@ -256,6 +263,10 @@ tool_header=$(jq -cn --argjson header "$valid_header" --argjson manifest "$valid
   }]
 ')
 print -r -- "$tool_header" | schema_eval 'canonical_session_header(1)' >/dev/null
+if jq -c '.harness.tools[0].manifest |= del(.render.model_text)' <<<"$tool_header" |
+    schema_eval 'canonical_session_header(1)' >/dev/null 2>&1; then
+  fail 'session header accepted an unnormalized tool render'
+fi
 for field in request_sandbox_bypass sandbox_bypass_reason; do
   if jq -c --arg field "$field" '.input_schema.properties[$field] = {type:"string"}' \
       <<<"$valid_manifest" | schema_eval 'tool_manifest' >/dev/null 2>&1; then

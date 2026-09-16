@@ -40,10 +40,10 @@ Each hook is configured on a harness as an ordered list of component references.
 }
 ```
 
-A manifest can select component-specific values to load from `.env` and render initial text, user text, and the model context body:
+A manifest can select component-specific values to load from `.env` and override initial text, user text, or the model context body:
 
 ```json
-{"environment":["HOOK_MODE"],"render":{"initial_user_text":"Checking the working tree","user_text":"${output.stderr}","model_text":"${output.stdout}"}}
+{"environment":["HOOK_MODE"],"render":{"initial_user_text":"Checking the working tree"}}
 ```
 
 When a request is built, nonempty model text is grouped by lifecycle and attributed to each component:
@@ -112,7 +112,7 @@ Skipping is sticky: after one script returns 10 or 11, a later zero does not res
 | `post_tool_use` | tool response JSON | continue | unsupported |
 | `stop` | final assistant text | finish turn | add feedback and continue |
 
-Hook manifests render captured output into independent durable user and model text. By default stderr becomes user text and stdout becomes model text.
+Hook manifests render captured output into independent durable user and model text. Supplied render fields merge over defaults: no initial text, stderr as user text, and stdout as model text.
 
 Tool hooks receive canonical envelopes. A request envelope has:
 

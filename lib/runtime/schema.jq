@@ -22,12 +22,17 @@ def script_template($input_variables; $output):
     ($output and IN("output.stdout", "output.stderr", "output.exit_code"))));
 
 def component_render($input_variables; $permission):
+  (["initial_user_text", "model_text", "user_text"] +
+    if $permission then ["permission_user_text"] else [] end) as $fields |
   type == "object" and
+  (keys - $fields | length) == 0 and
+  all(to_entries[]; . as $entry | .value |
+    script_template($input_variables; $entry.key | IN("model_text", "user_text")));
+
+def complete_component_render($input_variables; $permission):
+  component_render($input_variables; $permission) and
   keys == (["initial_user_text", "model_text", "user_text"] +
-    if $permission then ["permission_user_text"] else [] end | sort) and
-  ([.initial_user_text] + if $permission then [.permission_user_text] else [] end |
-    all(.[]; script_template($input_variables; false))) and
-  ([.user_text,.model_text] | all(.[]; script_template($input_variables; true)));
+    if $permission then ["permission_user_text"] else [] end | sort);
 
 def tool_manifest:
   (.input_schema.properties // {} | keys | map("input." + .)) as $input_variables |
@@ -43,7 +48,8 @@ def tool_manifest:
       has("request_sandbox_bypass") or has("sandbox_bypass_reason") | not) and
     ((.required // []) |
       index("request_sandbox_bypass") == null and index("sandbox_bypass_reason") == null)) and
-  (.render | component_render($input_variables; true)) and
+  (if has("render") then .render | component_render($input_variables; true)
+   else true end) and
   ((.environment // []) | component_environment) and
   (.sandbox | type == "boolean") and
   ((.allow_sandbox_bypass // false) | type == "boolean") and
@@ -94,7 +100,7 @@ def hook_component:
   (keys - ["command", "environment", "help", "match", "render"] | length) == 0 and
   has("command") and has("environment") and has("render") and
   (.command | absolute_path) and
-  (.render | component_render(null; false)) and
+  (.render | complete_component_render(null; false)) and
   (.environment | component_environment) and
   (if has("match") then .match | hook_match else true end) and
   (if has("help") then .help | hook_help else true end);
@@ -255,7 +261,9 @@ def canonical_session_header($format_version):
       type == "object" and keys == ["command", "manifest", "name", "settings"] and
       (.name | tool_name) and (.command | absolute_path) and
       (.settings == null or (.settings | absolute_nul_free_path)) and
-      (.manifest | tool_manifest) and
+      (.manifest | . as $manifest | tool_manifest and has("render") and
+        (.render | complete_component_render(
+          ($manifest.input_schema.properties // {} | keys | map("input." + .)); true))) and
       (if .manifest.sandbox then .settings != null else .settings == null end))) and
     (([.tools[].name] | unique | length) == (.tools | length)) and
     (.sandbox | type == "boolean") and

@@ -18,9 +18,8 @@ A tool directory contains an executable `run`, a `manifest.json` or `manifest.js
     }
   },
   "render": {
-    "initial_user_text": "${name} · ${input.path}",
-    "user_text": "${name} · ${input.path}\n${output.stdout}${output.stderr}",
-    "model_text": "${output.stdout}${output.stderr}",
+    "initial_user_text": "${name} ${input.path}",
+    "user_text": "${name} ${input.path}\n${output.stdout}${output.stderr}",
     "permission_user_text": "${input.path}"
   },
   "sandbox": true,
@@ -29,9 +28,9 @@ A tool directory contains an executable `run`, a `manifest.json` or `manifest.js
 }
 ```
 
-`description`, `input_schema`, `render`, and `sandbox` are required. The input schema must describe an object. `environment` selects component-specific variables and defaults to empty. `allow_sandbox_bypass` defaults to false and is valid only for a sandboxed tool.
+`description`, `input_schema`, and `sandbox` are required. The input schema must describe an object. `environment` selects component-specific variables and defaults to empty. `allow_sandbox_bypass` defaults to false and is valid only for a sandboxed tool.
 
-A manifest defines `initial_user_text` and `permission_user_text` before execution and `user_text` and `model_text` for the result. Empty rendered text is omitted. Templates use one-pass `${...}` substitution with `name`, `input`, `input.FIELD`, `output.stdout`, `output.stderr`, and `output.exit_code`. Output variables are available only to result templates. See the manifests under [`share/default/tools/`](../share/default/tools/) for examples.
+A manifest may override `initial_user_text` and `permission_user_text` before execution and `user_text` and `model_text` for the result. Supplied fields merge over defaults that show the tool name and input on one line, then return stdout and stderr without an exit code. Empty rendered text is omitted. Templates use one-pass `${...}` substitution with `name`, `input`, `input.FIELD`, `output.stdout`, `output.stderr`, and `output.exit_code`. Output variables are available only to result templates. See the manifests under [`share/default/tools/`](../share/default/tools/) for examples.
 
 If a provider requests an undeclared tool, Shellfish uses a plain default template so the call and its rejection remain visible to the user and model.
 

@@ -164,10 +164,10 @@ SF_PRESENT_STYLE=( tool tool divider rail
   'syntax.added' 'fg=green,bg=darkgreen'
   'syntax.removed' 'fg=red,bg=darkred' )
 width 20
-sf_tui_action execution_update diff edit_file tool 'edit_file · path'
-sf_tui_action execution_end diff edit_file tool $'edit_file · path\n-old\n+new'
+sf_tui_action execution_update diff edit_file tool 'edit_file path'
+sf_tui_action execution_end diff edit_file tool $'edit_file path\n-old\n+new'
 view 20
-assert_tail $'⛭ edit_file · path\n│ -old\n╰ +new'
+assert_tail $'⛭ edit_file path\n│ -old\n╰ +new'
 ! has_style 'fg=red,bg=darkred' || fail 'execution text received diff highlighting'
 ! has_style 'fg=green,bg=darkgreen' || fail 'execution text received diff highlighting'
 SF_PRESENT_STYLE=()

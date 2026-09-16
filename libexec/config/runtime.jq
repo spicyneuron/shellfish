@@ -1,5 +1,12 @@
 include "lib/runtime/schema";
 
+def hook_render_defaults:
+  {initial_user_text:"",user_text:"${output.stderr}",model_text:"${output.stdout}"};
+def tool_render_defaults:
+  {initial_user_text:"${name} ${input}",
+   user_text:"${name} ${input}\n${output.stdout}${output.stderr}",
+   model_text:"${output.stdout}${output.stderr}",permission_user_text:"${input}"};
+
 def config_error($path; $message):
   error("invalid config at $" + ($path | map("[" + tojson + "]") | join("")) + ": " + $message);
 def config_object($path; $fields):
@@ -218,7 +225,8 @@ def runtime_finalize:
   [$resolved_tools[] as $tool |
     ($tool.manifest_json | fromjson |
       select(tool_manifest) //
-        error("invalid tool manifest: " + $tool.command)) as $tool_manifest |
+        error("invalid tool manifest: " + $tool.command) |
+      .render = (tool_render_defaults + (.render // {}))) as $tool_manifest |
     if $tool_manifest.sandbox and ($tool.settings_readable | not) then
       error("cannot read tool sandbox settings: " + $tool.settings)
     else {name:$tool.name,command:$tool.command,
@@ -226,15 +234,16 @@ def runtime_finalize:
       settings:(if $tool_manifest.sandbox then $tool.settings else null end)} end] as $tools |
   (reduce $resolved_components[] as $component ({};
     ($component.manifest_json | fromjson) as $manifest |
-    ($manifest.render // {initial_user_text:"",user_text:"${output.stderr}",
-      model_text:"${output.stdout}"}) as $render |
+    (hook_render_defaults + ($manifest.render // {})) as $render |
     ($manifest |
       select(type == "object" and
         (keys - (if $component.hook == "user_prompt_submit"
           then ["environment", "help", "match", "render"]
           else ["environment", "render"] end) | length) == 0 and
         ((.environment // []) | component_environment) and
-        ($render | component_render(null; false)) and
+        (if $manifest | has("render") then
+           $manifest.render | component_render(null; false)
+         else true end) and
         (if has("match") then .match | hook_match else true end) and
         (if has("help") then
            has("match") and (.help | hook_help)

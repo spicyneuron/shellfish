@@ -1,4 +1,8 @@
 {
+  "render": {
+    "user_text": "${output.stdout}${output.stderr}",
+    "model_text": ""
+  },
   "match": {
     "pattern": "^/(help|h)\\z"
   }

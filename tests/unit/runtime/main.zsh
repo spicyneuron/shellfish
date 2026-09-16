@@ -98,11 +98,17 @@ jq -e --arg root "$ROOT/share/default/hooks/session_start" \
     ($root + "/git_environment/run"),
     ($root + "/project_instructions/run")
   ] and
-  .harness.user_prompt_submit[0].command == ($prompt_root + "/help/run") and
+  (.harness.user_prompt_submit[0] |
+    .command == ($prompt_root + "/help/run") and
+    .render == {initial_user_text:"",user_text:"${output.stdout}${output.stderr}",
+      model_text:""}) and
   .harness.user_prompt_submit[-1].command == ($prompt_root + "/git_environment/run") and
   (.backend | has("context_window_command") | not) and
   (.harness.tools | map(.name)) ==
-    ["read_file", "edit_file", "write_file", "skill", "search_web", "fetch_url", "shell"]
+    ["read_file", "edit_file", "write_file", "skill", "search_web", "fetch_url", "shell"] and
+  .harness.tools[0].manifest.render.permission_user_text == "${input.file_path}" and
+  .harness.tools[-1].manifest.render.user_text ==
+    "${name}\n${input.command}\n${output.stdout}${output.stderr}\nexit ${output.exit_code}"
 ' <<<"$REPLY" >/dev/null
 
 # Bundled backend names resolve adapters.
@@ -286,6 +292,7 @@ cat >"$tmp/config/hooks/user_prompt_submit/help/manifest.jsonc" <<'JSON'
 {
   // Imported only for this component.
   "environment": ["HELP_FORMAT"],
+  "render": {"user_text": "${output.stdout}"},
   "match": {"pattern": "^/(help|h)\\z"},
   "help": {
     "usage": "/help, /h",
@@ -313,7 +320,7 @@ JSON
 sf_runtime_resolve_from_config "$tmp/config/hooked.jsonc" '' '' '{}' "$ROOT/tests/fixtures/backend"
 jq -e --arg base "${tmp:A}/config/hooks" '
   .harness.user_prompt_submit == [
-    {command:($base + "/user_prompt_submit/help/run"),render:{initial_user_text:"",user_text:"${output.stderr}",model_text:"${output.stdout}"},environment:["HELP_FORMAT"],
+    {command:($base + "/user_prompt_submit/help/run"),render:{initial_user_text:"",user_text:"${output.stdout}",model_text:"${output.stdout}"},environment:["HELP_FORMAT"],
       match:{pattern:"^/(help|h)\\z"},help:{usage:"/help, /h",description:"Show help"}},
     {command:($base + "/user_prompt_submit/shell/run"),render:{initial_user_text:"",user_text:"${output.stderr}",model_text:"${output.stdout}"},environment:[],
       match:{command:($base + "/user_prompt_submit/shell/check")}}
@@ -409,9 +416,7 @@ for tool_name in alpha beta gamma delta epsilon; do
   print -r -- '#!/bin/sh' >"$tmp/config/tools/$tool_name/run"
   chmod +x "$tmp/config/tools/$tool_name/run"
   jq -n --arg description "$tool_name tool" \
-    '{description:$description,input_schema:{type:"object"},sandbox:false,
-      render:{initial_user_text:"${name}",user_text:"${output.stdout}${output.stderr}",
-        model_text:"${output.stdout}${output.stderr}",permission_user_text:"${input}"}}' \
+    '{description:$description,input_schema:{type:"object"},sandbox:false}' \
     >"$tmp/config/tools/$tool_name/manifest.json"
 done
 mv "$tmp/config/tools/beta/manifest.json" "$tmp/config/tools/beta/manifest.jsonc"
@@ -426,7 +431,10 @@ jq -e --arg base "${tmp:A}/config/tools" '
   (.harness.tools | map(.name)) == ["beta", "alpha", "gamma", "delta", "epsilon"] and
   (.harness.tools | map(.command)) == [($base + "/beta/run"), ($base + "/alpha/run"),
     ($base + "/gamma/run"), ($base + "/delta/run"), ($base + "/epsilon/run")] and
-  all(.harness.tools[]; .settings == null and (has("describe") | not)) and
+  all(.harness.tools[]; .settings == null and (has("describe") | not) and
+    .manifest.render == {initial_user_text:"${name} ${input}",
+      user_text:"${name} ${input}\n${output.stdout}${output.stderr}",
+      model_text:"${output.stdout}${output.stderr}",permission_user_text:"${input}"}) and
   .harness.tools[0].manifest.description == "beta tool"
 ' <<<"$REPLY" >/dev/null
 cp "$tmp/config/tools/beta/manifest.jsonc" "$tmp/config/tools/beta/manifest.json"
@@ -438,9 +446,7 @@ fi
 rm "$tmp/config/tools/beta/manifest.json"
 
 # Sandboxed tools require fence settings.
-jq -n '{description:"sandboxed",input_schema:{type:"object"},sandbox:true,
-  render:{initial_user_text:"${name}",user_text:"${output.stdout}${output.stderr}",
-    model_text:"${output.stdout}${output.stderr}",permission_user_text:"${input}"}}' \
+jq -n '{description:"sandboxed",input_schema:{type:"object"},sandbox:true}' \
   >"$tmp/config/tools/alpha/manifest.json"
 if sf_runtime_resolve_from_config "$tmp/config/tooled.jsonc" '' '' '{}' "$ROOT/tests/fixtures/backend"; then
   fail 'sandboxed tool without fence settings was accepted'
