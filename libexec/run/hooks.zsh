@@ -96,7 +96,7 @@ sf_run_hooks() {
     sf_hook_next_id || { error='cannot allocate hook invocation ID'; break; }
     id=$REPLY
     sf_hook_activity "$lifecycle" "$id" "$name" "$command" "$input_json" \
-      "$(jq -r '.running' <<<"$component")" || { error='cannot prepare hook activity'; break; }
+      "$(jq -r '.initial_user_text' <<<"$component")" || { error='cannot prepare hook activity'; break; }
     activity=$REPLY
     sf_run_emit "$activity" || { error='cannot emit hook activity'; break; }
     invoke_status=0

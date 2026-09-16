@@ -6,7 +6,7 @@ export XDG_STATE_HOME="$tmp/state"
 typeset entry="$ROOT/bin/shellfish" hook="$tmp/start" config="$tmp/config.jsonc"
 typeset input="$tmp/input" session="$tmp/session.jsonl" stream="$tmp/stream"
 mkdir "$hook"
-print -r -- '{"environment":["START_INPUT"],"running":"Starting up"}' \
+print -r -- '{"environment":["START_INPUT"],"initial_user_text":"Starting up"}' \
   >"$hook/manifest.json"
 cat >"$hook/run" <<'ZSH'
 #!/usr/bin/env zsh

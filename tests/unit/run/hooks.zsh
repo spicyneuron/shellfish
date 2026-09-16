@@ -50,8 +50,8 @@ chmod +x "$prompt_hook" "$second_hook"
 export PROMPT_INPUT=$prompt_input SECOND_MARKER=$second_marker
 SF_TEST_RUNTIME=$(jq -c --arg first "$prompt_hook" --arg second "$second_hook" '
   .harness.user_prompt_submit=[
-    {command:$first,environment:["PROMPT_INPUT"],running:""},
-    {command:$second,environment:["SECOND_MARKER"],running:""}
+    {command:$first,environment:["PROMPT_INPUT"],initial_user_text:""},
+    {command:$second,environment:["SECOND_MARKER"],initial_user_text:""}
   ]
 ' <<<"$SF_TEST_RUNTIME")
 
@@ -159,7 +159,7 @@ export STOP_INPUT=$stop_input REQUEST_COUNT=$request_count
 SF_TEST_RUNTIME=$(jq -c --arg backend "$stop_backend" --arg hook "$stop_hook" '
   .backend.command=$backend | .backend.environment=["REQUEST_COUNT"] |
   .harness.user_prompt_submit=[] |
-  .harness.stop=[{command:$hook,environment:["STOP_INPUT"],running:""}]
+  .harness.stop=[{command:$hook,environment:["STOP_INPUT"],initial_user_text:""}]
 ' <<<"$SF_TEST_RUNTIME")
 session="$tmp/stop.jsonl"
 sf_test_session "$session"

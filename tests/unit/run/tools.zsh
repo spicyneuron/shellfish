@@ -48,10 +48,10 @@ chmod +x "$pre" "$later" "$post"
 export HOOK_DIR=$hook_dir TOOL_MARKER=$tool_marker
 SF_TEST_RUNTIME=$(jq -c --arg pre "$pre" --arg later "$later" --arg post "$post" '
   .harness.pre_tool_use=[
-    {command:$pre,environment:["HOOK_DIR"],running:""},
-    {command:$later,environment:["HOOK_DIR"],running:""}
+    {command:$pre,environment:["HOOK_DIR"],initial_user_text:""},
+    {command:$later,environment:["HOOK_DIR"],initial_user_text:""}
   ] |
-  .harness.post_tool_use=[{command:$post,environment:["HOOK_DIR"],running:""}]
+  .harness.post_tool_use=[{command:$post,environment:["HOOK_DIR"],initial_user_text:""}]
 ' <<<"$SF_TEST_RUNTIME")
 typeset session="$tmp/denied.jsonl" stream="$tmp/denied.stream"
 sf_test_session "$session"
@@ -109,7 +109,7 @@ export PERMISSION_INPUT=$permission_input
 SF_TEST_RUNTIME=$(jq -c --arg hook "$permission" '
   .harness.pre_tool_use=[] | .harness.post_tool_use=[] |
   .harness.sandbox=true | .harness.fence="/usr/bin/true" |
-  .harness.permission_request=[{command:$hook,environment:["PERMISSION_INPUT"],running:""}]
+  .harness.permission_request=[{command:$hook,environment:["PERMISSION_INPUT"],initial_user_text:""}]
 ' <<<"$SF_TEST_RUNTIME")
 session="$tmp/permission-allow.jsonl"
 sf_test_session "$session"
@@ -177,7 +177,7 @@ ZSH
 chmod +x "$post_fail"
 SF_TEST_RUNTIME=$(jq -c --arg hook "$post_fail" '
   .harness.permission_request=[] |
-  .harness.post_tool_use=[{command:$hook,environment:[],running:""}]
+  .harness.post_tool_use=[{command:$hook,environment:[],initial_user_text:""}]
 ' <<<"$SF_TEST_RUNTIME")
 session="$tmp/post-failure.jsonl"
 sf_test_session "$session"

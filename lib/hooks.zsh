@@ -29,16 +29,16 @@ sf_hook_next_id() {
 }
 
 sf_hook_activity() {
-  local lifecycle=$1 id=$2 name=$3 executable=$4 input=$5 template=$6 running
-  running=$(sf_jq -nr --arg template "$template" --arg name "$name" --argjson input "$input" '
+  local lifecycle=$1 id=$2 name=$3 executable=$4 input=$5 template=$6 user_text
+  user_text=$(sf_jq -nr --arg template "$template" --arg name "$name" --argjson input "$input" '
     include "lib/render";
-    render_running($template;$name;$input)
+    render_initial_user_text($template;$name;$input)
   ') || return
   REPLY=$(jq -cn --arg lifecycle "$lifecycle" --arg id "$id" --arg name "$name" \
-    --arg executable "$executable" --argjson input "$input" --arg running "$running" '
+    --arg executable "$executable" --argjson input "$input" --arg user_text "$user_text" '
       {type:"_hook_activity",hook:$lifecycle,id:$id,name:$name,input:$input,
        executable:$executable} +
-      (if $running == "" then {} else {user_text:$running} end)
+      (if $user_text == "" then {} else {user_text:$user_text} end)
     ')
 }
 

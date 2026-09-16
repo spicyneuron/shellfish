@@ -10,7 +10,7 @@ sf_create_event() {
 }
 
 sf_create_start_hooks() {
-  local session=$1 input component command name id running activity outcome record error=''
+  local session=$1 input component command name id initial_user_text activity outcome record error=''
   local projection state_projection
   local -a components states
   integer exit_code
@@ -28,13 +28,13 @@ sf_create_start_hooks() {
   components=( ${(@f)projection} )
   for component in "${components[@]}"; do
     command=$(jq -r '.command' <<<"$component") || error='cannot inspect session_start hook'
-    running=$(jq -r '.running' <<<"$component") || error='cannot inspect session_start hook'
+    initial_user_text=$(jq -r '.initial_user_text' <<<"$component") || error='cannot inspect session_start hook'
     [[ -z $error ]] || break
     sf_hook_name "$command"
     name=$REPLY
     sf_hook_next_id || { error='cannot allocate hook invocation ID'; break; }
     id=$REPLY
-    sf_hook_activity session_start "$id" "$name" "$command" '""' "$running" || {
+    sf_hook_activity session_start "$id" "$name" "$command" '""' "$initial_user_text" || {
       error="cannot prepare hook activity: $command"
       break
     }

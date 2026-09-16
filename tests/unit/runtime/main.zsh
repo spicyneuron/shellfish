@@ -140,7 +140,7 @@ typeset hooked_session="$tmp/hooked.jsonl"
 jq -cn --argjson runtime "$runtime" '
   {type:"session",format_version:1,cwd:"/",
    created:"2026-08-18T00:00:00Z"} +
-  ($runtime | .harness.stop=[{command:"/bin/hook",environment:[],running:""}])
+  ($runtime | .harness.stop=[{command:"/bin/hook",environment:[],initial_user_text:""}])
 ' >"$hooked_session"
 unset HOME XDG_STATE_HOME
 sf_runtime_resolve "$hooked_session" "$config" '' '' '{}' '' 0 >/dev/null
@@ -313,12 +313,12 @@ JSON
 sf_runtime_resolve_from_config "$tmp/config/hooked.jsonc" '' '' '{}' "$ROOT/tests/fixtures/backend"
 jq -e --arg base "${tmp:A}/config/hooks" '
   .harness.user_prompt_submit == [
-    {command:($base + "/user_prompt_submit/help/run"),running:"",environment:["HELP_FORMAT"],
+    {command:($base + "/user_prompt_submit/help/run"),initial_user_text:"",environment:["HELP_FORMAT"],
       match:{pattern:"^/(help|h)\\z"},help:{usage:"/help, /h",description:"Show help"}},
-    {command:($base + "/user_prompt_submit/shell/run"),running:"",environment:[],
+    {command:($base + "/user_prompt_submit/shell/run"),initial_user_text:"",environment:[],
       match:{command:($base + "/user_prompt_submit/shell/check")}}
   ] and .harness.stop ==
-    [{command:($base + "/stop/gate/run"),running:"",environment:[]}]
+    [{command:($base + "/stop/gate/run"),initial_user_text:"",environment:[]}]
 ' <<<"$REPLY" >/dev/null
 
 # Components resolve beside a symlinked config's target.
@@ -394,11 +394,11 @@ SF_ROOT="$tmp/root"
 SF_SHARE="$tmp/root/share"
 sf_runtime_resolve_from_config "$tmp/bundled.jsonc" '' '' '{}' "$ROOT/tests/fixtures/backend"
 jq -e --arg path "${tmp:A}/hooks/stop/bundled/run" \
-  '.harness.stop == [{command:$path,running:"",environment:[]}]' <<<"$REPLY" >/dev/null
+  '.harness.stop == [{command:$path,initial_user_text:"",environment:[]}]' <<<"$REPLY" >/dev/null
 rm -rf -- "$tmp/hooks/stop/bundled"
 sf_runtime_resolve_from_config "$tmp/bundled.jsonc" '' '' '{}' "$ROOT/tests/fixtures/backend"
 jq -e --arg path "${tmp:A}/root/share/default/hooks/stop/bundled/run" \
-  '.harness.stop == [{command:$path,running:"",environment:[]}]' <<<"$REPLY" >/dev/null
+  '.harness.stop == [{command:$path,initial_user_text:"",environment:[]}]' <<<"$REPLY" >/dev/null
 SF_ROOT=$ROOT
 SF_SHARE=$ROOT/share
 
@@ -476,7 +476,7 @@ jq '.harnesses.tooled.sandbox=false' "$tmp/config/tooled.jsonc" \
 export OPENAI_API_KEY='from-environment'
 export ANTHROPIC_API_KEY='other-component'
 sf_runtime_resolve_from_config "$config" work '' '{}'
-runtime=$(jq -c '.harness.stop=[{command:"/bin/hook",environment:["ANTHROPIC_API_KEY"],running:""}]' \
+runtime=$(jq -c '.harness.stop=[{command:"/bin/hook",environment:["ANTHROPIC_API_KEY"],initial_user_text:""}]' \
   <<<"$REPLY")
 sf_environment_prepare "$runtime" OPENAI_API_KEY
 [[ ${(j: :)SF_ENVIRONMENT_NAMES} == 'ANTHROPIC_API_KEY OPENAI_API_KEY' ]]

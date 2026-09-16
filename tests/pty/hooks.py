@@ -62,7 +62,7 @@ def test_startup_streams_hooks_and_runs_the_queued_prompt():
         script.write_text(START_HOOK)
         script.chmod(0o755)
         (component / "manifest.json").write_text(
-            json.dumps({"running": "Inspecting first_start"})
+            json.dumps({"initial_user_text": "Inspecting first_start"})
         )
         session = Session(
             explicit_session=True, session_start=[str(component)],
@@ -99,7 +99,7 @@ def test_startup_cancellation_quits_without_a_session():
         script.write_text(START_HOOK)
         script.chmod(0o755)
         (component / "manifest.json").write_text(
-            json.dumps({"running": "Inspecting slow_start"})
+            json.dumps({"initial_user_text": "Inspecting slow_start"})
         )
         session = Session(explicit_session=True, session_start=[str(component)])
         try:

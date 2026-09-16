@@ -35,7 +35,7 @@ Nothing is emitted until the whole prefix validates, and nothing is ever written
 
 | Type | Fields and meaning |
 | --- | --- |
-| `_hook_activity` | A selected startup component's nonempty configured running label, or a short empty event that clears it. |
+| `_hook_activity` | A selected startup component's nonempty configured initial user text, or a short empty event that clears it. |
 | `_session_load` and records | The created session, loaded, after startup hooks finish successfully. |
 
 Durable startup records are appended as they happen and reach the client through the closing load, so creating a session and opening an existing one produce the same canonical record stream. A failed or cancelled startup emits no `_session_load`, reports the failure on stderr, and removes the incomplete session; clients must wait for successful process exit before submitting a turn.
@@ -113,7 +113,7 @@ Transient events currently include:
 | `_assistant_reasoning_opaque` | Provider reasoning data for later requests; nothing to present. |
 | `_turn_usage` | The provider's latest token usage for this response. |
 | `_assistant_end` | The response is complete; `stop` is its reason. It precedes the durable assistant record. |
-| `_hook_activity` | A selected ordinary hook component's configured running label, or an empty clear event. |
+| `_hook_activity` | A selected ordinary hook component's configured initial user text, or an empty clear event. |
 | `_tool_activity` | A validated tool call is being processed. |
 | `_tool_permission_request` | A sandbox bypass needs a client decision. |
 | `_handoff` | A hook script asks a capable client to run `argv` after the turn exits cleanly. |

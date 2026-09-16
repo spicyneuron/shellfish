@@ -1,5 +1,5 @@
 {
-  "running": "user_shell · Running shell command…",
+  "initial_user_text": "user_shell · Running shell command…",
   "match": {
     "pattern": "^![^\\n]*\\z"
   },

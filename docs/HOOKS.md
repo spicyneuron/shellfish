@@ -40,10 +40,10 @@ Each hook is configured on a harness as an ordered list of component references.
 }
 ```
 
-A manifest can select component-specific values to load from `.env` and set a running display label:
+A manifest can select component-specific values to load from `.env` and set the initial user text shown while the hook runs:
 
 ```json
-{"environment":["HOOK_MODE"],"running":"Checking the working tree"}
+{"environment":["HOOK_MODE"],"initial_user_text":"Checking the working tree"}
 ```
 
 `user_prompt_submit` components may also declare a regular-expression or executable `match` selector and optional help metadata:

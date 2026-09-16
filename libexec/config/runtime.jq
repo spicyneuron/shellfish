@@ -226,20 +226,20 @@ def runtime_finalize:
       settings:(if $tool_manifest.sandbox then $tool.settings else null end)} end] as $tools |
   (reduce $resolved_components[] as $component ({};
     ($component.manifest_json | fromjson) as $manifest |
-    ($manifest.running // "") as $running |
+    ($manifest.initial_user_text // "") as $initial_user_text |
     ($manifest |
       select(type == "object" and
         (keys - (if $component.hook == "user_prompt_submit"
-          then ["environment", "help", "match", "running"]
-          else ["environment", "running"] end) | length) == 0 and
+          then ["environment", "help", "initial_user_text", "match"]
+          else ["environment", "initial_user_text"] end) | length) == 0 and
         ((.environment // []) | component_environment) and
-        ($running | script_template(null; false)) and
+        ($initial_user_text | script_template(null; false)) and
         (if has("match") then .match | hook_match else true end) and
         (if has("help") then
            has("match") and (.help | hook_help)
          else true end)) //
       error("invalid hook manifest: " + $component.command)) as $hook_manifest |
-    .[$component.hook] += [({command:$component.command,running:$running,
+    .[$component.hook] += [({command:$component.command,initial_user_text:$initial_user_text,
       environment:($hook_manifest.environment // [])} +
       (if $hook_manifest | has("match") then {match:$hook_manifest.match} else {} end) +
       (if $hook_manifest | has("help") then {help:$hook_manifest.help} else {} end))])) as $hooks |

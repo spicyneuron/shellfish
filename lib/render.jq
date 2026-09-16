@@ -13,7 +13,7 @@ def render_input:
 def render_template($template; $variables):
   $template | gsub("\\$\\{(?<name>[^{}]+)\\}"; $variables[.name]);
 
-def render_running($template; $name; $input):
+def render_initial_user_text($template; $name; $input):
   render_template($template; ({name:$name} + ($input | render_input)));
 
 def render_tool($render; $name; $input; $output):

@@ -90,10 +90,10 @@ def hook_help:
 
 def hook_component:
   type == "object" and
-  (keys - ["command", "environment", "help", "match", "running"] | length) == 0 and
-  has("command") and has("environment") and has("running") and
+  (keys - ["command", "environment", "help", "initial_user_text", "match"] | length) == 0 and
+  has("command") and has("environment") and has("initial_user_text") and
   (.command | absolute_path) and
-  (.running | script_template(null; false)) and
+  (.initial_user_text | script_template(null; false)) and
   (.environment | component_environment) and
   (if has("match") then .match | hook_match else true end) and
   (if has("help") then .help | hook_help else true end);
