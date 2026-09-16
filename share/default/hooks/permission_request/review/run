@@ -44,7 +44,6 @@ permission_resolve() {
   exit 11
 }
 
-[[ $# == 2 ]] || permission_deny 'Permission review received an invalid invocation.'
 [[ -r $SHELLFISH_SESSION && -d $SHELLFISH_TURN_STATE ]] ||
   permission_deny 'Permission review could not read the active turn.'
 
