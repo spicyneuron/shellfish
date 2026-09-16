@@ -19,73 +19,65 @@ sf_hook_name() {
   REPLY=${name:t}
 }
 
-sf_hook_next_id() {
-  local maximum
-  maximum=$(printf '%s\n' "${SF_SESSION_RECORDS[@]:1}" | jq -Rs '
-    [split("\n")[] | fromjson? | select(.type == "hook_result") | .id | tonumber] |
-    max // 0
-  ') || return
-  REPLY=$(( maximum + 1 ))
-}
-
 sf_hook_activity() {
   local lifecycle=$1 id=$2 name=$3 executable=$4 input=$5 render=$6
-  REPLY=$(sf_jq -cn --arg lifecycle "$lifecycle" --arg id "$id" --arg name "$name" \
-    --arg executable "$executable" --argjson input "$input" --argjson render "$render" '
+  local projected input_option=--arg
+  [[ $lifecycle != (permission_request|pre_tool_use|post_tool_use) ]] || input_option=--argjson
+  projected=$(sf_jq -jcn --arg lifecycle "$lifecycle" --arg id "$id" --arg name "$name" \
+    --arg executable "$executable" "$input_option" input "$input" --argjson render "$render" '
       include "lib/render";
       (render_component($render;$name;$input;{stdout:"",stderr:"",exit_code:0}) |
        .initial_user_text // "") as $user_text |
-      {type:"_hook_activity",hook:$lifecycle,id:$id,name:$name,input:$input,
-       executable:$executable} +
-      (if $user_text == "" then {} else {user_text:$user_text} end)
-    ')
+      ({type:"_hook_activity",hook:$lifecycle,id:$id,name:$name,input:$input,
+        executable:$executable} +
+       (if $user_text == "" then {} else {user_text:$user_text} end)) as $activity |
+      ($activity | tojson), "\u0000",
+      (if $user_text == "" then "" else ($activity | del(.user_text) | tojson) end), "\u0000",
+      ($input | tojson), "\u0000"
+    ') || return
+  reply=( "${(@0)${projected%$'\0'}}" )
+  (( ${#reply} == 3 )) || return 1
+  REPLY=$reply[1]
 }
 
-sf_hook_result() {
-  local lifecycle=$1 id=$2 name=$3 executable=$4 input=$5 render=$6 outcome=$7
-  REPLY=$(sf_jq -cn --arg lifecycle "$lifecycle" --arg id "$id" --arg name "$name" \
-    --arg executable "$executable" --argjson input "$input" --argjson outcome "$outcome" \
-    --argjson render "$render" '
-      include "lib/render"; include "lib/session/read";
-      render_component($render;$name;$input;$outcome) as $rendered |
-      ({type:"hook_result",lifecycle:$lifecycle,id:$id,name:$name,input:$input,
-        executable:$executable,exit_code:$outcome.exit_code} +
-       (if $rendered.user_text == null then {} else {user_text:$rendered.user_text} end) +
-       (if $rendered.model_text == null then {} else {model_text:$rendered.model_text} end)) as $result |
-      if $result | canonical_hook_result then $result else error("invalid result") end
-    ' 2>/dev/null)
+sf_hook_project() {
+  local runtime=$1 lifecycle=$2 content=$3 projected
+  local -a fields
+  projected=$(printf '%s\n' "${SF_SESSION_RECORDS[@]:1}" |
+    jq -jRs --argjson runtime "$runtime" --arg lifecycle "$lifecycle" \
+    --arg input "$content" '
+      def field: ., "\u0000";
+      ([split("\n")[] | fromjson? | select(.type == "hook_result") | .id | tonumber] |
+        ((max // 0) + 1) | tostring | field),
+      ($runtime.harness.max_capture_bytes | tostring | field),
+      ($runtime.backend.env_file | field),
+      ($runtime.profile.request.model | field),
+      ($runtime.harness[$lifecycle][]? |
+        (.match.pattern? // "") as $pattern |
+        select($pattern == "" or ($input | test($pattern))) |
+        (.command | field),
+        (.environment | join(" ") | field),
+        (.match.command? // "" | field),
+        (.render | tojson | field)),
+      ("ok" | field)
+    ' 2>/dev/null) || return 1
+  fields=( "${(@0)${projected%$'\0'}}" )
+  (( ${#fields} >= 5 && (${#fields} - 5) % 4 == 0 )) && [[ $fields[-1] == ok ]] || return 1
+  reply=( "${(@)fields[1,-2]}" )
 }
 
-# Return the decoded outcome in REPLY and capture metadata in reply.
+# Return match metadata or one projected hook completion in reply.
 sf_hook_invoke() {
   setopt local_options no_err_exit
-  local session=$1 runtime=$2 component=$3 cwd=$4 input=$5 lifecycle=$6 turn_state=$7
-  shift 7
-  local command selected max_capture config_dir='' directory projected control_error=''
+  local session=$1 runtime=$2 command=$3 selected=$4 max_capture=$5 env_file=$6 model=$7
+  local cwd=$8 input=$9 lifecycle=${10} turn_state=${11} render=${12} id=${13}
+  local name=${14} input_json=${15}
+  shift 15
+  local config_dir='' directory projected capture_error=''
   local -a arguments environment fields process
 
   SF_HOOK_ERROR=''
-  projected=$(jq -jrn --argjson runtime "$runtime" --argjson component "$component" '
-    def field: ., "\u0000";
-    ($component.command | field),
-    ($component.environment | join(" ") | field),
-    ($runtime.harness.max_capture_bytes | tostring | field),
-    ($runtime.backend.env_file | field),
-    ($runtime.profile.request.model | field),
-    ("ok" | field)
-  ' 2>/dev/null) || {
-    sf_hook_fail 'cannot inspect hook component'
-    return
-  }
-  fields=( "${(@0)${projected%$'\0'}}" )
-  (( ${#fields} == 6 )) && [[ $fields[6] == ok ]] || {
-    sf_hook_fail 'cannot inspect hook component'
-    return
-  }
-  command=$fields[1]
-  selected=$fields[2]
-  max_capture=$fields[3]
-  [[ -z $fields[4] ]] || config_dir=${fields[4]:h}
+  [[ -z $env_file ]] || config_dir=${env_file:h}
   [[ -f $command && -x $command ]] || {
     sf_hook_fail "hook command is not executable: $command"
     return
@@ -100,7 +92,7 @@ sf_hook_invoke() {
   environment=(
     "SHELLFISH_SESSION=${session:A}"
     "SHELLFISH_MAX_CAPTURE_BYTES=$max_capture"
-    "SHELLFISH_MODEL=$fields[5]"
+    "SHELLFISH_MODEL=$model"
     "SHELLFISH_EXECUTABLE=$SF_ENTRY"
     "SHELLFISH_MODE=${SHELLFISH_MODE-}"
     "SHELLFISH_VERBOSE=${SHELLFISH_VERBOSE:-0}"
@@ -124,33 +116,57 @@ sf_hook_invoke() {
   fi
   process=( "${reply[@]}" )
   if (( process[3] + process[4] + process[5] > max_capture )); then
-    control_error='hook output exceeds capture limit'
+    capture_error='hook output exceeds capture limit'
   fi
-  REPLY=$(sf_jq -cn --argjson exit_code "$process[1]" --argjson interrupted "$process[2]" \
+  if (( process[2] )); then
+    rm -rf -- "$directory"
+    return $process[1]
+  fi
+  if [[ -z $id ]]; then
+    rm -rf -- "$directory"
+    reply=( "$process[1]" "$process[3]" "$process[4]" "$process[5]" )
+    return
+  fi
+  projected=$(sf_jq -jcn --argjson exit_code "$process[1]" \
     --rawfile stdout "$directory/stdout" --rawfile stderr "$directory/stderr" \
-    --slurpfile controls "$directory/control" --arg control_error "$control_error" '
-      include "lib/session/read";
-      ($controls | if length == 0 then {}
-       elif length == 1 and (.[0] | type == "object") then .[0]
-       else null end) as $control |
-      (if $control == null then "malformed control data"
-       elif ($control | if has("state") then
-          .state | type == "array" and all(.[];
-            type == "object" and keys == ["name","value"] and
-            ({type:"state"} + . | canonical_state))
-        else true end) | not then "invalid state control"
-       else $control_error end) as $error |
-      {exit_code:$exit_code,interrupted:($interrupted != 0),
-       stdout:$stdout,stderr:$stderr,
-       states:(if $error == "" then [$control.state[]? | {type:"state"} + .] else [] end),
-       control:(if $error == "" then ($control | del(.state)) else {} end)} +
-      (if $error == "" then {} else {control_error:$error} end)
+    --slurpfile controls "$directory/control" --arg capture_error "$capture_error" \
+    --arg lifecycle "$lifecycle" --arg id "$id" --arg name "$name" \
+    --arg executable "$command" --argjson input "$input_json" --argjson render "$render" '
+      include "lib/hooks"; include "lib/render"; include "lib/session/read";
+      def field: ., "\u0000";
+      hook_outcome($exit_code;$stdout;$stderr;$controls;$capture_error) |
+      . as $outcome |
+      ($outcome | hook_control_error($lifecycle)) as $control_error |
+      (if $outcome.exit_code != 0 or $outcome.stdout != "" or $outcome.stderr != "" then
+        render_component($render;$name;$input;$outcome) as $rendered |
+        ({type:"hook_result",lifecycle:$lifecycle,id:$id,name:$name,input:$input,
+          executable:$executable,exit_code:$outcome.exit_code} +
+         (if $rendered.user_text == null then {} else {user_text:$rendered.user_text} end) +
+         (if $rendered.model_text == null then {} else {model_text:$rendered.model_text} end)) as $result |
+        if $result | canonical_hook_result then $result else error("invalid result") end
+       else null end) as $result |
+      ($outcome.exit_code | tostring | field),
+      ($control_error | field),
+      ($outcome.stderr | field),
+      (if $control_error == "" then $outcome.control.action? // "" else "" end | field),
+      (if $control_error == "" then $outcome.control.reason? // "" else "" end | field),
+      (if $control_error != "" then ""
+       elif $outcome.control.action? == "handoff" then ($outcome.control.argv | tojson)
+       elif $outcome.control.action? == "session_update" then ($outcome.control.patch | tojson)
+       else "" end | field),
+      (if $result == null then "" else ($result | tojson) end | field),
+      ($outcome.states | length | tostring | field),
+      ($outcome.states[] | tojson | field)
     ' 2>/dev/null) || {
     rm -rf -- "$directory"
     sf_hook_fail 'cannot decode hook result'
     return
   }
   rm -rf -- "$directory"
-  reply=( "$process[1]" "$process[3]" "$process[4]" "$process[5]" )
-  (( ! process[2] )) || return $process[1]
+  fields=( "${(@0)${projected%$'\0'}}" )
+  (( ${#fields} >= 8 && ${#fields} == 8 + fields[8] )) || {
+    sf_hook_fail 'cannot decode hook result'
+    return
+  }
+  reply=( "${fields[@]}" )
 }

@@ -8,75 +8,74 @@ sf_create_event() {
 }
 
 sf_create_start_hooks() {
-  local session=$1 input component command name id render activity outcome record clear error=''
-  local projection state_projection
-  local -a components states
-  integer exit_code
+  local session=$1 input input_json command selected name render record clear error=''
+  local max_capture env_file model
+  local -a plan completion states
+  integer offset id exit_code invoke_status state_count
   sf_scratch_file hooks input || {
     sf_die 'cannot prepare session_start hook input'
     return 1
   }
   input=$REPLY
   : >"$input" || { rm -f -- "$input"; sf_die 'cannot prepare session_start hook input'; return 1; }
-  projection=$(jq -c '.harness.session_start[]?' <<<"$SF_SESSION[runtime]") || {
+  sf_hook_project "$SF_SESSION[runtime]" session_start '' || {
     rm -f -- "$input"
     sf_die 'cannot inspect session_start hooks'
     return 1
   }
-  components=( ${(@f)projection} )
-  for component in "${components[@]}"; do
-    command=$(jq -r '.command' <<<"$component") || error='cannot inspect session_start hook'
-    render=$(jq -c '.render' <<<"$component") || error='cannot inspect session_start hook'
-    [[ -z $error ]] || break
+  plan=( "${reply[@]}" )
+  id=$plan[1]
+  max_capture=$plan[2]
+  env_file=$plan[3]
+  model=$plan[4]
+  for (( offset = 5; offset <= ${#plan}; offset += 4 )); do
+    command=$plan[offset]
+    selected=$plan[offset+1]
+    render=$plan[offset+3]
     sf_hook_name "$command"
     name=$REPLY
-    sf_hook_next_id || { error='cannot allocate hook invocation ID'; break; }
-    id=$REPLY
-    sf_hook_activity session_start "$id" "$name" "$command" '""' "$render" || {
+    sf_hook_activity session_start "$id" "$name" "$command" '' "$render" || {
       error="cannot prepare hook activity: $command"
       break
     }
-    activity=$REPLY
-    sf_create_event "$activity" || { error='cannot emit hook activity'; break; }
-    integer invoke_status=0
-    sf_hook_invoke "$session" "$SF_SESSION[runtime]" "$component" \
-      "$SF_SESSION[cwd]" "$input" session_start '' || invoke_status=$?
+    clear=$reply[2]
+    input_json=$reply[3]
+    sf_create_event "$REPLY" || { error='cannot emit hook activity'; break; }
+    invoke_status=0
+    sf_hook_invoke "$session" "$SF_SESSION[runtime]" "$command" "$selected" "$max_capture" \
+      "$env_file" "$model" "$SF_SESSION[cwd]" "$input" session_start '' \
+      "$render" "$id" "$name" "$input_json" || invoke_status=$?
     if (( invoke_status )); then
       if (( invoke_status == 130 )); then rm -f -- "$input"; return 130; fi
       error=${SF_HOOK_ERROR:-cannot run session_start hook}
       break
     fi
-    outcome=$REPLY
-    exit_code=$(jq -r '.exit_code' <<<"$outcome") || { error='cannot inspect hook result'; break; }
-    state_projection=$(jq -c '.states[]' <<<"$outcome") || { error='cannot inspect hook state'; break; }
-    states=( ${(@f)state_projection} )
+    completion=( "${reply[@]}" )
+    exit_code=$completion[1]
+    state_count=$completion[8]
+    states=( "${(@)completion[9,$(( 8 + state_count ))]}" )
     for record in "${states[@]}"; do
       sf_session_append "$session" "$record" || { error=$SF_SESSION_ERROR; break 2; }
       sf_create_event "$record" || { error='cannot emit hook state'; break 2; }
     done
-    if jq -e '.exit_code != 0 or .stdout != "" or .stderr != ""' <<<"$outcome" >/dev/null; then
-      sf_hook_result session_start "$id" "$name" "$command" '""' "$render" "$outcome" || {
-        error="hook script returned invalid result: $command"
-        break
-      }
-      record=$REPLY
+    record=$completion[7]
+    if [[ -n $record ]]; then
       sf_session_append "$session" "$record" || { error=$SF_SESSION_ERROR; break; }
       sf_create_event "$record" || { error='cannot emit hook result'; break; }
-    elif jq -e 'has("user_text")' <<<"$activity" >/dev/null; then
-      clear=$(jq -c 'del(.user_text)' <<<"$activity") || { error='cannot prepare hook clear'; break; }
+      (( id += 1 ))
+    elif [[ -n $clear ]]; then
       sf_create_event "$clear" || { error='cannot emit hook clear'; break; }
     fi
-    if [[ -n $(jq -r '.control_error // empty' <<<"$outcome") ]]; then
+    if [[ $completion[2] == decode ]]; then
       error="session_start hook returned invalid control: $command"
-    elif ! jq -e '.control == {}' <<<"$outcome" >/dev/null; then
+    elif [[ $completion[2] == lifecycle ]]; then
       error="session_start hook returned unexpected control: $command"
     elif (( exit_code == 10 || exit_code == 11 )); then
       error='session_start hook returned unsupported status'
     elif (( exit_code != 0 )); then
       error="hook script failed with status $exit_code: $command"
     fi
-    [[ -z $error || -z $(jq -r '.stderr' <<<"$outcome") ]] ||
-      error+=": $(jq -r '.stderr' <<<"$outcome")"
+    [[ -z $error || -z $completion[3] ]] || error+=": $completion[3]"
     [[ -z $error ]] || break
   done
   rm -f -- "$input"
