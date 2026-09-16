@@ -163,9 +163,11 @@ SF_TUI_TRANSPORT_EXIT_DETAIL=''
 sf_tui_exec_finish
 assert_equal idle "$SF_PRESENT_STATE"
 assert_equal 0 "${#SF_PRESENT_QUEUE}"
+# The core records its own cancellation, so the client reports only what it
+# dropped on the way out.
 sf_tui_transcript 79 20
-[[ $SF_PRESENT_VIEWPORT_TEXT == *'✕ Cancelled.'* ]] ||
-  fail "cancellation was not reported: $SF_PRESENT_VIEWPORT_TEXT"
+[[ $SF_PRESENT_VIEWPORT_TEXT == *'✕ Discarded 1 queued prompt'* ]] ||
+  fail "discarded queue was not reported: $SF_PRESENT_VIEWPORT_TEXT"
 
 # Discard queues after uncertain exits.
 sf_tui_reset
@@ -180,7 +182,8 @@ sf_tui_exec_finish
 assert_equal 0 "${#SF_PRESENT_QUEUE}"
 assert_equal idle "$SF_PRESENT_STATE"
 
-# A durable failure is reported once.
+# A durable failure is reported by the core, so the client adds no heading of
+# its own. Rows committed during the tick have already left the queue.
 sf_tui_reset
 sf_tui_terminal_reset
 SF_PRESENT_SESSION="$tmp/recover.jsonl"
@@ -193,8 +196,8 @@ SF_TUI_TRANSPORT_EXIT_DETAIL='test backend failure'
 sf_tui_heartbeat_tick
 assert_equal idle "$SF_PRESENT_STATE"
 sf_tui_transcript 79 20
-typeset -a failure_rows=( ${(M)${(f)SF_PRESENT_VIEWPORT_TEXT}:#*test backend failure*} )
-assert_equal 1 "${#failure_rows}"
+[[ $SF_PRESENT_VIEWPORT_TEXT != *'Exec process failed'* ]] ||
+  fail "a settled error was reported twice: $SF_PRESENT_VIEWPORT_TEXT"
 
 # Recover from terminated execs.
 sf_tui_reset

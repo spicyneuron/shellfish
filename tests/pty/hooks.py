@@ -196,9 +196,10 @@ def test_prompt_hook_hands_off_to_another_session():
 
 
 def test_prompt_hook_hands_off_to_new_session():
-    # An explicit path distinguishes the newly allocated session.
+    # Freeze the source runtime before changing ambient config.
     session = Session(explicit_session=True, hooks={"new": None})
     try:
+        session.wait_session_records(1, path=session.explicit_session)
         config = json.loads(session.config_file.read_text())
         config["profiles"]["development"]["request"]["model"] = "changed-model"
         session.config_file.write_text(json.dumps(config))

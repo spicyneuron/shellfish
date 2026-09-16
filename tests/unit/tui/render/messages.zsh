@@ -18,6 +18,8 @@ typeset -gi SF_PRESENT_HISTORY_NO=0
 assert_equal '⠃,⠁,⠁,⠁,⠃,⠆,⡄,⡀,⡀,⡀,⡄,⠆' "${(j:,:)SF_PRESENT_ACTIVITY_FRAMES}"
 
 view() { sf_tui_transcript "$@" || fail 'rendering the transcript failed'; REPLY=$SF_PRESENT_VIEWPORT_TEXT }
+# Content settles at the terminal width, so a narrow case sets it up front.
+width() { COLUMNS=$(( $1 + 1 )) }
 message() {
   sf_tui_action message_start "$1" &&
     sf_tui_action message_delta 0 text "$2" '' &&
@@ -62,18 +64,21 @@ view 79 20
 
 # Settled rows keep the width they were formatted at.
 sf_tui_reset
+width 12
 message user 'alpha beta gamma'
 view 12 20
 assert_equal $'─ user ─ 1 ─\n\nalpha beta\ngamma' "$REPLY"
 view 8 20
 assert_equal $'─ user ─ 1 ─\n\nalpha beta\ngamma' "$REPLY"
 sf_tui_reset
+width 8
 message user 'alpha beta gamma'
 view 8 20
 assert_equal $'─ user ─\n\nalpha\nbeta\ngamma' "$REPLY"
 
 # Viewports keep the last rows.
 sf_tui_reset
+width 79
 message user $'one\ntwo\nthree\nfour'
 view 79 3
 assert_equal $'two\nthree\nfour' "$REPLY"
@@ -274,12 +279,14 @@ view 79 20
 [[ $REPLY == $'─ system '*$'\n\n… ~2 tokens' ]] || fail "collapsed system: $REPLY"
 assert_equal 3 "$SF_PRESENT_SAFE_ROWS"
 sf_tui_reset
+width 8
 message system $'one\ntwo'
 view 8 20
 for row in "${(@f)REPLY}"; do
   (( ${#row} <= 8 )) || fail "narrow system row overflowed: $row"
 done
 sf_tui_reset
+width 79
 SF_PRESENT_PREVIEW_CONTEXT=1
 message system $'first row\nsecond row\nthird row'
 view 79 20

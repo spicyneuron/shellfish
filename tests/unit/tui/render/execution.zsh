@@ -14,6 +14,8 @@ view() {
   REPLY=$SF_PRESENT_VIEWPORT_TEXT
 }
 assert_tail() { [[ $REPLY == *"$1" ]] || fail "expected tail: $1" "actual: $REPLY" }
+# Content settles at the terminal width, so a narrow case sets it up front.
+width() { COLUMNS=$(( $1 + 1 )) }
 has_style() { (( ${SF_PRESENT_VIEWPORT_HIGHLIGHTS[(Ie)$1]} )) }
 message() {
   sf_tui_action message_start "$1" &&
@@ -149,6 +151,7 @@ sf_tui_reset
 SF_PRESENT_STYLE=( tool tool divider rail
   'syntax.added' 'fg=green,bg=darkgreen'
   'syntax.removed' 'fg=red,bg=darkred' )
+width 20
 sf_tui_action execution_update diff edit_file tool 'edit_file · path'
 sf_tui_action execution_end diff edit_file tool $'edit_file · path\n-old\n+new'
 view 20
@@ -177,6 +180,7 @@ view
 # Settled rows taller than the terminal budget drain in source order.
 sf_tui_reset
 sf_tui_terminal_reset
+width 20
 sf_tui_action execution_update tall shell tool 'shell · one'
 sf_tui_action execution_end tall shell tool $'shell · one\ntwo\nthree\nfour\nfive'
 typeset drained=''

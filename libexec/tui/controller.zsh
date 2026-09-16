@@ -246,6 +246,7 @@ sf_tui_exec_finish() {
       SF_PRESENT_QUEUE=( "${(@)SF_PRESENT_QUEUE[2,-1]}" )
       if ! sf_tui_client_command "$SF_PRESENT_SUBMITTED"; then
         SF_PRESENT_STATE=queued
+        sf_tui_prompt_message "$SF_PRESENT_SUBMITTED" || return 1
       fi
     fi
   fi
@@ -332,6 +333,15 @@ sf_tui_controller() {
     SF_PRESENT_ERROR=$SF_PRESENT_HIGHLIGHT_ERROR
     return 1
   }
+  # Start creation before drawing anything; its hooks are the slow part.
+  if [[ $session_mode == startup ]]; then
+    SF_PRESENT_STATE=working
+    sf_tui_activity_start || return 1
+    sf_tui_transport_start '' sf_tui_exec_ready || {
+      SF_PRESENT_ERROR=$SF_TUI_TRANSPORT_ERROR
+      return 1
+    }
+  fi
   SF_PRESENT_RUNTIME=$presentation
   sf_tui_chat_start "$session_mode" "$session" || {
     SF_PRESENT_ERROR='cannot render startup banner'
@@ -341,16 +351,7 @@ sf_tui_controller() {
     (.profile.context_window // "")' <<<"$presentation")}" ) || return 1
   sf_tui_action runtime "$runtime[1]" "$runtime[2]" || return 1
   SF_PRESENT_CONTEXT_WINDOW=$runtime[2]
-  if [[ $session_mode == startup ]]; then
-    SF_PRESENT_STATE=working
-    sf_tui_activity_start || return 1
-    sf_tui_transport_start '' sf_tui_exec_ready || {
-      SF_PRESENT_ERROR=$SF_TUI_TRANSPORT_ERROR
-      return 1
-    }
-  else
-    sf_tui_load "$session" || return 1
-  fi
+  [[ $session_mode == startup ]] || sf_tui_load "$session" || return 1
   PROMPT=''
   saved_tty=$(stty -g 2>/dev/null) || return 1
   SF_PRESENT_TTY=$saved_tty
@@ -359,6 +360,7 @@ sf_tui_controller() {
     if [[ $SF_PRESENT_STATE == working ]]; then
       SF_PRESENT_QUEUE=( "$initial" )
     else
+      sf_tui_prompt_message "$initial" || return 1
       sf_tui_turn "$initial" || return 1
     fi
   fi

@@ -14,6 +14,8 @@ typeset -ga SF_PRESENT_ROW_TEXT=() SF_PRESENT_ROW_SPANS=()
 typeset -ga SF_PRESENT_ROW_READY=()
 typeset -gi SF_PRESENT_ROW_HEAD=1
 typeset -ga SF_PRESENT_LIVE_ROW_TEXT=() SF_PRESENT_LIVE_ROW_SPANS=()
+# The width the transcript last drew; empty until the first draw.
+typeset -g SF_PRESENT_WIDTH=''
 
 sf_tui_reset() {
   SF_PRESENT_ROW_TEXT=()
@@ -22,6 +24,18 @@ sf_tui_reset() {
   SF_PRESENT_ROW_HEAD=1
   SF_PRESENT_LIVE_ROW_TEXT=()
   SF_PRESENT_LIVE_ROW_SPANS=()
+  SF_PRESENT_WIDTH=''
+  sf_tui_formatters_reset
+}
+
+# READY prevents committing role chrome without its content.
+sf_tui_rows_append() {
+  integer count=$1 leading=$2 row
+  for (( row = 1; row <= count; row++ )); do
+    SF_PRESENT_ROW_TEXT+=( "$SF_FORMAT_ROWS[row]" )
+    SF_PRESENT_ROW_SPANS+=( "$SF_FORMAT_SPANS[row]" )
+    SF_PRESENT_ROW_READY+=( $(( ! leading || row >= leading )) )
+  done
 }
 
 sf_tui_rows_consume() {
@@ -50,6 +64,8 @@ sf_tui_transcript() {
   SF_PRESENT_SAFE_TEXT=''
   SF_PRESENT_SAFE_HIGHLIGHTS=()
   SF_PRESENT_SAFE_ROWS=0
+  SF_PRESENT_WIDTH=$columns
+  sf_tui_rows_prepare $columns || return 1
   stable=$(( ${#SF_PRESENT_ROW_TEXT} - SF_PRESENT_ROW_HEAD + 1 ))
   (( stable > 0 )) || stable=0
   take=$(( stable < budget ? stable : budget ))

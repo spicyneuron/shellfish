@@ -1,9 +1,7 @@
 #!/usr/bin/env zsh
 
 source "${0:A:h:h:h}/_helpers.zsh"
-sf_test_source libexec/tui/render/highlights.zsh \
-  libexec/tui/render/text.zsh libexec/tui/render/wrap.zsh \
-  libexec/tui/render/terminal.zsh libexec/tui/render/view.zsh \
+sf_test_source libexec/tui/render/main.zsh \
   libexec/tui/transport.zsh libexec/tui/editor.zsh libexec/tui/controller.zsh
 
 # Avoid the PTY worker.

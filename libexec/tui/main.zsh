@@ -80,11 +80,10 @@ sf_tui_main() {
         take=$(( arity + 1 ))
         (( $# >= take )) || { sf_die "$1 requires a value"; return 2; }
         runtime_args+=( "${@:1:$take}" )
-        if [[ $1 == --config ]]; then
-          presentation_args+=( "${@:1:$take}" )
-        else
-          override=1
-        fi
+        # The banner and footer describe the runtime creation will freeze, so
+        # config resolves the same options. Only the system prompt is its own.
+        [[ $1 == (--system|--system-file) ]] || presentation_args+=( "${@:1:$take}" )
+        [[ $1 == --config ]] || override=1
         shift $take
         ;;
       *)
@@ -137,6 +136,7 @@ sf_tui_main() {
   (( ! config_status )) || return $config_status
 
   source "$SF_ROOT/libexec/tui/render/main.zsh"
+  source "$SF_ROOT/libexec/tui/project.zsh"
   source "$SF_ROOT/libexec/tui/transport.zsh"
   source "$SF_ROOT/libexec/tui/editor.zsh"
   source "$SF_ROOT/libexec/tui/controller.zsh"
