@@ -35,11 +35,10 @@ Nothing is emitted until the whole prefix validates, and nothing is ever written
 
 | Type | Fields and meaning |
 | --- | --- |
-| `_session_load` and initial records | The created session, followed by its header and optional system record. |
-| `_hook_activity` | A selected startup component's nonempty configured initial user text, or a short empty event that clears it. |
-| `state` and `hook_result` | Durable startup records, emitted immediately after they are appended. |
+| `_hook_activity` | A selected startup component's nonempty configured initial user text, followed by a short empty event that clears it when the component finishes. |
+| `_session_load` and durable records | The finished session, as [`shellfish load`](#reading-a-session) emits it. |
 
-Creation publishes the session and its system context before running startup hooks. Hooks then run in configured order, with each durable result following its live activity. A failed or cancelled startup reports the failure on stderr and retains the valid session prefix and any completed hook results. Clients must wait for successful process exit before submitting a turn.
+Startup hooks run in configured order and report only live activity while they work. Creation then hands the finished session to `load`, so its durable records have exactly one producer and reach clients once. A failed or cancelled startup reports the failure on stderr and publishes no session path, though the valid transcript prefix it already wrote is kept. Clients must wait for successful process exit before submitting a turn.
 
 `--system` and `--system-file` replace the configured system prompt for that creation. Chat and `run` accept the same creation options when they are not opening an existing `--session`.
 

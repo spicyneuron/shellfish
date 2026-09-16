@@ -45,12 +45,15 @@ sf_create_session() {
   printf '%s\n' "${SF_SESSION_RECORDS[@]}" |
     "$SF_ENTRY" install-session --session-out "$session" >/dev/null || return 1
   source "$SF_ROOT/libexec/create/hooks.zsh"
-  if (( SF_CREATE_JSONL )); then
-    jq -cn --arg path "$session" '{type:"_session_load",path:$path}' || return 1
-    printf '%s\n' "${SF_SESSION_RECORDS[@]}" || return 1
-  fi
   sf_create_start_hooks "$session" || error=$?
   (( ! error )) || return $error
+  # A complete session is published only through the read-only load boundary,
+  # so creation never becomes a second source of canonical records.
+  (( SF_CREATE_JSONL )) || return 0
+  "$SF_ENTRY" load --session "$session" || {
+    sf_die "cannot load the created session: $session"
+    return 1
+  }
 }
 
 sf_create_main() {

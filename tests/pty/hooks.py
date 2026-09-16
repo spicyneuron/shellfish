@@ -114,16 +114,19 @@ def test_startup_cancellation_retains_the_session():
             session.wait_after(0, "Inspecting slow_start")
             session.send(b"\x03")
             session.wait_after(0, "Cancelled.")
+            # Cancelled creation never published a session, so the client stops
+            # instead of offering one, while the written prefix stays on disk.
             assert session.explicit_session.exists()
             _, records = session.wait_session_records(
                 1, path=session.explicit_session
             )
             assert [record["type"] for record in records] == ["session"]
+            mark = len(session.output)
             session.send(b"\x03")
             end = time.monotonic() + 0.2
             while time.monotonic() < end:
                 session.pump()
-            assert "Resume with:" in session.visible(), session.visible()
+            assert "Resume with:" not in session.visible(mark), session.visible(mark)
         finally:
             (session.explicit_session.parent / "slow_start-release").touch()
             session.close()

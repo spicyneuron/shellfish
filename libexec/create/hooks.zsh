@@ -52,7 +52,6 @@ sf_create_start_hooks() {
     states=( ${(@f)state_projection} )
     for record in "${states[@]}"; do
       sf_session_append "$session" "$record" || { error=$SF_SESSION_ERROR; break 2; }
-      sf_create_event "$record" || { error='cannot emit hook state'; break 2; }
     done
     if jq -e '.exit_code != 0 or .stdout != "" or .stderr != ""' <<<"$outcome" >/dev/null; then
       sf_hook_result session_start "$id" "$name" "$command" '""' "$render" "$outcome" || {
@@ -61,8 +60,9 @@ sf_create_start_hooks() {
       }
       record=$REPLY
       sf_session_append "$session" "$record" || { error=$SF_SESSION_ERROR; break; }
-      sf_create_event "$record" || { error='cannot emit hook result'; break; }
-    elif jq -e 'has("user_text")' <<<"$activity" >/dev/null; then
+    fi
+    # The live activity ends with the hook; loading later shows its result.
+    if jq -e 'has("user_text")' <<<"$activity" >/dev/null; then
       clear=$(jq -c 'del(.user_text)' <<<"$activity") || { error='cannot prepare hook clear'; break; }
       sf_create_event "$clear" || { error='cannot emit hook clear'; break; }
     fi

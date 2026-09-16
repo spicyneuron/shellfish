@@ -312,19 +312,4 @@ for code in 0 9; do
   [[ $POSTDISPLAY != *'[r]'* ]] || fail 'refresh was offered without a session'
 done
 
-# A published session remains resumable when a later startup hook fails.
-sf_tui_reset
-sf_tui_terminal_reset
-SF_PRESENT_SESSION="$tmp/failed-startup.jsonl"
-SF_PRESENT_CREATING=1
-SF_PRESENT_STATE=working
-SF_TUI_TRANSPORT_EOF=1
-SF_TUI_TRANSPORT_EXIT_STATUS=9
-SF_TUI_TRANSPORT_EXIT_DETAIL='startup failure'
-sf_tui_exec_finish
-assert_equal idle "$SF_PRESENT_STATE"
-sf_tui_transcript 79 20
-[[ $SF_PRESENT_VIEWPORT_TEXT == *'Session creation failed.'* ]] ||
-  fail "published startup failure was mislabeled: $SF_PRESENT_VIEWPORT_TEXT"
-
 print -r -- ok
