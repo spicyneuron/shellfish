@@ -84,7 +84,7 @@ jq -e '
 jq -e '
   .theme_mode == "light" and .theme_light == "light" and
   .themes.light.text == "#123456" and
-  .tui.preview_lines_context == 2
+  .tui.preview_lines == 2
 ' <<<"$SF_PRESENTATION" >/dev/null
 
 # Empty configs use bundled defaults.
@@ -101,12 +101,14 @@ jq -e --arg root "$ROOT/share/default/hooks/session_start" \
   (.harness.user_prompt_submit[0] |
     .command == ($prompt_root + "/help/run") and
     .render == {initial_user_text:"",user_text:"${output.stdout}${output.stderr}",
-      model_text:""}) and
+      model_text:"",preview_lines:"full"}) and
   .harness.user_prompt_submit[-1].command == ($prompt_root + "/git_environment/run") and
   (.backend | has("context_window_command") | not) and
   (.harness.tools | map(.name)) ==
     ["read_file", "edit_file", "write_file", "skill", "search_web", "fetch_url", "shell"] and
   .harness.tools[0].manifest.render.permission_user_text == "${input.file_path}" and
+  .harness.tools[1].manifest.render.preview_lines == "full" and
+  (.harness.tools[0].manifest.render | has("preview_lines") | not) and
   .harness.tools[-1].manifest.render.user_text ==
     "${name}\n${input.command}\n${output.stdout}${output.stderr}\nexit ${output.exit_code}"
 ' <<<"$REPLY" >/dev/null
@@ -162,13 +164,13 @@ cat >"$tmp/config/presentation.jsonc" <<'JSON'
   "theme_light": "light",
   "theme_dark": "dark",
   "themes": {"light": {"text": "#abcdef"}},
-  "tui": {"preview_lines_context": 9}
+  "tui": {"preview_lines": 9}
 }
 JSON
 sf_runtime_restore_presentation "$tmp/config/presentation.jsonc"
 jq -e '
   .theme_mode == "light" and .themes.light.text == "#abcdef" and
-  .tui.preview_lines_context == 9
+  .tui.preview_lines == 9
 ' <<<"$SF_PRESENTATION" >/dev/null
 
 print -r -- '{"theme_light":"missing"}' >"$tmp/config/missing-theme.jsonc"
@@ -276,12 +278,12 @@ jq -e --arg read "${tmp:A}/home/reference" --arg write "${tmp:A}/home/output" '
 
 # Presentation config is validated independently.
 cat >"$tmp/config/invalid-presentation.jsonc" <<'JSON'
-{"tui":{"preview_lines_context":-1}}
+{"tui":{"preview_lines":-1}}
 JSON
 if sf_runtime_restore_presentation "$tmp/config/invalid-presentation.jsonc"; then
   fail 'invalid presentation field was accepted'
 fi
-[[ $SF_RUNTIME_ERROR == *'invalid config at $["tui"]["preview_lines_context"]: must be full or a non-negative integer'* ]]
+[[ $SF_RUNTIME_ERROR == *'invalid config at $["tui"]["preview_lines"]: must be full or a non-negative integer'* ]]
 
 # Hook references preserve order and prefer configured scripts.
 mkdir -p "$tmp/config/hooks/user_prompt_submit/help" \

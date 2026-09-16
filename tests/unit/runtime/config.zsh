@@ -34,7 +34,7 @@ if print -r -- '{"themes":{"dark":{"text":"red"}}}' |
 fi
 
 # Preview line counts require valid types.
-if print -r -- '{"tui":{"preview_lines_context":-1}}' |
+if print -r -- '{"tui":{"preview_lines":-1}}' |
     config_eval 'config_validate' >/dev/null 2>&1; then
   fail 'invalid tui preview_lines was accepted'
 fi

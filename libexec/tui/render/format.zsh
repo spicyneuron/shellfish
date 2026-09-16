@@ -200,7 +200,7 @@ sf_tui_format_message() {
   fi
   visible=${#SF_WRAP_ROWS}
   preview=full
-  [[ $role != system ]] || preview=$SF_PRESENT_PREVIEW_CONTEXT
+  [[ $role != system ]] || preview=$SF_PRESENT_PREVIEW
   if [[ $preview != full ]] && (( visible > preview )); then
     visible=$preview
     hidden=1
@@ -400,10 +400,19 @@ sf_tui_format_execution() {
     $body == "$SF_LIVE_NAME"$'\n'* || $body == "$SF_LIVE_NAME "* ]] ||
     body="$SF_LIVE_NAME"$'\n'"$body"
   case $SF_LIVE_CLASS in
-    tool) glyph='⛭'; preview=full ;;
-    context) glyph='↪'; preview=$SF_PRESENT_PREVIEW_CONTEXT ;;
-    *) glyph='ℹ'; preview=full ;;
+    tool) glyph='⛭' ;;
+    context) glyph='↪' ;;
+    *) glyph='ℹ' ;;
   esac
+  preview=$SF_LIVE_PREVIEW
+  if [[ -z $preview ]]; then
+    [[ $SF_LIVE_CLASS == context ]] && preview=default || preview=full
+  fi
+  if [[ $SF_PRESENT_PREVIEW == full ]]; then
+    preview=full
+  elif [[ $preview == default ]]; then
+    preview=$SF_PRESENT_PREVIEW
+  fi
   (( ! live )) || sf_tui_spinner && spinner=$live
 
   (( SF_LIVE_CHROME )) || sf_tui_format_rule $columns "$SF_LIVE_ROLE" "$SF_LIVE_SECTION"

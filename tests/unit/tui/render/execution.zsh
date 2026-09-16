@@ -147,16 +147,29 @@ assert_equal 3 "$SF_PRESENT_SAFE_ROWS"
 
 # Context output is clamped to the configured budget.
 sf_tui_reset
-SF_PRESENT_PREVIEW_CONTEXT=1
+SF_PRESENT_PREVIEW=1
 sf_tui_action execution_end h1 probe context $'probe\nfirst\nsecond\nthird'
 view
 assert_equal $'↪ probe\n│ first\n╰ … ~6 tokens' "$REPLY"
 sf_tui_reset
-SF_PRESENT_PREVIEW_CONTEXT=0
+SF_PRESENT_PREVIEW=0
 sf_tui_action execution_end h1 prompt context $'prompt\nfirst\nsecond'
 view
 assert_equal $'↪ prompt\n╰ … ~5 tokens' "$REPLY"
-SF_PRESENT_PREVIEW_CONTEXT=full
+SF_PRESENT_PREVIEW=full
+
+# Components may select a fixed limit or bypass the context default.
+sf_tui_reset
+SF_PRESENT_PREVIEW=2
+sf_tui_action execution_end h1 probe tool $'probe\nfirst\nsecond\nthird' 1
+view
+assert_tail $'⛭ probe\n│ first\n╰ … ~6 tokens'
+sf_tui_reset
+SF_PRESENT_PREVIEW=0
+sf_tui_action execution_end h1 probe tool $'probe\nfirst\nsecond' full
+view
+assert_tail $'⛭ probe\n│ first\n╰ second'
+SF_PRESENT_PREVIEW=full
 
 # Execution text is plain even when it resembles a diff.
 sf_tui_reset

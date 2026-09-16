@@ -108,7 +108,7 @@ A read grant allows reading; a write grant allows reading and writing. Use `--sa
 
 ## Existing sessions
 
-A session retains its resolved runtime rather than reinterpreting current configuration. Themes and TUI preview settings remain current client configuration. Inspect a session's configuration with:
+A session retains its resolved runtime rather than reinterpreting current configuration. Themes and global TUI preview settings remain current client configuration. Inspect a session's configuration with:
 
 ```sh
 shellfish config --session-from path/to/session.jsonl

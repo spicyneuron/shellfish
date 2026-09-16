@@ -12,6 +12,9 @@ def component_environment:
 def nul_free_string:
   type == "string" and (index("\u0000") | not);
 
+def preview_lines:
+  . == "full" or (type == "number" and floor == . and . >= 0 and . <= 2147483647);
+
 def script_template($input_variables; $output):
   type == "string" and (index("\u0000") | not) and
   (gsub("\\$\\{[^{}]+\\}"; "") | index("${") | not) and
@@ -25,14 +28,16 @@ def component_render($input_variables; $permission):
   (["initial_user_text", "model_text", "user_text"] +
     if $permission then ["permission_user_text"] else [] end) as $fields |
   type == "object" and
-  (keys - $fields | length) == 0 and
-  all(to_entries[]; . as $entry | .value |
-    script_template($input_variables; $entry.key | IN("model_text", "user_text")));
+  (keys - ($fields + ["preview_lines"]) | length) == 0 and
+  all(to_entries[] | select(.key != "preview_lines"); . as $entry | .value |
+    script_template($input_variables; $entry.key | IN("model_text", "user_text"))) and
+  (if has("preview_lines") then .preview_lines | preview_lines else true end);
 
 def complete_component_render($input_variables; $permission):
+  (["initial_user_text", "model_text", "user_text"] +
+    if $permission then ["permission_user_text"] else [] end) as $fields |
   component_render($input_variables; $permission) and
-  keys == (["initial_user_text", "model_text", "user_text"] +
-    if $permission then ["permission_user_text"] else [] end | sort);
+  (($fields - keys | length) == 0);
 
 def tool_manifest:
   (.input_schema.properties // {} | keys | map("input." + .)) as $input_variables |

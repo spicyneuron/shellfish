@@ -273,7 +273,7 @@ SF_PRESENT_PREVIEW_REASONING=full
 
 # System text is clamped to the configured context budget.
 sf_tui_reset
-SF_PRESENT_PREVIEW_CONTEXT=0
+SF_PRESENT_PREVIEW=0
 message system $'one\ntwo'
 view 79 20
 [[ $REPLY == $'─ system '*$'\n\n… ~2 tokens' ]] || fail "collapsed system: $REPLY"
@@ -287,12 +287,12 @@ for row in "${(@f)REPLY}"; do
 done
 sf_tui_reset
 width 79
-SF_PRESENT_PREVIEW_CONTEXT=1
+SF_PRESENT_PREVIEW=1
 message system $'first row\nsecond row\nthird row'
 view 79 20
 [[ $REPLY == $'─ system '*$'\n\nfirst row\n… ~8 tokens' ]] || fail "previewed system: $REPLY"
 assert_equal 4 "$SF_PRESENT_SAFE_ROWS"
-SF_PRESENT_PREVIEW_CONTEXT=full
+SF_PRESENT_PREVIEW=full
 
 # Incomplete inline syntax withholds only a bounded suffix.
 sf_tui_reset

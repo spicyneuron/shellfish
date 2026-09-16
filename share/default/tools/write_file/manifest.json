@@ -10,6 +10,7 @@
     }
   },
   "render": {
+    "preview_lines": "full",
     "initial_user_text": "${name} ${input.file_path}",
     "user_text": "${name} ${input.file_path}\n${output.stdout}${output.stderr}",
     "permission_user_text": "${input.file_path}"

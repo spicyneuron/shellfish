@@ -31,11 +31,30 @@ def usage_actions($window):
 
 def identity: ((.backend.name // "?") + "/" + (.profile.request.model // "?"));
 
-def runtime_actions:
-  [["runtime", identity, (.profile.context_window // "" | tostring)]];
+def hook_previews($runtime; $lifecycle):
+  reduce $runtime.harness[$lifecycle][]? as $hook ({};
+    .[$hook.command] = ($hook.render.preview_lines // "default"));
 
-# Context feeds the model and is reference material worth clamping; a notice
-# speaks only to the reader, so it is shown whole.
+def runtime_previews:
+  . as $runtime |
+  {tools:(reduce $runtime.harness.tools[]? as $tool ({};
+      .[$tool.name] = ($tool.manifest.render.preview_lines // "default"))),
+   hooks:(reduce ["session_start", "user_prompt_submit", "permission_request",
+      "pre_tool_use", "post_tool_use", "stop"][] as $lifecycle ({};
+      .[$lifecycle] = hook_previews($runtime; $lifecycle)))};
+
+def runtime_actions:
+  [["runtime", identity, (.profile.context_window // "" | tostring),
+    (runtime_previews | tojson)]];
+
+def tool_preview($previews; $name):
+  $previews.tools[$name] // "default";
+
+def hook_preview($previews; $lifecycle; $executable):
+  $previews.hooks[$lifecycle][$executable] // "default";
+
+# Context and notice select presentation styling; their manifests select the
+# preview policy independently.
 def hook_class: if (.model_text // "") == "" then "notice" else "context" end;
 # Model-only results show attribution without exposing model context.
 def result_text:
@@ -68,7 +87,7 @@ def response_actions:
     end] +
   [["message_end"]];
 
-def record_actions($mode; $window):
+def record_actions($mode; $window; $previews):
   if .type == "assistant" then
     (if $mode == "load" then response_actions else [] end) + usage_actions($window)
   elif .type == "user" then
@@ -79,15 +98,17 @@ def record_actions($mode; $window):
     (.user_text | split("\n")) as $lines |
     [["error", $lines[0], ($lines[1:] | join("\n"))]]
   elif .type == "tool_result" then
-    [["execution_end", .id, .name, "tool", result_text]]
+    [["execution_end", .id, .name, "tool", result_text,
+      (tool_preview($previews; .name) | tostring)]]
   elif .type == "hook_result" then
-    [["execution_end", .id, .name, hook_class, result_text]]
+    [["execution_end", .id, .name, hook_class, result_text,
+      (hook_preview($previews; .lifecycle; (.executable // "")) | tostring)]]
   elif .type == "session" then runtime_actions
   elif .type == "state" then []
   else error("unsupported record: " + (.type | tostring))
   end;
 
-def event_actions($window):
+def event_actions($window; $previews):
   if .type == "_assistant_start" then [["message_start", "agent"]]
   elif .type == "_assistant_message_delta" then
     [["message_delta", (.index | tostring), "text", .text, ""]]
@@ -99,11 +120,13 @@ def event_actions($window):
   elif .type == "_assistant_end" then [["message_end"]]
   elif .type == "_turn_usage" then []
   elif .type == "_tool_activity" then
-    [["execution_update", .id, .name, "tool", (.user_text // "")]]
+    [["execution_update", .id, .name, "tool", (.user_text // ""),
+      (tool_preview($previews; .name) | tostring)]]
   elif .type == "_hook_activity" then
+    (hook_preview($previews; .hook; (.executable // "")) | tostring) as $preview |
     if (.user_text // "") == "" then
-      [["execution_end", .id, .name, "notice", ""]]
-    else [["execution_update", .id, .name, "notice", .user_text]] end
+      [["execution_end", .id, .name, "notice", "", $preview]]
+    else [["execution_update", .id, .name, "notice", .user_text, $preview]] end
   elif .type == "_tool_permission_request" then
     (.preview // "") as $preview |
     [["permission", .id, .tool.name,
@@ -120,17 +143,18 @@ def nul_safe: gsub("\u0000"; "�");
 [inputs | fromjson] |
 reduce .[] as $line (
   {mode: $mode, window: (if $window == "" then null else ($window | tonumber) end),
-   actions: []};
+   previews: $previews, actions: []};
   . as $state |
   ($line |
-    if (.type // "" | startswith("_")) then event_actions($state.window)
-    else record_actions($state.mode; $state.window) end) as $emitted |
+    if (.type // "" | startswith("_")) then event_actions($state.window; $state.previews)
+    else record_actions($state.mode; $state.window; $state.previews) end) as $emitted |
   .actions += $emitted |
   if $line.type == "_session_load" then .mode = "load"
   elif $line.type == "_session_update" then
-    .window = ($line.runtime.profile.context_window // null)
+    .window = ($line.runtime.profile.context_window // null) |
+    .previews = ($line.runtime | runtime_previews)
   elif $line.type == "session" then
-    .window = ($line.profile.context_window // null)
+    .window = ($line.profile.context_window // null) | .previews = ($line | runtime_previews)
   else . end
 ) |
 # Fields are NUL-joined and each action ends with a record separator.

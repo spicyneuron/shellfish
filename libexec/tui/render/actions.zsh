@@ -10,8 +10,8 @@ sf_tui_action() {
     message_start) sf_tui_message_open "${1-}" ;;
     message_delta) sf_tui_message_stream "${1-}" "${2-}" "${3-}" "${4-}" ;;
     message_end) sf_tui_message_close ;;
-    execution_update) sf_tui_execution_update "${1-}" "${2-}" "${3-}" "${4-}" ;;
-    execution_end) sf_tui_execution_end "${1-}" "${2-}" "${3-}" "${4-}" ;;
+    execution_update) sf_tui_execution_update "${1-}" "${2-}" "${3-}" "${4-}" "${5-}" ;;
+    execution_end) sf_tui_execution_end "${1-}" "${2-}" "${3-}" "${4-}" "${5-}" ;;
     error) sf_tui_error_append "${1-}" "${2-}" ;;
     runtime) sf_tui_identity "${1-}" ;;
     usage) sf_tui_usage "${1-}" "${2-}" ;;

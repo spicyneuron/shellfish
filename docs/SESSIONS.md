@@ -22,7 +22,7 @@ Opening an existing session uses its header and rejects ordinary runtime overrid
 
 The header freezes resolved settings and manifest fields, not every external byte used by them. Executables, sandbox policy files, and credential values remain external.
 
-Themes and TUI preview limits are not part of the session. Interactive chat resolves them from current configuration whenever it opens a session.
+Themes and global TUI preview limits are not part of the session. Interactive chat resolves them from current configuration whenever it opens a session.
 
 The header is frozen against ambient configuration, but it is not immutable. Context-window discovery and hook-requested runtime updates may replace it after validation. Transcript records remain unchanged.
 

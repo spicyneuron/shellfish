@@ -112,7 +112,7 @@ Skipping is sticky: after one script returns 10 or 11, a later zero does not res
 | `post_tool_use` | tool response JSON | continue | unsupported |
 | `stop` | final assistant text | finish turn | add feedback and continue |
 
-Hook manifests render captured output into independent durable user and model text. Supplied render fields merge over defaults: no initial text, stderr as user text, and stdout as model text.
+Hook manifests render captured output into independent durable user and model text. Supplied render fields merge over defaults: no initial text, stderr as user text, and stdout as model text. `render.preview_lines` may be `"full"` or a non-negative line count; when omitted, the TUI uses its default preview limit.
 
 Tool hooks receive canonical envelopes. A request envelope has:
 

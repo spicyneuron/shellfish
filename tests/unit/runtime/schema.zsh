@@ -239,6 +239,14 @@ print -r -- "$valid_manifest" | jq -c 'del(.render)' |
   schema_eval 'tool_manifest' >/dev/null || fail 'tool manifest required render overrides'
 print -r -- "$valid_manifest" | jq -c '.render = {model_text:""}' |
   schema_eval 'tool_manifest' >/dev/null || fail 'tool manifest rejected a partial render override'
+print -r -- "$valid_manifest" | jq -c '.render.preview_lines = 3' |
+  schema_eval 'tool_manifest' >/dev/null || fail 'tool manifest rejected a preview line limit'
+for preview in -1 '"context"'; do
+  if jq -c --argjson preview "$preview" '.render.preview_lines = $preview' \
+      <<<"$valid_manifest" | schema_eval 'tool_manifest' >/dev/null 2>&1; then
+    fail "tool manifest accepted invalid preview lines: $preview"
+  fi
+done
 if print -r -- "$valid_manifest" | jq -c '.render = null' |
     schema_eval 'tool_manifest' >/dev/null 2>&1; then
   fail 'tool manifest accepted null render overrides'

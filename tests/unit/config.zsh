@@ -212,7 +212,7 @@ report=$(zsh -f "$entry" config --config "$config_dir/shellfish.jsonc") ||
 assert_equal gpt-4o "$(jq -r '.profile.request.model' <<<"$report")" 'config reports the model'
 [[ $(jq -r '.backend.command' <<<"$report") == */openai/run ]] || fail 'config reports the backend command'
 assert_equal auto "$(jq -r '.theme.mode' <<<"$report")" 'config reports the theme mode'
-assert_equal 2 "$(jq -r '.tui.preview_lines_context' <<<"$report")" 'config reports TUI limits'
+assert_equal 2 "$(jq -r '.tui.preview_lines' <<<"$report")" 'config reports TUI limits'
 jq -e --arg root "$ROOT" '
   .profile.system == [($root + "/share/default/system/general.md"),
     ($root + "/share/default/system/tools.md")]
@@ -247,7 +247,7 @@ echo '{"type":"user","content":[{"type":"text","text":"hi"}]}' >>"$tmp/stored.js
 report=$(zsh -f "$entry" config --config "$config_dir/shellfish.jsonc" --session-from "$tmp/stored.jsonl") || \
   fail 'config session report failed'
 assert_equal auto "$(jq -r '.theme.mode' <<<"$report")" 'config --session-from reports the current theme mode'
-assert_equal 2 "$(jq -r '.tui.preview_lines_context' <<<"$report")" \
+assert_equal 2 "$(jq -r '.tui.preview_lines' <<<"$report")" \
   'config --session-from reports current TUI limits'
 jq -e '.profile.system == []' <<<"$report" >/dev/null || \
   fail 'config did not report stored system paths'
@@ -261,12 +261,12 @@ fi
 report=$(zsh -f "$entry" config --config "$config_dir/shellfish.jsonc" --verbose) || \
   fail 'config verbose report failed'
 assert_equal 'full full' \
-  "$(jq -r '[.tui.preview_lines_reasoning, .tui.preview_lines_context] |
+  "$(jq -r '[.tui.preview_lines_reasoning, .tui.preview_lines] |
     join(" ")' <<<"$report")" \
   '--verbose lifts every preview limit'
 report=$(zsh -f "$entry" config --config "$config_dir/shellfish.jsonc" \
   --session-from "$tmp/stored.jsonl" --verbose) || fail 'config verbose session report failed'
-assert_equal full "$(jq -r '.tui.preview_lines_context' <<<"$report")" \
+assert_equal full "$(jq -r '.tui.preview_lines' <<<"$report")" \
   '--verbose reaches a stored session'
 assert_equal stored-model "$(jq -r '.profile.request.model' <<<"$report")" \
   '--verbose leaves the stored runtime alone'

@@ -308,7 +308,7 @@
         "preview_lines_reasoning": {
           "$ref": "#/$defs/preview_lines"
         },
-        "preview_lines_context": {
+        "preview_lines": {
           "$ref": "#/$defs/preview_lines"
         }
       }

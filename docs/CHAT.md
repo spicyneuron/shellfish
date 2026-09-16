@@ -9,7 +9,7 @@ Interactive chat is the default Shellfish client. It submits each prompt as one 
 - `shellfish --resume` opens a picker listing recent sessions for this directory.
 - `shellfish --session PATH` opens a specific session.
 
-New sessions use current configuration. Existing sessions retain their backend, harness, model, and sandbox settings, while themes and preview settings always come from current configuration.
+New sessions use current configuration. Existing sessions retain their backend, harness, model, and sandbox settings, while themes and global preview settings always come from current configuration.
 
 ## Interact
 
@@ -29,7 +29,7 @@ During a permission request, the keymap switches to accept `a` (approve) or `d` 
 
 ## Presentation
 
-The TUI collapses long reasoning and context according to current preview settings. Tool templates are always shown in full. Start chat with `--verbose` to expand reasoning and context inline.
+The TUI collapses long reasoning and component output according to current preview settings. A component manifest may select a fixed line limit or full output. Start chat with `--verbose` to expand every preview inline.
 
 ## Recovery
 

@@ -1,5 +1,6 @@
 {
   "render": {
+    "preview_lines": "full",
     "user_text": "${output.stdout}${output.stderr}",
     "model_text": ""
   },
