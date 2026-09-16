@@ -146,10 +146,10 @@ sf_run_permission_client() {
 
 sf_run_turn() {
   local user_record=$1 session=$2 prompt=$3 opened runtime tools backend selected context_command
-  local request assistant stop_text hook component call id name input activity permission decision
+  local request assistant stop_text component call id name input activity permission decision
   local call_projection tool_request post_request
   local reason outcome state_projection record post_error='' failure='' turn_state tool_temp=''
-  local -a calls states
+  local -a calls states hook_result
   integer begun=0 request_count=0 call_count=0 request_limit tool_limit max_capture run_status
 
   {
@@ -175,23 +175,23 @@ sf_run_turn() {
     turn_state=$REPLY
     if [[ -z $failure ]]; then
       sf_run_hooks "$session" user_prompt_submit "$prompt" "$turn_state" || failure=$SF_RUN_HOOK_ERROR
-      hook=$REPLY
+      hook_result=( "${reply[@]}" )
     fi
     if [[ -z $failure ]]; then
-      case $(jq -r '.action // empty' <<<"$hook") in
+      case $hook_result[2] in
         handoff)
-          sf_run_emit "$(jq -c '{type:"_handoff",argv}' <<<"$hook")"
+          sf_run_emit "$(jq -cn --argjson argv "$hook_result[4]" '{type:"_handoff",argv:$argv}')"
           return 0
           ;;
         session_update)
-          sf_session_update "$session" "$(jq -c '.patch' <<<"$hook")" || failure=$SF_SESSION_ERROR
+          sf_session_update "$session" "$hook_result[4]" || failure=$SF_SESSION_ERROR
           [[ -n $failure ]] || sf_run_emit "$(jq -cn --argjson runtime "$SF_SESSION[runtime]" \
             '{type:"_session_update",runtime:$runtime}')"
           [[ -z $failure ]]
           return
           ;;
       esac
-      if [[ $(jq -r '.decision' <<<"$hook") == handled ]]; then
+      if [[ $hook_result[1] == handled ]]; then
         return 0
       fi
     fi
@@ -244,8 +244,8 @@ sf_run_turn() {
           failure=$SF_RUN_HOOK_ERROR
           break
         }
-        hook=$REPLY
-        if [[ $(jq -r '.decision' <<<"$hook") != continue ]]; then
+        hook_result=( "${reply[@]}" )
+        if [[ $hook_result[1] != continue ]]; then
           SF_RUN[answer]=$stop_text
           break
         fi
@@ -277,8 +277,8 @@ sf_run_turn() {
         else
           sf_run_hooks "$session" pre_tool_use "$tool_request" \
             "$turn_state" "$name" "$id" || { failure=$SF_RUN_HOOK_ERROR; break; }
-          hook=$REPLY
-          if [[ $(jq -r '.decision' <<<"$hook") == deny ]]; then
+          hook_result=( "${reply[@]}" )
+          if [[ $hook_result[1] == deny ]]; then
             sf_run_tool_refused 'tool call denied by pre_tool_use hook' 126
             outcome=$REPLY
           elif [[ -z $component ]]; then
@@ -298,9 +298,9 @@ sf_run_turn() {
             elif [[ $decision == request ]]; then
               sf_run_hooks "$session" permission_request "$tool_request" \
                 "$turn_state" "$name" "$id" || { failure=$SF_RUN_HOOK_ERROR; break; }
-              hook=$REPLY
-              decision=$(jq -r '.decision' <<<"$hook")
-              reason=$(jq -r '.reason // "sandbox bypass denied"' <<<"$hook")
+              hook_result=( "${reply[@]}" )
+              decision=$hook_result[1]
+              reason=${hook_result[3]:-sandbox bypass denied}
               if [[ $decision == proceed ]]; then
                 sf_run_tool_render "$component" "$name" "$input" \
                   '{"stdout":"","stderr":"","exit_code":0}' || { failure='cannot render permission request'; break; }

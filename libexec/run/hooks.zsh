@@ -44,14 +44,14 @@ sf_run_hook_match() {
   jq -e '.exit_code == 0' <<<"$outcome" >/dev/null
 }
 
-# Return one decision object in REPLY after appending every accepted record.
+# Return decision fields in reply after appending every accepted record.
 sf_run_hooks() {
   local session=$1 lifecycle=$2 content=$3 turn_state=$4
   shift 4
   local input_file input_json projection component command name id render activity outcome record clear
-  local state_projection control error='' decision=proceed reason='' action='' patch=''
+  local state_projection control='{}' error='' decision=proceed reason='' action='' patch=''
   local action_argv='[]'
-  local -a components states
+  local -a components states capture
   integer exit_code invoke_status match_status
 
   SF_RUN_HOOK_ERROR=''
@@ -111,13 +111,17 @@ sf_run_hooks() {
       break
     fi
     outcome=$REPLY
-    exit_code=$(jq -r '.exit_code' <<<"$outcome") || { error='cannot inspect hook result'; break; }
-    state_projection=$(jq -c '.states[]' <<<"$outcome") || { error='cannot inspect hook state'; break; }
-    states=( ${(@f)state_projection} )
+    capture=( "${reply[@]}" )
+    exit_code=$capture[1]
+    states=()
+    if (( capture[4] )); then
+      state_projection=$(jq -c '.states[]' <<<"$outcome") || { error='cannot inspect hook state'; break; }
+      states=( ${(@f)state_projection} )
+    fi
     for record in "${states[@]}"; do
       sf_run_append "$session" "$record" || { error=$REPLY; break 2; }
     done
-    if jq -e '.exit_code != 0 or .stdout != "" or .stderr != ""' <<<"$outcome" >/dev/null; then
+    if (( exit_code != 0 || capture[2] + capture[3] != 0 )); then
       sf_hook_result "$lifecycle" "$id" "$name" "$command" "$input_json" \
         "$render" "$outcome" || {
         error="hook script returned invalid result: $command"
@@ -129,11 +133,13 @@ sf_run_hooks() {
       clear=$(jq -c 'del(.user_text)' <<<"$activity") || { error='cannot prepare hook clear'; break; }
       sf_run_emit "$clear" || { error='cannot emit hook clear'; break; }
     fi
-    sf_run_hook_control "$lifecycle" "$outcome" || {
-      error="$lifecycle hook returned invalid control: $command"
-      break
-    }
-    control=$REPLY
+    if (( exit_code != 0 || capture[2] + capture[3] + capture[4] != 0 )); then
+      sf_run_hook_control "$lifecycle" "$outcome" || {
+        error="$lifecycle hook returned invalid control: $command"
+        break
+      }
+      control=$REPLY
+    fi
     case $exit_code in
       0) ;;
       10)
@@ -172,12 +178,7 @@ sf_run_hooks() {
     SF_RUN_HOOK_ERROR=$error
     return 1
   fi
-  REPLY=$(jq -cn --arg decision "$decision" --arg action "$action" \
-    --arg reason "$reason" --argjson argv "$action_argv" --argjson patch "${patch:-null}" '
-      {decision:$decision} +
-      (if $action == "" then {} else {action:$action} end) +
-      (if $reason == "" then {} else {reason:$reason} end) +
-      (if $action == "handoff" then {argv:$argv}
-       elif $action == "session_update" then {patch:$patch} else {} end)
-    ')
+  reply=( "$decision" "$action" "$reason" )
+  [[ $action != handoff ]] || reply+=( "$action_argv" )
+  [[ $action != session_update ]] || reply+=( "$patch" )
 }

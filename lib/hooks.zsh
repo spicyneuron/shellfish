@@ -56,7 +56,7 @@ sf_hook_result() {
     ' 2>/dev/null)
 }
 
-# Run one hook command and return its captured channels plus decoded state.
+# Return the decoded outcome in REPLY and capture metadata in reply.
 sf_hook_invoke() {
   setopt local_options no_err_exit
   local session=$1 runtime=$2 component=$3 cwd=$4 input=$5 lifecycle=$6 turn_state=$7
@@ -151,5 +151,6 @@ sf_hook_invoke() {
     return
   }
   rm -rf -- "$directory"
+  reply=( "$process[1]" "$process[3]" "$process[4]" "$process[5]" )
   (( ! process[2] )) || return $process[1]
 }
