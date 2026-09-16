@@ -119,7 +119,7 @@ typeset handoff_script="$tmp/handoff"
 mkdir "$handoff_script"
 cat >"$handoff_script/run" <<'ZSH'
 #!/usr/bin/env zsh
-[[ $1 == user_prompt_submit ]] || exit 1
+(( $# == 0 )) || exit 1
 print -rn -u3 -- '{"action":"handoff","argv":["/usr/bin/printf","next.jsonl"]}'
 exit 11
 ZSH

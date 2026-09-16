@@ -14,7 +14,7 @@ emulate -R zsh
 setopt no_aliases no_multios pipe_fail
 typeset submitted=''
 integer read_status
-[[ $1 == user_prompt_submit ]] || exit 1
+(( $# == 0 )) || exit 1
 IFS= read -r submitted
 read_status=$?
 [[ "$read_status:$submitted" == '1:/switch' ]] || exit 0
@@ -26,7 +26,7 @@ exit 11
 """
 
 SLOW_HOOK = r"""#!/usr/bin/env zsh
-[[ $1 == user_prompt_submit ]] || exit 1
+(( $# == 0 )) || exit 1
 typeset directory=${SHELLFISH_SESSION:h}
 : >"$directory/hook-started"
 while [[ ! -e $directory/hook-release ]]; do
@@ -36,7 +36,7 @@ done
 """
 
 DISPLAY_HOOK = r"""#!/usr/bin/env zsh
-[[ $1 == user_prompt_submit ]] || exit 1
+(( $# == 0 )) || exit 1
 integer line
 for (( line = 1; line <= 24; line++ )); do
   print -u2 -- "display line $line"

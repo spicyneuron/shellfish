@@ -10,7 +10,7 @@ typeset prompt_hook="$tmp/prompt-hook" second_hook="$tmp/second-hook"
 typeset prompt_input="$tmp/prompt-input" second_marker="$tmp/second-ran"
 cat >"$prompt_hook" <<'ZSH'
 #!/usr/bin/env zsh
-[[ $1 == user_prompt_submit && $SHELLFISH_TURN_ID == <1-> &&
+[[ $# == 0 && $SHELLFISH_TURN_ID == <1-> &&
   -d $SHELLFISH_TURN_STATE ]] || exit 2
 cat >"$PROMPT_INPUT"
 case $(<"$PROMPT_INPUT") in
@@ -153,9 +153,9 @@ print -r -- '{"type":"_assistant_end","stop":"end"}'
 ZSH
 cat >"$stop_hook" <<'ZSH'
 #!/usr/bin/env zsh
-[[ $1 == stop && $2 == <1-> ]] || exit 2
+[[ $# == 1 && $1 == <1-> ]] || exit 2
 cat >"$STOP_INPUT"
-if [[ $2 == 1 ]]; then
+if [[ $1 == 1 ]]; then
   print -rn -- 'continue context'
   print -rn -u2 -- 'checking again'
   exit 10

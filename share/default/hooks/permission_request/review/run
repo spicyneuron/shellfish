@@ -44,19 +44,15 @@ permission_resolve() {
   exit 11
 }
 
-[[ $1 == permission_request && $# == 1 ]] || permission_deny 'Permission review received an invalid invocation.'
+[[ $# == 2 ]] || permission_deny 'Permission review received an invalid invocation.'
 [[ -r $SHELLFISH_SESSION && -d $SHELLFISH_TURN_STATE ]] ||
   permission_deny 'Permission review could not read the active turn.'
 
 request=$(cat; printf x)
 request=${request%x}
-request=$(jq -ce --argjson turn "$SHELLFISH_TURN_ID" '
-  select(type == "object" and keys == ["tool","turn_id"] and
-    .turn_id == $turn and
-    (.tool | keys == ["id","input","name"] and
-      (.name | type == "string" and test("^[A-Za-z_][A-Za-z0-9_-]*$")) and
-      (.id | type == "string" and test("^[A-Za-z0-9_-]+$")) and
-      (.input | type == "object")))
+request=$(jq -ce --argjson turn "$SHELLFISH_TURN_ID" --arg name "$1" --arg id "$2" '
+  select(type == "object" and (.tool_input | type == "object")) |
+  {turn_id:$turn,tool:{name:$name,id:$id,input:.tool_input}}
 ' <<<"$request" 2>/dev/null) || permission_deny 'Permission review received an invalid tool request.'
 state_name=$(jq -r --argjson turn "$SHELLFISH_TURN_ID" '
   "permissions/\($turn)/\(.tool.id)"

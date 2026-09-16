@@ -21,7 +21,7 @@ from _session import ROWS, COLUMNS, Session, run  # noqa: E402
 WORDS = [f"w{index:03d}" for index in range(1, 201)]
 SESSION_FIXTURE = Path(__file__).resolve().parents[1] / "fixtures/session/complete.jsonl"
 QUEUE_HOOK = r"""#!/usr/bin/env zsh
-[[ $1 == user_prompt_submit ]] || exit 1
+(( $# == 0 )) || exit 1
 IFS= read -r prompt
 [[ $prompt == alpha ]] || exit 0
 : >"${SHELLFISH_SESSION:h}/queue-ready"

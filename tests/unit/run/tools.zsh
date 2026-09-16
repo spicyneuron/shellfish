@@ -97,6 +97,7 @@ assert_canonical_session "$session"
 typeset permission="$tmp/permission" permission_input="$tmp/permission-input"
 cat >"$permission" <<'ZSH'
 #!/usr/bin/env zsh
+[[ $# == 2 && $1 == shell && $2 == call_1 ]] || exit 2
 input=$(cat)
 print -rn -- "$input" >"$PERMISSION_INPUT"
 print -rn -u3 -- '{"state":[{"name":"permission/state","value":true}],"action":"allow"}'

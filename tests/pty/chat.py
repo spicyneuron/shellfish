@@ -20,14 +20,14 @@ from _session import APP, COLUMNS, ROWS, Session, run  # noqa: E402
 
 
 ECHO_HOOK = r"""#!/usr/bin/env zsh
-[[ $1 == user_prompt_submit ]] || exit 1
+(( $# == 0 )) || exit 1
 cat >"${SHELLFISH_SESSION:h}/submitted"
 print -u2 accepted
 exit 10
 """
 
 HOLD_PERMISSION_HOOK = r"""#!/usr/bin/env zsh
-[[ $1 == user_prompt_submit ]] || exit 1
+(( $# == 0 )) || exit 1
 : >"${SHELLFISH_SESSION:h}/permission-ready"
 while [[ ! -e ${SHELLFISH_SESSION:h}/permission-release ]]; do sleep 0.02; done
 """

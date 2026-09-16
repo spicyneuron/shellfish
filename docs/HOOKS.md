@@ -66,7 +66,7 @@ Selectors run before the component and retain configured order. A command select
 
 ## The hook script contract
 
-Scripts run from the session working directory. `$1` is the hook name. Remaining arguments and stdin are hook-specific. Shellfish exports:
+Scripts run from the session working directory. Arguments and stdin are hook-specific. Shellfish exports:
 
 | Variable | Meaning |
 | --- | --- |
@@ -136,7 +136,7 @@ A response envelope adds the committed result:
 
 Runs once after the session header and optional system record are created.
 
-- **argv:** `session_start`
+- **argv:** none
 - **stdin:** empty
 - **fd 3:** state
 - **Exit 0:** finish creation
@@ -146,7 +146,7 @@ Runs once after the session header and optional system record are created.
 
 Runs before the user record is committed.
 
-- **argv:** `user_prompt_submit`
+- **argv:** none
 - **stdin:** exact submitted prompt
 - **fd 3:** state, and with exit 11, `{"action":"handoff","argv":[...]}` containing a complete command or `{"action":"session_update","patch":{...}}`
 - **Exit 0:** submit the literal prompt
@@ -159,7 +159,7 @@ Valid output remains durable when submission is blocked. A handoff is only a req
 
 Runs when a tool requests a supported sandbox bypass. This decision is separate from the `pre_tool_use` policy gate.
 
-- **argv:** `permission_request`
+- **argv:** `TOOL_NAME TOOL_USE_ID`
 - **stdin:** tool request envelope
 - **fd 3:** state, and with exit 11, `{"action":"allow"}` or `{"action":"deny","reason":"..."}`
 - **Exit 0:** defer to an interactive client, or deny if none can answer
@@ -170,7 +170,7 @@ Runs when a tool requests a supported sandbox bypass. This decision is separate 
 
 Runs immediately before a tool.
 
-- **argv:** `pre_tool_use`
+- **argv:** `TOOL_NAME TOOL_USE_ID`
 - **stdin:** tool request envelope
 - **fd 3:** state
 - **Exit 0:** execute the tool
@@ -183,7 +183,7 @@ This hook can observe and gate input but cannot rewrite it or approve a sandbox 
 
 Runs after the tool completes but before its result is committed, including when the tool exits nonzero.
 
-- **argv:** `post_tool_use`
+- **argv:** `TOOL_NAME TOOL_USE_ID`
 - **stdin:** tool response envelope
 - **fd 3:** state
 - **Exit 0:** continue the tool loop
@@ -195,7 +195,7 @@ This hook cannot replace the tool outcome. Its state and hook result are committ
 
 Runs after a completed assistant record.
 
-- **argv:** `stop STOP_ATTEMPT`, with a one-based attempt count
+- **argv:** `STOP_ATTEMPT`, with a one-based attempt count
 - **stdin:** text blocks from the final assistant message, concatenated in content order
 - **fd 3:** state
 - **Exit 0:** finish the turn

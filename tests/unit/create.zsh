@@ -83,7 +83,7 @@ typeset hook="$tmp/failing-hook" hook_config="$tmp/hook.jsonc"
 mkdir "$hook"
 cat >"$hook/run" <<'ZSH'
 #!/usr/bin/env zsh
-[[ $1 == session_start && -z ${SHELLFISH_TURN_STATE-} ]] || exit 2
+[[ $# == 0 && -z ${SHELLFISH_TURN_STATE-} ]] || exit 2
 print -u2 -r -- 'startup detail'
 exit 9
 ZSH

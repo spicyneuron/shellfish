@@ -96,7 +96,7 @@ sf_hook_invoke() {
   }
   arguments=()
   for selected in $SF_ENVIRONMENT_NAMES; do arguments+=( -u "$selected" ); done
-  arguments+=( "${SF_ENVIRONMENT_VALUES[@]}" "$command" "$lifecycle" "$@" )
+  arguments+=( "${SF_ENVIRONMENT_VALUES[@]}" "$command" "$@" )
   environment=(
     "SHELLFISH_SESSION=${session:A}"
     "SHELLFISH_MAX_CAPTURE_BYTES=$max_capture"
