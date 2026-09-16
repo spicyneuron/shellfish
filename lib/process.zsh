@@ -7,6 +7,7 @@ typeset -g SF_PROCESS_ERROR=''
 sf_process_fail() {
   SF_PROCESS_ERROR=$1
   REPLY=''
+  reply=()
   return 1
 }
 
@@ -78,7 +79,8 @@ sf_process_stop() {
       kill -0 "$pid" 2>/dev/null; do
     sleep 0.01
   done
-  [[ -z $group_file ]] || read -r group <"$group_file" 2>/dev/null || group=0
+  [[ -z $group_file || ! -r $group_file ]] ||
+    read -r group <"$group_file" 2>/dev/null || group=0
   if (( group > 0 )); then
     kill -TERM -- -$group 2>/dev/null || true
     kill -CONT -- -$group 2>/dev/null || true
@@ -117,16 +119,19 @@ sf_process_capture_stream() {
 
 sf_process_run() {
   setopt local_options local_traps no_err_exit no_monitor
-  local input=$1 capture=${2:A} decoded executable stdin working sandbox_executable
+  local capture=${1:A} working=$2 input=$3
+  integer max_capture=$4
+  shift 4
   local stdout="$capture/stdout" stderr="$capture/stderr" control="$capture/control"
   local stdout_pipe="$stdout.pipe" stderr_pipe="$stderr.pipe" control_pipe="$control.pipe"
   local group_file="$capture/process.group" status_file="$capture/process.status"
-  local -a fields arguments environment sandbox_arguments command process_command readers
-  integer argument_count environment_count sandbox_count index max_capture limit
+  local -a command=( "$@" ) process_command readers
+  integer limit stdout_bytes stderr_bytes control_bytes
   integer process_pid=0 process_status=1 reader reader_status=0 signal_status=0 complete=0
 
   SF_PROCESS_ERROR=''
   REPLY=''
+  reply=()
   [[ -d $capture && ! -L $capture ]] || {
     sf_process_fail 'invalid process capture directory'
     return
@@ -135,76 +140,14 @@ sf_process_run() {
     sf_process_fail 'process capture directory is not empty'
     return
   }
-  decoded=$(jq -jre '
-    def path: type == "string" and startswith("/") and (index("\u0000") | not);
-    def strings: type == "array" and all(.[]; type == "string" and (index("\u0000") | not));
-    def environment: strings and all(.[]; test("^[A-Za-z_][A-Za-z0-9_]*="));
-    def field: ., "\u0000";
-    select(type == "object" and
-      keys == ["arguments","cwd","environment","executable","max_capture_bytes","sandbox","stdin"] and
-      (.executable | path) and (.stdin | path) and (.cwd | path) and
-      (.arguments | strings) and (.environment | environment) and
-      (.max_capture_bytes | type == "number" and floor == . and . > 0) and
-      (.sandbox == null or (.sandbox | type == "object" and
-        keys == ["arguments","executable"] and (.executable | path) and (.arguments | strings)))) |
-    (.executable | field), (.stdin | field), (.cwd | field),
-    (.max_capture_bytes | tostring | field),
-    (.arguments | length | tostring | field), (.arguments[] | field),
-    (.environment | length | tostring | field), (.environment[] | field),
-    ((.sandbox.executable // "") | field),
-    ((.sandbox.arguments // []) | length | tostring | field),
-    ((.sandbox.arguments // [])[] | field), ("ok" | field)
-  ' <<<"$input" 2>/dev/null) || {
-    sf_process_fail 'invalid process request'
-    return
-  }
-  fields=( "${(@0)${decoded%$'\0'}}" )
-  (( ${#fields} >= 8 )) && [[ $fields[-1] == ok ]] || {
-    sf_process_fail 'invalid process request'
-    return
-  }
-  executable=$fields[1]
-  stdin=$fields[2]
-  working=$fields[3]
-  max_capture=$fields[4]
-  argument_count=$fields[5]
-  index=6
-  arguments=( "${fields[@]:$(( index - 1 )):$argument_count}" )
-  (( index += argument_count ))
-  (( index <= ${#fields} )) || {
-    sf_process_fail 'invalid process request'
-    return
-  }
-  environment_count=$fields[index]
-  (( index += 1 ))
-  environment=( "${fields[@]:$(( index - 1 )):$environment_count}" )
-  (( index += environment_count ))
-  (( index + 2 <= ${#fields} )) || {
-    sf_process_fail 'invalid process request'
-    return
-  }
-  sandbox_executable=$fields[index]
-  sandbox_count=$fields[index+1]
-  (( index += 2 ))
-  sandbox_arguments=( "${fields[@]:$(( index - 1 )):$sandbox_count}" )
-  (( index + sandbox_count == ${#fields} )) || {
-    sf_process_fail 'invalid process request'
-    return
-  }
-  [[ -f $executable && -x $executable && -f $stdin && -r $stdin &&
-      -d $working && -x $working ]] || {
-    sf_process_fail 'process request is unavailable'
-    return
-  }
-  [[ -z $sandbox_executable || ( -f $sandbox_executable && -x $sandbox_executable ) ]] || {
-    sf_process_fail 'process sandbox is unavailable'
+  [[ -f $input && -r $input && -d $working && -x $working &&
+      ${#command} -gt 0 && $command[1] == /* && -f $command[1] && -x $command[1] &&
+      $max_capture -gt 0 ]] || {
+    sf_process_fail 'process invocation is unavailable'
     return
   }
 
-  command=( /usr/bin/env -- "${environment[@]}" "$executable" "${arguments[@]}" )
-  [[ -z $sandbox_executable ]] ||
-    command=( "$sandbox_executable" "${sandbox_arguments[@]}" -- "${command[@]}" )
-  sf_process_isolated_command "$group_file" "$status_file" "$working" "$stdin" \
+  sf_process_isolated_command "$group_file" "$status_file" "$working" "$input" \
     "$stdout_pipe" "$stderr_pipe" "$control_pipe" "${command[@]}" || {
     sf_process_fail 'cannot isolate process'
     return
@@ -242,21 +185,14 @@ sf_process_run() {
       sf_process_fail 'cannot capture process output'
       return
     }
-    REPLY=$(jq -cn --arg stdout "$stdout" --arg stderr "$stderr" --arg control "$control" \
-      --argjson exit_code "$process_status" --argjson signal_status "$signal_status" \
-      --argjson max "$max_capture" \
-      --argjson stdout_bytes "$(wc -c <"$stdout")" \
-      --argjson stderr_bytes "$(wc -c <"$stderr")" \
-      --argjson control_bytes "$(wc -c <"$control")" '
-        def channel($path; $bytes):
-          {path:$path,bytes:$bytes,overflow:($bytes > $max)};
-        {exit_code:$exit_code,interrupted:($signal_status != 0),
-         stdout:channel($stdout;$stdout_bytes),stderr:channel($stderr;$stderr_bytes),
-         control:channel($control;$control_bytes)}
-      ') || {
-      sf_process_fail 'cannot prepare process result'
+    stdout_bytes=$(wc -c <"$stdout") && stderr_bytes=$(wc -c <"$stderr") &&
+      control_bytes=$(wc -c <"$control") || {
+      sf_process_fail 'cannot inspect process capture'
       return
     }
+    # Exit status, interrupted flag, then stdout, stderr, and control byte counts.
+    reply=( $process_status $(( signal_status != 0 )) $stdout_bytes $stderr_bytes $control_bytes )
+    REPLY=''
     complete=1
   } always {
     trap - INT USR1 HUP TERM

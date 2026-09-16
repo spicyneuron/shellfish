@@ -92,8 +92,8 @@ sf_run_cancel() {
 
 sf_run_context_window() {
   local session=$1 request=$2 command=$3 selected=$4 max_capture=$5
-  local directory input args_json env_json process_request result output window patch event name
-  local -a arguments environment
+  local directory input output window patch event name
+  local -a arguments process
   sf_environment_prepare "$SF_SESSION[runtime]" "$selected" || return 1
   sf_scratch_create backends context || return 1
   directory=$REPLY
@@ -102,21 +102,12 @@ sf_run_context_window() {
   arguments=()
   for name in $SF_ENVIRONMENT_NAMES; do arguments+=( -u "$name" ); done
   arguments+=( "${SF_ENVIRONMENT_VALUES[@]}" "$command" )
-  args_json=$(jq -cn '$ARGS.positional' --args -- "${arguments[@]}") || {
-    rm -rf -- "$directory" "$input"
-    return 1
-  }
-  env_json='[]'
-  process_request=$(jq -cn --argjson arguments "$args_json" --argjson environment "$env_json" \
-    --arg cwd "$PWD" --arg stdin "${input:A}" --argjson max "$max_capture" '
-      {arguments:$arguments,cwd:$cwd,environment:$environment,executable:"/usr/bin/env",
-       max_capture_bytes:$max,sandbox:null,stdin:$stdin}
-    ') || { rm -rf -- "$directory" "$input"; return 1; }
-  if sf_process_run "$process_request" "$directory"; then
-    result=$REPLY
-    if jq -e '.interrupted' <<<"$result" >/dev/null; then
-      SF_RUN[signal_status]=$(jq -r '.exit_code' <<<"$result")
-    elif jq -e '.exit_code == 0' <<<"$result" >/dev/null; then
+  if sf_process_run "$directory" "$PWD" "${input:A}" "$max_capture" \
+      /usr/bin/env "${arguments[@]}"; then
+    process=( "${reply[@]}" )
+    if (( process[2] )); then
+      SF_RUN[signal_status]=$process[1]
+    elif (( process[1] == 0 )); then
       output=$(<"$directory/stdout")
       window=$(sf_jq -ser '
         include "lib/runtime/schema";

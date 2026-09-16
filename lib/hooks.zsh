@@ -60,10 +60,8 @@ sf_hook_invoke() {
   setopt local_options no_err_exit
   local session=$1 runtime=$2 component=$3 cwd=$4 input=$5 lifecycle=$6 turn_state=$7
   shift 7
-  local command selected max_capture config_dir='' directory request result projected
-  local args_json env_json control_error=''
-  local -a selected_names arguments environment fields
-  integer total interrupted
+  local command selected max_capture config_dir='' directory projected control_error=''
+  local -a arguments environment fields process
 
   SF_HOOK_ERROR=''
   projected=$(jq -jrn --argjson runtime "$runtime" --argjson component "$component" '
@@ -94,9 +92,8 @@ sf_hook_invoke() {
     sf_hook_fail "$SF_ENVIRONMENT_ERROR"
     return
   }
-  selected_names=( $SF_ENVIRONMENT_NAMES )
   arguments=()
-  for selected in $selected_names; do arguments+=( -u "$selected" ); done
+  for selected in $SF_ENVIRONMENT_NAMES; do arguments+=( -u "$selected" ); done
   arguments+=( "${SF_ENVIRONMENT_VALUES[@]}" "$command" "$lifecycle" "$@" )
   environment=(
     "SHELLFISH_SESSION=${session:A}"
@@ -117,37 +114,17 @@ sf_hook_invoke() {
     return
   }
   directory=$REPLY
-  args_json=$(jq -cn '$ARGS.positional' --args -- "${arguments[@]}") || {
-    rm -rf -- "$directory"
-    sf_hook_fail 'cannot prepare hook request'
-    return
-  }
-  env_json=$(jq -cn '$ARGS.positional' --args -- "${environment[@]}") || {
-    rm -rf -- "$directory"
-    sf_hook_fail 'cannot prepare hook request'
-    return
-  }
-  request=$(jq -cn --argjson arguments "$args_json" --argjson environment "$env_json" \
-    --arg cwd "${cwd:A}" --arg stdin "${input:A}" --argjson max "$max_capture" '
-      {arguments:$arguments,cwd:$cwd,environment:$environment,
-       executable:"/usr/bin/env",max_capture_bytes:$max,sandbox:null,stdin:$stdin}
-    ') || {
-    rm -rf -- "$directory"
-    sf_hook_fail 'cannot prepare hook request'
-    return
-  }
-  if ! sf_process_run "$request" "$directory"; then
+  if ! sf_process_run "$directory" "${cwd:A}" "${input:A}" "$max_capture" \
+      /usr/bin/env -- "${environment[@]}" /usr/bin/env "${arguments[@]}"; then
     rm -rf -- "$directory"
     sf_hook_fail "$SF_PROCESS_ERROR"
     return
   fi
-  result=$REPLY
-  interrupted=$(jq -r '.interrupted | if . then 1 else 0 end' <<<"$result") || interrupted=0
-  total=$(jq '[.stdout.bytes,.stderr.bytes,.control.bytes] | add' <<<"$result") || total=$(( max_capture + 1 ))
-  if (( total > max_capture )); then
+  process=( "${reply[@]}" )
+  if (( process[3] + process[4] + process[5] > max_capture )); then
     control_error='hook output exceeds capture limit'
   fi
-  REPLY=$(sf_jq -cn --argjson process "$result" \
+  REPLY=$(sf_jq -cn --argjson exit_code "$process[1]" --argjson interrupted "$process[2]" \
     --rawfile stdout "$directory/stdout" --rawfile stderr "$directory/stderr" \
     --slurpfile controls "$directory/control" --arg control_error "$control_error" '
       include "lib/session/read";
@@ -161,7 +138,7 @@ sf_hook_invoke() {
             ({type:"state"} + . | canonical_state))
         else true end) | not then "invalid state control"
        else $control_error end) as $error |
-      {exit_code:$process.exit_code,interrupted:$process.interrupted,
+      {exit_code:$exit_code,interrupted:($interrupted != 0),
        stdout:$stdout,stderr:$stderr,
        states:(if $error == "" then [$control.state[]? | {type:"state"} + .] else [] end),
        control:(if $error == "" then ($control | del(.state)) else {} end)} +
@@ -172,5 +149,5 @@ sf_hook_invoke() {
     return
   }
   rm -rf -- "$directory"
-  (( ! interrupted )) || return $(jq -r '.exit_code' <<<"$result")
+  (( ! process[2] )) || return $process[1]
 }

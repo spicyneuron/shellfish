@@ -105,11 +105,11 @@ sf_run_tool_bound() {
 sf_run_tool_execute() {
   setopt local_options no_err_exit
   local session=$1 runtime=$2 component=$3 input=$4 tool_directory
-  local command selected settings cwd fence capture stdin request result control
-  local stdout stderr bounded_stdout bounded_stderr args_json env_json sandbox_json output
-  local config_dir='' env_file execution_input state_projection='' signal_code
-  local -a arguments environment names states
-  integer max_capture control_bytes budget stderr_bytes interrupted
+  local command selected settings cwd fence capture stdin
+  local bounded_stdout bounded_stderr output
+  local config_dir='' env_file execution_input state_projection=''
+  local -a arguments environment names states process_command process
+  integer max_capture control_bytes budget stderr_bytes
 
   tool_directory=$5
   SF_RUN_TOOL_ERROR=''
@@ -149,8 +149,6 @@ sf_run_tool_execute() {
   arguments=()
   for selected in $names; do arguments+=( -u "$selected" ); done
   arguments+=( "${environment[@]}" "$command" )
-  environment=()
-  sandbox_json=null
   if jq -e '.harness.sandbox' <<<"$runtime" >/dev/null &&
       jq -e '.manifest.sandbox' <<<"$component" >/dev/null &&
       [[ $(jq -r '.request_sandbox_bypass // false' <<<"$input") != true ]]; then
@@ -165,37 +163,27 @@ sf_run_tool_execute() {
     for expose in ${(f)$(jq -r '.harness.sandbox_write_paths[]' <<<"$runtime")}; do
       sandbox_arguments+=( --expose-host-path-rw "$expose" )
     done
-    args_json=$(jq -cn '$ARGS.positional' --args -- "${sandbox_arguments[@]}") || return 1
-    sandbox_json=$(jq -cn --arg executable "$fence" --argjson arguments "$args_json" \
-      '{executable:$executable,arguments:$arguments}') || return 1
+    process_command=( "$fence" "${sandbox_arguments[@]}" -- /usr/bin/env "${arguments[@]}" )
+  else
+    process_command=( /usr/bin/env "${arguments[@]}" )
   fi
-  args_json=$(jq -cn '$ARGS.positional' --args -- "${arguments[@]}") || return 1
-  env_json='[]'
-  request=$(jq -cn --argjson arguments "$args_json" --argjson environment "$env_json" \
-    --arg cwd "${cwd:A}" --arg stdin "${stdin:A}" --argjson max "$max_capture" \
-    --argjson sandbox "$sandbox_json" '
-      {arguments:$arguments,cwd:$cwd,environment:$environment,
-       executable:"/usr/bin/env",max_capture_bytes:$max,sandbox:$sandbox,stdin:$stdin}
-    ') || return 1
-  if ! sf_process_run "$request" "$capture"; then
+  if ! sf_process_run "$capture" "${cwd:A}" "${stdin:A}" "$max_capture" \
+      "${process_command[@]}"; then
     SF_RUN_TOOL_ERROR=$SF_PROCESS_ERROR
     return 1
   fi
-  result=$REPLY
-  interrupted=$(jq -r '.interrupted | if . then 1 else 0 end' <<<"$result") || interrupted=0
-  if (( interrupted )); then
-    signal_code=$(jq -r '.exit_code' <<<"$result")
-    return $signal_code
+  process=( "${reply[@]}" )
+  if (( process[2] )); then
+    return $process[1]
   fi
-  control="$capture/control"
-  control_bytes=$(wc -c <"$control") || control_bytes=$(( max_capture + 1 ))
+  control_bytes=$process[5]
   (( control_bytes <= max_capture )) || {
     SF_RUN_TOOL_ERROR='tool control data exceeds capture limit'
     return 1
   }
   states=()
   if (( control_bytes )); then
-    sf_state_control_decode "$control" || {
+    sf_state_control_decode "$capture/control" || {
       SF_RUN_TOOL_ERROR='tool returned invalid control data'
       return 1
     }
@@ -212,7 +200,7 @@ sf_run_tool_execute() {
   stderr_bytes=$(wc -c <"$bounded_stderr") || return 1
   sf_run_tool_bound "$capture/stdout" "$bounded_stdout" $(( budget - stderr_bytes )) || return 1
   output=$(jq -cn --rawfile stdout "$bounded_stdout" --rawfile stderr "$bounded_stderr" \
-    --argjson exit_code "$(jq -r '.exit_code' <<<"$result")" \
+    --argjson exit_code "$process[1]" \
     '{stdout:$stdout,stderr:$stderr,exit_code:$exit_code}') || return 1
   state_projection=$(printf '%s\n' "${states[@]}" | jq -sc '.') || return 1
   REPLY=$(jq -cn --argjson output "$output" --argjson states "$state_projection" \
