@@ -67,8 +67,7 @@ func newTestServer(t *testing.T, sessionPath, script string) string {
 	t.Helper()
 	binary := fakeShellfish(t, script)
 	turns, cancelTurns := context.WithCancel(context.Background())
-	service, err := New(sessionPath, testAccessCode,
-		NewExec(turns, binary, sessionPath))
+	service, err := New(testAccessCode, NewExec(turns, binary, sessionPath))
 	if err != nil {
 		cancelTurns()
 		t.Fatal(err)
@@ -177,32 +176,6 @@ func waitFor(path string) string {
 	return "while [ ! -f '" + path + "' ]; do sleep 0.02; done\n"
 }
 
-func TestReadTranscriptRequiresJSONLines(t *testing.T) {
-	header := strings.TrimSuffix(headerLine(t), "\n")
-	path := filepath.Join(t.TempDir(), "session.jsonl")
-	read := func(content string) ([]json.RawMessage, error) {
-		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
-			t.Fatal(err)
-		}
-		return readTranscript(path)
-	}
-	records, err := read(header + "\n" + userRecord + "\n" + `{"type":`)
-	if err != nil || len(records) != 2 {
-		t.Fatalf("complete records = %d, error = %v", len(records), err)
-	}
-	invalid := []string{
-		header + "\n \n" + userRecord + "\n",
-		header + "\n{\n}\n",
-		header + "\n[]\n",
-		"\u00a0" + header + "\n",
-	}
-	for _, content := range invalid {
-		if _, err := read(content); err == nil {
-			t.Fatalf("readTranscript accepted %q", content)
-		}
-	}
-}
-
 func TestUnauthorized(t *testing.T) {
 	base := newTestServer(t, newSession(t, ""), "")
 	for _, path := range []string{"/session", "/turn", "/cancel", "/permission"} {
@@ -255,33 +228,28 @@ func TestPublicAssets(t *testing.T) {
 	}
 }
 
-func TestNewRejectsInvalidSessionHeader(t *testing.T) {
-	cwd := workDir(t)
-	tests := []struct {
-		name      string
-		header    map[string]any
-		wantError string
-	}{
-		{"record type", map[string]any{"type": "message", "format_version": 1, "cwd": cwd}, "unsupported session header"},
-		{"format version", map[string]any{"type": "session", "format_version": 2, "cwd": cwd}, "unsupported session header"},
-		{"working directory", map[string]any{"type": "session", "format_version": 1, "cwd": t.TempDir()}, "session belongs to"},
+// Whether a session is canonical is load's to decide. The server refuses a
+// session belonging to another directory, and passes on load's own refusal.
+func TestNewRefusesUnservableSession(t *testing.T) {
+	record, err := json.Marshal(map[string]any{
+		"type": "session", "format_version": 1, "cwd": t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
 	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			record, err := json.Marshal(test.header)
-			if err != nil {
-				t.Fatal(err)
-			}
-			path := filepath.Join(t.TempDir(), "session.jsonl")
-			if err := os.WriteFile(path, append(record, '\n'), 0o600); err != nil {
-				t.Fatal(err)
-			}
-			_, err = New(path, testAccessCode, nil)
-			if err == nil || !strings.Contains(err.Error(), test.wantError) {
-				t.Fatalf("error = %v, want containing %q", err, test.wantError)
-			}
-		})
+	path := filepath.Join(t.TempDir(), "session.jsonl")
+	if err := os.WriteFile(path, append(record, '\n'), 0o600); err != nil {
+		t.Fatal(err)
 	}
+	open := func(sessionPath, wantError string) {
+		t.Helper()
+		_, err := New(testAccessCode,
+			NewExec(context.Background(), fakeShellfish(t, ""), sessionPath))
+		if err == nil || !strings.Contains(err.Error(), wantError) {
+			t.Fatalf("error = %v, want containing %q", err, wantError)
+		}
+	}
+	open(path, "session belongs to")
+	open(filepath.Join(t.TempDir(), "missing.jsonl"), "load session")
 }
 
 // A connection replays the durable session, closes it with a session-status
@@ -411,7 +379,7 @@ func TestDrainCancelsPendingPermission(t *testing.T) {
 	turns, cancelTurns := context.WithCancel(context.Background())
 	defer cancelTurns()
 	sessionPath := newSession(t, "")
-	service, err := New(sessionPath, testAccessCode, NewExec(turns,
+	service, err := New(testAccessCode, NewExec(turns,
 		fakeShellfish(t, "IFS= read -r input\nprintf '%s\\n' '"+permissionRequest+"'\nIFS= read -r response\n"),
 		sessionPath))
 	if err != nil {
@@ -442,7 +410,7 @@ func TestFirstSignalBoundsShutdownDrain(t *testing.T) {
 	turns, killTurn := context.WithCancel(context.Background())
 	defer killTurn()
 	sessionPath := newSession(t, "")
-	service, err := New(sessionPath, testAccessCode, NewExec(turns,
+	service, err := New(testAccessCode, NewExec(turns,
 		fakeShellfish(t, "trap 'exit 130' USR1\nIFS= read -r input\nprintf ready >'"+ready+"'\nwhile :; do sleep 0.05; done\n"),
 		sessionPath))
 	if err != nil {

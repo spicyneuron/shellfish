@@ -24,9 +24,6 @@ const maxEventBytes = 1 << 20
 // by reopening the stream.
 const clientQueue = 256
 
-// Mirrors the format version lib/session/main.zsh writes into a session header.
-const sessionFormatVersion = 1
-
 // Proxies in front of the service cut idle connections, and a silent turn can
 // outlast their timeouts.
 var keepaliveInterval = 20 * time.Second
@@ -42,10 +39,9 @@ var errStreamSettling = errors.New("session file is ahead of the stream")
 // transcript belongs to exec and its presentation to the browser. The service
 // distinguishes framing and whether a durable error settled a failed child.
 type Service struct {
-	sessionPath string
-	accessCode  string
-	header      sessionHeader
-	exec        *Exec
+	accessCode string
+	header     sessionHeader
+	exec       *Exec
 
 	mu     sync.Mutex
 	client chan json.RawMessage
@@ -73,10 +69,8 @@ type turn struct {
 }
 
 type sessionHeader struct {
-	Type          string `json:"type"`
-	FormatVersion int    `json:"format_version"`
-	Cwd           string `json:"cwd"`
-	Harness       struct {
+	Cwd     string `json:"cwd"`
+	Harness struct {
 		Sandbox bool `json:"sandbox"`
 		Tools   []struct {
 			Name string `json:"name"`
@@ -84,8 +78,8 @@ type sessionHeader struct {
 	} `json:"harness"`
 }
 
-func New(sessionPath, accessCode string, exec *Exec) (*Service, error) {
-	records, err := readTranscript(sessionPath)
+func New(accessCode string, exec *Exec) (*Service, error) {
+	records, err := exec.Load()
 	if err != nil {
 		return nil, err
 	}
@@ -93,16 +87,16 @@ func New(sessionPath, accessCode string, exec *Exec) (*Service, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Service{sessionPath: sessionPath, accessCode: accessCode, header: header,
-		exec: exec, recordCount: len(records)}, nil
+	return &Service{accessCode: accessCode, header: header, exec: exec,
+		recordCount: len(records)}, nil
 }
 
-// checkHeader refuses an unsupported session or one from another directory.
+// checkHeader refuses a session from another directory. Load has already
+// accepted the header as canonical; this reads what the server itself needs.
 func checkHeader(record json.RawMessage) (sessionHeader, error) {
 	var header sessionHeader
-	if err := json.Unmarshal(record, &header); err != nil ||
-		header.Type != "session" || header.FormatVersion != sessionFormatVersion {
-		return sessionHeader{}, errors.New("unsupported session header")
+	if err := json.Unmarshal(record, &header); err != nil {
+		return sessionHeader{}, fmt.Errorf("read session header: %w", err)
 	}
 	cwd, err := os.Getwd()
 	if err == nil {
@@ -210,7 +204,7 @@ func (s *Service) attach() (chan json.RawMessage, []json.RawMessage, error) {
 	if s.client != nil {
 		return nil, nil, errClientAttached
 	}
-	records, err := readTranscript(s.sessionPath)
+	records, err := s.exec.Load()
 	if err != nil {
 		return nil, nil, err
 	}
@@ -431,34 +425,6 @@ func sessionStatusFrame(working bool, failure string) json.RawMessage {
 		Error   string `json:"error,omitempty"`
 	}{Type: "_session_status", Working: working, Error: failure})
 	return frame
-}
-
-func readTranscript(path string) ([]json.RawMessage, error) {
-	body, err := os.ReadFile(path)
-	if err != nil {
-		return nil, fmt.Errorf("open session: %w", err)
-	}
-	// One record per line, so a trailing fragment is a record a killed writer never
-	// finished. The service reads only and must not repair it; the records before it
-	// are the session, and the next writer discards the rest.
-	if end := bytes.LastIndexByte(body, '\n'); end < 0 {
-		body = nil
-	} else {
-		body = body[:end]
-	}
-	if len(body) == 0 {
-		return nil, errors.New("session transcript is empty")
-	}
-	lines := bytes.Split(body, []byte{'\n'})
-	records := make([]json.RawMessage, 0, len(lines))
-	for _, line := range lines {
-		record := bytes.Trim(line, " \t\r")
-		if len(record) <= 1 || record[0] != '{' || !json.Valid(record) {
-			return nil, errors.New("invalid session transcript")
-		}
-		records = append(records, bytes.Clone(record))
-	}
-	return records, nil
 }
 
 // compactObject bounds one JSON object and reduces it to the single line an SSE

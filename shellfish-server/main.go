@@ -156,7 +156,7 @@ func serve(session, bind, binary string) error {
 	// not drain.
 	turns, killTurn := context.WithCancel(context.Background())
 	defer killTurn()
-	service, err := New(sessionPath, accessCode, NewExec(turns, binaryPath, sessionPath))
+	service, err := New(accessCode, NewExec(turns, binaryPath, sessionPath))
 	if err != nil {
 		return err
 	}

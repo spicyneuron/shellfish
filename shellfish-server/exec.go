@@ -36,6 +36,33 @@ func NewExec(ctx context.Context, binary, session string) *Exec {
 	return &Exec{ctx: ctx, binary: binary, session: session}
 }
 
+// Load returns the durable records of the session. Validation, an interrupted
+// append's trailing fragment, and canonical meaning all belong to shellfish
+// load. The transient path event it opens with is dropped here.
+func (e *Exec) Load() ([]json.RawMessage, error) {
+	child := exec.CommandContext(e.ctx, e.binary, "load", "--session", e.session)
+	diagnostics := &tailBuffer{limit: maxDiagnosticBytes}
+	child.Stderr = diagnostics
+	output, err := child.Output()
+	if err != nil {
+		return nil, fmt.Errorf("load session: %w%s", err, diagnostics.suffix())
+	}
+	lines := bytes.Split(bytes.TrimSuffix(output, []byte{'\n'}), []byte{'\n'})
+	var opening struct {
+		Type string `json:"type"`
+	}
+	// The path event and the header are the shortest stream load can produce.
+	if len(lines) < 2 || json.Unmarshal(lines[0], &opening) != nil ||
+		opening.Type != "_session_load" {
+		return nil, errors.New("load did not open with a session path")
+	}
+	records := make([]json.RawMessage, 0, len(lines)-1)
+	for _, line := range lines[1:] {
+		records = append(records, line)
+	}
+	return records, nil
+}
+
 func (e *Exec) Run(ctx context.Context, input json.RawMessage, replies <-chan json.RawMessage, emit func(json.RawMessage)) error {
 	ctx, cancel := context.WithCancel(ctx)
 	stop := context.AfterFunc(e.ctx, cancel)

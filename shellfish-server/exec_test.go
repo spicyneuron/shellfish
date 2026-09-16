@@ -14,11 +14,20 @@ import (
 	"time"
 )
 
-// fakeShellfish installs a stand-in for the shellfish executable.
+// loadStub answers shellfish load with the session file as it stands, so a test
+// session holds whatever records the test finds useful.
+const loadStub = `if [ "$1" = load ]; then
+  printf '{"type":"_session_load","path":"%s"}\n' "$3"
+  exec cat "$3"
+fi
+`
+
+// fakeShellfish installs a stand-in for the shellfish executable. Only turns
+// reach the given script; load is answered before it.
 func fakeShellfish(t *testing.T, script string) string {
 	t.Helper()
 	binary := filepath.Join(t.TempDir(), "shellfish")
-	if err := os.WriteFile(binary, []byte("#!/bin/sh\n"+script), 0o700); err != nil {
+	if err := os.WriteFile(binary, []byte("#!/bin/sh\n"+loadStub+script), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	return binary
