@@ -1,12 +1,10 @@
 emulate -R zsh
 setopt no_aliases no_bg_nice no_multios pipe_fail
 
-(( $+functions[sf_jq] )) || source "$SF_ROOT/lib/jq.zsh"
 (( $+functions[sf_process_stop] )) || source "$SF_ROOT/lib/process.zsh"
 (( $+functions[sf_scratch_file] )) || source "$SF_ROOT/lib/scratch.zsh"
 
 typeset -ga SF_TUI_TRANSPORT_COMMAND=() SF_TUI_TRANSPORT_LINES=()
-typeset -ga SF_TUI_TRANSPORT_EVENTS=()
 typeset -g SF_TUI_TRANSPORT_PID='' SF_TUI_TRANSPORT_INPUT_FD=''
 typeset -g SF_TUI_TRANSPORT_OUTPUT_FD='' SF_TUI_TRANSPORT_ERROR_FILE=''
 typeset -gi SF_TUI_TRANSPORT_EOF=0 SF_TUI_TRANSPORT_EXIT_STATUS=0
@@ -14,7 +12,6 @@ typeset -g SF_TUI_TRANSPORT_EXIT_DETAIL='' SF_TUI_TRANSPORT_ERROR=''
 
 sf_tui_transport_reset() {
   SF_TUI_TRANSPORT_LINES=()
-  SF_TUI_TRANSPORT_EVENTS=()
   SF_TUI_TRANSPORT_EOF=0
   SF_TUI_TRANSPORT_EXIT_STATUS=0
   SF_TUI_TRANSPORT_EXIT_DETAIL=''
@@ -22,7 +19,7 @@ sf_tui_transport_reset() {
 }
 
 sf_tui_transport_has_pending() {
-  (( ${#SF_TUI_TRANSPORT_EVENTS} || ${#SF_TUI_TRANSPORT_LINES} ))
+  (( ${#SF_TUI_TRANSPORT_LINES} ))
 }
 
 sf_tui_transport_is_complete() {
@@ -151,34 +148,6 @@ sf_tui_transport_read() {
     sf_tui_transport_close || true
     SF_TUI_TRANSPORT_EOF=1
   fi
-}
-
-# Returns 0 for an event, 1 when empty, and 2 for malformed output.
-sf_tui_transport_next() {
-  local runtime=${1:-null} events
-  local -a decoded fields
-  integer complete=0 index
-
-  if (( ! ${#SF_TUI_TRANSPORT_EVENTS} )); then
-    (( ${#SF_TUI_TRANSPORT_LINES} )) || return 1
-    events=$(printf '%s\n' "${SF_TUI_TRANSPORT_LINES[@]}" |
-      sf_jq -jRs --argjson runtime "$runtime" \
-        -f "$SF_ROOT/libexec/tui/event-decode.jq" 2>/dev/null) || events=''
-    SF_TUI_TRANSPORT_LINES=()
-    fields=( "${(@0)${events%$'\0'}}" )
-    for (( index = 1; index + 6 <= ${#fields}; index += 7 )); do
-      if [[ $fields[index] == batch_ok ]]; then
-        complete=1
-      else
-        decoded+=( "${(@)fields[index,index + 6]}" )
-      fi
-    done
-    (( complete )) || return 2
-    SF_TUI_TRANSPORT_EVENTS+=( "${decoded[@]}" )
-    (( ${#SF_TUI_TRANSPORT_EVENTS} )) || return 1
-  fi
-  reply=( "${(@)SF_TUI_TRANSPORT_EVENTS[1,7]}" )
-  SF_TUI_TRANSPORT_EVENTS=( "${(@)SF_TUI_TRANSPORT_EVENTS[8,-1]}" )
 }
 
 sf_tui_transport_result() {

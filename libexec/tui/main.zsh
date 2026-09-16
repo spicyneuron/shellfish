@@ -123,16 +123,13 @@ sf_tui_main() {
   fi
   if [[ ! -t 1 ]]; then sf_die 'chat requires an interactive terminal'; return 2; fi
 
-  integer startup_status=0 config_status=0
+  integer config_status=0
   if [[ -n $requested_session ]]; then
-    source "$SF_ROOT/lib/session/startup.zsh"
-    sf_session_open "$requested_session" "$override" \
-      "${runtime_args[@]}" || startup_status=$?
-    if (( startup_status )); then
-      [[ -z $SF_SESSION_STARTUP_ERROR ]] || sf_die "$SF_SESSION_STARTUP_ERROR"
-      return $startup_status
-    fi
-    session=$SF_SESSION_OPEN[path]
+    (( ! override )) || {
+      sf_die 'options that configure a new session cannot be used with an existing one'
+      return 2
+    }
+    session=$requested_session
     session_mode=resume
     presentation_args=( --session-from "$session" "${presentation_args[@]}" )
   fi

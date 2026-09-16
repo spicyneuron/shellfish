@@ -1,10 +1,8 @@
 #!/usr/bin/env zsh
 
 source "${0:A:h:h:h}/_helpers.zsh"
-sf_test_source libexec/tui/render/formatters.zsh libexec/tui/render/highlights.zsh \
+sf_test_source libexec/tui/render/highlights.zsh \
   libexec/tui/render/text.zsh libexec/tui/render/wrap.zsh \
-  libexec/tui/render/messages.zsh libexec/tui/render/notices.zsh \
-  libexec/tui/render/execution.zsh \
   libexec/tui/render/terminal.zsh libexec/tui/render/view.zsh \
   libexec/tui/transport.zsh libexec/tui/editor.zsh libexec/tui/controller.zsh
 
@@ -17,11 +15,9 @@ typeset -g SF_PRESENT_STATE=idle
 typeset -g SF_PRESENT_FOOTER=test/model
 typeset -gi COLUMNS=80 LINES=10
 typeset -ga ZLE_CALLS=()
-typeset -gi ZLE_FAIL_INVALIDATE=0
 zle() {
   ZLE_CALL="$*"
   ZLE_CALLS+=( "$*" )
-  [[ $1 != -I ]] || (( ! ZLE_FAIL_INVALIDATE )) || return 1
 }
 sf_tui_answer_permission() {
   assert_equal approve "$1"
@@ -179,61 +175,6 @@ sf_tui_bind
 [[ $(bindkey -M sf-present $'\e') == *sf_tui_escape ]]
 [[ $(bindkey -M sf-permission a) == *sf_tui_insert ]]
 [[ $(bindkey -M sf-permission d) == *sf_tui_insert ]]
-
-# Stop after render failure.
-typeset saved_repaint=$functions[sf_tui_repaint]
-typeset -gi failed_repaints=0
-sf_tui_repaint() {
-  (( ++failed_repaints ))
-  SF_PRESENT_SAFE_ROWS=3
-  return 1
-}
-sf_tui_reset
-sf_tui_terminal_reset
-sf_tui_event assistant_message_delta 0 before
-SF_PRESENT_SESSION=/tmp/stopped.jsonl
-SF_PRESENT_STATE=working
-SF_TUI_TRANSPORT_EVENTS=( assistant_message_delta 0 after '' '' '' '' )
-SF_TUI_TRANSPORT_EOF=0
-KEYS_QUEUED_COUNT=0
-PENDING=0
-ZLE_CALLS=()
-sf_tui_heartbeat_tick
-assert_equal 1 "$failed_repaints"
-assert_equal 0 "$SF_PRESENT_SAFE_ROWS"
-assert_equal 0 "$SF_PRESENT_PENDING_ROWS"
-assert_equal stopped "$SF_PRESENT_STATE"
-assert_equal 'cannot render chat' "$SF_PRESENT_ERROR"
-[[ $PREDISPLAY == *'cannot render chat'* ]] ||
-  fail 'the stopped view did not report the render failure'
-[[ $PREDISPLAY == *'/refresh'* && $PREDISPLAY == *'/quit'* ]] ||
-  fail 'the stopped view did not say which prompts it accepts'
-BUFFER=/refresh
-CURSOR=8
-sf_tui_pre_redraw
-assert_equal /refresh "$BUFFER"
-assert_equal 8 "$CURSOR"
-BUFFER=''
-CURSOR=0
-sf_tui_pre_redraw
-sf_tui_line_init
-sf_tui_heartbeat_tick
-assert_equal 1 "$failed_repaints"
-functions[sf_tui_repaint]=$saved_repaint
-SF_PRESENT_STATE=idle
-SF_PRESENT_ERROR=''
-
-# Preserve settled rows when a terminal commit fails.
-sf_tui_reset
-sf_tui_terminal_reset
-sf_tui_event user retained
-SF_PRESENT_STATE=working
-ZLE_FAIL_INVALIDATE=1
-sf_tui_heartbeat_tick
-ZLE_FAIL_INVALIDATE=0
-assert_equal stopped "$SF_PRESENT_STATE"
-[[ ${(F)SF_PRESENT_ROW_TEXT} == *retained* ]] ||
-  fail 'failed terminal commit lost settled rows'
 
 # Stop when a submitted prompt cannot be staged.
 typeset saved_stage=$functions[sf_tui_terminal_stage]

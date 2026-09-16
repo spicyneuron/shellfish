@@ -1,66 +1,35 @@
 emulate -R zsh
 setopt no_aliases no_bg_nice no_multios pipe_fail
 
+typeset -g SF_PRESENT_ERROR=''
+typeset -g SF_PRESENT_RUNTIME='null'
+typeset -g SF_PRESENT_IDENTITY='' SF_PRESENT_FOOTER=''
+
 # Chrome spans cover the full display; viewport spans start at PREDISPLAY.
 typeset -ga SF_PRESENT_CHROME_HIGHLIGHTS=()
 typeset -g SF_PRESENT_VIEWPORT_TEXT=''
 typeset -ga SF_PRESENT_VIEWPORT_HIGHLIGHTS=()
+# Rows remain here until committed to terminal scrollback.
+typeset -ga SF_PRESENT_ROW_TEXT=() SF_PRESENT_ROW_SPANS=()
+typeset -ga SF_PRESENT_ROW_READY=()
+typeset -gi SF_PRESENT_ROW_HEAD=1
 typeset -ga SF_PRESENT_LIVE_ROW_TEXT=() SF_PRESENT_LIVE_ROW_SPANS=()
 
-# Final entries settle; the live tail retains only mutable source.
-sf_tui_rows_prepare() {
-  integer columns=$1 row safe source leading body_rows final index
+sf_tui_reset() {
+  SF_PRESENT_ROW_TEXT=()
+  SF_PRESENT_ROW_SPANS=()
+  SF_PRESENT_ROW_READY=()
+  SF_PRESENT_ROW_HEAD=1
   SF_PRESENT_LIVE_ROW_TEXT=()
   SF_PRESENT_LIVE_ROW_SPANS=()
-  final=$(( SF_PRESENT_LIVE ? SF_PRESENT_LIVE - 1 : ${#SF_PRESENT_KIND} ))
-  for (( index = 1; index <= final; index++ )); do
-    sf_tui_format_entry $index $columns || return 1
-    sf_tui_rows_append ${#SF_FORMAT_ROWS} $SF_FORMAT_LEADING
-  done
-  (( ! final )) || sf_tui_formatter_drop $final || return 1
-  (( SF_PRESENT_LIVE )) || return 0
-
-  sf_tui_format_entry 1 $columns || return 1
-  safe=$SF_FORMAT_SAFE
-  (( safe >= SF_FORMAT_LEADING )) || safe=0
-  if (( safe )); then
-    sf_tui_rows_append $safe $SF_FORMAT_LEADING
-    SF_PRESENT_EMITTED[1]=1
-    source=0
-    for (( row = 1; row <= safe; row++ )); do
-      source=$(( source + ${SF_FORMAT_CONSUMED[row]:-0} ))
-    done
-    leading=$(( SF_FORMAT_LEADING > 0 ))
-    body_rows=$(( safe > SF_FORMAT_LEADING ? safe - SF_FORMAT_LEADING : 0 ))
-    (( body_rows <= SF_FORMAT_BODY_ROWS )) || body_rows=$SF_FORMAT_BODY_ROWS
-    sf_tui_formatter_advance $source $leading $body_rows || return 1
-  fi
-  for (( row = safe + 1; row <= ${#SF_FORMAT_ROWS}; row++ )); do
-    SF_PRESENT_LIVE_ROW_TEXT+=( "$SF_FORMAT_ROWS[row]" )
-    SF_PRESENT_LIVE_ROW_SPANS+=( "$SF_FORMAT_SPANS[row]" )
-  done
 }
 
-sf_tui_format_entry() {
-  integer index=$1 columns=$2
-  case $SF_PRESENT_KIND[index] in
-    message) sf_tui_format_message $index $columns ;;
-    reasoning) sf_tui_format_reasoning $index $columns ;;
-    activity|hook|error)
-      sf_tui_format_notice $index $columns ;;
-    execution) sf_tui_format_execution_block $index $columns ;;
-    *) return 1 ;;
-  esac
-}
+sf_tui_footer_usage() { SF_PRESENT_FOOTER="${SF_PRESENT_IDENTITY} · $1"; }
 
-# READY prevents committing role chrome without its content.
-sf_tui_rows_append() {
-  integer count=$1 leading=$2 row
-  for (( row = 1; row <= count; row++ )); do
-    SF_PRESENT_ROW_TEXT+=( "$SF_FORMAT_ROWS[row]" )
-    SF_PRESENT_ROW_SPANS+=( "$SF_FORMAT_SPANS[row]" )
-    SF_PRESENT_ROW_READY+=( $(( ! leading || row >= leading )) )
-  done
+sf_tui_session_update() {
+  SF_PRESENT_RUNTIME=$1
+  SF_PRESENT_IDENTITY=$(jq -r '.backend.name + "/" + .profile.request.model' <<<"$1")
+  SF_PRESENT_FOOTER=$SF_PRESENT_IDENTITY
 }
 
 sf_tui_rows_consume() {
@@ -89,7 +58,6 @@ sf_tui_transcript() {
   SF_PRESENT_SAFE_TEXT=''
   SF_PRESENT_SAFE_HIGHLIGHTS=()
   SF_PRESENT_SAFE_ROWS=0
-  sf_tui_rows_prepare $columns || return 1
   stable=$(( ${#SF_PRESENT_ROW_TEXT} - SF_PRESENT_ROW_HEAD + 1 ))
   (( stable > 0 )) || stable=0
   take=$(( stable < budget ? stable : budget ))

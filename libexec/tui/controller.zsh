@@ -81,7 +81,6 @@ sf_tui_submit() {
   [[ $SF_PRESENT_STATE == idle && -n $submitted ]] || return 0
   SF_PRESENT_SUBMITTED=$submitted
   sf_tui_record_prompt "$submitted"
-  sf_tui_event user "$submitted" || return 1
   REPLY=submit
 }
 
@@ -109,80 +108,6 @@ sf_tui_cancel() {
   esac
 }
 
-sf_tui_decoded() {
-  local type=$1 first=${2-} second=${3-} third=${4-} fourth=${5-} fifth=${6-} sixth=${7-}
-  local encoded preview reason
-  [[ $type == error ]] || SF_PRESENT_ERROR_SETTLED=0
-  # Before creation, accept only creation-stream events.
-  [[ -n $SF_PRESENT_SESSION ||
-      $type == (hook_call|hook_result|error|session_created) ]] ||
-    return 1
-  case $type in
-      session_created)
-        [[ -z $SF_PRESENT_SESSION ]] || return 1
-        SF_PRESENT_SESSION=$first
-        SF_TUI_TRANSPORT_COMMAND=( "$SF_ENTRY" run --jsonl --session "$first" )
-        ;;
-      assistant_start|assistant_message_delta|assistant_reasoning_delta| \
-      assistant_reasoning_opaque|assistant_tool_call_delta|assistant_end| \
-      tool_call|tool_result|hook_call|hook_result)
-        sf_tui_event "$type" "$first" "$second" "$third" "$fourth" "$fifth" "$sixth" || return 1
-        ;;
-      turn_usage)
-        sf_tui_footer_usage "$first"
-        [[ -z $second ]] || sf_tui_event reasoning_tokens "$second" || return 1
-        ;;
-      error)
-        sf_tui_event error "$first" "$second" "$third" || return 1
-        [[ $third != end ]] || SF_PRESENT_ERROR_SETTLED=1
-        ;;
-      permission_request)
-        [[ $SF_PRESENT_STATE == working && -z $SF_PRESENT_PERMISSION_ID ]] || return 1
-        SF_PRESENT_PERMISSION_ID=$first
-        sf_tui_safe "$second"
-        SF_PRESENT_PERMISSION_TOOL=$REPLY
-        sf_tui_safe "$third"
-        preview=$REPLY
-        sf_tui_safe "$fourth"
-        reason=$REPLY
-        SF_PRESENT_PERMISSION_TEXT="$preview"$'\n\nReason: '"$reason"
-        SF_PRESENT_PERMISSION_LANGUAGE=$fifth
-        SF_PRESENT_PERMISSION_PREVIEW_LENGTH=${#preview}
-        sf_tui_editor_permission open
-        SF_PRESENT_STATE=permission
-        sf_tui_event tool_permission || return 1
-        ;;
-      handoff)
-        (( ! ${#SF_PRESENT_HANDOFF} )) || return 1
-        encoded=$(jq -j '.[] | ., "\u0000"' <<<"$first") || return 1
-        SF_PRESENT_HANDOFF=( "${(@0)${encoded%$'\0'}}" )
-        ;;
-      session_update)
-        sf_tui_session_update "$first"
-        ;;
-      *) return 1 ;;
-  esac
-}
-
-sf_tui_pending_next() {
-  integer transport_status=0
-
-  sf_tui_transport_next "${SF_PRESENT_RUNTIME:-null}" || transport_status=$?
-  case $transport_status in
-    0)
-      if sf_tui_decoded "${reply[@]}"; then
-        return 0
-      fi
-      ;;
-    1) return 0 ;;
-  esac
-  # Reload is the only recovery from invalid live output.
-  sf_tui_transport_stop
-  sf_tui_discard_queue
-  sf_tui_stop 'exec sent invalid JSONL'
-  return 0
-}
-
 sf_tui_exec_finish() {
   local heading detail exit_detail
   integer exit_status cancelled=0 settled_error=$SF_PRESENT_ERROR_SETTLED
@@ -195,7 +120,6 @@ sf_tui_exec_finish() {
     exit_detail='Create did not confirm session creation.'
   fi
   [[ $SF_PRESENT_STATE != cancelling ]] || cancelled=1
-  sf_tui_event activity_stop || return 1
   if (( exit_status || cancelled )); then
     if (( settled_error )); then
       heading=''
@@ -232,7 +156,6 @@ sf_tui_exec_finish() {
     sf_tui_permission_reset
     sf_tui_editor_permission discard
     SF_PRESENT_STATE=idle
-    [[ -z $heading ]] || sf_tui_event error "$heading" "$detail" || return 1
   else
     SF_PRESENT_STATE=idle
     sf_tui_permission_reset
@@ -244,7 +167,6 @@ sf_tui_exec_finish() {
       SF_PRESENT_QUEUE=( "${(@)SF_PRESENT_QUEUE[2,-1]}" )
       if ! sf_tui_client_command "$SF_PRESENT_SUBMITTED"; then
         SF_PRESENT_STATE=queued
-        sf_tui_event user "$SF_PRESENT_SUBMITTED" || return 1
       fi
     fi
   fi
@@ -266,7 +188,6 @@ sf_tui_turn() {
   SF_PRESENT_ACTIVITY_FRAME=0
   SF_PRESENT_ACTIVITY=${SF_PRESENT_ACTIVITY_FRAMES[1]}
   SF_PRESENT_STATE=working
-  sf_tui_event activity_start || { SF_PRESENT_STATE=idle; return 1; }
   if ! sf_tui_transport_start "$input" sf_tui_exec_ready; then
     SF_PRESENT_STATE=idle
     SF_PRESENT_ERROR=$SF_TUI_TRANSPORT_ERROR
@@ -285,7 +206,6 @@ sf_tui_answer_permission() {
     return 1
   fi
   sf_tui_permission_reset
-  sf_tui_event tool_permission_clear || return 1
   sf_tui_editor_permission restore
   SF_PRESENT_STATE=working
 }
@@ -293,7 +213,7 @@ sf_tui_answer_permission() {
 sf_tui_controller() {
   local session=$1 presentation=${2:-\{\}} initial=${3-}
   local session_mode=${4:-resume} draft=${5-}
-  local input=$draft saved_tty editor_error system
+  local input=$draft saved_tty editor_error
   integer exit_status=0 editor_status=0
 
   SF_PRESENT_SESSION=$session
@@ -306,7 +226,7 @@ sf_tui_controller() {
   zmodload zsh/zle || { SF_PRESENT_ERROR='cannot load ZLE'; return 1; }
   bindkey -e
   sf_tui_bind
-  # Configure formatters before replay creates content.
+  # Configure presentation before any content arrives.
   sf_tui_rows_config "$presentation" || {
     SF_PRESENT_ERROR='cannot read presentation configuration'
     return 1
@@ -321,18 +241,6 @@ sf_tui_controller() {
       SF_PRESENT_ERROR=$SF_TUI_TRANSPORT_ERROR
       return 1
     }
-    sf_tui_transport_read "$SF_TUI_TRANSPORT_OUTPUT_FD" || return 1
-    if ! sf_tui_transport_next null || [[ $reply[1] != session_prepare ]]; then
-      SF_PRESENT_ERROR=${SF_TUI_TRANSPORT_EXIT_DETAIL:-'Create did not prepare a session.'}
-      return 1
-    fi
-    system=$reply[3]
-    sf_tui_reset
-    sf_tui_session_update "$reply[2]"
-    [[ -z $system ]] || sf_tui_event system "$system" || return 1
-    sf_tui_event activity_start || return 1
-  else
-    sf_tui_reload "$session" || return 1
   fi
   sf_tui_chat_start "$session_mode" "$session" || {
     SF_PRESENT_ERROR='cannot render startup banner'
@@ -346,7 +254,6 @@ sf_tui_controller() {
     if [[ $SF_PRESENT_STATE == working ]]; then
       SF_PRESENT_QUEUE=( "$initial" )
     else
-      sf_tui_event user "$initial" || return 1
       sf_tui_turn "$initial" || return 1
     fi
   fi
