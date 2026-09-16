@@ -20,7 +20,9 @@ cached_tokens=$(( input_tokens * 85 / 100 ))
 [[ -z ${SF_TEST_BACKEND_REQUEST-} ]] || print -r -- "$request" >"$SF_TEST_BACKEND_REQUEST"
 decoded=$(jq -rj '
   ([.messages[] | select(.type == "user") |
-    [.content[] | select(.type == "text") | .text] | join("")] | last // "") as $text |
+    [.content[] | select(.type == "text") | .text] | join("") |
+    # Session start context is harness noise, not part of the prompt.
+    sub("(?s)<hook name=\"session_start\">.*?</hook>\n*"; "")] | last // "") as $text |
   $text, "\u0000",
   ([$text | scan("\\b(?:tool|TOOL)\\b")] | length | tostring), "\u0000",
   (if ($text | test("\\b(?:delay|DELAY)\\b")) then "1" else "0" end), "\u0000",
