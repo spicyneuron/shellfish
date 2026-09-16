@@ -315,7 +315,6 @@ sf_tui_controller() {
   local session=$1 presentation=${2:-\{\}} initial=${3-}
   local session_mode=${4:-resume} draft=${5-}
   local input=$draft saved_tty editor_error
-  local -a runtime
   integer exit_status=0 editor_status=0
 
   SF_PRESENT_SESSION=$session
@@ -353,10 +352,6 @@ sf_tui_controller() {
     SF_PRESENT_ERROR='cannot render startup banner'
     return 1
   }
-  runtime=( "${(@f)$(jq -r '.backend.name + "/" + .profile.request.model,
-    (.profile.context_window // "")' <<<"$presentation")}" ) || return 1
-  sf_tui_action runtime "$runtime[1]" "$runtime[2]" || return 1
-  SF_PRESENT_CONTEXT_WINDOW=$runtime[2]
   [[ $session_mode == startup ]] || sf_tui_load "$session" || return 1
   PROMPT=''
   saved_tty=$(stty -g 2>/dev/null) || return 1

@@ -129,15 +129,12 @@ sf_run_main() {
       '{type:"user",content:[{type:"text",text:$text}]}') || return 1
   fi
 
-  source "$SF_ROOT/lib/session/startup.zsh"
-  sf_session_open "$requested_session" "$override" "${create_args[@]}"
+  source "$SF_ROOT/libexec/run/startup.zsh"
+  sf_run_open_session "$requested_session" "$override" "${create_args[@]}"
   local open_status=$?
-  if (( open_status )); then
-    [[ -z $SF_SESSION_STARTUP_ERROR ]] || sf_die "$SF_SESSION_STARTUP_ERROR"
-    return $open_status
-  fi
+  (( ! open_status )) || return $open_status
 
-  local session=$SF_SESSION_OPEN[path]
+  local session=$REPLY
   source "$SF_ROOT/libexec/run/turn.zsh"
   SF_RUN[jsonl]=$jsonl
   typeset -gx SHELLFISH_MODE=run

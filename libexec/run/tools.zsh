@@ -3,7 +3,7 @@ setopt no_aliases no_bg_nice no_multios pipe_fail
 
 (( $+functions[sf_environment_prepare] )) || source "$SF_ROOT/lib/environment.zsh"
 (( $+functions[sf_process_run] )) || source "$SF_ROOT/lib/process.zsh"
-(( $+functions[sf_state_control_decode] )) || source "$SF_ROOT/lib/state.zsh"
+(( $+functions[sf_jq] )) || source "$SF_ROOT/lib/jq.zsh"
 
 typeset -g SF_RUN_TOOL_ERROR=''
 
@@ -102,6 +102,41 @@ sf_run_tool_bound() {
   fi
 }
 
+# Return remaining control in REPLY and canonical state records in reply.
+sf_run_control_decode() {
+  local capture=$1 control output
+  REPLY=''
+  reply=()
+
+  control=$(jq -cse '
+    if length == 1 and (.[0] | type == "object") then .[0]
+    else error("expected one object") end
+  ' "$capture" 2>/dev/null) || {
+    REPLY=malformed
+    return 1
+  }
+  output=$(sf_jq -jnre --argjson control "$control" '
+    include "lib/session/read";
+    def field: ., "\u0000";
+    if $control | if has("state") then
+        .state | type == "array" and all(.[];
+          type == "object" and keys == ["name", "value"] and
+          ({type:"state"} + . | canonical_state))
+      else true end
+    then
+      ($control |
+        if has("state") then
+          del(.state) | if length == 0 then "" else tojson end
+        else tojson end | field),
+      ($control.state[]? | {type:"state"} + . | tojson | field)
+    else error("invalid state control") end
+  ' 2>/dev/null) || {
+    REPLY=state
+    return 1
+  }
+  reply=( "${(@0)${output%$'\0'}}" )
+}
+
 sf_run_tool_execute() {
   setopt local_options no_err_exit
   local session=$1 runtime=$2 component=$3 input=$4 tool_directory
@@ -183,7 +218,7 @@ sf_run_tool_execute() {
   }
   states=()
   if (( control_bytes )); then
-    sf_state_control_decode "$capture/control" || {
+    sf_run_control_decode "$capture/control" || {
       SF_RUN_TOOL_ERROR='tool returned invalid control data'
       return 1
     }
