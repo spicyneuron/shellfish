@@ -38,14 +38,11 @@ zsh -f "$entry" create --jsonl --config "$config" --session-out "$session" \
 [[ ! -s $input ]] || fail 'session_start hook received nonempty stdin'
 jq -eRn --arg session "$session" --arg executable "${hook:A}/run" '
   [inputs | fromjson] as $events |
-  ($events[0] | .type == "_hook_activity" and .hook == "session_start" and
+  ($events[2] | .type == "_hook_activity" and .hook == "session_start" and
     .user_text == "Starting up") and
-  # Live activity clears before the finished session arrives through load.
-  ($events[1] | has("user_text") | not) and
   [$events[] | .type] ==
-    ["_hook_activity","_hook_activity","_session_load","session","state",
-     "hook_result"] and
-  ($events[2] == {type:"_session_load",path:$session}) and
+    ["_session_load","session","_hook_activity","state","hook_result"] and
+  ($events[0] == {type:"_session_load",path:$session}) and
   ($events[-1] | del(.id)) == {
     type:"hook_result",lifecycle:"session_start",name:"start",input:"",
     executable:$executable,exit_code:0,
@@ -70,8 +67,8 @@ zsh -f "$entry" create --jsonl --config "$config" --session-out "$session" \
   >"$stream" || fail 'silent session_start hook failed'
 jq -eRn --arg executable "${hook:A}/run" '
   [inputs | fromjson] as $events |
-  [$events[].type] == ["_hook_activity","_hook_activity","_session_load","session"] and
-  ($events[1] | del(.id)) ==
+  [$events[].type] == ["_session_load","session","_hook_activity","_hook_activity"] and
+  ($events[3] | del(.id)) ==
     {type:"_hook_activity",hook:"session_start",name:"start",input:"",
      executable:$executable}
 ' <"$stream" >/dev/null ||
@@ -95,10 +92,11 @@ ZSH
     >"$stream" 2>"$tmp/unsupported.stderr" || create_status=$?
   (( create_status == 1 )) || fail "session_start accepted status $unsupported"
   [[ -f $session ]] || fail 'failed session_start removed the transcript it wrote'
-  jq -eRn '
+  jq -eRn --arg session "$session" '
     [inputs | fromjson] as $events |
-    [$events[].type] == ["_hook_activity","_hook_activity"]
-  ' <"$stream" >/dev/null || fail 'failed creation published a session'
+    [$events[].type] == ["_session_load","session","_hook_activity","hook_result"] and
+    $events[0] == {type:"_session_load",path:$session}
+  ' <"$stream" >/dev/null || fail 'failed creation lost its ordered durable stream'
   jq -e -s '.[-1].type == "hook_result" and .[-1].exit_code != 0' \
     "$session" >/dev/null || fail 'failed startup result was not durable'
   [[ $(<"$tmp/unsupported.stderr") == *'unsupported status'*'unsupported display'* ]] ||

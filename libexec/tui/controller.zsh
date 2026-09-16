@@ -229,6 +229,8 @@ sf_tui_exec_finish() {
         detail+=$REPLY
       fi
     fi
+    # A creation path is provisional until its process succeeds.
+    (( ! creating )) || SF_PRESENT_SESSION=''
     if [[ -z $SF_PRESENT_SESSION ]]; then
       sf_tui_stop "$heading" "$detail"
       return 0

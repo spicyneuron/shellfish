@@ -114,8 +114,8 @@ def test_startup_cancellation_retains_the_transcript():
             session.wait_after(0, "Inspecting slow_start")
             session.send(b"\x03")
             session.wait_after(0, "Cancelled.")
-            # Cancelled creation never published a session, so the client stops
-            # instead of offering one, while the written prefix stays on disk.
+            # The creation path remains provisional, so cancellation stops the
+            # client without offering it while the written prefix stays on disk.
             assert "Submit /quit to leave." in session.visible(), session.visible()
             assert session.explicit_session.exists()
             _, records = session.wait_session_records(

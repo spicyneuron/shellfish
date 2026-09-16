@@ -272,21 +272,32 @@ assert_equal "$SF_ENTRY --clear --session $tmp/recover.jsonl" \
 SF_PRESENT_ACTION=''
 SF_PRESENT_HANDOFF=()
 
-# Creation queues prompts until load names the session.
+# Creation names the session and renders its system context before live hooks.
 sf_tui_reset
 sf_tui_terminal_reset
+SF_TUI_PROJECT_MODE=live
 SF_PRESENT_SESSION=''
 SF_PRESENT_STATE=working
 SF_PRESENT_QUEUE=()
 sf_tui_submit early
 assert_equal repaint "$REPLY"
 assert_equal early "${(j:,:)SF_PRESENT_QUEUE}"
-pump '{"type":"_hook_activity","hook":"session_start","id":"1","name":"setup","input":"","user_text":"setup · working"}'
+pump "$(jq -cn --arg path "$tmp/new.jsonl" '{type:"_session_load",path:$path}')" \
+  '{"type":"session","backend":{"name":"test"},"profile":{"request":{"model":"model"}}}' \
+  '{"type":"system","content":"instructions"}' \
+  '{"type":"_hook_activity","hook":"session_start","id":"1","name":"setup","input":"","user_text":"setup · working"}'
 assert_equal working "$SF_PRESENT_STATE"
-pump "$(jq -cn --arg path "$tmp/new.jsonl" '{type:"_session_load",path:$path}')"
 assert_equal "$tmp/new.jsonl" "$SF_PRESENT_SESSION"
 assert_equal "$SF_ENTRY run --jsonl --session $tmp/new.jsonl" \
   "${(j: :)SF_TUI_TRANSPORT_COMMAND}"
+sf_tui_transcript 79 20
+[[ $SF_PRESENT_VIEWPORT_TEXT == *instructions*'setup · working'* ]] ||
+  fail 'startup did not render system context before live hook activity'
+pump '{"type":"hook_result","lifecycle":"session_start","id":"1","name":"setup","input":"","exit_code":0,"user_text":"setup · ready"}'
+sf_tui_transcript 79 20
+[[ $SF_PRESENT_VIEWPORT_TEXT == *instructions*'setup · ready'* &&
+    $SF_PRESENT_VIEWPORT_TEXT != *'setup · working'* ]] ||
+  fail 'startup hook activity did not settle in place'
 SF_TUI_TRANSPORT_EOF=1
 SF_TUI_TRANSPORT_EXIT_STATUS=0
 sf_tui_exec_finish
@@ -299,6 +310,7 @@ for code in 0 9; do
   sf_tui_reset
   sf_tui_terminal_reset
   SF_PRESENT_SESSION=''
+  (( ! code )) || SF_PRESENT_SESSION="$tmp/failed.jsonl"
   SF_PRESENT_CREATING=1
   SF_PRESENT_STATE=working
   SF_PRESENT_QUEUE=()
@@ -309,6 +321,7 @@ for code in 0 9; do
   assert_equal stopped "$SF_PRESENT_STATE"
   [[ $SF_PRESENT_ERROR == 'Session creation failed.'* ]] ||
     fail "creation failure reported $SF_PRESENT_ERROR"
+  assert_equal '' "$SF_PRESENT_SESSION"
   [[ $POSTDISPLAY != *'[r]'* ]] || fail 'refresh was offered without a session'
 done
 
