@@ -81,7 +81,15 @@ sf_tui_submit() {
   [[ $SF_PRESENT_STATE == idle && -n $submitted ]] || return 0
   SF_PRESENT_SUBMITTED=$submitted
   sf_tui_record_prompt "$submitted"
+  sf_tui_prompt_message "$submitted" || return 1
   REPLY=submit
+}
+
+# A submitted prompt is shown locally; its durable record repeats nothing.
+sf_tui_prompt_message() {
+  sf_tui_action message_start user &&
+    sf_tui_action message_delta 0 text "$1" '' &&
+    sf_tui_action message_end
 }
 
 sf_tui_cancel() {
@@ -108,6 +116,75 @@ sf_tui_cancel() {
   esac
 }
 
+# Workflow actions stay here; everything else is presentation. A settled error
+# ends the turn, so later activity makes it ordinary output again.
+sf_tui_apply() {
+  local type=$1 preview reason
+  [[ $type == error ]] || SF_PRESENT_ERROR_SETTLED=0
+  case $type in
+    session)
+      [[ -n $SF_PRESENT_SESSION ]] || SF_TUI_TRANSPORT_COMMAND=(
+        "$SF_ENTRY" run --jsonl --session "$2" )
+      SF_PRESENT_SESSION=$2
+      ;;
+    permission)
+      [[ $SF_PRESENT_STATE == working && -z $SF_PRESENT_PERMISSION_ID ]] || return 1
+      SF_PRESENT_PERMISSION_ID=$2
+      sf_tui_safe "$3"
+      SF_PRESENT_PERMISSION_TOOL=$REPLY
+      sf_tui_safe "$4"
+      preview=$REPLY
+      sf_tui_safe "$5"
+      reason=$REPLY
+      SF_PRESENT_PERMISSION_TEXT="$preview"$'\n\nReason: '"$reason"
+      SF_PRESENT_PERMISSION_LANGUAGE=$6
+      SF_PRESENT_PERMISSION_PREVIEW_LENGTH=${#preview}
+      sf_tui_editor_permission open
+      SF_PRESENT_STATE=permission
+      sf_tui_activity_hold
+      ;;
+    handoff)
+      (( ! ${#SF_PRESENT_HANDOFF} )) || return 1
+      SF_PRESENT_HANDOFF=( "${@:2}" )
+      ;;
+    error)
+      sf_tui_action "$@" || return 1
+      SF_PRESENT_ERROR_SETTLED=1
+      ;;
+    *) sf_tui_action "$@" || return 1 ;;
+  esac
+}
+
+# Before a session exists, only creation activity may arrive.
+sf_tui_drain_actions() {
+  local record
+  local -a fields
+  integer applied=1
+  for record in "${SF_PRESENT_ACTIONS[@]}"; do
+    fields=( "${(@ps:\0:)record}" )
+    if [[ -z $SF_PRESENT_SESSION &&
+        $fields[1] != (session|execution_update|execution_end|error) ]] ||
+        ! sf_tui_apply "${fields[@]}"; then
+      applied=0
+      break
+    fi
+  done
+  SF_PRESENT_ACTIONS=()
+  (( applied ))
+}
+
+sf_tui_pending_next() {
+  local -a lines=( "${SF_TUI_TRANSPORT_LINES[@]}" )
+  SF_TUI_TRANSPORT_LINES=()
+  sf_tui_project "$SF_TUI_PROJECT_MODE" "${lines[@]}" &&
+    sf_tui_drain_actions && return 0
+  # Reloading is the only recovery from invalid live output.
+  sf_tui_transport_stop
+  sf_tui_discard_queue
+  sf_tui_stop 'exec sent invalid JSONL'
+  return 0
+}
+
 sf_tui_exec_finish() {
   local heading detail exit_detail
   integer exit_status cancelled=0 settled_error=$SF_PRESENT_ERROR_SETTLED
@@ -117,9 +194,10 @@ sf_tui_exec_finish() {
   SF_PRESENT_ERROR_SETTLED=0
   if [[ -z $SF_PRESENT_SESSION ]] && (( ! exit_status )); then
     exit_status=1
-    exit_detail='Create did not confirm session creation.'
+    exit_detail='Create exited without loading a session.'
   fi
   [[ $SF_PRESENT_STATE != cancelling ]] || cancelled=1
+  sf_tui_activity_stop || return 1
   if (( exit_status || cancelled )); then
     if (( settled_error )); then
       heading=''
@@ -156,6 +234,7 @@ sf_tui_exec_finish() {
     sf_tui_permission_reset
     sf_tui_editor_permission discard
     SF_PRESENT_STATE=idle
+    [[ -z $heading ]] || sf_tui_action error "$heading" "$detail" || return 1
   else
     SF_PRESENT_STATE=idle
     sf_tui_permission_reset
@@ -188,6 +267,8 @@ sf_tui_turn() {
   SF_PRESENT_ACTIVITY_FRAME=0
   SF_PRESENT_ACTIVITY=${SF_PRESENT_ACTIVITY_FRAMES[1]}
   SF_PRESENT_STATE=working
+  SF_TUI_PROJECT_MODE=live
+  sf_tui_activity_start || { SF_PRESENT_STATE=idle; return 1; }
   if ! sf_tui_transport_start "$input" sf_tui_exec_ready; then
     SF_PRESENT_STATE=idle
     SF_PRESENT_ERROR=$SF_TUI_TRANSPORT_ERROR
@@ -206,14 +287,30 @@ sf_tui_answer_permission() {
     return 1
   fi
   sf_tui_permission_reset
+  sf_tui_activity_start
   sf_tui_editor_permission restore
   SF_PRESENT_STATE=working
+}
+
+# Replay an existing session through the same projector as a live turn.
+sf_tui_load() {
+  local session=$1 loaded
+  loaded=$("$SF_ENTRY" load --session "$session" 2>/dev/null) || {
+    SF_PRESENT_ERROR="cannot read session: $session"
+    return 1
+  }
+  sf_tui_reset
+  sf_tui_project load ${(f)loaded} && sf_tui_drain_actions || {
+    SF_PRESENT_ERROR="cannot present session: $session"
+    return 1
+  }
 }
 
 sf_tui_controller() {
   local session=$1 presentation=${2:-\{\}} initial=${3-}
   local session_mode=${4:-resume} draft=${5-}
   local input=$draft saved_tty editor_error
+  local -a runtime
   integer exit_status=0 editor_status=0
 
   SF_PRESENT_SESSION=$session
@@ -235,17 +332,25 @@ sf_tui_controller() {
     SF_PRESENT_ERROR=$SF_PRESENT_HIGHLIGHT_ERROR
     return 1
   }
-  if [[ $session_mode == startup ]]; then
-    SF_PRESENT_STATE=working
-    sf_tui_transport_start '' sf_tui_exec_ready || {
-      SF_PRESENT_ERROR=$SF_TUI_TRANSPORT_ERROR
-      return 1
-    }
-  fi
+  SF_PRESENT_RUNTIME=$presentation
   sf_tui_chat_start "$session_mode" "$session" || {
     SF_PRESENT_ERROR='cannot render startup banner'
     return 1
   }
+  runtime=( "${(@f)$(jq -r '.backend.name + "/" + .profile.request.model,
+    (.profile.context_window // "")' <<<"$presentation")}" ) || return 1
+  sf_tui_action runtime "$runtime[1]" "$runtime[2]" || return 1
+  SF_PRESENT_CONTEXT_WINDOW=$runtime[2]
+  if [[ $session_mode == startup ]]; then
+    SF_PRESENT_STATE=working
+    sf_tui_activity_start || return 1
+    sf_tui_transport_start '' sf_tui_exec_ready || {
+      SF_PRESENT_ERROR=$SF_TUI_TRANSPORT_ERROR
+      return 1
+    }
+  else
+    sf_tui_load "$session" || return 1
+  fi
   PROMPT=''
   saved_tty=$(stty -g 2>/dev/null) || return 1
   SF_PRESENT_TTY=$saved_tty

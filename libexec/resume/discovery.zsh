@@ -1,7 +1,7 @@
 emulate -R zsh
 setopt no_aliases no_multios pipe_fail
 
-(( $+functions[sf_session_directory] )) || source "$SF_ROOT/lib/session/main.zsh"
+(( $+functions[sf_session_directory] )) || source "$SF_ROOT/lib/session/path.zsh"
 
 typeset -ga SF_SESSION_MATCHES=()
 

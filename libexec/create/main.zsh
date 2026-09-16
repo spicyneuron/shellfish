@@ -45,13 +45,6 @@ sf_create_session() {
   }
   printf '%s\n' "${SF_SESSION_RECORDS[@]}" |
     "$SF_ENTRY" install-session --session-out "$session" >/dev/null || return 1
-  if (( SF_CREATE_JSONL )); then
-    printf '%s\n' "${SF_SESSION_RECORDS[@]}" | jq -cs --arg path "$session" \
-      '{type:"_session_prepare",path:$path,records:.}' || {
-      sf_die 'cannot emit session preparation'
-      return 1
-    }
-  fi
   source "$SF_ROOT/libexec/create/hooks.zsh"
   sf_create_start_hooks "$session" || error=$?
   (( ! error )) || {
@@ -146,7 +139,8 @@ sf_create_main() {
     return $create_status
   fi
   if (( SF_CREATE_JSONL )); then
-    jq -cn --arg path "$session" '{type:"_session_created",path:$path}' || return 1
+    # Creation ends in the same canonical stream an existing session loads.
+    "$SF_ENTRY" load --session "$session" || return 1
   else
     print -r -- "$session" || return 1
   fi

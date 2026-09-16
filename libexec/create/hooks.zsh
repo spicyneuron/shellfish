@@ -3,13 +3,10 @@ setopt no_aliases no_bg_nice no_multios pipe_fail
 
 source "$SF_ROOT/lib/hooks.zsh"
 
+# Only transient activity is streamed; durable startup records reach the client
+# through the load that ends a successful creation.
 sf_create_event() {
   (( ! SF_CREATE_JSONL )) || print -r -- "$1"
-}
-
-sf_create_append() {
-  sf_session_append "$1" "$2" || return
-  sf_create_event "$2"
 }
 
 sf_create_start_hooks() {
@@ -56,7 +53,7 @@ sf_create_start_hooks() {
     state_projection=$(jq -c '.states[]' <<<"$outcome") || { error='cannot inspect hook state'; break; }
     states=( ${(@f)state_projection} )
     for record in "${states[@]}"; do
-      sf_create_append "$session" "$record" || { error=$SF_SESSION_ERROR; break 2; }
+      sf_session_append "$session" "$record" || { error=$SF_SESSION_ERROR; break 2; }
     done
     if jq -e '.exit_code != 0 or .stdout != "" or .stderr != ""' <<<"$outcome" >/dev/null; then
       sf_hook_result session_start "$id" "$name" "$command" '""' "$outcome" || {
@@ -64,7 +61,7 @@ sf_create_start_hooks() {
         break
       }
       record=$REPLY
-      sf_create_append "$session" "$record" || { error=$SF_SESSION_ERROR; break; }
+      sf_session_append "$session" "$record" || { error=$SF_SESSION_ERROR; break; }
     fi
     if [[ -n $(jq -r '.control_error // empty' <<<"$outcome") ]]; then
       error="session_start hook returned invalid control: $command"

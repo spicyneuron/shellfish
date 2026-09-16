@@ -40,14 +40,14 @@ jq -eRn --arg session "$session" --arg executable "${hook:A}/run" '
   [inputs | fromjson] as $events |
   ($events | any(.type == "_hook_activity" and .hook == "session_start" and
     .user_text == "Starting up")) and
-  [$events[] | select(.type | IN("state","hook_result")) | .type] ==
-    ["state","hook_result"] and
-  ($events | map(select(.type == "hook_result"))[0] | del(.id)) == {
+  [$events[] | .type] ==
+    ["_hook_activity","_session_load","session","state","hook_result"] and
+  ($events[1] == {type:"_session_load",path:$session}) and
+  ($events[-1] | del(.id)) == {
     type:"hook_result",lifecycle:"session_start",name:"start",input:"",
     executable:$executable,exit_code:0,user_text:"startup display",
     model_text:"startup model"
-  } and
-  ($events[-1] == {type:"_session_created",path:$session})
+  }
 ' <"$stream" >/dev/null || fail 'session_start channels or ordering were wrong'
 jq -e -s '
   .[-2] == {type:"state",name:"startup/state",value:true} and
@@ -72,12 +72,12 @@ ZSH
     >"$stream" 2>"$tmp/unsupported.stderr" || create_status=$?
   (( create_status == 1 )) || fail "session_start accepted status $unsupported"
   [[ ! -e $session ]] || fail 'failed session_start left an authoritative session'
-  jq -eRn --argjson status "$unsupported" '
+  jq -eRn '
     [inputs | fromjson] as $events |
-    ($events[-1] | .type == "hook_result" and .exit_code == $status and
-      .model_text == "unsupported model" and .user_text == "unsupported display") and
-    ($events | any(.type == "_session_load") | not)
-  ' <"$stream" >/dev/null || fail 'unsupported startup status lost its result'
+    ($events | all(.type == "_hook_activity"))
+  ' <"$stream" >/dev/null || fail 'failed creation streamed durable records'
+  [[ $(<"$tmp/unsupported.stderr") == *'unsupported status'*'unsupported display'* ]] ||
+    fail 'unsupported startup status lost its diagnostic'
 done
 
 print -r -- ok

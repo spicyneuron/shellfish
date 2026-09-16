@@ -24,14 +24,6 @@ sf_tui_reset() {
   SF_PRESENT_LIVE_ROW_SPANS=()
 }
 
-sf_tui_footer_usage() { SF_PRESENT_FOOTER="${SF_PRESENT_IDENTITY} · $1"; }
-
-sf_tui_session_update() {
-  SF_PRESENT_RUNTIME=$1
-  SF_PRESENT_IDENTITY=$(jq -r '.backend.name + "/" + .profile.request.model' <<<"$1")
-  SF_PRESENT_FOOTER=$SF_PRESENT_IDENTITY
-}
-
 sf_tui_rows_consume() {
   integer count=$1 row available=$(( ${#SF_PRESENT_ROW_TEXT} - SF_PRESENT_ROW_HEAD + 1 ))
   (( count >= 0 && count <= available )) || return 1

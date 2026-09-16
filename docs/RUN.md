@@ -17,18 +17,28 @@ printf '%s\n' '{"type":"user","content":[{"type":"text","text":"Review these cha
 
 `shellfish create` creates an idle session and prints its absolute path. `--session-from PATH` derives one from an existing session's runtime, while `--session-out PATH` selects its destination. See [`SESSIONS.md`](SESSIONS.md) for session semantics.
 
+## Reading a session
+
+`shellfish load --session PATH` is the read-only session boundary. It validates the complete durable prefix, then writes one transient path event followed by the canonical header and durable records in file order:
+
+```json
+{"type":"_session_load","path":"/absolute/path/session.jsonl"}
+{"type":"session","format_version":1,"cwd":"/project","created":"...","backend":{},"harness":{},"profile":{}}
+{"type":"system","content":"..."}
+```
+
+Nothing is emitted until the whole prefix validates, and nothing is ever written back. A final unterminated line is an interrupted append and is ignored; the newline-terminated prefix before it must be valid. A structurally valid unfinished turn loads as it stands, because ordinary [recovery](#completion-and-recovery) belongs to the next `run`.
+
 ## Session creation protocol
 
-`shellfish create --jsonl` streams startup events instead of printing a path:
+`shellfish create --jsonl` streams startup activity instead of printing a path:
 
 | Type | Fields and meaning |
 | --- | --- |
-| `_session_prepare` | `path` and the durable header and optional system record, before hooks run. |
 | `_hook_activity` | A selected startup component's nonempty configured running label, or a short empty event that clears it. |
-| `state`, `hook_result` | Durable output from each validated `session_start` component. |
-| `_session_created` | `path`, after startup hooks finish successfully. |
+| `_session_load` and records | The created session, loaded, after startup hooks finish successfully. |
 
-Durable startup records are appended before emission. A failed startup emits no `_session_created`; clients must wait for successful process exit before submitting a turn. Cancellation exits nonzero and attempts to remove the incomplete session.
+Durable startup records are appended as they happen and reach the client through the closing load, so creating a session and opening an existing one produce the same canonical record stream. A failed or cancelled startup emits no `_session_load`, reports the failure on stderr, and removes the incomplete session; clients must wait for successful process exit before submitting a turn.
 
 `--system` and `--system-file` replace the configured system prompt for that creation. Chat and `run` accept the same creation options when they are not opening an existing `--session`.
 

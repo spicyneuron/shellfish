@@ -11,8 +11,8 @@ typeset header=$(head -n 1 "$SF_TEST_SESSIONS/complete.jsonl")
 typeset runtime=$(jq -c 'del(.type,.format_version,.cwd,.created) |
   .profile.context_window = 200' <<<"$header")
 
-# Join one action for comparison; fields never contain " | ".
-actions() { print -rl -- ${(@)SF_PRESENT_ACTIONS//$'\0'/ | } }
+# Join one action per line for comparison; a trailing empty field shows as "|".
+actions() { print -rl -- ${(@)${(@)SF_PRESENT_ACTIONS//$'\0'/ | }% } }
 
 project() {
   local mode=$1
@@ -32,7 +32,7 @@ assert_equal 'message_start | agent
 message_delta | 0 | text | I will look. |
 message_delta | 1 | reasoning | weighing |
 message_end
-usage | 2 ↑ 1 ↓ | ' "$REPLY"
+usage | 2 ↑ 1 ↓ |' "$REPLY"
 
 # A loaded durable response produces the same ordered message actions.
 project load \
@@ -93,13 +93,13 @@ assert_equal 'error | Cancelled. | stopped by the user' "$REPLY"
 
 # The header and later updates carry runtime identity; usage reads its window.
 project load "$header"
-assert_equal 'runtime | test/fake-model | ' "$REPLY"
+assert_equal 'runtime | test/fake-model |' "$REPLY"
 project live "$(jq -cn --argjson runtime "$runtime" \
   '{type:"_session_update",runtime:$runtime}')"
 assert_equal 'runtime | test/fake-model | 200' "$REPLY"
 project live \
   '{"type":"assistant","stop":"end","content":[],"usage":{"input_tokens":75,"cached_tokens":15,"output_tokens":5}}'
-assert_equal 'usage | 75 ↑ 20% ⦿ 5 ↓ 38% of 200 ◔ | ' "$REPLY"
+assert_equal 'usage | 75 ↑ 20% ⦿ 5 ↓ 38% of 200 ◔ |' "$REPLY"
 
 # The loaded path event names the session the client now owns.
 project load '{"type":"_session_load","path":"/sessions/live.jsonl"}'
@@ -109,10 +109,22 @@ assert_equal 'session | /sessions/live.jsonl' "$REPLY"
 project live '{"type":"_handoff","argv":["shellfish","--clear"]}'
 assert_equal 'handoff | shellfish | --clear' "$REPLY"
 
-# Ordering-only and model-only events present nothing.
+# Tool-call and opaque blocks carry ordering only, live or loaded, so the
+# renderer can close the block before them.
 project live \
   '{"type":"_assistant_tool_call_delta","index":2}' \
-  '{"type":"_assistant_reasoning_opaque","index":3}' \
+  '{"type":"_assistant_reasoning_opaque","index":3}'
+assert_equal 'message_delta | 2 | inert |  |
+message_delta | 3 | inert |  |' "$REPLY"
+project load \
+  '{"type":"assistant","stop":"tool_calls","content":[{"type":"text","text":"running"},{"type":"tool_call","id":"call_1","name":"shell","input":{"command":"pwd"}}]}'
+assert_equal 'message_start | agent
+message_delta | 0 | text | running |
+message_delta | 1 | inert |  |
+message_end' "$REPLY"
+
+# Model-only events present nothing.
+project live \
   '{"type":"_turn_usage","usage":{"input_tokens":1,"output_tokens":1}}' \
   '{"type":"state","name":"probe","value":true}'
 assert_equal '' "$REPLY"

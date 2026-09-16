@@ -36,4 +36,4 @@ Hooks and backends are trusted and run with your permissions; tools can be sandb
 
 ## Clients invoke turns
 
-Clients submit prompts, render events, and replay the transcript. They own interaction and presentation, but rely on `shellfish run` for the agent loop and state.
+Clients submit prompts and render what they receive. They own interaction and presentation, but rely on `shellfish run` for the agent loop and state, and on `shellfish load` for a validated session. A client never reads a session file itself: live events and loaded records arrive as one stream and become one presentation vocabulary.
