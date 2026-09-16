@@ -67,10 +67,10 @@ SF_TEST_RUNTIME=$(jq -c --arg backend "$backend" --arg tool "$tool" '
       input_schema:{type:"object",additionalProperties:false,required:["value"],
         properties:{value:{type:"string"}}},
       render:{
-        running:"${name}\n${input}",
-        user:"${name}\n${output.stdout}${output.stderr}\nexit ${output.exit_code}",
-        model:"${output.stdout}${output.stderr}\nexit ${output.exit_code}",
-        permission:"${input}"
+        initial_user_text:"${name}\n${input}",
+        user_text:"${name}\n${output.stdout}${output.stderr}\nexit ${output.exit_code}",
+        model_text:"${output.stdout}${output.stderr}\nexit ${output.exit_code}",
+        permission_user_text:"${input}"
       },
       environment:["TOOL_ORDER"],
       sandbox:false

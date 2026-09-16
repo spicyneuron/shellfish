@@ -1,5 +1,5 @@
 {
-  "initial_user_text": "fork · Forking session…",
+  "render": {"initial_user_text":"${name} · Forking session…","user_text":"${output.stderr}","model_text":"${output.stdout}"},
   "match": {
     "pattern": "^/fork( [^\\n]*)?\\z"
   },

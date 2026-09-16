@@ -37,6 +37,11 @@ def runtime_actions:
 # Context feeds the model and is reference material worth clamping; a notice
 # speaks only to the reader, so it is shown whole.
 def hook_class: if (.model_text // "") == "" then "notice" else "context" end;
+# Model-only results show attribution without exposing model context.
+def result_text:
+  if (.user_text // "") != "" then .user_text
+  elif (.model_text // "") != "" then .name
+  else "" end;
 
 def message_actions($role; $text):
   if ($text | test("[^\n]")) then
@@ -74,9 +79,9 @@ def record_actions($mode; $window):
     (.user_text | split("\n")) as $lines |
     [["error", $lines[0], ($lines[1:] | join("\n"))]]
   elif .type == "tool_result" then
-    [["execution_end", .id, .name, "tool", (.user_text // "")]]
+    [["execution_end", .id, .name, "tool", result_text]]
   elif .type == "hook_result" then
-    [["execution_end", .id, .name, hook_class, (.user_text // "")]]
+    [["execution_end", .id, .name, hook_class, result_text]]
   elif .type == "session" then runtime_actions
   elif .type == "state" then []
   else error("unsupported record: " + (.type | tostring))
@@ -96,7 +101,8 @@ def event_actions($window):
   elif .type == "_tool_activity" then
     [["execution_update", .id, .name, "tool", (.user_text // "")]]
   elif .type == "_hook_activity" then
-    if (.user_text // "") == "" then []
+    if (.user_text // "") == "" then
+      [["execution_end", .id, .name, "notice", ""]]
     else [["execution_update", .id, .name, "notice", .user_text]] end
   elif .type == "_tool_permission_request" then
     (.preview // "") as $preview |

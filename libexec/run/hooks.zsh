@@ -48,7 +48,7 @@ sf_run_hook_match() {
 sf_run_hooks() {
   local session=$1 lifecycle=$2 content=$3 turn_state=$4
   shift 4
-  local input_file input_json projection component command name id activity outcome record
+  local input_file input_json projection component command name id render activity outcome record clear
   local state_projection control error='' decision=proceed reason='' action='' patch=''
   local action_argv='[]'
   local -a components states
@@ -95,8 +95,9 @@ sf_run_hooks() {
     name=$REPLY
     sf_hook_next_id || { error='cannot allocate hook invocation ID'; break; }
     id=$REPLY
+    render=$(jq -c '.render' <<<"$component") || { error='cannot inspect hook activity'; break; }
     sf_hook_activity "$lifecycle" "$id" "$name" "$command" "$input_json" \
-      "$(jq -r '.initial_user_text' <<<"$component")" || { error='cannot prepare hook activity'; break; }
+      "$render" || { error='cannot prepare hook activity'; break; }
     activity=$REPLY
     sf_run_emit "$activity" || { error='cannot emit hook activity'; break; }
     invoke_status=0
@@ -117,11 +118,16 @@ sf_run_hooks() {
       sf_run_append "$session" "$record" || { error=$REPLY; break 2; }
     done
     if jq -e '.exit_code != 0 or .stdout != "" or .stderr != ""' <<<"$outcome" >/dev/null; then
-      sf_hook_result "$lifecycle" "$id" "$name" "$command" "$input_json" "$outcome" || {
+      sf_hook_result "$lifecycle" "$id" "$name" "$command" "$input_json" \
+        "$render" "$outcome" || {
         error="hook script returned invalid result: $command"
         break
       }
-      sf_run_append "$session" "$REPLY" || { error=$REPLY; break; }
+      record=$REPLY
+      sf_run_append "$session" "$record" || { error=$REPLY; break; }
+    elif jq -e 'has("user_text")' <<<"$activity" >/dev/null; then
+      clear=$(jq -c 'del(.user_text)' <<<"$activity") || { error='cannot prepare hook clear'; break; }
+      sf_run_emit "$clear" || { error='cannot emit hook clear'; break; }
     fi
     sf_run_hook_control "$lifecycle" "$outcome" || {
       error="$lifecycle hook returned invalid control: $command"

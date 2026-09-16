@@ -396,6 +396,9 @@ sf_tui_format_execution() {
   sf_tui_format_start
   sf_tui_format_trim "$SF_LIVE_TEXT"
   body=$REPLY
+  [[ -z $SF_LIVE_NAME || $body == "$SF_LIVE_NAME" ||
+    $body == "$SF_LIVE_NAME"$'\n'* || $body == "$SF_LIVE_NAME ·"* ]] ||
+    body="$SF_LIVE_NAME"$'\n'"$body"
   case $SF_LIVE_CLASS in
     tool) glyph='⛭'; preview=full ;;
     context) glyph='↪'; preview=$SF_PRESENT_PREVIEW_CONTEXT ;;
@@ -406,9 +409,7 @@ sf_tui_format_execution() {
   (( SF_LIVE_CHROME )) || sf_tui_format_rule $columns "$SF_LIVE_ROLE" "$SF_LIVE_SECTION"
   chrome=${#SF_FORMAT_ROWS}
   SF_PRESENT_HIGHLIGHT_SPANS=()
-  # Emphasize a leading name only; never locate one mid-text.
-  [[ -z $SF_LIVE_NAME || $body != $SF_LIVE_NAME* ]] ||
-    SF_PRESENT_HIGHLIGHT_SPANS+=( 0 ${#SF_LIVE_NAME} bold )
+  [[ -z $SF_LIVE_NAME ]] || SF_PRESENT_HIGHLIGHT_SPANS+=( 0 ${#SF_LIVE_NAME} bold )
   sf_tui_wrap $columns "$body" '│ ' "${(@)SF_PRESENT_HIGHLIGHT_SPANS}" || return 1
   total=${#SF_WRAP_ROWS}
   limit=$total

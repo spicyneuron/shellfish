@@ -19,6 +19,29 @@ pump() {
   sf_tui_pending_next || fail 'draining core output failed'
 }
 
+# A silent hook completion retracts its transient activity.
+SF_PRESENT_SESSION="$tmp/session.jsonl"
+SF_PRESENT_STATE=working
+sf_tui_reset
+pump '{"type":"_hook_activity","hook":"session_start","id":"1","name":"git_environment","input":"","user_text":"git_environment · Loading git environment…"}'
+sf_tui_transcript 79 20
+[[ $SF_PRESENT_VIEWPORT_TEXT == *'Loading git environment'* ]] ||
+  fail 'hook activity did not reach the viewport'
+pump '{"type":"_hook_activity","hook":"session_start","id":"1","name":"git_environment","input":""}'
+sf_tui_transcript 79 20
+[[ $SF_PRESENT_VIEWPORT_TEXT != *'Loading git environment'* ]] ||
+  fail 'silent hook activity did not leave the viewport'
+
+# Model context settles as a named hook without exposing model text.
+sf_tui_reset
+pump '{"type":"_hook_activity","hook":"session_start","id":"2","name":"git_environment","input":"","user_text":"git_environment · Loading git environment…"}'
+pump '{"type":"hook_result","lifecycle":"session_start","id":"2","name":"git_environment","input":"","exit_code":0,"model_text":"Git branch: secret"}'
+sf_tui_transcript 79 20
+[[ $SF_PRESENT_VIEWPORT_TEXT == *'↪ git_environment'* &&
+    $SF_PRESENT_VIEWPORT_TEXT != *'Loading git environment'* &&
+    $SF_PRESENT_VIEWPORT_TEXT != *'Git branch: secret'* ]] ||
+  fail 'model-only hook result did not settle as private context'
+
 # Present one turn.
 SF_PRESENT_SESSION="$tmp/session.jsonl"
 SF_PRESENT_STATE=working
@@ -276,6 +299,7 @@ for code in 0 9; do
   sf_tui_reset
   sf_tui_terminal_reset
   SF_PRESENT_SESSION=''
+  SF_PRESENT_CREATING=1
   SF_PRESENT_STATE=working
   SF_PRESENT_QUEUE=()
   SF_TUI_TRANSPORT_EOF=1
@@ -287,5 +311,20 @@ for code in 0 9; do
     fail "creation failure reported $SF_PRESENT_ERROR"
   [[ $POSTDISPLAY != *'[r]'* ]] || fail 'refresh was offered without a session'
 done
+
+# A published session remains resumable when a later startup hook fails.
+sf_tui_reset
+sf_tui_terminal_reset
+SF_PRESENT_SESSION="$tmp/failed-startup.jsonl"
+SF_PRESENT_CREATING=1
+SF_PRESENT_STATE=working
+SF_TUI_TRANSPORT_EOF=1
+SF_TUI_TRANSPORT_EXIT_STATUS=9
+SF_TUI_TRANSPORT_EXIT_DETAIL='startup failure'
+sf_tui_exec_finish
+assert_equal idle "$SF_PRESENT_STATE"
+sf_tui_transcript 79 20
+[[ $SF_PRESENT_VIEWPORT_TEXT == *'Session creation failed.'* ]] ||
+  fail "published startup failure was mislabeled: $SF_PRESENT_VIEWPORT_TEXT"
 
 print -r -- ok

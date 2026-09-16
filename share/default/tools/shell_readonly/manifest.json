@@ -16,10 +16,10 @@
     }
   },
   "render": {
-    "running": "${name}\n${input.command}",
-    "user": "${name}\n${input.command}\n${output.stdout}${output.stderr}\nexit ${output.exit_code}",
-    "model": "${output.stdout}${output.stderr}\nexit ${output.exit_code}",
-    "permission": "${input.command}"
+    "initial_user_text": "${name}\n${input.command}",
+    "user_text": "${name}\n${input.command}\n${output.stdout}${output.stderr}\nexit ${output.exit_code}",
+    "model_text": "${output.stdout}${output.stderr}\nexit ${output.exit_code}",
+    "permission_user_text": "${input.command}"
   },
   "sandbox": true
 }

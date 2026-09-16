@@ -9,10 +9,10 @@
     }
   },
   "render": {
-    "running": "${name} · ${input.url}",
-    "user": "${name} · ${input.url}\n${output.stdout}${output.stderr}",
-    "model": "${output.stdout}${output.stderr}",
-    "permission": "${input.url}"
+    "initial_user_text": "${name} · ${input.url}",
+    "user_text": "${name} · ${input.url}\n${output.stdout}${output.stderr}",
+    "model_text": "${output.stdout}${output.stderr}",
+    "permission_user_text": "${input.url}"
   },
   "sandbox": true
 }

@@ -42,12 +42,12 @@ sf_run_tool_component() {
 
 sf_run_tool_render() {
   local component=$1 name=$2 input=$3 output=$4
-  local render='{"running":"${name}\n${input}","user":"${name}\n${output.stdout}${output.stderr}\nexit ${output.exit_code}","model":"${output.stdout}${output.stderr}\nexit ${output.exit_code}","permission":"${input}"}'
+  local render='{"initial_user_text":"${name}\n${input}","user_text":"${name}\n${output.stdout}${output.stderr}\nexit ${output.exit_code}","model_text":"${output.stdout}${output.stderr}\nexit ${output.exit_code}","permission_user_text":"${input}"}'
   [[ -z $component ]] || render=$(jq -c '.manifest.render' <<<"$component") || return
   REPLY=$(sf_jq -cn --argjson render "$render" --arg name "$name" \
     --argjson input "$input" --argjson output "$output" '
       include "lib/render";
-      render_tool($render;$name;$input;$output)
+      render_component($render;$name;$input;$output)
     ' 2>/dev/null)
 }
 
@@ -59,7 +59,7 @@ sf_run_tool_activity() {
   REPLY=$(jq -cn --arg id "$id" --arg name "$name" --argjson input "$input" \
     --argjson rendered "$rendered" '
       {type:"_tool_activity",id:$id,name:$name,input:$input} +
-      (if $rendered.running_text == null then {} else {user_text:$rendered.running_text} end)
+      (if $rendered.initial_user_text == null then {} else {user_text:$rendered.initial_user_text} end)
     ')
 }
 

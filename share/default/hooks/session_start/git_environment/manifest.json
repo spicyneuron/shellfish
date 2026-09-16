@@ -1,1 +1,1 @@
-{"initial_user_text":"git_environment · Loading git environment…"}
+{"render":{"initial_user_text":"${name} · Loading git environment…","user_text":"${name}\n${output.stdout}${output.stderr}","model_text":"<hook name=\"${name}\">\n${output.stdout}</hook>"}}

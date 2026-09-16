@@ -6,13 +6,13 @@ sf_test_tmp run-tool-contract
 export XDG_STATE_HOME="$tmp/state" SF_TEST_BACKEND_DELAY=0
 sf_test_runtime
 
-# Tool rendering uses the new running/user/model/permission vocabulary.
+# Tool rendering uses the shared component vocabulary.
 SF_TEST_RUNTIME=$(jq -c '
   .harness.tools[0].manifest.render={
-    running:"${name}\n${input.command}",
-    user:"${name}\n${output.stdout}${output.stderr}\nexit ${output.exit_code}",
-    model:"${output.stdout}${output.stderr}\nexit ${output.exit_code}",
-    permission:"${input.command}"
+    initial_user_text:"${name}\n${input.command}",
+    user_text:"${name}\n${output.stdout}${output.stderr}\nexit ${output.exit_code}",
+    model_text:"${output.stdout}${output.stderr}\nexit ${output.exit_code}",
+    permission_user_text:"${input.command}"
   }
 ' <<<"$SF_TEST_RUNTIME")
 
@@ -48,10 +48,10 @@ chmod +x "$pre" "$later" "$post"
 export HOOK_DIR=$hook_dir TOOL_MARKER=$tool_marker
 SF_TEST_RUNTIME=$(jq -c --arg pre "$pre" --arg later "$later" --arg post "$post" '
   .harness.pre_tool_use=[
-    {command:$pre,environment:["HOOK_DIR"],initial_user_text:""},
-    {command:$later,environment:["HOOK_DIR"],initial_user_text:""}
+    {command:$pre,environment:["HOOK_DIR"],render:{initial_user_text:"",user_text:"${output.stderr}",model_text:"${output.stdout}"}},
+    {command:$later,environment:["HOOK_DIR"],render:{initial_user_text:"",user_text:"${output.stderr}",model_text:"${output.stdout}"}}
   ] |
-  .harness.post_tool_use=[{command:$post,environment:["HOOK_DIR"],initial_user_text:""}]
+  .harness.post_tool_use=[{command:$post,environment:["HOOK_DIR"],render:{initial_user_text:"",user_text:"${output.stderr}",model_text:"${output.stdout}"}}]
 ' <<<"$SF_TEST_RUNTIME")
 typeset session="$tmp/denied.jsonl" stream="$tmp/denied.stream"
 sf_test_session "$session"
@@ -109,7 +109,7 @@ export PERMISSION_INPUT=$permission_input
 SF_TEST_RUNTIME=$(jq -c --arg hook "$permission" '
   .harness.pre_tool_use=[] | .harness.post_tool_use=[] |
   .harness.sandbox=true | .harness.fence="/usr/bin/true" |
-  .harness.permission_request=[{command:$hook,environment:["PERMISSION_INPUT"],initial_user_text:""}]
+  .harness.permission_request=[{command:$hook,environment:["PERMISSION_INPUT"],render:{initial_user_text:"",user_text:"${output.stderr}",model_text:"${output.stdout}"}}]
 ' <<<"$SF_TEST_RUNTIME")
 session="$tmp/permission-allow.jsonl"
 sf_test_session "$session"
@@ -177,7 +177,7 @@ ZSH
 chmod +x "$post_fail"
 SF_TEST_RUNTIME=$(jq -c --arg hook "$post_fail" '
   .harness.permission_request=[] |
-  .harness.post_tool_use=[{command:$hook,environment:[],initial_user_text:""}]
+  .harness.post_tool_use=[{command:$hook,environment:[],render:{initial_user_text:"",user_text:"${output.stderr}",model_text:"${output.stdout}"}}]
 ' <<<"$SF_TEST_RUNTIME")
 session="$tmp/post-failure.jsonl"
 sf_test_session "$session"

@@ -174,19 +174,18 @@ sf_tui_reasoning_tokens() {
   SF_LIVE_TOKENS=$1
 }
 
-# One mutable block covers an execution: a call opens it, hook activity may
-# replace its contents, and a result settles it.
-# Hook activity borrows the running block, keeping the owning call's identity.
+# One mutable block covers an execution. Hook activity may replace a running
+# tool view; the latest visible event owns empty-result settlement.
 sf_tui_execution_update() {
   local id=$1 name=$2 class=${3:-tool} text=${4-}
   if [[ $SF_LIVE_KIND != execution ]]; then
     sf_tui_live_close || return 1
     SF_LIVE_KIND=execution
-    SF_LIVE_ID=$id
     SF_LIVE_CLASS=$class
     # A tool call belongs to the agent's turn; a hook notice stands on its own.
     [[ $class != tool ]] || sf_tui_claim_role agent
   fi
+  SF_LIVE_ID=$id
   sf_tui_safe "$name"
   SF_LIVE_NAME=$REPLY
   sf_tui_safe "$text"
@@ -197,7 +196,7 @@ sf_tui_execution_end() {
   local id=$1 name=$2 class=${3:-tool} text=${4-}
   # A result with nothing to show leaves no trace, live or settled.
   if [[ -z $text ]]; then
-    [[ $SF_LIVE_KIND != execution ]] || sf_tui_retract
+    [[ $SF_LIVE_KIND != execution || $SF_LIVE_ID != $id ]] || sf_tui_retract
     sf_tui_activity_resume
     return 0
   fi

@@ -7,10 +7,10 @@ export XDG_STATE_HOME="$tmp/state" SF_TEST_BACKEND_DELAY=0
 sf_test_runtime
 SF_TEST_RUNTIME=$(jq -c '
   .harness.tools[0].manifest.render={
-    running:"${name}\n${input.command}",
-    user:"${name}\n${output.stdout}${output.stderr}\nexit ${output.exit_code}",
-    model:"${output.stdout}${output.stderr}\nexit ${output.exit_code}",
-    permission:"${input.command}"
+    initial_user_text:"${name}\n${input.command}",
+    user_text:"${name}\n${output.stdout}${output.stderr}\nexit ${output.exit_code}",
+    model_text:"${output.stdout}${output.stderr}\nexit ${output.exit_code}",
+    permission_user_text:"${input.command}"
   }
 ' <<<"$SF_TEST_RUNTIME")
 

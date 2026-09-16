@@ -50,8 +50,8 @@ chmod +x "$prompt_hook" "$second_hook"
 export PROMPT_INPUT=$prompt_input SECOND_MARKER=$second_marker
 SF_TEST_RUNTIME=$(jq -c --arg first "$prompt_hook" --arg second "$second_hook" '
   .harness.user_prompt_submit=[
-    {command:$first,environment:["PROMPT_INPUT"],initial_user_text:""},
-    {command:$second,environment:["SECOND_MARKER"],initial_user_text:""}
+    {command:$first,environment:["PROMPT_INPUT"],render:{initial_user_text:"",user_text:"${output.stderr}",model_text:"${output.stdout}"}},
+    {command:$second,environment:["SECOND_MARKER"],render:{initial_user_text:"second · working",user_text:"${output.stderr}",model_text:"${output.stdout}"}}
   ]
 ' <<<"$SF_TEST_RUNTIME")
 
@@ -60,7 +60,7 @@ typeset session="$tmp/accepted.jsonl" stream="$tmp/accepted.stream"
 sf_test_session "$session"
 sf_test_run accept "$session" >"$stream" || fail 'accepted prompt hook failed'
 assert_equal accept "$(<$prompt_input)" 'prompt hook did not receive exact prompt text'
-jq -eRn --arg executable "$prompt_hook" '
+jq -eRn --arg executable "$prompt_hook" --arg second "$second_hook" '
   [inputs | fromjson] as $events |
   [$events[] | select(.type | IN("state","hook_result","user")) | .type] ==
     ["state","hook_result","user"] and
@@ -71,8 +71,15 @@ jq -eRn --arg executable "$prompt_hook" '
       user_text:"user display",model_text:"model context"
     } and
   ($events | map(select(.type == "state"))[0]) ==
-    {type:"state",name:"prompt/state",value:1}
-' <"$stream" >/dev/null || fail 'accepted prompt hook violated channel ordering'
+    {type:"state",name:"prompt/state",value:1} and
+  ($events | map(select(.type == "_hook_activity" and .name == "second-hook"))) == [
+    {type:"_hook_activity",hook:"user_prompt_submit",id:"2",name:"second-hook",
+     executable:$second,input:"accept",user_text:"second · working"},
+    {type:"_hook_activity",hook:"user_prompt_submit",id:"2",name:"second-hook",
+     executable:$second,input:"accept"}
+  ]
+' <"$stream" >/dev/null ||
+  fail 'accepted prompt hook violated channel ordering'
 assert_canonical_session "$session"
 
 # Status 10 selects block but continues the chain; a later zero cannot undo it.
@@ -159,7 +166,7 @@ export STOP_INPUT=$stop_input REQUEST_COUNT=$request_count
 SF_TEST_RUNTIME=$(jq -c --arg backend "$stop_backend" --arg hook "$stop_hook" '
   .backend.command=$backend | .backend.environment=["REQUEST_COUNT"] |
   .harness.user_prompt_submit=[] |
-  .harness.stop=[{command:$hook,environment:["STOP_INPUT"],initial_user_text:""}]
+  .harness.stop=[{command:$hook,environment:["STOP_INPUT"],render:{initial_user_text:"",user_text:"${output.stderr}",model_text:"${output.stdout}"}}]
 ' <<<"$SF_TEST_RUNTIME")
 session="$tmp/stop.jsonl"
 sf_test_session "$session"

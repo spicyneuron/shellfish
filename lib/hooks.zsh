@@ -29,13 +29,12 @@ sf_hook_next_id() {
 }
 
 sf_hook_activity() {
-  local lifecycle=$1 id=$2 name=$3 executable=$4 input=$5 template=$6 user_text
-  user_text=$(sf_jq -nr --arg template "$template" --arg name "$name" --argjson input "$input" '
-    include "lib/render";
-    render_initial_user_text($template;$name;$input)
-  ') || return
-  REPLY=$(jq -cn --arg lifecycle "$lifecycle" --arg id "$id" --arg name "$name" \
-    --arg executable "$executable" --argjson input "$input" --arg user_text "$user_text" '
+  local lifecycle=$1 id=$2 name=$3 executable=$4 input=$5 render=$6
+  REPLY=$(sf_jq -cn --arg lifecycle "$lifecycle" --arg id "$id" --arg name "$name" \
+    --arg executable "$executable" --argjson input "$input" --argjson render "$render" '
+      include "lib/render";
+      (render_component($render;$name;$input;{stdout:"",stderr:"",exit_code:0}) |
+       .initial_user_text // "") as $user_text |
       {type:"_hook_activity",hook:$lifecycle,id:$id,name:$name,input:$input,
        executable:$executable} +
       (if $user_text == "" then {} else {user_text:$user_text} end)
@@ -43,14 +42,16 @@ sf_hook_activity() {
 }
 
 sf_hook_result() {
-  local lifecycle=$1 id=$2 name=$3 executable=$4 input=$5 outcome=$6
+  local lifecycle=$1 id=$2 name=$3 executable=$4 input=$5 render=$6 outcome=$7
   REPLY=$(sf_jq -cn --arg lifecycle "$lifecycle" --arg id "$id" --arg name "$name" \
-    --arg executable "$executable" --argjson input "$input" --argjson outcome "$outcome" '
-      include "lib/session/read";
+    --arg executable "$executable" --argjson input "$input" --argjson outcome "$outcome" \
+    --argjson render "$render" '
+      include "lib/render"; include "lib/session/read";
+      render_component($render;$name;$input;$outcome) as $rendered |
       ({type:"hook_result",lifecycle:$lifecycle,id:$id,name:$name,input:$input,
         executable:$executable,exit_code:$outcome.exit_code} +
-       (if $outcome.stderr == "" then {} else {user_text:$outcome.stderr} end) +
-       (if $outcome.stdout == "" then {} else {model_text:$outcome.stdout} end)) as $result |
+       (if $rendered.user_text == null then {} else {user_text:$rendered.user_text} end) +
+       (if $rendered.model_text == null then {} else {model_text:$rendered.model_text} end)) as $result |
       if $result | canonical_hook_result then $result else error("invalid result") end
     ' 2>/dev/null)
 }

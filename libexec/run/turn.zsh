@@ -305,7 +305,7 @@ sf_run_turn() {
                 sf_run_tool_render "$component" "$name" "$input" \
                   '{"stdout":"","stderr":"","exit_code":0}' || { failure='cannot render permission request'; break; }
                 sf_run_permission_client "$name" "$input" \
-                  "$(jq -r '.reason' <<<"$permission")" "$(jq -r '.permission_text // ""' <<<"$REPLY")"
+                  "$(jq -r '.reason' <<<"$permission")" "$(jq -r '.permission_user_text // ""' <<<"$REPLY")"
                 run_status=$?
                 if (( run_status == 2 )); then failure=$REPLY; break; fi
                 decision=$REPLY

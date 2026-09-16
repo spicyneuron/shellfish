@@ -10,10 +10,10 @@
     }
   },
   "render": {
-    "running": "${name} · ${input.query}",
-    "user": "${name} · ${input.query}\n${output.stdout}${output.stderr}",
-    "model": "${output.stdout}${output.stderr}",
-    "permission": "${input.query}"
+    "initial_user_text": "${name} · ${input.query}",
+    "user_text": "${name} · ${input.query}\n${output.stdout}${output.stderr}",
+    "model_text": "${output.stdout}${output.stderr}",
+    "permission_user_text": "${input.query}"
   },
   "sandbox": true
 }

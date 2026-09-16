@@ -31,14 +31,15 @@ Nothing is emitted until the whole prefix validates, and nothing is ever written
 
 ## Session creation protocol
 
-`shellfish create --jsonl` streams startup activity instead of printing a path:
+`shellfish create --jsonl` streams the creation protocol instead of printing a path:
 
 | Type | Fields and meaning |
 | --- | --- |
+| `_session_load` and initial records | The created session, followed by its header and optional system record. |
 | `_hook_activity` | A selected startup component's nonempty configured initial user text, or a short empty event that clears it. |
-| `_session_load` and records | The created session, loaded, after startup hooks finish successfully. |
+| `state` and `hook_result` | Durable startup records, emitted immediately after they are appended. |
 
-Durable startup records are appended as they happen and reach the client through the closing load, so creating a session and opening an existing one produce the same canonical record stream. A failed or cancelled startup emits no `_session_load`, reports the failure on stderr, and removes the incomplete session; clients must wait for successful process exit before submitting a turn.
+Creation publishes the session and its system context before running startup hooks. Hooks then run in configured order, with each durable result following its live activity. A failed or cancelled startup reports the failure on stderr and retains the valid session prefix and any completed hook results. Clients must wait for successful process exit before submitting a turn.
 
 `--system` and `--system-file` replace the configured system prompt for that creation. Chat and `run` accept the same creation options when they are not opening an existing `--session`.
 

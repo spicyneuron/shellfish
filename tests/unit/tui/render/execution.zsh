@@ -86,6 +86,12 @@ sf_tui_action execution_end queued shell tool 'shell · cancelled'
 view
 assert_tail $'⛭ shell · cancelled\n╰'
 
+# The formatter supplies identity when rendered text contains only output.
+sf_tui_reset
+sf_tui_action execution_end h1 guard notice 'approved'
+view
+assert_tail $'ℹ guard\n╰ approved'
+
 # A held turn hides only the spinner.
 sf_tui_reset
 sf_tui_activity_start
@@ -118,13 +124,19 @@ assert_equal 2 "$SF_PRESENT_SAFE_ROWS"
 unset 'SF_PRESENT_STYLE[execution]' 'SF_PRESENT_STYLE[activity]'
 sf_tui_activity_stop
 
-# A running view with no result of its own is retained, not retracted.
+# Empty completion retracts only its own running view.
 sf_tui_reset
 sf_tui_action execution_update h1 silent notice 'silent · Working'
+sf_tui_action execution_end h1 silent notice ''
 message user ready
 view
-[[ $REPLY == $'ℹ silent · Working\n╰\n\n─ user '*$' 1 ─\n\nready' ]] ||
-  fail "following message did not retain the hook view: $REPLY"
+[[ $REPLY == $'─ user '*$' 1 ─\n\nready' ]] ||
+  fail "silent hook activity did not retract: $REPLY"
+sf_tui_reset
+sf_tui_action execution_update call_1 shell tool 'shell · Working'
+sf_tui_action execution_end h1 silent notice ''
+view
+assert_tail $'⛭ shell · Working\n╰ ⠃'
 
 # Loaded results append already settled.
 sf_tui_reset

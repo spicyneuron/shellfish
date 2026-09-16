@@ -21,12 +21,13 @@ def script_template($input_variables; $output):
      else . as $name | $input_variables | index($name) != null end) or
     ($output and IN("output.stdout", "output.stderr", "output.exit_code"))));
 
-def tool_render($input_variables):
-  type == "object" and keys == ["model", "permission", "running", "user"] and
-  (.running | script_template($input_variables; false)) and
-  (.permission | script_template($input_variables; false)) and
-  (.user | script_template($input_variables; true)) and
-  (.model | script_template($input_variables; true));
+def component_render($input_variables; $permission):
+  type == "object" and
+  keys == (["initial_user_text", "model_text", "user_text"] +
+    if $permission then ["permission_user_text"] else [] end | sort) and
+  ([.initial_user_text] + if $permission then [.permission_user_text] else [] end |
+    all(.[]; script_template($input_variables; false))) and
+  ([.user_text,.model_text] | all(.[]; script_template($input_variables; true)));
 
 def tool_manifest:
   (.input_schema.properties // {} | keys | map("input." + .)) as $input_variables |
@@ -42,7 +43,7 @@ def tool_manifest:
       has("request_sandbox_bypass") or has("sandbox_bypass_reason") | not) and
     ((.required // []) |
       index("request_sandbox_bypass") == null and index("sandbox_bypass_reason") == null)) and
-  (.render | tool_render($input_variables)) and
+  (.render | component_render($input_variables; true)) and
   ((.environment // []) | component_environment) and
   (.sandbox | type == "boolean") and
   ((.allow_sandbox_bypass // false) | type == "boolean") and
@@ -90,10 +91,10 @@ def hook_help:
 
 def hook_component:
   type == "object" and
-  (keys - ["command", "environment", "help", "initial_user_text", "match"] | length) == 0 and
-  has("command") and has("environment") and has("initial_user_text") and
+  (keys - ["command", "environment", "help", "match", "render"] | length) == 0 and
+  has("command") and has("environment") and has("render") and
   (.command | absolute_path) and
-  (.initial_user_text | script_template(null; false)) and
+  (.render | component_render(null; false)) and
   (.environment | component_environment) and
   (if has("match") then .match | hook_match else true end) and
   (if has("help") then .help | hook_help else true end);

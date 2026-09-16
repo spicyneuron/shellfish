@@ -104,7 +104,6 @@ else
   message="Session sandbox $access grant removed: $grant_path"
 fi
 print -r -- "$message"
-print -u2 -r -- "$message"
 
 jq -cn --argjson patch "$patch" \
   '{action:"session_update",patch:$patch}' >&3 || exit 1

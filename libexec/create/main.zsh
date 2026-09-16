@@ -26,13 +26,12 @@ sf_create_read_system() {
 }
 
 sf_create_interrupt() {
-  local exit_status=$1 session=$2
+  local exit_status=$1
   if (( exit_status == 130 )); then
     sf_die 'Cancelled.' || true
   else
     sf_die 'Session creation interrupted.' || true
   fi
-  [[ -z $session ]] || rm -f -- "$session" 2>/dev/null
   exit $exit_status
 }
 
@@ -46,12 +45,12 @@ sf_create_session() {
   printf '%s\n' "${SF_SESSION_RECORDS[@]}" |
     "$SF_ENTRY" install-session --session-out "$session" >/dev/null || return 1
   source "$SF_ROOT/libexec/create/hooks.zsh"
+  if (( SF_CREATE_JSONL )); then
+    jq -cn --arg path "$session" '{type:"_session_load",path:$path}' || return 1
+    printf '%s\n' "${SF_SESSION_RECORDS[@]}" || return 1
+  fi
   sf_create_start_hooks "$session" || error=$?
-  (( ! error )) || {
-    rm -f -- "$session" 2>/dev/null
-    sf_session_reset
-    return $error
-  }
+  (( ! error )) || return $error
 }
 
 sf_create_main() {
@@ -120,9 +119,9 @@ sf_create_main() {
 
   source "$SF_ROOT/lib/session/main.zsh"
   source "$SF_ROOT/lib/scratch.zsh"
-  trap 'sf_create_interrupt 130 "$session"' INT USR1
-  trap 'sf_create_interrupt 129 "$session"' HUP
-  trap 'sf_create_interrupt 143 "$session"' TERM
+  trap 'sf_create_interrupt 130' INT USR1
+  trap 'sf_create_interrupt 129' HUP
+  trap 'sf_create_interrupt 143' TERM
   sf_session_select_path "$requested_out" || {
     sf_die "$SF_SESSION_ERROR"
     return 1
@@ -138,10 +137,7 @@ sf_create_main() {
     fi
     return $create_status
   fi
-  if (( SF_CREATE_JSONL )); then
-    # Creation ends in the same canonical stream an existing session loads.
-    "$SF_ENTRY" load --session "$session" || return 1
-  else
+  if (( ! SF_CREATE_JSONL )); then
     print -r -- "$session" || return 1
   fi
 }

@@ -10,6 +10,7 @@ typeset -g SF_PRESENT_PERMISSION_LANGUAGE=''
 typeset -gi SF_PRESENT_PERMISSION_PREVIEW_LENGTH=0
 typeset -gi SF_PRESENT_EXIT_STATUS=0
 typeset -gi SF_PRESENT_ERROR_SETTLED=0
+typeset -gi SF_PRESENT_CREATING=0
 typeset -g SF_PRESENT_TTY=''
 
 sf_tui_permission_reset() {
@@ -188,11 +189,13 @@ sf_tui_pending_next() {
 sf_tui_exec_finish() {
   local heading detail exit_detail
   integer exit_status cancelled=0 settled_error=$SF_PRESENT_ERROR_SETTLED
+  integer creating=$SF_PRESENT_CREATING
   sf_tui_transport_result || return 1
   exit_status=$reply[1]
   exit_detail=$reply[2]
   SF_PRESENT_ERROR_SETTLED=0
-  if [[ -z $SF_PRESENT_SESSION ]] && (( ! exit_status )); then
+  SF_PRESENT_CREATING=0
+  if (( creating && ! exit_status )) && [[ -z $SF_PRESENT_SESSION ]]; then
     exit_status=1
     exit_detail='Create exited without loading a session.'
   fi
@@ -210,7 +213,7 @@ sf_tui_exec_finish() {
       heading='Exec process terminated.'
       detail=${exit_detail:-"Terminated by signal $(( exit_status - 128 ))."}
     else
-      if [[ -z $SF_PRESENT_SESSION ]]; then
+      if (( creating )); then
         heading='Session creation failed.'
       else
         heading='Exec process failed.'
@@ -265,6 +268,7 @@ sf_tui_turn() {
     '{type:"user",content:[{type:"text",text:$prompt}]}') || return 1
   SF_PRESENT_HANDOFF=()
   SF_PRESENT_ERROR_SETTLED=0
+  SF_PRESENT_CREATING=0
   SF_PRESENT_ACTIVITY_FRAME=0
   SF_PRESENT_ACTIVITY=${SF_PRESENT_ACTIVITY_FRAMES[1]}
   SF_PRESENT_STATE=working
@@ -320,6 +324,8 @@ sf_tui_controller() {
   SF_PRESENT_SUBMITTED=''
   SF_PRESENT_QUEUE=()
   SF_PRESENT_EXIT_STATUS=0
+  SF_PRESENT_CREATING=0
+  [[ $session_mode != startup ]] || SF_PRESENT_CREATING=1
   sf_tui_terminal_reset
   zmodload zsh/zle || { SF_PRESENT_ERROR='cannot load ZLE'; return 1; }
   bindkey -e

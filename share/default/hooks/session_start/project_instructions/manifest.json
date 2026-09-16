@@ -1,0 +1,1 @@
+{"render":{"initial_user_text":"","user_text":"${name}\n${output.stdout}${output.stderr}","model_text":"<hook name=\"${name}\">\n${output.stdout}</hook>"}}

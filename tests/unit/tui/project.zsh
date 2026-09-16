@@ -69,16 +69,20 @@ ok' "$REPLY"
 # Hook context is reference material; a hook notice speaks only to the reader.
 project live \
   '{"type":"_hook_activity","hook":"pre_tool_use","id":"1","name":"guard","input":"","user_text":"guard · checking"}' \
+  '{"type":"_hook_activity","hook":"pre_tool_use","id":"1","name":"guard","input":""}' \
   '{"type":"hook_result","lifecycle":"pre_tool_use","id":"1","name":"guard","input":"","exit_code":0,"user_text":"guard · ok"}' \
-  '{"type":"hook_result","lifecycle":"session_start","id":"2","name":"project","input":"","exit_code":0,"user_text":"project · read","model_text":"context"}'
+  '{"type":"hook_result","lifecycle":"session_start","id":"2","name":"project","input":"","exit_code":0,"user_text":"project · read","model_text":"context"}' \
+  '{"type":"hook_result","lifecycle":"session_start","id":"3","name":"git_environment","input":"","exit_code":0,"model_text":"Git branch: main"}'
 assert_equal 'execution_update | 1 | guard | notice | guard · checking
+execution_end | 1 | guard | notice |
 execution_end | 1 | guard | notice | guard · ok
-execution_end | 2 | project | context | project · read' "$REPLY"
+execution_end | 2 | project | context | project · read
+execution_end | 3 | git_environment | context | git_environment' "$REPLY"
 
-# A hook that shows nothing produces no action.
+# Hook activity without display text clears its matching live view.
 project live \
   '{"type":"_hook_activity","hook":"stop","id":"3","name":"quiet","input":""}'
-assert_equal '' "$REPLY"
+assert_equal 'execution_end | 3 | quiet | notice |' "$REPLY"
 
 # Permissions carry the preview the client highlights.
 project live \

@@ -162,19 +162,19 @@ valid_header=$(jq -cn '
       fence: "", tools: [], sandbox: true,
       max_requests_per_turn: 50, max_tool_calls_per_request: 20,
       max_capture_bytes: 32768,
-      stop: [{command:"/bin/hook",environment:["HOOK_MODE"],initial_user_text:""}]
+      stop: [{command:"/bin/hook",environment:["HOOK_MODE"],render:{initial_user_text:"",user_text:"${output.stderr}",model_text:"${output.stdout}"}}]
     }
   }
 ')
 print -r -- "$valid_header" | schema_eval 'canonical_session_header(1)' >/dev/null
 valid_header=$(jq -c '.harness.user_prompt_submit=[{
-  command:"/bin/prompt",environment:[],initial_user_text:"",match:{pattern:"^!"},
+  command:"/bin/prompt",environment:[],render:{initial_user_text:"",user_text:"${output.stderr}",model_text:"${output.stdout}"},match:{pattern:"^!"},
   help:{usage:"!COMMAND",description:"Run a shell command"}
 }]' <<<"$valid_header")
 print -r -- "$valid_header" | schema_eval 'canonical_session_header(1)' >/dev/null
 typeset permission_header
 permission_header=$(jq -c '.harness.permission_request=[{
-  command:"/bin/permission",environment:[],initial_user_text:""
+  command:"/bin/permission",environment:[],render:{initial_user_text:"",user_text:"${output.stderr}",model_text:"${output.stdout}"}
 }]' <<<"$valid_header")
 print -r -- "$permission_header" |
   schema_eval 'canonical_session_header(1)' >/dev/null
@@ -225,10 +225,10 @@ valid_manifest=$(jq -cn '
       required: ["command"]
     },
     render: {
-      running: "${name}\n${input.command}",
-      user: "${name}\n${output.stdout}${output.stderr}\nexit ${output.exit_code}",
-      model: "${output.stdout}${output.stderr}\nexit ${output.exit_code}",
-      permission: "${input.command}"
+      initial_user_text: "${name}\n${input.command}",
+      user_text: "${name}\n${output.stdout}${output.stderr}\nexit ${output.exit_code}",
+      model_text: "${output.stdout}${output.stderr}\nexit ${output.exit_code}",
+      permission_user_text: "${input.command}"
     },
     sandbox: true,
     allow_sandbox_bypass: true
@@ -244,9 +244,9 @@ if jq -c '.render = {user_before:"",user_after:"",model_after:""}' \
     <<<"$valid_manifest" | schema_eval 'tool_manifest' >/dev/null 2>&1; then
   fail 'tool manifest accepted the deleted render vocabulary'
 fi
-if jq -c '.render.running = "${output.stdout}"' <<<"$valid_manifest" |
+if jq -c '.render.initial_user_text = "${output.stdout}"' <<<"$valid_manifest" |
     schema_eval 'tool_manifest' >/dev/null 2>&1; then
-  fail 'tool manifest used output in its running text'
+  fail 'tool manifest used output in its initial user text'
 fi
 
 typeset tool_header

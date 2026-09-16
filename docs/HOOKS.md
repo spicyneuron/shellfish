@@ -40,10 +40,10 @@ Each hook is configured on a harness as an ordered list of component references.
 }
 ```
 
-A manifest can select component-specific values to load from `.env` and set the initial user text shown while the hook runs:
+A manifest can select component-specific values to load from `.env` and render initial, user, and model text:
 
 ```json
-{"environment":["HOOK_MODE"],"initial_user_text":"Checking the working tree"}
+{"environment":["HOOK_MODE"],"render":{"initial_user_text":"Checking the working tree","user_text":"${output.stderr}","model_text":"<hook>\n${output.stdout}</hook>"}}
 ```
 
 `user_prompt_submit` components may also declare a regular-expression or executable `match` selector and optional help metadata:
@@ -74,8 +74,8 @@ Scripts communicate through three bounded channels:
 
 | Channel | Meaning |
 | --- | --- |
-| stdout | Durable model context, preserved verbatim |
-| stderr | Durable user-only output, preserved verbatim |
+| stdout | Raw output available to result templates |
+| stderr | Raw output available to result templates |
 | fd 3 | One JSON control object for durable state and hook-specific decisions |
 
 fd 3, when used, must contain exactly one object. Every hook accepts `{"state":[{"name":"example","value":true}]}`. Additional control fields depend on the hook. State names are at most 128 characters and match `^[A-Za-z0-9][A-Za-z0-9_.:/-]*$`. Valid state and hook output become durable in that order before the next component runs. Scripts never write the transcript directly.
@@ -102,7 +102,7 @@ Skipping is sticky: after one script returns 10 or 11, a later zero does not res
 | `post_tool_use` | tool response JSON | continue | unsupported |
 | `stop` | final assistant text | finish turn | add feedback and continue |
 
-Hook stdout becomes attributed model context. Stderr becomes attributed user-only output. These meanings do not change with lifecycle or exit status.
+Hook manifests render captured output into independent durable user and model text. By default stderr becomes user text and stdout becomes model text.
 
 Tool hooks receive canonical envelopes. A request envelope has:
 
@@ -128,8 +128,6 @@ Runs once after the session header and optional system record are created.
 
 - **argv:** `session_start`
 - **stdin:** empty
-- **stdout:** durable startup model context
-- **stderr:** durable user-only output
 - **fd 3:** state
 - **Exit 0:** finish creation
 - **Exit 10 or 11:** unsupported and fail creation
@@ -140,8 +138,6 @@ Runs before the user record is committed.
 
 - **argv:** `user_prompt_submit`
 - **stdin:** exact submitted prompt
-- **stdout:** durable model context immediately before the prompt
-- **stderr:** durable user-only output
 - **fd 3:** state, and with exit 11, `{"action":"handoff","argv":[...]}` containing a complete command or `{"action":"session_update","patch":{...}}`
 - **Exit 0:** submit the literal prompt
 - **Exit 10:** block submission and continue the hook chain
@@ -155,8 +151,6 @@ Runs when a tool requests a supported sandbox bypass. This decision is separate 
 
 - **argv:** `permission_request`
 - **stdin:** tool request envelope
-- **stdout:** durable model context
-- **stderr:** durable user-only output
 - **fd 3:** state, and with exit 11, `{"action":"allow"}` or `{"action":"deny","reason":"..."}`
 - **Exit 0:** defer to an interactive client, or deny if none can answer
 - **Exit 10:** deny and continue the hook chain
@@ -168,8 +162,6 @@ Runs immediately before a tool.
 
 - **argv:** `pre_tool_use`
 - **stdin:** tool request envelope
-- **stdout:** durable model context
-- **stderr:** user-only output
 - **fd 3:** state
 - **Exit 0:** execute the tool
 - **Exit 10:** deny the tool and continue the hook chain
@@ -183,8 +175,6 @@ Runs after the tool completes but before its result is committed, including when
 
 - **argv:** `post_tool_use`
 - **stdin:** tool response envelope
-- **stdout:** durable model context before the tool result
-- **stderr:** user-only output
 - **fd 3:** state
 - **Exit 0:** continue the tool loop
 - **Exit 10 or 11:** unsupported and fail the turn
@@ -197,8 +187,6 @@ Runs after a completed assistant record.
 
 - **argv:** `stop STOP_ATTEMPT`, with a one-based attempt count
 - **stdin:** text blocks from the final assistant message, concatenated in content order
-- **stdout:** durable model context
-- **stderr:** durable user-only output
 - **fd 3:** state
 - **Exit 0:** finish the turn
 - **Exit 10:** commit feedback, request another provider response, and continue the hook chain

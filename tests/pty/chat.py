@@ -61,7 +61,7 @@ def test_sandbox_updates_without_reload():
                 "name": "sandbox",
                 "executable": records[0]["harness"]["user_prompt_submit"][0]["command"],
                 "input": f"/sandbox +w {grant}",
-                "user_text": granted,
+                "user_text": f"sandbox\n{granted}",
                 "model_text": granted,
                 "exit_code": 11,
             }

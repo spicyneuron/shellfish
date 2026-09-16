@@ -3,14 +3,12 @@ setopt no_aliases no_bg_nice no_multios pipe_fail
 
 source "$SF_ROOT/lib/hooks.zsh"
 
-# Only transient activity is streamed; durable startup records reach the client
-# through the load that ends a successful creation.
 sf_create_event() {
   (( ! SF_CREATE_JSONL )) || print -r -- "$1"
 }
 
 sf_create_start_hooks() {
-  local session=$1 input component command name id initial_user_text activity outcome record error=''
+  local session=$1 input component command name id render activity outcome record clear error=''
   local projection state_projection
   local -a components states
   integer exit_code
@@ -28,13 +26,13 @@ sf_create_start_hooks() {
   components=( ${(@f)projection} )
   for component in "${components[@]}"; do
     command=$(jq -r '.command' <<<"$component") || error='cannot inspect session_start hook'
-    initial_user_text=$(jq -r '.initial_user_text' <<<"$component") || error='cannot inspect session_start hook'
+    render=$(jq -c '.render' <<<"$component") || error='cannot inspect session_start hook'
     [[ -z $error ]] || break
     sf_hook_name "$command"
     name=$REPLY
     sf_hook_next_id || { error='cannot allocate hook invocation ID'; break; }
     id=$REPLY
-    sf_hook_activity session_start "$id" "$name" "$command" '""' "$initial_user_text" || {
+    sf_hook_activity session_start "$id" "$name" "$command" '""' "$render" || {
       error="cannot prepare hook activity: $command"
       break
     }
@@ -54,14 +52,19 @@ sf_create_start_hooks() {
     states=( ${(@f)state_projection} )
     for record in "${states[@]}"; do
       sf_session_append "$session" "$record" || { error=$SF_SESSION_ERROR; break 2; }
+      sf_create_event "$record" || { error='cannot emit hook state'; break 2; }
     done
     if jq -e '.exit_code != 0 or .stdout != "" or .stderr != ""' <<<"$outcome" >/dev/null; then
-      sf_hook_result session_start "$id" "$name" "$command" '""' "$outcome" || {
+      sf_hook_result session_start "$id" "$name" "$command" '""' "$render" "$outcome" || {
         error="hook script returned invalid result: $command"
         break
       }
       record=$REPLY
       sf_session_append "$session" "$record" || { error=$SF_SESSION_ERROR; break; }
+      sf_create_event "$record" || { error='cannot emit hook result'; break; }
+    elif jq -e 'has("user_text")' <<<"$activity" >/dev/null; then
+      clear=$(jq -c 'del(.user_text)' <<<"$activity") || { error='cannot prepare hook clear'; break; }
+      sf_create_event "$clear" || { error='cannot emit hook clear'; break; }
     fi
     if [[ -n $(jq -r '.control_error // empty' <<<"$outcome") ]]; then
       error="session_start hook returned invalid control: $command"

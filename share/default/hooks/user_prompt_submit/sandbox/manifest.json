@@ -1,4 +1,5 @@
 {
+  "render": {"initial_user_text":"","user_text":"${name}\n${output.stdout}${output.stderr}","model_text":"${output.stdout}"},
   "match": {
     "pattern": "^/sandbox( [^\\n]*)?\\z"
   },

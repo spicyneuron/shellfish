@@ -62,7 +62,11 @@ def test_startup_streams_hooks_and_runs_the_queued_prompt():
         script.write_text(START_HOOK)
         script.chmod(0o755)
         (component / "manifest.json").write_text(
-            json.dumps({"initial_user_text": "Inspecting first_start"})
+            json.dumps({"render": {
+                "initial_user_text": "Inspecting first_start",
+                "user_text": "${output.stderr}",
+                "model_text": "${output.stdout}",
+            }})
         )
         session = Session(
             explicit_session=True, session_start=[str(component)],
@@ -91,7 +95,7 @@ def test_startup_streams_hooks_and_runs_the_queued_prompt():
             session.close()
 
 
-def test_startup_cancellation_quits_without_a_session():
+def test_startup_cancellation_retains_the_session():
     with tempfile.TemporaryDirectory() as directory:
         component = Path(directory) / "slow_start"
         component.mkdir()
@@ -99,19 +103,27 @@ def test_startup_cancellation_quits_without_a_session():
         script.write_text(START_HOOK)
         script.chmod(0o755)
         (component / "manifest.json").write_text(
-            json.dumps({"initial_user_text": "Inspecting slow_start"})
+            json.dumps({"render": {
+                "initial_user_text": "Inspecting slow_start",
+                "user_text": "${output.stderr}",
+                "model_text": "${output.stdout}",
+            }})
         )
         session = Session(explicit_session=True, session_start=[str(component)])
         try:
             session.wait_after(0, "Inspecting slow_start")
             session.send(b"\x03")
             session.wait_after(0, "Cancelled.")
-            assert not session.explicit_session.exists()
+            assert session.explicit_session.exists()
+            _, records = session.wait_session_records(
+                1, path=session.explicit_session
+            )
+            assert [record["type"] for record in records] == ["session"]
             session.send(b"\x03")
             end = time.monotonic() + 0.2
             while time.monotonic() < end:
                 session.pump()
-            assert "Resume with:" not in session.visible(), session.visible()
+            assert "Resume with:" in session.visible(), session.visible()
         finally:
             (session.explicit_session.parent / "slow_start-release").touch()
             session.close()
@@ -234,7 +246,7 @@ def test_fork_restores_removed_user_prompt_as_draft():
 if __name__ == "__main__":
     run("hook script PTY scenarios", [
         test_startup_streams_hooks_and_runs_the_queued_prompt,
-        test_startup_cancellation_quits_without_a_session,
+        test_startup_cancellation_retains_the_session,
         test_slow_prompt_hook_keeps_ui_active,
         test_prompt_hook_display_precedes_agent_section,
         test_prompt_hook_hands_off_to_another_session,

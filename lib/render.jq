@@ -13,18 +13,12 @@ def render_input:
 def render_template($template; $variables):
   $template | gsub("\\$\\{(?<name>[^{}]+)\\}"; $variables[.name]);
 
-def render_initial_user_text($template; $name; $input):
-  render_template($template; ({name:$name} + ($input | render_input)));
-
-def render_tool($render; $name; $input; $output):
+def render_component($render; $name; $input; $output):
   ({name:$name} + ($input | render_input) + {
     "output.stdout":$output.stdout,
     "output.stderr":$output.stderr,
     "output.exit_code":($output.exit_code | tostring)
   }) as $variables |
-  {
-    running_text:render_template($render.running;$variables),
-    user_text:render_template($render.user;$variables),
-    model_text:render_template($render.model;$variables),
-    permission_text:render_template($render.permission;$variables)
-  } | with_entries(select(.value != ""));
+  $render |
+  with_entries(.value = render_template(.value;$variables)) |
+  with_entries(select(.value != ""));
