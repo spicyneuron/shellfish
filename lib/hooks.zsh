@@ -70,13 +70,14 @@ sf_hook_invoke() {
     ($component.environment | join(" ") | field),
     ($runtime.harness.max_capture_bytes | tostring | field),
     ($runtime.backend.env_file | field),
+    ($runtime.profile.request.model | field),
     ("ok" | field)
   ' 2>/dev/null) || {
     sf_hook_fail 'cannot inspect hook component'
     return
   }
   fields=( "${(@0)${projected%$'\0'}}" )
-  (( ${#fields} == 5 )) && [[ $fields[5] == ok ]] || {
+  (( ${#fields} == 6 )) && [[ $fields[6] == ok ]] || {
     sf_hook_fail 'cannot inspect hook component'
     return
   }
@@ -98,7 +99,7 @@ sf_hook_invoke() {
   environment=(
     "SHELLFISH_SESSION=${session:A}"
     "SHELLFISH_MAX_CAPTURE_BYTES=$max_capture"
-    "SHELLFISH_MODEL=$SF_SESSION[model]"
+    "SHELLFISH_MODEL=$fields[5]"
     "SHELLFISH_EXECUTABLE=$SF_ENTRY"
     "SHELLFISH_MODE=${SHELLFISH_MODE-}"
     "SHELLFISH_VERBOSE=${SHELLFISH_VERBOSE:-0}"

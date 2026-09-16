@@ -26,8 +26,7 @@ jq -e -L "$ROOT" '
   canonical_session_header(1) and
   .profile.request.model == "test-model"
 ' <<<"$header" >/dev/null
-[[ $SF_SESSION[turn_id] == 1 && $SF_SESSION[cwd] == "$PWD" &&
-   $SF_SESSION[model] == test-model ]]
+[[ $SF_SESSION[turn_id] == 1 && $SF_SESSION[cwd] == "$PWD" ]]
 
 sf_session_append "$session" '{"type":"user","content":[{"type":"text","text":"hello"}]}'
 sf_session_append "$session" '{"type":"assistant","stop":"end","content":[{"type":"text","text":"hi"}],"usage":{"input_tokens":1,"output_tokens":1}}'
@@ -40,11 +39,9 @@ transcript_before=$(tail -n +2 "$session")
 sf_session_begin_turn "$session"
 sf_session_update "$session" '{"harness":{"sandbox_read_paths":["/tmp/reference"]}}' ||
   fail "$SF_SESSION_ERROR"
-[[ $REPLY == 1 ]]
 typeset request_update='{"harness":{"sandbox_write_paths":["/tmp/reference"]},"profile":{"request":{"effort":null}}}'
 sf_session_update "$session" "$request_update" ||
   fail "$SF_SESSION_ERROR"
-[[ $REPLY == 1 ]]
 jq -e '
   .harness.sandbox_read_paths == ["/tmp/reference"] and
   .harness.sandbox_write_paths == ["/tmp/reference"] and
@@ -54,15 +51,13 @@ jq -e '
 [[ $(stat -f '%Lp' "$session") == 600 ]]
 updated_before=$(cat "$session")
 sf_session_update "$session" '{"harness":{"sandbox_write_paths":["/tmp/reference"]}}'
-[[ $REPLY == 0 && $(cat "$session") == "$updated_before" ]]
+[[ $(cat "$session") == "$updated_before" ]]
 sf_session_update "$session" '{"harness":{"sandbox_write_paths":[]}}'
-[[ $REPLY == 1 ]]
 jq -e '
   .harness.sandbox_read_paths == ["/tmp/reference"] and
   .harness.sandbox_write_paths == []
 ' <<<"$SF_SESSION[runtime]" >/dev/null
 sf_session_update "$session" '{"harness":{"sandbox_write_paths":[]}}'
-[[ $REPLY == 0 ]]
 updated_before=$(cat "$session")
 if sf_session_update "$session" '{"cwd":"/tmp"}'; then
   fail 'session metadata update succeeded'
@@ -126,7 +121,6 @@ exact_header=$(head -n 1 "$SF_TEST_SESSIONS/header-only.jsonl")
 print -r -- "  $exact_header  " >"$exact"
 cp "$exact" "$exact_before"
 sf_session_begin_turn "$exact"
-assert_equal fake-model "$SF_SESSION[model]"
 sf_session_reset
 cmp -s "$exact_before" "$exact" || fail 'opening a valid session rewrote its bytes'
 

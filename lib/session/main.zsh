@@ -76,7 +76,7 @@ sf_session_repair_tail() {
 }
 
 sf_session_prepare() {
-  local runtime=$1 cwd created decoded header model
+  local runtime=$1 cwd created decoded header
   SF_SESSION_ERROR=''
   sf_session_reset
   cwd=$(pwd -P) && created=$(date -u '+%Y-%m-%dT%H:%M:%SZ') || {
@@ -89,23 +89,20 @@ sf_session_prepare() {
       def field: ., "\u0000";
       ({type:"session",format_version:1,cwd:$cwd,created:$created} + $runtime) |
       (tojson | field),
-      (.profile.request.model | field),
       ("ok" | field)
     ') || {
     sf_session_fail 'cannot prepare session header'
     return
   }
   local -a fields=( "${(@0)${decoded%$'\0'}}" )
-  (( ${#fields} == 3 )) && [[ $fields[3] == ok ]] || {
+  (( ${#fields} == 2 )) && [[ $fields[2] == ok ]] || {
     sf_session_fail 'cannot prepare session header'
     return
   }
   header=$fields[1]
-  model=$fields[2]
   SF_SESSION=(
     runtime "$runtime"
     cwd "$cwd"
-    model "$model"
     turn_id 1
   )
   SF_SESSION_RECORDS=( "$header" )
@@ -155,7 +152,6 @@ sf_session_project() {
     (.[1:] | session_load) as $durable |
     (.[0] | del(.type, .format_version, .cwd, .created) | tojson | field),
     (.[0].cwd | field),
-    (.[0].profile.request.model | field),
     (([.[] | select(.type == "user")] | length + 1) |
       tostring | field),
     ("ok" | field)
@@ -164,15 +160,14 @@ sf_session_project() {
     return
   }
   fields=( "${(@0)${loaded%$'\0'}}" )
-  (( ${#fields} == 5 )) && [[ $fields[5] == ok ]] || {
+  (( ${#fields} == 4 )) && [[ $fields[4] == ok ]] || {
     sf_session_fail "cannot restore session runtime: $session_path"
     return
   }
   SF_SESSION=(
     runtime "$fields[1]"
     cwd "$fields[2]"
-    model "$fields[3]"
-    turn_id "$fields[4]"
+    turn_id "$fields[3]"
   )
 }
 
@@ -243,7 +238,6 @@ sf_session_update() {
     return
   }
   if [[ $fields[1] == false ]]; then
-    REPLY=0
     return 0
   fi
   header=$fields[2]
@@ -277,26 +271,23 @@ sf_session_update() {
     return 1
   fi
   sf_session_read "$session_path" || return
-  REPLY=1
 }
 
 # Requires a freshly read session and reports appended records in REPLY. An
 # unfinished turn settles its unresolved calls with fixed text, then closes.
-# A failed turn closes even where the durable view already reads as idle.
 sf_session_recover_turn() {
-  local session_path=$1 user_text=${2:-Turn interrupted.} closing record recovered=''
-  integer failed=${3:-0}
+  local session_path=$1 closing record recovered=''
   REPLY=''
   closing=$(printf '%s\n' "${SF_SESSION_RECORDS[@]:1}" |
-    sf_jq -sc --arg user_text "$user_text" --argjson failed "$failed" '
+    sf_jq -sc '
       include "lib/session/read";
       session_run |
-      select(.next != "user" or $failed != 0) |
+      select(.next != "user") |
       (.calls[] as $call |
         ($call | {type:"tool_result", id, name, input, exit_code:126,
           user_text:"tool call outcome unknown",
           model_text:"tool call outcome unknown"})),
-      {type:"error", user_text:$user_text}
+      {type:"error", user_text:"Turn interrupted."}
     ') || {
     sf_session_fail "cannot close the interrupted turn: $session_path"
     return
@@ -307,15 +298,6 @@ sf_session_recover_turn() {
     recovered+=$record
   done
   REPLY=$recovered
-}
-
-# Repair torn tails before rereading; close the turn from the durable view.
-sf_session_resync_turn() {
-  local session_path=$1 user_text=${2-}
-  integer failed=${3:-0}
-  sf_session_repair_tail "$session_path" || return
-  sf_session_read "$session_path" || return
-  sf_session_recover_turn "$session_path" "$user_text" "$failed"
 }
 
 sf_session_begin_turn() {
@@ -330,7 +312,9 @@ sf_session_begin_turn() {
     sf_session_fail "invalid session path: $session_path"
     return
   }
-  if ! sf_session_resync_turn "$session_path"; then
+  if ! sf_session_repair_tail "$session_path" ||
+      ! sf_session_read "$session_path" ||
+      ! sf_session_recover_turn "$session_path"; then
     sf_session_reset
     return 1
   fi

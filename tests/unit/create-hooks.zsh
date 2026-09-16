@@ -10,7 +10,7 @@ print -r -- '{"environment":["START_INPUT"],"running":"Starting up"}' \
   >"$hook/manifest.json"
 cat >"$hook/run" <<'ZSH'
 #!/usr/bin/env zsh
-[[ $1 == session_start && -z ${SHELLFISH_TURN_ID-} &&
+[[ $1 == session_start && $SHELLFISH_MODEL == test && -z ${SHELLFISH_TURN_ID-} &&
   -z ${SHELLFISH_TURN_STATE-} ]] || exit 2
 cat >"$START_INPUT"
 print -rn -- 'startup model'

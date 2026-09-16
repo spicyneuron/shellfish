@@ -1,28 +1,11 @@
 emulate -R zsh
 setopt no_aliases no_multios pipe_fail
 
-sf_temp_directory() {
-  local mode=$1 fallback=${2:-${TMPDIR:-/tmp}} directory
-  case $mode in
-    environment) directory=$fallback ;;
-    native)
-      if [[ $OSTYPE == darwin* ]]; then
-        directory=$(/usr/bin/getconf DARWIN_USER_TEMP_DIR) || return 1
-      else
-        directory=$fallback
-      fi
-      ;;
-    *) return 1 ;;
-  esac
-  [[ -d $directory ]] || return 1
-  REPLY=${directory:A}
-}
-
 sf_scratch_category() {
-  local category=$1 root
+  local category=$1 directory=${TMPDIR:-/tmp} root
   [[ -n $category && $category != *[^A-Za-z0-9]* ]] || return 1
-  sf_temp_directory environment || return 1
-  root="$REPLY/shellfish-$EUID"
+  [[ -d $directory ]] || return 1
+  root="${directory:A}/shellfish-$EUID"
   (umask 077; mkdir -- "$root") 2>/dev/null || :
   [[ -d $root && ! -L $root && -O $root ]] || return 1
   chmod 700 "$root" || return 1
