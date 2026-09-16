@@ -80,8 +80,10 @@ def decode_backend_response(valid_event; valid_message):
           if ($records | length) != 1 then halt_error(1)
           else
             $records[0] as $message |
+            [$message.content[] | select(.type == "tool_call")] as $calls |
             .output = ["end", "\u0000", ($event | tojson), "\u0000",
-              ($message | tojson), "\u0000"]
+              ($message | tojson), "\u0000", ($calls | length | tostring), "\u0000",
+              ($calls[] | .id, "\u0000", .name, "\u0000", (.input | tojson), "\u0000")]
           end
         else
           .output = ["event", "\u0000", ($event | tojson), "\u0000"]

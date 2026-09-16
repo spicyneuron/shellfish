@@ -7,60 +7,48 @@ setopt no_aliases no_bg_nice no_multios pipe_fail
 
 typeset -g SF_RUN_TOOL_ERROR=''
 
-sf_run_tools_schema() {
-  local runtime=$1
-  REPLY=$(jq -cn --argjson runtime "$runtime" '
-    $runtime.harness as $harness |
-    [$harness.tools[] |
-      .manifest as $manifest |
-      (($harness.sandbox and $manifest.sandbox and
-        ($manifest.allow_sandbox_bypass // false))) as $bypass |
-      {name,description:($manifest.description +
-        if $harness.sandbox and $manifest.sandbox
-        then "\n\nThis tool runs under its package sandbox policy."
-        else "\n\nSandboxing is disabled; this tool runs with the current user permissions." end +
-        if .name == "shell" and $bypass
-        then "\n\nWhen requesting an unsandboxed command, keep it to one logical operation. Split multi-step or compound commands across calls so each approval is easy to review."
-        else "" end),
-       input_schema:($manifest.input_schema |
-         if $bypass then
-           .properties.request_sandbox_bypass={type:"boolean",description:"Request approval to run without the sandbox"} |
-           .properties.sandbox_bypass_reason={type:"string",minLength:1,
-             description:"Explain why this tool call must run outside the sandbox"} |
-           .allOf=((.allOf // []) + [{
-             if:{properties:{request_sandbox_bypass:{const:true}},required:["request_sandbox_bypass"]},
-             then:{required:["sandbox_bypass_reason"]}}])
-         else . end)}]
-  ' 2>/dev/null) || { SF_RUN_TOOL_ERROR='cannot inspect configured tools'; return 1; }
-}
-
-sf_run_tool_component() {
-  local runtime=$1 name=$2
-  REPLY=$(jq -c --arg name "$name" '[.harness.tools[] | select(.name == $name)][0] // empty' \
-    <<<"$runtime") || return 1
-}
-
-sf_run_tool_render() {
-  local component=$1 name=$2 input=$3 output=$4
-  local render='{"initial_user_text":"${name} ${input}","user_text":"${name} ${input}\n${output.stdout}${output.stderr}","model_text":"${output.stdout}${output.stderr}","permission_user_text":"${input}"}'
-  [[ -z $component ]] || render=$(jq -c '.manifest.render' <<<"$component") || return
-  REPLY=$(sf_jq -cn --argjson render "$render" --arg name "$name" \
-    --argjson input "$input" --argjson output "$output" '
+sf_run_tool_plan() {
+  local runtime=$1 id=$2 name=$3 input=$4 projection
+  local -a fields
+  projection=$(sf_jq -jrn --argjson runtime "$runtime" --arg id "$id" --arg name "$name" \
+    --argjson input "$input" --argjson turn "$SF_SESSION[turn_id]" '
       include "lib/render";
-      render_component($render;$name;$input;$output)
-    ' 2>/dev/null)
-}
-
-sf_run_tool_activity() {
-  local id=$1 name=$2 input=$3 component=$4 rendered
-  sf_run_tool_render "$component" "$name" "$input" \
-    '{"stdout":"","stderr":"","exit_code":0}' || return
-  rendered=$REPLY
-  REPLY=$(jq -cn --arg id "$id" --arg name "$name" --argjson input "$input" \
-    --argjson rendered "$rendered" '
-      {type:"_tool_activity",id:$id,name:$name,input:$input} +
-      (if $rendered.initial_user_text == null then {} else {user_text:$rendered.initial_user_text} end)
-    ')
+      def field: ., "\u0000";
+      [$runtime.harness.tools[] | select(.name == $name)][0] as $tool |
+      ($tool.manifest.render // default_tool_render) as $render |
+      (render_component($render;$name;$input;{stdout:"",stderr:"",exit_code:0})) as $rendered |
+      (if $tool == null or ($runtime.harness.sandbox | not) then {decision:"none"}
+       elif (($input.request_sandbox_bypass // false) | type) != "boolean" then
+         {decision:"deny",reason:"sandbox bypass is not allowed"}
+       elif ($input.request_sandbox_bypass // false) == false then {decision:"none"}
+       elif ($tool.manifest.allow_sandbox_bypass // false) != true then
+         {decision:"deny",reason:"sandbox bypass is not allowed"}
+       elif ($input.sandbox_bypass_reason? | type) != "string" or
+           $input.sandbox_bypass_reason == "" then
+         {decision:"failure",reason:"sandbox bypass reason is required"}
+       else {decision:"request",reason:$input.sandbox_bypass_reason} end) as $permission |
+      ({turn_id:$turn,tool_name:$name,tool_use_id:$id,tool_input:$input} | tojson | field),
+      ({type:"_tool_activity",id:$id,name:$name,input:$input} +
+        (if $rendered.initial_user_text == null then {}
+         else {user_text:$rendered.initial_user_text} end) | tojson | field),
+      ($permission.decision | field), ($permission.reason // "" | field),
+      ($rendered.permission_user_text // "" | field),
+      ($tool.command // "" | field), (($tool.manifest.environment // []) | join(" ") | field),
+      ($tool.settings // "" | field), ($runtime.harness.max_capture_bytes | tostring | field),
+      ($runtime.harness.fence | field), ($runtime.backend.env_file | field),
+      ($input | del(.request_sandbox_bypass,.sandbox_bypass_reason) | tojson | field),
+      ($runtime.harness.sandbox and ($tool.manifest.sandbox // false) and
+        (($input.request_sandbox_bypass // false) | not) | tostring | field),
+      ($runtime.harness.sandbox_read_paths | join("\n") | field),
+      ($runtime.harness.sandbox_write_paths | join("\n") | field),
+      ($render | tojson | field), ("ok" | field)
+    ' 2>/dev/null) || { SF_RUN_TOOL_ERROR='cannot inspect tool'; return 1; }
+  fields=( "${(@0)${projection%$'\0'}}" )
+  (( ${#fields} == 17 )) && [[ $fields[17] == ok ]] || {
+    SF_RUN_TOOL_ERROR='cannot inspect tool'
+    return 1
+  }
+  reply=( "${(@)fields[1,16]}" )
 }
 
 sf_run_tool_refused() {
@@ -68,23 +56,6 @@ sf_run_tool_refused() {
   integer exit_code=$2
   REPLY=$(jq -cn --arg reason "$reason" --argjson exit_code "$exit_code" \
     '{output:{stdout:"",stderr:"",exit_code:$exit_code},states:[],reason:$reason}')
-}
-
-sf_run_tool_permission() {
-  local runtime=$1 component=$2 input=$3
-  REPLY=$(jq -cn --argjson runtime "$runtime" --argjson component "${component:-null}" \
-    --argjson input "$input" '
-      if $component == null or ($runtime.harness.sandbox | not) then {decision:"none"}
-      elif (($input.request_sandbox_bypass // false) | type) != "boolean" then
-        {decision:"deny",reason:"sandbox bypass is not allowed"}
-      elif ($input.request_sandbox_bypass // false) == false then {decision:"none"}
-      elif ($component.manifest.allow_sandbox_bypass // false) != true then
-        {decision:"deny",reason:"sandbox bypass is not allowed"}
-      elif ($input.sandbox_bypass_reason? | type) != "string" or
-          $input.sandbox_bypass_reason == "" then
-        {decision:"failure",reason:"sandbox bypass reason is required"}
-      else {decision:"request",reason:$input.sandbox_bypass_reason} end
-    ' 2>/dev/null) || { SF_RUN_TOOL_ERROR='cannot inspect tool permission'; return 1; }
 }
 
 sf_run_tool_bound() {
@@ -102,61 +73,17 @@ sf_run_tool_bound() {
   fi
 }
 
-# Return remaining control in REPLY and canonical state records in reply.
-sf_run_control_decode() {
-  local capture=$1 control output
-  REPLY=''
-  reply=()
-
-  control=$(jq -cse '
-    if length == 1 and (.[0] | type == "object") then .[0]
-    else error("expected one object") end
-  ' "$capture" 2>/dev/null) || {
-    REPLY=malformed
-    return 1
-  }
-  output=$(sf_jq -jnre --argjson control "$control" '
-    include "lib/session/read";
-    def field: ., "\u0000";
-    if $control | if has("state") then
-        .state | type == "array" and all(.[];
-          type == "object" and keys == ["name", "value"] and
-          ({type:"state"} + . | canonical_state))
-      else true end
-    then
-      ($control |
-        if has("state") then
-          del(.state) | if length == 0 then "" else tojson end
-        else tojson end | field),
-      ($control.state[]? | {type:"state"} + . | tojson | field)
-    else error("invalid state control") end
-  ' 2>/dev/null) || {
-    REPLY=state
-    return 1
-  }
-  reply=( "${(@0)${output%$'\0'}}" )
-}
-
 sf_run_tool_execute() {
   setopt local_options no_err_exit
-  local session=$1 runtime=$2 component=$3 input=$4 tool_directory
-  local command selected settings cwd fence capture stdin
-  local bounded_stdout bounded_stderr output
-  local config_dir='' env_file execution_input state_projection=''
-  local -a arguments environment names states process_command process
-  integer max_capture control_bytes budget stderr_bytes denied=0
+  local session=$1 runtime=$2 command=$3 selected=$4 settings=$5 fence=$7
+  local env_file=$8 execution_input=$9 sandbox=${10} read_paths=${11} write_paths=${12}
+  local tool_directory=${13} cwd=$SF_SESSION[cwd] capture stdin bounded_stdout bounded_stderr
+  local config_dir='' expose
+  local -a arguments environment names process_command process sandbox_arguments
+  integer max_capture=$6 control_bytes budget stderr_bytes denied=0
 
-  tool_directory=$5
   SF_RUN_TOOL_ERROR=''
-  command=$(jq -r '.command' <<<"$component") || return 1
-  selected=$(jq -r '(.manifest.environment // []) | join(" ")' <<<"$component") || return 1
-  settings=$(jq -r '.settings // ""' <<<"$component") || return 1
-  max_capture=$(jq -r '.harness.max_capture_bytes' <<<"$runtime") || return 1
-  cwd=$SF_SESSION[cwd]
-  fence=$(jq -r '.harness.fence' <<<"$runtime") || return 1
-  env_file=$(jq -r '.backend.env_file' <<<"$runtime") || return 1
   [[ -z $env_file ]] || config_dir=${env_file:h}
-  execution_input=$(jq -c 'del(.request_sandbox_bypass,.sandbox_bypass_reason)' <<<"$input") || return 1
   sf_environment_prepare "$runtime" "$selected" || {
     SF_RUN_TOOL_ERROR=$SF_ENVIRONMENT_ERROR
     return 1
@@ -184,18 +111,15 @@ sf_run_tool_execute() {
   arguments=()
   for selected in $names; do arguments+=( -u "$selected" ); done
   arguments+=( "${environment[@]}" "$command" )
-  if jq -e '.harness.sandbox' <<<"$runtime" >/dev/null &&
-      jq -e '.manifest.sandbox' <<<"$component" >/dev/null &&
-      [[ $(jq -r '.request_sandbox_bypass // false' <<<"$input") != true ]]; then
+  if [[ $sandbox == true ]]; then
     arguments=( -i "${arguments[@]:$(( ${#names} * 2 ))}" )
-    local -a sandbox_arguments=( --monitor --fence-log-file "$capture/sandbox.log"
+    sandbox_arguments=( --monitor --fence-log-file "$capture/sandbox.log"
       --settings "$settings" --expose-host-path "$command" --expose-host-path-rw "$tool_directory"
       --expose-host-path-rw "$capture/control" )
-    local expose
-    for expose in ${(f)$(jq -r '.harness.sandbox_read_paths[]' <<<"$runtime")}; do
+    for expose in ${(f)read_paths}; do
       sandbox_arguments+=( --expose-host-path "$expose" )
     done
-    for expose in ${(f)$(jq -r '.harness.sandbox_write_paths[]' <<<"$runtime")}; do
+    for expose in ${(f)write_paths}; do
       sandbox_arguments+=( --expose-host-path-rw "$expose" )
     done
     process_command=( "$fence" "${sandbox_arguments[@]}" -- /usr/bin/env "${arguments[@]}" )
@@ -216,51 +140,47 @@ sf_run_tool_execute() {
     SF_RUN_TOOL_ERROR='tool control data exceeds capture limit'
     return 1
   }
-  states=()
-  if (( control_bytes )); then
-    sf_run_control_decode "$capture/control" || {
-      SF_RUN_TOOL_ERROR='tool returned invalid control data'
-      return 1
-    }
-    [[ -z $reply[1] ]] || {
-      SF_RUN_TOOL_ERROR='tool returned invalid control data'
-      return 1
-    }
-    (( ${#reply} <= 1 )) || states=( "${(@)reply[2,-1]}" )
-  fi
   budget=$(( max_capture - control_bytes ))
   bounded_stderr="$capture/stderr.bounded"
   bounded_stdout="$capture/stdout.bounded"
   sf_run_tool_bound "$capture/stderr" "$bounded_stderr" $budget || return 1
   stderr_bytes=$(wc -c <"$bounded_stderr") || return 1
   sf_run_tool_bound "$capture/stdout" "$bounded_stdout" $(( budget - stderr_bytes )) || return 1
-  output=$(jq -cn --rawfile stdout "$bounded_stdout" --rawfile stderr "$bounded_stderr" \
-    --argjson exit_code "$process[1]" \
-    '{stdout:$stdout,stderr:$stderr,exit_code:$exit_code}') || return 1
-  state_projection=$(printf '%s\n' "${states[@]}" | jq -sc '.') || return 1
-  # fence marks each monitored violation with a cross in its log. Report one only
-  # alongside a failing tool, since a successful run tolerated whatever was blocked.
   if (( process[1] )) && grep -qs $'✗' "$capture/sandbox.log"; then denied=1; fi
-  REPLY=$(jq -cn --argjson output "$output" --argjson states "$state_projection" \
-    --argjson denied "$denied" \
-    '{output:$output,states:$states} +
-     (if $denied == 1 then {sandbox_denied:true} else {} end)') || return 1
+  REPLY=$(sf_jq -cn --rawfile stdout "$bounded_stdout" --rawfile stderr "$bounded_stderr" \
+    --slurpfile control "$capture/control" --argjson control_bytes "$control_bytes" \
+    --argjson exit_code "$process[1]" --argjson denied "$denied" '
+      include "lib/session/read";
+      (if $control_bytes == 0 then {}
+       elif ($control | length) == 1 and ($control[0] | type) == "object" then $control[0]
+       else error("invalid control") end) as $control |
+      if ($control | if has("state") then
+          .state | type == "array" and all(.[];
+            type == "object" and keys == ["name", "value"] and
+            ({type:"state"} + . | canonical_state))
+        else true end) and (($control | del(.state)) == {})
+      then
+        {output:{stdout:$stdout,stderr:$stderr,exit_code:$exit_code},
+         states:[$control.state[]? | {type:"state"} + .]} +
+        (if $denied == 1 then {sandbox_denied:true} else {} end)
+      else error("invalid control") end
+    ' 2>/dev/null) || { SF_RUN_TOOL_ERROR='tool returned invalid control data'; return 1; }
   } always {
     rm -rf -- "$capture"
   }
 }
 
-sf_run_tool_record() {
-  local id=$1 name=$2 input=$3 component=$4 outcome=$5 rendered executable='' render_output
-  [[ -z $component ]] || executable=$(jq -r '.command' <<<"$component") || return
-  render_output=$(jq -c '.output + if has("reason") then {stderr:.reason} else {} end' \
-    <<<"$outcome") || return
-  sf_run_tool_render "$component" "$name" "$input" "$render_output" || return
-  rendered=$REPLY
-  REPLY=$(sf_jq -cn --arg id "$id" --arg name "$name" --argjson input "$input" \
-    --arg executable "$executable" --argjson outcome "$outcome" \
-    --argjson rendered "$rendered" '
+sf_run_tool_complete() {
+  local tool_request=$1 id=$2 name=$3 input=$4 executable=$5 render=$6 outcome=$7 projection
+  local -a fields states
+  projection=$(sf_jq -jrn --argjson request "$tool_request" --arg id "$id" --arg name "$name" \
+    --argjson input "$input" --arg executable "$executable" --argjson render "$render" \
+    --argjson outcome "$outcome" '
       include "lib/session/read";
+      include "lib/render";
+      def field: ., "\u0000";
+      render_component($render;$name;$input;
+        ($outcome.output + if $outcome | has("reason") then {stderr:$outcome.reason} else {} end)) as $rendered |
       (if $outcome.sandbox_denied then
         "\n\n<sandbox_notice>A denial was detected during this tool call. " +
         "This does not necessarily mean the tool failed.</sandbox_notice>"
@@ -269,6 +189,18 @@ sf_run_tool_record() {
        (if $executable == "" then {} else {executable:$executable} end) +
        (if $rendered.user_text == null then {} else {user_text:$rendered.user_text} end) +
        (if $rendered.model_text == null then {} else {model_text:($rendered.model_text + $notice)} end)) as $result |
-      if $result | canonical_tool_result then $result else error("invalid result") end
-    ' 2>/dev/null) || { SF_RUN_TOOL_ERROR="cannot render tool result: $name"; return 1; }
+      if $result | canonical_tool_result then
+        ($request + {tool_response:$outcome.output} | tojson | field),
+        ($result | tojson | field), ($outcome.states | length | tostring | field),
+        ($outcome.states[] | tojson | field), ("ok" | field)
+      else error("invalid result") end
+    ' 2>/dev/null) || { SF_RUN_TOOL_ERROR="cannot finish tool result: $name"; return 1; }
+  fields=( "${(@0)${projection%$'\0'}}" )
+  [[ $fields[-1] == ok && $fields[3] == <-> ]] &&
+    (( ${#fields} == fields[3] + 4 )) || {
+      SF_RUN_TOOL_ERROR="cannot finish tool result: $name"
+      return 1
+    }
+  REPLY=$fields[2]
+  reply=( "$fields[1]" "${(@)fields[4,-2]}" )
 }

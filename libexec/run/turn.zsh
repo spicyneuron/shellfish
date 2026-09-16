@@ -50,9 +50,9 @@ sf_run_partial_assistant() {
 }
 
 sf_run_cancel() {
-  local session=$1 message partial pending projection call id name input component outcome record
+  local session=$1 message partial projection record
   local active=$SF_RUN[active_call] known=$SF_RUN[known_outcome]
-  local -a calls
+  local -a records
   message='Turn interrupted.'
   (( SF_RUN[signal_status] != 130 )) || message='Cancelled.'
   sf_run_partial_assistant
@@ -60,31 +60,33 @@ sf_run_cancel() {
   if [[ -n $partial ]]; then
     sf_session_append "$session" "$partial" && sf_run_emit "$partial"
   fi
-  projection=$(printf '%s\n' "${SF_SESSION_RECORDS[@]:1}" | sf_jq -sc '
+  projection=$(printf '%s\n' "${SF_SESSION_RECORDS[@]:1}" | sf_jq -jsc \
+    --argjson runtime "$SF_SESSION[runtime]" --arg active "$active" \
+    --argjson known "${known:-null}" '
     include "lib/session/read";
-    session_run | .calls[]
+    include "lib/render";
+    def field: ., "\u0000";
+    session_run | .calls[] |
+    . as $call |
+    ([$runtime.harness.tools[] | select(.name == $call.name)][0]) as $tool |
+    ($tool.manifest.render // default_tool_render) as $render |
+    (if $call.id == $active and $known != null then $known
+     else {output:{stdout:"",stderr:"",exit_code:126},states:[],
+       reason:(if $call.id == $active then "tool call interrupted" else "tool call cancelled" end)} end) as $outcome |
+    render_component($render;$call.name;$call.input;
+      ($outcome.output + if $outcome | has("reason") then {stderr:$outcome.reason} else {} end)) as $rendered |
+    ({type:"tool_result",id:$call.id,name:$call.name,input:$call.input,
+      exit_code:$outcome.output.exit_code} +
+     (if $tool == null then {} else {executable:$tool.command} end) +
+     (if $rendered.user_text == null then {} else {user_text:$rendered.user_text} end) +
+     (if $rendered.model_text == null then {} else {model_text:($rendered.model_text +
+       if $outcome.sandbox_denied then "\n\n<sandbox_notice>A denial was detected during this tool call. This does not necessarily mean the tool failed.</sandbox_notice>"
+       else "" end)} end)) |
+    select(canonical_tool_result) | tojson | field
   ' 2>/dev/null) || projection=''
-  calls=( ${(@f)projection} )
-  for call in "${calls[@]}"; do
-    id=$(jq -r '.id' <<<"$call") || continue
-    name=$(jq -r '.name' <<<"$call") || continue
-    input=$(jq -c '.input' <<<"$call") || continue
-    if sf_run_tool_component "$SF_SESSION[runtime]" "$name"; then
-      component=$REPLY
-    else
-      component=''
-    fi
-    if [[ $id == $active && -n $known ]]; then
-      outcome=$known
-    elif [[ $id == $active ]]; then
-      sf_run_tool_refused 'tool call interrupted' 126
-      outcome=$REPLY
-    else
-      sf_run_tool_refused 'tool call cancelled' 126
-      outcome=$REPLY
-    fi
-    sf_run_tool_record "$id" "$name" "$input" "$component" "$outcome" || continue
-    record=$REPLY
+  records=()
+  [[ -z $projection ]] || records=( "${(@0)${projection%$'\0'}}" )
+  for record in "${records[@]}"; do
     sf_session_append "$session" "$record" && sf_run_emit "$record"
   done
   sf_run_error "$session" "$message" || true
@@ -144,13 +146,55 @@ sf_run_permission_client() {
   [[ -n $REPLY ]] || { REPLY='invalid permission response'; return 2; }
 }
 
+sf_run_project() {
+  local runtime=$1 projected
+  local -a fields
+  projected=$(jq -jrn --argjson runtime "$runtime" '
+    def field: ., "\u0000";
+    $runtime.harness as $harness |
+    [$harness.tools[] |
+      .manifest as $manifest |
+      (($harness.sandbox and $manifest.sandbox and
+        ($manifest.allow_sandbox_bypass // false))) as $bypass |
+      {name,description:($manifest.description +
+        if $harness.sandbox and $manifest.sandbox
+        then "\n\nThis tool runs under its package sandbox policy."
+        else "\n\nSandboxing is disabled; this tool runs with the current user permissions." end +
+        if .name == "shell" and $bypass
+        then "\n\nWhen requesting an unsandboxed command, keep it to one logical operation. Split multi-step or compound commands across calls so each approval is easy to review."
+        else "" end),
+       input_schema:($manifest.input_schema |
+         if $bypass then
+           .properties.request_sandbox_bypass={type:"boolean",description:"Request approval to run without the sandbox"} |
+           .properties.sandbox_bypass_reason={type:"string",minLength:1,
+             description:"Explain why this tool call must run outside the sandbox"} |
+           .allOf=((.allOf // []) + [{
+             if:{properties:{request_sandbox_bypass:{const:true}},required:["request_sandbox_bypass"]},
+             then:{required:["sandbox_bypass_reason"]}}])
+         else . end)}] as $tools |
+    ($harness.max_requests_per_turn | tostring | field),
+    ($harness.max_tool_calls_per_request | tostring | field),
+    ($harness.max_capture_bytes | tostring | field),
+    ($runtime.backend.command | field),
+    ($runtime.backend.environment | join(" ") | field),
+    ($runtime.backend.context_window_command // "" | field),
+    ($tools | tojson | field),
+    ("ok" | field)
+  ' 2>/dev/null) || return 1
+  fields=( "${(@0)${projected%$'\0'}}" )
+  (( ${#fields} == 8 )) && [[ $fields[8] == ok ]] || return 1
+  reply=( "${(@)fields[1,6]}" )
+  REPLY=$fields[7]
+}
+
 sf_run_turn() {
   local user_record=$1 session=$2 prompt=$3 opened runtime tools backend selected context_command
-  local request assistant stop_text component call id name input activity permission decision
-  local call_projection tool_request post_request
+  local request assistant stop_text id name input decision
+  local tool_request post_request activity permission_reason permission_preview executable render
+  local tool_environment settings fence env_file execution_input sandbox read_paths write_paths
   local reason outcome state_projection record post_error='' failure='' turn_state tool_temp=''
-  local -a calls states hook_result
-  integer begun=0 request_count=0 call_count=0 request_limit tool_limit max_capture run_status
+  local -a calls states hook_result runtime_fields tool_plan
+  integer begun=0 offset request_count=0 call_count=0 request_limit tool_limit max_capture run_status
 
   {
     SF_RUN[answer]=''
@@ -163,12 +207,15 @@ sf_run_turn() {
     opened=$REPLY
     [[ -z $opened ]] || sf_run_emit "$opened"
     runtime=$SF_SESSION[runtime]
-    request_limit=$(jq -r '.harness.max_requests_per_turn' <<<"$runtime") || failure='cannot inspect frozen runtime'
-    tool_limit=$(jq -r '.harness.max_tool_calls_per_request' <<<"$runtime") || failure='cannot inspect frozen runtime'
-    max_capture=$(jq -r '.harness.max_capture_bytes' <<<"$runtime") || failure='cannot inspect frozen runtime'
-    backend=$(jq -r '.backend.command' <<<"$runtime") || failure='cannot inspect frozen runtime'
-    selected=$(jq -r '.backend.environment | join(" ")' <<<"$runtime") || failure='cannot inspect frozen runtime'
-    context_command=$(jq -r '.backend.context_window_command // ""' <<<"$runtime") || failure='cannot inspect frozen runtime'
+    sf_run_project "$runtime" || failure='cannot inspect frozen runtime'
+    tools=$REPLY
+    runtime_fields=( "${reply[@]}" )
+    request_limit=$runtime_fields[1]
+    tool_limit=$runtime_fields[2]
+    max_capture=$runtime_fields[3]
+    backend=$runtime_fields[4]
+    selected=$runtime_fields[5]
+    context_command=$runtime_fields[6]
     [[ -z $failure && -d $SF_SESSION[cwd] && -x $SF_SESSION[cwd] ]] ||
       failure=${failure:-session working directory is unavailable: $SF_SESSION[cwd]}
     sf_scratch_create turns turn || failure='cannot prepare hook turn state'
@@ -196,8 +243,6 @@ sf_run_turn() {
       fi
     fi
     if [[ -z $failure ]]; then
-      sf_run_tools_schema "$runtime" || failure=$SF_RUN_TOOL_ERROR
-      tools=$REPLY
       sf_scratch_create tooltemps turn || failure='cannot prepare tool temporary directory'
       tool_temp=$REPLY
     fi
@@ -231,11 +276,7 @@ sf_run_turn() {
       }
       assistant=$SF_REQUEST[assistant]
       sf_run_append "$session" "$assistant" || { failure=$REPLY; break; }
-      call_projection=$(jq -c '.content[] | select(.type == "tool_call")' <<<"$assistant") || {
-        failure='cannot inspect provider response'
-        break
-      }
-      calls=( ${(@f)call_projection} )
+      calls=( "${SF_REQUEST_CALLS[@]}" )
       if (( ! ${#calls} )); then
         stop_text=$(jq -r '[.content[] | select(.type == "text") | .text] | join("")' <<<"$assistant") || {
           failure='cannot inspect provider response'; break
@@ -252,23 +293,30 @@ sf_run_turn() {
         continue
       fi
       call_count=0
-      for call in "${calls[@]}"; do
+      for (( offset = 1; offset <= ${#calls}; offset += 3 )); do
         (( call_count += 1 ))
-        id=$(jq -r '.id' <<<"$call") || { failure='cannot inspect tool call'; break; }
-        name=$(jq -r '.name' <<<"$call") || { failure='cannot inspect tool call'; break; }
-        input=$(jq -c '.input' <<<"$call") || { failure='cannot inspect tool call'; break; }
-        tool_request=$(jq -cn --argjson turn "$SF_SESSION[turn_id]" --arg name "$name" --arg id "$id" \
-          --argjson input "$input" \
-          '{turn_id:$turn,tool_name:$name,tool_use_id:$id,tool_input:$input}') || {
-          failure='cannot prepare tool hook input'
-          break
-        }
-        sf_run_tool_component "$runtime" "$name"
-        component=$REPLY
-        sf_run_tool_activity "$id" "$name" "$input" "$component" || {
-          failure='cannot prepare tool activity'; break
-        }
-        sf_run_emit "$REPLY" || { failure='cannot emit tool activity'; break; }
+        id=$calls[offset]
+        name=$calls[offset+1]
+        input=$calls[offset+2]
+        sf_run_tool_plan "$runtime" "$id" "$name" "$input" || { failure=$SF_RUN_TOOL_ERROR; break; }
+        tool_plan=( "${reply[@]}" )
+        tool_request=$tool_plan[1]
+        activity=$tool_plan[2]
+        decision=$tool_plan[3]
+        permission_reason=$tool_plan[4]
+        permission_preview=$tool_plan[5]
+        executable=$tool_plan[6]
+        tool_environment=$tool_plan[7]
+        settings=$tool_plan[8]
+        max_capture=$tool_plan[9]
+        fence=$tool_plan[10]
+        env_file=$tool_plan[11]
+        execution_input=$tool_plan[12]
+        sandbox=$tool_plan[13]
+        read_paths=$tool_plan[14]
+        write_paths=$tool_plan[15]
+        render=$tool_plan[16]
+        sf_run_emit "$activity" || { failure='cannot emit tool activity'; break; }
         SF_RUN[active_call]=$id
         SF_RUN[known_outcome]=''
         if (( call_count > tool_limit )); then
@@ -281,19 +329,15 @@ sf_run_turn() {
           if [[ $hook_result[1] == deny ]]; then
             sf_run_tool_refused 'tool call denied by pre_tool_use hook' 126
             outcome=$REPLY
-          elif [[ -z $component ]]; then
+          elif [[ -z $executable ]]; then
             sf_run_tool_refused "tool is not allowed: $name" 127
             outcome=$REPLY
           else
-            sf_run_tool_permission "$runtime" "$component" "$input" || { failure=$SF_RUN_TOOL_ERROR; break; }
-            permission=$REPLY
-            decision=$(jq -r '.decision' <<<"$permission")
-            reason=$(jq -r '.reason // empty' <<<"$permission")
             if [[ $decision == failure ]]; then
-              failure=$reason
+              failure=$permission_reason
               break
             elif [[ $decision == deny ]]; then
-              sf_run_tool_refused "$reason" 126
+              sf_run_tool_refused "$permission_reason" 126
               outcome=$REPLY
             elif [[ $decision == request ]]; then
               sf_run_hooks "$session" permission_request "$tool_request" \
@@ -302,10 +346,7 @@ sf_run_turn() {
               decision=$hook_result[1]
               reason=${hook_result[3]:-sandbox bypass denied}
               if [[ $decision == proceed ]]; then
-                sf_run_tool_render "$component" "$name" "$input" \
-                  '{"stdout":"","stderr":"","exit_code":0}' || { failure='cannot render permission request'; break; }
-                sf_run_permission_client "$name" "$input" \
-                  "$(jq -r '.reason' <<<"$permission")" "$(jq -r '.permission_user_text // ""' <<<"$REPLY")"
+                sf_run_permission_client "$name" "$input" "$permission_reason" "$permission_preview"
                 run_status=$?
                 if (( run_status == 2 )); then failure=$REPLY; break; fi
                 decision=$REPLY
@@ -316,7 +357,9 @@ sf_run_turn() {
               fi
             fi
             if [[ -z $outcome ]]; then
-              sf_run_tool_execute "$session" "$runtime" "$component" "$input" "$tool_temp"
+              sf_run_tool_execute "$session" "$runtime" "$executable" "$tool_environment" \
+                "$settings" "$max_capture" "$fence" "$env_file" "$execution_input" \
+                "$sandbox" "$read_paths" "$write_paths" "$tool_temp"
               run_status=$?
               if (( run_status )); then
                 if (( run_status == 129 || run_status == 130 || run_status == 143 )); then
@@ -331,23 +374,18 @@ sf_run_turn() {
           fi
         fi
         [[ -n $outcome ]] || break
-        state_projection=$(jq -c '.states[]' <<<"$outcome") || { failure='cannot inspect tool state'; break; }
-        states=( ${(@f)state_projection} )
+        sf_run_tool_complete "$tool_request" "$id" "$name" "$input" "$executable" \
+          "$render" "$outcome" || { failure=$SF_RUN_TOOL_ERROR; break; }
+        record=$REPLY
+        post_request=$reply[1]
+        states=( "${(@)reply[2,-1]}" )
         for record in "${states[@]}"; do
           sf_run_append "$session" "$record" || { failure=$REPLY; break 2; }
         done
         SF_RUN[known_outcome]=$outcome
-        post_request=$(jq -c --argjson response "$(jq -c '.output' <<<"$outcome")" \
-          '. + {tool_response:$response}' <<<"$tool_request") || {
-          failure='cannot prepare post-tool hook input'
-          break
-        }
         sf_run_hooks "$session" post_tool_use "$post_request" \
           "$turn_state" "$name" "$id" || post_error=$SF_RUN_HOOK_ERROR
-        sf_run_tool_record "$id" "$name" "$input" "$component" "$outcome" || {
-          failure=$SF_RUN_TOOL_ERROR; break
-        }
-        sf_run_append "$session" "$REPLY" || { failure=$REPLY; break; }
+        sf_run_append "$session" "$record" || { failure=$REPLY; break; }
         SF_RUN[active_call]=''
         SF_RUN[known_outcome]=''
         outcome=''

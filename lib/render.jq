@@ -22,3 +22,8 @@ def render_component($render; $name; $input; $output):
   $render |
   with_entries(.value = render_template(.value;$variables)) |
   with_entries(select(.value != ""));
+
+def default_tool_render:
+  {initial_user_text:"${name} ${input}",
+   user_text:"${name} ${input}\n${output.stdout}${output.stderr}",
+   model_text:"${output.stdout}${output.stderr}",permission_user_text:"${input}"};

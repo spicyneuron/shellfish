@@ -71,7 +71,6 @@ def nonempty_control_free_string:
 
 def model_name: nonempty_control_free_string;
 def absolute_path: type == "string" and startswith("/") and (test("[[:cntrl:]]") | not);
-def absolute_nul_free_path: nul_free_string and startswith("/");
 def endpoint: type == "string" and test("^https?://[^[:space:][:cntrl:]]+$");
 def positive_integer:
   type == "number" and floor == . and . >= 1 and . <= 2147483647;
@@ -232,13 +231,13 @@ def canonical_request:
 
 def canonical_session_header($format_version):
   type == "object" and .type == "session" and .format_version == $format_version and
-  (.cwd | absolute_nul_free_path) and (.created | type == "string") and
+  (.cwd | absolute_path) and (.created | type == "string") and
   (.profile | type == "object" and
     ((keys - ["context_window", "request", "system"]) | length == 0) and
     (["request"] - keys | length == 0) and
     (.request | type == "object" and (.model | model_name)) and
     ((has("system") | not) or
-      (.system | type == "array" and all(.[]; absolute_nul_free_path))) and
+      (.system | type == "array" and all(.[]; absolute_path))) and
     (if has("context_window") then
       .context_window == null or (.context_window | positive_integer)
     else true end)) and
@@ -247,7 +246,7 @@ def canonical_session_header($format_version):
     (["command", "endpoint", "env_file", "environment", "http_stall", "http_timeout", "insecure_tls", "name"] - keys | length == 0) and
     (.name | profile_name) and (.command | absolute_path) and (.endpoint | endpoint) and
     (.environment | component_environment) and (.insecure_tls | type == "boolean") and
-    (.env_file == "" or (.env_file | absolute_nul_free_path)) and
+    (.env_file == "" or (.env_file | absolute_path)) and
     (.http_timeout | positive_integer) and (.http_stall | positive_integer) and
     (if has("context_window_command") then
       .context_window_command | absolute_path
@@ -259,13 +258,13 @@ def canonical_session_header($format_version):
       ((keys - ($required + hook_names)) | length == 0) and
       (($required - keys) | length == 0)) and
     harness_hooks and
-    (.sandbox_read_paths | type == "array" and all(.[]; absolute_nul_free_path)) and
-    (.sandbox_write_paths | type == "array" and all(.[]; absolute_nul_free_path)) and
+    (.sandbox_read_paths | type == "array" and all(.[]; absolute_path)) and
+    (.sandbox_write_paths | type == "array" and all(.[]; absolute_path)) and
     (.fence == "" or (.fence | absolute_path)) and
     (.tools | type == "array" and all(.[];
       type == "object" and keys == ["command", "manifest", "name", "settings"] and
       (.name | tool_name) and (.command | absolute_path) and
-      (.settings == null or (.settings | absolute_nul_free_path)) and
+      (.settings == null or (.settings | absolute_path)) and
       (.manifest | . as $manifest | tool_manifest and has("render") and
         (.render | complete_component_render(
           ($manifest.input_schema.properties // {} | keys | map("input." + .)); true))) and

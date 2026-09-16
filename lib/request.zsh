@@ -9,6 +9,7 @@ setopt no_aliases no_bg_nice no_multios pipe_fail
 typeset -gA SF_REQUEST=(
   assistant '' directory '' error '' group_file '' pid ''
 )
+typeset -ga SF_REQUEST_CALLS=()
 typeset -ga SF_REQUEST_PARTIAL_EVENTS=()
 
 sf_request_build() {
@@ -32,14 +33,15 @@ sf_request_run() {
   setopt local_options no_bg_nice
   local request=$1 command=$2 runtime=$3 selected=$4 emit=${5:-:}
   local directory error_file group_file input_file output_pipe status_file
-  local adapter_pid decoder_pid assistant event end_event kind='' name
-  local -a environment=( env ) process_command
-  integer adapter_status=1 decoder_status=1 ended=0
+  local adapter_pid decoder_pid assistant event end_event kind='' name call_id call_name call_input
+  local -a environment=( env ) process_command calls
+  integer adapter_status=1 decoder_status=1 ended=0 call_count call_index
 
   SF_REQUEST[assistant]=''
   SF_REQUEST[directory]=''
   SF_REQUEST[error]=''
   SF_REQUEST[group_file]=''
+  SF_REQUEST_CALLS=()
   SF_REQUEST_PARTIAL_EVENTS=()
   SF_REQUEST[pid]=''
   sf_environment_prepare "$runtime" "$selected" || {
@@ -97,10 +99,21 @@ sf_request_run() {
         ;;
       end)
         if ! IFS= read -r -d $'\0' end_event <&p ||
-            ! IFS= read -r -d $'\0' assistant <&p; then
+            ! IFS= read -r -d $'\0' assistant <&p ||
+            ! IFS= read -r -d $'\0' call_count <&p || [[ $call_count != <-> ]]; then
           kind=invalid
           break
         fi
+        for (( call_index = 0; call_index < call_count; call_index++ )); do
+          if ! IFS= read -r -d $'\0' call_id <&p ||
+              ! IFS= read -r -d $'\0' call_name <&p ||
+              ! IFS= read -r -d $'\0' call_input <&p; then
+            kind=invalid
+            break
+          fi
+          calls+=( "$call_id" "$call_name" "$call_input" )
+        done
+        [[ $kind != invalid ]] || break
         ended=1
         break
         ;;
@@ -123,6 +136,7 @@ sf_request_run() {
   (( decoder_status == 0 )) || kind=invalid
   if [[ $kind != invalid && $adapter_status == 0 ]] && (( ended )); then
     SF_REQUEST[assistant]=$assistant
+    SF_REQUEST_CALLS=( "${calls[@]}" )
     [[ -z $SF_REQUEST[assistant] ]] || SF_REQUEST_PARTIAL_EVENTS=()
   fi
   # Announce completion only after a clean adapter exit.
