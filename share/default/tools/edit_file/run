@@ -1,7 +1,6 @@
 #!/usr/bin/env zsh
 set -euo pipefail
 
-(($# == 0)) || { printf 'Usage: edit_file\n' >&2; exit 2; }
 decoded=$(jq -ejr '
   def field: ., "\u0000";
   def string: type == "string" and index("\u0000") == null;

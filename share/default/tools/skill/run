@@ -1,7 +1,6 @@
 #!/usr/bin/env zsh
 set -euo pipefail
 
-(($# == 0)) || { print -u2 -r -- 'Usage: skill'; exit 2; }
 name=$(jq -ejr 'select(type == "object" and keys == ["name"] and
   (.name | type == "string" and test("^[a-z0-9]+(-[a-z0-9]+)*$") and length <= 64)) | .name') || {
   print -u2 -r -- 'skill: invalid input'
