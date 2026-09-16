@@ -94,7 +94,25 @@ def canonical_response:
       ($calls | length) > 0 and (([$calls[].id] | unique | length) == ($calls | length))
     else ($calls | length) == 0 end);
 
-def join_context($parts): [$parts[] | select(. != "")] | join("\n\n");
+def render_context:
+  if type == "string" then .
+  else
+    "<hook name=\"" + (.lifecycle | @html) + "\">\n" +
+    ([.scripts[] |
+      "<context script=\"" + (.name | @html) + "\">\n" + .text +
+      (if .text | endswith("\n") then "" else "\n" end) + "</context>"] |
+      join("\n")) +
+    "\n</hook>"
+  end;
+
+def add_hook_context($record):
+  ([to_entries[] | select(.value.lifecycle? == $record.lifecycle) | .key] | first) as $index |
+  {name:$record.name,text:$record.model_text} as $script |
+  if $index == null then . + [{lifecycle:$record.lifecycle,scripts:[$script]}]
+  else .[$index].scripts += [$script] end;
+
+def join_context($parts):
+  [$parts[] | select(. != "") | render_context] | join("\n\n");
 
 def context_message($context; $request):
   {type:"user", content:[{type:"text", text:join_context([$context[], $request])}]};
@@ -111,7 +129,7 @@ def session_state:
         else
           .hooks += [$record.id] |
           (if ($record.model_text // "") == "" then .
-           else .context += [$record.model_text] end) |
+           else .context |= add_hook_context($record) end) |
           # Failing stop feedback continues the turn with another request.
           if $record.lifecycle == "stop" and $record.exit_code != 0 and
               ($record.model_text // "") != "" and .next == "user"
@@ -156,7 +174,8 @@ def session_state:
 def session_load: . as $records | session_state | $records;
 
 def session_run:
-  session_state | {next, calls:[.calls[] | {id, name, input}], context};
+  session_state |
+  {next, calls:[.calls[] | {id, name, input}], context:[.context[] | render_context]};
 
 # A response awaiting results reaches no request, and trailing context waits
 # here for the request that carries it.

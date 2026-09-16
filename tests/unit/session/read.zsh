@@ -11,7 +11,7 @@ messages() { jq -L "$ROOT" -ce 'include "lib/session/read"; session_messages'; }
 typeset records="$tmp/records.jsonl"
 cat >"$records" <<'JSONL'
 {"type":"system","content":"system text"}
-{"type":"hook_result","lifecycle":"session_start","id":"1","name":"env","input":"","executable":"/hooks/env/run","exit_code":0,"user_text":"env","model_text":"<hook name=\"session_start\">\n<context script=\"env\">ready &amp; set</context>\n</hook>"}
+{"type":"hook_result","lifecycle":"session_start","id":"1","name":"env","input":"","executable":"/hooks/env/run","exit_code":0,"user_text":"env","model_text":"ready &amp; set"}
 {"type":"user","content":[{"type":"text","text":"run it"}]}
 {"type":"assistant","stop":"tool_calls","content":[{"type":"reasoning","text":"think","opaque":{"signature":"abc"}},{"type":"text","text":"Inspecting that."},{"type":"tool_call","id":"call_1","name":"shell","input":{"command":"ls"}},{"type":"tool_call","id":"call_2","name":"shell","input":{"command":"pwd"}}],"usage":{"input_tokens":100,"output_tokens":20}}
 {"type":"hook_result","lifecycle":"pre_tool_use","id":"2","name":"policy","input":{"turn_id":1,"tool_name":"shell","tool_use_id":"call_1","tool_input":{"command":"ls"}},"exit_code":0,"model_text":"POLICY"}
@@ -34,7 +34,7 @@ done
 # Hook context waits for the request that consumes it.
 prefix 2 | run | jq -e '
   .next == "user" and .calls == [] and
-  .context == ["<hook name=\"session_start\">\n<context script=\"env\">ready &amp; set</context>\n</hook>"]
+  .context == ["<hook name=\"session_start\">\n<context script=\"env\">\nready &amp; set\n</context>\n</hook>"]
 ' >/dev/null || fail 'session hook context is not pending before the user request'
 prefix 3 | run |
   jq -e '. == {next:"assistant",calls:[],context:[]}' >/dev/null ||
@@ -47,7 +47,9 @@ prefix 4 | run | jq -e '
              {id:"call_2",name:"shell",input:{command:"pwd"}}]
 ' >/dev/null || fail 'pending calls do not follow assistant content'
 prefix 6 | run | jq -e '
-  .next == "tool_result" and .context == ["POLICY"] and ([.calls[].id] == ["call_1","call_2"])
+  .next == "tool_result" and
+  .context == ["<hook name=\"pre_tool_use\">\n<context script=\"policy\">\nPOLICY\n</context>\n</hook>"] and
+  ([.calls[].id] == ["call_1","call_2"])
 ' >/dev/null || fail 'tool hook context or pending calls are wrong before a result'
 prefix 7 | run | jq -e '
   .next == "tool_result" and .context == [] and ([.calls[].id] == ["call_2"])
@@ -67,10 +69,23 @@ jq -sc . "$records" | messages | jq -e '
                    {type:"text",text:"Inspecting that."}] and
   .[2] == {type:"tool_call",id:"call_1",name:"shell",input:{command:"ls"}} and
   .[3] == {type:"tool_result",call_id:"call_1",name:"shell",exit_code:0,
-           content:"POLICY\n\nout"} and
+           content:"<hook name=\"pre_tool_use\">\n<context script=\"policy\">\nPOLICY\n</context>\n</hook>\n\nout"} and
   .[5].content == "/tmp" and
   .[6] == {type:"assistant",stop:"end",content:[{type:"text",text:"done"}]}
 ' >/dev/null || fail 'provider messages do not match the transcript'
+
+# Scripts from one lifecycle share one attributed hook block.
+print -r -- '[
+  {"type":"hook_result","lifecycle":"session_start","id":"1","name":"env","input":"","exit_code":0,"model_text":"first"},
+  {"type":"hook_result","lifecycle":"session_start","id":"2","name":"instructions","input":"","exit_code":0,"model_text":"second\n"},
+  {"type":"user","content":[{"type":"text","text":"go"}]}
+]' | messages | jq -e '
+  .[0].content[0].text ==
+    "<hook name=\"session_start\">\n" +
+    "<context script=\"env\">\nfirst\n</context>\n" +
+    "<context script=\"instructions\">\nsecond\n</context>\n" +
+    "</hook>\n\ngo"
+' >/dev/null || fail 'same-lifecycle hook context was not grouped'
 
 # Errors close a turn, reach no request, and never become context.
 typeset failed_turn='[
@@ -101,7 +116,9 @@ print -r -- '[
   {"type":"assistant","stop":"end","content":[]},
   {"type":"hook_result","lifecycle":"stop","id":"1","name":"observe","input":"","exit_code":0,"model_text":"NOTE"}
 ]' | messages | jq -e '
-  [.[].type] == ["user","assistant","user"] and .[2].content[0].text == "NOTE"
+  [.[].type] == ["user","assistant","user"] and
+  .[2].content[0].text ==
+    "<hook name=\"stop\">\n<context script=\"observe\">\nNOTE\n</context>\n</hook>"
 ' >/dev/null || fail 'unconsumed context did not reach the request'
 
 # Stop feedback continues the turn with a request that consumes its context.
@@ -109,7 +126,8 @@ print -r -- '[
   {"type":"user","content":[{"type":"text","text":"go"}]},
   {"type":"assistant","stop":"end","content":[]},
   {"type":"hook_result","lifecycle":"stop","id":"1","name":"observe","input":"","exit_code":2,"model_text":"KEEP GOING"}
-]' | run | jq -e '. == {next:"assistant",calls:[],context:["KEEP GOING"]}' >/dev/null ||
+]' | run | jq -e '. == {next:"assistant",calls:[],context:[
+  "<hook name=\"stop\">\n<context script=\"observe\">\nKEEP GOING\n</context>\n</hook>"]}' >/dev/null ||
   fail 'stop feedback did not continue the turn'
 
 # Invalid input fails instead of returning partial state.

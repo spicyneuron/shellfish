@@ -92,12 +92,9 @@ if ! jq -ce -s --rawfile context "$context" --arg created "$created" \
     # Carried startup hooks keep their identifiers, so continue past them.
     (([$startup[] | select(.type == "hook_result") | .id | tonumber] | max // 0) + 1 |
       tostring) as $id |
-    # This context reaches the model through the successor session, so its
-    # attribution must match the envelope the core applies to hook output.
     {type:"hook_result",lifecycle:"session_start",id:$id,
       name:"compact",input:"",executable:$executable,exit_code:0,
-      model_text:("<hook name=\"session_start\">\n<context script=\"compact\">" +
-        $context + "</context>\n</hook>")}
+      model_text:$context}
   ' "$SHELLFISH_SESSION" >"$transcript"; then
   fail_compaction 'cannot create compacted session; keeping the original'
   exit $?

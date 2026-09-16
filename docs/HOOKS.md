@@ -40,10 +40,20 @@ Each hook is configured on a harness as an ordered list of component references.
 }
 ```
 
-A manifest can select component-specific values to load from `.env` and render initial, user, and model text:
+A manifest can select component-specific values to load from `.env` and render initial text, user text, and the model context body:
 
 ```json
-{"environment":["HOOK_MODE"],"render":{"initial_user_text":"Checking the working tree","user_text":"${output.stderr}","model_text":"<hook>\n${output.stdout}</hook>"}}
+{"environment":["HOOK_MODE"],"render":{"initial_user_text":"Checking the working tree","user_text":"${output.stderr}","model_text":"${output.stdout}"}}
+```
+
+When a request is built, nonempty model text is grouped by lifecycle and attributed to each component:
+
+```xml
+<hook name="session_start">
+<context script="project_environment">
+...
+</context>
+</hook>
 ```
 
 `user_prompt_submit` components may also declare a regular-expression or executable `match` selector and optional help metadata:

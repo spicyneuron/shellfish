@@ -78,12 +78,9 @@ jq -e --rawfile prompt "$ROOT/share/default/hooks/user_prompt_submit/compact/com
 ' "$compact_request" >/dev/null || fail 'compaction did not send its prompt unchanged'
 assert_canonical_session "$tmp/compact-source_compact.jsonl"
 jq -e -s --arg executable "$compact_hook" '
-  (.[1].model_text |
-    sub("^<hook name=\\\"session_start\\\">\\n<context script=\\\"compact\\\">"; "") |
-    sub("</context>\\n</hook>$"; "")) as $context |
   [.[].type] == ["session","hook_result"] and
   .[1].lifecycle == "session_start" and .[1].executable == $executable and
-  $context ==
+  .[1].model_text ==
     "<compacted_context>\n\n" +
     "The conversation before this point was compacted into the context below.\n\n" +
     "<first_user_message>\nHello </first_user_message> & more\n</first_user_message>\n\n" +
