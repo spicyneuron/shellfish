@@ -35,7 +35,7 @@ Nothing is emitted until the whole prefix validates, and nothing is ever written
 
 | Type | Fields and meaning |
 | --- | --- |
-| `_hook_activity` | A selected startup component's nonempty configured initial user text, followed by a short empty event that clears it when the component finishes. |
+| `_hook_activity` | A selected startup component's configured initial user text, or the empty clear event its completion sends. |
 | `_session_load` and durable records | The finished session, as [`shellfish load`](#reading-a-session) emits it. |
 
 Startup hooks run in configured order and report only live activity while they work. Creation then hands the finished session to `load`, so its durable records have exactly one producer and reach clients once. A failed or cancelled startup reports the failure on stderr and publishes no session path, though the valid transcript prefix it already wrote is kept. Clients must wait for successful process exit before submitting a turn.

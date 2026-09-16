@@ -95,7 +95,7 @@ def test_startup_streams_hooks_and_runs_the_queued_prompt():
             session.close()
 
 
-def test_startup_cancellation_retains_the_session():
+def test_startup_cancellation_retains_the_transcript():
     with tempfile.TemporaryDirectory() as directory:
         component = Path(directory) / "slow_start"
         component.mkdir()
@@ -116,6 +116,7 @@ def test_startup_cancellation_retains_the_session():
             session.wait_after(0, "Cancelled.")
             # Cancelled creation never published a session, so the client stops
             # instead of offering one, while the written prefix stays on disk.
+            assert "Submit /quit to leave." in session.visible(), session.visible()
             assert session.explicit_session.exists()
             _, records = session.wait_session_records(
                 1, path=session.explicit_session
@@ -249,7 +250,7 @@ def test_fork_restores_removed_user_prompt_as_draft():
 if __name__ == "__main__":
     run("hook script PTY scenarios", [
         test_startup_streams_hooks_and_runs_the_queued_prompt,
-        test_startup_cancellation_retains_the_session,
+        test_startup_cancellation_retains_the_transcript,
         test_slow_prompt_hook_keeps_ui_active,
         test_prompt_hook_display_precedes_agent_section,
         test_prompt_hook_hands_off_to_another_session,
