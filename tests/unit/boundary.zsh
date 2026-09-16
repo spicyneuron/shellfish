@@ -23,6 +23,17 @@ declarations() {
 
 typeset dir component module token cmd
 typeset -a shell_files jq_files routes=()
+# Clients drive the core through public commands and may share only policy-free
+# primitives. Canonical session reading and provider mechanics stay in the core.
+typeset -a clients=( tui resume )
+typeset -a client_shared=(
+  lib/options.zsh lib/process.zsh lib/scratch.zsh lib/session/path.zsh )
+
+# Shared code never calls upward into a program.
+collect '\$SF_ROOT/libexec[^"'\'' ]*' $ROOT/lib/**/*(.N)
+(( ! ${#matches} )) || fail "lib uses a program: $matches[1]"
+collect '^include "libexec[^"]+"' $ROOT/lib/**/*.jq(.N)
+(( ! ${#matches} )) || fail "lib includes program jq: $matches[1]"
 
 # Collect shared symbols.
 declarations $ROOT/lib/**/*.zsh(.N)
@@ -55,13 +66,25 @@ for dir in $ROOT/libexec/*(/N); do
       fail "$component uses unknown shared data: $module"
   done
 
-  # jq includes stay component-local.
+  # jq includes stay component-local, and clients own no canonical schema.
   collect '^include "[^"]+"' $jq_files
   for token in $matches; do
     module=${${token#include \"}%\"}
     [[ $module == (libexec/$component/*|lib/*) ]] ||
       fail "$component includes jq it does not own: $module"
+    (( ! ${clients[(Ie)$component]} )) ||
+      fail "$component includes core jq: $module"
   done
+
+  # Clients reach the core through public commands and shared primitives only.
+  if (( ${clients[(Ie)$component]} )); then
+    collect '\$SF_ROOT/lib/[^"'\'' ]+' $shell_files $jq_files
+    for token in $matches; do
+      module=${token#\$SF_ROOT/}
+      (( ${client_shared[(Ie)$module]} )) ||
+        fail "$component uses core implementation: $module"
+    done
+  fi
 
   # Cross-component calls use public commands.
   collect '"\$SF_ENTRY" [a-z][a-z-]*' $shell_files
