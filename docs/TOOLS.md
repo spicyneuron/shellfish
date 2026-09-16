@@ -72,6 +72,8 @@ A tool that starts a model-authored or otherwise untrusted child command must cl
 
 When both the harness and tool enable sandboxing, Shellfish runs the tool under [`fence`](https://github.com/fencesandbox/fence) using the component's `fence.jsonc`. Harness path grants extend that policy, but deny rules still take precedence. A tool with `sandbox: false`, or any tool in a harness with sandboxing disabled, runs with the user's permissions.
 
+When the sandbox blocks an access and the tool then exits non-zero, Shellfish appends a `<sandbox_notice>` to the result's model text. The notice is advisory: the block is not necessarily what failed the tool.
+
 For a sandboxed tool with `allow_sandbox_bypass: true`, Shellfish adds `request_sandbox_bypass` and `sandbox_bypass_reason` to the model-facing input schema. These control fields are removed before the tool runs. A request proceeds unsandboxed only after a hook or interactive client approves it. Otherwise Shellfish records a denied result without invoking the tool.
 
 ## Cancellation

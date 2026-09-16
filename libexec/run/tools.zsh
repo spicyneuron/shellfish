@@ -144,7 +144,7 @@ sf_run_tool_execute() {
   local bounded_stdout bounded_stderr output
   local config_dir='' env_file execution_input state_projection=''
   local -a arguments environment names states process_command process
-  integer max_capture control_bytes budget stderr_bytes
+  integer max_capture control_bytes budget stderr_bytes denied=0
 
   tool_directory=$5
   SF_RUN_TOOL_ERROR=''
@@ -238,8 +238,13 @@ sf_run_tool_execute() {
     --argjson exit_code "$process[1]" \
     '{stdout:$stdout,stderr:$stderr,exit_code:$exit_code}') || return 1
   state_projection=$(printf '%s\n' "${states[@]}" | jq -sc '.') || return 1
+  # fence marks each monitored violation with a cross in its log. Report one only
+  # alongside a failing tool, since a successful run tolerated whatever was blocked.
+  if (( process[1] )) && grep -qs $'✗' "$capture/sandbox.log"; then denied=1; fi
   REPLY=$(jq -cn --argjson output "$output" --argjson states "$state_projection" \
-    '{output:$output,states:$states}') || return 1
+    --argjson denied "$denied" \
+    '{output:$output,states:$states} +
+     (if $denied == 1 then {sandbox_denied:true} else {} end)') || return 1
   } always {
     rm -rf -- "$capture"
   }
@@ -253,13 +258,17 @@ sf_run_tool_record() {
   sf_run_tool_render "$component" "$name" "$input" "$render_output" || return
   rendered=$REPLY
   REPLY=$(sf_jq -cn --arg id "$id" --arg name "$name" --argjson input "$input" \
-    --arg executable "$executable" --argjson output "$(jq -c '.output' <<<"$outcome")" \
+    --arg executable "$executable" --argjson outcome "$outcome" \
     --argjson rendered "$rendered" '
       include "lib/session/read";
-      ({type:"tool_result",id:$id,name:$name,input:$input,exit_code:$output.exit_code} +
+      (if $outcome.sandbox_denied then
+        "\n\n<sandbox_notice>A denial was detected during this tool call. " +
+        "This does not necessarily mean the tool failed.</sandbox_notice>"
+      else "" end) as $notice |
+      ({type:"tool_result",id:$id,name:$name,input:$input,exit_code:$outcome.output.exit_code} +
        (if $executable == "" then {} else {executable:$executable} end) +
        (if $rendered.user_text == null then {} else {user_text:$rendered.user_text} end) +
-       (if $rendered.model_text == null then {} else {model_text:$rendered.model_text} end)) as $result |
+       (if $rendered.model_text == null then {} else {model_text:($rendered.model_text + $notice)} end)) as $result |
       if $result | canonical_tool_result then $result else error("invalid result") end
     ' 2>/dev/null) || { SF_RUN_TOOL_ERROR="cannot render tool result: $name"; return 1; }
 }

@@ -194,4 +194,43 @@ jq -eRn '
 ' <"$stream" >/dev/null || fail 'post failure lost or reordered the known outcome'
 assert_canonical_session "$session"
 
+# A sandbox violation annotates the model text of a failing tool, and only that.
+typeset fence="$tmp/fence"
+cat >"$fence" <<'ZSH'
+#!/usr/bin/env zsh
+log=''
+while (( $# )); do
+  case $1 in
+    --fence-log-file) log=$2; shift 2 ;;
+    --) shift; break ;;
+    *) shift ;;
+  esac
+done
+[[ -z $log ]] || print -r -- '[fence:logstream] ✗ file-write-create /etc/denied' >"$log"
+exec "$@"
+ZSH
+chmod +x "$fence"
+SF_TEST_RUNTIME=$(jq -c --arg fence "$fence" '
+  .harness.post_tool_use=[] | .harness.sandbox=true | .harness.fence=$fence
+' <<<"$SF_TEST_RUNTIME")
+session="$tmp/sandbox-denied.jsonl"
+sf_test_session "$session"
+SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_COMMAND='print -rn -- output; exit 3' \
+  sf_test_run sandbox "$session" >"$stream" || fail 'sandbox denial turn failed'
+jq -eRn '
+  [inputs | fromjson | select(.type == "tool_result")][0] |
+  .exit_code == 3 and .user_text == "shell\noutput\nexit 3" and
+  .model_text == "output\nexit 3\n\n<sandbox_notice>A denial was detected during this tool call. This does not necessarily mean the tool failed.</sandbox_notice>"
+' <"$stream" >/dev/null || fail 'sandbox denial did not annotate the model text'
+assert_canonical_session "$session"
+
+session="$tmp/sandbox-tolerated.jsonl"
+sf_test_session "$session"
+SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_COMMAND='print -rn -- output' \
+  sf_test_run sandbox "$session" >"$stream" || fail 'tolerated denial turn failed'
+jq -eRn '
+  [inputs | fromjson | select(.type == "tool_result")][0] |
+  .exit_code == 0 and .model_text == "output\nexit 0"
+' <"$stream" >/dev/null || fail 'a succeeding tool was annotated'
+
 print -r -- ok
