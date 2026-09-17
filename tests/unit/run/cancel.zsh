@@ -44,4 +44,21 @@ jq -eRn --arg command "$command" '
 ' <"$stream" >/dev/null || fail 'tool interruption did not settle pending calls'
 assert_canonical_session "$session"
 
+# Opening a session whose turn never finished settles its calls the same way.
+typeset recovered="$tmp/recovered.jsonl" recovered_stream="$tmp/recovered.stream"
+sf_test_session "$recovered"
+jq -cn '{type:"user",content:[{type:"text",text:"interrupted"}]}' >>"$recovered"
+jq -cn '{type:"assistant",stop:"tool_calls",
+  content:[{type:"tool_call",id:"call_1",name:"shell",input:{command:"true"}}]}' >>"$recovered"
+jq -cn '{type:"user",content:[{type:"text",text:"next"}]}' |
+  "$ROOT/bin/shellfish" run --jsonl --session "$recovered" >"$recovered_stream" ||
+  fail 'recovery run failed'
+jq -eRn '
+  [inputs | fromjson] as $events |
+  ($events[0] | .type == "tool_result" and .id == "call_1" and .exit_code == 126 and
+    .executable != null and .model_text == "tool call outcome unknown\nexit 126") and
+  ($events[1] == {type:"error",user_text:"Turn interrupted."})
+' <"$recovered_stream" >/dev/null || fail 'recovery did not settle through the tool owner'
+assert_canonical_session "$recovered"
+
 print -r -- ok

@@ -1,7 +1,7 @@
 emulate -R zsh
 setopt no_aliases no_bg_nice no_multios pipe_fail
 
-(( $+functions[sf_environment_prepare] )) || source "$SF_ROOT/lib/environment.zsh"
+(( $+functions[sf_environment_load] )) || source "$SF_ROOT/lib/environment.zsh"
 (( $+functions[sf_process_run] )) || source "$SF_ROOT/lib/process.zsh"
 (( $+functions[sf_jq] )) || source "$SF_ROOT/lib/jq.zsh"
 
@@ -75,16 +75,16 @@ sf_run_tool_bound() {
 
 sf_run_tool_execute() {
   setopt local_options no_err_exit
-  local session=$1 runtime=$2 command=$3 selected=$4 settings=$5 fence=$7
-  local env_file=$8 execution_input=$9 sandbox=${10} read_paths=${11} write_paths=${12}
-  local tool_directory=${13} cwd=$SF_RUN[cwd] capture stdin bounded_stdout bounded_stderr
+  local session=$1 command=$2 selected=$3 settings=$4 fence=$6
+  local env_file=$7 execution_input=$8 sandbox=$9 read_paths=${10} write_paths=${11}
+  local tool_directory=${12} cwd=$SF_RUN[cwd] capture stdin bounded_stdout bounded_stderr
   local config_dir='' expose
   local -a arguments environment names process_command process sandbox_arguments
-  integer max_capture=$6 control_bytes budget stderr_bytes denied=0
+  integer max_capture=$5 control_bytes budget stderr_bytes denied=0
 
   SF_RUN_TOOL_ERROR=''
   [[ -z $env_file ]] || config_dir=${env_file:h}
-  sf_environment_prepare "$runtime" "$selected" || {
+  sf_environment_load "$env_file" "$selected" || {
     SF_RUN_TOOL_ERROR=$SF_ENVIRONMENT_ERROR
     return 1
   }
@@ -107,7 +107,7 @@ sf_run_tool_execute() {
   [[ -z ${LC_CTYPE-} ]] || environment+=( "LC_CTYPE=$LC_CTYPE" )
   [[ -z ${XDG_CONFIG_HOME-} ]] || environment+=( "XDG_CONFIG_HOME=$XDG_CONFIG_HOME" )
   environment+=( "${SF_ENVIRONMENT_VALUES[@]}" )
-  names=( $SF_ENVIRONMENT_NAMES )
+  names=( ${=SF_RUN[env_names]} )
   arguments=()
   for selected in $names; do arguments+=( -u "$selected" ); done
   arguments+=( "${environment[@]}" "$command" )

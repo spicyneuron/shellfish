@@ -1,7 +1,7 @@
 emulate -R zsh
 setopt no_aliases no_bg_nice no_multios pipe_fail
 
-(( $+functions[sf_environment_prepare] )) || source "$SF_ROOT/lib/environment.zsh"
+(( $+functions[sf_environment_load] )) || source "$SF_ROOT/lib/environment.zsh"
 (( $+functions[sf_process_run] )) || source "$SF_ROOT/lib/process.zsh"
 (( $+functions[sf_scratch_create] )) || source "$SF_ROOT/lib/scratch.zsh"
 
@@ -73,12 +73,12 @@ sf_run_hook_invoke() {
     SF_RUN_HOOK_ERROR="hook command is not executable: $command"
     return 1
   }
-  sf_environment_prepare "$runtime" "$selected" || {
+  sf_environment_load "$env_file" "$selected" || {
     SF_RUN_HOOK_ERROR=$SF_ENVIRONMENT_ERROR
     return 1
   }
   arguments=()
-  for selected in $SF_ENVIRONMENT_NAMES; do arguments+=( -u "$selected" ); done
+  for selected in ${=SF_RUN[env_names]}; do arguments+=( -u "$selected" ); done
   arguments+=( "${SF_ENVIRONMENT_VALUES[@]}" "$command" "$@" )
   environment=(
     "SHELLFISH_SESSION=${session:A}"

@@ -8,8 +8,8 @@ source "$SF_ROOT/libexec/run/hooks.zsh"
 source "$SF_ROOT/libexec/run/tools.zsh"
 
 typeset -gA SF_RUN=(
-  active_call '' answer '' jsonl 0 known_outcome '' permission_count 0 signal_status 0
-  write_failed 0
+  active_call '' answer '' env_names '' jsonl 0 known_outcome '' permission_count 0
+  signal_status 0 write_failed 0
 )
 
 sf_run_emit() {
@@ -27,9 +27,46 @@ sf_run_append() {
   sf_run_emit "$record" || { REPLY='cannot emit session record'; return 1; }
 }
 
+# Settle every still-pending call through the tool owner. The reason describes
+# calls the turn never reached.
+sf_run_settle() {
+  local session=$1 reason=$2 projection id name input outcome
+  local active=$SF_RUN[active_call] known=$SF_RUN[known_outcome]
+  local -a fields plan
+  integer index
+  projection=$(sf_jq -jRs '
+    include "lib/session";
+    def field: ., "\u0000";
+    [split("\n")[1:][] | select(length > 0) | fromjson] |
+    session_run | .calls[] |
+    (.id | field), (.name | field), (.input | tojson | field)
+  ' "$session" 2>/dev/null) || projection=''
+  fields=()
+  [[ -z $projection ]] || fields=( "${(@0)${projection%$'\0'}}" )
+  for (( index = 1; index + 2 <= ${#fields}; index += 3 )); do
+    id=$fields[index]
+    name=$fields[index+1]
+    input=$fields[index+2]
+    if [[ $id == $active && -n $known ]]; then
+      outcome=$known
+    elif [[ $id == $active ]]; then
+      sf_run_tool_refused 'tool call interrupted' 126
+      outcome=$REPLY
+    else
+      sf_run_tool_refused "$reason" 126
+      outcome=$REPLY
+    fi
+    sf_run_tool_plan "$SF_RUN[runtime]" "$id" "$name" "$input" || break
+    plan=( "${reply[@]}" )
+    sf_run_tool_complete "$plan[1]" "$id" "$name" "$input" "$plan[6]" \
+      "$plan[16]" "$outcome" || break
+    sf_run_append "$session" "$REPLY" || return 1
+  done
+}
+
 sf_run_open() {
-  local session=$1 projection record
-  local -a fields recovery
+  local session=$1 projection
+  local -a fields
   [[ $session == /* && -f $session && ! -L $session && -r $session ]] || {
     REPLY="invalid session path: $session"
     return 1
@@ -48,29 +85,25 @@ sf_run_open() {
     ($records[0].runtime | tojson | field),
     ($records[0].cwd | field),
     (([$records[1:][] | select(.type == "user")] | length + 1) | tostring | field),
-    ($run.calls[] | {type:"tool_result",id,name,input,exit_code:126,
-      user_text:"tool call outcome unknown",model_text:"tool call outcome unknown"} |
-      tojson | field),
-    (if $run.next == "user" then empty
-     else {type:"error",user_text:"Turn interrupted."} | tojson | field end),
+    (($run.next != "user") | tostring | field),
     ("ok" | field)
   ' "$session" 2>/dev/null) || {
     REPLY="cannot read session: $session"
     return 1
   }
   fields=( "${(@0)${projection%$'\0'}}" )
-  (( ${#fields} >= 4 )) && [[ $fields[-1] == ok ]] || {
+  (( ${#fields} == 5 )) && [[ $fields[5] == ok ]] || {
     REPLY="cannot read session: $session"
     return 1
   }
   SF_RUN[runtime]=$fields[1]
   SF_RUN[cwd]=$fields[2]
   SF_RUN[turn_id]=$fields[3]
-  recovery=()
-  (( ${#fields} == 4 )) || recovery=( "${(@)fields[4,$(( ${#fields} - 1 ))]}" )
-  for record in "${recovery[@]}"; do
-    sf_run_append "$session" "$record" || return 1
-  done
+  sf_environment_names "$SF_RUN[runtime]" || { REPLY=$SF_ENVIRONMENT_ERROR; return 1; }
+  SF_RUN[env_names]=$REPLY
+  [[ $fields[4] == true ]] || return 0
+  sf_run_settle "$session" 'tool call outcome unknown' || return 1
+  sf_run_error "$session" 'Turn interrupted.'
 }
 
 sf_run_interrupt() {
@@ -100,12 +133,9 @@ sf_run_partial_assistant() {
   ' 2>/dev/null) || REPLY=''
 }
 
-# Settle every still-pending call through the tool owner, then close the turn.
+# Record any partial response, settle pending calls, then close the turn.
 sf_run_cancel() {
-  local session=$1 message partial projection id name input outcome
-  local active=$SF_RUN[active_call] known=$SF_RUN[known_outcome]
-  local -a fields plan
-  integer index
+  local session=$1 message partial
   message='Turn interrupted.'
   (( SF_RUN[signal_status] != 130 )) || message='Cancelled.'
   sf_run_partial_assistant
@@ -113,34 +143,7 @@ sf_run_cancel() {
   if [[ -n $partial ]]; then
     sf_run_append "$session" "$partial" || return
   fi
-  projection=$(sf_jq -jRs '
-    include "lib/session";
-    def field: ., "\u0000";
-    [split("\n")[1:][] | select(length > 0) | fromjson] |
-    session_run | .calls[] |
-    (.id | field), (.name | field), (.input | tojson | field)
-  ' "$session" 2>/dev/null) || projection=''
-  fields=()
-  [[ -z $projection ]] || fields=( "${(@0)${projection%$'\0'}}" )
-  for (( index = 1; index + 2 <= ${#fields}; index += 3 )); do
-    id=$fields[index]
-    name=$fields[index+1]
-    input=$fields[index+2]
-    if [[ $id == $active && -n $known ]]; then
-      outcome=$known
-    elif [[ $id == $active ]]; then
-      sf_run_tool_refused 'tool call interrupted' 126
-      outcome=$REPLY
-    else
-      sf_run_tool_refused 'tool call cancelled' 126
-      outcome=$REPLY
-    fi
-    sf_run_tool_plan "$SF_RUN[runtime]" "$id" "$name" "$input" || break
-    plan=( "${reply[@]}" )
-    sf_run_tool_complete "$plan[1]" "$id" "$name" "$input" "$plan[6]" \
-      "$plan[16]" "$outcome" || break
-    sf_run_append "$session" "$REPLY" || return
-  done
+  sf_run_settle "$session" 'tool call cancelled' || return
   sf_run_error "$session" "$message" || true
 }
 
@@ -398,7 +401,7 @@ sf_run_turn() {
               fi
             fi
             if [[ -z $outcome ]]; then
-              sf_run_tool_execute "$session" "$runtime" "$executable" "$tool_environment" \
+              sf_run_tool_execute "$session" "$executable" "$tool_environment" \
                 "$settings" "$max_capture" "$fence" "$env_file" "$execution_input" \
                 "$sandbox" "$read_paths" "$write_paths" "$tool_temp"
               run_status=$?

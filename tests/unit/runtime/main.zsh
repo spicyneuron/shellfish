@@ -456,8 +456,9 @@ export ANTHROPIC_API_KEY='other-component'
 sf_runtime_resolve_from_config "$config" work '' '{}'
 runtime=$(jq -c '.harness.stop=[{command:"/bin/hook",environment:["ANTHROPIC_API_KEY"],render:{initial_user_text:"",user_text:"${output.stderr}",model_text:"${output.stdout}"}}]' \
   <<<"$REPLY")
-sf_environment_prepare "$runtime" OPENAI_API_KEY
-[[ ${(j: :)SF_ENVIRONMENT_NAMES} == 'ANTHROPIC_API_KEY OPENAI_API_KEY' ]]
+sf_environment_names "$runtime"
+[[ $REPLY == 'ANTHROPIC_API_KEY OPENAI_API_KEY' ]]
+sf_environment_load "$(jq -r '.backend.env_file' <<<"$runtime")" OPENAI_API_KEY
 [[ ${(j: :)SF_ENVIRONMENT_VALUES} == 'OPENAI_API_KEY=from-environment' ]]
 [[ $runtime != *from-environment* ]]
 unset OPENAI_API_KEY ANTHROPIC_API_KEY
@@ -469,16 +470,16 @@ export OPENAI_API_KEY = "from-file"
 ANTHROPIC_API_KEY=other-file
 ENV
 runtime=$(jq -c --arg path "$environment_file" '.backend.env_file=$path' <<<"$runtime")
-sf_environment_prepare "$runtime" OPENAI_API_KEY
+sf_environment_load "$environment_file" OPENAI_API_KEY
 [[ ${(j: :)SF_ENVIRONMENT_VALUES} == 'OPENAI_API_KEY=from-file' ]]
 [[ $runtime != *from-file* ]]
 
 export OPENAI_API_KEY=''
-sf_environment_prepare "$runtime" OPENAI_API_KEY
+sf_environment_load "$environment_file" OPENAI_API_KEY
 [[ ${(j: :)SF_ENVIRONMENT_VALUES} == 'OPENAI_API_KEY=' ]]
 unset OPENAI_API_KEY
 
 print -r -- 'invalid line' >>"$environment_file"
-if sf_environment_prepare "$runtime" OPENAI_API_KEY; then
+if sf_environment_load "$environment_file" OPENAI_API_KEY; then
   fail 'invalid env file tail was accepted'
 fi

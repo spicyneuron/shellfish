@@ -45,8 +45,8 @@ sf_run_main() {
         shift 2
         ;;
       --session-out)
-        (( ! out_explicit )) || { sf_die '--session-out may only be specified once'; return 2; }
-        [[ -n $2 ]] || { sf_die '--session-out requires a nonempty path'; return 2; }
+        # Creation owns the value diagnostics.
+        (( $# >= 2 )) || { sf_die '--session-out requires a value'; return 2; }
         out_explicit=1
         create_args+=( "${@:1:2}" )
         shift 2
