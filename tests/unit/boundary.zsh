@@ -37,6 +37,8 @@ collect '\$SF_ROOT/libexec[^"'\'' ]*' $ROOT/lib/**/*(.N)
 (( ! ${#matches} )) || fail "lib uses a program: $matches[1]"
 collect '^include "libexec[^"]+"' $ROOT/lib/**/*.jq(.N)
 (( ! ${#matches} )) || fail "lib includes program jq: $matches[1]"
+collect '\bsf_session_[a-z0-9_]+\b' $ROOT/lib/runtime.zsh
+(( ! ${#matches} )) || fail "runtime uses session ownership: $matches[1]"
 
 # Collect shared symbols.
 declarations $ROOT/lib/**/*.zsh(.N)

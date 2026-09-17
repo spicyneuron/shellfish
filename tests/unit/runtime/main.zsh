@@ -120,41 +120,11 @@ jq -e '
   (.backend.context_window_command | endswith("/share/default/backends/codex/context_window"))
 ' <<<"$REPLY" >/dev/null
 
-# New and stored runtimes share a boundary.
-sf_runtime_resolve '' "$config" '' 'boundary-model' '{}' '' 1
+# Runtime resolution and presentation are returned separately.
+sf_runtime_resolve_from_config "$config" '' 'boundary-model' '{}'
 jq -e '.profile.request.model == "boundary-model"' <<<"$REPLY" >/dev/null
 jq -e '.theme_mode == "light" and .themes.light.text == "#123456"' \
   <<<"$SF_PRESENTATION" >/dev/null
-
-typeset session="$tmp/session.jsonl"
-jq -cn --argjson runtime "$runtime" '
-  {type:"session",format_version:1,cwd:"/",created:"2026-08-18T00:00:00Z",runtime:$runtime}
-' >"$session"
-sf_runtime_resolve "$session" "$config" '' '' '{}' '' 0
-assert_equal "$runtime" "$REPLY" 'runtime resolution reads the frozen runtime'
-
-# Stored sessions reject runtime overrides.
-jq -e '.theme_mode == "light" and .themes.light.text == "#123456"' \
-  <<<"$SF_PRESENTATION" >/dev/null
-integer resolve_status=0
-sf_runtime_resolve "$session" "$config" '' changed '{}' '' 1 || resolve_status=$?
-(( resolve_status == 2 ))
-[[ $SF_RUNTIME_ERROR == 'runtime overrides cannot be used with an existing session' ]]
-
-# Stored runtimes do not depend on home directories.
-integer had_home=${+HOME} had_state_home=${+XDG_STATE_HOME}
-typeset saved_home=${HOME-} saved_state_home=${XDG_STATE_HOME-}
-typeset hooked_session="$tmp/hooked.jsonl"
-jq -cn --argjson runtime "$runtime" '
-  {type:"session",format_version:1,cwd:"/",
-   created:"2026-08-18T00:00:00Z",
-   runtime:($runtime | .harness.stop=[{command:"/bin/hook",environment:[],render:{initial_user_text:"",user_text:"${output.stderr}",model_text:"${output.stdout}"}}])}
-' >"$hooked_session"
-unset HOME XDG_STATE_HOME
-sf_runtime_resolve "$hooked_session" "$config" '' '' '{}' '' 0 >/dev/null
-if (( had_home )); then export HOME=$saved_home; else unset HOME; fi
-if (( had_state_home )); then export XDG_STATE_HOME=$saved_state_home
-else unset XDG_STATE_HOME; fi
 
 # Reopening validates only presentation config.
 cat >"$tmp/config/presentation.jsonc" <<'JSON'

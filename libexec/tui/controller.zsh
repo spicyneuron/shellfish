@@ -301,13 +301,21 @@ sf_tui_answer_permission() {
 
 # Replay an existing session through the same projector as a live turn.
 sf_tui_load() {
-  local session=$1 loaded
-  loaded=$("$SF_ENTRY" load --session "$session" 2>/dev/null) || {
+  local session=$1 line
+  local -a loaded=()
+  integer endings=0
+  [[ -f $session && ! -L $session && -r $session && -s $session ]] || {
     SF_PRESENT_ERROR="cannot read session: $session"
     return 1
   }
+  endings=$(tail -c 1 "$session" | wc -l) || endings=0
+  (( endings == 1 )) || {
+    SF_PRESENT_ERROR="cannot read incomplete session: $session"
+    return 1
+  }
+  while IFS= read -r line; do loaded+=( "$line" ); done <"$session"
   sf_tui_reset
-  sf_tui_project load ${(f)loaded} && sf_tui_drain_actions || {
+  sf_tui_project load "${loaded[@]}" && sf_tui_drain_actions || {
     SF_PRESENT_ERROR="cannot present session: $session"
     return 1
   }

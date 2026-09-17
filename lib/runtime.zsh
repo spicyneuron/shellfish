@@ -2,7 +2,6 @@ emulate -R zsh
 setopt no_aliases no_multios pipe_fail
 
 (( $+functions[sf_jq] )) || source "$SF_ROOT/lib/jq.zsh"
-(( $+functions[sf_session_read_runtime] )) || source "$SF_ROOT/lib/session.zsh"
 [[ -n ${SF_SHARE-} ]] || typeset -g SF_SHARE=$SF_ROOT/share
 
 typeset -g SF_RUNTIME_ERROR=''
@@ -155,32 +154,6 @@ sf_runtime_reference() {
     candidate="$SF_SHARE/default/$kind/$reference"
   fi
   REPLY=${candidate:A}
-}
-
-sf_runtime_resolve() {
-  local session_path=$1 requested_config=$2 requested_profile=$3
-  local requested_model=$4 requested_request=$5 requested_backend=$6 runtime
-  integer runtime_override=${7:-0}
-
-  SF_RUNTIME_ERROR=''
-  SF_PRESENTATION=''
-  REPLY=''
-  if [[ -n $session_path ]]; then
-    if (( runtime_override )); then
-      sf_runtime_fail 'runtime overrides cannot be used with an existing session'
-      return 2
-    fi
-    sf_session_read_runtime "$session_path" || {
-      sf_runtime_fail "$SF_SESSION_ERROR"
-      return
-    }
-    runtime=$REPLY
-    sf_runtime_restore_presentation "$requested_config" || return
-    REPLY=$runtime
-  else
-    sf_runtime_resolve_from_config "$requested_config" "$requested_profile" \
-      "$requested_model" "$requested_request" "$requested_backend" || return
-  fi
 }
 
 sf_runtime_resolve_from_config() {
@@ -421,10 +394,10 @@ sf_runtime_restore_presentation() {
 # Parse the options that select a runtime, then resolve it. Callers that own
 # their own flags pass only the ones listed in lib/options.zsh.
 sf_runtime_resolve_args() {
-  local session_path='' config='' profile='' model='' backend=''
+  local config='' profile='' model='' backend=''
   local request='{}' flag grant resolved
   local -a read_paths=() write_paths=()
-  integer override=0 detect=0
+  integer detect=0
 
   SF_RUNTIME_ERROR=''
   while (( $# )); do
@@ -435,36 +408,27 @@ sf_runtime_resolve_args() {
         config=$2
         shift 2
         ;;
-      --session-from)
-        [[ -n $2 ]] || sf_runtime_fail '--session-from requires a nonempty path' || return 2
-        session_path=$2
-        shift 2
-        ;;
       -p|--profile)
         [[ $2 =~ ^[A-Za-z0-9][A-Za-z0-9_-]*$ ]] ||
           sf_runtime_fail '--profile must match [A-Za-z0-9][A-Za-z0-9_-]*' || return 2
         profile=$2
-        override=1
         shift 2
         ;;
       -m|--model)
         [[ -n $2 && ! $2 =~ '[[:cntrl:]]' ]] ||
           sf_runtime_fail '--model requires a nonempty value without control characters' || return 2
         model=$2
-        override=1
         shift 2
         ;;
       -b|--backend)
         [[ -n $2 && ! $2 =~ '[[:cntrl:]]' ]] ||
           sf_runtime_fail '--backend requires a nonempty value without control characters' || return 2
         backend=$2
-        override=1
         shift 2
         ;;
       --request)
         request=$(jq -ce 'select(type == "object")' <<<"$2" 2>/dev/null) ||
           sf_runtime_fail '--request requires a JSON object' || return 2
-        override=1
         shift 2
         ;;
       --sandbox-read|--sandbox-write)
@@ -484,12 +448,10 @@ sf_runtime_resolve_args() {
         else
           write_paths+=( "$resolved" )
         fi
-        override=1
         shift 2
         ;;
       --sandbox-auto)
         detect=1
-        override=1
         shift
         ;;
       *)
@@ -514,6 +476,5 @@ sf_runtime_resolve_args() {
       sf_runtime_fail 'cannot prepare sandbox grants' || return
   fi
 
-  sf_runtime_resolve "$session_path" "$config" "$profile" "$model" "$request" \
-    "$backend" "$override"
+  sf_runtime_resolve_from_config "$config" "$profile" "$model" "$request" "$backend"
 }

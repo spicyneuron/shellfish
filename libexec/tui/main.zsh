@@ -30,10 +30,11 @@ sf_read_prompt() {
 sf_tui_main() {
   local requested_session=''
   local input='' draft='' presentation runtime session='' session_mode=startup
+  local presentation_config='' source_session=''
   local arity=''
   local -a positional=() runtime_args=() resolve_args=()
   local -a original_args=("$@")
-  integer out_explicit=0 override=0 take=0
+  integer out_explicit=0 override=0 runtime_override=0 take=0
   integer clear_requested=0
   integer handoff=0 draft_explicit=0
   integer verbose_requested=0 controller_status=0
@@ -81,7 +82,11 @@ sf_tui_main() {
         runtime_args+=( "${@:1:$take}" )
         # The banner and footer describe the runtime creation will freeze, so
         # the client resolves the same options. Only the system prompt is its own.
-        [[ $1 == (--system|--system-file) ]] || resolve_args+=( "${@:1:$take}" )
+        [[ $1 == (--system|--system-file|--session-from) ]] ||
+          resolve_args+=( "${@:1:$take}" )
+        [[ $1 != --config ]] || presentation_config=$2
+        [[ $1 != --session-from ]] || source_session=$2
+        [[ $1 == (--config|--system|--system-file|--session-from) ]] || runtime_override=1
         [[ $1 == --config ]] || override=1
         shift $take
         ;;
@@ -127,19 +132,55 @@ sf_tui_main() {
       sf_die 'options that configure a new session cannot be used with an existing one'
       return 2
     }
-    session=$requested_session
+    source "$SF_ROOT/lib/session.zsh"
+    sf_session_select_path "$requested_session" || {
+      sf_die "$SF_SESSION_ERROR"
+      return 1
+    }
+    session=$REPLY
     session_mode=resume
-    resolve_args=( --session-from "$session" "${resolve_args[@]}" )
   fi
-  source "$SF_ROOT/lib/session.zsh"
   source "$SF_ROOT/lib/runtime.zsh"
   SF_RUNTIME_VERBOSE=$verbose_requested
-  sf_runtime_resolve_args "${resolve_args[@]}" || {
-    resolve_status=$?
-    sf_die "$SF_RUNTIME_ERROR"
-    return $resolve_status
-  }
-  runtime=$REPLY
+  if [[ $session_mode == resume ]]; then
+    sf_session_read_runtime "$session" || {
+      sf_die "$SF_SESSION_ERROR"
+      return 1
+    }
+    runtime=$REPLY
+    sf_runtime_restore_presentation "$presentation_config" || {
+      resolve_status=$?
+      sf_die "$SF_RUNTIME_ERROR"
+      return $resolve_status
+    }
+  elif [[ -n $source_session ]]; then
+    (( ! runtime_override )) || {
+      sf_die 'runtime overrides cannot be used with --session-from'
+      return 2
+    }
+    source "$SF_ROOT/lib/session.zsh"
+    sf_session_select_path "$source_session" || {
+      sf_die "$SF_SESSION_ERROR"
+      return 1
+    }
+    sf_session_read_runtime "$REPLY" || {
+      sf_die "$SF_SESSION_ERROR"
+      return 1
+    }
+    runtime=$REPLY
+    sf_runtime_restore_presentation "$presentation_config" || {
+      resolve_status=$?
+      sf_die "$SF_RUNTIME_ERROR"
+      return $resolve_status
+    }
+  else
+    sf_runtime_resolve_args "${resolve_args[@]}" || {
+      resolve_status=$?
+      sf_die "$SF_RUNTIME_ERROR"
+      return $resolve_status
+    }
+    runtime=$REPLY
+  fi
   presentation=$SF_PRESENTATION
 
   source "$SF_ROOT/libexec/tui/render/main.zsh"

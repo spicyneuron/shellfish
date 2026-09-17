@@ -6,6 +6,7 @@ source "${0:A:h:h}/_helpers.zsh"
 sf_test_source lib/options.zsh
 
 typeset -a not_forwarded=( -- --verbose )
+typeset -a create_owned=( --session-from --system --system-file )
 
 # A shift count includes the option itself.
 typeset -A parsed=()
@@ -32,10 +33,12 @@ for name in ${(k)parsed}; do
 done
 
 for name in ${(k)SF_CREATE_OPTIONS}; do
-  [[ $name == (--system|--system-file) ]] || (( ${+parsed[$name]} )) || \
+  (( ${create_owned[(Ie)$name]} )) || (( ${+parsed[$name]} )) || \
     fail "lib/options.zsh declares $name but lib/runtime.zsh does not parse it"
 done
-[[ $SF_CREATE_OPTIONS[--system] == 1 && $SF_CREATE_OPTIONS[--system-file] == 1 ]] ||
-  fail 'creation options give system inputs the wrong arity'
+for name in $create_owned; do
+  [[ $SF_CREATE_OPTIONS[$name] == 1 ]] ||
+    fail "creation option gives $name the wrong arity"
+done
 
 print -r -- ok

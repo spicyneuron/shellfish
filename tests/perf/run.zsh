@@ -121,51 +121,39 @@ for (( iteration = 1; iteration <= iterations; iteration++ )); do
 done
 
 for (( iteration = 1; iteration <= iterations; iteration++ )); do
-  typeset -gx SHELLFISH_PERF_RUN="config-$iteration"
-  start=$EPOCHREALTIME
-  (
-    cd "$tmp/project"
-    XDG_STATE_HOME="$tmp/state" PATH="$tmp/bin:$PATH" \
-      zsh -f "$root/bin/shellfish" config \
-      --config "$tmp/config/shellfish.jsonc" >/dev/null 2>"$stderr"
-  ) || { cat "$stderr" >&2; exit 1; }
-  printf 'config\t%.9f\n' "$(( (EPOCHREALTIME - start) * 1000 ))" >>"$component_metrics"
-
   typeset -gx SHELLFISH_PERF_RUN="create-$iteration"
   start=$EPOCHREALTIME
   (
     cd "$tmp/project"
     XDG_STATE_HOME="$tmp/state" PATH="$tmp/bin:$PATH" \
-      zsh -f "$root/bin/shellfish" create \
+      zsh -f "$root/bin/shellfish" run --jsonl --session-create \
       --session-out "$tmp/create-$iteration.jsonl" \
       --config "$tmp/config/shellfish.jsonc" >/dev/null 2>"$stderr"
   ) || { cat "$stderr" >&2; exit 1; }
   printf 'create\t%.9f\n' "$(( (EPOCHREALTIME - start) * 1000 ))" >>"$component_metrics"
 
-  typeset -gx SHELLFISH_PERF_RUN="build-request-$iteration"
+  typeset -gx SHELLFISH_PERF_RUN="backend-request-$iteration"
   start=$EPOCHREALTIME
   (
     cd "$tmp/project"
     XDG_STATE_HOME="$tmp/state" PATH="$tmp/bin:$PATH" \
-      zsh -f "$root/bin/shellfish" build-request \
-      --session "$tmp/session-$iteration.jsonl" </dev/null >/dev/null 2>"$stderr"
+      zsh -f "$root/bin/shellfish" backend-request \
+      <"$tmp/session-$iteration.jsonl" >/dev/null 2>"$stderr"
   ) || { cat "$stderr" >&2; exit 1; }
-  printf 'build_request\t%.9f\n' "$(( (EPOCHREALTIME - start) * 1000 ))" >>"$component_metrics"
+  printf 'backend_request\t%.9f\n' "$(( (EPOCHREALTIME - start) * 1000 ))" >>"$component_metrics"
 done
 
-integer fresh_count=0 existing_count=0 config_count=0 create_count=0 build_count=0
+integer fresh_count=0 existing_count=0 create_count=0 backend_count=0
 fresh_count=$(grep -c '^fresh-' "$jq_log") || fresh_count=0
 existing_count=$(grep -c '^existing-' "$jq_log") || existing_count=0
-config_count=$(grep -c '^config-' "$jq_log") || config_count=0
 create_count=$(grep -c '^create-' "$jq_log") || create_count=0
-build_count=$(grep -c '^build-request-' "$jq_log") || build_count=0
+backend_count=$(grep -c '^backend-request-' "$jq_log") || backend_count=0
 float fresh_per_run=$fresh_count existing_per_run=$existing_count
-float config_per_run=$config_count create_per_run=$create_count build_per_run=$build_count
+float create_per_run=$create_count backend_per_run=$backend_count
 fresh_per_run=$(( fresh_per_run / iterations ))
 existing_per_run=$(( existing_per_run / iterations ))
-config_per_run=$(( config_per_run / iterations ))
 create_per_run=$(( create_per_run / iterations ))
-build_per_run=$(( build_per_run / iterations ))
+backend_per_run=$(( backend_per_run / iterations ))
 
 print_metrics() {
   local heading=$1 samples=$2
@@ -195,6 +183,5 @@ print_metrics 'Run performance (2 requests, 1 tool, 1 script/hook)' "$turn_metri
   fresh_session 'Fresh session' $fresh_per_run \
   existing_session 'Existing session' $existing_per_run
 print_metrics 'Public commands' "$component_metrics" \
-  config 'Resolve configuration' $config_per_run \
   create 'Create session' $create_per_run \
-  build_request 'Build request' $build_per_run
+  backend_request 'Backend request' $backend_per_run

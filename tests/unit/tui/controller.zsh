@@ -19,6 +19,20 @@ pump() {
   sf_tui_pending_next || fail 'draining core output failed'
 }
 
+# Replay complete session lines directly and reject invalid physical input.
+typeset replay="$tmp/replay.jsonl" malformed="$tmp/malformed.jsonl" torn="$tmp/torn.jsonl"
+cp "$SF_TEST_SESSIONS/complete.jsonl" "$replay"
+SF_PRESENT_SESSION=$replay
+SF_PRESENT_STATE=idle
+sf_tui_load "$replay" || fail 'direct session replay failed'
+assert_equal test/fake-model "$SF_PRESENT_IDENTITY"
+print -r -- 'not json' >"$malformed"
+sf_tui_load "$malformed" && fail 'malformed session replay succeeded'
+assert_equal "cannot present session: $malformed" "$SF_PRESENT_ERROR"
+print -n -r -- '{"type":"user"' >"$torn"
+sf_tui_load "$torn" && fail 'incomplete session replay succeeded'
+assert_equal "cannot read incomplete session: $torn" "$SF_PRESENT_ERROR"
+
 # A silent hook completion retracts its transient activity.
 SF_PRESENT_SESSION="$tmp/session.jsonl"
 SF_PRESENT_STATE=working

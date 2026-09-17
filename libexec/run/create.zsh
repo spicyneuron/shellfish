@@ -20,9 +20,9 @@ sf_run_read_system() {
 }
 
 sf_run_create() {
-  local requested_out='' runtime session system system_text projection header record cwd created
+  local requested_out='' source_session='' runtime session system system_text projection header record cwd created
   local -a forwarded=() system_parts=() system_paths=()
-  integer resolve_status=0 take=0 system_explicit=0
+  integer resolve_status=0 take=0 system_explicit=0 runtime_override=0
 
   while (( $# )); do
     case $1 in
@@ -45,21 +45,38 @@ sf_run_create() {
         system_explicit=1
         shift 2
         ;;
+      --session-from)
+        [[ -z $source_session ]] || { sf_die '--session-from may only be specified once'; return 2; }
+        [[ -n $2 ]] || { sf_die '--session-from requires a nonempty path'; return 2; }
+        source_session=$2
+        shift 2
+        ;;
       *)
         take=$(( ${SF_CREATE_OPTIONS[$1]:-0} + 1 ))
         (( $# >= take )) || { sf_die "$1 requires a value"; return 2; }
         forwarded+=( "${@:1:$take}" )
+        [[ $1 == --config ]] || runtime_override=1
         shift $take
         ;;
     esac
   done
 
-  sf_runtime_resolve_args "${forwarded[@]}" || {
-    resolve_status=$?
-    sf_die "$SF_RUNTIME_ERROR"
-    return $resolve_status
-  }
-  runtime=$REPLY
+  if [[ -n $source_session ]]; then
+    (( ! runtime_override )) || {
+      sf_die 'runtime overrides cannot be used with --session-from'
+      return 2
+    }
+    sf_session_select_path "$source_session" || { sf_die "$SF_SESSION_ERROR"; return 1; }
+    sf_session_read_runtime "$REPLY" || { sf_die "$SF_SESSION_ERROR"; return 1; }
+    runtime=$REPLY
+  else
+    sf_runtime_resolve_args "${forwarded[@]}" || {
+      resolve_status=$?
+      sf_die "$SF_RUNTIME_ERROR"
+      return $resolve_status
+    }
+    runtime=$REPLY
+  fi
   if (( ! system_explicit )); then
     projection=$(jq -jr '.profile.system[] | ., "\u0000"' <<<"$runtime") ||
       sf_die 'cannot resolve system paths' || return
