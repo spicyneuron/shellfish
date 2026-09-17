@@ -47,10 +47,10 @@ def test_sandbox_updates_without_reload():
             end = time.monotonic() + 3
             while time.monotonic() < end:
                 records = [json.loads(line) for line in path.read_text().splitlines()]
-                if grant_path in records[0]["harness"]["sandbox_write_paths"]:
+                if grant_path in records[0]["runtime"]["harness"]["sandbox_write_paths"]:
                     break
                 session.pump()
-            assert grant_path in records[0]["harness"]["sandbox_write_paths"]
+            assert grant_path in records[0]["runtime"]["harness"]["sandbox_write_paths"]
             granted = f"Session sandbox write grant added: {grant_path}\n"
             assert len(records) == 2
             result = records[1]
@@ -59,7 +59,7 @@ def test_sandbox_updates_without_reload():
                 "type": "hook_result",
                 "lifecycle": "user_prompt_submit",
                 "name": "sandbox",
-                "executable": records[0]["harness"]["user_prompt_submit"][0]["command"],
+                "executable": records[0]["runtime"]["harness"]["user_prompt_submit"][0]["command"],
                 "input": f"/sandbox +w {grant}",
                 "user_text": f"sandbox\n{granted}",
                 "model_text": granted,

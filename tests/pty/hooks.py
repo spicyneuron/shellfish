@@ -176,10 +176,10 @@ def test_prompt_hook_display_precedes_agent_section():
     try:
         mark = len(session.output)
         session.send(b"display only\r")
-        session.wait_after(mark, "display line 24")
+        session.wait_after(mark, "display line 3")
         visible = session.visible(mark)
         user = visible.find("─ user ")
-        display = visible.find("display line 24")
+        display = visible.find("display line 3")
         assert 0 <= user < display, visible
         assert "─ agent " not in visible, visible
     finally:
@@ -226,7 +226,7 @@ def test_prompt_hook_hands_off_to_new_session():
         path, records = session.wait_session_records(1)
         assert path != session.explicit_session, (path, session.explicit_session)
         assert len(records) >= 1, records
-        assert records[0]["profile"]["request"]["model"] == "fake-model", records[0]
+        assert records[0]["runtime"]["profile"]["request"]["model"] == "fake-model", records[0]
     finally:
         session.close()
 
@@ -242,6 +242,7 @@ def test_fork_restores_removed_user_prompt_as_draft():
         session.wait_after(mark, "❯ original prompt", view=session.typed)
         session.send(b" edited\r")
         _, records = session.wait_session_records(3, path=fork)
+        assert fork.stat().st_mode & 0o777 == 0o600
         assert records[-2]["content"][0]["text"] == "original prompt edited", records
     finally:
         session.close()

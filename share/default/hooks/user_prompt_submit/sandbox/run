@@ -3,7 +3,7 @@
 emulate -R zsh
 setopt extended_glob no_aliases no_multios pipe_fail
 
-typeset submitted='' body operation candidate grant_path header grants updated patch field
+typeset submitted='' body operation candidate grant_path header grants updated runtime field
 typeset action access message
 typeset usage='usage: /sandbox {read|write|+read|+write|+r|+w|-read|-write|-r|-w} DIR'
 integer read_status
@@ -14,13 +14,13 @@ case "$read_status:$submitted" in
   1:/sandbox)
     IFS= read -r header <"$SHELLFISH_SESSION" || exit 1
     jq -r '
-      "Sandbox: " + (if .harness.sandbox then "enabled" else "disabled" end),
+      "Sandbox: " + (if .runtime.harness.sandbox then "enabled" else "disabled" end),
       "Read grants:",
-      (if .harness.sandbox_read_paths | length == 0 then "  (none)"
-       else .harness.sandbox_read_paths[] | "  " + . end),
+      (if .runtime.harness.sandbox_read_paths | length == 0 then "  (none)"
+       else .runtime.harness.sandbox_read_paths[] | "  " + . end),
       "Write grants:",
-      (if .harness.sandbox_write_paths | length == 0 then "  (none)"
-       else .harness.sandbox_write_paths[] | "  " + . end)
+      (if .runtime.harness.sandbox_write_paths | length == 0 then "  (none)"
+       else .runtime.harness.sandbox_write_paths[] | "  " + . end)
     ' <<<"$header" >&2 || exit 1
     exit 10
     ;;
@@ -50,12 +50,12 @@ esac
 }
 
 IFS= read -r header <"$SHELLFISH_SESSION" || exit 1
-jq -e '.harness.sandbox == true' <<<"$header" >/dev/null || {
+jq -e '.runtime.harness.sandbox == true' <<<"$header" >/dev/null || {
   print -u2 -r -- 'session sandbox is disabled'
   exit 10
 }
 field="sandbox_${access}_paths"
-grants=$(jq -ce --arg field "$field" '.harness[$field] | select(type == "array")' \
+grants=$(jq -ce --arg field "$field" '.runtime.harness[$field] | select(type == "array")' \
   <<<"$header") || exit 1
 
 if [[ $candidate == '~/'* ]]; then
@@ -96,8 +96,8 @@ fi
 updated=$(jq -c --arg action "$action" --arg path "$grant_path" '
   if $action == "add" then . + [$path] else map(select(. != $path)) end
 ' <<<"$grants") || exit 1
-patch=$(jq -cn --arg field "$field" --argjson paths "$updated" \
-  '{harness:{($field):$paths}}') || exit 1
+runtime=$(jq -c --arg field "$field" --argjson paths "$updated" \
+  '.runtime | .harness[$field]=$paths' <<<"$header") || exit 1
 if [[ $action == add ]]; then
   message="Session sandbox $access grant added: $grant_path"
 else
@@ -105,6 +105,6 @@ else
 fi
 print -r -- "$message"
 
-jq -cn --argjson patch "$patch" \
-  '{action:"session_update",patch:$patch}' >&3 || exit 1
+jq -cn --argjson runtime "$runtime" \
+  '{action:"session_update",runtime:$runtime}' >&3 || exit 1
 exit 11

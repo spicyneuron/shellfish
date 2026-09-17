@@ -4,9 +4,9 @@ emulate -R zsh
 setopt extended_glob no_aliases no_multios pipe_fail
 
 typeset submitted draft='' instruction request summary boundary context created base candidate
-typeset transcript installed
+typeset transcript
 typeset -a argv
-integer explicit=0 suffix=1 install_status=0
+integer explicit=0 suffix=1
 
 fail_compaction() {
   print -u2 -r -- "$1"
@@ -47,9 +47,8 @@ request=$(jq -cn --arg text "$instruction" \
   fail_compaction 'cannot prepare summary request; keeping the original'
   exit $?
 }
-summary=$(print -r -- "$request" |
-  "$SHELLFISH_EXECUTABLE" build-request --session "$SHELLFISH_SESSION" --tools '[]' |
-  "$SHELLFISH_EXECUTABLE" send-request --session "$SHELLFISH_SESSION" |
+summary=$({ cat -- "$SHELLFISH_SESSION"; print -r -- "$request"; } |
+  "$SHELLFISH_EXECUTABLE" backend-request |
   jq -er '[.content[] | select(.type == "text") | .text] | join("") |
     select(test("[^[:space:]]"))') || {
   fail_compaction 'cannot summarize session; keeping the original'
@@ -104,12 +103,10 @@ base=${SHELLFISH_SESSION%.jsonl}
 base=${base%_compact(|_<->)}
 candidate="${base}_compact.jsonl"
 while true; do
-  install_status=0
-  installed=$("$SHELLFISH_EXECUTABLE" install-session --session-out "$candidate" \
-    <"$transcript" 2>/dev/null) || install_status=$?
-  (( install_status )) || break
-  # Status 3 means the name is taken; anything else is a real failure.
-  if (( install_status != 3 )); then
+  if (umask 077; setopt no_clobber; cat -- "$transcript" >"$candidate") 2>/dev/null; then
+    break
+  fi
+  if [[ ! -e $candidate && ! -L $candidate ]]; then
     fail_compaction 'cannot create compacted session; keeping the original'
     exit $?
   fi
@@ -117,7 +114,7 @@ while true; do
   (( suffix++ ))
 done
 
-argv=( "$SHELLFISH_EXECUTABLE" --session "$installed" )
+argv=( "$SHELLFISH_EXECUTABLE" --session "$candidate" )
 [[ -z $draft ]] || argv+=( --draft "$draft" )
 jq -cn '$ARGS.positional | {action:"handoff",argv:.}' --args -- "${argv[@]}" >&3 || exit 1
 exit 11

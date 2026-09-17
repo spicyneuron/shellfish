@@ -1,6 +1,8 @@
 #!/usr/bin/env zsh
 
-source "${0:A:h:h}/_hooks.zsh"
+source "${0:A:h:h:h}/_helpers.zsh"
+sf_test_source lib/session.zsh
+sf_test_tmp compact
 
 # Compact into a canonical child.
 typeset compact_hook="$ROOT/share/default/hooks/user_prompt_submit/compact/run"
@@ -17,15 +19,14 @@ cat >"$compact_shellfish" <<'ZSH'
 #!/usr/bin/env zsh
 typeset request reply
 case $1 in
-  build-request|install-session) exec "$SF_TEST_ENTRY" "$@" ;;
-  send-request)
+  backend-request)
     request=$(cat)
     if [[ -n ${SF_TEST_BACKEND_REQUEST-} ]]; then
       print -r -- "$request" >>"$SF_TEST_BACKEND_REQUEST"
     fi
     [[ ${SF_TEST_COMPACT_FAIL:-0} == 0 ]] || exit 1
     reply='Timeline </timeline> & entry'
-    jq -cn --arg reply "$reply" '{content:[{type:"text",text:$reply}]}'
+    jq -cn --arg reply "$reply" '{type:"assistant",stop:"end",content:[{type:"text",text:$reply}]}'
     ;;
   *) exit 2 ;;
 esac
@@ -35,12 +36,10 @@ chmod +x "$compact_shellfish"
 sf_test_runtime
 SF_TEST_RUNTIME=$(jq -c '.profile.context_window = 100' <<<"$SF_TEST_RUNTIME")
 sf_test_session "$compact_source"
-sf_session_begin_turn "$compact_source"
 sf_session_append "$compact_source" '{"type":"user","content":[{"type":"text","text":"Hello </first_user_message> & more"}]}'
 sf_session_append "$compact_source" '{"type":"assistant","stop":"end","content":[{"type":"text","text":"Hi"}],"usage":{"input_tokens":1,"output_tokens":1}}'
 sf_session_append "$compact_source" '{"type":"user","content":[{"type":"text","text":"Keep working"}]}'
 sf_session_append "$compact_source" '{"type":"assistant","stop":"end","content":[{"type":"reasoning","text":"Check first","opaque":{"encrypted_content":"secret"}},{"type":"text","text":"Continuing"}],"usage":{"input_tokens":1,"output_tokens":1}}'
-sf_session_reset
 
 # Ignore sessions below threshold.
 : >"$compact_control"
@@ -71,12 +70,13 @@ jq -e --arg command "$compact_shellfish" \
   . == {action:"handoff",argv:[$command,"--session",$child,"--draft","my next prompt"]}
 ' "$compact_control" >/dev/null || fail 'automatic compaction lost the prompt'
 assert_equal "$compact_before" "$(shasum <"$compact_source")"
-jq -e --rawfile prompt "$ROOT/share/default/hooks/user_prompt_submit/compact/compact.md" '
+jq -e -s --rawfile prompt "$ROOT/share/default/hooks/user_prompt_submit/compact/compact.md" '
   ($prompt | rtrimstr("\n")) as $prompt |
-  .tools == [] and
-  .messages[-1].content == [{type:"text",text:$prompt}]
+  .[-1].content == [{type:"text",text:$prompt}]
 ' "$compact_request" >/dev/null || fail 'compaction did not send its prompt unchanged'
 assert_canonical_session "$tmp/compact-source_compact.jsonl"
+[[ $(stat -f %Lp "$tmp/compact-source_compact.jsonl") == 600 ]] ||
+  fail 'compaction created a readable child session'
 jq -e -s --arg executable "$compact_hook" '
   [.[].type] == ["session","hook_result"] and
   .[1].lifecycle == "session_start" and .[1].executable == $executable and

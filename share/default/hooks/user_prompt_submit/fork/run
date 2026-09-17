@@ -4,9 +4,9 @@ emulate -R zsh
 setopt extended_glob no_aliases no_multios pipe_fail
 
 typeset submitted='' target=0 base candidate created draft='' resolved
-typeset transcript installed
+typeset transcript
 typeset -a argv fields
-integer read_status suffix=1 cutoff=0 explicit=0 has_draft=0 install_status=0
+integer read_status suffix=1 cutoff=0 explicit=0 has_draft=0
 IFS= read -r submitted
 read_status=$?
 
@@ -68,19 +68,17 @@ base=${base%_fork(|_<->)}
 base="${base}_fork"
 while true; do
   candidate="${base}_${suffix}.jsonl"
-  install_status=0
-  installed=$("$SHELLFISH_EXECUTABLE" install-session --session-out "$candidate" \
-    <"$transcript" 2>/dev/null) || install_status=$?
-  (( install_status )) || break
-  # Status 3 means the name is taken; anything else is a real failure.
-  if (( install_status != 3 )); then
+  if (umask 077; setopt no_clobber; cat -- "$transcript" >"$candidate") 2>/dev/null; then
+    break
+  fi
+  if [[ ! -e $candidate && ! -L $candidate ]]; then
     print -u2 -r -- "cannot create fork: $candidate"
     exit 10
   fi
   (( suffix++ ))
 done
 
-argv=( "$SHELLFISH_EXECUTABLE" --session "$installed" )
+argv=( "$SHELLFISH_EXECUTABLE" --session "$candidate" )
 (( ! has_draft )) || argv+=( --draft "$draft" )
 jq -cn '$ARGS.positional | {action:"handoff",argv:.}' --args -- "${argv[@]}" >&3 || exit 1
 exit 11

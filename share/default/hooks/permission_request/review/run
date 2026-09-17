@@ -6,11 +6,10 @@ setopt extended_glob no_aliases no_multios pipe_fail
 integer input_tokens=32768
 integer output_tokens=4096
 integer request_seconds=60
-local request header active_header active_response budget system base records transcript projected
-local backend_request response result selected_runtime state_name='' name
+local request header budget system base records transcript response result context candidate state_name=''
 local review_content=''
 integer review_content_set=0
-local -a candidates parent_environment reviewer_environment send_command
+local -a candidates
 
 permission_deny() {
   local reason=${1//$'\n'/ } control
@@ -66,62 +65,76 @@ fi
 
 header=$(head -n 1 -- "$SHELLFISH_SESSION") ||
   permission_deny 'Permission review could not inspect the active runtime.'
-active_header=$header
-parent_environment=( "${(@f)$(jq -r '.backend.environment[]' <<<"$active_header")}" ) ||
-  permission_deny 'Permission review could not inspect the active backend environment.'
-parent_environment=( "${(@)parent_environment:#}" )
-if [[ -n ${SHELLFISH_PERMISSION_PROFILE-} ]]; then
-  selected_runtime=$("$SHELLFISH_EXECUTABLE" config --profile \
-    "$SHELLFISH_PERMISSION_PROFILE" 2>/dev/null) ||
-    permission_deny 'Permission review could not resolve its selected profile.'
-  header=$(jq -cn --argjson header "$header" --argjson runtime "$selected_runtime" '
-    $header | .profile=$runtime.profile | .backend=$runtime.backend
-  ') || permission_deny 'Permission review could not apply its selected profile.'
-fi
-reviewer_environment=( "${(@f)$(jq -r '.backend.environment[]' <<<"$header")}" ) ||
-  permission_deny 'Permission review could not inspect the reviewer backend environment.'
-reviewer_environment=( "${(@)reviewer_environment:#}" )
 # A known context limit clamps the fixed input budget; an unknown one leaves it intact.
 budget=$(jq --argjson input_tokens "$input_tokens" --argjson output_tokens "$output_tokens" '
-  [(.profile.context_window | numbers | select(floor == .) | . - $output_tokens),
+  [(.runtime.profile.context_window | numbers | select(floor == .) | . - $output_tokens),
     $input_tokens] | min * 4
 ' <<<"$header")
 
-projected=$("$SHELLFISH_EXECUTABLE" build-request --session "$SHELLFISH_SESSION" \
-  --tools '[]' 2>/dev/null) ||
-  permission_deny 'Permission review could not project the active context.'
-active_response=$(jq -sc '
-  reduce .[] as $record ({assistant:null,settled:false};
-    if $record.type == "assistant" then
-      {assistant:($record | del(.usage)),settled:false}
-    elif $record.type == "tool_result" and .assistant != null then
-      .settled = true
-    else . end) |
-  select(.assistant.stop == "tool_calls")
-' "$SHELLFISH_SESSION" 2>/dev/null) ||
-  permission_deny 'Permission review could not inspect the active response.'
-
 # The first user message retains startup context. Later messages are admitted
 # backward without gaps, then emitted chronologically.
-records=$(jq -cn --argjson request "$request" --argjson projected "$projected" \
-  --argjson active "$active_response" '
-  ($projected.messages | to_entries) as $entries |
+records=$(jq -cs --argjson request "$request" '
+  def render_context:
+    if type == "string" then .
+    else
+      "<hook name=\"" + (.lifecycle | @html) + "\">\n" +
+      ([.scripts[] | "<context script=\"" + (.name | @html) + "\">\n" + .text +
+        (if .text | endswith("\n") then "" else "\n" end) + "</context>"] | join("\n")) +
+      "\n</hook>"
+    end;
+  def join_context($parts): [$parts[] | select(. != "") | render_context] | join("\n\n");
+  def context_message($context; $text):
+    {type:"user",content:[{type:"text",text:join_context([$context[], $text])}]};
+  def add_context($record):
+    ([to_entries[] | select(.value.lifecycle? == $record.lifecycle) | .key] | first) as $index |
+    {name:$record.name,text:$record.model_text} as $script |
+    if $index == null then . + [{lifecycle:$record.lifecycle,scripts:[$script]}]
+    else .[$index].scripts += [$script] end;
+  . as $records |
+  (reduce $records[1:][] as $record
+    ({messages:[],context:[],calls:[],response:null};
+      if $record.type == "state" or $record.type == "system" then .
+      elif $record.type == "hook_result" then
+        if ($record.model_text // "") == "" then . else .context |= add_context($record) end
+      elif $record.type == "error" then .calls=[] | .response=null
+      elif $record.type == "user" then
+        .messages += [context_message(.context;$record.content[0].text)] | .context=[]
+      elif $record.type == "assistant" then
+        (if (.context | length) == 0 then .
+         else .messages += [context_message(.context;"")] | .context=[] end) |
+        ([$record.content[] | select(.type == "tool_call")]) as $calls |
+        if ($calls | length) == 0 then .messages += [$record | del(.usage)]
+        else .calls=$calls | .response=$record end
+      elif $record.type == "tool_result" then
+        .calls[0] as $call |
+        (if .response == null then . else
+          .messages += [.response | del(.usage) |
+            .content=[.content[] | select(.type != "tool_call")]] | .response=null end) |
+        .messages += [
+          {type:"tool_call",id:$call.id,name:$call.name,input:$call.input},
+          {type:"tool_result",call_id:$call.id,name:$call.name,
+            exit_code:$record.exit_code,content:join_context([.context[],($record.model_text // "")])}
+        ] | .context=[] | .calls=.calls[1:]
+      else . end)) as $state |
+  ($state.messages + if ($state.context | length) == 0 then []
+    else [context_message($state.context;"")] end | to_entries) as $entries |
   ([ $entries[] | select(.value.type == "user") | .key ] | first) as $first_user |
   select($first_user != null) |
   {
-    system_message:($projected.system | if length > 0 then . else null end),
+    system_message:([$records[1:][] | select(.type == "system") | .content] | join("\n\n") |
+      if length > 0 then . else null end),
     startup_context:$entries[$first_user].value,
     target_tool_call:{type:"tool_call",id:$request.tool.id,
       name:$request.tool.name,input:$request.tool.input},
     candidates:([
       ($entries[] | select(.key > $first_user) | .value),
-      ($active.assistant | select($active.settled | not)) |
+      ($state.response | select(. != null)) |
       if .type == "assistant" then
         {type,stop,content:[.content[] | select(.type == "text")]}
       else . end
     ] | reverse)
   }
-' 2>/dev/null) ||
+' "$SHELLFISH_SESSION" 2>/dev/null) ||
   permission_deny 'Permission review could not project the active context.'
 
 base=$(jq -cn --argjson records "$records" '
@@ -156,7 +169,7 @@ transcript="$SHELLFISH_TURN_STATE/permission-review.jsonl"
 if ! jq -cn --argjson header "$header" --arg system "$system" --argjson context "$base" \
     --argjson output_tokens "$output_tokens" --argjson request_seconds "$request_seconds" '
   ($header |
-    .profile.request |= (
+    .runtime.profile.request |= (
       .max_tokens = ([.max_output_tokens // .max_completion_tokens //
         .max_tokens // $output_tokens,$output_tokens] | min) |
       del(.max_output_tokens,.max_completion_tokens) |
@@ -169,9 +182,9 @@ if ! jq -cn --argjson header "$header" --arg system "$system" --argjson context 
           reason:{type:"string",minLength:1,maxLength:1000}
         }
       }) |
-    .profile.system = [] |
-    .backend.http_timeout = ([.backend.http_timeout,$request_seconds] | min) |
-    .harness |= (.tools=[] | .sandbox=false | .sandbox_read_paths=[] |
+    .runtime.profile.system = [] |
+    .runtime.backend.http_timeout = ([.runtime.backend.http_timeout,$request_seconds] | min) |
+    .runtime.harness |= (.tools=[] | .sandbox=false | .sandbox_read_paths=[] |
       .sandbox_write_paths=[] | .fence="" |
       .session_start=[] | .user_prompt_submit=[] | .permission_request=[] |
       .pre_tool_use=[] | .post_tool_use=[] | .stop=[])),
@@ -181,19 +194,7 @@ if ! jq -cn --argjson header "$header" --arg system "$system" --argjson context 
   permission_deny 'Permission review could not construct its temporary runtime.'
 fi
 
-backend_request="$SHELLFISH_TURN_STATE/permission-request.json"
-if ! "$SHELLFISH_EXECUTABLE" build-request --session "$transcript" --tools '[]' \
-    >"$backend_request" 2>/dev/null; then
-  permission_deny 'Permission review could not build the provider request.'
-fi
-send_command=( env )
-if [[ -n ${SHELLFISH_PERMISSION_PROFILE-} ]]; then
-  for name in $parent_environment; do
-    (( ${reviewer_environment[(Ie)$name]} )) || send_command+=( -u "$name" )
-  done
-fi
-send_command+=( "$SHELLFISH_EXECUTABLE" send-request --session "$transcript" )
-response=$("${send_command[@]}" <"$backend_request" 2>/dev/null) ||
+response=$("$SHELLFISH_EXECUTABLE" backend-request <"$transcript" 2>/dev/null) ||
   permission_deny 'Permission review provider request failed.'
 
 review_content=$(jq -er '

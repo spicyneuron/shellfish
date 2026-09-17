@@ -67,7 +67,7 @@ Commands that replace the active session request a [handoff](HOOKS.md#user_promp
 
 The bundled `review` component can decide sandbox bypass requests without interactive approval. It uses one inference to classify risk and user authorization, then allows only when authorization is at least as high as risk. Failures deny the request. Classifications and reasons remain in model-hidden state; a denial reason is also shown as tool feedback.
 
-Review is disabled by default. Enable it with `"permission_request": ["review"]`. It uses the session's inference settings unless `SHELLFISH_PERMISSION_PROFILE` selects another profile in `.env`.
+Review is disabled by default. Enable it with `"permission_request": ["review"]`. It uses the session's frozen inference settings.
 
 ### Compaction
 
