@@ -27,7 +27,11 @@ typeset -a shell_files jq_files routes=()
 # primitives. Canonical session reading and provider mechanics stay in the core.
 typeset -a clients=( tui resume )
 typeset -a client_shared=(
-  lib/options.zsh lib/process.zsh lib/scratch.zsh lib/session/path.zsh )
+  lib/options.zsh lib/process.zsh lib/runtime.zsh lib/scratch.zsh lib/session.zsh )
+# lib/session.zsh both names a session and mutates one. A client may name one.
+typeset -a core_only_symbols=(
+  sf_session_prepare sf_session_system sf_session_read sf_session_append
+  sf_session_update sf_session_recover_turn sf_session_begin_turn )
 
 # Shared code never calls upward into a program.
 collect '\$SF_ROOT/libexec[^"'\'' ]*' $ROOT/lib/**/*(.N)
@@ -83,6 +87,11 @@ for dir in $ROOT/libexec/*(/N); do
       module=${token#\$SF_ROOT/}
       (( ${client_shared[(Ie)$module]} )) ||
         fail "$component uses core implementation: $module"
+    done
+    collect "$symbol_pattern" $shell_files $jq_files
+    for token in $matches; do
+      (( ! ${core_only_symbols[(Ie)$token]} )) ||
+        fail "$component mutates a session: $token"
     done
   fi
 
