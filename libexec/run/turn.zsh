@@ -100,10 +100,12 @@ sf_run_partial_assistant() {
   ' 2>/dev/null) || REPLY=''
 }
 
+# Settle every still-pending call through the tool owner, then close the turn.
 sf_run_cancel() {
-  local session=$1 message partial projection record
+  local session=$1 message partial projection id name input outcome
   local active=$SF_RUN[active_call] known=$SF_RUN[known_outcome]
-  local -a records
+  local -a fields plan
+  integer index
   message='Turn interrupted.'
   (( SF_RUN[signal_status] != 130 )) || message='Cancelled.'
   sf_run_partial_assistant
@@ -111,34 +113,33 @@ sf_run_cancel() {
   if [[ -n $partial ]]; then
     sf_run_append "$session" "$partial" || return
   fi
-  projection=$(sf_jq -jRs --argjson runtime "$SF_RUN[runtime]" --arg active "$active" \
-    --argjson known "${known:-null}" '
+  projection=$(sf_jq -jRs '
     include "lib/session";
-    include "lib/runtime";
     def field: ., "\u0000";
     [split("\n")[1:][] | select(length > 0) | fromjson] |
     session_run | .calls[] |
-    . as $call |
-    ([$runtime.harness.tools[] | select(.name == $call.name)][0]) as $tool |
-    ($tool.manifest.render // tool_render_defaults) as $render |
-    (if $call.id == $active and $known != null then $known
-     else {output:{stdout:"",stderr:"",exit_code:126},states:[],
-       reason:(if $call.id == $active then "tool call interrupted" else "tool call cancelled" end)} end) as $outcome |
-    render_component($render;$call.name;$call.input;
-      ($outcome.output + if $outcome | has("reason") then {stderr:$outcome.reason} else {} end)) as $rendered |
-    ({type:"tool_result",id:$call.id,name:$call.name,input:$call.input,
-      exit_code:$outcome.output.exit_code} +
-     (if $tool == null then {} else {executable:$tool.command} end) +
-     (if $rendered.user_text == null then {} else {user_text:$rendered.user_text} end) +
-     (if $rendered.model_text == null then {} else {model_text:($rendered.model_text +
-       if $outcome.sandbox_denied then "\n\n<sandbox_notice>A denial was detected during this tool call. This does not necessarily mean the tool failed.</sandbox_notice>"
-       else "" end)} end)) |
-    select(canonical_tool_result) | tojson | field
+    (.id | field), (.name | field), (.input | tojson | field)
   ' "$session" 2>/dev/null) || projection=''
-  records=()
-  [[ -z $projection ]] || records=( "${(@0)${projection%$'\0'}}" )
-  for record in "${records[@]}"; do
-    sf_run_append "$session" "$record" || return
+  fields=()
+  [[ -z $projection ]] || fields=( "${(@0)${projection%$'\0'}}" )
+  for (( index = 1; index + 2 <= ${#fields}; index += 3 )); do
+    id=$fields[index]
+    name=$fields[index+1]
+    input=$fields[index+2]
+    if [[ $id == $active && -n $known ]]; then
+      outcome=$known
+    elif [[ $id == $active ]]; then
+      sf_run_tool_refused 'tool call interrupted' 126
+      outcome=$REPLY
+    else
+      sf_run_tool_refused 'tool call cancelled' 126
+      outcome=$REPLY
+    fi
+    sf_run_tool_plan "$SF_RUN[runtime]" "$id" "$name" "$input" || break
+    plan=( "${reply[@]}" )
+    sf_run_tool_complete "$plan[1]" "$id" "$name" "$input" "$plan[6]" \
+      "$plan[16]" "$outcome" || break
+    sf_run_append "$session" "$REPLY" || return
   done
   sf_run_error "$session" "$message" || true
 }
