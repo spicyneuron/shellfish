@@ -1,7 +1,7 @@
 #!/usr/bin/env zsh
 
 source "${0:A:h:h:h}/_helpers.zsh"
-sf_test_source lib/session/main.zsh
+sf_test_source lib/session.zsh
 
 typeset session header before
 sf_test_tmp session
@@ -22,9 +22,9 @@ jq -e '.profile.request.model == "test-model" and .backend.env_file == ""' \
   <<<"$SF_SESSION[runtime]" >/dev/null
 header=$(head -n 1 "$session")
 jq -e -L "$ROOT" '
-  include "lib/runtime/schema";
+  include "lib/runtime";
   canonical_session_header(1) and
-  .profile.request.model == "test-model"
+  .runtime.profile.request.model == "test-model"
 ' <<<"$header" >/dev/null
 [[ $SF_SESSION[turn_id] == 1 && $SF_SESSION[cwd] == "$PWD" ]]
 
@@ -33,15 +33,16 @@ sf_session_append "$session" '{"type":"assistant","stop":"end","content":[{"type
 sf_session_reset
 (( $(wc -l <"$session") == 3 ))
 
-# Runtime updates preserve transcript bytes and file mode.
-typeset transcript_before updated_before
+# An update carries the complete replacement runtime, and preserves transcript
+# bytes and file mode.
+typeset transcript_before updated_before granted denied
 transcript_before=$(tail -n +2 "$session")
 sf_session_begin_turn "$session"
-sf_session_update "$session" '{"harness":{"sandbox_read_paths":["/tmp/reference"]}}' ||
-  fail "$SF_SESSION_ERROR"
-typeset request_update='{"harness":{"sandbox_write_paths":["/tmp/reference"]},"profile":{"request":{"effort":null}}}'
-sf_session_update "$session" "$request_update" ||
-  fail "$SF_SESSION_ERROR"
+granted=$(jq -c '.harness.sandbox_read_paths=["/tmp/reference"] |
+  .harness.sandbox_write_paths=["/tmp/reference"] |
+  .profile.request.effort=null' <<<"$SF_TEST_RUNTIME") || fail 'cannot build the update'
+denied=$(jq -c '.harness.sandbox_write_paths=[]' <<<"$granted") || fail 'cannot build the update'
+sf_session_update "$session" "$granted" || fail "$SF_SESSION_ERROR"
 jq -e '
   .harness.sandbox_read_paths == ["/tmp/reference"] and
   .harness.sandbox_write_paths == ["/tmp/reference"] and
@@ -49,20 +50,17 @@ jq -e '
 ' <<<"$SF_SESSION[runtime]" >/dev/null
 [[ $(tail -n +2 "$session") == "$transcript_before" ]]
 [[ $(stat -f '%Lp' "$session") == 600 ]]
+# An unchanged runtime rewrites nothing.
 updated_before=$(cat "$session")
-sf_session_update "$session" '{"harness":{"sandbox_write_paths":["/tmp/reference"]}}'
+sf_session_update "$session" "$granted"
 [[ $(cat "$session") == "$updated_before" ]]
-sf_session_update "$session" '{"harness":{"sandbox_write_paths":[]}}'
+sf_session_update "$session" "$denied"
 jq -e '
   .harness.sandbox_read_paths == ["/tmp/reference"] and
   .harness.sandbox_write_paths == []
 ' <<<"$SF_SESSION[runtime]" >/dev/null
-sf_session_update "$session" '{"harness":{"sandbox_write_paths":[]}}'
 updated_before=$(cat "$session")
-if sf_session_update "$session" '{"cwd":"/tmp"}'; then
-  fail 'session metadata update succeeded'
-fi
-if sf_session_update "$session" '{"harness":{"sandbox":null}}'; then
+if sf_session_update "$session" "$(jq -c '.harness.sandbox=null' <<<"$denied")"; then
   fail 'invalid runtime update succeeded'
 fi
 [[ $(cat "$session") == "$updated_before" ]]
@@ -158,5 +156,5 @@ print -r -- "$REPLY" | jq -se '. == [
 sf_session_reset
 jq -e -s '.[3].model_text == "out"' "$unresolved" >/dev/null ||
   fail 'recovery rewrote a known outcome'
-tail -n +2 "$unresolved" | jq -L "$ROOT" -sce 'include "lib/session/read"; session_load' \
+tail -n +2 "$unresolved" | jq -L "$ROOT" -sce 'include "lib/session"; session_load' \
   >/dev/null || fail 'recovery left an invalid transcript'

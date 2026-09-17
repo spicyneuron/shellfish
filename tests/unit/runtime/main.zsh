@@ -1,7 +1,7 @@
 #!/usr/bin/env zsh
 
 source "${0:A:h:h:h}/_helpers.zsh"
-sf_test_source libexec/config/runtime.zsh lib/environment.zsh lib/session/main.zsh
+sf_test_source lib/runtime.zsh lib/environment.zsh lib/session.zsh
 
 typeset config runtime tool_name jsonc hook
 sf_test_tmp runtime
@@ -128,7 +128,7 @@ jq -e '.theme_mode == "light" and .themes.light.text == "#123456"' \
 
 typeset session="$tmp/session.jsonl"
 jq -cn --argjson runtime "$runtime" '
-  {type:"session",format_version:1,cwd:"/",created:"2026-08-18T00:00:00Z"} + $runtime
+  {type:"session",format_version:1,cwd:"/",created:"2026-08-18T00:00:00Z",runtime:$runtime}
 ' >"$session"
 sf_runtime_resolve "$session" "$config" '' '' '{}' '' 0
 assert_equal "$runtime" "$REPLY" 'runtime resolution reads the frozen runtime'
@@ -147,8 +147,8 @@ typeset saved_home=${HOME-} saved_state_home=${XDG_STATE_HOME-}
 typeset hooked_session="$tmp/hooked.jsonl"
 jq -cn --argjson runtime "$runtime" '
   {type:"session",format_version:1,cwd:"/",
-   created:"2026-08-18T00:00:00Z"} +
-  ($runtime | .harness.stop=[{command:"/bin/hook",environment:[],render:{initial_user_text:"",user_text:"${output.stderr}",model_text:"${output.stdout}"}}])
+   created:"2026-08-18T00:00:00Z",
+   runtime:($runtime | .harness.stop=[{command:"/bin/hook",environment:[],render:{initial_user_text:"",user_text:"${output.stderr}",model_text:"${output.stdout}"}}])}
 ' >"$hooked_session"
 unset HOME XDG_STATE_HOME
 sf_runtime_resolve "$hooked_session" "$config" '' '' '{}' '' 0 >/dev/null

@@ -1,8 +1,58 @@
 emulate -R zsh
 setopt no_aliases no_multios pipe_fail
 
+# Where sessions live, and how one is named, read, appended to, and replaced.
+
+typeset -g SF_SESSION_ERROR=''
+
+sf_session_fail() {
+  SF_SESSION_ERROR=$1
+  return 1
+}
+
+sf_session_directory() {
+  local LC_ALL=C root cwd scope
+  setopt local_options extended_glob
+  if [[ -n ${XDG_STATE_HOME-} ]]; then
+    root="$XDG_STATE_HOME/shellfish/sessions"
+  elif [[ -n ${HOME-} ]]; then
+    root="$HOME/.local/state/shellfish/sessions"
+  else
+    sf_session_fail 'HOME or XDG_STATE_HOME is required when --session is omitted'
+    return
+  fi
+  cwd=$(pwd -P) || {
+    sf_session_fail 'cannot resolve the working directory'
+    return
+  }
+  scope=${cwd//[^A-Za-z0-9]##/_}
+  REPLY="$root/$scope"
+}
+
+# An empty request names a new session in the current project's directory.
+sf_session_select_path() {
+  local requested=${1-} directory created
+  SF_SESSION_ERROR=''
+  if [[ -n $requested ]]; then
+    [[ $requested == /* ]] || requested="$PWD/$requested"
+    REPLY=${requested:a}
+    return
+  fi
+
+  sf_session_directory || return
+  directory=$REPLY
+  mkdir -p "$directory" && chmod 700 "$directory" || {
+    sf_session_fail "cannot prepare session directory: $directory"
+    return
+  }
+  created=$(date -u '+%Y%m%dT%H%M%SZ') || {
+    sf_session_fail 'cannot timestamp session'
+    return
+  }
+  REPLY="$directory/$created-${sysparams[pid]}-$RANDOM$RANDOM.jsonl"
+}
+
 (( $+functions[sf_jq] )) || source "$SF_ROOT/lib/jq.zsh"
-(( $+functions[sf_session_select_path] )) || source "$SF_ROOT/lib/session/path.zsh"
 
 typeset -gA SF_SESSION=()
 typeset -ga SF_SESSION_RECORDS=()
@@ -39,9 +89,8 @@ sf_session_prepare() {
   }
   decoded=$(sf_jq -jnre --arg cwd "$cwd" --arg created "$created" \
     --argjson runtime "$runtime" '
-      include "lib/runtime/schema";
       def field: ., "\u0000";
-      ({type:"session",format_version:1,cwd:$cwd,created:$created} + $runtime) |
+      {type:"session",format_version:1,cwd:$cwd,created:$created,runtime:$runtime} |
       (tojson | field),
       ("ok" | field)
     ') || {
@@ -83,9 +132,8 @@ sf_session_read_runtime() {
     return
   }
   REPLY=$(sf_jq -cnce --argjson header "$header" '
-    include "lib/runtime/schema";
-    $header | select(canonical_session_header(1)) |
-    del(.type, .format_version, .cwd, .created)
+    include "lib/runtime";
+    $header | select(canonical_session_header(1)) | .runtime
   ' 2>/dev/null) || {
     sf_session_fail "cannot read session header: $session_path"
     return
@@ -97,14 +145,14 @@ sf_session_project() {
   local -a fields
   SF_SESSION=()
   loaded=$(printf '%s\n' "${SF_SESSION_RECORDS[@]}" | sf_jq -jes '
-    include "lib/runtime/schema";
-    include "lib/session/read";
+    include "lib/runtime";
+    include "lib/session";
     def field: ., "\u0000";
     select(length >= 1) |
     select(.[0] | canonical_session_header(1)) |
     # Loading validates the transcript; the fields below project the header.
     (.[1:] | session_load) as $durable |
-    (.[0] | del(.type, .format_version, .cwd, .created) | tojson | field),
+    (.[0].runtime | tojson | field),
     (.[0].cwd | field),
     (([.[] | select(.type == "user")] | length + 1) |
       tostring | field),
@@ -171,13 +219,9 @@ sf_session_update() {
   }
   decoded=$(sf_jq -jnre --argjson header "$SF_SESSION_RECORDS[1]" \
     --argjson update "$update" '
-      include "lib/runtime/schema";
+      include "lib/runtime";
       def field: ., "\u0000";
-      select($update | type == "object" and
-        (keys - ["backend", "harness", "profile"] | length) == 0) |
-      ($header | {type,format_version,cwd,created}) as $metadata |
-      (($header | del(.type,.format_version,.cwd,.created)) * $update) as $runtime |
-      ($runtime + $metadata) as $updated |
+      ($header | .runtime = $update) as $updated |
       select($updated | canonical_session_header(1)) |
       ($updated != $header | tostring | field),
       ($updated | tojson | field),
@@ -234,7 +278,7 @@ sf_session_recover_turn() {
   REPLY=''
   closing=$(printf '%s\n' "${SF_SESSION_RECORDS[@]:1}" |
     sf_jq -sc '
-      include "lib/session/read";
+      include "lib/session";
       session_run |
       select(.next != "user") |
       (.calls[] as $call |

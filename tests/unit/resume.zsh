@@ -17,7 +17,9 @@ typeset s_state_only="$tmp/state_only.jsonl"
 typeset s_state_tail="$tmp/state_tail.jsonl"
 
 make_header() {
-  jq -cn '{type:"session",format_version:1,cwd:"/tmp",created:"2026-08-18T10:00:00Z",profile:{request:{model:"claude-3"}},backend:{name:"custom",command:"/test/run",endpoint:"https://example.invalid"}}'
+  jq -cn '{type:"session",format_version:1,cwd:"/tmp",created:"2026-08-18T10:00:00Z",
+    runtime:{profile:{request:{model:"claude-3"}},
+      backend:{name:"custom",command:"/test/run",endpoint:"https://example.invalid"}}}'
 }
 
 # Header-only session.
@@ -107,7 +109,7 @@ error=$(zsh -f "$entry" --resume 2>&1) || exit_code=$?
   fail 'resume picker did not require an interactive terminal'
 
 export XDG_STATE_HOME=$tmp
-source "$ROOT/lib/session/main.zsh"
+source "$ROOT/lib/session.zsh"
 source "$ROOT/libexec/resume/discovery.zsh"
 sf_session_directory
 directory=$REPLY
@@ -115,7 +117,8 @@ mkdir -p -- "$directory"
 
 make_discovery_header() {
   jq -cn --arg cwd "$1" --arg model "$2" '{type:"session",format_version:1,
-    cwd:$cwd,created:"2026-09-04T00:00:00Z",profile:{request:{model:$model}}}'
+    cwd:$cwd,created:"2026-09-04T00:00:00Z",
+    runtime:{profile:{request:{model:$model}}}}'
 }
 make_discovery_header "$(pwd -P)" first >"$directory/first.jsonl"
 touch -t 202609040100 "$directory/first.jsonl"

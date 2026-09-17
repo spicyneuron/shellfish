@@ -103,7 +103,7 @@ def record_actions($mode; $window; $previews):
   elif .type == "hook_result" then
     [["execution_end", .id, .name, hook_class, result_text,
       (hook_preview($previews; .lifecycle; (.executable // "")) | tostring)]]
-  elif .type == "session" then runtime_actions
+  elif .type == "session" then (.runtime | runtime_actions)
   elif .type == "state" then []
   else error("unsupported record: " + (.type | tostring))
   end;
@@ -154,7 +154,8 @@ reduce .[] as $line (
     .window = ($line.runtime.profile.context_window // null) |
     .previews = ($line.runtime | runtime_previews)
   elif $line.type == "session" then
-    .window = ($line.profile.context_window // null) | .previews = ($line | runtime_previews)
+    .window = ($line.runtime.profile.context_window // null) |
+    .previews = ($line.runtime | runtime_previews)
   else . end
 ) |
 # Fields are NUL-joined and each action ends with a record separator.

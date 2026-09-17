@@ -1,7 +1,7 @@
 emulate -R zsh
 setopt no_aliases no_multios pipe_fail
 
-(( $+functions[sf_session_directory] )) || source "$SF_ROOT/lib/session/path.zsh"
+(( $+functions[sf_session_directory] )) || source "$SF_ROOT/lib/session.zsh"
 
 typeset -ga SF_SESSION_MATCHES=()
 
@@ -51,7 +51,7 @@ sf_session_find() {
           select($headers[.key] |
             type == "object" and .type == "session" and .format_version == 1 and
             (.cwd == $cwd) and
-            (.profile.request.model | type == "string")) |
+            (.runtime.profile.request.model | type == "string")) |
           .value] |
         (if $limit > 0 then .[0:$limit] else . end) |
         (.[] | ., "\u0000"), "ok", "\u0000"

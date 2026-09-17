@@ -52,8 +52,8 @@ zsh -f "$entry" create --session-out "$granted" --config "$config" \
   fail 'create rejected forwarded sandbox grants'
 jq -e --arg read "${tmp:A}/system" --arg write "${tmp:A}/home" '
   select(.type == "session") |
-  (.harness.sandbox_read_paths | index($read)) != null and
-  (.harness.sandbox_write_paths | index($write)) != null
+  (.runtime.harness.sandbox_read_paths | index($read)) != null and
+  (.runtime.harness.sandbox_write_paths | index($write)) != null
 ' "$granted" >/dev/null || fail 'create did not store forwarded sandbox grants'
 
 # Derived sessions reuse runtime and reread system paths.
