@@ -7,6 +7,8 @@ typeset -g SF_PRESENT_HIGHLIGHT_ERROR=''
 typeset -gi SF_PRESENT_HIGHLIGHT_INLINE_OPEN=0 SF_PRESENT_HIGHLIGHT_BLOCK_OPEN=0
 typeset -gA SF_PRESENT_STYLE=()
 typeset -g SF_PRESENT_BACKGROUND=''
+# Keyed "$language/$token", plus "$language" once its words are loaded.
+typeset -gA SF_PRESENT_KEYWORD=()
 
 sf_tui_background_mode() {
   local tty saved answer='' character previous=''
@@ -164,6 +166,10 @@ sf_tui_code_highlight() {
       ;;
     *) return 0 ;;
   esac
+  if [[ -n $words ]] && (( ! ${+SF_PRESENT_KEYWORD[$language]} )); then
+    for token in ${(s:|:)words}; do SF_PRESENT_KEYWORD[$language/$token]=1; done
+    SF_PRESENT_KEYWORD[$language]=1
+  fi
 
   if (( state )) && [[ -n $block_end ]]; then
     end=1
@@ -294,7 +300,7 @@ sf_tui_code_highlight() {
         (( ++end ))
       done
       token=${source[index,end - 1]}
-      if [[ -n $words && "|$words|" == *"|$token|"* ]]; then
+      if (( ${+SF_PRESENT_KEYWORD[$language/$token]} )); then
         sf_tui_highlight_span $(( base + index - 1 )) $(( base + end - 1 )) keyword
       fi
       index=$end

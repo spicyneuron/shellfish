@@ -394,7 +394,7 @@ const LANGUAGES = {
     comments: ["#.*"],
     quotes: "\"'",
     words:
-      "case|do|done|elif|else|esac|export|fi|for|function|if|in|local|return|then|until|while",
+      "alias|awk|basename|case|cat|cd|chmod|chown|cmp|comm|cp|curl|cut|date|diff|dirname|do|done|du|echo|elif|else|env|esac|eval|exec|export|false|fi|find|for|function|getopts|git|grep|head|if|in|jobs|jq|kill|less|ln|local|ls|make|mkdir|mv|npm|paste|printf|pwd|read|realpath|return|rm|sed|set|sort|source|ssh|tail|tar|tee|test|then|time|touch|tr|true|uniq|until|wait|wc|wget|which|while|xargs",
   },
   go: {
     comments: ["//.*", "/\\*[\\s\\S]*?\\*/"],
