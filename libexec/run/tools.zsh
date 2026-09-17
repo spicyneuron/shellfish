@@ -8,9 +8,8 @@ setopt no_aliases no_bg_nice no_multios pipe_fail
 typeset -g SF_RUN_TOOL_ERROR=''
 
 sf_run_tool_plan() {
-  local runtime=$1 id=$2 name=$3 input=$4 projection
-  local -a fields
-  projection=$(sf_jq -jrn --argjson runtime "$runtime" --arg id "$id" --arg name "$name" \
+  local runtime=$1 id=$2 name=$3 input=$4
+  sf_jq_fields 16 -rn --argjson runtime "$runtime" --arg id "$id" --arg name "$name" \
     --argjson input "$input" --argjson turn "$SF_RUN[turn_id]" '
       include "lib/runtime";
       def field: ., "\u0000";
@@ -42,13 +41,7 @@ sf_run_tool_plan() {
       ($runtime.harness.sandbox_read_paths | join("\n") | field),
       ($runtime.harness.sandbox_write_paths | join("\n") | field),
       ($render | tojson | field), ("ok" | field)
-    ' 2>/dev/null) || { SF_RUN_TOOL_ERROR='cannot inspect tool'; return 1; }
-  fields=( "${(@0)${projection%$'\0'}}" )
-  (( ${#fields} == 17 )) && [[ $fields[17] == ok ]] || {
-    SF_RUN_TOOL_ERROR='cannot inspect tool'
-    return 1
-  }
-  reply=( "${(@)fields[1,16]}" )
+    ' || { SF_RUN_TOOL_ERROR='cannot inspect tool'; return 1; }
 }
 
 sf_run_tool_refused() {
@@ -171,9 +164,9 @@ sf_run_tool_execute() {
 }
 
 sf_run_tool_complete() {
-  local tool_request=$1 id=$2 name=$3 input=$4 executable=$5 render=$6 outcome=$7 projection
-  local -a fields states
-  projection=$(sf_jq -jrn --argjson request "$tool_request" --arg id "$id" --arg name "$name" \
+  local tool_request=$1 id=$2 name=$3 input=$4 executable=$5 render=$6 outcome=$7
+  local -a fields
+  sf_jq_fields 0 -rn --argjson request "$tool_request" --arg id "$id" --arg name "$name" \
     --argjson input "$input" --arg executable "$executable" --argjson render "$render" \
     --argjson outcome "$outcome" '
       include "lib/session";
@@ -191,16 +184,11 @@ sf_run_tool_complete() {
        (if $rendered.model_text == null then {} else {model_text:($rendered.model_text + $notice)} end)) as $result |
       if $result | canonical_tool_result then
         ($request + {tool_response:$outcome.output} | tojson | field),
-        ($result | tojson | field), ($outcome.states | length | tostring | field),
+        ($result | tojson | field),
         ($outcome.states[] | tojson | field), ("ok" | field)
       else error("invalid result") end
-    ' 2>/dev/null) || { SF_RUN_TOOL_ERROR="cannot finish tool result: $name"; return 1; }
-  fields=( "${(@0)${projection%$'\0'}}" )
-  [[ $fields[-1] == ok && $fields[3] == <-> ]] &&
-    (( ${#fields} == fields[3] + 4 )) || {
-      SF_RUN_TOOL_ERROR="cannot finish tool result: $name"
-      return 1
-    }
+    ' || { SF_RUN_TOOL_ERROR="cannot finish tool result: $name"; return 1; }
+  fields=( "${reply[@]}" )
   REPLY=$fields[2]
-  reply=( "$fields[1]" "${(@)fields[4,-2]}" )
+  reply=( "$fields[1]" "${(@)fields[3,-1]}" )
 }

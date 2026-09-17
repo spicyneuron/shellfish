@@ -14,10 +14,10 @@ sf_run_hook_name() {
 }
 
 sf_run_hook_activity() {
-  local lifecycle=$1 id=$2 name=$3 executable=$4 input=$5 render=$6 projected
+  local lifecycle=$1 id=$2 name=$3 executable=$4 input=$5 render=$6
   local input_option=--arg
   [[ $lifecycle != (permission_request|pre_tool_use|post_tool_use) ]] || input_option=--argjson
-  projected=$(sf_jq -jcn --arg lifecycle "$lifecycle" --arg id "$id" --arg name "$name" \
+  sf_jq_fields 3 -cn --arg lifecycle "$lifecycle" --arg id "$id" --arg name "$name" \
     --arg executable "$executable" "$input_option" input "$input" --argjson render "$render" '
       include "lib/runtime";
       (render_component($render;$name;$input;{stdout:"",stderr:"",exit_code:0}) |
@@ -27,17 +27,14 @@ sf_run_hook_activity() {
        (if $user_text == "" then {} else {user_text:$user_text} end)) as $activity |
       ($activity | tojson), "\u0000",
       (if $user_text == "" then "" else ($activity | del(.user_text) | tojson) end), "\u0000",
-      ($input | tojson), "\u0000"
-    ') || return
-  reply=( "${(@0)${projected%$'\0'}}" )
-  (( ${#reply} == 3 )) || return 1
+      ($input | tojson), "\u0000", "ok", "\u0000"
+    ' || return 1
   REPLY=$reply[1]
 }
 
 sf_run_hook_project() {
-  local session=$1 runtime=$2 lifecycle=$3 content=$4 projected
-  local -a fields
-  projected=$(jq -jRs --argjson runtime "$runtime" --arg lifecycle "$lifecycle" \
+  local session=$1 runtime=$2 lifecycle=$3 content=$4
+  sf_jq_fields 0 -Rs --argjson runtime "$runtime" --arg lifecycle "$lifecycle" \
     --arg input "$content" '
       def field: ., "\u0000";
       ([split("\n")[1:][] | fromjson? | select(.type == "hook_result") | .id | tonumber] |
@@ -53,10 +50,7 @@ sf_run_hook_project() {
         (.match.command? // "" | field),
         (.render | tojson | field)),
       ("ok" | field)
-    ' "$session" 2>/dev/null) || return 1
-  fields=( "${(@0)${projected%$'\0'}}" )
-  (( ${#fields} >= 5 && (${#fields} - 5) % 4 == 0 )) && [[ $fields[-1] == ok ]] || return 1
-  reply=( "${(@)fields[1,-2]}" )
+    ' "$session"
 }
 
 sf_run_hook_invoke() {
@@ -65,8 +59,8 @@ sf_run_hook_invoke() {
   local cwd=$8 input=$9 lifecycle=${10} turn_state=${11} render=${12} id=${13}
   local name=${14} input_json=${15}
   shift 15
-  local config_dir='' directory projected capture_error=''
-  local -a arguments environment fields process
+  local config_dir='' directory capture_error=''
+  local -a arguments environment process
 
   [[ -z $env_file ]] || config_dir=${env_file:h}
   [[ -f $command && -x $command ]] || {
@@ -118,7 +112,7 @@ sf_run_hook_invoke() {
     reply=( "$process[1]" "$process[3]" "$process[4]" "$process[5]" )
     return
   fi
-  projected=$(sf_jq -jcn --argjson exit_code "$process[1]" \
+  sf_jq_fields 0 -cn --argjson exit_code "$process[1]" \
     --rawfile stdout "$directory/stdout" --rawfile stderr "$directory/stderr" \
     --slurpfile controls "$directory/control" --arg capture_error "$capture_error" \
     --arg lifecycle "$lifecycle" --arg id "$id" --arg name "$name" \
@@ -147,19 +141,14 @@ sf_run_hook_invoke() {
        else "" end | field),
       (if $result == null then "" else ($result | tojson) end | field),
       ($outcome.states | length | tostring | field),
-      ($outcome.states[] | tojson | field)
-    ' 2>/dev/null) || {
+      ($outcome.states[] | tojson | field),
+      ("ok" | field)
+    ' || {
     rm -rf -- "$directory"
     SF_RUN_HOOK_ERROR='cannot decode hook result'
     return 1
   }
   rm -rf -- "$directory"
-  fields=( "${(@0)${projected%$'\0'}}" )
-  (( ${#fields} >= 8 && ${#fields} == 8 + fields[8] )) || {
-    SF_RUN_HOOK_ERROR='cannot decode hook result'
-    return 1
-  }
-  reply=( "${fields[@]}" )
 }
 
 sf_run_hook_match() {

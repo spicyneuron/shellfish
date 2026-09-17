@@ -32,8 +32,8 @@ sf_run_prompt() {
 }
 
 sf_run_main() {
-  local requested_session='' input='' prompt='' arity='' input_projection
-  local -a positional=() create_args=() input_fields
+  local requested_session='' input='' prompt='' arity=''
+  local -a positional=() create_args=()
   integer create_only=0 out_explicit=0 jsonl=0 override=0 take=0
 
   while (( $# )); do
@@ -128,22 +128,17 @@ sf_run_main() {
       sf_die '--jsonl requires a canonical user message on stdin'
       return 2
     }
-    input_projection=$(sf_jq -jre '
+    sf_jq_fields 2 -re '
       include "lib/session";
       def field: ., "\u0000";
       select(canonical_user_message) |
       (tojson | field), (.content[0].text | field), ("ok" | field)
-    ' <<<"$input" 2>/dev/null) || {
+    ' <<<"$input" || {
       sf_die '--jsonl requires a canonical user message on stdin'
       return 2
     }
-    input_fields=( "${(@0)${input_projection%$'\0'}}" )
-    (( ${#input_fields} == 3 )) && [[ $input_fields[3] == ok ]] || {
-      sf_die '--jsonl requires a canonical user message on stdin'
-      return 2
-    }
-    input=$input_fields[1]
-    prompt=$input_fields[2]
+    input=$reply[1]
+    prompt=$reply[2]
   else
     sf_run_prompt "${positional[@]}" || return
     prompt=$REPLY

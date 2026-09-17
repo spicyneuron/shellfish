@@ -30,19 +30,19 @@ sf_run_append() {
 # Settle every still-pending call through the tool owner. The reason describes
 # calls the turn never reached.
 sf_run_settle() {
-  local session=$1 reason=$2 projection id name input outcome
+  local session=$1 reason=$2 id name input outcome
   local active=$SF_RUN[active_call] known=$SF_RUN[known_outcome]
   local -a fields plan
   integer index
-  projection=$(sf_jq -jRs '
+  sf_jq_fields 0 -Rs '
     include "lib/session";
     def field: ., "\u0000";
     [split("\n")[1:][] | select(length > 0) | fromjson] |
-    session_run | .calls[] |
-    (.id | field), (.name | field), (.input | tojson | field)
-  ' "$session" 2>/dev/null) || projection=''
-  fields=()
-  [[ -z $projection ]] || fields=( "${(@0)${projection%$'\0'}}" )
+    session_run |
+    (.calls[] | (.id | field), (.name | field), (.input | tojson | field)),
+    ("ok" | field)
+  ' "$session" || reply=()
+  fields=( "${reply[@]}" )
   for (( index = 1; index + 2 <= ${#fields}; index += 3 )); do
     id=$fields[index]
     name=$fields[index+1]
@@ -65,13 +65,13 @@ sf_run_settle() {
 }
 
 sf_run_open() {
-  local session=$1 projection
+  local session=$1
   local -a fields
   [[ $session == /* && -f $session && ! -L $session && -r $session ]] || {
     REPLY="invalid session path: $session"
     return 1
   }
-  projection=$(sf_jq -jRs '
+  sf_jq_fields 4 -Rs '
     include "lib/runtime";
     include "lib/session";
     def field: ., "\u0000";
@@ -87,15 +87,11 @@ sf_run_open() {
     (([$records[1:][] | select(.type == "user")] | length + 1) | tostring | field),
     (($run.next != "user") | tostring | field),
     ("ok" | field)
-  ' "$session" 2>/dev/null) || {
+  ' "$session" || {
     REPLY="cannot read session: $session"
     return 1
   }
-  fields=( "${(@0)${projection%$'\0'}}" )
-  (( ${#fields} == 5 )) && [[ $fields[5] == ok ]] || {
-    REPLY="cannot read session: $session"
-    return 1
-  }
+  fields=( "${reply[@]}" )
   SF_RUN[runtime]=$fields[1]
   SF_RUN[cwd]=$fields[2]
   SF_RUN[turn_id]=$fields[3]
@@ -164,9 +160,9 @@ sf_run_permission_client() {
 }
 
 sf_run_project() {
-  local runtime=$1 projected
+  local runtime=$1
   local -a fields
-  projected=$(jq -jrn --argjson runtime "$runtime" '
+  sf_jq_fields 5 -rn --argjson runtime "$runtime" '
     def field: ., "\u0000";
     $runtime.harness as $harness |
     [$harness.tools[] |
@@ -195,9 +191,8 @@ sf_run_project() {
     ($runtime.backend.context_window_command // "" | field),
     ($tools | tojson | field),
     ("ok" | field)
-  ' 2>/dev/null) || return 1
-  fields=( "${(@0)${projected%$'\0'}}" )
-  (( ${#fields} == 6 )) && [[ $fields[6] == ok ]] || return 1
+  ' || return 1
+  fields=( "${reply[@]}" )
   reply=( "${(@)fields[1,4]}" )
   REPLY=$fields[5]
 }
@@ -208,8 +203,8 @@ sf_run_turn() {
   local tool_request post_request activity permission_reason permission_preview executable render
   local tool_environment settings fence env_file execution_input sandbox read_paths write_paths
   local reason outcome record post_error='' failure='' turn_state tool_temp='' call
-  local call_projection call_projected
-  local -a calls call_fields states hook_result runtime_fields tool_plan
+  local call_projection
+  local -a calls states hook_result runtime_fields tool_plan
   integer begun=0 request_count=0 call_count=0 request_limit tool_limit max_capture run_status
 
   {
@@ -336,12 +331,11 @@ sf_run_turn() {
       call_count=0
       for call in "${calls[@]}"; do
         (( call_count += 1 ))
-        call_projected=$(jq -jr '.id,"\u0000",.name,"\u0000",(.input|tojson),"\u0000"' \
-          <<<"$call") || { failure='cannot inspect provider tool call'; break; }
-        call_fields=( "${(@0)${call_projected%$'\0'}}" )
-        id=$call_fields[1]
-        name=$call_fields[2]
-        input=$call_fields[3]
+        sf_jq_fields 3 -r '.id,"\u0000",.name,"\u0000",(.input|tojson),"\u0000","ok","\u0000"' \
+          <<<"$call" || { failure='cannot inspect provider tool call'; break; }
+        id=$reply[1]
+        name=$reply[2]
+        input=$reply[3]
         sf_run_tool_plan "$runtime" "$id" "$name" "$input" || { failure=$SF_RUN_TOOL_ERROR; break; }
         tool_plan=( "${reply[@]}" )
         tool_request=$tool_plan[1]

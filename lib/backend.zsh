@@ -12,8 +12,8 @@ typeset -ga SF_BACKEND_PARTIAL_EVENTS=()
 # One projection of the transcript on stdin: the adapter request, then the
 # named backend command and its environment declarations.
 sf_backend_project() {
-  local tools=$1 command_field=$2 projection
-  projection=$(sf_jq -jsc --argjson tools "$tools" --arg command_field "$command_field" '
+  local tools=$1 command_field=$2
+  sf_jq_fields 4 -sc --argjson tools "$tools" --arg command_field "$command_field" '
     include "lib/runtime";
     include "lib/session";
     include "lib/backend";
@@ -33,9 +33,7 @@ sf_backend_project() {
     ($runtime.backend.env_file | field),
     ($runtime.backend.environment | join(" ") | field),
     ("ok" | field)
-  ' 2>/dev/null) || return 1
-  reply=( "${(@0)${projection%$'\0'}}" )
-  (( ${#reply} == 5 )) && [[ $reply[5] == ok ]]
+  '
 }
 
 sf_backend_context_window() {
