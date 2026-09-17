@@ -131,4 +131,28 @@ jq -eRn '
 ' <"$stream" >/dev/null || fail 'ordinary tool denials did not settle calls'
 assert_canonical_session "$session"
 
+# A failed append ends transcript mutation, including the usual durable error.
+typeset break_hook="$tmp/break-session" broken="$tmp/broken.jsonl"
+cat >"$break_hook" <<'ZSH'
+#!/usr/bin/env zsh
+cat >/dev/null
+mv "$SHELLFISH_SESSION" "$SHELLFISH_SESSION.saved" || exit
+mkdir "$SHELLFISH_SESSION"
+ZSH
+chmod +x "$break_hook"
+SF_TEST_RUNTIME=$(jq -c --arg hook "$break_hook" '
+  .harness.user_prompt_submit=[{
+    command:$hook,environment:[],
+    render:{initial_user_text:"",user_text:"${output.stderr}",model_text:"${output.stdout}"}
+  }]
+' <<<"$SF_TEST_RUNTIME")
+sf_test_session "$broken"
+integer broken_status=0
+sf_test_run broken "$broken" >"$stream" 2>"$tmp/broken.stderr" || broken_status=$?
+(( broken_status == 1 )) || fail 'turn continued after its session became unavailable'
+[[ -d $broken && -z $(find "$broken" -mindepth 1 -print -quit) ]] ||
+  fail 'turn mutated the unavailable session after its first write failure'
+jq -es 'length == 1 and .[0].type == "session"' "$broken.saved" >/dev/null ||
+  fail 'write failure changed the previously durable prefix'
+
 print -r -- ok

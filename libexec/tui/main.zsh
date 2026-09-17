@@ -148,7 +148,7 @@ sf_tui_main() {
   source "$SF_ROOT/libexec/tui/editor.zsh"
   source "$SF_ROOT/libexec/tui/controller.zsh"
   if [[ $session_mode == startup ]]; then
-    SF_TUI_TRANSPORT_COMMAND=( "$SF_ENTRY" create --jsonl "${runtime_args[@]}" )
+    SF_TUI_TRANSPORT_COMMAND=( "$SF_ENTRY" run --jsonl --session-create "${runtime_args[@]}" )
   else
     SF_TUI_TRANSPORT_COMMAND=( "$SF_ENTRY" run --jsonl --session "$session" )
   fi

@@ -1,7 +1,7 @@
 emulate -R zsh
-setopt no_aliases no_multios pipe_fail
+setopt no_aliases no_bg_nice no_multios pipe_fail
 
-# Where sessions live, and how one is named, read, appended to, and replaced.
+# Where sessions live, how one is named, and the two durable mutations.
 
 typeset -g SF_SESSION_ERROR=''
 
@@ -54,73 +54,6 @@ sf_session_select_path() {
 
 (( $+functions[sf_jq] )) || source "$SF_ROOT/lib/jq.zsh"
 
-typeset -gA SF_SESSION=()
-typeset -ga SF_SESSION_RECORDS=()
-
-sf_session_reset() {
-  SF_SESSION=()
-  SF_SESSION_RECORDS=()
-}
-
-sf_session_repair_tail() {
-  local session_path=$1 total fragment
-  [[ -s $session_path && -n $(tail -c 1 "$session_path") ]] || return 0
-  total=$(wc -c <"$session_path") || {
-    sf_session_fail "cannot inspect session tail: $session_path"
-    return
-  }
-  fragment=$(tail -n 1 "$session_path" | wc -c) || {
-    sf_session_fail "cannot inspect session tail: $session_path"
-    return
-  }
-  truncate -s "$(( total - fragment ))" "$session_path" || {
-    sf_session_fail "cannot repair session tail: $session_path"
-    return
-  }
-}
-
-sf_session_prepare() {
-  local runtime=$1 cwd created decoded header
-  SF_SESSION_ERROR=''
-  sf_session_reset
-  cwd=$(pwd -P) && created=$(date -u '+%Y-%m-%dT%H:%M:%SZ') || {
-    sf_session_fail 'cannot prepare session header'
-    return
-  }
-  decoded=$(sf_jq -jnre --arg cwd "$cwd" --arg created "$created" \
-    --argjson runtime "$runtime" '
-      def field: ., "\u0000";
-      {type:"session",format_version:1,cwd:$cwd,created:$created,runtime:$runtime} |
-      (tojson | field),
-      ("ok" | field)
-    ') || {
-    sf_session_fail 'cannot prepare session header'
-    return
-  }
-  local -a fields=( "${(@0)${decoded%$'\0'}}" )
-  (( ${#fields} == 2 )) && [[ $fields[2] == ok ]] || {
-    sf_session_fail 'cannot prepare session header'
-    return
-  }
-  header=$fields[1]
-  SF_SESSION=(
-    runtime "$runtime"
-    cwd "$cwd"
-    turn_id 1
-  )
-  SF_SESSION_RECORDS=( "$header" )
-}
-
-sf_session_system() {
-  local content=${1-} record
-  SF_SESSION_ERROR=''
-  [[ -n $content ]] || return 0
-  [[ $content != *$'\0'* ]] || sf_session_fail 'system content must not contain NUL bytes' || return
-  record=$(jq -cn --arg content "$content" '{type:"system",content:$content}') ||
-    sf_session_fail 'cannot prepare system record' || return
-  SF_SESSION_RECORDS+=( "$record" )
-}
-
 sf_session_read_runtime() {
   local session_path=$1 header
   [[ -f $session_path && ! -L $session_path && -r $session_path ]] || {
@@ -140,180 +73,35 @@ sf_session_read_runtime() {
   }
 }
 
-sf_session_project() {
-  local session_path=$1 loaded
-  local -a fields
-  SF_SESSION=()
-  loaded=$(printf '%s\n' "${SF_SESSION_RECORDS[@]}" | sf_jq -jes '
-    include "lib/runtime";
-    include "lib/session";
-    def field: ., "\u0000";
-    select(length >= 1) |
-    select(.[0] | canonical_session_header(1)) |
-    # Loading validates the transcript; the fields below project the header.
-    (.[1:] | session_load) as $durable |
-    (.[0].runtime | tojson | field),
-    (.[0].cwd | field),
-    (([.[] | select(.type == "user")] | length + 1) |
-      tostring | field),
-    ("ok" | field)
-  ' 2>/dev/null) || {
-    sf_session_fail "cannot read session: $session_path"
-    return
-  }
-  fields=( "${(@0)${loaded%$'\0'}}" )
-  (( ${#fields} == 4 )) && [[ $fields[4] == ok ]] || {
-    sf_session_fail "cannot restore session runtime: $session_path"
-    return
-  }
-  SF_SESSION=(
-    runtime "$fields[1]"
-    cwd "$fields[2]"
-    turn_id "$fields[3]"
-  )
-}
-
-sf_session_read() {
-  local session_path=$1 input record
-  sf_session_reset
-  for input in "$@"; do
-    while IFS= read -r record; do
-      [[ -n $record ]] || {
-        SF_SESSION_RECORDS=()
-        sf_session_fail "cannot read session: $session_path"
-        return
-      }
-      SF_SESSION_RECORDS+=( "$record" )
-    done <"$input"
-  done
-  (( ${#SF_SESSION_RECORDS} )) || {
-    sf_session_fail "cannot read session: $session_path"
-    return
-  }
-  sf_session_project "$session_path" || {
-    SF_SESSION_RECORDS=()
-    return 1
-  }
-}
-
 sf_session_append() {
   local session_path=$1 record=$2
-  (( ${#SF_SESSION_RECORDS} )) || {
-    sf_session_fail 'session has not been read'
-    return
-  }
-  if ! printf '%s\n' "$record" >>"$session_path"; then
+  SF_SESSION_ERROR=''
+  if ! print -r -- "$record" >>"$session_path"; then
     sf_session_fail "cannot append session record: $session_path"
     return
   fi
-  SF_SESSION_RECORDS+=( "$record" )
 }
 
-sf_session_update() {
-  local session_path=$1 update=$2 decoded header temp error
-  local -a fields
-  integer changed=0
-  (( ${#SF_SESSION_RECORDS} )) || {
-    sf_session_fail 'session has not been read'
-    return
-  }
-  decoded=$(sf_jq -jnre --argjson header "$SF_SESSION_RECORDS[1]" \
-    --argjson update "$update" '
-      include "lib/runtime";
-      def field: ., "\u0000";
-      ($header | .runtime = $update) as $updated |
-      select($updated | canonical_session_header(1)) |
-      ($updated != $header | tostring | field),
-      ($updated | tojson | field),
-      ("ok" | field)
-    ' 2>/dev/null) || {
-    sf_session_fail 'invalid session update'
-    return
-  }
-  fields=( "${(@0)${decoded%$'\0'}}" )
-  (( ${#fields} == 3 )) && [[ $fields[3] == ok ]] || {
-    sf_session_fail 'invalid session update'
-    return
-  }
-  if [[ $fields[1] == false ]]; then
-    return 0
-  fi
-  header=$fields[2]
+sf_session_replace_runtime() {
+  local session_path=$1 runtime=$2 temp error=''
+  SF_SESSION_ERROR=''
   temp=$(mktemp "${session_path:h}/.${session_path:t}.XXXXXX") || {
     sf_session_fail "cannot prepare session update: $session_path"
     return
   }
-  repeat 1; do
-    chmod 600 "$temp" || {
-      error="cannot secure session update: $session_path"
-      break
-    }
-    {
-      print -r -- "$header"
-      (( ${#SF_SESSION_RECORDS} == 1 )) ||
-        printf '%s\n' "${SF_SESSION_RECORDS[@]:1}"
-    } >"$temp" || {
-      error="cannot write session update: $session_path"
-      break
-    }
-    mv -f -- "$temp" "$session_path" || {
-      error="cannot replace session: $session_path"
-      break
-    }
-    temp=''
-    changed=1
-  done
-  if (( ! changed )); then
+  chmod 600 "$temp" || error="cannot secure session update: $session_path"
+  if [[ -z $error ]]; then
+    sf_jq -cs --argjson runtime "$runtime" '
+      include "lib/runtime";
+      .[0].runtime = $runtime |
+      if .[0] | canonical_session_header(1) then .[] else error("invalid runtime") end
+    ' "$session_path" >"$temp" 2>/dev/null || error='invalid session runtime replacement'
+  fi
+  [[ -n $error ]] || mv -f -- "$temp" "$session_path" ||
+    error="cannot replace session: $session_path"
+  if [[ -n $error ]]; then
     rm -f -- "$temp" 2>/dev/null
     sf_session_fail "$error"
-    return 1
-  fi
-  sf_session_read "$session_path" || return
-}
-
-# Requires a freshly read session and reports appended records in REPLY. An
-# unfinished turn settles its unresolved calls with fixed text, then closes.
-sf_session_recover_turn() {
-  local session_path=$1 closing record recovered=''
-  REPLY=''
-  closing=$(printf '%s\n' "${SF_SESSION_RECORDS[@]:1}" |
-    sf_jq -sc '
-      include "lib/session";
-      session_run |
-      select(.next != "user") |
-      (.calls[] as $call |
-        ($call | {type:"tool_result", id, name, input, exit_code:126,
-          user_text:"tool call outcome unknown",
-          model_text:"tool call outcome unknown"})),
-      {type:"error", user_text:"Turn interrupted."}
-    ') || {
-    sf_session_fail "cannot close the interrupted turn: $session_path"
-    return
-  }
-  for record in ${(f)closing}; do
-    sf_session_append "$session_path" "$record" || return
-    [[ -z $recovered ]] || recovered+=$'\n'
-    recovered+=$record
-  done
-  REPLY=$recovered
-}
-
-sf_session_begin_turn() {
-  local session_path=$1
-  SF_SESSION_ERROR=''
-  REPLY=''
-  [[ $session_path == /* ]] || {
-    sf_session_fail 'session path must be absolute'
-    return
-  }
-  [[ -f $session_path && ! -L $session_path ]] || {
-    sf_session_fail "invalid session path: $session_path"
-    return
-  }
-  if ! sf_session_repair_tail "$session_path" ||
-      ! sf_session_read "$session_path" ||
-      ! sf_session_recover_turn "$session_path"; then
-    sf_session_reset
     return 1
   fi
 }

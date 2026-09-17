@@ -104,16 +104,16 @@ sf_test_runtime() {
     ')
 }
 
-sf_test_install_prepared() {
-  local session=$1
-  printf '%s\n' "${SF_SESSION_RECORDS[@]}" |
-    "$ROOT/bin/shellfish" install-session --session-out "$session" >/dev/null
-}
-
 sf_test_session() {
-  local session=$1
-  sf_session_prepare "$SF_TEST_RUNTIME" &&
-    sf_session_system "$SF_TEST_SYSTEM" && sf_test_install_prepared "$session"
+  local session=$1 cwd created header
+  cwd=$(pwd -P)
+  created=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
+  header=$(jq -cn --arg cwd "$cwd" --arg created "$created" \
+    --argjson runtime "$SF_TEST_RUNTIME" \
+    '{type:"session",format_version:1,cwd:$cwd,created:$created,runtime:$runtime}')
+  (umask 077; print -r -- "$header" >"$session")
+  [[ -z $SF_TEST_SYSTEM ]] || jq -cn --arg content "$SF_TEST_SYSTEM" \
+    '{type:"system",content:$content}' >>"$session"
 }
 
 sf_test_run() {

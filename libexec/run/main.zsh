@@ -34,7 +34,7 @@ sf_run_prompt() {
 sf_run_main() {
   local requested_session='' input='' prompt='' arity='' input_projection
   local -a positional=() create_args=() input_fields
-  integer out_explicit=0 jsonl=0 override=0 take=0
+  integer create_only=0 out_explicit=0 jsonl=0 override=0 take=0
 
   while (( $# )); do
     case $1 in
@@ -53,6 +53,11 @@ sf_run_main() {
         ;;
       --jsonl)
         jsonl=1
+        shift
+        ;;
+      --session-create)
+        (( ! create_only )) || { sf_die '--session-create may only be specified once'; return 2; }
+        create_only=1
         shift
         ;;
       --verbose)
@@ -85,6 +90,21 @@ sf_run_main() {
     sf_die '--session names an existing session and cannot be combined with --session-out'
     return 2
   }
+  if (( create_only )); then
+    [[ -z $requested_session ]] || {
+      sf_die '--session-create cannot be combined with --session'
+      return 2
+    }
+    (( ! ${#positional} )) || {
+      sf_die '--session-create does not accept a prompt'
+      return 2
+    }
+    if [[ ! -t 0 ]]; then IFS= read -t 0 -r input || true; fi
+    [[ -z $input ]] || {
+      sf_die '--session-create does not accept a prompt'
+      return 2
+    }
+  fi
   (( $+commands[jq] )) || {
     sf_die 'shellfish requires jq'
     return 2
@@ -96,7 +116,9 @@ sf_run_main() {
     typeset -gx SHELLFISH_VERBOSE=0
   fi
 
-  if (( jsonl )); then
+  if (( create_only )); then
+    input=''
+  elif (( jsonl )); then
     (( ! ${#positional} )) || {
       sf_die '--jsonl does not accept a prompt'
       return 2
@@ -129,12 +151,6 @@ sf_run_main() {
       '{type:"user",content:[{type:"text",text:$text}]}') || return 1
   fi
 
-  source "$SF_ROOT/libexec/run/startup.zsh"
-  sf_run_open_session "$requested_session" "$override" "${create_args[@]}"
-  local open_status=$?
-  (( ! open_status )) || return $open_status
-
-  local session=$REPLY
   source "$SF_ROOT/libexec/run/turn.zsh"
   SF_RUN[jsonl]=$jsonl
   typeset -gx SHELLFISH_MODE=run
@@ -142,6 +158,33 @@ sf_run_main() {
   trap 'SF_RUN[signal_status]=129; kill -TERM $$' HUP
   trap '(( SF_RUN[signal_status] )) || SF_RUN[signal_status]=143;
     sf_run_interrupt "$SF_RUN[signal_status]"; exit $SF_RUN[signal_status]' TERM
+  local session
+  if [[ -n $requested_session ]]; then
+    sf_session_select_path "$requested_session" || { sf_die "$SF_SESSION_ERROR"; return 1; }
+    session=$REPLY
+    [[ -s $session ]] || { sf_die "no session at $session"; return 1; }
+    (( ! override )) || {
+      sf_die 'options that configure a new session cannot be used with an existing one'
+      return 2
+    }
+  else
+    source "$SF_ROOT/libexec/run/create.zsh"
+    local create_status=0
+    sf_run_create "${create_args[@]}" || create_status=$?
+    if (( create_status )); then
+      if (( create_status == 130 )); then
+        sf_die 'Cancelled.' || true
+      elif (( create_status == 129 || create_status == 143 )); then
+        sf_die 'Session creation interrupted.' || true
+      fi
+      return $create_status
+    fi
+    session=$REPLY
+  fi
+  if (( create_only )); then
+    trap - INT USR1 HUP TERM
+    return 0
+  fi
   sf_run_turn "$input" "$session" "$prompt"
   local run_status=$?
   trap - INT USR1 HUP TERM

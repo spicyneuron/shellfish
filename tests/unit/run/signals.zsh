@@ -192,3 +192,15 @@ print -r -- "$jsonl" | jq -eRn '
   $events[0] == {type:"error",user_text:"Turn interrupted."} and
   ($events[1] | .type == "user")
 ' >/dev/null || fail 'exec did not start after an unfinished turn'
+
+# An incomplete physical tail is an error and is never repaired in place.
+typeset incomplete="$tmp/incomplete.jsonl" incomplete_before="$tmp/incomplete.before"
+cp "$recovered_session" "$incomplete"
+print -rn -- '{"type":"user"' >>"$incomplete"
+cp "$incomplete" "$incomplete_before"
+integer incomplete_status=0
+print -r -- '{"type":"user","content":[{"type":"text","text":"next"}]}' |
+  zsh -f "$entry" run --jsonl --session "$incomplete" \
+  >/dev/null 2>"$tmp/incomplete.stderr" || incomplete_status=$?
+(( incomplete_status == 1 )) || fail 'run accepted an incomplete session tail'
+cmp -s "$incomplete_before" "$incomplete" || fail 'run repaired an incomplete session tail'

@@ -24,8 +24,8 @@ def hook_control_error($lifecycle):
       if ($control == {} or
           ($control.action == "handoff" and ($control | keys) == ["action","argv"] and
            ($control.argv | type == "array" and length > 0 and all(.[]; type == "string"))) or
-          ($control.action == "session_update" and ($control | keys) == ["action","patch"] and
-           ($control.patch | type == "object"))) then "" else "lifecycle" end
+          ($control.action == "session_update" and ($control | keys) == ["action","runtime"] and
+           ($control.runtime | type == "object"))) then "" else "lifecycle" end
     elif $control == {} then "" else "lifecycle" end
   elif $lifecycle == "permission_request" and $outcome.exit_code == 11 then
     if ($control.action == "allow" and ($control | keys) == ["action"]) or

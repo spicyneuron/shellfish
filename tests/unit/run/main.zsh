@@ -91,7 +91,7 @@ output=$(zsh -f "$entry" run --session "$forwarded_session" \
 
 # JSONL streams only new turn events.
 typeset jsonl stream_session="$tmp/stream.jsonl"
-zsh -f "$entry" create --session-out "$stream_session" --config "$config" >/dev/null ||
+zsh -f "$entry" run --session-create --session-out "$stream_session" --config "$config" >/dev/null ||
   fail 'stream session create failed'
 typeset -i prefix=$(jq -es 'length' "$stream_session")
 jsonl=$(print -r -- \
@@ -200,5 +200,17 @@ exit_code=0
 print -n '{}' | zsh -f "$entry" run --jsonl --config "$config" >/dev/null 2>&1 || \
   exit_code=$?
 (( exit_code == 2 )) || fail 'run accepted noncanonical JSON input'
+exit_code=0
+zsh -f "$entry" run --session-create --session "$stream_session" \
+  >/dev/null 2>&1 || exit_code=$?
+(( exit_code == 2 )) || fail 'session creation accepted an existing session'
+exit_code=0
+zsh -f "$entry" run --session-create --config "$config" prompt \
+  >/dev/null 2>&1 || exit_code=$?
+(( exit_code == 2 )) || fail 'session creation accepted a prompt argument'
+exit_code=0
+print -r -- prompt | zsh -f "$entry" run --session-create --config "$config" \
+  >/dev/null 2>&1 || exit_code=$?
+(( exit_code == 2 )) || fail 'session creation accepted a prompt on stdin'
 
 print -r -- 'ok'

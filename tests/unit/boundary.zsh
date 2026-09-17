@@ -30,8 +30,7 @@ typeset -a client_shared=(
   lib/options.zsh lib/process.zsh lib/runtime.zsh lib/scratch.zsh lib/session.zsh )
 # lib/session.zsh both names a session and mutates one. A client may name one.
 typeset -a core_only_symbols=(
-  sf_session_prepare sf_session_system sf_session_read sf_session_append
-  sf_session_update sf_session_recover_turn sf_session_begin_turn )
+  sf_session_append sf_session_replace_runtime )
 
 # Shared code never calls upward into a program.
 collect '\$SF_ROOT/libexec[^"'\'' ]*' $ROOT/lib/**/*(.N)

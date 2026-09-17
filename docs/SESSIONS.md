@@ -12,11 +12,11 @@ Records after the header are append-only. Each complete provider response is one
 
 ## Lifecycle
 
-`shellfish create` resolves current configuration, materializes the system prompt, writes the initial records, and runs `session_start` hooks. See [`RUN.md`](RUN.md#session-creation-protocol) for the client protocol.
+`shellfish run --jsonl --session-create` resolves current configuration, materializes the system prompt, writes the initial records, and runs `session_start` hooks. See [`RUN.md`](RUN.md#session-creation-protocol) for the client protocol.
 
 Opening an existing session uses its header and rejects ordinary runtime overrides. Interactive chat rebuilds the display from durable records and current presentation settings, then invokes one `shellfish run` process for each new turn.
 
-`shellfish create --session-from PATH` derives a new, empty session from an existing runtime. It copies no conversation or startup context; it rematerializes the configured system components and runs startup hooks again.
+`shellfish run --jsonl --session-create --session-from PATH` derives a new, empty session from an existing runtime. It copies no conversation or startup context; it rematerializes the configured system components and runs startup hooks again.
 
 ## Runtime boundary
 

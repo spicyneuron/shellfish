@@ -34,7 +34,12 @@ case $(<"$PROMPT_INPUT") in
     runtime=$(head -n 1 "$SHELLFISH_SESSION" | jq -c \
       '.runtime.harness.sandbox_write_paths=["/tmp/reference"] | .runtime') || exit 2
     jq -cn --argjson runtime "$runtime" \
-      '{action:"session_update",patch:$runtime}' >&3
+      '{action:"session_update",runtime:$runtime}' >&3
+    exit 11
+    ;;
+  update-invalid)
+    print -rn -- 'invalid update context'
+    print -rn -u3 -- '{"action":"session_update","runtime":{}}'
     exit 11
     ;;
   invalid)
@@ -125,6 +130,20 @@ jq -eRn '
 head -n 1 "$session" | jq -e \
   '.runtime.harness.sandbox_write_paths == ["/tmp/reference"]' >/dev/null ||
   fail 'session update did not replace the frozen header'
+
+# A rejected complete runtime follows the ordinary durable failure path.
+session="$tmp/update-invalid.jsonl"
+sf_test_session "$session"
+integer update_status=0
+sf_test_run update-invalid "$session" >"$stream" 2>"$tmp/update-invalid.stderr" ||
+  update_status=$?
+(( update_status == 1 )) || fail 'invalid session runtime did not fail the turn'
+jq -e -s '
+  .[-2].type == "hook_result" and .[-2].model_text == "invalid update context" and
+  .[-1] == {type:"error",user_text:"invalid session runtime replacement"}
+' "$session" >/dev/null || fail 'invalid runtime did not preserve the durable failure order'
+[[ $(<"$tmp/update-invalid.stderr") == *'invalid session runtime replacement'* ]] ||
+  fail 'invalid runtime failure was not reported'
 
 # Invalid lifecycle control keeps completed output before the durable error.
 session="$tmp/invalid.jsonl"

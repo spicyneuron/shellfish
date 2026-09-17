@@ -9,6 +9,7 @@ source "$SF_ROOT/libexec/run/tools.zsh"
 
 typeset -gA SF_RUN=(
   active_call '' answer '' jsonl 0 known_outcome '' permission_count 0 signal_status 0
+  write_failed 0
 )
 
 sf_run_emit() {
@@ -17,8 +18,59 @@ sf_run_emit() {
 
 sf_run_append() {
   local session=$1 record=$2
-  sf_session_append "$session" "$record" || { REPLY=$SF_SESSION_ERROR; return 1; }
+  (( ! SF_RUN[write_failed] )) || { REPLY='session writing has stopped'; return 1; }
+  if ! sf_session_append "$session" "$record"; then
+    SF_RUN[write_failed]=1
+    REPLY=$SF_SESSION_ERROR
+    return 1
+  fi
   sf_run_emit "$record" || { REPLY='cannot emit session record'; return 1; }
+}
+
+sf_run_open() {
+  local session=$1 projection record
+  local -a fields recovery
+  [[ $session == /* && -f $session && ! -L $session && -r $session ]] || {
+    REPLY="invalid session path: $session"
+    return 1
+  }
+  projection=$(sf_jq -jRs '
+    include "lib/runtime";
+    include "lib/session";
+    def field: ., "\u0000";
+    select(endswith("\n")) |
+    split("\n") as $lines |
+    select($lines[-1] == "" and ($lines[0:-1] | length > 0) and
+      all($lines[0:-1][]; length > 0)) |
+    ($lines[0:-1] | map(fromjson)) as $records |
+    select($records[0] | canonical_session_header(1)) |
+    ($records[1:] | session_run) as $run |
+    ($records[0].runtime | tojson | field),
+    ($records[0].cwd | field),
+    (([$records[1:][] | select(.type == "user")] | length + 1) | tostring | field),
+    ($run.calls[] | {type:"tool_result",id,name,input,exit_code:126,
+      user_text:"tool call outcome unknown",model_text:"tool call outcome unknown"} |
+      tojson | field),
+    (if $run.next == "user" then empty
+     else {type:"error",user_text:"Turn interrupted."} | tojson | field end),
+    ("ok" | field)
+  ' "$session" 2>/dev/null) || {
+    REPLY="cannot read session: $session"
+    return 1
+  }
+  fields=( "${(@0)${projection%$'\0'}}" )
+  (( ${#fields} >= 4 )) && [[ $fields[-1] == ok ]] || {
+    REPLY="cannot read session: $session"
+    return 1
+  }
+  SF_RUN[runtime]=$fields[1]
+  SF_RUN[cwd]=$fields[2]
+  SF_RUN[turn_id]=$fields[3]
+  recovery=()
+  (( ${#fields} == 4 )) || recovery=( "${(@)fields[4,$(( ${#fields} - 1 ))]}" )
+  for record in "${recovery[@]}"; do
+    sf_run_append "$session" "$record" || return 1
+  done
 }
 
 sf_run_interrupt() {
@@ -57,14 +109,14 @@ sf_run_cancel() {
   sf_run_partial_assistant
   partial=$REPLY
   if [[ -n $partial ]]; then
-    sf_session_append "$session" "$partial" && sf_run_emit "$partial"
+    sf_run_append "$session" "$partial" || return
   fi
-  projection=$(printf '%s\n' "${SF_SESSION_RECORDS[@]:1}" | sf_jq -jsc \
-    --argjson runtime "$SF_SESSION[runtime]" --arg active "$active" \
+  projection=$(sf_jq -jRs --argjson runtime "$SF_RUN[runtime]" --arg active "$active" \
     --argjson known "${known:-null}" '
     include "lib/session";
     include "lib/runtime";
     def field: ., "\u0000";
+    [split("\n")[1:][] | select(length > 0) | fromjson] |
     session_run | .calls[] |
     . as $call |
     ([$runtime.harness.tools[] | select(.name == $call.name)][0]) as $tool |
@@ -82,11 +134,11 @@ sf_run_cancel() {
        if $outcome.sandbox_denied then "\n\n<sandbox_notice>A denial was detected during this tool call. This does not necessarily mean the tool failed.</sandbox_notice>"
        else "" end)} end)) |
     select(canonical_tool_result) | tojson | field
-  ' 2>/dev/null) || projection=''
+  ' "$session" 2>/dev/null) || projection=''
   records=()
   [[ -z $projection ]] || records=( "${(@0)${projection%$'\0'}}" )
   for record in "${records[@]}"; do
-    sf_session_append "$session" "$record" && sf_run_emit "$record"
+    sf_run_append "$session" "$record" || return
   done
   sf_run_error "$session" "$message" || true
 }
@@ -147,7 +199,7 @@ sf_run_project() {
 }
 
 sf_run_turn() {
-  local user_record=$1 session=$2 prompt=$3 opened runtime tools context_command
+  local user_record=$1 session=$2 prompt=$3 runtime tools context_command
   local assistant stop_text id name input decision
   local tool_request post_request activity permission_reason permission_preview executable render
   local tool_environment settings fence env_file execution_input sandbox read_paths write_paths
@@ -162,11 +214,10 @@ sf_run_turn() {
     SF_RUN[known_outcome]=''
     SF_RUN[permission_count]=0
     SF_RUN[signal_status]=0
-    sf_session_begin_turn "$session" || { print -r -u2 -- "$SF_SESSION_ERROR"; return 1; }
+    SF_RUN[write_failed]=0
+    sf_run_open "$session" || { print -r -u2 -- "$REPLY"; return 1; }
     begun=1
-    opened=$REPLY
-    [[ -z $opened ]] || sf_run_emit "$opened"
-    runtime=$SF_SESSION[runtime]
+    runtime=$SF_RUN[runtime]
     sf_run_project "$runtime" || failure='cannot inspect frozen runtime'
     tools=$REPLY
     runtime_fields=( "${reply[@]}" )
@@ -174,8 +225,8 @@ sf_run_turn() {
     tool_limit=$runtime_fields[2]
     max_capture=$runtime_fields[3]
     context_command=$runtime_fields[4]
-    [[ -z $failure && -d $SF_SESSION[cwd] && -x $SF_SESSION[cwd] ]] ||
-      failure=${failure:-session working directory is unavailable: $SF_SESSION[cwd]}
+    [[ -z $failure && -d $SF_RUN[cwd] && -x $SF_RUN[cwd] ]] ||
+      failure=${failure:-session working directory is unavailable: $SF_RUN[cwd]}
     sf_scratch_create turns turn || failure='cannot prepare hook turn state'
     turn_state=$REPLY
     if [[ -z $failure ]]; then
@@ -185,18 +236,24 @@ sf_run_turn() {
     if [[ -z $failure ]]; then
       case $hook_result[2] in
         handoff)
-          sf_run_emit "$(jq -cn --argjson argv "$hook_result[4]" '{type:"_handoff",argv:$argv}')"
-          return 0
+          if sf_run_emit "$(jq -cn --argjson argv "$hook_result[4]" '{type:"_handoff",argv:$argv}')"; then
+            return 0
+          fi
+          failure='cannot emit handoff'
           ;;
         session_update)
-          sf_session_update "$session" "$hook_result[4]" || failure=$SF_SESSION_ERROR
-          [[ -n $failure ]] || sf_run_emit "$(jq -cn --argjson runtime "$SF_SESSION[runtime]" \
-            '{type:"_session_update",runtime:$runtime}')"
-          [[ -z $failure ]]
-          return
+          if sf_session_replace_runtime "$session" "$hook_result[4]"; then
+            if sf_run_emit "$(jq -cn --argjson runtime "$hook_result[4]" \
+                '{type:"_session_update",runtime:$runtime}')"; then
+              return 0
+            fi
+            failure='cannot emit session update'
+          else
+            failure=$SF_SESSION_ERROR
+          fi
           ;;
       esac
-      if [[ $hook_result[1] == handled ]]; then
+      if [[ -z $failure && $hook_result[1] == handled ]]; then
         return 0
       fi
     fi
@@ -215,8 +272,7 @@ sf_run_turn() {
       fi
       if (( request_count == 1 )) && [[ -n $context_command ]] &&
           ! jq -e '.profile | has("context_window")' <<<"$runtime" >/dev/null; then
-        sf_backend_context_window "$tools" "$max_capture" \
-          < <(printf '%s\n' "${SF_SESSION_RECORDS[@]}")
+        sf_backend_context_window "$tools" "$max_capture" <"$session"
         run_status=$?
         if (( run_status )); then
           if (( run_status == 129 || run_status == 130 || run_status == 143 )); then
@@ -231,15 +287,15 @@ sf_run_turn() {
           failure='cannot update model context window'
           break
         }
-        sf_session_update "$session" "$runtime" || { failure=$SF_SESSION_ERROR; break; }
+        sf_session_replace_runtime "$session" "$runtime" || { failure=$SF_SESSION_ERROR; break; }
+        SF_RUN[runtime]=$runtime
         sf_run_emit "$(jq -cn --argjson runtime "$runtime" \
           '{type:"_session_update",runtime:$runtime}')" || {
           failure='cannot emit session update'
           break
         }
       fi
-      sf_backend_request "$tools" sf_run_emit \
-        < <(printf '%s\n' "${SF_SESSION_RECORDS[@]}")
+      sf_backend_request "$tools" sf_run_emit <"$session"
       run_status=$?
       if (( run_status )); then
         if (( SF_RUN[signal_status] )); then

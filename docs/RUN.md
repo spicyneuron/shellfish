@@ -15,7 +15,7 @@ printf '%s\n' '{"type":"user","content":[{"type":"text","text":"Review these cha
   shellfish run --jsonl --session path/to/session.jsonl
 ```
 
-`shellfish create` creates an idle session and prints its absolute path. `--session-from PATH` derives one from an existing session's runtime, while `--session-out PATH` selects its destination. See [`SESSIONS.md`](SESSIONS.md) for session semantics.
+`shellfish run --jsonl --session-create` creates an idle session and exits after startup hooks. `--session-from PATH` derives one from an existing session's runtime, while `--session-out PATH` selects its destination. See [`SESSIONS.md`](SESSIONS.md) for session semantics.
 
 ## Reading a session
 
@@ -23,7 +23,7 @@ printf '%s\n' '{"type":"user","content":[{"type":"text","text":"Review these cha
 
 ```json
 {"type":"_session_load","path":"/absolute/path/session.jsonl"}
-{"type":"session","format_version":1,"cwd":"/project","created":"...","backend":{},"harness":{},"profile":{}}
+{"type":"session","format_version":1,"cwd":"/project","created":"...","runtime":{"backend":{},"harness":{},"profile":{}}}
 {"type":"system","content":"..."}
 ```
 
@@ -31,7 +31,7 @@ Nothing is emitted until the whole prefix validates, and nothing is ever written
 
 ## Session creation protocol
 
-`shellfish create --jsonl` streams the creation protocol instead of printing a path:
+`shellfish run --jsonl --session-create` streams the creation protocol. No creation mode prints a session path:
 
 | Type | Fields and meaning |
 | --- | --- |
@@ -42,12 +42,6 @@ Nothing is emitted until the whole prefix validates, and nothing is ever written
 Creation publishes the session and its system context before running startup hooks. Hooks then run in configured order, with each durable result following its live activity. A failed or cancelled startup reports the failure on stderr and retains the valid session prefix and any completed hook results. Clients must wait for successful process exit before submitting a turn.
 
 `--system` and `--system-file` replace the configured system prompt for that creation. Chat and `run` accept the same creation options when they are not opening an existing `--session`.
-
-## Canonical transcript installation
-
-`shellfish install-session --session-out PATH` validates and atomically publishes a caller-constructed transcript without resolving configuration or running hooks. It preserves the supplied bytes, refuses an existing destination, and prints the installed path.
-
-The transcript may end at any valid durable boundary, including an unfinished turn. The next `shellfish run` applies ordinary [recovery](#completion-and-recovery). Naming and derivation policy belong to the caller.
 
 ## Input
 
@@ -67,20 +61,14 @@ Stdin remains open for permission replies. When the turn emits a permission requ
 
 `decision` is `approve` or `deny`, and `id` must match the pending request. Clients must preserve line framing and send no unrelated input. Without a client or hook decision, the turn denies the bypass.
 
-## Read-only request composition
+## Read-only backend request
 
-`shellfish build-request` and `shellfish send-request` expose the provider-request boundary without opening a durable turn. Both require `--session` and read the selected session without recovery or mutation.
+`shellfish backend-request` reads one complete transcript on stdin, invokes its frozen backend, and writes one canonical assistant record:
 
-`build-request` validates optional additional durable records as a continuation of the session and writes one canonical backend request. `--tools` supplies provider tool schemas.
-
-`send-request` validates one canonical backend request against the session's frozen runtime, invokes its adapter, and writes one canonical assistant message.
-
-Neither command runs hooks, executes tool calls, or persists output. Tool schemas and returned calls remain inert.
+It supplies no tools, runs no hooks, and persists nothing.
 
 ```sh
-printf '%s\n' '{"type":"user","content":[{"type":"text","text":"Summarize this conversation"}]}' |
-  shellfish build-request --session path/to/session.jsonl --tools '[]' |
-  shellfish send-request --session path/to/session.jsonl
+cat path/to/session.jsonl | shellfish backend-request
 ```
 
 ## Output

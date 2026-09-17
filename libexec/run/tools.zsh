@@ -11,7 +11,7 @@ sf_run_tool_plan() {
   local runtime=$1 id=$2 name=$3 input=$4 projection
   local -a fields
   projection=$(sf_jq -jrn --argjson runtime "$runtime" --arg id "$id" --arg name "$name" \
-    --argjson input "$input" --argjson turn "$SF_SESSION[turn_id]" '
+    --argjson input "$input" --argjson turn "$SF_RUN[turn_id]" '
       include "lib/runtime";
       def field: ., "\u0000";
       [$runtime.harness.tools[] | select(.name == $name)][0] as $tool |
@@ -77,7 +77,7 @@ sf_run_tool_execute() {
   setopt local_options no_err_exit
   local session=$1 runtime=$2 command=$3 selected=$4 settings=$5 fence=$7
   local env_file=$8 execution_input=$9 sandbox=${10} read_paths=${11} write_paths=${12}
-  local tool_directory=${13} cwd=$SF_SESSION[cwd] capture stdin bounded_stdout bounded_stderr
+  local tool_directory=${13} cwd=$SF_RUN[cwd] capture stdin bounded_stdout bounded_stderr
   local config_dir='' expose
   local -a arguments environment names process_command process sandbox_arguments
   integer max_capture=$6 control_bytes budget stderr_bytes denied=0

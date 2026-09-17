@@ -73,7 +73,7 @@ Scripts run from the session working directory. Arguments and stdin are hook-spe
 | `SHELLFISH_SESSION` | Absolute path of the active session JSONL |
 | `SHELLFISH_MAX_CAPTURE_BYTES` | Combined byte limit across stdout, stderr, and fd 3 |
 | `SHELLFISH_EXECUTABLE` | Absolute path of the invoked Shellfish executable |
-| `SHELLFISH_MODE` | Owning process: `create` for `session_start`, `run` for every turn hook |
+| `SHELLFISH_MODE` | Owning process; currently always `run` |
 | `SHELLFISH_MODEL` | Active model frozen in the session header |
 | `SHELLFISH_VERBOSE` | `1` when full presentation was requested, otherwise `0` |
 | `SHELLFISH_CONFIG_DIR` | Directory containing the config file, or its prospective default |
@@ -148,12 +148,12 @@ Runs before the user record is committed.
 
 - **argv:** none
 - **stdin:** exact submitted prompt
-- **fd 3:** state, and with exit 11, `{"action":"handoff","argv":[...]}` containing a complete command or `{"action":"session_update","patch":{...}}`
+- **fd 3:** state, and with exit 11, `{"action":"handoff","argv":[...]}` containing a complete command or `{"action":"session_update","runtime":{...}}`
 - **Exit 0:** submit the literal prompt
 - **Exit 10:** block submission and continue the hook chain
 - **Exit 11:** block submission, halt the chain, and optionally apply its action
 
-Valid output remains durable when submission is blocked. A handoff is only a request. A capable client performs it after the turn exits cleanly. A session update may patch `profile`, `backend`, or `harness`. Shellfish applies it only when the resulting runtime is valid.
+Valid output remains durable when submission is blocked. A handoff is only a request. A capable client performs it after the turn exits cleanly. A session update supplies one complete valid runtime and atomically replaces the frozen header.
 
 ### `permission_request`
 

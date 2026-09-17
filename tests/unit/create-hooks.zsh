@@ -33,7 +33,7 @@ cat >"$config" <<EOF
 EOF
 export START_INPUT=$input
 
-zsh -f "$entry" create --jsonl --config "$config" --session-out "$session" \
+zsh -f "$entry" run --jsonl --session-create --config "$config" --session-out "$session" \
   >"$stream" || fail 'session_start hook failed'
 [[ ! -s $input ]] || fail 'session_start hook received nonempty stdin'
 jq -eRn --arg session "$session" --arg executable "${hook:A}/run" '
@@ -63,7 +63,7 @@ cat >/dev/null
 ZSH
 chmod +x "$hook/run"
 session="$tmp/silent.jsonl"
-zsh -f "$entry" create --jsonl --config "$config" --session-out "$session" \
+zsh -f "$entry" run --jsonl --session-create --config "$config" --session-out "$session" \
   >"$stream" || fail 'silent session_start hook failed'
 jq -eRn --arg executable "${hook:A}/run" '
   [inputs | fromjson] as $events |
@@ -88,7 +88,7 @@ ZSH
   chmod +x "$hook/run"
   session="$tmp/unsupported-$unsupported.jsonl"
   integer create_status=0
-  zsh -f "$entry" create --jsonl --config "$config" --session-out "$session" \
+  zsh -f "$entry" run --jsonl --session-create --config "$config" --session-out "$session" \
     >"$stream" 2>"$tmp/unsupported.stderr" || create_status=$?
   (( create_status == 1 )) || fail "session_start accepted status $unsupported"
   [[ -f $session ]] || fail 'failed session_start removed the transcript it wrote'
