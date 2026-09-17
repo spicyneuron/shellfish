@@ -5,8 +5,10 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -65,7 +67,7 @@ func printHelp(w io.Writer) {
 	fmt.Fprint(w, `Usage: shellfish-server [SERVER OPTIONS] [SHELLFISH OPTIONS]
 
 Expose one Shellfish session to one browser. Without --session, the server
-creates a session by forwarding Shellfish options to shellfish create.
+creates a session by forwarding Shellfish options to shellfish run.
 
 Server options:
   --session PATH     Serve an existing session
@@ -120,17 +122,21 @@ func parseServerArgs(args []string) (serverOptions, error) {
 }
 
 func createSession(binary string, args []string) (string, error) {
-	command := exec.Command(binary, append([]string{"create"}, args...)...)
+	command := exec.Command(binary, append([]string{"run", "--jsonl", "--session-create"}, args...)...)
 	command.Stderr = os.Stderr
 	output, err := command.Output()
 	if err != nil {
 		return "", fmt.Errorf("create session: %w", err)
 	}
-	session := strings.TrimSuffix(string(output), "\n")
-	if session == "" || strings.Contains(session, "\n") {
-		return "", errors.New("Shellfish did not return one session path")
+	line, _, _ := bytes.Cut(output, []byte{'\n'})
+	var opening struct {
+		Type string `json:"type"`
+		Path string `json:"path"`
 	}
-	return session, nil
+	if json.Unmarshal(line, &opening) != nil || opening.Type != "_session_load" || opening.Path == "" {
+		return "", errors.New("Shellfish did not emit a session path")
+	}
+	return opening.Path, nil
 }
 
 func serve(session, bind, binary string) error {
@@ -173,12 +179,12 @@ func serve(session, bind, binary string) error {
 	signals := make(chan os.Signal, 2)
 	signal.Notify(signals, os.Interrupt, syscall.SIGTERM)
 	defer signal.Stop(signals)
-	tools := make([]string, len(service.header.Harness.Tools))
-	for i, tool := range service.header.Harness.Tools {
+	tools := make([]string, len(service.header.Runtime.Harness.Tools))
+	for i, tool := range service.header.Runtime.Harness.Tools {
 		tools[i] = tool.Name
 	}
 	printStartupBanner(os.Stderr, "http://"+listener.Addr().String(), accessCode,
-		service.header.Cwd, tools, service.header.Harness.Sandbox)
+		service.header.Cwd, tools, *service.header.Runtime.Harness.Sandbox)
 	log.Printf("serving session %s", sessionPath)
 	return serveHTTP(listener, service, killTurn, signals)
 }

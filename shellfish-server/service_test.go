@@ -43,7 +43,9 @@ func headerLine(t *testing.T) string {
 	t.Helper()
 	record, err := json.Marshal(map[string]any{
 		"type": "session", "format_version": 1, "cwd": workDir(t),
-		"harness": map[string]any{"sandbox": false},
+		"runtime": map[string]any{"harness": map[string]any{
+			"sandbox": false, "tools": []any{},
+		}},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -228,11 +230,14 @@ func TestPublicAssets(t *testing.T) {
 	}
 }
 
-// Whether a session is canonical is load's to decide. The server refuses a
-// session belonging to another directory, and passes on load's own refusal.
+// The server refuses invalid files and sessions belonging to another directory.
 func TestNewRefusesUnservableSession(t *testing.T) {
 	record, err := json.Marshal(map[string]any{
-		"type": "session", "format_version": 1, "cwd": t.TempDir()})
+		"type": "session", "format_version": 1, "cwd": t.TempDir(),
+		"runtime": map[string]any{"harness": map[string]any{
+			"sandbox": false, "tools": []any{},
+		}},
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -249,7 +254,23 @@ func TestNewRefusesUnservableSession(t *testing.T) {
 		}
 	}
 	open(path, "session belongs to")
-	open(filepath.Join(t.TempDir(), "missing.jsonl"), "load session")
+	invalid := filepath.Join(t.TempDir(), "invalid-header.jsonl")
+	if err := os.WriteFile(invalid, []byte("{}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	open(invalid, "unsupported format")
+	missingRuntime := filepath.Join(t.TempDir(), "missing-runtime.jsonl")
+	missingRecord, err := json.Marshal(map[string]any{
+		"type": "session", "format_version": 1, "cwd": workDir(t),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(missingRuntime, append(missingRecord, '\n'), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	open(missingRuntime, "missing runtime fields")
+	open(filepath.Join(t.TempDir(), "missing.jsonl"), "read session")
 }
 
 // A connection replays the durable session, closes it with a session-status

@@ -36,28 +36,32 @@ func NewExec(ctx context.Context, binary, session string) *Exec {
 	return &Exec{ctx: ctx, binary: binary, session: session}
 }
 
-// Load returns the durable records of the session. Validation, an interrupted
-// append's trailing fragment, and canonical meaning all belong to shellfish
-// load. The transient path event it opens with is dropped here.
+// Load returns complete JSONL records directly. The browser protocol starts at
+// the header, so creation's transient path event is not part of replay.
 func (e *Exec) Load() ([]json.RawMessage, error) {
-	child := exec.CommandContext(e.ctx, e.binary, "load", "--session", e.session)
-	diagnostics := &tailBuffer{limit: maxDiagnosticBytes}
-	child.Stderr = diagnostics
-	output, err := child.Output()
+	info, err := os.Lstat(e.session)
 	if err != nil {
-		return nil, fmt.Errorf("load session: %w%s", err, diagnostics.suffix())
+		return nil, fmt.Errorf("read session: %w", err)
 	}
-	lines := bytes.Split(bytes.TrimSuffix(output, []byte{'\n'}), []byte{'\n'})
-	var opening struct {
-		Type string `json:"type"`
+	if !info.Mode().IsRegular() {
+		return nil, fmt.Errorf("read session: not a regular file: %s", e.session)
 	}
-	// The path event and the header are the shortest stream load can produce.
-	if len(lines) < 2 || json.Unmarshal(lines[0], &opening) != nil ||
-		opening.Type != "_session_load" {
-		return nil, errors.New("load did not open with a session path")
+	data, err := os.ReadFile(e.session)
+	if err != nil {
+		return nil, fmt.Errorf("read session: %w", err)
 	}
-	records := make([]json.RawMessage, 0, len(lines)-1)
-	for _, line := range lines[1:] {
+	if len(data) == 0 {
+		return nil, errors.New("read session: empty transcript")
+	}
+	if data[len(data)-1] != '\n' {
+		return nil, errors.New("read session: incomplete final record")
+	}
+	lines := bytes.Split(data[:len(data)-1], []byte{'\n'})
+	records := make([]json.RawMessage, 0, len(lines))
+	for index, line := range lines {
+		if len(line) == 0 || !json.Valid(line) {
+			return nil, fmt.Errorf("read session: invalid JSON at line %d", index+1)
+		}
 		records = append(records, line)
 	}
 	return records, nil

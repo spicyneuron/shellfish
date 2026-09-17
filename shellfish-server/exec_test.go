@@ -14,20 +14,11 @@ import (
 	"time"
 )
 
-// loadStub answers shellfish load with the session file as it stands, so a test
-// session holds whatever records the test finds useful.
-const loadStub = `if [ "$1" = load ]; then
-  printf '{"type":"_session_load","path":"%s"}\n' "$3"
-  exec cat "$3"
-fi
-`
-
-// fakeShellfish installs a stand-in for the shellfish executable. Only turns
-// reach the given script; load is answered before it.
+// fakeShellfish installs a stand-in for the shellfish executable.
 func fakeShellfish(t *testing.T, script string) string {
 	t.Helper()
 	binary := filepath.Join(t.TempDir(), "shellfish")
-	if err := os.WriteFile(binary, []byte("#!/bin/sh\n"+loadStub+script), 0o700); err != nil {
+	if err := os.WriteFile(binary, []byte("#!/bin/sh\n"+script), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	return binary
@@ -106,7 +97,7 @@ printf '%s\n' '{"type":"_assistant_start"}'
 func TestCreateSessionForwardsShellfishOptions(t *testing.T) {
 	recorded := filepath.Join(t.TempDir(), "invocation")
 	binary := fakeShellfish(t, `printf '%s\n' "$*" >'`+recorded+`'
-printf '%s\n' /sessions/new.jsonl
+printf '%s\n' '{"type":"_session_load","path":"/sessions/new.jsonl"}' '{"type":"session"}'
 `)
 	session, err := createSession(binary, []string{"--profile", "work", "--model", "test"})
 	if err != nil {
@@ -116,8 +107,60 @@ printf '%s\n' /sessions/new.jsonl
 		t.Fatalf("session = %q", session)
 	}
 	if got, err := os.ReadFile(recorded); err != nil ||
-		string(got) != "create --profile work --model test\n" {
+		string(got) != "run --jsonl --session-create --profile work --model test\n" {
 		t.Fatalf("invocation = %q (%v)", got, err)
+	}
+}
+
+func TestExecLoadsCompleteJSONL(t *testing.T) {
+	dir := t.TempDir()
+	session := filepath.Join(dir, "session.jsonl")
+	content := "{\"type\":\"session\"}\n{\"type\":\"user\"}\n"
+	if err := os.WriteFile(session, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	records, err := NewExec(context.Background(), "/shellfish", session).Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := ""
+	for _, record := range records {
+		got += string(record) + "\n"
+	}
+	if got != content {
+		t.Fatalf("records = %q, want %q", got, content)
+	}
+}
+
+func TestExecRejectsInvalidTranscriptFiles(t *testing.T) {
+	dir := t.TempDir()
+	complete := filepath.Join(dir, "complete.jsonl")
+	if err := os.WriteFile(complete, []byte("{}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cases := map[string]string{
+		"empty":        "",
+		"unterminated": "{}",
+		"blank line":   "{}\n\n",
+		"invalid JSON": "{}\nnot-json\n",
+	}
+	for name, content := range cases {
+		t.Run(name, func(t *testing.T) {
+			path := filepath.Join(dir, strings.ReplaceAll(name, " ", "-")+".jsonl")
+			if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := NewExec(context.Background(), "/shellfish", path).Load(); err == nil {
+				t.Fatal("invalid transcript was accepted")
+			}
+		})
+	}
+	link := filepath.Join(dir, "link.jsonl")
+	if err := os.Symlink(complete, link); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := NewExec(context.Background(), "/shellfish", link).Load(); err == nil {
+		t.Fatal("symlinked transcript was accepted")
 	}
 }
 

@@ -1,6 +1,6 @@
 # shellfish-server
 
-`shellfish-server` exposes one Shellfish session to one browser. It runs every turn through `shellfish run --jsonl` and reads the session through `shellfish load`, so terminal chat, the server, and other clients all use the same agent loop and durable transcript.
+`shellfish-server` exposes one Shellfish session to one browser. It runs every turn through `shellfish run --jsonl` and replays the durable session transcript directly.
 
 Install the optional server with Go:
 
@@ -10,7 +10,7 @@ go install github.com/spicyneuron/shellfish/shellfish-server@latest
 
 ## Run the server
 
-Run `shellfish-server` from the project directory. Without `--session`, it creates a session using the same runtime options as `shellfish create`:
+Run `shellfish-server` from the project directory. Without `--session`, it creates a session through `shellfish run --jsonl --session-create` using the same runtime options as a new chat:
 
 ```sh
 shellfish-server --profile work --model MODEL

@@ -36,8 +36,9 @@ var errStreamSettling = errors.New("session file is ahead of the stream")
 // Service proxies one authenticated browser onto one Shellfish session: it
 // replays the durable transcript, relays one exec child's JSONL, and hands turn,
 // cancellation, and permission actions back to that child. The meaning of a
-// transcript belongs to exec and its presentation to the browser. The service
-// distinguishes framing and whether a durable error settled a failed child.
+// transcript belongs to Shellfish and its presentation to the browser. The
+// service distinguishes framing and whether a durable error settled a failed
+// child.
 type Service struct {
 	accessCode string
 	header     sessionHeader
@@ -69,13 +70,23 @@ type turn struct {
 }
 
 type sessionHeader struct {
-	Cwd     string `json:"cwd"`
-	Harness struct {
-		Sandbox bool `json:"sandbox"`
-		Tools   []struct {
-			Name string `json:"name"`
-		} `json:"tools"`
-	} `json:"harness"`
+	Type          string          `json:"type"`
+	FormatVersion int             `json:"format_version"`
+	Cwd           string          `json:"cwd"`
+	Runtime       *sessionRuntime `json:"runtime"`
+}
+
+type sessionRuntime struct {
+	Harness *sessionHarness `json:"harness"`
+}
+
+type sessionHarness struct {
+	Sandbox *bool         `json:"sandbox"`
+	Tools   []sessionTool `json:"tools"`
+}
+
+type sessionTool struct {
+	Name string `json:"name"`
 }
 
 func New(accessCode string, exec *Exec) (*Service, error) {
@@ -91,12 +102,24 @@ func New(accessCode string, exec *Exec) (*Service, error) {
 		recordCount: len(records)}, nil
 }
 
-// checkHeader refuses a session from another directory. Load has already
-// accepted the header as canonical; this reads what the server itself needs.
+// checkHeader reads the fields the server needs and refuses a session from
+// another directory.
 func checkHeader(record json.RawMessage) (sessionHeader, error) {
 	var header sessionHeader
 	if err := json.Unmarshal(record, &header); err != nil {
 		return sessionHeader{}, fmt.Errorf("read session header: %w", err)
+	}
+	if header.Type != "session" || header.FormatVersion != 1 {
+		return sessionHeader{}, errors.New("read session header: unsupported format")
+	}
+	if header.Runtime == nil || header.Runtime.Harness == nil ||
+		header.Runtime.Harness.Sandbox == nil || header.Runtime.Harness.Tools == nil {
+		return sessionHeader{}, errors.New("read session header: missing runtime fields")
+	}
+	for _, tool := range header.Runtime.Harness.Tools {
+		if tool.Name == "" {
+			return sessionHeader{}, errors.New("read session header: invalid tool")
+		}
 	}
 	cwd, err := os.Getwd()
 	if err == nil {
