@@ -2,7 +2,7 @@
 
 Shellfish reads JSONC from `$XDG_CONFIG_HOME/shellfish/shellfish.jsonc`, or `~/.config/shellfish/shellfish.jsonc` when `XDG_CONFIG_HOME` is unset. User configuration is merged over the bundled [`share/default/shellfish.jsonc`](../share/default/shellfish.jsonc). Objects merge recursively and arrays replace their defaults.
 
-Run `shellfish config --init` to create a user configuration from the bundled [`share/template/`](../share/template/) without replacing existing customization. Use `shellfish config` to inspect the runtime a new session would use.
+To start from a working example, copy [`share/template/`](../share/template/) into that directory and edit it.
 
 ## Profiles
 
@@ -108,10 +108,6 @@ A read grant allows reading; a write grant allows reading and writing. Use `--sa
 
 ## Existing sessions
 
-A session retains its resolved runtime rather than reinterpreting current configuration. Themes and global TUI preview settings remain current client configuration. Inspect a session's configuration with:
-
-```sh
-shellfish config --session-from path/to/session.jsonl
-```
+A session retains its resolved runtime rather than reinterpreting current configuration, so opening one rejects ordinary runtime overrides. Themes and global TUI preview settings remain current client configuration.
 
 See [`SESSIONS.md`](SESSIONS.md) for the runtime boundary and derivation semantics.

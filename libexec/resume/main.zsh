@@ -41,13 +41,13 @@ sf_resume_main() {
 
   (( $+commands[jq] )) || { sf_die 'shellfish requires jq'; return 2; }
   source "$SF_ROOT/libexec/resume/discovery.zsh"
-  sf_session_find $limit || { sf_die "$SF_SESSION_ERROR"; return 1; }
-  session=$SF_SESSION_MATCHES[1]
+  sf_resume_find $limit || { sf_die "$SF_SESSION_ERROR"; return 1; }
+  session=$SF_RESUME_MATCHES[1]
 
   if (( ! limit )); then
     zmodload zsh/terminfo && echoti clear || { sf_die 'cannot clear terminal'; return 1; }
     source "$SF_ROOT/libexec/resume/picker.zsh"
-    sf_resume_run "${SF_SESSION_MATCHES[@]}" || {
+    sf_resume_run "${SF_RESUME_MATCHES[@]}" || {
       resume_status=$?
       (( resume_status == 130 )) || sf_die "$SF_RESUME_ERROR"
       return $resume_status

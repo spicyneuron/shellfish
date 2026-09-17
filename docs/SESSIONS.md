@@ -28,6 +28,8 @@ The header is frozen against ambient configuration, but it is not immutable. Con
 
 ## Durability and recovery
 
-Every durable prefix must be valid, including one left by an interrupted turn. Tool calls remain inert until the complete assistant response is validated and appended. A tool result exactly identifies and repeats the input of the call it settles.
+Every durable prefix must be valid, including one left by an interrupted turn. A final unterminated line is an interrupted append: readers ignore it and require the newline-terminated prefix before it to be valid. A structurally valid unfinished turn replays as it stands, because recovery belongs to the next `shellfish run`.
+
+Tool calls remain inert until the complete assistant response is validated and appended. A tool result exactly identifies and repeats the input of the call it settles.
 
 The turn process closes interrupted work from what it knows: an active call is interrupted, later calls are cancelled, and completed outcomes are preserved. Reopening an unfinished session records unresolved calls as unknown outcomes, then closes the failed turn. Clients discard uncertain transient state and replay the session. See [`RUN.md`](RUN.md#completion-and-recovery) for recovery behavior.

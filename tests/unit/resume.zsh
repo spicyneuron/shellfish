@@ -129,18 +129,18 @@ touch -t 202609040300 "$directory/other.jsonl"
 print -r -- '{"not":"a session header"}' >"$directory/corrupt.jsonl"
 make_discovery_header "$(pwd -P)" hidden >"$directory/.internal.jsonl"
 
-sf_session_find 0
-assert_equal 2 "${#SF_SESSION_MATCHES}"
-[[ $SF_SESSION_MATCHES[1] == "$directory/second.jsonl" ]]
-[[ $SF_SESSION_MATCHES[2] == "$directory/first.jsonl" ]]
-[[ ${SF_SESSION_MATCHES[(I)*.internal.jsonl]} == 0 ]] ||
+sf_resume_find 0
+assert_equal 2 "${#SF_RESUME_MATCHES}"
+[[ $SF_RESUME_MATCHES[1] == "$directory/second.jsonl" ]]
+[[ $SF_RESUME_MATCHES[2] == "$directory/first.jsonl" ]]
+[[ ${SF_RESUME_MATCHES[(I)*.internal.jsonl]} == 0 ]] ||
   fail 'automatic discovery included a leading-dot session'
-sf_session_find 1
-assert_equal 1 "${#SF_SESSION_MATCHES}"
-[[ $SF_SESSION_MATCHES[1] == "$directory/second.jsonl" ]]
+sf_resume_find 1
+assert_equal 1 "${#SF_RESUME_MATCHES}"
+[[ $SF_RESUME_MATCHES[1] == "$directory/second.jsonl" ]]
 (
   cd "$tmp"
-  if sf_session_find 0 2>/dev/null; then
+  if sf_resume_find 0 2>/dev/null; then
     fail 'session discovery succeeded with no matches'
   fi
 )

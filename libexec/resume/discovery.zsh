@@ -3,16 +3,16 @@ setopt no_aliases no_multios pipe_fail
 
 (( $+functions[sf_session_directory] )) || source "$SF_ROOT/lib/session.zsh"
 
-typeset -ga SF_SESSION_MATCHES=()
+typeset -ga SF_RESUME_MATCHES=()
 
 # Finds sessions for the current directory, newest first, up to a nonzero LIMIT.
-sf_session_find() {
+sf_resume_find() {
   local limit=${1:-0} directory cwd file field
   local -a candidates headers readable fields
   local -A header_by_file
   integer decoded=0 index
   SF_SESSION_ERROR=''
-  SF_SESSION_MATCHES=()
+  SF_RESUME_MATCHES=()
   sf_session_directory || return
   directory=$REPLY
   cwd=$(pwd -P) || {
@@ -42,7 +42,7 @@ sf_session_find() {
       if [[ $file == ok ]]; then
         decoded=1
       else
-        SF_SESSION_MATCHES+=( "$file" )
+        SF_RESUME_MATCHES+=( "$file" )
       fi
     done < <(printf '%s\n' "${headers[@]}" |
       jq -jRn --arg cwd "$cwd" --argjson limit "$limit" --args '
@@ -57,10 +57,10 @@ sf_session_find() {
         (.[] | ., "\u0000"), "ok", "\u0000"
       ' "${candidates[@]}" 2>/dev/null)
     (( decoded )) || {
-      SF_SESSION_MATCHES=()
+      SF_RESUME_MATCHES=()
       sf_session_fail "cannot inspect sessions in $directory"
       return
     }
   fi
-  (( ${#SF_SESSION_MATCHES} )) || sf_session_fail "no sessions match $cwd"
+  (( ${#SF_RESUME_MATCHES} )) || sf_session_fail "no sessions match $cwd"
 }

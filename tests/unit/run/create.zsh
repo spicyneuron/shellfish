@@ -1,7 +1,7 @@
 #!/usr/bin/env zsh
 
-source "${0:A:h:h}/_helpers.zsh"
-sf_test_tmp create-command
+source "${0:A:h:h:h}/_helpers.zsh"
+sf_test_tmp run-create-command
 mkdir -p "$tmp/home" "$tmp/system"
 print -r -- 'initial system' >"$tmp/system/source.md"
 export HOME="${tmp:A}/home"

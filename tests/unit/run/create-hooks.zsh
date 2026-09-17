@@ -1,7 +1,7 @@
 #!/usr/bin/env zsh
 
-source "${0:A:h:h}/_helpers.zsh"
-sf_test_tmp create-hook-contract
+source "${0:A:h:h:h}/_helpers.zsh"
+sf_test_tmp run-create-hook-contract
 export XDG_STATE_HOME="$tmp/state"
 typeset entry="$ROOT/bin/shellfish" hook="$tmp/start" config="$tmp/config.jsonc"
 typeset input="$tmp/input" session="$tmp/session.jsonl" stream="$tmp/stream"

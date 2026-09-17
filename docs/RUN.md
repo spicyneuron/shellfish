@@ -17,18 +17,6 @@ printf '%s\n' '{"type":"user","content":[{"type":"text","text":"Review these cha
 
 `shellfish run --jsonl --session-create` creates an idle session and exits after startup hooks. `--session-from PATH` derives one from an existing session's runtime, while `--session-out PATH` selects its destination. See [`SESSIONS.md`](SESSIONS.md) for session semantics.
 
-## Reading a session
-
-`shellfish load --session PATH` is the read-only session boundary. It validates the complete durable prefix, then writes one transient path event followed by the canonical header and durable records in file order:
-
-```json
-{"type":"_session_load","path":"/absolute/path/session.jsonl"}
-{"type":"session","format_version":1,"cwd":"/project","created":"...","runtime":{"backend":{},"harness":{},"profile":{}}}
-{"type":"system","content":"..."}
-```
-
-Nothing is emitted until the whole prefix validates, and nothing is ever written back. A final unterminated line is an interrupted append and is ignored; the newline-terminated prefix before it must be valid. A structurally valid unfinished turn loads as it stands, because ordinary [recovery](#completion-and-recovery) belongs to the next `run`.
-
 ## Session creation protocol
 
 `shellfish run --jsonl --session-create` streams the creation protocol. No creation mode prints a session path:

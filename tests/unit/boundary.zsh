@@ -51,11 +51,30 @@ collect '^[[:space:]]+[a-z|-]+\)' "$ROOT/bin/shellfish"
 for token in $matches; do routes+=( ${(s:|:)${${token//[[:space:]]/}%\)}} ); done
 (( ${#routes} )) || fail 'no dispatcher routes found'
 
+# Named routes are the whole public command surface; the rest are chat flags.
+typeset -a surface=( ${(o)${(M)routes:#[a-z]*}} )
+[[ ${(j: :)surface} == 'backend-request run' ]] ||
+  fail "unexpected public command surface: $surface"
+
+# Programs the dispatcher reaches by path instead of by route name.
+collect 'libexec/[a-z-]+/main\.zsh' "$ROOT/bin/shellfish"
+typeset -a dispatched=( ${${matches#libexec/}%/main.zsh} )
+
+# Bundled harness resources are product behavior, not core implementation. They
+# run from any installation and never reach into the repository layout.
+collect '\$SF_(ROOT|SHARE)\b' $ROOT/share/default/**/*(.N)
+(( ! ${#matches} )) || fail "bundled resource uses the installation layout: $matches[1]"
+collect 'include "lib/[a-z]+"' $ROOT/share/default/**/*(.N)
+(( ! ${#matches} )) || fail "bundled resource uses core jq: $matches[1]"
+
 for dir in $ROOT/libexec/*(/N); do
   component=${dir:t}
   shell_files=( $dir/**/*.zsh(.N) )
   jq_files=( $dir/**/*.jq(.N) )
   (( ${#shell_files} )) || fail "no sources found for component: $component"
+
+  (( ${routes[(Ie)$component]} || ${dispatched[(Ie)$component]} )) ||
+    fail "component is unreachable from the dispatcher: $component"
 
   # Repository paths must be owned, shared, or bundled data.
   collect '\$SF_ROOT/[^"'\'' ]+' $shell_files $jq_files
