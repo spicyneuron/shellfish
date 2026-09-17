@@ -2,6 +2,8 @@ emulate -R zsh
 setopt no_aliases no_multios pipe_fail
 
 (( $+functions[sf_jq] )) || source "$SF_ROOT/lib/jq.zsh"
+(( $+functions[sf_session_read_runtime] )) || source "$SF_ROOT/lib/session.zsh"
+[[ -n ${SF_SHARE-} ]] || typeset -g SF_SHARE=$SF_ROOT/share
 
 typeset -g SF_RUNTIME_ERROR=''
 typeset -g SF_PRESENTATION=''
@@ -214,7 +216,7 @@ sf_runtime_resolve_from_config() {
     --arg model_override "$model_override" --argjson request_override "$request_override" \
     --arg backend_override "$backend_override" \
     --arg external_backend_name "$external_name" --arg home "$home" '
-      include "libexec/config/runtime";
+      include "lib/runtime";
       def record: ., "\u0000";
       {defaults:$defaults,raw:$raw,profile_override:$profile_override,
        model_override:$model_override,request_override:$request_override,
@@ -371,12 +373,11 @@ sf_runtime_resolve_from_config() {
     --arg context_window_command "$context_window_command" --arg fence "$fence" \
     --arg env_file "$env_file" --argjson system "$system_paths" \
     --argjson grants "$SF_RUNTIME_SANDBOX_GRANTS" --args '
-      include "libexec/config/runtime";
-      include "lib/runtime/schema";
+      include "lib/runtime";
       ({prepared:$prepared,manifest:$manifest,command:$command,
         context_window_command:$context_window_command,fence:$fence,
         env_file:$env_file,system:$system,resolved:$ARGS.positional} + $grants) |
-      runtime_finalize | .runtime
+      runtime_finalize
     ' "${resolved_args[@]}" 2>&1) || {
     sf_runtime_validation_error "$final" "cannot finalize runtime"
     return
@@ -400,7 +401,7 @@ sf_runtime_restore_presentation() {
   raw=$loaded[3]
   output=$(sf_jq -nce --argjson defaults "$defaults" \
     --argjson raw "$raw" '
-      include "libexec/config/runtime";
+      include "lib/runtime";
       {defaults:$defaults,raw:$raw} | presentation_resolve
     ' 2>&1) || {
     if [[ $output == *"$theme_marker"* ]]; then
@@ -417,18 +418,102 @@ sf_runtime_restore_presentation() {
   sf_runtime_apply_verbose
 }
 
-sf_runtime_report() {
-  local runtime=$1
-  jq -ne --argjson runtime "$runtime" --argjson presentation "$SF_PRESENTATION" '
-    $runtime + {
-      theme: {
-        mode: $presentation.theme_mode,
-        light: {name: $presentation.theme_light,
-                palette: $presentation.themes[$presentation.theme_light]},
-        dark: {name: $presentation.theme_dark,
-               palette: $presentation.themes[$presentation.theme_dark]}
-      },
-      tui: $presentation.tui
-    }
-  '
+# Parse the options that select a runtime, then resolve it. Callers that own
+# their own flags pass only the ones listed in lib/options.zsh.
+sf_runtime_resolve_args() {
+  local session_path='' config='' profile='' model='' backend=''
+  local request='{}' flag grant resolved
+  local -a read_paths=() write_paths=()
+  integer override=0 detect=0
+
+  SF_RUNTIME_ERROR=''
+  while (( $# )); do
+    case $1 in
+      --config)
+        [[ -n $2 && $2 != - ]] ||
+          sf_runtime_fail '--config requires a nonempty file path other than -' || return 2
+        config=$2
+        shift 2
+        ;;
+      --session-from)
+        [[ -n $2 ]] || sf_runtime_fail '--session-from requires a nonempty path' || return 2
+        session_path=$2
+        shift 2
+        ;;
+      -p|--profile)
+        [[ $2 =~ ^[A-Za-z0-9][A-Za-z0-9_-]*$ ]] ||
+          sf_runtime_fail '--profile must match [A-Za-z0-9][A-Za-z0-9_-]*' || return 2
+        profile=$2
+        override=1
+        shift 2
+        ;;
+      -m|--model)
+        [[ -n $2 && ! $2 =~ '[[:cntrl:]]' ]] ||
+          sf_runtime_fail '--model requires a nonempty value without control characters' || return 2
+        model=$2
+        override=1
+        shift 2
+        ;;
+      -b|--backend)
+        [[ -n $2 && ! $2 =~ '[[:cntrl:]]' ]] ||
+          sf_runtime_fail '--backend requires a nonempty value without control characters' || return 2
+        backend=$2
+        override=1
+        shift 2
+        ;;
+      --request)
+        request=$(jq -ce 'select(type == "object")' <<<"$2" 2>/dev/null) ||
+          sf_runtime_fail '--request requires a JSON object' || return 2
+        override=1
+        shift 2
+        ;;
+      --sandbox-read|--sandbox-write)
+        flag=$1
+        [[ -n $2 ]] || sf_runtime_fail "$flag requires a nonempty path" || return 2
+        grant=$2
+        if [[ $grant == '~/'* ]]; then
+          [[ -n ${HOME-} ]] || sf_runtime_fail "$flag cannot expand ~ without HOME" || return 2
+          grant="$HOME/${grant#\~/}"
+        elif [[ $grant != /* ]]; then
+          grant="$PWD/$grant"
+        fi
+        resolved=${grant:A}
+        [[ -e $resolved ]] || sf_runtime_fail "$flag path does not exist: $2" || return 2
+        if [[ $flag == --sandbox-read ]]; then
+          read_paths+=( "$resolved" )
+        else
+          write_paths+=( "$resolved" )
+        fi
+        override=1
+        shift 2
+        ;;
+      --sandbox-auto)
+        detect=1
+        override=1
+        shift
+        ;;
+      *)
+        sf_runtime_fail "unknown argument: $1"
+        return 2
+        ;;
+    esac
+  done
+
+  if (( detect || ${#read_paths} || ${#write_paths} )); then
+    local detected='{"sandbox_read_paths":[],"sandbox_write_paths":[]}'
+    if (( detect )); then
+      (( $+functions[sf_sandbox_detect] )) || source "$SF_ROOT/lib/sandbox.zsh"
+      detected=$(sf_sandbox_detect) || sf_runtime_fail 'cannot detect sandbox paths' || return
+    fi
+    # The read count splits explicit read and write path arguments.
+    SF_RUNTIME_SANDBOX_GRANTS=$(jq -cn --argjson detected "$detected" \
+      --argjson reads "${#read_paths}" --args '
+        {sandbox_read_paths: ($ARGS.positional[:$reads] + $detected.sandbox_read_paths),
+         sandbox_write_paths: ($ARGS.positional[$reads:] + $detected.sandbox_write_paths)}
+      ' -- "${read_paths[@]}" "${write_paths[@]}") ||
+      sf_runtime_fail 'cannot prepare sandbox grants' || return
+  fi
+
+  sf_runtime_resolve "$session_path" "$config" "$profile" "$model" "$request" \
+    "$backend" "$override"
 }

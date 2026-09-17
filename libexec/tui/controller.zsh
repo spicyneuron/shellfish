@@ -314,8 +314,8 @@ sf_tui_load() {
 }
 
 sf_tui_controller() {
-  local session=$1 presentation=${2:-\{\}} initial=${3-}
-  local session_mode=${4:-resume} draft=${5-}
+  local session=$1 runtime=${2:-null} presentation=${3:-\{\}} initial=${4-}
+  local session_mode=${5:-resume} draft=${6-}
   local input=$draft saved_tty editor_error
   integer exit_status=0 editor_status=0
 
@@ -349,7 +349,7 @@ sf_tui_controller() {
       return 1
     }
   fi
-  SF_PRESENT_RUNTIME=$presentation
+  SF_PRESENT_RUNTIME=$runtime
   sf_tui_chat_start "$session_mode" "$session" || {
     SF_PRESENT_ERROR='cannot render startup banner'
     return 1

@@ -80,9 +80,9 @@ sf_tui_theme_config() {
        "syntax.added":("fg=" + .diff_added + ",bg=" + .diff_added_background),
        "syntax.removed":("fg=" + .diff_removed + ",bg=" + .diff_removed_background)};
     def record($key; $value): $key, "\u0000", $value, "\u0000";
-    record("mode"; .theme.mode),
-    (styles(.theme.light.palette) | to_entries[] | record("light." + .key; .value)),
-    (styles(.theme.dark.palette) | to_entries[] | record("dark." + .key; .value)),
+    record("mode"; .theme_mode),
+    (styles(.themes[.theme_light]) | to_entries[] | record("light." + .key; .value)),
+    (styles(.themes[.theme_dark]) | to_entries[] | record("dark." + .key; .value)),
     record("valid"; "yes")
   ' <<<"$presentation" 2>/dev/null)
   [[ ${values[valid]-} == yes ]] || {

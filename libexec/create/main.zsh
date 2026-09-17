@@ -53,10 +53,10 @@ sf_create_session() {
 }
 
 sf_create_main() {
-  local requested_out='' report runtime session system
+  local requested_out='' runtime session system
   local system_text projection
   local -a forwarded=() system_parts=() system_paths=()
-  integer report_status=0 take=0 system_explicit=0
+  integer resolve_status=0 take=0 system_explicit=0
   source "$SF_ROOT/lib/options.zsh"
 
   while (( $# )); do
@@ -99,14 +99,16 @@ sf_create_main() {
     return 2
   }
 
-  report=$("$SF_ENTRY" config "${forwarded[@]}") || report_status=$?
-  (( ! report_status )) || return $report_status
-  runtime=$(jq -ce 'del(.theme, .tui)' <<<"$report") || {
-    sf_die 'cannot resolve the session runtime'
-    return 1
+  source "$SF_ROOT/lib/session.zsh"
+  source "$SF_ROOT/lib/runtime.zsh"
+  sf_runtime_resolve_args "${forwarded[@]}" || {
+    resolve_status=$?
+    sf_die "$SF_RUNTIME_ERROR"
+    return $resolve_status
   }
+  runtime=$REPLY
   if (( ! system_explicit )); then
-    projection=$(jq -jr '.profile.system[] | ., "\u0000"' <<<"$report") ||
+    projection=$(jq -jr '.profile.system[] | ., "\u0000"' <<<"$runtime") ||
       sf_die 'cannot resolve system paths' || return
     system_paths=( ${(@0)projection} )
     for system_text in "${system_paths[@]}"; do
@@ -116,7 +118,6 @@ sf_create_main() {
   fi
   system=${(pj:\n\n:)system_parts}
 
-  source "$SF_ROOT/lib/session/main.zsh"
   source "$SF_ROOT/lib/scratch.zsh"
   trap 'sf_create_interrupt 130' INT USR1
   trap 'sf_create_interrupt 129' HUP

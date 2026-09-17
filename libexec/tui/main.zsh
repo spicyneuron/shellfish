@@ -29,9 +29,9 @@ sf_read_prompt() {
 
 sf_tui_main() {
   local requested_session=''
-  local input='' draft='' presentation session='' session_mode=startup
+  local input='' draft='' presentation runtime session='' session_mode=startup
   local arity=''
-  local -a positional=() runtime_args=() presentation_args=()
+  local -a positional=() runtime_args=() resolve_args=()
   local -a original_args=("$@")
   integer out_explicit=0 override=0 take=0
   integer clear_requested=0
@@ -66,7 +66,6 @@ sf_tui_main() {
         ;;
       --verbose)
         verbose_requested=1
-        presentation_args+=( "$1" )
         shift
         ;;
       --)
@@ -81,8 +80,8 @@ sf_tui_main() {
         (( $# >= take )) || { sf_die "$1 requires a value"; return 2; }
         runtime_args+=( "${@:1:$take}" )
         # The banner and footer describe the runtime creation will freeze, so
-        # config resolves the same options. Only the system prompt is its own.
-        [[ $1 == (--system|--system-file) ]] || presentation_args+=( "${@:1:$take}" )
+        # the client resolves the same options. Only the system prompt is its own.
+        [[ $1 == (--system|--system-file) ]] || resolve_args+=( "${@:1:$take}" )
         [[ $1 == --config ]] || override=1
         shift $take
         ;;
@@ -122,7 +121,7 @@ sf_tui_main() {
   fi
   if [[ ! -t 1 ]]; then sf_die 'chat requires an interactive terminal'; return 2; fi
 
-  integer config_status=0
+  integer resolve_status=0
   if [[ -n $requested_session ]]; then
     (( ! override )) || {
       sf_die 'options that configure a new session cannot be used with an existing one'
@@ -130,10 +129,18 @@ sf_tui_main() {
     }
     session=$requested_session
     session_mode=resume
-    presentation_args=( --session-from "$session" "${presentation_args[@]}" )
+    resolve_args=( --session-from "$session" "${resolve_args[@]}" )
   fi
-  presentation=$("$SF_ENTRY" config "${presentation_args[@]}") || config_status=$?
-  (( ! config_status )) || return $config_status
+  source "$SF_ROOT/lib/session.zsh"
+  source "$SF_ROOT/lib/runtime.zsh"
+  SF_RUNTIME_VERBOSE=$verbose_requested
+  sf_runtime_resolve_args "${resolve_args[@]}" || {
+    resolve_status=$?
+    sf_die "$SF_RUNTIME_ERROR"
+    return $resolve_status
+  }
+  runtime=$REPLY
+  presentation=$SF_PRESENTATION
 
   source "$SF_ROOT/libexec/tui/render/main.zsh"
   source "$SF_ROOT/libexec/tui/project.zsh"
@@ -149,7 +156,7 @@ sf_tui_main() {
     zmodload zsh/terminfo && echoti clear || { sf_die 'cannot clear terminal'; return 1; }
   fi
   {
-    sf_tui_controller "$session" "$presentation" "$input" \
+    sf_tui_controller "$session" "$runtime" "$presentation" "$input" \
       "$session_mode" "$draft" || controller_status=$?
   } always {
     [[ -z $SF_TUI_TRANSPORT_PID ]] || sf_tui_transport_stop

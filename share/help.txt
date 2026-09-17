@@ -5,7 +5,6 @@ A tiny coding agent written in zsh, awk, curl, and jq.
 Usage:
   shellfish [OPTIONS] [PROMPT]       Start an interactive chat
   shellfish run [OPTIONS] [PROMPT]   Run exactly one agent turn
-  shellfish config [OPTIONS]         Inspect or initialize configuration
 
 New sessions:
   -p, --profile NAME    Select a configured profile
@@ -25,9 +24,6 @@ Existing sessions:
   -s, --session PATH [OPTIONS] [PROMPT]  Open a specific session
 
 Global config:
-  --init                Create the user configuration directory; combine with
-                        --sandbox-auto to save detected sandbox grants
-
   Default directory: ${XDG_CONFIG_HOME:-$HOME/.config}/shellfish
   Main file:         shellfish.jsonc
 
