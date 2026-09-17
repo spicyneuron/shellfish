@@ -167,23 +167,23 @@ valid_header=$(jq -cn '
     }
   }
 ')
-print -r -- "$valid_header" | schema_eval 'canonical_session_header(1)' >/dev/null
+print -r -- "$valid_header" | schema_eval 'canonical_session_header' >/dev/null
 valid_header=$(jq -c '.runtime.harness.user_prompt_submit=[{
   command:"/bin/prompt",environment:[],render:{initial_user_text:"",user_text:"${output.stderr}",model_text:"${output.stdout}"},match:{pattern:"^!"},
   help:{usage:"!COMMAND",description:"Run a shell command"}
 }]' <<<"$valid_header")
-print -r -- "$valid_header" | schema_eval 'canonical_session_header(1)' >/dev/null
+print -r -- "$valid_header" | schema_eval 'canonical_session_header' >/dev/null
 typeset permission_header
 permission_header=$(jq -c '.runtime.harness.permission_request=[{
   command:"/bin/permission",environment:[],render:{initial_user_text:"",user_text:"${output.stderr}",model_text:"${output.stdout}"}
 }]' <<<"$valid_header")
 print -r -- "$permission_header" |
-  schema_eval 'canonical_session_header(1)' >/dev/null
+  schema_eval 'canonical_session_header' >/dev/null
 for patch in \
   '.runtime.harness.user_prompt_submit[0].match.pattern="["' \
   'del(.runtime.harness.user_prompt_submit[0].match)'; do
   if jq -c "$patch" <<<"$valid_header" |
-      schema_eval 'canonical_session_header(1)' >/dev/null 2>&1; then
+      schema_eval 'canonical_session_header' >/dev/null 2>&1; then
     fail "invalid hook selection metadata was accepted: $patch"
   fi
 done
@@ -191,27 +191,27 @@ done
 for environment in '["DUPLICATE","DUPLICATE"]' '["HAS SPACE"]'; do
   if jq -c --argjson environment "$environment" \
       '.runtime.backend.environment = $environment' <<<"$valid_header" |
-      schema_eval 'canonical_session_header(1)' >/dev/null 2>&1; then
+      schema_eval 'canonical_session_header' >/dev/null 2>&1; then
     fail "invalid component environment was accepted: $environment"
   fi
 done
 
 print -r -- "$valid_header" | jq -c '.runtime.profile.system = ["/system/prompt.md"]' |
-  schema_eval 'canonical_session_header(1)' >/dev/null
+  schema_eval 'canonical_session_header' >/dev/null
 for system in '["relative.md"]' '"/system/prompt.md"'; do
   if jq -c --argjson system "$system" '.runtime.profile.system = $system' <<<"$valid_header" |
-      schema_eval 'canonical_session_header(1)' >/dev/null 2>&1; then
+      schema_eval 'canonical_session_header' >/dev/null 2>&1; then
     fail "invalid system paths were accepted in a session header: $system"
   fi
 done
 
 # Hook paths must be absolute.
 if jq -c '.runtime.harness.stop[0].command = "relative/hook"' <<<"$valid_header" |
-    schema_eval 'canonical_session_header(1)' >/dev/null 2>&1; then
+    schema_eval 'canonical_session_header' >/dev/null 2>&1; then
   fail 'relative hook path was accepted in session header'
 fi
 if jq -c '.runtime.harness.sandbox_read_paths = ["relative"]' <<<"$valid_header" |
-    schema_eval 'canonical_session_header(1)' >/dev/null 2>&1; then
+    schema_eval 'canonical_session_header' >/dev/null 2>&1; then
   fail 'relative sandbox read path was accepted in session header'
 fi
 
@@ -271,9 +271,9 @@ tool_header=$(jq -cn --argjson header "$valid_header" --argjson manifest "$valid
     name:"shell", command:"/bin/shell-tool", manifest:$manifest, settings:"/etc/fence.jsonc"
   }]
 ')
-print -r -- "$tool_header" | schema_eval 'canonical_session_header(1)' >/dev/null
+print -r -- "$tool_header" | schema_eval 'canonical_session_header' >/dev/null
 if jq -c '.runtime.harness.tools[0].manifest |= del(.render.model_text)' <<<"$tool_header" |
-    schema_eval 'canonical_session_header(1)' >/dev/null 2>&1; then
+    schema_eval 'canonical_session_header' >/dev/null 2>&1; then
   fail 'session header accepted an unnormalized tool render'
 fi
 for field in request_sandbox_bypass sandbox_bypass_reason; do

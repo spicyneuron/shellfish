@@ -4,7 +4,7 @@ source "${0:A:h:h:h}/_helpers.zsh"
 sf_test_tmp session-read
 
 # Views read the transcript below the session header.
-load() { jq -L "$ROOT" -ce 'include "lib/session"; session_load'; }
+accepts() { jq -L "$ROOT" -ce 'include "lib/session"; session_state'; }
 run() { jq -L "$ROOT" -ce 'include "lib/session"; session_run'; }
 messages() { jq -L "$ROOT" -ce 'include "lib/session"; session_messages'; }
 
@@ -23,12 +23,11 @@ JSONL
 
 prefix() { head -n $1 "$records" | jq -sc .; }
 
-# Loading returns the original records and accepts every durable prefix.
-assert_equal "$(jq -sc . "$records")" "$(jq -sc . "$records" | load)"
+# Every durable prefix is a valid transcript.
 integer total=$(wc -l <"$records")
 integer index
 for (( index = 1; index <= total; index += 1 )); do
-  prefix $index | load >/dev/null || fail "durable prefix of $index records was rejected"
+  prefix $index | accepts >/dev/null || fail "durable prefix of $index records was rejected"
 done
 
 # Hook context waits for the request that consumes it.
@@ -94,7 +93,7 @@ typeset failed_turn='[
   {"type":"error","user_text":"Backend exited before completing a response."},
   {"type":"user","content":[{"type":"text","text":"second"}]}
 ]'
-print -r -- "$failed_turn" | load >/dev/null || fail 'an error did not close the open turn'
+print -r -- "$failed_turn" | accepts >/dev/null || fail 'an error did not close the open turn'
 print -r -- "$failed_turn" | run |
   jq -e '. == {next:"assistant",calls:[],context:[]}' >/dev/null ||
   fail 'an error left calls or context pending'
@@ -185,7 +184,7 @@ typeset -a invalid=(
      {"type":"assistant","stop":"end","content":[]}]'
 )
 for (( index = 1; index <= ${#invalid}; index += 2 )); do
-  if print -r -- "$invalid[index + 1]" | load >/dev/null 2>&1; then
+  if print -r -- "$invalid[index + 1]" | accepts >/dev/null 2>&1; then
     fail "the reader accepted $invalid[index]"
   fi
 done
@@ -198,7 +197,7 @@ settling() {
 }
 
 settling '{"type":"tool_result","id":"c1","name":"shell","input":{},"executable":"/tools/shell/run","user_text":"shown","model_text":"out","exit_code":0}' |
-  load >/dev/null || fail 'the reader rejected a fully described tool result'
+  accepts >/dev/null || fail 'the reader rejected a fully described tool result'
 
 typeset -a malformed_results=(
   'an out-of-range exit code' '{"type":"tool_result","id":"c1","name":"shell","input":{},"exit_code":256}'
@@ -207,7 +206,7 @@ typeset -a malformed_results=(
   'a hook lifecycle on a tool result' '{"type":"tool_result","id":"c1","name":"shell","input":{},"exit_code":0,"lifecycle":"stop"}'
 )
 for (( index = 1; index <= ${#malformed_results}; index += 2 )); do
-  if settling "$malformed_results[index + 1]" | load >/dev/null 2>&1; then
+  if settling "$malformed_results[index + 1]" | accepts >/dev/null 2>&1; then
     fail "the reader accepted $malformed_results[index]"
   fi
 done
@@ -219,7 +218,7 @@ typeset -a shapes=(
   '{"type":"state","name":"A0_.:/-","value":[false,1,"text"]}'
 )
 for (( index = 1; index <= ${#shapes}; index += 1 )); do
-  print -r -- "[$shapes[index]]" | load >/dev/null ||
+  print -r -- "[$shapes[index]]" | accepts >/dev/null ||
     fail "the reader rejected $shapes[index]"
 done
 
@@ -234,15 +233,15 @@ typeset -a malformed=(
   'a state record without a value' '{"type":"state","name":"name"}'
 )
 for (( index = 1; index <= ${#malformed}; index += 2 )); do
-  if print -r -- "[$malformed[index + 1]]" | load >/dev/null 2>&1; then
+  if print -r -- "[$malformed[index + 1]]" | accepts >/dev/null 2>&1; then
     fail "the reader accepted $malformed[index]"
   fi
 done
 
 print -r -- "[$(jq -cn --arg name "$(printf 'a%.0s' {1..128})" \
-  '{type:"state",name:$name,value:true}')]" | load >/dev/null ||
+  '{type:"state",name:$name,value:true}')]" | accepts >/dev/null ||
   fail 'the reader rejected a state name of the maximum length'
 if print -r -- "[$(jq -cn --arg name "$(printf 'a%.0s' {1..129})" \
-    '{type:"state",name:$name,value:true}')]" | load >/dev/null 2>&1; then
+    '{type:"state",name:$name,value:true}')]" | accepts >/dev/null 2>&1; then
   fail 'the reader accepted an overlong state name'
 fi

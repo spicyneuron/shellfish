@@ -9,18 +9,17 @@ setopt no_aliases no_bg_nice no_multios pipe_fail
 typeset -gA SF_BACKEND=(directory '' error '' group_file '' pid '')
 typeset -ga SF_BACKEND_PARTIAL_EVENTS=()
 
-sf_backend_context_window() {
-  local tools=$1
-  integer max_capture=$2
-  local projection directory input output name
-  local -a projected arguments process
-  projection=$(sf_jq -jsc --argjson tools "$tools" '
+# One projection of the transcript on stdin: the adapter request, then the
+# named backend command and its environment declarations.
+sf_backend_project() {
+  local tools=$1 command_field=$2 projection
+  projection=$(sf_jq -jsc --argjson tools "$tools" --arg command_field "$command_field" '
     include "lib/runtime";
     include "lib/session";
     include "lib/backend";
     def field: ., "\u0000";
     select(length >= 1) |
-    select(.[0] | canonical_session_header(1)) |
+    select(.[0] | canonical_session_header) |
     . as $records |
     $records[0].runtime as $runtime |
     backend_adapter_request(
@@ -30,19 +29,25 @@ sf_backend_context_window() {
       $tools
     ) as $request |
     ($request | tojson | field),
-    ($runtime.backend.context_window_command | field),
+    ($runtime.backend[$command_field] | field),
     ($runtime.backend.env_file | field),
     ($runtime.backend.environment | join(" ") | field),
     ("ok" | field)
-  ' 2>/dev/null) || {
+  ' 2>/dev/null) || return 1
+  reply=( "${(@0)${projection%$'\0'}}" )
+  (( ${#reply} == 5 )) && [[ $reply[5] == ok ]]
+}
+
+sf_backend_context_window() {
+  local tools=$1
+  integer max_capture=$2
+  local directory input output name
+  local -a projected arguments process
+  sf_backend_project "$tools" context_window_command || {
     SF_BACKEND[error]='cannot prepare context window request'
     return 1
   }
-  projected=( "${(@0)${projection%$'\0'}}" )
-  (( ${#projected} == 5 )) && [[ $projected[5] == ok ]] || {
-    SF_BACKEND[error]='cannot prepare context window request'
-    return 1
-  }
+  projected=( "${reply[@]}" )
   sf_environment_load "$projected[3]" "$projected[4]" || {
     SF_BACKEND[error]=$SF_ENVIRONMENT_ERROR
     return 1
@@ -200,37 +205,13 @@ sf_backend_run() {
 }
 
 sf_backend_request() {
-  local tools=$1 emit=${2:-:} projection
+  local tools=$1 emit=${2:-:}
   local -a projected
-  projection=$(sf_jq -jsc --argjson tools "$tools" '
-    include "lib/runtime";
-    include "lib/session";
-    include "lib/backend";
-    def field: ., "\u0000";
-    select(length >= 1) |
-    select(.[0] | canonical_session_header(1)) |
-    . as $records |
-    $records[0].runtime as $runtime |
-    backend_adapter_request(
-      $runtime;
-      ([$records[1:][] | select(.type == "system") | .content] | join("\n\n"));
-      ($records[1:] | session_messages);
-      $tools
-    ) as $request |
-    ($request | tojson | field),
-    ($runtime.backend.command | field),
-    ($runtime.backend.env_file | field),
-    ($runtime.backend.environment | join(" ") | field),
-    ("ok" | field)
-  ' 2>/dev/null) || {
+  sf_backend_project "$tools" command || {
     SF_BACKEND[error]='cannot prepare provider request'
     return 1
   }
-  projected=( "${(@0)${projection%$'\0'}}" )
-  (( ${#projected} == 5 )) && [[ $projected[5] == ok ]] || {
-    SF_BACKEND[error]='cannot prepare provider request'
-    return 1
-  }
+  projected=( "${reply[@]}" )
   sf_backend_run "$projected[1]" "$projected[2]" "$projected[3]" \
     "$projected[4]" "$emit"
 }

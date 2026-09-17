@@ -72,8 +72,8 @@ assert_canonical_session() {
   jq -L "$ROOT" -e -s --arg stop "$stop" '
     include "lib/runtime";
     include "lib/session";
-    (.[0] | canonical_session_header(1)) and
-    (.[1:] | session_load | true) and
+    (.[0] | canonical_session_header) and
+    (.[1:] | session_state | true) and
     ($stop == "" or .[-1].stop == $stop)
   ' "$session" >/dev/null || {
     sf_test_detail=( "not a canonical session${stop:+ ending in stop \"$stop\"}: $session" )

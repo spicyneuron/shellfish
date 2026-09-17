@@ -43,7 +43,7 @@ sf_run_open() {
     select($lines[-1] == "" and ($lines[0:-1] | length > 0) and
       all($lines[0:-1][]; length > 0)) |
     ($lines[0:-1] | map(fromjson)) as $records |
-    select($records[0] | canonical_session_header(1)) |
+    select($records[0] | canonical_session_header) |
     ($records[1:] | session_run) as $run |
     ($records[0].runtime | tojson | field),
     ($records[0].cwd | field),
@@ -203,7 +203,7 @@ sf_run_turn() {
   local assistant stop_text id name input decision
   local tool_request post_request activity permission_reason permission_preview executable render
   local tool_environment settings fence env_file execution_input sandbox read_paths write_paths
-  local reason outcome state_projection record post_error='' failure='' turn_state tool_temp='' call
+  local reason outcome record post_error='' failure='' turn_state tool_temp='' call
   local call_projection call_projected
   local -a calls call_fields states hook_result runtime_fields tool_plan
   integer begun=0 request_count=0 call_count=0 request_limit tool_limit max_capture run_status

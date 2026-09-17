@@ -97,7 +97,7 @@ sf_run_create() {
   header=$(sf_jq -cn --arg cwd "$cwd" --arg created "$created" --argjson runtime "$runtime" '
     include "lib/runtime";
     {type:"session",format_version:1,cwd:$cwd,created:$created,runtime:$runtime} |
-    select(canonical_session_header(1))
+    select(canonical_session_header)
   ') || { sf_die 'cannot prepare session header'; return 1; }
   local -a records=( "$header" )
   if [[ -n $system ]]; then

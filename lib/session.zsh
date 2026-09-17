@@ -66,7 +66,7 @@ sf_session_read_runtime() {
   }
   REPLY=$(sf_jq -cnce --argjson header "$header" '
     include "lib/runtime";
-    $header | select(canonical_session_header(1)) | .runtime
+    $header | select(canonical_session_header) | .runtime
   ' 2>/dev/null) || {
     sf_session_fail "cannot read session header: $session_path"
     return
@@ -94,7 +94,7 @@ sf_session_replace_runtime() {
     sf_jq -cs --argjson runtime "$runtime" '
       include "lib/runtime";
       .[0].runtime = $runtime |
-      if .[0] | canonical_session_header(1) then .[] else error("invalid runtime") end
+      if .[0] | canonical_session_header then .[] else error("invalid runtime") end
     ' "$session_path" >"$temp" 2>/dev/null || error='invalid session runtime replacement'
   fi
   [[ -n $error ]] || mv -f -- "$temp" "$session_path" ||

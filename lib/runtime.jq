@@ -194,8 +194,8 @@ def canonical_runtime:
 
 # The session header freezes one runtime. lib/session.jq owns the records that
 # follow it, but cannot call canonical_runtime across a module boundary.
-def canonical_session_header($format_version):
-  type == "object" and .type == "session" and .format_version == $format_version and
+def canonical_session_header:
+  type == "object" and .type == "session" and .format_version == 1 and
   (.cwd | absolute_path) and (.created | type == "string") and
   (.runtime | canonical_runtime);
 

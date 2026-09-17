@@ -176,8 +176,6 @@ def session_state:
         .next = (if (.calls | length) == 0 then "assistant" else "tool_result" end)
       else error("unrecognized session record") end);
 
-def session_load: . as $records | session_state | $records;
-
 def session_run:
   session_state |
   {next, calls:[.calls[] | {id, name, input}], context:[.context[] | render_context]};
