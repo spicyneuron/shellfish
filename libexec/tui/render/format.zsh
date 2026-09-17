@@ -143,6 +143,22 @@ sf_tui_format_preview() {
   REPLY=$(( configured > spent ? configured - spent : 0 ))
 }
 
+# Background styles must reach the right margin, so pad the row to full width.
+sf_tui_format_fill() {
+  local text=$1 character
+  integer columns=$2 width=0
+  for character in ${(s::)text}; do
+    if [[ $character == [[:ascii:]] ]]; then
+      (( ++width ))
+    else
+      sf_tui_cell_width "$character" $width
+      (( width += REPLY ))
+    fi
+  done
+  repeat $(( columns > width ? columns - width : 0 )); do text+=' '; done
+  REPLY=$text
+}
+
 # Charge trimmed edges to the first and fully wrapped last body rows.
 sf_tui_format_edges() {
   integer first=$1 length=$2 row consumed=0
@@ -388,7 +404,7 @@ sf_tui_markdown_target() {
 
 sf_tui_format_execution() {
   integer columns=$1 final=$2 live=$(( ! $2 )) spinner=0
-  integer row limit chrome total hidden=0
+  integer row limit chrome total hidden=0 span background
   local body glyph preview text kind=execution
   local base_style=${SF_PRESENT_STYLE[execution]-} rail_style=${SF_PRESENT_STYLE[divider]-}
   local -a projected=() spans=()
@@ -419,6 +435,8 @@ sf_tui_format_execution() {
   chrome=${#SF_FORMAT_ROWS}
   SF_PRESENT_HIGHLIGHT_SPANS=()
   [[ -z $SF_LIVE_NAME ]] || SF_PRESENT_HIGHLIGHT_SPANS+=( 0 ${#SF_LIVE_NAME} bold )
+  # A hunk header is the only reliable signal that output is a unified diff.
+  [[ $body != (|*$'\n')'@@ -'*' @@'* ]] || sf_tui_diff_highlight "$body"
   sf_tui_wrap $columns "$body" '│ ' "${(@)SF_PRESENT_HIGHLIGHT_SPANS}" || return 1
   total=${#SF_WRAP_ROWS}
   limit=$total
@@ -435,10 +453,24 @@ sf_tui_format_execution() {
       text="╰${text[2,-1]}"
     fi
     projected=( ${=SF_WRAP_SPANS[row]} )
+    background=0
+    for (( span = 1; span <= ${#projected}; span += 3 )); do
+      [[ ${projected[span + 2]} != *bg=* ]] || background=1
+    done
+    if (( background )); then
+      sf_tui_format_fill "$text" $columns
+      text=$REPLY
+    fi
     spans=()
     [[ -z $base_style || -z $text ]] || spans+=( 0 ${#text} "$base_style" )
     [[ -z $rail_style || $text != (│|╰)* ]] || spans+=( 0 1 "$rail_style" )
-    spans+=( "${(@)projected}" )
+    for (( span = 1; span <= ${#projected}; span += 3 )); do
+      if [[ ${projected[span + 2]} == *bg=* ]]; then
+        spans+=( 0 ${#text} "${projected[span + 2]}" )
+      else
+        spans+=( ${projected[span]} ${projected[span + 1]} "${projected[span + 2]}" )
+      fi
+    done
     SF_FORMAT_ROWS+=( "$text" )
     SF_FORMAT_SPANS+=( "${(j: :)spans}" )
     SF_FORMAT_CONSUMED+=( $SF_WRAP_CONSUMED[row] )

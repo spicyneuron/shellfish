@@ -171,18 +171,27 @@ view
 assert_tail $'⛭ probe\n│ first\n╰ second'
 SF_PRESENT_PREVIEW=full
 
-# Execution text is plain even when it resembles a diff.
+# A hunk header marks output as a diff; its rows fill the width so backgrounds span it.
 sf_tui_reset
 SF_PRESENT_STYLE=( tool tool divider rail
   'syntax.added' 'fg=green,bg=darkgreen'
   'syntax.removed' 'fg=red,bg=darkred' )
 width 20
 sf_tui_action execution_update diff edit_file tool 'edit_file path'
-sf_tui_action execution_end diff edit_file tool $'edit_file path\n-old\n+new'
+sf_tui_action execution_end diff edit_file tool $'edit_file path\n@@ -1 +1 @@\n-old\n+new'
 view 20
-assert_tail $'⛭ edit_file path\n│ -old\n╰ +new'
-! has_style 'fg=red,bg=darkred' || fail 'execution text received diff highlighting'
-! has_style 'fg=green,bg=darkgreen' || fail 'execution text received diff highlighting'
+typeset pad=${(l:14:)""}
+assert_tail $'⛭ edit_file path\n│ @@ -1 +1 @@\n│ -old'"$pad"$'\n╰ +new'"$pad"
+has_style 'fg=red,bg=darkred' || fail 'diff removal was not highlighted'
+has_style 'fg=green,bg=darkgreen' || fail 'diff addition was not highlighted'
+
+# Output that merely resembles a diff stays plain.
+sf_tui_reset
+sf_tui_action execution_update plain shell tool 'shell · run'
+sf_tui_action execution_end plain shell tool $'shell · run\n-old\n+new'
+view 20
+assert_tail $'⛭ shell · run\n│ -old\n╰ +new'
+! has_style 'fg=red,bg=darkred' || fail 'plain execution received diff highlighting'
 SF_PRESENT_STYLE=()
 
 # Errors settle a pending execution and close the turn.
