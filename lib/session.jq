@@ -1,26 +1,31 @@
 # Durable record validity and transcript order. Records are read left to right;
-# each view projects the state this reduction reaches. A jq module cannot use
-# another module's definitions, so the durable record vocabulary lives here.
+# each view projects the state this reduction reaches.
+#
+# jq resolves an included module's internal calls only one level deep, so every
+# module states its own vocabulary. lib/runtime.jq repeats these primitives and
+# owns the header, which validates the runtime nested inside it.
 
-def record_string: type == "string" and (index("\u0000") | not);
-def record_id: type == "string" and test("^[A-Za-z0-9_-]+$");
-def record_tool_name: type == "string" and test("^[A-Za-z_][A-Za-z0-9_-]*$");
-def record_path: type == "string" and startswith("/") and (test("[[:cntrl:]]") | not);
-def record_count:
+def nul_free_string: type == "string" and (index("\u0000") | not);
+def identifier: type == "string" and test("^[A-Za-z0-9_-]+$");
+def tool_name: type == "string" and test("^[A-Za-z_][A-Za-z0-9_-]*$");
+def absolute_path:
+  type == "string" and startswith("/") and (test("[[:cntrl:]]") | not);
+def token_count:
   type == "number" and floor == . and . >= 0 and . <= 9007199254740991;
-def record_lifecycle:
-  IN("session_start", "user_prompt_submit", "permission_request", "pre_tool_use",
-    "post_tool_use", "stop");
 
-def canonical_usage:
+def token_usage:
   type == "object" and
   ((keys - ["input_tokens", "output_tokens", "cached_tokens", "reasoning_tokens"]) |
     length == 0) and
-  (.input_tokens | record_count) and (.output_tokens | record_count) and
+  (.input_tokens | token_count) and (.output_tokens | token_count) and
   (if has("cached_tokens") then
-     (.cached_tokens | record_count) and .cached_tokens <= .input_tokens
+     (.cached_tokens | token_count) and .cached_tokens <= .input_tokens
    else true end) and
-  (if has("reasoning_tokens") then .reasoning_tokens | record_count else true end);
+  (if has("reasoning_tokens") then .reasoning_tokens | token_count else true end);
+
+def record_lifecycle:
+  IN("session_start", "user_prompt_submit", "permission_request", "pre_tool_use",
+    "post_tool_use", "stop");
 
 def canonical_text:
   type == "object" and keys == ["text", "type"] and
@@ -34,13 +39,13 @@ def canonical_reasoning:
 
 def canonical_tool_call:
   type == "object" and keys == ["id", "input", "name", "type"] and
-  .type == "tool_call" and (.id | record_id) and (.name | record_tool_name) and
+  .type == "tool_call" and (.id | identifier) and (.name | tool_name) and
   (.input | type == "object");
 
 def canonical_user_message:
   type == "object" and keys == ["content", "type"] and .type == "user" and
   (.content | type == "array" and length == 1 and (.[0] | canonical_text)) and
-  (.content[0].text | record_string);
+  (.content[0].text | nul_free_string);
 
 def canonical_state:
   type == "object" and keys == ["name", "type", "value"] and .type == "state" and
@@ -49,11 +54,11 @@ def canonical_state:
 
 def canonical_system:
   type == "object" and keys == ["content", "type"] and .type == "system" and
-  (.content | record_string);
+  (.content | nul_free_string);
 
 def canonical_error:
   type == "object" and keys == ["type", "user_text"] and .type == "error" and
-  (.user_text | record_string) and .user_text != "";
+  (.user_text | nul_free_string) and .user_text != "";
 
 # Hook and tool results share one settled base; only identity and input differ.
 def canonical_execution_result($extra):
@@ -61,21 +66,21 @@ def canonical_execution_result($extra):
   ((keys - (["executable", "exit_code", "id", "input", "model_text", "name",
     "type", "user_text"] + $extra)) | length == 0) and
   ((["exit_code", "id", "input", "name", "type"] - keys) | length == 0) and
-  (.id | record_id) and
+  (.id | identifier) and
   (.exit_code | type == "number" and floor == . and . >= 0 and . <= 255) and
-  (if has("executable") then .executable | record_path else true end) and
+  (if has("executable") then .executable | absolute_path else true end) and
   (if has("user_text") then .user_text | type == "string" and length > 0 else true end) and
   (if has("model_text") then .model_text | type == "string" and length > 0 else true end);
 
 def canonical_tool_result:
   canonical_execution_result([]) and .type == "tool_result" and
-  (.name | record_tool_name) and (.input | type == "object");
+  (.name | tool_name) and (.input | type == "object");
 
 def canonical_hook_result:
   canonical_execution_result(["lifecycle"]) and .type == "hook_result" and
   (.lifecycle | record_lifecycle) and
   (.id | test("^[1-9][0-9]*$")) and
-  (.name | record_string and length > 0) and
+  (.name | nul_free_string and length > 0) and
   (.input | type == "string" or type == "object");
 
 def response_calls: [.content[] | select(.type == "tool_call")];
@@ -86,7 +91,7 @@ def canonical_response:
   ((keys - ["content", "stop", "type", "usage"]) | length == 0) and
   ((["content", "stop", "type"] - keys) | length == 0) and
   (.stop | IN("end", "tool_calls", "length", "cancelled")) and
-  ((has("usage") | not) or (.usage | canonical_usage)) and
+  ((has("usage") | not) or (.usage | token_usage)) and
   (.content | type == "array" and
     all(.[]; canonical_text or canonical_reasoning or canonical_tool_call)) and
   (response_calls as $calls |

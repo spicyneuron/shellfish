@@ -12,7 +12,7 @@ sf_run_tool_plan() {
   local -a fields
   projection=$(sf_jq -jrn --argjson runtime "$runtime" --arg id "$id" --arg name "$name" \
     --argjson input "$input" --argjson turn "$SF_SESSION[turn_id]" '
-      include "lib/render";
+      include "lib/runtime";
       def field: ., "\u0000";
       [$runtime.harness.tools[] | select(.name == $name)][0] as $tool |
       ($tool.manifest.render // default_tool_render) as $render |
@@ -150,7 +150,7 @@ sf_run_tool_execute() {
   REPLY=$(sf_jq -cn --rawfile stdout "$bounded_stdout" --rawfile stderr "$bounded_stderr" \
     --slurpfile control "$capture/control" --argjson control_bytes "$control_bytes" \
     --argjson exit_code "$process[1]" --argjson denied "$denied" '
-      include "lib/session/read";
+      include "lib/session";
       (if $control_bytes == 0 then {}
        elif ($control | length) == 1 and ($control[0] | type) == "object" then $control[0]
        else error("invalid control") end) as $control |
@@ -176,8 +176,8 @@ sf_run_tool_complete() {
   projection=$(sf_jq -jrn --argjson request "$tool_request" --arg id "$id" --arg name "$name" \
     --argjson input "$input" --arg executable "$executable" --argjson render "$render" \
     --argjson outcome "$outcome" '
-      include "lib/session/read";
-      include "lib/render";
+      include "lib/session";
+      include "lib/runtime";
       def field: ., "\u0000";
       render_component($render;$name;$input;
         ($outcome.output + if $outcome | has("reason") then {stderr:$outcome.reason} else {} end)) as $rendered |

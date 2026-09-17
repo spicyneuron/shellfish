@@ -56,7 +56,7 @@ sf_send_request_main() {
   }
 
   source "$SF_ROOT/lib/jq.zsh"
-  source "$SF_ROOT/lib/session/main.zsh"
+  source "$SF_ROOT/lib/session.zsh"
   source "$SF_ROOT/lib/request.zsh"
   sf_session_select_path "$requested_session" || {
     sf_die "$SF_SESSION_ERROR"
@@ -74,7 +74,7 @@ sf_send_request_main() {
     return 2
   }
   request=$(sf_jq -cse --argjson runtime "$runtime" '
-    include "lib/runtime/schema";
+    include "lib/request";
     select(length == 1) | .[0] |
     select(canonical_request) |
     select(.options == {request:$runtime.profile.request}) |

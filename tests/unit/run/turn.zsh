@@ -1,7 +1,7 @@
 #!/usr/bin/env zsh
 
 source "${0:A:h:h:h}/_helpers.zsh"
-sf_test_source lib/session/main.zsh
+sf_test_source lib/session.zsh
 sf_test_tmp run-turn-contract
 export XDG_STATE_HOME="$tmp/state" SF_TEST_BACKEND_DELAY=0
 
@@ -12,7 +12,7 @@ sf_test_session "$session"
 integer prefix=$(wc -l <"$session")
 sf_test_run $'two\nwords' "$session" >"$stream" || fail 'simple turn failed'
 jq -eRn -L "$ROOT" '
-  include "lib/runtime/schema";
+  include "lib/session";
   [inputs | fromjson] as $events |
   ($events | map(select(.type == "user" or .type == "assistant"))) as $durable |
   $durable[0] == {type:"user",content:[{type:"text",text:"two\nwords"}]} and

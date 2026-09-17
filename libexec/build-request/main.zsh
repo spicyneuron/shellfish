@@ -54,7 +54,7 @@ sf_build_request_main() {
     return 2
   }
 
-  source "$SF_ROOT/lib/session/main.zsh"
+  source "$SF_ROOT/lib/session.zsh"
   source "$SF_ROOT/lib/request.zsh"
   sf_session_select_path "$requested_session" || {
     sf_die "$SF_SESSION_ERROR"

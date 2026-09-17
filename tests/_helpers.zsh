@@ -70,8 +70,8 @@ fail() {
 assert_canonical_session() {
   local session=$1 stop=${2-}
   jq -L "$ROOT" -e -s --arg stop "$stop" '
-    include "lib/runtime/schema";
-    include "lib/session/read";
+    include "lib/runtime";
+    include "lib/session";
     (.[0] | canonical_session_header(1)) and
     (.[1:] | session_load | true) and
     ($stop == "" or .[-1].stop == $stop)

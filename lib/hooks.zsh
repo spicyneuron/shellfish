@@ -25,7 +25,7 @@ sf_hook_activity() {
   [[ $lifecycle != (permission_request|pre_tool_use|post_tool_use) ]] || input_option=--argjson
   projected=$(sf_jq -jcn --arg lifecycle "$lifecycle" --arg id "$id" --arg name "$name" \
     --arg executable "$executable" "$input_option" input "$input" --argjson render "$render" '
-      include "lib/render";
+      include "lib/runtime";
       (render_component($render;$name;$input;{stdout:"",stderr:"",exit_code:0}) |
        .initial_user_text // "") as $user_text |
       ({type:"_hook_activity",hook:$lifecycle,id:$id,name:$name,input:$input,
@@ -132,7 +132,7 @@ sf_hook_invoke() {
     --slurpfile controls "$directory/control" --arg capture_error "$capture_error" \
     --arg lifecycle "$lifecycle" --arg id "$id" --arg name "$name" \
     --arg executable "$command" --argjson input "$input_json" --argjson render "$render" '
-      include "lib/hooks"; include "lib/render"; include "lib/session/read";
+      include "lib/hooks"; include "lib/runtime"; include "lib/session";
       def field: ., "\u0000";
       hook_outcome($exit_code;$stdout;$stderr;$controls;$capture_error) |
       . as $outcome |

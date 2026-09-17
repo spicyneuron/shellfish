@@ -22,7 +22,7 @@ sf_environment_project() {
   SF_ENVIRONMENT_NAMES=()
   SF_ENVIRONMENT_FILE=''
   projection=$(sf_jq -L "$SF_ROOT" -jrn --argjson runtime "$runtime" '
-      include "lib/runtime/schema";
+      include "lib/runtime";
       def field: ., "\u0000";
       ($runtime.backend.env_file | field),
       ([$runtime.backend.environment[]?,

@@ -1,7 +1,7 @@
 #!/usr/bin/env zsh
 
 source "${0:A:h:h:h}/_helpers.zsh"
-sf_test_source lib/session/main.zsh
+sf_test_source lib/session.zsh
 sf_test_tmp run-tool-contract
 export XDG_STATE_HOME="$tmp/state" SF_TEST_BACKEND_DELAY=0
 sf_test_runtime

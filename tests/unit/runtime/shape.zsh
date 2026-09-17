@@ -3,34 +3,33 @@
 source "${0:A:h:h:h}/_helpers.zsh"
 
 schema_eval() {
-  jq -L "$ROOT" -e 'include "lib/runtime/schema"; '"$1"
+  jq -L "$ROOT" -e 'include "lib/runtime"; '"$1"
 }
 
 request_eval() {
-  jq -L "$ROOT" -e 'include "lib/runtime/schema"; include "lib/session/read";
-    include "lib/request"; '"$1"
+  jq -L "$ROOT" -e 'include "lib/session"; include "lib/request"; '"$1"
 }
 
 # Request messages require one safe text block.
 print -r -- '{"type":"user","content":[{"type":"text","text":"hello"}]}' |
-  schema_eval 'request_user_message' >/dev/null
+  request_eval 'request_user_message' >/dev/null
 
 if print -r -- '{"type":"user","content":[{"type":"text","text":"bad\u0000nul"}]}' |
-    schema_eval 'request_user_message' >/dev/null 2>&1; then
+    request_eval 'request_user_message' >/dev/null 2>&1; then
   fail 'user message with NUL was accepted'
 fi
 
 if print -r -- '{"type":"user","content":[]}' |
-    schema_eval 'request_user_message' >/dev/null 2>&1; then
+    request_eval 'request_user_message' >/dev/null 2>&1; then
   fail 'empty user content was accepted'
 fi
 
 # Request responses carry no calls in content.
 print -r -- '{"type":"assistant","stop":"end","content":[{"type":"text","text":"hi"}]}' |
-  schema_eval 'request_assistant_message' >/dev/null
+  request_eval 'request_assistant_message' >/dev/null
 
 print -r -- '{"type":"tool_call","id":"c1","name":"shell","input":{}}' |
-  schema_eval 'request_tool_call' >/dev/null
+  request_eval 'request_tool_call' >/dev/null
 
 # Requests require canonical projected fields.
 typeset valid_request
@@ -52,13 +51,13 @@ valid_request=$(jq -cn '{
   options:{request:{model:"model"}},
   transport:{endpoint:"https://example.com",insecure_tls:false,http_timeout:30,http_stall:10}
 }') || fail 'cannot prepare canonical request fixture'
-print -r -- "$valid_request" | schema_eval 'canonical_request' >/dev/null
+print -r -- "$valid_request" | request_eval 'canonical_request' >/dev/null
 
 for filter in \
     '.messages[0].content = [{}]' \
     '.tools[0] = {}' \
     '.extra = true'; do
-  if jq "$filter" <<<"$valid_request" | schema_eval 'canonical_request' >/dev/null 2>&1; then
+  if jq "$filter" <<<"$valid_request" | request_eval 'canonical_request' >/dev/null 2>&1; then
     fail "canonical request accepted malformed input: $filter"
   fi
 done
@@ -150,37 +149,39 @@ valid_header=$(jq -cn '
     format_version: 1,
     cwd: "/tmp",
     created: "2026-08-18T00:00:00Z",
-    profile: {request: {model: "gpt-4o"}},
-    backend: {
-      name: "openai", command: "/bin/run", env_file: "/tmp/.env",
-      endpoint: "https://api.openai.com/v1/chat/completions",
-      environment: ["OPENAI_API_KEY"], insecure_tls: false,
-      http_timeout: 30, http_stall: 10
-    },
-    harness: {
-      sandbox_read_paths: [], sandbox_write_paths: [],
-      fence: "", tools: [], sandbox: true,
-      max_requests_per_turn: 50, max_tool_calls_per_request: 20,
-      max_capture_bytes: 32768,
-      stop: [{command:"/bin/hook",environment:["HOOK_MODE"],render:{initial_user_text:"",user_text:"${output.stderr}",model_text:"${output.stdout}"}}]
+    runtime: {
+      profile: {request: {model: "gpt-4o"}},
+      backend: {
+        name: "openai", command: "/bin/run", env_file: "/tmp/.env",
+        endpoint: "https://api.openai.com/v1/chat/completions",
+        environment: ["OPENAI_API_KEY"], insecure_tls: false,
+        http_timeout: 30, http_stall: 10
+      },
+      harness: {
+        sandbox_read_paths: [], sandbox_write_paths: [],
+        fence: "", tools: [], sandbox: true,
+        max_requests_per_turn: 50, max_tool_calls_per_request: 20,
+        max_capture_bytes: 32768,
+        stop: [{command:"/bin/hook",environment:["HOOK_MODE"],render:{initial_user_text:"",user_text:"${output.stderr}",model_text:"${output.stdout}"}}]
+      }
     }
   }
 ')
 print -r -- "$valid_header" | schema_eval 'canonical_session_header(1)' >/dev/null
-valid_header=$(jq -c '.harness.user_prompt_submit=[{
+valid_header=$(jq -c '.runtime.harness.user_prompt_submit=[{
   command:"/bin/prompt",environment:[],render:{initial_user_text:"",user_text:"${output.stderr}",model_text:"${output.stdout}"},match:{pattern:"^!"},
   help:{usage:"!COMMAND",description:"Run a shell command"}
 }]' <<<"$valid_header")
 print -r -- "$valid_header" | schema_eval 'canonical_session_header(1)' >/dev/null
 typeset permission_header
-permission_header=$(jq -c '.harness.permission_request=[{
+permission_header=$(jq -c '.runtime.harness.permission_request=[{
   command:"/bin/permission",environment:[],render:{initial_user_text:"",user_text:"${output.stderr}",model_text:"${output.stdout}"}
 }]' <<<"$valid_header")
 print -r -- "$permission_header" |
   schema_eval 'canonical_session_header(1)' >/dev/null
 for patch in \
-  '.harness.user_prompt_submit[0].match.pattern="["' \
-  'del(.harness.user_prompt_submit[0].match)'; do
+  '.runtime.harness.user_prompt_submit[0].match.pattern="["' \
+  'del(.runtime.harness.user_prompt_submit[0].match)'; do
   if jq -c "$patch" <<<"$valid_header" |
       schema_eval 'canonical_session_header(1)' >/dev/null 2>&1; then
     fail "invalid hook selection metadata was accepted: $patch"
@@ -189,27 +190,27 @@ done
 # Environment names must survive space-separated zsh projection.
 for environment in '["DUPLICATE","DUPLICATE"]' '["HAS SPACE"]'; do
   if jq -c --argjson environment "$environment" \
-      '.backend.environment = $environment' <<<"$valid_header" |
+      '.runtime.backend.environment = $environment' <<<"$valid_header" |
       schema_eval 'canonical_session_header(1)' >/dev/null 2>&1; then
     fail "invalid component environment was accepted: $environment"
   fi
 done
 
-print -r -- "$valid_header" | jq -c '.profile.system = ["/system/prompt.md"]' |
+print -r -- "$valid_header" | jq -c '.runtime.profile.system = ["/system/prompt.md"]' |
   schema_eval 'canonical_session_header(1)' >/dev/null
 for system in '["relative.md"]' '"/system/prompt.md"'; do
-  if jq -c --argjson system "$system" '.profile.system = $system' <<<"$valid_header" |
+  if jq -c --argjson system "$system" '.runtime.profile.system = $system' <<<"$valid_header" |
       schema_eval 'canonical_session_header(1)' >/dev/null 2>&1; then
     fail "invalid system paths were accepted in a session header: $system"
   fi
 done
 
 # Hook paths must be absolute.
-if jq -c '.harness.stop[0].command = "relative/hook"' <<<"$valid_header" |
+if jq -c '.runtime.harness.stop[0].command = "relative/hook"' <<<"$valid_header" |
     schema_eval 'canonical_session_header(1)' >/dev/null 2>&1; then
   fail 'relative hook path was accepted in session header'
 fi
-if jq -c '.harness.sandbox_read_paths = ["relative"]' <<<"$valid_header" |
+if jq -c '.runtime.harness.sandbox_read_paths = ["relative"]' <<<"$valid_header" |
     schema_eval 'canonical_session_header(1)' >/dev/null 2>&1; then
   fail 'relative sandbox read path was accepted in session header'
 fi
@@ -271,7 +272,7 @@ tool_header=$(jq -cn --argjson header "$valid_header" --argjson manifest "$valid
   }]
 ')
 print -r -- "$tool_header" | schema_eval 'canonical_session_header(1)' >/dev/null
-if jq -c '.harness.tools[0].manifest |= del(.render.model_text)' <<<"$tool_header" |
+if jq -c '.runtime.harness.tools[0].manifest |= del(.render.model_text)' <<<"$tool_header" |
     schema_eval 'canonical_session_header(1)' >/dev/null 2>&1; then
   fail 'session header accepted an unnormalized tool render'
 fi

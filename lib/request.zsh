@@ -15,8 +15,8 @@ typeset -ga SF_REQUEST_PARTIAL_EVENTS=()
 sf_request_build() {
   local runtime=$1 tools=$2
   sf_jq -sce --argjson runtime "$runtime" --argjson tools "$tools" '
-    include "lib/runtime/schema";
-    include "lib/session/read";
+    include "lib/session";
+    include "lib/request";
     . as $records |
     {
       format_version:1,
@@ -79,8 +79,8 @@ sf_request_run() {
   adapter_pid=$!
   SF_REQUEST[pid]=$adapter_pid
   coproc sf_jq -jn --unbuffered '
-    include "lib/runtime/schema";
-    include "lib/session/read";
+    include "lib/runtime";
+    include "lib/session";
     include "lib/request";
     decode_backend_response(canonical_backend_event; canonical_response)
   ' <"$output_pipe" 2>/dev/null

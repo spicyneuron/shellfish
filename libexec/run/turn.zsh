@@ -1,7 +1,7 @@
 emulate -R zsh
 setopt no_aliases no_bg_nice no_multios pipe_fail
 
-source "$SF_ROOT/lib/session/main.zsh"
+source "$SF_ROOT/lib/session.zsh"
 source "$SF_ROOT/lib/request.zsh"
 source "$SF_ROOT/lib/scratch.zsh"
 source "$SF_ROOT/libexec/run/hooks.zsh"
@@ -40,8 +40,8 @@ sf_run_partial_assistant() {
     printf '%s\n' "${SF_REQUEST_PARTIAL_EVENTS[@]}"
     print -r -- '{"type":"_assistant_end","stop":"length"}'
   } | sf_jq -cse '
-    include "lib/runtime/schema";
-    include "lib/session/read";
+    include "lib/runtime";
+    include "lib/session";
     include "lib/request";
     assemble_backend_response(canonical_backend_response_events; canonical_response) |
     select(any(.content[]; (.type == "text" or .type == "reasoning") and .text != "")) |
@@ -63,8 +63,8 @@ sf_run_cancel() {
   projection=$(printf '%s\n' "${SF_SESSION_RECORDS[@]:1}" | sf_jq -jsc \
     --argjson runtime "$SF_SESSION[runtime]" --arg active "$active" \
     --argjson known "${known:-null}" '
-    include "lib/session/read";
-    include "lib/render";
+    include "lib/session";
+    include "lib/runtime";
     def field: ., "\u0000";
     session_run | .calls[] |
     . as $call |
@@ -112,7 +112,7 @@ sf_run_context_window() {
     elif (( process[1] == 0 )); then
       output=$(<"$directory/stdout")
       window=$(sf_jq -ser '
-        include "lib/runtime/schema";
+        include "lib/runtime";
         select(length == 1 and (.[0] | type == "object" and keys == ["context_window"] and
           (.context_window | positive_integer))) | .[0].context_window
       ' <<<"$output" 2>/dev/null) || window=''

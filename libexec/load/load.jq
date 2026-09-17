@@ -1,5 +1,5 @@
-include "lib/runtime/schema";
-include "lib/session/read";
+include "lib/runtime";
+include "lib/session";
 
 # A durable session always ends at a newline; a fragment after the last one is
 # an interrupted append that no reader may interpret.

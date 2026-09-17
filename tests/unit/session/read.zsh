@@ -4,9 +4,9 @@ source "${0:A:h:h:h}/_helpers.zsh"
 sf_test_tmp session-read
 
 # Views read the transcript below the session header.
-load() { jq -L "$ROOT" -ce 'include "lib/session/read"; session_load'; }
-run() { jq -L "$ROOT" -ce 'include "lib/session/read"; session_run'; }
-messages() { jq -L "$ROOT" -ce 'include "lib/session/read"; session_messages'; }
+load() { jq -L "$ROOT" -ce 'include "lib/session"; session_load'; }
+run() { jq -L "$ROOT" -ce 'include "lib/session"; session_run'; }
+messages() { jq -L "$ROOT" -ce 'include "lib/session"; session_messages'; }
 
 typeset records="$tmp/records.jsonl"
 cat >"$records" <<'JSONL'

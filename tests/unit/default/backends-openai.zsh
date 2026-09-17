@@ -80,8 +80,8 @@ jq -e '
 ' "$BACKEND_TEST_BODY" >/dev/null || fail 'openai did not normalize common request parameters'
 
 jq -n -e -L "$ROOT" '
-  include "lib/runtime/schema";
-  include "lib/session/read";
+  include "lib/runtime";
+  include "lib/session";
   include "lib/request";
   [inputs] |
   assemble_backend_response(canonical_backend_response_events; canonical_response) as $message |
@@ -125,8 +125,8 @@ printf "%s\n" \
   "" >"$BACKEND_TEST_RESPONSE"
 OPENAI_API_KEY=test-key zsh -f "$run" <"$req" >"$res"
 jq -n -e -L "$ROOT" '
-  include "lib/runtime/schema";
-  include "lib/session/read";
+  include "lib/runtime";
+  include "lib/session";
   include "lib/request";
   [inputs] | assemble_backend_response(canonical_backend_response_events; canonical_response) ==
     {type:"assistant",stop:"length",content:[]}
@@ -141,8 +141,8 @@ printf "%s\n" \
 OPENAI_API_KEY=test-key zsh -f "$run" <"$req" >"$res"
 
 jq -n -e -L "$ROOT" '
-  include "lib/runtime/schema";
-  include "lib/session/read";
+  include "lib/runtime";
+  include "lib/session";
   include "lib/request";
   [inputs] |
   assemble_backend_response(canonical_backend_response_events; canonical_response) as $message |
@@ -186,8 +186,8 @@ EOF
 OPENAI_API_KEY=test-key zsh -f "$run" <"$req" >"$res"
 
 jq -n -e -L "$ROOT" '
-  include "lib/runtime/schema";
-  include "lib/session/read";
+  include "lib/runtime";
+  include "lib/session";
   include "lib/request";
   [inputs] |
   assemble_backend_response(canonical_backend_response_events; canonical_response) as $message |

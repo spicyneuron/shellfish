@@ -49,8 +49,8 @@ sf_install_main() {
 
   source "$SF_ROOT/lib/jq.zsh"
   sf_jq -Rse '
-    include "lib/runtime/schema";
-    include "lib/session/read";
+    include "lib/runtime";
+    include "lib/session";
     select(endswith("\n")) |
     split("\n") as $lines |
     select($lines[-1] == "" and ($lines[0:-1] | length > 0) and

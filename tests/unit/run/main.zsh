@@ -99,7 +99,7 @@ jsonl=$(print -r -- \
   SF_TEST_BACKEND_DELAY=0 zsh -f "$entry" run --jsonl --config "$config" \
     --session "$stream_session") || fail 'JSONL run failed'
 print -r -- "$jsonl" | jq -eRn -L "$ROOT" '
-  include "lib/runtime/schema";
+  include "lib/session";
   [inputs | fromjson] as $events |
   ($events | any(.type == "session") | not) and
   ($events | any(.type == "_assistant_message_delta")) and

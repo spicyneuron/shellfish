@@ -1,7 +1,7 @@
 emulate -R zsh
 setopt no_aliases no_bg_nice no_multios pipe_fail
 
-(( $+functions[sf_session_select_path] )) || source "$SF_ROOT/lib/session/path.zsh"
+(( $+functions[sf_session_select_path] )) || source "$SF_ROOT/lib/session.zsh"
 
 # Resume a requested session or delegate creation to shellfish create, and
 # report the opened session in REPLY.

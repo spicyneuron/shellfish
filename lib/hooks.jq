@@ -1,4 +1,4 @@
-include "lib/session/read";
+include "lib/session";
 
 def hook_outcome($exit_code; $stdout; $stderr; $controls; $capture_error):
   ($controls | if length == 0 then {}

@@ -32,7 +32,7 @@ sf_load_main() {
   (( $+commands[jq] )) || { sf_die 'shellfish requires jq'; return 2; }
 
   source "$SF_ROOT/lib/jq.zsh"
-  source "$SF_ROOT/lib/session/path.zsh"
+  source "$SF_ROOT/lib/session.zsh"
   sf_session_select_path "$requested" || { sf_die "$SF_SESSION_ERROR"; return 1; }
   session=$REPLY
   [[ -f $session && ! -L $session && -r $session ]] ||

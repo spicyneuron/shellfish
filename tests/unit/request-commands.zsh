@@ -47,7 +47,7 @@ assert_equal "$request_digest" "$(shasum <"$request_session")"
 
 # jq modules resolve from the installation root.
 mkdir -p "$tmp/lib/runtime"
-print -r -- 'def canonical_request(:' >"$tmp/lib/runtime/schema.jq"
+print -r -- 'def canonical_request(:' >"$tmp/lib/runtime.jq"
 print -r -- 'def decode_backend_response(:' >"$tmp/lib/request.jq"
 (
   builtin cd -- "$tmp"
