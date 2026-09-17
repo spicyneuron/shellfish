@@ -148,7 +148,7 @@ sf_tui_format_fill() {
   local text=$1 character
   integer columns=$2 width=0
   for character in ${(s::)text}; do
-    if [[ $character == [[:ascii:]] ]]; then
+    if [[ $character == [[:ascii:]] && $character != $'\t' ]]; then
       (( ++width ))
     else
       sf_tui_cell_width "$character" $width
