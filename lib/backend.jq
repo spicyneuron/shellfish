@@ -1,8 +1,6 @@
 # The adapter protocol: the request an adapter reads and the events it writes.
-#
-# jq resolves an included module's internal calls only one level deep, so every
-# module states its own vocabulary. These shapes also overlap the durable
-# records in lib/session.jq; stage 2 folds this module into lib/backend.jq.
+# jq resolves an included module's internal calls only one level deep, so this
+# module states the primitives its definitions need.
 
 def nul_free_string: type == "string" and (index("\u0000") | not);
 def identifier: type == "string" and test("^[A-Za-z0-9_-]+$");
@@ -118,6 +116,16 @@ def canonical_request:
     (.endpoint | endpoint) and (.insecure_tls | type == "boolean") and
     (.http_timeout | positive_integer) and (.http_stall | positive_integer));
 
+def backend_adapter_request($runtime; $system; $messages; $tools):
+  {
+    format_version:1,
+    system:$system,
+    messages:$messages,
+    tools:$tools,
+    options:{request:$runtime.profile.request},
+    transport:($runtime.backend | {endpoint,insecure_tls,http_timeout,http_stall})
+  } | select(canonical_request);
+
 def backend_response_state:
   {blocks:{}, usage:null, stop:null, valid:true, ended:false};
 
@@ -200,10 +208,8 @@ def decode_backend_response(valid_event; valid_message):
           if ($records | length) != 1 then halt_error(1)
           else
             $records[0] as $message |
-            [$message.content[] | select(.type == "tool_call")] as $calls |
             .output = ["end", "\u0000", ($event | tojson), "\u0000",
-              ($message | tojson), "\u0000", ($calls | length | tostring), "\u0000",
-              ($calls[] | .id, "\u0000", .name, "\u0000", (.input | tojson), "\u0000")]
+              ($message | tojson), "\u0000"]
           end
         else
           .output = ["event", "\u0000", ($event | tojson), "\u0000"]

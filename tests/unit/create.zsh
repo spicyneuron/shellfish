@@ -117,7 +117,7 @@ zsh -f "$entry" create --session-out "$override" --config "$config" \
   >/dev/null || fail 'create rejected system overrides'
 jq -se '
   length == 2 and
-  (.[0].profile.system | length) == 1 and
+  (.[0].runtime.profile.system | length) == 1 and
   .[1] == {type:"system",content:"inline\nprompt\n\nfile prompt\n\nlast prompt"}
 ' "$override" >/dev/null || fail 'create did not materialize ordered system overrides'
 printf 'updated file prompt\n' >"$override_file"

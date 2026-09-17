@@ -40,12 +40,10 @@ sf_environment_project() {
 
 # Canonical environment names cannot contain spaces.
 sf_environment_prepare() {
-  local runtime=$1 selected=$2 line key value name
+  local runtime=$1 selected=$2 name
   local -a selected_names
-  local -A values
 
   SF_ENVIRONMENT_ERROR=''
-  SF_ENVIRONMENT_VALUES=()
   sf_environment_project "$runtime" || {
     sf_environment_fail 'cannot inspect component environment'
     return
@@ -56,14 +54,26 @@ sf_environment_prepare() {
       sf_environment_fail 'cannot inspect component environment'
       return
     }
-    if [[ ${parameters[$name]-} == *export* ]]; then
-      values[$name]=${(P)name}
-    fi
+  done
+  sf_environment_load "$SF_ENVIRONMENT_FILE" "$selected"
+}
+
+sf_environment_load() {
+  local env_file=$1 selected=$2 line key value name
+  local -a selected_names
+  local -A values
+
+  SF_ENVIRONMENT_ERROR=''
+  SF_ENVIRONMENT_VALUES=()
+  selected_names=( ${=selected} )
+  for name in $selected_names; do
+    [[ ${parameters[$name]-} == *export* ]] || continue
+    values[$name]=${(P)name}
   done
   if (( ${#selected_names} )) &&
-    [[ -n $SF_ENVIRONMENT_FILE && ( -e $SF_ENVIRONMENT_FILE || -L $SF_ENVIRONMENT_FILE ) ]]; then
-    [[ -f $SF_ENVIRONMENT_FILE && -r $SF_ENVIRONMENT_FILE ]] || {
-      sf_environment_fail "cannot read env file: $SF_ENVIRONMENT_FILE"
+    [[ -n $env_file && ( -e $env_file || -L $env_file ) ]]; then
+    [[ -f $env_file && -r $env_file ]] || {
+      sf_environment_fail "cannot read env file: $env_file"
       return
     }
     while IFS= read -r line || [[ -n $line ]]; do
@@ -93,7 +103,7 @@ sf_environment_prepare() {
         value=${value[2,-2]}
       fi
       values[$key]=$value
-    done <"$SF_ENVIRONMENT_FILE"
+    done <"$env_file"
   fi
   for name in $selected_names; do
     (( ${+values[$name]} )) || continue

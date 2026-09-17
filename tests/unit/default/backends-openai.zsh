@@ -82,7 +82,7 @@ jq -e '
 jq -n -e -L "$ROOT" '
   include "lib/runtime";
   include "lib/session";
-  include "lib/request";
+  include "lib/backend";
   [inputs] |
   assemble_backend_response(canonical_backend_response_events; canonical_response) as $message |
   ($message | canonical_response) and
@@ -127,7 +127,7 @@ OPENAI_API_KEY=test-key zsh -f "$run" <"$req" >"$res"
 jq -n -e -L "$ROOT" '
   include "lib/runtime";
   include "lib/session";
-  include "lib/request";
+  include "lib/backend";
   [inputs] | assemble_backend_response(canonical_backend_response_events; canonical_response) ==
     {type:"assistant",stop:"length",content:[]}
 ' "$res" >/dev/null
@@ -143,7 +143,7 @@ OPENAI_API_KEY=test-key zsh -f "$run" <"$req" >"$res"
 jq -n -e -L "$ROOT" '
   include "lib/runtime";
   include "lib/session";
-  include "lib/request";
+  include "lib/backend";
   [inputs] |
   assemble_backend_response(canonical_backend_response_events; canonical_response) as $message |
   ($message | canonical_response) and
@@ -188,7 +188,7 @@ OPENAI_API_KEY=test-key zsh -f "$run" <"$req" >"$res"
 jq -n -e -L "$ROOT" '
   include "lib/runtime";
   include "lib/session";
-  include "lib/request";
+  include "lib/backend";
   [inputs] |
   assemble_backend_response(canonical_backend_response_events; canonical_response) as $message |
   ($message | canonical_response) and

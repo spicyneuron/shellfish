@@ -7,7 +7,7 @@ schema_eval() {
 }
 
 request_eval() {
-  jq -L "$ROOT" -e 'include "lib/session"; include "lib/request"; '"$1"
+  jq -L "$ROOT" -e 'include "lib/session"; include "lib/backend"; '"$1"
 }
 
 # Request messages require one safe text block.
@@ -267,7 +267,7 @@ if jq -c '.render.initial_user_text = "${output.stdout}"' <<<"$valid_manifest" |
 fi
 typeset tool_header
 tool_header=$(jq -cn --argjson header "$valid_header" --argjson manifest "$valid_manifest" '
-  $header | .harness.tools = [{
+  $header | .runtime.harness.tools = [{
     name:"shell", command:"/bin/shell-tool", manifest:$manifest, settings:"/etc/fence.jsonc"
   }]
 ')

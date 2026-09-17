@@ -31,7 +31,10 @@ case $(<"$PROMPT_INPUT") in
     ;;
   update)
     print -rn -- 'update context'
-    print -rn -u3 -- '{"action":"session_update","patch":{"harness":{"sandbox_write_paths":["/tmp/reference"]}}}'
+    runtime=$(head -n 1 "$SHELLFISH_SESSION" | jq -c \
+      '.runtime.harness.sandbox_write_paths=["/tmp/reference"] | .runtime') || exit 2
+    jq -cn --argjson runtime "$runtime" \
+      '{action:"session_update",patch:$runtime}' >&3
     exit 11
     ;;
   invalid)
@@ -120,7 +123,7 @@ jq -eRn '
   ($events | any(.type == "user") | not)
 ' <"$stream" >/dev/null || fail 'session update did not halt before user append'
 head -n 1 "$session" | jq -e \
-  '.harness.sandbox_write_paths == ["/tmp/reference"]' >/dev/null ||
+  '.runtime.harness.sandbox_write_paths == ["/tmp/reference"]' >/dev/null ||
   fail 'session update did not replace the frozen header'
 
 # Invalid lifecycle control keeps completed output before the durable error.

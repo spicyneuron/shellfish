@@ -2,7 +2,7 @@ emulate -R zsh
 setopt no_aliases no_bg_nice no_multios pipe_fail
 
 source "$SF_ROOT/lib/session.zsh"
-source "$SF_ROOT/lib/request.zsh"
+source "$SF_ROOT/lib/backend.zsh"
 source "$SF_ROOT/lib/scratch.zsh"
 source "$SF_ROOT/libexec/run/hooks.zsh"
 source "$SF_ROOT/libexec/run/tools.zsh"
@@ -24,7 +24,7 @@ sf_run_append() {
 sf_run_interrupt() {
   integer code=$1
   SF_RUN[signal_status]=$code
-  [[ -z $SF_REQUEST[pid] ]] || sf_process_stop "$SF_REQUEST[pid]" "$SF_REQUEST[group_file]"
+  [[ -z $SF_BACKEND[pid] ]] || sf_process_stop "$SF_BACKEND[pid]" "$SF_BACKEND[group_file]"
 }
 
 sf_run_error() {
@@ -35,14 +35,13 @@ sf_run_error() {
 
 sf_run_partial_assistant() {
   REPLY=''
-  (( ${#SF_REQUEST_PARTIAL_EVENTS} )) || return 0
+  (( ${#SF_BACKEND_PARTIAL_EVENTS} )) || return 0
   REPLY=$({
-    printf '%s\n' "${SF_REQUEST_PARTIAL_EVENTS[@]}"
+    printf '%s\n' "${SF_BACKEND_PARTIAL_EVENTS[@]}"
     print -r -- '{"type":"_assistant_end","stop":"length"}'
   } | sf_jq -cse '
-    include "lib/runtime";
     include "lib/session";
-    include "lib/request";
+    include "lib/backend";
     assemble_backend_response(canonical_backend_response_events; canonical_response) |
     select(any(.content[]; (.type == "text" or .type == "reasoning") and .text != "")) |
     .stop="cancelled"
@@ -69,7 +68,7 @@ sf_run_cancel() {
     session_run | .calls[] |
     . as $call |
     ([$runtime.harness.tools[] | select(.name == $call.name)][0]) as $tool |
-    ($tool.manifest.render // default_tool_render) as $render |
+    ($tool.manifest.render // tool_render_defaults) as $render |
     (if $call.id == $active and $known != null then $known
      else {output:{stdout:"",stderr:"",exit_code:126},states:[],
        reason:(if $call.id == $active then "tool call interrupted" else "tool call cancelled" end)} end) as $outcome |
@@ -90,44 +89,6 @@ sf_run_cancel() {
     sf_session_append "$session" "$record" && sf_run_emit "$record"
   done
   sf_run_error "$session" "$message" || true
-}
-
-sf_run_context_window() {
-  local session=$1 request=$2 command=$3 selected=$4 max_capture=$5
-  local directory input output window patch event name
-  local -a arguments process
-  sf_environment_prepare "$SF_SESSION[runtime]" "$selected" || return 1
-  sf_scratch_create backends context || return 1
-  directory=$REPLY
-  input="$directory.input"
-  print -r -- "$request" >"$input" || { rm -rf -- "$directory" "$input"; return 1; }
-  arguments=()
-  for name in $SF_ENVIRONMENT_NAMES; do arguments+=( -u "$name" ); done
-  arguments+=( "${SF_ENVIRONMENT_VALUES[@]}" "$command" )
-  if sf_process_run "$directory" "$PWD" "${input:A}" "$max_capture" \
-      /usr/bin/env "${arguments[@]}"; then
-    process=( "${reply[@]}" )
-    if (( process[2] )); then
-      SF_RUN[signal_status]=$process[1]
-    elif (( process[1] == 0 )); then
-      output=$(<"$directory/stdout")
-      window=$(sf_jq -ser '
-        include "lib/runtime";
-        select(length == 1 and (.[0] | type == "object" and keys == ["context_window"] and
-          (.context_window | positive_integer))) | .[0].context_window
-      ' <<<"$output" 2>/dev/null) || window=''
-    fi
-  fi
-  rm -rf -- "$directory" "$input"
-  (( ! SF_RUN[signal_status] )) || return $SF_RUN[signal_status]
-  if [[ -n $window ]]; then
-    patch=$(jq -cn --argjson window "$window" '{profile:{context_window:$window}}') || return 1
-  else
-    patch='{"profile":{"context_window":null}}'
-  fi
-  sf_session_update "$session" "$patch" || return 1
-  event=$(jq -cn --argjson runtime "$SF_SESSION[runtime]" '{type:"_session_update",runtime:$runtime}') || return 1
-  sf_run_emit "$event"
 }
 
 sf_run_permission_client() {
@@ -175,26 +136,25 @@ sf_run_project() {
     ($harness.max_requests_per_turn | tostring | field),
     ($harness.max_tool_calls_per_request | tostring | field),
     ($harness.max_capture_bytes | tostring | field),
-    ($runtime.backend.command | field),
-    ($runtime.backend.environment | join(" ") | field),
     ($runtime.backend.context_window_command // "" | field),
     ($tools | tojson | field),
     ("ok" | field)
   ' 2>/dev/null) || return 1
   fields=( "${(@0)${projected%$'\0'}}" )
-  (( ${#fields} == 8 )) && [[ $fields[8] == ok ]] || return 1
-  reply=( "${(@)fields[1,6]}" )
-  REPLY=$fields[7]
+  (( ${#fields} == 6 )) && [[ $fields[6] == ok ]] || return 1
+  reply=( "${(@)fields[1,4]}" )
+  REPLY=$fields[5]
 }
 
 sf_run_turn() {
-  local user_record=$1 session=$2 prompt=$3 opened runtime tools backend selected context_command
-  local request assistant stop_text id name input decision
+  local user_record=$1 session=$2 prompt=$3 opened runtime tools context_command
+  local assistant stop_text id name input decision
   local tool_request post_request activity permission_reason permission_preview executable render
   local tool_environment settings fence env_file execution_input sandbox read_paths write_paths
-  local reason outcome state_projection record post_error='' failure='' turn_state tool_temp=''
-  local -a calls states hook_result runtime_fields tool_plan
-  integer begun=0 offset request_count=0 call_count=0 request_limit tool_limit max_capture run_status
+  local reason outcome state_projection record post_error='' failure='' turn_state tool_temp='' call
+  local call_projection call_projected
+  local -a calls call_fields states hook_result runtime_fields tool_plan
+  integer begun=0 request_count=0 call_count=0 request_limit tool_limit max_capture run_status
 
   {
     SF_RUN[answer]=''
@@ -213,9 +173,7 @@ sf_run_turn() {
     request_limit=$runtime_fields[1]
     tool_limit=$runtime_fields[2]
     max_capture=$runtime_fields[3]
-    backend=$runtime_fields[4]
-    selected=$runtime_fields[5]
-    context_command=$runtime_fields[6]
+    context_command=$runtime_fields[4]
     [[ -z $failure && -d $SF_SESSION[cwd] && -x $SF_SESSION[cwd] ]] ||
       failure=${failure:-session working directory is unavailable: $SF_SESSION[cwd]}
     sf_scratch_create turns turn || failure='cannot prepare hook turn state'
@@ -255,28 +213,51 @@ sf_run_turn() {
         failure="provider request limit reached: $request_limit"
         break
       fi
-      request=$(printf '%s\n' "${SF_SESSION_RECORDS[@]}" |
-        sf_request_build "$runtime" "$tools") || { failure='cannot prepare provider request'; break; }
       if (( request_count == 1 )) && [[ -n $context_command ]] &&
           ! jq -e '.profile | has("context_window")' <<<"$runtime" >/dev/null; then
-        sf_run_context_window "$session" "$request" "$context_command" "$selected" "$max_capture"
+        sf_backend_context_window "$tools" "$max_capture" \
+          < <(printf '%s\n' "${SF_SESSION_RECORDS[@]}")
         run_status=$?
         if (( run_status )); then
-          (( run_status == 129 || run_status == 130 || run_status == 143 )) ||
-            failure='cannot discover model context window'
+          if (( run_status == 129 || run_status == 130 || run_status == 143 )); then
+            SF_RUN[signal_status]=$run_status
+          else
+            failure=$SF_BACKEND[error]
+          fi
           break
         fi
-        runtime=$SF_SESSION[runtime]
-        request=$(printf '%s\n' "${SF_SESSION_RECORDS[@]}" |
-          sf_request_build "$runtime" "$tools") || { failure='cannot prepare provider request'; break; }
+        runtime=$(jq -c --argjson window "$REPLY" \
+          '.profile.context_window=$window' <<<"$runtime") || {
+          failure='cannot update model context window'
+          break
+        }
+        sf_session_update "$session" "$runtime" || { failure=$SF_SESSION_ERROR; break; }
+        sf_run_emit "$(jq -cn --argjson runtime "$runtime" \
+          '{type:"_session_update",runtime:$runtime}')" || {
+          failure='cannot emit session update'
+          break
+        }
       fi
-      sf_request_run "$request" "$backend" "$runtime" "$selected" sf_run_emit || {
-        failure=$SF_REQUEST[error]
+      sf_backend_request "$tools" sf_run_emit \
+        < <(printf '%s\n' "${SF_SESSION_RECORDS[@]}")
+      run_status=$?
+      if (( run_status )); then
+        if (( SF_RUN[signal_status] )); then
+          run_status=$SF_RUN[signal_status]
+        fi
+        if (( run_status == 129 || run_status == 130 || run_status == 143 )); then
+          SF_RUN[signal_status]=$run_status
+        else
+          failure=$SF_BACKEND[error]
+        fi
         break
-      }
-      assistant=$SF_REQUEST[assistant]
+      fi
+      assistant=$REPLY
       sf_run_append "$session" "$assistant" || { failure=$REPLY; break; }
-      calls=( "${SF_REQUEST_CALLS[@]}" )
+      call_projection=$(jq -c '.content[] | select(.type == "tool_call")' \
+        <<<"$assistant") || { failure='cannot inspect provider response'; break; }
+      calls=()
+      [[ -z $call_projection ]] || calls=( "${(@f)call_projection}" )
       if (( ! ${#calls} )); then
         stop_text=$(jq -r '[.content[] | select(.type == "text") | .text] | join("")' <<<"$assistant") || {
           failure='cannot inspect provider response'; break
@@ -293,11 +274,14 @@ sf_run_turn() {
         continue
       fi
       call_count=0
-      for (( offset = 1; offset <= ${#calls}; offset += 3 )); do
+      for call in "${calls[@]}"; do
         (( call_count += 1 ))
-        id=$calls[offset]
-        name=$calls[offset+1]
-        input=$calls[offset+2]
+        call_projected=$(jq -jr '.id,"\u0000",.name,"\u0000",(.input|tojson),"\u0000"' \
+          <<<"$call") || { failure='cannot inspect provider tool call'; break; }
+        call_fields=( "${(@0)${call_projected%$'\0'}}" )
+        id=$call_fields[1]
+        name=$call_fields[2]
+        input=$call_fields[3]
         sf_run_tool_plan "$runtime" "$id" "$name" "$input" || { failure=$SF_RUN_TOOL_ERROR; break; }
         tool_plan=( "${reply[@]}" )
         tool_request=$tool_plan[1]

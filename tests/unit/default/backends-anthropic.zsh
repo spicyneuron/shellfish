@@ -46,7 +46,7 @@ assert_usage() {
   jq -e -s -L "$ROOT" '
     include "lib/runtime";
     include "lib/session";
-    include "lib/request";
+    include "lib/backend";
     map(select(.type == "_turn_usage"))[0] as $event |
     assemble_backend_response(canonical_backend_response_events; canonical_response) as $message |
     ($event | del(.type)) == {
@@ -101,7 +101,7 @@ ANTHROPIC_API_KEY=test zsh -f "$run" <"$req" >"$res"
 jq -e -s -L "$ROOT" '
   include "lib/runtime";
   include "lib/session";
-  include "lib/request";
+  include "lib/backend";
   assemble_backend_response(canonical_backend_response_events; canonical_response) as $message |
   ($message.stop == "tool_calls") and
   ($message.content == [

@@ -15,7 +15,7 @@ sf_run_tool_plan() {
       include "lib/runtime";
       def field: ., "\u0000";
       [$runtime.harness.tools[] | select(.name == $name)][0] as $tool |
-      ($tool.manifest.render // default_tool_render) as $render |
+      ($tool.manifest.render // tool_render_defaults) as $render |
       (render_component($render;$name;$input;{stdout:"",stderr:"",exit_code:0})) as $rendered |
       (if $tool == null or ($runtime.harness.sandbox | not) then {decision:"none"}
        elif (($input.request_sandbox_bypass // false) | type) != "boolean" then
