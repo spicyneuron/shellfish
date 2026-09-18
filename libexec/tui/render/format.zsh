@@ -391,8 +391,8 @@ sf_tui_markdown_target() {
 
 sf_tui_format_execution() {
   integer columns=$1 live=$(( ! $2 )) spinner=0
-  integer row limit chrome total hidden=0 span background
-  local body glyph preview text kind=execution
+  integer row limit chrome total hidden=0 span background cursor start end
+  local body glyph preview text style kind=execution
   local base_style=${SF_PRESENT_STYLE[execution]-} rail_style=${SF_PRESENT_STYLE[divider]-}
   local -a projected=() spans=()
 
@@ -449,15 +449,33 @@ sf_tui_format_execution() {
       text=$REPLY
     fi
     spans=()
-    [[ -z $base_style || -z $text ]] || spans+=( 0 ${#text} "$base_style" )
-    [[ -z $rail_style || $text != (│|╰)* ]] || spans+=( 0 1 "$rail_style" )
+    cursor=0
+    if [[ -n $rail_style && $text == (│|╰)* ]]; then
+      spans+=( 0 1 "$rail_style" )
+      cursor=1
+    fi
     for (( span = 1; span <= ${#projected}; span += 3 )); do
-      if [[ ${projected[span + 2]} == *bg=* ]]; then
-        spans+=( 0 ${#text} "${projected[span + 2]}" )
-      else
-        spans+=( ${projected[span]} ${projected[span + 1]} "${projected[span + 2]}" )
+      style=${projected[span + 2]}
+      if [[ $style == *bg=* ]]; then
+        spans=( 0 ${#text} "$style" )
+        cursor=${#text}
+        break
       fi
+      start=${projected[span]}
+      end=${projected[span + 1]}
+      (( start >= cursor )) || start=$cursor
+      (( end <= ${#text} )) || end=${#text}
+      (( start >= end )) && continue
+      if [[ -n $base_style ]] && (( cursor < start )); then
+        spans+=( $cursor $start "$base_style" )
+      fi
+      [[ -z $base_style ]] || style="$base_style,$style"
+      spans+=( $start $end "$style" )
+      cursor=$end
     done
+    if [[ -n $base_style ]] && (( cursor < ${#text} )); then
+      spans+=( $cursor ${#text} "$base_style" )
+    fi
     SF_FORMAT_ROWS+=( "$text" )
     SF_FORMAT_SPANS+=( "${(j: :)spans}" )
     SF_FORMAT_CONSUMED+=( $SF_WRAP_CONSUMED[row] )

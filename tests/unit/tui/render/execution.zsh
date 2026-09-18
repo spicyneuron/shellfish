@@ -124,6 +124,14 @@ assert_equal 2 "$SF_PRESENT_SAFE_ROWS"
 unset 'SF_PRESENT_STYLE[execution]' 'SF_PRESENT_STYLE[activity]'
 sf_tui_activity_stop
 
+# The configured execution color survives the bold tool name without overlapping spans.
+sf_tui_reset
+SF_PRESENT_STYLE[execution]='fg=#123456'
+sf_tui_action execution_end colored read_file tool 'read_file docs/CONFIG.md'
+assert_equal '0 2 fg=#123456 2 11 fg=#123456,bold 11 26 fg=#123456' \
+  "$SF_PRESENT_ROW_SPANS[-2]"
+unset 'SF_PRESENT_STYLE[execution]'
+
 # Empty completion retracts only its own running view.
 sf_tui_reset
 sf_tui_action execution_update h1 silent notice 'silent · Working'
