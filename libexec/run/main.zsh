@@ -14,15 +14,19 @@ sf_die() {
   return 1
 }
 
+# An inherited pipe may never reach EOF, so only a turn that needs the message
+# reads until it closes.
 sf_run_prompt() {
   local stdin_input=''
-  if [[ ! -t 0 ]]; then stdin_input=$(<&0); fi
   if (( $# )); then
+    if [[ ! -t 0 ]]; then IFS= read -t 0 -r stdin_input || true; fi
     [[ -z $stdin_input ]] || {
       sf_die 'cannot use a message argument and standard input together'
       return 2
     }
     stdin_input=${(j: :)@}
+  elif [[ ! -t 0 ]]; then
+    stdin_input=$(<&0)
   fi
   [[ -n $stdin_input ]] || {
     sf_die 'a message is required for a new turn'

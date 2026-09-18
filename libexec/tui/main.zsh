@@ -14,15 +14,19 @@ sf_die() {
   return 1
 }
 
+# An inherited pipe may never reach EOF, so only a draft that needs the message
+# reads until it closes.
 sf_read_prompt() {
   local input=''
-  if [[ ! -t 0 ]]; then input=$(<&0); fi
   if (( $# )); then
+    if [[ ! -t 0 ]]; then IFS= read -t 0 -r input || true; fi
     [[ -z $input ]] || {
       sf_die 'cannot use a message argument and standard input together'
       return 2
     }
     input=${(j: :)@}
+  elif [[ ! -t 0 ]]; then
+    input=$(<&0)
   fi
   REPLY=$input
 }

@@ -44,6 +44,13 @@ output=$(print -rn -- 'piped answer' |
   fail 'piped run failed'
 assert_equal 'piped answer' "$output" 'run accepts standard input'
 
+# A message argument does not wait for an inherited pipe to close.
+integer pipe_started=$SECONDS
+output=$(SF_TEST_BACKEND_DELAY=0 zsh -f "$entry" run --config "$config" 'plain answer' \
+  < <(sleep 5)) || fail 'run with an open pipe failed'
+assert_equal 'plain answer' "$output" 'run ignores an unread pipe'
+(( SECONDS - pipe_started < 3 )) || fail 'run waited for an inherited pipe to close'
+
 # Positional prompt words are joined.
 output=$(SF_TEST_BACKEND_DELAY=0 zsh -f "$entry" run --config "$config" \
   several prompt words) || fail 'multi-argument run failed'
