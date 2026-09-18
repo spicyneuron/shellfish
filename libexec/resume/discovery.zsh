@@ -28,7 +28,6 @@ sf_resume_find() {
       printf "%s%c%s%c", FILENAME, 0, $0, 0
       nextfile
     }' "${readable[@]}" 2>/dev/null)}" )
-    [[ -n $fields[-1] ]] || fields[-1]=()
     for (( index = 1; index < ${#fields}; index += 2 )); do
       header_by_file[$fields[index]]=$fields[index+1]
     done
