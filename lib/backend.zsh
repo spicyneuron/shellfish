@@ -9,15 +9,19 @@ setopt no_aliases no_bg_nice no_multios pipe_fail
 typeset -gA SF_BACKEND=(directory '' error '' group_file '' pid '')
 typeset -ga SF_BACKEND_PARTIAL_EVENTS=()
 
+# What one adapter invocation needs, keyed by name.
+typeset -gA SF_BACKEND_PLAN=()
+
 # One projection of the transcript on stdin: the adapter request, then the
 # named backend command and its environment declarations.
 sf_backend_project() {
   local tools=$1 command_field=$2
-  sf_jq_fields 4 -sc --argjson tools "$tools" --arg command_field "$command_field" '
+  sf_jq_fields 10 -sc --argjson tools "$tools" --arg command_field "$command_field" '
     include "lib/runtime";
     include "lib/session";
     include "lib/backend";
     def field: ., "\u0000";
+    def entry($key; $value): ($key | field), ($value | field);
     select(length >= 1) |
     select(.[0] | canonical_session_header) |
     . as $records |
@@ -28,25 +32,26 @@ sf_backend_project() {
       ($records[1:] | session_messages);
       $tools
     ) as $request |
-    ($request | tojson | field),
-    ($runtime.backend[$command_field] | field),
-    ($runtime.backend.env_file | field),
-    ($runtime.backend.environment | join(" ") | field),
+    entry("request"; $request | tojson),
+    entry("command"; $runtime.backend[$command_field]),
+    entry("env_file"; $runtime.backend.env_file),
+    entry("environment"; $runtime.backend.environment | join(" ")),
+    entry("environment_names"; declared_environment($runtime)),
     ("ok" | field)
-  '
+  ' || return 1
+  SF_BACKEND_PLAN=( "${reply[@]}" )
 }
 
 sf_backend_context_window() {
   local tools=$1
   integer max_capture=$2
   local directory input output name
-  local -a projected arguments process
+  local -a arguments process
   sf_backend_project "$tools" context_window_command || {
     SF_BACKEND[error]='cannot prepare context window request'
     return 1
   }
-  projected=( "${reply[@]}" )
-  sf_environment_load "$projected[3]" "$projected[4]" || {
+  sf_environment_load "$SF_BACKEND_PLAN[env_file]" "$SF_BACKEND_PLAN[environment]" || {
     SF_BACKEND[error]=$SF_ENVIRONMENT_ERROR
     return 1
   }
@@ -56,14 +61,14 @@ sf_backend_context_window() {
   }
   directory=$REPLY
   input="$directory.input"
-  print -r -- "$projected[1]" >"$input" || {
+  print -r -- "$SF_BACKEND_PLAN[request]" >"$input" || {
     rm -rf -- "$directory" "$input"
     SF_BACKEND[error]='cannot prepare context window request'
     return 1
   }
   arguments=( /usr/bin/env )
-  for name in ${=projected[4]}; do arguments+=( -u "$name" ); done
-  arguments+=( "${SF_ENVIRONMENT_VALUES[@]}" "$projected[2]" )
+  for name in ${=SF_BACKEND_PLAN[environment_names]}; do arguments+=( -u "$name" ); done
+  arguments+=( "${SF_ENVIRONMENT_VALUES[@]}" "$SF_BACKEND_PLAN[command]" )
   if ! sf_process_run "$directory" "$PWD" "${input:A}" "$max_capture" \
       "${arguments[@]}"; then
     rm -rf -- "$directory" "$input"
@@ -89,7 +94,7 @@ sf_backend_context_window() {
 
 sf_backend_run() {
   setopt local_options local_traps no_bg_nice
-  local request=$1 command=$2 env_file=$3 selected=$4 emit=${5:-:}
+  local emit=${1:-:} request=$SF_BACKEND_PLAN[request] command=$SF_BACKEND_PLAN[command]
   local directory error_file group_file input_file output_pipe status_file
   local adapter_pid decoder_pid assistant event end_event kind=''
   local -a environment=( env ) process_command
@@ -98,11 +103,11 @@ sf_backend_run() {
   REPLY=''
   SF_BACKEND=(directory '' error '' group_file '' pid '')
   SF_BACKEND_PARTIAL_EVENTS=()
-  sf_environment_load "$env_file" "$selected" || {
+  sf_environment_load "$SF_BACKEND_PLAN[env_file]" "$SF_BACKEND_PLAN[environment]" || {
     SF_BACKEND[error]=$SF_ENVIRONMENT_ERROR
     return 1
   }
-  for name in ${=selected}; do environment+=( -u "$name" ); done
+  for name in ${=SF_BACKEND_PLAN[environment_names]}; do environment+=( -u "$name" ); done
   environment+=( "${SF_ENVIRONMENT_VALUES[@]}" )
   sf_scratch_create backends request || {
     SF_BACKEND[error]='cannot prepare provider capture'
@@ -204,12 +209,9 @@ sf_backend_run() {
 
 sf_backend_request() {
   local tools=$1 emit=${2:-:}
-  local -a projected
   sf_backend_project "$tools" command || {
     SF_BACKEND[error]='cannot prepare provider request'
     return 1
   }
-  projected=( "${reply[@]}" )
-  sf_backend_run "$projected[1]" "$projected[2]" "$projected[3]" \
-    "$projected[4]" "$emit"
+  sf_backend_run "$emit"
 }

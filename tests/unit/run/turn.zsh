@@ -155,4 +155,28 @@ sf_test_run broken "$broken" >"$stream" 2>"$tmp/broken.stderr" || broken_status=
 jq -es 'length == 1 and .[0].type == "session"' "$broken.saved" >/dev/null ||
   fail 'write failure changed the previously durable prefix'
 
+# An adapter unsets every declared name, not only its own.
+sf_test_runtime
+typeset isolated_backend="$tmp/isolated-backend" isolated="$tmp/isolated.jsonl"
+cat >"$isolated_backend" <<'ZSH'
+#!/usr/bin/env zsh
+cat >/dev/null
+jq -cn --arg text "${TOOL_SECRET-unset} ${BACKEND_SECRET-unset}" \
+  '{type:"_assistant_message_delta",index:0,text:$text}'
+print -r -- '{"type":"_turn_usage","input_tokens":1,"output_tokens":1}'
+print -r -- '{"type":"_assistant_end","stop":"end"}'
+ZSH
+chmod +x "$isolated_backend"
+SF_TEST_RUNTIME=$(jq -c --arg backend "$isolated_backend" '
+  .backend.command=$backend | .backend.environment=["BACKEND_SECRET"] |
+  .harness.tools[0].manifest.environment=["TOOL_SECRET"]
+' <<<"$SF_TEST_RUNTIME")
+export BACKEND_SECRET=backend-value TOOL_SECRET=tool-value
+sf_test_session "$isolated"
+sf_test_run isolated "$isolated" >"$stream" || fail 'isolated turn failed'
+jq -eRn '[inputs | fromjson | select(.type == "assistant") | .content[0].text] ==
+  ["unset backend-value"]' <"$stream" >/dev/null ||
+  fail 'adapter did not unset the names another component declared'
+unset BACKEND_SECRET TOOL_SECRET
+
 print -r -- ok
