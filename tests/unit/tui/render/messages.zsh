@@ -210,10 +210,12 @@ view 79 20
 [[ $REPLY == *$'\n\nfirst\n\nsecond' ]] || fail "inert block boundary: $REPLY"
 stream 3 reasoning thought 9
 view 79 20
-[[ $REPLY == *$'✎ Reasoning\n  thought\n  ⠃' ]] || fail "reasoning transition: $REPLY"
+# Reasoning withholds its incomplete line, exactly as message text does.
+[[ $REPLY == *$'✎ Reasoning\n  ⠃' ]] || fail "reasoning transition: $REPLY"
 stream 4 inert ''
 view 79 20
-[[ $REPLY == *'Thought for ~9 tokens.' ]] || fail "reasoning settled by an inert block: $REPLY"
+[[ $REPLY == *$'✎ Reasoning\n  thought\n  Thought for ~9 tokens.' ]] ||
+  fail "reasoning settled by an inert block: $REPLY"
 
 # Reasoning previews spend rows and keep the whole-content estimate.
 sf_tui_reset

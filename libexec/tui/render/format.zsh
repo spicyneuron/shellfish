@@ -6,6 +6,8 @@ setopt no_aliases no_bg_nice no_multios pipe_fail
 
 typeset -ga SF_FORMAT_ROWS=() SF_FORMAT_SPANS=() SF_FORMAT_CONSUMED=()
 typeset -gi SF_FORMAT_SAFE=0 SF_FORMAT_LEADING=0 SF_FORMAT_BODY_ROWS=0
+# Whether the preview budget held rows back from the block just formatted.
+typeset -gi SF_FORMAT_PROSE_HIDDEN=0
 # Trimmed characters remain logical source consumption.
 typeset -gi SF_FORMAT_TRIM_LEADING=0 SF_FORMAT_TRIM_TRAILING=0
 typeset -ga SF_FORMAT_SPAN=()
@@ -19,6 +21,7 @@ sf_tui_format_start() {
   SF_FORMAT_SAFE=0
   SF_FORMAT_LEADING=0
   SF_FORMAT_BODY_ROWS=0
+  SF_FORMAT_PROSE_HIDDEN=0
   SF_FORMAT_TRIM_LEADING=0
   SF_FORMAT_TRIM_TRAILING=0
 }
@@ -31,6 +34,17 @@ sf_tui_format_blank() {
 
 sf_tui_format_at_start() {
   (( SF_PRESENT_ROW_HEAD > ${#SF_PRESENT_ROW_TEXT} && ! SF_PRESENT_PREFIX_VISIBLE ))
+}
+
+# Trim outer blank lines, but keep a live block's closing newline: it is how
+# sf_tui_format_prose knows the last row is complete. The retained character
+# comes out of the trailing count, so it stays charged to the row it belongs to.
+sf_tui_format_trim_live() {
+  integer live=$2
+  sf_tui_format_trim "$1"
+  (( live && SF_FORMAT_TRIM_TRAILING )) || return 0
+  REPLY+=$'\n'
+  SF_FORMAT_TRIM_TRAILING=$(( SF_FORMAT_TRIM_TRAILING - 1 ))
 }
 
 # Trim outer blank lines while recording their source length.
@@ -135,14 +149,6 @@ sf_tui_format_head() {
   sf_tui_format_chrome $columns "$text" "$kind" "${(@)source}"
 }
 
-sf_tui_format_preview() {
-  local configured=$1
-  integer spent=$2
-  REPLY=$configured
-  [[ $configured != full ]] || return 0
-  REPLY=$(( configured > spent ? configured - spent : 0 ))
-}
-
 # Background styles must reach the right margin, so pad the row to full width.
 sf_tui_format_fill() {
   local text=$1 character
@@ -174,82 +180,77 @@ sf_tui_format_edges() {
 
 # Messages ------------------------------------------------------------------
 
-# A live message exposes only its stable wrapped prefix.
+# Wrap and emit one prose body below the chrome already produced. Only complete
+# rows are ever shown, so a live block never displays a row that can still grow.
+# A MARKDOWN block settles no further than its scanner has resolved.
+sf_tui_format_prose() {
+  integer columns=$1 live=$2 markdown=$3 chrome total stable closed=0
+  local body=$4 prefix=$5 style=$6 preview=$7
+
+  # Source that ends at a line boundary has no row left to grow.
+  [[ $body != *$'\n' ]] || closed=1
+  chrome=${#SF_FORMAT_ROWS}
+  SF_FORMAT_LEADING=$chrome
+  SF_PRESENT_HIGHLIGHT_SPANS=()
+  if (( markdown )) && [[ -n $body ]]; then
+    if (( live )); then
+      sf_tui_markdown_cached "$body" $columns || return 1
+    else
+      sf_tui_markdown_highlight "$body"
+    fi
+  fi
+  sf_tui_wrap $columns "$body" "$prefix" "${(@)SF_PRESENT_HIGHLIGHT_SPANS}" || return 1
+  total=${#SF_WRAP_ROWS}
+  stable=$total
+  (( ! live || ! stable || closed )) || stable=$(( stable - 1 ))
+  if [[ $preview != full ]]; then
+    # The budget spans the whole block, so rows already settled have spent it.
+    preview=$(( preview > SF_LIVE_SPENT ? preview - SF_LIVE_SPENT : 0 ))
+    (( total <= preview )) || SF_FORMAT_PROSE_HIDDEN=1
+    (( stable <= preview )) || stable=$preview
+  fi
+  sf_tui_format_body $stable "$style"
+  sf_tui_format_edges $(( chrome + 1 )) ${#body}
+  (( live && stable )) || return 0
+  if (( markdown )); then
+    sf_tui_markdown_advance "$body" $chrome $stable $columns || return 1
+    stable=$REPLY
+  fi
+  (( ! stable )) || SF_FORMAT_SAFE=$(( chrome + stable ))
+}
+
+# Message text is Markdown; only system text takes a preview budget.
 sf_tui_format_message() {
-  integer columns=$1 final=$2 live=$(( ! $2 )) stable visible chrome hidden=0
-  local body=$SF_LIVE_TEXT role=$SF_LIVE_ROLE preview
+  integer columns=$1 live=$(( ! $2 ))
+  local body=$SF_LIVE_TEXT role=$SF_LIVE_ROLE preview=full
 
   sf_tui_format_start
-  # Do not trim system text; retain one trailing newline for other live messages.
+  # System text is shown exactly as it was provided.
   if [[ $role != system ]]; then
-    sf_tui_format_trim "$body"
+    sf_tui_format_trim_live "$body" $live
     body=$REPLY
-    if (( live && SF_FORMAT_TRIM_TRAILING )); then
-      body+=$'\n'
-      SF_FORMAT_TRIM_TRAILING=$(( SF_FORMAT_TRIM_TRAILING - 1 ))
-    fi
   fi
 
   (( SF_LIVE_CHROME )) || sf_tui_format_rule $columns "$role" "$SF_LIVE_SECTION"
-  chrome=${#SF_FORMAT_ROWS}
-  SF_FORMAT_LEADING=$chrome
-
-  if [[ -z $body ]]; then
-    if (( live )) && sf_tui_spinner; then
-      sf_tui_format_styled $columns "$SF_PRESENT_ACTIVITY" message '' activity || return 1
-    else
-      SF_FORMAT_SAFE=${#SF_FORMAT_ROWS}
-    fi
-    return 0
-  fi
-
-  SF_PRESENT_HIGHLIGHT_SPANS=()
-  if (( live )); then
-    sf_tui_markdown_cached "$body" $columns || return 1
-  else
-    sf_tui_markdown_highlight "$body"
-  fi
-  sf_tui_wrap $columns "$body" '' "${(@)SF_PRESENT_HIGHLIGHT_SPANS}" || return 1
-  stable=${#SF_WRAP_ROWS}
-  if (( live && stable )) && [[ $body != *$'\n' ]]; then
-    stable=$(( stable - 1 ))
-  fi
-  visible=${#SF_WRAP_ROWS}
-  preview=full
   [[ $role != system ]] || preview=$SF_PRESENT_PREVIEW
-  if [[ $preview != full ]] && (( visible > preview )); then
-    visible=$preview
-    hidden=1
-  fi
-  (( ! live )) || visible=$stable
-  sf_tui_format_body $visible message
-  sf_tui_format_edges $(( chrome + 1 )) ${#body}
-  if [[ $role == system && $preview != full ]] && (( hidden )); then
+  sf_tui_format_prose $columns $live 1 "$body" '' message "$preview" || return 1
+  if [[ $role == system ]] && (( SF_FORMAT_PROSE_HIDDEN )); then
     sf_tui_token_count ${#body}
     sf_tui_format_styled $columns "… ~$REPLY tokens" message clamp || return 1
   elif (( live )) && sf_tui_spinner; then
     sf_tui_format_styled $columns "$SF_PRESENT_ACTIVITY" message '' activity || return 1
   fi
-  if (( ! live )); then
-    SF_FORMAT_SAFE=${#SF_FORMAT_ROWS}
-  elif (( stable )); then
-    sf_tui_markdown_advance "$body" $chrome $stable $columns || return 1
-    (( ! REPLY )) || SF_FORMAT_SAFE=$(( chrome + REPLY ))
-  fi
+  (( live )) || SF_FORMAT_SAFE=${#SF_FORMAT_ROWS}
 }
 
-# Only complete reasoning rows are safe while live.
+# Reasoning is plain text: no Markdown, no syntax highlighting.
 sf_tui_format_reasoning() {
-  integer columns=$1 final=$2 live=$(( ! $2 )) stable visible chrome hidden=0
-  integer closed_line=0
-  local body=$SF_LIVE_TEXT preview tail tokens
+  integer columns=$1 live=$(( ! $2 ))
+  local body=$SF_LIVE_TEXT tail tokens
 
   sf_tui_format_start
-  [[ $body != *$'\n' ]] || closed_line=1
-  sf_tui_format_trim "$body"
+  sf_tui_format_trim_live "$body" $live
   body=$REPLY
-  sf_tui_format_preview "$SF_PRESENT_PREVIEW_REASONING" $SF_LIVE_SPENT
-  preview=$REPLY
   sf_tui_token_count $SF_LIVE_TOTAL "$SF_LIVE_TOKENS"
   tokens=$REPLY
 
@@ -264,44 +265,17 @@ sf_tui_format_reasoning() {
   fi
 
   (( SF_LIVE_CHROME )) || sf_tui_format_styled $columns '✎ Reasoning' reasoning || return 1
-  chrome=${#SF_FORMAT_ROWS}
-  SF_FORMAT_LEADING=$chrome
-  SF_PRESENT_HIGHLIGHT_SPANS=()
-  if [[ -n $body ]]; then
-    if (( live )); then
-      sf_tui_markdown_cached "$body" $columns || return 1
-    else
-      sf_tui_markdown_highlight "$body"
-    fi
-  fi
-  sf_tui_wrap $columns "$body" '  ' "${(@)SF_PRESENT_HIGHLIGHT_SPANS}" || return 1
-  stable=${#SF_WRAP_ROWS}
-  if (( live && stable && ! closed_line )); then
-    stable=$(( stable - 1 ))
-  fi
-  visible=${#SF_WRAP_ROWS}
-  if [[ $preview != full ]] && (( visible > preview )); then
-    visible=$preview
-    hidden=1
-  fi
-  sf_tui_format_body $visible reasoning
-  sf_tui_format_edges $(( chrome + 1 )) ${#body}
+  sf_tui_format_prose $columns $live 0 "$body" '  ' reasoning \
+    "$SF_PRESENT_PREVIEW_REASONING" || return 1
   if (( live )); then
-    if (( hidden )); then tail="  … ~$tokens tokens $SF_PRESENT_ACTIVITY"
+    if (( SF_FORMAT_PROSE_HIDDEN )); then tail="  … ~$tokens tokens $SF_PRESENT_ACTIVITY"
     else tail="  $SF_PRESENT_ACTIVITY"; fi
   else
-    if (( hidden )); then tail="  … Thought for ~$tokens tokens."
+    if (( SF_FORMAT_PROSE_HIDDEN )); then tail="  … Thought for ~$tokens tokens."
     else tail="  Thought for ~$tokens tokens."; fi
   fi
   sf_tui_format_styled $columns "$tail" reasoning clamp activity || return 1
-
-  if (( ! live )); then
-    SF_FORMAT_SAFE=${#SF_FORMAT_ROWS}
-  elif (( stable )); then
-    (( stable <= visible )) || stable=$visible
-    sf_tui_markdown_advance "$body" $chrome $stable $columns || return 1
-    (( ! REPLY )) || SF_FORMAT_SAFE=$(( chrome + REPLY ))
-  fi
+  (( live )) || SF_FORMAT_SAFE=${#SF_FORMAT_ROWS}
 }
 
 # Cached spans stay source-relative across wrapping and resize.
@@ -403,7 +377,7 @@ sf_tui_markdown_target() {
 # Executions and notices ----------------------------------------------------
 
 sf_tui_format_execution() {
-  integer columns=$1 final=$2 live=$(( ! $2 )) spinner=0
+  integer columns=$1 live=$(( ! $2 )) spinner=0
   integer row limit chrome total hidden=0 span background
   local body glyph preview text kind=execution
   local base_style=${SF_PRESENT_STYLE[execution]-} rail_style=${SF_PRESENT_STYLE[divider]-}
