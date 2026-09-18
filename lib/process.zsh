@@ -1,6 +1,7 @@
 emulate -R zsh
 setopt no_aliases no_bg_nice no_multios pipe_fail
 zmodload zsh/system
+zmodload zsh/zselect
 
 typeset -g SF_PROCESS_ERROR=''
 
@@ -77,7 +78,7 @@ sf_process_stop() {
   [[ -n $pid ]] || return 0
   while [[ -n $group_file && ! -s $group_file ]] && (( polls++ < 50 )) &&
       kill -0 "$pid" 2>/dev/null; do
-    sleep 0.01
+    zselect -t 1 2>/dev/null || true
   done
   [[ -z $group_file || ! -r $group_file ]] ||
     read -r group <"$group_file" 2>/dev/null || group=0
@@ -90,10 +91,14 @@ sf_process_stop() {
   fi
   polls=0
   if (( group > 0 )); then
-    while (( polls++ < 50 )) && kill -0 -- -$group 2>/dev/null; do sleep 0.01; done
+    while (( polls++ < 50 )) && kill -0 -- -$group 2>/dev/null; do
+      zselect -t 1 2>/dev/null || true
+    done
     kill -KILL -- -$group 2>/dev/null || true
   else
-    while (( polls++ < 50 )) && kill -0 "$pid" 2>/dev/null; do sleep 0.01; done
+    while (( polls++ < 50 )) && kill -0 "$pid" 2>/dev/null; do
+      zselect -t 1 2>/dev/null || true
+    done
   fi
   kill -KILL "$pid" 2>/dev/null || true
   wait "$pid" 2>/dev/null || true

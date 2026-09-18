@@ -6,6 +6,17 @@ sf_test_tmp run-tool-contract
 export XDG_STATE_HOME="$tmp/state" SF_TEST_BACKEND_DELAY=0
 sf_test_runtime
 
+# The bundled shell decodes multiline commands once and preserves exit status.
+typeset shell_tool="$ROOT/share/default/tools/shell/run"
+assert_equal $'first\nsecond' "$(print -rn -- \
+  '{"command":"print -r -- first; print -r -- second"}' | "$shell_tool")"
+integer shell_status=0
+print -rn -- '{"command":"exit 7"}' | "$shell_tool" >/dev/null || shell_status=$?
+(( shell_status == 7 )) || fail 'shell tool changed the command exit status'
+if print -rn -- '{"command":"true","extra":true}' | "$shell_tool" >/dev/null 2>&1; then
+  fail 'shell tool accepted an unknown input field'
+fi
+
 # Tool rendering uses the shared component vocabulary.
 SF_TEST_RUNTIME=$(jq -c '
   .harness.tools[0].manifest.render={

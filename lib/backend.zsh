@@ -96,9 +96,9 @@ sf_backend_run() {
   setopt local_options local_traps no_bg_nice
   local emit=${1:-:} request=$SF_BACKEND_PLAN[request] command=$SF_BACKEND_PLAN[command]
   local directory error_file group_file input_file output_pipe status_file
-  local adapter_pid decoder_pid unblock_pid assistant event end_event kind=''
+  local adapter_pid decoder_pid assistant event end_event kind=''
   local -a environment=( env ) process_command
-  integer adapter_status=1 decoder_status=1 ended=0 signal_status=0
+  integer adapter_status=1 decoder_status=1 ended=0 signal_status=0 guard_fd run_status
 
   REPLY=''
   SF_BACKEND=(directory '' error '' group_file '' pid '')
@@ -132,7 +132,15 @@ sf_backend_run() {
     return 1
   }
   process_command=( "${reply[@]}" )
-  "${process_command[@]}" </dev/null >/dev/null 2>&1 &
+  # Hold one writer for the adapter lifetime so pre-open failure still gives
+  # the decoder EOF instead of leaving it blocked on the response pipe.
+  {
+    exec {guard_fd}>"$output_pipe" || exit 1
+    "${process_command[@]}" </dev/null >/dev/null 2>&1
+    run_status=$?
+    exec {guard_fd}>&-
+    exit $run_status
+  } &
   adapter_pid=$!
   SF_BACKEND[pid]=$adapter_pid
   trap 'signal_status=130; sf_process_stop "$adapter_pid" "$group_file"' INT USR1
@@ -144,14 +152,6 @@ sf_backend_run() {
     decode_backend_response(canonical_backend_event; canonical_response)
   ' <"$output_pipe" 2>/dev/null
   decoder_pid=$!
-  # An adapter that dies before opening the response pipe leaves the decoder
-  # blocked on open with no writer left to arrive. Opening the pipe once the
-  # adapter is gone gives the decoder a clean EOF instead of a wedged turn.
-  {
-    while kill -0 "$adapter_pid" 2>/dev/null; do sleep 0.05; done
-    : >"$output_pipe"
-  } &
-  unblock_pid=$!
   "$emit" '{"type":"_assistant_start"}'
   while IFS= read -r -d $'\0' kind <&p; do
     case $kind in
@@ -185,9 +185,6 @@ sf_backend_run() {
   adapter_pid=''
   decoder_status=0
   wait "$decoder_pid" || decoder_status=$?
-  # The unblocker waits for a reader that is now gone, so it cannot exit alone.
-  kill -KILL "$unblock_pid" 2>/dev/null
-  wait "$unblock_pid" 2>/dev/null
   SF_BACKEND[group_file]=''
   SF_BACKEND[pid]=''
   [[ $kind != invalid ]] || adapter_status=1
