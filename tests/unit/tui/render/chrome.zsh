@@ -6,8 +6,6 @@ sf_test_source libexec/tui/render/main.zsh
 typeset -g BUFFER=draft CURSOR=3 PREDISPLAY='' POSTDISPLAY=''
 typeset -g SF_PRESENT_STATE=idle SF_PRESENT_FOOTER=test/model
 typeset -g SF_PRESENT_PERMISSION_TOOL='' SF_PRESENT_PERMISSION_TEXT=''
-typeset -g SF_PRESENT_PERMISSION_LANGUAGE=''
-typeset -gi SF_PRESENT_PERMISSION_PREVIEW_LENGTH=0
 typeset -ga SF_PRESENT_QUEUE=()
 typeset -gi COLUMNS=80 LINES=10
 

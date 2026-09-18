@@ -6,8 +6,6 @@ typeset -g SF_PRESENT_SESSION=''
 typeset -g SF_PRESENT_ACTION='' SF_PRESENT_SUBMITTED=''
 typeset -g SF_PRESENT_STATE=idle SF_PRESENT_PERMISSION_ID=''
 typeset -g SF_PRESENT_PERMISSION_TOOL='' SF_PRESENT_PERMISSION_TEXT=''
-typeset -g SF_PRESENT_PERMISSION_LANGUAGE=''
-typeset -gi SF_PRESENT_PERMISSION_PREVIEW_LENGTH=0
 typeset -gi SF_PRESENT_EXIT_STATUS=0
 typeset -gi SF_PRESENT_ERROR_SETTLED=0
 typeset -gi SF_PRESENT_CREATING=0
@@ -17,8 +15,6 @@ sf_tui_permission_reset() {
   SF_PRESENT_PERMISSION_ID=''
   SF_PRESENT_PERMISSION_TOOL=''
   SF_PRESENT_PERMISSION_TEXT=''
-  SF_PRESENT_PERMISSION_LANGUAGE=''
-  SF_PRESENT_PERMISSION_PREVIEW_LENGTH=0
 }
 
 TRAPTERM() {
@@ -138,8 +134,6 @@ sf_tui_apply() {
       sf_tui_safe "$5"
       reason=$REPLY
       SF_PRESENT_PERMISSION_TEXT="$preview"$'\n\nReason: '"$reason"
-      SF_PRESENT_PERMISSION_LANGUAGE=$6
-      SF_PRESENT_PERMISSION_PREVIEW_LENGTH=${#preview}
       sf_tui_editor_permission open
       SF_PRESENT_STATE=permission
       sf_tui_activity_hold

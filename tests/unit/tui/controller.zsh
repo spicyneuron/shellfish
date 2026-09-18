@@ -78,8 +78,6 @@ assert_equal permission "$SF_PRESENT_STATE"
 assert_equal permission_1 "$SF_PRESENT_PERMISSION_ID"
 assert_equal shell "$SF_PRESENT_PERMISSION_TOOL"
 assert_equal $'pwd\n\nReason: host access' "$SF_PRESENT_PERMISSION_TEXT"
-assert_equal plain "$SF_PRESENT_PERMISSION_LANGUAGE"
-assert_equal 3 "$SF_PRESENT_PERMISSION_PREVIEW_LENGTH"
 
 # Capture a handoff request.
 SF_PRESENT_STATE=working

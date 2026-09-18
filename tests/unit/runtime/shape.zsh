@@ -168,6 +168,12 @@ valid_header=$(jq -cn '
   }
 ')
 print -r -- "$valid_header" | schema_eval 'canonical_session_header' >/dev/null
+for patch in '.extra=true' '.runtime.extra=true'; do
+  if jq -c "$patch" <<<"$valid_header" |
+      schema_eval 'canonical_session_header' >/dev/null 2>&1; then
+    fail "opaque session state was accepted: $patch"
+  fi
+done
 valid_header=$(jq -c '.runtime.harness.user_prompt_submit=[{
   command:"/bin/prompt",environment:[],render:{initial_user_text:"",user_text:"${output.stderr}",model_text:"${output.stdout}"},match:{pattern:"^!"},
   help:{usage:"!COMMAND",description:"Run a shell command"}

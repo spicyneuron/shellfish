@@ -1,8 +1,6 @@
 emulate -R zsh
 setopt no_aliases no_multios pipe_fail
 
-(( $+functions[sf_jq] )) || source "$SF_ROOT/lib/jq.zsh"
-
 typeset -g SF_ENVIRONMENT_ERROR=''
 typeset -ga SF_ENVIRONMENT_VALUES=()
 

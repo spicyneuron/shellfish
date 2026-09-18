@@ -228,7 +228,7 @@ sf_tui_repaint() {
   local mode=${1-}
   integer columns=${COLUMNS:-0} rows=${LINES:-0} budget reserve=6
   integer index queue_shown queue_limit start queue_head=0 history_item=0 history_label=0
-  local prompt_divider_top prompt_divider_bottom label preview
+  local prompt_divider_top prompt_divider_bottom label
   local queue_item queue_line queue_text=''
   local prompt_style=prompt
   local choices='[a]pprove  [d]eny (default)'
@@ -279,20 +279,6 @@ sf_tui_repaint() {
     PREDISPLAY+="$prompt_divider_top"
     sf_tui_chrome $start ${#prompt_divider_top} $prompt_style
     PREDISPLAY+=$'\n\n'
-    start=${#PREDISPLAY}
-    if (( SF_PRESENT_PERMISSION_PREVIEW_LENGTH )); then
-      preview=${SF_PRESENT_PERMISSION_TEXT[1,SF_PRESENT_PERMISSION_PREVIEW_LENGTH]}
-      SF_PRESENT_HIGHLIGHT_SPANS=()
-      sf_tui_code_highlight "$preview" "$SF_PRESENT_PERMISSION_LANGUAGE"
-      for (( index = 1; index <= ${#SF_PRESENT_HIGHLIGHT_SPANS}; index += 3 )); do
-        SF_PRESENT_CHROME_HIGHLIGHTS+=(
-          $(( start + SF_PRESENT_HIGHLIGHT_SPANS[index] ))
-          $(( start + SF_PRESENT_HIGHLIGHT_SPANS[index + 1] ))
-          "$SF_PRESENT_HIGHLIGHT_SPANS[index + 2]"
-        )
-      done
-      SF_PRESENT_HIGHLIGHT_SPANS=()
-    fi
     PREDISPLAY+="$SF_PRESENT_PERMISSION_TEXT"$'\n\n'
     start=${#PREDISPLAY}
     PREDISPLAY+="$choices"$'\n'

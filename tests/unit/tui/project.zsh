@@ -83,11 +83,11 @@ project live \
   '{"type":"_hook_activity","hook":"stop","id":"3","name":"quiet","input":""}'
 assert_equal 'execution_end | 3 | quiet | notice |  | default' "$REPLY"
 
-# Permissions carry the preview the client highlights.
+# Permissions carry the preview the client displays.
 project live \
   '{"type":"_tool_permission_request","id":"permission_1","tool":{"name":"shell","input":{"command":"git status"}},"reason":"writes outside the sandbox","preview":"git status"}'
 assert_equal \
-  'permission | permission_1 | shell | git status | writes outside the sandbox | plain' \
+  'permission | permission_1 | shell | git status | writes outside the sandbox' \
   "$REPLY"
 
 # Errors split their heading from the detail below it.

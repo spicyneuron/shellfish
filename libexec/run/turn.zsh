@@ -40,10 +40,16 @@ sf_run_settle() {
     session_run |
     (.calls[] | {id,name,input} | tojson | field),
     ("ok" | field)
-  ' "$session" || reply=()
+  ' "$session" || {
+    REPLY='cannot inspect pending tool calls'
+    return 1
+  }
   calls=( "${reply[@]}" )
   for call in "${calls[@]}"; do
-    sf_run_tool_plan "$SF_RUN[runtime]" "$call" || break
+    sf_run_tool_plan "$SF_RUN[runtime]" "$call" || {
+      REPLY=${SF_RUN_TOOL_ERROR:-cannot inspect pending tool call}
+      return 1
+    }
     if [[ $SF_TOOL_PLAN[id] == $active && -n $known ]]; then
       outcome=$known
     elif [[ $SF_TOOL_PLAN[id] == $active ]]; then
@@ -53,7 +59,10 @@ sf_run_settle() {
       sf_run_tool_refused "$reason" 126
       outcome=$REPLY
     fi
-    sf_run_tool_complete "$outcome" || break
+    sf_run_tool_complete "$outcome" || {
+      REPLY=${SF_RUN_TOOL_ERROR:-cannot finish pending tool call}
+      return 1
+    }
     sf_run_append "$session" "$REPLY" || return 1
   done
 }
@@ -192,7 +201,7 @@ sf_run_project() {
 sf_run_turn() {
   local user_record=$1 session=$2 prompt=$3 runtime tools context_command
   local assistant stop_text id name decision post_request
-  local reason outcome record post_error='' failure='' turn_state tool_temp='' call
+  local reason outcome result state post_error='' failure='' turn_state tool_temp='' call
   local call_projection
   local -a calls states hook_result runtime_fields
   integer begun=0 request_count=0 call_count=0 request_limit tool_limit max_capture run_status
@@ -383,16 +392,16 @@ sf_run_turn() {
         fi
         [[ -n $outcome ]] || break
         sf_run_tool_complete "$outcome" || { failure=$SF_RUN_TOOL_ERROR; break; }
-        record=$REPLY
+        result=$REPLY
         post_request=$reply[1]
         states=( "${(@)reply[2,-1]}" )
-        for record in "${states[@]}"; do
-          sf_run_append "$session" "$record" || { failure=$REPLY; break 2; }
+        for state in "${states[@]}"; do
+          sf_run_append "$session" "$state" || { failure=$REPLY; break 2; }
         done
         SF_RUN[known_outcome]=$outcome
         sf_run_hooks "$session" post_tool_use "$post_request" \
           "$turn_state" "$name" "$id" || post_error=$SF_RUN_HOOK_ERROR
-        sf_run_append "$session" "$record" || { failure=$REPLY; break; }
+        sf_run_append "$session" "$result" || { failure=$REPLY; break; }
         SF_RUN[active_call]=''
         SF_RUN[known_outcome]=''
         outcome=''

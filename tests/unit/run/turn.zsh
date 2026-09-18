@@ -55,6 +55,7 @@ cat >"$tool" <<'ZSH'
 #!/usr/bin/env zsh
 value=$(jq -er '.value | select(type == "string")') || exit 2
 print -r -- "$value" >>"$TOOL_ORDER"
+print -rn -u3 -- "{\"state\":[{\"name\":\"tool/$value\",\"value\":true}]}"
 print -rn -- "$value"
 ZSH
 chmod +x "$backend" "$tool"
@@ -83,13 +84,16 @@ sf_test_session "$session"
 sf_test_run ordered "$session" >"$stream" || fail 'ordered tool turn failed'
 jq -eRn '
   [inputs | fromjson] as $events |
-  [$events[] | select(.type | IN("assistant","_tool_activity","tool_result")) |
+  [$events[] | select(.type | IN("assistant","_tool_activity","state","tool_result")) |
     if .type == "assistant" then [.type,.stop]
+    elif .type == "state" then [.type,.name]
     else [.type,.id,.name,.exit_code?] end] == [
       ["assistant","tool_calls"],
       ["_tool_activity","call_1","ordered",null],
+      ["state","tool/first"],
       ["tool_result","call_1","ordered",0],
       ["_tool_activity","call_2","ordered",null],
+      ["state","tool/second"],
       ["tool_result","call_2","ordered",0],
       ["assistant","end"]
     ] and

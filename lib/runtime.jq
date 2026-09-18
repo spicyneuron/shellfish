@@ -157,6 +157,7 @@ def tool_manifest:
 # The resolved runtime, as it appears at header.runtime.
 def canonical_runtime:
   type == "object" and
+  keys == ["backend", "harness", "profile"] and
   (.profile | type == "object" and
     ((keys - ["context_window", "request", "system"]) | length == 0) and
     (["request"] - keys | length == 0) and
@@ -203,7 +204,9 @@ def canonical_runtime:
 # The session header freezes one runtime. lib/session.jq owns the records that
 # follow it, but cannot call canonical_runtime across a module boundary.
 def canonical_session_header:
-  type == "object" and .type == "session" and .format_version == 1 and
+  type == "object" and
+  keys == ["created", "cwd", "format_version", "runtime", "type"] and
+  .type == "session" and .format_version == 1 and
   (.cwd | absolute_path) and (.created | type == "string") and
   (.runtime | canonical_runtime);
 

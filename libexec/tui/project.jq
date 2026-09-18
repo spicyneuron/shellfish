@@ -131,7 +131,7 @@ def event_actions($window; $previews):
     (.preview // "") as $preview |
     [["permission", .id, .tool.name,
       (if ($preview | length) > 1000 then $preview[0:1000] + "…" else $preview end),
-      (.reason // ""), "plain"]]
+      (.reason // "")]]
   elif .type == "_handoff" then [["handoff"] + .argv]
   elif .type == "_session_update" then (.runtime | runtime_actions)
   elif .type == "_session_load" then [["session", .path]]
