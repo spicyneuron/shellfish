@@ -4,79 +4,251 @@ A harness defines how Shellfish behaves as an agent. It combines tools, lifecycl
 
 The core owns event ordering, persistence, recovery, and cleanup. The harness supplies tools and workflow policy. Harnesses are frozen when a session is created, so changes affect new sessions rather than existing ones.
 
-## Default coding harness
+See [`CONFIG.md`](CONFIG.md) for composition, lookup, and the bundled coding harness. This document defines the executable component contracts.
 
-The bundled `default` harness provides project context, general-purpose coding tools, interactive commands, compaction, and conservative sandboxing. Its configuration and components under [`share/default/`](../share/default/) are the authoritative reference.
+## Shared contract
 
-### System prompt
+Tools, hooks, and backend adapters are executable component directories. Component references resolve before the session is created, and the resolved paths and manifests are frozen in its header.
 
-The system prompt belongs to the profile rather than the harness, so the same harness can support different roles. Shellfish materializes the selected system components when it creates a session. Later file changes do not alter that session's prompt.
+| Component | Required files | Trust |
+| --- | --- | --- |
+| Tool | `run`, `manifest.json` or `manifest.jsonc`; `fence.jsonc` when sandboxed | Model-facing; optionally sandboxed |
+| Hook | `run`; optional manifest | Trusted, user permissions |
+| Backend adapter | `run`, manifest; optional `context_window` | Trusted, user permissions |
 
-| Component | Role |
+Scripts run from the session working directory. Shellfish starts each in an isolated process group, terminates ordinary descendants on completion or cancellation, and escalates from `TERM` to `KILL`. Components must finish their own subprocesses; daemonizing is unsupported.
+
+Hook and tool stdout, stderr, and fd 3 share `max_capture_bytes`. Hooks fail when they exceed it. Tool control data must fit first; remaining stdout and stderr are tail-preserving and may be truncated. Raw captures are transient—only rendered text and accepted state records are durable.
+
+### Environment
+
+Manifests list environment variable names under `environment`. Exported values take precedence over `.env`; undeclared component credential names are removed before launch.
+
+| Variable | Tool | Hook |
+| --- | :---: | :---: |
+| `SHELLFISH_SESSION` | ✓ | ✓ |
+| `SHELLFISH_EXECUTABLE` | ✓ | ✓ |
+| `SHELLFISH_CONFIG_DIR` | ✓ | ✓ |
+| `SHELLFISH_MAX_CAPTURE_BYTES` | ✓ | ✓ |
+| `SHELLFISH_MODEL` |  | ✓ |
+| `SHELLFISH_MODE` |  | ✓ (`run`) |
+| `SHELLFISH_VERBOSE` |  | ✓ (`0` or `1`) |
+| `SHELLFISH_TURN_ID` |  | Turn hooks only |
+| `SHELLFISH_TURN_STATE` |  | Turn hooks only |
+| `TMPDIR`, `TMPPREFIX` | ✓ |  |
+
+All tool calls in one turn share a private `TMPDIR`; Shellfish removes it during cleanup. Sandboxed tools start with a clean environment. Unsandboxed tools, hooks, and adapters inherit the filtered process environment plus their selected values.
+
+### Rendering
+
+Tool and hook manifests may define `render` templates:
+
+| Field | When shown |
 | --- | --- |
-| `general.md` | Communication, execution, and context-handling guidance |
-| `tools.md` | Conventions for using the bundled tools |
+| `initial_user_text` | Activity before execution |
+| `user_text` | Durable user-facing result |
+| `model_text` | Durable model context |
+| `permission_user_text` | Tool-only sandbox-bypass preview |
+| `preview_lines` | `"full"` or a non-negative TUI line limit |
 
-### Tools
+Templates perform one substitution pass. Available variables are `name`, `input`, `input.FIELD`, and—for result templates—`output.stdout`, `output.stderr`, and `output.exit_code`. Empty rendered text is omitted.
 
-Tools are executable components with model-facing JSON schemas. The default tools cover file access, shell commands, web access, and Agent Skills.
+Hook defaults expose stderr to the user and stdout to the model. Tool defaults show the name and input, then return stdout and stderr to both. A manifest overrides only the fields it supplies.
 
-| Component | Role |
+### Durable state
+
+Hooks and tools may write one JSON object to fd 3:
+
+```json
+{"state":[{"name":"example/status","value":{"ready":true}}]}
+```
+
+Names are at most 128 characters and match `^[A-Za-z0-9][A-Za-z0-9_.:/-]*$`. The latest exact name is effective; `null` clears it. Accepted state is appended before the component result. A component starting an untrusted child must close fd 3 so the child cannot forge state.
+
+## Tools
+
+A tool manifest defines its model-facing schema and execution policy:
+
+```json
+{
+  "description": "Read one project file.",
+  "input_schema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["path"],
+    "properties": {"path": {"type": "string", "minLength": 1}}
+  },
+  "sandbox": true,
+  "allow_sandbox_bypass": true,
+  "environment": ["TOOL_SETTING"],
+  "render": {"initial_user_text": "${name} ${input.path}"}
+}
+```
+
+| Field | Requirement |
 | --- | --- |
-| `read_file` | Read project text with line numbers |
-| `edit_file` | Make targeted replacements in existing text files |
-| `write_file` | Create text files |
-| `skill` | Load an advertised Agent Skill |
-| `search_web` | Search the web |
-| `fetch_url` | Fetch a web page as Markdown |
-| `shell` | Run a zsh command in the session working directory |
+| `description` | Required nonempty model-facing description |
+| `input_schema` | Required JSON Schema for an object |
+| `sandbox` | Required boolean |
+| `allow_sandbox_bypass` | Optional, default `false`; valid only when sandboxed |
+| `environment` | Optional unique variable names |
+| `render` | Optional template overrides |
 
-Tools start with a restricted environment and may run inside the configured [`fence`](https://github.com/fencesandbox/fence) sandbox. Interactive clients can ask the user to approve a supported one-time bypass. Hook scripts and backend adapters remain trusted and unsandboxed. See [Tools](TOOLS.md) for the component contract and [Sandbox grants](CONFIG.md#sandbox-grants) for persistent access.
+Shellfish calls `run` with no arguments and one input object on stdin. Sandbox-bypass control fields are removed first. The tool must validate input before using it. A nonzero exit is a normal tool result and does not fail the turn.
 
-### Session context
+The result repeats the exact call ID, name, and input and records an exit code. State is committed after normal execution and before the result, including for nonzero exits; interrupted execution commits no requested state.
 
-At session creation, startup hooks add project, Git, instruction, and available-skill context. This context is recorded once rather than rediscovered before every turn.
+If the model calls an undeclared tool, Shellfish records a rejected result with default rendering. Calls are processed in response order, and each complete result is persisted before the next call.
 
-| Component | Role |
+### Sandbox and permission
+
+A tool is sandboxed only when both its manifest and harness enable sandboxing. Shellfish runs it under [`fence`](https://github.com/fencesandbox/fence) with its `fence.jsonc`; harness path grants extend that policy, but deny rules win. Otherwise it runs with user permissions.
+
+For a sandboxed tool with `allow_sandbox_bypass: true`, Shellfish adds `request_sandbox_bypass` and `sandbox_bypass_reason` to the schema shown to the model. A requested bypass proceeds unsandboxed only when a `permission_request` hook or interactive client approves it. Otherwise the tool is not invoked and receives a denied result.
+
+A detected sandbox denial on a nonzero tool exit adds an advisory `<sandbox_notice>` to model context; it does not assert that the denial caused the failure.
+
+## Hooks
+
+Hooks are ordered shell scripts bound to lifecycle points. They add context and workflow policy without changing the core agent loop. Bundled and custom hooks use the same process contract.
+
+```text
+create session
+    session_start
+begin turn
+    user_prompt_submit
+append user
+repeat:
+    append assistant
+    if tool calls:
+        for each call:
+            pre_tool_use
+            permission_request when execution needs approval
+            execute or deny tool
+            post_tool_use
+        continue
+    stop
+    if completion allowed: finish turn
+```
+
+A hook manifest may select environment variables and rendering. Only `user_prompt_submit` supports selectors and help metadata:
+
+```json
+{
+  "environment": ["HOOK_MODE"],
+  "match": {"pattern": "^/review\\z"},
+  "help": {"usage": "/review", "description": "Review changes"},
+  "render": {"initial_user_text": "Checking the working tree"}
+}
+```
+
+`match` is either a jq-compatible regular expression or `{"command":"check"}` naming an executable beside `run`. A match command receives the normal hook context, must write nothing, and selects on exit 0, skips on 1, and fails otherwise. Selection preserves configured order.
+
+stdout, stderr, and fd 3 are bounded together. fd 3 must contain exactly one object when used. State and rendered hook output become durable in that order before the next component runs. A silent exit 0 creates no result record.
+
+| Exit | Default action | Remaining chain |
+| ---: | --- | --- |
+| `0` | Perform | Run |
+| `10` | Skip | Run |
+| `11` | Skip | Halt |
+| Other | Fail the operation | Halt |
+
+Skipping is sticky: a later exit 0 does not restore the lifecycle's default action.
+
+### Lifecycle reference
+
+| Hook | argv | stdin | Exit 10 | Exit 11 / control |
+| --- | --- | --- | --- | --- |
+| `session_start` | — | Empty | Unsupported | Unsupported |
+| `user_prompt_submit` | — | Exact prompt | Block; continue chain | Block; halt; optional handoff or session update |
+| `permission_request` | `NAME ID` | Tool request | Deny; continue chain | Halt; required `allow` or `deny` decision |
+| `pre_tool_use` | `NAME ID` | Tool request | Deny; continue chain | Deny; halt |
+| `post_tool_use` | `NAME ID` | Tool response | Unsupported | Unsupported |
+| `stop` | `ATTEMPT` | Final assistant text | Add feedback; continue inference and chain | Add feedback; continue inference; halt chain |
+
+Exit 0 performs the named default: finish creation, submit the prompt, defer permission to a client, execute the tool, accept the tool result, or finish the turn. Without a capable client, deferred permission is denied.
+
+Tool hooks receive canonical envelopes:
+
+```json
+{"turn_id":1,"tool_name":"shell","tool_use_id":"call_1","tool_input":{"command":"true"}}
+```
+
+`post_tool_use` receives the same fields plus:
+
+```json
+{"tool_response":{"stdout":"","stderr":"","exit_code":0}}
+```
+
+Every hook accepts `state` on fd 3. Hook-specific exit-11 controls are:
+
+```json
+{"action":"handoff","argv":["command","arg"]}
+{"action":"allow"}
+{"action":"deny","reason":"optional feedback"}
+```
+
+A handoff asks a capable client to run the complete `argv` after a clean turn exit. A session update has the shape `{"action":"session_update","runtime":RUNTIME}`, where `RUNTIME` is one complete valid runtime; Shellfish atomically replaces the header. `pre_tool_use` and `post_tool_use` cannot rewrite tool input or results. `permission_request` may only allow or deny a supported sandbox bypass.
+
+## Backend adapters
+
+A backend adapter translates between Shellfish's provider-neutral protocol and one inference provider. It owns request projection, transport, stream parsing, and provider-specific validation. The core assembles, persists, and recovers complete assistant responses.
+
+An adapter manifest declares its default endpoint and environment:
+
+```json
+{"endpoint":"https://api.example.com/v1/messages","environment":["EXAMPLE_API_KEY"]}
+```
+
+Shellfish starts `run` once per provider request with one object on stdin:
+
+```json
+{
+  "format_version": 1,
+  "system": "Materialized system text",
+  "messages": [],
+  "tools": [],
+  "options": {"request": {"model": "provider-model"}},
+  "transport": {
+    "endpoint": "https://api.example.com/v1/messages",
+    "insecure_tls": false,
+    "http_timeout": 120,
+    "http_stall": 30
+  }
+}
+```
+
+`messages` contains provider-neutral conversation records in transcript order. `tools` contains model-facing tool definitions. `options.request` contains common and provider-specific settings; unrelated fields pass through. `transport` is authoritative for the exchange.
+
+Bundled adapters normalize token limits in this order: `max_output_tokens`, `max_completion_tokens`, `max_tokens`. `reasoning_effort` overrides `reasoning.effort`, and `response_schema` replaces the provider-native structured-output setting. The Codex adapter omits output limits because its endpoint rejects them.
+
+### Response stream
+
+The adapter writes one normalized JSON event per line:
+
+| Event | Required payload |
 | --- | --- |
-| `project_environment` | Host, project tree, available commands, and skills |
-| `git_environment` | Repository and branch context |
-| `project_instructions` | Project `AGENTS.md`, falling back to `CLAUDE.md` |
+| `_assistant_message_delta` | `index`, append-only `text` |
+| `_assistant_reasoning_delta` | `index`, append-only `text` |
+| `_assistant_reasoning_opaque` | `index`, complete `opaque` object |
+| `_assistant_tool_call_delta` | `index` and at least one of `id`, `name`, append-only raw JSON `input` |
+| `_turn_usage` | Non-negative `input_tokens`, `output_tokens`; optional cached/reasoning counts |
+| `_assistant_end` | `stop`: `end`, `tool_calls`, or `length` |
 
-### Interactive commands
+Indexes are non-negative and define final content order. One index cannot change content type. Tool IDs and names cannot change once set; complete tool input must decode to an object, and IDs must be unique within the response. Opaque reasoning preserves provider data needed by later requests and must repeat identically for one index.
 
-Most slash commands are `user_prompt_submit` hooks supplied by the harness. They provide help, session creation and derivation, sandbox updates, shell context, presentation changes, and server handoff. Run `/help` for the current command set.
+Event objects use these exact normalized fields; provider-native correlation needed only during parsing remains adapter-local.
 
-| Component | Role |
-| --- | --- |
-| `help` | Show available commands and editor keys |
-| `verbose` | Toggle full presentation previews |
-| `new` | Start a session with the active runtime |
-| `copy` | Copy a conversation section to the clipboard |
-| `fork` | Derive a session from a transcript prefix |
-| `sandbox` | Inspect or update session sandbox grants |
-| `user_shell` | Run `!` commands and add their output as context |
-| `server` | Hand the session to `shellfish-server` |
-| `resume` | Choose another project session |
-| `compact` | Summarize the conversation into a child session |
-| `git_environment` | Add context when Git identity changes |
+The latest usage event wins; cached tokens cannot exceed input tokens. Exactly one `_assistant_end` must be final: `tool_calls` requires complete calls, `end` forbids calls, and `length` discards calls. The adapter must then exit 0. Stderr is failure diagnostics, never stream data.
 
-Commands that replace the active session request a [handoff](HOOKS.md#user_prompt_submit) for the client to perform. Client lifecycle commands such as `/refresh` and `/quit` are not hooks. A custom harness can omit or replace the bundled commands without changing the agent loop.
+The core validates and assembles the complete response before persisting it or permitting tool execution. A nonzero exit or invalid stream fails the request.
 
-### Permission review
+### Context-window discovery
 
-The bundled `review` component can decide sandbox bypass requests without interactive approval. It uses one inference to classify risk and user authorization, then allows only when authorization is at least as high as risk. Failures deny the request. Classifications and reasons remain in model-hidden state; a denial reason is also shown as tool feedback.
+An optional executable `context_window` receives the same request and selected environment before the first provider request when capacity is absent. It returns:
 
-Review is disabled by default. Enable it with `"permission_request": ["review"]`. It uses the session's frozen inference settings.
+```json
+{"context_window":200000}
+```
 
-### Compaction
-
-Once a session has completed its first turn, `/compact` can summarize it into a child session without changing the source. The summary carries unfinished work and current status within its chronology. The default harness can also compact automatically as the conversation approaches a known context-window limit.
-
-Successful compaction asks the client to open the child. Automatic compaction preserves the interrupted prompt as an editable draft. Harnesses bound provider requests per turn, tool calls per response, and captured component output.
-
-## Build a focused harness
-
-A focused harness exposes only the tools and hooks its role requires. Harnesses do not inherit, and the profile that selects one supplies its system prompt and backend settings.
-
-See [Customize a harness](CONFIG.md#customize-a-harness) for configuration and component lookup, and [Hooks](HOOKS.md) for the lifecycle contract.
+The value must be positive. Failure or any other output means metadata is unavailable and does not fail inference. Discovery must not make a generation request.

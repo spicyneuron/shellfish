@@ -43,7 +43,7 @@
       // Tools available to the model.
       "tools": ["read_file", "edit_file", "write_file", "skill", "search_web", "fetch_url", "shell"],
 
-      // Each hook runs an ordered list of components. See docs/HOOKS.md for
+      // Each hook runs an ordered list of components. See docs/HARNESS.md for
       // payloads, exit statuses, and environment guarantees.
       "session_start": ["project_environment", "git_environment", "project_instructions"],
       "user_prompt_submit": ["help", "verbose", "new", "copy", "fork", "sandbox", "user_shell", "server", "resume", "compact", "git_environment"],

@@ -16,13 +16,48 @@ client ─ user prompt ─▶ │  read session  │
 
 ## The transcript is the state
 
-A session JSONL file is the agent's only durable state. The first row freezes runtime settings. Every record after it belongs to one append-only transcript. A complete assistant response keeps its ordered text, reasoning, and inert tool calls together; later result records settle those calls exactly.
+A session JSONL file is the agent's only durable state. Its first line is a header and every later line is one record:
+
+```text
+{"type":"session","format_version":1,"cwd":"/project","created":"...","runtime":{...}}
+{"type":"system","content":"..."}
+{"type":"user","content":[{"type":"text","text":"Fix the bug"}]}
+{"type":"assistant","stop":"end","content":[{"type":"text","text":"Done."}]}
+```
+
+The header freezes the resolved profile, backend, harness, component manifests, paths, and sandbox grants. Credential values and presentation settings remain external.
+
+| Durable record | Role |
+| --- | --- |
+| `system` | System prompt |
+| `hook_result` | Lifecycle hook output |
+| `user` | User message |
+| `assistant` | Complete assistant response with text, reasoning, and tool calls |
+| `tool_result` | The exact call identity and input plus its settled result |
+| `state` | Model-invisible named state; the latest exact name wins and `null` clears it |
+| `error` | Durable user-facing failure or cancellation, omitted from provider requests |
+
+Provider deltas, hook activity, permission requests, usage previews, and presentation state are transient. Clients may display them but never write them to the transcript.
 
 One session reader defines record validity and ordering, then derives pending work and provider messages from that transcript. Recovery and request construction do not maintain competing session models.
 
 ## A turn is the unit of execution
 
 One `shellfish run` process owns the complete transition from user message to final response. There is no resident agent process.
+
+```text
+open and recover session
+  -> run submission hooks
+  -> append user
+  -> request and append assistant
+  -> execute and append tool results while requested
+  -> run stop hooks
+  -> clean up
+```
+
+The process reads the transcript again at each consuming boundary instead of retaining a second session representation. It appends each canonical record before emitting it to a client. A backend's partial tool-call fragments remain inert until the complete assistant response has been assembled, validated, and persisted.
+
+Cancellation preserves any valid partial text or reasoning, settles calls whose outcomes are known, marks active or later calls interrupted or cancelled, and appends an error. A write failure stops further mutation.
 
 ## The harness is just shell scripts
 
@@ -34,6 +69,17 @@ The core guarantees ordering, validation, persistence, recovery, and cleanup. Ev
 
 Hooks and backends are trusted and run with your permissions; tools can be sandboxed. Each can provide a JSON manifest to configure environment access and other settings.
 
+| Owner | Responsibility |
+| --- | --- |
+| Core | Canonical records, event order, session mutation, recovery, permissions, and cleanup |
+| Backend adapter | Provider request translation, transport, stream parsing, and provider-specific validation |
+| Hook | Context or policy before and after core operations |
+| Tool | One model-requested action and optional durable state request |
+
+Hooks and tools communicate through JSON, stdout, stderr, and a small control channel; backend adapters emit normalized JSON events. Components do not receive a mutable session object. See [`HARNESS.md`](HARNESS.md) for their contracts.
+
 ## Clients invoke turns
 
 Clients submit prompts and render what they receive. They own interaction and presentation, but rely on `shellfish run` for the agent loop and state. A client replays the durable transcript for history and reads live events from the turn it invoked; both use one presentation vocabulary. Clients never append to a session, recover one, or reinterpret its runtime.
+
+Types without a leading underscore are durable records already appended by the turn owner. Types beginning with `_` are transient. If a live outcome becomes uncertain, the client discards its transient view and replays the file instead of guessing.

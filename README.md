@@ -11,7 +11,7 @@ A tiny coding agent written in a few thousand lines of `zsh`, `awk`, `curl`, and
 
 Absurdly extensible (shell scripts!) with a familiar Claude Code and Codex TUI (distillation attack!). No bloat, telemetry, or sprawling supply chain surface area.
 
-Under-the-hood, an AI agent is just a state machine, an append-only log, an HTTP client, and some tools. It should not need 1000+ npm dependencies, half a million lines of code, or, God-forbid, an Electron app.
+Under the hood, an AI agent is just a state machine, an append-only log, an HTTP client, and some tools. It should not need 1000+ npm dependencies, half a million lines of code, or, God forbid, an Electron app.
 
 This entire codebase fits comfortably within the context window of any modern LLM. It's small enough to run anywhere and flexible enough to adapt to any workflow.
 
@@ -27,15 +27,10 @@ This entire codebase fits comfortably within the context window of any modern LL
 - **Extensible agent loop.** Hook scripts run in a pipeline, gating actions, modifying state, and even launching other services.
 - **Audit in one sitting.** Agent behavior is inspectable Markdown, shell, and JSON; full session state is just JSONL.
 - **Harnesses, plural.** Configure multiple purpose-built agents instead of forcing every workflow into one configuration.
-- **Take a session on the go.** The optional server exposes your agent through a lightweight browser client. Because what could go wrong?
 
-The bundled harness is a minimal starting point. The [default harness guide](docs/HARNESS.md) explains how its pieces fit together.
+## Installation
 
-## Get started
-
-Shellfish requires `zsh` 5+, `awk`, `curl`, and [`jq`](https://github.com/jqlang/jq). On Linux it also requires `setsid`; on macOS it uses the included `script` utility for process-group creation. The default harness needs [`fence`](https://github.com/fencesandbox/fence) for sandboxed tools.
-
-Install via git:
+Shellfish requires `zsh` 5+, `awk`, `curl`, and [`jq`](https://github.com/jqlang/jq). On Linux it also requires `setsid`. On macOS it uses the system `script` utility for process-group creation. The default harness needs [`fence`](https://github.com/fencesandbox/fence) for sandboxed tools.
 
 ```sh
 # With `~/.local/bin` on `PATH`
@@ -44,17 +39,20 @@ git clone https://github.com/spicyneuron/shellfish.git "$HOME/.local/share/shell
 ln -s "$HOME/.local/share/shellfish/bin/shellfish" "$HOME/.local/bin/shellfish"
 ```
 
-Provide credentials through the environment or `${XDG_CONFIG_HOME:-$HOME/.config}/shellfish/.env`, then start an interactive chat:
+## Getting started
 
 ```sh
-export OPENROUTER_API_KEY=...
-shellfish --backend openrouter --model MODEL
-```
+export OPENROUTER_API_KEY=...     # Or use the config directory's .env file
 
-Or use your existing Codex subscription login:
+shellfish                         # Start a new session
+shellfish --continue              # Reopen the most recent session
+shellfish --resume                # Pick a session from this directory
+shellfish --session PATH          # Open one session directly
 
-```sh
-shellfish --backend codex --model MODEL
+shellfish --backend BACKEND --model MODEL  # Use custom settings
+shellfish --profile PROFILE       # Use a preconfigured profile
+
+shellfish run "PROMPT"            # Run one non-interactive turn
 ```
 
 Built-in backends and credentials:
@@ -69,34 +67,36 @@ Built-in backends and credentials:
 
 The `openai` backend also supports compatible services by setting `endpoint` in its backend config.
 
+Run `shellfish --help` for creation and sandbox options, or `/help` inside chat for commands supplied by the active harness.
+
+## Configuration
+
+Shellfish merges `$XDG_CONFIG_HOME/shellfish/shellfish.jsonc` (typically `~/.config/shellfish/shellfish.jsonc`) over [its defaults](share/default/shellfish.jsonc). Objects merge recursively and arrays replace their defaults. Exported credentials override values in `.env` beside the configuration file.
+
+```jsonc
+{
+  "$schema": "https://raw.githubusercontent.com/spicyneuron/shellfish/refs/heads/main/share/shellfish.schema.json",
+  "default_profile": "work",
+  "profiles": {
+    "work": {
+      "extend": "default",
+      "backend": "openrouter",
+      "request": {"model": "MODEL"}
+    }
+  }
+}
+```
+
+Backends and harnesses are reusable named building blocks. A backend selects an adapter and endpoint, and declares the environment variables it needs. A harness combines tools, lifecycle hooks, sandbox policy, and turn limits.
+
+Profiles are a reusable package of backend, harness, system-prompt, and provider request settings. Profiles may extend one another, and command-line options can override the selected profile when creating a session. Shellfish resolves that composition once and freezes it in the session header.
+
 ## Documentation
 
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md): Design intent and opinionated boundaries.
-- [`docs/CONFIG.md`](docs/CONFIG.md): Configure profiles, backends, harnesses, components, and sandbox grants.
-- [`docs/SESSIONS.md`](docs/SESSIONS.md): Understand session structure, creation, frozen runtime, derivation, and recovery.
-- [`docs/HARNESS.md`](docs/HARNESS.md): Understand the harness role and the bundled defaults.
-- [`docs/TOOLS.md`](docs/TOOLS.md): Write custom tools and configure their sandbox contract.
-- [`docs/HOOKS.md`](docs/HOOKS.md): Write custom lifecycle hooks.
-- [`docs/BACKENDS.md`](docs/BACKENDS.md): Write provider backend adapters.
-- [`docs/CHAT.md`](docs/CHAT.md): Use interactive chat, slash commands, and keybindings.
-- [`docs/RUN.md`](docs/RUN.md): Integrate with the single-turn JSONL interface.
-- [`docs/SERVER.md`](docs/SERVER.md): Serve a session for remote access.
+- [`docs/CONFIG.md`](docs/CONFIG.md): Configure profiles, components, presentation, and the bundled coding harness.
+- [`docs/HARNESS.md`](docs/HARNESS.md): Write custom hooks, tools, and backend adapters.
 - [`docs/CURSED.md`](docs/CURSED.md): Hard-won lessons and ~~hacks~~ clever workarounds.
-
-## Server (experimental)
-
-`shellfish-server` accepts the same flags as `shellfish` and serves a web client at `127.0.0.1:9158`.
-
-Configure a VPN like Tailscale or Wireguard, and then control `shellfish` from your phone! For now, only one session at a time.
-
-```sh
-# Install
-go install github.com/spicyneuron/shellfish/shellfish-server@latest
-
-# Serve a project with default profile
-cd my/project/
-shellfish-server
-```
 
 ## Develop
 
