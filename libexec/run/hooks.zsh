@@ -39,15 +39,12 @@ sf_run_hook_activity() {
 # Shared values land in SF_HOOK_PLAN; the matching hooks follow in reply as
 # groups of command, environment, match command, and render template.
 sf_run_hook_project() {
-  local session=$1 runtime=$2 lifecycle=$3 content=$4
-  sf_jq_fields 0 -Rs --argjson runtime "$runtime" --arg lifecycle "$lifecycle" \
+  local runtime=$1 lifecycle=$2 content=$3
+  sf_jq_fields 0 -rn --argjson runtime "$runtime" --arg lifecycle "$lifecycle" \
     --arg input "$content" '
       include "lib/runtime";
       def field: ., "\u0000";
       def entry($key; $value): ($key | field), ($value | field);
-      entry("id";
-        [split("\n")[1:][] | fromjson? | select(.type == "hook_result") | .id | tonumber] |
-        ((max // 0) + 1) | tostring),
       entry("max_capture"; $runtime.harness.max_capture_bytes | tostring),
       entry("env_file"; $runtime.backend.env_file),
       entry("model"; $runtime.profile.request.model),
@@ -60,9 +57,9 @@ sf_run_hook_project() {
         (.match.command? // "" | field),
         (.render | tojson | field)),
       ("ok" | field)
-    ' "$session" || return 1
-  SF_HOOK_PLAN=( "${(@)reply[1,10]}" )
-  reply=( "${(@)reply[11,-1]}" )
+    ' || return 1
+  SF_HOOK_PLAN=( "${(@)reply[1,8]}" )
+  reply=( "${(@)reply[9,-1]}" )
 }
 
 sf_run_hook_invoke() {
@@ -192,6 +189,20 @@ sf_run_hooks() {
   integer offset id exit_code invoke_status match_status
 
   SF_RUN_HOOK_ERROR=''
+  if (( SF_RUN[hooks_known] )) &&
+      [[ " $SF_RUN[hooks] " != *" $lifecycle "* ]]; then
+    reply=( proceed '' '' )
+    return 0
+  fi
+  sf_run_hook_project "$SF_RUN[runtime]" "$lifecycle" "$content" || {
+    SF_RUN_HOOK_ERROR="cannot inspect $lifecycle hooks"
+    return 1
+  }
+  plan=( "${reply[@]}" )
+  if (( ! ${#plan} )); then
+    reply=( proceed '' '' )
+    return 0
+  fi
   sf_scratch_file hooks input || { SF_RUN_HOOK_ERROR="cannot prepare $lifecycle hook input"; return 1; }
   input_file=$REPLY
   print -rn -- "$content" >"$input_file" || {
@@ -199,13 +210,7 @@ sf_run_hooks() {
     SF_RUN_HOOK_ERROR="cannot prepare $lifecycle hook input"
     return 1
   }
-  sf_run_hook_project "$session" "$SF_RUN[runtime]" "$lifecycle" "$content" || {
-    rm -f -- "$input_file"
-    SF_RUN_HOOK_ERROR="cannot inspect $lifecycle hooks"
-    return 1
-  }
-  plan=( "${reply[@]}" )
-  id=$SF_HOOK_PLAN[id]
+  id=$SF_RUN[hook_id]
   for (( offset = 1; offset <= ${#plan}; offset += 4 )); do
     command=$plan[offset]
     selected=$plan[offset+1]
@@ -246,7 +251,8 @@ sf_run_hooks() {
     record=$SF_HOOK_RESULT[record]
     if [[ -n $record ]]; then
       sf_run_append "$session" "$record" || { error=$REPLY; break; }
-      (( id += 1 ))
+      (( SF_RUN[hook_id] += 1 ))
+      id=$SF_RUN[hook_id]
     elif [[ -n $clear ]]; then
       sf_run_emit "$clear" || { error='cannot emit hook clear'; break; }
     fi

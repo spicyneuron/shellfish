@@ -9,7 +9,7 @@ source "$SF_ROOT/libexec/run/tools.zsh"
 
 typeset -gA SF_RUN=(
   active_call '' answer '' jsonl 0 known_outcome '' permission_count 0 signal_status 0
-  write_failed 0
+  hook_id 1 hooks '' hooks_known 0 write_failed 0
 )
 
 sf_run_emit() {
@@ -74,7 +74,7 @@ sf_run_open() {
     REPLY="invalid session path: $session"
     return 1
   }
-  sf_jq_fields 4 -Rs '
+  sf_jq_fields 6 -Rs '
     include "lib/runtime";
     include "lib/session";
     def field: ., "\u0000";
@@ -89,6 +89,11 @@ sf_run_open() {
     ($records[0].cwd | field),
     (([$records[1:][] | select(.type == "user")] | length + 1) | tostring | field),
     (($run.next != "user") | tostring | field),
+    ([$records[1:][] | select(.type == "hook_result") | .id | tonumber] |
+      ((max // 0) + 1) | tostring | field),
+    ([hook_names[] as $hook |
+      select(($records[0].runtime.harness[$hook] // []) | length > 0) | $hook] |
+      join(" ") | field),
     ("ok" | field)
   ' "$session" || {
     REPLY="cannot read session: $session"
@@ -98,6 +103,9 @@ sf_run_open() {
   SF_RUN[runtime]=$fields[1]
   SF_RUN[cwd]=$fields[2]
   SF_RUN[turn_id]=$fields[3]
+  SF_RUN[hook_id]=$fields[5]
+  SF_RUN[hooks]=$fields[6]
+  SF_RUN[hooks_known]=1
   [[ $fields[4] == true ]] || return 0
   sf_run_settle "$session" 'tool call outcome unknown' || return 1
   sf_run_error "$session" 'Turn interrupted.'
@@ -212,6 +220,7 @@ sf_run_turn() {
     SF_RUN[known_outcome]=''
     SF_RUN[permission_count]=0
     SF_RUN[signal_status]=0
+    SF_RUN[hooks_known]=0
     SF_RUN[write_failed]=0
     sf_run_open "$session" || { print -r -u2 -- "$REPLY"; return 1; }
     begun=1

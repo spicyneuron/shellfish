@@ -66,24 +66,25 @@ SF_TEST_RUNTIME=$(jq -c --arg first "$prompt_hook" --arg second "$second_hook" '
 # Status 0 persists state and attributed output before the accepted user record.
 typeset session="$tmp/accepted.jsonl" stream="$tmp/accepted.stream"
 sf_test_session "$session"
+print -r -- '{"type":"hook_result","lifecycle":"session_start","id":"7","name":"prior","input":"","exit_code":0}' \
+  >>"$session"
 sf_test_run accept "$session" >"$stream" || fail 'accepted prompt hook failed'
 assert_equal accept "$(<$prompt_input)" 'prompt hook did not receive exact prompt text'
 jq -eRn --arg executable "$prompt_hook" --arg second "$second_hook" '
   [inputs | fromjson] as $events |
   [$events[] | select(.type | IN("state","hook_result","user")) | .type] ==
     ["state","hook_result","user"] and
-  ($events | map(select(.type == "hook_result"))[0] |
-    del(.id)) == {
-      type:"hook_result",lifecycle:"user_prompt_submit",name:"prompt-hook",
+  ($events | map(select(.type == "hook_result"))[0]) == {
+      type:"hook_result",lifecycle:"user_prompt_submit",id:"8",name:"prompt-hook",
       executable:$executable,input:"accept",exit_code:0,
       user_text:"user display",model_text:"model context"
     } and
   ($events | map(select(.type == "state"))[0]) ==
     {type:"state",name:"prompt/state",value:1} and
   ($events | map(select(.type == "_hook_activity" and .name == "second-hook"))) == [
-    {type:"_hook_activity",hook:"user_prompt_submit",id:"2",name:"second-hook",
+    {type:"_hook_activity",hook:"user_prompt_submit",id:"9",name:"second-hook",
      executable:$second,input:"accept",user_text:"second · working"},
-    {type:"_hook_activity",hook:"user_prompt_submit",id:"2",name:"second-hook",
+    {type:"_hook_activity",hook:"user_prompt_submit",id:"9",name:"second-hook",
      executable:$second,input:"accept"}
   ]
 ' <"$stream" >/dev/null ||

@@ -120,6 +120,7 @@ sf_run_create() {
   SF_RUN[runtime]=$runtime
   SF_RUN[cwd]=$cwd
   SF_RUN[turn_id]=1
+  SF_RUN[hook_id]=1
   if (( SF_RUN[jsonl] )); then
     sf_run_emit "$(jq -cn --arg path "$session" '{type:"_session_load",path:$path}')" || return 1
     for record in "${records[@]}"; do
