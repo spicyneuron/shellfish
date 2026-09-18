@@ -4,8 +4,7 @@ set -u
 
 for name in AGENTS.md CLAUDE.md; do
   [ -f "$name" ] && [ -r "$name" ] || continue
-  printf '%s: Follow the instructions below for this directory tree. ' "$name"
-  printf 'Do not reread this file. A nested %s takes precedence.\n\n' "$name"
+  printf %s "$name" >&2
   cat "$name" || exit 1
   exit 0
 done
