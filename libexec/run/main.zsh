@@ -38,7 +38,7 @@ sf_run_prompt() {
 sf_run_main() {
   local requested_session='' input='' prompt='' arity=''
   local -a positional=() create_args=()
-  integer create_only=0 out_explicit=0 jsonl=0 override=0 take=0
+  integer create_only=0 jsonl=0 override=0 take=0
 
   while (( $# )); do
     case $1 in
@@ -51,7 +51,7 @@ sf_run_main() {
       --session-out)
         # Creation owns the value diagnostics.
         (( $# >= 2 )) || { sf_die '--session-out requires a value'; return 2; }
-        out_explicit=1
+        override=1
         create_args+=( "${@:1:2}" )
         shift 2
         ;;
@@ -90,10 +90,6 @@ sf_run_main() {
     esac
   done
 
-  [[ -z $requested_session ]] || (( ! out_explicit )) || {
-    sf_die '--session names an existing session and cannot be combined with --session-out'
-    return 2
-  }
   if (( create_only )); then
     [[ -z $requested_session ]] || {
       sf_die '--session-create cannot be combined with --session'
@@ -109,6 +105,10 @@ sf_run_main() {
       return 2
     }
   fi
+  [[ -z $requested_session ]] || (( ! override )) || {
+    sf_die 'options that configure a new session cannot be used with an existing one'
+    return 2
+  }
   (( $+commands[jq] )) || {
     sf_die 'shellfish requires jq'
     return 2
@@ -162,10 +162,6 @@ sf_run_main() {
     sf_session_select_path "$requested_session" || { sf_die "$SF_SESSION_ERROR"; return 1; }
     session=$REPLY
     [[ -s $session ]] || { sf_die "no session at $session"; return 1; }
-    (( ! override )) || {
-      sf_die 'options that configure a new session cannot be used with an existing one'
-      return 2
-    }
   else
     source "$SF_ROOT/libexec/run/create.zsh"
     local create_status=0

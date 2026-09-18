@@ -33,7 +33,7 @@ sf_read_prompt() {
 
 sf_tui_main() {
   local requested_session=''
-  local input='' draft='' presentation runtime session='' session_mode=startup
+  local input='' draft='' presentation runtime runtime_session='' session='' session_mode=startup
   local presentation_config='' source_session=''
   local arity=''
   local -a positional=() runtime_args=() resolve_args=()
@@ -136,38 +136,28 @@ sf_tui_main() {
       sf_die 'options that configure a new session cannot be used with an existing one'
       return 2
     }
-    source "$SF_ROOT/lib/session.zsh"
-    sf_session_select_path "$requested_session" || {
-      sf_die "$SF_SESSION_ERROR"
-      return 1
-    }
-    session=$REPLY
+    runtime_session=$requested_session
     session_mode=resume
-  fi
-  source "$SF_ROOT/lib/runtime.zsh"
-  SF_RUNTIME_VERBOSE=$verbose_requested
-  if [[ $session_mode == resume ]]; then
-    sf_session_read_runtime "$session" || {
-      sf_die "$SF_SESSION_ERROR"
-      return 1
-    }
-    runtime=$REPLY
-    sf_runtime_restore_presentation "$presentation_config" || {
-      resolve_status=$?
-      sf_die "$SF_RUNTIME_ERROR"
-      return $resolve_status
-    }
   elif [[ -n $source_session ]]; then
     (( ! runtime_override )) || {
       sf_die 'runtime overrides cannot be used with --session-from'
       return 2
     }
+    runtime_session=$source_session
+  fi
+  if [[ -n $runtime_session ]]; then
     source "$SF_ROOT/lib/session.zsh"
-    sf_session_select_path "$source_session" || {
+    sf_session_select_path "$runtime_session" || {
       sf_die "$SF_SESSION_ERROR"
       return 1
     }
-    sf_session_read_runtime "$REPLY" || {
+    runtime_session=$REPLY
+    [[ $session_mode != resume ]] || session=$runtime_session
+  fi
+  source "$SF_ROOT/lib/runtime.zsh"
+  SF_RUNTIME_VERBOSE=$verbose_requested
+  if [[ -n $runtime_session ]]; then
+    sf_session_read_runtime "$runtime_session" || {
       sf_die "$SF_SESSION_ERROR"
       return 1
     }
