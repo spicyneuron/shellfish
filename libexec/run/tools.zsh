@@ -7,12 +7,17 @@ setopt no_aliases no_bg_nice no_multios pipe_fail
 
 typeset -g SF_RUN_TOOL_ERROR=''
 
+# Everything execution and settlement need for one call, keyed by name.
+typeset -gA SF_TOOL_PLAN=()
+
 sf_run_tool_plan() {
-  local runtime=$1 id=$2 name=$3 input=$4
-  sf_jq_fields 16 -rn --argjson runtime "$runtime" --arg id "$id" --arg name "$name" \
-    --argjson input "$input" --argjson turn "$SF_RUN[turn_id]" '
+  local runtime=$1 call=$2
+  sf_jq_fields 40 -rn --argjson runtime "$runtime" --argjson call "$call" \
+    --argjson turn "$SF_RUN[turn_id]" '
       include "lib/runtime";
       def field: ., "\u0000";
+      def entry($key; $value): ($key | field), ($value | field);
+      $call.id as $id | $call.name as $name | $call.input as $input |
       [$runtime.harness.tools[] | select(.name == $name)][0] as $tool |
       ($tool.manifest.render // tool_render_defaults) as $render |
       (render_component($render;$name;$input;{stdout:"",stderr:"",exit_code:0})) as $rendered |
@@ -26,22 +31,33 @@ sf_run_tool_plan() {
            $input.sandbox_bypass_reason == "" then
          {decision:"failure",reason:"sandbox bypass reason is required"}
        else {decision:"request",reason:$input.sandbox_bypass_reason} end) as $permission |
-      ({turn_id:$turn,tool_name:$name,tool_use_id:$id,tool_input:$input} | tojson | field),
-      ({type:"_tool_activity",id:$id,name:$name,input:$input} +
+      entry("id"; $id), entry("name"; $name), entry("input"; $input | tojson),
+      entry("request";
+        {turn_id:$turn,tool_name:$name,tool_use_id:$id,tool_input:$input} | tojson),
+      entry("activity";
+        {type:"_tool_activity",id:$id,name:$name,input:$input} +
         (if $rendered.initial_user_text == null then {}
-         else {user_text:$rendered.initial_user_text} end) | tojson | field),
-      ($permission.decision | field), ($permission.reason // "" | field),
-      ($rendered.permission_user_text // "" | field),
-      ($tool.command // "" | field), (($tool.manifest.environment // []) | join(" ") | field),
-      ($tool.settings // "" | field), ($runtime.harness.max_capture_bytes | tostring | field),
-      ($runtime.harness.fence | field), ($runtime.backend.env_file | field),
-      ($input | del(.request_sandbox_bypass,.sandbox_bypass_reason) | tojson | field),
-      ($runtime.harness.sandbox and ($tool.manifest.sandbox // false) and
-        (($input.request_sandbox_bypass // false) | not) | tostring | field),
-      ($runtime.harness.sandbox_read_paths | join("\n") | field),
-      ($runtime.harness.sandbox_write_paths | join("\n") | field),
-      ($render | tojson | field), ("ok" | field)
+         else {user_text:$rendered.initial_user_text} end) | tojson),
+      entry("decision"; $permission.decision),
+      entry("permission_reason"; $permission.reason // ""),
+      entry("permission_preview"; $rendered.permission_user_text // ""),
+      entry("executable"; $tool.command // ""),
+      entry("environment"; ($tool.manifest.environment // []) | join(" ")),
+      entry("environment_names"; declared_environment($runtime)),
+      entry("settings"; $tool.settings // ""),
+      entry("max_capture"; $runtime.harness.max_capture_bytes | tostring),
+      entry("fence"; $runtime.harness.fence),
+      entry("env_file"; $runtime.backend.env_file),
+      entry("execution_input";
+        $input | del(.request_sandbox_bypass,.sandbox_bypass_reason) | tojson),
+      entry("sandbox"; $runtime.harness.sandbox and ($tool.manifest.sandbox // false) and
+        (($input.request_sandbox_bypass // false) | not) | tostring),
+      entry("read_paths"; $runtime.harness.sandbox_read_paths | join("\n")),
+      entry("write_paths"; $runtime.harness.sandbox_write_paths | join("\n")),
+      entry("render"; $render | tojson),
+      ("ok" | field)
     ' || { SF_RUN_TOOL_ERROR='cannot inspect tool'; return 1; }
+  SF_TOOL_PLAN=( "${reply[@]}" )
 }
 
 sf_run_tool_refused() {
@@ -68,16 +84,17 @@ sf_run_tool_bound() {
 
 sf_run_tool_execute() {
   setopt local_options no_err_exit
-  local session=$1 command=$2 selected=$3 settings=$4 fence=$6
-  local env_file=$7 execution_input=$8 sandbox=$9 read_paths=${10} write_paths=${11}
-  local tool_directory=${12} cwd=$SF_RUN[cwd] capture stdin bounded_stdout bounded_stderr
-  local config_dir='' expose
+  local session=$1 tool_directory=$2 command=$SF_TOOL_PLAN[executable]
+  local settings=$SF_TOOL_PLAN[settings] fence=$SF_TOOL_PLAN[fence]
+  local env_file=$SF_TOOL_PLAN[env_file] sandbox=$SF_TOOL_PLAN[sandbox]
+  local cwd=$SF_RUN[cwd] capture stdin bounded_stdout bounded_stderr
+  local config_dir='' expose name
   local -a arguments environment names process_command process sandbox_arguments
-  integer max_capture=$5 control_bytes budget stderr_bytes denied=0
+  integer max_capture=$SF_TOOL_PLAN[max_capture] control_bytes budget stderr_bytes denied=0
 
   SF_RUN_TOOL_ERROR=''
   [[ -z $env_file ]] || config_dir=${env_file:h}
-  sf_environment_load "$env_file" "$selected" || {
+  sf_environment_load "$env_file" "$SF_TOOL_PLAN[environment]" || {
     SF_RUN_TOOL_ERROR=$SF_ENVIRONMENT_ERROR
     return 1
   }
@@ -86,7 +103,7 @@ sf_run_tool_execute() {
   capture=$REPLY
   {
   stdin="$tool_directory/input"
-  print -r -- "$execution_input" >"$stdin" || {
+  print -r -- "$SF_TOOL_PLAN[execution_input]" >"$stdin" || {
     SF_RUN_TOOL_ERROR='cannot prepare tool input'
     return 1
   }
@@ -100,19 +117,19 @@ sf_run_tool_execute() {
   [[ -z ${LC_CTYPE-} ]] || environment+=( "LC_CTYPE=$LC_CTYPE" )
   [[ -z ${XDG_CONFIG_HOME-} ]] || environment+=( "XDG_CONFIG_HOME=$XDG_CONFIG_HOME" )
   environment+=( "${SF_ENVIRONMENT_VALUES[@]}" )
-  names=( ${=SF_RUN[env_names]} )
+  names=( ${=SF_TOOL_PLAN[environment_names]} )
   arguments=()
-  for selected in $names; do arguments+=( -u "$selected" ); done
+  for name in $names; do arguments+=( -u "$name" ); done
   arguments+=( "${environment[@]}" "$command" )
   if [[ $sandbox == true ]]; then
     arguments=( -i "${arguments[@]:$(( ${#names} * 2 ))}" )
     sandbox_arguments=( --monitor --fence-log-file "$capture/sandbox.log"
       --settings "$settings" --expose-host-path "$command" --expose-host-path-rw "$tool_directory"
       --expose-host-path-rw "$capture/control" )
-    for expose in ${(f)read_paths}; do
+    for expose in ${(f)SF_TOOL_PLAN[read_paths]}; do
       sandbox_arguments+=( --expose-host-path "$expose" )
     done
-    for expose in ${(f)write_paths}; do
+    for expose in ${(f)SF_TOOL_PLAN[write_paths]}; do
       sandbox_arguments+=( --expose-host-path-rw "$expose" )
     done
     process_command=( "$fence" "${sandbox_arguments[@]}" -- /usr/bin/env "${arguments[@]}" )
@@ -164,11 +181,12 @@ sf_run_tool_execute() {
 }
 
 sf_run_tool_complete() {
-  local tool_request=$1 id=$2 name=$3 input=$4 executable=$5 render=$6 outcome=$7
+  local outcome=$1 name=$SF_TOOL_PLAN[name]
   local -a fields
-  sf_jq_fields 0 -rn --argjson request "$tool_request" --arg id "$id" --arg name "$name" \
-    --argjson input "$input" --arg executable "$executable" --argjson render "$render" \
-    --argjson outcome "$outcome" '
+  sf_jq_fields 0 -rn --argjson request "$SF_TOOL_PLAN[request]" \
+    --arg id "$SF_TOOL_PLAN[id]" --arg name "$name" \
+    --argjson input "$SF_TOOL_PLAN[input]" --arg executable "$SF_TOOL_PLAN[executable]" \
+    --argjson render "$SF_TOOL_PLAN[render]" --argjson outcome "$outcome" '
       include "lib/session";
       include "lib/runtime";
       def field: ., "\u0000";

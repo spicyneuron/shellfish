@@ -11,23 +11,6 @@ sf_environment_fail() {
   return 1
 }
 
-# Every name any component may declare, so one component cannot inherit
-# another's credentials. Canonical environment names cannot contain spaces.
-sf_environment_names() {
-  local runtime=$1
-  SF_ENVIRONMENT_ERROR=''
-  REPLY=$(sf_jq -rn --argjson runtime "$runtime" '
-      include "lib/runtime";
-      [$runtime.backend.environment[]?,
-       $runtime.harness.tools[].manifest.environment[]?,
-       (hook_names[] as $hook | $runtime.harness[$hook][]?.environment[]?)] |
-      unique | join(" ")
-    ' 2>/dev/null) || {
-    sf_environment_fail 'cannot inspect component environment'
-    return 1
-  }
-}
-
 sf_environment_load() {
   local env_file=$1 selected=$2 line key value name
   local -a selected_names

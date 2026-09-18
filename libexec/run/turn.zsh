@@ -8,8 +8,8 @@ source "$SF_ROOT/libexec/run/hooks.zsh"
 source "$SF_ROOT/libexec/run/tools.zsh"
 
 typeset -gA SF_RUN=(
-  active_call '' answer '' env_names '' jsonl 0 known_outcome '' permission_count 0
-  signal_status 0 write_failed 0
+  active_call '' answer '' jsonl 0 known_outcome '' permission_count 0 signal_status 0
+  write_failed 0
 )
 
 sf_run_emit() {
@@ -30,36 +30,30 @@ sf_run_append() {
 # Settle every still-pending call through the tool owner. The reason describes
 # calls the turn never reached.
 sf_run_settle() {
-  local session=$1 reason=$2 id name input outcome
+  local session=$1 reason=$2 call outcome
   local active=$SF_RUN[active_call] known=$SF_RUN[known_outcome]
-  local -a fields plan
-  integer index
+  local -a calls
   sf_jq_fields 0 -Rs '
     include "lib/session";
     def field: ., "\u0000";
     [split("\n")[1:][] | select(length > 0) | fromjson] |
     session_run |
-    (.calls[] | (.id | field), (.name | field), (.input | tojson | field)),
+    (.calls[] | {id,name,input} | tojson | field),
     ("ok" | field)
   ' "$session" || reply=()
-  fields=( "${reply[@]}" )
-  for (( index = 1; index + 2 <= ${#fields}; index += 3 )); do
-    id=$fields[index]
-    name=$fields[index+1]
-    input=$fields[index+2]
-    if [[ $id == $active && -n $known ]]; then
+  calls=( "${reply[@]}" )
+  for call in "${calls[@]}"; do
+    sf_run_tool_plan "$SF_RUN[runtime]" "$call" || break
+    if [[ $SF_TOOL_PLAN[id] == $active && -n $known ]]; then
       outcome=$known
-    elif [[ $id == $active ]]; then
+    elif [[ $SF_TOOL_PLAN[id] == $active ]]; then
       sf_run_tool_refused 'tool call interrupted' 126
       outcome=$REPLY
     else
       sf_run_tool_refused "$reason" 126
       outcome=$REPLY
     fi
-    sf_run_tool_plan "$SF_RUN[runtime]" "$id" "$name" "$input" || break
-    plan=( "${reply[@]}" )
-    sf_run_tool_complete "$plan[1]" "$id" "$name" "$input" "$plan[6]" \
-      "$plan[16]" "$outcome" || break
+    sf_run_tool_complete "$outcome" || break
     sf_run_append "$session" "$REPLY" || return 1
   done
 }
@@ -95,8 +89,6 @@ sf_run_open() {
   SF_RUN[runtime]=$fields[1]
   SF_RUN[cwd]=$fields[2]
   SF_RUN[turn_id]=$fields[3]
-  sf_environment_names "$SF_RUN[runtime]" || { REPLY=$SF_ENVIRONMENT_ERROR; return 1; }
-  SF_RUN[env_names]=$REPLY
   [[ $fields[4] == true ]] || return 0
   sf_run_settle "$session" 'tool call outcome unknown' || return 1
   sf_run_error "$session" 'Turn interrupted.'
@@ -199,12 +191,10 @@ sf_run_project() {
 
 sf_run_turn() {
   local user_record=$1 session=$2 prompt=$3 runtime tools context_command
-  local assistant stop_text id name input decision
-  local tool_request post_request activity permission_reason permission_preview executable render
-  local tool_environment settings fence env_file execution_input sandbox read_paths write_paths
+  local assistant stop_text id name decision post_request
   local reason outcome record post_error='' failure='' turn_state tool_temp='' call
   local call_projection
-  local -a calls states hook_result runtime_fields tool_plan
+  local -a calls states hook_result runtime_fields
   integer begun=0 request_count=0 call_count=0 request_limit tool_limit max_capture run_status
 
   {
@@ -331,60 +321,42 @@ sf_run_turn() {
       call_count=0
       for call in "${calls[@]}"; do
         (( call_count += 1 ))
-        sf_jq_fields 3 -r '.id,"\u0000",.name,"\u0000",(.input|tojson),"\u0000","ok","\u0000"' \
-          <<<"$call" || { failure='cannot inspect provider tool call'; break; }
-        id=$reply[1]
-        name=$reply[2]
-        input=$reply[3]
-        sf_run_tool_plan "$runtime" "$id" "$name" "$input" || { failure=$SF_RUN_TOOL_ERROR; break; }
-        tool_plan=( "${reply[@]}" )
-        tool_request=$tool_plan[1]
-        activity=$tool_plan[2]
-        decision=$tool_plan[3]
-        permission_reason=$tool_plan[4]
-        permission_preview=$tool_plan[5]
-        executable=$tool_plan[6]
-        tool_environment=$tool_plan[7]
-        settings=$tool_plan[8]
-        max_capture=$tool_plan[9]
-        fence=$tool_plan[10]
-        env_file=$tool_plan[11]
-        execution_input=$tool_plan[12]
-        sandbox=$tool_plan[13]
-        read_paths=$tool_plan[14]
-        write_paths=$tool_plan[15]
-        render=$tool_plan[16]
-        sf_run_emit "$activity" || { failure='cannot emit tool activity'; break; }
+        sf_run_tool_plan "$runtime" "$call" || { failure=$SF_RUN_TOOL_ERROR; break; }
+        id=$SF_TOOL_PLAN[id]
+        name=$SF_TOOL_PLAN[name]
+        decision=$SF_TOOL_PLAN[decision]
+        sf_run_emit "$SF_TOOL_PLAN[activity]" || { failure='cannot emit tool activity'; break; }
         SF_RUN[active_call]=$id
         SF_RUN[known_outcome]=''
         if (( call_count > tool_limit )); then
           sf_run_tool_refused "tool call denied: per-response limit is $tool_limit" 126
           outcome=$REPLY
         else
-          sf_run_hooks "$session" pre_tool_use "$tool_request" \
+          sf_run_hooks "$session" pre_tool_use "$SF_TOOL_PLAN[request]" \
             "$turn_state" "$name" "$id" || { failure=$SF_RUN_HOOK_ERROR; break; }
           hook_result=( "${reply[@]}" )
           if [[ $hook_result[1] == deny ]]; then
             sf_run_tool_refused 'tool call denied by pre_tool_use hook' 126
             outcome=$REPLY
-          elif [[ -z $executable ]]; then
+          elif [[ -z $SF_TOOL_PLAN[executable] ]]; then
             sf_run_tool_refused "tool is not allowed: $name" 127
             outcome=$REPLY
           else
             if [[ $decision == failure ]]; then
-              failure=$permission_reason
+              failure=$SF_TOOL_PLAN[permission_reason]
               break
             elif [[ $decision == deny ]]; then
-              sf_run_tool_refused "$permission_reason" 126
+              sf_run_tool_refused "$SF_TOOL_PLAN[permission_reason]" 126
               outcome=$REPLY
             elif [[ $decision == request ]]; then
-              sf_run_hooks "$session" permission_request "$tool_request" \
+              sf_run_hooks "$session" permission_request "$SF_TOOL_PLAN[request]" \
                 "$turn_state" "$name" "$id" || { failure=$SF_RUN_HOOK_ERROR; break; }
               hook_result=( "${reply[@]}" )
               decision=$hook_result[1]
               reason=${hook_result[3]:-sandbox bypass denied}
               if [[ $decision == proceed ]]; then
-                sf_run_permission_client "$name" "$input" "$permission_reason" "$permission_preview"
+                sf_run_permission_client "$name" "$SF_TOOL_PLAN[input]" \
+                  "$SF_TOOL_PLAN[permission_reason]" "$SF_TOOL_PLAN[permission_preview]"
                 run_status=$?
                 if (( run_status == 2 )); then failure=$REPLY; break; fi
                 decision=$REPLY
@@ -395,9 +367,7 @@ sf_run_turn() {
               fi
             fi
             if [[ -z $outcome ]]; then
-              sf_run_tool_execute "$session" "$executable" "$tool_environment" \
-                "$settings" "$max_capture" "$fence" "$env_file" "$execution_input" \
-                "$sandbox" "$read_paths" "$write_paths" "$tool_temp"
+              sf_run_tool_execute "$session" "$tool_temp"
               run_status=$?
               if (( run_status )); then
                 if (( run_status == 129 || run_status == 130 || run_status == 143 )); then
@@ -412,8 +382,7 @@ sf_run_turn() {
           fi
         fi
         [[ -n $outcome ]] || break
-        sf_run_tool_complete "$tool_request" "$id" "$name" "$input" "$executable" \
-          "$render" "$outcome" || { failure=$SF_RUN_TOOL_ERROR; break; }
+        sf_run_tool_complete "$outcome" || { failure=$SF_RUN_TOOL_ERROR; break; }
         record=$REPLY
         post_request=$reply[1]
         states=( "${(@)reply[2,-1]}" )

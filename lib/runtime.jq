@@ -36,6 +36,14 @@ def hook_names:
   ["session_start", "user_prompt_submit", "permission_request", "pre_tool_use",
    "post_tool_use", "stop"];
 
+# Every name any component of a frozen runtime may declare. A component unsets
+# all of them, so it cannot inherit another component's credentials.
+def declared_environment($runtime):
+  [$runtime.backend.environment[]?,
+   $runtime.harness.tools[].manifest.environment[]?,
+   (hook_names[] as $hook | $runtime.harness[$hook][]?.environment[]?)] |
+  unique | join(" ");
+
 # Display templates. script_template admits exactly the variables that
 # render_component supplies below; read the two together.
 def script_template($input_variables; $output):
