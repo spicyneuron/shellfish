@@ -77,7 +77,11 @@ sf_skills_discover() {
   local home=${HOME-} root canonical directory file name description disabled
   local -a roots discovered
   local -A seen_roots seen_names
-  roots=( "$project_dir/.agents/skills" )
+  if [[ -d $project_dir/.agents/skills ]]; then
+    roots=( "$project_dir/.agents/skills" )
+  else
+    roots=( "$project_dir/.claude/skills" )
+  fi
   [[ -z $config_dir ]] || roots+=( "$config_dir/skills" )
   [[ -z $home ]] || roots+=( "$home/.agents/skills" )
   roots+=( "$bundled_root/skills" )

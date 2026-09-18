@@ -30,8 +30,9 @@ Turn the agreed design into the shortest instructions that will reliably produce
 - Remember that length costs tokens. The name and description load in every new session, and the full skill loads when invoked.
 - Make the description the shortest clear answer to: When should this skill be used? Prefer `Use when ...` or `Invoke when ...`.
 - Open the skill body with a brief section that captures its intent.
-- Inspect project instructions and existing skills under `./.agents/skills/` so the skill follows local conventions and does not duplicate an existing capability.
-- Create the skill at `./.agents/skills/<name>/SKILL.md`. Choose a specific name using only lowercase letters, numbers, and single hyphens.
+- Use the active project skill directory: `./.agents/skills/` when it exists, otherwise an existing `./.claude/skills/`, otherwise create `./.agents/skills/`.
+- Inspect project instructions and existing skills there so the new skill follows local conventions and does not duplicate an existing capability.
+- Create `<name>/SKILL.md` there. Choose a specific name using only lowercase letters, numbers, and single hyphens.
 - Match the frontmatter `name` to the directory name. Keep `name` at most 64 characters and `description` at most 1024 characters. Use single-line scalars.
 - Omit `disable-model-invocation` unless the user asks to hide the skill from automatic invocation.
 - Keep the essential workflow in `SKILL.md`. Add supporting files with relative paths only when they are useful. Add scripts, dependencies, or broad permissions only when the workflow requires them.
