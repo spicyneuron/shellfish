@@ -85,8 +85,10 @@ sf_run_tool_bound() {
 sf_run_tool_execute() {
   setopt local_options no_err_exit
   local session=$1 tool_directory=$2 command=$SF_TOOL_PLAN[executable]
-  local settings=$SF_TOOL_PLAN[settings] fence=$SF_TOOL_PLAN[fence]
-  local env_file=$SF_TOOL_PLAN[env_file] sandbox=$SF_TOOL_PLAN[sandbox]
+  local selected=$SF_TOOL_PLAN[environment] settings=$SF_TOOL_PLAN[settings]
+  local fence=$SF_TOOL_PLAN[fence] env_file=$SF_TOOL_PLAN[env_file]
+  local execution_input=$SF_TOOL_PLAN[execution_input] sandbox=$SF_TOOL_PLAN[sandbox]
+  local read_paths=$SF_TOOL_PLAN[read_paths] write_paths=$SF_TOOL_PLAN[write_paths]
   local cwd=$SF_RUN[cwd] capture stdin bounded_stdout bounded_stderr
   local config_dir='' expose name
   local -a arguments environment names process_command process sandbox_arguments
@@ -94,7 +96,7 @@ sf_run_tool_execute() {
 
   SF_RUN_TOOL_ERROR=''
   [[ -z $env_file ]] || config_dir=${env_file:h}
-  sf_environment_load "$env_file" "$SF_TOOL_PLAN[environment]" || {
+  sf_environment_load "$env_file" "$selected" || {
     SF_RUN_TOOL_ERROR=$SF_ENVIRONMENT_ERROR
     return 1
   }
@@ -103,7 +105,7 @@ sf_run_tool_execute() {
   capture=$REPLY
   {
   stdin="$tool_directory/input"
-  print -r -- "$SF_TOOL_PLAN[execution_input]" >"$stdin" || {
+  print -r -- "$execution_input" >"$stdin" || {
     SF_RUN_TOOL_ERROR='cannot prepare tool input'
     return 1
   }
@@ -126,10 +128,10 @@ sf_run_tool_execute() {
     sandbox_arguments=( --monitor --fence-log-file "$capture/sandbox.log"
       --settings "$settings" --expose-host-path "$command" --expose-host-path-rw "$tool_directory"
       --expose-host-path-rw "$capture/control" )
-    for expose in ${(f)SF_TOOL_PLAN[read_paths]}; do
+    for expose in ${(f)read_paths}; do
       sandbox_arguments+=( --expose-host-path "$expose" )
     done
-    for expose in ${(f)SF_TOOL_PLAN[write_paths]}; do
+    for expose in ${(f)write_paths}; do
       sandbox_arguments+=( --expose-host-path-rw "$expose" )
     done
     process_command=( "$fence" "${sandbox_arguments[@]}" -- /usr/bin/env "${arguments[@]}" )

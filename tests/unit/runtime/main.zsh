@@ -456,9 +456,10 @@ export ANTHROPIC_API_KEY='other-component'
 sf_runtime_resolve_from_config "$config" work '' '{}'
 runtime=$(jq -c '.harness.stop=[{command:"/bin/hook",environment:["ANTHROPIC_API_KEY"],render:{initial_user_text:"",user_text:"${output.stderr}",model_text:"${output.stdout}"}}]' \
   <<<"$REPLY")
-[[ $(jq -L "$ROOT" -rn --argjson runtime "$runtime" \
-  'include "lib/runtime"; declared_environment($runtime)') ==
-  'ANTHROPIC_API_KEY OPENAI_API_KEY' ]]
+typeset declared
+declared=$(jq -L "$ROOT" -rn --argjson runtime "$runtime" \
+  'include "lib/runtime"; declared_environment($runtime)')
+[[ $declared == 'ANTHROPIC_API_KEY OPENAI_API_KEY' ]]
 sf_environment_load "$(jq -r '.backend.env_file' <<<"$runtime")" OPENAI_API_KEY
 [[ ${(j: :)SF_ENVIRONMENT_VALUES} == 'OPENAI_API_KEY=from-environment' ]]
 [[ $runtime != *from-environment* ]]
