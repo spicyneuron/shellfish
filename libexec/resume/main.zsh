@@ -47,7 +47,6 @@ sf_resume_main() {
   fi
 
   exec -- "$SF_ENTRY" --session "$session" "${tui_args[@]}"
-  sf_die 'cannot resume selected session'
 }
 
 sf_resume_main "$@"
