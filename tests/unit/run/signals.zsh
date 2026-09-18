@@ -44,7 +44,11 @@ cat >"$model_backend/context_window" <<'ZSH'
 cat >/dev/null
 print -r -- ready >"$MODEL_READY"
 trap 'print -r -- stopped >"$MODEL_STOPPED"; exit 143' TERM
-while true; do sleep 0.1; done
+# Cancellation signals the whole process group. Idle in a builtin so the wait
+# has no forked child: a sleep would take the same TERM, and zsh can exit on a
+# signal-killed foreground job without running its own trap.
+zmodload zsh/zselect
+while true; do zselect -t 10; done
 ZSH
 chmod +x "$model_backend/run" "$model_backend/context_window"
 jq --arg adapter "$model_backend" '.backends.fixture.adapter=$adapter' \
