@@ -23,7 +23,7 @@ This project is pre-release. Remove obsolete behavior rather than adding depreca
 ## Working here
 
 - When in doubt, choose the simplest possible implementation. We support the happy path and common cases. We do not need to defend against every theoretical edge case.
-- Consult the relevant docs when changing a subsystem: `docs/ARCHITECTURE.md`, `docs/RUN.md`, `docs/CONFIG.md`, `docs/HARNESS.md`, `docs/HOOKS.md`, `docs/BACKENDS.md`, or `docs/SERVER.md`.
+- Consult the relevant docs when changing a subsystem: `docs/ARCHITECTURE.md`, `docs/CONFIG.md`, `docs/HARNESS.md`, or `docs/CURSED.md`.
 - Docs are exclusively for high-level, user-facing concepts. They should not go into implementation details or restate the code as prose.
 - For code changes, run the nearest focused test first, then bare `./tests/run`. Use `./tests/run pty` only for behavior requiring a terminal. Use `./tests/run server` for `shellfish-server/` changes. Do not run tests for documentation- or comment-only changes.
 - In zsh, avoid names that collide with special parameters such as `status` and `commands`. When a command substitution's exit status matters, declare the variable first and assign it separately.
