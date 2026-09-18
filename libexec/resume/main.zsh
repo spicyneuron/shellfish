@@ -7,10 +7,7 @@ typeset -gr SF_ROOT=${0:A:h:h:h}
 typeset -gr SF_ENTRY=$SF_ROOT/bin/shellfish
 typeset -gr SF_RESUME_ENTRY=${0:A}
 
-sf_die() {
-  print -u2 -r -- "shellfish: $*"
-  return 1
-}
+source "$SF_ROOT/lib/cli.zsh"
 
 sf_resume_main() {
   local mode=${1-} session
@@ -29,14 +26,7 @@ sf_resume_main() {
     if [[ ! -o interactive && -t 1 && ( -t 0 || -r /dev/tty ) ]]; then
       exec zsh -f -i "$SF_RESUME_ENTRY" "$mode" "$@"
     fi
-    if [[ ! -o interactive ]]; then
-      sf_die 'resume requires an interactive terminal'
-      return 2
-    fi
-    if [[ ! -t 0 ]]; then
-      exec </dev/tty || { sf_die 'resume requires an interactive terminal'; return 2; }
-    fi
-    if [[ ! -t 1 ]]; then sf_die 'resume requires an interactive terminal'; return 2; fi
+    sf_cli_require_terminal resume || return
   fi
 
   (( $+commands[jq] )) || { sf_die 'shellfish requires jq'; return 2; }

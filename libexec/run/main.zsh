@@ -6,34 +6,9 @@ setopt no_aliases no_bg_nice no_multios pipe_fail
 typeset -gr SF_ROOT=${0:A:h:h:h}
 typeset -gr SF_ENTRY="$SF_ROOT/bin/shellfish"
 
+source "$SF_ROOT/lib/cli.zsh"
 source "$SF_ROOT/lib/jq.zsh"
 source "$SF_ROOT/lib/options.zsh"
-
-sf_die() {
-  print -u2 -r -- "shellfish: $*"
-  return 1
-}
-
-# An inherited pipe may never reach EOF, so only a turn that needs the message
-# reads until it closes.
-sf_run_prompt() {
-  local stdin_input=''
-  if (( $# )); then
-    if [[ ! -t 0 ]]; then IFS= read -t 0 -r stdin_input || true; fi
-    [[ -z $stdin_input ]] || {
-      sf_die 'cannot use a message argument and standard input together'
-      return 2
-    }
-    stdin_input=${(j: :)@}
-  elif [[ ! -t 0 ]]; then
-    stdin_input=$(<&0)
-  fi
-  [[ -n $stdin_input ]] || {
-    sf_die 'a message is required for a new turn'
-    return 2
-  }
-  REPLY=$stdin_input
-}
 
 sf_run_main() {
   local requested_session='' input='' prompt='' arity=''
@@ -144,8 +119,12 @@ sf_run_main() {
     input=$reply[1]
     prompt=$reply[2]
   else
-    sf_run_prompt "${positional[@]}" || return
+    sf_cli_read_prompt "${positional[@]}" || return
     prompt=$REPLY
+    [[ -n $prompt ]] || {
+      sf_die 'a message is required for a new turn'
+      return 2
+    }
     input=$(jq -cn --arg text "$prompt" \
       '{type:"user",content:[{type:"text",text:$text}]}') || return 1
   fi

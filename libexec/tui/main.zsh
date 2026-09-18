@@ -7,29 +7,8 @@ typeset -gr SF_ROOT=${0:A:h:h:h}
 typeset -gr SF_ENTRY=$SF_ROOT/bin/shellfish
 typeset -gr SF_TUI_ENTRY=${0:A}
 
+source "$SF_ROOT/lib/cli.zsh"
 source "$SF_ROOT/lib/options.zsh"
-
-sf_die() {
-  print -u2 -r -- "shellfish: $*"
-  return 1
-}
-
-# An inherited pipe may never reach EOF, so only a draft that needs the message
-# reads until it closes.
-sf_read_prompt() {
-  local input=''
-  if (( $# )); then
-    if [[ ! -t 0 ]]; then IFS= read -t 0 -r input || true; fi
-    [[ -z $input ]] || {
-      sf_die 'cannot use a message argument and standard input together'
-      return 2
-    }
-    input=${(j: :)@}
-  elif [[ ! -t 0 ]]; then
-    input=$(<&0)
-  fi
-  REPLY=$input
-}
 
 sf_tui_main() {
   local requested_session=''
@@ -109,7 +88,7 @@ sf_tui_main() {
   (( $+commands[jq] )) || { sf_die 'shellfish requires jq'; return 2; }
   typeset -gx SHELLFISH_VERBOSE=$verbose_requested
 
-  sf_read_prompt "${positional[@]}" || return
+  sf_cli_read_prompt "${positional[@]}" || return
   input=$REPLY
   if (( draft_explicit )) && { (( ${#positional} )) || [[ -n $input ]]; }; then
     sf_die '--draft cannot be combined with a prompt'
@@ -121,14 +100,7 @@ sf_tui_main() {
     fi
     exec zsh -f -i "$SF_TUI_ENTRY" "${original_args[@]}"
   fi
-  if [[ ! -o interactive ]]; then
-    sf_die 'chat requires an interactive terminal'
-    return 2
-  fi
-  if [[ ! -t 0 ]]; then
-    exec </dev/tty || { sf_die 'chat requires an interactive terminal'; return 2; }
-  fi
-  if [[ ! -t 1 ]]; then sf_die 'chat requires an interactive terminal'; return 2; fi
+  sf_cli_require_terminal chat || return
 
   integer resolve_status=0
   if [[ -n $requested_session ]]; then

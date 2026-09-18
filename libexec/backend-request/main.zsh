@@ -5,10 +5,7 @@ setopt no_aliases no_multios pipe_fail
 
 typeset -gr SF_ROOT=${0:A:h:h:h}
 
-sf_die() {
-  print -u2 -r -- "shellfish: $*"
-  return 1
-}
+source "$SF_ROOT/lib/cli.zsh"
 
 sf_backend_request_abort() {
   sf_process_stop "$SF_BACKEND[pid]" "$SF_BACKEND[group_file]"
