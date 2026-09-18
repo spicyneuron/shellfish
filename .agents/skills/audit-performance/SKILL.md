@@ -10,12 +10,13 @@ Preserve correctness at trust boundaries. The objective is less work, not weaker
 
 ## Workflow
 
-1. Choose the representative operation and scaling axis. Use `tests/metrics/run.zsh` for a complete tool-calling turn and `tests/metrics/rendering.zsh` for streamed presentation. Run `./tests/run metrics` when the request covers the whole system.
-2. Record an unchanged baseline. For turns, capture `jq processes/run`, end-to-end time, and remainder time. Treat process counts as deterministic and timings as noisy. Compare distributions or repeated samples.
-3. Trace one representative run to attribute dynamic cost by arguments and call site. For the turn fixture, use `tests/metrics/run.zsh 1`. Static `rg` alone is insufficient, and fixture-owned processes must be excluded. Keep instrumentation temporary.
-4. Rank costs by frequency and growth: per delta, record, tool call, tool, hook, provider request, turn, or startup. Check behavior at more than one input size when the path can scale.
-5. Make one coherent reduction at a time. Rerun the focused metric and nearest tests, then bare `./tests/run` for code changes.
-6. Report the old and new workload, counts, and timing distribution. Commit only after review.
+1. Read every tracked, nonignored file in the requested subsystem, including its implementation, tests, configuration, documentation, and bundled resources. Inspect callers and external boundaries outside the subsystem as needed to understand its workload. If the user does not name a subsystem, read the entire application.
+2. Choose the representative operation and scaling axis. Use `tests/perf/run.zsh` for core turns and public commands, or `./tests/run perf` for its default repeated sample. Design a focused temporary measurement when that fixture does not exercise the requested path.
+3. Record an unchanged baseline. For turns, capture `jq` processes per run and end-to-end time. Treat process counts as deterministic and timings as noisy. Compare repeated samples.
+4. Trace one representative run to attribute dynamic cost by arguments and call site. Use `tests/perf/run.zsh 1` for one core sample. Static `rg` alone is insufficient, and fixture-owned processes must be excluded. Keep instrumentation temporary.
+5. Rank costs by frequency and growth: per delta, record, tool call, tool, hook, provider request, turn, or startup. Check behavior at more than one input size when the path can scale.
+6. Make one coherent reduction at a time. Rerun the focused measurement and nearest tests, then bare `./tests/run` for code changes.
+7. Report the old and new workload, counts, and timing distribution. Commit only after review.
 
 ## Patterns
 
