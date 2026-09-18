@@ -184,7 +184,7 @@ sf_tui_format_edges() {
 # rows are ever shown, so a live block never displays a row that can still grow.
 # A MARKDOWN block settles no further than its scanner has resolved.
 sf_tui_format_prose() {
-  integer columns=$1 live=$2 markdown=$3 chrome total stable closed=0
+  integer columns=$1 live=$2 markdown=$3 chrome total stable safe blank=0 closed=0
   local body=$4 prefix=$5 style=$6 preview=$7
 
   # Source that ends at a line boundary has no row left to grow.
@@ -212,11 +212,24 @@ sf_tui_format_prose() {
   sf_tui_format_body $stable "$style"
   sf_tui_format_edges $(( chrome + 1 )) ${#body}
   (( live && stable )) || return 0
-  if (( markdown )); then
-    sf_tui_markdown_advance "$body" $chrome $stable $columns || return 1
-    stable=$REPLY
+  safe=$stable
+  if (( markdown && closed )); then
+    # Keep one visible row live so a following blank line can cross terminal
+    # handoffs as an internal row. ZLE collapses empty rows at either edge.
+    safe=$(( safe - 1 ))
+    [[ -n $SF_WRAP_ROWS[stable] ]] || blank=1
+    while (( safe )) && [[ -z $SF_WRAP_ROWS[safe] ]]; do
+      blank=1
+      safe=$(( safe - 1 ))
+    done
+    (( ! blank || ! safe )) || safe=$(( safe - 1 ))
   fi
-  (( ! stable )) || SF_FORMAT_SAFE=$(( chrome + stable ))
+  (( safe )) || return 0
+  if (( markdown )); then
+    sf_tui_markdown_advance "$body" $chrome $safe $columns || return 1
+    safe=$REPLY
+  fi
+  (( ! safe )) || SF_FORMAT_SAFE=$(( chrome + safe ))
 }
 
 # Message text is Markdown; only system text takes a preview budget.

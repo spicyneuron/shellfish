@@ -93,13 +93,13 @@ view 8 20
 assert_equal $'─ agent \n\nhello\nworld' "$REPLY"
 assert_equal 4 "$SF_PRESENT_SAFE_ROWS"
 
-# A newline makes the current live row safe, and closing keeps the role.
+# A newline shows the current row, and closing settles it with the role.
 sf_tui_reset
 sf_tui_action message_start agent
 stream 0 text $'answer\n'
 view 20 20
 [[ $REPLY == *$'\n\nanswer\n⠃' ]] || fail "newline-closed assistant row: $REPLY"
-assert_equal 3 "$SF_PRESENT_SAFE_ROWS"
+assert_equal 0 "$SF_PRESENT_SAFE_ROWS"
 sf_tui_action message_end
 message user next
 view 20 20
@@ -129,13 +129,13 @@ view 79 20
 sf_tui_reset
 sf_tui_terminal_reset
 sf_tui_action message_start agent
-stream 0 text $'one\ntail'
+stream 0 text $'one\ntail\n'
 sf_tui_transcript 8 20
 sf_tui_terminal_stage
 sf_tui_terminal_finish
 typeset drained=$PREDISPLAY$'\n'
 sf_tui_terminal_restore
-stream 0 text $'\ntwo\nlast'
+stream 0 text $'two\nlast'
 sf_tui_transcript 8 20
 sf_tui_terminal_stage
 sf_tui_terminal_finish
@@ -150,6 +150,25 @@ assert_equal $'─ agent \n\none\ntail\ntwo\nlast' "$drained"
 sf_tui_terminal_restore
 sf_tui_transcript 8 20
 assert_equal '' "$SF_PRESENT_VIEWPORT_TEXT"
+
+# Fence separators remain live until they can commit inside visible rows.
+sf_tui_reset
+sf_tui_terminal_reset
+sf_tui_action message_start agent
+stream 0 text $'```json\n{}\n```\n'
+sf_tui_transcript 20 20
+sf_tui_terminal_stage
+sf_tui_terminal_finish
+sf_tui_terminal_restore
+stream 0 text $'\n'
+sf_tui_transcript 20 20
+assert_equal 0 "$SF_PRESENT_SAFE_ROWS"
+stream 0 text $'```jsonc\n'
+sf_tui_transcript 20 20
+assert_equal 0 "$SF_PRESENT_SAFE_ROWS"
+stream 0 text $'{}\n'
+sf_tui_transcript 20 20
+assert_equal $'```\n\n```jsonc' "$SF_PRESENT_SAFE_TEXT"
 
 # A width change reflows only uncommitted source.
 sf_tui_reset

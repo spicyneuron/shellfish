@@ -128,7 +128,7 @@ sf_tui_terminal_reset
 SF_PRESENT_SESSION="$tmp/recover.jsonl"
 SF_PRESENT_STATE=working
 sf_tui_action message_start agent
-sf_tui_action message_delta 0 text $'committed\n' ''
+sf_tui_action message_delta 0 text $'committed\nnext\n' ''
 sf_tui_transcript 20 20
 sf_tui_terminal_stage
 sf_tui_terminal_finish
