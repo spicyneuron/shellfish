@@ -8,7 +8,7 @@ source "$SF_ROOT/libexec/run/hooks.zsh"
 source "$SF_ROOT/libexec/run/tools.zsh"
 
 typeset -gA SF_RUN=(
-  active_call '' answer '' jsonl 0 known_outcome '' permission_count 0 signal_status 0
+  active_call '' answer '' assistant '' jsonl 0 known_outcome '' permission_count 0 signal_status 0
   hook_id 1 hooks '' hooks_known 0 write_failed 0
 )
 
@@ -216,6 +216,7 @@ sf_run_turn() {
 
   {
     SF_RUN[answer]=''
+    SF_RUN[assistant]=''
     SF_RUN[active_call]=''
     SF_RUN[known_outcome]=''
     SF_RUN[permission_count]=0
@@ -332,6 +333,7 @@ sf_run_turn() {
         hook_result=( "${reply[@]}" )
         if [[ $hook_result[1] != continue ]]; then
           SF_RUN[answer]=$stop_text
+          SF_RUN[assistant]=$assistant
           break
         fi
         continue

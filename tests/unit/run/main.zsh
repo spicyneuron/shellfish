@@ -38,6 +38,23 @@ output=$(SF_TEST_BACKEND_DELAY=0 zsh -f "$entry" run --config "$config" 'plain a
   fail 'plain run failed'
 assert_equal 'plain answer' "$output" 'plain run prints only the answer'
 
+# Multi-request turns print only the final assistant message.
+output=$(SF_TEST_BACKEND_DELAY=0 zsh -f "$entry" run --config "$config" 'use a tool') || \
+  fail 'plain tool run failed'
+assert_equal 'Tool complete.' "$output" 'plain run included an intermediate assistant message'
+
+# JSON mode returns a flattened final result, not a protocol record or turn stream.
+typeset json_session="$tmp/json.jsonl"
+output=$(SF_TEST_BACKEND_DELAY=0 zsh -f "$entry" run --json --config "$config" \
+  --session-out "$json_session" 'use a tool') || fail 'JSON run failed'
+print -r -- "$output" | jq -e '
+  keys == ["message","stop","usage"] and
+  .message == "Tool complete." and .stop == "end" and
+  (.usage | type == "object")
+' >/dev/null || fail 'JSON run returned the wrong structure'
+jq -es '[.[] | select(.type == "assistant")] | length == 2' "$json_session" >/dev/null ||
+  fail 'JSON test did not exercise an intermediate assistant message'
+
 # Standard input supplies the prompt.
 output=$(print -rn -- 'piped answer' |
   SF_TEST_BACKEND_DELAY=0 zsh -f "$entry" run --config "$config") || \
@@ -200,6 +217,9 @@ print -r -- \
 
 # Invalid input combinations are rejected.
 integer exit_code=0
+zsh -f "$entry" run --json --jsonl --config "$config" >/dev/null 2>&1 || exit_code=$?
+(( exit_code == 2 )) || fail 'run accepted --json with --jsonl'
+exit_code=0
 print -n piped | zsh -f "$entry" run --config "$config" argument >/dev/null 2>&1 || \
   exit_code=$?
 (( exit_code == 2 )) || fail 'run accepted prompt argument and stdin together'

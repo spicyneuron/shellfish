@@ -13,7 +13,7 @@ source "$SF_ROOT/lib/options.zsh"
 sf_run_main() {
   local requested_session='' input='' prompt='' arity=''
   local -a positional=() create_args=()
-  integer create_only=0 jsonl=0 override=0 take=0
+  integer create_only=0 json=0 jsonl=0 override=0 take=0
 
   while (( $# )); do
     case $1 in
@@ -29,6 +29,10 @@ sf_run_main() {
         override=1
         create_args+=( "${@:1:2}" )
         shift 2
+        ;;
+      --json)
+        json=1
+        shift
         ;;
       --jsonl)
         jsonl=1
@@ -65,6 +69,10 @@ sf_run_main() {
     esac
   done
 
+  (( ! json || ! jsonl )) || {
+    sf_die '--json and --jsonl cannot be combined'
+    return 2
+  }
   if (( create_only )); then
     [[ -z $requested_session ]] || {
       sf_die '--session-create cannot be combined with --session'
@@ -162,7 +170,11 @@ sf_run_main() {
   sf_run_turn "$input" "$session" "$prompt"
   local run_status=$?
   trap - INT USR1 HUP TERM
-  if (( ! jsonl )) && [[ -n $SF_RUN[answer] ]]; then
+  if (( json )) && [[ -n $SF_RUN[assistant] ]]; then
+    jq -c --arg message "$SF_RUN[answer]" \
+      '{message:$message,stop:.stop,usage:(.usage // null)}' \
+      <<<"$SF_RUN[assistant]" || { sf_die 'cannot format final response'; return 1; }
+  elif (( ! jsonl )) && [[ -n $SF_RUN[answer] ]]; then
     print -r -- "$SF_RUN[answer]"
   fi
   return $run_status

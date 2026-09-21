@@ -6,6 +6,10 @@ Usage:
   shellfish [OPTIONS] [PROMPT]       Start an interactive chat
   shellfish run [OPTIONS] [PROMPT]   Run exactly one agent turn
 
+Run output:
+  --json               Print the final result and usage as JSON
+  --jsonl              Stream all turn events as JSON Lines
+
 New sessions:
   -p, --profile NAME    Select a configured profile
   -b, --backend NAME    Override the backend name or path
