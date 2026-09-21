@@ -17,8 +17,18 @@ while (($#)); do
     *) shift ;;
   esac
 done
+if [[ -n ${BACKEND_TEST_ATTEMPTS:-} ]]; then
+  attempts=0
+  [[ ! -s $BACKEND_TEST_ATTEMPTS ]] || attempts=$(<"$BACKEND_TEST_ATTEMPTS")
+  printf '%s\n' "$((attempts + 1))" >"$BACKEND_TEST_ATTEMPTS"
+fi
+if [[ -n ${BACKEND_TEST_FAIL_ONCE:-} && ${attempts:-0} == 0 ]]; then
+  printf '%s' 'curl: (92) HTTP/2 stream was not closed cleanly: INTERNAL_ERROR (err 2)000' >&2
+  exit 92
+fi
 cat "$BACKEND_TEST_RESPONSE"
 printf %s "${BACKEND_TEST_STATUS:-200}" >&2
+exit "${BACKEND_TEST_CURL_STATUS:-0}"
 EOF
 chmod +x "$tmp/curl"
 export PATH="$tmp:$PATH"
@@ -67,6 +77,26 @@ jq -e '
   .text.format == {type:"json_schema",name:"shellfish_response",strict:true,
     schema:{type:"object",required:["answer"],properties:{answer:{type:"string"}}}}
 ' "$BACKEND_TEST_BODY" >/dev/null || fail 'responses did not normalize common request parameters'
+
+# Retry one HTTP/2 reset when no response body arrived.
+export BACKEND_TEST_ATTEMPTS="$tmp/curl-attempts"
+BACKEND_TEST_FAIL_ONCE=1 OPENAI_API_KEY=test zsh -f "$run" <"$req" >"$res"
+assert_equal 2 "$(<"$BACKEND_TEST_ATTEMPTS")"
+assert_usage
+
+# Do not retry a reset after response data has started streaming.
+cat >"$BACKEND_TEST_RESPONSE" <<'EOF'
+data: {"type":"response.output_text.delta","delta":"partial"}
+EOF
+: >"$BACKEND_TEST_ATTEMPTS"
+if BACKEND_TEST_STATUS=000 BACKEND_TEST_CURL_STATUS=92 OPENAI_API_KEY=test \
+    zsh -f "$run" <"$req" >"$res" 2>"$tmp/error"; then
+  fail 'partial HTTP/2 reset was accepted'
+fi
+assert_equal 1 "$(<"$BACKEND_TEST_ATTEMPTS")"
+jq -e -s '. == [{type:"_assistant_message_delta",index:0,text:"partial"}]' \
+  "$res" >/dev/null || fail 'partial HTTP/2 reset lost streamed output'
+unset BACKEND_TEST_ATTEMPTS
 
 # Report the ChatGPT transport's top-level error detail.
 print -r -- '{"detail":"unsupported parameter"}' >"$BACKEND_TEST_RESPONSE"

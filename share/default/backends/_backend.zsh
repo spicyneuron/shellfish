@@ -94,22 +94,31 @@ sf_backend_context_curl_args() {
 # Sends the prepared body and normalizes the response with the adapter's jq
 # program, given last as jq takes it. The body streams to the normalizer rather
 # than landing in a file first, so a response is normalized while it is still
-# arriving. It is copied aside on the way past only so a failure has something to
-# quote; nothing reads that copy when the exchange succeeds. With the body on
-# stdout the status travels on stderr, written last, so the three characters it
-# ends with are the code. The normalizer's stderr is captured so sf_backend_finish
-# can report a concise protocol or normalization reason. The first argument is
-# the adapter's jq filter for extracting an HTTP error message.
+# arriving. It is copied aside on the way past so a failure has something to
+# quote and an empty HTTP/2 reset can be retried before output begins. With the
+# body on stdout the status travels on stderr, written last, so the three
+# characters it ends with are the code. The normalizer's stderr is captured so
+# sf_backend_finish can report a concise protocol or normalization reason. The
+# first argument is the adapter's jq filter for extracting an HTTP error message.
 sf_backend_stream() {
   local error_filter=$1
   local -a statuses
+  integer retries=0
   shift
-  set +e
-  curl "${SF_BACKEND_CURL_ARGS[@]}" 2>"$SF_BACKEND_STATUS_FILE" |
-    tee "$SF_BACKEND_RESPONSE_FILE" |
-    jq -nRrc --unbuffered "$@" 2>"$SF_BACKEND_NORMALIZER_ERROR_FILE"
-  statuses=( $pipestatus )
-  set -e
+  while true; do
+    set +e
+    curl "${SF_BACKEND_CURL_ARGS[@]}" 2>"$SF_BACKEND_STATUS_FILE" |
+      tee "$SF_BACKEND_RESPONSE_FILE" |
+      jq -nRrc --unbuffered "$@" 2>"$SF_BACKEND_NORMALIZER_ERROR_FILE"
+    statuses=( $pipestatus )
+    set -e
+    if (( statuses[1] == 92 && retries == 0 )) && [[ ! -s $SF_BACKEND_RESPONSE_FILE ]]; then
+      (( retries += 1 ))
+      sleep 1
+      continue
+    fi
+    break
+  done
   sf_backend_finish "$error_filter" "${statuses[@]}"
 }
 
