@@ -407,10 +407,7 @@ sf_tui_format_execution() {
     context) glyph='↪' ;;
     *) glyph='ℹ' ;;
   esac
-  preview=$SF_LIVE_PREVIEW
-  if [[ -z $preview ]]; then
-    [[ $SF_LIVE_CLASS == context ]] && preview=default || preview=full
-  fi
+  preview=${SF_LIVE_PREVIEW:-default}
   if [[ $SF_PRESENT_PREVIEW == full ]]; then
     preview=full
   elif [[ $preview == default ]]; then

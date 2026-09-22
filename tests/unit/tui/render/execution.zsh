@@ -166,6 +166,14 @@ view
 assert_equal $'↪ prompt\n╰ … ~5 tokens' "$REPLY"
 SF_PRESENT_PREVIEW=full
 
+# Every class takes that same budget; only a component override lifts it.
+sf_tui_reset
+SF_PRESENT_PREVIEW=1
+sf_tui_action execution_end h1 prompt notice $'prompt\nfirst\nsecond'
+view
+assert_equal $'ℹ prompt\n│ first\n╰ … ~5 tokens' "$REPLY"
+SF_PRESENT_PREVIEW=full
+
 # Components may select a fixed limit or bypass the context default.
 sf_tui_reset
 SF_PRESENT_PREVIEW=2
