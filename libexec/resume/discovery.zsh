@@ -7,7 +7,7 @@ typeset -ga SF_RESUME_MATCHES=()
 
 # Finds sessions for the current directory, newest first, up to a nonzero LIMIT.
 sf_resume_find() {
-  local limit=${1:-0} directory cwd home home_cwd='' file field
+  local limit=${1:-0} directory cwd file field
   local -a candidates headers readable fields
   local -A header_by_file
   integer decoded=0 index
@@ -19,14 +19,6 @@ sf_resume_find() {
     sf_session_fail 'cannot resolve the working directory'
     return
   }
-  home=${HOME:A}
-  if [[ -n $home ]]; then
-    if [[ $cwd == $home ]]; then
-      home_cwd='~'
-    elif [[ $cwd == "$home"/* ]]; then
-      home_cwd="~/${cwd#"$home"/}"
-    fi
-  fi
   candidates=( $directory/*.jsonl(N.om) )
   for file in $candidates; do
     [[ -f $file && -r $file && ! -L $file ]] && readable+=( "$file" )
@@ -52,13 +44,14 @@ sf_resume_find() {
         SF_RESUME_MATCHES+=( "$file" )
       fi
     done < <(printf '%s\n' "${headers[@]}" |
-      jq -jRn --arg cwd "$cwd" --arg home_cwd "$home_cwd" \
+      sf_jq -jRn --arg cwd "$cwd" --arg home "${HOME:A}" \
         --argjson limit "$limit" --args '
+        include "lib/runtime";
         [inputs | fromjson? // null] as $headers |
         [$ARGS.positional | to_entries[] |
           select($headers[.key] |
             type == "object" and .type == "session" and .format_version == 1 and
-            (.cwd == $cwd or ($home_cwd != "" and .cwd == $home_cwd)) and
+            (try (.cwd | expand_path(""; $home)) catch null) == $cwd and
             (.runtime.profile.request.model | type == "string")) |
           .value] |
         (if $limit > 0 then .[0:$limit] else . end) |

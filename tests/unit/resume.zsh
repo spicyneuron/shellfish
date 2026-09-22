@@ -155,6 +155,15 @@ assert_equal 1 "${#SF_RESUME_MATCHES}"
 )
 rm -- "$directory/home.jsonl" "$directory/root.jsonl"
 (
+  # An unexpandable cwd skips its own session, not the whole directory.
+  unset HOME
+  make_discovery_header '~/elsewhere' homeless >"$directory/homeless.jsonl"
+  touch -t 202609040600 "$directory/homeless.jsonl"
+  sf_resume_find 0
+  assert_equal 2 "${#SF_RESUME_MATCHES}"
+)
+rm -- "$directory/homeless.jsonl"
+(
   cd "$tmp"
   if sf_resume_find 0 2>/dev/null; then
     fail 'session discovery succeeded with no matches'
