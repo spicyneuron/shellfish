@@ -8,8 +8,8 @@ typeset -g SF_PRESENT_ACTIVITY=${SF_PRESENT_ACTIVITY_FRAMES[1]}
 sf_tui_rows_config() {
   local config=${1:-\{\}} values
   local -a limits
-  values=$(jq -r '[.tui.preview_lines_reasoning // "full",
-    .tui.preview_lines // "full"][]' <<<"$config") || return 1
+  values=$(jq -r '[.preview_lines_reasoning // "full",
+    .preview_lines // "full"][]' <<<"$config") || return 1
   limits=( "${(@f)values}" )
   (( ${#limits} == 2 )) || return 1
   SF_PRESENT_PREVIEW_REASONING=$limits[1]

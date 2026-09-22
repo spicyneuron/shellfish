@@ -1,8 +1,10 @@
 # Configuration
 
-Shellfish reads JSONC from `$XDG_CONFIG_HOME/shellfish/shellfish.jsonc` (or `~/.config/shellfish/shellfish.jsonc` when `XDG_CONFIG_HOME` is unset). User configuration is merged over the bundled [`share/default/shellfish.jsonc`](../share/default/shellfish.jsonc). Objects merge recursively and arrays replace their defaults.
+Shellfish reads JSONC from `$XDG_CONFIG_HOME/shellfish/` (or `~/.config/shellfish/` when `XDG_CONFIG_HOME` is unset). `shellfish.jsonc` describes runtimes and `tui.jsonc` describes rendering; each is merged over its bundled counterpart, [`share/default/shellfish.jsonc`](../share/default/shellfish.jsonc) and [`share/default/tui.jsonc`](../share/default/tui.jsonc). Objects merge recursively and arrays replace their defaults.
 
-Copy [`share/template/`](../share/template/) into that directory for a working starting point. The bundled [`shellfish.schema.json`](../share/shellfish.schema.json) is the exact field reference.
+The two files never mix. A session freezes a runtime, so `shellfish.jsonc` rejects rendering keys; `tui.jsonc` is read fresh on every run and is never frozen.
+
+Copy [`share/template/`](../share/template/) into that directory for a working starting point. The bundled [`shellfish.schema.json`](../share/shellfish.schema.json) and [`tui.schema.json`](../share/tui.schema.json) are the exact field references.
 
 ## Composition
 
@@ -16,7 +18,7 @@ request ─┘
 - A **backend** selects an adapter and endpoint and declares environment access.
 - A **harness** combines tools, ordered lifecycle hooks, sandbox policy, and turn limits.
 - A **profile** composes one backend and one harness with system-prompt components and provider request settings.
-- A **theme** and global preview limits remain current presentation settings; they are not frozen in sessions.
+- A **theme** and the preview limits live in `tui.jsonc`; they are not frozen in sessions.
 
 Profiles may inherit. Backends and harnesses do not have their own inheritance mechanism.
 
@@ -135,7 +137,7 @@ Component manifests declare environment variable names. Values resolve from expo
 
 Hooks and adapters inherit the ordinary process environment after every component-declared name is removed, then receive their own selected values. Unsandboxed tools inherit the same filtered environment; sandboxed tools start clean. See [`HARNESS.md`](HARNESS.md#shared-contract) for the process context.
 
-## Sandbox and presentation
+## Sandbox
 
 The default harness runs opted-in tools under [`fence`](https://github.com/fencesandbox/fence). Tool policies and platform temp access set the baseline; harness grants extend filesystem access, while policy deny rules still take precedence.
 
@@ -152,17 +154,19 @@ The default harness runs opted-in tools under [`fence`](https://github.com/fence
 
 `--sandbox-read` and `--sandbox-write` add one-off grants; `--sandbox-auto` adds detected development-tool paths. Setting `sandbox` to `false` runs every tool with user permissions. Grants are frozen into new sessions.
 
-Presentation stays current when a session is reopened:
+## Rendering
+
+`tui.jsonc` is read on every run, so a reopened session renders with whatever it says today.
 
 | Field | Meaning |
 | --- | --- |
 | `theme_mode` | `auto`, `light`, or `dark` |
 | `theme_light`, `theme_dark` | Selected names under `themes` |
 | `themes` | Partial named `#RRGGBB` palettes |
-| `tui.preview_lines_reasoning` | Collapsed reasoning lines or `"full"` |
-| `tui.preview_lines` | Collapsed component-output lines or `"full"` |
+| `preview_lines_reasoning` | Collapsed reasoning lines or `"full"` |
+| `preview_lines` | Collapsed component-output lines or `"full"` |
 
-`--verbose` temporarily makes both preview limits `"full"`.
+`--verbose` temporarily makes both preview limits `"full"`. A tool or hook raises its own limit with `render.preview_lines`; see [`HARNESS.md`](HARNESS.md#rendering).
 
 ## Bundled coding harness
 

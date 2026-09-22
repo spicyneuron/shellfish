@@ -71,7 +71,7 @@ Run `shellfish --help` for creation and sandbox options, or `/help` inside chat 
 
 ## Configuration
 
-Shellfish merges `$XDG_CONFIG_HOME/shellfish/shellfish.jsonc` (typically `~/.config/shellfish/shellfish.jsonc`) over [its defaults](share/default/shellfish.jsonc). Objects merge recursively and arrays replace their defaults. Exported credentials override values in `.env` beside the configuration file.
+Shellfish merges `$XDG_CONFIG_HOME/shellfish/shellfish.jsonc` (typically `~/.config/shellfish/shellfish.jsonc`) over [its defaults](share/default/shellfish.jsonc). Objects merge recursively and arrays replace their defaults. Exported credentials override values in `.env` beside the configuration file. Themes and preview limits live alongside it in [`tui.jsonc`](share/default/tui.jsonc).
 
 ```jsonc
 {

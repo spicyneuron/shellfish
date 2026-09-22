@@ -20,7 +20,7 @@ New sessions:
   --sandbox-auto        Grant detected development-tool paths
   --sandbox-read PATH   Give sandboxed tools read-only access (repeatable)
   --sandbox-write PATH  Give sandboxed tools read-write access (repeatable)
-  --config FILE         Use another configuration file
+  --config FILE         Use another runtime configuration file
 
 Existing sessions:
   -c, --continue [OPTIONS] [PROMPT]      Continue the most recent session here
@@ -30,6 +30,7 @@ Existing sessions:
 Global config:
   Default directory: ${XDG_CONFIG_HOME:-$HOME/.config}/shellfish
   Main file:         shellfish.jsonc
+  TUI file:          tui.jsonc
 
 Authentication:
   Set environment variable or include in the config directory's .env

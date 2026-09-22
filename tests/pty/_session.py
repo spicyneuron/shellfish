@@ -66,10 +66,6 @@ class Session:
         self.config_file = config_dir / "shellfish.jsonc"
         config = {
             "default_profile": "development",
-            # Avoid an interactive terminal background probe.
-            "theme_mode": "dark",
-            "theme_light": "theme",
-            "theme_dark": "theme",
             "backends": {"test": {"adapter": TEST_BACKEND}},
             "harnesses": {
                 "test": {
@@ -84,7 +80,6 @@ class Session:
                     "request": {"model": "fake-model"},
                 }
             },
-            "themes": {"theme": THEME},
         }
         if hooks:
             config["harnesses"]["test"]["user_prompt_submit"] = list(hooks)
@@ -103,6 +98,13 @@ class Session:
         if session_start:
             config["harnesses"]["test"]["session_start"] = session_start
         self.config_file.write_text(json.dumps(config))
+        # Avoid an interactive terminal background probe.
+        (config_dir / "tui.jsonc").write_text(json.dumps({
+            "theme_mode": "dark",
+            "theme_light": "theme",
+            "theme_dark": "theme",
+            "themes": {"theme": THEME},
+        }))
         self.explicit_session = (
             Path(self.state_home.name) / "explicit.jsonl"
             if explicit_session
@@ -125,10 +127,14 @@ class Session:
                 SF_TEST_BACKEND_DELAY="0.02",
                 XDG_STATE_HOME=self.state_home.name,
                 XDG_CONFIG_HOME=str(self.config_home),
+                # A test must not read the developer's home, and zsh sources
+                # ~/.zshenv on startup, which may export its own
+                # XDG_CONFIG_HOME over the one set here.
+                HOME=self.state_home.name,
             )
             env.update(env_overrides)
             os.chdir(self.project_dir)
-            argv = [APP, "--config", str(self.config_file)]
+            argv = [APP]
             if self.explicit_session:
                 # Empty paths require --session-out; existing paths resume.
                 flag = (

@@ -3,7 +3,9 @@ setopt no_aliases no_multios pipe_fail
 
 (( $+functions[sf_jq] )) || source "$SF_ROOT/lib/jq.zsh"
 (( $+functions[sf_jsonc_read] )) || source "$SF_ROOT/lib/jsonc.zsh"
-[[ -n ${SF_SHARE-} ]] || typeset -g SF_SHARE=$SF_ROOT/share
+(( $+functions[sf_cli_diagnostic] )) || source "$SF_ROOT/lib/cli.zsh"
+[[ -n ${SF_SHARE-} ]] ||
+  typeset -g SF_SHARE=$SF_ROOT/share
 
 typeset -g SF_RUNTIME_ERROR=''
 typeset -g SF_RUNTIME_SANDBOX_GRANTS='{"sandbox_read_paths":[],"sandbox_write_paths":[]}'
@@ -13,13 +15,10 @@ sf_runtime_fail() {
   return 1
 }
 
-# jq's own "jq: " prefix says nothing the fallback message has not already said.
 sf_runtime_validation_error() {
-  local output=$1 fallback=$2 detail=''
-  [[ -z $output ]] || \
-    detail=$(print -rn -- "$output" | LC_ALL=C tr -s '[:cntrl:]' ' ' | cut -c 1-1000)
-  detail=${detail#jq: }
-  sf_runtime_fail "$fallback${detail:+: $detail}"
+  local output=$1 fallback=$2
+  sf_cli_diagnostic "$output"
+  sf_runtime_fail "$fallback${REPLY:+: $REPLY}"
 }
 
 sf_runtime_read_manifest() {

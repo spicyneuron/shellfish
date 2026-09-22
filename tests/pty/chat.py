@@ -16,7 +16,7 @@ import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from _session import APP, COLUMNS, ROWS, Session, run  # noqa: E402
+from _session import APP, COLUMNS, ROWS, THEME, Session, run  # noqa: E402
 
 
 ECHO_HOOK = r"""#!/usr/bin/env zsh
@@ -338,19 +338,17 @@ def test_sigterm_leaves_terminal_state():
     fcntl.ioctl(master, termios.TIOCSWINSZ, struct.pack("HHHH", ROWS, COLUMNS, 0, 0))
     before = termios.tcgetattr(slave)
     config_dir = tempfile.TemporaryDirectory()
-    config = Path(config_dir.name) / "shellfish.jsonc"
-    config.write_text(
-        json.dumps(
-            {
-                "default_profile": "development",
-                "profiles": {
-                    "development": {
-                        "backend": "openai",
-                        "request": {"model": "fake-model"},
-                    }
-                },
-            }
-        )
+    # Resuming reads the runtime from the session header, so only rendering
+    # needs a fixture; a stable theme avoids a terminal background probe.
+    config_home = Path(config_dir.name) / "config"
+    (config_home / "shellfish").mkdir(parents=True)
+    (config_home / "shellfish" / "tui.jsonc").write_text(
+        json.dumps({
+            "theme_mode": "dark",
+            "theme_light": "theme",
+            "theme_dark": "theme",
+            "themes": {"theme": THEME},
+        })
     )
     fixture = Path(__file__).resolve().parents[1] / "fixtures/session/complete.jsonl"
     header = json.loads(fixture.read_text().splitlines()[0])
@@ -370,8 +368,10 @@ def test_sigterm_leaves_terminal_state():
     env.pop("NO_COLOR", None)
     env["TERM"] = "xterm-256color"
     env["XDG_STATE_HOME"] = config_dir.name
+    env["XDG_CONFIG_HOME"] = str(config_home)
+    env["HOME"] = config_dir.name
     process = subprocess.Popen(
-        [APP, "--config", str(config), "--session", str(session_file)],
+        [APP, "--session", str(session_file)],
         stdin=slave, stdout=slave, stderr=slave, env=env,
         close_fds=True, start_new_session=True,
     )

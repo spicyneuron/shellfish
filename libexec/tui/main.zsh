@@ -13,7 +13,7 @@ source "$SF_ROOT/lib/options.zsh"
 sf_tui_main() {
   local requested_session=''
   local input='' draft='' presentation runtime runtime_session='' session='' session_mode=startup
-  local presentation_config='' source_session=''
+  local source_session=''
   local arity=''
   local -a positional=() runtime_args=() resolve_args=()
   local -a original_args=("$@")
@@ -67,10 +67,9 @@ sf_tui_main() {
         # the client resolves the same options. Only the system prompt is its own.
         [[ $1 == (--system|--system-file|--session-from) ]] ||
           resolve_args+=( "${@:1:$take}" )
-        [[ $1 != --config ]] || presentation_config=$2
         [[ $1 != --session-from ]] || source_session=$2
-        [[ $1 == (--config|--system|--system-file|--session-from) ]] || runtime_override=1
-        [[ $1 == --config ]] || override=1
+        [[ $1 == (--system|--system-file|--session-from) ]] || runtime_override=1
+        override=1
         shift $take
         ;;
       *)
@@ -143,7 +142,7 @@ sf_tui_main() {
     runtime=$REPLY
   fi
   SF_PRESENTATION_VERBOSE=$verbose_requested
-  sf_presentation_resolve "$presentation_config" || {
+  sf_presentation_resolve || {
     resolve_status=$?
     sf_die "$SF_PRESENTATION_ERROR"
     return $resolve_status

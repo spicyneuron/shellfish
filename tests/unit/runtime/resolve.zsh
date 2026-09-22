@@ -27,9 +27,11 @@ fi
 print -r -- '{"profiles":{"work":{"context_window":null}}}' |
   config_eval 'config_validate' >/dev/null
 
-# Presentation keys pass through; lib/presentation.jq validates them.
-print -r -- '{"themes":{"dark":{"text":"red"}},"tui":{"preview_lines":-1}}' |
-  config_eval 'config_validate' >/dev/null
+# Presentation belongs to tui.jsonc and has no place here.
+if print -r -- '{"themes":{"dark":{"text":"red"}}}' |
+    config_eval 'config_validate' >/dev/null 2>&1; then
+  fail 'presentation key was accepted'
+fi
 
 # Harnesses reject unknown fields.
 if print -r -- '{"harnesses":{"bad":{"unexpected":[]}}}' |

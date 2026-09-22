@@ -89,13 +89,14 @@ jq -e '
   (.backend.context_window_command | endswith("/share/default/backends/codex/context_window"))
 ' <<<"$REPLY" >/dev/null
 
-# A runtime carries no presentation, and an unusable theme cannot block one.
+# Presentation lives in tui.jsonc, so this config has no place for it.
 print -r -- '{"theme_light":"missing","themes":{"dark":{"text":"blue"}}}' \
   >"$tmp/config/bad-theme.jsonc"
-sf_runtime_resolve_from_config "$tmp/config/bad-theme.jsonc" '' 'model' '{}' \
-  "$ROOT/tests/fixtures/backend" || fail 'runtime resolution read presentation'
-jq -e '.profile.request.model == "model" and (has("presentation") | not)' \
-  <<<"$REPLY" >/dev/null
+if sf_runtime_resolve_from_config "$tmp/config/bad-theme.jsonc" '' 'model' '{}' \
+    "$ROOT/tests/fixtures/backend"; then
+  fail 'presentation keys were accepted in the runtime config'
+fi
+[[ $SF_RUNTIME_ERROR == *'invalid config at $["theme_light"]: unknown field'* ]]
 
 # CLI backend paths override configuration.
 sf_runtime_resolve_from_config "$config" work '' '{}' "$ROOT/tests/fixtures/backend"

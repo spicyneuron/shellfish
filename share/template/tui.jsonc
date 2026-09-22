@@ -1,0 +1,18 @@
+// Shellfish TUI settings
+//
+// Full reference:
+// https://github.com/spicyneuron/shellfish/blob/main/share/default/tui.jsonc
+{
+  "$schema": "https://raw.githubusercontent.com/spicyneuron/shellfish/refs/heads/main/share/tui.schema.json",
+
+  "theme_mode": "auto",
+
+  // A palette merges over the bundled one, so list only what changes.
+  "themes": {
+    // "dark": { "agent": "#ffa759" }
+  },
+
+  // Rows kept when collapsing output. "full" shows everything.
+  "preview_lines_reasoning": 0,
+  "preview_lines": 2
+}

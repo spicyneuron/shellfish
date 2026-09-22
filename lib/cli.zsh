@@ -3,6 +3,15 @@ sf_die() {
   return 1
 }
 
+# Condense captured output into one line to append to a message that already
+# names the file. jq's own "jq: " prefix would only repeat that attribution.
+sf_cli_diagnostic() {
+  local output=$1 detail=''
+  [[ -z $output ]] || \
+    detail=$(print -rn -- "$output" | LC_ALL=C tr -s '[:cntrl:]' ' ' | cut -c 1-1000)
+  REPLY=${detail#jq: }
+}
+
 # An inherited pipe may never reach EOF, so argv input only probes stdin for
 # an immediately available conflict.
 sf_cli_read_prompt() {

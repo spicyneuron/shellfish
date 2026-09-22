@@ -327,11 +327,8 @@ def config_profile($path):
   config_assert((has("system") | not) or (.system | type == "array" and
     all(.[]; nonempty_control_free_string)); $path + ["system"]; "must be references");
 
-# Presentation keys pass through untouched. A session never freezes them, so
-# the client that renders owns their validation.
 def config_validate:
-  config_object([]; ["$schema", "default_profile", "theme_mode", "theme_light", "theme_dark",
-    "backends", "harnesses", "themes", "tui", "profiles"]) |
+  config_object([]; ["$schema", "default_profile", "backends", "harnesses", "profiles"]) |
   config_assert((has("$schema") | not) or (."$schema" | type == "string");
     ["$schema"]; "must be a string") |
   config_assert((has("default_profile") | not) or (.default_profile | profile_name);

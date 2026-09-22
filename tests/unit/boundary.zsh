@@ -27,7 +27,8 @@ typeset -a shell_files jq_files routes=()
 # primitives. Canonical session reading and provider mechanics stay in the core.
 typeset -a clients=( tui resume )
 typeset -a client_shared=(
-  lib/cli.zsh lib/options.zsh lib/process.zsh lib/runtime.zsh lib/scratch.zsh lib/session.zsh )
+  lib/cli.zsh lib/jsonc.zsh lib/options.zsh lib/process.zsh lib/runtime.zsh
+  lib/scratch.zsh lib/session.zsh )
 # lib/session.zsh both names a session and mutates one. A client may name one.
 typeset -a core_only_symbols=(
   sf_session_append sf_session_replace_runtime )

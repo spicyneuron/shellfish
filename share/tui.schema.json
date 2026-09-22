@@ -1,0 +1,144 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Shellfish TUI configuration",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "theme_mode": {
+      "enum": ["auto", "light", "dark"]
+    },
+    "theme_light": {
+      "$ref": "#/$defs/name"
+    },
+    "theme_dark": {
+      "$ref": "#/$defs/name"
+    },
+    "themes": {
+      "$ref": "#/$defs/named_themes"
+    },
+    "preview_lines_reasoning": {
+      "$ref": "#/$defs/preview_lines"
+    },
+    "preview_lines": {
+      "$ref": "#/$defs/preview_lines"
+    }
+  },
+  "$defs": {
+    "name": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+    },
+    "color": {
+      "type": "string",
+      "pattern": "^#[0-9A-Fa-f]{6}$"
+    },
+    "theme": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "text": {
+          "$ref": "#/$defs/color"
+        },
+        "muted": {
+          "$ref": "#/$defs/color"
+        },
+        "divider": {
+          "$ref": "#/$defs/color"
+        },
+        "footer": {
+          "$ref": "#/$defs/color"
+        },
+        "prompt": {
+          "$ref": "#/$defs/color"
+        },
+        "prompt_waiting": {
+          "$ref": "#/$defs/color"
+        },
+        "system": {
+          "$ref": "#/$defs/color"
+        },
+        "context": {
+          "$ref": "#/$defs/color"
+        },
+        "user": {
+          "$ref": "#/$defs/color"
+        },
+        "agent": {
+          "$ref": "#/$defs/color"
+        },
+        "activity": {
+          "$ref": "#/$defs/color"
+        },
+        "link": {
+          "$ref": "#/$defs/color"
+        },
+        "code": {
+          "$ref": "#/$defs/color"
+        },
+        "tool": {
+          "$ref": "#/$defs/color"
+        },
+        "reasoning": {
+          "$ref": "#/$defs/color"
+        },
+        "error": {
+          "$ref": "#/$defs/color"
+        },
+        "syntax_comment": {
+          "$ref": "#/$defs/color"
+        },
+        "syntax_keyword": {
+          "$ref": "#/$defs/color"
+        },
+        "syntax_string": {
+          "$ref": "#/$defs/color"
+        },
+        "syntax_number": {
+          "$ref": "#/$defs/color"
+        },
+        "syntax_tag": {
+          "$ref": "#/$defs/color"
+        },
+        "diff_added": {
+          "$ref": "#/$defs/color"
+        },
+        "diff_added_background": {
+          "$ref": "#/$defs/color"
+        },
+        "diff_removed": {
+          "$ref": "#/$defs/color"
+        },
+        "diff_removed_background": {
+          "$ref": "#/$defs/color"
+        },
+        "permission": {
+          "$ref": "#/$defs/color"
+        }
+      }
+    },
+    "named_themes": {
+      "type": "object",
+      "propertyNames": {
+        "$ref": "#/$defs/name"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/theme"
+      }
+    },
+    "preview_lines": {
+      "oneOf": [
+        {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 2147483647
+        },
+        {
+          "const": "full"
+        }
+      ]
+    }
+  }
+}

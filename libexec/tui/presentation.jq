@@ -11,9 +11,6 @@ def config_error($path; $message):
 def config_assert($valid; $path; $message):
   if $valid then . else config_error($path; $message) end;
 
-# The keys a config contributes to presentation. The core owns the rest.
-def presentation_keys: {theme_mode, theme_light, theme_dark, tui, themes};
-
 def config_presentation:
   config_assert((has("theme_mode") | not) or (.theme_mode | IN("auto", "light", "dark"));
     ["theme_mode"]; "invalid theme mode") |
@@ -29,12 +26,10 @@ def config_presentation:
       config_assert($color.value | type == "string" and
         test("^#[0-9A-Fa-f]{6}$");
         ["themes", $theme.key, $color.key]; "must be a #RRGGBB color"))) |
-  config_assert((has("tui") | not) or (.tui | type == "object");
-    ["tui"]; "must be an object") |
   reduce ["preview_lines_reasoning", "preview_lines"][] as $field (.;
-    config_assert((.tui // {} | has($field) | not) or
-      (.tui[$field] | . == "full" or (type == "number" and floor == . and . >= 0));
-      ["tui", $field]; "must be full or a non-negative integer"));
+    config_assert((has($field) | not) or
+      (.[$field] | . == "full" or (type == "number" and floor == . and . >= 0));
+      [$field]; "must be full or a non-negative integer"));
 
 # Whichever theme the current mode selects must exist.
 def presentation_finish:
@@ -46,7 +41,6 @@ def presentation_finish:
 
 if $raw | type != "object" then error("shellfish:invalid-config")
 else
-  ($defaults | presentation_keys) *
-  ($raw | presentation_keys | with_entries(select(.value != null))) |
+  $defaults * ($raw | with_entries(select(.value != null))) |
   config_presentation | presentation_finish
 end
