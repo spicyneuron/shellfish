@@ -147,7 +147,7 @@ sf_runtime_resolve_from_config() {
   local backend_override=${5-}
   local config_path config_dir='' raw defaults prepared external
   local backend_name backend_reference backend_dir backend_base manifest command
-  local context_window_command='' resolved_json
+  local context_window_command=''
   local reference resolved hook hook_manifest hook_match external_name final settings fence='' env_file=''
   local home=${HOME-}
   local -A decoded
@@ -277,28 +277,23 @@ sf_runtime_resolve_from_config() {
   done
   [[ -z ${commands[fence]-} ]] || fence=${commands[fence]:A}
 
-  # Split the resolved entries into their three lists here, so runtime_finalize
-  # reads each one directly instead of offsetting into a single argument list.
-  resolved_json=$(jq -cn --argjson tools "${#tool_entries}" \
-    --argjson components "${#component_entries}" --args '
-      $ARGS.positional |
-      {tools:.[:$tools], components:.[$tools:$tools + $components],
-       system:.[$tools + $components:]}
-    ' -- "${tool_entries[@]}" "${component_entries[@]}" "${system_entries[@]}") || {
-    sf_runtime_fail 'cannot assemble resolved runtime references'
-    return
-  }
+  # The two counts split the resolved entries into their three lists.
   final=$(sf_jq -cnce --argjson prepared "$prepared" \
     --arg manifest "$manifest" --arg command "$command" \
     --arg context_window_command "$context_window_command" --arg fence "$fence" \
-    --arg env_file "$env_file" --argjson resolved "$resolved_json" \
-    --argjson grants "$SF_RUNTIME_SANDBOX_GRANTS" '
+    --arg env_file "$env_file" --argjson tool_words "${#tool_entries}" \
+    --argjson component_words "${#component_entries}" \
+    --argjson grants "$SF_RUNTIME_SANDBOX_GRANTS" --args '
       include "lib/runtime";
       ({prepared:$prepared,manifest:$manifest,command:$command,
         context_window_command:$context_window_command,fence:$fence,
-        env_file:$env_file,resolved:$resolved} + $grants) |
+        env_file:$env_file,
+        resolved:($ARGS.positional |
+          {tools:.[:$tool_words],
+           components:.[$tool_words:$tool_words + $component_words],
+           system:.[$tool_words + $component_words:]})} + $grants) |
       runtime_finalize
-    ' 2>&1) || {
+    ' -- "${tool_entries[@]}" "${component_entries[@]}" "${system_entries[@]}" 2>&1) || {
     sf_runtime_validation_error "$final" "cannot finalize runtime"
     return
   }
