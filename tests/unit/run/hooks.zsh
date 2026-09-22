@@ -223,4 +223,38 @@ jq -eRn '
 ' <"$stream" >/dev/null || fail 'request limit lost stop feedback or its error'
 assert_canonical_session "$session"
 
+# The bundled sandbox hook compares portable grants with shell-resolved input.
+typeset sandbox_hook="$ROOT/share/default/hooks/user_prompt_submit/sandbox/run"
+typeset sandbox_session="$tmp/sandbox.jsonl" sandbox_control="$tmp/sandbox-control.json"
+typeset sandbox_project="$tmp/project" sandbox_home="$tmp/home" sandbox_output="$tmp/sandbox-output"
+mkdir -p "$sandbox_project/dir" "$sandbox_home/share"
+jq -c --arg cwd "${sandbox_project:A}" '
+  .cwd=$cwd | .runtime.harness.sandbox=true |
+  .runtime.harness.sandbox_write_paths=["./dir","~/share"]
+' "$SF_TEST_SESSIONS/header-only.jsonl" >"$sandbox_session"
+(
+  builtin cd -- "$sandbox_project"
+  export HOME="$sandbox_home"
+  sandbox_call() {
+    print -rn -- "$1" | SHELLFISH_SESSION="$sandbox_session" \
+      zsh -f "$sandbox_hook" 3>"$sandbox_control" >"$sandbox_output" 2>&1
+  }
+  integer sandbox_status=0
+  sandbox_call '/sandbox +w dir' || sandbox_status=$?
+  (( sandbox_status == 10 )) || fail 'project-relative grant was duplicated'
+  sandbox_status=0
+  sandbox_call '/sandbox +w ~/share' || sandbox_status=$?
+  (( sandbox_status == 10 )) || fail 'home-relative grant was duplicated'
+  sandbox_status=0
+  sandbox_call "/sandbox -w ${sandbox_project:A}/dir" || sandbox_status=$?
+  (( sandbox_status == 11 )) || fail 'project-relative grant could not be removed'
+  jq -e '.runtime.harness.sandbox_write_paths == ["~/share"]' \
+    "$sandbox_control" >/dev/null || fail 'sandbox removed the wrong grant'
+  sandbox_status=0
+  sandbox_call '/sandbox -w ~/share' || sandbox_status=$?
+  (( sandbox_status == 11 )) || fail 'home-relative grant could not be removed'
+  jq -e '.runtime.harness.sandbox_write_paths == ["./dir"]' \
+    "$sandbox_control" >/dev/null || fail 'sandbox removed the wrong home grant'
+)
+
 print -r -- ok

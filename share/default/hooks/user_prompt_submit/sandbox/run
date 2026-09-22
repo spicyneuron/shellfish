@@ -4,6 +4,7 @@ emulate -R zsh
 setopt extended_glob no_aliases no_multios pipe_fail
 
 typeset submitted='' body operation candidate grant_path header grants updated runtime field
+typeset grant resolved matched=''
 typeset action access message
 typeset usage='usage: /sandbox {read|write|+read|+write|+r|+w|-read|-write|-r|-w} DIR'
 integer read_status
@@ -58,32 +59,34 @@ field="sandbox_${access}_paths"
 grants=$(jq -ce --arg field "$field" '.runtime.harness[$field] | select(type == "array")' \
   <<<"$header") || exit 1
 
-if [[ $candidate == '~/'* ]]; then
+if [[ $candidate == '~' || $candidate == '~/'* ]]; then
   [[ -n ${HOME-} ]] || {
     print -u2 -r -- 'cannot expand ~ without HOME'
     exit 10
   }
-  candidate="$HOME/${candidate#\~/}"
+  candidate=${candidate/#\~/${HOME:A}}
 elif [[ $candidate != /* ]]; then
   candidate="$PWD/$candidate"
 fi
 
-if [[ $action == add ]]; then
-  grant_path=${candidate:A}
-  [[ -d $grant_path ]] || {
-    print -u2 -r -- "sandbox directory does not exist: $candidate"
-    exit 10
-  }
-else
-  if [[ $candidate == /* ]] && jq -e --arg path "$candidate" 'index($path) != null' \
-      <<<"$grants" >/dev/null; then
-    grant_path=$candidate
-  else
-    grant_path=${candidate:A}
-  fi
+grant_path=${candidate:A}
+if [[ $action == add && ! -d $grant_path ]]; then
+  print -u2 -r -- "sandbox directory does not exist: $candidate"
+  exit 10
 fi
 
-if jq -e --arg path "$grant_path" 'index($path) != null' <<<"$grants" >/dev/null; then
+while IFS= read -r -d '' grant; do
+  case $grant in
+    '~') resolved=${HOME:A} ;;
+    '~/'*) resolved="${HOME:A}/${grant#\~/}" ;;
+    '.') resolved=$PWD ;;
+    './'*) resolved="$PWD/${grant#./}" ;;
+    *) resolved=$grant ;;
+  esac
+  [[ ${resolved:A} != $grant_path ]] || { matched=$grant; break; }
+done < <(jq -jr '.[] | ., "\u0000"' <<<"$grants")
+
+if [[ -n $matched ]]; then
   if [[ $action == add ]]; then
     print -u2 -r -- "sandbox $access grant already exists: $grant_path"
     exit 10
@@ -93,8 +96,8 @@ elif [[ $action == remove ]]; then
   exit 10
 fi
 
-updated=$(jq -c --arg action "$action" --arg path "$grant_path" '
-  if $action == "add" then . + [$path] else map(select(. != $path)) end
+updated=$(jq -c --arg action "$action" --arg path "$grant_path" --arg matched "$matched" '
+  if $action == "add" then . + [$path] else map(select(. != $matched)) end
 ' <<<"$grants") || exit 1
 runtime=$(jq -c --arg field "$field" --argjson paths "$updated" \
   '.runtime | .harness[$field]=$paths' <<<"$header") || exit 1
