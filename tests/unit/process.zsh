@@ -20,11 +20,14 @@ chmod +x "$command"
 print -rn -- input >"$input_file"
 
 typeset capture="$tmp/basic" stdout stderr control child
+typeset -A result
 mkdir "$capture"
 capture=${capture:A}
 sf_process_run "$capture" "$tmp" "$input_file" 512 \
   /usr/bin/env RUNNER_VALUE=ambient "$command" argument || { fail "$SF_PROCESS_ERROR"; exit 1; }
-(( reply[1] == 7 && reply[2] == 0 && reply[3] > 0 && reply[4] == 5 && reply[5] == 12 )) ||
+result=( "${reply[@]}" )
+(( result[exit_code] == 7 && result[interrupted] == 0 && result[stdout_bytes] > 0 &&
+   result[stderr_bytes] == 5 && result[control_bytes] == 12 )) ||
   fail 'runner returned an invalid result'
 stdout="$capture/stdout"
 stderr="$capture/stderr"
@@ -50,7 +53,9 @@ chmod +x "$overflow"
 mkdir "$overflow_capture"
 sf_process_run "$overflow_capture" "$tmp" "$input_file" 16 "$overflow" ||
   fail "$SF_PROCESS_ERROR"
-(( reply[1] == 0 && reply[2] == 0 && reply[3] == 17 && reply[4] == 17 && reply[5] == 17 )) ||
+result=( "${reply[@]}" )
+(( result[exit_code] == 0 && result[interrupted] == 0 && result[stdout_bytes] == 17 &&
+   result[stderr_bytes] == 17 && result[control_bytes] == 17 )) ||
   fail 'runner did not bound each capture channel'
 
 # Interruption settles the result and stops the whole command group.
@@ -69,14 +74,15 @@ mkdir "$interrupt_capture"
 (
   sf_process_run "$interrupt_capture" "$tmp" "$input_file" 16 \
     /usr/bin/env STARTED="$marker" CHILD_FILE="$child_file" "$interrupt" || exit
-  print -r -- "${(j: :)reply}" >"$interrupt_result"
+  result=( "${reply[@]}" )
+  print -r -- "$result[exit_code] $result[interrupted]" >"$interrupt_result"
 ) &
 integer runner=$! waited=0
 while (( waited++ < 100 )) && [[ ! -s $child_file ]]; do sleep 0.02; done
 [[ -s $child_file ]] || fail 'runner command did not start'
 kill -TERM "$runner"
 wait "$runner" || fail 'runner did not settle an interrupted command'
-[[ $(<"$interrupt_result") == '143 1 '* ]] ||
+[[ $(<"$interrupt_result") == '143 1' ]] ||
   fail 'runner did not report interruption'
 child=$(<"$child_file")
 ! kill -0 "$child" 2>/dev/null || fail 'runner left an interrupted descendant alive'

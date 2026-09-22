@@ -195,8 +195,8 @@ sf_process_run() {
       sf_process_fail 'cannot inspect process capture'
       return
     }
-    # Exit status, interrupted flag, then stdout, stderr, and control byte counts.
-    reply=( $process_status $(( signal_status != 0 )) $stdout_bytes $stderr_bytes $control_bytes )
+    reply=( exit_code $process_status interrupted $(( signal_status != 0 ))
+      stdout_bytes $stdout_bytes stderr_bytes $stderr_bytes control_bytes $control_bytes )
     REPLY=''
     complete=1
   } always {

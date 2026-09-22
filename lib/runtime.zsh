@@ -124,7 +124,7 @@ sf_runtime_load_config() {
   }
   sf_runtime_read_config "$requested_config" "$config_path" || return
   raw=$REPLY
-  reply=( "$config_path" "$defaults" "$raw" )
+  reply=( config_path "$config_path" defaults "$defaults" raw "$raw" )
 }
 
 sf_runtime_reference() {
@@ -151,7 +151,8 @@ sf_runtime_resolve_from_config() {
   local reference resolved hook hook_manifest hook_match external_name final settings fence='' env_file=''
   local home=${HOME-}
   local -A decoded
-  local -a loaded tool_entries system_entries component_entries
+  local -a tool_entries system_entries component_entries
+  local -A loaded
   local -a tool_references system_references component_references
   integer settings_readable
 
@@ -159,9 +160,9 @@ sf_runtime_resolve_from_config() {
   REPLY=''
   sf_runtime_load_config "$requested_config" || return
   loaded=( "${reply[@]}" )
-  config_path=$loaded[1]
-  defaults=$loaded[2]
-  raw=$loaded[3]
+  config_path=$loaded[config_path]
+  defaults=$loaded[defaults]
+  raw=$loaded[raw]
   [[ -z $config_path ]] || config_dir=${config_path:h}
   [[ -z $config_path ]] || env_file=${config_dir:A}/.env
   [[ -z $home ]] || home=${home:A}

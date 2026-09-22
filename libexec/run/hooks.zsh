@@ -69,7 +69,8 @@ sf_run_hook_invoke() {
   local render=$7 id=$8 name=$9 input_json=${10}
   shift 10
   local env_file=$SF_HOOK_PLAN[env_file] config_dir='' directory capture_error=''
-  local -a arguments environment process
+  local -a arguments environment
+  local -A process
   integer max_capture=$SF_HOOK_PLAN[max_capture]
 
   [[ -z $env_file ]] || config_dir=${env_file:h}
@@ -110,20 +111,20 @@ sf_run_hook_invoke() {
     return 1
   fi
   process=( "${reply[@]}" )
-  if (( process[3] + process[4] + process[5] > max_capture )); then
+  if (( process[stdout_bytes] + process[stderr_bytes] +
+     process[control_bytes] > max_capture )); then
     capture_error='hook output exceeds capture limit'
   fi
-  if (( process[2] )); then
+  if (( process[interrupted] )); then
     rm -rf -- "$directory"
-    return $process[1]
+    return $process[exit_code]
   fi
   if [[ -z $id ]]; then
     rm -rf -- "$directory"
-    SF_HOOK_RESULT=( exit_code "$process[1]" stdout_bytes "$process[3]"
-      stderr_bytes "$process[4]" control_bytes "$process[5]" )
+    SF_HOOK_RESULT=( "${(@kv)process}" )
     return
   fi
-  sf_jq_fields -cn --argjson exit_code "$process[1]" \
+  sf_jq_fields -cn --argjson exit_code "$process[exit_code]" \
     --rawfile stdout "$directory/stdout" --rawfile stderr "$directory/stderr" \
     --slurpfile controls "$directory/control" --arg capture_error "$capture_error" \
     --arg lifecycle "$lifecycle" --arg id "$id" --arg name "$name" \
@@ -156,7 +157,7 @@ sf_run_hook_invoke() {
         elif $outcome.control.action? == "session_update" then ($outcome.control.runtime | tojson)
         else "" end),
       entry("record"; if $result == null then "" else ($result | tojson) end),
-      ($outcome.states[] | tojson | field),
+      entry("states"; [$outcome.states[] | tojson] | join("\n")),
       ("ok" | field)
     ' || {
     rm -rf -- "$directory"
@@ -164,9 +165,7 @@ sf_run_hook_invoke() {
     return 1
   }
   rm -rf -- "$directory"
-  # Seven named values, then any state records the hook wrote.
-  SF_HOOK_RESULT=( "${(@)reply[1,14]}" )
-  reply=( "${(@)reply[15,-1]}" )
+  SF_HOOK_RESULT=( "${reply[@]}" )
 }
 
 # A match command decides by status alone and may write nothing.
@@ -194,7 +193,7 @@ sf_run_hooks() {
   SF_RUN_HOOK_ERROR=''
   if (( SF_RUN[hooks_known] )) &&
       [[ " $SF_RUN[hooks] " != *" $lifecycle "* ]]; then
-    reply=( proceed '' '' )
+    reply=( decision proceed )
     return 0
   fi
   sf_run_hook_project "$SF_RUN[runtime]" "$lifecycle" "$content" || {
@@ -203,7 +202,7 @@ sf_run_hooks() {
   }
   plan=( "${reply[@]}" )
   if (( ! ${#plan} )); then
-    reply=( proceed '' '' )
+    reply=( decision proceed )
     return 0
   fi
   sf_scratch_file hook-input || { SF_RUN_HOOK_ERROR="cannot prepare $lifecycle hook input"; return 1; }
@@ -247,7 +246,7 @@ sf_run_hooks() {
       error=${SF_RUN_HOOK_ERROR:-cannot run $lifecycle hook}
       break
     fi
-    states=( "${reply[@]}" )
+    states=( ${(f)SF_HOOK_RESULT[states]} )
     exit_code=$SF_HOOK_RESULT[exit_code]
     for record in "${states[@]}"; do
       sf_run_append "$session" "$record" || { error=$REPLY; break 2; }
@@ -301,6 +300,5 @@ sf_run_hooks() {
     SF_RUN_HOOK_ERROR=$error
     return 1
   fi
-  reply=( "$decision" "$action" "$reason" )
-  [[ $action != (handoff|session_update) ]] || reply+=( "$payload" )
+  reply=( decision "$decision" action "$action" reason "$reason" payload "$payload" )
 }

@@ -91,7 +91,8 @@ sf_run_tool_execute() {
   local read_paths=$SF_TOOL_PLAN[read_paths] write_paths=$SF_TOOL_PLAN[write_paths]
   local cwd=$SF_RUN[cwd] capture stdin bounded_stdout bounded_stderr
   local config_dir='' expose name darwin_temp='' temp_dir=${TMPDIR:-/tmp}
-  local -a arguments environment names process_command process sandbox_arguments temp_paths
+  local -a arguments environment names process_command sandbox_arguments temp_paths
+  local -A process
   integer max_capture=$SF_TOOL_PLAN[max_capture] control_bytes budget stderr_bytes denied=0
 
   SF_RUN_TOOL_ERROR=''
@@ -164,10 +165,10 @@ sf_run_tool_execute() {
     return 1
   fi
   process=( "${reply[@]}" )
-  if (( process[2] )); then
-    return $process[1]
+  if (( process[interrupted] )); then
+    return $process[exit_code]
   fi
-  control_bytes=$process[5]
+  control_bytes=$process[control_bytes]
   (( control_bytes <= max_capture )) || {
     SF_RUN_TOOL_ERROR='tool control data exceeds capture limit'
     return 1
@@ -178,10 +179,10 @@ sf_run_tool_execute() {
   sf_run_tool_bound "$capture/stderr" "$bounded_stderr" $budget || return 1
   stderr_bytes=$(wc -c <"$bounded_stderr") || return 1
   sf_run_tool_bound "$capture/stdout" "$bounded_stdout" $(( budget - stderr_bytes )) || return 1
-  if (( process[1] )) && grep -qs $'✗' "$capture/sandbox.log"; then denied=1; fi
+  if (( process[exit_code] )) && grep -qs $'✗' "$capture/sandbox.log"; then denied=1; fi
   REPLY=$(sf_jq -cn --rawfile stdout "$bounded_stdout" --rawfile stderr "$bounded_stderr" \
     --slurpfile control "$capture/control" --argjson control_bytes "$control_bytes" \
-    --argjson exit_code "$process[1]" --argjson denied "$denied" '
+    --argjson exit_code "$process[exit_code]" --argjson denied "$denied" '
       include "lib/session";
       (if $control_bytes == 0 then {}
        elif ($control | length) == 1 and ($control[0] | type) == "object" then $control[0]
@@ -205,7 +206,6 @@ sf_run_tool_execute() {
 
 sf_run_tool_complete() {
   local outcome=$1 name=$SF_TOOL_PLAN[name]
-  local -a fields
   sf_jq_fields -rn --argjson request "$SF_TOOL_PLAN[request]" \
     --arg id "$SF_TOOL_PLAN[id]" --arg name "$name" \
     --argjson input "$SF_TOOL_PLAN[input]" \
@@ -223,12 +223,10 @@ sf_run_tool_complete() {
        (if $rendered.user_text == null then {} else {user_text:$rendered.user_text} end) +
        (if $rendered.model_text == null then {} else {model_text:($rendered.model_text + $notice)} end)) as $result |
       if $result | canonical_tool_result then
-        ($request + {tool_response:$outcome.output} | tojson | field),
-        ($result | tojson | field),
-        ($outcome.states[] | tojson | field), ("ok" | field)
+        entry("post_request"; $request + {tool_response:$outcome.output} | tojson),
+        entry("result"; $result | tojson),
+        entry("states"; [$outcome.states[] | tojson] | join("\n")),
+        ("ok" | field)
       else error("invalid result") end
     ' || { SF_RUN_TOOL_ERROR="cannot finish tool result: $name"; return 1; }
-  fields=( "${reply[@]}" )
-  REPLY=$fields[2]
-  reply=( "$fields[1]" "${(@)fields[3,-1]}" )
 }

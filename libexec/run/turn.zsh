@@ -33,6 +33,7 @@ sf_run_settle() {
   local session=$1 reason=$2 call outcome
   local active=$SF_RUN[active_call] known=$SF_RUN[known_outcome]
   local -a calls
+  local -A completed
   sf_jq_fields -Rs '
     include "lib/fields";
     include "lib/session";
@@ -63,7 +64,8 @@ sf_run_settle() {
       REPLY=${SF_RUN_TOOL_ERROR:-cannot finish pending tool call}
       return 1
     }
-    sf_run_append "$session" "$REPLY" || return 1
+    completed=( "${reply[@]}" )
+    sf_run_append "$session" "$completed[result]" || return 1
   done
 }
 
@@ -211,8 +213,8 @@ sf_run_turn() {
   local assistant stop_text id name decision post_request
   local reason outcome result state post_error='' failure='' turn_state call
   local call_projection
-  local -a calls states hook_result
-  local -A projected
+  local -a calls states
+  local -A projected hook_result completed
   integer begun=0 request_count=0 call_count=0 request_limit tool_limit max_capture run_status
 
   {
@@ -242,20 +244,23 @@ sf_run_turn() {
     sf_scratch_directory turn || failure='cannot prepare hook turn state'
     turn_state=$REPLY
     if [[ -z $failure ]]; then
-      sf_run_hooks "$session" user_prompt_submit "$prompt" "$turn_state" || failure=$SF_RUN_HOOK_ERROR
-      hook_result=( "${reply[@]}" )
+      if sf_run_hooks "$session" user_prompt_submit "$prompt" "$turn_state"; then
+        hook_result=( "${reply[@]}" )
+      else
+        failure=$SF_RUN_HOOK_ERROR
+      fi
     fi
     if [[ -z $failure ]]; then
-      case $hook_result[2] in
+      case $hook_result[action] in
         handoff)
-          if sf_run_emit "$(jq -cn --argjson argv "$hook_result[4]" '{type:"_handoff",argv:$argv}')"; then
+          if sf_run_emit "$(jq -cn --argjson argv "$hook_result[payload]" '{type:"_handoff",argv:$argv}')"; then
             return 0
           fi
           failure='cannot emit handoff'
           ;;
         session_update)
-          if sf_session_replace_runtime "$session" "$hook_result[4]"; then
-            if sf_run_emit "$(jq -cn --argjson runtime "$hook_result[4]" \
+          if sf_session_replace_runtime "$session" "$hook_result[payload]"; then
+            if sf_run_emit "$(jq -cn --argjson runtime "$hook_result[payload]" \
                 '{type:"_session_update",runtime:$runtime}')"; then
               return 0
             fi
@@ -265,7 +270,7 @@ sf_run_turn() {
           fi
           ;;
       esac
-      if [[ -z $failure && $hook_result[1] == handled ]]; then
+      if [[ -z $failure && $hook_result[decision] == handled ]]; then
         return 0
       fi
     fi
@@ -331,7 +336,7 @@ sf_run_turn() {
           break
         }
         hook_result=( "${reply[@]}" )
-        if [[ $hook_result[1] != continue ]]; then
+        if [[ $hook_result[decision] != continue ]]; then
           SF_RUN[answer]=$stop_text
           SF_RUN[assistant]=$assistant
           break
@@ -355,7 +360,7 @@ sf_run_turn() {
           sf_run_hooks "$session" pre_tool_use "$SF_TOOL_PLAN[request]" \
             "$turn_state" "$name" "$id" || { failure=$SF_RUN_HOOK_ERROR; break; }
           hook_result=( "${reply[@]}" )
-          if [[ $hook_result[1] == deny ]]; then
+          if [[ $hook_result[decision] == deny ]]; then
             sf_run_tool_refused 'tool call denied by pre_tool_use hook' 126
             outcome=$REPLY
           elif [[ -z $SF_TOOL_PLAN[executable] ]]; then
@@ -372,8 +377,8 @@ sf_run_turn() {
               sf_run_hooks "$session" permission_request "$SF_TOOL_PLAN[request]" \
                 "$turn_state" "$name" "$id" || { failure=$SF_RUN_HOOK_ERROR; break; }
               hook_result=( "${reply[@]}" )
-              decision=$hook_result[1]
-              reason=${hook_result[3]:-sandbox bypass denied}
+              decision=$hook_result[decision]
+              reason=${hook_result[reason]:-sandbox bypass denied}
               if [[ $decision == proceed ]]; then
                 sf_run_permission_client "$name" "$SF_TOOL_PLAN[input]" \
                   "$SF_TOOL_PLAN[permission_reason]" "$SF_TOOL_PLAN[permission_preview]"
@@ -403,9 +408,10 @@ sf_run_turn() {
         fi
         [[ -n $outcome ]] || break
         sf_run_tool_complete "$outcome" || { failure=$SF_RUN_TOOL_ERROR; break; }
-        result=$REPLY
-        post_request=$reply[1]
-        states=( "${(@)reply[2,-1]}" )
+        completed=( "${reply[@]}" )
+        result=$completed[result]
+        post_request=$completed[post_request]
+        states=( ${(f)completed[states]} )
         for state in "${states[@]}"; do
           sf_run_append "$session" "$state" || { failure=$REPLY; break 2; }
         done

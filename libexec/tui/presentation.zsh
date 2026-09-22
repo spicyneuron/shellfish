@@ -14,7 +14,7 @@ sf_presentation_resolve() {
   local requested_config=$1 config_path defaults raw output
   local invalid_marker=': shellfish:invalid-config'
   local theme_marker=': shellfish:unknown-theme:'
-  local -a loaded
+  local -A loaded
 
   SF_PRESENTATION=''
   SF_PRESENTATION_ERROR=''
@@ -23,9 +23,9 @@ sf_presentation_resolve() {
     return 1
   }
   loaded=( "${reply[@]}" )
-  config_path=$loaded[1]
-  defaults=$loaded[2]
-  raw=$loaded[3]
+  config_path=$loaded[config_path]
+  defaults=$loaded[defaults]
+  raw=$loaded[raw]
   output=$(jq -nce --argjson defaults "$defaults" --argjson raw "$raw" \
     -f "$SF_ROOT/libexec/tui/presentation.jq" 2>&1) || {
     if [[ $output == *"$theme_marker"* ]]; then

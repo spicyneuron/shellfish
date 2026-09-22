@@ -48,7 +48,8 @@ sf_backend_context_window() {
   local tools=$1
   integer max_capture=$2
   local directory input output name
-  local -a arguments process
+  local -a arguments
+  local -A process
   sf_backend_project "$tools" context_window_command || {
     SF_BACKEND[error]='cannot prepare context window request'
     return 1
@@ -78,12 +79,12 @@ sf_backend_context_window() {
     return 1
   fi
   process=( "${reply[@]}" )
-  if (( process[2] )); then
+  if (( process[interrupted] )); then
     rm -rf -- "$directory" "$input"
-    return $process[1]
+    return $process[exit_code]
   fi
   REPLY=null
-  if (( process[1] == 0 )); then
+  if (( process[exit_code] == 0 )); then
     output=$(<"$directory/stdout")
     REPLY=$(sf_jq -ser '
       include "lib/runtime";
