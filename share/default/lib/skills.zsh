@@ -74,7 +74,7 @@ sf_skills_discover() {
   emulate -L zsh
   setopt extended_glob
   local bundled_root=$1 config_dir=${2-} project_dir=${3:-$PWD}
-  local home=${HOME-} root canonical directory file name description disabled
+  local home=${HOME-} user_config='' root canonical directory file name description disabled
   local -a roots discovered
   local -A seen_roots seen_names
   if [[ -d $project_dir/.agents/skills ]]; then
@@ -83,6 +83,12 @@ sf_skills_discover() {
     roots=( "$project_dir/.claude/skills" )
   fi
   [[ -z $config_dir ]] || roots+=( "$config_dir/skills" )
+  if [[ -n ${XDG_CONFIG_HOME-} ]]; then
+    user_config=$XDG_CONFIG_HOME/shellfish
+  elif [[ -n $home ]]; then
+    user_config=$home/.config/shellfish
+  fi
+  [[ -z $user_config ]] || roots+=( "$user_config/skills" )
   [[ -z $home ]] || roots+=( "$home/.agents/skills" )
   roots+=( "$bundled_root/skills" )
   for root in "${roots[@]}"; do
@@ -90,7 +96,7 @@ sf_skills_discover() {
     [[ -z ${seen_roots[$canonical]-} ]] || continue
     seen_roots[$canonical]=1
     [[ -d $canonical ]] || continue
-    for directory in "$canonical"/*(N/); do
+    for directory in "$canonical"/*(N-/); do
       file=$directory/SKILL.md
       [[ -f $file && -r $file ]] || continue
       sf_skills_metadata "$file" || continue
