@@ -69,10 +69,10 @@ sf_run_hook_invoke() {
   local session=$1 command=$2 selected=$3 input=$4 lifecycle=$5 turn_state=$6
   local render=$7 id=$8 name=$9 input_json=${10}
   shift 10
-  local env_file=$SF_HOOK_PLAN[env_file] config_dir='' directory capture_error=''
+  local env_file=$SF_HOOK_PLAN[env_file] config_dir='' directory
   local -a arguments environment
   local -A process
-  integer max_capture=$SF_HOOK_PLAN[max_capture]
+  integer max_capture=$SF_HOOK_PLAN[max_capture] over_capture=0
 
   [[ -z $env_file ]] || config_dir=${env_file:h}
   [[ -f $command && -x $command ]] || {
@@ -114,7 +114,7 @@ sf_run_hook_invoke() {
   process=( "${reply[@]}" )
   if (( process[stdout_bytes] + process[stderr_bytes] +
      process[control_bytes] > max_capture )); then
-    capture_error='hook output exceeds capture limit'
+    over_capture=1
   fi
   if (( process[interrupted] )); then
     rm -rf -- "$directory"
@@ -127,14 +127,14 @@ sf_run_hook_invoke() {
   fi
   sf_jq_fields -cn --argjson exit_code "$process[exit_code]" \
     --rawfile stdout "$directory/stdout" --rawfile stderr "$directory/stderr" \
-    --slurpfile controls "$directory/control" --arg capture_error "$capture_error" \
+    --slurpfile controls "$directory/control" --argjson over_capture "$over_capture" \
     --arg lifecycle "$lifecycle" --arg id "$id" --arg name "$name" \
     --argjson input "$input_json" --argjson render "$render" '
       include "lib/fields";
       include "libexec/run/hooks";
       include "lib/runtime";
       include "lib/session";
-      hook_outcome($exit_code;$stdout;$stderr;$controls;$capture_error) |
+      hook_outcome($exit_code;$stdout;$stderr;$controls;$over_capture) |
       . as $outcome | .output as $output |
       ($outcome | hook_control_error($lifecycle)) as $control_error |
       (if $output.exit_code != 0 or $output.stdout != "" or $output.stderr != "" then
