@@ -139,6 +139,22 @@ sf_resume_find 1
 assert_equal 1 "${#SF_RESUME_MATCHES}"
 [[ $SF_RESUME_MATCHES[1] == "$directory/second.jsonl" ]]
 (
+  cwd=$(pwd -P)
+  export HOME=${cwd:h}
+  make_discovery_header "~/${cwd:t}" home >"$directory/home.jsonl"
+  touch -t 202609040400 "$directory/home.jsonl"
+  sf_resume_find 1
+  [[ $SF_RESUME_MATCHES[1] == "$directory/home.jsonl" ]] ||
+    fail 'home-relative session cwd was not discovered'
+  export HOME=$cwd
+  make_discovery_header '~' root >"$directory/root.jsonl"
+  touch -t 202609040500 "$directory/root.jsonl"
+  sf_resume_find 1
+  [[ $SF_RESUME_MATCHES[1] == "$directory/root.jsonl" ]] ||
+    fail 'bare home session cwd was not discovered'
+)
+rm -- "$directory/home.jsonl" "$directory/root.jsonl"
+(
   cd "$tmp"
   if sf_resume_find 0 2>/dev/null; then
     fail 'session discovery succeeded with no matches'
