@@ -30,6 +30,22 @@ jq -e '.tools == [] and .messages[-1].content[0].text == "composed request"' \
   "$tmp/request.json" >/dev/null || fail 'backend-request exposed unavailable tools'
 assert_equal "$digest" "$(shasum <"$session")"
 
+# Backend execution follows the session cwd, not the command's cwd.
+typeset cwd_backend="$tmp/cwd-backend" cwd_session="$tmp/cwd-session.jsonl"
+cat >"$cwd_backend" <<EOF
+#!/usr/bin/env zsh
+pwd -P >"$tmp/backend-cwd"
+exec "$SF_TEST_BACKEND"
+EOF
+chmod +x "$cwd_backend"
+jq -c --arg command "$cwd_backend" '
+  if .type == "session" then .cwd="~" | .runtime.backend.command=$command else . end
+' \
+  "$session" >"$cwd_session"
+HOME="$tmp" SF_TEST_BACKEND_DELAY=0 zsh -f "$entry" backend-request \
+  <"$cwd_session" >/dev/null || fail 'home-relative backend request failed'
+assert_equal "${tmp:A}" "$(<"$tmp/backend-cwd")" 'backend ran outside the session cwd'
+
 # jq modules resolve from the installation root.
 mkdir -p "$tmp/lib"
 print -r -- 'def canonical_request(:' >"$tmp/lib/backend.jq"

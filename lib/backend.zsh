@@ -16,7 +16,7 @@ typeset -gA SF_BACKEND_PLAN=()
 # named backend command and its environment declarations.
 sf_backend_project() {
   local tools=$1 command_field=$2
-  sf_jq_fields 10 -sc --argjson tools "$tools" --arg command_field "$command_field" \
+  sf_jq_fields 12 -sc --argjson tools "$tools" --arg command_field "$command_field" \
     --arg home "${HOME:A}" '
     include "lib/runtime";
     include "lib/session";
@@ -26,7 +26,8 @@ sf_backend_project() {
     select(length >= 1) |
     select(.[0] | canonical_session_header) |
     . as $records |
-    ($records[0] | header_expand($home) | .runtime) as $runtime |
+    ($records[0] | header_expand($home)) as $header |
+    $header.runtime as $runtime |
     backend_adapter_request(
       $runtime;
       ([$records[1:][] | select(.type == "system") | .content] | join("\n\n"));
@@ -34,6 +35,7 @@ sf_backend_project() {
       $tools
     ) as $request |
     entry("request"; $request | tojson),
+    entry("cwd"; $header.cwd),
     entry("command"; $runtime.backend[$command_field]),
     entry("env_file"; $runtime.backend.env_file),
     entry("environment"; $runtime.backend.environment | join(" ")),
@@ -70,7 +72,7 @@ sf_backend_context_window() {
   arguments=( /usr/bin/env )
   for name in ${=SF_BACKEND_PLAN[environment_names]}; do arguments+=( -u "$name" ); done
   arguments+=( "${SF_ENVIRONMENT_VALUES[@]}" "$SF_BACKEND_PLAN[command]" )
-  if ! sf_process_run "$directory" "$PWD" "${input:A}" "$max_capture" \
+  if ! sf_process_run "$directory" "$SF_BACKEND_PLAN[cwd]" "${input:A}" "$max_capture" \
       "${arguments[@]}"; then
     rm -rf -- "$directory" "$input"
     SF_BACKEND[error]=${SF_PROCESS_ERROR:-cannot discover model context window}
@@ -123,7 +125,7 @@ sf_backend_run() {
   SF_BACKEND[directory]=$directory
   SF_BACKEND[group_file]=$group_file
   print -r -- "$request" >"$input_file" && mkfifo "$output_pipe" &&
-    sf_process_isolated_command "$group_file" "$status_file" "$PWD" "$input_file" \
+    sf_process_isolated_command "$group_file" "$status_file" "$SF_BACKEND_PLAN[cwd]" "$input_file" \
       "$output_pipe" "$error_file" /dev/null \
       "${environment[@]}" "$command" || {
     rm -rf -- "$directory"

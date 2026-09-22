@@ -230,10 +230,10 @@ func TestPublicAssets(t *testing.T) {
 	}
 }
 
-// The server refuses invalid files and sessions belonging to another directory.
-func TestNewRefusesUnservableSession(t *testing.T) {
+// The server accepts an explicit session regardless of its stored cwd.
+func TestNewChecksSessionHeader(t *testing.T) {
 	record, err := json.Marshal(map[string]any{
-		"type": "session", "format_version": 1, "cwd": t.TempDir(),
+		"type": "session", "format_version": 1, "cwd": "~/project",
 		"runtime": map[string]any{"harness": map[string]any{
 			"sandbox": false, "tools": []any{},
 		}},
@@ -253,7 +253,10 @@ func TestNewRefusesUnservableSession(t *testing.T) {
 			t.Fatalf("error = %v, want containing %q", err, wantError)
 		}
 	}
-	open(path, "session belongs to")
+	if _, err := New(testAccessCode,
+		NewExec(context.Background(), fakeShellfish(t, ""), path)); err != nil {
+		t.Fatalf("home-relative session was rejected: %v", err)
+	}
 	invalid := filepath.Join(t.TempDir(), "invalid-header.jsonl")
 	if err := os.WriteFile(invalid, []byte("{}\n"), 0o600); err != nil {
 		t.Fatal(err)

@@ -10,8 +10,6 @@ import (
 	"io"
 	"log"
 	"net/http"
-	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -102,8 +100,7 @@ func New(accessCode string, exec *Exec) (*Service, error) {
 		recordCount: len(records)}, nil
 }
 
-// checkHeader reads the fields the server needs and refuses a session from
-// another directory.
+// checkHeader reads the fields the server needs.
 func checkHeader(record json.RawMessage) (sessionHeader, error) {
 	var header sessionHeader
 	if err := json.Unmarshal(record, &header); err != nil {
@@ -120,16 +117,6 @@ func checkHeader(record json.RawMessage) (sessionHeader, error) {
 		if tool.Name == "" {
 			return sessionHeader{}, errors.New("read session header: invalid tool")
 		}
-	}
-	cwd, err := os.Getwd()
-	if err == nil {
-		cwd, err = filepath.EvalSymlinks(cwd)
-	}
-	if err != nil {
-		return sessionHeader{}, fmt.Errorf("resolve working directory: %w", err)
-	}
-	if header.Cwd != cwd {
-		return sessionHeader{}, fmt.Errorf("session belongs to %q, not %q", header.Cwd, cwd)
 	}
 	return header, nil
 }
