@@ -277,4 +277,47 @@ jq -se 'map(.type) == ["session","system"]' "$cancelled" >/dev/null ||
   fail 'cancelled creation lost its transcript prefix'
 [[ -s $hook_error ]] || fail 'cancelled creation omitted stderr diagnostic'
 
+# Moving a home and project preserves their frozen relative references.
+typeset old_home="$tmp/original-home" new_home="$tmp/moved-home"
+typeset old_project="$old_home/project" new_project="$new_home/project"
+typeset portable_config="$old_home/shellfish.jsonc"
+mkdir -p "$old_project/hook"
+print -r -- 'original prompt' >"$old_project/prompt.md"
+cat >"$old_project/hook/run" <<'ZSH'
+#!/usr/bin/env zsh
+pwd -P >"$PWD/hook-cwd"
+ZSH
+chmod +x "$old_project/hook/run"
+jq --arg system "$old_project/prompt.md" --arg hook "$old_project/hook" '
+  .profiles.machine.system=[$system] |
+  .harnesses.machine.user_prompt_submit=[$hook]
+' "$config" >"$portable_config"
+(
+  builtin cd -- "$old_project"
+  HOME="$old_home" zsh -f "$entry" run --session-create \
+    --session-out "$PWD/session.jsonl" --config "$portable_config"
+) || fail 'portable session creation failed'
+jq -e 'select(.type == "session") |
+  .cwd == "~/project" and .runtime.profile.system == ["./prompt.md"] and
+  .runtime.backend.env_file == "~/.env" and
+  .runtime.harness.user_prompt_submit[0].command == "./hook/run"
+' "$old_project/session.jsonl" >/dev/null || fail 'session did not store portable paths'
+mv -- "$old_home" "$new_home"
+(
+  builtin cd -- "$new_project"
+  HOME="$new_home" SF_TEST_BACKEND_DELAY=0 zsh -f "$entry" run \
+    --session "$PWD/session.jsonl" 'plain answer' >"$tmp/relocated-answer"
+) || fail 'relocated session turn failed'
+assert_equal 'plain answer' "$(<"$tmp/relocated-answer")"
+assert_equal "${new_project:A}" "$(<"$new_project/hook-cwd")" \
+  'relocated hook ran outside the project'
+print -r -- 'moved prompt' >"$new_project/prompt.md"
+(
+  builtin cd -- "$new_project"
+  HOME="$new_home" zsh -f "$entry" run --session-create \
+    --session-from "$PWD/session.jsonl" --session-out "$PWD/derived.jsonl"
+) || fail 'relocated session could not be derived'
+jq -e -s '.[1] == {type:"system",content:"moved prompt"}' \
+  "$new_project/derived.jsonl" >/dev/null || fail 'derived session read the old project path'
+
 print -r -- ok

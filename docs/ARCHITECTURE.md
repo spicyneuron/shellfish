@@ -27,6 +27,8 @@ A session JSONL file is the agent's only durable state. Its first line is a head
 
 The header freezes the resolved profile, backend, harness, component manifests, paths, and sandbox grants. Credential values and presentation settings remain external.
 
+Header paths use `./` for the project, `~/` for HOME, or `/` for fixed absolute locations; `.` and `~` name the roots themselves. The session cwd is home-relative or absolute. Moving a session and project preserves relative paths; if the project moves independently of HOME, update the header cwd. Absolute external paths and sandbox grants may need attention.
+
 | Durable record | Role |
 | --- | --- |
 | `system` | System prompt |
