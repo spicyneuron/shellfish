@@ -2,7 +2,7 @@ emulate -R zsh
 setopt no_aliases no_bg_nice no_multios pipe_fail
 
 (( $+functions[sf_jq] )) || source "$SF_ROOT/lib/jq.zsh"
-(( $+functions[sf_scratch_create] )) || source "$SF_ROOT/lib/scratch.zsh"
+(( $+functions[sf_scratch_directory] )) || source "$SF_ROOT/lib/scratch.zsh"
 (( $+functions[sf_process_isolated_command] )) || source "$SF_ROOT/lib/process.zsh"
 (( $+functions[sf_environment_load] )) || source "$SF_ROOT/lib/environment.zsh"
 
@@ -57,7 +57,7 @@ sf_backend_context_window() {
     SF_BACKEND[error]=$SF_ENVIRONMENT_ERROR
     return 1
   }
-  sf_scratch_create backends context || {
+  sf_scratch_directory backend-context || {
     SF_BACKEND[error]='cannot prepare context window capture'
     return 1
   }
@@ -111,7 +111,7 @@ sf_backend_run() {
   }
   for name in ${=SF_BACKEND_PLAN[environment_names]}; do environment+=( -u "$name" ); done
   environment+=( "${SF_ENVIRONMENT_VALUES[@]}" )
-  sf_scratch_create backends request || {
+  sf_scratch_directory backend-request || {
     SF_BACKEND[error]='cannot prepare provider capture'
     return 1
   }

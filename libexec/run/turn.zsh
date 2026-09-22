@@ -239,7 +239,7 @@ sf_run_turn() {
     fi
     [[ -z $failure && -d $SF_RUN[cwd] && -x $SF_RUN[cwd] ]] ||
       failure=${failure:-session working directory is unavailable: $SF_RUN[cwd]}
-    sf_scratch_create turns turn || failure='cannot prepare hook turn state'
+    sf_scratch_directory turn || failure='cannot prepare hook turn state'
     turn_state=$REPLY
     if [[ -z $failure ]]; then
       sf_run_hooks "$session" user_prompt_submit "$prompt" "$turn_state" || failure=$SF_RUN_HOOK_ERROR
@@ -270,8 +270,14 @@ sf_run_turn() {
       fi
     fi
     if [[ -z $failure ]]; then
-      sf_scratch_create tooltemps turn || failure='cannot prepare tool temporary directory'
-      tool_temp=$REPLY
+      if tool_temp=$(mktemp -d "${TMPDIR:-/tmp}/shellfish-tool-$EUID.XXXXXX") &&
+          chmod 700 "$tool_temp"; then
+        tool_temp=${tool_temp:A}
+      else
+        [[ -z $tool_temp ]] || rm -rf -- "$tool_temp"
+        tool_temp=''
+        failure='cannot prepare tool temporary directory'
+      fi
     fi
     if [[ -z $failure ]]; then
       sf_run_append "$session" "$user_record" || failure=$REPLY

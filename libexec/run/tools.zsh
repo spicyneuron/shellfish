@@ -4,6 +4,7 @@ setopt no_aliases no_bg_nice no_multios pipe_fail
 (( $+functions[sf_environment_load] )) || source "$SF_ROOT/lib/environment.zsh"
 (( $+functions[sf_process_run] )) || source "$SF_ROOT/lib/process.zsh"
 (( $+functions[sf_jq] )) || source "$SF_ROOT/lib/jq.zsh"
+(( $+functions[sf_scratch_directory] )) || source "$SF_ROOT/lib/scratch.zsh"
 
 typeset -g SF_RUN_TOOL_ERROR=''
 
@@ -100,14 +101,20 @@ sf_run_tool_execute() {
     return 1
   }
   [[ -d $tool_directory ]] || { SF_RUN_TOOL_ERROR='tool temporary directory is unavailable'; return 1; }
-  sf_scratch_create tools capture || { SF_RUN_TOOL_ERROR='cannot prepare tool capture'; return 1; }
-  capture=$REPLY
-  {
-  stdin="$tool_directory/input"
+  sf_scratch_file tool-input || { SF_RUN_TOOL_ERROR='cannot prepare tool input'; return 1; }
+  stdin=$REPLY
   print -r -- "$execution_input" >"$stdin" || {
+    rm -f -- "$stdin"
     SF_RUN_TOOL_ERROR='cannot prepare tool input'
     return 1
   }
+  sf_scratch_directory tool || {
+    rm -f -- "$stdin"
+    SF_RUN_TOOL_ERROR='cannot prepare tool capture'
+    return 1
+  }
+  capture=$REPLY
+  {
   environment=(
     "HOME=${HOME:-$cwd}" "PATH=$PATH" "TERM=${TERM:-dumb}"
     "LANG=${LANG:-C}" "SHELLFISH_CONFIG_DIR=$config_dir"
@@ -125,8 +132,7 @@ sf_run_tool_execute() {
   if [[ $sandbox == true ]]; then
     arguments=( -i "${arguments[@]:$(( ${#names} * 2 ))}" )
     sandbox_arguments=( --monitor --fence-log-file "$capture/sandbox.log"
-      --settings "$settings" --expose-host-path "$command" --expose-host-path-rw "$tool_directory"
-      --expose-host-path-rw "$capture/control" )
+      --settings "$settings" --expose-host-path "$command" --expose-host-path-rw "$tool_directory" )
     for expose in ${(f)read_paths}; do
       sandbox_arguments+=( --expose-host-path "$expose" )
     done
@@ -178,6 +184,7 @@ sf_run_tool_execute() {
     ' 2>/dev/null) || { SF_RUN_TOOL_ERROR='tool returned invalid control data'; return 1; }
   } always {
     rm -rf -- "$capture"
+    rm -f -- "$stdin"
   }
 }
 

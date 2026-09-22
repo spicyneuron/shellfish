@@ -27,6 +27,15 @@ SF_TEST_RUNTIME=$(jq -c '
   }
 ' <<<"$SF_TEST_RUNTIME")
 
+# Tool scratch cannot redirect the next call's core-owned input write.
+typeset input_target="$tmp/tool-input-target" input_session="$tmp/tool-input.jsonl"
+typeset input_stream="$tmp/tool-input.stream"
+sf_test_session "$input_session"
+SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_COUNT=2 \
+  SF_TEST_BACKEND_TOOL_COMMAND="ln -sf ${(q)input_target} \"\$TMPDIR/input\"" \
+  sf_test_run input "$input_session" >"$input_stream" || fail 'tool input isolation turn failed'
+[[ ! -e $input_target ]] || fail 'tool scratch redirected a later input write'
+
 # Pre-tool denial is sticky, preserves sibling calls, and still reaches post hooks.
 typeset pre="$tmp/pre" later="$tmp/pre-later" post="$tmp/post"
 typeset hook_dir="$tmp/hook-inputs" tool_marker="$tmp/tool-ran"

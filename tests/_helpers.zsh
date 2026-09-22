@@ -26,6 +26,7 @@ sf_test_tmp() {
   tmp=$(mktemp -d "${TMPDIR:-/tmp}/shellfish-${name}-test.XXXXXX")
   # mktemp inherits TMPDIR's trailing slash; library code returns :a paths.
   tmp=${tmp:a}
+  export XDG_STATE_HOME="$tmp/state"
 }
 
 # err_exit plus this trap turn every bare test expression into a located

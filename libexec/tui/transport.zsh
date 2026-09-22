@@ -95,7 +95,7 @@ sf_tui_transport_start() {
     return 1
   }
   sf_tui_transport_reset
-  sf_scratch_file transport exec-error || {
+  sf_scratch_file transport-error || {
     SF_TUI_TRANSPORT_ERROR='cannot create exec error file'
     return 1
   }

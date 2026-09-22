@@ -3,7 +3,7 @@ setopt no_aliases no_bg_nice no_multios pipe_fail
 
 (( $+functions[sf_environment_load] )) || source "$SF_ROOT/lib/environment.zsh"
 (( $+functions[sf_process_run] )) || source "$SF_ROOT/lib/process.zsh"
-(( $+functions[sf_scratch_create] )) || source "$SF_ROOT/lib/scratch.zsh"
+(( $+functions[sf_scratch_directory] )) || source "$SF_ROOT/lib/scratch.zsh"
 
 typeset -g SF_RUN_HOOK_ERROR=''
 
@@ -98,7 +98,7 @@ sf_run_hook_invoke() {
   else
     arguments=( -u SHELLFISH_TURN_ID -u SHELLFISH_TURN_STATE "${arguments[@]}" )
   fi
-  sf_scratch_create hooks capture || {
+  sf_scratch_directory hook || {
     SF_RUN_HOOK_ERROR='cannot prepare hook capture'
     return 1
   }
@@ -206,7 +206,7 @@ sf_run_hooks() {
     reply=( proceed '' '' )
     return 0
   fi
-  sf_scratch_file hooks input || { SF_RUN_HOOK_ERROR="cannot prepare $lifecycle hook input"; return 1; }
+  sf_scratch_file hook-input || { SF_RUN_HOOK_ERROR="cannot prepare $lifecycle hook input"; return 1; }
   input_file=$REPLY
   print -rn -- "$content" >"$input_file" || {
     rm -f -- "$input_file"
