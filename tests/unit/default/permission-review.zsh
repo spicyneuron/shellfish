@@ -32,16 +32,16 @@ SF_TEST_RUNTIME=$(jq -c --arg hook "$hook" '
 ' <<<"$SF_TEST_RUNTIME")
 SF_TEST_SYSTEM='fixed system'
 sf_test_session "$session"
-sf_session_append "$session" '{"type":"hook_result","lifecycle":"session_start","id":"1","name":"project_instructions","input":"","executable":"/hooks/project_instructions/run","exit_code":0,"model_text":"startup constraint"}'
+sf_session_append "$session" '{"type":"hook_result","lifecycle":"session_start","id":"1","name":"project_instructions","input":"","exit_code":0,"model_text":"startup constraint"}'
 sf_session_append "$session" '{"type":"user","content":[{"type":"text","text":"opening request"}]}'
 sf_session_append "$session" '{"type":"assistant","stop":"end","content":[{"type":"text","text":"opening answer"}]}'
-sf_session_append "$session" '{"type":"hook_result","lifecycle":"stop","id":"2","name":"retry","input":"","executable":"/hooks/retry/run","exit_code":1,"model_text":"retry constraint"}'
+sf_session_append "$session" '{"type":"hook_result","lifecycle":"stop","id":"2","name":"retry","input":"","exit_code":1,"model_text":"retry constraint"}'
 sf_session_append "$session" '{"type":"assistant","stop":"end","content":[{"type":"text","text":"revised answer"}]}'
 sf_session_append "$session" '{"type":"user","content":[{"type":"text","text":"run the local setup"}]}'
 sf_session_append "$session" '{"type":"assistant","stop":"tool_calls","content":[{"type":"text","text":"I will inspect it."},{"type":"tool_call","id":"call_6","name":"shell","input":{"command":"inspect"}}]}'
 sf_session_append "$session" '{"type":"tool_result","id":"call_6","name":"shell","input":{"command":"inspect"},"exit_code":0,"model_text":"inspection"}'
 sf_session_append "$session" '{"type":"assistant","stop":"tool_calls","content":[{"type":"reasoning","text":"private","opaque":{"secret":"value"}},{"type":"text","text":"I will run it."},{"type":"tool_call","id":"call_7","name":"shell","input":{"command":"setup","request_sandbox_bypass":true,"sandbox_bypass_reason":"needed"}}]}'
-sf_session_append "$session" '{"type":"hook_result","lifecycle":"permission_request","id":"3","name":"policy","input":{},"executable":"/hooks/policy/run","exit_code":0,"model_text":"permission context"}'
+sf_session_append "$session" '{"type":"hook_result","lifecycle":"permission_request","id":"3","name":"policy","input":{},"exit_code":0,"model_text":"permission context"}'
 assert_canonical_session "$session"
 request='{"tool_input":{"command":"setup","request_sandbox_bypass":true,"sandbox_bypass_reason":"needed"}}'
 

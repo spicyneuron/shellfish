@@ -77,9 +77,9 @@ jq -e -s --rawfile prompt "$ROOT/share/default/hooks/user_prompt_submit/compact/
 assert_canonical_session "$tmp/compact-source_compact.jsonl"
 [[ $(stat -f %Lp "$tmp/compact-source_compact.jsonl") == 600 ]] ||
   fail 'compaction created a readable child session'
-jq -e -s --arg executable "$compact_hook" '
+jq -e -s '
   [.[].type] == ["session","hook_result"] and
-  .[1].lifecycle == "session_start" and .[1].executable == $executable and
+  .[1].lifecycle == "session_start" and .[1].name == "compact" and
   .[1].model_text ==
     "<compacted_context>\n\n" +
     "The conversation before this point was compacted into the context below.\n\n" +
@@ -179,7 +179,7 @@ typeset state_source="$tmp/state-source.jsonl"
 head -n 1 "$compact_source" >"$state_source"
 print -r -- \
   '{"type":"state","name":"git/identity","value":"branch:main"}' \
-  '{"type":"hook_result","lifecycle":"session_start","id":"1","name":"project_environment","input":"","executable":"/hooks/project_environment/run","model_text":"env","exit_code":0}' \
+  '{"type":"hook_result","lifecycle":"session_start","id":"1","name":"project_environment","input":"","model_text":"env","exit_code":0}' \
   '{"type":"user","content":[{"type":"text","text":"Hello"}]}' \
   '{"type":"state","name":"agents/a1b2c3","value":{"session":".agent-a1b2c3.jsonl"}}' \
   '{"type":"assistant","stop":"end","content":[{"type":"text","text":"Hi"}],"usage":{"input_tokens":1,"output_tokens":1}}' \
@@ -192,13 +192,13 @@ SHELLFISH_EXECUTABLE="$compact_shellfish" SHELLFISH_SESSION="$state_source" \
   3>"$compact_control" < <(print -n -- /compact) 2>/dev/null || compact_status=$?
 (( compact_status == 11 ))
 assert_canonical_session "$tmp/state-source_compact.jsonl"
-jq -e -s --arg executable "$compact_hook" '
+jq -e -s '
   [.[].type] == ["session","hook_result","state","state","state","hook_result"] and
   [.[] | select(.type == "state") | [.name, .value]] ==
     [["git/identity","branch:main"],
      ["agents/a1b2c3",{session:".agent-a1b2c3.jsonl"}],
      ["git/identity",null]] and
-  .[-1].executable == $executable
+  .[-1].name == "compact"
 ' "$tmp/state-source_compact.jsonl" >/dev/null ||
   fail 'compaction did not carry state history in source order'
 assert_equal "$state_before" "$(shasum <"$state_source")"

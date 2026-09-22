@@ -70,13 +70,13 @@ print -r -- '{"type":"hook_result","lifecycle":"session_start","id":"7","name":"
   >>"$session"
 sf_test_run accept "$session" >"$stream" || fail 'accepted prompt hook failed'
 assert_equal accept "$(<$prompt_input)" 'prompt hook did not receive exact prompt text'
-jq -eRn --arg executable "$prompt_hook" --arg second "$second_hook" '
+jq -eRn --arg second "$second_hook" '
   [inputs | fromjson] as $events |
   [$events[] | select(.type | IN("state","hook_result","user")) | .type] ==
     ["state","hook_result","user"] and
   ($events | map(select(.type == "hook_result"))[0]) == {
       type:"hook_result",lifecycle:"user_prompt_submit",id:"8",name:"prompt-hook",
-      executable:$executable,input:"accept",exit_code:0,
+      input:"accept",exit_code:0,
       user_text:"user display",model_text:"model context"
     } and
   ($events | map(select(.type == "state"))[0]) ==

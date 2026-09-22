@@ -74,7 +74,7 @@ sf_run_open() {
     REPLY="invalid session path: $session"
     return 1
   }
-  sf_jq_fields 6 -Rs '
+  sf_jq_fields 6 -Rs --arg home "${HOME:A}" '
     include "lib/runtime";
     include "lib/session";
     def field: ., "\u0000";
@@ -84,15 +84,16 @@ sf_run_open() {
       all($lines[0:-1][]; length > 0)) |
     ($lines[0:-1] | map(fromjson)) as $records |
     select($records[0] | canonical_session_header) |
+    ($records[0] | header_expand($home)) as $header |
     ($records[1:] | session_run) as $run |
-    ($records[0].runtime | tojson | field),
-    ($records[0].cwd | field),
+    ($header.runtime | tojson | field),
+    ($header.cwd | field),
     (([$records[1:][] | select(.type == "user")] | length + 1) | tostring | field),
     (($run.next != "user") | tostring | field),
     ([$records[1:][] | select(.type == "hook_result") | .id | tonumber] |
       ((max // 0) + 1) | tostring | field),
     ([hook_names[] as $hook |
-      select(($records[0].runtime.harness[$hook] // []) | length > 0) | $hook] |
+      select(($header.runtime.harness[$hook] // []) | length > 0) | $hook] |
       join(" ") | field),
     ("ok" | field)
   ' "$session" || {

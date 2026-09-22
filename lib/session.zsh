@@ -64,9 +64,9 @@ sf_session_read_runtime() {
     sf_session_fail "cannot read session header: $session_path"
     return
   }
-  REPLY=$(sf_jq -cnce --argjson header "$header" '
+  REPLY=$(sf_jq -cnce --argjson header "$header" --arg home "${HOME:A}" '
     include "lib/runtime";
-    $header | select(canonical_session_header) | .runtime
+    $header | select(canonical_session_header) | header_expand($home) | .runtime
   ' 2>/dev/null) || {
     sf_session_fail "cannot read session header: $session_path"
     return
@@ -91,9 +91,10 @@ sf_session_replace_runtime() {
   }
   chmod 600 "$temp" || error="cannot secure session update: $session_path"
   if [[ -z $error ]]; then
-    sf_jq -cs --argjson runtime "$runtime" '
+    sf_jq -cs --argjson runtime "$runtime" --arg home "${HOME:A}" '
       include "lib/runtime";
-      .[0].runtime = $runtime |
+      (.[0].cwd | expand_path(""; $home)) as $cwd |
+      .[0].runtime = ($runtime | runtime_paths(store_path($cwd; $home))) |
       if .[0] | canonical_session_header then .[] else error("invalid runtime") end
     ' "$session_path" >"$temp" 2>/dev/null || error='invalid session runtime replacement'
   fi

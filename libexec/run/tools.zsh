@@ -187,7 +187,7 @@ sf_run_tool_complete() {
   local -a fields
   sf_jq_fields 0 -rn --argjson request "$SF_TOOL_PLAN[request]" \
     --arg id "$SF_TOOL_PLAN[id]" --arg name "$name" \
-    --argjson input "$SF_TOOL_PLAN[input]" --arg executable "$SF_TOOL_PLAN[executable]" \
+    --argjson input "$SF_TOOL_PLAN[input]" \
     --argjson render "$SF_TOOL_PLAN[render]" --argjson outcome "$outcome" '
       include "lib/session";
       include "lib/runtime";
@@ -199,7 +199,6 @@ sf_run_tool_complete() {
         "This does not necessarily mean the tool failed.</sandbox_notice>"
       else "" end) as $notice |
       ({type:"tool_result",id:$id,name:$name,input:$input,exit_code:$outcome.output.exit_code} +
-       (if $executable == "" then {} else {executable:$executable} end) +
        (if $rendered.user_text == null then {} else {user_text:$rendered.user_text} end) +
        (if $rendered.model_text == null then {} else {model_text:($rendered.model_text + $notice)} end)) as $result |
       if $result | canonical_tool_result then

@@ -8,8 +8,6 @@
 def nul_free_string: type == "string" and (index("\u0000") | not);
 def identifier: type == "string" and test("^[A-Za-z0-9_-]+$");
 def tool_name: type == "string" and test("^[A-Za-z_][A-Za-z0-9_-]*$");
-def absolute_path:
-  type == "string" and startswith("/") and (test("[[:cntrl:]]") | not);
 def token_count:
   type == "number" and floor == . and . >= 0 and . <= 9007199254740991;
 
@@ -63,12 +61,11 @@ def canonical_error:
 # Hook and tool results share one settled base; only identity and input differ.
 def canonical_execution_result($extra):
   type == "object" and
-  ((keys - (["executable", "exit_code", "id", "input", "model_text", "name",
+  ((keys - (["exit_code", "id", "input", "model_text", "name",
     "type", "user_text"] + $extra)) | length == 0) and
   ((["exit_code", "id", "input", "name", "type"] - keys) | length == 0) and
   (.id | identifier) and
   (.exit_code | type == "number" and floor == . and . >= 0 and . <= 255) and
-  (if has("executable") then .executable | absolute_path else true end) and
   (if has("user_text") then .user_text | type == "string" and length > 0 else true end) and
   (if has("model_text") then .model_text | type == "string" and length > 0 else true end);
 

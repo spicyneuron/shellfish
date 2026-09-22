@@ -79,8 +79,7 @@ created=$(date -u '+%Y-%m-%dT%H:%M:%SZ') || {
 transcript="$SHELLFISH_TURN_STATE/compact.jsonl"
 # Startup records without state, then every state record in source order, so the
 # child reconstructs the same effective state without interpreting names.
-if ! jq -ce -s --rawfile context "$context" --arg created "$created" \
-    --arg executable "${0:A}" '
+if ! jq -ce -s --rawfile context "$context" --arg created "$created" '
     . as $records |
     ([$records | to_entries[] |
       select(.value.type == "user" or .value.type == "assistant") | .key] | first) as $start |
@@ -92,7 +91,7 @@ if ! jq -ce -s --rawfile context "$context" --arg created "$created" \
     (([$startup[] | select(.type == "hook_result") | .id | tonumber] | max // 0) + 1 |
       tostring) as $id |
     {type:"hook_result",lifecycle:"session_start",id:$id,
-      name:"compact",input:"",executable:$executable,exit_code:0,
+      name:"compact",input:"",exit_code:0,
       model_text:$context}
   ' "$SHELLFISH_SESSION" >"$transcript"; then
   fail_compaction 'cannot create compacted session; keeping the original'

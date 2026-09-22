@@ -56,7 +56,7 @@ jq -cn '{type:"user",content:[{type:"text",text:"next"}]}' |
 jq -eRn '
   [inputs | fromjson] as $events |
   ($events[0] | .type == "tool_result" and .id == "call_1" and .exit_code == 126 and
-    .executable != null and .model_text == "tool call outcome unknown\nexit 126") and
+    (has("executable") | not) and .model_text == "tool call outcome unknown\nexit 126") and
   ($events[1] == {type:"error",user_text:"Turn interrupted."})
 ' <"$recovered_stream" >/dev/null || fail 'recovery did not settle through the tool owner'
 assert_canonical_session "$recovered"

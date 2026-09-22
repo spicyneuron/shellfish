@@ -18,7 +18,11 @@ def nonempty_control_free_string:
   type == "string" and length > 0 and (test("[[:cntrl:]]") | not);
 
 def model_name: nonempty_control_free_string;
-def absolute_path: type == "string" and startswith("/") and (test("[[:cntrl:]]") | not);
+def stored_path:
+  nonempty_control_free_string and
+  (startswith("/") or . == "." or startswith("./") or . == "~" or startswith("~/"));
+def stored_cwd:
+  nonempty_control_free_string and (startswith("/") or . == "~" or startswith("~/"));
 def endpoint: type == "string" and test("^https?://[^[:space:][:cntrl:]]+$");
 
 def positive_integer:
@@ -102,7 +106,7 @@ def hook_match:
     ($pattern | type == "string" and length > 0 and
       (test("[[:cntrl:]]") | not)) and
     (try ("" | test($pattern) | type == "boolean") catch false)
-  elif keys == ["command"] then .command | absolute_path
+  elif keys == ["command"] then .command | stored_path
   else false end;
 
 def hook_text:
@@ -117,7 +121,7 @@ def hook_component:
   type == "object" and
   (keys - ["command", "environment", "help", "match", "render"] | length) == 0 and
   has("command") and has("environment") and has("render") and
-  (.command | absolute_path) and
+  (.command | stored_path) and
   (.render | complete_component_render(null; false)) and
   (.environment | component_environment) and
   (if has("match") then .match | hook_match else true end) and
@@ -154,7 +158,7 @@ def tool_manifest:
   ((.allow_sandbox_bypass // false) | type == "boolean") and
   (if (.allow_sandbox_bypass // false) then .sandbox else true end);
 
-# The resolved runtime, as it appears at header.runtime.
+# The runtime stored in the session header.
 def canonical_runtime:
   type == "object" and
   keys == ["backend", "harness", "profile"] and
@@ -163,19 +167,19 @@ def canonical_runtime:
     (["request"] - keys | length == 0) and
     (.request | type == "object" and (.model | model_name)) and
     ((has("system") | not) or
-      (.system | type == "array" and all(.[]; absolute_path))) and
+      (.system | type == "array" and all(.[]; stored_path))) and
     (if has("context_window") then
       .context_window == null or (.context_window | positive_integer)
     else true end)) and
   (.backend | type == "object" and
     ((keys - ["command", "context_window_command", "endpoint", "env_file", "environment", "http_stall", "http_timeout", "insecure_tls", "name"]) | length == 0) and
     (["command", "endpoint", "env_file", "environment", "http_stall", "http_timeout", "insecure_tls", "name"] - keys | length == 0) and
-    (.name | profile_name) and (.command | absolute_path) and (.endpoint | endpoint) and
+    (.name | profile_name) and (.command | stored_path) and (.endpoint | endpoint) and
     (.environment | component_environment) and (.insecure_tls | type == "boolean") and
-    (.env_file == "" or (.env_file | absolute_path)) and
+    (.env_file == "" or (.env_file | stored_path)) and
     (.http_timeout | positive_integer) and (.http_stall | positive_integer) and
     (if has("context_window_command") then
-      .context_window_command | absolute_path
+      .context_window_command | stored_path
     else true end)) and
   (.harness | type == "object" and
     (["sandbox_read_paths", "sandbox_write_paths", "fence",
@@ -184,13 +188,13 @@ def canonical_runtime:
       ((keys - ($required + hook_names)) | length == 0) and
       (($required - keys) | length == 0)) and
     harness_hooks and
-    (.sandbox_read_paths | type == "array" and all(.[]; absolute_path)) and
-    (.sandbox_write_paths | type == "array" and all(.[]; absolute_path)) and
-    (.fence == "" or (.fence | absolute_path)) and
+    (.sandbox_read_paths | type == "array" and all(.[]; stored_path)) and
+    (.sandbox_write_paths | type == "array" and all(.[]; stored_path)) and
+    (.fence == "" or (.fence | stored_path)) and
     (.tools | type == "array" and all(.[];
       type == "object" and keys == ["command", "manifest", "name", "settings"] and
-      (.name | tool_name) and (.command | absolute_path) and
-      (.settings == null or (.settings | absolute_path)) and
+      (.name | tool_name) and (.command | stored_path) and
+      (.settings == null or (.settings | stored_path)) and
       (.manifest | . as $manifest | tool_manifest and has("render") and
         (.render | complete_component_render(
           ($manifest.input_schema.properties // {} | keys | map("input." + .)); true))) and
@@ -207,8 +211,50 @@ def canonical_session_header:
   type == "object" and
   keys == ["created", "cwd", "format_version", "runtime", "type"] and
   .type == "session" and .format_version == 1 and
-  (.cwd | absolute_path) and (.created | type == "string") and
+  (.cwd | stored_cwd) and (.created | type == "string") and
   (.runtime | canonical_runtime);
+
+def runtime_paths(rewrite):
+  (if .profile | has("system") then .profile.system |= map(rewrite) else . end) |
+  .backend.command |= rewrite |
+  (if .backend.env_file == "" then . else .backend.env_file |= rewrite end) |
+  (if .backend | has("context_window_command") then
+    .backend.context_window_command |= rewrite else . end) |
+  (if .harness.fence == "" then . else .harness.fence |= rewrite end) |
+  .harness.sandbox_read_paths |= map(rewrite) |
+  .harness.sandbox_write_paths |= map(rewrite) |
+  .harness.tools |= map(.command |= rewrite |
+    (if .settings == null then . else .settings |= rewrite end)) |
+  reduce hook_names[] as $hook (.;
+    if .harness | has($hook) then
+      .harness[$hook] |= map(.command |= rewrite |
+        (if .match // {} | has("command") then .match.command |= rewrite else . end))
+    else . end);
+
+def expand_path($cwd; $home):
+  if startswith("/") then .
+  elif . == "~" or startswith("~/") then
+    if $home == "" then error("cannot expand ~ without HOME")
+    elif . == "~" then $home
+    else $home + "/" + ltrimstr("~/") end
+  elif . == "." then $cwd
+  else $cwd + "/" + ltrimstr("./") end;
+
+def store_path($cwd; $home):
+  if $cwd != "" and . == $cwd then "."
+  elif $cwd != "" and startswith($cwd + "/") then "./" + ltrimstr($cwd + "/")
+  elif $home != "" and . == $home then "~"
+  elif $home != "" and startswith($home + "/") then "~/" + ltrimstr($home + "/")
+  else . end;
+
+def header_expand($home):
+  (.cwd | expand_path(""; $home)) as $cwd |
+  .cwd = $cwd | .runtime |= runtime_paths(expand_path($cwd; $home));
+
+def header_store($home):
+  .cwd as $cwd |
+  .cwd = ($cwd | store_path(""; $home)) |
+  .runtime |= runtime_paths(store_path($cwd; $home));
 
 def hook_render_defaults:
   {initial_user_text:"",user_text:"${output.stderr}",model_text:"${output.stdout}"};

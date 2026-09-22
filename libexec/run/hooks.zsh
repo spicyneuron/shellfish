@@ -126,7 +126,7 @@ sf_run_hook_invoke() {
     --rawfile stdout "$directory/stdout" --rawfile stderr "$directory/stderr" \
     --slurpfile controls "$directory/control" --arg capture_error "$capture_error" \
     --arg lifecycle "$lifecycle" --arg id "$id" --arg name "$name" \
-    --arg executable "$command" --argjson input "$input_json" --argjson render "$render" '
+    --argjson input "$input_json" --argjson render "$render" '
       include "libexec/run/hooks"; include "lib/runtime"; include "lib/session";
       def field: ., "\u0000";
       def entry($key; $value): ($key | field), ($value | field);
@@ -136,7 +136,7 @@ sf_run_hook_invoke() {
       (if $outcome.exit_code != 0 or $outcome.stdout != "" or $outcome.stderr != "" then
         render_component($render;$name;$input;$outcome) as $rendered |
         ({type:"hook_result",lifecycle:$lifecycle,id:$id,name:$name,input:$input,
-          executable:$executable,exit_code:$outcome.exit_code} +
+          exit_code:$outcome.exit_code} +
          (if $rendered.user_text == null then {} else {user_text:$rendered.user_text} end) +
          (if $rendered.model_text == null then {} else {model_text:$rendered.model_text} end)) as $result |
         if $result | canonical_hook_result then $result else error("invalid result") end

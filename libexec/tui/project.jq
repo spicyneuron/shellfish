@@ -31,9 +31,14 @@ def usage_actions($window):
 
 def identity: ((.backend.name // "?") + "/" + (.profile.request.model // "?"));
 
+def hook_name:
+  split("/") | if .[-1] == "run" then .[-2] else .[-1] end;
+
 def hook_previews($runtime; $lifecycle):
   reduce $runtime.harness[$lifecycle][]? as $hook ({};
-    .[$hook.command] = ($hook.render.preview_lines // "default"));
+    ($hook.command | hook_name) as $name |
+    .[$name] = (if has($name) then "default"
+      else $hook.render.preview_lines // "default" end));
 
 def runtime_previews:
   . as $runtime |
@@ -50,8 +55,8 @@ def runtime_actions:
 def tool_preview($previews; $name):
   $previews.tools[$name] // "default";
 
-def hook_preview($previews; $lifecycle; $executable):
-  $previews.hooks[$lifecycle][$executable] // "default";
+def hook_preview($previews; $lifecycle; $name):
+  $previews.hooks[$lifecycle][$name] // "default";
 
 # Context and notice select presentation styling; their manifests select the
 # preview policy independently.
@@ -102,7 +107,7 @@ def record_actions($mode; $window; $previews):
       (tool_preview($previews; .name) | tostring)]]
   elif .type == "hook_result" then
     [["execution_end", .id, .name, hook_class, result_text,
-      (hook_preview($previews; .lifecycle; (.executable // "")) | tostring)]]
+      (hook_preview($previews; .lifecycle; .name) | tostring)]]
   elif .type == "session" then (.runtime | runtime_actions)
   elif .type == "state" then []
   else error("unsupported record: " + (.type | tostring))
@@ -123,7 +128,7 @@ def event_actions($window; $previews):
     [["execution_update", .id, .name, "tool", (.user_text // ""),
       (tool_preview($previews; .name) | tostring)]]
   elif .type == "_hook_activity" then
-    (hook_preview($previews; .hook; (.executable // "")) | tostring) as $preview |
+    (hook_preview($previews; .hook; .name) | tostring) as $preview |
     if (.user_text // "") == "" then
       [["execution_end", .id, .name, "notice", "", $preview]]
     else [["execution_update", .id, .name, "notice", .user_text, $preview]] end

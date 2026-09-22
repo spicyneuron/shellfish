@@ -11,12 +11,12 @@ messages() { jq -L "$ROOT" -ce 'include "lib/session"; session_messages'; }
 typeset records="$tmp/records.jsonl"
 cat >"$records" <<'JSONL'
 {"type":"system","content":"system text"}
-{"type":"hook_result","lifecycle":"session_start","id":"1","name":"env","input":"","executable":"/hooks/env/run","exit_code":0,"user_text":"env","model_text":"ready &amp; set"}
+{"type":"hook_result","lifecycle":"session_start","id":"1","name":"env","input":"","exit_code":0,"user_text":"env","model_text":"ready &amp; set"}
 {"type":"user","content":[{"type":"text","text":"run it"}]}
 {"type":"assistant","stop":"tool_calls","content":[{"type":"reasoning","text":"think","opaque":{"signature":"abc"}},{"type":"text","text":"Inspecting that."},{"type":"tool_call","id":"call_1","name":"shell","input":{"command":"ls"}},{"type":"tool_call","id":"call_2","name":"shell","input":{"command":"pwd"}}],"usage":{"input_tokens":100,"output_tokens":20}}
 {"type":"hook_result","lifecycle":"pre_tool_use","id":"2","name":"policy","input":{"turn_id":1,"tool_name":"shell","tool_use_id":"call_1","tool_input":{"command":"ls"}},"exit_code":0,"model_text":"POLICY"}
 {"type":"state","name":"git/identity","value":"first"}
-{"type":"tool_result","id":"call_1","name":"shell","input":{"command":"ls"},"executable":"/tools/shell/run","exit_code":0,"user_text":"shell\nout","model_text":"out"}
+{"type":"tool_result","id":"call_1","name":"shell","input":{"command":"ls"},"exit_code":0,"user_text":"shell\nout","model_text":"out"}
 {"type":"tool_result","id":"call_2","name":"shell","input":{"command":"pwd"},"exit_code":0,"model_text":"/tmp"}
 {"type":"assistant","stop":"end","content":[{"type":"text","text":"done"}],"usage":{"input_tokens":120,"output_tokens":4}}
 JSONL
@@ -159,8 +159,8 @@ typeset -a invalid=(
      {"type":"assistant","stop":"tool_calls","content":[
        {"type":"tool_call","id":"c1","name":"shell","input":{}}]},
      {"type":"tool_result","id":"c1","name":"shell","input":{}}]'
-  'a relative executable' '[{"type":"hook_result","lifecycle":"stop","id":"1","name":"observe",
-     "input":"","executable":"hooks/observe","exit_code":0}]'
+  'an executable path' '[{"type":"hook_result","lifecycle":"stop","id":"1","name":"observe",
+     "input":"","executable":"/hooks/observe","exit_code":0}]'
   'a hook without a lifecycle' '[{"type":"hook_result","id":"1","name":"observe","input":"","exit_code":0}]'
   'an unknown hook lifecycle' '[{"type":"hook_result","lifecycle":"other","id":"1","name":"observe","input":"","exit_code":0}]'
   'a nondecimal hook identifier' '[{"type":"hook_result","lifecycle":"stop","id":"first","name":"observe","input":"","exit_code":0}]'
@@ -196,7 +196,7 @@ settling() {
       {"type":"tool_call","id":"c1","name":"shell","input":{}}]},'"$1"']'
 }
 
-settling '{"type":"tool_result","id":"c1","name":"shell","input":{},"executable":"/tools/shell/run","user_text":"shown","model_text":"out","exit_code":0}' |
+settling '{"type":"tool_result","id":"c1","name":"shell","input":{},"user_text":"shown","model_text":"out","exit_code":0}' |
   accepts >/dev/null || fail 'the reader rejected a fully described tool result'
 
 typeset -a malformed_results=(
@@ -212,7 +212,7 @@ for (( index = 1; index <= ${#malformed_results}; index += 2 )); do
 done
 
 typeset -a shapes=(
-  '{"type":"hook_result","lifecycle":"session_start","id":"1","name":"add_env","input":"","executable":"/hooks/add_env","user_text":"shown","model_text":"data","exit_code":0}'
+  '{"type":"hook_result","lifecycle":"session_start","id":"1","name":"add_env","input":"","user_text":"shown","model_text":"data","exit_code":0}'
   '{"type":"hook_result","lifecycle":"pre_tool_use","id":"2","name":"check","input":{},"exit_code":0}'
   '{"type":"state","name":"a","value":null}'
   '{"type":"state","name":"A0_.:/-","value":[false,1,"text"]}'

@@ -51,10 +51,10 @@ typeset granted="$tmp/granted.jsonl"
 zsh -f "$entry" run --session-create --session-out "$granted" --config "$config" \
   --sandbox-read "${tmp:A}/system" --sandbox-write "${tmp:A}/home" >/dev/null || \
   fail 'create rejected forwarded sandbox grants'
-jq -e --arg read "${tmp:A}/system" --arg write "${tmp:A}/home" '
+jq -e --arg read "${tmp:A}/system" '
   select(.type == "session") |
   (.runtime.harness.sandbox_read_paths | index($read)) != null and
-  (.runtime.harness.sandbox_write_paths | index($write)) != null
+  (.runtime.harness.sandbox_write_paths | index("~")) != null
 ' "$granted" >/dev/null || fail 'create did not store forwarded sandbox grants'
 
 # Derived sessions reuse runtime and reread system paths.
@@ -193,7 +193,7 @@ jq -se 'map(.type) == ["_session_load","session","system","_hook_activity",
   "state","hook_result","_hook_activity"]' \
   "$SF_TEST_EVENTS" >/dev/null || exit 3
 jq -se '.[-2] == {type:"state",name:"startup/stream",value:true} and
-  .[-1].type == "hook_result" and (.[-1].executable | endswith("/first-hook/run"))' \
+  .[-1].type == "hook_result" and .[-1].name == "first-hook"' \
   "$SHELLFISH_SESSION" >/dev/null || exit 4
 ZSH
 print -r -- '{}' >"$first/manifest.json"
@@ -216,7 +216,7 @@ jq -se --arg path "$streamed" --arg first "${first:A}/run" --arg silent "${silen
     executable:$silent,input:""} and
   .[4:6] == $session[2:] and
   .[5].lifecycle == "session_start" and .[5].name == "first-hook" and
-  .[5].executable == $first and .[5].input == "" and .[5].exit_code == 0 and
+  .[5].input == "" and .[5].exit_code == 0 and
   .[5].user_text == "startup display\n" and
   (.[5].model_text | startswith("startup context\n")) and
   .[3].id == .[5].id

@@ -4,4 +4,4 @@
 {"type":"tool_result","id":"call_1","name":"read_file","input":{"file_path":"README.md"},"exit_code":0,"user_text":"read_file\ncontents\nsecond line\nexit 0","model_text":"contents\nsecond line\nexit 0"}
 {"type":"tool_result","id":"call_2","name":"shell","input":{"command":"make test"},"exit_code":1,"user_text":"shell\nfailed\u001b[31m\nexit 1","model_text":"failed\u001b[31m\nexit 1"}
 {"type":"assistant","stop":"end","content":[{"type":"text","text":"Done"}],"usage":{"input_tokens":2,"output_tokens":1}}
-{"type":"hook_result","lifecycle":"session_start","id":"1","name":"test","input":"","executable":"/hooks/test/run","model_text":"Use fixtures.","exit_code":0}
+{"type":"hook_result","lifecycle":"session_start","id":"1","name":"test","input":"","model_text":"Use fixtures.","exit_code":0}

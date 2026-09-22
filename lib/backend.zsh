@@ -16,7 +16,8 @@ typeset -gA SF_BACKEND_PLAN=()
 # named backend command and its environment declarations.
 sf_backend_project() {
   local tools=$1 command_field=$2
-  sf_jq_fields 10 -sc --argjson tools "$tools" --arg command_field "$command_field" '
+  sf_jq_fields 10 -sc --argjson tools "$tools" --arg command_field "$command_field" \
+    --arg home "${HOME:A}" '
     include "lib/runtime";
     include "lib/session";
     include "lib/backend";
@@ -25,7 +26,7 @@ sf_backend_project() {
     select(length >= 1) |
     select(.[0] | canonical_session_header) |
     . as $records |
-    $records[0].runtime as $runtime |
+    ($records[0] | header_expand($home) | .runtime) as $runtime |
     backend_adapter_request(
       $runtime;
       ([$records[1:][] | select(.type == "system") | .content] | join("\n\n"));

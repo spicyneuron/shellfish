@@ -104,7 +104,7 @@ runtime=$(jq -c '
   .harness.tools = [{name:"shell",manifest:{render:{preview_lines:"full"}}}] |
   .harness.user_prompt_submit = [
     {command:"/first/help/run",render:{preview_lines:1}},
-    {command:"/second/help/run",render:{preview_lines:"full"}}
+    {command:"~/hooks/other/run",render:{preview_lines:"full"}}
   ]
 ' \
   <<<"$runtime")
@@ -114,8 +114,18 @@ project live \
   '{"type":"_tool_activity","id":"call_2","name":"shell","input":{},"user_text":"shell"}'
 assert_equal 'execution_update | call_2 | shell | tool | shell | full' "$REPLY"
 project live \
-  '{"type":"_hook_activity","hook":"user_prompt_submit","id":"4","name":"help","executable":"/first/help/run","input":"","user_text":"help"}'
+  '{"type":"_hook_activity","hook":"user_prompt_submit","id":"4","name":"help","input":"","user_text":"help"}'
 assert_equal 'execution_update | 4 | help | notice | help | 1' "$REPLY"
+project load \
+  '{"type":"hook_result","lifecycle":"user_prompt_submit","id":"4","name":"help","input":"","exit_code":0,"user_text":"help"}'
+assert_equal 'execution_end | 4 | help | notice | help | 1' "$REPLY"
+runtime=$(jq -c '.harness.user_prompt_submit += [
+  {command:"/second/help/run",render:{preview_lines:"full"}}]' <<<"$runtime")
+project live "$(jq -cn --argjson runtime "$runtime" \
+  '{type:"_session_update",runtime:$runtime}')"
+project load \
+  '{"type":"hook_result","lifecycle":"user_prompt_submit","id":"5","name":"help","input":"","exit_code":0,"user_text":"help"}'
+assert_equal 'execution_end | 5 | help | notice | help | default' "$REPLY"
 project live \
   '{"type":"assistant","stop":"end","content":[],"usage":{"input_tokens":75,"cached_tokens":15,"output_tokens":5}}'
 assert_equal 'usage | 75 ↑ 20% ⦿ 5 ↓ 38% of 200 ◔ |' "$REPLY"
