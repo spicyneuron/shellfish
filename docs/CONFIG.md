@@ -166,7 +166,7 @@ The default harness runs opted-in tools under [`fence`](https://github.com/fence
 | `preview_lines_reasoning` | Collapsed reasoning lines or `"full"` |
 | `preview_lines` | Collapsed component-output lines or `"full"` |
 
-`--verbose` temporarily makes both preview limits `"full"`. A tool or hook raises its own limit with `render.preview_lines`; see [`HARNESS.md`](HARNESS.md#rendering).
+`--verbose` temporarily makes both preview limits `"full"`. A tool or hook overrides the global limit with `render.preview_lines`; see [`HARNESS.md`](HARNESS.md#rendering).
 
 ## Bundled coding harness
 

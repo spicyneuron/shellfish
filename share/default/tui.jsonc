@@ -71,7 +71,7 @@
   },
 
   // Rows kept when collapsing output. "full" shows everything. A tool or hook
-  // raises its own limit with render.preview_lines. Disabled by --verbose.
+  // overrides the global limit with render.preview_lines. Disabled by --verbose.
   "preview_lines_reasoning": 0,
   "preview_lines": 2
 }

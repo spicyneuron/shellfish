@@ -62,7 +62,6 @@ done
 cat >"$tmp/config/shellfish.jsonc" <<EOF
 {
   "default_profile":"perf",
-  "theme_mode":"dark","theme_light":"light","theme_dark":"dark",
   "backends":{"perf":{"adapter":"perf"}},
   "harnesses":{"perf":{"tools":["perf"],"sandbox":false,
     "session_start":["perf"],"user_prompt_submit":["perf"],"permission_request":[],

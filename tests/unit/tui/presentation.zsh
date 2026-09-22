@@ -64,6 +64,25 @@ if sf_presentation_resolve; then
 fi
 [[ $SF_PRESENTATION_ERROR == *'invalid config at $["themes"]["light"]["text"]: must be a #RRGGBB color'* ]]
 
+# The executable validator matches the schema rather than ignoring typos.
+print -r -- '{"preview_line":2}' >"$config"
+if sf_presentation_resolve; then
+  fail 'unknown TUI field was accepted'
+fi
+[[ $SF_PRESENTATION_ERROR == *'invalid config at $["preview_line"]: unknown field'* ]]
+
+print -r -- '{"themes":{"dark":{"agnt":"#ffffff"}}}' >"$config"
+if sf_presentation_resolve; then
+  fail 'unknown theme color was accepted'
+fi
+[[ $SF_PRESENTATION_ERROR == *'invalid config at $["themes"]["dark"]["agnt"]: unknown field'* ]]
+
+print -r -- '{"preview_lines":null}' >"$config"
+if sf_presentation_resolve; then
+  fail 'null TUI field was accepted'
+fi
+[[ $SF_PRESENTATION_ERROR == *'invalid config at $["preview_lines"]: must be full or a non-negative integer'* ]]
+
 # A syntax error keeps the line jq reported.
 print -r -- '{"preview_lines": 2' >"$config"
 if sf_presentation_resolve; then
