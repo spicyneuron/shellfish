@@ -424,7 +424,12 @@ sf_tui_format_execution() {
   [[ -z $SF_LIVE_NAME ]] || SF_PRESENT_HIGHLIGHT_SPANS+=( 0 ${#SF_LIVE_NAME} bold )
   # A hunk header is the only reliable signal that output is a unified diff.
   [[ $body != (|*$'\n')'@@ -'*' @@'* ]] || sf_tui_diff_highlight "$body"
-  sf_tui_wrap $columns "$body" '│ ' "${(@)SF_PRESENT_HIGHLIGHT_SPANS}" || return 1
+  if (( ! live )) && [[ $preview != full ]]; then
+    sf_tui_wrap -L $(( preview + 2 )) $columns "$body" '│ ' \
+      "${(@)SF_PRESENT_HIGHLIGHT_SPANS}" || return 1
+  else
+    sf_tui_wrap $columns "$body" '│ ' "${(@)SF_PRESENT_HIGHLIGHT_SPANS}" || return 1
+  fi
   total=${#SF_WRAP_ROWS}
   limit=$total
   # The identity row always shows; the preview budget covers the output below it.

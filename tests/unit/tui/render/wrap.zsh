@@ -44,3 +44,11 @@ rows; assert_equal $'│ 界|│ 界' "$REPLY"
 
 sf_tui_wrap 80 $'one\n' ''
 rows; assert_equal one "$REPLY"
+
+# A limited wrap keeps one extra row to detect hidden output.
+sf_tui_wrap -L 2 80 $'one\ntwo\nthree' ''
+rows; assert_equal 'one|two' "$REPLY"
+sf_tui_wrap -L 2 5 'hello world again' ''
+rows; assert_equal 'hello|world' "$REPLY"
+sf_tui_wrap -L 2 80 $'one\ntwo' ''
+rows; assert_equal 'one|two' "$REPLY"

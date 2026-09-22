@@ -12,6 +12,13 @@ sf_tui_wrap() {
   SF_WRAP_ROWS=()
   SF_WRAP_SPANS=()
   SF_WRAP_CONSUMED=()
+  integer limit=0
+  if [[ ${1-} == -L ]]; then
+    (( $# >= 5 )) || return 1
+    limit=$2
+    (( limit > 0 )) || return 1
+    shift 2
+  fi
   (( $# >= 3 )) || return 1
   integer columns=$1
   local text=$2 prefix=$3
@@ -40,6 +47,7 @@ sf_tui_wrap() {
     character=$characters[index]
     if [[ $character == $'\n' ]]; then
       sf_tui_wrap_emit $(( index - row_start + 1 ))
+      (( ! limit || ${#SF_WRAP_ROWS} < limit )) || return 0
       row_start=$(( index + 1 ))
       sf_tui_wrap_start
       continue
@@ -65,6 +73,7 @@ sf_tui_wrap() {
         row_start=$index
         index=$(( index - 1 ))
       fi
+      (( ! limit || ${#SF_WRAP_ROWS} < limit )) || return 0
       sf_tui_wrap_start
       continue
     fi
