@@ -475,8 +475,8 @@ def runtime_finalize:
     {name:.[0],command:.[1],manifest_json:.[2],settings:.[3],
       settings_readable:(.[4] == "1")}] as $resolved_tools |
   [range(0; $component_count) as $index |
-    ($args[($component_offset + ($index * 3)):][:3]) |
-    {hook:.[0],command:.[1],manifest_json:.[2]}] as $resolved_components |
+    ($args[($component_offset + ($index * 4)):][:4]) |
+    {hook:.[0],command:.[1],manifest_json:.[2],match:.[3]}] as $resolved_components |
   [$resolved_tools[] as $tool |
     ($tool.manifest_json | fromjson |
       select(tool_manifest) //
@@ -488,7 +488,9 @@ def runtime_finalize:
       manifest:$tool_manifest,
       settings:(if $tool_manifest.sandbox then $tool.settings else null end)} end] as $tools |
   (reduce $resolved_components[] as $component ({};
-    ($component.manifest_json | fromjson) as $manifest |
+    ($component.manifest_json | fromjson |
+      if $component.match == "" then .
+      else .match = {command:$component.match} end) as $manifest |
     (hook_render_defaults + ($manifest.render // {})) as $render |
     ($manifest |
       select(type == "object" and
@@ -503,7 +505,7 @@ def runtime_finalize:
         (if has("help") then
            has("match") and (.help | hook_help)
          else true end)) //
-      error("invalid hook manifest: " + $component.command)) as $hook_manifest |
+      error("invalid hook component: " + $component.command)) as $hook_manifest |
     .[$component.hook] += [({command:$component.command,render:$render,
       environment:($hook_manifest.environment // [])} +
       (if $hook_manifest | has("match") then {match:$hook_manifest.match} else {} end) +

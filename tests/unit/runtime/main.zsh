@@ -274,9 +274,10 @@ cat >"$tmp/config/hooks/user_prompt_submit/help/manifest.jsonc" <<'JSON'
 JSON
 print -r -- '#!/bin/sh' >"$tmp/config/hooks/user_prompt_submit/shell/run"
 chmod +x "$tmp/config/hooks/user_prompt_submit/shell/run"
-print -r -- '#!/bin/sh' >"$tmp/config/hooks/user_prompt_submit/shell/check"
-chmod +x "$tmp/config/hooks/user_prompt_submit/shell/check"
-print -r -- '{"match":{"command":"check"}}' \
+# A match script beside run supersedes a manifest pattern.
+print -r -- '#!/bin/sh' >"$tmp/config/hooks/user_prompt_submit/shell/match"
+chmod +x "$tmp/config/hooks/user_prompt_submit/shell/match"
+print -r -- '{"match":{"pattern":"^/shell\\z"}}' \
   >"$tmp/config/hooks/user_prompt_submit/shell/manifest.json"
 print -r -- '#!/bin/sh' >"$tmp/config/hooks/stop/gate/run"
 chmod +x "$tmp/config/hooks/stop/gate/run"
@@ -295,10 +296,20 @@ jq -e --arg base "${tmp:A}/config/hooks" '
     {command:($base + "/user_prompt_submit/help/run"),render:{initial_user_text:"",user_text:"${output.stdout}",model_text:"${output.stdout}"},environment:["HELP_FORMAT"],
       match:{pattern:"^/(help|h)\\z"},help:{usage:"/help, /h",description:"Show help"}},
     {command:($base + "/user_prompt_submit/shell/run"),render:{initial_user_text:"",user_text:"${output.stderr}",model_text:"${output.stdout}"},environment:[],
-      match:{command:($base + "/user_prompt_submit/shell/check")}}
+      match:{command:($base + "/user_prompt_submit/shell/match")}}
   ] and .harness.stop ==
     [{command:($base + "/stop/gate/run"),render:{initial_user_text:"",user_text:"${output.stderr}",model_text:"${output.stdout}"},environment:[]}]
 ' <<<"$REPLY" >/dev/null
+
+# Only user_prompt_submit hooks may be gated by a match script.
+print -r -- '#!/bin/sh' >"$tmp/config/hooks/stop/gate/match"
+chmod +x "$tmp/config/hooks/stop/gate/match"
+if sf_runtime_resolve_from_config "$tmp/config/hooked.jsonc" '' '' '{}' \
+    "$ROOT/tests/fixtures/backend"; then
+  fail 'match script on a stop hook was accepted'
+fi
+[[ $SF_RUNTIME_ERROR == *'invalid hook component: '*'/stop/gate/run'* ]]
+rm "$tmp/config/hooks/stop/gate/match"
 
 # Components resolve beside a symlinked config's target.
 mkdir -p "$tmp/symlink-config-home/shellfish" "$tmp/config-target/system"

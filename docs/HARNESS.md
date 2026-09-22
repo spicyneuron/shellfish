@@ -142,7 +142,7 @@ A hook manifest may select environment variables and rendering. Only `user_promp
 }
 ```
 
-`match` is either a jq-compatible regular expression or `{"command":"check"}` naming an executable beside `run`. A match command receives the normal hook context, must write nothing, and selects on exit 0, skips on 1, and fails otherwise. Selection preserves configured order.
+`match` is a jq-compatible regular expression. An executable named `match` beside `run` replaces it: the script receives the normal hook context, must write nothing, and selects on exit 0, skips on 1, and fails otherwise. Selection preserves configured order.
 
 stdout, stderr, and fd 3 are bounded together. fd 3 must contain exactly one object when used. State and rendered hook output become durable in that order before the next component runs. A silent exit 0 creates no result record.
 

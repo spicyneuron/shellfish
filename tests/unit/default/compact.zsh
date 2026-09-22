@@ -6,7 +6,7 @@ sf_test_tmp compact
 
 # Compact into a canonical child.
 typeset compact_hook="$ROOT/share/default/hooks/user_prompt_submit/compact/run"
-typeset compact_check="$ROOT/share/default/hooks/user_prompt_submit/compact/check"
+typeset compact_match="$ROOT/share/default/hooks/user_prompt_submit/compact/match"
 typeset compact_source="$tmp/compact-source.jsonl"
 typeset compact_control="$tmp/compact-control.json"
 typeset compact_shellfish="$tmp/compact-shellfish"
@@ -44,7 +44,7 @@ sf_session_append "$compact_source" '{"type":"assistant","stop":"end","content":
 # Ignore sessions below threshold.
 : >"$compact_control"
 SHELLFISH_EXECUTABLE="$ROOT/bin/shellfish" SHELLFISH_SESSION="$compact_source" \
-  SHELLFISH_TURN_STATE="$tmp" zsh -f "$compact_check" user_prompt_submit \
+  SHELLFISH_TURN_STATE="$tmp" zsh -f "$compact_match" user_prompt_submit \
   2>"$compact_display" \
   < <(print -n -- 'ordinary prompt') || compact_status=$?
 (( compact_status == 1 )) || fail 'a session below the threshold selected compaction'
@@ -56,7 +56,7 @@ jq -c 'if .type == "assistant" then .usage = {input_tokens:75,output_tokens:5} e
   "$compact_source" >"$tmp/compact-above.jsonl"
 mv "$tmp/compact-above.jsonl" "$compact_source"
 typeset compact_before=$(shasum <"$compact_source")
-SHELLFISH_SESSION="$compact_source" zsh -f "$compact_check" user_prompt_submit \
+SHELLFISH_SESSION="$compact_source" zsh -f "$compact_match" user_prompt_submit \
   < <(print -n -- 'my next prompt') || fail 'threshold did not select compaction'
 SF_TEST_BACKEND_REQUEST="$compact_request" \
   SHELLFISH_EXECUTABLE="$compact_shellfish" SHELLFISH_SESSION="$compact_source" \
@@ -102,7 +102,7 @@ print -r -- \
   '{"type":"error","user_text":"Cancelled."}' \
   >>"$cancelled_source"
 assert_canonical_session "$cancelled_source"
-SHELLFISH_SESSION="$cancelled_source" zsh -f "$compact_check" user_prompt_submit \
+SHELLFISH_SESSION="$cancelled_source" zsh -f "$compact_match" user_prompt_submit \
   < <(print -n -- 'after cancelling') ||
   fail 'a cancelled turn did not select compaction'
 

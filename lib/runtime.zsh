@@ -162,7 +162,7 @@ sf_runtime_resolve_from_config() {
   local config_path config_dir='' raw defaults decoded prepared presentation system_paths='[]'
   local backend_name backend_reference backend_dir backend_base manifest command
   local context_window_command=''
-  local reference resolved hook hook_manifest selector external_name final settings fence='' env_file=''
+  local reference resolved hook hook_manifest hook_match external_name final settings fence='' env_file=''
   local home=${HOME-}
   local theme_marker=': shellfish:unknown-theme:'
   local -a fields tool_entries loaded
@@ -289,7 +289,7 @@ sf_runtime_resolve_from_config() {
     resolved=$REPLY
     system_entries+=( "$resolved" )
   done
-  while (( ${#component_entries} / 3 < component_count )); do
+  while (( ${#component_entries} / 4 < component_count )); do
     hook=$fields[index]
     reference=$fields[index+1]
     (( index += 2 ))
@@ -304,24 +304,9 @@ sf_runtime_resolve_from_config() {
     }
     sf_runtime_read_manifest "$resolved" optional || return
     hook_manifest=$REPLY
-    selector=''
-    if [[ $hook_manifest == *'"match":'* ]]; then
-      selector=$(jq -r '
-        if (.match? | type) == "object" and (.match | keys) == ["command"] and
-            (.match.command | type) == "string"
-        then .match.command else "" end
-      ' <<<"$hook_manifest") || return
-    fi
-    if [[ -n $selector ]]; then
-      if [[ $selector != [A-Za-z0-9]* || $selector == *[^A-Za-z0-9_.-]* ||
-          ! -f $resolved/$selector || ! -x $resolved/$selector ]]; then
-        sf_runtime_fail "invalid $hook hook match command: $reference"
-        return
-      fi
-      hook_manifest=$(jq -c --arg command "$resolved/$selector" \
-        '.match.command = $command' <<<"$hook_manifest") || return
-    fi
-    component_entries+=( "$hook" "$resolved/run" "$hook_manifest" )
+    hook_match=''
+    [[ ! -f $resolved/match || ! -x $resolved/match ]] || hook_match=$resolved/match
+    component_entries+=( "$hook" "$resolved/run" "$hook_manifest" "$hook_match" )
   done
   (( index == ${#fields} )) || {
     sf_runtime_fail 'cannot inspect prepared runtime'
@@ -330,7 +315,7 @@ sf_runtime_resolve_from_config() {
   [[ -z ${commands[fence]-} ]] || fence=${commands[fence]:A}
 
   (( ${#tool_entries} == tool_count * 5 && ${#system_entries} == system_count &&
-    ${#component_entries} == component_count * 3 )) || {
+    ${#component_entries} == component_count * 4 )) || {
     sf_runtime_fail 'cannot assemble resolved runtime references'
     return
   }
