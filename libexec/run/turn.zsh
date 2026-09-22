@@ -209,7 +209,7 @@ sf_run_project() {
 sf_run_turn() {
   local user_record=$1 session=$2 prompt=$3 runtime tools context_command
   local assistant stop_text id name decision post_request
-  local reason outcome result state post_error='' failure='' turn_state tool_temp='' call
+  local reason outcome result state post_error='' failure='' turn_state call
   local call_projection
   local -a calls states hook_result
   local -A projected
@@ -267,16 +267,6 @@ sf_run_turn() {
       esac
       if [[ -z $failure && $hook_result[1] == handled ]]; then
         return 0
-      fi
-    fi
-    if [[ -z $failure ]]; then
-      if tool_temp=$(mktemp -d "${TMPDIR:-/tmp}/shellfish-tool-$EUID.XXXXXX") &&
-          chmod 700 "$tool_temp"; then
-        tool_temp=${tool_temp:A}
-      else
-        [[ -z $tool_temp ]] || rm -rf -- "$tool_temp"
-        tool_temp=''
-        failure='cannot prepare tool temporary directory'
       fi
     fi
     if [[ -z $failure ]]; then
@@ -397,7 +387,7 @@ sf_run_turn() {
               fi
             fi
             if [[ -z $outcome ]]; then
-              sf_run_tool_execute "$session" "$tool_temp"
+              sf_run_tool_execute "$session"
               run_status=$?
               if (( run_status )); then
                 if (( run_status == 129 || run_status == 130 || run_status == 143 )); then
@@ -440,7 +430,7 @@ sf_run_turn() {
     fi
   } always {
     trap - TERM
-    rm -rf -- "$turn_state" "$tool_temp" 2>/dev/null
+    rm -rf -- "$turn_state" 2>/dev/null
     (( ! begun || ! SF_RUN[signal_status] )) || sf_run_cancel "$session"
   }
 }

@@ -137,7 +137,7 @@ Hooks and adapters inherit the ordinary process environment after every componen
 
 ## Sandbox and presentation
 
-The default harness runs opted-in tools under [`fence`](https://github.com/fencesandbox/fence). Tool policies set the baseline; harness grants extend filesystem access, while policy deny rules still take precedence.
+The default harness runs opted-in tools under [`fence`](https://github.com/fencesandbox/fence). Tool policies and platform temp access set the baseline; harness grants extend filesystem access, while policy deny rules still take precedence.
 
 ```jsonc
 {

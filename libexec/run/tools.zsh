@@ -84,14 +84,14 @@ sf_run_tool_bound() {
 
 sf_run_tool_execute() {
   setopt local_options no_err_exit
-  local session=$1 tool_directory=$2 command=$SF_TOOL_PLAN[executable]
+  local session=$1 command=$SF_TOOL_PLAN[executable]
   local selected=$SF_TOOL_PLAN[environment] settings=$SF_TOOL_PLAN[settings]
   local fence=$SF_TOOL_PLAN[fence] env_file=$SF_TOOL_PLAN[env_file]
   local execution_input=$SF_TOOL_PLAN[execution_input] sandbox=$SF_TOOL_PLAN[sandbox]
   local read_paths=$SF_TOOL_PLAN[read_paths] write_paths=$SF_TOOL_PLAN[write_paths]
   local cwd=$SF_RUN[cwd] capture stdin bounded_stdout bounded_stderr
-  local config_dir='' expose name
-  local -a arguments environment names process_command process sandbox_arguments
+  local config_dir='' expose name darwin_temp='' temp_dir=${TMPDIR:-/tmp}
+  local -a arguments environment names process_command process sandbox_arguments temp_paths
   integer max_capture=$SF_TOOL_PLAN[max_capture] control_bytes budget stderr_bytes denied=0
 
   SF_RUN_TOOL_ERROR=''
@@ -100,7 +100,16 @@ sf_run_tool_execute() {
     SF_RUN_TOOL_ERROR=$SF_ENVIRONMENT_ERROR
     return 1
   }
-  [[ -d $tool_directory ]] || { SF_RUN_TOOL_ERROR='tool temporary directory is unavailable'; return 1; }
+  [[ -d $temp_dir ]] || { SF_RUN_TOOL_ERROR='temporary directory is unavailable'; return 1; }
+  temp_dir=${temp_dir:A}
+  if [[ $OSTYPE == darwin* && -x /usr/bin/getconf ]]; then
+    darwin_temp=$(/usr/bin/getconf DARWIN_USER_TEMP_DIR 2>/dev/null) || darwin_temp=''
+    if [[ -d $darwin_temp ]]; then
+      darwin_temp=${darwin_temp:A}
+    else
+      darwin_temp=''
+    fi
+  fi
   sf_scratch_file tool-input || { SF_RUN_TOOL_ERROR='cannot prepare tool input'; return 1; }
   stdin=$REPLY
   print -r -- "$execution_input" >"$stdin" || {
@@ -119,12 +128,13 @@ sf_run_tool_execute() {
     "HOME=${HOME:-$cwd}" "PATH=$PATH" "TERM=${TERM:-dumb}"
     "LANG=${LANG:-C}" "SHELLFISH_CONFIG_DIR=$config_dir"
     "SHELLFISH_MAX_CAPTURE_BYTES=$max_capture" "SHELLFISH_SESSION=$session"
-    "SHELLFISH_EXECUTABLE=$SF_ENTRY" "TMPDIR=$tool_directory" "TMPPREFIX=$tool_directory/zsh"
+    "SHELLFISH_EXECUTABLE=$SF_ENTRY"
   )
   [[ -z ${LC_ALL-} ]] || environment+=( "LC_ALL=$LC_ALL" )
   [[ -z ${LC_CTYPE-} ]] || environment+=( "LC_CTYPE=$LC_CTYPE" )
   [[ -z ${XDG_CONFIG_HOME-} ]] || environment+=( "XDG_CONFIG_HOME=$XDG_CONFIG_HOME" )
   environment+=( "${SF_ENVIRONMENT_VALUES[@]}" )
+  environment+=( "TMPDIR=$temp_dir" "TMPPREFIX=$temp_dir/zsh" )
   names=( ${=SF_TOOL_PLAN[environment_names]} )
   arguments=()
   for name in $names; do arguments+=( -u "$name" ); done
@@ -132,7 +142,12 @@ sf_run_tool_execute() {
   if [[ $sandbox == true ]]; then
     arguments=( -i "${arguments[@]:$(( ${#names} * 2 ))}" )
     sandbox_arguments=( --monitor --fence-log-file "$capture/sandbox.log"
-      --settings "$settings" --expose-host-path "$command" --expose-host-path-rw "$tool_directory" )
+      --settings "$settings" --expose-host-path "$command" )
+    temp_paths=( /tmp "$temp_dir" )
+    [[ -z $darwin_temp ]] || temp_paths+=( "$darwin_temp" )
+    for expose in ${(u)temp_paths}; do
+      [[ -d $expose ]] && sandbox_arguments+=( --expose-host-path-rw "$expose" )
+    done
     for expose in ${(f)read_paths}; do
       sandbox_arguments+=( --expose-host-path "$expose" )
     done

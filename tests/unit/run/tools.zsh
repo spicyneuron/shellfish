@@ -3,6 +3,8 @@
 source "${0:A:h:h:h}/_helpers.zsh"
 sf_test_source lib/session.zsh
 sf_test_tmp run-tool-contract
+mkdir "$tmp/host-temp"
+export TMPDIR="$tmp/host-temp" TMPPREFIX="$tmp/manifest-prefix"
 export XDG_STATE_HOME="$tmp/state" SF_TEST_BACKEND_DELAY=0
 sf_test_runtime
 
@@ -19,6 +21,7 @@ fi
 
 # Tool rendering uses the shared component vocabulary.
 SF_TEST_RUNTIME=$(jq -c '
+  .harness.tools[0].manifest.environment=["TMPPREFIX"] |
   .harness.tools[0].manifest.render={
     initial_user_text:"${name}\n${input.command}",
     user_text:"${name}\n${output.stdout}${output.stderr}\nexit ${output.exit_code}",
@@ -27,14 +30,25 @@ SF_TEST_RUNTIME=$(jq -c '
   }
 ' <<<"$SF_TEST_RUNTIME")
 
-# Tool scratch cannot redirect the next call's core-owned input write.
+# Tools use the host temp directory rather than a Shellfish-owned turn directory.
+typeset temp_session="$tmp/tool-temp.jsonl" temp_stream="$tmp/tool-temp.stream"
+sf_test_session "$temp_session"
+SF_TEST_BACKEND_TOOL_CALL=1 \
+  SF_TEST_BACKEND_TOOL_COMMAND='print -rn -- "$TMPDIR|$TMPPREFIX"' \
+  sf_test_run temp "$temp_session" >"$temp_stream" || fail 'tool temp environment turn failed'
+jq -eRn --arg expected "${TMPDIR:A}|${TMPDIR:A}/zsh" '
+  [inputs | fromjson | select(.type == "tool_result")][0].model_text ==
+    ($expected + "\nexit 0")
+' <"$temp_stream" >/dev/null || fail 'tool did not receive the host temp environment'
+
+# Tool temp cannot redirect the next call's core-owned input write.
 typeset input_target="$tmp/tool-input-target" input_session="$tmp/tool-input.jsonl"
 typeset input_stream="$tmp/tool-input.stream"
 sf_test_session "$input_session"
 SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_COUNT=2 \
   SF_TEST_BACKEND_TOOL_COMMAND="ln -sf ${(q)input_target} \"\$TMPDIR/input\"" \
   sf_test_run input "$input_session" >"$input_stream" || fail 'tool input isolation turn failed'
-[[ ! -e $input_target ]] || fail 'tool scratch redirected a later input write'
+[[ ! -e $input_target ]] || fail 'tool temp redirected a later input write'
 
 # Pre-tool denial is sticky, preserves sibling calls, and still reaches post hooks.
 typeset pre="$tmp/pre" later="$tmp/pre-later" post="$tmp/post"
@@ -217,9 +231,11 @@ assert_canonical_session "$session"
 
 # A sandbox violation annotates the model text of a failing tool, and only that.
 typeset fence="$tmp/fence"
+typeset fence_arguments="$tmp/fence-arguments"
 cat >"$fence" <<'ZSH'
 #!/usr/bin/env zsh
 log=''
+print -rl -- "$@" >"$FENCE_ARGUMENTS"
 while (( $# )); do
   case $1 in
     --fence-log-file) log=$2; shift 2 ;;
@@ -231,6 +247,7 @@ done
 exec "$@"
 ZSH
 chmod +x "$fence"
+export FENCE_ARGUMENTS=$fence_arguments
 SF_TEST_RUNTIME=$(jq -c --arg fence "$fence" '
   .harness.post_tool_use=[] | .harness.sandbox=true | .harness.fence=$fence
 ' <<<"$SF_TEST_RUNTIME")
@@ -243,6 +260,22 @@ jq -eRn '
   .exit_code == 3 and .user_text == "shell\noutput\nexit 3" and
   .model_text == "output\nexit 3\n\n<sandbox_notice>A denial was detected during this tool call. This does not necessarily mean the tool failed.</sandbox_notice>"
 ' <"$stream" >/dev/null || fail 'sandbox denial did not annotate the model text'
+jq -eRn --arg temp "${TMPDIR:A}" '
+  [inputs] as $args |
+  [range(0; $args | length) as $i |
+    select($args[$i] == "--expose-host-path-rw") | $args[$i + 1]] as $paths |
+  ($paths | index("/tmp") != null and index($temp) != null)
+' <"$fence_arguments" >/dev/null || fail 'sandbox did not grant the standard temp directories'
+if [[ $OSTYPE == darwin* ]]; then
+  typeset darwin_temp
+  darwin_temp=$(/usr/bin/getconf DARWIN_USER_TEMP_DIR)
+  jq -eRn --arg temp "${darwin_temp:A}" '
+    [inputs] as $args |
+    [range(0; $args | length) as $i |
+      select($args[$i] == "--expose-host-path-rw") | $args[$i + 1]] |
+    index($temp) != null
+  ' <"$fence_arguments" >/dev/null || fail 'sandbox did not grant the Darwin temp directory'
+fi
 assert_canonical_session "$session"
 
 session="$tmp/sandbox-tolerated.jsonl"

@@ -37,7 +37,7 @@ Manifests list environment variable names under `environment`. Exported values t
 | `SHELLFISH_TURN_STATE` |  | Turn hooks only |
 | `TMPDIR`, `TMPPREFIX` | ✓ |  |
 
-All tool calls in one turn share a private `TMPDIR`; Shellfish removes it during cleanup. Sandboxed tools start with a clean environment. Unsandboxed tools, hooks, and adapters inherit the filtered process environment plus their selected values.
+Tools use the host's `TMPDIR`, or `/tmp` when it is unset, and receive a `TMPPREFIX` beneath it. Sandboxed tools may read and write the platform temp directories as baseline temporary storage; tools own their cleanup. Sandboxed tools otherwise start with a clean environment. Unsandboxed tools, hooks, and adapters inherit the filtered process environment plus their selected values.
 
 ### Rendering
 
@@ -102,7 +102,7 @@ If the model calls an undeclared tool, Shellfish records a rejected result with 
 
 ### Sandbox and permission
 
-A tool is sandboxed only when both its manifest and harness enable sandboxing. Shellfish runs it under [`fence`](https://github.com/fencesandbox/fence) with its `fence.jsonc`; harness path grants extend that policy, but deny rules win. Otherwise it runs with user permissions.
+A tool is sandboxed only when both its manifest and harness enable sandboxing. Shellfish runs it under [`fence`](https://github.com/fencesandbox/fence) with its `fence.jsonc`; platform temp access and harness path grants extend that policy, but deny rules win. Otherwise it runs with user permissions.
 
 For a sandboxed tool with `allow_sandbox_bypass: true`, Shellfish adds `request_sandbox_bypass` and `sandbox_bypass_reason` to the schema shown to the model. A requested bypass proceeds unsandboxed only when a `permission_request` hook or interactive client approves it. Otherwise the tool is not invoked and receives a denied result.
 
