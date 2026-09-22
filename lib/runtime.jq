@@ -1,10 +1,8 @@
 # The runtime shape, the header that freezes it, and the config that resolves
-# it. Display templates are validated and applied here.
+# it. Display templates are validated and applied here. The header lives here
+# rather than in lib/session.jq because it validates the runtime nested inside it.
 #
-# A parameterized definition called across a module boundary cannot call
-# anything else, so every module states its own vocabulary. See AGENTS.md. The
-# header lives here rather than in lib/session.jq because it validates the
-# runtime nested inside it.
+# Repeated primitives are deliberate; see AGENTS.md.
 
 def profile_name:
   type == "string" and test("^[A-Za-z0-9][A-Za-z0-9_-]*$");
