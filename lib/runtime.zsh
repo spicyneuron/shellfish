@@ -2,6 +2,7 @@ emulate -R zsh
 setopt no_aliases no_multios pipe_fail
 
 (( $+functions[sf_jq] )) || source "$SF_ROOT/lib/jq.zsh"
+(( $+functions[sf_jsonc_read] )) || source "$SF_ROOT/lib/jsonc.zsh"
 [[ -n ${SF_SHARE-} ]] || typeset -g SF_SHARE=$SF_ROOT/share
 
 typeset -g SF_RUNTIME_ERROR=''
@@ -12,43 +13,13 @@ sf_runtime_fail() {
   return 1
 }
 
+# jq's own "jq: " prefix says nothing the fallback message has not already said.
 sf_runtime_validation_error() {
   local output=$1 fallback=$2 detail=''
   [[ -z $output ]] || \
     detail=$(print -rn -- "$output" | LC_ALL=C tr -s '[:cntrl:]' ' ' | cut -c 1-1000)
+  detail=${detail#jq: }
   sf_runtime_fail "$fallback${detail:+: $detail}"
-}
-
-sf_runtime_read_jsonc() {
-  awk '
-    BEGIN { block = 0; string = 0; escaped = 0 }
-    {
-      for (i = 1; i <= length($0); i += 1) {
-        character = substr($0, i, 1)
-        next_character = substr($0, i + 1, 1)
-        if (block) {
-          if (character == "*" && next_character == "/") { block = 0; i += 1 }
-          continue
-        }
-        if (string) {
-          printf "%s", character
-          if (escaped) escaped = 0
-          else if (character == "\\") escaped = 1
-          else if (character == "\"") string = 0
-          continue
-        }
-        if (character == "\"") { string = 1; printf "%s", character }
-        else if (character == "/" && next_character == "/") break
-        else if (character == "/" && next_character == "*") { block = 1; i += 1; printf " " }
-        else printf "%s", character
-      }
-      printf "\n"
-    }
-    END {
-      if (block) { print "unterminated block comment" > "/dev/stderr"; exit 1 }
-      if (string) { print "unterminated string" > "/dev/stderr"; exit 1 }
-    }
-  ' "$1" | jq -c .
 }
 
 sf_runtime_read_manifest() {
@@ -72,7 +43,7 @@ sf_runtime_read_manifest() {
     sf_runtime_fail "cannot read component manifest: $manifest_path"
     return
   }
-  content=$(sf_runtime_read_jsonc "$manifest_path" 2>&1) || {
+  content=$(sf_jsonc_read "$manifest_path" 2>&1) || {
     sf_runtime_validation_error "$content" "invalid component manifest: $manifest_path"
     return
   }
@@ -103,7 +74,7 @@ sf_runtime_read_config() {
       sf_runtime_fail "cannot read config: $config_path"
       return
     }
-    raw=$(sf_runtime_read_jsonc "$config_path" 2>&1) || {
+    raw=$(sf_jsonc_read "$config_path" 2>&1) || {
       sf_runtime_validation_error "$raw" "invalid config: $config_path"
       return
     }
@@ -118,7 +89,7 @@ sf_runtime_load_config() {
   local requested_config=$1 config_path defaults raw
   sf_runtime_config_path "$requested_config"
   config_path=$REPLY
-  defaults=$(sf_runtime_read_jsonc "$SF_SHARE/default/shellfish.jsonc" 2>/dev/null) || {
+  defaults=$(sf_jsonc_read "$SF_SHARE/default/shellfish.jsonc" 2>/dev/null) || {
     sf_runtime_fail 'invalid bundled config'
     return
   }

@@ -3,7 +3,7 @@
 source "${0:A:h:h:h}/_helpers.zsh"
 sf_test_source lib/runtime.zsh lib/environment.zsh lib/session.zsh
 
-typeset config runtime tool_name jsonc hook
+typeset config runtime tool_name hook
 sf_test_tmp runtime
 mkdir -p "$tmp/config" "$tmp/home"
 export HOME="${tmp:A}/home"
@@ -26,26 +26,6 @@ cat >"$config" <<'JSON'
   }
 }
 JSON
-
-# JSONC parsing preserves comment-like strings.
-cat >"$tmp/config/string-values.jsonc" <<'JSON'
-{
-  // line comment
-  "line": "https://example.invalid/a//b",
-  /* block comment */
-  "block": "literal /* comment */",
-  "quote": "escaped quote: \"// still text\" and \"/* too */\"",
-  // another comment
-  "path": "C:\\Users\\shellfish\\shellfish.jsonc"
-}
-JSON
-jsonc=$(sf_runtime_read_jsonc "$tmp/config/string-values.jsonc")
-jq -e '. == {
-  line:"https://example.invalid/a//b",
-  block:"literal /* comment */",
-  quote:"escaped quote: \"// still text\" and \"/* too */\"",
-  path:"C:\\Users\\shellfish\\shellfish.jsonc"
-}' <<<"$jsonc" >/dev/null
 
 # CLI request options override the profile.
 sf_runtime_resolve_from_config "$config" '' 'cli-model' '{"temperature":0.7,"seed":4}'
