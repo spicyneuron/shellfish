@@ -10,58 +10,6 @@ request_eval() {
   jq -L "$ROOT" -e 'include "lib/session"; include "lib/backend"; '"$1"
 }
 
-# Request messages require one safe text block.
-print -r -- '{"type":"user","content":[{"type":"text","text":"hello"}]}' |
-  request_eval 'request_user_message' >/dev/null
-
-if print -r -- '{"type":"user","content":[{"type":"text","text":"bad\u0000nul"}]}' |
-    request_eval 'request_user_message' >/dev/null 2>&1; then
-  fail 'user message with NUL was accepted'
-fi
-
-if print -r -- '{"type":"user","content":[]}' |
-    request_eval 'request_user_message' >/dev/null 2>&1; then
-  fail 'empty user content was accepted'
-fi
-
-# Request responses carry no calls in content.
-print -r -- '{"type":"assistant","stop":"end","content":[{"type":"text","text":"hi"}]}' |
-  request_eval 'request_assistant_message' >/dev/null
-
-print -r -- '{"type":"tool_call","id":"c1","name":"shell","input":{}}' |
-  request_eval 'request_tool_call' >/dev/null
-
-# Requests require canonical projected fields.
-typeset valid_request
-valid_request=$(jq -cn '{
-  format_version:1,
-  system:"system",
-  messages:[
-    {type:"user",content:[{type:"text",text:"question"}]},
-    {type:"assistant",stop:"tool_calls",content:[
-      {type:"reasoning",text:"checking",opaque:{signature:"signed"}}
-    ]},
-    {type:"tool_call",id:"call_1",name:"shell",input:{command:"pwd"}},
-    {type:"tool_result",call_id:"call_1",name:"shell",content:"/tmp",exit_code:0},
-    {type:"assistant",stop:"end",content:[{type:"text",text:"done"}]}
-  ],
-  tools:[{name:"shell",description:"Run a command",input_schema:{
-    type:"object",properties:{command:{type:"string"}},required:["command"]
-  }}],
-  options:{request:{model:"model"}},
-  transport:{endpoint:"https://example.com",insecure_tls:false,http_timeout:30,http_stall:10}
-}') || fail 'cannot prepare canonical request fixture'
-print -r -- "$valid_request" | request_eval 'canonical_request' >/dev/null
-
-for filter in \
-    '.messages[0].content = [{}]' \
-    '.tools[0] = {}' \
-    '.extra = true'; do
-  if jq "$filter" <<<"$valid_request" | request_eval 'canonical_request' >/dev/null 2>&1; then
-    fail "canonical request accepted malformed input: $filter"
-  fi
-done
-
 # Backend streams require canonical ordering.
 jq -cn '[
   {type:"_assistant_reasoning_opaque",index:0,opaque:{type:"redacted_thinking",data:"secret"}},

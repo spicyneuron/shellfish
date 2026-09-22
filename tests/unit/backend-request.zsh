@@ -63,6 +63,15 @@ print -r -- '{"type":"user","content":[{"type":"text","text":"duplicate"}]}' \
 zsh -f "$entry" backend-request <"$tmp/invalid-transition.jsonl" >/dev/null 2>&1 &&
   fail 'backend-request accepted an invalid record transition'
 
+# Hook context cannot place NUL in a projected user message.
+{
+  sed '$d' "$session"
+  print -r -- '{"type":"hook_result","lifecycle":"stop","id":"1","name":"nul","input":"","exit_code":0,"model_text":"bad\u0000text"}'
+  tail -n 1 "$session"
+} >"$tmp/nul-context.jsonl"
+zsh -f "$entry" backend-request <"$tmp/nul-context.jsonl" >/dev/null 2>&1 &&
+  fail 'backend-request accepted NUL in projected hook context'
+
 {
   sed '$d' "$session"
   tail -n 1 "$session" | jq -c '.content[0].text = "error"'

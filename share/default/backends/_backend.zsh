@@ -32,9 +32,8 @@ sf_backend_setup() {
   }
 }
 
-# Reads the request fields an adapter consumes. The core validated the request
-# before invoking the adapter, so this checks only what this program uses, plus
-# the jq predicate an adapter passes for request options it cannot translate.
+# Reads the request fields an adapter consumes, plus the jq predicate an adapter
+# passes for request options it cannot translate.
 # The model check leads because jq's and short-circuits, so the predicate never
 # runs against a missing options.request.
 sf_backend_request() {
