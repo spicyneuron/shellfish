@@ -5,8 +5,6 @@ setopt no_aliases no_multios pipe_fail
 [[ -n ${SF_SHARE-} ]] || typeset -g SF_SHARE=$SF_ROOT/share
 
 typeset -g SF_RUNTIME_ERROR=''
-typeset -g SF_PRESENTATION=''
-typeset -g SF_RUNTIME_VERBOSE=0
 typeset -g SF_RUNTIME_SANDBOX_GRANTS='{"sandbox_read_paths":[],"sandbox_write_paths":[]}'
 
 sf_runtime_fail() {
@@ -129,18 +127,6 @@ sf_runtime_load_config() {
   reply=( "$config_path" "$defaults" "$raw" )
 }
 
-# Presentation remains unfrozen, so --verbose also affects stored sessions.
-sf_runtime_apply_verbose() {
-  local updated
-  (( SF_RUNTIME_VERBOSE )) || return 0
-  updated=$(jq -c '.tui.preview_lines_reasoning = "full" |
-    .tui.preview_lines = "full"' <<<"$SF_PRESENTATION") || {
-    sf_runtime_fail 'cannot apply verbose preview limits'
-    return
-  }
-  SF_PRESENTATION=$updated
-}
-
 sf_runtime_reference() {
   local reference=$1 base=$2 kind=$3 candidate
   if [[ $reference == /* ]]; then
@@ -159,19 +145,17 @@ sf_runtime_reference() {
 sf_runtime_resolve_from_config() {
   local requested_config=$1 profile_override=$2 model_override=$3 request_override=$4
   local backend_override=${5-}
-  local config_path config_dir='' raw defaults decoded prepared presentation system_paths='[]'
+  local config_path config_dir='' raw defaults decoded prepared system_paths='[]'
   local backend_name backend_reference backend_dir backend_base manifest command
   local context_window_command=''
   local reference resolved hook hook_manifest hook_match external_name final settings fence='' env_file=''
   local home=${HOME-}
-  local theme_marker=': shellfish:unknown-theme:'
   local -a fields tool_entries loaded
   local -a system_entries component_entries resolved_args
   integer tool_count system_count component_count index tool_index
   integer settings_readable
 
   SF_RUNTIME_ERROR=''
-  SF_PRESENTATION=''
   REPLY=''
   sf_runtime_load_config "$requested_config" || return
   loaded=( "${reply[@]}" )
@@ -197,7 +181,6 @@ sf_runtime_resolve_from_config() {
        external_backend_name:$external_backend_name,home:$home} |
       runtime_prepare as $prepared |
       ($prepared | tojson | record),
-      ($prepared.presentation | tojson | record),
       ($prepared.backend_name | record),
       ($prepared.backend_reference | record),
       ($prepared.backend_external | tostring | record),
@@ -209,21 +192,16 @@ sf_runtime_resolve_from_config() {
       ($prepared.hook_component_references[] | .hook, "\u0000", .reference, "\u0000"),
       ("ok" | record)
   ' 2>&1) || {
-    if [[ $decoded == *"$theme_marker"* ]]; then
-      sf_runtime_fail "unknown theme: ${decoded#*"$theme_marker"}"
-    else
-      sf_runtime_validation_error "$decoded" "cannot prepare runtime"
-    fi
+    sf_runtime_validation_error "$decoded" "cannot prepare runtime"
     return
   }
   fields=( "${(@0)${decoded%$'\0'}}" )
-  (( ${#fields} >= 9 )) && [[ $fields[-1] == ok ]] || {
+  (( ${#fields} >= 8 )) && [[ $fields[-1] == ok ]] || {
     sf_runtime_fail 'cannot inspect prepared runtime'
     return
   }
   prepared=$fields[1]
-  presentation=$fields[2]
-  fields=( "${(@)fields[3,-1]}" )
+  fields=( "${(@)fields[2,-1]}" )
   backend_name=$fields[1]
   backend_reference=$fields[2]
   tool_count=$fields[4]
@@ -341,39 +319,6 @@ sf_runtime_resolve_from_config() {
     return
   }
   REPLY=$final
-  SF_PRESENTATION=$presentation
-  sf_runtime_apply_verbose
-}
-
-sf_runtime_restore_presentation() {
-  local requested_config=$1 config_path raw defaults output
-  local invalid_marker=': shellfish:invalid-config'
-  local theme_marker=': shellfish:unknown-theme:'
-  local -a loaded
-  SF_RUNTIME_ERROR=''
-  SF_PRESENTATION=''
-  sf_runtime_load_config "$requested_config" || return
-  loaded=( "${reply[@]}" )
-  config_path=$loaded[1]
-  defaults=$loaded[2]
-  raw=$loaded[3]
-  output=$(sf_jq -nce --argjson defaults "$defaults" \
-    --argjson raw "$raw" '
-      include "lib/runtime";
-      {defaults:$defaults,raw:$raw} | presentation_resolve
-    ' 2>&1) || {
-    if [[ $output == *"$theme_marker"* ]]; then
-      sf_runtime_fail "unknown theme: ${output#*"$theme_marker"}"
-    elif [[ $output == *"$invalid_marker" ]]; then
-      sf_runtime_fail "invalid config: $config_path"
-    else
-      sf_runtime_validation_error "$output" \
-        "invalid presentation config: ${config_path:-<defaults>}"
-    fi
-    return
-  }
-  SF_PRESENTATION=$output
-  sf_runtime_apply_verbose
 }
 
 # Parse the options that select a runtime, then resolve it. Callers that own

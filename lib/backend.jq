@@ -1,5 +1,6 @@
-# Adapter request and event protocol. jq resolves an included module's internal calls
-# only one level deep, so this module states the primitives its definitions need.
+# Adapter request and event protocol. A parameterized definition called across a
+# module boundary cannot call anything else, so this module states the
+# primitives its definitions need. See AGENTS.md.
 
 def nul_free_string: type == "string" and (index("\u0000") | not);
 def identifier: type == "string" and test("^[A-Za-z0-9_-]+$");

@@ -13,9 +13,6 @@ config="$tmp/config/shellfish.jsonc"
 cat >"$config" <<'JSON'
 {
   "default_profile": "work",
-  "theme_mode": "light",
-  "theme_light": "light",
-  "theme_dark": "dark",
   "backends": {
     "custom": {"adapter": "openai"},
     "custom-responses": {"adapter": "openai-responses"}
@@ -26,9 +23,6 @@ cat >"$config" <<'JSON'
       "context_window": 128000,
       "request": {"model": "configured", "temperature": 0.2}
     }
-  },
-  "themes": {
-    "light": {"text": "#123456"}
   }
 }
 JSON
@@ -81,11 +75,6 @@ jq -e '
   (.backend.context_window_command |
     endswith("/share/default/backends/openai-responses/context_window"))
 ' <<<"$REPLY" >/dev/null
-jq -e '
-  .theme_mode == "light" and .theme_light == "light" and
-  .themes.light.text == "#123456" and
-  .tui.preview_lines == 2
-' <<<"$SF_PRESENTATION" >/dev/null
 
 # Empty configs use bundled defaults.
 print -r -- '{}' >"$tmp/config/empty.jsonc"
@@ -120,39 +109,13 @@ jq -e '
   (.backend.context_window_command | endswith("/share/default/backends/codex/context_window"))
 ' <<<"$REPLY" >/dev/null
 
-# Runtime resolution and presentation are returned separately.
-sf_runtime_resolve_from_config "$config" '' 'boundary-model' '{}'
-jq -e '.profile.request.model == "boundary-model"' <<<"$REPLY" >/dev/null
-jq -e '.theme_mode == "light" and .themes.light.text == "#123456"' \
-  <<<"$SF_PRESENTATION" >/dev/null
-
-# Reopening validates only presentation config.
-cat >"$tmp/config/presentation.jsonc" <<'JSON'
-{
-  "profiles": "ignored while reopening",
-  "theme_mode": "light",
-  "theme_light": "light",
-  "theme_dark": "dark",
-  "themes": {"light": {"text": "#abcdef"}},
-  "tui": {"preview_lines": 9}
-}
-JSON
-sf_runtime_restore_presentation "$tmp/config/presentation.jsonc"
-jq -e '
-  .theme_mode == "light" and .themes.light.text == "#abcdef" and
-  .tui.preview_lines == 9
-' <<<"$SF_PRESENTATION" >/dev/null
-
-print -r -- '{"theme_light":"missing"}' >"$tmp/config/missing-theme.jsonc"
-if sf_runtime_restore_presentation "$tmp/config/missing-theme.jsonc"; then
-  fail 'missing current theme was accepted'
-fi
-[[ $SF_RUNTIME_ERROR == 'unknown theme: missing' ]]
-if sf_runtime_resolve_from_config "$tmp/config/missing-theme.jsonc" '' 'model' '{}' \
-    "$ROOT/tests/fixtures/backend"; then
-  fail 'prospective runtime accepted a missing theme'
-fi
-[[ $SF_RUNTIME_ERROR == 'unknown theme: missing' ]]
+# A runtime carries no presentation, and an unusable theme cannot block one.
+print -r -- '{"theme_light":"missing","themes":{"dark":{"text":"blue"}}}' \
+  >"$tmp/config/bad-theme.jsonc"
+sf_runtime_resolve_from_config "$tmp/config/bad-theme.jsonc" '' 'model' '{}' \
+  "$ROOT/tests/fixtures/backend" || fail 'runtime resolution read presentation'
+jq -e '.profile.request.model == "model" and (has("presentation") | not)' \
+  <<<"$REPLY" >/dev/null
 
 # CLI backend paths override configuration.
 sf_runtime_resolve_from_config "$config" work '' '{}' "$ROOT/tests/fixtures/backend"
@@ -245,15 +208,6 @@ jq -e --arg read "${tmp:A}/home/reference" --arg write "${tmp:A}/home/output" '
   fi
   [[ $SF_RUNTIME_ERROR == *'cannot expand ~ without HOME'* ]]
 )
-
-# Presentation config is validated independently.
-cat >"$tmp/config/invalid-presentation.jsonc" <<'JSON'
-{"tui":{"preview_lines":-1}}
-JSON
-if sf_runtime_restore_presentation "$tmp/config/invalid-presentation.jsonc"; then
-  fail 'invalid presentation field was accepted'
-fi
-[[ $SF_RUNTIME_ERROR == *'invalid config at $["tui"]["preview_lines"]: must be full or a non-negative integer'* ]]
 
 # Hook references preserve order and prefer configured scripts.
 mkdir -p "$tmp/config/hooks/user_prompt_submit/help" \

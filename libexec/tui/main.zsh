@@ -127,18 +127,13 @@ sf_tui_main() {
     [[ $session_mode != resume ]] || session=$runtime_session
   fi
   source "$SF_ROOT/lib/runtime.zsh"
-  SF_RUNTIME_VERBOSE=$verbose_requested
+  source "$SF_ROOT/libexec/tui/presentation.zsh"
   if [[ -n $runtime_session ]]; then
     sf_session_read_runtime "$runtime_session" || {
       sf_die "$SF_SESSION_ERROR"
       return 1
     }
     runtime=$REPLY
-    sf_runtime_restore_presentation "$presentation_config" || {
-      resolve_status=$?
-      sf_die "$SF_RUNTIME_ERROR"
-      return $resolve_status
-    }
   else
     sf_runtime_resolve_args "${resolve_args[@]}" || {
       resolve_status=$?
@@ -147,6 +142,12 @@ sf_tui_main() {
     }
     runtime=$REPLY
   fi
+  SF_PRESENTATION_VERBOSE=$verbose_requested
+  sf_presentation_resolve "$presentation_config" || {
+    resolve_status=$?
+    sf_die "$SF_PRESENTATION_ERROR"
+    return $resolve_status
+  }
   presentation=$SF_PRESENTATION
 
   source "$SF_ROOT/libexec/tui/render/main.zsh"

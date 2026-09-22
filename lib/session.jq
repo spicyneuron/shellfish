@@ -1,9 +1,10 @@
 # Durable record validity and transcript order. Records are read left to right;
 # each view projects the state this reduction reaches.
 #
-# jq resolves an included module's internal calls only one level deep, so every
-# module states its own vocabulary. lib/runtime.jq repeats these primitives and
-# owns the header, which validates the runtime nested inside it.
+# A parameterized definition called across a module boundary cannot call
+# anything else, so every module states its own vocabulary. See AGENTS.md.
+# lib/runtime.jq repeats these primitives and owns the header, which validates
+# the runtime nested inside it.
 
 def nul_free_string: type == "string" and (index("\u0000") | not);
 def identifier: type == "string" and test("^[A-Za-z0-9_-]+$");

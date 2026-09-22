@@ -1,9 +1,10 @@
 # The runtime shape, the header that freezes it, and the config that resolves
 # it. Display templates are validated and applied here.
 #
-# jq resolves an included module's internal calls only one level deep, so every
-# module states its own vocabulary. The header lives here rather than in
-# lib/session.jq because it validates the runtime nested inside it.
+# A parameterized definition called across a module boundary cannot call
+# anything else, so every module states its own vocabulary. See AGENTS.md. The
+# header lives here rather than in lib/session.jq because it validates the
+# runtime nested inside it.
 
 def profile_name:
   type == "string" and test("^[A-Za-z0-9][A-Za-z0-9_-]*$");
@@ -273,16 +274,6 @@ def config_object($path; $fields):
 def config_assert($valid; $path; $message):
   if $valid then . else config_error($path; $message) end;
 
-def config_theme($path):
-  ["text", "muted", "divider", "footer", "prompt", "prompt_waiting",
-   "system", "context", "user", "agent", "activity", "link", "code", "tool",
-   "reasoning", "error", "syntax_comment", "syntax_keyword", "syntax_string",
-   "syntax_number", "syntax_tag", "diff_added", "diff_added_background",
-   "diff_removed", "diff_removed_background", "permission"] as $colors |
-  config_object($path; $colors) |
-  reduce $colors[] as $field (.;
-    config_assert((has($field) | not) or (.[$field] | type == "string" and
-      test("^#[0-9A-Fa-f]{6}$")); $path + [$field]; "must be a #RRGGBB color"));
 def config_backend($path):
   config_object($path; ["adapter", "endpoint", "environment", "insecure_tls",
     "http_timeout", "http_stall"]) |
@@ -338,6 +329,8 @@ def config_profile($path):
   config_assert((has("system") | not) or (.system | type == "array" and
     all(.[]; nonempty_control_free_string)); $path + ["system"]; "must be references");
 
+# Presentation keys pass through untouched. A session never freezes them, so
+# the client that renders owns their validation.
 def config_validate:
   config_object([]; ["$schema", "default_profile", "theme_mode", "theme_light", "theme_dark",
     "backends", "harnesses", "themes", "tui", "profiles"]) |
@@ -345,27 +338,12 @@ def config_validate:
     ["$schema"]; "must be a string") |
   config_assert((has("default_profile") | not) or (.default_profile | profile_name);
     ["default_profile"]; "invalid profile name") |
-  config_assert((has("theme_mode") | not) or (.theme_mode | IN("auto", "light", "dark"));
-    ["theme_mode"]; "invalid theme mode") |
-  config_assert((has("theme_light") | not) or (.theme_light | profile_name);
-    ["theme_light"]; "invalid theme") |
-  config_assert((has("theme_dark") | not) or (.theme_dark | profile_name);
-    ["theme_dark"]; "invalid theme") |
   if has("backends") then .backends |= (to_entries | map(.key as $name |
     config_assert($name | profile_name; ["backends", $name]; "invalid name") |
     .value |= config_backend(["backends", $name])) | from_entries) else . end |
   if has("harnesses") then .harnesses |= (to_entries | map(.key as $name |
     config_assert($name | profile_name; ["harnesses", $name]; "invalid name") |
     .value |= config_harness(["harnesses", $name])) | from_entries) else . end |
-  if has("themes") then .themes |= (to_entries | map(.key as $name |
-    config_assert($name | profile_name; ["themes", $name]; "invalid name") |
-    .value |= config_theme(["themes", $name])) | from_entries) else . end |
-  if has("tui") then .tui |= (
-    ["preview_lines_reasoning", "preview_lines"] as $preview_fields |
-    config_object(["tui"]; $preview_fields) |
-    reduce $preview_fields[] as $field (.;
-      config_assert((has($field) | not) or (.[$field] | preview_lines);
-        ["tui", $field]; "must be full or a non-negative integer"))) else . end |
   if has("profiles") then .profiles |= (to_entries | map(.key as $name |
     config_assert($name | profile_name; ["profiles", $name]; "invalid name") |
     .value |= config_profile(["profiles", $name])) | from_entries) else . end;
@@ -389,13 +367,6 @@ def config_resolve_profiles($bundled; $configured; $backends; $harnesses):
         .backend = (($backends[$ref] // error("unknown backend: " + $ref)) + {name:$ref}) else . end |
       if has("harness") then .harness as $ref |
         .harness = (($harnesses[$ref] // error("unknown harness: " + $ref)) + {name:$ref}) else . end));
-
-def presentation_finish:
-  . as $config |
-  ([$config.theme_light, $config.theme_dark] | unique | map(. as $name |
-    select($config.themes | has($name) | not)) | join(", ")) as $missing |
-  if $missing != "" then error("shellfish:unknown-theme:" + $missing)
-  else $config end;
 
 def runtime_prepare:
   . as $input |
@@ -439,24 +410,11 @@ def runtime_prepare:
     backend_reference:(if $external then $backend_override
       else ($profile.backend.adapter // $backend_name) end),
     backend_external:$external,
-    presentation:((($defaults | {theme_mode,theme_light,theme_dark,tui,themes}) *
-      ($validated | {theme_mode,theme_light,theme_dark,tui,themes} |
-      with_entries(select(.value != null)))) | presentation_finish),
     tool_references:($profile.harness.tools // []),
     system_references:($profile.system // []),
     hook_component_references:[hook_names[] as $hook |
       ($profile.harness[$hook] // [])[] | {hook:$hook,reference:.}]
   };
-
-def presentation_resolve:
-  . as {$defaults,$raw} |
-  if $raw | type != "object" then error("shellfish:invalid-config")
-  else
-    ((($defaults | {theme_mode,theme_light,theme_dark,tui,themes}) *
-      ($raw | {theme_mode,theme_light,theme_dark,tui,themes} |
-      with_entries(select(.value != null))) |
-      config_validate) | presentation_finish)
-  end;
 
 def runtime_finalize:
   . as $input |
