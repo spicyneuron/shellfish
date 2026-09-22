@@ -181,10 +181,10 @@ sf_run_tool_execute() {
   sf_run_tool_bound "$capture/stdout" "$bounded_stdout" $(( budget - stderr_bytes )) || return 1
   if (( process[exit_code] )) && grep -qs $'✗' "$capture/sandbox.log"; then denied=1; fi
   REPLY=$(sf_jq -cn --rawfile stdout "$bounded_stdout" --rawfile stderr "$bounded_stderr" \
-    --slurpfile control "$capture/control" --argjson control_bytes "$control_bytes" \
+    --slurpfile control "$capture/control" \
     --argjson exit_code "$process[exit_code]" --argjson denied "$denied" '
       include "lib/session";
-      (if $control_bytes == 0 then {}
+      (if ($control | length) == 0 then {}
        elif ($control | length) == 1 and ($control[0] | type) == "object" then $control[0]
        else error("invalid control") end) as $control |
       if ($control | if has("state") then

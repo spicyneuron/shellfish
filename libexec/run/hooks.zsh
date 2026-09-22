@@ -59,6 +59,7 @@ sf_run_hook_project() {
         (.render | tojson | field)),
       ("ok" | field)
     ' || return 1
+  # The four named entries above fill the first eight slots; hooks follow.
   SF_HOOK_PLAN=( "${(@)reply[1,8]}" )
   reply=( "${(@)reply[9,-1]}" )
 }
