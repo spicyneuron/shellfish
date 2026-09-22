@@ -135,19 +135,19 @@ sf_run_hook_invoke() {
       include "lib/runtime";
       include "lib/session";
       hook_outcome($exit_code;$stdout;$stderr;$controls;$capture_error) |
-      . as $outcome |
+      . as $outcome | .output as $output |
       ($outcome | hook_control_error($lifecycle)) as $control_error |
-      (if $outcome.exit_code != 0 or $outcome.stdout != "" or $outcome.stderr != "" then
-        render_component($render;$name;$input;$outcome) as $rendered |
+      (if $output.exit_code != 0 or $output.stdout != "" or $output.stderr != "" then
+        render_component($render;$name;$input;$output) as $rendered |
         ({type:"hook_result",lifecycle:$lifecycle,id:$id,name:$name,input:$input,
-          exit_code:$outcome.exit_code} +
+          exit_code:$output.exit_code} +
          (if $rendered.user_text == null then {} else {user_text:$rendered.user_text} end) +
          (if $rendered.model_text == null then {} else {model_text:$rendered.model_text} end)) as $result |
         if $result | canonical_hook_result then $result else error("invalid result") end
        else null end) as $result |
-      entry("exit_code"; $outcome.exit_code | tostring),
+      entry("exit_code"; $output.exit_code | tostring),
       entry("control_error"; $control_error),
-      entry("stderr"; $outcome.stderr),
+      entry("stderr"; $output.stderr),
       entry("action";
         if $control_error == "" then $outcome.control.action? // "" else "" end),
       entry("reason";
