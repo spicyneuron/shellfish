@@ -21,30 +21,31 @@ sf_run_hook_activity() {
   local lifecycle=$1 id=$2 name=$3 executable=$4 input=$5 render=$6
   local input_option=--arg
   [[ $lifecycle != (permission_request|pre_tool_use|post_tool_use) ]] || input_option=--argjson
-  sf_jq_fields 3 -cn --arg lifecycle "$lifecycle" --arg id "$id" --arg name "$name" \
+  sf_jq_fields -cn --arg lifecycle "$lifecycle" --arg id "$id" --arg name "$name" \
     --arg executable "$executable" "$input_option" input "$input" --argjson render "$render" '
+      include "lib/fields";
       include "lib/runtime";
       (render_component($render;$name;$input;{stdout:"",stderr:"",exit_code:0}) |
        .initial_user_text // "") as $user_text |
       ({type:"_hook_activity",hook:$lifecycle,id:$id,name:$name,input:$input,
         executable:$executable} +
        (if $user_text == "" then {} else {user_text:$user_text} end)) as $activity |
-      ($activity | tojson), "\u0000",
-      (if $user_text == "" then "" else ($activity | del(.user_text) | tojson) end), "\u0000",
-      ($input | tojson), "\u0000", "ok", "\u0000"
+      entry("record"; $activity | tojson),
+      entry("clear";
+        if $user_text == "" then "" else ($activity | del(.user_text) | tojson) end),
+      entry("input"; $input | tojson),
+      ("ok" | field)
     ' || return 1
-  REPLY=$reply[1]
 }
 
 # Shared values land in SF_HOOK_PLAN; the matching hooks follow in reply as
 # groups of command, environment, match command, and render template.
 sf_run_hook_project() {
   local runtime=$1 lifecycle=$2 content=$3
-  sf_jq_fields 0 -rn --argjson runtime "$runtime" --arg lifecycle "$lifecycle" \
+  sf_jq_fields -rn --argjson runtime "$runtime" --arg lifecycle "$lifecycle" \
     --arg input "$content" '
+      include "lib/fields";
       include "lib/runtime";
-      def field: ., "\u0000";
-      def entry($key; $value): ($key | field), ($value | field);
       entry("max_capture"; $runtime.harness.max_capture_bytes | tostring),
       entry("env_file"; $runtime.backend.env_file),
       entry("model"; $runtime.profile.request.model),
@@ -122,14 +123,15 @@ sf_run_hook_invoke() {
       stderr_bytes "$process[4]" control_bytes "$process[5]" )
     return
   fi
-  sf_jq_fields 0 -cn --argjson exit_code "$process[1]" \
+  sf_jq_fields -cn --argjson exit_code "$process[1]" \
     --rawfile stdout "$directory/stdout" --rawfile stderr "$directory/stderr" \
     --slurpfile controls "$directory/control" --arg capture_error "$capture_error" \
     --arg lifecycle "$lifecycle" --arg id "$id" --arg name "$name" \
     --argjson input "$input_json" --argjson render "$render" '
-      include "libexec/run/hooks"; include "lib/runtime"; include "lib/session";
-      def field: ., "\u0000";
-      def entry($key; $value): ($key | field), ($value | field);
+      include "lib/fields";
+      include "libexec/run/hooks";
+      include "lib/runtime";
+      include "lib/session";
       hook_outcome($exit_code;$stdout;$stderr;$controls;$capture_error) |
       . as $outcome |
       ($outcome | hook_control_error($lifecycle)) as $control_error |
@@ -186,6 +188,7 @@ sf_run_hooks() {
   local input_file input_json command selected match_command name render record clear
   local error='' decision=proceed reason='' action='' payload=''
   local -a plan states
+  local -A activity
   integer offset id exit_code invoke_status match_status
 
   SF_RUN_HOOK_ERROR=''
@@ -230,9 +233,10 @@ sf_run_hooks() {
     name=$REPLY
     sf_run_hook_activity "$lifecycle" "$id" "$name" "$command" "$content" \
       "$render" || { error='cannot prepare hook activity'; break; }
-    clear=$reply[2]
-    input_json=$reply[3]
-    sf_run_emit "$REPLY" || { error='cannot emit hook activity'; break; }
+    activity=( "${reply[@]}" )
+    clear=$activity[clear]
+    input_json=$activity[input]
+    sf_run_emit "$activity[record]" || { error='cannot emit hook activity'; break; }
     invoke_status=0
     sf_run_hook_invoke "$session" "$command" "$selected" "$input_file" "$lifecycle" \
       "$turn_state" "$render" "$id" "$name" "$input_json" "$@" || invoke_status=$?

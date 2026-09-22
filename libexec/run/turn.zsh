@@ -33,9 +33,9 @@ sf_run_settle() {
   local session=$1 reason=$2 call outcome
   local active=$SF_RUN[active_call] known=$SF_RUN[known_outcome]
   local -a calls
-  sf_jq_fields 0 -Rs '
+  sf_jq_fields -Rs '
+    include "lib/fields";
     include "lib/session";
-    def field: ., "\u0000";
     [split("\n")[1:][] | select(length > 0) | fromjson] |
     session_run |
     (.calls[] | {id,name,input} | tojson | field),
@@ -69,15 +69,15 @@ sf_run_settle() {
 
 sf_run_open() {
   local session=$1
-  local -a fields
+  local -A opened
   [[ $session == /* && -f $session && ! -L $session && -r $session ]] || {
     REPLY="invalid session path: $session"
     return 1
   }
-  sf_jq_fields 6 -Rs --arg home "${HOME:A}" '
+  sf_jq_fields -Rs --arg home "${HOME:A}" '
+    include "lib/fields";
     include "lib/runtime";
     include "lib/session";
-    def field: ., "\u0000";
     select(endswith("\n")) |
     split("\n") as $lines |
     select($lines[-1] == "" and ($lines[0:-1] | length > 0) and
@@ -86,28 +86,31 @@ sf_run_open() {
     select($records[0] | canonical_session_header) |
     ($records[0] | header_expand($home)) as $header |
     ($records[1:] | session_run) as $run |
-    ($header.runtime | tojson | field),
-    ($header.cwd | field),
-    (([$records[1:][] | select(.type == "user")] | length + 1) | tostring | field),
-    (($run.next != "user") | tostring | field),
-    ([$records[1:][] | select(.type == "hook_result") | .id | tonumber] |
-      ((max // 0) + 1) | tostring | field),
-    ([hook_names[] as $hook |
-      select(($header.runtime.harness[$hook] // []) | length > 0) | $hook] |
-      join(" ") | field),
+    entry("runtime"; $header.runtime | tojson),
+    entry("cwd"; $header.cwd),
+    entry("turn_id";
+      [$records[1:][] | select(.type == "user")] | length + 1 | tostring),
+    entry("pending"; ($run.next != "user") | tostring),
+    entry("hook_id";
+      [$records[1:][] | select(.type == "hook_result") | .id | tonumber] |
+      ((max // 0) + 1) | tostring),
+    entry("hooks";
+      [hook_names[] as $hook |
+        select(($header.runtime.harness[$hook] // []) | length > 0) | $hook] |
+      join(" ")),
     ("ok" | field)
   ' "$session" || {
     REPLY="cannot read session: $session"
     return 1
   }
-  fields=( "${reply[@]}" )
-  SF_RUN[runtime]=$fields[1]
-  SF_RUN[cwd]=$fields[2]
-  SF_RUN[turn_id]=$fields[3]
-  SF_RUN[hook_id]=$fields[5]
-  SF_RUN[hooks]=$fields[6]
+  opened=( "${reply[@]}" )
+  SF_RUN[runtime]=$opened[runtime]
+  SF_RUN[cwd]=$opened[cwd]
+  SF_RUN[turn_id]=$opened[turn_id]
+  SF_RUN[hook_id]=$opened[hook_id]
+  SF_RUN[hooks]=$opened[hooks]
   SF_RUN[hooks_known]=1
-  [[ $fields[4] == true ]] || return 0
+  [[ $opened[pending] == true ]] || return 0
   sf_run_settle "$session" 'tool call outcome unknown' || return 1
   sf_run_error "$session" 'Turn interrupted.'
 }
@@ -171,9 +174,8 @@ sf_run_permission_client() {
 
 sf_run_project() {
   local runtime=$1
-  local -a fields
-  sf_jq_fields 5 -rn --argjson runtime "$runtime" '
-    def field: ., "\u0000";
+  sf_jq_fields -rn --argjson runtime "$runtime" '
+    include "lib/fields";
     $runtime.harness as $harness |
     [$harness.tools[] |
       .manifest as $manifest |
@@ -195,16 +197,13 @@ sf_run_project() {
              if:{properties:{request_sandbox_bypass:{const:true}},required:["request_sandbox_bypass"]},
              then:{required:["sandbox_bypass_reason"]}}])
          else . end)}] as $tools |
-    ($harness.max_requests_per_turn | tostring | field),
-    ($harness.max_tool_calls_per_request | tostring | field),
-    ($harness.max_capture_bytes | tostring | field),
-    ($runtime.backend.context_window_command // "" | field),
-    ($tools | tojson | field),
+    entry("max_requests"; $harness.max_requests_per_turn | tostring),
+    entry("max_tool_calls"; $harness.max_tool_calls_per_request | tostring),
+    entry("max_capture"; $harness.max_capture_bytes | tostring),
+    entry("context_window_command"; $runtime.backend.context_window_command // ""),
+    entry("tools"; $tools | tojson),
     ("ok" | field)
   ' || return 1
-  fields=( "${reply[@]}" )
-  reply=( "${(@)fields[1,4]}" )
-  REPLY=$fields[5]
 }
 
 sf_run_turn() {
@@ -212,7 +211,8 @@ sf_run_turn() {
   local assistant stop_text id name decision post_request
   local reason outcome result state post_error='' failure='' turn_state tool_temp='' call
   local call_projection
-  local -a calls states hook_result runtime_fields
+  local -a calls states hook_result
+  local -A projected
   integer begun=0 request_count=0 call_count=0 request_limit tool_limit max_capture run_status
 
   {
@@ -227,13 +227,16 @@ sf_run_turn() {
     sf_run_open "$session" || { print -r -u2 -- "$REPLY"; return 1; }
     begun=1
     runtime=$SF_RUN[runtime]
-    sf_run_project "$runtime" || failure='cannot inspect frozen runtime'
-    tools=$REPLY
-    runtime_fields=( "${reply[@]}" )
-    request_limit=$runtime_fields[1]
-    tool_limit=$runtime_fields[2]
-    max_capture=$runtime_fields[3]
-    context_command=$runtime_fields[4]
+    if sf_run_project "$runtime"; then
+      projected=( "${reply[@]}" )
+      tools=$projected[tools]
+      request_limit=$projected[max_requests]
+      tool_limit=$projected[max_tool_calls]
+      max_capture=$projected[max_capture]
+      context_command=$projected[context_window_command]
+    else
+      failure='cannot inspect frozen runtime'
+    fi
     [[ -z $failure && -d $SF_RUN[cwd] && -x $SF_RUN[cwd] ]] ||
       failure=${failure:-session working directory is unavailable: $SF_RUN[cwd]}
     sf_scratch_create turns turn || failure='cannot prepare hook turn state'

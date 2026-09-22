@@ -422,17 +422,12 @@ def runtime_finalize:
       (.endpoint | endpoint) and (.environment | component_environment)) //
     error("invalid backend manifest")) as $manifest |
   $input.command as $command |
-  $input.resolved as $args |
-  ($prepared.tool_references | length) as $tool_count |
-  ($prepared.hook_component_references | length) as $component_count |
-  ($tool_count * 5) as $component_offset |
-  [range(0; $tool_count) as $index |
-    ($args[($index * 5):][:5]) |
+  # Each resolved entry arrives as a fixed-width group of shell words.
+  ($input.resolved.tools | [range(0; length; 5) as $at | .[$at:$at + 5] |
     {name:.[0],command:.[1],manifest_json:.[2],settings:.[3],
-      settings_readable:(.[4] == "1")}] as $resolved_tools |
-  [range(0; $component_count) as $index |
-    ($args[($component_offset + ($index * 4)):][:4]) |
-    {hook:.[0],command:.[1],manifest_json:.[2],match:.[3]}] as $resolved_components |
+      settings_readable:(.[4] == "1")}]) as $resolved_tools |
+  ($input.resolved.components | [range(0; length; 4) as $at | .[$at:$at + 4] |
+    {hook:.[0],command:.[1],manifest_json:.[2],match:.[3]}]) as $resolved_components |
   [$resolved_tools[] as $tool |
     ($tool.manifest_json | fromjson |
       select(tool_manifest) //
@@ -471,7 +466,7 @@ def runtime_finalize:
     any($tools[]; .manifest.sandbox)) as $needs_fence |
   if $needs_fence and $input.fence == "" then error("sandboxing requires fence") else . end |
   {
-    profile:({request:$prepared.request,system:$input.system} +
+    profile:({request:$prepared.request,system:$input.resolved.system} +
       (if $profile | has("context_window") then
         {context_window:$profile.context_window} else {} end)),
     backend:{name:$prepared.backend_name,command:$command,env_file:$input.env_file,

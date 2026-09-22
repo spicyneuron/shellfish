@@ -145,14 +145,14 @@ sf_runtime_reference() {
 sf_runtime_resolve_from_config() {
   local requested_config=$1 profile_override=$2 model_override=$3 request_override=$4
   local backend_override=${5-}
-  local config_path config_dir='' raw defaults decoded prepared system_paths='[]'
+  local config_path config_dir='' raw defaults prepared external
   local backend_name backend_reference backend_dir backend_base manifest command
-  local context_window_command=''
+  local context_window_command='' resolved_json
   local reference resolved hook hook_manifest hook_match external_name final settings fence='' env_file=''
   local home=${HOME-}
-  local -a fields tool_entries loaded
-  local -a system_entries component_entries resolved_args
-  integer tool_count system_count component_count index tool_index
+  local -A decoded
+  local -a loaded tool_entries system_entries component_entries
+  local -a tool_references system_references component_references
   integer settings_readable
 
   SF_RUNTIME_ERROR=''
@@ -168,56 +168,50 @@ sf_runtime_resolve_from_config() {
 
   external_name=${backend_override%/}
   external_name=${external_name:t}
-  decoded=$(sf_jq -jnre --argjson defaults "$defaults" \
+  # A reference carries no control characters, so newlines delimit each list.
+  sf_jq_fields -rn --argjson defaults "$defaults" \
     --argjson raw "$raw" --arg profile_override "$profile_override" \
     --arg model_override "$model_override" --argjson request_override "$request_override" \
     --arg backend_override "$backend_override" \
     --arg external_backend_name "$external_name" --arg home "$home" '
+      include "lib/fields";
       include "lib/runtime";
-      def record: ., "\u0000";
       {defaults:$defaults,raw:$raw,profile_override:$profile_override,
        model_override:$model_override,request_override:$request_override,
        backend_override:$backend_override,
        external_backend_name:$external_backend_name,home:$home} |
       runtime_prepare as $prepared |
-      ($prepared | tojson | record),
-      ($prepared.backend_name | record),
-      ($prepared.backend_reference | record),
-      ($prepared.backend_external | tostring | record),
-      ($prepared.tool_references | length | tostring | record),
-      ($prepared.system_references | length | tostring | record),
-      ($prepared.hook_component_references | length | tostring | record),
-      ($prepared.tool_references[] | record),
-      ($prepared.system_references[] | record),
-      ($prepared.hook_component_references[] | .hook, "\u0000", .reference, "\u0000"),
-      ("ok" | record)
-  ' 2>&1) || {
-    sf_runtime_validation_error "$decoded" "cannot prepare runtime"
+      entry("prepared"; $prepared | tojson),
+      entry("backend_name"; $prepared.backend_name),
+      entry("backend_reference"; $prepared.backend_reference),
+      entry("backend_external"; $prepared.backend_external | tostring),
+      entry("tools"; $prepared.tool_references | join("\n")),
+      entry("system"; $prepared.system_references | join("\n")),
+      entry("hooks";
+        [$prepared.hook_component_references[] | .hook + " " + .reference] | join("\n")),
+      ("ok" | field)
+  ' || {
+    sf_runtime_validation_error "$REPLY" "cannot prepare runtime"
     return
   }
-  fields=( "${(@0)${decoded%$'\0'}}" )
-  (( ${#fields} >= 8 )) && [[ $fields[-1] == ok ]] || {
-    sf_runtime_fail 'cannot inspect prepared runtime'
-    return
-  }
-  prepared=$fields[1]
-  fields=( "${(@)fields[2,-1]}" )
-  backend_name=$fields[1]
-  backend_reference=$fields[2]
-  tool_count=$fields[4]
-  system_count=$fields[5]
-  component_count=$fields[6]
-  index=7
+  decoded=( "${reply[@]}" )
+  prepared=$decoded[prepared]
+  backend_name=$decoded[backend_name]
+  backend_reference=$decoded[backend_reference]
+  external=$decoded[backend_external]
+  tool_references=( ${(f)decoded[tools]} )
+  system_references=( ${(f)decoded[system]} )
+  component_references=( ${(f)decoded[hooks]} )
 
   backend_base=$config_dir
-  if [[ $fields[3] == true ]]; then
+  if [[ $external == true ]]; then
     [[ $backend_name =~ ^[A-Za-z0-9][A-Za-z0-9_-]*$ ]] || {
       sf_runtime_fail "invalid backend name: $backend_name"
       return
     }
     backend_base=$PWD
   fi
-  if [[ $fields[3] == true && $backend_reference == */* &&
+  if [[ $external == true && $backend_reference == */* &&
       $backend_reference != /* && $backend_reference != '~/'* ]]; then
     backend_dir=${backend_base:A}/$backend_reference
     backend_dir=${backend_dir:A}
@@ -238,9 +232,7 @@ sf_runtime_resolve_from_config() {
   [[ ! -f $backend_dir/context_window || ! -x $backend_dir/context_window ]] ||
     context_window_command=$backend_dir/context_window
 
-  for (( tool_index = 0; tool_index < tool_count; tool_index++ )); do
-    reference=$fields[index]
-    (( index += 1 ))
+  for reference in "${tool_references[@]}"; do
     sf_runtime_reference "$reference" "$config_dir" tools || {
       sf_runtime_fail "cannot resolve tool directory: $reference"
       return
@@ -257,20 +249,16 @@ sf_runtime_resolve_from_config() {
     tool_entries+=( "${${resolved%/}:t}" "$resolved/run" "$REPLY" \
       "$settings" "$settings_readable" )
   done
-  while (( ${#system_entries} < system_count )); do
-    reference=$fields[index]
-    (( index += 1 ))
+  for reference in "${system_references[@]}"; do
     sf_runtime_reference "$reference" "$config_dir" system || {
       sf_runtime_fail "cannot resolve system component: $reference"
       return
     }
-    resolved=$REPLY
-    system_entries+=( "$resolved" )
+    system_entries+=( "$REPLY" )
   done
-  while (( ${#component_entries} / 4 < component_count )); do
-    hook=$fields[index]
-    reference=$fields[index+1]
-    (( index += 2 ))
+  for reference in "${component_references[@]}"; do
+    hook=${reference%% *}
+    reference=${reference#* }
     sf_runtime_reference "$reference" "$config_dir" "hooks/$hook" || {
       sf_runtime_fail "cannot resolve $hook hook script: $reference"
       return
@@ -286,35 +274,30 @@ sf_runtime_resolve_from_config() {
     [[ ! -f $resolved/match || ! -x $resolved/match ]] || hook_match=$resolved/match
     component_entries+=( "$hook" "$resolved/run" "$hook_manifest" "$hook_match" )
   done
-  (( index == ${#fields} )) || {
-    sf_runtime_fail 'cannot inspect prepared runtime'
-    return
-  }
   [[ -z ${commands[fence]-} ]] || fence=${commands[fence]:A}
 
-  (( ${#tool_entries} == tool_count * 5 && ${#system_entries} == system_count &&
-    ${#component_entries} == component_count * 4 )) || {
+  # Split the resolved entries into their three lists here, so runtime_finalize
+  # reads each one directly instead of offsetting into a single argument list.
+  resolved_json=$(jq -cn --argjson tools "${#tool_entries}" \
+    --argjson components "${#component_entries}" --args '
+      $ARGS.positional |
+      {tools:.[:$tools], components:.[$tools:$tools + $components],
+       system:.[$tools + $components:]}
+    ' -- "${tool_entries[@]}" "${component_entries[@]}" "${system_entries[@]}") || {
     sf_runtime_fail 'cannot assemble resolved runtime references'
     return
   }
-  if (( ${#system_entries} )); then
-    system_paths=$(jq -cn --args '$ARGS.positional' -- "${system_entries[@]}") || {
-      sf_runtime_fail 'cannot prepare resolved system paths'
-      return
-    }
-  fi
-  resolved_args=( "${tool_entries[@]}" "${component_entries[@]}" )
   final=$(sf_jq -cnce --argjson prepared "$prepared" \
     --arg manifest "$manifest" --arg command "$command" \
     --arg context_window_command "$context_window_command" --arg fence "$fence" \
-    --arg env_file "$env_file" --argjson system "$system_paths" \
-    --argjson grants "$SF_RUNTIME_SANDBOX_GRANTS" --args '
+    --arg env_file "$env_file" --argjson resolved "$resolved_json" \
+    --argjson grants "$SF_RUNTIME_SANDBOX_GRANTS" '
       include "lib/runtime";
       ({prepared:$prepared,manifest:$manifest,command:$command,
         context_window_command:$context_window_command,fence:$fence,
-        env_file:$env_file,system:$system,resolved:$ARGS.positional} + $grants) |
+        env_file:$env_file,resolved:$resolved} + $grants) |
       runtime_finalize
-    ' "${resolved_args[@]}" 2>&1) || {
+    ' 2>&1) || {
     sf_runtime_validation_error "$final" "cannot finalize runtime"
     return
   }

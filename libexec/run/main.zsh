@@ -13,6 +13,7 @@ source "$SF_ROOT/lib/options.zsh"
 sf_run_main() {
   local requested_session='' input='' prompt='' arity=''
   local -a positional=() create_args=()
+  local -A message
   integer create_only=0 json=0 jsonl=0 override=0 take=0
 
   while (( $# )); do
@@ -115,17 +116,18 @@ sf_run_main() {
       sf_die '--jsonl requires a canonical user message on stdin'
       return 2
     }
-    sf_jq_fields 2 -re '
+    sf_jq_fields -re '
+      include "lib/fields";
       include "lib/session";
-      def field: ., "\u0000";
       select(canonical_user_message) |
-      (tojson | field), (.content[0].text | field), ("ok" | field)
+      entry("record"; tojson), entry("prompt"; .content[0].text), ("ok" | field)
     ' <<<"$input" || {
       sf_die '--jsonl requires a canonical user message on stdin'
       return 2
     }
-    input=$reply[1]
-    prompt=$reply[2]
+    message=( "${reply[@]}" )
+    input=$message[record]
+    prompt=$message[prompt]
   else
     sf_cli_read_prompt "${positional[@]}" || return
     prompt=$REPLY

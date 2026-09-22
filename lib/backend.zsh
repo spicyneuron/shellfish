@@ -16,13 +16,12 @@ typeset -gA SF_BACKEND_PLAN=()
 # named backend command and its environment declarations.
 sf_backend_project() {
   local tools=$1 command_field=$2
-  sf_jq_fields 12 -sc --argjson tools "$tools" --arg command_field "$command_field" \
+  sf_jq_fields -sc --argjson tools "$tools" --arg command_field "$command_field" \
     --arg home "${HOME:A}" '
+    include "lib/fields";
     include "lib/runtime";
     include "lib/session";
     include "lib/backend";
-    def field: ., "\u0000";
-    def entry($key; $value): ($key | field), ($value | field);
     select(length >= 1) |
     select(.[0] | canonical_session_header) |
     . as $records |

@@ -12,11 +12,10 @@ typeset -gA SF_TOOL_PLAN=()
 
 sf_run_tool_plan() {
   local runtime=$1 call=$2
-  sf_jq_fields 40 -rn --argjson runtime "$runtime" --argjson call "$call" \
+  sf_jq_fields -rn --argjson runtime "$runtime" --argjson call "$call" \
     --argjson turn "$SF_RUN[turn_id]" '
+      include "lib/fields";
       include "lib/runtime";
-      def field: ., "\u0000";
-      def entry($key; $value): ($key | field), ($value | field);
       $call.id as $id | $call.name as $name | $call.input as $input |
       [$runtime.harness.tools[] | select(.name == $name)][0] as $tool |
       ($tool.manifest.render // tool_render_defaults) as $render |
@@ -185,13 +184,13 @@ sf_run_tool_execute() {
 sf_run_tool_complete() {
   local outcome=$1 name=$SF_TOOL_PLAN[name]
   local -a fields
-  sf_jq_fields 0 -rn --argjson request "$SF_TOOL_PLAN[request]" \
+  sf_jq_fields -rn --argjson request "$SF_TOOL_PLAN[request]" \
     --arg id "$SF_TOOL_PLAN[id]" --arg name "$name" \
     --argjson input "$SF_TOOL_PLAN[input]" \
     --argjson render "$SF_TOOL_PLAN[render]" --argjson outcome "$outcome" '
+      include "lib/fields";
       include "lib/session";
       include "lib/runtime";
-      def field: ., "\u0000";
       render_component($render;$name;$input;
         ($outcome.output + if $outcome | has("reason") then {stderr:$outcome.reason} else {} end)) as $rendered |
       (if $outcome.sandbox_denied then
