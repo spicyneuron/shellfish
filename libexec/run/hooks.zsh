@@ -27,44 +27,60 @@ sf_run_hook_settle() {
   sf_run_append "$SF_HOOK_RESULT[session]" "$1" || return
   (( SF_RUN[hook_id] += 1 ))
   SF_HOOK_RESULT[live]=0
+  SF_HOOK_RESULT[preview]=null
 }
 
-# Apply one fd 3 line as it arrives. After an invalid line the rest are ignored
-# and the hook fails at exit.
-sf_run_hook_line() {
-  local record
-  local -A line
-  [[ -z $SF_HOOK_RESULT[error] ]] || return 0
-  sf_jq_fields -cn --arg line "$1" --arg lifecycle "$SF_HOOK_RESULT[lifecycle]" \
-    --arg id "$SF_RUN[hook_id]" '
+# Decode one fd 3 line for a hook or tool. DRAFT is the transient event a draft
+# fills in, RESULT the record a final with text fills in, and PREVIEW the live
+# section's hint. LIFECYCLE is empty for a tool.
+sf_run_component_line() {
+  sf_jq_fields -cn --arg line "$1" --arg lifecycle "$2" --argjson draft "$3" \
+    --argjson result "$4" --argjson preview "${5:-null}" '
       include "lib/fields";
       include "lib/session";
-      include "libexec/run/hooks";
-      ($line | try fromjson catch null | hook_line($lifecycle; $id)) as $line |
+      include "libexec/run/component";
+      ($line | try fromjson catch null |
+        component_line(if $lifecycle == "" then null else $lifecycle end; $draft; $preview)) as $line |
       entry("valid"; $line != null | tostring),
-      entry("final"; $line.final | tostring),
       entry("states"; [$line.states[]? | tojson] | join("\n")),
-      entry("record"; $line.record | if . == null then "" else tojson end),
+      entry("texts"; $line.texts | if . == null then "" else tojson end),
+      entry("record"; $line.texts |
+        if has("user_text") or has("model_text") then $result + . | tojson else "" end),
       entry("draft"; $line.draft | if . == null then "" else tojson end),
+      entry("preview"; $line.preview | tojson),
       entry("action"; $line.control.action // ""),
       entry("reason"; $line.control.reason // ""),
       entry("payload"; $line.control | (.argv // .runtime) |
         if . == null then "" else tojson end),
       ("ok" | field)
-    ' || { SF_HOOK_RESULT[error]='cannot decode hook output'; return 1; }
+    '
+}
+
+# Apply one hook fd 3 line as it arrives. After an invalid line the rest are
+# ignored and the hook fails at exit.
+sf_run_hook_line() {
+  local record lifecycle=$SF_HOOK_RESULT[lifecycle] id=$SF_RUN[hook_id]
+  local -A line
+  [[ -z $SF_HOOK_RESULT[error] ]] || return 0
+  sf_run_component_line "$1" "$lifecycle" \
+    '{"type":"_draft","lifecycle":"'$lifecycle'","id":"'$id'"}' \
+    '{"type":"hook_result","lifecycle":"'$lifecycle'","id":"'$id'"}' \
+    "$SF_HOOK_RESULT[preview]" ||
+    { SF_HOOK_RESULT[error]='cannot decode hook output'; return 1; }
   line=( "${reply[@]}" )
   [[ $line[valid] == true ]] || { SF_HOOK_RESULT[error]=invalid; return 1; }
   for record in ${(f)line[states]}; do
     sf_run_append "$SF_HOOK_RESULT[session]" "$record" ||
       { SF_HOOK_RESULT[error]=$REPLY; return 1; }
   done
+  SF_HOOK_RESULT[preview]=$line[preview]
   if [[ -n $line[record] ]]; then
     sf_run_hook_settle "$line[record]" || { SF_HOOK_RESULT[error]=$REPLY; return 1; }
   elif [[ -n $line[draft] ]]; then
     sf_run_emit "$line[draft]" || { SF_HOOK_RESULT[error]='cannot emit hook draft'; return 1; }
     SF_HOOK_RESULT[live]=1
   fi
-  [[ $line[final] != true ]] || SF_HOOK_RESULT[final]=1
+  [[ -z $line[texts] ]] || SF_HOOK_RESULT[final]=1
   [[ -z $line[action] ]] || SF_HOOK_RESULT+=( action "$line[action]"
     reason "$line[reason]" payload "$line[payload]" )
 }
@@ -74,10 +90,12 @@ sf_run_hook_line() {
 sf_run_hook_shortcut() {
   local directory=$1 record
   record=$(sf_jq -cn --rawfile stdout "$directory/stdout" --rawfile stderr "$directory/stderr" \
-    --arg lifecycle "$SF_HOOK_RESULT[lifecycle]" --arg id "$SF_RUN[hook_id]" '
+    --arg lifecycle "$SF_HOOK_RESULT[lifecycle]" --arg id "$SF_RUN[hook_id]" \
+    --argjson preview "${SF_HOOK_RESULT[preview]:-null}" '
       {type:"hook_result",lifecycle:$lifecycle,id:$id} +
       (if $stdout + $stderr == "" then {} else {user_text:($stdout + $stderr)} end) +
-      (if $stdout == "" then {} else {model_text:$stdout} end)
+      (if $stdout == "" then {} else {model_text:$stdout} end) +
+      (if $preview == null then {} else {user_preview_lines:$preview} end)
     ') || { REPLY='cannot decode hook result'; return 1; }
   sf_run_hook_settle "$record"
 }
@@ -151,7 +169,7 @@ sf_run_hooks() {
   else
     directory=$REPLY
     SF_HOOK_RESULT=( session "$session" lifecycle "$lifecycle" error '' final 0 live 0
-      action '' reason '' payload '' )
+      preview null action '' reason '' payload '' )
     if ! sf_process_run "$directory" "${SF_RUN[cwd]:A}" "$input" "$max_capture" \
         sf_run_hook_line /usr/bin/env "${environment[@]}" "$command" "$@"; then
       error=$SF_PROCESS_ERROR
@@ -179,7 +197,7 @@ sf_run_hooks() {
   [[ -z $directory ]] || rm -rf -- "$directory"
   # A draft that nothing settled leaves no trace.
   if (( SF_HOOK_RESULT[live] && ! process[interrupted] )); then
-    sf_run_emit '{"type":"_hook_draft","lifecycle":"'$lifecycle'","id":"'$SF_RUN[hook_id]'","user_text":""}' ||
+    sf_run_emit '{"type":"_draft","lifecycle":"'$lifecycle'","id":"'$SF_RUN[hook_id]'","user_text":""}' ||
       error=${error:-cannot emit hook draft}
   fi
   [[ -z $error ]] || { SF_RUN_HOOK_ERROR=$error; return 1; }

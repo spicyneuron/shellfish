@@ -96,11 +96,11 @@ jq -eRn '
     } and
   ($events | map(select(.type == "state"))[0]) ==
     {type:"state",name:"prompt/state",value:1} and
-  ($events | map(select(.type == "_hook_draft"))) == [
-    {type:"_hook_draft",lifecycle:"user_prompt_submit",id:"8",user_text:"working"},
-    {type:"_hook_draft",lifecycle:"user_prompt_submit",id:"9",user_text:"trailing",
+  ($events | map(select(.type == "_draft"))) == [
+    {type:"_draft",lifecycle:"user_prompt_submit",id:"8",user_text:"working"},
+    {type:"_draft",lifecycle:"user_prompt_submit",id:"9",user_text:"trailing",
      user_preview_lines:2},
-    {type:"_hook_draft",lifecycle:"user_prompt_submit",id:"9",user_text:""}
+    {type:"_draft",lifecycle:"user_prompt_submit",id:"9",user_text:""}
   ]
 ' <"$stream" >/dev/null ||
   fail 'accepted prompt hook violated channel ordering'

@@ -46,11 +46,8 @@ jq -e --arg root "$ROOT/share/profiles/default/hooks" '
   (.harness | has("permission_request") | not) and
   (.harness.tools | map(.name)) ==
     ["read_file", "edit_file", "write_file", "skill", "search_web", "fetch_url", "shell"] and
-  .harness.tools[0].manifest.render.permission_user_text == "${input.file_path}" and
-  .harness.tools[1].manifest.render.preview_lines == "full" and
-  (.harness.tools[0].manifest.render | has("preview_lines") | not) and
-  .harness.tools[-1].manifest.render.user_text ==
-    "${name}\n${input.command}\n${output.stdout}${output.stderr}\nexit ${output.exit_code}"
+  .harness.tools[0].manifest.user_permission == "${input.file_path}" and
+  .harness.tools[-1].manifest.user_draft == "${name}\n${input.command}"
 ' <<<"$REPLY" >/dev/null
 
 # Bundled adapter names resolve through the bundled default profile.
@@ -235,9 +232,7 @@ jq -e --arg base "${tools:A}" '
   (.harness.tools | map(.command)) == [($base + "/beta/run"), ($base + "/alpha/run"),
     ($base + "/gamma/run"), ($base + "/delta/run"), ($base + "/epsilon/run")] and
   all(.harness.tools[]; .settings == null and (has("describe") | not) and
-    .manifest.render == {initial_user_text:"${name} ${input}",
-      user_text:"${name} ${input}\n${output.stdout}${output.stderr}",
-      model_text:"${output.stdout}${output.stderr}",permission_user_text:"${input}"}) and
+    (.manifest | has("user_draft") or has("user_permission") | not)) and
   .harness.tools[0].manifest.description == "beta tool"
 ' <<<"$REPLY" >/dev/null
 cp "$tools/beta/manifest.jsonc" "$tools/beta/manifest.json"

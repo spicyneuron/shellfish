@@ -350,7 +350,8 @@ sf_run_turn() {
         id=$SF_TOOL_PLAN[id]
         name=$SF_TOOL_PLAN[name]
         decision=$SF_TOOL_PLAN[decision]
-        sf_run_emit "$SF_TOOL_PLAN[activity]" || { failure='cannot emit tool activity'; break; }
+        [[ -z $SF_TOOL_PLAN[event] ]] || sf_run_emit "$SF_TOOL_PLAN[event]" ||
+          { failure='cannot emit tool draft'; break; }
         SF_RUN[active_call]=$id
         SF_RUN[known_outcome]=''
         if (( call_count > tool_limit )); then

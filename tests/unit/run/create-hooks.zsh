@@ -30,10 +30,10 @@ zsh -f "$entry" run --jsonl --session-create --session-out "$session" \
 [[ ! -s $input ]] || fail 'session_start hook received nonempty stdin'
 jq -eRn --arg session "$session" '
   [inputs | fromjson] as $events |
-  ($events[2] | .type == "_hook_draft" and .lifecycle == "session_start" and
+  ($events[2] | .type == "_draft" and .lifecycle == "session_start" and
     .user_text == "Starting up") and
   [$events[] | .type] ==
-    ["_session_load","session","_hook_draft","state","hook_result"] and
+    ["_session_load","session","_draft","state","hook_result"] and
   ($events[0] == {type:"_session_load",path:$session}) and
   ($events[-1] | del(.id)) == {
     type:"hook_result",lifecycle:"session_start",
@@ -58,9 +58,9 @@ zsh -f "$entry" run --jsonl --session-create --session-out "$session" \
   >"$stream" || fail 'silent session_start hook failed'
 jq -eRn '
   [inputs | fromjson] as $events |
-  [$events[].type] == ["_session_load","session","_hook_draft","_hook_draft"] and
+  [$events[].type] == ["_session_load","session","_draft","_draft"] and
   ($events[3] | del(.id)) ==
-    {type:"_hook_draft",lifecycle:"session_start",user_text:""}
+    {type:"_draft",lifecycle:"session_start",user_text:""}
 ' <"$stream" >/dev/null ||
   fail 'silent session_start activity did not clear'
 assert_canonical_session "$session"

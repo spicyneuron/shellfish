@@ -157,12 +157,8 @@ valid_manifest=$(jq -cn '
       properties: {command: {type: "string"}},
       required: ["command"]
     },
-    render: {
-      initial_user_text: "${name}\n${input.command}",
-      user_text: "${name}\n${output.stdout}${output.stderr}\nexit ${output.exit_code}",
-      model_text: "${output.stdout}${output.stderr}\nexit ${output.exit_code}",
-      permission_user_text: "${input.command}"
-    },
+    user_draft: "${name}\n${input.command}",
+    user_permission: "${input.command}",
     sandbox: true,
     allow_sandbox_bypass: true
   }
@@ -176,35 +172,20 @@ for environment in '["DUPLICATE","DUPLICATE"]' '["HAS SPACE"]'; do
     fail "invalid tool environment was accepted: $environment"
   fi
 done
-print -r -- "$valid_manifest" | jq -c 'del(.render)' |
-  schema_eval 'tool_manifest' >/dev/null || fail 'tool manifest required render overrides'
-print -r -- "$valid_manifest" | jq -c '.render = {model_text:""}' |
-  schema_eval 'tool_manifest' >/dev/null || fail 'tool manifest rejected a partial render override'
-print -r -- "$valid_manifest" | jq -c '.render.preview_lines = 3' |
-  schema_eval 'tool_manifest' >/dev/null || fail 'tool manifest rejected a preview line limit'
-for preview in -1 '"context"'; do
-  if jq -c --argjson preview "$preview" '.render.preview_lines = $preview' \
-      <<<"$valid_manifest" | schema_eval 'tool_manifest' >/dev/null 2>&1; then
-    fail "tool manifest accepted invalid preview lines: $preview"
-  fi
-done
-if print -r -- "$valid_manifest" | jq -c '.render = null' |
-    schema_eval 'tool_manifest' >/dev/null 2>&1; then
-  fail 'tool manifest accepted null render overrides'
-fi
+print -r -- "$valid_manifest" | jq -c 'del(.user_draft, .user_permission)' |
+  schema_eval 'tool_manifest' >/dev/null || fail 'tool manifest required its templates'
 for manifest in "$ROOT"/share/profiles/default/tools/*/manifest.json; do
   schema_eval 'tool_manifest' <"$manifest" >/dev/null ||
     fail "invalid bundled tool manifest: $manifest"
 done
 
-if jq -c '.render = {user_before:"",user_after:"",model_after:""}' \
-    <<<"$valid_manifest" | schema_eval 'tool_manifest' >/dev/null 2>&1; then
-  fail 'tool manifest accepted the deleted render vocabulary'
-fi
-if jq -c '.render.initial_user_text = "${output.stdout}"' <<<"$valid_manifest" |
-    schema_eval 'tool_manifest' >/dev/null 2>&1; then
-  fail 'tool manifest used output in its initial user text'
-fi
+for manifest in '.render = {}' '.user_draft = "${output.stdout}"' \
+    '.user_permission = "${input.missing}"'; do
+  if jq -c "$manifest" <<<"$valid_manifest" |
+      schema_eval 'tool_manifest' >/dev/null 2>&1; then
+    fail "tool manifest was accepted: $manifest"
+  fi
+done
 typeset tool_header
 tool_header=$(jq -cn --argjson header "$valid_header" --argjson manifest "$valid_manifest" '
   $header | .runtime.harness.tools = [{
@@ -212,10 +193,6 @@ tool_header=$(jq -cn --argjson header "$valid_header" --argjson manifest "$valid
   }]
 ')
 print -r -- "$tool_header" | schema_eval 'canonical_session_header' >/dev/null
-if jq -c '.runtime.harness.tools[0].manifest |= del(.render.model_text)' <<<"$tool_header" |
-    schema_eval 'canonical_session_header' >/dev/null 2>&1; then
-  fail 'session header accepted an unnormalized tool render'
-fi
 for field in request_sandbox_bypass sandbox_bypass_reason; do
   if jq -c --arg field "$field" '.input_schema.properties[$field] = {type:"string"}' \
       <<<"$valid_manifest" | schema_eval 'tool_manifest' >/dev/null 2>&1; then

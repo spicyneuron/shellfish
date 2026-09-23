@@ -57,19 +57,19 @@ project live \
   '{"type":"system","content":"be brief"}'
 assert_equal '' "$REPLY"
 
-# Tool calls update one execution and settle it.
+# Tool calls update one execution and settle it with their own preview hints.
 project live \
-  '{"type":"_tool_activity","id":"call_1","name":"shell","input":{"command":"make test"},"user_text":"shell · make test"}' \
-  '{"type":"tool_result","id":"call_1","name":"shell","input":{"command":"make test"},"exit_code":0,"user_text":"shell · make test\nok","model_text":"ok"}'
-assert_equal 'execution_update | call_1 | shell | tool | shell · make test | default
+  '{"type":"_draft","id":"call_1","name":"shell","user_text":"shell · make test","user_preview_lines":2}' \
+  '{"type":"tool_result","id":"call_1","name":"shell","input":{"command":"make test"},"exit_code":0,"user_text":"shell · make test\nok","model_text":"ok","user_preview_lines":"full"}'
+assert_equal 'execution_update | call_1 | shell | tool | shell · make test | 2
 execution_end | call_1 | shell | tool | shell · make test
-ok | default' "$REPLY"
+ok | full' "$REPLY"
 
 # Hook context is reference material; a hook notice speaks only to the reader.
 # Drafts and results carry their own preview hints.
 project live \
-  '{"type":"_hook_draft","lifecycle":"pre_tool_use","id":"1","user_text":"guard · checking","user_preview_lines":1}' \
-  '{"type":"_hook_draft","lifecycle":"pre_tool_use","id":"1","user_text":""}' \
+  '{"type":"_draft","lifecycle":"pre_tool_use","id":"1","user_text":"guard · checking","user_preview_lines":1}' \
+  '{"type":"_draft","lifecycle":"pre_tool_use","id":"1","user_text":""}' \
   '{"type":"hook_result","lifecycle":"pre_tool_use","id":"1","user_text":"guard · ok","user_preview_lines":"full"}' \
   '{"type":"hook_result","lifecycle":"session_start","id":"2","user_text":"project · read","model_text":"context"}' \
   '{"type":"hook_result","lifecycle":"session_start","id":"3","model_text":"Git branch: main"}'
@@ -96,14 +96,6 @@ assert_equal 'runtime | test/fake-model |' "$REPLY"
 project live "$(jq -cn --argjson runtime "$runtime" \
   '{type:"_session_update",runtime:$runtime}')"
 assert_equal 'runtime | test/fake-model | 200' "$REPLY"
-runtime=$(jq -c '
-  .harness.tools = [{name:"shell",manifest:{render:{preview_lines:"full"}}}]
-' <<<"$runtime")
-project live "$(jq -cn --argjson runtime "$runtime" \
-  '{type:"_session_update",runtime:$runtime}')"
-project live \
-  '{"type":"_tool_activity","id":"call_2","name":"shell","input":{},"user_text":"shell"}'
-assert_equal 'execution_update | call_2 | shell | tool | shell | full' "$REPLY"
 project live \
   '{"type":"assistant","stop":"end","content":[],"usage":{"input_tokens":75,"cached_tokens":15,"output_tokens":5}}'
 assert_equal 'usage | 75 ↑ 20% ⦿ 5 ↓ 38% of 200 ◔ |' "$REPLY"

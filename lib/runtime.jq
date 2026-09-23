@@ -1,5 +1,5 @@
 # The runtime shape, the header that freezes it, and the config that resolves
-# it. Display templates are validated and applied here. The header lives here
+# it. Tool display templates are validated and applied here. The header lives here
 # rather than in lib/session.jq because it validates the runtime nested inside it.
 #
 # Repeated primitives are deliberate; see AGENTS.md.
@@ -27,8 +27,6 @@ def endpoint: type == "string" and test("^https?://[^[:space:][:cntrl:]]+$");
 def positive_integer:
   type == "number" and floor == . and . >= 1 and . <= 2147483647;
 def capture_bytes: positive_integer and . >= 64;
-def preview_lines:
-  . == "full" or (type == "number" and floor == . and . >= 0 and . <= 2147483647);
 
 def component_environment:
   type == "array" and
@@ -39,56 +37,21 @@ def hook_names:
   ["session_start", "user_prompt_submit", "permission_request", "pre_tool_use",
    "post_tool_use", "stop"];
 
-# Display templates. script_template admits exactly the variables that
-# render_component supplies below; read the two together.
-def script_template($input_variables; $output):
+# A tool template may name only ${name}, ${input}, and ${input.FIELD} for a
+# declared input property.
+def tool_template($fields):
   type == "string" and (index("\u0000") | not) and
   (gsub("\\$\\{[^{}]+\\}"; "") | index("${") | not) and
-  ([scan("\\$\\{([^{}]+)\\}")[0]] | all(.[];
-    . == "name" or . == "input" or
-    (if $input_variables == null then test("^input\\.[A-Za-z_][A-Za-z0-9_]*$")
-     else . as $name | $input_variables | index($name) != null end) or
-    ($output and IN("output.stdout", "output.stderr", "output.exit_code"))));
+  ([scan("\\$\\{([^{}]+)\\}")[0]] |
+    all(.[]; IN("name", "input") or (. as $field | $fields | index($field) != null)));
 
-def component_render($input_variables; $permission):
-  (["initial_user_text", "model_text", "user_text"] +
-    if $permission then ["permission_user_text"] else [] end) as $fields |
-  type == "object" and
-  (keys - ($fields + ["preview_lines"]) | length) == 0 and
-  all(to_entries[] | select(.key != "preview_lines"); . as $entry | .value |
-    script_template($input_variables; $entry.key | IN("model_text", "user_text"))) and
-  (if has("preview_lines") then .preview_lines | preview_lines else true end);
-
-def complete_component_render($input_variables; $permission):
-  (["initial_user_text", "model_text", "user_text"] +
-    if $permission then ["permission_user_text"] else [] end) as $fields |
-  component_render($input_variables; $permission) and
-  (($fields - keys | length) == 0);
-
-def render_value:
-  if . == null then ""
-  elif type == "string" then .
-  else tojson end;
-
-def render_input:
-  . as $input |
-  {input:($input | render_value)} +
-  ($input | if type == "object" then
-    with_entries(.key = "input." + .key | .value |= render_value)
-  else {} end);
-
-def render_template($template; $variables):
-  $template | gsub("\\$\\{(?<name>[^{}]+)\\}"; $variables[.name]);
-
-def render_component($render; $name; $input; $output):
-  ({name:$name} + ($input | render_input) + {
-    "output.stdout":$output.stdout,
-    "output.stderr":$output.stderr,
-    "output.exit_code":($output.exit_code | tostring)
-  }) as $variables |
-  $render |
-  with_entries(.value = render_template(.value;$variables)) |
-  with_entries(select(.value != ""));
+# A call's input is an object; strings substitute as-is, null as nothing, and
+# other values as JSON.
+def render_template($template; $name; $input):
+  def text: if type == "string" then . elif . == null then "" else tojson end;
+  ({name:$name, input:($input | text)} +
+    ($input | with_entries(.key = "input." + .key | .value |= text))) as $variables |
+  $template | gsub("\\$\\{(?<name>[^{}]+)\\}"; $variables[.name] // "");
 
 # Each lifecycle lists its hook scripts nearest first: the first runs, and each
 # later one is the parent of the one before.
@@ -100,7 +63,7 @@ def tool_manifest:
   (.input_schema.properties // {} | keys | map("input." + .)) as $input_variables |
   type == "object" and
   ((keys - ["allow_sandbox_bypass", "description", "environment",
-    "input_schema", "render", "sandbox"]) | length == 0) and
+    "input_schema", "sandbox", "user_draft", "user_permission"]) | length == 0) and
   (.description | nul_free_string and length > 0) and
   (.input_schema | type == "object" and .type == "object" and
     ((.properties // {}) | type == "object") and
@@ -110,8 +73,7 @@ def tool_manifest:
       has("request_sandbox_bypass") or has("sandbox_bypass_reason") | not) and
     ((.required // []) |
       index("request_sandbox_bypass") == null and index("sandbox_bypass_reason") == null)) and
-  (if has("render") then .render | component_render($input_variables; true)
-   else true end) and
+  all(.user_draft, .user_permission; . == null or tool_template($input_variables)) and
   ((.environment // []) | component_environment) and
   (.sandbox | type == "boolean") and
   ((.allow_sandbox_bypass // false) | type == "boolean") and
@@ -145,9 +107,7 @@ def canonical_runtime:
       type == "object" and keys == ["command", "manifest", "name", "settings"] and
       (.name | tool_name) and (.command | stored_path) and
       (.settings == null or (.settings | stored_path)) and
-      (.manifest | . as $manifest | tool_manifest and has("render") and
-        (.render | complete_component_render(
-          ($manifest.input_schema.properties // {} | keys | map("input." + .)); true))) and
+      (.manifest | tool_manifest) and
       (if .manifest.sandbox then .settings != null else .settings == null end))) and
     (([.tools[].name] | unique | length) == (.tools | length)) and
     (.sandbox | type == "boolean") and
@@ -198,11 +158,6 @@ def header_store($home):
   .cwd as $cwd |
   .cwd = ($cwd | store_path(""; $home)) |
   .runtime |= runtime_paths(store_path($cwd; $home));
-
-def tool_render_defaults:
-  {initial_user_text:"${name} ${input}",
-   user_text:"${name} ${input}\n${output.stdout}${output.stderr}",
-   model_text:"${output.stdout}${output.stderr}",permission_user_text:"${input}"};
 
 def config_error($path; $message):
   error("invalid profile at $" + ($path | map("[" + tojson + "]") | join("")) + ": " + $message);
@@ -347,8 +302,7 @@ def runtime_finalize($profile; $table; $grants):
   [($profile.tools // [])[] as $reference |
     $table["tools\t" + $reference] as $entry |
     ($entry.manifest | select(tool_manifest) //
-        error("invalid tool manifest: " + $entry.path) |
-      .render = (tool_render_defaults + (.render // {}))) as $tool_manifest |
+        error("invalid tool manifest: " + $entry.path)) as $tool_manifest |
     if $tool_manifest.sandbox and ($entry.flag | not) then
       error("cannot read tool sandbox settings: " + $entry.path + "/fence.jsonc")
     else {name:($entry.path | split("/") | last), command:($entry.path + "/run"),

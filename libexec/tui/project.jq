@@ -33,19 +33,11 @@ def usage_actions($window):
 def identity:
   ((.backend.command // "" | split("/")[-2] // "?") + "/" + (.request.model // "?"));
 
-def runtime_previews:
-  reduce .harness.tools[]? as $tool ({};
-    .[$tool.name] = ($tool.manifest.render.preview_lines // "default"));
-
 def runtime_actions:
-  [["runtime", identity, (.context_window // "" | tostring),
-    (runtime_previews | tojson)]];
+  [["runtime", identity, (.context_window // "" | tostring)]];
 
-def tool_preview($previews; $name):
-  $previews[$name] // "default";
-
-# A hook result or draft carries its own preview hint.
-def hook_preview: .user_preview_lines // "default" | tostring;
+# A result or draft carries its own preview hint.
+def preview: .user_preview_lines // "default" | tostring;
 
 # Context and notice select presentation styling.
 def hook_class: if (.model_text // "") == "" then "notice" else "context" end;
@@ -80,7 +72,7 @@ def response_actions:
     end] +
   [["message_end"]];
 
-def record_actions($mode; $window; $previews):
+def record_actions($mode; $window):
   if .type == "assistant" then
     (if $mode == "load" then response_actions else [] end) + usage_actions($window)
   elif .type == "user" then
@@ -91,16 +83,15 @@ def record_actions($mode; $window; $previews):
     (.user_text | split("\n")) as $lines |
     [["error", $lines[0], ($lines[1:] | join("\n"))]]
   elif .type == "tool_result" then
-    [["execution_end", .id, .name, "tool", result_text,
-      (tool_preview($previews; .name) | tostring)]]
+    [["execution_end", .id, .name, "tool", result_text, preview]]
   elif .type == "hook_result" then
-    [["execution_end", .id, "", hook_class, result_text, hook_preview]]
+    [["execution_end", .id, "", hook_class, result_text, preview]]
   elif .type == "session" then (.runtime | runtime_actions)
   elif .type == "state" then []
   else error("unsupported record: " + (.type | tostring))
   end;
 
-def event_actions($window; $previews):
+def event_actions($window):
   if .type == "_assistant_start" then [["message_start", "agent"]]
   elif .type == "_assistant_message_delta" then
     [["message_delta", (.index | tostring), "text", .text, ""]]
@@ -111,12 +102,11 @@ def event_actions($window; $previews):
     [["message_delta", (.index | tostring), "inert", "", ""]]
   elif .type == "_assistant_end" then [["message_end"]]
   elif .type == "_turn_usage" then []
-  elif .type == "_tool_activity" then
-    [["execution_update", .id, .name, "tool", (.user_text // ""),
-      (tool_preview($previews; .name) | tostring)]]
-  elif .type == "_hook_draft" then
-    if .user_text == "" then [["execution_end", .id, "", "notice", "", hook_preview]]
-    else [["execution_update", .id, "", "notice", .user_text, hook_preview]] end
+  # A tool draft names its tool; an empty hook draft clears its section.
+  elif .type == "_draft" then
+    (if has("name") then "tool" else "notice" end) as $class |
+    if .user_text == "" then [["execution_end", .id, "", $class, "", preview]]
+    else [["execution_update", .id, .name // "", $class, .user_text, preview]] end
   elif .type == "_tool_permission_request" then
     (.preview // "") as $preview |
     [["permission", .id, .tool.name,
@@ -133,19 +123,15 @@ def nul_safe: gsub("\u0000"; "�");
 [inputs | fromjson] |
 reduce .[] as $line (
   {mode: $mode, window: (if $window == "" then null else ($window | tonumber) end),
-   previews: $previews, actions: []};
+   actions: []};
   . as $state |
   ($line |
-    if (.type // "" | startswith("_")) then event_actions($state.window; $state.previews)
-    else record_actions($state.mode; $state.window; $state.previews) end) as $emitted |
+    if (.type // "" | startswith("_")) then event_actions($state.window)
+    else record_actions($state.mode; $state.window) end) as $emitted |
   .actions += $emitted |
   if $line.type == "_session_load" then .mode = "load"
-  elif $line.type == "_session_update" then
-    .window = ($line.runtime.context_window // null) |
-    .previews = ($line.runtime | runtime_previews)
-  elif $line.type == "session" then
-    .window = ($line.runtime.context_window // null) |
-    .previews = ($line.runtime | runtime_previews)
+  elif $line.type | IN("session", "_session_update") then
+    .window = ($line.runtime.context_window // null)
   else . end
 ) |
 # Fields are NUL-joined and each action ends with a record separator.

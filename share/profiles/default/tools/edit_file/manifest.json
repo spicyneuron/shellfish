@@ -11,12 +11,8 @@
       "replace_all": {"type": "boolean", "default": false, "description": "Replace every occurrence of old_string; by default, exactly one occurrence is required"}
     }
   },
-  "render": {
-    "preview_lines": "full",
-    "initial_user_text": "${name} ${input.file_path}",
-    "user_text": "${name} ${input.file_path}\n${output.stdout}${output.stderr}",
-    "permission_user_text": "${input.file_path}"
-  },
+  "user_draft": "${name} ${input.file_path}",
+  "user_permission": "${input.file_path}",
   "sandbox": true,
   "allow_sandbox_bypass": true
 }

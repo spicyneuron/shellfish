@@ -242,7 +242,7 @@ def test_permission_decision_restores_draft():
         results = [record for record in records if record.get("type") == "tool_result"]
         assert len(results) == 1
         assert results[0]["exit_code"] == 126
-        assert results[0]["model_text"] == "sandbox bypass denied\nexit 126"
+        assert results[0]["model_text"] == "sandbox bypass denied"
         users = [record for record in records if record.get("type") == "user"]
         assert len(users) == 1
         assert users[0]["content"] == [{"type": "text", "text": prompt}]

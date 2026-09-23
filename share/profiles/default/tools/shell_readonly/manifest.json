@@ -15,11 +15,7 @@
       }
     }
   },
-  "render": {
-    "initial_user_text": "${name}\n${input.command}",
-    "user_text": "${name}\n${input.command}\n${output.stdout}${output.stderr}\nexit ${output.exit_code}",
-    "model_text": "${output.stdout}${output.stderr}\nexit ${output.exit_code}",
-    "permission_user_text": "${input.command}"
-  },
+  "user_draft": "${name}\n${input.command}",
+  "user_permission": "${input.command}",
   "sandbox": true
 }

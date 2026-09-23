@@ -1,5 +1,7 @@
 #!/usr/bin/env zsh
 set -euo pipefail
+# Diffs read best unabridged.
+print -r -u3 -- '{"user_preview_lines":"full"}'
 
 decoded=$(jq -ejr '
   def field: ., "\u0000";

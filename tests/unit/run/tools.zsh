@@ -8,9 +8,10 @@ export TMPDIR="$tmp/host-temp" TMPPREFIX="$tmp/manifest-prefix"
 export XDG_STATE_HOME="$tmp/state" SF_TEST_BACKEND_DELAY=0
 sf_test_runtime
 
-# The bundled shell decodes multiline commands once and preserves exit status.
+# The bundled shell decodes multiline commands once, preserves exit status, and
+# reports it in a footer.
 typeset shell_tool="$ROOT/share/profiles/default/tools/shell/run"
-assert_equal $'first\nsecond' "$(print -rn -- \
+assert_equal $'first\nsecond\n\nexit 0' "$(print -rn -- \
   '{"command":"print -r -- first; print -r -- second"}' | "$shell_tool")"
 integer shell_status=0
 print -rn -- '{"command":"exit 7"}' | "$shell_tool" >/dev/null || shell_status=$?
@@ -19,16 +20,8 @@ if print -rn -- '{"command":"true","extra":true}' | "$shell_tool" >/dev/null 2>&
   fail 'shell tool accepted an unknown input field'
 fi
 
-# Tool rendering uses the shared component vocabulary.
-SF_TEST_RUNTIME=$(jq -c '
-  .harness.tools[0].manifest.environment=["TMPPREFIX"] |
-  .harness.tools[0].manifest.render={
-    initial_user_text:"${name}\n${input.command}",
-    user_text:"${name}\n${output.stdout}${output.stderr}\nexit ${output.exit_code}",
-    model_text:"${output.stdout}${output.stderr}\nexit ${output.exit_code}",
-    permission_user_text:"${input.command}"
-  }
-' <<<"$SF_TEST_RUNTIME")
+SF_TEST_RUNTIME=$(jq -c '.harness.tools[0].manifest.environment=["TMPPREFIX"]' \
+  <<<"$SF_TEST_RUNTIME")
 
 # Tools use the host temp directory rather than a Shellfish-owned turn directory.
 typeset temp_session="$tmp/tool-temp.jsonl" temp_stream="$tmp/tool-temp.stream"
@@ -120,7 +113,7 @@ jq -e '. == {turn_id:1,tool_name:"shell",tool_use_id:"call_1",
   "print -r -- ran >>${(q)tool_marker}; print -rn -- output" \
   "$hook_dir/pre-call_1" >/dev/null || fail 'pre hook received the wrong request'
 jq -e '. == {turn_id:1,tool_name:"shell",tool_use_id:"call_1",
-  tool_input:{command:$command},tool_response:{stdout:"",stderr:"",exit_code:126}}' \
+  tool_input:{command:$command},tool_response:{stdout:"",stderr:"pre denied",exit_code:126}}' \
   --arg command "print -r -- ran >>${(q)tool_marker}; print -rn -- output" \
   "$hook_dir/post-call_1" >/dev/null || fail 'post hook did not receive the denial outcome'
 assert_equal call_2 "$(<$hook_dir/later)" 'deny reached the parent hook'
@@ -143,10 +136,11 @@ jq -eRn '
   ($events | map(select(.type == "hook_result"))[0] |
     .model_text == "pre context" and .user_text == "pre display") and
   ($events | map(select(.type == "tool_result"))[0].model_text | contains("pre denied")) and
-  ($events | map(select(.type == "_tool_activity"))[1].user_text) ==
+  ($events | map(select(.type == "_draft" and .name == "shell"))[1].user_text) ==
     "shell\n" + $command and
   ($events | map(select(.type == "tool_result"))[1] |
-    .user_text == "shell\noutput\nexit 0" and .model_text == "output\nexit 0")
+    .user_text == "shell\n" + $command + "\noutput\nexit 0" and
+    .model_text == "output\nexit 0")
 ' --arg command "print -r -- ran >>${(q)tool_marker}; print -rn -- output" \
   <"$stream" >/dev/null || fail 'tool lifecycle ordering or rendering was wrong'
 assert_canonical_session "$session"
@@ -214,6 +208,8 @@ SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_BYPASS=true \
 jq -eRn '
   [inputs | fromjson] as $events |
   ($events | map(select(.type == "_tool_permission_request")) | length) == 1 and
+  ($events | map(select(.type == "_tool_permission_request"))[0].preview) ==
+    "print -rn -- approved" and
   ($events | map(select(.type == "tool_result"))[0].exit_code) == 0
 ' <"$stream" >/dev/null || fail 'client permission was not requested explicitly'
 jq -e -s 'all(.[]; .type != "_tool_permission_request" and
@@ -288,7 +284,7 @@ SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_COMMAND='print -rn -- output; e
   sf_test_run sandbox "$session" >"$stream" || fail 'sandbox denial turn failed'
 jq -eRn '
   [inputs | fromjson | select(.type == "tool_result")][0] |
-  .exit_code == 3 and .user_text == "shell\noutput\nexit 3" and
+  .exit_code == 3 and .user_text == "shell\nprint -rn -- output; exit 3\noutput\nexit 3" and
   .model_text == "output\nexit 3\n\n<sandbox_notice>A denial was detected during this tool call. This does not necessarily mean the tool failed.</sandbox_notice>"
 ' <"$stream" >/dev/null || fail 'sandbox denial did not annotate the model text'
 jq -eRn --arg temp "${TMPDIR:A}" '
@@ -328,5 +324,68 @@ SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_COMMAND=$env_command \
 jq -eRn '[inputs | fromjson | select(.type == "tool_result")][0].model_text ==
   "declared-file unset unset\nexit 0"' <"$stream" >/dev/null ||
   fail 'sandboxed tool saw values beyond its declared names'
+
+# A tool streams drafts, and its last final settles the call with the state
+# from every line. An action is invalid for a tool.
+typeset protocol="$tmp/protocol"
+cat >"$protocol" <<'ZSH'
+#!/usr/bin/env zsh
+case $(jq -r .command) in
+  final)
+    print -r -u3 -- '{"user_draft":"working","state":[{"name":"tool/a","value":1}]}'
+    print -r -u3 -- '{"user_final":"first","model_final":"first"}'
+    print -r -u3 -- '{"user_final":"shown","model_final":"seen","user_preview_lines":"full","state":[{"name":"tool/b","value":2}]}'
+    print -r -- ignored
+    exit 4
+    ;;
+  hint) print -r -u3 -- '{"user_preview_lines":3}'; print -rn -- plain ;;
+  action) print -r -u3 -- '{"action":"deny"}' ;;
+  huge) jq -cn '{user_final:("x" * 70000)}' >&3 ;;
+esac
+ZSH
+chmod +x "$protocol"
+SF_TEST_RUNTIME=$(jq -c --arg command "$protocol" '
+  .harness.sandbox=false | .harness.tools[0].command=$command' <<<"$SF_TEST_RUNTIME")
+session="$tmp/protocol.jsonl"
+sf_test_session "$session"
+SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_COMMAND=final \
+  sf_test_run protocol "$session" >"$stream" || fail 'protocol tool turn failed'
+jq -eRn '
+  [inputs | fromjson | select(.type | IN("_draft","state","tool_result"))] ==
+    [{type:"_draft",id:"call_1",name:"shell",user_text:"shell\nfinal"},
+     {type:"_draft",id:"call_1",name:"shell",user_text:"working"},
+     {type:"state",name:"tool/a",value:1},{type:"state",name:"tool/b",value:2},
+     {type:"tool_result",id:"call_1",name:"shell",input:{command:"final"},exit_code:4,
+      user_text:"shown",model_text:"seen",user_preview_lines:"full"}]
+' <"$stream" >/dev/null || fail 'tool drafts or last final settled wrong'
+assert_canonical_session "$session"
+
+# Without a final, the result inherits the last preview hint.
+session="$tmp/protocol-hint.jsonl"
+sf_test_session "$session"
+SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_COMMAND=hint \
+  sf_test_run protocol "$session" >"$stream" || fail 'hinted tool turn failed'
+jq -eRn '[inputs | fromjson | select(.type == "tool_result")][0] |
+  .user_text == "shell\nhint\nplain" and .model_text == "plain" and
+  .user_preview_lines == 3' <"$stream" >/dev/null || fail 'shortcut lost its preview hint'
+
+session="$tmp/protocol-action.jsonl"
+sf_test_session "$session"
+if SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_COMMAND=action \
+    sf_test_run protocol "$session" >"$stream" 2>/dev/null; then
+  fail 'a tool action was accepted'
+fi
+jq -eRn '[inputs | fromjson][-1] | .type == "error" and
+  (.user_text | contains("invalid control"))' <"$stream" >/dev/null ||
+  fail 'a tool action was not reported'
+
+# A final beyond the capture limit fails the call, not the turn.
+session="$tmp/protocol-huge.jsonl"
+sf_test_session "$session"
+SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_COMMAND=huge \
+  sf_test_run protocol "$session" >"$stream" || fail 'oversized final failed the turn'
+jq -eRn '[inputs | fromjson | select(.type == "tool_result")][0] |
+  .exit_code == 1 and .model_text == "tool result exceeds capture limit"' \
+  <"$stream" >/dev/null || fail 'oversized final did not fail the call'
 
 print -r -- ok

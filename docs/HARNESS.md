@@ -18,7 +18,7 @@ Tools and backend adapters are executable component directories; a hook is one e
 
 Scripts run from the session working directory. Shellfish starts each in an isolated process group, terminates ordinary descendants on completion or cancellation, and escalates from `TERM` to `KILL`. Components must finish their own subprocesses; daemonizing is unsupported.
 
-`max_capture_bytes` bounds each fd 3 line. A tool's control data must fit first; its remaining stdout and stderr are tail-preserving and may be truncated. Hook limits are under [Output](#output). Raw captures are transient—only settled text and accepted state records are durable.
+Raw captures are transient—only settled text and accepted state records are durable.
 
 ### Environment
 
@@ -43,31 +43,22 @@ Hooks and adapters inherit the process environment and receive every value in `.
 
 Tools use the host's `TMPDIR`, or `/tmp` when it is unset, and receive a `TMPPREFIX` beneath it. Sandboxed tools may read and write the platform temp directories as baseline temporary storage; tools own their cleanup. Sandboxed tools otherwise start with a clean environment plus their declared names. Unsandboxed tools inherit the process environment plus their declared names.
 
-### Rendering
+### Output
 
-Tool manifests may define `render` templates:
+Hooks and tools stream JSON objects to fd 3 while they run, one per line:
 
-| Field | When shown |
+| Key | Meaning |
 | --- | --- |
-| `initial_user_text` | Activity before execution |
-| `user_text` | Durable user-facing result |
-| `model_text` | Durable model context |
-| `permission_user_text` | Tool-only sandbox-bypass preview |
-| `preview_lines` | `"full"` or a non-negative TUI line limit |
+| `user_draft` | Replaces the text of the component's live section; transient |
+| `user_final` | Durable user-facing text; settles the live section |
+| `model_final` | Durable model context; settles the live section |
+| `user_preview_lines` | `"full"` or a TUI line limit for the live section and the result it settles |
+| `state` | State records, such as `[{"name":"example/status","value":{"ready":true}}]` |
+| `action` | A hook's lifecycle decision; see [Hooks](#hooks) |
 
-Templates perform one substitution pass. Available variables are `name`, `input`, `input.FIELD`, and—for result templates—`output.stdout`, `output.stderr`, and `output.exit_code`. Empty rendered text is omitted.
+Without a final, stdout and stderr settle as one result at exit; the component sections below say who sees what. When a final is written, stdout is ignored and stderr serves only as failure diagnostics. `max_capture_bytes` bounds each line and that fallback output; drafts do not add up against it. An invalid line fails the execution.
 
-Defaults show the name and input, then return stdout and stderr to both. A manifest overrides only the fields it supplies.
-
-### Durable state
-
-Hooks and tools may write JSON objects to fd 3, one per line (tools at most one):
-
-```json
-{"state":[{"name":"example/status","value":{"ready":true}}]}
-```
-
-Names are at most 128 characters and match `^[A-Za-z0-9][A-Za-z0-9_.:/-]*$`. The latest exact name is effective; `null` clears it. Accepted state is appended before the component result. A component starting an untrusted child must close fd 3 so the child cannot forge state.
+State names are at most 128 characters and match `^[A-Za-z0-9][A-Za-z0-9_.:/-]*$`. The latest exact name is effective; `null` clears it. Accepted state is appended before the result it accompanies. A component starting an untrusted child must close fd 3 so the child cannot forge state.
 
 ## Tools
 
@@ -85,7 +76,7 @@ A tool manifest defines its model-facing schema and execution policy:
   "sandbox": true,
   "allow_sandbox_bypass": true,
   "environment": ["TOOL_SETTING"],
-  "render": {"initial_user_text": "${name} ${input.path}"}
+  "user_draft": "${name} ${input.path}"
 }
 ```
 
@@ -96,13 +87,16 @@ A tool manifest defines its model-facing schema and execution policy:
 | `sandbox` | Required boolean |
 | `allow_sandbox_bypass` | Optional, default `false`; valid only when sandboxed |
 | `environment` | Optional unique variable names |
-| `render` | Optional template overrides |
+| `user_draft` | Optional live text before the tool writes its own; default `${name} ${input}` |
+| `user_permission` | Optional sandbox-bypass prompt text; default `${input}` |
+
+Templates perform one substitution pass over `name`, `input`, and `input.FIELD` for a declared property.
 
 Shellfish calls `run` with no arguments and one input object on stdin. Sandbox-bypass control fields are removed first. The tool must validate input before using it. A nonzero exit is a normal tool result and does not fail the turn.
 
-The result repeats the exact call ID, name, and input and records an exit code. State is committed after normal execution and before the result, including for nonzero exits; interrupted execution commits no requested state.
+A call settles exactly once, at exit: the last final becomes the result, and state from every line is committed before it, including for nonzero exits. Without a final, the user sees the rendered `user_draft` followed by stdout and stderr, the model sees stdout and stderr, and that output keeps its tail when it exceeds `max_capture_bytes`. A final beyond the limit fails the call. Tools take no `action`, and interrupted execution commits nothing.
 
-If the model calls an undeclared tool, Shellfish records a rejected result with default rendering. Calls are processed in response order, and each complete result is persisted before the next call.
+The result repeats the exact call ID, name, and input and records an exit code. If the model calls an undeclared tool, Shellfish records a rejected result. Calls are processed in response order, and each complete result is persisted before the next call.
 
 ### Sandbox and permission
 
@@ -148,20 +142,9 @@ echo '{"action":"block","user_final":"Deploying…"}' >&3
 
 A hook that never calls its parent replaces it.
 
-### Output
+### Hook output
 
-Hooks stream JSON lines to fd 3 while they run:
-
-| Key | Meaning |
-| --- | --- |
-| `user_draft` | Replaces the text of the hook's live section; transient |
-| `user_final` | Durable user-facing text; settles the live section |
-| `model_final` | Durable model context; settles the live section |
-| `user_preview_lines` | `"full"` or a TUI line limit for this line's draft or final |
-| `state` | State records |
-| `action` | A lifecycle decision; see below |
-
-Each final and its state become durable as the line arrives, so an interrupted or failed hook keeps what it already settled. A hook that writes no final settles its stdout and stderr as one result at exit: the user sees both and the model sees stdout. Empty output creates no record. `max_capture_bytes` bounds each line and that fallback output; drafts do not add up against it. An invalid line or any nonzero exit fails the operation, with stderr in the diagnostic.
+A hook writes the [shared output](#output). Each final and its state become durable as the line arrives, so an interrupted or failed hook keeps what it already settled; the next draft opens a new section. Without a final, the user sees stdout and stderr and the model sees stdout; empty output creates no record. A hook fails when its fallback output exceeds `max_capture_bytes`. Any nonzero exit fails the operation, with stderr in the diagnostic.
 
 Model text from one lifecycle reaches the model grouped in `<hook name="LIFECYCLE">`, each result inserted verbatim. Bundled hooks wrap theirs in `<context script="NAME">`.
 

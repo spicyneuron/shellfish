@@ -35,9 +35,9 @@ if jq -e '.messages | any(.type == "tool_result")' <<<"$request" >/dev/null; the
   jq -e '
     .messages[-4:] == [
       {type:"tool_call",id:"call_1",name:"ordered",input:{value:"first"}},
-      {type:"tool_result",call_id:"call_1",name:"ordered",content:"first\nexit 0",exit_code:0},
+      {type:"tool_result",call_id:"call_1",name:"ordered",content:"first",exit_code:0},
       {type:"tool_call",id:"call_2",name:"ordered",input:{value:"second"}},
-      {type:"tool_result",call_id:"call_2",name:"ordered",content:"second\nexit 0",exit_code:0}
+      {type:"tool_result",call_id:"call_2",name:"ordered",content:"second",exit_code:0}
     ]
   ' <<<"$request" >/dev/null || exit 9
   [[ $(<$TOOL_ORDER) == $'first\nsecond' ]] || exit 8
@@ -67,12 +67,6 @@ SF_TEST_RUNTIME=$(jq -c --arg backend "$backend" --arg tool "$tool" '
       description:"Record ordered calls",
       input_schema:{type:"object",additionalProperties:false,required:["value"],
         properties:{value:{type:"string"}}},
-      render:{
-        initial_user_text:"${name}\n${input}",
-        user_text:"${name}\n${output.stdout}${output.stderr}\nexit ${output.exit_code}",
-        model_text:"${output.stdout}${output.stderr}\nexit ${output.exit_code}",
-        permission_user_text:"${input}"
-      },
       environment:["TOOL_ORDER"],
       sandbox:false
     }
@@ -84,15 +78,15 @@ sf_test_session "$session"
 sf_test_run ordered "$session" >"$stream" || fail 'ordered tool turn failed'
 jq -eRn '
   [inputs | fromjson] as $events |
-  [$events[] | select(.type | IN("assistant","_tool_activity","state","tool_result")) |
+  [$events[] | select(.type | IN("assistant","_draft","state","tool_result")) |
     if .type == "assistant" then [.type,.stop]
     elif .type == "state" then [.type,.name]
     else [.type,.id,.name,.exit_code?] end] == [
       ["assistant","tool_calls"],
-      ["_tool_activity","call_1","ordered",null],
+      ["_draft","call_1","ordered",null],
       ["state","tool/first"],
       ["tool_result","call_1","ordered",0],
-      ["_tool_activity","call_2","ordered",null],
+      ["_draft","call_2","ordered",null],
       ["state","tool/second"],
       ["tool_result","call_2","ordered",0],
       ["assistant","end"]
@@ -100,7 +94,7 @@ jq -eRn '
   ($events | map(select(.type == "tool_result") | .input)) ==
     [{value:"first"},{value:"second"}] and
   ($events | map(select(.type == "tool_result") | .model_text)) ==
-    ["first\nexit 0","second\nexit 0"]
+    ["first","second"]
 ' <"$stream" >/dev/null || fail 'tool calls did not settle in order'
 assert_canonical_session "$session"
 

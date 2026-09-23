@@ -5,14 +5,6 @@ sf_test_source lib/session.zsh
 sf_test_tmp run-tool-cancel-contract
 export XDG_STATE_HOME="$tmp/state" SF_TEST_BACKEND_DELAY=0
 sf_test_runtime
-SF_TEST_RUNTIME=$(jq -c '
-  .harness.tools[0].manifest.render={
-    initial_user_text:"${name}\n${input.command}",
-    user_text:"${name}\n${output.stdout}${output.stderr}\nexit ${output.exit_code}",
-    model_text:"${output.stdout}${output.stderr}\nexit ${output.exit_code}",
-    permission_user_text:"${input.command}"
-  }
-' <<<"$SF_TEST_RUNTIME")
 
 # Interrupting an active tool settles it and cancels later calls from the
 # already-durable assistant response without starting more lifecycle hooks.
@@ -36,9 +28,9 @@ jq -eRn --arg command "$command" '
   ($events | map(select(.type == "tool_result") |
     {id,input,exit_code,model_text})) == [
       {id:"call_1",input:{command:$command},exit_code:126,
-       model_text:"tool call interrupted\nexit 126"},
+       model_text:"tool call interrupted"},
       {id:"call_2",input:{command:$command},exit_code:126,
-       model_text:"tool call cancelled\nexit 126"}
+       model_text:"tool call cancelled"}
     ] and
   $events[-1] == {type:"error",user_text:"Turn interrupted."}
 ' <"$stream" >/dev/null || fail 'tool interruption did not settle pending calls'
@@ -56,7 +48,7 @@ jq -cn '{type:"user",content:[{type:"text",text:"next"}]}' |
 jq -eRn '
   [inputs | fromjson] as $events |
   ($events[0] | .type == "tool_result" and .id == "call_1" and .exit_code == 126 and
-    (has("executable") | not) and .model_text == "tool call outcome unknown\nexit 126") and
+    (has("executable") | not) and .model_text == "tool call outcome unknown") and
   ($events[1] == {type:"error",user_text:"Turn interrupted."})
 ' <"$recovered_stream" >/dev/null || fail 'recovery did not settle through the tool owner'
 assert_canonical_session "$recovered"

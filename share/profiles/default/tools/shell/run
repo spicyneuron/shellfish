@@ -69,7 +69,8 @@ wait "$watchdog_pid" 2>/dev/null || true
 watchdog_pid=0
 trap - ALRM
 if (( timed_out )); then
-  print -u2 -r -- "shell: timed out after $timeout seconds"
-  exit 124
+  print -r -- "shell: timed out after $timeout seconds"
+  result=124
 fi
+print -rn -- $'\n'"exit $result"
 exit "$result"

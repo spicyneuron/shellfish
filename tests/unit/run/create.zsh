@@ -183,7 +183,7 @@ until jq -se '.[-2] == {type:"state",name:"startup/stream",value:true} and
   (( polls++ < 100 )) || exit 4
   sleep 0.02
 done
-jq -se 'map(.type) == ["_session_load","session","system","_hook_draft",
+jq -se 'map(.type) == ["_session_load","session","system","_draft",
   "state","hook_result"]' \
   "$SF_TEST_EVENTS" >/dev/null || exit 3
 ZSH
@@ -195,10 +195,10 @@ SF_TEST_EVENTS="$events" zsh -f "$entry" run --jsonl --session-create -p stream 
 [[ ! -s $hook_error ]] || fail "streamed display leaked to stderr: $(<"$hook_error")"
 jq -se --arg path "$streamed" --slurpfile session "$streamed" '
   # A hook that writes nothing records nothing.
-  map(.type) == ["_session_load","session","system","_hook_draft","state","hook_result"] and
+  map(.type) == ["_session_load","session","system","_draft","state","hook_result"] and
   .[0] == {type:"_session_load",path:$path} and
   .[1:3] == $session[0:2] and
-  (.[3] | del(.id)) == {type:"_hook_draft",lifecycle:"session_start",user_text:"starting"} and
+  (.[3] | del(.id)) == {type:"_draft",lifecycle:"session_start",user_text:"starting"} and
   .[4:6] == $session[2:] and
   (.[5] | del(.id)) == {type:"hook_result",lifecycle:"session_start",
     user_text:"startup display",model_text:"startup context"} and
@@ -215,7 +215,7 @@ SF_TEST_EVENTS="$events" zsh -f "$entry" run --jsonl --session-create \
 [[ -f $failed && $(<"$hook_error") == *'session_start hook failed with status 9:'* ]] ||
   fail 'failed startup did not retain its session and diagnostic'
 jq -se '
-  map(.type) == ["_session_load","session","system","_hook_draft","state","hook_result"]
+  map(.type) == ["_session_load","session","system","_draft","state","hook_result"]
 ' "$events" >/dev/null || fail 'a failed creation lost its durable prefix'
 jq -se 'map(.type) == ["session","system","state","hook_result"]' \
   "$failed" >/dev/null || fail 'a failed creation lost its durable prefix'

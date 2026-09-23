@@ -70,9 +70,8 @@
     }
   },
 
-  // Rows kept when collapsing output. "full" shows everything. A tool's
-  // render.preview_lines or a hook's user_preview_lines overrides the global
-  // limit. Disabled by --verbose.
+  // Rows kept when collapsing output. "full" shows everything. A hook's or
+  // tool's user_preview_lines overrides the global limit. Disabled by --verbose.
   "preview_lines_reasoning": 0,
   "preview_lines": 2
 }

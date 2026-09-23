@@ -60,28 +60,25 @@ def canonical_error:
 def preview_hint:
   . == "full" or (type == "number" and floor == . and . >= 0 and . <= 2147483647);
 
-# Settled text is nonempty when present.
-def result_texts:
+# A settled result: its REQUIRED fields plus optional texts, nonempty when
+# present, and a preview hint.
+def result_fields($required):
+  type == "object" and
+  ((keys - ($required + ["model_text", "type", "user_preview_lines", "user_text"])) |
+    length == 0) and
+  (($required - keys) | length == 0) and
   (if has("user_text") then .user_text | type == "string" and length > 0 else true end) and
-  (if has("model_text") then .model_text | type == "string" and length > 0 else true end);
+  (if has("model_text") then .model_text | type == "string" and length > 0 else true end) and
+  ((has("user_preview_lines") | not) or (.user_preview_lines | preview_hint));
 
 def canonical_tool_result:
-  type == "object" and .type == "tool_result" and
-  ((keys - ["exit_code", "id", "input", "model_text", "name", "type", "user_text"]) |
-    length == 0) and
-  ((["exit_code", "id", "input", "name", "type"] - keys) | length == 0) and
+  result_fields(["exit_code", "id", "input", "name"]) and .type == "tool_result" and
   (.id | identifier) and (.name | tool_name) and (.input | type == "object") and
-  (.exit_code | type == "number" and floor == . and . >= 0 and . <= 255) and
-  result_texts;
+  (.exit_code | type == "number" and floor == . and . >= 0 and . <= 255);
 
 def canonical_hook_result:
-  type == "object" and .type == "hook_result" and
-  ((keys - ["id", "lifecycle", "model_text", "type", "user_preview_lines", "user_text"]) |
-    length == 0) and
-  ((["id", "lifecycle", "type"] - keys) | length == 0) and
-  (.lifecycle | record_lifecycle) and (.id | test("^[1-9][0-9]*$")) and
-  result_texts and
-  ((has("user_preview_lines") | not) or (.user_preview_lines | preview_hint));
+  result_fields(["id", "lifecycle"]) and .type == "hook_result" and
+  (.lifecycle | record_lifecycle) and (.id | test("^[1-9][0-9]*$"));
 
 def response_calls: [.content[] | select(.type == "tool_call")];
 
