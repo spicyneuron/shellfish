@@ -235,7 +235,8 @@ ZSH
 chmod +x "$post_fail"
 SF_TEST_PROFILE=$(jq -c --arg hook "$post_fail" '
   .hooks.permission_request=[] |
-  .hooks.post_tool_use=[$hook]
+  .hooks.post_tool_use=[$hook] |
+  .sandbox=false
 ' <<<"$SF_TEST_PROFILE")
 session="$tmp/post-failure.jsonl"
 sf_test_session "$session"

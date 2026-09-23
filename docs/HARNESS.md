@@ -184,7 +184,7 @@ Actions take these shapes:
 {"action":"continue"}
 ```
 
-A block ends the turn without submitting the prompt. A handoff asks a capable client to run the complete `argv` after a clean turn exit. A session update's `PROFILE` is one complete session profile, as stored in the header; Shellfish atomically replaces it. A `pre_tool_use` deny reason becomes the refused tool result. A `stop` continue sends the hook's model finals back as feedback and continues inference. `pre_tool_use` and `post_tool_use` cannot rewrite tool input or results. `permission_request` may only allow or deny a supported sandbox bypass.
+A block ends the turn without submitting the prompt. A handoff asks a capable client to run the complete `argv` after a clean turn exit. A session update's `PROFILE` is one complete session profile, as stored in the header; Shellfish atomically replaces it. A `pre_tool_use` deny reason becomes the refused tool result. A `stop` continue requires model feedback from a final or stdout, then continues inference with it. `pre_tool_use` and `post_tool_use` cannot rewrite tool input or results. `permission_request` may only allow or deny a supported sandbox bypass.
 
 ## Backend adapters
 

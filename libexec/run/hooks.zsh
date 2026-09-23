@@ -44,6 +44,7 @@ sf_run_component_line() {
       entry("valid"; $line != null | tostring),
       entry("states"; [$line.states[]? | tojson] | join("\n")),
       entry("texts"; $line.texts | if . == null then "" else tojson end),
+      entry("model_feedback"; ($line.texts.model_text // "") != "" | tostring),
       entry("record"; $line.texts |
         if has("user_text") or has("model_text") then $result + . | tojson else "" end),
       entry("draft"; $line.draft | if . == null then "" else tojson end),
@@ -81,6 +82,7 @@ sf_run_hook_line() {
     SF_HOOK_RESULT[live]=1
   fi
   [[ -z $line[texts] ]] || SF_HOOK_RESULT[final]=1
+  [[ $line[model_feedback] != true ]] || SF_HOOK_RESULT[model_feedback]=1
   [[ -z $line[action] ]] || SF_HOOK_RESULT+=( action "$line[action]"
     reason "$line[reason]" payload "$line[payload]" )
 }
@@ -97,7 +99,8 @@ sf_run_hook_shortcut() {
       (if $stdout == "" then {} else {model_text:$stdout} end) +
       (if $preview == null then {} else {user_preview_lines:$preview} end)
     ') || { REPLY='cannot decode hook result'; return 1; }
-  sf_run_hook_settle "$record"
+  sf_run_hook_settle "$record" || return
+  [[ ! -s $directory/stdout ]] || SF_HOOK_RESULT[model_feedback]=1
 }
 
 # Run the lifecycle's first hook. Each later one is the parent of the one before,
@@ -169,6 +172,7 @@ sf_run_hooks() {
   else
     directory=$REPLY
     SF_HOOK_RESULT=( session "$session" lifecycle "$lifecycle" error '' final 0 live 0
+      model_feedback 0
       preview null action '' reason '' payload '' )
     if ! sf_process_run "$directory" "${SF_RUN[cwd]:A}" "$input" "$max_capture" \
         sf_run_hook_line /usr/bin/env "${environment[@]}" "$command" "$@"; then
@@ -199,6 +203,10 @@ sf_run_hooks() {
   if (( SF_HOOK_RESULT[live] && ! process[interrupted] )); then
     sf_run_emit '{"type":"_draft","lifecycle":"'$lifecycle'","id":"'$SF_RUN[hook_id]'","user_text":""}' ||
       error=${error:-cannot emit hook draft}
+  fi
+  if [[ -z $error && $lifecycle == stop && $SF_HOOK_RESULT[action] == continue ]] &&
+      (( ! SF_HOOK_RESULT[model_feedback] )); then
+    error='stop hook continued without model feedback'
   fi
   [[ -z $error ]] || { SF_RUN_HOOK_ERROR=$error; return 1; }
   reply=( action "$SF_HOOK_RESULT[action]" reason "$SF_HOOK_RESULT[reason]"

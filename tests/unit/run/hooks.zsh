@@ -299,6 +299,27 @@ jq -eRn '
 ' <"$stream" >/dev/null || fail 'request limit lost stop feedback or its error'
 assert_canonical_session "$session"
 
+# A continuation without model feedback fails before another provider request.
+cat >"$stop_hook" <<'ZSH'
+#!/usr/bin/env zsh
+print -r -u3 -- '{"user_final":"checking again","action":"continue"}'
+ZSH
+chmod +x "$stop_hook"
+rm -f "$request_count"
+SF_TEST_PROFILE=$(jq -c '.max_requests_per_turn=8' <<<"$SF_TEST_PROFILE")
+session="$tmp/stop-no-feedback.jsonl"
+sf_test_session "$session"
+integer no_feedback_status=0
+sf_test_run stop "$session" >"$stream" || no_feedback_status=$?
+(( no_feedback_status == 1 )) || fail 'stop continuation without feedback succeeded'
+assert_equal 1 "$(<$request_count)" 'stop continuation without feedback requested again'
+jq -eRn '
+  [inputs | fromjson] as $events |
+  ($events[-2] | .type == "hook_result" and .user_text == "checking again") and
+  $events[-1] == {type:"error",user_text:"stop hook continued without model feedback"}
+' <"$stream" >/dev/null || fail 'stop continuation without feedback was not rejected'
+assert_canonical_session "$session"
+
 # Each hook reaches its parent with the original stdin, to any depth, and their
 # fd 3 lines interleave in order.
 typeset delegate="$tmp/delegate"
