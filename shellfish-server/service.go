@@ -71,20 +71,12 @@ type sessionHeader struct {
 	Type          string          `json:"type"`
 	FormatVersion int             `json:"format_version"`
 	Cwd           string          `json:"cwd"`
-	Runtime       *sessionRuntime `json:"runtime"`
+	Profile       *sessionProfile `json:"profile"`
 }
 
-type sessionRuntime struct {
-	Harness *sessionHarness `json:"harness"`
-}
-
-type sessionHarness struct {
-	Sandbox *bool         `json:"sandbox"`
-	Tools   []sessionTool `json:"tools"`
-}
-
-type sessionTool struct {
-	Name string `json:"name"`
+type sessionProfile struct {
+	Sandbox *bool    `json:"sandbox"`
+	Tools   []string `json:"tools"`
 }
 
 func New(accessCode string, exec *Exec) (*Service, error) {
@@ -109,12 +101,11 @@ func checkHeader(record json.RawMessage) (sessionHeader, error) {
 	if header.Type != "session" || header.FormatVersion != 1 {
 		return sessionHeader{}, errors.New("read session header: unsupported format")
 	}
-	if header.Runtime == nil || header.Runtime.Harness == nil ||
-		header.Runtime.Harness.Sandbox == nil || header.Runtime.Harness.Tools == nil {
-		return sessionHeader{}, errors.New("read session header: missing runtime fields")
+	if header.Profile == nil || header.Profile.Sandbox == nil || header.Profile.Tools == nil {
+		return sessionHeader{}, errors.New("read session header: missing profile fields")
 	}
-	for _, tool := range header.Runtime.Harness.Tools {
-		if tool.Name == "" {
+	for _, tool := range header.Profile.Tools {
+		if tool == "" {
 			return sessionHeader{}, errors.New("read session header: invalid tool")
 		}
 	}

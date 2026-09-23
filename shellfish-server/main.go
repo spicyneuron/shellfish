@@ -70,7 +70,7 @@ Expose one Shellfish session to one browser. Without --session, the server
 creates a session by forwarding Shellfish options to shellfish run.
 
 Server options:
-  --session PATH     Serve an existing session
+  -s, --session PATH Serve an existing session
   --bind ADDRESS     Listen at ADDRESS (default 127.0.0.1:9158)
   --shellfish PATH   Use PATH as the Shellfish executable
   -h, --help         Show this help
@@ -99,7 +99,7 @@ func parseServerArgs(args []string) (serverOptions, error) {
 		case "--help", "-h":
 			options.help = true
 			continue
-		case "--session", "-session":
+		case "-s", "--session", "-session":
 			target = &options.session
 		case "--bind", "-bind":
 			target = &options.bind
@@ -179,12 +179,12 @@ func serve(session, bind, binary string) error {
 	signals := make(chan os.Signal, 2)
 	signal.Notify(signals, os.Interrupt, syscall.SIGTERM)
 	defer signal.Stop(signals)
-	tools := make([]string, len(service.header.Runtime.Harness.Tools))
-	for i, tool := range service.header.Runtime.Harness.Tools {
-		tools[i] = tool.Name
+	tools := make([]string, len(service.header.Profile.Tools))
+	for i, tool := range service.header.Profile.Tools {
+		tools[i] = filepath.Base(tool)
 	}
 	printStartupBanner(os.Stderr, "http://"+listener.Addr().String(), accessCode,
-		service.header.Cwd, tools, *service.header.Runtime.Harness.Sandbox)
+		service.header.Cwd, tools, *service.header.Profile.Sandbox)
 	log.Printf("serving session %s", sessionPath)
 	return serveHTTP(listener, service, killTurn, signals)
 }

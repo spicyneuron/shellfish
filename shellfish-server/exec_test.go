@@ -182,7 +182,11 @@ func TestParseServerArgsStripsServerOptions(t *testing.T) {
 }
 
 func TestParseServerArgsRejectsExistingSessionOptions(t *testing.T) {
-	_, err := parseServerArgs([]string{"--session", "session.jsonl", "--profile", "work"})
+	options, err := parseServerArgs([]string{"-s", "session.jsonl"})
+	if err != nil || options.session != "session.jsonl" || len(options.shellfishArgs) != 0 {
+		t.Fatalf("short session option = %#v, error = %v", options, err)
+	}
+	_, err = parseServerArgs([]string{"--session", "session.jsonl", "--profile", "work"})
 	if err == nil || err.Error() != "Shellfish options require creating a new session" {
 		t.Fatalf("existing session options error = %v", err)
 	}

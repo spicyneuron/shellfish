@@ -15,92 +15,12 @@ const HEADER = {
   type: "session",
   format_version: 1,
   cwd: "/project",
-  backend: { name: "test" },
-  request: { model: "test-model" },
-  harness: {
-    tools: [
-      {
-        name: "shell",
-        manifest: {
-          render: {
-            user_before: "${script}\n${input.command}",
-            user_after: "${script}\n${input.command}\n${output.stdout}${output.stderr}\nexit ${output.exit_code}",
-            model_after: "${output.stdout}${output.stderr}\nexit ${output.exit_code}",
-          },
-          permission_preview: "${input.command}",
-        },
-      },
-      {
-        name: "read_file",
-        manifest: {
-          render: {
-            user_before: "${script} · ${input.file_path}",
-            user_after: "${script} · ${input.file_path}\n${output.stdout}${output.stderr}",
-            model_after: "${output.stdout}${output.stderr}",
-          },
-          permission_preview: "${input.file_path}",
-        },
-      },
-      {
-        name: "edit_file",
-        manifest: {
-          render: {
-            user_before: "${script} · ${input.file_path}",
-            user_after: "${script} · ${input.file_path}\n${output.stdout}${output.stderr}",
-            model_after: "${output.stdout}${output.stderr}",
-          },
-          permission_preview: "${input.file_path}",
-        },
-      },
-    ],
-    session_start: [
-      {
-        command: "/hooks/session_start/probe/run",
-        render: {
-          user_before: "${script} · Inspecting",
-          user_after: "${script}\n${output.stdout}",
-          model_after: "${output.stdout}",
-        },
-      },
-    ],
-    user_prompt_submit: [
-      {
-        command: "/hooks/user_prompt_submit/compact/run",
-        render: {
-          user_before: "${script} · Compacting",
-          user_after: "${script}\n${output.stdout}",
-          model_after: "${output.stdout}",
-        },
-      },
-    ],
-    pre_tool_use: [
-      {
-        command: "/hooks/pre_tool_use/guard/run",
-        render: {
-          user_before: "${script}\nchecking",
-          user_after: "${script}\n${output.stderr}",
-          model_after: "${output.stdout}",
-        },
-      },
-    ],
-    stop: [
-      {
-        command: "/hooks/stop/check/run",
-        render: {
-          user_before: "${script} · Checking",
-          user_after: "${script}\n${output.stderr}",
-          model_after: "${output.stdout}",
-        },
-      },
-      {
-        command: "/other/stop/check/run",
-        render: {
-          user_before: "wrong template",
-          user_after: "wrong template",
-          model_after: "",
-        },
-      },
-    ],
+  profile: {
+    backend: { adapter: "@default/backends/test" },
+    request: { model: "test-model" },
+    context_window: null,
+    tools: ["@default/tools/shell"],
+    sandbox: true,
   },
 };
 const ASSISTANT = {
@@ -108,12 +28,6 @@ const ASSISTANT = {
   stop: "end",
   content: [{ type: "text", text: "committed" }],
   usage: { input_tokens: 10, output_tokens: 2 },
-};
-const TOOL_HOOK_INPUT = {
-  turn_id: "turn_1",
-  tool_name: "shell",
-  tool_use_id: "call_1",
-  tool_input: { command: "true" },
 };
 
 // ----------------------------------------------------------------------- DOM
@@ -446,7 +360,7 @@ test("replays the durable session before live work", async () => {
   await page.authenticate();
   assert.deepEqual(page.opens, ["Bearer 123456"]);
   const header = structuredClone(HEADER);
-  header.context_window = 200;
+  header.profile.context_window = 200;
   await page.send(
     header,
     { type: "system", content: "instructions" },
@@ -454,24 +368,20 @@ test("replays the durable session before live work", async () => {
       type: "user",
       content: [{ type: "text", text: "**hello**" }],
     },
-    { type: "assistant", stop: "tool_calls", content: [] },
+    { type: "assistant", stop: "tool_calls", content: [
+      { type: "tool_call", id: "call_1", name: "shell", input: { command: "true" } },
+    ] },
     {
       type: "hook_result",
-      hook: "pre_tool_use",
-      script: "/hooks/pre_tool_use/guard/run",
-      input: TOOL_HOOK_INPUT,
-      stdout: "approved",
-      stderr: "checked",
-      exit_code: 0,
-      tool_use_id: "call_1",
+      lifecycle: "pre_tool_use",
+      id: "1",
     },
     {
       type: "tool_result",
-      call_id: "call_1",
+      id: "call_1",
       name: "shell",
       input: { command: "true" },
-      stdout: "done",
-      stderr: "",
+      user_text: "shell\ntrue\ndone",
       exit_code: 0,
     },
     {
@@ -500,6 +410,8 @@ test("replays the durable session before live work", async () => {
   assert.equal(page.model.textContent, "test/test-model");
   assert.equal(page.usage.textContent, " · 75 ↑ 80% ⦿ 5 ↓ 38% of 200 ◔");
   assert.equal(find(page.output, "note").length, 0);
+  assert.equal(find(page.output, "call")[0].textContent, "⛭ shell\ntrue\ndone");
+  assert.equal(find(page.output, "assistant").length, 2);
 });
 
 test("accepts canonical state without rendering it", async () => {
@@ -532,10 +444,9 @@ test("applies a session update without replaying the transcript", async () => {
   const records = page.output.children.slice();
   await page.send({
     type: "_session_update",
-    runtime: {
-      backend: { name: "updated" },
+    profile: {
+      backend: { adapter: "/backends/updated" },
       request: { model: "new-model" },
-      harness: { tools: [] },
     },
   });
   assert.equal(page.model.textContent, "updated/new-model");
@@ -547,10 +458,9 @@ test("shows context usage and preserves cache usage", async () => {
   const page = await idle();
   await page.send({
     type: "_session_update",
-    runtime: {
-      backend: { name: "test" },
+    profile: {
+      backend: { adapter: "/backends/test" },
       request: { model: "test-model" }, context_window: 264000,
-      harness: { tools: [] },
     },
   });
   await page.send({
@@ -563,10 +473,9 @@ test("shows context usage and preserves cache usage", async () => {
 
   await page.send({
     type: "_session_update",
-    runtime: {
-      backend: { name: "test" },
+    profile: {
+      backend: { adapter: "/backends/test" },
       request: { model: "test-model" }, context_window: null,
-      harness: { tools: [] },
     },
   });
   await page.send({
@@ -583,14 +492,12 @@ test("copies the latest or selected derived section locally", async () => {
   await page.send(
     { type: "user", content: [{ type: "text", text: "\n  question\t\n" }] },
     { ...ASSISTANT, stop: "tool_calls", content: [] },
-    { type: "_tool_activity", call_id: "copy_call", name: "shell", input: {} },
     {
       type: "tool_result",
-      call_id: "copy_call",
+      id: "copy_call",
       name: "shell",
       input: {},
-      stdout: "",
-      stderr: "",
+      user_text: "shell",
       exit_code: 0,
     },
     {
@@ -627,50 +534,44 @@ test("copies the latest or selected derived section locally", async () => {
 });
 
 // The sigil marks whether the hook fed the model, not what is shown below it.
-test("marks a hook that fed the model", async () => {
+test("shows user-facing hook text without exposing model text", async () => {
   const page = await idle();
   await page.send({
     type: "hook_result",
-    hook: "session_start",
-    script: "/hooks/session_start/probe/run",
-    input: "",
-    stdout: "environment",
-    stderr: "",
-    exit_code: 0,
+    lifecycle: "session_start",
+    id: "1",
+    user_text: "Inspecting project",
+    model_text: "secret model context",
   });
   const shown = findTag(find(page.output, "note")[0], "pre")[0];
-  assert.equal(shown.textContent, "↪ probe\nenvironment");
+  assert.equal(shown.textContent, "↪ Inspecting project");
+  await page.send({
+    type: "hook_result", lifecycle: "stop", id: "2",
+    model_text: "private stop feedback",
+  });
+  assert.equal(find(page.output, "note")[1].textContent, "↪ stop");
+  assert.equal(page.output.textContent.includes("secret model context"), false);
+  assert.equal(page.output.textContent.includes("private stop feedback"), false);
 });
 
 test("marks a hook that spoke only to the reader", async () => {
   const page = await idle();
   await page.send({
     type: "hook_result",
-    hook: "stop",
-    script: "/hooks/stop/check/run",
-    input: "",
-    stdout: "",
-    stderr: "checked 3 files",
-    exit_code: 0,
+    lifecycle: "stop",
+    id: "2",
+    user_text: "checked 3 files",
   });
   const shown = findTag(find(page.output, "note")[0], "pre")[0];
-  assert.deepEqual(
-    findTag(shown, "strong").map((node) => node.textContent),
-    ["check"],
-  );
-  assert.equal(shown.textContent, "ℹ check\nchecked 3 files");
+  assert.equal(shown.textContent, "ℹ checked 3 files");
 });
 
-test("a hook with no display template renders nothing", async () => {
+test("a hook with no user or model text renders nothing", async () => {
   const page = await idle();
   await page.send({
     type: "hook_result",
-    hook: "post_tool_use",
-    script: "/hooks/post_tool_use/unconfigured/run",
-    input: {},
-    stdout: "quiet",
-    stderr: "",
-    exit_code: 0,
+    lifecycle: "post_tool_use",
+    id: "3",
   });
   assert.equal(find(page.output, "note").length, 0);
 });
@@ -681,12 +582,9 @@ test("puts prompt context under a user heading", async () => {
     { type: "_session_status", working: true },
     {
       type: "hook_result",
-      hook: "user_prompt_submit",
-      script: "/hooks/user_prompt_submit/compact/run",
-      input: "prompt",
-      stdout: "injected",
-      stderr: "",
-      exit_code: 0,
+      lifecycle: "user_prompt_submit",
+      id: "1",
+      model_text: "injected",
     },
     { type: "user", content: [{ type: "text", text: "prompt" }] },
   );
@@ -697,7 +595,7 @@ test("puts prompt context under a user heading", async () => {
   assert.equal(find(page.output, "activity").length, 1);
 });
 
-test("renders complete live tool views like the terminal", async () => {
+test("renders only settled tool text and labels model-only results", async () => {
   const page = await idle();
   await page.send(
     {
@@ -706,30 +604,20 @@ test("renders complete live tool views like the terminal", async () => {
       content: [{ type: "reasoning", text: "thinking" }],
     },
     {
-      type: "_tool_activity",
-      call_id: "call_1",
+      type: "tool_result",
+      id: "call_1",
       name: "shell",
       input: { command: "if true; then pwd; fi" },
+      user_text: "shell\nif true; then pwd; fi\n/project",
+      exit_code: 0,
     },
     {
-      type: "_tool_activity",
-      call_id: "call_2",
+      type: "tool_result",
+      id: "call_2",
       name: "read_file",
-      input: {
-        file_path: "outside.txt",
-        request_sandbox_bypass: true,
-        sandbox_bypass_reason: "outside project",
-      },
-    },
-    {
-      type: "_tool_activity",
-      call_id: "call_3",
-      name: "unknown",
-      input: {
-        value: 1,
-        request_sandbox_bypass: true,
-        sandbox_bypass_reason: "outside project",
-      },
+      input: { file_path: "outside.txt" },
+      model_text: "private file content",
+      exit_code: 0,
     },
   );
   assert.equal(
@@ -737,26 +625,9 @@ test("renders complete live tool views like the terminal", async () => {
     "✎Reasoning",
   );
   const calls = find(page.output, "call");
-  assert.equal(calls[0].textContent, "⛭ shell\nif true; then pwd; fi");
-  assert.equal(findTag(calls[0], "strong")[0].textContent, "shell");
-  assert.equal(find(calls[0], "word").length, 0);
-  assert.equal(calls[1].textContent, "⛭ read_file · outside.txt");
-  assert.equal(findTag(calls[1], "strong")[0].textContent, "read_file");
-  assert.equal(findTag(calls[1], "strong").length, 1);
-  assert.equal(calls[2].textContent, '⛭ unknown\n{"value":1}');
-  await page.send({
-    type: "tool_result",
-    call_id: "call_3",
-    name: "unknown",
-    input: { value: 1 },
-    stdout: "",
-    stderr: "tool is not allowed: unknown",
-    exit_code: 127,
-  });
-  assert.equal(
-    calls[2].textContent,
-    "⛭ unknown\ntool is not allowed: unknown\nexit 127",
-  );
+  assert.equal(calls[0].textContent, "⛭ shell\nif true; then pwd; fi\n/project");
+  assert.equal(calls[1].textContent, "⛭ read_file");
+  assert.equal(page.output.textContent.includes("private file content"), false);
 });
 
 test("leaves deltas out of the transcript and draws the record once", async () => {
@@ -790,8 +661,7 @@ test("leaves deltas out of the transcript and draws the record once", async () =
   assert.equal(find(page.output, "activity").length, 1);
   assert.equal(page.usage.textContent, " · 10 ↑ 2 ↓");
   await page.send({ ...ASSISTANT, content: [{ type: "text", text: "\n\n" }] });
-  assert.equal(find(page.output, "assistant").length, 2);
-  assert.equal(find(page.output, "assistant")[1].textContent, "");
+  assert.equal(find(page.output, "assistant").length, 1);
   await page.send({ type: "_session_status", working: false });
   assert.equal(find(page.output, "activity").length, 0);
 });
@@ -829,102 +699,66 @@ test("ends a section on a durable error without numbering it", async () => {
   assert.equal(findTag(shown, "pre").length, 0);
 });
 
-test("labels running hook activity from its template", async () => {
+test("updates temporary drafts by result ID", async () => {
   const page = await idle();
   await page.send(
     { type: "_session_status", working: true },
-    {
-      type: "_hook_activity",
-      hook: "user_prompt_submit",
-      script: "/hooks/user_prompt_submit/compact/run",
-      input: "/compact",
-    },
+    { type: "_draft", lifecycle: "stop", id: "1", user_text: "Checking" },
   );
-  let notes = find(page.output, "note");
-  assert.equal(notes.length, 1);
-  assert.equal(
-    findTag(notes[0], "pre")[0].textContent,
-    "ℹ compact · Compacting",
-  );
+  assert.equal(find(page.output, "note")[0].textContent, "Checking");
   assert.equal(find(page.output, "activity").length, 1);
+  await page.send({ type: "_draft", lifecycle: "stop", id: "1", user_text: "Checking files" });
+  assert.equal(find(page.output, "note").length, 1);
+  assert.equal(find(page.output, "note")[0].textContent, "Checking files");
+});
 
-  // One hook runs at a time, so a later label replaces the standing one.
+test("replaces a draft with its durable result", async () => {
+  const page = await idle();
+  await page.send(
+    { type: "_draft", lifecycle: "stop", id: "1", user_text: "Checking" },
+    {
+      type: "hook_result",
+      lifecycle: "stop",
+      id: "1",
+      user_text: "checked 3 files",
+    },
+  );
+  const notes = find(page.output, "note");
+  assert.equal(notes.length, 1);
+  assert.equal(notes[0].textContent, "ℹ checked 3 files");
+});
+
+test("tool and hook drafts with the same ID settle independently", async () => {
+  const page = await idle();
+  await page.send(
+    { type: "_draft", name: "shell", id: "1", user_text: "running shell" },
+    { type: "_draft", lifecycle: "pre_tool_use", id: "1", user_text: "checking" },
+    { type: "hook_result", lifecycle: "pre_tool_use", id: "1" },
+  );
+  assert.deepEqual(find(page.output, "note").map((note) => note.textContent),
+    ["running shell"]);
   await page.send({
-    type: "_hook_activity",
-    hook: "session_start",
-    script: "/hooks/session_start/probe/run",
-    input: "",
+    type: "tool_result", id: "1", name: "shell", input: {},
+    user_text: "shell done", exit_code: 0,
   });
-  notes = find(page.output, "note");
-  assert.equal(notes.length, 1);
-  assert.equal(findTag(notes[0], "pre")[0].textContent, "ℹ probe · Inspecting");
+  assert.equal(find(page.output, "note").length, 0);
+  assert.equal(find(page.output, "call")[0].textContent, "⛭ shell done");
 });
 
-test("replaces hook activity with its durable result", async () => {
+test("clears an unsettled draft when the core retracts it", async () => {
   const page = await idle();
   await page.send(
-    {
-      type: "_hook_activity",
-      hook: "stop",
-      script: "/hooks/stop/check/run",
-      input: "",
-    },
-    {
-      type: "hook_result",
-      hook: "stop",
-      script: "/hooks/stop/check/run",
-      input: "",
-      stdout: "",
-      stderr: "checked 3 files",
-      exit_code: 0,
-    },
+    { type: "_draft", lifecycle: "stop", id: "1", user_text: "Checking" },
+    { type: "_draft", lifecycle: "stop", id: "1", user_text: "" },
   );
-  // A stop hook that let the turn end speaks only to the reader.
-  const notes = find(page.output, "note");
-  assert.equal(notes.length, 1);
-  assert.equal(
-    findTag(notes[0], "pre")[0].textContent,
-    "ℹ check\nchecked 3 files",
-  );
+  assert.equal(find(page.output, "note").length, 0);
 });
 
-test("retracts a silent script's label for the next result", async () => {
-  const page = await idle();
-  await page.send(
-    {
-      type: "_hook_activity",
-      hook: "session_start",
-      script: "/hooks/session_start/probe/run",
-      input: "",
-    },
-    {
-      type: "hook_result",
-      hook: "stop",
-      script: "/hooks/stop/check/run",
-      input: "",
-      stdout: "",
-      stderr: "checked 3 files",
-      exit_code: 0,
-    },
-  );
-  const notes = find(page.output, "note");
-  assert.equal(notes.length, 1);
-  assert.equal(
-    findTag(notes[0], "pre")[0].textContent,
-    "ℹ check\nchecked 3 files",
-  );
-});
-
-test("replaces standing hook activity with a process failure", async () => {
+test("removes drafts on process failure", async () => {
   const page = await idle();
   await page.send(
     { type: "_session_status", working: true },
-    {
-      type: "_hook_activity",
-      hook: "stop",
-      script: "/hooks/stop/check/run",
-      input: "",
-    },
+    { type: "_draft", lifecycle: "stop", id: "1", user_text: "Checking" },
     {
       type: "_session_status",
       working: false,
@@ -1040,12 +874,12 @@ test("answers and removes permission prompts", async () => {
         stop: "tool_calls",
         content: [],
       },
-      { type: "_tool_activity", call_id: "call_1", name, input },
       {
         type: "_tool_permission_request",
         id: "permission_1",
-        tool: { call_id: "call_1", name, input },
+        tool: { name, input },
         reason: "not allowed by policy",
+        preview,
       },
     );
     const request = find(page.output, "permission")[0];
@@ -1056,7 +890,7 @@ test("answers and removes permission prompts", async () => {
     assert.equal(find(request, "input")[0].textContent, preview);
     assert.match(request.textContent, /Reason: not allowed by policy/);
     assert.equal(find(request, "input")[0].tagName, "pre");
-    assert.equal(find(page.output, "call").length, 1);
+    assert.equal(find(page.output, "call").length, 0);
     assert.equal(page.cancel.hidden, false);
 
     find(page.output, "actions")[0].children[button].dispatch("click");
@@ -1077,7 +911,7 @@ test("answers and removes permission prompts", async () => {
   }
 });
 
-test("replaces a live tool view with its complete plain result", async () => {
+test("replaces a tool draft with its completed text", async () => {
   const page = await idle();
   await page.send(
     { type: "_session_status", working: true },
@@ -1087,44 +921,22 @@ test("replaces a live tool view with its complete plain result", async () => {
   await page.send(
     { type: "assistant", stop: "tool_calls", content: [] },
     {
-      type: "_tool_activity",
-      call_id: "call_1",
+      type: "_draft",
+      id: "call_1",
       name: "edit_file",
-      input: { file_path: "notes.txt", old_string: "old", new_string: "new" },
+      user_text: "edit_file · notes.txt",
     },
   );
   assert.equal(find(page.output, "call").length, 1);
   assert.equal(find(page.output, "activity").length, 1);
   assert.equal(page.cancel.hidden, false);
 
-  await page.send(
-    {
-      type: "_hook_activity",
-      hook: "pre_tool_use",
-      script: "/hooks/pre_tool_use/guard/run",
-      input: TOOL_HOOK_INPUT,
-    },
-    {
-      type: "hook_result",
-      hook: "pre_tool_use",
-      script: "/hooks/pre_tool_use/guard/run",
-      input: TOOL_HOOK_INPUT,
-      stdout: "approved",
-      stderr: "checked",
-      exit_code: 0,
-      tool_use_id: "call_1",
-    },
-  );
-  assert.equal(find(page.output, "call")[0].textContent, "⛭ guard\nchecked");
-  assert.equal(find(page.output, "note").length, 0);
-
   await page.send({
     type: "tool_result",
-    call_id: "call_1",
+    id: "call_1",
     name: "edit_file",
     input: { file_path: "notes.txt", old_string: "old", new_string: "new" },
-    stdout: "@@ -1 +1 @@\n-old\n+new",
-    stderr: "",
+    user_text: "edit_file · notes.txt\n@@ -1 +1 @@\n-old\n+new",
     exit_code: 0,
   });
   const call = find(page.output, "call")[0];
@@ -1133,7 +945,6 @@ test("replaces a live tool view with its complete plain result", async () => {
     call.textContent,
     "⛭ edit_file · notes.txt\n@@ -1 +1 @@\n-old\n+new",
   );
-  assert.equal(findTag(call, "strong")[0].textContent, "edit_file");
   assert.equal(find(page.output, "note").length, 0);
   assert.equal(find(page.output, "activity").length, 1);
   assert.equal(page.cancel.hidden, false);

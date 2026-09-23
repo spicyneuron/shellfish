@@ -46,28 +46,8 @@ let sectionId = 0;
 let contextWindow = null;
 // Text chunks by derived section ID, used by the local /copy command.
 let sectionChunks = [];
-// Live tool nodes by call ID, and IDs settled in the current response.
-const calls = new Map();
-const settledCalls = new Set();
-// The note standing in for a running hook, or null.
-let hookActivity = null;
-// Render templates from the session header.
-const toolTemplatesByName = new Map();
-const hookTemplatesByName = new Map();
-const DEFAULT_TOOL_TEMPLATES = {
-  render: {
-    user_before: "${script}\n${input}",
-    user_after: "${script}\n${output.stdout}${output.stderr}\nexit ${output.exit_code}",
-    model_after: "${output.stdout}${output.stderr}\nexit ${output.exit_code}",
-  },
-  permission_preview: "${input}",
-};
-// Defaults cover hooks a session no longer configures.
-const DEFAULT_HOOK_TEMPLATES = {
-  user_before: "",
-  user_after: "",
-  model_after: "${output.stdout}",
-};
+// Temporary component text, keyed by the result ID that settles it.
+const drafts = new Map();
 
 // -------------------------------------------------------------------- the DOM
 
@@ -188,10 +168,20 @@ function hideIndicator() {
   indicator = null;
 }
 
-// The next hook or settled result retracts a running hook label.
-function clearHookActivity() {
-  if (hookActivity) hookActivity.remove();
-  hookActivity = null;
+function draftKey(frame) {
+  return (frame.name ? "tool:" : "hook:") + frame.id;
+}
+
+function clearDraft(frame) {
+  const key = draftKey(frame);
+  const article = drafts.get(key);
+  if (article) article.remove();
+  drafts.delete(key);
+}
+
+function clearDrafts() {
+  for (const article of drafts.values()) article.remove();
+  drafts.clear();
 }
 
 function collapsible(parent, sigil, heading, text, kind, secondary) {
@@ -212,83 +202,6 @@ function note(text, kind, heading, secondary) {
   if (text) el(article, "pre", null, safe(text));
   place(article);
   if (working) showIndicator();
-}
-
-function renderTemplate(template, values) {
-  return template.replace(/\$\{([^{}]+)\}/g, (_, name) => values[name]);
-}
-
-function inputValues(input) {
-  const values = { input: renderValue(input) };
-  if (input && typeof input === "object" && !Array.isArray(input)) {
-    for (const [key, value] of Object.entries(input)) {
-      values["input." + key] = renderValue(value);
-    }
-  }
-  return values;
-}
-
-function renderIdentityView(parent, template, token, identity, render) {
-  const parts = template.split(token);
-  for (let index = 0; index < parts.length; index++) {
-    parent.append(document.createTextNode(safe(render(parts[index]))));
-    if (index < parts.length - 1) el(parent, "strong", null, safe(identity));
-  }
-}
-
-function renderScript(template, script, input, output) {
-  const values = { script, ...inputValues(input) };
-  if (output) {
-    values["output.stdout"] = output.stdout;
-    values["output.stderr"] = output.stderr;
-    values["output.exit_code"] = String(output.exit_code);
-  }
-  return renderTemplate(template, values);
-}
-
-function renderScriptView(parent, template, script, input, output) {
-  renderIdentityView(parent, template, "${script}", script, (part) =>
-    renderScript(part, script, input, output),
-  );
-}
-
-function renderExecution(parent, sigil, template, script, input, output) {
-  parent.replaceChildren();
-  el(parent, "span", "sigil", sigil + " ");
-  renderScriptView(parent, template, script, input, output);
-}
-
-function toolInput(input) {
-  const shown = { ...input };
-  delete shown.request_sandbox_bypass;
-  delete shown.sandbox_bypass_reason;
-  return shown;
-}
-
-function toolTemplates(name) {
-  return toolTemplatesByName.get(name) || DEFAULT_TOOL_TEMPLATES;
-}
-
-function restoreToolView(call) {
-  const { frame, templates } = call;
-  renderExecution(call, "⛭", templates.render.user_before, frame.name,
-    toolInput(frame.input), null);
-}
-
-function renderValue(value) {
-  if (value === null) return "";
-  return typeof value === "string" ? value : JSON.stringify(value);
-}
-
-function hookTemplates(hook, command) {
-  return (
-    hookTemplatesByName.get(hook + "\0" + command) || DEFAULT_HOOK_TEMPLATES
-  );
-}
-
-function scriptIdentity(command) {
-  const parts = command.split("/");
-  return parts.at(-1) === "run" ? parts.at(-2) : parts.at(-1);
 }
 
 // -------------------------------------------------------------------- markdown
@@ -516,53 +429,42 @@ function highlight(parent, code, language) {
 
 // ------------------------------------------------------------------- the frames
 
-function applyRuntime(runtime) {
-  const name = safe((runtime.request || {}).model);
-  const backend = safe((runtime.backend || {}).name);
-  contextWindow = runtime.context_window ?? null;
+function applyProfile(profile) {
+  const name = safe(profile.request.model);
+  const backend = safe(profile.backend.adapter.split("/").at(-1));
+  contextWindow = profile.context_window ?? null;
   model.textContent = backend ? backend + "/" + name : name;
-  toolTemplatesByName.clear();
-  hookTemplatesByName.clear();
-  for (const tool of (runtime.harness || {}).tools || []) {
-    const manifest = tool.manifest || {};
-    toolTemplatesByName.set(tool.name, {
-      render: manifest.render,
-      permission_preview: manifest.permission_preview,
-    });
+}
+
+function renderDraft(frame) {
+  if (!frame.user_text) return clearDraft(frame);
+  hideIndicator();
+  const key = draftKey(frame);
+  let article = drafts.get(key);
+  if (article) {
+    article.children[0].textContent = safe(frame.user_text);
+  } else {
+    article = record("note", null);
+    el(article, "pre", "call", safe(frame.user_text));
+    drafts.set(key, article);
   }
-  for (const hook of [
-    "session_start",
-    "user_prompt_submit",
-    "permission_request",
-    "pre_tool_use",
-    "post_tool_use",
-    "stop",
-  ]) {
-    for (const component of (runtime.harness || {})[hook] || []) {
-      hookTemplatesByName.set(hook + "\0" + component.command, component.render);
-    }
-  }
+  place(article);
+  if (working) showIndicator();
 }
 
 function apply(frame) {
   switch (frame.type) {
     case "session":
-      applyRuntime(frame);
+      applyProfile(frame.profile);
       document.title = "shellfish " + safe(frame.cwd);
       return;
     case "system":
       section("system");
       return renderCollapsed("system", "system prompt", frame.content);
     case "hook_result":
-      if (frame.hook === "user_prompt_submit") {
-        hideIndicator();
-        section("user");
-      }
       return renderHookResult(frame);
     case "user":
     case "assistant":
-      calls.clear();
-      settledCalls.clear();
       return renderMessage(frame);
     case "tool_result":
       return renderResult(frame);
@@ -570,7 +472,7 @@ function apply(frame) {
       // The failure ends its section without claiming a section number. Its
       // first line is the outcome, and any remaining lines are its detail.
       lastRole = null;
-      clearHookActivity();
+      clearDrafts();
       const [outcome, ...detail] = safe(frame.user_text).split("\n");
       return note(detail.join("\n"), "error", outcome);
     }
@@ -600,64 +502,8 @@ function apply(frame) {
       // Provisional. Content is drawn only from the record that commits it,
       // which arrives on this same stream.
       return;
-    case "_hook_activity": {
-      if (
-        ![
-          "session_start",
-          "user_prompt_submit",
-          "permission_request",
-          "pre_tool_use",
-          "post_tool_use",
-          "stop",
-        ].includes(frame.hook) ||
-        typeof frame.script !== "string" ||
-        !frame.script.startsWith("/") ||
-        /[\u0000-\u001f\u007f-\u009f]/.test(frame.script) ||
-        !(
-          typeof frame.input === "string" ||
-          (frame.input &&
-            typeof frame.input === "object" &&
-            !Array.isArray(frame.input))
-        ) ||
-        Object.keys(frame).sort().join(",") !== "hook,input,script,type"
-      ) {
-        throw new Error("invalid hook activity");
-      }
-      clearHookActivity();
-      hideIndicator();
-      const script = scriptIdentity(frame.script);
-      const template = hookTemplates(frame.hook, frame.script).user_before;
-      const text = renderScript(template, script, frame.input, null);
-      if (text) {
-        const call = calls.get(frame.input?.tool_use_id);
-        if (call) {
-          renderExecution(call, "⛭", template, script, frame.input, null);
-          if (working) showIndicator();
-          return;
-        }
-        const article = record("note", null);
-        const content = el(article, "pre", "call");
-        renderExecution(content, "ℹ", template, script, frame.input, null);
-        hookActivity = article;
-        place(article);
-      }
-      if (working) showIndicator();
-      return;
-    }
-    case "_tool_activity":
-      if (
-        typeof frame.call_id !== "string" ||
-        !frame.call_id ||
-        typeof frame.name !== "string" ||
-        !frame.name ||
-        !frame.input ||
-        typeof frame.input !== "object" ||
-        Array.isArray(frame.input) ||
-        Object.keys(frame).sort().join(",") !== "call_id,input,name,type"
-      ) {
-        throw new Error("invalid tool activity");
-      }
-      return renderToolCall({ ...frame, id: frame.call_id });
+    case "_draft":
+      return renderDraft(frame);
     case "_tool_permission_request":
       return askPermission(frame);
     case "_handoff": {
@@ -680,7 +526,7 @@ function apply(frame) {
       );
     }
     case "_session_update":
-      return applyRuntime(frame.runtime);
+      return applyProfile(frame.profile);
     default:
       throw new Error("unexpected frame: " + frame.type);
   }
@@ -736,82 +582,29 @@ function renderMessage(frame) {
     }
   }
   if (frame.usage) showUsage(frame.usage);
-  // A response whose only output was calls has nothing of its own to draw.
-  if (parts.length) place(article);
+  if (article.children.length) place(article);
   if (working) showIndicator();
 }
 
-// A call is recorded when it reaches execution, so it draws its own record
-// inside the agent section its assistant message opened.
-function renderToolCall(frame) {
+function renderResult(frame) {
+  clearDraft(frame);
+  const text = frame.user_text || (frame.model_text ? frame.name : "");
+  if (!text) return;
   hideIndicator();
   section("agent");
   const article = record("assistant", null);
-  const call = el(article, "pre", "call");
-  const templates = toolTemplates(frame.name);
-  call.frame = frame;
-  call.templates = templates;
-  restoreToolView(call);
-  calls.set(frame.id, call);
+  el(article, "pre", "call", "⛭ " + safe(text));
   place(article);
   if (working) showIndicator();
 }
 
-// A result belongs to the call it names.
-function renderResult(frame) {
-  if (!calls.has(frame.call_id)) {
-    renderToolCall({ ...frame, id: frame.call_id });
-  }
-  const call = calls.get(frame.call_id);
-  hideIndicator();
-  calls.delete(frame.call_id);
-  settledCalls.add(frame.call_id);
-  const templates = toolTemplates(frame.name);
-  renderExecution(call, "⛭", templates.render.user_after, frame.name,
-    toolInput(frame.input), frame);
-  place(call);
-  if (working) showIndicator();
-}
-
-// A silent script records no result, so a pending label may belong to an
-// earlier one. Either way it is transient and gives way to this result.
 function renderHookResult(frame) {
+  clearDraft(frame);
+  const text = frame.user_text || (frame.model_text ? frame.lifecycle : "");
+  if (!text) return;
   hideIndicator();
-  clearHookActivity();
-  const templates = hookTemplates(frame.hook, frame.script);
-  const script = scriptIdentity(frame.script);
-  const text = renderScript(
-    templates.user_after,
-    script,
-    frame.input,
-    frame,
-  );
-  const call = calls.get(frame.tool_use_id);
-  if (call) {
-    if (text) {
-      renderExecution(call, "⛭", templates.user_after, script,
-        frame.input, frame);
-    } else restoreToolView(call);
-    if (working) showIndicator();
-    return;
-  }
-  if (frame.tool_use_id && !settledCalls.has(frame.tool_use_id)) {
-    if (working) showIndicator();
-    return;
-  }
-  if (!text) {
-    if (working) showIndicator();
-    return;
-  }
-  // The sigil marks whether the hook fed the model, not what is shown below it.
-  const sigil = renderScript(templates.model_after, script, frame.input, frame)
-    ? "↪"
-    : "ℹ";
   const article = record("note", null);
-  const content = el(article, "pre", "call");
-  renderExecution(
-    content, sigil, templates.user_after, script, frame.input, frame,
-  );
+  el(article, "pre", "call", (frame.model_text ? "↪ " : "ℹ ") + safe(text));
   place(article);
   if (working) showIndicator();
 }
@@ -822,7 +615,7 @@ function applyState(frame) {
     showIndicator();
   } else {
     hideIndicator();
-    clearHookActivity();
+    clearDrafts();
     clearPermission();
   }
   if (frame.error) {
@@ -877,13 +670,7 @@ function askPermission(frame) {
     "permission",
     "Run " + safe(tool.name) + " outside of sandbox?",
   );
-  const templates = toolTemplates(tool.name);
-  el(article, "pre", "input", safe(renderScript(
-    templates.permission_preview,
-    tool.name,
-    toolInput(tool.input),
-    null,
-  )));
+  el(article, "pre", "input", safe(frame.preview));
   if (frame.reason) el(article, "pre", "reason", "Reason: " + safe(frame.reason));
   const actions = el(article, "div", "actions");
   for (const decision of ["approve", "deny"]) {
@@ -1004,9 +791,7 @@ function reload(from) {
 
 function reset() {
   output.replaceChildren();
-  calls.clear();
-  settledCalls.clear();
-  hookActivity = null;
+  drafts.clear();
   indicator = null;
   lastRole = null;
   sectionId = 0;

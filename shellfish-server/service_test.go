@@ -22,7 +22,7 @@ const userRecord = `{"type":"user","content":[{"type":"text","text":"go"}]}`
 const assistantRecord = `{"type":"assistant","stop":"end","content":[{"type":"text","text":"done"}]}`
 const toolAssistantRecord = `{"type":"assistant","stop":"tool_calls","content":[]}`
 const errorRecord = `{"type":"error","user_text":"backend failed"}`
-const hookActivity = `{"type":"_hook_activity","hook":"user_prompt_submit","script":"/hooks/check/run","input":"go"}`
+const hookDraft = `{"type":"_draft","lifecycle":"user_prompt_submit","id":"1","user_text":"Checking"}`
 const stateRecord = `{"type":"state","name":"agents/a1b2c3","value":{"session":".agent-a1b2c3.jsonl"}}`
 
 func workDir(t *testing.T) string {
@@ -43,9 +43,7 @@ func headerLine(t *testing.T) string {
 	t.Helper()
 	record, err := json.Marshal(map[string]any{
 		"type": "session", "format_version": 1, "cwd": workDir(t),
-		"runtime": map[string]any{"harness": map[string]any{
-			"sandbox": false, "tools": []any{},
-		}},
+		"profile": map[string]any{"sandbox": false, "tools": []string{}},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -234,9 +232,7 @@ func TestPublicAssets(t *testing.T) {
 func TestNewChecksSessionHeader(t *testing.T) {
 	record, err := json.Marshal(map[string]any{
 		"type": "session", "format_version": 1, "cwd": "~/project",
-		"runtime": map[string]any{"harness": map[string]any{
-			"sandbox": false, "tools": []any{},
-		}},
+		"profile": map[string]any{"sandbox": false, "tools": []string{}},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -262,17 +258,17 @@ func TestNewChecksSessionHeader(t *testing.T) {
 		t.Fatal(err)
 	}
 	open(invalid, "unsupported format")
-	missingRuntime := filepath.Join(t.TempDir(), "missing-runtime.jsonl")
+	missingProfile := filepath.Join(t.TempDir(), "missing-profile.jsonl")
 	missingRecord, err := json.Marshal(map[string]any{
 		"type": "session", "format_version": 1, "cwd": workDir(t),
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(missingRuntime, append(missingRecord, '\n'), 0o600); err != nil {
+	if err := os.WriteFile(missingProfile, append(missingRecord, '\n'), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	open(missingRuntime, "missing runtime fields")
+	open(missingProfile, "missing profile fields")
 	open(filepath.Join(t.TempDir(), "missing.jsonl"), "read session")
 }
 
@@ -544,14 +540,14 @@ func TestActivityAfterRecoveredErrorReportsChildDiagnostics(t *testing.T) {
 	sessionPath := newSession(t, userRecord+"\n"+toolAssistantRecord+"\n")
 	base := newTestServer(t, sessionPath, "IFS= read -r input\n"+
 		`printf '%s\n' '`+errorRecord+`' >>'`+sessionPath+`'`+"\n"+
-		`printf '%s\n' '`+errorRecord+`' '`+hookActivity+`'`+"\nexit 1\n")
+		`printf '%s\n' '`+errorRecord+`' '`+hookDraft+`'`+"\nexit 1\n")
 	session := openStream(t, base, http.StatusOK)
 	session.expectRaw(t, strings.TrimSuffix(headerLine(t), "\n"))
 	session.expectJSON(t, userRecord, toolAssistantRecord,
 		`{"type":"_session_status","working":false}`)
 	post(t, base+"/turn", userRecord, http.StatusAccepted)
 	session.expectJSON(t, `{"type":"_session_status","working":true}`, errorRecord,
-		hookActivity)
+		hookDraft)
 	if frame := session.next(t); !strings.Contains(frame, "turn process failed") {
 		t.Fatalf("frame = %s, want process failure", frame)
 	}
