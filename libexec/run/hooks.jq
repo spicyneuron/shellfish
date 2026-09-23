@@ -1,36 +1,32 @@
 include "lib/session";
 
-def hook_outcome($exit_code; $stdout; $stderr; $controls; $over_capture):
-  ($controls | if length == 0 then {}
-   elif length == 1 and (.[0] | type == "object") then .[0]
-   else null end) as $control |
-  ($control != null and $over_capture == 0 and
-   ($control | if has("state") then
-      .state | type == "array" and all(.[];
-        type == "object" and keys == ["name","value"] and
-        ({type:"state"} + . | canonical_state))
-    else true end)) as $valid |
-  {output:{stdout:$stdout,stderr:$stderr,exit_code:$exit_code},
-   states:(if $valid then [$control.state[]? | {type:"state"} + .] else [] end),
-   control:(if $valid then ($control | del(.state)) else {} end)} +
-  (if $valid then {} else {control_invalid:true} end);
+# One fd 3 line: optional state and at most one action valid for the lifecycle.
+def hook_action($lifecycle):
+  ({user_prompt_submit:["block","handoff","session_update"],
+    permission_request:["allow","deny"], pre_tool_use:["deny"],
+    stop:["continue"]}[$lifecycle] // []) as $actions |
+  (.action | IN($actions[])) and
+  if .action == "handoff" then keys == ["action","argv"] and
+    (.argv | type == "array" and length > 0 and all(.[]; type == "string"))
+  elif .action == "session_update" then keys == ["action","runtime"] and
+    (.runtime | type == "object")
+  elif .action == "deny" then keys == ["action"] or
+    (keys == ["action","reason"] and (.reason | type == "string"))
+  else keys == ["action"] end;
 
-# Any non-empty result reaches the caller as one generic diagnostic.
-def hook_control_error($lifecycle):
-  . as $outcome | .control as $control |
-  if has("control_invalid") then "invalid"
-  elif $lifecycle == "user_prompt_submit" then
-    if $outcome.output.exit_code == 11 then
-      if ($control == {} or
-          ($control.action == "handoff" and ($control | keys) == ["action","argv"] and
-           ($control.argv | type == "array" and length > 0 and all(.[]; type == "string"))) or
-          ($control.action == "session_update" and ($control | keys) == ["action","runtime"] and
-           ($control.runtime | type == "object"))) then "" else "invalid" end
-    elif $control == {} then "" else "invalid" end
-  elif $lifecycle == "permission_request" and $outcome.output.exit_code == 11 then
-    if ($control.action == "allow" and ($control | keys) == ["action"]) or
-        ($control.action == "deny" and
-          (($control | keys) == ["action"] or
-           (($control | keys) == ["action","reason"] and ($control.reason | type == "string"))))
-    then "" else "invalid" end
-  elif $control == {} then "" else "invalid" end;
+def hook_line($lifecycle):
+  type == "object" and
+  ((has("state") | not) or (.state | type == "array" and all(.[];
+    type == "object" and keys == ["name","value"] and
+    ({type:"state"} + . | canonical_state)))) and
+  (del(.state) | . == {} or hook_action($lifecycle));
+
+# States from every line merge and the last action wins. Any invalid line or
+# overflow voids the control.
+def hook_outcome($lifecycle; $exit_code; $stdout; $stderr; $lines; $over_capture):
+  ($over_capture == 0 and all($lines[]; hook_line($lifecycle))) as $valid |
+  {output:{stdout:$stdout,stderr:$stderr,exit_code:$exit_code},
+   valid:$valid,
+   states:(if $valid then [$lines[].state[]? | {type:"state"} + .] else [] end),
+   control:(if $valid then [$lines[] | del(.state) | select(. != {})] | last // {}
+     else {} end)};

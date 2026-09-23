@@ -24,7 +24,7 @@ permission_deny() {
     end)
   ') || exit 1
   print -rn -u3 -- "$control" || exit 1
-  exit 11
+  exit 0
 }
 
 permission_resolve() {
@@ -40,7 +40,7 @@ permission_resolve() {
     (if $decision == "deny" then {reason:$classification.reason} else {} end)
   ') || exit 1
   print -rn -u3 -- "$control" || exit 1
-  exit 11
+  exit 0
 }
 
 [[ -r $SHELLFISH_SESSION && -d $SHELLFISH_TURN_STATE ]] ||

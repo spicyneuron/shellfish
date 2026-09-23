@@ -270,7 +270,7 @@ sf_run_turn() {
           fi
           ;;
       esac
-      if [[ -z $failure && $hook_result[decision] == handled ]]; then
+      if [[ -z $failure && $hook_result[action] == block ]]; then
         return 0
       fi
     fi
@@ -336,7 +336,7 @@ sf_run_turn() {
           break
         }
         hook_result=( "${reply[@]}" )
-        if [[ $hook_result[decision] != continue ]]; then
+        if [[ $hook_result[action] != continue ]]; then
           SF_RUN[answer]=$stop_text
           SF_RUN[assistant]=$assistant
           break
@@ -360,8 +360,8 @@ sf_run_turn() {
           sf_run_hooks "$session" pre_tool_use "$SF_TOOL_PLAN[request]" \
             "$turn_state" "$name" "$id" || { failure=$SF_RUN_HOOK_ERROR; break; }
           hook_result=( "${reply[@]}" )
-          if [[ $hook_result[decision] == deny ]]; then
-            sf_run_tool_refused 'tool call denied by pre_tool_use hook' 126
+          if [[ $hook_result[action] == deny ]]; then
+            sf_run_tool_refused "${hook_result[reason]:-tool call denied by pre_tool_use hook}" 126
             outcome=$REPLY
           elif [[ -z $SF_TOOL_PLAN[executable] ]]; then
             sf_run_tool_refused "tool is not allowed: $name" 127
@@ -377,9 +377,9 @@ sf_run_turn() {
               sf_run_hooks "$session" permission_request "$SF_TOOL_PLAN[request]" \
                 "$turn_state" "$name" "$id" || { failure=$SF_RUN_HOOK_ERROR; break; }
               hook_result=( "${reply[@]}" )
-              decision=$hook_result[decision]
+              decision=$hook_result[action]
               reason=${hook_result[reason]:-sandbox bypass denied}
-              if [[ $decision == proceed ]]; then
+              if [[ -z $decision ]]; then
                 sf_run_permission_client "$name" "$SF_TOOL_PLAN[input]" \
                   "$SF_TOOL_PLAN[permission_reason]" "$SF_TOOL_PLAN[permission_preview]"
                 run_status=$?

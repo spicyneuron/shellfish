@@ -172,7 +172,6 @@ cat >"$handoff_script/run" <<'ZSH'
 #!/usr/bin/env zsh
 (( $# == 0 )) || exit 1
 print -rn -u3 -- '{"action":"handoff","argv":["/usr/bin/printf","next.jsonl"]}'
-exit 11
 ZSH
 chmod +x "$handoff_script/run"
 typeset handoff_output="$tmp/handoff.jsonl"

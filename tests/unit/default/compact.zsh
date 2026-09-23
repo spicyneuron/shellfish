@@ -58,12 +58,13 @@ mv "$tmp/compact-above.jsonl" "$compact_source"
 typeset compact_before=$(shasum <"$compact_source")
 SHELLFISH_SESSION="$compact_source" zsh -f "$compact_match" user_prompt_submit \
   < <(print -n -- 'my next prompt') || fail 'threshold did not select compaction'
+compact_status=0
 SF_TEST_BACKEND_REQUEST="$compact_request" \
   SHELLFISH_EXECUTABLE="$compact_shellfish" SHELLFISH_SESSION="$compact_source" \
   SHELLFISH_TURN_STATE="$tmp" zsh -f "$compact_hook" user_prompt_submit \
   3>"$compact_control" 2>"$compact_display" \
   < <(print -n -- 'my next prompt') || compact_status=$?
-(( compact_status == 11 ))
+(( compact_status == 0 ))
 [[ ! -s $compact_display ]] || fail 'compaction wrote unexpected display output'
 jq -e --arg command "$compact_shellfish" \
   --arg child "$tmp/compact-source_compact.jsonl" '
@@ -111,7 +112,7 @@ SHELLFISH_EXECUTABLE="$compact_shellfish" SHELLFISH_SESSION="$cancelled_source" 
   SHELLFISH_TURN_STATE="$tmp" zsh -f "$compact_hook" user_prompt_submit \
   3>"$compact_control" 2>"$compact_display" \
   < <(print -n -- /compact) || compact_status=$?
-(( compact_status == 11 )) || fail 'a cancelled turn did not compact explicitly'
+(( compact_status == 0 )) || fail 'a cancelled turn did not compact explicitly'
 [[ ! -s $compact_display ]] || fail 'compacting a cancelled turn wrote display output'
 assert_canonical_session "$tmp/cancelled-source_compact.jsonl"
 
@@ -134,7 +135,9 @@ for incomplete in empty user-only assistant-only; do
   SHELLFISH_EXECUTABLE="$compact_shellfish" SHELLFISH_SESSION="$incomplete_source" \
     SHELLFISH_TURN_STATE="$tmp" zsh -f "$compact_hook" user_prompt_submit \
     3>"$compact_control" < <(print -n -- /compact) 2>/dev/null || compact_status=$?
-  (( compact_status == 10 )) || fail "compaction accepted $incomplete session"
+  (( compact_status == 0 )) &&
+    [[ $(<"$compact_control") == '{"action":"block"}' ]] ||
+    fail "compaction accepted $incomplete session"
 done
 
 : >"$compact_control"
@@ -151,7 +154,7 @@ SHELLFISH_EXECUTABLE="$compact_shellfish" \
   SHELLFISH_SESSION="$compact_source" \
   SHELLFISH_TURN_STATE="$tmp" zsh -f "$compact_hook" user_prompt_submit \
   3>"$compact_control" < <(print -n -- /compact) || compact_status=$?
-(( compact_status == 11 ))
+(( compact_status == 0 ))
 assert_equal \
   "$(jq -cn --arg command "$compact_shellfish" \
     --arg child "$tmp/compact-source_compact_1.jsonl" \
@@ -172,8 +175,9 @@ SF_TEST_COMPACT_FAIL=1 SHELLFISH_EXECUTABLE="$compact_shellfish" \
   SHELLFISH_SESSION="$compact_source" \
   SHELLFISH_TURN_STATE="$tmp" zsh -f "$compact_hook" user_prompt_submit \
   3>"$compact_control" < <(print -n -- /compact) 2>/dev/null || compact_status=$?
-(( compact_status == 10 )) || fail 'explicit summary failure was not handled'
-[[ ! -s $compact_control ]] || fail 'explicit summary failure requested a handoff'
+(( compact_status == 0 )) &&
+  [[ $(<"$compact_control") == '{"action":"block"}' ]] ||
+  fail 'explicit summary failure was not handled'
 # Preserve ordered state history.
 typeset state_source="$tmp/state-source.jsonl"
 head -n 1 "$compact_source" >"$state_source"
@@ -190,7 +194,7 @@ compact_status=0
 SHELLFISH_EXECUTABLE="$compact_shellfish" SHELLFISH_SESSION="$state_source" \
   SHELLFISH_TURN_STATE="$tmp" zsh -f "$compact_hook" user_prompt_submit \
   3>"$compact_control" < <(print -n -- /compact) 2>/dev/null || compact_status=$?
-(( compact_status == 11 ))
+(( compact_status == 0 ))
 assert_canonical_session "$tmp/state-source_compact.jsonl"
 jq -e -s '
   [.[].type] == ["session","hook_result","state","state","state","hook_result"] and

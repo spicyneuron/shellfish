@@ -129,12 +129,8 @@ def session_state:
           error("repeated hook id: " + $record.id)
         else
           .hooks += [$record.id] |
-          (if ($record.model_text // "") == "" then .
-           else .context |= add_hook_context($record) end) |
-          # Failing stop feedback continues the turn with another request.
-          if $record.lifecycle == "stop" and $record.exit_code != 0 and
-              ($record.model_text // "") != "" and .next == "user"
-          then .next = "assistant" else . end
+          if ($record.model_text // "") == "" then .
+          else .context |= add_hook_context($record) end
         end
       elif ($record | canonical_error) then
         .next = "user" | .calls = [] | .response = null
@@ -143,7 +139,9 @@ def session_state:
         .messages += [context_message(.context; $record.content[0].text)] |
         .context = [] | .next = "assistant"
       elif ($record | canonical_response) then
-        if .next != "assistant" then error("response outside a turn") else . end |
+        # Stop feedback may continue the turn with another request.
+        if .next == "assistant" or any(.context[]; .lifecycle? == "stop") then .
+        else error("response outside a turn") end |
         (if (.context | length) == 0 then .
          else .messages += [context_message(.context; "")] | .context = [] end) |
         ($record | response_calls) as $calls |

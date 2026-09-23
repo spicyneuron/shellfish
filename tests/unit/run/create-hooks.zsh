@@ -70,32 +70,40 @@ jq -eRn --arg executable "${hook:A}/run" '
   fail 'silent session_start activity did not clear'
 assert_canonical_session "$session"
 
-# Skip and halt statuses are unsupported for session_start and preserve the
-# published session with its completed failed hook result.
-for unsupported in 10 11; do
+# An action or a nonzero exit fails session_start and preserves the published
+# session with its completed hook result.
+typeset -A unsupported_cases=(
+  action "print -r -u3 -- '{\"action\":\"block\"}'"
+  status 'exit 3'
+)
+typeset -A unsupported_errors=(
+  action 'invalid control'
+  status 'failed with status 3*unsupported display'
+)
+for unsupported in action status; do
   cat >"$hook/run" <<ZSH
 #!/usr/bin/env zsh
 cat >/dev/null
 print -rn -- 'unsupported model'
 print -rn -u2 -- 'unsupported display'
-exit $unsupported
+$unsupported_cases[$unsupported]
 ZSH
   chmod +x "$hook/run"
   session="$tmp/unsupported-$unsupported.jsonl"
   integer create_status=0
   zsh -f "$entry" run --jsonl --session-create --session-out "$session" \
     >"$stream" 2>"$tmp/unsupported.stderr" || create_status=$?
-  (( create_status == 1 )) || fail "session_start accepted status $unsupported"
+  (( create_status == 1 )) || fail "session_start accepted $unsupported"
   [[ -f $session ]] || fail 'failed session_start removed the transcript it wrote'
   jq -eRn --arg session "$session" '
     [inputs | fromjson] as $events |
     [$events[].type] == ["_session_load","session","_hook_activity","hook_result"] and
     $events[0] == {type:"_session_load",path:$session}
   ' <"$stream" >/dev/null || fail 'failed creation lost its ordered durable stream'
-  jq -e -s '.[-1].type == "hook_result" and .[-1].exit_code != 0' \
+  jq -e -s '.[-1].type == "hook_result"' \
     "$session" >/dev/null || fail 'failed startup result was not durable'
-  [[ $(<"$tmp/unsupported.stderr") == *'unsupported status'*'unsupported display'* ]] ||
-    fail 'unsupported startup status lost its diagnostic'
+  [[ $(<"$tmp/unsupported.stderr") == *${~unsupported_errors[$unsupported]}* ]] ||
+    fail "session_start $unsupported lost its diagnostic"
 done
 
 print -r -- ok

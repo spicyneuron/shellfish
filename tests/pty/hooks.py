@@ -21,7 +21,6 @@ read_status=$?
 jq -cn --arg path "${SHELLFISH_SESSION:h}/switched.jsonl" \
   --arg executable "$SHELLFISH_EXECUTABLE" \
   '{action:"handoff",argv:[$executable,"--session-out",$path]}' >&3
-exit 11
 """
 
 SLOW_HOOK = r"""#!/usr/bin/env zsh
@@ -40,7 +39,7 @@ integer line
 for (( line = 1; line <= 24; line++ )); do
   print -u2 -- "display line $line"
 done
-exit 10
+print -r -u3 -- '{"action":"block"}'
 """
 
 START_HOOK = r"""#!/usr/bin/env zsh
@@ -199,13 +198,8 @@ def test_prompt_hook_hands_off_to_another_session():
             json.loads(line)
             for line in session.explicit_session.read_text().splitlines()
         ]
-        # The silent redirect leaves the original session at its header, plus
-        # the settled decision that redirected it.
-        assert [record["type"] for record in original] == [
-            "session",
-            "hook_result",
-        ], original
-        assert "user_text" not in original[1] and "model_text" not in original[1]
+        # The silent redirect leaves the original session at its header.
+        assert [record["type"] for record in original] == ["session"], original
     finally:
         session.close()
 

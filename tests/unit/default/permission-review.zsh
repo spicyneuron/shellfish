@@ -57,7 +57,7 @@ run_review() {
 }
 
 run_review valid
-(( hook_status == 11 )) || fail 'permission review did not resolve the request'
+(( hook_status == 0 )) || fail 'permission review did not resolve the request'
 jq -e . "$control" >/dev/null || { cat "$control" >&2; fail 'permission review returned invalid control'; }
 jq -e '
   .action == "allow" and (has("reason") | not) and
@@ -92,14 +92,14 @@ jq -e -s --arg tool_input "$(jq -c '.tool_input' <<<"$request")" \
 assert_canonical_session "$captured"
 
 run_review failure
-(( hook_status == 11 )) || fail 'provider failure did not fail closed'
+(( hook_status == 0 )) || fail 'provider failure did not fail closed'
 jq -e '.action == "deny" and
   .reason == "Permission review provider request failed." and
   .state[0].value == {content:null,reason:"Permission review provider request failed."}
 ' "$control" >/dev/null || fail 'provider failure returned the wrong denial'
 
 run_review '{"risk":"high","authorization":"unknown","reason":"Not authorized."}'
-(( hook_status == 11 )) || fail 'unknown authorization did not resolve'
+(( hook_status == 0 )) || fail 'unknown authorization did not resolve'
 jq -e '.action == "deny" and .reason == "Not authorized." and
   (.state[0].value.content | fromjson).authorization == "unknown"
 ' "$control" >/dev/null || fail 'unknown authorization was not denied'

@@ -57,7 +57,7 @@ Hook defaults expose stderr to the user and stdout to the model. Tool defaults s
 
 ### Durable state
 
-Hooks and tools may write one JSON object, on one line, to fd 3:
+Hooks and tools may write JSON objects to fd 3, one per line (tools at most one):
 
 ```json
 {"state":[{"name":"example/status","value":{"ready":true}}]}
@@ -143,29 +143,20 @@ A hook manifest may configure rendering. Only `user_prompt_submit` supports sele
 
 `match` is a jq-compatible regular expression. An executable named `match` beside `run` replaces it: the script receives the normal hook context, must write nothing, and selects on exit 0, skips on 1, and fails otherwise. Selection preserves configured order.
 
-stdout, stderr, and fd 3 are bounded together. fd 3 must contain exactly one object when used. State and rendered hook output become durable in that order before the next component runs. A silent exit 0 creates no result record.
+stdout, stderr, and fd 3 are bounded together. State and rendered hook output become durable in that order before the next component runs. A silent exit 0 creates no result record. Any nonzero exit fails the operation, with stderr in the diagnostic.
 
-| Exit | Default action | Remaining chain |
-| ---: | --- | --- |
-| `0` | Perform | Run |
-| `10` | Skip | Run |
-| `11` | Skip | Halt |
-| Other | Fail the operation | Halt |
-
-Skipping is sticky: a later exit 0 does not restore the lifecycle's default action.
+A hook changes the lifecycle's outcome by writing an `action` line to fd 3. The last action wins, applies only after exit 0, and halts the remaining chain. Without an action, the lifecycle proceeds.
 
 ### Lifecycle reference
 
-| Hook | argv | stdin | Exit 10 | Exit 11 / control |
+| Hook | argv | stdin | Actions | No action |
 | --- | --- | --- | --- | --- |
-| `session_start` | — | Empty | Unsupported | Unsupported |
-| `user_prompt_submit` | — | Exact prompt | Block; continue chain | Block; halt; optional handoff or session update |
-| `permission_request` | `NAME ID` | Tool request | Deny; continue chain | Halt; required `allow` or `deny` decision |
-| `pre_tool_use` | `NAME ID` | Tool request | Deny; continue chain | Deny; halt |
-| `post_tool_use` | `NAME ID` | Tool response | Unsupported | Unsupported |
-| `stop` | `ATTEMPT` | Final assistant text | Add feedback; continue inference and chain | Add feedback; continue inference; halt chain |
-
-Exit 0 performs the named default: finish creation, submit the prompt, defer permission to a client, execute the tool, accept the tool result, or finish the turn. Without a capable client, deferred permission is denied.
+| `session_start` | — | Empty | None | Finish creation |
+| `user_prompt_submit` | — | Exact prompt | `block`, `handoff`, `session_update` | Submit the prompt |
+| `permission_request` | `NAME ID` | Tool request | `allow`, `deny` | Defer to a capable client, otherwise deny |
+| `pre_tool_use` | `NAME ID` | Tool request | `deny` | Execute the tool |
+| `post_tool_use` | `NAME ID` | Tool response | None | Accept the result |
+| `stop` | `ATTEMPT` | Final assistant text | `continue` | Finish the turn |
 
 Tool hooks receive canonical envelopes:
 
@@ -179,15 +170,18 @@ Tool hooks receive canonical envelopes:
 {"tool_response":{"stdout":"","stderr":"","exit_code":0}}
 ```
 
-Every hook accepts `state` on fd 3. Hook-specific exit-11 controls are:
+Every hook accepts `state` on fd 3. Actions take these shapes:
 
 ```json
+{"action":"block"}
 {"action":"handoff","argv":["command","arg"]}
+{"action":"session_update","runtime":RUNTIME}
 {"action":"allow"}
 {"action":"deny","reason":"optional feedback"}
+{"action":"continue"}
 ```
 
-A handoff asks a capable client to run the complete `argv` after a clean turn exit. A session update has the shape `{"action":"session_update","runtime":RUNTIME}`, where `RUNTIME` is one complete valid runtime; Shellfish atomically replaces the header. `pre_tool_use` and `post_tool_use` cannot rewrite tool input or results. `permission_request` may only allow or deny a supported sandbox bypass.
+A block ends the turn without submitting the prompt. A handoff asks a capable client to run the complete `argv` after a clean turn exit. A session update's `RUNTIME` is one complete valid runtime; Shellfish atomically replaces the header. A `pre_tool_use` deny reason becomes the refused tool result. A `stop` continue sends the hook's model output back as feedback and continues inference. `pre_tool_use` and `post_tool_use` cannot rewrite tool input or results. `permission_request` may only allow or deny a supported sandbox bypass.
 
 ## Backend adapters
 

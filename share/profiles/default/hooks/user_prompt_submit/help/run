@@ -12,6 +12,8 @@ case "$read_status:$submitted" in
   *) exit 0 ;;
 esac
 
+print -ru3 -- '{"action":"block"}'
+
 IFS= read -r header <"$SHELLFISH_SESSION" || exit 1
 
 {
@@ -37,4 +39,4 @@ IFS= read -r header <"$SHELLFISH_SESSION" || exit 1
       for (i=1;i<=NR;i++) { l=chars(key[i]); if (l>max) max=l }
       for (i=1;i<=NR;i++) printf "%s%*s  %s\n", key[i], max-chars(key[i]), "", desc[i]
     }' >&2
-exit 11
+exit 0

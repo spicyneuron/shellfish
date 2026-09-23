@@ -23,11 +23,14 @@ case "$read_status:$submitted" in
       (if .runtime.harness.sandbox_write_paths | length == 0 then "  (none)"
        else .runtime.harness.sandbox_write_paths[] | "  " + . end)
     ' <<<"$header" >&2 || exit 1
-    exit 10
+    print -ru3 -- '{"action":"block"}'
+    exit 0
     ;;
   1:'/sandbox '*) body=${submitted#'/sandbox '} ;;
   *) exit 0 ;;
 esac
+
+print -ru3 -- '{"action":"block"}'
 
 body=${body##[[:space:]]#}
 body=${body%%[[:space:]]#}
@@ -42,18 +45,18 @@ case $operation in
   -write|-w) action=remove; access=write ;;
   *)
     print -u2 -r -- "$usage"
-    exit 10
+    exit 0
     ;;
 esac
 [[ -n $candidate ]] || {
   print -u2 -r -- "$usage"
-  exit 10
+  exit 0
 }
 
 IFS= read -r header <"$SHELLFISH_SESSION" || exit 1
 jq -e '.runtime.harness.sandbox == true' <<<"$header" >/dev/null || {
   print -u2 -r -- 'session sandbox is disabled'
-  exit 10
+  exit 0
 }
 field="sandbox_${access}_paths"
 grants=$(jq -ce --arg field "$field" '.runtime.harness[$field] | select(type == "array")' \
@@ -62,7 +65,7 @@ grants=$(jq -ce --arg field "$field" '.runtime.harness[$field] | select(type == 
 if [[ $candidate == '~' || $candidate == '~/'* ]]; then
   [[ -n ${HOME-} ]] || {
     print -u2 -r -- 'cannot expand ~ without HOME'
-    exit 10
+    exit 0
   }
   candidate=${candidate/#\~/${HOME:A}}
 elif [[ $candidate != /* ]]; then
@@ -72,7 +75,7 @@ fi
 grant_path=${candidate:A}
 if [[ $action == add && ! -d $grant_path ]]; then
   print -u2 -r -- "sandbox directory does not exist: $candidate"
-  exit 10
+  exit 0
 fi
 
 while IFS= read -r -d '' grant; do
@@ -89,11 +92,11 @@ done < <(jq -jr '.[] | ., "\u0000"' <<<"$grants")
 if [[ -n $matched ]]; then
   if [[ $action == add ]]; then
     print -u2 -r -- "sandbox $access grant already exists: $grant_path"
-    exit 10
+    exit 0
   fi
 elif [[ $action == remove ]]; then
   print -u2 -r -- "sandbox $access grant is not set: $grant_path"
-  exit 10
+  exit 0
 fi
 
 updated=$(jq -c --arg action "$action" --arg path "$grant_path" --arg matched "$matched" '
@@ -110,4 +113,4 @@ print -r -- "$message"
 
 jq -cn --argjson runtime "$runtime" \
   '{action:"session_update",runtime:$runtime}' >&3 || exit 1
-exit 11
+exit 0

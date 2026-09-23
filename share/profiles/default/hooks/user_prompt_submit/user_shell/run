@@ -13,11 +13,13 @@ case "$read_status:$submitted" in
   *) exit 0 ;;
 esac
 
+print -ru3 -- '{"action":"block"}'
+
 command=${submitted#\!}
 command=${command##[[:space:]]#}
 if [[ -z $command ]]; then
   print -u2 -r -- 'usage: !COMMAND'
-  exit 10
+  exit 0
 fi
 
 print -r -- '$ '"$command"
@@ -27,4 +29,4 @@ unset SHELLFISH_CONFIG_DIR
 command zsh -f -c "$command" </dev/null 2>&1 3>&-
 command_status=$?
 (( ! command_status )) || print -r -- $'\n(exit '"$command_status"')'
-exit 10
+exit 0

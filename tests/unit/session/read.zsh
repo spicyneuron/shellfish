@@ -120,14 +120,17 @@ print -r -- '[
     "<hook name=\"stop\">\n<context script=\"observe\">\nNOTE\n</context>\n</hook>"
 ' >/dev/null || fail 'unconsumed context did not reach the request'
 
-# Stop feedback continues the turn with a request that consumes its context.
+# A response may follow stop feedback, which reaches it as context.
 print -r -- '[
   {"type":"user","content":[{"type":"text","text":"go"}]},
   {"type":"assistant","stop":"end","content":[]},
-  {"type":"hook_result","lifecycle":"stop","id":"1","name":"observe","input":"","exit_code":2,"model_text":"KEEP GOING"}
-]' | run | jq -e '. == {next:"assistant",calls:[],context:[
-  "<hook name=\"stop\">\n<context script=\"observe\">\nKEEP GOING\n</context>\n</hook>"]}' >/dev/null ||
-  fail 'stop feedback did not continue the turn'
+  {"type":"hook_result","lifecycle":"stop","id":"1","name":"observe","input":"","exit_code":0,"model_text":"KEEP GOING"},
+  {"type":"assistant","stop":"end","content":[]}
+]' | messages | jq -e '
+  [.[].type] == ["user","assistant","user","assistant"] and
+  .[2].content[0].text ==
+    "<hook name=\"stop\">\n<context script=\"observe\">\nKEEP GOING\n</context>\n</hook>"
+' >/dev/null || fail 'stop feedback did not continue the turn'
 
 # Invalid input fails instead of returning partial state.
 typeset -a invalid=(

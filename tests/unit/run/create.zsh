@@ -85,7 +85,7 @@ typeset failed="$tmp/failed.jsonl" hook_error="$tmp/hook-error"
 zsh -f "$entry" run --session-create --session-out "$failed" \
   -p hook >/dev/null 2>"$hook_error" &&
   fail 'a failing session_start script created a session'
-[[ $(<"$hook_error") == *"hook script failed with status 9: ${hook:A}/run: startup detail"* ]] ||
+[[ $(<"$hook_error") == *"session_start hook failed with status 9: ${hook:A}/run: startup detail"* ]] ||
   fail 'create hid the session_start failure'
 [[ -f $failed ]] || fail 'create removed the failed startup transcript'
 jq -se 'map(.type) == ["session","system","hook_result"] and .[-1].exit_code == 9' \
@@ -220,7 +220,7 @@ failed="$tmp/later-failed.jsonl"
 SF_TEST_EVENTS="$events" zsh -f "$entry" run --jsonl --session-create \
   --session-out "$failed" -p stream >"$events" 2>"$hook_error" &&
   fail 'a later startup failure succeeded'
-[[ -f $failed && $(<"$hook_error") == *'hook script failed with status 9:'* ]] ||
+[[ -f $failed && $(<"$hook_error") == *'session_start hook failed with status 9:'* ]] ||
   fail 'failed startup did not retain its session and diagnostic'
 jq -se '
   map(.type) == ["_session_load","session","system","_hook_activity","state",

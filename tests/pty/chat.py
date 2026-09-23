@@ -23,7 +23,7 @@ ECHO_HOOK = r"""#!/usr/bin/env zsh
 (( $# == 0 )) || exit 1
 cat >"${SHELLFISH_SESSION:h}/submitted"
 print -u2 accepted
-exit 10
+print -r -u3 -- '{"action":"block"}'
 """
 
 HOLD_PERMISSION_HOOK = r"""#!/usr/bin/env zsh
@@ -62,7 +62,7 @@ def test_sandbox_updates_without_reload():
                 "input": f"/sandbox +w {grant}",
                 "user_text": f"sandbox\n{granted}",
                 "model_text": granted,
-                "exit_code": 11,
+                "exit_code": 0,
             }
         finally:
             session.close()

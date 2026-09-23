@@ -22,12 +22,20 @@ case $(<"$PROMPT_INPUT") in
   block)
     print -rn -- 'blocked context'
     print -rn -u2 -- 'blocked display'
-    exit 10
+    print -r -u3 -- '{"action":"block"}'
+    ;;
+  last)
+    print -r -u3 -- '{"action":"block"}'
+    print -r -u3 -- '{"action":"handoff","argv":["/usr/bin/printf","last.jsonl"]}'
+    ;;
+  fail)
+    print -r -u3 -- '{"action":"block"}'
+    print -rn -u2 -- 'hook broke'
+    exit 3
     ;;
   handoff)
     print -rn -- 'handoff context'
     print -rn -u3 -- '{"action":"handoff","argv":["/usr/bin/printf","next.jsonl"]}'
-    exit 11
     ;;
   update)
     print -rn -- 'update context'
@@ -35,12 +43,10 @@ case $(<"$PROMPT_INPUT") in
       '.runtime.harness.sandbox_write_paths=["/tmp/reference"] | .runtime') || exit 2
     jq -cn --argjson runtime "$runtime" \
       '{action:"session_update",runtime:$runtime}' >&3
-    exit 11
     ;;
   update-invalid)
     print -rn -- 'invalid update context'
     print -rn -u3 -- '{"action":"session_update","runtime":{}}'
-    exit 11
     ;;
   invalid)
     print -rn -- 'failed context'
@@ -91,32 +97,50 @@ jq -eRn --arg second "$second_hook" '
   fail 'accepted prompt hook violated channel ordering'
 assert_canonical_session "$session"
 
-# Status 10 selects block but continues the chain; a later zero cannot undo it.
+# A block action halts the chain before the user record.
 rm -f "$second_marker"
 session="$tmp/blocked.jsonl"
 sf_test_session "$session"
 sf_test_run block "$session" >"$stream" || fail 'blocked prompt was not handled'
-[[ -e $second_marker ]] || fail 'status 10 did not continue the hook chain'
+[[ ! -e $second_marker ]] || fail 'block did not halt the hook chain'
 jq -eRn '
   [inputs | fromjson] as $events |
   ($events | any(.type == "user" or .type == "assistant") | not) and
   ($events | map(select(.type == "hook_result"))[0] |
-    .exit_code == 10 and .model_text == "blocked context" and
+    .exit_code == 0 and .model_text == "blocked context" and
     .user_text == "blocked display")
 ' <"$stream" >/dev/null || fail 'blocked prompt entered provider execution'
 
-# Status 11 halts the chain and exposes only its allowed transient action.
+# A handoff halts the chain and exposes only its allowed transient action.
 rm -f "$second_marker"
 session="$tmp/handoff.jsonl"
 sf_test_session "$session"
 sf_test_run handoff "$session" >"$stream" || fail 'handoff prompt failed'
-[[ ! -e $second_marker ]] || fail 'status 11 did not halt the hook chain'
+[[ ! -e $second_marker ]] || fail 'handoff did not halt the hook chain'
 jq -eRn '
   [inputs | fromjson] as $events |
   $events[-1] == {type:"_handoff",argv:["/usr/bin/printf","next.jsonl"]} and
   ($events | any(.type == "user") | not) and
   ($events | map(select(.type == "hook_result"))[0].model_text) == "handoff context"
 ' <"$stream" >/dev/null || fail 'handoff control was not applied after durability'
+
+# The last action wins.
+session="$tmp/last.jsonl"
+sf_test_session "$session"
+sf_test_run last "$session" >"$stream" || fail 'last action prompt failed'
+jq -eRn '[inputs | fromjson][-1] == {type:"_handoff",argv:["/usr/bin/printf","last.jsonl"]}' \
+  <"$stream" >/dev/null || fail 'the last action did not win'
+
+# A nonzero exit fails the turn with stderr and ignores its action.
+session="$tmp/fail.jsonl"
+sf_test_session "$session"
+integer fail_status=0
+sf_test_run fail "$session" >"$stream" 2>"$tmp/fail.stderr" || fail_status=$?
+(( fail_status == 1 )) || fail 'failed hook did not fail the turn'
+[[ $(<"$tmp/fail.stderr") == *'user_prompt_submit hook failed with status 3'*': hook broke'* ]] ||
+  fail 'failed hook did not report stderr'
+jq -e -s 'any(.[]; .type == "user") | not' "$session" >/dev/null ||
+  fail 'failed hook submitted the prompt'
 
 # A halted session update atomically replaces only the frozen header.
 session="$tmp/update.jsonl"
@@ -160,7 +184,7 @@ jq -eRn '
 ' <"$stream" >/dev/null || fail 'invalid control lost the completed hook result'
 assert_canonical_session "$session"
 
-# Stop receives exact final assistant text and status 10 starts another request.
+# Stop receives exact final assistant text and continue starts another request.
 typeset stop_backend="$tmp/stop-backend" stop_hook="$tmp/stop-hook"
 typeset stop_input="$tmp/stop-input" request_count="$tmp/request-count"
 cat >"$stop_backend" <<'ZSH'
@@ -181,7 +205,7 @@ cat >"$STOP_INPUT"
 if [[ $1 == 1 ]]; then
   print -rn -- 'continue context'
   print -rn -u2 -- 'checking again'
-  exit 10
+  print -r -u3 -- '{"action":"continue"}'
 fi
 ZSH
 chmod +x "$stop_backend" "$stop_hook"
@@ -202,7 +226,7 @@ jq -eRn '
     ["answer 1","answer 2"] and
   ($events | map(select(.type == "hook_result")) | length) == 1 and
   ($events | map(select(.type == "hook_result"))[0] |
-    .lifecycle == "stop" and .exit_code == 10 and
+    .lifecycle == "stop" and .exit_code == 0 and
     .model_text == "continue context" and .user_text == "checking again")
 ' <"$stream" >/dev/null || fail 'stop continuation produced the wrong durable order'
 assert_canonical_session "$session"
@@ -218,7 +242,7 @@ sf_test_run stop "$session" >"$stream" || limit_status=$?
 jq -eRn '
   [inputs | fromjson] as $events |
   ($events[-2] | .type == "hook_result" and .lifecycle == "stop" and
-    .exit_code == 10 and .model_text == "continue context") and
+    .exit_code == 0 and .model_text == "continue context") and
   $events[-1] == {type:"error",user_text:"provider request limit reached: 1"}
 ' <"$stream" >/dev/null || fail 'request limit lost stop feedback or its error'
 assert_canonical_session "$session"
@@ -239,21 +263,21 @@ jq -c --arg cwd "${sandbox_project:A}" '
     print -rn -- "$1" | SHELLFISH_SESSION="$sandbox_session" \
       zsh -f "$sandbox_hook" 3>"$sandbox_control" >"$sandbox_output" 2>&1
   }
-  integer sandbox_status=0
-  sandbox_call '/sandbox +w dir' || sandbox_status=$?
-  (( sandbox_status == 10 )) || fail 'project-relative grant was duplicated'
-  sandbox_status=0
-  sandbox_call '/sandbox +w ~/share' || sandbox_status=$?
-  (( sandbox_status == 10 )) || fail 'home-relative grant was duplicated'
-  sandbox_status=0
-  sandbox_call "/sandbox -w ${sandbox_project:A}/dir" || sandbox_status=$?
-  (( sandbox_status == 11 )) || fail 'project-relative grant could not be removed'
-  jq -e '.runtime.harness.sandbox_write_paths == ["~/share"]' \
+  sandbox_action() {
+    sandbox_call "$1" || fail "sandbox hook failed: $1"
+    jq -rs 'last.action' "$sandbox_control"
+  }
+  [[ $(sandbox_action '/sandbox +w dir') == block ]] ||
+    fail 'project-relative grant was duplicated'
+  [[ $(sandbox_action '/sandbox +w ~/share') == block ]] ||
+    fail 'home-relative grant was duplicated'
+  [[ $(sandbox_action "/sandbox -w ${sandbox_project:A}/dir") == session_update ]] ||
+    fail 'project-relative grant could not be removed'
+  jq -es 'last.runtime.harness.sandbox_write_paths == ["~/share"]' \
     "$sandbox_control" >/dev/null || fail 'sandbox removed the wrong grant'
-  sandbox_status=0
-  sandbox_call '/sandbox -w ~/share' || sandbox_status=$?
-  (( sandbox_status == 11 )) || fail 'home-relative grant could not be removed'
-  jq -e '.runtime.harness.sandbox_write_paths == ["./dir"]' \
+  [[ $(sandbox_action '/sandbox -w ~/share') == session_update ]] ||
+    fail 'home-relative grant could not be removed'
+  jq -es 'last.runtime.harness.sandbox_write_paths == ["./dir"]' \
     "$sandbox_control" >/dev/null || fail 'sandbox removed the wrong home grant'
 )
 

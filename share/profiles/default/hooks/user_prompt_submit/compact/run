@@ -10,8 +10,8 @@ integer explicit=0 suffix=1
 
 fail_compaction() {
   print -u2 -r -- "$1"
-  (( explicit )) && return 10
-  return 0
+  (( ! explicit )) || print -ru3 -- '{"action":"block"}'
+  exit 0
 }
 
 submitted=$(cat; printf x)
@@ -35,24 +35,20 @@ if ! jq -ce -s '
   {first_user_message:$first.content[0].text, final_assistant_response:$reply}
 ' "$SHELLFISH_SESSION" >"$boundary" 2>/dev/null; then
   fail_compaction 'nothing to compact yet'
-  exit $?
 fi
 
 [[ -r ${0:A:h}/compact.md ]] && instruction=$(<"${0:A:h}/compact.md") || {
   fail_compaction 'cannot read compaction prompt; keeping the original'
-  exit $?
 }
 request=$(jq -cn --arg text "$instruction" \
   '{type:"user",content:[{type:"text",text:$text}]}') || {
   fail_compaction 'cannot prepare summary request; keeping the original'
-  exit $?
 }
 summary=$({ cat -- "$SHELLFISH_SESSION"; print -r -- "$request"; } |
   "$SHELLFISH_EXECUTABLE" backend-request |
   jq -er '[.content[] | select(.type == "text") | .text] | join("") |
     select(test("[^[:space:]]"))') || {
   fail_compaction 'cannot summarize session; keeping the original'
-  exit $?
 }
 
 context="$SHELLFISH_TURN_STATE/compact-context"
@@ -69,12 +65,10 @@ if ! jq -nerj --slurpfile boundary "$boundary" \
   "</compacted_context>"
 ' >"$context"; then
   fail_compaction 'cannot assemble compacted context; keeping the original'
-  exit $?
 fi
 
 created=$(date -u '+%Y-%m-%dT%H:%M:%SZ') || {
   fail_compaction 'cannot create compacted session; keeping the original'
-  exit $?
 }
 transcript="$SHELLFISH_TURN_STATE/compact.jsonl"
 # Startup records without state, then every state record in source order, so the
@@ -95,7 +89,6 @@ if ! jq -ce -s --rawfile context "$context" --arg created "$created" '
       model_text:$context}
   ' "$SHELLFISH_SESSION" >"$transcript"; then
   fail_compaction 'cannot create compacted session; keeping the original'
-  exit $?
 fi
 
 base=${SHELLFISH_SESSION%.jsonl}
@@ -116,4 +109,4 @@ done
 argv=( "$SHELLFISH_EXECUTABLE" --session "$candidate" )
 [[ -z $draft ]] || argv+=( --draft "$draft" )
 jq -cn '$ARGS.positional | {action:"handoff",argv:.}' --args -- "${argv[@]}" >&3 || exit 1
-exit 11
+exit 0

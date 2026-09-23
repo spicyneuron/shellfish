@@ -18,9 +18,11 @@ case "$read_status:$submitted" in
   *) exit 0 ;;
 esac
 
+print -ru3 -- '{"action":"block"}'
+
 if [[ $target != <-> || ${#target} -gt 9 ]] || (( explicit && target == 0 )); then
   print -u2 -r -- 'usage: /copy [N]'
-  exit 10
+  exit 0
 fi
 
 text=$(jq -j -s --argjson target "$target" '
@@ -43,7 +45,7 @@ text=$(jq -j -s --argjson target "$target" '
   else ($state.sections[$id - 1].chunks | join("\n\n")) + "\u0000" end
 ' "$SHELLFISH_SESSION" 2>/dev/null) || {
   print -u2 -r -- 'copy target does not exist'
-  exit 10
+  exit 0
 }
 text=${text%$'\0'}
 
@@ -57,11 +59,11 @@ elif (( $+commands[xsel] )); then
   copier=( xsel --clipboard --input )
 else
   print -u2 -r -- 'cannot copy: no supported clipboard command found'
-  exit 10
+  exit 0
 fi
 print -rn -- "$text" | "${copier[@]}" || {
   print -u2 -r -- 'cannot copy to clipboard'
-  exit 10
+  exit 0
 }
 print -u2 -r -- 'Copied.'
-exit 10
+exit 0

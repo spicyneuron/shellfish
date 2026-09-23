@@ -135,10 +135,9 @@ sf_run_hook_invoke() {
       include "libexec/run/hooks";
       include "lib/runtime";
       include "lib/session";
-      hook_outcome($exit_code;$stdout;$stderr;
+      hook_outcome($lifecycle;$exit_code;$stdout;$stderr;
         $ARGS.positional | map(try fromjson catch null);$over_capture) |
       . as $outcome | .output as $output |
-      ($outcome | hook_control_error($lifecycle)) as $control_error |
       (if $output.exit_code != 0 or $output.stdout != "" or $output.stderr != "" then
         render_component($render;$name;$input;$output) as $rendered |
         ({type:"hook_result",lifecycle:$lifecycle,id:$id,name:$name,input:$input,
@@ -148,17 +147,12 @@ sf_run_hook_invoke() {
         if $result | canonical_hook_result then $result else error("invalid result") end
        else null end) as $result |
       entry("exit_code"; $output.exit_code | tostring),
-      entry("control_error"; $control_error),
+      entry("valid"; $outcome.valid | tostring),
       entry("stderr"; $output.stderr),
-      entry("action";
-        if $control_error == "" then $outcome.control.action? // "" else "" end),
-      entry("reason";
-        if $control_error == "" then $outcome.control.reason? // "" else "" end),
-      entry("payload";
-        if $control_error != "" then ""
-        elif $outcome.control.action? == "handoff" then ($outcome.control.argv | tojson)
-        elif $outcome.control.action? == "session_update" then ($outcome.control.runtime | tojson)
-        else "" end),
+      entry("action"; $outcome.control.action // ""),
+      entry("reason"; $outcome.control.reason // ""),
+      entry("payload"; $outcome.control | (.argv // .runtime) // "" |
+        if . == "" then . else tojson end),
       entry("record"; if $result == null then "" else ($result | tojson) end),
       entry("states"; [$outcome.states[] | tojson] | join("\n")),
       ("ok" | field)
@@ -183,20 +177,21 @@ sf_run_hook_match() {
   (( SF_HOOK_RESULT[exit_code] == 0 ))
 }
 
-# Return decision fields in reply after appending every accepted record.
+# Return the halting action's fields in reply after appending every accepted
+# record. No action leaves them empty.
 sf_run_hooks() {
   local session=$1 lifecycle=$2 content=$3 turn_state=$4
   shift 4
   local input_file input_json command match_command name render record clear
-  local error='' decision=proceed reason='' action='' payload=''
+  local error='' reason='' action='' payload=''
   local -a plan states
   local -A activity
-  integer offset id exit_code invoke_status match_status
+  integer offset id invoke_status match_status
 
   SF_RUN_HOOK_ERROR=''
   if (( SF_RUN[hooks_known] )) &&
       [[ " $SF_RUN[hooks] " != *" $lifecycle "* ]]; then
-    reply=( decision proceed )
+    reply=( action '' )
     return 0
   fi
   sf_run_hook_project "$SF_RUN[runtime]" "$lifecycle" "$content" || {
@@ -205,7 +200,7 @@ sf_run_hooks() {
   }
   plan=( "${reply[@]}" )
   if (( ! ${#plan} )); then
-    reply=( decision proceed )
+    reply=( action '' )
     return 0
   fi
   sf_scratch_file hook-input || { SF_RUN_HOOK_ERROR="cannot prepare $lifecycle hook input"; return 1; }
@@ -249,7 +244,6 @@ sf_run_hooks() {
       break
     fi
     states=( ${(f)SF_HOOK_RESULT[states]} )
-    exit_code=$SF_HOOK_RESULT[exit_code]
     for record in "${states[@]}"; do
       sf_run_append "$session" "$record" || { error=$REPLY; break 2; }
     done
@@ -261,46 +255,22 @@ sf_run_hooks() {
     elif [[ -n $clear ]]; then
       sf_run_emit "$clear" || { error='cannot emit hook clear'; break; }
     fi
-    if [[ -n $SF_HOOK_RESULT[control_error] ]]; then
-      error="$lifecycle hook returned invalid control: $command"
+    if (( SF_HOOK_RESULT[exit_code] )); then
+      error="$lifecycle hook failed with status $SF_HOOK_RESULT[exit_code]: $command"
+      [[ -z $SF_HOOK_RESULT[stderr] ]] || error+=": $SF_HOOK_RESULT[stderr]"
       break
     fi
+    [[ $SF_HOOK_RESULT[valid] == true ]] ||
+      { error="$lifecycle hook returned invalid control: $command"; break; }
     action=$SF_HOOK_RESULT[action]
     reason=$SF_HOOK_RESULT[reason]
     payload=$SF_HOOK_RESULT[payload]
-    case $exit_code in
-      0) ;;
-      10)
-        case $lifecycle in
-          user_prompt_submit) decision=handled ;;
-          permission_request|pre_tool_use) decision=deny ;;
-          stop) decision=continue ;;
-          *) error="$lifecycle hook returned unsupported status" ;;
-        esac
-        ;;
-      11)
-        case $lifecycle in
-          user_prompt_submit)
-            decision=handled
-            ;;
-          permission_request)
-            [[ $decision == deny ]] || decision=$action
-            ;;
-          pre_tool_use) decision=deny ;;
-          stop) decision=continue ;;
-          *) error="$lifecycle hook returned unsupported status" ;;
-        esac
-        [[ -n $error ]] || break
-        ;;
-      *) error="hook script failed with status $exit_code: $command" ;;
-    esac
-    [[ -z $error || -z $SF_HOOK_RESULT[stderr] ]] || error+=": $SF_HOOK_RESULT[stderr]"
-    [[ -z $error ]] || break
+    [[ -z $action ]] || break
   done
   rm -f -- "$input_file"
   if [[ -n $error ]]; then
     SF_RUN_HOOK_ERROR=$error
     return 1
   fi
-  reply=( decision "$decision" action "$action" reason "$reason" payload "$payload" )
+  reply=( action "$action" reason "$reason" payload "$payload" )
 }
