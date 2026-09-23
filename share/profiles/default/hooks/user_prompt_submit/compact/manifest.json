@@ -1,5 +1,4 @@
 {
-  "render": {"initial_user_text":"${name} · Compacting conversation…","user_text":"${output.stderr}","model_text":"${output.stdout}"},
   "help": {
     "usage": "/compact",
     "description": "Summarize this session into a new one"

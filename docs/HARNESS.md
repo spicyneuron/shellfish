@@ -18,7 +18,7 @@ Tools, hooks, and backend adapters are executable component directories. Compone
 
 Scripts run from the session working directory. Shellfish starts each in an isolated process group, terminates ordinary descendants on completion or cancellation, and escalates from `TERM` to `KILL`. Components must finish their own subprocesses; daemonizing is unsupported.
 
-Hook and tool stdout, stderr, and fd 3 share `max_capture_bytes`. Hooks fail when they exceed it. Tool control data must fit first; remaining stdout and stderr are tail-preserving and may be truncated. Raw captures are transient—only rendered text and accepted state records are durable.
+`max_capture_bytes` bounds each fd 3 line. A tool's control data must fit first; its remaining stdout and stderr are tail-preserving and may be truncated. Hook limits are under [Output](#output). Raw captures are transient—only settled text and accepted state records are durable.
 
 ### Environment
 
@@ -41,7 +41,7 @@ Tools use the host's `TMPDIR`, or `/tmp` when it is unset, and receive a `TMPPRE
 
 ### Rendering
 
-Tool and hook manifests may define `render` templates:
+Tool manifests may define `render` templates:
 
 | Field | When shown |
 | --- | --- |
@@ -53,11 +53,11 @@ Tool and hook manifests may define `render` templates:
 
 Templates perform one substitution pass. Available variables are `name`, `input`, `input.FIELD`, and—for result templates—`output.stdout`, `output.stderr`, and `output.exit_code`. Empty rendered text is omitted.
 
-Hook defaults expose stderr to the user and stdout to the model. Tool defaults show the name and input, then return stdout and stderr to both. A manifest overrides only the fields it supplies.
+Defaults show the name and input, then return stdout and stderr to both. A manifest overrides only the fields it supplies.
 
 ### Durable state
 
-Hooks and tools may write JSON objects to fd 3, one per line (tools at most one):
+Hooks and tools may write JSON objects to fd 3, one per line (tools at most one; hooks only beside a final):
 
 ```json
 {"state":[{"name":"example/status","value":{"ready":true}}]}
@@ -131,19 +131,33 @@ repeat:
     if completion allowed: finish turn
 ```
 
-A hook manifest may configure rendering. Only `user_prompt_submit` supports selectors and help metadata:
+A `user_prompt_submit` hook manifest may add a selector and help metadata:
 
 ```json
 {
   "match": {"pattern": "^/review\\z"},
-  "help": {"usage": "/review", "description": "Review changes"},
-  "render": {"initial_user_text": "Checking the working tree"}
+  "help": {"usage": "/review", "description": "Review changes"}
 }
 ```
 
 `match` is a jq-compatible regular expression. An executable named `match` beside `run` replaces it: the script receives the normal hook context, must write nothing, and selects on exit 0, skips on 1, and fails otherwise. Selection preserves configured order.
 
-stdout, stderr, and fd 3 are bounded together. State and rendered hook output become durable in that order before the next component runs. A silent exit 0 creates no result record. Any nonzero exit fails the operation, with stderr in the diagnostic.
+### Output
+
+Hooks stream JSON lines to fd 3 while they run:
+
+| Key | Meaning |
+| --- | --- |
+| `user_draft` | Replaces the text of the hook's live section; transient |
+| `user_final` | Durable user-facing text; settles the live section |
+| `model_final` | Durable model context; settles the live section |
+| `user_preview_lines` | `"full"` or a TUI line limit for this line's draft or final |
+| `state` | State records |
+| `action` | A lifecycle decision; see below |
+
+Each final and its state become durable as the line arrives, so an interrupted or failed hook keeps what it already settled. A hook that writes no final settles its stdout and stderr as one result at exit: the user sees both and the model sees stdout. Empty output creates no record. `max_capture_bytes` bounds each line and that fallback output; drafts do not add up against it. An invalid line or any nonzero exit fails the operation, with stderr in the diagnostic.
+
+Model text from one lifecycle reaches the model grouped in `<hook name="LIFECYCLE">`, each result inserted verbatim. Bundled hooks wrap theirs in `<context script="NAME">`.
 
 A hook changes the lifecycle's outcome by writing an `action` line to fd 3. The last action wins, applies only after exit 0, and halts the remaining chain. Without an action, the lifecycle proceeds.
 
@@ -170,7 +184,7 @@ Tool hooks receive canonical envelopes:
 {"tool_response":{"stdout":"","stderr":"","exit_code":0}}
 ```
 
-Every hook accepts `state` on fd 3. Actions take these shapes:
+Actions take these shapes:
 
 ```json
 {"action":"block"}
@@ -181,7 +195,7 @@ Every hook accepts `state` on fd 3. Actions take these shapes:
 {"action":"continue"}
 ```
 
-A block ends the turn without submitting the prompt. A handoff asks a capable client to run the complete `argv` after a clean turn exit. A session update's `RUNTIME` is one complete valid runtime; Shellfish atomically replaces the header. A `pre_tool_use` deny reason becomes the refused tool result. A `stop` continue sends the hook's model output back as feedback and continues inference. `pre_tool_use` and `post_tool_use` cannot rewrite tool input or results. `permission_request` may only allow or deny a supported sandbox bypass.
+A block ends the turn without submitting the prompt. A handoff asks a capable client to run the complete `argv` after a clean turn exit. A session update's `RUNTIME` is one complete valid runtime; Shellfish atomically replaces the header. A `pre_tool_use` deny reason becomes the refused tool result. A `stop` continue sends the hook's model finals back as feedback and continues inference. `pre_tool_use` and `post_tool_use` cannot rewrite tool input or results. `permission_request` may only allow or deny a supported sandbox bypass.
 
 ## Backend adapters
 

@@ -56,7 +56,7 @@ chmod +x "$env_hook"
 export ENV_SEEN=$env_seen EXPORTED=exported
 SF_TEST_RUNTIME=$(jq -c --arg hook "$env_hook" '
   .harness.tools[0].manifest.environment=["DECLARED"] |
-  .harness.post_tool_use=[{command:$hook,render:{initial_user_text:"",user_text:"${output.stderr}",model_text:"${output.stdout}"}}]
+  .harness.post_tool_use=[{command:$hook}]
 ' <<<"$SF_TEST_RUNTIME")
 sf_test_session "$env_session"
 SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_COMMAND=$env_command \
@@ -86,11 +86,8 @@ cat >"$pre" <<'ZSH'
 input=$(cat)
 id=$(jq -r '.tool_use_id' <<<"$input")
 print -rn -- "$input" >"$HOOK_DIR/pre-$id"
-print -r -u3 -- "{\"state\":[{\"name\":\"pre/$id\",\"value\":true}]}"
 if [[ $id == call_1 ]]; then
-  print -rn -- 'pre context'
-  print -rn -u2 -- 'pre display'
-  print -r -u3 -- '{"action":"deny","reason":"pre denied"}'
+  print -r -u3 -- '{"user_final":"pre display","model_final":"pre context","state":[{"name":"pre/call_1","value":true}],"action":"deny","reason":"pre denied"}'
 fi
 ZSH
 cat >"$later" <<'ZSH'
@@ -103,16 +100,16 @@ cat >"$post" <<'ZSH'
 input=$(cat)
 id=$(jq -r '.tool_use_id' <<<"$input")
 print -rn -- "$input" >"$HOOK_DIR/post-$id"
-print -rn -u3 -- "{\"state\":[{\"name\":\"post/$id\",\"value\":true}]}"
+print -rn -u3 -- "{\"user_final\":\"post $id\",\"state\":[{\"name\":\"post/$id\",\"value\":true}]}"
 ZSH
 chmod +x "$pre" "$later" "$post"
 export HOOK_DIR=$hook_dir TOOL_MARKER=$tool_marker
 SF_TEST_RUNTIME=$(jq -c --arg pre "$pre" --arg later "$later" --arg post "$post" '
   .harness.pre_tool_use=[
-    {command:$pre,render:{initial_user_text:"",user_text:"${output.stderr}",model_text:"${output.stdout}"}},
-    {command:$later,render:{initial_user_text:"",user_text:"${output.stderr}",model_text:"${output.stdout}"}}
+    {command:$pre},
+    {command:$later}
   ] |
-  .harness.post_tool_use=[{command:$post,render:{initial_user_text:"",user_text:"${output.stderr}",model_text:"${output.stdout}"}}]
+  .harness.post_tool_use=[{command:$post}]
 ' <<<"$SF_TEST_RUNTIME")
 typeset session="$tmp/denied.jsonl" stream="$tmp/denied.stream"
 sf_test_session "$session"
@@ -133,14 +130,15 @@ jq -eRn '
   [inputs | fromjson] as $events |
   [$events[] | select(.type | IN("state","hook_result","tool_result")) |
     if .type == "state" then [.type,.name]
-    elif .type == "hook_result" then [.type,.lifecycle,.exit_code]
+    elif .type == "hook_result" then [.type,.lifecycle]
     else [.type,.id,.exit_code] end] == [
       ["state","pre/call_1"],
-      ["hook_result","pre_tool_use",0],
+      ["hook_result","pre_tool_use"],
       ["state","post/call_1"],
+      ["hook_result","post_tool_use"],
       ["tool_result","call_1",126],
-      ["state","pre/call_2"],
       ["state","post/call_2"],
+      ["hook_result","post_tool_use"],
       ["tool_result","call_2",0]
     ] and
   ($events | map(select(.type == "hook_result"))[0] |
@@ -161,16 +159,14 @@ cat >"$permission" <<'ZSH'
 [[ $# == 2 && $1 == shell && $2 == call_1 ]] || exit 2
 input=$(cat)
 print -rn -- "$input" >"$PERMISSION_INPUT"
-print -rn -u3 -- '{"state":[{"name":"permission/state","value":true}],"action":"allow"}'
-print -rn -- 'review context'
-print -rn -u2 -- 'review display'
+print -rn -u3 -- '{"state":[{"name":"permission/state","value":true}],"action":"allow","user_final":"review display","model_final":"review context"}'
 ZSH
 chmod +x "$permission"
 export PERMISSION_INPUT=$permission_input
 SF_TEST_RUNTIME=$(jq -c --arg hook "$permission" '
   .harness.pre_tool_use=[] | .harness.post_tool_use=[] |
   .harness.sandbox=true |
-  .harness.permission_request=[{command:$hook,render:{initial_user_text:"",user_text:"${output.stderr}",model_text:"${output.stdout}"}}]
+  .harness.permission_request=[{command:$hook}]
 ' <<<"$SF_TEST_RUNTIME")
 session="$tmp/permission-allow.jsonl"
 sf_test_session "$session"
@@ -187,7 +183,7 @@ jq -eRn '
   [$events[] | select(.type | IN("state","hook_result","tool_result")) | .type] ==
     ["state","hook_result","tool_result"] and
   ($events | map(select(.type == "hook_result"))[0] |
-    .lifecycle == "permission_request" and .exit_code == 0 and
+    .lifecycle == "permission_request" and
     .model_text == "review context" and .user_text == "review display") and
   ($events | map(select(.type == "tool_result"))[0].exit_code) == 0
 ' <"$stream" >/dev/null || fail 'permission allow produced the wrong records'
@@ -225,19 +221,18 @@ jq -e -s 'all(.[]; .type != "_tool_permission_request" and
   .type != "_tool_permission_response")' "$session" >/dev/null ||
   fail 'permission exchange became durable'
 
-# A completed failing post hook remains before the known outcome and durable error.
+# A failing post hook keeps its settled final before the known outcome and durable error.
 typeset post_fail="$tmp/post-fail"
 cat >"$post_fail" <<'ZSH'
 #!/usr/bin/env zsh
 cat >/dev/null
-print -rn -- 'post failure context'
-print -rn -u2 -- 'post failure display'
+print -r -u3 -- '{"user_final":"post failure display","model_final":"post failure context"}'
 exit 3
 ZSH
 chmod +x "$post_fail"
 SF_TEST_RUNTIME=$(jq -c --arg hook "$post_fail" '
   .harness.permission_request=[] |
-  .harness.post_tool_use=[{command:$hook,render:{initial_user_text:"",user_text:"${output.stderr}",model_text:"${output.stdout}"}}]
+  .harness.post_tool_use=[{command:$hook}]
 ' <<<"$SF_TEST_RUNTIME")
 session="$tmp/post-failure.jsonl"
 sf_test_session "$session"
@@ -247,7 +242,7 @@ SF_TEST_BACKEND_TOOL_CALL=1 sf_test_run post "$session" >"$stream" || post_statu
 jq -eRn '
   [inputs | fromjson] as $events |
   ($events[-3] | .type == "hook_result" and .lifecycle == "post_tool_use" and
-    .exit_code == 3 and .model_text == "post failure context" and
+    .model_text == "post failure context" and
     .user_text == "post failure display") and
   ($events[-2] | .type == "tool_result" and .id == "call_1" and .exit_code == 0) and
   ($events[-1] | .type == "error" and (.user_text | contains("post_tool_use")))

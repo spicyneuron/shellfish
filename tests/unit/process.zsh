@@ -65,7 +65,7 @@ result=( "${reply[@]}" )
 [[ ${(j:|:)lines} == '{"a":1}' ]] || fail "runner split or padded lines: $lines"
 collect() { lines+=( "$1" ); }
 
-# Each channel stops after one byte beyond its limit; fd 3 stops delivering lines.
+# Each channel stops after one byte beyond its limit; an overlong fd 3 line stops delivery.
 typeset overflow="$tmp/overflow" overflow_capture="$tmp/overflow-capture"
 cat >"$overflow" <<'ZSH'
 #!/usr/bin/env zsh

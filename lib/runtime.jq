@@ -110,10 +110,8 @@ def hook_help:
 
 def hook_component:
   type == "object" and
-  (keys - ["command", "help", "match", "render"] | length) == 0 and
-  has("command") and has("render") and
+  (keys - ["command", "help", "match"] | length) == 0 and
   (.command | stored_path) and
-  (.render | complete_component_render(null; false)) and
   (if has("match") then .match | hook_match else true end) and
   (if has("help") then .help | hook_help else true end);
 
@@ -233,8 +231,6 @@ def header_store($home):
   .cwd = ($cwd | store_path(""; $home)) |
   .runtime |= runtime_paths(store_path($cwd; $home));
 
-def hook_render_defaults:
-  {initial_user_text:"",user_text:"${output.stderr}",model_text:"${output.stdout}"};
 def tool_render_defaults:
   {initial_user_text:"${name} ${input}",
    user_text:"${name} ${input}\n${output.stdout}${output.stderr}",
@@ -389,21 +385,16 @@ def runtime_finalize($profile; $table; $grants):
       if $component.entry.flag then
         .match = {command:($component.entry.path + "/match")}
       else . end) as $manifest |
-    (hook_render_defaults + ($manifest.render // {})) as $render |
     ($manifest |
       select(type == "object" and
         (keys - (if $component.hook == "user_prompt_submit"
-          then ["help", "match", "render"]
-          else ["render"] end) | length) == 0 and
-        (if $manifest | has("render") then
-           $manifest.render | component_render(null; false)
-         else true end) and
+          then ["help", "match"] else [] end) | length) == 0 and
         (if has("match") then .match | hook_match else true end) and
         (if has("help") then
            has("match") and (.help | hook_help)
          else true end)) //
       error("invalid hook component: " + $command)) as $hook_manifest |
-    .[$component.hook] += [({command:$command,render:$render} +
+    .[$component.hook] += [({command:$command} +
       (if $hook_manifest | has("match") then {match:$hook_manifest.match} else {} end) +
       (if $hook_manifest | has("help") then {help:$hook_manifest.help} else {} end))])) as $hooks |
   {

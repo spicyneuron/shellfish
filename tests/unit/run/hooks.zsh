@@ -15,13 +15,17 @@ cat >"$prompt_hook" <<'ZSH'
 cat >"$PROMPT_INPUT"
 case $(<"$PROMPT_INPUT") in
   accept)
+    print -r -u3 -- '{"user_draft":"working"}'
+    print -r -u3 -- '{"user_final":"user display","model_final":"model context","state":[{"name":"prompt/state","value":1}]}'
+    print -r -u3 -- '{"user_draft":"trailing","user_preview_lines":2}'
+    print -rn -- 'ignored stdout'
+    ;;
+  shortcut)
     print -rn -- 'model context'
-    print -rn -u2 -- 'user display'
-    print -rn -u3 -- '{"state":[{"name":"prompt/state","value":1}]}'
+    print -rn -u2 -- ' user display'
     ;;
   block)
     print -rn -- 'blocked context'
-    print -rn -u2 -- 'blocked display'
     print -r -u3 -- '{"action":"block"}'
     ;;
   last)
@@ -48,10 +52,26 @@ case $(<"$PROMPT_INPUT") in
     print -rn -- 'invalid update context'
     print -rn -u3 -- '{"action":"session_update","runtime":{}}'
     ;;
+  drafts)
+    repeat 3 print -r -u3 -- "{\"user_draft\":\"${(l:30000::d:)}\"}"
+    print -r -u3 -- '{"user_final":"done"}'
+    ;;
+  oversize)
+    print -r -u3 -- '{"user_final":"kept"}'
+    print -r -u3 -- "{\"user_final\":\"${(l:70000::o:)}\"}"
+    ;;
   invalid)
-    print -rn -- 'failed context'
-    print -rn -u2 -- 'failed display'
-    print -rn -u3 -- '{"action":"allow"}'
+    print -r -u3 -- '{"user_final":"kept","model_final":"kept context"}'
+    print -r -u3 -- '{"action":"allow"}'
+    print -r -u3 -- '{"user_final":"ignored"}'
+    ;;
+  state)
+    print -r -u3 -- '{"state":[{"name":"prompt/state","value":2}]}'
+    ;;
+  interrupt)
+    print -r -u3 -- '{"user_final":"settled"}'
+    : >"$INTERRUPT_MARKER"
+    sleep 30
     ;;
 esac
 ZSH
@@ -63,39 +83,61 @@ ZSH
 chmod +x "$prompt_hook" "$second_hook"
 export PROMPT_INPUT=$prompt_input SECOND_MARKER=$second_marker
 SF_TEST_RUNTIME=$(jq -c --arg first "$prompt_hook" --arg second "$second_hook" '
-  .harness.user_prompt_submit=[
-    {command:$first,render:{initial_user_text:"",user_text:"${output.stderr}",model_text:"${output.stdout}"}},
-    {command:$second,render:{initial_user_text:"second · working",user_text:"${output.stderr}",model_text:"${output.stdout}"}}
-  ]
+  .harness.user_prompt_submit=[{command:$first},{command:$second}]
 ' <<<"$SF_TEST_RUNTIME")
 
-# Status 0 persists state and attributed output before the accepted user record.
+# A final and its state settle as they arrive; drafts are transient, and a
+# draft nothing settles is cleared. stdout after a final is ignored.
 typeset session="$tmp/accepted.jsonl" stream="$tmp/accepted.stream"
 sf_test_session "$session"
-print -r -- '{"type":"hook_result","lifecycle":"session_start","id":"7","name":"prior","input":"","exit_code":0}' \
-  >>"$session"
+print -r -- '{"type":"hook_result","lifecycle":"session_start","id":"7"}' >>"$session"
 sf_test_run accept "$session" >"$stream" || fail 'accepted prompt hook failed'
 assert_equal accept "$(<$prompt_input)" 'prompt hook did not receive exact prompt text'
-jq -eRn --arg second "$second_hook" '
+[[ -e $second_marker ]] || fail 'a hook without an action halted the chain'
+jq -eRn '
   [inputs | fromjson] as $events |
   [$events[] | select(.type | IN("state","hook_result","user")) | .type] ==
     ["state","hook_result","user"] and
   ($events | map(select(.type == "hook_result"))[0]) == {
-      type:"hook_result",lifecycle:"user_prompt_submit",id:"8",name:"prompt-hook",
-      input:"accept",exit_code:0,
+      type:"hook_result",lifecycle:"user_prompt_submit",id:"8",
       user_text:"user display",model_text:"model context"
     } and
   ($events | map(select(.type == "state"))[0]) ==
     {type:"state",name:"prompt/state",value:1} and
-  ($events | map(select(.type == "_hook_activity" and .name == "second-hook"))) == [
-    {type:"_hook_activity",hook:"user_prompt_submit",id:"9",name:"second-hook",
-     executable:$second,input:"accept",user_text:"second · working"},
-    {type:"_hook_activity",hook:"user_prompt_submit",id:"9",name:"second-hook",
-     executable:$second,input:"accept"}
+  ($events | map(select(.type == "_hook_draft"))) == [
+    {type:"_hook_draft",lifecycle:"user_prompt_submit",id:"8",user_text:"working"},
+    {type:"_hook_draft",lifecycle:"user_prompt_submit",id:"9",user_text:"trailing",
+     user_preview_lines:2},
+    {type:"_hook_draft",lifecycle:"user_prompt_submit",id:"9",user_text:""}
   ]
 ' <"$stream" >/dev/null ||
   fail 'accepted prompt hook violated channel ordering'
 assert_canonical_session "$session"
+
+# Without a final, the user sees stdout and stderr and the model sees stdout.
+session="$tmp/shortcut.jsonl"
+sf_test_session "$session"
+sf_test_run shortcut "$session" >"$stream" || fail 'shortcut prompt hook failed'
+jq -e -s '
+  map(select(.type == "hook_result")) == [{type:"hook_result",
+    lifecycle:"user_prompt_submit",id:"1",
+    user_text:"model context user display",model_text:"model context"}]
+' "$session" >/dev/null || fail 'hook output did not settle through the shortcut'
+
+# Drafts do not count toward the capture limit; a larger final fails the hook
+# after keeping what already settled.
+session="$tmp/drafts.jsonl"
+sf_test_session "$session"
+sf_test_run drafts "$session" >"$stream" || fail 'drafts counted toward the capture limit'
+session="$tmp/oversize.jsonl"
+sf_test_session "$session"
+integer oversize_status=0
+sf_test_run oversize "$session" >"$stream" 2>"$tmp/oversize.stderr" || oversize_status=$?
+(( oversize_status == 1 )) || fail 'an oversized final did not fail the turn'
+[[ $(<"$tmp/oversize.stderr") == *'hook output exceeds capture limit'* ]] ||
+  fail 'an oversized final was not reported'
+jq -e -s 'map(select(.type == "hook_result") | .user_text) == ["kept"]' "$session" \
+  >/dev/null || fail 'an oversized final lost the settled result'
 
 # A block action halts the chain before the user record.
 rm -f "$second_marker"
@@ -106,9 +148,7 @@ sf_test_run block "$session" >"$stream" || fail 'blocked prompt was not handled'
 jq -eRn '
   [inputs | fromjson] as $events |
   ($events | any(.type == "user" or .type == "assistant") | not) and
-  ($events | map(select(.type == "hook_result"))[0] |
-    .exit_code == 0 and .model_text == "blocked context" and
-    .user_text == "blocked display")
+  ($events | map(select(.type == "hook_result"))[0].model_text == "blocked context")
 ' <"$stream" >/dev/null || fail 'blocked prompt entered provider execution'
 
 # A handoff halts the chain and exposes only its allowed transient action.
@@ -139,8 +179,8 @@ sf_test_run fail "$session" >"$stream" 2>"$tmp/fail.stderr" || fail_status=$?
 (( fail_status == 1 )) || fail 'failed hook did not fail the turn'
 [[ $(<"$tmp/fail.stderr") == *'user_prompt_submit hook failed with status 3'*': hook broke'* ]] ||
   fail 'failed hook did not report stderr'
-jq -e -s 'any(.[]; .type == "user") | not' "$session" >/dev/null ||
-  fail 'failed hook submitted the prompt'
+jq -e -s 'any(.[]; .type == "user" or .type == "hook_result") | not' "$session" >/dev/null ||
+  fail 'failed hook submitted the prompt or settled its output'
 
 # A halted session update atomically replaces only the frozen header.
 session="$tmp/update.jsonl"
@@ -170,19 +210,44 @@ jq -e -s '
 [[ $(<"$tmp/update-invalid.stderr") == *'invalid session runtime replacement'* ]] ||
   fail 'invalid runtime failure was not reported'
 
-# Invalid lifecycle control keeps completed output before the durable error.
+# An invalid line keeps the finals before it and ignores the lines after it.
+typeset invalid
 session="$tmp/invalid.jsonl"
 sf_test_session "$session"
 integer hook_status=0
 sf_test_run invalid "$session" >"$stream" 2>"$tmp/invalid.stderr" || hook_status=$?
 (( hook_status == 1 )) || fail 'invalid prompt control did not fail the turn'
-jq -eRn '
-  [inputs | fromjson] as $events |
-  ($events[-2] | .type == "hook_result" and .exit_code == 0 and
-    .model_text == "failed context" and .user_text == "failed display") and
-  ($events[-1] | .type == "error" and (.user_text | contains("invalid control")))
-' <"$stream" >/dev/null || fail 'invalid control lost the completed hook result'
+[[ $(<"$tmp/invalid.stderr") == *'invalid control'* ]] ||
+  fail 'invalid control was not reported'
 assert_canonical_session "$session"
+jq -e -s '
+  (map(select(.type == "hook_result") | .user_text) == ["kept"]) and
+  .[-1].type == "error"
+' "$session" >/dev/null || fail 'invalid control lost the settled result'
+
+# State may ride on a line of its own.
+session="$tmp/state.jsonl"
+sf_test_session "$session"
+sf_test_run state "$session" >"$stream" || fail 'state without a final failed the turn'
+jq -e -s 'map(select(.type == "state")) == [{type:"state",name:"prompt/state",value:2}]' \
+  "$session" >/dev/null || fail 'state without a final was not appended'
+assert_canonical_session "$session"
+
+# Interruption keeps the finals a hook already settled.
+typeset interrupt_marker="$tmp/interrupt-started"
+session="$tmp/interrupt.jsonl"
+sf_test_session "$session"
+jq -cn '{type:"user",content:[{type:"text",text:"interrupt"}]}' |
+  INTERRUPT_MARKER=$interrupt_marker "$ROOT/bin/shellfish" run --jsonl --session "$session" \
+  >"$stream" &
+integer pid=$! waited=0 interrupt_status=0
+while (( waited++ < 100 )) && [[ ! -e $interrupt_marker ]]; do sleep 0.02; done
+(( waited <= 100 )) || fail 'interrupted hook did not start'
+kill -TERM "$pid" 2>/dev/null
+wait "$pid" || interrupt_status=$?
+(( interrupt_status == 143 )) || fail 'interrupted hook returned the wrong status'
+jq -e -s 'map(select(.type == "hook_result") | .user_text) == ["settled"]' "$session" \
+  >/dev/null || fail 'interruption lost a settled final'
 
 # Stop receives exact final assistant text and continue starts another request.
 typeset stop_backend="$tmp/stop-backend" stop_hook="$tmp/stop-hook"
@@ -203,9 +268,7 @@ cat >"$stop_hook" <<'ZSH'
 [[ $# == 1 && $1 == <1-> ]] || exit 2
 cat >"$STOP_INPUT"
 if [[ $1 == 1 ]]; then
-  print -rn -- 'continue context'
-  print -rn -u2 -- 'checking again'
-  print -r -u3 -- '{"action":"continue"}'
+  print -r -u3 -- '{"user_final":"checking again","model_final":"continue context","action":"continue"}'
 fi
 ZSH
 chmod +x "$stop_backend" "$stop_hook"
@@ -213,7 +276,7 @@ export STOP_INPUT=$stop_input REQUEST_COUNT=$request_count
 SF_TEST_RUNTIME=$(jq -c --arg backend "$stop_backend" --arg hook "$stop_hook" '
   .backend.command=$backend |
   .harness.user_prompt_submit=[] |
-  .harness.stop=[{command:$hook,render:{initial_user_text:"",user_text:"${output.stderr}",model_text:"${output.stdout}"}}]
+  .harness.stop=[{command:$hook}]
 ' <<<"$SF_TEST_RUNTIME")
 session="$tmp/stop.jsonl"
 sf_test_session "$session"
@@ -226,7 +289,7 @@ jq -eRn '
     ["answer 1","answer 2"] and
   ($events | map(select(.type == "hook_result")) | length) == 1 and
   ($events | map(select(.type == "hook_result"))[0] |
-    .lifecycle == "stop" and .exit_code == 0 and
+    .lifecycle == "stop" and
     .model_text == "continue context" and .user_text == "checking again")
 ' <"$stream" >/dev/null || fail 'stop continuation produced the wrong durable order'
 assert_canonical_session "$session"
@@ -242,7 +305,7 @@ sf_test_run stop "$session" >"$stream" || limit_status=$?
 jq -eRn '
   [inputs | fromjson] as $events |
   ($events[-2] | .type == "hook_result" and .lifecycle == "stop" and
-    .exit_code == 0 and .model_text == "continue context") and
+    .model_text == "continue context") and
   $events[-1] == {type:"error",user_text:"provider request limit reached: 1"}
 ' <"$stream" >/dev/null || fail 'request limit lost stop feedback or its error'
 assert_canonical_session "$session"

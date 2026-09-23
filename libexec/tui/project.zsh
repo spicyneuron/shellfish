@@ -5,7 +5,7 @@ setopt no_aliases no_bg_nice no_multios pipe_fail
 # rejected whole, so an invalid line never leaves a partial turn on screen.
 typeset -ga SF_PRESENT_ACTIONS=()
 typeset -g SF_PRESENT_CONTEXT_WINDOW=''
-typeset -g SF_PRESENT_PREVIEWS='{ "tools": {}, "hooks": {} }'
+typeset -g SF_PRESENT_PREVIEWS='{}'
 typeset -g SF_TUI_PROJECT_MODE=live
 
 # MODE is the record policy this batch starts in: "live" skips the durable

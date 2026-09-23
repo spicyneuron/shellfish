@@ -122,9 +122,14 @@ sf_process_capture_stream() {
   exec {output_fd}>&-
 }
 
+sf_process_bytes() {
+  setopt local_options no_multibyte
+  REPLY=${#1}
+}
+
 # Stream fd 3 to HANDLER one nonempty line at a time while the command runs. A
-# final line without a newline arrives at exit. Lines stop once fd 3 exceeds
-# MAX_CAPTURE bytes.
+# final line without a newline arrives at exit. control_bytes is the longest
+# line; lines stop once one exceeds MAX_CAPTURE bytes.
 sf_process_run() {
   setopt local_options local_traps no_err_exit no_monitor
   local capture=${1:A} working=$2 input=$3
@@ -136,7 +141,7 @@ sf_process_run() {
   local group_file="$capture/process.group" status_file="$capture/process.status"
   local chunk buffer='' line
   local -a command=( "$@" ) process_command readers
-  integer limit stdout_bytes stderr_bytes control_bytes=0 count control_fd=-1 guard_fd
+  integer limit stdout_bytes stderr_bytes control_bytes=0 control_fd=-1 guard_fd
   integer process_pid=0 process_status=1 reader reader_status=0 signal_status=0 complete=0
 
   SF_PROCESS_ERROR=''
@@ -188,16 +193,19 @@ sf_process_run() {
     trap 'signal_status=130; sf_process_stop "$process_pid" "$group_file"' INT USR1
     trap 'signal_status=129; sf_process_stop "$process_pid" "$group_file"' HUP
     trap 'signal_status=143; sf_process_stop "$process_pid" "$group_file"' TERM
-    while sysread -c count -i $control_fd -s 4096 chunk; do
+    while sysread -i $control_fd -s 4096 chunk; do
       (( control_bytes > max_capture )) && continue
-      (( control_bytes += count ))
-      (( control_bytes <= max_capture )) || continue
       buffer+=$chunk
       while [[ $buffer == *$'\n'* ]]; do
         line=${buffer%%$'\n'*}
-        buffer=${buffer#*$'\n'}
+        buffer=${buffer:${#line}+1}
+        sf_process_bytes "$line"
+        (( REPLY <= max_capture )) || { control_bytes=$REPLY; continue 2; }
+        (( control_bytes = REPLY > control_bytes ? REPLY : control_bytes ))
         [[ -z $line ]] || "$handler" "$line"
       done
+      sf_process_bytes "$buffer"
+      (( control_bytes = REPLY > control_bytes ? REPLY : control_bytes ))
     done
     (( control_bytes > max_capture )) || [[ -z $buffer ]] || "$handler" "$buffer"
     if sf_process_wait "$process_pid" "$group_file" "$status_file"; then

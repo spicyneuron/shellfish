@@ -4,8 +4,9 @@ emulate -R zsh
 setopt no_aliases no_bg_nice no_multios pipe_fail
 zmodload zsh/datetime
 source "${0:A:h:h:h:h}/lib/capped.zsh" || exit 1
+source "${0:A:h:h:h:h}/lib/hook.zsh" || exit 1
 
-typeset previous branch hash identity
+typeset previous branch hash identity text
 previous=$(jq -ers '
   [.[] | select(.type == "state" and .name == "git/identity")][-1].value |
   select(type == "string")
@@ -22,14 +23,13 @@ case $? in
 esac
 [[ $identity != "$previous" ]] || exit 0
 
-jq -cn --arg identity "$identity" \
-  '{state:[{name:"git/identity",value:$identity}]}' >&3 || exit 1
 case "$previous -> $identity" in
   branch:*' -> branch:'*)
-    print -r -- "Git branch changed from ${previous#branch:} to ${identity#branch:}."
+    text="Git branch changed from ${previous#branch:} to ${identity#branch:}."
     ;;
   *)
-    print -r -- "Git identity changed from $previous to $identity."
+    text="Git identity changed from $previous to $identity."
     ;;
 esac
-exit 0
+sf_hook_context git_environment "git_environment"$'\n'"$text" "$text" \
+  "$(jq -cn --arg identity "$identity" '{state:[{name:"git/identity",value:$identity}]}')"

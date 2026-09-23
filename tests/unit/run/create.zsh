@@ -69,7 +69,7 @@ zsh -f "$entry" run --session-create --session-out "$explicit" >/dev/null 2>&1 &
 zsh -f "$entry" run --session-create --session-from "$created" --model other >/dev/null 2>&1 &&
   fail 'create accepted a runtime override with --session-from'
 
-# Retain the valid prefix and failed result from startup hooks.
+# Retain the valid prefix when a startup hook fails.
 typeset hook="$tmp/failing-hook"
 mkdir "$hook"
 cat >"$hook/run" <<'ZSH'
@@ -88,8 +88,8 @@ zsh -f "$entry" run --session-create --session-out "$failed" \
 [[ $(<"$hook_error") == *"session_start hook failed with status 9: ${hook:A}/run: startup detail"* ]] ||
   fail 'create hid the session_start failure'
 [[ -f $failed ]] || fail 'create removed the failed startup transcript'
-jq -se 'map(.type) == ["session","system","hook_result"] and .[-1].exit_code == 9' \
-  "$failed" >/dev/null || fail 'create did not retain the failed startup result'
+jq -se 'map(.type) == ["session","system"]' \
+  "$failed" >/dev/null || fail 'create did not retain the failed startup prefix'
 
 # Join system components in order.
 typeset joined="$tmp/joined.jsonl"
@@ -169,51 +169,41 @@ mkdir "$first" "$silent"
 cat >"$first/run" <<'ZSH'
 #!/usr/bin/env zsh
 [[ -f $SHELLFISH_SESSION ]] || exit 2
-jq -se 'map(.type) == ["_session_load","session","system","_hook_activity"]' \
+jq -se 'map(.type) == ["_session_load","session","system"]' \
   "$SF_TEST_EVENTS" >/dev/null || exit 3
-print -r -- 'startup context'
-printf '%*s' "${SF_TEST_CONTEXT_BYTES:-0}" ''
-print -rn -u3 -- '{"state":[{"name":"startup/stream","value":true}]}'
-print -u2 -r -- 'startup display'
+print -r -u3 -- '{"user_draft":"starting"}'
+print -r -u3 -- '{"user_final":"startup display","model_final":"startup context","state":[{"name":"startup/stream","value":true}]}'
 ZSH
 cat >"$silent/run" <<'ZSH'
 #!/usr/bin/env zsh
 [[ -f $SHELLFISH_SESSION ]] || exit 2
 # Each durable startup record reaches the stream before the next hook runs.
-jq -se 'map(.type) == ["_session_load","session","system","_hook_activity",
-  "state","hook_result","_hook_activity"]' \
+jq -se 'map(.type) == ["_session_load","session","system","_hook_draft",
+  "state","hook_result"]' \
   "$SF_TEST_EVENTS" >/dev/null || exit 3
 jq -se '.[-2] == {type:"state",name:"startup/stream",value:true} and
-  .[-1].type == "hook_result" and .[-1].name == "first-hook"' \
+  .[-1].type == "hook_result"' \
   "$SHELLFISH_SESSION" >/dev/null || exit 4
 ZSH
-print -r -- '{}' >"$first/manifest.json"
 chmod +x "$first/run" "$silent/run"
 sf_test_profile stream \
   "{\"extend\": [\"default\"], \"hooks\": {\"session_start\": [\"$first\", \"$silent\"]}}"
 SF_TEST_EVENTS="$events" zsh -f "$entry" run --jsonl --session-create -p stream \
   --session-out "$streamed" >"$events" 2>"$hook_error" || fail 'streamed creation failed'
 [[ ! -s $hook_error ]] || fail "streamed display leaked to stderr: $(<"$hook_error")"
-jq -se --arg path "$streamed" --arg first "${first:A}/run" --arg silent "${silent:A}/run" \
-  --slurpfile session "$streamed" '
-  map(.type) == ["_session_load","session","system","_hook_activity",
-    "state","hook_result","_hook_activity"] and
+jq -se --arg path "$streamed" --slurpfile session "$streamed" '
+  # A hook that writes nothing records nothing.
+  map(.type) == ["_session_load","session","system","_hook_draft","state","hook_result"] and
   .[0] == {type:"_session_load",path:$path} and
   .[1:3] == $session[0:2] and
-  (.[3] | del(.id)) == {type:"_hook_activity",hook:"session_start",name:"first-hook",
-    executable:$first,input:""} and
-  # A hook that captured nothing records no result.
-  (.[6] | del(.id)) == {type:"_hook_activity",hook:"session_start",name:"silent-hook",
-    executable:$silent,input:""} and
+  (.[3] | del(.id)) == {type:"_hook_draft",lifecycle:"session_start",user_text:"starting"} and
   .[4:6] == $session[2:] and
-  .[5].lifecycle == "session_start" and .[5].name == "first-hook" and
-  .[5].input == "" and .[5].exit_code == 0 and
-  .[5].user_text == "startup display\n" and
-  (.[5].model_text | startswith("startup context\n")) and
+  (.[5] | del(.id)) == {type:"hook_result",lifecycle:"session_start",
+    user_text:"startup display",model_text:"startup context"} and
   .[3].id == .[5].id
 ' "$events" >/dev/null || fail 'invalid creation event sequence or transcript'
 
-# A failed later startup retains and streams the completed prefix and result.
+# A failed later startup retains and streams the completed prefix.
 sf_test_profile stream \
   "{\"extend\": [\"hook\"], \"hooks\": {\"session_start\": [\"$first\", \"...\"]}}"
 failed="$tmp/later-failed.jsonl"
@@ -223,14 +213,10 @@ SF_TEST_EVENTS="$events" zsh -f "$entry" run --jsonl --session-create \
 [[ -f $failed && $(<"$hook_error") == *'session_start hook failed with status 9:'* ]] ||
   fail 'failed startup did not retain its session and diagnostic'
 jq -se '
-  map(.type) == ["_session_load","session","system","_hook_activity","state",
-    "hook_result","_hook_activity","hook_result"] and
-  .[-1].exit_code == 9
+  map(.type) == ["_session_load","session","system","_hook_draft","state","hook_result"]
 ' "$events" >/dev/null || fail 'a failed creation lost its durable prefix'
-jq -se '
-  map(.type) == ["session","system","state","hook_result","hook_result"] and
-  .[-1].exit_code == 9
-' "$failed" >/dev/null || fail 'a failed creation lost its durable prefix'
+jq -se 'map(.type) == ["session","system","state","hook_result"]' \
+  "$failed" >/dev/null || fail 'a failed creation lost its durable prefix'
 
 # Cancel running startup scripts.
 typeset slow="$tmp/slow-hook" cancelled="$tmp/cancelled.jsonl"
@@ -263,7 +249,7 @@ wait "$create_pid" || cancel_status=$?
 : >"$SLOW_RELEASE"
 sleep 0.3
 [[ ! -e $SLOW_EXIT_MARKER ]] || fail 'cancelled session_start hook script ran to completion'
-jq -se 'map(.type) == ["_session_load","session","system","_hook_activity"]' \
+jq -se 'map(.type) == ["_session_load","session","system"]' \
   "$events" >/dev/null || fail 'cancelled creation lost its durable prefix'
 jq -se 'map(.type) == ["session","system"]' "$cancelled" >/dev/null ||
   fail 'cancelled creation lost its transcript prefix'

@@ -7,39 +7,12 @@ setopt no_aliases no_bg_nice no_multios pipe_fail
 
 typeset -g SF_RUN_HOOK_ERROR=''
 
-# Values shared by every hook of one lifecycle, and the outcome of the hook
-# that ran last, both keyed by name.
+# Values shared by every hook of one lifecycle, and the running hook's outcome,
+# both keyed by name.
 typeset -gA SF_HOOK_PLAN=() SF_HOOK_RESULT=()
 
-sf_run_hook_name() {
-  local name=$1
-  [[ ${name:t} != run ]] || name=${name:h}
-  REPLY=${name:t}
-}
-
-sf_run_hook_activity() {
-  local lifecycle=$1 id=$2 name=$3 executable=$4 input=$5 render=$6
-  local input_option=--arg
-  [[ $lifecycle != (permission_request|pre_tool_use|post_tool_use) ]] || input_option=--argjson
-  sf_jq_fields -cn --arg lifecycle "$lifecycle" --arg id "$id" --arg name "$name" \
-    --arg executable "$executable" "$input_option" input "$input" --argjson render "$render" '
-      include "lib/fields";
-      include "lib/runtime";
-      (render_component($render;$name;$input;{stdout:"",stderr:"",exit_code:0}) |
-       .initial_user_text // "") as $user_text |
-      ({type:"_hook_activity",hook:$lifecycle,id:$id,name:$name,input:$input,
-        executable:$executable} +
-       (if $user_text == "" then {} else {user_text:$user_text} end)) as $activity |
-      entry("record"; $activity | tojson),
-      entry("clear";
-        if $user_text == "" then "" else ($activity | del(.user_text) | tojson) end),
-      entry("input"; $input | tojson),
-      ("ok" | field)
-    ' || return 1
-}
-
 # Shared values land in SF_HOOK_PLAN; the matching hooks follow in reply as
-# groups of command, match command, and render template.
+# pairs of command and match command.
 sf_run_hook_project() {
   local runtime=$1 lifecycle=$2 content=$3
   sf_jq_fields -rn --argjson runtime "$runtime" --arg lifecycle "$lifecycle" \
@@ -52,8 +25,7 @@ sf_run_hook_project() {
         (.match.pattern? // "") as $pattern |
         select($pattern == "" or ($input | test($pattern))) |
         (.command | field),
-        (.match.command? // "" | field),
-        (.render | tojson | field)),
+        (.match.command? // "" | field)),
       ("ok" | field)
     ' || return 1
   # The two named entries above fill the first four slots; hooks follow.
@@ -61,20 +33,75 @@ sf_run_hook_project() {
   reply=( "${(@)reply[5,-1]}" )
 }
 
-# Collect fd 3 lines for sf_run_hook_invoke.
-sf_run_hook_control() {
-  controls+=( "$1" )
+# A settled result takes the live section's id and opens the next one.
+sf_run_hook_settle() {
+  sf_run_append "$SF_HOOK_RESULT[session]" "$1" || return
+  (( SF_RUN[hook_id] += 1 ))
+  SF_HOOK_RESULT[live]=0
 }
 
+# Apply one fd 3 line as it arrives. After an invalid line the rest are ignored
+# and the hook fails at exit.
+sf_run_hook_line() {
+  local record
+  local -A line
+  [[ -z $SF_HOOK_RESULT[error] ]] || return 0
+  sf_jq_fields -cn --arg line "$1" --arg lifecycle "$SF_HOOK_RESULT[lifecycle]" \
+    --arg id "$SF_RUN[hook_id]" '
+      include "lib/fields";
+      include "lib/session";
+      include "libexec/run/hooks";
+      ($line | try fromjson catch null | hook_line($lifecycle; $id)) as $line |
+      entry("valid"; $line != null | tostring),
+      entry("final"; $line.final | tostring),
+      entry("states"; [$line.states[]? | tojson] | join("\n")),
+      entry("record"; $line.record | if . == null then "" else tojson end),
+      entry("draft"; $line.draft | if . == null then "" else tojson end),
+      entry("action"; $line.control.action // ""),
+      entry("reason"; $line.control.reason // ""),
+      entry("payload"; $line.control | (.argv // .runtime) |
+        if . == null then "" else tojson end),
+      ("ok" | field)
+    ' || { SF_HOOK_RESULT[error]='cannot decode hook output'; return 1; }
+  line=( "${reply[@]}" )
+  [[ $line[valid] == true ]] || { SF_HOOK_RESULT[error]=invalid; return 1; }
+  for record in ${(f)line[states]}; do
+    sf_run_append "$SF_HOOK_RESULT[session]" "$record" ||
+      { SF_HOOK_RESULT[error]=$REPLY; return 1; }
+  done
+  if [[ -n $line[record] ]]; then
+    sf_run_hook_settle "$line[record]" || { SF_HOOK_RESULT[error]=$REPLY; return 1; }
+  elif [[ -n $line[draft] ]]; then
+    sf_run_emit "$line[draft]" || { SF_HOOK_RESULT[error]='cannot emit hook draft'; return 1; }
+    SF_HOOK_RESULT[live]=1
+  fi
+  [[ $line[final] != true ]] || SF_HOOK_RESULT[final]=1
+  [[ -z $line[action] ]] || SF_HOOK_RESULT+=( action "$line[action]"
+    reason "$line[reason]" payload "$line[payload]" )
+}
+
+# Without a final, stdout and stderr settle as one result: the user sees both
+# and the model sees stdout.
+sf_run_hook_shortcut() {
+  local directory=$1 record
+  record=$(sf_jq -cn --rawfile stdout "$directory/stdout" --rawfile stderr "$directory/stderr" \
+    --arg lifecycle "$SF_HOOK_RESULT[lifecycle]" --arg id "$SF_RUN[hook_id]" '
+      {type:"hook_result",lifecycle:$lifecycle,id:$id} +
+      (if $stdout + $stderr == "" then {} else {user_text:($stdout + $stderr)} end) +
+      (if $stdout == "" then {} else {model_text:$stdout} end)
+    ') || { REPLY='cannot decode hook result'; return 1; }
+  sf_run_hook_settle "$record"
+}
+
+# HANDLER receives fd 3 lines; ":" runs a match command, which only reports.
 sf_run_hook_invoke() {
   setopt local_options no_err_exit
-  local session=$1 command=$2 input=$3 lifecycle=$4 turn_state=$5
-  local render=$6 id=$7 name=$8 input_json=$9
-  shift 9
-  local config_dir directory
-  local -a environment controls=()
+  local session=$1 command=$2 input=$3 lifecycle=$4 turn_state=$5 handler=$6
+  shift 6
+  local config_dir directory error=''
+  local -a environment
   local -A process
-  integer max_capture=$SF_HOOK_PLAN[max_capture] over_capture=0
+  integer max_capture=$SF_HOOK_PLAN[max_capture] output_bytes
 
   [[ -f $command && -x $command ]] || {
     SF_RUN_HOOK_ERROR="hook command is not executable: $command"
@@ -106,63 +133,41 @@ sf_run_hook_invoke() {
     return 1
   }
   directory=$REPLY
+  SF_HOOK_RESULT=( session "$session" lifecycle "$lifecycle" error '' final 0 live 0
+    action '' reason '' payload '' )
   if ! sf_process_run "$directory" "${SF_RUN[cwd]:A}" "${input:A}" "$max_capture" \
-      sf_run_hook_control /usr/bin/env "${environment[@]}" "$command" "$@"; then
+      "$handler" /usr/bin/env "${environment[@]}" "$command" "$@"; then
     rm -rf -- "$directory"
     SF_RUN_HOOK_ERROR=$SF_PROCESS_ERROR
     return 1
   fi
   process=( "${reply[@]}" )
-  if (( process[stdout_bytes] + process[stderr_bytes] +
-     process[control_bytes] > max_capture )); then
-    over_capture=1
-  fi
-  if (( process[interrupted] )); then
+  SF_HOOK_RESULT+=( "${(@kv)process}" )
+  if (( process[interrupted] )) || [[ $handler == : ]]; then
     rm -rf -- "$directory"
-    return $process[exit_code]
+    return $(( process[interrupted] ? process[exit_code] : 0 ))
   fi
-  if [[ -z $id ]]; then
-    rm -rf -- "$directory"
-    SF_HOOK_RESULT=( "${(@kv)process}" )
-    return
+  output_bytes=$(( process[stdout_bytes] + process[stderr_bytes] ))
+  if [[ $SF_HOOK_RESULT[error] == invalid ]]; then
+    error="$lifecycle hook returned invalid control: $command"
+  elif [[ -n $SF_HOOK_RESULT[error] ]]; then
+    error=$SF_HOOK_RESULT[error]
+  elif (( process[exit_code] )); then
+    error="$lifecycle hook failed with status $process[exit_code]: $command"
+    [[ ! -s $directory/stderr ]] || error+=": $(<"$directory/stderr")"
+  elif (( process[control_bytes] > max_capture ||
+      ! SF_HOOK_RESULT[final] && output_bytes > max_capture )); then
+    error="$lifecycle hook output exceeds capture limit: $command"
+  elif (( ! SF_HOOK_RESULT[final] && output_bytes )); then
+    sf_run_hook_shortcut "$directory" || error=$REPLY
   fi
-  sf_jq_fields -cn --argjson exit_code "$process[exit_code]" \
-    --rawfile stdout "$directory/stdout" --rawfile stderr "$directory/stderr" \
-    --argjson over_capture "$over_capture" \
-    --arg lifecycle "$lifecycle" --arg id "$id" --arg name "$name" \
-    --argjson input "$input_json" --argjson render "$render" '
-      include "lib/fields";
-      include "libexec/run/hooks";
-      include "lib/runtime";
-      include "lib/session";
-      hook_outcome($lifecycle;$exit_code;$stdout;$stderr;
-        $ARGS.positional | map(try fromjson catch null);$over_capture) |
-      . as $outcome | .output as $output |
-      (if $output.exit_code != 0 or $output.stdout != "" or $output.stderr != "" then
-        render_component($render;$name;$input;$output) as $rendered |
-        ({type:"hook_result",lifecycle:$lifecycle,id:$id,name:$name,input:$input,
-          exit_code:$output.exit_code} +
-         (if $rendered.user_text == null then {} else {user_text:$rendered.user_text} end) +
-         (if $rendered.model_text == null then {} else {model_text:$rendered.model_text} end)) as $result |
-        if $result | canonical_hook_result then $result else error("invalid result") end
-       else null end) as $result |
-      entry("exit_code"; $output.exit_code | tostring),
-      entry("valid"; $outcome.valid | tostring),
-      entry("stderr"; $output.stderr),
-      entry("action"; $outcome.control.action // ""),
-      entry("reason"; $outcome.control.reason // ""),
-      entry("payload"; $outcome.control | (.argv // .runtime) // "" |
-        if . == "" then . else tojson end),
-      entry("record"; if $result == null then "" else ($result | tojson) end),
-      entry("states"; [$outcome.states[] | tojson] | join("\n")),
-      ("ok" | field)
-    ' --args "${controls[@]}" || {
-    rm -rf -- "$directory"
-    SF_RUN_HOOK_ERROR='cannot decode hook result'
-    return 1
-  }
   rm -rf -- "$directory"
-  SF_HOOK_RESULT=( "${reply[@]}" )
+  # A draft that nothing settled leaves no trace.
+  if (( SF_HOOK_RESULT[live] )); then
+    sf_run_emit '{"type":"_hook_draft","lifecycle":"'$lifecycle'","id":"'$SF_RUN[hook_id]'","user_text":""}' ||
+      error=${error:-cannot emit hook draft}
+  fi
+  [[ -z $error ]] || { SF_RUN_HOOK_ERROR=$error; return 1; }
 }
 
 # A match command decides by status alone and may write nothing.
@@ -170,25 +175,24 @@ sf_run_hook_match() {
   local session=$1 command=$2 input_file=$3 lifecycle=$4 turn_state=$5
   shift 5
   sf_run_hook_invoke "$session" "$command" "$input_file" "$lifecycle" \
-    "$turn_state" '' '' '' '' "$@" || return 2
+    "$turn_state" : "$@" || return 2
   (( SF_HOOK_RESULT[stdout_bytes] + SF_HOOK_RESULT[stderr_bytes] +
      SF_HOOK_RESULT[control_bytes] == 0 &&
      (SF_HOOK_RESULT[exit_code] == 0 || SF_HOOK_RESULT[exit_code] == 1) )) || return 2
   (( SF_HOOK_RESULT[exit_code] == 0 ))
 }
 
-# Return the halting action's fields in reply after appending every accepted
+# Return the halting action's fields in reply after appending every settled
 # record. No action leaves them empty.
 sf_run_hooks() {
   local session=$1 lifecycle=$2 content=$3 turn_state=$4
   shift 4
-  local input_file input_json command match_command name render record clear
-  local error='' reason='' action='' payload=''
-  local -a plan states
-  local -A activity
-  integer offset id invoke_status match_status
+  local input_file command match_command error=''
+  local -a plan
+  integer offset invoke_status match_status
 
   SF_RUN_HOOK_ERROR=''
+  SF_HOOK_RESULT=( action '' reason '' payload '' )
   if (( SF_RUN[hooks_known] )) &&
       [[ " $SF_RUN[hooks] " != *" $lifecycle "* ]]; then
     reply=( action '' )
@@ -210,11 +214,9 @@ sf_run_hooks() {
     SF_RUN_HOOK_ERROR="cannot prepare $lifecycle hook input"
     return 1
   }
-  id=$SF_RUN[hook_id]
-  for (( offset = 1; offset <= ${#plan}; offset += 3 )); do
+  for (( offset = 1; offset <= ${#plan}; offset += 2 )); do
     command=$plan[offset]
     match_command=$plan[offset+1]
-    render=$plan[offset+2]
     if [[ -n $match_command ]]; then
       sf_run_hook_match "$session" "$match_command" "$input_file" \
         "$lifecycle" "$turn_state" "$@"
@@ -225,17 +227,9 @@ sf_run_hooks() {
         break
       }
     fi
-    sf_run_hook_name "$command"
-    name=$REPLY
-    sf_run_hook_activity "$lifecycle" "$id" "$name" "$command" "$content" \
-      "$render" || { error='cannot prepare hook activity'; break; }
-    activity=( "${reply[@]}" )
-    clear=$activity[clear]
-    input_json=$activity[input]
-    sf_run_emit "$activity[record]" || { error='cannot emit hook activity'; break; }
     invoke_status=0
     sf_run_hook_invoke "$session" "$command" "$input_file" "$lifecycle" \
-      "$turn_state" "$render" "$id" "$name" "$input_json" "$@" || invoke_status=$?
+      "$turn_state" sf_run_hook_line "$@" || invoke_status=$?
     if (( invoke_status )); then
       if (( invoke_status == 129 || invoke_status == 130 || invoke_status == 143 )); then
         SF_RUN[signal_status]=$invoke_status
@@ -243,34 +237,13 @@ sf_run_hooks() {
       error=${SF_RUN_HOOK_ERROR:-cannot run $lifecycle hook}
       break
     fi
-    states=( ${(f)SF_HOOK_RESULT[states]} )
-    for record in "${states[@]}"; do
-      sf_run_append "$session" "$record" || { error=$REPLY; break 2; }
-    done
-    record=$SF_HOOK_RESULT[record]
-    if [[ -n $record ]]; then
-      sf_run_append "$session" "$record" || { error=$REPLY; break; }
-      (( SF_RUN[hook_id] += 1 ))
-      id=$SF_RUN[hook_id]
-    elif [[ -n $clear ]]; then
-      sf_run_emit "$clear" || { error='cannot emit hook clear'; break; }
-    fi
-    if (( SF_HOOK_RESULT[exit_code] )); then
-      error="$lifecycle hook failed with status $SF_HOOK_RESULT[exit_code]: $command"
-      [[ -z $SF_HOOK_RESULT[stderr] ]] || error+=": $SF_HOOK_RESULT[stderr]"
-      break
-    fi
-    [[ $SF_HOOK_RESULT[valid] == true ]] ||
-      { error="$lifecycle hook returned invalid control: $command"; break; }
-    action=$SF_HOOK_RESULT[action]
-    reason=$SF_HOOK_RESULT[reason]
-    payload=$SF_HOOK_RESULT[payload]
-    [[ -z $action ]] || break
+    [[ -z $SF_HOOK_RESULT[action] ]] || break
   done
   rm -f -- "$input_file"
   if [[ -n $error ]]; then
     SF_RUN_HOOK_ERROR=$error
     return 1
   fi
-  reply=( action "$action" reason "$reason" payload "$payload" )
+  reply=( action "$SF_HOOK_RESULT[action]" reason "$SF_HOOK_RESULT[reason]"
+    payload "$SF_HOOK_RESULT[payload]" )
 }

@@ -79,9 +79,9 @@ sf_run_tool_bound() {
   fi
 }
 
-# Collect fd 3 lines for sf_run_tool_execute.
+# Collect fd 3 lines for sf_run_tool_execute; a second line is already invalid.
 sf_run_tool_control() {
-  controls+=( "$1" )
+  (( ${#controls} > 1 )) || controls+=( "$1" )
 }
 
 sf_run_tool_execute() {

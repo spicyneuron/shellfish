@@ -11,10 +11,10 @@ messages() { jq -L "$ROOT" -ce 'include "lib/session"; session_messages'; }
 typeset records="$tmp/records.jsonl"
 cat >"$records" <<'JSONL'
 {"type":"system","content":"system text"}
-{"type":"hook_result","lifecycle":"session_start","id":"1","name":"env","input":"","exit_code":0,"user_text":"env","model_text":"ready &amp; set"}
+{"type":"hook_result","lifecycle":"session_start","id":"1","user_text":"env","model_text":"<context script=\"env\">\nready &amp; set\n</context>"}
 {"type":"user","content":[{"type":"text","text":"run it"}]}
 {"type":"assistant","stop":"tool_calls","content":[{"type":"reasoning","text":"think","opaque":{"signature":"abc"}},{"type":"text","text":"Inspecting that."},{"type":"tool_call","id":"call_1","name":"shell","input":{"command":"ls"}},{"type":"tool_call","id":"call_2","name":"shell","input":{"command":"pwd"}}],"usage":{"input_tokens":100,"output_tokens":20}}
-{"type":"hook_result","lifecycle":"pre_tool_use","id":"2","name":"policy","input":{"turn_id":1,"tool_name":"shell","tool_use_id":"call_1","tool_input":{"command":"ls"}},"exit_code":0,"model_text":"POLICY"}
+{"type":"hook_result","lifecycle":"pre_tool_use","id":"2","model_text":"<context script=\"policy\">\nPOLICY\n</context>"}
 {"type":"state","name":"git/identity","value":"first"}
 {"type":"tool_result","id":"call_1","name":"shell","input":{"command":"ls"},"exit_code":0,"user_text":"shell\nout","model_text":"out"}
 {"type":"tool_result","id":"call_2","name":"shell","input":{"command":"pwd"},"exit_code":0,"model_text":"/tmp"}
@@ -73,10 +73,10 @@ jq -sc . "$records" | messages | jq -e '
   .[6] == {type:"assistant",stop:"end",content:[{type:"text",text:"done"}]}
 ' >/dev/null || fail 'provider messages do not match the transcript'
 
-# Scripts from one lifecycle share one attributed hook block.
+# Results from one lifecycle share one hook block, each text inserted verbatim.
 print -r -- '[
-  {"type":"hook_result","lifecycle":"session_start","id":"1","name":"env","input":"","exit_code":0,"model_text":"first"},
-  {"type":"hook_result","lifecycle":"session_start","id":"2","name":"instructions","input":"","exit_code":0,"model_text":"second\n"},
+  {"type":"hook_result","lifecycle":"session_start","id":"1","model_text":"<context script=\"env\">\nfirst\n</context>"},
+  {"type":"hook_result","lifecycle":"session_start","id":"2","model_text":"<context script=\"instructions\">\nsecond\n</context>\n"},
   {"type":"user","content":[{"type":"text","text":"go"}]}
 ]' | messages | jq -e '
   .[0].content[0].text ==
@@ -113,7 +113,7 @@ print -r -- '[
 print -r -- '[
   {"type":"user","content":[{"type":"text","text":"go"}]},
   {"type":"assistant","stop":"end","content":[]},
-  {"type":"hook_result","lifecycle":"stop","id":"1","name":"observe","input":"","exit_code":0,"model_text":"NOTE"}
+  {"type":"hook_result","lifecycle":"stop","id":"1","model_text":"<context script=\"observe\">\nNOTE\n</context>"}
 ]' | messages | jq -e '
   [.[].type] == ["user","assistant","user"] and
   .[2].content[0].text ==
@@ -124,7 +124,7 @@ print -r -- '[
 print -r -- '[
   {"type":"user","content":[{"type":"text","text":"go"}]},
   {"type":"assistant","stop":"end","content":[]},
-  {"type":"hook_result","lifecycle":"stop","id":"1","name":"observe","input":"","exit_code":0,"model_text":"KEEP GOING"},
+  {"type":"hook_result","lifecycle":"stop","id":"1","model_text":"<context script=\"observe\">\nKEEP GOING\n</context>"},
   {"type":"assistant","stop":"end","content":[]}
 ]' | messages | jq -e '
   [.[].type] == ["user","assistant","user","assistant"] and
@@ -162,15 +162,15 @@ typeset -a invalid=(
      {"type":"assistant","stop":"tool_calls","content":[
        {"type":"tool_call","id":"c1","name":"shell","input":{}}]},
      {"type":"tool_result","id":"c1","name":"shell","input":{}}]'
-  'an executable path' '[{"type":"hook_result","lifecycle":"stop","id":"1","name":"observe",
-     "input":"","executable":"/hooks/observe","exit_code":0}]'
-  'a hook without a lifecycle' '[{"type":"hook_result","id":"1","name":"observe","input":"","exit_code":0}]'
-  'an unknown hook lifecycle' '[{"type":"hook_result","lifecycle":"other","id":"1","name":"observe","input":"","exit_code":0}]'
-  'a nondecimal hook identifier' '[{"type":"hook_result","lifecycle":"stop","id":"first","name":"observe","input":"","exit_code":0}]'
-  'a zero hook identifier' '[{"type":"hook_result","lifecycle":"stop","id":"0","name":"observe","input":"","exit_code":0}]'
+  'a hook name' '[{"type":"hook_result","lifecycle":"stop","id":"1","name":"observe"}]'
+  'a hook exit code' '[{"type":"hook_result","lifecycle":"stop","id":"1","exit_code":0}]'
+  'a hook without a lifecycle' '[{"type":"hook_result","id":"1"}]'
+  'an unknown hook lifecycle' '[{"type":"hook_result","lifecycle":"other","id":"1"}]'
+  'a nondecimal hook identifier' '[{"type":"hook_result","lifecycle":"stop","id":"first"}]'
+  'a zero hook identifier' '[{"type":"hook_result","lifecycle":"stop","id":"0"}]'
   'a repeated hook identifier' '[
-     {"type":"hook_result","lifecycle":"session_start","id":"1","name":"env","input":"","exit_code":0},
-     {"type":"hook_result","lifecycle":"stop","id":"1","name":"observe","input":"","exit_code":0}]'
+     {"type":"hook_result","lifecycle":"session_start","id":"1"},
+     {"type":"hook_result","lifecycle":"stop","id":"1"}]'
   'an empty error' '[{"type":"error","user_text":""}]'
   'an error carrying model text' '[{"type":"error","user_text":"failed","model_text":"failed"}]'
   'reasoning with an extra field' '[{"type":"user","content":[{"type":"text","text":"a"}]},
@@ -215,8 +215,8 @@ for (( index = 1; index <= ${#malformed_results}; index += 2 )); do
 done
 
 typeset -a shapes=(
-  '{"type":"hook_result","lifecycle":"session_start","id":"1","name":"add_env","input":"","user_text":"shown","model_text":"data","exit_code":0}'
-  '{"type":"hook_result","lifecycle":"pre_tool_use","id":"2","name":"check","input":{},"exit_code":0}'
+  '{"type":"hook_result","lifecycle":"session_start","id":"1","user_text":"shown","model_text":"data","user_preview_lines":"full"}'
+  '{"type":"hook_result","lifecycle":"pre_tool_use","id":"2","user_text":"shown","user_preview_lines":0}'
   '{"type":"state","name":"a","value":null}'
   '{"type":"state","name":"A0_.:/-","value":[false,1,"text"]}'
 )
@@ -226,10 +226,10 @@ for (( index = 1; index <= ${#shapes}; index += 1 )); do
 done
 
 typeset -a malformed=(
-  'a hook without input' '{"type":"hook_result","lifecycle":"session_start","id":"1","name":"add_env","exit_code":0}'
-  'array hook input' '{"type":"hook_result","lifecycle":"session_start","id":"1","name":"add_env","input":[],"exit_code":0}'
-  'a tool identifier on a hook' '{"type":"hook_result","lifecycle":"session_start","id":"1","name":"add_env","input":"","exit_code":0,"tool_use_id":"c1"}'
-  'empty hook user text' '{"type":"hook_result","lifecycle":"session_start","id":"1","name":"add_env","input":"","exit_code":0,"user_text":""}'
+  'hook input' '{"type":"hook_result","lifecycle":"session_start","id":"1","input":""}'
+  'a tool identifier on a hook' '{"type":"hook_result","lifecycle":"session_start","id":"1","tool_use_id":"c1"}'
+  'empty hook user text' '{"type":"hook_result","lifecycle":"session_start","id":"1","user_text":""}'
+  'a negative preview hint' '{"type":"hook_result","lifecycle":"session_start","id":"1","user_preview_lines":-1}'
   'an unnamed state record' '{"type":"state","name":"","value":null}'
   'a state name opening with a separator' '{"type":"state","name":"/leading","value":null}'
   'a spaced state name' '{"type":"state","name":"bad name","value":null}'

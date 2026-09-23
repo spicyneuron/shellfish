@@ -1,10 +1,14 @@
 #!/usr/bin/env zsh
 
 set -u
+source "${0:A:h:h:h:h}/lib/hook.zsh" || exit 1
 
+typeset name text
 for name in AGENTS.md CLAUDE.md; do
   [ -f "$name" ] && [ -r "$name" ] || continue
-  printf %s "$name" >&2
-  cat "$name" || exit 1
-  exit 0
+  text=$(cat -- "$name" && print x) || exit 1
+  text=${text%x}
+  sf_hook_context project_instructions "project_instructions $name"$'\n'"$text" \
+    "$name: Follow the instructions below for this directory tree. Do not reread this file. A nested $name takes precedence."$'\n\n'"$text"
+  exit
 done

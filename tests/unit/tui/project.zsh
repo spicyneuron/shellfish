@@ -66,22 +66,18 @@ execution_end | call_1 | shell | tool | shell · make test
 ok | default' "$REPLY"
 
 # Hook context is reference material; a hook notice speaks only to the reader.
+# Drafts and results carry their own preview hints.
 project live \
-  '{"type":"_hook_activity","hook":"pre_tool_use","id":"1","name":"guard","input":"","user_text":"guard · checking"}' \
-  '{"type":"_hook_activity","hook":"pre_tool_use","id":"1","name":"guard","input":""}' \
-  '{"type":"hook_result","lifecycle":"pre_tool_use","id":"1","name":"guard","input":"","exit_code":0,"user_text":"guard · ok"}' \
-  '{"type":"hook_result","lifecycle":"session_start","id":"2","name":"project","input":"","exit_code":0,"user_text":"project · read","model_text":"context"}' \
-  '{"type":"hook_result","lifecycle":"session_start","id":"3","name":"git_environment","input":"","exit_code":0,"model_text":"Git branch: main"}'
-assert_equal 'execution_update | 1 | guard | notice | guard · checking | default
-execution_end | 1 | guard | notice |  | default
-execution_end | 1 | guard | notice | guard · ok | default
-execution_end | 2 | project | context | project · read | default
-execution_end | 3 | git_environment | context | git_environment | default' "$REPLY"
-
-# Hook activity without display text clears its matching live view.
-project live \
-  '{"type":"_hook_activity","hook":"stop","id":"3","name":"quiet","input":""}'
-assert_equal 'execution_end | 3 | quiet | notice |  | default' "$REPLY"
+  '{"type":"_hook_draft","lifecycle":"pre_tool_use","id":"1","user_text":"guard · checking","user_preview_lines":1}' \
+  '{"type":"_hook_draft","lifecycle":"pre_tool_use","id":"1","user_text":""}' \
+  '{"type":"hook_result","lifecycle":"pre_tool_use","id":"1","user_text":"guard · ok","user_preview_lines":"full"}' \
+  '{"type":"hook_result","lifecycle":"session_start","id":"2","user_text":"project · read","model_text":"context"}' \
+  '{"type":"hook_result","lifecycle":"session_start","id":"3","model_text":"Git branch: main"}'
+assert_equal 'execution_update | 1 |  | notice | guard · checking | 1
+execution_end | 1 |  | notice |  | default
+execution_end | 1 |  | notice | guard · ok | full
+execution_end | 2 |  | context | project · read | default
+execution_end | 3 |  | context | session_start | default' "$REPLY"
 
 # Permissions carry the preview the client displays.
 project live \
@@ -101,31 +97,13 @@ project live "$(jq -cn --argjson runtime "$runtime" \
   '{type:"_session_update",runtime:$runtime}')"
 assert_equal 'runtime | test/fake-model | 200' "$REPLY"
 runtime=$(jq -c '
-  .harness.tools = [{name:"shell",manifest:{render:{preview_lines:"full"}}}] |
-  .harness.user_prompt_submit = [
-    {command:"/first/help/run",render:{preview_lines:1}},
-    {command:"~/hooks/other/run",render:{preview_lines:"full"}}
-  ]
-' \
-  <<<"$runtime")
+  .harness.tools = [{name:"shell",manifest:{render:{preview_lines:"full"}}}]
+' <<<"$runtime")
 project live "$(jq -cn --argjson runtime "$runtime" \
   '{type:"_session_update",runtime:$runtime}')"
 project live \
   '{"type":"_tool_activity","id":"call_2","name":"shell","input":{},"user_text":"shell"}'
 assert_equal 'execution_update | call_2 | shell | tool | shell | full' "$REPLY"
-project live \
-  '{"type":"_hook_activity","hook":"user_prompt_submit","id":"4","name":"help","input":"","user_text":"help"}'
-assert_equal 'execution_update | 4 | help | notice | help | 1' "$REPLY"
-project load \
-  '{"type":"hook_result","lifecycle":"user_prompt_submit","id":"4","name":"help","input":"","exit_code":0,"user_text":"help"}'
-assert_equal 'execution_end | 4 | help | notice | help | 1' "$REPLY"
-runtime=$(jq -c '.harness.user_prompt_submit += [
-  {command:"/second/help/run",render:{preview_lines:"full"}}]' <<<"$runtime")
-project live "$(jq -cn --argjson runtime "$runtime" \
-  '{type:"_session_update",runtime:$runtime}')"
-project load \
-  '{"type":"hook_result","lifecycle":"user_prompt_submit","id":"5","name":"help","input":"","exit_code":0,"user_text":"help"}'
-assert_equal 'execution_end | 5 | help | notice | help | default' "$REPLY"
 project live \
   '{"type":"assistant","stop":"end","content":[],"usage":{"input_tokens":75,"cached_tokens":15,"output_tokens":5}}'
 assert_equal 'usage | 75 ↑ 20% ⦿ 5 ↓ 38% of 200 ◔ |' "$REPLY"

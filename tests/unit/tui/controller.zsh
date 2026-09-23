@@ -33,25 +33,25 @@ print -n -r -- '{"type":"user"' >"$torn"
 sf_tui_load "$torn" && fail 'incomplete session replay succeeded'
 assert_equal "cannot read incomplete session: $torn" "$SF_PRESENT_ERROR"
 
-# A silent hook completion retracts its transient activity.
+# A cleared hook draft retracts its transient activity.
 SF_PRESENT_SESSION="$tmp/session.jsonl"
 SF_PRESENT_STATE=working
 sf_tui_reset
-pump '{"type":"_hook_activity","hook":"session_start","id":"1","name":"git_environment","input":"","user_text":"git_environment · Loading git environment…"}'
+pump '{"type":"_hook_draft","lifecycle":"session_start","id":"1","user_text":"git_environment · Loading git environment…"}'
 sf_tui_transcript 79 20
 [[ $SF_PRESENT_VIEWPORT_TEXT == *'Loading git environment'* ]] ||
   fail 'hook activity did not reach the viewport'
-pump '{"type":"_hook_activity","hook":"session_start","id":"1","name":"git_environment","input":""}'
+pump '{"type":"_hook_draft","lifecycle":"session_start","id":"1","user_text":""}'
 sf_tui_transcript 79 20
 [[ $SF_PRESENT_VIEWPORT_TEXT != *'Loading git environment'* ]] ||
   fail 'silent hook activity did not leave the viewport'
 
-# Model context settles as a named hook without exposing model text.
+# Model context settles under its lifecycle without exposing model text.
 sf_tui_reset
-pump '{"type":"_hook_activity","hook":"session_start","id":"2","name":"git_environment","input":"","user_text":"git_environment · Loading git environment…"}'
-pump '{"type":"hook_result","lifecycle":"session_start","id":"2","name":"git_environment","input":"","exit_code":0,"model_text":"Git branch: secret"}'
+pump '{"type":"_hook_draft","lifecycle":"session_start","id":"2","user_text":"git_environment · Loading git environment…"}'
+pump '{"type":"hook_result","lifecycle":"session_start","id":"2","model_text":"Git branch: secret"}'
 sf_tui_transcript 79 20
-[[ $SF_PRESENT_VIEWPORT_TEXT == *'↪ git_environment'* &&
+[[ $SF_PRESENT_VIEWPORT_TEXT == *'↪ session_start'* &&
     $SF_PRESENT_VIEWPORT_TEXT != *'Loading git environment'* &&
     $SF_PRESENT_VIEWPORT_TEXT != *'Git branch: secret'* ]] ||
   fail 'model-only hook result did not settle as private context'
@@ -297,7 +297,7 @@ assert_equal early "${(j:,:)SF_PRESENT_QUEUE}"
 pump "$(jq -cn --arg path "$tmp/new.jsonl" '{type:"_session_load",path:$path}')" \
   '{"type":"session","backend":{"command":"/test/run"},"request":{"model":"model"}}' \
   '{"type":"system","content":"instructions"}' \
-  '{"type":"_hook_activity","hook":"session_start","id":"1","name":"setup","input":"","user_text":"setup · working"}'
+  '{"type":"_hook_draft","lifecycle":"session_start","id":"1","user_text":"setup · working"}'
 assert_equal working "$SF_PRESENT_STATE"
 assert_equal "$tmp/new.jsonl" "$SF_PRESENT_SESSION"
 assert_equal "$SF_ENTRY run --jsonl --session $tmp/new.jsonl" \
@@ -305,7 +305,7 @@ assert_equal "$SF_ENTRY run --jsonl --session $tmp/new.jsonl" \
 sf_tui_transcript 79 20
 [[ $SF_PRESENT_VIEWPORT_TEXT == *instructions*'setup · working'* ]] ||
   fail 'startup did not render system context before live hook activity'
-pump '{"type":"hook_result","lifecycle":"session_start","id":"1","name":"setup","input":"","exit_code":0,"user_text":"setup · ready"}'
+pump '{"type":"hook_result","lifecycle":"session_start","id":"1","user_text":"setup · ready"}'
 sf_tui_transcript 79 20
 [[ $SF_PRESENT_VIEWPORT_TEXT == *instructions*'setup · ready'* &&
     $SF_PRESENT_VIEWPORT_TEXT != *'setup · working'* ]] ||

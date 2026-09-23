@@ -47,10 +47,7 @@ jq -e --arg root "$ROOT/share/profiles/default/hooks/session_start" \
     ($root + "/git_environment/run"),
     ($root + "/project_instructions/run")
   ] and
-  (.harness.user_prompt_submit[0] |
-    .command == ($prompt_root + "/help/run") and
-    .render == {initial_user_text:"",user_text:"${output.stdout}${output.stderr}",
-      model_text:"",preview_lines:"full"}) and
+  .harness.user_prompt_submit[0].command == ($prompt_root + "/help/run") and
   .harness.user_prompt_submit[-1].command == ($prompt_root + "/git_environment/run") and
   (.harness.tools | map(.name)) ==
     ["read_file", "edit_file", "write_file", "skill", "search_web", "fetch_url", "shell"] and
@@ -188,7 +185,6 @@ print -r -- '#!/bin/sh' >"$hooked/user_prompt_submit/help/run"
 chmod +x "$hooked/user_prompt_submit/help/run"
 cat >"$hooked/user_prompt_submit/help/manifest.jsonc" <<'JSON'
 {
-  "render": {"user_text": "${output.stdout}"},
   "match": {"pattern": "^/(help|h)\\z"},
   "help": {
     "usage": "/help, /h",
@@ -213,12 +209,12 @@ sf_test_profile hooked '{
 sf_runtime_resolve_args -p hooked
 jq -e --arg base "${hooked:A}" '
   .harness.user_prompt_submit == [
-    {command:($base + "/user_prompt_submit/help/run"),render:{initial_user_text:"",user_text:"${output.stdout}",model_text:"${output.stdout}"},
+    {command:($base + "/user_prompt_submit/help/run"),
       match:{pattern:"^/(help|h)\\z"},help:{usage:"/help, /h",description:"Show help"}},
-    {command:($base + "/user_prompt_submit/shell/run"),render:{initial_user_text:"",user_text:"${output.stderr}",model_text:"${output.stdout}"},
+    {command:($base + "/user_prompt_submit/shell/run"),
       match:{command:($base + "/user_prompt_submit/shell/match")}}
   ] and .harness.stop ==
-    [{command:($base + "/stop/gate/run"),render:{initial_user_text:"",user_text:"${output.stderr}",model_text:"${output.stdout}"}}]
+    [{command:($base + "/stop/gate/run")}]
 ' <<<"$REPLY" >/dev/null
 
 # Only user_prompt_submit hooks may be gated by a match script.

@@ -111,7 +111,7 @@ valid_header=$(jq -cn '
         tools: [], sandbox: true,
         max_requests_per_turn: 50, max_tool_calls_per_request: 20,
         max_capture_bytes: 32768,
-        stop: [{command:"/bin/hook",render:{initial_user_text:"",user_text:"${output.stderr}",model_text:"${output.stdout}"}}]
+        stop: [{command:"/bin/hook"}]
       }
     }
   }
@@ -124,13 +124,13 @@ for patch in '.extra=true' '.runtime.extra=true'; do
   fi
 done
 valid_header=$(jq -c '.runtime.harness.user_prompt_submit=[{
-  command:"/bin/prompt",render:{initial_user_text:"",user_text:"${output.stderr}",model_text:"${output.stdout}"},match:{pattern:"^!"},
+  command:"/bin/prompt",match:{pattern:"^!"},
   help:{usage:"!COMMAND",description:"Run a shell command"}
 }]' <<<"$valid_header")
 print -r -- "$valid_header" | schema_eval 'canonical_session_header' >/dev/null
 typeset permission_header
 permission_header=$(jq -c '.runtime.harness.permission_request=[{
-  command:"/bin/permission",render:{initial_user_text:"",user_text:"${output.stderr}",model_text:"${output.stdout}"}
+  command:"/bin/permission"
 }]' <<<"$valid_header")
 print -r -- "$permission_header" |
   schema_eval 'canonical_session_header' >/dev/null

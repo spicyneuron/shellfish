@@ -44,6 +44,8 @@ request=$(jq -cn --arg text "$instruction" \
   '{type:"user",content:[{type:"text",text:$text}]}') || {
   fail_compaction 'cannot prepare summary request; keeping the original'
 }
+source "${0:A:h:h:h:h}/lib/hook.zsh" && sf_hook_draft 'compact · Compacting conversation…' ||
+  fail_compaction 'cannot report compaction progress; keeping the original'
 summary=$({ cat -- "$SHELLFISH_SESSION"; print -r -- "$request"; } |
   "$SHELLFISH_EXECUTABLE" backend-request |
   jq -er '[.content[] | select(.type == "text") | .text] | join("") |
@@ -85,8 +87,7 @@ if ! jq -ce -s --rawfile context "$context" --arg created "$created" '
     (([$startup[] | select(.type == "hook_result") | .id | tonumber] | max // 0) + 1 |
       tostring) as $id |
     {type:"hook_result",lifecycle:"session_start",id:$id,
-      name:"compact",input:"",exit_code:0,
-      model_text:$context}
+      model_text:("<context script=\"compact\">\n" + $context + "\n</context>")}
   ' "$SHELLFISH_SESSION" >"$transcript"; then
   fail_compaction 'cannot create compacted session; keeping the original'
 fi

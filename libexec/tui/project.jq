@@ -33,40 +33,26 @@ def usage_actions($window):
 def identity:
   ((.backend.command // "" | split("/")[-2] // "?") + "/" + (.request.model // "?"));
 
-def hook_name:
-  split("/") | if .[-1] == "run" then .[-2] else .[-1] end;
-
-def hook_previews($runtime; $lifecycle):
-  reduce $runtime.harness[$lifecycle][]? as $hook ({};
-    ($hook.command | hook_name) as $name |
-    .[$name] = (if has($name) then "default"
-      else $hook.render.preview_lines // "default" end));
-
 def runtime_previews:
-  . as $runtime |
-  {tools:(reduce $runtime.harness.tools[]? as $tool ({};
-      .[$tool.name] = ($tool.manifest.render.preview_lines // "default"))),
-   hooks:(reduce ["session_start", "user_prompt_submit", "permission_request",
-      "pre_tool_use", "post_tool_use", "stop"][] as $lifecycle ({};
-      .[$lifecycle] = hook_previews($runtime; $lifecycle)))};
+  reduce .harness.tools[]? as $tool ({};
+    .[$tool.name] = ($tool.manifest.render.preview_lines // "default"));
 
 def runtime_actions:
   [["runtime", identity, (.context_window // "" | tostring),
     (runtime_previews | tojson)]];
 
 def tool_preview($previews; $name):
-  $previews.tools[$name] // "default";
+  $previews[$name] // "default";
 
-def hook_preview($previews; $lifecycle; $name):
-  $previews.hooks[$lifecycle][$name] // "default";
+# A hook result or draft carries its own preview hint.
+def hook_preview: .user_preview_lines // "default" | tostring;
 
-# Context and notice select presentation styling; their manifests select the
-# preview policy independently.
+# Context and notice select presentation styling.
 def hook_class: if (.model_text // "") == "" then "notice" else "context" end;
 # Model-only results show attribution without exposing model context.
 def result_text:
   if (.user_text // "") != "" then .user_text
-  elif (.model_text // "") != "" then .name
+  elif (.model_text // "") != "" then .name // .lifecycle
   else "" end;
 
 def message_actions($role; $text):
@@ -108,8 +94,7 @@ def record_actions($mode; $window; $previews):
     [["execution_end", .id, .name, "tool", result_text,
       (tool_preview($previews; .name) | tostring)]]
   elif .type == "hook_result" then
-    [["execution_end", .id, .name, hook_class, result_text,
-      (hook_preview($previews; .lifecycle; .name) | tostring)]]
+    [["execution_end", .id, "", hook_class, result_text, hook_preview]]
   elif .type == "session" then (.runtime | runtime_actions)
   elif .type == "state" then []
   else error("unsupported record: " + (.type | tostring))
@@ -129,11 +114,9 @@ def event_actions($window; $previews):
   elif .type == "_tool_activity" then
     [["execution_update", .id, .name, "tool", (.user_text // ""),
       (tool_preview($previews; .name) | tostring)]]
-  elif .type == "_hook_activity" then
-    (hook_preview($previews; .hook; .name) | tostring) as $preview |
-    if (.user_text // "") == "" then
-      [["execution_end", .id, .name, "notice", "", $preview]]
-    else [["execution_update", .id, .name, "notice", .user_text, $preview]] end
+  elif .type == "_hook_draft" then
+    if .user_text == "" then [["execution_end", .id, "", "notice", "", hook_preview]]
+    else [["execution_update", .id, "", "notice", .user_text, hook_preview]] end
   elif .type == "_tool_permission_request" then
     (.preview // "") as $preview |
     [["permission", .id, .tool.name,

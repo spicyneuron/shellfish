@@ -1,1 +1,0 @@
-{"render":{"initial_user_text":"","user_text":"${name} ${output.stderr}\n${output.stdout}","model_text":"${output.stderr}: Follow the instructions below for this directory tree. Do not reread this file. A nested ${output.stderr} takes precedence.\n\n${output.stdout}"}}

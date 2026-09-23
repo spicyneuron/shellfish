@@ -51,18 +51,15 @@ def test_sandbox_updates_without_reload():
                     break
                 session.pump()
             assert grant_path in records[0]["runtime"]["harness"]["sandbox_write_paths"]
-            granted = f"Session sandbox write grant added: {grant_path}\n"
+            granted = f"Session sandbox write grant added: {grant_path}"
             assert len(records) == 2
             result = records[1]
             assert result.pop("id")
             assert result == {
                 "type": "hook_result",
                 "lifecycle": "user_prompt_submit",
-                "name": "sandbox",
-                "input": f"/sandbox +w {grant}",
                 "user_text": f"sandbox\n{granted}",
-                "model_text": granted,
-                "exit_code": 0,
+                "model_text": f'<context script="sandbox">\n{granted}\n</context>',
             }
         finally:
             session.close()

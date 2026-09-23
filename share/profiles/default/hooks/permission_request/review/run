@@ -43,6 +43,8 @@ permission_resolve() {
   exit 0
 }
 
+source "${0:A:h:h:h:h}/lib/hook.zsh" && sf_hook_draft 'review · Reviewing permission request…' ||
+  permission_deny 'Permission review could not start.'
 [[ -r $SHELLFISH_SESSION && -d $SHELLFISH_TURN_STATE ]] ||
   permission_deny 'Permission review could not read the active turn.'
 
@@ -78,18 +80,15 @@ records=$(jq -cs --argjson request "$request" '
     if type == "string" then .
     else
       "<hook name=\"" + (.lifecycle | @html) + "\">\n" +
-      ([.scripts[] | "<context script=\"" + (.name | @html) + "\">\n" + .text +
-        (if .text | endswith("\n") then "" else "\n" end) + "</context>"] | join("\n")) +
-      "\n</hook>"
+      ([.texts[] | if endswith("\n") then . else . + "\n" end] | add) + "</hook>"
     end;
   def join_context($parts): [$parts[] | select(. != "") | render_context] | join("\n\n");
   def context_message($context; $text):
     {type:"user",content:[{type:"text",text:join_context([$context[], $text])}]};
   def add_context($record):
     ([to_entries[] | select(.value.lifecycle? == $record.lifecycle) | .key] | first) as $index |
-    {name:$record.name,text:$record.model_text} as $script |
-    if $index == null then . + [{lifecycle:$record.lifecycle,scripts:[$script]}]
-    else .[$index].scripts += [$script] end;
+    if $index == null then . + [{lifecycle:$record.lifecycle,texts:[$record.model_text]}]
+    else .[$index].texts += [$record.model_text] end;
   . as $records |
   (reduce $records[1:][] as $record
     ({messages:[],context:[],calls:[],response:null};

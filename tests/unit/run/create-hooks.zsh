@@ -7,16 +7,13 @@ sf_test_config
 typeset entry="$ROOT/bin/shellfish" hook="$tmp/start"
 typeset input="$tmp/input" session="$tmp/session.jsonl" stream="$tmp/stream"
 mkdir "$hook"
-print -r -- '{"render":{"initial_user_text":"Starting up","user_text":"${name}\n${output.stdout}${output.stderr}","model_text":"${output.stdout}"}}' \
-  >"$hook/manifest.json"
 cat >"$hook/run" <<'ZSH'
 #!/usr/bin/env zsh
 [[ $# == 0 && $SHELLFISH_MODEL == test && -z ${SHELLFISH_TURN_ID-} &&
   -z ${SHELLFISH_TURN_STATE-} ]] || exit 2
 cat >"$START_INPUT"
-print -rn -- 'startup model'
-print -rn -u2 -- 'startup display'
-print -rn -u3 -- '{"state":[{"name":"startup/state","value":true}]}'
+print -r -u3 -- '{"user_draft":"Starting up"}'
+print -r -u3 -- '{"user_final":"startup display","model_final":"startup model","state":[{"name":"startup/state","value":true}]}'
 ZSH
 chmod +x "$hook/run"
 sf_test_profile default "{
@@ -33,16 +30,14 @@ zsh -f "$entry" run --jsonl --session-create --session-out "$session" \
 [[ ! -s $input ]] || fail 'session_start hook received nonempty stdin'
 jq -eRn --arg session "$session" '
   [inputs | fromjson] as $events |
-  ($events[2] | .type == "_hook_activity" and .hook == "session_start" and
+  ($events[2] | .type == "_hook_draft" and .lifecycle == "session_start" and
     .user_text == "Starting up") and
   [$events[] | .type] ==
-    ["_session_load","session","_hook_activity","state","hook_result"] and
+    ["_session_load","session","_hook_draft","state","hook_result"] and
   ($events[0] == {type:"_session_load",path:$session}) and
   ($events[-1] | del(.id)) == {
-    type:"hook_result",lifecycle:"session_start",name:"start",input:"",
-    exit_code:0,
-    user_text:"start\nstartup modelstartup display",
-    model_text:"startup model"
+    type:"hook_result",lifecycle:"session_start",
+    user_text:"startup display",model_text:"startup model"
   }
 ' <"$stream" >/dev/null || fail 'session_start channels or ordering were wrong'
 jq -e -s '
@@ -51,27 +46,27 @@ jq -e -s '
 ' "$session" >/dev/null || fail 'startup records were not durable'
 assert_canonical_session "$session"
 
-# A successful hook without a durable result still closes its live activity.
+# A successful hook without a durable result still clears its draft.
 cat >"$hook/run" <<'ZSH'
 #!/usr/bin/env zsh
 cat >/dev/null
+print -r -u3 -- '{"user_draft":"Starting up"}'
 ZSH
 chmod +x "$hook/run"
 session="$tmp/silent.jsonl"
 zsh -f "$entry" run --jsonl --session-create --session-out "$session" \
   >"$stream" || fail 'silent session_start hook failed'
-jq -eRn --arg executable "${hook:A}/run" '
+jq -eRn '
   [inputs | fromjson] as $events |
-  [$events[].type] == ["_session_load","session","_hook_activity","_hook_activity"] and
+  [$events[].type] == ["_session_load","session","_hook_draft","_hook_draft"] and
   ($events[3] | del(.id)) ==
-    {type:"_hook_activity",hook:"session_start",name:"start",input:"",
-     executable:$executable}
+    {type:"_hook_draft",lifecycle:"session_start",user_text:""}
 ' <"$stream" >/dev/null ||
   fail 'silent session_start activity did not clear'
 assert_canonical_session "$session"
 
 # An action or a nonzero exit fails session_start and preserves the published
-# session with its completed hook result.
+# session with the results already settled.
 typeset -A unsupported_cases=(
   action "print -r -u3 -- '{\"action\":\"block\"}'"
   status 'exit 3'
@@ -84,7 +79,7 @@ for unsupported in action status; do
   cat >"$hook/run" <<ZSH
 #!/usr/bin/env zsh
 cat >/dev/null
-print -rn -- 'unsupported model'
+print -r -u3 -- '{"model_final":"unsupported model"}'
 print -rn -u2 -- 'unsupported display'
 $unsupported_cases[$unsupported]
 ZSH
@@ -97,7 +92,7 @@ ZSH
   [[ -f $session ]] || fail 'failed session_start removed the transcript it wrote'
   jq -eRn --arg session "$session" '
     [inputs | fromjson] as $events |
-    [$events[].type] == ["_session_load","session","_hook_activity","hook_result"] and
+    [$events[].type] == ["_session_load","session","hook_result"] and
     $events[0] == {type:"_session_load",path:$session}
   ' <"$stream" >/dev/null || fail 'failed creation lost its ordered durable stream'
   jq -e -s '.[-1].type == "hook_result"' \

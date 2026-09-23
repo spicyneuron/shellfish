@@ -4,10 +4,12 @@ emulate -R zsh
 setopt no_aliases no_bg_nice no_multios pipe_fail
 zmodload zsh/datetime
 source "${0:A:h:h:h:h}/lib/capped.zsh" || exit 1
+source "${0:A:h:h:h:h}/lib/hook.zsh" || exit 1
+sf_hook_draft 'git_environment · Loading git environment…' || exit 1
 
 typeset -F deadline=$(( EPOCHREALTIME + SF_PROBE_BUDGET ))
 
-typeset branch hash identity commits git_status
+typeset branch hash identity commits git_status text
 integer probe_status
 branch=$(sf_capped "$deadline" git symbolic-ref --quiet --short HEAD 2>/dev/null)
 case $? in
@@ -27,14 +29,13 @@ probe_status=$?
 (( probe_status != 124 )) || exit 0
 (( probe_status == 0 )) || git_status=''
 
-jq -cn --arg identity "$identity" \
-  '{state:[{name:"git/identity",value:$identity}]}' >&3 || exit 1
-case $identity in
-  branch:*) print -r -- "Git branch: ${identity#branch:}" ;;
-  commit:*) print -r -- "Git commit: ${identity#commit:} (detached HEAD)" ;;
-esac
-print -r -- $'Recent commits:
-'"$commits"
-print -r -- $'Git status:
-'"$(print -r -- "$git_status" | head -10)"
-exit 0
+text=$(
+  case $identity in
+    branch:*) print -r -- "Git branch: ${identity#branch:}" ;;
+    commit:*) print -r -- "Git commit: ${identity#commit:} (detached HEAD)" ;;
+  esac
+  print -r -- $'Recent commits:\n'"$commits"
+  print -r -- $'Git status:\n'"$(print -r -- "$git_status" | head -10)"
+)
+sf_hook_context git_environment "git_environment"$'\n'"$text" "$text" \
+  "$(jq -cn --arg identity "$identity" '{state:[{name:"git/identity",value:$identity}]}')"

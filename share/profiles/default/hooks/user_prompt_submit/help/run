@@ -16,7 +16,8 @@ print -ru3 -- '{"action":"block"}'
 
 IFS= read -r header <"$SHELLFISH_SESSION" || exit 1
 
-{
+typeset text
+text=$({
   print -r -- $'shift+enter\tAdd a line instead of sending the message'
   print -r -- $'ctrl+c\tCancel an active request; otherwise exit'
   print -r -- $'↑, ↓\tNavigate prompt history'
@@ -38,5 +39,5 @@ IFS= read -r header <"$SHELLFISH_SESSION" || exit 1
       max=0
       for (i=1;i<=NR;i++) { l=chars(key[i]); if (l>max) max=l }
       for (i=1;i<=NR;i++) printf "%s%*s  %s\n", key[i], max-chars(key[i]), "", desc[i]
-    }' >&2
-exit 0
+    }') || exit 1
+jq -cn --arg text "$text" '{user_final:$text,user_preview_lines:"full"}' >&3

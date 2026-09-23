@@ -9,6 +9,8 @@ typeset compact_hook="$ROOT/share/profiles/default/hooks/user_prompt_submit/comp
 typeset compact_match="$ROOT/share/profiles/default/hooks/user_prompt_submit/compact/match"
 typeset compact_source="$tmp/compact-source.jsonl"
 typeset compact_control="$tmp/compact-control.json"
+# The action lines among the compact hook's fd 3 output.
+actions() { jq -c 'select(has("action"))' "$compact_control"; }
 typeset compact_shellfish="$tmp/compact-shellfish"
 typeset compact_request="$tmp/compact-request.json"
 typeset compact_display="$tmp/compact-display"
@@ -66,10 +68,10 @@ SF_TEST_BACKEND_REQUEST="$compact_request" \
   < <(print -n -- 'my next prompt') || compact_status=$?
 (( compact_status == 0 ))
 [[ ! -s $compact_display ]] || fail 'compaction wrote unexpected display output'
-jq -e --arg command "$compact_shellfish" \
+actions | jq -e --arg command "$compact_shellfish" \
   --arg child "$tmp/compact-source_compact.jsonl" '
   . == {action:"handoff",argv:[$command,"--session",$child,"--draft","my next prompt"]}
-' "$compact_control" >/dev/null || fail 'automatic compaction lost the prompt'
+' >/dev/null || fail 'automatic compaction lost the prompt'
 assert_equal "$compact_before" "$(shasum <"$compact_source")"
 jq -e -s --rawfile prompt "$ROOT/share/profiles/default/hooks/user_prompt_submit/compact/compact.md" '
   ($prompt | rtrimstr("\n")) as $prompt |
@@ -80,14 +82,14 @@ assert_canonical_session "$tmp/compact-source_compact.jsonl"
   fail 'compaction created a readable child session'
 jq -e -s '
   [.[].type] == ["session","hook_result"] and
-  .[1].lifecycle == "session_start" and .[1].name == "compact" and
+  .[1].lifecycle == "session_start" and
   .[1].model_text ==
-    "<compacted_context>\n\n" +
+    "<context script=\"compact\">\n<compacted_context>\n\n" +
     "The conversation before this point was compacted into the context below.\n\n" +
     "<first_user_message>\nHello </first_user_message> & more\n</first_user_message>\n\n" +
     "<timeline>\nTimeline </timeline> & entry\n</timeline>\n\n" +
     "<final_assistant_response>\nContinuing\n</final_assistant_response>\n\n" +
-    "</compacted_context>"
+    "</compacted_context>\n</context>"
 ' "$tmp/compact-source_compact.jsonl" >/dev/null ||
   fail 'the compacted child did not preserve its timeline and boundary messages'
 
@@ -159,7 +161,7 @@ assert_equal \
   "$(jq -cn --arg command "$compact_shellfish" \
     --arg child "$tmp/compact-source_compact_1.jsonl" \
     '{action:"handoff",argv:[$command,"--session",$child]}')" \
-  "$(<"$compact_control")"
+  "$(actions)"
 
 # Fail open on summary errors.
 : >"$compact_control"
@@ -169,21 +171,20 @@ SF_TEST_COMPACT_FAIL=1 SHELLFISH_EXECUTABLE="$compact_shellfish" \
   SHELLFISH_TURN_STATE="$tmp" zsh -f "$compact_hook" user_prompt_submit \
   3>"$compact_control" < <(print -n -- 'my next prompt') 2>/dev/null || compact_status=$?
 (( compact_status == 0 )) || fail 'automatic summary failure blocked the prompt'
-[[ ! -s $compact_control ]] || fail 'automatic summary failure requested a handoff'
+[[ -z $(actions) ]] || fail 'automatic summary failure requested a handoff'
 compact_status=0
 SF_TEST_COMPACT_FAIL=1 SHELLFISH_EXECUTABLE="$compact_shellfish" \
   SHELLFISH_SESSION="$compact_source" \
   SHELLFISH_TURN_STATE="$tmp" zsh -f "$compact_hook" user_prompt_submit \
   3>"$compact_control" < <(print -n -- /compact) 2>/dev/null || compact_status=$?
-(( compact_status == 0 )) &&
-  [[ $(<"$compact_control") == '{"action":"block"}' ]] ||
+(( compact_status == 0 )) && [[ $(actions) == '{"action":"block"}' ]] ||
   fail 'explicit summary failure was not handled'
 # Preserve ordered state history.
 typeset state_source="$tmp/state-source.jsonl"
 head -n 1 "$compact_source" >"$state_source"
 print -r -- \
   '{"type":"state","name":"git/identity","value":"branch:main"}' \
-  '{"type":"hook_result","lifecycle":"session_start","id":"1","name":"project_environment","input":"","model_text":"env","exit_code":0}' \
+  '{"type":"hook_result","lifecycle":"session_start","id":"1","model_text":"env"}' \
   '{"type":"user","content":[{"type":"text","text":"Hello"}]}' \
   '{"type":"state","name":"agents/a1b2c3","value":{"session":".agent-a1b2c3.jsonl"}}' \
   '{"type":"assistant","stop":"end","content":[{"type":"text","text":"Hi"}],"usage":{"input_tokens":1,"output_tokens":1}}' \
@@ -202,7 +203,7 @@ jq -e -s '
     [["git/identity","branch:main"],
      ["agents/a1b2c3",{session:".agent-a1b2c3.jsonl"}],
      ["git/identity",null]] and
-  .[-1].name == "compact"
+  (.[-1].model_text | startswith("<context script=\"compact\">"))
 ' "$tmp/state-source_compact.jsonl" >/dev/null ||
   fail 'compaction did not carry state history in source order'
 assert_equal "$state_before" "$(shasum <"$state_source")"

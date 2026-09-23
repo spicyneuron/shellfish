@@ -27,33 +27,35 @@ SF_TEST_RUNTIME=$(jq -c --arg hook "$hook" '
   .context_window=20000 |
   .request += {max_tokens:5000,temperature:0.2} |
   .backend.http_timeout=120 |
-  .harness.permission_request=[{command:$hook,render:{
-    initial_user_text:"",user_text:"${output.stderr}",model_text:"${output.stdout}"}}]
+  .harness.permission_request=[{command:$hook}]
 ' <<<"$SF_TEST_RUNTIME")
 SF_TEST_SYSTEM='fixed system'
 sf_test_session "$session"
-sf_session_append "$session" '{"type":"hook_result","lifecycle":"session_start","id":"1","name":"project_instructions","input":"","exit_code":0,"model_text":"startup constraint"}'
+sf_session_append "$session" '{"type":"hook_result","lifecycle":"session_start","id":"1","model_text":"<context script=\"project_instructions\">\nstartup constraint\n</context>"}'
 sf_session_append "$session" '{"type":"user","content":[{"type":"text","text":"opening request"}]}'
 sf_session_append "$session" '{"type":"assistant","stop":"end","content":[{"type":"text","text":"opening answer"}]}'
-sf_session_append "$session" '{"type":"hook_result","lifecycle":"stop","id":"2","name":"retry","input":"","exit_code":1,"model_text":"retry constraint"}'
+sf_session_append "$session" '{"type":"hook_result","lifecycle":"stop","id":"2","model_text":"retry constraint"}'
 sf_session_append "$session" '{"type":"assistant","stop":"end","content":[{"type":"text","text":"revised answer"}]}'
 sf_session_append "$session" '{"type":"user","content":[{"type":"text","text":"run the local setup"}]}'
 sf_session_append "$session" '{"type":"assistant","stop":"tool_calls","content":[{"type":"text","text":"I will inspect it."},{"type":"tool_call","id":"call_6","name":"shell","input":{"command":"inspect"}}]}'
 sf_session_append "$session" '{"type":"tool_result","id":"call_6","name":"shell","input":{"command":"inspect"},"exit_code":0,"model_text":"inspection"}'
 sf_session_append "$session" '{"type":"assistant","stop":"tool_calls","content":[{"type":"reasoning","text":"private","opaque":{"secret":"value"}},{"type":"text","text":"I will run it."},{"type":"tool_call","id":"call_7","name":"shell","input":{"command":"setup","request_sandbox_bypass":true,"sandbox_bypass_reason":"needed"}}]}'
-sf_session_append "$session" '{"type":"hook_result","lifecycle":"permission_request","id":"3","name":"policy","input":{},"exit_code":0,"model_text":"permission context"}'
+sf_session_append "$session" '{"type":"hook_result","lifecycle":"permission_request","id":"3","model_text":"permission context"}'
 assert_canonical_session "$session"
 request='{"tool_input":{"command":"setup","request_sandbox_bypass":true,"sandbox_bypass_reason":"needed"}}'
 
+# The review shows a draft, then settles one final carrying its decision.
 run_review() {
   print -r -- "$1" >"$mode"
-  : >"$control"
   hook_status=0
   SF_TEST_CAPTURE="$captured" SF_TEST_MODE="$mode" \
     SHELLFISH_EXECUTABLE="$wrapper" SHELLFISH_SESSION="$session" \
     SHELLFISH_TURN_STATE="$tmp" SHELLFISH_TURN_ID=6 \
     zsh -f "$hook" shell call_7 \
-    3>"$control" <<<"$request" || hook_status=$?
+    3>"$tmp/lines" <<<"$request" || hook_status=$?
+  jq -e -s 'length == 2 and (.[0] | keys) == ["user_draft"]' "$tmp/lines" >/dev/null ||
+    fail 'permission review did not draft once before settling'
+  jq -c -s last "$tmp/lines" >|"$control"
 }
 
 run_review valid
