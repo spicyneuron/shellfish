@@ -10,7 +10,7 @@ The central design is an append-only session with each turn operated by one proc
 
 ## Scope
 
-Read every tracked, nonignored file in the requested subsystem. Include its implementation, tests, configuration, documentation, and bundled resources under `share/default/`. Do not sample files or stop after finding a major issue. Inspect callers and external boundaries outside the subsystem as needed to understand its contract. If the user does not name a subsystem, read the entire application, one subsystem at a time.
+Read every tracked, nonignored file in the requested subsystem. Include its implementation, tests, configuration, documentation, and bundled resources under `share/profiles/`. Do not sample files or stop after finding a major issue. Inspect callers and external boundaries outside the subsystem as needed to understand its contract. If the user does not name a subsystem, read the entire application, one subsystem at a time.
 
 Inventory the scope before reading and maintain a coverage checklist. Run `./tests/run loc` to identify areas that warrant especially close review, but do not treat size alone as a defect. Maintain provisional notes while inspecting, but assess them against the complete requested scope before reporting. Use documented intent and observable behavior together. Flag contradictions rather than assuming either is authoritative.
 

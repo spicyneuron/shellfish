@@ -262,10 +262,11 @@ def config_assert($valid; $path; $message):
 def reference_list: type == "array" and all(.[]; nonempty_control_free_string);
 
 # One profile file. Its top level is the runtime top level, so "backend" and
-# "harness" are inline objects rather than names into separate maps.
+# "hooks" are inline objects rather than names into separate maps.
 def config_profile($path):
-  config_object($path; ["$schema", "backend", "context_window", "extend", "harness",
-    "request", "system"]) |
+  config_object($path; ["$schema", "backend", "context_window", "extend", "hooks",
+    "max_capture_bytes", "max_requests_per_turn", "max_tool_calls_per_request",
+    "request", "sandbox", "sandbox_read_paths", "sandbox_write_paths", "system", "tools"]) |
   config_assert((has("extend") | not) or (.extend | type == "array" and
     all(.[]; ltrimstr("@") | profile_name)); $path + ["extend"]; "must be profile names") |
   config_assert((has("context_window") | not) or
@@ -273,8 +274,9 @@ def config_profile($path):
     $path + ["context_window"]; "must be null or a positive integer") |
   config_assert((has("request") | not) or (.request | type == "object");
     $path + ["request"]; "must be an object") |
-  config_assert((has("system") | not) or (.system | reference_list);
-    $path + ["system"]; "must be references") |
+  reduce ["system", "tools"][] as $field (.;
+    config_assert((has($field) | not) or (.[$field] | reference_list);
+      $path + [$field]; "must be references")) |
   (if has("backend") then .backend |= (
     config_object($path + ["backend"]; ["adapter", "endpoint",
       "insecure_tls", "http_timeout", "http_stall"]) |
@@ -288,34 +290,32 @@ def config_profile($path):
       config_assert((has($field) | not) or (.[$field] | positive_integer);
         $path + ["backend", $field]; "must be a positive integer"))
   ) else . end) |
-  (if has("harness") then .harness |= (
-    config_object($path + ["harness"]; ["tools", "sandbox", "sandbox_read_paths",
-      "sandbox_write_paths", "max_requests_per_turn", "max_tool_calls_per_request",
-      "max_capture_bytes"] + hook_names) |
-    reduce (hook_names + ["tools"])[] as $field (.;
+  (if has("hooks") then .hooks |= (
+    config_object($path + ["hooks"]; hook_names) |
+    reduce hook_names[] as $field (.;
       config_assert((has($field) | not) or (.[$field] | reference_list);
-        $path + ["harness", $field]; "must be references")) |
-    config_assert((has("sandbox") | not) or (.sandbox | type == "boolean");
-      $path + ["harness", "sandbox"]; "must be a boolean") |
-    reduce ["sandbox_read_paths", "sandbox_write_paths"][] as $field (.;
-      config_assert((has($field) | not) or (.[$field] | type == "array" and
-        all(.[]; type == "string" and length > 0 and
-          (startswith("/") or startswith("~/")) and (contains("\u0000") | not)));
-        $path + ["harness", $field]; "must contain absolute or ~/ paths")) |
-    reduce ["max_requests_per_turn", "max_tool_calls_per_request"][] as $field (.;
-      config_assert((has($field) | not) or (.[$field] | positive_integer);
-        $path + ["harness", $field]; "must be a positive integer")) |
-    config_assert((has("max_capture_bytes") | not) or (.max_capture_bytes | capture_bytes);
-      $path + ["harness", "max_capture_bytes"]; "must be at least 64")
-  ) else . end);
+        $path + ["hooks", $field]; "must be references"))
+  ) else . end) |
+  config_assert((has("sandbox") | not) or (.sandbox | type == "boolean");
+    $path + ["sandbox"]; "must be a boolean") |
+  reduce ["sandbox_read_paths", "sandbox_write_paths"][] as $field (.;
+    config_assert((has($field) | not) or (.[$field] | type == "array" and
+      all(.[]; type == "string" and length > 0 and
+        (startswith("/") or startswith("~/")) and (contains("\u0000") | not)));
+      $path + [$field]; "must contain absolute or ~/ paths")) |
+  reduce ["max_requests_per_turn", "max_tool_calls_per_request"][] as $field (.;
+    config_assert((has($field) | not) or (.[$field] | positive_integer);
+      $path + [$field]; "must be a positive integer")) |
+  config_assert((has("max_capture_bytes") | not) or (.max_capture_bytes | capture_bytes);
+    $path + ["max_capture_bytes"]; "must be at least 64");
 
-# Profile files keyed by path become names: bundled files are "@NAME" and
-# configured files "NAME".
+# Profile files keyed by path become their folder names: bundled folders are
+# "@NAME" and configured folders "NAME".
 def profile_map($bundled):
   with_entries(.key |= ((if startswith($bundled + "/") then "@" else "" end) +
-    (split("/") | last | rtrimstr(".jsonc"))));
+    (split("/")[-2])));
 
-# A bare name prefers the configured file; "@NAME" is always the bundled one.
+# A bare name prefers the configured folder; "@NAME" is always the bundled one.
 def profile_key($profiles):
   if startswith("@") or $profiles[.] then . else "@" + . end;
 
@@ -356,17 +356,16 @@ def profile_select($profiles; $names; $model; $request; $backend; $home):
   (if (.backend.adapter // "") == "" then
     error("profile backend is required") else . end) |
   # Splicing an inherited list makes a restated tool easy to duplicate.
-  ((.harness.tools // []) as $tools |
+  ((.tools // []) as $tools |
     if ($tools | length) == ($tools | unique | length) then .
     else error("profile tools must be unique: " + ($tools | join(", "))) end) |
-  .harness = ((.harness // {}) |
-    reduce ["sandbox_read_paths", "sandbox_write_paths"][] as $field (.;
-      if has($field) then .[$field] |= map(
-        if startswith("~/") then
-          if $home == "" then error("cannot expand ~ without HOME")
-          else $home + "/" + ltrimstr("~/") end
-        else . end)
-      else . end));
+  reduce ["sandbox_read_paths", "sandbox_write_paths"][] as $field (.;
+    if has($field) then .[$field] |= map(
+      if startswith("~/") then
+        if $home == "" then error("cannot expand ~ without HOME")
+        else $home + "/" + ltrimstr("~/") end
+      else . end)
+    else . end);
 
 # Filesystem facts jq cannot obtain, keyed by "<kind>TAB<reference>". Each entry
 # is a resolved directory, one flag for an optional sibling script, and the
@@ -382,7 +381,7 @@ def runtime_finalize($profile; $table; $config_dir; $fence; $grants):
   ($backend.manifest |
     select(type == "object" and keys == ["endpoint"] and (.endpoint | endpoint)) //
     error("invalid backend manifest")) as $manifest |
-  [($profile.harness.tools // [])[] as $reference |
+  [($profile.tools // [])[] as $reference |
     $table["tools\t" + $reference] as $entry |
     ($entry.manifest | select(tool_manifest) //
         error("invalid tool manifest: " + $entry.path) |
@@ -393,7 +392,7 @@ def runtime_finalize($profile; $table; $config_dir; $fence; $grants):
       manifest:$tool_manifest,
       settings:(if $tool_manifest.sandbox then $entry.path + "/fence.jsonc"
         else null end)} end] as $tools |
-  (reduce (hook_names[] as $hook | ($profile.harness[$hook] // [])[] |
+  (reduce (hook_names[] as $hook | ($profile.hooks[$hook] // [])[] |
       {hook:$hook, entry:$table[("hooks/" + $hook) + "\t" + .]}) as $component ({};
     ($component.entry.path + "/run") as $command |
     ($component.entry.manifest |
@@ -417,7 +416,7 @@ def runtime_finalize($profile; $table; $config_dir; $fence; $grants):
     .[$component.hook] += [({command:$command,render:$render} +
       (if $hook_manifest | has("match") then {match:$hook_manifest.match} else {} end) +
       (if $hook_manifest | has("help") then {help:$hook_manifest.help} else {} end))])) as $hooks |
-  ((if $profile.harness | has("sandbox") then $profile.harness.sandbox else true end) and
+  (($profile.sandbox != false) and
     any($tools[]; .manifest.sandbox)) as $needs_fence |
   if $needs_fence and $fence == "" then error("sandboxing requires fence") else . end |
   {
@@ -430,14 +429,13 @@ def runtime_finalize($profile; $table; $config_dir; $fence; $grants):
         {context_window_command:($backend.path + "/context_window")} else {} end)),
     config_dir:$config_dir,
     harness:({
-      sandbox_read_paths:(($profile.harness.sandbox_read_paths // []) + $grants.sandbox_read_paths),
-      sandbox_write_paths:(($profile.harness.sandbox_write_paths // []) + $grants.sandbox_write_paths),
+      sandbox_read_paths:(($profile.sandbox_read_paths // []) + $grants.sandbox_read_paths),
+      sandbox_write_paths:(($profile.sandbox_write_paths // []) + $grants.sandbox_write_paths),
       fence:(if $needs_fence then $fence else "" end),tools:$tools,
-      sandbox:(if $profile.harness | has("sandbox")
-        then $profile.harness.sandbox else true end),
-      max_requests_per_turn:($profile.harness.max_requests_per_turn // 100),
-      max_tool_calls_per_request:($profile.harness.max_tool_calls_per_request // 25),
-      max_capture_bytes:($profile.harness.max_capture_bytes // 32768)} + $hooks),
+      sandbox:($profile.sandbox != false),
+      max_requests_per_turn:($profile.max_requests_per_turn // 100),
+      max_tool_calls_per_request:($profile.max_tool_calls_per_request // 25),
+      max_capture_bytes:($profile.max_capture_bytes // 32768)} + $hooks),
     request:$profile.request,
     system:[($profile.system // [])[] | $table["system\t" + .].path]
   } +

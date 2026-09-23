@@ -4,7 +4,7 @@ source "${0:A:h:h:h}/_helpers.zsh"
 sf_test_tmp default-environment
 
 # Report project environment.
-typeset environment_script="$ROOT/share/default/hooks/session_start/project_environment/run"
+typeset environment_script="$ROOT/share/profiles/default/hooks/session_start/project_environment/run"
 typeset environment_bin="$tmp/environment-bin"
 typeset environment_output
 mkdir "$environment_bin"
@@ -29,8 +29,8 @@ environment_output=$(PATH="$environment_bin:$PATH" zsh -f "$environment_script" 
 [[ $environment_output == *'Available agent skills.'* ]]
 
 # Record Git identity transitions.
-typeset git_start="$ROOT/share/default/hooks/session_start/git_environment/run"
-typeset git_prompt="$ROOT/share/default/hooks/user_prompt_submit/git_environment/run"
+typeset git_start="$ROOT/share/profiles/default/hooks/session_start/git_environment/run"
+typeset git_prompt="$ROOT/share/profiles/default/hooks/user_prompt_submit/git_environment/run"
 typeset git_bin="$tmp/git-environment-bin" git_state="$tmp/git-state"
 typeset git_session="$tmp/git-session.jsonl" git_control="$tmp/git-control.json" git_output
 mkdir "$git_bin"

@@ -22,11 +22,9 @@ chmod +x "$hook/run"
 sf_test_profile default "{
   \"backend\":{\"adapter\":\"$ROOT/tests/fixtures/backend\"},
   \"request\":{\"model\":\"test\"},
-  \"harness\":{
-    \"tools\":[],\"sandbox\":false,\"session_start\":[\"$hook\"],
-    \"max_requests_per_turn\":2,\"max_tool_calls_per_request\":2,
-    \"max_capture_bytes\":1024
-  }
+  \"tools\":[],\"sandbox\":false,\"hooks\":{\"session_start\":[\"$hook\"]},
+  \"max_requests_per_turn\":2,\"max_tool_calls_per_request\":2,
+  \"max_capture_bytes\":1024
 }"
 export START_INPUT=$input
 

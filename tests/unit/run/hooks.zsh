@@ -224,7 +224,7 @@ jq -eRn '
 assert_canonical_session "$session"
 
 # The bundled sandbox hook compares portable grants with shell-resolved input.
-typeset sandbox_hook="$ROOT/share/default/hooks/user_prompt_submit/sandbox/run"
+typeset sandbox_hook="$ROOT/share/profiles/default/hooks/user_prompt_submit/sandbox/run"
 typeset sandbox_session="$tmp/sandbox.jsonl" sandbox_control="$tmp/sandbox-control.json"
 typeset sandbox_project="$tmp/project" sandbox_home="$tmp/home" sandbox_output="$tmp/sandbox-output"
 mkdir -p "$sandbox_project/dir" "$sandbox_home/share"

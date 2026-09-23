@@ -5,8 +5,6 @@
 
   "extend": ["default"],
 
-  "harness": {
-    // "..." splices the inherited list, so this adds without restating it.
-    "permission_request": ["...", "review"]
-  }
+  // "..." splices the inherited list, so this adds without restating it.
+  "hooks": {"permission_request": ["...", "review"]}
 }

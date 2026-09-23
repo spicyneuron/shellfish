@@ -1,8 +1,8 @@
 // Shellfish: https://github.com/spicyneuron/shellfish
 //
-// The bundled agent, selected when --profile is absent. A profile in
-// $XDG_CONFIG_HOME/shellfish/profiles/ shadows a bundled file of the same
-// name, and "extend" merges one profile into another.
+// The bundled agent, selected when --profile is absent. A profile folder in
+// $XDG_CONFIG_HOME/shellfish/profiles/ shadows a bundled one of the same name,
+// and "extend" merges one profile into another.
 {
   "$schema": "https://raw.githubusercontent.com/spicyneuron/shellfish/refs/heads/main/share/shellfish.schema.json",
 
@@ -24,31 +24,29 @@
   // disable it.
   // "context_window": 200000,
 
-  // The harness wraps the shared turn loop with capabilities, sandboxing, and
-  // limits.
-  "harness": {
-    // Tools available to the model.
-    "tools": ["read_file", "edit_file", "write_file", "skill", "search_web", "fetch_url", "shell"],
+  // Tools available to the model.
+  "tools": ["read_file", "edit_file", "write_file", "skill", "search_web", "fetch_url", "shell"],
 
-    // Each hook runs an ordered list of components. See docs/HARNESS.md for
-    // payloads, exit statuses, and environment guarantees.
+  // Each lifecycle runs an ordered list of hooks. See docs/HARNESS.md for
+  // payloads, exit statuses, and environment guarantees.
+  "hooks": {
     "session_start": ["project_environment", "git_environment", "project_instructions"],
     "user_prompt_submit": ["help", "verbose", "new", "copy", "fork", "sandbox", "user_shell", "server", "resume", "compact", "git_environment"],
     "permission_request": [],
     "pre_tool_use": [],
     "post_tool_use": [],
-    "stop": [],
+    "stop": []
+  },
 
-    // "sandbox" enables fence for tools that opt in via their manifest.
-    // sandbox_read_paths/sandbox_write_paths grant extra paths beyond the
-    // project directory while keeping the tool's other restrictions.
-    "sandbox": true,
-    "sandbox_read_paths": [],
-    "sandbox_write_paths": [],
+  // "sandbox" enables fence for tools that opt in via their manifest.
+  // sandbox_read_paths/sandbox_write_paths grant extra paths beyond the
+  // project directory while keeping the tool's other restrictions.
+  "sandbox": true,
+  "sandbox_read_paths": [],
+  "sandbox_write_paths": [],
 
-    // Caps for requests, tool calls, and bytes from a single tool result.
-    "max_requests_per_turn": 100,
-    "max_tool_calls_per_request": 25,
-    "max_capture_bytes": 32768
-  }
+  // Caps for requests, tool calls, and bytes from a single tool result.
+  "max_requests_per_turn": 100,
+  "max_tool_calls_per_request": 25,
+  "max_capture_bytes": 32768
 }

@@ -3,19 +3,17 @@
 source "${0:A:h:h:h}/_helpers.zsh"
 sf_test_tmp run-command
 sf_test_config
-mkdir -p "$tmp/home" "$SF_TEST_CONFIG/system"
-print -r -- 'initial system' >"$SF_TEST_CONFIG/system/source.md"
+mkdir -p "$tmp/home" "$SF_TEST_CONFIG/profiles/default/system"
+print -r -- 'initial system' >"$SF_TEST_CONFIG/profiles/default/system/source.md"
 export HOME="${tmp:A}/home"
 
 sf_test_profile default "{
   \"backend\": {\"adapter\": \"$ROOT/tests/fixtures/backend\"},
   \"system\": [\"source.md\"],
   \"request\": {\"model\": \"test-model\"},
-  \"harness\": {
-    \"tools\": [], \"sandbox\": true,
-    \"max_requests_per_turn\": 8, \"max_tool_calls_per_request\": 16,
-    \"max_capture_bytes\": 65536
-  }
+  \"tools\": [], \"sandbox\": true,
+  \"max_requests_per_turn\": 8, \"max_tool_calls_per_request\": 16,
+  \"max_capture_bytes\": 65536
 }"
 export XDG_STATE_HOME="$tmp/state"
 typeset entry="$ROOT/bin/shellfish"
@@ -179,7 +177,7 @@ ZSH
 chmod +x "$handoff_script/run"
 typeset handoff_output="$tmp/handoff.jsonl"
 sf_test_profile handoff \
-  "{\"extend\": [\"default\"], \"harness\": {\"user_prompt_submit\": [\"$handoff_script\"]}}"
+  "{\"extend\": [\"default\"], \"hooks\": {\"user_prompt_submit\": [\"$handoff_script\"]}}"
 print -r -- \
   '{"type":"user","content":[{"type":"text","text":"handoff"}]}' |
   zsh -f "$entry" run --jsonl -p handoff \
@@ -192,7 +190,7 @@ jq -eRn '
 
 # Invalid session paths fail cleanly.
 typeset invalid_path="$tmp/invalid-path" invalid_path_output="$tmp/invalid-path.out"
-ln -s "$SF_TEST_CONFIG/profiles/default.jsonc" "$invalid_path"
+ln -s "$SF_TEST_CONFIG/profiles/default/profile.jsonc" "$invalid_path"
 integer invalid_path_status=0
 print -r -- \
   '{"type":"user","content":[{"type":"text","text":"ignored"}]}' |

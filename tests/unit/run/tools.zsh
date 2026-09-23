@@ -9,7 +9,7 @@ export XDG_STATE_HOME="$tmp/state" SF_TEST_BACKEND_DELAY=0
 sf_test_runtime
 
 # The bundled shell decodes multiline commands once and preserves exit status.
-typeset shell_tool="$ROOT/share/default/tools/shell/run"
+typeset shell_tool="$ROOT/share/profiles/default/tools/shell/run"
 assert_equal $'first\nsecond' "$(print -rn -- \
   '{"command":"print -r -- first; print -r -- second"}' | "$shell_tool")"
 integer shell_status=0

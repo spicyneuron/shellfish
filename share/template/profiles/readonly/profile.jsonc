@@ -5,8 +5,6 @@
 
   "extend": ["default"],
 
-  "harness": {
-    "tools": ["read_file", "shell_readonly"],
-    "session_start": ["project_instructions"]
-  }
+  "tools": ["read_file", "shell_readonly"],
+  "hooks": {"session_start": ["project_instructions"]}
 }

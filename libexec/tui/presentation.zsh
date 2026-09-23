@@ -40,7 +40,7 @@ sf_presentation_resolve() {
   SF_PRESENTATION_ERROR=''
   sf_presentation_config_path
   config_path=$REPLY
-  defaults=$(sf_jsonc_read "$SF_SHARE/default/tui.jsonc" 2>/dev/null) ||
+  defaults=$(sf_jsonc_read "$SF_SHARE/tui.jsonc" 2>/dev/null) ||
     sf_presentation_fail 'invalid bundled TUI config' || return
   if [[ -n $config_path && ( -e $config_path || -L $config_path ) ]]; then
     [[ -f $config_path && -r $config_path ]] ||

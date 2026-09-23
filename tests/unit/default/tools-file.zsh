@@ -3,7 +3,7 @@
 source "${0:A:h:h:h}/_helpers.zsh"
 sf_test_tmp default-tools-file
 
-typeset tools="$ROOT/share/default/tools"
+typeset tools="$ROOT/share/profiles/default/tools"
 typeset output
 
 run_tool() {

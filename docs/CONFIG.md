@@ -1,6 +1,6 @@
 # Configuration
 
-Shellfish reads JSONC from `$XDG_CONFIG_HOME/shellfish/` (or `~/.config/shellfish/` when `XDG_CONFIG_HOME` is unset). `profiles/NAME.jsonc` describes a runtime and `tui.jsonc` describes rendering. A profile name resolves to exactly one file: yours shadows the bundled file of the same name under [`share/default/profiles/`](../share/default/profiles/). `tui.jsonc` merges over [`share/default/tui.jsonc`](../share/default/tui.jsonc).
+Shellfish reads JSONC from `$XDG_CONFIG_HOME/shellfish/` (or `~/.config/shellfish/` when `XDG_CONFIG_HOME` is unset). `profiles/NAME/profile.jsonc` describes a runtime and `tui.jsonc` describes rendering. A profile name resolves to exactly one folder: yours shadows the bundled folder of the same name under [`share/profiles/`](../share/profiles/). `tui.jsonc` merges over [`share/tui.jsonc`](../share/tui.jsonc).
 
 The two never mix. A session freezes a runtime, so a profile rejects rendering keys; `tui.jsonc` is read fresh on every run and is never frozen.
 
@@ -8,16 +8,16 @@ Copy [`share/template/`](../share/template/) into that directory for a working s
 
 ## Profiles
 
-`profiles/default.jsonc` is selected when `--profile` is absent. `-p NAME` selects another and repeats compose: `-p review -p readonly` merges them left to right. A file you write shadows the bundled file of that name, and `@NAME` always means the bundled file, so your own `default.jsonc` can extend `@default` to build on the bundled agent.
+`profiles/default/` is selected when `--profile` is absent. `-p NAME` selects another and repeats compose: `-p review -p readonly` merges them left to right. A folder you write shadows the bundled folder of that name, and `@NAME` always means the bundled folder, so your own `default` can extend `@default` to build on the bundled agent.
 
 A profile's top level is the runtime's top level.
 
 ```jsonc
-// profiles/work.jsonc
+// profiles/work/profile.jsonc
 {
   "extend": ["default"],
   "backend": {"adapter": "openrouter"},
-  "harness": {"tools": ["...", "my_tool"]},
+  "tools": ["...", "my_tool"],
   "request": {"model": "MODEL"}
 }
 ```
@@ -26,7 +26,7 @@ A profile's top level is the runtime's top level.
 | --- | --- |
 | `extend` | Ordered profile names, merged left to right; own keys last |
 | `backend` | Adapter reference and transport settings |
-| `harness` | Tools, hooks, sandbox policy, and turn limits |
+| `tools`, `hooks`, sandbox, and limits | The harness; see [Harness](#harness) |
 | `system` | Ordered system-component references |
 | `request` | Provider request object; `model` is required after resolution |
 | `context_window` | Positive capacity override; `null` disables discovery; absent permits adapter discovery |
@@ -36,11 +36,11 @@ The selected profiles and everything they extend are flattened into one list, pa
 A profile that sets only one section is a shareable fragment; that is what `extend` is for, so there are no separate backend or harness maps.
 
 ```jsonc
-// profiles/local-llm.jsonc — not selectable on its own; no model
+// profiles/local-llm/profile.jsonc — not selectable on its own; no model
 {"backend": {"adapter": "openai",
              "endpoint": "http://127.0.0.1:8080/v1/chat/completions"}}
 
-// profiles/local.jsonc
+// profiles/local/profile.jsonc
 {"extend": ["default", "local-llm"], "request": {"model": "qwen3"}}
 ```
 
@@ -58,17 +58,17 @@ Bundled adapters: `anthropic`, `codex`, `openai`, `openai-responses`, and `openr
 
 ## Harness
 
-Omitted hook and tool lists are empty; omitted sandbox and limit fields use the defaults below.
+These fields sit at the profile's top level. Omitted hook and tool lists are empty; omitted sandbox and limit fields use the defaults below.
 
 | Field | Default / meaning |
 | --- | --- |
 | `tools` | `[]`; unique tool references exposed to the model |
-| `session_start` | `[]`; creation context hooks |
-| `user_prompt_submit` | `[]`; prompt gates and interactive commands |
-| `permission_request` | `[]`; sandbox-bypass decisions |
-| `pre_tool_use` | `[]`; tool policy gates |
-| `post_tool_use` | `[]`; post-execution observers |
-| `stop` | `[]`; completion gates |
+| `hooks.session_start` | `[]`; creation context hooks |
+| `hooks.user_prompt_submit` | `[]`; prompt gates and interactive commands |
+| `hooks.permission_request` | `[]`; sandbox-bypass decisions |
+| `hooks.pre_tool_use` | `[]`; tool policy gates |
+| `hooks.post_tool_use` | `[]`; post-execution observers |
+| `hooks.stop` | `[]`; completion gates |
 | `sandbox` | `true` |
 | `sandbox_read_paths` | `[]`; extra read grants |
 | `sandbox_write_paths` | `[]`; extra read-write grants |
@@ -79,27 +79,29 @@ Omitted hook and tool lists are empty; omitted sandbox and limit fields use the 
 One capability set can serve different roles, because the system prompt sits beside it:
 
 ```jsonc
-// profiles/review.jsonc
+// profiles/review/profile.jsonc, beside system/review.md
 {
   "extend": ["default"],
-  "harness": {
-    "tools": ["read_file"],
-    "session_start": ["project_environment", "project_instructions"]
-  },
+  "tools": ["read_file"],
+  "hooks": {"session_start": ["project_environment", "project_instructions"]},
   "system": ["review.md"]
 }
 ```
 
 ## Components and environment
 
-System components, tools, hooks, and adapters may be referenced by absolute path, by a path under `~/`, or by name. Named references resolve under the matching configuration subdirectory, then fall back to [`share/default/`](../share/default/); user components can shadow bundled ones.
+A profile folder keeps its components beside `profile.jsonc`:
 
-| Kind | User directory | Bundled directory |
-| --- | --- | --- |
-| System | `system/` | `share/default/system/` |
-| Tool | `tools/` | `share/default/tools/` |
-| Hook | `hooks/HOOK/` | `share/default/hooks/HOOK/` |
-| Adapter | `backends/` | `share/default/backends/` |
+```text
+profiles/NAME/
+  profile.jsonc
+  system/FILE.md
+  tools/TOOL/
+  hooks/HOOK/NAME/
+  backends/ADAPTER/
+```
+
+A name in `system`, `tools`, `hooks`, or `backend.adapter` resolves to the first folder that contains it, starting with the most-derived profile and walking back through what it extends; a later `-p` comes before an earlier one. So a profile shadows its parents' components, and a name never falls back beyond those folders: a profile that does not extend `default` references bundled parts as `@default/tools/shell`. `@NAME/path` always resolves inside the bundled folder, while `~/path` and absolute paths are used as written.
 
 Credentials live in exported variables or `.env` in the configuration directory; exported values win. Values remain external and are read for each invocation.
 
@@ -112,10 +114,8 @@ The default harness runs opted-in tools under [`fence`](https://github.com/fence
 ```jsonc
 {
   "extend": ["default"],
-  "harness": {
-    "sandbox_read_paths": ["/path/to/reference"],
-    "sandbox_write_paths": ["/path/to/output"]
-  }
+  "sandbox_read_paths": ["/path/to/reference"],
+  "sandbox_write_paths": ["/path/to/output"]
 }
 ```
 
@@ -137,7 +137,7 @@ The default harness runs opted-in tools under [`fence`](https://github.com/fence
 
 ## Bundled agent
 
-[`profiles/default.jsonc`](../share/default/profiles/default.jsonc) works out of the box: the `openrouter` adapter, `general.md` and `tools.md`, and up to 16,384 output tokens with medium reasoning effort. It sets no model, so supply one in your own profile or with `-m`. [`profiles/coding.jsonc`](../share/default/profiles/coding.jsonc) is a short example of overriding it.
+[`default`](../share/profiles/default/profile.jsonc) works out of the box: the `openrouter` adapter, `general.md` and `tools.md`, and up to 16,384 output tokens with medium reasoning effort. It sets no model, so supply one in your own profile or with `-m`. [`coding`](../share/profiles/coding/profile.jsonc) is a short example of overriding it.
 
 Its harness enables sandboxing, uses the limit defaults above, and exposes:
 
@@ -176,6 +176,6 @@ Most interactive commands are `user_prompt_submit` hooks:
 
 `git_environment` also runs before ordinary prompts when Git identity changes. Client-owned `/refresh`, `/quit`, and `/queue` commands do not run a turn.
 
-The optional `permission_request` component `review` uses one inference to compare requested risk with user authorization; failures deny. Enable it with `"harness": {"permission_request": ["review"]}`.
+The optional `permission_request` component `review` uses one inference to compare requested risk with user authorization; failures deny. Enable it with `"hooks": {"permission_request": ["review"]}`.
 
 `/compact` leaves the source unchanged and asks the client to open a summarized child. Automatic compaction may run near a known context-window limit and preserves the interrupted prompt as an editable draft.

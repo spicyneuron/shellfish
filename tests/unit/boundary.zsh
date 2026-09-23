@@ -63,9 +63,9 @@ typeset -a dispatched=( ${${matches#libexec/}%/main.zsh} )
 
 # Bundled harness resources are product behavior, not core implementation. They
 # run from any installation and never reach into the repository layout.
-collect '\$SF_(ROOT|SHARE)\b' $ROOT/share/default/**/*(.N)
+collect '\$SF_(ROOT|SHARE)\b' $ROOT/share/profiles/**/*(.N)
 (( ! ${#matches} )) || fail "bundled resource uses the installation layout: $matches[1]"
-collect 'include "lib/[a-z]+"' $ROOT/share/default/**/*(.N)
+collect 'include "lib/[a-z]+"' $ROOT/share/profiles/**/*(.N)
 (( ! ${#matches} )) || fail "bundled resource uses core jq: $matches[1]"
 
 for dir in $ROOT/libexec/*(/N); do
@@ -87,7 +87,7 @@ for dir in $ROOT/libexec/*(/N); do
   collect '\$SF_SHARE/[^"'\'' ]+' $shell_files $jq_files
   for token in $matches; do
     module=${token#\$SF_SHARE/}
-    [[ $module == (default/*|template/*) ]] ||
+    [[ $module == (profiles/*|template/*|tui.jsonc) ]] ||
       fail "$component uses unknown shared data: $module"
   done
 

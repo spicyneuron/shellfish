@@ -34,22 +34,13 @@
         }
       }
     },
-    "harness": {
+    "tools": {
+      "$ref": "#/$defs/component_list"
+    },
+    "hooks": {
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "tools": {
-          "$ref": "#/$defs/component_list"
-        },
-        "sandbox": {
-          "type": "boolean"
-        },
-        "sandbox_read_paths": {
-          "$ref": "#/$defs/sandbox_path_list"
-        },
-        "sandbox_write_paths": {
-          "$ref": "#/$defs/sandbox_path_list"
-        },
         "session_start": {
           "$ref": "#/$defs/component_list"
         },
@@ -67,17 +58,26 @@
         },
         "stop": {
           "$ref": "#/$defs/component_list"
-        },
-        "max_requests_per_turn": {
-          "$ref": "#/$defs/positive_integer"
-        },
-        "max_tool_calls_per_request": {
-          "$ref": "#/$defs/positive_integer"
-        },
-        "max_capture_bytes": {
-          "$ref": "#/$defs/capture_bytes"
         }
       }
+    },
+    "sandbox": {
+      "type": "boolean"
+    },
+    "sandbox_read_paths": {
+      "$ref": "#/$defs/sandbox_path_list"
+    },
+    "sandbox_write_paths": {
+      "$ref": "#/$defs/sandbox_path_list"
+    },
+    "max_requests_per_turn": {
+      "$ref": "#/$defs/positive_integer"
+    },
+    "max_tool_calls_per_request": {
+      "$ref": "#/$defs/positive_integer"
+    },
+    "max_capture_bytes": {
+      "$ref": "#/$defs/capture_bytes"
     },
     "system": {
       "$ref": "#/$defs/component_list"

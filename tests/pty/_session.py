@@ -63,22 +63,25 @@ class Session:
         self.config_home = Path(self.state_home.name) / "config"
         config_dir = self.config_home / "shellfish"
         config_dir.mkdir(parents=True)
-        (config_dir / "profiles").mkdir()
-        self.config_file = config_dir / "profiles" / "default.jsonc"
+        profile_dir = config_dir / "profiles" / "default"
+        profile_dir.mkdir(parents=True)
+        self.config_file = profile_dir / "profile.jsonc"
         config = {
             "backend": {"adapter": TEST_BACKEND},
             "request": {"model": "fake-model"},
-            "harness": {
-                "tools": ["read_file", "write_file", "edit_file", "shell"],
-                "sandbox": True,
-            },
+            "tools": [f"@default/tools/{tool}"
+                      for tool in ("read_file", "write_file", "edit_file", "shell")],
+            "sandbox": True,
+            "hooks": {},
         }
         if hooks:
-            config["harness"]["user_prompt_submit"] = list(hooks)
-            hook_dir = config_dir / "hooks" / "user_prompt_submit"
+            # Bodyless entries are bundled hooks.
+            config["hooks"]["user_prompt_submit"] = [
+                name if body is not None else f"@default/hooks/user_prompt_submit/{name}"
+                for name, body in hooks.items()]
+            hook_dir = profile_dir / "hooks" / "user_prompt_submit"
             hook_dir.mkdir(parents=True)
             for name, body in hooks.items():
-                # Bodyless entries resolve to bundled hooks.
                 if body is None:
                     continue
                 component = hook_dir / name
@@ -88,7 +91,7 @@ class Session:
                 script.chmod(0o755)
                 (component / "manifest.json").write_text("{}")
         if session_start:
-            config["harness"]["session_start"] = session_start
+            config["hooks"]["session_start"] = session_start
         self.config_file.write_text(json.dumps(config))
         # Avoid an interactive terminal background probe.
         (config_dir / "tui.jsonc").write_text(json.dumps({

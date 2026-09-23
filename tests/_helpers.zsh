@@ -29,7 +29,7 @@ sf_test_tmp() {
   export XDG_STATE_HOME="$tmp/state"
 }
 
-# An isolated config directory, then one profile file inside it.
+# An isolated config directory, then one profile folder inside it.
 sf_test_config() {
   typeset -g SF_TEST_CONFIG="$tmp/config/shellfish"
   mkdir -p "$SF_TEST_CONFIG/profiles"
@@ -37,7 +37,8 @@ sf_test_config() {
 }
 
 sf_test_profile() {
-  print -r -- "$2" >"$SF_TEST_CONFIG/profiles/$1.jsonc"
+  mkdir -p "$SF_TEST_CONFIG/profiles/$1"
+  print -r -- "$2" >"$SF_TEST_CONFIG/profiles/$1/profile.jsonc"
 }
 
 # err_exit plus this trap turn every bare test expression into a located
@@ -95,7 +96,7 @@ assert_canonical_session() {
 
 # Frozen runtime used by tool and exec tests. Optional system-file path.
 sf_test_runtime() {
-  local system=${1-} tool=$ROOT/share/default/tools/shell
+  local system=${1-} tool=$ROOT/share/profiles/default/tools/shell
   typeset -g SF_TEST_RUNTIME SF_TEST_SYSTEM=''
   [[ -z $system ]] || SF_TEST_SYSTEM=$(<"$system")
   SF_TEST_RUNTIME=$(jq -cn \

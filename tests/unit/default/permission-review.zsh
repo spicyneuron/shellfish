@@ -4,7 +4,7 @@ source "${0:A:h:h:h}/_helpers.zsh"
 sf_test_source lib/session.zsh
 sf_test_tmp permission-review
 
-typeset hook="$ROOT/share/default/hooks/permission_request/review/run"
+typeset hook="$ROOT/share/profiles/default/hooks/permission_request/review/run"
 typeset session="$tmp/review.jsonl" control="$tmp/control.json"
 typeset wrapper="$tmp/shellfish" captured="$tmp/transcript.jsonl" mode="$tmp/mode"
 typeset request
@@ -67,7 +67,7 @@ jq -e '
     {risk:"medium",authorization:"high",reason:"Explicitly authorized."}
 ' "$control" >/dev/null || fail 'permission review returned the wrong decision'
 jq -e -s --arg tool_input "$(jq -c '.tool_input' <<<"$request")" \
-    --rawfile policy "$ROOT/share/default/hooks/permission_request/review/review.md" '
+    --rawfile policy "$ROOT/share/profiles/default/hooks/permission_request/review/review.md" '
   (.[2].content[0].text | fromjson) as $context |
   .[0].runtime.request.model == "test-model" and
   .[0].runtime.request.max_tokens == 4096 and

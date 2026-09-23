@@ -208,7 +208,7 @@ if print -r -- "$valid_manifest" | jq -c '.render = null' |
     schema_eval 'tool_manifest' >/dev/null 2>&1; then
   fail 'tool manifest accepted null render overrides'
 fi
-for manifest in "$ROOT"/share/default/tools/*/manifest.json; do
+for manifest in "$ROOT"/share/profiles/default/tools/*/manifest.json; do
   schema_eval 'tool_manifest' <"$manifest" >/dev/null ||
     fail "invalid bundled tool manifest: $manifest"
 done

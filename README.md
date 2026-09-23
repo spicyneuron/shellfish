@@ -71,19 +71,19 @@ Run `shellfish --help` for creation and sandbox options, or `/help` inside chat 
 
 ## Configuration
 
-An agent is one file in `$XDG_CONFIG_HOME/shellfish/profiles/` (typically `~/.config/shellfish/profiles/`). `default.jsonc` is selected when `--profile` is absent, and a file there shadows the [bundled profile](share/default/profiles/) of the same name. Exported credentials override values in `.env` in that directory. Themes and preview limits live in [`tui.jsonc`](share/default/tui.jsonc).
+An agent is one folder in `$XDG_CONFIG_HOME/shellfish/profiles/` (typically `~/.config/shellfish/profiles/`) holding a `profile.jsonc` and any prompts, tools, hooks, or adapters of its own. `default/` is selected when `--profile` is absent, and a folder there shadows the [bundled profile](share/profiles/) of the same name. Exported credentials override values in `.env` in the config directory. Themes and preview limits live in [`tui.jsonc`](share/tui.jsonc).
 
 ```jsonc
-// ~/.config/shellfish/profiles/review.jsonc — shellfish -p review
+// ~/.config/shellfish/profiles/review/profile.jsonc — shellfish -p review
 {
   "$schema": "https://raw.githubusercontent.com/spicyneuron/shellfish/refs/heads/main/share/shellfish.schema.json",
   "extend": ["default"],
-  "harness": {"tools": ["read_file", "shell_readonly"]},
-  "system": ["...", "review.md"]
+  "tools": ["read_file", "shell_readonly"],
+  "system": ["...", "review.md"]  // profiles/review/system/review.md
 }
 ```
 
-A profile holds a backend, a harness, system-prompt components, and provider request settings. `extend` merges other profiles in order, objects merge recursively, and `"..."` splices an inherited list. Command-line options override the selection, `-p` repeats to compose several profiles, and Shellfish resolves that composition once and freezes it in the session header.
+A profile holds a backend, a harness, system-prompt components, and provider request settings. Component names resolve through the profile's own folder first, then the folders it extends. `extend` merges other profiles in order, objects merge recursively, and `"..."` splices an inherited list. Command-line options override the selection, `-p` repeats to compose several profiles, and Shellfish resolves that composition once and freezes it in the session header.
 
 ## Documentation
 

@@ -14,7 +14,7 @@ ZSH
 chmod +x "$tmp/jina-bin/curl"
 typeset jina_args="$tmp/jina.args" jina_output
 jina_output=$(PATH="$tmp/jina-bin:$PATH" JINA_TEST_ARGS="$jina_args" \
-  "$ROOT/share/default/tools/fetch_url/run" <<<'{"url":"https://example.com/docs?q=reader"}')
+  "$ROOT/share/profiles/default/tools/fetch_url/run" <<<'{"url":"https://example.com/docs?q=reader"}')
 assert_equal '# fetched markdown' "$jina_output"
 typeset -a expected_jina_args=(
   --disable --silent --show-error --fail-with-body --connect-timeout 10 --max-time 60
@@ -23,15 +23,15 @@ typeset -a expected_jina_args=(
 )
 assert_equal "${(F)expected_jina_args}" "$(<"$jina_args")"
 if PATH="$tmp/jina-bin:$PATH" JINA_TEST_ARGS="$jina_args" \
-    "$ROOT/share/default/tools/fetch_url/run" <<<'{"url":"file:///etc/passwd"}' >/dev/null 2>&1; then
+    "$ROOT/share/profiles/default/tools/fetch_url/run" <<<'{"url":"file:///etc/passwd"}' >/dev/null 2>&1; then
   fail 'fetch_url accepted a non-HTTP URL'
 fi
 if PATH="$tmp/jina-bin:$PATH" JINA_TEST_ARGS="$jina_args" \
-    "$ROOT/share/default/tools/fetch_url/run" <<<'{"url":"https://example.com","extra":true}' >/dev/null 2>&1; then
+    "$ROOT/share/profiles/default/tools/fetch_url/run" <<<'{"url":"https://example.com","extra":true}' >/dev/null 2>&1; then
   fail 'fetch_url accepted an unknown input field'
 fi
 if PATH="$tmp/jina-bin:$PATH" JINA_TEST_ARGS="$jina_args" JINA_TEST_STATUS=22 \
-    "$ROOT/share/default/tools/fetch_url/run" <<<'{"url":"https://example.com"}' >/dev/null 2>&1; then
+    "$ROOT/share/profiles/default/tools/fetch_url/run" <<<'{"url":"https://example.com"}' >/dev/null 2>&1; then
   fail 'fetch_url hid a curl failure'
 fi
 jq -e '
@@ -39,7 +39,7 @@ jq -e '
   .network.allowLocalBinding == false and
   .network.allowLocalOutbound == false and
   .filesystem.defaultDenyRead == true
-' "$ROOT/share/default/tools/fetch_url/fence.jsonc" >/dev/null
+' "$ROOT/share/profiles/default/tools/fetch_url/fence.jsonc" >/dev/null
 
 # Search through the Exa MCP endpoint.
 mkdir "$tmp/exa-bin"
@@ -59,7 +59,7 @@ ZSH
 chmod +x "$tmp/exa-bin/curl"
 typeset exa_args="$tmp/exa.args" exa_output
 exa_output=$(PATH="$tmp/exa-bin:$PATH" EXA_TEST_ARGS="$exa_args" \
-  "$ROOT/share/default/tools/search_web/run" \
+  "$ROOT/share/profiles/default/tools/search_web/run" \
   <<<'{"query":"current shellfish CLI documentation","num_results":3}')
 assert_equal '# search result' "$exa_output"
 typeset -a expected_exa_args=(
@@ -74,22 +74,22 @@ typeset -a expected_exa_args=(
 )
 assert_equal "${(F)expected_exa_args}" "$(<"$exa_args")"
 if PATH="$tmp/exa-bin:$PATH" EXA_TEST_ARGS="$exa_args" \
-    "$ROOT/share/default/tools/search_web/run" \
+    "$ROOT/share/profiles/default/tools/search_web/run" \
     <<<'{"query":"docs","num_results":1.5}' >/dev/null 2>&1; then
   fail 'search_web accepted a fractional result count'
 fi
 if PATH="$tmp/exa-bin:$PATH" EXA_TEST_ARGS="$exa_args" \
-    "$ROOT/share/default/tools/search_web/run" \
+    "$ROOT/share/profiles/default/tools/search_web/run" \
     <<<'{"query":"docs","extra":true}' >/dev/null 2>&1; then
   fail 'search_web accepted an unknown input field'
 fi
 typeset exa_error='{"jsonrpc":"2.0","id":1,"error":{"code":-32000,"message":"rate limited"}}'
 if PATH="$tmp/exa-bin:$PATH" EXA_TEST_ARGS="$exa_args" EXA_TEST_RESPONSE="$exa_error" \
-    "$ROOT/share/default/tools/search_web/run" <<<'{"query":"docs"}' >/dev/null 2>&1; then
+    "$ROOT/share/profiles/default/tools/search_web/run" <<<'{"query":"docs"}' >/dev/null 2>&1; then
   fail 'search_web accepted an MCP error response'
 fi
 if PATH="$tmp/exa-bin:$PATH" EXA_TEST_ARGS="$exa_args" EXA_TEST_STATUS=22 \
-    "$ROOT/share/default/tools/search_web/run" <<<'{"query":"docs"}' >/dev/null 2>&1; then
+    "$ROOT/share/profiles/default/tools/search_web/run" <<<'{"query":"docs"}' >/dev/null 2>&1; then
   fail 'search_web hid a curl failure'
 fi
 jq -e '
@@ -97,4 +97,4 @@ jq -e '
   .network.allowLocalBinding == false and
   .network.allowLocalOutbound == false and
   .filesystem.defaultDenyRead == true
-' "$ROOT/share/default/tools/search_web/fence.jsonc" >/dev/null
+' "$ROOT/share/profiles/default/tools/search_web/fence.jsonc" >/dev/null

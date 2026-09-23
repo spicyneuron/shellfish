@@ -1,7 +1,7 @@
 // Shellfish TUI settings
 //
 // Full reference:
-// https://github.com/spicyneuron/shellfish/blob/main/share/default/tui.jsonc
+// https://github.com/spicyneuron/shellfish/blob/main/share/tui.jsonc
 {
   "$schema": "https://raw.githubusercontent.com/spicyneuron/shellfish/refs/heads/main/share/tui.schema.json",
 

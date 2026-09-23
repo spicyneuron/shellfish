@@ -1,7 +1,7 @@
 #!/usr/bin/env zsh
 
 source "${0:A:h:h:h}/_helpers.zsh"
-sf_test_source share/default/backends/_backend.zsh
+sf_test_source share/profiles/default/backends/_backend.zsh
 sf_test_tmp backends
 
 # Create private backend files.

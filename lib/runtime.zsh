@@ -57,8 +57,8 @@ sf_runtime_config_dir() {
 
 sf_runtime_read_profiles() {
   local config_dir=$1 file detail profiles
-  local -a files=( "$SF_SHARE/default/profiles"/*.jsonc(N-.)
-    "$config_dir/profiles"/*.jsonc(N-.) )
+  local -a files=( "$SF_SHARE/profiles"/*/profile.jsonc(N-.)
+    "$config_dir/profiles"/*/profile.jsonc(N-.) )
   profiles=$(sf_jsonc_read_keyed "${files[@]}" 2>&1) || {
     # One bad file spoils the batch, so name it.
     for file in "${files[@]}"; do
@@ -71,18 +71,23 @@ sf_runtime_read_profiles() {
   REPLY=$profiles
 }
 
+# A name resolves to the first folder, in precedence order, that holds it.
 sf_runtime_reference() {
-  local reference=$1 base=$2 kind=$3 candidate
-  if [[ $reference == /* ]]; then
-    candidate=$reference
-  elif [[ $reference == '~/'* ]]; then
-    [[ -n ${HOME-} ]] || return 1
-    candidate="$HOME/${reference#\~/}"
-  elif [[ -e $base/$kind/$reference || -L $base/$kind/$reference ]]; then
-    candidate="$base/$kind/$reference"
-  else
-    candidate="$SF_SHARE/default/$kind/$reference"
-  fi
+  local reference=$1 kind=$2 folder candidate=''
+  shift 2
+  case $reference in
+    /*) candidate=$reference ;;
+    '~/'*) [[ -z ${HOME-} ]] || candidate="$HOME/${reference#\~/}" ;;
+    @*/*) candidate="$SF_SHARE/profiles/${reference#@}" ;;
+    *)
+      for folder; do
+        [[ -e $folder/$kind/$reference || -L $folder/$kind/$reference ]] || continue
+        candidate="$folder/$kind/$reference"
+        break
+      done
+      ;;
+  esac
+  [[ -n $candidate ]] || return 1
   REPLY=${candidate:A}
 }
 
@@ -93,7 +98,7 @@ sf_runtime_resolve_profile() {
   local config_dir profiles profile kind reference subdirectory key resolved final
   local fence='' home=${HOME-}
   local -A decoded
-  local -a entries=() references=()
+  local -a entries=() references=() folders=()
   integer flag
 
   SF_RUNTIME_ERROR=''
@@ -107,20 +112,24 @@ sf_runtime_resolve_profile() {
   # A reference carries no control characters, so newlines delimit the list and
   # a space separates each kind from its reference.
   sf_jq_fields -rn --argjson files "$profiles" --arg names "$profile_names" \
-    --arg bundled "$SF_SHARE/default/profiles" \
+    --arg bundled "$SF_SHARE/profiles" --arg configured "$config_dir/profiles" \
     --arg model "$model_override" --argjson request "$request_override" \
     --arg backend "$backend_override" --arg home "$home" '
       include "lib/fields";
       include "lib/runtime";
-      profile_select($files | profile_map($bundled);
-        (($names | select(length > 0) | split("\n")) // ["default"]);
-        $model; $request; $backend; $home) as $profile |
+      ($files | profile_map($bundled)) as $profiles |
+      (($names | select(length > 0) | split("\n")) // ["default"]) as $names |
+      profile_select($profiles; $names; $model; $request; $backend; $home) as $profile |
       entry("profile"; $profile | tojson),
+      # Precedence is the reverse of merge order.
+      entry("folders"; [] | profile_order($profiles; $names; []) | reverse |
+        map(if startswith("@") then $bundled + "/" + ltrimstr("@")
+          else $configured + "/" + . end) | join("\n")),
       entry("references";
         [["backend", $profile.backend.adapter],
-         (($profile.harness.tools // [])[] | ["tools", .]),
+         (($profile.tools // [])[] | ["tools", .]),
          (($profile.system // [])[] | ["system", .]),
-         (hook_names[] as $hook | ($profile.harness[$hook] // [])[] |
+         (hook_names[] as $hook | ($profile.hooks[$hook] // [])[] |
            ["hooks/" + $hook, .])] |
         map(join(" ")) | join("\n")),
       ("ok" | field)
@@ -131,6 +140,7 @@ sf_runtime_resolve_profile() {
   decoded=( "${reply[@]}" )
   profile=$decoded[profile]
   references=( ${(f)decoded[references]} )
+  folders=( ${(f)decoded[folders]} )
 
   for reference in "${references[@]}"; do
     kind=${reference%% *}
@@ -139,7 +149,7 @@ sf_runtime_resolve_profile() {
     subdirectory=$kind
     key="$kind"$'\t'"$reference"
     [[ $kind != backend ]] || { subdirectory=backends; key=backend; }
-    sf_runtime_reference "$reference" "$config_dir" "$subdirectory" || {
+    sf_runtime_reference "$reference" "$subdirectory" "${folders[@]}" || {
       sf_runtime_fail "cannot resolve $kind reference: $reference"
       return
     }

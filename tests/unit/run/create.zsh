@@ -3,8 +3,9 @@
 source "${0:A:h:h:h}/_helpers.zsh"
 sf_test_tmp run-create-command
 sf_test_config
-mkdir -p "$tmp/home" "$SF_TEST_CONFIG/system"
-print -r -- 'initial system' >"$SF_TEST_CONFIG/system/source.md"
+typeset system="$SF_TEST_CONFIG/profiles/default/system"
+mkdir -p "$tmp/home" "$system"
+print -r -- 'initial system' >"$system/source.md"
 export HOME="${tmp:A}/home"
 export XDG_STATE_HOME="$tmp/state"
 
@@ -12,7 +13,7 @@ sf_test_profile default "{
   \"backend\": {\"adapter\": \"$ROOT/tests/fixtures/backend\"},
   \"system\": [\"source.md\"],
   \"request\": {\"model\": \"test-model\"},
-  \"harness\": {\"tools\": []}
+  \"tools\": []
 }"
 
 typeset entry="$ROOT/bin/shellfish"
@@ -36,16 +37,16 @@ jq -es 'length == 2' "$explicit" >/dev/null || fail 'create did not populate --s
 # Freeze forwarded sandbox grants.
 typeset granted="$tmp/granted.jsonl"
 zsh -f "$entry" run --session-create --session-out "$granted" \
-  --sandbox-read "${SF_TEST_CONFIG:A}/system" --sandbox-write "${tmp:A}/home" >/dev/null || \
+  --sandbox-read "${system:A}" --sandbox-write "${tmp:A}/home" >/dev/null || \
   fail 'create rejected forwarded sandbox grants'
-jq -e --arg read "${SF_TEST_CONFIG:A}/system" '
+jq -e --arg read "${system:A}" '
   select(.type == "session") |
   (.runtime.harness.sandbox_read_paths | index($read)) != null and
   (.runtime.harness.sandbox_write_paths | index("~")) != null
 ' "$granted" >/dev/null || fail 'create did not store forwarded sandbox grants'
 
 # Derived sessions reuse runtime and reread system paths.
-print -r -- 'changed configured system' >"$SF_TEST_CONFIG/system/source.md"
+print -r -- 'changed configured system' >"$system/source.md"
 print -r -- '{"type":"user","content":[{"type":"text","text":"old"}]}' \
   >>"$created"
 reused="$tmp/reused.jsonl"
@@ -79,7 +80,7 @@ exit 9
 ZSH
 chmod +x "$hook/run"
 sf_test_profile hook \
-  "{\"extend\": [\"default\"], \"harness\": {\"session_start\": [\"$hook\"]}}"
+  "{\"extend\": [\"default\"], \"hooks\": {\"session_start\": [\"$hook\"]}}"
 typeset failed="$tmp/failed.jsonl" hook_error="$tmp/hook-error"
 zsh -f "$entry" run --session-create --session-out "$failed" \
   -p hook >/dev/null 2>"$hook_error" &&
@@ -92,8 +93,8 @@ jq -se 'map(.type) == ["session","system","hook_result"] and .[-1].exit_code == 
 
 # Join system components in order.
 typeset joined="$tmp/joined.jsonl"
-printf 'first prompt\n\n\n' >"$SF_TEST_CONFIG/system/first.md"
-printf 'second prompt\n' >"$SF_TEST_CONFIG/system/second.md"
+printf 'first prompt\n\n\n' >"$system/first.md"
+printf 'second prompt\n' >"$system/second.md"
 sf_test_profile joined \
   '{"extend": ["default"], "system": ["first.md", "second.md"]}' 
 zsh -f "$entry" run --session-create --session-out "$joined" -p joined >/dev/null ||
@@ -189,7 +190,7 @@ ZSH
 print -r -- '{}' >"$first/manifest.json"
 chmod +x "$first/run" "$silent/run"
 sf_test_profile stream \
-  "{\"extend\": [\"default\"], \"harness\": {\"session_start\": [\"$first\", \"$silent\"]}}"
+  "{\"extend\": [\"default\"], \"hooks\": {\"session_start\": [\"$first\", \"$silent\"]}}"
 SF_TEST_EVENTS="$events" zsh -f "$entry" run --jsonl --session-create -p stream \
   --session-out "$streamed" >"$events" 2>"$hook_error" || fail 'streamed creation failed'
 [[ ! -s $hook_error ]] || fail "streamed display leaked to stderr: $(<"$hook_error")"
@@ -214,7 +215,7 @@ jq -se --arg path "$streamed" --arg first "${first:A}/run" --arg silent "${silen
 
 # A failed later startup retains and streams the completed prefix and result.
 sf_test_profile stream \
-  "{\"extend\": [\"hook\"], \"harness\": {\"session_start\": [\"$first\", \"...\"]}}"
+  "{\"extend\": [\"hook\"], \"hooks\": {\"session_start\": [\"$first\", \"...\"]}}"
 failed="$tmp/later-failed.jsonl"
 SF_TEST_EVENTS="$events" zsh -f "$entry" run --jsonl --session-create \
   --session-out "$failed" -p stream >"$events" 2>"$hook_error" &&
@@ -247,7 +248,7 @@ done
 ZSH
 chmod +x "$slow/run"
 sf_test_profile slow \
-  "{\"extend\": [\"default\"], \"harness\": {\"session_start\": [\"$slow\"]}}"
+  "{\"extend\": [\"default\"], \"hooks\": {\"session_start\": [\"$slow\"]}}"
 zsh -f "$entry" run --jsonl --session-create -p slow --session-out "$cancelled" \
   >"$events" 2>"$hook_error" &
 integer create_pid=$! cancel_status=0 waited=0
@@ -271,19 +272,19 @@ jq -se 'map(.type) == ["session","system"]' "$cancelled" >/dev/null ||
 # Moving a home and project preserves their frozen relative references.
 typeset old_home="$tmp/original-home" new_home="$tmp/moved-home"
 typeset old_project="$old_home/project" new_project="$new_home/project"
-mkdir -p "$old_project/hook" "$old_home/.config/shellfish/profiles"
+mkdir -p "$old_project/hook" "$old_home/.config/shellfish/profiles/default"
 print -r -- 'original prompt' >"$old_project/prompt.md"
 cat >"$old_project/hook/run" <<'ZSH'
 #!/usr/bin/env zsh
 pwd -P >"$PWD/hook-cwd"
 ZSH
 chmod +x "$old_project/hook/run"
-cat >"$old_home/.config/shellfish/profiles/default.jsonc" <<EOF
+cat >"$old_home/.config/shellfish/profiles/default/profile.jsonc" <<EOF
 {
   "backend": {"adapter": "$ROOT/tests/fixtures/backend"},
   "request": {"model": "test-model"},
   "system": ["$old_project/prompt.md"],
-  "harness": {"tools": [], "user_prompt_submit": ["$old_project/hook"]}
+  "tools": [], "hooks": {"user_prompt_submit": ["$old_project/hook"]}
 }
 EOF
 (

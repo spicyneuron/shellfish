@@ -66,7 +66,7 @@ typeset -a core terminal harness client server shell_tests server_tests
 core=( "$root/bin/shellfish" "$root"/(lib|libexec)/**/*.(zsh|jq)(N.) )
 core=( ${core:#$root/libexec/(tui|resume)/*} )
 terminal=( "$root"/libexec/(tui|resume)/**/*.(zsh|jq|awk)(N.) )
-harness=( "$root"/share/default/**/*(N.) )
+harness=( "$root"/share/profiles/**/*(N.) )
 client=( "$root"/shellfish-server/ui/**/*.(js|css|html)(N.) )
 server=( "$root"/shellfish-server/*.go(N.) )
 server_tests=( ${(M)server:#*_test.go} "$root"/shellfish-server/ui/**/*_test.js(N.) )
