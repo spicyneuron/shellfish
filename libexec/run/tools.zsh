@@ -21,7 +21,6 @@ sf_run_tool_plan() {
       $call.id as $id | $call.name as $name | $call.input as $input |
       [$tools[] | select(.name == $name)][0] as $tool |
       render_template($tool.manifest.user_draft // "${name} ${input}"; $name; $input) as $draft |
-      {type:"_draft",id:$id,name:$name} as $draft_event |
       (if $tool == null or ($profile.sandbox | not) then {decision:"none"}
        elif (($input.request_sandbox_bypass // false) | type) != "boolean" then
          {decision:"deny",reason:"sandbox bypass is not allowed"}
@@ -36,8 +35,7 @@ sf_run_tool_plan() {
       entry("request";
         {turn_id:$turn,tool_name:$name,tool_use_id:$id,tool_input:$input} | tojson),
       entry("draft"; $draft),
-      entry("draft_event"; $draft_event | tojson),
-      entry("event"; if $draft == "" then "" else $draft_event + {user_text:$draft} | tojson end),
+      entry("event"; {type:"_draft",id:$id,name:$name,user_text:$draft} | tojson),
       entry("decision"; $permission.decision),
       entry("permission_reason"; $permission.reason // ""),
       entry("permission_preview";
@@ -83,7 +81,7 @@ sf_run_tool_bound() {
 sf_run_tool_line() {
   local -A line
   [[ -z $SF_TOOL_RESULT[error] ]] || return 0
-  sf_run_component_line "$1" '' "$SF_TOOL_PLAN[draft_event]" '{}' \
+  sf_run_component_line "$1" '' "$SF_TOOL_PLAN[event]" '{}' \
     "$SF_TOOL_RESULT[preview]" || { SF_TOOL_RESULT[error]=invalid; return 1; }
   line=( "${reply[@]}" )
   [[ $line[valid] == true ]] || { SF_TOOL_RESULT[error]=invalid; return 1; }

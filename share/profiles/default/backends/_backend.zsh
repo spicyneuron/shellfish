@@ -1,5 +1,3 @@
-(( $+functions[sf_scratch_directory] )) || source "${${(%):-%x}:A:h:h:h:h:h}/lib/scratch.zsh"
-
 typeset -g SF_BACKEND_NAME SF_BACKEND_TEMP_DIR SF_BACKEND_REQUEST_FILE
 typeset -g SF_BACKEND_BODY_FILE SF_BACKEND_RESPONSE_FILE SF_BACKEND_STATUS_FILE
 typeset -g SF_BACKEND_HEADERS_FILE SF_BACKEND_NORMALIZER_ERROR_FILE
@@ -16,8 +14,9 @@ sf_backend_die() {
 
 sf_backend_setup() {
   SF_BACKEND_NAME=$1
-  sf_scratch_directory "backend-$1" || sf_backend_die 'cannot create temporary directory'
-  SF_BACKEND_TEMP_DIR=$REPLY
+  SF_BACKEND_TEMP_DIR=$(mktemp -d "${TMPDIR:-/tmp}/shellfish-backend-$1.XXXXXX") ||
+    sf_backend_die 'cannot create temporary directory'
+  SF_BACKEND_TEMP_DIR=${SF_BACKEND_TEMP_DIR:A}
   SF_BACKEND_REQUEST_FILE=$SF_BACKEND_TEMP_DIR/request.json
   SF_BACKEND_BODY_FILE=$SF_BACKEND_TEMP_DIR/body.json
   SF_BACKEND_RESPONSE_FILE=$SF_BACKEND_TEMP_DIR/response

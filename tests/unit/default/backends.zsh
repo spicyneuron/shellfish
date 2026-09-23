@@ -6,7 +6,8 @@ sf_test_tmp backends
 
 # Create private backend files.
 sf_backend_setup test_backend
-[[ $SF_BACKEND_TEMP_DIR == "${XDG_STATE_HOME:A}/shellfish/scratch/backend-test_backend."* ]]
+[[ $SF_BACKEND_TEMP_DIR == */shellfish-backend-test_backend.* ]]
+assert_equal 700 "$(stat -f %Lp "$SF_BACKEND_TEMP_DIR")"
 assert_equal 600 "$(stat -f %Lp "$SF_BACKEND_HEADERS_FILE")"
 
 # Ignore empty credentials.

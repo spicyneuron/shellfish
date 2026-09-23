@@ -21,7 +21,7 @@ declarations() {
   symbols=( ${(fu)found} )
 }
 
-typeset dir component module token cmd
+typeset dir component module token cmd file rel
 typeset -a shell_files jq_files routes=()
 # Clients drive the core through public commands and may share only policy-free
 # primitives. Canonical session reading and provider mechanics stay in the core.
@@ -67,6 +67,15 @@ collect '\$SF_(ROOT|SHARE)\b' $ROOT/share/profiles/**/*(.N)
 (( ! ${#matches} )) || fail "bundled resource uses the installation layout: $matches[1]"
 collect 'include "lib/[a-z]+"' $ROOT/share/profiles/**/*(.N)
 (( ! ${#matches} )) || fail "bundled resource uses core jq: $matches[1]"
+# A path relative to the script itself stays inside its own profile folder.
+for file in $ROOT/share/profiles/*/**/*(.N); do
+  rel=${file#$ROOT/share/profiles/*/}
+  collect ':A(:h)+|\.\./' $file
+  for token in $matches; do
+    [[ $token != ../ ]] && (( ${#${token//[^h]/}} <= ${#${(s:/:)rel}} )) ||
+      fail "bundled resource leaves its profile folder: ${file#$ROOT/}: $token"
+  done
+done
 
 for dir in $ROOT/libexec/*(/N); do
   component=${dir:t}
