@@ -190,6 +190,12 @@ function collapsible(parent, sigil, heading, text, kind, secondary) {
   el(details, "pre", null, safe(text));
 }
 
+function hookDetails(parent, sigil, heading, body, lifecycle) {
+  const details = el(parent, "details", "hook");
+  summary(el(details, "summary"), sigil, heading, lifecycle);
+  if (body) el(details, "pre", null, safe(body));
+}
+
 function note(text, kind, heading, secondary) {
   hideIndicator();
   const article = record(kind ? "note " + kind : "note", null);
@@ -604,7 +610,10 @@ function renderHookResult(frame) {
   if (!text) return;
   hideIndicator();
   const article = record("note", null);
-  el(article, "pre", "call", (frame.model_text ? "↪ " : "ℹ ") + safe(text));
+  const first = text.indexOf("\n");
+  const heading = first < 0 ? text : text.slice(0, first);
+  const body = first < 0 ? "" : text.slice(first + 1);
+  hookDetails(article, frame.model_text ? "↪" : "ℹ", heading, body);
   place(article);
   if (working) showIndicator();
 }

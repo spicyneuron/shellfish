@@ -540,16 +540,18 @@ test("shows user-facing hook text without exposing model text", async () => {
     type: "hook_result",
     lifecycle: "session_start",
     id: "1",
-    user_text: "Inspecting project",
+    user_text: "git_environment\nInspecting project",
     model_text: "secret model context",
   });
-  const shown = findTag(find(page.output, "note")[0], "pre")[0];
-  assert.equal(shown.textContent, "↪ Inspecting project");
+  const shown = findTag(find(page.output, "note")[0], "details")[0];
+  assert.equal(findTag(shown, "summary")[0].textContent, "↪git_environment");
+  assert.equal(findTag(shown, "pre")[0].textContent, "Inspecting project");
   await page.send({
     type: "hook_result", lifecycle: "stop", id: "2",
     model_text: "private stop feedback",
   });
-  assert.equal(find(page.output, "note")[1].textContent, "↪ stop");
+  assert.equal(findTag(find(page.output, "note")[1], "summary")[0].textContent,
+    "↪stop");
   assert.equal(page.output.textContent.includes("secret model context"), false);
   assert.equal(page.output.textContent.includes("private stop feedback"), false);
 });
@@ -560,10 +562,11 @@ test("marks a hook that spoke only to the reader", async () => {
     type: "hook_result",
     lifecycle: "stop",
     id: "2",
-    user_text: "checked 3 files",
+    user_text: "stop\nchecked 3 files",
   });
-  const shown = findTag(find(page.output, "note")[0], "pre")[0];
-  assert.equal(shown.textContent, "ℹ checked 3 files");
+  const shown = findTag(find(page.output, "note")[0], "details")[0];
+  assert.equal(findTag(shown, "summary")[0].textContent, "ℹstop");
+  assert.equal(findTag(shown, "pre")[0].textContent, "checked 3 files");
 });
 
 test("a hook with no user or model text renders nothing", async () => {
@@ -720,12 +723,13 @@ test("replaces a draft with its durable result", async () => {
       type: "hook_result",
       lifecycle: "stop",
       id: "1",
-      user_text: "checked 3 files",
+      user_text: "stop\nchecked 3 files",
     },
   );
   const notes = find(page.output, "note");
   assert.equal(notes.length, 1);
-  assert.equal(notes[0].textContent, "ℹ checked 3 files");
+  assert.equal(findTag(notes[0], "summary")[0].textContent, "ℹstop");
+  assert.equal(findTag(notes[0], "pre")[0].textContent, "checked 3 files");
 });
 
 test("tool and hook drafts with the same ID settle independently", async () => {
