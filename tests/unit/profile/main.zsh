@@ -48,7 +48,7 @@ jq -e --arg root "$ROOT/share/profiles/default/hooks" '
 sf_profile_tools "$REPLY"
 jq -e '
   .[0].manifest.user_permission == "${input.file_path}" and
-  .[-1].manifest.user_draft == "${name}\n${input.command}"
+  .[-1].manifest.user_text == "${name}\n${input.command}"
 ' <<<"$REPLY" >/dev/null
 
 # Bundled adapter names resolve through the bundled default profile.

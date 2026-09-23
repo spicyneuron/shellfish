@@ -9,11 +9,12 @@ typeset -a argv
 integer explicit=0 suffix=1
 
 fail_compaction() {
-  print -u2 -r -- "$1"
+  sf_hook_notice "$1"
   (( ! explicit )) || print -ru3 -- '{"action":"block"}'
   exit 0
 }
 
+source "${0:A:h:h}/lib/hook.zsh" || exit 1
 submitted=$(cat; printf x)
 submitted=${submitted%x}
 
@@ -44,7 +45,7 @@ request=$(jq -cn --arg text "$instruction" \
   '{type:"user",content:[{type:"text",text:$text}]}') || {
   fail_compaction 'cannot prepare summary request; keeping the original'
 }
-source "${0:A:h:h}/lib/hook.zsh" && sf_hook_draft 'compact · Compacting conversation…' ||
+sf_hook_draft 'compact · Compacting conversation…' ||
   fail_compaction 'cannot report compaction progress; keeping the original'
 summary=$({ cat -- "$SHELLFISH_SESSION"; print -r -- "$request"; } |
   "$SHELLFISH_EXECUTABLE" backend-request |
@@ -110,4 +111,5 @@ done
 argv=( "$SHELLFISH_EXECUTABLE" --session "$candidate" )
 [[ -z $draft ]] || argv+=( --draft "$draft" )
 jq -cn '$ARGS.positional | {action:"handoff",argv:.}' --args -- "${argv[@]}" >&3 || exit 1
+print -ru3 -- '{"user_text":"","finalize":true}' || exit 1
 exit 0

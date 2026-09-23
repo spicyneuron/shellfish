@@ -49,14 +49,14 @@ Hooks and tools stream JSON objects to fd 3 while they run, one per line:
 
 | Key | Meaning |
 | --- | --- |
-| `user_draft` | Replaces the text of the component's live section; transient |
-| `user_final` | Durable user-facing text; settles the live section |
-| `model_final` | Durable model context; settles the live section |
+| `user_text` | Replaces the live section's user-facing text; the component now owns it |
+| `model_text` | Replaces the live section's model context; the component now owns it |
+| `finalize` | `true` settles the live section now and opens an empty one; hooks only |
 | `user_preview_lines` | `"full"` or a TUI line limit for the live section and the result it settles |
 | `state` | State records, such as `[{"name":"example/status","value":{"ready":true}}]` |
 | `action` | A hook's lifecycle decision; see [Hooks](#hooks) |
 
-Without a final, stdout and stderr settle as one result at exit; the component sections below say who sees what. When a final is written, stdout is ignored and stderr serves only as failure diagnostics. `max_capture_bytes` bounds each line and that fallback output; drafts do not add up against it. An invalid line fails the execution.
+User text streams as live progress. At exit, each field the component did not write is filled from captured output; the component sections below say who sees what. A field it wrote keeps exactly that text, so a component that shows progress must write its final text too. A section with neither text creates no result. `max_capture_bytes` bounds each line and that fallback output. An invalid line fails the execution.
 
 State names are at most 128 characters and match `^[A-Za-z0-9][A-Za-z0-9_.:/-]*$`. The latest exact name is effective; `null` clears it. Accepted state is appended before the result it accompanies. A component starting an untrusted child must close fd 3 so the child cannot forge state.
 
@@ -76,7 +76,7 @@ A tool manifest defines its model-facing schema and execution policy:
   "sandbox": true,
   "allow_sandbox_bypass": true,
   "environment": ["TOOL_SETTING"],
-  "user_draft": "${name} ${input.path}"
+  "user_text": "${name} ${input.path}"
 }
 ```
 
@@ -87,14 +87,14 @@ A tool manifest defines its model-facing schema and execution policy:
 | `sandbox` | Required boolean |
 | `allow_sandbox_bypass` | Optional, default `false`; valid only when sandboxed |
 | `environment` | Optional unique variable names |
-| `user_draft` | Optional live text before the tool writes its own; default `${name} ${input}` |
+| `user_text` | Optional user text shown before the tool's output; default `${name} ${input}` |
 | `user_permission` | Optional sandbox-bypass prompt text; default `${input}` |
 
 Templates perform one substitution pass over `name`, `input`, and `input.FIELD` for a declared property.
 
 Shellfish calls `run` with no arguments and one input object on stdin. Sandbox-bypass control fields are removed first. The tool must validate input before using it. A nonzero exit is a normal tool result and does not fail the turn.
 
-A call settles exactly once, at exit: the last final becomes the result, and state from every line is committed before it, including for nonzero exits. Without a final, the user sees the rendered `user_draft` followed by stdout and stderr, the model sees stdout and stderr, and that output keeps its tail when it exceeds `max_capture_bytes`. A final beyond the limit fails the call. Tools take no `action`, and interrupted execution commits nothing.
+A call settles exactly once, at exit, and state from every line is committed before it, including for nonzero exits. Unless the tool writes its own, the user sees the rendered `user_text` followed by stdout and stderr, and the model sees stdout and stderr; that output keeps its tail when it exceeds `max_capture_bytes`. A line beyond the limit fails the call. Tools take no `action`, and interrupted execution commits nothing.
 
 The result repeats the exact call ID, name, and input and records an exit code. If the model calls an undeclared tool, Shellfish records a rejected result. Calls are processed in response order, and each complete result is persisted before the next call.
 
@@ -137,14 +137,14 @@ The next hook in the list is the running hook's parent. `SHELLFISH_PARENT_HOOK` 
 #!/bin/sh
 # Handle /deploy here and leave every other prompt to the parent.
 [ "$(cat)" = /deploy ] || exec "$SHELLFISH_PARENT_HOOK" "$@"
-echo '{"action":"block","user_final":"Deploying…"}' >&3
+echo '{"action":"block","user_text":"Deploying…"}' >&3
 ```
 
 A hook that never calls its parent replaces it.
 
 ### Hook output
 
-A hook writes the [shared output](#output). Each final and its state become durable as the line arrives, so an interrupted or failed hook keeps what it already settled; the next draft opens a new section. Without a final, the user sees stdout and stderr and the model sees stdout; empty output creates no record. A hook fails when its fallback output exceeds `max_capture_bytes`. Any nonzero exit fails the operation, with stderr in the diagnostic.
+A hook writes the [shared output](#output). State and each finalized section become durable as the line arrives, so an interrupted or failed hook keeps what it already settled. At exit 0, the last section settles; unless the hook writes its own, the user sees stdout and stderr and the model sees stdout. A hook fails when its fallback output exceeds `max_capture_bytes`. Any nonzero exit fails the operation, with stderr in the diagnostic.
 
 Model text from one lifecycle reaches the model grouped in `<hook name="LIFECYCLE">`, each result inserted verbatim. Bundled hooks wrap theirs in `<context script="NAME">`.
 
@@ -184,7 +184,7 @@ Actions take these shapes:
 {"action":"continue"}
 ```
 
-A block ends the turn without submitting the prompt. A handoff asks a capable client to run the complete `argv` after a clean turn exit. A session update's `PROFILE` is one complete session profile, as stored in the header; Shellfish atomically replaces it. A `pre_tool_use` deny reason becomes the refused tool result. A `stop` continue requires model feedback from a final or stdout, then continues inference with it. `pre_tool_use` and `post_tool_use` cannot rewrite tool input or results. `permission_request` may only allow or deny a supported sandbox bypass.
+A block ends the turn without submitting the prompt. A handoff asks a capable client to run the complete `argv` after a clean turn exit. A session update's `PROFILE` is one complete session profile, as stored in the header; Shellfish atomically replaces it. A `pre_tool_use` deny reason becomes the refused tool result. A `stop` continue requires settled model text, then continues inference with it. `pre_tool_use` and `post_tool_use` cannot rewrite tool input or results. `permission_request` may only allow or deny a supported sandbox bypass.
 
 ## Backend adapters
 

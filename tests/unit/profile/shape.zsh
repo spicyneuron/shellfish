@@ -148,7 +148,7 @@ valid_manifest=$(jq -cn '
       properties: {command: {type: "string"}},
       required: ["command"]
     },
-    user_draft: "${name}\n${input.command}",
+    user_text: "${name}\n${input.command}",
     user_permission: "${input.command}",
     sandbox: true,
     allow_sandbox_bypass: true
@@ -163,14 +163,14 @@ for environment in '["DUPLICATE","DUPLICATE"]' '["HAS SPACE"]'; do
     fail "invalid tool environment was accepted: $environment"
   fi
 done
-print -r -- "$valid_manifest" | jq -c 'del(.user_draft, .user_permission)' |
+print -r -- "$valid_manifest" | jq -c 'del(.user_text, .user_permission)' |
   schema_eval 'tool_manifest' >/dev/null || fail 'tool manifest required its templates'
 for manifest in "$ROOT"/share/profiles/default/tools/*/manifest.json; do
   schema_eval 'tool_manifest' <"$manifest" >/dev/null ||
     fail "invalid bundled tool manifest: $manifest"
 done
 
-for manifest in '.render = {}' '.user_draft = "${output.stdout}"' \
+for manifest in '.render = {}' '.user_text = "${output.stdout}"' \
     '.user_permission = "${input.missing}"'; do
   if jq -c "$manifest" <<<"$valid_manifest" |
       schema_eval 'tool_manifest' >/dev/null 2>&1; then

@@ -61,8 +61,8 @@ assert_equal '' "$REPLY"
 project live \
   '{"type":"_draft","id":"call_1","name":"shell","user_text":"shell · make test","user_preview_lines":2}' \
   '{"type":"tool_result","id":"call_1","name":"shell","input":{"command":"make test"},"exit_code":0,"user_text":"shell · make test\nok","model_text":"ok","user_preview_lines":"full"}'
-assert_equal 'execution_update | call_1 | shell | tool | shell · make test | 2
-execution_end | call_1 | shell | tool | shell · make test
+assert_equal 'execution_update | call_1 | tool | shell · make test | 2
+execution_end | call_1 | tool | shell · make test
 ok | full' "$REPLY"
 
 # Hook context is reference material; a hook notice speaks only to the reader.
@@ -73,11 +73,11 @@ project live \
   '{"type":"hook_result","lifecycle":"pre_tool_use","id":"1","user_text":"guard · ok","user_preview_lines":"full"}' \
   '{"type":"hook_result","lifecycle":"session_start","id":"2","user_text":"project · read","model_text":"context"}' \
   '{"type":"hook_result","lifecycle":"session_start","id":"3","model_text":"Git branch: main"}'
-assert_equal 'execution_update | 1 |  | notice | guard · checking | 1
-execution_end | 1 |  | notice |  | default
-execution_end | 1 |  | notice | guard · ok | full
-execution_end | 2 |  | context | project · read | default
-execution_end | 3 |  | context | session_start | default' "$REPLY"
+assert_equal 'execution_update | 1 | notice | guard · checking | 1
+execution_end | 1 | notice |  | default
+execution_end | 1 | notice | guard · ok | full
+execution_end | 2 | context | project · read | default
+execution_end | 3 | context | session_start | default' "$REPLY"
 
 # Permissions carry the preview the client displays.
 project live \

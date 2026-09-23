@@ -399,9 +399,6 @@ sf_tui_format_execution() {
   sf_tui_format_start
   sf_tui_format_trim "$SF_LIVE_TEXT"
   body=$REPLY
-  [[ -z $SF_LIVE_NAME || $body == "$SF_LIVE_NAME" ||
-    $body == "$SF_LIVE_NAME"$'\n'* || $body == "$SF_LIVE_NAME "* ]] ||
-    body="$SF_LIVE_NAME"$'\n'"$body"
   case $SF_LIVE_CLASS in
     tool) glyph='⛭' ;;
     context) glyph='↪' ;;
@@ -418,7 +415,6 @@ sf_tui_format_execution() {
   (( SF_LIVE_CHROME )) || sf_tui_format_rule $columns "$SF_LIVE_ROLE" "$SF_LIVE_SECTION"
   chrome=${#SF_FORMAT_ROWS}
   SF_PRESENT_HIGHLIGHT_SPANS=()
-  [[ -z $SF_LIVE_NAME ]] || SF_PRESENT_HIGHLIGHT_SPANS+=( 0 ${#SF_LIVE_NAME} bold )
   # A hunk header is the only reliable signal that output is a unified diff.
   [[ $body != (|*$'\n')'@@ -'*' @@'* ]] || sf_tui_diff_highlight "$body"
   if (( ! live )) && [[ $preview != full ]]; then

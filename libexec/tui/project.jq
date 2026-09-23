@@ -83,9 +83,9 @@ def record_actions($mode; $window):
     (.user_text | split("\n")) as $lines |
     [["error", $lines[0], ($lines[1:] | join("\n"))]]
   elif .type == "tool_result" then
-    [["execution_end", .id, .name, "tool", result_text, preview]]
+    [["execution_end", .id, "tool", result_text, preview]]
   elif .type == "hook_result" then
-    [["execution_end", .id, "", hook_class, result_text, preview]]
+    [["execution_end", .id, hook_class, result_text, preview]]
   elif .type == "session" then (.profile | profile_actions)
   elif .type == "state" then []
   else error("unsupported record: " + (.type | tostring))
@@ -102,11 +102,11 @@ def event_actions($window):
     [["message_delta", (.index | tostring), "inert", "", ""]]
   elif .type == "_assistant_end" then [["message_end"]]
   elif .type == "_turn_usage" then []
-  # A tool draft names its tool; an empty hook draft clears its section.
+  # A tool draft names its tool; an empty draft clears its section.
   elif .type == "_draft" then
     (if has("name") then "tool" else "notice" end) as $class |
-    if .user_text == "" then [["execution_end", .id, "", $class, "", preview]]
-    else [["execution_update", .id, .name // "", $class, .user_text, preview]] end
+    if .user_text == "" then [["execution_end", .id, $class, "", preview]]
+    else [["execution_update", .id, $class, .user_text, preview]] end
   elif .type == "_tool_permission_request" then
     (.preview // "") as $preview |
     [["permission", .id, .tool.name,

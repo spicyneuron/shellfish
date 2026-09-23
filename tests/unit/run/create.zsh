@@ -169,14 +169,14 @@ cat >"$first" <<'ZSH'
 [[ -f $SHELLFISH_SESSION ]] || exit 2
 jq -se 'map(.type) == ["_session_load","session","system"]' \
   "$SF_TEST_EVENTS" >/dev/null || exit 3
-print -r -u3 -- '{"user_draft":"starting"}'
-print -r -u3 -- '{"user_final":"startup display","model_final":"startup context","state":[{"name":"startup/stream","value":true}]}'
+print -r -u3 -- '{"user_text":"starting"}'
+print -r -u3 -- '{"user_text":"startup display","model_text":"startup context","finalize":true,"state":[{"name":"startup/stream","value":true}]}'
 [[ -z ${SHELLFISH_PARENT_HOOK-} ]] || exec "$SHELLFISH_PARENT_HOOK"
 ZSH
 cat >"$silent" <<'ZSH'
 #!/usr/bin/env zsh
 [[ -f $SHELLFISH_SESSION ]] || exit 2
-# A final becomes durable and streams while its hook still runs.
+# A finalized section becomes durable and streams while its hook still runs.
 integer polls=0
 until jq -se '.[-2] == {type:"state",name:"startup/stream",value:true} and
     .[-1].type == "hook_result"' "$SHELLFISH_SESSION" >/dev/null 2>&1; do

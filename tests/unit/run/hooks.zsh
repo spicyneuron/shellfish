@@ -14,10 +14,10 @@ cat >"$prompt_hook" <<'ZSH'
 cat >"$PROMPT_INPUT"
 case $(<"$PROMPT_INPUT") in
   accept)
-    print -r -u3 -- '{"user_draft":"working"}'
-    print -r -u3 -- '{"user_final":"user display","model_final":"model context","state":[{"name":"prompt/state","value":1}]}'
-    print -r -u3 -- '{"user_draft":"trailing","user_preview_lines":2}'
-    print -rn -- 'ignored stdout'
+    print -r -u3 -- '{"user_text":"working"}'
+    print -r -u3 -- '{"user_text":"user display","model_text":"model context","finalize":true,"state":[{"name":"prompt/state","value":1}]}'
+    print -r -u3 -- '{"user_text":"trailing","user_preview_lines":2}'
+    print -rn -- 'trailing context'
     ;;
   shortcut)
     print -rn -- 'model context'
@@ -52,23 +52,23 @@ case $(<"$PROMPT_INPUT") in
     print -rn -u3 -- '{"action":"session_update","profile":{}}'
     ;;
   drafts)
-    repeat 3 print -r -u3 -- "{\"user_draft\":\"${(l:30000::d:)}\"}"
-    print -r -u3 -- '{"user_final":"done"}'
+    repeat 3 print -r -u3 -- "{\"user_text\":\"${(l:30000::d:)}\"}"
+    print -r -u3 -- '{"user_text":"done"}'
     ;;
   oversize)
-    print -r -u3 -- '{"user_final":"kept"}'
-    print -r -u3 -- "{\"user_final\":\"${(l:70000::o:)}\"}"
+    print -r -u3 -- '{"user_text":"kept","finalize":true}'
+    print -r -u3 -- "{\"user_text\":\"${(l:70000::o:)}\"}"
     ;;
   invalid)
-    print -r -u3 -- '{"user_final":"kept","model_final":"kept context"}'
+    print -r -u3 -- '{"user_text":"kept","model_text":"kept context","finalize":true}'
     print -r -u3 -- '{"action":"allow"}'
-    print -r -u3 -- '{"user_final":"ignored"}'
+    print -r -u3 -- '{"user_text":"ignored","finalize":true}'
     ;;
   state)
     print -r -u3 -- '{"state":[{"name":"prompt/state","value":2}]}'
     ;;
   interrupt)
-    print -r -u3 -- '{"user_final":"settled"}'
+    print -r -u3 -- '{"user_text":"settled","finalize":true}'
     : >"$INTERRUPT_MARKER"
     sleep 30
     ;;
@@ -79,8 +79,9 @@ export PROMPT_INPUT=$prompt_input
 SF_TEST_PROFILE=$(jq -c --arg hook "$prompt_hook" '.hooks.user_prompt_submit=[$hook]' \
   <<<"$SF_TEST_PROFILE")
 
-# A final and its state settle as they arrive; drafts are transient, and a
-# draft nothing settles is cleared. stdout after a final is ignored.
+# A finalized section and its state settle as they arrive; user text streams as
+# a draft. The trailing section keeps its own user text and takes stdout for
+# the model.
 typeset session="$tmp/accepted.jsonl" stream="$tmp/accepted.stream"
 sf_test_session "$session"
 print -r -- '{"type":"hook_result","lifecycle":"session_start","id":"7"}' >>"$session"
@@ -89,24 +90,24 @@ assert_equal accept "$(<$prompt_input)" 'prompt hook did not receive exact promp
 jq -eRn '
   [inputs | fromjson] as $events |
   [$events[] | select(.type | IN("state","hook_result","user")) | .type] ==
-    ["state","hook_result","user"] and
-  ($events | map(select(.type == "hook_result"))[0]) == {
+    ["state","hook_result","hook_result","user"] and
+  ($events | map(select(.type == "hook_result"))) == [{
       type:"hook_result",lifecycle:"user_prompt_submit",id:"8",
       user_text:"user display",model_text:"model context"
-    } and
+    }, {type:"hook_result",lifecycle:"user_prompt_submit",id:"9",
+      user_text:"trailing",model_text:"trailing context",user_preview_lines:2}] and
   ($events | map(select(.type == "state"))[0]) ==
     {type:"state",name:"prompt/state",value:1} and
   ($events | map(select(.type == "_draft"))) == [
     {type:"_draft",lifecycle:"user_prompt_submit",id:"8",user_text:"working"},
     {type:"_draft",lifecycle:"user_prompt_submit",id:"9",user_text:"trailing",
-     user_preview_lines:2},
-    {type:"_draft",lifecycle:"user_prompt_submit",id:"9",user_text:""}
+     user_preview_lines:2}
   ]
 ' <"$stream" >/dev/null ||
   fail 'accepted prompt hook violated channel ordering'
 assert_canonical_session "$session"
 
-# Without a final, the user sees stdout and stderr and the model sees stdout.
+# By default, the user sees stdout and stderr and the model sees stdout.
 session="$tmp/shortcut.jsonl"
 sf_test_session "$session"
 sf_test_run shortcut "$session" >"$stream" || fail 'shortcut prompt hook failed'
@@ -116,20 +117,20 @@ jq -e -s '
     user_text:"model context user display",model_text:"model context"}]
 ' "$session" >/dev/null || fail 'hook output did not settle through the shortcut'
 
-# Drafts do not count toward the capture limit; a larger final fails the hook
+# Lines do not add up against the capture limit; a larger line fails the hook
 # after keeping what already settled.
 session="$tmp/drafts.jsonl"
 sf_test_session "$session"
-sf_test_run drafts "$session" >"$stream" || fail 'drafts counted toward the capture limit'
+sf_test_run drafts "$session" >"$stream" || fail 'lines counted toward the capture limit'
 session="$tmp/oversize.jsonl"
 sf_test_session "$session"
 integer oversize_status=0
 sf_test_run oversize "$session" >"$stream" 2>"$tmp/oversize.stderr" || oversize_status=$?
-(( oversize_status == 1 )) || fail 'an oversized final did not fail the turn'
+(( oversize_status == 1 )) || fail 'an oversized line did not fail the turn'
 [[ $(<"$tmp/oversize.stderr") == *'hook output exceeds capture limit'* ]] ||
-  fail 'an oversized final was not reported'
+  fail 'an oversized line was not reported'
 jq -e -s 'map(select(.type == "hook_result") | .user_text) == ["kept"]' "$session" \
-  >/dev/null || fail 'an oversized final lost the settled result'
+  >/dev/null || fail 'an oversized line lost the settled result'
 
 # A block action ends the turn before the user record.
 session="$tmp/blocked.jsonl"
@@ -198,7 +199,7 @@ jq -e -s '
 [[ $(<"$tmp/update-invalid.stderr") == *'invalid session profile replacement'* ]] ||
   fail 'invalid profile failure was not reported'
 
-# An invalid line keeps the finals before it and ignores the lines after it.
+# An invalid line keeps the sections finalized before it and ignores the lines after it.
 typeset invalid
 session="$tmp/invalid.jsonl"
 sf_test_session "$session"
@@ -216,12 +217,12 @@ jq -e -s '
 # State may ride on a line of its own.
 session="$tmp/state.jsonl"
 sf_test_session "$session"
-sf_test_run state "$session" >"$stream" || fail 'state without a final failed the turn'
+sf_test_run state "$session" >"$stream" || fail 'state without text failed the turn'
 jq -e -s 'map(select(.type == "state")) == [{type:"state",name:"prompt/state",value:2}]' \
-  "$session" >/dev/null || fail 'state without a final was not appended'
+  "$session" >/dev/null || fail 'state without text was not appended'
 assert_canonical_session "$session"
 
-# Interruption keeps the finals a hook already settled.
+# Interruption keeps the sections a hook already finalized.
 typeset interrupt_marker="$tmp/interrupt-started"
 session="$tmp/interrupt.jsonl"
 sf_test_session "$session"
@@ -235,7 +236,7 @@ kill -TERM "$pid" 2>/dev/null
 wait "$pid" || interrupt_status=$?
 (( interrupt_status == 143 )) || fail 'interrupted hook returned the wrong status'
 jq -e -s 'map(select(.type == "hook_result") | .user_text) == ["settled"]' "$session" \
-  >/dev/null || fail 'interruption lost a settled final'
+  >/dev/null || fail 'interruption lost a finalized section'
 
 # Stop receives exact final assistant text and continue starts another request.
 typeset stop_backend="$tmp/stop-backend/run" stop_hook="$tmp/stop-hook"
@@ -257,7 +258,7 @@ cat >"$stop_hook" <<'ZSH'
 [[ $# == 1 && $1 == <1-> ]] || exit 2
 cat >"$STOP_INPUT"
 if [[ $1 == 1 ]]; then
-  print -r -u3 -- '{"user_final":"checking again","model_final":"continue context","action":"continue"}'
+  print -r -u3 -- '{"user_text":"checking again","model_text":"continue context","action":"continue"}'
 fi
 ZSH
 chmod +x "$stop_backend" "$stop_hook"
@@ -302,7 +303,7 @@ assert_canonical_session "$session"
 # A continuation without model feedback fails before another provider request.
 cat >"$stop_hook" <<'ZSH'
 #!/usr/bin/env zsh
-print -r -u3 -- '{"user_final":"checking again","action":"continue"}'
+print -r -u3 -- '{"user_text":"checking again","action":"continue"}'
 ZSH
 chmod +x "$stop_hook"
 rm -f "$request_count"
@@ -326,9 +327,9 @@ typeset delegate="$tmp/delegate"
 cat >"$delegate" <<'ZSH'
 #!/usr/bin/env zsh
 input=$(cat)
-print -r -u3 -- "{\"user_final\":\"${0:t} before: $input\"}"
+print -r -u3 -- "{\"user_text\":\"${0:t} before: $input\",\"finalize\":true}"
 [[ -z ${SHELLFISH_PARENT_HOOK-} ]] || "$SHELLFISH_PARENT_HOOK" "$@" || exit
-print -r -u3 -- "{\"user_final\":\"${0:t} after\"}"
+print -r -u3 -- "{\"user_text\":\"${0:t} after\",\"finalize\":true}"
 ZSH
 chmod +x "$delegate"
 ln -s delegate "$tmp/one"

@@ -12,8 +12,8 @@ cat >"$hook" <<'ZSH'
 [[ $# == 0 && $SHELLFISH_MODEL == test && -z ${SHELLFISH_TURN_ID-} &&
   -z ${SHELLFISH_TURN_STATE-} ]] || exit 2
 cat >"$START_INPUT"
-print -r -u3 -- '{"user_draft":"Starting up"}'
-print -r -u3 -- '{"user_final":"startup display","model_final":"startup model","state":[{"name":"startup/state","value":true}]}'
+print -r -u3 -- '{"user_text":"Starting up"}'
+print -r -u3 -- '{"user_text":"startup display","model_text":"startup model","finalize":true,"state":[{"name":"startup/state","value":true}]}'
 ZSH
 chmod +x "$hook"
 sf_test_profile default "{
@@ -46,11 +46,12 @@ jq -e -s '
 ' "$session" >/dev/null || fail 'startup records were not durable'
 assert_canonical_session "$session"
 
-# A successful hook without a durable result still clears its draft.
+# A successful hook that releases its user text without output clears its draft.
 cat >"$hook" <<'ZSH'
 #!/usr/bin/env zsh
 cat >/dev/null
-print -r -u3 -- '{"user_draft":"Starting up"}'
+print -r -u3 -- '{"user_text":"Starting up"}'
+print -r -u3 -- '{"user_text":"","finalize":true}'
 ZSH
 chmod +x "$hook"
 session="$tmp/silent.jsonl"
@@ -79,7 +80,7 @@ for unsupported in action status; do
   cat >"$hook" <<ZSH
 #!/usr/bin/env zsh
 cat >/dev/null
-print -r -u3 -- '{"model_final":"unsupported model"}'
+print -r -u3 -- '{"model_text":"unsupported model","finalize":true}'
 print -rn -u2 -- 'unsupported display'
 $unsupported_cases[$unsupported]
 ZSH

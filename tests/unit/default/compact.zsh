@@ -131,7 +131,7 @@ for incomplete in empty user-only assistant-only; do
     SHELLFISH_TURN_STATE="$tmp" zsh -f "$compact_hook" user_prompt_submit \
     3>"$compact_control" < <(print -n -- /compact) 2>/dev/null || compact_status=$?
   (( compact_status == 0 )) &&
-    [[ $(<"$compact_control") == '{"action":"block"}' ]] ||
+    [[ $(actions) == '{"action":"block"}' ]] ||
     fail "compaction accepted $incomplete session"
 done
 
@@ -141,7 +141,7 @@ SHELLFISH_EXECUTABLE="$compact_shellfish" SHELLFISH_SESSION="$tmp/empty.jsonl" \
   SHELLFISH_TURN_STATE="$tmp" zsh -f "$compact_hook" user_prompt_submit \
   3>"$compact_control" < <(print -n -- 'ordinary prompt') 2>/dev/null || compact_status=$?
 (( compact_status == 0 )) || fail 'automatic compaction did not skip an empty session'
-[[ ! -s $compact_control ]] || fail 'empty automatic compaction requested a handoff'
+[[ -z $(actions) ]] || fail 'empty automatic compaction requested a handoff'
 
 # Compact explicitly without a draft.
 compact_status=0

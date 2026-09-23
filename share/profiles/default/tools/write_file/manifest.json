@@ -9,7 +9,7 @@
       "content": {"type": "string", "description": "Complete contents for the new file"}
     }
   },
-  "user_draft": "${name} ${input.file_path}",
+  "user_text": "${name} ${input.file_path}",
   "user_permission": "${input.file_path}",
   "sandbox": true,
   "allow_sandbox_bypass": true

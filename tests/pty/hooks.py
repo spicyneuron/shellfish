@@ -44,12 +44,12 @@ print -r -u3 -- '{"action":"block"}'
 
 START_HOOK = r"""#!/usr/bin/env zsh
 typeset directory=${SHELLFISH_SESSION:h} name=${0:t}
-print -r -u3 -- "{\"user_draft\":\"Inspecting $name\"}"
+print -r -u3 -- "{\"user_text\":\"Inspecting $name\"}"
 : >"$directory/$name-started"
 while [[ ! -e $directory/$name-release ]]; do
   sleep 0.05
 done
-print -r -u3 -- "{\"user_final\":\"$name context\",\"model_final\":\"$name context\"}"
+print -r -u3 -- "{\"user_text\":\"$name context\",\"model_text\":\"$name context\",\"finalize\":true}"
 [[ -z ${SHELLFISH_PARENT_HOOK-} ]] || exec "$SHELLFISH_PARENT_HOOK"
 """
 

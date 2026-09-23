@@ -15,18 +15,18 @@ branch=$(sf_capped "$deadline" git symbolic-ref --quiet --short HEAD 2>/dev/null
 case $? in
   0) identity="branch:$branch" ;;
   1)
-    hash=$(sf_capped "$deadline" git rev-parse --verify HEAD 2>/dev/null) || exit 0
+    hash=$(sf_capped "$deadline" git rev-parse --verify HEAD 2>/dev/null) || { print -ru3 -- '{"user_text":"","finalize":true}'; exit 0 }
     identity="commit:$hash"
     ;;
-  *) exit 0 ;;
+  *) print -ru3 -- '{"user_text":"","finalize":true}'; exit 0 ;;
 esac
 commits=$(sf_capped "$deadline" git log --oneline -5 2>/dev/null)
 probe_status=$?
-(( probe_status != 124 )) || exit 0
+(( probe_status != 124 )) || { print -ru3 -- '{"user_text":"","finalize":true}'; exit 0 }
 (( probe_status == 0 )) || commits=''
 git_status=$(sf_capped "$deadline" git status --short 2>/dev/null)
 probe_status=$?
-(( probe_status != 124 )) || exit 0
+(( probe_status != 124 )) || { print -ru3 -- '{"user_text":"","finalize":true}'; exit 0 }
 (( probe_status == 0 )) || git_status=''
 
 text=$(

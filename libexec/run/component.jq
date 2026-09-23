@@ -15,17 +15,24 @@ def component_action($lifecycle):
     (keys == ["action","reason"] and (.reason | type == "string"))
   else keys == ["action"] end;
 
-# One fd 3 line becomes its effects, or null when invalid. $draft is the
-# transient event a draft fills in. A preview hint applies to the live section,
-# so a line without one inherits $preview, the last hint since the previous
-# result.
-def component_line($lifecycle; $draft; $preview):
+# The nonempty texts a view settles to, or null when there are none. A view
+# holds the fields its component wrote; $user and $model fill the others.
+def component_texts($user; $model; $preview):
+  {user_text:$user, model_text:$model} + . | with_entries(select(.value != "")) |
+  if . == {} then null
+  else . + if $preview == null then {} else {user_preview_lines:$preview} end end;
+
+# One fd 3 line becomes its effects, or null when invalid. $view is the live
+# section's view and $draft the transient event a user text fills in. A preview
+# hint applies to the live section, so a line without one inherits $preview,
+# the last hint since the previous result. Only a hook finalizes a section.
+def component_line($lifecycle; $view; $draft; $preview):
   if type == "object" then . else {"": null} end |
-  (has("user_final") or has("model_final")) as $final |
   with_entries(select(.key | IN("action","argv","profile","reason"))) as $control |
-  if ((keys - ["action","argv","model_final","profile","reason","state","user_draft",
-      "user_final","user_preview_lines"]) | length == 0) and
-    all(.user_draft, .user_final, .model_final; . == null or type == "string") and
+  if ((keys - ["action","argv","finalize","model_text","profile","reason","state",
+      "user_preview_lines","user_text"]) | length == 0) and
+    all(.user_text, .model_text; . == null or type == "string") and
+    ((has("finalize") | not) or .finalize == true) and
     ((has("user_preview_lines") | not) or (.user_preview_lines | preview_hint)) and
     ((has("state") | not) or (.state | type == "array" and all(.[];
       type == "object" and keys == ["name","value"] and
@@ -33,14 +40,12 @@ def component_line($lifecycle; $draft; $preview):
     ($control == {} or ($control | component_action($lifecycle)))
   then
     (.user_preview_lines // $preview) as $hint |
-    (if $hint == null then {} else {user_preview_lines:$hint} end) as $hinted |
-    {final:$final, preview:$hint,
-     states:[.state[]? | {type:"state"} + .],
-     texts:(if $final then
-       (if (.user_final // "") == "" then {} else {user_text:.user_final} end) +
-       (if (.model_final // "") == "" then {} else {model_text:.model_final} end) +
-       $hinted else null end),
-     draft:($draft + {user_text:.user_draft} + $hinted |
-       select(($final | not) and .user_text != null)) // null,
-     control:$control}
+    ($view + with_entries(select(.key | IN("user_text","model_text")))) as $view |
+    if .finalize and $lifecycle != null then
+      {view:{}, preview:null, record:($view | component_texts(""; ""; $hint))}
+    else
+      {view:$view, preview:$hint, draft:(if has("user_text") | not then null else
+        $draft + {user_text:.user_text} +
+        if $hint == null then {} else {user_preview_lines:$hint} end end)}
+    end + {states:[.state[]? | {type:"state"} + .], control:$control}
   else null end;

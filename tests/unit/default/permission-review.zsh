@@ -44,7 +44,7 @@ sf_session_append "$session" '{"type":"hook_result","lifecycle":"permission_requ
 assert_canonical_session "$session"
 request='{"tool_input":{"command":"setup","request_sandbox_bypass":true,"sandbox_bypass_reason":"needed"}}'
 
-# The review shows a draft, then settles one final carrying its decision.
+# The review shows a draft, then clears it with its decision.
 run_review() {
   print -r -- "$1" >"$mode"
   hook_status=0
@@ -53,7 +53,7 @@ run_review() {
     SHELLFISH_TURN_STATE="$tmp" SHELLFISH_TURN_ID=6 \
     zsh -f "$hook" shell call_7 \
     3>"$tmp/lines" <<<"$request" || hook_status=$?
-  jq -e -s 'length == 2 and (.[0] | keys) == ["user_draft"]' "$tmp/lines" >/dev/null ||
+  jq -e -s 'length == 2 and (.[0] | keys) == ["user_text"]' "$tmp/lines" >/dev/null ||
     fail 'permission review did not draft once before settling'
   jq -c -s last "$tmp/lines" >|"$control"
 }

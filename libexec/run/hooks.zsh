@@ -22,31 +22,33 @@ sf_run_hook_project() {
   SF_HOOK_PLAN=( "${reply[@]}" )
 }
 
-# A settled result takes the live section's id and opens the next one.
+# A settled result takes the live section's id and opens the next one. Settled
+# model text is feedback.
 sf_run_hook_settle() {
   sf_run_append "$SF_HOOK_RESULT[session]" "$1" || return
   (( SF_RUN[hook_id] += 1 ))
   SF_HOOK_RESULT[live]=0
-  SF_HOOK_RESULT[preview]=null
+  [[ $2 != true ]] || SF_HOOK_RESULT[model_feedback]=1
 }
 
-# Decode one fd 3 line for a hook or tool. DRAFT is the transient event a draft
-# fills in, RESULT the record a final with text fills in, and PREVIEW the live
-# section's hint. LIFECYCLE is empty for a tool.
+# Decode one fd 3 line for a hook or tool against the live section's VIEW.
+# DRAFT is the transient event a user text fills in, RESULT the record a
+# finalized view fills in, and PREVIEW the live section's hint. LIFECYCLE is
+# empty for a tool.
 sf_run_component_line() {
-  sf_jq_fields -cn --arg line "$1" --arg lifecycle "$2" --argjson draft "$3" \
-    --argjson result "$4" --argjson preview "${5:-null}" '
+  sf_jq_fields -cn --arg line "$1" --arg lifecycle "$2" --argjson view "$3" \
+    --argjson draft "$4" --argjson result "$5" --argjson preview "$6" '
       include "lib/fields";
       include "lib/session";
       include "libexec/run/component";
-      ($line | try fromjson catch null |
-        component_line(if $lifecycle == "" then null else $lifecycle end; $draft; $preview)) as $line |
+      ($line | try fromjson catch null | component_line(
+        if $lifecycle == "" then null else $lifecycle end; $view; $draft; $preview)) as $line |
       entry("valid"; $line != null | tostring),
       entry("states"; [$line.states[]? | tojson] | join("\n")),
-      entry("texts"; $line.texts | if . == null then "" else tojson end),
-      entry("model_feedback"; ($line.texts.model_text // "") != "" | tostring),
-      entry("record"; $line.texts |
-        if has("user_text") or has("model_text") then $result + . | tojson else "" end),
+      entry("view"; $line.view | tojson),
+      entry("owned"; $line.view // {} | has("user_text") and has("model_text") | tostring),
+      entry("record"; $line.record | if . == null then "" else $result + . | tojson end),
+      entry("model_feedback"; $line.record.model_text != null | tostring),
       entry("draft"; $line.draft | if . == null then "" else tojson end),
       entry("preview"; $line.preview | tojson),
       entry("action"; $line.control.action // ""),
@@ -63,7 +65,7 @@ sf_run_hook_line() {
   local record lifecycle=$SF_HOOK_RESULT[lifecycle] id=$SF_RUN[hook_id]
   local -A line
   [[ -z $SF_HOOK_RESULT[error] ]] || return 0
-  sf_run_component_line "$1" "$lifecycle" \
+  sf_run_component_line "$1" "$lifecycle" "$SF_HOOK_RESULT[view]" \
     '{"type":"_draft","lifecycle":"'$lifecycle'","id":"'$id'"}' \
     '{"type":"hook_result","lifecycle":"'$lifecycle'","id":"'$id'"}' \
     "$SF_HOOK_RESULT[preview]" ||
@@ -74,33 +76,35 @@ sf_run_hook_line() {
     sf_run_append "$SF_HOOK_RESULT[session]" "$record" ||
       { SF_HOOK_RESULT[error]=$REPLY; return 1; }
   done
-  SF_HOOK_RESULT[preview]=$line[preview]
+  SF_HOOK_RESULT+=( view "$line[view]" owned "$line[owned]" preview "$line[preview]" )
   if [[ -n $line[record] ]]; then
-    sf_run_hook_settle "$line[record]" || { SF_HOOK_RESULT[error]=$REPLY; return 1; }
+    sf_run_hook_settle "$line[record]" "$line[model_feedback]" || { SF_HOOK_RESULT[error]=$REPLY; return 1; }
   elif [[ -n $line[draft] ]]; then
     sf_run_emit "$line[draft]" || { SF_HOOK_RESULT[error]='cannot emit hook draft'; return 1; }
     SF_HOOK_RESULT[live]=1
   fi
-  [[ -z $line[texts] ]] || SF_HOOK_RESULT[final]=1
-  [[ $line[model_feedback] != true ]] || SF_HOOK_RESULT[model_feedback]=1
   [[ -z $line[action] ]] || SF_HOOK_RESULT+=( action "$line[action]"
     reason "$line[reason]" payload "$line[payload]" )
 }
 
-# Without a final, stdout and stderr settle as one result: the user sees both
-# and the model sees stdout.
-sf_run_hook_shortcut() {
-  local directory=$1 record
-  record=$(sf_jq -cn --rawfile stdout "$directory/stdout" --rawfile stderr "$directory/stderr" \
+# The trailing section settles at exit 0: the user sees stdout and stderr and
+# the model sees stdout, unless the hook wrote its own.
+sf_run_hook_trailing() {
+  local directory=$1
+  local -A settled
+  sf_jq_fields -cn --rawfile stdout "$directory/stdout" --rawfile stderr "$directory/stderr" \
     --arg lifecycle "$SF_HOOK_RESULT[lifecycle]" --arg id "$SF_RUN[hook_id]" \
-    --argjson preview "${SF_HOOK_RESULT[preview]:-null}" '
-      {type:"hook_result",lifecycle:$lifecycle,id:$id} +
-      (if $stdout + $stderr == "" then {} else {user_text:($stdout + $stderr)} end) +
-      (if $stdout == "" then {} else {model_text:$stdout} end) +
-      (if $preview == null then {} else {user_preview_lines:$preview} end)
-    ') || { REPLY='cannot decode hook result'; return 1; }
-  sf_run_hook_settle "$record" || return
-  [[ ! -s $directory/stdout ]] || SF_HOOK_RESULT[model_feedback]=1
+    --argjson view "$SF_HOOK_RESULT[view]" --argjson preview "$SF_HOOK_RESULT[preview]" '
+      include "lib/fields";
+      include "libexec/run/component";
+      ($view | component_texts($stdout + $stderr; $stdout; $preview)) as $texts |
+      entry("record"; $texts | if . == null then "" else
+        {type:"hook_result",lifecycle:$lifecycle,id:$id} + . | tojson end),
+      entry("model_feedback"; $texts.model_text != null | tostring),
+      ("ok" | field)
+    ' || { REPLY='cannot decode hook result'; return 1; }
+  settled=( "${reply[@]}" )
+  [[ -z $settled[record] ]] || sf_run_hook_settle "$settled[record]" "$settled[model_feedback]"
 }
 
 # Run the lifecycle's first hook. Each later one is the parent of the one before,
@@ -171,9 +175,8 @@ sf_run_hooks() {
     error='cannot prepare hook capture'
   else
     directory=$REPLY
-    SF_HOOK_RESULT=( session "$session" lifecycle "$lifecycle" error '' final 0 live 0
-      model_feedback 0
-      preview null action '' reason '' payload '' )
+    SF_HOOK_RESULT=( session "$session" lifecycle "$lifecycle" error '' live 0
+      model_feedback 0 view '{}' owned false preview null action '' reason '' payload '' )
     if ! sf_process_run "$directory" "${SF_RUN[cwd]:A}" "$input" "$max_capture" \
         sf_run_hook_line /usr/bin/env "${environment[@]}" "$command" "$@"; then
       error=$SF_PROCESS_ERROR
@@ -189,11 +192,12 @@ sf_run_hooks() {
       elif (( process[exit_code] )); then
         error="$lifecycle hook failed with status $process[exit_code]: $command"
         [[ ! -s $directory/stderr ]] || error+=": $(<"$directory/stderr")"
-      elif (( process[control_bytes] > max_capture || ! SF_HOOK_RESULT[final] &&
-          process[stdout_bytes] + process[stderr_bytes] > max_capture )); then
+      elif [[ $SF_HOOK_RESULT[owned] != true ]] &&
+          (( process[stdout_bytes] + process[stderr_bytes] > max_capture )) ||
+          (( process[control_bytes] > max_capture )); then
         error="$lifecycle hook output exceeds capture limit: $command"
-      elif (( ! SF_HOOK_RESULT[final] && process[stdout_bytes] + process[stderr_bytes] )); then
-        sf_run_hook_shortcut "$directory" || error=$REPLY
+      else
+        sf_run_hook_trailing "$directory" || error=$REPLY
       fi
     fi
   fi

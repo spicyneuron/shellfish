@@ -15,7 +15,7 @@
       }
     }
   },
-  "user_draft": "${name}\n${input.command}",
+  "user_text": "${name}\n${input.command}",
   "user_permission": "${input.command}",
   "sandbox": true,
   "allow_sandbox_bypass": true

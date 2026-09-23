@@ -25,7 +25,7 @@ source "${0:A:h:h}/lib/hook.zsh" || exit 1
 sf_hook_draft 'fork · Forking session…' || exit 1
 
 if [[ $target != <-> || ${#target} -gt 9 ]] || (( explicit && target == 0 )); then
-  print -u2 -r -- 'usage: /fork [N]'
+  sf_hook_notice 'usage: /fork [N]'
   exit 0
 fi
 
@@ -49,7 +49,7 @@ resolved=$(jq -j -s --argjson target "$target" '
     else [$next.index, $next.draft, 1] end
   end | "\(.[0])\u0000\(.[1])\u0000\(.[2])\u0000"
 ' "$SHELLFISH_SESSION" 2>/dev/null) || {
-  print -u2 -r -- 'fork target does not exist'
+  sf_hook_notice 'fork target does not exist'
   exit 0
 }
 fields=( "${(@0)${resolved%$'\0'}}" )
@@ -63,7 +63,7 @@ transcript="$SHELLFISH_TURN_STATE/fork.jsonl"
 if ! jq -ce -s --argjson cutoff "$cutoff" --arg created "$created" '
   .[0:$cutoff] | .[0].created = $created | .[]
 ' "$SHELLFISH_SESSION" >"$transcript"; then
-  print -u2 -r -- 'cannot fork session'
+  sf_hook_notice 'cannot fork session'
   exit 0
 fi
 
@@ -76,7 +76,7 @@ while true; do
     break
   fi
   if [[ ! -e $candidate && ! -L $candidate ]]; then
-    print -u2 -r -- "cannot create fork: $candidate"
+    sf_hook_notice "cannot create fork: $candidate"
     exit 0
   fi
   (( suffix++ ))
@@ -85,4 +85,5 @@ done
 argv=( "$SHELLFISH_EXECUTABLE" --session "$candidate" )
 (( ! has_draft )) || argv+=( --draft "$draft" )
 jq -cn '$ARGS.positional | {action:"handoff",argv:.}' --args -- "${argv[@]}" >&3 || exit 1
+print -ru3 -- '{"user_text":"","finalize":true}' || exit 1
 exit 0

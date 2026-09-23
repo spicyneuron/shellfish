@@ -88,7 +88,7 @@ input=$(cat)
 id=$(jq -r '.tool_use_id' <<<"$input")
 print -rn -- "$input" >"$HOOK_DIR/pre-$id"
 if [[ $id == call_1 ]]; then
-  print -r -u3 -- '{"user_final":"pre display","model_final":"pre context","state":[{"name":"pre/call_1","value":true}],"action":"deny","reason":"pre denied"}'
+  print -r -u3 -- '{"user_text":"pre display","model_text":"pre context","state":[{"name":"pre/call_1","value":true}],"action":"deny","reason":"pre denied"}'
 else
   exec "$SHELLFISH_PARENT_HOOK" "$@"
 fi
@@ -103,7 +103,7 @@ cat >"$post" <<'ZSH'
 input=$(cat)
 id=$(jq -r '.tool_use_id' <<<"$input")
 print -rn -- "$input" >"$HOOK_DIR/post-$id"
-print -rn -u3 -- "{\"user_final\":\"post $id\",\"state\":[{\"name\":\"post/$id\",\"value\":true}]}"
+print -rn -u3 -- "{\"user_text\":\"post $id\",\"state\":[{\"name\":\"post/$id\",\"value\":true}]}"
 ZSH
 chmod +x "$pre" "$later" "$post"
 export HOOK_DIR=$hook_dir TOOL_MARKER=$tool_marker
@@ -160,7 +160,7 @@ cat >"$permission" <<'ZSH'
 [[ $# == 2 && $1 == shell && $2 == call_1 ]] || exit 2
 input=$(cat)
 print -rn -- "$input" >"$PERMISSION_INPUT"
-print -rn -u3 -- '{"state":[{"name":"permission/state","value":true}],"action":"allow","user_final":"review display","model_final":"review context"}'
+print -rn -u3 -- '{"state":[{"name":"permission/state","value":true}],"action":"allow","user_text":"review display","model_text":"review context"}'
 ZSH
 chmod +x "$permission"
 export PERMISSION_INPUT=$permission_input
@@ -224,12 +224,12 @@ jq -e -s 'all(.[]; .type != "_tool_permission_request" and
   .type != "_tool_permission_response")' "$session" >/dev/null ||
   fail 'permission exchange became durable'
 
-# A failing post hook keeps its settled final before the known outcome and durable error.
+# A failing post hook keeps its finalized section before the known outcome and durable error.
 typeset post_fail="$tmp/post-fail"
 cat >"$post_fail" <<'ZSH'
 #!/usr/bin/env zsh
 cat >/dev/null
-print -r -u3 -- '{"user_final":"post failure display","model_final":"post failure context"}'
+print -r -u3 -- '{"user_text":"post failure display","model_text":"post failure context","finalize":true}'
 exit 3
 ZSH
 chmod +x "$post_fail"
@@ -333,22 +333,22 @@ jq -eRn '[inputs | fromjson | select(.type == "tool_result")][0].model_text ==
   "declared-file unset unset\nexit 0"' <"$stream" >/dev/null ||
   fail 'sandboxed tool saw values beyond its declared names'
 
-# A tool streams drafts, and its last final settles the call with the state
-# from every line. An action is invalid for a tool.
+# A tool streams user text and settles once at exit with the state from every
+# line; stdout fills the model text it did not write. A tool ignores finalize,
+# and an action is invalid for it.
 typeset protocol="$tmp/protocol"
 cat >"$protocol" <<'ZSH'
 #!/usr/bin/env zsh
 case $(jq -r .command) in
   final)
-    print -r -u3 -- '{"user_draft":"working","state":[{"name":"tool/a","value":1}]}'
-    print -r -u3 -- '{"user_final":"first","model_final":"first"}'
-    print -r -u3 -- '{"user_final":"shown","model_final":"seen","user_preview_lines":"full","state":[{"name":"tool/b","value":2}]}'
-    print -r -- ignored
+    print -r -u3 -- '{"user_text":"working","state":[{"name":"tool/a","value":1}]}'
+    print -r -u3 -- '{"user_text":"shown","finalize":true,"user_preview_lines":"full","state":[{"name":"tool/b","value":2}]}'
+    print -rn -- seen
     exit 4
     ;;
   hint) print -r -u3 -- '{"user_preview_lines":3}'; print -rn -- plain ;;
   action) print -r -u3 -- '{"action":"deny"}' ;;
-  huge) jq -cn '{user_final:("x" * 70000)}' >&3 ;;
+  huge) jq -cn '{user_text:("x" * 70000)}' >&3 ;;
 esac
 ZSH
 chmod +x "$protocol"
@@ -362,13 +362,14 @@ jq -eRn '
   [inputs | fromjson | select(.type | IN("_draft","state","tool_result"))] ==
     [{type:"_draft",id:"call_1",name:"shell",user_text:"shell\nfinal"},
      {type:"_draft",id:"call_1",name:"shell",user_text:"working"},
+     {type:"_draft",id:"call_1",name:"shell",user_text:"shown",user_preview_lines:"full"},
      {type:"state",name:"tool/a",value:1},{type:"state",name:"tool/b",value:2},
      {type:"tool_result",id:"call_1",name:"shell",input:{command:"final"},exit_code:4,
       user_text:"shown",model_text:"seen",user_preview_lines:"full"}]
-' <"$stream" >/dev/null || fail 'tool drafts or last final settled wrong'
+' <"$stream" >/dev/null || fail 'tool user text or output settled wrong'
 assert_canonical_session "$session"
 
-# Without a final, the result inherits the last preview hint.
+# The result inherits the last preview hint.
 session="$tmp/protocol-hint.jsonl"
 sf_test_session "$session"
 SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_COMMAND=hint \
@@ -387,13 +388,13 @@ jq -eRn '[inputs | fromjson][-1] | .type == "error" and
   (.user_text | contains("invalid control"))' <"$stream" >/dev/null ||
   fail 'a tool action was not reported'
 
-# A final beyond the capture limit fails the call, not the turn.
+# A line beyond the capture limit fails the call, not the turn.
 session="$tmp/protocol-huge.jsonl"
 sf_test_session "$session"
 SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_COMMAND=huge \
-  sf_test_run protocol "$session" >"$stream" || fail 'oversized final failed the turn'
+  sf_test_run protocol "$session" >"$stream" || fail 'oversized line failed the turn'
 jq -eRn '[inputs | fromjson | select(.type == "tool_result")][0] |
   .exit_code == 1 and .model_text == "tool result exceeds capture limit"' \
-  <"$stream" >/dev/null || fail 'oversized final did not fail the call'
+  <"$stream" >/dev/null || fail 'oversized line did not fail the call'
 
 print -r -- ok

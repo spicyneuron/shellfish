@@ -4,7 +4,7 @@ source "${0:A:h:h:h}/_helpers.zsh"
 sf_test_tmp default-environment
 
 # The model context a bundled hook settles on fd 3, or nothing.
-settled() { jq -rs 'map(select(has("model_final"))) | last.model_final // ""' "$1"; }
+settled() { jq -rs 'map(select(has("model_text"))) | last.model_text // ""' "$1"; }
 
 # Report project environment as context after a draft.
 typeset environment_control="$tmp/environment-control.json"
@@ -19,7 +19,7 @@ EOF
 chmod +x "$environment_bin/tree"
 PATH="$environment_bin:$PATH" zsh -f "$environment_script" session_start \
   3>"$environment_control" >/dev/null
-jq -e -s '.[0] | has("user_draft")' "$environment_control" >/dev/null
+jq -e -s '.[0] | has("user_text")' "$environment_control" >/dev/null
 environment_output=$(settled "$environment_control")
 [[ $environment_output == '<context script="project_environment">'$'\n'*$'\n</context>' ]]
 [[ $environment_output == *$'PWD: '*$'\n.'* ]]
@@ -67,7 +67,7 @@ PATH="$git_bin:$PATH" GIT_STATE="$git_state" \
 git_output=$(settled "$git_control")
 [[ $git_output == *main* && $git_output == *'abc123 Test commit'* &&
    $git_output == *status-file* && $git_output != *'Recent files:'* ]]
-jq -e -s 'last.state == [{name:"git/identity",value:"branch:main"}]' \
+jq -e -s 'map(.state // empty) | last == [{name:"git/identity",value:"branch:main"}]' \
   "$git_control" >/dev/null
 jq -c '.state[]? | {type:"state"} + .' "$git_control" >"$git_session"
 print -r -- '{"type":"state","name":"git/other","value":"ignored"}' >>"$git_session"
@@ -82,7 +82,7 @@ PATH="$git_bin:$PATH" GIT_STATE="$git_state" SHELLFISH_SESSION="$git_session" \
   zsh -f "$git_prompt" user_prompt_submit 3>"$git_control"
 git_output=$(settled "$git_control")
 [[ $git_output == *main* && $git_output == *feature* ]]
-jq -e -s 'last.state == [{name:"git/identity",value:"branch:feature"}]' \
+jq -e -s 'map(.state // empty) | last == [{name:"git/identity",value:"branch:feature"}]' \
   "$git_control" >/dev/null
 jq -c '.state[]? | {type:"state"} + .' "$git_control" >>"$git_session"
 PATH="$git_bin:$PATH" GIT_STATE="$git_state" SHELLFISH_SESSION="$git_session" \
@@ -96,7 +96,7 @@ PATH="$git_bin:$PATH" GIT_STATE="$git_state" SHELLFISH_SESSION="$git_session" \
   zsh -f "$git_prompt" user_prompt_submit 3>"$git_control"
 git_output=$(settled "$git_control")
 [[ $git_output == *feature* && $git_output == *0123456789abcdef* ]]
-jq -e -s 'last.state == [{name:"git/identity",value:"commit:0123456789abcdef"}]' \
+jq -e -s 'map(.state // empty) | last == [{name:"git/identity",value:"commit:0123456789abcdef"}]' \
   "$git_control" >/dev/null
 jq -c '.state[]? | {type:"state"} + .' "$git_control" >>"$git_session"
 

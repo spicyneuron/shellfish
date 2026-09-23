@@ -22,7 +22,7 @@ handoff() {
 
 [[ $submitted == *$'\n'* ]] || case $submitted in
   /help|/h)
-    jq -Rsc '{action:"block",user_final:rtrimstr("\n"),user_preview_lines:"full"}' >&3 <<'HELP'
+    jq -Rsc '{action:"block",user_text:rtrimstr("\n"),user_preview_lines:"full"}' >&3 <<'HELP'
 shift+enter        Add a line instead of sending the message
 ctrl+c             Cancel an active request; otherwise exit
 ↑, ↓               Navigate prompt history

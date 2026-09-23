@@ -20,7 +20,7 @@ sf_run_tool_plan() {
       include "lib/profile";
       $call.id as $id | $call.name as $name | $call.input as $input |
       [$tools[] | select(.name == $name)][0] as $tool |
-      render_template($tool.manifest.user_draft // "${name} ${input}"; $name; $input) as $draft |
+      render_template($tool.manifest.user_text // "${name} ${input}"; $name; $input) as $draft |
       (if $tool == null or ($profile.sandbox | not) then {decision:"none"}
        elif (($input.request_sandbox_bypass // false) | type) != "boolean" then
          {decision:"deny",reason:"sandbox bypass is not allowed"}
@@ -76,18 +76,17 @@ sf_run_tool_bound() {
   fi
 }
 
-# Apply one tool fd 3 line as it arrives. Drafts stream at once; state and the
-# last final wait for a completed exit.
+# Apply one tool fd 3 line as it arrives. User text streams at once; state and
+# the view wait for a completed exit.
 sf_run_tool_line() {
   local -A line
   [[ -z $SF_TOOL_RESULT[error] ]] || return 0
-  sf_run_component_line "$1" '' "$SF_TOOL_PLAN[event]" '{}' \
+  sf_run_component_line "$1" '' "$SF_TOOL_RESULT[view]" "$SF_TOOL_PLAN[event]" '{}' \
     "$SF_TOOL_RESULT[preview]" || { SF_TOOL_RESULT[error]=invalid; return 1; }
   line=( "${reply[@]}" )
   [[ $line[valid] == true ]] || { SF_TOOL_RESULT[error]=invalid; return 1; }
   SF_TOOL_RESULT[states]+=${line[states]:+$line[states]$'\n'}
-  SF_TOOL_RESULT[preview]=$line[preview]
-  [[ -z $line[texts] ]] || SF_TOOL_RESULT[final]=$line[texts]
+  SF_TOOL_RESULT+=( view "$line[view]" preview "$line[preview]" )
   [[ -z $line[draft] ]] || sf_run_emit "$line[draft]" ||
     { SF_TOOL_RESULT[error]='cannot emit tool draft'; return 1; }
 }
@@ -167,7 +166,7 @@ sf_run_tool_execute() {
   else
     process_command=( /usr/bin/env "${arguments[@]}" )
   fi
-  SF_TOOL_RESULT=( error '' states '' preview null final '' )
+  SF_TOOL_RESULT=( error '' states '' view '{}' preview null )
   if ! sf_process_run "$capture" "${cwd:A}" "${stdin:A}" "$max_capture" \
       sf_run_tool_line "${process_command[@]}"; then
     SF_RUN_TOOL_ERROR=$SF_PROCESS_ERROR
@@ -195,11 +194,10 @@ sf_run_tool_execute() {
   if (( process[exit_code] )) && grep -qs $'✗' "$capture/sandbox.log"; then denied=1; fi
   REPLY=$(sf_jq -cn --rawfile stdout "$bounded_stdout" --rawfile stderr "$bounded_stderr" \
     --argjson exit_code "$process[exit_code]" --argjson denied "$denied" \
-    --arg states "$SF_TOOL_RESULT[states]" --arg final "$SF_TOOL_RESULT[final]" \
+    --arg states "$SF_TOOL_RESULT[states]" --argjson view "$SF_TOOL_RESULT[view]" \
     --argjson preview "$SF_TOOL_RESULT[preview]" '
       {output:{stdout:$stdout,stderr:$stderr,exit_code:$exit_code},
-       states:[$states | split("\n")[] | select(. != "") | fromjson]} +
-      (if $final == "" then {} else {final:($final | fromjson)} end) +
+       states:[$states | split("\n")[] | select(. != "") | fromjson], view:$view} +
       (if $preview == null then {} else {preview:$preview} end) +
       (if $denied == 1 then {sandbox_denied:true} else {} end)
     ') || { SF_RUN_TOOL_ERROR='cannot decode tool result'; return 1; }
@@ -209,8 +207,8 @@ sf_run_tool_execute() {
   }
 }
 
-# Without a final, the user sees the draft followed by stdout and stderr, and
-# the model sees stdout and stderr.
+# Each field the tool did not write settles from its output: the user sees the
+# draft followed by stdout and stderr, and the model sees stdout and stderr.
 sf_run_tool_complete() {
   local outcome=$1 name=$SF_TOOL_PLAN[name]
   sf_jq_fields -rn --argjson request "$SF_TOOL_PLAN[request]" \
@@ -218,13 +216,10 @@ sf_run_tool_complete() {
     --argjson input "$SF_TOOL_PLAN[input]" --argjson outcome "$outcome" '
       include "lib/fields";
       include "lib/session";
-      ($outcome.final // (
-        ($outcome.output.stdout + $outcome.output.stderr) as $output |
-        ([$draft, $output] | map(select(. != "")) | join("\n")) as $user |
-        (if $user == "" then {} else {user_text:$user} end) +
-        (if $output == "" then {} else {model_text:$output} end) +
-        (if $outcome | has("preview") then {user_preview_lines:$outcome.preview} else {} end)
-      )) as $texts |
+      include "libexec/run/component";
+      ($outcome.output.stdout + $outcome.output.stderr) as $output |
+      ($outcome.view // {} | component_texts(
+        [$draft, $output] | map(select(. != "")) | join("\n"); $output; $outcome.preview)) as $texts |
       ({type:"tool_result",id:$id,name:$name,input:$input,exit_code:$outcome.output.exit_code} +
        $texts |
        if $outcome.sandbox_denied and has("model_text") then
