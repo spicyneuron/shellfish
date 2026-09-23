@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """Hook display, startup pacing, and handoff in the chat UI."""
 import json
+import os
 import sys
 import tempfile
+import termios
 import time
 from pathlib import Path
 
@@ -209,6 +211,50 @@ def test_prompt_hook_hands_off_to_another_session():
         session.close()
 
 
+def test_handoff_runs_command_on_path_and_restores_interrupt():
+    with tempfile.TemporaryDirectory() as directory:
+        command = Path(directory) / "sf-handoff-probe"
+        marker = Path(directory) / "ran"
+        command.write_text("#!/bin/sh\nprintf ran >\"$1\"\n")
+        command.chmod(0o755)
+        hook = """#!/bin/sh
+cat >/dev/null
+jq -cn --arg path '%s' '{action:"handoff",argv:["sf-handoff-probe",$path]}' >&3
+""" % marker
+        session = Session(hooks={"probe": hook},
+                          env={"PATH": directory + os.pathsep + os.environ["PATH"]})
+        try:
+            session.send(b"probe\r")
+            end = time.monotonic() + 5
+            while not marker.exists() and time.monotonic() < end:
+                session.pump()
+            assert marker.exists(), session.visible()[-1000:]
+            assert termios.tcgetattr(session.fd)[6][termios.VINTR] == b"\x03"
+        finally:
+            session.close()
+
+
+def test_failed_handoff_restores_interrupt():
+    hook = """#!/bin/sh
+cat >/dev/null
+printf '%s\\n' '{"action":"handoff","argv":["sf-missing-handoff-command"]}' >&3
+"""
+    session = Session(hooks={"missing": hook})
+    try:
+        session.send(b"missing\r")
+        end = time.monotonic() + 5
+        result = None
+        while result is None and time.monotonic() < end:
+            result = os.waitid(os.P_PID, session.pid,
+                               os.WEXITED | os.WNOHANG | os.WNOWAIT)
+            session.pump()
+        assert result is not None, session.visible()[-1000:]
+        assert result.si_status == 127, result
+        assert termios.tcgetattr(session.fd)[6][termios.VINTR] == b"\x03"
+    finally:
+        session.close()
+
+
 def test_prompt_hook_hands_off_to_new_session():
     # Freeze the source profile before changing ambient config.
     session = Session(explicit_session=True, hooks={"new": None})
@@ -254,6 +300,8 @@ if __name__ == "__main__":
         test_prompt_hook_display_precedes_agent_section,
         test_help_shows_its_full_listing,
         test_prompt_hook_hands_off_to_another_session,
+        test_handoff_runs_command_on_path_and_restores_interrupt,
+        test_failed_handoff_restores_interrupt,
         test_prompt_hook_hands_off_to_new_session,
         test_fork_restores_removed_user_prompt_as_draft,
     ])

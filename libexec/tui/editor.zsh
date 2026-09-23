@@ -451,10 +451,11 @@ sf_tui_handoff_exec() {
   sf_tui_heartbeat_stop
   [[ $SF_PRESENT_STATE == idle ]] || sf_tui_transport_stop
   zle -I
-  stty "$SF_PRESENT_TTY" 2>/dev/null || true
   print
-  # Do not inherit active ZLE state.
-  exec zsh -f -i "${SF_PRESENT_HANDOFF[@]}" </dev/tty >/dev/tty 2>/dev/tty
+  # ZLE can overwrite tty settings as it exits; restore in the new process.
+  exec zsh -f -c 'stty "$1" < /dev/tty; shift; exec -- "$@"' handoff \
+    "$SF_PRESENT_TTY" "${SF_PRESENT_HANDOFF[@]}" \
+    </dev/tty >/dev/tty 2>/dev/tty
   print -u2 -r -- 'Cannot execute handoff.'
   exit 1
 }
