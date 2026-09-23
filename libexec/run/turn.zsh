@@ -205,6 +205,7 @@ sf_run_project() {
     entry("max_tool_calls"; $profile.max_tool_calls_per_request | tostring),
     entry("max_capture"; $profile.max_capture_bytes | tostring),
     entry("adapter"; $profile.backend.adapter),
+    entry("context_window"; $profile | has("context_window") | tostring),
     entry("tools"; $tools | tojson),
     ("ok" | field)
   ' || return 1
@@ -214,9 +215,8 @@ sf_run_turn() {
   local user_record=$1 session=$2 prompt=$3 profile tools context_command
   local assistant stop_text id name decision post_request
   local reason outcome result state post_error='' failure='' turn_state call
-  local call_projection
   local -a calls states
-  local -A projected hook_result completed
+  local -A projected response hook_result completed
   integer begun=0 request_count=0 call_count=0 request_limit tool_limit max_capture run_status
 
   {
@@ -286,7 +286,7 @@ sf_run_turn() {
         break
       fi
       if (( request_count == 1 )) && [[ -f $context_command && -x $context_command ]] &&
-          ! jq -e 'has("context_window")' <<<"$profile" >/dev/null; then
+          [[ $projected[context_window] != true ]]; then
         sf_backend_context_window "$context_command" "$tools" "$max_capture" <"$session"
         run_status=$?
         if (( run_status )); then
@@ -325,14 +325,17 @@ sf_run_turn() {
       fi
       assistant=$REPLY
       sf_run_append "$session" "$assistant" || { failure=$REPLY; break; }
-      call_projection=$(jq -c '.content[] | select(.type == "tool_call")' \
-        <<<"$assistant") || { failure='cannot inspect provider response'; break; }
+      sf_jq_fields '
+        include "lib/fields";
+        entry("calls"; [.content[] | select(.type == "tool_call") | tojson] | join("\n")),
+        entry("text"; [.content[] | select(.type == "text") | .text] | join("") | sub("\n+$"; "")),
+        ("ok" | field)
+      ' <<<"$assistant" || { failure='cannot inspect provider response'; break; }
+      response=( "${reply[@]}" )
       calls=()
-      [[ -z $call_projection ]] || calls=( "${(@f)call_projection}" )
+      [[ -z $response[calls] ]] || calls=( "${(@f)response[calls]}" )
       if (( ! ${#calls} )); then
-        stop_text=$(jq -r '[.content[] | select(.type == "text") | .text] | join("")' <<<"$assistant") || {
-          failure='cannot inspect provider response'; break
-        }
+        stop_text=$response[text]
         sf_run_hooks "$session" stop "$stop_text" "$turn_state" "$request_count" || {
           failure=$SF_RUN_HOOK_ERROR
           break
