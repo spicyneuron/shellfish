@@ -4,7 +4,7 @@ source "${0:A:h:h:h}/_helpers.zsh"
 sf_test_source lib/session.zsh
 sf_test_tmp run-tool-cancel-contract
 export XDG_STATE_HOME="$tmp/state" SF_TEST_BACKEND_DELAY=0
-sf_test_runtime
+sf_test_frozen_profile
 
 # Interrupting an active tool settles it and cancels later calls from the
 # already-durable assistant response without starting more lifecycle hooks.

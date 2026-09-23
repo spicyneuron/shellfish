@@ -4,7 +4,7 @@ source "${0:A:h:h:h}/_helpers.zsh"
 sf_test_source lib/session.zsh
 sf_test_tmp run-hook-contract
 export XDG_STATE_HOME="$tmp/state" SF_TEST_BACKEND_DELAY=0
-sf_test_runtime
+sf_test_frozen_profile
 
 typeset prompt_hook="$tmp/prompt-hook" prompt_input="$tmp/prompt-input"
 cat >"$prompt_hook" <<'ZSH'
@@ -42,14 +42,14 @@ case $(<"$PROMPT_INPUT") in
     ;;
   update)
     print -rn -- 'update context'
-    runtime=$(head -n 1 "$SHELLFISH_SESSION" | jq -c \
-      '.runtime.harness.sandbox_write_paths=["/tmp/reference"] | .runtime') || exit 2
-    jq -cn --argjson runtime "$runtime" \
-      '{action:"session_update",runtime:$runtime}' >&3
+    profile=$(head -n 1 "$SHELLFISH_SESSION" | jq -c \
+      '.profile.sandbox_write_paths=["/tmp/reference"] | .profile') || exit 2
+    jq -cn --argjson profile "$profile" \
+      '{action:"session_update",profile:$profile}' >&3
     ;;
   update-invalid)
     print -rn -- 'invalid update context'
-    print -rn -u3 -- '{"action":"session_update","runtime":{}}'
+    print -rn -u3 -- '{"action":"session_update","profile":{}}'
     ;;
   drafts)
     repeat 3 print -r -u3 -- "{\"user_draft\":\"${(l:30000::d:)}\"}"
@@ -76,8 +76,8 @@ esac
 ZSH
 chmod +x "$prompt_hook"
 export PROMPT_INPUT=$prompt_input
-SF_TEST_RUNTIME=$(jq -c --arg hook "$prompt_hook" '.harness.user_prompt_submit=[$hook]' \
-  <<<"$SF_TEST_RUNTIME")
+SF_TEST_PROFILE=$(jq -c --arg hook "$prompt_hook" '.hooks.user_prompt_submit=[$hook]' \
+  <<<"$SF_TEST_PROFILE")
 
 # A final and its state settle as they arrive; drafts are transient, and a
 # draft nothing settles is cleared. stdout after a final is ignored.
@@ -177,26 +177,26 @@ sf_test_run update "$session" >"$stream" || fail 'session update prompt failed'
 jq -eRn '
   [inputs | fromjson] as $events |
   ($events[-1] | .type == "_session_update" and
-    .runtime.harness.sandbox_write_paths == ["/tmp/reference"]) and
+    .profile.sandbox_write_paths == ["/tmp/reference"]) and
   ($events | any(.type == "user") | not)
 ' <"$stream" >/dev/null || fail 'session update did not halt before user append'
 head -n 1 "$session" | jq -e \
-  '.runtime.harness.sandbox_write_paths == ["/tmp/reference"]' >/dev/null ||
+  '.profile.sandbox_write_paths == ["/tmp/reference"]' >/dev/null ||
   fail 'session update did not replace the frozen header'
 
-# A rejected complete runtime follows the ordinary durable failure path.
+# A rejected complete profile follows the ordinary durable failure path.
 session="$tmp/update-invalid.jsonl"
 sf_test_session "$session"
 integer update_status=0
 sf_test_run update-invalid "$session" >"$stream" 2>"$tmp/update-invalid.stderr" ||
   update_status=$?
-(( update_status == 1 )) || fail 'invalid session runtime did not fail the turn'
+(( update_status == 1 )) || fail 'invalid session profile did not fail the turn'
 jq -e -s '
   .[-2].type == "hook_result" and .[-2].model_text == "invalid update context" and
-  .[-1] == {type:"error",user_text:"invalid session runtime replacement"}
-' "$session" >/dev/null || fail 'invalid runtime did not preserve the durable failure order'
-[[ $(<"$tmp/update-invalid.stderr") == *'invalid session runtime replacement'* ]] ||
-  fail 'invalid runtime failure was not reported'
+  .[-1] == {type:"error",user_text:"invalid session profile replacement"}
+' "$session" >/dev/null || fail 'invalid profile did not preserve the durable failure order'
+[[ $(<"$tmp/update-invalid.stderr") == *'invalid session profile replacement'* ]] ||
+  fail 'invalid profile failure was not reported'
 
 # An invalid line keeps the finals before it and ignores the lines after it.
 typeset invalid
@@ -238,7 +238,8 @@ jq -e -s 'map(select(.type == "hook_result") | .user_text) == ["settled"]' "$ses
   >/dev/null || fail 'interruption lost a settled final'
 
 # Stop receives exact final assistant text and continue starts another request.
-typeset stop_backend="$tmp/stop-backend" stop_hook="$tmp/stop-hook"
+typeset stop_backend="$tmp/stop-backend/run" stop_hook="$tmp/stop-hook"
+mkdir -p "${stop_backend:h}"
 typeset stop_input="$tmp/stop-input" request_count="$tmp/request-count"
 cat >"$stop_backend" <<'ZSH'
 #!/usr/bin/env zsh
@@ -261,11 +262,11 @@ fi
 ZSH
 chmod +x "$stop_backend" "$stop_hook"
 export STOP_INPUT=$stop_input REQUEST_COUNT=$request_count
-SF_TEST_RUNTIME=$(jq -c --arg backend "$stop_backend" --arg hook "$stop_hook" '
-  .backend.command=$backend |
-  .harness.user_prompt_submit=[] |
-  .harness.stop=[$hook]
-' <<<"$SF_TEST_RUNTIME")
+SF_TEST_PROFILE=$(jq -c --arg backend "${stop_backend:h}" --arg hook "$stop_hook" '
+  .backend.adapter=$backend |
+  .hooks.user_prompt_submit=[] |
+  .hooks.stop=[$hook]
+' <<<"$SF_TEST_PROFILE")
 session="$tmp/stop.jsonl"
 sf_test_session "$session"
 sf_test_run stop "$session" >"$stream" || fail 'stop continuation failed'
@@ -284,7 +285,7 @@ assert_canonical_session "$session"
 
 # Stop continuation cannot exceed the frozen provider request limit.
 rm -f "$request_count"
-SF_TEST_RUNTIME=$(jq -c '.harness.max_requests_per_turn=1' <<<"$SF_TEST_RUNTIME")
+SF_TEST_PROFILE=$(jq -c '.max_requests_per_turn=1' <<<"$SF_TEST_PROFILE")
 session="$tmp/request-limit.jsonl"
 sf_test_session "$session"
 integer limit_status=0
@@ -312,9 +313,9 @@ chmod +x "$delegate"
 ln -s delegate "$tmp/one"
 ln -s delegate "$tmp/two"
 ln -s delegate "$tmp/three"
-SF_TEST_RUNTIME=$(jq -c --arg dir "$tmp" '
-  .harness.stop=[] | .harness.user_prompt_submit=[$dir + "/one", $dir + "/two", $dir + "/three"]
-' <<<"$SF_TEST_RUNTIME")
+SF_TEST_PROFILE=$(jq -c --arg dir "$tmp" '
+  .hooks.stop=[] | .hooks.user_prompt_submit=[$dir + "/one", $dir + "/two", $dir + "/three"]
+' <<<"$SF_TEST_PROFILE")
 session="$tmp/delegate.jsonl"
 sf_test_session "$session"
 sf_test_run parents "$session" >"$stream" || fail 'delegating hooks failed'
@@ -324,14 +325,14 @@ jq -e -s '
     "three after", "two after", "one after"]
 ' "$session" >/dev/null || fail 'delegation lost stdin or reordered fd 3'
 
-# The bundled sandbox hook compares portable grants with shell-resolved input.
+# The bundled sandbox hook compares stored grants with shell-resolved input.
 typeset sandbox_hook="$ROOT/share/profiles/default/hooks/sandbox"
 typeset sandbox_session="$tmp/sandbox.jsonl" sandbox_control="$tmp/sandbox-control.json"
 typeset sandbox_project="$tmp/project" sandbox_home="$tmp/home" sandbox_output="$tmp/sandbox-output"
 mkdir -p "$sandbox_project/dir" "$sandbox_home/share"
 jq -c --arg cwd "${sandbox_project:A}" '
-  .cwd=$cwd | .runtime.harness.sandbox=true |
-  .runtime.harness.sandbox_write_paths=["./dir","~/share"]
+  .cwd=$cwd | .profile.sandbox=true |
+  .profile.sandbox_write_paths=[$cwd + "/dir","~/share"]
 ' "$SF_TEST_SESSIONS/header-only.jsonl" >"$sandbox_session"
 (
   builtin cd -- "$sandbox_project"
@@ -345,16 +346,16 @@ jq -c --arg cwd "${sandbox_project:A}" '
     jq -rs 'last.action' "$sandbox_control"
   }
   [[ $(sandbox_action '/sandbox +w dir') == block ]] ||
-    fail 'project-relative grant was duplicated'
+    fail 'absolute grant was duplicated'
   [[ $(sandbox_action '/sandbox +w ~/share') == block ]] ||
     fail 'home-relative grant was duplicated'
   [[ $(sandbox_action "/sandbox -w ${sandbox_project:A}/dir") == session_update ]] ||
-    fail 'project-relative grant could not be removed'
-  jq -es 'last.runtime.harness.sandbox_write_paths == ["~/share"]' \
+    fail 'absolute grant could not be removed'
+  jq -es 'last.profile.sandbox_write_paths == ["~/share"]' \
     "$sandbox_control" >/dev/null || fail 'sandbox removed the wrong grant'
   [[ $(sandbox_action '/sandbox -w ~/share') == session_update ]] ||
     fail 'home-relative grant could not be removed'
-  jq -es 'last.runtime.harness.sandbox_write_paths == ["./dir"]' \
+  jq -es --arg dir "${sandbox_project:A}/dir" 'last.profile.sandbox_write_paths == [$dir]' \
     "$sandbox_control" >/dev/null || fail 'sandbox removed the wrong home grant'
 )
 

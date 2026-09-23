@@ -3,7 +3,7 @@
 source "${0:A:h:h:h}/_helpers.zsh"
 
 profile_eval() {
-  jq -L "$ROOT" -e 'include "lib/runtime"; '"$1"
+  jq -L "$ROOT" -e 'include "lib/profile"; '"$1"
 }
 
 # Profile validation rejects invalid fields.
@@ -24,7 +24,7 @@ print -r -- '{"context_window":null}' | profile_eval 'config_profile(["p"])' >/d
 
 # Objects merge recursively, arrays replace, and "..." splices.
 jq -n -L "$ROOT" -e '
-  include "lib/runtime";
+  include "lib/profile";
   ({request:{reasoning:{effort:"high"}},tools:["...","mine"],system:["only.md"]} |
     merge_over({request:{model:"base",reasoning:{effort:"low",budget:1}},
       tools:["a","b"],sandbox:false,system:["base.md"]})) == {
@@ -35,7 +35,7 @@ jq -n -L "$ROOT" -e '
 
 # Diamonds resolve once; cycles error.
 jq -n -L "$ROOT" -e '
-  include "lib/runtime";
+  include "lib/profile";
   profile_resolve({
     base:{request:{model:"base"}},
     left:{extend:["base"],sandbox:false},
@@ -45,7 +45,7 @@ jq -n -L "$ROOT" -e '
     request:{model:"base"},sandbox:false,system:["r.md"]
   }' >/dev/null
 if jq -n -L "$ROOT" -e '
-    include "lib/runtime";
+    include "lib/profile";
     profile_resolve({a:{extend:["b"]},b:{extend:["a"]}}; ["a"])
   ' >/dev/null 2>&1; then
   fail 'profile inheritance cycle was accepted'
@@ -53,7 +53,7 @@ fi
 
 # A shared parent applies once, so a splice it reaches twice does not repeat.
 jq -n -L "$ROOT" -e '
-  include "lib/runtime";
+  include "lib/profile";
   profile_resolve({
     base:{system:["base.md"]},
     add:{extend:["base"],system:["...","add.md"]},
@@ -62,29 +62,33 @@ jq -n -L "$ROOT" -e '
 
 # Later --profile names override earlier ones.
 jq -n -L "$ROOT" -e '
-  include "lib/runtime";
+  include "lib/profile";
   profile_resolve({one:{request:{model:"one"},system:["one.md"]},
     two:{request:{model:"two"}}}; ["one","two"]) ==
     {request:{model:"two"},system:["one.md"]}' >/dev/null
 
-# Selection applies CLI overrides and requires a model and an adapter.
+# Selection applies CLI overrides, requires a model and an adapter, and fills
+# defaults.
 jq -n -L "$ROOT" -e '
-  include "lib/runtime";
-  profile_select({p:{backend:{adapter:"openai"},request:{model:"base"}}}; ["p"];
-    "cli"; {seed:1}; "other"; "") ==
-    {backend:{adapter:"other"},request:{model:"cli",seed:1}}' >/dev/null
+  include "lib/profile";
+  profile_select({p:{backend:{adapter:"openai"},request:{model:"base"},sandbox:false}};
+    ["p"]; "cli"; {seed:1}; "other") == {
+    backend:{adapter:"other",insecure_tls:false,http_timeout:3600,http_stall:300},
+    request:{model:"cli",seed:1}, system:[], tools:[], hooks:{}, sandbox:false,
+    sandbox_read_paths:[], sandbox_write_paths:[], max_requests_per_turn:100,
+    max_tool_calls_per_request:25, max_capture_bytes:32768}' >/dev/null
 # "p" has no model; "q" has no adapter.
 for name in p q; do
   if jq -n -L "$ROOT" --arg name "$name" -e '
-      include "lib/runtime";
+      include "lib/profile";
       profile_select({p:{backend:{adapter:"openai"}},q:{request:{model:"m"}}};
-        [$name]; ""; {}; ""; "")' >/dev/null 2>&1; then
+        [$name]; ""; {}; "")' >/dev/null 2>&1; then
     fail "incomplete profile was accepted: $name"
   fi
 done
 
 # Component lookup through profile folders.
-sf_test_source lib/runtime.zsh
+sf_test_source lib/profile.zsh
 sf_test_tmp resolve
 sf_test_config
 export HOME="$tmp/home"
@@ -104,27 +108,27 @@ sf_test_profile near '{"extend": ["far"]}'
 sf_test_profile later '{}'
 
 # The most-derived folder wins, and parents still supply what it lacks.
-sf_runtime_resolve_args -p near
+sf_profile_resolve_args -p near
 jq -e --arg base "$profiles" '
   .system == [$base + "/near/system/shared.md"] and
-  .harness.tools[0].command == $base + "/far/tools/probe/run"' <<<"$REPLY" >/dev/null
+  .tools == [$base + "/far/tools/probe"]' <<<"$REPLY" >/dev/null
 
 # A later -p is more derived than an earlier one.
-sf_runtime_resolve_args -p near -p later
+sf_profile_resolve_args -p near -p later
 jq -e --arg base "$profiles" '.system == [$base + "/later/system/shared.md"]' <<<"$REPLY" >/dev/null
 
 # "@NAME/path" is the bundled folder even when a user folder shadows the name;
 # "~/" and absolute paths are taken as written.
 sf_test_profile default '{"extend": ["far"], "system": ["shared.md",
   "@default/system/general.md", "~/prompts/home.md", "'"$HOME"'/prompts/home.md"]}'
-sf_runtime_resolve_args
+sf_profile_resolve_args
 jq -e --arg base "$profiles" --arg home "${HOME:A}" --arg bundled "$ROOT/share/profiles/default" '
   .system == [$base + "/default/system/shared.md", $bundled + "/system/general.md",
     $home + "/prompts/home.md", $home + "/prompts/home.md"]' <<<"$REPLY" >/dev/null
 
 # Bare names never fall back to the bundled folder.
 sf_test_profile default '{"extend": ["far"], "system": ["general.md"]}'
-if sf_runtime_resolve_args; then
+if sf_profile_resolve_args; then
   fail 'bare name resolved outside the profile folders'
 fi
-[[ $SF_RUNTIME_ERROR == 'cannot resolve system reference: general.md' ]]
+[[ $SF_PROFILE_ERROR == 'cannot resolve system reference: general.md' ]]

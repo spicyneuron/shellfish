@@ -4,7 +4,7 @@ source "${0:A:h:h:h}/_helpers.zsh"
 sf_test_tmp run-create-command
 sf_test_config
 typeset system="$SF_TEST_CONFIG/profiles/default/system"
-mkdir -p "$tmp/home" "$system"
+mkdir -p "$tmp/home/work" "$system"
 print -r -- 'initial system' >"$system/source.md"
 export HOME="${tmp:A}/home"
 export XDG_STATE_HOME="$tmp/state"
@@ -37,15 +37,15 @@ jq -es 'length == 2' "$explicit" >/dev/null || fail 'create did not populate --s
 # Freeze forwarded sandbox grants.
 typeset granted="$tmp/granted.jsonl"
 zsh -f "$entry" run --session-create --session-out "$granted" \
-  --sandbox-read "${system:A}" --sandbox-write "${tmp:A}/home" >/dev/null || \
+  --sandbox-read "${system:A}" --sandbox-write "${tmp:A}/home/work" >/dev/null || \
   fail 'create rejected forwarded sandbox grants'
 jq -e --arg read "${system:A}" '
   select(.type == "session") |
-  (.runtime.harness.sandbox_read_paths | index($read)) != null and
-  (.runtime.harness.sandbox_write_paths | index("~")) != null
+  (.profile.sandbox_read_paths | index($read)) != null and
+  (.profile.sandbox_write_paths | index("~/work")) != null
 ' "$granted" >/dev/null || fail 'create did not store forwarded sandbox grants'
 
-# Derived sessions reuse runtime and reread system paths.
+# Derived sessions reuse profile and reread system paths.
 print -r -- 'changed configured system' >"$system/source.md"
 print -r -- '{"type":"user","content":[{"type":"text","text":"old"}]}' \
   >>"$created"
@@ -55,7 +55,7 @@ zsh -f "$entry" run --session-create --session-from "$created" --session-out "$r
 jq -e -s --slurpfile source "$created" '
   length == 2 and .[1] == {type:"system",content:"changed configured system"} and
   (.[0] | del(.created)) == ($source[0] | del(.created))
-' "$reused" >/dev/null || fail 'create did not reuse the stored runtime'
+' "$reused" >/dev/null || fail 'create did not reuse the stored profile'
 
 # Reject a missing source.
 zsh -f "$entry" run --session-create --session-from "$tmp/absent.jsonl" >/dev/null 2>&1 &&
@@ -67,7 +67,7 @@ zsh -f "$entry" run --session-create --session-out "$explicit" >/dev/null 2>&1 &
 
 # Reject overrides for stored sessions.
 zsh -f "$entry" run --session-create --session-from "$created" --model other >/dev/null 2>&1 &&
-  fail 'create accepted a runtime override with --session-from'
+  fail 'create accepted a profile override with --session-from'
 
 # Retain the valid prefix when a startup hook fails.
 typeset hook="$tmp/failing-hook"
@@ -109,7 +109,7 @@ zsh -f "$entry" run --session-create --session-out "$override" \
   >/dev/null || fail 'create rejected system overrides'
 jq -se '
   length == 2 and
-  (.[0].runtime.system | length) == 1 and
+  (.[0].profile.system | length) == 1 and
   .[1] == {type:"system",content:"inline\nprompt\n\nfile prompt\n\nlast prompt"}
 ' "$override" >/dev/null || fail 'create did not materialize ordered system overrides'
 printf 'updated file prompt\n' >"$override_file"
@@ -256,7 +256,7 @@ jq -se 'map(.type) == ["session","system"]' "$cancelled" >/dev/null ||
   fail 'cancelled creation lost its transcript prefix'
 [[ -s $hook_error ]] || fail 'cancelled creation omitted stderr diagnostic'
 
-# Moving a home and project preserves their frozen relative references.
+# Moving a home preserves its frozen home-relative references.
 typeset old_home="$tmp/original-home" new_home="$tmp/moved-home"
 typeset old_project="$old_home/project" new_project="$new_home/project"
 mkdir -p "$old_project" "$old_home/.config/shellfish/profiles/default"
@@ -280,8 +280,8 @@ EOF
     --session-create --session-out "$PWD/session.jsonl"
 ) || fail 'portable session creation failed'
 jq -e 'select(.type == "session") |
-  .cwd == "~/project" and .runtime.system == ["./prompt.md"] and
-  .runtime.harness.user_prompt_submit[0] == "./hook"
+  .cwd == "~/project" and .profile.system == ["~/project/prompt.md"] and
+  .profile.hooks.user_prompt_submit[0] == "~/project/hook"
 ' "$old_project/session.jsonl" >/dev/null || fail 'session did not store portable paths'
 mv -- "$old_home" "$new_home"
 (

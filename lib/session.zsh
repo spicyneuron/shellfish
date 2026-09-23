@@ -54,7 +54,8 @@ sf_session_select_path() {
 
 (( $+functions[sf_jq] )) || source "$SF_ROOT/lib/jq.zsh"
 
-sf_session_read_runtime() {
+# The session's profile with absolute paths.
+sf_session_read_profile() {
   local session_path=$1 header
   [[ -f $session_path && ! -L $session_path && -r $session_path ]] || {
     sf_session_fail "invalid session path: $session_path"
@@ -64,9 +65,10 @@ sf_session_read_runtime() {
     sf_session_fail "cannot read session header: $session_path"
     return
   }
-  REPLY=$(sf_jq -cnce --argjson header "$header" --arg home "${HOME:A}" '
-    include "lib/runtime";
-    $header | select(canonical_session_header) | header_expand($home) | .runtime
+  REPLY=$(sf_jq -cnce --argjson header "$header" --arg share "$SF_SHARE" \
+      --arg home "${HOME:+${HOME:A}}" '
+    include "lib/profile";
+    $header | select(canonical_session_header) | header_expand($share; $home) | .profile
   ' 2>/dev/null) || {
     sf_session_fail "cannot read session header: $session_path"
     return
@@ -82,8 +84,8 @@ sf_session_append() {
   fi
 }
 
-sf_session_replace_runtime() {
-  local session_path=$1 runtime=$2 temp error=''
+sf_session_replace_profile() {
+  local session_path=$1 profile=$2 temp error=''
   SF_SESSION_ERROR=''
   temp=$(mktemp "${session_path:h}/.${session_path:t}.XXXXXX") || {
     sf_session_fail "cannot prepare session update: $session_path"
@@ -91,12 +93,12 @@ sf_session_replace_runtime() {
   }
   chmod 600 "$temp" || error="cannot secure session update: $session_path"
   if [[ -z $error ]]; then
-    sf_jq -cs --argjson runtime "$runtime" --arg home "${HOME:A}" '
-      include "lib/runtime";
-      (.[0].cwd | expand_path(""; $home)) as $cwd |
-      .[0].runtime = ($runtime | runtime_paths(store_path($cwd; $home))) |
-      if .[0] | canonical_session_header then .[] else error("invalid runtime") end
-    ' "$session_path" >"$temp" 2>/dev/null || error='invalid session runtime replacement'
+    sf_jq -cs --argjson profile "$profile" --arg share "$SF_SHARE" \
+        --arg home "${HOME:+${HOME:A}}" '
+      include "lib/profile";
+      .[0].profile = ($profile | profile_store($share; $home)) |
+      if .[0] | canonical_session_header then .[] else error("invalid profile") end
+    ' "$session_path" >"$temp" 2>/dev/null || error='invalid session profile replacement'
   fi
   [[ -n $error ]] || mv -f -- "$temp" "$session_path" ||
     error="cannot replace session: $session_path"

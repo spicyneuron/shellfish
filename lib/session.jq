@@ -1,6 +1,6 @@
 # Durable record validity and transcript order. Records are read left to right;
-# each view projects the state this reduction reaches. lib/runtime.jq owns the
-# header, which validates the runtime nested inside it.
+# each view projects the state this reduction reaches. lib/profile.jq owns the
+# header, which validates the profile nested inside it.
 #
 # Repeated primitives are deliberate; see AGENTS.md.
 

@@ -13,16 +13,16 @@ typeset -g SF_RUN_TOOL_ERROR=''
 typeset -gA SF_TOOL_PLAN=() SF_TOOL_RESULT=()
 
 sf_run_tool_plan() {
-  local runtime=$1 call=$2
-  sf_jq_fields -rn --argjson runtime "$runtime" --argjson call "$call" \
-    --argjson turn "$SF_RUN[turn_id]" '
+  local call=$1
+  sf_jq_fields -rn --argjson profile "$SF_RUN[profile]" --argjson tools "$SF_RUN[tools]" \
+    --argjson call "$call" --argjson turn "$SF_RUN[turn_id]" '
       include "lib/fields";
-      include "lib/runtime";
+      include "lib/profile";
       $call.id as $id | $call.name as $name | $call.input as $input |
-      [$runtime.harness.tools[] | select(.name == $name)][0] as $tool |
+      [$tools[] | select(.name == $name)][0] as $tool |
       render_template($tool.manifest.user_draft // "${name} ${input}"; $name; $input) as $draft |
       {type:"_draft",id:$id,name:$name} as $draft_event |
-      (if $tool == null or ($runtime.harness.sandbox | not) then {decision:"none"}
+      (if $tool == null or ($profile.sandbox | not) then {decision:"none"}
        elif (($input.request_sandbox_bypass // false) | type) != "boolean" then
          {decision:"deny",reason:"sandbox bypass is not allowed"}
        elif ($input.request_sandbox_bypass // false) == false then {decision:"none"}
@@ -44,14 +44,13 @@ sf_run_tool_plan() {
         render_template($tool.manifest.user_permission // "${input}"; $name; $input)),
       entry("executable"; $tool.command // ""),
       entry("environment"; ($tool.manifest.environment // []) | join(" ")),
-      entry("settings"; $tool.settings // ""),
-      entry("max_capture"; $runtime.harness.max_capture_bytes | tostring),
+      entry("max_capture"; $profile.max_capture_bytes | tostring),
       entry("execution_input";
         $input | del(.request_sandbox_bypass,.sandbox_bypass_reason) | tojson),
-      entry("sandbox"; $runtime.harness.sandbox and ($tool.manifest.sandbox // false) and
+      entry("sandbox"; $profile.sandbox and ($tool.manifest.sandbox // false) and
         (($input.request_sandbox_bypass // false) | not) | tostring),
-      entry("read_paths"; $runtime.harness.sandbox_read_paths | join("\n")),
-      entry("write_paths"; $runtime.harness.sandbox_write_paths | join("\n")),
+      entry("read_paths"; $profile.sandbox_read_paths | join("\n")),
+      entry("write_paths"; $profile.sandbox_write_paths | join("\n")),
       ("ok" | field)
     ' || { SF_RUN_TOOL_ERROR='cannot inspect tool'; return 1; }
   SF_TOOL_PLAN=( "${reply[@]}" )
@@ -98,7 +97,7 @@ sf_run_tool_line() {
 sf_run_tool_execute() {
   setopt local_options no_err_exit
   local session=$1 command=$SF_TOOL_PLAN[executable]
-  local selected=$SF_TOOL_PLAN[environment] settings=$SF_TOOL_PLAN[settings]
+  local selected=$SF_TOOL_PLAN[environment]
   local config_dir
   local execution_input=$SF_TOOL_PLAN[execution_input] sandbox=$SF_TOOL_PLAN[sandbox]
   local read_paths=$SF_TOOL_PLAN[read_paths] write_paths=$SF_TOOL_PLAN[write_paths]
@@ -154,7 +153,7 @@ sf_run_tool_execute() {
   if [[ $sandbox == true ]]; then
     arguments=( -i "${arguments[@]}" )
     sandbox_arguments=( --monitor --fence-log-file "$capture/sandbox.log"
-      --settings "$settings" --expose-host-path "$command" )
+      --settings "${command:h}/fence.jsonc" --expose-host-path "$command" )
     temp_paths=( /tmp "$temp_dir" )
     [[ -z $darwin_temp ]] || temp_paths+=( "$darwin_temp" )
     for expose in ${(u)temp_paths}; do

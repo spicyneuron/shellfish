@@ -100,5 +100,5 @@ A profile holds a backend, a harness, system-prompt components, and provider req
 ./tests/run server   # browser and Go server tests
 ./tests/run perf     # performance reports
 ./tests/run loc      # source size report
-./tests/run unit/session/main.zsh unit/runtime/main.zsh
+./tests/run unit/session/main.zsh unit/profile/main.zsh
 ```

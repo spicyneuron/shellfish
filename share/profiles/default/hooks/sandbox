@@ -3,7 +3,7 @@
 emulate -R zsh
 setopt extended_glob no_aliases no_multios pipe_fail
 
-typeset submitted='' body operation candidate grant_path header grants updated runtime field
+typeset submitted='' body operation candidate grant_path header grants updated profile field
 typeset grant resolved matched=''
 typeset action access message
 typeset usage='usage: /sandbox {read|write|+read|+write|+r|+w|-read|-write|-r|-w} DIR'
@@ -15,13 +15,13 @@ case "$read_status:$submitted" in
   1:/sandbox)
     IFS= read -r header <"$SHELLFISH_SESSION" || exit 1
     jq -r '
-      "Sandbox: " + (if .runtime.harness.sandbox then "enabled" else "disabled" end),
+      "Sandbox: " + (if .profile.sandbox then "enabled" else "disabled" end),
       "Read grants:",
-      (if .runtime.harness.sandbox_read_paths | length == 0 then "  (none)"
-       else .runtime.harness.sandbox_read_paths[] | "  " + . end),
+      (if .profile.sandbox_read_paths | length == 0 then "  (none)"
+       else .profile.sandbox_read_paths[] | "  " + . end),
       "Write grants:",
-      (if .runtime.harness.sandbox_write_paths | length == 0 then "  (none)"
-       else .runtime.harness.sandbox_write_paths[] | "  " + . end)
+      (if .profile.sandbox_write_paths | length == 0 then "  (none)"
+       else .profile.sandbox_write_paths[] | "  " + . end)
     ' <<<"$header" >&2 || exit 1
     print -ru3 -- '{"action":"block"}'
     exit 0
@@ -54,12 +54,12 @@ esac
 }
 
 IFS= read -r header <"$SHELLFISH_SESSION" || exit 1
-jq -e '.runtime.harness.sandbox == true' <<<"$header" >/dev/null || {
+jq -e '.profile.sandbox == true' <<<"$header" >/dev/null || {
   print -u2 -r -- 'session sandbox is disabled'
   exit 0
 }
 field="sandbox_${access}_paths"
-grants=$(jq -ce --arg field "$field" '.runtime.harness[$field] | select(type == "array")' \
+grants=$(jq -ce --arg field "$field" '.profile[$field] | select(type == "array")' \
   <<<"$header") || exit 1
 
 if [[ $candidate == '~' || $candidate == '~/'* ]]; then
@@ -80,10 +80,7 @@ fi
 
 while IFS= read -r -d '' grant; do
   case $grant in
-    '~') resolved=${HOME:A} ;;
     '~/'*) resolved="${HOME:A}/${grant#\~/}" ;;
-    '.') resolved=$PWD ;;
-    './'*) resolved="$PWD/${grant#./}" ;;
     *) resolved=$grant ;;
   esac
   [[ ${resolved:A} != $grant_path ]] || { matched=$grant; break; }
@@ -102,8 +99,8 @@ fi
 updated=$(jq -c --arg action "$action" --arg path "$grant_path" --arg matched "$matched" '
   if $action == "add" then . + [$path] else map(select(. != $matched)) end
 ' <<<"$grants") || exit 1
-runtime=$(jq -c --arg field "$field" --argjson paths "$updated" \
-  '.runtime | .harness[$field]=$paths' <<<"$header") || exit 1
+profile=$(jq -c --arg field "$field" --argjson paths "$updated" \
+  '.profile | .[$field]=$paths' <<<"$header") || exit 1
 if [[ $action == add ]]; then
   message="Session sandbox $access grant added: $grant_path"
 else
@@ -111,4 +108,4 @@ else
 fi
 source "${0:A:h:h}/lib/hook.zsh" || exit 1
 sf_hook_context sandbox "sandbox"$'\n'"$message" "$message" \
-  "$(jq -cn --argjson runtime "$runtime" '{action:"session_update",runtime:$runtime}')"
+  "$(jq -cn --argjson profile "$profile" '{action:"session_update",profile:$profile}')"

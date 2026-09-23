@@ -15,25 +15,26 @@ typeset -gA SF_BACKEND_PLAN=()
 # One projection of the transcript on stdin: the adapter request and command.
 sf_backend_project() {
   local tools=$1
-  sf_jq_fields -sc --argjson tools "$tools" --arg home "${HOME:A}" '
+  sf_jq_fields -sc --argjson tools "$tools" --arg share "$SF_SHARE" \
+      --arg home "${HOME:+${HOME:A}}" '
     include "lib/fields";
-    include "lib/runtime";
+    include "lib/profile";
     include "lib/session";
     include "lib/backend";
     select(length >= 1) |
     select(.[0] | canonical_session_header) |
     . as $records |
-    ($records[0] | header_expand($home)) as $header |
-    $header.runtime as $runtime |
+    ($records[0] | header_expand($share; $home)) as $header |
+    $header.profile as $profile |
     backend_adapter_request(
-      $runtime;
+      $profile;
       ([$records[1:][] | select(.type == "system") | .content] | join("\n\n"));
       ($records[1:] | session_messages);
       $tools
     ) as $request |
     entry("request"; $request | tojson),
     entry("cwd"; $header.cwd),
-    entry("command"; $runtime.backend.command),
+    entry("command"; $profile.backend.adapter + "/run"),
     ("ok" | field)
   ' || return 1
   SF_BACKEND_PLAN=( "${reply[@]}" )
@@ -78,7 +79,7 @@ sf_backend_context_window() {
   if (( process[exit_code] == 0 )); then
     output=$(<"$directory/stdout")
     REPLY=$(sf_jq -ser '
-      include "lib/runtime";
+      include "lib/profile";
       select(length == 1 and (.[0] | type == "object" and keys == ["context_window"] and
         (.context_window | positive_integer))) | .[0].context_window
     ' <<<"$output" 2>/dev/null) || REPLY=null

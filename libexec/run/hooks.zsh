@@ -11,12 +11,12 @@ typeset -g SF_RUN_HOOK_ERROR=''
 typeset -gA SF_HOOK_PLAN=() SF_HOOK_RESULT=()
 
 sf_run_hook_project() {
-  local runtime=$1 lifecycle=$2
-  sf_jq_fields -rn --argjson runtime "$runtime" --arg lifecycle "$lifecycle" '
+  local profile=$1 lifecycle=$2
+  sf_jq_fields -rn --argjson profile "$profile" --arg lifecycle "$lifecycle" '
       include "lib/fields";
-      entry("max_capture"; $runtime.harness.max_capture_bytes | tostring),
-      entry("model"; $runtime.request.model),
-      entry("hooks"; $runtime.harness[$lifecycle] // [] | join("\n")),
+      entry("max_capture"; $profile.max_capture_bytes | tostring),
+      entry("model"; $profile.request.model),
+      entry("hooks"; $profile.hooks[$lifecycle] // [] | join("\n")),
       ("ok" | field)
     ' || return 1
   SF_HOOK_PLAN=( "${reply[@]}" )
@@ -50,7 +50,7 @@ sf_run_component_line() {
       entry("preview"; $line.preview | tojson),
       entry("action"; $line.control.action // ""),
       entry("reason"; $line.control.reason // ""),
-      entry("payload"; $line.control | (.argv // .runtime) |
+      entry("payload"; $line.control | (.argv // .profile) |
         if . == null then "" else tojson end),
       ("ok" | field)
     '
@@ -119,7 +119,7 @@ sf_run_hooks() {
       [[ " $SF_RUN[hooks] " != *" $lifecycle "* ]]; then
     return 0
   fi
-  sf_run_hook_project "$SF_RUN[runtime]" "$lifecycle" || {
+  sf_run_hook_project "$SF_RUN[profile]" "$lifecycle" || {
     SF_RUN_HOOK_ERROR="cannot inspect $lifecycle hooks"
     return 1
   }

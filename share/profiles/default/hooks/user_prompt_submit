@@ -58,7 +58,7 @@ esac
 
 # Compact automatically once the latest response nears the frozen window.
 jq -es '
-  .[0].runtime.context_window as $window |
+  .[0].profile.context_window as $window |
   ([.[] | select(.type == "assistant" and .usage != null)] | last) as $measured |
   $window != null and $measured != null and
   (($measured.usage.input_tokens + $measured.usage.output_tokens) / $window) >= 0.8

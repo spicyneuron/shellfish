@@ -3,9 +3,9 @@
 source "${0:A:h:h:h}/_helpers.zsh"
 sf_test_source lib/session.zsh
 sf_test_tmp session-mutation
-sf_test_runtime
+sf_test_frozen_profile
 
-typeset session="$tmp/session.jsonl" before runtime
+typeset session="$tmp/session.jsonl" before profile
 sf_test_session "$session"
 
 # Default sessions use a private project-scoped state directory.
@@ -29,23 +29,23 @@ mv "$session.saved" "$session"
 
 # Runtime replacement is atomic and leaves every durable record unchanged.
 before=$(tail -n +2 "$session")
-runtime=$(jq -c '.harness.sandbox_read_paths=["/tmp/reference"] |
-  .harness.sandbox_write_paths=["/tmp/reference"]' <<<"$SF_TEST_RUNTIME")
-sf_session_replace_runtime "$session" "$runtime" || fail "$SF_SESSION_ERROR"
+profile=$(jq -c '.sandbox_read_paths=["/tmp/reference"] |
+  .sandbox_write_paths=["/tmp/reference"]' <<<"$SF_TEST_PROFILE")
+sf_session_replace_profile "$session" "$profile" || fail "$SF_SESSION_ERROR"
 head -n 1 "$session" | jq -e '
-  .runtime.harness.sandbox_read_paths == ["/tmp/reference"] and
-  .runtime.harness.sandbox_write_paths == ["/tmp/reference"]
+  .profile.sandbox_read_paths == ["/tmp/reference"] and
+  .profile.sandbox_write_paths == ["/tmp/reference"]
 ' >/dev/null
 assert_equal "$before" "$(tail -n +2 "$session")"
 [[ $(stat -f '%Lp' "$session") == 600 ]]
 
 typeset unchanged=$(cat "$session")
-if sf_session_replace_runtime "$session" '{}'; then
-  fail 'invalid runtime replacement succeeded'
+if sf_session_replace_profile "$session" '{}'; then
+  fail 'invalid profile replacement succeeded'
 fi
 assert_equal "$unchanged" "$(cat "$session")"
 
-sf_session_read_runtime "$session" || fail "$SF_SESSION_ERROR"
-jq -e '.harness.sandbox_read_paths == ["/tmp/reference"]' <<<"$REPLY" >/dev/null
+sf_session_read_profile "$session" || fail "$SF_SESSION_ERROR"
+jq -e '.sandbox_read_paths == ["/tmp/reference"]' <<<"$REPLY" >/dev/null
 
 print -r -- ok

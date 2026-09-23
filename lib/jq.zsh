@@ -1,3 +1,7 @@
+# Bundled data, which stored profile paths name as "@NAME/...".
+[[ -n ${SF_SHARE-} ]] ||
+  typeset -g SF_SHARE=$SF_ROOT/share
+
 # Resolve relative jq modules from the installation, not the caller.
 # Caller redirections retain their paths; jq file arguments must be absolute.
 sf_jq() (

@@ -6,7 +6,7 @@ sf_test_tmp run-tool-contract
 mkdir "$tmp/host-temp"
 export TMPDIR="$tmp/host-temp" TMPPREFIX="$tmp/manifest-prefix"
 export XDG_STATE_HOME="$tmp/state" SF_TEST_BACKEND_DELAY=0
-sf_test_runtime
+sf_test_frozen_profile
 
 # The bundled shell decodes multiline commands once, preserves exit status, and
 # reports it in a footer.
@@ -20,8 +20,7 @@ if print -rn -- '{"command":"true","extra":true}' | "$shell_tool" >/dev/null 2>&
   fail 'shell tool accepted an unknown input field'
 fi
 
-SF_TEST_RUNTIME=$(jq -c '.harness.tools[0].manifest.environment=["TMPPREFIX"]' \
-  <<<"$SF_TEST_RUNTIME")
+sf_test_shell_tool '.environment=["TMPPREFIX"]'
 
 # Tools use the host temp directory rather than a Shellfish-owned turn directory.
 typeset temp_session="$tmp/tool-temp.jsonl" temp_stream="$tmp/tool-temp.stream"
@@ -36,7 +35,7 @@ jq -eRn --arg expected "${TMPDIR:A}|${TMPDIR:A}/zsh" '
 
 # Hooks receive all of .env; tools receive only the .env names they declare.
 typeset env_config="$XDG_CONFIG_HOME/shellfish" env_hook="$tmp/env-hook" env_seen="$tmp/env-seen"
-typeset env_session="$tmp/env.jsonl" env_stream="$tmp/env.stream" base_runtime=$SF_TEST_RUNTIME
+typeset env_session="$tmp/env.jsonl" env_stream="$tmp/env.stream" base_profile=$SF_TEST_PROFILE
 typeset env_command='print -rn -- "${DECLARED-unset} ${UNDECLARED-unset} ${EXPORTED-unset}"'
 mkdir -p "$env_config"
 print -rl -- DECLARED=declared-file UNDECLARED=undeclared-file >"$env_config/.env"
@@ -47,10 +46,9 @@ print -rn -- "${UNDECLARED-unset}" >"$ENV_SEEN"
 ZSH
 chmod +x "$env_hook"
 export ENV_SEEN=$env_seen EXPORTED=exported
-SF_TEST_RUNTIME=$(jq -c --arg hook "$env_hook" '
-  .harness.tools[0].manifest.environment=["DECLARED"] |
-  .harness.post_tool_use=[$hook]
-' <<<"$SF_TEST_RUNTIME")
+sf_test_shell_tool '.environment=["DECLARED"]'
+SF_TEST_PROFILE=$(jq -c --arg hook "$env_hook" '.hooks.post_tool_use=[$hook]' \
+  <<<"$SF_TEST_PROFILE")
 sf_test_session "$env_session"
 SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_COMMAND=$env_command \
   sf_test_run env "$env_session" >"$env_stream" || fail 'tool environment turn failed'
@@ -58,7 +56,17 @@ jq -eRn '[inputs | fromjson | select(.type == "tool_result")][0].model_text ==
   "declared-file unset exported\nexit 0"' <"$env_stream" >/dev/null ||
   fail 'unsandboxed tool did not receive exactly its declared .env names'
 assert_equal undeclared-file "$(<$env_seen)" 'hook did not receive an undeclared .env key'
-SF_TEST_RUNTIME=$base_runtime
+SF_TEST_PROFILE=$base_profile
+
+# Tool manifests are read on each run, so an edit after creation takes effect.
+typeset live_session="$tmp/live-manifest.jsonl"
+sf_test_session "$live_session"
+sf_test_shell_tool '.environment=["TMPPREFIX"] | .description="edited after creation"'
+SF_TEST_BACKEND_REQUEST="$tmp/live-request.json" sf_test_run live "$live_session" >/dev/null ||
+  fail 'live manifest turn failed'
+jq -e '.tools[0].description | startswith("edited after creation")' \
+  "$tmp/live-request.json" >/dev/null || fail 'tool manifest was not read live'
+sf_test_shell_tool '.environment=["TMPPREFIX"]'
 
 # Tool temp cannot redirect the next call's core-owned input write.
 typeset input_target="$tmp/tool-input-target" input_session="$tmp/tool-input.jsonl"
@@ -99,10 +107,10 @@ print -rn -u3 -- "{\"user_final\":\"post $id\",\"state\":[{\"name\":\"post/$id\"
 ZSH
 chmod +x "$pre" "$later" "$post"
 export HOOK_DIR=$hook_dir TOOL_MARKER=$tool_marker
-SF_TEST_RUNTIME=$(jq -c --arg pre "$pre" --arg later "$later" --arg post "$post" '
-  .harness.pre_tool_use=[$pre, $later] |
-  .harness.post_tool_use=[$post]
-' <<<"$SF_TEST_RUNTIME")
+SF_TEST_PROFILE=$(jq -c --arg pre "$pre" --arg later "$later" --arg post "$post" '
+  .hooks.pre_tool_use=[$pre, $later] |
+  .hooks.post_tool_use=[$post]
+' <<<"$SF_TEST_PROFILE")
 typeset session="$tmp/denied.jsonl" stream="$tmp/denied.stream"
 sf_test_session "$session"
 SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_COUNT=2 \
@@ -156,11 +164,11 @@ print -rn -u3 -- '{"state":[{"name":"permission/state","value":true}],"action":"
 ZSH
 chmod +x "$permission"
 export PERMISSION_INPUT=$permission_input
-SF_TEST_RUNTIME=$(jq -c --arg hook "$permission" '
-  .harness.pre_tool_use=[] | .harness.post_tool_use=[] |
-  .harness.sandbox=true |
-  .harness.permission_request=[$hook]
-' <<<"$SF_TEST_RUNTIME")
+SF_TEST_PROFILE=$(jq -c --arg hook "$permission" '
+  .hooks.pre_tool_use=[] | .hooks.post_tool_use=[] |
+  .sandbox=true |
+  .hooks.permission_request=[$hook]
+' <<<"$SF_TEST_PROFILE")
 session="$tmp/permission-allow.jsonl"
 sf_test_session "$session"
 SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_BYPASS=true \
@@ -197,7 +205,7 @@ jq -eRn '
 ' <"$stream" >/dev/null || fail 'permission denial did not settle the call'
 
 # No hook defers to the client; the permission exchange stays transient.
-SF_TEST_RUNTIME=$(jq -c '.harness.permission_request=[]' <<<"$SF_TEST_RUNTIME")
+SF_TEST_PROFILE=$(jq -c '.hooks.permission_request=[]' <<<"$SF_TEST_PROFILE")
 session="$tmp/permission-client.jsonl"
 sf_test_session "$session"
 SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_BYPASS=true \
@@ -225,10 +233,10 @@ print -r -u3 -- '{"user_final":"post failure display","model_final":"post failur
 exit 3
 ZSH
 chmod +x "$post_fail"
-SF_TEST_RUNTIME=$(jq -c --arg hook "$post_fail" '
-  .harness.permission_request=[] |
-  .harness.post_tool_use=[$hook]
-' <<<"$SF_TEST_RUNTIME")
+SF_TEST_PROFILE=$(jq -c --arg hook "$post_fail" '
+  .hooks.permission_request=[] |
+  .hooks.post_tool_use=[$hook]
+' <<<"$SF_TEST_PROFILE")
 session="$tmp/post-failure.jsonl"
 sf_test_session "$session"
 integer post_status=0
@@ -246,7 +254,7 @@ assert_canonical_session "$session"
 
 # A sandboxed tool needs fence on PATH when it runs. ZDOTDIR keeps a user's
 # .zshenv from restoring PATH.
-SF_TEST_RUNTIME=$(jq -c '.harness.post_tool_use=[] | .harness.sandbox=true' <<<"$SF_TEST_RUNTIME")
+SF_TEST_PROFILE=$(jq -c '.hooks.post_tool_use=[] | .sandbox=true' <<<"$SF_TEST_PROFILE")
 typeset no_fence="$tmp/no-fence"
 mkdir "$no_fence"
 ln -s "$commands[jq]" "$commands[zsh]" "$no_fence/"
@@ -315,8 +323,7 @@ jq -eRn '
 ' <"$stream" >/dev/null || fail 'a succeeding tool was annotated'
 
 # A sandboxed tool starts clean apart from its declared names.
-SF_TEST_RUNTIME=$(jq -c '.harness.tools[0].manifest.environment=["DECLARED"]' \
-  <<<"$SF_TEST_RUNTIME")
+sf_test_shell_tool '.environment=["DECLARED"]'
 session="$tmp/sandbox-env.jsonl"
 sf_test_session "$session"
 SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_COMMAND=$env_command \
@@ -344,8 +351,8 @@ case $(jq -r .command) in
 esac
 ZSH
 chmod +x "$protocol"
-SF_TEST_RUNTIME=$(jq -c --arg command "$protocol" '
-  .harness.sandbox=false | .harness.tools[0].command=$command' <<<"$SF_TEST_RUNTIME")
+sf_test_shell_tool . "$protocol"
+SF_TEST_PROFILE=$(jq -c '.sandbox=false' <<<"$SF_TEST_PROFILE")
 session="$tmp/protocol.jsonl"
 sf_test_session "$session"
 SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_COMMAND=final \

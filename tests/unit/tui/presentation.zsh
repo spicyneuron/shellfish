@@ -1,7 +1,7 @@
 #!/usr/bin/env zsh
 
 # Presentation resolves from its own config. A session never freezes it, and
-# the runtime config never carries it.
+# a profile never carries it.
 
 source "${0:A:h:h:h}/_helpers.zsh"
 sf_test_source libexec/tui/presentation.zsh

@@ -9,12 +9,7 @@ typeset -g SF_PRESENT_PERMISSION_TOOL='' SF_PRESENT_PERMISSION_TEXT=''
 typeset -ga SF_PRESENT_QUEUE=()
 typeset -gi COLUMNS=80 LINES=10
 
-SF_PRESENT_RUNTIME='{
-  "harness": {
-    "tools": [{"name":"read_file"},{"name":"shell"}],
-    "sandbox": true
-  }
-}'
+SF_PRESENT_PROFILE='{"tools":["@default/tools/read_file","/tools/shell"],"sandbox":true}'
 typeset banner
 COLUMNS=41
 banner=$(sf_tui_chat_start startup /tmp/session.jsonl)

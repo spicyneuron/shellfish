@@ -26,7 +26,7 @@ sf_tui_project() {
     fields=( "${(@ps:\0:)record}" )
     case $fields[1] in
       session) SF_TUI_PROJECT_MODE=load ;;
-      runtime) SF_PRESENT_CONTEXT_WINDOW=$fields[3] ;;
+      profile) SF_PRESENT_CONTEXT_WINDOW=$fields[3] ;;
     esac
   done
 }

@@ -1,16 +1,14 @@
 # Configuration
 
-Shellfish reads JSONC from `$XDG_CONFIG_HOME/shellfish/` (or `~/.config/shellfish/` when `XDG_CONFIG_HOME` is unset). `profiles/NAME/profile.jsonc` describes a runtime and `tui.jsonc` describes rendering. A profile name resolves to exactly one folder: yours shadows the bundled folder of the same name under [`share/profiles/`](../share/profiles/). `tui.jsonc` merges over [`share/tui.jsonc`](../share/tui.jsonc).
+Shellfish reads JSONC from `$XDG_CONFIG_HOME/shellfish/` (or `~/.config/shellfish/` when `XDG_CONFIG_HOME` is unset). `profiles/NAME/profile.jsonc` describes an agent and `tui.jsonc` describes rendering. A profile name resolves to exactly one folder: yours shadows the bundled folder of the same name under [`share/profiles/`](../share/profiles/). `tui.jsonc` merges over [`share/tui.jsonc`](../share/tui.jsonc).
 
-The two never mix. A session freezes a runtime, so a profile rejects rendering keys; `tui.jsonc` is read fresh on every run and is never frozen.
+The two never mix. A session freezes a profile, so a profile rejects rendering keys; `tui.jsonc` is read fresh on every run and is never frozen.
 
 Copy [`share/template/`](../share/template/) into that directory for a working starting point. The bundled [`shellfish.schema.json`](../share/shellfish.schema.json) and [`tui.schema.json`](../share/tui.schema.json) are the exact field references.
 
 ## Profiles
 
 `profiles/default/` is selected when `--profile` is absent. `-p NAME` selects another and repeats compose: `-p review -p readonly` merges them left to right. A folder you write shadows the bundled folder of that name, and `@NAME` always means the bundled folder, so your own `default` can extend `@default` to build on the bundled agent.
-
-A profile's top level is the runtime's top level.
 
 ```jsonc
 // profiles/work/profile.jsonc
@@ -31,7 +29,7 @@ A profile's top level is the runtime's top level.
 | `request` | Provider request object; `model` is required after resolution |
 | `context_window` | Positive capacity override; `null` disables discovery; absent permits adapter discovery |
 
-The selected profiles and everything they extend are flattened into one list, parents first and each profile once, then merged in order. Objects merge recursively and arrays replace, except that `"..."` splices the list as it stood before that profile, so a list can be extended without restating it. Cycles are errors. A resolved new session must have an adapter and a valid model.
+The selected profiles and everything they extend are flattened into one list, parents first and each profile once, then merged in order. Objects merge recursively and arrays replace, except that `"..."` splices the list as it stood before that profile, so a list can be extended without restating it. Cycles are errors. A resolved new session must have an adapter and a valid model, and stores the profile, with every default filled and every reference resolved, as its header.
 
 A profile that sets only one section is a shareable fragment; that is what `extend` is for, so there are no separate backend or harness maps.
 
@@ -163,7 +161,7 @@ The bundled `user_prompt_submit` handles most interactive commands:
 | --- | --- |
 | `/help`, `/h` | Show harness commands and editor keys |
 | `/verbose`, `/v` | Toggle full previews |
-| `/new` | Start a session with the active runtime |
+| `/new` | Start a session with the active profile |
 | `/copy [N]` | Copy a conversation section |
 | `/fork [N]` | Derive a session from a transcript prefix |
 | `/sandbox [OP DIR]` | Inspect or update frozen sandbox grants |

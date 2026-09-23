@@ -2,7 +2,7 @@ emulate -R zsh
 setopt no_aliases no_bg_nice no_multios pipe_fail
 
 typeset -g SF_PRESENT_ERROR=''
-typeset -g SF_PRESENT_RUNTIME='null'
+typeset -g SF_PRESENT_PROFILE='null'
 typeset -g SF_PRESENT_IDENTITY='' SF_PRESENT_FOOTER=''
 
 # Chrome spans cover the full display; viewport spans start at PREDISPLAY.
@@ -126,9 +126,9 @@ sf_tui_chat_start() {
   local session_mode=$1 session=$2 tools sandbox line
   local -a details logo shrimp
   details=( "${(@f)$(jq -r '
-    ([.harness.tools[].name] | if length == 0 then "none" else join(", ") end),
-    (if .harness.sandbox then "enabled" else "disabled" end)
-  ' <<<"$SF_PRESENT_RUNTIME")}" ) || return 1
+    ([.tools[] | split("/") | last] | if length == 0 then "none" else join(", ") end),
+    (if .sandbox then "enabled" else "disabled" end)
+  ' <<<"$SF_PRESENT_PROFILE")}" ) || return 1
   tools=$details[1]
   sandbox=$details[2]
   logo=(

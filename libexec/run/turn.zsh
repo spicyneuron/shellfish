@@ -2,6 +2,7 @@ emulate -R zsh
 setopt no_aliases no_bg_nice no_multios pipe_fail
 
 source "$SF_ROOT/lib/session.zsh"
+source "$SF_ROOT/lib/profile.zsh"
 source "$SF_ROOT/lib/backend.zsh"
 source "$SF_ROOT/lib/scratch.zsh"
 source "$SF_ROOT/libexec/run/hooks.zsh"
@@ -47,7 +48,7 @@ sf_run_settle() {
   }
   calls=( "${reply[@]}" )
   for call in "${calls[@]}"; do
-    sf_run_tool_plan "$SF_RUN[runtime]" "$call" || {
+    sf_run_tool_plan "$call" || {
       REPLY=${SF_RUN_TOOL_ERROR:-cannot inspect pending tool call}
       return 1
     }
@@ -76,9 +77,9 @@ sf_run_open() {
     REPLY="invalid session path: $session"
     return 1
   }
-  sf_jq_fields -Rs --arg home "${HOME:A}" '
+  sf_jq_fields -Rs --arg share "$SF_SHARE" --arg home "${HOME:+${HOME:A}}" '
     include "lib/fields";
-    include "lib/runtime";
+    include "lib/profile";
     include "lib/session";
     select(endswith("\n")) |
     split("\n") as $lines |
@@ -86,9 +87,9 @@ sf_run_open() {
       all($lines[0:-1][]; length > 0)) |
     ($lines[0:-1] | map(fromjson)) as $records |
     select($records[0] | canonical_session_header) |
-    ($records[0] | header_expand($home)) as $header |
+    ($records[0] | header_expand($share; $home)) as $header |
     ($records[1:] | session_run) as $run |
-    entry("runtime"; $header.runtime | tojson),
+    entry("profile"; $header.profile | tojson),
     entry("cwd"; $header.cwd),
     entry("turn_id";
       [$records[1:][] | select(.type == "user")] | length + 1 | tostring),
@@ -98,7 +99,7 @@ sf_run_open() {
       ((max // 0) + 1) | tostring),
     entry("hooks";
       [hook_names[] as $hook |
-        select(($header.runtime.harness[$hook] // []) | length > 0) | $hook] |
+        select(($header.profile.hooks[$hook] // []) | length > 0) | $hook] |
       join(" ")),
     ("ok" | field)
   ' "$session" || {
@@ -106,12 +107,14 @@ sf_run_open() {
     return 1
   }
   opened=( "${reply[@]}" )
-  SF_RUN[runtime]=$opened[runtime]
+  SF_RUN[profile]=$opened[profile]
   SF_RUN[cwd]=$opened[cwd]
   SF_RUN[turn_id]=$opened[turn_id]
   SF_RUN[hook_id]=$opened[hook_id]
   SF_RUN[hooks]=$opened[hooks]
   SF_RUN[hooks_known]=1
+  sf_profile_tools "$SF_RUN[profile]" || { REPLY=$SF_PROFILE_ERROR; return 1; }
+  SF_RUN[tools]=$REPLY
   [[ $opened[pending] == true ]] || return 0
   sf_run_settle "$session" 'tool call outcome unknown' || return 1
   sf_run_error "$session" 'Turn interrupted.'
@@ -175,16 +178,15 @@ sf_run_permission_client() {
 }
 
 sf_run_project() {
-  local runtime=$1
-  sf_jq_fields -rn --argjson runtime "$runtime" '
+  local profile=$1
+  sf_jq_fields -rn --argjson profile "$profile" --argjson tools "$SF_RUN[tools]" '
     include "lib/fields";
-    $runtime.harness as $harness |
-    [$harness.tools[] |
+    [$tools[] |
       .manifest as $manifest |
-      (($harness.sandbox and $manifest.sandbox and
+      (($profile.sandbox and $manifest.sandbox and
         ($manifest.allow_sandbox_bypass // false))) as $bypass |
       {name,description:($manifest.description +
-        if $harness.sandbox and $manifest.sandbox
+        if $profile.sandbox and $manifest.sandbox
         then "\n\nThis tool runs under its package sandbox policy."
         else "\n\nSandboxing is disabled; this tool runs with the current user permissions." end +
         if .name == "shell" and $bypass
@@ -199,17 +201,17 @@ sf_run_project() {
              if:{properties:{request_sandbox_bypass:{const:true}},required:["request_sandbox_bypass"]},
              then:{required:["sandbox_bypass_reason"]}}])
          else . end)}] as $tools |
-    entry("max_requests"; $harness.max_requests_per_turn | tostring),
-    entry("max_tool_calls"; $harness.max_tool_calls_per_request | tostring),
-    entry("max_capture"; $harness.max_capture_bytes | tostring),
-    entry("backend"; $runtime.backend.command),
+    entry("max_requests"; $profile.max_requests_per_turn | tostring),
+    entry("max_tool_calls"; $profile.max_tool_calls_per_request | tostring),
+    entry("max_capture"; $profile.max_capture_bytes | tostring),
+    entry("adapter"; $profile.backend.adapter),
     entry("tools"; $tools | tojson),
     ("ok" | field)
   ' || return 1
 }
 
 sf_run_turn() {
-  local user_record=$1 session=$2 prompt=$3 runtime tools context_command
+  local user_record=$1 session=$2 prompt=$3 profile tools context_command
   local assistant stop_text id name decision post_request
   local reason outcome result state post_error='' failure='' turn_state call
   local call_projection
@@ -228,16 +230,16 @@ sf_run_turn() {
     SF_RUN[write_failed]=0
     sf_run_open "$session" || { print -r -u2 -- "$REPLY"; return 1; }
     begun=1
-    runtime=$SF_RUN[runtime]
-    if sf_run_project "$runtime"; then
+    profile=$SF_RUN[profile]
+    if sf_run_project "$profile"; then
       projected=( "${reply[@]}" )
       tools=$projected[tools]
       request_limit=$projected[max_requests]
       tool_limit=$projected[max_tool_calls]
       max_capture=$projected[max_capture]
-      context_command=${projected[backend]:h}/context_window
+      context_command=$projected[adapter]/context_window
     else
-      failure='cannot inspect frozen runtime'
+      failure='cannot inspect frozen profile'
     fi
     [[ -z $failure && -d $SF_RUN[cwd] && -x $SF_RUN[cwd] ]] ||
       failure=${failure:-session working directory is unavailable: $SF_RUN[cwd]}
@@ -259,9 +261,9 @@ sf_run_turn() {
           failure='cannot emit handoff'
           ;;
         session_update)
-          if sf_session_replace_runtime "$session" "$hook_result[payload]"; then
-            if sf_run_emit "$(jq -cn --argjson runtime "$hook_result[payload]" \
-                '{type:"_session_update",runtime:$runtime}')"; then
+          if sf_session_replace_profile "$session" "$hook_result[payload]"; then
+            if sf_run_emit "$(jq -cn --argjson profile "$hook_result[payload]" \
+                '{type:"_session_update",profile:$profile}')"; then
               return 0
             fi
             failure='cannot emit session update'
@@ -284,7 +286,7 @@ sf_run_turn() {
         break
       fi
       if (( request_count == 1 )) && [[ -f $context_command && -x $context_command ]] &&
-          ! jq -e 'has("context_window")' <<<"$runtime" >/dev/null; then
+          ! jq -e 'has("context_window")' <<<"$profile" >/dev/null; then
         sf_backend_context_window "$context_command" "$tools" "$max_capture" <"$session"
         run_status=$?
         if (( run_status )); then
@@ -295,15 +297,15 @@ sf_run_turn() {
           fi
           break
         fi
-        runtime=$(jq -c --argjson window "$REPLY" \
-          '.context_window=$window' <<<"$runtime") || {
+        profile=$(jq -c --argjson window "$REPLY" \
+          '.context_window=$window' <<<"$profile") || {
           failure='cannot update model context window'
           break
         }
-        sf_session_replace_runtime "$session" "$runtime" || { failure=$SF_SESSION_ERROR; break; }
-        SF_RUN[runtime]=$runtime
-        sf_run_emit "$(jq -cn --argjson runtime "$runtime" \
-          '{type:"_session_update",runtime:$runtime}')" || {
+        sf_session_replace_profile "$session" "$profile" || { failure=$SF_SESSION_ERROR; break; }
+        SF_RUN[profile]=$profile
+        sf_run_emit "$(jq -cn --argjson profile "$profile" \
+          '{type:"_session_update",profile:$profile}')" || {
           failure='cannot emit session update'
           break
         }
@@ -346,7 +348,7 @@ sf_run_turn() {
       call_count=0
       for call in "${calls[@]}"; do
         (( call_count += 1 ))
-        sf_run_tool_plan "$runtime" "$call" || { failure=$SF_RUN_TOOL_ERROR; break; }
+        sf_run_tool_plan "$call" || { failure=$SF_RUN_TOOL_ERROR; break; }
         id=$SF_TOOL_PLAN[id]
         name=$SF_TOOL_PLAN[name]
         decision=$SF_TOOL_PLAN[decision]

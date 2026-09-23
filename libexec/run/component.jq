@@ -9,8 +9,8 @@ def component_action($lifecycle):
   (.action | IN($actions[])) and
   if .action == "handoff" then keys == ["action","argv"] and
     (.argv | type == "array" and length > 0 and all(.[]; type == "string"))
-  elif .action == "session_update" then keys == ["action","runtime"] and
-    (.runtime | type == "object")
+  elif .action == "session_update" then keys == ["action","profile"] and
+    (.profile | type == "object")
   elif .action == "deny" then keys == ["action"] or
     (keys == ["action","reason"] and (.reason | type == "string"))
   else keys == ["action"] end;
@@ -22,8 +22,8 @@ def component_action($lifecycle):
 def component_line($lifecycle; $draft; $preview):
   if type == "object" then . else {"": null} end |
   (has("user_final") or has("model_final")) as $final |
-  with_entries(select(.key | IN("action","argv","reason","runtime"))) as $control |
-  if ((keys - ["action","argv","model_final","reason","runtime","state","user_draft",
+  with_entries(select(.key | IN("action","argv","profile","reason"))) as $control |
+  if ((keys - ["action","argv","model_final","profile","reason","state","user_draft",
       "user_final","user_preview_lines"]) | length == 0) and
     all(.user_draft, .user_final, .model_final; . == null or type == "string") and
     ((has("user_preview_lines") | not) or (.user_preview_lines | preview_hint)) and

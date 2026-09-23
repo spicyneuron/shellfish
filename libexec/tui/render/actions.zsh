@@ -13,7 +13,7 @@ sf_tui_action() {
     execution_update) sf_tui_execution_update "${1-}" "${2-}" "${3-}" "${4-}" "${5-}" ;;
     execution_end) sf_tui_execution_end "${1-}" "${2-}" "${3-}" "${4-}" "${5-}" ;;
     error) sf_tui_error_append "${1-}" "${2-}" ;;
-    runtime) sf_tui_identity "${1-}" ;;
+    profile) sf_tui_identity "${1-}" ;;
     usage) sf_tui_usage "${1-}" "${2-}" ;;
     *) return 1 ;;
   esac

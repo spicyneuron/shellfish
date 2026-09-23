@@ -54,7 +54,7 @@ sf_run_main() {
         break
         ;;
       -*)
-        # Creation owns these; every one of them overrides the runtime.
+        # Creation owns these; every one of them overrides the profile.
         arity=${SF_CREATE_OPTIONS[$1]-}
         [[ -n $arity ]] || { sf_die "unknown argument: $1"; return 2; }
         take=$(( arity + 1 ))

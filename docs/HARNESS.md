@@ -2,13 +2,13 @@
 
 A harness defines how Shellfish behaves as an agent. It combines tools, lifecycle hooks, sandbox policy, and turn limits around the shared execution loop. A profile holds one harness together with a backend, a system prompt, and model request settings.
 
-The core owns event ordering, persistence, recovery, and cleanup. The harness supplies tools and workflow policy. Harnesses are frozen when a session is created, so changes affect new sessions rather than existing ones.
+The core owns event ordering, persistence, recovery, and cleanup. The harness supplies tools and workflow policy. A session freezes its component lists and settings when it is created; the component files themselves are read on each run.
 
 See [`CONFIG.md`](CONFIG.md) for composition, lookup, and the bundled coding harness. This document defines the executable component contracts.
 
 ## Shared contract
 
-Tools and backend adapters are executable component directories; a hook is one executable file. Component references resolve before the session is created, and the resolved paths and manifests are frozen in its header.
+Tools and backend adapters are executable component directories; a hook is one executable file. Component references resolve before the session is created, and the resolved paths are frozen in its header. Manifests and scripts are read on each run.
 
 | Component | Required files | Trust |
 | --- | --- | --- |
@@ -178,13 +178,13 @@ Actions take these shapes:
 ```json
 {"action":"block"}
 {"action":"handoff","argv":["command","arg"]}
-{"action":"session_update","runtime":RUNTIME}
+{"action":"session_update","profile":PROFILE}
 {"action":"allow"}
 {"action":"deny","reason":"optional feedback"}
 {"action":"continue"}
 ```
 
-A block ends the turn without submitting the prompt. A handoff asks a capable client to run the complete `argv` after a clean turn exit. A session update's `RUNTIME` is one complete valid runtime; Shellfish atomically replaces the header. A `pre_tool_use` deny reason becomes the refused tool result. A `stop` continue sends the hook's model finals back as feedback and continues inference. `pre_tool_use` and `post_tool_use` cannot rewrite tool input or results. `permission_request` may only allow or deny a supported sandbox bypass.
+A block ends the turn without submitting the prompt. A handoff asks a capable client to run the complete `argv` after a clean turn exit. A session update's `PROFILE` is one complete session profile, as stored in the header; Shellfish atomically replaces it. A `pre_tool_use` deny reason becomes the refused tool result. A `stop` continue sends the hook's model finals back as feedback and continues inference. `pre_tool_use` and `post_tool_use` cannot rewrite tool input or results. `permission_request` may only allow or deny a supported sandbox bypass.
 
 ## Backend adapters
 

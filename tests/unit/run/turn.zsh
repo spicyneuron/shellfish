@@ -6,7 +6,7 @@ sf_test_tmp run-turn-contract
 export XDG_STATE_HOME="$tmp/state" SF_TEST_BACKEND_DELAY=0
 
 # A successful turn appends each durable object before emitting it.
-sf_test_runtime
+sf_test_frozen_profile
 typeset session="$tmp/simple.jsonl" stream="$tmp/simple.stream"
 sf_test_session "$session"
 integer prefix=$(wc -l <"$session")
@@ -27,7 +27,8 @@ cmp -s "$tmp/emitted" "$tmp/appended" ||
   fail 'durable events differ from appended records'
 
 # Complete calls execute in assistant order and all settle before continuation.
-typeset backend="$tmp/backend" tool="$tmp/tool" order="$tmp/order"
+typeset backend="$tmp/backend/run" tool="$tmp/ordered/run" order="$tmp/order"
+mkdir -p "${backend:h}" "${tool:h}"
 cat >"$backend" <<'ZSH'
 #!/usr/bin/env zsh
 request=$(cat)
@@ -59,19 +60,16 @@ print -rn -u3 -- "{\"state\":[{\"name\":\"tool/$value\",\"value\":true}]}"
 print -rn -- "$value"
 ZSH
 chmod +x "$backend" "$tool"
-SF_TEST_RUNTIME=$(jq -c --arg backend "$backend" --arg tool "$tool" '
-  .backend.command=$backend |
-  .harness.tools=[{
-    name:"ordered",command:$tool,settings:null,
-    manifest:{
-      description:"Record ordered calls",
-      input_schema:{type:"object",additionalProperties:false,required:["value"],
-        properties:{value:{type:"string"}}},
-      environment:["TOOL_ORDER"],
-      sandbox:false
-    }
-  }]
-' <<<"$SF_TEST_RUNTIME")
+print -r -- '{
+  "description": "Record ordered calls",
+  "input_schema": {"type": "object", "additionalProperties": false, "required": ["value"],
+    "properties": {"value": {"type": "string"}}},
+  "environment": ["TOOL_ORDER"],
+  "sandbox": false
+}' >"${tool:h}/manifest.json"
+SF_TEST_PROFILE=$(jq -c --arg backend "${backend:h}" --arg tool "${tool:h}" '
+  .backend.adapter=$backend | .tools=[$tool]
+' <<<"$SF_TEST_PROFILE")
 export TOOL_ORDER=$order
 session="$tmp/ordered.jsonl"
 sf_test_session "$session"
@@ -99,7 +97,8 @@ jq -eRn '
 assert_canonical_session "$session"
 
 # Unknown tools and calls beyond the per-request limit settle as denials.
-typeset limited_backend="$tmp/limited-backend"
+typeset limited_backend="$tmp/limited-backend/run"
+mkdir -p "${limited_backend:h}"
 cat >"$limited_backend" <<'ZSH'
 #!/usr/bin/env zsh
 request=$(cat)
@@ -115,9 +114,9 @@ else
 fi
 ZSH
 chmod +x "$limited_backend"
-SF_TEST_RUNTIME=$(jq -c --arg backend "$limited_backend" '
-  .backend.command=$backend | .harness.tools=[] | .harness.max_tool_calls_per_request=1
-' <<<"$SF_TEST_RUNTIME")
+SF_TEST_PROFILE=$(jq -c --arg backend "${limited_backend:h}" '
+  .backend.adapter=$backend | .tools=[] | .max_tool_calls_per_request=1
+' <<<"$SF_TEST_PROFILE")
 session="$tmp/limited.jsonl"
 sf_test_session "$session"
 sf_test_run limited "$session" >"$stream" || fail 'limited tool turn failed'
@@ -138,9 +137,9 @@ mv "$SHELLFISH_SESSION" "$SHELLFISH_SESSION.saved" || exit
 mkdir "$SHELLFISH_SESSION"
 ZSH
 chmod +x "$break_hook"
-SF_TEST_RUNTIME=$(jq -c --arg hook "$break_hook" '
-  .harness.user_prompt_submit=[$hook]
-' <<<"$SF_TEST_RUNTIME")
+SF_TEST_PROFILE=$(jq -c --arg hook "$break_hook" '
+  .hooks.user_prompt_submit=[$hook]
+' <<<"$SF_TEST_PROFILE")
 sf_test_session "$broken"
 integer broken_status=0
 sf_test_run broken "$broken" >"$stream" 2>"$tmp/broken.stderr" || broken_status=$?
@@ -151,8 +150,9 @@ jq -es 'length == 1 and .[0].type == "session"' "$broken.saved" >/dev/null ||
   fail 'write failure changed the previously durable prefix'
 
 # An adapter receives every .env value; exported values win.
-sf_test_runtime
-typeset env_backend="$tmp/env-backend" env_session="$tmp/env.jsonl"
+sf_test_frozen_profile
+typeset env_backend="$tmp/env-backend/run" env_session="$tmp/env.jsonl"
+mkdir -p "${env_backend:h}"
 typeset env_config="$XDG_CONFIG_HOME/shellfish"
 mkdir -p "$env_config"
 print -rl -- FILE_SECRET=file-value EXPORTED_SECRET=file-value >"$env_config/.env"
@@ -165,8 +165,8 @@ print -r -- '{"type":"_turn_usage","input_tokens":1,"output_tokens":1}'
 print -r -- '{"type":"_assistant_end","stop":"end"}'
 ZSH
 chmod +x "$env_backend"
-SF_TEST_RUNTIME=$(jq -c --arg backend "$env_backend" '.backend.command=$backend' \
-  <<<"$SF_TEST_RUNTIME")
+SF_TEST_PROFILE=$(jq -c --arg backend "${env_backend:h}" '.backend.adapter=$backend' \
+  <<<"$SF_TEST_PROFILE")
 export EXPORTED_SECRET=exported-value
 sf_test_session "$env_session"
 sf_test_run env "$env_session" >"$stream" || fail 'adapter environment turn failed'

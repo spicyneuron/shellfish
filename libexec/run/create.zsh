@@ -1,7 +1,7 @@
 emulate -R zsh
 setopt no_aliases no_bg_nice no_multios pipe_fail
 
-source "$SF_ROOT/lib/runtime.zsh"
+source "$SF_ROOT/lib/profile.zsh"
 source "$SF_ROOT/lib/session.zsh"
 
 sf_run_read_system() {
@@ -20,9 +20,9 @@ sf_run_read_system() {
 }
 
 sf_run_create() {
-  local requested_out='' source_session='' runtime session system system_text projection header record cwd created
+  local requested_out='' source_session='' profile session system system_text projection header record cwd created
   local -a forwarded=() system_parts=() system_paths=()
-  integer resolve_status=0 take=0 system_explicit=0 runtime_override=0
+  integer resolve_status=0 take=0 system_explicit=0 profile_override=0
 
   while (( $# )); do
     case $1 in
@@ -55,30 +55,30 @@ sf_run_create() {
         take=$(( ${SF_CREATE_OPTIONS[$1]:-0} + 1 ))
         (( $# >= take )) || { sf_die "$1 requires a value"; return 2; }
         forwarded+=( "${@:1:$take}" )
-        runtime_override=1
+        profile_override=1
         shift $take
         ;;
     esac
   done
 
   if [[ -n $source_session ]]; then
-    (( ! runtime_override )) || {
-      sf_die 'runtime overrides cannot be used with --session-from'
+    (( ! profile_override )) || {
+      sf_die 'profile overrides cannot be used with --session-from'
       return 2
     }
     sf_session_select_path "$source_session" || { sf_die "$SF_SESSION_ERROR"; return 1; }
-    sf_session_read_runtime "$REPLY" || { sf_die "$SF_SESSION_ERROR"; return 1; }
-    runtime=$REPLY
+    sf_session_read_profile "$REPLY" || { sf_die "$SF_SESSION_ERROR"; return 1; }
+    profile=$REPLY
   else
-    sf_runtime_resolve_args "${forwarded[@]}" || {
+    sf_profile_resolve_args "${forwarded[@]}" || {
       resolve_status=$?
-      sf_die "$SF_RUNTIME_ERROR"
+      sf_die "$SF_PROFILE_ERROR"
       return $resolve_status
     }
-    runtime=$REPLY
+    profile=$REPLY
   fi
   if (( ! system_explicit )); then
-    projection=$(jq -jr '.system[] | ., "\u0000"' <<<"$runtime") ||
+    projection=$(jq -jr '.system[] | ., "\u0000"' <<<"$profile") ||
       sf_die 'cannot resolve system paths' || return
     system_paths=( ${(@0)projection} )
     for system_text in "${system_paths[@]}"; do
@@ -94,11 +94,11 @@ sf_run_create() {
     sf_die 'cannot prepare session header'
     return 1
   }
-  header=$(sf_jq -cn --arg cwd "$cwd" --arg created "$created" \
-    --arg home "${HOME:A}" --argjson runtime "$runtime" '
-    include "lib/runtime";
-    {type:"session",format_version:1,cwd:$cwd,created:$created,runtime:$runtime} |
-    header_store($home) | select(canonical_session_header)
+  header=$(sf_jq -cn --arg cwd "$cwd" --arg created "$created" --arg share "$SF_SHARE" \
+    --arg home "${HOME:+${HOME:A}}" --argjson profile "$profile" '
+    include "lib/profile";
+    {type:"session",format_version:1,cwd:($cwd | store_path(""; $home)),created:$created,
+     profile:($profile | profile_store($share; $home))} | select(canonical_session_header)
   ') || { sf_die 'cannot prepare session header'; return 1; }
   local -a records=( "$header" )
   if [[ -n $system ]]; then
@@ -118,7 +118,7 @@ sf_run_create() {
     return 1
   }
 
-  SF_RUN[runtime]=$runtime
+  SF_RUN[profile]=$profile
   SF_RUN[cwd]=$cwd
   SF_RUN[turn_id]=1
   SF_RUN[hook_id]=1

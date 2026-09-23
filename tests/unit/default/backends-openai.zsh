@@ -80,7 +80,7 @@ jq -e '
 ' "$BACKEND_TEST_BODY" >/dev/null || fail 'openai did not normalize common request parameters'
 
 jq -n -e -L "$ROOT" '
-  include "lib/runtime";
+  include "lib/profile";
   include "lib/session";
   include "lib/backend";
   [inputs] |
@@ -125,7 +125,7 @@ printf "%s\n" \
   "" >"$BACKEND_TEST_RESPONSE"
 OPENAI_API_KEY=test-key zsh -f "$run" <"$req" >"$res"
 jq -n -e -L "$ROOT" '
-  include "lib/runtime";
+  include "lib/profile";
   include "lib/session";
   include "lib/backend";
   [inputs] | assemble_backend_response(canonical_backend_response_events; canonical_response) ==
@@ -141,7 +141,7 @@ printf "%s\n" \
 OPENAI_API_KEY=test-key zsh -f "$run" <"$req" >"$res"
 
 jq -n -e -L "$ROOT" '
-  include "lib/runtime";
+  include "lib/profile";
   include "lib/session";
   include "lib/backend";
   [inputs] |
@@ -186,7 +186,7 @@ EOF
 OPENAI_API_KEY=test-key zsh -f "$run" <"$req" >"$res"
 
 jq -n -e -L "$ROOT" '
-  include "lib/runtime";
+  include "lib/profile";
   include "lib/session";
   include "lib/backend";
   [inputs] |

@@ -1,10 +1,9 @@
 emulate -R zsh
 setopt no_aliases no_multios pipe_fail
 
-# Theme and preview limits are current settings, not part of a frozen runtime,
+# Theme and preview limits are current settings, not part of a frozen profile,
 # so they resolve from their own config on every run. Nothing here reaches the
-# core: a session never carries presentation, and the runtime config never
-# describes it.
+# core: a session never carries presentation, and a profile never describes it.
 (( $+functions[sf_jsonc_read] )) || source "$SF_ROOT/lib/jsonc.zsh"
 (( $+functions[sf_cli_diagnostic] )) || source "$SF_ROOT/lib/cli.zsh"
 (( $+functions[sf_environment_config_dir] )) || source "$SF_ROOT/lib/environment.zsh"

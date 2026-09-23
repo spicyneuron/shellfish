@@ -5,8 +5,8 @@ sf_test_tmp backend-request
 
 typeset entry="$ROOT/bin/shellfish" session="$tmp/session.jsonl"
 typeset response digest
-jq -c --arg command "$SF_TEST_BACKEND" --arg cwd "$tmp" \
-  '.runtime.backend.command = $command | .cwd = $cwd' \
+jq -c --arg adapter "${SF_TEST_BACKEND:h}" --arg cwd "$tmp" \
+  '.profile.backend.adapter = $adapter | .cwd = $cwd' \
   "$SF_TEST_SESSIONS/header-only.jsonl" >"$session"
 print -r -- '{"type":"user","content":[{"type":"text","text":"old"}]}' >>"$session"
 print -r -- '{"type":"assistant","stop":"end","content":[{"type":"text","text":"answer"}]}' \
@@ -31,20 +31,21 @@ jq -e '.tools == [] and .messages[-1].content[0].text == "composed request"' \
 assert_equal "$digest" "$(shasum <"$session")"
 
 # Backend execution follows the session cwd, not the command's cwd.
-typeset cwd_backend="$tmp/cwd-backend" cwd_session="$tmp/cwd-session.jsonl"
+typeset cwd_backend="$tmp/cwd-backend/run" cwd_session="$tmp/cwd-session.jsonl"
+mkdir -p "${cwd_backend:h}" "$tmp/project"
 cat >"$cwd_backend" <<EOF
 #!/usr/bin/env zsh
 pwd -P >"$tmp/backend-cwd"
 exec "$SF_TEST_BACKEND"
 EOF
 chmod +x "$cwd_backend"
-jq -c --arg command "$cwd_backend" '
-  if .type == "session" then .cwd="~" | .runtime.backend.command=$command else . end
+jq -c --arg adapter "${cwd_backend:h}" '
+  if .type == "session" then .cwd="~/project" | .profile.backend.adapter=$adapter else . end
 ' \
   "$session" >"$cwd_session"
 HOME="$tmp" SF_TEST_BACKEND_DELAY=0 zsh -f "$entry" backend-request \
   <"$cwd_session" >/dev/null || fail 'home-relative backend request failed'
-assert_equal "${tmp:A}" "$(<"$tmp/backend-cwd")" 'backend ran outside the session cwd'
+assert_equal "${tmp:A}/project" "$(<"$tmp/backend-cwd")" 'backend ran outside the session cwd'
 
 # jq modules resolve from the installation root.
 mkdir -p "$tmp/lib"
@@ -82,7 +83,8 @@ SF_TEST_BACKEND_DELAY=0 zsh -f "$entry" backend-request <"$tmp/failing.jsonl" \
   fail 'backend-request hid the backend error'
 
 # Reject invalid backend event streams without exposing partial output.
-typeset invalid_backend="$tmp/invalid-backend" invalid_session="$tmp/invalid-session.jsonl"
+typeset invalid_backend="$tmp/invalid-backend/run" invalid_session="$tmp/invalid-session.jsonl"
+mkdir -p "${invalid_backend:h}"
 cat >"$invalid_backend" <<'ZSH'
 #!/usr/bin/env zsh
 cat >/dev/null
@@ -102,7 +104,7 @@ ZSH
 chmod +x "$invalid_backend"
 {
   IFS= read -r header
-  jq -c --arg command "$invalid_backend" '.runtime.backend.command = $command' <<<"$header"
+  jq -c --arg adapter "${invalid_backend:h}" '.profile.backend.adapter = $adapter' <<<"$header"
   cat
 } <"$session" >"$invalid_session"
 typeset invalid_mode

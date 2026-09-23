@@ -1,6 +1,6 @@
-# The runtime shape, the header that freezes it, and the config that resolves
-# it. Tool display templates are validated and applied here. The header lives here
-# rather than in lib/session.jq because it validates the runtime nested inside it.
+# Profiles: the config that resolves one, the session header that freezes it,
+# and tool manifests and their templates. The header lives here rather than in
+# lib/session.jq because it validates the profile nested inside it.
 #
 # Repeated primitives are deliberate; see AGENTS.md.
 
@@ -17,11 +17,11 @@ def nonempty_control_free_string:
   type == "string" and length > 0 and (test("[[:cntrl:]]") | not);
 
 def model_name: nonempty_control_free_string;
-def stored_path:
+def stored_reference:
   nonempty_control_free_string and
-  (startswith("/") or . == "." or startswith("./") or . == "~" or startswith("~/"));
+  (startswith("/") or startswith("~/") or test("^@[A-Za-z0-9][A-Za-z0-9_-]*/."));
 def stored_cwd:
-  nonempty_control_free_string and (startswith("/") or . == "~" or startswith("~/"));
+  nonempty_control_free_string and (startswith("/") or startswith("~/"));
 def endpoint: type == "string" and test("^https?://[^[:space:][:cntrl:]]+$");
 
 def positive_integer:
@@ -53,12 +53,6 @@ def render_template($template; $name; $input):
     ($input | with_entries(.key = "input." + .key | .value |= text))) as $variables |
   $template | gsub("\\$\\{(?<name>[^{}]+)\\}"; $variables[.name] // "");
 
-# Each lifecycle lists its hook scripts nearest first: the first runs, and each
-# later one is the parent of the one before.
-def harness_hooks:
-  . as $harness |
-  all(hook_names[]; ($harness[.] // []) | type == "array" and all(.[]; stored_path));
-
 def tool_manifest:
   (.input_schema.properties // {} | keys | map("input." + .)) as $input_variables |
   type == "object" and
@@ -79,86 +73,6 @@ def tool_manifest:
   ((.allow_sandbox_bypass // false) | type == "boolean") and
   (if (.allow_sandbox_bypass // false) then .sandbox else true end);
 
-# The runtime stored in the session header.
-def canonical_runtime:
-  type == "object" and
-  ((keys - ["backend", "context_window", "harness", "request", "system"]) | length == 0) and
-  ((["backend", "harness", "request", "system"] - keys) | length == 0) and
-  (.request | type == "object" and (.model | model_name)) and
-  (.system | type == "array" and all(.[]; stored_path)) and
-  (if has("context_window") then
-    .context_window == null or (.context_window | positive_integer)
-  else true end) and
-  (.backend | type == "object" and
-    keys == ["command", "endpoint", "http_stall", "http_timeout", "insecure_tls"] and
-    (.command | stored_path) and (.endpoint | endpoint) and
-    (.insecure_tls | type == "boolean") and
-    (.http_timeout | positive_integer) and (.http_stall | positive_integer)) and
-  (.harness | type == "object" and
-    (["sandbox_read_paths", "sandbox_write_paths",
-      "max_capture_bytes", "max_requests_per_turn",
-      "max_tool_calls_per_request", "sandbox", "tools"] as $required |
-      ((keys - ($required + hook_names)) | length == 0) and
-      (($required - keys) | length == 0)) and
-    harness_hooks and
-    (.sandbox_read_paths | type == "array" and all(.[]; stored_path)) and
-    (.sandbox_write_paths | type == "array" and all(.[]; stored_path)) and
-    (.tools | type == "array" and all(.[];
-      type == "object" and keys == ["command", "manifest", "name", "settings"] and
-      (.name | tool_name) and (.command | stored_path) and
-      (.settings == null or (.settings | stored_path)) and
-      (.manifest | tool_manifest) and
-      (if .manifest.sandbox then .settings != null else .settings == null end))) and
-    (([.tools[].name] | unique | length) == (.tools | length)) and
-    (.sandbox | type == "boolean") and
-    (.max_requests_per_turn | positive_integer) and
-    (.max_tool_calls_per_request | positive_integer) and
-    (.max_capture_bytes | capture_bytes));
-
-# The session header freezes one runtime. lib/session.jq owns the records that
-# follow it, but cannot call canonical_runtime across a module boundary.
-def canonical_session_header:
-  type == "object" and
-  keys == ["created", "cwd", "format_version", "runtime", "type"] and
-  .type == "session" and .format_version == 1 and
-  (.cwd | stored_cwd) and (.created | type == "string") and
-  (.runtime | canonical_runtime);
-
-def runtime_paths(rewrite):
-  .system |= map(rewrite) |
-  .backend.command |= rewrite |
-  .harness.sandbox_read_paths |= map(rewrite) |
-  .harness.sandbox_write_paths |= map(rewrite) |
-  .harness.tools |= map(.command |= rewrite |
-    (if .settings == null then . else .settings |= rewrite end)) |
-  reduce hook_names[] as $hook (.;
-    if .harness | has($hook) then .harness[$hook] |= map(rewrite) else . end);
-
-def expand_path($cwd; $home):
-  if startswith("/") then .
-  elif . == "~" or startswith("~/") then
-    if $home == "" then error("cannot expand ~ without HOME")
-    elif . == "~" then $home
-    else $home + "/" + ltrimstr("~/") end
-  elif . == "." then $cwd
-  else $cwd + "/" + ltrimstr("./") end;
-
-def store_path($cwd; $home):
-  if $cwd != "" and . == $cwd then "."
-  elif $cwd != "" and startswith($cwd + "/") then "./" + ltrimstr($cwd + "/")
-  elif $home != "" and . == $home then "~"
-  elif $home != "" and startswith($home + "/") then "~/" + ltrimstr($home + "/")
-  else . end;
-
-def header_expand($home):
-  (.cwd | expand_path(""; $home)) as $cwd |
-  .cwd = $cwd | .runtime |= runtime_paths(expand_path($cwd; $home));
-
-def header_store($home):
-  .cwd as $cwd |
-  .cwd = ($cwd | store_path(""; $home)) |
-  .runtime |= runtime_paths(store_path($cwd; $home));
-
 def config_error($path; $message):
   error("invalid profile at $" + ($path | map("[" + tojson + "]") | join("")) + ": " + $message);
 def config_object($path; $fields):
@@ -170,8 +84,8 @@ def config_assert($valid; $path; $message):
   if $valid then . else config_error($path; $message) end;
 def reference_list: type == "array" and all(.[]; nonempty_control_free_string);
 
-# One profile file. Its top level is the runtime top level, so "backend" and
-# "hooks" are inline objects rather than names into separate maps.
+# One profile file. "backend" and "hooks" are inline objects rather than names
+# into separate maps.
 def config_profile($path):
   config_object($path; ["$schema", "backend", "context_window", "extend", "hooks",
     "max_capture_bytes", "max_requests_per_turn", "max_tool_calls_per_request",
@@ -264,7 +178,7 @@ def profile_resolve($profiles; $names):
   reduce ([] | profile_order($profiles; $names; []))[] as $key ({};
     . as $inherited | $profiles[$key] | del(.extend, ."$schema") | merge_over($inherited));
 
-def profile_select($profiles; $names; $model; $request; $backend; $home):
+def profile_select($profiles; $names; $model; $request; $backend):
   profile_resolve($profiles; $names) |
   (if $backend == "" then . else .backend.adapter = $backend end) |
   .request = ((.request // {}) * $request |
@@ -277,58 +191,63 @@ def profile_select($profiles; $names; $model; $request; $backend; $home):
   ((.tools // []) as $tools |
     if ($tools | length) == ($tools | unique | length) then .
     else error("profile tools must be unique: " + ($tools | join(", "))) end) |
-  reduce ["sandbox_read_paths", "sandbox_write_paths"][] as $field (.;
-    if has($field) then .[$field] |= map(
-      if startswith("~/") then
-        if $home == "" then error("cannot expand ~ without HOME")
-        else $home + "/" + ltrimstr("~/") end
-      else . end)
-    else . end);
+  {system:[], tools:[], hooks:{}, sandbox:true, sandbox_read_paths:[],
+   sandbox_write_paths:[], max_requests_per_turn:100, max_tool_calls_per_request:25,
+   max_capture_bytes:32768,
+   backend:{insecure_tls:false, http_timeout:3600, http_stall:300}} * .;
 
-# Filesystem facts jq cannot obtain, keyed by "<kind>TAB<reference>". Each entry
-# is a resolved path, one flag for readable tool sandbox settings, and the
-# component manifest.
-def resolution_table($words):
-  [range(0; $words | length; 4) as $at |
-    {key:$words[$at], value:{path:$words[$at + 1],
-      flag:($words[$at + 2] == "1"), manifest:($words[$at + 3] | fromjson)}}] |
-  from_entries;
+# Each reference as [kind, reference] through f, where kind is its folder.
+def profile_references(f):
+  .backend.adapter |= (["backends", .] | f) |
+  .system |= map(["system", .] | f) |
+  .tools |= map(["tools", .] | f) |
+  .hooks |= map_values(map(["hooks", .] | f));
 
-def runtime_finalize($profile; $table; $grants):
-  $table["backend"] as $backend |
-  ($backend.manifest |
-    select(type == "object" and keys == ["endpoint"] and (.endpoint | endpoint)) //
-    error("invalid backend manifest")) as $manifest |
-  [($profile.tools // [])[] as $reference |
-    $table["tools\t" + $reference] as $entry |
-    ($entry.manifest | select(tool_manifest) //
-        error("invalid tool manifest: " + $entry.path)) as $tool_manifest |
-    if $tool_manifest.sandbox and ($entry.flag | not) then
-      error("cannot read tool sandbox settings: " + $entry.path + "/fence.jsonc")
-    else {name:($entry.path | split("/") | last), command:($entry.path + "/run"),
-      manifest:$tool_manifest,
-      settings:(if $tool_manifest.sandbox then $entry.path + "/fence.jsonc"
-        else null end)} end] as $tools |
-  (reduce hook_names[] as $hook ({};
-    ($profile.hooks[$hook] // []) as $references |
-    if $references == [] then .
-    else .[$hook] = [$references[] | $table["hooks\t" + .].path] end)) as $hooks |
-  {
-    backend:{command:($backend.path + "/run"),
-      endpoint:($profile.backend.endpoint // $manifest.endpoint),
-      insecure_tls:($profile.backend.insecure_tls // false),
-      http_timeout:($profile.backend.http_timeout // 3600),
-      http_stall:($profile.backend.http_stall // 300)},
-    harness:({
-      sandbox_read_paths:(($profile.sandbox_read_paths // []) + $grants.sandbox_read_paths),
-      sandbox_write_paths:(($profile.sandbox_write_paths // []) + $grants.sandbox_write_paths),
-      tools:$tools,
-      sandbox:($profile.sandbox != false),
-      max_requests_per_turn:($profile.max_requests_per_turn // 100),
-      max_tool_calls_per_request:($profile.max_tool_calls_per_request // 25),
-      max_capture_bytes:($profile.max_capture_bytes // 32768)} + $hooks),
-    request:$profile.request,
-    system:[($profile.system // [])[] | $table["system\t" + .].path]
-  } +
-  (if $profile | has("context_window") then
-    {context_window:$profile.context_window} else {} end);
+def profile_paths(reference; path):
+  profile_references(.[1] | reference) |
+  .sandbox_read_paths |= map(path) | .sandbox_write_paths |= map(path);
+
+# Stored paths name bundled files "@NAME/...", files under HOME "~/...", and
+# anything else absolutely.
+def store_path($share; $home):
+  if $share != "" and startswith($share + "/profiles/") then
+    "@" + ltrimstr($share + "/profiles/")
+  elif $home != "" and startswith($home + "/") then "~" + ltrimstr($home)
+  else . end;
+
+def expand_path($share; $home):
+  if startswith("@") then $share + "/profiles/" + ltrimstr("@")
+  elif startswith("~/") then
+    if $home == "" then error("cannot expand ~ without HOME")
+    else $home + ltrimstr("~") end
+  else . end;
+
+def profile_store($share; $home):
+  profile_paths(store_path($share; $home); store_path(""; $home));
+
+def profile_expand($share; $home):
+  profile_paths(expand_path($share; $home); expand_path(""; $home));
+
+# A session profile is a valid profile with every default filled and every
+# reference resolved.
+def canonical_profile:
+  (try (config_profile([]) | true) catch false) and
+  (keys - ["context_window"]) == ["backend", "hooks", "max_capture_bytes",
+    "max_requests_per_turn", "max_tool_calls_per_request", "request", "sandbox",
+    "sandbox_read_paths", "sandbox_write_paths", "system", "tools"] and
+  (.backend | keys == ["adapter", "endpoint", "http_stall", "http_timeout", "insecure_tls"]) and
+  (.request.model | model_name) and
+  all(.backend.adapter, .system[], .tools[], .hooks[][]; stored_reference) and
+  (.tools | map(split("/") | last) | all(.[]; tool_name) and length == (unique | length));
+
+# The session header freezes one profile. lib/session.jq owns the records that
+# follow it, but cannot call canonical_profile across a module boundary.
+def canonical_session_header:
+  type == "object" and
+  keys == ["created", "cwd", "format_version", "profile", "type"] and
+  .type == "session" and .format_version == 1 and
+  (.cwd | stored_cwd) and (.created | type == "string") and
+  (.profile | canonical_profile);
+
+def header_expand($share; $home):
+  .cwd |= expand_path(""; $home) | .profile |= profile_expand($share; $home);

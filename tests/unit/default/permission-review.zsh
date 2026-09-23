@@ -22,13 +22,13 @@ jq -cn --arg text "$text" \
 ZSH
 chmod +x "$wrapper"
 
-sf_test_runtime
-SF_TEST_RUNTIME=$(jq -c --arg hook "$hook" '
+sf_test_frozen_profile
+SF_TEST_PROFILE=$(jq -c --arg hook "$hook" '
   .context_window=20000 |
   .request += {max_tokens:5000,temperature:0.2} |
   .backend.http_timeout=120 |
-  .harness.permission_request=[$hook]
-' <<<"$SF_TEST_RUNTIME")
+  .hooks.permission_request=[$hook]
+' <<<"$SF_TEST_PROFILE")
 SF_TEST_SYSTEM='fixed system'
 sf_test_session "$session"
 sf_session_append "$session" '{"type":"hook_result","lifecycle":"session_start","id":"1","model_text":"<context script=\"project_instructions\">\nstartup constraint\n</context>"}'
@@ -71,13 +71,13 @@ jq -e '
 jq -e -s --arg tool_input "$(jq -c '.tool_input' <<<"$request")" \
     --rawfile policy "$ROOT/share/profiles/default/hooks/review.md" '
   (.[2].content[0].text | fromjson) as $context |
-  .[0].runtime.request.model == "test-model" and
-  .[0].runtime.request.max_tokens == 4096 and
-  .[0].runtime.request.temperature == 0.2 and
-  .[0].runtime.request.response_schema.additionalProperties == false and
-  .[0].runtime.backend.http_timeout == 60 and
-  .[0].runtime.harness.tools == [] and
-  .[0].runtime.harness.permission_request == [] and
+  .[0].profile.request.model == "test-model" and
+  .[0].profile.request.max_tokens == 4096 and
+  .[0].profile.request.temperature == 0.2 and
+  .[0].profile.request.response_schema.additionalProperties == false and
+  .[0].profile.backend.http_timeout == 60 and
+  .[0].profile.tools == [] and
+  .[0].profile.hooks == {} and .[0].profile.system == [] and
   [.[].type] == ["session","system","user"] and
   .[1].content == ($policy | rtrimstr("\n")) and
   $context.system_message == "fixed system" and

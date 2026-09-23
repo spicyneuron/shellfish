@@ -47,10 +47,10 @@ def test_sandbox_updates_without_reload():
             end = time.monotonic() + 3
             while time.monotonic() < end:
                 records = [json.loads(line) for line in path.read_text().splitlines()]
-                if grant_path in records[0]["runtime"]["harness"]["sandbox_write_paths"]:
+                if grant_path in records[0]["profile"]["sandbox_write_paths"]:
                     break
                 session.pump()
-            assert grant_path in records[0]["runtime"]["harness"]["sandbox_write_paths"]
+            assert grant_path in records[0]["profile"]["sandbox_write_paths"]
             granted = f"Session sandbox write grant added: {grant_path}"
             assert len(records) == 2
             result = records[1]
@@ -335,7 +335,7 @@ def test_sigterm_leaves_terminal_state():
     fcntl.ioctl(master, termios.TIOCSWINSZ, struct.pack("HHHH", ROWS, COLUMNS, 0, 0))
     before = termios.tcgetattr(slave)
     config_dir = tempfile.TemporaryDirectory()
-    # Resuming reads the runtime from the session header, so only rendering
+    # Resuming reads the profile from the session header, so only rendering
     # needs a fixture; a stable theme avoids a terminal background probe.
     config_home = Path(config_dir.name) / "config"
     (config_home / "shellfish").mkdir(parents=True)

@@ -3,7 +3,7 @@
 source "${0:A:h:h:h}/_helpers.zsh"
 
 schema_eval() {
-  jq -L "$ROOT" -e 'include "lib/runtime"; '"$1"
+  jq -L "$ROOT" -e 'include "lib/profile"; '"$1"
 }
 
 request_eval() {
@@ -89,63 +89,54 @@ for events in \
   fi
 done
 
-# Session headers require canonical runtimes.
+# A session header holds a complete profile with stored references.
 typeset valid_header
 valid_header=$(jq -cn '
   {
     type: "session",
     format_version: 1,
-    cwd: "/tmp",
+    cwd: "~/project",
     created: "2026-08-18T00:00:00Z",
-    runtime: {
+    profile: {
       request: {model: "gpt-4o"},
-      system: [],
+      system: ["@default/system/general.md"],
       backend: {
-        command: "/bin/run",
+        adapter: "@default/backends/openai",
         endpoint: "https://api.openai.com/v1/chat/completions",
         insecure_tls: false,
         http_timeout: 30, http_stall: 10
       },
-      harness: {
-        sandbox_read_paths: [], sandbox_write_paths: [],
-        tools: [], sandbox: true,
-        max_requests_per_turn: 50, max_tool_calls_per_request: 20,
-        max_capture_bytes: 32768,
-        stop: ["/bin/hook", "/bin/parent"]
-      }
+      tools: ["@default/tools/shell", "~/tools/jira"],
+      hooks: {stop: ["/bin/hook", "@default/hooks/stop"]},
+      sandbox: true, sandbox_read_paths: ["~/cache"], sandbox_write_paths: [],
+      max_requests_per_turn: 50, max_tool_calls_per_request: 20,
+      max_capture_bytes: 32768
     }
   }
 ')
 print -r -- "$valid_header" | schema_eval 'canonical_session_header' >/dev/null
-for patch in '.extra=true' '.runtime.extra=true'; do
+for patch in '.extra=true' '.profile.extra=true' '.profile.extend=["default"]' \
+    '.profile."$schema"="x"' 'del(.profile.max_capture_bytes)' 'del(.profile.hooks)' \
+    'del(.profile.backend.endpoint)' 'del(.profile.request.model)' \
+    '.profile.hooks.stop=[{command:"/bin/hook"}]' '.profile.system=["relative.md"]' \
+    '.profile.tools=["shell"]' '.profile.tools=["/a/shell","/b/shell"]' \
+    '.profile.backend.adapter="./openai"' '.profile.sandbox_read_paths=["relative"]' \
+    '.cwd="./project"'; do
   if jq -c "$patch" <<<"$valid_header" |
       schema_eval 'canonical_session_header' >/dev/null 2>&1; then
-    fail "opaque session state was accepted: $patch"
-  fi
-done
-if jq -c '.runtime.harness.stop=[{command:"/bin/hook"}]' <<<"$valid_header" |
-    schema_eval 'canonical_session_header' >/dev/null 2>&1; then
-  fail 'hook component objects were accepted in a session header'
-fi
-
-print -r -- "$valid_header" | jq -c '.runtime.system = ["/system/prompt.md"]' |
-  schema_eval 'canonical_session_header' >/dev/null
-for system in '["relative.md"]' '"/system/prompt.md"'; do
-  if jq -c --argjson system "$system" '.runtime.system = $system' <<<"$valid_header" |
-      schema_eval 'canonical_session_header' >/dev/null 2>&1; then
-    fail "invalid system paths were accepted in a session header: $system"
+    fail "invalid session header was accepted: $patch"
   fi
 done
 
-# Hook paths must be absolute.
-if jq -c '.runtime.harness.stop[0] = "relative/hook"' <<<"$valid_header" |
-    schema_eval 'canonical_session_header' >/dev/null 2>&1; then
-  fail 'relative hook path was accepted in session header'
-fi
-if jq -c '.runtime.harness.sandbox_read_paths = ["relative"]' <<<"$valid_header" |
-    schema_eval 'canonical_session_header' >/dev/null 2>&1; then
-  fail 'relative sandbox read path was accepted in session header'
-fi
+# Stored forms round-trip through expansion.
+jq -L "$ROOT" -e --arg share /opt/sf/share --arg home /home/me '
+  include "lib/profile";
+  .profile as $stored |
+  ($stored | profile_expand($share; $home)) as $expanded |
+  $expanded.tools == ["/opt/sf/share/profiles/default/tools/shell", "/home/me/tools/jira"] and
+  $expanded.sandbox_read_paths == ["/home/me/cache"] and
+  ($expanded | profile_store($share; $home)) == $stored
+' <<<"$valid_header" >/dev/null || fail 'stored profile paths did not round-trip'
 
 # Tool manifests validate sandboxing.
 typeset valid_manifest
@@ -186,13 +177,6 @@ for manifest in '.render = {}' '.user_draft = "${output.stdout}"' \
     fail "tool manifest was accepted: $manifest"
   fi
 done
-typeset tool_header
-tool_header=$(jq -cn --argjson header "$valid_header" --argjson manifest "$valid_manifest" '
-  $header | .runtime.harness.tools = [{
-    name:"shell", command:"/bin/shell-tool", manifest:$manifest, settings:"/etc/fence.jsonc"
-  }]
-')
-print -r -- "$tool_header" | schema_eval 'canonical_session_header' >/dev/null
 for field in request_sandbox_bypass sandbox_bypass_reason; do
   if jq -c --arg field "$field" '.input_schema.properties[$field] = {type:"string"}' \
       <<<"$valid_manifest" | schema_eval 'tool_manifest' >/dev/null 2>&1; then

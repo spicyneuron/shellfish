@@ -66,14 +66,14 @@ output=$(SF_TEST_BACKEND_DELAY=0 zsh -f "$entry" run --session-out "$forwarded_s
   'plain answer') || fail 'forwarded run failed'
 assert_equal 'plain answer' "$output" 'run keeps the prompt after a forwarded value'
 head -n 1 "$forwarded_session" | jq -e '
-  .runtime.request.model == "forwarded-model" and
-  (.runtime.system | length) == 1
+  .profile.request.model == "forwarded-model" and
+  (.profile.system | length) == 1
 ' \
   >/dev/null || fail 'a forwarded option value did not reach the new session'
 jq -e 'select(.type == "system" and .content == "forwarded system")' \
   "$forwarded_session" >/dev/null || fail 'run did not create the overridden system record'
 
-# Session reuse copies only runtime settings.
+# Session reuse copies only profile settings.
 typeset copied_session="$tmp/copied.jsonl"
 cp "$forwarded_session" "$tmp/source-before"
 output=$(SF_TEST_BACKEND_DELAY=0 zsh -f "$entry" run \
@@ -82,10 +82,10 @@ output=$(SF_TEST_BACKEND_DELAY=0 zsh -f "$entry" run \
 assert_equal 'copied answer' "$output"
 cmp -s "$forwarded_session" "$tmp/source-before" || fail 'run modified its source'
 jq -es --slurpfile source "$forwarded_session" '
-  .[0].runtime == $source[0].runtime and
+  .[0].profile == $source[0].profile and
   .[1] == {type:"system",content:"initial system"} and
   [.[] | select(.type == "user") | .content[0].text] == ["copied answer"]
-' "$copied_session" >/dev/null || fail 'run did not reuse the stored runtime'
+' "$copied_session" >/dev/null || fail 'run did not reuse the stored profile'
 
 # Session source options are exclusive.
 integer conflict_status=0
@@ -124,7 +124,7 @@ jq -c . "$stream_session" | tail -n +$(( prefix + 1 )) >"$tmp/session-durable"
 cmp -s "$tmp/stream-durable" "$tmp/session-durable" ||
   fail 'JSONL durable events differ from the appended session records'
 
-# Context discovery replaces the complete frozen runtime before inference.
+# Context discovery replaces the complete frozen profile before inference.
 typeset context_backend="$tmp/context-backend"
 typeset context_session="$tmp/context.jsonl" context_stream="$tmp/context.stream"
 mkdir "$context_backend"
@@ -146,11 +146,11 @@ jq -eRn '
   [inputs | fromjson] as $events |
   ($events | map(.type) | index("_session_update")) as $update |
   ($events | map(.type) | index("_assistant_start")) as $start |
-  $update < $start and $events[$update].runtime.context_window == 4321
+  $update < $start and $events[$update].profile.context_window == 4321
 ' <"$context_stream" >/dev/null || fail 'context discovery emitted the wrong order'
 head -n 1 "$context_session" | jq -e \
-  '.runtime.context_window == 4321' >/dev/null ||
-  fail 'context discovery did not freeze the complete updated runtime'
+  '.profile.context_window == 4321' >/dev/null ||
+  fail 'context discovery did not freeze the complete updated profile'
 cat >"$context_backend/context_window" <<'ZSH'
 #!/usr/bin/env zsh
 cat >/dev/null
@@ -162,7 +162,7 @@ print -r -- '{"type":"user","content":[{"type":"text","text":"fallback"}]}' |
     --session-out "$context_session" >/dev/null ||
   fail 'unavailable context discovery blocked inference'
 head -n 1 "$context_session" | jq -e \
-  '.runtime.context_window == null' >/dev/null ||
+  '.profile.context_window == null' >/dev/null ||
   fail 'unavailable context discovery did not freeze null'
 
 # JSONL emits command handoffs.

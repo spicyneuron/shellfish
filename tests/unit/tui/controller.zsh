@@ -85,15 +85,15 @@ SF_PRESENT_PERMISSION_ID=''
 pump '{"type":"_handoff","argv":["/tmp/custom command","","arg"]}'
 assert_equal '/tmp/custom command,,arg' "${(j:,:)SF_PRESENT_HANDOFF}"
 
-# Apply runtime updates.
-typeset updated_runtime
-updated_runtime=$(jq -c '
+# Apply profile updates.
+typeset updated_profile
+updated_profile=$(jq -c '
   del(.type,.format_version,.cwd,.created) |
-  .backend.command = "/updated/run" | .request.model = "new-model" |
+  .backend.adapter = "/updated" | .request.model = "new-model" |
   .context_window = null
 ' "$SF_TEST_SESSIONS/header-only.jsonl")
-pump "$(jq -cn --argjson runtime "$updated_runtime" \
-  '{type:"_session_update",runtime:$runtime}')"
+pump "$(jq -cn --argjson profile "$updated_profile" \
+  '{type:"_session_update",profile:$profile}')"
 assert_equal updated/new-model "$SF_PRESENT_IDENTITY"
 assert_equal updated/new-model "$SF_PRESENT_FOOTER"
 
@@ -295,7 +295,7 @@ sf_tui_submit early
 assert_equal repaint "$REPLY"
 assert_equal early "${(j:,:)SF_PRESENT_QUEUE}"
 pump "$(jq -cn --arg path "$tmp/new.jsonl" '{type:"_session_load",path:$path}')" \
-  '{"type":"session","backend":{"command":"/test/run"},"request":{"model":"model"}}' \
+  '{"type":"session","profile":{"backend":{"adapter":"/test"},"request":{"model":"model"}}}' \
   '{"type":"system","content":"instructions"}' \
   '{"type":"_draft","lifecycle":"session_start","id":"1","user_text":"setup · working"}'
 assert_equal working "$SF_PRESENT_STATE"

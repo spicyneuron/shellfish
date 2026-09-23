@@ -31,10 +31,10 @@ def usage_actions($window):
 
 # The backend name is its adapter directory.
 def identity:
-  ((.backend.command // "" | split("/")[-2] // "?") + "/" + (.request.model // "?"));
+  ((.backend.adapter // "?" | split("/") | last) + "/" + (.request.model // "?"));
 
-def runtime_actions:
-  [["runtime", identity, (.context_window // "" | tostring)]];
+def profile_actions:
+  [["profile", identity, (.context_window // "" | tostring)]];
 
 # A result or draft carries its own preview hint.
 def preview: .user_preview_lines // "default" | tostring;
@@ -86,7 +86,7 @@ def record_actions($mode; $window):
     [["execution_end", .id, .name, "tool", result_text, preview]]
   elif .type == "hook_result" then
     [["execution_end", .id, "", hook_class, result_text, preview]]
-  elif .type == "session" then (.runtime | runtime_actions)
+  elif .type == "session" then (.profile | profile_actions)
   elif .type == "state" then []
   else error("unsupported record: " + (.type | tostring))
   end;
@@ -113,7 +113,7 @@ def event_actions($window):
       (if ($preview | length) > 1000 then $preview[0:1000] + "…" else $preview end),
       (.reason // "")]]
   elif .type == "_handoff" then [["handoff"] + .argv]
-  elif .type == "_session_update" then (.runtime | runtime_actions)
+  elif .type == "_session_update" then (.profile | profile_actions)
   elif .type == "_session_load" then [["session", .path]]
   else error("unsupported event: " + (.type | tostring))
   end;
@@ -131,7 +131,7 @@ reduce .[] as $line (
   .actions += $emitted |
   if $line.type == "_session_load" then .mode = "load"
   elif $line.type | IN("session", "_session_update") then
-    .window = ($line.runtime.context_window // null)
+    .window = ($line.profile.context_window // null)
   else . end
 ) |
 # Fields are NUL-joined and each action ends with a record separator.

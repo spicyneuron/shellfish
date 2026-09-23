@@ -46,13 +46,13 @@ sf_resume_find() {
     done < <(printf '%s\n' "${headers[@]}" |
       sf_jq -jRn --arg cwd "$cwd" --arg home "${HOME:A}" \
         --argjson limit "$limit" --args '
-        include "lib/runtime";
+        include "lib/profile";
         [inputs | fromjson? // null] as $headers |
         [$ARGS.positional | to_entries[] |
           select($headers[.key] |
             type == "object" and .type == "session" and .format_version == 1 and
             (try (.cwd | expand_path(""; $home)) catch null) == $cwd and
-            (.runtime.request.model | type == "string")) |
+            (.profile.request.model | type == "string")) |
           .value] |
         (if $limit > 0 then .[0:$limit] else . end) |
         (.[] | ., "\u0000"), "ok", "\u0000"

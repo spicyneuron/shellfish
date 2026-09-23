@@ -82,7 +82,7 @@ fail() {
 assert_canonical_session() {
   local session=$1 stop=${2-}
   jq -L "$ROOT" -e -s --arg stop "$stop" '
-    include "lib/runtime";
+    include "lib/profile";
     include "lib/session";
     (.[0] | canonical_session_header) and
     (.[1:] | session_state | true) and
@@ -93,27 +93,34 @@ assert_canonical_session() {
   }
 }
 
-# Frozen runtime used by tool and exec tests. Optional system-file path.
-sf_test_runtime() {
-  local system=${1-} tool=$ROOT/share/profiles/default/tools/shell
-  typeset -g SF_TEST_RUNTIME SF_TEST_SYSTEM=''
+# Frozen profile used by tool and exec tests. Optional system-file path.
+sf_test_frozen_profile() {
+  local system=${1-}
+  typeset -g SF_TEST_PROFILE SF_TEST_SYSTEM=''
   [[ -z $system ]] || SF_TEST_SYSTEM=$(<"$system")
-  SF_TEST_RUNTIME=$(jq -cn \
-    --arg command "$SF_TEST_BACKEND" \
-    --arg tool "$tool" \
-    --slurpfile tool_manifest "$tool/manifest.json" '
+  SF_TEST_PROFILE=$(jq -cn --arg adapter "${SF_TEST_BACKEND:h}" \
+    --arg tool "$ROOT/share/profiles/default/tools/shell" '
       {
         request:{model:"test-model"},
         system:[],
-        backend:{command:$command,endpoint:"https://example.invalid/test",
+        backend:{adapter:$adapter,endpoint:"https://example.invalid/test",
           insecure_tls:false,http_timeout:30,http_stall:10},
-        harness:{sandbox_read_paths:[],sandbox_write_paths:[],
-          tools:[{name:"shell",command:($tool+"/run"),
-            settings:(if $tool_manifest[0].sandbox then ($tool+"/fence.jsonc") else null end),
-            manifest:$tool_manifest[0]}],sandbox:false,
-          max_requests_per_turn:8,max_tool_calls_per_request:16,max_capture_bytes:65536}
+        tools:[$tool], hooks:{}, sandbox:false, sandbox_read_paths:[], sandbox_write_paths:[],
+        max_requests_per_turn:8,max_tool_calls_per_request:16,max_capture_bytes:65536
       }
     ')
+}
+
+# Point the frozen profile at a copy of the bundled shell tool whose manifest
+# FILTER edits. An optional RUN script replaces the tool's own.
+sf_test_shell_tool() {
+  local filter=$1 run=${2-} bundled=$ROOT/share/profiles/default/tools/shell
+  local tool="$tmp/tools/shell"
+  mkdir -p "$tool"
+  cp -f "${run:-$bundled/run}" "$tool/run"
+  cp -f "$bundled/fence.jsonc" "$tool/fence.jsonc"
+  jq "$filter" "$bundled/manifest.json" >"$tool/manifest.json"
+  SF_TEST_PROFILE=$(jq -c --arg tool "$tool" '.tools=[$tool]' <<<"$SF_TEST_PROFILE")
 }
 
 sf_test_session() {
@@ -121,8 +128,8 @@ sf_test_session() {
   cwd=$(pwd -P)
   created=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
   header=$(jq -cn --arg cwd "$cwd" --arg created "$created" \
-    --argjson runtime "$SF_TEST_RUNTIME" \
-    '{type:"session",format_version:1,cwd:$cwd,created:$created,runtime:$runtime}')
+    --argjson profile "$SF_TEST_PROFILE" \
+    '{type:"session",format_version:1,cwd:$cwd,created:$created,profile:$profile}')
   (umask 077; print -r -- "$header" >"$session")
   [[ -z $SF_TEST_SYSTEM ]] || jq -cn --arg content "$SF_TEST_SYSTEM" \
     '{type:"system",content:$content}' >>"$session"
