@@ -90,40 +90,11 @@ def render_component($render; $name; $input; $output):
   with_entries(.value = render_template(.value;$variables)) |
   with_entries(select(.value != ""));
 
-def hook_match:
-  type == "object" and
-  if keys == ["pattern"] then
-    .pattern as $pattern |
-    ($pattern | type == "string" and length > 0 and
-      (test("[[:cntrl:]]") | not)) and
-    (try ("" | test($pattern) | type == "boolean") catch false)
-  elif keys == ["command"] then .command | stored_path
-  else false end;
-
-def hook_text:
-  type == "string" and (test("[[:cntrl:]]") | not);
-
-def hook_help:
-  type == "object" and keys == ["description", "usage"] and
-  (.usage | hook_text and length > 0) and
-  (.description | hook_text and length > 0);
-
-def hook_component:
-  type == "object" and
-  (keys - ["command", "help", "match"] | length) == 0 and
-  (.command | stored_path) and
-  (if has("match") then .match | hook_match else true end) and
-  (if has("help") then .help | hook_help else true end);
-
+# Each lifecycle lists its hook scripts nearest first: the first runs, and each
+# later one is the parent of the one before.
 def harness_hooks:
   . as $harness |
-  all(hook_names[]; . as $hook |
-    ($harness | has($hook) | not) or
-    ($harness[$hook] | type == "array" and all(.[];
-      hook_component and
-      (if $hook == "user_prompt_submit" then
-         (has("help") | not) or has("match")
-       else ((has("match") or has("help")) | not) end))));
+  all(hook_names[]; ($harness[.] // []) | type == "array" and all(.[]; stored_path));
 
 def tool_manifest:
   (.input_schema.properties // {} | keys | map("input." + .)) as $input_variables |
@@ -201,10 +172,7 @@ def runtime_paths(rewrite):
   .harness.tools |= map(.command |= rewrite |
     (if .settings == null then . else .settings |= rewrite end)) |
   reduce hook_names[] as $hook (.;
-    if .harness | has($hook) then
-      .harness[$hook] |= map(.command |= rewrite |
-        (if .match // {} | has("command") then .match.command |= rewrite else . end))
-    else . end);
+    if .harness | has($hook) then .harness[$hook] |= map(rewrite) else . end);
 
 def expand_path($cwd; $home):
   if startswith("/") then .
@@ -295,6 +263,15 @@ def config_profile($path):
   config_assert((has("max_capture_bytes") | not) or (.max_capture_bytes | capture_bytes);
     $path + ["max_capture_bytes"]; "must be at least 64");
 
+# A folder holding hooks/LIFECYCLE contributes [that script, "..."] unless its
+# profile sets the list. $scripts are the executables found under hooks/.
+def profile_discover($scripts):
+  with_entries((.key | rtrimstr("profile.jsonc") + "hooks/") as $hooks |
+    .value |= reduce hook_names[] as $hook (.;
+      if ($scripts | index([$hooks + $hook])) and type == "object" and
+          ((.hooks // {}) | type == "object" and (has($hook) | not))
+      then .hooks[$hook] = [$hooks + $hook, "..."] else . end));
+
 # Profile files keyed by path become their folder names: bundled folders are
 # "@NAME" and configured folders "NAME".
 def profile_map($bundled):
@@ -354,7 +331,7 @@ def profile_select($profiles; $names; $model; $request; $backend; $home):
     else . end);
 
 # Filesystem facts jq cannot obtain, keyed by "<kind>TAB<reference>". Each entry
-# is a resolved directory, one flag for an optional sibling script, and the
+# is a resolved path, one flag for readable tool sandbox settings, and the
 # component manifest.
 def resolution_table($words):
   [range(0; $words | length; 4) as $at |
@@ -378,25 +355,10 @@ def runtime_finalize($profile; $table; $grants):
       manifest:$tool_manifest,
       settings:(if $tool_manifest.sandbox then $entry.path + "/fence.jsonc"
         else null end)} end] as $tools |
-  (reduce (hook_names[] as $hook | ($profile.hooks[$hook] // [])[] |
-      {hook:$hook, entry:$table[("hooks/" + $hook) + "\t" + .]}) as $component ({};
-    ($component.entry.path + "/run") as $command |
-    ($component.entry.manifest |
-      if $component.entry.flag then
-        .match = {command:($component.entry.path + "/match")}
-      else . end) as $manifest |
-    ($manifest |
-      select(type == "object" and
-        (keys - (if $component.hook == "user_prompt_submit"
-          then ["help", "match"] else [] end) | length) == 0 and
-        (if has("match") then .match | hook_match else true end) and
-        (if has("help") then
-           has("match") and (.help | hook_help)
-         else true end)) //
-      error("invalid hook component: " + $command)) as $hook_manifest |
-    .[$component.hook] += [({command:$command} +
-      (if $hook_manifest | has("match") then {match:$hook_manifest.match} else {} end) +
-      (if $hook_manifest | has("help") then {help:$hook_manifest.help} else {} end))])) as $hooks |
+  (reduce hook_names[] as $hook ({};
+    ($profile.hooks[$hook] // []) as $references |
+    if $references == [] then .
+    else .[$hook] = [$references[] | $table["hooks\t" + .].path] end)) as $hooks |
   {
     backend:{command:($backend.path + "/run"),
       endpoint:($profile.backend.endpoint // $manifest.endpoint),

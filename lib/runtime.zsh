@@ -23,7 +23,7 @@ sf_runtime_validation_error() {
 }
 
 sf_runtime_read_manifest() {
-  local directory=$1 mode=$2 json="$1/manifest.json" jsonc="$1/manifest.jsonc"
+  local directory=$1 json="$1/manifest.json" jsonc="$1/manifest.jsonc"
   local manifest_path content
   if [[ ( -e $json || -L $json ) && ( -e $jsonc || -L $jsonc ) ]]; then
     sf_runtime_fail "multiple component manifests: $directory"
@@ -32,9 +32,6 @@ sf_runtime_read_manifest() {
     manifest_path=$jsonc
   elif [[ -e $json || -L $json ]]; then
     manifest_path=$json
-  elif [[ $mode == optional ]]; then
-    REPLY='{}'
-    return 0
   else
     sf_runtime_fail "missing component manifest: $directory"
     return
@@ -87,13 +84,13 @@ sf_runtime_reference() {
 }
 
 # Walk the selected profile's references into the resolution table: one uniform
-# record of table key, resolved path, optional-script flag, and manifest.
+# record of table key, resolved path, sandbox-settings flag, and manifest.
 sf_runtime_resolve_profile() {
   local profile_names=$1 model_override=$2 request_override=$3 backend_override=$4
   local config_dir profiles profile kind reference subdirectory key resolved final
   local home=${HOME-}
   local -A decoded
-  local -a entries=() references=() folders=()
+  local -a entries=() references=() folders=() scripts
   integer flag
 
   SF_RUNTIME_ERROR=''
@@ -103,16 +100,17 @@ sf_runtime_resolve_profile() {
   sf_runtime_read_profiles "$config_dir" || return
   profiles=$REPLY
   [[ -z $home ]] || home=${home:A}
+  scripts=( "$SF_SHARE/profiles"/*/hooks/*(N-*) "$config_dir/profiles"/*/hooks/*(N-*) )
 
   # A reference carries no control characters, so newlines delimit the list and
   # a space separates each kind from its reference.
   sf_jq_fields -rn --argjson files "$profiles" --arg names "$profile_names" \
     --arg bundled "$SF_SHARE/profiles" --arg configured "$config_dir/profiles" \
     --arg model "$model_override" --argjson request "$request_override" \
-    --arg backend "$backend_override" --arg home "$home" '
+    --arg backend "$backend_override" --arg home "$home" --arg scripts "${(F)scripts}" '
       include "lib/fields";
       include "lib/runtime";
-      ($files | profile_map($bundled)) as $profiles |
+      ($files | profile_discover($scripts | split("\n")) | profile_map($bundled)) as $profiles |
       (($names | select(length > 0) | split("\n")) // ["default"]) as $names |
       profile_select($profiles; $names; $model; $request; $backend; $home) as $profile |
       entry("profile"; $profile | tojson),
@@ -124,8 +122,7 @@ sf_runtime_resolve_profile() {
         [["backend", $profile.backend.adapter],
          (($profile.tools // [])[] | ["tools", .]),
          (($profile.system // [])[] | ["system", .]),
-         (hook_names[] as $hook | ($profile.hooks[$hook] // [])[] |
-           ["hooks/" + $hook, .])] |
+         (hook_names[] as $hook | ($profile.hooks[$hook] // [])[] | ["hooks", .])] |
         map(join(" ")) | join("\n")),
       ("ok" | field)
   ' || {
@@ -149,28 +146,21 @@ sf_runtime_resolve_profile() {
       return
     }
     resolved=$REPLY
-    flag=0
-    if [[ $kind == system ]]; then
-      entries+=( "$key" "$resolved" 0 '{}' )
-      continue
-    fi
-    [[ -d $resolved && -x $resolved/run ]] || {
+    case $kind in
+      system) ;;
+      hooks) [[ -f $resolved && -x $resolved ]] ;;
+      *) [[ -d $resolved && -x $resolved/run ]] ;;
+    esac || {
       sf_runtime_fail "invalid $kind reference: $reference"
       return
     }
-    case $kind in
-      backend)
-        sf_runtime_read_manifest "$resolved" required || return
-        ;;
-      tools)
-        sf_runtime_read_manifest "$resolved" required || return
-        [[ ! -f $resolved/fence.jsonc || ! -r $resolved/fence.jsonc ]] || flag=1
-        ;;
-      *)
-        sf_runtime_read_manifest "$resolved" optional || return
-        [[ ! -f $resolved/match || ! -x $resolved/match ]] || flag=1
-        ;;
-    esac
+    if [[ $kind == (system|hooks) ]]; then
+      entries+=( "$key" "$resolved" 0 '{}' )
+      continue
+    fi
+    sf_runtime_read_manifest "$resolved" || return
+    flag=0
+    [[ $kind != tools || ! -f $resolved/fence.jsonc || ! -r $resolved/fence.jsonc ]] || flag=1
     entries+=( "$key" "$resolved" "$flag" "$REPLY" )
   done
 

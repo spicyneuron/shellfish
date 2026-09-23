@@ -3,8 +3,8 @@
 emulate -R zsh
 setopt no_aliases no_bg_nice no_multios pipe_fail
 zmodload zsh/datetime
-source "${0:A:h:h:h:h}/lib/capped.zsh" || exit 1
-source "${0:A:h:h:h:h}/lib/hook.zsh" || exit 1
+source "${0:A:h:h}/lib/capped.zsh" || exit 1
+source "${0:A:h:h}/lib/hook.zsh" || exit 1
 
 typeset previous branch hash identity text
 previous=$(jq -ers '

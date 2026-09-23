@@ -1,0 +1,4 @@
+#!/usr/bin/env zsh
+
+# Bundled startup context, one block per part.
+${0:A:h}/project_environment && ${0:A:h}/git_environment && ${0:A:h}/project_instructions

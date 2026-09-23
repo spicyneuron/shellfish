@@ -1,0 +1,12 @@
+#!/usr/bin/env zsh
+
+# SHELLFISH_PARENT_HOOK: run the next hook of the lifecycle on its original
+# input. That hook reaches its own parent the same way.
+emulate -R zsh
+typeset -a hooks=( ${(f)SHELLFISH_PARENT_HOOKS} )
+if (( ${#hooks} > 1 )); then
+  export SHELLFISH_PARENT_HOOKS=${(F)hooks[2,-1]}
+else
+  unset SHELLFISH_PARENT_HOOK
+fi
+exec "$hooks[1]" "$@" <"$SHELLFISH_HOOK_INPUT"

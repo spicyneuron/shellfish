@@ -5,8 +5,8 @@ sf_test_source lib/session.zsh
 sf_test_tmp compact
 
 # Compact into a canonical child.
-typeset compact_hook="$ROOT/share/profiles/default/hooks/user_prompt_submit/compact/run"
-typeset compact_match="$ROOT/share/profiles/default/hooks/user_prompt_submit/compact/match"
+typeset compact_hook="$ROOT/share/profiles/default/hooks/compact"
+typeset dispatcher="$ROOT/share/profiles/default/hooks/user_prompt_submit"
 typeset compact_source="$tmp/compact-source.jsonl"
 typeset compact_control="$tmp/compact-control.json"
 # The action lines among the compact hook's fd 3 output.
@@ -44,12 +44,11 @@ sf_session_append "$compact_source" '{"type":"user","content":[{"type":"text","t
 sf_session_append "$compact_source" '{"type":"assistant","stop":"end","content":[{"type":"reasoning","text":"Check first","opaque":{"encrypted_content":"secret"}},{"type":"text","text":"Continuing"}],"usage":{"input_tokens":1,"output_tokens":1}}'
 
 # Ignore sessions below threshold.
-: >"$compact_control"
 SHELLFISH_EXECUTABLE="$ROOT/bin/shellfish" SHELLFISH_SESSION="$compact_source" \
-  SHELLFISH_TURN_STATE="$tmp" zsh -f "$compact_match" user_prompt_submit \
-  2>"$compact_display" \
-  < <(print -n -- 'ordinary prompt') || compact_status=$?
-(( compact_status == 1 )) || fail 'a session below the threshold selected compaction'
+  SHELLFISH_TURN_STATE="$tmp" zsh -f "$dispatcher" user_prompt_submit \
+  3>"$compact_control" 2>"$compact_display" >"$tmp/dispatch-output" \
+  < <(print -n -- 'ordinary prompt') || fail 'a session below the threshold failed the dispatcher'
+[[ ! -s $tmp/dispatch-output ]] || fail 'an ordinary prompt produced dispatcher output'
 [[ ! -s $compact_control ]] || fail 'a session below the threshold requested a handoff'
 [[ ! -s $compact_display ]] || fail 'a session below the threshold displayed compaction'
 
@@ -58,12 +57,10 @@ jq -c 'if .type == "assistant" then .usage = {input_tokens:75,output_tokens:5} e
   "$compact_source" >"$tmp/compact-above.jsonl"
 mv "$tmp/compact-above.jsonl" "$compact_source"
 typeset compact_before=$(shasum <"$compact_source")
-SHELLFISH_SESSION="$compact_source" zsh -f "$compact_match" user_prompt_submit \
-  < <(print -n -- 'my next prompt') || fail 'threshold did not select compaction'
 compact_status=0
 SF_TEST_BACKEND_REQUEST="$compact_request" \
   SHELLFISH_EXECUTABLE="$compact_shellfish" SHELLFISH_SESSION="$compact_source" \
-  SHELLFISH_TURN_STATE="$tmp" zsh -f "$compact_hook" user_prompt_submit \
+  SHELLFISH_TURN_STATE="$tmp" zsh -f "$dispatcher" user_prompt_submit \
   3>"$compact_control" 2>"$compact_display" \
   < <(print -n -- 'my next prompt') || compact_status=$?
 (( compact_status == 0 ))
@@ -73,7 +70,7 @@ actions | jq -e --arg command "$compact_shellfish" \
   . == {action:"handoff",argv:[$command,"--session",$child,"--draft","my next prompt"]}
 ' >/dev/null || fail 'automatic compaction lost the prompt'
 assert_equal "$compact_before" "$(shasum <"$compact_source")"
-jq -e -s --rawfile prompt "$ROOT/share/profiles/default/hooks/user_prompt_submit/compact/compact.md" '
+jq -e -s --rawfile prompt "$ROOT/share/profiles/default/hooks/compact.md" '
   ($prompt | rtrimstr("\n")) as $prompt |
   .[-1].content == [{type:"text",text:$prompt}]
 ' "$compact_request" >/dev/null || fail 'compaction did not send its prompt unchanged'
@@ -105,10 +102,6 @@ print -r -- \
   '{"type":"error","user_text":"Cancelled."}' \
   >>"$cancelled_source"
 assert_canonical_session "$cancelled_source"
-SHELLFISH_SESSION="$cancelled_source" zsh -f "$compact_match" user_prompt_submit \
-  < <(print -n -- 'after cancelling') ||
-  fail 'a cancelled turn did not select compaction'
-
 compact_status=0
 SHELLFISH_EXECUTABLE="$compact_shellfish" SHELLFISH_SESSION="$cancelled_source" \
   SHELLFISH_TURN_STATE="$tmp" zsh -f "$compact_hook" user_prompt_submit \

@@ -71,21 +71,20 @@ zsh -f "$entry" run --session-create --session-from "$created" --model other >/d
 
 # Retain the valid prefix when a startup hook fails.
 typeset hook="$tmp/failing-hook"
-mkdir "$hook"
-cat >"$hook/run" <<'ZSH'
+cat >"$hook" <<'ZSH'
 #!/usr/bin/env zsh
 [[ $# == 0 && -z ${SHELLFISH_TURN_STATE-} ]] || exit 2
 print -u2 -r -- 'startup detail'
 exit 9
 ZSH
-chmod +x "$hook/run"
+chmod +x "$hook"
 sf_test_profile hook \
   "{\"extend\": [\"default\"], \"hooks\": {\"session_start\": [\"$hook\"]}}"
 typeset failed="$tmp/failed.jsonl" hook_error="$tmp/hook-error"
 zsh -f "$entry" run --session-create --session-out "$failed" \
   -p hook >/dev/null 2>"$hook_error" &&
   fail 'a failing session_start script created a session'
-[[ $(<"$hook_error") == *"session_start hook failed with status 9: ${hook:A}/run: startup detail"* ]] ||
+[[ $(<"$hook_error") == *"session_start hook failed with status 9: ${hook:A}: startup detail"* ]] ||
   fail 'create hid the session_start failure'
 [[ -f $failed ]] || fail 'create removed the failed startup transcript'
 jq -se 'map(.type) == ["session","system"]' \
@@ -165,27 +164,30 @@ zsh -f "$entry" run --session-create --session-out "$binary" \
 # Startup records are durable before the next component runs.
 typeset events="$tmp/events.jsonl" streamed="$tmp/streamed.jsonl"
 typeset first="$tmp/first-hook" silent="$tmp/silent-hook"
-mkdir "$first" "$silent"
-cat >"$first/run" <<'ZSH'
+cat >"$first" <<'ZSH'
 #!/usr/bin/env zsh
 [[ -f $SHELLFISH_SESSION ]] || exit 2
 jq -se 'map(.type) == ["_session_load","session","system"]' \
   "$SF_TEST_EVENTS" >/dev/null || exit 3
 print -r -u3 -- '{"user_draft":"starting"}'
 print -r -u3 -- '{"user_final":"startup display","model_final":"startup context","state":[{"name":"startup/stream","value":true}]}'
+[[ -z ${SHELLFISH_PARENT_HOOK-} ]] || exec "$SHELLFISH_PARENT_HOOK"
 ZSH
-cat >"$silent/run" <<'ZSH'
+cat >"$silent" <<'ZSH'
 #!/usr/bin/env zsh
 [[ -f $SHELLFISH_SESSION ]] || exit 2
-# Each durable startup record reaches the stream before the next hook runs.
+# A final becomes durable and streams while its hook still runs.
+integer polls=0
+until jq -se '.[-2] == {type:"state",name:"startup/stream",value:true} and
+    .[-1].type == "hook_result"' "$SHELLFISH_SESSION" >/dev/null 2>&1; do
+  (( polls++ < 100 )) || exit 4
+  sleep 0.02
+done
 jq -se 'map(.type) == ["_session_load","session","system","_hook_draft",
   "state","hook_result"]' \
   "$SF_TEST_EVENTS" >/dev/null || exit 3
-jq -se '.[-2] == {type:"state",name:"startup/stream",value:true} and
-  .[-1].type == "hook_result"' \
-  "$SHELLFISH_SESSION" >/dev/null || exit 4
 ZSH
-chmod +x "$first/run" "$silent/run"
+chmod +x "$first" "$silent"
 sf_test_profile stream \
   "{\"extend\": [\"default\"], \"hooks\": {\"session_start\": [\"$first\", \"$silent\"]}}"
 SF_TEST_EVENTS="$events" zsh -f "$entry" run --jsonl --session-create -p stream \
@@ -222,8 +224,7 @@ jq -se 'map(.type) == ["session","system","state","hook_result"]' \
 typeset slow="$tmp/slow-hook" cancelled="$tmp/cancelled.jsonl"
 export SLOW_MARKER="$tmp/slow-active" SLOW_RELEASE="$tmp/slow-release"
 export SLOW_EXIT_MARKER="$tmp/slow-exit"
-mkdir "$slow"
-cat >"$slow/run" <<'ZSH'
+cat >"$slow" <<'ZSH'
 #!/usr/bin/env zsh
 : >"$SLOW_MARKER"
 # Release detects scripts that survive cancellation.
@@ -232,7 +233,7 @@ while [[ ! -e $SLOW_RELEASE ]]; do
 done
 : >"$SLOW_EXIT_MARKER"
 ZSH
-chmod +x "$slow/run"
+chmod +x "$slow"
 sf_test_profile slow \
   "{\"extend\": [\"default\"], \"hooks\": {\"session_start\": [\"$slow\"]}}"
 zsh -f "$entry" run --jsonl --session-create -p slow --session-out "$cancelled" \
@@ -258,13 +259,13 @@ jq -se 'map(.type) == ["session","system"]' "$cancelled" >/dev/null ||
 # Moving a home and project preserves their frozen relative references.
 typeset old_home="$tmp/original-home" new_home="$tmp/moved-home"
 typeset old_project="$old_home/project" new_project="$new_home/project"
-mkdir -p "$old_project/hook" "$old_home/.config/shellfish/profiles/default"
+mkdir -p "$old_project" "$old_home/.config/shellfish/profiles/default"
 print -r -- 'original prompt' >"$old_project/prompt.md"
-cat >"$old_project/hook/run" <<'ZSH'
+cat >"$old_project/hook" <<'ZSH'
 #!/usr/bin/env zsh
 pwd -P >"$PWD/hook-cwd"
 ZSH
-chmod +x "$old_project/hook/run"
+chmod +x "$old_project/hook"
 cat >"$old_home/.config/shellfish/profiles/default/profile.jsonc" <<EOF
 {
   "backend": {"adapter": "$ROOT/tests/fixtures/backend"},
@@ -280,7 +281,7 @@ EOF
 ) || fail 'portable session creation failed'
 jq -e 'select(.type == "session") |
   .cwd == "~/project" and .runtime.system == ["./prompt.md"] and
-  .runtime.harness.user_prompt_submit[0].command == "./hook/run"
+  .runtime.harness.user_prompt_submit[0] == "./hook"
 ' "$old_project/session.jsonl" >/dev/null || fail 'session did not store portable paths'
 mv -- "$old_home" "$new_home"
 (

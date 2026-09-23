@@ -145,7 +145,7 @@ mkdir "$SHELLFISH_SESSION"
 ZSH
 chmod +x "$break_hook"
 SF_TEST_RUNTIME=$(jq -c --arg hook "$break_hook" '
-  .harness.user_prompt_submit=[{command:$hook}]
+  .harness.user_prompt_submit=[$hook]
 ' <<<"$SF_TEST_RUNTIME")
 sf_test_session "$broken"
 integer broken_status=0

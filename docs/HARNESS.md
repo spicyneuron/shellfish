@@ -8,12 +8,12 @@ See [`CONFIG.md`](CONFIG.md) for composition, lookup, and the bundled coding har
 
 ## Shared contract
 
-Tools, hooks, and backend adapters are executable component directories. Component references resolve before the session is created, and the resolved paths and manifests are frozen in its header.
+Tools and backend adapters are executable component directories; a hook is one executable file. Component references resolve before the session is created, and the resolved paths and manifests are frozen in its header.
 
 | Component | Required files | Trust |
 | --- | --- | --- |
 | Tool | `run`, `manifest.json` or `manifest.jsonc`; `fence.jsonc` when sandboxed | Model-facing; optionally sandboxed |
-| Hook | `run`; optional manifest | Trusted, user permissions |
+| Hook | The executable itself | Trusted, user permissions |
 | Backend adapter | `run`, manifest; optional `context_window` | Trusted, user permissions |
 
 Scripts run from the session working directory. Shellfish starts each in an isolated process group, terminates ordinary descendants on completion or cancellation, and escalates from `TERM` to `KILL`. Components must finish their own subprocesses; daemonizing is unsupported.
@@ -30,12 +30,16 @@ Hooks and adapters inherit the process environment and receive every value in `.
 | `SHELLFISH_EXECUTABLE` | ✓ | ✓ |
 | `SHELLFISH_CONFIG_DIR` | ✓ | ✓ |
 | `SHELLFISH_MAX_CAPTURE_BYTES` | ✓ | ✓ |
+| `SHELLFISH_DEFAULT_DIR` | ✓ | ✓ |
 | `SHELLFISH_MODEL` |  | ✓ |
 | `SHELLFISH_MODE` |  | ✓ (`run`) |
 | `SHELLFISH_VERBOSE` |  | ✓ (`0` or `1`) |
 | `SHELLFISH_TURN_ID` |  | Turn hooks only |
 | `SHELLFISH_TURN_STATE` |  | Turn hooks only |
+| `SHELLFISH_PARENT_HOOK` |  | When a parent exists |
 | `TMPDIR`, `TMPPREFIX` | ✓ |  |
+
+`SHELLFISH_DEFAULT_DIR` is the installed bundled `default` profile folder, so scripts can call its parts, such as `$SHELLFISH_DEFAULT_DIR/hooks/review`.
 
 Tools use the host's `TMPDIR`, or `/tmp` when it is unset, and receive a `TMPPREFIX` beneath it. Sandboxed tools may read and write the platform temp directories as baseline temporary storage; tools own their cleanup. Sandboxed tools otherwise start with a clean environment plus their declared names. Unsandboxed tools inherit the process environment plus their declared names.
 
@@ -57,7 +61,7 @@ Defaults show the name and input, then return stdout and stderr to both. A manif
 
 ### Durable state
 
-Hooks and tools may write JSON objects to fd 3, one per line (tools at most one; hooks only beside a final):
+Hooks and tools may write JSON objects to fd 3, one per line (tools at most one):
 
 ```json
 {"state":[{"name":"example/status","value":{"ready":true}}]}
@@ -110,7 +114,7 @@ A detected sandbox denial on a nonzero tool exit adds an advisory `<sandbox_noti
 
 ## Hooks
 
-Hooks are ordered shell scripts bound to lifecycle points. They add context and workflow policy without changing the core agent loop. Bundled and custom hooks use the same process contract.
+Hooks are executables bound to lifecycle points. They add context and workflow policy without changing the core agent loop. Bundled and custom hooks use the same process contract.
 
 ```text
 create session
@@ -131,16 +135,18 @@ repeat:
     if completion allowed: finish turn
 ```
 
-A `user_prompt_submit` hook manifest may add a selector and help metadata:
+Each lifecycle runs one hook: the first in its list. A profile folder's `hooks/LIFECYCLE` joins the front of the inherited list unless the profile sets `hooks.LIFECYCLE`; see [`CONFIG.md`](CONFIG.md#harness). Any other file under `hooks/` is an inert part that scripts may call.
 
-```json
-{
-  "match": {"pattern": "^/review\\z"},
-  "help": {"usage": "/review", "description": "Review changes"}
-}
+The next hook in the list is the running hook's parent. `SHELLFISH_PARENT_HOOK` runs it with the same arguments and the original stdin, even if the caller already read it; it is unset when there is no parent. Both write to the same fd 3, and the parent reaches its own parent the same way:
+
+```sh
+#!/bin/sh
+# Handle /deploy here and leave every other prompt to the parent.
+[ "$(cat)" = /deploy ] || exec "$SHELLFISH_PARENT_HOOK" "$@"
+echo '{"action":"block","user_final":"Deploying…"}' >&3
 ```
 
-`match` is a jq-compatible regular expression. An executable named `match` beside `run` replaces it: the script receives the normal hook context, must write nothing, and selects on exit 0, skips on 1, and fails otherwise. Selection preserves configured order.
+A hook that never calls its parent replaces it.
 
 ### Output
 
@@ -159,7 +165,7 @@ Each final and its state become durable as the line arrives, so an interrupted o
 
 Model text from one lifecycle reaches the model grouped in `<hook name="LIFECYCLE">`, each result inserted verbatim. Bundled hooks wrap theirs in `<context script="NAME">`.
 
-A hook changes the lifecycle's outcome by writing an `action` line to fd 3. The last action wins, applies only after exit 0, and halts the remaining chain. Without an action, the lifecycle proceeds.
+A hook changes the lifecycle's outcome by writing an `action` line to fd 3. The last action wins and applies only after exit 0. Without an action, the lifecycle proceeds.
 
 ### Lifecycle reference
 

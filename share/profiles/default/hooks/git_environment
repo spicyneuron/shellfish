@@ -3,8 +3,8 @@
 emulate -R zsh
 setopt no_aliases no_bg_nice no_multios pipe_fail
 zmodload zsh/datetime
-source "${0:A:h:h:h:h}/lib/capped.zsh" || exit 1
-source "${0:A:h:h:h:h}/lib/hook.zsh" || exit 1
+source "${0:A:h:h}/lib/capped.zsh" || exit 1
+source "${0:A:h:h}/lib/hook.zsh" || exit 1
 sf_hook_draft 'git_environment · Loading git environment…' || exit 1
 
 typeset -F deadline=$(( EPOCHREALTIME + SF_PROBE_BUDGET ))

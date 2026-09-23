@@ -4,7 +4,7 @@ source "${0:A:h:h:h}/_helpers.zsh"
 sf_test_source lib/session.zsh
 sf_test_tmp permission-review
 
-typeset hook="$ROOT/share/profiles/default/hooks/permission_request/review/run"
+typeset hook="$ROOT/share/profiles/default/hooks/review"
 typeset session="$tmp/review.jsonl" control="$tmp/control.json"
 typeset wrapper="$tmp/shellfish" captured="$tmp/transcript.jsonl" mode="$tmp/mode"
 typeset request
@@ -27,7 +27,7 @@ SF_TEST_RUNTIME=$(jq -c --arg hook "$hook" '
   .context_window=20000 |
   .request += {max_tokens:5000,temperature:0.2} |
   .backend.http_timeout=120 |
-  .harness.permission_request=[{command:$hook}]
+  .harness.permission_request=[$hook]
 ' <<<"$SF_TEST_RUNTIME")
 SF_TEST_SYSTEM='fixed system'
 sf_test_session "$session"
@@ -69,7 +69,7 @@ jq -e '
     {risk:"medium",authorization:"high",reason:"Explicitly authorized."}
 ' "$control" >/dev/null || fail 'permission review returned the wrong decision'
 jq -e -s --arg tool_input "$(jq -c '.tool_input' <<<"$request")" \
-    --rawfile policy "$ROOT/share/profiles/default/hooks/permission_request/review/review.md" '
+    --rawfile policy "$ROOT/share/profiles/default/hooks/review.md" '
   (.[2].content[0].text | fromjson) as $context |
   .[0].runtime.request.model == "test-model" and
   .[0].runtime.request.max_tokens == 4096 and

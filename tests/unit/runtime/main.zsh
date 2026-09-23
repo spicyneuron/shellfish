@@ -40,15 +40,10 @@ jq -e '.backend.command | endswith("/share/profiles/default/backends/openai-resp
 
 # The bundled default profile supplies the coding agent.
 sf_runtime_resolve_args -m default-model -b "$fixture_backend"
-jq -e --arg root "$ROOT/share/profiles/default/hooks/session_start" \
-  --arg prompt_root "$ROOT/share/profiles/default/hooks/user_prompt_submit" '
-  (.harness.session_start | map(.command)) == [
-    ($root + "/project_environment/run"),
-    ($root + "/git_environment/run"),
-    ($root + "/project_instructions/run")
-  ] and
-  .harness.user_prompt_submit[0].command == ($prompt_root + "/help/run") and
-  .harness.user_prompt_submit[-1].command == ($prompt_root + "/git_environment/run") and
+jq -e --arg root "$ROOT/share/profiles/default/hooks" '
+  .harness.session_start == [$root + "/session_start"] and
+  .harness.user_prompt_submit == [$root + "/user_prompt_submit"] and
+  (.harness | has("permission_request") | not) and
   (.harness.tools | map(.name)) ==
     ["read_file", "edit_file", "write_file", "skill", "search_web", "fetch_url", "shell"] and
   .harness.tools[0].manifest.render.permission_user_text == "${input.file_path}" and
@@ -122,7 +117,7 @@ sf_runtime_resolve_args -p coding
 jq -e '
   .request.model == "mine" and .request.max_tokens == 16384 and
   (.harness.tools | length) == 7 and
-  (.harness.permission_request | map(.command | split("/")[-2])) == ["review"]
+  (.harness.permission_request | map(split("/")[-3:] | join("/"))) == ["coding/hooks/permission_request"]
 ' <<<"$REPLY" >/dev/null
 
 # Unknown and cyclic profiles fail.
@@ -178,61 +173,45 @@ jq -e --arg read "${tmp:A}/home/my reference" --arg write "${tmp:A}/home/output"
   [[ $SF_RUNTIME_ERROR == *'cannot expand ~ without HOME'* ]]
 )
 
-# Hook references preserve order and read optional manifests and match scripts.
+# A folder's hooks/LIFECYCLE joins the front of the inherited list; other files
+# under hooks/ are inert parts.
+typeset base_hooks="$SF_TEST_CONFIG/profiles/hook-base/hooks"
 typeset hooked="$SF_TEST_CONFIG/profiles/hooked/hooks"
-mkdir -p "$hooked/user_prompt_submit/help" "$hooked/user_prompt_submit/shell" "$hooked/stop/gate"
-print -r -- '#!/bin/sh' >"$hooked/user_prompt_submit/help/run"
-chmod +x "$hooked/user_prompt_submit/help/run"
-cat >"$hooked/user_prompt_submit/help/manifest.jsonc" <<'JSON'
-{
-  "match": {"pattern": "^/(help|h)\\z"},
-  "help": {
-    "usage": "/help, /h",
-    "description": "Show help"
-  }
+mkdir -p "$base_hooks" "$hooked/dir"
+for script in "$base_hooks/stop" "$base_hooks/part" "$hooked/stop"; do
+  print -r -- '#!/bin/sh' >"$script"
+  chmod +x "$script"
+done
+sf_test_profile hook-base '{}'
+hooked_profile() {
+  sf_test_profile hooked "$(jq -cn --arg adapter "$fixture_backend" --argjson hooks "${1:-null}" '
+    {extend:["hook-base"],backend:{adapter:$adapter},request:{model:"m"}} +
+    if $hooks == null then {} else {hooks:$hooks} end')"
 }
-JSON
-print -r -- '#!/bin/sh' >"$hooked/user_prompt_submit/shell/run"
-chmod +x "$hooked/user_prompt_submit/shell/run"
-# A match script beside run supersedes a manifest pattern.
-print -r -- '#!/bin/sh' >"$hooked/user_prompt_submit/shell/match"
-chmod +x "$hooked/user_prompt_submit/shell/match"
-print -r -- '{"match":{"pattern":"^/shell\\z"}}' \
-  >"$hooked/user_prompt_submit/shell/manifest.json"
-print -r -- '#!/bin/sh' >"$hooked/stop/gate/run"
-chmod +x "$hooked/stop/gate/run"
-sf_test_profile hooked '{
-  "backend": {"adapter": "'"$fixture_backend"'"},
-  "request": {"model": "m"},
-  "hooks": {"user_prompt_submit": ["help", "shell"], "stop": ["gate"]}
-}'
+hooked_profile
 sf_runtime_resolve_args -p hooked
-jq -e --arg base "${hooked:A}" '
-  .harness.user_prompt_submit == [
-    {command:($base + "/user_prompt_submit/help/run"),
-      match:{pattern:"^/(help|h)\\z"},help:{usage:"/help, /h",description:"Show help"}},
-    {command:($base + "/user_prompt_submit/shell/run"),
-      match:{command:($base + "/user_prompt_submit/shell/match")}}
-  ] and .harness.stop ==
-    [{command:($base + "/stop/gate/run")}]
-' <<<"$REPLY" >/dev/null
+jq -e --arg base "${base_hooks:A}" --arg hooked "${hooked:A}" '
+  .harness.stop == [$hooked + "/stop", $base + "/stop"] and
+  (.harness | has("part") or has("user_prompt_submit") | not)
+' <<<"$REPLY" >/dev/null || fail 'discovered hooks did not stack nearest first'
 
-# Only user_prompt_submit hooks may be gated by a match script.
-print -r -- '#!/bin/sh' >"$hooked/stop/gate/match"
-chmod +x "$hooked/stop/gate/match"
-if sf_runtime_resolve_args -p hooked; then
-  fail 'match script on a stop hook was accepted'
-fi
-[[ $SF_RUNTIME_ERROR == *'invalid hook component: '*'/stop/gate/run'* ]]
-rm "$hooked/stop/gate/match"
+# An explicit list replaces discovery, "..." splices the inherited list, and []
+# disables the lifecycle.
+hooked_profile '{"stop": ["part", "..."]}'
+sf_runtime_resolve_args -p hooked
+jq -e --arg base "${base_hooks:A}" '.harness.stop == [$base + "/part", $base + "/stop"]' \
+  <<<"$REPLY" >/dev/null || fail 'an explicit hook list did not replace discovery'
+hooked_profile '{"stop": []}'
+sf_runtime_resolve_args -p hooked
+jq -e '.harness | has("stop") | not' <<<"$REPLY" >/dev/null ||
+  fail 'an empty hook list did not disable the lifecycle'
 
-# A reference that names a file rather than a component directory fails.
-rm -r "$hooked/stop/gate"
-print -r -- '#!/bin/sh' >"$hooked/stop/gate"
+# A hook reference must name an executable file.
+hooked_profile '{"pre_tool_use": ["dir"]}'
 if sf_runtime_resolve_args -p hooked; then
-  fail 'non-directory hook was accepted'
+  fail 'directory hook was accepted'
 fi
-[[ $SF_RUNTIME_ERROR == 'invalid hooks/stop reference: gate' ]]
+[[ $SF_RUNTIME_ERROR == 'invalid hooks reference: dir' ]]
 
 # Tool references preserve configured order.
 typeset tools="$SF_TEST_CONFIG/profiles/tooled/tools"

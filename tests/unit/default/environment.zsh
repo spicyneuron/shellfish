@@ -8,7 +8,7 @@ settled() { jq -rs 'map(select(has("model_final"))) | last.model_final // ""' "$
 
 # Report project environment as context after a draft.
 typeset environment_control="$tmp/environment-control.json"
-typeset environment_script="$ROOT/share/profiles/default/hooks/session_start/project_environment/run"
+typeset environment_script="$ROOT/share/profiles/default/hooks/project_environment"
 typeset environment_bin="$tmp/environment-bin"
 typeset environment_output
 mkdir "$environment_bin"
@@ -39,8 +39,8 @@ environment_output=$(settled "$environment_control")
 [[ $environment_output == *'Available agent skills.'* ]]
 
 # Record Git identity transitions.
-typeset git_start="$ROOT/share/profiles/default/hooks/session_start/git_environment/run"
-typeset git_prompt="$ROOT/share/profiles/default/hooks/user_prompt_submit/git_environment/run"
+typeset git_start="$ROOT/share/profiles/default/hooks/git_environment"
+typeset git_prompt="$ROOT/share/profiles/default/hooks/git_identity"
 typeset git_bin="$tmp/git-environment-bin" git_state="$tmp/git-state"
 typeset git_session="$tmp/git-session.jsonl" git_control="$tmp/git-control.json" git_output
 mkdir "$git_bin"

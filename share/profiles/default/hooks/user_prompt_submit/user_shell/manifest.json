@@ -1,9 +1,0 @@
-{
-  "match": {
-    "pattern": "^![^\\n]*\\z"
-  },
-  "help": {
-    "usage": "!COMMAND",
-    "description": "Run COMMAND and stage its output as context"
-  }
-}

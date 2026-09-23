@@ -22,7 +22,7 @@ if [[ -z $command ]]; then
   exit 0
 fi
 
-source "${0:A:h:h:h:h}/lib/hook.zsh" || exit 1
+source "${0:A:h:h}/lib/hook.zsh" || exit 1
 sf_hook_draft 'user_shell · Running shell command…' || exit 1
 text=$(
   print -r -- '$ '"$command"

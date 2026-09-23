@@ -1,7 +1,7 @@
 #!/usr/bin/env zsh
 
 set -u
-source "${0:A:h:h:h:h}/lib/hook.zsh" || exit 1
+source "${0:A:h:h}/lib/hook.zsh" || exit 1
 
 typeset name text
 for name in AGENTS.md CLAUDE.md; do

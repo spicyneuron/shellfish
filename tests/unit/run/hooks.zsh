@@ -6,8 +6,7 @@ sf_test_tmp run-hook-contract
 export XDG_STATE_HOME="$tmp/state" SF_TEST_BACKEND_DELAY=0
 sf_test_runtime
 
-typeset prompt_hook="$tmp/prompt-hook" second_hook="$tmp/second-hook"
-typeset prompt_input="$tmp/prompt-input" second_marker="$tmp/second-ran"
+typeset prompt_hook="$tmp/prompt-hook" prompt_input="$tmp/prompt-input"
 cat >"$prompt_hook" <<'ZSH'
 #!/usr/bin/env zsh
 [[ $# == 0 && $SHELLFISH_TURN_ID == <1-> &&
@@ -75,16 +74,10 @@ case $(<"$PROMPT_INPUT") in
     ;;
 esac
 ZSH
-cat >"$second_hook" <<'ZSH'
-#!/usr/bin/env zsh
-cat >/dev/null
-: >"$SECOND_MARKER"
-ZSH
-chmod +x "$prompt_hook" "$second_hook"
-export PROMPT_INPUT=$prompt_input SECOND_MARKER=$second_marker
-SF_TEST_RUNTIME=$(jq -c --arg first "$prompt_hook" --arg second "$second_hook" '
-  .harness.user_prompt_submit=[{command:$first},{command:$second}]
-' <<<"$SF_TEST_RUNTIME")
+chmod +x "$prompt_hook"
+export PROMPT_INPUT=$prompt_input
+SF_TEST_RUNTIME=$(jq -c --arg hook "$prompt_hook" '.harness.user_prompt_submit=[$hook]' \
+  <<<"$SF_TEST_RUNTIME")
 
 # A final and its state settle as they arrive; drafts are transient, and a
 # draft nothing settles is cleared. stdout after a final is ignored.
@@ -93,7 +86,6 @@ sf_test_session "$session"
 print -r -- '{"type":"hook_result","lifecycle":"session_start","id":"7"}' >>"$session"
 sf_test_run accept "$session" >"$stream" || fail 'accepted prompt hook failed'
 assert_equal accept "$(<$prompt_input)" 'prompt hook did not receive exact prompt text'
-[[ -e $second_marker ]] || fail 'a hook without an action halted the chain'
 jq -eRn '
   [inputs | fromjson] as $events |
   [$events[] | select(.type | IN("state","hook_result","user")) | .type] ==
@@ -139,24 +131,20 @@ sf_test_run oversize "$session" >"$stream" 2>"$tmp/oversize.stderr" || oversize_
 jq -e -s 'map(select(.type == "hook_result") | .user_text) == ["kept"]' "$session" \
   >/dev/null || fail 'an oversized final lost the settled result'
 
-# A block action halts the chain before the user record.
-rm -f "$second_marker"
+# A block action ends the turn before the user record.
 session="$tmp/blocked.jsonl"
 sf_test_session "$session"
 sf_test_run block "$session" >"$stream" || fail 'blocked prompt was not handled'
-[[ ! -e $second_marker ]] || fail 'block did not halt the hook chain'
 jq -eRn '
   [inputs | fromjson] as $events |
   ($events | any(.type == "user" or .type == "assistant") | not) and
   ($events | map(select(.type == "hook_result"))[0].model_text == "blocked context")
 ' <"$stream" >/dev/null || fail 'blocked prompt entered provider execution'
 
-# A handoff halts the chain and exposes only its allowed transient action.
-rm -f "$second_marker"
+# A handoff exposes only its allowed transient action.
 session="$tmp/handoff.jsonl"
 sf_test_session "$session"
 sf_test_run handoff "$session" >"$stream" || fail 'handoff prompt failed'
-[[ ! -e $second_marker ]] || fail 'handoff did not halt the hook chain'
 jq -eRn '
   [inputs | fromjson] as $events |
   $events[-1] == {type:"_handoff",argv:["/usr/bin/printf","next.jsonl"]} and
@@ -182,7 +170,7 @@ sf_test_run fail "$session" >"$stream" 2>"$tmp/fail.stderr" || fail_status=$?
 jq -e -s 'any(.[]; .type == "user" or .type == "hook_result") | not' "$session" >/dev/null ||
   fail 'failed hook submitted the prompt or settled its output'
 
-# A halted session update atomically replaces only the frozen header.
+# A session update atomically replaces only the frozen header.
 session="$tmp/update.jsonl"
 sf_test_session "$session"
 sf_test_run update "$session" >"$stream" || fail 'session update prompt failed'
@@ -276,7 +264,7 @@ export STOP_INPUT=$stop_input REQUEST_COUNT=$request_count
 SF_TEST_RUNTIME=$(jq -c --arg backend "$stop_backend" --arg hook "$stop_hook" '
   .backend.command=$backend |
   .harness.user_prompt_submit=[] |
-  .harness.stop=[{command:$hook}]
+  .harness.stop=[$hook]
 ' <<<"$SF_TEST_RUNTIME")
 session="$tmp/stop.jsonl"
 sf_test_session "$session"
@@ -310,8 +298,34 @@ jq -eRn '
 ' <"$stream" >/dev/null || fail 'request limit lost stop feedback or its error'
 assert_canonical_session "$session"
 
+# Each hook reaches its parent with the original stdin, to any depth, and their
+# fd 3 lines interleave in order.
+typeset delegate="$tmp/delegate"
+cat >"$delegate" <<'ZSH'
+#!/usr/bin/env zsh
+input=$(cat)
+print -r -u3 -- "{\"user_final\":\"${0:t} before: $input\"}"
+[[ -z ${SHELLFISH_PARENT_HOOK-} ]] || "$SHELLFISH_PARENT_HOOK" "$@" || exit
+print -r -u3 -- "{\"user_final\":\"${0:t} after\"}"
+ZSH
+chmod +x "$delegate"
+ln -s delegate "$tmp/one"
+ln -s delegate "$tmp/two"
+ln -s delegate "$tmp/three"
+SF_TEST_RUNTIME=$(jq -c --arg dir "$tmp" '
+  .harness.stop=[] | .harness.user_prompt_submit=[$dir + "/one", $dir + "/two", $dir + "/three"]
+' <<<"$SF_TEST_RUNTIME")
+session="$tmp/delegate.jsonl"
+sf_test_session "$session"
+sf_test_run parents "$session" >"$stream" || fail 'delegating hooks failed'
+jq -e -s '
+  map(select(.type == "hook_result") | .user_text) == [
+    "one before: parents", "two before: parents", "three before: parents",
+    "three after", "two after", "one after"]
+' "$session" >/dev/null || fail 'delegation lost stdin or reordered fd 3'
+
 # The bundled sandbox hook compares portable grants with shell-resolved input.
-typeset sandbox_hook="$ROOT/share/profiles/default/hooks/user_prompt_submit/sandbox/run"
+typeset sandbox_hook="$ROOT/share/profiles/default/hooks/sandbox"
 typeset sandbox_session="$tmp/sandbox.jsonl" sandbox_control="$tmp/sandbox-control.json"
 typeset sandbox_project="$tmp/project" sandbox_home="$tmp/home" sandbox_output="$tmp/sandbox-output"
 mkdir -p "$sandbox_project/dir" "$sandbox_home/share"

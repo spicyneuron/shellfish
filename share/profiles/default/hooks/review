@@ -43,7 +43,7 @@ permission_resolve() {
   exit 0
 }
 
-source "${0:A:h:h:h:h}/lib/hook.zsh" && sf_hook_draft 'review · Reviewing permission request…' ||
+source "${0:A:h:h}/lib/hook.zsh" && sf_hook_draft 'review · Reviewing permission request…' ||
   permission_deny 'Permission review could not start.'
 [[ -r $SHELLFISH_SESSION && -d $SHELLFISH_TURN_STATE ]] ||
   permission_deny 'Permission review could not read the active turn.'

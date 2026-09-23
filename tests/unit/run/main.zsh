@@ -167,13 +167,12 @@ head -n 1 "$context_session" | jq -e \
 
 # JSONL emits command handoffs.
 typeset handoff_script="$tmp/handoff"
-mkdir "$handoff_script"
-cat >"$handoff_script/run" <<'ZSH'
+cat >"$handoff_script" <<'ZSH'
 #!/usr/bin/env zsh
 (( $# == 0 )) || exit 1
 print -rn -u3 -- '{"action":"handoff","argv":["/usr/bin/printf","next.jsonl"]}'
 ZSH
-chmod +x "$handoff_script/run"
+chmod +x "$handoff_script"
 typeset handoff_output="$tmp/handoff.jsonl"
 sf_test_profile handoff \
   "{\"extend\": [\"default\"], \"hooks\": {\"user_prompt_submit\": [\"$handoff_script\"]}}"

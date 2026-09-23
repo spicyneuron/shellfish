@@ -1,0 +1,2 @@
+#!/bin/sh
+exec "$SHELLFISH_DEFAULT_DIR/hooks/review" "$@"

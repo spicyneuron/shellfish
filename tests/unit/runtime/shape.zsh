@@ -111,7 +111,7 @@ valid_header=$(jq -cn '
         tools: [], sandbox: true,
         max_requests_per_turn: 50, max_tool_calls_per_request: 20,
         max_capture_bytes: 32768,
-        stop: [{command:"/bin/hook"}]
+        stop: ["/bin/hook", "/bin/parent"]
       }
     }
   }
@@ -123,25 +123,10 @@ for patch in '.extra=true' '.runtime.extra=true'; do
     fail "opaque session state was accepted: $patch"
   fi
 done
-valid_header=$(jq -c '.runtime.harness.user_prompt_submit=[{
-  command:"/bin/prompt",match:{pattern:"^!"},
-  help:{usage:"!COMMAND",description:"Run a shell command"}
-}]' <<<"$valid_header")
-print -r -- "$valid_header" | schema_eval 'canonical_session_header' >/dev/null
-typeset permission_header
-permission_header=$(jq -c '.runtime.harness.permission_request=[{
-  command:"/bin/permission"
-}]' <<<"$valid_header")
-print -r -- "$permission_header" |
-  schema_eval 'canonical_session_header' >/dev/null
-for patch in \
-  '.runtime.harness.user_prompt_submit[0].match.pattern="["' \
-  'del(.runtime.harness.user_prompt_submit[0].match)'; do
-  if jq -c "$patch" <<<"$valid_header" |
-      schema_eval 'canonical_session_header' >/dev/null 2>&1; then
-    fail "invalid hook selection metadata was accepted: $patch"
-  fi
-done
+if jq -c '.runtime.harness.stop=[{command:"/bin/hook"}]' <<<"$valid_header" |
+    schema_eval 'canonical_session_header' >/dev/null 2>&1; then
+  fail 'hook component objects were accepted in a session header'
+fi
 
 print -r -- "$valid_header" | jq -c '.runtime.system = ["/system/prompt.md"]' |
   schema_eval 'canonical_session_header' >/dev/null
@@ -153,7 +138,7 @@ for system in '["relative.md"]' '"/system/prompt.md"'; do
 done
 
 # Hook paths must be absolute.
-if jq -c '.runtime.harness.stop[0].command = "relative/hook"' <<<"$valid_header" |
+if jq -c '.runtime.harness.stop[0] = "relative/hook"' <<<"$valid_header" |
     schema_eval 'canonical_session_header' >/dev/null 2>&1; then
   fail 'relative hook path was accepted in session header'
 fi

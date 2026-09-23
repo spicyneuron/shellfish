@@ -15,8 +15,8 @@
 
   // "context_window": 200000, // Set null to disable automatic discovery
 
-  // "..." keeps the inherited list. Opt in to agentic permission review:
-  // "hooks": {"permission_request": ["...", "review"]},
+  // Opt in to agentic permission review:
+  // "hooks": {"permission_request": ["review"]},
 
   "sandbox_read_paths": [
     // Paths outside the project that sandboxed tools may read

@@ -69,7 +69,7 @@ The core guarantees ordering, validation, persistence, recovery, and cleanup. Ev
 - **Tools** let the model act.
 - **Hooks** add context and workflow policy at lifecycle boundaries.
 
-Hooks and backends are trusted, run with your permissions, and receive every value in `.env`; tools can be sandboxed and receive only the `.env` names their manifest declares. Each can provide a JSON manifest for other settings.
+Hooks and backends are trusted, run with your permissions, and receive every value in `.env`; tools can be sandboxed and receive only the `.env` names their manifest declares. Tools and backends describe other settings in a JSON manifest.
 
 | Owner | Responsibility |
 | --- | --- |

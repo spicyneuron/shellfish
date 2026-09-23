@@ -44,7 +44,7 @@ request=$(jq -cn --arg text "$instruction" \
   '{type:"user",content:[{type:"text",text:$text}]}') || {
   fail_compaction 'cannot prepare summary request; keeping the original'
 }
-source "${0:A:h:h:h:h}/lib/hook.zsh" && sf_hook_draft 'compact · Compacting conversation…' ||
+source "${0:A:h:h}/lib/hook.zsh" && sf_hook_draft 'compact · Compacting conversation…' ||
   fail_compaction 'cannot report compaction progress; keeping the original'
 summary=$({ cat -- "$SHELLFISH_SESSION"; print -r -- "$request"; } |
   "$SHELLFISH_EXECUTABLE" backend-request |

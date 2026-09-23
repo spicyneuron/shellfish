@@ -1,0 +1,66 @@
+#!/usr/bin/env zsh
+
+# Bundled prompt commands, automatic compaction, and the git identity check.
+# Parts beside this script receive the prompt on stdin.
+
+emulate -R zsh
+setopt no_aliases no_multios pipe_fail
+
+typeset parts=${0:A:h} submitted
+submitted=$(cat; printf x)
+submitted=${submitted%x}
+
+part() {
+  print -rn -- "$submitted" | "$parts/$1"
+  exit
+}
+
+handoff() {
+  jq -cn '{action:"handoff",argv:$ARGS.positional}' --args -- "$@" >&3
+  exit
+}
+
+[[ $submitted == *$'\n'* ]] || case $submitted in
+  /help|/h)
+    jq -Rsc '{action:"block",user_final:rtrimstr("\n"),user_preview_lines:"full"}' >&3 <<'HELP'
+shift+enter        Add a line instead of sending the message
+ctrl+c             Cancel an active request; otherwise exit
+↑, ↓               Navigate prompt history
+/queue drop <N>    Discard queued prompt
+/queue clear       Discard all queued prompts
+/verbose, /v       Toggle full previews
+/new               Start a new session with the same settings
+/copy [N]          Copy the latest or selected user/agent section
+/fork [N]          Fork at the following user section (default: current end)
+/sandbox [OP DIR]  List or update session sandbox grants
+!COMMAND           Run COMMAND and stage its output as context
+/server            Serve this session in a browser
+/resume            Switch to a session for this directory
+/compact           Summarize this session into a new one
+/refresh, /r       Rerender current session; fix layout
+/quit, /q          Exit
+HELP
+    exit
+    ;;
+  /verbose|/v)
+    (( ${SHELLFISH_VERBOSE:-0} )) || handoff "$SHELLFISH_EXECUTABLE" --verbose --clear --session "$SHELLFISH_SESSION"
+    handoff "$SHELLFISH_EXECUTABLE" --clear --session "$SHELLFISH_SESSION"
+    ;;
+  /new) handoff "$SHELLFISH_EXECUTABLE" --session-from "$SHELLFISH_SESSION" ;;
+  /resume) handoff "$SHELLFISH_EXECUTABLE" --resume ;;
+  /server) handoff shellfish-server --session "$SHELLFISH_SESSION" ;;
+  /copy|'/copy '*) part copy ;;
+  /fork|'/fork '*) part fork ;;
+  /sandbox|'/sandbox '*) part sandbox ;;
+  /compact) part compact ;;
+  '!'*) part user_shell ;;
+esac
+
+# Compact automatically once the latest response nears the frozen window.
+jq -es '
+  .[0].runtime.context_window as $window |
+  ([.[] | select(.type == "assistant" and .usage != null)] | last) as $measured |
+  $window != null and $measured != null and
+  (($measured.usage.input_tokens + $measured.usage.output_tokens) / $window) >= 0.8
+' "$SHELLFISH_SESSION" >/dev/null 2>&1 && part compact
+exec "$parts/git_identity"

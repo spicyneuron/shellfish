@@ -56,7 +56,7 @@ chmod +x "$env_hook"
 export ENV_SEEN=$env_seen EXPORTED=exported
 SF_TEST_RUNTIME=$(jq -c --arg hook "$env_hook" '
   .harness.tools[0].manifest.environment=["DECLARED"] |
-  .harness.post_tool_use=[{command:$hook}]
+  .harness.post_tool_use=[$hook]
 ' <<<"$SF_TEST_RUNTIME")
 sf_test_session "$env_session"
 SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_COMMAND=$env_command \
@@ -76,8 +76,8 @@ SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_COUNT=2 \
   sf_test_run input "$input_session" >"$input_stream" || fail 'tool input isolation turn failed'
 [[ ! -e $input_target ]] || fail 'tool temp redirected a later input write'
 
-# Pre-tool denial halts the chain, refuses with its reason, preserves sibling
-# calls, and still reaches post hooks.
+# Pre-tool denial refuses with its reason without reaching the parent hook,
+# preserves sibling calls, and still reaches post hooks.
 typeset pre="$tmp/pre" later="$tmp/pre-later" post="$tmp/post"
 typeset hook_dir="$tmp/hook-inputs" tool_marker="$tmp/tool-ran"
 mkdir "$hook_dir"
@@ -88,6 +88,8 @@ id=$(jq -r '.tool_use_id' <<<"$input")
 print -rn -- "$input" >"$HOOK_DIR/pre-$id"
 if [[ $id == call_1 ]]; then
   print -r -u3 -- '{"user_final":"pre display","model_final":"pre context","state":[{"name":"pre/call_1","value":true}],"action":"deny","reason":"pre denied"}'
+else
+  exec "$SHELLFISH_PARENT_HOOK" "$@"
 fi
 ZSH
 cat >"$later" <<'ZSH'
@@ -105,11 +107,8 @@ ZSH
 chmod +x "$pre" "$later" "$post"
 export HOOK_DIR=$hook_dir TOOL_MARKER=$tool_marker
 SF_TEST_RUNTIME=$(jq -c --arg pre "$pre" --arg later "$later" --arg post "$post" '
-  .harness.pre_tool_use=[
-    {command:$pre},
-    {command:$later}
-  ] |
-  .harness.post_tool_use=[{command:$post}]
+  .harness.pre_tool_use=[$pre, $later] |
+  .harness.post_tool_use=[$post]
 ' <<<"$SF_TEST_RUNTIME")
 typeset session="$tmp/denied.jsonl" stream="$tmp/denied.stream"
 sf_test_session "$session"
@@ -124,7 +123,7 @@ jq -e '. == {turn_id:1,tool_name:"shell",tool_use_id:"call_1",
   tool_input:{command:$command},tool_response:{stdout:"",stderr:"",exit_code:126}}' \
   --arg command "print -r -- ran >>${(q)tool_marker}; print -rn -- output" \
   "$hook_dir/post-call_1" >/dev/null || fail 'post hook did not receive the denial outcome'
-assert_equal call_2 "$(<$hook_dir/later)" 'deny did not halt the pre hook chain'
+assert_equal call_2 "$(<$hook_dir/later)" 'deny reached the parent hook'
 assert_equal ran "$(<$tool_marker)" 'pre-tool denial did not preserve the sibling call'
 jq -eRn '
   [inputs | fromjson] as $events |
@@ -166,7 +165,7 @@ export PERMISSION_INPUT=$permission_input
 SF_TEST_RUNTIME=$(jq -c --arg hook "$permission" '
   .harness.pre_tool_use=[] | .harness.post_tool_use=[] |
   .harness.sandbox=true |
-  .harness.permission_request=[{command:$hook}]
+  .harness.permission_request=[$hook]
 ' <<<"$SF_TEST_RUNTIME")
 session="$tmp/permission-allow.jsonl"
 sf_test_session "$session"
@@ -232,7 +231,7 @@ ZSH
 chmod +x "$post_fail"
 SF_TEST_RUNTIME=$(jq -c --arg hook "$post_fail" '
   .harness.permission_request=[] |
-  .harness.post_tool_use=[{command:$hook}]
+  .harness.post_tool_use=[$hook]
 ' <<<"$SF_TEST_RUNTIME")
 session="$tmp/post-failure.jsonl"
 sf_test_session "$session"

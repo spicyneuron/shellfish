@@ -109,6 +109,6 @@ if [[ $action == add ]]; then
 else
   message="Session sandbox $access grant removed: $grant_path"
 fi
-source "${0:A:h:h:h:h}/lib/hook.zsh" || exit 1
+source "${0:A:h:h}/lib/hook.zsh" || exit 1
 sf_hook_context sandbox "sandbox"$'\n'"$message" "$message" \
   "$(jq -cn --argjson runtime "$runtime" '{action:"session_update",runtime:$runtime}')"

@@ -58,23 +58,20 @@ Bundled adapters: `anthropic`, `codex`, `openai`, `openai-responses`, and `openr
 
 ## Harness
 
-These fields sit at the profile's top level. Omitted hook and tool lists are empty; omitted sandbox and limit fields use the defaults below.
+These fields sit at the profile's top level. Omitted sandbox and limit fields use the defaults below.
 
 | Field | Default / meaning |
 | --- | --- |
 | `tools` | `[]`; unique tool references exposed to the model |
-| `hooks.session_start` | `[]`; creation context hooks |
-| `hooks.user_prompt_submit` | `[]`; prompt gates and interactive commands |
-| `hooks.permission_request` | `[]`; sandbox-bypass decisions |
-| `hooks.pre_tool_use` | `[]`; tool policy gates |
-| `hooks.post_tool_use` | `[]`; post-execution observers |
-| `hooks.stop` | `[]`; completion gates |
+| `hooks.LIFECYCLE` | Hook references, nearest first; see below |
 | `sandbox` | `true` |
 | `sandbox_read_paths` | `[]`; extra read grants |
 | `sandbox_write_paths` | `[]`; extra read-write grants |
 | `max_requests_per_turn` | `100` |
 | `max_tool_calls_per_request` | `25` |
 | `max_capture_bytes` | `32768`; per component execution, minimum `64` |
+
+Each lifecycle runs the first hook in its list, and each later one is the parent of the one before; see [`HARNESS.md`](HARNESS.md#hooks). A folder containing `hooks/LIFECYCLE` contributes `[that script, "..."]` unless its profile sets that list, so discovered scripts stack nearest first. An explicit list replaces what was inherited, `"..."` splices it back in, and `[]` disables the lifecycle.
 
 One capability set can serve different roles, because the system prompt sits beside it:
 
@@ -83,7 +80,7 @@ One capability set can serve different roles, because the system prompt sits bes
 {
   "extend": ["default"],
   "tools": ["read_file"],
-  "hooks": {"session_start": ["project_environment", "project_instructions"]},
+  "hooks": {"session_start": ["project_instructions"]},
   "system": ["review.md"]
 }
 ```
@@ -97,7 +94,8 @@ profiles/NAME/
   profile.jsonc
   system/FILE.md
   tools/TOOL/
-  hooks/HOOK/NAME/
+  hooks/LIFECYCLE
+  hooks/PART
   backends/ADAPTER/
 ```
 
@@ -151,7 +149,7 @@ Its harness enables sandboxing, uses the limit defaults above, and exposes:
 | `search_web` | Search through Exa |
 | `fetch_url` | Fetch a page as Markdown through Jina Reader |
 
-Creation hooks record context once:
+The bundled `session_start` records context once, one block per part:
 
 | Hook | Context |
 | --- | --- |
@@ -159,7 +157,7 @@ Creation hooks record context once:
 | `git_environment` | Branch or commit, recent commits, and working-tree summary |
 | `project_instructions` | `AGENTS.md`, falling back to `CLAUDE.md` |
 
-Most interactive commands are `user_prompt_submit` hooks:
+The bundled `user_prompt_submit` handles most interactive commands:
 
 | Input | Action |
 | --- | --- |
@@ -174,8 +172,8 @@ Most interactive commands are `user_prompt_submit` hooks:
 | `/compact` | Summarize into a child session |
 | `/server` | Hand the session to the experimental browser client |
 
-`git_environment` also runs before ordinary prompts when Git identity changes. Client-owned `/refresh`, `/quit`, and `/queue` commands do not run a turn.
+It also compacts automatically near a known context-window limit and reports Git identity changes before ordinary prompts. Client-owned `/refresh`, `/quit`, and `/queue` commands do not run a turn.
 
-The optional `permission_request` component `review` uses one inference to compare requested risk with user authorization; failures deny. Enable it with `"hooks": {"permission_request": ["review"]}`.
+The optional `review` part uses one inference to compare requested risk with user authorization; failures deny. The bundled `coding` profile enables it, or set `"hooks": {"permission_request": ["review"]}`.
 
-`/compact` leaves the source unchanged and asks the client to open a summarized child. Automatic compaction may run near a known context-window limit and preserves the interrupted prompt as an editable draft.
+`/compact` leaves the source unchanged and asks the client to open a summarized child. Automatic compaction preserves the interrupted prompt as an editable draft.

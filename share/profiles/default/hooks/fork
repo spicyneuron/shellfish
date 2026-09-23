@@ -21,7 +21,7 @@ case "$read_status:$submitted" in
 esac
 
 print -ru3 -- '{"action":"block"}'
-source "${0:A:h:h:h:h}/lib/hook.zsh" || exit 1
+source "${0:A:h:h}/lib/hook.zsh" || exit 1
 sf_hook_draft 'fork · Forking session…' || exit 1
 
 if [[ $target != <-> || ${#target} -gt 9 ]] || (( explicit && target == 0 )); then

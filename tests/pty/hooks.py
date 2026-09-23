@@ -43,23 +43,22 @@ print -r -u3 -- '{"action":"block"}'
 """
 
 START_HOOK = r"""#!/usr/bin/env zsh
-typeset directory=${SHELLFISH_SESSION:h} name=${0:h:t}
+typeset directory=${SHELLFISH_SESSION:h} name=${0:t}
 print -r -u3 -- "{\"user_draft\":\"Inspecting $name\"}"
 : >"$directory/$name-started"
 while [[ ! -e $directory/$name-release ]]; do
   sleep 0.05
 done
-print -r -- "$name context"
+print -r -u3 -- "{\"user_final\":\"$name context\",\"model_final\":\"$name context\"}"
+[[ -z ${SHELLFISH_PARENT_HOOK-} ]] || exec "$SHELLFISH_PARENT_HOOK"
 """
 
 
 def start_hook(directory, name):
-    component = Path(directory) / name
-    component.mkdir()
-    script = component / "run"
+    script = Path(directory) / name
     script.write_text(START_HOOK)
     script.chmod(0o755)
-    return str(component)
+    return str(script)
 
 
 def test_startup_streams_hooks_and_runs_the_queued_prompt():
