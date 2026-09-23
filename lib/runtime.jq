@@ -151,25 +151,20 @@ def tool_manifest:
 # The runtime stored in the session header.
 def canonical_runtime:
   type == "object" and
-  ((keys - ["backend", "config_dir", "context_window", "harness", "request", "system"]) | length == 0) and
-  ((["backend", "config_dir", "harness", "request", "system"] - keys) | length == 0) and
+  ((keys - ["backend", "context_window", "harness", "request", "system"]) | length == 0) and
+  ((["backend", "harness", "request", "system"] - keys) | length == 0) and
   (.request | type == "object" and (.model | model_name)) and
   (.system | type == "array" and all(.[]; stored_path)) and
-  (.config_dir | stored_path) and
   (if has("context_window") then
     .context_window == null or (.context_window | positive_integer)
   else true end) and
   (.backend | type == "object" and
-    ((keys - ["command", "context_window_command", "endpoint", "http_stall", "http_timeout", "insecure_tls", "name"]) | length == 0) and
-    (["command", "endpoint", "http_stall", "http_timeout", "insecure_tls", "name"] - keys | length == 0) and
-    (.name | profile_name) and (.command | stored_path) and (.endpoint | endpoint) and
+    keys == ["command", "endpoint", "http_stall", "http_timeout", "insecure_tls"] and
+    (.command | stored_path) and (.endpoint | endpoint) and
     (.insecure_tls | type == "boolean") and
-    (.http_timeout | positive_integer) and (.http_stall | positive_integer) and
-    (if has("context_window_command") then
-      .context_window_command | stored_path
-    else true end)) and
+    (.http_timeout | positive_integer) and (.http_stall | positive_integer)) and
   (.harness | type == "object" and
-    (["sandbox_read_paths", "sandbox_write_paths", "fence",
+    (["sandbox_read_paths", "sandbox_write_paths",
       "max_capture_bytes", "max_requests_per_turn",
       "max_tool_calls_per_request", "sandbox", "tools"] as $required |
       ((keys - ($required + hook_names)) | length == 0) and
@@ -177,7 +172,6 @@ def canonical_runtime:
     harness_hooks and
     (.sandbox_read_paths | type == "array" and all(.[]; stored_path)) and
     (.sandbox_write_paths | type == "array" and all(.[]; stored_path)) and
-    (.fence == "" or (.fence | stored_path)) and
     (.tools | type == "array" and all(.[];
       type == "object" and keys == ["command", "manifest", "name", "settings"] and
       (.name | tool_name) and (.command | stored_path) and
@@ -203,11 +197,7 @@ def canonical_session_header:
 
 def runtime_paths(rewrite):
   .system |= map(rewrite) |
-  .config_dir |= rewrite |
   .backend.command |= rewrite |
-  (if .backend | has("context_window_command") then
-    .backend.context_window_command |= rewrite else . end) |
-  (if .harness.fence == "" then . else .harness.fence |= rewrite end) |
   .harness.sandbox_read_paths |= map(rewrite) |
   .harness.sandbox_write_paths |= map(rewrite) |
   .harness.tools |= map(.command |= rewrite |
@@ -376,7 +366,7 @@ def resolution_table($words):
       flag:($words[$at + 2] == "1"), manifest:($words[$at + 3] | fromjson)}}] |
   from_entries;
 
-def runtime_finalize($profile; $table; $config_dir; $fence; $grants):
+def runtime_finalize($profile; $table; $grants):
   $table["backend"] as $backend |
   ($backend.manifest |
     select(type == "object" and keys == ["endpoint"] and (.endpoint | endpoint)) //
@@ -416,22 +406,16 @@ def runtime_finalize($profile; $table; $config_dir; $fence; $grants):
     .[$component.hook] += [({command:$command,render:$render} +
       (if $hook_manifest | has("match") then {match:$hook_manifest.match} else {} end) +
       (if $hook_manifest | has("help") then {help:$hook_manifest.help} else {} end))])) as $hooks |
-  (($profile.sandbox != false) and
-    any($tools[]; .manifest.sandbox)) as $needs_fence |
-  if $needs_fence and $fence == "" then error("sandboxing requires fence") else . end |
   {
-    backend:({name:($backend.path | split("/") | last),command:($backend.path + "/run"),
+    backend:{command:($backend.path + "/run"),
       endpoint:($profile.backend.endpoint // $manifest.endpoint),
       insecure_tls:($profile.backend.insecure_tls // false),
       http_timeout:($profile.backend.http_timeout // 3600),
-      http_stall:($profile.backend.http_stall // 300)} +
-      (if $backend.flag then
-        {context_window_command:($backend.path + "/context_window")} else {} end)),
-    config_dir:$config_dir,
+      http_stall:($profile.backend.http_stall // 300)},
     harness:({
       sandbox_read_paths:(($profile.sandbox_read_paths // []) + $grants.sandbox_read_paths),
       sandbox_write_paths:(($profile.sandbox_write_paths // []) + $grants.sandbox_write_paths),
-      fence:(if $needs_fence then $fence else "" end),tools:$tools,
+      tools:$tools,
       sandbox:($profile.sandbox != false),
       max_requests_per_turn:($profile.max_requests_per_turn // 100),
       max_tool_calls_per_request:($profile.max_tool_calls_per_request // 25),

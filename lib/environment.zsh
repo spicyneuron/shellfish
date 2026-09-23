@@ -9,16 +9,25 @@ sf_environment_fail() {
   return 1
 }
 
-# Exported values win over .env in the config directory. Without a second
-# argument every .env entry loads; otherwise only the space-separated names.
+sf_environment_config_dir() {
+  local base=${XDG_CONFIG_HOME:-${HOME:+$HOME/.config}}
+  [[ -n $base ]] || sf_environment_fail 'HOME or XDG_CONFIG_HOME is required' || return
+  REPLY=${base:A}/shellfish
+}
+
+# Exported values win over .env in the config directory, which lands in REPLY.
+# Without an argument every .env entry loads; otherwise only the space-separated
+# names.
 sf_environment_load() {
-  local env_file=$1/.env line key value name
-  local -a selected_names=( ${=2-} )
-  integer all=$(( $# < 2 ))
+  local env_file line key value name
+  local -a selected_names=( ${=1-} )
+  integer all=$(( ! $# ))
   local -A values
 
   SF_ENVIRONMENT_ERROR=''
   SF_ENVIRONMENT_VALUES=()
+  sf_environment_config_dir || return
+  env_file=$REPLY/.env
   for name in $selected_names; do
     [[ ${parameters[$name]-} == *export* ]] || continue
     values[$name]=${(P)name}

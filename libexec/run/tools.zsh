@@ -45,8 +45,6 @@ sf_run_tool_plan() {
       entry("environment"; ($tool.manifest.environment // []) | join(" ")),
       entry("settings"; $tool.settings // ""),
       entry("max_capture"; $runtime.harness.max_capture_bytes | tostring),
-      entry("fence"; $runtime.harness.fence),
-      entry("config_dir"; $runtime.config_dir),
       entry("execution_input";
         $input | del(.request_sandbox_bypass,.sandbox_bypass_reason) | tojson),
       entry("sandbox"; $runtime.harness.sandbox and ($tool.manifest.sandbox // false) and
@@ -85,7 +83,7 @@ sf_run_tool_execute() {
   setopt local_options no_err_exit
   local session=$1 command=$SF_TOOL_PLAN[executable]
   local selected=$SF_TOOL_PLAN[environment] settings=$SF_TOOL_PLAN[settings]
-  local fence=$SF_TOOL_PLAN[fence] config_dir=$SF_TOOL_PLAN[config_dir]
+  local config_dir
   local execution_input=$SF_TOOL_PLAN[execution_input] sandbox=$SF_TOOL_PLAN[sandbox]
   local read_paths=$SF_TOOL_PLAN[read_paths] write_paths=$SF_TOOL_PLAN[write_paths]
   local cwd=$SF_RUN[cwd] capture stdin bounded_stdout bounded_stderr
@@ -95,10 +93,13 @@ sf_run_tool_execute() {
   integer max_capture=$SF_TOOL_PLAN[max_capture] control_bytes budget stderr_bytes denied=0
 
   SF_RUN_TOOL_ERROR=''
-  sf_environment_load "$config_dir" "$selected" || {
+  [[ $sandbox != true || -n ${commands[fence]-} ]] ||
+    { SF_RUN_TOOL_ERROR='sandboxing requires fence'; return 1; }
+  sf_environment_load "$selected" || {
     SF_RUN_TOOL_ERROR=$SF_ENVIRONMENT_ERROR
     return 1
   }
+  config_dir=$REPLY
   [[ -d $temp_dir ]] || { SF_RUN_TOOL_ERROR='temporary directory is unavailable'; return 1; }
   temp_dir=${temp_dir:A}
   if [[ $OSTYPE == darwin* && -x /usr/bin/getconf ]]; then
@@ -149,7 +150,7 @@ sf_run_tool_execute() {
     for expose in ${(f)write_paths}; do
       sandbox_arguments+=( --expose-host-path-rw "$expose" )
     done
-    process_command=( "$fence" "${sandbox_arguments[@]}" -- /usr/bin/env "${arguments[@]}" )
+    process_command=( "$commands[fence]" "${sandbox_arguments[@]}" -- /usr/bin/env "${arguments[@]}" )
   else
     process_command=( /usr/bin/env "${arguments[@]}" )
   fi

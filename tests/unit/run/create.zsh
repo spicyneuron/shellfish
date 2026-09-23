@@ -294,7 +294,6 @@ EOF
 ) || fail 'portable session creation failed'
 jq -e 'select(.type == "session") |
   .cwd == "~/project" and .runtime.system == ["./prompt.md"] and
-  .runtime.config_dir == "~/.config/shellfish" and
   .runtime.harness.user_prompt_submit[0].command == "./hook/run"
 ' "$old_project/session.jsonl" >/dev/null || fail 'session did not store portable paths'
 mv -- "$old_home" "$new_home"

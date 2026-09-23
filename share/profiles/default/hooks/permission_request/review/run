@@ -185,7 +185,7 @@ if ! jq -cn --argjson header "$header" --arg system "$system" --argjson context 
     .runtime.system = [] |
     .runtime.backend.http_timeout = ([.runtime.backend.http_timeout,$request_seconds] | min) |
     .runtime.harness |= (.tools=[] | .sandbox=false | .sandbox_read_paths=[] |
-      .sandbox_write_paths=[] | .fence="" |
+      .sandbox_write_paths=[] |
       .session_start=[] | .user_prompt_submit=[] | .permission_request=[] |
       .pre_tool_use=[] | .post_tool_use=[] | .stop=[])),
   {type:"system",content:$system},

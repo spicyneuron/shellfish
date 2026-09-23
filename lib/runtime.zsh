@@ -4,6 +4,7 @@ setopt no_aliases no_multios pipe_fail
 (( $+functions[sf_jq] )) || source "$SF_ROOT/lib/jq.zsh"
 (( $+functions[sf_jsonc_read] )) || source "$SF_ROOT/lib/jsonc.zsh"
 (( $+functions[sf_cli_diagnostic] )) || source "$SF_ROOT/lib/cli.zsh"
+(( $+functions[sf_environment_config_dir] )) || source "$SF_ROOT/lib/environment.zsh"
 [[ -n ${SF_SHARE-} ]] ||
   typeset -g SF_SHARE=$SF_ROOT/share
 
@@ -49,12 +50,6 @@ sf_runtime_read_manifest() {
   REPLY=$content
 }
 
-sf_runtime_config_dir() {
-  local base=${XDG_CONFIG_HOME:-${HOME:+$HOME/.config}}
-  [[ -n $base ]] || sf_runtime_fail 'HOME or XDG_CONFIG_HOME is required' || return
-  REPLY=${base:A}/shellfish
-}
-
 sf_runtime_read_profiles() {
   local config_dir=$1 file detail profiles
   local -a files=( "$SF_SHARE/profiles"/*/profile.jsonc(N-.)
@@ -96,14 +91,14 @@ sf_runtime_reference() {
 sf_runtime_resolve_profile() {
   local profile_names=$1 model_override=$2 request_override=$3 backend_override=$4
   local config_dir profiles profile kind reference subdirectory key resolved final
-  local fence='' home=${HOME-}
+  local home=${HOME-}
   local -A decoded
   local -a entries=() references=() folders=()
   integer flag
 
   SF_RUNTIME_ERROR=''
   REPLY=''
-  sf_runtime_config_dir || return
+  sf_environment_config_dir || sf_runtime_fail "$SF_ENVIRONMENT_ERROR" || return
   config_dir=$REPLY
   sf_runtime_read_profiles "$config_dir" || return
   profiles=$REPLY
@@ -166,7 +161,6 @@ sf_runtime_resolve_profile() {
     case $kind in
       backend)
         sf_runtime_read_manifest "$resolved" required || return
-        [[ ! -f $resolved/context_window || ! -x $resolved/context_window ]] || flag=1
         ;;
       tools)
         sf_runtime_read_manifest "$resolved" required || return
@@ -179,13 +173,11 @@ sf_runtime_resolve_profile() {
     esac
     entries+=( "$key" "$resolved" "$flag" "$REPLY" )
   done
-  [[ -z ${commands[fence]-} ]] || fence=${commands[fence]:A}
 
-  final=$(sf_jq -cnce --argjson profile "$profile" --arg config_dir "$config_dir" \
-    --arg fence "$fence" --argjson grants "$SF_RUNTIME_SANDBOX_GRANTS" --args '
+  final=$(sf_jq -cnce --argjson profile "$profile" \
+    --argjson grants "$SF_RUNTIME_SANDBOX_GRANTS" --args '
       include "lib/runtime";
-      runtime_finalize($profile; resolution_table($ARGS.positional);
-        $config_dir; $fence; $grants)
+      runtime_finalize($profile; resolution_table($ARGS.positional); $grants)
     ' -- "${entries[@]}" 2>&1) || {
     sf_runtime_validation_error "$final" 'cannot finalize runtime'
     return

@@ -19,19 +19,15 @@ sf_test_profile work '{
 # CLI request options override the profile.
 sf_runtime_resolve_args -p work -m cli-model --request '{"temperature":0.7,"seed":4}'
 runtime=$REPLY
-jq -e --arg command "$ROOT/share/profiles/default/backends/openai/run" \
-  --arg config_dir "${SF_TEST_CONFIG:A}" '
+jq -e --arg command "$ROOT/share/profiles/default/backends/openai/run" '
   .request == {model:"cli-model",temperature:0.7,seed:4} and
   .context_window == 128000 and
-  .backend.name == "openai" and
   .backend.command == $command and
-  (.backend.context_window_command | endswith("/share/profiles/default/backends/openai/context_window")) and
-  .config_dir == $config_dir and
   .backend.endpoint == "https://api.openai.com/v1/chat/completions" and
   .system == [] and
   .harness == {
     sandbox_read_paths:[],sandbox_write_paths:[],
-    fence:"",tools:[],sandbox:true,
+    tools:[],sandbox:true,
     max_requests_per_turn:100,max_tool_calls_per_request:25,
     max_capture_bytes:32768
   }
@@ -39,11 +35,8 @@ jq -e --arg command "$ROOT/share/profiles/default/backends/openai/run" \
 
 # A backend override replaces the adapter reference.
 sf_runtime_resolve_args -p work -m cli-model -b @default/backends/openai-responses
-jq -e '
-  .backend.name == "openai-responses" and
-  (.backend.context_window_command |
-    endswith("/share/profiles/default/backends/openai-responses/context_window"))
-' <<<"$REPLY" >/dev/null
+jq -e '.backend.command | endswith("/share/profiles/default/backends/openai-responses/run")' \
+  <<<"$REPLY" >/dev/null
 
 # The bundled default profile supplies the coding agent.
 sf_runtime_resolve_args -m default-model -b "$fixture_backend"
@@ -59,7 +52,6 @@ jq -e --arg root "$ROOT/share/profiles/default/hooks/session_start" \
     .render == {initial_user_text:"",user_text:"${output.stdout}${output.stderr}",
       model_text:"",preview_lines:"full"}) and
   .harness.user_prompt_submit[-1].command == ($prompt_root + "/git_environment/run") and
-  (.backend | has("context_window_command") | not) and
   (.harness.tools | map(.name)) ==
     ["read_file", "edit_file", "write_file", "skill", "search_web", "fetch_url", "shell"] and
   .harness.tools[0].manifest.render.permission_user_text == "${input.file_path}" and
@@ -71,10 +63,8 @@ jq -e --arg root "$ROOT/share/profiles/default/hooks/session_start" \
 
 # Bundled adapter names resolve through the bundled default profile.
 sf_runtime_resolve_args -m gpt-codex-test -b codex
-jq -e '
-  .backend.name == "codex" and
-  (.backend.context_window_command | endswith("/share/profiles/default/backends/codex/context_window"))
-' <<<"$REPLY" >/dev/null
+jq -e '.backend.command | endswith("/share/profiles/default/backends/codex/run")' \
+  <<<"$REPLY" >/dev/null
 
 # Presentation lives in tui.jsonc, so a profile has no place for it.
 sf_test_profile bad-theme '{"theme_light":"missing"}'
@@ -296,44 +286,33 @@ jq -e --arg settings "${tools:A}/alpha/fence.jsonc" '
   .harness.tools[1].manifest.sandbox == true and
   .harness.tools[1].settings == $settings' <<<"$REPLY" >/dev/null
 
-(
-  commands[fence]=''
-  if sf_runtime_resolve_args -p tooled; then
-    fail 'sandboxed tool without fence was accepted'
-  fi
-  [[ $SF_RUNTIME_ERROR == *'sandboxing requires fence'* ]]
-)
 
-# An unsandboxed harness does not require fence.
 sf_test_profile unsandboxed '{"extend": ["tooled"], "sandbox": false}'
-(
-  unset 'commands[fence]'
-  sf_runtime_resolve_args -p unsandboxed
-  jq -e '.harness.sandbox == false and .harness.fence == ""' <<<"$REPLY" >/dev/null
-)
+sf_runtime_resolve_args -p unsandboxed
+jq -e '.harness.sandbox == false' <<<"$REPLY" >/dev/null
 
-# Environment values load from env files: selected names, or every entry.
-typeset environment_dir="$tmp/environment" environment_file="$tmp/environment/.env"
-mkdir -p "$environment_dir"
+# Environment values load from the config directory's .env: selected names, or
+# every entry.
+typeset environment_file="$SF_TEST_CONFIG/.env"
 cat >"$environment_file" <<'ENV'
 export OPENAI_API_KEY = "from-file"
 ANTHROPIC_API_KEY=other-file
 ENV
-sf_environment_load "$environment_dir" OPENAI_API_KEY
-[[ ${(j: :)SF_ENVIRONMENT_VALUES} == 'OPENAI_API_KEY=from-file' ]]
-sf_environment_load "$environment_dir"
+sf_environment_load OPENAI_API_KEY
+[[ ${(j: :)SF_ENVIRONMENT_VALUES} == 'OPENAI_API_KEY=from-file' && $REPLY == ${SF_TEST_CONFIG:A} ]]
+sf_environment_load
 [[ ${(oj: :)SF_ENVIRONMENT_VALUES} == 'ANTHROPIC_API_KEY=other-file OPENAI_API_KEY=from-file' ]]
 
 # Exported values win: selected names carry them, and a full load leaves them
 # to inheritance.
 export OPENAI_API_KEY=''
-sf_environment_load "$environment_dir" OPENAI_API_KEY
+sf_environment_load OPENAI_API_KEY
 [[ ${(j: :)SF_ENVIRONMENT_VALUES} == 'OPENAI_API_KEY=' ]]
-sf_environment_load "$environment_dir"
+sf_environment_load
 [[ ${(j: :)SF_ENVIRONMENT_VALUES} == 'ANTHROPIC_API_KEY=other-file' ]]
 unset OPENAI_API_KEY
 
 print -r -- 'invalid line' >>"$environment_file"
-if sf_environment_load "$environment_dir" OPENAI_API_KEY; then
+if sf_environment_load OPENAI_API_KEY; then
   fail 'invalid env file tail was accepted'
 fi

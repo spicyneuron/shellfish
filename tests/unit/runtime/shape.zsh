@@ -100,16 +100,15 @@ valid_header=$(jq -cn '
     runtime: {
       request: {model: "gpt-4o"},
       system: [],
-      config_dir: "/tmp/config",
       backend: {
-        name: "openai", command: "/bin/run",
+        command: "/bin/run",
         endpoint: "https://api.openai.com/v1/chat/completions",
         insecure_tls: false,
         http_timeout: 30, http_stall: 10
       },
       harness: {
         sandbox_read_paths: [], sandbox_write_paths: [],
-        fence: "", tools: [], sandbox: true,
+        tools: [], sandbox: true,
         max_requests_per_turn: 50, max_tool_calls_per_request: 20,
         max_capture_bytes: 32768,
         stop: [{command:"/bin/hook",render:{initial_user_text:"",user_text:"${output.stderr}",model_text:"${output.stdout}"}}]

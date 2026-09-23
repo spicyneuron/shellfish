@@ -42,10 +42,10 @@ jq -eRn --arg expected "${TMPDIR:A}|${TMPDIR:A}/zsh" '
 ' <"$temp_stream" >/dev/null || fail 'tool did not receive the host temp environment'
 
 # Hooks receive all of .env; tools receive only the .env names they declare.
-typeset env_config="$tmp/env-config" env_hook="$tmp/env-hook" env_seen="$tmp/env-seen"
+typeset env_config="$XDG_CONFIG_HOME/shellfish" env_hook="$tmp/env-hook" env_seen="$tmp/env-seen"
 typeset env_session="$tmp/env.jsonl" env_stream="$tmp/env.stream" base_runtime=$SF_TEST_RUNTIME
 typeset env_command='print -rn -- "${DECLARED-unset} ${UNDECLARED-unset} ${EXPORTED-unset}"'
-mkdir "$env_config"
+mkdir -p "$env_config"
 print -rl -- DECLARED=declared-file UNDECLARED=undeclared-file >"$env_config/.env"
 cat >"$env_hook" <<'ZSH'
 #!/usr/bin/env zsh
@@ -54,8 +54,8 @@ print -rn -- "${UNDECLARED-unset}" >"$ENV_SEEN"
 ZSH
 chmod +x "$env_hook"
 export ENV_SEEN=$env_seen EXPORTED=exported
-SF_TEST_RUNTIME=$(jq -c --arg config "$env_config" --arg hook "$env_hook" '
-  .config_dir=$config | .harness.tools[0].manifest.environment=["DECLARED"] |
+SF_TEST_RUNTIME=$(jq -c --arg hook "$env_hook" '
+  .harness.tools[0].manifest.environment=["DECLARED"] |
   .harness.post_tool_use=[{command:$hook,render:{initial_user_text:"",user_text:"${output.stderr}",model_text:"${output.stdout}"}}]
 ' <<<"$SF_TEST_RUNTIME")
 sf_test_session "$env_session"
@@ -169,7 +169,7 @@ chmod +x "$permission"
 export PERMISSION_INPUT=$permission_input
 SF_TEST_RUNTIME=$(jq -c --arg hook "$permission" '
   .harness.pre_tool_use=[] | .harness.post_tool_use=[] |
-  .harness.sandbox=true | .harness.fence="/usr/bin/true" |
+  .harness.sandbox=true |
   .harness.permission_request=[{command:$hook,render:{initial_user_text:"",user_text:"${output.stderr}",model_text:"${output.stdout}"}}]
 ' <<<"$SF_TEST_RUNTIME")
 session="$tmp/permission-allow.jsonl"
@@ -255,8 +255,23 @@ jq -eRn '
 ' <"$stream" >/dev/null || fail 'post failure lost or reordered the known outcome'
 assert_canonical_session "$session"
 
+# A sandboxed tool needs fence on PATH when it runs. ZDOTDIR keeps a user's
+# .zshenv from restoring PATH.
+SF_TEST_RUNTIME=$(jq -c '.harness.post_tool_use=[] | .harness.sandbox=true' <<<"$SF_TEST_RUNTIME")
+typeset no_fence="$tmp/no-fence"
+mkdir "$no_fence"
+ln -s "$commands[jq]" "$commands[zsh]" "$no_fence/"
+session="$tmp/sandbox-missing.jsonl"
+sf_test_session "$session"
+ZDOTDIR=$no_fence PATH="$no_fence:/usr/bin:/bin" SF_TEST_BACKEND_TOOL_CALL=1 \
+  sf_test_run sandbox "$session" >"$stream" 2>/dev/null || true
+jq -eRn '[inputs | fromjson][-1] |
+  .type == "error" and (.user_text | contains("sandboxing requires fence"))
+' <"$stream" >/dev/null || fail 'sandboxed tool ran without fence'
+
 # A sandbox violation annotates the model text of a failing tool, and only that.
-typeset fence="$tmp/fence"
+mkdir "$tmp/bin"
+typeset fence="$tmp/bin/fence"
 typeset fence_arguments="$tmp/fence-arguments"
 cat >"$fence" <<'ZSH'
 #!/usr/bin/env zsh
@@ -273,10 +288,7 @@ done
 exec "$@"
 ZSH
 chmod +x "$fence"
-export FENCE_ARGUMENTS=$fence_arguments
-SF_TEST_RUNTIME=$(jq -c --arg fence "$fence" '
-  .harness.post_tool_use=[] | .harness.sandbox=true | .harness.fence=$fence
-' <<<"$SF_TEST_RUNTIME")
+export FENCE_ARGUMENTS=$fence_arguments PATH="$tmp/bin:$PATH"
 session="$tmp/sandbox-denied.jsonl"
 sf_test_session "$session"
 SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_COMMAND='print -rn -- output; exit 3' \
@@ -314,9 +326,8 @@ jq -eRn '
 ' <"$stream" >/dev/null || fail 'a succeeding tool was annotated'
 
 # A sandboxed tool starts clean apart from its declared names.
-SF_TEST_RUNTIME=$(jq -c --arg config "$env_config" '
-  .config_dir=$config | .harness.tools[0].manifest.environment=["DECLARED"]
-' <<<"$SF_TEST_RUNTIME")
+SF_TEST_RUNTIME=$(jq -c '.harness.tools[0].manifest.environment=["DECLARED"]' \
+  <<<"$SF_TEST_RUNTIME")
 session="$tmp/sandbox-env.jsonl"
 sf_test_session "$session"
 SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_COMMAND=$env_command \

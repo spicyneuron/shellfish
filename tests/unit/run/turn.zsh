@@ -162,7 +162,7 @@ jq -es 'length == 1 and .[0].type == "session"' "$broken.saved" >/dev/null ||
 # An adapter receives every .env value; exported values win.
 sf_test_runtime
 typeset env_backend="$tmp/env-backend" env_session="$tmp/env.jsonl"
-typeset env_config="$tmp/env-config"
+typeset env_config="$XDG_CONFIG_HOME/shellfish"
 mkdir -p "$env_config"
 print -rl -- FILE_SECRET=file-value EXPORTED_SECRET=file-value >"$env_config/.env"
 cat >"$env_backend" <<'ZSH'
@@ -174,9 +174,8 @@ print -r -- '{"type":"_turn_usage","input_tokens":1,"output_tokens":1}'
 print -r -- '{"type":"_assistant_end","stop":"end"}'
 ZSH
 chmod +x "$env_backend"
-SF_TEST_RUNTIME=$(jq -c --arg backend "$env_backend" --arg config "$env_config" '
-  .backend.command=$backend | .config_dir=$config
-' <<<"$SF_TEST_RUNTIME")
+SF_TEST_RUNTIME=$(jq -c --arg backend "$env_backend" '.backend.command=$backend' \
+  <<<"$SF_TEST_RUNTIME")
 export EXPORTED_SECRET=exported-value
 sf_test_session "$env_session"
 sf_test_run env "$env_session" >"$stream" || fail 'adapter environment turn failed'

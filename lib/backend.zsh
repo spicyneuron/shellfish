@@ -12,12 +12,10 @@ typeset -ga SF_BACKEND_PARTIAL_EVENTS=()
 # What one adapter invocation needs, keyed by name.
 typeset -gA SF_BACKEND_PLAN=()
 
-# One projection of the transcript on stdin: the adapter request, then the
-# named backend command.
+# One projection of the transcript on stdin: the adapter request and command.
 sf_backend_project() {
-  local tools=$1 command_field=$2
-  sf_jq_fields -sc --argjson tools "$tools" --arg command_field "$command_field" \
-    --arg home "${HOME:A}" '
+  local tools=$1
+  sf_jq_fields -sc --argjson tools "$tools" --arg home "${HOME:A}" '
     include "lib/fields";
     include "lib/runtime";
     include "lib/session";
@@ -35,23 +33,22 @@ sf_backend_project() {
     ) as $request |
     entry("request"; $request | tojson),
     entry("cwd"; $header.cwd),
-    entry("command"; $runtime.backend[$command_field]),
-    entry("config_dir"; $runtime.config_dir),
+    entry("command"; $runtime.backend.command),
     ("ok" | field)
   ' || return 1
   SF_BACKEND_PLAN=( "${reply[@]}" )
 }
 
 sf_backend_context_window() {
-  local tools=$1
-  integer max_capture=$2
+  local command=$1 tools=$2
+  integer max_capture=$3
   local directory input output
   local -A process
-  sf_backend_project "$tools" context_window_command || {
+  sf_backend_project "$tools" || {
     SF_BACKEND[error]='cannot prepare context window request'
     return 1
   }
-  sf_environment_load "$SF_BACKEND_PLAN[config_dir]" || {
+  sf_environment_load || {
     SF_BACKEND[error]=$SF_ENVIRONMENT_ERROR
     return 1
   }
@@ -67,7 +64,7 @@ sf_backend_context_window() {
     return 1
   }
   if ! sf_process_run "$directory" "$SF_BACKEND_PLAN[cwd]" "${input:A}" "$max_capture" \
-      /usr/bin/env "${SF_ENVIRONMENT_VALUES[@]}" "$SF_BACKEND_PLAN[command]"; then
+      /usr/bin/env "${SF_ENVIRONMENT_VALUES[@]}" "$command"; then
     rm -rf -- "$directory" "$input"
     SF_BACKEND[error]=${SF_PROCESS_ERROR:-cannot discover model context window}
     return 1
@@ -100,7 +97,7 @@ sf_backend_run() {
   REPLY=''
   SF_BACKEND=(directory '' error '' group_file '' pid '')
   SF_BACKEND_PARTIAL_EVENTS=()
-  sf_environment_load "$SF_BACKEND_PLAN[config_dir]" || {
+  sf_environment_load || {
     SF_BACKEND[error]=$SF_ENVIRONMENT_ERROR
     return 1
   }
@@ -212,7 +209,7 @@ sf_backend_run() {
 
 sf_backend_request() {
   local tools=$1 emit=${2:-:}
-  sf_backend_project "$tools" command || {
+  sf_backend_project "$tools" || {
     SF_BACKEND[error]='cannot prepare provider request'
     return 1
   }

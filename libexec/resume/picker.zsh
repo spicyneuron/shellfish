@@ -80,7 +80,7 @@ sf_resume_load() {
         if test("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}") then
           .[0:16] | sub("T"; " ")
         else . end), "\u0000",
-      (((.header.runtime.backend.name // "?") | one_line) + "/" +
+      (((.header.runtime.backend.command // "" | split("/")[-2] // "?") | one_line) + "/" +
        ((.header.runtime.request.model // "?") | one_line)), "\u0000",
       (.last | summary | one_line), "\u0000"),
     "ok", "\u0000"

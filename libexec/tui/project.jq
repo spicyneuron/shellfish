@@ -29,7 +29,9 @@ def usage_actions($window):
       (.usage.reasoning_tokens? // "" | tostring)]]
   else [] end;
 
-def identity: ((.backend.name // "?") + "/" + (.request.model // "?"));
+# The backend name is its adapter directory.
+def identity:
+  ((.backend.command // "" | split("/")[-2] // "?") + "/" + (.request.model // "?"));
 
 def hook_name:
   split("/") | if .[-1] == "run" then .[-2] else .[-1] end;

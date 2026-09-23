@@ -47,7 +47,6 @@ sf_run_hook_project() {
       include "lib/fields";
       include "lib/runtime";
       entry("max_capture"; $runtime.harness.max_capture_bytes | tostring),
-      entry("config_dir"; $runtime.config_dir),
       entry("model"; $runtime.request.model),
       ($runtime.harness[$lifecycle][]? |
         (.match.pattern? // "") as $pattern |
@@ -57,9 +56,9 @@ sf_run_hook_project() {
         (.render | tojson | field)),
       ("ok" | field)
     ' || return 1
-  # The three named entries above fill the first six slots; hooks follow.
-  SF_HOOK_PLAN=( "${(@)reply[1,6]}" )
-  reply=( "${(@)reply[7,-1]}" )
+  # The two named entries above fill the first four slots; hooks follow.
+  SF_HOOK_PLAN=( "${(@)reply[1,4]}" )
+  reply=( "${(@)reply[5,-1]}" )
 }
 
 sf_run_hook_invoke() {
@@ -67,7 +66,7 @@ sf_run_hook_invoke() {
   local session=$1 command=$2 input=$3 lifecycle=$4 turn_state=$5
   local render=$6 id=$7 name=$8 input_json=$9
   shift 9
-  local config_dir=$SF_HOOK_PLAN[config_dir] directory
+  local config_dir directory
   local -a environment
   local -A process
   integer max_capture=$SF_HOOK_PLAN[max_capture] over_capture=0
@@ -76,10 +75,11 @@ sf_run_hook_invoke() {
     SF_RUN_HOOK_ERROR="hook command is not executable: $command"
     return 1
   }
-  sf_environment_load "$config_dir" || {
+  sf_environment_load || {
     SF_RUN_HOOK_ERROR=$SF_ENVIRONMENT_ERROR
     return 1
   }
+  config_dir=$REPLY
   # Core values follow .env values so that they win.
   environment=(
     "${SF_ENVIRONMENT_VALUES[@]}"

@@ -202,7 +202,7 @@ sf_run_project() {
     entry("max_requests"; $harness.max_requests_per_turn | tostring),
     entry("max_tool_calls"; $harness.max_tool_calls_per_request | tostring),
     entry("max_capture"; $harness.max_capture_bytes | tostring),
-    entry("context_window_command"; $runtime.backend.context_window_command // ""),
+    entry("backend"; $runtime.backend.command),
     entry("tools"; $tools | tojson),
     ("ok" | field)
   ' || return 1
@@ -235,7 +235,7 @@ sf_run_turn() {
       request_limit=$projected[max_requests]
       tool_limit=$projected[max_tool_calls]
       max_capture=$projected[max_capture]
-      context_command=$projected[context_window_command]
+      context_command=${projected[backend]:h}/context_window
     else
       failure='cannot inspect frozen runtime'
     fi
@@ -283,9 +283,9 @@ sf_run_turn() {
         failure="provider request limit reached: $request_limit"
         break
       fi
-      if (( request_count == 1 )) && [[ -n $context_command ]] &&
+      if (( request_count == 1 )) && [[ -f $context_command && -x $context_command ]] &&
           ! jq -e 'has("context_window")' <<<"$runtime" >/dev/null; then
-        sf_backend_context_window "$tools" "$max_capture" <"$session"
+        sf_backend_context_window "$context_command" "$tools" "$max_capture" <"$session"
         run_status=$?
         if (( run_status )); then
           if (( run_status == 129 || run_status == 130 || run_status == 143 )); then

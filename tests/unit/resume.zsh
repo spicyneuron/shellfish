@@ -19,7 +19,7 @@ typeset s_state_tail="$tmp/state_tail.jsonl"
 make_header() {
   jq -cn '{type:"session",format_version:1,cwd:"/tmp",created:"2026-08-18T10:00:00Z",
     runtime:{request:{model:"claude-3"},
-      backend:{name:"custom",command:"/test/run",endpoint:"https://example.invalid"}}}'
+      backend:{command:"/custom/run",endpoint:"https://example.invalid"}}}'
 }
 
 # Header-only session.

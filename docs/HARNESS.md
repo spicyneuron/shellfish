@@ -102,7 +102,7 @@ If the model calls an undeclared tool, Shellfish records a rejected result with 
 
 ### Sandbox and permission
 
-A tool is sandboxed only when both its manifest and harness enable sandboxing. Shellfish runs it under [`fence`](https://github.com/fencesandbox/fence) with its `fence.jsonc`; platform temp access and harness path grants extend that policy, but deny rules win. Otherwise it runs with user permissions.
+A tool is sandboxed only when both its manifest and harness enable sandboxing. Shellfish runs it under [`fence`](https://github.com/fencesandbox/fence), found on `PATH` when the tool runs, with its `fence.jsonc`; platform temp access and harness path grants extend that policy, but deny rules win. Otherwise it runs with user permissions.
 
 For a sandboxed tool with `allow_sandbox_bypass: true`, Shellfish adds `request_sandbox_bypass` and `sandbox_bypass_reason` to the schema shown to the model. A requested bypass proceeds unsandboxed only when a `permission_request` hook or interactive client approves it. Otherwise the tool is not invoked and receives a denied result.
 

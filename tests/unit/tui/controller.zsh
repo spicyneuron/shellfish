@@ -89,7 +89,7 @@ assert_equal '/tmp/custom command,,arg' "${(j:,:)SF_PRESENT_HANDOFF}"
 typeset updated_runtime
 updated_runtime=$(jq -c '
   del(.type,.format_version,.cwd,.created) |
-  .backend.name = "updated" | .request.model = "new-model" |
+  .backend.command = "/updated/run" | .request.model = "new-model" |
   .context_window = null
 ' "$SF_TEST_SESSIONS/header-only.jsonl")
 pump "$(jq -cn --argjson runtime "$updated_runtime" \
@@ -295,7 +295,7 @@ sf_tui_submit early
 assert_equal repaint "$REPLY"
 assert_equal early "${(j:,:)SF_PRESENT_QUEUE}"
 pump "$(jq -cn --arg path "$tmp/new.jsonl" '{type:"_session_load",path:$path}')" \
-  '{"type":"session","backend":{"name":"test"},"request":{"model":"model"}}' \
+  '{"type":"session","backend":{"command":"/test/run"},"request":{"model":"model"}}' \
   '{"type":"system","content":"instructions"}' \
   '{"type":"_hook_activity","hook":"session_start","id":"1","name":"setup","input":"","user_text":"setup · working"}'
 assert_equal working "$SF_PRESENT_STATE"

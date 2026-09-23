@@ -26,14 +26,13 @@ sf_test_tmp() {
   tmp=$(mktemp -d "${TMPDIR:-/tmp}/shellfish-${name}-test.XXXXXX")
   # mktemp inherits TMPDIR's trailing slash; library code returns :a paths.
   tmp=${tmp:a}
-  export XDG_STATE_HOME="$tmp/state"
+  export XDG_STATE_HOME="$tmp/state" XDG_CONFIG_HOME="$tmp/config"
 }
 
 # An isolated config directory, then one profile folder inside it.
 sf_test_config() {
   typeset -g SF_TEST_CONFIG="$tmp/config/shellfish"
   mkdir -p "$SF_TEST_CONFIG/profiles"
-  export XDG_CONFIG_HOME="$tmp/config"
 }
 
 sf_test_profile() {
@@ -102,15 +101,13 @@ sf_test_runtime() {
   SF_TEST_RUNTIME=$(jq -cn \
     --arg command "$SF_TEST_BACKEND" \
     --arg tool "$tool" \
-    --arg fence "${commands[fence]:A}" \
     --slurpfile tool_manifest "$tool/manifest.json" '
       {
         request:{model:"test-model"},
         system:[],
-        config_dir:"/nonexistent/shellfish",
-        backend:{name:"test",command:$command,endpoint:"https://example.invalid/test",
+        backend:{command:$command,endpoint:"https://example.invalid/test",
           insecure_tls:false,http_timeout:30,http_stall:10},
-        harness:{sandbox_read_paths:[],sandbox_write_paths:[],fence:$fence,
+        harness:{sandbox_read_paths:[],sandbox_write_paths:[],
           tools:[{name:"shell",command:($tool+"/run"),
             settings:(if $tool_manifest[0].sandbox then ($tool+"/fence.jsonc") else null end),
             manifest:$tool_manifest[0]}],sandbox:false,

@@ -7,24 +7,11 @@ setopt no_aliases no_multios pipe_fail
 # describes it.
 (( $+functions[sf_jsonc_read] )) || source "$SF_ROOT/lib/jsonc.zsh"
 (( $+functions[sf_cli_diagnostic] )) || source "$SF_ROOT/lib/cli.zsh"
+(( $+functions[sf_environment_config_dir] )) || source "$SF_ROOT/lib/environment.zsh"
 
 typeset -g SF_PRESENTATION=''
 typeset -g SF_PRESENTATION_ERROR=''
 typeset -g SF_PRESENTATION_VERBOSE=0
-
-sf_presentation_config_path() {
-  local candidate=''
-  if [[ -n ${XDG_CONFIG_HOME-} ]]; then
-    candidate="$XDG_CONFIG_HOME/shellfish/tui.jsonc"
-  elif [[ -n ${HOME-} ]]; then
-    candidate="$HOME/.config/shellfish/tui.jsonc"
-  fi
-  if [[ -n $candidate ]]; then
-    REPLY=${candidate:A}
-  else
-    REPLY=''
-  fi
-}
 
 sf_presentation_fail() {
   SF_PRESENTATION_ERROR=$1
@@ -38,8 +25,8 @@ sf_presentation_resolve() {
 
   SF_PRESENTATION=''
   SF_PRESENTATION_ERROR=''
-  sf_presentation_config_path
-  config_path=$REPLY
+  config_path=''
+  ! sf_environment_config_dir || config_path=$REPLY/tui.jsonc
   defaults=$(sf_jsonc_read "$SF_SHARE/tui.jsonc" 2>/dev/null) ||
     sf_presentation_fail 'invalid bundled TUI config' || return
   if [[ -n $config_path && ( -e $config_path || -L $config_path ) ]]; then
