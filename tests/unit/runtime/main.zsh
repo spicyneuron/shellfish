@@ -3,43 +3,33 @@
 source "${0:A:h:h:h}/_helpers.zsh"
 sf_test_source lib/runtime.zsh lib/environment.zsh lib/session.zsh
 
-typeset config runtime tool_name hook
+typeset runtime tool_name
+typeset -r fixture_backend="$ROOT/tests/fixtures/backend"
 sf_test_tmp runtime
-mkdir -p "$tmp/config" "$tmp/home"
+sf_test_config
+mkdir -p "$tmp/home"
 export HOME="${tmp:A}/home"
-unset XDG_CONFIG_HOME
-config="$tmp/config/shellfish.jsonc"
 
-cat >"$config" <<'JSON'
-{
-  "default_profile": "work",
-  "backends": {
-    "custom": {"adapter": "openai"},
-    "custom-responses": {"adapter": "openai-responses"}
-  },
-  "profiles": {
-    "work": {
-      "backend": "custom",
-      "context_window": 128000,
-      "request": {"model": "configured", "temperature": 0.2}
-    }
-  }
-}
-JSON
+sf_test_profile work '{
+  "backend": {"adapter": "openai"},
+  "context_window": 128000,
+  "request": {"model": "configured", "temperature": 0.2}
+}'
 
 # CLI request options override the profile.
-sf_runtime_resolve_from_config "$config" '' 'cli-model' '{"temperature":0.7,"seed":4}'
+sf_runtime_resolve_args -p work -m cli-model --request '{"temperature":0.7,"seed":4}'
 runtime=$REPLY
-jq -e --arg command "$ROOT/share/default/backends/openai/run" '
-  .profile.request == {model:"cli-model",temperature:0.7,seed:4} and
-  .profile.context_window == 128000 and
-  .backend.name == "custom" and
+jq -e --arg command "$ROOT/share/default/backends/openai/run" \
+  --arg config_dir "${SF_TEST_CONFIG:A}" '
+  .request == {model:"cli-model",temperature:0.7,seed:4} and
+  .context_window == 128000 and
+  .backend.name == "openai" and
   .backend.command == $command and
   (.backend.context_window_command | endswith("/share/default/backends/openai/context_window")) and
-  (.backend.env_file | endswith("/config/.env")) and
+  .config_dir == $config_dir and
   .backend.endpoint == "https://api.openai.com/v1/chat/completions" and
   .backend.environment == ["OPENAI_API_KEY"] and
-  .profile.system == [] and
+  .system == [] and
   .harness == {
     sandbox_read_paths:[],sandbox_write_paths:[],
     fence:"",tools:[],sandbox:true,
@@ -48,18 +38,16 @@ jq -e --arg command "$ROOT/share/default/backends/openai/run" '
   }
 ' <<<"$runtime" >/dev/null
 
-# Backend overrides select their adapter.
-sf_runtime_resolve_from_config "$config" '' 'cli-model' '{}' custom-responses
+# A backend override replaces the adapter reference.
+sf_runtime_resolve_args -p work -m cli-model -b openai-responses
 jq -e '
-  .backend.name == "custom-responses" and
+  .backend.name == "openai-responses" and
   (.backend.context_window_command |
     endswith("/share/default/backends/openai-responses/context_window"))
 ' <<<"$REPLY" >/dev/null
 
-# Empty configs use bundled defaults.
-print -r -- '{}' >"$tmp/config/empty.jsonc"
-sf_runtime_resolve_from_config "$tmp/config/empty.jsonc" '' 'default-model' '{}' \
-  "$ROOT/tests/fixtures/backend"
+# The bundled default profile supplies the coding agent.
+sf_runtime_resolve_args -m default-model -b "$fixture_backend"
 jq -e --arg root "$ROOT/share/default/hooks/session_start" \
   --arg prompt_root "$ROOT/share/default/hooks/user_prompt_submit" '
   (.harness.session_start | map(.command)) == [
@@ -82,120 +70,133 @@ jq -e --arg root "$ROOT/share/default/hooks/session_start" \
     "${name}\n${input.command}\n${output.stdout}${output.stderr}\nexit ${output.exit_code}"
 ' <<<"$REPLY" >/dev/null
 
-# Bundled backend names resolve adapters.
-sf_runtime_resolve_from_config "$tmp/config/empty.jsonc" '' 'gpt-codex-test' '{}' codex
+# Bundled adapter names resolve without configuration.
+sf_runtime_resolve_args -m gpt-codex-test -b codex
 jq -e '
   .backend.name == "codex" and
   (.backend.context_window_command | endswith("/share/default/backends/codex/context_window"))
 ' <<<"$REPLY" >/dev/null
 
-# Presentation lives in tui.jsonc, so this config has no place for it.
-print -r -- '{"theme_light":"missing","themes":{"dark":{"text":"blue"}}}' \
-  >"$tmp/config/bad-theme.jsonc"
-if sf_runtime_resolve_from_config "$tmp/config/bad-theme.jsonc" '' 'model' '{}' \
-    "$ROOT/tests/fixtures/backend"; then
-  fail 'presentation keys were accepted in the runtime config'
+# Presentation lives in tui.jsonc, so a profile has no place for it.
+sf_test_profile bad-theme '{"theme_light":"missing"}'
+if sf_runtime_resolve_args -p bad-theme -m model -b "$fixture_backend"; then
+  fail 'presentation keys were accepted in a profile'
 fi
-[[ $SF_RUNTIME_ERROR == *'invalid config at $["theme_light"]: unknown field'* ]]
+[[ $SF_RUNTIME_ERROR == *'invalid profile at $["bad-theme"]["theme_light"]: unknown field'* ]]
 
-# CLI backend paths override configuration.
-sf_runtime_resolve_from_config "$config" work '' '{}' "$ROOT/tests/fixtures/backend"
+# Absolute backend paths override configuration.
+sf_runtime_resolve_args -p work -b "$fixture_backend"
 jq -e '
   .backend.endpoint == "https://example.invalid/test" and
   (.backend.command | endswith("/tests/fixtures/backend/run"))
 ' <<<"$REPLY" >/dev/null
 
-# Relative backend paths use the caller directory.
-mkdir -p "$tmp/fixtures"
-ln -s "$ROOT/tests/fixtures/backend" "$tmp/fixtures/backend"
-(
-  cd "$tmp"
-  sf_runtime_resolve_from_config "$config" work '' '{}' fixtures/backend
-  jq -e --arg command "$ROOT/tests/fixtures/backend/run" \
-    '.backend.command == $command' <<<"$REPLY" >/dev/null
-)
-
-# Default profiles can extend bundled defaults.
-cat >"$tmp/config/default-extend.jsonc" <<JSON
-{
-  "profiles": {
-    "default": {
-      "extend": "default",
-      "backend": "test",
-      "request": {"model": "extended-model"}
-    }
-  },
-  "backends": {"test": {"adapter": "$ROOT/tests/fixtures/backend"}}
-}
-JSON
-sf_runtime_resolve_from_config "$tmp/config/default-extend.jsonc" '' '' '{}'
+# A configured profile replaces the bundled file of the same name outright.
+sf_test_profile default '{
+  "backend": {"adapter": "'"$fixture_backend"'"},
+  "request": {"model": "extended-model"},
+  "harness": {"tools": ["read_file"]}
+}'
+sf_runtime_resolve_args
 jq -e '
-  .profile.request.model == "extended-model" and
+  .request == {model:"extended-model"} and
+  (.harness.tools | map(.name)) == ["read_file"] and
+  .system == [] and
   (.backend.command | endswith("/tests/fixtures/backend/run"))
 ' <<<"$REPLY" >/dev/null
 
-# Missing default configs use bundled defaults.
-mkdir "$tmp/empty-config"
+# "..." splices the inherited list; repeated --profile composes left to right.
+sf_test_profile extra '{"harness": {"tools": ["...", "shell"]}}'
+sf_runtime_resolve_args -p default -p extra
+jq -e '(.harness.tools | map(.name)) == ["read_file", "shell"]' <<<"$REPLY" >/dev/null
+
+# A top-level list splices from a sibling too, and a token with nothing to splice drops.
+sf_test_profile prompts '{"system": ["general.md"]}'
+sf_test_profile more-prompts '{"system": ["...", "tools.md"], "harness": {"tools": ["...", "shell"]}}'
+sf_runtime_resolve_args -p prompts -p more-prompts -m model -b "$fixture_backend"
+jq -e '(.system | map(split("/") | last)) == ["general.md", "tools.md"] and
+  (.harness.tools | map(.name)) == ["shell"]' <<<"$REPLY" >/dev/null
+
+# Splicing a list that already holds the tool duplicates it.
+sf_test_profile duplicate '{"harness": {"tools": ["...", "read_file"]}}'
+if sf_runtime_resolve_args -p default -p duplicate; then
+  fail 'duplicate tool references were accepted'
+fi
+[[ $SF_RUNTIME_ERROR == *'profile tools must be unique: read_file, read_file'* ]]
+
+# "@default" is always the bundled file, so a configured default can build on it,
+# and bundled profiles that extend the bare name see the configured one.
+sf_test_profile default '{
+  "extend": ["@default"],
+  "backend": {"adapter": "'"$fixture_backend"'"},
+  "request": {"model": "mine"}
+}'
+sf_runtime_resolve_args -p coding
+jq -e '
+  .request.model == "mine" and .request.max_tokens == 16384 and
+  (.harness.tools | length) == 7 and
+  (.harness.permission_request | map(.command | split("/")[-2])) == ["review"]
+' <<<"$REPLY" >/dev/null
+
+# Unknown and cyclic profiles fail.
+if sf_runtime_resolve_args -p absent; then
+  fail 'unknown profile was accepted'
+fi
+[[ $SF_RUNTIME_ERROR == *'unknown profile: absent'* ]]
+sf_test_profile loop-a '{"extend": ["loop-b"]}'
+sf_test_profile loop-b '{"extend": ["loop-a"]}'
+if sf_runtime_resolve_args -p loop-a; then
+  fail 'profile inheritance cycle was accepted'
+fi
+[[ $SF_RUNTIME_ERROR == *'profile inheritance cycle: loop-a'* ]]
+
+# Missing config directories use bundled profiles.
 (
   export XDG_CONFIG_HOME="$tmp/empty-config"
-  sf_runtime_resolve_from_config '' '' test-model '{}' "$ROOT/tests/fixtures/backend"
+  sf_runtime_resolve_args -m test-model -b "$fixture_backend"
   jq -e '
-    .profile.request.model == "test-model" and
+    .request.model == "test-model" and
     (.backend.command | endswith("/tests/fixtures/backend/run"))
   ' <<<"$REPLY" >/dev/null
 )
 
 # Invalid backend paths fail.
-if sf_runtime_resolve_from_config "$config" work '' '{}' "$tmp/not-a-backend"; then
-  fail 'invalid CLI backend path was accepted'
+if sf_runtime_resolve_args -p work -b "$tmp/not-a-backend"; then
+  fail 'invalid backend path was accepted'
 fi
 
-# Config errors identify their source.
-if sf_runtime_resolve_from_config "$tmp/missing.jsonc" '' '' '{}'; then
-  fail 'explicit missing config was accepted'
+# Malformed profiles identify their source.
+print -r -- '{"request":}' >"$SF_TEST_CONFIG/profiles/malformed.jsonc"
+if sf_runtime_resolve_args; then
+  fail 'malformed profile was accepted'
 fi
-sf_runtime_config_path "$tmp/missing.jsonc"
-[[ $SF_RUNTIME_ERROR == "cannot read config: $REPLY" ]]
-
-cat >"$tmp/config/malformed.jsonc" <<'JSON'
-{"profiles":}
-JSON
-if sf_runtime_resolve_from_config "$tmp/config/malformed.jsonc" '' '' '{}'; then
-  fail 'malformed config was accepted'
-fi
-[[ $SF_RUNTIME_ERROR == *'invalid config: '*'malformed.jsonc:'*'parse error:'* ]]
+[[ $SF_RUNTIME_ERROR == *'invalid profile: '*'malformed.jsonc:'*'parse error:'* ]]
+rm "$SF_TEST_CONFIG/profiles/malformed.jsonc"
 
 # Home-relative sandbox paths expand safely.
-cat >"$tmp/config/home-paths.jsonc" <<'JSON'
-{
-  "profiles":{"default":{"extend":"default","harness":"home"}},
-  "harnesses":{"home":{
-    "sandbox_read_paths":["~/reference"],
-    "sandbox_write_paths":["~/output"]
-  }}
-}
-JSON
-HOME="$tmp/home" sf_runtime_resolve_from_config "$tmp/config/home-paths.jsonc" '' \
-  test-model '{}' "$ROOT/tests/fixtures/backend"
-jq -e --arg read "${tmp:A}/home/reference" --arg write "${tmp:A}/home/output" '
+sf_test_profile home-paths '{
+  "extend": ["default"],
+  "harness": {"sandbox_read_paths": ["~/my reference"], "sandbox_write_paths": ["~/output"]}
+}'
+sf_runtime_resolve_args -p home-paths -m test-model -b "$fixture_backend"
+jq -e --arg read "${tmp:A}/home/my reference" --arg write "${tmp:A}/home/output" '
   .harness.sandbox_read_paths == [$read] and
   .harness.sandbox_write_paths == [$write]
 ' <<<"$REPLY" >/dev/null || fail 'home-relative sandbox paths were not expanded'
 (
   unset HOME
-  if sf_runtime_resolve_from_config "$tmp/config/home-paths.jsonc" '' test-model '{}' \
-    "$ROOT/tests/fixtures/backend"; then
+  if sf_runtime_resolve_args -p home-paths -m test-model -b "$fixture_backend"; then
     fail 'home-relative sandbox path resolved without HOME'
   fi
   [[ $SF_RUNTIME_ERROR == *'cannot expand ~ without HOME'* ]]
 )
 
 # Hook references preserve order and prefer configured scripts.
-mkdir -p "$tmp/config/hooks/user_prompt_submit/help" \
-  "$tmp/config/hooks/user_prompt_submit/shell" "$tmp/config/hooks/stop/gate"
-print -r -- '#!/bin/sh' >"$tmp/config/hooks/user_prompt_submit/help/run"
-chmod +x "$tmp/config/hooks/user_prompt_submit/help/run"
-cat >"$tmp/config/hooks/user_prompt_submit/help/manifest.jsonc" <<'JSON'
+mkdir -p "$SF_TEST_CONFIG/hooks/user_prompt_submit/help" \
+  "$SF_TEST_CONFIG/hooks/user_prompt_submit/shell" "$SF_TEST_CONFIG/hooks/stop/gate"
+print -r -- '#!/bin/sh' >"$SF_TEST_CONFIG/hooks/user_prompt_submit/help/run"
+chmod +x "$SF_TEST_CONFIG/hooks/user_prompt_submit/help/run"
+cat >"$SF_TEST_CONFIG/hooks/user_prompt_submit/help/manifest.jsonc" <<'JSON'
 {
   // Imported only for this component.
   "environment": ["HELP_FORMAT"],
@@ -207,26 +208,22 @@ cat >"$tmp/config/hooks/user_prompt_submit/help/manifest.jsonc" <<'JSON'
   }
 }
 JSON
-print -r -- '#!/bin/sh' >"$tmp/config/hooks/user_prompt_submit/shell/run"
-chmod +x "$tmp/config/hooks/user_prompt_submit/shell/run"
+print -r -- '#!/bin/sh' >"$SF_TEST_CONFIG/hooks/user_prompt_submit/shell/run"
+chmod +x "$SF_TEST_CONFIG/hooks/user_prompt_submit/shell/run"
 # A match script beside run supersedes a manifest pattern.
-print -r -- '#!/bin/sh' >"$tmp/config/hooks/user_prompt_submit/shell/match"
-chmod +x "$tmp/config/hooks/user_prompt_submit/shell/match"
+print -r -- '#!/bin/sh' >"$SF_TEST_CONFIG/hooks/user_prompt_submit/shell/match"
+chmod +x "$SF_TEST_CONFIG/hooks/user_prompt_submit/shell/match"
 print -r -- '{"match":{"pattern":"^/shell\\z"}}' \
-  >"$tmp/config/hooks/user_prompt_submit/shell/manifest.json"
-print -r -- '#!/bin/sh' >"$tmp/config/hooks/stop/gate/run"
-chmod +x "$tmp/config/hooks/stop/gate/run"
-cat >"$tmp/config/hooked.jsonc" <<JSON
-{
-  "profiles": {"default": {"harness": "hooked", "request": {"model": "m"}}},
-  "harnesses": {"hooked": {
-    "user_prompt_submit": ["help", "shell"],
-    "stop": ["gate"]
-  }}
-}
-JSON
-sf_runtime_resolve_from_config "$tmp/config/hooked.jsonc" '' '' '{}' "$ROOT/tests/fixtures/backend"
-jq -e --arg base "${tmp:A}/config/hooks" '
+  >"$SF_TEST_CONFIG/hooks/user_prompt_submit/shell/manifest.json"
+print -r -- '#!/bin/sh' >"$SF_TEST_CONFIG/hooks/stop/gate/run"
+chmod +x "$SF_TEST_CONFIG/hooks/stop/gate/run"
+sf_test_profile hooked '{
+  "backend": {"adapter": "'"$fixture_backend"'"},
+  "request": {"model": "m"},
+  "harness": {"user_prompt_submit": ["help", "shell"], "stop": ["gate"]}
+}'
+sf_runtime_resolve_args -p hooked
+jq -e --arg base "${SF_TEST_CONFIG:A}/hooks" '
   .harness.user_prompt_submit == [
     {command:($base + "/user_prompt_submit/help/run"),render:{initial_user_text:"",user_text:"${output.stdout}",model_text:"${output.stdout}"},environment:["HELP_FORMAT"],
       match:{pattern:"^/(help|h)\\z"},help:{usage:"/help, /h",description:"Show help"}},
@@ -237,115 +234,87 @@ jq -e --arg base "${tmp:A}/config/hooks" '
 ' <<<"$REPLY" >/dev/null
 
 # Only user_prompt_submit hooks may be gated by a match script.
-print -r -- '#!/bin/sh' >"$tmp/config/hooks/stop/gate/match"
-chmod +x "$tmp/config/hooks/stop/gate/match"
-if sf_runtime_resolve_from_config "$tmp/config/hooked.jsonc" '' '' '{}' \
-    "$ROOT/tests/fixtures/backend"; then
+print -r -- '#!/bin/sh' >"$SF_TEST_CONFIG/hooks/stop/gate/match"
+chmod +x "$SF_TEST_CONFIG/hooks/stop/gate/match"
+if sf_runtime_resolve_args -p hooked; then
   fail 'match script on a stop hook was accepted'
 fi
 [[ $SF_RUNTIME_ERROR == *'invalid hook component: '*'/stop/gate/run'* ]]
-rm "$tmp/config/hooks/stop/gate/match"
-
-# Components resolve beside a symlinked config's target.
-mkdir -p "$tmp/symlink-config-home/shellfish" "$tmp/config-target/system"
-print -r -- 'linked prompt' >"$tmp/config-target/system/linked.md"
-cat >"$tmp/config-target/shellfish.jsonc" <<'JSON'
-{
-  "profiles":{"default":{"system":["linked.md"],"request":{"model":"m"}}}
-}
-JSON
-ln -s "$tmp/config-target/shellfish.jsonc" \
-  "$tmp/symlink-config-home/shellfish/shellfish.jsonc"
-(
-  export XDG_CONFIG_HOME="$tmp/symlink-config-home"
-  sf_runtime_resolve_from_config '' '' '' '{}' "$ROOT/tests/fixtures/backend"
-  jq -e --arg env "${tmp:A}/config-target/.env" \
-    --arg path "${tmp:A}/config-target/system/linked.md" '
-    .profile.system == [$path] and .backend.env_file == $env
-  ' <<<"$REPLY" >/dev/null
-)
+rm "$SF_TEST_CONFIG/hooks/stop/gate/match"
 
 # System references resolve without reading prompt files.
-mkdir -p "$tmp/config/system"
-print -r -- 'first' >"$tmp/config/system/first.md"
-print -r -- 'second' >"$tmp/config/system/second.md"
-cat >"$tmp/config/system.jsonc" <<'JSON'
-{
-  "profiles":{"default":{"system":["first.md","second.md"],"request":{"model":"m"}}}
-}
-JSON
-sf_runtime_resolve_from_config "$tmp/config/system.jsonc" '' '' '{}' \
-  "$ROOT/tests/fixtures/backend"
-jq -e --arg first "${tmp:A}/config/system/first.md" \
-  --arg second "${tmp:A}/config/system/second.md" \
-  '.profile.system == [$first,$second]' <<<"$REPLY" >/dev/null ||
+mkdir -p "$SF_TEST_CONFIG/system"
+print -r -- 'first' >"$SF_TEST_CONFIG/system/first.md"
+print -r -- 'second' >"$SF_TEST_CONFIG/system/second.md"
+sf_test_profile systems '{
+  "backend": {"adapter": "'"$fixture_backend"'"},
+  "request": {"model": "m"},
+  "system": ["first.md", "second.md"]
+}'
+sf_runtime_resolve_args -p systems
+jq -e --arg first "${SF_TEST_CONFIG:A}/system/first.md" \
+  --arg second "${SF_TEST_CONFIG:A}/system/second.md" \
+  '.system == [$first,$second]' <<<"$REPLY" >/dev/null ||
   fail 'system component paths were not resolved'
-rm "$tmp/config/system/second.md"
-sf_runtime_resolve_from_config "$tmp/config/system.jsonc" '' '' '{}' \
-  "$ROOT/tests/fixtures/backend" || fail 'config tried to read a missing prompt file'
+rm "$SF_TEST_CONFIG/system/second.md"
+sf_runtime_resolve_args -p systems || fail 'resolution read a missing prompt file'
 jq -e --arg fallback "$ROOT/share/default/system/second.md" \
-  '.profile.system[1] == $fallback' <<<"$REPLY" >/dev/null ||
+  '.system[1] == $fallback' <<<"$REPLY" >/dev/null ||
   fail 'missing prompt path was not resolved'
 
 # Missing hook references fail.
-cat >"$tmp/config/missing-hook.jsonc" <<'JSON'
-{
-  "profiles":{"default":{"harness":"bad","request":{"model":"m"}}},
-  "harnesses":{"bad":{"stop":["missing"]}}
-}
-JSON
-if sf_runtime_resolve_from_config "$tmp/config/missing-hook.jsonc" '' '' '{}' \
-    "$ROOT/tests/fixtures/backend"; then
+sf_test_profile missing-hook '{
+  "backend": {"adapter": "'"$fixture_backend"'"},
+  "request": {"model": "m"},
+  "harness": {"stop": ["missing"]}
+}'
+if sf_runtime_resolve_args -p missing-hook; then
   fail 'missing hook was accepted'
 fi
-[[ $SF_RUNTIME_ERROR == 'invalid stop hook: missing' ]]
+[[ $SF_RUNTIME_ERROR == 'invalid hooks/stop reference: missing' ]]
 
 # Configured scripts override bundled scripts.
-mkdir -p "$tmp/root/share/default/hooks/stop/bundled" "$tmp/hooks/stop/bundled"
+mkdir -p "$tmp/root/share/default/hooks/stop/bundled" \
+  "$tmp/root/share/default/profiles" "$SF_TEST_CONFIG/hooks/stop/bundled"
 ln -s "$ROOT/lib" "$tmp/root/lib"
 ln -s "$ROOT/libexec" "$tmp/root/libexec"
-ln -s "$ROOT/share/default/shellfish.jsonc" "$tmp/root/share/default/shellfish.jsonc"
 print -r -- '#!/bin/sh' >"$tmp/root/share/default/hooks/stop/bundled/run"
 chmod +x "$tmp/root/share/default/hooks/stop/bundled/run"
-print -r -- '#!/bin/sh' >"$tmp/hooks/stop/bundled/run"
-chmod +x "$tmp/hooks/stop/bundled/run"
-cat >"$tmp/bundled.jsonc" <<'JSON'
-{
-  "profiles":{"default":{"harness":"fallback","request":{"model":"m"}}},
-  "harnesses":{"fallback":{"stop":["bundled"]}}
-}
-JSON
-SF_ROOT="$tmp/root"
+print -r -- '#!/bin/sh' >"$SF_TEST_CONFIG/hooks/stop/bundled/run"
+chmod +x "$SF_TEST_CONFIG/hooks/stop/bundled/run"
+sf_test_profile fallback '{
+  "backend": {"adapter": "'"$fixture_backend"'"},
+  "request": {"model": "m"},
+  "harness": {"stop": ["bundled"]}
+}'
 SF_SHARE="$tmp/root/share"
-sf_runtime_resolve_from_config "$tmp/bundled.jsonc" '' '' '{}' "$ROOT/tests/fixtures/backend"
-jq -e --arg path "${tmp:A}/hooks/stop/bundled/run" \
+sf_runtime_resolve_args -p fallback
+jq -e --arg path "${SF_TEST_CONFIG:A}/hooks/stop/bundled/run" \
   '.harness.stop == [{command:$path,render:{initial_user_text:"",user_text:"${output.stderr}",model_text:"${output.stdout}"},environment:[]}]' <<<"$REPLY" >/dev/null
-rm -rf -- "$tmp/hooks/stop/bundled"
-sf_runtime_resolve_from_config "$tmp/bundled.jsonc" '' '' '{}' "$ROOT/tests/fixtures/backend"
+rm -rf -- "$SF_TEST_CONFIG/hooks/stop/bundled"
+sf_runtime_resolve_args -p fallback
 jq -e --arg path "${tmp:A}/root/share/default/hooks/stop/bundled/run" \
   '.harness.stop == [{command:$path,render:{initial_user_text:"",user_text:"${output.stderr}",model_text:"${output.stdout}"},environment:[]}]' <<<"$REPLY" >/dev/null
-SF_ROOT=$ROOT
 SF_SHARE=$ROOT/share
 
 # Tool references preserve configured order.
-mkdir -p "$tmp/config/tools"
+mkdir -p "$SF_TEST_CONFIG/tools"
 for tool_name in alpha beta gamma delta epsilon; do
-  mkdir "$tmp/config/tools/$tool_name"
-  print -r -- '#!/bin/sh' >"$tmp/config/tools/$tool_name/run"
-  chmod +x "$tmp/config/tools/$tool_name/run"
+  mkdir "$SF_TEST_CONFIG/tools/$tool_name"
+  print -r -- '#!/bin/sh' >"$SF_TEST_CONFIG/tools/$tool_name/run"
+  chmod +x "$SF_TEST_CONFIG/tools/$tool_name/run"
   jq -n --arg description "$tool_name tool" \
     '{description:$description,input_schema:{type:"object"},sandbox:false}' \
-    >"$tmp/config/tools/$tool_name/manifest.json"
+    >"$SF_TEST_CONFIG/tools/$tool_name/manifest.json"
 done
-mv "$tmp/config/tools/beta/manifest.json" "$tmp/config/tools/beta/manifest.jsonc"
-cat >"$tmp/config/tooled.jsonc" <<'JSON'
-{
-  "profiles":{"default":{"harness":"tooled","request":{"model":"m"}}},
-  "harnesses":{"tooled":{"tools":["beta","alpha","gamma","delta","epsilon"]}}
-}
-JSON
-sf_runtime_resolve_from_config "$tmp/config/tooled.jsonc" '' '' '{}' "$ROOT/tests/fixtures/backend"
-jq -e --arg base "${tmp:A}/config/tools" '
+mv "$SF_TEST_CONFIG/tools/beta/manifest.json" "$SF_TEST_CONFIG/tools/beta/manifest.jsonc"
+sf_test_profile tooled '{
+  "backend": {"adapter": "'"$fixture_backend"'"},
+  "request": {"model": "m"},
+  "harness": {"tools": ["beta", "alpha", "gamma", "delta", "epsilon"]}
+}'
+sf_runtime_resolve_args -p tooled
+jq -e --arg base "${SF_TEST_CONFIG:A}/tools" '
   (.harness.tools | map(.name)) == ["beta", "alpha", "gamma", "delta", "epsilon"] and
   (.harness.tools | map(.command)) == [($base + "/beta/run"), ($base + "/alpha/run"),
     ($base + "/gamma/run"), ($base + "/delta/run"), ($base + "/epsilon/run")] and
@@ -355,79 +324,74 @@ jq -e --arg base "${tmp:A}/config/tools" '
       model_text:"${output.stdout}${output.stderr}",permission_user_text:"${input}"}) and
   .harness.tools[0].manifest.description == "beta tool"
 ' <<<"$REPLY" >/dev/null
-cp "$tmp/config/tools/beta/manifest.jsonc" "$tmp/config/tools/beta/manifest.json"
-if sf_runtime_resolve_from_config "$tmp/config/tooled.jsonc" '' '' '{}' \
-    "$ROOT/tests/fixtures/backend"; then
+cp "$SF_TEST_CONFIG/tools/beta/manifest.jsonc" "$SF_TEST_CONFIG/tools/beta/manifest.json"
+if sf_runtime_resolve_args -p tooled; then
   fail 'component with ambiguous manifests was accepted'
 fi
-[[ $SF_RUNTIME_ERROR == "multiple component manifests: ${tmp:A}/config/tools/beta" ]]
-rm "$tmp/config/tools/beta/manifest.json"
+[[ $SF_RUNTIME_ERROR == "multiple component manifests: ${SF_TEST_CONFIG:A}/tools/beta" ]]
+rm "$SF_TEST_CONFIG/tools/beta/manifest.json"
 
 # Sandboxed tools require fence settings.
 jq -n '{description:"sandboxed",input_schema:{type:"object"},sandbox:true}' \
-  >"$tmp/config/tools/alpha/manifest.json"
-if sf_runtime_resolve_from_config "$tmp/config/tooled.jsonc" '' '' '{}' "$ROOT/tests/fixtures/backend"; then
+  >"$SF_TEST_CONFIG/tools/alpha/manifest.json"
+if sf_runtime_resolve_args -p tooled; then
   fail 'sandboxed tool without fence settings was accepted'
 fi
-[[ $SF_RUNTIME_ERROR == *"cannot read tool sandbox settings: ${tmp:A}/config/tools/alpha/fence.jsonc"* ]]
-print -r -- '{}' >"$tmp/config/tools/alpha/fence.jsonc"
-sf_runtime_resolve_from_config "$tmp/config/tooled.jsonc" '' '' '{}' "$ROOT/tests/fixtures/backend"
-jq -e --arg settings "${tmp:A}/config/tools/alpha/fence.jsonc" '
+[[ $SF_RUNTIME_ERROR == *"cannot read tool sandbox settings: ${SF_TEST_CONFIG:A}/tools/alpha/fence.jsonc"* ]]
+print -r -- '{}' >"$SF_TEST_CONFIG/tools/alpha/fence.jsonc"
+sf_runtime_resolve_args -p tooled
+jq -e --arg settings "${SF_TEST_CONFIG:A}/tools/alpha/fence.jsonc" '
   (.harness.tools | map(.name)) == ["beta", "alpha", "gamma", "delta", "epsilon"] and
   .harness.tools[1].manifest.sandbox == true and
   .harness.tools[1].settings == $settings' <<<"$REPLY" >/dev/null
 
 (
   commands[fence]=''
-  if sf_runtime_resolve_from_config "$tmp/config/tooled.jsonc" '' '' '{}' \
-      "$ROOT/tests/fixtures/backend"; then
+  if sf_runtime_resolve_args -p tooled; then
     fail 'sandboxed tool without fence was accepted'
   fi
   [[ $SF_RUNTIME_ERROR == *'sandboxing requires fence'* ]]
 )
 
-# Unsandboxed harnesses do not require fence.
-jq '.harnesses.tooled.sandbox=false' "$tmp/config/tooled.jsonc" \
-  >"$tmp/config/unsandboxed-tools.jsonc"
+# An unsandboxed harness does not require fence.
+sf_test_profile unsandboxed '{"extend": ["tooled"], "harness": {"sandbox": false}}'
 (
   unset 'commands[fence]'
-  sf_runtime_resolve_from_config "$tmp/config/unsandboxed-tools.jsonc" '' '' '{}' \
-    "$ROOT/tests/fixtures/backend"
+  sf_runtime_resolve_args -p unsandboxed
   jq -e '.harness.sandbox == false and .harness.fence == ""' <<<"$REPLY" >/dev/null
 )
 
 # Exported environment values override the env file.
 export OPENAI_API_KEY='from-environment'
 export ANTHROPIC_API_KEY='other-component'
-sf_runtime_resolve_from_config "$config" work '' '{}'
+sf_runtime_resolve_args -p work
 runtime=$(jq -c '.harness.stop=[{command:"/bin/hook",environment:["ANTHROPIC_API_KEY"],render:{initial_user_text:"",user_text:"${output.stderr}",model_text:"${output.stdout}"}}]' \
   <<<"$REPLY")
 typeset declared
 declared=$(jq -L "$ROOT" -rn --argjson runtime "$runtime" \
   'include "lib/runtime"; declared_environment($runtime)')
 [[ $declared == 'ANTHROPIC_API_KEY OPENAI_API_KEY' ]]
-sf_environment_load "$(jq -r '.backend.env_file' <<<"$runtime")" OPENAI_API_KEY
+sf_environment_load "$(jq -r .config_dir <<<"$runtime")" OPENAI_API_KEY
 [[ ${(j: :)SF_ENVIRONMENT_VALUES} == 'OPENAI_API_KEY=from-environment' ]]
 [[ $runtime != *from-environment* ]]
 unset OPENAI_API_KEY ANTHROPIC_API_KEY
 
 # Environment values load from env files.
-typeset environment_file="$tmp/config/environment.fixture"
+typeset environment_dir="$tmp/environment" environment_file="$tmp/environment/.env"
+mkdir -p "$environment_dir"
 cat >"$environment_file" <<'ENV'
 export OPENAI_API_KEY = "from-file"
 ANTHROPIC_API_KEY=other-file
 ENV
-runtime=$(jq -c --arg path "$environment_file" '.backend.env_file=$path' <<<"$runtime")
-sf_environment_load "$environment_file" OPENAI_API_KEY
+sf_environment_load "$environment_dir" OPENAI_API_KEY
 [[ ${(j: :)SF_ENVIRONMENT_VALUES} == 'OPENAI_API_KEY=from-file' ]]
-[[ $runtime != *from-file* ]]
 
 export OPENAI_API_KEY=''
-sf_environment_load "$environment_file" OPENAI_API_KEY
+sf_environment_load "$environment_dir" OPENAI_API_KEY
 [[ ${(j: :)SF_ENVIRONMENT_VALUES} == 'OPENAI_API_KEY=' ]]
 unset OPENAI_API_KEY
 
 print -r -- 'invalid line' >>"$environment_file"
-if sf_environment_load "$environment_file" OPENAI_API_KEY; then
+if sf_environment_load "$environment_dir" OPENAI_API_KEY; then
   fail 'invalid env file tail was accepted'
 fi

@@ -98,9 +98,11 @@ valid_header=$(jq -cn '
     cwd: "/tmp",
     created: "2026-08-18T00:00:00Z",
     runtime: {
-      profile: {request: {model: "gpt-4o"}},
+      request: {model: "gpt-4o"},
+      system: [],
+      config_dir: "/tmp/config",
       backend: {
-        name: "openai", command: "/bin/run", env_file: "/tmp/.env",
+        name: "openai", command: "/bin/run",
         endpoint: "https://api.openai.com/v1/chat/completions",
         environment: ["OPENAI_API_KEY"], insecure_tls: false,
         http_timeout: 30, http_stall: 10
@@ -150,10 +152,10 @@ for environment in '["DUPLICATE","DUPLICATE"]' '["HAS SPACE"]'; do
   fi
 done
 
-print -r -- "$valid_header" | jq -c '.runtime.profile.system = ["/system/prompt.md"]' |
+print -r -- "$valid_header" | jq -c '.runtime.system = ["/system/prompt.md"]' |
   schema_eval 'canonical_session_header' >/dev/null
 for system in '["relative.md"]' '"/system/prompt.md"'; do
-  if jq -c --argjson system "$system" '.runtime.profile.system = $system' <<<"$valid_header" |
+  if jq -c --argjson system "$system" '.runtime.system = $system' <<<"$valid_header" |
       schema_eval 'canonical_session_header' >/dev/null 2>&1; then
     fail "invalid system paths were accepted in a session header: $system"
   fi

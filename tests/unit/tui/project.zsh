@@ -8,7 +8,7 @@ source "${0:A:h:h:h}/_helpers.zsh"
 sf_test_source libexec/tui/render/view.zsh libexec/tui/project.zsh
 
 typeset header=$(head -n 1 "$SF_TEST_SESSIONS/complete.jsonl")
-typeset runtime=$(jq -c '.runtime | .profile.context_window = 200' <<<"$header")
+typeset runtime=$(jq -c '.runtime | .context_window = 200' <<<"$header")
 
 # Join one action per line for comparison; a trailing empty field shows as "|".
 actions() { print -rl -- ${(@)${(@)SF_PRESENT_ACTIONS//$'\0'/ | }% } }

@@ -160,22 +160,19 @@ def tool_manifest:
 # The runtime stored in the session header.
 def canonical_runtime:
   type == "object" and
-  keys == ["backend", "harness", "profile"] and
-  (.profile | type == "object" and
-    ((keys - ["context_window", "request", "system"]) | length == 0) and
-    (["request"] - keys | length == 0) and
-    (.request | type == "object" and (.model | model_name)) and
-    ((has("system") | not) or
-      (.system | type == "array" and all(.[]; stored_path))) and
-    (if has("context_window") then
-      .context_window == null or (.context_window | positive_integer)
-    else true end)) and
+  ((keys - ["backend", "config_dir", "context_window", "harness", "request", "system"]) | length == 0) and
+  ((["backend", "config_dir", "harness", "request", "system"] - keys) | length == 0) and
+  (.request | type == "object" and (.model | model_name)) and
+  (.system | type == "array" and all(.[]; stored_path)) and
+  (.config_dir | stored_path) and
+  (if has("context_window") then
+    .context_window == null or (.context_window | positive_integer)
+  else true end) and
   (.backend | type == "object" and
-    ((keys - ["command", "context_window_command", "endpoint", "env_file", "environment", "http_stall", "http_timeout", "insecure_tls", "name"]) | length == 0) and
-    (["command", "endpoint", "env_file", "environment", "http_stall", "http_timeout", "insecure_tls", "name"] - keys | length == 0) and
+    ((keys - ["command", "context_window_command", "endpoint", "environment", "http_stall", "http_timeout", "insecure_tls", "name"]) | length == 0) and
+    (["command", "endpoint", "environment", "http_stall", "http_timeout", "insecure_tls", "name"] - keys | length == 0) and
     (.name | profile_name) and (.command | stored_path) and (.endpoint | endpoint) and
     (.environment | component_environment) and (.insecure_tls | type == "boolean") and
-    (.env_file == "" or (.env_file | stored_path)) and
     (.http_timeout | positive_integer) and (.http_stall | positive_integer) and
     (if has("context_window_command") then
       .context_window_command | stored_path
@@ -214,9 +211,9 @@ def canonical_session_header:
   (.runtime | canonical_runtime);
 
 def runtime_paths(rewrite):
-  (if .profile | has("system") then .profile.system |= map(rewrite) else . end) |
+  .system |= map(rewrite) |
+  .config_dir |= rewrite |
   .backend.command |= rewrite |
-  (if .backend.env_file == "" then . else .backend.env_file |= rewrite end) |
   (if .backend | has("context_window_command") then
     .backend.context_window_command |= rewrite else . end) |
   (if .harness.fence == "" then . else .harness.fence |= rewrite end) |
@@ -263,7 +260,7 @@ def tool_render_defaults:
    model_text:"${output.stdout}${output.stderr}",permission_user_text:"${input}"};
 
 def config_error($path; $message):
-  error("invalid config at $" + ($path | map("[" + tojson + "]") | join("")) + ": " + $message);
+  error("invalid profile at $" + ($path | map("[" + tojson + "]") | join("")) + ": " + $message);
 def config_object($path; $fields):
   if type != "object" then config_error($path; "must be an object")
   else (keys - $fields) as $unknown |
@@ -271,174 +268,150 @@ def config_object($path; $fields):
     else . end end;
 def config_assert($valid; $path; $message):
   if $valid then . else config_error($path; $message) end;
+def reference_list: type == "array" and all(.[]; nonempty_control_free_string);
 
-def config_backend($path):
-  config_object($path; ["adapter", "endpoint", "environment", "insecure_tls",
-    "http_timeout", "http_stall"]) |
-  config_assert((has("adapter") | not) or (.adapter | nonempty_control_free_string);
-    $path + ["adapter"]; "invalid reference") |
-  config_assert((has("endpoint") | not) or (.endpoint | endpoint);
-    $path + ["endpoint"]; "must be an HTTP(S) URL") |
-  config_assert((has("environment") | not) or (.environment | component_environment);
-    $path + ["environment"]; "must contain unique environment variable names") |
-  config_assert((has("insecure_tls") | not) or (.insecure_tls | type == "boolean");
-    $path + ["insecure_tls"]; "must be a boolean") |
-  config_assert((has("http_timeout") | not) or (.http_timeout | positive_integer);
-    $path + ["http_timeout"]; "must be a positive integer") |
-  config_assert((has("http_stall") | not) or (.http_stall | positive_integer);
-    $path + ["http_stall"]; "must be a positive integer");
-def config_harness($path):
-  config_object($path; ["tools", "sandbox", "sandbox_read_paths", "sandbox_write_paths",
-    "max_requests_per_turn", "max_tool_calls_per_request", "max_capture_bytes"] + hook_names) |
-  reduce hook_names[] as $hook (.;
-    config_assert((has($hook) | not) or (.[$hook] | type == "array" and
-      all(.[]; nonempty_control_free_string)); $path + [$hook]; "must be references")) |
-  config_assert((has("tools") | not) or (.tools | type == "array" and
-    all(.[]; nonempty_control_free_string) and length == (unique | length));
-    $path + ["tools"]; "must be unique references") |
-  config_assert((has("sandbox") | not) or (.sandbox | type == "boolean");
-    $path + ["sandbox"]; "must be a boolean") |
-  reduce ["sandbox_read_paths", "sandbox_write_paths"][] as $field (.;
-    config_assert((has($field) | not) or (.[$field] | type == "array" and
-      all(.[]; type == "string" and length > 0 and
-        (startswith("/") or startswith("~/")) and (contains("\u0000") | not)));
-      $path + [$field]; "must contain absolute or ~/ paths")) |
-  config_assert((has("max_requests_per_turn") | not) or
-    (.max_requests_per_turn | positive_integer); $path + ["max_requests_per_turn"];
-    "must be a positive integer") |
-  config_assert((has("max_tool_calls_per_request") | not) or
-    (.max_tool_calls_per_request | positive_integer); $path + ["max_tool_calls_per_request"];
-    "must be a positive integer") |
-  config_assert((has("max_capture_bytes") | not) or (.max_capture_bytes | capture_bytes);
-    $path + ["max_capture_bytes"]; "must be at least 64");
+# One profile file. Its top level is the runtime top level, so "backend" and
+# "harness" are inline objects rather than names into separate maps.
 def config_profile($path):
-  config_object($path; ["extend", "backend", "context_window", "harness", "request", "system"]) |
-  config_assert((has("extend") | not) or (.extend | profile_name);
-    $path + ["extend"]; "invalid profile name") |
-  config_assert((has("backend") | not) or (.backend | profile_name);
-    $path + ["backend"]; "invalid backend name") |
-  config_assert((has("harness") | not) or (.harness | profile_name);
-    $path + ["harness"]; "invalid harness name") |
+  config_object($path; ["$schema", "backend", "context_window", "extend", "harness",
+    "request", "system"]) |
+  config_assert((has("extend") | not) or (.extend | type == "array" and
+    all(.[]; ltrimstr("@") | profile_name)); $path + ["extend"]; "must be profile names") |
   config_assert((has("context_window") | not) or
     (.context_window == null or (.context_window | positive_integer));
     $path + ["context_window"]; "must be null or a positive integer") |
   config_assert((has("request") | not) or (.request | type == "object");
     $path + ["request"]; "must be an object") |
-  config_assert((has("system") | not) or (.system | type == "array" and
-    all(.[]; nonempty_control_free_string)); $path + ["system"]; "must be references");
+  config_assert((has("system") | not) or (.system | reference_list);
+    $path + ["system"]; "must be references") |
+  (if has("backend") then .backend |= (
+    config_object($path + ["backend"]; ["adapter", "endpoint", "environment",
+      "insecure_tls", "http_timeout", "http_stall"]) |
+    config_assert((has("adapter") | not) or (.adapter | nonempty_control_free_string);
+      $path + ["backend", "adapter"]; "invalid reference") |
+    config_assert((has("endpoint") | not) or (.endpoint | endpoint);
+      $path + ["backend", "endpoint"]; "must be an HTTP(S) URL") |
+    config_assert((has("environment") | not) or (.environment | component_environment);
+      $path + ["backend", "environment"]; "must contain unique environment variable names") |
+    config_assert((has("insecure_tls") | not) or (.insecure_tls | type == "boolean");
+      $path + ["backend", "insecure_tls"]; "must be a boolean") |
+    reduce ["http_timeout", "http_stall"][] as $field (.;
+      config_assert((has($field) | not) or (.[$field] | positive_integer);
+        $path + ["backend", $field]; "must be a positive integer"))
+  ) else . end) |
+  (if has("harness") then .harness |= (
+    config_object($path + ["harness"]; ["tools", "sandbox", "sandbox_read_paths",
+      "sandbox_write_paths", "max_requests_per_turn", "max_tool_calls_per_request",
+      "max_capture_bytes"] + hook_names) |
+    reduce (hook_names + ["tools"])[] as $field (.;
+      config_assert((has($field) | not) or (.[$field] | reference_list);
+        $path + ["harness", $field]; "must be references")) |
+    config_assert((has("sandbox") | not) or (.sandbox | type == "boolean");
+      $path + ["harness", "sandbox"]; "must be a boolean") |
+    reduce ["sandbox_read_paths", "sandbox_write_paths"][] as $field (.;
+      config_assert((has($field) | not) or (.[$field] | type == "array" and
+        all(.[]; type == "string" and length > 0 and
+          (startswith("/") or startswith("~/")) and (contains("\u0000") | not)));
+        $path + ["harness", $field]; "must contain absolute or ~/ paths")) |
+    reduce ["max_requests_per_turn", "max_tool_calls_per_request"][] as $field (.;
+      config_assert((has($field) | not) or (.[$field] | positive_integer);
+        $path + ["harness", $field]; "must be a positive integer")) |
+    config_assert((has("max_capture_bytes") | not) or (.max_capture_bytes | capture_bytes);
+      $path + ["harness", "max_capture_bytes"]; "must be at least 64")
+  ) else . end);
 
-def config_validate:
-  config_object([]; ["$schema", "default_profile", "backends", "harnesses", "profiles"]) |
-  config_assert((has("$schema") | not) or (."$schema" | type == "string");
-    ["$schema"]; "must be a string") |
-  config_assert((has("default_profile") | not) or (.default_profile | profile_name);
-    ["default_profile"]; "invalid profile name") |
-  if has("backends") then .backends |= (to_entries | map(.key as $name |
-    config_assert($name | profile_name; ["backends", $name]; "invalid name") |
-    .value |= config_backend(["backends", $name])) | from_entries) else . end |
-  if has("harnesses") then .harnesses |= (to_entries | map(.key as $name |
-    config_assert($name | profile_name; ["harnesses", $name]; "invalid name") |
-    .value |= config_harness(["harnesses", $name])) | from_entries) else . end |
-  if has("profiles") then .profiles |= (to_entries | map(.key as $name |
-    config_assert($name | profile_name; ["profiles", $name]; "invalid name") |
-    .value |= config_profile(["profiles", $name])) | from_entries) else . end;
+# Profile files keyed by path become names: bundled files are "@NAME" and
+# configured files "NAME".
+def profile_map($bundled):
+  with_entries(.key |= ((if startswith($bundled + "/") then "@" else "" end) +
+    (split("/") | last | rtrimstr(".jsonc"))));
 
-def config_resolve_profiles($bundled; $configured; $backends; $harnesses):
-  def resolve($name; $seen):
-    if $seen | index($name) then error("profile inheritance cycle")
-    elif $configured | has($name) then
-      $configured[$name] as $profile |
-      if $profile | has("extend") then
-        (if $name == "default" and $profile.extend == "default" then
-          $bundled.default // error("unknown bundled default profile")
-        else resolve($profile.extend; $seen + [$name]) end) * ($profile | del(.extend))
-      else $profile end
-    elif $bundled | has($name) then $bundled[$name]
-    else error("unknown profile: " + $name) end;
-  reduce (($bundled + $configured) | keys[]) as $name ({};
-    resolve($name; []) as $profile |
-    .[$name] = ($profile |
-      if has("backend") then .backend as $ref |
-        .backend = (($backends[$ref] // error("unknown backend: " + $ref)) + {name:$ref}) else . end |
-      if has("harness") then .harness as $ref |
-        .harness = (($harnesses[$ref] // error("unknown harness: " + $ref)) + {name:$ref}) else . end));
+# A bare name prefers the configured file; "@NAME" is always the bundled one.
+def profile_key($profiles):
+  if startswith("@") or $profiles[.] then . else "@" + . end;
 
-def runtime_prepare:
-  . as $input |
-  $input.defaults as $defaults |
-  $input.raw as $raw |
-  $input.profile_override as $profile_override |
-  $input.model_override as $model_override |
-  $input.request_override as $request_override |
-  $input.backend_override as $backend_override |
-  $input.external_backend_name as $external_backend_name |
-  ($raw | config_validate) as $validated |
-  ($defaults * $validated) as $base |
-  ($base | .profiles = config_resolve_profiles(
-    $defaults.profiles; $validated.profiles // {};
-    .backends; .harnesses)) as $config |
-  (if $profile_override == "" then $config.default_profile else $profile_override end) as $name |
-  ($config.profiles[$name] // error("unknown profile: " + $name)) as $selected |
-  $selected |
-  .harness |= reduce ["sandbox_read_paths", "sandbox_write_paths"][] as $field (.;
-    if has($field) then .[$field] |= map(
-      if startswith("~/") then
-        if $input.home == "" then error("cannot expand ~ without HOME")
-        else $input.home + "/" + ltrimstr("~/") end
-      else . end)
-    else . end) |
-  if $backend_override == "" then .
-  elif $config.backends | has($backend_override) then
-    .backend = ($config.backends[$backend_override] + {name:$backend_override})
-  else .backend = {name:$external_backend_name} end |
-  . as $profile |
-  ($profile.backend.name // error("profile backend is required")) as $backend_name |
-  (($profile.request // {}) * $request_override |
-    if $model_override == "" then . else .model = $model_override end |
-    select(.model | model_name) //
-      error("a valid model is required for a new session")) as $request |
-  ($backend_override != "" and ($config.backends | has($backend_override) | not)) as $external |
-  {
-    profile:$profile,
-    request:$request,
-    backend_name:$backend_name,
-    backend_reference:(if $external then $backend_override
-      else ($profile.backend.adapter // $backend_name) end),
-    backend_external:$external,
-    tool_references:($profile.harness.tools // []),
-    system_references:($profile.system // []),
-    hook_component_references:[hook_names[] as $hook |
-      ($profile.harness[$hook] // [])[] | {hook:$hook,reference:.}]
-  };
+# Objects merge recursively and arrays replace, except that "..." splices the
+# inherited array at its position.
+def merge_over($base):
+  if type == "object" then
+    . as $over | (($base | objects) // {}) as $base |
+    reduce keys_unsorted[] as $key ($base;
+      .[$key] = ($over[$key] | merge_over($base[$key])))
+  elif type == "array" then
+    [.[] | if . == "..." then (($base | arrays) // [])[] else . end]
+  else . end;
 
-def runtime_finalize:
-  . as $input |
-  $input.prepared as $prepared |
-  ($input.manifest | fromjson |
+# Depth-first with parents first, each profile once. $seen is the ancestor
+# path, so diamonds are legal and cycles are not.
+def profile_order($profiles; $names; $seen):
+  reduce $names[] as $name (.;
+    ($name | profile_key($profiles)) as $key |
+    if $seen | index([$key]) then error("profile inheritance cycle: " + $name)
+    elif index([$key]) then .
+    else ($profiles[$key] // error("unknown profile: " + $name) |
+        config_profile([$name]) | .extend // []) as $parents |
+      profile_order($profiles; $parents; $seen + [$key]) + [$key] end);
+
+# Selected profiles merge in one ordered pass, as if one profile extended them all.
+def profile_resolve($profiles; $names):
+  reduce ([] | profile_order($profiles; $names; []))[] as $key ({};
+    . as $inherited | $profiles[$key] | del(.extend, ."$schema") | merge_over($inherited));
+
+def profile_select($profiles; $names; $model; $request; $backend; $home):
+  profile_resolve($profiles; $names) |
+  (if $backend == "" then . else .backend.adapter = $backend end) |
+  .request = ((.request // {}) * $request |
+    if $model == "" then . else .model = $model end) |
+  (if .request.model | model_name then . else
+    error("a valid model is required for a new session") end) |
+  (if (.backend.adapter // "") == "" then
+    error("profile backend is required") else . end) |
+  # Splicing an inherited list makes a restated tool easy to duplicate.
+  ((.harness.tools // []) as $tools |
+    if ($tools | length) == ($tools | unique | length) then .
+    else error("profile tools must be unique: " + ($tools | join(", "))) end) |
+  .harness = ((.harness // {}) |
+    reduce ["sandbox_read_paths", "sandbox_write_paths"][] as $field (.;
+      if has($field) then .[$field] |= map(
+        if startswith("~/") then
+          if $home == "" then error("cannot expand ~ without HOME")
+          else $home + "/" + ltrimstr("~/") end
+        else . end)
+      else . end));
+
+# Filesystem facts jq cannot obtain, keyed by "<kind>TAB<reference>". Each entry
+# is a resolved directory, one flag for an optional sibling script, and the
+# component manifest.
+def resolution_table($words):
+  [range(0; $words | length; 4) as $at |
+    {key:$words[$at], value:{path:$words[$at + 1],
+      flag:($words[$at + 2] == "1"), manifest:($words[$at + 3] | fromjson)}}] |
+  from_entries;
+
+def runtime_finalize($profile; $table; $config_dir; $fence; $grants):
+  $table["backend"] as $backend |
+  ($backend.manifest |
     select(type == "object" and keys == ["endpoint", "environment"] and
       (.endpoint | endpoint) and (.environment | component_environment)) //
     error("invalid backend manifest")) as $manifest |
-  $input.command as $command |
-  # Each resolved entry arrives as a fixed-width group of shell words.
-  ($input.resolved.tools | [range(0; length; 5) as $at | .[$at:$at + 5] |
-    {name:.[0],command:.[1],manifest_json:.[2],settings:.[3],
-      settings_readable:(.[4] == "1")}]) as $resolved_tools |
-  ($input.resolved.components | [range(0; length; 4) as $at | .[$at:$at + 4] |
-    {hook:.[0],command:.[1],manifest_json:.[2],match:.[3]}]) as $resolved_components |
-  [$resolved_tools[] as $tool |
-    ($tool.manifest_json | fromjson |
-      select(tool_manifest) //
-        error("invalid tool manifest: " + $tool.command) |
+  [($profile.harness.tools // [])[] as $reference |
+    $table["tools\t" + $reference] as $entry |
+    ($entry.manifest | select(tool_manifest) //
+        error("invalid tool manifest: " + $entry.path) |
       .render = (tool_render_defaults + (.render // {}))) as $tool_manifest |
-    if $tool_manifest.sandbox and ($tool.settings_readable | not) then
-      error("cannot read tool sandbox settings: " + $tool.settings)
-    else {name:$tool.name,command:$tool.command,
+    if $tool_manifest.sandbox and ($entry.flag | not) then
+      error("cannot read tool sandbox settings: " + $entry.path + "/fence.jsonc")
+    else {name:($entry.path | split("/") | last), command:($entry.path + "/run"),
       manifest:$tool_manifest,
-      settings:(if $tool_manifest.sandbox then $tool.settings else null end)} end] as $tools |
-  (reduce $resolved_components[] as $component ({};
-    ($component.manifest_json | fromjson |
-      if $component.match == "" then .
-      else .match = {command:$component.match} end) as $manifest |
+      settings:(if $tool_manifest.sandbox then $entry.path + "/fence.jsonc"
+        else null end)} end] as $tools |
+  (reduce (hook_names[] as $hook | ($profile.harness[$hook] // [])[] |
+      {hook:$hook, entry:$table[("hooks/" + $hook) + "\t" + .]}) as $component ({};
+    ($component.entry.path + "/run") as $command |
+    ($component.entry.manifest |
+      if $component.entry.flag then
+        .match = {command:($component.entry.path + "/match")}
+      else . end) as $manifest |
     (hook_render_defaults + ($manifest.render // {})) as $render |
     ($manifest |
       select(type == "object" and
@@ -453,34 +426,35 @@ def runtime_finalize:
         (if has("help") then
            has("match") and (.help | hook_help)
          else true end)) //
-      error("invalid hook component: " + $component.command)) as $hook_manifest |
-    .[$component.hook] += [({command:$component.command,render:$render,
+      error("invalid hook component: " + $command)) as $hook_manifest |
+    .[$component.hook] += [({command:$command,render:$render,
       environment:($hook_manifest.environment // [])} +
       (if $hook_manifest | has("match") then {match:$hook_manifest.match} else {} end) +
       (if $hook_manifest | has("help") then {help:$hook_manifest.help} else {} end))])) as $hooks |
-  $prepared.profile as $profile |
   ((if $profile.harness | has("sandbox") then $profile.harness.sandbox else true end) and
     any($tools[]; .manifest.sandbox)) as $needs_fence |
-  if $needs_fence and $input.fence == "" then error("sandboxing requires fence") else . end |
+  if $needs_fence and $fence == "" then error("sandboxing requires fence") else . end |
   {
-    profile:({request:$prepared.request,system:$input.resolved.system} +
-      (if $profile | has("context_window") then
-        {context_window:$profile.context_window} else {} end)),
-    backend:{name:$prepared.backend_name,command:$command,env_file:$input.env_file,
+    backend:({name:($backend.path | split("/") | last),command:($backend.path + "/run"),
       endpoint:($profile.backend.endpoint // $manifest.endpoint),
       environment:($profile.backend.environment // $manifest.environment),
       insecure_tls:($profile.backend.insecure_tls // false),
       http_timeout:($profile.backend.http_timeout // 3600),
       http_stall:($profile.backend.http_stall // 300)} +
-      (if $input.context_window_command == "" then {}
-       else {context_window_command:$input.context_window_command} end),
+      (if $backend.flag then
+        {context_window_command:($backend.path + "/context_window")} else {} end)),
+    config_dir:$config_dir,
     harness:({
-      sandbox_read_paths:(($profile.harness.sandbox_read_paths // []) + $input.sandbox_read_paths),
-      sandbox_write_paths:(($profile.harness.sandbox_write_paths // []) + $input.sandbox_write_paths),
-      fence:(if $needs_fence then $input.fence else "" end),tools:$tools,
+      sandbox_read_paths:(($profile.harness.sandbox_read_paths // []) + $grants.sandbox_read_paths),
+      sandbox_write_paths:(($profile.harness.sandbox_write_paths // []) + $grants.sandbox_write_paths),
+      fence:(if $needs_fence then $fence else "" end),tools:$tools,
       sandbox:(if $profile.harness | has("sandbox")
         then $profile.harness.sandbox else true end),
       max_requests_per_turn:($profile.harness.max_requests_per_turn // 100),
       max_tool_calls_per_request:($profile.harness.max_tool_calls_per_request // 25),
-      max_capture_bytes:($profile.harness.max_capture_bytes // 32768)} + $hooks)
-  };
+      max_capture_bytes:($profile.harness.max_capture_bytes // 32768)} + $hooks),
+    request:$profile.request,
+    system:[($profile.system // [])[] | $table["system\t" + .].path]
+  } +
+  (if $profile | has("context_window") then
+    {context_window:$profile.context_window} else {} end);

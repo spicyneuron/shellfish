@@ -65,36 +65,30 @@ Built-in backends and credentials:
 | `openai-responses` | `OPENAI_API_KEY` |
 | `openrouter` | `OPENROUTER_API_KEY` |
 
-The `openai` backend also supports compatible services by setting `endpoint` in its backend config.
+The `openai` adapter also supports compatible services by setting `endpoint` in a profile's `backend`.
 
 Run `shellfish --help` for creation and sandbox options, or `/help` inside chat for commands supplied by the active harness.
 
 ## Configuration
 
-Shellfish merges `$XDG_CONFIG_HOME/shellfish/shellfish.jsonc` (typically `~/.config/shellfish/shellfish.jsonc`) over [its defaults](share/default/shellfish.jsonc). Objects merge recursively and arrays replace their defaults. Exported credentials override values in `.env` beside the configuration file. Themes and preview limits live alongside it in [`tui.jsonc`](share/default/tui.jsonc).
+An agent is one file in `$XDG_CONFIG_HOME/shellfish/profiles/` (typically `~/.config/shellfish/profiles/`). `default.jsonc` is selected when `--profile` is absent, and a file there shadows the [bundled profile](share/default/profiles/) of the same name. Exported credentials override values in `.env` in that directory. Themes and preview limits live in [`tui.jsonc`](share/default/tui.jsonc).
 
 ```jsonc
+// ~/.config/shellfish/profiles/review.jsonc — shellfish -p review
 {
   "$schema": "https://raw.githubusercontent.com/spicyneuron/shellfish/refs/heads/main/share/shellfish.schema.json",
-  "default_profile": "work",
-  "profiles": {
-    "work": {
-      "extend": "default",
-      "backend": "openrouter",
-      "request": {"model": "MODEL"}
-    }
-  }
+  "extend": ["default"],
+  "harness": {"tools": ["read_file", "shell_readonly"]},
+  "system": ["...", "review.md"]
 }
 ```
 
-Backends and harnesses are reusable named building blocks. A backend selects an adapter and endpoint, and declares the environment variables it needs. A harness combines tools, lifecycle hooks, sandbox policy, and turn limits.
-
-Profiles are a reusable package of backend, harness, system-prompt, and provider request settings. Profiles may extend one another, and command-line options can override the selected profile when creating a session. Shellfish resolves that composition once and freezes it in the session header.
+A profile holds a backend, a harness, system-prompt components, and provider request settings. `extend` merges other profiles in order, objects merge recursively, and `"..."` splices an inherited list. Command-line options override the selection, `-p` repeats to compose several profiles, and Shellfish resolves that composition once and freezes it in the session header.
 
 ## Documentation
 
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md): Design intent and opinionated boundaries.
-- [`docs/CONFIG.md`](docs/CONFIG.md): Configure profiles, components, presentation, and the bundled coding harness.
+- [`docs/CONFIG.md`](docs/CONFIG.md): Configure profiles, components, presentation, and the bundled agent.
 - [`docs/HARNESS.md`](docs/HARNESS.md): Write custom hooks, tools, and backend adapters.
 - [`docs/CURSED.md`](docs/CURSED.md): Hard-won lessons and ~~hacks~~ clever workarounds.
 

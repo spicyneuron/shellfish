@@ -2,50 +2,38 @@
 
 source "${0:A:h:h:h}/_helpers.zsh"
 sf_test_tmp run-command
-mkdir -p "$tmp/home" "$tmp/system"
-print -r -- 'initial system' >"$tmp/system/source.md"
+sf_test_config
+mkdir -p "$tmp/home" "$SF_TEST_CONFIG/system"
+print -r -- 'initial system' >"$SF_TEST_CONFIG/system/source.md"
 export HOME="${tmp:A}/home"
-unset XDG_CONFIG_HOME
 
-typeset config="$tmp/shellfish.jsonc"
-cat >"$config" <<EOF
-{
-  "default_profile": "exec",
-  "backends": {"fixture": {"adapter": "$ROOT/tests/fixtures/backend"}},
-  "harnesses": {
-    "machine": {
-      "tools": [], "sandbox": true,
-      "session_start": [], "user_prompt_submit": [], "permission_request": [],
-      "pre_tool_use": [], "post_tool_use": [], "stop": [],
-      "max_requests_per_turn": 8, "max_tool_calls_per_request": 16,
-      "max_capture_bytes": 65536
-    }
-  },
-  "profiles": {
-    "exec": {
-      "backend": "fixture", "harness": "machine", "system": ["source.md"],
-      "request": {"model": "test-model"}
-    }
+sf_test_profile default "{
+  \"backend\": {\"adapter\": \"$ROOT/tests/fixtures/backend\"},
+  \"system\": [\"source.md\"],
+  \"request\": {\"model\": \"test-model\"},
+  \"harness\": {
+    \"tools\": [], \"sandbox\": true,
+    \"max_requests_per_turn\": 8, \"max_tool_calls_per_request\": 16,
+    \"max_capture_bytes\": 65536
   }
-}
-EOF
+}"
 export XDG_STATE_HOME="$tmp/state"
 typeset entry="$ROOT/bin/shellfish"
 typeset output
 
 # Plain mode prints only the answer.
-output=$(SF_TEST_BACKEND_DELAY=0 zsh -f "$entry" run --config "$config" 'plain answer') || \
+output=$(SF_TEST_BACKEND_DELAY=0 zsh -f "$entry" run 'plain answer') || \
   fail 'plain run failed'
 assert_equal 'plain answer' "$output" 'plain run prints only the answer'
 
 # Multi-request turns print only the final assistant message.
-output=$(SF_TEST_BACKEND_DELAY=0 zsh -f "$entry" run --config "$config" 'use a tool') || \
+output=$(SF_TEST_BACKEND_DELAY=0 zsh -f "$entry" run 'use a tool') || \
   fail 'plain tool run failed'
 assert_equal 'Tool complete.' "$output" 'plain run included an intermediate assistant message'
 
 # JSON mode returns a flattened final result, not a protocol record or turn stream.
 typeset json_session="$tmp/json.jsonl"
-output=$(SF_TEST_BACKEND_DELAY=0 zsh -f "$entry" run --json --config "$config" \
+output=$(SF_TEST_BACKEND_DELAY=0 zsh -f "$entry" run --json \
   --session-out "$json_session" 'use a tool') || fail 'JSON run failed'
 print -r -- "$output" | jq -e '
   keys == ["message","stop","usage"] and
@@ -57,31 +45,31 @@ jq -es '[.[] | select(.type == "assistant")] | length == 2' "$json_session" >/de
 
 # Standard input supplies the prompt.
 output=$(print -rn -- 'piped answer' |
-  SF_TEST_BACKEND_DELAY=0 zsh -f "$entry" run --config "$config") || \
+  SF_TEST_BACKEND_DELAY=0 zsh -f "$entry" run) || \
   fail 'piped run failed'
 assert_equal 'piped answer' "$output" 'run accepts standard input'
 
 # A message argument does not wait for an inherited pipe to close.
 integer pipe_started=$SECONDS
-output=$(SF_TEST_BACKEND_DELAY=0 zsh -f "$entry" run --config "$config" 'plain answer' \
+output=$(SF_TEST_BACKEND_DELAY=0 zsh -f "$entry" run 'plain answer' \
   < <(sleep 5)) || fail 'run with an open pipe failed'
 assert_equal 'plain answer' "$output" 'run ignores an unread pipe'
 (( SECONDS - pipe_started < 3 )) || fail 'run waited for an inherited pipe to close'
 
 # Positional prompt words are joined.
-output=$(SF_TEST_BACKEND_DELAY=0 zsh -f "$entry" run --config "$config" \
+output=$(SF_TEST_BACKEND_DELAY=0 zsh -f "$entry" run \
   several prompt words) || fail 'multi-argument run failed'
 assert_equal 'several prompt words' "$output" 'run joins positional prompt words'
 
 # Create options preserve their values.
 typeset forwarded_session="$tmp/forwarded.jsonl"
 output=$(SF_TEST_BACKEND_DELAY=0 zsh -f "$entry" run --session-out "$forwarded_session" \
-  --config "$config" --model forwarded-model --system 'forwarded system' \
+  --model forwarded-model --system 'forwarded system' \
   'plain answer') || fail 'forwarded run failed'
 assert_equal 'plain answer' "$output" 'run keeps the prompt after a forwarded value'
 head -n 1 "$forwarded_session" | jq -e '
-  .runtime.profile.request.model == "forwarded-model" and
-  (.runtime.profile.system | length) == 1
+  .runtime.request.model == "forwarded-model" and
+  (.runtime.system | length) == 1
 ' \
   >/dev/null || fail 'a forwarded option value did not reach the new session'
 jq -e 'select(.type == "system" and .content == "forwarded system")' \
@@ -115,12 +103,12 @@ output=$(zsh -f "$entry" run --session "$forwarded_session" \
 
 # JSONL streams only new turn events.
 typeset jsonl stream_session="$tmp/stream.jsonl"
-zsh -f "$entry" run --session-create --session-out "$stream_session" --config "$config" >/dev/null ||
+zsh -f "$entry" run --session-create --session-out "$stream_session" >/dev/null ||
   fail 'stream session create failed'
 typeset -i prefix=$(jq -es 'length' "$stream_session")
 jsonl=$(print -r -- \
   '{"type":"user","content":[{"type":"text","text":"stream answer"}]}' |
-  SF_TEST_BACKEND_DELAY=0 zsh -f "$entry" run --jsonl --config "$config" \
+  SF_TEST_BACKEND_DELAY=0 zsh -f "$entry" run --jsonl \
     --session "$stream_session") || fail 'JSONL run failed'
 print -r -- "$jsonl" | jq -eRn -L "$ROOT" '
   include "lib/session";
@@ -139,7 +127,7 @@ cmp -s "$tmp/stream-durable" "$tmp/session-durable" ||
   fail 'JSONL durable events differ from the appended session records'
 
 # Context discovery replaces the complete frozen runtime before inference.
-typeset context_backend="$tmp/context-backend" context_config="$tmp/context.jsonc"
+typeset context_backend="$tmp/context-backend"
 typeset context_session="$tmp/context.jsonl" context_stream="$tmp/context.stream"
 mkdir "$context_backend"
 cp "$ROOT/tests/fixtures/backend/manifest.json" "$context_backend/manifest.json"
@@ -150,20 +138,20 @@ cat >/dev/null
 print -r -- '{"context_window":4321}'
 ZSH
 chmod +x "$context_backend/context_window"
-jq --arg adapter "$context_backend" '.backends.fixture.adapter=$adapter' \
-  "$config" >"$context_config"
+sf_test_profile context \
+  "{\"extend\": [\"default\"], \"backend\": {\"adapter\": \"$context_backend\"}}"
 print -r -- '{"type":"user","content":[{"type":"text","text":"context"}]}' |
-  SF_TEST_BACKEND_DELAY=0 zsh -f "$entry" run --jsonl --config "$context_config" \
+  SF_TEST_BACKEND_DELAY=0 zsh -f "$entry" run --jsonl -p context \
     --session-out "$context_session" >"$context_stream" ||
   fail 'context discovery run failed'
 jq -eRn '
   [inputs | fromjson] as $events |
   ($events | map(.type) | index("_session_update")) as $update |
   ($events | map(.type) | index("_assistant_start")) as $start |
-  $update < $start and $events[$update].runtime.profile.context_window == 4321
+  $update < $start and $events[$update].runtime.context_window == 4321
 ' <"$context_stream" >/dev/null || fail 'context discovery emitted the wrong order'
 head -n 1 "$context_session" | jq -e \
-  '.runtime.profile.context_window == 4321' >/dev/null ||
+  '.runtime.context_window == 4321' >/dev/null ||
   fail 'context discovery did not freeze the complete updated runtime'
 cat >"$context_backend/context_window" <<'ZSH'
 #!/usr/bin/env zsh
@@ -172,11 +160,11 @@ exit 7
 ZSH
 context_session="$tmp/context-unavailable.jsonl"
 print -r -- '{"type":"user","content":[{"type":"text","text":"fallback"}]}' |
-  SF_TEST_BACKEND_DELAY=0 zsh -f "$entry" run --jsonl --config "$context_config" \
+  SF_TEST_BACKEND_DELAY=0 zsh -f "$entry" run --jsonl -p context \
     --session-out "$context_session" >/dev/null ||
   fail 'unavailable context discovery blocked inference'
 head -n 1 "$context_session" | jq -e \
-  '.runtime.profile.context_window == null' >/dev/null ||
+  '.runtime.context_window == null' >/dev/null ||
   fail 'unavailable context discovery did not freeze null'
 
 # JSONL emits command handoffs.
@@ -189,12 +177,12 @@ print -rn -u3 -- '{"action":"handoff","argv":["/usr/bin/printf","next.jsonl"]}'
 exit 11
 ZSH
 chmod +x "$handoff_script/run"
-typeset handoff_config="$tmp/handoff.jsonc" handoff_output="$tmp/handoff.jsonl"
-jq --arg script "$handoff_script" '.harnesses.machine.user_prompt_submit=[$script]' \
-  "$config" >"$handoff_config"
+typeset handoff_output="$tmp/handoff.jsonl"
+sf_test_profile handoff \
+  "{\"extend\": [\"default\"], \"harness\": {\"user_prompt_submit\": [\"$handoff_script\"]}}"
 print -r -- \
   '{"type":"user","content":[{"type":"text","text":"handoff"}]}' |
-  zsh -f "$entry" run --jsonl --config "$handoff_config" \
+  zsh -f "$entry" run --jsonl -p handoff \
   >"$handoff_output" || fail 'JSONL run rejected a handoff'
 jq -eRn '
   [inputs | fromjson] as $events |
@@ -204,7 +192,7 @@ jq -eRn '
 
 # Invalid session paths fail cleanly.
 typeset invalid_path="$tmp/invalid-path" invalid_path_output="$tmp/invalid-path.out"
-ln -s "$config" "$invalid_path"
+ln -s "$SF_TEST_CONFIG/profiles/default.jsonc" "$invalid_path"
 integer invalid_path_status=0
 print -r -- \
   '{"type":"user","content":[{"type":"text","text":"ignored"}]}' |
@@ -217,14 +205,14 @@ print -r -- \
 
 # Invalid input combinations are rejected.
 integer exit_code=0
-zsh -f "$entry" run --json --jsonl --config "$config" >/dev/null 2>&1 || exit_code=$?
+zsh -f "$entry" run --json --jsonl >/dev/null 2>&1 || exit_code=$?
 (( exit_code == 2 )) || fail 'run accepted --json with --jsonl'
 exit_code=0
-print -n piped | zsh -f "$entry" run --config "$config" argument >/dev/null 2>&1 || \
+print -n piped | zsh -f "$entry" run argument >/dev/null 2>&1 || \
   exit_code=$?
 (( exit_code == 2 )) || fail 'run accepted prompt argument and stdin together'
 exit_code=0
-print -n '{}' | zsh -f "$entry" run --jsonl --config "$config" >/dev/null 2>&1 || \
+print -n '{}' | zsh -f "$entry" run --jsonl >/dev/null 2>&1 || \
   exit_code=$?
 (( exit_code == 2 )) || fail 'run accepted noncanonical JSON input'
 exit_code=0
@@ -232,11 +220,11 @@ zsh -f "$entry" run --session-create --session "$stream_session" \
   >/dev/null 2>&1 || exit_code=$?
 (( exit_code == 2 )) || fail 'session creation accepted an existing session'
 exit_code=0
-zsh -f "$entry" run --session-create --config "$config" prompt \
+zsh -f "$entry" run --session-create prompt \
   >/dev/null 2>&1 || exit_code=$?
 (( exit_code == 2 )) || fail 'session creation accepted a prompt argument'
 exit_code=0
-print -r -- prompt | zsh -f "$entry" run --session-create --config "$config" \
+print -r -- prompt | zsh -f "$entry" run --session-create \
   >/dev/null 2>&1 || exit_code=$?
 (( exit_code == 2 )) || fail 'session creation accepted a prompt on stdin'
 

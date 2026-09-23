@@ -11,8 +11,8 @@ Run output:
   --jsonl              Stream all turn events as JSON Lines
 
 New sessions:
-  -p, --profile NAME    Select a configured profile
-  -b, --backend NAME    Override the backend name or path
+  -p, --profile NAME    Select a profile; @default is bundled (repeatable, composes)
+  -b, --backend REF     Override the backend adapter reference
   -m, --model MODEL     Override the model
   --request JSON        Merge raw backend request parameters
   --system TEXT         Replace the system prompt (repeatable)
@@ -20,7 +20,6 @@ New sessions:
   --sandbox-auto        Grant detected development-tool paths
   --sandbox-read PATH   Give sandboxed tools read-only access (repeatable)
   --sandbox-write PATH  Give sandboxed tools read-write access (repeatable)
-  --config FILE         Use another runtime configuration file
 
 Existing sessions:
   -c, --continue [OPTIONS] [PROMPT]      Continue the most recent session here
@@ -29,7 +28,7 @@ Existing sessions:
 
 Global config:
   Default directory: ${XDG_CONFIG_HOME:-$HOME/.config}/shellfish
-  Main file:         shellfish.jsonc
+  Profiles:          profiles/NAME.jsonc
   TUI file:          tui.jsonc
 
 Authentication:

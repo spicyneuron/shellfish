@@ -54,13 +54,13 @@ sf_run_main() {
         break
         ;;
       -*)
-        # Creation owns these; only --config is not an override.
+        # Creation owns these; every one of them overrides the runtime.
         arity=${SF_CREATE_OPTIONS[$1]-}
         [[ -n $arity ]] || { sf_die "unknown argument: $1"; return 2; }
         take=$(( arity + 1 ))
         (( $# >= take )) || { sf_die "$1 requires a value"; return 2; }
         create_args+=( "${@:1:$take}" )
-        [[ $1 == --config ]] || override=1
+        override=1
         shift $take
         ;;
       *)

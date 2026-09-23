@@ -16,18 +16,18 @@ integer iterations=$iteration_arg
 typeset tmp
 tmp=$(mktemp -d "${TMPDIR:-/tmp}/shellfish-perf.XXXXXX")
 trap 'if [[ -n ${SHELLFISH_PERF_KEEP-} ]]; then print -u2 -r -- "kept: $tmp"; else rm -rf -- "$tmp"; fi' EXIT
-mkdir -p "$tmp/project" "$tmp/state" "$tmp/bin" "$tmp/config/backends/perf" \
-  "$tmp/config/tools/perf"
+mkdir -p "$tmp/project" "$tmp/state" "$tmp/bin" "$tmp/xdg/shellfish/backends/perf" \
+  "$tmp/xdg/shellfish/tools/perf"
 
 cat >"$tmp/bin/jq" <<'EOF'
 #!/usr/bin/env zsh
 print -r -- "$SHELLFISH_PERF_RUN" >>"$SHELLFISH_PERF_JQ_LOG"
 exec "$SHELLFISH_PERF_JQ" "$@"
 EOF
-cat >"$tmp/config/backends/perf/manifest.json" <<'EOF'
+cat >"$tmp/xdg/shellfish/backends/perf/manifest.json" <<'EOF'
 {"endpoint":"https://example.invalid/perf","environment":[]}
 EOF
-cat >"$tmp/config/backends/perf/run" <<'EOF'
+cat >"$tmp/xdg/shellfish/backends/perf/run" <<'EOF'
 #!/usr/bin/env zsh
 request=$(cat)
 if "$SHELLFISH_PERF_JQ" -e '.messages[-1].type == "tool_result"' <<<"$request" >/dev/null; then
@@ -37,37 +37,37 @@ else
 fi
 print -r -- "$response"
 EOF
-cat >"$tmp/config/tools/perf/manifest.json" <<'EOF'
+cat >"$tmp/xdg/shellfish/tools/perf/manifest.json" <<'EOF'
 {"description":"Performance fixture","input_schema":{"type":"object","additionalProperties":false},"sandbox":false}
 EOF
-cat >"$tmp/config/tools/perf/run" <<'EOF'
+cat >"$tmp/xdg/shellfish/tools/perf/run" <<'EOF'
 #!/usr/bin/env zsh
 cat >/dev/null
 print -rn -- 'tool result'
 EOF
-chmod +x "$tmp/bin/jq" "$tmp/config/backends/perf/run" "$tmp/config/tools/perf/run"
+chmod +x "$tmp/bin/jq" "$tmp/xdg/shellfish/backends/perf/run" "$tmp/xdg/shellfish/tools/perf/run"
 
 # The unsandboxed tool skips permission_request.
 typeset -a hook_events=(session_start user_prompt_submit pre_tool_use post_tool_use stop)
 typeset event
 for event in $hook_events; do
-  mkdir -p "$tmp/config/hooks/$event/perf"
-  cat >"$tmp/config/hooks/$event/perf/run" <<'EOF'
+  mkdir -p "$tmp/xdg/shellfish/hooks/$event/perf"
+  cat >"$tmp/xdg/shellfish/hooks/$event/perf/run" <<'EOF'
 #!/usr/bin/env zsh
 cat >/dev/null
 EOF
-  chmod +x "$tmp/config/hooks/$event/perf/run"
+  chmod +x "$tmp/xdg/shellfish/hooks/$event/perf/run"
 done
 
-cat >"$tmp/config/shellfish.jsonc" <<EOF
+mkdir -p "$tmp/xdg/shellfish/profiles"
+cat >"$tmp/xdg/shellfish/profiles/default.jsonc" <<EOF
 {
-  "default_profile":"perf",
-  "backends":{"perf":{"adapter":"perf"}},
-  "harnesses":{"perf":{"tools":["perf"],"sandbox":false,
+  "backend":{"adapter":"perf"},
+  "request":{"model":"perf"},
+  "harness":{"tools":["perf"],"sandbox":false,
     "session_start":["perf"],"user_prompt_submit":["perf"],"permission_request":[],
     "pre_tool_use":["perf"],"post_tool_use":["perf"],"stop":["perf"],
-    "max_requests_per_turn":8,"max_tool_calls_per_request":16,"max_capture_bytes":65536}},
-  "profiles":{"perf":{"backend":"perf","harness":"perf","request":{"model":"perf"}}}
+    "max_requests_per_turn":8,"max_tool_calls_per_request":16,"max_capture_bytes":65536}
 }
 EOF
 
@@ -84,9 +84,8 @@ for (( iteration = 1; iteration <= iterations; iteration++ )); do
   float start=$EPOCHREALTIME
   (
     cd "$tmp/project"
-    XDG_STATE_HOME="$tmp/state" PATH="$tmp/bin:$PATH" \
-      zsh -f "$root/bin/shellfish" run --session-out "$tmp/session-$iteration.jsonl" \
-      --config "$tmp/config/shellfish.jsonc" perf </dev/null >/dev/null 2>"$stderr"
+    XDG_STATE_HOME="$tmp/state" XDG_CONFIG_HOME="$tmp/xdg" PATH="$tmp/bin:$PATH" \
+      zsh -f "$root/bin/shellfish" run --session-out "$tmp/session-$iteration.jsonl" perf </dev/null >/dev/null 2>"$stderr"
   ) || { cat "$stderr" >&2; exit 1; }
   float elapsed=$(( (EPOCHREALTIME - start) * 1000 ))
   printf 'fresh_session\t%.9f\n' "$elapsed" >>"$turn_metrics"
@@ -104,9 +103,8 @@ for (( iteration = 1; iteration <= iterations; iteration++ )); do
   start=$EPOCHREALTIME
   (
     cd "$tmp/project"
-    XDG_STATE_HOME="$tmp/state" PATH="$tmp/bin:$PATH" \
-      zsh -f "$root/bin/shellfish" run --session "$tmp/session-$iteration.jsonl" \
-      --config "$tmp/config/shellfish.jsonc" perf </dev/null >/dev/null 2>"$stderr"
+    XDG_STATE_HOME="$tmp/state" XDG_CONFIG_HOME="$tmp/xdg" PATH="$tmp/bin:$PATH" \
+      zsh -f "$root/bin/shellfish" run --session "$tmp/session-$iteration.jsonl" perf </dev/null >/dev/null 2>"$stderr"
   ) || { cat "$stderr" >&2; exit 1; }
   elapsed=$(( (EPOCHREALTIME - start) * 1000 ))
   printf 'existing_session\t%.9f\n' "$elapsed" >>"$turn_metrics"
@@ -124,10 +122,9 @@ for (( iteration = 1; iteration <= iterations; iteration++ )); do
   start=$EPOCHREALTIME
   (
     cd "$tmp/project"
-    XDG_STATE_HOME="$tmp/state" PATH="$tmp/bin:$PATH" \
+    XDG_STATE_HOME="$tmp/state" XDG_CONFIG_HOME="$tmp/xdg" PATH="$tmp/bin:$PATH" \
       zsh -f "$root/bin/shellfish" run --jsonl --session-create \
-      --session-out "$tmp/create-$iteration.jsonl" \
-      --config "$tmp/config/shellfish.jsonc" >/dev/null 2>"$stderr"
+      --session-out "$tmp/create-$iteration.jsonl" >/dev/null 2>"$stderr"
   ) || { cat "$stderr" >&2; exit 1; }
   printf 'create\t%.9f\n' "$(( (EPOCHREALTIME - start) * 1000 ))" >>"$component_metrics"
 
@@ -135,7 +132,7 @@ for (( iteration = 1; iteration <= iterations; iteration++ )); do
   start=$EPOCHREALTIME
   (
     cd "$tmp/project"
-    XDG_STATE_HOME="$tmp/state" PATH="$tmp/bin:$PATH" \
+    XDG_STATE_HOME="$tmp/state" XDG_CONFIG_HOME="$tmp/xdg" PATH="$tmp/bin:$PATH" \
       zsh -f "$root/bin/shellfish" backend-request \
       <"$tmp/session-$iteration.jsonl" >/dev/null 2>"$stderr"
   ) || { cat "$stderr" >&2; exit 1; }

@@ -24,8 +24,8 @@ chmod +x "$wrapper"
 
 sf_test_runtime
 SF_TEST_RUNTIME=$(jq -c --arg hook "$hook" '
-  .profile.context_window=20000 |
-  .profile.request += {max_tokens:5000,temperature:0.2} |
+  .context_window=20000 |
+  .request += {max_tokens:5000,temperature:0.2} |
   .backend.http_timeout=120 |
   .harness.permission_request=[{command:$hook,environment:[],render:{
     initial_user_text:"",user_text:"${output.stderr}",model_text:"${output.stdout}"}}]
@@ -69,10 +69,10 @@ jq -e '
 jq -e -s --arg tool_input "$(jq -c '.tool_input' <<<"$request")" \
     --rawfile policy "$ROOT/share/default/hooks/permission_request/review/review.md" '
   (.[2].content[0].text | fromjson) as $context |
-  .[0].runtime.profile.request.model == "test-model" and
-  .[0].runtime.profile.request.max_tokens == 4096 and
-  .[0].runtime.profile.request.temperature == 0.2 and
-  .[0].runtime.profile.request.response_schema.additionalProperties == false and
+  .[0].runtime.request.model == "test-model" and
+  .[0].runtime.request.max_tokens == 4096 and
+  .[0].runtime.request.temperature == 0.2 and
+  .[0].runtime.request.response_schema.additionalProperties == false and
   .[0].runtime.backend.http_timeout == 60 and
   .[0].runtime.harness.tools == [] and
   .[0].runtime.harness.permission_request == [] and

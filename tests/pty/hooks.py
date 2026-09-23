@@ -19,9 +19,8 @@ IFS= read -r submitted
 read_status=$?
 [[ "$read_status:$submitted" == '1:/switch' ]] || exit 0
 jq -cn --arg path "${SHELLFISH_SESSION:h}/switched.jsonl" \
-  --arg config "${SHELLFISH_SESSION:h}/config/shellfish/shellfish.jsonc" \
   --arg executable "$SHELLFISH_EXECUTABLE" \
-  '{action:"handoff",argv:[$executable,"--config",$config,"--session-out",$path]}' >&3
+  '{action:"handoff",argv:[$executable,"--session-out",$path]}' >&3
 exit 11
 """
 
@@ -217,7 +216,7 @@ def test_prompt_hook_hands_off_to_new_session():
     try:
         session.wait_session_records(1, path=session.explicit_session)
         config = json.loads(session.config_file.read_text())
-        config["profiles"]["development"]["request"]["model"] = "changed-model"
+        config["request"]["model"] = "changed-model"
         session.config_file.write_text(json.dumps(config))
         mark = len(session.output)
         session.send(b"/new\r")
@@ -226,7 +225,7 @@ def test_prompt_hook_hands_off_to_new_session():
         path, records = session.wait_session_records(1)
         assert path != session.explicit_session, (path, session.explicit_session)
         assert len(records) >= 1, records
-        assert records[0]["runtime"]["profile"]["request"]["model"] == "fake-model", records[0]
+        assert records[0]["runtime"]["request"]["model"] == "fake-model", records[0]
     finally:
         session.close()
 

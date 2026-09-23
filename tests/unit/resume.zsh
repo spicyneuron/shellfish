@@ -18,7 +18,7 @@ typeset s_state_tail="$tmp/state_tail.jsonl"
 
 make_header() {
   jq -cn '{type:"session",format_version:1,cwd:"/tmp",created:"2026-08-18T10:00:00Z",
-    runtime:{profile:{request:{model:"claude-3"}},
+    runtime:{request:{model:"claude-3"},
       backend:{name:"custom",command:"/test/run",endpoint:"https://example.invalid"}}}'
 }
 
@@ -118,7 +118,7 @@ mkdir -p -- "$directory"
 make_discovery_header() {
   jq -cn --arg cwd "$1" --arg model "$2" '{type:"session",format_version:1,
     cwd:$cwd,created:"2026-09-04T00:00:00Z",
-    runtime:{profile:{request:{model:$model}}}}'
+    runtime:{request:{model:$model}}}'
 }
 make_discovery_header "$(pwd -P)" first >"$directory/first.jsonl"
 touch -t 202609040100 "$directory/first.jsonl"

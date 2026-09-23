@@ -16,7 +16,7 @@ const HEADER = {
   format_version: 1,
   cwd: "/project",
   backend: { name: "test" },
-  profile: { request: { model: "test-model" } },
+  request: { model: "test-model" },
   harness: {
     tools: [
       {
@@ -446,7 +446,7 @@ test("replays the durable session before live work", async () => {
   await page.authenticate();
   assert.deepEqual(page.opens, ["Bearer 123456"]);
   const header = structuredClone(HEADER);
-  header.profile.context_window = 200;
+  header.context_window = 200;
   await page.send(
     header,
     { type: "system", content: "instructions" },
@@ -534,7 +534,7 @@ test("applies a session update without replaying the transcript", async () => {
     type: "_session_update",
     runtime: {
       backend: { name: "updated" },
-      profile: { request: { model: "new-model" } },
+      request: { model: "new-model" },
       harness: { tools: [] },
     },
   });
@@ -549,7 +549,7 @@ test("shows context usage and preserves cache usage", async () => {
     type: "_session_update",
     runtime: {
       backend: { name: "test" },
-      profile: { request: { model: "test-model" }, context_window: 264000 },
+      request: { model: "test-model" }, context_window: 264000,
       harness: { tools: [] },
     },
   });
@@ -565,7 +565,7 @@ test("shows context usage and preserves cache usage", async () => {
     type: "_session_update",
     runtime: {
       backend: { name: "test" },
-      profile: { request: { model: "test-model" }, context_window: null },
+      request: { model: "test-model" }, context_window: null,
       harness: { tools: [] },
     },
   });

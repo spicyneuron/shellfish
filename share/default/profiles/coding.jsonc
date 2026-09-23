@@ -1,0 +1,12 @@
+// An example override: the bundled agent with agentic permission review.
+// Select it with --profile coding.
+{
+  "$schema": "https://raw.githubusercontent.com/spicyneuron/shellfish/refs/heads/main/share/shellfish.schema.json",
+
+  "extend": ["default"],
+
+  "harness": {
+    // "..." splices the inherited list, so this adds without restating it.
+    "permission_request": ["...", "review"]
+  }
+}

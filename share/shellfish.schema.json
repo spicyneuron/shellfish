@@ -1,78 +1,16 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "Shellfish configuration",
+  "title": "Shellfish profile",
   "type": "object",
   "additionalProperties": false,
   "properties": {
     "$schema": {
       "type": "string"
     },
-    "default_profile": {
-      "$ref": "#/$defs/name"
-    },
-    "backends": {
-      "$ref": "#/$defs/named_backends"
-    },
-    "harnesses": {
-      "$ref": "#/$defs/named_harnesses"
-    },
-    "profiles": {
-      "type": "object",
-      "propertyNames": {
+    "extend": {
+      "type": "array",
+      "items": {
         "$ref": "#/$defs/name"
-      },
-      "additionalProperties": {
-        "$ref": "#/$defs/profile"
-      }
-    }
-  },
-  "$defs": {
-    "name": {
-      "type": "string",
-      "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
-    },
-    "reference": {
-      "type": "string",
-      "minLength": 1,
-      "pattern": "^[^\u0000-\u001f\u007f-]+$"
-    },
-    "positive_integer": {
-      "type": "integer",
-      "minimum": 1,
-      "maximum": 2147483647
-    },
-    "capture_bytes": {
-      "type": "integer",
-      "minimum": 64,
-      "maximum": 2147483647
-    },
-    "environment_name": {
-      "type": "string",
-      "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
-    },
-    "environment": {
-      "type": "array",
-      "items": {
-        "$ref": "#/$defs/environment_name"
-      },
-      "uniqueItems": true
-    },
-    "endpoint": {
-      "type": "string",
-      "pattern": "^https?://[^\\s\u0000-\u001f\u007f-]+$"
-    },
-    "component_list": {
-      "type": "array",
-      "items": {
-        "$ref": "#/$defs/reference"
-      }
-    },
-    "sandbox_path_list": {
-      "type": "array",
-      "items": {
-        "type": "string",
-        "minLength": 1,
-        "pattern": "^(/|~/)[^\u0000-\u001f\u007f-]*$"
       }
     },
     "backend": {
@@ -99,25 +37,12 @@
         }
       }
     },
-    "named_backends": {
-      "type": "object",
-      "propertyNames": {
-        "$ref": "#/$defs/name"
-      },
-      "additionalProperties": {
-        "$ref": "#/$defs/backend"
-      }
-    },
     "harness": {
       "type": "object",
       "additionalProperties": false,
       "properties": {
         "tools": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/reference"
-          },
-          "uniqueItems": true
+          "$ref": "#/$defs/component_list"
         },
         "sandbox": {
           "type": "boolean"
@@ -157,14 +82,18 @@
         }
       }
     },
-    "named_harnesses": {
-      "type": "object",
-      "propertyNames": {
-        "$ref": "#/$defs/name"
-      },
-      "additionalProperties": {
-        "$ref": "#/$defs/harness"
-      }
+    "system": {
+      "$ref": "#/$defs/component_list"
+    },
+    "context_window": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/positive_integer"
+        },
+        {
+          "type": "null"
+        }
+      ]
     },
     "request": {
       "type": "object",
@@ -173,39 +102,58 @@
         "model": {
           "type": "string",
           "minLength": 1,
-          "pattern": "^[^\u0000-\u001f\u007f-]+$"
+          "pattern": "^[^\u0000-\u001f\u007f-\u009f]+$"
         }
       }
+    }
+  },
+  "$defs": {
+    "name": {
+      "type": "string",
+      "pattern": "^@?[A-Za-z0-9][A-Za-z0-9_-]*$"
     },
-    "profile": {
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "extend": {
-          "$ref": "#/$defs/name"
-        },
-        "backend": {
-          "$ref": "#/$defs/name"
-        },
-        "harness": {
-          "$ref": "#/$defs/name"
-        },
-        "system": {
-          "$ref": "#/$defs/component_list"
-        },
-        "context_window": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/positive_integer"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "request": {
-          "$ref": "#/$defs/request"
-        }
+    "reference": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[^\u0000-\u001f\u007f-\u009f]+$"
+    },
+    "positive_integer": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 2147483647
+    },
+    "capture_bytes": {
+      "type": "integer",
+      "minimum": 64,
+      "maximum": 2147483647
+    },
+    "environment_name": {
+      "type": "string",
+      "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+    },
+    "environment": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/environment_name"
+      },
+      "uniqueItems": true
+    },
+    "endpoint": {
+      "type": "string",
+      "pattern": "^https?://[^\\s\u0000-\u001f\u007f-\u009f]+$"
+    },
+    "component_list": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/reference"
+      }
+    },
+    "sandbox_path_list": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "pattern": "^(/|~/)[^\u0000-\u001f\u007f-\u009f]*$"
       }
     }
   }

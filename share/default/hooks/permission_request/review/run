@@ -67,7 +67,7 @@ header=$(head -n 1 -- "$SHELLFISH_SESSION") ||
   permission_deny 'Permission review could not inspect the active runtime.'
 # A known context limit clamps the fixed input budget; an unknown one leaves it intact.
 budget=$(jq --argjson input_tokens "$input_tokens" --argjson output_tokens "$output_tokens" '
-  [(.runtime.profile.context_window | numbers | select(floor == .) | . - $output_tokens),
+  [(.runtime.context_window | numbers | select(floor == .) | . - $output_tokens),
     $input_tokens] | min * 4
 ' <<<"$header")
 
@@ -169,7 +169,7 @@ transcript="$SHELLFISH_TURN_STATE/permission-review.jsonl"
 if ! jq -cn --argjson header "$header" --arg system "$system" --argjson context "$base" \
     --argjson output_tokens "$output_tokens" --argjson request_seconds "$request_seconds" '
   ($header |
-    .runtime.profile.request |= (
+    .runtime.request |= (
       .max_tokens = ([.max_output_tokens // .max_completion_tokens //
         .max_tokens // $output_tokens,$output_tokens] | min) |
       del(.max_output_tokens,.max_completion_tokens) |
@@ -182,7 +182,7 @@ if ! jq -cn --argjson header "$header" --arg system "$system" --argjson context 
           reason:{type:"string",minLength:1,maxLength:1000}
         }
       }) |
-    .runtime.profile.system = [] |
+    .runtime.system = [] |
     .runtime.backend.http_timeout = ([.runtime.backend.http_timeout,$request_seconds] | min) |
     .runtime.harness |= (.tools=[] | .sandbox=false | .sandbox_read_paths=[] |
       .sandbox_write_paths=[] | .fence="" |

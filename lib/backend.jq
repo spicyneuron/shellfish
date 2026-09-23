@@ -52,7 +52,7 @@ def backend_adapter_request($runtime; $system; $messages; $tools):
     system:$system,
     messages:$messages,
     tools:$tools,
-    options:{request:$runtime.profile.request},
+    options:{request:$runtime.request},
     transport:($runtime.backend | {endpoint,insecure_tls,http_timeout,http_stall})
   } | select(all(.messages[] | select(.type == "user");
     .content[0].text | index("\u0000") | not));

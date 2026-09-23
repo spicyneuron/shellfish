@@ -284,7 +284,7 @@ sf_run_turn() {
         break
       fi
       if (( request_count == 1 )) && [[ -n $context_command ]] &&
-          ! jq -e '.profile | has("context_window")' <<<"$runtime" >/dev/null; then
+          ! jq -e 'has("context_window")' <<<"$runtime" >/dev/null; then
         sf_backend_context_window "$tools" "$max_capture" <"$session"
         run_status=$?
         if (( run_status )); then
@@ -296,7 +296,7 @@ sf_run_turn() {
           break
         fi
         runtime=$(jq -c --argjson window "$REPLY" \
-          '.profile.context_window=$window' <<<"$runtime") || {
+          '.context_window=$window' <<<"$runtime") || {
           failure='cannot update model context window'
           break
         }

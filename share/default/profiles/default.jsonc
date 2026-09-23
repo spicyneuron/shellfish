@@ -1,0 +1,54 @@
+// Shellfish: https://github.com/spicyneuron/shellfish
+//
+// The bundled agent, selected when --profile is absent. A profile in
+// $XDG_CONFIG_HOME/shellfish/profiles/ shadows a bundled file of the same
+// name, and "extend" merges one profile into another.
+{
+  "$schema": "https://raw.githubusercontent.com/spicyneuron/shellfish/refs/heads/main/share/shellfish.schema.json",
+
+  // "adapter" names a directory under backends/; "endpoint" and "environment"
+  // override the adapter's manifest. Environment names are passed without
+  // translation. Codex relies on an existing CLI login. The "openai" adapter
+  // works with any OpenAI-compatible endpoint. Optional transport knobs not
+  // shown here: insecure_tls, http_timeout, http_stall.
+  "backend": {"adapter": "openrouter"},
+
+  // Parameters passed through to the backend adapter. "max_tokens" and
+  // "reasoning.effort" are normalized in the bundled adapters.
+  "request": {"max_tokens": 16384, "reasoning": {"effort": "medium"}},
+
+  // Files under system/ concatenated into the system prompt.
+  "system": ["general.md", "tools.md"],
+
+  // Uncomment to override best-effort model metadata discovery, or set null to
+  // disable it.
+  // "context_window": 200000,
+
+  // The harness wraps the shared turn loop with capabilities, sandboxing, and
+  // limits.
+  "harness": {
+    // Tools available to the model.
+    "tools": ["read_file", "edit_file", "write_file", "skill", "search_web", "fetch_url", "shell"],
+
+    // Each hook runs an ordered list of components. See docs/HARNESS.md for
+    // payloads, exit statuses, and environment guarantees.
+    "session_start": ["project_environment", "git_environment", "project_instructions"],
+    "user_prompt_submit": ["help", "verbose", "new", "copy", "fork", "sandbox", "user_shell", "server", "resume", "compact", "git_environment"],
+    "permission_request": [],
+    "pre_tool_use": [],
+    "post_tool_use": [],
+    "stop": [],
+
+    // "sandbox" enables fence for tools that opt in via their manifest.
+    // sandbox_read_paths/sandbox_write_paths grant extra paths beyond the
+    // project directory while keeping the tool's other restrictions.
+    "sandbox": true,
+    "sandbox_read_paths": [],
+    "sandbox_write_paths": [],
+
+    // Caps for requests, tool calls, and bytes from a single tool result.
+    "max_requests_per_turn": 100,
+    "max_tool_calls_per_request": 25,
+    "max_capture_bytes": 32768
+  }
+}

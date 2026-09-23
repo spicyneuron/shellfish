@@ -3,7 +3,8 @@
 source "${0:A:h:h:h}/_helpers.zsh"
 sf_test_tmp run-create-hook-contract
 export XDG_STATE_HOME="$tmp/state"
-typeset entry="$ROOT/bin/shellfish" hook="$tmp/start" config="$tmp/config.jsonc"
+sf_test_config
+typeset entry="$ROOT/bin/shellfish" hook="$tmp/start"
 typeset input="$tmp/input" session="$tmp/session.jsonl" stream="$tmp/stream"
 mkdir "$hook"
 print -r -- '{"environment":["START_INPUT"],"render":{"initial_user_text":"Starting up","user_text":"${name}\n${output.stdout}${output.stderr}","model_text":"${output.stdout}"}}' \
@@ -18,22 +19,18 @@ print -rn -u2 -- 'startup display'
 print -rn -u3 -- '{"state":[{"name":"startup/state","value":true}]}'
 ZSH
 chmod +x "$hook/run"
-cat >"$config" <<EOF
-{
-  "default_profile":"test",
-  "backends":{"test":{"adapter":"$ROOT/tests/fixtures/backend"}},
-  "harnesses":{"test":{
-    "tools":[],"sandbox":false,"session_start":["$hook"],
-    "max_requests_per_turn":2,"max_tool_calls_per_request":2,
-    "max_capture_bytes":1024
-  }},
-  "profiles":{"test":{"backend":"test","harness":"test",
-    "request":{"model":"test"}}}
-}
-EOF
+sf_test_profile default "{
+  \"backend\":{\"adapter\":\"$ROOT/tests/fixtures/backend\"},
+  \"request\":{\"model\":\"test\"},
+  \"harness\":{
+    \"tools\":[],\"sandbox\":false,\"session_start\":[\"$hook\"],
+    \"max_requests_per_turn\":2,\"max_tool_calls_per_request\":2,
+    \"max_capture_bytes\":1024
+  }
+}"
 export START_INPUT=$input
 
-zsh -f "$entry" run --jsonl --session-create --config "$config" --session-out "$session" \
+zsh -f "$entry" run --jsonl --session-create --session-out "$session" \
   >"$stream" || fail 'session_start hook failed'
 [[ ! -s $input ]] || fail 'session_start hook received nonempty stdin'
 jq -eRn --arg session "$session" '
@@ -63,7 +60,7 @@ cat >/dev/null
 ZSH
 chmod +x "$hook/run"
 session="$tmp/silent.jsonl"
-zsh -f "$entry" run --jsonl --session-create --config "$config" --session-out "$session" \
+zsh -f "$entry" run --jsonl --session-create --session-out "$session" \
   >"$stream" || fail 'silent session_start hook failed'
 jq -eRn --arg executable "${hook:A}/run" '
   [inputs | fromjson] as $events |
@@ -88,7 +85,7 @@ ZSH
   chmod +x "$hook/run"
   session="$tmp/unsupported-$unsupported.jsonl"
   integer create_status=0
-  zsh -f "$entry" run --jsonl --session-create --config "$config" --session-out "$session" \
+  zsh -f "$entry" run --jsonl --session-create --session-out "$session" \
     >"$stream" 2>"$tmp/unsupported.stderr" || create_status=$?
   (( create_status == 1 )) || fail "session_start accepted status $unsupported"
   [[ -f $session ]] || fail 'failed session_start removed the transcript it wrote'

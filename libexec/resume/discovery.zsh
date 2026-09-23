@@ -52,7 +52,7 @@ sf_resume_find() {
           select($headers[.key] |
             type == "object" and .type == "session" and .format_version == 1 and
             (try (.cwd | expand_path(""; $home)) catch null) == $cwd and
-            (.runtime.profile.request.model | type == "string")) |
+            (.runtime.request.model | type == "string")) |
           .value] |
         (if $limit > 0 then .[0:$limit] else . end) |
         (.[] | ., "\u0000"), "ok", "\u0000"

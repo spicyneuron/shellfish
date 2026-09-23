@@ -517,9 +517,9 @@ function highlight(parent, code, language) {
 // ------------------------------------------------------------------- the frames
 
 function applyRuntime(runtime) {
-  const name = safe(((runtime.profile || {}).request || {}).model);
+  const name = safe((runtime.request || {}).model);
   const backend = safe((runtime.backend || {}).name);
-  contextWindow = (runtime.profile || {}).context_window ?? null;
+  contextWindow = runtime.context_window ?? null;
   model.textContent = backend ? backend + "/" + name : name;
   toolTemplatesByName.clear();
   hookTemplatesByName.clear();

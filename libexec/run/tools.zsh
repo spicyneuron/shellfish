@@ -47,7 +47,7 @@ sf_run_tool_plan() {
       entry("settings"; $tool.settings // ""),
       entry("max_capture"; $runtime.harness.max_capture_bytes | tostring),
       entry("fence"; $runtime.harness.fence),
-      entry("env_file"; $runtime.backend.env_file),
+      entry("config_dir"; $runtime.config_dir),
       entry("execution_input";
         $input | del(.request_sandbox_bypass,.sandbox_bypass_reason) | tojson),
       entry("sandbox"; $runtime.harness.sandbox and ($tool.manifest.sandbox // false) and
@@ -86,18 +86,17 @@ sf_run_tool_execute() {
   setopt local_options no_err_exit
   local session=$1 command=$SF_TOOL_PLAN[executable]
   local selected=$SF_TOOL_PLAN[environment] settings=$SF_TOOL_PLAN[settings]
-  local fence=$SF_TOOL_PLAN[fence] env_file=$SF_TOOL_PLAN[env_file]
+  local fence=$SF_TOOL_PLAN[fence] config_dir=$SF_TOOL_PLAN[config_dir]
   local execution_input=$SF_TOOL_PLAN[execution_input] sandbox=$SF_TOOL_PLAN[sandbox]
   local read_paths=$SF_TOOL_PLAN[read_paths] write_paths=$SF_TOOL_PLAN[write_paths]
   local cwd=$SF_RUN[cwd] capture stdin bounded_stdout bounded_stderr
-  local config_dir='' expose name darwin_temp='' temp_dir=${TMPDIR:-/tmp}
+  local expose name darwin_temp='' temp_dir=${TMPDIR:-/tmp}
   local -a arguments environment names process_command sandbox_arguments temp_paths
   local -A process
   integer max_capture=$SF_TOOL_PLAN[max_capture] control_bytes budget stderr_bytes denied=0
 
   SF_RUN_TOOL_ERROR=''
-  [[ -z $env_file ]] || config_dir=${env_file:h}
-  sf_environment_load "$env_file" "$selected" || {
+  sf_environment_load "$config_dir" "$selected" || {
     SF_RUN_TOOL_ERROR=$SF_ENVIRONMENT_ERROR
     return 1
   }

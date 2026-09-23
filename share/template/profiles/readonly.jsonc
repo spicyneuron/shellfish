@@ -1,0 +1,12 @@
+// The default profile with read-only tools. Select with --profile readonly.
+// Repeated -p flags compose left to right.
+{
+  "$schema": "https://raw.githubusercontent.com/spicyneuron/shellfish/refs/heads/main/share/shellfish.schema.json",
+
+  "extend": ["default"],
+
+  "harness": {
+    "tools": ["read_file", "shell_readonly"],
+    "session_start": ["project_instructions"]
+  }
+}

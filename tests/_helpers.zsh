@@ -29,6 +29,17 @@ sf_test_tmp() {
   export XDG_STATE_HOME="$tmp/state"
 }
 
+# An isolated config directory, then one profile file inside it.
+sf_test_config() {
+  typeset -g SF_TEST_CONFIG="$tmp/config/shellfish"
+  mkdir -p "$SF_TEST_CONFIG/profiles"
+  export XDG_CONFIG_HOME="$tmp/config"
+}
+
+sf_test_profile() {
+  print -r -- "$2" >"$SF_TEST_CONFIG/profiles/$1.jsonc"
+}
+
 # err_exit plus this trap turn every bare test expression into a located
 # assertion; the trap names the statement, then err_exit abandons the file.
 typeset -ga sf_test_detail=()
@@ -93,9 +104,11 @@ sf_test_runtime() {
     --arg fence "${commands[fence]:A}" \
     --slurpfile tool_manifest "$tool/manifest.json" '
       {
-        profile:{request:{model:"test-model"}},
+        request:{model:"test-model"},
+        system:[],
+        config_dir:"/nonexistent/shellfish",
         backend:{name:"test",command:$command,endpoint:"https://example.invalid/test",
-          environment:[],env_file:"",insecure_tls:false,http_timeout:30,http_stall:10},
+          environment:[],insecure_tls:false,http_timeout:30,http_stall:10},
         harness:{sandbox_read_paths:[],sandbox_write_paths:[],fence:$fence,
           tools:[{name:"shell",command:($tool+"/run"),
             settings:(if $tool_manifest[0].sandbox then ($tool+"/fence.jsonc") else null end),

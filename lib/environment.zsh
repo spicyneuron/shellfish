@@ -9,8 +9,9 @@ sf_environment_fail() {
   return 1
 }
 
+# Exported values win over .env in the config directory.
 sf_environment_load() {
-  local env_file=$1 selected=$2 line key value name
+  local env_file=$1/.env selected=$2 line key value name
   local -a selected_names
   local -A values
 
@@ -22,7 +23,7 @@ sf_environment_load() {
     values[$name]=${(P)name}
   done
   if (( ${#selected_names} )) &&
-    [[ -n $env_file && ( -e $env_file || -L $env_file ) ]]; then
+    [[ -e $env_file || -L $env_file ]]; then
     [[ -f $env_file && -r $env_file ]] || {
       sf_environment_fail "cannot read env file: $env_file"
       return

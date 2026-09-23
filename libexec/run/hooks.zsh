@@ -47,8 +47,8 @@ sf_run_hook_project() {
       include "lib/fields";
       include "lib/runtime";
       entry("max_capture"; $runtime.harness.max_capture_bytes | tostring),
-      entry("env_file"; $runtime.backend.env_file),
-      entry("model"; $runtime.profile.request.model),
+      entry("config_dir"; $runtime.config_dir),
+      entry("model"; $runtime.request.model),
       entry("environment_names"; declared_environment($runtime)),
       ($runtime.harness[$lifecycle][]? |
         (.match.pattern? // "") as $pattern |
@@ -69,17 +69,16 @@ sf_run_hook_invoke() {
   local session=$1 command=$2 selected=$3 input=$4 lifecycle=$5 turn_state=$6
   local render=$7 id=$8 name=$9 input_json=${10}
   shift 10
-  local env_file=$SF_HOOK_PLAN[env_file] config_dir='' directory
+  local config_dir=$SF_HOOK_PLAN[config_dir] directory
   local -a arguments environment
   local -A process
   integer max_capture=$SF_HOOK_PLAN[max_capture] over_capture=0
 
-  [[ -z $env_file ]] || config_dir=${env_file:h}
   [[ -f $command && -x $command ]] || {
     SF_RUN_HOOK_ERROR="hook command is not executable: $command"
     return 1
   }
-  sf_environment_load "$env_file" "$selected" || {
+  sf_environment_load "$config_dir" "$selected" || {
     SF_RUN_HOOK_ERROR=$SF_ENVIRONMENT_ERROR
     return 1
   }

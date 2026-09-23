@@ -36,7 +36,7 @@ sf_backend_project() {
     entry("request"; $request | tojson),
     entry("cwd"; $header.cwd),
     entry("command"; $runtime.backend[$command_field]),
-    entry("env_file"; $runtime.backend.env_file),
+    entry("config_dir"; $runtime.config_dir),
     entry("environment"; $runtime.backend.environment | join(" ")),
     entry("environment_names"; declared_environment($runtime)),
     ("ok" | field)
@@ -54,7 +54,7 @@ sf_backend_context_window() {
     SF_BACKEND[error]='cannot prepare context window request'
     return 1
   }
-  sf_environment_load "$SF_BACKEND_PLAN[env_file]" "$SF_BACKEND_PLAN[environment]" || {
+  sf_environment_load "$SF_BACKEND_PLAN[config_dir]" "$SF_BACKEND_PLAN[environment]" || {
     SF_BACKEND[error]=$SF_ENVIRONMENT_ERROR
     return 1
   }
@@ -106,7 +106,7 @@ sf_backend_run() {
   REPLY=''
   SF_BACKEND=(directory '' error '' group_file '' pid '')
   SF_BACKEND_PARTIAL_EVENTS=()
-  sf_environment_load "$SF_BACKEND_PLAN[env_file]" "$SF_BACKEND_PLAN[environment]" || {
+  sf_environment_load "$SF_BACKEND_PLAN[config_dir]" "$SF_BACKEND_PLAN[environment]" || {
     SF_BACKEND[error]=$SF_ENVIRONMENT_ERROR
     return 1
   }

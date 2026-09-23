@@ -1,88 +1,68 @@
 # Configuration
 
-Shellfish reads JSONC from `$XDG_CONFIG_HOME/shellfish/` (or `~/.config/shellfish/` when `XDG_CONFIG_HOME` is unset). `shellfish.jsonc` describes runtimes and `tui.jsonc` describes rendering; each is merged over its bundled counterpart, [`share/default/shellfish.jsonc`](../share/default/shellfish.jsonc) and [`share/default/tui.jsonc`](../share/default/tui.jsonc). Objects merge recursively and arrays replace their defaults.
+Shellfish reads JSONC from `$XDG_CONFIG_HOME/shellfish/` (or `~/.config/shellfish/` when `XDG_CONFIG_HOME` is unset). `profiles/NAME.jsonc` describes a runtime and `tui.jsonc` describes rendering. A profile name resolves to exactly one file: yours shadows the bundled file of the same name under [`share/default/profiles/`](../share/default/profiles/). `tui.jsonc` merges over [`share/default/tui.jsonc`](../share/default/tui.jsonc).
 
-The two files never mix. A session freezes a runtime, so `shellfish.jsonc` rejects rendering keys; `tui.jsonc` is read fresh on every run and is never frozen.
+The two never mix. A session freezes a runtime, so a profile rejects rendering keys; `tui.jsonc` is read fresh on every run and is never frozen.
 
 Copy [`share/template/`](../share/template/) into that directory for a working starting point. The bundled [`shellfish.schema.json`](../share/shellfish.schema.json) and [`tui.schema.json`](../share/tui.schema.json) are the exact field references.
 
-## Composition
+## Profiles
 
-```text
-backend ─┐
-harness ─┼─▶ profile ─▶ command-line overrides ─▶ frozen session runtime
-system  ─┤
-request ─┘
-```
+`profiles/default.jsonc` is selected when `--profile` is absent. `-p NAME` selects another and repeats compose: `-p review -p readonly` merges them left to right. A file you write shadows the bundled file of that name, and `@NAME` always means the bundled file, so your own `default.jsonc` can extend `@default` to build on the bundled agent.
 
-- A **backend** selects an adapter and endpoint and declares environment access.
-- A **harness** combines tools, ordered lifecycle hooks, sandbox policy, and turn limits.
-- A **profile** composes one backend and one harness with system-prompt components and provider request settings.
-- A **theme** and the preview limits live in `tui.jsonc`; they are not frozen in sessions.
-
-Profiles may inherit. Backends and harnesses do not have their own inheritance mechanism.
+A profile's top level is the runtime's top level.
 
 ```jsonc
+// profiles/work.jsonc
 {
-  "default_profile": "work",
-  "profiles": {
-    "work": {
-      "extend": "default",
-      "backend": "openrouter",
-      "request": {"model": "MODEL"}
-    }
-  }
+  "extend": ["default"],
+  "backend": {"adapter": "openrouter"},
+  "harness": {"tools": ["...", "my_tool"]},
+  "request": {"model": "MODEL"}
 }
 ```
 
-`extend` recursively merges the parent profile into the child; child arrays replace parent arrays. Extending `default` retains the bundled harness, system prompt, and request defaults. A resolved new session must have a backend and valid model.
-
 | Profile field | Meaning |
 | --- | --- |
-| `extend` | Parent profile name |
-| `backend` | Name under `backends` |
-| `harness` | Name under `harnesses` |
+| `extend` | Ordered profile names, merged left to right; own keys last |
+| `backend` | Adapter reference and transport settings |
+| `harness` | Tools, hooks, sandbox policy, and turn limits |
 | `system` | Ordered system-component references |
 | `request` | Provider request object; `model` is required after resolution |
 | `context_window` | Positive capacity override; `null` disables discovery; absent permits adapter discovery |
 
-## Backends
+The selected profiles and everything they extend are flattened into one list, parents first and each profile once, then merged in order. Objects merge recursively and arrays replace, except that `"..."` splices the list as it stood before that profile, so a list can be extended without restating it. Cycles are errors. A resolved new session must have an adapter and a valid model.
+
+A profile that sets only one section is a shareable fragment; that is what `extend` is for, so there are no separate backend or harness maps.
+
+```jsonc
+// profiles/local-llm.jsonc — not selectable on its own; no model
+{"backend": {"adapter": "openai",
+             "endpoint": "http://127.0.0.1:8080/v1/chat/completions",
+             "environment": []}}
+
+// profiles/local.jsonc
+{"extend": ["default", "local-llm"], "request": {"model": "qwen3"}}
+```
+
+A fragment that omits `environment` inherits the previous layer's credential names, so state it explicitly.
+
+## Backend
 
 | Field | Default / meaning |
 | --- | --- |
-| `adapter` | Backend name; selects an adapter component |
+| `adapter` | Adapter reference; `-b REF` overrides it |
 | `endpoint` | Adapter manifest endpoint |
 | `environment` | Adapter manifest declarations |
 | `insecure_tls` | `false` |
 | `http_timeout` | `3600` seconds |
 | `http_stall` | `300` seconds without response bytes |
 
-An OpenAI-compatible service can reuse the bundled adapter:
-
-```jsonc
-{
-  "backends": {
-    "local": {
-      "adapter": "openai",
-      "endpoint": "http://127.0.0.1:8080/v1/chat/completions",
-      "environment": []
-    }
-  },
-  "profiles": {
-    "local": {
-      "extend": "default",
-      "backend": "local",
-      "request": {"model": "MODEL"}
-    }
-  }
-}
-```
-
 Bundled adapters: `anthropic`, `codex`, `openai`, `openai-responses`, and `openrouter`. See [`HARNESS.md`](HARNESS.md#backend-adapters) for the adapter protocol.
 
-## Harnesses
+## Harness
 
-Harnesses have no `extend` field. A custom harness lists the capabilities it needs; omitted hook lists and tool lists are empty, while omitted sandbox and limit fields use the defaults below.
+Omitted hook and tool lists are empty; omitted sandbox and limit fields use the defaults below.
 
 | Field | Default / meaning |
 | --- | --- |
@@ -100,25 +80,17 @@ Harnesses have no `extend` field. A custom harness lists the capabilities it nee
 | `max_tool_calls_per_request` | `25` |
 | `max_capture_bytes` | `32768`; per component execution, minimum `64` |
 
-System prompts belong to profiles, so one harness can serve different roles:
+One capability set can serve different roles, because the system prompt sits beside it:
 
 ```jsonc
+// profiles/review.jsonc
 {
-  "harnesses": {
-    "review": {
-      "tools": ["read_file"],
-      "session_start": ["project_environment", "project_instructions"]
-    }
+  "extend": ["default"],
+  "harness": {
+    "tools": ["read_file"],
+    "session_start": ["project_environment", "project_instructions"]
   },
-  "profiles": {
-    "review": {
-      "extend": "default",
-      "harness": "review",
-      "system": ["review.md"],
-      "backend": "openrouter",
-      "request": {"model": "MODEL"}
-    }
-  }
+  "system": ["review.md"]
 }
 ```
 
@@ -133,7 +105,7 @@ System components, tools, hooks, and adapters may be referenced by absolute path
 | Hook | `hooks/HOOK/` | `share/default/hooks/HOOK/` |
 | Adapter | `backends/` | `share/default/backends/` |
 
-Component manifests declare environment variable names. Values resolve from exported variables first, then `.env` beside `shellfish.jsonc`; missing values remain unset. The names and `.env` path are frozen, but values remain external and are read for each invocation.
+Component manifests declare environment variable names. Values resolve from exported variables first, then `.env` in the configuration directory; missing values remain unset. The names and the directory are frozen, but values remain external and are read for each invocation.
 
 Hooks and adapters inherit the ordinary process environment after every component-declared name is removed, then receive their own selected values. Unsandboxed tools inherit the same filtered environment; sandboxed tools start clean. See [`HARNESS.md`](HARNESS.md#shared-contract) for the process context.
 
@@ -143,11 +115,10 @@ The default harness runs opted-in tools under [`fence`](https://github.com/fence
 
 ```jsonc
 {
-  "harnesses": {
-    "default": {
-      "sandbox_read_paths": ["/path/to/reference"],
-      "sandbox_write_paths": ["/path/to/output"]
-    }
+  "extend": ["default"],
+  "harness": {
+    "sandbox_read_paths": ["/path/to/reference"],
+    "sandbox_write_paths": ["/path/to/output"]
   }
 }
 ```
@@ -168,11 +139,11 @@ The default harness runs opted-in tools under [`fence`](https://github.com/fence
 
 `--verbose` temporarily makes both preview limits `"full"`. A tool or hook overrides the global limit with `render.preview_lines`; see [`HARNESS.md`](HARNESS.md#rendering).
 
-## Bundled coding harness
+## Bundled agent
 
-The bundled `default` profile selects `general.md` and `tools.md`, requests up to 16,384 output tokens with medium reasoning effort, and leaves backend and model selection to user configuration or command-line options.
+[`profiles/default.jsonc`](../share/default/profiles/default.jsonc) works out of the box: the `openrouter` adapter, `general.md` and `tools.md`, and up to 16,384 output tokens with medium reasoning effort. It sets no model, so supply one in your own profile or with `-m`. [`profiles/coding.jsonc`](../share/default/profiles/coding.jsonc) is a short example of overriding it.
 
-The default harness enables sandboxing, uses the limit defaults above, and exposes:
+Its harness enables sandboxing, uses the limit defaults above, and exposes:
 
 | Tool | Role |
 | --- | --- |
@@ -209,6 +180,6 @@ Most interactive commands are `user_prompt_submit` hooks:
 
 `git_environment` also runs before ordinary prompts when Git identity changes. Client-owned `/refresh`, `/quit`, and `/queue` commands do not run a turn.
 
-The optional `permission_request` component `review` uses one inference to compare requested risk with user authorization; failures deny. Enable it with `"permission_request":["review"]`.
+The optional `permission_request` component `review` uses one inference to compare requested risk with user authorization; failures deny. Enable it with `"harness": {"permission_request": ["review"]}`.
 
 `/compact` leaves the source unchanged and asks the client to open a summarized child. Automatic compaction may run near a known context-window limit and preserves the interrupted prompt as an editable draft.

@@ -12,7 +12,7 @@ submitted=${submitted%x}
 # Automatic compaction measures the most recent response against the frozen
 # window. Eligibility is the run script's; this is only the threshold.
 jq -es '
-  .[0].runtime.profile.context_window as $window |
+  .[0].runtime.context_window as $window |
   ([.[] | select(.type == "assistant" and .usage != null)] | last) as $measured |
   $window != null and $measured != null and
   (($measured.usage.input_tokens + $measured.usage.output_tokens) / $window) >= 0.8

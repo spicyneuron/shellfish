@@ -29,7 +29,7 @@ def usage_actions($window):
       (.usage.reasoning_tokens? // "" | tostring)]]
   else [] end;
 
-def identity: ((.backend.name // "?") + "/" + (.profile.request.model // "?"));
+def identity: ((.backend.name // "?") + "/" + (.request.model // "?"));
 
 def hook_name:
   split("/") | if .[-1] == "run" then .[-2] else .[-1] end;
@@ -49,7 +49,7 @@ def runtime_previews:
       .[$lifecycle] = hook_previews($runtime; $lifecycle)))};
 
 def runtime_actions:
-  [["runtime", identity, (.profile.context_window // "" | tostring),
+  [["runtime", identity, (.context_window // "" | tostring),
     (runtime_previews | tojson)]];
 
 def tool_preview($previews; $name):
@@ -156,10 +156,10 @@ reduce .[] as $line (
   .actions += $emitted |
   if $line.type == "_session_load" then .mode = "load"
   elif $line.type == "_session_update" then
-    .window = ($line.runtime.profile.context_window // null) |
+    .window = ($line.runtime.context_window // null) |
     .previews = ($line.runtime | runtime_previews)
   elif $line.type == "session" then
-    .window = ($line.runtime.profile.context_window // null) |
+    .window = ($line.runtime.context_window // null) |
     .previews = ($line.runtime | runtime_previews)
   else . end
 ) |

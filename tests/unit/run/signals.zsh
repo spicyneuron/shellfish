@@ -3,34 +3,22 @@
 source "${0:A:h:h:h}/_helpers.zsh"
 sf_test_tmp exec-command-signals
 
-typeset config="$tmp/shellfish.jsonc"
-cat >"$config" <<EOF
-{
-  "default_profile": "exec",
-  "backends": {"fixture": {"adapter": "$ROOT/tests/fixtures/backend"}},
-  "harnesses": {
-    "machine": {
-      "tools": [], "sandbox": true,
-      "session_start": [], "user_prompt_submit": [], "permission_request": [],
-      "pre_tool_use": [], "post_tool_use": [], "stop": [],
-      "max_requests_per_turn": 8, "max_tool_calls_per_request": 16,
-      "max_capture_bytes": 65536
-    }
-  },
-  "profiles": {
-    "exec": {
-      "backend": "fixture", "harness": "machine",
-      "request": {"model": "test-model"}
-    }
+sf_test_config
+sf_test_profile default "{
+  \"backend\": {\"adapter\": \"$ROOT/tests/fixtures/backend\"},
+  \"request\": {\"model\": \"test-model\"},
+  \"harness\": {
+    \"tools\": [], \"sandbox\": true,
+    \"max_requests_per_turn\": 8, \"max_tool_calls_per_request\": 16,
+    \"max_capture_bytes\": 65536
   }
-}
-EOF
+}"
 export XDG_STATE_HOME="$tmp/state"
 typeset entry="$ROOT/bin/shellfish"
 
 # Cancellation stops context discovery.
 typeset model_backend="$tmp/model-backend" model_ready="$tmp/model-ready"
-typeset model_stopped="$tmp/model-stopped" model_config="$tmp/model.jsonc"
+typeset model_stopped="$tmp/model-stopped"
 mkdir "$model_backend"
 cat >"$model_backend/manifest.json" <<'JSON'
 {"endpoint":"https://example.invalid/v1/messages","environment":[]}
@@ -51,11 +39,11 @@ zmodload zsh/zselect
 while true; do zselect -t 10; done
 ZSH
 chmod +x "$model_backend/run" "$model_backend/context_window"
-jq --arg adapter "$model_backend" '.backends.fixture.adapter=$adapter' \
-  "$config" >"$model_config"
+sf_test_profile model \
+  "{\"extend\": [\"default\"], \"backend\": {\"adapter\": \"$model_backend\"}}"
 typeset model_session="$tmp/model-cancel.jsonl" model_output="$tmp/model-cancel.out"
 MODEL_READY="$model_ready" MODEL_STOPPED="$model_stopped" \
-  zsh -f "$entry" run --config "$model_config" --session-out "$model_session" prompt \
+  zsh -f "$entry" run -p model --session-out "$model_session" prompt \
   >"$model_output" 2>&1 &
 typeset model_pid=$!
 integer model_waited=0
@@ -74,7 +62,7 @@ jq -e -s '.[-1] == {type:"error",user_text:"Cancelled."}' "$model_session" >/dev
 
 # SIGINT persists partial assistant content.
 typeset cancel_session="$tmp/cancel.jsonl" cancel_output="$tmp/cancel.out"
-SF_TEST_BACKEND_DELAY=0.3 zsh -f "$entry" run --jsonl --config "$config" \
+SF_TEST_BACKEND_DELAY=0.3 zsh -f "$entry" run --jsonl \
   --session-out "$cancel_session" \
   < <(print -r -- '{"type":"user","content":[{"type":"text","text":"alpha beta gamma delta epsilon zeta eta theta"}]}') \
   >"$cancel_output" 2>&1 &
@@ -120,12 +108,11 @@ trap 'exit 143' TERM
 while true; do sleep 1; done
 ZSH
 chmod +x "$cancel_backend/run"
-typeset cancel_backend_config="$tmp/cancel-backend.jsonc"
-jq --arg adapter "$cancel_backend" '.backends.fixture.adapter=$adapter' \
-  "$config" >"$cancel_backend_config"
+sf_test_profile cancel-backend \
+  "{\"extend\": [\"default\"], \"backend\": {\"adapter\": \"$cancel_backend\"}}"
 
 typeset reasoning_session="$tmp/reasoning-cancel.jsonl" reasoning_output="$tmp/reasoning-cancel.out"
-zsh -f "$entry" run --jsonl --config "$cancel_backend_config" \
+zsh -f "$entry" run --jsonl -p cancel-backend \
   --session-out "$reasoning_session" \
   < <(print -r -- '{"type":"user","content":[{"type":"text","text":"reasoning"}]}') \
   >"$reasoning_output" 2>&1 &
@@ -151,7 +138,7 @@ jq -e -s '
 typeset tool_input_session="$tmp/tool-input-cancel.jsonl" tool_input_output="$tmp/tool-input-cancel.out"
 CANCEL_BACKEND_MARKER="$cancel_backend_marker" CANCEL_BACKEND_PID_FILE="$cancel_backend_pid_file" \
   zsh -f "$entry" run --jsonl \
-  --config "$cancel_backend_config" --session-out "$tool_input_session" \
+  -p cancel-backend --session-out "$tool_input_session" \
   < <(print -r -- '{"type":"user","content":[{"type":"text","text":"tool input"}]}') \
   >"$tool_input_output" 2>&1 &
 typeset tool_input_pid=$!
@@ -181,7 +168,7 @@ jq -e -s '
 
 # Interrupted sessions accept another turn.
 typeset recovered_session="$tmp/recovered.jsonl"
-SF_TEST_BACKEND_DELAY=0 zsh -f "$entry" run --config "$config" \
+SF_TEST_BACKEND_DELAY=0 zsh -f "$entry" run \
   --session-out "$recovered_session" seed >/dev/null || fail 'recovery seed failed'
 print -r -- \
   '{"type":"user","content":[{"type":"text","text":"interrupted"}]}' \
@@ -189,7 +176,7 @@ print -r -- \
 typeset jsonl
 jsonl=$(print -r -- \
   '{"type":"user","content":[{"type":"text","text":"next"}]}' |
-  SF_TEST_BACKEND_DELAY=0 zsh -f "$entry" run --jsonl --config "$config" \
+  SF_TEST_BACKEND_DELAY=0 zsh -f "$entry" run --jsonl \
     --session "$recovered_session") || fail 'recovery run failed'
 print -r -- "$jsonl" | jq -eRn '
   [inputs | fromjson] as $events |

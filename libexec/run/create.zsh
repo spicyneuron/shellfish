@@ -55,7 +55,7 @@ sf_run_create() {
         take=$(( ${SF_CREATE_OPTIONS[$1]:-0} + 1 ))
         (( $# >= take )) || { sf_die "$1 requires a value"; return 2; }
         forwarded+=( "${@:1:$take}" )
-        [[ $1 == --config ]] || runtime_override=1
+        runtime_override=1
         shift $take
         ;;
     esac
@@ -78,7 +78,7 @@ sf_run_create() {
     runtime=$REPLY
   fi
   if (( ! system_explicit )); then
-    projection=$(jq -jr '.profile.system[] | ., "\u0000"' <<<"$runtime") ||
+    projection=$(jq -jr '.system[] | ., "\u0000"' <<<"$runtime") ||
       sf_die 'cannot resolve system paths' || return
     system_paths=( ${(@0)projection} )
     for system_text in "${system_paths[@]}"; do

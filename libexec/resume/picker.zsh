@@ -81,7 +81,7 @@ sf_resume_load() {
           .[0:16] | sub("T"; " ")
         else . end), "\u0000",
       (((.header.runtime.backend.name // "?") | one_line) + "/" +
-       ((.header.runtime.profile.request.model // "?") | one_line)), "\u0000",
+       ((.header.runtime.request.model // "?") | one_line)), "\u0000",
       (.last | summary | one_line), "\u0000"),
     "ok", "\u0000"
   ' 2>/dev/null)

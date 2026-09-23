@@ -2,38 +2,25 @@
 
 source "${0:A:h:h:h}/_helpers.zsh"
 sf_test_tmp run-create-command
-mkdir -p "$tmp/home" "$tmp/system"
-print -r -- 'initial system' >"$tmp/system/source.md"
+sf_test_config
+mkdir -p "$tmp/home" "$SF_TEST_CONFIG/system"
+print -r -- 'initial system' >"$SF_TEST_CONFIG/system/source.md"
 export HOME="${tmp:A}/home"
 export XDG_STATE_HOME="$tmp/state"
-unset XDG_CONFIG_HOME
 
-typeset config="$tmp/shellfish.jsonc"
-cat >"$config" <<EOF
-{
-  "default_profile": "machine",
-  "backends": {"fixture": {"adapter": "$ROOT/tests/fixtures/backend"}},
-  "harnesses": {
-    "machine": {
-      "tools": [], "session_start": [], "user_prompt_submit": [],
-      "permission_request": [], "pre_tool_use": [], "post_tool_use": [], "stop": []
-    }
-  },
-  "profiles": {
-    "machine": {
-      "backend": "fixture", "harness": "machine", "system": ["source.md"],
-      "request": {"model": "test-model"}
-    }
-  }
-}
-EOF
+sf_test_profile default "{
+  \"backend\": {\"adapter\": \"$ROOT/tests/fixtures/backend\"},
+  \"system\": [\"source.md\"],
+  \"request\": {\"model\": \"test-model\"},
+  \"harness\": {\"tools\": []}
+}"
 
 typeset entry="$ROOT/bin/shellfish"
 typeset created reused explicit
 
 # Create a complete idle session.
 created="$tmp/created.jsonl"
-zsh -f "$entry" run --jsonl --session-create --session-out "$created" --config "$config" \
+zsh -f "$entry" run --jsonl --session-create --session-out "$created" \
   >/dev/null || fail 'create failed'
 [[ -f $created && $created == /* ]] || fail 'run did not create the session'
 jq -es 'length == 2 and .[0].type == "session" and
@@ -42,23 +29,23 @@ jq -es 'length == 2 and .[0].type == "session" and
 
 # Select an explicit destination.
 explicit="$tmp/explicit.jsonl"
-zsh -f "$entry" run --session-create --session-out "$explicit" --config "$config" ||
+zsh -f "$entry" run --session-create --session-out "$explicit" ||
   fail 'run ignored --session-out'
 jq -es 'length == 2' "$explicit" >/dev/null || fail 'create did not populate --session-out'
 
 # Freeze forwarded sandbox grants.
 typeset granted="$tmp/granted.jsonl"
-zsh -f "$entry" run --session-create --session-out "$granted" --config "$config" \
-  --sandbox-read "${tmp:A}/system" --sandbox-write "${tmp:A}/home" >/dev/null || \
+zsh -f "$entry" run --session-create --session-out "$granted" \
+  --sandbox-read "${SF_TEST_CONFIG:A}/system" --sandbox-write "${tmp:A}/home" >/dev/null || \
   fail 'create rejected forwarded sandbox grants'
-jq -e --arg read "${tmp:A}/system" '
+jq -e --arg read "${SF_TEST_CONFIG:A}/system" '
   select(.type == "session") |
   (.runtime.harness.sandbox_read_paths | index($read)) != null and
   (.runtime.harness.sandbox_write_paths | index("~")) != null
 ' "$granted" >/dev/null || fail 'create did not store forwarded sandbox grants'
 
 # Derived sessions reuse runtime and reread system paths.
-print -r -- 'changed configured system' >"$tmp/system/source.md"
+print -r -- 'changed configured system' >"$SF_TEST_CONFIG/system/source.md"
 print -r -- '{"type":"user","content":[{"type":"text","text":"old"}]}' \
   >>"$created"
 reused="$tmp/reused.jsonl"
@@ -74,7 +61,7 @@ zsh -f "$entry" run --session-create --session-from "$tmp/absent.jsonl" >/dev/nu
   fail 'create accepted a missing source'
 
 # Preserve occupied destinations.
-zsh -f "$entry" run --session-create --session-out "$explicit" --config "$config" >/dev/null 2>&1 &&
+zsh -f "$entry" run --session-create --session-out "$explicit" >/dev/null 2>&1 &&
   fail 'create overwrote an existing session'
 
 # Reject overrides for stored sessions.
@@ -82,7 +69,7 @@ zsh -f "$entry" run --session-create --session-from "$created" --model other >/d
   fail 'create accepted a runtime override with --session-from'
 
 # Retain the valid prefix and failed result from startup hooks.
-typeset hook="$tmp/failing-hook" hook_config="$tmp/hook.jsonc"
+typeset hook="$tmp/failing-hook"
 mkdir "$hook"
 cat >"$hook/run" <<'ZSH'
 #!/usr/bin/env zsh
@@ -91,10 +78,11 @@ print -u2 -r -- 'startup detail'
 exit 9
 ZSH
 chmod +x "$hook/run"
-jq --arg hook "$hook" '.harnesses.machine.session_start=[$hook]' "$config" >"$hook_config"
+sf_test_profile hook \
+  "{\"extend\": [\"default\"], \"harness\": {\"session_start\": [\"$hook\"]}}"
 typeset failed="$tmp/failed.jsonl" hook_error="$tmp/hook-error"
 zsh -f "$entry" run --session-create --session-out "$failed" \
-  --config "$hook_config" >/dev/null 2>"$hook_error" &&
+  -p hook >/dev/null 2>"$hook_error" &&
   fail 'a failing session_start script created a session'
 [[ $(<"$hook_error") == *"hook script failed with status 9: ${hook:A}/run: startup detail"* ]] ||
   fail 'create hid the session_start failure'
@@ -103,11 +91,12 @@ jq -se 'map(.type) == ["session","system","hook_result"] and .[-1].exit_code == 
   "$failed" >/dev/null || fail 'create did not retain the failed startup result'
 
 # Join system components in order.
-typeset joined="$tmp/joined.jsonl" joined_config="$tmp/joined.jsonc"
-printf 'first prompt\n\n\n' >"$tmp/system/first.md"
-printf 'second prompt\n' >"$tmp/system/second.md"
-jq '.profiles.machine.system=["first.md","second.md"]' "$config" >"$joined_config"
-zsh -f "$entry" run --session-create --session-out "$joined" --config "$joined_config" >/dev/null ||
+typeset joined="$tmp/joined.jsonl"
+printf 'first prompt\n\n\n' >"$SF_TEST_CONFIG/system/first.md"
+printf 'second prompt\n' >"$SF_TEST_CONFIG/system/second.md"
+sf_test_profile joined \
+  '{"extend": ["default"], "system": ["first.md", "second.md"]}' 
+zsh -f "$entry" run --session-create --session-out "$joined" -p joined >/dev/null ||
   fail 'multi-component create failed'
 jq -se 'length == 2 and .[1] == {type:"system",content:"first prompt\n\nsecond prompt"}' \
   "$joined" >/dev/null || fail 'create did not join the system components'
@@ -115,12 +104,12 @@ jq -se 'length == 2 and .[1] == {type:"system",content:"first prompt\n\nsecond p
 # Preserve mixed system override order.
 typeset override="$tmp/override.jsonl" override_file="$tmp/override.md" derived
 printf 'file prompt\n' >"$override_file"
-zsh -f "$entry" run --session-create --session-out "$override" --config "$config" \
+zsh -f "$entry" run --session-create --session-out "$override" \
   --system $'inline\nprompt\n\n' --system-file "$override_file" --system 'last prompt' \
   >/dev/null || fail 'create rejected system overrides'
 jq -se '
   length == 2 and
-  (.[0].runtime.profile.system | length) == 1 and
+  (.[0].runtime.system | length) == 1 and
   .[1] == {type:"system",content:"inline\nprompt\n\nfile prompt\n\nlast prompt"}
 ' "$override" >/dev/null || fail 'create did not materialize ordered system overrides'
 printf 'updated file prompt\n' >"$override_file"
@@ -143,22 +132,23 @@ jq -se 'length == 2 and .[1] == {type:"system",content:"--session-out"}' \
 # Clear prompts with empty overrides.
 typeset empty_file="$tmp/empty.md" empty_session
 printf '\n\n' >"$empty_file"
-for source in --config --session-from; do
-  typeset source_path=$config
-  [[ $source != --session-from ]] || source_path=$override
-  empty_session="$tmp/empty-${source#--}.jsonl"
-  zsh -f "$entry" run --session-create --session-out "$empty_session" "$source" "$source_path" \
+for source in profile session; do
+  typeset -a origin=( -p default )
+  [[ $source != session ]] || origin=( --session-from "$override" )
+  empty_session="$tmp/empty-$source.jsonl"
+  zsh -f "$entry" run --session-create --session-out "$empty_session" "${origin[@]}" \
     --system '' --system-file "$empty_file" || fail 'empty system override failed'
   jq -se 'length == 1' "$empty_session" >/dev/null || fail 'empty override retained a system record'
 done
 
 # Reject unreadable system components.
-typeset missing="$tmp/missing.jsonl" missing_config="$tmp/missing.jsonc"
-jq --arg path "$tmp/absent.md" '.profiles.machine.system=[$path]' "$config" >"$missing_config"
-zsh -f "$entry" run --session-create --session-out "$missing" --config "$missing_config" >/dev/null 2>&1 &&
+typeset missing="$tmp/missing.jsonl"
+sf_test_profile missing-system \
+  "{\"extend\": [\"default\"], \"system\": [\"$tmp/absent.md\"]}"
+zsh -f "$entry" run --session-create --session-out "$missing" -p missing-system >/dev/null 2>&1 &&
   fail 'a missing system component created a session'
 [[ ! -e $missing ]] || fail 'create left a transcript for a missing component'
-zsh -f "$entry" run --session-create --session-out "$missing" --config "$config" \
+zsh -f "$entry" run --session-create --session-out "$missing" \
   --system-file "$tmp/absent.md" >/dev/null 2>&1 &&
   fail 'create accepted a missing system override file'
 [[ ! -e $missing ]] || fail 'missing system override left a transcript'
@@ -166,14 +156,14 @@ zsh -f "$entry" run --session-create --session-out "$missing" --config "$config"
 # Reject system input that cannot survive shell transport intact.
 typeset binary="$tmp/binary.jsonl" binary_file="$tmp/binary.md"
 printf 'before\0after\n' >"$binary_file"
-zsh -f "$entry" run --session-create --session-out "$binary" --config "$config" \
+zsh -f "$entry" run --session-create --session-out "$binary" \
   --system-file "$binary_file" >/dev/null 2>&1 &&
   fail 'create accepted system content containing NUL bytes'
 [[ ! -e $binary ]] || fail 'binary system input left a transcript'
 
 # Startup records are durable before the next component runs.
 typeset events="$tmp/events.jsonl" streamed="$tmp/streamed.jsonl"
-typeset first="$tmp/first-hook" silent="$tmp/silent-hook" stream_config="$tmp/stream.jsonc"
+typeset first="$tmp/first-hook" silent="$tmp/silent-hook"
 mkdir "$first" "$silent"
 cat >"$first/run" <<'ZSH'
 #!/usr/bin/env zsh
@@ -198,9 +188,9 @@ jq -se '.[-2] == {type:"state",name:"startup/stream",value:true} and
 ZSH
 print -r -- '{}' >"$first/manifest.json"
 chmod +x "$first/run" "$silent/run"
-jq --arg first "$first" --arg silent "$silent" \
-  '.harnesses.machine.session_start=[$first,$silent]' "$config" >"$stream_config"
-SF_TEST_EVENTS="$events" zsh -f "$entry" run --jsonl --session-create --config "$stream_config" \
+sf_test_profile stream \
+  "{\"extend\": [\"default\"], \"harness\": {\"session_start\": [\"$first\", \"$silent\"]}}"
+SF_TEST_EVENTS="$events" zsh -f "$entry" run --jsonl --session-create -p stream \
   --session-out "$streamed" >"$events" 2>"$hook_error" || fail 'streamed creation failed'
 [[ ! -s $hook_error ]] || fail "streamed display leaked to stderr: $(<"$hook_error")"
 jq -se --arg path "$streamed" --arg first "${first:A}/run" --arg silent "${silent:A}/run" \
@@ -223,11 +213,11 @@ jq -se --arg path "$streamed" --arg first "${first:A}/run" --arg silent "${silen
 ' "$events" >/dev/null || fail 'invalid creation event sequence or transcript'
 
 # A failed later startup retains and streams the completed prefix and result.
-jq --arg first "$first" '.harnesses.machine.session_start |= [$first] + .' \
-  "$hook_config" >"$stream_config"
+sf_test_profile stream \
+  "{\"extend\": [\"hook\"], \"harness\": {\"session_start\": [\"$first\", \"...\"]}}"
 failed="$tmp/later-failed.jsonl"
 SF_TEST_EVENTS="$events" zsh -f "$entry" run --jsonl --session-create \
-  --session-out "$failed" --config "$stream_config" >"$events" 2>"$hook_error" &&
+  --session-out "$failed" -p stream >"$events" 2>"$hook_error" &&
   fail 'a later startup failure succeeded'
 [[ -f $failed && $(<"$hook_error") == *'hook script failed with status 9:'* ]] ||
   fail 'failed startup did not retain its session and diagnostic'
@@ -242,7 +232,7 @@ jq -se '
 ' "$failed" >/dev/null || fail 'a failed creation lost its durable prefix'
 
 # Cancel running startup scripts.
-typeset slow="$tmp/slow-hook" slow_config="$tmp/slow.jsonc" cancelled="$tmp/cancelled.jsonl"
+typeset slow="$tmp/slow-hook" cancelled="$tmp/cancelled.jsonl"
 export SLOW_MARKER="$tmp/slow-active" SLOW_RELEASE="$tmp/slow-release"
 export SLOW_EXIT_MARKER="$tmp/slow-exit"
 mkdir "$slow"
@@ -256,8 +246,9 @@ done
 : >"$SLOW_EXIT_MARKER"
 ZSH
 chmod +x "$slow/run"
-jq --arg slow "$slow" '.harnesses.machine.session_start=[$slow]' "$config" >"$slow_config"
-zsh -f "$entry" run --jsonl --session-create --config "$slow_config" --session-out "$cancelled" \
+sf_test_profile slow \
+  "{\"extend\": [\"default\"], \"harness\": {\"session_start\": [\"$slow\"]}}"
+zsh -f "$entry" run --jsonl --session-create -p slow --session-out "$cancelled" \
   >"$events" 2>"$hook_error" &
 integer create_pid=$! cancel_status=0 waited=0
 while (( waited++ < 50 )) && [[ ! -e $SLOW_MARKER ]]; do
@@ -280,32 +271,35 @@ jq -se 'map(.type) == ["session","system"]' "$cancelled" >/dev/null ||
 # Moving a home and project preserves their frozen relative references.
 typeset old_home="$tmp/original-home" new_home="$tmp/moved-home"
 typeset old_project="$old_home/project" new_project="$new_home/project"
-typeset portable_config="$old_home/shellfish.jsonc"
-mkdir -p "$old_project/hook"
+mkdir -p "$old_project/hook" "$old_home/.config/shellfish/profiles"
 print -r -- 'original prompt' >"$old_project/prompt.md"
 cat >"$old_project/hook/run" <<'ZSH'
 #!/usr/bin/env zsh
 pwd -P >"$PWD/hook-cwd"
 ZSH
 chmod +x "$old_project/hook/run"
-jq --arg system "$old_project/prompt.md" --arg hook "$old_project/hook" '
-  .profiles.machine.system=[$system] |
-  .harnesses.machine.user_prompt_submit=[$hook]
-' "$config" >"$portable_config"
+cat >"$old_home/.config/shellfish/profiles/default.jsonc" <<EOF
+{
+  "backend": {"adapter": "$ROOT/tests/fixtures/backend"},
+  "request": {"model": "test-model"},
+  "system": ["$old_project/prompt.md"],
+  "harness": {"tools": [], "user_prompt_submit": ["$old_project/hook"]}
+}
+EOF
 (
   builtin cd -- "$old_project"
-  HOME="$old_home" zsh -f "$entry" run --session-create \
-    --session-out "$PWD/session.jsonl" --config "$portable_config"
+  HOME="$old_home" XDG_CONFIG_HOME="$old_home/.config" zsh -f "$entry" run \
+    --session-create --session-out "$PWD/session.jsonl"
 ) || fail 'portable session creation failed'
 jq -e 'select(.type == "session") |
-  .cwd == "~/project" and .runtime.profile.system == ["./prompt.md"] and
-  .runtime.backend.env_file == "~/.env" and
+  .cwd == "~/project" and .runtime.system == ["./prompt.md"] and
+  .runtime.config_dir == "~/.config/shellfish" and
   .runtime.harness.user_prompt_submit[0].command == "./hook/run"
 ' "$old_project/session.jsonl" >/dev/null || fail 'session did not store portable paths'
 mv -- "$old_home" "$new_home"
 (
   builtin cd -- "$new_project"
-  HOME="$new_home" SF_TEST_BACKEND_DELAY=0 zsh -f "$entry" run \
+  HOME="$new_home" XDG_CONFIG_HOME="$new_home/.config" SF_TEST_BACKEND_DELAY=0 zsh -f "$entry" run \
     --session "$PWD/session.jsonl" 'plain answer' >"$tmp/relocated-answer"
 ) || fail 'relocated session turn failed'
 assert_equal 'plain answer' "$(<"$tmp/relocated-answer")"
@@ -314,7 +308,7 @@ assert_equal "${new_project:A}" "$(<"$new_project/hook-cwd")" \
 print -r -- 'moved prompt' >"$new_project/prompt.md"
 (
   builtin cd -- "$new_project"
-  HOME="$new_home" zsh -f "$entry" run --session-create \
+  HOME="$new_home" XDG_CONFIG_HOME="$new_home/.config" zsh -f "$entry" run --session-create \
     --session-from "$PWD/session.jsonl" --session-out "$PWD/derived.jsonl"
 ) || fail 'relocated session could not be derived'
 jq -e -s '.[1] == {type:"system",content:"moved prompt"}' \

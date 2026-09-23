@@ -2,57 +2,81 @@
 
 source "${0:A:h:h:h}/_helpers.zsh"
 
-config_eval() {
+profile_eval() {
   jq -L "$ROOT" -e 'include "lib/runtime"; '"$1"
 }
 
-# Profile inheritance rejects cycles.
-if print -r -- '{"bundled":{},"configured":{"a":{"extend":"b"},"b":{"extend":"a"}},"backends":{},"harnesses":{},"themes":{}}' |
-    jq -L "$ROOT" -e '
-      include "lib/runtime";
-      config_resolve_profiles(.bundled; .configured; .backends; .harnesses)
-    ' >/dev/null 2>&1; then
+# Profile validation rejects invalid fields.
+for profile in \
+    '{"legacy_backend":"test"}' \
+    '{"context_window":0}' \
+    '{"themes":{"dark":{"text":"red"}}}' \
+    '{"extend":"default"}' \
+    '{"harness":{"unexpected":[]}}' \
+    '{"backend":{"endpoint":"ftp://example.invalid"}}'; do
+  if print -r -- "$profile" | profile_eval 'config_profile(["p"])' >/dev/null 2>&1; then
+    fail "invalid profile was accepted: $profile"
+  fi
+done
+print -r -- '{"context_window":null}' | profile_eval 'config_profile(["p"])' >/dev/null
+
+# Objects merge recursively, arrays replace, and "..." splices.
+jq -n -L "$ROOT" -e '
+  include "lib/runtime";
+  ({request:{reasoning:{effort:"high"}},harness:{tools:["...","mine"]},system:["only.md"]} |
+    merge_over({request:{model:"base",reasoning:{effort:"low",budget:1}},
+      harness:{tools:["a","b"],sandbox:false},system:["base.md"]})) == {
+    request:{model:"base",reasoning:{effort:"high",budget:1}},
+    harness:{tools:["a","b","mine"],sandbox:false},
+    system:["only.md"]
+  }' >/dev/null
+
+# Diamonds resolve once; cycles error.
+jq -n -L "$ROOT" -e '
+  include "lib/runtime";
+  profile_resolve({
+    base:{request:{model:"base"}},
+    left:{extend:["base"],harness:{sandbox:false}},
+    right:{extend:["base"],system:["r.md"]},
+    leaf:{extend:["left","right"]}
+  }; ["leaf"]) == {
+    request:{model:"base"},harness:{sandbox:false},system:["r.md"]
+  }' >/dev/null
+if jq -n -L "$ROOT" -e '
+    include "lib/runtime";
+    profile_resolve({a:{extend:["b"]},b:{extend:["a"]}}; ["a"])
+  ' >/dev/null 2>&1; then
   fail 'profile inheritance cycle was accepted'
 fi
 
-# Profile validation rejects invalid fields.
-if print -r -- '{"profiles":{"work":{"legacy_backend":"test"}}}' |
-    config_eval 'config_validate' >/dev/null 2>&1; then
-  fail 'unknown profile field was accepted'
-fi
-if print -r -- '{"profiles":{"work":{"context_window":0}}}' |
-    config_eval 'config_validate' >/dev/null 2>&1; then
-  fail 'invalid profile context window was accepted'
-fi
-print -r -- '{"profiles":{"work":{"context_window":null}}}' |
-  config_eval 'config_validate' >/dev/null
-
-# Presentation belongs to tui.jsonc and has no place here.
-if print -r -- '{"themes":{"dark":{"text":"red"}}}' |
-    config_eval 'config_validate' >/dev/null 2>&1; then
-  fail 'presentation key was accepted'
-fi
-
-# Harnesses reject unknown fields.
-if print -r -- '{"harnesses":{"bad":{"unexpected":[]}}}' |
-    config_eval 'config_validate' >/dev/null 2>&1; then
-  fail 'unknown harness field was accepted'
-fi
-
-# Profile extensions inherit and override.
-typeset resolved_profile
-resolved_profile=$(jq -n -L "$ROOT" '
+# A shared parent applies once, so a splice it reaches twice does not repeat.
+jq -n -L "$ROOT" -e '
   include "lib/runtime";
-  config_resolve_profiles(
-    {default:{backend:"openai",harness:"default",context_window:100000,request:{model:"base"}}};
-    {work:{extend:"default",request:{model:"work-model"}}};
-    {openai:{adapter:"openai"}};
-    {default:{tools:[]}}
-  )
-')
-jq -e '
-  .work.backend.name == "openai" and
-  .work.harness.name == "default" and
-  .work.context_window == 100000 and
-  .work.request.model == "work-model"
-' <<<"$resolved_profile" >/dev/null
+  profile_resolve({
+    base:{system:["base.md"]},
+    add:{extend:["base"],system:["...","add.md"]},
+    leaf:{extend:["add","base"]}
+  }; ["leaf","add"]) == {system:["base.md","add.md"]}' >/dev/null
+
+# Later --profile names override earlier ones.
+jq -n -L "$ROOT" -e '
+  include "lib/runtime";
+  profile_resolve({one:{request:{model:"one"},system:["one.md"]},
+    two:{request:{model:"two"}}}; ["one","two"]) ==
+    {request:{model:"two"},system:["one.md"]}' >/dev/null
+
+# Selection applies CLI overrides and requires a model and an adapter.
+jq -n -L "$ROOT" -e '
+  include "lib/runtime";
+  profile_select({p:{backend:{adapter:"openai"},request:{model:"base"}}}; ["p"];
+    "cli"; {seed:1}; "other"; "") ==
+    {backend:{adapter:"other"},request:{model:"cli",seed:1},harness:{}}' >/dev/null
+# "p" has no model; "q" has no adapter.
+for name in p q; do
+  if jq -n -L "$ROOT" --arg name "$name" -e '
+      include "lib/runtime";
+      profile_select({p:{backend:{adapter:"openai"}},q:{request:{model:"m"}}};
+        [$name]; ""; {}; ""; "")' >/dev/null 2>&1; then
+    fail "incomplete profile was accepted: $name"
+  fi
+done

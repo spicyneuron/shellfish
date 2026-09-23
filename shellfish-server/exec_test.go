@@ -167,7 +167,7 @@ func TestExecRejectsInvalidTranscriptFiles(t *testing.T) {
 func TestParseServerArgsStripsServerOptions(t *testing.T) {
 	options, err := parseServerArgs([]string{
 		"--bind", "127.0.0.1:0", "--shellfish", "/bin/shellfish",
-		"--profile", "work", "--config", "shellfish.jsonc",
+		"--profile", "work", "--model", "test",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -175,7 +175,7 @@ func TestParseServerArgsStripsServerOptions(t *testing.T) {
 	if options.bind != "127.0.0.1:0" || options.binary != "/bin/shellfish" {
 		t.Fatalf("options = %#v", options)
 	}
-	if got, want := strings.Join(options.shellfishArgs, " "), "--profile work --config shellfish.jsonc"; got != want {
+	if got, want := strings.Join(options.shellfishArgs, " "), "--profile work --model test"; got != want {
 		t.Fatalf("Shellfish options = %q, want %q", got, want)
 	}
 

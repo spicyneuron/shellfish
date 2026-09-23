@@ -49,52 +49,26 @@ sf_runtime_read_manifest() {
   REPLY=$content
 }
 
-sf_runtime_config_path() {
-  local requested=${1-} candidate=''
-  if [[ -n $requested ]]; then
-    [[ $requested == /* ]] || requested="$PWD/$requested"
-    candidate=$requested
-  elif [[ -n ${XDG_CONFIG_HOME-} ]]; then
-    candidate="$XDG_CONFIG_HOME/shellfish/shellfish.jsonc"
-  elif [[ -n ${HOME-} ]]; then
-    candidate="$HOME/.config/shellfish/shellfish.jsonc"
-  fi
-  if [[ -n $candidate ]]; then
-    REPLY=${candidate:A}
-  else
-    REPLY=''
-  fi
+sf_runtime_config_dir() {
+  local base=${XDG_CONFIG_HOME:-${HOME:+$HOME/.config}}
+  [[ -n $base ]] || sf_runtime_fail 'HOME or XDG_CONFIG_HOME is required' || return
+  REPLY=${base:A}/shellfish
 }
 
-sf_runtime_read_config() {
-  local requested_config=$1 config_path=$2 raw='{}'
-  if [[ -n $config_path && ( -e $config_path || -L $config_path ) ]]; then
-    [[ -f $config_path && -r $config_path ]] || {
-      sf_runtime_fail "cannot read config: $config_path"
-      return
-    }
-    raw=$(sf_jsonc_read "$config_path" 2>&1) || {
-      sf_runtime_validation_error "$raw" "invalid config: $config_path"
-      return
-    }
-  elif [[ -n $requested_config ]]; then
-    sf_runtime_fail "cannot read config: $config_path"
-    return
-  fi
-  REPLY=$raw
-}
-
-sf_runtime_load_config() {
-  local requested_config=$1 config_path defaults raw
-  sf_runtime_config_path "$requested_config"
-  config_path=$REPLY
-  defaults=$(sf_jsonc_read "$SF_SHARE/default/shellfish.jsonc" 2>/dev/null) || {
-    sf_runtime_fail 'invalid bundled config'
+sf_runtime_read_profiles() {
+  local config_dir=$1 file detail profiles
+  local -a files=( "$SF_SHARE/default/profiles"/*.jsonc(N-.)
+    "$config_dir/profiles"/*.jsonc(N-.) )
+  profiles=$(sf_jsonc_read_keyed "${files[@]}" 2>&1) || {
+    # One bad file spoils the batch, so name it.
+    for file in "${files[@]}"; do
+      detail=$(sf_jsonc_read "$file" 2>&1) ||
+        sf_runtime_validation_error "$detail" "invalid profile: $file" || return
+    done
+    sf_runtime_fail 'cannot read profiles'
     return
   }
-  sf_runtime_read_config "$requested_config" "$config_path" || return
-  raw=$REPLY
-  reply=( config_path "$config_path" defaults "$defaults" raw "$raw" )
+  REPLY=$profiles
 }
 
 sf_runtime_reference() {
@@ -104,7 +78,7 @@ sf_runtime_reference() {
   elif [[ $reference == '~/'* ]]; then
     [[ -n ${HOME-} ]] || return 1
     candidate="$HOME/${reference#\~/}"
-  elif [[ -n $base && ( -e $base/$kind/$reference || -L $base/$kind/$reference ) ]]; then
+  elif [[ -e $base/$kind/$reference || -L $base/$kind/$reference ]]; then
     candidate="$base/$kind/$reference"
   else
     candidate="$SF_SHARE/default/$kind/$reference"
@@ -112,159 +86,98 @@ sf_runtime_reference() {
   REPLY=${candidate:A}
 }
 
-sf_runtime_resolve_from_config() {
-  local requested_config=$1 profile_override=$2 model_override=$3 request_override=$4
-  local backend_override=${5-}
-  local config_path config_dir='' raw defaults prepared external
-  local backend_name backend_reference backend_dir backend_base manifest command
-  local context_window_command=''
-  local reference resolved hook hook_manifest hook_match external_name final settings fence='' env_file=''
-  local home=${HOME-}
+# Walk the selected profile's references into the resolution table: one uniform
+# record of table key, resolved path, optional-script flag, and manifest.
+sf_runtime_resolve_profile() {
+  local profile_names=$1 model_override=$2 request_override=$3 backend_override=$4
+  local config_dir profiles profile kind reference subdirectory key resolved final
+  local fence='' home=${HOME-}
   local -A decoded
-  local -a tool_entries system_entries component_entries
-  local -A loaded
-  local -a tool_references system_references component_references
-  integer settings_readable
+  local -a entries=() references=()
+  integer flag
 
   SF_RUNTIME_ERROR=''
   REPLY=''
-  sf_runtime_load_config "$requested_config" || return
-  loaded=( "${reply[@]}" )
-  config_path=$loaded[config_path]
-  defaults=$loaded[defaults]
-  raw=$loaded[raw]
-  [[ -z $config_path ]] || config_dir=${config_path:h}
-  [[ -z $config_path ]] || env_file=${config_dir:A}/.env
+  sf_runtime_config_dir || return
+  config_dir=$REPLY
+  sf_runtime_read_profiles "$config_dir" || return
+  profiles=$REPLY
   [[ -z $home ]] || home=${home:A}
 
-  external_name=${backend_override%/}
-  external_name=${external_name:t}
-  # A reference carries no control characters, so newlines delimit each list.
-  sf_jq_fields -rn --argjson defaults "$defaults" \
-    --argjson raw "$raw" --arg profile_override "$profile_override" \
-    --arg model_override "$model_override" --argjson request_override "$request_override" \
-    --arg backend_override "$backend_override" \
-    --arg external_backend_name "$external_name" --arg home "$home" '
+  # A reference carries no control characters, so newlines delimit the list and
+  # a space separates each kind from its reference.
+  sf_jq_fields -rn --argjson files "$profiles" --arg names "$profile_names" \
+    --arg bundled "$SF_SHARE/default/profiles" \
+    --arg model "$model_override" --argjson request "$request_override" \
+    --arg backend "$backend_override" --arg home "$home" '
       include "lib/fields";
       include "lib/runtime";
-      {defaults:$defaults,raw:$raw,profile_override:$profile_override,
-       model_override:$model_override,request_override:$request_override,
-       backend_override:$backend_override,
-       external_backend_name:$external_backend_name,home:$home} |
-      runtime_prepare as $prepared |
-      entry("prepared"; $prepared | tojson),
-      entry("backend_name"; $prepared.backend_name),
-      entry("backend_reference"; $prepared.backend_reference),
-      entry("backend_external"; $prepared.backend_external | tostring),
-      entry("tools"; $prepared.tool_references | join("\n")),
-      entry("system"; $prepared.system_references | join("\n")),
-      entry("hooks";
-        [$prepared.hook_component_references[] | .hook + " " + .reference] | join("\n")),
+      profile_select($files | profile_map($bundled);
+        (($names | select(length > 0) | split("\n")) // ["default"]);
+        $model; $request; $backend; $home) as $profile |
+      entry("profile"; $profile | tojson),
+      entry("references";
+        [["backend", $profile.backend.adapter],
+         (($profile.harness.tools // [])[] | ["tools", .]),
+         (($profile.system // [])[] | ["system", .]),
+         (hook_names[] as $hook | ($profile.harness[$hook] // [])[] |
+           ["hooks/" + $hook, .])] |
+        map(join(" ")) | join("\n")),
       ("ok" | field)
   ' || {
-    sf_runtime_validation_error "$REPLY" "cannot prepare runtime"
+    sf_runtime_validation_error "$REPLY" 'cannot select profile'
     return
   }
   decoded=( "${reply[@]}" )
-  prepared=$decoded[prepared]
-  backend_name=$decoded[backend_name]
-  backend_reference=$decoded[backend_reference]
-  external=$decoded[backend_external]
-  tool_references=( ${(f)decoded[tools]} )
-  system_references=( ${(f)decoded[system]} )
-  component_references=( ${(f)decoded[hooks]} )
+  profile=$decoded[profile]
+  references=( ${(f)decoded[references]} )
 
-  backend_base=$config_dir
-  if [[ $external == true ]]; then
-    [[ $backend_name =~ ^[A-Za-z0-9][A-Za-z0-9_-]*$ ]] || {
-      sf_runtime_fail "invalid backend name: $backend_name"
-      return
-    }
-    backend_base=$PWD
-  fi
-  if [[ $external == true && $backend_reference == */* &&
-      $backend_reference != /* && $backend_reference != '~/'* ]]; then
-    backend_dir=${backend_base:A}/$backend_reference
-    backend_dir=${backend_dir:A}
-  else
-    sf_runtime_reference "$backend_reference" "$backend_base" backends || {
-      sf_runtime_fail "cannot resolve backend: $backend_name"
-      return
-    }
-    backend_dir=$REPLY
-  fi
-  [[ -d $backend_dir && -x $backend_dir/run ]] || {
-    sf_runtime_fail "invalid backend: $backend_dir"
-    return
-  }
-  sf_runtime_read_manifest "$backend_dir" required || return
-  manifest=$REPLY
-  command=$backend_dir/run
-  [[ ! -f $backend_dir/context_window || ! -x $backend_dir/context_window ]] ||
-    context_window_command=$backend_dir/context_window
-
-  for reference in "${tool_references[@]}"; do
-    sf_runtime_reference "$reference" "$config_dir" tools || {
-      sf_runtime_fail "cannot resolve tool directory: $reference"
-      return
-    }
-    resolved=$REPLY
-    [[ -d $resolved && -x $resolved/run ]] || {
-      sf_runtime_fail "invalid tool directory: $reference"
-      return
-    }
-    sf_runtime_read_manifest "$resolved" required || return
-    settings="$resolved/fence.jsonc"
-    settings_readable=0
-    [[ ! -f $settings || ! -r $settings ]] || settings_readable=1
-    tool_entries+=( "${${resolved%/}:t}" "$resolved/run" "$REPLY" \
-      "$settings" "$settings_readable" )
-  done
-  for reference in "${system_references[@]}"; do
-    sf_runtime_reference "$reference" "$config_dir" system || {
-      sf_runtime_fail "cannot resolve system component: $reference"
-      return
-    }
-    system_entries+=( "$REPLY" )
-  done
-  for reference in "${component_references[@]}"; do
-    hook=${reference%% *}
+  for reference in "${references[@]}"; do
+    kind=${reference%% *}
     reference=${reference#* }
-    sf_runtime_reference "$reference" "$config_dir" "hooks/$hook" || {
-      sf_runtime_fail "cannot resolve $hook hook script: $reference"
+    # There is exactly one backend, so it needs no reference in its key.
+    subdirectory=$kind
+    key="$kind"$'\t'"$reference"
+    [[ $kind != backend ]] || { subdirectory=backends; key=backend; }
+    sf_runtime_reference "$reference" "$config_dir" "$subdirectory" || {
+      sf_runtime_fail "cannot resolve $kind reference: $reference"
       return
     }
     resolved=$REPLY
+    flag=0
+    if [[ $kind == system ]]; then
+      entries+=( "$key" "$resolved" 0 '{}' )
+      continue
+    fi
     [[ -d $resolved && -x $resolved/run ]] || {
-      sf_runtime_fail "invalid $hook hook: $reference"
+      sf_runtime_fail "invalid $kind reference: $reference"
       return
     }
-    sf_runtime_read_manifest "$resolved" optional || return
-    hook_manifest=$REPLY
-    hook_match=''
-    [[ ! -f $resolved/match || ! -x $resolved/match ]] || hook_match=$resolved/match
-    component_entries+=( "$hook" "$resolved/run" "$hook_manifest" "$hook_match" )
+    case $kind in
+      backend)
+        sf_runtime_read_manifest "$resolved" required || return
+        [[ ! -f $resolved/context_window || ! -x $resolved/context_window ]] || flag=1
+        ;;
+      tools)
+        sf_runtime_read_manifest "$resolved" required || return
+        [[ ! -f $resolved/fence.jsonc || ! -r $resolved/fence.jsonc ]] || flag=1
+        ;;
+      *)
+        sf_runtime_read_manifest "$resolved" optional || return
+        [[ ! -f $resolved/match || ! -x $resolved/match ]] || flag=1
+        ;;
+    esac
+    entries+=( "$key" "$resolved" "$flag" "$REPLY" )
   done
   [[ -z ${commands[fence]-} ]] || fence=${commands[fence]:A}
 
-  # The two counts split the resolved entries into their three lists.
-  final=$(sf_jq -cnce --argjson prepared "$prepared" \
-    --arg manifest "$manifest" --arg command "$command" \
-    --arg context_window_command "$context_window_command" --arg fence "$fence" \
-    --arg env_file "$env_file" --argjson tool_words "${#tool_entries}" \
-    --argjson component_words "${#component_entries}" \
-    --argjson grants "$SF_RUNTIME_SANDBOX_GRANTS" --args '
+  final=$(sf_jq -cnce --argjson profile "$profile" --arg config_dir "$config_dir" \
+    --arg fence "$fence" --argjson grants "$SF_RUNTIME_SANDBOX_GRANTS" --args '
       include "lib/runtime";
-      ({prepared:$prepared,manifest:$manifest,command:$command,
-        context_window_command:$context_window_command,fence:$fence,
-        env_file:$env_file,
-        resolved:($ARGS.positional |
-          {tools:.[:$tool_words],
-           components:.[$tool_words:$tool_words + $component_words],
-           system:.[$tool_words + $component_words:]})} + $grants) |
-      runtime_finalize
-    ' -- "${tool_entries[@]}" "${component_entries[@]}" "${system_entries[@]}" 2>&1) || {
-    sf_runtime_validation_error "$final" "cannot finalize runtime"
+      runtime_finalize($profile; resolution_table($ARGS.positional);
+        $config_dir; $fence; $grants)
+    ' -- "${entries[@]}" 2>&1) || {
+    sf_runtime_validation_error "$final" 'cannot finalize runtime'
     return
   }
   REPLY=$final
@@ -273,24 +186,18 @@ sf_runtime_resolve_from_config() {
 # Parse the options that select a runtime, then resolve it. Callers that own
 # their own flags pass only the ones listed in lib/options.zsh.
 sf_runtime_resolve_args() {
-  local config='' profile='' model='' backend=''
+  local model='' backend=''
   local request='{}' flag grant resolved
-  local -a read_paths=() write_paths=()
+  local -a profiles=() read_paths=() write_paths=()
   integer detect=0
 
   SF_RUNTIME_ERROR=''
   while (( $# )); do
     case $1 in
-      --config)
-        [[ -n $2 && $2 != - ]] ||
-          sf_runtime_fail '--config requires a nonempty file path other than -' || return 2
-        config=$2
-        shift 2
-        ;;
       -p|--profile)
-        [[ $2 =~ ^[A-Za-z0-9][A-Za-z0-9_-]*$ ]] ||
-          sf_runtime_fail '--profile must match [A-Za-z0-9][A-Za-z0-9_-]*' || return 2
-        profile=$2
+        [[ $2 =~ ^@?[A-Za-z0-9][A-Za-z0-9_-]*$ ]] ||
+          sf_runtime_fail '--profile must match @?[A-Za-z0-9][A-Za-z0-9_-]*' || return 2
+        profiles+=( "$2" )
         shift 2
         ;;
       -m|--model)
@@ -355,5 +262,5 @@ sf_runtime_resolve_args() {
       sf_runtime_fail 'cannot prepare sandbox grants' || return
   fi
 
-  sf_runtime_resolve_from_config "$config" "$profile" "$model" "$request" "$backend"
+  sf_runtime_resolve_profile "${(pj:\n:)profiles}" "$model" "$request" "$backend"
 }
