@@ -39,7 +39,7 @@ sf_run_hook_activity() {
 }
 
 # Shared values land in SF_HOOK_PLAN; the matching hooks follow in reply as
-# groups of command, environment, match command, and render template.
+# groups of command, match command, and render template.
 sf_run_hook_project() {
   local runtime=$1 lifecycle=$2 content=$3
   sf_jq_fields -rn --argjson runtime "$runtime" --arg lifecycle "$lifecycle" \
@@ -49,28 +49,26 @@ sf_run_hook_project() {
       entry("max_capture"; $runtime.harness.max_capture_bytes | tostring),
       entry("config_dir"; $runtime.config_dir),
       entry("model"; $runtime.request.model),
-      entry("environment_names"; declared_environment($runtime)),
       ($runtime.harness[$lifecycle][]? |
         (.match.pattern? // "") as $pattern |
         select($pattern == "" or ($input | test($pattern))) |
         (.command | field),
-        (.environment | join(" ") | field),
         (.match.command? // "" | field),
         (.render | tojson | field)),
       ("ok" | field)
     ' || return 1
-  # The four named entries above fill the first eight slots; hooks follow.
-  SF_HOOK_PLAN=( "${(@)reply[1,8]}" )
-  reply=( "${(@)reply[9,-1]}" )
+  # The three named entries above fill the first six slots; hooks follow.
+  SF_HOOK_PLAN=( "${(@)reply[1,6]}" )
+  reply=( "${(@)reply[7,-1]}" )
 }
 
 sf_run_hook_invoke() {
   setopt local_options no_err_exit
-  local session=$1 command=$2 selected=$3 input=$4 lifecycle=$5 turn_state=$6
-  local render=$7 id=$8 name=$9 input_json=${10}
-  shift 10
+  local session=$1 command=$2 input=$3 lifecycle=$4 turn_state=$5
+  local render=$6 id=$7 name=$8 input_json=$9
+  shift 9
   local config_dir=$SF_HOOK_PLAN[config_dir] directory
-  local -a arguments environment
+  local -a environment
   local -A process
   integer max_capture=$SF_HOOK_PLAN[max_capture] over_capture=0
 
@@ -78,14 +76,13 @@ sf_run_hook_invoke() {
     SF_RUN_HOOK_ERROR="hook command is not executable: $command"
     return 1
   }
-  sf_environment_load "$config_dir" "$selected" || {
+  sf_environment_load "$config_dir" || {
     SF_RUN_HOOK_ERROR=$SF_ENVIRONMENT_ERROR
     return 1
   }
-  arguments=()
-  for selected in ${=SF_HOOK_PLAN[environment_names]}; do arguments+=( -u "$selected" ); done
-  arguments+=( "${SF_ENVIRONMENT_VALUES[@]}" "$command" "$@" )
+  # Core values follow .env values so that they win.
   environment=(
+    "${SF_ENVIRONMENT_VALUES[@]}"
     "SHELLFISH_SESSION=${session:A}"
     "SHELLFISH_MAX_CAPTURE_BYTES=$max_capture"
     "SHELLFISH_MODEL=$SF_HOOK_PLAN[model]"
@@ -97,7 +94,7 @@ sf_run_hook_invoke() {
   if [[ $lifecycle != session_start ]]; then
     environment+=( "SHELLFISH_TURN_ID=$SF_RUN[turn_id]" "SHELLFISH_TURN_STATE=$turn_state" )
   else
-    arguments=( -u SHELLFISH_TURN_ID -u SHELLFISH_TURN_STATE "${arguments[@]}" )
+    environment=( -u SHELLFISH_TURN_ID -u SHELLFISH_TURN_STATE "${environment[@]}" )
   fi
   sf_scratch_directory hook || {
     SF_RUN_HOOK_ERROR='cannot prepare hook capture'
@@ -105,7 +102,7 @@ sf_run_hook_invoke() {
   }
   directory=$REPLY
   if ! sf_process_run "$directory" "${SF_RUN[cwd]:A}" "${input:A}" "$max_capture" \
-      /usr/bin/env -- "${environment[@]}" /usr/bin/env "${arguments[@]}"; then
+      /usr/bin/env "${environment[@]}" "$command" "$@"; then
     rm -rf -- "$directory"
     SF_RUN_HOOK_ERROR=$SF_PROCESS_ERROR
     return 1
@@ -170,9 +167,9 @@ sf_run_hook_invoke() {
 
 # A match command decides by status alone and may write nothing.
 sf_run_hook_match() {
-  local session=$1 command=$2 selected=$3 input_file=$4 lifecycle=$5 turn_state=$6
-  shift 6
-  sf_run_hook_invoke "$session" "$command" "$selected" "$input_file" "$lifecycle" \
+  local session=$1 command=$2 input_file=$3 lifecycle=$4 turn_state=$5
+  shift 5
+  sf_run_hook_invoke "$session" "$command" "$input_file" "$lifecycle" \
     "$turn_state" '' '' '' '' "$@" || return 2
   (( SF_HOOK_RESULT[stdout_bytes] + SF_HOOK_RESULT[stderr_bytes] +
      SF_HOOK_RESULT[control_bytes] == 0 &&
@@ -184,7 +181,7 @@ sf_run_hook_match() {
 sf_run_hooks() {
   local session=$1 lifecycle=$2 content=$3 turn_state=$4
   shift 4
-  local input_file input_json command selected match_command name render record clear
+  local input_file input_json command match_command name render record clear
   local error='' decision=proceed reason='' action='' payload=''
   local -a plan states
   local -A activity
@@ -213,13 +210,12 @@ sf_run_hooks() {
     return 1
   }
   id=$SF_RUN[hook_id]
-  for (( offset = 1; offset <= ${#plan}; offset += 4 )); do
+  for (( offset = 1; offset <= ${#plan}; offset += 3 )); do
     command=$plan[offset]
-    selected=$plan[offset+1]
-    match_command=$plan[offset+2]
-    render=$plan[offset+3]
+    match_command=$plan[offset+1]
+    render=$plan[offset+2]
     if [[ -n $match_command ]]; then
-      sf_run_hook_match "$session" "$match_command" "$selected" "$input_file" \
+      sf_run_hook_match "$session" "$match_command" "$input_file" \
         "$lifecycle" "$turn_state" "$@"
       match_status=$?
       (( match_status == 0 )) || {
@@ -237,7 +233,7 @@ sf_run_hooks() {
     input_json=$activity[input]
     sf_run_emit "$activity[record]" || { error='cannot emit hook activity'; break; }
     invoke_status=0
-    sf_run_hook_invoke "$session" "$command" "$selected" "$input_file" "$lifecycle" \
+    sf_run_hook_invoke "$session" "$command" "$input_file" "$lifecycle" \
       "$turn_state" "$render" "$id" "$name" "$input_json" "$@" || invoke_status=$?
     if (( invoke_status )); then
       if (( invoke_status == 129 || invoke_status == 130 || invoke_status == 143 )); then

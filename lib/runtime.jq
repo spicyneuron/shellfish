@@ -39,14 +39,6 @@ def hook_names:
   ["session_start", "user_prompt_submit", "permission_request", "pre_tool_use",
    "post_tool_use", "stop"];
 
-# Every name any component of a frozen runtime may declare. A component unsets
-# all of them, so it cannot inherit another component's credentials.
-def declared_environment($runtime):
-  [$runtime.backend.environment[]?,
-   $runtime.harness.tools[].manifest.environment[]?,
-   (hook_names[] as $hook | $runtime.harness[$hook][]?.environment[]?)] |
-  unique | join(" ");
-
 # Display templates. script_template admits exactly the variables that
 # render_component supplies below; read the two together.
 def script_template($input_variables; $output):
@@ -118,11 +110,10 @@ def hook_help:
 
 def hook_component:
   type == "object" and
-  (keys - ["command", "environment", "help", "match", "render"] | length) == 0 and
-  has("command") and has("environment") and has("render") and
+  (keys - ["command", "help", "match", "render"] | length) == 0 and
+  has("command") and has("render") and
   (.command | stored_path) and
   (.render | complete_component_render(null; false)) and
-  (.environment | component_environment) and
   (if has("match") then .match | hook_match else true end) and
   (if has("help") then .help | hook_help else true end);
 
@@ -169,10 +160,10 @@ def canonical_runtime:
     .context_window == null or (.context_window | positive_integer)
   else true end) and
   (.backend | type == "object" and
-    ((keys - ["command", "context_window_command", "endpoint", "environment", "http_stall", "http_timeout", "insecure_tls", "name"]) | length == 0) and
-    (["command", "endpoint", "environment", "http_stall", "http_timeout", "insecure_tls", "name"] - keys | length == 0) and
+    ((keys - ["command", "context_window_command", "endpoint", "http_stall", "http_timeout", "insecure_tls", "name"]) | length == 0) and
+    (["command", "endpoint", "http_stall", "http_timeout", "insecure_tls", "name"] - keys | length == 0) and
     (.name | profile_name) and (.command | stored_path) and (.endpoint | endpoint) and
-    (.environment | component_environment) and (.insecure_tls | type == "boolean") and
+    (.insecure_tls | type == "boolean") and
     (.http_timeout | positive_integer) and (.http_stall | positive_integer) and
     (if has("context_window_command") then
       .context_window_command | stored_path
@@ -285,14 +276,12 @@ def config_profile($path):
   config_assert((has("system") | not) or (.system | reference_list);
     $path + ["system"]; "must be references") |
   (if has("backend") then .backend |= (
-    config_object($path + ["backend"]; ["adapter", "endpoint", "environment",
+    config_object($path + ["backend"]; ["adapter", "endpoint",
       "insecure_tls", "http_timeout", "http_stall"]) |
     config_assert((has("adapter") | not) or (.adapter | nonempty_control_free_string);
       $path + ["backend", "adapter"]; "invalid reference") |
     config_assert((has("endpoint") | not) or (.endpoint | endpoint);
       $path + ["backend", "endpoint"]; "must be an HTTP(S) URL") |
-    config_assert((has("environment") | not) or (.environment | component_environment);
-      $path + ["backend", "environment"]; "must contain unique environment variable names") |
     config_assert((has("insecure_tls") | not) or (.insecure_tls | type == "boolean");
       $path + ["backend", "insecure_tls"]; "must be a boolean") |
     reduce ["http_timeout", "http_stall"][] as $field (.;
@@ -391,8 +380,7 @@ def resolution_table($words):
 def runtime_finalize($profile; $table; $config_dir; $fence; $grants):
   $table["backend"] as $backend |
   ($backend.manifest |
-    select(type == "object" and keys == ["endpoint", "environment"] and
-      (.endpoint | endpoint) and (.environment | component_environment)) //
+    select(type == "object" and keys == ["endpoint"] and (.endpoint | endpoint)) //
     error("invalid backend manifest")) as $manifest |
   [($profile.harness.tools // [])[] as $reference |
     $table["tools\t" + $reference] as $entry |
@@ -416,9 +404,8 @@ def runtime_finalize($profile; $table; $config_dir; $fence; $grants):
     ($manifest |
       select(type == "object" and
         (keys - (if $component.hook == "user_prompt_submit"
-          then ["environment", "help", "match", "render"]
-          else ["environment", "render"] end) | length) == 0 and
-        ((.environment // []) | component_environment) and
+          then ["help", "match", "render"]
+          else ["render"] end) | length) == 0 and
         (if $manifest | has("render") then
            $manifest.render | component_render(null; false)
          else true end) and
@@ -427,8 +414,7 @@ def runtime_finalize($profile; $table; $config_dir; $fence; $grants):
            has("match") and (.help | hook_help)
          else true end)) //
       error("invalid hook component: " + $command)) as $hook_manifest |
-    .[$component.hook] += [({command:$command,render:$render,
-      environment:($hook_manifest.environment // [])} +
+    .[$component.hook] += [({command:$command,render:$render} +
       (if $hook_manifest | has("match") then {match:$hook_manifest.match} else {} end) +
       (if $hook_manifest | has("help") then {help:$hook_manifest.help} else {} end))])) as $hooks |
   ((if $profile.harness | has("sandbox") then $profile.harness.sandbox else true end) and
@@ -437,7 +423,6 @@ def runtime_finalize($profile; $table; $config_dir; $fence; $grants):
   {
     backend:({name:($backend.path | split("/") | last),command:($backend.path + "/run"),
       endpoint:($profile.backend.endpoint // $manifest.endpoint),
-      environment:($profile.backend.environment // $manifest.environment),
       insecure_tls:($profile.backend.insecure_tls // false),
       http_timeout:($profile.backend.http_timeout // 3600),
       http_stall:($profile.backend.http_stall // 300)} +

@@ -108,7 +108,7 @@ sf_test_runtime() {
         system:[],
         config_dir:"/nonexistent/shellfish",
         backend:{name:"test",command:$command,endpoint:"https://example.invalid/test",
-          environment:[],insecure_tls:false,http_timeout:30,http_stall:10},
+          insecure_tls:false,http_timeout:30,http_stall:10},
         harness:{sandbox_read_paths:[],sandbox_write_paths:[],fence:$fence,
           tools:[{name:"shell",command:($tool+"/run"),
             settings:(if $tool_manifest[0].sandbox then ($tool+"/fence.jsonc") else null end),

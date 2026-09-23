@@ -21,7 +21,7 @@ typeset model_backend="$tmp/model-backend" model_ready="$tmp/model-ready"
 typeset model_stopped="$tmp/model-stopped"
 mkdir "$model_backend"
 cat >"$model_backend/manifest.json" <<'JSON'
-{"endpoint":"https://example.invalid/v1/messages","environment":[]}
+{"endpoint":"https://example.invalid/v1/messages"}
 JSON
 cat >"$model_backend/run" <<'ZSH'
 #!/usr/bin/env zsh

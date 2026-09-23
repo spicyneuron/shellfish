@@ -38,14 +38,11 @@ A profile that sets only one section is a shareable fragment; that is what `exte
 ```jsonc
 // profiles/local-llm.jsonc — not selectable on its own; no model
 {"backend": {"adapter": "openai",
-             "endpoint": "http://127.0.0.1:8080/v1/chat/completions",
-             "environment": []}}
+             "endpoint": "http://127.0.0.1:8080/v1/chat/completions"}}
 
 // profiles/local.jsonc
 {"extend": ["default", "local-llm"], "request": {"model": "qwen3"}}
 ```
-
-A fragment that omits `environment` inherits the previous layer's credential names, so state it explicitly.
 
 ## Backend
 
@@ -53,7 +50,6 @@ A fragment that omits `environment` inherits the previous layer's credential nam
 | --- | --- |
 | `adapter` | Adapter reference; `-b REF` overrides it |
 | `endpoint` | Adapter manifest endpoint |
-| `environment` | Adapter manifest declarations |
 | `insecure_tls` | `false` |
 | `http_timeout` | `3600` seconds |
 | `http_stall` | `300` seconds without response bytes |
@@ -105,9 +101,9 @@ System components, tools, hooks, and adapters may be referenced by absolute path
 | Hook | `hooks/HOOK/` | `share/default/hooks/HOOK/` |
 | Adapter | `backends/` | `share/default/backends/` |
 
-Component manifests declare environment variable names. Values resolve from exported variables first, then `.env` in the configuration directory; missing values remain unset. The names and the directory are frozen, but values remain external and are read for each invocation.
+Credentials live in exported variables or `.env` in the configuration directory; exported values win. Values remain external and are read for each invocation.
 
-Hooks and adapters inherit the ordinary process environment after every component-declared name is removed, then receive their own selected values. Unsandboxed tools inherit the same filtered environment; sandboxed tools start clean. See [`HARNESS.md`](HARNESS.md#shared-contract) for the process context.
+Hooks and adapters are trusted: they inherit the process environment and receive every `.env` value. Tools receive only the `.env` names their manifest declares. Unsandboxed tools also inherit the process environment; sandboxed tools start clean. A key kept only in `.env` is therefore invisible to tools that do not declare it. See [`HARNESS.md`](HARNESS.md#shared-contract) for the process context.
 
 ## Sandbox
 

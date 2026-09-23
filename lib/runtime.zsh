@@ -32,7 +32,7 @@ sf_runtime_read_manifest() {
   elif [[ -e $json || -L $json ]]; then
     manifest_path=$json
   elif [[ $mode == optional ]]; then
-    REPLY='{"environment":[]}'
+    REPLY='{}'
     return 0
   else
     sf_runtime_fail "missing component manifest: $directory"

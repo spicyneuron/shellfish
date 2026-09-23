@@ -41,6 +41,32 @@ jq -eRn --arg expected "${TMPDIR:A}|${TMPDIR:A}/zsh" '
     ($expected + "\nexit 0")
 ' <"$temp_stream" >/dev/null || fail 'tool did not receive the host temp environment'
 
+# Hooks receive all of .env; tools receive only the .env names they declare.
+typeset env_config="$tmp/env-config" env_hook="$tmp/env-hook" env_seen="$tmp/env-seen"
+typeset env_session="$tmp/env.jsonl" env_stream="$tmp/env.stream" base_runtime=$SF_TEST_RUNTIME
+typeset env_command='print -rn -- "${DECLARED-unset} ${UNDECLARED-unset} ${EXPORTED-unset}"'
+mkdir "$env_config"
+print -rl -- DECLARED=declared-file UNDECLARED=undeclared-file >"$env_config/.env"
+cat >"$env_hook" <<'ZSH'
+#!/usr/bin/env zsh
+cat >/dev/null
+print -rn -- "${UNDECLARED-unset}" >"$ENV_SEEN"
+ZSH
+chmod +x "$env_hook"
+export ENV_SEEN=$env_seen EXPORTED=exported
+SF_TEST_RUNTIME=$(jq -c --arg config "$env_config" --arg hook "$env_hook" '
+  .config_dir=$config | .harness.tools[0].manifest.environment=["DECLARED"] |
+  .harness.post_tool_use=[{command:$hook,render:{initial_user_text:"",user_text:"${output.stderr}",model_text:"${output.stdout}"}}]
+' <<<"$SF_TEST_RUNTIME")
+sf_test_session "$env_session"
+SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_COMMAND=$env_command \
+  sf_test_run env "$env_session" >"$env_stream" || fail 'tool environment turn failed'
+jq -eRn '[inputs | fromjson | select(.type == "tool_result")][0].model_text ==
+  "declared-file unset exported\nexit 0"' <"$env_stream" >/dev/null ||
+  fail 'unsandboxed tool did not receive exactly its declared .env names'
+assert_equal undeclared-file "$(<$env_seen)" 'hook did not receive an undeclared .env key'
+SF_TEST_RUNTIME=$base_runtime
+
 # Tool temp cannot redirect the next call's core-owned input write.
 typeset input_target="$tmp/tool-input-target" input_session="$tmp/tool-input.jsonl"
 typeset input_stream="$tmp/tool-input.stream"
@@ -82,10 +108,10 @@ chmod +x "$pre" "$later" "$post"
 export HOOK_DIR=$hook_dir TOOL_MARKER=$tool_marker
 SF_TEST_RUNTIME=$(jq -c --arg pre "$pre" --arg later "$later" --arg post "$post" '
   .harness.pre_tool_use=[
-    {command:$pre,environment:["HOOK_DIR"],render:{initial_user_text:"",user_text:"${output.stderr}",model_text:"${output.stdout}"}},
-    {command:$later,environment:["HOOK_DIR"],render:{initial_user_text:"",user_text:"${output.stderr}",model_text:"${output.stdout}"}}
+    {command:$pre,render:{initial_user_text:"",user_text:"${output.stderr}",model_text:"${output.stdout}"}},
+    {command:$later,render:{initial_user_text:"",user_text:"${output.stderr}",model_text:"${output.stdout}"}}
   ] |
-  .harness.post_tool_use=[{command:$post,environment:["HOOK_DIR"],render:{initial_user_text:"",user_text:"${output.stderr}",model_text:"${output.stdout}"}}]
+  .harness.post_tool_use=[{command:$post,render:{initial_user_text:"",user_text:"${output.stderr}",model_text:"${output.stdout}"}}]
 ' <<<"$SF_TEST_RUNTIME")
 typeset session="$tmp/denied.jsonl" stream="$tmp/denied.stream"
 sf_test_session "$session"
@@ -144,7 +170,7 @@ export PERMISSION_INPUT=$permission_input
 SF_TEST_RUNTIME=$(jq -c --arg hook "$permission" '
   .harness.pre_tool_use=[] | .harness.post_tool_use=[] |
   .harness.sandbox=true | .harness.fence="/usr/bin/true" |
-  .harness.permission_request=[{command:$hook,environment:["PERMISSION_INPUT"],render:{initial_user_text:"",user_text:"${output.stderr}",model_text:"${output.stdout}"}}]
+  .harness.permission_request=[{command:$hook,render:{initial_user_text:"",user_text:"${output.stderr}",model_text:"${output.stdout}"}}]
 ' <<<"$SF_TEST_RUNTIME")
 session="$tmp/permission-allow.jsonl"
 sf_test_session "$session"
@@ -212,7 +238,7 @@ ZSH
 chmod +x "$post_fail"
 SF_TEST_RUNTIME=$(jq -c --arg hook "$post_fail" '
   .harness.permission_request=[] |
-  .harness.post_tool_use=[{command:$hook,environment:[],render:{initial_user_text:"",user_text:"${output.stderr}",model_text:"${output.stdout}"}}]
+  .harness.post_tool_use=[{command:$hook,render:{initial_user_text:"",user_text:"${output.stderr}",model_text:"${output.stdout}"}}]
 ' <<<"$SF_TEST_RUNTIME")
 session="$tmp/post-failure.jsonl"
 sf_test_session "$session"
@@ -286,5 +312,17 @@ jq -eRn '
   [inputs | fromjson | select(.type == "tool_result")][0] |
   .exit_code == 0 and .model_text == "output\nexit 0"
 ' <"$stream" >/dev/null || fail 'a succeeding tool was annotated'
+
+# A sandboxed tool starts clean apart from its declared names.
+SF_TEST_RUNTIME=$(jq -c --arg config "$env_config" '
+  .config_dir=$config | .harness.tools[0].manifest.environment=["DECLARED"]
+' <<<"$SF_TEST_RUNTIME")
+session="$tmp/sandbox-env.jsonl"
+sf_test_session "$session"
+SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_COMMAND=$env_command \
+  sf_test_run sandbox "$session" >"$stream" || fail 'sandboxed environment turn failed'
+jq -eRn '[inputs | fromjson | select(.type == "tool_result")][0].model_text ==
+  "declared-file unset unset\nexit 0"' <"$stream" >/dev/null ||
+  fail 'sandboxed tool saw values beyond its declared names'
 
 print -r -- ok

@@ -22,7 +22,7 @@ Hook and tool stdout, stderr, and fd 3 share `max_capture_bytes`. Hooks fail whe
 
 ### Environment
 
-Manifests list environment variable names under `environment`. Exported values take precedence over `.env`; undeclared component credential names are removed before launch.
+Hooks and adapters inherit the process environment and receive every value in `.env`. Tools receive only the `.env` names listed under `environment` in their manifest. Exported values take precedence over `.env`.
 
 | Variable | Tool | Hook |
 | --- | :---: | :---: |
@@ -37,7 +37,7 @@ Manifests list environment variable names under `environment`. Exported values t
 | `SHELLFISH_TURN_STATE` |  | Turn hooks only |
 | `TMPDIR`, `TMPPREFIX` | ✓ |  |
 
-Tools use the host's `TMPDIR`, or `/tmp` when it is unset, and receive a `TMPPREFIX` beneath it. Sandboxed tools may read and write the platform temp directories as baseline temporary storage; tools own their cleanup. Sandboxed tools otherwise start with a clean environment. Unsandboxed tools, hooks, and adapters inherit the filtered process environment plus their selected values.
+Tools use the host's `TMPDIR`, or `/tmp` when it is unset, and receive a `TMPPREFIX` beneath it. Sandboxed tools may read and write the platform temp directories as baseline temporary storage; tools own their cleanup. Sandboxed tools otherwise start with a clean environment plus their declared names. Unsandboxed tools inherit the process environment plus their declared names.
 
 ### Rendering
 
@@ -131,11 +131,10 @@ repeat:
     if completion allowed: finish turn
 ```
 
-A hook manifest may select environment variables and rendering. Only `user_prompt_submit` supports selectors and help metadata:
+A hook manifest may configure rendering. Only `user_prompt_submit` supports selectors and help metadata:
 
 ```json
 {
-  "environment": ["HOOK_MODE"],
   "match": {"pattern": "^/review\\z"},
   "help": {"usage": "/review", "description": "Review changes"},
   "render": {"initial_user_text": "Checking the working tree"}
@@ -194,10 +193,10 @@ A handoff asks a capable client to run the complete `argv` after a clean turn ex
 
 A backend adapter translates between Shellfish's provider-neutral protocol and one inference provider. It owns request projection, transport, stream parsing, and provider-specific validation. The core assembles, persists, and recovers complete assistant responses.
 
-An adapter manifest declares its default endpoint and environment:
+An adapter manifest declares its default endpoint:
 
 ```json
-{"endpoint":"https://api.example.com/v1/messages","environment":["EXAMPLE_API_KEY"]}
+{"endpoint":"https://api.example.com/v1/messages"}
 ```
 
 Shellfish starts `run` once per provider request with one object on stdin:
@@ -245,7 +244,7 @@ The core validates and assembles the complete response before persisting it or p
 
 ### Context-window discovery
 
-An optional executable `context_window` receives the same request and selected environment before the first provider request when capacity is absent. It returns:
+An optional executable `context_window` receives the same request and environment before the first provider request when capacity is absent. It returns:
 
 ```json
 {"context_window":200000}

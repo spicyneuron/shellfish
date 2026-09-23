@@ -104,7 +104,7 @@ valid_header=$(jq -cn '
       backend: {
         name: "openai", command: "/bin/run",
         endpoint: "https://api.openai.com/v1/chat/completions",
-        environment: ["OPENAI_API_KEY"], insecure_tls: false,
+        insecure_tls: false,
         http_timeout: 30, http_stall: 10
       },
       harness: {
@@ -112,7 +112,7 @@ valid_header=$(jq -cn '
         fence: "", tools: [], sandbox: true,
         max_requests_per_turn: 50, max_tool_calls_per_request: 20,
         max_capture_bytes: 32768,
-        stop: [{command:"/bin/hook",environment:["HOOK_MODE"],render:{initial_user_text:"",user_text:"${output.stderr}",model_text:"${output.stdout}"}}]
+        stop: [{command:"/bin/hook",render:{initial_user_text:"",user_text:"${output.stderr}",model_text:"${output.stdout}"}}]
       }
     }
   }
@@ -125,13 +125,13 @@ for patch in '.extra=true' '.runtime.extra=true'; do
   fi
 done
 valid_header=$(jq -c '.runtime.harness.user_prompt_submit=[{
-  command:"/bin/prompt",environment:[],render:{initial_user_text:"",user_text:"${output.stderr}",model_text:"${output.stdout}"},match:{pattern:"^!"},
+  command:"/bin/prompt",render:{initial_user_text:"",user_text:"${output.stderr}",model_text:"${output.stdout}"},match:{pattern:"^!"},
   help:{usage:"!COMMAND",description:"Run a shell command"}
 }]' <<<"$valid_header")
 print -r -- "$valid_header" | schema_eval 'canonical_session_header' >/dev/null
 typeset permission_header
 permission_header=$(jq -c '.runtime.harness.permission_request=[{
-  command:"/bin/permission",environment:[],render:{initial_user_text:"",user_text:"${output.stderr}",model_text:"${output.stdout}"}
+  command:"/bin/permission",render:{initial_user_text:"",user_text:"${output.stderr}",model_text:"${output.stdout}"}
 }]' <<<"$valid_header")
 print -r -- "$permission_header" |
   schema_eval 'canonical_session_header' >/dev/null
@@ -141,14 +141,6 @@ for patch in \
   if jq -c "$patch" <<<"$valid_header" |
       schema_eval 'canonical_session_header' >/dev/null 2>&1; then
     fail "invalid hook selection metadata was accepted: $patch"
-  fi
-done
-# Environment names must survive space-separated zsh projection.
-for environment in '["DUPLICATE","DUPLICATE"]' '["HAS SPACE"]'; do
-  if jq -c --argjson environment "$environment" \
-      '.runtime.backend.environment = $environment' <<<"$valid_header" |
-      schema_eval 'canonical_session_header' >/dev/null 2>&1; then
-    fail "invalid component environment was accepted: $environment"
   fi
 done
 
@@ -192,6 +184,14 @@ valid_manifest=$(jq -cn '
   }
 ')
 print -r -- "$valid_manifest" | schema_eval 'tool_manifest' >/dev/null
+# Environment names must survive space-separated zsh projection.
+for environment in '["DUPLICATE","DUPLICATE"]' '["HAS SPACE"]'; do
+  if jq -c --argjson environment "$environment" \
+      '.environment = $environment' <<<"$valid_manifest" |
+      schema_eval 'tool_manifest' >/dev/null 2>&1; then
+    fail "invalid tool environment was accepted: $environment"
+  fi
+done
 print -r -- "$valid_manifest" | jq -c 'del(.render)' |
   schema_eval 'tool_manifest' >/dev/null || fail 'tool manifest required render overrides'
 print -r -- "$valid_manifest" | jq -c '.render = {model_text:""}' |

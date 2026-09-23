@@ -1,4 +1,3 @@
 {
-  "endpoint": "https://chatgpt.com/backend-api/codex/responses",
-  "environment": []
+  "endpoint": "https://chatgpt.com/backend-api/codex/responses"
 }

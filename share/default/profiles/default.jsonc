@@ -6,9 +6,9 @@
 {
   "$schema": "https://raw.githubusercontent.com/spicyneuron/shellfish/refs/heads/main/share/shellfish.schema.json",
 
-  // "adapter" names a directory under backends/; "endpoint" and "environment"
-  // override the adapter's manifest. Environment names are passed without
-  // translation. Codex relies on an existing CLI login. The "openai" adapter
+  // "adapter" names a directory under backends/; "endpoint" overrides the
+  // adapter's manifest. Credentials come from the environment or .env in the
+  // config directory. Codex relies on an existing CLI login. The "openai" adapter
   // works with any OpenAI-compatible endpoint. Optional transport knobs not
   // shown here: insecure_tls, http_timeout, http_stall.
   "backend": {"adapter": "openrouter"},

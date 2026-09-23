@@ -1,4 +1,3 @@
 {
-  "endpoint": "https://example.invalid/test",
-  "environment": []
+  "endpoint": "https://example.invalid/test"
 }

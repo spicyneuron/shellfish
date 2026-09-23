@@ -23,9 +23,6 @@
         "endpoint": {
           "$ref": "#/$defs/endpoint"
         },
-        "environment": {
-          "$ref": "#/$defs/environment"
-        },
         "insecure_tls": {
           "type": "boolean"
         },
@@ -126,17 +123,6 @@
       "type": "integer",
       "minimum": 64,
       "maximum": 2147483647
-    },
-    "environment_name": {
-      "type": "string",
-      "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
-    },
-    "environment": {
-      "type": "array",
-      "items": {
-        "$ref": "#/$defs/environment_name"
-      },
-      "uniqueItems": true
     },
     "endpoint": {
       "type": "string",

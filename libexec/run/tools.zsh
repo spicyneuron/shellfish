@@ -43,7 +43,6 @@ sf_run_tool_plan() {
       entry("permission_preview"; $rendered.permission_user_text // ""),
       entry("executable"; $tool.command // ""),
       entry("environment"; ($tool.manifest.environment // []) | join(" ")),
-      entry("environment_names"; declared_environment($runtime)),
       entry("settings"; $tool.settings // ""),
       entry("max_capture"; $runtime.harness.max_capture_bytes | tostring),
       entry("fence"; $runtime.harness.fence),
@@ -90,8 +89,8 @@ sf_run_tool_execute() {
   local execution_input=$SF_TOOL_PLAN[execution_input] sandbox=$SF_TOOL_PLAN[sandbox]
   local read_paths=$SF_TOOL_PLAN[read_paths] write_paths=$SF_TOOL_PLAN[write_paths]
   local cwd=$SF_RUN[cwd] capture stdin bounded_stdout bounded_stderr
-  local expose name darwin_temp='' temp_dir=${TMPDIR:-/tmp}
-  local -a arguments environment names process_command sandbox_arguments temp_paths
+  local expose darwin_temp='' temp_dir=${TMPDIR:-/tmp}
+  local -a arguments process_command sandbox_arguments temp_paths
   local -A process
   integer max_capture=$SF_TOOL_PLAN[max_capture] control_bytes budget stderr_bytes denied=0
 
@@ -124,23 +123,19 @@ sf_run_tool_execute() {
   }
   capture=$REPLY
   {
-  environment=(
+  arguments=(
     "HOME=${HOME:-$cwd}" "PATH=$PATH" "TERM=${TERM:-dumb}"
     "LANG=${LANG:-C}" "SHELLFISH_CONFIG_DIR=$config_dir"
     "SHELLFISH_MAX_CAPTURE_BYTES=$max_capture" "SHELLFISH_SESSION=$session"
     "SHELLFISH_EXECUTABLE=$SF_ENTRY"
   )
-  [[ -z ${LC_ALL-} ]] || environment+=( "LC_ALL=$LC_ALL" )
-  [[ -z ${LC_CTYPE-} ]] || environment+=( "LC_CTYPE=$LC_CTYPE" )
-  [[ -z ${XDG_CONFIG_HOME-} ]] || environment+=( "XDG_CONFIG_HOME=$XDG_CONFIG_HOME" )
-  environment+=( "${SF_ENVIRONMENT_VALUES[@]}" )
-  environment+=( "TMPDIR=$temp_dir" "TMPPREFIX=$temp_dir/zsh" )
-  names=( ${=SF_TOOL_PLAN[environment_names]} )
-  arguments=()
-  for name in $names; do arguments+=( -u "$name" ); done
-  arguments+=( "${environment[@]}" "$command" )
+  [[ -z ${LC_ALL-} ]] || arguments+=( "LC_ALL=$LC_ALL" )
+  [[ -z ${LC_CTYPE-} ]] || arguments+=( "LC_CTYPE=$LC_CTYPE" )
+  [[ -z ${XDG_CONFIG_HOME-} ]] || arguments+=( "XDG_CONFIG_HOME=$XDG_CONFIG_HOME" )
+  arguments+=( "${SF_ENVIRONMENT_VALUES[@]}" )
+  arguments+=( "TMPDIR=$temp_dir" "TMPPREFIX=$temp_dir/zsh" "$command" )
   if [[ $sandbox == true ]]; then
-    arguments=( -i "${arguments[@]:$(( ${#names} * 2 ))}" )
+    arguments=( -i "${arguments[@]}" )
     sandbox_arguments=( --monitor --fence-log-file "$capture/sandbox.log"
       --settings "$settings" --expose-host-path "$command" )
     temp_paths=( /tmp "$temp_dir" )

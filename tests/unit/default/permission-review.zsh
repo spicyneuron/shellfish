@@ -27,7 +27,7 @@ SF_TEST_RUNTIME=$(jq -c --arg hook "$hook" '
   .context_window=20000 |
   .request += {max_tokens:5000,temperature:0.2} |
   .backend.http_timeout=120 |
-  .harness.permission_request=[{command:$hook,environment:[],render:{
+  .harness.permission_request=[{command:$hook,render:{
     initial_user_text:"",user_text:"${output.stderr}",model_text:"${output.stdout}"}}]
 ' <<<"$SF_TEST_RUNTIME")
 SF_TEST_SYSTEM='fixed system'

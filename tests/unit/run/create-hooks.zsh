@@ -7,7 +7,7 @@ sf_test_config
 typeset entry="$ROOT/bin/shellfish" hook="$tmp/start"
 typeset input="$tmp/input" session="$tmp/session.jsonl" stream="$tmp/stream"
 mkdir "$hook"
-print -r -- '{"environment":["START_INPUT"],"render":{"initial_user_text":"Starting up","user_text":"${name}\n${output.stdout}${output.stderr}","model_text":"${output.stdout}"}}' \
+print -r -- '{"render":{"initial_user_text":"Starting up","user_text":"${name}\n${output.stdout}${output.stderr}","model_text":"${output.stdout}"}}' \
   >"$hook/manifest.json"
 cat >"$hook/run" <<'ZSH'
 #!/usr/bin/env zsh

@@ -25,7 +25,7 @@ print -r -- "$SHELLFISH_PERF_RUN" >>"$SHELLFISH_PERF_JQ_LOG"
 exec "$SHELLFISH_PERF_JQ" "$@"
 EOF
 cat >"$tmp/xdg/shellfish/backends/perf/manifest.json" <<'EOF'
-{"endpoint":"https://example.invalid/perf","environment":[]}
+{"endpoint":"https://example.invalid/perf"}
 EOF
 cat >"$tmp/xdg/shellfish/backends/perf/run" <<'EOF'
 #!/usr/bin/env zsh

@@ -28,7 +28,6 @@ jq -e --arg command "$ROOT/share/default/backends/openai/run" \
   (.backend.context_window_command | endswith("/share/default/backends/openai/context_window")) and
   .config_dir == $config_dir and
   .backend.endpoint == "https://api.openai.com/v1/chat/completions" and
-  .backend.environment == ["OPENAI_API_KEY"] and
   .system == [] and
   .harness == {
     sandbox_read_paths:[],sandbox_write_paths:[],
@@ -198,8 +197,6 @@ print -r -- '#!/bin/sh' >"$SF_TEST_CONFIG/hooks/user_prompt_submit/help/run"
 chmod +x "$SF_TEST_CONFIG/hooks/user_prompt_submit/help/run"
 cat >"$SF_TEST_CONFIG/hooks/user_prompt_submit/help/manifest.jsonc" <<'JSON'
 {
-  // Imported only for this component.
-  "environment": ["HELP_FORMAT"],
   "render": {"user_text": "${output.stdout}"},
   "match": {"pattern": "^/(help|h)\\z"},
   "help": {
@@ -225,12 +222,12 @@ sf_test_profile hooked '{
 sf_runtime_resolve_args -p hooked
 jq -e --arg base "${SF_TEST_CONFIG:A}/hooks" '
   .harness.user_prompt_submit == [
-    {command:($base + "/user_prompt_submit/help/run"),render:{initial_user_text:"",user_text:"${output.stdout}",model_text:"${output.stdout}"},environment:["HELP_FORMAT"],
+    {command:($base + "/user_prompt_submit/help/run"),render:{initial_user_text:"",user_text:"${output.stdout}",model_text:"${output.stdout}"},
       match:{pattern:"^/(help|h)\\z"},help:{usage:"/help, /h",description:"Show help"}},
-    {command:($base + "/user_prompt_submit/shell/run"),render:{initial_user_text:"",user_text:"${output.stderr}",model_text:"${output.stdout}"},environment:[],
+    {command:($base + "/user_prompt_submit/shell/run"),render:{initial_user_text:"",user_text:"${output.stderr}",model_text:"${output.stdout}"},
       match:{command:($base + "/user_prompt_submit/shell/match")}}
   ] and .harness.stop ==
-    [{command:($base + "/stop/gate/run"),render:{initial_user_text:"",user_text:"${output.stderr}",model_text:"${output.stdout}"},environment:[]}]
+    [{command:($base + "/stop/gate/run"),render:{initial_user_text:"",user_text:"${output.stderr}",model_text:"${output.stdout}"}}]
 ' <<<"$REPLY" >/dev/null
 
 # Only user_prompt_submit hooks may be gated by a match script.
@@ -290,11 +287,11 @@ sf_test_profile fallback '{
 SF_SHARE="$tmp/root/share"
 sf_runtime_resolve_args -p fallback
 jq -e --arg path "${SF_TEST_CONFIG:A}/hooks/stop/bundled/run" \
-  '.harness.stop == [{command:$path,render:{initial_user_text:"",user_text:"${output.stderr}",model_text:"${output.stdout}"},environment:[]}]' <<<"$REPLY" >/dev/null
+  '.harness.stop == [{command:$path,render:{initial_user_text:"",user_text:"${output.stderr}",model_text:"${output.stdout}"}}]' <<<"$REPLY" >/dev/null
 rm -rf -- "$SF_TEST_CONFIG/hooks/stop/bundled"
 sf_runtime_resolve_args -p fallback
 jq -e --arg path "${tmp:A}/root/share/default/hooks/stop/bundled/run" \
-  '.harness.stop == [{command:$path,render:{initial_user_text:"",user_text:"${output.stderr}",model_text:"${output.stdout}"},environment:[]}]' <<<"$REPLY" >/dev/null
+  '.harness.stop == [{command:$path,render:{initial_user_text:"",user_text:"${output.stderr}",model_text:"${output.stdout}"}}]' <<<"$REPLY" >/dev/null
 SF_SHARE=$ROOT/share
 
 # Tool references preserve configured order.
@@ -361,22 +358,7 @@ sf_test_profile unsandboxed '{"extend": ["tooled"], "harness": {"sandbox": false
   jq -e '.harness.sandbox == false and .harness.fence == ""' <<<"$REPLY" >/dev/null
 )
 
-# Exported environment values override the env file.
-export OPENAI_API_KEY='from-environment'
-export ANTHROPIC_API_KEY='other-component'
-sf_runtime_resolve_args -p work
-runtime=$(jq -c '.harness.stop=[{command:"/bin/hook",environment:["ANTHROPIC_API_KEY"],render:{initial_user_text:"",user_text:"${output.stderr}",model_text:"${output.stdout}"}}]' \
-  <<<"$REPLY")
-typeset declared
-declared=$(jq -L "$ROOT" -rn --argjson runtime "$runtime" \
-  'include "lib/runtime"; declared_environment($runtime)')
-[[ $declared == 'ANTHROPIC_API_KEY OPENAI_API_KEY' ]]
-sf_environment_load "$(jq -r .config_dir <<<"$runtime")" OPENAI_API_KEY
-[[ ${(j: :)SF_ENVIRONMENT_VALUES} == 'OPENAI_API_KEY=from-environment' ]]
-[[ $runtime != *from-environment* ]]
-unset OPENAI_API_KEY ANTHROPIC_API_KEY
-
-# Environment values load from env files.
+# Environment values load from env files: selected names, or every entry.
 typeset environment_dir="$tmp/environment" environment_file="$tmp/environment/.env"
 mkdir -p "$environment_dir"
 cat >"$environment_file" <<'ENV'
@@ -385,10 +367,16 @@ ANTHROPIC_API_KEY=other-file
 ENV
 sf_environment_load "$environment_dir" OPENAI_API_KEY
 [[ ${(j: :)SF_ENVIRONMENT_VALUES} == 'OPENAI_API_KEY=from-file' ]]
+sf_environment_load "$environment_dir"
+[[ ${(oj: :)SF_ENVIRONMENT_VALUES} == 'ANTHROPIC_API_KEY=other-file OPENAI_API_KEY=from-file' ]]
 
+# Exported values win: selected names carry them, and a full load leaves them
+# to inheritance.
 export OPENAI_API_KEY=''
 sf_environment_load "$environment_dir" OPENAI_API_KEY
 [[ ${(j: :)SF_ENVIRONMENT_VALUES} == 'OPENAI_API_KEY=' ]]
+sf_environment_load "$environment_dir"
+[[ ${(j: :)SF_ENVIRONMENT_VALUES} == 'ANTHROPIC_API_KEY=other-file' ]]
 unset OPENAI_API_KEY
 
 print -r -- 'invalid line' >>"$environment_file"

@@ -60,7 +60,7 @@ print -rn -- "$value"
 ZSH
 chmod +x "$backend" "$tool"
 SF_TEST_RUNTIME=$(jq -c --arg backend "$backend" --arg tool "$tool" '
-  .backend.command=$backend | .backend.environment=["TOOL_ORDER"] |
+  .backend.command=$backend |
   .harness.tools=[{
     name:"ordered",command:$tool,settings:null,
     manifest:{
@@ -146,7 +146,7 @@ ZSH
 chmod +x "$break_hook"
 SF_TEST_RUNTIME=$(jq -c --arg hook "$break_hook" '
   .harness.user_prompt_submit=[{
-    command:$hook,environment:[],
+    command:$hook,
     render:{initial_user_text:"",user_text:"${output.stderr}",model_text:"${output.stdout}"}
   }]
 ' <<<"$SF_TEST_RUNTIME")
@@ -159,28 +159,30 @@ sf_test_run broken "$broken" >"$stream" 2>"$tmp/broken.stderr" || broken_status=
 jq -es 'length == 1 and .[0].type == "session"' "$broken.saved" >/dev/null ||
   fail 'write failure changed the previously durable prefix'
 
-# An adapter unsets every declared name, not only its own.
+# An adapter receives every .env value; exported values win.
 sf_test_runtime
-typeset isolated_backend="$tmp/isolated-backend" isolated="$tmp/isolated.jsonl"
-cat >"$isolated_backend" <<'ZSH'
+typeset env_backend="$tmp/env-backend" env_session="$tmp/env.jsonl"
+typeset env_config="$tmp/env-config"
+mkdir -p "$env_config"
+print -rl -- FILE_SECRET=file-value EXPORTED_SECRET=file-value >"$env_config/.env"
+cat >"$env_backend" <<'ZSH'
 #!/usr/bin/env zsh
 cat >/dev/null
-jq -cn --arg text "${TOOL_SECRET-unset} ${BACKEND_SECRET-unset}" \
+jq -cn --arg text "${FILE_SECRET-unset} ${EXPORTED_SECRET-unset}" \
   '{type:"_assistant_message_delta",index:0,text:$text}'
 print -r -- '{"type":"_turn_usage","input_tokens":1,"output_tokens":1}'
 print -r -- '{"type":"_assistant_end","stop":"end"}'
 ZSH
-chmod +x "$isolated_backend"
-SF_TEST_RUNTIME=$(jq -c --arg backend "$isolated_backend" '
-  .backend.command=$backend | .backend.environment=["BACKEND_SECRET"] |
-  .harness.tools[0].manifest.environment=["TOOL_SECRET"]
+chmod +x "$env_backend"
+SF_TEST_RUNTIME=$(jq -c --arg backend "$env_backend" --arg config "$env_config" '
+  .backend.command=$backend | .config_dir=$config
 ' <<<"$SF_TEST_RUNTIME")
-export BACKEND_SECRET=backend-value TOOL_SECRET=tool-value
-sf_test_session "$isolated"
-sf_test_run isolated "$isolated" >"$stream" || fail 'isolated turn failed'
+export EXPORTED_SECRET=exported-value
+sf_test_session "$env_session"
+sf_test_run env "$env_session" >"$stream" || fail 'adapter environment turn failed'
 jq -eRn '[inputs | fromjson | select(.type == "assistant") | .content[0].text] ==
-  ["unset backend-value"]' <"$stream" >/dev/null ||
-  fail 'adapter did not unset the names another component declared'
-unset BACKEND_SECRET TOOL_SECRET
+  ["file-value exported-value"]' <"$stream" >/dev/null ||
+  fail 'adapter did not receive .env values with exported precedence'
+unset EXPORTED_SECRET
 
 print -r -- ok
