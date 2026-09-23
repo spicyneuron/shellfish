@@ -61,13 +61,18 @@ sf_run_hook_project() {
   reply=( "${(@)reply[5,-1]}" )
 }
 
+# Collect fd 3 lines for sf_run_hook_invoke.
+sf_run_hook_control() {
+  controls+=( "$1" )
+}
+
 sf_run_hook_invoke() {
   setopt local_options no_err_exit
   local session=$1 command=$2 input=$3 lifecycle=$4 turn_state=$5
   local render=$6 id=$7 name=$8 input_json=$9
   shift 9
   local config_dir directory
-  local -a environment
+  local -a environment controls=()
   local -A process
   integer max_capture=$SF_HOOK_PLAN[max_capture] over_capture=0
 
@@ -102,7 +107,7 @@ sf_run_hook_invoke() {
   }
   directory=$REPLY
   if ! sf_process_run "$directory" "${SF_RUN[cwd]:A}" "${input:A}" "$max_capture" \
-      /usr/bin/env "${environment[@]}" "$command" "$@"; then
+      sf_run_hook_control /usr/bin/env "${environment[@]}" "$command" "$@"; then
     rm -rf -- "$directory"
     SF_RUN_HOOK_ERROR=$SF_PROCESS_ERROR
     return 1
@@ -123,14 +128,15 @@ sf_run_hook_invoke() {
   fi
   sf_jq_fields -cn --argjson exit_code "$process[exit_code]" \
     --rawfile stdout "$directory/stdout" --rawfile stderr "$directory/stderr" \
-    --slurpfile controls "$directory/control" --argjson over_capture "$over_capture" \
+    --argjson over_capture "$over_capture" \
     --arg lifecycle "$lifecycle" --arg id "$id" --arg name "$name" \
     --argjson input "$input_json" --argjson render "$render" '
       include "lib/fields";
       include "libexec/run/hooks";
       include "lib/runtime";
       include "lib/session";
-      hook_outcome($exit_code;$stdout;$stderr;$controls;$over_capture) |
+      hook_outcome($exit_code;$stdout;$stderr;
+        $ARGS.positional | map(try fromjson catch null);$over_capture) |
       . as $outcome | .output as $output |
       ($outcome | hook_control_error($lifecycle)) as $control_error |
       (if $output.exit_code != 0 or $output.stdout != "" or $output.stderr != "" then
@@ -156,7 +162,7 @@ sf_run_hook_invoke() {
       entry("record"; if $result == null then "" else ($result | tojson) end),
       entry("states"; [$outcome.states[] | tojson] | join("\n")),
       ("ok" | field)
-    ' || {
+    ' --args "${controls[@]}" || {
     rm -rf -- "$directory"
     SF_RUN_HOOK_ERROR='cannot decode hook result'
     return 1

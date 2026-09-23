@@ -63,7 +63,7 @@ sf_backend_context_window() {
     SF_BACKEND[error]='cannot prepare context window request'
     return 1
   }
-  if ! sf_process_run "$directory" "$SF_BACKEND_PLAN[cwd]" "${input:A}" "$max_capture" \
+  if ! sf_process_run "$directory" "$SF_BACKEND_PLAN[cwd]" "${input:A}" "$max_capture" : \
       /usr/bin/env "${SF_ENVIRONMENT_VALUES[@]}" "$command"; then
     rm -rf -- "$directory" "$input"
     SF_BACKEND[error]=${SF_PROCESS_ERROR:-cannot discover model context window}

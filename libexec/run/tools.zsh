@@ -79,6 +79,11 @@ sf_run_tool_bound() {
   fi
 }
 
+# Collect fd 3 lines for sf_run_tool_execute.
+sf_run_tool_control() {
+  controls+=( "$1" )
+}
+
 sf_run_tool_execute() {
   setopt local_options no_err_exit
   local session=$1 command=$SF_TOOL_PLAN[executable]
@@ -88,7 +93,7 @@ sf_run_tool_execute() {
   local read_paths=$SF_TOOL_PLAN[read_paths] write_paths=$SF_TOOL_PLAN[write_paths]
   local cwd=$SF_RUN[cwd] capture stdin bounded_stdout bounded_stderr
   local expose darwin_temp='' temp_dir=${TMPDIR:-/tmp}
-  local -a arguments process_command sandbox_arguments temp_paths
+  local -a arguments process_command sandbox_arguments temp_paths controls=()
   local -A process
   integer max_capture=$SF_TOOL_PLAN[max_capture] control_bytes budget stderr_bytes denied=0
 
@@ -155,7 +160,7 @@ sf_run_tool_execute() {
     process_command=( /usr/bin/env "${arguments[@]}" )
   fi
   if ! sf_process_run "$capture" "${cwd:A}" "${stdin:A}" "$max_capture" \
-      "${process_command[@]}"; then
+      sf_run_tool_control "${process_command[@]}"; then
     SF_RUN_TOOL_ERROR=$SF_PROCESS_ERROR
     return 1
   fi
@@ -176,9 +181,9 @@ sf_run_tool_execute() {
   sf_run_tool_bound "$capture/stdout" "$bounded_stdout" $(( budget - stderr_bytes )) || return 1
   if (( process[exit_code] )) && grep -qs $'✗' "$capture/sandbox.log"; then denied=1; fi
   REPLY=$(sf_jq -cn --rawfile stdout "$bounded_stdout" --rawfile stderr "$bounded_stderr" \
-    --slurpfile control "$capture/control" \
     --argjson exit_code "$process[exit_code]" --argjson denied "$denied" '
       include "lib/session";
+      ($ARGS.positional | map(fromjson)) as $control |
       (if ($control | length) == 0 then {}
        elif ($control | length) == 1 and ($control[0] | type) == "object" then $control[0]
        else error("invalid control") end) as $control |
@@ -192,7 +197,7 @@ sf_run_tool_execute() {
          states:[$control.state[]? | {type:"state"} + .]} +
         (if $denied == 1 then {sandbox_denied:true} else {} end)
       else error("invalid control") end
-    ' 2>/dev/null) || { SF_RUN_TOOL_ERROR='tool returned invalid control data'; return 1; }
+    ' --args "${controls[@]}" 2>/dev/null) || { SF_RUN_TOOL_ERROR='tool returned invalid control data'; return 1; }
   } always {
     rm -rf -- "$capture"
     rm -f -- "$stdin"

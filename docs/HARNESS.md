@@ -57,7 +57,7 @@ Hook defaults expose stderr to the user and stdout to the model. Tool defaults s
 
 ### Durable state
 
-Hooks and tools may write one JSON object to fd 3:
+Hooks and tools may write one JSON object, on one line, to fd 3:
 
 ```json
 {"state":[{"name":"example/status","value":{"ready":true}}]}

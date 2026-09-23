@@ -122,16 +122,21 @@ sf_process_capture_stream() {
   exec {output_fd}>&-
 }
 
+# Stream fd 3 to HANDLER one nonempty line at a time while the command runs. A
+# final line without a newline arrives at exit. Lines stop once fd 3 exceeds
+# MAX_CAPTURE bytes.
 sf_process_run() {
   setopt local_options local_traps no_err_exit no_monitor
   local capture=${1:A} working=$2 input=$3
   integer max_capture=$4
-  shift 4
-  local stdout="$capture/stdout" stderr="$capture/stderr" control="$capture/control"
-  local stdout_pipe="$stdout.pipe" stderr_pipe="$stderr.pipe" control_pipe="$control.pipe"
+  local handler=$5
+  shift 5
+  local stdout="$capture/stdout" stderr="$capture/stderr"
+  local stdout_pipe="$stdout.pipe" stderr_pipe="$stderr.pipe" control_pipe="$capture/control.pipe"
   local group_file="$capture/process.group" status_file="$capture/process.status"
+  local chunk buffer='' line
   local -a command=( "$@" ) process_command readers
-  integer limit stdout_bytes stderr_bytes control_bytes
+  integer limit stdout_bytes stderr_bytes control_bytes=0 count control_fd=-1 guard_fd
   integer process_pid=0 process_status=1 reader reader_status=0 signal_status=0 complete=0
 
   SF_PROCESS_ERROR=''
@@ -168,13 +173,33 @@ sf_process_run() {
     readers+=( $! )
     sf_process_capture_stream "$stderr_pipe" "$stderr" $limit &
     readers+=( $! )
-    sf_process_capture_stream "$control_pipe" "$control" $limit &
-    readers+=( $! )
-    "${process_command[@]}" </dev/null >/dev/null 2>&1 &
+    # The wrapper holds one fd 3 writer until the command group is gone, so the
+    # reader below neither blocks on open nor waits on a lingering descendant.
+    {
+      exec {guard_fd}>"$control_pipe" || exit 1
+      "${process_command[@]}" </dev/null >/dev/null 2>&1 {guard_fd}>&- &
+      sf_process_wait $! "$group_file" "$status_file"
+    } &
     process_pid=$!
+    exec {control_fd}<"$control_pipe" || {
+      sf_process_fail 'cannot capture process output'
+      return
+    }
     trap 'signal_status=130; sf_process_stop "$process_pid" "$group_file"' INT USR1
     trap 'signal_status=129; sf_process_stop "$process_pid" "$group_file"' HUP
     trap 'signal_status=143; sf_process_stop "$process_pid" "$group_file"' TERM
+    while sysread -c count -i $control_fd -s 4096 chunk; do
+      (( control_bytes > max_capture )) && continue
+      (( control_bytes += count ))
+      (( control_bytes <= max_capture )) || continue
+      buffer+=$chunk
+      while [[ $buffer == *$'\n'* ]]; do
+        line=${buffer%%$'\n'*}
+        buffer=${buffer#*$'\n'}
+        [[ -z $line ]] || "$handler" "$line"
+      done
+    done
+    (( control_bytes > max_capture )) || [[ -z $buffer ]] || "$handler" "$buffer"
     if sf_process_wait "$process_pid" "$group_file" "$status_file"; then
       process_status=$REPLY
     elif (( signal_status )); then
@@ -190,8 +215,7 @@ sf_process_run() {
       sf_process_fail 'cannot capture process output'
       return
     }
-    stdout_bytes=$(wc -c <"$stdout") && stderr_bytes=$(wc -c <"$stderr") &&
-      control_bytes=$(wc -c <"$control") || {
+    stdout_bytes=$(wc -c <"$stdout") && stderr_bytes=$(wc -c <"$stderr") || {
       sf_process_fail 'cannot inspect process capture'
       return
     }
@@ -201,10 +225,11 @@ sf_process_run() {
     complete=1
   } always {
     trap - INT USR1 HUP TERM
+    (( control_fd < 0 )) || exec {control_fd}<&-
     (( process_pid == 0 || complete )) || sf_process_stop "$process_pid" "$group_file"
     (( complete )) || {
       for reader in $readers; do kill -TERM $reader 2>/dev/null; wait $reader 2>/dev/null; done
-      rm -f -- "$stdout" "$stderr" "$control"
+      rm -f -- "$stdout" "$stderr"
     }
     rm -f -- "$stdout_pipe" "$stderr_pipe" "$control_pipe" "$group_file" "$status_file"
   }
