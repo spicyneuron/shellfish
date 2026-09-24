@@ -1,6 +1,6 @@
 # Configuration
 
-Shellfish reads JSONC from `$XDG_CONFIG_HOME/shellfish/` (or `~/.config/shellfish/` when `XDG_CONFIG_HOME` is unset). `profiles/NAME/profile.jsonc` describes an agent and `tui.jsonc` describes rendering. A profile name resolves to exactly one folder: yours shadows the bundled folder of the same name under [`share/profiles/`](../share/profiles/). `tui.jsonc` merges over [`share/tui.jsonc`](../share/tui.jsonc).
+Shellfish reads JSONC from `$XDG_CONFIG_HOME/shellfish/` (or `~/.config/shellfish/` when `XDG_CONFIG_HOME` is unset). `profiles/NAME/profile.jsonc` describes an agent and `tui.jsonc` describes rendering. `NAME` may be a slash-separated path such as `openai/sol`. A profile name resolves to exactly one folder: yours shadows the bundled folder of the same name under [`share/profiles/`](../share/profiles/). `tui.jsonc` merges over [`share/tui.jsonc`](../share/tui.jsonc).
 
 The two never mix. A session freezes a profile, so a profile rejects rendering keys; `tui.jsonc` is read fresh on every run and is never frozen.
 
@@ -8,7 +8,7 @@ Copy [`share/template/`](../share/template/) into that directory for a working s
 
 ## Profiles
 
-`profiles/default/` is selected when `--profile` is absent. `-p NAME` selects another and repeats compose: `-p review -p readonly` merges them left to right. A folder you write shadows the bundled folder of that name, and `@NAME` always means the bundled folder, so your own `default` can extend `@default` to build on the bundled agent.
+`profiles/default/` is selected when `--profile` is absent. `-p NAME` selects another, including nested profiles such as `-p openai/sol`, and repeats compose: `-p review -p readonly` merges them left to right. `extend` accepts the same names. A folder you write shadows the bundled folder of that name, and `@NAME` always means the bundled folder, so your own `default` can extend `@default` to build on the bundled agent.
 
 ```jsonc
 // profiles/work/profile.jsonc

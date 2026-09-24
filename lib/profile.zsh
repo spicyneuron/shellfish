@@ -109,9 +109,9 @@ sf_profile_resolve() {
   REPLY=''
   sf_environment_config_dir || sf_profile_fail "$SF_ENVIRONMENT_ERROR" || return
   config_dir=$REPLY
-  files=( "$SF_SHARE/profiles"/*/profile.jsonc(N-.) "$config_dir/profiles"/*/profile.jsonc(N-.) )
+  files=( "$SF_SHARE/profiles"/**/profile.jsonc(N-.) "$config_dir/profiles"/**/profile.jsonc(N-.) )
   sf_profile_read_files 'invalid profile' "${files[@]}" || return
-  scripts=( "$SF_SHARE/profiles"/*/hooks/*(N-*) "$config_dir/profiles"/*/hooks/*(N-*) )
+  scripts=( "$SF_SHARE/profiles"/**/hooks/*(N-*) "$config_dir/profiles"/**/hooks/*(N-*) )
 
   sf_jq_fields -rn --argjson files "$REPLY" --arg names "$profile_names" \
     --arg bundled "$SF_SHARE/profiles" --arg configured "$config_dir/profiles" \
@@ -120,7 +120,8 @@ sf_profile_resolve() {
     --arg scripts "${(F)scripts}" '
       include "lib/fields";
       include "lib/profile";
-      ($files | profile_discover($scripts | split("\n")) | profile_map($bundled)) as $profiles |
+      ($files | profile_discover($scripts | split("\n")) |
+        profile_map($bundled; $configured)) as $profiles |
       (($names | select(length > 0) | split("\n")) // ["default"]) as $names |
       profile_select($profiles; $names; $model; $request; $backend) |
       .sandbox_read_paths += $grants.sandbox_read_paths |
@@ -199,8 +200,8 @@ sf_profile_resolve_args() {
   while (( $# )); do
     case $1 in
       -p|--profile)
-        [[ $2 =~ ^@?[A-Za-z0-9][A-Za-z0-9_-]*$ ]] ||
-          sf_profile_fail '--profile must match @?[A-Za-z0-9][A-Za-z0-9_-]*' || return 2
+        [[ $2 =~ '^@?[A-Za-z0-9][A-Za-z0-9_-]*(/[A-Za-z0-9][A-Za-z0-9_-]*)*$' ]] ||
+          sf_profile_fail '--profile must be a slash-separated profile name' || return 2
         profiles+=( "$2" )
         shift 2
         ;;

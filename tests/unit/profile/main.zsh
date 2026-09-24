@@ -16,6 +16,25 @@ sf_test_profile work '{
   "request": {"model": "configured", "temperature": 0.2}
 }'
 
+# Nested names select by relative path and can extend other nested profiles.
+sf_test_profile openai/base '{"extend":["@default"],"request":{"model":"base"}}'
+sf_test_profile openai/sol '{"extend":["openai/base"],"request":{"model":"sol"},
+  "system":["prompt.md"]}'
+mkdir -p "$SF_TEST_CONFIG/profiles/openai/sol/system" "$SF_TEST_CONFIG/profiles/openai/sol/hooks"
+print -r -- 'nested' >"$SF_TEST_CONFIG/profiles/openai/sol/system/prompt.md"
+print -r -- '#!/bin/sh' >"$SF_TEST_CONFIG/profiles/openai/sol/hooks/stop"
+chmod +x "$SF_TEST_CONFIG/profiles/openai/sol/hooks/stop"
+sf_profile_resolve_args -p openai/sol
+jq -e --arg folder "${SF_TEST_CONFIG:A}/profiles/openai/sol" '
+  .request.model == "sol" and (.tools | length) == 7 and
+  .system == [$folder + "/system/prompt.md"] and
+  .hooks.stop == [$folder + "/hooks/stop"]' <<<"$REPLY" >/dev/null
+for name in openai//sol openai/../sol /openai/sol openai/sol/; do
+  if sf_profile_resolve_args -p "$name"; then
+    fail "invalid profile name was accepted: $name"
+  fi
+done
+
 # CLI request options override the profile.
 sf_profile_resolve_args -p work -m cli-model --request '{"temperature":0.7,"seed":4}'
 profile=$REPLY

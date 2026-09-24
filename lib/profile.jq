@@ -5,7 +5,7 @@
 # Repeated primitives are deliberate; see AGENTS.md.
 
 def profile_name:
-  type == "string" and test("^[A-Za-z0-9][A-Za-z0-9_-]*$");
+  type == "string" and test("^[A-Za-z0-9][A-Za-z0-9_-]*(/[A-Za-z0-9][A-Za-z0-9_-]*)*$");
 
 def tool_name:
   type == "string" and test("^[A-Za-z_][A-Za-z0-9_-]*$");
@@ -141,13 +141,13 @@ def profile_discover($scripts):
           ((.hooks // {}) | type == "object" and (has($hook) | not))
       then .hooks[$hook] = [$hooks + $hook, "..."] else . end));
 
-# Profile files keyed by path become their folder names: bundled folders are
-# "@NAME" and configured folders "NAME".
-def profile_map($bundled):
-  with_entries(.key |= ((if startswith($bundled + "/") then "@" else "" end) +
-    (split("/")[-2])));
+# Profile files keyed by path become their paths relative to the profile root.
+def profile_map($bundled; $configured):
+  with_entries(.key |= (if startswith($bundled + "/") then
+      "@" + ltrimstr($bundled + "/")
+    else ltrimstr($configured + "/") end | rtrimstr("/profile.jsonc")));
 
-# A bare name prefers the configured folder; "@NAME" is always the bundled one.
+# An unprefixed name prefers the configured folder; "@NAME" uses the bundled one.
 def profile_key($profiles):
   if startswith("@") or $profiles[.] then . else "@" + . end;
 
