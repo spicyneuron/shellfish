@@ -177,6 +177,7 @@ body:has(#code:not([hidden])) #prompt {
 .section-id {
   order: 3;
   color: var(--muted);
+  font-weight: normal;
 }
 
 .section-id::after {

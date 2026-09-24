@@ -134,7 +134,7 @@ function section(role) {
 function summary(parent, sigil, heading, secondary) {
   const line = el(parent, "span", "summary-line");
   el(line, "span", "sigil", sigil);
-  el(line, "strong", null, safe(heading));
+  line.append(document.createTextNode(safe(heading)));
   if (secondary !== undefined) {
     line.append(document.createTextNode(" · " + safe(secondary)));
   }
@@ -582,7 +582,14 @@ function renderMessage(frame) {
     const reasoning =
       part.type === "reasoning" ? trimBoundaryNewlines(part.text) : "";
     if (reasoning) {
-      collapsible(article, "✎", "Reasoning", reasoning, "reasoning");
+      const tokens = Math.ceil(Array.from(reasoning).length / 4);
+      collapsible(
+        article,
+        "✎",
+        `Thought for ~${tokens} tokens.`,
+        reasoning,
+        "reasoning",
+      );
     } else if (part.type === "text" && displayChunks[partIndex]) {
       markdown(el(article, "pre", "text"), displayChunks[partIndex]);
     }

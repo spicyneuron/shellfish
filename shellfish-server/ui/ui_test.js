@@ -545,6 +545,7 @@ test("shows user-facing hook text without exposing model text", async () => {
   });
   const shown = findTag(find(page.output, "note")[0], "details")[0];
   assert.equal(findTag(shown, "summary")[0].textContent, "↪git_environment");
+  assert.equal(findTag(shown, "strong").length, 0);
   assert.equal(findTag(shown, "pre")[0].textContent, "Inspecting project");
   await page.send({
     type: "hook_result", lifecycle: "stop", id: "2",
@@ -679,8 +680,9 @@ test("renders only settled tool text and labels model-only results", async () =>
   );
   assert.equal(
     findTag(find(page.output, "reasoning")[0], "summary")[0].textContent,
-    "✎Reasoning",
+    "✎Thought for ~2 tokens.",
   );
+  assert.equal(findTag(find(page.output, "call")[0], "strong").length, 0);
   const calls = find(page.output, "call");
   assert.equal(calls[0].textContent, "⛭ shell\nif true; then pwd; fi\n/project");
   assert.equal(calls[1].textContent, "⛭ read_file");
@@ -880,10 +882,8 @@ test("splits a process failure into its outcome and detail", async () => {
     error: "turn process failed\nprovider request limit reached: 50",
   });
   const shown = find(page.output, "note").at(-1);
-  assert.equal(
-    findTag(findTag(shown, "h2")[0], "strong")[0].textContent,
-    "turn process failed",
-  );
+  assert.equal(findTag(shown, "h2")[0].textContent, "✕turn process failed");
+  assert.equal(findTag(shown, "h2")[0].querySelectorAll("strong").length, 0);
   assert.equal(
     findTag(shown, "pre")[0].textContent,
     "provider request limit reached: 50",
