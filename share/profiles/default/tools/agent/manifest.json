@@ -1,5 +1,5 @@
 {
-  "description": "Start a durable child agent synchronously with a named profile, or inspect a child by agent_id. Active means a parent admission slot, not verified process liveness. Add this tool to a profile's tools list to opt in.",
+  "description": "Start a durable child agent synchronously with exactly one origin: a named profile for a fresh child, or fork=true for completed parent context. Inspect a child by agent_id. Active means a parent admission slot, not verified process liveness. Add this tool to a profile's tools list to opt in.",
   "input_schema": {
     "type": "object",
     "additionalProperties": false,
@@ -7,6 +7,7 @@
     "properties": {
       "operation": {"type": "string", "enum": ["start", "inspect"]},
       "profile": {"type": "string", "minLength": 1},
+      "fork": {"type": "boolean"},
       "task": {"type": "string", "minLength": 1},
       "agent_id": {"type": "string"}
     }
