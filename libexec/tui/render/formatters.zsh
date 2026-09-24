@@ -193,7 +193,7 @@ sf_tui_execution_update() {
 }
 
 sf_tui_execution_end() {
-  local id=$1 class=${2:-tool} text=${3-} preview=${4-}
+  local id=$1 class=${2:-tool} text=${3-} preview=${4-} role=${5-}
   # A result with nothing to show leaves no trace, live or settled.
   if [[ -z $text ]]; then
     [[ $SF_LIVE_KIND != execution || $SF_LIVE_ID != $id ]] || sf_tui_retract
@@ -201,6 +201,7 @@ sf_tui_execution_end() {
     return 0
   fi
   sf_tui_execution_update "$id" "$class" "$text" "$preview" || return 1
+  [[ -z $role ]] || sf_tui_claim_role "$role"
   # A result owns the identity and class of the block it settles.
   SF_LIVE_ID=$id
   SF_LIVE_CLASS=$class
