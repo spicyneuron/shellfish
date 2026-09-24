@@ -58,7 +58,7 @@ sf_run_tool_refused() {
   local reason=$1
   integer exit_code=$2
   REPLY=$(jq -cn --arg reason "$reason" --argjson exit_code "$exit_code" \
-    '{output:{stdout:"",stderr:$reason,exit_code:$exit_code},states:[]}')
+    '{output:{stdout:"",stderr:$reason,exit_code:$exit_code}}')
 }
 
 sf_run_tool_bound() {
@@ -76,16 +76,19 @@ sf_run_tool_bound() {
   fi
 }
 
-# Apply one tool fd 3 line as it arrives. User text streams at once; state and
-# the view wait for a completed exit.
+# Apply one tool fd 3 line as it arrives. The view waits for a completed exit.
 sf_run_tool_line() {
+  local record
   local -A line
   [[ -z $SF_TOOL_RESULT[error] ]] || return 0
   sf_run_component_line "$1" '' "$SF_TOOL_RESULT[view]" "$SF_TOOL_PLAN[event]" '{}' \
     "$SF_TOOL_RESULT[preview]" || { SF_TOOL_RESULT[error]=invalid; return 1; }
   line=( "${reply[@]}" )
   [[ $line[valid] == true ]] || { SF_TOOL_RESULT[error]=invalid; return 1; }
-  SF_TOOL_RESULT[states]+=${line[states]:+$line[states]$'\n'}
+  for record in ${(f)line[states]}; do
+    sf_run_append "$SF_TOOL_RESULT[session]" "$record" ||
+      { SF_TOOL_RESULT[error]=$REPLY; return 1; }
+  done
   SF_TOOL_RESULT+=( view "$line[view]" preview "$line[preview]" )
   [[ -z $line[draft] ]] || sf_run_emit "$line[draft]" ||
     { SF_TOOL_RESULT[error]='cannot emit tool draft'; return 1; }
@@ -166,7 +169,7 @@ sf_run_tool_execute() {
   else
     process_command=( /usr/bin/env "${arguments[@]}" )
   fi
-  SF_TOOL_RESULT=( error '' states '' view '{}' preview null )
+  SF_TOOL_RESULT=( session "$session" error '' view '{}' preview null )
   if ! sf_process_run "$capture" "${cwd:A}" "${stdin:A}" "$max_capture" \
       sf_run_tool_line "${process_command[@]}"; then
     SF_RUN_TOOL_ERROR=$SF_PROCESS_ERROR
@@ -194,10 +197,9 @@ sf_run_tool_execute() {
   if (( process[exit_code] )) && grep -qs $'✗' "$capture/sandbox.log"; then denied=1; fi
   REPLY=$(sf_jq -cn --rawfile stdout "$bounded_stdout" --rawfile stderr "$bounded_stderr" \
     --argjson exit_code "$process[exit_code]" --argjson denied "$denied" \
-    --arg states "$SF_TOOL_RESULT[states]" --argjson view "$SF_TOOL_RESULT[view]" \
+    --argjson view "$SF_TOOL_RESULT[view]" \
     --argjson preview "$SF_TOOL_RESULT[preview]" '
-      {output:{stdout:$stdout,stderr:$stderr,exit_code:$exit_code},
-       states:[$states | split("\n")[] | select(. != "") | fromjson], view:$view} +
+      {output:{stdout:$stdout,stderr:$stderr,exit_code:$exit_code},view:$view} +
       (if $preview == null then {} else {preview:$preview} end) +
       (if $denied == 1 then {sandbox_denied:true} else {} end)
     ') || { SF_RUN_TOOL_ERROR='cannot decode tool result'; return 1; }
@@ -229,7 +231,6 @@ sf_run_tool_complete() {
       if $result | canonical_tool_result then
         entry("post_request"; $request + {tool_response:$outcome.output} | tojson),
         entry("result"; $result | tojson),
-        entry("states"; [$outcome.states[] | tojson] | join("\n")),
         ("ok" | field)
       else error("invalid result") end
     ' || { SF_RUN_TOOL_ERROR="cannot finish tool result: $name"; return 1; }

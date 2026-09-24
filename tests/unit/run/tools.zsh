@@ -333,9 +333,8 @@ jq -eRn '[inputs | fromjson | select(.type == "tool_result")][0].model_text ==
   "declared-file unset unset\nexit 0"' <"$stream" >/dev/null ||
   fail 'sandboxed tool saw values beyond its declared names'
 
-# A tool streams user text and settles once at exit with the state from every
-# line; stdout fills the model text it did not write. A tool ignores finalize,
-# and an action is invalid for it.
+# A tool streams user text and state, then settles once at exit. Stdout fills
+# the model text it did not write. A tool ignores finalize, and an action is invalid.
 typeset protocol="$tmp/protocol"
 cat >"$protocol" <<'ZSH'
 #!/usr/bin/env zsh
@@ -347,7 +346,15 @@ case $(jq -r .command) in
     exit 4
     ;;
   hint) print -r -u3 -- '{"user_preview_lines":3}'; print -rn -- plain ;;
-  action) print -r -u3 -- '{"action":"deny"}' ;;
+  action)
+    print -r -u3 -- '{"state":[{"name":"tool/before-error","value":true}]}'
+    print -r -u3 -- '{"action":"deny"}'
+    ;;
+  stream)
+    print -r -u3 -- '{"state":[{"name":"tool/live","value":true}]}'
+    : >"$TOOL_MARKER"
+    sleep 30
+    ;;
   huge) jq -cn '{user_text:("x" * 70000)}' >&3 ;;
 esac
 ZSH
@@ -361,9 +368,10 @@ SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_COMMAND=final \
 jq -eRn '
   [inputs | fromjson | select(.type | IN("_draft","state","tool_result"))] ==
     [{type:"_draft",id:"call_1",name:"shell",user_text:"shell\nfinal"},
+     {type:"state",name:"tool/a",value:1},
      {type:"_draft",id:"call_1",name:"shell",user_text:"working"},
+     {type:"state",name:"tool/b",value:2},
      {type:"_draft",id:"call_1",name:"shell",user_text:"shown",user_preview_lines:"full"},
-     {type:"state",name:"tool/a",value:1},{type:"state",name:"tool/b",value:2},
      {type:"tool_result",id:"call_1",name:"shell",input:{command:"final"},exit_code:4,
       user_text:"shown",model_text:"seen",user_preview_lines:"full"}]
 ' <"$stream" >/dev/null || fail 'tool user text or output settled wrong'
@@ -387,6 +395,32 @@ fi
 jq -eRn '[inputs | fromjson][-1] | .type == "error" and
   (.user_text | contains("invalid control"))' <"$stream" >/dev/null ||
   fail 'a tool action was not reported'
+jq -e -s 'map(select(.type == "state")) ==
+  [{type:"state",name:"tool/before-error",value:true}]' "$session" >/dev/null ||
+  fail 'invalid control lost previously accepted tool state'
+
+# State is durable while the tool is running and remains so after interruption.
+typeset live_marker="$tmp/tool-live"
+session="$tmp/protocol-stream.jsonl"
+sf_test_session "$session"
+jq -cn '{type:"user",content:[{type:"text",text:"protocol"}]}' |
+  SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_COMMAND=stream \
+  TOOL_MARKER=$live_marker "$ROOT/bin/shellfish" run --jsonl --session "$session" \
+  >"$stream" &
+integer live_pid=$! live_waited=0 live_status=0
+while (( live_waited++ < 100 )) && [[ ! -e $live_marker ]]; do sleep 0.02; done
+(( live_waited <= 100 )) || fail 'tool did not reach its wait'
+live_waited=0
+while (( live_waited++ < 100 )) && ! jq -e -s \
+    'any(.[]; .type == "state" and .name == "tool/live")' "$session" \
+    >/dev/null 2>&1; do sleep 0.02; done
+(( live_waited <= 100 )) || fail 'tool state was not committed while running'
+kill -TERM "$live_pid" 2>/dev/null
+wait "$live_pid" || live_status=$?
+(( live_status == 143 )) || fail 'interrupted tool returned the wrong status'
+jq -e -s 'any(.[]; .type == "state" and .name == "tool/live")' \
+  "$session" >/dev/null || fail 'interruption lost committed tool state'
+assert_canonical_session "$session"
 
 # A line beyond the capture limit fails the call, not the turn.
 session="$tmp/protocol-huge.jsonl"

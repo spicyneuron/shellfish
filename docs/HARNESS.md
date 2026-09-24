@@ -94,7 +94,7 @@ Templates perform one substitution pass over `name`, `input`, and `input.FIELD` 
 
 Shellfish calls `run` with no arguments and one input object on stdin. Sandbox-bypass control fields are removed first. The tool must validate input before using it. A nonzero exit is a normal tool result and does not fail the turn.
 
-A call settles exactly once, at exit, and state from every line is committed before it, including for nonzero exits. Unless the tool writes its own, the user sees the rendered `user_text` followed by stdout and stderr, and the model sees stdout and stderr; that output keeps its tail when it exceeds `max_capture_bytes`. A line beyond the limit fails the call. Tools take no `action`, and interrupted execution commits nothing.
+A call settles exactly once, at exit. State from each valid line is committed as it arrives, including if the tool later fails or is interrupted. Unless the tool writes its own, the user sees the rendered `user_text` followed by stdout and stderr, and the model sees stdout and stderr; that output keeps its tail when it exceeds `max_capture_bytes`. A line beyond the limit fails the call. Tools take no `action`; interruption settles a rejected result instead of the tool's output.
 
 The result repeats the exact call ID, name, and input and records an exit code. If the model calls an undeclared tool, Shellfish records a rejected result. Calls are processed in response order, and each complete result is persisted before the next call.
 

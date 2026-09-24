@@ -214,8 +214,8 @@ sf_run_project() {
 sf_run_turn() {
   local user_record=$1 session=$2 prompt=$3 profile tools context_command
   local assistant stop_text id name decision post_request
-  local reason outcome result state post_error='' failure='' turn_state call
-  local -a calls states
+  local reason outcome result post_error='' failure='' turn_state call
+  local -a calls
   local -A projected response hook_result completed
   integer begun=0 request_count=0 call_count=0 request_limit tool_limit max_capture run_status
 
@@ -417,10 +417,6 @@ sf_run_turn() {
         completed=( "${reply[@]}" )
         result=$completed[result]
         post_request=$completed[post_request]
-        states=( ${(f)completed[states]} )
-        for state in "${states[@]}"; do
-          sf_run_append "$session" "$state" || { failure=$REPLY; break 2; }
-        done
         SF_RUN[known_outcome]=$outcome
         sf_run_hooks "$session" post_tool_use "$post_request" \
           "$turn_state" "$name" "$id" || post_error=$SF_RUN_HOOK_ERROR
