@@ -823,6 +823,7 @@ function reset() {
 // ------------------------------------------------------------------ the page
 
 function refresh() {
+  form.className = working ? "" : "waiting";
   cancelButton.hidden = !working;
   cancelButton.disabled = busy;
   detachButton.hidden = code === null;

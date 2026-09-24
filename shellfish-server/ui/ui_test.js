@@ -260,6 +260,7 @@ function load(savedCode, initialSessionStatus = 200) {
   };
   return {
     output: elements.get("output"),
+    prompt: elements.get("prompt"),
     entry: elements.get("entry"),
     cancel: elements.get("cancel"),
     detach: elements.get("detach"),
@@ -336,6 +337,15 @@ test("restores the tab's saved access code", async () => {
   const page = load("123456");
   await page.waitFor(() => page.opens.length === 1, "restored session stream");
   assert.deepEqual(page.opens, ["Bearer 123456"]);
+});
+
+test("tracks whether the prompt is waiting", async () => {
+  const page = await idle();
+  assert.equal(page.prompt.className, "waiting");
+  await page.send({ type: "_session_status", working: true });
+  assert.equal(page.prompt.className, "");
+  await page.send({ type: "_session_status", working: false });
+  assert.equal(page.prompt.className, "waiting");
 });
 
 test("forgets a restored access code the service rejects", async () => {

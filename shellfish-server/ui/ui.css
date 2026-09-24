@@ -8,7 +8,8 @@
   --divider: #d6dde3;
   --details: #f5f5f5;
   --footer: #828e9f;
-  --prompt: #399ee6;
+  --prompt: #d6dde3;
+  --prompt-waiting: #399ee6;
   --user: #399ee6;
   --agent: #fa8d3e;
   --system: #a37acc;
@@ -36,7 +37,8 @@
     --divider: #3d444d;
     --details: #1e2124;
     --footer: #707a8c;
-    --prompt: #73d0ff;
+    --prompt: #3d444d;
+    --prompt-waiting: #73d0ff;
     --user: #73d0ff;
     --agent: #ffa759;
     --system: #dfbfff;
@@ -118,7 +120,6 @@ body:has(#code:not([hidden])) footer {
 
 body:has(#code:not([hidden])) #prompt {
   padding-bottom: 0.25rem;
-  border-bottom: 1px solid var(--divider);
 }
 
 #output {
@@ -384,8 +385,13 @@ footer {
   display: flex;
   gap: 0.5rem;
   align-items: baseline;
-  padding-top: 0.25rem;
-  border-top: 1px solid var(--divider);
+  padding: 0.25rem 0;
+  border-top: 1px solid var(--prompt);
+  border-bottom: 1px solid var(--prompt);
+}
+
+#prompt.waiting {
+  --prompt: var(--prompt-waiting);
 }
 
 #label {
@@ -414,10 +420,9 @@ footer {
 #status {
   display: flex;
   gap: 0.5rem;
+  height: 1.75rem;
   align-items: center;
-  margin-top: 0.25rem;
-  padding-top: 0.25rem;
-  border-top: 1px solid var(--divider);
+  padding: 0.5rem 0 0.25rem;
   color: var(--footer);
 }
 
