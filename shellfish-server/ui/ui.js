@@ -860,6 +860,7 @@ function deauthenticate(reason) {
   if (reader) reader.abort();
   reader = null;
   code = null;
+  document.title = "shellfish";
   sessionStorage.removeItem(CODE_STORAGE_KEY);
   reset();
   entry.hidden = true;

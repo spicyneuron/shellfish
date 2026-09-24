@@ -180,6 +180,17 @@ function load(savedCode, initialSessionStatus = 200) {
   const storage = new Map(
     savedCode === undefined ? [] : [["shellfish.access-code", savedCode]],
   );
+  const document = {
+    title: "shellfish",
+    getElementById: (id) => elements.get(id),
+    createElement: (tag) => new Element(tag),
+    createTextNode: (text) => {
+      const node = new Element("#text");
+      node.textContent = text;
+      return node;
+    },
+    addEventListener() {},
+  };
   let reloads = 0;
   let queue = [];
   let waiting = [];
@@ -217,17 +228,7 @@ function load(savedCode, initialSessionStatus = 200) {
   };
 
   const context = vm.createContext({
-    document: {
-      title: "",
-      getElementById: (id) => elements.get(id),
-      createElement: (tag) => new Element(tag),
-      createTextNode: (text) => {
-        const node = new Element("#text");
-        node.textContent = text;
-        return node;
-      },
-      addEventListener() {},
-    },
+    document,
     fetch: fetchStub,
     AbortController: class {
       abort() {}
@@ -271,6 +272,7 @@ function load(savedCode, initialSessionStatus = 200) {
     copied,
     waitFor,
     storage,
+    document,
     get reloads() {
       return reloads;
     },
@@ -303,7 +305,10 @@ function load(savedCode, initialSessionStatus = 200) {
       const scheduled = timers.splice(0, timers.length);
       for (const timer of scheduled) timer();
       await waitFor(
-        () => waiting.length === 1 || timers.length > 0,
+        () =>
+          waiting.length === 1 ||
+          timers.length > 0 ||
+          !storage.has("shellfish.access-code"),
         "session stream or reconnect",
       );
       return scheduled.length;
@@ -355,6 +360,18 @@ test("forgets a restored access code the service rejects", async () => {
     "rejected access code cleanup",
   );
   assert.equal(page.storage.has("shellfish.access-code"), false);
+});
+
+test("restores the page title when the access code is rejected", async () => {
+  const page = load();
+  await page.authenticate();
+  await page.send(HEADER);
+  assert.equal(page.document.title, "shellfish /project");
+
+  page.refuse(401);
+  await page.endStream();
+  await page.reconnect();
+  assert.equal(page.document.title, "shellfish");
 });
 
 test("detaching forgets the saved access code and reloads", async () => {
