@@ -552,6 +552,10 @@ test("shows user-facing hook text without exposing model text", async () => {
   });
   assert.equal(findTag(find(page.output, "note")[1], "summary")[0].textContent,
     "↪stop");
+  assert.deepEqual(
+    find(page.output, "section").map((heading) => heading.textContent),
+    ["system", "agent1"],
+  );
   assert.equal(page.output.textContent.includes("secret model context"), false);
   assert.equal(page.output.textContent.includes("private stop feedback"), false);
 });
@@ -596,6 +600,56 @@ test("puts prompt context under a user heading", async () => {
     ["user1", "agent2"],
   );
   assert.equal(find(page.output, "activity").length, 1);
+});
+
+test("groups hooks by lifecycle during replay", async () => {
+  const page = load();
+  await page.authenticate();
+  await page.send(
+    HEADER,
+    { type: "system", content: "instructions" },
+    { type: "hook_result", lifecycle: "session_start", id: "1", model_text: "start" },
+    { type: "hook_result", lifecycle: "session_start", id: "2", user_text: "startup notice" },
+    { type: "hook_result", lifecycle: "user_prompt_submit", id: "3", model_text: "prompt" },
+    { type: "user", content: [{ type: "text", text: "go" }] },
+    { type: "assistant", stop: "tool_calls", content: [
+      { type: "tool_call", id: "c1", name: "shell", input: {} },
+    ] },
+    { type: "hook_result", lifecycle: "pre_tool_use", id: "4", model_text: "before" },
+    { type: "tool_result", id: "c1", name: "shell", input: {}, exit_code: 0,
+      user_text: "shell done" },
+    ASSISTANT,
+    { type: "hook_result", lifecycle: "stop", id: "5", model_text: "later" },
+    { type: "user", content: [{ type: "text", text: "again" }] },
+    { type: "_session_status", working: false },
+  );
+  assert.deepEqual(
+    find(page.output, "section").map((heading) => heading.textContent),
+    ["system", "user1", "agent2", "user3"],
+  );
+  assert.deepEqual(
+    page.output.children.map((child) => child.className || child.textContent).filter(Boolean),
+    ["section section-system", "record system", "record note", "record note",
+      "section section-user", "record note", "record user",
+      "section section-agent", "record note", "record assistant", "record assistant",
+      "record note", "section section-user", "record user"],
+  );
+});
+
+test("keeps trailing stop hooks under agent", async () => {
+  const page = load();
+  await page.authenticate();
+  await page.send(
+    HEADER,
+    ASSISTANT,
+    { type: "hook_result", lifecycle: "stop", id: "1", model_text: "pending" },
+    { type: "_session_status", working: false },
+  );
+  assert.deepEqual(
+    find(page.output, "section").map((heading) => heading.textContent),
+    ["agent1"],
+  );
+  assert.equal(find(page.output, "note").length, 1);
 });
 
 test("renders only settled tool text and labels model-only results", async () => {

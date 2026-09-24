@@ -609,6 +609,8 @@ function renderHookResult(frame) {
   const text = frame.user_text || (frame.model_text ? frame.lifecycle : "");
   if (!text) return;
   hideIndicator();
+  section(frame.lifecycle === "session_start" ? "system" :
+    frame.lifecycle === "user_prompt_submit" ? "user" : "agent");
   const article = record("note", null);
   const first = text.indexOf("\n");
   const heading = first < 0 ? text : text.slice(0, first);

@@ -80,6 +80,14 @@ view
 assert_tail $'⛭ shell\n│ make test\n╰ done\n\n⠃'
 sf_tui_activity_stop
 
+# A hook settling a tool draft keeps the heading the draft already claimed.
+sf_tui_reset
+sf_tui_action execution_update hooked tool $'shell\nmake test'
+sf_tui_action execution_end h1 context 'guard approved' default agent
+view
+[[ $REPLY == $'─ agent '*$' 1 ─\n\n↪ guard approved\n╰' ]] ||
+  fail "hook result lost the tool draft heading: $REPLY"
+
 # A settled result with no running block stands on its own.
 sf_tui_reset
 sf_tui_action execution_end queued tool 'shell · cancelled'

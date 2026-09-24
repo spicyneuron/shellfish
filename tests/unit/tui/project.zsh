@@ -75,35 +75,23 @@ project live \
   '{"type":"hook_result","lifecycle":"session_start","id":"3","model_text":"Git branch: main"}'
 assert_equal 'execution_update | 1 | notice | guard · checking | 1
 execution_end | 1 | notice |  | default
-execution_end | 1 | notice | guard · ok | full
-execution_end | 2 | context | project · read | default
-execution_end | 3 | context | session_start | default' "$REPLY"
+execution_end | 1 | notice | guard · ok | full | agent
+execution_end | 2 | context | project · read | default | system
+execution_end | 3 | context | session_start | default | system' "$REPLY"
 
-# Replay keeps context in transcript order but gives it the next message's heading.
+# Hook headings follow their lifecycle, live or on replay.
 project load \
   '{"type":"hook_result","lifecycle":"session_start","id":"1","model_text":"start"}' \
   '{"type":"hook_result","lifecycle":"user_prompt_submit","id":"2","model_text":"prompt"}' \
-  '{"type":"user","content":[{"type":"text","text":"go"}]}' \
-  '{"type":"assistant","stop":"tool_calls","content":[{"type":"tool_call","id":"c1","name":"shell","input":{}}]}' \
   '{"type":"hook_result","lifecycle":"pre_tool_use","id":"3","model_text":"before"}' \
-  '{"type":"tool_result","id":"c1","name":"shell","input":{},"exit_code":0}' \
-  '{"type":"assistant","stop":"end","content":[]}' \
-  '{"type":"hook_result","lifecycle":"stop","id":"4","model_text":"later"}' \
-  '{"type":"user","content":[{"type":"text","text":"again"}]}'
-[[ $REPLY == *'execution_end | 1 | context | session_start | default | system'* &&
-   $REPLY == *'execution_end | 2 | context | user_prompt_submit | default | user'* &&
-   $REPLY == *'execution_end | 3 | context | pre_tool_use | default | agent'* &&
-   $REPLY == *'execution_end | 4 | context | stop | default | user'* ]] ||
-  fail "replay assigned context to the wrong heading: $REPLY"
+  '{"type":"hook_result","lifecycle":"stop","id":"4","model_text":"later"}'
+assert_equal 'execution_end | 1 | context | session_start | default | system
+execution_end | 2 | context | user_prompt_submit | default | user
+execution_end | 3 | context | pre_tool_use | default | agent
+execution_end | 4 | context | stop | default | agent' "$REPLY"
 project load \
-  '{"type":"hook_result","lifecycle":"stop","id":"5","model_text":"pending"}'
-assert_equal 'execution_end | 5 | context | stop | default' "$REPLY"
-project load \
-  '{"type":"hook_result","lifecycle":"stop","id":"6","model_text":"continue"}' \
-  '{"type":"state","name":"check","value":true}' \
-  '{"type":"assistant","stop":"end","content":[]}'
-[[ $REPLY == *'execution_end | 6 | context | stop | default | agent'* ]] ||
-  fail "continued stop context lacked the next heading: $REPLY"
+  '{"type":"hook_result","lifecycle":"session_start","id":"5","user_text":"startup notice"}'
+assert_equal 'execution_end | 5 | notice | startup notice | default | system' "$REPLY"
 
 # Permissions carry the preview the client displays.
 project live \

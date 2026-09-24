@@ -70,10 +70,10 @@ sf_tui_row_width() {
 # Only the first formatter of a role run owns its rule.
 sf_tui_claim_role() {
   local role=$1
+  [[ -n $role && $SF_PRESENT_LAST_ROLE != $role ]] || return 0
   SF_LIVE_ROLE=''
   SF_LIVE_PRIOR=''
   SF_LIVE_SECTION=''
-  [[ -n $role && $SF_PRESENT_LAST_ROLE != $role ]] || return 0
   SF_LIVE_ROLE=$role
   SF_LIVE_PRIOR=$SF_PRESENT_LAST_ROLE
   if [[ $role == (user|agent) ]]; then

@@ -72,7 +72,7 @@ def response_actions:
     end] +
   [["message_end"]];
 
-def record_actions($mode; $window; $next):
+def record_actions($mode; $window):
   if .type == "assistant" then
     (if $mode == "load" then response_actions else [] end) + usage_actions($window)
   elif .type == "user" then
@@ -85,14 +85,10 @@ def record_actions($mode; $window; $next):
   elif .type == "tool_result" then
     [["execution_end", .id, "tool", result_text, preview]]
   elif .type == "hook_result" then
-    (if $mode == "load" and (.model_text // "") != "" then
-       if .lifecycle == "session_start" then "system"
-       elif $next == "user" then "user"
-       elif $next == "assistant" or $next == "tool_result" then "agent"
-       else "" end
-     else "" end) as $role |
-    [["execution_end", .id, hook_class, result_text, preview] +
-      (if $role == "" then [] else [$role] end)]
+    [["execution_end", .id, hook_class, result_text, preview,
+      (if .lifecycle == "session_start" then "system"
+       elif .lifecycle == "user_prompt_submit" then "user"
+       else "agent" end)]]
   elif .type == "session" then (.profile | profile_actions)
   elif .type == "state" then []
   else error("unsupported record: " + (.type | tostring))
@@ -127,21 +123,14 @@ def event_actions($window):
 
 def nul_safe: gsub("\u0000"; "�");
 
-[inputs | fromjson] as $lines |
-(reduce range(($lines | length) - 1; -1; -1) as $index
-  ({next:"", following:[]};
-   .following += [.next] |
-   if $lines[$index].type | IN("user", "assistant", "tool_result") then
-     .next = $lines[$index].type
-   else . end) | .following | reverse) as $following |
-reduce ($lines | to_entries[]) as $entry (
+[inputs | fromjson] |
+reduce .[] as $line (
   {mode: $mode, window: (if $window == "" then null else ($window | tonumber) end),
    actions: []};
   . as $state |
-  $entry.value as $line |
   ($line |
     if (.type // "" | startswith("_")) then event_actions($state.window)
-    else record_actions($state.mode; $state.window; $following[$entry.key]) end) as $emitted |
+    else record_actions($state.mode; $state.window) end) as $emitted |
   .actions += $emitted |
   if $line.type == "_session_load" then .mode = "load"
   elif $line.type | IN("session", "_session_update") then
