@@ -14,7 +14,7 @@ sf_run_main() {
   local requested_session='' input='' prompt='' arity=''
   local -a positional=() create_args=()
   local -A message
-  integer create_only=0 json=0 jsonl=0 override=0 take=0
+  integer create_only=0 json=0 jsonl=0 background=0 override=0 take=0
 
   while (( $# )); do
     case $1 in
@@ -37,6 +37,10 @@ sf_run_main() {
         ;;
       --jsonl)
         jsonl=1
+        shift
+        ;;
+      --background)
+        background=1
         shift
         ;;
       --session-create)
@@ -72,6 +76,13 @@ sf_run_main() {
 
   (( ! json || ! jsonl )) || {
     sf_die '--json and --jsonl cannot be combined'
+    return 2
+  }
+  (( ! background || ! json )) || { sf_die '--background cannot be combined with --json'; return 2; }
+  (( ! background || ! jsonl )) || { sf_die '--background cannot be combined with --jsonl'; return 2; }
+  (( ! background || ! create_only )) || { sf_die '--background cannot be combined with --session-create'; return 2; }
+  (( ! background )) || [[ $OSTYPE == darwin* && -x /usr/bin/script ]] || {
+    sf_die '--background requires macOS /usr/bin/script'
     return 2
   }
   if (( create_only )); then
@@ -111,7 +122,13 @@ sf_run_main() {
       sf_die '--jsonl does not accept a prompt'
       return 2
     }
-    IFS= read -r input || [[ -n $input ]] || input=''
+    if [[ -n ${SHELLFISH_BACKGROUND_WORKER-} && -n ${SHELLFISH_BACKGROUND_INPUT-} ]]; then
+      input=$(<"$SHELLFISH_BACKGROUND_INPUT") || { sf_die 'cannot read background input'; return 1; }
+      rm -f -- "$SHELLFISH_BACKGROUND_INPUT"
+      unset SHELLFISH_BACKGROUND_INPUT
+    else
+      IFS= read -r input || [[ -n $input ]] || input=''
+    fi
     [[ -n $input ]] || {
       sf_die '--jsonl requires a canonical user message on stdin'
       return 2
@@ -143,7 +160,11 @@ sf_run_main() {
   SF_RUN[jsonl]=$jsonl
   typeset -gx SHELLFISH_MODE=run
   trap 'SF_RUN[signal_status]=130; kill -TERM $$' INT USR1
-  trap 'SF_RUN[signal_status]=129; kill -TERM $$' HUP
+  if [[ -n ${SHELLFISH_BACKGROUND_WORKER-} ]]; then
+    trap '' HUP
+  else
+    trap 'SF_RUN[signal_status]=129; kill -TERM $$' HUP
+  fi
   trap '(( SF_RUN[signal_status] )) || SF_RUN[signal_status]=143;
     sf_run_interrupt "$SF_RUN[signal_status]"; exit $SF_RUN[signal_status]' TERM
   local session
@@ -168,6 +189,53 @@ sf_run_main() {
   if (( create_only )); then
     trap - INT USR1 HUP TERM
     return 0
+  fi
+  if (( background )); then
+    trap - INT USR1 HUP TERM
+    local input_file ack_dir ack_file
+    input_file=$(mktemp "${TMPDIR:-/tmp}/shellfish-background-input.XXXXXX") || return 1
+    ack_dir=$(mktemp -d "${TMPDIR:-/tmp}/shellfish-background-ack.XXXXXX") || {
+      rm -f -- "$input_file"
+      return 1
+    }
+    ack_file="$ack_dir/ready"
+    print -r -- "$input" >"$input_file" && mkfifo "$ack_file" || {
+      rm -f -- "$input_file" "$ack_file"
+      rmdir "$ack_dir"
+      sf_die 'cannot prepare background turn'
+      return 1
+    }
+    exec 4<>"$ack_file" || {
+      rm -f -- "$input_file" "$ack_file"
+      rmdir "$ack_dir"
+      sf_die 'cannot prepare background acknowledgement'
+      return 1
+    }
+    SHELLFISH_BACKGROUND_WORKER=1 SHELLFISH_BACKGROUND_INPUT="$input_file" \
+      /usr/bin/script -q -e /dev/null "$commands[zsh]" -f -c \
+      'trap "" HUP; exec "$@" </dev/null >/dev/null 2>&1 3>&-' -- \
+      "$SF_ROOT/libexec/run/main.zsh" --jsonl --session "$session" \
+      </dev/null >/dev/null 2>&1 3>&- 4>&4 &!
+    local launch_pid=$!
+    local acknowledgement=''
+    if read -r -t 10 -u 4 acknowledgement && [[ $acknowledgement == ready ]]; then
+      exec 4>&-
+      rm -f -- "$ack_file"
+      rmdir "$ack_dir"
+      print -r -- "$session"
+      return 0
+    fi
+    exec 4>&-
+    rm -f -- "$ack_file"
+    rmdir "$ack_dir"
+    kill -0 "$launch_pid" 2>/dev/null || rm -f -- "$input_file"
+    sf_die 'background worker did not acknowledge start'
+    return 1
+  fi
+  if [[ -n ${SHELLFISH_BACKGROUND_WORKER-} ]]; then
+    print -r -u 4 -- ready || return 1
+    exec 4>&-
+    unset SHELLFISH_BACKGROUND_WORKER
   fi
   sf_run_turn "$input" "$session" "$prompt"
   local run_status=$?
