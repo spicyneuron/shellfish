@@ -3,7 +3,7 @@
 emulate -R zsh
 setopt extended_glob no_aliases no_bg_nice no_multios pipe_fail
 
-typeset input operation profile task agent_id child parent_dir association value output fork transcript
+typeset input operation profile task agent_id child parent_dir association value output fork transcript background launch_error
 typeset limit=${SHELLFISH_MAX_ACTIVE_AGENTS-4}
 integer count=0 result=0 waited=0
 
@@ -12,16 +12,18 @@ fail() { print -u2 -r -- "agent: $1"; exit ${2:-1}; }
 input=$(cat) || fail 'cannot read input'
 operation=$(jq -er '
   select(type == "object" and
-    ((keys - ["operation", "profile", "fork", "task", "agent_id"]) | length == 0)) |
+    ((keys - ["operation", "profile", "fork", "task", "agent_id", "background"]) | length == 0)) |
   if .operation == "start" and
      ((has("profile") and (has("fork") | not) and
        (.profile | type == "string" and length > 0)) or
       (has("fork") and (has("profile") | not) and .fork == true)) and
      (.task | type == "string" and length > 0) and
+     (if has("background") then .background | type == "boolean" else true end) and
      (has("agent_id") | not) then "start"
   elif .operation == "inspect" and
        (.agent_id | type == "string" and test("^[a-f0-9]{32}$")) and
-       (has("profile") | not) and (has("task") | not) then "inspect"
+       (has("profile") | not) and (has("task") | not) and
+       (has("background") | not) then "inspect"
   else empty end
 ' <<<"$input" 2>/dev/null) || fail 'invalid input' 2
 
@@ -40,6 +42,7 @@ if [[ $operation == inspect ]]; then
   agent_id=$(jq -r '.agent_id' <<<"$input")
 else
   fork=$(jq -r '.fork // false' <<<"$input")
+  background=$(jq -r '.background // false' <<<"$input")
   [[ $fork == true ]] || profile=$(jq -r '.profile' <<<"$input")
   task=$(jq -r '.task' <<<"$input")
   # A later state record supersedes an earlier reservation.
@@ -63,15 +66,30 @@ if [[ $operation == inspect ]]; then
   [[ -f $child && ! -L $child ]] || fail 'agent session is unavailable'
   output=$(jq -c -s --arg id "$agent_id" --argjson association "$association" '
     if length < 2 or .[0].type != "session" or
-       (any(.[1:]; . == {type:"state",name:"agents/child",value:true}) | not) or
+       (any(.[1:][]; . == {type:"state",name:"agents/child",value:true}) | not) or
        (all(.[]; .type | IN("session","system","state","hook_result","user",
          "assistant","tool_result","error")) | not) then
       error("invalid agent session")
-    else {agent_id:$id, active:$association.active,
-     answer:([.[] | select(.type == "assistant" and .stop == "end") |
-       [.content[] | select(.type == "text") | .text] | join("\n")] | last // null),
-     last_record:(.[-1].type // null)} end
+    else
+      ([to_entries[] | select(.value.type == "user") | .key] | last) as $turn |
+      (if $turn == null then [] else .[$turn:] end) as $records |
+      ($records[-1].type // null) as $last |
+      {agent_id:$id, active:$association.active,
+       settled:($last == "error" or
+         ($last == "assistant" and $records[-1].stop == "end" and
+          ((.[0].profile.hooks.stop // []) | length == 0))),
+       answer:([$records[] | select(.type == "assistant" and .stop == "end") |
+         [.content[] | select(.type == "text") | .text] | join("\n")] | last // null),
+       last_record:$last}
+    end
   ' "$child") || fail 'cannot inspect agent session'
+  if jq -e '.active == true and .settled == true' <<<"$output" >/dev/null; then
+    print -r -u3 -- "$(jq -cn --arg name "agents/$agent_id" \
+      --arg session ".agent-$agent_id.jsonl" \
+      '{state:[{name:$name,value:{session:$session,active:false}}]}')" ||
+      fail 'cannot release agent slot'
+    output=$(jq -c '.active=false' <<<"$output") || fail 'cannot format inspection'
+  fi
   print -r -- "$output"
   exit 0
 fi
@@ -104,6 +122,10 @@ else
 fi
 print -r -- '{"type":"state","name":"agents/child","value":true}' >>"$child" ||
   fail 'cannot mark child session'
+if [[ $background == true ]]; then
+  launch_error=$(mktemp "${TMPDIR:-/tmp}/shellfish-agent-launch.XXXXXX") ||
+    fail 'cannot prepare background launch'
+fi
 value=$(jq -cn --arg session ".agent-$agent_id.jsonl" \
   '{session:$session,active:true}') || fail 'cannot reserve agent'
 print -r -u3 -- "$(jq -cn --arg name "agents/$agent_id" --argjson value "$value" \
@@ -118,6 +140,28 @@ while (( waited < 500 )); do
   (( waited++ ))
 done
 (( waited < 500 )) || fail 'agent reservation was not persisted'
+
+if [[ $background == true ]]; then
+  output=$("$SHELLFISH_EXECUTABLE" run --background --session "$child" -- "$task" \
+    2>"$launch_error")
+  result=$?
+  if (( result )); then
+    # Only diagnostics emitted before worker launch prove the slot is unused.
+    if grep -Eq '^shellfish: (--background requires macOS /usr/bin/script|cannot prepare background turn|cannot prepare background acknowledgement)$' "$launch_error"; then
+      print -r -u3 -- "$(jq -cn --arg name "agents/$agent_id" \
+        --arg session ".agent-$agent_id.jsonl" \
+        '{state:[{name:$name,value:{session:$session,active:false}}]}')" ||
+        fail 'cannot release agent slot'
+    fi
+    cat "$launch_error" >&2
+    rm -f -- "$launch_error"
+    fail 'cannot launch background agent'
+  fi
+  rm -f -- "$launch_error"
+  [[ $output == "$child" ]] || fail 'background launch acknowledgement is invalid'
+  print -r -- "$(jq -cn --arg id "$agent_id" '{agent_id:$id,active:true,settled:false}')"
+  exit 0
+fi
 
 "$SHELLFISH_EXECUTABLE" run --session "$child" -- "$task" >/dev/null 2>&1
 result=$?
