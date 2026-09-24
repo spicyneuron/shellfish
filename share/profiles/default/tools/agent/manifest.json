@@ -1,0 +1,16 @@
+{
+  "description": "Start a durable child agent synchronously with a named profile, or inspect a child by agent_id. Active means a parent admission slot, not verified process liveness. Add this tool to a profile's tools list to opt in.",
+  "input_schema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["operation"],
+    "properties": {
+      "operation": {"type": "string", "enum": ["start", "inspect"]},
+      "profile": {"type": "string", "minLength": 1},
+      "task": {"type": "string", "minLength": 1},
+      "agent_id": {"type": "string"}
+    }
+  },
+  "environment": ["SHELLFISH_MAX_ACTIVE_AGENTS"],
+  "sandbox": false
+}

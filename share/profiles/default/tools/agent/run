@@ -1,0 +1,108 @@
+#!/usr/bin/env zsh
+
+emulate -R zsh
+setopt extended_glob no_aliases no_bg_nice no_multios pipe_fail
+
+typeset input operation profile task agent_id child parent_dir association value output
+typeset limit=${SHELLFISH_MAX_ACTIVE_AGENTS-4}
+integer count=0 result=0 waited=0
+
+fail() { print -u2 -r -- "agent: $1"; exit ${2:-1}; }
+
+input=$(cat) || fail 'cannot read input'
+operation=$(jq -er '
+  select(type == "object" and
+    ((keys - ["operation", "profile", "task", "agent_id"]) | length == 0)) |
+  if .operation == "start" and
+     (.profile | type == "string" and length > 0) and
+     (.task | type == "string" and length > 0) and
+     (has("agent_id") | not) then "start"
+  elif .operation == "inspect" and
+       (.agent_id | type == "string" and test("^[a-f0-9]{32}$")) and
+       (has("profile") | not) and (has("task") | not) then "inspect"
+  else empty end
+' <<<"$input" 2>/dev/null) || fail 'invalid input' 2
+
+[[ -n ${SHELLFISH_SESSION-} && -n ${SHELLFISH_EXECUTABLE-} ]] ||
+  fail 'session environment is unavailable'
+[[ $limit == <1-> ]] || fail 'SHELLFISH_MAX_ACTIVE_AGENTS must be a positive integer' 2
+parent_dir=${SHELLFISH_SESSION:A:h}
+
+# The marker is feature-owned state, appended only after session_start settles.
+if jq -e 'select(.type == "state" and .name == "agents/child")' \
+    "$SHELLFISH_SESSION" >/dev/null 2>&1; then
+  fail 'a child agent cannot delegate'
+fi
+
+if [[ $operation == inspect ]]; then
+  agent_id=$(jq -r '.agent_id' <<<"$input")
+else
+  profile=$(jq -r '.profile' <<<"$input")
+  task=$(jq -r '.task' <<<"$input")
+  # A later state record supersedes an earlier reservation.
+  count=$(jq -s '[.[] | select(.type == "state" and (.name | startswith("agents/"))) |
+    {key:.name,value:.value}] | from_entries | [.[] | select(.active? == true)] | length' \
+    "$SHELLFISH_SESSION") || fail 'cannot read parent state'
+  (( count < limit )) || fail "active agent limit reached ($limit)"
+  agent_id=$(uuidgen | tr -d '-' | tr '[:upper:]' '[:lower:]') || fail 'cannot create agent ID'
+  [[ $agent_id == [a-f0-9]## ]] || fail 'cannot create agent ID'
+fi
+
+child="$parent_dir/.agent-$agent_id.jsonl"
+if [[ $operation == inspect ]]; then
+  association=$(jq -c -s --arg name "agents/$agent_id" \
+    '[.[] | select(.type == "state" and .name == $name) | .value] | last // empty' \
+    "$SHELLFISH_SESSION") || fail 'cannot read agent association'
+  [[ -n $association ]] || fail 'unknown agent_id' 2
+  jq -e --arg session ".agent-$agent_id.jsonl" \
+    '.session == $session and (.active | type == "boolean")' \
+    <<<"$association" >/dev/null || fail 'invalid agent association'
+  [[ -f $child && ! -L $child ]] || fail 'agent session is unavailable'
+  output=$(jq -c -s --arg id "$agent_id" --argjson association "$association" '
+    if length < 2 or .[0].type != "session" or
+       (any(.[1:]; . == {type:"state",name:"agents/child",value:true}) | not) or
+       (all(.[]; .type | IN("session","system","state","hook_result","user",
+         "assistant","tool_result","error")) | not) then
+      error("invalid agent session")
+    else {agent_id:$id, active:$association.active,
+     answer:([.[] | select(.type == "assistant" and .stop == "end") |
+       [.content[] | select(.type == "text") | .text] | join("\n")] | last // null),
+     last_record:(.[-1].type // null)} end
+  ' "$child") || fail 'cannot inspect agent session'
+  print -r -- "$output"
+  exit 0
+fi
+
+# Reserve a unique hidden path before creating it through the public interface.
+[[ ! -e $child && ! -L $child ]] || fail 'agent ID collision'
+"$SHELLFISH_EXECUTABLE" run --session-create --session-out "$child" \
+  --profile "$profile" >/dev/null || fail 'cannot create agent session'
+print -r -- '{"type":"state","name":"agents/child","value":true}' >>"$child" ||
+  fail 'cannot mark child session'
+value=$(jq -cn --arg session ".agent-$agent_id.jsonl" \
+  '{session:$session,active:true}') || fail 'cannot reserve agent'
+print -r -u3 -- "$(jq -cn --arg name "agents/$agent_id" --argjson value "$value" \
+  '{state:[{name:$name,value:$value}]}')" || fail 'cannot reserve agent'
+
+# fd 3 is a stream. Do not start the child until its reservation is durable.
+while (( waited < 500 )); do
+  if jq -e -s --arg name "agents/$agent_id" \
+      'any(.[]; .type == "state" and .name == $name and .value.active == true)' \
+      "$SHELLFISH_SESSION" >/dev/null 2>&1; then break; fi
+  sleep 0.01
+  (( waited++ ))
+done
+(( waited < 500 )) || fail 'agent reservation was not persisted'
+
+"$SHELLFISH_EXECUTABLE" run --session "$child" -- "$task" >/dev/null 2>&1
+result=$?
+print -r -u3 -- "$(jq -cn --arg name "agents/$agent_id" --arg session ".agent-$agent_id.jsonl" \
+  '{state:[{name:$name,value:{session:$session,active:false}}]}')" ||
+  fail 'cannot release agent slot'
+output=$(jq -c -s --arg id "$agent_id" --argjson exit_code "$result" '
+  {agent_id:$id,exit_code:$exit_code,
+   answer:([.[] | select(.type == "assistant" and .stop == "end") |
+     [.content[] | select(.type == "text") | .text] | join("\n")] | last // null)}
+' "$child") || fail 'cannot read agent result'
+print -r -- "$output"
+exit "$result"
