@@ -171,7 +171,6 @@ jq -se 'map(.type) == ["_session_load","session","system"]' \
   "$SF_TEST_EVENTS" >/dev/null || exit 3
 print -r -u3 -- '{"user_text":"starting"}'
 print -r -u3 -- '{"user_text":"startup display","model_text":"startup context","finalize":true,"state":[{"name":"startup/stream","value":true}]}'
-[[ -z ${SHELLFISH_PARENT_HOOK-} ]] || exec "$SHELLFISH_PARENT_HOOK"
 ZSH
 cat >"$silent" <<'ZSH'
 #!/usr/bin/env zsh

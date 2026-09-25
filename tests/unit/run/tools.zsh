@@ -77,7 +77,7 @@ SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_COUNT=2 \
   sf_test_run input "$input_session" >"$input_stream" || fail 'tool input isolation turn failed'
 [[ ! -e $input_target ]] || fail 'tool temp redirected a later input write'
 
-# Pre-tool denial refuses with its reason without reaching the parent hook,
+# Pre-tool denial refuses with its reason without reaching the later hook,
 # preserves sibling calls, and still reaches post hooks.
 typeset pre="$tmp/pre" later="$tmp/pre-later" post="$tmp/post"
 typeset hook_dir="$tmp/hook-inputs" tool_marker="$tmp/tool-ran"
@@ -90,7 +90,7 @@ print -rn -- "$input" >"$HOOK_DIR/pre-$id"
 if [[ $id == call_1 ]]; then
   print -r -u3 -- '{"user_text":"pre display","model_text":"pre context","state":[{"name":"pre/call_1","value":true}],"action":"deny","reason":"pre denied"}'
 else
-  exec "$SHELLFISH_PARENT_HOOK" "$@"
+  :
 fi
 ZSH
 cat >"$later" <<'ZSH'
@@ -124,7 +124,7 @@ jq -e '. == {turn_id:1,tool_name:"shell",tool_use_id:"call_1",
   tool_input:{command:$command},tool_response:{stdout:"",stderr:"pre denied",exit_code:126}}' \
   --arg command "print -r -- ran >>${(q)tool_marker}; print -rn -- output" \
   "$hook_dir/post-call_1" >/dev/null || fail 'post hook did not receive the denial outcome'
-assert_equal call_2 "$(<$hook_dir/later)" 'deny reached the parent hook'
+assert_equal call_2 "$(<$hook_dir/later)" 'deny reached the later hook'
 assert_equal ran "$(<$tool_marker)" 'pre-tool denial did not preserve the sibling call'
 jq -eRn '
   [inputs | fromjson] as $events |
@@ -204,8 +204,21 @@ jq -eRn '
   .exit_code == 126 and (.model_text | contains("review denied"))
 ' <"$stream" >/dev/null || fail 'permission denial did not settle the call'
 
-# No hook defers to the client; the permission exchange stays transient.
-SF_TEST_PROFILE=$(jq -c '.hooks.permission_request=[]' <<<"$SF_TEST_PROFILE")
+# If every hook defers, approval falls back to the client.
+typeset defer_one="$tmp/defer-one" defer_two="$tmp/defer-two"
+cat >"$defer_one" <<'ZSH'
+#!/usr/bin/env zsh
+cat >"$PERMISSION_INPUT"
+print -r -u3 -- '{"user_text":"reviewed","finalize":true}'
+ZSH
+cat >"$defer_two" <<'ZSH'
+#!/usr/bin/env zsh
+[[ -s $PERMISSION_INPUT ]] || exit 2
+cat >/dev/null
+ZSH
+chmod +x "$defer_one" "$defer_two"
+SF_TEST_PROFILE=$(jq -c --arg one "$defer_one" --arg two "$defer_two" \
+  '.hooks.permission_request=[$one,$two]' <<<"$SF_TEST_PROFILE")
 session="$tmp/permission-client.jsonl"
 sf_test_session "$session"
 SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_BYPASS=true \
@@ -218,6 +231,7 @@ jq -eRn '
   ($events | map(select(.type == "_tool_permission_request")) | length) == 1 and
   ($events | map(select(.type == "_tool_permission_request"))[0].preview) ==
     "print -rn -- approved" and
+  ($events | map(select(.type == "hook_result")) | any(.user_text == "reviewed")) and
   ($events | map(select(.type == "tool_result"))[0].exit_code) == 0
 ' <"$stream" >/dev/null || fail 'client permission was not requested explicitly'
 jq -e -s 'all(.[]; .type != "_tool_permission_request" and

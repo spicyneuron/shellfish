@@ -36,7 +36,6 @@ Hooks and adapters inherit the process environment and receive every value in `.
 | `SHELLFISH_VERBOSE` |  | ✓ (`0` or `1`) |
 | `SHELLFISH_TURN_ID` |  | Turn hooks only |
 | `SHELLFISH_TURN_STATE` |  | Turn hooks only |
-| `SHELLFISH_PARENT_HOOK` |  | When a parent exists |
 | `TMPDIR`, `TMPPREFIX` | ✓ |  |
 
 `SHELLFISH_DEFAULT_DIR` is the installed bundled `default` profile folder, so scripts can call its parts, such as `$SHELLFISH_DEFAULT_DIR/hooks/review`.
@@ -129,18 +128,7 @@ repeat:
     if completion allowed: finish turn
 ```
 
-Each lifecycle runs one hook: the first in its list. A profile folder's `hooks/LIFECYCLE` joins the front of the inherited list unless the profile sets `hooks.LIFECYCLE`; see [`CONFIG.md`](CONFIG.md#harness). Any other file under `hooks/` is an inert part that scripts may call.
-
-The next hook in the list is the running hook's parent. `SHELLFISH_PARENT_HOOK` runs it with the same arguments and the original stdin, even if the caller already read it; it is unset when there is no parent. Both write to the same fd 3, and the parent reaches its own parent the same way:
-
-```sh
-#!/bin/sh
-# Handle /deploy here and leave every other prompt to the parent.
-[ "$(cat)" = /deploy ] || exec "$SHELLFISH_PARENT_HOOK" "$@"
-echo '{"action":"block","user_text":"Deploying…"}' >&3
-```
-
-A hook that never calls its parent replaces it.
+Each lifecycle runs its configured hooks in order, each as a separate process with the original stdin and arguments. A hook without an action defers to the next. A successful action ends the list; if every hook defers, the lifecycle takes its no-action outcome. A profile folder's `hooks/LIFECYCLE` joins the front of the inherited list unless the profile sets `hooks.LIFECYCLE`; see [`CONFIG.md`](CONFIG.md#harness).
 
 ### Hook output
 
@@ -148,7 +136,7 @@ A hook writes the [shared output](#output). State and each finalized section bec
 
 Model text from one lifecycle reaches the model grouped in `<hook name="LIFECYCLE">`, each result inserted verbatim. Bundled hooks wrap theirs in `<context script="NAME">`.
 
-A hook changes the lifecycle's outcome by writing an `action` line to fd 3. The last action wins and applies only after exit 0. Without an action, the lifecycle proceeds.
+A hook changes the lifecycle's outcome by writing an `action` line to fd 3. The last action from that hook wins and applies only after exit 0. Without an action, the next hook runs.
 
 ### Lifecycle reference
 

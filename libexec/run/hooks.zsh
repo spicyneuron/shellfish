@@ -107,9 +107,8 @@ sf_run_hook_trailing() {
   [[ -z $settled[record] ]] || sf_run_hook_settle "$settled[record]" "$settled[model_feedback]"
 }
 
-# Run the lifecycle's first hook. Each later one is the parent of the one before,
-# reached through SHELLFISH_PARENT_HOOK. Return the last action's fields in
-# reply after appending every settled record; no action leaves them empty.
+# Run each hook with the lifecycle's original input and arguments. A successful
+# action ends the list; no action leaves reply empty.
 sf_run_hooks() {
   setopt local_options no_err_exit
   local session=$1 lifecycle=$2 content=$3 turn_state=$4
@@ -117,7 +116,7 @@ sf_run_hooks() {
   local command input config_dir directory='' error=''
   local -a hooks environment
   local -A process
-  integer max_capture
+  integer max_capture model_feedback=0
 
   SF_RUN_HOOK_ERROR=''
   SF_HOOK_RESULT=( action '' reason '' payload '' live 0 )
@@ -132,12 +131,7 @@ sf_run_hooks() {
   }
   hooks=( ${(f)SF_HOOK_PLAN[hooks]} )
   (( ${#hooks} )) || return 0
-  command=$hooks[1]
   max_capture=$SF_HOOK_PLAN[max_capture]
-  [[ -f $command && -x $command ]] || {
-    SF_RUN_HOOK_ERROR="hook command is not executable: $command"
-    return 1
-  }
   sf_environment_load || {
     SF_RUN_HOOK_ERROR=$SF_ENVIRONMENT_ERROR
     return 1
@@ -162,54 +156,56 @@ sf_run_hooks() {
   else
     environment=( -u SHELLFISH_TURN_ID -u SHELLFISH_TURN_STATE "${environment[@]}" )
   fi
-  # libexec/run/parent-hook reopens the input for each parent in turn.
-  if (( ${#hooks} > 1 )); then
-    environment+=( "SHELLFISH_PARENT_HOOK=$SF_ROOT/libexec/run/parent-hook"
-      "SHELLFISH_PARENT_HOOKS=${(F)hooks[2,-1]}" "SHELLFISH_HOOK_INPUT=$input" )
-  else
-    environment=( -u SHELLFISH_PARENT_HOOK "${environment[@]}" )
-  fi
   if ! print -rn -- "$content" >"$input"; then
     error="cannot prepare $lifecycle hook input"
-  elif ! sf_scratch_directory hook; then
-    error='cannot prepare hook capture'
   else
-    directory=$REPLY
-    SF_HOOK_RESULT=( session "$session" lifecycle "$lifecycle" error '' live 0
-      model_feedback 0 view '{}' owned false preview null action '' reason '' payload '' )
-    if ! sf_process_run "$directory" "${SF_RUN[cwd]:A}" "$input" "$max_capture" \
-        sf_run_hook_line /usr/bin/env "${environment[@]}" "$command" "$@"; then
-      error=$SF_PROCESS_ERROR
-    else
-      process=( "${reply[@]}" )
-      if (( process[interrupted] )); then
-        SF_RUN[signal_status]=$process[exit_code]
-        error="cannot run $lifecycle hook"
-      elif [[ $SF_HOOK_RESULT[error] == invalid ]]; then
-        error="$lifecycle hook returned invalid control: $command"
-      elif [[ -n $SF_HOOK_RESULT[error] ]]; then
-        error=$SF_HOOK_RESULT[error]
-      elif (( process[exit_code] )); then
-        error="$lifecycle hook failed with status $process[exit_code]: $command"
-        [[ ! -s $directory/stderr ]] || error+=": $(<"$directory/stderr")"
-      elif [[ $SF_HOOK_RESULT[owned] != true ]] &&
-          (( process[stdout_bytes] + process[stderr_bytes] > max_capture )) ||
-          (( process[control_bytes] > max_capture )); then
-        error="$lifecycle hook output exceeds capture limit: $command"
+    for command in "${hooks[@]}"; do
+      [[ -f $command && -x $command ]] || {
+        error="hook command is not executable: $command"
+        break
+      }
+      sf_scratch_directory hook || { error='cannot prepare hook capture'; break; }
+      directory=$REPLY
+      process=()
+      SF_HOOK_RESULT=( session "$session" lifecycle "$lifecycle" error '' live 0
+        model_feedback 0 view '{}' owned false preview null action '' reason '' payload '' )
+      if ! sf_process_run "$directory" "${SF_RUN[cwd]:A}" "$input" "$max_capture" \
+          sf_run_hook_line /usr/bin/env "${environment[@]}" "$command" "$@"; then
+        error=$SF_PROCESS_ERROR
       else
-        sf_run_hook_trailing "$directory" || error=$REPLY
+        process=( "${reply[@]}" )
+        if (( process[interrupted] )); then
+          SF_RUN[signal_status]=$process[exit_code]
+          error="cannot run $lifecycle hook"
+        elif [[ $SF_HOOK_RESULT[error] == invalid ]]; then
+          error="$lifecycle hook returned invalid control: $command"
+        elif [[ -n $SF_HOOK_RESULT[error] ]]; then
+          error=$SF_HOOK_RESULT[error]
+        elif (( process[exit_code] )); then
+          error="$lifecycle hook failed with status $process[exit_code]: $command"
+          [[ ! -s $directory/stderr ]] || error+=": $(<"$directory/stderr")"
+        elif [[ $SF_HOOK_RESULT[owned] != true ]] &&
+            (( process[stdout_bytes] + process[stderr_bytes] > max_capture )) ||
+            (( process[control_bytes] > max_capture )); then
+          error="$lifecycle hook output exceeds capture limit: $command"
+        else
+          sf_run_hook_trailing "$directory" || error=$REPLY
+        fi
       fi
-    fi
+      rm -rf -- "$directory"
+      directory=''
+      # A draft that nothing settled leaves no trace.
+      if (( SF_HOOK_RESULT[live] && ! process[interrupted] )); then
+        sf_run_emit '{"type":"_draft","lifecycle":"'$lifecycle'","id":"'$SF_RUN[hook_id]'","user_text":""}' ||
+          error=${error:-cannot emit hook draft}
+      fi
+      (( model_feedback |= SF_HOOK_RESULT[model_feedback] ))
+      [[ -z $error && -z $SF_HOOK_RESULT[action] ]] || break
+    done
   fi
   rm -f -- "$input"
-  [[ -z $directory ]] || rm -rf -- "$directory"
-  # A draft that nothing settled leaves no trace.
-  if (( SF_HOOK_RESULT[live] && ! process[interrupted] )); then
-    sf_run_emit '{"type":"_draft","lifecycle":"'$lifecycle'","id":"'$SF_RUN[hook_id]'","user_text":""}' ||
-      error=${error:-cannot emit hook draft}
-  fi
   if [[ -z $error && $lifecycle == stop && $SF_HOOK_RESULT[action] == continue ]] &&
-      (( ! SF_HOOK_RESULT[model_feedback] )); then
+      (( ! model_feedback )); then
     error='stop hook continued without model feedback'
   fi
   [[ -z $error ]] || { SF_RUN_HOOK_ERROR=$error; return 1; }

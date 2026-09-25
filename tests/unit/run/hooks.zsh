@@ -321,31 +321,65 @@ jq -eRn '
 ' <"$stream" >/dev/null || fail 'stop continuation without feedback was not rejected'
 assert_canonical_session "$session"
 
-# Each hook reaches its parent with the original stdin, to any depth, and their
-# fd 3 lines interleave in order.
+# Each hook receives the original input and settles before the next starts.
 typeset delegate="$tmp/delegate"
 cat >"$delegate" <<'ZSH'
 #!/usr/bin/env zsh
 input=$(cat)
-print -r -u3 -- "{\"user_text\":\"${0:t} before: $input\",\"finalize\":true}"
-[[ -z ${SHELLFISH_PARENT_HOOK-} ]] || "$SHELLFISH_PARENT_HOOK" "$@" || exit
-print -r -u3 -- "{\"user_text\":\"${0:t} after\",\"finalize\":true}"
+[[ $# == 0 && $input == ordered ]] || exit 2
+if [[ ${0:t} != one ]]; then
+  jq -e -s --arg prev "$PREVIOUS" \
+    'any(.[]; .type == "hook_result" and .user_text == $prev)' \
+    "$SHELLFISH_SESSION" >/dev/null || exit 3
+fi
+print -r -u3 -- "{\"user_text\":\"${0:t}: $input\",\"finalize\":true}"
 ZSH
 chmod +x "$delegate"
 ln -s delegate "$tmp/one"
 ln -s delegate "$tmp/two"
 ln -s delegate "$tmp/three"
+export PREVIOUS='one: ordered'
 SF_TEST_PROFILE=$(jq -c --arg dir "$tmp" '
   .hooks.stop=[] | .hooks.user_prompt_submit=[$dir + "/one", $dir + "/two", $dir + "/three"]
 ' <<<"$SF_TEST_PROFILE")
 session="$tmp/delegate.jsonl"
 sf_test_session "$session"
-sf_test_run parents "$session" >"$stream" || fail 'delegating hooks failed'
+sf_test_run ordered "$session" >"$stream" || fail 'ordered hooks failed'
 jq -e -s '
-  map(select(.type == "hook_result") | .user_text) == [
-    "one before: parents", "two before: parents", "three before: parents",
-    "three after", "two after", "one after"]
-' "$session" >/dev/null || fail 'delegation lost stdin or reordered fd 3'
+  map(select(.type == "hook_result") | .user_text) ==
+    ["one: ordered", "two: ordered", "three: ordered"]
+' "$session" >/dev/null || fail 'hook list lost stdin or reordered fd 3'
+
+# An action stops the list, and a later failure keeps earlier settled output.
+rm "$tmp/two"
+cat >"$tmp/two" <<'ZSH'
+#!/usr/bin/env zsh
+print -r -u3 -- '{"user_text":"terminal","finalize":true,"action":"block"}'
+ZSH
+chmod +x "$tmp/two"
+session="$tmp/terminal.jsonl"
+sf_test_session "$session"
+sf_test_run ordered "$session" >"$stream" || fail 'terminal hook failed'
+jq -e -s '
+  map(select(.type == "hook_result") | .user_text) == ["one: ordered", "terminal"] and
+  (any(.[]; .type == "user") | not)
+' "$session" >/dev/null || fail 'terminal action did not stop later hooks'
+
+cat >"$tmp/two" <<'ZSH'
+#!/usr/bin/env zsh
+print -r -u3 -- '{"user_text":"failed section","finalize":true}'
+exit 7
+ZSH
+chmod +x "$tmp/two"
+session="$tmp/later-error.jsonl"
+sf_test_session "$session"
+integer later_status=0
+sf_test_run ordered "$session" >"$stream" 2>"$tmp/later-error.stderr" || later_status=$?
+(( later_status == 1 )) || fail 'later hook failure did not fail the turn'
+jq -e -s '
+  map(select(.type == "hook_result") | .user_text) == ["one: ordered", "failed section"] and
+  .[-1].type == "error"
+' "$session" >/dev/null || fail 'later hook failure lost settled output'
 
 # The bundled sandbox hook compares stored grants with shell-resolved input.
 typeset sandbox_hook="$ROOT/share/profiles/default/hooks/sandbox"
