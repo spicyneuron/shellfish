@@ -74,7 +74,7 @@ jq -n -L "$ROOT" -e '
   profile_select({p:{backend:{adapter:"openai"},request:{model:"base"},sandbox:false}};
     ["p"]; "cli"; {seed:1}; "other") == {
     backend:{adapter:"other",insecure_tls:false,http_timeout:3600,http_stall:300},
-    request:{model:"cli",seed:1}, system:[], tools:[], hooks:{}, sandbox:false,
+    request:{model:"cli",seed:1}, system:[], tools:[], hooks:{}, env:{}, sandbox:false,
     sandbox_read_paths:[], sandbox_write_paths:[], max_requests_per_turn:100,
     max_tool_calls_per_request:25, max_capture_bytes:32768}' >/dev/null
 # "p" has no model; "q" has no adapter.

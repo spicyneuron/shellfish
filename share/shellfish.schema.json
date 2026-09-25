@@ -13,6 +13,16 @@
         "$ref": "#/$defs/name"
       }
     },
+    "env": {
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+      },
+      "additionalProperties": {
+        "type": "string",
+        "pattern": "^[^\u0000]*$"
+      }
+    },
     "backend": {
       "type": "object",
       "additionalProperties": false,

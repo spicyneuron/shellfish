@@ -33,6 +33,11 @@ def component_environment:
   all(.[]; type == "string" and test("^[A-Za-z_][A-Za-z0-9_]*$")) and
   length == (unique | length);
 
+def profile_environment:
+  type == "object" and
+  all(keys[]; test("^[A-Za-z_][A-Za-z0-9_]*$")) and
+  all(.[]; nul_free_string);
+
 def hook_names:
   ["session_start", "user_prompt_submit", "permission_request", "pre_tool_use",
    "post_tool_use", "stop"];
@@ -87,7 +92,7 @@ def reference_list: type == "array" and all(.[]; nonempty_control_free_string);
 # One profile file. "backend" and "hooks" are inline objects rather than names
 # into separate maps.
 def config_profile($path):
-  config_object($path; ["$schema", "backend", "context_window", "extend", "hooks",
+  config_object($path; ["$schema", "backend", "context_window", "env", "extend", "hooks",
     "max_capture_bytes", "max_requests_per_turn", "max_tool_calls_per_request",
     "request", "sandbox", "sandbox_read_paths", "sandbox_write_paths", "system", "tools"]) |
   config_assert((has("extend") | not) or (.extend | type == "array" and
@@ -97,6 +102,8 @@ def config_profile($path):
     $path + ["context_window"]; "must be null or a positive integer") |
   config_assert((has("request") | not) or (.request | type == "object");
     $path + ["request"]; "must be an object") |
+  config_assert((has("env") | not) or (.env | profile_environment);
+    $path + ["env"]; "must map variable names to strings") |
   reduce ["system", "tools"][] as $field (.;
     config_assert((has($field) | not) or (.[$field] | reference_list);
       $path + [$field]; "must be references")) |
@@ -183,7 +190,7 @@ def profile_select($profiles; $names; $model; $request; $backend):
   ((.tools // []) as $tools |
     if ($tools | length) == ($tools | unique | length) then .
     else error("profile tools must be unique: " + ($tools | join(", "))) end) |
-  {system:[], tools:[], hooks:{}, sandbox:true, sandbox_read_paths:[],
+  {system:[], tools:[], hooks:{}, env:{}, sandbox:true, sandbox_read_paths:[],
    sandbox_write_paths:[], max_requests_per_turn:100, max_tool_calls_per_request:25,
    max_capture_bytes:32768,
    backend:{insecure_tls:false, http_timeout:3600, http_stall:300}} * .;
@@ -228,7 +235,7 @@ def profile_expand($share; $home):
 # reference resolved.
 def canonical_profile:
   (try (config_profile([]) | true) catch false) and
-  (keys - ["context_window"]) == ["backend", "hooks", "max_capture_bytes",
+  (keys - ["context_window"]) == ["backend", "env", "hooks", "max_capture_bytes",
     "max_requests_per_turn", "max_tool_calls_per_request", "request", "sandbox",
     "sandbox_read_paths", "sandbox_write_paths", "system", "tools"] and
   (.backend | keys == ["adapter", "endpoint", "http_stall", "http_timeout", "insecure_tls"]) and

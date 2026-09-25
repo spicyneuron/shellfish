@@ -44,7 +44,7 @@ jq -e --arg adapter "$ROOT/share/backends/openai" '
   .backend == {adapter:$adapter,endpoint:"https://api.openai.com/v1/chat/completions",
     insecure_tls:false,http_timeout:3600,http_stall:300} and
   del(.request, .context_window, .backend) == {
-    system:[],tools:[],hooks:{},sandbox:true,sandbox_read_paths:[],sandbox_write_paths:[],
+    system:[],tools:[],hooks:{},env:{},sandbox:true,sandbox_read_paths:[],sandbox_write_paths:[],
     max_requests_per_turn:100,max_tool_calls_per_request:25,max_capture_bytes:32768
   }
 ' <<<"$profile" >/dev/null
@@ -272,14 +272,36 @@ sf_environment_load OPENAI_API_KEY
 sf_environment_load
 [[ ${(oj: :)SF_ENVIRONMENT_VALUES} == 'ANTHROPIC_API_KEY=other-file OPENAI_API_KEY=from-file' ]]
 
+# Profile env merges by key and overrides .env.
+sf_test_profile env-base '{"extend":["work"],"env":{"OPENAI_API_KEY":"base","OTHER":"kept"}}'
+sf_test_profile env-child '{"extend":["env-base"],"env":{"OPENAI_API_KEY":"profile"}}'
+sf_profile_resolve_args -p env-child
+profile=$REPLY
+jq -e '.env == {OPENAI_API_KEY:"profile",OTHER:"kept"}' <<<"$profile" >/dev/null
+sf_environment_load OPENAI_API_KEY "$(jq -c '.env' <<<"$profile")"
+[[ ${(j: :)SF_ENVIRONMENT_VALUES} == 'OPENAI_API_KEY=profile' ]]
+sf_environment_load '' "$(jq -c '.env' <<<"$profile")"
+[[ ${SF_ENVIRONMENT_VALUES[(Ie)ANTHROPIC_API_KEY=other-file]} -gt 0 &&
+   ${SF_ENVIRONMENT_VALUES[(Ie)OPENAI_API_KEY=profile]} -gt 0 &&
+   ${SF_ENVIRONMENT_VALUES[(Ie)OTHER=kept]} -gt 0 && ${#SF_ENVIRONMENT_VALUES} == 3 ]]
+sf_environment_load OTHER '{"OTHER":"line one\nline two\n"}'
+[[ $SF_ENVIRONMENT_VALUES[1] == $'OTHER=line one\nline two\n' ]]
+
 # Exported values win: selected names carry them, and a full load leaves them
 # to inheritance.
 export OPENAI_API_KEY=''
-sf_environment_load OPENAI_API_KEY
+sf_environment_load OPENAI_API_KEY '{"OPENAI_API_KEY":"profile"}'
 [[ ${(j: :)SF_ENVIRONMENT_VALUES} == 'OPENAI_API_KEY=' ]]
-sf_environment_load
-[[ ${(j: :)SF_ENVIRONMENT_VALUES} == 'ANTHROPIC_API_KEY=other-file' ]]
+sf_environment_load '' '{"OPENAI_API_KEY":"profile"}'
+[[ ${(oj: :)SF_ENVIRONMENT_VALUES} == 'ANTHROPIC_API_KEY=other-file' ]]
 unset OPENAI_API_KEY
+
+for value in '{"BAD-NAME":"x"}' '{"GOOD":2}' '{"GOOD":"\u0000"}'; do
+  sf_test_profile bad-env '{"extend":["work"],"env":'"$value"'}'
+  if sf_profile_resolve_args -p bad-env; then
+    fail "invalid profile env was accepted: $value"
+  fi
+done
 
 print -r -- 'invalid line' >>"$environment_file"
 if sf_environment_load OPENAI_API_KEY; then

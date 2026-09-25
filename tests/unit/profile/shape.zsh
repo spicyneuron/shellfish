@@ -108,6 +108,7 @@ valid_header=$(jq -cn '
       },
       tools: ["@tools/shell", "~/tools/jira"],
       hooks: {stop: ["/bin/hook", "@hooks/stop"]},
+      env: {},
       sandbox: true, sandbox_read_paths: ["~/cache"], sandbox_write_paths: [],
       max_requests_per_turn: 50, max_tool_calls_per_request: 20,
       max_capture_bytes: 32768
@@ -117,6 +118,7 @@ valid_header=$(jq -cn '
 print -r -- "$valid_header" | schema_eval 'canonical_session_header' >/dev/null
 for patch in '.extra=true' '.profile.extra=true' '.profile.extend=["default"]' \
     '.profile."$schema"="x"' 'del(.profile.max_capture_bytes)' 'del(.profile.hooks)' \
+    'del(.profile.env)' '.profile.env.BAD=2' \
     'del(.profile.backend.endpoint)' 'del(.profile.request.model)' \
     '.profile.hooks.stop=[{command:"/bin/hook"}]' '.profile.system=["relative.md"]' \
     '.profile.tools=["shell"]' '.profile.tools=["/a/shell","/b/shell"]' \
