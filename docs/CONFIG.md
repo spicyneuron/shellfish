@@ -147,8 +147,6 @@ Its harness enables sandboxing, uses the limit defaults above, and exposes:
 | `search_web` | Search through Exa |
 | `fetch_url` | Fetch a page as Markdown through Jina Reader |
 
-The bundled `agent` tool is opt-in: add it to a profile's tools list. It starts a hidden, durable child from a named profile or a completed parent prefix, either synchronously or with `background: true`. Inspect by ID to read durable progress, or continue a settled child with a new task using its frozen profile. Background turns return after launch, not after an answer. Its `active` value is a parent admission slot, not verified process liveness; a final-looking answer may remain uncertain if a stop hook could continue the turn. Inspection releases a slot only when the transcript establishes a settled outcome. The default limit is four active slots per parent; `SHELLFISH_MAX_ACTIVE_AGENTS` sets a positive-integer limit for each call.
-
 The bundled `session_start` records context once, one block per part:
 
 | Hook | Context |
@@ -174,6 +172,30 @@ The bundled `user_prompt_submit` handles most interactive commands:
 
 It also compacts automatically near a known context-window limit and reports Git identity changes before ordinary prompts. Client-owned `/refresh`, `/quit`, and `/queue` commands do not run a turn.
 
-The optional `review` part uses one inference to compare requested risk with user authorization; failures deny. The bundled `coding` profile enables it, or set `"hooks": {"permission_request": ["review"]}`.
-
 `/compact` leaves the source unchanged and asks the client to open a summarized child. Automatic compaction preserves the interrupted prompt as an editable draft.
+
+## Optional bundled components
+
+### Agent tool
+
+The `agent` tool lets you delegate a separate task to another agent, so work can proceed independently of your current conversation. You can wait for its result, let it run in the background, check its progress, or give it a follow-up task once it finishes. It is opt-in; add it to a profile's tools list. For example, extend the bundled `@default` and keep its existing tools while adding `agent`:
+
+```jsonc
+{
+  "extend": ["@default"],
+  "tools": ["...", "agent"]
+}
+```
+
+Background work returns control after launch; the default limit is four active child agents per parent. Set `SHELLFISH_MAX_ACTIVE_AGENTS` to change that positive-integer limit.
+
+### Review hook
+
+The `review` hook helps decide whether a requested sandbox bypass is justified by the user's instructions. If it cannot approve the request, the bypass is denied and the tool is not run. The default profile does not enable it. The bundled `coding` profile's `permission_request` script delegates to `review`; to enable the hook in another profile, add it to `permission_request`:
+
+```jsonc
+{
+  "extend": ["@default"],
+  "hooks": {"permission_request": ["review"]}
+}
+```
