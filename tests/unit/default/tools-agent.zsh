@@ -384,7 +384,7 @@ fi
 typeset background_parent="$tmp/background-parent.jsonl" background_id background_child
 export SF_AGENT_ID_FILE="$tmp/agent-id"
 sf_test_session "$background_parent"
-if [[ $OSTYPE == darwin* ]]; then
+if [[ $OSTYPE == darwin* || $OSTYPE == linux* && $+commands[setsid] -ne 0 ]]; then
 sf_test_run 'background parent' "$background_parent" >"$stream" ||
   fail 'background parent turn failed'
 background_id=$(jq -r -s '[.[] | select(.type == "state" and
@@ -458,7 +458,7 @@ fi
 
 # A stop hook can continue after a final-looking assistant, so that record
 # alone cannot release a background slot.
-if [[ $OSTYPE == darwin* ]]; then
+if [[ $OSTYPE == darwin* || $OSTYPE == linux* && $+commands[setsid] -ne 0 ]]; then
 typeset uncertain_id=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb uncertain
 uncertain="$tmp/.agent-$uncertain_id.jsonl"
 cp "$background_child" "$uncertain"

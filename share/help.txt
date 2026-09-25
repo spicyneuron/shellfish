@@ -9,7 +9,7 @@ Usage:
 Run output:
   --json               Print the final result and usage as JSON
   --jsonl              Stream all turn events as JSON Lines
-  --background         Start one detached turn; print its session path (macOS only)
+  --background         Start one detached turn; print its session path
 
 New sessions:
   -p, --profile NAME    Select a profile; @default is bundled (repeatable, composes)

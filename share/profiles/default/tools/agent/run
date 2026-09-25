@@ -162,7 +162,7 @@ if [[ $background == true ]]; then
   result=$?
   if (( result )); then
     # Only diagnostics emitted before worker launch prove the slot is unused.
-    if grep -Eq '^shellfish: (--background requires macOS /usr/bin/script|cannot prepare background turn|cannot prepare background acknowledgement)$' "$launch_error"; then
+    if grep -Eq '^shellfish: (--background requires macOS /usr/bin/script or Linux setsid|cannot prepare background turn|cannot prepare background acknowledgement)$' "$launch_error"; then
       print -r -u3 -- "$(jq -cn --arg name "agents/$agent_id" \
         --arg session ".agent-$agent_id.jsonl" \
         '{state:[{name:$name,value:{session:$session,active:false}}]}')" ||

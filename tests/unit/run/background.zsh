@@ -12,10 +12,12 @@ sf_test_session "$session"
 [[ ! -s $ack ]] || fail '--background --jsonl wrote stdout'
 grep -q 'cannot be combined with --jsonl' "$err" || fail 'missing --jsonl conflict diagnostic'
 
-if [[ $OSTYPE != darwin* ]]; then
+if [[ $OSTYPE != darwin* && $OSTYPE != linux* ]] ||
+    { [[ $OSTYPE == linux* ]] && (( ! $+commands[setsid] )); }; then
   "$ROOT/bin/shellfish" run --background --session "$session" hello >"$ack" 2>"$err" &&
-    fail 'background launch unexpectedly succeeded off macOS'
-  grep -q 'requires macOS' "$err" || fail 'missing unsupported-platform diagnostic'
+    fail 'background launch unexpectedly succeeded without a launcher'
+  grep -q 'requires macOS /usr/bin/script or Linux setsid' "$err" ||
+    fail 'missing unsupported-platform diagnostic'
   exit 0
 fi
 
@@ -43,14 +45,16 @@ import sys
 
 run, session = sys.argv[1:]
 process = subprocess.Popen(
-    [run, "run", "--background", "--session", session, "survive delay"],
+    ["/bin/zsh", "-c", '"$@" || exit; sleep 10', "--", run, "run",
+     "--background", "--session", session, "survive delay"],
     stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
     start_new_session=True,
 )
-out, err = process.communicate(timeout=15)
-assert process.returncode == 0, err
-assert out.strip() == session, out
+ack = process.stdout.readline()
+assert ack.strip() == session, (ack, process.stderr.read())
+assert process.poll() is None, "initiating group exited before cancellation"
 os.killpg(process.pid, signal.SIGTERM)
+assert process.wait(timeout=15) != 0, "initiating group ignored cancellation"
 PY
 
 waited=0

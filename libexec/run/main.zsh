@@ -13,6 +13,7 @@ source "$SF_ROOT/lib/options.zsh"
 sf_run_main() {
   local requested_session='' input='' prompt='' arity=''
   local -a positional=() create_args=()
+  local -a background_launcher=()
   local -A message
   integer create_only=0 json=0 jsonl=0 background=0 override=0 take=0
 
@@ -81,10 +82,14 @@ sf_run_main() {
   (( ! background || ! json )) || { sf_die '--background cannot be combined with --json'; return 2; }
   (( ! background || ! jsonl )) || { sf_die '--background cannot be combined with --jsonl'; return 2; }
   (( ! background || ! create_only )) || { sf_die '--background cannot be combined with --session-create'; return 2; }
-  (( ! background )) || [[ $OSTYPE == darwin* && -x /usr/bin/script ]] || {
-    sf_die '--background requires macOS /usr/bin/script'
-    return 2
-  }
+  if (( background )); then
+    source "$SF_ROOT/lib/process.zsh"
+    sf_process_isolation_launcher || {
+      sf_die '--background requires macOS /usr/bin/script or Linux setsid'
+      return 2
+    }
+    background_launcher=( "${reply[@]}" )
+  fi
   if (( create_only )); then
     [[ -z $requested_session ]] || {
       sf_die '--session-create cannot be combined with --session'
@@ -212,7 +217,7 @@ sf_run_main() {
       return 1
     }
     SHELLFISH_BACKGROUND_WORKER=1 SHELLFISH_BACKGROUND_INPUT="$input_file" \
-      /usr/bin/script -q -e /dev/null "$commands[zsh]" -f -c \
+      "${background_launcher[@]}" "$commands[zsh]" -f -c \
       'trap "" HUP; exec "$@" </dev/null >/dev/null 2>&1 3>&-' -- \
       "$SF_ROOT/libexec/run/main.zsh" --jsonl --session "$session" \
       </dev/null >/dev/null 2>&1 3>&- 4>&4 &!

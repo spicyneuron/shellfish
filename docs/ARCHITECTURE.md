@@ -47,7 +47,7 @@ One session reader defines record validity and ordering, then derives pending wo
 
 One `shellfish run` process owns the complete transition from user message to final response. There is no resident agent process.
 
-On macOS, `shellfish run --background` starts an isolated one-turn process and returns the absolute session path once it starts. The acknowledgement does not mean the prompt was persisted or the turn completed; inspect the transcript for durable progress. Background output is not streamed.
+On macOS and Linux, `shellfish run --background` starts an isolated one-turn process and returns the absolute session path once it starts. The acknowledgement does not mean the prompt was persisted or the turn completed; inspect the transcript for durable progress. Background output is not streamed.
 
 ```text
 open and recover session

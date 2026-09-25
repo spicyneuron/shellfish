@@ -12,6 +12,17 @@ sf_process_fail() {
   return 1
 }
 
+sf_process_isolation_launcher() {
+  if [[ $OSTYPE == linux* ]] && (( $+commands[setsid] )); then
+    reply=( "$commands[setsid]" )
+  elif [[ $OSTYPE == darwin* && -x /usr/bin/script ]]; then
+    reply=( /usr/bin/script -q -e /dev/null )
+  else
+    reply=()
+    return 1
+  fi
+}
+
 sf_process_isolated_run() {
   emulate -L zsh
   setopt no_aliases no_bg_nice no_monitor no_multios
@@ -35,26 +46,23 @@ sf_process_isolated_run() {
 sf_process_isolated_command() {
   local group_file=$1 status_file=$2 working=$3 input=$4 stdout=$5 stderr=$6
   local control=$7 runner script_value=''
+  local -a launcher
   shift 7
   integer script_set=-1
   runner='source "$1" || exit; shift; sf_process_isolated_run "$@"'
-  if [[ $OSTYPE == linux* ]] && (( $+commands[setsid] )); then
-    reply=( "$commands[setsid]" "$commands[zsh]" -f -c "$runner" --
-      "$SF_ROOT/lib/process.zsh" "$group_file" "$status_file" "$working" "$input"
-      "$stdout" "$stderr" "$control" $script_set "$script_value" "$@" )
-  elif [[ $OSTYPE == darwin* && -x /usr/bin/script ]]; then
+  sf_process_isolation_launcher || return 1
+  launcher=( "${reply[@]}" )
+  if [[ $OSTYPE == darwin* ]]; then
     if [[ ${parameters[SCRIPT]-} == *export* ]]; then
       script_set=1
       script_value=$SCRIPT
     else
       script_set=0
     fi
-    reply=( /usr/bin/script -q -e /dev/null "$commands[zsh]" -f -c "$runner" --
-      "$SF_ROOT/lib/process.zsh" "$group_file" "$status_file" "$working" "$input"
-      "$stdout" "$stderr" "$control" $script_set "$script_value" "$@" )
-  else
-    return 1
   fi
+  reply=( "${launcher[@]}" "$commands[zsh]" -f -c "$runner" --
+    "$SF_ROOT/lib/process.zsh" "$group_file" "$status_file" "$working" "$input"
+    "$stdout" "$stderr" "$control" $script_set "$script_value" "$@" )
 }
 
 sf_process_wait() {
