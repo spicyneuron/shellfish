@@ -132,3 +132,65 @@ if sf_profile_resolve_args; then
   fail 'bare name resolved outside the profile folders'
 fi
 [[ $SF_PROFILE_ERROR == 'cannot resolve system reference: general.md' ]]
+
+# Flat profiles select components from fixed kind directories, independent of
+# which profile supplied the reference.
+(
+  SF_SHARE="$tmp/flat-share"
+  mkdir -p "$SF_SHARE/profiles/deep" "$SF_SHARE/system" "$SF_SHARE/hooks" \
+    "$SF_SHARE/backends/demo" "$SF_TEST_CONFIG/system" \
+    "$SF_TEST_CONFIG/profiles/deep" "$SF_TEST_CONFIG/tools/probe"
+  print -r -- 'bundled' >"$SF_SHARE/system/general.md"
+  print -r -- 'configured' >"$SF_TEST_CONFIG/system/general.md"
+  print -r -- '#!/bin/sh' >"$SF_SHARE/hooks/stop"
+  print -r -- '#!/bin/sh' >"$SF_SHARE/backends/demo/run"
+  print -r -- '#!/bin/sh' >"$SF_TEST_CONFIG/tools/probe/run"
+  chmod +x "$SF_SHARE/hooks/stop" "$SF_SHARE/backends/demo/run" \
+    "$SF_TEST_CONFIG/tools/probe/run"
+  print -r -- '{"endpoint":"https://example.invalid/test"}' \
+    >"$SF_SHARE/backends/demo/manifest.jsonc"
+  print -r -- '{"description":"probe","input_schema":{"type":"object"},"sandbox":false}' \
+    >"$SF_TEST_CONFIG/tools/probe/manifest.jsonc"
+  mkdir -p "$SF_TEST_CONFIG/tools/unused"
+  print -r -- 'not a manifest' >"$SF_TEST_CONFIG/tools/unused/manifest.jsonc"
+  print -r -- '{"backend":{"adapter":"@backends/demo"},"request":{"model":"bundled"}}' \
+    >"$SF_SHARE/profiles/default.jsonc"
+  print -r -- '{"backend":{"adapter":"@backends/demo"},"request":{"model":"mine"},
+    "system":["general.md","@system/general.md"],"tools":["probe"],
+    "hooks":{"stop":["@hooks/stop"]}}' >"$SF_TEST_CONFIG/profiles/default.jsonc"
+  print -r -- '{"extend":["default"],"request":{"model":"variant"}}' \
+    >"$SF_TEST_CONFIG/profiles/deep/variant.jsonc"
+  print -r -- '{"extend":["@default"],"request":{"model":"bundled-variant"}}' \
+    >"$SF_SHARE/profiles/deep/variant.jsonc"
+  sf_profile_resolve_args -p deep/variant
+  jq -e --arg configured "${SF_TEST_CONFIG:A}" --arg bundled "${SF_SHARE:A}" '
+    .request.model == "variant" and
+    .system == [$configured + "/system/general.md", $bundled + "/system/general.md"] and
+    .tools == [$configured + "/tools/probe"] and
+    .hooks.stop == [$bundled + "/hooks/stop"] and
+    .backend.adapter == ($bundled + "/backends/demo")
+  ' <<<"$REPLY" >/dev/null
+  sf_profile_resolve_args -p @deep/variant
+  jq -e '.request.model == "bundled-variant" and .system == []' <<<"$REPLY" >/dev/null
+  sf_profile_resolve_args -p deep/variant -m overridden
+  jq -e '.request.model == "overridden"' <<<"$REPLY" >/dev/null
+  print -r -- '{"extend":["default"],"tools":["missing"]}' \
+    >"$SF_TEST_CONFIG/profiles/bad.jsonc"
+  if sf_profile_resolve_args -p bad; then
+    fail 'missing flat component was accepted'
+  fi
+  [[ $SF_PROFILE_ERROR == 'cannot resolve tools reference: missing' ]]
+  print -r -- '{"extend":["default"],"hooks":{"stop":["general.md"]}}' \
+    >"$SF_TEST_CONFIG/profiles/bad.jsonc"
+  if sf_profile_resolve_args -p bad; then
+    fail 'invalid flat hook was accepted'
+  fi
+  [[ $SF_PROFILE_ERROR == 'cannot resolve hooks reference: general.md' ]]
+  print -r -- 'not executable' >"$SF_SHARE/hooks/disabled"
+  print -r -- '{"extend":["default"],"hooks":{"stop":["@hooks/disabled"]}}' \
+    >"$SF_TEST_CONFIG/profiles/bad.jsonc"
+  if sf_profile_resolve_args -p bad; then
+    fail 'non-executable flat hook was accepted'
+  fi
+  [[ $SF_PROFILE_ERROR == 'invalid hooks reference: @hooks/disabled' ]]
+)

@@ -141,11 +141,13 @@ def profile_discover($scripts):
           ((.hooks // {}) | type == "object" and (has($hook) | not))
       then .hooks[$hook] = [$hooks + $hook, "..."] else . end));
 
-# Profile files keyed by path become their paths relative to the profile root.
+# Profile files keyed by path become their names relative to the profile root.
 def profile_map($bundled; $configured):
   with_entries(.key |= (if startswith($bundled + "/") then
       "@" + ltrimstr($bundled + "/")
-    else ltrimstr($configured + "/") end | rtrimstr("/profile.jsonc")));
+    else ltrimstr($configured + "/") end |
+    if endswith("/profile.jsonc") then rtrimstr("/profile.jsonc")
+    else rtrimstr(".jsonc") end));
 
 # An unprefixed name prefers the configured folder; "@NAME" uses the bundled one.
 def profile_key($profiles):
@@ -207,16 +209,22 @@ def profile_paths(reference; path):
   profile_references(.[1] | reference) |
   .sandbox_read_paths |= map(path) | .sandbox_write_paths |= map(path);
 
-# Stored paths name bundled files "@NAME/...", files under HOME "~/...", and
+# Stored paths name bundled files "@KIND/...", files under HOME "~/...", and
 # anything else absolutely.
 def store_path($share; $home):
   if $share != "" and startswith($share + "/profiles/") then
     "@" + ltrimstr($share + "/profiles/")
+  elif $share != "" and startswith($share + "/") then
+    "@" + ltrimstr($share + "/")
   elif $home != "" and startswith($home + "/") then "~" + ltrimstr($home)
   else . end;
 
 def expand_path($share; $home):
-  if startswith("@") then $share + "/profiles/" + ltrimstr("@")
+  if startswith("@") then
+    if (ltrimstr("@") | startswith("profiles/")) then $share + "/" + ltrimstr("@")
+    elif (ltrimstr("@") | test("^(system|tools|hooks|backends)/")) then
+      $share + "/" + ltrimstr("@")
+    else $share + "/profiles/" + ltrimstr("@") end
   elif startswith("~/") then
     if $home == "" then error("cannot expand ~ without HOME")
     else $home + ltrimstr("~") end

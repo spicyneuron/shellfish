@@ -48,15 +48,25 @@ sf_profile_manifest() {
   fi
 }
 
-# A name resolves to the first folder, in precedence order, that holds it.
+# Flat component directories take precedence; folder lookup remains temporary.
 sf_profile_reference() {
-  local reference=$1 kind=$2 folder candidate=''
-  shift 2
+  local reference=$1 kind=$2 config_dir=$3 folder candidate=''
+  shift 3
   case $reference in
     /*) candidate=$reference ;;
     '~/'*) [[ -z ${HOME-} ]] || candidate="$HOME/${reference#\~/}" ;;
+    @$kind/*) candidate="$SF_SHARE/${reference#@}" ;;
     @*/*) candidate="$SF_SHARE/profiles/${reference#@}" ;;
     *)
+      for folder in "$config_dir" "$SF_SHARE"; do
+        [[ -e $folder/$kind/$reference || -L $folder/$kind/$reference ]] || continue
+        candidate="$folder/$kind/$reference"
+        break
+      done
+      if [[ -n $candidate ]]; then
+        REPLY=${candidate:A}
+        return 0
+      fi
       for folder; do
         [[ -e $folder/$kind/$reference || -L $folder/$kind/$reference ]] || continue
         candidate="$folder/$kind/$reference"
@@ -101,7 +111,7 @@ sf_profile_tools() {
 # reference. REPLY is the profile with absolute paths.
 sf_profile_resolve() {
   local profile_names=$1 model_override=$2 request_override=$3 backend_override=$4
-  local config_dir profile reference resolved manifest='' final
+  local config_dir profile reference resolved manifest='' final root candidate parent
   local -A decoded
   local -a files folders references resolutions=() scripts
 
@@ -109,7 +119,20 @@ sf_profile_resolve() {
   REPLY=''
   sf_environment_config_dir || sf_profile_fail "$SF_ENVIRONMENT_ERROR" || return
   config_dir=$REPLY
-  files=( "$SF_SHARE/profiles"/**/profile.jsonc(N-.) "$config_dir/profiles"/**/profile.jsonc(N-.) )
+  files=( "$SF_SHARE/profiles"/**/profile.jsonc(N-.) )
+  for root in "$SF_SHARE/profiles" "$config_dir/profiles"; do
+    [[ $root == $SF_SHARE/profiles ]] ||
+      files+=( "$config_dir/profiles"/**/profile.jsonc(N-.) )
+    for candidate in "$root"/**/*.jsonc(N-.); do
+      [[ $candidate:t == profile.jsonc ]] && continue
+      parent=${candidate:h}
+      while [[ $parent != $root ]]; do
+        [[ -f $parent/profile.jsonc ]] && break
+        parent=${parent:h}
+      done
+      [[ $parent == $root ]] && files+=( "$candidate" )
+    done
+  done
   sf_profile_read_files 'invalid profile' "${files[@]}" || return
   scripts=( "$SF_SHARE/profiles"/**/hooks/*(N-*) "$config_dir/profiles"/**/hooks/*(N-*) )
 
@@ -146,13 +169,13 @@ sf_profile_resolve() {
   # A reference carries no control characters, so newlines delimit the list and
   # a space separates each folder kind from its reference.
   for reference in "${references[@]}"; do
-    sf_profile_reference "${reference#* }" "${reference%% *}" "${folders[@]}" || {
+    sf_profile_reference "${reference#* }" "${reference%% *}" "$config_dir" "${folders[@]}" || {
       sf_profile_fail "cannot resolve ${reference%% *} reference: ${reference#* }"
       return
     }
     resolved=$REPLY
     case ${reference%% *} in
-      system) ;;
+      system) [[ -f $resolved && -r $resolved ]] ;;
       hooks) [[ -f $resolved && -x $resolved ]] ;;
       *) [[ -d $resolved && -x $resolved/run ]] ;;
     esac || {

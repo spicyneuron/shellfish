@@ -138,6 +138,21 @@ jq -L "$ROOT" -e --arg share /opt/sf/share --arg home /home/me '
   ($expanded | profile_store($share; $home)) == $stored
 ' <<<"$valid_header" >/dev/null || fail 'stored profile paths did not round-trip'
 
+# Flat bundled references use the installed share root, not profiles/default.
+jq -L "$ROOT" -e --arg share /opt/sf/share --arg home /home/me '
+  include "lib/profile";
+  .profile.system = ["@system/general.md"] |
+  .profile.backend.adapter = "@backends/openai" |
+  .profile.tools = ["@tools/shell", "~/tools/jira"] |
+  .profile.hooks.stop = ["@hooks/stop"] |
+  .profile as $stored |
+  ($stored | profile_expand($share; $home)) as $expanded |
+  $expanded.system == ["/opt/sf/share/system/general.md"] and
+  $expanded.backend.adapter == "/opt/sf/share/backends/openai" and
+  $expanded.tools[0] == "/opt/sf/share/tools/shell" and
+  ($expanded | profile_store($share; $home)) == $stored
+' <<<"$valid_header" >/dev/null || fail 'flat stored profile paths did not round-trip'
+
 # Tool manifests validate sandboxing.
 typeset valid_manifest
 valid_manifest=$(jq -cn '
