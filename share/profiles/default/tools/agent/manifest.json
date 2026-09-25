@@ -1,11 +1,11 @@
 {
-  "description": "Start a durable child agent with exactly one origin: a named profile for a fresh child, or fork=true for completed parent context. Set background=true to return after process start, without waiting for the answer. Inspect a child by agent_id; inspection reports only durable transcript evidence and may leave completion uncertain. Active means a parent admission slot, not verified process liveness. Add this tool to a profile's tools list to opt in.",
+  "description": "Start a durable child agent with exactly one origin: a named profile for a fresh child, or fork=true for completed parent context. Inspect or continue an associated child by agent_id; continue sends a new task only after its prior turn has settled. Set background=true on start or continue to return after process start, without waiting for the answer. Inspection reports only durable transcript evidence and may leave completion uncertain. Active means a parent admission slot, not verified process liveness. Add this tool to a profile's tools list to opt in.",
   "input_schema": {
     "type": "object",
     "additionalProperties": false,
     "required": ["operation"],
     "properties": {
-      "operation": {"type": "string", "enum": ["start", "inspect"]},
+      "operation": {"type": "string", "enum": ["start", "inspect", "continue"]},
       "profile": {"type": "string", "minLength": 1},
       "fork": {"type": "boolean"},
       "background": {"type": "boolean"},

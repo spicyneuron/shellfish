@@ -147,7 +147,7 @@ Its harness enables sandboxing, uses the limit defaults above, and exposes:
 | `search_web` | Search through Exa |
 | `fetch_url` | Fetch a page as Markdown through Jina Reader |
 
-The bundled `agent` tool is opt-in: add it to a profile's tools list. It starts a hidden, durable child from a named profile or a completed parent prefix, either synchronously or with `background: true`. Background start returns an ID after launch, not an answer. Inspect by ID to read durable progress. Its `active` value is a parent admission slot, not verified process liveness; a final-looking answer may remain uncertain if a stop hook could continue the turn. Inspection releases a slot only when the transcript establishes a settled outcome. The default limit is four active slots per parent; `SHELLFISH_MAX_ACTIVE_AGENTS` sets a positive-integer limit for each call.
+The bundled `agent` tool is opt-in: add it to a profile's tools list. It starts a hidden, durable child from a named profile or a completed parent prefix, either synchronously or with `background: true`. Inspect by ID to read durable progress, or continue a settled child with a new task using its frozen profile. Background turns return after launch, not after an answer. Its `active` value is a parent admission slot, not verified process liveness; a final-looking answer may remain uncertain if a stop hook could continue the turn. Inspection releases a slot only when the transcript establishes a settled outcome. The default limit is four active slots per parent; `SHELLFISH_MAX_ACTIVE_AGENTS` sets a positive-integer limit for each call.
 
 The bundled `session_start` records context once, one block per part:
 

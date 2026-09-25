@@ -23,21 +23,33 @@ if [[ $task == 'delegated task' ]]; then
   exit 0
 fi
 if jq -e '.tools | any(.name == "agent")' <<<"$request" >/dev/null; then
-  if [[ $task == 'inspect child' ]] && jq -e '
+  if [[ $task == 'inspect child' || $task == 'continue child' ||
+        $task == 'continue background' ]] && jq -e '
       ([.messages | to_entries[] | select(.value.type == "user" and
-        .value.content[0].text == "inspect child") | .key] | last) as $turn |
+        .value.content[0].text == $task) | .key] | last) as $turn |
       $turn != null and
       ([.messages[$turn + 1:][] | select(.type == "tool_result")] | length) == 0
-    ' <<<"$request" >/dev/null; then
+    ' --arg task "$task" <<<"$request" >/dev/null; then
     id=$(<"$SF_AGENT_ID_FILE")
-    jq -cn --arg id "$id" '{type:"_assistant_tool_call_delta",index:0,
-      id:"call_1",name:"agent",input:({operation:"inspect",agent_id:$id} | tojson)}'
+    if [[ $task == 'inspect child' ]]; then
+      input=$(jq -cn --arg id "$id" '{operation:"inspect",agent_id:$id}')
+    else
+      input=$(jq -cn --arg id "$id" \
+        --arg task "$([[ $task == 'continue background' ]] && print 'slow child' || print 'next child task')" \
+        --argjson background "$([[ $task == 'continue background' ]] && print true || print false)" \
+        '{operation:"continue",agent_id:$id,task:$task,background:$background}')
+    fi
+    jq -cn --arg input "$input" '{type:"_assistant_tool_call_delta",index:0,
+      id:"call_1",name:"agent",input:$input}'
+    print -r -- '{"type":"_assistant_end","stop":"tool_calls"}'
   elif jq -e '.messages | any(.type == "tool_result")' <<<"$request" >/dev/null; then
     print -r -- '{"type":"_assistant_message_delta","index":0,"text":"parent done"}'
     print -r -- '{"type":"_assistant_end","stop":"end"}'
   else
     if [[ $task == 'background parent' ]]; then
       print -r -- '{"type":"_assistant_tool_call_delta","index":0,"id":"call_1","name":"agent","input":"{\"operation\":\"start\",\"profile\":\"child\",\"task\":\"slow child\",\"background\":true}"}'
+    elif [[ $task == 'stop-hook parent' ]]; then
+      print -r -- '{"type":"_assistant_tool_call_delta","index":0,"id":"call_1","name":"agent","input":"{\"operation\":\"start\",\"profile\":\"child-stop\",\"task\":\"child task\"}"}'
     elif [[ $task == 'fork parent' || $task == 'fork header' ]]; then
       print -r -- '{"type":"_assistant_tool_call_delta","index":0,"id":"call_1","name":"agent","input":"{\"operation\":\"start\",\"fork\":true,\"task\":\"delegated task\"}"}'
     else
@@ -63,6 +75,16 @@ sf_test_profile child "{
   \"backend\":{\"adapter\":\"$backend\"},
   \"request\":{\"model\":\"test\"},
   \"tools\":[],\"sandbox\":true,
+  \"max_requests_per_turn\":4,\"max_tool_calls_per_request\":4,
+  \"max_capture_bytes\":4096
+}"
+print -r -- '#!/usr/bin/env zsh' 'exit 0' >"$tmp/stop-hook"
+chmod +x "$tmp/stop-hook"
+sf_test_profile child-stop "{
+  \"backend\":{\"adapter\":\"$backend\"},
+  \"request\":{\"model\":\"test\"},
+  \"tools\":[],\"sandbox\":true,
+  \"hooks\":{\"stop\":[\"$tmp/stop-hook\"]},
   \"max_requests_per_turn\":4,\"max_tool_calls_per_request\":4,
   \"max_capture_bytes\":4096
 }"
@@ -123,6 +145,32 @@ inspected=$(print -r -- "{\"operation\":\"inspect\",\"agent_id\":\"$id\"}" |
   "$agent/run" 3>/dev/null) || fail 'inspect failed'
 jq -e --arg id "$id" '.agent_id == $id and .active == false and
   .answer == "child answer"' <<<"$inspected" >/dev/null || fail 'inspect output is wrong'
+export SF_AGENT_ID_FILE="$tmp/agent-id"
+print -r -- "$id" >"$SF_AGENT_ID_FILE"
+sf_test_run 'continue child' "$session" >"$stream" || fail 'first continuation failed'
+sf_test_run 'continue child' "$session" >"$stream" || fail 'second continuation failed'
+assert_canonical_session "$session"
+assert_canonical_session "$child"
+jq -e -s '
+  [.[] | select(.type == "user") | .content[0].text] ==
+    ["child task","next child task","next child task"] and
+  [.[0].profile.sandbox, .[0].profile.tools] == [true,[]] and
+  ([.[] | select(.type == "assistant" and .stop == "end") |
+    .content[0].text] | length) == 3
+' "$child" >/dev/null || fail 'continuation did not reuse the frozen child profile'
+jq -e -s --arg id "$id" '
+  ([.[] | select(.type == "state" and .name == ("agents/" + $id)) |
+    .value.active]) == [true,false,true,false,true,false] and
+  ([.[] | select(.type == "tool_result" and .name == "agent") |
+    .model_text | fromjson | select(.agent_id == $id and .answer == "child answer")] |
+    length) == 3
+' "$session" >/dev/null || fail 'continuation results or slots were not durable'
+if print -r -- '{"operation":"continue","agent_id":"00000000000000000000000000000000","task":"bad"}' |
+    SHELLFISH_SESSION="$session" SHELLFISH_EXECUTABLE="$ROOT/bin/shellfish" \
+    "$agent/run" 3>"$tmp/refused-state" >/dev/null 2>&1; then
+  fail 'unknown continuation ID was accepted'
+fi
+[[ ! -s "$tmp/refused-state" ]] || fail 'unknown continuation reserved a slot'
 if print -r -- '{"operation":"start","profile":"child","task":"recurse"}' |
     SHELLFISH_SESSION="$child" SHELLFISH_EXECUTABLE="$ROOT/bin/shellfish" \
     "$agent/run" 3>/dev/null >/dev/null 2>&1; then
@@ -142,6 +190,13 @@ if print -r -- '{"operation":"start","profile":"child","task":"at cap"}' |
     "$agent/run" 3>/dev/null >/dev/null 2>&1; then
   fail 'full active-agent limit was ignored'
 fi
+if print -r -- "{\"operation\":\"continue\",\"agent_id\":\"$id\",\"task\":\"at cap\"}" |
+    SHELLFISH_MAX_ACTIVE_AGENTS=1 SHELLFISH_SESSION="$session" \
+    SHELLFISH_EXECUTABLE="$ROOT/bin/shellfish" \
+    "$agent/run" 3>"$tmp/refused-state" >/dev/null 2>&1; then
+  fail 'continuation ignored full active-agent limit'
+fi
+[[ ! -s "$tmp/refused-state" ]] || fail 'capped continuation reserved a slot'
 print -r -- "{\"operation\":\"inspect\",\"agent_id\":\"$id\"}" |
   SHELLFISH_MAX_ACTIVE_AGENTS=1 SHELLFISH_SESSION="$session" \
   SHELLFISH_EXECUTABLE="$ROOT/bin/shellfish" \
@@ -159,6 +214,67 @@ if print -r -- "{\"operation\":\"inspect\",\"agent_id\":\"$bad_id\"}" |
     "$agent/run" 3>/dev/null >/dev/null 2>&1; then
   fail 'invalid child transcript was inspected'
 fi
+if print -r -- "{\"operation\":\"continue\",\"agent_id\":\"$bad_id\",\"task\":\"bad\"}" |
+    SHELLFISH_SESSION="$session" SHELLFISH_EXECUTABLE="$ROOT/bin/shellfish" \
+    "$agent/run" 3>"$tmp/refused-state" >/dev/null 2>&1; then
+  fail 'invalid child transcript was continued'
+fi
+[[ ! -s "$tmp/refused-state" ]] || fail 'invalid child reserved a slot'
+typeset missing_id=cccccccccccccccccccccccccccccccc
+print -r -- "{\"type\":\"state\",\"name\":\"agents/$missing_id\",\"value\":{\"session\":\".agent-$missing_id.jsonl\",\"active\":false}}" >>"$session"
+if print -r -- "{\"operation\":\"continue\",\"agent_id\":\"$missing_id\",\"task\":\"bad\"}" |
+    SHELLFISH_SESSION="$session" SHELLFISH_EXECUTABLE="$ROOT/bin/shellfish" \
+    "$agent/run" 3>"$tmp/refused-state" >/dev/null 2>&1; then
+  fail 'missing child transcript was continued'
+fi
+[[ ! -s "$tmp/refused-state" ]] || fail 'missing child reserved a slot'
+if print -r -- "{\"operation\":\"continue\",\"agent_id\":\"$id\",\"task\":\"bad\",\"profile\":\"child\"}" |
+    SHELLFISH_SESSION="$session" SHELLFISH_EXECUTABLE="$ROOT/bin/shellfish" \
+    "$agent/run" 3>"$tmp/refused-state" >/dev/null 2>&1; then
+  fail 'continuation accepted a profile override'
+fi
+
+# A public parent fork carries the association; the copied parent can use it
+# without copying the associated child file.
+typeset copied_parent fork_actions="$tmp/fork-actions"
+SHELLFISH_SESSION="$session" SHELLFISH_EXECUTABLE="$ROOT/bin/shellfish" \
+  SHELLFISH_TURN_STATE="$tmp" "$ROOT/share/profiles/default/hooks/fork" \
+  user_prompt_submit 3>"$fork_actions" < <(print -n -- /fork) >/dev/null ||
+  fail 'parent fork failed'
+copied_parent=$(jq -r 'select(.action == "handoff") | .argv[2]' "$fork_actions")
+[[ -f $copied_parent ]] || fail 'parent fork did not create a session'
+assert_canonical_session "$copied_parent"
+sf_test_run 'continue child' "$copied_parent" >"$stream" ||
+  fail 'copied parent could not continue its associated child'
+assert_canonical_session "$copied_parent"
+jq -e -s --arg id "$id" '
+  ([.[] | select(.type == "tool_result" and .name == "agent") |
+    .model_text | fromjson | select(.agent_id == $id and .answer == "child answer")] |
+    length) == 4
+' "$copied_parent" >/dev/null || fail 'copied parent lost its agent association'
+
+# A synchronous release proves process exit even when a stop hook makes the
+# final assistant record inconclusive to transcript-only inspection.
+typeset stop_parent="$tmp/stop-parent.jsonl" stop_id stop_child stop_inspection
+sf_test_session "$stop_parent"
+sf_test_run 'stop-hook parent' "$stop_parent" >"$stream" ||
+  fail 'stop-hook child start failed'
+stop_id=$(jq -r -s '[.[] | select(.type == "state" and
+  (.name | startswith("agents/"))) | .name] | last | sub("^agents/"; "")' "$stop_parent")
+stop_child="$tmp/.agent-$stop_id.jsonl"
+stop_inspection=$(print -r -- "{\"operation\":\"inspect\",\"agent_id\":\"$stop_id\"}" |
+  SHELLFISH_SESSION="$stop_parent" SHELLFISH_EXECUTABLE="$ROOT/bin/shellfish" \
+  "$agent/run" 3>"$tmp/refused-state") || fail 'stop-hook inspection failed'
+jq -e '.active == false and .settled == false and .answer == "child answer"' \
+  <<<$stop_inspection >/dev/null || fail 'stop-hook inspection was misreported'
+print -r -- "$stop_id" >"$SF_AGENT_ID_FILE"
+sf_test_run 'continue child' "$stop_parent" >"$stream" ||
+  fail 'settled synchronous stop-hook child could not continue'
+assert_canonical_session "$stop_child"
+jq -e -s '[.[] | select(.type == "user") | .content[0].text] ==
+  ["child task","next child task"]' "$stop_child" >/dev/null ||
+  fail 'stop-hook continuation did not add a child turn'
+print -r -- "$id" >"$SF_AGENT_ID_FILE"
 if print -r -- '{"operation":"start","task":"missing profile"}' |
     SHELLFISH_SESSION="$session" SHELLFISH_EXECUTABLE="$ROOT/bin/shellfish" \
     "$agent/run" 3>/dev/null >/dev/null 2>&1; then
@@ -312,6 +428,32 @@ jq -e -s --arg id "$background_id" '
       .model_text | fromjson) |
       .active == false and .settled == true and .answer == "child answer")
   ' "$background_parent" >/dev/null || fail 'inspection did not release settled slot'
+  sf_test_run 'continue background' "$background_parent" >"$stream" ||
+    fail 'background continuation failed'
+  jq -e -s --arg id "$background_id" '
+    ([.[] | select(.type == "state" and .name == ("agents/" + $id)) |
+      .value.active]) == [true,false,true] and
+    ([.[] | select(.type == "tool_result" and .name == "agent")] | last |
+      .model_text | fromjson) == {agent_id:$id,active:true,settled:false}
+  ' "$background_parent" >/dev/null || fail 'background continuation did not retain slot'
+  if print -r -- "{\"operation\":\"continue\",\"agent_id\":\"$background_id\",\"task\":\"overlap\"}" |
+      SHELLFISH_SESSION="$background_parent" SHELLFISH_EXECUTABLE="$ROOT/bin/shellfish" \
+      "$agent/run" 3>"$tmp/refused-state" >/dev/null 2>&1; then
+    fail 'active child was continued again'
+  fi
+  [[ ! -s "$tmp/refused-state" ]] || fail 'active child reserved another slot'
+  integer continue_waited=0
+  until jq -e -s '[.[] | select(.type == "assistant" and .stop == "end")] | length == 2' \
+      "$background_child" >/dev/null 2>&1; do
+    (( continue_waited++ < 100 )) || fail 'background continuation did not finish'
+    sleep 0.1
+  done
+  sf_test_run 'inspect child' "$background_parent" >"$stream" ||
+    fail 'background continuation inspection failed'
+  jq -e -s --arg id "$background_id" '
+    ([.[] | select(.type == "state" and .name == ("agents/" + $id)) |
+      .value.active]) == [true,false,true,false]
+  ' "$background_parent" >/dev/null || fail 'background continuation slot was not released'
 fi
 
 # A stop hook can continue after a final-looking assistant, so that record
@@ -331,6 +473,12 @@ uncertain_result=$(print -r -- "{\"operation\":\"inspect\",\"agent_id\":\"$uncer
 jq -e '.active == true and .settled == false and .answer == "child answer"' \
   <<<$uncertain_result >/dev/null || fail 'stop-hook answer was misreported as settled'
 [[ ! -s "$tmp/uncertain-state" ]] || fail 'uncertain inspection released a slot'
+if print -r -- "{\"operation\":\"continue\",\"agent_id\":\"$uncertain_id\",\"task\":\"bad\"}" |
+    SHELLFISH_SESSION="$background_parent" SHELLFISH_EXECUTABLE="$ROOT/bin/shellfish" \
+    "$agent/run" 3>"$tmp/refused-state" >/dev/null 2>&1; then
+  fail 'uncertain child was continued'
+fi
+[[ ! -s "$tmp/refused-state" ]] || fail 'uncertain continuation reserved a slot'
 
 typeset cancel_parent="$tmp/cancel-parent.jsonl" cancel_id cancel_child
 sf_test_session "$cancel_parent"

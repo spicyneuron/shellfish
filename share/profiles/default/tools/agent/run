@@ -20,10 +20,13 @@ operation=$(jq -er '
      (.task | type == "string" and length > 0) and
      (if has("background") then .background | type == "boolean" else true end) and
      (has("agent_id") | not) then "start"
-  elif .operation == "inspect" and
+  elif (.operation == "inspect" or .operation == "continue") and
        (.agent_id | type == "string" and test("^[a-f0-9]{32}$")) and
-       (has("profile") | not) and (has("task") | not) and
-       (has("background") | not) then "inspect"
+       (has("profile") | not) and (has("fork") | not) and
+       (if .operation == "continue" then
+         (.task | type == "string" and length > 0) and
+         (if has("background") then .background | type == "boolean" else true end)
+       else (has("task") | not) and (has("background") | not) end) then .operation
   else empty end
 ' <<<"$input" 2>/dev/null) || fail 'invalid input' 2
 
@@ -38,24 +41,19 @@ if jq -e 'select(.type == "state" and .name == "agents/child")' \
   fail 'a child agent cannot delegate'
 fi
 
-if [[ $operation == inspect ]]; then
+if [[ $operation == inspect || $operation == continue ]]; then
   agent_id=$(jq -r '.agent_id' <<<"$input")
 else
   fork=$(jq -r '.fork // false' <<<"$input")
   background=$(jq -r '.background // false' <<<"$input")
   [[ $fork == true ]] || profile=$(jq -r '.profile' <<<"$input")
   task=$(jq -r '.task' <<<"$input")
-  # A later state record supersedes an earlier reservation.
-  count=$(jq -s '[.[] | select(.type == "state" and (.name | startswith("agents/"))) |
-    {key:.name,value:.value}] | from_entries | [.[] | select(.active? == true)] | length' \
-    "$SHELLFISH_SESSION") || fail 'cannot read parent state'
-  (( count < limit )) || fail "active agent limit reached ($limit)"
   agent_id=$(uuidgen | tr -d '-' | tr '[:upper:]' '[:lower:]') || fail 'cannot create agent ID'
   [[ $agent_id == [a-f0-9]## ]] || fail 'cannot create agent ID'
 fi
 
 child="$parent_dir/.agent-$agent_id.jsonl"
-if [[ $operation == inspect ]]; then
+if [[ $operation == inspect || $operation == continue ]]; then
   association=$(jq -c -s --arg name "agents/$agent_id" \
     '[.[] | select(.type == "state" and .name == $name) | .value] | last // empty' \
     "$SHELLFISH_SESSION") || fail 'cannot read agent association'
@@ -83,45 +81,62 @@ if [[ $operation == inspect ]]; then
        last_record:$last}
     end
   ' "$child") || fail 'cannot inspect agent session'
-  if jq -e '.active == true and .settled == true' <<<"$output" >/dev/null; then
-    print -r -u3 -- "$(jq -cn --arg name "agents/$agent_id" \
-      --arg session ".agent-$agent_id.jsonl" \
-      '{state:[{name:$name,value:{session:$session,active:false}}]}')" ||
-      fail 'cannot release agent slot'
-    output=$(jq -c '.active=false' <<<"$output") || fail 'cannot format inspection'
+  if [[ $operation == inspect ]]; then
+    if jq -e '.active == true and .settled == true' <<<"$output" >/dev/null; then
+      print -r -u3 -- "$(jq -cn --arg name "agents/$agent_id" \
+        --arg session ".agent-$agent_id.jsonl" \
+        '{state:[{name:$name,value:{session:$session,active:false}}]}')" ||
+        fail 'cannot release agent slot'
+      output=$(jq -c '.active=false' <<<"$output") || fail 'cannot format inspection'
+    fi
+    print -r -- "$output"
+    exit 0
   fi
-  print -r -- "$output"
-  exit 0
+  # A synchronous run releases its slot only after exit, even with stop hooks.
+  jq -e '.active == false' <<<"$output" >/dev/null &&
+    jq -e -s '.[-1].type == "error" or
+      (.[-1].type == "assistant" and .[-1].stop == "end")' "$child" >/dev/null ||
+    fail 'agent prior turn is active or uncertain' 2
+  background=$(jq -r '.background // false' <<<"$input")
+  task=$(jq -r '.task' <<<"$input")
 fi
 
-# Reserve a unique hidden path before creating it through the public interface.
-[[ ! -e $child && ! -L $child ]] || fail 'agent ID collision'
-if [[ $fork == true ]]; then
-  # The last user starts the invoking turn. Nothing from that turn is inherited.
-  transcript=$(mktemp "$parent_dir/.agent-fork.XXXXXX") || fail 'cannot prepare fork'
-  if ! jq -ce -s '
-        if length == 0 or .[0].type != "session" then
-          error("invalid parent session")
-        else
-          . as $records |
-          ([$records | to_entries[] | select(.value.type == "user") | .key] | last) as $turn |
-          $records[0:($turn // length)][]
-        end
-      ' "$SHELLFISH_SESSION" >"$transcript" 2>/dev/null; then
+# A later state record supersedes an earlier reservation.
+count=$(jq -s '[.[] | select(.type == "state" and (.name | startswith("agents/"))) |
+  {key:.name,value:.value}] | from_entries | [.[] | select(.active? == true)] | length' \
+  "$SHELLFISH_SESSION") || fail 'cannot read parent state'
+(( count < limit )) || fail "active agent limit reached ($limit)"
+
+if [[ $operation == start ]]; then
+  # Reserve a unique hidden path before creating it through the public interface.
+  [[ ! -e $child && ! -L $child ]] || fail 'agent ID collision'
+  if [[ $fork == true ]]; then
+    # The last user starts the invoking turn. Nothing from that turn is inherited.
+    transcript=$(mktemp "$parent_dir/.agent-fork.XXXXXX") || fail 'cannot prepare fork'
+    if ! jq -ce -s '
+          if length == 0 or .[0].type != "session" then
+            error("invalid parent session")
+          else
+            . as $records |
+            ([$records | to_entries[] | select(.value.type == "user") | .key] | last) as $turn |
+            $records[0:($turn // length)][]
+          end
+        ' "$SHELLFISH_SESSION" >"$transcript" 2>/dev/null; then
+      rm -f -- "$transcript"
+      fail 'cannot fork parent session'
+    fi
+    if ! ln "$transcript" "$child" 2>/dev/null; then
+      rm -f -- "$transcript"
+      fail 'cannot create agent session'
+    fi
     rm -f -- "$transcript"
-    fail 'cannot fork parent session'
+  else
+    "$SHELLFISH_EXECUTABLE" run --session-create --session-out "$child" \
+      --profile "$profile" >/dev/null || fail 'cannot create agent session'
   fi
-  if ! ln "$transcript" "$child" 2>/dev/null; then
-    rm -f -- "$transcript"
-    fail 'cannot create agent session'
-  fi
-  rm -f -- "$transcript"
-else
-  "$SHELLFISH_EXECUTABLE" run --session-create --session-out "$child" \
-    --profile "$profile" >/dev/null || fail 'cannot create agent session'
+  print -r -- '{"type":"state","name":"agents/child","value":true}' >>"$child" ||
+    fail 'cannot mark child session'
 fi
-print -r -- '{"type":"state","name":"agents/child","value":true}' >>"$child" ||
-  fail 'cannot mark child session'
 if [[ $background == true ]]; then
   launch_error=$(mktemp "${TMPDIR:-/tmp}/shellfish-agent-launch.XXXXXX") ||
     fail 'cannot prepare background launch'
