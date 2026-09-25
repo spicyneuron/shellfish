@@ -5,7 +5,7 @@ setopt extended_glob no_aliases no_bg_nice no_multios pipe_fail
 
 typeset input operation profile task agent_id child parent_dir association value output fork transcript background launch_error
 typeset limit=${SHELLFISH_MAX_ACTIVE_AGENTS-4}
-integer count=0 result=0 waited=0
+integer count=0 result=0
 
 fail() { print -u2 -r -- "agent: $1"; exit ${2:-1}; }
 
@@ -145,16 +145,6 @@ value=$(jq -cn --arg session ".agent-$agent_id.jsonl" \
   '{session:$session,active:true}') || fail 'cannot reserve agent'
 print -r -u3 -- "$(jq -cn --arg name "agents/$agent_id" --argjson value "$value" \
   '{state:[{name:$name,value:$value}]}')" || fail 'cannot reserve agent'
-
-# fd 3 is a stream. Do not start the child until its reservation is durable.
-while (( waited < 500 )); do
-  if jq -e -s --arg name "agents/$agent_id" \
-      'any(.[]; .type == "state" and .name == $name and .value.active == true)' \
-      "$SHELLFISH_SESSION" >/dev/null 2>&1; then break; fi
-  sleep 0.01
-  (( waited++ ))
-done
-(( waited < 500 )) || fail 'agent reservation was not persisted'
 
 if [[ $background == true ]]; then
   output=$("$SHELLFISH_EXECUTABLE" run --background --session "$child" -- "$task" \
