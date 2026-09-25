@@ -3,7 +3,7 @@
 emulate -R zsh
 setopt extended_glob no_aliases no_bg_nice no_multios pipe_fail
 
-typeset input operation profile task agent_id child parent_dir association value output fork transcript background launch_error
+typeset input operation profile task agent_id child parent_dir association value output fork transcript background
 typeset limit=${SHELLFISH_MAX_ACTIVE_AGENTS-4}
 integer count=0 result=0
 
@@ -137,33 +137,21 @@ if [[ $operation == start ]]; then
   print -r -- '{"type":"state","name":"agents/child","value":true}' >>"$child" ||
     fail 'cannot mark child session'
 fi
-if [[ $background == true ]]; then
-  launch_error=$(mktemp "${TMPDIR:-/tmp}/shellfish-agent-launch.XXXXXX") ||
-    fail 'cannot prepare background launch'
-fi
 value=$(jq -cn --arg session ".agent-$agent_id.jsonl" \
   '{session:$session,active:true}') || fail 'cannot reserve agent'
 print -r -u3 -- "$(jq -cn --arg name "agents/$agent_id" --argjson value "$value" \
   '{state:[{name:$name,value:$value}]}')" || fail 'cannot reserve agent'
 
 if [[ $background == true ]]; then
-  output=$("$SHELLFISH_EXECUTABLE" run --background --session "$child" -- "$task" \
-    2>"$launch_error")
+  output=$("$SHELLFISH_EXECUTABLE" run --background --session "$child" -- "$task")
   result=$?
-  if (( result )); then
-    # Only diagnostics emitted before worker launch prove the slot is unused.
-    if grep -Eq '^shellfish: (--background requires macOS /usr/bin/script or Linux setsid|cannot prepare background turn|cannot prepare background acknowledgement)$' "$launch_error"; then
-      print -r -u3 -- "$(jq -cn --arg name "agents/$agent_id" \
-        --arg session ".agent-$agent_id.jsonl" \
-        '{state:[{name:$name,value:{session:$session,active:false}}]}')" ||
-        fail 'cannot release agent slot'
-    fi
-    cat "$launch_error" >&2
-    rm -f -- "$launch_error"
+  if (( result )) || [[ $output != "$child" ]]; then
+    print -r -u3 -- "$(jq -cn --arg name "agents/$agent_id" \
+      --arg session ".agent-$agent_id.jsonl" \
+      '{state:[{name:$name,value:{session:$session,active:false}}]}')" ||
+      fail 'cannot release agent slot'
     fail 'cannot launch background agent'
   fi
-  rm -f -- "$launch_error"
-  [[ $output == "$child" ]] || fail 'background launch acknowledgement is invalid'
   print -r -- "$(jq -cn --arg id "$agent_id" '{agent_id:$id,active:true,settled:false}')"
   exit 0
 fi

@@ -531,20 +531,18 @@ until jq -e -s '.[-1].type == "assistant" and .[-1].stop == "end"' \
 done
 fi
 
-# A known pre-launch failure releases the reservation after it was committed.
+# A failed background launch releases its reservation.
 typeset fail_launcher="$tmp/fail-launcher" fail_parent="$tmp/fail-launch-parent.jsonl"
 cat >"$fail_launcher" <<'ZSH'
 #!/usr/bin/env zsh
 if [[ $1 == run && $2 == --background ]]; then
-  [[ $SF_TEST_LAUNCH_MODE != known ]] ||
-    print -u2 -- 'shellfish: cannot prepare background turn'
+  print -u2 -- 'background launch failed'
   exit 7
 fi
 exec "$SF_TEST_REAL_SHELLFISH" "$@"
 ZSH
 chmod +x "$fail_launcher"
 export SF_TEST_REAL_SHELLFISH="$ROOT/bin/shellfish"
-export SF_TEST_LAUNCH_MODE=known
 sf_test_session "$fail_parent"
 typeset fail_events="$tmp/fail-events"
 : >"$fail_events"
@@ -567,37 +565,11 @@ typeset fail_watcher=$!
 if print -r -- '{"operation":"start","profile":"child","task":"never","background":true}' |
     SHELLFISH_SESSION="$fail_parent" SHELLFISH_EXECUTABLE="$fail_launcher" \
     "$agent/run" 3>"$fail_events" >/dev/null 2>"$tmp/fail-error"; then
-  fail 'known launch failure succeeded'
+  fail 'failed launch succeeded'
 fi
-wait "$fail_watcher" || fail 'known-failure reservation was not released'
-grep -q 'cannot prepare background turn' "$tmp/fail-error" ||
+wait "$fail_watcher" || fail 'failed-launch reservation was not released'
+grep -q 'background launch failed' "$tmp/fail-error" ||
   fail 'launch error was not reported'
 jq -e -s '[.[] | select(.type == "state" and (.name | startswith("agents/"))) |
   .value.active] == [true,false]' "$fail_parent" >/dev/null ||
-  fail 'known launch failure retained slot'
-
-# An unclassified nonzero return can be an interrupted launch after the
-# worker started, so the reservation remains active.
-typeset unknown_parent="$tmp/unknown-launch-parent.jsonl" unknown_events="$tmp/unknown-events"
-sf_test_session "$unknown_parent"
-: >"$unknown_events"
-(
-  integer tries=0
-  until [[ -s $unknown_events ]]; do
-    (( tries += 1 ))
-    (( tries < 500 )) || exit 1
-    sleep 0.01
-  done
-  jq -c '.state[0] | {type:"state",name,value}' <"$unknown_events" >>"$unknown_parent"
-) &
-typeset unknown_watcher=$!
-if print -r -- '{"operation":"start","profile":"child","task":"never","background":true}' |
-    SF_TEST_LAUNCH_MODE=unknown SHELLFISH_SESSION="$unknown_parent" \
-    SHELLFISH_EXECUTABLE="$fail_launcher" \
-    "$agent/run" 3>"$unknown_events" >/dev/null 2>/dev/null; then
-  fail 'unknown launch failure succeeded'
-fi
-wait "$unknown_watcher" || fail 'unknown launch reservation was not persisted'
-jq -e -s '[.[] | select(.type == "state" and (.name | startswith("agents/"))) |
-  .value.active] == [true]' "$unknown_parent" >/dev/null ||
-  fail 'uncertain launch cleared its reservation'
+  fail 'failed launch retained slot'
