@@ -105,7 +105,7 @@ sf_test_frozen_profile() {
         system:[],
         backend:{adapter:$adapter,endpoint:"https://example.invalid/test",
           insecure_tls:false,http_timeout:30,http_stall:10},
-        tools:[$tool], hooks:{}, sandbox:false, sandbox_read_paths:[], sandbox_write_paths:[],
+        tools:[$tool], hooks:{}, env:{}, sandbox:false, sandbox_read_paths:[], sandbox_write_paths:[],
         max_requests_per_turn:8,max_tool_calls_per_request:16,max_capture_bytes:65536
       }
     ')

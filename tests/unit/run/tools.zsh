@@ -33,7 +33,7 @@ jq -eRn --arg expected "${TMPDIR:A}|${TMPDIR:A}/zsh" '
     ($expected + "\nexit 0")
 ' <"$temp_stream" >/dev/null || fail 'tool did not receive the host temp environment'
 
-# Hooks receive all of .env; tools receive only the .env names they declare.
+# Hooks receive all profile and .env values; tools receive only declared names.
 typeset env_config="$XDG_CONFIG_HOME/shellfish" env_hook="$tmp/env-hook" env_seen="$tmp/env-seen"
 typeset env_session="$tmp/env.jsonl" env_stream="$tmp/env.stream" base_profile=$SF_TEST_PROFILE
 typeset env_command='print -rn -- "${DECLARED-unset} ${UNDECLARED-unset} ${EXPORTED-unset} ${SHELLFISH_SHARE_DIR-unset}"'
@@ -47,16 +47,19 @@ ZSH
 chmod +x "$env_hook"
 export ENV_SEEN=$env_seen EXPORTED=exported
 sf_test_shell_tool '.environment=["DECLARED"]'
-SF_TEST_PROFILE=$(jq -c --arg hook "$env_hook" '.hooks.post_tool_use=[$hook]' \
+SF_TEST_PROFILE=$(jq -c --arg hook "$env_hook" '
+  .hooks.post_tool_use=[$hook] |
+  .env={DECLARED:"declared-profile",UNDECLARED:"undeclared-profile",EXPORTED:"ignored"}
+' \
   <<<"$SF_TEST_PROFILE")
 sf_test_session "$env_session"
 SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_COMMAND=$env_command \
   sf_test_run env "$env_session" >"$env_stream" || fail 'tool environment turn failed'
 jq -eRn --arg share "$SF_SHARE" '[inputs | fromjson | select(.type == "tool_result")][0].model_text ==
-  ("declared-file unset exported " + $share + "\nexit 0")' <"$env_stream" >/dev/null ||
-  fail 'unsandboxed tool did not receive exactly its declared .env names'
-assert_equal "undeclared-file $SF_SHARE" "$(<$env_seen)" \
-  'hook did not receive the installed share root and undeclared .env key'
+  ("declared-profile unset exported " + $share + "\nexit 0")' <"$env_stream" >/dev/null ||
+  fail 'unsandboxed tool did not receive profile env with declared-name filtering'
+assert_equal "undeclared-profile $SF_SHARE" "$(<$env_seen)" \
+  'hook did not receive profile env'
 SF_TEST_PROFILE=$base_profile
 
 # Tool manifests are read on each run, so an edit after creation takes effect.
@@ -340,12 +343,14 @@ jq -eRn '
 
 # A sandboxed tool starts clean apart from its declared names.
 sf_test_shell_tool '.environment=["DECLARED"]'
+SF_TEST_PROFILE=$(jq -c '.env={DECLARED:"sandbox-profile",UNDECLARED:"hidden"}' \
+  <<<"$SF_TEST_PROFILE")
 session="$tmp/sandbox-env.jsonl"
 sf_test_session "$session"
 SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_COMMAND=$env_command \
   sf_test_run sandbox "$session" >"$stream" || fail 'sandboxed environment turn failed'
 jq -eRn --arg share "$SF_SHARE" '[inputs | fromjson | select(.type == "tool_result")][0].model_text ==
-  ("declared-file unset unset " + $share + "\nexit 0")' <"$stream" >/dev/null ||
+  ("sandbox-profile unset unset " + $share + "\nexit 0")' <"$stream" >/dev/null ||
   fail 'sandboxed tool saw values beyond its declared names'
 
 # A tool streams user text and state, then settles once at exit. Stdout fills

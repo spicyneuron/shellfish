@@ -34,6 +34,7 @@ sf_backend_project() {
     ) as $request |
     entry("request"; $request | tojson),
     entry("cwd"; $header.cwd),
+    entry("profile_env"; $profile.env | tojson),
     entry("command"; $profile.backend.adapter + "/run"),
     ("ok" | field)
   ' || return 1
@@ -49,7 +50,7 @@ sf_backend_context_window() {
     SF_BACKEND[error]='cannot prepare context window request'
     return 1
   }
-  sf_environment_load || {
+  sf_environment_load '' "$SF_BACKEND_PLAN[profile_env]" || {
     SF_BACKEND[error]=$SF_ENVIRONMENT_ERROR
     return 1
   }
@@ -98,7 +99,7 @@ sf_backend_run() {
   REPLY=''
   SF_BACKEND=(directory '' error '' group_file '' pid '')
   SF_BACKEND_PARTIAL_EVENTS=()
-  sf_environment_load || {
+  sf_environment_load '' "$SF_BACKEND_PLAN[profile_env]" || {
     SF_BACKEND[error]=$SF_ENVIRONMENT_ERROR
     return 1
   }

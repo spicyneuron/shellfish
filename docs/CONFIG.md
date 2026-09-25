@@ -24,6 +24,7 @@ Copy [`share/template/`](../share/template/) into that directory for a working s
 | --- | --- |
 | `extend` | Ordered profile names, merged left to right; own keys last |
 | `backend` | Adapter reference and transport settings |
+| `env` | Non-secret environment values for this profile |
 | `tools`, `hooks`, sandbox, and limits | The harness; see [Harness](#harness) |
 | `system` | Ordered system-component references |
 | `request` | Provider request object; `model` is required after resolution |
@@ -97,9 +98,11 @@ backends/ADAPTER/
 
 A bare name in `system`, `tools`, `hooks`, or `backend.adapter` resolves in its kind's top-level user directory first, then bundled `share/`. Profile inheritance does not affect component lookup. `@KIND/NAME`, such as `@tools/shell`, selects the bundled component explicitly; `~/path` and absolute paths are also available. Only components named in a resolved profile are active. Missing or invalid active components fail resolution; unused files are inert.
 
-Credentials live in exported variables or `.env` in the configuration directory; exported values win. Values remain external and are read for each invocation.
+Use profile `env` for non-secret settings such as `{"SHELLFISH_MAX_ACTIVE_AGENTS": "2"}`. It merges by variable name through inheritance and is frozen in the session header. Do not put credentials there.
 
-Hooks and adapters are trusted: they inherit the process environment and receive every `.env` value. Tools receive only the `.env` names their manifest declares. Unsandboxed tools also inherit the process environment; sandboxed tools start clean. A key kept only in `.env` is therefore invisible to tools that do not declare it. See [`HARNESS.md`](HARNESS.md#shared-contract) for the process context.
+Credentials live in exported variables or `.env` in the configuration directory; those remain external and are read for each invocation. Precedence is exported environment, then profile `env`, then `.env`.
+
+Hooks and adapters are trusted: they inherit the process environment and receive every profile `env` and `.env` value. Tools receive only the names their manifest declares from these sources. Unsandboxed tools also inherit the process environment; sandboxed tools start clean. A key kept only in `.env` or profile `env` is therefore invisible to tools that do not declare it. See [`HARNESS.md`](HARNESS.md#shared-contract) for the process context.
 
 ## Sandbox
 
@@ -185,7 +188,7 @@ The `agent` tool lets you delegate a separate task to another agent, so work can
 }
 ```
 
-Background work returns control after launch; the default limit is four active child agents per parent. Set `SHELLFISH_MAX_ACTIVE_AGENTS` to change that positive-integer limit.
+Background work returns control after launch; the default limit is four active child agents per parent. Set `SHELLFISH_MAX_ACTIVE_AGENTS` in profile `env` or externally to change that positive-integer limit.
 
 ### Review hook
 

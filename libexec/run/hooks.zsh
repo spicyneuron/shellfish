@@ -16,6 +16,7 @@ sf_run_hook_project() {
       include "lib/fields";
       entry("max_capture"; $profile.max_capture_bytes | tostring),
       entry("model"; $profile.request.model),
+      entry("profile_env"; $profile.env | tojson),
       entry("hooks"; $profile.hooks[$lifecycle] // [] | join("\n")),
       ("ok" | field)
     ' || return 1
@@ -132,14 +133,14 @@ sf_run_hooks() {
   hooks=( ${(f)SF_HOOK_PLAN[hooks]} )
   (( ${#hooks} )) || return 0
   max_capture=$SF_HOOK_PLAN[max_capture]
-  sf_environment_load || {
+  sf_environment_load '' "$SF_HOOK_PLAN[profile_env]" || {
     SF_RUN_HOOK_ERROR=$SF_ENVIRONMENT_ERROR
     return 1
   }
   config_dir=$REPLY
   sf_scratch_file hook-input || { SF_RUN_HOOK_ERROR="cannot prepare $lifecycle hook input"; return 1; }
   input=${REPLY:A}
-  # Core values follow .env values so that they win.
+  # Core values follow configured values so that they win.
   environment=(
     "${SF_ENVIRONMENT_VALUES[@]}"
     "SHELLFISH_SESSION=${session:A}"

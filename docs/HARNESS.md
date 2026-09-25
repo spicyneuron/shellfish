@@ -22,7 +22,7 @@ Raw captures are transient—only settled text and accepted state records are du
 
 ### Environment
 
-Hooks and adapters inherit the process environment and receive every value in `.env`. Tools receive only the `.env` names listed under `environment` in their manifest. Exported values take precedence over `.env`.
+Hooks and adapters inherit the process environment and receive every value in profile `env` and `.env`. Tools receive only the names listed under `environment` in their manifest. Exported values take precedence over profile `env`, which takes precedence over `.env`. Profile values are frozen in the session header; exported values and `.env` remain external.
 
 | Variable | Tool | Hook |
 | --- | :---: | :---: |

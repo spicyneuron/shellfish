@@ -42,6 +42,7 @@ sf_run_tool_plan() {
         render_template($tool.manifest.user_permission // "${input}"; $name; $input)),
       entry("executable"; $tool.command // ""),
       entry("environment"; ($tool.manifest.environment // []) | join(" ")),
+      entry("profile_env"; $profile.env | tojson),
       entry("max_capture"; $profile.max_capture_bytes | tostring),
       entry("execution_input";
         $input | del(.request_sandbox_bypass,.sandbox_bypass_reason) | tojson),
@@ -110,7 +111,7 @@ sf_run_tool_execute() {
   SF_RUN_TOOL_ERROR=''
   [[ $sandbox != true || -n ${commands[fence]-} ]] ||
     { SF_RUN_TOOL_ERROR='sandboxing requires fence'; return 1; }
-  sf_environment_load "$selected" || {
+  sf_environment_load "$selected" "$SF_TOOL_PLAN[profile_env]" || {
     SF_RUN_TOOL_ERROR=$SF_ENVIRONMENT_ERROR
     return 1
   }
@@ -140,6 +141,7 @@ sf_run_tool_execute() {
   capture=$REPLY
   {
   arguments=(
+    "${SF_ENVIRONMENT_VALUES[@]}"
     "HOME=${HOME:-$cwd}" "PATH=$PATH" "TERM=${TERM:-dumb}"
     "LANG=${LANG:-C}" "SHELLFISH_CONFIG_DIR=$config_dir"
     "SHELLFISH_MAX_CAPTURE_BYTES=$max_capture" "SHELLFISH_SESSION=$session"
@@ -148,7 +150,6 @@ sf_run_tool_execute() {
   [[ -z ${LC_ALL-} ]] || arguments+=( "LC_ALL=$LC_ALL" )
   [[ -z ${LC_CTYPE-} ]] || arguments+=( "LC_CTYPE=$LC_CTYPE" )
   [[ -z ${XDG_CONFIG_HOME-} ]] || arguments+=( "XDG_CONFIG_HOME=$XDG_CONFIG_HOME" )
-  arguments+=( "${SF_ENVIRONMENT_VALUES[@]}" )
   arguments+=( "TMPDIR=$temp_dir" "TMPPREFIX=$temp_dir/zsh" "$command" )
   if [[ $sandbox == true ]]; then
     arguments=( -i "${arguments[@]}" )

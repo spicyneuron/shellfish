@@ -155,24 +155,27 @@ typeset env_backend="$tmp/env-backend/run" env_session="$tmp/env.jsonl"
 mkdir -p "${env_backend:h}"
 typeset env_config="$XDG_CONFIG_HOME/shellfish"
 mkdir -p "$env_config"
-print -rl -- FILE_SECRET=file-value EXPORTED_SECRET=file-value >"$env_config/.env"
+print -rl -- FILE_SECRET=file-value EXPORTED_SECRET=file-value \
+  PROFILE_SETTING=file-value >"$env_config/.env"
 cat >"$env_backend" <<'ZSH'
 #!/usr/bin/env zsh
 cat >/dev/null
-jq -cn --arg text "${FILE_SECRET-unset} ${EXPORTED_SECRET-unset}" \
+jq -cn --arg text "${FILE_SECRET-unset} ${EXPORTED_SECRET-unset} ${PROFILE_SETTING-unset}" \
   '{type:"_assistant_message_delta",index:0,text:$text}'
 print -r -- '{"type":"_turn_usage","input_tokens":1,"output_tokens":1}'
 print -r -- '{"type":"_assistant_end","stop":"end"}'
 ZSH
 chmod +x "$env_backend"
-SF_TEST_PROFILE=$(jq -c --arg backend "${env_backend:h}" '.backend.adapter=$backend' \
+SF_TEST_PROFILE=$(jq -c --arg backend "${env_backend:h}" '
+  .backend.adapter=$backend | .env.PROFILE_SETTING="profile-value"
+' \
   <<<"$SF_TEST_PROFILE")
 export EXPORTED_SECRET=exported-value
 sf_test_session "$env_session"
 sf_test_run env "$env_session" >"$stream" || fail 'adapter environment turn failed'
 jq -eRn '[inputs | fromjson | select(.type == "assistant") | .content[0].text] ==
-  ["file-value exported-value"]' <"$stream" >/dev/null ||
-  fail 'adapter did not receive .env values with exported precedence'
+  ["file-value exported-value profile-value"]' <"$stream" >/dev/null ||
+  fail 'adapter did not receive layered environment values'
 unset EXPORTED_SECRET
 
 print -r -- ok

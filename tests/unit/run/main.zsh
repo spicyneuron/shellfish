@@ -133,11 +133,13 @@ cp "$ROOT/tests/fixtures/backend/run" "$context_backend/run"
 cat >"$context_backend/context_window" <<'ZSH'
 #!/usr/bin/env zsh
 cat >/dev/null
+[[ $PROFILE_SETTING == context-profile ]] || exit 8
 print -r -- '{"context_window":4321}'
 ZSH
 chmod +x "$context_backend/context_window"
 sf_test_profile context \
-  "{\"extend\": [\"default\"], \"backend\": {\"adapter\": \"$context_backend\"}}"
+  "{\"extend\": [\"default\"], \"backend\": {\"adapter\": \"$context_backend\"},
+    \"env\": {\"PROFILE_SETTING\": \"context-profile\"}}"
 print -r -- '{"type":"user","content":[{"type":"text","text":"context"}]}' |
   SF_TEST_BACKEND_DELAY=0 zsh -f "$entry" run --jsonl -p context \
     --session-out "$context_session" >"$context_stream" ||
