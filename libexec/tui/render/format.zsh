@@ -258,7 +258,7 @@ sf_tui_format_message() {
 
 # Reasoning is plain text: no Markdown, no syntax highlighting.
 sf_tui_format_reasoning() {
-  integer columns=$1 live=$(( ! $2 ))
+  integer columns=$1 live=$(( ! $2 )) row
   local body=$SF_LIVE_TEXT tail tokens
 
   sf_tui_format_start
@@ -277,9 +277,12 @@ sf_tui_format_reasoning() {
     return 0
   fi
 
-  (( SF_LIVE_CHROME )) || sf_tui_format_styled $columns '✎ Reasoning' reasoning || return 1
   sf_tui_format_prose $columns $live 0 "$body" '  ' reasoning \
     "$SF_PRESENT_PREVIEW_REASONING" || return 1
+  row=$(( SF_FORMAT_LEADING + 1 ))
+  if (( row <= ${#SF_FORMAT_ROWS} )); then
+    SF_FORMAT_ROWS[row]="✎ ${SF_FORMAT_ROWS[row][3,-1]}"
+  fi
   if (( live )); then
     if (( SF_FORMAT_PROSE_HIDDEN )); then tail="  … ~$tokens tokens $SF_PRESENT_ACTIVITY"
     else tail="  $SF_PRESENT_ACTIVITY"; fi

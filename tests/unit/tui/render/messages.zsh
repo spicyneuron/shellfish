@@ -230,10 +230,10 @@ view 79 20
 stream 3 reasoning thought 9
 view 79 20
 # Reasoning withholds its incomplete line, exactly as message text does.
-[[ $REPLY == *$'✎ Reasoning\n  ⠃' ]] || fail "reasoning transition: $REPLY"
+[[ $REPLY == *$'  ⠃' ]] || fail "reasoning transition: $REPLY"
 stream 4 inert ''
 view 79 20
-[[ $REPLY == *$'✎ Reasoning\n  thought\n  Thought for ~9 tokens.' ]] ||
+[[ $REPLY == *$'✎ thought\n  Thought for ~9 tokens.' ]] ||
   fail "reasoning settled by an inert block: $REPLY"
 
 # Reasoning previews spend rows and keep the whole-content estimate.
@@ -243,13 +243,13 @@ SF_PRESENT_PREVIEW_REASONING=1
 sf_tui_action message_start agent
 stream 0 reasoning $'first\nsecond\nthird'
 sf_tui_transcript 20 20
-[[ $SF_PRESENT_SAFE_TEXT == *'✎ Reasoning'*first* ]] ||
-  fail 'reasoning did not stage its safe leading rows'
+[[ $SF_PRESENT_SAFE_TEXT == *'✎ first'* ]] ||
+  fail 'reasoning preview lost its safe leading rows'
 sf_tui_terminal_stage
 sf_tui_terminal_finish
 sf_tui_terminal_restore
 sf_tui_transcript 10 20
-[[ $SF_PRESENT_VIEWPORT_TEXT != *Reasoning* && $SF_PRESENT_VIEWPORT_TEXT != *second* ]] ||
+[[ $SF_PRESENT_VIEWPORT_TEXT != *second* ]] ||
   fail 'resize restored consumed chrome or drained hidden rows'
 [[ $SF_PRESENT_VIEWPORT_TEXT == *'~5'* ]] ||
   fail 'partial reasoning lost its whole-content estimate'
@@ -267,15 +267,27 @@ sf_tui_reset
 sf_tui_action message_start agent
 stream 0 reasoning $'first\nsecond'
 view 79 20
-[[ $REPLY == $'─ agent '*$' 1 ─\n\n✎ Reasoning\n  first\n  … ~3 tokens ⠃' ]] ||
+[[ $REPLY == $'─ agent '*$' 1 ─\n\n✎ first\n  … ~3 tokens ⠃' ]] ||
   fail "live reasoning preview: $REPLY"
-assert_equal 4 "$SF_PRESENT_SAFE_ROWS"
+assert_equal 3 "$SF_PRESENT_SAFE_ROWS"
 sf_tui_action usage '3 ↑ 1 ↓' 4
 sf_tui_action message_end
 view 79 20
-[[ $REPLY == $'─ agent '*$' 1 ─\n\n✎ Reasoning\n  first\n  … Thought for ~4 tokens.' ]] ||
+[[ $REPLY == $'─ agent '*$' 1 ─\n\n✎ first\n  … Thought for ~4 tokens.' ]] ||
   fail "settled reasoning preview: $REPLY"
-assert_equal 5 "$SF_PRESENT_SAFE_ROWS"
+assert_equal 4 "$SF_PRESENT_SAFE_ROWS"
+
+# Wrapped reasoning keeps the icon on its first line only.
+sf_tui_reset
+width 13
+sf_tui_action message_start agent
+stream 0 reasoning 'a reasoning block long enough to wrap'
+sf_tui_action message_end
+view 14 20
+typeset icon_tail=${REPLY#*✎}
+[[ $REPLY == *'✎ a'* && $icon_tail != *✎* ]] ||
+  fail "wrapped reasoning repeated its icon: $REPLY"
+width 79
 
 # Collapsed reasoning settles as one summary.
 sf_tui_reset
