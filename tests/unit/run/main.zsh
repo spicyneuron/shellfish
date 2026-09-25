@@ -3,8 +3,8 @@
 source "${0:A:h:h:h}/_helpers.zsh"
 sf_test_tmp run-command
 sf_test_config
-mkdir -p "$tmp/home" "$SF_TEST_CONFIG/profiles/default/system"
-print -r -- 'initial system' >"$SF_TEST_CONFIG/profiles/default/system/source.md"
+mkdir -p "$tmp/home" "$SF_TEST_CONFIG/system"
+print -r -- 'initial system' >"$SF_TEST_CONFIG/system/source.md"
 export HOME="${tmp:A}/home"
 
 sf_test_profile default "{
@@ -188,7 +188,7 @@ jq -eRn '
 
 # Invalid session paths fail cleanly.
 typeset invalid_path="$tmp/invalid-path" invalid_path_output="$tmp/invalid-path.out"
-ln -s "$SF_TEST_CONFIG/profiles/default/profile.jsonc" "$invalid_path"
+ln -s "$SF_TEST_CONFIG" "$invalid_path"
 integer invalid_path_status=0
 print -r -- \
   '{"type":"user","content":[{"type":"text","text":"ignored"}]}' |

@@ -99,7 +99,7 @@ sf_test_frozen_profile() {
   typeset -g SF_TEST_PROFILE SF_TEST_SYSTEM=''
   [[ -z $system ]] || SF_TEST_SYSTEM=$(<"$system")
   SF_TEST_PROFILE=$(jq -cn --arg adapter "${SF_TEST_BACKEND:h}" \
-    --arg tool "$ROOT/share/profiles/default/tools/shell" '
+    --arg tool "$ROOT/share/tools/shell" '
       {
         request:{model:"test-model"},
         system:[],
@@ -114,7 +114,7 @@ sf_test_frozen_profile() {
 # Point the frozen profile at a copy of the bundled shell tool whose manifest
 # FILTER edits. An optional RUN script replaces the tool's own.
 sf_test_shell_tool() {
-  local filter=$1 run=${2-} bundled=$ROOT/share/profiles/default/tools/shell
+  local filter=$1 run=${2-} bundled=$ROOT/share/tools/shell
   local tool="$tmp/tools/shell"
   mkdir -p "$tool"
   cp -f "${run:-$bundled/run}" "$tool/run"

@@ -11,7 +11,7 @@ mkdir -p "$tmp/home"
 export HOME="${tmp:A}/home"
 
 sf_test_profile work '{
-  "backend": {"adapter": "@default/backends/openai"},
+  "backend": {"adapter": "@backends/openai"},
   "context_window": 128000,
   "request": {"model": "configured", "temperature": 0.2}
 }'
@@ -38,7 +38,7 @@ done
 # CLI request options override the profile.
 sf_profile_resolve_args -p work -m cli-model --request '{"temperature":0.7,"seed":4}'
 profile=$REPLY
-jq -e --arg adapter "$ROOT/share/profiles/default/backends/openai" '
+jq -e --arg adapter "$ROOT/share/backends/openai" '
   .request == {model:"cli-model",temperature:0.7,seed:4} and
   .context_window == 128000 and
   .backend == {adapter:$adapter,endpoint:"https://api.openai.com/v1/chat/completions",
@@ -50,14 +50,15 @@ jq -e --arg adapter "$ROOT/share/profiles/default/backends/openai" '
 ' <<<"$profile" >/dev/null
 
 # A backend override replaces the adapter reference.
-sf_profile_resolve_args -p work -m cli-model -b @default/backends/openai-responses
-jq -e '.backend.adapter | endswith("/share/profiles/default/backends/openai-responses")' \
+sf_profile_resolve_args -p work -m cli-model -b @backends/openai-responses
+jq -e '.backend.adapter | endswith("/share/backends/openai-responses")' \
   <<<"$REPLY" >/dev/null
 
 # The bundled default profile supplies the coding agent.
 sf_profile_resolve_args -m default-model -b "$fixture_backend"
-jq -e --arg root "$ROOT/share/profiles/default/hooks" '
-  .hooks.session_start == [$root + "/session_start"] and
+jq -e --arg root "$ROOT/share/hooks" '
+  .hooks.session_start == [$root + "/project_environment", $root + "/git_environment",
+    $root + "/project_instructions"] and
   .hooks.user_prompt_submit == [$root + "/user_prompt_submit"] and
   (.hooks | has("permission_request") | not) and
   (.tools | map(split("/") | last)) ==
@@ -72,7 +73,7 @@ jq -e '
 
 # Bundled adapter names resolve through the bundled default profile.
 sf_profile_resolve_args -m gpt-codex-test -b codex
-jq -e '.backend.adapter | endswith("/share/profiles/default/backends/codex")' \
+jq -e '.backend.adapter | endswith("/share/backends/codex")' \
   <<<"$REPLY" >/dev/null
 
 # Presentation lives in tui.jsonc, so a profile has no place for it.
@@ -93,7 +94,7 @@ jq -e '
 sf_test_profile default '{
   "backend": {"adapter": "'"$fixture_backend"'"},
   "request": {"model": "extended-model"},
-  "tools": ["@default/tools/read_file"]
+  "tools": ["@tools/read_file"]
 }'
 sf_profile_resolve_args
 jq -e '
@@ -104,24 +105,24 @@ jq -e '
 ' <<<"$REPLY" >/dev/null
 
 # "..." splices the inherited list; repeated --profile composes left to right.
-sf_test_profile extra '{"tools": ["...", "@default/tools/shell"]}'
+sf_test_profile extra '{"tools": ["...", "@tools/shell"]}'
 sf_profile_resolve_args -p default -p extra
 jq -e '(.tools | map(split("/") | last)) == ["read_file", "shell"]' <<<"$REPLY" >/dev/null
 
 # A top-level list splices from a sibling too, and a token with nothing to splice drops.
-sf_test_profile prompts '{"system": ["@default/system/general.md"]}'
-sf_test_profile more-prompts '{"system": ["...", "@default/system/tools.md"],
-  "tools": ["...", "@default/tools/shell"]}'
+sf_test_profile prompts '{"system": ["@system/general.md"]}'
+sf_test_profile more-prompts '{"system": ["...", "@system/tools.md"],
+  "tools": ["...", "@tools/shell"]}'
 sf_profile_resolve_args -p prompts -p more-prompts -m model -b "$fixture_backend"
 jq -e '(.system | map(split("/") | last)) == ["general.md", "tools.md"] and
   (.tools | map(split("/") | last)) == ["shell"]' <<<"$REPLY" >/dev/null
 
 # Splicing a list that already holds the tool duplicates it.
-sf_test_profile duplicate '{"tools": ["...", "@default/tools/read_file"]}'
+sf_test_profile duplicate '{"tools": ["...", "@tools/read_file"]}'
 if sf_profile_resolve_args -p default -p duplicate; then
   fail 'duplicate tool references were accepted'
 fi
-[[ $SF_PROFILE_ERROR == *'profile tools must be unique: @default/tools/read_file, @default/tools/read_file'* ]]
+[[ $SF_PROFILE_ERROR == *'profile tools must be unique: @tools/read_file, @tools/read_file'* ]]
 
 # "@default" is always the bundled file, so a configured default can build on it,
 # and bundled profiles that extend the bare name see the configured one.
@@ -134,7 +135,7 @@ sf_profile_resolve_args -p coding
 jq -e '
   .request.model == "mine" and .request.max_tokens == 16384 and
   (.tools | length) == 7 and
-  (.hooks.permission_request | map(split("/")[-3:] | join("/"))) == ["coding/hooks/permission_request"]
+  (.hooks.permission_request | map(split("/")[-2:] | join("/"))) == ["hooks/review"]
 ' <<<"$REPLY" >/dev/null
 
 # Unknown and cyclic profiles fail.

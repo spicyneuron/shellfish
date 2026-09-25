@@ -10,7 +10,7 @@ sf_test_frozen_profile
 
 # The bundled shell decodes multiline commands once, preserves exit status, and
 # reports it in a footer.
-typeset shell_tool="$ROOT/share/profiles/default/tools/shell/run"
+typeset shell_tool="$ROOT/share/tools/shell/run"
 assert_equal $'first\nsecond\n\nexit 0' "$(print -rn -- \
   '{"command":"print -r -- first; print -r -- second"}' | "$shell_tool")"
 integer shell_status=0
@@ -36,13 +36,13 @@ jq -eRn --arg expected "${TMPDIR:A}|${TMPDIR:A}/zsh" '
 # Hooks receive all of .env; tools receive only the .env names they declare.
 typeset env_config="$XDG_CONFIG_HOME/shellfish" env_hook="$tmp/env-hook" env_seen="$tmp/env-seen"
 typeset env_session="$tmp/env.jsonl" env_stream="$tmp/env.stream" base_profile=$SF_TEST_PROFILE
-typeset env_command='print -rn -- "${DECLARED-unset} ${UNDECLARED-unset} ${EXPORTED-unset}"'
+typeset env_command='print -rn -- "${DECLARED-unset} ${UNDECLARED-unset} ${EXPORTED-unset} ${SHELLFISH_SHARE_DIR-unset}"'
 mkdir -p "$env_config"
 print -rl -- DECLARED=declared-file UNDECLARED=undeclared-file >"$env_config/.env"
 cat >"$env_hook" <<'ZSH'
 #!/usr/bin/env zsh
 cat >/dev/null
-print -rn -- "${UNDECLARED-unset}" >"$ENV_SEEN"
+print -rn -- "${UNDECLARED-unset} ${SHELLFISH_SHARE_DIR-unset}" >"$ENV_SEEN"
 ZSH
 chmod +x "$env_hook"
 export ENV_SEEN=$env_seen EXPORTED=exported
@@ -52,10 +52,11 @@ SF_TEST_PROFILE=$(jq -c --arg hook "$env_hook" '.hooks.post_tool_use=[$hook]' \
 sf_test_session "$env_session"
 SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_COMMAND=$env_command \
   sf_test_run env "$env_session" >"$env_stream" || fail 'tool environment turn failed'
-jq -eRn '[inputs | fromjson | select(.type == "tool_result")][0].model_text ==
-  "declared-file unset exported\nexit 0"' <"$env_stream" >/dev/null ||
+jq -eRn --arg share "$SF_SHARE" '[inputs | fromjson | select(.type == "tool_result")][0].model_text ==
+  ("declared-file unset exported " + $share + "\nexit 0")' <"$env_stream" >/dev/null ||
   fail 'unsandboxed tool did not receive exactly its declared .env names'
-assert_equal undeclared-file "$(<$env_seen)" 'hook did not receive an undeclared .env key'
+assert_equal "undeclared-file $SF_SHARE" "$(<$env_seen)" \
+  'hook did not receive the installed share root and undeclared .env key'
 SF_TEST_PROFILE=$base_profile
 
 # Tool manifests are read on each run, so an edit after creation takes effect.
@@ -343,8 +344,8 @@ session="$tmp/sandbox-env.jsonl"
 sf_test_session "$session"
 SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_COMMAND=$env_command \
   sf_test_run sandbox "$session" >"$stream" || fail 'sandboxed environment turn failed'
-jq -eRn '[inputs | fromjson | select(.type == "tool_result")][0].model_text ==
-  "declared-file unset unset\nexit 0"' <"$stream" >/dev/null ||
+jq -eRn --arg share "$SF_SHARE" '[inputs | fromjson | select(.type == "tool_result")][0].model_text ==
+  ("declared-file unset unset " + $share + "\nexit 0")' <"$stream" >/dev/null ||
   fail 'sandboxed tool saw values beyond its declared names'
 
 # A tool streams user text and state, then settles once at exit. Stdout fills

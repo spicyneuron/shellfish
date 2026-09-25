@@ -5,8 +5,8 @@ sf_test_source lib/session.zsh
 sf_test_tmp compact
 
 # Compact into a canonical child.
-typeset compact_hook="$ROOT/share/profiles/default/hooks/compact"
-typeset dispatcher="$ROOT/share/profiles/default/hooks/user_prompt_submit"
+typeset compact_hook="$ROOT/share/hooks/compact"
+typeset dispatcher="$ROOT/share/hooks/user_prompt_submit"
 typeset compact_source="$tmp/compact-source.jsonl"
 typeset compact_control="$tmp/compact-control.json"
 # The action lines among the compact hook's fd 3 output.
@@ -70,7 +70,7 @@ actions | jq -e --arg command "$compact_shellfish" \
   . == {action:"handoff",argv:[$command,"--session",$child,"--draft","my next prompt"]}
 ' >/dev/null || fail 'automatic compaction lost the prompt'
 assert_equal "$compact_before" "$(shasum <"$compact_source")"
-jq -e -s --rawfile prompt "$ROOT/share/profiles/default/hooks/compact.md" '
+jq -e -s --rawfile prompt "$ROOT/share/hooks/compact.md" '
   ($prompt | rtrimstr("\n")) as $prompt |
   .[-1].content == [{type:"text",text:$prompt}]
 ' "$compact_request" >/dev/null || fail 'compaction did not send its prompt unchanged'

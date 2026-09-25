@@ -30,7 +30,7 @@ Hooks and adapters inherit the process environment and receive every value in `.
 | `SHELLFISH_EXECUTABLE` | ✓ | ✓ |
 | `SHELLFISH_CONFIG_DIR` | ✓ | ✓ |
 | `SHELLFISH_MAX_CAPTURE_BYTES` | ✓ | ✓ |
-| `SHELLFISH_DEFAULT_DIR` | ✓ | ✓ |
+| `SHELLFISH_SHARE_DIR` | ✓ | ✓ |
 | `SHELLFISH_MODEL` |  | ✓ |
 | `SHELLFISH_MODE` |  | ✓ (`run`) |
 | `SHELLFISH_VERBOSE` |  | ✓ (`0` or `1`) |
@@ -38,7 +38,7 @@ Hooks and adapters inherit the process environment and receive every value in `.
 | `SHELLFISH_TURN_STATE` |  | Turn hooks only |
 | `TMPDIR`, `TMPPREFIX` | ✓ |  |
 
-`SHELLFISH_DEFAULT_DIR` is the installed bundled `default` profile folder, so scripts can call its parts, such as `$SHELLFISH_DEFAULT_DIR/hooks/review`.
+`SHELLFISH_SHARE_DIR` is the installed bundled `share/` root, so scripts can call its parts, such as `$SHELLFISH_SHARE_DIR/hooks/review`.
 
 Tools use the host's `TMPDIR`, or `/tmp` when it is unset, and receive a `TMPPREFIX` beneath it. Sandboxed tools may read and write the platform temp directories as baseline temporary storage; tools own their cleanup. Sandboxed tools otherwise start with a clean environment plus their declared names. Unsandboxed tools inherit the process environment plus their declared names.
 
@@ -128,7 +128,7 @@ repeat:
     if completion allowed: finish turn
 ```
 
-Each lifecycle runs its configured hooks in order, each as a separate process with the original stdin and arguments. A hook without an action defers to the next. A successful action ends the list; if every hook defers, the lifecycle takes its no-action outcome. A profile folder's `hooks/LIFECYCLE` joins the front of the inherited list unless the profile sets `hooks.LIFECYCLE`; see [`CONFIG.md`](CONFIG.md#harness).
+Each lifecycle runs its configured hooks in order, each as a separate process with the original stdin and arguments. A hook without an action defers to the next. A successful action ends the list; if every hook defers, the lifecycle takes its no-action outcome. Only hooks named in the resolved profile run; see [`CONFIG.md`](CONFIG.md#harness).
 
 ### Hook output
 

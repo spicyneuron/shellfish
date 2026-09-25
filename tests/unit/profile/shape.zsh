@@ -180,7 +180,7 @@ for environment in '["DUPLICATE","DUPLICATE"]' '["HAS SPACE"]'; do
 done
 print -r -- "$valid_manifest" | jq -c 'del(.user_text, .user_permission)' |
   schema_eval 'tool_manifest' >/dev/null || fail 'tool manifest required its templates'
-for manifest in "$ROOT"/share/profiles/default/tools/*/manifest.json; do
+for manifest in "$ROOT"/share/tools/*/manifest.json; do
   schema_eval 'tool_manifest' <"$manifest" >/dev/null ||
     fail "invalid bundled tool manifest: $manifest"
 done

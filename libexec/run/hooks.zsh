@@ -149,7 +149,7 @@ sf_run_hooks() {
     "SHELLFISH_MODE=${SHELLFISH_MODE-}"
     "SHELLFISH_VERBOSE=${SHELLFISH_VERBOSE:-0}"
     "SHELLFISH_CONFIG_DIR=$config_dir"
-    "SHELLFISH_DEFAULT_DIR=$SF_SHARE/profiles/default"
+    "SHELLFISH_SHARE_DIR=$SF_SHARE"
   )
   if [[ $lifecycle != session_start ]]; then
     environment+=( "SHELLFISH_TURN_ID=$SF_RUN[turn_id]" "SHELLFISH_TURN_STATE=$turn_state" )

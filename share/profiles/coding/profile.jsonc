@@ -1,7 +1,0 @@
-// An example override: the bundled agent with agentic permission review, which
-// hooks/permission_request beside this file runs. Select it with --profile coding.
-{
-  "$schema": "https://raw.githubusercontent.com/spicyneuron/shellfish/refs/heads/main/share/shellfish.schema.json",
-
-  "extend": ["default"]
-}

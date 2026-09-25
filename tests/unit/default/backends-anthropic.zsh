@@ -3,8 +3,8 @@
 source "${0:A:h:h:h}/_helpers.zsh"
 
 sf_test_tmp backends-anthropic
-typeset run="$ROOT/share/profiles/default/backends/anthropic/run"
-typeset context_window="$ROOT/share/profiles/default/backends/anthropic/context_window"
+typeset run="$ROOT/share/backends/anthropic/run"
+typeset context_window="$ROOT/share/backends/anthropic/context_window"
 typeset req="$tmp/request.json"
 typeset res="$tmp/output.jsonl"
 

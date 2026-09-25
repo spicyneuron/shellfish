@@ -1,0 +1,7 @@
+// An example override with agentic permission review. Select it with --profile coding.
+{
+  "$schema": "https://raw.githubusercontent.com/spicyneuron/shellfish/refs/heads/main/share/shellfish.schema.json",
+
+  "extend": ["default"],
+  "hooks": {"permission_request": ["@hooks/review"]}
+}

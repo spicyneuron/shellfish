@@ -1,8 +1,7 @@
 // Shellfish: https://github.com/spicyneuron/shellfish
 //
-// The bundled agent, selected when --profile is absent. A profile folder in
-// $XDG_CONFIG_HOME/shellfish/profiles/ shadows a bundled one of the same name,
-// and "extend" merges one profile into another.
+// The bundled agent, selected when --profile is absent. A profile file in
+// $XDG_CONFIG_HOME/shellfish/profiles/ shadows a bundled one of the same name.
 {
   "$schema": "https://raw.githubusercontent.com/spicyneuron/shellfish/refs/heads/main/share/shellfish.schema.json",
 
@@ -27,8 +26,11 @@
   // Tools available to the model.
   "tools": ["read_file", "edit_file", "write_file", "skill", "search_web", "fetch_url", "shell"],
 
-  // hooks/session_start and hooks/user_prompt_submit beside this file run at
-  // those lifecycles. See docs/HARNESS.md.
+  // Ordered hooks run only when listed here. See docs/HARNESS.md.
+  "hooks": {
+    "session_start": ["project_environment", "git_environment", "project_instructions"],
+    "user_prompt_submit": ["user_prompt_submit"]
+  },
 
   // "sandbox" enables fence for tools that opt in via their manifest.
   // sandbox_read_paths/sandbox_write_paths grant extra paths beyond the

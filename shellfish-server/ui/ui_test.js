@@ -16,10 +16,10 @@ const HEADER = {
   format_version: 1,
   cwd: "/project",
   profile: {
-    backend: { adapter: "@default/backends/test" },
+    backend: { adapter: "@backends/test" },
     request: { model: "test-model" },
     context_window: null,
-    tools: ["@default/tools/shell"],
+    tools: ["@tools/shell"],
     sandbox: true,
   },
 };

@@ -63,17 +63,17 @@ typeset -a dispatched=( ${${matches#libexec/}%/main.zsh} )
 
 # Bundled harness resources are product behavior, not core implementation. They
 # run from any installation and never reach into the repository layout.
-collect '\$SF_(ROOT|SHARE)\b' $ROOT/share/profiles/**/*(.N)
+collect '\$SF_(ROOT|SHARE)\b' $ROOT/share/**/*(.N)
 (( ! ${#matches} )) || fail "bundled resource uses the installation layout: $matches[1]"
-collect 'include "lib/[a-z]+"' $ROOT/share/profiles/**/*(.N)
+collect 'include "lib/[a-z]+"' $ROOT/share/**/*(.N)
 (( ! ${#matches} )) || fail "bundled resource uses core jq: $matches[1]"
-# A path relative to the script itself stays inside its own profile folder.
-for file in $ROOT/share/profiles/*/**/*(.N); do
-  rel=${file#$ROOT/share/profiles/*/}
+# A script-relative path stays inside the installed share root.
+for file in $ROOT/share/{hooks,tools,backends,lib}/**/*(.N); do
+  rel=${file#$ROOT/share/}
   collect ':A(:h)+|\.\./' $file
   for token in $matches; do
     [[ $token != ../ ]] && (( ${#${token//[^h]/}} <= ${#${(s:/:)rel}} )) ||
-      fail "bundled resource leaves its profile folder: ${file#$ROOT/}: $token"
+      fail "bundled resource leaves share: ${file#$ROOT/}: $token"
   done
 done
 

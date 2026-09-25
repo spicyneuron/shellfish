@@ -5,9 +5,9 @@ sf_test_tmp default-tools-agent
 sf_test_config
 export XDG_STATE_HOME="$tmp/state"
 
-typeset agent="$ROOT/share/profiles/default/tools/agent"
+typeset agent="$ROOT/share/tools/agent"
 typeset backend="$tmp/backend" session="$tmp/parent.jsonl" stream="$tmp/stream"
-if grep -q '"agent"' "$ROOT/share/profiles/default/profile.jsonc"; then
+if grep -q '"agent"' "$ROOT/share/profiles/default.jsonc"; then
   fail 'agent must be opt-in'
 fi
 mkdir -p "$backend"
@@ -238,7 +238,7 @@ fi
 # without copying the associated child file.
 typeset copied_parent fork_actions="$tmp/fork-actions"
 SHELLFISH_SESSION="$session" SHELLFISH_EXECUTABLE="$ROOT/bin/shellfish" \
-  SHELLFISH_TURN_STATE="$tmp" "$ROOT/share/profiles/default/hooks/fork" \
+  SHELLFISH_TURN_STATE="$tmp" "$ROOT/share/hooks/fork" \
   user_prompt_submit 3>"$fork_actions" < <(print -n -- /fork) >/dev/null ||
   fail 'parent fork failed'
 copied_parent=$(jq -r 'select(.action == "handoff") | .argv[2]' "$fork_actions")

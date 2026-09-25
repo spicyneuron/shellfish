@@ -63,13 +63,13 @@ class Session:
         self.config_home = Path(self.state_home.name) / "config"
         config_dir = self.config_home / "shellfish"
         config_dir.mkdir(parents=True)
-        profile_dir = config_dir / "profiles" / "default"
+        profile_dir = config_dir / "profiles"
         profile_dir.mkdir(parents=True)
-        self.config_file = profile_dir / "profile.jsonc"
+        self.config_file = profile_dir / "default.jsonc"
         config = {
             "backend": {"adapter": TEST_BACKEND},
             "request": {"model": "fake-model"},
-            "tools": [f"@default/tools/{tool}"
+            "tools": [f"@tools/{tool}"
                       for tool in ("read_file", "write_file", "edit_file", "shell")],
             "sandbox": True,
             "hooks": {},
@@ -77,9 +77,9 @@ class Session:
         if hooks:
             # A bodyless entry selects the bundled dispatcher.
             config["hooks"]["user_prompt_submit"] = [
-                name if body is not None else "@default/hooks/user_prompt_submit"
+                name if body is not None else "@hooks/user_prompt_submit"
                 for name, body in hooks.items()]
-            hook_dir = profile_dir / "hooks"
+            hook_dir = config_dir / "hooks"
             hook_dir.mkdir()
             for name, body in hooks.items():
                 if body is None:

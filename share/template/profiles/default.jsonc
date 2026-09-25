@@ -1,7 +1,7 @@
 // Shellfish profile: https://github.com/spicyneuron/shellfish
 //
 // Selected when --profile is absent. "@default" is the bundled agent:
-// https://github.com/spicyneuron/shellfish/blob/main/share/profiles/default/profile.jsonc
+// https://github.com/spicyneuron/shellfish/blob/main/share/profiles/default.jsonc
 {
   "$schema": "https://raw.githubusercontent.com/spicyneuron/shellfish/refs/heads/main/share/shellfish.schema.json",
 
@@ -16,7 +16,7 @@
   // "context_window": 200000, // Set null to disable automatic discovery
 
   // Opt in to agentic permission review:
-  // "hooks": {"permission_request": ["review"]},
+  // "hooks": {"permission_request": ["@hooks/review"]},
 
   "sandbox_read_paths": [
     // Paths outside the project that sandboxed tools may read

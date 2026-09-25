@@ -25,9 +25,9 @@ A session JSONL file is the agent's only durable state. Its first line is a head
 {"type":"assistant","stop":"end","content":[{"type":"text","text":"Done."}]}
 ```
 
-The header freezes the resolved profile: the model and request settings, backend, the tool, system, and hook lists, limits, and sandbox grants. It is itself a complete profile. Component files, including tool manifests and scripts, are read live on each run. Credential values and presentation settings remain external.
+The header freezes the resolved profile: the model and request settings, backend, the tool, system, and hook lists, limits, and sandbox grants. It is itself a complete profile. System file text is materialized into the session's system record at creation; executable components, manifests, and policies remain live. Credential values and presentation settings remain external.
 
-Header paths use `@NAME/` for bundled profile folders, `~/` for HOME, or `/` for fixed absolute locations, so a session survives upgrades and moves with its home. If the project moves independently of HOME, update the header cwd.
+Header paths use `@KIND/NAME` for bundled components, `~/` for HOME, or `/` for fixed absolute locations, so a session survives upgrades and moves with its home. If the project moves independently of HOME, update the header cwd.
 
 | Durable record | Role |
 | --- | --- |

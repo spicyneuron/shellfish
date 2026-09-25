@@ -143,7 +143,7 @@ sf_run_tool_execute() {
     "HOME=${HOME:-$cwd}" "PATH=$PATH" "TERM=${TERM:-dumb}"
     "LANG=${LANG:-C}" "SHELLFISH_CONFIG_DIR=$config_dir"
     "SHELLFISH_MAX_CAPTURE_BYTES=$max_capture" "SHELLFISH_SESSION=$session"
-    "SHELLFISH_EXECUTABLE=$SF_ENTRY" "SHELLFISH_DEFAULT_DIR=$SF_SHARE/profiles/default"
+    "SHELLFISH_EXECUTABLE=$SF_ENTRY" "SHELLFISH_SHARE_DIR=$SF_SHARE"
   )
   [[ -z ${LC_ALL-} ]] || arguments+=( "LC_ALL=$LC_ALL" )
   [[ -z ${LC_CTYPE-} ]] || arguments+=( "LC_CTYPE=$LC_CTYPE" )

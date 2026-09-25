@@ -3,7 +3,7 @@
 source "${0:A:h:h:h}/_helpers.zsh"
 sf_test_tmp run-create-command
 sf_test_config
-typeset system="$SF_TEST_CONFIG/profiles/default/system"
+typeset system="$SF_TEST_CONFIG/system"
 mkdir -p "$tmp/home/work" "$system"
 print -r -- 'initial system' >"$system/source.md"
 export HOME="${tmp:A}/home"
@@ -258,14 +258,14 @@ jq -se 'map(.type) == ["session","system"]' "$cancelled" >/dev/null ||
 # Moving a home preserves its frozen home-relative references.
 typeset old_home="$tmp/original-home" new_home="$tmp/moved-home"
 typeset old_project="$old_home/project" new_project="$new_home/project"
-mkdir -p "$old_project" "$old_home/.config/shellfish/profiles/default"
+mkdir -p "$old_project" "$old_home/.config/shellfish/profiles"
 print -r -- 'original prompt' >"$old_project/prompt.md"
 cat >"$old_project/hook" <<'ZSH'
 #!/usr/bin/env zsh
 pwd -P >"$PWD/hook-cwd"
 ZSH
 chmod +x "$old_project/hook"
-cat >"$old_home/.config/shellfish/profiles/default/profile.jsonc" <<EOF
+cat >"$old_home/.config/shellfish/profiles/default.jsonc" <<EOF
 {
   "backend": {"adapter": "$ROOT/tests/fixtures/backend"},
   "request": {"model": "test-model"},

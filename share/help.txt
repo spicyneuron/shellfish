@@ -29,7 +29,7 @@ Existing sessions:
 
 Global config:
   Default directory: ${XDG_CONFIG_HOME:-$HOME/.config}/shellfish
-  Profiles:          profiles/NAME/profile.jsonc
+  Profiles:          profiles/NAME.jsonc
   TUI file:          tui.jsonc
 
 Authentication:

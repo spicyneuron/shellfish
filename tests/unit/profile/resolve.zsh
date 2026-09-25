@@ -117,21 +117,20 @@ jq -e --arg base "$profiles" '
 sf_profile_resolve_args -p near -p later
 jq -e --arg base "$profiles" '.system == [$base + "/later/system/shared.md"]' <<<"$REPLY" >/dev/null
 
-# "@NAME/path" is the bundled folder even when a user folder shadows the name;
+# "@KIND/path" selects the bundled component despite user shadowing;
 # "~/" and absolute paths are taken as written.
 sf_test_profile default '{"extend": ["far"], "system": ["shared.md",
-  "@default/system/general.md", "~/prompts/home.md", "'"$HOME"'/prompts/home.md"]}'
+  "@system/general.md", "~/prompts/home.md", "'"$HOME"'/prompts/home.md"]}'
 sf_profile_resolve_args
-jq -e --arg base "$profiles" --arg home "${HOME:A}" --arg bundled "$ROOT/share/profiles/default" '
+jq -e --arg base "$profiles" --arg home "${HOME:A}" --arg bundled "$ROOT/share" '
   .system == [$base + "/default/system/shared.md", $bundled + "/system/general.md",
     $home + "/prompts/home.md", $home + "/prompts/home.md"]' <<<"$REPLY" >/dev/null
 
-# Bare names never fall back to the bundled folder.
+# Bare names fall back to the bundled kind directory.
 sf_test_profile default '{"extend": ["far"], "system": ["general.md"]}'
-if sf_profile_resolve_args; then
-  fail 'bare name resolved outside the profile folders'
-fi
-[[ $SF_PROFILE_ERROR == 'cannot resolve system reference: general.md' ]]
+sf_profile_resolve_args
+jq -e --arg bundled "$ROOT/share" '.system == [$bundled + "/system/general.md"]' \
+  <<<"$REPLY" >/dev/null
 
 # Flat profiles select components from fixed kind directories, independent of
 # which profile supplied the reference.

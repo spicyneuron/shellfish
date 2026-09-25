@@ -1,6 +1,6 @@
 # Configuration
 
-Shellfish reads JSONC from `$XDG_CONFIG_HOME/shellfish/` (or `~/.config/shellfish/` when `XDG_CONFIG_HOME` is unset). `profiles/NAME/profile.jsonc` describes an agent and `tui.jsonc` describes rendering. `NAME` may be a slash-separated path such as `openai/sol`. A profile name resolves to exactly one folder: yours shadows the bundled folder of the same name under [`share/profiles/`](../share/profiles/). `tui.jsonc` merges over [`share/tui.jsonc`](../share/tui.jsonc).
+Shellfish reads JSONC from `$XDG_CONFIG_HOME/shellfish/` (or `~/.config/shellfish/` when `XDG_CONFIG_HOME` is unset). `profiles/NAME.jsonc` describes an agent and `tui.jsonc` describes rendering. `NAME` may be a slash-separated path such as `openai/sol`. Your profile file shadows the bundled file of the same name under [`share/profiles/`](../share/profiles/). `tui.jsonc` merges over [`share/tui.jsonc`](../share/tui.jsonc).
 
 The two never mix. A session freezes a profile, so a profile rejects rendering keys; `tui.jsonc` is read fresh on every run and is never frozen.
 
@@ -8,10 +8,10 @@ Copy [`share/template/`](../share/template/) into that directory for a working s
 
 ## Profiles
 
-`profiles/default/` is selected when `--profile` is absent. `-p NAME` selects another, including nested profiles such as `-p openai/sol`, and repeats compose: `-p review -p readonly` merges them left to right. `extend` accepts the same names. A folder you write shadows the bundled folder of that name, and `@NAME` always means the bundled folder, so your own `default` can extend `@default` to build on the bundled agent.
+`profiles/default.jsonc` is selected when `--profile` is absent. `-p NAME` selects another, including nested profiles such as `-p openai/sol`, and repeats compose: `-p review -p readonly` merges them left to right. `extend` accepts the same names. A file you write shadows the bundled file of that name, and `@NAME` always means the bundled file, so your own `default` can extend `@default` to build on the bundled agent.
 
 ```jsonc
-// profiles/work/profile.jsonc
+// profiles/work.jsonc
 {
   "extend": ["default"],
   "backend": {"adapter": "openrouter"},
@@ -34,11 +34,11 @@ The selected profiles and everything they extend are flattened into one list, pa
 A profile that sets only one section is a shareable fragment; that is what `extend` is for, so there are no separate backend or harness maps.
 
 ```jsonc
-// profiles/local-llm/profile.jsonc — not selectable on its own; no model
+// profiles/local-llm.jsonc — not selectable on its own; no model
 {"backend": {"adapter": "openai",
              "endpoint": "http://127.0.0.1:8080/v1/chat/completions"}}
 
-// profiles/local/profile.jsonc
+// profiles/local.jsonc
 {"extend": ["default", "local-llm"], "request": {"model": "qwen3"}}
 ```
 
@@ -61,7 +61,7 @@ These fields sit at the profile's top level. Omitted sandbox and limit fields us
 | Field | Default / meaning |
 | --- | --- |
 | `tools` | `[]`; unique tool references exposed to the model |
-| `hooks.LIFECYCLE` | Hook references, nearest first; see below |
+| `hooks.LIFECYCLE` | Ordered hook references; see below |
 | `sandbox` | `true` |
 | `sandbox_read_paths` | `[]`; extra read grants |
 | `sandbox_write_paths` | `[]`; extra read-write grants |
@@ -69,12 +69,12 @@ These fields sit at the profile's top level. Omitted sandbox and limit fields us
 | `max_tool_calls_per_request` | `25` |
 | `max_capture_bytes` | `32768`; per component execution, minimum `64` |
 
-Each lifecycle runs the first hook in its list, and each later one is the parent of the one before; see [`HARNESS.md`](HARNESS.md#hooks). A folder containing `hooks/LIFECYCLE` contributes `[that script, "..."]` unless its profile sets that list, so discovered scripts stack nearest first. An explicit list replaces what was inherited, `"..."` splices it back in, and `[]` disables the lifecycle.
+Each lifecycle runs every listed hook in order until one takes an action. A hook without an action defers to the next, and an empty or absent list runs none; see [`HARNESS.md`](HARNESS.md#hooks). A list replaces what was inherited, while `"..."` splices the inherited list at that position.
 
 One capability set can serve different roles, because the system prompt sits beside it:
 
 ```jsonc
-// profiles/review/profile.jsonc, beside system/review.md
+// profiles/review.jsonc, with system/review.md
 {
   "extend": ["default"],
   "tools": ["read_file"],
@@ -85,19 +85,17 @@ One capability set can serve different roles, because the system prompt sits bes
 
 ## Components and environment
 
-A profile folder keeps its components beside `profile.jsonc`:
+A configuration root has separate profile and component locations:
 
 ```text
-profiles/NAME/
-  profile.jsonc
-  system/FILE.md
-  tools/TOOL/
-  hooks/LIFECYCLE
-  hooks/PART
-  backends/ADAPTER/
+profiles/NAME.jsonc
+system/FILE.md
+tools/TOOL/
+hooks/HOOK
+backends/ADAPTER/
 ```
 
-A name in `system`, `tools`, `hooks`, or `backend.adapter` resolves to the first folder that contains it, starting with the most-derived profile and walking back through what it extends; a later `-p` comes before an earlier one. So a profile shadows its parents' components, and a name never falls back beyond those folders: a profile that does not extend `default` references bundled parts as `@default/tools/shell`. `@NAME/path` always resolves inside the bundled folder, while `~/path` and absolute paths are used as written.
+A bare name in `system`, `tools`, `hooks`, or `backend.adapter` resolves in its kind's top-level user directory first, then bundled `share/`. Profile inheritance does not affect component lookup. `@KIND/NAME`, such as `@tools/shell`, selects the bundled component explicitly; `~/path` and absolute paths are also available. Only components named in a resolved profile are active. Missing or invalid active components fail resolution; unused files are inert.
 
 Credentials live in exported variables or `.env` in the configuration directory; exported values win. Values remain external and are read for each invocation.
 
@@ -133,7 +131,7 @@ The default harness runs opted-in tools under [`fence`](https://github.com/fence
 
 ## Bundled agent
 
-[`default`](../share/profiles/default/profile.jsonc) works out of the box: the `openrouter` adapter, `general.md` and `tools.md`, and up to 16,384 output tokens with medium reasoning effort. It sets no model, so supply one in your own profile or with `-m`. [`coding`](../share/profiles/coding/profile.jsonc) is a short example of overriding it.
+[`default`](../share/profiles/default.jsonc) works out of the box: the `openrouter` adapter, `general.md` and `tools.md`, and up to 16,384 output tokens with medium reasoning effort. It sets no model, so supply one in your own profile or with `-m`. [`coding`](../share/profiles/coding.jsonc) is a short example of overriding it.
 
 Its harness enables sandboxing, uses the limit defaults above, and exposes:
 

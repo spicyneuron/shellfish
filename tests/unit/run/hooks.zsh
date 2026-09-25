@@ -382,7 +382,7 @@ jq -e -s '
 ' "$session" >/dev/null || fail 'later hook failure lost settled output'
 
 # The bundled sandbox hook compares stored grants with shell-resolved input.
-typeset sandbox_hook="$ROOT/share/profiles/default/hooks/sandbox"
+typeset sandbox_hook="$ROOT/share/hooks/sandbox"
 typeset sandbox_session="$tmp/sandbox.jsonl" sandbox_control="$tmp/sandbox-control.json"
 typeset sandbox_project="$tmp/project" sandbox_home="$tmp/home" sandbox_output="$tmp/sandbox-output"
 mkdir -p "$sandbox_project/dir" "$sandbox_home/share"

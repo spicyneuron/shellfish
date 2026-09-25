@@ -3,10 +3,10 @@
 source "${0:A:h:h:h}/_helpers.zsh"
 
 sf_test_tmp backends-openai
-typeset run="$ROOT/share/profiles/default/backends/openai/run"
-typeset openrouter_run="$ROOT/share/profiles/default/backends/openrouter/run"
-typeset context_window="$ROOT/share/profiles/default/backends/openai/context_window"
-typeset responses_context_window="$ROOT/share/profiles/default/backends/openai-responses/context_window"
+typeset run="$ROOT/share/backends/openai/run"
+typeset openrouter_run="$ROOT/share/backends/openrouter/run"
+typeset context_window="$ROOT/share/backends/openai/context_window"
+typeset responses_context_window="$ROOT/share/backends/openai-responses/context_window"
 typeset req="$tmp/request.json"
 typeset res="$tmp/response.json"
 typeset body="$tmp/body.json"
