@@ -28,10 +28,12 @@ while IFS= read -r -d $'\0' file; do
     lib/*.jq | \
     libexec/*.zsh | \
     libexec/*.jq | \
-    share/profiles/*.zsh | \
-    share/profiles/*/run | \
-    share/profiles/*/check | \
-    share/profiles/*/context_window | \
+    share/hooks/* | \
+    share/tools/*/run | \
+    share/backends/*/run | \
+    share/backends/*/context_window | \
+    share/backends/*.zsh | \
+    share/lib/*.zsh | \
     shellfish-server/*.go | \
     shellfish-server/ui/*.js | \
     shellfish-server/ui/*.css | \

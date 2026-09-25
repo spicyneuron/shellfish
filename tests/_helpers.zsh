@@ -29,15 +29,15 @@ sf_test_tmp() {
   export XDG_STATE_HOME="$tmp/state" XDG_CONFIG_HOME="$tmp/config"
 }
 
-# An isolated config directory, then one profile folder inside it.
+# An isolated config directory for profile fixtures.
 sf_test_config() {
   typeset -g SF_TEST_CONFIG="$tmp/config/shellfish"
   mkdir -p "$SF_TEST_CONFIG/profiles"
 }
 
 sf_test_profile() {
-  mkdir -p "$SF_TEST_CONFIG/profiles/$1"
-  print -r -- "$2" >"$SF_TEST_CONFIG/profiles/$1/profile.jsonc"
+  mkdir -p "$SF_TEST_CONFIG/profiles/${1:h}"
+  print -r -- "$2" >"$SF_TEST_CONFIG/profiles/$1.jsonc"
 }
 
 # err_exit plus this trap turn every bare test expression into a located

@@ -19,7 +19,7 @@ def nonempty_control_free_string:
 def model_name: nonempty_control_free_string;
 def stored_reference:
   nonempty_control_free_string and
-  (startswith("/") or startswith("~/") or test("^@[A-Za-z0-9][A-Za-z0-9_-]*/."));
+  (startswith("/") or startswith("~/") or test("^@(system|tools|hooks|backends)/.+"));
 def stored_cwd:
   nonempty_control_free_string and (startswith("/") or startswith("~/"));
 def endpoint: type == "string" and test("^https?://[^[:space:][:cntrl:]]+$");
@@ -132,22 +132,12 @@ def config_profile($path):
   config_assert((has("max_capture_bytes") | not) or (.max_capture_bytes | capture_bytes);
     $path + ["max_capture_bytes"]; "must be at least 64");
 
-# A folder holding hooks/LIFECYCLE contributes [that script, "..."] unless its
-# profile sets the list. $scripts are the executables found under hooks/.
-def profile_discover($scripts):
-  with_entries((.key | rtrimstr("profile.jsonc") + "hooks/") as $hooks |
-    .value |= reduce hook_names[] as $hook (.;
-      if ($scripts | index([$hooks + $hook])) and type == "object" and
-          ((.hooks // {}) | type == "object" and (has($hook) | not))
-      then .hooks[$hook] = [$hooks + $hook, "..."] else . end));
-
 # Profile files keyed by path become their names relative to the profile root.
 def profile_map($bundled; $configured):
   with_entries(.key |= (if startswith($bundled + "/") then
       "@" + ltrimstr($bundled + "/")
     else ltrimstr($configured + "/") end |
-    if endswith("/profile.jsonc") then rtrimstr("/profile.jsonc")
-    else rtrimstr(".jsonc") end));
+    rtrimstr(".jsonc")));
 
 # An unprefixed name prefers the configured folder; "@NAME" uses the bundled one.
 def profile_key($profiles):
@@ -198,7 +188,7 @@ def profile_select($profiles; $names; $model; $request; $backend):
    max_capture_bytes:32768,
    backend:{insecure_tls:false, http_timeout:3600, http_stall:300}} * .;
 
-# Each reference as [kind, reference] through f, where kind is its folder.
+# Each reference as [kind, reference] through f.
 def profile_references(f):
   .backend.adapter |= (["backends", .] | f) |
   .system |= map(["system", .] | f) |
@@ -212,19 +202,17 @@ def profile_paths(reference; path):
 # Stored paths name bundled files "@KIND/...", files under HOME "~/...", and
 # anything else absolutely.
 def store_path($share; $home):
-  if $share != "" and startswith($share + "/profiles/") then
-    "@" + ltrimstr($share + "/profiles/")
-  elif $share != "" and startswith($share + "/") then
-    "@" + ltrimstr($share + "/")
+  if $share != "" and startswith($share + "/") then
+    if startswith($share + "/system/") or startswith($share + "/tools/") or
+        startswith($share + "/hooks/") or startswith($share + "/backends/") then
+      "@" + ltrimstr($share + "/")
+    else . end
   elif $home != "" and startswith($home + "/") then "~" + ltrimstr($home)
   else . end;
 
 def expand_path($share; $home):
   if startswith("@") then
-    if (ltrimstr("@") | startswith("profiles/")) then $share + "/" + ltrimstr("@")
-    elif (ltrimstr("@") | test("^(system|tools|hooks|backends)/")) then
-      $share + "/" + ltrimstr("@")
-    else $share + "/profiles/" + ltrimstr("@") end
+    $share + "/" + ltrimstr("@")
   elif startswith("~/") then
     if $home == "" then error("cannot expand ~ without HOME")
     else $home + ltrimstr("~") end

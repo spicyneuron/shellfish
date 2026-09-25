@@ -87,43 +87,47 @@ for name in p q; do
   fi
 done
 
-# Component lookup through profile folders.
+# Component lookup uses fixed kind directories, not profile folders.
 sf_test_source lib/profile.zsh
 sf_test_tmp resolve
 sf_test_config
 export HOME="$tmp/home"
-typeset profiles="${SF_TEST_CONFIG:A}/profiles"
-mkdir -p "$HOME/prompts" "$profiles"/{far,near,later,default}/system "$profiles/far/tools/probe"
-print -r -- '#!/bin/sh' >"$profiles/far/tools/probe/run"
-chmod +x "$profiles/far/tools/probe/run"
+typeset config="${SF_TEST_CONFIG:A}"
+mkdir -p "$HOME/prompts" "$config/system" "$config/tools/probe" \
+  "$config/profiles/far/system" "$config/profiles/far/tools/probe"
+print -r -- '#!/bin/sh' >"$config/tools/probe/run"
+chmod +x "$config/tools/probe/run"
 print -r -- '{"description":"probe","input_schema":{"type":"object"},"sandbox":false}' \
-  >"$profiles/far/tools/probe/manifest.json"
-for folder in far near later default; do
-  print -r -- "$folder" >"$profiles/$folder/system/shared.md"
-done
+  >"$config/tools/probe/manifest.json"
+print -r -- 'configured' >"$config/system/shared.md"
+print -r -- 'old folder' >"$config/profiles/far/system/shared.md"
+print -r -- 'not json' >"$config/profiles/far/tools/probe/manifest.jsonc"
 print -r -- 'home' >"$HOME/prompts/home.md"
 sf_test_profile far '{"backend": {"adapter": "'"$SF_TEST_BACKEND:h"'"},
   "request": {"model": "m"}, "tools": ["probe"], "system": ["shared.md"]}'
 sf_test_profile near '{"extend": ["far"]}'
-sf_test_profile later '{}'
+sf_test_profile unused '{invalid json'
 
-# The most-derived folder wins, and parents still supply what it lacks.
+# A child inherits references, but its folder cannot replace their target.
 sf_profile_resolve_args -p near
-jq -e --arg base "$profiles" '
-  .system == [$base + "/near/system/shared.md"] and
-  .tools == [$base + "/far/tools/probe"]' <<<"$REPLY" >/dev/null
-
-# A later -p is more derived than an earlier one.
-sf_profile_resolve_args -p near -p later
-jq -e --arg base "$profiles" '.system == [$base + "/later/system/shared.md"]' <<<"$REPLY" >/dev/null
+jq -e --arg base "$config" '
+  .system == [$base + "/system/shared.md"] and
+  .tools == [$base + "/tools/probe"]' <<<"$REPLY" >/dev/null
+sf_test_profile escape '{"extend":["far"],"system":["../profiles/far/system/shared.md"]}'
+if sf_profile_resolve_args -p escape; then
+  fail 'relative component reference escaped its kind directory'
+fi
+[[ $SF_PROFILE_ERROR == 'cannot resolve system reference: ../profiles/far/system/shared.md' ]]
 
 # "@KIND/path" selects the bundled component despite user shadowing;
 # "~/" and absolute paths are taken as written.
 sf_test_profile default '{"extend": ["far"], "system": ["shared.md",
   "@system/general.md", "~/prompts/home.md", "'"$HOME"'/prompts/home.md"]}'
+mkdir -p "$config/profiles/default"
+print -r -- '{old folder profile' >"$config/profiles/default/profile.jsonc"
 sf_profile_resolve_args
-jq -e --arg base "$profiles" --arg home "${HOME:A}" --arg bundled "$ROOT/share" '
-  .system == [$base + "/default/system/shared.md", $bundled + "/system/general.md",
+jq -e --arg base "$config" --arg home "${HOME:A}" --arg bundled "$ROOT/share" '
+  .system == [$base + "/system/shared.md", $bundled + "/system/general.md",
     $home + "/prompts/home.md", $home + "/prompts/home.md"]' <<<"$REPLY" >/dev/null
 
 # Bare names fall back to the bundled kind directory.
@@ -131,6 +135,7 @@ sf_test_profile default '{"extend": ["far"], "system": ["general.md"]}'
 sf_profile_resolve_args
 jq -e --arg bundled "$ROOT/share" '.system == [$bundled + "/system/general.md"]' \
   <<<"$REPLY" >/dev/null
+rm "$config/tools/probe/manifest.json"
 
 # Flat profiles select components from fixed kind directories, independent of
 # which profile supplied the reference.
@@ -161,7 +166,7 @@ jq -e --arg bundled "$ROOT/share" '.system == [$bundled + "/system/general.md"]'
     >"$SF_TEST_CONFIG/profiles/deep/variant.jsonc"
   print -r -- '{"extend":["@default"],"request":{"model":"bundled-variant"}}' \
     >"$SF_SHARE/profiles/deep/variant.jsonc"
-  sf_profile_resolve_args -p deep/variant
+  sf_profile_resolve_args -p deep/variant || fail "$SF_PROFILE_ERROR"
   jq -e --arg configured "${SF_TEST_CONFIG:A}" --arg bundled "${SF_SHARE:A}" '
     .request.model == "variant" and
     .system == [$configured + "/system/general.md", $bundled + "/system/general.md"] and

@@ -99,15 +99,15 @@ valid_header=$(jq -cn '
     created: "2026-08-18T00:00:00Z",
     profile: {
       request: {model: "gpt-4o"},
-      system: ["@default/system/general.md"],
+      system: ["@system/general.md"],
       backend: {
-        adapter: "@default/backends/openai",
+        adapter: "@backends/openai",
         endpoint: "https://api.openai.com/v1/chat/completions",
         insecure_tls: false,
         http_timeout: 30, http_stall: 10
       },
-      tools: ["@default/tools/shell", "~/tools/jira"],
-      hooks: {stop: ["/bin/hook", "@default/hooks/stop"]},
+      tools: ["@tools/shell", "~/tools/jira"],
+      hooks: {stop: ["/bin/hook", "@hooks/stop"]},
       sandbox: true, sandbox_read_paths: ["~/cache"], sandbox_write_paths: [],
       max_requests_per_turn: 50, max_tool_calls_per_request: 20,
       max_capture_bytes: 32768
@@ -120,7 +120,8 @@ for patch in '.extra=true' '.profile.extra=true' '.profile.extend=["default"]' \
     'del(.profile.backend.endpoint)' 'del(.profile.request.model)' \
     '.profile.hooks.stop=[{command:"/bin/hook"}]' '.profile.system=["relative.md"]' \
     '.profile.tools=["shell"]' '.profile.tools=["/a/shell","/b/shell"]' \
-    '.profile.backend.adapter="./openai"' '.profile.sandbox_read_paths=["relative"]' \
+    '.profile.backend.adapter="./openai"' '.profile.system=["@default/system/general.md"]' \
+    '.profile.sandbox_read_paths=["relative"]' \
     '.cwd="./project"'; do
   if jq -c "$patch" <<<"$valid_header" |
       schema_eval 'canonical_session_header' >/dev/null 2>&1; then
@@ -133,25 +134,19 @@ jq -L "$ROOT" -e --arg share /opt/sf/share --arg home /home/me '
   include "lib/profile";
   .profile as $stored |
   ($stored | profile_expand($share; $home)) as $expanded |
-  $expanded.tools == ["/opt/sf/share/profiles/default/tools/shell", "/home/me/tools/jira"] and
+  $expanded.tools == ["/opt/sf/share/tools/shell", "/home/me/tools/jira"] and
   $expanded.sandbox_read_paths == ["/home/me/cache"] and
   ($expanded | profile_store($share; $home)) == $stored
 ' <<<"$valid_header" >/dev/null || fail 'stored profile paths did not round-trip'
 
-# Flat bundled references use the installed share root, not profiles/default.
+# Old absolute component paths remain data when a header is stored.
 jq -L "$ROOT" -e --arg share /opt/sf/share --arg home /home/me '
   include "lib/profile";
-  .profile.system = ["@system/general.md"] |
-  .profile.backend.adapter = "@backends/openai" |
-  .profile.tools = ["@tools/shell", "~/tools/jira"] |
-  .profile.hooks.stop = ["@hooks/stop"] |
-  .profile as $stored |
-  ($stored | profile_expand($share; $home)) as $expanded |
-  $expanded.system == ["/opt/sf/share/system/general.md"] and
-  $expanded.backend.adapter == "/opt/sf/share/backends/openai" and
-  $expanded.tools[0] == "/opt/sf/share/tools/shell" and
-  ($expanded | profile_store($share; $home)) == $stored
-' <<<"$valid_header" >/dev/null || fail 'flat stored profile paths did not round-trip'
+  .profile.tools = ["/opt/sf/share/profiles/default/tools/shell"] |
+  (canonical_session_header and
+  (.profile | profile_store($share; $home)).tools ==
+    ["/opt/sf/share/profiles/default/tools/shell"])
+' <<<"$valid_header" >/dev/null || fail 'old absolute paths changed when stored'
 
 # Tool manifests validate sandboxing.
 typeset valid_manifest

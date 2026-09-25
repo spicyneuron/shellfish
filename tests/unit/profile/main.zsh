@@ -19,16 +19,16 @@ sf_test_profile work '{
 # Nested names select by relative path and can extend other nested profiles.
 sf_test_profile openai/base '{"extend":["@default"],"request":{"model":"base"}}'
 sf_test_profile openai/sol '{"extend":["openai/base"],"request":{"model":"sol"},
-  "system":["prompt.md"]}'
-mkdir -p "$SF_TEST_CONFIG/profiles/openai/sol/system" "$SF_TEST_CONFIG/profiles/openai/sol/hooks"
-print -r -- 'nested' >"$SF_TEST_CONFIG/profiles/openai/sol/system/prompt.md"
-print -r -- '#!/bin/sh' >"$SF_TEST_CONFIG/profiles/openai/sol/hooks/stop"
-chmod +x "$SF_TEST_CONFIG/profiles/openai/sol/hooks/stop"
+  "system":["prompt.md"],"hooks":{"stop":["stop"]}}'
+mkdir -p "$SF_TEST_CONFIG/system" "$SF_TEST_CONFIG/hooks"
+print -r -- 'nested' >"$SF_TEST_CONFIG/system/prompt.md"
+print -r -- '#!/bin/sh' >"$SF_TEST_CONFIG/hooks/stop"
+chmod +x "$SF_TEST_CONFIG/hooks/stop"
 sf_profile_resolve_args -p openai/sol
-jq -e --arg folder "${SF_TEST_CONFIG:A}/profiles/openai/sol" '
+jq -e --arg root "${SF_TEST_CONFIG:A}" '
   .request.model == "sol" and (.tools | length) == 7 and
-  .system == [$folder + "/system/prompt.md"] and
-  .hooks.stop == [$folder + "/hooks/stop"]' <<<"$REPLY" >/dev/null
+  .system == [$root + "/system/prompt.md"] and
+  .hooks.stop == [$root + "/hooks/stop"]' <<<"$REPLY" >/dev/null
 for name in openai//sol openai/../sol /openai/sol openai/sol/; do
   if sf_profile_resolve_args -p "$name"; then
     fail "invalid profile name was accepted: $name"
@@ -167,11 +167,11 @@ fi
 
 # Malformed profiles identify their source.
 sf_test_profile malformed '{"request":}'
-if sf_profile_resolve_args; then
+if sf_profile_resolve_args -p malformed; then
   fail 'malformed profile was accepted'
 fi
-[[ $SF_PROFILE_ERROR == *'invalid profile: '*'malformed/profile.jsonc:'*'parse error:'* ]]
-rm -r "$SF_TEST_CONFIG/profiles/malformed"
+[[ $SF_PROFILE_ERROR == *'invalid profile: '*'malformed.jsonc:'*'parse error:'* ]]
+rm "$SF_TEST_CONFIG/profiles/malformed.jsonc"
 
 # Home-relative sandbox paths expand safely.
 sf_test_profile home-paths '{
@@ -191,48 +191,39 @@ jq -e --arg read "${tmp:A}/home/my reference" --arg write "${tmp:A}/home/output"
   [[ $SF_PROFILE_ERROR == *'cannot expand ~ without HOME'* ]]
 )
 
-# A folder's hooks/LIFECYCLE joins the front of the inherited list; other files
-# under hooks/ are inert parts.
-typeset base_hooks="$SF_TEST_CONFIG/profiles/hook-base/hooks"
-typeset hooked="$SF_TEST_CONFIG/profiles/hooked/hooks"
-mkdir -p "$base_hooks" "$hooked/dir"
-for script in "$base_hooks/stop" "$base_hooks/part" "$hooked/stop"; do
+# Inactive files, including old folder-style hooks and manifests, are inert.
+typeset hooks="$SF_TEST_CONFIG/hooks"
+mkdir -p "$hooks/dir" "$SF_TEST_CONFIG/profiles/hooked/hooks" \
+  "$SF_TEST_CONFIG/profiles/hooked/tools/legacy"
+print -r -- '#!/bin/sh' >"$SF_TEST_CONFIG/profiles/hooked/hooks/stop"
+chmod +x "$SF_TEST_CONFIG/profiles/hooked/hooks/stop"
+print -r -- 'not json' >"$SF_TEST_CONFIG/profiles/hooked/tools/legacy/manifest.jsonc"
+for script in "$hooks/first" "$hooks/second"; do
   print -r -- '#!/bin/sh' >"$script"
   chmod +x "$script"
 done
-sf_test_profile hook-base '{}'
-hooked_profile() {
-  sf_test_profile hooked "$(jq -cn --arg adapter "$fixture_backend" --argjson hooks "${1:-null}" '
-    {extend:["hook-base"],backend:{adapter:$adapter},request:{model:"m"}} +
-    if $hooks == null then {} else {hooks:$hooks} end')"
-}
-hooked_profile
+sf_test_profile hook-base '{"backend":{"adapter":"'"$fixture_backend"'"},
+  "request":{"model":"m"},"hooks":{"stop":["first"]}}'
+sf_test_profile hooked '{"extend":["hook-base"],"hooks":{"stop":["...","second"]}}'
 sf_profile_resolve_args -p hooked
-jq -e --arg base "${base_hooks:A}" --arg hooked "${hooked:A}" '
-  .hooks.stop == [$hooked + "/stop", $base + "/stop"] and
-  (.hooks | has("part") or has("user_prompt_submit") | not)
-' <<<"$REPLY" >/dev/null || fail 'discovered hooks did not stack nearest first'
-
-# An explicit list replaces discovery, "..." splices the inherited list, and []
-# disables the lifecycle.
-hooked_profile '{"stop": ["part", "..."]}'
-sf_profile_resolve_args -p hooked
-jq -e --arg base "${base_hooks:A}" '.hooks.stop == [$base + "/part", $base + "/stop"]' \
-  <<<"$REPLY" >/dev/null || fail 'an explicit hook list did not replace discovery'
-hooked_profile '{"stop": []}'
+jq -e --arg hooks "${hooks:A}" '
+  .hooks.stop == [$hooks + "/first", $hooks + "/second"] and
+  (.hooks | has("user_prompt_submit") | not)
+' <<<"$REPLY" >/dev/null || fail 'explicit hook order changed'
+sf_test_profile hooked '{"extend":["hook-base"],"hooks":{"stop":[]}}'
 sf_profile_resolve_args -p hooked
 jq -e '.hooks.stop == []' <<<"$REPLY" >/dev/null ||
   fail 'an empty hook list did not disable the lifecycle'
 
 # A hook reference must name an executable file.
-hooked_profile '{"pre_tool_use": ["dir"]}'
+sf_test_profile hooked '{"extend":["hook-base"],"hooks":{"pre_tool_use":["dir"]}}'
 if sf_profile_resolve_args -p hooked; then
   fail 'directory hook was accepted'
 fi
 [[ $SF_PROFILE_ERROR == 'invalid hooks reference: dir' ]]
 
 # Tool references preserve configured order.
-typeset tools="$SF_TEST_CONFIG/profiles/tooled/tools"
+typeset tools="$SF_TEST_CONFIG/tools"
 for tool_name in alpha beta gamma delta epsilon; do
   mkdir -p "$tools/$tool_name"
   print -r -- '#!/bin/sh' >"$tools/$tool_name/run"

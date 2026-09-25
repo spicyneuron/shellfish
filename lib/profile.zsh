@@ -48,26 +48,19 @@ sf_profile_manifest() {
   fi
 }
 
-# Flat component directories take precedence; folder lookup remains temporary.
 sf_profile_reference() {
   local reference=$1 kind=$2 config_dir=$3 folder candidate=''
-  shift 3
+  if [[ $reference != /* && $reference != '~/'* &&
+      ( /$reference/ == */../* || /$reference/ == */./* ) ]]; then
+    return 1
+  fi
   case $reference in
     /*) candidate=$reference ;;
     '~/'*) [[ -z ${HOME-} ]] || candidate="$HOME/${reference#\~/}" ;;
     @$kind/*) candidate="$SF_SHARE/${reference#@}" ;;
-    @*/*) candidate="$SF_SHARE/profiles/${reference#@}" ;;
+    @*) return 1 ;;
     *)
       for folder in "$config_dir" "$SF_SHARE"; do
-        [[ -e $folder/$kind/$reference || -L $folder/$kind/$reference ]] || continue
-        candidate="$folder/$kind/$reference"
-        break
-      done
-      if [[ -n $candidate ]]; then
-        REPLY=${candidate:A}
-        return 0
-      fi
-      for folder; do
         [[ -e $folder/$kind/$reference || -L $folder/$kind/$reference ]] || continue
         candidate="$folder/$kind/$reference"
         break
@@ -111,49 +104,63 @@ sf_profile_tools() {
 # reference. REPLY is the profile with absolute paths.
 sf_profile_resolve() {
   local profile_names=$1 model_override=$2 request_override=$3 backend_override=$4
-  local config_dir profile reference resolved manifest='' final root candidate parent
-  local -A decoded
-  local -a files folders references resolutions=() scripts
+  local config_dir profile reference resolved manifest='' final name file found='{}' parents
+  local -A decoded seen
+  local -a files pending references resolutions=()
 
   SF_PROFILE_ERROR=''
   REPLY=''
   sf_environment_config_dir || sf_profile_fail "$SF_ENVIRONMENT_ERROR" || return
   config_dir=$REPLY
-  files=( "$SF_SHARE/profiles"/**/profile.jsonc(N-.) )
-  for root in "$SF_SHARE/profiles" "$config_dir/profiles"; do
-    [[ $root == $SF_SHARE/profiles ]] ||
-      files+=( "$config_dir/profiles"/**/profile.jsonc(N-.) )
-    for candidate in "$root"/**/*.jsonc(N-.); do
-      [[ $candidate:t == profile.jsonc ]] && continue
-      parent=${candidate:h}
-      while [[ $parent != $root ]]; do
-        [[ -f $parent/profile.jsonc ]] && break
-        parent=${parent:h}
-      done
-      [[ $parent == $root ]] && files+=( "$candidate" )
+  if [[ -n $profile_names ]]; then
+    pending=( ${(f)profile_names} )
+  else
+    pending=( default )
+  fi
+  while (( ${#pending} )); do
+    files=()
+    for name in "${pending[@]}"; do
+      [[ -z ${seen[$name]-} ]] || continue
+      [[ $name =~ '^@?[A-Za-z0-9][A-Za-z0-9_-]*(/[A-Za-z0-9][A-Za-z0-9_-]*)*$' ]] ||
+        sf_profile_fail "invalid profile name: $name" || return
+      seen[$name]=1
+      if [[ $name == @* ]]; then
+        file="$SF_SHARE/profiles/${name#@}.jsonc"
+      else
+        file="$config_dir/profiles/$name.jsonc"
+        [[ -e $file || -L $file ]] || file="$SF_SHARE/profiles/$name.jsonc"
+      fi
+      [[ -e $file || -L $file ]] || sf_profile_fail "unknown profile: $name" || return
+      files+=( "$file" )
     done
+    (( ${#files} )) || break
+    sf_profile_read_files 'invalid profile' "${files[@]}" || return
+    found=$(jq -cn --argjson previous "$found" --argjson files "$REPLY" \
+      '$previous + $files') || sf_profile_fail 'cannot read profiles' || return
+    parents=$(sf_jq -rn --argjson files "$REPLY" \
+      --arg bundled "$SF_SHARE/profiles" --arg configured "$config_dir/profiles" '
+      include "lib/profile";
+      $files | profile_map($bundled; $configured) | to_entries[] |
+      .key as $name | .value | config_profile([$name]) | .extend[]?
+    ' 2>&1) || {
+      sf_profile_validation_error "$parents" 'invalid profile'
+      return
+    }
+    pending=( ${(f)parents} )
   done
-  sf_profile_read_files 'invalid profile' "${files[@]}" || return
-  scripts=( "$SF_SHARE/profiles"/**/hooks/*(N-*) "$config_dir/profiles"/**/hooks/*(N-*) )
 
-  sf_jq_fields -rn --argjson files "$REPLY" --arg names "$profile_names" \
+  sf_jq_fields -rn --argjson files "$found" --arg names "$profile_names" \
     --arg bundled "$SF_SHARE/profiles" --arg configured "$config_dir/profiles" \
     --arg model "$model_override" --argjson request "$request_override" \
-    --arg backend "$backend_override" --argjson grants "$SF_PROFILE_GRANTS" \
-    --arg scripts "${(F)scripts}" '
+    --arg backend "$backend_override" --argjson grants "$SF_PROFILE_GRANTS" '
       include "lib/fields";
       include "lib/profile";
-      ($files | profile_discover($scripts | split("\n")) |
-        profile_map($bundled; $configured)) as $profiles |
+      ($files | profile_map($bundled; $configured)) as $profiles |
       (($names | select(length > 0) | split("\n")) // ["default"]) as $names |
       profile_select($profiles; $names; $model; $request; $backend) |
       .sandbox_read_paths += $grants.sandbox_read_paths |
       .sandbox_write_paths += $grants.sandbox_write_paths |
       entry("profile"; tojson),
-      # Precedence is the reverse of merge order.
-      entry("folders"; [] | profile_order($profiles; $names; []) | reverse |
-        map(if startswith("@") then $bundled + "/" + ltrimstr("@")
-          else $configured + "/" + . end) | join("\n")),
       entry("references"; [profile_references(join(" ")) |
         .backend.adapter, .system[], .tools[], .hooks[][]] | unique | join("\n")),
       ("ok" | field)
@@ -164,12 +171,10 @@ sf_profile_resolve() {
   decoded=( "${reply[@]}" )
   profile=$decoded[profile]
   references=( ${(f)decoded[references]} )
-  folders=( ${(f)decoded[folders]} )
 
-  # A reference carries no control characters, so newlines delimit the list and
-  # a space separates each folder kind from its reference.
+  # A reference carries no control characters, so newlines delimit the list.
   for reference in "${references[@]}"; do
-    sf_profile_reference "${reference#* }" "${reference%% *}" "$config_dir" "${folders[@]}" || {
+    sf_profile_reference "${reference#* }" "${reference%% *}" "$config_dir" || {
       sf_profile_fail "cannot resolve ${reference%% *} reference: ${reference#* }"
       return
     }
