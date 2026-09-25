@@ -189,6 +189,7 @@ The `agent` tool lets you delegate a separate task to another agent, so work can
 ```
 
 Background work returns control after launch; the default limit is four active child agents per parent. Set `SHELLFISH_MAX_ACTIVE_AGENTS` in profile `env` or externally to change that positive-integer limit.
+Inspection distinguishes a child that is still running from one that has stopped without a final transcript outcome. A stopped child releases its active slot and can be continued; Shellfish recovers unfinished work on that next turn.
 
 ### Review hook
 

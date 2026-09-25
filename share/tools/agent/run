@@ -3,7 +3,7 @@
 emulate -R zsh
 setopt extended_glob no_aliases no_bg_nice no_multios pipe_fail
 
-typeset input operation profile task agent_id child parent_dir association value output fork transcript background
+typeset input operation profile task agent_id child parent_dir association value output fork transcript background working lock_fd
 typeset limit=${SHELLFISH_MAX_ACTIVE_AGENTS-4}
 integer count=0 result=0
 
@@ -62,7 +62,16 @@ if [[ $operation == inspect || $operation == continue ]]; then
     '.session == $session and (.active | type == "boolean")' \
     <<<"$association" >/dev/null || fail 'invalid agent association'
   [[ -f $child && ! -L $child ]] || fail 'agent session is unavailable'
-  output=$(jq -c -s --arg id "$agent_id" --argjson association "$association" '
+  [[ -f $child.lock && ! -L $child.lock && -w $child.lock ]] ||
+    fail 'agent session lock is unavailable'
+  zmodload zsh/system || fail 'cannot load session locking'
+  working=true
+  if zsystem flock -t 0 -f lock_fd "$child.lock" 2>/dev/null; then
+    zsystem flock -u "$lock_fd"
+    working=false
+  fi
+  output=$(jq -c -s --arg id "$agent_id" --argjson association "$association" \
+    --argjson working "$working" '
     if length < 2 or .[0].type != "session" or
        (any(.[1:][]; . == {type:"state",name:"agents/child",value:true}) | not) or
        (all(.[]; .type | IN("session","system","state","hook_result","user",
@@ -72,17 +81,17 @@ if [[ $operation == inspect || $operation == continue ]]; then
       ([to_entries[] | select(.value.type == "user") | .key] | last) as $turn |
       (if $turn == null then [] else .[$turn:] end) as $records |
       ($records[-1].type // null) as $last |
-      {agent_id:$id, active:$association.active,
-       settled:($last == "error" or
+      {agent_id:$id, active:$association.active, working:$working,
+       settled:(($working | not) and ($last == "error" or
          ($last == "assistant" and $records[-1].stop == "end" and
-          ((.[0].profile.hooks.stop // []) | length == 0))),
+          ((.[0].profile.hooks.stop // []) | length == 0)))),
        answer:([$records[] | select(.type == "assistant" and .stop == "end") |
          [.content[] | select(.type == "text") | .text] | join("\n")] | last // null),
        last_record:$last}
     end
   ' "$child") || fail 'cannot inspect agent session'
   if [[ $operation == inspect ]]; then
-    if jq -e '.active == true and .settled == true' <<<"$output" >/dev/null; then
+    if [[ $working == false ]] && jq -e '.active == true' <<<"$output" >/dev/null; then
       print -r -u3 -- "$(jq -cn --arg name "agents/$agent_id" \
         --arg session ".agent-$agent_id.jsonl" \
         '{state:[{name:$name,value:{session:$session,active:false}}]}')" ||
@@ -92,11 +101,8 @@ if [[ $operation == inspect || $operation == continue ]]; then
     print -r -- "$output"
     exit 0
   fi
-  # A synchronous run releases its slot only after exit, even with stop hooks.
-  jq -e '.active == false' <<<"$output" >/dev/null &&
-    jq -e -s '.[-1].type == "error" or
-      (.[-1].type == "assistant" and .[-1].stop == "end")' "$child" >/dev/null ||
-    fail 'agent prior turn is active or uncertain' 2
+  jq -e '.active == false and .working == false' <<<"$output" >/dev/null ||
+    fail 'agent prior turn is active' 2
   background=$(jq -r '.background // false' <<<"$input")
   task=$(jq -r '.task' <<<"$input")
 fi

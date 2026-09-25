@@ -7,7 +7,7 @@ This project is pre-release. Remove obsolete behavior rather than adding depreca
 ## Design boundaries
 
 - A session JSONL file is the authoritative state. Transcript records after its header are append-only. Provider deltas, hook display, permissions, and presentation state are transient.
-- One `shellfish run` process owns a complete turn, including hooks, provider requests, tools, persistence, recovery, and cleanup. This is a convention, not concurrent-writer protection. Clients invoke that boundary and replay the transcript. They do not embed the turn loop or maintain another copy of session state.
+- One `shellfish run` process owns a complete turn, including hooks, provider requests, tools, persistence, recovery, and cleanup. A per-session lock prevents overlapping turns. Clients invoke that boundary and replay the transcript. They do not embed the turn loop or maintain another copy of session state.
 - The session header freezes the resolved profile. A session update may atomically replace it. Credentials and current presentation settings remain external. Do not add lifecycle or presentation records to the transcript.
 - The core owns event ordering, canonical validation, persistence, recovery, and cleanup. Harnesses supply tools and workflow policy through configuration and lifecycle scripts. Keep bundled coding behavior out of the generic turn machinery.
 - Backend adapters translate provider protocols into the normalized response stream. Keep provider-specific parsing, correlation, and protocol validation in the adapter. Tool calls remain inert until the core has assembled, validated, and persisted the complete assistant response.

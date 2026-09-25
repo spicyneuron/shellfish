@@ -45,7 +45,7 @@ One session reader defines record validity and ordering, then derives pending wo
 
 ## A turn is the unit of execution
 
-One `shellfish run` process owns the complete transition from user message to final response. There is no resident agent process.
+One `shellfish run` process owns the complete transition from user message to final response. A session lock prevents overlapping turns and releases when the process exits. There is no resident agent process.
 
 On macOS and Linux, `shellfish run --background` starts an isolated one-turn process and returns the absolute session path once it starts. The acknowledgement does not mean the prompt was persisted or the turn completed; inspect the transcript for durable progress. Background output is not streamed.
 

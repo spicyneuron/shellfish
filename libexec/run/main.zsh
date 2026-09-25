@@ -10,6 +10,24 @@ source "$SF_ROOT/lib/cli.zsh"
 source "$SF_ROOT/lib/jq.zsh"
 source "$SF_ROOT/lib/options.zsh"
 
+typeset -g SF_RUN_LOCK_FD=''
+
+sf_run_lock() {
+  local lock="$1.lock"
+  zmodload zsh/system || { sf_die 'cannot load session locking'; return 1; }
+  if [[ ! -e $lock && ! -L $lock ]]; then
+    (umask 077; setopt no_clobber; : >"$lock") 2>/dev/null || true
+  fi
+  [[ -f $lock && ! -L $lock && -w $lock ]] || {
+    sf_die "invalid session lock: $lock"
+    return 1
+  }
+  zsystem flock -t 0 -f SF_RUN_LOCK_FD "$lock" 2>/dev/null || {
+    sf_die "session turn already active: $1"
+    return 1
+  }
+}
+
 sf_run_main() {
   local requested_session='' input='' prompt='' arity=''
   local -a positional=() create_args=()
@@ -234,9 +252,17 @@ sf_run_main() {
     rm -f -- "$ack_file"
     rmdir "$ack_dir"
     kill -0 "$launch_pid" 2>/dev/null || rm -f -- "$input_file"
-    sf_die 'background worker did not acknowledge start'
+    if [[ $acknowledgement == lock_failed ]]; then
+      sf_die "background worker could not acquire session lock: $session"
+    else
+      sf_die 'background worker did not acknowledge start'
+    fi
     return 1
   fi
+  sf_run_lock "$session" || {
+    [[ -z ${SHELLFISH_BACKGROUND_WORKER-} ]] || print -r -u 4 -- lock_failed
+    return 1
+  }
   if [[ -n ${SHELLFISH_BACKGROUND_WORKER-} ]]; then
     print -r -u 4 -- ready || return 1
     exec 4>&-
@@ -244,6 +270,7 @@ sf_run_main() {
   fi
   sf_run_turn "$input" "$session" "$prompt"
   local run_status=$?
+  zsystem flock -u "$SF_RUN_LOCK_FD"
   trap - INT USR1 HUP TERM
   if (( json )) && [[ -n $SF_RUN[assistant] ]]; then
     jq -c --arg message "$SF_RUN[answer]" \

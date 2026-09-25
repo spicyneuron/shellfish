@@ -41,6 +41,31 @@ print -r -- "$output" | jq -e '
 jq -es '[.[] | select(.type == "assistant")] | length == 2' "$json_session" >/dev/null ||
   fail 'JSON test did not exercise an intermediate assistant message'
 
+# A detached turn acknowledges only after it owns the session lock. Competing
+# runs must not append a second prompt, and the lock releases on completion.
+zmodload zsh/system || fail 'cannot load session locking'
+typeset lock_fd='' lock_error="$tmp/lock-error"
+zsystem flock -t 0 -f lock_fd "$json_session.lock" || fail 'finished turn kept its lock'
+zsystem flock -u "$lock_fd"
+"$entry" run --background --session "$json_session" delay >/dev/null ||
+  fail 'background run failed'
+if "$entry" run --session "$json_session" competing >/dev/null 2>"$lock_error"; then
+  fail 'concurrent turn was accepted'
+fi
+grep -q 'session turn already active' "$lock_error" ||
+  fail 'concurrent turn reported the wrong failure'
+jq -e -s 'all(.[]; .type != "user" or .content[0].text != "competing")' \
+  "$json_session" >/dev/null ||
+  fail 'concurrent turn appended a prompt'
+integer lock_wait=0
+until zsystem flock -t 0 -f lock_fd "$json_session.lock" 2>/dev/null; do
+  (( lock_wait++ < 100 )) || fail 'background turn kept its lock'
+  sleep 0.1
+done
+zsystem flock -u "$lock_fd"
+jq -e -s '.[-1].type == "assistant" and .[-1].stop == "end"' "$json_session" >/dev/null ||
+  fail 'background lock released before turn completion'
+
 # Standard input supplies the prompt.
 output=$(print -rn -- 'piped answer' |
   SF_TEST_BACKEND_DELAY=0 zsh -f "$entry" run) || \

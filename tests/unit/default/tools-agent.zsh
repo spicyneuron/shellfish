@@ -144,7 +144,8 @@ inspected=$(print -r -- "{\"operation\":\"inspect\",\"agent_id\":\"$id\"}" |
   SHELLFISH_SESSION="$session" SHELLFISH_EXECUTABLE="$ROOT/bin/shellfish" \
   "$agent/run" 3>/dev/null) || fail 'inspect failed'
 jq -e --arg id "$id" '.agent_id == $id and .active == false and
-  .answer == "child answer"' <<<"$inspected" >/dev/null || fail 'inspect output is wrong'
+  .working == false and .settled == true and .answer == "child answer"' \
+  <<<"$inspected" >/dev/null || fail 'inspect output is wrong'
 export SF_AGENT_ID_FILE="$tmp/agent-id"
 print -r -- "$id" >"$SF_AGENT_ID_FILE"
 sf_test_run 'continue child' "$session" >"$stream" || fail 'first continuation failed'
@@ -253,8 +254,7 @@ jq -e -s --arg id "$id" '
     length) == 4
 ' "$copied_parent" >/dev/null || fail 'copied parent lost its agent association'
 
-# A synchronous release proves process exit even when a stop hook makes the
-# final assistant record inconclusive to transcript-only inspection.
+# A synchronous release proves process exit even with a stop hook.
 typeset stop_parent="$tmp/stop-parent.jsonl" stop_id stop_child stop_inspection
 sf_test_session "$stop_parent"
 sf_test_run 'stop-hook parent' "$stop_parent" >"$stream" ||
@@ -265,7 +265,8 @@ stop_child="$tmp/.agent-$stop_id.jsonl"
 stop_inspection=$(print -r -- "{\"operation\":\"inspect\",\"agent_id\":\"$stop_id\"}" |
   SHELLFISH_SESSION="$stop_parent" SHELLFISH_EXECUTABLE="$ROOT/bin/shellfish" \
   "$agent/run" 3>"$tmp/refused-state") || fail 'stop-hook inspection failed'
-jq -e '.active == false and .settled == false and .answer == "child answer"' \
+jq -e '.active == false and .working == false and .settled == false and
+  .answer == "child answer"' \
   <<<$stop_inspection >/dev/null || fail 'stop-hook inspection was misreported'
 print -r -- "$stop_id" >"$SF_AGENT_ID_FILE"
 sf_test_run 'continue child' "$stop_parent" >"$stream" ||
@@ -380,7 +381,7 @@ if print -r -- '{"operation":"start","fork":true,"task":"bad"}' |
 fi
 
 # A background start returns while the child is still working. Its reserved
-# slot remains occupied until inspection sees a settled transcript.
+# slot remains occupied until inspection sees the turn stop.
 typeset background_parent="$tmp/background-parent.jsonl" background_id background_child
 export SF_AGENT_ID_FILE="$tmp/agent-id"
 sf_test_session "$background_parent"
@@ -411,7 +412,8 @@ jq -e -s --arg id "$background_id" '
     SHELLFISH_MAX_ACTIVE_AGENTS=1 SHELLFISH_SESSION="$background_parent" \
     SHELLFISH_EXECUTABLE="$ROOT/bin/shellfish" "$agent/run" 3>/dev/null) ||
     fail 'inspect at background cap failed'
-  jq -e '.active == true and .settled == false and .answer == null' \
+  jq -e '.active == true and .working == true and .settled == false and
+    .answer == null' \
     <<<$pending >/dev/null || fail 'pending inspection misreported completion'
   integer waited=0
   until jq -e -s '.[-1].type == "assistant" and .[-1].stop == "end"' \
@@ -426,7 +428,8 @@ jq -e -s --arg id "$background_id" '
       .value.active]) == [true,false] and
     (([.[] | select(.type == "tool_result" and .name == "agent")] | last |
       .model_text | fromjson) |
-      .active == false and .settled == true and .answer == "child answer")
+      .active == false and .working == false and .settled == true and
+      .answer == "child answer")
   ' "$background_parent" >/dev/null || fail 'inspection did not release settled slot'
   sf_test_run 'continue background' "$background_parent" >"$stream" ||
     fail 'background continuation failed'
@@ -456,8 +459,7 @@ jq -e -s --arg id "$background_id" '
   ' "$background_parent" >/dev/null || fail 'background continuation slot was not released'
 fi
 
-# A stop hook can continue after a final-looking assistant, so that record
-# alone cannot release a background slot.
+# A final-looking assistant does not release a slot while the turn lock is held.
 if [[ $OSTYPE == darwin* || $OSTYPE == linux* && $+commands[setsid] -ne 0 ]]; then
 typeset uncertain_id=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb uncertain
 uncertain="$tmp/.agent-$uncertain_id.jsonl"
@@ -465,12 +467,18 @@ cp "$background_child" "$uncertain"
 jq -c '.profile.hooks.stop=["/tmp/stop-hook"]' "$uncertain" >"$tmp/uncertain-header"
 { cat "$tmp/uncertain-header"; tail -n +2 "$uncertain"; } >"$tmp/uncertain-copy"
 mv "$tmp/uncertain-copy" "$uncertain"
+: >"$uncertain.lock"
+zmodload zsh/system || fail 'cannot load session locking'
+typeset uncertain_fd=''
+zsystem flock -t 0 -f uncertain_fd "$uncertain.lock" ||
+  fail 'cannot hold uncertain child lock'
 print -r -- "{\"type\":\"state\",\"name\":\"agents/$uncertain_id\",\"value\":{\"session\":\".agent-$uncertain_id.jsonl\",\"active\":true}}" >>"$background_parent"
 typeset uncertain_result
 uncertain_result=$(print -r -- "{\"operation\":\"inspect\",\"agent_id\":\"$uncertain_id\"}" |
   SHELLFISH_SESSION="$background_parent" SHELLFISH_EXECUTABLE="$ROOT/bin/shellfish" \
   "$agent/run" 3>"$tmp/uncertain-state") || fail 'uncertain inspection failed'
-jq -e '.active == true and .settled == false and .answer == "child answer"' \
+jq -e '.active == true and .working == true and .settled == false and
+  .answer == "child answer"' \
   <<<$uncertain_result >/dev/null || fail 'stop-hook answer was misreported as settled'
 [[ ! -s "$tmp/uncertain-state" ]] || fail 'uncertain inspection released a slot'
 if print -r -- "{\"operation\":\"continue\",\"agent_id\":\"$uncertain_id\",\"task\":\"bad\"}" |
@@ -479,6 +487,12 @@ if print -r -- "{\"operation\":\"continue\",\"agent_id\":\"$uncertain_id\",\"tas
   fail 'uncertain child was continued'
 fi
 [[ ! -s "$tmp/refused-state" ]] || fail 'uncertain continuation reserved a slot'
+zsystem flock -u "$uncertain_fd"
+uncertain_result=$(print -r -- "{\"operation\":\"inspect\",\"agent_id\":\"$uncertain_id\"}" |
+  SHELLFISH_SESSION="$background_parent" SHELLFISH_EXECUTABLE="$ROOT/bin/shellfish" \
+  "$agent/run" 3>"$tmp/uncertain-state") || fail 'finished child inspection failed'
+jq -e '.active == false and .working == false and .settled == false' \
+  <<<"$uncertain_result" >/dev/null || fail 'finished child kept its slot'
 
 typeset cancel_parent="$tmp/cancel-parent.jsonl" cancel_id cancel_child
 sf_test_session "$cancel_parent"
