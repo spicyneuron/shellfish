@@ -79,7 +79,7 @@ One capability set can serve different roles, because the system prompt sits bes
 {
   "extend": ["default"],
   "tools": ["read_file"],
-  "hooks": {"session_start": ["project_instructions"]},
+  "hooks": {"session_start": ["project/instructions"]},
   "system": ["review.md"]
 }
 ```
@@ -152,9 +152,9 @@ The bundled `session_start` records context once, one block per part:
 
 | Hook | Context |
 | --- | --- |
-| `project_environment` | Date, platform, project tree, available commands, and skills |
-| `git_environment` | Branch or commit, recent commits, and working-tree summary |
-| `project_instructions` | `AGENTS.md`, falling back to `CLAUDE.md` |
+| `project/environment` | Date, platform, project tree, available commands, and skills |
+| `git/environment` | Branch or commit, recent commits, and working-tree summary |
+| `project/instructions` | `AGENTS.md`, falling back to `CLAUDE.md` |
 
 The bundled submit hooks handle interactive commands:
 

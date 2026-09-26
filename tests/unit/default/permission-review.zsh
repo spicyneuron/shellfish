@@ -31,7 +31,7 @@ SF_TEST_PROFILE=$(jq -c --arg hook "$hook" '
 ' <<<"$SF_TEST_PROFILE")
 SF_TEST_SYSTEM='fixed system'
 sf_test_session "$session"
-sf_session_append "$session" '{"type":"hook_result","lifecycle":"session_start","id":"1","model_text":"<context script=\"project_instructions\">\nstartup constraint\n</context>"}'
+sf_session_append "$session" '{"type":"hook_result","lifecycle":"session_start","id":"1","model_text":"<context script=\"project/instructions\">\nstartup constraint\n</context>"}'
 sf_session_append "$session" '{"type":"user","content":[{"type":"text","text":"opening request"}]}'
 sf_session_append "$session" '{"type":"assistant","stop":"end","content":[{"type":"text","text":"opening answer"}]}'
 sf_session_append "$session" '{"type":"hook_result","lifecycle":"stop","id":"2","model_text":"retry constraint"}'
@@ -82,7 +82,7 @@ jq -e -s --arg tool_input "$(jq -c '.tool_input' <<<"$request")" \
   .[1].content == ($policy | rtrimstr("\n")) and
   $context.system_message == "fixed system" and
   $context.startup_context.content[0].text ==
-    "<hook name=\"session_start\">\n<context script=\"project_instructions\">\nstartup constraint\n</context>\n</hook>\n\nopening request" and
+    "<hook name=\"session_start\">\n<context script=\"project/instructions\">\nstartup constraint\n</context>\n</hook>\n\nopening request" and
   $context.target_tool_call == {type:"tool_call",id:"call_7",name:"shell",input:($tool_input | fromjson)} and
   ($context.recent_timeline | map(.type)) ==
     ["assistant","user","assistant","user","assistant","tool_call","tool_result","user","assistant"] and

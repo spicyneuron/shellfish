@@ -8,7 +8,7 @@ settled() { jq -rs 'map(select(has("model_text"))) | last.model_text // ""' "$1"
 
 # Report project environment as context after a draft.
 typeset environment_control="$tmp/environment-control.json"
-typeset environment_script="$ROOT/share/hooks/project_environment"
+typeset environment_script="$ROOT/share/hooks/project/environment"
 typeset environment_bin="$tmp/environment-bin"
 typeset environment_output
 mkdir "$environment_bin"
@@ -21,7 +21,7 @@ PATH="$environment_bin:$PATH" zsh -f "$environment_script" session_start \
   3>"$environment_control" >/dev/null
 jq -e -s '.[0] | has("user_text")' "$environment_control" >/dev/null
 environment_output=$(settled "$environment_control")
-[[ $environment_output == '<context script="project_environment">'$'\n'*$'\n</context>' ]]
+[[ $environment_output == '<context script="project/environment">'$'\n'*$'\n</context>' ]]
 [[ $environment_output == *$'PWD: '*$'\n.'* ]]
 [[ $environment_output == *'Available commands:'* ]]
 [[ $environment_output == *'Available agent skills.'* ]]
@@ -39,8 +39,8 @@ environment_output=$(settled "$environment_control")
 [[ $environment_output == *'Available agent skills.'* ]]
 
 # Record Git identity transitions.
-typeset git_start="$ROOT/share/hooks/git_environment"
-typeset git_prompt="$ROOT/share/hooks/git_identity"
+typeset git_environment="$ROOT/share/hooks/git/environment"
+typeset git_prompt="$ROOT/share/hooks/git/change"
 typeset git_bin="$tmp/git-environment-bin" git_state="$tmp/git-state"
 typeset git_session="$tmp/git-session.jsonl" git_control="$tmp/git-control.json" git_output
 mkdir "$git_bin"
@@ -63,10 +63,11 @@ EOF
 chmod +x "$git_bin/git"
 print -r -- 'branch:main' >"$git_state"
 PATH="$git_bin:$PATH" GIT_STATE="$git_state" \
-  zsh -f "$git_start" session_start 3>"$git_control"
+  zsh -f "$git_environment" session_start 3>"$git_control"
 git_output=$(settled "$git_control")
 [[ $git_output == *main* && $git_output == *'abc123 Test commit'* &&
    $git_output == *status-file* && $git_output != *'Recent files:'* ]]
+[[ $git_output == '<context script="git/environment">'$'\n'*$'\n</context>' ]]
 jq -e -s 'map(.state // empty) | last == [{name:"git/identity",value:"branch:main"}]' \
   "$git_control" >/dev/null
 jq -c '.state[]? | {type:"state"} + .' "$git_control" >"$git_session"
@@ -82,6 +83,9 @@ PATH="$git_bin:$PATH" GIT_STATE="$git_state" SHELLFISH_SESSION="$git_session" \
   zsh -f "$git_prompt" user_prompt_submit 3>"$git_control"
 git_output=$(settled "$git_control")
 [[ $git_output == *main* && $git_output == *feature* ]]
+[[ $git_output == '<context script="git/change">'$'\n'*$'\n</context>' ]]
+jq -e -s 'map(select(has("user_text"))) | last.user_text | startswith("git/change\n")' \
+  "$git_control" >/dev/null
 jq -e -s 'map(.state // empty) | last == [{name:"git/identity",value:"branch:feature"}]' \
   "$git_control" >/dev/null
 jq -c '.state[]? | {type:"state"} + .' "$git_control" >>"$git_session"
@@ -111,7 +115,7 @@ git_output=$(settled "$git_control")
 assert_equal '' "$git_output"
 [[ ! -s $git_control ]]
 
-PATH="$git_bin:$PATH" zsh -f "$git_start" session_start 3>"$git_control"
+PATH="$git_bin:$PATH" zsh -f "$git_environment" session_start 3>"$git_control"
 assert_equal '' "$(settled "$git_control")"
 cat >"$git_bin/git" <<'EOF'
 #!/bin/sh

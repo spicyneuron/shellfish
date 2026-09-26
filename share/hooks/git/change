@@ -3,8 +3,8 @@
 emulate -R zsh
 setopt no_aliases no_bg_nice no_multios pipe_fail
 zmodload zsh/datetime
-source "${0:A:h:h}/lib/capped.zsh" || exit 1
-source "${0:A:h:h}/lib/hook.zsh" || exit 1
+source "${0:A:h:h:h}/lib/capped.zsh" || exit 1
+source "${0:A:h:h:h}/lib/hook.zsh" || exit 1
 
 typeset previous branch hash identity text
 previous=$(jq -ers '
@@ -31,5 +31,5 @@ case "$previous -> $identity" in
     text="Git identity changed from $previous to $identity."
     ;;
 esac
-sf_hook_context git_environment "git_environment"$'\n'"$text" "$text" \
+sf_hook_context git/change "git/change"$'\n'"$text" "$text" \
   "$(jq -cn --arg identity "$identity" '{state:[{name:"git/identity",value:$identity}]}')"

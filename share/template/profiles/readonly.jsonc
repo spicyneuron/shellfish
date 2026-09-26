@@ -6,5 +6,5 @@
   "extend": ["default"],
 
   "tools": ["read_file", "shell_readonly"],
-  "hooks": {"session_start": ["project_instructions"]}
+  "hooks": {"session_start": ["project/instructions"]}
 }

@@ -3,7 +3,7 @@
 emulate -R zsh
 setopt no_aliases no_multios pipe_fail
 
-typeset bundled_root=${0:A:h:h} submitted token name file text
+typeset bundled_root=${0:A:h:h} submitted token name file text preview
 typeset -A paths loaded
 integer index
 
@@ -24,5 +24,9 @@ while IFS= read -r token; do
   loaded[$name]=1
   file=$paths[$name]
   text=$(sf_skills_render "$file" "$name") || exit 1
-  sf_hook_context prompt_skills "prompt_skills · Loaded \$$name" "$text" || exit 1
+  preview=${text#*$'\n'}
+  preview=${preview%'</skill>'}
+  preview=${preview%$'\n'}
+  while [[ $preview == $'\n'* ]]; do preview=${preview#$'\n'}; done
+  sf_hook_context skills "skills · Loaded \$$name"$'\n'"$preview" "$text" || exit 1
 done < <(print -rn -- "$submitted" | grep -oE '(^|[^[:alnum:]_$])\$[a-z0-9]+(-[a-z0-9]+)*')

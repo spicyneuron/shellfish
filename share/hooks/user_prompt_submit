@@ -63,4 +63,4 @@ jq -es '
   $window != null and $measured != null and
   (($measured.usage.input_tokens + $measured.usage.output_tokens) / $window) >= 0.8
 ' "$SHELLFISH_SESSION" >/dev/null 2>&1 && part compact
-exec "$parts/git_identity"
+exec "$parts/git/change"
