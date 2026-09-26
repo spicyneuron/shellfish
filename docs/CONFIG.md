@@ -156,7 +156,7 @@ The bundled `session_start` records context once, one block per part:
 | `git_environment` | Branch or commit, recent commits, and working-tree summary |
 | `project_instructions` | `AGENTS.md`, falling back to `CLAUDE.md` |
 
-The bundled `user_prompt_submit` handles most interactive commands:
+The bundled submit hooks handle interactive commands:
 
 | Input | Action |
 | --- | --- |
@@ -167,11 +167,14 @@ The bundled `user_prompt_submit` handles most interactive commands:
 | `/fork [N]` | Derive a session from a transcript prefix |
 | `/sandbox [OP DIR]` | Inspect or update frozen sandbox grants |
 | `!COMMAND` | Run a user-authored command and stage its output as context |
+| `$SKILL` | Load a matching skill into model context, including user-only skills |
 | `/resume` | Choose another session for this directory |
 | `/compact` | Summarize into a child session |
 | `/server` | Hand the session to the experimental browser client |
 
 It also compacts automatically near a known context-window limit and reports Git identity changes before ordinary prompts. Client-owned `/refresh`, `/quit`, and `/queue` commands do not run a turn.
+
+For ordinary prompts, `$skill-name` loads each matching skill into the model's context before the request, even when `disable-model-invocation` is true. The submitted prompt stays unchanged. Unknown skill names are ignored.
 
 `/compact` leaves the source unchanged and asks the client to open a summarized child. Automatic compaction preserves the interrupted prompt as an editable draft.
 

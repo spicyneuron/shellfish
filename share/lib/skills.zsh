@@ -74,6 +74,7 @@ sf_skills_discover() {
   emulate -L zsh
   setopt extended_glob
   local bundled_root=$1 config_dir=${2-} project_dir=${3:-$PWD}
+  local include_disabled=${4:-false}
   local home=${HOME-} root canonical directory file name description disabled
   local -a roots discovered
   local -A seen_roots seen_names
@@ -99,9 +100,28 @@ sf_skills_discover() {
       disabled=$reply[3]
       [[ -z ${seen_names[$name]-} ]] || continue
       seen_names[$name]=1
-      [[ $disabled == false ]] || continue
+      [[ $disabled == false || $include_disabled == true ]] || continue
       discovered+=( "$name" "$description" "${file:A}" )
     done
   done
   reply=( "${discovered[@]}" )
+}
+
+sf_skills_render() {
+  emulate -L zsh
+  local file=$1 name=$2 line
+  jq -nr --arg name "$name" --arg directory "${file:h}" '
+    "<skill name=\"" + ($name | @html) + "\" directory=\"" +
+    ($directory | @html) + "\">"
+  ' || return 1
+  {
+    IFS= read -r line || return 1
+    while IFS= read -r line || [[ -n $line ]]; do
+      [[ ${line%$'\r'} == --- ]] && break
+    done
+    while IFS= read -r line || [[ -n $line ]]; do
+      print -r -- "$line"
+    done
+  } <"$file"
+  print -r -- '</skill>'
 }

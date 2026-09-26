@@ -1,0 +1,28 @@
+#!/usr/bin/env zsh
+
+emulate -R zsh
+setopt no_aliases no_multios pipe_fail
+
+typeset bundled_root=${0:A:h:h} submitted token name file text
+typeset -A paths loaded
+integer index
+
+submitted=$(cat; printf x)
+submitted=${submitted%x}
+[[ $submitted == *\$* ]] || exit 0
+
+source "$bundled_root/lib/skills.zsh" || exit 1
+source "$bundled_root/lib/hook.zsh" || exit 1
+sf_skills_discover "$bundled_root" "${SHELLFISH_CONFIG_DIR-}" "$PWD" true
+for (( index = 1; index <= ${#reply}; index += 3 )); do
+  paths[$reply[index]]=$reply[index+2]
+done
+
+while IFS= read -r token; do
+  name=${token##*\$}
+  [[ -n ${paths[$name]-} && -z ${loaded[$name]-} ]] || continue
+  loaded[$name]=1
+  file=$paths[$name]
+  text=$(sf_skills_render "$file" "$name") || exit 1
+  sf_hook_context prompt_skills "prompt_skills · Loaded \$$name" "$text" || exit 1
+done < <(print -rn -- "$submitted" | grep -oE '(^|[^[:alnum:]_$])\$[a-z0-9]+(-[a-z0-9]+)*')
