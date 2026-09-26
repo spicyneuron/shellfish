@@ -5,7 +5,7 @@ setopt extended_glob no_aliases no_multios pipe_fail
 
 typeset submitted='' body operation candidate grant_path header grants updated profile field
 typeset grant resolved matched=''
-typeset action access message
+typeset action access message user
 typeset usage='usage: /sandbox {read|write|+read|+write|+r|+w|-read|-write|-r|-w} DIR'
 integer read_status
 IFS= read -r submitted
@@ -103,9 +103,11 @@ profile=$(jq -c --arg field "$field" --argjson paths "$updated" \
   '.profile | .[$field]=$paths' <<<"$header") || exit 1
 if [[ $action == add ]]; then
   message="Session sandbox $access grant added: $grant_path"
+  user="Sandbox $access grant added:"
 else
   message="Session sandbox $access grant removed: $grant_path"
+  user="Sandbox $access grant removed:"
 fi
 source "${0:A:h:h}/lib/hook.zsh" || exit 1
-sf_hook_context sandbox "sandbox"$'\n'"$message" "$message" \
+sf_hook_context sandbox "$user"$'\n'"$grant_path" "$message" \
   "$(jq -cn --argjson profile "$profile" '{action:"session_update",profile:$profile}')"

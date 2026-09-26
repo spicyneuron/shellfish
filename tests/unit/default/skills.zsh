@@ -100,15 +100,15 @@ print -rn -- 'Use $shared and $config-only, then $shared. Ignore $hidden, $missi
     zsh -f "$hook" user_prompt_submit 3>"$control")
 jq -e -s '
   length == 3 and
-  (.[0].user_text | startswith("skills · Loaded $shared\n# shared instructions")) and
+  (.[0].user_text | startswith("Loaded $shared:\n# shared instructions")) and
   (.[0].user_text | contains("# shared instructions")) and
   (.[0].user_text | contains("<skill") | not) and
   (.[0].model_text | contains("<skill name=\"shared\" directory=\"")) and
   (.[0].model_text | contains("# shared instructions")) and
   (.[0].model_text | contains("description: project description") | not) and
-  (.[1].user_text | startswith("skills · Loaded $config-only\n# config-only instructions")) and
+  (.[1].user_text | startswith("Loaded $config-only:\n# config-only instructions")) and
   (.[1].model_text | contains("# config-only instructions")) and
-  (.[2].user_text | startswith("skills · Loaded $hidden\n# hidden instructions")) and
+  (.[2].user_text | startswith("Loaded $hidden:\n# hidden instructions")) and
   (.[2].model_text | contains("# hidden instructions")) and
   all(.[]; .finalize == true)
 ' "$control" >/dev/null

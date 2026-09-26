@@ -5,7 +5,7 @@ setopt no_aliases no_bg_nice no_multios pipe_fail
 zmodload zsh/datetime
 source "${0:A:h:h:h}/lib/capped.zsh" || exit 1
 source "${0:A:h:h:h}/lib/hook.zsh" || exit 1
-sf_hook_draft 'git/environment · Loading git environment…' || exit 1
+sf_hook_draft 'Loading git environment…' || exit 1
 
 typeset -F deadline=$(( EPOCHREALTIME + SF_PROBE_BUDGET ))
 
@@ -37,5 +37,5 @@ text=$(
   print -r -- $'Recent commits:\n'"$commits"
   print -r -- $'Git status:\n'"$(print -r -- "$git_status" | head -10)"
 )
-sf_hook_context git/environment "git/environment"$'\n'"$text" "$text" \
+sf_hook_context git/environment "Git environment:"$'\n'"$text" "$text" \
   "$(jq -cn --arg identity "$identity" '{state:[{name:"git/identity",value:$identity}]}')"

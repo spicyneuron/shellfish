@@ -67,6 +67,7 @@ PATH="$git_bin:$PATH" GIT_STATE="$git_state" \
 git_output=$(settled "$git_control")
 [[ $git_output == *main* && $git_output == *'abc123 Test commit'* &&
    $git_output == *status-file* && $git_output != *'Recent files:'* ]]
+[[ $(jq -rs '.[-1].user_text' "$git_control") == 'Git environment:'$'\n'* ]]
 [[ $git_output == '<context script="git/environment">'$'\n'*$'\n</context>' ]]
 jq -e -s 'map(.state // empty) | last == [{name:"git/identity",value:"branch:main"}]' \
   "$git_control" >/dev/null
@@ -84,7 +85,7 @@ PATH="$git_bin:$PATH" GIT_STATE="$git_state" SHELLFISH_SESSION="$git_session" \
 git_output=$(settled "$git_control")
 [[ $git_output == *main* && $git_output == *feature* ]]
 [[ $git_output == '<context script="git/change">'$'\n'*$'\n</context>' ]]
-jq -e -s 'map(select(has("user_text"))) | last.user_text | startswith("git/change\n")' \
+jq -e -s 'map(select(has("user_text"))) | last.user_text == "Git checkout changed:\nmain → feature"' \
   "$git_control" >/dev/null
 jq -e -s 'map(.state // empty) | last == [{name:"git/identity",value:"branch:feature"}]' \
   "$git_control" >/dev/null
@@ -100,6 +101,8 @@ PATH="$git_bin:$PATH" GIT_STATE="$git_state" SHELLFISH_SESSION="$git_session" \
   zsh -f "$git_prompt" user_prompt_submit 3>"$git_control"
 git_output=$(settled "$git_control")
 [[ $git_output == *feature* && $git_output == *0123456789abcdef* ]]
+jq -e -s 'map(select(has("user_text"))) | last.user_text == "Git checkout changed:\nfeature → detached commit 0123456789abcdef"' \
+  "$git_control" >/dev/null
 jq -e -s 'map(.state // empty) | last == [{name:"git/identity",value:"commit:0123456789abcdef"}]' \
   "$git_control" >/dev/null
 jq -c '.state[]? | {type:"state"} + .' "$git_control" >>"$git_session"

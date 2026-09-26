@@ -567,11 +567,11 @@ test("shows user-facing hook text without exposing model text", async () => {
     type: "hook_result",
     lifecycle: "session_start",
     id: "1",
-    user_text: "git/environment\nInspecting project",
+    user_text: "Git environment:\nInspecting project",
     model_text: "secret model context",
   });
   const shown = findTag(find(page.output, "note")[0], "details")[0];
-  assert.equal(findTag(shown, "summary")[0].textContent, "↪git/environment");
+  assert.equal(findTag(shown, "summary")[0].textContent, "↪Git environment:");
   assert.equal(findTag(shown, "strong").length, 0);
   assert.equal(findTag(shown, "pre")[0].textContent, "Inspecting project");
   await page.send({

@@ -23,7 +23,7 @@ if [[ -z $command ]]; then
 fi
 
 source "${0:A:h:h}/lib/hook.zsh" || exit 1
-sf_hook_draft 'user_shell · Running shell command…' || exit 1
+sf_hook_draft 'Running shell command…' || exit 1
 text=$(
   print -r -- '$ '"$command"
   unset SHELLFISH_SESSION SHELLFISH_TURN_STATE
@@ -33,4 +33,4 @@ text=$(
   command_status=$?
   (( ! command_status )) || print -r -- $'\n(exit '"$command_status"')'
 )
-sf_hook_context user_shell "user_shell"$'\n'"$text" "$text"
+sf_hook_context user_shell "Shell command:"$'\n'"$text" "$text"

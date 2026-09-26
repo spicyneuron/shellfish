@@ -35,23 +35,23 @@ if ! jq -ce -s '
   select($first != null and $last != null) |
   {first_user_message:$first.content[0].text, final_assistant_response:$reply}
 ' "$SHELLFISH_SESSION" >"$boundary" 2>/dev/null; then
-  fail_compaction 'nothing to compact yet'
+  fail_compaction 'Nothing to compact yet.'
 fi
 
 [[ -r ${0:A:h}/compact.md ]] && instruction=$(<"${0:A:h}/compact.md") || {
-  fail_compaction 'cannot read compaction prompt; keeping the original'
+  fail_compaction 'Could not read compaction prompt. Original session kept.'
 }
 request=$(jq -cn --arg text "$instruction" \
   '{type:"user",content:[{type:"text",text:$text}]}') || {
-  fail_compaction 'cannot prepare summary request; keeping the original'
+  fail_compaction 'Could not prepare summary request. Original session kept.'
 }
-sf_hook_draft 'compact · Compacting conversation…' ||
-  fail_compaction 'cannot report compaction progress; keeping the original'
+sf_hook_draft 'Compacting conversation…' ||
+  fail_compaction 'Could not report compaction progress. Original session kept.'
 summary=$({ cat -- "$SHELLFISH_SESSION"; print -r -- "$request"; } |
   "$SHELLFISH_EXECUTABLE" backend-request |
   jq -er '[.content[] | select(.type == "text") | .text] | join("") |
     select(test("[^[:space:]]"))') || {
-  fail_compaction 'cannot summarize session; keeping the original'
+  fail_compaction 'Could not summarize session. Original session kept.'
 }
 
 context="$SHELLFISH_TURN_STATE/compact-context"
@@ -67,11 +67,11 @@ if ! jq -nerj --slurpfile boundary "$boundary" \
   "\n</final_assistant_response>\n\n" +
   "</compacted_context>"
 ' >"$context"; then
-  fail_compaction 'cannot assemble compacted context; keeping the original'
+  fail_compaction 'Could not assemble compacted context. Original session kept.'
 fi
 
 created=$(date -u '+%Y-%m-%dT%H:%M:%SZ') || {
-  fail_compaction 'cannot create compacted session; keeping the original'
+  fail_compaction 'Could not create compacted session. Original session kept.'
 }
 transcript="$SHELLFISH_TURN_STATE/compact.jsonl"
 # Startup records without state, then every state record in source order, so the
@@ -90,7 +90,7 @@ if ! jq -ce -s --rawfile context "$context" --arg created "$created" '
     {type:"hook_result",lifecycle:"session_start",id:$id,
       model_text:("<context script=\"compact\">\n" + $context + "\n</context>")}
   ' "$SHELLFISH_SESSION" >"$transcript"; then
-  fail_compaction 'cannot create compacted session; keeping the original'
+  fail_compaction 'Could not create compacted session. Original session kept.'
 fi
 
 base=${SHELLFISH_SESSION%.jsonl}
@@ -101,7 +101,7 @@ while true; do
     break
   fi
   if [[ ! -e $candidate && ! -L $candidate ]]; then
-    fail_compaction 'cannot create compacted session; keeping the original'
+    fail_compaction 'Could not create compacted session. Original session kept.'
     exit $?
   fi
   candidate="${base}_compact_${suffix}.jsonl"

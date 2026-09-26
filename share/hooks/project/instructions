@@ -8,7 +8,7 @@ for name in AGENTS.md CLAUDE.md; do
   [ -f "$name" ] && [ -r "$name" ] || continue
   text=$(cat -- "$name" && print x) || exit 1
   text=${text%x}
-  sf_hook_context project/instructions "project/instructions $name"$'\n'"$text" \
+  sf_hook_context project/instructions "Project instructions ($name):"$'\n'"$text" \
     "$name: Follow the instructions below for this directory tree. Do not reread this file. A nested $name takes precedence."$'\n\n'"$text"
   exit
 done

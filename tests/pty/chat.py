@@ -40,7 +40,7 @@ def test_sandbox_updates_without_reload():
             path, _ = session.wait_session_records(1)
             mark = len(session.output)
             session.send(f"/sandbox +w {grant}\r".encode())
-            session.wait_after(mark, "Session sandbox write grant added", timeout=5)
+            session.wait_after(mark, "Sandbox write grant added", timeout=5)
             session.wait_ready(mark, timeout=5)
             assert "Project:" not in session.visible(mark)
             grant_path = str(Path(grant).resolve())
@@ -58,7 +58,7 @@ def test_sandbox_updates_without_reload():
             assert result == {
                 "type": "hook_result",
                 "lifecycle": "user_prompt_submit",
-                "user_text": f"sandbox\n{granted}",
+                "user_text": f"Sandbox write grant added:\n{grant_path}",
                 "model_text": f'<context script="sandbox">\n{granted}\n</context>',
             }
         finally:

@@ -6,7 +6,7 @@ zmodload zsh/datetime
 source "${0:A:h:h:h}/lib/capped.zsh" || exit 1
 source "${0:A:h:h:h}/lib/hook.zsh" || exit 1
 
-typeset previous branch hash identity text
+typeset previous branch hash identity text from to
 previous=$(jq -ers '
   [.[] | select(.type == "state" and .name == "git/identity")][-1].value |
   select(type == "string")
@@ -31,5 +31,9 @@ case "$previous -> $identity" in
     text="Git identity changed from $previous to $identity."
     ;;
 esac
-sf_hook_context git/change "git/change"$'\n'"$text" "$text" \
+from=${previous#*:}
+to=${identity#*:}
+[[ $previous != commit:* ]] || from="detached commit $from"
+[[ $identity != commit:* ]] || to="detached commit $to"
+sf_hook_context git/change "Git checkout changed:"$'\n'"$from → $to" "$text" \
   "$(jq -cn --arg identity "$identity" '{state:[{name:"git/identity",value:$identity}]}')"
