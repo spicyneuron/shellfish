@@ -35,6 +35,11 @@ sf_run_tool_plan() {
       entry("request";
         {turn_id:$turn,tool_name:$name,tool_use_id:$id,tool_input:$input} | tojson),
       entry("draft"; $draft),
+      entry("done";
+        if $tool.manifest.user_text_done == null then $draft
+        else render_template($tool.manifest.user_text_done; $name; $input) end),
+      entry("denied";
+        render_template($tool.manifest.user_text_denied // ""; $name; $input)),
       entry("event"; {type:"_draft",id:$id,name:$name,user_text:$draft} | tojson),
       entry("decision"; $permission.decision),
       entry("permission_reason"; $permission.reason // ""),
@@ -56,10 +61,13 @@ sf_run_tool_plan() {
 }
 
 sf_run_tool_refused() {
-  local reason=$1
+  local reason=$1 heading=${3-}
   integer exit_code=$2
-  REPLY=$(jq -cn --arg reason "$reason" --argjson exit_code "$exit_code" \
-    '{output:{stdout:"",stderr:$reason,exit_code:$exit_code}}')
+  REPLY=$(jq -cn --arg reason "$reason" --arg heading "$heading" \
+    --argjson exit_code "$exit_code" '
+    {output:{stdout:"",stderr:$reason,exit_code:$exit_code}} +
+    if $heading == "" then {} else {view:{user_text:($heading + "\n" + $reason)}} end
+  ')
 }
 
 sf_run_tool_bound() {
@@ -200,7 +208,7 @@ sf_run_tool_execute() {
     --argjson exit_code "$process[exit_code]" --argjson denied "$denied" \
     --argjson view "$SF_TOOL_RESULT[view]" \
     --argjson preview "$SF_TOOL_RESULT[preview]" '
-      {output:{stdout:$stdout,stderr:$stderr,exit_code:$exit_code},view:$view} +
+      {output:{stdout:$stdout,stderr:$stderr,exit_code:$exit_code},view:$view,ran:true} +
       (if $preview == null then {} else {preview:$preview} end) +
       (if $denied == 1 then {sandbox_denied:true} else {} end)
     ') || { SF_RUN_TOOL_ERROR='cannot decode tool result'; return 1; }
@@ -216,13 +224,15 @@ sf_run_tool_complete() {
   local outcome=$1 name=$SF_TOOL_PLAN[name]
   sf_jq_fields -rn --argjson request "$SF_TOOL_PLAN[request]" \
     --arg id "$SF_TOOL_PLAN[id]" --arg name "$name" --arg draft "$SF_TOOL_PLAN[draft]" \
+    --arg done "$SF_TOOL_PLAN[done]" \
     --argjson input "$SF_TOOL_PLAN[input]" --argjson outcome "$outcome" '
       include "lib/fields";
       include "lib/session";
       include "libexec/run/component";
       ($outcome.output.stdout + $outcome.output.stderr) as $output |
       ($outcome.view // {} | component_texts(
-        [$draft, $output] | map(select(. != "")) | join("\n"); $output; $outcome.preview)) as $texts |
+        [(if $outcome.ran // false then $done else $draft end), $output] |
+          map(select(. != "")) | join("\n"); $output; $outcome.preview)) as $texts |
       ({type:"tool_result",id:$id,name:$name,input:$input,exit_code:$outcome.output.exit_code} +
        $texts |
        if $outcome.sandbox_denied and has("model_text") then

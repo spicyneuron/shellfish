@@ -15,7 +15,9 @@
       }
     }
   },
-  "user_text": "${name}\n${input.command}",
+  "user_text": "Running shell command:\n${input.command}",
+  "user_text_done": "Ran shell command:\n${input.command}",
+  "user_text_denied": "Denied shell command:\n${input.command}",
   "user_permission": "${input.command}",
   "sandbox": true,
   "allow_sandbox_bypass": true

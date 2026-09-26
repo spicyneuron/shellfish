@@ -149,9 +149,9 @@ jq -eRn '
     .model_text == "pre context" and .user_text == "pre display") and
   ($events | map(select(.type == "tool_result"))[0].model_text | contains("pre denied")) and
   ($events | map(select(.type == "_draft" and .name == "shell"))[1].user_text) ==
-    "shell\n" + $command and
+    "Running shell command:\n" + $command and
   ($events | map(select(.type == "tool_result"))[1] |
-    .user_text == "shell\n" + $command + "\noutput\nexit 0" and
+    .user_text == "Ran shell command:\n" + $command + "\noutput\nexit 0" and
     .model_text == "output\nexit 0")
 ' --arg command "print -r -- ran >>${(q)tool_marker}; print -rn -- output" \
   <"$stream" >/dev/null || fail 'tool lifecycle ordering or rendering was wrong'
@@ -205,7 +205,9 @@ SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_BYPASS=true \
   sf_test_run permission "$session" >"$stream" || fail 'permission hook deny failed'
 jq -eRn '
   [inputs | fromjson | select(.type == "tool_result")][0] |
-  .exit_code == 126 and (.model_text | contains("review denied"))
+  .exit_code == 126 and (.model_text | contains("review denied")) and
+  (.user_text | startswith("Denied shell command:\n")) and
+  (.user_text | endswith("\nreview denied"))
 ' <"$stream" >/dev/null || fail 'permission denial did not settle the call'
 
 # If every hook defers, approval falls back to the client.
@@ -311,7 +313,7 @@ SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_COMMAND='print -rn -- output; e
   sf_test_run sandbox "$session" >"$stream" || fail 'sandbox denial turn failed'
 jq -eRn '
   [inputs | fromjson | select(.type == "tool_result")][0] |
-  .exit_code == 3 and .user_text == "shell\nprint -rn -- output; exit 3\noutput\nexit 3" and
+  .exit_code == 3 and .user_text == "Ran shell command:\nprint -rn -- output; exit 3\noutput\nexit 3" and
   .model_text == "output\nexit 3\n\n<sandbox_notice>A denial was detected during this tool call. This does not necessarily mean the tool failed.</sandbox_notice>"
 ' <"$stream" >/dev/null || fail 'sandbox denial did not annotate the model text'
 jq -eRn --arg temp "${TMPDIR:A}" '
@@ -387,7 +389,7 @@ SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_COMMAND=final \
   sf_test_run protocol "$session" >"$stream" || fail 'protocol tool turn failed'
 jq -eRn '
   [inputs | fromjson | select(.type | IN("_draft","state","tool_result"))] ==
-    [{type:"_draft",id:"call_1",name:"shell",user_text:"shell\nfinal"},
+    [{type:"_draft",id:"call_1",name:"shell",user_text:"Running shell command:\nfinal"},
      {type:"state",name:"tool/a",value:1},
      {type:"_draft",id:"call_1",name:"shell",user_text:"working"},
      {type:"state",name:"tool/b",value:2},
@@ -403,7 +405,7 @@ sf_test_session "$session"
 SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_COMMAND=hint \
   sf_test_run protocol "$session" >"$stream" || fail 'hinted tool turn failed'
 jq -eRn '[inputs | fromjson | select(.type == "tool_result")][0] |
-  .user_text == "shell\nhint\nplain" and .model_text == "plain" and
+  .user_text == "Ran shell command:\nhint\nplain" and .model_text == "plain" and
   .user_preview_lines == 3' <"$stream" >/dev/null || fail 'shortcut lost its preview hint'
 
 session="$tmp/protocol-action.jsonl"

@@ -62,7 +62,8 @@ def tool_manifest:
   (.input_schema.properties // {} | keys | map("input." + .)) as $input_variables |
   type == "object" and
   ((keys - ["allow_sandbox_bypass", "description", "environment",
-    "input_schema", "sandbox", "user_permission", "user_text"]) | length == 0) and
+    "input_schema", "sandbox", "user_permission", "user_text", "user_text_denied",
+    "user_text_done"]) | length == 0) and
   (.description | nul_free_string and length > 0) and
   (.input_schema | type == "object" and .type == "object" and
     ((.properties // {}) | type == "object") and
@@ -72,7 +73,8 @@ def tool_manifest:
       has("request_sandbox_bypass") or has("sandbox_bypass_reason") | not) and
     ((.required // []) |
       index("request_sandbox_bypass") == null and index("sandbox_bypass_reason") == null)) and
-  all(.user_permission, .user_text; . == null or tool_template($input_variables)) and
+  all(.user_permission, .user_text, .user_text_denied, .user_text_done;
+    . == null or tool_template($input_variables)) and
   ((.environment // []) | component_environment) and
   (.sandbox | type == "boolean") and
   ((.allow_sandbox_bypass // false) | type == "boolean") and

@@ -68,7 +68,9 @@ jq -e --arg root "$ROOT/share/hooks" '
 sf_profile_tools "$REPLY"
 jq -e '
   .[0].manifest.user_permission == "${input.file_path}" and
-  .[-1].manifest.user_text == "${name}\n${input.command}"
+  .[-1].manifest.user_text == "Running shell command:\n${input.command}" and
+  .[-1].manifest.user_text_done == "Ran shell command:\n${input.command}" and
+  .[-1].manifest.user_text_denied == "Denied shell command:\n${input.command}"
 ' <<<"$REPLY" >/dev/null
 
 # Bundled adapter names resolve through the bundled default profile.

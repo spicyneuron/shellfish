@@ -87,6 +87,8 @@ A tool manifest defines its model-facing schema and execution policy:
 | `allow_sandbox_bypass` | Optional, default `false`; valid only when sandboxed |
 | `environment` | Optional unique variable names |
 | `user_text` | Optional user text shown before the tool's output; default `${name} ${input}` |
+| `user_text_done` | Optional title after the tool runs, before its output; defaults to `user_text` |
+| `user_text_denied` | Optional title for policy or permission denials; the reason follows it |
 | `user_permission` | Optional sandbox-bypass prompt text; default `${input}` |
 
 Templates perform one substitution pass over `name`, `input`, and `input.FIELD` for a declared property.
