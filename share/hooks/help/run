@@ -7,7 +7,7 @@ typeset submitted
 IFS= read -r submitted
 [[ "$?:$submitted" == (1:/help|1:/h) ]] || exit 0
 print -ru3 -- '{"action":"block"}'
-cat <<'HELP'
+cat >&2 <<'HELP'
 Help:
 shift+enter        Add a line instead of sending the message
 ctrl+c             Cancel an active request; otherwise exit

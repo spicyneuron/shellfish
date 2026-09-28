@@ -24,7 +24,7 @@ print -ru3 -- '{"action":"block"}'
 print -ru3 -- '{"user_text":"Forking session…"}' || exit 1
 
 if [[ $target != <-> || ${#target} -gt 9 ]] || (( explicit && target == 0 )); then
-  print -r -- 'Usage: /fork [N]'
+  print -ru2 -- 'Usage: /fork [N]'
   exit 0
 fi
 
@@ -48,7 +48,7 @@ resolved=$(jq -j -s --argjson target "$target" '
     else [$next.index, $next.draft, 1] end
   end | "\(.[0])\u0000\(.[1])\u0000\(.[2])\u0000"
 ' "$SHELLFISH_SESSION" 2>/dev/null) || {
-  print -r -- 'Fork target does not exist.'
+  print -ru2 -- 'Fork target does not exist.'
   exit 0
 }
 fields=( "${(@0)${resolved%$'\0'}}" )
@@ -62,7 +62,7 @@ transcript="$SHELLFISH_TURN_STATE/fork.jsonl"
 if ! jq -ce -s --argjson cutoff "$cutoff" --arg created "$created" '
   .[0:$cutoff] | .[0].created = $created | .[]
 ' "$SHELLFISH_SESSION" >"$transcript"; then
-  print -r -- 'Could not fork session.'
+  print -ru2 -- 'Could not fork session.'
   exit 0
 fi
 
@@ -75,7 +75,7 @@ while true; do
     break
   fi
   if [[ ! -e $candidate && ! -L $candidate ]]; then
-    print -r -- "Could not create fork:"$'\n'"$candidate"
+    print -ru2 -- "Could not create fork:"$'\n'"$candidate"
     exit 0
   fi
   (( suffix++ ))

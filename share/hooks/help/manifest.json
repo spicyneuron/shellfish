@@ -1,1 +1,1 @@
-{"user_text_done":"${output.stdout}","user_preview_lines":"full"}
+{"user_text_done":"${output.stderr}","user_preview_lines":"full"}

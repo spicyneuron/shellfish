@@ -108,8 +108,9 @@ else
   message="Session sandbox $access grant removed: $grant_path"
   user="Sandbox $access grant removed:"
 fi
-jq -cn --arg user "$user"$'\n'"$grant_path" --arg message "$message" \
-  --argjson profile "$profile" '
-  {action:"session_update",profile:$profile,data:{user:$user,message:$message},
-   model_text:"<context script=\"sandbox\">\n${data.message}\n</context>"}
-' >&3
+jq -cn --argjson profile "$profile" '
+  {action:"session_update",profile:$profile,
+   model_text:"<context script=\"sandbox\">\n${output.stdout}</context>"}
+' >&3 || exit 1
+print -r -- "$message"
+print -rnu2 -- "$user"$'\n'"$grant_path"

@@ -25,7 +25,7 @@ while IFS= read -r token; do
   sf_skills_body "$file" || exit 1
   text=$(sf_skills_wrap "$name" "${file:h}" "$REPLY") || exit 1
   body=${${REPLY##$'\n'##}%%$'\n'##}
-  (( ${#loaded} == 1 )) || print -rn -- $'\n\n'
-  print -rn -- "Loaded \$$name:"$'\n'"$body"
-  print -ru2 -- "<context script=\"skills\">"$'\n'"$text"$'\n'"</context>"
+  (( ${#loaded} == 1 )) || print -rnu2 -- $'\n\n'
+  print -rnu2 -- "Loaded \$$name:"$'\n'"$body"
+  print -r -- "<context script=\"skills\">"$'\n'"$text"$'\n'"</context>"
 done < <(print -rn -- "$submitted" | grep -oE '(^|[^[:alnum:]_$])\$[a-z0-9]+(-[a-z0-9]+)*')

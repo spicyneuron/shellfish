@@ -9,7 +9,7 @@ typeset -a argv
 integer explicit=0 suffix=1
 
 fail_compaction() {
-  print -r -- "$1"
+  print -ru2 -- "$1"
   (( ! explicit )) || print -ru3 -- '{"action":"block"}'
   exit 0
 }
