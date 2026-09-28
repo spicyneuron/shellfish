@@ -24,24 +24,19 @@ sf_run_component_line() {
       include "lib/profile";
       include "lib/session";
       include "libexec/run/component";
-      ($raw | try fromjson catch null |
-        component_update($component)) as $update |
-      if $update == null then entry("valid"; "false")
-      else
-        entry("valid"; "true"),
-        entry("states"; [$update.states[] | tojson] | join("\n")),
-        entry("component"; $update.component | tojson),
-        entry("draft"; $update.component.draft |
-          if .user_text == $component.draft.user_text then "" else tojson end),
-        entry("action"; $update.control.action // ""),
-        entry("reason"; $update.control.reason // ""),
-        entry("payload"; $update.control | (.argv // .profile) |
-          if . == null then "" else tojson end)
-      end,
+      ($raw | try fromjson catch null | component_update($component) //
+        error("invalid component line")) as $update |
+      entry("states"; [$update.states[] | tojson] | join("\n")),
+      entry("component"; $update.component | tojson),
+      entry("draft"; $update.component.draft |
+        if .user_text == $component.draft.user_text then "" else tojson end),
+      entry("action"; $update.control.action // ""),
+      entry("reason"; $update.control.reason // ""),
+      entry("payload"; $update.control | (.argv // .profile) |
+        if . == null then "" else tojson end),
       ("ok" | field)
     ' || { SF_COMPONENT[error]=invalid; return 1; }
   line=( "${reply[@]}" )
-  [[ $line[valid] == true ]] || { SF_COMPONENT[error]=invalid; return 1; }
   for record in ${(f)line[states]}; do
     sf_run_append "$SF_COMPONENT[session]" "$record" ||
       { SF_COMPONENT[error]=$REPLY; return 1; }

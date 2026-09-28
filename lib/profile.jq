@@ -30,11 +30,6 @@ def capture_bytes: positive_integer and . >= 64;
 def component_preview_hint:
   . == "full" or (type == "number" and floor == . and . >= 0 and . <= 2147483647);
 
-def component_environment:
-  type == "array" and
-  all(.[]; type == "string" and test("^[A-Za-z_][A-Za-z0-9_]*$")) and
-  length == (unique | length);
-
 def profile_environment:
   type == "object" and
   all(keys[]; test("^[A-Za-z_][A-Za-z0-9_]*$")) and
@@ -54,7 +49,7 @@ def component_template($fields):
       (. as $field | $fields | index($field) != null)));
 
 # Component input is text or an object; strings substitute as-is, null as
-# nothing, and other values as JSON.
+# nothing, and other values as JSON. An absent template renders empty.
 def render_template($template; $name; $input; $output; $data):
   def text: if type == "string" then . elif . == null then "" else tojson end;
   ({name:$name, input:($input | text)} +
@@ -63,19 +58,25 @@ def render_template($template; $name; $input; $output; $data):
     else {} end) +
     ($output | with_entries(.key = "output." + .key | .value |= text)) +
     ($data | with_entries(.key = "data." + .key | .value |= text))) as $variables |
-  $template | gsub("\\$\\{(?<name>[^{}]+)\\}"; $variables[.name] // "");
+  $template // "" | gsub("\\$\\{(?<name>[^{}]+)\\}"; $variables[.name] // "");
 
-def component_manifest($kind):
-  (.input_schema.properties // {} | keys | map("input." + .)) as $input_variables |
+def component_templates: ["user_text", "user_text_done", "user_text_skipped", "model_text"];
+def component_inputs: .input_schema.properties // {} | keys | map("input." + .);
+
+# The presentation any component manifest may set, plus the caller's $fields.
+def component_manifest($fields):
+  component_inputs as $inputs |
   type == "object" and
-  ((keys - (["model_text", "user_preview_lines", "user_text", "user_text_done",
-    "user_text_skipped"] + if $kind == "tools" then
-      ["allow_sandbox_bypass", "description", "environment", "input_schema",
-       "sandbox", "user_permission"] else [] end)) | length == 0) and
-  all(.user_text, .user_text_done, .user_text_skipped, .model_text;
-    . == null or component_template($input_variables)) and
-  ((has("user_preview_lines") | not) or (.user_preview_lines | component_preview_hint)) and
-  (if $kind == "hooks" then true else
+  ((keys - component_templates - ["user_preview_lines"] - $fields) | length == 0) and
+  all(.[component_templates[]]; . == null or component_template($inputs)) and
+  ((has("user_preview_lines") | not) or (.user_preview_lines | component_preview_hint));
+
+def hook_manifest: component_manifest([]);
+
+def tool_manifest:
+  component_inputs as $inputs |
+  component_manifest(["allow_sandbox_bypass", "description", "environment",
+    "input_schema", "sandbox", "user_permission"]) and
   (.description | nul_free_string and length > 0) and
   (.input_schema | type == "object" and .type == "object" and
     ((.properties // {}) | type == "object") and
@@ -85,14 +86,12 @@ def component_manifest($kind):
       has("request_sandbox_bypass") or has("sandbox_bypass_reason") | not) and
     ((.required // []) |
       index("request_sandbox_bypass") == null and index("sandbox_bypass_reason") == null)) and
-  (.user_permission == null or (.user_permission | component_template($input_variables))) and
-  ((.environment // []) | component_environment) and
+  (.user_permission == null or (.user_permission | component_template($inputs))) and
+  ((.environment // []) | type == "array" and length == (unique | length) and
+    all(.[]; type == "string" and test("^[A-Za-z_][A-Za-z0-9_]*$"))) and
   (.sandbox | type == "boolean") and
   ((.allow_sandbox_bypass // false) | type == "boolean") and
-  (if (.allow_sandbox_bypass // false) then .sandbox else true end) end);
-
-def tool_manifest: component_manifest("tools");
-def hook_manifest: component_manifest("hooks");
+  (if (.allow_sandbox_bypass // false) then .sandbox else true end);
 
 def config_error($path; $message):
   error("invalid profile at $" + ($path | map("[" + tojson + "]") | join("")) + ": " + $message);

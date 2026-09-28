@@ -35,7 +35,11 @@ sf_run_tool_plan() {
       entry("id"; $id), entry("name"; $name), entry("input"; $input | tojson),
       entry("request";
         {turn_id:$turn,tool_name:$name,tool_use_id:$id,tool_input:$input} | tojson),
-      entry("component"; component_plan($manifest; "tools"; $name; $input;
+      entry("component"; component_plan($manifest;
+        {user_text:"${name} ${input}",
+         user_text_done:"${name} ${input}\n${output.stdout}${output.stderr}",
+         user_text_skipped:"${name} ${input}\n${output.stderr}",
+         model_text:"${output.stdout}${output.stderr}"}; $name; $input;
         {type:"_draft",id:$id,name:$name}) | tojson),
       entry("decision"; $permission.decision),
       entry("permission_reason"; $permission.reason // ""),

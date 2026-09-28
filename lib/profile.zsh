@@ -48,6 +48,14 @@ sf_profile_manifest() {
   fi
 }
 
+# The parsed manifest of a component folder.
+sf_profile_read_manifest() {
+  sf_profile_manifest "$1" || return
+  local file=$REPLY
+  REPLY=$(sf_jsonc_read "$file" 2>&1) ||
+    sf_profile_validation_error "$REPLY" "invalid component manifest: $file"
+}
+
 sf_profile_reference() {
   local reference=$1 kind=$2 config_dir=$3 folder candidate=''
   if [[ $reference != /* && $reference != '~/'* &&
@@ -104,7 +112,7 @@ sf_profile_tools() {
 # reference. REPLY is the profile with absolute paths.
 sf_profile_resolve() {
   local profile_names=$1 model_override=$2 request_override=$3 backend_override=$4
-  local config_dir profile reference resolved manifest='' backend_manifest='' final name file found='{}' parents
+  local config_dir profile reference resolved backend_manifest='' final name file found='{}' parents
   local -A decoded seen
   local -a files pending references resolutions=()
 
@@ -187,19 +195,11 @@ sf_profile_resolve() {
       return
     }
     if [[ $reference == 'backends '* ]]; then
-      sf_profile_manifest "$resolved" && manifest=$(sf_jsonc_read "$REPLY" 2>&1) || {
-        [[ -n $SF_PROFILE_ERROR ]] ||
-          sf_profile_validation_error "$manifest" "invalid component manifest: $REPLY"
-        return 1
-      }
-      backend_manifest=$manifest
+      sf_profile_read_manifest "$resolved" || return
+      backend_manifest=$REPLY
     elif [[ $reference == 'hooks '* ]]; then
-      sf_profile_manifest "$resolved" && manifest=$(sf_jsonc_read "$REPLY" 2>&1) || {
-        [[ -n $SF_PROFILE_ERROR ]] ||
-          sf_profile_validation_error "$manifest" "invalid component manifest: $resolved"
-        return 1
-      }
-      sf_jq -en --argjson manifest "$manifest" '
+      sf_profile_read_manifest "$resolved" || return
+      sf_jq -en --argjson manifest "$REPLY" '
         include "lib/profile"; $manifest | hook_manifest
       ' >/dev/null || sf_profile_fail "invalid hook manifest: $resolved" || return
     fi

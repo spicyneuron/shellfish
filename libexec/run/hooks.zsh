@@ -24,16 +24,15 @@ sf_run_hook_project() {
 }
 
 sf_run_hook_manifest() {
-  local command=$1 name=$2 lifecycle=$3 input=$4 id=$5 manifest
-  sf_profile_manifest "${command:h}" || { REPLY=$SF_PROFILE_ERROR; return 1; }
-  manifest=$(sf_jsonc_read "$REPLY" 2>&1) || { REPLY="invalid hook manifest: $command"; return 1; }
-  REPLY=$(sf_jq -cn --argjson manifest "$manifest" --arg name "$name" \
+  local command=$1 name=$2 lifecycle=$3 input=$4 id=$5
+  sf_profile_read_manifest "${command:h}" || { REPLY=$SF_PROFILE_ERROR; return 1; }
+  REPLY=$(sf_jq -cn --argjson manifest "$REPLY" --arg name "$name" \
     --arg lifecycle "$lifecycle" --arg input "$input" --arg id "$id" '
     include "lib/profile";
     include "lib/session";
     include "libexec/run/component";
     if $manifest | hook_manifest then
-      component_plan($manifest; "hooks"; $name; $input; {type:"_draft",lifecycle:$lifecycle,id:$id})
+      component_plan($manifest; {}; $name; $input; {type:"_draft",lifecycle:$lifecycle,id:$id})
     else error("invalid hook manifest") end
   ' 2>/dev/null) || { REPLY="invalid hook manifest: $command"; return 1; }
 }
