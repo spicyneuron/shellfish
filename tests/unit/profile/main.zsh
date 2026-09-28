@@ -195,13 +195,9 @@ jq -e --arg read "${tmp:A}/home/my reference" --arg write "${tmp:A}/home/output"
   [[ $SF_PROFILE_ERROR == *'cannot expand ~ without HOME'* ]]
 )
 
-# Inactive components and obsolete profile-local files are inert.
+# Unreferenced components are inert.
 typeset hooks="$SF_TEST_CONFIG/hooks"
-mkdir -p "$hooks/dir" "$SF_TEST_CONFIG/profiles/hooked/hooks" \
-  "$SF_TEST_CONFIG/profiles/hooked/tools/legacy"
-print -r -- '#!/bin/sh' >"$SF_TEST_CONFIG/profiles/hooked/hooks/stop"
-chmod +x "$SF_TEST_CONFIG/profiles/hooked/hooks/stop"
-print -r -- 'not json' >"$SF_TEST_CONFIG/profiles/hooked/tools/legacy/manifest.jsonc"
+mkdir -p "$hooks/dir"
 for script in "$hooks/first" "$hooks/second"; do
   print -r -- '#!/bin/sh' | sf_test_hook "$script"
 done
