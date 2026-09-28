@@ -10,7 +10,9 @@
       "limit": {"type": "integer", "minimum": 1, "default": 500, "description": "Maximum number of lines to return"}
     }
   },
-  "user_text": "${name} ${input.file_path}",
+  "user_text": "Reading file:\n${input.file_path}",
+  "user_text_done": "Read file:\n${input.file_path}\n${output.stdout}${output.stderr}",
+  "user_text_skipped": "Did not read file:\n${input.file_path}\n${output.stderr}",
   "user_permission": "${input.file_path}",
   "sandbox": true,
   "allow_sandbox_bypass": true

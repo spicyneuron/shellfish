@@ -9,7 +9,9 @@
       "content": {"type": "string", "description": "Complete contents for the new file"}
     }
   },
-  "user_text": "${name} ${input.file_path}",
+  "user_text": "Creating file:\n${input.file_path}",
+  "user_text_done": "Created file:\n${input.file_path}\n${output.stdout}${output.stderr}",
+  "user_text_skipped": "Did not create file:\n${input.file_path}\n${output.stderr}",
   "user_preview_lines": "full",
   "user_permission": "${input.file_path}",
   "sandbox": true,

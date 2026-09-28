@@ -15,7 +15,9 @@
       }
     }
   },
-  "user_text": "${name}\n${input.command}",
+  "user_text": "Running read-only shell command:\n${input.command}",
+  "user_text_done": "Ran read-only shell command:\n${input.command}\n${output.stdout}${output.stderr}",
+  "user_text_skipped": "Did not run read-only shell command:\n${input.command}\n${output.stderr}",
   "user_permission": "${input.command}",
   "sandbox": true
 }

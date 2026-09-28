@@ -206,7 +206,7 @@ SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_BYPASS=true \
 jq -eRn '
   [inputs | fromjson | select(.type == "tool_result")][0] |
   .exit_code == 126 and (.model_text | contains("review denied")) and
-  (.user_text | startswith("Denied shell command:\n")) and
+  (.user_text | startswith("Did not run shell command:\n")) and
   (.user_text | endswith("\nreview denied"))
 ' <"$stream" >/dev/null || fail 'permission denial did not settle the call'
 

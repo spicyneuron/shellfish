@@ -11,7 +11,9 @@
       "replace_all": {"type": "boolean", "default": false, "description": "Replace every occurrence of old_string; by default, exactly one occurrence is required"}
     }
   },
-  "user_text": "${name} ${input.file_path}",
+  "user_text": "Editing file:\n${input.file_path}",
+  "user_text_done": "Edited file:\n${input.file_path}\n${output.stdout}${output.stderr}",
+  "user_text_skipped": "Did not edit file:\n${input.file_path}\n${output.stderr}",
   "user_preview_lines": "full",
   "user_permission": "${input.file_path}",
   "sandbox": true,

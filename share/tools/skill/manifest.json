@@ -8,5 +8,8 @@
       "name": {"type": "string", "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$", "maxLength": 64, "description": "Skill name from the available agent skills context"}
     }
   },
+  "user_text": "Loading skill:\n${input.name}",
+  "user_text_done": "Skill load finished:\n${input.name}\n${output.stderr}",
+  "user_text_skipped": "Did not load skill:\n${input.name}\n${output.stderr}",
   "sandbox": false
 }

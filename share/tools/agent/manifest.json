@@ -13,6 +13,9 @@
       "agent_id": {"type": "string"}
     }
   },
+  "user_text": "Running agent request: ${input.operation}",
+  "user_text_done": "Agent request finished: ${input.operation}\n${output.stderr}",
+  "user_text_skipped": "Did not run agent request: ${input.operation}\n${output.stderr}",
   "environment": ["SHELLFISH_MAX_ACTIVE_AGENTS"],
   "sandbox": false
 }

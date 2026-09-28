@@ -9,5 +9,8 @@
       "num_results": {"type": "integer", "minimum": 1, "maximum": 10, "description": "Number of results to return (default: 10)"}
     }
   },
+  "user_text": "Searching the web:\n${input.query}",
+  "user_text_done": "Searched the web:\n${input.query}\n${output.stdout}${output.stderr}",
+  "user_text_skipped": "Did not search the web:\n${input.query}\n${output.stderr}",
   "sandbox": true
 }

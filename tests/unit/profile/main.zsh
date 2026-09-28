@@ -92,7 +92,7 @@ jq -e '
   .[0].manifest.user_permission == "${input.file_path}" and
   .[-1].manifest.user_text == "Running shell command:\n${input.command}" and
   .[-1].manifest.user_text_done == "Ran shell command:\n${input.command}\n${output.stdout}${output.stderr}" and
-  .[-1].manifest.user_text_skipped == "Denied shell command:\n${input.command}\n${output.stderr}" and
+  .[-1].manifest.user_text_skipped == "Did not run shell command:\n${input.command}\n${output.stderr}" and
   .[1].manifest.user_preview_lines == "full" and
   .[2].manifest.user_preview_lines == "full"
 ' <<<"$REPLY" >/dev/null
