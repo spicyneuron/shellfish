@@ -4,12 +4,12 @@ setopt no_aliases no_bg_nice no_multios pipe_fail
 (( $+functions[sf_environment_load] )) || source "$SF_ROOT/lib/environment.zsh"
 (( $+functions[sf_process_run] )) || source "$SF_ROOT/lib/process.zsh"
 (( $+functions[sf_scratch_directory] )) || source "$SF_ROOT/lib/scratch.zsh"
-(( $+functions[sf_run_component_update] )) || source "$SF_ROOT/libexec/run/component.zsh"
+(( $+functions[sf_run_component_begin] )) || source "$SF_ROOT/libexec/run/component.zsh"
 
 typeset -g SF_RUN_HOOK_ERROR=''
 
-# The lifecycle's plan and the running hook's outcome, both keyed by name.
-typeset -gA SF_HOOK_PLAN=() SF_HOOK_RESULT=()
+# The lifecycle's invocation plan.
+typeset -gA SF_HOOK_PLAN=()
 
 sf_run_hook_project() {
   local profile=$1 lifecycle=$2
@@ -32,84 +32,31 @@ sf_run_hook_manifest() {
     --arg lifecycle "$lifecycle" --arg input "$input" --arg id "$id" '
     include "lib/fields";
     include "lib/profile";
+    include "lib/session";
+    include "libexec/run/component";
     if $manifest | hook_manifest then
-      entry("templates"; {user_text:($manifest.user_text // ""),
-        user_text_done:($manifest.user_text_done // ""),
-        user_text_skipped:($manifest.user_text_skipped // ""),
-        model_text:($manifest.model_text // "")} | tojson),
-      entry("preview"; $manifest.user_preview_lines // null | tojson),
-      entry("draft";
-        render_template($manifest.user_text // ""; $name; $input; {}; {}) as $text |
-        if $text == "" then "" else
-          {type:"_draft",lifecycle:$lifecycle,id:$id,user_text:$text} +
-          (if $manifest.user_preview_lines == null then {} else
-            {user_preview_lines:$manifest.user_preview_lines} end) | tojson
-        end),
+      entry("component"; component_plan($manifest; "hooks"; $name; $input;
+        {type:"_draft",lifecycle:$lifecycle,id:$id}) | tojson),
       ("ok" | field)
     else error("invalid hook manifest") end
   ' || { REPLY="invalid hook manifest: $command"; return 1; }
   SF_HOOK_PLAN=( "${reply[@]}" )
-  SF_HOOK_PLAN[name]=$name
-}
-
-# Apply one hook fd 3 line as it arrives. State is durable before settlement.
-sf_run_hook_line() {
-  local record lifecycle=$SF_HOOK_RESULT[lifecycle] id=$SF_RUN[hook_id]
-  local -A line
-  [[ -z $SF_HOOK_RESULT[error] ]] || return 0
-  sf_run_component_update "$1" "$lifecycle" "$SF_HOOK_RESULT[data]" \
-    "$SF_HOOK_RESULT[templates]" '[]' "$SF_HOOK_PLAN[preview]" \
-    "$SF_HOOK_PLAN[name]" "$SF_HOOK_RESULT[input]" \
-    "{\"type\":\"_draft\",\"lifecycle\":\"$lifecycle\",\"id\":\"$id\"}" ||
-    { SF_HOOK_RESULT[error]='cannot decode hook output'; return 1; }
-  line=( "${reply[@]}" )
-  [[ $line[valid] == true ]] || { SF_HOOK_RESULT[error]=invalid; return 1; }
-  for record in ${(f)line[states]}; do
-    sf_run_append "$SF_HOOK_RESULT[session]" "$record" ||
-      { SF_HOOK_RESULT[error]=$REPLY; return 1; }
-  done
-  SF_HOOK_RESULT+=( data "$line[data]" templates "$line[templates]" )
-  sf_run_emit "$line[draft]" || { SF_HOOK_RESULT[error]='cannot emit hook draft'; return 1; }
-  SF_HOOK_RESULT[live]=1
-  [[ -z $line[action] ]] || SF_HOOK_RESULT+=( action "$line[action]"
-    reason "$line[reason]" payload "$line[payload]" )
 }
 
 sf_run_hook_complete() {
-  local directory=$1
+  local directory=$1 outcome
   local -A settled
-  local stdout="$directory/stdout.bounded" stderr="$directory/stderr.bounded"
-  sf_run_component_bound "$directory/stdout" "$stdout" "$SF_HOOK_PLAN[max_capture]" ||
-    { REPLY='cannot bound hook stdout'; return 1; }
-  sf_run_component_bound "$directory/stderr" "$stderr" "$SF_HOOK_PLAN[max_capture]" ||
-    { REPLY='cannot bound hook stderr'; return 1; }
-  sf_jq_fields -cn --rawfile stdout "$stdout" --rawfile stderr "$stderr" \
-    --arg lifecycle "$SF_HOOK_RESULT[lifecycle]" --arg id "$SF_RUN[hook_id]" \
-    --arg name "$SF_HOOK_PLAN[name]" --argjson input "$SF_HOOK_RESULT[input]" \
-    --argjson data "$SF_HOOK_RESULT[data]" \
-    --argjson templates "$SF_HOOK_RESULT[templates]" \
-    --argjson preview "$SF_HOOK_PLAN[preview]" \
-    --argjson exit_code 0 '
-      include "lib/fields";
-      include "lib/session";
-      include "lib/profile";
-      include "libexec/run/component";
-      (component_render($templates; true; $name; $input;
-        {stdout:$stdout,stderr:$stderr,exit_code:$exit_code}; $data; $preview)) as $texts |
-      ({type:"hook_result",lifecycle:$lifecycle,id:$id} + $texts) as $result |
-      if $result | canonical_hook_result then
-        entry("record"; if $texts.user_text == null and $texts.model_text == null
-          then "" else $result | tojson end),
-      entry("model_feedback"; $texts.model_text != null | tostring),
-      ("ok" | field)
-      else error("invalid hook result") end
-    ' || { REPLY='cannot decode hook result'; return 1; }
+  sf_run_component_capture "$directory" "$SF_HOOK_PLAN[max_capture]" 0 ||
+    { REPLY='cannot capture hook result'; return 1; }
+  outcome=$REPLY
+  sf_run_component_complete "$SF_COMPONENT[values]" "$outcome" ||
+    { REPLY='cannot decode hook result'; return 1; }
   settled=( "${reply[@]}" )
-  if [[ -n $settled[record] ]]; then
-    sf_run_append "$SF_HOOK_RESULT[session]" "$settled[record]" || return
+  if [[ -n $settled[result] ]]; then
+    sf_run_append "$SF_COMPONENT[session]" "$settled[result]" || return
     (( SF_RUN[hook_id] += 1 ))
-    SF_HOOK_RESULT[live]=0
-    [[ $settled[model_feedback] != true ]] || SF_HOOK_RESULT[model_feedback]=1
+    SF_COMPONENT[live]=0
+    [[ $settled[model_feedback] != true ]] || SF_COMPONENT[model_feedback]=1
   fi
 }
 
@@ -125,7 +72,7 @@ sf_run_hooks() {
   integer max_capture model_feedback=0
 
   SF_RUN_HOOK_ERROR=''
-  SF_HOOK_RESULT=( action '' reason '' payload '' live 0 )
+  SF_COMPONENT=( action '' reason '' payload '' live 0 )
   reply=( action '' reason '' payload '' )
   if (( SF_RUN[hooks_known] )) &&
       [[ " $SF_RUN[hooks] " != *" $lifecycle "* ]]; then
@@ -183,23 +130,18 @@ sf_run_hooks() {
       sf_scratch_directory hook || { error='cannot prepare hook capture'; break; }
       directory=$REPLY
       process=()
-      SF_HOOK_RESULT=( session "$session" lifecycle "$lifecycle" error '' live 0
-        model_feedback 0 input "$(jq -Rn --arg text "$content" '$text')"
-        data '{}' templates "$SF_HOOK_PLAN[templates]" action '' reason '' payload '' )
-      if [[ -n $SF_HOOK_PLAN[draft] ]]; then
-        sf_run_emit "$SF_HOOK_PLAN[draft]" && SF_HOOK_RESULT[live]=1 ||
-          error='cannot emit hook draft'
-      fi
+      sf_run_component_begin "$session" "$SF_HOOK_PLAN[component]" ||
+        error='cannot emit hook draft'
       if [[ -z $error ]] && sf_process_run "$directory" "${SF_RUN[cwd]:A}" "$input" "$max_capture" \
-          sf_run_hook_line /usr/bin/env "${environment[@]}" "$command/run" "$@"; then
+          sf_run_component_line /usr/bin/env "${environment[@]}" "$command/run" "$@"; then
         process=( "${reply[@]}" )
         if (( process[interrupted] )); then
           SF_RUN[signal_status]=$process[exit_code]
           error="cannot run $lifecycle hook"
-        elif [[ $SF_HOOK_RESULT[error] == invalid ]]; then
+        elif [[ $SF_COMPONENT[error] == invalid ]]; then
           error="$lifecycle hook returned invalid control: $command"
-        elif [[ -n $SF_HOOK_RESULT[error] ]]; then
-          error=$SF_HOOK_RESULT[error]
+        elif [[ -n $SF_COMPONENT[error] ]]; then
+          error=$SF_COMPONENT[error]
         elif (( process[exit_code] )); then
           error="$lifecycle hook failed with status $process[exit_code]: $command"
           [[ ! -s $directory/stderr ]] || error+=": $(<"$directory/stderr")"
@@ -214,20 +156,17 @@ sf_run_hooks() {
       rm -rf -- "$directory"
       directory=''
       # A draft that nothing settled leaves no trace.
-      if (( SF_HOOK_RESULT[live] )); then
-        sf_run_emit '{"type":"_draft","lifecycle":"'$lifecycle'","id":"'$SF_RUN[hook_id]'","user_text":""}' ||
-          error=${error:-cannot emit hook draft}
-      fi
-      (( model_feedback |= SF_HOOK_RESULT[model_feedback] ))
-      [[ -z $error && -z $SF_HOOK_RESULT[action] ]] || break
+      sf_run_component_clear || error=${error:-cannot emit hook draft}
+      (( model_feedback |= SF_COMPONENT[model_feedback] ))
+      [[ -z $error && -z $SF_COMPONENT[action] ]] || break
     done
   fi
   rm -f -- "$input"
-  if [[ -z $error && $lifecycle == stop && $SF_HOOK_RESULT[action] == continue ]] &&
+  if [[ -z $error && $lifecycle == stop && $SF_COMPONENT[action] == continue ]] &&
       (( ! model_feedback )); then
     error='stop hook continued without model feedback'
   fi
   [[ -z $error ]] || { SF_RUN_HOOK_ERROR=$error; return 1; }
-  reply=( action "$SF_HOOK_RESULT[action]" reason "$SF_HOOK_RESULT[reason]"
-    payload "$SF_HOOK_RESULT[payload]" )
+  reply=( action "$SF_COMPONENT[action]" reason "$SF_COMPONENT[reason]"
+    payload "$SF_COMPONENT[payload]" )
 }
