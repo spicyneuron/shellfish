@@ -1,5 +1,6 @@
 #!/usr/bin/env zsh
 source "${0:A:h:h:h}/_helpers.zsh"
+sf_test_source lib/jq.zsh
 sf_test_tmp run-create-hook-contract
 sf_test_config
 export XDG_STATE_HOME="$tmp/state"
@@ -138,7 +139,7 @@ jq -eRn '
 assert_canonical_session "$session"
 # Removed fd3 fields fail instead of reviving section or preview behavior.
 typeset field
-for field in finalize user_preview_lines; do
+for field in finalize user_preview_lines user_text_denied; do
   print -r -- '#!/usr/bin/env zsh' >"$hook/run"
   print -r -- "print -r -u3 -- '{\"$field\":true}'" >>"$hook/run"
   session="$tmp/invalid-$field.jsonl"
@@ -180,7 +181,7 @@ jq -eRn --arg name "${external:A}" '
 # Reconstruct model context after removing the live manifest.
 rm "$hook/manifest.json"
 session="$tmp/session.jsonl"
-jq -e -s -L "$ROOT" '
+sf_jq -e -s '
   include "lib/profile";
   include "lib/session";
   .[1:] | session_messages[-1].content[0].text |

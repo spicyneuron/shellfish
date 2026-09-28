@@ -132,13 +132,15 @@ assert_canonical_session "$session"
 
 # A failed append ends transcript mutation, including the usual durable error.
 typeset break_hook="$tmp/break-session" broken="$tmp/broken.jsonl"
-cat >"$break_hook" <<'ZSH'
+mkdir -p "$break_hook"
+print -r -- '{}' >"$break_hook/manifest.json"
+cat >"$break_hook/run" <<'ZSH'
 #!/usr/bin/env zsh
 cat >/dev/null
 mv "$SHELLFISH_SESSION" "$SHELLFISH_SESSION.saved" || exit
 mkdir "$SHELLFISH_SESSION"
 ZSH
-chmod +x "$break_hook"
+chmod +x "$break_hook/run"
 SF_TEST_PROFILE=$(jq -c --arg hook "$break_hook" '
   .hooks.user_prompt_submit=[$hook]
 ' <<<"$SF_TEST_PROFILE")

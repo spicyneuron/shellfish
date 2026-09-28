@@ -92,11 +92,13 @@ A configuration root has separate profile and component locations:
 profiles/NAME.jsonc
 system/FILE.md
 tools/TOOL/
-hooks/HOOK
+hooks/HOOK/
 backends/ADAPTER/
 ```
 
 A bare name in `system`, `tools`, `hooks`, or `backend.adapter` resolves in its kind's top-level user directory first, then bundled `share/`. Profile inheritance does not affect component lookup. `@KIND/NAME`, such as `@tools/shell`, selects the bundled component explicitly; `~/path` and absolute paths are also available. Only components named in a resolved profile are active. Missing or invalid active components fail resolution; unused files are inert.
+
+Tools and hooks each require an executable `run` and a `manifest.json` or `manifest.jsonc`. Hook manifests declare presentation templates, with empty defaults. Tool manifests also declare their model-facing schema and execution policy. See [`HARNESS.md`](HARNESS.md#presentation) for templates and outcomes. References are frozen in the session, while manifest edits affect later invocations only.
 
 Use profile `env` for non-secret settings such as `{"SHELLFISH_MAX_ACTIVE_AGENTS": "2"}`. It merges by variable name through inheritance and is frozen in the session header. Do not put credentials there.
 
@@ -130,7 +132,7 @@ The default harness runs opted-in tools under [`fence`](https://github.com/fence
 | `preview_lines_reasoning` | Collapsed reasoning lines or `"full"` |
 | `preview_lines` | Collapsed component-output lines or `"full"` |
 
-`--verbose` temporarily makes both preview limits `"full"`. A hook's or tool's `user_preview_lines` overrides the global limit; see [`HARNESS.md`](HARNESS.md).
+`--verbose` temporarily makes both preview limits `"full"`. A hook or tool manifest's `user_preview_lines` overrides the global limit for Running and settled text.
 
 ## Bundled agent
 
@@ -196,7 +198,7 @@ Inspection distinguishes a child that is still running from one that has stopped
 
 ### Review hook
 
-The `review` hook helps decide whether a requested sandbox bypass is justified by the user's instructions. If it cannot approve the request, the bypass is denied and the tool is not run. The default profile does not enable it. The bundled `coding` profile's `permission_request` script delegates to `review`; to enable the hook in another profile, add it to `permission_request`:
+The `review` hook helps decide whether a requested sandbox bypass is justified by the user's instructions. If it cannot approve the request, the bypass is denied and the tool is not run. The bundled `coding` profile enables it, but the default profile does not. To enable it in another profile, add it to `permission_request`:
 
 ```jsonc
 {

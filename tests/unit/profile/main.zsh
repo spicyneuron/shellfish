@@ -20,10 +20,11 @@ sf_test_profile work '{
 sf_test_profile openai/base '{"extend":["@default"],"request":{"model":"base"}}'
 sf_test_profile openai/sol '{"extend":["openai/base"],"request":{"model":"sol"},
   "system":["prompt.md"],"hooks":{"stop":["stop"]}}'
-mkdir -p "$SF_TEST_CONFIG/system" "$SF_TEST_CONFIG/hooks"
+mkdir -p "$SF_TEST_CONFIG/system" "$SF_TEST_CONFIG/hooks/stop"
 print -r -- 'nested' >"$SF_TEST_CONFIG/system/prompt.md"
-print -r -- '#!/bin/sh' >"$SF_TEST_CONFIG/hooks/stop"
-chmod +x "$SF_TEST_CONFIG/hooks/stop"
+print -r -- '#!/bin/sh' >"$SF_TEST_CONFIG/hooks/stop/run"
+print -r -- '{}' >"$SF_TEST_CONFIG/hooks/stop/manifest.json"
+chmod +x "$SF_TEST_CONFIG/hooks/stop/run"
 sf_profile_resolve_args -p openai/sol
 jq -e --arg root "${SF_TEST_CONFIG:A}" '
   .request.model == "sol" and (.tools | length) == 7 and
@@ -74,6 +75,7 @@ sf_jq -en '
    user_text_done:"${output.stdout}${output.stderr}/${output.exit_code}",
    user_text_skipped:"${input.command}",model_text:"",user_preview_lines:0} as $manifest |
   ($manifest | tool_manifest) and
+  ($manifest + {user_text_denied:"legacy"} | tool_manifest | not) and
   ("${data.note}/${output.exit_code}/${input.command}/${data.absent}" |
     render_template("${data.note}/${output.exit_code}/${input.command}/${data.absent}";
       "shell"; {command:"run"}; {exit_code:4}; {note:"${output.stdout}"})) ==
@@ -218,7 +220,7 @@ jq -e --arg read "${tmp:A}/home/my reference" --arg write "${tmp:A}/home/output"
   [[ $SF_PROFILE_ERROR == *'cannot expand ~ without HOME'* ]]
 )
 
-# Inactive files, including old folder-style hooks and manifests, are inert.
+# Inactive components and obsolete profile-local files are inert.
 typeset hooks="$SF_TEST_CONFIG/hooks"
 mkdir -p "$hooks/dir" "$SF_TEST_CONFIG/profiles/hooked/hooks" \
   "$SF_TEST_CONFIG/profiles/hooked/tools/legacy"
@@ -226,8 +228,10 @@ print -r -- '#!/bin/sh' >"$SF_TEST_CONFIG/profiles/hooked/hooks/stop"
 chmod +x "$SF_TEST_CONFIG/profiles/hooked/hooks/stop"
 print -r -- 'not json' >"$SF_TEST_CONFIG/profiles/hooked/tools/legacy/manifest.jsonc"
 for script in "$hooks/first" "$hooks/second"; do
-  print -r -- '#!/bin/sh' >"$script"
-  chmod +x "$script"
+  mkdir -p "$script"
+  print -r -- '#!/bin/sh' >"$script/run"
+  print -r -- '{}' >"$script/manifest.json"
+  chmod +x "$script/run"
 done
 sf_test_profile hook-base '{"backend":{"adapter":"'"$fixture_backend"'"},
   "request":{"model":"m"},"hooks":{"stop":["first"]}}'
@@ -242,10 +246,10 @@ sf_profile_resolve_args -p hooked
 jq -e '.hooks.stop == []' <<<"$REPLY" >/dev/null ||
   fail 'an empty hook list did not disable the lifecycle'
 
-# A hook reference must name an executable file.
+# A hook directory must contain an executable run and a manifest.
 sf_test_profile hooked '{"extend":["hook-base"],"hooks":{"pre_tool_use":["dir"]}}'
 if sf_profile_resolve_args -p hooked; then
-  fail 'directory hook was accepted'
+  fail 'incomplete hook directory was accepted'
 fi
 [[ $SF_PROFILE_ERROR == 'invalid hooks reference: dir' ]]
 

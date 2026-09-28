@@ -141,15 +141,16 @@ rm "$config/tools/probe/manifest.json"
 # which profile supplied the reference.
 (
   SF_SHARE="$tmp/flat-share"
-  mkdir -p "$SF_SHARE/profiles/deep" "$SF_SHARE/system" "$SF_SHARE/hooks" \
+  mkdir -p "$SF_SHARE/profiles/deep" "$SF_SHARE/system" "$SF_SHARE/hooks/stop" \
     "$SF_SHARE/backends/demo" "$SF_TEST_CONFIG/system" \
     "$SF_TEST_CONFIG/profiles/deep" "$SF_TEST_CONFIG/tools/probe"
   print -r -- 'bundled' >"$SF_SHARE/system/general.md"
   print -r -- 'configured' >"$SF_TEST_CONFIG/system/general.md"
-  print -r -- '#!/bin/sh' >"$SF_SHARE/hooks/stop"
+  print -r -- '#!/bin/sh' >"$SF_SHARE/hooks/stop/run"
+  print -r -- '{}' >"$SF_SHARE/hooks/stop/manifest.json"
   print -r -- '#!/bin/sh' >"$SF_SHARE/backends/demo/run"
   print -r -- '#!/bin/sh' >"$SF_TEST_CONFIG/tools/probe/run"
-  chmod +x "$SF_SHARE/hooks/stop" "$SF_SHARE/backends/demo/run" \
+  chmod +x "$SF_SHARE/hooks/stop/run" "$SF_SHARE/backends/demo/run" \
     "$SF_TEST_CONFIG/tools/probe/run"
   print -r -- '{"endpoint":"https://example.invalid/test"}' \
     >"$SF_SHARE/backends/demo/manifest.jsonc"

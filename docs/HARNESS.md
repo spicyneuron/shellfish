@@ -8,17 +8,17 @@ See [`CONFIG.md`](CONFIG.md) for composition, lookup, and the bundled coding har
 
 ## Shared contract
 
-Tools and backend adapters are executable component directories; a hook is one executable file. Component references resolve before the session is created, and the resolved paths are frozen in its header. Manifests and scripts are read on each run.
+Tools, hooks, and backend adapters are executable component directories. References resolve before session creation and are frozen in its header. Manifests and scripts are read on each invocation.
 
 | Component | Required files | Trust |
 | --- | --- | --- |
-| Tool | `run`, `manifest.json` or `manifest.jsonc`; `fence.jsonc` when sandboxed | Model-facing; optionally sandboxed |
-| Hook | The executable itself | Trusted, user permissions |
+| Tool | `run`, `manifest.json` or `manifest.jsonc`, `fence.jsonc` when sandboxed | Model-facing, optionally sandboxed |
+| Hook | `run`, `manifest.json` or `manifest.jsonc` | Trusted, user permissions |
 | Backend adapter | `run`, manifest; optional `context_window` | Trusted, user permissions |
 
 Scripts run from the session working directory. Shellfish starts each in an isolated process group, terminates ordinary descendants on completion or cancellation, and escalates from `TERM` to `KILL`. Components must finish their own subprocesses; daemonizing is unsupported.
 
-Raw captures are transient—only settled text and accepted state records are durable.
+Raw captures and live progress are transient. Only settled text and accepted state records are durable. Replay uses stored text, never manifests.
 
 ### Environment
 
@@ -38,26 +38,33 @@ Hooks and adapters inherit the process environment and receive every value in pr
 | `SHELLFISH_TURN_STATE` |  | Turn hooks only |
 | `TMPDIR`, `TMPPREFIX` | ✓ |  |
 
-`SHELLFISH_SHARE_DIR` is the installed bundled `share/` root, so scripts can call its parts, such as `$SHELLFISH_SHARE_DIR/hooks/review`.
+`SHELLFISH_SHARE_DIR` is the installed bundled `share/` root, so scripts can call its parts, such as `$SHELLFISH_SHARE_DIR/hooks/review/run`.
 
 Tools use the host's `TMPDIR`, or `/tmp` when it is unset, and receive a `TMPPREFIX` beneath it. Sandboxed tools may read and write the platform temp directories as baseline temporary storage; tools own their cleanup. Sandboxed tools otherwise start with a clean environment plus their declared names. Unsandboxed tools inherit the process environment plus their declared names.
 
+### Presentation
+
+Hook and tool manifests declare complete text templates. A component settles at most once. Tools settle as **Done** if their script ran, including nonzero exits, or **Skipped** if policy, permission, limits, or preflight prevented execution. Hooks settle after exit 0 and are never skipped. A nonzero hook exit fails the operation instead.
+
+| Manifest field | Tool default | Hook default |
+| --- | --- | --- |
+| `user_text` | `${name} ${input}` | Empty |
+| `user_text_done` | `${name} ${input}\n${output.stdout}${output.stderr}` | Empty |
+| `user_text_skipped` | `${name} ${input}\n${output.stderr}` | Empty |
+| `model_text` | `${output.stdout}${output.stderr}` | Empty |
+| `user_preview_lines` | Client preview limit | Client preview limit |
+
+`user_text` is Running progress. Done or Skipped text and `model_text` are stored at settlement. `user_preview_lines` accepts a line count or `"full"` and applies to both Running and settled text.
+
+Templates render exactly as configured, with no appended output or client fallback. Empty renderings omit that field. A silent hook creates no result, but every tool call receives one. `${name}` is the tool name or hook reference path. `${input}` is the tool input object or lifecycle stdin text, and `${input.FIELD}` accesses a declared tool input property. `${output.stdout}`, `${output.stderr}`, and `${output.exit_code}` access captures at settlement, including skip reasons and sandbox diagnostics. `${data.KEY}` accesses strings supplied on fd 3.
+
+Substitution is one pass. Strings insert literally, other input values insert as JSON, and missing or null values insert empty. Running progress has no output values. Captured stdout and stderr each retain their tail behind an `[output truncated]` marker when they exceed `max_capture_bytes`.
+
 ### Output
 
-Hooks and tools stream JSON objects to fd 3 while they run, one per line:
+Hooks and tools send newline-delimited JSON objects to fd 3. `data` supplies string values, such as `{"data":{"branch":"main"}}`. Any template field proposes a replacement, including `""` to silence it. Each valid line updates data and templates, then re-renders Running progress. `user_preview_lines` belongs only in the manifest.
 
-| Key | Meaning |
-| --- | --- |
-| `user_text` | Replaces the live section's user-facing text; the component now owns it |
-| `model_text` | Replaces the live section's model context; the component now owns it |
-| `finalize` | `true` settles the live section now and opens an empty one; hooks only |
-| `user_preview_lines` | `"full"` or a TUI line limit for the live section and the result it settles |
-| `state` | State records, such as `[{"name":"example/status","value":{"ready":true}}]` |
-| `action` | A hook's lifecycle decision; see [Hooks](#hooks) |
-
-User text streams as live progress. At exit, each field the component did not write is filled from captured output; the component sections below say who sees what. A field it wrote keeps exactly that text, so a component that shows progress must write its final text too. A section with neither text creates no result. `max_capture_bytes` bounds each line and that fallback output. An invalid line fails the execution.
-
-State names are at most 128 characters and match `^[A-Za-z0-9][A-Za-z0-9_.:/-]*$`. The latest exact name is effective; `null` clears it. Accepted state is appended before the result it accompanies. A component starting an untrusted child must close fd 3 so the child cannot forge state.
+`state` accepts updates such as `[{"name":"example/status","value":{"ready":true}}]`. Each valid line's state is durable immediately, even if the process later fails or is interrupted. Names are at most 128 characters and match `^[A-Za-z0-9][A-Za-z0-9_.:/-]*$`. The latest exact name is effective, and `null` clears it. Hook lifecycle actions are described [below](#hooks). Invalid or oversized control output fails execution. A component starting an untrusted child must close fd 3.
 
 ## Tools
 
@@ -86,16 +93,11 @@ A tool manifest defines its model-facing schema and execution policy:
 | `sandbox` | Required boolean |
 | `allow_sandbox_bypass` | Optional, default `false`; valid only when sandboxed |
 | `environment` | Optional unique variable names |
-| `user_text` | Optional user text shown before the tool's output; default `${name} ${input}` |
-| `user_text_done` | Optional title after the tool runs, before its output; defaults to `user_text` |
-| `user_text_denied` | Optional title for policy or permission denials; the reason follows it |
-| `user_permission` | Optional sandbox-bypass prompt text; default `${input}` |
-
-Templates perform one substitution pass over `name`, `input`, and `input.FIELD` for a declared property.
+| `user_permission` | Optional sandbox-bypass prompt template, default `${input}` |
 
 Shellfish calls `run` with no arguments and one input object on stdin. Sandbox-bypass control fields are removed first. The tool must validate input before using it. A nonzero exit is a normal tool result and does not fail the turn.
 
-A call settles exactly once, at exit. State from each valid line is committed as it arrives, including if the tool later fails or is interrupted. Unless the tool writes its own, the user sees the rendered `user_text` followed by stdout and stderr, and the model sees stdout and stderr; that output keeps its tail when it exceeds `max_capture_bytes`. A line beyond the limit fails the call. Tools take no `action`; interruption settles a rejected result instead of the tool's output.
+Tools take no lifecycle action. Interruption settles a rejected result instead of the tool's output.
 
 The result repeats the exact call ID, name, and input and records an exit code. If the model calls an undeclared tool, Shellfish records a rejected result. Calls are processed in response order, and each complete result is persisted before the next call.
 
@@ -103,13 +105,13 @@ The result repeats the exact call ID, name, and input and records an exit code. 
 
 A tool is sandboxed only when both its manifest and harness enable sandboxing. Shellfish runs it under [`fence`](https://github.com/fencesandbox/fence), found on `PATH` when the tool runs, with its `fence.jsonc`; platform temp access and harness path grants extend that policy, but deny rules win. Otherwise it runs with user permissions.
 
-For a sandboxed tool with `allow_sandbox_bypass: true`, Shellfish adds `request_sandbox_bypass` and `sandbox_bypass_reason` to the schema shown to the model. A requested bypass proceeds unsandboxed only when a `permission_request` hook or interactive client approves it. Otherwise the tool is not invoked and receives a denied result.
+For a sandboxed tool with `allow_sandbox_bypass: true`, Shellfish adds `request_sandbox_bypass` and `sandbox_bypass_reason` to the schema shown to the model. A requested bypass proceeds unsandboxed only when a `permission_request` hook or interactive client approves it. Otherwise the tool is not invoked and receives a Skipped result.
 
-A detected sandbox denial on a nonzero tool exit adds an advisory `<sandbox_notice>` to model context; it does not assert that the denial caused the failure.
+A detected sandbox denial on a nonzero tool exit adds an advisory `<sandbox_notice>` to captured stderr before rendering. It does not assert that the denial caused the failure.
 
 ## Hooks
 
-Hooks are executables bound to lifecycle points. They add context and workflow policy without changing the core agent loop. Bundled and custom hooks use the same process contract.
+Hooks are components bound to lifecycle points. Their manifests accept only the shared presentation fields and can be empty. Each hook decides whether its input needs work, without a separate selector.
 
 ```text
 create session
@@ -134,7 +136,7 @@ Each lifecycle runs its configured hooks in order, each as a separate process wi
 
 ### Hook output
 
-A hook writes the [shared output](#output). State and each finalized section become durable as the line arrives, so an interrupted or failed hook keeps what it already settled. At exit 0, the last section settles; unless the hook writes its own, the user sees stdout and stderr and the model sees stdout. A hook fails when its fallback output exceeds `max_capture_bytes`. Any nonzero exit fails the operation, with stderr in the diagnostic.
+A hook follows the [shared presentation and output contract](#presentation). It settles after exit 0. A nonzero exit fails the operation, retains accepted state, and clears unsettled progress, with stderr in the diagnostic.
 
 Model text from one lifecycle reaches the model grouped in `<hook name="LIFECYCLE">`, each result inserted verbatim. Bundled hooks wrap theirs in `<context script="NAME">`.
 

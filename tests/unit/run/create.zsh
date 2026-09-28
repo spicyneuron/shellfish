@@ -71,13 +71,15 @@ zsh -f "$entry" run --session-create --session-from "$created" --model other >/d
 
 # Retain the valid prefix when a startup hook fails.
 typeset hook="$tmp/failing-hook"
-cat >"$hook" <<'ZSH'
+mkdir -p "$hook"
+print -r -- '{}' >"$hook/manifest.json"
+cat >"$hook/run" <<'ZSH'
 #!/usr/bin/env zsh
 [[ $# == 0 && -z ${SHELLFISH_TURN_STATE-} ]] || exit 2
 print -u2 -r -- 'startup detail'
 exit 9
 ZSH
-chmod +x "$hook"
+chmod +x "$hook/run"
 sf_test_profile hook \
   "{\"extend\": [\"default\"], \"hooks\": {\"session_start\": [\"$hook\"]}}"
 typeset failed="$tmp/failed.jsonl" hook_error="$tmp/hook-error"
@@ -161,50 +163,19 @@ zsh -f "$entry" run --session-create --session-out "$binary" \
   fail 'create accepted system content containing NUL bytes'
 [[ ! -e $binary ]] || fail 'binary system input left a transcript'
 
-# Startup records are durable before the next component runs.
-typeset events="$tmp/events.jsonl" streamed="$tmp/streamed.jsonl"
-typeset first="$tmp/first-hook" silent="$tmp/silent-hook"
-cat >"$first" <<'ZSH'
+# A failed later startup retains and streams the completed prefix.
+typeset events="$tmp/events.jsonl" first="$tmp/first-hook"
+mkdir -p "$first"
+print -r -- '{"user_text_done":"startup display","model_text":"startup context"}' \
+  >"$first/manifest.json"
+cat >"$first/run" <<'ZSH'
 #!/usr/bin/env zsh
 [[ -f $SHELLFISH_SESSION ]] || exit 2
 jq -se 'map(.type) == ["_session_load","session","system"]' \
   "$SF_TEST_EVENTS" >/dev/null || exit 3
-print -r -u3 -- '{"user_text":"starting"}'
-print -r -u3 -- '{"user_text":"startup display","model_text":"startup context","finalize":true,"state":[{"name":"startup/stream","value":true}]}'
+print -r -u3 -- '{"state":[{"name":"startup/stream","value":true}]}'
 ZSH
-cat >"$silent" <<'ZSH'
-#!/usr/bin/env zsh
-[[ -f $SHELLFISH_SESSION ]] || exit 2
-# A finalized section becomes durable and streams while its hook still runs.
-integer polls=0
-until jq -se '.[-2] == {type:"state",name:"startup/stream",value:true} and
-    .[-1].type == "hook_result"' "$SHELLFISH_SESSION" >/dev/null 2>&1; do
-  (( polls++ < 100 )) || exit 4
-  sleep 0.02
-done
-jq -se 'map(.type) == ["_session_load","session","system","_draft",
-  "state","hook_result"]' \
-  "$SF_TEST_EVENTS" >/dev/null || exit 3
-ZSH
-chmod +x "$first" "$silent"
-sf_test_profile stream \
-  "{\"extend\": [\"default\"], \"hooks\": {\"session_start\": [\"$first\", \"$silent\"]}}"
-SF_TEST_EVENTS="$events" zsh -f "$entry" run --jsonl --session-create -p stream \
-  --session-out "$streamed" >"$events" 2>"$hook_error" || fail 'streamed creation failed'
-[[ ! -s $hook_error ]] || fail "streamed display leaked to stderr: $(<"$hook_error")"
-jq -se --arg path "$streamed" --slurpfile session "$streamed" '
-  # A hook that writes nothing records nothing.
-  map(.type) == ["_session_load","session","system","_draft","state","hook_result"] and
-  .[0] == {type:"_session_load",path:$path} and
-  .[1:3] == $session[0:2] and
-  (.[3] | del(.id)) == {type:"_draft",lifecycle:"session_start",user_text:"starting"} and
-  .[4:6] == $session[2:] and
-  (.[5] | del(.id)) == {type:"hook_result",lifecycle:"session_start",
-    user_text:"startup display",model_text:"startup context"} and
-  .[3].id == .[5].id
-' "$events" >/dev/null || fail 'invalid creation event sequence or transcript'
-
-# A failed later startup retains and streams the completed prefix.
+chmod +x "$first/run"
 sf_test_profile stream \
   "{\"extend\": [\"hook\"], \"hooks\": {\"session_start\": [\"$first\", \"...\"]}}"
 failed="$tmp/later-failed.jsonl"
@@ -214,7 +185,8 @@ SF_TEST_EVENTS="$events" zsh -f "$entry" run --jsonl --session-create \
 [[ -f $failed && $(<"$hook_error") == *'session_start hook failed with status 9:'* ]] ||
   fail 'failed startup did not retain its session and diagnostic'
 jq -se '
-  map(.type) == ["_session_load","session","system","_draft","state","hook_result"]
+  map(.type) == ["_session_load","session","system","state","_draft","hook_result"] and
+  .[-1].user_text == "startup display" and .[-1].model_text == "startup context"
 ' "$events" >/dev/null || fail 'a failed creation lost its durable prefix'
 jq -se 'map(.type) == ["session","system","state","hook_result"]' \
   "$failed" >/dev/null || fail 'a failed creation lost its durable prefix'
@@ -223,7 +195,9 @@ jq -se 'map(.type) == ["session","system","state","hook_result"]' \
 typeset slow="$tmp/slow-hook" cancelled="$tmp/cancelled.jsonl"
 export SLOW_MARKER="$tmp/slow-active" SLOW_RELEASE="$tmp/slow-release"
 export SLOW_EXIT_MARKER="$tmp/slow-exit"
-cat >"$slow" <<'ZSH'
+mkdir -p "$slow"
+print -r -- '{}' >"$slow/manifest.json"
+cat >"$slow/run" <<'ZSH'
 #!/usr/bin/env zsh
 : >"$SLOW_MARKER"
 # Release detects scripts that survive cancellation.
@@ -232,7 +206,7 @@ while [[ ! -e $SLOW_RELEASE ]]; do
 done
 : >"$SLOW_EXIT_MARKER"
 ZSH
-chmod +x "$slow"
+chmod +x "$slow/run"
 sf_test_profile slow \
   "{\"extend\": [\"default\"], \"hooks\": {\"session_start\": [\"$slow\"]}}"
 zsh -f "$entry" run --jsonl --session-create -p slow --session-out "$cancelled" \
@@ -258,13 +232,14 @@ jq -se 'map(.type) == ["session","system"]' "$cancelled" >/dev/null ||
 # Moving a home preserves its frozen home-relative references.
 typeset old_home="$tmp/original-home" new_home="$tmp/moved-home"
 typeset old_project="$old_home/project" new_project="$new_home/project"
-mkdir -p "$old_project" "$old_home/.config/shellfish/profiles"
+mkdir -p "$old_project/hook" "$old_home/.config/shellfish/profiles"
 print -r -- 'original prompt' >"$old_project/prompt.md"
-cat >"$old_project/hook" <<'ZSH'
+print -r -- '{}' >"$old_project/hook/manifest.json"
+cat >"$old_project/hook/run" <<'ZSH'
 #!/usr/bin/env zsh
 pwd -P >"$PWD/hook-cwd"
 ZSH
-chmod +x "$old_project/hook"
+chmod +x "$old_project/hook/run"
 cat >"$old_home/.config/shellfish/profiles/default.jsonc" <<EOF
 {
   "backend": {"adapter": "$ROOT/tests/fixtures/backend"},

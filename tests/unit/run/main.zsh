@@ -206,27 +206,6 @@ head -n 1 "$context_session" | jq -e \
   '.profile.context_window == null' >/dev/null ||
   fail 'unavailable context discovery did not freeze null'
 
-# JSONL emits command handoffs.
-typeset handoff_script="$tmp/handoff"
-cat >"$handoff_script" <<'ZSH'
-#!/usr/bin/env zsh
-(( $# == 0 )) || exit 1
-print -rn -u3 -- '{"action":"handoff","argv":["/usr/bin/printf","next.jsonl"]}'
-ZSH
-chmod +x "$handoff_script"
-typeset handoff_output="$tmp/handoff.jsonl"
-sf_test_profile handoff \
-  "{\"extend\": [\"default\"], \"hooks\": {\"user_prompt_submit\": [\"$handoff_script\"]}}"
-print -r -- \
-  '{"type":"user","content":[{"type":"text","text":"handoff"}]}' |
-  zsh -f "$entry" run --jsonl -p handoff \
-  >"$handoff_output" || fail 'JSONL run rejected a handoff'
-jq -eRn '
-  [inputs | fromjson] as $events |
-  $events[-1] == {type:"_handoff",argv:["/usr/bin/printf","next.jsonl"]} and
-  ($events | any(.type == "user") | not)
-' <"$handoff_output" >/dev/null || fail 'JSONL run discarded the handoff'
-
 # Invalid session paths fail cleanly.
 typeset invalid_path="$tmp/invalid-path" invalid_path_output="$tmp/invalid-path.out"
 ln -s "$SF_TEST_CONFIG" "$invalid_path"
