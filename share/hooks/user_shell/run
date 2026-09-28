@@ -22,7 +22,7 @@ if [[ -z $command ]]; then
   exit 0
 fi
 
-print -ru3 -- '{"user_text":"Running shell command…","user_text_done":"Shell command:\n${output.stdout}","model_text":"<context script=\"user_shell\">\n${output.stdout}</context>"}'
+print -ru3 -- '{"user_text":"Running shell command…","user_text_done":"Shell command:\n${output.stdout}","model_text":"<context script=\"${name}\">\n${output.stdout}</context>"}'
 print -r -- '$ '"$command"
 unset SHELLFISH_SESSION SHELLFISH_TURN_STATE
 unset SHELLFISH_MAX_CAPTURE_BYTES SHELLFISH_MODE SHELLFISH_MODEL SHELLFISH_TURN_ID SHELLFISH_VERBOSE

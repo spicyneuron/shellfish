@@ -37,6 +37,6 @@ to=${identity#*:}
 jq -cn --arg identity "$identity" --arg from "$from" --arg to "$to" '
   {state:[{name:"git/identity",value:$identity}],data:{from:$from,to:$to},
    user_text_done:"Git checkout changed:\n${data.from} → ${data.to}",
-   model_text:"<context script=\"git/change\">\n${output.stdout}</context>"}
+   model_text:"<context script=\"${name}\">\n${output.stdout}</context>"}
 ' >&3 || exit 1
 print -r -- "$text"

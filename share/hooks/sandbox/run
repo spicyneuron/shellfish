@@ -110,7 +110,7 @@ else
 fi
 jq -cn --argjson profile "$profile" '
   {action:"session_update",profile:$profile,
-   model_text:"<context script=\"sandbox\">\n${output.stdout}</context>"}
+   model_text:"<context script=\"${name}\">\n${output.stdout}</context>"}
 ' >&3 || exit 1
 print -r -- "$message"
 print -rnu2 -- "$user"$'\n'"$grant_path"

@@ -114,7 +114,9 @@ jq -e -s '
   (.[0].model_text | contains("description: project description") | not) and
   (.[0].user_text | contains("Loaded $config-only:\n# config-only instructions")) and
   (.[0].user_text | contains("Loaded $hidden:\n# hidden instructions")) and
-  (.[0].model_text | [scan("<context script=\"skills\">")] | length == 3) and
+  (.[0].model_text | startswith("<context script=\"skills\">\n<skill name=") and
+    endswith("</skill>\n</context>")) and
+  (.[0].model_text | [scan("<skill name=")] | length == 3) and
   (.[0].model_text | [scan("# shared instructions")] | length == 1) and
   (.[0].model_text | contains("# config-only instructions") and contains("# hidden instructions"))
 ' "$control" >/dev/null

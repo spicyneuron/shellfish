@@ -25,7 +25,7 @@ sf_run_hook_project() {
 
 sf_run_hook_manifest() {
   local command=$1 name=$2 lifecycle=$3 input=$4 id=$5
-  sf_profile_read_manifest "${command:h}" || { REPLY=$SF_PROFILE_ERROR; return 1; }
+  sf_profile_read_manifest "$command" || { REPLY=$SF_PROFILE_ERROR; return 1; }
   REPLY=$(sf_jq -cn --argjson manifest "$REPLY" --arg name "$name" \
     --arg lifecycle "$lifecycle" --arg input "$input" --arg id "$id" '
     include "lib/profile";
@@ -127,7 +127,7 @@ sf_run_hooks() {
       else
         name=$command
       fi
-      sf_run_hook_manifest "$command/run" "$name" "$lifecycle" "$content" \
+      sf_run_hook_manifest "$command" "$name" "$lifecycle" "$content" \
         "$SF_RUN[hook_id]" || { error=$REPLY; break; }
       component=$REPLY
       sf_scratch_directory hook || { error='cannot prepare hook capture'; break; }

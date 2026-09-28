@@ -1,1 +1,1 @@
-{"user_text_done":"${output.stderr}","model_text":"${output.stdout}"}
+{"user_text_done":"${output.stderr}"}
