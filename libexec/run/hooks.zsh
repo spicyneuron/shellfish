@@ -28,19 +28,15 @@ sf_run_hook_manifest() {
   local command=$1 name=$2 lifecycle=$3 input=$4 id=$5 manifest
   sf_profile_manifest "${command:h}" || { REPLY=$SF_PROFILE_ERROR; return 1; }
   manifest=$(sf_jsonc_read "$REPLY" 2>&1) || { REPLY="invalid hook manifest: $command"; return 1; }
-  sf_jq_fields -cn --argjson manifest "$manifest" --arg name "$name" \
+  REPLY=$(sf_jq -cn --argjson manifest "$manifest" --arg name "$name" \
     --arg lifecycle "$lifecycle" --arg input "$input" --arg id "$id" '
-    include "lib/fields";
     include "lib/profile";
     include "lib/session";
     include "libexec/run/component";
     if $manifest | hook_manifest then
-      entry("component"; component_plan($manifest; "hooks"; $name; $input;
-        {type:"_draft",lifecycle:$lifecycle,id:$id}) | tojson),
-      ("ok" | field)
+      component_plan($manifest; "hooks"; $name; $input; {type:"_draft",lifecycle:$lifecycle,id:$id})
     else error("invalid hook manifest") end
-  ' || { REPLY="invalid hook manifest: $command"; return 1; }
-  SF_HOOK_PLAN=( "${reply[@]}" )
+  ' 2>/dev/null) || { REPLY="invalid hook manifest: $command"; return 1; }
 }
 
 sf_run_hook_complete() {
@@ -66,13 +62,12 @@ sf_run_hooks() {
   setopt local_options no_err_exit
   local session=$1 lifecycle=$2 content=$3 turn_state=$4
   shift 4
-  local command input config_dir directory='' error='' name
+  local command input config_dir directory='' error='' name component
   local -a hooks environment
-  local -A process
+  local -A process SF_COMPONENT=( action '' reason '' payload '' live 0 )
   integer max_capture model_feedback=0
 
   SF_RUN_HOOK_ERROR=''
-  SF_COMPONENT=( action '' reason '' payload '' live 0 )
   reply=( action '' reason '' payload '' )
   if (( SF_RUN[hooks_known] )) &&
       [[ " $SF_RUN[hooks] " != *" $lifecycle "* ]]; then
@@ -126,11 +121,11 @@ sf_run_hooks() {
       fi
       sf_run_hook_manifest "$command/run" "$name" "$lifecycle" "$content" \
         "$SF_RUN[hook_id]" || { error=$REPLY; break; }
-      SF_HOOK_PLAN[max_capture]=$max_capture
+      component=$REPLY
       sf_scratch_directory hook || { error='cannot prepare hook capture'; break; }
       directory=$REPLY
       process=()
-      sf_run_component_begin "$session" "$SF_HOOK_PLAN[component]" ||
+      sf_run_component_begin "$session" "$component" ||
         error='cannot emit hook draft'
       if [[ -z $error ]] && sf_process_run "$directory" "${SF_RUN[cwd]:A}" "$input" "$max_capture" \
           sf_run_component_line /usr/bin/env "${environment[@]}" "$command/run" "$@"; then

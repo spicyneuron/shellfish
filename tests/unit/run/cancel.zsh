@@ -6,22 +6,28 @@ sf_test_tmp run-tool-cancel-contract
 export XDG_STATE_HOME="$tmp/state" SF_TEST_BACKEND_DELAY=0
 sf_test_frozen_profile
 
+# Start a two-call tool turn, then interrupt it once the marker appears.
+interrupt() {
+  local session=$1 stream=$2 marker=$3 command=$4
+  integer waited=0 run_status=0
+  sf_test_session "$session"
+  jq -cn --arg text cancel '{type:"user",content:[{type:"text",text:$text}]}' |
+    SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_COUNT=2 \
+    SF_TEST_BACKEND_TOOL_COMMAND="$command" \
+    "$ROOT/bin/shellfish" run --jsonl --session "$session" >"$stream" &
+  while (( waited++ < 100 )) && [[ ! -e $marker ]]; do sleep 0.02; done
+  (( waited <= 100 )) || fail 'interruption point was not reached'
+  kill -TERM $! || fail 'tool turn ended before interruption'
+  wait $! || run_status=$?
+  (( run_status == 143 )) || fail 'interrupted tool turn returned the wrong status'
+}
+
 # Interrupting an active tool settles it and cancels later calls from the
 # already-durable assistant response without starting more lifecycle hooks.
 typeset session="$tmp/tool-cancel.jsonl" stream="$tmp/tool-cancel.stream"
 typeset marker="$tmp/tool-active" finished="$tmp/tool-finished"
 typeset command=": >${(q)marker}; sleep 30; : >${(q)finished}"
-sf_test_session "$session"
-jq -cn --arg text cancel '{type:"user",content:[{type:"text",text:$text}]}' |
-  SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_COUNT=2 \
-  SF_TEST_BACKEND_TOOL_COMMAND="$command" \
-  "$ROOT/bin/shellfish" run --jsonl --session "$session" >"$stream" &
-integer pid=$! waited=0 run_status=0
-while (( waited++ < 100 )) && [[ ! -e $marker ]]; do sleep 0.02; done
-(( waited <= 100 )) || fail 'active tool did not start'
-kill -TERM "$pid" || fail 'tool turn ended before interruption'
-wait "$pid" || run_status=$?
-(( run_status == 143 )) || fail 'interrupted tool turn returned the wrong status'
+interrupt "$session" "$stream" "$marker" "$command"
 [[ ! -e $finished ]] || fail 'interrupted tool ran to completion'
 jq -eRn --arg command "$command" '
   [inputs | fromjson] as $events |
@@ -34,6 +40,21 @@ jq -eRn --arg command "$command" '
     ] and
   $events[-1] == {type:"error",user_text:"Turn interrupted."}
 ' <"$stream" >/dev/null || fail 'tool interruption did not settle pending calls'
+assert_canonical_session "$session"
+
+# A tool that finished keeps its real result when a post hook is interrupted.
+typeset post="$tmp/post" posted="$tmp/post-active"
+mkdir -p "$post"
+print -r -- '{}' >"$post/manifest.json"
+print -rl -- '#!/usr/bin/env zsh' ": >${(q)posted}; sleep 30" >"$post/run"
+chmod +x "$post/run"
+SF_TEST_PROFILE=$(jq -c --arg post "$post" '.hooks.post_tool_use=[$post]' <<<"$SF_TEST_PROFILE")
+session="$tmp/post-cancel.jsonl" stream="$tmp/post-cancel.stream"
+interrupt "$session" "$stream" "$posted" 'print -rn -- ran'
+jq -eRn '
+  [inputs | fromjson | select(.type == "tool_result") | [.id,.exit_code]] ==
+    [["call_1",0],["call_2",126]]
+' <"$stream" >/dev/null || fail 'interrupted post hook lost the known tool result'
 assert_canonical_session "$session"
 
 # Opening a session whose turn never finished settles its calls the same way.

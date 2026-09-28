@@ -139,8 +139,6 @@ sf_run_tool_execute() {
   else
     process_command=( /usr/bin/env "${arguments[@]}" )
   fi
-  # Policy hooks replaced the active component, but its first draft is already visible.
-  sf_run_component_begin "$session" "$SF_TOOL_PLAN[component]" 0 || return 1
   if ! sf_process_run "$capture" "${cwd:A}" "${stdin:A}" "$max_capture" \
       sf_run_component_line "${process_command[@]}"; then
     SF_RUN_TOOL_ERROR=$SF_PROCESS_ERROR
@@ -172,8 +170,8 @@ sf_run_tool_execute() {
 }
 
 sf_run_tool_complete() {
-  local outcome=$1 result
-  sf_run_component_complete "$SF_TOOL_PLAN[component]" "$outcome" ||
+  local component=$1 outcome=$2 result
+  sf_run_component_complete "$component" "$outcome" ||
     { SF_RUN_TOOL_ERROR="cannot finish tool result: $SF_TOOL_PLAN[name]"; return 1; }
   local -A settled=( "${reply[@]}" )
   result=$settled[result]

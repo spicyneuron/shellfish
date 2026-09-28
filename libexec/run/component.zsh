@@ -52,16 +52,14 @@ sf_run_component_line() {
     reason "$line[reason]" payload "$line[payload]" )
 }
 
-# Snapshot presentation with the outcome before another component can replace it.
 sf_run_component_capture() {
   local directory=$1 limit=$2 code=$3 suffix=${4:-}
   sf_run_component_bound "$directory/stdout" "$directory/stdout.bounded" "$limit" &&
     sf_run_component_bound "$directory/stderr" "$directory/stderr.bounded" "$limit" || return 1
   REPLY=$(jq -cn --rawfile stdout "$directory/stdout.bounded" \
     --rawfile stderr "$directory/stderr.bounded" --argjson exit_code "$code" \
-    --arg suffix "$suffix" --argjson component "$SF_COMPONENT[values]" '
-    {output:{stdout:$stdout,stderr:($stderr + $suffix),exit_code:$exit_code},
-     data:$component.data,templates:$component.templates,ran:true}')
+    --arg suffix "$suffix" '
+    {output:{stdout:$stdout,stderr:($stderr + $suffix),exit_code:$exit_code},ran:true}')
 }
 
 sf_run_component_complete() {

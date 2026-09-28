@@ -66,12 +66,12 @@ def component_update($component):
   end;
 
 def component_result($component; $outcome):
-  ($outcome.templates // $component.templates) as $templates |
+  $component.templates as $templates |
   (if $outcome.ran then $templates.user_text_done else $templates.user_text_skipped end) as $user |
   ({user_text:render_template($user; $component.name; $component.input;
-      $outcome.output; $outcome.data // {}),
+      $outcome.output; $component.data),
     model_text:render_template($templates.model_text; $component.name; $component.input;
-      $outcome.output; $outcome.data // {})} |
+      $outcome.output; $component.data)} |
     with_entries(select(.value != "")) +
     if $component.preview == null then {} else
       {user_preview_lines:$component.preview} end) as $texts |

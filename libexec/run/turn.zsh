@@ -9,7 +9,7 @@ source "$SF_ROOT/libexec/run/hooks.zsh"
 source "$SF_ROOT/libexec/run/tools.zsh"
 
 typeset -gA SF_RUN=(
-  active_call '' answer '' assistant '' jsonl 0 known_outcome '' permission_count 0 signal_status 0
+  active_call '' answer '' assistant '' jsonl 0 known_result '' permission_count 0 signal_status 0
   hook_id 1 hooks '' hooks_known 0 write_failed 0
 )
 
@@ -31,8 +31,8 @@ sf_run_append() {
 # Settle every still-pending call through the tool owner. The reason describes
 # calls the turn never reached.
 sf_run_settle() {
-  local session=$1 reason=$2 call outcome
-  local active=$SF_RUN[active_call] known=$SF_RUN[known_outcome]
+  local session=$1 reason=$2 call
+  local active=$SF_RUN[active_call] known=$SF_RUN[known_result]
   local -a calls
   local -A completed
   sf_jq_fields -Rs '
@@ -52,16 +52,15 @@ sf_run_settle() {
       REPLY=${SF_RUN_TOOL_ERROR:-cannot inspect pending tool call}
       return 1
     }
-    if [[ $SF_TOOL_PLAN[id] == $active && -n $known ]]; then
-      outcome=$known
-    elif [[ $SF_TOOL_PLAN[id] == $active ]]; then
-      sf_run_tool_refused 'tool call interrupted' 126
-      outcome=$REPLY
-    else
+    if [[ $SF_TOOL_PLAN[id] != $active ]]; then
       sf_run_tool_refused "$reason" 126
-      outcome=$REPLY
+    elif [[ -n $known ]]; then
+      sf_run_append "$session" "$known" || return 1
+      continue
+    else
+      sf_run_tool_refused 'tool call interrupted' 126
     fi
-    sf_run_tool_complete "$outcome" || {
+    sf_run_tool_complete "$SF_TOOL_PLAN[component]" "$REPLY" || {
       REPLY=${SF_RUN_TOOL_ERROR:-cannot finish pending tool call}
       return 1
     }
@@ -223,7 +222,7 @@ sf_run_turn() {
     SF_RUN[answer]=''
     SF_RUN[assistant]=''
     SF_RUN[active_call]=''
-    SF_RUN[known_outcome]=''
+    SF_RUN[known_result]=''
     SF_RUN[permission_count]=0
     SF_RUN[signal_status]=0
     SF_RUN[hooks_known]=0
@@ -358,7 +357,7 @@ sf_run_turn() {
         sf_run_component_begin "$session" "$SF_TOOL_PLAN[component]" ||
           { failure='cannot emit tool draft'; break; }
         SF_RUN[active_call]=$id
-        SF_RUN[known_outcome]=''
+        SF_RUN[known_result]=''
         if (( call_count > tool_limit )); then
           sf_run_tool_refused "tool call denied: per-response limit is $tool_limit" 126
           outcome=$REPLY
@@ -417,16 +416,16 @@ sf_run_turn() {
           fi
         fi
         [[ -n $outcome ]] || break
-        sf_run_tool_complete "$outcome" || { failure=$SF_RUN_TOOL_ERROR; break; }
+        sf_run_tool_complete "$SF_COMPONENT[values]" "$outcome" || { failure=$SF_RUN_TOOL_ERROR; break; }
         completed=( "${reply[@]}" )
         result=$completed[result]
         post_request=$completed[post_request]
-        SF_RUN[known_outcome]=$outcome
+        SF_RUN[known_result]=$result
         sf_run_hooks "$session" post_tool_use "$post_request" \
           "$turn_state" "$name" "$id" || post_error=$SF_RUN_HOOK_ERROR
         sf_run_append "$session" "$result" || { failure=$REPLY; break; }
         SF_RUN[active_call]=''
-        SF_RUN[known_outcome]=''
+        SF_RUN[known_result]=''
         outcome=''
         if [[ -n $post_error ]]; then failure=$post_error; break; fi
       done

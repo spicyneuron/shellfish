@@ -181,7 +181,6 @@ sf_profile_resolve() {
     resolved=$REPLY
     case ${reference%% *} in
       system) [[ -f $resolved && -r $resolved ]] ;;
-      hooks) [[ -d $resolved && -x $resolved/run ]] ;;
       *) [[ -d $resolved && -x $resolved/run ]] ;;
     esac || {
       sf_profile_fail "invalid ${reference%% *} reference: ${reference#* }"
