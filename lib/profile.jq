@@ -27,6 +27,8 @@ def endpoint: type == "string" and test("^https?://[^[:space:][:cntrl:]]+$");
 def positive_integer:
   type == "number" and floor == . and . >= 1 and . <= 2147483647;
 def capture_bytes: positive_integer and . >= 64;
+def component_preview_hint:
+  . == "full" or (type == "number" and floor == . and . >= 0 and . <= 2147483647);
 
 def component_environment:
   type == "array" and
@@ -42,28 +44,33 @@ def hook_names:
   ["session_start", "user_prompt_submit", "permission_request", "pre_tool_use",
    "post_tool_use", "stop"];
 
-# A tool template may name only ${name}, ${input}, and ${input.FIELD} for a
-# declared input property.
-def tool_template($fields):
+# A template may name component values and declared input properties.
+def component_template($fields):
   type == "string" and (index("\u0000") | not) and
   (gsub("\\$\\{[^{}]+\\}"; "") | index("${") | not) and
   ([scan("\\$\\{([^{}]+)\\}")[0]] |
-    all(.[]; IN("name", "input") or (. as $field | $fields | index($field) != null)));
+    all(.[]; IN("name", "input", "output.stdout", "output.stderr", "output.exit_code") or
+      test("^data\\.[A-Za-z_][A-Za-z0-9_]*$") or
+      (. as $field | $fields | index($field) != null)));
 
-# A call's input is an object; strings substitute as-is, null as nothing, and
-# other values as JSON.
-def render_template($template; $name; $input):
+# Component input is text or an object; strings substitute as-is, null as
+# nothing, and other values as JSON.
+def render_template($template; $name; $input; $output; $data):
   def text: if type == "string" then . elif . == null then "" else tojson end;
   ({name:$name, input:($input | text)} +
-    ($input | with_entries(.key = "input." + .key | .value |= text))) as $variables |
+    ($input | if type == "object" then
+      with_entries(.key = "input." + .key | .value |= text)
+    else {} end) +
+    ($output | with_entries(.key = "output." + .key | .value |= text)) +
+    ($data | with_entries(.key = "data." + .key | .value |= text))) as $variables |
   $template | gsub("\\$\\{(?<name>[^{}]+)\\}"; $variables[.name] // "");
 
 def tool_manifest:
   (.input_schema.properties // {} | keys | map("input." + .)) as $input_variables |
   type == "object" and
   ((keys - ["allow_sandbox_bypass", "description", "environment",
-    "input_schema", "sandbox", "user_permission", "user_text", "user_text_denied",
-    "user_text_done"]) | length == 0) and
+    "input_schema", "model_text", "sandbox", "user_permission", "user_preview_lines",
+    "user_text", "user_text_done", "user_text_skipped"]) | length == 0) and
   (.description | nul_free_string and length > 0) and
   (.input_schema | type == "object" and .type == "object" and
     ((.properties // {}) | type == "object") and
@@ -73,8 +80,9 @@ def tool_manifest:
       has("request_sandbox_bypass") or has("sandbox_bypass_reason") | not) and
     ((.required // []) |
       index("request_sandbox_bypass") == null and index("sandbox_bypass_reason") == null)) and
-  all(.user_permission, .user_text, .user_text_denied, .user_text_done;
-    . == null or tool_template($input_variables)) and
+  all(.user_permission, .user_text, .user_text_done, .user_text_skipped, .model_text;
+    . == null or component_template($input_variables)) and
+  ((has("user_preview_lines") | not) or (.user_preview_lines | component_preview_hint)) and
   ((.environment // []) | component_environment) and
   (.sandbox | type == "boolean") and
   ((.allow_sandbox_bypass // false) | type == "boolean") and

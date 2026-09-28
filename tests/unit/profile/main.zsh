@@ -64,13 +64,37 @@ jq -e --arg root "$ROOT/share/hooks" '
   (.tools | map(split("/") | last)) ==
     ["read_file", "edit_file", "write_file", "skill", "search_web", "fetch_url", "shell"]
 ' <<<"$REPLY" >/dev/null
+
+# Templates validate syntax, not runtime data availability. Replacement is one pass.
+sf_jq -en '
+  include "lib/profile";
+  {description:"test",input_schema:{type:"object",properties:{command:{type:"string"}}},
+   sandbox:false,user_text:"${data.note}",
+   user_text_done:"${output.stdout}${output.stderr}/${output.exit_code}",
+   user_text_skipped:"${input.command}",model_text:"",user_preview_lines:0} as $manifest |
+  ($manifest | tool_manifest) and
+  ("${data.note}/${output.exit_code}/${input.command}/${data.absent}" |
+    render_template("${data.note}/${output.exit_code}/${input.command}/${data.absent}";
+      "shell"; {command:"run"}; {exit_code:4}; {note:"${output.stdout}"})) ==
+    "${output.stdout}/4/run/" and
+  ("${input}/${name}/${data.note}" |
+    render_template("${input}/${name}/${data.note}"; "git/environment";
+      "raw ${name}"; {}; {note:"ok"})) ==
+    "raw ${name}/git/environment/ok" and
+  (["${input.undeclared}","${output.bad}","${data.bad-key}","${unclosed",
+    "${name}\u0000"] | all(.[]; component_template(["input.command"]) | not)) and
+  (["full",0,12] | all(.[]; component_preview_hint)) and
+  ([null,-1,1.5,"3"] | all(.[]; component_preview_hint | not))
+' >/dev/null || fail 'component template validation or rendering was wrong'
 # Tool manifests are read live from the resolved folders.
 sf_profile_tools "$REPLY"
 jq -e '
   .[0].manifest.user_permission == "${input.file_path}" and
   .[-1].manifest.user_text == "Running shell command:\n${input.command}" and
-  .[-1].manifest.user_text_done == "Ran shell command:\n${input.command}" and
-  .[-1].manifest.user_text_denied == "Denied shell command:\n${input.command}"
+  .[-1].manifest.user_text_done == "Ran shell command:\n${input.command}\n${output.stdout}${output.stderr}" and
+  .[-1].manifest.user_text_skipped == "Denied shell command:\n${input.command}\n${output.stderr}" and
+  .[1].manifest.user_preview_lines == "full" and
+  .[2].manifest.user_preview_lines == "full"
 ' <<<"$REPLY" >/dev/null
 
 # Bundled adapter names resolve through the bundled default profile.

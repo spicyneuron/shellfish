@@ -51,7 +51,7 @@ sf_tui_reset
 pump '{"type":"_draft","lifecycle":"session_start","id":"2","user_text":"Loading git environment…"}'
 pump '{"type":"hook_result","lifecycle":"session_start","id":"2","model_text":"Git branch: secret"}'
 sf_tui_transcript 79 20
-[[ $SF_PRESENT_VIEWPORT_TEXT == *'↪ session_start'* &&
+[[ $SF_PRESENT_VIEWPORT_TEXT != *'↪ session_start'* &&
     $SF_PRESENT_VIEWPORT_TEXT != *'Loading git environment'* &&
     $SF_PRESENT_VIEWPORT_TEXT != *'Git branch: secret'* ]] ||
   fail 'model-only hook result did not settle as private context'

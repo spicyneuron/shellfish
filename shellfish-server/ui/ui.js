@@ -601,7 +601,7 @@ function renderMessage(frame) {
 
 function renderResult(frame) {
   clearDraft(frame);
-  const text = frame.user_text || (frame.model_text ? frame.name : "");
+  const text = frame.user_text || "";
   if (!text) return;
   hideIndicator();
   section("agent");
@@ -613,7 +613,7 @@ function renderResult(frame) {
 
 function renderHookResult(frame) {
   clearDraft(frame);
-  const text = frame.user_text || (frame.model_text ? frame.lifecycle : "");
+  const text = frame.user_text || "";
   if (!text) return;
   hideIndicator();
   section(frame.lifecycle === "session_start" ? "system" :

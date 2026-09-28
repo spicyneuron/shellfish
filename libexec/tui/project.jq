@@ -41,11 +41,7 @@ def preview: .user_preview_lines // "default" | tostring;
 
 # Context and notice select presentation styling.
 def hook_class: if (.model_text // "") == "" then "notice" else "context" end;
-# Model-only results show attribution without exposing model context.
-def result_text:
-  if (.user_text // "") != "" then .user_text
-  elif (.model_text // "") != "" then .name // .lifecycle
-  else "" end;
+def result_text: .user_text // "";
 
 def message_actions($role; $text):
   if ($text | test("[^\n]")) then

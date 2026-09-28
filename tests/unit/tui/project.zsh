@@ -77,7 +77,7 @@ assert_equal 'execution_update | 1 | notice | guard · checking | 1
 execution_end | 1 | notice |  | default
 execution_end | 1 | notice | guard · ok | full | agent
 execution_end | 2 | context | project · read | default | system
-execution_end | 3 | context | session_start | default | system' "$REPLY"
+execution_end | 3 | context |  | default | system' "$REPLY"
 
 # Hook headings follow their lifecycle, live or on replay.
 project load \
@@ -85,10 +85,10 @@ project load \
   '{"type":"hook_result","lifecycle":"user_prompt_submit","id":"2","model_text":"prompt"}' \
   '{"type":"hook_result","lifecycle":"pre_tool_use","id":"3","model_text":"before"}' \
   '{"type":"hook_result","lifecycle":"stop","id":"4","model_text":"later"}'
-assert_equal 'execution_end | 1 | context | session_start | default | system
-execution_end | 2 | context | user_prompt_submit | default | user
-execution_end | 3 | context | pre_tool_use | default | agent
-execution_end | 4 | context | stop | default | agent' "$REPLY"
+assert_equal 'execution_end | 1 | context |  | default | system
+execution_end | 2 | context |  | default | user
+execution_end | 3 | context |  | default | agent
+execution_end | 4 | context |  | default | agent' "$REPLY"
 project load \
   '{"type":"hook_result","lifecycle":"session_start","id":"5","user_text":"startup notice"}'
 assert_equal 'execution_end | 5 | notice | startup notice | default | system' "$REPLY"

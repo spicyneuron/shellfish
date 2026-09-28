@@ -20,7 +20,12 @@ sf_run_tool_plan() {
       include "lib/profile";
       $call.id as $id | $call.name as $name | $call.input as $input |
       [$tools[] | select(.name == $name)][0] as $tool |
-      render_template($tool.manifest.user_text // "${name} ${input}"; $name; $input) as $draft |
+      ($tool.manifest // {}) as $manifest |
+      {user_text:($manifest.user_text // "${name} ${input}"),
+       user_text_done:($manifest.user_text_done // "${name} ${input}\n${output.stdout}${output.stderr}"),
+       user_text_skipped:($manifest.user_text_skipped // "${name} ${input}\n${output.stderr}"),
+       model_text:($manifest.model_text // "${output.stdout}${output.stderr}")} as $templates |
+      render_template($templates.user_text; $name; $input; {}; {}) as $draft |
       (if $tool == null or ($profile.sandbox | not) then {decision:"none"}
        elif (($input.request_sandbox_bypass // false) | type) != "boolean" then
          {decision:"deny",reason:"sandbox bypass is not allowed"}
@@ -35,16 +40,16 @@ sf_run_tool_plan() {
       entry("request";
         {turn_id:$turn,tool_name:$name,tool_use_id:$id,tool_input:$input} | tojson),
       entry("draft"; $draft),
-      entry("done";
-        if $tool.manifest.user_text_done == null then $draft
-        else render_template($tool.manifest.user_text_done; $name; $input) end),
-      entry("denied";
-        render_template($tool.manifest.user_text_denied // ""; $name; $input)),
-      entry("event"; {type:"_draft",id:$id,name:$name,user_text:$draft} | tojson),
+      entry("templates"; $templates | tojson),
+      entry("fields"; ($manifest.input_schema.properties // {} | keys | map("input." + .)) | tojson),
+      entry("preview"; $manifest.user_preview_lines // null | tojson),
+      entry("event"; {type:"_draft",id:$id,name:$name,user_text:$draft} +
+        if $manifest.user_preview_lines == null then {} else
+          {user_preview_lines:$manifest.user_preview_lines} end | tojson),
       entry("decision"; $permission.decision),
       entry("permission_reason"; $permission.reason // ""),
       entry("permission_preview";
-        render_template($tool.manifest.user_permission // "${input}"; $name; $input)),
+        render_template($manifest.user_permission // "${input}"; $name; $input; {}; {})),
       entry("executable"; $tool.command // ""),
       entry("environment"; ($tool.manifest.environment // []) | join(" ")),
       entry("profile_env"; $profile.env | tojson),
@@ -61,12 +66,11 @@ sf_run_tool_plan() {
 }
 
 sf_run_tool_refused() {
-  local reason=$1 heading=${3-}
+  local reason=$1 ran=${3:-false}
   integer exit_code=$2
-  REPLY=$(jq -cn --arg reason "$reason" --arg heading "$heading" \
+  REPLY=$(jq -cn --arg reason "$reason" --argjson ran "$ran" \
     --argjson exit_code "$exit_code" '
-    {output:{stdout:"",stderr:$reason,exit_code:$exit_code}} +
-    if $heading == "" then {} else {view:{user_text:($heading + "\n" + $reason)}} end
+    {output:{stdout:"",stderr:$reason,exit_code:$exit_code},ran:$ran}
   ')
 }
 
@@ -90,16 +94,36 @@ sf_run_tool_line() {
   local record
   local -A line
   [[ -z $SF_TOOL_RESULT[error] ]] || return 0
-  sf_run_component_line "$1" '' "$SF_TOOL_RESULT[view]" "$SF_TOOL_PLAN[event]" '{}' \
-    "$SF_TOOL_RESULT[preview]" || { SF_TOOL_RESULT[error]=invalid; return 1; }
+  sf_jq_fields -cn --arg raw "$1" --argjson data "$SF_TOOL_RESULT[data]" \
+    --argjson templates "$SF_TOOL_RESULT[templates]" \
+    --argjson fields "$SF_TOOL_PLAN[fields]" \
+    --argjson preview "$SF_TOOL_PLAN[preview]" \
+    --arg name "$SF_TOOL_PLAN[name]" --argjson input "$SF_TOOL_PLAN[input]" \
+    --arg id "$SF_TOOL_PLAN[id]" '
+      include "lib/fields";
+      include "lib/profile";
+      include "libexec/run/component";
+      ($raw | try fromjson catch null |
+        component_update($fields; $data; $templates; $name; $input; $preview;
+          {type:"_draft",id:$id,name:$name})) as $update |
+      if $update == null then entry("valid"; "false")
+      else
+        entry("valid"; "true"),
+        entry("states"; [$update.states[] | tojson] | join("\n")),
+        entry("data"; $update.data | tojson),
+        entry("templates"; $update.templates | tojson),
+        entry("draft"; $update.draft | tojson)
+      end,
+      ("ok" | field)
+    ' || { SF_TOOL_RESULT[error]=invalid; return 1; }
   line=( "${reply[@]}" )
   [[ $line[valid] == true ]] || { SF_TOOL_RESULT[error]=invalid; return 1; }
   for record in ${(f)line[states]}; do
     sf_run_append "$SF_TOOL_RESULT[session]" "$record" ||
       { SF_TOOL_RESULT[error]=$REPLY; return 1; }
   done
-  SF_TOOL_RESULT+=( view "$line[view]" preview "$line[preview]" )
-  [[ -z $line[draft] ]] || sf_run_emit "$line[draft]" ||
+  SF_TOOL_RESULT+=( data "$line[data]" templates "$line[templates]" )
+  sf_run_emit "$line[draft]" ||
     { SF_TOOL_RESULT[error]='cannot emit tool draft'; return 1; }
 }
 
@@ -114,11 +138,9 @@ sf_run_tool_execute() {
   local expose darwin_temp='' temp_dir=${TMPDIR:-/tmp}
   local -a arguments process_command sandbox_arguments temp_paths
   local -A process
-  integer max_capture=$SF_TOOL_PLAN[max_capture] stderr_bytes denied=0
+  integer max_capture=$SF_TOOL_PLAN[max_capture] denied=0
 
   SF_RUN_TOOL_ERROR=''
-  [[ $sandbox != true || -n ${commands[fence]-} ]] ||
-    { SF_RUN_TOOL_ERROR='sandboxing requires fence'; return 1; }
   sf_environment_load "$selected" "$SF_TOOL_PLAN[profile_env]" || {
     SF_RUN_TOOL_ERROR=$SF_ENVIRONMENT_ERROR
     return 1
@@ -178,7 +200,7 @@ sf_run_tool_execute() {
   else
     process_command=( /usr/bin/env "${arguments[@]}" )
   fi
-  SF_TOOL_RESULT=( session "$session" error '' view '{}' preview null )
+  SF_TOOL_RESULT=( session "$session" error '' data '{}' templates "$SF_TOOL_PLAN[templates]" )
   if ! sf_process_run "$capture" "${cwd:A}" "${stdin:A}" "$max_capture" \
       sf_run_tool_line "${process_command[@]}"; then
     SF_RUN_TOOL_ERROR=$SF_PROCESS_ERROR
@@ -195,22 +217,23 @@ sf_run_tool_execute() {
     SF_RUN_TOOL_ERROR=$SF_TOOL_RESULT[error]
     return 1
   elif (( process[control_bytes] > max_capture )); then
-    sf_run_tool_refused 'tool result exceeds capture limit' 1
+    sf_run_tool_refused 'tool result exceeds capture limit' 1 true
     return
   fi
   bounded_stderr="$capture/stderr.bounded"
   bounded_stdout="$capture/stdout.bounded"
   sf_run_tool_bound "$capture/stderr" "$bounded_stderr" $max_capture || return 1
-  stderr_bytes=$(wc -c <"$bounded_stderr") || return 1
-  sf_run_tool_bound "$capture/stdout" "$bounded_stdout" $(( max_capture - stderr_bytes )) || return 1
+  sf_run_tool_bound "$capture/stdout" "$bounded_stdout" $max_capture || return 1
   if (( process[exit_code] )) && grep -qs $'✗' "$capture/sandbox.log"; then denied=1; fi
   REPLY=$(sf_jq -cn --rawfile stdout "$bounded_stdout" --rawfile stderr "$bounded_stderr" \
     --argjson exit_code "$process[exit_code]" --argjson denied "$denied" \
-    --argjson view "$SF_TOOL_RESULT[view]" \
-    --argjson preview "$SF_TOOL_RESULT[preview]" '
-      {output:{stdout:$stdout,stderr:$stderr,exit_code:$exit_code},view:$view,ran:true} +
-      (if $preview == null then {} else {preview:$preview} end) +
-      (if $denied == 1 then {sandbox_denied:true} else {} end)
+    --argjson data "$SF_TOOL_RESULT[data]" \
+    --argjson templates "$SF_TOOL_RESULT[templates]" '
+      {output:{stdout:$stdout,stderr:($stderr +
+        if $denied == 1 then
+          "\n<sandbox_notice>A denial was detected during this tool call. This does not necessarily mean the tool failed.</sandbox_notice>"
+        else "" end),
+        exit_code:$exit_code},data:$data,templates:$templates,ran:true}
     ') || { SF_RUN_TOOL_ERROR='cannot decode tool result'; return 1; }
   } always {
     rm -rf -- "$capture"
@@ -218,27 +241,23 @@ sf_run_tool_execute() {
   }
 }
 
-# Each field the tool did not write settles from its output: the user sees the
-# draft followed by stdout and stderr, and the model sees stdout and stderr.
 sf_run_tool_complete() {
   local outcome=$1 name=$SF_TOOL_PLAN[name]
   sf_jq_fields -rn --argjson request "$SF_TOOL_PLAN[request]" \
-    --arg id "$SF_TOOL_PLAN[id]" --arg name "$name" --arg draft "$SF_TOOL_PLAN[draft]" \
-    --arg done "$SF_TOOL_PLAN[done]" \
+    --arg id "$SF_TOOL_PLAN[id]" --arg name "$name" \
+    --argjson templates "$SF_TOOL_PLAN[templates]" \
+    --argjson preview "$SF_TOOL_PLAN[preview]" \
     --argjson input "$SF_TOOL_PLAN[input]" --argjson outcome "$outcome" '
       include "lib/fields";
       include "lib/session";
+      include "lib/profile";
       include "libexec/run/component";
-      ($outcome.output.stdout + $outcome.output.stderr) as $output |
-      ($outcome.view // {} | component_texts(
-        [(if $outcome.ran // false then $done else $draft end), $output] |
-          map(select(. != "")) | join("\n"); $output; $outcome.preview)) as $texts |
+      ($outcome.templates // $templates) as $templates |
+      ($outcome.data // {}) as $data |
+      (component_render($templates; $outcome.ran; $name; $input; $outcome.output; $data;
+        $preview)) as $texts |
       ({type:"tool_result",id:$id,name:$name,input:$input,exit_code:$outcome.output.exit_code} +
-       $texts |
-       if $outcome.sandbox_denied and has("model_text") then
-         .model_text += "\n\n<sandbox_notice>A denial was detected during this tool call. " +
-           "This does not necessarily mean the tool failed.</sandbox_notice>"
-       else . end) as $result |
+       $texts) as $result |
       if $result | canonical_tool_result then
         entry("post_request"; $request + {tool_response:$outcome.output} | tojson),
         entry("result"; $result | tojson),

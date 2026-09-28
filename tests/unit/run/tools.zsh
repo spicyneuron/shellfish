@@ -282,12 +282,14 @@ ln -s "$commands[jq]" "$commands[zsh]" "$no_fence/"
 session="$tmp/sandbox-missing.jsonl"
 sf_test_session "$session"
 ZDOTDIR=$no_fence PATH="$no_fence:/usr/bin:/bin" SF_TEST_BACKEND_TOOL_CALL=1 \
-  sf_test_run sandbox "$session" >"$stream" 2>/dev/null || true
-jq -eRn '[inputs | fromjson][-1] |
-  .type == "error" and (.user_text | contains("sandboxing requires fence"))
-' <"$stream" >/dev/null || fail 'sandboxed tool ran without fence'
+  sf_test_run sandbox "$session" >"$stream" 2>/dev/null ||
+  fail 'missing sandbox runner failed the turn'
+jq -eRn '[inputs | fromjson | select(.type == "tool_result")][0] |
+  .exit_code == 126 and (.user_text | contains("sandboxing requires fence")) and
+  (.model_text | contains("sandboxing requires fence"))
+' <"$stream" >/dev/null || fail 'missing sandbox runner was not skipped'
 
-# A sandbox violation annotates the model text of a failing tool, and only that.
+# A sandbox violation enters the same captured output seen by templates and hooks.
 mkdir "$tmp/bin"
 typeset fence="$tmp/bin/fence"
 typeset fence_arguments="$tmp/fence-arguments"
@@ -307,15 +309,33 @@ exec "$@"
 ZSH
 chmod +x "$fence"
 export FENCE_ARGUMENTS=$fence_arguments PATH="$tmp/bin:$PATH"
+typeset sandbox_post="$tmp/sandbox-post" sandbox_output="$tmp/sandbox-output.json"
+cat >"$sandbox_post" <<'ZSH'
+#!/usr/bin/env zsh
+jq -c .tool_response >"$SANDBOX_OUTPUT"
+ZSH
+chmod +x "$sandbox_post"
+export SANDBOX_OUTPUT=$sandbox_output
+SF_TEST_PROFILE=$(jq -c --arg hook "$sandbox_post" '.hooks.post_tool_use=[$hook]' \
+  <<<"$SF_TEST_PROFILE")
 session="$tmp/sandbox-denied.jsonl"
 sf_test_session "$session"
 SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_COMMAND='print -rn -- output; exit 3' \
   sf_test_run sandbox "$session" >"$stream" || fail 'sandbox denial turn failed'
 jq -eRn '
   [inputs | fromjson | select(.type == "tool_result")][0] |
-  .exit_code == 3 and .user_text == "Ran shell command:\nprint -rn -- output; exit 3\noutput\nexit 3" and
-  .model_text == "output\nexit 3\n\n<sandbox_notice>A denial was detected during this tool call. This does not necessarily mean the tool failed.</sandbox_notice>"
+  .exit_code == 3 and
+  (.user_text | contains("Ran shell command:\nprint -rn -- output; exit 3\noutput\nexit 3\n<sandbox_notice>")) and
+  (.model_text | contains("output\nexit 3\n<sandbox_notice>"))
 ' <"$stream" >/dev/null || fail 'sandbox denial did not annotate the model text'
+jq -e --slurpfile output "$sandbox_output" '
+  . as $result |
+  $output[0].exit_code == $result.exit_code and
+  ($output[0].stdout + $output[0].stderr) == $result.model_text and
+  ($output[0].stderr | contains("<sandbox_notice>"))
+' < <(jq -c 'select(.type == "tool_result")' "$stream") >/dev/null ||
+  fail 'post_tool_use did not receive the rendered sandbox output'
+SF_TEST_PROFILE=$(jq -c '.hooks.post_tool_use=[]' <<<"$SF_TEST_PROFILE")
 jq -eRn --arg temp "${TMPDIR:A}" '
   [inputs] as $args |
   [range(0; $args | length) as $i |
@@ -355,19 +375,30 @@ jq -eRn --arg share "$SF_SHARE" '[inputs | fromjson | select(.type == "tool_resu
   ("sandbox-profile unset unset " + $share + "\nexit 0")' <"$stream" >/dev/null ||
   fail 'sandboxed tool saw values beyond its declared names'
 
-# A tool streams user text and state, then settles once at exit. Stdout fills
-# the model text it did not write. A tool ignores finalize, and an action is invalid.
+# A tool streams data, templates, and state, then renders once at exit.
+sf_jq -en '
+  include "lib/profile";
+  include "lib/session";
+  include "libexec/run/component";
+  [{state:[{name:"invalid state",value:1}]},
+   {data:{note:1}},
+   {data:{"bad-key":"value"}},
+   {user_text_done:"${output.unknown}"}] |
+  all(.[]; component_update(["input.command"]; {};
+    {user_text:""}; "shell"; {command:"x"}; null;
+    {type:"_draft",id:"call_1",name:"shell"}) == null)
+' >/dev/null || fail 'invalid fd3 state, data, or template was accepted'
 typeset protocol="$tmp/protocol"
 cat >"$protocol" <<'ZSH'
 #!/usr/bin/env zsh
 case $(jq -r .command) in
   final)
-    print -r -u3 -- '{"user_text":"working","state":[{"name":"tool/a","value":1}]}'
-    print -r -u3 -- '{"user_text":"shown","finalize":true,"user_preview_lines":"full","state":[{"name":"tool/b","value":2}]}'
-    print -rn -- seen
+    print -r -u3 -- '{"data":{"note":"${literal}"},"user_text":"working ${data.note}","state":[{"name":"tool/a","value":1}]}'
+    print -r -u3 -- '{"user_text":"shown ${data.note}","user_text_done":"settled ${data.note}: ${output.stdout}/${output.exit_code}","model_text":"model ${output.stdout}","state":[{"name":"tool/b","value":2}]}'
+    print -rn -- 'seen ${output.stderr}'
     exit 4
     ;;
-  hint) print -r -u3 -- '{"user_preview_lines":3}'; print -rn -- plain ;;
+  hint) print -rn -- plain ;;
   action)
     print -r -u3 -- '{"state":[{"name":"tool/before-error","value":true}]}'
     print -r -u3 -- '{"action":"deny"}'
@@ -378,10 +409,14 @@ case $(jq -r .command) in
     sleep 30
     ;;
   huge) jq -cn '{user_text:("x" * 70000)}' >&3 ;;
+  capture)
+    jq -nr '"x" * 70000'
+    jq -nr '"y" * 70000' >&2
+    ;;
 esac
 ZSH
 chmod +x "$protocol"
-sf_test_shell_tool . "$protocol"
+sf_test_shell_tool '.user_preview_lines=3' "$protocol"
 SF_TEST_PROFILE=$(jq -c '.sandbox=false' <<<"$SF_TEST_PROFILE")
 session="$tmp/protocol.jsonl"
 sf_test_session "$session"
@@ -389,24 +424,24 @@ SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_COMMAND=final \
   sf_test_run protocol "$session" >"$stream" || fail 'protocol tool turn failed'
 jq -eRn '
   [inputs | fromjson | select(.type | IN("_draft","state","tool_result"))] ==
-    [{type:"_draft",id:"call_1",name:"shell",user_text:"Running shell command:\nfinal"},
+    [{type:"_draft",id:"call_1",name:"shell",user_text:"Running shell command:\nfinal",user_preview_lines:3},
      {type:"state",name:"tool/a",value:1},
-     {type:"_draft",id:"call_1",name:"shell",user_text:"working"},
+     {type:"_draft",id:"call_1",name:"shell",user_text:"working ${literal}",user_preview_lines:3},
      {type:"state",name:"tool/b",value:2},
-     {type:"_draft",id:"call_1",name:"shell",user_text:"shown",user_preview_lines:"full"},
+     {type:"_draft",id:"call_1",name:"shell",user_text:"shown ${literal}",user_preview_lines:3},
      {type:"tool_result",id:"call_1",name:"shell",input:{command:"final"},exit_code:4,
-      user_text:"shown",model_text:"seen",user_preview_lines:"full"}]
+      user_text:"settled ${literal}: seen ${output.stderr}/4",model_text:"model seen ${output.stderr}",user_preview_lines:3}]
 ' <"$stream" >/dev/null || fail 'tool user text or output settled wrong'
 assert_canonical_session "$session"
 
-# The result inherits the last preview hint.
+# The result keeps its manifest preview hint.
 session="$tmp/protocol-hint.jsonl"
 sf_test_session "$session"
 SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_COMMAND=hint \
   sf_test_run protocol "$session" >"$stream" || fail 'hinted tool turn failed'
 jq -eRn '[inputs | fromjson | select(.type == "tool_result")][0] |
   .user_text == "Ran shell command:\nhint\nplain" and .model_text == "plain" and
-  .user_preview_lines == 3' <"$stream" >/dev/null || fail 'shortcut lost its preview hint'
+  .user_preview_lines == 3' <"$stream" >/dev/null || fail 'manifest preview hint was lost'
 
 session="$tmp/protocol-action.jsonl"
 sf_test_session "$session"
@@ -452,5 +487,31 @@ SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_COMMAND=huge \
 jq -eRn '[inputs | fromjson | select(.type == "tool_result")][0] |
   .exit_code == 1 and .model_text == "tool result exceeds capture limit"' \
   <"$stream" >/dev/null || fail 'oversized line did not fail the call'
+
+session="$tmp/protocol-capture.jsonl"
+sf_test_session "$session"
+SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_COMMAND=capture \
+  sf_test_run capture "$session" >"$stream" || fail 'large output failed the turn'
+jq -eRn '[inputs | fromjson | select(.type == "tool_result")][0] |
+  .exit_code == 0 and
+  (.model_text | length) == 131072 and
+  (.model_text | startswith("[output truncated]\n")) and
+  (.model_text | contains("[output truncated]\ny"))
+' <"$stream" >/dev/null || fail 'captured output did not keep both bounded tails'
+
+# An explicitly silent tool still settles and persists a result.
+sf_test_shell_tool '.user_text="" | .user_text_done="" |
+  .user_text_skipped="" | .model_text=""' "$protocol"
+session="$tmp/protocol-silent.jsonl"
+sf_test_session "$session"
+SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_COMMAND=hint \
+  sf_test_run silent "$session" >"$stream" || fail 'silent tool turn failed'
+jq -eRn '[inputs | fromjson] as $events |
+  ($events | any(.type == "_draft" and .name == "shell") | not) and
+  ($events | map(select(.type == "tool_result")) | length) == 1 and
+  ($events | map(select(.type == "tool_result"))[0] |
+    .exit_code == 0 and (has("user_text") | not) and (has("model_text") | not))
+' <"$stream" >/dev/null || fail 'silent tool did not settle without fallback text'
+assert_canonical_session "$session"
 
 print -r -- ok

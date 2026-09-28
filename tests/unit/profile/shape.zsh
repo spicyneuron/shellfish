@@ -182,7 +182,7 @@ for manifest in "$ROOT"/share/tools/*/manifest.json; do
     fail "invalid bundled tool manifest: $manifest"
 done
 
-for manifest in '.render = {}' '.user_text = "${output.stdout}"' \
+for manifest in '.render = {}' '.user_text = "${output.unknown}"' \
     '.user_permission = "${input.missing}"'; do
   if jq -c "$manifest" <<<"$valid_manifest" |
       schema_eval 'tool_manifest' >/dev/null 2>&1; then

@@ -83,9 +83,11 @@ jq -eRn '
       ["assistant","tool_calls"],
       ["_draft","call_1","ordered",null],
       ["state","tool/first"],
+      ["_draft","call_1","ordered",null],
       ["tool_result","call_1","ordered",0],
       ["_draft","call_2","ordered",null],
       ["state","tool/second"],
+      ["_draft","call_2","ordered",null],
       ["tool_result","call_2","ordered",0],
       ["assistant","end"]
     ] and

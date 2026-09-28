@@ -360,16 +360,14 @@ sf_run_turn() {
         SF_RUN[active_call]=$id
         SF_RUN[known_outcome]=''
         if (( call_count > tool_limit )); then
-          sf_run_tool_refused "tool call denied: per-response limit is $tool_limit" 126 \
-            "$SF_TOOL_PLAN[denied]"
+          sf_run_tool_refused "tool call denied: per-response limit is $tool_limit" 126
           outcome=$REPLY
         else
           sf_run_hooks "$session" pre_tool_use "$SF_TOOL_PLAN[request]" \
             "$turn_state" "$name" "$id" || { failure=$SF_RUN_HOOK_ERROR; break; }
           hook_result=( "${reply[@]}" )
           if [[ $hook_result[action] == deny ]]; then
-            sf_run_tool_refused "${hook_result[reason]:-tool call denied by pre_tool_use hook}" \
-              126 "$SF_TOOL_PLAN[denied]"
+            sf_run_tool_refused "${hook_result[reason]:-tool call denied by pre_tool_use hook}" 126
             outcome=$REPLY
           elif [[ -z $SF_TOOL_PLAN[executable] ]]; then
             sf_run_tool_refused "tool is not allowed: $name" 127
@@ -379,8 +377,7 @@ sf_run_turn() {
               failure=$SF_TOOL_PLAN[permission_reason]
               break
             elif [[ $decision == deny ]]; then
-              sf_run_tool_refused "$SF_TOOL_PLAN[permission_reason]" 126 \
-                "$SF_TOOL_PLAN[denied]"
+              sf_run_tool_refused "$SF_TOOL_PLAN[permission_reason]" 126
               outcome=$REPLY
             elif [[ $decision == request ]]; then
               sf_run_hooks "$session" permission_request "$SF_TOOL_PLAN[request]" \
@@ -396,9 +393,13 @@ sf_run_turn() {
                 decision=$REPLY
               fi
               if [[ $decision == deny ]]; then
-                sf_run_tool_refused "$reason" 126 "$SF_TOOL_PLAN[denied]"
+                sf_run_tool_refused "$reason" 126
                 outcome=$REPLY
               fi
+            fi
+            if [[ -z $outcome && $SF_TOOL_PLAN[sandbox] == true && -z ${commands[fence]-} ]]; then
+              sf_run_tool_refused 'sandboxing requires fence' 126
+              outcome=$REPLY
             fi
             if [[ -z $outcome ]]; then
               sf_run_tool_execute "$session"

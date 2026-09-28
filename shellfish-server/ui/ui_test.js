@@ -578,11 +578,10 @@ test("shows user-facing hook text without exposing model text", async () => {
     type: "hook_result", lifecycle: "stop", id: "2",
     model_text: "private stop feedback",
   });
-  assert.equal(findTag(find(page.output, "note")[1], "summary")[0].textContent,
-    "↪stop");
+  assert.equal(find(page.output, "note").length, 1);
   assert.deepEqual(
     find(page.output, "section").map((heading) => heading.textContent),
-    ["system", "agent1"],
+    ["system"],
   );
   assert.equal(page.output.textContent.includes("secret model context"), false);
   assert.equal(page.output.textContent.includes("private stop feedback"), false);
@@ -657,14 +656,14 @@ test("groups hooks by lifecycle during replay", async () => {
   );
   assert.deepEqual(
     page.output.children.map((child) => child.className || child.textContent).filter(Boolean),
-    ["section section-system", "record system", "record note", "record note",
-      "section section-user", "record note", "record user",
-      "section section-agent", "record note", "record assistant", "record assistant",
-      "record note", "section section-user", "record user"],
+    ["section section-system", "record system", "record note",
+      "section section-user", "record user",
+      "section section-agent", "record assistant", "record assistant",
+      "section section-user", "record user"],
   );
 });
 
-test("keeps trailing stop hooks under agent", async () => {
+test("hides trailing model-only stop hooks", async () => {
   const page = load();
   await page.authenticate();
   await page.send(
@@ -677,10 +676,10 @@ test("keeps trailing stop hooks under agent", async () => {
     find(page.output, "section").map((heading) => heading.textContent),
     ["agent1"],
   );
-  assert.equal(find(page.output, "note").length, 1);
+  assert.equal(find(page.output, "note").length, 0);
 });
 
-test("renders only settled tool text and labels model-only results", async () => {
+test("renders only settled user-facing tool text", async () => {
   const page = await idle();
   await page.send(
     {
@@ -712,7 +711,7 @@ test("renders only settled tool text and labels model-only results", async () =>
   assert.equal(findTag(find(page.output, "call")[0], "strong").length, 0);
   const calls = find(page.output, "call");
   assert.equal(calls[0].textContent, "⛭ shell\nif true; then pwd; fi\n/project");
-  assert.equal(calls[1].textContent, "⛭ read_file");
+  assert.equal(calls.length, 1);
   assert.equal(page.output.textContent.includes("private file content"), false);
 });
 

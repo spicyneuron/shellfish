@@ -22,7 +22,7 @@ assert_equal '(empty)' "$(run_tool read_file '{"file_path":"empty.txt"}')"
 output=$(run_tool edit_file \
   '{"file_path":"file-tool.txt","old_string":"alpha","new_string":"beta"}')
 [[ $output == '@@ -1 +1 @@'* && $output == *-alpha* && $output == *+beta* ]]
-assert_equal '{"user_preview_lines":"full"}' "$(<$tmp/fd3)" 'edit_file did not ask for a full preview'
+assert_equal '' "$(<$tmp/fd3)" 'edit_file wrote presentation control data'
 
 # Skip unchanged edits.
 assert_equal 'edit_file: file-tool.txt is already up to date' \

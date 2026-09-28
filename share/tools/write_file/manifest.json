@@ -10,6 +10,7 @@
     }
   },
   "user_text": "${name} ${input.file_path}",
+  "user_preview_lines": "full",
   "user_permission": "${input.file_path}",
   "sandbox": true,
   "allow_sandbox_bypass": true
