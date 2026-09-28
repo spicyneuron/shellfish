@@ -61,7 +61,12 @@ case $COMPONENT_CASE in
     print -rn -u2 -- 'stderr'
     [[ $COMPONENT_KIND != tool ]] || exit 4
     ;;
-  capture)
+  capture|capture_override)
+    if [[ $COMPONENT_CASE == capture_override ]]; then
+      [[ $SHELLFISH_MAX_CAPTURE_BYTES == 2048 ]] || exit 3
+    else
+      [[ $SHELLFISH_MAX_CAPTURE_BYTES == 1024 ]] || exit 3
+    fi
     print -rn -- 'head'${(l:1200::o:)}'stdout-tail'
     print -rn -u2 -- 'head'${(l:1200::e:)}'stderr-tail'
     ;;
@@ -71,10 +76,11 @@ case $COMPONENT_CASE in
     ;;
 esac
 ZSH
-for scenario in protocol capture silent manifest_silent null; do
+for scenario in protocol capture capture_override silent manifest_silent null; do
   case $scenario in
     protocol) manifest='{"user_text":"Running ${name}","user_text_done":"Finished","user_preview_lines":"full","model_text":""}' ;;
     capture) manifest='{"user_text":"","user_text_done":"${output.stdout}|${output.stderr}","model_text":"${output.stdout}${output.stderr}"}' ;;
+    capture_override) manifest='{"user_text":"","user_text_done":"${output.stdout}|${output.stderr}","model_text":"${output.stdout}${output.stderr}","max_capture_bytes":2048}' ;;
     silent) manifest='{"user_text":"","user_text_done":"","model_text":""}' ;;
     manifest_silent) manifest='{"user_text":"Working","user_text_done":"","model_text":""}' ;;
     null) manifest='{"user_text":null,"user_text_done":null,"user_text_skipped":null,"model_text":null}' ;;
@@ -97,7 +103,7 @@ for scenario in protocol capture silent manifest_silent null; do
       --arg result_type "$result_type" --arg name "$component_name" '
       [inputs | fromjson | select(.type | IN("_draft","state","hook_result","tool_result"))] as $e |
       [$e[] | select(.type == $result_type)] as $results |
-      (if $kind == "tool" or ($scenario | IN("protocol","capture")) then
+      (if $kind == "tool" or ($scenario | IN("protocol","capture","capture_override")) then
         ($results | length) == 1 else ($results | length) == 0 end) and
       if $scenario == "protocol" then
         [$e[].type] == ["_draft","state","_draft","state","_draft",$result_type] and
@@ -113,6 +119,10 @@ for scenario in protocol capture silent manifest_silent null; do
           contains("stderr-tail") and (contains("head") | not)) and
         ($results[0].model_text | length == 2048) and
         ([$results[0].user_text | scan("\\[output truncated\\]")] | length) == 2
+      elif $scenario == "capture_override" then
+        ($results[0].user_text | contains("head") and contains("stdout-tail") and
+          contains("stderr-tail") and (contains("[output truncated]") | not)) and
+        ($results[0].model_text | length > 2048)
       elif $scenario == "silent" or $scenario == "manifest_silent" then
         $e[0].user_text == "Working" and
         if $kind == "hook" then ($results | length) == 0 and $e[-1].user_text == ""
@@ -163,12 +173,12 @@ sf_jq -e -s '
 ' "$session" >/dev/null || fail 'replay needed the live manifest'
 reject 'cannot read component manifest'
 typeset invalid
-for invalid in field template; do
-  if [[ $invalid == field ]]; then
-    print -r -- '{"description":"not a hook field"}' >"$hook/manifest.json"
-  else
-    print -r -- '{"user_text_done":"${input.undeclared}"}' >"$hook/manifest.json"
-  fi
+for invalid in field template capture; do
+  case $invalid in
+    field) print -r -- '{"description":"not a hook field"}' >"$hook/manifest.json" ;;
+    template) print -r -- '{"user_text_done":"${input.undeclared}"}' >"$hook/manifest.json" ;;
+    capture) print -r -- '{"max_capture_bytes":63}' >"$hook/manifest.json" ;;
+  esac
   reject 'invalid hook manifest'
 done
 print -r -- ok

@@ -24,15 +24,17 @@ sf_run_hook_project() {
 }
 
 sf_run_hook_manifest() {
-  local command=$1 name=$2 lifecycle=$3 input=$4 id=$5
+  local command=$1 name=$2 lifecycle=$3 input=$4 id=$5 max_capture=$6
   sf_profile_read_manifest "$command" || { REPLY=$SF_PROFILE_ERROR; return 1; }
   REPLY=$(sf_jq -cn --argjson manifest "$REPLY" --arg name "$name" \
-    --arg lifecycle "$lifecycle" --arg input "$input" --arg id "$id" '
+    --arg lifecycle "$lifecycle" --arg input "$input" --arg id "$id" \
+    --argjson max_capture "$max_capture" '
     include "lib/profile";
     include "lib/session";
     include "libexec/run/component";
     if $manifest | hook_manifest then
       component_plan($manifest; {}; $name; $input; {type:"_draft",lifecycle:$lifecycle,id:$id}) +
+        {max_capture:($manifest.max_capture_bytes // $max_capture)} +
         {actions:({user_prompt_submit:["block","handoff","session_update"],
           permission_request:["allow","deny"],pre_tool_use:["deny"],
           stop:["continue"]}[$lifecycle] // [])}
@@ -99,7 +101,6 @@ sf_run_hooks() {
   environment=(
     "${SF_ENVIRONMENT_VALUES[@]}"
     "SHELLFISH_SESSION=${session:A}"
-    "SHELLFISH_MAX_CAPTURE_BYTES=$max_capture"
     "SHELLFISH_MODEL=$SF_HOOK_PLAN[model]"
     "SHELLFISH_EXECUTABLE=$SF_ENTRY"
     "SHELLFISH_MODE=${SHELLFISH_MODE-}"
@@ -128,14 +129,16 @@ sf_run_hooks() {
         name=$command
       fi
       sf_run_hook_manifest "$command" "$name" "$lifecycle" "$content" \
-        "$SF_RUN[hook_id]" || { error=$REPLY; break; }
+        "$SF_RUN[hook_id]" "$SF_HOOK_PLAN[max_capture]" || { error=$REPLY; break; }
       component=$REPLY
+      max_capture=$(jq -r '.max_capture' <<<"$component") || { error='cannot inspect hook capture limit'; break; }
       sf_scratch_directory hook || { error='cannot prepare hook capture'; break; }
       directory=$REPLY
       if ! sf_run_component_begin "$session" "$component"; then
         error='cannot emit hook draft'
       elif ! sf_run_component_execute "$directory" "${SF_RUN[cwd]:A}" "$input" "$max_capture" \
-          /usr/bin/env "${environment[@]}" "$command/run" "$@"; then
+          /usr/bin/env "${environment[@]}" "SHELLFISH_MAX_CAPTURE_BYTES=$max_capture" \
+          "$command/run" "$@"; then
         error=$REPLY
       else
         case $reply[1] in

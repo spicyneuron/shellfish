@@ -1,1 +1,1 @@
-{"user_text_done":"${output.stderr}"}
+{"user_text_done":"${output.stderr}","max_capture_bytes":65536}

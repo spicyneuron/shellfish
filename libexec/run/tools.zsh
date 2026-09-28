@@ -48,7 +48,7 @@ sf_run_tool_plan() {
       entry("executable"; $tool.command // ""),
       entry("environment"; ($tool.manifest.environment // []) | join(" ")),
       entry("profile_env"; $profile.env | tojson),
-      entry("max_capture"; $profile.max_capture_bytes | tostring),
+      entry("max_capture"; $manifest.max_capture_bytes // $profile.max_capture_bytes | tostring),
       entry("execution_input";
         $input | del(.request_sandbox_bypass,.sandbox_bypass_reason) | tojson),
       entry("sandbox"; $profile.sandbox and ($tool.manifest.sandbox // false) and

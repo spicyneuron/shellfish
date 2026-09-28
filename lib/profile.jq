@@ -67,9 +67,10 @@ def component_inputs: .input_schema.properties // {} | keys | map("input." + .);
 def component_manifest($fields):
   component_inputs as $inputs |
   type == "object" and
-  ((keys - component_templates - ["user_preview_lines"] - $fields) | length == 0) and
+  ((keys - component_templates - ["user_preview_lines", "max_capture_bytes"] - $fields) | length == 0) and
   all(.[component_templates[]]; . == null or component_template($inputs)) and
-  ((has("user_preview_lines") | not) or (.user_preview_lines | component_preview_hint));
+  ((has("user_preview_lines") | not) or (.user_preview_lines | component_preview_hint)) and
+  ((has("max_capture_bytes") | not) or (.max_capture_bytes | capture_bytes));
 
 def hook_manifest: component_manifest([]);
 

@@ -68,7 +68,7 @@ These fields sit at the profile's top level. Omitted sandbox and limit fields us
 | `sandbox_write_paths` | `[]`; extra read-write grants |
 | `max_requests_per_turn` | `100` |
 | `max_tool_calls_per_request` | `25` |
-| `max_capture_bytes` | `32768`; per component execution, minimum `64` |
+| `max_capture_bytes` | `32768`; per component execution, minimum `64`, overridable by a hook or tool manifest |
 
 Each lifecycle runs every listed hook in order until one takes an action. A hook without an action defers to the next, and an empty or absent list runs none; see [`HARNESS.md`](HARNESS.md#hooks). A list replaces what was inherited, while `"..."` splices the inherited list at that position.
 
