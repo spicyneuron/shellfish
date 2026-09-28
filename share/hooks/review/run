@@ -17,7 +17,7 @@ permission_deny() {
   reason=${reason[1,1000]}
   control=$(jq -cn --arg name "$state_name" --arg reason "$reason" \
       --arg content "$review_content" --argjson content_set "$review_content_set" '
-    {action:"deny",reason:$reason,user_text:"",finalize:true} +
+    {action:"deny",reason:$reason} +
     (if $name == "" then {} else
       {state:[{name:$name,value:{
         content:(if $content_set == 1 then $content else null end),reason:$reason}}]}
@@ -36,15 +36,13 @@ permission_resolve() {
         $rank[$classification.authorization] >= $rank[$classification.risk]
      then "allow" else "deny" end) as $decision |
     {state:[{name:$name,value:{content:$content,reason:$classification.reason}}],
-      action:$decision,user_text:"",finalize:true} +
+      action:$decision} +
     (if $decision == "deny" then {reason:$classification.reason} else {} end)
   ') || exit 1
   print -rn -u3 -- "$control" || exit 1
   exit 0
 }
 
-source "${0:A:h:h}/lib/hook.zsh" && sf_hook_draft 'Reviewing permission request…' ||
-  permission_deny 'Permission review could not start.'
 [[ -r $SHELLFISH_SESSION && -d $SHELLFISH_TURN_STATE ]] ||
   permission_deny 'Permission review could not read the active turn.'
 
@@ -62,7 +60,7 @@ if (( ${#state_name} > 128 )); then
   permission_deny 'Permission review cannot store this tool request identifier.'
 fi
 
-[[ -r ${0:A:h}/review.md ]] && system=$(<"${0:A:h}/review.md") ||
+[[ -r ${0:A:h:h}/review.md ]] && system=$(<"${0:A:h:h}/review.md") ||
   permission_deny 'Permission review could not load its policy.'
 
 header=$(head -n 1 -- "$SHELLFISH_SESSION") ||

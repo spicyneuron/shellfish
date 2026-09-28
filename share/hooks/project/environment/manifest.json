@@ -1,0 +1,5 @@
+{
+  "user_text": "Loading project environment…",
+  "user_text_done": "Project environment:\n${output.stdout}",
+  "model_text": "<context script=\"${name}\">\n${output.stdout}</context>"
+}

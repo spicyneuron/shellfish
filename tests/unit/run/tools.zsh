@@ -7,6 +7,13 @@ mkdir "$tmp/host-temp"
 export TMPDIR="$tmp/host-temp" TMPPREFIX="$tmp/manifest-prefix"
 export XDG_STATE_HOME="$tmp/state" SF_TEST_BACKEND_DELAY=0
 sf_test_frozen_profile
+hook_fixture() {
+  local directory=$1 manifest=${2:-'{}'}
+  mkdir -p "$directory"
+  print -r -- "$manifest" >"$directory/manifest.json"
+  cat >"$directory/run"
+  chmod +x "$directory/run"
+}
 
 # The bundled shell decodes multiline commands once, preserves exit status, and
 # reports it in a footer.
@@ -39,12 +46,11 @@ typeset env_session="$tmp/env.jsonl" env_stream="$tmp/env.stream" base_profile=$
 typeset env_command='print -rn -- "${DECLARED-unset} ${UNDECLARED-unset} ${EXPORTED-unset} ${SHELLFISH_SHARE_DIR-unset}"'
 mkdir -p "$env_config"
 print -rl -- DECLARED=declared-file UNDECLARED=undeclared-file >"$env_config/.env"
-cat >"$env_hook" <<'ZSH'
+hook_fixture "$env_hook" <<'ZSH'
 #!/usr/bin/env zsh
 cat >/dev/null
 print -rn -- "${UNDECLARED-unset} ${SHELLFISH_SHARE_DIR-unset}" >"$ENV_SEEN"
 ZSH
-chmod +x "$env_hook"
 export ENV_SEEN=$env_seen EXPORTED=exported
 sf_test_shell_tool '.environment=["DECLARED"]'
 SF_TEST_PROFILE=$(jq -c --arg hook "$env_hook" '
@@ -86,30 +92,29 @@ SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_COUNT=2 \
 typeset pre="$tmp/pre" later="$tmp/pre-later" post="$tmp/post"
 typeset hook_dir="$tmp/hook-inputs" tool_marker="$tmp/tool-ran"
 mkdir "$hook_dir"
-cat >"$pre" <<'ZSH'
+hook_fixture "$pre" <<'ZSH'
 #!/usr/bin/env zsh
 input=$(cat)
 id=$(jq -r '.tool_use_id' <<<"$input")
 print -rn -- "$input" >"$HOOK_DIR/pre-$id"
 if [[ $id == call_1 ]]; then
-  print -r -u3 -- '{"user_text":"pre display","model_text":"pre context","state":[{"name":"pre/call_1","value":true}],"action":"deny","reason":"pre denied"}'
+  print -r -u3 -- '{"user_text_done":"pre display","model_text":"pre context","state":[{"name":"pre/call_1","value":true}],"action":"deny","reason":"pre denied"}'
 else
   :
 fi
 ZSH
-cat >"$later" <<'ZSH'
+hook_fixture "$later" <<'ZSH'
 #!/usr/bin/env zsh
 id=$(jq -r '.tool_use_id')
 print -r -- "$id" >>"$HOOK_DIR/later"
 ZSH
-cat >"$post" <<'ZSH'
+hook_fixture "$post" <<'ZSH'
 #!/usr/bin/env zsh
 input=$(cat)
 id=$(jq -r '.tool_use_id' <<<"$input")
 print -rn -- "$input" >"$HOOK_DIR/post-$id"
-print -rn -u3 -- "{\"user_text\":\"post $id\",\"state\":[{\"name\":\"post/$id\",\"value\":true}]}"
+print -rn -u3 -- "{\"user_text_done\":\"post $id\",\"state\":[{\"name\":\"post/$id\",\"value\":true}]}"
 ZSH
-chmod +x "$pre" "$later" "$post"
 export HOOK_DIR=$hook_dir TOOL_MARKER=$tool_marker
 SF_TEST_PROFILE=$(jq -c --arg pre "$pre" --arg later "$later" --arg post "$post" '
   .hooks.pre_tool_use=[$pre, $later] |
@@ -159,14 +164,13 @@ assert_canonical_session "$session"
 
 # Permission hooks receive the request and may allow or deny.
 typeset permission="$tmp/permission" permission_input="$tmp/permission-input"
-cat >"$permission" <<'ZSH'
+hook_fixture "$permission" <<'ZSH'
 #!/usr/bin/env zsh
 [[ $# == 2 && $1 == shell && $2 == call_1 ]] || exit 2
 input=$(cat)
 print -rn -- "$input" >"$PERMISSION_INPUT"
-print -rn -u3 -- '{"state":[{"name":"permission/state","value":true}],"action":"allow","user_text":"review display","model_text":"review context"}'
+print -rn -u3 -- '{"state":[{"name":"permission/state","value":true}],"action":"allow","user_text_done":"review display","model_text":"review context"}'
 ZSH
-chmod +x "$permission"
 export PERMISSION_INPUT=$permission_input
 SF_TEST_PROFILE=$(jq -c --arg hook "$permission" '
   .hooks.pre_tool_use=[] | .hooks.post_tool_use=[] |
@@ -193,12 +197,11 @@ jq -eRn '
   ($events | map(select(.type == "tool_result"))[0].exit_code) == 0
 ' <"$stream" >/dev/null || fail 'permission allow produced the wrong records'
 
-cat >"$permission" <<'ZSH'
+hook_fixture "$permission" <<'ZSH'
 #!/usr/bin/env zsh
 cat >"$PERMISSION_INPUT"
 print -rn -u3 -- '{"action":"deny","reason":"review denied"}'
 ZSH
-chmod +x "$permission"
 session="$tmp/permission-deny.jsonl"
 sf_test_session "$session"
 SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_BYPASS=true \
@@ -212,17 +215,15 @@ jq -eRn '
 
 # If every hook defers, approval falls back to the client.
 typeset defer_one="$tmp/defer-one" defer_two="$tmp/defer-two"
-cat >"$defer_one" <<'ZSH'
+hook_fixture "$defer_one" '{"user_text_done":"reviewed"}' <<'ZSH'
 #!/usr/bin/env zsh
 cat >"$PERMISSION_INPUT"
-print -r -u3 -- '{"user_text":"reviewed","finalize":true}'
 ZSH
-cat >"$defer_two" <<'ZSH'
+hook_fixture "$defer_two" <<'ZSH'
 #!/usr/bin/env zsh
 [[ -s $PERMISSION_INPUT ]] || exit 2
 cat >/dev/null
 ZSH
-chmod +x "$defer_one" "$defer_two"
 SF_TEST_PROFILE=$(jq -c --arg one "$defer_one" --arg two "$defer_two" \
   '.hooks.permission_request=[$one,$two]' <<<"$SF_TEST_PROFILE")
 session="$tmp/permission-client.jsonl"
@@ -244,15 +245,14 @@ jq -e -s 'all(.[]; .type != "_tool_permission_request" and
   .type != "_tool_permission_response")' "$session" >/dev/null ||
   fail 'permission exchange became durable'
 
-# A failing post hook keeps its finalized section before the known outcome and durable error.
+# A failing post hook keeps accepted state before the known outcome and error.
 typeset post_fail="$tmp/post-fail"
-cat >"$post_fail" <<'ZSH'
+hook_fixture "$post_fail" '{"user_text_done":"must not settle"}' <<'ZSH'
 #!/usr/bin/env zsh
 cat >/dev/null
-print -r -u3 -- '{"user_text":"post failure display","model_text":"post failure context","finalize":true}'
+print -r -u3 -- '{"state":[{"name":"post/failure","value":true}]}'
 exit 3
 ZSH
-chmod +x "$post_fail"
 SF_TEST_PROFILE=$(jq -c --arg hook "$post_fail" '
   .hooks.permission_request=[] |
   .hooks.post_tool_use=[$hook] |
@@ -264,10 +264,9 @@ integer post_status=0
 SF_TEST_BACKEND_TOOL_CALL=1 sf_test_run post "$session" >"$stream" || post_status=$?
 (( post_status == 1 )) || fail 'failing post hook did not fail the turn'
 jq -eRn '
-  [inputs | fromjson] as $events |
-  ($events[-3] | .type == "hook_result" and .lifecycle == "post_tool_use" and
-    .model_text == "post failure context" and
-    .user_text == "post failure display") and
+  [inputs | fromjson | select(.type | IN("state","hook_result","tool_result","error"))] as $events |
+  ($events | any(.type == "hook_result") | not) and
+  ($events[-3] | .type == "state" and .name == "post/failure" and .value == true) and
   ($events[-2] | .type == "tool_result" and .id == "call_1" and .exit_code == 0) and
   ($events[-1] | .type == "error" and (.user_text | contains("post_tool_use")))
 ' <"$stream" >/dev/null || fail 'post failure lost or reordered the known outcome'
@@ -310,11 +309,10 @@ ZSH
 chmod +x "$fence"
 export FENCE_ARGUMENTS=$fence_arguments PATH="$tmp/bin:$PATH"
 typeset sandbox_post="$tmp/sandbox-post" sandbox_output="$tmp/sandbox-output.json"
-cat >"$sandbox_post" <<'ZSH'
+hook_fixture "$sandbox_post" <<'ZSH'
 #!/usr/bin/env zsh
 jq -c .tool_response >"$SANDBOX_OUTPUT"
 ZSH
-chmod +x "$sandbox_post"
 export SANDBOX_OUTPUT=$sandbox_output
 SF_TEST_PROFILE=$(jq -c --arg hook "$sandbox_post" '.hooks.post_tool_use=[$hook]' \
   <<<"$SF_TEST_PROFILE")
@@ -384,7 +382,7 @@ sf_jq -en '
    {data:{note:1}},
    {data:{"bad-key":"value"}},
    {user_text_done:"${output.unknown}"}] |
-  all(.[]; component_update(["input.command"]; {};
+  all(.[]; component_update(""; ["input.command"]; {};
     {user_text:""}; "shell"; {command:"x"}; null;
     {type:"_draft",id:"call_1",name:"shell"}) == null)
 ' >/dev/null || fail 'invalid fd3 state, data, or template was accepted'
