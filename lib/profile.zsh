@@ -197,11 +197,6 @@ sf_profile_resolve() {
     if [[ $reference == 'backends '* ]]; then
       sf_profile_read_manifest "$resolved" || return
       backend_manifest=$REPLY
-    elif [[ $reference == 'hooks '* ]]; then
-      sf_profile_read_manifest "$resolved" || return
-      sf_jq -en --argjson manifest "$REPLY" '
-        include "lib/profile"; $manifest | hook_manifest
-      ' >/dev/null || sf_profile_fail "invalid hook manifest: $resolved" || return
     fi
     resolutions+=( "$reference" "$resolved" )
   done

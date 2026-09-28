@@ -138,25 +138,4 @@ rm "$BLOCK_TWO"; : >"$FAIL_TWO"; new_session later-error
 sf_test_run ordered "$session" >"$stream" 2>"$tmp/later.err" && fail 'later hook succeeded'
 jq -e -s 'map(select(.type == "hook_result") | .user_text) == ["one: ordered"] and
   .[-1].type == "error"' "$session" >/dev/null || fail 'later failure lost durable prefix'
-# Bundled sandbox policy distinguishes absolute and home-relative grants.
-typeset sandbox="$ROOT/share/hooks/sandbox/run" sandbox_session="$tmp/sandbox.jsonl"
-mkdir -p "$tmp/project/dir" "$tmp/home/share"
-jq -c --arg cwd "${tmp:A}/project" '.cwd=$cwd | .profile.sandbox=true |
-  .profile.sandbox_write_paths=[$cwd + "/dir","~/share"]' \
-  "$SF_TEST_SESSIONS/header-only.jsonl" >"$sandbox_session"
-(
-  builtin cd -- "$tmp/project"; export HOME="$tmp/home"
-  call() {
-    print -rn -- "$1" | SHELLFISH_SESSION="$sandbox_session" \
-      zsh -f "$sandbox" 3>"$tmp/control" >/dev/null 2>&1 || fail 'sandbox hook failed'
-    jq -rs 'last' "$tmp/control"
-  }
-  [[ $(call '/sandbox +w dir' | jq -r .action) == block ]] || fail 'absolute grant duplicated'
-  [[ $(call '/sandbox +w ~/share' | jq -r .action) == block ]] || fail 'home grant duplicated'
-  call '/sandbox -w dir' | jq -e '.action == "session_update" and
-    .profile.sandbox_write_paths == ["~/share"]' >/dev/null || fail 'absolute grant removal failed'
-  call '/sandbox -w ~/share' | jq -e --arg path "${tmp:A}/project/dir" '
-    .action == "session_update" and .profile.sandbox_write_paths == [$path]' >/dev/null ||
-    fail 'home grant removal failed'
-)
 print -r -- ok

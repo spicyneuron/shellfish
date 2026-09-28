@@ -152,3 +152,24 @@ submit '!printf '\''${output.stderr}'\''; exit 7'
 jq -e -s 'map(.type) == ["session","hook_result"] and
   (.[1].model_text | contains("${output.stderr}") and contains("(exit 7)")) and
   (.[1].user_text | startswith("Shell command:\n$ "))' "$command_session" >/dev/null
+# Bundled sandbox policy distinguishes absolute and home-relative grants.
+typeset sandbox="$ROOT/share/hooks/sandbox/run" sandbox_session="$tmp/sandbox.jsonl"
+mkdir -p "$tmp/project/dir" "$tmp/home/share"
+jq -c --arg cwd "${tmp:A}/project" '.cwd=$cwd | .profile.sandbox=true |
+  .profile.sandbox_write_paths=[$cwd + "/dir","~/share"]' \
+  "$SF_TEST_SESSIONS/header-only.jsonl" >"$sandbox_session"
+(
+  builtin cd -- "$tmp/project"; export HOME="$tmp/home"
+  call() {
+    print -rn -- "$1" | SHELLFISH_SESSION="$sandbox_session" \
+      zsh -f "$sandbox" 3>"$tmp/control" >/dev/null 2>&1 || fail 'sandbox hook failed'
+    jq -rs 'last' "$tmp/control"
+  }
+  [[ $(call '/sandbox +w dir' | jq -r .action) == block ]] || fail 'absolute grant duplicated'
+  [[ $(call '/sandbox +w ~/share' | jq -r .action) == block ]] || fail 'home grant duplicated'
+  call '/sandbox -w dir' | jq -e '.action == "session_update" and
+    .profile.sandbox_write_paths == ["~/share"]' >/dev/null || fail 'absolute grant removal failed'
+  call '/sandbox -w ~/share' | jq -e --arg path "${tmp:A}/project/dir" '
+    .action == "session_update" and .profile.sandbox_write_paths == [$path]' >/dev/null ||
+    fail 'home grant removal failed'
+)

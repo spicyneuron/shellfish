@@ -107,28 +107,25 @@ sf_skills_discover() {
   reply=( "${discovered[@]}" )
 }
 
-# The skill's instructions after its frontmatter.
+# REPLY is the skill's instructions after its frontmatter.
 sf_skills_body() {
   emulate -L zsh
   local line
+  REPLY=''
   {
     IFS= read -r line || return 1
     while IFS= read -r line || [[ -n $line ]]; do
       [[ ${line%$'\r'} == --- ]] && break
     done
     while IFS= read -r line || [[ -n $line ]]; do
-      print -r -- "$line"
+      REPLY+=$line$'\n'
     done
   } <"$1"
 }
 
-sf_skills_render() {
-  emulate -L zsh
-  local file=$1 name=$2
-  jq -nr --arg name "$name" --arg directory "${file:h}" '
+# Wrap BODY, which ends in a newline unless empty, as the model sees a loaded skill.
+sf_skills_wrap() {
+  jq -nr --arg name "$1" --arg directory "$2" --arg body "$3" '
     "<skill name=\"" + ($name | @html) + "\" directory=\"" +
-    ($directory | @html) + "\">"
-  ' || return 1
-  sf_skills_body "$file" || return 1
-  print -r -- '</skill>'
+    ($directory | @html) + "\">\n" + $body + "</skill>"'
 }

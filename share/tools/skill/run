@@ -12,8 +12,8 @@ sf_skills_discover "$bundled_root" "${SHELLFISH_CONFIG_DIR-}" "$PWD"
 integer index
 for (( index = 1; index <= ${#reply}; index += 3 )); do
   [[ $reply[index] == $name ]] || continue
-  file=$reply[index+2]
-  sf_skills_render "$file" "$name"
+  sf_skills_body "$reply[index+2]" || exit 1
+  sf_skills_wrap "$name" "${reply[index+2]:h}" "$REPLY"
   exit $?
 done
 print -u2 -r -- "skill is not available: $name"

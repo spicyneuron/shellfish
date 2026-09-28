@@ -1,9 +1,9 @@
 #!/usr/bin/env zsh
 
 emulate -R zsh
-setopt no_aliases no_multios pipe_fail
+setopt extended_glob no_aliases no_multios pipe_fail
 
-typeset bundled_root=${0:A:h:h:h} submitted token name file text preview
+typeset bundled_root=${0:A:h:h:h} submitted token name file text body
 typeset -A paths loaded
 integer index
 
@@ -22,10 +22,10 @@ while IFS= read -r token; do
   [[ -n ${paths[$name]-} && -z ${loaded[$name]-} ]] || continue
   loaded[$name]=1
   file=$paths[$name]
-  text=$(sf_skills_render "$file" "$name") || exit 1
-  preview=$(sf_skills_body "$file") || exit 1
-  while [[ $preview == $'\n'* ]]; do preview=${preview#$'\n'}; done
+  sf_skills_body "$file" || exit 1
+  text=$(sf_skills_wrap "$name" "${file:h}" "$REPLY") || exit 1
+  body=${${REPLY##$'\n'##}%%$'\n'##}
   (( ${#loaded} == 1 )) || print -rn -- $'\n\n'
-  print -rn -- "Loaded \$$name:"$'\n'"$preview"
+  print -rn -- "Loaded \$$name:"$'\n'"$body"
   print -ru2 -- "<context script=\"skills\">"$'\n'"$text"$'\n'"</context>"
 done < <(print -rn -- "$submitted" | grep -oE '(^|[^[:alnum:]_$])\$[a-z0-9]+(-[a-z0-9]+)*')

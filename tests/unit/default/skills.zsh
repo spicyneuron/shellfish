@@ -85,7 +85,8 @@ loaded=$(cd "$project" && print -rn -- '{"name":"linked"}' | HOME="$home" \
   SHELLFISH_CONFIG_DIR="$config" zsh -f "$tool")
 [[ $loaded == "<skill name=\"linked\" directory=\"${tmp:A}/linked-skills/linked\">"*$'# linked instructions'*'</skill>' ]]
 make_skill "$tmp/odd & \"root\"" odd 'odd description'
-loaded=$(sf_skills_render "$tmp/odd & \"root\"/odd/SKILL.md" odd)
+sf_skills_body "$tmp/odd & \"root\"/odd/SKILL.md"
+loaded=$(sf_skills_wrap odd "$tmp/odd & \"root\"/odd" "$REPLY")
 [[ $loaded == *'directory="'*'odd &amp; &quot;root&quot;/odd">'* ]]
 [[ $loaded != *'description: odd description'* ]]
 if (cd "$project" && print -rn -- '{"name":"hidden"}' | HOME="$home" \
