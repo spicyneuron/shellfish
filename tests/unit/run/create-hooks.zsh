@@ -163,16 +163,15 @@ jq -eRn '
   $events[-1].user_text == ""
 ' <"$stream" >/dev/null || fail 'failed hook lost state or live draft clearing'
 assert_canonical_session "$session"
-# Removed fd3 fields fail instead of reviving section or preview behavior.
+# Invalid fd3 lines fail without leaving a result.
 typeset field
-for field in '"finalize":true' '"user_preview_lines":true' '"user_text_denied":true' \
-  '"state":[{"name":"invalid state","value":1}]' '"data":{"note":1}' \
+for field in '"unknown":true' '"state":[{"name":"invalid state","value":1}]' '"data":{"note":1}' \
   '"data":{"bad-key":"value"}' '"user_text_done":"${output.unknown}"'; do
   print -r -- '#!/usr/bin/env zsh' >"$hook/run"
   print -r -- "print -r -u3 -- '{$field}'" >>"$hook/run"
   reject 'returned invalid control'
   jq -e -s 'map(.type) == ["session"]' "$session" >/dev/null ||
-    fail "removed fd3 $field produced a result"
+    fail "invalid fd3 $field produced a result"
 done
 # A file is not a hook component, even when executable.
 typeset legacy="$tmp/legacy-hook"

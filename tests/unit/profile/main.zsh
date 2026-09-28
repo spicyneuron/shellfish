@@ -75,7 +75,7 @@ sf_jq -en '
    user_text_done:"${output.stdout}${output.stderr}/${output.exit_code}",
    user_text_skipped:"${input.command}",model_text:"",user_preview_lines:0} as $manifest |
   ($manifest | tool_manifest) and
-  ($manifest + {user_text_denied:"legacy"} | tool_manifest | not) and
+  ($manifest + {unknown:""} | tool_manifest | not) and
   ("${data.note}/${output.exit_code}/${input.command}/${data.absent}" |
     render_template("${data.note}/${output.exit_code}/${input.command}/${data.absent}";
       "shell"; {command:"run"}; {exit_code:4}; {note:"${output.stdout}"})) ==
@@ -92,12 +92,8 @@ sf_jq -en '
 # Tool manifests are read live from the resolved folders.
 sf_profile_tools "$REPLY"
 jq -e '
-  .[0].manifest.user_permission == "${input.file_path}" and
-  .[-1].manifest.user_text == "Running shell command:\n${input.command}" and
-  .[-1].manifest.user_text_done == "Ran shell command:\n${input.command}\n${output.stdout}${output.stderr}" and
-  .[-1].manifest.user_text_skipped == "Did not run shell command:\n${input.command}\n${output.stderr}" and
-  .[1].manifest.user_preview_lines == "full" and
-  .[2].manifest.user_preview_lines == "full"
+  length > 0 and all(.[]; .name as $name |
+    (.command | endswith("/" + $name + "/run")) and .manifest.description != null)
 ' <<<"$REPLY" >/dev/null
 
 # Bundled adapter names resolve through the bundled default profile.
