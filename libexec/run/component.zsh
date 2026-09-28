@@ -94,8 +94,6 @@ sf_run_component_bound() {
   bytes=$(wc -c <"$source") || return
   if (( bytes <= limit )); then
     cat "$source" >"$destination"
-  elif (( limit <= ${#marker} )); then
-    print -rn -- "${marker[1,limit]}" >"$destination"
   else
     room=$(( limit - ${#marker} ))
     print -rn -- "$marker" >"$destination" && tail -c "$room" "$source" >>"$destination"
