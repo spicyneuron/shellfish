@@ -25,10 +25,11 @@ sf_run_hook_project() {
 }
 
 sf_run_hook_manifest() {
-  local command=$1 name=$2 manifest
+  local command=$1 name=$2 lifecycle=$3 input=$4 id=$5 manifest
   sf_profile_manifest "${command:h}" || { REPLY=$SF_PROFILE_ERROR; return 1; }
   manifest=$(sf_jsonc_read "$REPLY" 2>&1) || { REPLY="invalid hook manifest: $command"; return 1; }
-  sf_jq_fields -cn --argjson manifest "$manifest" '
+  sf_jq_fields -cn --argjson manifest "$manifest" --arg name "$name" \
+    --arg lifecycle "$lifecycle" --arg input "$input" --arg id "$id" '
     include "lib/fields";
     include "lib/profile";
     if $manifest | hook_manifest then
@@ -37,6 +38,13 @@ sf_run_hook_manifest() {
         user_text_skipped:($manifest.user_text_skipped // ""),
         model_text:($manifest.model_text // "")} | tojson),
       entry("preview"; $manifest.user_preview_lines // null | tojson),
+      entry("draft";
+        render_template($manifest.user_text // ""; $name; $input; {}; {}) as $text |
+        if $text == "" then "" else
+          {type:"_draft",lifecycle:$lifecycle,id:$id,user_text:$text} +
+          (if $manifest.user_preview_lines == null then {} else
+            {user_preview_lines:$manifest.user_preview_lines} end) | tojson
+        end),
       ("ok" | field)
     else error("invalid hook manifest") end
   ' || { REPLY="invalid hook manifest: $command"; return 1; }
@@ -169,7 +177,8 @@ sf_run_hooks() {
       else
         name=$command
       fi
-      sf_run_hook_manifest "$command/run" "$name" || { error=$REPLY; break; }
+      sf_run_hook_manifest "$command/run" "$name" "$lifecycle" "$content" \
+        "$SF_RUN[hook_id]" || { error=$REPLY; break; }
       SF_HOOK_PLAN[max_capture]=$max_capture
       sf_scratch_directory hook || { error='cannot prepare hook capture'; break; }
       directory=$REPLY
@@ -177,10 +186,12 @@ sf_run_hooks() {
       SF_HOOK_RESULT=( session "$session" lifecycle "$lifecycle" error '' live 0
         model_feedback 0 input "$(jq -Rn --arg text "$content" '$text')"
         data '{}' templates "$SF_HOOK_PLAN[templates]" action '' reason '' payload '' )
-      if ! sf_process_run "$directory" "${SF_RUN[cwd]:A}" "$input" "$max_capture" \
+      if [[ -n $SF_HOOK_PLAN[draft] ]]; then
+        sf_run_emit "$SF_HOOK_PLAN[draft]" && SF_HOOK_RESULT[live]=1 ||
+          error='cannot emit hook draft'
+      fi
+      if [[ -z $error ]] && sf_process_run "$directory" "${SF_RUN[cwd]:A}" "$input" "$max_capture" \
           sf_run_hook_line /usr/bin/env "${environment[@]}" "$command/run" "$@"; then
-        error=$SF_PROCESS_ERROR
-      else
         process=( "${reply[@]}" )
         if (( process[interrupted] )); then
           SF_RUN[signal_status]=$process[exit_code]
@@ -197,6 +208,8 @@ sf_run_hooks() {
         else
           sf_run_hook_complete "$directory" || error=$REPLY
         fi
+      elif [[ -z $error ]]; then
+        error=$SF_PROCESS_ERROR
       fi
       rm -rf -- "$directory"
       directory=''

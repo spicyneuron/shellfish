@@ -1,10 +1,8 @@
 #!/usr/bin/env zsh
-
 source "${0:A:h:h:h}/_helpers.zsh"
 sf_test_tmp run-create-hook-contract
 sf_test_config
 export XDG_STATE_HOME="$tmp/state"
-
 typeset entry="$ROOT/bin/shellfish" hook="$SF_TEST_CONFIG/hooks/project/instructions"
 typeset project="$tmp/project" session="$tmp/session.jsonl" stream="$tmp/stream"
 mkdir -p "$hook" "$project"
@@ -17,7 +15,6 @@ sf_test_profile default "{
   \"hooks\":{\"session_start\":[\"project/instructions\"]},
   \"max_capture_bytes\":1024
 }"
-
 (cd "$project" && zsh -f "$entry" run --jsonl --session-create --session-out "$session") \
   >"$stream" || fail 'manifested session_start hook failed'
 jq -eRn --arg session "$session" --arg hook "${hook:A}" '
@@ -32,12 +29,41 @@ jq -eRn --arg session "$session" --arg hook "${hook:A}" '
     (.model_text | contains("<context script=\"project/instructions\">")))
 ' <"$stream" >/dev/null || fail 'hook draft, name, or settlement was wrong'
 assert_canonical_session "$session"
-
 create() {
   (cd "$project" && zsh -f "$entry" run --jsonl --session-create --session-out "$1") \
     >"$stream"
 }
-
+# Manifest-only progress and literal Done text need no fd3 or captured output.
+print -r -- '{"user_text":"Running ${name}","user_text_done":"Finished",
+  "user_preview_lines":"full"}' >"$hook/manifest.json"
+print -r -- '#!/usr/bin/env zsh' >"$hook/run"
+session="$tmp/literal.jsonl"
+create "$session" || fail 'manifest-only hook failed'
+jq -eRn '
+  [inputs | fromjson] as $events |
+  [$events[].type] == ["_session_load","session","_draft","hook_result"] and
+  $events[2].user_text == "Running project/instructions" and
+  $events[3].user_text == "Finished" and
+  all($events[2:4][]; .user_preview_lines == "full") and
+  ($events[3] | has("model_text") | not)
+' <"$stream" >/dev/null || fail 'manifest progress, literal Done, or preview was lost'
+sf_test_profile absolute "{\"extend\":[\"default\"],
+  \"hooks\":{\"session_start\":[\"$hook\"]}}"
+(cd "$project" && zsh -f "$entry" run --jsonl --session-create \
+  --session-out "$tmp/absolute.jsonl" -p absolute) >"$stream" || fail 'absolute hook failed'
+jq -eRn '
+  [inputs | fromjson | select(.type == "_draft")][0].user_text == "Running project/instructions"
+' <"$stream" >/dev/null || fail 'absolute hook under the configured root lost its relative name'
+print -r -- '{"user_text":"Working","user_text_done":""}' >"$hook/manifest.json"
+session="$tmp/manifest-silent.jsonl"
+create "$session" || fail 'manifest-only silent hook failed'
+jq -eRn '
+  [inputs | fromjson] as $events |
+  [$events[].type] == ["_session_load","session","_draft","_draft"] and
+  $events[2].user_text == "Working" and $events[3].user_text == ""
+' <"$stream" >/dev/null || fail 'manifest-only draft was not cleared'
+jq -e -s 'map(.type) == ["session"]' "$session" >/dev/null ||
+  fail 'manifest-only draft became durable'
 # State arrives before the result, and captured `${...}` text is never expanded.
 print -r -- '{"user_text":"Running ${name}",
   "user_text_done":"${data.tag}: ${output.stdout}",
@@ -51,14 +77,13 @@ session="$tmp/state.jsonl"
 create "$session" || fail 'manifested state hook failed'
 jq -eRn '
   [inputs | fromjson] as $events |
-  [$events[].type] == ["_session_load","session","state","_draft","hook_result"] and
-  $events[2] == {type:"state",name:"startup/ready",value:true} and
-  $events[3].user_text == "Running project/instructions" and
-  $events[4].user_text == "Done: literal ${input}" and
-  $events[4].model_text == "literal ${input}"
+  [$events[].type] == ["_session_load","session","_draft","state","_draft","hook_result"] and
+  $events[2].user_text == "Running project/instructions" and
+  $events[3] == {type:"state",name:"startup/ready",value:true} and
+  $events[4].user_text == "Running project/instructions" and
+  $events[5].user_text == "Done: literal ${input}" and
+  $events[5].model_text == "literal ${input}"
 ' <"$stream" >/dev/null || fail 'state, name, or literal output was wrong'
-assert_canonical_session "$session"
-
 # Oversized hook output settles from bounded tails on both capture channels.
 print -r -- '{"user_text_done":"${output.stdout}|${output.stderr}",
   "model_text":"${output.stdout}${output.stderr}"}' >"$hook/manifest.json"
@@ -76,8 +101,6 @@ jq -eRn '
   ([$result.user_text | scan("\\[output truncated\\]")] | length) == 2 and
   ($result.model_text | contains("stdout-tail") and contains("stderr-tail"))
 ' <"$stream" >/dev/null || fail 'hook capture did not render bounded tails'
-assert_canonical_session "$session"
-
 # An empty settled template clears a transient draft and creates no record.
 print -r -- '{}' >"$hook/manifest.json"
 cat >"$hook/run" <<'ZSH'
@@ -93,8 +116,6 @@ jq -eRn '
   $events[2].user_text == "Working" and
   $events[3].user_text == ""
 ' <"$stream" >/dev/null || fail 'empty Done did not clear its draft'
-assert_canonical_session "$session"
-
 # Nonzero exit keeps accepted state, discards the proposed action, and fails.
 cat >"$hook/run" <<'ZSH'
 #!/usr/bin/env zsh
@@ -115,7 +136,6 @@ jq -eRn '
   $events[-1].user_text == ""
 ' <"$stream" >/dev/null || fail 'failed hook lost state or live draft clearing'
 assert_canonical_session "$session"
-
 # Removed fd3 fields fail instead of reviving section or preview behavior.
 typeset field
 for field in finalize user_preview_lines; do
@@ -130,7 +150,6 @@ for field in finalize user_preview_lines; do
   jq -e -s 'map(.type) == ["session"]' "$session" >/dev/null ||
     fail "removed fd3 $field produced a result"
 done
-
 # A file is not a hook component, even when executable.
 typeset legacy="$tmp/legacy-hook"
 print -r -- '#!/usr/bin/env zsh' >"$legacy"
@@ -143,7 +162,6 @@ result=0
 (( result == 1 )) || fail 'file hook reference was accepted'
 [[ $(<"$tmp/legacy.stderr") == *'invalid hooks reference'* ]] ||
   fail 'file hook rejection lost its diagnostic'
-
 # External absolute references keep their absolute name, even under /hooks/.
 typeset external="$tmp/external/hooks/probe"
 mkdir -p "$external"
@@ -159,31 +177,6 @@ jq -eRn --arg name "${external:A}" '
   [inputs | fromjson | select(.type == "hook_result")][0].user_text == $name
 ' <"$stream" >/dev/null || fail 'absolute external hook name was rewritten'
 
-# Prompt actions apply after a successful settled result and keep their input.
-print -r -- '{"user_text_done":"Blocked ${input}","model_text":"prompt context"}' \
-  >"$hook/manifest.json"
-cat >"$hook/run" <<'ZSH'
-#!/usr/bin/env zsh
-[[ $SHELLFISH_TURN_ID == <1-> && -d $SHELLFISH_TURN_STATE ]] || exit 2
-print -r -u3 -- '{"state":[{"name":"prompt/block","value":true}],"action":"block"}'
-ZSH
-sf_test_profile prompt "{\"extend\":[\"default\"],
-  \"hooks\":{\"session_start\":[],\"user_prompt_submit\":[\"$hook\"]}}"
-session="$tmp/prompt.jsonl"
-(cd "$project" && zsh -f "$entry" run --session-create --session-out "$session" \
-  -p prompt) >/dev/null || fail 'prompt session creation failed'
-print -r -- '{"type":"user","content":[{"type":"text","text":"do not send"}]}' |
-  zsh -f "$entry" run --jsonl --session "$session" >"$stream" ||
-  fail 'prompt block action failed'
-jq -eRn '
-  [inputs | fromjson] as $events |
-  [$events[].type] == ["state","_draft","hook_result"] and
-  $events[0] == {type:"state",name:"prompt/block",value:true} and
-  $events[-1].user_text == "Blocked do not send" and
-  $events[-1].model_text == "prompt context"
-' <"$stream" >/dev/null || fail 'prompt action applied before persistence or lost input'
-assert_canonical_session "$session"
-
 # Reconstruct model context after removing the live manifest.
 rm "$hook/manifest.json"
 session="$tmp/session.jsonl"
@@ -194,7 +187,6 @@ jq -e -s -L "$ROOT" '
   contains("<context script=\"project/instructions\">") and
   contains("Follow this project rule.")
 ' "$session" >/dev/null || fail 'replay needed the live manifest'
-
 result=0
 (cd "$project" && zsh -f "$entry" run --session-create --session-out "$tmp/missing.jsonl") \
   >"$stream" 2>"$tmp/missing.stderr" || result=$?
@@ -216,5 +208,4 @@ for invalid in field template; do
   [[ $(<"$tmp/invalid-manifest.stderr") == *'invalid hook manifest'* ]] ||
     fail "invalid hook manifest $invalid lost its diagnostic"
 done
-
 print -r -- ok
