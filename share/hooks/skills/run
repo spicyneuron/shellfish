@@ -23,9 +23,7 @@ while IFS= read -r token; do
   loaded[$name]=1
   file=$paths[$name]
   text=$(sf_skills_render "$file" "$name") || exit 1
-  preview=${text#*$'\n'}
-  preview=${preview%'</skill>'}
-  preview=${preview%$'\n'}
+  preview=$(sf_skills_body "$file") || exit 1
   while [[ $preview == $'\n'* ]]; do preview=${preview#$'\n'}; done
   (( ${#loaded} == 1 )) || print -rn -- $'\n\n'
   print -rn -- "Loaded \$$name:"$'\n'"$preview"

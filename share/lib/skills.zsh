@@ -107,13 +107,10 @@ sf_skills_discover() {
   reply=( "${discovered[@]}" )
 }
 
-sf_skills_render() {
+# The skill's instructions after its frontmatter.
+sf_skills_body() {
   emulate -L zsh
-  local file=$1 name=$2 line
-  jq -nr --arg name "$name" --arg directory "${file:h}" '
-    "<skill name=\"" + ($name | @html) + "\" directory=\"" +
-    ($directory | @html) + "\">"
-  ' || return 1
+  local line
   {
     IFS= read -r line || return 1
     while IFS= read -r line || [[ -n $line ]]; do
@@ -122,6 +119,16 @@ sf_skills_render() {
     while IFS= read -r line || [[ -n $line ]]; do
       print -r -- "$line"
     done
-  } <"$file"
+  } <"$1"
+}
+
+sf_skills_render() {
+  emulate -L zsh
+  local file=$1 name=$2
+  jq -nr --arg name "$name" --arg directory "${file:h}" '
+    "<skill name=\"" + ($name | @html) + "\" directory=\"" +
+    ($directory | @html) + "\">"
+  ' || return 1
+  sf_skills_body "$file" || return 1
   print -r -- '</skill>'
 }
