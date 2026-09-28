@@ -4,9 +4,7 @@ sf_test_tmp run-hook-contract
 export XDG_STATE_HOME="$tmp/state" SF_TEST_BACKEND_DELAY=0
 sf_test_frozen_profile
 typeset hook="$tmp/prompt" session stream="$tmp/stream"
-mkdir "$hook"
-print -r -- '{"user_text_done":"${output.stdout}","model_text":"${output.stdout}"}' >"$hook/manifest.json"
-cat >"$hook/run" <<'ZSH'
+sf_test_hook "$hook" '{"user_text_done":"${output.stdout}","model_text":"${output.stdout}"}' <<'ZSH'
 #!/usr/bin/env zsh
 [[ $# == 0 && $SHELLFISH_TURN_ID == <1-> && -d $SHELLFISH_TURN_STATE ]] || exit 2
 input=$(cat)
@@ -19,14 +17,13 @@ case $input in
     [[ $input != bad-update ]] || profile='{}'
     jq -cn --argjson profile "$profile" '{action:"session_update",profile:$profile}' >&3
     print -rn -- 'update context' ;;
-  fail) print -r -u3 -- '{"action":"block"}'; print -rn -u2 -- 'hook broke'; exit 3 ;;
+  fail) print -r -u3 -- '{"state":[{"name":"prompt/failed","value":true}],"action":"block"}'; print -rn -u2 -- 'hook broke'; exit 3 ;;
   invalid) print -r -u3 -- '{"action":"deny"}' ;;
   state) print -r -u3 -- '{"state":[{"name":"prompt/state","value":2}]}' ;;
   interrupt) print -r -u3 -- '{"state":[{"name":"prompt/started","value":true}],"user_text":"Working"}'
     : >"$INTERRUPT_MARKER"; sleep 30 ;;
 esac
 ZSH
-chmod +x "$hook/run"
 SF_TEST_PROFILE=$(jq -c --arg hook "$hook" '.hooks.user_prompt_submit=[$hook]' <<<"$SF_TEST_PROFILE")
 new_session() { session="$tmp/$1.jsonl"; sf_test_session "$session"; }
 new_session handoff; sf_test_run handoff "$session" >"$stream" || fail 'handoff failed'
@@ -42,7 +39,8 @@ jq -e -s '.[-2].model_text == "update context" and
   fail 'invalid update lost settled result'
 new_session fail; sf_test_run fail "$session" >"$stream" 2>"$tmp/fail.err" && fail 'nonzero hook succeeded'
 [[ $(<"$tmp/fail.err") == *'failed with status 3'*'hook broke'* ]] || fail 'nonzero diagnostic lost'
-jq -e -s 'map(.type) == ["session","error"]' "$session" >/dev/null || fail 'failed action applied'
+jq -e -s 'map(.type) == ["session","state","error"]' "$session" >/dev/null ||
+  fail 'failed hook lost state or applied its action'
 new_session invalid; sf_test_run invalid "$session" >"$stream" 2>"$tmp/invalid.err" && fail 'invalid action succeeded'
 [[ $(<"$tmp/invalid.err") == *'invalid control'* ]] || fail 'invalid action lost its diagnostic'
 jq -e -s 'map(.type) == ["session","error"]' "$session" >/dev/null || fail 'invalid action settled'
@@ -64,7 +62,7 @@ jq -e -s '.[1] == {type:"state",name:"prompt/started",value:true} and
   fail 'interruption lost state or settled unfinished output'
 # Stop receives final assistant text and can continue only with model feedback.
 typeset backend="$tmp/backend/run" stop="$tmp/stop" count="$tmp/count" stop_input="$tmp/stop-input"
-mkdir -p "${backend:h}" "$stop"
+mkdir -p "${backend:h}"
 cat >"$backend" <<'ZSH'
 #!/usr/bin/env zsh
 cat >/dev/null
@@ -76,8 +74,7 @@ print -r -- "{\"type\":\"_assistant_message_delta\",\"index\":0,\"text\":\"answe
 print -r -- '{"type":"_turn_usage","input_tokens":1,"output_tokens":1}'
 print -r -- '{"type":"_assistant_end","stop":"end"}'
 ZSH
-print -r -- '{"user_text_done":"${output.stdout}","model_text":"${output.stdout}"}' >"$stop/manifest.json"
-cat >"$stop/run" <<'ZSH'
+sf_test_hook "$stop" '{"user_text_done":"${output.stdout}","model_text":"${output.stdout}"}' <<'ZSH'
 #!/usr/bin/env zsh
 cat >"$STOP_INPUT"
 if [[ $1 == 1 ]]; then
@@ -86,7 +83,7 @@ if [[ $1 == 1 ]]; then
   print -rn -- 'checking again'
 fi
 ZSH
-chmod +x "$backend" "$stop/run"
+chmod +x "$backend"
 export REQUEST_COUNT=$count STOP_INPUT=$stop_input STOP_SILENT="$tmp/silent"
 SF_TEST_PROFILE=$(jq -c --arg backend "${backend:h}" --arg hook "$stop" '
   .backend.adapter=$backend | .hooks.user_prompt_submit=[] | .hooks.stop=[$hook]' <<<"$SF_TEST_PROFILE")
@@ -110,8 +107,7 @@ jq -e -s '.[-2].user_text == "checking again" and (.[-2] | has("model_text") | n
   >/dev/null || fail 'missing stop feedback was accepted'
 # Ordered hooks see original input and preceding results. An action stops the list.
 typeset hooks="$tmp/hooks" name
-mkdir -p "$hooks"/{one,two,three}
-cat >"$hooks/one/run" <<'ZSH'
+sf_test_hook "$hooks/one" '{"user_text_done":"${output.stdout}"}' <<'ZSH'
 #!/usr/bin/env zsh
 name=${0:h:t}; input=$(cat)
 [[ $input == ordered ]] || exit 2
@@ -124,10 +120,8 @@ fi
 [[ $name != two || ! -e $BLOCK_TWO ]] || print -r -u3 -- '{"action":"block"}'
 print -rn -- "$name: $input"
 ZSH
-for name in one two three; do
-  [[ $name == one ]] || cp "$hooks/one/run" "$hooks/$name/run"
-  print -r -- '{"user_text_done":"${output.stdout}"}' >"$hooks/$name/manifest.json"
-  chmod +x "$hooks/$name/run"
+for name in two three; do
+  sf_test_hook "$hooks/$name" '{"user_text_done":"${output.stdout}"}' <"$hooks/one/run"
 done
 export BLOCK_TWO="$tmp/block-two" FAIL_TWO="$tmp/fail-two"
 SF_TEST_PROFILE=$(jq -c --arg dir "$hooks" --arg adapter "${SF_TEST_BACKEND:h}" '

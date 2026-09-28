@@ -158,23 +158,19 @@ def test_tool_uses_manifest_display():
 
 
 def test_file_changes_use_full_preview():
-    for tool, title, detail in (
-        ("write_file", "Created file:", "+   1. Definitions."),
-        ("edit_file", "Edited file:", "control with that entity"),
-    ):
-        session = Session(explicit_session=True)
-        try:
-            mark = len(session.output)
-            session.send((tool.split("_")[0] + "\r").encode())
-            session.wait_after(mark, f"Allow {tool} outside of sandbox?")
-            session.send(b"a")
-            _, records = session.wait_session_records(4, path=session.explicit_session)
-            result = next(record for record in records if record.get("type") == "tool_result")
-            assert result["user_preview_lines"] == "full", result
-            assert result["user_text"].startswith(title + "\n"), result
-            session.wait_after(mark, detail, timeout=5)
-        finally:
-            session.close()
+    session = Session(explicit_session=True)
+    try:
+        mark = len(session.output)
+        session.send(b"write\r")
+        session.wait_after(mark, "Allow write_file outside of sandbox?")
+        session.send(b"a")
+        _, records = session.wait_session_records(4, path=session.explicit_session)
+        result = next(record for record in records if record.get("type") == "tool_result")
+        assert result["user_preview_lines"] == "full", result
+        assert result["user_text"].startswith("Created file:\n"), result
+        session.wait_after(mark, "+   1. Definitions.", timeout=5)
+    finally:
+        session.close()
 
 
 def test_activity_input_does_not_delay_interrupt():

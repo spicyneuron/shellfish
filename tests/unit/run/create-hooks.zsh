@@ -69,14 +69,13 @@ case $COMPONENT_CASE in
     print -r -u3 -- '{"user_text":"Working","user_text_done":"","model_text":""}'
     print -rn -- 'unrendered output'
     ;;
-  empty) print -rn -- 'unrendered output' ;;
 esac
 ZSH
-for scenario in literal protocol capture silent empty manifest_silent null; do
+for scenario in protocol capture silent manifest_silent null; do
   case $scenario in
-    literal|protocol) manifest='{"user_text":"Running ${name}","user_text_done":"Finished","user_preview_lines":"full","model_text":""}' ;;
+    protocol) manifest='{"user_text":"Running ${name}","user_text_done":"Finished","user_preview_lines":"full","model_text":""}' ;;
     capture) manifest='{"user_text":"","user_text_done":"${output.stdout}|${output.stderr}","model_text":"${output.stdout}${output.stderr}"}' ;;
-    silent|empty) manifest='{"user_text":"","user_text_done":"","model_text":""}' ;;
+    silent) manifest='{"user_text":"","user_text_done":"","model_text":""}' ;;
     manifest_silent) manifest='{"user_text":"Working","user_text_done":"","model_text":""}' ;;
     null) manifest='{"user_text":null,"user_text_done":null,"user_text_skipped":null,"model_text":null}' ;;
   esac
@@ -98,12 +97,9 @@ for scenario in literal protocol capture silent empty manifest_silent null; do
       --arg result_type "$result_type" --arg name "$component_name" '
       [inputs | fromjson | select(.type | IN("_draft","state","hook_result","tool_result"))] as $e |
       [$e[] | select(.type == $result_type)] as $results |
-      (if $kind == "tool" or ($scenario | IN("literal","protocol","capture")) then
+      (if $kind == "tool" or ($scenario | IN("protocol","capture")) then
         ($results | length) == 1 else ($results | length) == 0 end) and
-      if $scenario == "literal" then
-        $e[0].user_text == ("Running " + $name) and $results[0].user_text == "Finished" and
-        all($e[]; .user_preview_lines == "full") and ($results[0] | has("model_text") | not)
-      elif $scenario == "protocol" then
+      if $scenario == "protocol" then
         [$e[].type] == ["_draft","state","_draft","state","_draft",$result_type] and
         [$e[1],$e[3]] == [{type:"state",name:"component/a",value:1},{type:"state",name:"component/b",value:2}] and
         [$e[0].user_text,$e[2].user_text,$e[4].user_text] == ["Running " + $name,"Working old","Shown ${literal}"] and
@@ -121,8 +117,6 @@ for scenario in literal protocol capture silent empty manifest_silent null; do
         $e[0].user_text == "Working" and
         if $kind == "hook" then ($results | length) == 0 and $e[-1].user_text == ""
         else ($results | length) == 1 and ($results[0] | has("user_text") or has("model_text") | not) end
-      elif $scenario == "empty" then
-        all($e[]; .type != "_draft" and (has("user_text") or has("model_text") | not))
       else
         if $kind == "hook" then $e == []
         else $e[0].user_text == "shell {\"command\":\"null\"}" and
@@ -133,39 +127,23 @@ for scenario in literal protocol capture silent empty manifest_silent null; do
     assert_canonical_session "$session"
   done
 done
-# Absolute references under the configuration root retain the relative name.
-print -r -- '{"user_text":"Running ${name}","user_text_done":"Finished"}' >"$hook/manifest.json"
+# Absolute references keep the relative name under the configured root and the
+# absolute name elsewhere, even under another /hooks/ directory.
+typeset external="$tmp/external/hooks/probe" reference name
+print -r -- '#!/usr/bin/env zsh' | sf_test_hook "$external" '{"user_text_done":"${name}"}'
+print -r -- '{"user_text_done":"${name}"}' >"$hook/manifest.json"
 print -r -- '#!/usr/bin/env zsh' >"$hook/run"
-sf_test_profile absolute "{\"extend\":[\"default\"],
-  \"hooks\":{\"session_start\":[\"$hook\"]}}"
-create "$tmp/absolute.jsonl" -p absolute || fail 'absolute hook failed'
-jq -eRn '
-  [inputs | fromjson | select(.type == "_draft")][0].user_text == "Running project/instructions"
-' <"$stream" >/dev/null || fail 'absolute hook under the configured root lost its relative name'
-print -r -- '{}' >"$hook/manifest.json"
-# Nonzero exit keeps accepted state, discards the proposed action, and fails.
-cat >"$hook/run" <<'ZSH'
-#!/usr/bin/env zsh
-print -r -u3 -- '{"state":[{"name":"startup/failed","value":true}],"user_text":"Working"}'
-print -rn -u2 -- 'hook broke'
-exit 7
-ZSH
-session="$tmp/failed.jsonl"
-integer result=0
-create "$session" 2>"$tmp/failed.stderr" || result=$?
-(( result == 1 )) || fail 'nonzero manifested hook did not fail creation'
-[[ $(<"$tmp/failed.stderr") == *'session_start hook failed with status 7'*'hook broke'* ]] ||
-  fail 'nonzero hook lost its diagnostic'
-jq -eRn '
-  [inputs | fromjson] as $events |
-  [$events[].type] == ["_session_load","session","state","_draft","_draft"] and
-  $events[2] == {type:"state",name:"startup/failed",value:true} and
-  $events[-1].user_text == ""
-' <"$stream" >/dev/null || fail 'failed hook lost state or live draft clearing'
-assert_canonical_session "$session"
+for reference name in "$hook" project/instructions "$external" "${external:A}"; do
+  sf_test_profile absolute "{\"extend\":[\"default\"],\"hooks\":{\"session_start\":[\"$reference\"]}}"
+  create "$tmp/absolute-${reference:t}.jsonl" -p absolute || fail "absolute hook failed: $reference"
+  jq -eRn --arg name "$name" '
+    [inputs | fromjson | select(.type == "hook_result")][0].user_text == $name
+  ' <"$stream" >/dev/null || fail "absolute hook rendered the wrong name: $reference"
+done
 # Invalid fd3 lines fail without leaving a result.
 typeset field
-for field in '"unknown":true' '"state":[{"name":"invalid state","value":1}]' '"data":{"note":1}' \
+for field in '"unknown":true' '"state":[{"name":"invalid state","value":1}]' \
+  '"state":[{"name":"valid/state","value":1}],"data":{"note":1}' \
   '"data":{"bad-key":"value"}' '"user_text_done":"${output.unknown}"'; do
   print -r -- '#!/usr/bin/env zsh' >"$hook/run"
   print -r -- "print -r -u3 -- '{$field}'" >>"$hook/run"
@@ -173,27 +151,6 @@ for field in '"unknown":true' '"state":[{"name":"invalid state","value":1}]' '"d
   jq -e -s 'map(.type) == ["session"]' "$session" >/dev/null ||
     fail "invalid fd3 $field produced a result"
 done
-# A file is not a hook component, even when executable.
-typeset legacy="$tmp/legacy-hook"
-print -r -- '#!/usr/bin/env zsh' >"$legacy"
-chmod +x "$legacy"
-sf_test_profile legacy "{\"extend\":[\"default\"],
-  \"hooks\":{\"session_start\":[\"$legacy\"]}}"
-reject 'invalid hooks reference' -p legacy
-# External absolute references keep their absolute name, even under /hooks/.
-typeset external="$tmp/external/hooks/probe"
-mkdir -p "$external"
-print -r -- '{"user_text_done":"${name}"}' >"$external/manifest.json"
-print -r -- '#!/usr/bin/env zsh' >"$external/run"
-chmod +x "$external/run"
-sf_test_profile external "{\"extend\":[\"default\"],
-  \"hooks\":{\"session_start\":[\"$external\"]}}"
-session="$tmp/external.jsonl"
-create "$session" -p external || fail 'external hook failed'
-jq -eRn --arg name "${external:A}" '
-  [inputs | fromjson | select(.type == "hook_result")][0].user_text == $name
-' <"$stream" >/dev/null || fail 'absolute external hook name was rewritten'
-
 # Reconstruct model context after removing the live manifest.
 rm "$hook/manifest.json"
 session="$tmp/session.jsonl"

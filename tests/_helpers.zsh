@@ -123,6 +123,15 @@ sf_test_shell_tool() {
   SF_TEST_PROFILE=$(jq -c --arg tool "$tool" '.tools=[$tool]' <<<"$SF_TEST_PROFILE")
 }
 
+# A hook folder with MANIFEST (default {}) and a run script read from stdin.
+sf_test_hook() {
+  local directory=$1 manifest=${2:-'{}'}
+  mkdir -p "$directory"
+  print -r -- "$manifest" >"$directory/manifest.json"
+  cat >"$directory/run"
+  chmod +x "$directory/run"
+}
+
 sf_test_session() {
   local session=$1 cwd created header
   cwd=$(pwd -P)

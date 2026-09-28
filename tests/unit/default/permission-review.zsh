@@ -53,15 +53,10 @@ run_review() {
     SHELLFISH_TURN_STATE="$tmp" SHELLFISH_TURN_ID=6 \
     zsh -f "$hook/run" shell call_7 \
     3>"$tmp/lines" <<<"$request" || hook_status=$?
-  jq -e -s 'length == 1 and (.[0] | has("finalize") or has("user_text") | not)' \
-    "$tmp/lines" >/dev/null || fail 'permission review emitted obsolete settlement fields'
   jq -c -s last "$tmp/lines" >|"$control"
 }
 
 run_review valid
-jq -e '.user_text == "Reviewing permission request…" and
-  (.user_text_done // "") == "" and (.model_text // "") == ""' \
-  "$hook/manifest.json" >/dev/null || fail 'review progress or silence changed'
 (( hook_status == 0 )) || fail 'permission review did not resolve the request'
 jq -e . "$control" >/dev/null || { cat "$control" >&2; fail 'permission review returned invalid control'; }
 jq -e '

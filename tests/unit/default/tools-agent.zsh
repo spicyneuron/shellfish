@@ -78,10 +78,7 @@ sf_test_profile child "{
   \"max_requests_per_turn\":4,\"max_tool_calls_per_request\":4,
   \"max_capture_bytes\":4096
 }"
-mkdir -p "$tmp/stop-hook"
-print -r -- '{}' >"$tmp/stop-hook/manifest.json"
-print -rl -- '#!/usr/bin/env zsh' 'exit 0' >"$tmp/stop-hook/run"
-chmod +x "$tmp/stop-hook/run"
+print -rl -- '#!/usr/bin/env zsh' 'exit 0' | sf_test_hook "$tmp/stop-hook"
 sf_test_profile child-stop "{
   \"backend\":{\"adapter\":\"$backend\"},
   \"request\":{\"model\":\"test\"},

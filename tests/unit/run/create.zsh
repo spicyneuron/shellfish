@@ -71,15 +71,12 @@ zsh -f "$entry" run --session-create --session-from "$created" --model other >/d
 
 # Retain the valid prefix when a startup hook fails.
 typeset hook="$tmp/failing-hook"
-mkdir -p "$hook"
-print -r -- '{}' >"$hook/manifest.json"
-cat >"$hook/run" <<'ZSH'
+sf_test_hook "$hook" <<'ZSH'
 #!/usr/bin/env zsh
 [[ $# == 0 && -z ${SHELLFISH_TURN_STATE-} ]] || exit 2
 print -u2 -r -- 'startup detail'
 exit 9
 ZSH
-chmod +x "$hook/run"
 sf_test_profile hook \
   "{\"extend\": [\"default\"], \"hooks\": {\"session_start\": [\"$hook\"]}}"
 typeset failed="$tmp/failed.jsonl" hook_error="$tmp/hook-error"
@@ -165,17 +162,13 @@ zsh -f "$entry" run --session-create --session-out "$binary" \
 
 # A failed later startup retains and streams the completed prefix.
 typeset events="$tmp/events.jsonl" first="$tmp/first-hook"
-mkdir -p "$first"
-print -r -- '{"user_text_done":"startup display","model_text":"startup context"}' \
-  >"$first/manifest.json"
-cat >"$first/run" <<'ZSH'
+sf_test_hook "$first" '{"user_text_done":"startup display","model_text":"startup context"}' <<'ZSH'
 #!/usr/bin/env zsh
 [[ -f $SHELLFISH_SESSION ]] || exit 2
 jq -se 'map(.type) == ["_session_load","session","system"]' \
   "$SF_TEST_EVENTS" >/dev/null || exit 3
 print -r -u3 -- '{"state":[{"name":"startup/stream","value":true}]}'
 ZSH
-chmod +x "$first/run"
 sf_test_profile stream \
   "{\"extend\": [\"hook\"], \"hooks\": {\"session_start\": [\"$first\", \"...\"]}}"
 failed="$tmp/later-failed.jsonl"
@@ -195,9 +188,7 @@ jq -se 'map(.type) == ["session","system","state","hook_result"]' \
 typeset slow="$tmp/slow-hook" cancelled="$tmp/cancelled.jsonl"
 export SLOW_MARKER="$tmp/slow-active" SLOW_RELEASE="$tmp/slow-release"
 export SLOW_EXIT_MARKER="$tmp/slow-exit"
-mkdir -p "$slow"
-print -r -- '{}' >"$slow/manifest.json"
-cat >"$slow/run" <<'ZSH'
+sf_test_hook "$slow" <<'ZSH'
 #!/usr/bin/env zsh
 : >"$SLOW_MARKER"
 # Release detects scripts that survive cancellation.
@@ -206,7 +197,6 @@ while [[ ! -e $SLOW_RELEASE ]]; do
 done
 : >"$SLOW_EXIT_MARKER"
 ZSH
-chmod +x "$slow/run"
 sf_test_profile slow \
   "{\"extend\": [\"default\"], \"hooks\": {\"session_start\": [\"$slow\"]}}"
 zsh -f "$entry" run --jsonl --session-create -p slow --session-out "$cancelled" \
@@ -232,14 +222,12 @@ jq -se 'map(.type) == ["session","system"]' "$cancelled" >/dev/null ||
 # Moving a home preserves its frozen home-relative references.
 typeset old_home="$tmp/original-home" new_home="$tmp/moved-home"
 typeset old_project="$old_home/project" new_project="$new_home/project"
-mkdir -p "$old_project/hook" "$old_home/.config/shellfish/profiles"
+mkdir -p "$old_project" "$old_home/.config/shellfish/profiles"
 print -r -- 'original prompt' >"$old_project/prompt.md"
-print -r -- '{}' >"$old_project/hook/manifest.json"
-cat >"$old_project/hook/run" <<'ZSH'
+sf_test_hook "$old_project/hook" <<'ZSH'
 #!/usr/bin/env zsh
 pwd -P >"$PWD/hook-cwd"
 ZSH
-chmod +x "$old_project/hook/run"
 cat >"$old_home/.config/shellfish/profiles/default.jsonc" <<EOF
 {
   "backend": {"adapter": "$ROOT/tests/fixtures/backend"},

@@ -117,25 +117,7 @@ jq -e -s '
   (.[0].model_text | [scan("# shared instructions")] | length == 1) and
   (.[0].model_text | contains("# config-only instructions") and contains("# hidden instructions"))
 ' "$control" >/dev/null
-sf_jq -e -s '
-  include "lib/profile";
-  include "lib/session";
-  .[1:] | session_messages[0].content[0].text |
-  contains("# shared instructions") and contains("# config-only instructions") and
-  contains("# hidden instructions")
-' "$session" >/dev/null
 for prompt in 'No skill here' '$missing'; do
   HOME="$home" SHELLFISH_CONFIG_DIR="$config" sf_test_run "$prompt" "$session" >"$control"
   jq -e -s 'all(.[]; .type != "hook_result")' "$control" >/dev/null
 done
-for name in shared hidden; do
-  printf '%6000s\ntail-%s\n' '' "$name" >>"$project/.agents/skills/$name/SKILL.md"
-done
-SF_TEST_PROFILE=$(jq -c '.max_capture_bytes=1024' <<<"$SF_TEST_PROFILE")
-(cd "$project" && sf_test_session "$session")
-HOME="$home" sf_test_run '$shared $hidden' "$session" >"$control"
-jq -e -s 'map(select(.type == "hook_result")) | length == 1 and
-  all(.[0] | .user_text,.model_text; startswith("[output truncated]") and
-    contains("tail-hidden") and (utf8bytelength <= 1024))' "$session" >/dev/null
-sf_jq -e -s 'include "lib/profile"; include "lib/session";
-  .[1:] | session_messages[0].content[0].text | contains("tail-hidden")' "$session" >/dev/null

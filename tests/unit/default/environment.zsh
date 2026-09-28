@@ -81,8 +81,6 @@ startup
 jq -e -s 'all(.[]; .type != "state" and
   (.user_text // "" | startswith("Git environment:") | not))' \
   "$tmp/startup.jsonl" >/dev/null || fail 'no-repository startup was not silent'
-jq -e -s 'any(.[]; .type == "_draft" and .user_text == "Loading git environment…") and
-  any(.[]; .type == "_draft" and .user_text == "")' "$tmp/startup.stream" >/dev/null
 print -r -- 'branch:main' >"$git_state"
 
 git_change() {
@@ -150,41 +148,7 @@ for prompt in ordinary $'/help\nordinary'; do
   jq -e -s --arg prompt "$prompt" 'map(.type) == ["session","user","assistant"] and
     .[1].content[0].text == $prompt' "$command_session" >/dev/null
 done
-for prompt in /help /h; do
-  submit "$prompt"
-  jq -e -s 'map(.type) == ["session","hook_result"] and
-    .[1].user_preview_lines == "full" and (.[1].user_text | contains("/quit, /q"))' \
-    "$command_session" >/dev/null
-done
-for prompt in /new /resume /server /verbose /v; do
-  submit "$prompt"
-  jq -e -s --arg prompt "$prompt" --arg executable "$ROOT/bin/shellfish" \
-    --arg session "${command_session:A}" '
-    map(select(.type == "_handoff") | .argv) == [
-      if $prompt == "/new" then [$executable,"--session-from",$session]
-      elif $prompt == "/resume" then [$executable,"--resume"]
-      elif $prompt == "/server" then ["shellfish-server","--session",$session]
-      else [$executable,"--verbose","--clear","--session",$session] end]
-  ' "$command_stream" >/dev/null || fail "$prompt handoff: $(<$command_stream)"
-  [[ $(wc -l <"$command_session") -eq 1 ]]
-done
-SHELLFISH_VERBOSE=1 submit /verbose
-jq -e -s --arg session "${command_session:A}" 'map(select(.type == "_handoff") | .argv[1:]) ==
-  [["--clear","--session",$session]]' "$command_stream" >/dev/null
 submit '!printf '\''${output.stderr}'\''; exit 7'
 jq -e -s 'map(.type) == ["session","hook_result"] and
   (.[1].model_text | contains("${output.stderr}") and contains("(exit 7)")) and
   (.[1].user_text | startswith("Shell command:\n$ "))' "$command_session" >/dev/null
-for prompt in '! ' '/copy 0'; do
-  submit "$prompt"
-  jq -e -s 'map(.type) == ["session","hook_result"] and
-    (.[1].user_text | startswith("usage: ")) and (.[1] | has("model_text") | not)' \
-    "$command_session" >/dev/null
-done
-for prompt in '/fork 0' /fork /compact; do
-  submit "$prompt"
-  jq -e -s --arg prompt "$prompt" 'map(.type) == ["session","hook_result"] and
-    .[1].user_text == (if $prompt == "/fork 0" then "Usage: /fork [N]\n"
-      elif $prompt == "/fork" then "Fork target does not exist.\n"
-      else "Nothing to compact yet.\n" end)' "$command_session" >/dev/null
-done

@@ -44,10 +44,7 @@ assert_canonical_session "$session"
 
 # A tool that finished keeps its real result when a post hook is interrupted.
 typeset post="$tmp/post" posted="$tmp/post-active"
-mkdir -p "$post"
-print -r -- '{}' >"$post/manifest.json"
-print -rl -- '#!/usr/bin/env zsh' ": >${(q)posted}; sleep 30" >"$post/run"
-chmod +x "$post/run"
+print -rl -- '#!/usr/bin/env zsh' ": >${(q)posted}; sleep 30" | sf_test_hook "$post"
 SF_TEST_PROFILE=$(jq -c --arg post "$post" '.hooks.post_tool_use=[$post]' <<<"$SF_TEST_PROFILE")
 session="$tmp/post-cancel.jsonl" stream="$tmp/post-cancel.stream"
 interrupt "$session" "$stream" "$posted" 'print -rn -- ran'

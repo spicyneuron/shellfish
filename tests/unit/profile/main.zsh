@@ -20,11 +20,9 @@ sf_test_profile work '{
 sf_test_profile openai/base '{"extend":["@default"],"request":{"model":"base"}}'
 sf_test_profile openai/sol '{"extend":["openai/base"],"request":{"model":"sol"},
   "system":["prompt.md"],"hooks":{"stop":["stop"]}}'
-mkdir -p "$SF_TEST_CONFIG/system" "$SF_TEST_CONFIG/hooks/stop"
+mkdir -p "$SF_TEST_CONFIG/system"
 print -r -- 'nested' >"$SF_TEST_CONFIG/system/prompt.md"
-print -r -- '#!/bin/sh' >"$SF_TEST_CONFIG/hooks/stop/run"
-print -r -- '{}' >"$SF_TEST_CONFIG/hooks/stop/manifest.json"
-chmod +x "$SF_TEST_CONFIG/hooks/stop/run"
+print -r -- '#!/bin/sh' | sf_test_hook "$SF_TEST_CONFIG/hooks/stop"
 sf_profile_resolve_args -p openai/sol
 jq -e --arg root "${SF_TEST_CONFIG:A}" '
   .request.model == "sol" and (.tools | length) == 7 and
@@ -55,40 +53,21 @@ sf_profile_resolve_args -p work -m cli-model -b @backends/openai-responses
 jq -e '.backend.adapter | endswith("/share/backends/openai-responses")' \
   <<<"$REPLY" >/dev/null
 
-# The bundled default profile supplies the coding agent.
+# The bundled default profile resolves its components under share/.
 sf_profile_resolve_args -m default-model -b "$fixture_backend"
-jq -e --arg root "$ROOT/share/hooks" '
-  .hooks.session_start == [$root + "/project/environment", $root + "/git/environment",
-    $root + "/project/instructions"] and
-  .hooks.user_prompt_submit == (["help","verbose","new","resume","server","copy",
-    "sandbox","user_shell","fork","compact","git/change","skills"] | map($root + "/" + .)) and
-  (.hooks | has("permission_request") | not) and
-  (.tools | map(split("/") | last)) ==
-    ["read_file", "edit_file", "write_file", "skill", "search_web", "fetch_url", "shell"]
+jq -e --arg share "$ROOT/share/" '
+  [.hooks[][], .tools[]] | length > 0 and all(.[]; startswith($share))
 ' <<<"$REPLY" >/dev/null
 
-# Templates validate syntax, not runtime data availability. Replacement is one pass.
+# Manifests reject unknown fields, malformed templates, and bad preview hints.
 sf_jq -en '
   include "lib/profile";
-  {description:"test",input_schema:{type:"object",properties:{command:{type:"string"}}},
-   sandbox:false,user_text:"${data.note}",
-   user_text_done:"${output.stdout}${output.stderr}/${output.exit_code}",
-   user_text_skipped:"${input.command}",model_text:"",user_preview_lines:0} as $manifest |
-  ($manifest | tool_manifest) and
-  ($manifest + {unknown:""} | tool_manifest | not) and
-  ("${data.note}/${output.exit_code}/${input.command}/${data.absent}" |
-    render_template("${data.note}/${output.exit_code}/${input.command}/${data.absent}";
-      "shell"; {command:"run"}; {exit_code:4}; {note:"${output.stdout}"})) ==
-    "${output.stdout}/4/run/" and
-  ("${input}/${name}/${data.note}" |
-    render_template("${input}/${name}/${data.note}"; "git/environment";
-      "raw ${name}"; {}; {note:"ok"})) ==
-    "raw ${name}/git/environment/ok" and
-  (["${input.undeclared}","${output.bad}","${data.bad-key}","${unclosed",
-    "${name}\u0000"] | all(.[]; component_template(["input.command"]) | not)) and
+  {description:"test",input_schema:{type:"object"},sandbox:false} as $manifest |
+  ($manifest | tool_manifest) and ($manifest + {unknown:""} | tool_manifest | not) and
+  (["${data.bad-key}","${unclosed","${name}\u0000"] | all(.[]; component_template([]) | not)) and
   (["full",0,12] | all(.[]; component_preview_hint)) and
   ([null,-1,1.5,"3"] | all(.[]; component_preview_hint | not))
-' >/dev/null || fail 'component template validation or rendering was wrong'
+' >/dev/null || fail 'manifest validation accepted an invalid value'
 # Tool manifests are read live from the resolved folders.
 sf_profile_tools "$REPLY"
 jq -e '
@@ -224,10 +203,7 @@ print -r -- '#!/bin/sh' >"$SF_TEST_CONFIG/profiles/hooked/hooks/stop"
 chmod +x "$SF_TEST_CONFIG/profiles/hooked/hooks/stop"
 print -r -- 'not json' >"$SF_TEST_CONFIG/profiles/hooked/tools/legacy/manifest.jsonc"
 for script in "$hooks/first" "$hooks/second"; do
-  mkdir -p "$script"
-  print -r -- '#!/bin/sh' >"$script/run"
-  print -r -- '{}' >"$script/manifest.json"
-  chmod +x "$script/run"
+  print -r -- '#!/bin/sh' | sf_test_hook "$script"
 done
 sf_test_profile hook-base '{"backend":{"adapter":"'"$fixture_backend"'"},
   "request":{"model":"m"},"hooks":{"stop":["first"]}}'

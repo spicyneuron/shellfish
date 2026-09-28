@@ -7,13 +7,6 @@ mkdir "$tmp/host-temp"
 export TMPDIR="$tmp/host-temp" TMPPREFIX="$tmp/manifest-prefix"
 export XDG_STATE_HOME="$tmp/state" SF_TEST_BACKEND_DELAY=0
 sf_test_frozen_profile
-hook_fixture() {
-  local directory=$1 manifest=${2:-'{}'}
-  mkdir -p "$directory"
-  print -r -- "$manifest" >"$directory/manifest.json"
-  cat >"$directory/run"
-  chmod +x "$directory/run"
-}
 
 # The bundled shell decodes multiline commands once, preserves exit status, and
 # reports it in a footer.
@@ -46,7 +39,7 @@ typeset env_session="$tmp/env.jsonl" env_stream="$tmp/env.stream" base_profile=$
 typeset env_command='print -rn -- "${DECLARED-unset} ${UNDECLARED-unset} ${EXPORTED-unset} ${SHELLFISH_SHARE_DIR-unset}"'
 mkdir -p "$env_config"
 print -rl -- DECLARED=declared-file UNDECLARED=undeclared-file >"$env_config/.env"
-hook_fixture "$env_hook" <<'ZSH'
+sf_test_hook "$env_hook" <<'ZSH'
 #!/usr/bin/env zsh
 cat >/dev/null
 print -rn -- "${UNDECLARED-unset} ${SHELLFISH_SHARE_DIR-unset}" >"$ENV_SEEN"
@@ -92,7 +85,7 @@ SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_COUNT=2 \
 typeset pre="$tmp/pre" later="$tmp/pre-later" post="$tmp/post"
 typeset hook_dir="$tmp/hook-inputs" tool_marker="$tmp/tool-ran"
 mkdir "$hook_dir"
-hook_fixture "$pre" <<'ZSH'
+sf_test_hook "$pre" <<'ZSH'
 #!/usr/bin/env zsh
 input=$(cat)
 id=$(jq -r '.tool_use_id' <<<"$input")
@@ -103,12 +96,12 @@ else
   :
 fi
 ZSH
-hook_fixture "$later" <<'ZSH'
+sf_test_hook "$later" <<'ZSH'
 #!/usr/bin/env zsh
 id=$(jq -r '.tool_use_id')
 print -r -- "$id" >>"$HOOK_DIR/later"
 ZSH
-hook_fixture "$post" <<'ZSH'
+sf_test_hook "$post" <<'ZSH'
 #!/usr/bin/env zsh
 input=$(cat)
 id=$(jq -r '.tool_use_id' <<<"$input")
@@ -164,7 +157,7 @@ assert_canonical_session "$session"
 
 # Permission hooks receive the request and may allow or deny.
 typeset permission="$tmp/permission" permission_input="$tmp/permission-input"
-hook_fixture "$permission" <<'ZSH'
+sf_test_hook "$permission" <<'ZSH'
 #!/usr/bin/env zsh
 [[ $# == 2 && $1 == shell && $2 == call_1 ]] || exit 2
 input=$(cat)
@@ -197,7 +190,7 @@ jq -eRn '
   ($events | map(select(.type == "tool_result"))[0].exit_code) == 0
 ' <"$stream" >/dev/null || fail 'permission allow produced the wrong records'
 
-hook_fixture "$permission" <<'ZSH'
+sf_test_hook "$permission" <<'ZSH'
 #!/usr/bin/env zsh
 cat >"$PERMISSION_INPUT"
 print -rn -u3 -- '{"action":"deny","reason":"review denied"}'
@@ -215,11 +208,11 @@ jq -eRn '
 
 # If every hook defers, approval falls back to the client.
 typeset defer_one="$tmp/defer-one" defer_two="$tmp/defer-two"
-hook_fixture "$defer_one" '{"user_text_done":"reviewed"}' <<'ZSH'
+sf_test_hook "$defer_one" '{"user_text_done":"reviewed"}' <<'ZSH'
 #!/usr/bin/env zsh
 cat >"$PERMISSION_INPUT"
 ZSH
-hook_fixture "$defer_two" <<'ZSH'
+sf_test_hook "$defer_two" <<'ZSH'
 #!/usr/bin/env zsh
 [[ -s $PERMISSION_INPUT ]] || exit 2
 cat >/dev/null
@@ -247,7 +240,7 @@ jq -e -s 'all(.[]; .type != "_tool_permission_request" and
 
 # A failing post hook keeps accepted state before the known outcome and error.
 typeset post_fail="$tmp/post-fail"
-hook_fixture "$post_fail" '{"user_text_done":"must not settle"}' <<'ZSH'
+sf_test_hook "$post_fail" '{"user_text_done":"must not settle"}' <<'ZSH'
 #!/usr/bin/env zsh
 cat >/dev/null
 print -r -u3 -- '{"state":[{"name":"post/failure","value":true}]}'
@@ -309,7 +302,7 @@ ZSH
 chmod +x "$fence"
 export FENCE_ARGUMENTS=$fence_arguments PATH="$tmp/bin:$PATH"
 typeset sandbox_post="$tmp/sandbox-post" sandbox_output="$tmp/sandbox-output.json"
-hook_fixture "$sandbox_post" <<'ZSH'
+sf_test_hook "$sandbox_post" <<'ZSH'
 #!/usr/bin/env zsh
 jq -c .tool_response >"$SANDBOX_OUTPUT"
 ZSH
