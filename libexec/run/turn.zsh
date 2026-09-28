@@ -31,7 +31,7 @@ sf_run_append() {
 # Settle every still-pending call through the tool owner. The reason describes
 # calls the turn never reached.
 sf_run_settle() {
-  local session=$1 reason=$2 call
+  local session=$1 reason=$2 call component
   local active=$SF_RUN[active_call] known=$SF_RUN[known_result]
   local -a calls
   local -A completed
@@ -52,15 +52,18 @@ sf_run_settle() {
       REPLY=${SF_RUN_TOOL_ERROR:-cannot inspect pending tool call}
       return 1
     }
+    component=$SF_TOOL_PLAN[component]
     if [[ $SF_TOOL_PLAN[id] != $active ]]; then
       sf_run_tool_refused "$reason" 126
     elif [[ -n $known ]]; then
       sf_run_append "$session" "$known" || return 1
       continue
     else
+      # The active call keeps what it already sent on fd 3.
+      component=$SF_COMPONENT[values]
       sf_run_tool_refused 'tool call interrupted' 126
     fi
-    sf_run_tool_complete "$SF_TOOL_PLAN[component]" "$REPLY" || {
+    sf_run_tool_complete "$component" "$REPLY" || {
       REPLY=${SF_RUN_TOOL_ERROR:-cannot finish pending tool call}
       return 1
     }

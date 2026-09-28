@@ -42,6 +42,25 @@ jq -eRn --arg command "$command" '
 ' <"$stream" >/dev/null || fail 'tool interruption did not settle pending calls'
 assert_canonical_session "$session"
 
+# An interrupted tool settles with the data and templates it already sent.
+typeset profile=$SF_TEST_PROFILE partial="$tmp/partial-active"
+cat >"$tmp/partial-run" <<EOF
+#!/usr/bin/env zsh
+print -ru3 -- '{"data":{"step":"halfway"},"user_text_skipped":"Stopped \${data.step}"}'
+: >${(q)partial}
+sleep 30
+EOF
+chmod +x "$tmp/partial-run"
+sf_test_shell_tool . "$tmp/partial-run"
+session="$tmp/partial-cancel.jsonl" stream="$tmp/partial-cancel.stream"
+interrupt "$session" "$stream" "$partial" true
+jq -eRn '
+  [inputs | fromjson | select(.type == "tool_result" and .id == "call_1")][0].user_text ==
+    "Stopped halfway"
+' <"$stream" >/dev/null || fail 'interrupted tool lost its fd 3 presentation'
+assert_canonical_session "$session"
+SF_TEST_PROFILE=$profile
+
 # A tool that finished keeps its real result when a post hook is interrupted.
 typeset post="$tmp/post" posted="$tmp/post-active"
 print -rl -- '#!/usr/bin/env zsh' ": >${(q)posted}; sleep 30" | sf_test_hook "$post"
