@@ -75,16 +75,19 @@ class Session:
             "hooks": {},
         }
         if hooks:
-            # A bodyless entry selects the bundled dispatcher.
             config["hooks"]["user_prompt_submit"] = [
-                name if body is not None else "@hooks/user_prompt_submit"
+                name if body is not None else f"@hooks/{name}"
                 for name, body in hooks.items()]
             hook_dir = config_dir / "hooks"
             hook_dir.mkdir()
             for name, body in hooks.items():
                 if body is None:
                     continue
-                script = hook_dir / name
+                component = hook_dir / name
+                component.mkdir()
+                (component / "manifest.json").write_text(
+                    json.dumps({"user_text_done": "${output.stderr}"}))
+                script = component / "run"
                 script.write_text(body)
                 script.chmod(0o755)
         if session_start:

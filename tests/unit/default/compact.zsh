@@ -6,7 +6,7 @@ sf_test_tmp compact
 
 # Compact into a canonical child.
 typeset compact_hook="$ROOT/share/hooks/compact"
-typeset dispatcher="$ROOT/share/hooks/user_prompt_submit"
+typeset dispatcher="$ROOT/share/hooks/user_prompt_submit/run"
 typeset compact_source="$tmp/compact-source.jsonl"
 typeset compact_control="$tmp/compact-control.json"
 # The action lines among the compact hook's fd 3 output.

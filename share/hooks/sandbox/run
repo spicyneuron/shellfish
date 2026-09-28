@@ -108,6 +108,8 @@ else
   message="Session sandbox $access grant removed: $grant_path"
   user="Sandbox $access grant removed:"
 fi
-source "${0:A:h:h}/lib/hook.zsh" || exit 1
-sf_hook_context sandbox "$user"$'\n'"$grant_path" "$message" \
-  "$(jq -cn --argjson profile "$profile" '{action:"session_update",profile:$profile}')"
+jq -cn --arg user "$user"$'\n'"$grant_path" --arg message "$message" \
+  --argjson profile "$profile" '
+  {action:"session_update",profile:$profile,data:{user:$user,message:$message},
+   model_text:"<context script=\"sandbox\">\n${data.message}\n</context>"}
+' >&3

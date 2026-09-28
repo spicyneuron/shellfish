@@ -1,0 +1,10 @@
+#!/usr/bin/env zsh
+
+emulate -R zsh
+setopt no_aliases no_multios pipe_fail
+
+typeset submitted
+IFS= read -r submitted
+[[ "$?:$submitted" == 1:/resume ]] || exit 0
+jq -cn --arg executable "$SHELLFISH_EXECUTABLE" \
+  '{action:"handoff",argv:[$executable,"--resume"]}' >&3

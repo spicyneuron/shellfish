@@ -145,7 +145,7 @@ sf_test_run ordered "$session" >"$stream" 2>"$tmp/later.err" && fail 'later hook
 jq -e -s 'map(select(.type == "hook_result") | .user_text) == ["one: ordered"] and
   .[-1].type == "error"' "$session" >/dev/null || fail 'later failure lost durable prefix'
 # Bundled sandbox policy distinguishes absolute and home-relative grants.
-typeset sandbox="$ROOT/share/hooks/sandbox" sandbox_session="$tmp/sandbox.jsonl"
+typeset sandbox="$ROOT/share/hooks/sandbox/run" sandbox_session="$tmp/sandbox.jsonl"
 mkdir -p "$tmp/project/dir" "$tmp/home/share"
 jq -c --arg cwd "${tmp:A}/project" '.cwd=$cwd | .profile.sandbox=true |
   .profile.sandbox_write_paths=[$cwd + "/dir","~/share"]' \

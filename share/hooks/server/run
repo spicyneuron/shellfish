@@ -1,0 +1,10 @@
+#!/usr/bin/env zsh
+
+emulate -R zsh
+setopt no_aliases no_multios pipe_fail
+
+typeset submitted
+IFS= read -r submitted
+[[ "$?:$submitted" == 1:/server ]] || exit 0
+jq -cn --arg session "$SHELLFISH_SESSION" \
+  '{action:"handoff",argv:["shellfish-server","--session",$session]}' >&3

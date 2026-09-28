@@ -59,7 +59,8 @@ sf_profile_resolve_args -m default-model -b "$fixture_backend"
 jq -e --arg root "$ROOT/share/hooks" '
   .hooks.session_start == [$root + "/project/environment", $root + "/git/environment",
     $root + "/project/instructions"] and
-  .hooks.user_prompt_submit == [$root + "/user_prompt_submit", $root + "/skills"] and
+  .hooks.user_prompt_submit == (["help","verbose","new","resume","server","copy",
+    "sandbox","user_shell","user_prompt_submit","skills"] | map($root + "/" + .)) and
   (.hooks | has("permission_request") | not) and
   (.tools | map(split("/") | last)) ==
     ["read_file", "edit_file", "write_file", "skill", "search_web", "fetch_url", "shell"]

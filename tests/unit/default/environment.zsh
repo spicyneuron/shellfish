@@ -137,3 +137,49 @@ chmod +x "$git_bin/git"
 GIT_MARKER="$tmp/git-called" PATH="$git_bin:$PATH" SHELLFISH_SESSION="$tmp/empty.jsonl" \
   zsh -f "$git_prompt" user_prompt_submit 3>"$git_control" >/dev/null
 [[ ! -e $tmp/git-called ]]
+
+# Ordered command hooks leave ordinary and multiline prompts untouched.
+typeset command_session="$tmp/command.jsonl" command_stream="$tmp/command.stream"
+jq -c --arg root "$ROOT/share/hooks/" '.profile.hooks = {user_prompt_submit:
+  (["help","verbose","new","resume","server","copy","sandbox","user_shell"] |
+    map($root + .))}' < <(head -n 1 "$tmp/startup.jsonl") >"$tmp/command-header"
+submit() {
+  cp "$tmp/command-header" "$command_session"
+  sf_test_run "$1" "$command_session" >"$command_stream"
+}
+for prompt in ordinary $'/help\nordinary'; do
+  submit "$prompt"
+  jq -e -s --arg prompt "$prompt" 'map(.type) == ["session","user","assistant"] and
+    .[1].content[0].text == $prompt' "$command_session" >/dev/null
+done
+for prompt in /help /h; do
+  submit "$prompt"
+  jq -e -s 'map(.type) == ["session","hook_result"] and
+    .[1].user_preview_lines == "full" and (.[1].user_text | contains("/quit, /q"))' \
+    "$command_session" >/dev/null
+done
+for prompt in /new /resume /server /verbose /v; do
+  submit "$prompt"
+  jq -e -s --arg prompt "$prompt" --arg executable "$ROOT/bin/shellfish" \
+    --arg session "${command_session:A}" '
+    map(select(.type == "_handoff") | .argv) == [
+      if $prompt == "/new" then [$executable,"--session-from",$session]
+      elif $prompt == "/resume" then [$executable,"--resume"]
+      elif $prompt == "/server" then ["shellfish-server","--session",$session]
+      else [$executable,"--verbose","--clear","--session",$session] end]
+  ' "$command_stream" >/dev/null || fail "$prompt handoff: $(<$command_stream)"
+  [[ $(wc -l <"$command_session") -eq 1 ]]
+done
+SHELLFISH_VERBOSE=1 submit /verbose
+jq -e -s --arg session "${command_session:A}" 'map(select(.type == "_handoff") | .argv[1:]) ==
+  [["--clear","--session",$session]]' "$command_stream" >/dev/null
+submit '!printf '\''${output.stderr}'\''; exit 7'
+jq -e -s 'map(.type) == ["session","hook_result"] and
+  (.[1].model_text | contains("${output.stderr}") and contains("(exit 7)")) and
+  (.[1].user_text | startswith("Shell command:\n$ "))' "$command_session" >/dev/null
+for prompt in '! ' '/copy 0'; do
+  submit "$prompt"
+  jq -e -s 'map(.type) == ["session","hook_result"] and
+    (.[1].user_text | startswith("usage: ")) and (.[1] | has("model_text") | not)' \
+    "$command_session" >/dev/null
+done

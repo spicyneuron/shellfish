@@ -1,0 +1,13 @@
+#!/usr/bin/env zsh
+
+emulate -R zsh
+setopt no_aliases no_multios pipe_fail
+
+typeset submitted
+IFS= read -r submitted
+[[ "$?:$submitted" == (1:/verbose|1:/v) ]] || exit 0
+jq -cn --arg executable "$SHELLFISH_EXECUTABLE" --arg session "$SHELLFISH_SESSION" \
+  --argjson verbose "${SHELLFISH_VERBOSE:-0}" '
+  {action:"handoff",argv:[$executable] +
+    (if $verbose == 0 then ["--verbose"] else [] end) + ["--clear","--session",$session]}
+' >&3

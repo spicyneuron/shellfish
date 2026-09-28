@@ -1,0 +1,28 @@
+#!/usr/bin/env zsh
+
+emulate -R zsh
+setopt no_aliases no_multios pipe_fail
+
+typeset submitted
+IFS= read -r submitted
+[[ "$?:$submitted" == (1:/help|1:/h) ]] || exit 0
+print -ru3 -- '{"action":"block"}'
+cat <<'HELP'
+Help:
+shift+enter        Add a line instead of sending the message
+ctrl+c             Cancel an active request; otherwise exit
+↑, ↓               Navigate prompt history
+/queue drop <N>    Discard queued prompt
+/queue clear       Discard all queued prompts
+/verbose, /v       Toggle full previews
+/new               Start a new session with the same settings
+/copy [N]          Copy the latest or selected user/agent section
+/fork [N]          Fork at the following user section (default: current end)
+/sandbox [OP DIR]  List or update session sandbox grants
+!COMMAND           Run COMMAND and stage its output as context
+/server            Serve this session in a browser
+/resume            Switch to a session for this directory
+/compact           Summarize this session into a new one
+/refresh, /r       Rerender current session; fix layout
+/quit, /q          Exit
+HELP

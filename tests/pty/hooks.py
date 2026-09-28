@@ -45,21 +45,24 @@ print -r -u3 -- '{"action":"block"}'
 """
 
 START_HOOK = r"""#!/usr/bin/env zsh
-typeset directory=${SHELLFISH_SESSION:h} name=${0:t}
+typeset directory=${SHELLFISH_SESSION:h} name=${0:A:h:t}
 print -r -u3 -- "{\"user_text\":\"Inspecting $name\"}"
 : >"$directory/$name-started"
 while [[ ! -e $directory/$name-release ]]; do
   sleep 0.05
 done
-print -r -u3 -- "{\"user_text\":\"$name context\",\"model_text\":\"$name context\",\"finalize\":true}"
+print -r -u3 -- "{\"user_text_done\":\"$name context\",\"model_text\":\"$name context\"}"
 """
 
 
 def start_hook(directory, name):
-    script = Path(directory) / name
+    component = Path(directory) / name
+    component.mkdir()
+    (component / "manifest.json").write_text("{}")
+    script = component / "run"
     script.write_text(START_HOOK)
     script.chmod(0o755)
-    return str(script)
+    return str(component)
 
 
 def test_startup_streams_hooks_and_runs_the_queued_prompt():
@@ -275,7 +278,7 @@ def test_prompt_hook_hands_off_to_new_session():
 
 
 def test_fork_restores_removed_user_prompt_as_draft():
-    session = Session(explicit_session=True, hooks={"fork": None})
+    session = Session(explicit_session=True, hooks={"user_prompt_submit": None})
     fork = session.explicit_session.with_name("explicit_fork_1.jsonl")
     try:
         session.send(b"original prompt\r")
