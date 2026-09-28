@@ -77,7 +77,8 @@ sf_backend_context_window() {
     return $process[exit_code]
   fi
   REPLY=null
-  if (( process[exit_code] == 0 )); then
+  if (( process[exit_code] == 0 && process[stdout_bytes] <= max_capture &&
+      process[stderr_bytes] <= max_capture )); then
     output=$(<"$directory/stdout")
     REPLY=$(sf_jq -ser '
       include "lib/profile";

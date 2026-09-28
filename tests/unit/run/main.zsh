@@ -181,6 +181,20 @@ head -n 1 "$context_session" | jq -e \
 cat >"$context_backend/context_window" <<'ZSH'
 #!/usr/bin/env zsh
 cat >/dev/null
+printf '%70000s' ''
+print -r -- '{"context_window":4321}'
+ZSH
+context_session="$tmp/context-overflow.jsonl"
+print -r -- '{"type":"user","content":[{"type":"text","text":"overflow"}]}' |
+  SF_TEST_BACKEND_DELAY=0 zsh -f "$entry" run --jsonl -p context \
+    --session-out "$context_session" >/dev/null ||
+  fail 'overlong context discovery blocked inference'
+head -n 1 "$context_session" | jq -e \
+  '.profile.context_window == null' >/dev/null ||
+  fail 'overlong context discovery accepted a truncated JSON tail'
+cat >"$context_backend/context_window" <<'ZSH'
+#!/usr/bin/env zsh
+cat >/dev/null
 exit 7
 ZSH
 context_session="$tmp/context-unavailable.jsonl"

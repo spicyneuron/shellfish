@@ -65,12 +65,17 @@ def render_template($template; $name; $input; $output; $data):
     ($data | with_entries(.key = "data." + .key | .value |= text))) as $variables |
   $template | gsub("\\$\\{(?<name>[^{}]+)\\}"; $variables[.name] // "");
 
-def tool_manifest:
+def component_manifest($kind):
   (.input_schema.properties // {} | keys | map("input." + .)) as $input_variables |
   type == "object" and
-  ((keys - ["allow_sandbox_bypass", "description", "environment",
-    "input_schema", "model_text", "sandbox", "user_permission", "user_preview_lines",
-    "user_text", "user_text_done", "user_text_skipped"]) | length == 0) and
+  ((keys - (["model_text", "user_preview_lines", "user_text", "user_text_done",
+    "user_text_skipped"] + if $kind == "tools" then
+      ["allow_sandbox_bypass", "description", "environment", "input_schema",
+       "sandbox", "user_permission"] else [] end)) | length == 0) and
+  all(.user_text, .user_text_done, .user_text_skipped, .model_text;
+    . == null or component_template($input_variables)) and
+  ((has("user_preview_lines") | not) or (.user_preview_lines | component_preview_hint)) and
+  (if $kind == "hooks" then true else
   (.description | nul_free_string and length > 0) and
   (.input_schema | type == "object" and .type == "object" and
     ((.properties // {}) | type == "object") and
@@ -80,13 +85,14 @@ def tool_manifest:
       has("request_sandbox_bypass") or has("sandbox_bypass_reason") | not) and
     ((.required // []) |
       index("request_sandbox_bypass") == null and index("sandbox_bypass_reason") == null)) and
-  all(.user_permission, .user_text, .user_text_done, .user_text_skipped, .model_text;
-    . == null or component_template($input_variables)) and
-  ((has("user_preview_lines") | not) or (.user_preview_lines | component_preview_hint)) and
+  (.user_permission == null or (.user_permission | component_template($input_variables))) and
   ((.environment // []) | component_environment) and
   (.sandbox | type == "boolean") and
   ((.allow_sandbox_bypass // false) | type == "boolean") and
-  (if (.allow_sandbox_bypass // false) then .sandbox else true end);
+  (if (.allow_sandbox_bypass // false) then .sandbox else true end) end);
+
+def tool_manifest: component_manifest("tools");
+def hook_manifest: component_manifest("hooks");
 
 def config_error($path; $message):
   error("invalid profile at $" + ($path | map("[" + tojson + "]") | join("")) + ": " + $message);

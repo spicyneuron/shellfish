@@ -104,7 +104,7 @@ sf_profile_tools() {
 # reference. REPLY is the profile with absolute paths.
 sf_profile_resolve() {
   local profile_names=$1 model_override=$2 request_override=$3 backend_override=$4
-  local config_dir profile reference resolved manifest='' final name file found='{}' parents
+  local config_dir profile reference resolved manifest='' backend_manifest='' final name file found='{}' parents
   local -A decoded seen
   local -a files pending references resolutions=()
 
@@ -181,7 +181,7 @@ sf_profile_resolve() {
     resolved=$REPLY
     case ${reference%% *} in
       system) [[ -f $resolved && -r $resolved ]] ;;
-      hooks) [[ -f $resolved && -x $resolved ]] ;;
+      hooks) [[ -d $resolved && -x $resolved/run ]] ;;
       *) [[ -d $resolved && -x $resolved/run ]] ;;
     esac || {
       sf_profile_fail "invalid ${reference%% *} reference: ${reference#* }"
@@ -193,11 +193,21 @@ sf_profile_resolve() {
           sf_profile_validation_error "$manifest" "invalid component manifest: $REPLY"
         return 1
       }
+      backend_manifest=$manifest
+    elif [[ $reference == 'hooks '* ]]; then
+      sf_profile_manifest "$resolved" && manifest=$(sf_jsonc_read "$REPLY" 2>&1) || {
+        [[ -n $SF_PROFILE_ERROR ]] ||
+          sf_profile_validation_error "$manifest" "invalid component manifest: $resolved"
+        return 1
+      }
+      sf_jq -en --argjson manifest "$manifest" '
+        include "lib/profile"; $manifest | hook_manifest
+      ' >/dev/null || sf_profile_fail "invalid hook manifest: $resolved" || return
     fi
     resolutions+=( "$reference" "$resolved" )
   done
 
-  final=$(sf_jq -cnce --argjson profile "$profile" --argjson manifest "$manifest" \
+  final=$(sf_jq -cnce --argjson profile "$profile" --argjson manifest "$backend_manifest" \
     --arg share "$SF_SHARE" --arg home "${HOME:+${HOME:A}}" '
       include "lib/profile";
       ($ARGS.positional | [range(0; length; 2) as $at | {key:.[$at], value:.[$at + 1]}] |

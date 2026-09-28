@@ -69,8 +69,8 @@ collect() { lines+=( "$1" ); }
 typeset overflow="$tmp/overflow" overflow_capture="$tmp/overflow-capture"
 cat >"$overflow" <<'ZSH'
 #!/usr/bin/env zsh
-print -rn -- ${(l:80::o:)}
-print -rn -u2 -- ${(l:80::e:)}
+print -rn -- 'head'${(l:72::o:)}'tail'
+print -rn -u2 -- 'head'${(l:72::e:)}'tail'
 print -rn -u3 -- ${(l:80::c:)}
 ZSH
 chmod +x "$overflow"
@@ -82,6 +82,9 @@ result=( "${reply[@]}" )
 (( result[exit_code] == 0 && result[interrupted] == 0 && result[stdout_bytes] == 17 &&
    result[stderr_bytes] == 17 && result[control_bytes] > 16 && ! ${#lines} )) ||
   fail 'runner did not bound each capture channel'
+[[ $(<"$overflow_capture/stdout") == *tail &&
+   $(<"$overflow_capture/stderr") == *tail ]] ||
+  fail 'runner did not retain the captured tail'
 
 # Interruption while streaming settles the result and stops the whole command group.
 typeset interrupt="$tmp/interrupt" marker="$tmp/started" child_file="$tmp/child"

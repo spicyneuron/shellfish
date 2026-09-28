@@ -5,6 +5,7 @@ setopt no_aliases no_bg_nice no_multios pipe_fail
 (( $+functions[sf_process_run] )) || source "$SF_ROOT/lib/process.zsh"
 (( $+functions[sf_jq] )) || source "$SF_ROOT/lib/jq.zsh"
 (( $+functions[sf_scratch_directory] )) || source "$SF_ROOT/lib/scratch.zsh"
+(( $+functions[sf_run_component_bound] )) || source "$SF_ROOT/libexec/run/component.zsh"
 
 typeset -g SF_RUN_TOOL_ERROR=''
 
@@ -74,48 +75,16 @@ sf_run_tool_refused() {
   ')
 }
 
-sf_run_tool_bound() {
-  local source=$1 destination=$2
-  integer limit=$3 bytes room
-  local marker=$'[output truncated]\n'
-  bytes=$(wc -c <"$source") || return
-  if (( bytes <= limit )); then
-    cat "$source" >"$destination"
-  elif (( limit <= ${#marker} )); then
-    print -rn -- "${marker[1,limit]}" >"$destination"
-  else
-    room=$(( limit - ${#marker} ))
-    print -rn -- "$marker" >"$destination" && tail -c "$room" "$source" >>"$destination"
-  fi
-}
-
 # Apply one tool fd 3 line as it arrives. The view waits for a completed exit.
 sf_run_tool_line() {
   local record
   local -A line
   [[ -z $SF_TOOL_RESULT[error] ]] || return 0
-  sf_jq_fields -cn --arg raw "$1" --argjson data "$SF_TOOL_RESULT[data]" \
-    --argjson templates "$SF_TOOL_RESULT[templates]" \
-    --argjson fields "$SF_TOOL_PLAN[fields]" \
-    --argjson preview "$SF_TOOL_PLAN[preview]" \
-    --arg name "$SF_TOOL_PLAN[name]" --argjson input "$SF_TOOL_PLAN[input]" \
-    --arg id "$SF_TOOL_PLAN[id]" '
-      include "lib/fields";
-      include "lib/profile";
-      include "libexec/run/component";
-      ($raw | try fromjson catch null |
-        component_update($fields; $data; $templates; $name; $input; $preview;
-          {type:"_draft",id:$id,name:$name})) as $update |
-      if $update == null then entry("valid"; "false")
-      else
-        entry("valid"; "true"),
-        entry("states"; [$update.states[] | tojson] | join("\n")),
-        entry("data"; $update.data | tojson),
-        entry("templates"; $update.templates | tojson),
-        entry("draft"; $update.draft | tojson)
-      end,
-      ("ok" | field)
-    ' || { SF_TOOL_RESULT[error]=invalid; return 1; }
+  sf_run_component_update "$1" '' "$SF_TOOL_RESULT[data]" \
+    "$SF_TOOL_RESULT[templates]" "$SF_TOOL_PLAN[fields]" "$SF_TOOL_PLAN[preview]" \
+    "$SF_TOOL_PLAN[name]" "$SF_TOOL_PLAN[input]" \
+    "{\"type\":\"_draft\",\"id\":\"$SF_TOOL_PLAN[id]\",\"name\":\"$SF_TOOL_PLAN[name]\"}" ||
+    { SF_TOOL_RESULT[error]=invalid; return 1; }
   line=( "${reply[@]}" )
   [[ $line[valid] == true ]] || { SF_TOOL_RESULT[error]=invalid; return 1; }
   for record in ${(f)line[states]}; do
@@ -222,8 +191,8 @@ sf_run_tool_execute() {
   fi
   bounded_stderr="$capture/stderr.bounded"
   bounded_stdout="$capture/stdout.bounded"
-  sf_run_tool_bound "$capture/stderr" "$bounded_stderr" $max_capture || return 1
-  sf_run_tool_bound "$capture/stdout" "$bounded_stdout" $max_capture || return 1
+  sf_run_component_bound "$capture/stderr" "$bounded_stderr" $max_capture || return 1
+  sf_run_component_bound "$capture/stdout" "$bounded_stdout" $max_capture || return 1
   if (( process[exit_code] )) && grep -qs $'✗' "$capture/sandbox.log"; then denied=1; fi
   REPLY=$(sf_jq -cn --rawfile stdout "$bounded_stdout" --rawfile stderr "$bounded_stderr" \
     --argjson exit_code "$process[exit_code]" --argjson denied "$denied" \

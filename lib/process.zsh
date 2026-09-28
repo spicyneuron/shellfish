@@ -113,19 +113,17 @@ sf_process_stop() {
 }
 
 sf_process_capture_stream() {
-  local pipe=$1 output=$2 chunk stored_chunk
-  integer limit=$3 input_fd output_fd room stored=0
+  setopt local_options no_multibyte
+  local pipe=$1 output=$2 chunk stored=''
+  integer limit=$3 input_fd output_fd
   local LC_ALL=C
 
   exec {input_fd}<"$pipe" && exec {output_fd}>"$output" || return 1
   while sysread -i $input_fd -s 4096 chunk; do
-    room=$(( limit - stored ))
-    if (( room > 0 )); then
-      stored_chunk=${chunk[1,room]}
-      print -rn -u $output_fd -- "$stored_chunk"
-      (( stored += ${#stored_chunk} ))
-    fi
+    stored+=$chunk
+    (( ${#stored} <= limit )) || stored=${stored[-limit,-1]}
   done
+  print -rn -u $output_fd -- "$stored"
   exec {input_fd}<&-
   exec {output_fd}>&-
 }
