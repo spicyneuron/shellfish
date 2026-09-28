@@ -2,7 +2,6 @@ emulate -R zsh
 setopt no_aliases no_bg_nice no_multios pipe_fail
 
 (( $+functions[sf_environment_load] )) || source "$SF_ROOT/lib/environment.zsh"
-(( $+functions[sf_process_run] )) || source "$SF_ROOT/lib/process.zsh"
 (( $+functions[sf_scratch_directory] )) || source "$SF_ROOT/lib/scratch.zsh"
 (( $+functions[sf_run_component_begin] )) || source "$SF_ROOT/libexec/run/component.zsh"
 
@@ -40,12 +39,8 @@ sf_run_hook_manifest() {
 }
 
 sf_run_hook_complete() {
-  local directory=$1 outcome
   local -A settled
-  sf_run_component_capture "$directory" "$SF_HOOK_PLAN[max_capture]" 0 ||
-    { REPLY='cannot capture hook result'; return 1; }
-  outcome=$REPLY
-  sf_run_component_complete "$SF_COMPONENT[values]" "$outcome" ||
+  sf_run_component_complete "$SF_COMPONENT[values]" "$1" ||
     { REPLY='cannot decode hook result'; return 1; }
   settled=( "${reply[@]}" )
   if [[ -n $settled[result] ]]; then
@@ -62,9 +57,9 @@ sf_run_hooks() {
   setopt local_options no_err_exit
   local session=$1 lifecycle=$2 content=$3 turn_state=$4
   shift 4
-  local command input config_dir directory='' error='' name component
+  local command input config_dir directory error='' name component
   local -a hooks environment
-  local -A process SF_COMPONENT=( action '' reason '' payload '' live 0 )
+  local -A SF_COMPONENT=( action '' reason '' payload '' live 0 )
   integer max_capture model_feedback=0
 
   SF_RUN_HOOK_ERROR=''
@@ -124,32 +119,28 @@ sf_run_hooks() {
       component=$REPLY
       sf_scratch_directory hook || { error='cannot prepare hook capture'; break; }
       directory=$REPLY
-      process=()
-      sf_run_component_begin "$session" "$component" ||
+      if ! sf_run_component_begin "$session" "$component"; then
         error='cannot emit hook draft'
-      if [[ -z $error ]] && sf_process_run "$directory" "${SF_RUN[cwd]:A}" "$input" "$max_capture" \
-          sf_run_component_line /usr/bin/env "${environment[@]}" "$command/run" "$@"; then
-        process=( "${reply[@]}" )
-        if (( process[interrupted] )); then
-          SF_RUN[signal_status]=$process[exit_code]
-          error="cannot run $lifecycle hook"
-        elif [[ $SF_COMPONENT[error] == invalid ]]; then
-          error="$lifecycle hook returned invalid control: $command"
-        elif [[ -n $SF_COMPONENT[error] ]]; then
-          error=$SF_COMPONENT[error]
-        elif (( process[exit_code] )); then
-          error="$lifecycle hook failed with status $process[exit_code]: $command"
-          [[ ! -s $directory/stderr ]] || error+=": $(<"$directory/stderr")"
-        elif (( process[control_bytes] > max_capture )); then
-          error="$lifecycle hook output exceeds capture limit: $command"
-        else
-          sf_run_hook_complete "$directory" || error=$REPLY
-        fi
-      elif [[ -z $error ]]; then
-        error=$SF_PROCESS_ERROR
+      elif ! sf_run_component_execute "$directory" "${SF_RUN[cwd]:A}" "$input" "$max_capture" \
+          /usr/bin/env "${environment[@]}" "$command/run" "$@"; then
+        error=$REPLY
+      else
+        case $reply[1] in
+          (interrupted)
+            SF_RUN[signal_status]=$reply[2]
+            error="cannot run $lifecycle hook" ;;
+          (invalid) error="$lifecycle hook returned invalid control: $command" ;;
+          (overflow) error="$lifecycle hook output exceeds capture limit: $command" ;;
+          (*)
+            if (( reply[2] )); then
+              error="$lifecycle hook failed with status $reply[2]: $command"
+              [[ ! -s $directory/stderr ]] || error+=": $(<"$directory/stderr")"
+            else
+              sf_run_hook_complete "$REPLY" || error=$REPLY
+            fi ;;
+        esac
       fi
       rm -rf -- "$directory"
-      directory=''
       # A draft that nothing settled leaves no trace.
       sf_run_component_clear || error=${error:-cannot emit hook draft}
       (( model_feedback |= SF_COMPONENT[model_feedback] ))

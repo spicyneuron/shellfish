@@ -1,12 +1,13 @@
 emulate -R zsh
 setopt no_aliases no_multios pipe_fail
 
+(( $+functions[sf_process_run] )) || source "$SF_ROOT/lib/process.zsh"
+
 typeset -gA SF_COMPONENT=()
 
 sf_run_component_begin() {
   SF_COMPONENT=( session "$1" values "$2" error '' live 0
     action '' reason '' payload '' )
-  [[ ${3:-1} == 1 ]] || return 0
   local draft
   draft=$(jq -c '.draft | select(.user_text != "")' <<<"$2") || return 1
   [[ -n $draft ]] || return 0
@@ -30,7 +31,8 @@ sf_run_component_line() {
         entry("valid"; "true"),
         entry("states"; [$update.states[] | tojson] | join("\n")),
         entry("component"; $update.component | tojson),
-        entry("draft"; $update.component.draft | tojson),
+        entry("draft"; $update.component.draft |
+          if .user_text == $component.draft.user_text then "" else tojson end),
         entry("action"; $update.control.action // ""),
         entry("reason"; $update.control.reason // ""),
         entry("payload"; $update.control | (.argv // .profile) |
@@ -45,21 +47,42 @@ sf_run_component_line() {
       { SF_COMPONENT[error]=$REPLY; return 1; }
   done
   SF_COMPONENT[values]=$line[component]
-  sf_run_emit "$line[draft]" ||
-    { SF_COMPONENT[error]='cannot emit component draft'; return 1; }
-  SF_COMPONENT[live]=1
+  if [[ -n $line[draft] ]]; then
+    sf_run_emit "$line[draft]" ||
+      { SF_COMPONENT[error]='cannot emit component draft'; return 1; }
+    SF_COMPONENT[live]=1
+  fi
   [[ -z $line[action] ]] || SF_COMPONENT+=( action "$line[action]"
     reason "$line[reason]" payload "$line[payload]" )
 }
 
-sf_run_component_capture() {
-  local directory=$1 limit=$2 code=$3 suffix=${4:-}
-  sf_run_component_bound "$directory/stdout" "$directory/stdout.bounded" "$limit" &&
-    sf_run_component_bound "$directory/stderr" "$directory/stderr.bounded" "$limit" || return 1
-  REPLY=$(jq -cn --rawfile stdout "$directory/stdout.bounded" \
-    --rawfile stderr "$directory/stderr.bounded" --argjson exit_code "$code" \
-    --arg suffix "$suffix" '
-    {output:{stdout:$stdout,stderr:($stderr + $suffix),exit_code:$exit_code},ran:true}')
+# Run a prepared command into CAPTURE, streaming fd 3 as component lines. reply
+# is (status exit_code) with status ok, interrupted, invalid, or overflow; ok
+# leaves the bounded outcome in REPLY. Failure leaves a message in REPLY.
+sf_run_component_execute() {
+  local capture=$1 limit=$4 state=ok
+  local -A process
+  sf_process_run "$@[1,4]" sf_run_component_line "$@[5,-1]" ||
+    { REPLY=$SF_PROCESS_ERROR; return 1; }
+  process=( "${reply[@]}" )
+  if (( process[interrupted] )); then
+    state=interrupted
+  elif [[ $SF_COMPONENT[error] == invalid ]]; then
+    state=invalid
+  elif [[ -n $SF_COMPONENT[error] ]]; then
+    REPLY=$SF_COMPONENT[error]
+    return 1
+  elif (( process[control_bytes] > limit )); then
+    state=overflow
+  else
+    sf_run_component_bound "$capture/stdout" "$capture/stdout.bounded" "$limit" &&
+      sf_run_component_bound "$capture/stderr" "$capture/stderr.bounded" "$limit" &&
+      REPLY=$(jq -cn --rawfile stdout "$capture/stdout.bounded" \
+        --rawfile stderr "$capture/stderr.bounded" --argjson exit_code "$process[exit_code]" '
+        {output:{stdout:$stdout,stderr:$stderr,exit_code:$exit_code},ran:true}') ||
+      { REPLY='cannot capture component output'; return 1; }
+  fi
+  reply=( $state $process[exit_code] )
 }
 
 sf_run_component_complete() {

@@ -185,7 +185,7 @@ SF_TEST_EVENTS="$events" zsh -f "$entry" run --jsonl --session-create \
 [[ -f $failed && $(<"$hook_error") == *'session_start hook failed with status 9:'* ]] ||
   fail 'failed startup did not retain its session and diagnostic'
 jq -se '
-  map(.type) == ["_session_load","session","system","state","_draft","hook_result"] and
+  map(.type) == ["_session_load","session","system","state","hook_result"] and
   .[-1].user_text == "startup display" and .[-1].model_text == "startup context"
 ' "$events" >/dev/null || fail 'a failed creation lost its durable prefix'
 jq -se 'map(.type) == ["session","system","state","hook_result"]' \

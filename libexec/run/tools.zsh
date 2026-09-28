@@ -2,10 +2,9 @@ emulate -R zsh
 setopt no_aliases no_bg_nice no_multios pipe_fail
 
 (( $+functions[sf_environment_load] )) || source "$SF_ROOT/lib/environment.zsh"
-(( $+functions[sf_process_run] )) || source "$SF_ROOT/lib/process.zsh"
 (( $+functions[sf_jq] )) || source "$SF_ROOT/lib/jq.zsh"
 (( $+functions[sf_scratch_directory] )) || source "$SF_ROOT/lib/scratch.zsh"
-(( $+functions[sf_run_component_bound] )) || source "$SF_ROOT/libexec/run/component.zsh"
+(( $+functions[sf_run_component_execute] )) || source "$SF_ROOT/libexec/run/component.zsh"
 
 typeset -g SF_RUN_TOOL_ERROR=''
 
@@ -74,9 +73,8 @@ sf_run_tool_execute() {
   local execution_input=$SF_TOOL_PLAN[execution_input] sandbox=$SF_TOOL_PLAN[sandbox]
   local read_paths=$SF_TOOL_PLAN[read_paths] write_paths=$SF_TOOL_PLAN[write_paths]
   local cwd=$SF_RUN[cwd] capture stdin
-  local expose darwin_temp='' temp_dir=${TMPDIR:-/tmp} diagnostic=''
+  local expose darwin_temp='' temp_dir=${TMPDIR:-/tmp}
   local -a arguments process_command sandbox_arguments temp_paths
-  local -A process
   integer max_capture=$SF_TOOL_PLAN[max_capture]
 
   SF_RUN_TOOL_ERROR=''
@@ -139,30 +137,17 @@ sf_run_tool_execute() {
   else
     process_command=( /usr/bin/env "${arguments[@]}" )
   fi
-  if ! sf_process_run "$capture" "${cwd:A}" "${stdin:A}" "$max_capture" \
-      sf_run_component_line "${process_command[@]}"; then
-    SF_RUN_TOOL_ERROR=$SF_PROCESS_ERROR
-    return 1
+  sf_run_component_execute "$capture" "${cwd:A}" "${stdin:A}" "$max_capture" \
+    "${process_command[@]}" || { SF_RUN_TOOL_ERROR=$REPLY; return 1; }
+  case $reply[1] in
+    (interrupted) return $reply[2] ;;
+    (invalid) SF_RUN_TOOL_ERROR='tool returned invalid control data'; return 1 ;;
+    (overflow) sf_run_tool_refused 'tool result exceeds capture limit' 1 true; return ;;
+  esac
+  if (( reply[2] )) && grep -qs $'✗' "$capture/sandbox.log"; then
+    REPLY=$(jq -c '.output.stderr += "\n<sandbox_notice>A denial was detected during this tool call. This does not necessarily mean the tool failed.</sandbox_notice>"' <<<"$REPLY") ||
+      { SF_RUN_TOOL_ERROR='cannot decode tool result'; return 1; }
   fi
-  process=( "${reply[@]}" )
-  if (( process[interrupted] )); then
-    return $process[exit_code]
-  fi
-  if [[ $SF_COMPONENT[error] == invalid ]]; then
-    SF_RUN_TOOL_ERROR='tool returned invalid control data'
-    return 1
-  elif [[ -n $SF_COMPONENT[error] ]]; then
-    SF_RUN_TOOL_ERROR=$SF_COMPONENT[error]
-    return 1
-  elif (( process[control_bytes] > max_capture )); then
-    sf_run_tool_refused 'tool result exceeds capture limit' 1 true
-    return
-  fi
-  if (( process[exit_code] )) && grep -qs $'✗' "$capture/sandbox.log"; then
-    diagnostic=$'\n<sandbox_notice>A denial was detected during this tool call. This does not necessarily mean the tool failed.</sandbox_notice>'
-  fi
-  sf_run_component_capture "$capture" "$max_capture" "$process[exit_code]" "$diagnostic" ||
-    { SF_RUN_TOOL_ERROR='cannot decode tool result'; return 1; }
   } always {
     rm -rf -- "$capture"
     rm -f -- "$stdin"
