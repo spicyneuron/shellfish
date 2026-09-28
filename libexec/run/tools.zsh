@@ -159,12 +159,17 @@ sf_run_tool_execute() {
 }
 
 sf_run_tool_complete() {
-  local component=$1 outcome=$2 result
-  sf_run_component_complete "$component" "$outcome" ||
-    { SF_RUN_TOOL_ERROR="cannot finish tool result: $SF_TOOL_PLAN[name]"; return 1; }
-  local -A settled=( "${reply[@]}" )
-  result=$settled[result]
-  REPLY=$(jq -cn --argjson request "$SF_TOOL_PLAN[request]" --argjson outcome "$outcome" \
-    '$request + {tool_response:$outcome.output}') || return 1
-  reply=( result "$result" post_request "$REPLY" )
+  sf_jq_fields -cn --argjson component "$1" --argjson outcome "$2" \
+    --argjson request "$SF_TOOL_PLAN[request]" '
+    include "lib/fields";
+    include "lib/session";
+    include "lib/profile";
+    include "libexec/run/component";
+    {type:"tool_result",id:$request.tool_use_id,name:$request.tool_name,
+     input:$request.tool_input,exit_code:$outcome.output.exit_code} +
+      component_texts($component; $outcome) |
+    if canonical_tool_result then entry("result"; tojson),
+      entry("post_request"; $request + {tool_response:$outcome.output} | tojson), ("ok" | field)
+    else error("invalid tool result") end
+  ' || { SF_RUN_TOOL_ERROR="cannot finish tool result: $SF_TOOL_PLAN[name]"; return 1; }
 }

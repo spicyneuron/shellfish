@@ -1,11 +1,8 @@
 include "lib/session";
 include "lib/profile";
 
-# The action fields of one fd 3 line, valid for the lifecycle.
-def component_action($lifecycle):
-  ({user_prompt_submit:["block","handoff","session_update"],
-    permission_request:["allow","deny"], pre_tool_use:["deny"],
-    stop:["continue"]}[$lifecycle // ""] // []) as $actions |
+# The action fields of one fd 3 line, valid when the action is one of $actions.
+def component_action($actions):
   (.action | IN($actions[])) and
   if .action == "handoff" then keys == ["action","argv"] and
     (.argv | type == "array" and length > 0 and all(.[]; type == "string"))
@@ -28,7 +25,7 @@ def component_update($component):
   if type == "object" then . else {"": null} end |
   with_entries(select(.key | IN("action","argv","profile","reason"))) as $control |
   if ((keys - component_templates - ($control | keys) - ["state","data"]) | length == 0) and
-    ($control == {} or ($control | component_action($component.draft.lifecycle))) and
+    ($control == {} or ($control | component_action($component.actions // []))) and
     ((has("state") | not) or (.state | type == "array" and
       all(.[]; type == "object" and ({type:"state"} + . | canonical_state)))) and
     ((has("data") | not) or (.data | type == "object" and
@@ -44,14 +41,12 @@ def component_update($component):
          $component.name; $component.input; {}; $data)})})}
   else null end;
 
-# The settled record: the draft's identity with the texts its outcome renders.
-def component_result($component; $outcome):
+# The presentation an outcome settles to, without empty texts.
+def component_texts($component; $outcome):
   def render($template): render_template($template; $component.name; $component.input;
     $outcome.output; $component.data);
   $component.templates as $templates |
-  ($component.draft | del(.user_text) |
-    if has("lifecycle") then .type = "hook_result" else .type = "tool_result" |
-      . + {input:$component.input,exit_code:$outcome.output.exit_code} end) +
+  ($component.draft | with_entries(select(.key == "user_preview_lines"))) +
   ({user_text:render(if $outcome.ran then $templates.user_text_done
       else $templates.user_text_skipped end),
     model_text:render($templates.model_text)} | with_entries(select(.value != "")));

@@ -32,15 +32,29 @@ sf_run_hook_manifest() {
     include "lib/session";
     include "libexec/run/component";
     if $manifest | hook_manifest then
-      component_plan($manifest; {}; $name; $input; {type:"_draft",lifecycle:$lifecycle,id:$id})
+      component_plan($manifest; {}; $name; $input; {type:"_draft",lifecycle:$lifecycle,id:$id}) +
+        {actions:({user_prompt_submit:["block","handoff","session_update"],
+          permission_request:["allow","deny"],pre_tool_use:["deny"],
+          stop:["continue"]}[$lifecycle] // [])}
     else error("invalid hook manifest") end
   ' 2>/dev/null) || { REPLY="invalid hook manifest: $command"; return 1; }
 }
 
 sf_run_hook_complete() {
+  local lifecycle=$1 outcome=$2
   local -A settled
-  sf_run_component_complete "$SF_COMPONENT[values]" "$1" ||
-    { REPLY='cannot decode hook result'; return 1; }
+  sf_jq_fields -cn --argjson component "$SF_COMPONENT[values]" --argjson outcome "$outcome" \
+    --arg lifecycle "$lifecycle" --arg id "$SF_RUN[hook_id]" '
+    include "lib/fields";
+    include "lib/session";
+    include "lib/profile";
+    include "libexec/run/component";
+    {type:"hook_result",lifecycle:$lifecycle,id:$id} + component_texts($component; $outcome) |
+    if (has("user_text") or has("model_text")) | not then entry("result"; "")
+    elif canonical_hook_result then entry("result"; tojson)
+    else error("invalid hook result") end,
+    entry("model_feedback"; has("model_text") | tostring), ("ok" | field)
+  ' || { REPLY='cannot decode hook result'; return 1; }
   settled=( "${reply[@]}" )
   if [[ -n $settled[result] ]]; then
     sf_run_append "$SF_COMPONENT[session]" "$settled[result]" || return
@@ -135,7 +149,7 @@ sf_run_hooks() {
               error="$lifecycle hook failed with status $reply[2]: $command"
               [[ ! -s $directory/stderr ]] || error+=": $(<"$directory/stderr")"
             else
-              sf_run_hook_complete "$REPLY" || error=$REPLY
+              sf_run_hook_complete "$lifecycle" "$REPLY" || error=$REPLY
             fi ;;
         esac
       fi

@@ -80,21 +80,6 @@ sf_run_component_execute() {
   reply=( $state $process[exit_code] )
 }
 
-sf_run_component_complete() {
-  sf_jq_fields -cn --argjson component "$1" --argjson outcome "$2" '
-    include "lib/fields";
-    include "lib/session";
-    include "lib/profile";
-    include "libexec/run/component";
-    component_result($component; $outcome) |
-    if (if has("lifecycle") then canonical_hook_result else canonical_tool_result end) then
-      entry("result"; if has("lifecycle") and .user_text == null and .model_text == null
-        then "" else tojson end),
-      entry("model_feedback"; .model_text != null | tostring), ("ok" | field)
-    else error("invalid component result") end
-  '
-}
-
 sf_run_component_clear() {
   (( SF_COMPONENT[live] )) || return 0
   local draft
