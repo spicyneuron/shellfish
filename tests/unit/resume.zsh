@@ -15,6 +15,8 @@ typeset s_failed="$tmp/failed.jsonl"
 typeset s_bad="$tmp/bad.jsonl"
 typeset s_state_only="$tmp/state_only.jsonl"
 typeset s_state_tail="$tmp/state_tail.jsonl"
+typeset s_hook_model="$tmp/hook_model.jsonl"
+typeset s_tool_model="$tmp/tool_model.jsonl"
 
 make_header() {
   jq -cn '{type:"session",format_version:1,cwd:"/tmp",created:"2026-08-18T10:00:00Z",
@@ -66,13 +68,19 @@ print -r -- '{"type":"user","content":[{"type":"text","text":"latest prompt"}]}'
 print -r -- '{"type":"state","name":"preview/first","value":1}' >>"$s_state_tail"
 print -r -- '{"type":"state","name":"preview/last","value":2}' >>"$s_state_tail"
 
+# Model-only results fall back to their lifecycle or tool name.
+make_header >"$s_hook_model"
+print -r -- '{"type":"hook_result","lifecycle":"stop","id":"1","model_text":"data"}' >>"$s_hook_model"
+make_header >"$s_tool_model"
+print -r -- '{"type":"tool_result","id":"c1","name":"shell","input":{},"exit_code":0,"model_text":"ok"}' >>"$s_tool_model"
+
 # Summarize resume candidates.
 sf_resume_load "$s_empty" "$s_system" "$s_context" "$s_user" "$s_torn" "$s_assistant" "$s_tool_res" \
-  "$s_failed" "$s_bad" "$s_state_only" "$s_state_tail"
-(( ${#SF_RESUME_PATHS} == 11 ))
-(( ${#SF_RESUME_TIMES} == 11 ))
-(( ${#SF_RESUME_PAIRS} == 11 ))
-(( ${#SF_RESUME_PREVIEWS} == 11 ))
+  "$s_failed" "$s_bad" "$s_state_only" "$s_state_tail" "$s_hook_model" "$s_tool_model"
+(( ${#SF_RESUME_PATHS} == 13 ))
+(( ${#SF_RESUME_TIMES} == 13 ))
+(( ${#SF_RESUME_PAIRS} == 13 ))
+(( ${#SF_RESUME_PREVIEWS} == 13 ))
 
 assert_equal custom/claude-3 "$SF_RESUME_PAIRS[1]"
 assert_equal '(empty session)' "$SF_RESUME_PREVIEWS[1]"
@@ -87,12 +95,14 @@ assert_equal '?/?' "$SF_RESUME_PAIRS[9]"
 assert_equal '(unreadable)' "$SF_RESUME_PREVIEWS[9]"
 assert_equal 'STATE preview/only' "$SF_RESUME_PREVIEWS[10]"
 assert_equal 'STATE preview/last' "$SF_RESUME_PREVIEWS[11]"
+assert_equal stop "$SF_RESUME_PREVIEWS[12]"
+assert_equal shell "$SF_RESUME_PREVIEWS[13]"
 
 # Render and accept a changed selection.
 zle() { :; }
 COLUMNS=60
 sf_resume_update_display
-[[ $PREDISPLAY == 'Resume session (1 - 11 of 11)'$'\n\n'* &&
+[[ $PREDISPLAY == 'Resume session (1 - 13 of 13)'$'\n\n'* &&
    $PREDISPLAY == *$'\n› 1  '* ]] || fail 'resume picker did not render its selection'
 KEYS=$'\e[B'
 sf_resume_move

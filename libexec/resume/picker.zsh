@@ -58,7 +58,7 @@ sf_resume_load() {
       if . == null then "(unreadable)"
       elif .type == "session" then "(empty session)"
       elif .type == "system" then "SYSTEM"
-      elif .type == "hook_result" then ((.user_text // "") | one_line)
+      elif .type == "hook_result" then (.user_text // .lifecycle)
       elif .type == "state" then ("STATE " + (.name | tostring))
       elif .type == "user" then
         ([.content[]? | select(.type == "text") | .text] | join(""))
@@ -66,7 +66,7 @@ sf_resume_load() {
         (([.content[]? |
           if .type == "text" then .text
           else empty end] | last) // "AGENT")
-      elif .type == "tool_result" then (.user_text // "" | one_line)
+      elif .type == "tool_result" then (.user_text // .name)
       elif .type == "error" then .user_text
       else "(no summary)" end;
     [inputs] as $lines |
