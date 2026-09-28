@@ -248,6 +248,30 @@ sf_tui_submit next
 assert_equal submit "$REPLY"
 assert_equal next "$SF_PRESENT_SUBMITTED"
 
+# A blocked prompt displays hook output, but never becomes a user message.
+sf_tui_reset
+sf_tui_terminal_reset
+SF_PRESENT_STATE=idle
+sf_tui_submit /help
+assert_equal submit "$REPLY"
+sf_tui_transcript 79 20
+[[ $SF_PRESENT_VIEWPORT_TEXT != *'/help'* ]] ||
+  fail 'submitted prompt rendered before the core accepted it'
+assert_equal 0 "$SF_PRESENT_SECTION_ID"
+SF_PRESENT_STATE=working
+pump '{"type":"hook_result","lifecycle":"user_prompt_submit","id":"1","user_text":"Help notice"}'
+sf_tui_transcript 79 20
+[[ $SF_PRESENT_VIEWPORT_TEXT == *'Help notice'* &&
+    $SF_PRESENT_VIEWPORT_TEXT != *'/help'* ]] ||
+  fail 'blocked prompt rendered a user section'
+assert_equal 0 "$SF_PRESENT_SECTION_ID"
+sf_tui_reset
+pump '{"type":"user","content":[{"type":"text","text":"accepted"}]}'
+sf_tui_transcript 79 20
+[[ $SF_PRESENT_VIEWPORT_TEXT == *'accepted'* ]] ||
+  fail 'accepted prompt did not render from the core record'
+assert_equal 1 "$SF_PRESENT_SECTION_ID"
+
 # Stop on failed permission replies.
 sf_tui_reset
 sf_tui_terminal_reset

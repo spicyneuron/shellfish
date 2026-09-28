@@ -72,7 +72,7 @@ def record_actions($mode; $window):
   if .type == "assistant" then
     (if $mode == "load" then response_actions else [] end) + usage_actions($window)
   elif .type == "user" then
-    if $mode == "load" then message_actions("user"; .content[0].text) else [] end
+    message_actions("user"; .content[0].text)
   elif .type == "system" then
     if $mode == "load" then message_actions("system"; .content) else [] end
   elif .type == "error" then
@@ -83,7 +83,7 @@ def record_actions($mode; $window):
   elif .type == "hook_result" then
     [["execution_end", .id, hook_class, result_text, preview,
       (if .lifecycle == "session_start" then "system"
-       elif .lifecycle == "user_prompt_submit" then "user"
+       elif .lifecycle == "user_prompt_submit" then ""
        else "agent" end)]]
   elif .type == "session" then (.profile | profile_actions)
   elif .type == "state" then []

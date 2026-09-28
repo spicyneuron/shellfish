@@ -233,10 +233,9 @@ def test_queued_submits_keep_committed_history():
         session.send(b"alpha\r")
         terminal.wait_for(
             "the first turn to remain active",
-            lambda: "─ user" in terminal.everything().lower()
-            and ready.exists()
-            and not terminal.turn_finished(),
+            lambda: ready.exists() and not terminal.turn_finished(),
         )
+        assert "─ user" not in terminal.everything().lower(), terminal.dump()
         session.send(b"two\rthree\rdraft")
         terminal.wait_for(
             "the prompts to queue",

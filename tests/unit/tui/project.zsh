@@ -42,7 +42,7 @@ message_delta | 1 | reasoning | weighing | 40
 message_end
 usage | 2 ↑ 1 ↓ | 40' "$REPLY"
 
-# Loaded prompts and system text become messages; live ones are already shown.
+# User records render in both modes; system text is loaded only on replay.
 project load \
   '{"type":"user","content":[{"type":"text","text":"Hello"}]}' \
   '{"type":"system","content":"be brief"}'
@@ -55,7 +55,9 @@ message_end' "$REPLY"
 project live \
   '{"type":"user","content":[{"type":"text","text":"Hello"}]}' \
   '{"type":"system","content":"be brief"}'
-assert_equal '' "$REPLY"
+assert_equal 'message_start | user
+message_delta | 0 | text | Hello |
+message_end' "$REPLY"
 
 # Tool calls update one execution and settle it with their own preview hints.
 project live \
@@ -86,7 +88,7 @@ project load \
   '{"type":"hook_result","lifecycle":"pre_tool_use","id":"3","model_text":"before"}' \
   '{"type":"hook_result","lifecycle":"stop","id":"4","model_text":"later"}'
 assert_equal 'execution_end | 1 | context |  | default | system
-execution_end | 2 | context |  | default | user
+execution_end | 2 | context |  | default |
 execution_end | 3 | context |  | default | agent
 execution_end | 4 | context |  | default | agent' "$REPLY"
 project load \

@@ -78,15 +78,7 @@ sf_tui_submit() {
   [[ $SF_PRESENT_STATE == idle && -n $submitted ]] || return 0
   SF_PRESENT_SUBMITTED=$submitted
   sf_tui_record_prompt "$submitted"
-  sf_tui_prompt_message "$submitted" || return 1
   REPLY=submit
-}
-
-# A submitted prompt is shown locally; its durable record repeats nothing.
-sf_tui_prompt_message() {
-  sf_tui_action message_start user &&
-    sf_tui_action message_delta 0 text "$1" '' &&
-    sf_tui_action message_end
 }
 
 sf_tui_cancel() {
@@ -245,7 +237,6 @@ sf_tui_exec_finish() {
       SF_PRESENT_QUEUE=( "${(@)SF_PRESENT_QUEUE[2,-1]}" )
       if ! sf_tui_client_command "$SF_PRESENT_SUBMITTED"; then
         SF_PRESENT_STATE=queued
-        sf_tui_prompt_message "$SF_PRESENT_SUBMITTED" || return 1
       fi
     fi
   fi
@@ -365,7 +356,6 @@ sf_tui_controller() {
     if [[ $SF_PRESENT_STATE == working ]]; then
       SF_PRESENT_QUEUE=( "$initial" )
     else
-      sf_tui_prompt_message "$initial" || return 1
       sf_tui_turn "$initial" || return 1
     fi
   fi

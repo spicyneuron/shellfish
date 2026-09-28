@@ -288,12 +288,19 @@ sf_tui_accept() {
       BUFFER=''
       CURSOR=0
       SF_PRESENT_ACTION=submit
-      if ! sf_tui_repaint_checked || ! sf_tui_terminal_stage; then
+      if ! sf_tui_repaint_checked; then
         SF_PRESENT_ACTION=''
         [[ $SF_PRESENT_STATE == stopped ]] || sf_tui_stop 'cannot stage chat rows'
         return 0
       fi
-      sf_tui_draw_pending || return 1
+      if (( SF_PRESENT_SAFE_ROWS )); then
+        if ! sf_tui_terminal_stage; then
+          SF_PRESENT_ACTION=''
+          sf_tui_stop 'cannot stage chat rows'
+          return 0
+        fi
+        sf_tui_draw_pending || return 1
+      fi
       if ! zle accept-line; then
         SF_PRESENT_ACTION=''
         sf_tui_stop 'cannot commit chat rows'

@@ -7,8 +7,8 @@ typeset -ga SF_PRESENT_ACTIONS=()
 typeset -g SF_PRESENT_CONTEXT_WINDOW=''
 typeset -g SF_TUI_PROJECT_MODE=live
 
-# MODE is the record policy this batch starts in: "live" skips the durable
-# records a client already rendered, "load" expands them.
+# MODE is the record policy this batch starts in: "live" skips streamed
+# assistant content, "load" expands it.
 sf_tui_project() {
   local mode=$1 projected record
   local -a fields

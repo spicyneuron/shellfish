@@ -174,9 +174,11 @@ sf_tui_bind
 [[ $(bindkey -M sf-permission a) == *sf_tui_insert ]]
 [[ $(bindkey -M sf-permission d) == *sf_tui_insert ]]
 
-# Stop when a submitted prompt cannot be staged.
+# Stop when pending chat rows cannot be staged on submission.
 typeset saved_stage=$functions[sf_tui_terminal_stage]
+typeset saved_repaint=$functions[sf_tui_repaint_checked]
 sf_tui_terminal_stage() { return 1; }
+sf_tui_repaint_checked() { SF_PRESENT_SAFE_ROWS=1; }
 SF_PRESENT_STATE=idle
 SF_PRESENT_ERROR=''
 SF_PRESENT_ACTION=''
@@ -186,3 +188,4 @@ assert_equal '' "$SF_PRESENT_ACTION"
 assert_equal stopped "$SF_PRESENT_STATE"
 assert_equal 'cannot stage chat rows' "$SF_PRESENT_ERROR"
 functions[sf_tui_terminal_stage]=$saved_stage
+functions[sf_tui_repaint_checked]=$saved_repaint
