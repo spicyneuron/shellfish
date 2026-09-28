@@ -78,8 +78,10 @@ sf_test_profile child "{
   \"max_requests_per_turn\":4,\"max_tool_calls_per_request\":4,
   \"max_capture_bytes\":4096
 }"
-print -r -- '#!/usr/bin/env zsh' 'exit 0' >"$tmp/stop-hook"
-chmod +x "$tmp/stop-hook"
+mkdir -p "$tmp/stop-hook"
+print -r -- '{}' >"$tmp/stop-hook/manifest.json"
+print -rl -- '#!/usr/bin/env zsh' 'exit 0' >"$tmp/stop-hook/run"
+chmod +x "$tmp/stop-hook/run"
 sf_test_profile child-stop "{
   \"backend\":{\"adapter\":\"$backend\"},
   \"request\":{\"model\":\"test\"},
@@ -118,7 +120,7 @@ jq -e -s --arg id "$id" '
 ' "$session" >/dev/null || fail 'parent result or slot transitions are wrong'
 
 # The hidden child is not a candidate for automatic resume discovery.
-source "$ROOT/libexec/resume/discovery.zsh"
+sf_test_source libexec/resume/discovery.zsh
 sf_session_directory || fail 'cannot locate resume directory'
 typeset resume_dir=$REPLY
 mkdir -p "$resume_dir"
@@ -297,7 +299,7 @@ fork_id=$(jq -r -s '[.[] | select(.type == "state" and (.name | startswith("agen
 fork_child="$tmp/.agent-$fork_id.jsonl"
 assert_canonical_session "$fork_child"
 jq -e -s --slurpfile parent "$fork_parent" '
-  .[0] == $parent[0][0] and
+  .[0] == $parent[0] and
   (.[1:4] == $parent[1:4]) and
   .[4] == {type:"state",name:"agents/child",value:true} and
   (.[5:] | map(.type)) == ["user","assistant"] and
@@ -355,7 +357,7 @@ print -r -- '{"type":"user","content":[{"type":"text","text":"fork now"}]}' >>"$
       exit $?
     fi
     sleep 0.01
-    (( tries++ ))
+    (( ++tries ))
   done
   exit 1
 ) &

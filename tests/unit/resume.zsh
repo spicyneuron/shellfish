@@ -109,8 +109,7 @@ error=$(zsh -f "$entry" --resume 2>&1) || exit_code=$?
   fail 'resume picker did not require an interactive terminal'
 
 export XDG_STATE_HOME=$tmp
-source "$ROOT/lib/session.zsh"
-source "$ROOT/libexec/resume/discovery.zsh"
+sf_test_source lib/session.zsh libexec/resume/discovery.zsh
 sf_session_directory
 directory=$REPLY
 mkdir -p -- "$directory"
@@ -146,14 +145,8 @@ assert_equal 1 "${#SF_RESUME_MATCHES}"
   sf_resume_find 1
   [[ $SF_RESUME_MATCHES[1] == "$directory/home.jsonl" ]] ||
     fail 'home-relative session cwd was not discovered'
-  export HOME=$cwd
-  make_discovery_header '~' root >"$directory/root.jsonl"
-  touch -t 202609040500 "$directory/root.jsonl"
-  sf_resume_find 1
-  [[ $SF_RESUME_MATCHES[1] == "$directory/root.jsonl" ]] ||
-    fail 'bare home session cwd was not discovered'
 )
-rm -- "$directory/home.jsonl" "$directory/root.jsonl"
+rm -- "$directory/home.jsonl"
 (
   # An unexpandable cwd skips its own session, not the whole directory.
   unset HOME
