@@ -1,12 +1,13 @@
 #!/usr/bin/env zsh
 
 source "${0:A:h:h:h}/_helpers.zsh"
+sf_test_source lib/jq.zsh
 sf_test_tmp skills
 source "$ROOT/share/lib/skills.zsh"
 
 tool="$ROOT/share/tools/skill/run"
 project="$tmp/project"
-config="$tmp/config"
+config="$tmp/config/shellfish"
 home="$tmp/home"
 mkdir -p "$project/.agents/skills" "$config/skills" "$home/.agents/skills"
 
@@ -93,25 +94,48 @@ if (cd "$project" && print -rn -- '{"name":"hidden"}' | HOME="$home" \
 fi
 
 # Prompt references load each valid skill once, including user-only skills.
-hook="$ROOT/share/hooks/skills"
+sf_test_frozen_profile
+SF_TEST_PROFILE=$(jq -c --arg hook "$ROOT/share/hooks/skills" \
+  '.hooks.user_prompt_submit=[$hook]' <<<"$SF_TEST_PROFILE")
+session="$tmp/skills.jsonl"
+(cd "$project" && sf_test_session "$session")
 control="$tmp/prompt-skills.json"
-print -rn -- 'Use $shared and $config-only, then $shared. Ignore $hidden, $missing, and foo$personal.' |
-  (cd "$project" && HOME="$home" SHELLFISH_CONFIG_DIR="$config" \
-    zsh -f "$hook" user_prompt_submit 3>"$control")
+HOME="$home" SHELLFISH_CONFIG_DIR="$config" sf_test_run \
+  'Use $shared and $config-only, then $shared. Ignore $hidden, $missing, and foo$personal.' \
+  "$session" >"$control"
 jq -e -s '
-  length == 3 and
+  map(select(.type == "hook_result")) | length == 1 and
   (.[0].user_text | startswith("Loaded $shared:\n# shared instructions")) and
   (.[0].user_text | contains("# shared instructions")) and
   (.[0].user_text | contains("<skill") | not) and
   (.[0].model_text | contains("<skill name=\"shared\" directory=\"")) and
   (.[0].model_text | contains("# shared instructions")) and
   (.[0].model_text | contains("description: project description") | not) and
-  (.[1].user_text | startswith("Loaded $config-only:\n# config-only instructions")) and
-  (.[1].model_text | contains("# config-only instructions")) and
-  (.[2].user_text | startswith("Loaded $hidden:\n# hidden instructions")) and
-  (.[2].model_text | contains("# hidden instructions")) and
-  all(.[]; .finalize == true)
+  (.[0].user_text | contains("Loaded $config-only:\n# config-only instructions")) and
+  (.[0].user_text | contains("Loaded $hidden:\n# hidden instructions")) and
+  (.[0].model_text | [scan("<context script=\"skills\">")] | length == 3) and
+  (.[0].model_text | [scan("# shared instructions")] | length == 1) and
+  (.[0].model_text | contains("# config-only instructions") and contains("# hidden instructions"))
 ' "$control" >/dev/null
-print -rn -- 'No skill here' | (cd "$project" && HOME="$home" \
-  SHELLFISH_CONFIG_DIR="$config" zsh -f "$hook" user_prompt_submit 3>"$control")
-[[ ! -s $control ]]
+sf_jq -e -s '
+  include "lib/profile";
+  include "lib/session";
+  .[1:] | session_messages[0].content[0].text |
+  contains("# shared instructions") and contains("# config-only instructions") and
+  contains("# hidden instructions")
+' "$session" >/dev/null
+for prompt in 'No skill here' '$missing'; do
+  HOME="$home" SHELLFISH_CONFIG_DIR="$config" sf_test_run "$prompt" "$session" >"$control"
+  jq -e -s 'all(.[]; .type != "hook_result")' "$control" >/dev/null
+done
+for name in shared hidden; do
+  printf '%6000s\ntail-%s\n' '' "$name" >>"$project/.agents/skills/$name/SKILL.md"
+done
+SF_TEST_PROFILE=$(jq -c '.max_capture_bytes=1024' <<<"$SF_TEST_PROFILE")
+(cd "$project" && sf_test_session "$session")
+HOME="$home" sf_test_run '$shared $hidden' "$session" >"$control"
+jq -e -s 'map(select(.type == "hook_result")) | length == 1 and
+  all(.[0] | .user_text,.model_text; startswith("[output truncated]") and
+    contains("tail-hidden") and (utf8bytelength <= 1024))' "$session" >/dev/null
+sf_jq -e -s 'include "lib/profile"; include "lib/session";
+  .[1:] | session_messages[0].content[0].text | contains("tail-hidden")' "$session" >/dev/null

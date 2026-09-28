@@ -278,7 +278,7 @@ def test_prompt_hook_hands_off_to_new_session():
 
 
 def test_fork_restores_removed_user_prompt_as_draft():
-    session = Session(explicit_session=True, hooks={"user_prompt_submit": None})
+    session = Session(explicit_session=True, hooks={"fork": None})
     fork = session.explicit_session.with_name("explicit_fork_1.jsonl")
     try:
         session.send(b"original prompt\r")

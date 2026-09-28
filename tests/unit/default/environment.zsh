@@ -4,7 +4,7 @@ source "${0:A:h:h:h}/_helpers.zsh"
 sf_test_tmp default-environment
 
 # Model context emitted by the Git checkout prompt hook.
-settled() { jq -rs 'map(select(has("model_text"))) | last.model_text // ""' "$1"; }
+settled() { jq -rs 'map(select(.type == "hook_result")) | last.model_text // ""' "$1"; }
 
 # Capture project context through the default startup list.
 typeset environment_bin="$tmp/environment-bin"
@@ -16,7 +16,7 @@ EOF
 chmod +x "$environment_bin/tree"
 # Record Git identity transitions.
 typeset git_environment="$ROOT/share/hooks/git/environment/run"
-typeset git_prompt="$ROOT/share/hooks/git/change"
+typeset git_prompt="$ROOT/share/hooks/git/change/run"
 typeset git_bin="$tmp/git-environment-bin" git_state="$tmp/git-state"
 typeset git_session="$tmp/git-session.jsonl" git_control="$tmp/git-control.json" git_output
 mkdir "$git_bin"
@@ -43,7 +43,7 @@ print -r -- 'branch:main' >"$git_state"
 sf_test_config
 sf_test_profile default "{\"extend\":[\"@default\"],
   \"backend\":{\"adapter\":\"$ROOT/tests/fixtures/backend\"},
-  \"request\":{\"model\":\"test\"},\"hooks\":{\"user_prompt_submit\":[]}}"
+  \"request\":{\"model\":\"test\"},\"hooks\":{\"user_prompt_submit\":[\"git/change\"]}}"
 startup() {
   rm -f "$tmp/startup.jsonl"
   PATH="$environment_bin:$git_bin:$PATH" GIT_STATE="$git_state" \
@@ -66,7 +66,7 @@ jq -e -s '
     contains("abc123 Test commit") and contains("status-file") and
     (contains("Recent files:") | not))
 ' "$tmp/startup.jsonl" >/dev/null || fail 'default startup context or state ordering changed'
-jq -c 'select(.type == "state")' "$tmp/startup.jsonl" >"$git_session"
+jq -c 'select(.type == "session" or .type == "state")' "$tmp/startup.jsonl" >"$git_session"
 print -r -- '{"type":"state","name":"git/other","value":"ignored"}' >>"$git_session"
 print -r -- $'#!/bin/sh\nexit 124' >"$environment_bin/tree"
 print -r -- 'commit:0123456789abcdef' >"$git_state"
@@ -86,34 +86,32 @@ jq -e -s 'any(.[]; .type == "_draft" and .user_text == "Loading git environment�
 print -r -- 'branch:main' >"$git_state"
 
 git_change() {
-  PATH="$git_bin:$PATH" GIT_STATE="$git_state" SHELLFISH_SESSION="$git_session" \
-    zsh -f "$git_prompt" user_prompt_submit 3>"$git_control"
+  PATH="$git_bin:$PATH" GIT_STATE="$git_state" \
+    sf_test_run ordinary "$git_session" >"$git_control"
   git_output=$(settled "$git_control")
 }
 git_change
 assert_equal '' "$git_output"
-[[ ! -s $git_control ]]
+jq -e -s 'all(.[]; .type != "hook_result")' "$git_control" >/dev/null
 print -r -- 'branch:feature' >"$git_state"
 git_change
 [[ $git_output == *main* && $git_output == *feature* ]]
 [[ $git_output == '<context script="git/change">'$'\n'*$'\n</context>' ]]
-jq -e -s 'map(select(has("user_text"))) | last.user_text == "Git checkout changed:\nmain → feature"' \
+jq -e -s 'map(select(.type == "hook_result")) | last.user_text == "Git checkout changed:\nmain → feature"' \
   "$git_control" >/dev/null
-jq -e -s 'map(.state // empty) | last == [{name:"git/identity",value:"branch:feature"}]' \
+jq -e -s 'map(select(.type == "state")) | last.value == "branch:feature"' \
   "$git_control" >/dev/null
-jq -c '.state[]? | {type:"state"} + .' "$git_control" >>"$git_session"
 git_change
 assert_equal '' "$git_output"
-[[ ! -s $git_control ]]
+jq -e -s 'all(.[]; .type != "hook_result")' "$git_control" >/dev/null
 
 print -r -- 'commit:0123456789abcdef' >"$git_state"
 git_change
 [[ $git_output == *feature* && $git_output == *0123456789abcdef* ]]
-jq -e -s 'map(select(has("user_text"))) | last.user_text == "Git checkout changed:\nfeature → detached commit 0123456789abcdef"' \
+jq -e -s 'map(select(.type == "hook_result")) | last.user_text == "Git checkout changed:\nfeature → detached commit 0123456789abcdef"' \
   "$git_control" >/dev/null
-jq -e -s 'map(.state // empty) | last == [{name:"git/identity",value:"commit:0123456789abcdef"}]' \
+jq -e -s 'map(select(.type == "state")) | last.value == "commit:0123456789abcdef"' \
   "$git_control" >/dev/null
-jq -c '.state[]? | {type:"state"} + .' "$git_control" >>"$git_session"
 
 cat >"$git_bin/git" <<'EOF'
 #!/bin/sh
@@ -122,7 +120,7 @@ EOF
 chmod +x "$git_bin/git"
 git_change
 assert_equal '' "$git_output"
-[[ ! -s $git_control ]]
+jq -e -s 'all(.[]; .type != "hook_result")' "$git_control" >/dev/null
 
 PATH="$git_bin:$PATH" zsh -f "$git_environment" session_start \
   3>"$git_control" >"$tmp/git-output"
@@ -141,7 +139,7 @@ GIT_MARKER="$tmp/git-called" PATH="$git_bin:$PATH" SHELLFISH_SESSION="$tmp/empty
 # Ordered command hooks leave ordinary and multiline prompts untouched.
 typeset command_session="$tmp/command.jsonl" command_stream="$tmp/command.stream"
 jq -c --arg root "$ROOT/share/hooks/" '.profile.hooks = {user_prompt_submit:
-  (["help","verbose","new","resume","server","copy","sandbox","user_shell"] |
+  (["help","verbose","new","resume","server","copy","sandbox","user_shell","fork","compact"] |
     map($root + .))}' < <(head -n 1 "$tmp/startup.jsonl") >"$tmp/command-header"
 submit() {
   cp "$tmp/command-header" "$command_session"
@@ -182,4 +180,11 @@ for prompt in '! ' '/copy 0'; do
   jq -e -s 'map(.type) == ["session","hook_result"] and
     (.[1].user_text | startswith("usage: ")) and (.[1] | has("model_text") | not)' \
     "$command_session" >/dev/null
+done
+for prompt in '/fork 0' /fork /compact; do
+  submit "$prompt"
+  jq -e -s --arg prompt "$prompt" 'map(.type) == ["session","hook_result"] and
+    .[1].user_text == (if $prompt == "/fork 0" then "Usage: /fork [N]\n"
+      elif $prompt == "/fork" then "Fork target does not exist.\n"
+      else "Nothing to compact yet.\n" end)' "$command_session" >/dev/null
 done

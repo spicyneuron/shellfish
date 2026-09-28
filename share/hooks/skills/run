@@ -3,7 +3,7 @@
 emulate -R zsh
 setopt no_aliases no_multios pipe_fail
 
-typeset bundled_root=${0:A:h:h} submitted token name file text preview
+typeset bundled_root=${0:A:h:h:h} submitted token name file text preview
 typeset -A paths loaded
 integer index
 
@@ -12,7 +12,6 @@ submitted=${submitted%x}
 [[ $submitted == *\$* ]] || exit 0
 
 source "$bundled_root/lib/skills.zsh" || exit 1
-source "$bundled_root/lib/hook.zsh" || exit 1
 sf_skills_discover "$bundled_root" "${SHELLFISH_CONFIG_DIR-}" "$PWD" true
 for (( index = 1; index <= ${#reply}; index += 3 )); do
   paths[$reply[index]]=$reply[index+2]
@@ -28,5 +27,7 @@ while IFS= read -r token; do
   preview=${preview%'</skill>'}
   preview=${preview%$'\n'}
   while [[ $preview == $'\n'* ]]; do preview=${preview#$'\n'}; done
-  sf_hook_context skills "Loaded \$$name:"$'\n'"$preview" "$text" || exit 1
+  (( ${#loaded} == 1 )) || print -rn -- $'\n\n'
+  print -rn -- "Loaded \$$name:"$'\n'"$preview"
+  print -ru2 -- "<context script=\"skills\">"$'\n'"$text"$'\n'"</context>"
 done < <(print -rn -- "$submitted" | grep -oE '(^|[^[:alnum:]_$])\$[a-z0-9]+(-[a-z0-9]+)*')

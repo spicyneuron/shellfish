@@ -9,12 +9,11 @@ typeset -a argv
 integer explicit=0 suffix=1
 
 fail_compaction() {
-  sf_hook_notice "$1"
+  print -r -- "$1"
   (( ! explicit )) || print -ru3 -- '{"action":"block"}'
   exit 0
 }
 
-source "${0:A:h:h}/lib/hook.zsh" || exit 1
 submitted=$(cat; printf x)
 submitted=${submitted%x}
 
@@ -23,6 +22,12 @@ case $submitted in
     explicit=1
     ;;
   *)
+    jq -es '
+      .[0].profile.context_window as $window |
+      ([.[] | select(.type == "assistant" and .usage != null)] | last) as $measured |
+      $window != null and $measured != null and
+      (($measured.usage.input_tokens + $measured.usage.output_tokens) / $window) >= 0.8
+    ' "$SHELLFISH_SESSION" >/dev/null 2>&1 || exit 0
     draft=$submitted
     ;;
 esac
@@ -38,14 +43,14 @@ if ! jq -ce -s '
   fail_compaction 'Nothing to compact yet.'
 fi
 
-[[ -r ${0:A:h}/compact.md ]] && instruction=$(<"${0:A:h}/compact.md") || {
+[[ -r ${0:A:h}/prompt.md ]] && instruction=$(<"${0:A:h}/prompt.md") || {
   fail_compaction 'Could not read compaction prompt. Original session kept.'
 }
 request=$(jq -cn --arg text "$instruction" \
   '{type:"user",content:[{type:"text",text:$text}]}') || {
   fail_compaction 'Could not prepare summary request. Original session kept.'
 }
-sf_hook_draft 'Compacting conversation…' ||
+print -ru3 -- '{"user_text":"Compacting conversation…"}' ||
   fail_compaction 'Could not report compaction progress. Original session kept.'
 summary=$({ cat -- "$SHELLFISH_SESSION"; print -r -- "$request"; } |
   "$SHELLFISH_EXECUTABLE" backend-request |
@@ -111,5 +116,4 @@ done
 argv=( "$SHELLFISH_EXECUTABLE" --session "$candidate" )
 [[ -z $draft ]] || argv+=( --draft "$draft" )
 jq -cn '$ARGS.positional | {action:"handoff",argv:.}' --args -- "${argv[@]}" >&3 || exit 1
-print -ru3 -- '{"user_text":"","finalize":true}' || exit 1
 exit 0

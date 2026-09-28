@@ -29,7 +29,7 @@
   // Ordered hooks run only when listed here. See docs/HARNESS.md.
   "hooks": {
     "session_start": ["project/environment", "git/environment", "project/instructions"],
-    "user_prompt_submit": ["help", "verbose", "new", "resume", "server", "copy", "sandbox", "user_shell", "user_prompt_submit", "skills"]
+    "user_prompt_submit": ["help", "verbose", "new", "resume", "server", "copy", "sandbox", "user_shell", "fork", "compact", "git/change", "skills"]
   },
 
   // "sandbox" enables fence for tools that opt in via their manifest.

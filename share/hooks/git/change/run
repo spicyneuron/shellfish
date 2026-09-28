@@ -3,8 +3,7 @@
 emulate -R zsh
 setopt no_aliases no_bg_nice no_multios pipe_fail
 zmodload zsh/datetime
-source "${0:A:h:h:h}/lib/capped.zsh" || exit 1
-source "${0:A:h:h:h}/lib/hook.zsh" || exit 1
+source "${0:A:h:h:h:h}/lib/capped.zsh" || exit 1
 
 typeset previous branch hash identity text from to
 previous=$(jq -ers '
@@ -35,5 +34,9 @@ from=${previous#*:}
 to=${identity#*:}
 [[ $previous != commit:* ]] || from="detached commit $from"
 [[ $identity != commit:* ]] || to="detached commit $to"
-sf_hook_context git/change "Git checkout changed:"$'\n'"$from → $to" "$text" \
-  "$(jq -cn --arg identity "$identity" '{state:[{name:"git/identity",value:$identity}]}')"
+jq -cn --arg identity "$identity" --arg from "$from" --arg to "$to" '
+  {state:[{name:"git/identity",value:$identity}],data:{from:$from,to:$to},
+   user_text_done:"Git checkout changed:\n${data.from} → ${data.to}",
+   model_text:"<context script=\"git/change\">\n${output.stdout}</context>"}
+' >&3 || exit 1
+print -r -- "$text"

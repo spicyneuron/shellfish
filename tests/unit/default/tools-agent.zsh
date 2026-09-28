@@ -239,7 +239,7 @@ fi
 # without copying the associated child file.
 typeset copied_parent fork_actions="$tmp/fork-actions"
 SHELLFISH_SESSION="$session" SHELLFISH_EXECUTABLE="$ROOT/bin/shellfish" \
-  SHELLFISH_TURN_STATE="$tmp" "$ROOT/share/hooks/fork" \
+  SHELLFISH_TURN_STATE="$tmp" "$ROOT/share/hooks/fork/run" \
   user_prompt_submit 3>"$fork_actions" < <(print -n -- /fork) >/dev/null ||
   fail 'parent fork failed'
 copied_parent=$(jq -r 'select(.action == "handoff") | .argv[2]' "$fork_actions")
