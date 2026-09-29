@@ -1,1 +1,1 @@
-{"user_text_done":"${output.stderr}","user_preview_lines":"full"}
+{"match":{"pattern":"^/(help|h)\\z"},"user_text_done":"${output.stderr}","user_preview_lines":"full"}

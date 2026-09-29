@@ -1,1 +1,1 @@
-{"user_text_done":"${output.stderr}","max_capture_bytes":65536}
+{"match":{"pattern":"(^|[^[:alnum:]_$])\\$[a-z0-9]"},"user_text_done":"${output.stderr}","max_capture_bytes":65536}

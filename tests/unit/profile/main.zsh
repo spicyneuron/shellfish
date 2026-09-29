@@ -68,6 +68,37 @@ sf_jq -en '
   (["full",0,12] | all(.[]; component_preview_hint)) and
   ([null,-1,1.5,"3"] | all(.[]; component_preview_hint | not))
 ' >/dev/null || fail 'manifest validation accepted an invalid value'
+sf_jq -en '
+  include "lib/profile";
+  ({match:{pattern:"^/help\\z"}} | hook_manifest) and
+  ([{match:{pattern:"["}},{match:{pattern:1}},{match:{}},
+    {match:{pattern:"x",other:true}}] | all(.[]; hook_manifest | not)) and
+  ({match:{pattern:"x"},description:"tool",input_schema:{type:"object"},sandbox:false} |
+    tool_manifest | not)
+' >/dev/null || fail 'hook match validation failed'
+typeset item hook_name example
+for item in 'help:/help' 'verbose:/v' 'new:/new' 'resume:/resume' \
+    'server:/server' 'copy:/copy 2' 'sandbox:/sandbox read .' \
+    'user_shell:!echo hi' 'fork:/fork 2' 'skills:$sample'; do
+  hook_name=${item%%:*}
+  example=${item#*:}
+  sf_jq -en --arg prompt "$example" --slurpfile manifest \
+      "$ROOT/share/hooks/$hook_name/manifest.json" '
+    include "lib/profile";
+    $manifest[0] as $hook |
+    ($hook | hook_manifest) and
+    ($prompt | test($hook.match.pattern)) and
+    ("ordinary prompt" | test($hook.match.pattern) | not)
+  ' >/dev/null || fail "bundled hook match failed: $hook_name"
+done
+sf_jq -en --slurpfile manifest "$ROOT/share/hooks/skills/manifest.json" '
+  $manifest[0].match.pattern as $pattern |
+  (["$", "$-", "$Name", "abc$name", "$$name"] | all(.[]; test($pattern) | not)) and
+  (["$name", "$0", "use $name"] | all(.[]; test($pattern)))
+' >/dev/null || fail 'skills match accepted a non-name dollar sign'
+sf_jq -en --slurpfile manifest "$ROOT/share/hooks/user_shell/manifest.json" '
+  "!" | test($manifest[0].match.pattern)
+' >/dev/null || fail 'bare shell command lost its usage hook'
 # Tool manifests are read live from the resolved folders.
 sf_profile_tools "$REPLY"
 jq -e '

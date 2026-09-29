@@ -98,7 +98,7 @@ backends/ADAPTER/
 
 A bare name in `system`, `tools`, `hooks`, or `backend.adapter` resolves in its kind's top-level user directory first, then bundled `share/`. Profile inheritance does not affect component lookup. `@KIND/NAME`, such as `@tools/shell`, selects the bundled component explicitly; `~/path` and absolute paths are also available. Only components named in a resolved profile are active. Missing or invalid active components fail resolution, except hook manifests, which are validated each time the hook runs. Unused files are inert.
 
-Tools and hooks each require an executable `run` and a `manifest.json` or `manifest.jsonc`. Hook manifests declare presentation templates, with empty defaults. Tool manifests also declare their model-facing schema and execution policy. See [`HARNESS.md`](HARNESS.md#presentation) for templates and outcomes. References are frozen in the session, while manifest edits affect later invocations only.
+Tools and hooks each require an executable `run` and a `manifest.json` or `manifest.jsonc`. Hook manifests declare presentation templates, with empty defaults, and may match lifecycle input before running. Tool manifests also declare their model-facing schema and execution policy. See [`HARNESS.md`](HARNESS.md#presentation) for templates and outcomes. References are frozen in the session, while manifest edits affect later invocations only.
 
 Use profile `env` for non-secret settings such as `{"SHELLFISH_MAX_ACTIVE_AGENTS": "2"}`. It merges by variable name through inheritance and is frozen in the session header. Do not put credentials there.
 

@@ -138,4 +138,27 @@ rm "$BLOCK_TWO"; : >"$FAIL_TWO"; new_session later-error
 sf_test_run ordered "$session" >"$stream" 2>"$tmp/later.err" && fail 'later hook succeeded'
 jq -e -s 'map(select(.type == "hook_result") | .user_text) == ["one: ordered"] and
   .[-1].type == "error"' "$session" >/dev/null || fail 'later failure lost durable prefix'
+rm "$FAIL_TWO"
+for name in one two three; do
+  print -r -- '{"match":{"pattern":"^ordered\\z"},"user_text_done":"${output.stdout}"}' \
+    >"$hooks/$name/manifest.json"
+done
+new_session matched; sf_test_run ordered "$session" >"$stream" || fail 'matched hooks failed'
+jq -e -s 'map(select(.type == "hook_result") | .user_text) ==
+  ["one: ordered","two: ordered","three: ordered"]' "$session" >/dev/null ||
+  fail 'matching hook order changed'
+new_session unmatched; sf_test_run other "$session" >"$stream" || fail 'unmatched hooks failed'
+jq -e -s 'all(.[]; .type != "hook_result") and any(.[]; .type == "user")' \
+  "$session" >/dev/null || fail 'unmatched hooks ran or prompt was lost'
+new_session multiline; sf_test_run $'ordered\n' "$session" >"$stream" ||
+  fail 'multiline prompt matched exact pattern'
+jq -e -s 'all(.[]; .type != "hook_result") and
+  any(.[]; .type == "user" and .content[0].text == "ordered\n")' \
+  "$session" >/dev/null || fail 'multiline prompt was not submitted intact'
+print -r -- '{"match":{"pattern":"["}}' >"$hooks/one/manifest.json"
+new_session invalid-match
+sf_test_run other "$session" >"$stream" 2>"$tmp/match.err" &&
+  fail 'invalid unmatched manifest succeeded'
+[[ $(<"$tmp/match.err") == *'invalid hook manifest'* ]] ||
+  fail 'invalid match diagnostic was lost'
 print -r -- ok

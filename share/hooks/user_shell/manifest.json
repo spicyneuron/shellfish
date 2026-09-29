@@ -1,1 +1,1 @@
-{"user_text_done":"${output.stderr}"}
+{"match":{"pattern":"^![^\\n]*\\z"},"user_text_done":"${output.stderr}"}

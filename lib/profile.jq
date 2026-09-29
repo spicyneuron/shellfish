@@ -72,7 +72,12 @@ def component_manifest($fields):
   ((has("user_preview_lines") | not) or (.user_preview_lines | component_preview_hint)) and
   ((has("max_capture_bytes") | not) or (.max_capture_bytes | capture_bytes));
 
-def hook_manifest: component_manifest([]);
+def hook_manifest:
+  component_manifest(["match"]) and
+  ((has("match") | not) or
+    (.match | type == "object" and keys == ["pattern"] and
+      (.pattern as $pattern | $pattern | type == "string" and
+        (try ("" | test($pattern) | type == "boolean") catch false))));
 
 def tool_manifest:
   component_inputs as $inputs |

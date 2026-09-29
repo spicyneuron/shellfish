@@ -33,11 +33,13 @@ sf_run_hook_manifest() {
     include "lib/session";
     include "libexec/run/component";
     if $manifest | hook_manifest then
-      component_plan($manifest; {}; $name; $input; {type:"_draft",lifecycle:$lifecycle,id:$id}) +
-        {max_capture:($manifest.max_capture_bytes // $max_capture)} +
-        {actions:({user_prompt_submit:["block","handoff","session_update"],
-          permission_request:["allow","deny"],pre_tool_use:["deny"],
-          stop:["continue"]}[$lifecycle] // [])}
+      if $manifest.match == null or ($input | test($manifest.match.pattern)) then
+        component_plan($manifest; {}; $name; $input; {type:"_draft",lifecycle:$lifecycle,id:$id}) +
+          {max_capture:($manifest.max_capture_bytes // $max_capture)} +
+          {actions:({user_prompt_submit:["block","handoff","session_update"],
+            permission_request:["allow","deny"],pre_tool_use:["deny"],
+            stop:["continue"]}[$lifecycle] // [])}
+      else null end
     else error("invalid hook manifest") end
   ' 2>/dev/null) || { REPLY="invalid hook manifest: $command"; return 1; }
 }
@@ -131,6 +133,7 @@ sf_run_hooks() {
       sf_run_hook_manifest "$command" "$name" "$lifecycle" "$content" \
         "$SF_RUN[hook_id]" "$SF_HOOK_PLAN[max_capture]" || { error=$REPLY; break; }
       component=$REPLY
+      [[ $component != null ]] || continue
       max_capture=$(jq -r '.max_capture' <<<"$component") || { error='cannot inspect hook capture limit'; break; }
       sf_scratch_directory hook || { error='cannot prepare hook capture'; break; }
       directory=$REPLY

@@ -1,1 +1,1 @@
-{}
+{"match":{"pattern":"^/(verbose|v)\\z"}}
