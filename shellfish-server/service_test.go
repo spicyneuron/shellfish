@@ -224,6 +224,13 @@ func TestPublicAssets(t *testing.T) {
 			if response.Body.Len() == 0 {
 				t.Error("body is empty")
 			}
+			if asset.path == "/" {
+				for _, reference := range []string{`href="ui.css"`, `src="ui.js"`} {
+					if !strings.Contains(response.Body.String(), reference) {
+						t.Errorf("page missing relative asset reference %q", reference)
+					}
+				}
+			}
 		})
 	}
 }
