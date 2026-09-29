@@ -357,8 +357,7 @@ sf_run_turn() {
         id=$SF_TOOL_PLAN[id]
         name=$SF_TOOL_PLAN[name]
         decision=$SF_TOOL_PLAN[decision]
-        sf_run_component_begin "$session" "$SF_TOOL_PLAN[component]" ||
-          { failure='cannot emit tool draft'; break; }
+        sf_run_component_prepare "$session" "$SF_TOOL_PLAN[component]"
         SF_RUN[active_call]=$id
         SF_RUN[known_result]=''
         if (( call_count > tool_limit )); then
@@ -424,6 +423,7 @@ sf_run_turn() {
         result=$completed[result]
         post_request=$completed[post_request]
         SF_RUN[known_result]=$result
+        sf_run_component_clear || { failure='cannot clear tool draft'; break; }
         sf_run_hooks "$session" post_tool_use "$post_request" \
           "$turn_state" "$name" "$id" || post_error=$SF_RUN_HOOK_ERROR
         sf_run_append "$session" "$result" || { failure=$REPLY; break; }

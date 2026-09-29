@@ -1,3 +1,5 @@
 {
-  "user_text": "Reviewing permission request…"
+  "user_text": "Reviewing sandbox bypass…",
+  "user_text_done": "Sandbox bypass ${data.decision}: ${data.reason}",
+  "user_preview_lines": "full"
 }

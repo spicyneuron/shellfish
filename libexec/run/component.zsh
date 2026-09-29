@@ -5,9 +5,13 @@ setopt no_aliases no_multios pipe_fail
 
 typeset -gA SF_COMPONENT=()
 
-sf_run_component_begin() {
+sf_run_component_prepare() {
   SF_COMPONENT=( session "$1" values "$2" error '' live 0
     action '' reason '' payload '' )
+}
+
+sf_run_component_begin() {
+  sf_run_component_prepare "$@"
   local draft
   draft=$(jq -c '.draft | select(.user_text != "")' <<<"$2") || return 1
   [[ -n $draft ]] || return 0

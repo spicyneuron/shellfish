@@ -77,6 +77,7 @@ sf_test_run ordered "$session" >"$stream" || fail 'ordered tool turn failed'
 jq -eRn '
   [inputs | fromjson] as $events |
   [$events[] | select(.type | IN("assistant","_draft","state_update","tool_result")) |
+    select(.type != "_draft" or .user_text != "") |
     if .type == "assistant" then [.type,.stop]
     elif .type == "state_update" then [.type,.name]
     else [.type,.id,.name,.exit_code?] end] == [

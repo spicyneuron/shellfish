@@ -183,7 +183,9 @@ for manifest in "$ROOT"/share/tools/*/manifest.json; do
 done
 
 for manifest in '.render = {}' '.user_text = "${output.unknown}"' \
-    '.user_permission = "${input.missing}"'; do
+    '.user_permission = "${input.missing}"' \
+    '.user_text_unsandboxed = "${input.missing}"' \
+    '.user_text_done_unsandboxed = "${output.unknown}"'; do
   if jq -c "$manifest" <<<"$valid_manifest" |
       schema_eval 'tool_manifest' >/dev/null 2>&1; then
     fail "tool manifest was accepted: $manifest"

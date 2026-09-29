@@ -146,10 +146,17 @@ jq -eRn '
   ($events | map(select(.type == "hook_result"))[0] |
     .model_text == "pre context" and .user_text == "pre display") and
   ($events | map(select(.type == "tool_result"))[0].model_text | contains("pre denied")) and
-  ($events | map(select(.type == "_draft" and .name == "shell"))[1].user_text) ==
-    "Running shell command:\n" + $command and
+  ([$events[] | select((.type == "_draft" and .name == "shell") or
+      (.type == "hook_result" and .lifecycle == "post_tool_use")) |
+    if .type == "hook_result" then "post"
+    elif .user_text == "" then "clear" else "running" end] ==
+    ["post","running","clear","post"]) and
+  ($events | map(select(.type == "_draft" and .name == "shell" and .user_text != "")) |
+    length == 1 and
+    .[0].user_text == "Running shell command outside the sandbox:\n" + $command) and
   ($events | map(select(.type == "tool_result"))[1] |
-    .user_text == "Ran shell command:\n" + $command + "\noutput\nexit 0" and
+    .user_text == "Ran shell command outside the sandbox:\n" + $command +
+      "\noutput\nexit 0" and
     .model_text == "output\nexit 0")
 ' --arg command "print -r -- ran >>${(q)tool_marker}; print -rn -- output" \
   <"$stream" >/dev/null || fail 'tool lifecycle ordering or rendering was wrong'
@@ -187,7 +194,13 @@ jq -eRn '
   ($events | map(select(.type == "hook_result"))[0] |
     .lifecycle == "permission_request" and
     .model_text == "review context" and .user_text == "review display") and
-  ($events | map(select(.type == "tool_result"))[0].exit_code) == 0
+  ([$events[] | select(.type | IN("hook_result","_draft")) | .type] ==
+    ["hook_result","_draft","_draft"]) and
+  ($events | map(select(.type == "_draft" and .name == "shell" and .user_text != ""))[0].user_text) ==
+    "Running shell command outside the sandbox:\nprint -rn -- approved" and
+  ($events | map(select(.type == "tool_result"))[0] |
+    .exit_code == 0 and
+    .user_text == "Ran shell command outside the sandbox:\nprint -rn -- approved\napproved\nexit 0")
 ' <"$stream" >/dev/null || fail 'permission allow produced the wrong records'
 
 sf_test_hook "$permission" <<'ZSH'
@@ -200,10 +213,12 @@ sf_test_session "$session"
 SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_BYPASS=true \
   sf_test_run permission "$session" >"$stream" || fail 'permission hook deny failed'
 jq -eRn '
-  [inputs | fromjson | select(.type == "tool_result")][0] |
-  .exit_code == 126 and (.model_text | contains("review denied")) and
-  (.user_text | startswith("Did not run shell command:\n")) and
-  (.user_text | endswith("\nreview denied"))
+  [inputs | fromjson] as $events |
+  ($events | any(.type == "_draft" and .name == "shell") | not) and
+  ($events | map(select(.type == "tool_result"))[0] |
+    .exit_code == 126 and (.model_text | contains("review denied")) and
+    (.user_text | startswith("Did not run shell command:\n")) and
+    (.user_text | endswith("\nreview denied")))
 ' <"$stream" >/dev/null || fail 'permission denial did not settle the call'
 
 # If every hook defers, approval falls back to the client.

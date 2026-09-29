@@ -16,7 +16,9 @@
     }
   },
   "user_text": "Running shell command:\n${input.command}",
+  "user_text_unsandboxed": "Running shell command outside the sandbox:\n${input.command}",
   "user_text_done": "Ran shell command:\n${input.command}\n${output.stdout}${output.stderr}",
+  "user_text_done_unsandboxed": "Ran shell command outside the sandbox:\n${input.command}\n${output.stdout}${output.stderr}",
   "user_text_skipped": "Did not run shell command:\n${input.command}\n${output.stderr}",
   "user_permission": "${input.command}",
   "sandbox": true,

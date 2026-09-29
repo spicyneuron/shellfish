@@ -86,7 +86,7 @@ for scenario in protocol capture capture_override silent manifest_silent null; d
     null) manifest='{"user_text":null,"user_text_done":null,"user_text_skipped":null,"model_text":null}' ;;
   esac
   print -r -- "$manifest" >"$hook/manifest.json"
-  sf_test_shell_tool '. + '"$manifest" "$hook/run"
+  sf_test_shell_tool 'del(.user_text_unsandboxed, .user_text_done_unsandboxed) + '"$manifest" "$hook/run"
   for kind in hook tool; do
     session="$tmp/$kind-$scenario.jsonl"
     export COMPONENT_CASE=$scenario COMPONENT_KIND=$kind
@@ -106,7 +106,8 @@ for scenario in protocol capture capture_override silent manifest_silent null; d
       (if $kind == "tool" or ($scenario | IN("protocol","capture","capture_override")) then
         ($results | length) == 1 else ($results | length) == 0 end) and
       if $scenario == "protocol" then
-        [$e[].type] == ["_draft","state_update","_draft","state_update","_draft",$result_type] and
+        [$e[].type] == (["_draft","state_update","_draft","state_update","_draft"] +
+          if $kind == "tool" then ["_draft"] else [] end + [$result_type]) and
         [$e[1],$e[3]] == [{type:"state_update",name:"component/a",value:1},{type:"state_update",name:"component/b",value:2}] and
         [$e[0].user_text,$e[2].user_text,$e[4].user_text] == ["Running " + $name,"Working old","Shown ${literal}"] and
         $results[0].user_text == ("${literal}: literal ${input}|stderr/" +

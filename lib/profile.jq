@@ -82,7 +82,10 @@ def hook_manifest:
 def tool_manifest:
   component_inputs as $inputs |
   component_manifest(["allow_sandbox_bypass", "description", "environment",
-    "input_schema", "sandbox", "user_permission"]) and
+    "input_schema", "sandbox", "user_permission", "user_text_unsandboxed",
+    "user_text_done_unsandboxed"]) and
+  all([.user_text_unsandboxed, .user_text_done_unsandboxed][];
+    . == null or component_template($inputs)) and
   (.description | nul_free_string and length > 0) and
   (.input_schema | type == "object" and .type == "object" and
     ((.properties // {}) | type == "object") and

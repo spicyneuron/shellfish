@@ -32,10 +32,17 @@ sf_run_tool_plan() {
            $input.sandbox_bypass_reason == "" then
          {decision:"failure",reason:"sandbox bypass reason is required"}
        else {decision:"request",reason:$input.sandbox_bypass_reason} end) as $permission |
+      ($profile.sandbox and ($manifest.sandbox // false) and
+        (($input.request_sandbox_bypass // false) | not)) as $sandboxed |
       entry("id"; $id), entry("name"; $name), entry("input"; $input | tojson),
       entry("request";
         {turn_id:$turn,tool_name:$name,tool_use_id:$id,tool_input:$input} | tojson),
-      entry("component"; component_plan($manifest;
+      entry("component"; component_plan(
+        (if $sandboxed then $manifest else
+          $manifest |
+          .user_text=(.user_text_unsandboxed // .user_text) |
+          .user_text_done=(.user_text_done_unsandboxed // .user_text_done)
+        end);
         {user_text:"${name} ${input}",
          user_text_done:"${name} ${input}\n${output.stdout}${output.stderr}",
          user_text_skipped:"${name} ${input}\n${output.stderr}",
@@ -51,8 +58,7 @@ sf_run_tool_plan() {
       entry("max_capture"; $manifest.max_capture_bytes // $profile.max_capture_bytes | tostring),
       entry("execution_input";
         $input | del(.request_sandbox_bypass,.sandbox_bypass_reason) | tojson),
-      entry("sandbox"; $profile.sandbox and ($tool.manifest.sandbox // false) and
-        (($input.request_sandbox_bypass // false) | not) | tostring),
+      entry("sandbox"; $sandboxed | tostring),
       entry("read_paths"; $profile.sandbox_read_paths | join("\n")),
       entry("write_paths"; $profile.sandbox_write_paths | join("\n")),
       ("ok" | field)
@@ -141,6 +147,10 @@ sf_run_tool_execute() {
   else
     process_command=( /usr/bin/env "${arguments[@]}" )
   fi
+  sf_run_component_begin "$session" "$SF_TOOL_PLAN[component]" || {
+    SF_RUN_TOOL_ERROR='cannot emit tool draft'
+    return 1
+  }
   sf_run_component_execute "$capture" "${cwd:A}" "${stdin:A}" "$max_capture" \
     "${process_command[@]}" || { SF_RUN_TOOL_ERROR=$REPLY; return 1; }
   case $reply[1] in

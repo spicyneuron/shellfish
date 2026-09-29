@@ -56,6 +56,8 @@ Hook and tool manifests declare complete text templates. A component settles at 
 
 `user_text` is Running progress. Done or Skipped text and `model_text` are stored at settlement. `user_preview_lines` accepts a line count or `"full"` and applies to both Running and settled text.
 
+Tools may also set `user_text_unsandboxed` and `user_text_done_unsandboxed`. These replace the corresponding templates when a tool runs without its sandbox, whether by approval or harness configuration. If absent, the usual templates apply. A tool that does not run uses `user_text_skipped` instead.
+
 Templates render exactly as configured, with no appended output or client fallback. Empty renderings omit that field. A silent hook creates no result, but every tool call receives one. `${name}` is the tool name or hook reference path. `${input}` is the tool input object or lifecycle stdin text, and `${input.FIELD}` accesses a declared tool input property. `${output.stdout}`, `${output.stderr}`, and `${output.exit_code}` access captures at settlement, including skip reasons and sandbox diagnostics. `${data.KEY}` accesses strings supplied on fd 3.
 
 Substitution is one pass. Strings insert literally, other input values insert as JSON, and missing or null values insert empty. Running progress has no output values. Captured stdout and stderr each retain their tail behind an `[output truncated]` marker when they exceed `max_capture_bytes`. A hook or tool manifest may override the profile limit for that component, with a minimum of `64` bytes.
