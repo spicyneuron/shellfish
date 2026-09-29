@@ -79,7 +79,7 @@ created=$(date -u '+%Y-%m-%dT%H:%M:%SZ') || {
   fail_compaction 'Could not create compacted session. Original session kept.'
 }
 transcript="$SHELLFISH_TURN_STATE/compact.jsonl"
-# Startup records without state, then every state record in source order, so the
+# Startup records without state updates, then every update in source order, so the
 # child reconstructs the same effective state without interpreting names.
 if ! jq -ce -s --rawfile context "$context" --arg created "$created" '
     . as $records |
@@ -87,8 +87,8 @@ if ! jq -ce -s --rawfile context "$context" --arg created "$created" '
       select(.value.type == "user" or .value.type == "assistant") | .key] | first) as $start |
     select($start != null) |
     ($records[0:$start] | .[0].created = $created) as $startup |
-    ($startup[] | select(.type != "state")),
-    ($records[] | select(.type == "state")),
+    ($startup[] | select(.type != "state_update")),
+    ($records[] | select(.type == "state_update")),
     # Carried startup hooks keep their identifiers, so continue past them.
     (([$startup[] | select(.type == "hook_result") | .id | tonumber] | max // 0) + 1 |
       tostring) as $id |

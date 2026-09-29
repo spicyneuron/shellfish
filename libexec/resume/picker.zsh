@@ -59,7 +59,7 @@ sf_resume_load() {
       elif .type == "session" then "(empty session)"
       elif .type == "system" then "SYSTEM"
       elif .type == "hook_result" then (.user_text // .lifecycle)
-      elif .type == "state" then ("STATE " + (.name | tostring))
+      elif .type == "state_update" then ("STATE UPDATE " + (.name | tostring))
       elif .type == "user" then
         ([.content[]? | select(.type == "text") | .text] | join(""))
       elif .type == "assistant" then

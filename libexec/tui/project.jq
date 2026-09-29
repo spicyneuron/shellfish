@@ -86,7 +86,7 @@ def record_actions($mode; $window):
        elif .lifecycle == "user_prompt_submit" then ""
        else "agent" end)]]
   elif .type == "session" then (.profile | profile_actions)
-  elif .type == "state" then []
+  elif .type == "state_update" then []
   else error("unsupported record: " + (.type | tostring))
   end;
 

@@ -175,12 +175,12 @@ SF_TEST_COMPACT_FAIL=1 SHELLFISH_EXECUTABLE="$compact_shellfish" \
 typeset state_source="$tmp/state-source.jsonl"
 head -n 1 "$compact_source" >"$state_source"
 print -r -- \
-  '{"type":"state","name":"git/identity","value":"branch:main"}' \
+  '{"type":"state_update","name":"git/identity","value":"branch:main"}' \
   '{"type":"hook_result","lifecycle":"session_start","id":"1","model_text":"env"}' \
   '{"type":"user","content":[{"type":"text","text":"Hello"}]}' \
-  '{"type":"state","name":"agents/a1b2c3","value":{"session":".agent-a1b2c3.jsonl"}}' \
+  '{"type":"state_update","name":"agents/a1b2c3","value":{"session":".agent-a1b2c3.jsonl"}}' \
   '{"type":"assistant","stop":"end","content":[{"type":"text","text":"Hi"}],"usage":{"input_tokens":1,"output_tokens":1}}' \
-  '{"type":"state","name":"git/identity","value":null}' \
+  '{"type":"state_update","name":"git/identity","value":null}' \
   >>"$state_source"
 typeset state_before=$(shasum <"$state_source")
 compact_status=0
@@ -190,8 +190,8 @@ SHELLFISH_EXECUTABLE="$compact_shellfish" SHELLFISH_SESSION="$state_source" \
 (( compact_status == 0 ))
 assert_canonical_session "$tmp/state-source_compact.jsonl"
 jq -e -s '
-  [.[].type] == ["session","hook_result","state","state","state","hook_result"] and
-  [.[] | select(.type == "state") | [.name, .value]] ==
+  [.[].type] == ["session","hook_result","state_update","state_update","state_update","hook_result"] and
+  [.[] | select(.type == "state_update") | [.name, .value]] ==
     [["git/identity","branch:main"],
      ["agents/a1b2c3",{session:".agent-a1b2c3.jsonl"}],
      ["git/identity",null]] and

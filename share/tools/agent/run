@@ -36,7 +36,7 @@ operation=$(jq -er '
 parent_dir=${SHELLFISH_SESSION:A:h}
 
 # The marker is feature-owned state, appended only after session_start settles.
-if jq -e 'select(.type == "state" and .name == "agents/child")' \
+if jq -e 'select(.type == "state_update" and .name == "agents/child")' \
     "$SHELLFISH_SESSION" >/dev/null 2>&1; then
   fail 'a child agent cannot delegate'
 fi
@@ -55,7 +55,7 @@ fi
 child="$parent_dir/.agent-$agent_id.jsonl"
 if [[ $operation == inspect || $operation == continue ]]; then
   association=$(jq -c -s --arg name "agents/$agent_id" \
-    '[.[] | select(.type == "state" and .name == $name) | .value] | last // empty' \
+    '[.[] | select(.type == "state_update" and .name == $name) | .value] | last // empty' \
     "$SHELLFISH_SESSION") || fail 'cannot read agent association'
   [[ -n $association ]] || fail 'unknown agent_id' 2
   jq -e --arg session ".agent-$agent_id.jsonl" \
@@ -73,8 +73,8 @@ if [[ $operation == inspect || $operation == continue ]]; then
   output=$(jq -c -s --arg id "$agent_id" --argjson association "$association" \
     --argjson working "$working" '
     if length < 2 or .[0].type != "session" or
-       (any(.[1:][]; . == {type:"state",name:"agents/child",value:true}) | not) or
-       (all(.[]; .type | IN("session","system","state","hook_result","user",
+       (any(.[1:][]; . == {type:"state_update",name:"agents/child",value:true}) | not) or
+       (all(.[]; .type | IN("session","system","state_update","hook_result","user",
          "assistant","tool_result","error")) | not) then
       error("invalid agent session")
     else
@@ -94,7 +94,7 @@ if [[ $operation == inspect || $operation == continue ]]; then
     if [[ $working == false ]] && jq -e '.active == true' <<<"$output" >/dev/null; then
       print -r -u3 -- "$(jq -cn --arg name "agents/$agent_id" \
         --arg session ".agent-$agent_id.jsonl" \
-        '{state:[{name:$name,value:{session:$session,active:false}}]}')" ||
+        '{state_update:[{name:$name,value:{session:$session,active:false}}]}')" ||
         fail 'cannot release agent slot'
       output=$(jq -c '.active=false' <<<"$output") || fail 'cannot format inspection'
     fi
@@ -107,8 +107,8 @@ if [[ $operation == inspect || $operation == continue ]]; then
   task=$(jq -r '.task' <<<"$input")
 fi
 
-# A later state record supersedes an earlier reservation.
-count=$(jq -s '[.[] | select(.type == "state" and (.name | startswith("agents/"))) |
+# A later state update supersedes an earlier reservation.
+count=$(jq -s '[.[] | select(.type == "state_update" and (.name | startswith("agents/"))) |
   {key:.name,value:.value}] | from_entries | [.[] | select(.active? == true)] | length' \
   "$SHELLFISH_SESSION") || fail 'cannot read parent state'
 (( count < limit )) || fail "active agent limit reached ($limit)"
@@ -140,13 +140,13 @@ if [[ $operation == start ]]; then
     "$SHELLFISH_EXECUTABLE" run --session-create --session-out "$child" \
       --profile "$profile" >/dev/null || fail 'cannot create agent session'
   fi
-  print -r -- '{"type":"state","name":"agents/child","value":true}' >>"$child" ||
+  print -r -- '{"type":"state_update","name":"agents/child","value":true}' >>"$child" ||
     fail 'cannot mark child session'
 fi
 value=$(jq -cn --arg session ".agent-$agent_id.jsonl" \
   '{session:$session,active:true}') || fail 'cannot reserve agent'
 print -r -u3 -- "$(jq -cn --arg name "agents/$agent_id" --argjson value "$value" \
-  '{state:[{name:$name,value:$value}]}')" || fail 'cannot reserve agent'
+  '{state_update:[{name:$name,value:$value}]}')" || fail 'cannot reserve agent'
 
 if [[ $background == true ]]; then
   output=$("$SHELLFISH_EXECUTABLE" run --background --session "$child" -- "$task")
@@ -154,7 +154,7 @@ if [[ $background == true ]]; then
   if (( result )) || [[ $output != "$child" ]]; then
     print -r -u3 -- "$(jq -cn --arg name "agents/$agent_id" \
       --arg session ".agent-$agent_id.jsonl" \
-      '{state:[{name:$name,value:{session:$session,active:false}}]}')" ||
+      '{state_update:[{name:$name,value:{session:$session,active:false}}]}')" ||
       fail 'cannot release agent slot'
     fail 'cannot launch background agent'
   fi
@@ -165,7 +165,7 @@ fi
 "$SHELLFISH_EXECUTABLE" run --session "$child" -- "$task" >/dev/null 2>&1
 result=$?
 print -r -u3 -- "$(jq -cn --arg name "agents/$agent_id" --arg session ".agent-$agent_id.jsonl" \
-  '{state:[{name:$name,value:{session:$session,active:false}}]}')" ||
+  '{state_update:[{name:$name,value:{session:$session,active:false}}]}')" ||
   fail 'cannot release agent slot'
 output=$(jq -c -s --arg id "$agent_id" --argjson exit_code "$result" '
   {agent_id:$id,exit_code:$exit_code,

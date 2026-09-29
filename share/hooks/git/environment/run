@@ -28,7 +28,7 @@ probe_status=$?
 (( probe_status == 0 )) || git_status=''
 
 jq -cn --arg identity "$identity" '
-  {state:[{name:"git/identity",value:$identity}],
+  {state_update:[{name:"git/identity",value:$identity}],
    user_text_done:"Git environment:\n${output.stdout}",
    model_text:"<context script=\"${name}\">\n${output.stdout}</context>"}
 ' >&3 || exit 1

@@ -17,10 +17,10 @@ case $input in
     [[ $input != bad-update ]] || profile='{}'
     jq -cn --argjson profile "$profile" '{action:"session_update",profile:$profile}' >&3
     print -rn -- 'update context' ;;
-  fail) print -r -u3 -- '{"state":[{"name":"prompt/failed","value":true}],"action":"block"}'; print -rn -u2 -- 'hook broke'; exit 3 ;;
+  fail) print -r -u3 -- '{"state_update":[{"name":"prompt/failed","value":true}],"action":"block"}'; print -rn -u2 -- 'hook broke'; exit 3 ;;
   invalid) print -r -u3 -- '{"action":"deny"}' ;;
-  state) print -r -u3 -- '{"state":[{"name":"prompt/state","value":2}]}' ;;
-  interrupt) print -r -u3 -- '{"state":[{"name":"prompt/started","value":true}],"user_text":"Working"}'
+  state) print -r -u3 -- '{"state_update":[{"name":"prompt/state","value":2}]}' ;;
+  interrupt) print -r -u3 -- '{"state_update":[{"name":"prompt/started","value":true}],"user_text":"Working"}'
     : >"$INTERRUPT_MARKER"; sleep 30 ;;
 esac
 ZSH
@@ -39,13 +39,13 @@ jq -e -s '.[-2].model_text == "update context" and
   fail 'invalid update lost settled result'
 new_session fail; sf_test_run fail "$session" >"$stream" 2>"$tmp/fail.err" && fail 'nonzero hook succeeded'
 [[ $(<"$tmp/fail.err") == *'failed with status 3'*'hook broke'* ]] || fail 'nonzero diagnostic lost'
-jq -e -s 'map(.type) == ["session","state","error"]' "$session" >/dev/null ||
+jq -e -s 'map(.type) == ["session","state_update","error"]' "$session" >/dev/null ||
   fail 'failed hook lost state or applied its action'
 new_session invalid; sf_test_run invalid "$session" >"$stream" 2>"$tmp/invalid.err" && fail 'invalid action succeeded'
 [[ $(<"$tmp/invalid.err") == *'invalid control'* ]] || fail 'invalid action lost its diagnostic'
 jq -e -s 'map(.type) == ["session","error"]' "$session" >/dev/null || fail 'invalid action settled'
 new_session state; sf_test_run state "$session" >"$stream" || fail 'state-only hook failed'
-jq -e -s '.[1] == {type:"state",name:"prompt/state",value:2} and
+jq -e -s '.[1] == {type:"state_update",name:"prompt/state",value:2} and
   (map(.type) | index("hook_result") == null)' "$session" >/dev/null || fail 'state-only update was not durable'
 # Interrupted work retains state, not an unfinished result.
 typeset marker="$tmp/started"
@@ -57,7 +57,7 @@ while (( waited++ < 100 )) && [[ ! -e $marker ]]; do sleep 0.02; done
 [[ -e $marker ]] || fail 'interrupt hook did not start'
 kill -TERM "$pid"; wait "$pid" || interrupted=$?
 (( interrupted == 143 )) || fail 'interrupted hook returned wrong status'
-jq -e -s '.[1] == {type:"state",name:"prompt/started",value:true} and
+jq -e -s '.[1] == {type:"state_update",name:"prompt/started",value:true} and
   (map(.type) | index("hook_result") == null)' "$session" >/dev/null ||
   fail 'interruption lost state or settled unfinished output'
 # Stop receives final assistant text and can continue only with model feedback.

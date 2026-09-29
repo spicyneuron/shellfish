@@ -60,13 +60,13 @@ print -r -- 'not json' >"$s_bad"
 
 # State-only preview.
 make_header >"$s_state_only"
-print -r -- '{"type":"state","name":"preview/only","value":true}' >>"$s_state_only"
+print -r -- '{"type":"state_update","name":"preview/only","value":true}' >>"$s_state_only"
 
 # Trailing state preview.
 make_header >"$s_state_tail"
 print -r -- '{"type":"user","content":[{"type":"text","text":"latest prompt"}]}' >>"$s_state_tail"
-print -r -- '{"type":"state","name":"preview/first","value":1}' >>"$s_state_tail"
-print -r -- '{"type":"state","name":"preview/last","value":2}' >>"$s_state_tail"
+print -r -- '{"type":"state_update","name":"preview/first","value":1}' >>"$s_state_tail"
+print -r -- '{"type":"state_update","name":"preview/last","value":2}' >>"$s_state_tail"
 
 # Model-only results fall back to their lifecycle or tool name.
 make_header >"$s_hook_model"
@@ -93,8 +93,8 @@ assert_equal 'shell err exit 2' "$SF_RESUME_PREVIEWS[7]"
 assert_equal 'Turn interrupted.' "$SF_RESUME_PREVIEWS[8]"
 assert_equal '?/?' "$SF_RESUME_PAIRS[9]"
 assert_equal '(unreadable)' "$SF_RESUME_PREVIEWS[9]"
-assert_equal 'STATE preview/only' "$SF_RESUME_PREVIEWS[10]"
-assert_equal 'STATE preview/last' "$SF_RESUME_PREVIEWS[11]"
+assert_equal 'STATE UPDATE preview/only' "$SF_RESUME_PREVIEWS[10]"
+assert_equal 'STATE UPDATE preview/last' "$SF_RESUME_PREVIEWS[11]"
 assert_equal stop "$SF_RESUME_PREVIEWS[12]"
 assert_equal shell "$SF_RESUME_PREVIEWS[13]"
 

@@ -91,7 +91,7 @@ input=$(cat)
 id=$(jq -r '.tool_use_id' <<<"$input")
 print -rn -- "$input" >"$HOOK_DIR/pre-$id"
 if [[ $id == call_1 ]]; then
-  print -r -u3 -- '{"user_text_done":"pre display","model_text":"pre context","state":[{"name":"pre/call_1","value":true}],"action":"deny","reason":"pre denied"}'
+  print -r -u3 -- '{"user_text_done":"pre display","model_text":"pre context","state_update":[{"name":"pre/call_1","value":true}],"action":"deny","reason":"pre denied"}'
 else
   :
 fi
@@ -106,7 +106,7 @@ sf_test_hook "$post" <<'ZSH'
 input=$(cat)
 id=$(jq -r '.tool_use_id' <<<"$input")
 print -rn -- "$input" >"$HOOK_DIR/post-$id"
-print -rn -u3 -- "{\"user_text_done\":\"post $id\",\"state\":[{\"name\":\"post/$id\",\"value\":true}]}"
+print -rn -u3 -- "{\"user_text_done\":\"post $id\",\"state_update\":[{\"name\":\"post/$id\",\"value\":true}]}"
 ZSH
 export HOOK_DIR=$hook_dir TOOL_MARKER=$tool_marker
 SF_TEST_PROFILE=$(jq -c --arg pre "$pre" --arg later "$later" --arg post "$post" '
@@ -130,16 +130,16 @@ assert_equal call_2 "$(<$hook_dir/later)" 'deny reached the later hook'
 assert_equal ran "$(<$tool_marker)" 'pre-tool denial did not preserve the sibling call'
 jq -eRn '
   [inputs | fromjson] as $events |
-  [$events[] | select(.type | IN("state","hook_result","tool_result")) |
-    if .type == "state" then [.type,.name]
+  [$events[] | select(.type | IN("state_update","hook_result","tool_result")) |
+    if .type == "state_update" then [.type,.name]
     elif .type == "hook_result" then [.type,.lifecycle]
     else [.type,.id,.exit_code] end] == [
-      ["state","pre/call_1"],
+      ["state_update","pre/call_1"],
       ["hook_result","pre_tool_use"],
-      ["state","post/call_1"],
+      ["state_update","post/call_1"],
       ["hook_result","post_tool_use"],
       ["tool_result","call_1",126],
-      ["state","post/call_2"],
+      ["state_update","post/call_2"],
       ["hook_result","post_tool_use"],
       ["tool_result","call_2",0]
     ] and
@@ -162,7 +162,7 @@ sf_test_hook "$permission" <<'ZSH'
 [[ $# == 2 && $1 == shell && $2 == call_1 ]] || exit 2
 input=$(cat)
 print -rn -- "$input" >"$PERMISSION_INPUT"
-print -rn -u3 -- '{"state":[{"name":"permission/state","value":true}],"action":"allow","user_text_done":"review display","model_text":"review context"}'
+print -rn -u3 -- '{"state_update":[{"name":"permission/state","value":true}],"action":"allow","user_text_done":"review display","model_text":"review context"}'
 ZSH
 export PERMISSION_INPUT=$permission_input
 SF_TEST_PROFILE=$(jq -c --arg hook "$permission" '
@@ -182,8 +182,8 @@ jq -e '. == {turn_id:1,tool_name:"shell",tool_use_id:"call_1",tool_input:{
 jq -eRn '
   [inputs | fromjson] as $events |
   ($events | any(.type == "_tool_permission_request") | not) and
-  [$events[] | select(.type | IN("state","hook_result","tool_result")) | .type] ==
-    ["state","hook_result","tool_result"] and
+  [$events[] | select(.type | IN("state_update","hook_result","tool_result")) | .type] ==
+    ["state_update","hook_result","tool_result"] and
   ($events | map(select(.type == "hook_result"))[0] |
     .lifecycle == "permission_request" and
     .model_text == "review context" and .user_text == "review display") and
@@ -243,7 +243,7 @@ typeset post_fail="$tmp/post-fail"
 sf_test_hook "$post_fail" '{"user_text_done":"must not settle"}' <<'ZSH'
 #!/usr/bin/env zsh
 cat >/dev/null
-print -r -u3 -- '{"state":[{"name":"post/failure","value":true}]}'
+print -r -u3 -- '{"state_update":[{"name":"post/failure","value":true}]}'
 exit 3
 ZSH
 SF_TEST_PROFILE=$(jq -c --arg hook "$post_fail" '
@@ -257,9 +257,9 @@ integer post_status=0
 SF_TEST_BACKEND_TOOL_CALL=1 sf_test_run post "$session" >"$stream" || post_status=$?
 (( post_status == 1 )) || fail 'failing post hook did not fail the turn'
 jq -eRn '
-  [inputs | fromjson | select(.type | IN("state","hook_result","tool_result","error"))] as $events |
+  [inputs | fromjson | select(.type | IN("state_update","hook_result","tool_result","error"))] as $events |
   ($events | any(.type == "hook_result") | not) and
-  ($events[-3] | .type == "state" and .name == "post/failure" and .value == true) and
+  ($events[-3] | .type == "state_update" and .name == "post/failure" and .value == true) and
   ($events[-2] | .type == "tool_result" and .id == "call_1" and .exit_code == 0) and
   ($events[-1] | .type == "error" and (.user_text | contains("post_tool_use")))
 ' <"$stream" >/dev/null || fail 'post failure lost or reordered the known outcome'
@@ -372,11 +372,11 @@ cat >"$protocol" <<'ZSH'
 #!/usr/bin/env zsh
 case $(jq -r .command) in
   action)
-    print -r -u3 -- '{"state":[{"name":"tool/before-error","value":true}]}'
+    print -r -u3 -- '{"state_update":[{"name":"tool/before-error","value":true}]}'
     print -r -u3 -- '{"action":"deny"}'
     ;;
   stream)
-    print -r -u3 -- '{"state":[{"name":"tool/live","value":true}]}'
+    print -r -u3 -- '{"state_update":[{"name":"tool/live","value":true}]}'
     : >"$TOOL_MARKER"
     sleep 30
     ;;
@@ -395,8 +395,8 @@ fi
 jq -eRn '[inputs | fromjson][-1] | .type == "error" and
   (.user_text | contains("invalid control"))' <"$stream" >/dev/null ||
   fail 'a tool action was not reported'
-jq -e -s 'map(select(.type == "state")) ==
-  [{type:"state",name:"tool/before-error",value:true}]' "$session" >/dev/null ||
+jq -e -s 'map(select(.type == "state_update")) ==
+  [{type:"state_update",name:"tool/before-error",value:true}]' "$session" >/dev/null ||
   fail 'invalid control lost previously accepted tool state'
 
 # State is durable while the tool is running and remains so after interruption.
@@ -412,13 +412,13 @@ while (( live_waited++ < 100 )) && [[ ! -e $live_marker ]]; do sleep 0.02; done
 (( live_waited <= 100 )) || fail 'tool did not reach its wait'
 live_waited=0
 while (( live_waited++ < 100 )) && ! jq -e -s \
-    'any(.[]; .type == "state" and .name == "tool/live")' "$session" \
+    'any(.[]; .type == "state_update" and .name == "tool/live")' "$session" \
     >/dev/null 2>&1; do sleep 0.02; done
 (( live_waited <= 100 )) || fail 'tool state was not committed while running'
 kill -TERM "$live_pid" 2>/dev/null
 wait "$live_pid" || live_status=$?
 (( live_status == 143 )) || fail 'interrupted tool returned the wrong status'
-jq -e -s 'any(.[]; .type == "state" and .name == "tool/live")' \
+jq -e -s 'any(.[]; .type == "state_update" and .name == "tool/live")' \
   "$session" >/dev/null || fail 'interruption lost committed tool state'
 assert_canonical_session "$session"
 

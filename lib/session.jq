@@ -44,8 +44,8 @@ def canonical_user_message:
   (.content | type == "array" and length == 1 and (.[0] | canonical_text)) and
   (.content[0].text | nul_free_string);
 
-def canonical_state:
-  type == "object" and keys == ["name", "type", "value"] and .type == "state" and
+def canonical_state_update:
+  type == "object" and keys == ["name", "type", "value"] and .type == "state_update" and
   (.name | type == "string" and length <= 128 and
     test("^[A-Za-z0-9][A-Za-z0-9_.:/-]*\\z"));
 
@@ -118,7 +118,7 @@ def context_message($context; $request):
 def session_state:
   reduce .[] as $record
     ({next:"user", calls:[], context:[], hooks:[], messages:[], response:null};
-      if ($record | canonical_state) then .
+      if ($record | canonical_state_update) then .
       elif ($record | canonical_system) then
         if .next == "user" then . else error("system text inside a turn") end
       elif ($record | canonical_hook_result) then

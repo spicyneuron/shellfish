@@ -19,7 +19,7 @@ permission_deny() {
       --arg content "$review_content" --argjson content_set "$review_content_set" '
     {action:"deny",reason:$reason} +
     (if $name == "" then {} else
-      {state:[{name:$name,value:{
+      {state_update:[{name:$name,value:{
         content:(if $content_set == 1 then $content else null end),reason:$reason}}]}
     end)
   ') || exit 1
@@ -35,7 +35,7 @@ permission_resolve() {
     (if $classification.authorization != "unknown" and
         $rank[$classification.authorization] >= $rank[$classification.risk]
      then "allow" else "deny" end) as $decision |
-    {state:[{name:$name,value:{content:$content,reason:$classification.reason}}],
+    {state_update:[{name:$name,value:{content:$content,reason:$classification.reason}}],
       action:$decision} +
     (if $decision == "deny" then {reason:$classification.reason} else {} end)
   ') || exit 1
@@ -90,7 +90,7 @@ records=$(jq -cs --argjson request "$request" '
   . as $records |
   (reduce $records[1:][] as $record
     ({messages:[],context:[],calls:[],response:null};
-      if $record.type == "state" or $record.type == "system" then .
+      if $record.type == "state_update" or $record.type == "system" then .
       elif $record.type == "hook_result" then
         if ($record.model_text // "") == "" then . else .context |= add_context($record) end
       elif $record.type == "error" then .calls=[] | .response=null

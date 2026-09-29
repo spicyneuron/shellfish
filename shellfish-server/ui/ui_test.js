@@ -418,7 +418,7 @@ test("replays the durable session before live work", async () => {
       usage: { input_tokens: 75, cached_tokens: 60, output_tokens: 5 },
     },
     {
-      type: "state",
+      type: "state_update",
       name: "agents/a1b2c3",
       value: { session: ".agent-a1b2c3.jsonl" },
     },
@@ -441,22 +441,22 @@ test("replays the durable session before live work", async () => {
   assert.equal(find(page.output, "assistant").length, 2);
 });
 
-test("accepts canonical state without rendering it", async () => {
+test("accepts canonical state updates without rendering them", async () => {
   const page = await idle();
   const children = page.output.children.slice();
   await page.send(
-    { type: "state", name: "git/identity", value: null },
-    { type: "state", name: "tools:last", value: [1, { ok: true }] },
+    { type: "state_update", name: "git/identity", value: null },
+    { type: "state_update", name: "tools:last", value: [1, { ok: true }] },
   );
   assert.deepEqual(page.output.children, children);
 });
 
-test("rejects malformed state and the removed status alias", async () => {
+test("rejects malformed state updates and the removed status alias", async () => {
   for (const frame of [
-    { type: "state", name: "bad name", value: true },
-    { type: "state", name: "valid\n", value: true },
-    { type: "state", name: "valid/name" },
-    { type: "state", name: "valid/name", value: true, extra: false },
+    { type: "state_update", name: "bad name", value: true },
+    { type: "state_update", name: "valid\n", value: true },
+    { type: "state_update", name: "valid/name" },
+    { type: "state_update", name: "valid/name", value: true, extra: false },
     { type: "_state", working: false },
   ]) {
     const page = await idle();

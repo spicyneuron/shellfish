@@ -26,7 +26,7 @@ sf_run_component_line() {
       include "libexec/run/component";
       ($raw | try fromjson catch null | component_update($component) //
         error("invalid component line")) as $update |
-      entry("states"; [$update.states[] | tojson] | join("\n")),
+      entry("state_updates"; [$update.state_updates[] | tojson] | join("\n")),
       entry("component"; $update.component | tojson),
       entry("draft"; $update.component.draft |
         if .user_text == $component.draft.user_text then "" else tojson end),
@@ -37,7 +37,7 @@ sf_run_component_line() {
       ("ok" | field)
     ' || { SF_COMPONENT[error]=invalid; return 1; }
   line=( "${reply[@]}" )
-  for record in ${(f)line[states]}; do
+  for record in ${(f)line[state_updates]}; do
     sf_run_append "$SF_COMPONENT[session]" "$record" ||
       { SF_COMPONENT[error]=$REPLY; return 1; }
   done

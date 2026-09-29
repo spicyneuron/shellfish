@@ -23,7 +23,7 @@ const assistantRecord = `{"type":"assistant","stop":"end","content":[{"type":"te
 const toolAssistantRecord = `{"type":"assistant","stop":"tool_calls","content":[]}`
 const errorRecord = `{"type":"error","user_text":"backend failed"}`
 const hookDraft = `{"type":"_draft","lifecycle":"user_prompt_submit","id":"1","user_text":"Checking"}`
-const stateRecord = `{"type":"state","name":"agents/a1b2c3","value":{"session":".agent-a1b2c3.jsonl"}}`
+const stateUpdateRecord = `{"type":"state_update","name":"agents/a1b2c3","value":{"session":".agent-a1b2c3.jsonl"}}`
 
 func workDir(t *testing.T) string {
 	t.Helper()
@@ -283,8 +283,8 @@ func TestReplayThenSessionStatusThenLive(t *testing.T) {
 IFS= read -r input
 printf '%s\n' "$input" >'`+recorded+`'
 printf '%s\n' '{"type":"_assistant_message_delta","text":"do"}'
-printf '%s\n' '`+stateRecord+`' >>'`+sessionPath+`'
-printf '%s\n' '`+stateRecord+`'
+printf '%s\n' '`+stateUpdateRecord+`' >>'`+sessionPath+`'
+printf '%s\n' '`+stateUpdateRecord+`'
 `+waitFor(release)+`
 printf '%s\n' '`+userRecord+`' >>'`+sessionPath+`'
 printf '%s\n' '`+userRecord+`'
@@ -297,13 +297,13 @@ printf '%s\n' '`+assistantRecord+`'
 
 	post(t, base+"/turn", userRecord, http.StatusAccepted)
 	session.expectJSON(t, `{"type":"_session_status","working":true}`,
-		`{"type":"_assistant_message_delta","text":"do"}`, stateRecord)
+		`{"type":"_assistant_message_delta","text":"do"}`, stateUpdateRecord)
 
 	// Reattaching while the child is paused succeeds only if state advanced the
 	// server's durable record count.
 	session.body.Close()
 	session = openStream(t, base, http.StatusOK)
-	session.expectRaw(t, strings.TrimSuffix(headerLine(t), "\n"), stateRecord)
+	session.expectRaw(t, strings.TrimSuffix(headerLine(t), "\n"), stateUpdateRecord)
 	session.expectJSON(t, `{"type":"_session_status","working":true}`)
 	if err := os.WriteFile(release, nil, 0o600); err != nil {
 		t.Fatal(err)
@@ -315,7 +315,7 @@ printf '%s\n' '`+assistantRecord+`'
 		t.Fatalf("child input = %q (%v)", got, err)
 	}
 	if got, err := os.ReadFile(sessionPath); err != nil ||
-		string(got) != headerLine(t)+stateRecord+"\n"+userRecord+"\n"+assistantRecord+"\n" {
+		string(got) != headerLine(t)+stateUpdateRecord+"\n"+userRecord+"\n"+assistantRecord+"\n" {
 		t.Fatalf("session = %q (%v)", got, err)
 	}
 }

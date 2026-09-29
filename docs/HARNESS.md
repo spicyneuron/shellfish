@@ -18,7 +18,7 @@ Tools, hooks, and backend adapters are executable component directories. Referen
 
 Scripts run from the session working directory. Shellfish starts each in an isolated process group, terminates ordinary descendants on completion or cancellation, and escalates from `TERM` to `KILL`. Components must finish their own subprocesses; daemonizing is unsupported.
 
-Raw captures and live progress are transient. Only settled text and accepted state records are durable. Replay uses stored text, never manifests.
+Raw captures and live progress are transient. Only settled text and accepted state updates are durable. Replay uses stored text, never manifests.
 
 ### Environment
 
@@ -64,7 +64,7 @@ Substitution is one pass. Strings insert literally, other input values insert as
 
 Hooks and tools send newline-delimited JSON objects to fd 3. `data` supplies string values, such as `{"data":{"branch":"main"}}`. Any template field proposes a replacement, including `""` to silence it. Each valid line updates data and templates, then re-renders Running progress. `user_preview_lines` belongs only in the manifest.
 
-`state` accepts updates such as `[{"name":"example/status","value":{"ready":true}}]`. Each valid line's state is durable immediately, even if the process later fails or is interrupted. Names are at most 128 characters and match `^[A-Za-z0-9][A-Za-z0-9_.:/-]*$`. The latest exact name is effective, and `null` clears it. Hook lifecycle actions are described [below](#hooks). Invalid or oversized control output fails execution. A component starting an untrusted child must close fd 3.
+`state_update` accepts updates such as `{"state_update":[{"name":"example/status","value":{"ready":true}}]}`. Each valid line's updates are durable immediately, even if the process later fails or is interrupted. Names are at most 128 characters and match `^[A-Za-z0-9][A-Za-z0-9_.:/-]*$`. The latest exact name is effective, and `null` clears it. Hook lifecycle actions are described [below](#hooks). Invalid or oversized control output fails execution. A component starting an untrusted child must close fd 3.
 
 ## Tools
 

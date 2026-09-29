@@ -167,7 +167,7 @@ sf_test_hook "$first" '{"user_text_done":"startup display","model_text":"startup
 [[ -f $SHELLFISH_SESSION ]] || exit 2
 jq -se 'map(.type) == ["_session_load","session","system"]' \
   "$SF_TEST_EVENTS" >/dev/null || exit 3
-print -r -u3 -- '{"state":[{"name":"startup/stream","value":true}]}'
+print -r -u3 -- '{"state_update":[{"name":"startup/stream","value":true}]}'
 ZSH
 sf_test_profile stream \
   "{\"extend\": [\"hook\"], \"hooks\": {\"session_start\": [\"$first\", \"...\"]}}"
@@ -178,10 +178,10 @@ SF_TEST_EVENTS="$events" zsh -f "$entry" run --jsonl --session-create \
 [[ -f $failed && $(<"$hook_error") == *'session_start hook failed with status 9:'* ]] ||
   fail 'failed startup did not retain its session and diagnostic'
 jq -se '
-  map(.type) == ["_session_load","session","system","state","hook_result"] and
+  map(.type) == ["_session_load","session","system","state_update","hook_result"] and
   .[-1].user_text == "startup display" and .[-1].model_text == "startup context"
 ' "$events" >/dev/null || fail 'a failed creation lost its durable prefix'
-jq -se 'map(.type) == ["session","system","state","hook_result"]' \
+jq -se 'map(.type) == ["session","system","state_update","hook_result"]' \
   "$failed" >/dev/null || fail 'a failed creation lost its durable prefix'
 
 # Cancel running startup scripts.

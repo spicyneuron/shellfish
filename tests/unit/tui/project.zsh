@@ -141,7 +141,7 @@ message_end' "$REPLY"
 # Model-only events present nothing.
 project live \
   '{"type":"_turn_usage","usage":{"input_tokens":1,"output_tokens":1}}' \
-  '{"type":"state","name":"probe","value":true}'
+  '{"type":"state_update","name":"probe","value":true}'
 assert_equal '' "$REPLY"
 
 # An unsupported or malformed line rejects the whole batch.

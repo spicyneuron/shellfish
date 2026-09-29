@@ -53,8 +53,8 @@ startup() {
 }
 startup
 jq -e -s '
-  [ .[] | select(.type == "state" or .type == "hook_result") ] as $results |
-  ($results | map(.type)) == ["hook_result","state","hook_result","hook_result"] and
+  [ .[] | select(.type == "state_update" or .type == "hook_result") ] as $results |
+  ($results | map(.type)) == ["hook_result","state_update","hook_result","hook_result"] and
   ($results[0].user_text | startswith("Project environment:\n")) and
   ($results[0].model_text | startswith("<context script=\"project/environment\">\n")) and
   ($results[0].model_text | contains("PWD: ") and contains("\n.") and
@@ -66,19 +66,19 @@ jq -e -s '
     contains("abc123 Test commit") and contains("status-file") and
     (contains("Recent files:") | not))
 ' "$tmp/startup.jsonl" >/dev/null || fail 'default startup context or state ordering changed'
-jq -c 'select(.type == "session" or .type == "state")' "$tmp/startup.jsonl" >"$git_session"
-print -r -- '{"type":"state","name":"git/other","value":"ignored"}' >>"$git_session"
+jq -c 'select(.type == "session" or .type == "state_update")' "$tmp/startup.jsonl" >"$git_session"
+print -r -- '{"type":"state_update","name":"git/other","value":"ignored"}' >>"$git_session"
 print -r -- $'#!/bin/sh\nexit 124' >"$environment_bin/tree"
 print -r -- 'commit:0123456789abcdef' >"$git_state"
 startup
-jq -e -s 'any(.[]; .type == "state" and .value == "commit:0123456789abcdef") and
+jq -e -s 'any(.[]; .type == "state_update" and .value == "commit:0123456789abcdef") and
   any(.[]; (.user_text // "" | contains("(detached HEAD)"))) and
   any(.[]; (.model_text // "" | contains("Filesystem context: (skipped, slow file system)") and
     contains("Available commands:") and contains("Available agent skills.")))' \
   "$tmp/startup.jsonl" >/dev/null || fail 'detached startup context was lost'
 print -r -- 'none' >"$git_state"
 startup
-jq -e -s 'all(.[]; .type != "state" and
+jq -e -s 'all(.[]; .type != "state_update" and
   (.user_text // "" | startswith("Git environment:") | not))' \
   "$tmp/startup.jsonl" >/dev/null || fail 'no-repository startup was not silent'
 print -r -- 'branch:main' >"$git_state"
@@ -97,7 +97,7 @@ git_change
 [[ $git_output == '<context script="git/change">'$'\n'*$'\n</context>' ]]
 jq -e -s 'map(select(.type == "hook_result")) | last.user_text == "Git checkout changed:\nmain → feature"' \
   "$git_control" >/dev/null
-jq -e -s 'map(select(.type == "state")) | last.value == "branch:feature"' \
+jq -e -s 'map(select(.type == "state_update")) | last.value == "branch:feature"' \
   "$git_control" >/dev/null
 git_change
 assert_equal '' "$git_output"
@@ -108,7 +108,7 @@ git_change
 [[ $git_output == *feature* && $git_output == *0123456789abcdef* ]]
 jq -e -s 'map(select(.type == "hook_result")) | last.user_text == "Git checkout changed:\nfeature → detached commit 0123456789abcdef"' \
   "$git_control" >/dev/null
-jq -e -s 'map(select(.type == "state")) | last.value == "commit:0123456789abcdef"' \
+jq -e -s 'map(select(.type == "state_update")) | last.value == "commit:0123456789abcdef"' \
   "$git_control" >/dev/null
 
 cat >"$git_bin/git" <<'EOF'

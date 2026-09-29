@@ -61,9 +61,9 @@ run_review valid
 jq -e . "$control" >/dev/null || { cat "$control" >&2; fail 'permission review returned invalid control'; }
 jq -e '
   .action == "allow" and (has("reason") | not) and
-  .state[0].name == "permissions/6/call_7" and
-  .state[0].value.reason == "Explicitly authorized." and
-  (.state[0].value.content | fromjson) ==
+  .state_update[0].name == "permissions/6/call_7" and
+  .state_update[0].value.reason == "Explicitly authorized." and
+  (.state_update[0].value.content | fromjson) ==
     {risk:"medium",authorization:"high",reason:"Explicitly authorized."}
 ' "$control" >/dev/null || fail 'permission review returned the wrong decision'
 jq -e -s --arg tool_input "$(jq -c '.tool_input' <<<"$request")" \
@@ -95,11 +95,11 @@ run_review failure
 (( hook_status == 0 )) || fail 'provider failure did not fail closed'
 jq -e '.action == "deny" and
   .reason == "Permission review provider request failed." and
-  .state[0].value == {content:null,reason:"Permission review provider request failed."}
+  .state_update[0].value == {content:null,reason:"Permission review provider request failed."}
 ' "$control" >/dev/null || fail 'provider failure returned the wrong denial'
 
 run_review '{"risk":"high","authorization":"unknown","reason":"Not authorized."}'
 (( hook_status == 0 )) || fail 'unknown authorization did not resolve'
 jq -e '.action == "deny" and .reason == "Not authorized." and
-  (.state[0].value.content | fromjson).authorization == "unknown"
+  (.state_update[0].value.content | fromjson).authorization == "unknown"
 ' "$control" >/dev/null || fail 'unknown authorization was not denied'

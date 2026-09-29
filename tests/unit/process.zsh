@@ -13,7 +13,7 @@ sleep 30 &
 child=$!
 print -rn -- "${PWD:A}|$RUNNER_VALUE|$1|$input|$child"
 print -rn -u2 -- error
-print -rn -u3 -- '{"state":[]}'
+print -rn -u3 -- '{"state_update":[]}'
 exit 7
 ZSH
 chmod +x "$command"
@@ -29,13 +29,13 @@ sf_process_run "$capture" "$tmp" "$input_file" 512 collect \
   /usr/bin/env RUNNER_VALUE=ambient "$command" argument || { fail "$SF_PROCESS_ERROR"; exit 1; }
 result=( "${reply[@]}" )
 (( result[exit_code] == 7 && result[interrupted] == 0 && result[stdout_bytes] > 0 &&
-   result[stderr_bytes] == 5 && result[control_bytes] == 12 )) ||
+   result[stderr_bytes] == 5 && result[control_bytes] == 19 )) ||
   fail 'runner returned an invalid result'
 stdout="$capture/stdout"
 stderr="$capture/stderr"
 [[ $(<"$stdout") == "${tmp:A}|ambient|argument|input|"* ]] ||
   fail 'runner changed command input, cwd, environment, or arguments'
-[[ $(<"$stderr") == error && ${(j:|:)lines} == '{"state":[]}' ]] ||
+[[ $(<"$stderr") == error && ${(j:|:)lines} == '{"state_update":[]}' ]] ||
   fail 'runner mixed capture channels'
 child=${$(<"$stdout")##*|}
 ! kill -0 "$child" 2>/dev/null || fail 'runner left a command descendant alive'

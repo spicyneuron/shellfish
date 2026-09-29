@@ -55,8 +55,8 @@ cat >"$hook/run" <<'ZSH'
 cat >/dev/null
 case $COMPONENT_CASE in
   protocol)
-    print -r -u3 -- '{"state":[{"name":"component/a","value":1}],"data":{"tag":"old"},"user_text":"Working ${data.tag}"}'
-    print -r -u3 -- '{"state":[{"name":"component/b","value":2}],"data":{"tag":"${literal}"},"user_text":"Shown ${data.tag}","user_text_done":"${data.tag}: ${output.stdout}|${output.stderr}/${output.exit_code}","model_text":"${output.stdout}"}'
+    print -r -u3 -- '{"state_update":[{"name":"component/a","value":1}],"data":{"tag":"old"},"user_text":"Working ${data.tag}"}'
+    print -r -u3 -- '{"state_update":[{"name":"component/b","value":2}],"data":{"tag":"${literal}"},"user_text":"Shown ${data.tag}","user_text_done":"${data.tag}: ${output.stdout}|${output.stderr}/${output.exit_code}","model_text":"${output.stdout}"}'
     print -rn -- 'literal ${input}'
     print -rn -u2 -- 'stderr'
     [[ $COMPONENT_KIND != tool ]] || exit 4
@@ -101,19 +101,19 @@ for scenario in protocol capture capture_override silent manifest_silent null; d
     fi
     jq -eRn --arg scenario "$scenario" --arg kind "$kind" \
       --arg result_type "$result_type" --arg name "$component_name" '
-      [inputs | fromjson | select(.type | IN("_draft","state","hook_result","tool_result"))] as $e |
+      [inputs | fromjson | select(.type | IN("_draft","state_update","hook_result","tool_result"))] as $e |
       [$e[] | select(.type == $result_type)] as $results |
       (if $kind == "tool" or ($scenario | IN("protocol","capture","capture_override")) then
         ($results | length) == 1 else ($results | length) == 0 end) and
       if $scenario == "protocol" then
-        [$e[].type] == ["_draft","state","_draft","state","_draft",$result_type] and
-        [$e[1],$e[3]] == [{type:"state",name:"component/a",value:1},{type:"state",name:"component/b",value:2}] and
+        [$e[].type] == ["_draft","state_update","_draft","state_update","_draft",$result_type] and
+        [$e[1],$e[3]] == [{type:"state_update",name:"component/a",value:1},{type:"state_update",name:"component/b",value:2}] and
         [$e[0].user_text,$e[2].user_text,$e[4].user_text] == ["Running " + $name,"Working old","Shown ${literal}"] and
         $results[0].user_text == ("${literal}: literal ${input}|stderr/" +
           if $kind == "tool" then "4" else "0" end) and
         (if $kind == "tool" then $results[0].exit_code == 4 else true end) and
         $results[0].model_text == "literal ${input}" and
-        all($e[] | select(.type != "state"); .user_preview_lines == "full")
+        all($e[] | select(.type != "state_update"); .user_preview_lines == "full")
       elif $scenario == "capture" then
         ($results[0].user_text | length == 2049 and contains("stdout-tail") and
           contains("stderr-tail") and (contains("head") | not)) and
@@ -152,8 +152,8 @@ for reference name in "$hook" project/instructions "$external" "${external:A}"; 
 done
 # Invalid fd3 lines fail without leaving a result.
 typeset field
-for field in '"unknown":true' '"state":[{"name":"invalid state","value":1}]' \
-  '"state":[{"name":"valid/state","value":1}],"data":{"note":1}' \
+for field in '"unknown":true' '"state_update":[{"name":"invalid state","value":1}]' \
+  '"state_update":[{"name":"valid/state","value":1}],"data":{"note":1}' \
   '"data":{"bad-key":"value"}' '"user_text_done":"${output.unknown}"'; do
   print -r -- '#!/usr/bin/env zsh' >"$hook/run"
   print -r -- "print -r -u3 -- '{$field}'" >>"$hook/run"

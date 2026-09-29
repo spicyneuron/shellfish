@@ -36,7 +36,7 @@ Header paths use `@KIND/NAME` for bundled components, `~/` for HOME, or `/` for 
 | `user` | User message |
 | `assistant` | Complete assistant response with text, reasoning, and tool calls |
 | `tool_result` | The exact call identity and input plus its settled result |
-| `state` | Model-invisible named state; the latest exact name wins and `null` clears it |
+| `state_update` | Model-invisible named state update; the latest exact name wins and `null` clears it |
 | `error` | Durable user-facing failure or cancellation, omitted from provider requests |
 
 Provider deltas, hook activity, permission requests, usage previews, and presentation state are transient. Clients may display them but never write them to the transcript.

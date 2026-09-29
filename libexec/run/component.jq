@@ -24,10 +24,10 @@ def component_plan($manifest; $defaults; $name; $input; $draft):
 def component_update($component):
   if type == "object" then . else {"": null} end |
   with_entries(select(.key | IN("action","argv","profile","reason"))) as $control |
-  if ((keys - component_templates - ($control | keys) - ["state","data"]) | length == 0) and
+  if ((keys - component_templates - ($control | keys) - ["state_update","data"]) | length == 0) and
     ($control == {} or ($control | component_action($component.actions // []))) and
-    ((has("state") | not) or (.state | type == "array" and
-      all(.[]; type == "object" and ({type:"state"} + . | canonical_state)))) and
+    ((has("state_update") | not) or (.state_update | type == "array" and
+      all(.[]; type == "object" and ({type:"state_update"} + . | canonical_state_update)))) and
     ((has("data") | not) or (.data | type == "object" and
       all(keys[]; test("^[A-Za-z_][A-Za-z0-9_]*$")) and all(.[]; type == "string"))) and
     all(component_templates[] as $key | select(has($key)) | .[$key];
@@ -35,7 +35,7 @@ def component_update($component):
   then
     ($component.data + (.data // {})) as $data |
     ($component.templates + with_entries(select(.key | IN(component_templates[])))) as $templates |
-    {states:[.state[]? | {type:"state"} + .], control:$control,
+    {state_updates:[.state_update[]? | {type:"state_update"} + .], control:$control,
      component:($component + {data:$data,templates:$templates,
        draft:($component.draft + {user_text:render_template($templates.user_text;
          $component.name; $component.input; {}; $data)})})}

@@ -7,7 +7,7 @@ source "${0:A:h:h:h:h}/lib/capped.zsh" || exit 1
 
 typeset previous branch hash identity text from to
 previous=$(jq -ers '
-  [.[] | select(.type == "state" and .name == "git/identity")][-1].value |
+  [.[] | select(.type == "state_update" and .name == "git/identity")][-1].value |
   select(type == "string")
 ' "$SHELLFISH_SESSION" 2>/dev/null) || exit 0
 typeset -F deadline=$(( EPOCHREALTIME + SF_PROBE_BUDGET ))
@@ -35,7 +35,7 @@ to=${identity#*:}
 [[ $previous != commit:* ]] || from="detached commit $from"
 [[ $identity != commit:* ]] || to="detached commit $to"
 jq -cn --arg identity "$identity" --arg from "$from" --arg to "$to" '
-  {state:[{name:"git/identity",value:$identity}],data:{from:$from,to:$to},
+  {state_update:[{name:"git/identity",value:$identity}],data:{from:$from,to:$to},
    user_text_done:"Git checkout changed:\n${data.from} → ${data.to}",
    model_text:"<context script=\"${name}\">\n${output.stdout}</context>"}
 ' >&3 || exit 1

@@ -482,7 +482,7 @@ function apply(frame) {
       const [outcome, ...detail] = safe(frame.user_text).split("\n");
       return note(detail.join("\n"), "error", outcome);
     }
-    case "state":
+    case "state_update":
       if (
         typeof frame.name !== "string" ||
         frame.name.length === 0 ||
@@ -492,7 +492,7 @@ function apply(frame) {
         !Object.hasOwn(frame, "value") ||
         Object.keys(frame).sort().join(",") !== "name,type,value"
       ) {
-        throw new Error("invalid state record");
+        throw new Error("invalid state update record");
       }
       return;
     case "_session_status":

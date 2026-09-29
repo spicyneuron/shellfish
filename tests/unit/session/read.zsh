@@ -15,7 +15,7 @@ cat >"$records" <<'JSONL'
 {"type":"user","content":[{"type":"text","text":"run it"}]}
 {"type":"assistant","stop":"tool_calls","content":[{"type":"reasoning","text":"think","opaque":{"signature":"abc"}},{"type":"text","text":"Inspecting that."},{"type":"tool_call","id":"call_1","name":"shell","input":{"command":"ls"}},{"type":"tool_call","id":"call_2","name":"shell","input":{"command":"pwd"}}],"usage":{"input_tokens":100,"output_tokens":20}}
 {"type":"hook_result","lifecycle":"pre_tool_use","id":"2","model_text":"<context script=\"policy\">\nPOLICY\n</context>"}
-{"type":"state","name":"git/identity","value":"first"}
+{"type":"state_update","name":"git/identity","value":"first"}
 {"type":"tool_result","id":"call_1","name":"shell","input":{"command":"ls"},"exit_code":0,"user_text":"shell\nout","model_text":"out"}
 {"type":"tool_result","id":"call_2","name":"shell","input":{"command":"pwd"},"exit_code":0,"model_text":"/tmp"}
 {"type":"assistant","stop":"end","content":[{"type":"text","text":"done"}],"usage":{"input_tokens":120,"output_tokens":4}}
@@ -217,8 +217,8 @@ done
 typeset -a shapes=(
   '{"type":"hook_result","lifecycle":"session_start","id":"1","user_text":"shown","model_text":"data","user_preview_lines":"full"}'
   '{"type":"hook_result","lifecycle":"pre_tool_use","id":"2","user_text":"shown","user_preview_lines":0}'
-  '{"type":"state","name":"a","value":null}'
-  '{"type":"state","name":"A0_.:/-","value":[false,1,"text"]}'
+  '{"type":"state_update","name":"a","value":null}'
+  '{"type":"state_update","name":"A0_.:/-","value":[false,1,"text"]}'
 )
 for (( index = 1; index <= ${#shapes}; index += 1 )); do
   print -r -- "[$shapes[index]]" | accepts >/dev/null ||
@@ -230,10 +230,10 @@ typeset -a malformed=(
   'a tool identifier on a hook' '{"type":"hook_result","lifecycle":"session_start","id":"1","tool_use_id":"c1"}'
   'empty hook user text' '{"type":"hook_result","lifecycle":"session_start","id":"1","user_text":""}'
   'a negative preview hint' '{"type":"hook_result","lifecycle":"session_start","id":"1","user_preview_lines":-1}'
-  'an unnamed state record' '{"type":"state","name":"","value":null}'
-  'a state name opening with a separator' '{"type":"state","name":"/leading","value":null}'
-  'a spaced state name' '{"type":"state","name":"bad name","value":null}'
-  'a state record without a value' '{"type":"state","name":"name"}'
+  'an unnamed state record' '{"type":"state_update","name":"","value":null}'
+  'a state name opening with a separator' '{"type":"state_update","name":"/leading","value":null}'
+  'a spaced state name' '{"type":"state_update","name":"bad name","value":null}'
+  'a state record without a value' '{"type":"state_update","name":"name"}'
 )
 for (( index = 1; index <= ${#malformed}; index += 2 )); do
   if print -r -- "[$malformed[index + 1]]" | accepts >/dev/null 2>&1; then
@@ -242,9 +242,9 @@ for (( index = 1; index <= ${#malformed}; index += 2 )); do
 done
 
 print -r -- "[$(jq -cn --arg name "$(printf 'a%.0s' {1..128})" \
-  '{type:"state",name:$name,value:true}')]" | accepts >/dev/null ||
+  '{type:"state_update",name:$name,value:true}')]" | accepts >/dev/null ||
   fail 'the reader rejected a state name of the maximum length'
 if print -r -- "[$(jq -cn --arg name "$(printf 'a%.0s' {1..129})" \
-    '{type:"state",name:$name,value:true}')]" | accepts >/dev/null 2>&1; then
+    '{type:"state_update",name:$name,value:true}')]" | accepts >/dev/null 2>&1; then
   fail 'the reader accepted an overlong state name'
 fi

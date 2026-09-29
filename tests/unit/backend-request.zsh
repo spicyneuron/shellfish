@@ -11,7 +11,7 @@ jq -c --arg adapter "${SF_TEST_BACKEND:h}" --arg cwd "$tmp" \
 print -r -- '{"type":"user","content":[{"type":"text","text":"old"}]}' >>"$session"
 print -r -- '{"type":"assistant","stop":"end","content":[{"type":"text","text":"answer"}]}' \
   >>"$session"
-print -r -- '{"type":"state","name":"stored/value","value":{"revision":1}}' >>"$session"
+print -r -- '{"type":"state_update","name":"stored/value","value":{"revision":1}}' >>"$session"
 print -r -- '{"type":"user","content":[{"type":"text","text":"composed request"}]}' >>"$session"
 
 zsh -f "$entry" backend-request extra </dev/null >/dev/null 2>&1 &&

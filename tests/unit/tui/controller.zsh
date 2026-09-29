@@ -99,7 +99,7 @@ assert_equal updated/new-model "$SF_PRESENT_FOOTER"
 
 # Ignore live state records without disturbing the turn.
 SF_PRESENT_STATE=working
-pump '{"type":"state","name":"live/status","value":"ready"}'
+pump '{"type":"state_update","name":"live/status","value":"ready"}'
 assert_equal working "$SF_PRESENT_STATE"
 
 # Cancel active turns.
