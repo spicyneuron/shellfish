@@ -166,7 +166,7 @@ def test_slow_prompt_hook_keeps_ui_active():
         session.close()
 
 
-def test_blocked_prompt_displays_without_user_section():
+def test_blocked_prompt_notice_uses_user_heading():
     session = Session(hooks={"display": DISPLAY_HOOK})
     try:
         mark = len(session.output)
@@ -175,7 +175,7 @@ def test_blocked_prompt_displays_without_user_section():
         visible = session.visible(mark)
         display = visible.find("display line 3")
         assert display >= 0, visible
-        assert "─ user " not in visible, visible
+        assert "─ user " in visible, visible
         assert "─ agent " not in visible, visible
     finally:
         session.close()
@@ -299,7 +299,7 @@ if __name__ == "__main__":
         test_startup_streams_hooks_and_runs_the_queued_prompt,
         test_startup_cancellation_retains_the_transcript,
         test_slow_prompt_hook_keeps_ui_active,
-        test_blocked_prompt_displays_without_user_section,
+        test_blocked_prompt_notice_uses_user_heading,
         test_help_shows_its_full_listing,
         test_prompt_hook_hands_off_to_another_session,
         test_handoff_runs_command_on_path_and_restores_interrupt,

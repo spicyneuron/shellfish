@@ -88,7 +88,7 @@ project load \
   '{"type":"hook_result","lifecycle":"pre_tool_use","id":"3","model_text":"before"}' \
   '{"type":"hook_result","lifecycle":"stop","id":"4","model_text":"later"}'
 assert_equal 'execution_end | 1 | context |  | default | system
-execution_end | 2 | context |  | default |
+execution_end | 2 | context |  | default | user
 execution_end | 3 | context |  | default | agent
 execution_end | 4 | context |  | default | agent' "$REPLY"
 project load \

@@ -145,7 +145,10 @@ def test_help_notice_keeps_one_separator():
                      terminal.screen.scrolled + terminal.screen.display]
             end = next(i for i, line in enumerate(lines) if "╰ …" in line)
             help_row = lines.index("ℹ Help:")
-            assert lines[end + 1:help_row] == [""], terminal.dump()
+            user_row = next(i for i in range(end + 1, help_row)
+                            if lines[i].startswith("─ user "))
+            assert lines[end + 1:user_row] == [""], terminal.dump()
+            assert lines[user_row + 1:help_row] == [""], terminal.dump()
         finally:
             session.close()
 

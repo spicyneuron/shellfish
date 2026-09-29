@@ -82,9 +82,7 @@ def record_actions($mode; $window):
     [["execution_end", .id, "tool", result_text, preview]]
   elif .type == "hook_result" then
     [["execution_end", .id, hook_class, result_text, preview,
-      (if .lifecycle == "session_start" then "system"
-       elif .lifecycle == "user_prompt_submit" then ""
-       else "agent" end)]]
+      ({session_start:"system", user_prompt_submit:"user"}[.lifecycle] // "agent")]]
   elif .type == "session" then (.profile | profile_actions)
   elif .type == "state_update" then []
   else error("unsupported record: " + (.type | tostring))

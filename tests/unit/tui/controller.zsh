@@ -261,14 +261,14 @@ assert_equal 0 "$SF_PRESENT_SECTION_ID"
 SF_PRESENT_STATE=working
 pump '{"type":"hook_result","lifecycle":"user_prompt_submit","id":"1","user_text":"Help notice"}'
 sf_tui_transcript 79 20
-[[ $SF_PRESENT_VIEWPORT_TEXT == *'Help notice'* &&
+[[ $SF_PRESENT_VIEWPORT_TEXT == *'─ user '*'Help notice'* &&
     $SF_PRESENT_VIEWPORT_TEXT != *'/help'* ]] ||
-  fail 'blocked prompt rendered a user section'
-assert_equal 0 "$SF_PRESENT_SECTION_ID"
-sf_tui_reset
+  fail 'blocked prompt did not group its notice under a user heading'
+assert_equal 1 "$SF_PRESENT_SECTION_ID"
+# The accepted prompt shares the submission notice's heading.
 pump '{"type":"user","content":[{"type":"text","text":"accepted"}]}'
 sf_tui_transcript 79 20
-[[ $SF_PRESENT_VIEWPORT_TEXT == *'accepted'* ]] ||
+[[ $SF_PRESENT_VIEWPORT_TEXT == *'Help notice'*'accepted'* ]] ||
   fail 'accepted prompt did not render from the core record'
 assert_equal 1 "$SF_PRESENT_SECTION_ID"
 
