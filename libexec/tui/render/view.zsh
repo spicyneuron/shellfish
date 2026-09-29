@@ -38,6 +38,14 @@ sf_tui_rows_append() {
   done
 }
 
+sf_tui_rows_settle() {
+  sf_tui_rows_append "$1" "$2"
+  # A separator waits for the next entry or prompt commit.
+  SF_PRESENT_ROW_TEXT+=( '' )
+  SF_PRESENT_ROW_SPANS+=( '' )
+  SF_PRESENT_ROW_READY+=( 0 )
+}
+
 sf_tui_rows_consume() {
   integer count=$1 row available=$(( ${#SF_PRESENT_ROW_TEXT} - SF_PRESENT_ROW_HEAD + 1 ))
   (( count >= 0 && count <= available )) || return 1
@@ -255,9 +263,7 @@ sf_tui_repaint() {
   [[ $mode != stage ]] || (( ! SF_PRESENT_SAFE_ROWS )) || return 0
   PREDISPLAY=$SF_PRESENT_VIEWPORT_TEXT
   if [[ -n $PREDISPLAY ]]; then
-    PREDISPLAY+=$'\n'
-    # Reserve a row so scrollback commits do not move the prompt.
-    PREDISPLAY+=$'\n'
+    PREDISPLAY=${PREDISPLAY%$'\n'}$'\n\n'
   elif (( SF_PRESENT_PREFIX_VISIBLE )); then
     PREDISPLAY=$'\n'
   fi

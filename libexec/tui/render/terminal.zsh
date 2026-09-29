@@ -47,10 +47,18 @@ sf_tui_terminal_sync_end() {
 }
 
 sf_tui_terminal_stage() {
+  integer rows=$SF_PRESENT_SAFE_ROWS next=$(( SF_PRESENT_ROW_HEAD + SF_PRESENT_SAFE_ROWS ))
   (( ! SF_PRESENT_PENDING_ROWS )) || return 1
-  (( SF_PRESENT_SAFE_ROWS )) || return 1
+  if [[ ${1-} == prompt ]] && (( next == ${#SF_PRESENT_ROW_TEXT} )) &&
+      [[ $SF_PRESENT_ROW_TEXT[next] == '' && $SF_PRESENT_ROW_READY[next] == 0 ]]; then
+    (( ++rows ))
+  fi
+  (( rows )) || return 1
   SF_PRESENT_PENDING_TEXT=$SF_PRESENT_SAFE_TEXT
-  SF_PRESENT_PENDING_ROWS=$SF_PRESENT_SAFE_ROWS
+  if (( rows > SF_PRESENT_SAFE_ROWS && SF_PRESENT_SAFE_ROWS )); then
+    SF_PRESENT_PENDING_TEXT+=$'\n'
+  fi
+  SF_PRESENT_PENDING_ROWS=$rows
   SF_PRESENT_PENDING_HIGHLIGHTS=( "${(@)SF_PRESENT_SAFE_HIGHLIGHTS}" )
   SF_PRESENT_DRAFT=${BUFFER-}
   SF_PRESENT_DRAFT_CURSOR=${CURSOR:-0}

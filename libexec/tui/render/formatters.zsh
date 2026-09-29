@@ -104,7 +104,7 @@ sf_tui_settle() {
   sf_tui_row_width
   columns=$REPLY
   sf_tui_format_live $columns 1 || return 1
-  sf_tui_rows_append ${#SF_FORMAT_ROWS} $SF_FORMAT_LEADING
+  sf_tui_rows_settle ${#SF_FORMAT_ROWS} $SF_FORMAT_LEADING
   sf_tui_live_clear
 }
 
@@ -221,7 +221,7 @@ sf_tui_error_append() {
   sf_tui_row_width
   columns=$REPLY
   sf_tui_format_notice $columns "✕ $heading" ${#heading} "$detail" || return 1
-  sf_tui_rows_append ${#SF_FORMAT_ROWS} $SF_FORMAT_LEADING
+  sf_tui_rows_settle ${#SF_FORMAT_ROWS} $SF_FORMAT_LEADING
   SF_PRESENT_LAST_ROLE=error
 }
 
@@ -305,7 +305,6 @@ sf_tui_format_live() {
     execution) sf_tui_format_execution $columns $final ;;
     activity)
       sf_tui_format_start
-      sf_tui_format_at_start || sf_tui_format_blank
       sf_tui_format_styled $columns "$SF_PRESENT_ACTIVITY" activity
       ;;
     *) return 1 ;;

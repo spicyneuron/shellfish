@@ -4,6 +4,7 @@ import json
 import os
 import re
 import sys
+import tempfile
 import time
 from pathlib import Path
 
@@ -104,6 +105,69 @@ class Terminal:
             if predicate():
                 return
         raise AssertionError(f"timed out waiting for {what}" + self.dump())
+
+
+def test_help_notice_keeps_one_separator():
+    with tempfile.TemporaryDirectory() as directory:
+        hook = Path(directory) / "instructions"
+        hook.mkdir()
+        (hook / "manifest.json").write_text('{"user_text_done":"${output.stdout}"}')
+        script = hook / "run"
+        script.write_text(
+            '#!/usr/bin/env zsh\n'
+            'print -r -- "Project instructions (AGENTS.md):"\n'
+            'print -r -- "# Shellfish"\n'
+            'repeat 100 print -r -- "some instructions"\n'
+        )
+        script.chmod(0o755)
+        session = Session(hooks={"help": None}, session_start=[str(hook)])
+        terminal = Terminal(session)
+        try:
+            session.wait_session_records(2)
+            session.wait_ready()
+            terminal.wait_for("project notice", lambda: "╰ …" in terminal.everything())
+            for _ in range(5):
+                terminal.pump()
+            idle = [line.rstrip() for line in
+                    terminal.screen.scrolled + terminal.screen.display]
+            end = next(i for i, line in enumerate(idle) if "╰ …" in line)
+            divider = next(i for i in range(end + 1, len(idle))
+                           if idle[i].startswith("─"))
+            assert idle[end + 1:divider] == [""], terminal.dump()
+
+            session.send(b"/help\r")
+            session.wait_session_records(3)
+            session.wait_ready()
+            terminal.wait_for("help notice", lambda: "/quit, /q" in terminal.everything())
+            for _ in range(5):
+                terminal.pump()
+            lines = [line.rstrip() for line in
+                     terminal.screen.scrolled + terminal.screen.display]
+            end = next(i for i, line in enumerate(lines) if "╰ …" in line)
+            help_row = lines.index("ℹ Help:")
+            assert lines[end + 1:help_row] == [""], terminal.dump()
+        finally:
+            session.close()
+
+
+def test_user_and_agent_keep_one_separator():
+    session = Session()
+    terminal = Terminal(session)
+    try:
+        session.send(b"wqr\r")
+        session.wait_session_records(3)
+        session.wait_ready()
+        terminal.wait_for("agent reply", lambda: "─ agent " in terminal.everything())
+        for _ in range(5):
+            terminal.pump()
+        lines = [line.rstrip() for line in
+                 terminal.screen.scrolled + terminal.screen.display]
+        user_row = lines.index("wqr")
+        agent_row = next(i for i in range(user_row + 1, len(lines))
+                         if lines[i].startswith("─ agent "))
+        assert lines[user_row + 1:agent_row] == [""], terminal.dump()
+    finally:
+        session.close()
 
 
 def test_tall_turn_loses_neither_text_nor_draft():
@@ -267,6 +331,8 @@ def test_queued_submits_keep_committed_history():
 
 if __name__ == "__main__":
     run("scrollback PTY scenarios", [
+        test_help_notice_keeps_one_separator,
+        test_user_and_agent_keep_one_separator,
         test_tall_resume_drains_bounded_backlog,
         test_tall_turn_loses_neither_text_nor_draft,
         test_queued_submits_keep_committed_history,

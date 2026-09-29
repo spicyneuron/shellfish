@@ -11,7 +11,7 @@ typeset -g BUFFER='' CURSOR=0 PREDISPLAY='' POSTDISPLAY=''
 
 view() {
   sf_tui_transcript "${1:-80}" 100 || fail 'rendering executions failed'
-  REPLY=$SF_PRESENT_VIEWPORT_TEXT
+  REPLY=${SF_PRESENT_VIEWPORT_TEXT%$'\n'}
 }
 assert_tail() { [[ $REPLY == *"$1" ]] || fail "expected tail: $1" "actual: $REPLY" }
 # Content settles at the terminal width, so a narrow case sets it up front.
@@ -220,6 +220,22 @@ assert_equal 7 "$SF_PRESENT_SAFE_ROWS"
 message user retry
 view
 [[ $REPLY == *$'─ user '*$' 2 ─\n\nretry' ]] || fail "post-error section: $REPLY"
+
+# Every settled block has one blank row before the next, regardless of kind.
+sf_tui_reset
+width 79
+message system $'\n\nsystem\n\n'
+message user $'\nuser\n'
+sf_tui_action message_start agent
+sf_tui_action message_delta 0 reasoning thought 3
+sf_tui_action message_end
+sf_tui_action execution_end hook notice $'hook\nok'
+sf_tui_action error Failed detail
+view
+[[ $REPLY == *$'system\n\n─ user '* ]] || fail "system boundary: $REPLY"
+[[ $REPLY == *$'user\n\n─ agent '* ]] || fail "user boundary: $REPLY"
+[[ $REPLY == *$'✎ thought\n  Thought for ~3 tokens.\n\nℹ hook\n╰ ok\n\n✕ Failed\n  detail' ]] ||
+  fail "reasoning, notice, or error boundary: $REPLY"
 
 # Settled rows taller than the terminal budget drain in source order.
 sf_tui_reset

@@ -15,7 +15,10 @@ typeset -gi SF_PRESENT_HISTORY_NO=0
 
 assert_equal '⠃,⠁,⠁,⠁,⠃,⠆,⡄,⡀,⡀,⡀,⡄,⠆' "${(j:,:)SF_PRESENT_ACTIVITY_FRAMES}"
 
-view() { sf_tui_transcript "$@" || fail 'rendering the transcript failed'; REPLY=$SF_PRESENT_VIEWPORT_TEXT }
+view() {
+  sf_tui_transcript "$@" || fail 'rendering the transcript failed'
+  REPLY=${SF_PRESENT_VIEWPORT_TEXT%$'\n'}
+}
 # Content settles at the terminal width, so a narrow case sets it up front.
 width() { COLUMNS=$(( $1 + 1 )) }
 message() {
@@ -32,6 +35,8 @@ message user hello
 view 79 20
 assert_equal $'─ user ──────────────────────────────────────────────────────────────────── 1 ─\n\nhello' "$REPLY"
 assert_equal 79 "${#${REPLY%%$'\n'*}}"
+sf_tui_repaint || fail 'rendering the prompt failed'
+[[ $PREDISPLAY == *$'hello\n\n─'* ]] || fail "prompt boundary: $PREDISPLAY"
 
 # Repeated roles omit the rule.
 message user again
@@ -79,7 +84,7 @@ sf_tui_reset
 width 79
 message user $'one\ntwo\nthree\nfour'
 view 79 3
-assert_equal $'two\nthree\nfour' "$REPLY"
+assert_equal $'three\nfour' "$REPLY"
 
 # Live messages expose only complete wrapped rows.
 sf_tui_reset
@@ -190,8 +195,8 @@ assert_equal '⠃' "$SF_PRESENT_VIEWPORT_TEXT"
   fail 'the live tail lost its activity style'
 unset 'SF_PRESENT_STYLE[activity]'
 sf_tui_action message_end
-sf_tui_transcript 5 20
-assert_equal gamma "$SF_PRESENT_VIEWPORT_TEXT"
+view 5 20
+assert_equal gamma "$REPLY"
 
 # Logical source consumption survives cell-width changes.
 SF_PRESENT_STYLE=( message 'fg=1' syntax.strong bold )

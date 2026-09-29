@@ -293,13 +293,12 @@ sf_tui_accept() {
         [[ $SF_PRESENT_STATE == stopped ]] || sf_tui_stop 'cannot stage chat rows'
         return 0
       fi
-      if (( SF_PRESENT_SAFE_ROWS )); then
-        if ! sf_tui_terminal_stage; then
-          SF_PRESENT_ACTION=''
-          sf_tui_stop 'cannot stage chat rows'
-          return 0
-        fi
+      if sf_tui_terminal_stage prompt; then
         sf_tui_draw_pending || return 1
+      elif (( SF_PRESENT_SAFE_ROWS )); then
+        SF_PRESENT_ACTION=''
+        sf_tui_stop 'cannot stage chat rows'
+        return 0
       fi
       if ! zle accept-line; then
         SF_PRESENT_ACTION=''

@@ -32,10 +32,6 @@ sf_tui_format_blank() {
   SF_FORMAT_CONSUMED+=( 0 )
 }
 
-sf_tui_format_at_start() {
-  (( SF_PRESENT_ROW_HEAD > ${#SF_PRESENT_ROW_TEXT} && ! SF_PRESENT_PREFIX_VISIBLE ))
-}
-
 # Trim outer blank lines, but keep a live block's closing newline: it is how
 # sf_tui_format_prose knows the last row is complete. The retained character
 # comes out of the trailing count, so it stays charged to the row it belongs to.
@@ -69,7 +65,6 @@ sf_tui_span() {
 sf_tui_format_rule() {
   integer columns=$1 title_start title_end number_start=-1
   local role=$2 number=${3-} text
-  sf_tui_format_at_start || sf_tui_format_blank
   [[ -n $role ]] || return 0
   SF_FORMAT_SPAN=()
   text="─ $role "
@@ -238,11 +233,8 @@ sf_tui_format_message() {
   local body=$SF_LIVE_TEXT role=$SF_LIVE_ROLE preview=full
 
   sf_tui_format_start
-  # System text is shown exactly as it was provided.
-  if [[ $role != system ]]; then
-    sf_tui_format_trim_live "$body" $live
-    body=$REPLY
-  fi
+  sf_tui_format_trim_live "$body" $live
+  body=$REPLY
 
   (( SF_LIVE_CHROME )) || sf_tui_format_rule $columns "$role" "$SF_LIVE_SECTION"
   [[ $role != system ]] || preview=$SF_PRESENT_PREVIEW
@@ -502,7 +494,6 @@ sf_tui_format_notice() {
   sf_tui_format_start
   sf_tui_format_trim "$body"
   body=$REPLY
-  sf_tui_format_at_start || sf_tui_format_blank
   sf_tui_format_head $columns "$head" error 2 $(( 2 + heading_length )) || return 1
   SF_FORMAT_LEADING=${#SF_FORMAT_ROWS}
   if [[ -n $body ]]; then
