@@ -295,6 +295,11 @@ summary::-webkit-details-marker {
   flex: none;
 }
 
+/* A closed fold hints at the body it hides. */
+details:not([open]) > summary > .summary-line::after {
+  content: "…";
+}
+
 details.reasoning > summary,
 details.call > summary,
 details.hook > summary {
