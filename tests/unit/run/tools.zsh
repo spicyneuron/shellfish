@@ -5,7 +5,7 @@ sf_test_source lib/session.zsh
 sf_test_tmp run-tool-contract
 mkdir "$tmp/host-temp"
 export TMPDIR="$tmp/host-temp" TMPPREFIX="$tmp/manifest-prefix"
-export XDG_STATE_HOME="$tmp/state" SF_TEST_BACKEND_DELAY=0
+export SF_TEST_BACKEND_DELAY=0
 sf_test_frozen_profile
 
 # The bundled shell decodes multiline commands once, preserves exit status, and

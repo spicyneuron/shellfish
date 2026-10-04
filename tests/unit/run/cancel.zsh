@@ -3,7 +3,7 @@
 source "${0:A:h:h:h}/_helpers.zsh"
 sf_test_source lib/session.zsh
 sf_test_tmp run-tool-cancel-contract
-export XDG_STATE_HOME="$tmp/state" SF_TEST_BACKEND_DELAY=0
+export SF_TEST_BACKEND_DELAY=0
 sf_test_frozen_profile
 
 # Start a two-call tool turn, then interrupt it once the marker appears.

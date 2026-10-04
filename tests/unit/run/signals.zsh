@@ -11,7 +11,6 @@ sf_test_profile default "{
   \"max_requests_per_turn\": 8, \"max_tool_calls_per_request\": 16,
   \"max_capture_bytes\": 65536
 }"
-export XDG_STATE_HOME="$tmp/state"
 typeset entry="$ROOT/bin/shellfish"
 
 # Cancellation stops context discovery.

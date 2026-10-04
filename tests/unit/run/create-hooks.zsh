@@ -3,7 +3,6 @@ source "${0:A:h:h:h}/_helpers.zsh"
 sf_test_source lib/jq.zsh
 sf_test_tmp run-create-hook-contract
 sf_test_config
-export XDG_STATE_HOME="$tmp/state"
 typeset entry="$ROOT/bin/shellfish" hook="$SF_TEST_CONFIG/hooks/project/instructions"
 typeset project="$tmp/project" session="$tmp/session.jsonl" stream="$tmp/stream"
 mkdir -p "$hook" "$project"

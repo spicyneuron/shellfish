@@ -1,7 +1,7 @@
 #!/usr/bin/env zsh
 source "${0:A:h:h:h}/_helpers.zsh"
 sf_test_tmp run-hook-contract
-export XDG_STATE_HOME="$tmp/state" SF_TEST_BACKEND_DELAY=0
+export SF_TEST_BACKEND_DELAY=0
 sf_test_frozen_profile
 typeset hook="$tmp/prompt" session stream="$tmp/stream"
 sf_test_hook "$hook" '{"user_text_done":"${output.stdout}","model_text":"${output.stdout}"}' <<'ZSH'

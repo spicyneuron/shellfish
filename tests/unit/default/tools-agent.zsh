@@ -3,7 +3,6 @@
 source "${0:A:h:h:h}/_helpers.zsh"
 sf_test_tmp default-tools-agent
 sf_test_config
-export XDG_STATE_HOME="$tmp/state"
 
 typeset agent="$ROOT/share/tools/agent"
 typeset backend="$tmp/backend" session="$tmp/parent.jsonl" stream="$tmp/stream"

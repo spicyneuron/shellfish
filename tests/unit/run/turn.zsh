@@ -3,7 +3,7 @@
 source "${0:A:h:h:h}/_helpers.zsh"
 sf_test_source lib/session.zsh
 sf_test_tmp run-turn-contract
-export XDG_STATE_HOME="$tmp/state" SF_TEST_BACKEND_DELAY=0
+export SF_TEST_BACKEND_DELAY=0
 
 # A successful turn appends each durable object before emitting it.
 sf_test_frozen_profile

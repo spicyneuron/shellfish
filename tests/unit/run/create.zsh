@@ -7,7 +7,6 @@ typeset system="$SF_TEST_CONFIG/system"
 mkdir -p "$tmp/home/work" "$system"
 print -r -- 'initial system' >"$system/source.md"
 export HOME="${tmp:A}/home"
-export XDG_STATE_HOME="$tmp/state"
 
 sf_test_profile default "{
   \"backend\": {\"adapter\": \"$ROOT/tests/fixtures/backend\"},
