@@ -26,6 +26,10 @@
   --syntax-string: #86b300;
   --syntax-number: #a37acc;
   --syntax-tag: #55b4d4;
+  --diff-added: #3f7f34;
+  --diff-added-background: #e2f4df;
+  --diff-removed: #b84f5b;
+  --diff-removed-background: #f8e1e3;
   --node-gap: 1.5em;
 }
 
@@ -55,6 +59,10 @@
     --syntax-string: #d5ff80;
     --syntax-number: #dfbfff;
     --syntax-tag: #5ccfe6;
+    --diff-added: #87d96c;
+    --diff-added-background: #12261e;
+    --diff-removed: #f27983;
+    --diff-removed-background: #2d1519;
   }
 }
 
@@ -198,8 +206,7 @@ body:has(#code:not([hidden])) #prompt {
   color: var(--system);
 }
 
-.record.system,
-.record.context {
+.record.system {
   color: var(--context);
 }
 
@@ -254,6 +261,22 @@ code {
   color: var(--syntax-tag);
 }
 
+.added,
+.removed {
+  display: inline-block;
+  min-width: 100%;
+}
+
+.added {
+  color: var(--diff-added);
+  background: var(--diff-added-background);
+}
+
+.removed {
+  color: var(--diff-removed);
+  background: var(--diff-removed-background);
+}
+
 details {
   margin: 0;
 }
@@ -286,7 +309,8 @@ summary::-webkit-details-marker {
 }
 
 details.reasoning > summary,
-details.call > summary {
+details.call > summary,
+details.hook > summary {
   color: inherit;
 }
 
@@ -296,12 +320,12 @@ details > pre {
   overflow: auto;
 }
 
-.call {
+.call,
+.hook {
   color: var(--tool);
 }
 
-.note pre,
-.hook {
+.note > pre {
   color: var(--muted);
 }
 

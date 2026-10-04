@@ -1093,13 +1093,15 @@ test("replaces a tool draft with its completed text", async () => {
     id: "call_1",
     name: "edit_file",
     input: { file_path: "notes.txt", old_string: "old", new_string: "new" },
-    user_text: "edit_file · notes.txt\n@@ -1 +1 @@\n-old\n+new",
+    user_text: "edit_file · notes.txt\n--- a\n+++ b\n@@ -1 +1 @@\n-old\n+new",
     exit_code: 0,
   });
   const call = find(page.output, "call")[0];
   assert.equal(find(page.output, "call").length, 1);
   assert.equal(findTag(call, "summary")[0].textContent, "⛭edit_file · notes.txt");
-  assert.equal(findTag(call, "pre")[0].textContent, "@@ -1 +1 @@\n-old\n+new");
+  assert.equal(findTag(call, "pre")[0].textContent, "--- a\n+++ b\n@@ -1 +1 @@\n-old\n+new");
+  assert.deepEqual(find(call, "removed").map((line) => line.textContent), ["-old"]);
+  assert.deepEqual(find(call, "added").map((line) => line.textContent), ["+new"]);
   assert.equal(find(page.output, "note").length, 0);
   assert.equal(find(page.output, "activity").length, 1);
   assert.equal(page.cancel.hidden, false);

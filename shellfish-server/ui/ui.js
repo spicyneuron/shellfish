@@ -131,13 +131,10 @@ function section(role) {
   return heading;
 }
 
-function summary(parent, sigil, heading, secondary) {
+function summary(parent, sigil, heading) {
   const line = el(parent, "span", "summary-line");
   el(line, "span", "sigil", sigil);
   line.append(document.createTextNode(safe(heading)));
-  if (secondary !== undefined) {
-    line.append(document.createTextNode(" · " + safe(secondary)));
-  }
 }
 
 function showIndicator() {
@@ -184,31 +181,30 @@ function clearDrafts() {
   drafts.clear();
 }
 
-function collapsible(parent, sigil, heading, text, kind, secondary) {
-  const details = el(parent, "details", kind);
-  summary(el(details, "summary"), sigil, heading, secondary);
-  el(details, "pre", null, safe(text));
-}
-
-// A tool or hook execution, as in the terminal: the sigil and first line
-// summarize it, and any remaining lines fold beneath.
-function execution(kind, className, sigil, text, open) {
-  const article = record(kind, null);
-  const first = text.indexOf("\n");
-  const body = first < 0 ? "" : text.slice(first + 1);
-  const heading = first < 0 ? text : text.slice(0, first);
+// A summary line that folds its body beneath, or stands alone without one.
+function fold(parent, className, sigil, heading, body, open) {
   if (!body) {
-    summary(el(article, "div", className), sigil, heading);
-    return article;
+    summary(el(parent, "div", className), sigil, heading);
+    return;
   }
-  const details = el(article, "details", className);
+  const details = el(parent, "details", className);
   details.open = open;
   summary(el(details, "summary"), sigil, heading);
-  el(details, "pre", null, safe(body));
+  const pre = el(details, "pre");
+  // A hunk header is the only reliable signal that output is a unified diff.
+  if (/(^|\n)@@ -.* @@/.test(body)) diff(pre, safe(body));
+  else pre.textContent = safe(body);
+}
+
+// A tool or hook execution, as in the terminal: its first line is the summary.
+function execution(kind, className, sigil, text, open) {
+  const article = record(kind, null);
+  const [heading, ...body] = text.split("\n");
+  fold(article, className, sigil, heading, body.join("\n"), open);
   return article;
 }
 
-function note(text, kind, heading, secondary) {
+function note(text, kind, heading) {
   hideIndicator();
   const article = record(kind ? "note " + kind : "note", null);
   if (!heading) {
@@ -216,7 +212,7 @@ function note(text, kind, heading, secondary) {
     text = "";
   }
   const title = el(article, "h2");
-  summary(title, kind === "error" ? "✕" : "ℹ", heading, secondary);
+  summary(title, kind === "error" ? "✕" : "ℹ", heading);
   if (text) el(article, "pre", null, safe(text));
   place(article);
   if (working) showIndicator();
@@ -414,6 +410,18 @@ function tokenKind(token, language) {
   return "comment";
 }
 
+// diff appends a unified diff with its added and removed lines marked.
+function diff(parent, text) {
+  const lines = text.split("\n");
+  lines.forEach((line, index) => {
+    const kind = /^\+(?!\+\+)/.test(line) ? "added"
+      : /^-(?!--)/.test(line) ? "removed" : null;
+    if (kind) el(parent, "span", kind, line);
+    else parent.append(document.createTextNode(line));
+    if (index < lines.length - 1) parent.append(document.createTextNode("\n"));
+  });
+}
+
 // highlight appends code with spans for the tokens it recognizes. An unknown
 // language is still perfectly readable as text.
 function highlight(parent, code, language) {
@@ -553,10 +561,10 @@ function apply(frame) {
 
 // A prompt and its injected context are reference material: present, but folded
 // away until a reader asks for them.
-function renderCollapsed(kind, heading, content, secondary) {
+function renderCollapsed(kind, heading, content) {
   hideIndicator();
   const article = record(kind, null);
-  collapsible(article, "↪", heading, content, null, secondary);
+  fold(article, null, "↪", heading, content, false);
   place(article);
   if (working) showIndicator();
 }
@@ -596,13 +604,8 @@ function renderMessage(frame) {
       part.type === "reasoning" ? trimBoundaryNewlines(part.text) : "";
     if (reasoning) {
       const tokens = Math.ceil(Array.from(reasoning).length / 4);
-      collapsible(
-        article,
-        "✎",
-        `Thought for ~${tokens} tokens.`,
-        reasoning,
-        "reasoning",
-      );
+      fold(article, "reasoning", "✎", `Thought for ~${tokens} tokens.`,
+        reasoning, false);
     } else if (part.type === "text" && displayChunks[partIndex]) {
       markdown(el(article, "pre", "text"), displayChunks[partIndex]);
     }
