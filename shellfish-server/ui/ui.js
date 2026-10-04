@@ -200,11 +200,11 @@ function plain(parent, text) {
   else parent.textContent = safe(text);
 }
 
-// A tool or hook execution, as in the terminal: its first line is the summary.
-function execution(kind, className, sigil, text, open) {
+// A record summarized by its first line, as the terminal shows executions.
+function summarized(kind, className, sigil, text, open, format) {
   const article = record(kind, null);
   const [heading, ...body] = text.split("\n");
-  fold(article, className, sigil, heading, body.join("\n"), open);
+  fold(article, className, sigil, heading, body.join("\n"), open, format);
   return article;
 }
 
@@ -475,8 +475,8 @@ function renderDraft(frame) {
   // A running tool belongs to the agent's turn; a hook stands on its own.
   if (frame.name && !previous) section("agent");
   const article = frame.name
-    ? execution("assistant", "call", "⛭", text, true)
-    : execution("note", "hook", "ℹ", text, true);
+    ? summarized("assistant", "call", "⛭", text, true)
+    : summarized("note", "hook", "ℹ", text, true);
   if (previous) previous.replaceWith(article);
   drafts.set(key, article);
   place(article);
@@ -490,7 +490,6 @@ function apply(frame) {
       document.title = "shellfish " + safe(frame.cwd);
       return;
     case "system":
-      section("system");
       return renderSystem(frame.content);
     case "hook_result":
       return renderHookResult(frame);
@@ -566,10 +565,11 @@ function apply(frame) {
 // The system prompt is reference material: present, but folded away until a
 // reader asks for it.
 function renderSystem(content) {
+  const text = trimBoundaryNewlines(content);
+  if (!text) return;
   hideIndicator();
-  const article = record("system", null);
-  fold(article, null, "↪", "system prompt", content, false, markdown);
-  place(article);
+  section("system");
+  place(summarized("system", null, "↪", text, false, markdown));
   if (working) showIndicator();
 }
 
@@ -625,7 +625,7 @@ function renderResult(frame) {
   if (!text) return;
   hideIndicator();
   section("agent");
-  place(execution("assistant", "call", "⛭", text, full(frame)));
+  place(summarized("assistant", "call", "⛭", text, full(frame)));
   if (working) showIndicator();
 }
 
@@ -640,7 +640,7 @@ function renderHookResult(frame) {
   hideIndicator();
   section(frame.lifecycle === "session_start" ? "system" :
     frame.lifecycle === "user_prompt_submit" ? "user" : "agent");
-  place(execution("note", "hook", frame.model_text ? "↪" : "ℹ", text,
+  place(summarized("note", "hook", frame.model_text ? "↪" : "ℹ", text,
     full(frame)));
   if (working) showIndicator();
 }

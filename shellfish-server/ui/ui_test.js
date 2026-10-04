@@ -432,7 +432,7 @@ test("replays the durable session before live work", async () => {
   header.profile.context_window = 200;
   await page.send(
     header,
-    { type: "system", content: "# instructions" },
+    { type: "system", content: "\nYou are an agent.\n# instructions\n" },
     {
       type: "user",
       content: [{ type: "text", text: "**hello**" }],
@@ -477,7 +477,7 @@ test("replays the durable session before live work", async () => {
     "**hello**",
   );
   const system = find(page.output, "system")[0];
-  assert.equal(findTag(system, "summary")[0].textContent, "↪system prompt");
+  assert.equal(findTag(system, "summary")[0].textContent, "↪You are an agent.");
   assert.equal(find(system, "heading")[0].textContent, "# instructions");
   assert.equal(page.model.textContent, "test/test-model");
   assert.equal(page.usage.textContent, " · 75 ↑ 80% ⦿ 5 ↓ 38% of 200 ◔");
