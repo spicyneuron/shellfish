@@ -285,7 +285,8 @@ summary::-webkit-details-marker {
   flex: none;
 }
 
-details.reasoning > summary {
+details.reasoning > summary,
+details.call > summary {
   color: inherit;
 }
 
@@ -299,7 +300,8 @@ details > pre {
   color: var(--tool);
 }
 
-.note pre {
+.note pre,
+.hook {
   color: var(--muted);
 }
 

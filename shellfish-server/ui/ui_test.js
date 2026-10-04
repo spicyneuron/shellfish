@@ -77,6 +77,13 @@ class Element {
     this.parent = null;
   }
 
+  replaceWith(node) {
+    const siblings = this.parent.children;
+    siblings[siblings.indexOf(this)] = node;
+    node.parent = this.parent;
+    this.parent = null;
+  }
+
   replaceChildren() {
     for (const child of this.children) child.parent = null;
     this.children = [];
@@ -472,7 +479,10 @@ test("replays the durable session before live work", async () => {
   assert.equal(page.model.textContent, "test/test-model");
   assert.equal(page.usage.textContent, " · 75 ↑ 80% ⦿ 5 ↓ 38% of 200 ◔");
   assert.equal(find(page.output, "note").length, 0);
-  assert.equal(find(page.output, "call")[0].textContent, "⛭ shell\ntrue\ndone");
+  const call = find(page.output, "call")[0];
+  assert.equal(findTag(call, "summary")[0].textContent, "⛭shell");
+  assert.equal(findTag(call, "pre")[0].textContent, "true\ndone");
+  assert.equal(call.open, false);
   assert.equal(find(page.output, "assistant").length, 2);
 });
 
@@ -635,6 +645,23 @@ test("marks a hook that spoke only to the reader", async () => {
   assert.equal(findTag(shown, "pre")[0].textContent, "checked 3 files");
 });
 
+test("opens results that ask for their full preview", async () => {
+  const page = await idle();
+  await page.send(
+    {
+      type: "hook_result", lifecycle: "user_prompt_submit", id: "1",
+      user_text: "\nHelp:\n/copy\n", user_preview_lines: "full",
+    },
+    {
+      type: "tool_result", id: "c1", name: "shell", input: {}, exit_code: 0,
+      user_text: "Did not run shell command:\nls\ndenied", user_preview_lines: 3,
+    },
+  );
+  assert.equal(findTag(find(page.output, "hook")[0], "pre")[0].textContent, "/copy");
+  assert.equal(find(page.output, "hook")[0].open, true);
+  assert.equal(find(page.output, "call")[0].open, false);
+});
+
 test("a hook with no user or model text renders nothing", async () => {
   const page = await idle();
   await page.send({
@@ -745,7 +772,9 @@ test("renders only settled user-facing tool text", async () => {
   );
   assert.equal(findTag(find(page.output, "call")[0], "strong").length, 0);
   const calls = find(page.output, "call");
-  assert.equal(calls[0].textContent, "⛭ shell\nif true; then pwd; fi\n/project");
+  assert.equal(calls[0].tagName, "details");
+  assert.equal(findTag(calls[0], "summary")[0].textContent, "⛭shell");
+  assert.equal(findTag(calls[0], "pre")[0].textContent, "if true; then pwd; fi\n/project");
   assert.equal(calls.length, 1);
   assert.equal(page.output.textContent.includes("private file content"), false);
 });
@@ -825,11 +854,13 @@ test("updates temporary drafts by result ID", async () => {
     { type: "_session_status", working: true },
     { type: "_draft", lifecycle: "stop", id: "1", user_text: "Checking" },
   );
-  assert.equal(find(page.output, "note")[0].textContent, "Checking");
+  assert.equal(find(page.output, "note")[0].textContent, "ℹChecking");
   assert.equal(find(page.output, "activity").length, 1);
-  await page.send({ type: "_draft", lifecycle: "stop", id: "1", user_text: "Checking files" });
-  assert.equal(find(page.output, "note").length, 1);
-  assert.equal(find(page.output, "note")[0].textContent, "Checking files");
+  await page.send({ type: "_draft", lifecycle: "stop", id: "1", user_text: "Checking\n2 files" });
+  const notes = find(page.output, "note");
+  assert.equal(notes.length, 1);
+  assert.equal(findTag(notes[0], "summary")[0].textContent, "ℹChecking");
+  assert.equal(findTag(notes[0], "details")[0].open, true);
 });
 
 test("replaces a draft with its durable result", async () => {
@@ -856,14 +887,21 @@ test("tool and hook drafts with the same ID settle independently", async () => {
     { type: "_draft", lifecycle: "pre_tool_use", id: "1", user_text: "checking" },
     { type: "hook_result", lifecycle: "pre_tool_use", id: "1" },
   );
-  assert.deepEqual(find(page.output, "note").map((note) => note.textContent),
-    ["running shell"]);
+  assert.equal(find(page.output, "note").length, 0);
+  assert.deepEqual(find(page.output, "call").map((call) => call.textContent),
+    ["⛭running shell"]);
   await page.send({
     type: "tool_result", id: "1", name: "shell", input: {},
     user_text: "shell done", exit_code: 0,
   });
-  assert.equal(find(page.output, "note").length, 0);
-  assert.equal(find(page.output, "call")[0].textContent, "⛭ shell done");
+  const calls = find(page.output, "call");
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].tagName, "div");
+  assert.equal(calls[0].textContent, "⛭shell done");
+  assert.deepEqual(
+    find(page.output, "section").map((heading) => heading.textContent),
+    ["agent1"],
+  );
 });
 
 test("clears an unsettled draft when the core retracts it", async () => {
@@ -1059,11 +1097,9 @@ test("replaces a tool draft with its completed text", async () => {
     exit_code: 0,
   });
   const call = find(page.output, "call")[0];
-  assert.equal(call.tagName, "pre");
-  assert.equal(
-    call.textContent,
-    "⛭ edit_file · notes.txt\n@@ -1 +1 @@\n-old\n+new",
-  );
+  assert.equal(find(page.output, "call").length, 1);
+  assert.equal(findTag(call, "summary")[0].textContent, "⛭edit_file · notes.txt");
+  assert.equal(findTag(call, "pre")[0].textContent, "@@ -1 +1 @@\n-old\n+new");
   assert.equal(find(page.output, "note").length, 0);
   assert.equal(find(page.output, "activity").length, 1);
   assert.equal(page.cancel.hidden, false);

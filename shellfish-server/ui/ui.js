@@ -190,10 +190,22 @@ function collapsible(parent, sigil, heading, text, kind, secondary) {
   el(details, "pre", null, safe(text));
 }
 
-function hookDetails(parent, sigil, heading, body, lifecycle) {
-  const details = el(parent, "details", "hook");
-  summary(el(details, "summary"), sigil, heading, lifecycle);
-  if (body) el(details, "pre", null, safe(body));
+// A tool or hook execution, as in the terminal: the sigil and first line
+// summarize it, and any remaining lines fold beneath.
+function execution(kind, className, sigil, text, open) {
+  const article = record(kind, null);
+  const first = text.indexOf("\n");
+  const body = first < 0 ? "" : text.slice(first + 1);
+  const heading = first < 0 ? text : text.slice(0, first);
+  if (!body) {
+    summary(el(article, "div", className), sigil, heading);
+    return article;
+  }
+  const details = el(article, "details", className);
+  details.open = open;
+  summary(el(details, "summary"), sigil, heading);
+  el(details, "pre", null, safe(body));
+  return article;
 }
 
 function note(text, kind, heading, secondary) {
@@ -443,17 +455,18 @@ function applyProfile(profile) {
 }
 
 function renderDraft(frame) {
-  if (!frame.user_text) return clearDraft(frame);
+  const text = trimBoundaryNewlines(frame.user_text);
+  if (!text) return clearDraft(frame);
   hideIndicator();
   const key = draftKey(frame);
-  let article = drafts.get(key);
-  if (article) {
-    article.children[0].textContent = safe(frame.user_text);
-  } else {
-    article = record("note", null);
-    el(article, "pre", "call", safe(frame.user_text));
-    drafts.set(key, article);
-  }
+  const previous = drafts.get(key);
+  // A running tool belongs to the agent's turn; a hook stands on its own.
+  if (frame.name && !previous) section("agent");
+  const article = frame.name
+    ? execution("assistant", "call", "⛭", text, true)
+    : execution("note", "hook", "ℹ", text, true);
+  if (previous) previous.replaceWith(article);
+  drafts.set(key, article);
   place(article);
   if (working) showIndicator();
 }
@@ -601,29 +614,27 @@ function renderMessage(frame) {
 
 function renderResult(frame) {
   clearDraft(frame);
-  const text = frame.user_text || "";
+  const text = trimBoundaryNewlines(frame.user_text);
   if (!text) return;
   hideIndicator();
   section("agent");
-  const article = record("assistant", null);
-  el(article, "pre", "call", "⛭ " + safe(text));
-  place(article);
+  place(execution("assistant", "call", "⛭", text, full(frame)));
   if (working) showIndicator();
+}
+
+function full(frame) {
+  return frame.user_preview_lines === "full";
 }
 
 function renderHookResult(frame) {
   clearDraft(frame);
-  const text = frame.user_text || "";
+  const text = trimBoundaryNewlines(frame.user_text);
   if (!text) return;
   hideIndicator();
   section(frame.lifecycle === "session_start" ? "system" :
     frame.lifecycle === "user_prompt_submit" ? "user" : "agent");
-  const article = record("note", null);
-  const first = text.indexOf("\n");
-  const heading = first < 0 ? text : text.slice(0, first);
-  const body = first < 0 ? "" : text.slice(first + 1);
-  hookDetails(article, frame.model_text ? "↪" : "ℹ", heading, body);
-  place(article);
+  place(execution("note", "hook", frame.model_text ? "↪" : "ℹ", text,
+    full(frame)));
   if (working) showIndicator();
 }
 
