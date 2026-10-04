@@ -182,7 +182,7 @@ function clearDrafts() {
 }
 
 // A summary line that folds its body beneath, or stands alone without one.
-function fold(parent, className, sigil, heading, body, open) {
+function fold(parent, className, sigil, heading, body, open, format = plain) {
   if (!body) {
     summary(el(parent, "div", className), sigil, heading);
     return;
@@ -190,10 +190,14 @@ function fold(parent, className, sigil, heading, body, open) {
   const details = el(parent, "details", className);
   details.open = open;
   summary(el(details, "summary"), sigil, heading);
-  const pre = el(details, "pre");
-  // A hunk header is the only reliable signal that output is a unified diff.
-  if (/(^|\n)@@ -.* @@/.test(body)) diff(pre, safe(body));
-  else pre.textContent = safe(body);
+  format(el(details, "pre"), body);
+}
+
+// Process output is plain text, except that a hunk header is the only reliable
+// signal that output is a unified diff.
+function plain(parent, text) {
+  if (/(^|\n)@@ -.* @@/.test(text)) diff(parent, safe(text));
+  else parent.textContent = safe(text);
 }
 
 // A tool or hook execution, as in the terminal: its first line is the summary.
@@ -487,7 +491,7 @@ function apply(frame) {
       return;
     case "system":
       section("system");
-      return renderCollapsed("system", "system prompt", frame.content);
+      return renderSystem(frame.content);
     case "hook_result":
       return renderHookResult(frame);
     case "user":
@@ -559,12 +563,12 @@ function apply(frame) {
   }
 }
 
-// A prompt and its injected context are reference material: present, but folded
-// away until a reader asks for them.
-function renderCollapsed(kind, heading, content) {
+// The system prompt is reference material: present, but folded away until a
+// reader asks for it.
+function renderSystem(content) {
   hideIndicator();
-  const article = record(kind, null);
-  fold(article, null, "↪", heading, content, false);
+  const article = record("system", null);
+  fold(article, null, "↪", "system prompt", content, false, markdown);
   place(article);
   if (working) showIndicator();
 }

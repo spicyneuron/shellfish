@@ -60,9 +60,6 @@
         "system": {
           "$ref": "#/$defs/color"
         },
-        "context": {
-          "$ref": "#/$defs/color"
-        },
         "user": {
           "$ref": "#/$defs/color"
         },

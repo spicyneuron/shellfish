@@ -9,7 +9,7 @@ TERM=xterm-256color
 typeset -g theme_config='{"theme_mode":"dark","theme_light":"l","theme_dark":"d",
   "themes":{"l":{
   "muted":"#111111","divider":"#111111","footer":"#111111",
-    "prompt":"#111111","prompt_waiting":"#111111","system":"#111111","context":"#111111",
+    "prompt":"#111111","prompt_waiting":"#111111","system":"#111111",
     "user":"#111111","agent":"#111111","activity":"#111111","link":"#111111","code":"#111111","tool":"#111111",
     "reasoning":"#111111","error":"#111111","diff_added":"#111111",
     "syntax_comment":"#111112","syntax_keyword":"#111113",
@@ -18,7 +18,7 @@ typeset -g theme_config='{"theme_mode":"dark","theme_light":"l","theme_dark":"d"
     "diff_added_background":"#111111","diff_removed":"#111111",
     "diff_removed_background":"#111111","permission":"#111111"},
   "d":{"text":"#777777","muted":"#222222","divider":"#333333","footer":"#222222",
-    "prompt":"#444444","prompt_waiting":"#448844","system":"#232323","context":"#222222",
+    "prompt":"#444444","prompt_waiting":"#448844","system":"#232323",
     "user":"#555555","agent":"#2a2a2a","activity":"#2b2b2b","link":"#565656","code":"#575757","tool":"#222222",
     "reasoning":"#222222","error":"#666666","diff_added":"#222222",
     "syntax_comment":"#222223","syntax_keyword":"#222224",

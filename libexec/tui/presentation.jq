@@ -28,7 +28,7 @@ def config_presentation:
     config_assert($theme.key | config_name; ["themes", $theme.key]; "invalid name") |
     ($theme.value | config_object(["themes", $theme.key];
       ["text", "muted", "divider", "footer", "prompt", "prompt_waiting", "system",
-       "context", "user", "agent", "activity", "link", "code", "tool", "reasoning",
+       "user", "agent", "activity", "link", "code", "tool", "reasoning",
        "error", "syntax_comment", "syntax_keyword", "syntax_string", "syntax_number",
        "syntax_tag", "diff_added", "diff_added_background", "diff_removed",
        "diff_removed_background", "permission"])) as $_ |

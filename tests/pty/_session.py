@@ -26,7 +26,7 @@ OSC = re.compile(rb"\x1b\].*?(?:\x07|\x1b\\)", re.S)
 THEME = {
     "muted": "#8b949e", "divider": "#8b949e",
     "footer": "#8b949e", "prompt": "#8b949e", "prompt_waiting": "#a5d6ff",
-    "system": "#d2a8ff", "context": "#8b949e",
+    "system": "#d2a8ff",
     "user": "#58a6ff", "agent": "#ffb77a", "activity": "#ffb77a",
     "link": "#58a6ff", "code": "#58a6ff",
     "tool": "#8b949e", "reasoning": "#8b949e",
