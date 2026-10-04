@@ -171,7 +171,15 @@ sf_jq -e -s '
   contains("<context script=\"project/instructions\">") and
   contains("Follow this project rule.")
 ' "$session" >/dev/null || fail 'replay needed the live manifest'
-reject 'cannot read component manifest'
+cat >"$hook/run" <<'ZSH'
+#!/usr/bin/env zsh
+print -r -- out
+print -ru3 -- '{"state_update":[{"name":"manifest/absent","value":true}],"model_text":"${output.stdout}"}'
+ZSH
+session="$tmp/no-manifest.jsonl"
+create "$session" || fail 'hook without a manifest failed'
+jq -e -s '.[1].name == "manifest/absent" and .[-1].model_text == "out\n"' "$session" >/dev/null ||
+  fail 'hook without a manifest lost state or presentation'
 typeset invalid
 for invalid in field template capture; do
   case $invalid in

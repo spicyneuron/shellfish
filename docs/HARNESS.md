@@ -10,11 +10,13 @@ See [`CONFIG.md`](CONFIG.md) for composition, lookup, and the bundled coding har
 
 Tools, hooks, and backend adapters are executable component directories. References resolve before session creation and are frozen in its header. Manifests and scripts are read on each invocation.
 
-| Component | Required files | Trust |
+Every component requires an executable `run`. Configuration lives in an optional `manifest.json` or `manifest.jsonc`, with an absent manifest treated as `{}`. Each role validates the settings it needs.
+
+| Component | Additional requirements | Trust |
 | --- | --- | --- |
-| Tool | `run`, `manifest.json` or `manifest.jsonc`, `fence.jsonc` when sandboxed | Model-facing, optionally sandboxed |
-| Hook | `run`, `manifest.json` or `manifest.jsonc` | Trusted, user permissions |
-| Backend adapter | `run`, manifest; optional `context_window` | Trusted, user permissions |
+| Tool | Model-facing metadata and execution policy, `fence.jsonc` when sandboxed | Model-facing, optionally sandboxed |
+| Hook | None | Trusted, user permissions |
+| Backend adapter | Endpoint from profile or manifest, optional `context_window` executable | Trusted, user permissions |
 
 Scripts run from the session working directory. Shellfish starts each in an isolated process group, terminates ordinary descendants on completion or cancellation, and escalates from `TERM` to `KILL`. Components must finish their own subprocesses; daemonizing is unsupported.
 

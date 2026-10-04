@@ -46,7 +46,7 @@ sf_run_tool_plan() {
         {user_text:"${name} ${input}",
          user_text_done:"${name} ${input}\n${output.stdout}${output.stderr}",
          user_text_skipped:"${name} ${input}\n${output.stderr}",
-         model_text:"${output.stdout}${output.stderr}"}; $name; $input;
+         model_text:"${output.stdout}${output.stderr}"}; ($manifest | tool_inputs); $name; $input;
         {type:"_draft",id:$id,name:$name}) | tojson),
       entry("decision"; $permission.decision),
       entry("permission_reason"; $permission.reason // ""),
@@ -152,7 +152,7 @@ sf_run_tool_execute() {
     return 1
   }
   sf_run_component_execute "$capture" "${cwd:A}" "${stdin:A}" "$max_capture" \
-    "${process_command[@]}" || { SF_RUN_TOOL_ERROR=$REPLY; return 1; }
+    sf_run_component_line "${process_command[@]}" || { SF_RUN_TOOL_ERROR=$REPLY; return 1; }
   case $reply[1] in
     (interrupted) return $reply[2] ;;
     (invalid) SF_RUN_TOOL_ERROR='tool returned invalid control data'; return 1 ;;

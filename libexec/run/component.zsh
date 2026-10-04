@@ -6,8 +6,7 @@ setopt no_aliases no_multios pipe_fail
 typeset -gA SF_COMPONENT=()
 
 sf_run_component_prepare() {
-  SF_COMPONENT=( session "$1" values "$2" error '' live 0
-    action '' reason '' payload '' )
+  SF_COMPONENT=( session "$1" values "$2" error '' live 0 )
 }
 
 sf_run_component_begin() {
@@ -19,27 +18,25 @@ sf_run_component_begin() {
 }
 
 # State is durable per valid line, while all presentation values stay transient.
+# Any trailing KEYs pass through unvalidated, as JSON in REPLY when present.
 sf_run_component_line() {
   local record
   local -A line
-  [[ -z $SF_COMPONENT[error] ]] || return 0
+  [[ -z $SF_COMPONENT[error] ]] || return 1
   sf_jq_fields -cn --arg raw "$1" --argjson component "$SF_COMPONENT[values]" '
       include "lib/fields";
       include "lib/profile";
       include "lib/session";
       include "libexec/run/component";
-      ($raw | try fromjson catch null | component_update($component) //
+      ($raw | try fromjson catch null | component_update($component; $ARGS.positional) //
         error("invalid component line")) as $update |
       entry("state_updates"; [$update.state_updates[] | tojson] | join("\n")),
       entry("component"; $update.component | tojson),
       entry("draft"; $update.component.draft |
         if .user_text == $component.draft.user_text then "" else tojson end),
-      entry("action"; $update.control.action // ""),
-      entry("reason"; $update.control.reason // ""),
-      entry("payload"; $update.control | (.argv // .profile) |
-        if . == null then "" else tojson end),
+      entry("rest"; $update.rest | if . == {} then "" else tojson end),
       ("ok" | field)
-    ' || { SF_COMPONENT[error]=invalid; return 1; }
+    ' --args "${@:2}" || { SF_COMPONENT[error]=invalid; return 1; }
   line=( "${reply[@]}" )
   for record in ${(f)line[state_updates]}; do
     sf_run_append "$SF_COMPONENT[session]" "$record" ||
@@ -51,17 +48,16 @@ sf_run_component_line() {
       { SF_COMPONENT[error]='cannot emit component draft'; return 1; }
     SF_COMPONENT[live]=1
   fi
-  [[ -z $line[action] ]] || SF_COMPONENT+=( action "$line[action]"
-    reason "$line[reason]" payload "$line[payload]" )
+  REPLY=$line[rest]
 }
 
-# Run a prepared command into CAPTURE, streaming fd 3 as component lines. reply
+# Run a prepared command into CAPTURE, streaming fd 3 to the supplied handler. reply
 # is (status exit_code) with status ok, interrupted, invalid, or overflow; ok
 # leaves the bounded outcome in REPLY. Failure leaves a message in REPLY.
 sf_run_component_execute() {
   local capture=$1 limit=$4 state=ok
   local -A process
-  sf_process_run "$@[1,4]" sf_run_component_line "$@[5,-1]" ||
+  sf_process_run "$@" ||
     { REPLY=$SF_PROCESS_ERROR; return 1; }
   process=( "${reply[@]}" )
   if (( process[interrupted] )); then

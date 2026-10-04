@@ -34,37 +34,55 @@ sf_run_hook_manifest() {
     include "libexec/run/component";
     if $manifest | hook_manifest then
       if $manifest.match == null or ($input | test($manifest.match.pattern)) then
-        component_plan($manifest; {}; $name; $input; {type:"_draft",lifecycle:$lifecycle,id:$id}) +
-          {max_capture:($manifest.max_capture_bytes // $max_capture)} +
-          {actions:({user_prompt_submit:["block","handoff","session_update"],
-            permission_request:["allow","deny"],pre_tool_use:["deny"],
-            stop:["continue"]}[$lifecycle] // [])}
+        component_plan($manifest; {}; []; $name; $input; {type:"_draft",lifecycle:$lifecycle,id:$id}) +
+          {max_capture:($manifest.max_capture_bytes // $max_capture)}
       else null end
     else error("invalid hook manifest") end
   ' 2>/dev/null) || { REPLY="invalid hook manifest: $command"; return 1; }
 }
 
+# The last control line wins. It is validated when the hook settles.
+sf_run_hook_line() {
+  sf_run_component_line "$1" action argv profile reason || return
+  [[ -z $REPLY ]] || control=$REPLY
+}
+
 sf_run_hook_complete() {
-  local lifecycle=$1 outcome=$2
+  local lifecycle=$1 outcome=$2 command=$3
   local -A settled
   sf_jq_fields -cn --argjson component "$SF_COMPONENT[values]" --argjson outcome "$outcome" \
-    --arg lifecycle "$lifecycle" --arg id "$SF_RUN[hook_id]" '
+    --argjson control "$control" --arg lifecycle "$lifecycle" --arg id "$SF_RUN[hook_id]" '
     include "lib/fields";
     include "lib/session";
     include "lib/profile";
     include "libexec/run/component";
-    {type:"hook_result",lifecycle:$lifecycle,id:$id} + component_texts($component; $outcome) |
-    if (has("user_text") or has("model_text")) | not then entry("result"; "")
-    elif canonical_hook_result then entry("result"; tojson)
-    else error("invalid hook result") end,
-    entry("model_feedback"; has("model_text") | tostring), ("ok" | field)
-  ' || { REPLY='cannot decode hook result'; return 1; }
+    ({user_prompt_submit:["block","handoff","session_update"],
+      permission_request:["allow","deny"],pre_tool_use:["deny"],
+      stop:["continue"]}[$lifecycle] // []) as $actions |
+    if $control == {} or ($control | (.action | IN($actions[])) and
+      if .action == "handoff" then keys == ["action","argv"] and
+        (.argv | type == "array" and length > 0 and all(.[]; type == "string"))
+      elif .action == "session_update" then keys == ["action","profile"] and
+        (.profile | type == "object")
+      elif .action == "deny" then keys == ["action"] or
+        (keys == ["action","reason"] and (.reason | type == "string"))
+      else keys == ["action"] end) then . else error("invalid control") end |
+    ({type:"hook_result",lifecycle:$lifecycle,id:$id} + component_texts($component; $outcome) |
+      if (has("user_text") or has("model_text")) | not then entry("result"; "")
+      elif canonical_hook_result then entry("result"; tojson)
+      else error("invalid hook result") end,
+      entry("model_feedback"; has("model_text") | tostring)),
+    entry("action"; $control.action // ""), entry("reason"; $control.reason // ""),
+    entry("payload"; $control | .argv // .profile | if . == null then "" else tojson end),
+    ("ok" | field)
+  ' || { REPLY="$lifecycle hook returned invalid control or result: $command"; return 1; }
   settled=( "${reply[@]}" )
+  action=$settled[action] reason=$settled[reason] payload=$settled[payload]
   if [[ -n $settled[result] ]]; then
     sf_run_append "$SF_COMPONENT[session]" "$settled[result]" || return
     (( SF_RUN[hook_id] += 1 ))
     SF_COMPONENT[live]=0
-    [[ $settled[model_feedback] != true ]] || SF_COMPONENT[model_feedback]=1
+    [[ $settled[model_feedback] != true ]] || model_feedback=1
   fi
 }
 
@@ -74,9 +92,9 @@ sf_run_hooks() {
   setopt local_options no_err_exit
   local session=$1 lifecycle=$2 content=$3 turn_state=$4
   shift 4
-  local command input config_dir directory error='' name component
+  local command input config_dir directory error='' name component control action='' reason='' payload=''
   local -a hooks environment
-  local -A SF_COMPONENT=( action '' reason '' payload '' live 0 )
+  local -A SF_COMPONENT=()
   integer max_capture model_feedback=0
 
   SF_RUN_HOOK_ERROR=''
@@ -137,10 +155,11 @@ sf_run_hooks() {
       max_capture=$(jq -r '.max_capture' <<<"$component") || { error='cannot inspect hook capture limit'; break; }
       sf_scratch_directory hook || { error='cannot prepare hook capture'; break; }
       directory=$REPLY
+      control='{}'
       if ! sf_run_component_begin "$session" "$component"; then
         error='cannot emit hook draft'
       elif ! sf_run_component_execute "$directory" "${SF_RUN[cwd]:A}" "$input" "$max_capture" \
-          /usr/bin/env "${environment[@]}" "SHELLFISH_MAX_CAPTURE_BYTES=$max_capture" \
+          sf_run_hook_line /usr/bin/env "${environment[@]}" "SHELLFISH_MAX_CAPTURE_BYTES=$max_capture" \
           "$command/run" "$@"; then
         error=$REPLY
       else
@@ -155,23 +174,21 @@ sf_run_hooks() {
               error="$lifecycle hook failed with status $reply[2]: $command"
               [[ ! -s $directory/stderr ]] || error+=": $(<"$directory/stderr")"
             else
-              sf_run_hook_complete "$lifecycle" "$REPLY" || error=$REPLY
+              sf_run_hook_complete "$lifecycle" "$REPLY" "$command" || error=$REPLY
             fi ;;
         esac
       fi
       rm -rf -- "$directory"
       # A draft that nothing settled leaves no trace.
       sf_run_component_clear || error=${error:-cannot emit hook draft}
-      (( model_feedback |= SF_COMPONENT[model_feedback] ))
-      [[ -z $error && -z $SF_COMPONENT[action] ]] || break
+      [[ -z $error && -z $action ]] || break
     done
   fi
   rm -f -- "$input"
-  if [[ -z $error && $lifecycle == stop && $SF_COMPONENT[action] == continue ]] &&
+  if [[ -z $error && $lifecycle == stop && $action == continue ]] &&
       (( ! model_feedback )); then
     error='stop hook continued without model feedback'
   fi
   [[ -z $error ]] || { SF_RUN_HOOK_ERROR=$error; return 1; }
-  reply=( action "$SF_COMPONENT[action]" reason "$SF_COMPONENT[reason]"
-    payload "$SF_COMPONENT[payload]" )
+  reply=( action "$action" reason "$reason" payload "$payload" )
 }

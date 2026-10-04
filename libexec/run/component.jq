@@ -1,31 +1,19 @@
-include "lib/session";
 include "lib/profile";
-
-# The action fields of one fd 3 line, valid when the action is one of $actions.
-def component_action($actions):
-  (.action | IN($actions[])) and
-  if .action == "handoff" then keys == ["action","argv"] and
-    (.argv | type == "array" and length > 0 and all(.[]; type == "string"))
-  elif .action == "session_update" then keys == ["action","profile"] and
-    (.profile | type == "object")
-  elif .action == "deny" then keys == ["action"] or
-    (keys == ["action","reason"] and (.reason | type == "string"))
-  else keys == ["action"] end;
+include "lib/session";
 
 # Invocation values and initial presentation. The manifest overrides $defaults.
-def component_plan($manifest; $defaults; $name; $input; $draft):
+def component_plan($manifest; $defaults; $fields; $name; $input; $draft):
   ($defaults + ($manifest | with_entries(select(.value != null and
     (.key | IN(component_templates[])))))) as $templates |
-  {name:$name,input:$input,templates:$templates,data:{},fields:($manifest | component_inputs),
+  {name:$name,input:$input,templates:$templates,data:{},fields:$fields,
    draft:($draft + {user_text:render_template($templates.user_text; $name; $input; {}; {})} +
      ($manifest | with_entries(select(.key == "user_preview_lines"))))};
 
-# One fd 3 line applied to $component, or null when any part is invalid.
-def component_update($component):
-  if type == "object" then . else {"": null} end |
-  with_entries(select(.key | IN("action","argv","profile","reason"))) as $control |
-  if ((keys - component_templates - ($control | keys) - ["state_update","data"]) | length == 0) and
-    ($control == {} or ($control | component_action($component.actions // []))) and
+# One fd 3 line applied to $component, or null when any part is invalid. The
+# caller's $rest keys pass through unvalidated.
+def component_update($component; $rest):
+  if type == "object" and
+    ((keys - component_templates - ["state_update","data"] - $rest) | length == 0) and
     ((has("state_update") | not) or (.state_update | type == "array" and
       all(.[]; type == "object" and ({type:"state_update"} + . | canonical_state_update)))) and
     ((has("data") | not) or (.data | type == "object" and
@@ -35,7 +23,8 @@ def component_update($component):
   then
     ($component.data + (.data // {})) as $data |
     ($component.templates + with_entries(select(.key | IN(component_templates[])))) as $templates |
-    {state_updates:[.state_update[]? | {type:"state_update"} + .], control:$control,
+    {state_updates:[.state_update[]? | {type:"state_update"} + .],
+     rest:with_entries(select(.key | IN($rest[]))),
      component:($component + {data:$data,templates:$templates,
        draft:($component.draft + {user_text:render_template($templates.user_text;
          $component.name; $component.input; {}; $data)})})}

@@ -11,6 +11,7 @@ input=$(cat)
 case $input in
   handoff) print -r -u3 -- '{"action":"block"}'
     print -r -u3 -- '{"action":"handoff","argv":["/usr/bin/printf","next.jsonl"]}'
+    print -r -u3 -- '{"state_update":[{"name":"prompt/handoff","value":true}]}'
     print -rn -- 'handoff context' ;;
   update|bad-update)
     profile=$(head -n 1 "$SHELLFISH_SESSION" | jq -c '.profile.sandbox_write_paths=["/tmp/reference"] | .profile') || exit 2
@@ -28,6 +29,7 @@ SF_TEST_PROFILE=$(jq -c --arg hook "$hook" '.hooks.user_prompt_submit=[$hook]' <
 new_session() { session="$tmp/$1.jsonl"; sf_test_session "$session"; }
 new_session handoff; sf_test_run handoff "$session" >"$stream" || fail 'handoff failed'
 jq -eRn '[inputs | fromjson] as $e | $e[-1] == {type:"_handoff",argv:["/usr/bin/printf","next.jsonl"]} and
+  any($e[]; .type == "state_update" and .name == "prompt/handoff" and .value == true) and
   $e[-2].model_text == "handoff context" and ([ $e[] | select(.type == "user") ] | length) == 0' \
   <"$stream" >/dev/null || fail 'last action or handoff durability failed'
 new_session update; sf_test_run update "$session" >"$stream" || fail 'session update failed'

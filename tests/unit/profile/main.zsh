@@ -70,6 +70,12 @@ sf_jq -en '
 ' >/dev/null || fail 'manifest validation accepted an invalid value'
 sf_jq -en '
   include "lib/profile";
+  ({user_text:"${input.custom}"} | component_manifest([]; ["input.custom"])) and
+  ({input_schema:{properties:{custom:{}}},user_text:"${input.custom}"} |
+    component_manifest(["input_schema"]; []) | not)
+' >/dev/null || fail 'shared manifest validation inferred caller template fields'
+sf_jq -en '
+  include "lib/profile";
   ({match:{pattern:"^/help\\z"}} | hook_manifest) and
   ([{match:{pattern:"["}},{match:{pattern:1}},{match:{}},
     {match:{pattern:"x",other:true}}] | all(.[]; hook_manifest | not)) and
@@ -245,12 +251,21 @@ sf_profile_resolve_args -p hooked
 jq -e '.hooks.stop == []' <<<"$REPLY" >/dev/null ||
   fail 'an empty hook list did not disable the lifecycle'
 
-# A hook directory must contain an executable run and a manifest.
+# A hook directory must contain an executable run.
 sf_test_profile hooked '{"extend":["hook-base"],"hooks":{"pre_tool_use":["dir"]}}'
 if sf_profile_resolve_args -p hooked; then
   fail 'incomplete hook directory was accepted'
 fi
 [[ $SF_PROFILE_ERROR == 'invalid hooks reference: dir' ]]
+
+# A backend without a manifest needs an endpoint from the profile.
+mkdir -p "$SF_TEST_CONFIG/backends/bare"
+print -r -- '#!/bin/sh' >"$SF_TEST_CONFIG/backends/bare/run"
+chmod +x "$SF_TEST_CONFIG/backends/bare/run"
+sf_test_profile bare '{"backend":{"adapter":"bare"},"request":{"model":"m"}}'
+sf_profile_resolve_args -p bare && fail 'backend without an endpoint was accepted'
+sf_test_profile bare '{"backend":{"adapter":"bare","endpoint":"https://example.invalid"},"request":{"model":"m"}}'
+sf_profile_resolve_args -p bare || fail 'backend without a manifest was rejected'
 
 # Tool references preserve configured order.
 typeset tools="$SF_TEST_CONFIG/tools"
@@ -285,6 +300,10 @@ if sf_profile_resolve_args -p tooled; then
 fi
 [[ $SF_PROFILE_ERROR == "multiple component manifests: ${tools:A}/beta" ]]
 rm "$tools/beta/manifest.json"
+
+mv "$tools/gamma/manifest.json" "$tmp/gamma.json"
+sf_profile_resolve_args -p tooled && fail 'tool without a manifest was accepted'
+mv "$tmp/gamma.json" "$tools/gamma/manifest.json"
 
 sf_test_profile unsandboxed '{"extend": ["tooled"], "sandbox": false}'
 sf_profile_resolve_args -p unsandboxed

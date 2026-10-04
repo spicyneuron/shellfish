@@ -82,6 +82,8 @@ Hooks and backends are trusted, run with your permissions, and receive every val
 
 Hooks and tools communicate through JSON, stdout, stderr, and a small control channel; backend adapters emit normalized JSON events. Components do not receive a mutable session object. See [`HARNESS.md`](HARNESS.md) for their contracts.
 
+Hooks and tools share execution, presentation, and durable state updates. Their callers compose model interfaces, execution policies, lifecycle actions, and result records around that shared contract. The shared component layer does not distinguish hooks from tools.
+
 ## Clients invoke turns
 
 Clients submit prompts and render what they receive. They own interaction and presentation, but rely on `shellfish run` for the agent loop and state. A client replays the durable transcript for history and reads live events from the turn it invoked; both use one presentation vocabulary. Clients never append to a session, recover one, or reinterpret its profile.

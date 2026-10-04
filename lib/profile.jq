@@ -61,29 +61,28 @@ def render_template($template; $name; $input; $output; $data):
   $template // "" | gsub("\\$\\{(?<name>[^{}]+)\\}"; $variables[.name] // "");
 
 def component_templates: ["user_text", "user_text_done", "user_text_skipped", "model_text"];
-def component_inputs: .input_schema.properties // {} | keys | map("input." + .);
+def tool_inputs: .input_schema.properties // {} | keys | map("input." + .);
 
-# The presentation any component manifest may set, plus the caller's $fields.
-def component_manifest($fields):
-  component_inputs as $inputs |
+# Shared presentation with caller-supplied keys and template fields.
+def component_manifest($attrs; $fields):
   type == "object" and
-  ((keys - component_templates - ["user_preview_lines", "max_capture_bytes"] - $fields) | length == 0) and
-  all(.[component_templates[]]; . == null or component_template($inputs)) and
+  ((keys - component_templates - ["user_preview_lines", "max_capture_bytes"] - $attrs) | length == 0) and
+  all(.[component_templates[]]; . == null or component_template($fields)) and
   ((has("user_preview_lines") | not) or (.user_preview_lines | component_preview_hint)) and
   ((has("max_capture_bytes") | not) or (.max_capture_bytes | capture_bytes));
 
 def hook_manifest:
-  component_manifest(["match"]) and
+  component_manifest(["match"]; []) and
   ((has("match") | not) or
     (.match | type == "object" and keys == ["pattern"] and
       (.pattern as $pattern | $pattern | type == "string" and
         (try ("" | test($pattern) | type == "boolean") catch false))));
 
 def tool_manifest:
-  component_inputs as $inputs |
+  tool_inputs as $inputs |
   component_manifest(["allow_sandbox_bypass", "description", "environment",
     "input_schema", "sandbox", "user_permission", "user_text_unsandboxed",
-    "user_text_done_unsandboxed"]) and
+    "user_text_done_unsandboxed"]; $inputs) and
   all([.user_text_unsandboxed, .user_text_done_unsandboxed][];
     . == null or component_template($inputs)) and
   (.description | nul_free_string and length > 0) and

@@ -41,6 +41,11 @@ collect '^include "libexec[^"]+"' $ROOT/lib/**/*.jq(.N)
 collect '\bsf_session_[a-z0-9_]+\b' $ROOT/lib/profile.zsh
 (( ! ${#matches} )) || fail "profile uses session ownership: $matches[1]"
 
+# Shared execution has no role-specific fields, symbols, or control grammar.
+collect '\b(SF_(HOOK|TOOL)[A-Za-z0-9_]*|sf_run_(hook|tool)[a-z0-9_]*|hook_[a-z_]+|tool_[a-z_]+|input_schema|lifecycle|action|argv|reason|payload)\b|libexec/run/(hooks|tools)' \
+  $ROOT/libexec/run/component.{zsh,jq}
+(( ! ${#matches} )) || fail "component execution knows a caller role: $matches[1]"
+
 # Collect shared symbols.
 declarations $ROOT/lib/**/*.zsh(.N)
 typeset -A shared=()

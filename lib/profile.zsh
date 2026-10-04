@@ -36,22 +36,19 @@ sf_profile_read_files() {
 }
 
 sf_profile_manifest() {
-  local directory=$1 json="$1/manifest.json" jsonc="$1/manifest.jsonc"
-  if [[ ( -e $json || -L $json ) && ( -e $jsonc || -L $jsonc ) ]]; then
-    sf_profile_fail "multiple component manifests: $directory"
-  elif [[ -f $jsonc && -r $jsonc ]]; then
-    REPLY=$jsonc
-  elif [[ -f $json && -r $json ]]; then
-    REPLY=$json
-  else
+  local directory=$1
+  local -a files=( "$directory"/manifest.(json|jsonc)(N) )
+  (( ${#files} <= 1 )) || sf_profile_fail "multiple component manifests: $directory" || return
+  REPLY=${files[1]-}
+  [[ -z $REPLY || ( -f $REPLY && -r $REPLY ) ]] ||
     sf_profile_fail "cannot read component manifest: $directory"
-  fi
 }
 
 # The parsed manifest of a component folder.
 sf_profile_read_manifest() {
   sf_profile_manifest "$1" || return
   local file=$REPLY
+  [[ -n $file ]] || { REPLY='{}'; return 0; }
   REPLY=$(sf_jsonc_read "$file" 2>&1) ||
     sf_profile_validation_error "$REPLY" "invalid component manifest: $file"
 }
@@ -90,18 +87,19 @@ sf_profile_tools() {
     [[ -d $directory && -x $directory/run ]] ||
       sf_profile_fail "invalid tools reference: $directory" || return
     sf_profile_manifest "$directory" || return
-    files+=( "$REPLY" )
+    [[ -z $REPLY ]] || files+=( "$REPLY" )
   done
-  (( ${#files} )) || { REPLY='[]'; return 0; }
-  sf_profile_read_files 'invalid component manifest' "${files[@]}" || return
+  REPLY='{}'
+  (( ! ${#files} )) || sf_profile_read_files 'invalid component manifest' "${files[@]}" || return
   projection=$(sf_jq -cn --argjson manifests "$REPLY" '
     include "lib/profile";
-    [$ARGS.positional[] as $path | ($path | sub("/[^/]*$"; "")) as $directory |
-      ($manifests[$path] | select(tool_manifest) //
-        error("invalid tool manifest: " + $path)) as $manifest |
+    ($manifests | with_entries(.key |= sub("/[^/]*$"; ""))) as $manifests |
+    [$ARGS.positional[] as $directory |
+      (($manifests[$directory] // {}) | select(tool_manifest) //
+        error("invalid tool manifest: " + $directory)) as $manifest |
       {name:($directory | split("/") | last), command:($directory + "/run"),
        manifest:$manifest}]
-  ' --args "${files[@]}" 2>&1) || {
+  ' --args "${directories[@]}" 2>&1) || {
     sf_profile_validation_error "$projection" 'cannot read tools'
     return
   }
@@ -206,10 +204,12 @@ sf_profile_resolve() {
       include "lib/profile";
       ($ARGS.positional | [range(0; length; 2) as $at | {key:.[$at], value:.[$at + 1]}] |
         from_entries) as $paths |
-      ($manifest | select(type == "object" and keys == ["endpoint"] and (.endpoint | endpoint)) //
+      ($manifest | select(type == "object" and (keys - ["endpoint"]) == [] and
+        ((has("endpoint") | not) or (.endpoint | endpoint))) //
         error("invalid backend manifest")) as $manifest |
       $profile | profile_references(join(" ") as $key | $paths[$key]) |
       .backend.endpoint //= $manifest.endpoint |
+      if .backend.endpoint == null then error("backend endpoint is required") else . end |
       profile_expand($share; $home) |
       if canonical_profile then . else error("invalid resolved profile") end
     ' --args "${resolutions[@]}" 2>&1) || {
