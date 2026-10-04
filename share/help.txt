@@ -7,7 +7,7 @@ Usage:
   shellfish run [OPTIONS] [PROMPT]   Run exactly one agent turn
 
 Run output:
-  --json               Print the final result and usage as JSON
+  --json               Print the final result, usage, and session path as JSON
   --jsonl              Stream all turn events as JSON Lines
   --background         Start one detached turn; print its session path
 

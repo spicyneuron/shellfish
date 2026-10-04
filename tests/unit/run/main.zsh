@@ -32,10 +32,10 @@ assert_equal 'Tool complete.' "$output" 'plain run included an intermediate assi
 typeset json_session="$tmp/json.jsonl"
 output=$(SF_TEST_BACKEND_DELAY=0 zsh -f "$entry" run --json \
   --session-out "$json_session" 'use a tool') || fail 'JSON run failed'
-print -r -- "$output" | jq -e '
-  keys == ["message","stop","usage"] and
+print -r -- "$output" | jq -e --arg session "${json_session:a}" '
+  keys == ["message","session","stop","usage"] and
   .message == "Tool complete." and .stop == "end" and
-  (.usage | type == "object")
+  (.usage | type == "object") and .session == $session
 ' >/dev/null || fail 'JSON run returned the wrong structure'
 jq -es '[.[] | select(.type == "assistant")] | length == 2' "$json_session" >/dev/null ||
   fail 'JSON test did not exercise an intermediate assistant message'

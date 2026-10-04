@@ -273,8 +273,8 @@ sf_run_main() {
   zsystem flock -u "$SF_RUN_LOCK_FD"
   trap - INT USR1 HUP TERM
   if (( json )) && [[ -n $SF_RUN[assistant] ]]; then
-    jq -c --arg message "$SF_RUN[answer]" \
-      '{message:$message,stop:.stop,usage:(.usage // null)}' \
+    jq -c --arg message "$SF_RUN[answer]" --arg session "$session" \
+      '{message:$message,stop:.stop,usage:(.usage // null),session:$session}' \
       <<<"$SF_RUN[assistant]" || { sf_die 'cannot format final response'; return 1; }
   elif (( ! jsonl )) && [[ -n $SF_RUN[answer] ]]; then
     print -r -- "$SF_RUN[answer]"
