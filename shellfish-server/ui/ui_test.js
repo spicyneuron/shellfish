@@ -262,6 +262,7 @@ function load(savedCode, initialSessionStatus = 200) {
   return {
     output: elements.get("output"),
     prompt: elements.get("prompt"),
+    code: elements.get("code"),
     entry: elements.get("entry"),
     cancel: elements.get("cancel"),
     detach: elements.get("detach"),
@@ -336,6 +337,40 @@ test("normalizes the access code", async () => {
   const page = load();
   await page.authenticate(" 12a3-456 ");
   assert.deepEqual(page.opens, ["Bearer 123456"]);
+});
+
+test("automatically submits the access code at six digits", async () => {
+  const page = load();
+  for (const value of ["1", "12", "123", "1234", "12345"]) {
+    page.code.value = value;
+    page.code.dispatch("input");
+    assert.deepEqual(page.opens, []);
+  }
+  page.code.value = "123456";
+  page.code.dispatch("input");
+  await page.waitFor(() => page.opens.length === 1, "session stream");
+  assert.deepEqual(page.opens, ["Bearer 123456"]);
+  assert.equal(page.code.value, "");
+  assert.equal(page.code.hidden, true);
+  assert.equal(page.entry.hidden, false);
+  page.code.dispatch("input");
+  assert.deepEqual(page.opens, ["Bearer 123456"]);
+  assert.deepEqual(page.posts, []);
+});
+
+test("automatically submits a pasted, formatted access code", async () => {
+  const page = load();
+  page.code.value = "123 456";
+  page.code.dispatch("input");
+  await page.waitFor(() => page.opens.length === 1, "session stream");
+  assert.deepEqual(page.opens, ["Bearer 123456"]);
+});
+
+test("does not automatically submit more than six digits", () => {
+  const page = load();
+  page.code.value = "1234567";
+  page.code.dispatch("input");
+  assert.deepEqual(page.opens, []);
 });
 
 test("restores the tab's saved access code", async () => {

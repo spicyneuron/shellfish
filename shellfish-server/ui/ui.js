@@ -915,6 +915,12 @@ form.addEventListener("submit", async (event) => {
   });
 });
 
+codeEntry.addEventListener("input", () => {
+  if (code === null && codeEntry.value.replace(/\D/g, "").length === 6) {
+    form.requestSubmit();
+  }
+});
+
 entry.addEventListener("input", resizeEntry);
 
 detachButton.addEventListener("click", () => {
