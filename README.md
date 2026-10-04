@@ -71,7 +71,7 @@ Run `shellfish --help` for creation and sandbox options, or `/help` inside chat 
 
 ## Configuration
 
-An agent is a JSONC file in `$XDG_CONFIG_HOME/shellfish/profiles/` (typically `~/.config/shellfish/profiles/`). `default.jsonc` is selected when `--profile` is absent; your file shadows the [bundled profile](share/profiles/default.jsonc) of the same name. Reusable components live in top-level `system/`, `tools/`, `hooks/`, and `backends/` directories beside `profiles/`. Exported credentials override values in `.env` in the config directory. Themes and preview limits live in [`tui.jsonc`](share/tui.jsonc).
+An agent is a JSONC file in the config directory's `profiles/` (typically `~/.config/shellfish/profiles/`, see [Directories](docs/CONFIG.md#directories)). `default.jsonc` is selected when `--profile` is absent; your file shadows the [bundled profile](share/profiles/default.jsonc) of the same name. Reusable components live in top-level `system/`, `tools/`, `hooks/`, and `backends/` directories beside `profiles/`. Exported credentials override values in `.env` in the config directory. Themes and preview limits live in [`tui.jsonc`](share/tui.jsonc).
 
 ```jsonc
 // ~/.config/shellfish/profiles/review.jsonc — shellfish -p review

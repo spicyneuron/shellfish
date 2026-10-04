@@ -3,6 +3,8 @@ setopt no_aliases no_bg_nice no_multios pipe_fail
 
 # Where sessions live, how one is named, and the two durable mutations.
 
+(( $+functions[sf_environment_state_dir] )) || source "$SF_ROOT/lib/environment.zsh"
+
 typeset -g SF_SESSION_ERROR=''
 
 sf_session_fail() {
@@ -13,12 +15,12 @@ sf_session_fail() {
 sf_session_directory() {
   local LC_ALL=C root cwd scope
   setopt local_options extended_glob
-  if [[ -n ${XDG_STATE_HOME-} ]]; then
-    root="$XDG_STATE_HOME/shellfish/sessions"
-  elif [[ -n ${HOME-} ]]; then
-    root="$HOME/.local/state/shellfish/sessions"
+  if [[ -n ${SHELLFISH_SESSIONS_DIR-} ]]; then
+    root=${SHELLFISH_SESSIONS_DIR:a}
+  elif sf_environment_state_dir; then
+    root=$REPLY/sessions
   else
-    sf_session_fail 'HOME or XDG_STATE_HOME is required when --session is omitted'
+    sf_session_fail "$SF_ENVIRONMENT_ERROR"
     return
   fi
   cwd=$(pwd -P) || {

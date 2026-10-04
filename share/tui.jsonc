@@ -1,6 +1,6 @@
 // Shellfish: https://github.com/spicyneuron/shellfish
 //
-// Default TUI settings. $XDG_CONFIG_HOME/shellfish/tui.jsonc is merged over
+// Default TUI settings. tui.jsonc in the config directory is merged over
 // this file. Nothing here is frozen into a session; a reopened session renders
 // with whatever these say today.
 {

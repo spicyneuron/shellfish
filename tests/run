@@ -24,6 +24,8 @@ typeset start_all=$EPOCHREALTIME
 # test leaks collects in a single place instead of the bare temp directory.
 export TMPDIR=${${TMPDIR:-/tmp}%/}/shellfish-tests
 mkdir -p -- "$TMPDIR" || exit 1
+# Tests locate state through XDG; a developer's overrides would bypass that.
+unset SHELLFISH_CONFIG_DIR SHELLFISH_STATE_DIR SHELLFISH_SESSIONS_DIR SHELLFISH_SCRATCH_DIR
 
 if (( $# == 0 )); then
   suites=( unit )

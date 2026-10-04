@@ -1,10 +1,23 @@
 # Configuration
 
-Shellfish reads JSONC from `$XDG_CONFIG_HOME/shellfish/` (or `~/.config/shellfish/` when `XDG_CONFIG_HOME` is unset). `profiles/NAME.jsonc` describes an agent and `tui.jsonc` describes rendering. `NAME` may be a slash-separated path such as `openai/sol`. Your profile file shadows the bundled file of the same name under [`share/profiles/`](../share/profiles/). `tui.jsonc` merges over [`share/tui.jsonc`](../share/tui.jsonc).
+Shellfish reads JSONC from its config directory (see [Directories](#directories)). `profiles/NAME.jsonc` describes an agent and `tui.jsonc` describes rendering. `NAME` may be a slash-separated path such as `openai/sol`. Your profile file shadows the bundled file of the same name under [`share/profiles/`](../share/profiles/). `tui.jsonc` merges over [`share/tui.jsonc`](../share/tui.jsonc).
 
 The two never mix. A session freezes a profile, so a profile rejects rendering keys; `tui.jsonc` is read fresh on every run and is never frozen.
 
 Copy [`share/template/`](../share/template/) into that directory for a working starting point. The bundled [`shellfish.schema.json`](../share/shellfish.schema.json) and [`tui.schema.json`](../share/tui.schema.json) are the exact field references.
+
+## Directories
+
+Environment variables relocate Shellfish's directories. A more specific variable wins over a broader one.
+
+| Variable | Default | Contents |
+| --- | --- | --- |
+| `SHELLFISH_CONFIG_DIR` | `$XDG_CONFIG_HOME/shellfish` | Profiles, components, `tui.jsonc`, `.env` |
+| `SHELLFISH_STATE_DIR` | `$XDG_STATE_HOME/shellfish` | Sessions and scratch |
+| `SHELLFISH_SESSIONS_DIR` | `$SHELLFISH_STATE_DIR/sessions` | Session files, grouped by project directory |
+| `SHELLFISH_SCRATCH_DIR` | `$SHELLFISH_STATE_DIR/scratch` | Private temporary files for turns, hooks, and tools |
+
+`XDG_STATE_HOME` defaults to `~/.local/state`. `--continue` and `--resume` search the sessions directory. Child agents and hooks inherit these settings.
 
 ## Profiles
 

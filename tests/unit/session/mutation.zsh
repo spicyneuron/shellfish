@@ -9,10 +9,25 @@ typeset session="$tmp/session.jsonl" before profile
 sf_test_session "$session"
 
 # Default sessions use a private project-scoped state directory.
-typeset -g XDG_STATE_HOME="$tmp/state"
 sf_session_select_path
 [[ $REPLY == "$tmp/state/shellfish/sessions/"*.jsonl ]]
 [[ $(stat -f %Lp "$REPLY:h") == 700 ]]
+
+# Specific overrides win over SHELLFISH_STATE_DIR, which wins over XDG.
+(
+  export SHELLFISH_STATE_DIR="$tmp/custom-state"
+  sf_session_directory
+  [[ $REPLY == "$tmp/custom-state/sessions/"* ]]
+  SHELLFISH_SESSIONS_DIR="$tmp/custom-sessions" sf_session_directory
+  [[ $REPLY == "$tmp/custom-sessions/"* ]]
+  sf_test_source lib/scratch.zsh
+  sf_scratch_root
+  [[ $REPLY == "${tmp:A}/custom-state/scratch" ]]
+  SHELLFISH_SCRATCH_DIR="$tmp/custom-scratch" sf_scratch_root
+  [[ $REPLY == "${tmp:A}/custom-scratch" && $(stat -f %Lp "$REPLY") == 700 ]]
+  SHELLFISH_CONFIG_DIR="$tmp/custom-config" sf_environment_config_dir
+  [[ $REPLY == "${tmp:A}/custom-config" ]]
+)
 
 # Appends write one complete record and report the failing path plainly.
 sf_session_append "$session" \

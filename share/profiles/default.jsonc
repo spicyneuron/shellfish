@@ -1,7 +1,7 @@
 // Shellfish: https://github.com/spicyneuron/shellfish
 //
 // The bundled agent, selected when --profile is absent. A profile file in
-// $XDG_CONFIG_HOME/shellfish/profiles/ shadows a bundled one of the same name.
+// the config directory's profiles/ shadows a bundled one of the same name.
 {
   "$schema": "https://raw.githubusercontent.com/spicyneuron/shellfish/refs/heads/main/share/shellfish.schema.json",
 

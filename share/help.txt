@@ -27,10 +27,15 @@ Existing sessions:
   -r, --resume [OPTIONS] [PROMPT]        Pick a session from this directory
   -s, --session PATH [OPTIONS] [PROMPT]  Open a specific session
 
+Directories:
+  SHELLFISH_CONFIG_DIR    Default: ${XDG_CONFIG_HOME:-$HOME/.config}/shellfish
+  SHELLFISH_STATE_DIR     Default: ${XDG_STATE_HOME:-$HOME/.local/state}/shellfish
+  SHELLFISH_SESSIONS_DIR  Default: STATE_DIR/sessions
+  SHELLFISH_SCRATCH_DIR   Default: STATE_DIR/scratch
+
 Global config:
-  Default directory: ${XDG_CONFIG_HOME:-$HOME/.config}/shellfish
-  Profiles:          profiles/NAME.jsonc
-  TUI file:          tui.jsonc
+  Profiles:  CONFIG_DIR/profiles/NAME.jsonc
+  TUI file:  CONFIG_DIR/tui.jsonc
 
 Authentication:
   Set environment variable or include in the config directory's .env

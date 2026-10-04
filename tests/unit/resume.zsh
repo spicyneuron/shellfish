@@ -177,3 +177,18 @@ exit_code=0
 error=$(zsh -f "$entry" --continue --session-out target.jsonl 2>&1) || exit_code=$?
 [[ $error == *'--session names an existing session and cannot be combined with --session-out'* && $exit_code == 2 ]] || \
   fail 'continue did not select a session and forward TUI arguments'
+
+# Continue resolves against SHELLFISH_SESSIONS_DIR instead of the state directory.
+exit_code=0
+error=$(SHELLFISH_SESSIONS_DIR="$tmp/custom" zsh -f "$entry" --continue 2>&1) ||
+  exit_code=$?
+[[ $error == *"no sessions match $(pwd -P)"* && $exit_code == 1 ]] ||
+  fail 'continue ignored SHELLFISH_SESSIONS_DIR'
+custom="$tmp/custom/${directory:t}"
+mkdir -p -- "$custom"
+make_discovery_header "$(pwd -P)" custom >"$custom/custom.jsonl"
+exit_code=0
+error=$(SHELLFISH_SESSIONS_DIR="$tmp/custom" zsh -f "$entry" --continue \
+  --session-out target.jsonl 2>&1) || exit_code=$?
+[[ $error == *'cannot be combined with --session-out'* && $exit_code == 2 ]] ||
+  fail 'continue did not find a session in SHELLFISH_SESSIONS_DIR'

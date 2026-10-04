@@ -10,9 +10,17 @@ sf_environment_fail() {
 }
 
 sf_environment_config_dir() {
+  [[ -z ${SHELLFISH_CONFIG_DIR-} ]] || { REPLY=${SHELLFISH_CONFIG_DIR:A}; return; }
   local base=${XDG_CONFIG_HOME:-${HOME:+$HOME/.config}}
   [[ -n $base ]] || sf_environment_fail 'HOME or XDG_CONFIG_HOME is required' || return
   REPLY=${base:A}/shellfish
+}
+
+sf_environment_state_dir() {
+  [[ -z ${SHELLFISH_STATE_DIR-} ]] || { REPLY=${SHELLFISH_STATE_DIR:a}; return; }
+  local base=${XDG_STATE_HOME:-${HOME:+$HOME/.local/state}}
+  [[ -n $base ]] || sf_environment_fail 'HOME or XDG_STATE_HOME is required' || return
+  REPLY=${base:a}/shellfish
 }
 
 # Exported values win over profile env, then .env in the config directory.
