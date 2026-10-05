@@ -25,6 +25,11 @@
 ## Port ritalin into the official harness
 - Opt-in reminders at .agents/ritalin/*, concatenated
 
+# SESSIONS
+
+## --incognito
+- Session in a tmpdir, cleaned up on exit
+
 # RESEARCH
 
 ## prime-agent
