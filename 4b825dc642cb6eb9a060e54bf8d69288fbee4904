@@ -1,0 +1,47 @@
+# DESIGN
+
+## Direction
+- One server exposes the sessions in its project session directory
+- Session filename, including .jsonl, is the API ID. Clients never send paths
+- Transcripts stay authoritative. No registry, index, or duplicated metadata
+- Ephemeral state only: active turns, live output, subscribers, cancellation, commit reconciliation
+- Thin project coordinator over the existing per-session Service, created on first access
+- One active turn per session. One process-wide access code
+
+## Listing
+- Public shellfish command, shared with the resume picker
+- Recent activity first. Cursor paging by mtime, filename tie-break, opaque cursor
+- Paging bounds response size, not filesystem work. Weakly consistent
+- Short-lived in-memory cache only if scans prove slow
+
+## API
+- GET /sessions?limit=N&cursor=...
+- GET /sessions/{id}/stream
+- POST /sessions/{id}/turn, /cancel, /permission
+
+## Boundaries
+- Validate every ID and transcript: traversal, symlinks, non-regular files, foreign cwd, unsupported format, unsandboxed
+- No arbitrary paths, selected-session cookie, or metadata database
+- External changes appear on the next listing. Transcript locks still prevent competing turns
+
+# WORK
+
+## Session listing command, adopted by the picker
+
+## Project coordinator and session-scoped routes
+
+## Web UI list, select, and reconnect
+
+## Drain every session on shutdown
+- Second signal cancels
+
+## Handoffs in the web UI
+- fork and compact switch, resume lists, new creates, verbose toggles, server is a no-op
+
+# OPEN
+
+## Browser URL shape, Service eviction, global subscriber and turn limits
+
+## How the server learns a handoff's target session
+
+## Multiple projects from pre-approved directories
