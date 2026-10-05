@@ -1,0 +1,39 @@
+# PAIRING
+
+## Pair models
+- Driver and passenger, actor and coach, user advocate, adversarial review
+- Modes: stop hook handoff, inline steering, sequential context, explicit tool
+- Targets: shallow solutions, forgotten instructions, review-and-commit workflows
+
+## Council
+- Parallel prompt to several models, one summarizes
+
+# TOOLS
+
+## Shell-strict tool
+- Reason required per change
+- Reports diff and LOC change
+
+# CUSTOMIZATION
+
+## Customize subcommand
+- Opens shellfish in the config dir with a dedicated harness and system message
+
+## Tool preview under the system message
+- Possibly a session hook
+
+## Port ritalin into the official harness
+- Opt-in reminders at .agents/ritalin/*, concatenated
+
+# RESEARCH
+
+## prime-agent
+- https://github.com/PrimeIntellect-ai/prime-agent
+- Self-modifying skills, memory, and scripts with rewind
+- Selective context editing
+
+## obscura browser
+- https://github.com/h4ckf0r0day/obscura
+
+## deja-vu memory
+- https://github.com/vshulcz/deja-vu/
