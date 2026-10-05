@@ -1,0 +1,13 @@
+# INPUT
+
+## @ file fuzzy find
+- Replace the postdisplay footer with a 3-5 line area
+
+## Soft wrap words in the prompt
+
+# OUTPUT
+
+## Word diff
+
+## /verbose [n] opens a pager
+- Instead of a full reload
