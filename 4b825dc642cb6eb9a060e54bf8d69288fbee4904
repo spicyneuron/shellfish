@@ -1,0 +1,13 @@
+# POLICY
+
+## Permissive sandbox instead of unsandboxed
+- Blocks obviously destructive actions, allows home, caches, environment
+- Replaces unsandboxed plus the auto-review hook
+
+## Deny permission with a typed reason
+
+# FENCE PR
+
+## Request --config-json
+
+## Request --deny-host-path and --deny-host-path-rw
