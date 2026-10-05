@@ -10,9 +10,25 @@
 
 # TOOLS
 
-## Shell-strict tool
-- Reason required per change
+## Strict tools
+- Reason required per change, across shell, write, and edit
 - Reports diff and LOC change
+- UIs render the reason as a prominent part of the diff
+
+## Subagent edit review
+- Edit tools dispatch a separate model to review the proposed change
+- Pass or fail with reason
+
+# GATES
+
+## Dev-loop gates
+- Agent cannot write until it passes entry gates, cannot finish until it passes exit gates
+- Which gates apply and when is an open question
+- Stop gate: reviewer returns pass or fail with reason, minimal version
+- Per-tool-call gate: reviewer catches mistakes early, expensive
+- Plan-before-write gate: exit tools locked each turn until a proposal tool call unlocks them
+- Could combine with the stop gate
+- Candidate use for Jev / decision models
 
 # CUSTOMIZATION
 
