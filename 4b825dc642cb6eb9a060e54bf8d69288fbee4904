@@ -1,0 +1,50 @@
+# MULTI-SESSION
+
+## Direction
+- One server exposes the sessions in its project session directory
+- Session filename, including .jsonl, is the API ID. Clients never send paths
+- Transcripts stay authoritative. No registry, index, or duplicated metadata
+- Ephemeral state only: active turns, live output, subscribers, cancellation, commit reconciliation
+- Thin project coordinator over the existing per-session Service, created on first access
+- One active turn per session. One process-wide access code
+
+## Listing
+- Public shellfish command, shared with the resume picker
+- Recent activity first. Cursor paging by mtime, filename tie-break, opaque cursor
+- Paging bounds response size, not filesystem work. Weakly consistent
+- Short-lived in-memory cache only if scans prove slow
+
+## API
+- GET /sessions?limit=N&cursor=...
+- GET /sessions/{id}/stream
+- POST /sessions/{id}/turn, /cancel, /permission
+
+## Boundaries
+- Validate every ID and transcript: traversal, symlinks, non-regular files, foreign cwd, unsupported format, unsandboxed
+- No arbitrary paths, selected-session cookie, or metadata database
+- External changes appear on the next listing. Transcript locks still prevent competing turns
+
+## Work outline
+1. Session listing command, adopted by the picker
+2. Project coordinator and session-scoped routes
+3. Web UI list, select, and reconnect
+4. Drain every session on shutdown. Second signal cancels
+5. Handoffs: fork and compact switch, resume lists, new creates, verbose toggles, server is a no-op
+
+## Open
+- Browser URL shape, Service eviction, global subscriber and turn limits
+- How the server learns a handoff's target session
+- Multiple projects from pre-approved directories
+
+# SECURITY
+
+## Refuse unsandboxed sessions
+- Server rejects them at startup
+- /server hook blocks with a reason instead of handing off
+
+## SSL termination
+- Built in, or documented Caddy or nginx
+
+## Audit TUI, server, and web UI
+- Trusted: user code and hooks. Untrusted: model output and tool calls
+- Small-scale use over Tailscale or a local network
