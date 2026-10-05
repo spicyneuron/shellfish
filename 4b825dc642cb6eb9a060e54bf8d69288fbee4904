@@ -1,0 +1,14 @@
+# ACCESS
+
+## Refuse unsandboxed sessions
+- Server rejects them at startup
+- /server hook blocks with a reason instead of handing off
+
+## SSL termination
+- Built in, or documented Caddy or nginx
+
+# AUDIT
+
+## Audit TUI, server, and web UI
+- Trusted: user code and hooks. Untrusted: model output and tool calls
+- Small-scale use over Tailscale or a local network
