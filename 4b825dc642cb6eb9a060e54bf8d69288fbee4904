@@ -1,0 +1,17 @@
+# INPUT
+
+## Images, PDFs, and other files
+- Translate in prompt submit and the read tool
+- Follow each backend's pattern
+
+# CONTROL
+
+## Interrupt and steer
+- Cmd+Return sends now, or the next queued item
+- Interrupt, recover, then follow up with a user turn
+- Alternative: inject after tool results
+
+## /goal [string|file]
+- Stop hook blocks until complete
+- Covers /loop [time], /wait <N>, /watch todo.md
+- Stop guard variant: same cached prefix plus a review checklist
