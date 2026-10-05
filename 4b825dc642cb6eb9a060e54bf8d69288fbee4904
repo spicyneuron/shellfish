@@ -1,0 +1,24 @@
+# EXAMPLE HOOKS
+
+## Edit prompt in external editor
+- `/edit` user_prompt_submit hook
+- Also works at the end of a message
+
+## Stop notification
+- On macOS, prefer terminal-notifier, fall back to AppleScript
+- Include HOME-relative project directory
+
+# DISTRIBUTION
+
+## Homebrew and other install methods
+
+## Zip bundle with extraction command
+
+## Send OpenRouter app ID
+
+# LAUNCH
+
+## Screenshot
+
+## Tokei comparison
+- Codex, Pi, OpenCode
