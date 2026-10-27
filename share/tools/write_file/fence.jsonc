@@ -1,0 +1,23 @@
+{
+  "network": {
+    "allowedDomains": [], "deniedDomains": [],
+    "allowLocalBinding": false, "allowLocalOutbound": false
+  },
+  "filesystem": {
+    "defaultDenyRead": true,
+    "allowRead": ["."],
+    "allowWrite": ["."],
+    "denyRead": [
+      "**/.env", "**/.env.*", "**/.direnv/**", "**/.netrc",
+      "**/.git-credentials", "**/.npmrc", "**/.pypirc",
+      "**/*.key", "**/*.pem", "**/*.p12", "**/*.pfx"
+    ],
+    "denyWrite": [
+      "**/.env", "**/.env.*", "**/.direnv/**", "**/.netrc",
+      "**/.git-credentials", "**/.npmrc", "**/.pypirc",
+      "**/*.key", "**/*.pem", "**/*.p12", "**/*.pfx",
+      "**/.shellfish", "**/.shellfish/**"
+    ]
+  },
+  "command": {"useDefaults": true}
+}
