@@ -28,7 +28,7 @@ Existing sessions:
   -s, --session PATH [OPTIONS] [PROMPT]  Open a specific session
 
 Shellfish directory:
-  SHELLFISH_DIR      Default: $HOME/.shellfish
+  SHELLFISH_DIR      Default: nearest .shellfish, else $HOME/.shellfish
   Profiles:          DIR/profiles/NAME.jsonc
   TUI file:          DIR/tui.jsonc
   Sessions:          DIR/sessions/

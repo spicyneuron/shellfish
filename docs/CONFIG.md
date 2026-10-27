@@ -8,7 +8,7 @@ Copy [`share/template/`](../share/template/) into that directory for a working s
 
 ## Directories
 
-One Shellfish directory holds everything: profiles, components, `tui.jsonc`, `.env`, `sessions/` grouped by project directory, and `scratch/` for private temporary files. It is `~/.shellfish` unless `SHELLFISH_DIR` names another. `--continue` and `--resume` search its sessions. Child agents and hooks inherit the selection.
+One Shellfish directory holds everything: profiles, components, `tui.jsonc`, `.env`, `sessions/` grouped by project directory, and `scratch/` for private temporary files. Shellfish uses `SHELLFISH_DIR` when set, otherwise the nearest `.shellfish` directory above the working directory, otherwise `~/.shellfish`. A `.shellfish` directory therefore selects a separately configured Shellfish, such as one for work and one for personal projects, for everything beneath it. `--continue` and `--resume` search its sessions. Child agents, hooks, and tools inherit the selection.
 
 ## Profiles
 

@@ -16,11 +16,20 @@ sf_test_source lib/scratch.zsh
 sf_scratch_root
 [[ $REPLY == "${tmp:A}/shellfish/scratch" && $(stat -f %Lp "$REPLY") == 700 ]]
 
-# Without SHELLFISH_DIR, the directory is ~/.shellfish.
+# Without SHELLFISH_DIR, the nearest .shellfish above the working directory
+# wins, then ~/.shellfish.
 (
   unset SHELLFISH_DIR
-  HOME="$tmp/home" sf_environment_dir
+  export HOME="$tmp/home"
+  mkdir -p "$tmp/flavor/.shellfish" "$tmp/flavor/project/nested" "$tmp/elsewhere"
+  builtin cd -- "$tmp/flavor/project/nested"
+  sf_environment_dir
+  [[ $REPLY == "${tmp:A}/flavor/.shellfish" ]]
+  builtin cd -- "$tmp/elsewhere"
+  sf_environment_dir
   [[ $REPLY == "${tmp:A}/home/.shellfish" ]]
+  SHELLFISH_DIR="$tmp/explicit" sf_environment_dir
+  [[ $REPLY == "${tmp:A}/explicit" ]]
 )
 
 # Appends write one complete record and report the failing path plainly.

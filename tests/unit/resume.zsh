@@ -191,3 +191,17 @@ error=$(SHELLFISH_DIR="$tmp/custom" zsh -f "$entry" --continue \
   --session-out target.jsonl 2>&1) || exit_code=$?
 [[ $error == *'cannot be combined with --session-out'* && $exit_code == 2 ]] ||
   fail 'continue did not find a session in SHELLFISH_DIR'
+
+# Without SHELLFISH_DIR, continue searches the nearest .shellfish above here.
+(
+  mkdir -p -- "$tmp/flavor/.shellfish" "$tmp/flavor/project"
+  builtin cd -- "$tmp/flavor/project"
+  SHELLFISH_DIR="$tmp/flavor/.shellfish" sf_session_directory
+  mkdir -p -- "$REPLY"
+  make_discovery_header "$(pwd -P)" flavor >"$REPLY/flavor.jsonl"
+  unset SHELLFISH_DIR
+  exit_code=0
+  error=$(zsh -f "$entry" --continue --session-out target.jsonl 2>&1) || exit_code=$?
+  [[ $error == *'cannot be combined with --session-out'* && $exit_code == 2 ]] ||
+    fail 'continue did not find a session in the nearest .shellfish'
+)

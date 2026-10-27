@@ -9,9 +9,14 @@ sf_environment_fail() {
   return 1
 }
 
-# The Shellfish directory holds configuration, credentials, and sessions.
+# The Shellfish directory holds configuration, credentials, and sessions. It is
+# SHELLFISH_DIR, else the nearest .shellfish above the working directory, else
+# ~/.shellfish.
 sf_environment_dir() {
   [[ -z ${SHELLFISH_DIR-} ]] || { REPLY=${SHELLFISH_DIR:A}; return; }
+  local dir=${PWD:A}
+  while [[ ! -d $dir/.shellfish && $dir != / ]]; do dir=${dir:h}; done
+  [[ ! -d $dir/.shellfish ]] || { REPLY=$dir/.shellfish; REPLY=${REPLY:A}; return; }
   [[ -n ${HOME-} ]] || sf_environment_fail 'HOME or SHELLFISH_DIR is required' || return
   REPLY=${HOME:A}/.shellfish
 }

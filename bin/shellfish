@@ -6,6 +6,10 @@ setopt no_aliases no_multios pipe_fail
 typeset -gr SF_ROOT=${0:A:h:h}
 typeset -gr SF_SHARE=$SF_ROOT/share
 
+# Pin the Shellfish directory so every child process uses the same one.
+source "$SF_ROOT/lib/environment.zsh"
+! sf_environment_dir || export SHELLFISH_DIR=$REPLY
+
 case ${1-} in
   run|backend-request)
     exec -- "$SF_ROOT/libexec/$1/main.zsh" "${@:2}"
