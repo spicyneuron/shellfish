@@ -60,8 +60,8 @@ class Session:
         self.state_home = tempfile.TemporaryDirectory()
         self.project_home = tempfile.TemporaryDirectory(prefix="shellfish-pty.")
         self.project_dir = Path(self.project_home.name)
-        self.config_home = Path(self.state_home.name) / "config"
-        config_dir = self.config_home / "shellfish"
+        self.shellfish_dir = Path(self.state_home.name) / "shellfish"
+        config_dir = self.shellfish_dir
         config_dir.mkdir(parents=True)
         profile_dir = config_dir / "profiles"
         profile_dir.mkdir(parents=True)
@@ -120,11 +120,9 @@ class Session:
                 COLUMNS=str(COLUMNS),
                 LINES=str(ROWS),
                 SF_TEST_BACKEND_DELAY="0.02",
-                XDG_STATE_HOME=self.state_home.name,
-                XDG_CONFIG_HOME=str(self.config_home),
+                SHELLFISH_DIR=str(self.shellfish_dir),
                 # A test must not read the developer's home, and zsh sources
-                # ~/.zshenv on startup, which may export its own
-                # XDG_CONFIG_HOME over the one set here.
+                # ~/.zshenv on startup.
                 HOME=self.state_home.name,
             )
             env.update(env_overrides)
@@ -218,7 +216,7 @@ class Session:
             paths = (
                 [path]
                 if path
-                else list(Path(self.state_home.name).glob("shellfish/sessions/**/*.jsonl"))
+                else list(self.shellfish_dir.glob("sessions/**/*.jsonl"))
             )
             if len(paths) == 1 and paths[0].exists():
                 records = [json.loads(line) for line in paths[0].read_text().splitlines()]

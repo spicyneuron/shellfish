@@ -191,9 +191,9 @@ if sf_profile_resolve_args -p loop-a; then
 fi
 [[ $SF_PROFILE_ERROR == *'profile inheritance cycle: loop-a'* ]]
 
-# Missing config directories use bundled profiles.
+# A missing Shellfish directory uses bundled profiles.
 (
-  export XDG_CONFIG_HOME="$tmp/empty-config"
+  export SHELLFISH_DIR="$tmp/empty-config"
   sf_profile_resolve_args -m test-model -b "$fixture_backend"
   jq -e '
     .request.model == "test-model" and

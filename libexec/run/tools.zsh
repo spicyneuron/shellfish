@@ -120,7 +120,7 @@ sf_run_tool_execute() {
   arguments=(
     "${SF_ENVIRONMENT_VALUES[@]}"
     "HOME=${HOME:-$cwd}" "PATH=$PATH" "TERM=${TERM:-dumb}"
-    "LANG=${LANG:-C}" "SHELLFISH_CONFIG_DIR=$config_dir"
+    "LANG=${LANG:-C}" "SHELLFISH_DIR=$config_dir"
     "SHELLFISH_MAX_CAPTURE_BYTES=$max_capture" "SHELLFISH_SESSION=$session"
     "SHELLFISH_EXECUTABLE=$SF_ENTRY" "SHELLFISH_SHARE_DIR=$SF_SHARE"
   )

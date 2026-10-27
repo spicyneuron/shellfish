@@ -42,7 +42,7 @@ ln -s "$HOME/.local/share/shellfish/bin/shellfish" "$HOME/.local/bin/shellfish"
 ## Getting started
 
 ```sh
-export OPENROUTER_API_KEY=...     # Or use the config directory's .env file
+export OPENROUTER_API_KEY=...     # Or use .env in the Shellfish directory
 
 shellfish                         # Start a new session
 shellfish --continue              # Reopen the most recent session
@@ -71,19 +71,19 @@ Run `shellfish --help` for creation and sandbox options, or `/help` inside chat 
 
 ## Configuration
 
-An agent is a JSONC file in the config directory's `profiles/` (typically `~/.config/shellfish/profiles/`, see [Directories](docs/CONFIG.md#directories)). `default.jsonc` is selected when `--profile` is absent; your file shadows the [bundled profile](share/profiles/default.jsonc) of the same name. Reusable components live in top-level `system/`, `tools/`, `hooks/`, and `backends/` directories beside `profiles/`. Exported credentials override values in `.env` in the config directory. Themes and preview limits live in [`tui.jsonc`](share/tui.jsonc).
+An agent is a JSONC file in the Shellfish directory's `profiles/` (typically `~/.shellfish/profiles/`, see [Directories](docs/CONFIG.md#directories)). `default.jsonc` is selected when `--profile` is absent; your file shadows the [bundled profile](share/profiles/default.jsonc) of the same name. Reusable components live in top-level `system/`, `tools/`, `hooks/`, and `backends/` directories beside `profiles/`. Exported credentials override values in `.env` in the Shellfish directory. Themes and preview limits live in [`tui.jsonc`](share/tui.jsonc).
 
 ```jsonc
-// ~/.config/shellfish/profiles/review.jsonc — shellfish -p review
+// ~/.shellfish/profiles/review.jsonc — shellfish -p review
 {
   "$schema": "https://raw.githubusercontent.com/spicyneuron/shellfish/refs/heads/main/share/shellfish.schema.json",
   "extend": ["default"],
   "tools": ["read_file", "shell_readonly"],
-  "system": ["...", "review.md"]  // ~/.config/shellfish/system/review.md
+  "system": ["...", "review.md"]  // ~/.shellfish/system/review.md
 }
 ```
 
-A profile holds a backend, a harness, system-prompt components, and provider request settings. Component names resolve from the user configuration directory first, then the bundled `share/` directory; `@KIND/NAME` selects a bundled component explicitly. `extend` merges other profiles in order, objects merge recursively, and `"..."` splices an inherited list. Command-line options override the selection, `-p` repeats to compose several profiles, and Shellfish resolves that composition once and freezes it in the session header.
+A profile holds a backend, a harness, system-prompt components, and provider request settings. Component names resolve from the Shellfish directory first, then the bundled `share/` directory; `@KIND/NAME` selects a bundled component explicitly. `extend` merges other profiles in order, objects merge recursively, and `"..."` splices an inherited list. Command-line options override the selection, `-p` repeats to compose several profiles, and Shellfish resolves that composition once and freezes it in the session header.
 
 ## Documentation
 

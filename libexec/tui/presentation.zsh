@@ -6,7 +6,7 @@ setopt no_aliases no_multios pipe_fail
 # core: a session never carries presentation, and a profile never describes it.
 (( $+functions[sf_jsonc_read] )) || source "$SF_ROOT/lib/jsonc.zsh"
 (( $+functions[sf_cli_diagnostic] )) || source "$SF_ROOT/lib/cli.zsh"
-(( $+functions[sf_environment_config_dir] )) || source "$SF_ROOT/lib/environment.zsh"
+(( $+functions[sf_environment_dir] )) || source "$SF_ROOT/lib/environment.zsh"
 
 typeset -g SF_PRESENTATION=''
 typeset -g SF_PRESENTATION_ERROR=''
@@ -25,7 +25,7 @@ sf_presentation_resolve() {
   SF_PRESENTATION=''
   SF_PRESENTATION_ERROR=''
   config_path=''
-  ! sf_environment_config_dir || config_path=$REPLY/tui.jsonc
+  ! sf_environment_dir || config_path=$REPLY/tui.jsonc
   defaults=$(sf_jsonc_read "$SF_SHARE/tui.jsonc" 2>/dev/null) ||
     sf_presentation_fail 'invalid bundled TUI config' || return
   if [[ -n $config_path && ( -e $config_path || -L $config_path ) ]]; then

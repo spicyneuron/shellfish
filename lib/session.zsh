@@ -3,7 +3,7 @@ setopt no_aliases no_bg_nice no_multios pipe_fail
 
 # Where sessions live, how one is named, and the two durable mutations.
 
-(( $+functions[sf_environment_state_dir] )) || source "$SF_ROOT/lib/environment.zsh"
+(( $+functions[sf_environment_dir] )) || source "$SF_ROOT/lib/environment.zsh"
 
 typeset -g SF_SESSION_ERROR=''
 
@@ -15,14 +15,8 @@ sf_session_fail() {
 sf_session_directory() {
   local LC_ALL=C root cwd scope
   setopt local_options extended_glob
-  if [[ -n ${SHELLFISH_SESSIONS_DIR-} ]]; then
-    root=${SHELLFISH_SESSIONS_DIR:a}
-  elif sf_environment_state_dir; then
-    root=$REPLY/sessions
-  else
-    sf_session_fail "$SF_ENVIRONMENT_ERROR"
-    return
-  fi
+  sf_environment_dir || { sf_session_fail "$SF_ENVIRONMENT_ERROR"; return; }
+  root=$REPLY/sessions
   cwd=$(pwd -P) || {
     sf_session_fail 'cannot resolve the working directory'
     return

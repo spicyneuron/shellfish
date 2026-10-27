@@ -30,7 +30,7 @@ Hooks and adapters inherit the process environment and receive every value in pr
 | --- | :---: | :---: |
 | `SHELLFISH_SESSION` | ✓ | ✓ |
 | `SHELLFISH_EXECUTABLE` | ✓ | ✓ |
-| `SHELLFISH_CONFIG_DIR` | ✓ | ✓ |
+| `SHELLFISH_DIR` | ✓ | ✓ |
 | `SHELLFISH_MAX_CAPTURE_BYTES` | ✓ | ✓ |
 | `SHELLFISH_SHARE_DIR` | ✓ | ✓ |
 | `SHELLFISH_MODEL` |  | ✓ |

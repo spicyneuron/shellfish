@@ -26,12 +26,12 @@ sf_test_tmp() {
   tmp=$(mktemp -d "${TMPDIR:-/tmp}/shellfish-${name}-test.XXXXXX")
   # mktemp inherits TMPDIR's trailing slash; library code returns :a paths.
   tmp=${tmp:a}
-  export XDG_STATE_HOME="$tmp/state" XDG_CONFIG_HOME="$tmp/config"
+  export SHELLFISH_DIR="$tmp/shellfish"
 }
 
 # An isolated config directory for profile fixtures.
 sf_test_config() {
-  typeset -g SF_TEST_CONFIG="$tmp/config/shellfish"
+  typeset -g SF_TEST_CONFIG="$tmp/shellfish"
   mkdir -p "$SF_TEST_CONFIG/profiles"
 }
 

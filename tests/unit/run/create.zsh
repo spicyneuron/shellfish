@@ -221,13 +221,13 @@ jq -se 'map(.type) == ["session","system"]' "$cancelled" >/dev/null ||
 # Moving a home preserves its frozen home-relative references.
 typeset old_home="$tmp/original-home" new_home="$tmp/moved-home"
 typeset old_project="$old_home/project" new_project="$new_home/project"
-mkdir -p "$old_project" "$old_home/.config/shellfish/profiles"
+mkdir -p "$old_project" "$old_home/.shellfish/profiles"
 print -r -- 'original prompt' >"$old_project/prompt.md"
 sf_test_hook "$old_project/hook" <<'ZSH'
 #!/usr/bin/env zsh
 pwd -P >"$PWD/hook-cwd"
 ZSH
-cat >"$old_home/.config/shellfish/profiles/default.jsonc" <<EOF
+cat >"$old_home/.shellfish/profiles/default.jsonc" <<EOF
 {
   "backend": {"adapter": "$ROOT/tests/fixtures/backend"},
   "request": {"model": "test-model"},
@@ -237,7 +237,7 @@ cat >"$old_home/.config/shellfish/profiles/default.jsonc" <<EOF
 EOF
 (
   builtin cd -- "$old_project"
-  HOME="$old_home" XDG_CONFIG_HOME="$old_home/.config" zsh -f "$entry" run \
+  HOME="$old_home" SHELLFISH_DIR="$old_home/.shellfish" zsh -f "$entry" run \
     --session-create --session-out "$PWD/session.jsonl"
 ) || fail 'portable session creation failed'
 jq -e 'select(.type == "session") |
@@ -247,7 +247,7 @@ jq -e 'select(.type == "session") |
 mv -- "$old_home" "$new_home"
 (
   builtin cd -- "$new_project"
-  HOME="$new_home" XDG_CONFIG_HOME="$new_home/.config" SF_TEST_BACKEND_DELAY=0 zsh -f "$entry" run \
+  HOME="$new_home" SHELLFISH_DIR="$new_home/.shellfish" SF_TEST_BACKEND_DELAY=0 zsh -f "$entry" run \
     --session "$PWD/session.jsonl" 'plain answer' >"$tmp/relocated-answer"
 ) || fail 'relocated session turn failed'
 assert_equal 'plain answer' "$(<"$tmp/relocated-answer")"
@@ -256,7 +256,7 @@ assert_equal "${new_project:A}" "$(<"$new_project/hook-cwd")" \
 print -r -- 'moved prompt' >"$new_project/prompt.md"
 (
   builtin cd -- "$new_project"
-  HOME="$new_home" XDG_CONFIG_HOME="$new_home/.config" zsh -f "$entry" run --session-create \
+  HOME="$new_home" SHELLFISH_DIR="$new_home/.shellfish" zsh -f "$entry" run --session-create \
     --session-from "$PWD/session.jsonl" --session-out "$PWD/derived.jsonl"
 ) || fail 'relocated session could not be derived'
 jq -e -s '.[1] == {type:"system",content:"moved prompt"}' \

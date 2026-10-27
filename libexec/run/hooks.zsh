@@ -125,7 +125,7 @@ sf_run_hooks() {
     "SHELLFISH_EXECUTABLE=$SF_ENTRY"
     "SHELLFISH_MODE=${SHELLFISH_MODE-}"
     "SHELLFISH_VERBOSE=${SHELLFISH_VERBOSE:-0}"
-    "SHELLFISH_CONFIG_DIR=$config_dir"
+    "SHELLFISH_DIR=$config_dir"
     "SHELLFISH_SHARE_DIR=$SF_SHARE"
   )
   if [[ $lifecycle != session_start ]]; then

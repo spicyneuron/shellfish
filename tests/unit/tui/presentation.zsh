@@ -7,10 +7,10 @@ source "${0:A:h:h:h}/_helpers.zsh"
 sf_test_source libexec/tui/presentation.zsh
 sf_test_tmp presentation
 
-mkdir -p "$tmp/config/shellfish" "$tmp/home"
+mkdir -p "$tmp/shellfish" "$tmp/home"
 export HOME="${tmp:A}/home"
-export XDG_CONFIG_HOME="${tmp:A}/config"
-typeset config="$tmp/config/shellfish/tui.jsonc"
+export SHELLFISH_DIR="${tmp:A}/shellfish"
+typeset config="$tmp/shellfish/tui.jsonc"
 
 cat >"$config" <<'JSON'
 {

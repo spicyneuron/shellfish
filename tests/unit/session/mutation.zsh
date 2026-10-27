@@ -8,25 +8,19 @@ sf_test_frozen_profile
 typeset session="$tmp/session.jsonl" before profile
 sf_test_session "$session"
 
-# Default sessions use a private project-scoped state directory.
+# Project-scoped sessions and scratch are private within the Shellfish directory.
 sf_session_select_path
-[[ $REPLY == "$tmp/state/shellfish/sessions/"*.jsonl ]]
+[[ $REPLY == "${tmp:A}/shellfish/sessions/"*.jsonl ]]
 [[ $(stat -f %Lp "$REPLY:h") == 700 ]]
+sf_test_source lib/scratch.zsh
+sf_scratch_root
+[[ $REPLY == "${tmp:A}/shellfish/scratch" && $(stat -f %Lp "$REPLY") == 700 ]]
 
-# Specific overrides win over SHELLFISH_STATE_DIR, which wins over XDG.
+# Without SHELLFISH_DIR, the directory is ~/.shellfish.
 (
-  export SHELLFISH_STATE_DIR="$tmp/custom-state"
-  sf_session_directory
-  [[ $REPLY == "$tmp/custom-state/sessions/"* ]]
-  SHELLFISH_SESSIONS_DIR="$tmp/custom-sessions" sf_session_directory
-  [[ $REPLY == "$tmp/custom-sessions/"* ]]
-  sf_test_source lib/scratch.zsh
-  sf_scratch_root
-  [[ $REPLY == "${tmp:A}/custom-state/scratch" ]]
-  SHELLFISH_SCRATCH_DIR="$tmp/custom-scratch" sf_scratch_root
-  [[ $REPLY == "${tmp:A}/custom-scratch" && $(stat -f %Lp "$REPLY") == 700 ]]
-  SHELLFISH_CONFIG_DIR="$tmp/custom-config" sf_environment_config_dir
-  [[ $REPLY == "${tmp:A}/custom-config" ]]
+  unset SHELLFISH_DIR
+  HOME="$tmp/home" sf_environment_dir
+  [[ $REPLY == "${tmp:A}/home/.shellfish" ]]
 )
 
 # Appends write one complete record and report the failing path plainly.

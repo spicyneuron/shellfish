@@ -118,7 +118,6 @@ error=$(zsh -f "$entry" --resume 2>&1) || exit_code=$?
 [[ $error == *'resume requires an interactive terminal'* && $exit_code == 2 ]] || \
   fail 'resume picker did not require an interactive terminal'
 
-export XDG_STATE_HOME=$tmp
 sf_test_source lib/session.zsh libexec/resume/discovery.zsh
 sf_session_directory
 directory=$REPLY
@@ -178,17 +177,17 @@ error=$(zsh -f "$entry" --continue --session-out target.jsonl 2>&1) || exit_code
 [[ $error == *'--session names an existing session and cannot be combined with --session-out'* && $exit_code == 2 ]] || \
   fail 'continue did not select a session and forward TUI arguments'
 
-# Continue resolves against SHELLFISH_SESSIONS_DIR instead of the state directory.
+# Continue resolves against the selected SHELLFISH_DIR.
 exit_code=0
-error=$(SHELLFISH_SESSIONS_DIR="$tmp/custom" zsh -f "$entry" --continue 2>&1) ||
+error=$(SHELLFISH_DIR="$tmp/custom" zsh -f "$entry" --continue 2>&1) ||
   exit_code=$?
 [[ $error == *"no sessions match $(pwd -P)"* && $exit_code == 1 ]] ||
-  fail 'continue ignored SHELLFISH_SESSIONS_DIR'
-custom="$tmp/custom/${directory:t}"
+  fail 'continue ignored SHELLFISH_DIR'
+custom="$tmp/custom/sessions/${directory:t}"
 mkdir -p -- "$custom"
 make_discovery_header "$(pwd -P)" custom >"$custom/custom.jsonl"
 exit_code=0
-error=$(SHELLFISH_SESSIONS_DIR="$tmp/custom" zsh -f "$entry" --continue \
+error=$(SHELLFISH_DIR="$tmp/custom" zsh -f "$entry" --continue \
   --session-out target.jsonl 2>&1) || exit_code=$?
 [[ $error == *'cannot be combined with --session-out'* && $exit_code == 2 ]] ||
-  fail 'continue did not find a session in SHELLFISH_SESSIONS_DIR'
+  fail 'continue did not find a session in SHELLFISH_DIR'

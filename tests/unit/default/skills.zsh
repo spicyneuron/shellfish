@@ -7,7 +7,7 @@ source "$ROOT/share/lib/skills.zsh"
 
 tool="$ROOT/share/tools/skill/run"
 project="$tmp/project"
-config="$tmp/config/shellfish"
+config="$tmp/shellfish"
 home="$tmp/home"
 mkdir -p "$project/.agents/skills" "$config/skills" "$home/.agents/skills"
 
@@ -71,18 +71,18 @@ done
 
 # Load only valid advertised skills.
 loaded=$(cd "$project" && print -rn -- '{"name":"shared"}' | HOME="$home" \
-  SHELLFISH_CONFIG_DIR="$config" zsh -f "$tool")
+  SHELLFISH_DIR="$config" zsh -f "$tool")
 [[ $loaded == "<skill name=\"shared\" directory=\"${project:A}/.agents/skills/shared\">"*$'# shared instructions'*'</skill>' ]]
 [[ $loaded != *$'\nname: shared\n'* ]]
 loaded=$(cd "$claude_project" && print -rn -- '{"name":"shared"}' | HOME="$home" \
-  SHELLFISH_CONFIG_DIR="$config" zsh -f "$tool")
+  SHELLFISH_DIR="$config" zsh -f "$tool")
 [[ $loaded == "<skill name=\"shared\" directory=\"${claude_project:A}/.claude/skills/shared\">"*$'# shared instructions'*'</skill>' ]]
 loaded=$(cd "$project" && print -rn -- '{"name":"skill-creator"}' | HOME="$home" \
-  SHELLFISH_CONFIG_DIR="$config" zsh -f "$tool")
+  SHELLFISH_DIR="$config" zsh -f "$tool")
 [[ $loaded == "<skill name=\"skill-creator\" directory=\"$ROOT/share/skills/skill-creator\">"*'</skill>' ]]
 [[ $loaded != *$'\ndescription: Use when creating or editing project-local skills.\n'* ]]
 loaded=$(cd "$project" && print -rn -- '{"name":"linked"}' | HOME="$home" \
-  SHELLFISH_CONFIG_DIR="$config" zsh -f "$tool")
+  SHELLFISH_DIR="$config" zsh -f "$tool")
 [[ $loaded == "<skill name=\"linked\" directory=\"${tmp:A}/linked-skills/linked\">"*$'# linked instructions'*'</skill>' ]]
 make_skill "$tmp/odd & \"root\"" odd 'odd description'
 sf_skills_body "$tmp/odd & \"root\"/odd/SKILL.md"
@@ -90,7 +90,7 @@ loaded=$(sf_skills_wrap odd "$tmp/odd & \"root\"/odd" "$REPLY")
 [[ $loaded == *'directory="'*'odd &amp; &quot;root&quot;/odd">'* ]]
 [[ $loaded != *'description: odd description'* ]]
 if (cd "$project" && print -rn -- '{"name":"hidden"}' | HOME="$home" \
-    SHELLFISH_CONFIG_DIR="$config" zsh -f "$tool" >/dev/null 2>&1); then
+    SHELLFISH_DIR="$config" zsh -f "$tool" >/dev/null 2>&1); then
   fail 'skill tool loaded a model-disabled skill'
 fi
 
@@ -101,7 +101,7 @@ SF_TEST_PROFILE=$(jq -c --arg hook "$ROOT/share/hooks/skills" \
 session="$tmp/skills.jsonl"
 (cd "$project" && sf_test_session "$session")
 control="$tmp/prompt-skills.json"
-HOME="$home" SHELLFISH_CONFIG_DIR="$config" sf_test_run \
+HOME="$home" SHELLFISH_DIR="$config" sf_test_run \
   'Use $shared and $config-only, then $shared. Ignore $hidden, $missing, and foo$personal.' \
   "$session" >"$control"
 jq -e -s '
@@ -121,6 +121,6 @@ jq -e -s '
   (.[0].model_text | contains("# config-only instructions") and contains("# hidden instructions"))
 ' "$control" >/dev/null
 for prompt in 'No skill here' '$missing'; do
-  HOME="$home" SHELLFISH_CONFIG_DIR="$config" sf_test_run "$prompt" "$session" >"$control"
+  HOME="$home" SHELLFISH_DIR="$config" sf_test_run "$prompt" "$session" >"$control"
   jq -e -s 'all(.[]; .type != "hook_result")' "$control" >/dev/null
 done

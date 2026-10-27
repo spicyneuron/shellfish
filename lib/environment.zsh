@@ -9,21 +9,14 @@ sf_environment_fail() {
   return 1
 }
 
-sf_environment_config_dir() {
-  [[ -z ${SHELLFISH_CONFIG_DIR-} ]] || { REPLY=${SHELLFISH_CONFIG_DIR:A}; return; }
-  local base=${XDG_CONFIG_HOME:-${HOME:+$HOME/.config}}
-  [[ -n $base ]] || sf_environment_fail 'HOME or XDG_CONFIG_HOME is required' || return
-  REPLY=${base:A}/shellfish
+# The Shellfish directory holds configuration, credentials, and sessions.
+sf_environment_dir() {
+  [[ -z ${SHELLFISH_DIR-} ]] || { REPLY=${SHELLFISH_DIR:A}; return; }
+  [[ -n ${HOME-} ]] || sf_environment_fail 'HOME or SHELLFISH_DIR is required' || return
+  REPLY=${HOME:A}/.shellfish
 }
 
-sf_environment_state_dir() {
-  [[ -z ${SHELLFISH_STATE_DIR-} ]] || { REPLY=${SHELLFISH_STATE_DIR:a}; return; }
-  local base=${XDG_STATE_HOME:-${HOME:+$HOME/.local/state}}
-  [[ -n $base ]] || sf_environment_fail 'HOME or XDG_STATE_HOME is required' || return
-  REPLY=${base:a}/shellfish
-}
-
-# Exported values win over profile env, then .env in the config directory.
+# Exported values win over profile env, then .env in the Shellfish directory.
 # Without selected names every entry loads; otherwise only the named entries.
 sf_environment_load() {
   local env_file line key value name profile_env=${2:-'{}'}
@@ -33,7 +26,7 @@ sf_environment_load() {
 
   SF_ENVIRONMENT_ERROR=''
   SF_ENVIRONMENT_VALUES=()
-  sf_environment_config_dir || return
+  sf_environment_dir || return
   env_file=$REPLY/.env
   for name in $selected_names; do
     [[ ${parameters[$name]-} == *export* ]] || continue

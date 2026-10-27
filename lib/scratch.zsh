@@ -1,16 +1,12 @@
 emulate -R zsh
 setopt no_aliases no_multios pipe_fail
 
-(( $+functions[sf_environment_state_dir] )) || source "$SF_ROOT/lib/environment.zsh"
+(( $+functions[sf_environment_dir] )) || source "$SF_ROOT/lib/environment.zsh"
 
 sf_scratch_root() {
   local root
-  if [[ -n ${SHELLFISH_SCRATCH_DIR-} ]]; then
-    root=${SHELLFISH_SCRATCH_DIR:A}
-  else
-    sf_environment_state_dir || return 1
-    root=${REPLY:A}/scratch
-  fi
+  sf_environment_dir || return 1
+  root=$REPLY/scratch
   (umask 077; mkdir -p -- "$root") 2>/dev/null || return 1
   [[ -d $root && ! -L $root && -O $root ]] || return 1
   chmod 700 "$root" || return 1

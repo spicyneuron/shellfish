@@ -1,6 +1,6 @@
 # Configuration
 
-Shellfish reads JSONC from its config directory (see [Directories](#directories)). `profiles/NAME.jsonc` describes an agent and `tui.jsonc` describes rendering. `NAME` may be a slash-separated path such as `openai/sol`. Your profile file shadows the bundled file of the same name under [`share/profiles/`](../share/profiles/). `tui.jsonc` merges over [`share/tui.jsonc`](../share/tui.jsonc).
+Shellfish reads JSONC from the Shellfish directory (see [Directories](#directories)). `profiles/NAME.jsonc` describes an agent and `tui.jsonc` describes rendering. `NAME` may be a slash-separated path such as `openai/sol`. Your profile file shadows the bundled file of the same name under [`share/profiles/`](../share/profiles/). `tui.jsonc` merges over [`share/tui.jsonc`](../share/tui.jsonc).
 
 The two never mix. A session freezes a profile, so a profile rejects rendering keys; `tui.jsonc` is read fresh on every run and is never frozen.
 
@@ -8,16 +8,7 @@ Copy [`share/template/`](../share/template/) into that directory for a working s
 
 ## Directories
 
-Environment variables relocate Shellfish's directories. A more specific variable wins over a broader one.
-
-| Variable | Default | Contents |
-| --- | --- | --- |
-| `SHELLFISH_CONFIG_DIR` | `$XDG_CONFIG_HOME/shellfish` | Profiles, components, `tui.jsonc`, `.env` |
-| `SHELLFISH_STATE_DIR` | `$XDG_STATE_HOME/shellfish` | Sessions and scratch |
-| `SHELLFISH_SESSIONS_DIR` | `$SHELLFISH_STATE_DIR/sessions` | Session files, grouped by project directory |
-| `SHELLFISH_SCRATCH_DIR` | `$SHELLFISH_STATE_DIR/scratch` | Private temporary files for turns, hooks, and tools |
-
-`XDG_STATE_HOME` defaults to `~/.local/state`. `--continue` and `--resume` search the sessions directory. Child agents and hooks inherit these settings.
+One Shellfish directory holds everything: profiles, components, `tui.jsonc`, `.env`, `sessions/` grouped by project directory, and `scratch/` for private temporary files. It is `~/.shellfish` unless `SHELLFISH_DIR` names another. `--continue` and `--resume` search its sessions. Child agents and hooks inherit the selection.
 
 ## Profiles
 
@@ -115,7 +106,7 @@ Executable components require `run`. An optional `manifest.json` or `manifest.js
 
 Use profile `env` for non-secret settings such as `{"SHELLFISH_MAX_ACTIVE_AGENTS": "2"}`. It merges by variable name through inheritance and is frozen in the session header. Do not put credentials there.
 
-Credentials live in exported variables or `.env` in the configuration directory; those remain external and are read for each invocation. Precedence is exported environment, then profile `env`, then `.env`.
+Credentials live in exported variables or `.env` in the Shellfish directory; those remain external and are read for each invocation. Precedence is exported environment, then profile `env`, then `.env`.
 
 Hooks and adapters are trusted: they inherit the process environment and receive every profile `env` and `.env` value. Tools receive only the names their manifest declares from these sources. Unsandboxed tools also inherit the process environment; sandboxed tools start clean. A key kept only in `.env` or profile `env` is therefore invisible to tools that do not declare it. See [`HARNESS.md`](HARNESS.md#shared-contract) for the process context.
 

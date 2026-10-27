@@ -153,7 +153,7 @@ jq -es 'length == 1 and .[0].type == "session"' "$broken.saved" >/dev/null ||
 sf_test_frozen_profile
 typeset env_backend="$tmp/env-backend/run" env_session="$tmp/env.jsonl"
 mkdir -p "${env_backend:h}"
-typeset env_config="$XDG_CONFIG_HOME/shellfish"
+typeset env_config="$SHELLFISH_DIR"
 mkdir -p "$env_config"
 print -rl -- FILE_SECRET=file-value EXPORTED_SECRET=file-value \
   PROFILE_SETTING=file-value >"$env_config/.env"

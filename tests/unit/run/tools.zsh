@@ -34,7 +34,7 @@ jq -eRn --arg expected "${TMPDIR:A}|${TMPDIR:A}/zsh" '
 ' <"$temp_stream" >/dev/null || fail 'tool did not receive the host temp environment'
 
 # Hooks receive all profile and .env values; tools receive only declared names.
-typeset env_config="$XDG_CONFIG_HOME/shellfish" env_hook="$tmp/env-hook" env_seen="$tmp/env-seen"
+typeset env_config="$SHELLFISH_DIR" env_hook="$tmp/env-hook" env_seen="$tmp/env-seen"
 typeset env_session="$tmp/env.jsonl" env_stream="$tmp/env.stream" base_profile=$SF_TEST_PROFILE
 typeset env_command='print -rn -- "${DECLARED-unset} ${UNDECLARED-unset} ${EXPORTED-unset} ${SHELLFISH_SHARE_DIR-unset}"'
 mkdir -p "$env_config"

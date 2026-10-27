@@ -353,9 +353,9 @@ def test_sigterm_leaves_terminal_state():
     config_dir = tempfile.TemporaryDirectory()
     # Resuming reads the profile from the session header, so only rendering
     # needs a fixture; a stable theme avoids a terminal background probe.
-    config_home = Path(config_dir.name) / "config"
-    (config_home / "shellfish").mkdir(parents=True)
-    (config_home / "shellfish" / "tui.jsonc").write_text(
+    shellfish_dir = Path(config_dir.name) / "shellfish"
+    shellfish_dir.mkdir(parents=True)
+    (shellfish_dir / "tui.jsonc").write_text(
         json.dumps({
             "theme_mode": "dark",
             "theme_light": "theme",
@@ -380,8 +380,7 @@ def test_sigterm_leaves_terminal_state():
     env = os.environ.copy()
     env.pop("NO_COLOR", None)
     env["TERM"] = "xterm-256color"
-    env["XDG_STATE_HOME"] = config_dir.name
-    env["XDG_CONFIG_HOME"] = str(config_home)
+    env["SHELLFISH_DIR"] = str(shellfish_dir)
     env["HOME"] = config_dir.name
     process = subprocess.Popen(
         [APP, "--session", str(session_file)],

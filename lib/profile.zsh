@@ -4,7 +4,7 @@ setopt no_aliases no_multios pipe_fail
 (( $+functions[sf_jq] )) || source "$SF_ROOT/lib/jq.zsh"
 (( $+functions[sf_jsonc_read] )) || source "$SF_ROOT/lib/jsonc.zsh"
 (( $+functions[sf_cli_diagnostic] )) || source "$SF_ROOT/lib/cli.zsh"
-(( $+functions[sf_environment_config_dir] )) || source "$SF_ROOT/lib/environment.zsh"
+(( $+functions[sf_environment_dir] )) || source "$SF_ROOT/lib/environment.zsh"
 
 typeset -g SF_PROFILE_ERROR=''
 typeset -g SF_PROFILE_GRANTS='{"sandbox_read_paths":[],"sandbox_write_paths":[]}'
@@ -116,7 +116,7 @@ sf_profile_resolve() {
 
   SF_PROFILE_ERROR=''
   REPLY=''
-  sf_environment_config_dir || sf_profile_fail "$SF_ENVIRONMENT_ERROR" || return
+  sf_environment_dir || sf_profile_fail "$SF_ENVIRONMENT_ERROR" || return
   config_dir=$REPLY
   if [[ -n $profile_names ]]; then
     pending=( ${(f)profile_names} )

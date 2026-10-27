@@ -16,19 +16,19 @@ integer iterations=$iteration_arg
 typeset tmp
 tmp=$(mktemp -d "${TMPDIR:-/tmp}/shellfish-perf.XXXXXX")
 trap 'if [[ -n ${SHELLFISH_PERF_KEEP-} ]]; then print -u2 -r -- "kept: $tmp"; else rm -rf -- "$tmp"; fi' EXIT
-mkdir -p "$tmp/project" "$tmp/state" "$tmp/bin" "$tmp/xdg/shellfish/profiles" \
-  "$tmp/xdg/shellfish/backends/perf" "$tmp/xdg/shellfish/tools/perf" \
-  "$tmp/xdg/shellfish/hooks"
+mkdir -p "$tmp/project" "$tmp/bin" "$tmp/shellfish/profiles" \
+  "$tmp/shellfish/backends/perf" "$tmp/shellfish/tools/perf" \
+  "$tmp/shellfish/hooks"
 
 cat >"$tmp/bin/jq" <<'EOF'
 #!/usr/bin/env zsh
 print -r -- "$SHELLFISH_PERF_RUN" >>"$SHELLFISH_PERF_JQ_LOG"
 exec "$SHELLFISH_PERF_JQ" "$@"
 EOF
-cat >"$tmp/xdg/shellfish/backends/perf/manifest.json" <<'EOF'
+cat >"$tmp/shellfish/backends/perf/manifest.json" <<'EOF'
 {"endpoint":"https://example.invalid/perf"}
 EOF
-cat >"$tmp/xdg/shellfish/backends/perf/run" <<'EOF'
+cat >"$tmp/shellfish/backends/perf/run" <<'EOF'
 #!/usr/bin/env zsh
 request=$(cat)
 if "$SHELLFISH_PERF_JQ" -e '.messages[-1].type == "tool_result"' <<<"$request" >/dev/null; then
@@ -38,24 +38,24 @@ else
 fi
 print -r -- "$response"
 EOF
-cat >"$tmp/xdg/shellfish/tools/perf/manifest.json" <<'EOF'
+cat >"$tmp/shellfish/tools/perf/manifest.json" <<'EOF'
 {"description":"Performance fixture","input_schema":{"type":"object","additionalProperties":false},"sandbox":false}
 EOF
-cat >"$tmp/xdg/shellfish/tools/perf/run" <<'EOF'
+cat >"$tmp/shellfish/tools/perf/run" <<'EOF'
 #!/usr/bin/env zsh
 cat >/dev/null
 print -rn -- 'tool result'
 EOF
-chmod +x "$tmp/bin/jq" "$tmp/xdg/shellfish/backends/perf/run" "$tmp/xdg/shellfish/tools/perf/run"
+chmod +x "$tmp/bin/jq" "$tmp/shellfish/backends/perf/run" "$tmp/shellfish/tools/perf/run"
 
 # The unsandboxed tool skips permission_request.
-cat >"$tmp/xdg/shellfish/hooks/perf" <<'EOF'
+cat >"$tmp/shellfish/hooks/perf" <<'EOF'
 #!/usr/bin/env zsh
 cat >/dev/null
 EOF
-chmod +x "$tmp/xdg/shellfish/hooks/perf"
+chmod +x "$tmp/shellfish/hooks/perf"
 
-cat >"$tmp/xdg/shellfish/profiles/default.jsonc" <<EOF
+cat >"$tmp/shellfish/profiles/default.jsonc" <<EOF
 {
   "backend":{"adapter":"perf"},
   "request":{"model":"perf"},
@@ -79,7 +79,7 @@ for (( iteration = 1; iteration <= iterations; iteration++ )); do
   float start=$EPOCHREALTIME
   (
     cd "$tmp/project"
-    XDG_STATE_HOME="$tmp/state" XDG_CONFIG_HOME="$tmp/xdg" PATH="$tmp/bin:$PATH" \
+    SHELLFISH_DIR="$tmp/shellfish" PATH="$tmp/bin:$PATH" \
       zsh -f "$root/bin/shellfish" run --session-out "$tmp/session-$iteration.jsonl" perf </dev/null >/dev/null 2>"$stderr"
   ) || { cat "$stderr" >&2; exit 1; }
   float elapsed=$(( (EPOCHREALTIME - start) * 1000 ))
@@ -98,7 +98,7 @@ for (( iteration = 1; iteration <= iterations; iteration++ )); do
   start=$EPOCHREALTIME
   (
     cd "$tmp/project"
-    XDG_STATE_HOME="$tmp/state" XDG_CONFIG_HOME="$tmp/xdg" PATH="$tmp/bin:$PATH" \
+    SHELLFISH_DIR="$tmp/shellfish" PATH="$tmp/bin:$PATH" \
       zsh -f "$root/bin/shellfish" run --session "$tmp/session-$iteration.jsonl" perf </dev/null >/dev/null 2>"$stderr"
   ) || { cat "$stderr" >&2; exit 1; }
   elapsed=$(( (EPOCHREALTIME - start) * 1000 ))
@@ -117,7 +117,7 @@ for (( iteration = 1; iteration <= iterations; iteration++ )); do
   start=$EPOCHREALTIME
   (
     cd "$tmp/project"
-    XDG_STATE_HOME="$tmp/state" XDG_CONFIG_HOME="$tmp/xdg" PATH="$tmp/bin:$PATH" \
+    SHELLFISH_DIR="$tmp/shellfish" PATH="$tmp/bin:$PATH" \
       zsh -f "$root/bin/shellfish" run --jsonl --session-create \
       --session-out "$tmp/create-$iteration.jsonl" >/dev/null 2>"$stderr"
   ) || { cat "$stderr" >&2; exit 1; }
@@ -127,7 +127,7 @@ for (( iteration = 1; iteration <= iterations; iteration++ )); do
   start=$EPOCHREALTIME
   (
     cd "$tmp/project"
-    XDG_STATE_HOME="$tmp/state" XDG_CONFIG_HOME="$tmp/xdg" PATH="$tmp/bin:$PATH" \
+    SHELLFISH_DIR="$tmp/shellfish" PATH="$tmp/bin:$PATH" \
       zsh -f "$root/bin/shellfish" backend-request \
       <"$tmp/session-$iteration.jsonl" >/dev/null 2>"$stderr"
   ) || { cat "$stderr" >&2; exit 1; }
