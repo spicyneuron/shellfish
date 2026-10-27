@@ -1,0 +1,4 @@
+Pre-existing issue (not fixed): unit/tui/main.zsh times out after 30 s whenever the
+test runner's stdin is a pipe that never closes, because chat reads all of stdin when
+no prompt is given. I reproduced it on demand with a FIFO, and it's unrelated to this
+change. Running tests with </dev/null in tests/run would fix it if you want that.
