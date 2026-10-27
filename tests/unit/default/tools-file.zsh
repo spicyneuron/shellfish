@@ -38,3 +38,10 @@ for tool in edit_file write_file; do
   jq -e '.user_preview_lines == "full"' "$tools/$tool/manifest.json" >/dev/null ||
     fail "$tool lost its full preview"
 done
+
+# Sandboxed tools that may write cannot create or change a Shellfish directory.
+for policy in "$tools"/*/fence.jsonc; do
+  jq -e '(.filesystem.allowWrite // []) == [] or
+    (.filesystem.denyWrite | index("**/.shellfish") and index("**/.shellfish/**"))
+  ' "$policy" >/dev/null || fail "${policy:h:t} may write Shellfish directories"
+done

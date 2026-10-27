@@ -19,7 +19,8 @@
     "denyWrite": [
       "**/.env", "**/.env.*", "**/.direnv/**", "**/.netrc",
       "**/.git-credentials", "**/.npmrc", "**/.pypirc",
-      "**/*.key", "**/*.pem", "**/*.p12", "**/*.pfx"
+      "**/*.key", "**/*.pem", "**/*.p12", "**/*.pfx",
+      "**/.shellfish", "**/.shellfish/**"
     ]
   },
   "command": {"useDefaults": true}
