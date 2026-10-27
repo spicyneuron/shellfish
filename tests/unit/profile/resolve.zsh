@@ -12,13 +12,13 @@ profile_eval() {
 # Profiles only select; model files only configure.
 for profile in \
     '{"backend":{}}' '{"request":{}}' '{"env":{}}' '{"extend":["default"]}' \
-    '{"model":"default"}' '{"model":["../default"]}' '{"hooks":{"stop":[]}}' \
+    '{"model":"default"}' '{"model":[""]}' '{"sandbox":{"read":[]}}' '{"hooks":{"stop":[]}}' \
     '{"tools":"read_file"}' '{"themes":{}}'; do
   if print -r -- "$profile" | profile_eval 'config_profile(["p"])' >/dev/null 2>&1; then
     fail "invalid profile was accepted: $profile"
   fi
 done
-print -r -- '{"model":["a","@b/c"],"system":["x.md"],"tools":[],"hooks":["h"]}' |
+print -r -- '{"model":["a","@b/c.jsonc"],"sandbox":["~/s.jsonc"],"system":["x.md"],"tools":[],"hooks":["h"]}' |
   profile_eval 'config_profile(["p"])' >/dev/null
 for model in \
     '{"backend":"openai"}' '{"context_window":0}' '{"endpoint":"ftp://example.invalid"}' \
@@ -52,26 +52,18 @@ sf_test_tmp resolve
 sf_test_config
 export HOME="$tmp/home"
 typeset config="${SF_TEST_CONFIG:A}"
-mkdir -p "$HOME/prompts" "$config/system" "$config/tools/probe" "$config/profiles/far/system"
+mkdir -p "$HOME/prompts" "$config/system" "$config/tools/probe"
 print -r -- '#!/bin/sh' >"$config/tools/probe/run"
 chmod +x "$config/tools/probe/run"
 print -r -- '{"description":"probe","input_schema":{"type":"object"},"sandbox":false}' \
   >"$config/tools/probe/manifest.json"
 print -r -- 'configured' >"$config/system/shared.md"
-print -r -- 'profile folder' >"$config/profiles/far/system/shared.md"
 print -r -- 'home' >"$HOME/prompts/home.md"
 sf_test_model probe '{"adapter": "'"$SF_TEST_BACKEND:h"'", "request": {"model": "m"}}'
 sf_test_profile unused '{invalid json'
 
-# A relative reference cannot leave its kind directory.
-sf_test_profile escape '{"model":["probe"],"system":["../profiles/far/system/shared.md"]}'
-if sf_profile_resolve_args -p escape; then
-  fail 'relative component reference escaped its kind directory'
-fi
-[[ $SF_PROFILE_ERROR == 'cannot resolve system reference: ../profiles/far/system/shared.md' ]]
-
-# "@KIND/path" selects the bundled component despite user shadowing;
-# "~/" and absolute paths are taken as written. Bare names fall back to bundled.
+# "@path" selects under the bundled root despite user shadowing; "~/" and
+# absolute paths are taken as written. Bare names fall back to bundled.
 sf_test_profile default '{"model": ["probe"], "tools": ["probe"], "system": ["shared.md",
   "@system/general.md", "general.md", "~/prompts/home.md", "'"$HOME"'/prompts/home.md"]}'
 sf_profile_resolve_args

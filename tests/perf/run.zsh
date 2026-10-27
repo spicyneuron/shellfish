@@ -64,7 +64,7 @@ cat >"$tmp/shellfish/profiles/default.jsonc" <<'EOF'
   "hooks":["session_start","user_prompt_submit","pre_tool_use","post_tool_use","stop"]
 }
 EOF
-print -rl -- SHELLFISH_SANDBOX=0 SHELLFISH_MAX_REQUESTS_PER_TURN=8 \
+print -rl -- SHELLFISH_MAX_REQUESTS_PER_TURN=8 \
   SHELLFISH_MAX_TOOL_CALLS_PER_REQUEST=16 SHELLFISH_MAX_CAPTURE_BYTES=65536 \
   >"$tmp/shellfish/.env"
 

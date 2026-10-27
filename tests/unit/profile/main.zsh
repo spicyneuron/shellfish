@@ -53,12 +53,18 @@ jq -e --arg root "${SF_TEST_CONFIG:A}" '
   .model.request.model == "sol" and .tools == [] and
   .system == [$root + "/system/prompt.md"] and
   .hooks == {stop: [$root + "/hooks/stop"]}' <<<"$REPLY" >/dev/null
-for name in openai//sol openai/../sol /openai/sol openai/sol/; do
+
+# A path is taken as written, and "@" is the bundled root.
+sf_profile_resolve_args -p "$SF_TEST_CONFIG/profiles/openai/sol.jsonc" \
+  -m @models/openrouter.jsonc
+jq -e '.model.request.model == "sol" and (.model.adapter | endswith("/share/backends/openrouter"))' \
+  <<<"$REPLY" >/dev/null || fail 'path references did not select their files'
+for name in '' $'open\nai'; do
   if sf_profile_resolve_args -p "$name"; then
-    fail "invalid profile name was accepted: $name"
+    fail "invalid profile reference was accepted: $name"
   fi
   if sf_profile_resolve_args -p work -m "$name"; then
-    fail "invalid model name was accepted: $name"
+    fail "invalid model reference was accepted: $name"
   fi
 done
 
@@ -129,14 +135,14 @@ jq -e '.model.request.model == "one-off" and (.model.adapter | endswith("/backen
   <<<"$REPLY" >/dev/null || fail 'a request override did not complete the bundled model'
 
 # A profile selects; values belong to model files, the environment, or tui.jsonc.
-for field in backend request env extend sandbox max_capture_bytes theme_light; do
+for field in backend request env extend max_capture_bytes theme_light; do
   sf_test_profile bad "{\"model\": [\"fixture\"], \"$field\": {}}"
   if sf_profile_resolve_args -p bad; then
     fail "profile accepted $field"
   fi
   [[ $SF_PROFILE_ERROR == "invalid configuration: profile bad \$[\"$field\"]: unknown field" ]]
 done
-for value in '"fixture"' '[1]' '["../fixture"]'; do
+for value in '"fixture"' '[1]' '[""]'; do
   sf_test_profile bad "{\"model\": $value}"
   if sf_profile_resolve_args -p bad; then
     fail "profile accepted model $value"
@@ -166,17 +172,22 @@ fi
 [[ $SF_PROFILE_ERROR == 'profile selects no model: modelless' ]]
 sf_profile_resolve_args -p modelless -m fixture || fail 'a CLI model did not complete a profile'
 
-# A configured file shadows the bundled one, and "@NAME" selects the bundled one.
+# A configured file shadows the bundled one, and "@" still reaches the bundled one.
 sf_test_profile coding '{"model": ["fixture"]}'
 sf_profile_resolve_args -p coding
 jq -e '.hooks == {}' <<<"$REPLY" >/dev/null || fail 'configured profile did not shadow bundled'
 sf_test_model default '{"adapter": "'"$fixture_backend"'", "request": {"model": "mine"}}'
-sf_profile_resolve_args -p @coding
+sf_profile_resolve_args -p @profiles/coding.jsonc
 jq -e '.hooks.permission_request | length == 1' <<<"$REPLY" >/dev/null ||
-  fail '@coding did not select the bundled profile'
-sf_profile_resolve_args -p work -m @default
+  fail '@profiles/coding.jsonc did not select the bundled profile'
+sf_test_model openrouter '{"adapter": "'"$fixture_backend"'"}'
+sf_profile_resolve_args -p work -m openrouter
+jq -e '.model.adapter | endswith("/tests/fixtures/backend")' <<<"$REPLY" >/dev/null ||
+  fail 'configured model did not shadow bundled'
+sf_profile_resolve_args -p work -m @models/openrouter.jsonc
 jq -e '.model.adapter | endswith("/share/backends/openrouter")' <<<"$REPLY" >/dev/null ||
-  fail '@default did not select the bundled model'
+  fail '@models/openrouter.jsonc did not select the bundled model'
+rm "$SF_TEST_CONFIG/models/openrouter.jsonc"
 
 # Unknown names fail.
 if sf_profile_resolve_args -p absent; then
@@ -221,30 +232,45 @@ if sf_profile_resolve_args -p bare; then
   fail 'invalid backend path was accepted'
 fi
 
-# Sandbox settings come from the environment and flags.
+# Sandbox files merge left to right: grants accumulate, "enabled" replaces, and
+# flags add grants last. Grants need not exist.
 mkdir -p "$tmp/flag"
-SHELLFISH_SANDBOX=0 SHELLFISH_SANDBOX_READ="~/my reference:/opt/ref" \
-  SHELLFISH_SANDBOX_WRITE="~/output" sf_profile_resolve_args -p work --sandbox-write "$tmp/flag"
-jq -e --arg home "${tmp:A}/home" --arg flag "${tmp:A}/flag" '
+sf_test_sandbox base '{"read": ["~/my reference", "/opt/ref"], "write": ["~/output"]}'
+sf_test_sandbox off '{"enabled": false, "read": ["@system"]}'
+sf_test_sandbox on '{"enabled": true}'
+sf_test_profile boxed '{"model": ["work"], "sandbox": ["base", "off"]}'
+sf_profile_resolve_args -p boxed --sandbox-write "$tmp/flag"
+jq -e --arg home "${tmp:A}/home" --arg flag "${tmp:A}/flag" --arg share "$ROOT/share" '
   .sandbox == false and
-  .sandbox_read_paths == [$home + "/my reference", "/opt/ref"] and
+  .sandbox_read_paths == [$home + "/my reference", "/opt/ref", $share + "/system"] and
   .sandbox_write_paths == [$home + "/output", $flag]
-' <<<"$REPLY" >/dev/null || fail 'sandbox settings were not applied'
-print -r -- 'SHELLFISH_SANDBOX_READ=/from/env-file' >"$SF_TEST_CONFIG/.env"
-sf_profile_resolve_args -p work
-jq -e '.sandbox == true and .sandbox_read_paths == ["/from/env-file"]' <<<"$REPLY" >/dev/null ||
-  fail '.env sandbox settings were not applied'
-rm "$SF_TEST_CONFIG/.env"
-if SHELLFISH_SANDBOX=yes sf_profile_resolve_args -p work; then
-  fail 'an invalid SHELLFISH_SANDBOX was accepted'
-fi
-[[ $SF_PROFILE_ERROR == 'SHELLFISH_SANDBOX must be 0 or 1' ]]
-if SHELLFISH_SANDBOX_READ=relative sf_profile_resolve_args -p work; then
+' <<<"$REPLY" >/dev/null || fail 'sandbox files did not merge in order'
+sf_test_profile boxed '{"model": ["work"], "sandbox": ["off", "on"]}'
+sf_profile_resolve_args -p boxed
+jq -e '.sandbox == true' <<<"$REPLY" >/dev/null || fail 'a later sandbox file did not re-enable'
+
+# Invalid sandbox files name the file and entry.
+sf_test_sandbox bad '{"read": ["/ok", "relative"]}'
+sf_test_profile boxed '{"model": ["work"], "sandbox": ["bad"]}'
+if sf_profile_resolve_args -p boxed; then
   fail 'a relative sandbox path was accepted'
 fi
+[[ $SF_PROFILE_ERROR == 'invalid configuration: sandbox bad $["read"][1]: must be an absolute, ~/, or @ path' ]]
+for value in '{"enabled": "yes"}' '{"write": "/x"}' '{"paths": []}'; do
+  sf_test_sandbox bad "$value"
+  if sf_profile_resolve_args -p boxed; then
+    fail "sandbox file accepted $value"
+  fi
+done
+sf_test_profile boxed '{"model": ["work"], "sandbox": ["absent"]}'
+if sf_profile_resolve_args -p boxed; then
+  fail 'unknown sandbox file was accepted'
+fi
+[[ $SF_PROFILE_ERROR == 'unknown sandbox: absent' ]]
+sf_test_profile boxed '{"model": ["work"], "sandbox": ["base"]}'
 (
   unset HOME
-  if SHELLFISH_SANDBOX_READ="~/x" sf_profile_resolve_args -p work; then
+  if sf_profile_resolve_args -p boxed; then
     fail 'home-relative sandbox path resolved without HOME'
   fi
   [[ $SF_PROFILE_ERROR == *'cannot expand ~ without HOME'* ]]

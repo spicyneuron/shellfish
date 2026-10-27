@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Shellfish sandbox",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "enabled": {
+      "type": "boolean"
+    },
+    "read": {
+      "$ref": "#/$defs/paths"
+    },
+    "write": {
+      "$ref": "#/$defs/paths"
+    }
+  },
+  "$defs": {
+    "paths": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^(/|~/|@)[^\u0000-\u001f\u007f-\u009f]*$"
+      }
+    }
+  }
+}

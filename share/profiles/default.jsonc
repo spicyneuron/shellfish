@@ -1,14 +1,18 @@
 // Shellfish: https://github.com/spicyneuron/shellfish
 //
 // The bundled agent, selected when --profile is absent. A profile only selects:
-// model files, system prompt files, tools, and hooks. A file in the Shellfish
-// directory's profiles/ shadows a bundled one of the same name.
+// model files, sandbox files, system prompt files, tools, and hooks. A name
+// resolves in the Shellfish directory first, then the bundled one; a path
+// starts with "/", "~/", or "@" for the bundled root.
 {
   "$schema": "https://raw.githubusercontent.com/spicyneuron/shellfish/refs/heads/main/share/profile.schema.json",
 
   // Files under models/, merged left to right: the bundled defaults, then your
   // models/default.jsonc, which must name a model.
-  "model": ["@default", "default"],
+  "model": ["openrouter", "default"],
+
+  // Files under sandbox/, merged left to right: your sandbox/default.jsonc.
+  "sandbox": ["default"],
 
   // Files under system/ concatenated into the system prompt.
   "system": ["general.md", "tools.md"],

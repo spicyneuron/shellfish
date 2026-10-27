@@ -4,23 +4,26 @@ Configuration has three homes, each with one job:
 
 | Home | Job | Frozen in a session |
 | --- | --- | --- |
-| `profiles/NAME.jsonc` | Selects an agent's parts: model files, system prompts, tools, and hooks | Yes |
+| `profiles/NAME.jsonc` | Selects an agent's parts: model and sandbox files, system prompts, tools, and hooks | Yes |
 | `models/NAME.jsonc` | Configures the request: adapter, endpoint, and provider parameters | Yes |
+| `sandbox/NAME.jsonc` | Enables sandboxing and grants extra paths | Yes |
 | `.env` and the environment | Credentials and settings for Shellfish and its components | No |
 
 Rendering lives separately in `tui.jsonc`, which merges over [`share/tui.jsonc`](../share/tui.jsonc) and is read fresh on every run.
 
-Copy [`share/template/`](../share/template/) into the Shellfish directory for a working starting point. The bundled [`profile.schema.json`](../share/profile.schema.json), [`model.schema.json`](../share/model.schema.json), and [`tui.schema.json`](../share/tui.schema.json) are the exact field references.
+Copy [`share/template/`](../share/template/) into the Shellfish directory for a working starting point. The bundled [`profile.schema.json`](../share/profile.schema.json), [`model.schema.json`](../share/model.schema.json), [`sandbox.schema.json`](../share/sandbox.schema.json), and [`tui.schema.json`](../share/tui.schema.json) are the exact field references.
 
 ## Directories
 
-One Shellfish directory holds everything: profiles, models, components, `tui.jsonc`, `.env`, `sessions/` grouped by project directory, and `scratch/` for private temporary files. Shellfish uses `SHELLFISH_DIR` when set, otherwise the nearest `.shellfish` directory above the working directory, otherwise `~/.shellfish`. A `.shellfish` directory therefore selects a separately configured Shellfish, such as one for work and one for personal projects, for everything beneath it. `--continue` and `--resume` search its sessions. Child agents, hooks, and tools inherit the selection.
+One Shellfish directory holds everything: profiles, models, sandbox files, components, `tui.jsonc`, `.env`, `sessions/` grouped by project directory, and `scratch/` for private temporary files. Shellfish uses `SHELLFISH_DIR` when set, otherwise the nearest `.shellfish` directory above the working directory, otherwise `~/.shellfish`. A `.shellfish` directory therefore selects a separately configured Shellfish, such as one for work and one for personal projects, for everything beneath it. `--continue` and `--resume` search its sessions. Child agents, hooks, and tools inherit the selection.
 
-## Names
+## References
 
-Profiles and models are named files, and `NAME` may be a slash-separated path such as `openai/sol`. Your file shadows the bundled file of the same name, and `@NAME` always means the bundled one.
+Every reference in a profile or model file, and the `-p` and `-m` options, follow one rule. A reference starting with `/`, `~/`, or `@` is a path, where `@` is the bundled root just as `~` is home. Anything else is a name, which resolves in its kind's directory, yours first, then bundled. Profile, model, and sandbox names gain `.jsonc`, and a name may be nested, such as `openai/sol`.
 
-A profile names components by reference. A bare name resolves in its kind's directory (`system/`, `tools/`, `hooks/`, or `backends/`), yours first, then bundled. `@KIND/NAME`, such as `@tools/shell`, selects the bundled component. `~/path` and absolute paths are also available.
+Your file therefore shadows the bundled file of the same name, and a path still reaches the bundled one: `@tools/shell`, or `-p @profiles/coding.jsonc`. Session headers store bundled paths the same way, so a session survives upgrades.
+
+Path options such as `--system-file` and `--sandbox-read` accept the same prefixes and resolve any other path against the working directory.
 
 ## Profiles
 
@@ -29,7 +32,8 @@ A profile only selects. It holds no values of its own.
 ```jsonc
 // profiles/default.jsonc
 {
-  "model": ["@default", "default"],
+  "model": ["openrouter", "default"],
+  "sandbox": ["default"],
   "system": ["general.md", "tools.md"],
   "tools": ["read_file", "edit_file", "write_file", "shell"],
   "hooks": ["project/environment", "project/instructions", "help", "compact", "review"]
@@ -39,11 +43,12 @@ A profile only selects. It holds no values of its own.
 | Field | Meaning |
 | --- | --- |
 | `model` | Model files, merged left to right |
+| `sandbox` | Sandbox files, merged left to right |
 | `system` | System prompt files, concatenated in order |
 | `tools` | Tools exposed to the model |
 | `hooks` | Hooks, each run by the lifecycle its manifest names, in listed order |
 
-`profiles/default.jsonc` is selected when `--profile` is absent, and `-p NAME` selects another. Profiles do not inherit from each other, since a profile is short enough to copy. Only components named in the selected profile are active, and unused files are inert.
+`profiles/default.jsonc` is selected when `--profile` is absent, and `-p REF` selects another. Profiles do not inherit from each other, since a profile is short enough to copy. Only components named in the selected profile are active, and unused files are inert.
 
 ## Models
 
@@ -74,10 +79,10 @@ A profile's `model` list merges left to right: objects merge recursively and any
 {"request": {"reasoning": {"effort": "high"}}}
 
 // profiles/local.jsonc
-{"model": ["@default", "local", "high"], "system": ["general.md"], "tools": ["shell"]}
+{"model": ["openrouter", "local", "high"], "system": ["general.md"], "tools": ["shell"]}
 ```
 
-`-m NAME` merges another model file over the profile's list for one session and may repeat. `--request JSON` merges raw parameters last, so `--request '{"model":"MODEL"}'` tries a model without a file.
+`-m REF` merges another model file over the profile's list for one session and may repeat. `--request JSON` merges raw parameters last, so `--request '{"model":"MODEL"}'` tries a model without a file.
 
 Bundled adapters: `anthropic`, `codex`, `openai`, `openai-responses`, and `openrouter`. The `openai` adapter works with any OpenAI-compatible endpoint. See [`HARNESS.md`](HARNESS.md#backend-adapters) for the adapter protocol.
 
@@ -85,13 +90,10 @@ A new session freezes the selected profile with its merged model and every refer
 
 ## Environment
 
-Credentials and settings live in exported variables or `.env` in the Shellfish directory. Exported values win. Both stay external and are read for each invocation, so a change applies to existing sessions too, except the sandbox settings, which a new session freezes.
+Credentials and settings live in exported variables or `.env` in the Shellfish directory. Exported values win. Both stay external and are read for each invocation, so a change applies to existing sessions too.
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
-| `SHELLFISH_SANDBOX` | `1` | `0` runs every tool with user permissions |
-| `SHELLFISH_SANDBOX_READ` | Empty | Colon-separated extra read grants |
-| `SHELLFISH_SANDBOX_WRITE` | Empty | Colon-separated extra read-write grants |
 | `SHELLFISH_MAX_REQUESTS_PER_TURN` | `100` | Provider requests per turn |
 | `SHELLFISH_MAX_TOOL_CALLS_PER_REQUEST` | `25` | Tool calls per response |
 | `SHELLFISH_MAX_CAPTURE_BYTES` | `32768` | Bytes kept from each component stream, at least `64`, overridable by a manifest |
@@ -109,6 +111,7 @@ A configuration root has separate locations for each kind:
 ```text
 profiles/NAME.jsonc
 models/NAME.jsonc
+sandbox/NAME.jsonc
 system/FILE.md
 tools/TOOL/
 hooks/HOOK/
@@ -121,7 +124,22 @@ Executable components require `run`. An optional `manifest.json` or `manifest.js
 
 The default harness runs opted-in tools under [`fence`](https://github.com/fencesandbox/fence). Tool policies and platform temp access set the baseline; grants extend filesystem access, while policy deny rules still take precedence. Bundled policies never let a tool create or change a `.shellfish` directory, since its contents run outside the sandbox. A `SHELLFISH_DIR` with another name inside a writable path is not protected.
 
-`SHELLFISH_SANDBOX_READ` and `SHELLFISH_SANDBOX_WRITE` hold standing grants as absolute or `~/` paths. `--sandbox-read` and `--sandbox-write` add one-off grants, and `--sandbox-auto` adds detected development-tool paths. Grants are frozen into new sessions, and `/sandbox` changes them for one session.
+Sandbox files hold standing settings:
+
+```jsonc
+// sandbox/default.jsonc
+{"read": ["~/.cargo", "~/go/pkg"], "write": ["~/.cache/uv"]}
+```
+
+| Field | Meaning |
+| --- | --- |
+| `enabled` | `false` runs every tool with user permissions. Defaults to `true` |
+| `read` | Extra read grants |
+| `write` | Extra read-write grants |
+
+Grants are `/`, `~/`, or `@` paths and need not exist, so one file can serve several machines. A profile's `sandbox` list merges left to right: grants accumulate, and a later `enabled` replaces an earlier one. A profile without a `sandbox` list is sandboxed with no extra grants.
+
+`--sandbox-read` and `--sandbox-write` add one-off grants, and `--sandbox-auto` adds detected development-tool paths. A new session freezes the merged grants, and `/sandbox` changes them for one session.
 
 ## Rendering
 
@@ -139,7 +157,7 @@ The default harness runs opted-in tools under [`fence`](https://github.com/fence
 
 ## Bundled agent
 
-The bundled [`default`](../share/profiles/default.jsonc) profile selects `general.md` and `tools.md`, the tools below, and the bundled hooks. Its model list is the bundled [`@default`](../share/models/default.jsonc), which uses the `openrouter` adapter with up to 16,384 output tokens and medium reasoning effort, followed by your `models/default.jsonc`, which must name a model:
+The bundled [`default`](../share/profiles/default.jsonc) profile selects `general.md` and `tools.md`, the tools below, and the bundled hooks. Its model list is the bundled [`openrouter`](../share/models/openrouter.jsonc) model, with up to 16,384 output tokens and medium reasoning effort, followed by your `models/default.jsonc`, which must name a model. Its sandbox list is your `sandbox/default.jsonc`, which is empty until you write one:
 
 ```jsonc
 // models/default.jsonc

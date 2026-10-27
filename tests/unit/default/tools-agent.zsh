@@ -321,6 +321,14 @@ if print -r -- '{"operation":"start","profile":"child","fork":true,"task":"bad"}
     "$agent/run" 3>/dev/null >/dev/null 2>&1; then
   fail 'both fork origins were accepted'
 fi
+# A model-chosen profile cannot be a path or leave profiles/.
+for profile in "$tmp/evil.jsonc" '~/evil.jsonc' '@profiles/coding.jsonc' '../evil'; do
+  if jq -cn --arg profile "$profile" '{operation:"start",profile:$profile,task:"bad"}' |
+      SHELLFISH_SESSION="$fork_parent" SHELLFISH_EXECUTABLE="$ROOT/bin/shellfish" \
+      "$agent/run" 3>/dev/null >/dev/null 2>&1; then
+    fail "agent accepted profile reference: $profile"
+  fi
+done
 if print -r -- '{"operation":"start","fork":false,"task":"bad"}' |
     SHELLFISH_SESSION="$fork_parent" SHELLFISH_EXECUTABLE="$ROOT/bin/shellfish" \
     "$agent/run" 3>/dev/null >/dev/null 2>&1; then

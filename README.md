@@ -75,22 +75,24 @@ Run `shellfish --help` for creation and sandbox options, or `/help` inside chat 
 
 The Shellfish directory (typically `~/.shellfish/`, see [Directories](docs/CONFIG.md#directories)) holds three kinds of configuration:
 
-- **Profiles** in `profiles/` select an agent's parts: model files, system prompts, tools, and hooks.
+- **Profiles** in `profiles/` select an agent's parts: model and sandbox files, system prompts, tools, and hooks.
 - **Models** in `models/` configure the request: adapter, endpoint, and provider parameters. A profile's model files merge left to right.
-- **Settings** in `.env` or the environment hold credentials, sandbox grants, and limits.
+- **Sandbox files** in `sandbox/` enable sandboxing and grant extra paths.
+- **Settings** in `.env` or the environment hold credentials and limits.
 
 ```jsonc
 // ~/.shellfish/profiles/review.jsonc — shellfish -p review
 {
   "$schema": "https://raw.githubusercontent.com/spicyneuron/shellfish/refs/heads/main/share/profile.schema.json",
-  "model": ["@default", "default"],
+  "model": ["openrouter", "default"],
+  "sandbox": ["default"],
   "system": ["general.md", "review.md"],  // ~/.shellfish/system/review.md
   "tools": ["read_file", "shell_readonly"],
   "hooks": ["project/instructions"]
 }
 ```
 
-`default.jsonc` is selected when `--profile` is absent, and your file shadows the [bundled profile](share/profiles/default.jsonc) of the same name. Reusable components live in top-level `system/`, `tools/`, `hooks/`, and `backends/` directories beside `profiles/`, and resolve from the Shellfish directory first, then the bundled `share/` directory. A new session freezes the resolved selection in its header. Themes and preview limits live in [`tui.jsonc`](share/tui.jsonc).
+`default.jsonc` is selected when `--profile` is absent, and your file shadows the [bundled profile](share/profiles/default.jsonc) of the same name. Reusable components live in top-level `system/`, `tools/`, `hooks/`, and `backends/` directories beside `profiles/`, and resolve from the Shellfish directory first, then the bundled `share/` directory. A reference starting with `/`, `~/`, or `@` is a path instead, where `@` is the bundled root. A new session freezes the resolved selection in its header. Themes and preview limits live in [`tui.jsonc`](share/tui.jsonc).
 
 ## Documentation
 

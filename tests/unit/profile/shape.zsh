@@ -122,7 +122,7 @@ for patch in '.extra=true' '.profile.extra=true' '.profile.env={}' \
     '.profile.model.context_window=0' '.profile.hooks.unknown=[]' \
     '.profile.hooks.stop=[{command:"/bin/hook"}]' '.profile.system=["relative.md"]' \
     '.profile.tools=["shell"]' '.profile.tools=["/a/shell","/b/shell"]' \
-    '.profile.model.adapter="./openai"' '.profile.system=["@default/system/general.md"]' \
+    '.profile.model.adapter="./openai"' '.profile.system=[""]' \
     '.profile.sandbox_read_paths=["relative"]' \
     '.cwd="./project"'; do
   if jq -c "$patch" <<<"$valid_header" |
@@ -141,14 +141,16 @@ jq -L "$ROOT" -e --arg share /opt/sf/share --arg home /home/me '
   ($expanded | profile_store($share; $home)) == $stored
 ' <<<"$valid_header" >/dev/null || fail 'stored profile paths did not round-trip'
 
-# Old absolute component paths remain data when a header is stored.
+# Any path under the bundled root stores with "@", including sandbox grants.
 jq -L "$ROOT" -e --arg share /opt/sf/share --arg home /home/me '
   include "lib/profile";
-  .profile.tools = ["/opt/sf/share/profiles/default/tools/shell"] |
-  (canonical_session_header and
-  (.profile | profile_store($share; $home)).tools ==
-    ["/opt/sf/share/profiles/default/tools/shell"])
-' <<<"$valid_header" >/dev/null || fail 'old absolute paths changed when stored'
+  .profile | profile_expand($share; $home) |
+  .tools = ["/opt/sf/share/profiles/default/tools/shell", "/opt/other/jira"] |
+  .sandbox_write_paths = ["/opt/sf/share/skills"] |
+  profile_store($share; $home) |
+  .tools == ["@profiles/default/tools/shell", "/opt/other/jira"] and
+  .sandbox_write_paths == ["@skills"]
+' <<<"$valid_header" >/dev/null || fail 'bundled paths did not store with "@"'
 
 # Tool manifests validate sandboxing.
 typeset valid_manifest

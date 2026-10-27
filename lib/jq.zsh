@@ -1,4 +1,4 @@
-# Bundled data, which stored profile paths name as "@NAME/...".
+# Bundled data, which "@" names in references and stored profile paths.
 [[ -n ${SF_SHARE-} ]] ||
   typeset -g SF_SHARE=$SF_ROOT/share
 

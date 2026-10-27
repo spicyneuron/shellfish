@@ -1,7 +1,7 @@
 // Shellfish model: https://github.com/spicyneuron/shellfish
 //
 // Bundled profiles merge this file over the bundled defaults:
-// https://github.com/spicyneuron/shellfish/blob/main/share/models/default.jsonc
+// https://github.com/spicyneuron/shellfish/blob/main/share/models/openrouter.jsonc
 {
   "$schema": "https://raw.githubusercontent.com/spicyneuron/shellfish/refs/heads/main/share/model.schema.json",
 

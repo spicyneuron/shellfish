@@ -6,7 +6,7 @@
     "required": ["operation"],
     "properties": {
       "operation": {"type": "string", "enum": ["start", "inspect", "continue"]},
-      "profile": {"type": "string", "minLength": 1},
+      "profile": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*(/[A-Za-z0-9][A-Za-z0-9_-]*)*$"},
       "fork": {"type": "boolean"},
       "background": {"type": "boolean"},
       "task": {"type": "string", "minLength": 1},

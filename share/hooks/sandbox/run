@@ -68,6 +68,8 @@ if [[ $candidate == '~' || $candidate == '~/'* ]]; then
     exit 0
   }
   candidate=${candidate/#\~/${HOME:A}}
+elif [[ $candidate == @* ]]; then
+  candidate=$SHELLFISH_SHARE_DIR/${candidate#@}
 elif [[ $candidate != /* ]]; then
   candidate="$PWD/$candidate"
 fi
@@ -78,9 +80,11 @@ if [[ $action == add && ! -d $grant_path ]]; then
   exit 0
 fi
 
+# Stored grants name HOME as "~/" and the bundled root as "@".
 while IFS= read -r -d '' grant; do
   case $grant in
     '~/'*) resolved="${HOME:A}/${grant#\~/}" ;;
+    @*) resolved=$SHELLFISH_SHARE_DIR/${grant#@} ;;
     *) resolved=$grant ;;
   esac
   [[ ${resolved:A} != $grant_path ]] || { matched=$grant; break; }

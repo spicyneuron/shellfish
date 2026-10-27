@@ -4,9 +4,6 @@
 #
 # Repeated primitives are deliberate; see AGENTS.md.
 
-def profile_name:
-  type == "string" and test("^[A-Za-z0-9][A-Za-z0-9_-]*(/[A-Za-z0-9][A-Za-z0-9_-]*)*$");
-
 def tool_name:
   type == "string" and test("^[A-Za-z_][A-Za-z0-9_-]*$");
 
@@ -17,9 +14,10 @@ def nonempty_control_free_string:
   type == "string" and length > 0 and (test("[[:cntrl:]]") | not);
 
 def model_name: nonempty_control_free_string;
+# A path: absolute, under HOME as "~/", or under the bundled root as "@".
 def stored_reference:
   nonempty_control_free_string and
-  (startswith("/") or startswith("~/") or test("^@(system|tools|hooks|backends)/.+"));
+  (startswith("/") or startswith("~/") or startswith("@"));
 def stored_cwd:
   nonempty_control_free_string and (startswith("/") or startswith("~/"));
 def endpoint: type == "string" and test("^https?://[^[:space:][:cntrl:]]+$");
@@ -113,11 +111,8 @@ def reference_list: type == "array" and all(.[]; nonempty_control_free_string);
 
 # A profile only selects.
 def config_profile($path):
-  config_object($path; ["$schema", "hooks", "model", "system", "tools"]) |
-  config_assert((has("model") | not) or (.model | type == "array" and
-    all(.[]; type == "string" and (ltrimstr("@") | profile_name))); $path + ["model"];
-    "must be model names") |
-  reduce ["hooks", "system", "tools"][] as $field (.;
+  config_object($path; ["$schema", "hooks", "model", "sandbox", "system", "tools"]) |
+  reduce ["hooks", "model", "sandbox", "system", "tools"][] as $field (.;
     config_assert((has($field) | not) or (.[$field] | reference_list);
       $path + [$field]; "must be references"));
 
@@ -140,28 +135,38 @@ def model_merge($models; $request):
   reduce $models[] as $model ({}; . * ($model | del(."$schema"))) |
   .request = ((.request // {}) * $request) |
   if .request.model | model_name then . else
-    error("a model is required: set request.model in a model file or with --request") end |
+    error("a model is required: set request.model in models/default.jsonc or with --request")
+  end |
   if (.adapter // "") == "" then error("a model adapter is required") else . end;
 
-# Each reference as [kind, reference] through f, in the frozen shape.
-def profile_references(f):
-  .model.adapter |= (["backends", .] | f) |
-  .system |= map(["system", .] | f) |
-  .tools |= map(["tools", .] | f) |
-  .hooks |= map_values(map(["hooks", .] | f));
+# A sandbox file enables or disables sandboxing and grants extra paths.
+def config_sandbox($path):
+  config_object($path; ["$schema", "enabled", "read", "write"]) |
+  config_assert((has("enabled") | not) or (.enabled | type == "boolean");
+    $path + ["enabled"]; "must be a boolean") |
+  reduce ["read", "write"][] as $field (.;
+    config_assert((has($field) | not) or (.[$field] | type == "array");
+      $path + [$field]; "must be an array") |
+    reduce range(0; .[$field] // [] | length) as $at (.;
+      config_assert(.[$field][$at] | stored_reference; $path + [$field, $at];
+        "must be an absolute, ~/, or @ path")));
 
-def profile_paths(reference; path):
-  profile_references(.[1] | reference) |
-  .sandbox_read_paths |= map(path) | .sandbox_write_paths |= map(path);
+# Sandbox files merge left to right: grants accumulate and "enabled" replaces.
+def sandbox_merge($files):
+  reduce $files[] as $file ({enabled:true, read:[], write:[]};
+    (if $file | has("enabled") then .enabled = $file.enabled else . end) |
+    .read += ($file.read // []) | .write += ($file.write // []));
 
-# Stored paths name bundled files "@KIND/...", files under HOME "~/...", and
-# anything else absolutely.
+# Every path in a frozen profile through f.
+def profile_paths(f):
+  .model.adapter |= f | .system |= map(f) | .tools |= map(f) |
+  .hooks |= map_values(map(f)) |
+  .sandbox_read_paths |= map(f) | .sandbox_write_paths |= map(f);
+
+# Stored paths name bundled files "@...", files under HOME "~/...", and
+# anything else absolutely. An empty $share stores nothing as bundled.
 def store_path($share; $home):
-  if $share != "" and startswith($share + "/") then
-    if startswith($share + "/system/") or startswith($share + "/tools/") or
-        startswith($share + "/hooks/") or startswith($share + "/backends/") then
-      "@" + ltrimstr($share + "/")
-    else . end
+  if $share != "" and startswith($share + "/") then "@" + ltrimstr($share + "/")
   elif $home != "" and startswith($home + "/") then "~" + ltrimstr($home)
   else . end;
 
@@ -173,14 +178,8 @@ def expand_path($share; $home):
     else $home + ltrimstr("~") end
   else . end;
 
-def profile_store($share; $home):
-  profile_paths(store_path($share; $home); store_path(""; $home));
-
-def profile_expand($share; $home):
-  profile_paths(expand_path($share; $home); expand_path(""; $home));
-
-def sandbox_paths:
-  type == "array" and all(.[]; stored_cwd);
+def profile_store($share; $home): profile_paths(store_path($share; $home));
+def profile_expand($share; $home): profile_paths(expand_path($share; $home));
 
 # The frozen profile: the merged model, resolved references with hooks grouped
 # by lifecycle, and the session's sandbox grants.
@@ -197,10 +196,11 @@ def canonical_profile:
   (.system | type == "array") and (.tools | type == "array") and
   (.hooks | type == "object" and ((keys - hook_names) | length == 0) and
     all(.[]; type == "array")) and
-  all(.model.adapter, .system[], .tools[], .hooks[][]; stored_reference) and
+  (.sandbox_read_paths | type == "array") and (.sandbox_write_paths | type == "array") and
+  all(.model.adapter, .system[], .tools[], .hooks[][], .sandbox_read_paths[],
+    .sandbox_write_paths[]; stored_reference) and
   (.tools | map(split("/") | last) | all(.[]; tool_name) and length == (unique | length)) and
-  (.sandbox | type == "boolean") and
-  (.sandbox_read_paths | sandbox_paths) and (.sandbox_write_paths | sandbox_paths);
+  (.sandbox | type == "boolean");
 
 # The session header freezes one profile. lib/session.jq owns the records that
 # follow it, but cannot call canonical_profile across a module boundary.

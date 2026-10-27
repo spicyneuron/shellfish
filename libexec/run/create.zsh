@@ -5,14 +5,12 @@ source "$SF_ROOT/lib/profile.zsh"
 source "$SF_ROOT/lib/session.zsh"
 
 sf_run_read_system() {
-  local requested=$1 path=$1
-  if [[ $path == '~/'* ]]; then
-    [[ -n ${HOME-} ]] || { sf_die "cannot expand system file without HOME: $requested"; return 2; }
-    path="$HOME/${path#\~/}"
-  fi
-  [[ $path == /* ]] || path="$PWD/$path"
-  [[ -f $path && -r $path ]] || { sf_die "cannot read system file: $requested"; return 2; }
-  REPLY=$(<"$path")
+  local requested=$1 file
+  sf_cli_path "$requested" ||
+    { sf_die "cannot expand system file without HOME: $requested"; return 2; }
+  file=$REPLY
+  [[ -f $file && -r $file ]] || { sf_die "cannot read system file: $requested"; return 2; }
+  REPLY=$(<"$file")
   [[ $REPLY != *$'\0'* ]] || {
     sf_die "system file contains NUL bytes: $requested"
     return 2

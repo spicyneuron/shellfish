@@ -15,6 +15,20 @@ sf_cli_diagnostic() {
   REPLY=$detail
 }
 
+# A path starting with "/", "~/", or "@" (the bundled root) is taken as
+# written, and any other path is relative to the working directory. REPLY is
+# canonical. Fails only when "~/" has no HOME.
+sf_cli_path() {
+  local target=$1
+  case $target in
+    '~/'*) [[ -n ${HOME-} ]] || return 1; target=$HOME/${target#\~/} ;;
+    @*) target=$SF_SHARE/${target#@} ;;
+    /*) ;;
+    *) target=$PWD/$target ;;
+  esac
+  REPLY=${target:A}
+}
+
 # An inherited pipe may never reach EOF, so argv input only probes stdin for
 # an immediately available conflict.
 sf_cli_read_prompt() {

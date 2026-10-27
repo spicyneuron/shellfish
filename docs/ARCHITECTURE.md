@@ -27,7 +27,7 @@ A session JSONL file is the agent's only durable state. Its first line is a head
 
 The header freezes the resolved profile. It holds the merged model with its adapter, endpoint, and request settings, the system, tool, and hook lists with hooks grouped by lifecycle, and the sandbox setting and grants. System file text is materialized into the session's system record at creation; executable components, manifests, and policies remain live. Credentials, environment settings such as turn limits, and presentation settings remain external.
 
-Header paths use `@KIND/NAME` for bundled components, `~/` for HOME, or `/` for fixed absolute locations, so a session survives upgrades and moves with its home. If the project moves independently of HOME, update the header cwd.
+Header paths use `@` for the bundled root, `~/` for HOME, or `/` for fixed absolute locations, so a session survives upgrades and moves with its home. If the project moves independently of HOME, update the header cwd.
 
 | Durable record | Role |
 | --- | --- |

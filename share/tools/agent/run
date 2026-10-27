@@ -10,12 +10,15 @@ integer count=0 result=0
 fail() { print -u2 -r -- "agent: $1"; exit ${2:-1}; }
 
 input=$(cat) || fail 'cannot read input'
+# Only a profile name: a path, or a name leaving profiles/, could select a
+# profile the model wrote, with unsandboxed tools or its own hooks.
 operation=$(jq -er '
   select(type == "object" and
     ((keys - ["operation", "profile", "fork", "task", "agent_id", "background"]) | length == 0)) |
   if .operation == "start" and
      ((has("profile") and (has("fork") | not) and
-       (.profile | type == "string" and length > 0)) or
+       (.profile | type == "string" and
+         test("^[A-Za-z0-9][A-Za-z0-9_-]*(/[A-Za-z0-9][A-Za-z0-9_-]*)*$"))) or
       (has("fork") and (has("profile") | not) and .fork == true)) and
      (.task | type == "string" and length > 0) and
      (if has("background") then .background | type == "boolean" else true end) and

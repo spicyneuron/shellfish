@@ -2,7 +2,8 @@
 {
   "$schema": "https://raw.githubusercontent.com/spicyneuron/shellfish/refs/heads/main/share/profile.schema.json",
 
-  "model": ["@default", "default"],
+  "model": ["openrouter", "default"],
+  "sandbox": ["default"],
   "system": ["general.md", "tools.md"],
   "tools": ["read_file", "shell_readonly"],
   "hooks": [

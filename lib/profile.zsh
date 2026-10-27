@@ -52,30 +52,45 @@ sf_profile_read_manifest() {
     sf_profile_validation_error "$REPLY" "invalid component manifest: $file"
 }
 
-sf_profile_reference() {
-  local reference=$1 kind=$2 config_dir=$3 folder candidate=''
-  if [[ $reference != /* && $reference != '~/'* &&
-      ( /$reference/ == */../* || /$reference/ == */./* ) ]]; then
-    return 1
+# A reference starting with "/", "~/", or "@" is a path, and anything else is
+# a name under DIR in the Shellfish directory, then the bundled one. SUFFIX
+# completes a name, not a path. REPLY is the canonical path of what exists.
+sf_profile_lookup() {
+  local config_dir=$1 dir=$2 reference=$3 suffix=${4-} candidate
+  if [[ $reference == /* || $reference == '~/'* || $reference == @* ]]; then
+    sf_cli_path "$reference" || return
+    candidate=$REPLY
+  else
+    candidate=$config_dir/$dir/$reference$suffix
+    [[ -e $candidate || -L $candidate ]] || candidate=$SF_SHARE/$dir/$reference$suffix
   fi
-  case $reference in
-    /*) candidate=$reference ;;
-    '~/'*) [[ -z ${HOME-} ]] || candidate="$HOME/${reference#\~/}" ;;
-    @$kind/*) candidate="$SF_SHARE/${reference#@}" ;;
-    @*) return 1 ;;
-    *)
-      for folder in "$config_dir" "$SF_SHARE"; do
-        [[ -e $folder/$kind/$reference || -L $folder/$kind/$reference ]] || continue
-        candidate="$folder/$kind/$reference"
-        break
-      done
-      ;;
-  esac
-  [[ -n $candidate ]] || return 1
+  [[ -e $candidate || -L $candidate ]] || return 1
   REPLY=${candidate:A}
 }
 
-# The tools of an expanded profile, read live from their manifests.
+# The named files of one kind, in order, read and validated as a JSON array.
+sf_profile_configs() {
+  local kind=$1 dir=$2 config_dir=$3 name detail
+  shift 3
+  local -a names=( "$@" ) files=()
+  REPLY='[]'
+  (( ${#names} )) || return 0
+  for name in "${names[@]}"; do
+    sf_profile_lookup "$config_dir" "$dir" "$name" .jsonc ||
+      sf_profile_fail "unknown $kind: $name" || return
+    files+=( "$REPLY" )
+  done
+  sf_profile_read_files "invalid $kind" "${(u)files[@]}" || return
+  detail=$(sf_jq -cn --argjson files "$REPLY" --arg kind "$kind" '
+    include "lib/profile";
+    [$ARGS.positional | range(0; length; 2) as $at | .[$at:$at + 2] as [$file, $name] |
+      $files[$file] | ["\($kind) \($name)"] as $path |
+      if $kind == "model" then config_model($path) else config_sandbox($path) end]
+  ' --args "${files[@]:^names}" 2>&1) ||
+    sf_profile_validation_error "$detail" 'invalid configuration' || return
+  REPLY=$detail
+}
+
 # The tools of an expanded profile, read live from their manifests.
 sf_profile_tools() {
   local profile=$1 directory projection
@@ -106,61 +121,46 @@ sf_profile_tools() {
   REPLY=$projection
 }
 
-# A named profile or model file: yours first, then bundled. "@NAME" is bundled.
-sf_profile_named() {
-  local kind=$1 name=$2 config_dir=$3
-  [[ $name =~ '^@?[A-Za-z0-9][A-Za-z0-9_-]*(/[A-Za-z0-9][A-Za-z0-9_-]*)*$' ]] ||
-    sf_profile_fail "invalid $kind name: $name" || return
-  if [[ $name == @* ]]; then
-    REPLY="$SF_SHARE/${kind}s/${name#@}.jsonc"
-  else
-    REPLY="$config_dir/${kind}s/$name.jsonc"
-    [[ -e $REPLY || -L $REPLY ]] || REPLY="$SF_SHARE/${kind}s/$name.jsonc"
-  fi
-  [[ -e $REPLY || -L $REPLY ]] || sf_profile_fail "unknown $kind: $name"
-}
-
-# Resolve profile NAME with extra model names merged after its own, a request
-# override applied last, and sandbox GRANTS from flags. The sandbox defaults
-# come from SHELLFISH_SANDBOX and colon-separated SHELLFISH_SANDBOX_READ and
-# SHELLFISH_SANDBOX_WRITE. REPLY is the profile with absolute paths.
+# Resolve profile REFERENCE with extra model references merged after its own, a
+# request override applied last, and sandbox GRANTS from flags appended to its
+# sandbox files. REPLY is the profile with absolute paths.
 sf_profile_resolve() {
   local name=${1:-default} extra_models=$2 request=${3:-'{}'} grants=${4:-'{}'}
-  local config_dir profile listed models model reference kind resolved selected final
+  local config_dir profile models sandbox reference kind resolved selected final
   local backend_manifest='{}' hook_manifests='{}'
-  local -a model_names model_files references resolutions=() hook_files=()
+  local -a references resolutions=() hook_files=()
   local -A decoded
 
   SF_PROFILE_ERROR=''
   REPLY=''
   sf_environment_dir || sf_profile_fail "$SF_ENVIRONMENT_ERROR" || return
   config_dir=$REPLY
-  sf_profile_named profile "$name" "$config_dir" || return
+  sf_profile_lookup "$config_dir" profiles "$name" .jsonc ||
+    sf_profile_fail "unknown profile: $name" || return
   profile=$(sf_jsonc_read "$REPLY" 2>&1) ||
     sf_profile_validation_error "$profile" "invalid profile: $REPLY" || return
-  listed=$(sf_jq -rn --argjson profile "$profile" --arg name "$name" '
+  sf_jq_fields -rn --argjson profile "$profile" --arg name "$name" '
+    include "lib/fields";
     include "lib/profile";
-    $profile | config_profile(["profile " + $name]) | .model[]?
-  ' 2>&1) || { sf_profile_validation_error "$listed" 'invalid configuration'; return; }
-  model_names=( ${(f)listed} ${(f)extra_models} )
-  (( ${#model_names} )) || sf_profile_fail "profile selects no model: $name" || return
-  for model in "${model_names[@]}"; do
-    sf_profile_named model "$model" "$config_dir" || return
-    model_files+=( "$REPLY" )
-  done
-  sf_profile_read_files 'invalid model' "${(u)model_files[@]}" || return
+    $profile | config_profile(["profile " + $name]) |
+    entry("model"; .model // [] | join("\n")),
+    entry("sandbox"; .sandbox // [] | join("\n")),
+    ("ok" | field)
+  ' || { sf_profile_validation_error "$REPLY" 'invalid configuration'; return; }
+  decoded=( "${reply[@]}" )
+  [[ -n $decoded[model]$extra_models ]] ||
+    sf_profile_fail "profile selects no model: $name" || return
+  # A reference carries no control characters, so newlines delimit each list.
+  sf_profile_configs model models "$config_dir" ${(f)decoded[model]} ${(f)extra_models} ||
+    return
   models=$REPLY
-  sf_environment_settings 'SHELLFISH_SANDBOX SHELLFISH_SANDBOX_READ SHELLFISH_SANDBOX_WRITE' ||
-    sf_profile_fail "$SF_ENVIRONMENT_ERROR" || return
-  [[ ${SF_ENVIRONMENT_SETTINGS[SHELLFISH_SANDBOX]:-1} == [01] ]] ||
-    sf_profile_fail 'SHELLFISH_SANDBOX must be 0 or 1' || return
+  sf_profile_configs sandbox sandbox "$config_dir" ${(f)decoded[sandbox]} || return
+  sandbox=$REPLY
 
   sf_jq_fields -rn --argjson profile "$profile" --argjson models "$models" \
-    --argjson request "$request" --args '
+    --argjson request "$request" '
       include "lib/fields";
       include "lib/profile";
-      [$ARGS.positional as $files | range(0; $files | length; 2) as $at |
-        $models[$files[$at]] | config_model(["model " + $files[$at + 1]])] as $models |
       {model:model_merge($models; $request), system:($profile.system // []),
        tools:($profile.tools // []), hooks:($profile.hooks // [])} |
       if (.tools | length) == (.tools | unique | length) then .
@@ -170,7 +170,7 @@ sf_profile_resolve() {
         (.tools[] | ["tools", .]), (.hooks[] | ["hooks", .])] | unique |
         map(join(" ")) | join("\n")),
       ("ok" | field)
-  ' "${model_files[@]:^model_names}" || {
+  ' || {
     sf_profile_validation_error "$REPLY" 'invalid configuration'
     return
   }
@@ -178,10 +178,9 @@ sf_profile_resolve() {
   selected=$decoded[profile]
   references=( ${(f)decoded[references]} )
 
-  # A reference carries no control characters, so newlines delimit the list.
   for reference in "${references[@]}"; do
     kind=${reference%% *}
-    sf_profile_reference "${reference#* }" "$kind" "$config_dir" ||
+    sf_profile_lookup "$config_dir" "$kind" "${reference#* }" ||
       sf_profile_fail "cannot resolve $kind reference: ${reference#* }" || return
     resolved=$REPLY
     case $kind in
@@ -207,12 +206,10 @@ sf_profile_resolve() {
 
   final=$(sf_jq -nce --argjson profile "$selected" --argjson manifest "$backend_manifest" \
     --argjson hooks "$hook_manifests" --argjson grants "$grants" \
-    --arg sandbox "${SF_ENVIRONMENT_SETTINGS[SHELLFISH_SANDBOX]:-1}" \
-    --arg read "${SF_ENVIRONMENT_SETTINGS[SHELLFISH_SANDBOX_READ]-}" \
-    --arg write "${SF_ENVIRONMENT_SETTINGS[SHELLFISH_SANDBOX_WRITE]-}" \
+    --argjson sandbox "$sandbox" \
     --arg share "$SF_SHARE" --arg home "${HOME:+${HOME:A}}" '
       include "lib/profile";
-      def paths: split(":") | map(select(. != ""));
+      sandbox_merge($sandbox) as $sandbox |
       ($ARGS.positional | [range(0; length; 2) as $at | {key:.[$at], value:.[$at + 1]}] |
         from_entries) as $paths |
       ($hooks | with_entries(.key |= sub("/[^/]*$"; ""))) as $hooks |
@@ -232,9 +229,9 @@ sf_profile_resolve() {
       .hooks = (reduce hook_names[] as $lifecycle ({};
         [$refs[] | select($hooks[.].on == $lifecycle)] as $list |
         if $list == [] then . else .[$lifecycle] = $list end)) |
-      .sandbox = ($sandbox == "1") |
-      .sandbox_read_paths = ($read | paths) + ($grants.sandbox_read_paths // []) |
-      .sandbox_write_paths = ($write | paths) + ($grants.sandbox_write_paths // []) |
+      .sandbox = $sandbox.enabled |
+      .sandbox_read_paths = $sandbox.read + ($grants.sandbox_read_paths // []) |
+      .sandbox_write_paths = $sandbox.write + ($grants.sandbox_write_paths // []) |
       profile_expand($share; $home) |
       if canonical_profile then . else error("invalid resolved profile") end
     ' --args "${resolutions[@]}" 2>&1) || {
@@ -248,24 +245,22 @@ sf_profile_resolve() {
 # Parse the options that select a profile, then resolve it. Callers that own
 # their own flags pass only the ones listed in lib/options.zsh.
 sf_profile_resolve_args() {
-  local name='' request='{}' flag grant resolved grants=''
+  local name='' request='{}' flag resolved grants=''
   local -a models=() read_paths=() write_paths=()
   integer detect=0
 
   SF_PROFILE_ERROR=''
   while (( $# )); do
     case $1 in
-      -p|--profile)
-        [[ -z $name ]] || sf_profile_fail '--profile may only be specified once' || return 2
-        [[ $2 =~ '^@?[A-Za-z0-9][A-Za-z0-9_-]*(/[A-Za-z0-9][A-Za-z0-9_-]*)*$' ]] ||
-          sf_profile_fail '--profile must be a slash-separated profile name' || return 2
-        name=$2
-        shift 2
-        ;;
-      -m|--model)
-        [[ $2 =~ '^@?[A-Za-z0-9][A-Za-z0-9_-]*(/[A-Za-z0-9][A-Za-z0-9_-]*)*$' ]] ||
-          sf_profile_fail '--model must be a slash-separated model name' || return 2
-        models+=( "$2" )
+      -p|--profile|-m|--model)
+        [[ -n $2 && $2 != *[[:cntrl:]]* ]] ||
+          sf_profile_fail "$1 requires a reference without control characters" || return 2
+        if [[ $1 == (-m|--model) ]]; then
+          models+=( "$2" )
+        else
+          [[ -z $name ]] || sf_profile_fail '--profile may only be specified once' || return 2
+          name=$2
+        fi
         shift 2
         ;;
       --request)
@@ -276,14 +271,8 @@ sf_profile_resolve_args() {
       --sandbox-read|--sandbox-write)
         flag=$1
         [[ -n $2 ]] || sf_profile_fail "$flag requires a nonempty path" || return 2
-        grant=$2
-        if [[ $grant == '~/'* ]]; then
-          [[ -n ${HOME-} ]] || sf_profile_fail "$flag cannot expand ~ without HOME" || return 2
-          grant="$HOME/${grant#\~/}"
-        elif [[ $grant != /* ]]; then
-          grant="$PWD/$grant"
-        fi
-        resolved=${grant:A}
+        sf_cli_path "$2" || sf_profile_fail "$flag cannot expand ~ without HOME" || return 2
+        resolved=$REPLY
         [[ -e $resolved ]] || sf_profile_fail "$flag path does not exist: $2" || return 2
         if [[ $flag == --sandbox-read ]]; then
           read_paths+=( "$resolved" )

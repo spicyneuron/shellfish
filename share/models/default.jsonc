@@ -1,14 +1,3 @@
-// Shellfish: https://github.com/spicyneuron/shellfish
-//
-// The bundled model defaults. Bundled profiles merge models/default.jsonc from
-// the Shellfish directory over this file; it must name a model.
-{
-  "$schema": "https://raw.githubusercontent.com/spicyneuron/shellfish/refs/heads/main/share/model.schema.json",
-
-  // A directory under backends/. Credentials come from the environment or .env.
-  "adapter": "openrouter",
-
-  // Passed through to the adapter. "max_tokens" and "reasoning.effort" are
-  // normalized in the bundled adapters.
-  "request": {"max_tokens": 16384, "reasoning": {"effort": "medium"}}
-}
+// Empty until shadowed: bundled profiles merge models/default.jsonc from the
+// Shellfish directory over the bundled "openrouter" model.
+{}

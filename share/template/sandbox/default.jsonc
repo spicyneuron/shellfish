@@ -1,0 +1,17 @@
+// Shellfish sandbox: https://github.com/spicyneuron/shellfish
+//
+// Bundled profiles select this file. Paths are absolute, "~/" for HOME, or
+// "@" for the bundled root, and need not exist on every machine.
+{
+  "$schema": "https://raw.githubusercontent.com/spicyneuron/shellfish/refs/heads/main/share/sandbox.schema.json",
+
+  // false runs every tool with user permissions.
+  // "enabled": true,
+
+  "read": [
+    // Paths outside the project that sandboxed tools may read
+  ],
+  "write": [
+    // Paths outside the project that sandboxed tools may read and write
+  ]
+}

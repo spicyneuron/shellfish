@@ -156,3 +156,8 @@ sf_test_model() {
   mkdir -p "$SF_TEST_CONFIG/models/${1:h}"
   print -r -- "$2" >"$SF_TEST_CONFIG/models/$1.jsonc"
 }
+
+sf_test_sandbox() {
+  mkdir -p "$SF_TEST_CONFIG/sandbox"
+  print -r -- "$2" >"$SF_TEST_CONFIG/sandbox/$1.jsonc"
+}
