@@ -18,7 +18,7 @@ tmp=$(mktemp -d "${TMPDIR:-/tmp}/shellfish-perf.XXXXXX")
 trap 'if [[ -n ${SHELLFISH_PERF_KEEP-} ]]; then print -u2 -r -- "kept: $tmp"; else rm -rf -- "$tmp"; fi' EXIT
 mkdir -p "$tmp/project" "$tmp/bin" "$tmp/shellfish/profiles" \
   "$tmp/shellfish/backends/perf" "$tmp/shellfish/tools/perf" \
-  "$tmp/shellfish/hooks"
+  "$tmp/shellfish/hooks/perf"
 
 cat >"$tmp/bin/jq" <<'EOF'
 #!/usr/bin/env zsh
@@ -49,11 +49,11 @@ EOF
 chmod +x "$tmp/bin/jq" "$tmp/shellfish/backends/perf/run" "$tmp/shellfish/tools/perf/run"
 
 # The unsandboxed tool skips permission_request.
-cat >"$tmp/shellfish/hooks/perf" <<'EOF'
+cat >"$tmp/shellfish/hooks/perf/run" <<'EOF'
 #!/usr/bin/env zsh
 cat >/dev/null
 EOF
-chmod +x "$tmp/shellfish/hooks/perf"
+chmod +x "$tmp/shellfish/hooks/perf/run"
 
 cat >"$tmp/shellfish/profiles/default.jsonc" <<EOF
 {
