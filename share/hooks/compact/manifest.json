@@ -1,1 +1,1 @@
-{"user_text_done":"${output.stderr}"}
+{"on":"user_prompt_submit","user_text_done":"${output.stderr}"}

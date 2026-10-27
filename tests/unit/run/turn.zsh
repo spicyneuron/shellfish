@@ -68,7 +68,7 @@ print -r -- '{
   "sandbox": false
 }' >"${tool:h}/manifest.json"
 SF_TEST_PROFILE=$(jq -c --arg backend "${backend:h}" --arg tool "${tool:h}" '
-  .backend.adapter=$backend | .tools=[$tool]
+  .model.adapter=$backend | .tools=[$tool]
 ' <<<"$SF_TEST_PROFILE")
 export TOOL_ORDER=$order
 session="$tmp/ordered.jsonl"
@@ -116,11 +116,12 @@ fi
 ZSH
 chmod +x "$limited_backend"
 SF_TEST_PROFILE=$(jq -c --arg backend "${limited_backend:h}" '
-  .backend.adapter=$backend | .tools=[] | .max_tool_calls_per_request=1
+  .model.adapter=$backend | .tools=[]
 ' <<<"$SF_TEST_PROFILE")
 session="$tmp/limited.jsonl"
 sf_test_session "$session"
-sf_test_run limited "$session" >"$stream" || fail 'limited tool turn failed'
+SHELLFISH_MAX_TOOL_CALLS_PER_REQUEST=1 sf_test_run limited "$session" >"$stream" ||
+  fail 'limited tool turn failed'
 jq -eRn '
   [inputs | fromjson | select(.type == "tool_result")] as $results |
   ($results | length) == 2 and
@@ -155,26 +156,23 @@ typeset env_backend="$tmp/env-backend/run" env_session="$tmp/env.jsonl"
 mkdir -p "${env_backend:h}"
 typeset env_config="$SHELLFISH_DIR"
 mkdir -p "$env_config"
-print -rl -- FILE_SECRET=file-value EXPORTED_SECRET=file-value \
-  PROFILE_SETTING=file-value >"$env_config/.env"
+print -rl -- FILE_SECRET=file-value EXPORTED_SECRET=file-value >"$env_config/.env"
 cat >"$env_backend" <<'ZSH'
 #!/usr/bin/env zsh
 cat >/dev/null
-jq -cn --arg text "${FILE_SECRET-unset} ${EXPORTED_SECRET-unset} ${PROFILE_SETTING-unset}" \
+jq -cn --arg text "${FILE_SECRET-unset} ${EXPORTED_SECRET-unset}" \
   '{type:"_assistant_message_delta",index:0,text:$text}'
 print -r -- '{"type":"_turn_usage","input_tokens":1,"output_tokens":1}'
 print -r -- '{"type":"_assistant_end","stop":"end"}'
 ZSH
 chmod +x "$env_backend"
-SF_TEST_PROFILE=$(jq -c --arg backend "${env_backend:h}" '
-  .backend.adapter=$backend | .env.PROFILE_SETTING="profile-value"
-' \
+SF_TEST_PROFILE=$(jq -c --arg backend "${env_backend:h}" '.model.adapter=$backend' \
   <<<"$SF_TEST_PROFILE")
 export EXPORTED_SECRET=exported-value
 sf_test_session "$env_session"
 sf_test_run env "$env_session" >"$stream" || fail 'adapter environment turn failed'
 jq -eRn '[inputs | fromjson | select(.type == "assistant") | .content[0].text] ==
-  ["file-value exported-value profile-value"]' <"$stream" >/dev/null ||
+  ["file-value exported-value"]' <"$stream" >/dev/null ||
   fail 'adapter did not receive layered environment values'
 unset EXPORTED_SECRET
 

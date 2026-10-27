@@ -21,10 +21,10 @@ sf_environment_dir() {
   REPLY=${HOME:A}/.shellfish
 }
 
-# Exported values win over profile env, then .env in the Shellfish directory.
-# Without selected names every entry loads; otherwise only the named entries.
+# Exported values win over .env in the Shellfish directory. Without selected
+# names every entry loads; otherwise only the named entries.
 sf_environment_load() {
-  local env_file line key value name profile_env=${2:-'{}'}
+  local env_file line key value name
   local -a selected_names=( ${=1-} )
   integer all=$(( ${#selected_names} == 0 ))
   local -A values
@@ -37,13 +37,7 @@ sf_environment_load() {
     [[ ${parameters[$name]-} == *export* ]] || continue
     values[$name]=${(P)name}
   done
-  while IFS= read -r -d '' key && IFS= read -r -d '' value; do
-    (( all || ${selected_names[(Ie)$key]} )) || continue
-    [[ ${parameters[$key]-} == *export* ]] && continue
-    values[$key]=$value
-  done < <(jq -j 'to_entries[] | .key, "\u0000", .value, "\u0000"' <<<"$profile_env")
-  if (( all || ${#selected_names} )) &&
-    [[ -e $env_file || -L $env_file ]]; then
+  if [[ -e $env_file || -L $env_file ]]; then
     [[ -f $env_file && -r $env_file ]] || {
       sf_environment_fail "cannot read env file: $env_file"
       return
@@ -80,5 +74,16 @@ sf_environment_load() {
   fi
   for name in ${(k)values}; do
     SF_ENVIRONMENT_VALUES+=( "$name=$values[$name]" )
+  done
+}
+
+# Selected values keyed by name, for settings Shellfish reads itself.
+typeset -gA SF_ENVIRONMENT_SETTINGS=()
+sf_environment_settings() {
+  local entry
+  sf_environment_load "$1" || return
+  SF_ENVIRONMENT_SETTINGS=()
+  for entry in "${SF_ENVIRONMENT_VALUES[@]}"; do
+    SF_ENVIRONMENT_SETTINGS[${entry%%=*}]=${entry#*=}
   done
 }

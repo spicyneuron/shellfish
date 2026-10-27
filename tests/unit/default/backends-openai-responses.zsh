@@ -41,11 +41,11 @@ cat >"$req" <<'EOF'
   "system": "test",
   "messages": [{"type":"user","content":[{"type":"text","text":"hello"}]}],
   "tools": [],
-  "options": {"request":{"model":"gpt-test","max_tokens":10,"max_output_tokens":99,
+  "request":{"model":"gpt-test","max_tokens":10,"max_output_tokens":99,
     "max_completion_tokens":88,"reasoning":{"effort":"medium"},"reasoning_effort":"low",
     "text":{"verbosity":"low","format":{"type":"text"}},
-    "response_schema":{"type":"object","required":["answer"],"properties":{"answer":{"type":"string"}}}}},
-  "transport": {"endpoint":"https://api.openai.test","insecure_tls":false,"http_timeout":30,"http_stall":10}
+    "response_schema":{"type":"object","required":["answer"],"properties":{"answer":{"type":"string"}}}},
+  "endpoint":"https://api.openai.test"
 }
 EOF
 
@@ -143,8 +143,8 @@ cat >"$tmp/codex-request.json" <<'EOF'
   "system": "test",
   "messages": [{"type":"user","content":[{"type":"text","text":"hello"}]}],
   "tools": [],
-  "options": {"request":{"model":"gpt-codex-test","max_tokens":42}},
-  "transport": {"endpoint":"https://chatgpt.com/backend-api/codex/responses","insecure_tls":false,"http_timeout":30,"http_stall":10}
+  "request":{"model":"gpt-codex-test","max_tokens":42},
+  "endpoint":"https://chatgpt.com/backend-api/codex/responses"
 }
 EOF
 cat >"$CODEX_TEST_CATALOG" <<'EOF'
@@ -226,8 +226,8 @@ cat >"$batch_request" <<'JSON'
     {"type":"tool_result","call_id":"call_2","name":"shell","content":"bad","exit_code":1}
   ],
   "tools": [],
-  "options": {"request":{"model":"gpt-test"}},
-  "transport": {"endpoint":"https://api.openai.test","insecure_tls":false,"http_timeout":30,"http_stall":10}
+  "request":{"model":"gpt-test"},
+  "endpoint":"https://api.openai.test"
 }
 JSON
 cat >"$BACKEND_TEST_RESPONSE" <<'EOF'

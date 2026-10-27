@@ -65,17 +65,22 @@ class Session:
         config_dir.mkdir(parents=True)
         profile_dir = config_dir / "profiles"
         profile_dir.mkdir(parents=True)
+        model_dir = config_dir / "models"
+        model_dir.mkdir(parents=True)
+        self.model_file = model_dir / "default.jsonc"
+        self.model_file.write_text(json.dumps({
+            "adapter": TEST_BACKEND,
+            "request": {"model": "fake-model"},
+        }))
         self.config_file = profile_dir / "default.jsonc"
         config = {
-            "backend": {"adapter": TEST_BACKEND},
-            "request": {"model": "fake-model"},
+            "model": ["default"],
             "tools": [f"@tools/{tool}"
                       for tool in ("read_file", "write_file", "edit_file", "shell")],
-            "sandbox": True,
-            "hooks": {},
+            "hooks": list(session_start or []),
         }
         if hooks:
-            config["hooks"]["user_prompt_submit"] = [
+            config["hooks"] += [
                 name if body is not None else f"@hooks/{name}"
                 for name, body in hooks.items()]
             hook_dir = config_dir / "hooks"
@@ -85,13 +90,13 @@ class Session:
                     continue
                 component = hook_dir / name
                 component.mkdir()
-                (component / "manifest.json").write_text(
-                    json.dumps({"user_text_done": "${output.stderr}"}))
+                (component / "manifest.json").write_text(json.dumps({
+                    "on": "user_prompt_submit",
+                    "user_text_done": "${output.stderr}",
+                }))
                 script = component / "run"
                 script.write_text(body)
                 script.chmod(0o755)
-        if session_start:
-            config["hooks"]["session_start"] = session_start
         self.config_file.write_text(json.dumps(config))
         # Avoid an interactive terminal background probe.
         (config_dir / "tui.jsonc").write_text(json.dumps({

@@ -1,1 +1,1 @@
-{"match":{"pattern":"^/new\\z"}}
+{"on":"user_prompt_submit","match":{"pattern":"^/new\\z"}}

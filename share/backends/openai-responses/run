@@ -14,7 +14,7 @@ sf_backend_setup openai-responses
 trap 'rm -rf -- "$SF_BACKEND_TEMP_DIR"' EXIT
 cat >"$SF_BACKEND_REQUEST_FILE"
 
-sf_backend_request '.options.request |
+sf_backend_request '.request |
   all(keys[]; IN("include", "input", "instructions", "store") | not)' ||
   sf_backend_die 'invalid request'
 
@@ -46,7 +46,7 @@ jq -ce '
     else
       error("unsupported canonical type")
     end;
-  (.options.request |
+  (.request |
     if has("response_schema") then
       .response_schema as $schema |
       del(.response_schema) |

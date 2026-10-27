@@ -32,13 +32,13 @@ cat >"$req" <<'EOF'
   "system": "test",
   "messages": [{"type":"user","content":[{"type":"text","text":"hello"}]}],
   "tools": [],
-  "options": {"request":{"model":"claude-test","max_tokens":10,
+  "request":{"model":"claude-test","max_tokens":10,
     "max_completion_tokens":88,"max_output_tokens":99,
     "reasoning":{"effort":"high"},"reasoning_effort":"medium",
     "thinking":{"type":"disabled"},
     "output_config":{"foo":"keep","effort":"low","format":{"type":"text"}},
-    "response_schema":{"type":"object","required":["answer"],"properties":{"answer":{"type":"string"}}}}},
-  "transport": {"endpoint":"https://api.anthropic.com/v1/messages","insecure_tls":false,"http_timeout":30,"http_stall":10}
+    "response_schema":{"type":"object","required":["answer"],"properties":{"answer":{"type":"string"}}}},
+  "endpoint":"https://api.anthropic.com/v1/messages"
 }
 EOF
 
@@ -139,8 +139,8 @@ cat >"$batch_request" <<'JSON'
     {"type":"tool_result","call_id":"call_2","name":"shell","content":"bad","exit_code":1}
   ],
   "tools": [],
-  "options": {"request":{"model":"claude-test"}},
-  "transport": {"endpoint":"https://api.anthropic.com/v1/messages","insecure_tls":false,"http_timeout":30,"http_stall":10}
+  "request":{"model":"claude-test"},
+  "endpoint":"https://api.anthropic.com/v1/messages"
 }
 JSON
 cat >"$BACKEND_TEST_RESPONSE" <<'EOF'

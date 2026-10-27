@@ -1,46 +1,25 @@
 // Shellfish: https://github.com/spicyneuron/shellfish
 //
-// The bundled agent, selected when --profile is absent. A profile file in
-// the Shellfish directory's profiles/ shadows a bundled one of the same name.
+// The bundled agent, selected when --profile is absent. A profile only selects:
+// model files, system prompt files, tools, and hooks. A file in the Shellfish
+// directory's profiles/ shadows a bundled one of the same name.
 {
-  "$schema": "https://raw.githubusercontent.com/spicyneuron/shellfish/refs/heads/main/share/shellfish.schema.json",
+  "$schema": "https://raw.githubusercontent.com/spicyneuron/shellfish/refs/heads/main/share/profile.schema.json",
 
-  // "adapter" names a directory under backends/; "endpoint" overrides the
-  // adapter's manifest. Credentials come from the environment or .env in the
-  // Shellfish directory. Codex relies on an existing CLI login. The "openai"
-  // adapter works with any OpenAI-compatible endpoint. Optional transport knobs
-  // not shown here: insecure_tls, http_timeout, http_stall.
-  "backend": {"adapter": "openrouter"},
-
-  // Parameters passed through to the backend adapter. "max_tokens" and
-  // "reasoning.effort" are normalized in the bundled adapters.
-  "request": {"max_tokens": 16384, "reasoning": {"effort": "medium"}},
+  // Files under models/, merged left to right: the bundled defaults, then your
+  // models/default.jsonc, which must name a model.
+  "model": ["@default", "default"],
 
   // Files under system/ concatenated into the system prompt.
   "system": ["general.md", "tools.md"],
 
-  // Uncomment to override best-effort model metadata discovery, or set null to
-  // disable it.
-  // "context_window": 200000,
-
   // Tools available to the model.
   "tools": ["read_file", "edit_file", "write_file", "skill", "search_web", "fetch_url", "shell"],
 
-  // Ordered hooks run only when listed here. See docs/HARNESS.md.
-  "hooks": {
-    "session_start": ["project/environment", "git/environment", "project/instructions"],
-    "user_prompt_submit": ["help", "verbose", "new", "resume", "server", "copy", "sandbox", "user_shell", "fork", "compact", "git/change", "skills"]
-  },
-
-  // "sandbox" enables fence for tools that opt in via their manifest.
-  // sandbox_read_paths/sandbox_write_paths grant extra paths beyond the
-  // project directory while keeping the tool's other restrictions.
-  "sandbox": true,
-  "sandbox_read_paths": [],
-  "sandbox_write_paths": [],
-
-  // Caps for requests, tool calls, and bytes from a single tool result.
-  "max_requests_per_turn": 100,
-  "max_tool_calls_per_request": 25,
-  "max_capture_bytes": 32768
+  // Hooks run in this order within the lifecycle their manifest names.
+  "hooks": [
+    "project/environment", "git/environment", "project/instructions",
+    "help", "verbose", "new", "resume", "server", "copy", "sandbox", "user_shell",
+    "fork", "compact", "git/change", "skills"
+  ]
 }

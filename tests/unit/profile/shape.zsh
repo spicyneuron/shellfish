@@ -98,31 +98,31 @@ valid_header=$(jq -cn '
     cwd: "~/project",
     created: "2026-08-18T00:00:00Z",
     profile: {
-      request: {model: "gpt-4o"},
-      system: ["@system/general.md"],
-      backend: {
+      model: {
         adapter: "@backends/openai",
         endpoint: "https://api.openai.com/v1/chat/completions",
-        insecure_tls: false,
-        http_timeout: 30, http_stall: 10
+        request: {model: "gpt-4o"},
+        context_window: 128000
       },
+      system: ["@system/general.md"],
       tools: ["@tools/shell", "~/tools/jira"],
       hooks: {stop: ["/bin/hook", "@hooks/stop"]},
-      env: {},
-      sandbox: true, sandbox_read_paths: ["~/cache"], sandbox_write_paths: [],
-      max_requests_per_turn: 50, max_tool_calls_per_request: 20,
-      max_capture_bytes: 32768
+      sandbox: true, sandbox_read_paths: ["~/cache"], sandbox_write_paths: []
     }
   }
 ')
 print -r -- "$valid_header" | schema_eval 'canonical_session_header' >/dev/null
-for patch in '.extra=true' '.profile.extra=true' '.profile.extend=["default"]' \
-    '.profile."$schema"="x"' 'del(.profile.max_capture_bytes)' 'del(.profile.hooks)' \
-    'del(.profile.env)' '.profile.env.BAD=2' \
-    'del(.profile.backend.endpoint)' 'del(.profile.request.model)' \
+print -r -- "$valid_header" | jq -c '.profile.model.context_window = null' |
+  schema_eval 'canonical_session_header' >/dev/null
+print -r -- "$valid_header" | jq -c 'del(.profile.model.context_window)' |
+  schema_eval 'canonical_session_header' >/dev/null
+for patch in '.extra=true' '.profile.extra=true' '.profile.env={}' \
+    '.profile."$schema"="x"' 'del(.profile.hooks)' 'del(.profile.sandbox)' \
+    '.profile.model.extra=true' 'del(.profile.model.endpoint)' 'del(.profile.model.request.model)' \
+    '.profile.model.context_window=0' '.profile.hooks.unknown=[]' \
     '.profile.hooks.stop=[{command:"/bin/hook"}]' '.profile.system=["relative.md"]' \
     '.profile.tools=["shell"]' '.profile.tools=["/a/shell","/b/shell"]' \
-    '.profile.backend.adapter="./openai"' '.profile.system=["@default/system/general.md"]' \
+    '.profile.model.adapter="./openai"' '.profile.system=["@default/system/general.md"]' \
     '.profile.sandbox_read_paths=["relative"]' \
     '.cwd="./project"'; do
   if jq -c "$patch" <<<"$valid_header" |

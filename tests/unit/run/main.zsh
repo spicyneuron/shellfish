@@ -7,14 +7,11 @@ mkdir -p "$tmp/home" "$SF_TEST_CONFIG/system"
 print -r -- 'initial system' >"$SF_TEST_CONFIG/system/source.md"
 export HOME="${tmp:A}/home"
 
-sf_test_profile default "{
-  \"backend\": {\"adapter\": \"$ROOT/tests/fixtures/backend\"},
-  \"system\": [\"source.md\"],
-  \"request\": {\"model\": \"test-model\"},
-  \"tools\": [], \"sandbox\": true,
-  \"max_requests_per_turn\": 8, \"max_tool_calls_per_request\": 16,
-  \"max_capture_bytes\": 65536
+sf_test_model test "{
+  \"adapter\": \"$ROOT/tests/fixtures/backend\",
+  \"request\": {\"model\": \"test-model\"}
 }"
+sf_test_profile default '{"model": ["test"], "system": ["source.md"]}'
 typeset entry="$ROOT/bin/shellfish"
 typeset output
 
@@ -85,12 +82,13 @@ assert_equal 'several prompt words' "$output" 'run joins positional prompt words
 
 # Create options preserve their values.
 typeset forwarded_session="$tmp/forwarded.jsonl"
+sf_test_model forwarded '{"request": {"model": "forwarded-model"}}'
 output=$(SF_TEST_BACKEND_DELAY=0 zsh -f "$entry" run --session-out "$forwarded_session" \
-  --model forwarded-model --system 'forwarded system' \
+  --model forwarded --system 'forwarded system' \
   'plain answer') || fail 'forwarded run failed'
 assert_equal 'plain answer' "$output" 'run keeps the prompt after a forwarded value'
 head -n 1 "$forwarded_session" | jq -e '
-  .profile.request.model == "forwarded-model" and
+  .profile.model.request.model == "forwarded-model" and
   (.profile.system | length) == 1
 ' \
   >/dev/null || fail 'a forwarded option value did not reach the new session'
@@ -157,13 +155,13 @@ cp "$ROOT/tests/fixtures/backend/run" "$context_backend/run"
 cat >"$context_backend/context_window" <<'ZSH'
 #!/usr/bin/env zsh
 cat >/dev/null
-[[ $PROFILE_SETTING == context-profile ]] || exit 8
+[[ $CONTEXT_SETTING == context-env ]] || exit 8
 print -r -- '{"context_window":4321}'
 ZSH
 chmod +x "$context_backend/context_window"
-sf_test_profile context \
-  "{\"extend\": [\"default\"], \"backend\": {\"adapter\": \"$context_backend\"},
-    \"env\": {\"PROFILE_SETTING\": \"context-profile\"}}"
+sf_test_model context "{\"adapter\": \"$context_backend\"}"
+sf_test_profile context '{"model": ["test", "context"], "system": ["source.md"]}'
+print -r -- CONTEXT_SETTING=context-env >"$SF_TEST_CONFIG/.env"
 print -r -- '{"type":"user","content":[{"type":"text","text":"context"}]}' |
   SF_TEST_BACKEND_DELAY=0 zsh -f "$entry" run --jsonl -p context \
     --session-out "$context_session" >"$context_stream" ||
@@ -172,10 +170,10 @@ jq -eRn '
   [inputs | fromjson] as $events |
   ($events | map(.type) | index("_session_update")) as $update |
   ($events | map(.type) | index("_assistant_start")) as $start |
-  $update < $start and $events[$update].profile.context_window == 4321
+  $update < $start and $events[$update].profile.model.context_window == 4321
 ' <"$context_stream" >/dev/null || fail 'context discovery emitted the wrong order'
 head -n 1 "$context_session" | jq -e \
-  '.profile.context_window == 4321' >/dev/null ||
+  '.profile.model.context_window == 4321' >/dev/null ||
   fail 'context discovery did not freeze the complete updated profile'
 cat >"$context_backend/context_window" <<'ZSH'
 #!/usr/bin/env zsh
@@ -189,7 +187,7 @@ print -r -- '{"type":"user","content":[{"type":"text","text":"overflow"}]}' |
     --session-out "$context_session" >/dev/null ||
   fail 'overlong context discovery blocked inference'
 head -n 1 "$context_session" | jq -e \
-  '.profile.context_window == null' >/dev/null ||
+  '.profile.model.context_window == null' >/dev/null ||
   fail 'overlong context discovery accepted a truncated JSON tail'
 cat >"$context_backend/context_window" <<'ZSH'
 #!/usr/bin/env zsh
@@ -202,7 +200,7 @@ print -r -- '{"type":"user","content":[{"type":"text","text":"fallback"}]}' |
     --session-out "$context_session" >/dev/null ||
   fail 'unavailable context discovery blocked inference'
 head -n 1 "$context_session" | jq -e \
-  '.profile.context_window == null' >/dev/null ||
+  '.profile.model.context_window == null' >/dev/null ||
   fail 'unavailable context discovery did not freeze null'
 
 # Invalid session paths fail cleanly.

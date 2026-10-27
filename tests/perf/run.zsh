@@ -16,9 +16,8 @@ integer iterations=$iteration_arg
 typeset tmp
 tmp=$(mktemp -d "${TMPDIR:-/tmp}/shellfish-perf.XXXXXX")
 trap 'if [[ -n ${SHELLFISH_PERF_KEEP-} ]]; then print -u2 -r -- "kept: $tmp"; else rm -rf -- "$tmp"; fi' EXIT
-mkdir -p "$tmp/project" "$tmp/bin" "$tmp/shellfish/profiles" \
-  "$tmp/shellfish/backends/perf" "$tmp/shellfish/tools/perf" \
-  "$tmp/shellfish/hooks/perf"
+mkdir -p "$tmp/project" "$tmp/bin" "$tmp/shellfish/profiles" "$tmp/shellfish/models" \
+  "$tmp/shellfish/backends/perf" "$tmp/shellfish/tools/perf"
 
 cat >"$tmp/bin/jq" <<'EOF'
 #!/usr/bin/env zsh
@@ -48,23 +47,26 @@ print -rn -- 'tool result'
 EOF
 chmod +x "$tmp/bin/jq" "$tmp/shellfish/backends/perf/run" "$tmp/shellfish/tools/perf/run"
 
-# The unsandboxed tool skips permission_request.
-cat >"$tmp/shellfish/hooks/perf/run" <<'EOF'
-#!/usr/bin/env zsh
-cat >/dev/null
-EOF
-chmod +x "$tmp/shellfish/hooks/perf/run"
+# One hook per lifecycle. The unsandboxed tool skips permission_request.
+typeset lifecycle
+for lifecycle in session_start user_prompt_submit pre_tool_use post_tool_use stop; do
+  mkdir -p "$tmp/shellfish/hooks/$lifecycle"
+  print -r -- "{\"on\":\"$lifecycle\"}" >"$tmp/shellfish/hooks/$lifecycle/manifest.json"
+  print -rl -- '#!/usr/bin/env zsh' 'cat >/dev/null' >"$tmp/shellfish/hooks/$lifecycle/run"
+  chmod +x "$tmp/shellfish/hooks/$lifecycle/run"
+done
 
-cat >"$tmp/shellfish/profiles/default.jsonc" <<EOF
+print -r -- '{"adapter":"perf","request":{"model":"perf"}}' >"$tmp/shellfish/models/default.jsonc"
+cat >"$tmp/shellfish/profiles/default.jsonc" <<'EOF'
 {
-  "backend":{"adapter":"perf"},
-  "request":{"model":"perf"},
-  "tools":["perf"],"sandbox":false,
-  "hooks":{"session_start":["perf"],"user_prompt_submit":["perf"],"permission_request":[],
-    "pre_tool_use":["perf"],"post_tool_use":["perf"],"stop":["perf"]},
-  "max_requests_per_turn":8,"max_tool_calls_per_request":16,"max_capture_bytes":65536
+  "model":["default"],
+  "tools":["perf"],
+  "hooks":["session_start","user_prompt_submit","pre_tool_use","post_tool_use","stop"]
 }
 EOF
+print -rl -- SHELLFISH_SANDBOX=0 SHELLFISH_MAX_REQUESTS_PER_TURN=8 \
+  SHELLFISH_MAX_TOOL_CALLS_PER_REQUEST=16 SHELLFISH_MAX_CAPTURE_BYTES=65536 \
+  >"$tmp/shellfish/.env"
 
 typeset turn_metrics="$tmp/turn-metrics" component_metrics="$tmp/component-metrics"
 typeset jq_log="$tmp/jq-log" stderr="$tmp/stderr"

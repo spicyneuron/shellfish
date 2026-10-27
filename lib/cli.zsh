@@ -4,12 +4,15 @@ sf_die() {
 }
 
 # Condense captured output into one line to append to a message that already
-# names the file. jq's own "jq: " prefix would only repeat that attribution.
+# names the file. jq's own "jq: error (at ...): " prefix would only repeat that
+# attribution.
 sf_cli_diagnostic() {
   local output=$1 detail=''
   [[ -z $output ]] || \
     detail=$(print -rn -- "$output" | LC_ALL=C tr -s '[:cntrl:]' ' ' | cut -c 1-1000)
-  REPLY=${detail#jq: }
+  detail=${detail#jq: }
+  [[ ! $detail =~ '^error \(at [^)]*\): ' ]] || detail=${detail#$MATCH}
+  REPLY=$detail
 }
 
 # An inherited pipe may never reach EOF, so argv input only probes stdin for

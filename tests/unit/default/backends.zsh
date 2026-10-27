@@ -26,29 +26,26 @@ integer operation_status=0
 (( operation_status != 0 )) || fail 'invalid authentication value was accepted'
 [[ "$(<"$tmp/cred-err")" == *"invalid authentication value"* ]]
 
-# Read model and transport settings.
+# Read the model and endpoint, with transport settings from the environment.
 cat >"$SF_BACKEND_REQUEST_FILE" <<'JSON'
-{"options":{"request":{"model":"test-model"}},
- "transport":{"endpoint":"https://api.example.com/v1","insecure_tls":true,
-  "http_timeout":60,"http_stall":10}}
+{"request":{"model":"test-model"},"endpoint":"https://api.example.com/v1"}
 JSON
-sf_backend_request
+SHELLFISH_INSECURE_TLS=1 SHELLFISH_HTTP_TIMEOUT=60 SHELLFISH_HTTP_STALL=10 sf_backend_request
 assert_equal test-model "$SF_BACKEND_MODEL"
 assert_equal https://api.example.com/v1 "$SF_BACKEND_ENDPOINT"
 
 # Reject unsupported request options.
 operation_status=0
-sf_backend_request '.options.request | has("model") | not' || operation_status=$?
+sf_backend_request '.request | has("model") | not' || operation_status=$?
 (( operation_status != 0 )) || fail 'untranslatable request options were accepted'
 
 # Require a model.
-print -r -- '{"transport":{"endpoint":"https://api.example.com/v1","insecure_tls":true,"http_timeout":60,"http_stall":10}}' \
-  >"$SF_BACKEND_REQUEST_FILE"
+print -r -- '{"endpoint":"https://api.example.com/v1"}' >"$SF_BACKEND_REQUEST_FILE"
 operation_status=0
-sf_backend_request '.options.request | has("stream_options") | not' || operation_status=$?
+sf_backend_request '.request | has("stream_options") | not' || operation_status=$?
 (( operation_status != 0 )) || fail 'request without a model was accepted'
 
-# Apply frozen transport settings.
+# Apply transport settings.
 sf_backend_curl_args
 [[ "${SF_BACKEND_CURL_ARGS[*]}" == *'--url https://api.example.com/v1'* ]]
 [[ "${SF_BACKEND_CURL_ARGS[*]}" == *'--max-time 60'* ]]

@@ -1,1 +1,1 @@
-{"match":{"pattern":"^/server\\z"}}
+{"on":"user_prompt_submit","match":{"pattern":"^/server\\z"}}

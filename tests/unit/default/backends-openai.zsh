@@ -56,12 +56,12 @@ cat >"$req" <<'EOF'
   "tools": [
     {"name":"shell","description":"run shell","input_schema":{"type":"object","properties":{"command":{"type":"string"}}}}
   ],
-  "options":{"request":{"model":"gpt-4o","max_tokens":10,"max_completion_tokens":99,
+  "request":{"model":"gpt-4o","max_tokens":10,"max_completion_tokens":99,
     "max_output_tokens":77,
     "reasoning":{"effort":"medium"},"reasoning_effort":"low",
     "response_format":{"type":"json_object"},
-    "response_schema":{"type":"object","required":["answer"],"properties":{"answer":{"type":"string"}}}}},
-  "transport":{"endpoint":"https://api.openai.com/v1/chat/completions","insecure_tls":false,"http_timeout":30,"http_stall":10}
+    "response_schema":{"type":"object","required":["answer"],"properties":{"answer":{"type":"string"}}}},
+  "endpoint":"https://api.openai.com/v1/chat/completions"
 }
 EOF
 
@@ -105,7 +105,7 @@ jq -e '. == {context_window:128000}' "$res" >/dev/null
 grep -qx 'https://api.openai.com/v1/models' "$BACKEND_TEST_ARGS"
 grep -qx '10' "$BACKEND_TEST_ARGS"
 
-jq '.transport.endpoint = "https://api.openai.com/v1/responses"' "$req" >"$tmp/responses-request.json"
+jq '.endpoint = "https://api.openai.com/v1/responses"' "$req" >"$tmp/responses-request.json"
 (builtin cd -- "$tmp" && OPENAI_API_KEY=test-key zsh -f "$responses_context_window" \
   <"$tmp/responses-request.json" >"$res")
 jq -e '. == {context_window:128000}' "$res" >/dev/null
@@ -213,8 +213,8 @@ cat >"$batch_request" <<'JSON'
     {"type":"tool_result","call_id":"call_2","name":"shell","content":"bad","exit_code":1}
   ],
   "tools": [],
-  "options": {"request":{"model":"gpt-test"}},
-  "transport": {"endpoint":"https://api.openai.com/v1/chat/completions","insecure_tls":false,"http_timeout":30,"http_stall":10}
+  "request":{"model":"gpt-test"},
+  "endpoint":"https://api.openai.com/v1/chat/completions"
 }
 JSON
 printf '%s\n' 'data: {"choices":[{"delta":{"content":"ok"},"finish_reason":"stop"}]}' \

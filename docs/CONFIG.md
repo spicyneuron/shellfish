@@ -1,128 +1,127 @@
 # Configuration
 
-Shellfish reads JSONC from the Shellfish directory (see [Directories](#directories)). `profiles/NAME.jsonc` describes an agent and `tui.jsonc` describes rendering. `NAME` may be a slash-separated path such as `openai/sol`. Your profile file shadows the bundled file of the same name under [`share/profiles/`](../share/profiles/). `tui.jsonc` merges over [`share/tui.jsonc`](../share/tui.jsonc).
+Configuration has three homes, each with one job:
 
-The two never mix. A session freezes a profile, so a profile rejects rendering keys; `tui.jsonc` is read fresh on every run and is never frozen.
+| Home | Job | Frozen in a session |
+| --- | --- | --- |
+| `profiles/NAME.jsonc` | Selects an agent's parts: model files, system prompts, tools, and hooks | Yes |
+| `models/NAME.jsonc` | Configures the request: adapter, endpoint, and provider parameters | Yes |
+| `.env` and the environment | Credentials and settings for Shellfish and its components | No |
 
-Copy [`share/template/`](../share/template/) into that directory for a working starting point. The bundled [`shellfish.schema.json`](../share/shellfish.schema.json) and [`tui.schema.json`](../share/tui.schema.json) are the exact field references.
+Rendering lives separately in `tui.jsonc`, which merges over [`share/tui.jsonc`](../share/tui.jsonc) and is read fresh on every run.
+
+Copy [`share/template/`](../share/template/) into the Shellfish directory for a working starting point. The bundled [`profile.schema.json`](../share/profile.schema.json), [`model.schema.json`](../share/model.schema.json), and [`tui.schema.json`](../share/tui.schema.json) are the exact field references.
 
 ## Directories
 
-One Shellfish directory holds everything: profiles, components, `tui.jsonc`, `.env`, `sessions/` grouped by project directory, and `scratch/` for private temporary files. Shellfish uses `SHELLFISH_DIR` when set, otherwise the nearest `.shellfish` directory above the working directory, otherwise `~/.shellfish`. A `.shellfish` directory therefore selects a separately configured Shellfish, such as one for work and one for personal projects, for everything beneath it. `--continue` and `--resume` search its sessions. Child agents, hooks, and tools inherit the selection.
+One Shellfish directory holds everything: profiles, models, components, `tui.jsonc`, `.env`, `sessions/` grouped by project directory, and `scratch/` for private temporary files. Shellfish uses `SHELLFISH_DIR` when set, otherwise the nearest `.shellfish` directory above the working directory, otherwise `~/.shellfish`. A `.shellfish` directory therefore selects a separately configured Shellfish, such as one for work and one for personal projects, for everything beneath it. `--continue` and `--resume` search its sessions. Child agents, hooks, and tools inherit the selection.
+
+## Names
+
+Profiles and models are named files, and `NAME` may be a slash-separated path such as `openai/sol`. Your file shadows the bundled file of the same name, and `@NAME` always means the bundled one.
+
+A profile names components by reference. A bare name resolves in its kind's directory (`system/`, `tools/`, `hooks/`, or `backends/`), yours first, then bundled. `@KIND/NAME`, such as `@tools/shell`, selects the bundled component. `~/path` and absolute paths are also available.
 
 ## Profiles
 
-`profiles/default.jsonc` is selected when `--profile` is absent. `-p NAME` selects another, including nested profiles such as `-p openai/sol`, and repeats compose: `-p review -p readonly` merges them left to right. `extend` accepts the same names. A file you write shadows the bundled file of that name, and `@NAME` always means the bundled file, so your own `default` can extend `@default` to build on the bundled agent.
+A profile only selects. It holds no values of its own.
 
 ```jsonc
-// profiles/work.jsonc
+// profiles/default.jsonc
 {
-  "extend": ["default"],
-  "backend": {"adapter": "openrouter"},
-  "tools": ["...", "my_tool"],
-  "request": {"model": "MODEL"}
+  "model": ["@default", "default"],
+  "system": ["general.md", "tools.md"],
+  "tools": ["read_file", "edit_file", "write_file", "shell"],
+  "hooks": ["project/environment", "project/instructions", "help", "compact", "review"]
 }
 ```
 
-| Profile field | Meaning |
+| Field | Meaning |
 | --- | --- |
-| `extend` | Ordered profile names, merged left to right; own keys last |
-| `backend` | Adapter reference and transport settings |
-| `env` | Non-secret environment values for this profile |
-| `tools`, `hooks`, sandbox, and limits | The harness; see [Harness](#harness) |
-| `system` | Ordered system-component references |
-| `request` | Provider request object; `model` is required after resolution |
-| `context_window` | Positive capacity override; `null` disables discovery; absent permits adapter discovery |
+| `model` | Model files, merged left to right |
+| `system` | System prompt files, concatenated in order |
+| `tools` | Tools exposed to the model |
+| `hooks` | Hooks, each run by the lifecycle its manifest names, in listed order |
 
-The selected profiles and everything they extend are flattened into one list, parents first and each profile once, then merged in order. Objects merge recursively and arrays replace, except that `"..."` splices the list as it stood before that profile, so a list can be extended without restating it. Cycles are errors. A resolved new session must have an adapter and a valid model, and stores the profile, with every default filled and every reference resolved, as its header.
+`profiles/default.jsonc` is selected when `--profile` is absent, and `-p NAME` selects another. Profiles do not inherit from each other, since a profile is short enough to copy. Only components named in the selected profile are active, and unused files are inert.
 
-A profile that sets only one section is a shareable fragment; that is what `extend` is for, so there are no separate backend or harness maps.
+## Models
+
+A model file configures where a request goes and what it carries.
 
 ```jsonc
-// profiles/local-llm.jsonc — not selectable on its own; no model
-{"backend": {"adapter": "openai",
-             "endpoint": "http://127.0.0.1:8080/v1/chat/completions"}}
+// models/work.jsonc
+{
+  "adapter": "anthropic",
+  "request": {"model": "claude-opus-4-1", "max_tokens": 16384}
+}
+```
+
+| Field | Meaning |
+| --- | --- |
+| `adapter` | Backend adapter reference |
+| `endpoint` | Overrides the adapter's endpoint |
+| `context_window` | Positive capacity override. `null` disables discovery, and absent permits adapter discovery |
+| `request` | Provider request parameters, which must include `model` after merging |
+
+A profile's `model` list merges left to right: objects merge recursively and anything else is replaced. That lets small model files share settings without repeating them, including bundled ones:
+
+```jsonc
+// models/local.jsonc
+{"adapter": "openai", "endpoint": "http://127.0.0.1:8080/v1/chat/completions"}
+
+// models/high.jsonc
+{"request": {"reasoning": {"effort": "high"}}}
 
 // profiles/local.jsonc
-{"extend": ["default", "local-llm"], "request": {"model": "qwen3"}}
+{"model": ["@default", "local", "high"], "system": ["general.md"], "tools": ["shell"]}
 ```
 
-## Backend
+`-m NAME` merges another model file over the profile's list for one session and may repeat. `--request JSON` merges raw parameters last, so `--request '{"model":"MODEL"}'` tries a model without a file.
 
-| Field | Default / meaning |
-| --- | --- |
-| `adapter` | Adapter reference; `-b REF` overrides it |
-| `endpoint` | Adapter manifest endpoint |
-| `insecure_tls` | `false` |
-| `http_timeout` | `3600` seconds |
-| `http_stall` | `300` seconds without response bytes |
+Bundled adapters: `anthropic`, `codex`, `openai`, `openai-responses`, and `openrouter`. The `openai` adapter works with any OpenAI-compatible endpoint. See [`HARNESS.md`](HARNESS.md#backend-adapters) for the adapter protocol.
 
-Bundled adapters: `anthropic`, `codex`, `openai`, `openai-responses`, and `openrouter`. See [`HARNESS.md`](HARNESS.md#backend-adapters) for the adapter protocol.
+A new session freezes the selected profile with its merged model and every reference resolved.
 
-## Harness
+## Environment
 
-These fields sit at the profile's top level. Omitted sandbox and limit fields use the defaults below.
+Credentials and settings live in exported variables or `.env` in the Shellfish directory. Exported values win. Both stay external and are read for each invocation, so a change applies to existing sessions too, except the sandbox settings, which a new session freezes.
 
-| Field | Default / meaning |
-| --- | --- |
-| `tools` | `[]`; unique tool references exposed to the model |
-| `hooks.LIFECYCLE` | Ordered hook references; see below |
-| `sandbox` | `true` |
-| `sandbox_read_paths` | `[]`; extra read grants |
-| `sandbox_write_paths` | `[]`; extra read-write grants |
-| `max_requests_per_turn` | `100` |
-| `max_tool_calls_per_request` | `25` |
-| `max_capture_bytes` | `32768`; per component execution, minimum `64`, overridable by a hook or tool manifest |
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `SHELLFISH_SANDBOX` | `1` | `0` runs every tool with user permissions |
+| `SHELLFISH_SANDBOX_READ` | Empty | Colon-separated extra read grants |
+| `SHELLFISH_SANDBOX_WRITE` | Empty | Colon-separated extra read-write grants |
+| `SHELLFISH_MAX_REQUESTS_PER_TURN` | `100` | Provider requests per turn |
+| `SHELLFISH_MAX_TOOL_CALLS_PER_REQUEST` | `25` | Tool calls per response |
+| `SHELLFISH_MAX_CAPTURE_BYTES` | `32768` | Bytes kept from each component stream, at least `64`, overridable by a manifest |
+| `SHELLFISH_HTTP_TIMEOUT` | `3600` | Seconds per provider request |
+| `SHELLFISH_HTTP_STALL` | `300` | Seconds without response bytes |
+| `SHELLFISH_INSECURE_TLS` | `0` | `1` skips TLS verification |
+| `SHELLFISH_MAX_ACTIVE_AGENTS` | `4` | Active child agents per parent |
 
-Each lifecycle runs every listed hook in order until one takes an action. A hook without an action defers to the next, and an empty or absent list runs none; see [`HARNESS.md`](HARNESS.md#hooks). A list replaces what was inherited, while `"..."` splices the inherited list at that position.
+Hooks and adapters are trusted: they inherit the process environment and receive every `.env` value. Tools receive only the names their manifest declares. Unsandboxed tools also inherit the process environment; sandboxed tools start clean. A key kept only in `.env` is therefore invisible to tools that do not declare it. See [`HARNESS.md`](HARNESS.md#shared-contract) for the process context.
 
-One capability set can serve different roles, because the system prompt sits beside it:
+## Components
 
-```jsonc
-// profiles/review.jsonc, with system/review.md
-{
-  "extend": ["default"],
-  "tools": ["read_file"],
-  "hooks": {"session_start": ["project/instructions"]},
-  "system": ["review.md"]
-}
-```
-
-## Components and environment
-
-A configuration root has separate profile and component locations:
+A configuration root has separate locations for each kind:
 
 ```text
 profiles/NAME.jsonc
+models/NAME.jsonc
 system/FILE.md
 tools/TOOL/
 hooks/HOOK/
 backends/ADAPTER/
 ```
 
-A bare name in `system`, `tools`, `hooks`, or `backend.adapter` resolves in its kind's top-level user directory first, then bundled `share/`. Profile inheritance does not affect component lookup. `@KIND/NAME`, such as `@tools/shell`, selects the bundled component explicitly; `~/path` and absolute paths are also available. Only components named in a resolved profile are active. Missing or invalid active components fail resolution, except hook manifests, which are validated each time the hook runs. Unused files are inert.
-
-Executable components require `run`. An optional `manifest.json` or `manifest.jsonc` supplies configuration, with an absent manifest treated as `{}`. Hooks default to silent output with no input filter. Tools need model-facing descriptions, input schemas, and execution policies. Backends need an endpoint from either their manifest or the profile. See [`HARNESS.md`](HARNESS.md#presentation) for templates and outcomes. References are frozen in the session, while manifest edits affect later invocations only.
-
-Use profile `env` for non-secret settings such as `{"SHELLFISH_MAX_ACTIVE_AGENTS": "2"}`. It merges by variable name through inheritance and is frozen in the session header. Do not put credentials there.
-
-Credentials live in exported variables or `.env` in the Shellfish directory; those remain external and are read for each invocation. Precedence is exported environment, then profile `env`, then `.env`.
-
-Hooks and adapters are trusted: they inherit the process environment and receive every profile `env` and `.env` value. Tools receive only the names their manifest declares from these sources. Unsandboxed tools also inherit the process environment; sandboxed tools start clean. A key kept only in `.env` or profile `env` is therefore invisible to tools that do not declare it. See [`HARNESS.md`](HARNESS.md#shared-contract) for the process context.
+Executable components require `run`. An optional `manifest.json` or `manifest.jsonc` supplies configuration, with an absent manifest treated as `{}`. A hook's manifest names its lifecycle with `on`. Tools need model-facing descriptions, input schemas, and execution policies. Backends need an endpoint from either their manifest or a model file. See [`HARNESS.md`](HARNESS.md) for the contracts. References are frozen in the session, while manifest edits affect later invocations only. Missing or invalid active components fail resolution.
 
 ## Sandbox
 
-The default harness runs opted-in tools under [`fence`](https://github.com/fencesandbox/fence). Tool policies and platform temp access set the baseline; harness grants extend filesystem access, while policy deny rules still take precedence. Bundled policies never let a tool create or change a `.shellfish` directory, since its contents run outside the sandbox. A `SHELLFISH_DIR` with another name inside a writable path is not protected.
+The default harness runs opted-in tools under [`fence`](https://github.com/fencesandbox/fence). Tool policies and platform temp access set the baseline; grants extend filesystem access, while policy deny rules still take precedence. Bundled policies never let a tool create or change a `.shellfish` directory, since its contents run outside the sandbox. A `SHELLFISH_DIR` with another name inside a writable path is not protected.
 
-```jsonc
-{
-  "extend": ["default"],
-  "sandbox_read_paths": ["/path/to/reference"],
-  "sandbox_write_paths": ["/path/to/output"]
-}
-```
-
-`--sandbox-read` and `--sandbox-write` add one-off grants; `--sandbox-auto` adds detected development-tool paths. Setting `sandbox` to `false` runs every tool with user permissions. Grants are frozen into new sessions.
+`SHELLFISH_SANDBOX_READ` and `SHELLFISH_SANDBOX_WRITE` hold standing grants as absolute or `~/` paths. `--sandbox-read` and `--sandbox-write` add one-off grants, and `--sandbox-auto` adds detected development-tool paths. Grants are frozen into new sessions, and `/sandbox` changes them for one session.
 
 ## Rendering
 
@@ -140,9 +139,14 @@ The default harness runs opted-in tools under [`fence`](https://github.com/fence
 
 ## Bundled agent
 
-[`default`](../share/profiles/default.jsonc) works out of the box: the `openrouter` adapter, `general.md` and `tools.md`, and up to 16,384 output tokens with medium reasoning effort. It sets no model, so supply one in your own profile or with `-m`. [`coding`](../share/profiles/coding.jsonc) is a short example of overriding it.
+The bundled [`default`](../share/profiles/default.jsonc) profile selects `general.md` and `tools.md`, the tools below, and the bundled hooks. Its model list is the bundled [`@default`](../share/models/default.jsonc), which uses the `openrouter` adapter with up to 16,384 output tokens and medium reasoning effort, followed by your `models/default.jsonc`, which must name a model:
 
-Its harness enables sandboxing, uses the limit defaults above, and exposes:
+```jsonc
+// models/default.jsonc
+{"request": {"model": "anthropic/claude-opus-4.1"}}
+```
+
+[`coding`](../share/profiles/coding.jsonc) adds permission review.
 
 | Tool | Role |
 | --- | --- |
@@ -154,7 +158,7 @@ Its harness enables sandboxing, uses the limit defaults above, and exposes:
 | `search_web` | Search through Exa |
 | `fetch_url` | Fetch a page as Markdown through Jina Reader |
 
-The bundled `session_start` records context once, one block per part:
+The bundled `session_start` hooks record context once, one block per part:
 
 | Hook | Context |
 | --- | --- |
@@ -162,7 +166,7 @@ The bundled `session_start` records context once, one block per part:
 | `git/environment` | Branch or commit, recent commits, and working-tree summary |
 | `project/instructions` | `AGENTS.md`, falling back to `CLAUDE.md` |
 
-The bundled submit hooks handle interactive commands:
+The bundled `user_prompt_submit` hooks handle interactive commands:
 
 | Input | Action |
 | --- | --- |
@@ -188,25 +192,10 @@ For ordinary prompts, `$skill-name` loads each matching skill into the model's c
 
 ### Agent tool
 
-The `agent` tool lets you delegate a separate task to another agent, so work can proceed independently of your current conversation. You can wait for its result, let it run in the background, check its progress, or give it a follow-up task once it finishes. It is opt-in; add it to a profile's tools list. For example, extend the bundled `@default` and keep its existing tools while adding `agent`:
+The `agent` tool lets you delegate a separate task to another agent, so work can proceed independently of your current conversation. You can wait for its result, let it run in the background, check its progress, or give it a follow-up task once it finishes. It is opt-in; add `"agent"` to a profile's `tools`.
 
-```jsonc
-{
-  "extend": ["@default"],
-  "tools": ["...", "agent"]
-}
-```
-
-Background work returns control after launch; the default limit is four active child agents per parent. Set `SHELLFISH_MAX_ACTIVE_AGENTS` in profile `env` or externally to change that positive-integer limit.
-Inspection distinguishes a child that is still running from one that has stopped without a final transcript outcome. A stopped child releases its active slot and can be continued; Shellfish recovers unfinished work on that next turn.
+Background work returns control after launch; the default limit is four active child agents per parent, set by `SHELLFISH_MAX_ACTIVE_AGENTS`. Inspection distinguishes a child that is still running from one that has stopped without a final transcript outcome. A stopped child releases its active slot and can be continued; Shellfish recovers unfinished work on that next turn.
 
 ### Review hook
 
-The `review` hook helps decide whether a requested sandbox bypass is justified by the user's instructions. If it cannot approve the request, the bypass is denied and the tool is not run. The bundled `coding` profile enables it, but the default profile does not. To enable it in another profile, add it to `permission_request`:
-
-```jsonc
-{
-  "extend": ["@default"],
-  "hooks": {"permission_request": ["review"]}
-}
-```
+The `review` hook helps decide whether a requested sandbox bypass is justified by the user's instructions. If it cannot approve the request, the bypass is denied and the tool is not run. The bundled `coding` profile enables it, but the default profile does not. To enable it in another profile, add `"review"` to its `hooks`.

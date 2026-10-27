@@ -14,9 +14,7 @@ sf_run_hook_project() {
   local profile=$1 lifecycle=$2
   sf_jq_fields -rn --argjson profile "$profile" --arg lifecycle "$lifecycle" '
       include "lib/fields";
-      entry("max_capture"; $profile.max_capture_bytes | tostring),
-      entry("model"; $profile.request.model),
-      entry("profile_env"; $profile.env | tojson),
+      entry("model"; $profile.model.request.model),
       entry("hooks"; $profile.hooks[$lifecycle] // [] | join("\n")),
       ("ok" | field)
     ' || return 1
@@ -109,8 +107,7 @@ sf_run_hooks() {
   }
   hooks=( ${(f)SF_HOOK_PLAN[hooks]} )
   (( ${#hooks} )) || return 0
-  max_capture=$SF_HOOK_PLAN[max_capture]
-  sf_environment_load '' "$SF_HOOK_PLAN[profile_env]" || {
+  sf_environment_load || {
     SF_RUN_HOOK_ERROR=$SF_ENVIRONMENT_ERROR
     return 1
   }
@@ -149,7 +146,7 @@ sf_run_hooks() {
         name=$command
       fi
       sf_run_hook_manifest "$command" "$name" "$lifecycle" "$content" \
-        "$SF_RUN[hook_id]" "$SF_HOOK_PLAN[max_capture]" || { error=$REPLY; break; }
+        "$SF_RUN[hook_id]" "$SF_RUN[max_capture]" || { error=$REPLY; break; }
       component=$REPLY
       [[ $component != null ]] || continue
       max_capture=$(jq -r '.max_capture' <<<"$component") || { error='cannot inspect hook capture limit'; break; }

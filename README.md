@@ -43,14 +43,16 @@ ln -s "$HOME/.local/share/shellfish/bin/shellfish" "$HOME/.local/bin/shellfish"
 
 ```sh
 export OPENROUTER_API_KEY=...     # Or use .env in the Shellfish directory
+mkdir -p ~/.shellfish/models      # Name the default model
+echo '{"request": {"model": "MODEL"}}' >~/.shellfish/models/default.jsonc
 
 shellfish                         # Start a new session
 shellfish --continue              # Reopen the most recent session
 shellfish --resume                # Pick a session from this directory
 shellfish --session PATH          # Open one session directly
 
-shellfish --backend BACKEND --model MODEL  # Use custom settings
-shellfish --profile PROFILE       # Use a preconfigured profile
+shellfish --model MODEL           # Merge models/MODEL.jsonc over the default
+shellfish --profile PROFILE       # Use another profile
 
 shellfish run "PROMPT"            # Run one non-interactive turn
 ```
@@ -65,30 +67,35 @@ Built-in backends and credentials:
 | `openai-responses` | `OPENAI_API_KEY` |
 | `openrouter` | `OPENROUTER_API_KEY` |
 
-The `openai` adapter also supports compatible services by setting `endpoint` in a profile's `backend`.
+The `openai` adapter also supports compatible services by setting `endpoint` in a model file.
 
 Run `shellfish --help` for creation and sandbox options, or `/help` inside chat for commands supplied by the active harness.
 
 ## Configuration
 
-An agent is a JSONC file in the Shellfish directory's `profiles/` (typically `~/.shellfish/profiles/`, see [Directories](docs/CONFIG.md#directories)). `default.jsonc` is selected when `--profile` is absent; your file shadows the [bundled profile](share/profiles/default.jsonc) of the same name. Reusable components live in top-level `system/`, `tools/`, `hooks/`, and `backends/` directories beside `profiles/`. Exported credentials override values in `.env` in the Shellfish directory. Themes and preview limits live in [`tui.jsonc`](share/tui.jsonc).
+The Shellfish directory (typically `~/.shellfish/`, see [Directories](docs/CONFIG.md#directories)) holds three kinds of configuration:
+
+- **Profiles** in `profiles/` select an agent's parts: model files, system prompts, tools, and hooks.
+- **Models** in `models/` configure the request: adapter, endpoint, and provider parameters. A profile's model files merge left to right.
+- **Settings** in `.env` or the environment hold credentials, sandbox grants, and limits.
 
 ```jsonc
 // ~/.shellfish/profiles/review.jsonc — shellfish -p review
 {
-  "$schema": "https://raw.githubusercontent.com/spicyneuron/shellfish/refs/heads/main/share/shellfish.schema.json",
-  "extend": ["default"],
+  "$schema": "https://raw.githubusercontent.com/spicyneuron/shellfish/refs/heads/main/share/profile.schema.json",
+  "model": ["@default", "default"],
+  "system": ["general.md", "review.md"],  // ~/.shellfish/system/review.md
   "tools": ["read_file", "shell_readonly"],
-  "system": ["...", "review.md"]  // ~/.shellfish/system/review.md
+  "hooks": ["project/instructions"]
 }
 ```
 
-A profile holds a backend, a harness, system-prompt components, and provider request settings. Component names resolve from the Shellfish directory first, then the bundled `share/` directory; `@KIND/NAME` selects a bundled component explicitly. `extend` merges other profiles in order, objects merge recursively, and `"..."` splices an inherited list. Command-line options override the selection, `-p` repeats to compose several profiles, and Shellfish resolves that composition once and freezes it in the session header.
+`default.jsonc` is selected when `--profile` is absent, and your file shadows the [bundled profile](share/profiles/default.jsonc) of the same name. Reusable components live in top-level `system/`, `tools/`, `hooks/`, and `backends/` directories beside `profiles/`, and resolve from the Shellfish directory first, then the bundled `share/` directory. A new session freezes the resolved selection in its header. Themes and preview limits live in [`tui.jsonc`](share/tui.jsonc).
 
 ## Documentation
 
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md): Design intent and opinionated boundaries.
-- [`docs/CONFIG.md`](docs/CONFIG.md): Configure profiles, components, presentation, and the bundled agent.
+- [`docs/CONFIG.md`](docs/CONFIG.md): Configure profiles, models, settings, presentation, and the bundled agent.
 - [`docs/HARNESS.md`](docs/HARNESS.md): Write custom hooks, tools, and backend adapters.
 - [`docs/CURSED.md`](docs/CURSED.md): Hard-won lessons and ~~hacks~~ clever workarounds.
 

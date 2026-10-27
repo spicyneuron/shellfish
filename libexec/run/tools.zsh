@@ -14,7 +14,8 @@ typeset -gA SF_TOOL_PLAN=()
 sf_run_tool_plan() {
   local call=$1
   sf_jq_fields -rn --argjson profile "$SF_RUN[profile]" --argjson tools "$SF_RUN[tools]" \
-    --argjson call "$call" --argjson turn "$SF_RUN[turn_id]" '
+    --argjson call "$call" --argjson turn "$SF_RUN[turn_id]" \
+    --argjson max_capture "$SF_RUN[max_capture]" '
       include "lib/fields";
       include "lib/profile";
       include "lib/session";
@@ -54,8 +55,7 @@ sf_run_tool_plan() {
         render_template($manifest.user_permission // "${input}"; $name; $input; {}; {})),
       entry("executable"; $tool.command // ""),
       entry("environment"; ($tool.manifest.environment // []) | join(" ")),
-      entry("profile_env"; $profile.env | tojson),
-      entry("max_capture"; $manifest.max_capture_bytes // $profile.max_capture_bytes | tostring),
+      entry("max_capture"; $manifest.max_capture_bytes // $max_capture | tostring),
       entry("execution_input";
         $input | del(.request_sandbox_bypass,.sandbox_bypass_reason) | tojson),
       entry("sandbox"; $sandboxed | tostring),
@@ -88,7 +88,7 @@ sf_run_tool_execute() {
   integer max_capture=$SF_TOOL_PLAN[max_capture]
 
   SF_RUN_TOOL_ERROR=''
-  sf_environment_load "$selected" "$SF_TOOL_PLAN[profile_env]" || {
+  sf_environment_load "$selected" || {
     SF_RUN_TOOL_ERROR=$SF_ENVIRONMENT_ERROR
     return 1
   }

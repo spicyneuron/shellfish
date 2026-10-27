@@ -8,13 +8,9 @@ typeset project="$tmp/project" session="$tmp/session.jsonl" stream="$tmp/stream"
 mkdir -p "$hook" "$project"
 cp "$ROOT/share/hooks/project/instructions/"{manifest.json,run} "$hook/"
 print -r -- 'Follow this project rule.' >"$project/AGENTS.md"
-sf_test_profile default "{
-  \"backend\":{\"adapter\":\"$ROOT/tests/fixtures/backend\"},
-  \"request\":{\"model\":\"test\"},
-  \"tools\":[],\"sandbox\":false,
-  \"hooks\":{\"session_start\":[\"project/instructions\"]},
-  \"max_capture_bytes\":1024
-}"
+sf_test_model test "{\"adapter\":\"$ROOT/tests/fixtures/backend\",\"request\":{\"model\":\"test\"}}"
+sf_test_profile default '{"model":["test"],"hooks":["project/instructions"]}'
+export SHELLFISH_MAX_CAPTURE_BYTES=1024
 (cd "$project" && zsh -f "$entry" run --jsonl --session-create --session-out "$session") \
   >"$stream" || fail 'manifested session_start hook failed'
 jq -eRn --arg session "$session" --arg hook "${hook:A}" '
@@ -47,7 +43,7 @@ reject() {
 }
 # Run one presentation contract through both public compositions.
 sf_test_frozen_profile
-SF_TEST_PROFILE=$(jq -c '.max_capture_bytes=1024' <<<"$SF_TEST_PROFILE")
+export SHELLFISH_MAX_CAPTURE_BYTES=1024
 typeset kind scenario manifest result_type component_name
 cat >"$hook/run" <<'ZSH'
 #!/usr/bin/env zsh
@@ -84,7 +80,7 @@ for scenario in protocol capture capture_override silent manifest_silent null; d
     manifest_silent) manifest='{"user_text":"Working","user_text_done":"","model_text":""}' ;;
     null) manifest='{"user_text":null,"user_text_done":null,"user_text_skipped":null,"model_text":null}' ;;
   esac
-  print -r -- "$manifest" >"$hook/manifest.json"
+  jq -c '{on:"session_start"} + .' <<<"$manifest" >"$hook/manifest.json"
   sf_test_shell_tool 'del(.user_text_unsandboxed, .user_text_done_unsandboxed) + '"$manifest" "$hook/run"
   for kind in hook tool; do
     session="$tmp/$kind-$scenario.jsonl"
@@ -140,11 +136,12 @@ done
 # Absolute references keep the relative name under the configured root and the
 # absolute name elsewhere, even under another /hooks/ directory.
 typeset external="$tmp/external/hooks/probe" reference name
-print -r -- '#!/usr/bin/env zsh' | sf_test_hook "$external" '{"user_text_done":"${name}"}'
-print -r -- '{"user_text_done":"${name}"}' >"$hook/manifest.json"
+print -r -- '#!/usr/bin/env zsh' |
+  sf_test_hook "$external" '{"on":"session_start","user_text_done":"${name}"}'
+print -r -- '{"on":"session_start","user_text_done":"${name}"}' >"$hook/manifest.json"
 print -r -- '#!/usr/bin/env zsh' >"$hook/run"
 for reference name in "$hook" project/instructions "$external" "${external:A}"; do
-  sf_test_profile absolute "{\"extend\":[\"default\"],\"hooks\":{\"session_start\":[\"$reference\"]}}"
+  sf_test_profile absolute "{\"model\":[\"test\"],\"hooks\":[\"$reference\"]}"
   create "$tmp/absolute-${reference:t}.jsonl" -p absolute || fail "absolute hook failed: $reference"
   jq -eRn --arg name "$name" '
     [inputs | fromjson | select(.type == "hook_result")][0].user_text == $name
@@ -171,22 +168,16 @@ sf_jq -e -s '
   contains("<context script=\"project/instructions\">") and
   contains("Follow this project rule.")
 ' "$session" >/dev/null || fail 'replay needed the live manifest'
-cat >"$hook/run" <<'ZSH'
-#!/usr/bin/env zsh
-print -r -- out
-print -ru3 -- '{"state_update":[{"name":"manifest/absent","value":true}],"model_text":"${output.stdout}"}'
-ZSH
-session="$tmp/no-manifest.jsonl"
-create "$session" || fail 'hook without a manifest failed'
-jq -e -s '.[1].name == "manifest/absent" and .[-1].model_text == "out\n"' "$session" >/dev/null ||
-  fail 'hook without a manifest lost state or presentation'
+reject 'hook manifest must declare "on"'
 typeset invalid
-for invalid in field template capture; do
+for invalid in field template capture lifecycle unbound; do
   case $invalid in
-    field) print -r -- '{"description":"not a hook field"}' >"$hook/manifest.json" ;;
-    template) print -r -- '{"user_text_done":"${input.undeclared}"}' >"$hook/manifest.json" ;;
-    capture) print -r -- '{"max_capture_bytes":63}' >"$hook/manifest.json" ;;
+    field) print -r -- '{"on":"session_start","description":"not a hook field"}' >"$hook/manifest.json" ;;
+    template) print -r -- '{"on":"session_start","user_text_done":"${input.undeclared}"}' >"$hook/manifest.json" ;;
+    capture) print -r -- '{"on":"session_start","max_capture_bytes":63}' >"$hook/manifest.json" ;;
+    lifecycle) print -r -- '{"on":"session_end"}' >"$hook/manifest.json" ;;
+    unbound) print -r -- '{}' >"$hook/manifest.json" ;;
   esac
-  reject 'invalid hook manifest'
+  reject 'hook manifest must be valid and declare "on"'
 done
 print -r -- ok

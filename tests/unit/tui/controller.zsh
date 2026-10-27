@@ -88,9 +88,9 @@ assert_equal '/tmp/custom command,,arg' "${(j:,:)SF_PRESENT_HANDOFF}"
 # Apply profile updates.
 typeset updated_profile
 updated_profile=$(jq -c '
-  del(.type,.format_version,.cwd,.created) |
-  .backend.adapter = "/updated" | .request.model = "new-model" |
-  .context_window = null
+  .profile |
+  .model.adapter = "/updated" | .model.request.model = "new-model" |
+  .model.context_window = null
 ' "$SF_TEST_SESSIONS/header-only.jsonl")
 pump "$(jq -cn --argjson profile "$updated_profile" \
   '{type:"_session_update",profile:$profile}')"
@@ -319,7 +319,7 @@ sf_tui_submit early
 assert_equal repaint "$REPLY"
 assert_equal early "${(j:,:)SF_PRESENT_QUEUE}"
 pump "$(jq -cn --arg path "$tmp/new.jsonl" '{type:"_session_load",path:$path}')" \
-  '{"type":"session","profile":{"backend":{"adapter":"/test"},"request":{"model":"model"}}}' \
+  '{"type":"session","profile":{"model":{"adapter":"/test","request":{"model":"model"}}}}' \
   '{"type":"system","content":"instructions"}' \
   '{"type":"_draft","lifecycle":"session_start","id":"1","user_text":"setup · working"}'
 assert_equal working "$SF_PRESENT_STATE"

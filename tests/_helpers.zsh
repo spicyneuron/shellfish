@@ -101,14 +101,14 @@ sf_test_frozen_profile() {
   SF_TEST_PROFILE=$(jq -cn --arg adapter "${SF_TEST_BACKEND:h}" \
     --arg tool "$ROOT/share/tools/shell" '
       {
-        request:{model:"test-model"},
-        system:[],
-        backend:{adapter:$adapter,endpoint:"https://example.invalid/test",
-          insecure_tls:false,http_timeout:30,http_stall:10},
-        tools:[$tool], hooks:{}, env:{}, sandbox:false, sandbox_read_paths:[], sandbox_write_paths:[],
-        max_requests_per_turn:8,max_tool_calls_per_request:16,max_capture_bytes:65536
+        model:{adapter:$adapter,endpoint:"https://example.invalid/test",
+          request:{model:"test-model"}},
+        system:[], tools:[$tool], hooks:{},
+        sandbox:false, sandbox_read_paths:[], sandbox_write_paths:[]
       }
     ')
+  export SHELLFISH_MAX_REQUESTS_PER_TURN=8 SHELLFISH_MAX_TOOL_CALLS_PER_REQUEST=16
+  export SHELLFISH_MAX_CAPTURE_BYTES=65536
 }
 
 # Point the frozen profile at a copy of the bundled shell tool whose manifest
@@ -150,4 +150,9 @@ sf_test_run() {
     jq -cn --arg text "$prompt" '{type:"user",content:[{type:"text",text:$text}]}'
     [[ -z $reply ]] || print -r -- "$reply"
   } | "$ROOT/bin/shellfish" run --jsonl --session "$session"
+}
+
+sf_test_model() {
+  mkdir -p "$SF_TEST_CONFIG/models/${1:h}"
+  print -r -- "$2" >"$SF_TEST_CONFIG/models/$1.jsonc"
 }

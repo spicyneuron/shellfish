@@ -20,8 +20,8 @@ typeset s_tool_model="$tmp/tool_model.jsonl"
 
 make_header() {
   jq -cn '{type:"session",format_version:1,cwd:"/tmp",created:"2026-08-18T10:00:00Z",
-    profile:{request:{model:"claude-3"},
-      backend:{adapter:"/custom",endpoint:"https://example.invalid"}}}'
+    profile:{model:{adapter:"/custom",endpoint:"https://example.invalid",
+      request:{model:"claude-3"}}}}'
 }
 
 # Header-only session.
@@ -126,7 +126,7 @@ mkdir -p -- "$directory"
 make_discovery_header() {
   jq -cn --arg cwd "$1" --arg model "$2" '{type:"session",format_version:1,
     cwd:$cwd,created:"2026-09-04T00:00:00Z",
-    profile:{request:{model:$model}}}'
+    profile:{model:{request:{model:$model}}}}'
 }
 make_discovery_header "$(pwd -P)" first >"$directory/first.jsonl"
 touch -t 202609040100 "$directory/first.jsonl"

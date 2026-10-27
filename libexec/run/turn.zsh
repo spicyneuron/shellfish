@@ -13,6 +13,26 @@ typeset -gA SF_RUN=(
   hook_id 1 hooks '' hooks_known 0 write_failed 0
 )
 
+# Turn limits come from the environment on every run, not the frozen profile.
+sf_run_limits() {
+  local name
+  local -A limits=(
+    SHELLFISH_MAX_REQUESTS_PER_TURN 100
+    SHELLFISH_MAX_TOOL_CALLS_PER_REQUEST 25
+    SHELLFISH_MAX_CAPTURE_BYTES 32768
+  )
+  sf_environment_settings "${(k)limits}" || { REPLY=$SF_ENVIRONMENT_ERROR; return 1; }
+  for name in ${(k)limits}; do
+    limits[$name]=${SF_ENVIRONMENT_SETTINGS[$name]:-$limits[$name]}
+    [[ $limits[$name] == <1-2147483647> ]] || { REPLY="$name must be a positive integer"; return 1; }
+  done
+  (( limits[SHELLFISH_MAX_CAPTURE_BYTES] >= 64 )) ||
+    { REPLY='SHELLFISH_MAX_CAPTURE_BYTES must be at least 64'; return 1; }
+  SF_RUN[max_requests]=$(( limits[SHELLFISH_MAX_REQUESTS_PER_TURN] ))
+  SF_RUN[max_tool_calls]=$(( limits[SHELLFISH_MAX_TOOL_CALLS_PER_REQUEST] ))
+  SF_RUN[max_capture]=$(( limits[SHELLFISH_MAX_CAPTURE_BYTES] ))
+}
+
 sf_run_emit() {
   (( ! SF_RUN[jsonl] )) || print -r -- "$1"
 }
@@ -203,11 +223,8 @@ sf_run_project() {
              if:{properties:{request_sandbox_bypass:{const:true}},required:["request_sandbox_bypass"]},
              then:{required:["sandbox_bypass_reason"]}}])
          else . end)}] as $tools |
-    entry("max_requests"; $profile.max_requests_per_turn | tostring),
-    entry("max_tool_calls"; $profile.max_tool_calls_per_request | tostring),
-    entry("max_capture"; $profile.max_capture_bytes | tostring),
-    entry("adapter"; $profile.backend.adapter),
-    entry("context_window"; $profile | has("context_window") | tostring),
+    entry("adapter"; $profile.model.adapter),
+    entry("context_window"; $profile.model | has("context_window") | tostring),
     entry("tools"; $tools | tojson),
     ("ok" | field)
   ' || return 1
@@ -230,15 +247,15 @@ sf_run_turn() {
     SF_RUN[signal_status]=0
     SF_RUN[hooks_known]=0
     SF_RUN[write_failed]=0
-    sf_run_open "$session" || { print -r -u2 -- "$REPLY"; return 1; }
+    sf_run_limits && sf_run_open "$session" || { print -r -u2 -- "$REPLY"; return 1; }
     begun=1
     profile=$SF_RUN[profile]
     if sf_run_project "$profile"; then
       projected=( "${reply[@]}" )
       tools=$projected[tools]
-      request_limit=$projected[max_requests]
-      tool_limit=$projected[max_tool_calls]
-      max_capture=$projected[max_capture]
+      request_limit=$SF_RUN[max_requests]
+      tool_limit=$SF_RUN[max_tool_calls]
+      max_capture=$SF_RUN[max_capture]
       context_command=$projected[adapter]/context_window
     else
       failure='cannot inspect frozen profile'
@@ -300,7 +317,7 @@ sf_run_turn() {
           break
         fi
         profile=$(jq -c --argjson window "$REPLY" \
-          '.context_window=$window' <<<"$profile") || {
+          '.model.context_window=$window' <<<"$profile") || {
           failure='cannot update model context window'
           break
         }

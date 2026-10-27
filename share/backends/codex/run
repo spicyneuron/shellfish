@@ -17,10 +17,10 @@ cat >"$SF_BACKEND_REQUEST_FILE"
 
 # The Responses adapter translates common parameters and owns the generated body.
 # Codex validates the reasoning option it augments below.
-sf_backend_request '(.options.request | has("reasoning") | not) or
-  (.options.request.reasoning | type == "object")' ||
+sf_backend_request '(.request | has("reasoning") | not) or
+  (.request.reasoning | type == "object")' ||
   sf_backend_die 'invalid request'
-[[ $SF_BACKEND_ENDPOINT == $ENDPOINT && $SF_BACKEND_INSECURE_TLS == false ]] ||
+[[ $SF_BACKEND_ENDPOINT == $ENDPOINT && $SF_BACKEND_INSECURE_TLS == 0 ]] ||
   sf_backend_die 'Codex transport must use the built-in secure endpoint'
 
 # Reasoning comes back encrypted, so a summary is its only readable trace. Asked
@@ -29,7 +29,7 @@ sf_backend_request '(.options.request | has("reasoning") | not) or
 # The summary is forced after raw options are applied; effort stays the caller's.
 # The endpoint rejects max_output_tokens, so remove every common limit alias
 # before the Responses adapter can normalize one into that field.
-jq -c '.options.request |=
+jq -c '.request |=
   (del(.max_tokens,.max_completion_tokens,.max_output_tokens) |
    .reasoning = ((.reasoning // {} | if . == {effort:""} then {} else . end) * {summary:"auto"}))' \
   "$SF_BACKEND_REQUEST_FILE" >"$prepared_file" || sf_backend_die "cannot prepare canonical request"

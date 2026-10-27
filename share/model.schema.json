@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Shellfish model",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "adapter": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[^\u0000-\u001f\u007f-\u009f]+$"
+    },
+    "endpoint": {
+      "type": "string",
+      "pattern": "^https?://[^\\s\u0000-\u001f\u007f-\u009f]+$"
+    },
+    "context_window": {
+      "anyOf": [
+        {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2147483647
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "request": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "model": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[^\u0000-\u001f\u007f-\u009f]+$"
+        }
+      }
+    }
+  }
+}

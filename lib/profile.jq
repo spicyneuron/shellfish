@@ -1,6 +1,6 @@
-# Profiles: the config that resolves one, the session header that freezes it,
-# and tool manifests and their templates. The header lives here rather than in
-# lib/session.jq because it validates the profile nested inside it.
+# Profiles and model files, the session header that freezes their resolution,
+# and component manifests and their templates. The header lives here rather
+# than in lib/session.jq because it validates the profile nested inside it.
 #
 # Repeated primitives are deliberate; see AGENTS.md.
 
@@ -29,11 +29,6 @@ def positive_integer:
 def capture_bytes: positive_integer and . >= 64;
 def component_preview_hint:
   . == "full" or (type == "number" and floor == . and . >= 0 and . <= 2147483647);
-
-def profile_environment:
-  type == "object" and
-  all(keys[]; test("^[A-Za-z_][A-Za-z0-9_]*$")) and
-  all(.[]; nul_free_string);
 
 def hook_names:
   ["session_start", "user_prompt_submit", "permission_request", "pre_tool_use",
@@ -71,8 +66,10 @@ def component_manifest($attrs; $fields):
   ((has("user_preview_lines") | not) or (.user_preview_lines | component_preview_hint)) and
   ((has("max_capture_bytes") | not) or (.max_capture_bytes | capture_bytes));
 
+# "on" names the lifecycle a profile binds the hook to.
 def hook_manifest:
-  component_manifest(["match"]; []) and
+  component_manifest(["match", "on"]; []) and
+  ((has("on") | not) or (.on | IN(hook_names[]))) and
   ((has("match") | not) or
     (.match | type == "object" and keys == ["pattern"] and
       (.pattern as $pattern | $pattern | type == "string" and
@@ -101,8 +98,10 @@ def tool_manifest:
   ((.allow_sandbox_bypass // false) | type == "boolean") and
   (if (.allow_sandbox_bypass // false) then .sandbox else true end);
 
+# $path starts with a label, such as "profile work", followed by the field path.
 def config_error($path; $message):
-  error("invalid profile at $" + ($path | map("[" + tojson + "]") | join("")) + ": " + $message);
+  error($path[0] + ($path[1:] | if length == 0 then "" else
+    " $" + (map("[" + tojson + "]") | join("")) end) + ": " + $message);
 def config_object($path; $fields):
   if type != "object" then config_error($path; "must be an object")
   else (keys - $fields) as $unknown |
@@ -112,115 +111,41 @@ def config_assert($valid; $path; $message):
   if $valid then . else config_error($path; $message) end;
 def reference_list: type == "array" and all(.[]; nonempty_control_free_string);
 
-# One profile file. "backend" and "hooks" are inline objects rather than names
-# into separate maps.
+# A profile only selects.
 def config_profile($path):
-  config_object($path; ["$schema", "backend", "context_window", "env", "extend", "hooks",
-    "max_capture_bytes", "max_requests_per_turn", "max_tool_calls_per_request",
-    "request", "sandbox", "sandbox_read_paths", "sandbox_write_paths", "system", "tools"]) |
-  config_assert((has("extend") | not) or (.extend | type == "array" and
-    all(.[]; ltrimstr("@") | profile_name)); $path + ["extend"]; "must be profile names") |
+  config_object($path; ["$schema", "hooks", "model", "system", "tools"]) |
+  config_assert((has("model") | not) or (.model | type == "array" and
+    all(.[]; type == "string" and (ltrimstr("@") | profile_name))); $path + ["model"];
+    "must be model names") |
+  reduce ["hooks", "system", "tools"][] as $field (.;
+    config_assert((has($field) | not) or (.[$field] | reference_list);
+      $path + [$field]; "must be references"));
+
+# A model file configures one request: where it goes and what it carries.
+def config_model($path):
+  config_object($path; ["$schema", "adapter", "context_window", "endpoint", "request"]) |
+  config_assert((has("adapter") | not) or (.adapter | nonempty_control_free_string);
+    $path + ["adapter"]; "invalid reference") |
+  config_assert((has("endpoint") | not) or (.endpoint | endpoint);
+    $path + ["endpoint"]; "must be an HTTP(S) URL") |
   config_assert((has("context_window") | not) or
     (.context_window == null or (.context_window | positive_integer));
     $path + ["context_window"]; "must be null or a positive integer") |
   config_assert((has("request") | not) or (.request | type == "object");
-    $path + ["request"]; "must be an object") |
-  config_assert((has("env") | not) or (.env | profile_environment);
-    $path + ["env"]; "must map variable names to strings") |
-  reduce ["system", "tools"][] as $field (.;
-    config_assert((has($field) | not) or (.[$field] | reference_list);
-      $path + [$field]; "must be references")) |
-  (if has("backend") then .backend |= (
-    config_object($path + ["backend"]; ["adapter", "endpoint",
-      "insecure_tls", "http_timeout", "http_stall"]) |
-    config_assert((has("adapter") | not) or (.adapter | nonempty_control_free_string);
-      $path + ["backend", "adapter"]; "invalid reference") |
-    config_assert((has("endpoint") | not) or (.endpoint | endpoint);
-      $path + ["backend", "endpoint"]; "must be an HTTP(S) URL") |
-    config_assert((has("insecure_tls") | not) or (.insecure_tls | type == "boolean");
-      $path + ["backend", "insecure_tls"]; "must be a boolean") |
-    reduce ["http_timeout", "http_stall"][] as $field (.;
-      config_assert((has($field) | not) or (.[$field] | positive_integer);
-        $path + ["backend", $field]; "must be a positive integer"))
-  ) else . end) |
-  (if has("hooks") then .hooks |= (
-    config_object($path + ["hooks"]; hook_names) |
-    reduce hook_names[] as $field (.;
-      config_assert((has($field) | not) or (.[$field] | reference_list);
-        $path + ["hooks", $field]; "must be references"))
-  ) else . end) |
-  config_assert((has("sandbox") | not) or (.sandbox | type == "boolean");
-    $path + ["sandbox"]; "must be a boolean") |
-  reduce ["sandbox_read_paths", "sandbox_write_paths"][] as $field (.;
-    config_assert((has($field) | not) or (.[$field] | type == "array" and
-      all(.[]; type == "string" and length > 0 and
-        (startswith("/") or startswith("~/")) and (contains("\u0000") | not)));
-      $path + [$field]; "must contain absolute or ~/ paths")) |
-  reduce ["max_requests_per_turn", "max_tool_calls_per_request"][] as $field (.;
-    config_assert((has($field) | not) or (.[$field] | positive_integer);
-      $path + [$field]; "must be a positive integer")) |
-  config_assert((has("max_capture_bytes") | not) or (.max_capture_bytes | capture_bytes);
-    $path + ["max_capture_bytes"]; "must be at least 64");
+    $path + ["request"]; "must be an object");
 
-# Profile files keyed by path become their names relative to the profile root.
-def profile_map($bundled; $configured):
-  with_entries(.key |= (if startswith($bundled + "/") then
-      "@" + ltrimstr($bundled + "/")
-    else ltrimstr($configured + "/") end |
-    rtrimstr(".jsonc")));
+# Model files merge left to right: objects recursively, anything else replaced.
+# The request override applies last.
+def model_merge($models; $request):
+  reduce $models[] as $model ({}; . * ($model | del(."$schema"))) |
+  .request = ((.request // {}) * $request) |
+  if .request.model | model_name then . else
+    error("a model is required: set request.model in a model file or with --request") end |
+  if (.adapter // "") == "" then error("a model adapter is required") else . end;
 
-# An unprefixed name prefers the configured folder; "@NAME" uses the bundled one.
-def profile_key($profiles):
-  if startswith("@") or $profiles[.] then . else "@" + . end;
-
-# Objects merge recursively and arrays replace, except that "..." splices the
-# inherited array at its position.
-def merge_over($base):
-  if type == "object" then
-    . as $over | (($base | objects) // {}) as $base |
-    reduce keys_unsorted[] as $key ($base;
-      .[$key] = ($over[$key] | merge_over($base[$key])))
-  elif type == "array" then
-    [.[] | if . == "..." then (($base | arrays) // [])[] else . end]
-  else . end;
-
-# Depth-first with parents first, each profile once. $seen is the ancestor
-# path, so diamonds are legal and cycles are not.
-def profile_order($profiles; $names; $seen):
-  reduce $names[] as $name (.;
-    ($name | profile_key($profiles)) as $key |
-    if $seen | index([$key]) then error("profile inheritance cycle: " + $name)
-    elif index([$key]) then .
-    else ($profiles[$key] // error("unknown profile: " + $name) |
-        config_profile([$name]) | .extend // []) as $parents |
-      profile_order($profiles; $parents; $seen + [$key]) + [$key] end);
-
-# Selected profiles merge in one ordered pass, as if one profile extended them all.
-def profile_resolve($profiles; $names):
-  reduce ([] | profile_order($profiles; $names; []))[] as $key ({};
-    . as $inherited | $profiles[$key] | del(.extend, ."$schema") | merge_over($inherited));
-
-def profile_select($profiles; $names; $model; $request; $backend):
-  profile_resolve($profiles; $names) |
-  (if $backend == "" then . else .backend.adapter = $backend end) |
-  .request = ((.request // {}) * $request |
-    if $model == "" then . else .model = $model end) |
-  (if .request.model | model_name then . else
-    error("a valid model is required for a new session") end) |
-  (if (.backend.adapter // "") == "" then
-    error("profile backend is required") else . end) |
-  # Splicing an inherited list makes a restated tool easy to duplicate.
-  ((.tools // []) as $tools |
-    if ($tools | length) == ($tools | unique | length) then .
-    else error("profile tools must be unique: " + ($tools | join(", "))) end) |
-  {system:[], tools:[], hooks:{}, env:{}, sandbox:true, sandbox_read_paths:[],
-   sandbox_write_paths:[], max_requests_per_turn:100, max_tool_calls_per_request:25,
-   max_capture_bytes:32768,
-   backend:{insecure_tls:false, http_timeout:3600, http_stall:300}} * .;
-
-# Each reference as [kind, reference] through f.
+# Each reference as [kind, reference] through f, in the frozen shape.
 def profile_references(f):
-  .backend.adapter |= (["backends", .] | f) |
+  .model.adapter |= (["backends", .] | f) |
   .system |= map(["system", .] | f) |
   .tools |= map(["tools", .] | f) |
   .hooks |= map_values(map(["hooks", .] | f));
@@ -254,17 +179,28 @@ def profile_store($share; $home):
 def profile_expand($share; $home):
   profile_paths(expand_path($share; $home); expand_path(""; $home));
 
-# A session profile is a valid profile with every default filled and every
-# reference resolved.
+def sandbox_paths:
+  type == "array" and all(.[]; stored_cwd);
+
+# The frozen profile: the merged model, resolved references with hooks grouped
+# by lifecycle, and the session's sandbox grants.
 def canonical_profile:
-  (try (config_profile([]) | true) catch false) and
-  (keys - ["context_window"]) == ["backend", "env", "hooks", "max_capture_bytes",
-    "max_requests_per_turn", "max_tool_calls_per_request", "request", "sandbox",
-    "sandbox_read_paths", "sandbox_write_paths", "system", "tools"] and
-  (.backend | keys == ["adapter", "endpoint", "http_stall", "http_timeout", "insecure_tls"]) and
-  (.request.model | model_name) and
-  all(.backend.adapter, .system[], .tools[], .hooks[][]; stored_reference) and
-  (.tools | map(split("/") | last) | all(.[]; tool_name) and length == (unique | length));
+  type == "object" and
+  keys == ["hooks", "model", "sandbox", "sandbox_read_paths", "sandbox_write_paths",
+    "system", "tools"] and
+  (.model | type == "object" and
+    (keys - ["context_window"]) == ["adapter", "endpoint", "request"] and
+    (.endpoint | endpoint) and (.request | type == "object") and
+    (.request.model | model_name) and
+    ((has("context_window") | not) or .context_window == null or
+      (.context_window | positive_integer))) and
+  (.system | type == "array") and (.tools | type == "array") and
+  (.hooks | type == "object" and ((keys - hook_names) | length == 0) and
+    all(.[]; type == "array")) and
+  all(.model.adapter, .system[], .tools[], .hooks[][]; stored_reference) and
+  (.tools | map(split("/") | last) | all(.[]; tool_name) and length == (unique | length)) and
+  (.sandbox | type == "boolean") and
+  (.sandbox_read_paths | sandbox_paths) and (.sandbox_write_paths | sandbox_paths);
 
 # The session header freezes one profile. lib/session.jq owns the records that
 # follow it, but cannot call canonical_profile across a module boundary.

@@ -70,26 +70,14 @@ else
 fi
 ZSH
 chmod +x "$backend/run"
-sf_test_profile child "{
-  \"backend\":{\"adapter\":\"$backend\"},
-  \"request\":{\"model\":\"test\"},
-  \"tools\":[],\"sandbox\":true,
-  \"max_requests_per_turn\":4,\"max_tool_calls_per_request\":4,
-  \"max_capture_bytes\":4096
-}"
-print -rl -- '#!/usr/bin/env zsh' 'exit 0' | sf_test_hook "$tmp/stop-hook"
-sf_test_profile child-stop "{
-  \"backend\":{\"adapter\":\"$backend\"},
-  \"request\":{\"model\":\"test\"},
-  \"tools\":[],\"sandbox\":true,
-  \"hooks\":{\"stop\":[\"$tmp/stop-hook\"]},
-  \"max_requests_per_turn\":4,\"max_tool_calls_per_request\":4,
-  \"max_capture_bytes\":4096
-}"
+sf_test_model child "{\"adapter\":\"$backend\",\"request\":{\"model\":\"test\"}}"
+sf_test_profile child '{"model":["child"]}'
+print -rl -- '#!/usr/bin/env zsh' 'exit 0' | sf_test_hook "$tmp/stop-hook" '{"on":"stop"}'
+sf_test_profile child-stop "{\"model\":[\"child\"],\"hooks\":[\"$tmp/stop-hook\"]}"
 
 sf_test_frozen_profile
 SF_TEST_PROFILE=$(jq -c --arg adapter "$backend" --arg tool "$agent" \
-  '.backend.adapter=$adapter | .tools=[$tool]' <<<"$SF_TEST_PROFILE")
+  '.model.adapter=$adapter | .tools=[$tool]' <<<"$SF_TEST_PROFILE")
 sf_test_session "$session"
 sf_test_run 'parent task' "$session" >"$stream" || fail 'parent tool turn failed'
 assert_canonical_session "$session"

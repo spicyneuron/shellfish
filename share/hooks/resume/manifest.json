@@ -1,1 +1,1 @@
-{"match":{"pattern":"^/resume\\z"}}
+{"on":"user_prompt_submit","match":{"pattern":"^/resume\\z"}}

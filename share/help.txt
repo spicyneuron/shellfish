@@ -12,9 +12,8 @@ Run output:
   --background         Start one detached turn; print its session path
 
 New sessions:
-  -p, --profile NAME    Select a profile; @default is bundled (repeatable, composes)
-  -b, --backend REF     Override the backend adapter reference
-  -m, --model MODEL     Override the model
+  -p, --profile NAME    Select a profile (@NAME is bundled)
+  -m, --model NAME      Merge a model file over the profile's (repeatable)
   --request JSON        Merge raw backend request parameters
   --system TEXT         Replace the system prompt (repeatable)
   --system-file PATH    Replace it with file content (repeatable)
@@ -30,6 +29,8 @@ Existing sessions:
 Shellfish directory:
   SHELLFISH_DIR      Default: nearest .shellfish, else $HOME/.shellfish
   Profiles:          DIR/profiles/NAME.jsonc
+  Models:            DIR/models/NAME.jsonc
+  Settings:          DIR/.env
   TUI file:          DIR/tui.jsonc
   Sessions:          DIR/sessions/
 

@@ -32,29 +32,27 @@ sf_backend_setup() {
 }
 
 # Reads the request fields an adapter consumes, plus the jq predicate an adapter
-# passes for request options it cannot translate.
+# passes for request options it cannot translate. Transport settings come from
+# SHELLFISH_HTTP_TIMEOUT, SHELLFISH_HTTP_STALL, and SHELLFISH_INSECURE_TLS.
 # The model check leads because jq's and short-circuits, so the predicate never
-# runs against a missing options.request.
+# runs against a missing request.
 sf_backend_request() {
   local accepts=${1:-true}
   local -a fields
   fields=( "${(@f)$(jq -er "def accepted: $accepts;"'
-    select((.options.request.model | type == "string" and . != "") and accepted) |
-    .transport as $transport |
-    select(($transport.endpoint | type == "string" and . != "") and
-      ($transport.insecure_tls | type == "boolean") and
-      ($transport.http_timeout | type == "number") and
-      ($transport.http_stall | type == "number")) |
-    .options.request.model, $transport.endpoint,
-    ($transport.insecure_tls | tostring),
-    ($transport.http_timeout | tostring), ($transport.http_stall | tostring)
+    select((.request.model | type == "string" and . != "") and accepted and
+      (.endpoint | type == "string" and . != "")) |
+    .request.model, .endpoint
   ' "$SF_BACKEND_REQUEST_FILE")}" ) || return 1
-  (( ${#fields} == 5 )) || return 1
+  (( ${#fields} == 2 )) || return 1
   SF_BACKEND_MODEL=$fields[1]
   SF_BACKEND_ENDPOINT=$fields[2]
-  SF_BACKEND_INSECURE_TLS=$fields[3]
-  SF_BACKEND_HTTP_TIMEOUT=$fields[4]
-  SF_BACKEND_HTTP_STALL=$fields[5]
+  SF_BACKEND_HTTP_TIMEOUT=${SHELLFISH_HTTP_TIMEOUT:-3600}
+  SF_BACKEND_HTTP_STALL=${SHELLFISH_HTTP_STALL:-300}
+  SF_BACKEND_INSECURE_TLS=${SHELLFISH_INSECURE_TLS:-0}
+  [[ $SF_BACKEND_HTTP_TIMEOUT == <1-> && $SF_BACKEND_HTTP_STALL == <1-> ]] ||
+    sf_backend_die 'SHELLFISH_HTTP_TIMEOUT and SHELLFISH_HTTP_STALL must be positive integers'
+  [[ $SF_BACKEND_INSECURE_TLS == [01] ]] || sf_backend_die 'SHELLFISH_INSECURE_TLS must be 0 or 1'
 }
 
 sf_backend_credential() {
@@ -71,7 +69,7 @@ sf_backend_curl_args() {
     --header 'Content-Type: application/json' --data-binary "@$SF_BACKEND_BODY_FILE")
   [[ ! -s $SF_BACKEND_HEADERS_FILE ]] ||
     SF_BACKEND_CURL_ARGS+=(--header "@$SF_BACKEND_HEADERS_FILE")
-  [[ $SF_BACKEND_INSECURE_TLS != true ]] || SF_BACKEND_CURL_ARGS+=(--insecure)
+  [[ $SF_BACKEND_INSECURE_TLS != 1 ]] || SF_BACKEND_CURL_ARGS+=(--insecure)
 }
 
 # Model metadata is a side lookup, so it uses the request's TLS setting but its
@@ -86,7 +84,7 @@ sf_backend_context_curl_args() {
     --request GET --url "$endpoint")
   [[ ! -s $SF_BACKEND_HEADERS_FILE ]] ||
     SF_BACKEND_CURL_ARGS+=(--header "@$SF_BACKEND_HEADERS_FILE")
-  [[ $insecure != true ]] || SF_BACKEND_CURL_ARGS+=(--insecure)
+  [[ $insecure != 1 ]] || SF_BACKEND_CURL_ARGS+=(--insecure)
 }
 
 # Sends the prepared body and normalizes the response with the adapter's jq

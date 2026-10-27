@@ -88,20 +88,20 @@ ZSH
 chmod +x "$backend"
 export REQUEST_COUNT=$count STOP_INPUT=$stop_input STOP_SILENT="$tmp/silent"
 SF_TEST_PROFILE=$(jq -c --arg backend "${backend:h}" --arg hook "$stop" '
-  .backend.adapter=$backend | .hooks.user_prompt_submit=[] | .hooks.stop=[$hook]' <<<"$SF_TEST_PROFILE")
+  .model.adapter=$backend | .hooks.user_prompt_submit=[] | .hooks.stop=[$hook]' <<<"$SF_TEST_PROFILE")
 new_session stop; sf_test_run stop "$session" >"$stream" || fail 'stop continuation failed'
 assert_equal 'answer 2' "$(<$stop_input)" 'stop input was not final assistant text'
 assert_equal 2 "$(<$count)" 'stop did not continue provider'
 jq -e -s 'map(select(.type == "hook_result") | .model_text) == ["checking again"]' "$session" \
   >/dev/null || fail 'stop feedback did not settle'
-SF_TEST_PROFILE=$(jq -c '.max_requests_per_turn=1' <<<"$SF_TEST_PROFILE")
-new_session limit; sf_test_run stop "$session" >"$stream" 2>"$tmp/limit.err" && fail 'request limit succeeded'
+new_session limit
+SHELLFISH_MAX_REQUESTS_PER_TURN=1 sf_test_run stop "$session" >"$stream" 2>"$tmp/limit.err" &&
+  fail 'request limit succeeded'
 jq -e -s '.[-2].model_text == "checking again" and
   .[-1] == {type:"error",user_text:"provider request limit reached: 1"}' "$session" >/dev/null ||
   fail 'request limit lost feedback'
 : >"$STOP_SILENT"
 rm -f "$count"
-SF_TEST_PROFILE=$(jq -c '.max_requests_per_turn=8' <<<"$SF_TEST_PROFILE")
 new_session no-feedback; sf_test_run stop "$session" >"$stream" 2>"$tmp/feedback.err" && fail 'missing feedback succeeded'
 assert_equal 1 "$(<$count)" 'stop without feedback requested again'
 jq -e -s '.[-2].user_text == "checking again" and (.[-2] | has("model_text") | not) and
@@ -127,7 +127,7 @@ for name in two three; do
 done
 export BLOCK_TWO="$tmp/block-two" FAIL_TWO="$tmp/fail-two"
 SF_TEST_PROFILE=$(jq -c --arg dir "$hooks" --arg adapter "${SF_TEST_BACKEND:h}" '
-  .backend.adapter=$adapter | .hooks.stop=[] |
+  .model.adapter=$adapter | .hooks.stop=[] |
   .hooks.user_prompt_submit=[$dir + "/one",$dir + "/two",$dir + "/three"]' <<<"$SF_TEST_PROFILE")
 new_session ordered; sf_test_run ordered "$session" >"$stream" || fail 'ordered hooks failed'
 jq -e -s 'map(select(.type == "hook_result") | .user_text) ==

@@ -1,0 +1,23 @@
+// Shellfish model: https://github.com/spicyneuron/shellfish
+//
+// Bundled profiles merge this file over the bundled defaults:
+// https://github.com/spicyneuron/shellfish/blob/main/share/models/default.jsonc
+{
+  "$schema": "https://raw.githubusercontent.com/spicyneuron/shellfish/refs/heads/main/share/model.schema.json",
+
+  // anthropic, codex, openai, openai-responses, or openrouter (the default).
+  // "openai" works with any OpenAI-compatible endpoint.
+  // "adapter": "anthropic",
+
+  // Overrides the adapter's endpoint.
+  // "endpoint": "http://127.0.0.1:8080/v1/chat/completions",
+
+  // Overrides metadata discovery; null disables it.
+  // "context_window": 200000,
+
+  "request": {
+    "model": "MODEL"
+    // "reasoning": {"effort": "high"},
+    // "temperature": 0.5
+  }
+}

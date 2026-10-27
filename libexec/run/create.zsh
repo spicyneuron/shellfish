@@ -61,6 +61,7 @@ sf_run_create() {
     esac
   done
 
+  sf_run_limits || { sf_die "$REPLY"; return 1; }
   if [[ -n $source_session ]]; then
     (( ! profile_override )) || {
       sf_die 'profile overrides cannot be used with --session-from'

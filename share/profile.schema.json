@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Shellfish profile",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "model": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^@?[A-Za-z0-9][A-Za-z0-9_-]*(/[A-Za-z0-9][A-Za-z0-9_-]*)*$"
+      }
+    },
+    "system": {
+      "$ref": "#/$defs/references"
+    },
+    "tools": {
+      "$ref": "#/$defs/references"
+    },
+    "hooks": {
+      "$ref": "#/$defs/references"
+    }
+  },
+  "$defs": {
+    "references": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "pattern": "^[^\u0000-\u001f\u007f-\u009f]+$"
+      }
+    }
+  }
+}

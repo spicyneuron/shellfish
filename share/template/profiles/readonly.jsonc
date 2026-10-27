@@ -1,10 +1,13 @@
-// The default profile with read-only tools. Select with --profile readonly.
-// Repeated -p flags compose left to right.
+// The default agent with read-only tools. Select with --profile readonly.
 {
-  "$schema": "https://raw.githubusercontent.com/spicyneuron/shellfish/refs/heads/main/share/shellfish.schema.json",
+  "$schema": "https://raw.githubusercontent.com/spicyneuron/shellfish/refs/heads/main/share/profile.schema.json",
 
-  "extend": ["default"],
-
+  "model": ["@default", "default"],
+  "system": ["general.md", "tools.md"],
   "tools": ["read_file", "shell_readonly"],
-  "hooks": {"session_start": ["project/instructions"]}
+  "hooks": [
+    "project/instructions",
+    "help", "verbose", "new", "resume", "server", "copy", "sandbox", "user_shell",
+    "fork", "compact", "git/change", "skills"
+  ]
 }

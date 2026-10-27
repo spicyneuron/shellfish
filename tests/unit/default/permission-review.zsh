@@ -14,6 +14,7 @@ cat >"$wrapper" <<'ZSH'
 #!/usr/bin/env zsh
 [[ $1 == backend-request ]] || exit 2
 cat >"$SF_TEST_CAPTURE" || exit
+print -r -- "${SHELLFISH_HTTP_TIMEOUT-}" >"$SF_TEST_CAPTURE.timeout" || exit
 [[ $(<"$SF_TEST_MODE") != failure ]] || exit 1
 text=$(<"$SF_TEST_MODE")
 [[ $text != valid ]] || text=$' \n{"risk":"medium","authorization":"high","reason":"Explicitly authorized."}\n'
@@ -24,9 +25,8 @@ chmod +x "$wrapper"
 
 sf_test_frozen_profile
 SF_TEST_PROFILE=$(jq -c --arg hook "$hook" '
-  .context_window=20000 |
-  .request += {max_tokens:5000,temperature:0.2} |
-  .backend.http_timeout=120 |
+  .model.context_window=20000 |
+  .model.request += {max_tokens:5000,temperature:0.2} |
   .hooks.permission_request=[$hook]
 ' <<<"$SF_TEST_PROFILE")
 SF_TEST_SYSTEM='fixed system'
@@ -48,7 +48,7 @@ request='{"tool_input":{"command":"setup","request_sandbox_bypass":true,"sandbox
 run_review() {
   print -r -- "$1" >"$mode"
   hook_status=0
-  SF_TEST_CAPTURE="$captured" SF_TEST_MODE="$mode" \
+  SF_TEST_CAPTURE="$captured" SF_TEST_MODE="$mode" SHELLFISH_HTTP_TIMEOUT=120 \
     SHELLFISH_EXECUTABLE="$wrapper" SHELLFISH_SESSION="$session" \
     SHELLFISH_TURN_STATE="$tmp" SHELLFISH_TURN_ID=6 \
     zsh -f "$hook/run" shell call_7 \
@@ -77,11 +77,10 @@ jq -en -L "$ROOT" --slurpfile manifest "$hook/manifest.json" \
 jq -e -s --arg tool_input "$(jq -c '.tool_input' <<<"$request")" \
     --rawfile policy "$ROOT/share/hooks/review.md" '
   (.[2].content[0].text | fromjson) as $context |
-  .[0].profile.request.model == "test-model" and
-  .[0].profile.request.max_tokens == 4096 and
-  .[0].profile.request.temperature == 0.2 and
-  .[0].profile.request.response_schema.additionalProperties == false and
-  .[0].profile.backend.http_timeout == 60 and
+  .[0].profile.model.request.model == "test-model" and
+  .[0].profile.model.request.max_tokens == 4096 and
+  .[0].profile.model.request.temperature == 0.2 and
+  .[0].profile.model.request.response_schema.additionalProperties == false and
   .[0].profile.tools == [] and
   .[0].profile.hooks == {} and .[0].profile.system == [] and
   [.[].type] == ["session","system","user"] and
@@ -97,6 +96,7 @@ jq -e -s --arg tool_input "$(jq -c '.tool_input' <<<"$request")" \
   ($context | tostring | contains("private") | not) and
   ($context | tostring | contains("secret") | not)
 ' "$captured" >/dev/null || fail 'permission review projected the wrong transcript'
+assert_equal 60 "$(<"$captured.timeout")" 'permission review kept the session request timeout'
 assert_canonical_session "$captured"
 
 run_review failure

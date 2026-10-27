@@ -31,10 +31,10 @@ def usage_actions($window):
 
 # The backend name is its adapter directory.
 def identity:
-  ((.backend.adapter // "?" | split("/") | last) + "/" + (.request.model // "?"));
+  ((.model.adapter // "?" | split("/") | last) + "/" + (.model.request.model // "?"));
 
 def profile_actions:
-  [["profile", identity, (.context_window // "" | tostring)]];
+  [["profile", identity, (.model.context_window // "" | tostring)]];
 
 # A result or draft carries its own preview hint.
 def preview: .user_preview_lines // "default" | tostring;
@@ -128,7 +128,7 @@ reduce .[] as $line (
   .actions += $emitted |
   if $line.type == "_session_load" then .mode = "load"
   elif $line.type | IN("session", "_session_update") then
-    .window = ($line.profile.context_window // null)
+    .window = ($line.profile.model.context_window // null)
   else . end
 ) |
 # Fields are NUL-joined and each action ends with a record separator.

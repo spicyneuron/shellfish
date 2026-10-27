@@ -1,10 +1,10 @@
 # Harnesses
 
-A harness defines how Shellfish behaves as an agent. It combines tools, lifecycle hooks, sandbox policy, and turn limits around the shared execution loop. A profile holds one harness together with a backend, a system prompt, and model request settings.
+A harness defines how Shellfish behaves as an agent. It combines tools and lifecycle hooks around the shared execution loop. A profile selects one harness together with model files and system prompts.
 
 The core owns event ordering, persistence, recovery, and cleanup. The harness supplies tools and workflow policy. A session freezes its component lists and settings when it is created; the component files themselves are read on each run.
 
-See [`CONFIG.md`](CONFIG.md) for composition, lookup, and the bundled coding harness. This document defines the executable component contracts.
+See [`CONFIG.md`](CONFIG.md) for selection, lookup, settings, and the bundled harness. This document defines the executable component contracts.
 
 ## Shared contract
 
@@ -16,7 +16,7 @@ Every component requires an executable `run`. Configuration lives in an optional
 | --- | --- | --- |
 | Tool | Model-facing metadata and execution policy, `fence.jsonc` when sandboxed | Model-facing, optionally sandboxed |
 | Hook | None | Trusted, user permissions |
-| Backend adapter | Endpoint from profile or manifest, optional `context_window` executable | Trusted, user permissions |
+| Backend adapter | Endpoint from a model file or manifest, optional `context_window` executable | Trusted, user permissions |
 
 Scripts run from the session working directory. Shellfish starts each in an isolated process group, terminates ordinary descendants on completion or cancellation, and escalates from `TERM` to `KILL`. Components must finish their own subprocesses; daemonizing is unsupported.
 
@@ -24,7 +24,7 @@ Raw captures and live progress are transient. Only settled text and accepted sta
 
 ### Environment
 
-Hooks and adapters inherit the process environment and receive every value in profile `env` and `.env`. Tools receive only the names listed under `environment` in their manifest. Exported values take precedence over profile `env`, which takes precedence over `.env`. Profile values are frozen in the session header; exported values and `.env` remain external.
+Hooks and adapters inherit the process environment and receive every value in `.env`. Tools receive only the names listed under `environment` in their manifest. Exported values take precedence over `.env`, and both remain external. A component reads its own settings from these variables.
 
 | Variable | Tool | Hook |
 | --- | :---: | :---: |
@@ -58,11 +58,11 @@ Hook and tool manifests declare complete text templates. A component settles at 
 
 `user_text` is Running progress. Done or Skipped text and `model_text` are stored at settlement. `user_preview_lines` accepts a line count or `"full"` and applies to both Running and settled text.
 
-Tools may also set `user_text_unsandboxed` and `user_text_done_unsandboxed`. These replace the corresponding templates when a tool runs without its sandbox, whether by approval or harness configuration. If absent, the usual templates apply. A tool that does not run uses `user_text_skipped` instead.
+Tools may also set `user_text_unsandboxed` and `user_text_done_unsandboxed`. These replace the corresponding templates when a tool runs without its sandbox, whether by approval or session configuration. If absent, the usual templates apply. A tool that does not run uses `user_text_skipped` instead.
 
 Templates render exactly as configured, with no appended output or client fallback. Empty renderings omit that field. A silent hook creates no result, but every tool call receives one. `${name}` is the tool name or hook reference path. `${input}` is the tool input object or lifecycle stdin text, and `${input.FIELD}` accesses a declared tool input property. `${output.stdout}`, `${output.stderr}`, and `${output.exit_code}` access captures at settlement, including skip reasons and sandbox diagnostics. `${data.KEY}` accesses strings supplied on fd 3.
 
-Substitution is one pass. Strings insert literally, other input values insert as JSON, and missing or null values insert empty. Running progress has no output values. Captured stdout and stderr each retain their tail behind an `[output truncated]` marker when they exceed `max_capture_bytes`. A hook or tool manifest may override the profile limit for that component, with a minimum of `64` bytes.
+Substitution is one pass. Strings insert literally, other input values insert as JSON, and missing or null values insert empty. Running progress has no output values. Captured stdout and stderr each retain their tail behind an `[output truncated]` marker when they exceed `SHELLFISH_MAX_CAPTURE_BYTES`. A hook or tool manifest's `max_capture_bytes` overrides that limit for the component, with a minimum of `64` bytes.
 
 ### Output
 
@@ -107,7 +107,7 @@ The result repeats the exact call ID, name, and input and records an exit code. 
 
 ### Sandbox and permission
 
-A tool is sandboxed only when both its manifest and harness enable sandboxing. Shellfish runs it under [`fence`](https://github.com/fencesandbox/fence), found on `PATH` when the tool runs, with its `fence.jsonc`; platform temp access and harness path grants extend that policy, but deny rules win. Otherwise it runs with user permissions.
+A tool is sandboxed only when both its manifest and the session enable sandboxing. Shellfish runs it under [`fence`](https://github.com/fencesandbox/fence), found on `PATH` when the tool runs, with its `fence.jsonc`; platform temp access and session grants extend that policy, but deny rules win. Otherwise it runs with user permissions.
 
 For a sandboxed tool with `allow_sandbox_bypass: true`, Shellfish adds `request_sandbox_bypass` and `sandbox_bypass_reason` to the schema shown to the model. A requested bypass proceeds unsandboxed only when a `permission_request` hook or interactive client approves it. Otherwise the tool is not invoked and receives a Skipped result.
 
@@ -115,7 +115,7 @@ A detected sandbox denial on a nonzero tool exit adds an advisory `<sandbox_noti
 
 ## Hooks
 
-Hooks are components bound to lifecycle points. Their manifests accept the shared presentation fields and an optional `match.pattern` jq regular expression. A nonmatching hook is skipped without running its script or producing a result. Without `match`, the hook runs for every invocation. Each script still decides what to do with matching input.
+Hooks are components bound to lifecycle points. A hook's manifest names its lifecycle with `on`, such as `{"on":"stop"}`, and a session freezes that binding when it is created. Manifests also accept the shared presentation fields and an optional `match.pattern` jq regular expression. A nonmatching hook is skipped without running its script or producing a result. Without `match`, the hook runs for every invocation. Each script still decides what to do with matching input.
 
 ```text
 create session
@@ -136,7 +136,7 @@ repeat:
     if completion allowed: finish turn
 ```
 
-Each lifecycle runs its configured hooks in order, each as a separate process with the original stdin and arguments. A hook without an action defers to the next. A successful action ends the list; if every hook defers, the lifecycle takes its no-action outcome. Only hooks named in the resolved profile run; see [`CONFIG.md`](CONFIG.md#harness).
+Each lifecycle runs its hooks in the profile's order, each as a separate process with the original stdin and arguments. A hook without an action defers to the next. A successful action ends the list; if every hook defers, the lifecycle takes its no-action outcome. Only hooks named in the resolved profile run; see [`CONFIG.md`](CONFIG.md#profiles).
 
 ### Hook output
 
@@ -200,17 +200,12 @@ Shellfish starts `run` once per provider request with one object on stdin:
   "system": "Materialized system text",
   "messages": [],
   "tools": [],
-  "options": {"request": {"model": "provider-model"}},
-  "transport": {
-    "endpoint": "https://api.example.com/v1/messages",
-    "insecure_tls": false,
-    "http_timeout": 120,
-    "http_stall": 30
-  }
+  "request": {"model": "provider-model"},
+  "endpoint": "https://api.example.com/v1/messages"
 }
 ```
 
-`messages` contains provider-neutral conversation records in transcript order. `tools` contains model-facing tool definitions. `options.request` contains common and provider-specific settings; unrelated fields pass through. `transport` is authoritative for the exchange.
+`messages` contains provider-neutral conversation records in transcript order. `tools` contains model-facing tool definitions. `request` contains the merged model's common and provider-specific settings, and unrelated fields pass through. `endpoint` is authoritative for the exchange. Bundled adapters read `SHELLFISH_HTTP_TIMEOUT`, `SHELLFISH_HTTP_STALL`, and `SHELLFISH_INSECURE_TLS` from the environment.
 
 Bundled adapters normalize token limits in this order: `max_output_tokens`, `max_completion_tokens`, `max_tokens`. `reasoning_effort` overrides `reasoning.effort`, and `response_schema` replaces the provider-native structured-output setting. The Codex adapter omits output limits because its endpoint rejects them.
 

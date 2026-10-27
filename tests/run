@@ -134,7 +134,7 @@ run_test() {
     # Non-interactive shells cannot use job control to isolate background jobs,
     # so create a process group whose id is the target pid.
     exec python3 -c 'import os, sys; os.setsid(); os.execvp(sys.argv[1], sys.argv[1:])' $runner
-  ) >"$log" 2>&1 &
+  ) </dev/null >"$log" 2>&1 &
   sf_target_pid=$!
   {
     while (( polls++ < timeout * 5 )); do

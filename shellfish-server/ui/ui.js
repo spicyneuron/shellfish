@@ -460,9 +460,9 @@ function highlight(parent, code, language) {
 // ------------------------------------------------------------------- the frames
 
 function applyProfile(profile) {
-  const name = safe(profile.request.model);
-  const backend = safe(profile.backend.adapter.split("/").at(-1));
-  contextWindow = profile.context_window ?? null;
+  const name = safe(profile.model.request.model);
+  const backend = safe(profile.model.adapter.split("/").at(-1));
+  contextWindow = profile.model.context_window ?? null;
   model.textContent = backend ? backend + "/" + name : name;
 }
 

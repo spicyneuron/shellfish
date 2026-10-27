@@ -2,200 +2,103 @@
 
 source "${0:A:h:h:h}/_helpers.zsh"
 
+# A filter over lib/profile, with any further jq options.
 profile_eval() {
-  jq -L "$ROOT" -e 'include "lib/profile"; '"$1"
+  local filter=$1
+  shift
+  jq -L "$ROOT" -e "$@" 'include "lib/profile"; '"$filter"
 }
 
-# Profile validation rejects invalid fields.
+# Profiles only select; model files only configure.
 for profile in \
-    '{"legacy_backend":"test"}' \
-    '{"context_window":0}' \
-    '{"themes":{"dark":{"text":"red"}}}' \
-    '{"extend":"default"}' \
-    '{"harness":{}}' \
-    '{"hooks":{"unexpected":[]}}' \
-    '{"tools":"read_file"}' \
-    '{"backend":{"endpoint":"ftp://example.invalid"}}'; do
+    '{"backend":{}}' '{"request":{}}' '{"env":{}}' '{"extend":["default"]}' \
+    '{"model":"default"}' '{"model":["../default"]}' '{"hooks":{"stop":[]}}' \
+    '{"tools":"read_file"}' '{"themes":{}}'; do
   if print -r -- "$profile" | profile_eval 'config_profile(["p"])' >/dev/null 2>&1; then
     fail "invalid profile was accepted: $profile"
   fi
 done
-print -r -- '{"context_window":null}' | profile_eval 'config_profile(["p"])' >/dev/null
+print -r -- '{"model":["a","@b/c"],"system":["x.md"],"tools":[],"hooks":["h"]}' |
+  profile_eval 'config_profile(["p"])' >/dev/null
+for model in \
+    '{"backend":"openai"}' '{"context_window":0}' '{"endpoint":"ftp://example.invalid"}' \
+    '{"request":"x"}' '{"tools":[]}'; do
+  if print -r -- "$model" | profile_eval 'config_model(["m"])' >/dev/null 2>&1; then
+    fail "invalid model was accepted: $model"
+  fi
+done
+print -r -- '{"context_window":null}' | profile_eval 'config_model(["m"])' >/dev/null
 
-# Objects merge recursively, arrays replace, and "..." splices.
-jq -n -L "$ROOT" -e '
-  include "lib/profile";
-  ({request:{reasoning:{effort:"high"}},tools:["...","mine"],system:["only.md"]} |
-    merge_over({request:{model:"base",reasoning:{effort:"low",budget:1}},
-      tools:["a","b"],sandbox:false,system:["base.md"]})) == {
-    request:{model:"base",reasoning:{effort:"high",budget:1}},
-    tools:["a","b","mine"],sandbox:false,
-    system:["only.md"]
-  }' >/dev/null
-
-# Diamonds resolve once; cycles error.
-jq -n -L "$ROOT" -e '
-  include "lib/profile";
-  profile_resolve({
-    base:{request:{model:"base"}},
-    left:{extend:["base"],sandbox:false},
-    right:{extend:["base"],system:["r.md"]},
-    leaf:{extend:["left","right"]}
-  }; ["leaf"]) == {
-    request:{model:"base"},sandbox:false,system:["r.md"]
-  }' >/dev/null
-if jq -n -L "$ROOT" -e '
-    include "lib/profile";
-    profile_resolve({a:{extend:["b"]},b:{extend:["a"]}}; ["a"])
-  ' >/dev/null 2>&1; then
-  fail 'profile inheritance cycle was accepted'
-fi
-
-# A shared parent applies once, so a splice it reaches twice does not repeat.
-jq -n -L "$ROOT" -e '
-  include "lib/profile";
-  profile_resolve({
-    base:{system:["base.md"]},
-    add:{extend:["base"],system:["...","add.md"]},
-    leaf:{extend:["add","base"]}
-  }; ["leaf","add"]) == {system:["base.md","add.md"]}' >/dev/null
-
-# Later --profile names override earlier ones.
-jq -n -L "$ROOT" -e '
-  include "lib/profile";
-  profile_resolve({one:{request:{model:"one"},system:["one.md"]},
-    two:{request:{model:"two"}}}; ["one","two"]) ==
-    {request:{model:"two"},system:["one.md"]}' >/dev/null
-
-# Selection applies CLI overrides, requires a model and an adapter, and fills
-# defaults.
-jq -n -L "$ROOT" -e '
-  include "lib/profile";
-  profile_select({p:{backend:{adapter:"openai"},request:{model:"base"},sandbox:false}};
-    ["p"]; "cli"; {seed:1}; "other") == {
-    backend:{adapter:"other",insecure_tls:false,http_timeout:3600,http_stall:300},
-    request:{model:"cli",seed:1}, system:[], tools:[], hooks:{}, env:{}, sandbox:false,
-    sandbox_read_paths:[], sandbox_write_paths:[], max_requests_per_turn:100,
-    max_tool_calls_per_request:25, max_capture_bytes:32768}' >/dev/null
-# "p" has no model; "q" has no adapter.
-for name in p q; do
-  if jq -n -L "$ROOT" --arg name "$name" -e '
-      include "lib/profile";
-      profile_select({p:{backend:{adapter:"openai"}},q:{request:{model:"m"}}};
-        [$name]; ""; {}; "")' >/dev/null 2>&1; then
-    fail "incomplete profile was accepted: $name"
+# Model files merge left to right: objects recursively, anything else replaced.
+# The request override applies last, and the result needs a model and adapter.
+profile_eval '
+  model_merge([
+    {"$schema":"x",adapter:"openai",request:{model:"base",reasoning:{effort:"low",budget:1},stop:["a"]}},
+    {request:{reasoning:{effort:"high"},stop:["b"]},context_window:null},
+    {adapter:"anthropic"}
+  ]; {seed:1}) == {
+    adapter:"anthropic",context_window:null,
+    request:{model:"base",reasoning:{effort:"high",budget:1},stop:["b"],seed:1}
+  }' -n >/dev/null || fail 'model files did not merge in order'
+for models in '[{"adapter":"openai"}]' '[{"request":{"model":"m"}}]'; do
+  if profile_eval 'model_merge($models; {})' -n --argjson models "$models" >/dev/null 2>&1; then
+    fail "incomplete model was accepted: $models"
   fi
 done
 
-# Component lookup uses fixed kind directories, not profile folders.
+# Component lookup uses fixed kind directories.
 sf_test_source lib/profile.zsh
 sf_test_tmp resolve
 sf_test_config
 export HOME="$tmp/home"
 typeset config="${SF_TEST_CONFIG:A}"
-mkdir -p "$HOME/prompts" "$config/system" "$config/tools/probe" \
-  "$config/profiles/far/system" "$config/profiles/far/tools/probe"
+mkdir -p "$HOME/prompts" "$config/system" "$config/tools/probe" "$config/profiles/far/system"
 print -r -- '#!/bin/sh' >"$config/tools/probe/run"
 chmod +x "$config/tools/probe/run"
 print -r -- '{"description":"probe","input_schema":{"type":"object"},"sandbox":false}' \
   >"$config/tools/probe/manifest.json"
 print -r -- 'configured' >"$config/system/shared.md"
-print -r -- 'old folder' >"$config/profiles/far/system/shared.md"
-print -r -- 'not json' >"$config/profiles/far/tools/probe/manifest.jsonc"
+print -r -- 'profile folder' >"$config/profiles/far/system/shared.md"
 print -r -- 'home' >"$HOME/prompts/home.md"
-sf_test_profile far '{"backend": {"adapter": "'"$SF_TEST_BACKEND:h"'"},
-  "request": {"model": "m"}, "tools": ["probe"], "system": ["shared.md"]}'
-sf_test_profile near '{"extend": ["far"]}'
+sf_test_model probe '{"adapter": "'"$SF_TEST_BACKEND:h"'", "request": {"model": "m"}}'
 sf_test_profile unused '{invalid json'
 
-# A child inherits references, but its folder cannot replace their target.
-sf_profile_resolve_args -p near
-jq -e --arg base "$config" '
-  .system == [$base + "/system/shared.md"] and
-  .tools == [$base + "/tools/probe"]' <<<"$REPLY" >/dev/null
-sf_test_profile escape '{"extend":["far"],"system":["../profiles/far/system/shared.md"]}'
+# A relative reference cannot leave its kind directory.
+sf_test_profile escape '{"model":["probe"],"system":["../profiles/far/system/shared.md"]}'
 if sf_profile_resolve_args -p escape; then
   fail 'relative component reference escaped its kind directory'
 fi
 [[ $SF_PROFILE_ERROR == 'cannot resolve system reference: ../profiles/far/system/shared.md' ]]
 
 # "@KIND/path" selects the bundled component despite user shadowing;
-# "~/" and absolute paths are taken as written.
-sf_test_profile default '{"extend": ["far"], "system": ["shared.md",
-  "@system/general.md", "~/prompts/home.md", "'"$HOME"'/prompts/home.md"]}'
-mkdir -p "$config/profiles/default"
-print -r -- '{old folder profile' >"$config/profiles/default/profile.jsonc"
+# "~/" and absolute paths are taken as written. Bare names fall back to bundled.
+sf_test_profile default '{"model": ["probe"], "tools": ["probe"], "system": ["shared.md",
+  "@system/general.md", "general.md", "~/prompts/home.md", "'"$HOME"'/prompts/home.md"]}'
 sf_profile_resolve_args
 jq -e --arg base "$config" --arg home "${HOME:A}" --arg bundled "$ROOT/share" '
+  .tools == [$base + "/tools/probe"] and
   .system == [$base + "/system/shared.md", $bundled + "/system/general.md",
-    $home + "/prompts/home.md", $home + "/prompts/home.md"]' <<<"$REPLY" >/dev/null
+    $bundled + "/system/general.md", $home + "/prompts/home.md", $home + "/prompts/home.md"]
+' <<<"$REPLY" >/dev/null
 
-# Bare names fall back to the bundled kind directory.
-sf_test_profile default '{"extend": ["far"], "system": ["general.md"]}'
-sf_profile_resolve_args
-jq -e --arg bundled "$ROOT/share" '.system == [$bundled + "/system/general.md"]' \
-  <<<"$REPLY" >/dev/null
-rm "$config/tools/probe/manifest.json"
-
-# Flat profiles select components from fixed kind directories, independent of
-# which profile supplied the reference.
+# Missing and invalid components fail by kind.
+sf_test_profile bad '{"model":["probe"],"tools":["missing"]}'
+if sf_profile_resolve_args -p bad; then
+  fail 'missing component was accepted'
+fi
+[[ $SF_PROFILE_ERROR == 'cannot resolve tools reference: missing' ]]
+sf_test_profile bad '{"model":["probe"],"hooks":["general.md"]}'
+if sf_profile_resolve_args -p bad; then
+  fail 'a system file was accepted as a hook'
+fi
+[[ $SF_PROFILE_ERROR == 'cannot resolve hooks reference: general.md' ]]
 (
   SF_SHARE="$tmp/flat-share"
-  mkdir -p "$SF_SHARE/profiles/deep" "$SF_SHARE/system" "$SF_SHARE/hooks/stop" \
-    "$SF_SHARE/backends/demo" "$SF_TEST_CONFIG/system" \
-    "$SF_TEST_CONFIG/profiles/deep" "$SF_TEST_CONFIG/tools/probe"
-  print -r -- 'bundled' >"$SF_SHARE/system/general.md"
-  print -r -- 'configured' >"$SF_TEST_CONFIG/system/general.md"
-  print -r -- '#!/bin/sh' >"$SF_SHARE/hooks/stop/run"
-  print -r -- '{}' >"$SF_SHARE/hooks/stop/manifest.json"
-  print -r -- '#!/bin/sh' >"$SF_SHARE/backends/demo/run"
-  print -r -- '#!/bin/sh' >"$SF_TEST_CONFIG/tools/probe/run"
-  chmod +x "$SF_SHARE/hooks/stop/run" "$SF_SHARE/backends/demo/run" \
-    "$SF_TEST_CONFIG/tools/probe/run"
-  print -r -- '{"endpoint":"https://example.invalid/test"}' \
-    >"$SF_SHARE/backends/demo/manifest.jsonc"
-  print -r -- '{"description":"probe","input_schema":{"type":"object"},"sandbox":false}' \
-    >"$SF_TEST_CONFIG/tools/probe/manifest.jsonc"
-  mkdir -p "$SF_TEST_CONFIG/tools/unused"
-  print -r -- 'not a manifest' >"$SF_TEST_CONFIG/tools/unused/manifest.jsonc"
-  print -r -- '{"backend":{"adapter":"@backends/demo"},"request":{"model":"bundled"}}' \
-    >"$SF_SHARE/profiles/default.jsonc"
-  print -r -- '{"backend":{"adapter":"@backends/demo"},"request":{"model":"mine"},
-    "system":["general.md","@system/general.md"],"tools":["probe"],
-    "hooks":{"stop":["@hooks/stop"]}}' >"$SF_TEST_CONFIG/profiles/default.jsonc"
-  print -r -- '{"extend":["default"],"request":{"model":"variant"}}' \
-    >"$SF_TEST_CONFIG/profiles/deep/variant.jsonc"
-  print -r -- '{"extend":["@default"],"request":{"model":"bundled-variant"}}' \
-    >"$SF_SHARE/profiles/deep/variant.jsonc"
-  sf_profile_resolve_args -p deep/variant || fail "$SF_PROFILE_ERROR"
-  jq -e --arg configured "${SF_TEST_CONFIG:A}" --arg bundled "${SF_SHARE:A}" '
-    .request.model == "variant" and
-    .system == [$configured + "/system/general.md", $bundled + "/system/general.md"] and
-    .tools == [$configured + "/tools/probe"] and
-    .hooks.stop == [$bundled + "/hooks/stop"] and
-    .backend.adapter == ($bundled + "/backends/demo")
-  ' <<<"$REPLY" >/dev/null
-  sf_profile_resolve_args -p @deep/variant
-  jq -e '.request.model == "bundled-variant" and .system == []' <<<"$REPLY" >/dev/null
-  sf_profile_resolve_args -p deep/variant -m overridden
-  jq -e '.request.model == "overridden"' <<<"$REPLY" >/dev/null
-  print -r -- '{"extend":["default"],"tools":["missing"]}' \
-    >"$SF_TEST_CONFIG/profiles/bad.jsonc"
-  if sf_profile_resolve_args -p bad; then
-    fail 'missing flat component was accepted'
-  fi
-  [[ $SF_PROFILE_ERROR == 'cannot resolve tools reference: missing' ]]
-  print -r -- '{"extend":["default"],"hooks":{"stop":["general.md"]}}' \
-    >"$SF_TEST_CONFIG/profiles/bad.jsonc"
-  if sf_profile_resolve_args -p bad; then
-    fail 'invalid flat hook was accepted'
-  fi
-  [[ $SF_PROFILE_ERROR == 'cannot resolve hooks reference: general.md' ]]
+  mkdir -p "$SF_SHARE/hooks"
   print -r -- 'not executable' >"$SF_SHARE/hooks/disabled"
-  print -r -- '{"extend":["default"],"hooks":{"stop":["@hooks/disabled"]}}' \
-    >"$SF_TEST_CONFIG/profiles/bad.jsonc"
+  sf_test_profile bad '{"model":["probe"],"hooks":["@hooks/disabled"]}'
   if sf_profile_resolve_args -p bad; then
-    fail 'non-executable flat hook was accepted'
+    fail 'non-executable hook was accepted'
   fi
   [[ $SF_PROFILE_ERROR == 'invalid hooks reference: @hooks/disabled' ]]
 )

@@ -1,7 +1,13 @@
-// An example override with agentic permission review. Select it with --profile coding.
+// The bundled agent with agentic permission review. Select it with --profile coding.
 {
-  "$schema": "https://raw.githubusercontent.com/spicyneuron/shellfish/refs/heads/main/share/shellfish.schema.json",
+  "$schema": "https://raw.githubusercontent.com/spicyneuron/shellfish/refs/heads/main/share/profile.schema.json",
 
-  "extend": ["default"],
-  "hooks": {"permission_request": ["@hooks/review"]}
+  "model": ["@default", "default"],
+  "system": ["general.md", "tools.md"],
+  "tools": ["read_file", "edit_file", "write_file", "skill", "search_web", "fetch_url", "shell"],
+  "hooks": [
+    "project/environment", "git/environment", "project/instructions",
+    "help", "verbose", "new", "resume", "server", "copy", "sandbox", "user_shell",
+    "fork", "compact", "git/change", "skills", "review"
+  ]
 }

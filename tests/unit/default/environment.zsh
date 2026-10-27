@@ -41,9 +41,12 @@ chmod +x "$git_bin/git"
 print -r -- 'branch:main' >"$git_state"
 # The default startup list renders captured context and persists state first.
 sf_test_config
-sf_test_profile default "{\"extend\":[\"@default\"],
-  \"backend\":{\"adapter\":\"$ROOT/tests/fixtures/backend\"},
-  \"request\":{\"model\":\"test\"},\"hooks\":{\"user_prompt_submit\":[\"git/change\"]}}"
+sf_test_model default "{\"adapter\":\"$ROOT/tests/fixtures/backend\",\"request\":{\"model\":\"test\"}}"
+sf_test_profile default '{
+  "model": ["default"], "system": ["general.md", "tools.md"],
+  "tools": ["read_file", "edit_file", "write_file", "skill", "search_web", "fetch_url", "shell"],
+  "hooks": ["project/environment", "git/environment", "project/instructions", "git/change"]
+}'
 startup() {
   rm -f "$tmp/startup.jsonl"
   PATH="$environment_bin:$git_bin:$PATH" GIT_STATE="$git_state" \

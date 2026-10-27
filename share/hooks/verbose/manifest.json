@@ -1,1 +1,1 @@
-{"match":{"pattern":"^/(verbose|v)\\z"}}
+{"on":"user_prompt_submit","match":{"pattern":"^/(verbose|v)\\z"}}

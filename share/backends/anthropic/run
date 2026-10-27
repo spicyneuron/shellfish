@@ -49,7 +49,7 @@ jq -ce '
     else
       error("unsupported canonical type")
     end;
-  (.options.request |
+  (.request |
     if has("response_schema") then
       .response_schema as $schema |
       del(.response_schema) |

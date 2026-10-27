@@ -58,7 +58,7 @@ print -r -u3 -- "{\"user_text_done\":\"$name context\",\"model_text\":\"$name co
 def start_hook(directory, name):
     component = Path(directory) / name
     component.mkdir()
-    (component / "manifest.json").write_text("{}")
+    (component / "manifest.json").write_text('{"on":"session_start"}')
     script = component / "run"
     script.write_text(START_HOOK)
     script.chmod(0o755)
@@ -262,9 +262,9 @@ def test_prompt_hook_hands_off_to_new_session():
     session = Session(explicit_session=True, hooks={"new": None})
     try:
         session.wait_session_records(1, path=session.explicit_session)
-        config = json.loads(session.config_file.read_text())
-        config["request"]["model"] = "changed-model"
-        session.config_file.write_text(json.dumps(config))
+        model = json.loads(session.model_file.read_text())
+        model["request"]["model"] = "changed-model"
+        session.model_file.write_text(json.dumps(model))
         mark = len(session.output)
         session.send(b"/new\r")
         session.wait_ready(mark)
@@ -272,7 +272,7 @@ def test_prompt_hook_hands_off_to_new_session():
         path, records = session.wait_session_records(1)
         assert path != session.explicit_session, (path, session.explicit_session)
         assert len(records) >= 1, records
-        assert records[0]["profile"]["request"]["model"] == "fake-model", records[0]
+        assert records[0]["profile"]["model"]["request"]["model"] == "fake-model", records[0]
     finally:
         session.close()
 
