@@ -12,14 +12,15 @@ Run output:
   --background         Start one detached turn; print its session path
 
 New sessions:
-  -p, --profile REF     Select a profile by name, or by /, ~/, or @ path
-  -m, --model REF       Merge a model file over the profile's (repeatable)
-  --request JSON        Merge raw backend request parameters
-  --system TEXT         Replace the system prompt (repeatable)
-  --system-file PATH    Replace it with file content (repeatable)
+  -p, --profile REF     Select a profile by name or path
+  -m, --model REF|JSON  Merge a model file or object over the profile's
+  --sandbox REF|JSON    Merge a sandbox file or object over the profile's
+  --system REF|JSON     Append a system file or {"text": "..."}
+  -t, --tool REF        Append a tool
+  --hook REF            Append a hook
   --sandbox-auto        Grant detected development-tool paths
-  --sandbox-read PATH   Give sandboxed tools read-only access (repeatable)
-  --sandbox-write PATH  Give sandboxed tools read-write access (repeatable)
+
+  List options repeat. A REF starting with /, ~/, ./, ../, or @ is a path.
 
 Existing sessions:
   -c, --continue [OPTIONS] [PROMPT]      Continue the most recent session here

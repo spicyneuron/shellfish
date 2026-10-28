@@ -35,7 +35,7 @@ jq -es 'length == 2' "$explicit" >/dev/null || fail 'create did not populate --s
 # Freeze forwarded sandbox grants.
 typeset granted="$tmp/granted.jsonl"
 zsh -f "$entry" run --session-create --session-out "$granted" \
-  --sandbox-read "${system:A}" --sandbox-write "${tmp:A}/home/work" >/dev/null || \
+  --sandbox "{\"read\": [\"${system:A}\"], \"write\": [\"~/work\"]}" >/dev/null || \
   fail 'create rejected forwarded sandbox grants'
 jq -e --arg read "${system:A}" '
   select(.type == "session") |
@@ -97,45 +97,36 @@ zsh -f "$entry" run --session-create --session-out "$joined" -p joined >/dev/nul
 jq -se 'length == 2 and .[1] == {type:"system",content:"first prompt\n\nsecond prompt"}' \
   "$joined" >/dev/null || fail 'create did not join the system components'
 
-# Preserve mixed system override order.
+# System options append after the profile's prompts, in order.
 typeset override="$tmp/override.jsonl" override_file="$tmp/override.md" derived
 printf 'file prompt\n' >"$override_file"
 zsh -f "$entry" run --session-create --session-out "$override" \
-  --system $'inline\nprompt\n\n' --system-file "$override_file" --system 'last prompt' \
-  >/dev/null || fail 'create rejected system overrides'
+  --system '{"text":"inline\nprompt\n\n"}' --system "$override_file" \
+  --system '{"text":"last prompt"}' >/dev/null || fail 'create rejected system options'
 jq -se '
-  length == 2 and
-  (.[0].profile.system | length) == 1 and
-  .[1] == {type:"system",content:"inline\nprompt\n\nfile prompt\n\nlast prompt"}
-' "$override" >/dev/null || fail 'create did not materialize ordered system overrides'
+  length == 2 and (.[0].profile.system | length) == 4 and
+  .[1] == {type:"system",
+    content:"changed configured system\n\ninline\nprompt\n\nfile prompt\n\nlast prompt"}
+' "$override" >/dev/null || fail 'create did not materialize ordered system options'
 printf 'updated file prompt\n' >"$override_file"
-jq -c 'if .type == "system" then .content += "\n\n" else . end' "$override" \
-  >"$tmp/stored-system.jsonl"
-mv "$tmp/stored-system.jsonl" "$override"
 derived="$tmp/derived.jsonl"
 zsh -f "$entry" run --session-create --session-from "$override" --session-out "$derived" || \
-  fail 'create did not reuse the stored system paths'
+  fail 'create did not reuse the stored system items'
 jq -se '
-  length == 2 and
-  .[1] == {type:"system",content:"changed configured system"}
-' "$derived" >/dev/null || fail 'create did not rematerialize the stored system paths'
-typeset derived_override="$tmp/derived-override.jsonl"
-zsh -f "$entry" run --session-create --session-out "$derived_override" --session-from "$override" \
-  --system '--session-out' >/dev/null || fail 'derived create rejected option-looking system text'
-jq -se 'length == 2 and .[1] == {type:"system",content:"--session-out"}' \
-  "$derived_override" >/dev/null || fail 'derived create did not apply the system override'
+  length == 2 and .[1] == {type:"system",
+    content:"changed configured system\n\ninline\nprompt\n\nupdated file prompt\n\nlast prompt"}
+' "$derived" >/dev/null || fail 'create did not rematerialize the stored system items'
+zsh -f "$entry" run --session-create --session-from "$override" \
+  --system '{"text":"extra"}' >/dev/null 2>&1 &&
+  fail 'derived create accepted a system option'
 
-# Clear prompts with empty overrides.
-typeset empty_file="$tmp/empty.md" empty_session
+# Empty prompts leave no system record.
+typeset empty_file="$tmp/empty.md" empty_session="$tmp/empty.jsonl"
 printf '\n\n' >"$empty_file"
-for source in profile session; do
-  typeset -a origin=( -p default )
-  [[ $source != session ]] || origin=( --session-from "$override" )
-  empty_session="$tmp/empty-$source.jsonl"
-  zsh -f "$entry" run --session-create --session-out "$empty_session" "${origin[@]}" \
-    --system '' --system-file "$empty_file" || fail 'empty system override failed'
-  jq -se 'length == 1' "$empty_session" >/dev/null || fail 'empty override retained a system record'
-done
+sf_test_profile empty "{\"model\": [\"test\"], \"system\": [{\"text\": \"\"}, \"$empty_file\"]}"
+zsh -f "$entry" run --session-create --session-out "$empty_session" -p empty ||
+  fail 'empty system prompts failed'
+jq -se 'length == 1' "$empty_session" >/dev/null || fail 'empty prompts left a system record'
 
 # Reject unreadable system components.
 typeset missing="$tmp/missing.jsonl"
@@ -144,15 +135,15 @@ zsh -f "$entry" run --session-create --session-out "$missing" -p missing-system 
   fail 'a missing system component created a session'
 [[ ! -e $missing ]] || fail 'create left a transcript for a missing component'
 zsh -f "$entry" run --session-create --session-out "$missing" \
-  --system-file "$tmp/absent.md" >/dev/null 2>&1 &&
-  fail 'create accepted a missing system override file'
-[[ ! -e $missing ]] || fail 'missing system override left a transcript'
+  --system "$tmp/absent.md" >/dev/null 2>&1 &&
+  fail 'create accepted a missing system option file'
+[[ ! -e $missing ]] || fail 'missing system option left a transcript'
 
 # Reject system input that cannot survive shell transport intact.
 typeset binary="$tmp/binary.jsonl" binary_file="$tmp/binary.md"
 printf 'before\0after\n' >"$binary_file"
 zsh -f "$entry" run --session-create --session-out "$binary" \
-  --system-file "$binary_file" >/dev/null 2>&1 &&
+  --system "$binary_file" >/dev/null 2>&1 &&
   fail 'create accepted system content containing NUL bytes'
 [[ ! -e $binary ]] || fail 'binary system input left a transcript'
 

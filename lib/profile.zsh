@@ -54,9 +54,9 @@ sf_profile_read_manifest() {
 
 # A reference starting with "/", "~/", "./", "../", or "@" is a path, and
 # anything else is a name under DIR in the Shellfish directory, then the bundled
-# one. Config files make their relative paths absolute when read, so a relative
-# path here is from a flag and resolves against PWD. SUFFIX completes a name,
-# not a path. REPLY is the canonical path of what exists.
+# one. Relative paths in config files and list options are made absolute before
+# lookup, so one here is from -p and resolves against PWD. SUFFIX completes a
+# name, not a path. REPLY is the canonical path of what exists.
 sf_profile_lookup() {
   local config_dir=$1 dir=$2 reference=$3 suffix=${4-} candidate
   if [[ $reference == (/|'~/'|./|../|@)* ]]; then
@@ -86,7 +86,8 @@ sf_profile_configs() {
     sf_profile_read_files "invalid $kind" "${(u)files[@]}" || return
     contents=$REPLY
   fi
-  detail=$(sf_jq -cn --argjson items "$items" --argjson contents "$contents"     --arg kind "$kind" '
+  detail=$(sf_jq -cn --argjson items "$items" --argjson contents "$contents" \
+    --arg kind "$kind" '
     include "lib/profile";
     ($ARGS.positional | [range(0; length; 2) as $at | {key:.[$at + 1], value:.[$at]}] |
       from_entries) as $files |
@@ -134,8 +135,9 @@ sf_profile_components() {
   REPLY=$projection
 }
 
-# Resolve profile REFERENCE with EXTRA model and sandbox items appended to its
-# lists. REPLY is the frozen profile with absolute paths.
+# Resolve profile REFERENCE with the lists of profile EXTRA appended to its own,
+# EXTRA's relative paths resolving against PWD. REPLY is the frozen profile with
+# absolute paths.
 sf_profile_resolve() {
   local name=${1:-default} extra=${2:-'{}'}
   local config_dir file profile models sandbox reference kind resolved final
@@ -152,14 +154,17 @@ sf_profile_resolve() {
   file=$REPLY
   profile=$(sf_jsonc_read "$file" 2>&1) ||
     sf_profile_validation_error "$profile" "invalid profile: $file" || return
-  sf_jq_fields -rn --argjson profile "$profile" --argjson extra "$extra"     --arg name "$name" --arg dir "${file:h}" '
+  sf_jq_fields -rn --argjson profile "$profile" --argjson extra "$extra" \
+    --arg name "$name" --arg dir "${file:h}" --arg cwd "${PWD:A}" '
     include "lib/fields";
     include "lib/profile";
+    ($extra | config_profile(["options"]) | config_relative("profile"; $cwd)) as $extra |
     $profile | config_profile(["profile " + $name]) | config_relative("profile"; $dir) |
-    .model += ($extra.model // []) | .sandbox += ($extra.sandbox // []) |
+    reduce ("model", "sandbox", "system", "tools", "hooks") as $field (.;
+      .[$field] += $extra[$field]) |
     if .model == [] then error("profile selects no model: " + $name) else . end |
-    if (.tools | length) == (.tools | unique | length) then .
-    else error("profile tools must be unique: " + (.tools | join(", "))) end |
+    reduce ("system", "tools", "hooks") as $field (.;
+      .[$field] |= reduce .[] as $item ([]; if index([$item]) then . else . + [$item] end)) |
     entry("profile"; tojson),
     entry("models"; .model | tojson), entry("sandboxes"; .sandbox | tojson),
     # A reference carries no control characters, so newlines delimit each list.
@@ -235,47 +240,32 @@ sf_profile_resolve() {
   REPLY=$final
 }
 
-# Parse the options that select a profile, then resolve it. Callers that own
-# their own flags pass only the ones listed in lib/options.zsh.
+# Parse the options that select a profile, then resolve it. Each list option
+# takes a reference or an inline JSON object and appends to the profile's list.
+# Callers that own their own flags pass only the ones listed in lib/options.zsh.
 sf_profile_resolve_args() {
-  local name='' request='{}' flag resolved extra
-  local -a models=() read_paths=() write_paths=()
-  integer detect=0
+  local name='' extra detected='null'
+  local -a items=()
+  local -A fields=( -m model --model model --sandbox sandbox --system system
+    -t tools --tool tools --hook hooks )
 
   SF_PROFILE_ERROR=''
   while (( $# )); do
     case $1 in
-      -p|--profile|-m|--model)
-        [[ -n $2 && $2 != *[[:cntrl:]]* ]] ||
-          sf_profile_fail "$1 requires a reference without control characters" || return 2
-        if [[ $1 == (-m|--model) ]]; then
-          models+=( "$2" )
-        else
+      -p|--profile|-m|--model|--sandbox|--system|-t|--tool|--hook)
+        [[ -n $2 && ( $2 == '{'* || $2 != *[[:cntrl:]]* ) ]] ||
+          sf_profile_fail "$1 requires a reference or JSON object" || return 2
+        if [[ $1 == (-p|--profile) ]]; then
           [[ -z $name ]] || sf_profile_fail '--profile may only be specified once' || return 2
           name=$2
-        fi
-        shift 2
-        ;;
-      --request)
-        request=$(jq -ce --argjson base "$request" 'select(type == "object") | $base * .' \
-          <<<"$2" 2>/dev/null) || sf_profile_fail '--request requires a JSON object' || return 2
-        shift 2
-        ;;
-      --sandbox-read|--sandbox-write)
-        flag=$1
-        [[ -n $2 ]] || sf_profile_fail "$flag requires a nonempty path" || return 2
-        sf_cli_path "$2" || sf_profile_fail "$flag cannot expand ~ without HOME" || return 2
-        resolved=$REPLY
-        [[ -e $resolved ]] || sf_profile_fail "$flag path does not exist: $2" || return 2
-        if [[ $flag == --sandbox-read ]]; then
-          read_paths+=( "$resolved" )
         else
-          write_paths+=( "$resolved" )
+          items+=( "$1" "$fields[$1]" "$2" )
         fi
         shift 2
         ;;
       --sandbox-auto)
-        detect=1
+        (( $+functions[sf_sandbox_detect] )) || source "$SF_ROOT/lib/sandbox.zsh"
+        detected=$(sf_sandbox_detect) || sf_profile_fail 'cannot detect sandbox paths' || return
         shift
         ;;
       *)
@@ -285,19 +275,17 @@ sf_profile_resolve_args() {
     esac
   done
 
-  local detected='{"read":[],"write":[]}'
-  if (( detect )); then
-    (( $+functions[sf_sandbox_detect] )) || source "$SF_ROOT/lib/sandbox.zsh"
-    detected=$(sf_sandbox_detect) || sf_profile_fail 'cannot detect sandbox paths' || return
-  fi
-  # The read count splits explicit read and write path arguments.
-  extra=$(jq -cn --argjson request "$request" --argjson detected "$detected" \
-    --arg models "${(pj:\n:)models}" --argjson reads "${#read_paths}" '
-    {model:($models | split("\n") | map(select(. != "")) + if $request == {} then [] else [{request:$request}] end),
-     sandbox:[{read:($ARGS.positional[:$reads] + $detected.read),
-               write:($ARGS.positional[$reads:] + $detected.write)}]}
-  ' --args -- "${read_paths[@]}" "${write_paths[@]}") ||
-    sf_profile_fail 'cannot prepare profile overrides' || return
-
+  extra=$(jq -cn --argjson detected "$detected" '
+    reduce ($ARGS.positional | range(0; length; 3) as $at | .[$at:$at + 3]) as
+      [$flag, $field, $value] ({}; .[$field] += [
+        if $value | startswith("{") then ($value | try fromjson catch null | objects) //
+          error($flag + " requires a reference or JSON object")
+        else $value end]) |
+    if $detected then .sandbox += [$detected] else . end
+  ' --args -- "${items[@]}" 2>&1) || {
+    sf_cli_diagnostic "$extra"
+    sf_profile_fail "$REPLY"
+    return 2
+  }
   sf_profile_resolve "$name" "$extra"
 }

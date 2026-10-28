@@ -17,7 +17,7 @@ sf_tui_main() {
   local arity=''
   local -a positional=() profile_args=() resolve_args=()
   local -a original_args=("$@")
-  integer out_explicit=0 override=0 profile_override=0 take=0
+  integer out_explicit=0 override=0 take=0
   integer clear_requested=0
   integer handoff=0 draft_explicit=0
   integer verbose_requested=0 controller_status=0
@@ -64,11 +64,12 @@ sf_tui_main() {
         (( $# >= take )) || { sf_die "$1 requires a value"; return 2; }
         profile_args+=( "${@:1:$take}" )
         # The banner and footer describe the profile creation will freeze, so
-        # the client resolves the same options. Only the system prompt is its own.
-        [[ $1 == (--system|--system-file|--session-from) ]] ||
+        # the client resolves the same options.
+        if [[ $1 == --session-from ]]; then
+          source_session=$2
+        else
           resolve_args+=( "${@:1:$take}" )
-        [[ $1 != --session-from ]] || source_session=$2
-        [[ $1 == (--system|--system-file|--session-from) ]] || profile_override=1
+        fi
         override=1
         shift $take
         ;;
@@ -110,7 +111,7 @@ sf_tui_main() {
     profile_session=$requested_session
     session_mode=resume
   elif [[ -n $source_session ]]; then
-    (( ! profile_override )) || {
+    (( ! ${#resolve_args} )) || {
       sf_die 'profile overrides cannot be used with --session-from'
       return 2
     }

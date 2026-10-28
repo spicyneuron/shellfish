@@ -4,23 +4,10 @@ setopt no_aliases no_bg_nice no_multios pipe_fail
 source "$SF_ROOT/lib/profile.zsh"
 source "$SF_ROOT/lib/session.zsh"
 
-sf_run_read_system() {
-  local requested=$1 file
-  sf_cli_path "$requested" ||
-    { sf_die "cannot expand system file without HOME: $requested"; return 2; }
-  file=$REPLY
-  [[ -f $file && -r $file ]] || { sf_die "cannot read system file: $requested"; return 2; }
-  REPLY=$(<"$file")
-  [[ $REPLY != *$'\0'* ]] || {
-    sf_die "system file contains NUL bytes: $requested"
-    return 2
-  }
-}
-
 sf_run_create() {
   local requested_out='' source_session='' profile session system system_text projection header record cwd created
   local -a forwarded=() system_parts=()
-  integer resolve_status=0 take=0 system_explicit=0 profile_override=0
+  integer resolve_status=0 take=0
 
   while (( $# )); do
     case $1 in
@@ -28,19 +15,6 @@ sf_run_create() {
         [[ -z $requested_out ]] || { sf_die '--session-out may only be specified once'; return 2; }
         [[ -n $2 ]] || { sf_die '--session-out requires a nonempty path'; return 2; }
         requested_out=$2
-        shift 2
-        ;;
-      --system|--system-file)
-        (( $# >= 2 )) || { sf_die "$1 requires a value"; return 2; }
-        if [[ $1 == --system-file ]]; then
-          [[ -n $2 ]] || { sf_die '--system-file requires a nonempty path'; return 2; }
-          sf_run_read_system "$2" || return
-          system_text=$REPLY
-        else
-          system_text=$(print -rn -- "$2")
-        fi
-        [[ -z $system_text ]] || system_parts+=( "$system_text" )
-        system_explicit=1
         shift 2
         ;;
       --session-from)
@@ -53,7 +27,6 @@ sf_run_create() {
         take=$(( ${SF_CREATE_OPTIONS[$1]:-0} + 1 ))
         (( $# >= take )) || { sf_die "$1 requires a value"; return 2; }
         forwarded+=( "${@:1:$take}" )
-        profile_override=1
         shift $take
         ;;
     esac
@@ -61,7 +34,7 @@ sf_run_create() {
 
   sf_run_limits || { sf_die "$REPLY"; return 1; }
   if [[ -n $source_session ]]; then
-    (( ! profile_override )) || {
+    (( ! ${#forwarded} )) || {
       sf_die 'profile overrides cannot be used with --session-from'
       return 2
     }
@@ -76,19 +49,19 @@ sf_run_create() {
     }
     profile=$REPLY
   fi
-  if (( ! system_explicit )); then
-    # Each item becomes "f" and a file path, or "t" and inline text.
-    projection=$(jq -jr '.system[] | if type == "string" then "f" + . else "t" + .text end,
-      "\u0000"' <<<"$profile") || sf_die 'cannot resolve system prompt' || return
-    for system_text in "${(@0)projection}"; do
-      if [[ $system_text == f* ]]; then
-        sf_run_read_system "${system_text#f}" || return
-      else
-        REPLY=${system_text#t}
-      fi
-      [[ -z $REPLY ]] || system_parts+=( "$REPLY" )
-    done
-  fi
+  # Each item becomes "f" and a file path, or "t" and inline text.
+  projection=$(jq -jr '.system[] | if type == "string" then "f" + . else "t" + (.text | sub("\n+$"; "")) end,
+    "\u0000"' <<<"$profile") || sf_die 'cannot resolve system prompt' || return
+  for system_text in "${(@0)projection}"; do
+    if [[ $system_text == f* ]]; then
+      REPLY=$(<"${system_text#f}") || { sf_die "cannot read system file: ${system_text#f}"; return 1; }
+      [[ $REPLY != *$'\0'* ]] ||
+        { sf_die "system file contains NUL bytes: ${system_text#f}"; return 2; }
+    else
+      REPLY=${system_text#t}
+    fi
+    [[ -z $REPLY ]] || system_parts+=( "$REPLY" )
+  done
   system=${(pj:\n\n:)system_parts}
 
   sf_session_select_path "$requested_out" || { sf_die "$SF_SESSION_ERROR"; return 1; }

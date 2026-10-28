@@ -84,15 +84,15 @@ assert_equal 'several prompt words' "$output" 'run joins positional prompt words
 typeset forwarded_session="$tmp/forwarded.jsonl"
 sf_test_model forwarded '{"request": {"model": "forwarded-model"}}'
 output=$(SF_TEST_BACKEND_DELAY=0 zsh -f "$entry" run --session-out "$forwarded_session" \
-  --model forwarded --system 'forwarded system' \
+  --model forwarded --system '{"text":"forwarded system"}' \
   'plain answer') || fail 'forwarded run failed'
 assert_equal 'plain answer' "$output" 'run keeps the prompt after a forwarded value'
 head -n 1 "$forwarded_session" | jq -e '
   .profile.model.request.model == "forwarded-model" and
-  (.profile.system | length) == 1
+  .profile.system[-1] == {text:"forwarded system"}
 ' \
   >/dev/null || fail 'a forwarded option value did not reach the new session'
-jq -e 'select(.type == "system" and .content == "forwarded system")' \
+jq -e 'select(.type == "system" and (.content | endswith("forwarded system")))' \
   "$forwarded_session" >/dev/null || fail 'run did not create the overridden system record'
 
 # Session reuse copies only profile settings.
@@ -105,7 +105,7 @@ assert_equal 'copied answer' "$output"
 cmp -s "$forwarded_session" "$tmp/source-before" || fail 'run modified its source'
 jq -es --slurpfile source "$forwarded_session" '
   .[0].profile == $source[0].profile and
-  .[1] == {type:"system",content:"initial system"} and
+  .[1] == {type:"system",content:"initial system\n\nforwarded system"} and
   [.[] | select(.type == "user") | .content[0].text] == ["copied answer"]
 ' "$copied_session" >/dev/null || fail 'run did not reuse the stored profile'
 

@@ -19,7 +19,7 @@ sf_test_model work '{
 sf_test_model high '{"request": {"reasoning": {"effort": "high"}}}'
 sf_test_profile work '{"model": ["work"]}'
 
-# Model files merge left to right, -m merges on top, and --request applies last.
+# Model files merge left to right, and -m items merge on top in order.
 sf_test_profile layered '{"model": ["work", "high"]}'
 sf_profile_resolve_args -p layered
 jq -e --arg adapter "$ROOT/share/backends/openai" '
@@ -28,7 +28,8 @@ jq -e --arg adapter "$ROOT/share/backends/openai" '
     request:{model:"configured",temperature:0.2,reasoning:{effort:"high"}}} and
   del(.model) == {system:[],tools:[],hooks:[],sandbox:{enabled:true,read:[],write:[]}}
 ' <<<"$REPLY" >/dev/null || fail 'model files did not merge in order'
-sf_profile_resolve_args -p work -m high --request '{"temperature":0.7}' --request '{"seed":4}'
+sf_profile_resolve_args -p work -m high -m '{"request":{"temperature":0.7}}' \
+  -m '{"request":{"seed":4}}'
 jq -e '.model.request == {model:"configured",temperature:0.7,seed:4,reasoning:{effort:"high"}}' \
   <<<"$REPLY" >/dev/null || fail 'model overrides applied in the wrong order'
 sf_profile_resolve_args -p work -m fixture
@@ -166,7 +167,7 @@ if sf_profile_resolve_args; then
   fail 'the bundled model resolved without a model ID'
 fi
 [[ $SF_PROFILE_ERROR == *'a model is required: set request.model'* ]]
-sf_profile_resolve_args --request '{"model":"one-off"}'
+sf_profile_resolve_args -m '{"request":{"model":"one-off"}}'
 jq -e '.model.request.model == "one-off" and (.model.adapter | endswith("/backends/openrouter"))' \
   <<<"$REPLY" >/dev/null || fail 'a request override did not complete the bundled model'
 
@@ -235,12 +236,20 @@ if sf_profile_resolve_args -p work -m absent; then
 fi
 [[ $SF_PROFILE_ERROR == 'unknown model: absent' ]]
 
-# Duplicate tools fail.
-sf_test_profile duplicate '{"model": ["fixture"], "tools": ["@tools/read_file", "@tools/read_file"]}'
-if sf_profile_resolve_args -p duplicate; then
-  fail 'duplicate tool references were accepted'
+# Options append to lists, a repeated reference collapses to the first, and
+# references reaching the same tool fail.
+sf_test_profile duplicate '{"model": ["fixture"], "tools": ["@tools/read_file", "@tools/shell"]}'
+sf_profile_resolve_args -p duplicate -t @tools/read_file -t edit_file
+jq -e '.tools | map(split("/") | last) == ["read_file", "shell", "edit_file"]' \
+  <<<"$REPLY" >/dev/null || fail 'tool options did not append without repeats'
+if sf_profile_resolve_args -p duplicate -t read_file; then
+  fail 'two references to one tool were accepted'
 fi
-[[ $SF_PROFILE_ERROR == *'profile tools must be unique: @tools/read_file, @tools/read_file'* ]]
+for option in '-m {' '--sandbox [1]' '-t {"a":1}' '--system {"text":1}'; do
+  if sf_profile_resolve_args -p duplicate ${=option}; then
+    fail "invalid option value was accepted: $option"
+  fi
+done
 
 # Malformed files identify their source.
 sf_test_profile malformed '{"model":}'
@@ -275,7 +284,8 @@ sf_test_sandbox base '{"read": ["~/my reference", "/opt/ref"], "write": ["~/outp
 sf_test_sandbox off '{"enabled": false, "read": ["@system"]}'
 sf_test_sandbox on '{"enabled": true}'
 sf_test_profile boxed '{"model": ["work"], "sandbox": ["base", "off"]}'
-sf_profile_resolve_args -p boxed --sandbox-write "$tmp/flag"
+(cd "$tmp" && sf_profile_resolve_args -p boxed --sandbox '{"write":["./flag"]}' &&
+  print -r -- "$REPLY") | read -r REPLY
 jq -e --arg home "${tmp:A}/home" --arg flag "${tmp:A}/flag" --arg share "$ROOT/share" '
   .sandbox == {enabled:false, read:[$home + "/my reference", "/opt/ref", $share + "/system"],
     write:[$home + "/output", $flag]}
@@ -314,7 +324,7 @@ sf_test_profile boxed '{"model": ["work"], "sandbox": ["base"]}'
 # A missing Shellfish directory uses bundled files.
 (
   export SHELLFISH_DIR="$tmp/empty-config"
-  sf_profile_resolve_args --request '{"model":"test-model"}'
+  sf_profile_resolve_args -m '{"request":{"model":"test-model"}}'
   jq -e '.model.request.model == "test-model"' <<<"$REPLY" >/dev/null
 )
 

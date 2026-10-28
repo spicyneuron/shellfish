@@ -6,7 +6,7 @@ source "${0:A:h:h}/_helpers.zsh"
 sf_test_source lib/options.zsh
 
 typeset -a not_forwarded=( -- --verbose )
-typeset -a create_owned=( --session-from --system --system-file )
+typeset -a create_owned=( --session-from )
 
 # A shift count includes the option itself.
 typeset -A parsed=()

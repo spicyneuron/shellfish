@@ -23,8 +23,6 @@ Every reference in a profile, model, or sandbox file, and every option that take
 
 Your file therefore shadows the bundled file of the same name, and a path still reaches the bundled one: `@tools/shell`, or `-p @profiles/coding.jsonc`. Session headers store bundled paths the same way, so a session survives upgrades.
 
-Path options such as `--system-file` and `--sandbox-read` resolve any other path against the working directory.
-
 ## Profiles
 
 A profile only selects. It holds no values of its own.
@@ -51,6 +49,22 @@ A profile only selects. It holds no values of its own.
 A lone `model` or `sandbox` item needs no list. Inline values let one profile hold everything, though separate files are easier to share.
 
 `profiles/default.jsonc` is selected when `--profile` is absent, and `-p REF` selects another. Profiles do not inherit from each other, since a profile is short enough to copy. Only components named in the selected profile are active, and unused files are inert.
+
+Each field has an option that appends to the selected profile's list for one session. List options repeat, and any that accept inline values take a JSON object in place of a reference. Repeated references within a list collapse to the first.
+
+| Field | Option |
+| --- | --- |
+| `model` | `-m, --model REF\|JSON` |
+| `sandbox` | `--sandbox REF\|JSON` |
+| `system` | `--system REF\|JSON` |
+| `tools` | `-t, --tool REF` |
+| `hooks` | `--hook REF` |
+
+```sh
+shellfish -m '{"request": {"model": "MODEL"}}'         # Try a model without a file
+shellfish --sandbox '{"write": ["./build"]}'           # Grant a directory for one session
+shellfish --system ./review.md -t shell_readonly       # Add a prompt and a tool
+```
 
 ## Models
 
@@ -84,7 +98,7 @@ A profile's `model` list merges left to right: objects merge recursively and any
 {"model": ["openrouter", "local", "high"], "system": ["general.md"], "tools": ["shell"]}
 ```
 
-`-m REF` merges another model file over the profile's list for one session and may repeat. `--request JSON` merges raw parameters last, so `--request '{"model":"MODEL"}'` tries a model without a file.
+`-m` merges another model over the profile's list for one session.
 
 Bundled adapters: `anthropic`, `codex`, `openai`, `openai-responses`, and `openrouter`. The `openai` adapter works with any OpenAI-compatible endpoint. See [`HARNESS.md`](HARNESS.md#backend-adapters) for the adapter protocol.
 
@@ -141,7 +155,7 @@ Sandbox files hold standing settings:
 
 Grants are paths and need not exist, so one file can serve several machines. A profile's `sandbox` list merges left to right: grants accumulate, and a later `enabled` replaces an earlier one. A profile without a `sandbox` list is sandboxed with no extra grants.
 
-`--sandbox-read` and `--sandbox-write` add one-off grants, and `--sandbox-auto` adds detected development-tool paths. A new session freezes the merged grants, and `/sandbox` changes them for one session.
+`--sandbox` adds a sandbox file or object for one session, and `--sandbox-auto` adds detected development-tool paths. A new session freezes the merged grants, and `/sandbox` changes them for one session.
 
 ## Rendering
 

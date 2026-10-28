@@ -69,7 +69,7 @@ for file in $files; do
   } >>"$log" || exit 1
 
   run_status=0
-  shellfish run "$@" --system-file "$script_dir/unslop.md" -- "$file" \
+  shellfish run "$@" --system "$script_dir/unslop.md" -- "$file" \
     >>"$log" || run_status=$?
   if (( run_status )); then
     (( ++failed ))
