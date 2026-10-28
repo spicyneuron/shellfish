@@ -1,9 +1,7 @@
+Drop token estimates
+
 Feels like prompt submit should get split so that prompt command is a separate hook?
 
 Maybe consider how flag render badges like [unsandboxed]. For example, would this be better as [approved] [denied] or [auto-approved] [auto-denied]?
-
-Reading skills seems to show [unsandboxed] badge?
-⛭ [unsandboxed] Skill code-principles
-╰
 
 Option arrow up/down prints chars instead of navigating. Any other common navigation shortcuts? Should generally try to support them if not too hard.
