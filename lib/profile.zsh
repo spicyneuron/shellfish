@@ -141,7 +141,7 @@ sf_profile_resolve() {
   local name=${1:-default} extra=${2:-'{}'}
   local config_dir file profile models sandbox reference kind resolved final
   local backend_manifest='{}'
-  local -a references resolutions=()
+  local -a references resolutions=() system_files=()
   local -A decoded
 
   SF_PROFILE_ERROR=''
@@ -213,6 +213,7 @@ sf_profile_resolve() {
       system) [[ -f $resolved && -r $resolved ]] ;;
       *) [[ -d $resolved && -x $resolved/run ]] ;;
     esac || sf_profile_fail "invalid $kind reference: ${reference#* }" || return
+    [[ $kind != system ]] || system_files+=( --rawfile "$reference" "$resolved" )
     if [[ $kind == backends ]]; then
       sf_profile_read_manifest "$resolved" || return
       backend_manifest=$REPLY
@@ -220,8 +221,9 @@ sf_profile_resolve() {
     resolutions+=( "$reference" "$resolved" )
   done
 
+  # System files are read into one text, like model and sandbox files.
   final=$(sf_jq -nce --argjson profile "$profile" --argjson manifest "$backend_manifest" \
-    --arg share "$SF_SHARE" --arg home "${HOME:+${HOME:A}}" '
+    --arg share "$SF_SHARE" --arg home "${HOME:+${HOME:A}}" "${system_files[@]}" '
       include "lib/profile";
       ($ARGS.positional | [range(0; length; 2) as $at | {key:.[$at], value:.[$at + 1]}] |
         from_entries) as $paths |
@@ -232,7 +234,12 @@ sf_profile_resolve() {
       .model.adapter = $paths["backends " + .model.adapter] |
       .model.endpoint //= $manifest.endpoint |
       if .model.endpoint == null then error("backend endpoint is required") else . end |
-      .system |= map(if type == "string" then $paths["system " + .] else . end) |
+      .system |= ([.[] | if type == "string" then
+          $ARGS.named["system " + .] as $text |
+          if $text | index("\u0000") then error("system file contains NUL bytes: " + .)
+          else $text end
+        else .text end | sub("\n+$"; "") | select(. != "")] | join("\n\n") |
+        if . == "" then [] else [{text:.}] end) |
       .tools |= map($paths["tools " + .]) |
       .hooks |= map($paths["hooks " + .]) |
       profile_expand($share; $home) |

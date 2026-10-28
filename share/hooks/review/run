@@ -93,7 +93,7 @@ records=$(jq -cs --argjson request "$request" '
   . as $records |
   (reduce $records[1:][] as $record
     ({messages:[],context:[],calls:[],response:null};
-      if $record.type == "state_update" or $record.type == "system" then .
+      if $record.type == "state_update" then .
       elif $record.type == "hook_result" then
         if ($record.model_text // "") == "" then . else .context |= add_context($record) end
       elif $record.type == "error" then .calls=[] | .response=null
@@ -121,8 +121,7 @@ records=$(jq -cs --argjson request "$request" '
   ([ $entries[] | select(.value.type == "user") | .key ] | first) as $first_user |
   select($first_user != null) |
   {
-    system_message:([$records[1:][] | select(.type == "system") | .content] | join("\n\n") |
-      if length > 0 then . else null end),
+    system_message:$records[0].profile.system[0].text,
     startup_context:$entries[$first_user].value,
     target_tool_call:{type:"tool_call",id:$request.tool.id,
       name:$request.tool.name,input:$request.tool.input},
@@ -182,9 +181,8 @@ if ! jq -cn --argjson header "$header" --arg system "$system" --argjson context 
           reason:{type:"string",minLength:1,maxLength:1000}
         }
       }) |
-    .profile |= (.system=[] | .tools=[] | .hooks=[] |
+    .profile |= (.system=[{text:$system}] | .tools=[] | .hooks=[] |
       .sandbox={enabled:false, read:[], write:[]})),
-  {type:"system",content:$system},
   {type:"user",content:[{type:"text",text:($context | tojson)}]}
 ' >"$transcript"; then
   permission_deny 'Permission review could not construct its temporary session.'

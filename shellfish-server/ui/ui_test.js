@@ -21,6 +21,7 @@ const HEADER = {
       request: { model: "test-model" },
       context_window: null,
     },
+    system: [],
     tools: ["@tools/shell"],
     sandbox: true,
   },
@@ -432,9 +433,9 @@ test("replays the durable session before live work", async () => {
   assert.deepEqual(page.opens, ["Bearer 123456"]);
   const header = structuredClone(HEADER);
   header.profile.model.context_window = 200;
+  header.profile.system = [{ text: "\nYou are an agent.\n# instructions\n" }];
   await page.send(
     header,
-    { type: "system", content: "\nYou are an agent.\n# instructions\n" },
     {
       type: "user",
       content: [{ type: "text", text: "**hello**" }],
@@ -702,9 +703,10 @@ test("puts prompt context under a user heading", async () => {
 test("groups hooks by lifecycle during replay", async () => {
   const page = load();
   await page.authenticate();
+  const header = structuredClone(HEADER);
+  header.profile.system = [{ text: "instructions" }];
   await page.send(
-    HEADER,
-    { type: "system", content: "instructions" },
+    header,
     { type: "hook_result", lifecycle: "session_start", id: "1", model_text: "start" },
     { type: "hook_result", lifecycle: "session_start", id: "2", user_text: "startup notice" },
     { type: "hook_result", lifecycle: "user_prompt_submit", id: "3", model_text: "prompt" },

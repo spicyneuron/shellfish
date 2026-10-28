@@ -69,10 +69,10 @@ sf_test_profile unused '{invalid json'
 sf_test_profile default '{"model": ["probe"], "tools": ["probe"], "system": ["shared.md",
   "@system/general.md", "general.md", "~/prompts/home.md", "'"$HOME"'/prompts/home.md"]}'
 sf_profile_resolve_args
-jq -e --arg base "$config" --arg home "${HOME:A}" --arg bundled "$ROOT/share" '
+jq -e --arg base "$config" --rawfile general "$ROOT/share/system/general.md" '
+  ($general | sub("\n+$"; "")) as $general |
   .tools == [$base + "/tools/probe"] and
-  .system == [$base + "/system/shared.md", $bundled + "/system/general.md",
-    $bundled + "/system/general.md", $home + "/prompts/home.md", $home + "/prompts/home.md"]
+  .system == [{text:(["configured", $general, $general, "home", "home"] | join("\n\n"))}]
 ' <<<"$REPLY" >/dev/null
 
 # Missing and invalid components fail by kind.

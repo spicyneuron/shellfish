@@ -10,7 +10,6 @@ messages() { jq -L "$ROOT" -ce 'include "lib/session"; session_messages'; }
 
 typeset records="$tmp/records.jsonl"
 cat >"$records" <<'JSONL'
-{"type":"system","content":"system text"}
 {"type":"hook_result","lifecycle":"session_start","id":"1","user_text":"env","model_text":"<context script=\"env\">\nready &amp; set\n</context>"}
 {"type":"user","content":[{"type":"text","text":"run it"}]}
 {"type":"assistant","stop":"tool_calls","content":[{"type":"reasoning","text":"think","opaque":{"signature":"abc"}},{"type":"text","text":"Inspecting that."},{"type":"tool_call","id":"call_1","name":"shell","input":{"command":"ls"}},{"type":"tool_call","id":"call_2","name":"shell","input":{"command":"pwd"}}],"usage":{"input_tokens":100,"output_tokens":20}}
@@ -31,31 +30,31 @@ for (( index = 1; index <= total; index += 1 )); do
 done
 
 # Hook context waits for the request that consumes it.
-prefix 2 | run | jq -e '
+prefix 1 | run | jq -e '
   .next == "user" and .calls == [] and
   .context == ["<hook name=\"session_start\">\n<context script=\"env\">\nready &amp; set\n</context>\n</hook>"]
 ' >/dev/null || fail 'session hook context is not pending before the user request'
-prefix 3 | run |
+prefix 2 | run |
   jq -e '. == {next:"assistant",calls:[],context:[]}' >/dev/null ||
   fail 'the user request did not consume pending context'
 
 # Pending calls come from assistant content, in order, and settle one by one.
-prefix 4 | run | jq -e '
+prefix 3 | run | jq -e '
   .next == "tool_result" and .context == [] and
   .calls == [{id:"call_1",name:"shell",input:{command:"ls"}},
              {id:"call_2",name:"shell",input:{command:"pwd"}}]
 ' >/dev/null || fail 'pending calls do not follow assistant content'
-prefix 6 | run | jq -e '
+prefix 5 | run | jq -e '
   .next == "tool_result" and
   .context == ["<hook name=\"pre_tool_use\">\n<context script=\"policy\">\nPOLICY\n</context>\n</hook>"] and
   ([.calls[].id] == ["call_1","call_2"])
 ' >/dev/null || fail 'tool hook context or pending calls are wrong before a result'
-prefix 7 | run | jq -e '
+prefix 6 | run | jq -e '
   .next == "tool_result" and .context == [] and ([.calls[].id] == ["call_2"])
 ' >/dev/null || fail 'a settled result did not consume its call and context'
-prefix 8 | run | jq -e '. == {next:"assistant",calls:[],context:[]}' >/dev/null ||
+prefix 7 | run | jq -e '. == {next:"assistant",calls:[],context:[]}' >/dev/null ||
   fail 'settling every call did not continue the turn'
-prefix 9 | run | jq -e '. == {next:"user",calls:[],context:[]}' >/dev/null ||
+prefix 8 | run | jq -e '. == {next:"user",calls:[],context:[]}' >/dev/null ||
   fail 'a complete response did not close the turn'
 
 # Provider messages carry calls, drop usage, and place context where it applied.

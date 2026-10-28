@@ -102,7 +102,7 @@ A profile's `model` list merges left to right: objects merge recursively and any
 
 Bundled adapters: `anthropic`, `codex`, `openai`, `openai-responses`, and `openrouter`. The `openai` adapter works with any OpenAI-compatible endpoint. See [`HARNESS.md`](HARNESS.md#backend-adapters) for the adapter protocol.
 
-A new session freezes the selected profile with its model and sandbox merged and every reference resolved. The frozen profile in a session header is itself a profile and selects the same session again.
+A new session freezes the selected profile with its model and sandbox merged, its system prompts joined into one text, and every other reference resolved. The frozen profile in a session header is itself a profile and selects the same session again.
 
 ## Environment
 

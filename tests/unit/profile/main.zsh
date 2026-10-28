@@ -51,7 +51,7 @@ sf_test_profile openai/sol '{"model": ["openai/sol"], "system": ["prompt.md"], "
 sf_profile_resolve_args -p openai/sol
 jq -e --arg root "${SF_TEST_CONFIG:A}" '
   .model.request.model == "sol" and .tools == [] and
-  .system == [$root + "/system/prompt.md"] and
+  .system == [{text:"nested"}] and
   .hooks == [$root + "/hooks/stop"]' <<<"$REPLY" >/dev/null
 
 # A path is taken as written, and "@" is the bundled root.
@@ -73,7 +73,7 @@ print -r -- '{"model": ["../models/kit.jsonc"], "sandbox": ["../sandbox/kit.json
   "system": ["../system/kit.md"]}' >"$kit/profiles/kit.jsonc"
 sf_profile_resolve_args -p "$kit/profiles/kit.jsonc"
 jq -e --arg kit "${kit:A}" --arg backend "${tmp:A}/tests-backend" '
-  .model.adapter == $backend and .system == [$kit + "/system/kit.md"] and
+  .model.adapter == $backend and .system == [{text:"kit"}] and
   .sandbox.read == [$kit + "/sandbox/data", $kit + "/system"]
 ' <<<"$REPLY" >/dev/null || fail 'config-relative references did not resolve from their files'
 (
@@ -83,14 +83,15 @@ jq -e --arg kit "${kit:A}" --arg backend "${tmp:A}/tests-backend" '
 ) || fail 'flag-relative references did not resolve from the working directory'
 
 # Model, sandbox, and system lists take inline values, a lone model or sandbox
-# item needs no list, and a frozen profile resolves to itself.
+# item needs no list, system files freeze into one text, and a frozen profile
+# resolves to itself.
 sf_test_profile inline '{"model": {"adapter": "'"$fixture_backend"'", "request": {"model": "inline"}},
   "sandbox": {"read": ["./data"]}, "system": [{"text": "hello"}, "prompt.md"]}'
 sf_profile_resolve_args -p inline
 profile=$REPLY
 jq -e --arg root "${SF_TEST_CONFIG:A}" '
   .model.request.model == "inline" and .sandbox.read == [$root + "/profiles/data"] and
-  .system == [{text:"hello"}, $root + "/system/prompt.md"]
+  .system == [{text:"hello\n\nnested"}]
 ' <<<"$profile" >/dev/null || fail 'inline profile items did not resolve'
 print -r -- "$profile" >"$tmp/frozen.jsonc"
 sf_profile_resolve_args -p "$tmp/frozen.jsonc"
@@ -153,7 +154,8 @@ for name in default basic readonly plus; do
   profile=$REPLY
   jq -e --arg share "$ROOT/share/" --arg name "$name" '
     .model.request == {max_tokens:16384,reasoning:{effort:"medium"},model:"mine"} and
-    ([.hooks[], .tools[], .system[]] | length > 0 and all(.[]; startswith($share))) and
+    ([.hooks[], .tools[]] | length > 0 and all(.[]; startswith($share))) and
+    (.system[0].text | length > 0) and
     ((.tools | any(endswith("/agent"))) == ($name == "plus")) and
     ((.hooks | any(endswith("/review"))) == ($name == "plus"))
   ' <<<"$profile" >/dev/null || fail "template profile did not resolve: $name"
@@ -215,8 +217,8 @@ mkdir -p "$SF_TEST_CONFIG/system"
 print -r -- 'mine' >"$SF_TEST_CONFIG/system/general.md"
 sf_test_profile shadow '{"model": ["fixture"], "system": ["general.md", "@system/general.md"]}'
 sf_profile_resolve_args -p shadow
-jq -e --arg root "${SF_TEST_CONFIG:A}" --arg share "$ROOT/share" '
-  .system == [$root + "/system/general.md", $share + "/system/general.md"]
+jq -e --rawfile general "$ROOT/share/system/general.md" '
+  .system == [{text:("mine\n\n" + ($general | sub("\n+$"; "")))}]
 ' <<<"$REPLY" >/dev/null || fail 'configured component did not shadow bundled'
 rm "$SF_TEST_CONFIG/system/general.md"
 

@@ -73,8 +73,6 @@ def record_actions($mode; $window):
     (if $mode == "load" then response_actions else [] end) + usage_actions($window)
   elif .type == "user" then
     message_actions("user"; .content[0].text)
-  elif .type == "system" then
-    if $mode == "load" then message_actions("system"; .content) else [] end
   elif .type == "error" then
     (.user_text | split("\n")) as $lines |
     [["error", $lines[0], ($lines[1:] | join("\n"))]]
@@ -83,7 +81,9 @@ def record_actions($mode; $window):
   elif .type == "hook_result" then
     [["execution_end", .id, hook_class, result_text, preview,
       ({session_start:"system", user_prompt_submit:"user"}[.lifecycle] // "agent")]]
-  elif .type == "session" then (.profile | profile_actions)
+  elif .type == "session" then
+    (.profile | profile_actions) +
+    if $mode == "load" then message_actions("system"; .profile.system[0].text // "") else [] end
   elif .type == "state_update" then []
   else error("unsupported record: " + (.type | tostring))
   end;

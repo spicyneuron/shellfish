@@ -89,14 +89,13 @@ output=$(SF_TEST_BACKEND_DELAY=0 zsh -f "$entry" run --session-out "$forwarded_s
 assert_equal 'plain answer' "$output" 'run keeps the prompt after a forwarded value'
 head -n 1 "$forwarded_session" | jq -e '
   .profile.model.request.model == "forwarded-model" and
-  .profile.system[-1] == {text:"forwarded system"}
+  .profile.system == [{text:"initial system\n\nforwarded system"}]
 ' \
   >/dev/null || fail 'a forwarded option value did not reach the new session'
-jq -e 'select(.type == "system" and (.content | endswith("forwarded system")))' \
-  "$forwarded_session" >/dev/null || fail 'run did not create the overridden system record'
 
-# Session reuse copies only profile settings.
+# Session reuse copies only the frozen profile, not the current system files.
 typeset copied_session="$tmp/copied.jsonl"
+print -r -- 'changed system' >"$SF_TEST_CONFIG/system/source.md"
 cp "$forwarded_session" "$tmp/source-before"
 output=$(SF_TEST_BACKEND_DELAY=0 zsh -f "$entry" run \
   --session-from "$forwarded_session" --session-out "$copied_session" \
@@ -105,7 +104,6 @@ assert_equal 'copied answer' "$output"
 cmp -s "$forwarded_session" "$tmp/source-before" || fail 'run modified its source'
 jq -es --slurpfile source "$forwarded_session" '
   .[0].profile == $source[0].profile and
-  .[1] == {type:"system",content:"initial system\n\nforwarded system"} and
   [.[] | select(.type == "user") | .content[0].text] == ["copied answer"]
 ' "$copied_session" >/dev/null || fail 'run did not reuse the stored profile'
 

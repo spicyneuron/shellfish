@@ -27,9 +27,8 @@ sf_test_frozen_profile
 SF_TEST_PROFILE=$(jq -c --arg hook "$hook" '
   .model.context_window=20000 |
   .model.request += {max_tokens:5000,temperature:0.2} |
-  .hooks=[$hook]
+  .hooks=[$hook] | .system=[{text:"fixed system"}]
 ' <<<"$SF_TEST_PROFILE")
-SF_TEST_SYSTEM='fixed system'
 sf_test_session "$session"
 sf_session_append "$session" '{"type":"hook_result","lifecycle":"session_start","id":"1","model_text":"<context script=\"project/instructions\">\nstartup constraint\n</context>"}'
 sf_session_append "$session" '{"type":"user","content":[{"type":"text","text":"opening request"}]}'
@@ -76,15 +75,15 @@ jq -en -L "$ROOT" --slurpfile manifest "$hook/manifest.json" \
 ' >/dev/null || fail 'permission review hid its decision reason'
 jq -e -s --arg tool_input "$(jq -c '.tool_input' <<<"$request")" \
     --rawfile policy "$ROOT/share/hooks/review.md" '
-  (.[2].content[0].text | fromjson) as $context |
+  (.[1].content[0].text | fromjson) as $context |
   .[0].profile.model.request.model == "test-model" and
   .[0].profile.model.request.max_tokens == 4096 and
   .[0].profile.model.request.temperature == 0.2 and
   .[0].profile.model.request.response_schema.additionalProperties == false and
   .[0].profile.tools == [] and
-  .[0].profile.hooks == [] and .[0].profile.system == [] and
-  [.[].type] == ["session","system","user"] and
-  .[1].content == ($policy | rtrimstr("\n")) and
+  .[0].profile.hooks == [] and
+  .[0].profile.system == [{text:($policy | rtrimstr("\n"))}] and
+  [.[].type] == ["session","user"] and
   $context.system_message == "fixed system" and
   $context.startup_context.content[0].text ==
     "<hook name=\"session_start\">\n<context script=\"project/instructions\">\nstartup constraint\n</context>\n</hook>\n\nopening request" and

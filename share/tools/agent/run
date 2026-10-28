@@ -77,7 +77,7 @@ if [[ $operation == inspect || $operation == continue ]]; then
     --argjson working "$working" '
     if length < 2 or .[0].type != "session" or
        (any(.[1:][]; . == {type:"state_update",name:"agents/child",value:true}) | not) or
-       (all(.[]; .type | IN("session","system","state_update","hook_result","user",
+       (all(.[]; .type | IN("session","state_update","hook_result","user",
          "assistant","tool_result","error")) | not) then
       error("invalid agent session")
     else

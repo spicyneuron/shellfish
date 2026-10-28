@@ -488,9 +488,7 @@ function apply(frame) {
     case "session":
       applyProfile(frame.profile);
       document.title = "shellfish " + safe(frame.cwd);
-      return;
-    case "system":
-      return renderSystem(frame.content);
+      return renderSystem(frame.profile.system[0]?.text);
     case "hook_result":
       return renderHookResult(frame);
     case "user":

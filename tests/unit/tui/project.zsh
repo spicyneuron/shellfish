@@ -42,20 +42,19 @@ message_delta | 1 | reasoning | weighing | 40
 message_end
 usage | 2 ↑ 1 ↓ | 40' "$REPLY"
 
-# User records render in both modes; system text is loaded only on replay.
-project load \
-  '{"type":"user","content":[{"type":"text","text":"Hello"}]}' \
-  '{"type":"system","content":"be brief"}'
-assert_equal 'message_start | user
-message_delta | 0 | text | Hello |
-message_end
+# User records render in both modes; the header's system text only on replay.
+typeset briefed=$(jq -c '.profile.system = [{text:"be brief"}]' <<<"$header")
+project load "$briefed" '{"type":"user","content":[{"type":"text","text":"Hello"}]}'
+assert_equal 'profile | test/fake-model |
 message_start | system
 message_delta | 0 | text | be brief |
+message_end
+message_start | user
+message_delta | 0 | text | Hello |
 message_end' "$REPLY"
-project live \
-  '{"type":"user","content":[{"type":"text","text":"Hello"}]}' \
-  '{"type":"system","content":"be brief"}'
-assert_equal 'message_start | user
+project live "$briefed" '{"type":"user","content":[{"type":"text","text":"Hello"}]}'
+assert_equal 'profile | test/fake-model |
+message_start | user
 message_delta | 0 | text | Hello |
 message_end' "$REPLY"
 

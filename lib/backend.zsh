@@ -28,7 +28,7 @@ sf_backend_project() {
     $header.profile as $profile |
     backend_adapter_request(
       $profile;
-      ([$records[1:][] | select(.type == "system") | .content] | join("\n\n"));
+      ($profile.system[0].text // "");
       ($records[1:] | session_messages);
       $tools
     ) as $request |

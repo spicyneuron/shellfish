@@ -104,7 +104,7 @@ valid_header=$(jq -cn '
         request: {model: "gpt-4o"},
         context_window: 128000
       },
-      system: ["@system/general.md", {text: "inline"}],
+      system: [{text: "inline"}],
       tools: ["@tools/shell", "~/tools/jira"],
       hooks: ["/bin/hook", "@hooks/stop"],
       sandbox: {enabled: true, read: ["~/cache"], write: []}
@@ -120,10 +120,10 @@ for patch in '.extra=true' '.profile.extra=true' '.profile.env={}' \
     '.profile."$schema"="x"' 'del(.profile.hooks)' 'del(.profile.sandbox)' \
     '.profile.model.extra=true' 'del(.profile.model.endpoint)' 'del(.profile.model.request.model)' \
     '.profile.model.context_window=0' '.profile.hooks={}' \
-    '.profile.hooks=[{command:"/bin/hook"}]' '.profile.system=["relative.md"]' \
+    '.profile.hooks=[{command:"/bin/hook"}]' '.profile.system=["@system/general.md"]' \
     '.profile.system=[{text:1}]' '.profile.sandbox=true' '.profile.sandbox.extra=1' \
     '.profile.tools=["shell"]' '.profile.tools=["/a/shell","/b/shell"]' \
-    '.profile.model.adapter="./openai"' '.profile.system=[""]' \
+    '.profile.model.adapter="./openai"' '.profile.system=[{text:""}]' '.profile.system+=[{text:"two"}]' \
     '.profile.sandbox.read=["relative"]' \
     '.cwd="./project"'; do
   if jq -c "$patch" <<<"$valid_header" |

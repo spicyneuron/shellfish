@@ -319,8 +319,7 @@ sf_tui_submit early
 assert_equal repaint "$REPLY"
 assert_equal early "${(j:,:)SF_PRESENT_QUEUE}"
 pump "$(jq -cn --arg path "$tmp/new.jsonl" '{type:"_session_load",path:$path}')" \
-  '{"type":"session","profile":{"model":{"adapter":"/test","request":{"model":"model"}}}}' \
-  '{"type":"system","content":"instructions"}' \
+  '{"type":"session","profile":{"model":{"adapter":"/test","request":{"model":"model"}},"system":[{"text":"instructions"}]}}' \
   '{"type":"_draft","lifecycle":"session_start","id":"1","user_text":"setup · working"}'
 assert_equal working "$SF_PRESENT_STATE"
 assert_equal "$tmp/new.jsonl" "$SF_PRESENT_SESSION"

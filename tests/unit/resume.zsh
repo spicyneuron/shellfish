@@ -5,7 +5,6 @@ sf_test_source libexec/resume/picker.zsh
 sf_test_tmp resume
 
 typeset s_empty="$tmp/empty.jsonl"
-typeset s_system="$tmp/system.jsonl"
 typeset s_context="$tmp/context.jsonl"
 typeset s_user="$tmp/user.jsonl"
 typeset s_torn="$tmp/torn.jsonl"
@@ -26,10 +25,6 @@ make_header() {
 
 # Header-only session.
 make_header >"$s_empty"
-
-# System preview.
-make_header >"$s_system"
-print -r -- '{"type":"system","content":"Instructions"}' >>"$s_system"
 
 # Hook context preview.
 make_header >"$s_context"
@@ -75,34 +70,33 @@ make_header >"$s_tool_model"
 print -r -- '{"type":"tool_result","id":"c1","name":"shell","input":{},"exit_code":0,"model_text":"ok"}' >>"$s_tool_model"
 
 # Summarize resume candidates.
-sf_resume_load "$s_empty" "$s_system" "$s_context" "$s_user" "$s_torn" "$s_assistant" "$s_tool_res" \
+sf_resume_load "$s_empty" "$s_context" "$s_user" "$s_torn" "$s_assistant" "$s_tool_res" \
   "$s_failed" "$s_bad" "$s_state_only" "$s_state_tail" "$s_hook_model" "$s_tool_model"
-(( ${#SF_RESUME_PATHS} == 13 ))
-(( ${#SF_RESUME_TIMES} == 13 ))
-(( ${#SF_RESUME_PAIRS} == 13 ))
-(( ${#SF_RESUME_PREVIEWS} == 13 ))
+(( ${#SF_RESUME_PATHS} == 12 ))
+(( ${#SF_RESUME_TIMES} == 12 ))
+(( ${#SF_RESUME_PAIRS} == 12 ))
+(( ${#SF_RESUME_PREVIEWS} == 12 ))
 
 assert_equal custom/claude-3 "$SF_RESUME_PAIRS[1]"
 assert_equal '(empty session)' "$SF_RESUME_PREVIEWS[1]"
-assert_equal SYSTEM "$SF_RESUME_PREVIEWS[2]"
-assert_equal 'test · loaded' "$SF_RESUME_PREVIEWS[3]"
-assert_equal 'list files' "$SF_RESUME_PREVIEWS[4]"
-assert_equal '(unreadable)' "$SF_RESUME_PREVIEWS[5]"
-assert_equal 'here they are' "$SF_RESUME_PREVIEWS[6]"
-assert_equal 'shell err exit 2' "$SF_RESUME_PREVIEWS[7]"
-assert_equal 'Turn interrupted.' "$SF_RESUME_PREVIEWS[8]"
-assert_equal '?/?' "$SF_RESUME_PAIRS[9]"
-assert_equal '(unreadable)' "$SF_RESUME_PREVIEWS[9]"
-assert_equal 'STATE UPDATE preview/only' "$SF_RESUME_PREVIEWS[10]"
-assert_equal 'STATE UPDATE preview/last' "$SF_RESUME_PREVIEWS[11]"
-assert_equal stop "$SF_RESUME_PREVIEWS[12]"
-assert_equal shell "$SF_RESUME_PREVIEWS[13]"
+assert_equal 'test · loaded' "$SF_RESUME_PREVIEWS[2]"
+assert_equal 'list files' "$SF_RESUME_PREVIEWS[3]"
+assert_equal '(unreadable)' "$SF_RESUME_PREVIEWS[4]"
+assert_equal 'here they are' "$SF_RESUME_PREVIEWS[5]"
+assert_equal 'shell err exit 2' "$SF_RESUME_PREVIEWS[6]"
+assert_equal 'Turn interrupted.' "$SF_RESUME_PREVIEWS[7]"
+assert_equal '?/?' "$SF_RESUME_PAIRS[8]"
+assert_equal '(unreadable)' "$SF_RESUME_PREVIEWS[8]"
+assert_equal 'STATE UPDATE preview/only' "$SF_RESUME_PREVIEWS[9]"
+assert_equal 'STATE UPDATE preview/last' "$SF_RESUME_PREVIEWS[10]"
+assert_equal stop "$SF_RESUME_PREVIEWS[11]"
+assert_equal shell "$SF_RESUME_PREVIEWS[12]"
 
 # Render and accept a changed selection.
 zle() { :; }
 COLUMNS=60
 sf_resume_update_display
-[[ $PREDISPLAY == 'Resume session (1 - 13 of 13)'$'\n\n'* &&
+[[ $PREDISPLAY == 'Resume session (1 - 12 of 12)'$'\n\n'* &&
    $PREDISPLAY == *$'\n› 1  '* ]] || fail 'resume picker did not render its selection'
 KEYS=$'\e[B'
 sf_resume_move

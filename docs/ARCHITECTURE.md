@@ -20,18 +20,16 @@ A session JSONL file is the agent's only durable state. Its first line is a head
 
 ```text
 {"type":"session","format_version":1,"cwd":"~/project","created":"...","profile":{...}}
-{"type":"system","content":"..."}
 {"type":"user","content":[{"type":"text","text":"Fix the bug"}]}
 {"type":"assistant","stop":"end","content":[{"type":"text","text":"Done."}]}
 ```
 
-The header freezes the resolved profile, which is itself a valid profile that resolves to the same header. It holds the merged model with its adapter, endpoint, and request settings, the system, tool, and hook lists, and the merged sandbox setting and grants. System file text is materialized into the session's system record at creation; executable components, manifests, and policies remain live. Credentials, environment settings such as turn limits, and presentation settings remain external.
+The header freezes the resolved profile, which is itself a valid profile that resolves to the same header. It holds the merged model with its adapter, endpoint, and request settings, the system prompt text, the tool and hook lists, and the merged sandbox setting and grants. System prompt files are frozen as their text, like model and sandbox files; executable components, manifests, and policies remain live. Credentials, environment settings such as turn limits, and presentation settings remain external.
 
 Header paths use `@` for the bundled root, `~/` for HOME, or `/` for fixed absolute locations, so a session survives upgrades and moves with its home. If the project moves independently of HOME, update the header cwd.
 
 | Durable record | Role |
 | --- | --- |
-| `system` | System prompt |
 | `hook_result` | Lifecycle hook output |
 | `user` | User message |
 | `assistant` | Complete assistant response with text, reasoning, and tool calls |

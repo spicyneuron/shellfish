@@ -5,8 +5,8 @@ source "$SF_ROOT/lib/profile.zsh"
 source "$SF_ROOT/lib/session.zsh"
 
 sf_run_create() {
-  local requested_out='' source_session='' profile session system system_text projection header record cwd created
-  local -a forwarded=() system_parts=()
+  local requested_out='' source_session='' profile session header cwd created
+  local -a forwarded=()
   integer resolve_status=0 take=0
 
   while (( $# )); do
@@ -50,21 +50,6 @@ sf_run_create() {
     profile=$REPLY
   fi
   sf_run_components "$profile" || { sf_die "$REPLY"; return 1; }
-  # Each item becomes "f" and a file path, or "t" and inline text.
-  projection=$(jq -jr '.system[] | if type == "string" then "f" + . else "t" + (.text | sub("\n+$"; "")) end,
-    "\u0000"' <<<"$profile") || sf_die 'cannot resolve system prompt' || return
-  for system_text in "${(@0)projection}"; do
-    if [[ $system_text == f* ]]; then
-      REPLY=$(<"${system_text#f}") || { sf_die "cannot read system file: ${system_text#f}"; return 1; }
-      [[ $REPLY != *$'\0'* ]] ||
-        { sf_die "system file contains NUL bytes: ${system_text#f}"; return 2; }
-    else
-      REPLY=${system_text#t}
-    fi
-    [[ -z $REPLY ]] || system_parts+=( "$REPLY" )
-  done
-  system=${(pj:\n\n:)system_parts}
-
   sf_session_select_path "$requested_out" || { sf_die "$SF_SESSION_ERROR"; return 1; }
   session=$REPLY
   cwd=$(pwd -P) && created=$(date -u '+%Y-%m-%dT%H:%M:%SZ') || {
@@ -77,18 +62,10 @@ sf_run_create() {
     {type:"session",format_version:1,cwd:($cwd | store_path(""; $home)),created:$created,
      profile:($profile | profile_store($share; $home))} | select(canonical_session_header)
   ') || { sf_die 'cannot prepare session header'; return 1; }
-  local -a records=( "$header" )
-  if [[ -n $system ]]; then
-    record=$(jq -cn --arg content "$system" '{type:"system",content:$content}') || {
-      sf_die 'cannot prepare system record'
-      return 1
-    }
-    records+=( "$record" )
-  fi
   (
     umask 077
     setopt no_clobber
-    printf '%s\n' "${records[@]}" >"$session"
+    print -r -- "$header" >"$session"
   ) 2>/dev/null || {
     [[ ! -e $session && ! -L $session ]] || sf_die "session already exists: $session" || return 1
     sf_die "cannot create session: $session"
@@ -101,9 +78,7 @@ sf_run_create() {
   SF_RUN[hook_id]=1
   if (( SF_RUN[jsonl] )); then
     sf_run_emit "$(jq -cn --arg path "$session" '{type:"_session_load",path:$path}')" || return 1
-    for record in "${records[@]}"; do
-      sf_run_emit "$record" || return 1
-    done
+    sf_run_emit "$header" || return 1
   fi
   sf_run_hooks "$session" session_start '' '' || {
     (( ! SF_RUN[signal_status] )) || return $SF_RUN[signal_status]

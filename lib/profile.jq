@@ -191,8 +191,7 @@ def sandbox_merge($files):
 
 # Every path in a frozen profile through f.
 def profile_paths(f):
-  .model.adapter |= f | .system |= map(if type == "string" then f else . end) |
-  .tools |= map(f) | .hooks |= map(f) |
+  .model.adapter |= f | .tools |= map(f) | .hooks |= map(f) |
   .sandbox.read |= map(f) | .sandbox.write |= map(f);
 
 # Stored paths name bundled files "@...", files under HOME "~/...", and
@@ -214,7 +213,8 @@ def profile_store($share; $home): profile_paths(store_path($share; $home));
 def profile_expand($share; $home): profile_paths(expand_path($share; $home));
 
 # The frozen profile is a resolved profile: one merged model and sandbox item,
-# and every reference a stored path. Resolving it again changes nothing.
+# the system prompt as at most one text, and every reference a stored path.
+# Resolving it again changes nothing.
 def canonical_profile:
   type == "object" and
   keys == ["hooks", "model", "sandbox", "system", "tools"] and
@@ -227,8 +227,8 @@ def canonical_profile:
   (.sandbox | type == "object" and keys == ["enabled", "read", "write"] and
     (.enabled | type == "boolean") and (.read | type == "array") and
     (.write | type == "array")) and
-  (.system | type == "array" and all(.[]; stored_reference or
-    (type == "object" and keys == ["text"] and (.text | nul_free_string)))) and
+  (.system | type == "array" and length <= 1 and all(.[]; type == "object" and
+    keys == ["text"] and (.text | nul_free_string) and .text != "")) and
   (.tools | type == "array") and (.hooks | type == "array") and
   all(.model.adapter, .tools[], .hooks[], .sandbox.read[], .sandbox.write[];
     stored_reference) and

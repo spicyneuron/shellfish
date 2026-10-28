@@ -93,11 +93,9 @@ assert_canonical_session() {
   }
 }
 
-# Frozen profile used by tool and exec tests. Optional system-file path.
+# Frozen profile used by tool and exec tests.
 sf_test_frozen_profile() {
-  local system=${1-}
-  typeset -g SF_TEST_PROFILE SF_TEST_SYSTEM=''
-  [[ -z $system ]] || SF_TEST_SYSTEM=$(<"$system")
+  typeset -g SF_TEST_PROFILE
   SF_TEST_PROFILE=$(jq -cn --arg adapter "${SF_TEST_BACKEND:h}" \
     --arg tool "$ROOT/share/tools/shell" '
       {
@@ -152,8 +150,6 @@ sf_test_session() {
     --argjson profile "$SF_TEST_PROFILE" \
     '{type:"session",format_version:1,cwd:$cwd,created:$created,profile:$profile}')
   (umask 077; print -r -- "$header" >"$session")
-  [[ -z $SF_TEST_SYSTEM ]] || jq -cn --arg content "$SF_TEST_SYSTEM" \
-    '{type:"system",content:$content}' >>"$session"
 }
 
 sf_test_run() {

@@ -49,10 +49,6 @@ def canonical_state_update:
   (.name | type == "string" and length <= 128 and
     test("^[A-Za-z0-9][A-Za-z0-9_.:/-]*\\z"));
 
-def canonical_system:
-  type == "object" and keys == ["content", "type"] and .type == "system" and
-  (.content | nul_free_string);
-
 def canonical_error:
   type == "object" and keys == ["type", "user_text"] and .type == "error" and
   (.user_text | nul_free_string) and .user_text != "";
@@ -119,8 +115,6 @@ def session_state:
   reduce .[] as $record
     ({next:"user", calls:[], context:[], hooks:[], messages:[], response:null};
       if ($record | canonical_state_update) then .
-      elif ($record | canonical_system) then
-        if .next == "user" then . else error("system text inside a turn") end
       elif ($record | canonical_hook_result) then
         if (.hooks | index($record.id)) != null then
           error("repeated hook id: " + $record.id)

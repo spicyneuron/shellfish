@@ -57,7 +57,6 @@ sf_resume_load() {
     def summary:
       if . == null then "(unreadable)"
       elif .type == "session" then "(empty session)"
-      elif .type == "system" then "SYSTEM"
       elif .type == "hook_result" then (.user_text // .lifecycle)
       elif .type == "state_update" then ("STATE UPDATE " + (.name | tostring))
       elif .type == "user" then
