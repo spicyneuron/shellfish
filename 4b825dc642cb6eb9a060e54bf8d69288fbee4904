@@ -1,1 +1,9 @@
-Feels like prompt submit should get split so that prompt command is separate?
+✕ stop hook returned invalid control: /Users/main/.shellfish/hooks/ritalin_stop
+
+Feels like prompt submit should get split so that prompt command is a separate hook?
+
+Maybe consider how flag render badges like [unsandboxed]. For example, would this be better as [approved] [denied] or [auto-approved] [auto-denied]?
+
+Reading skills seems to show [unsandboxed] badge?
+⛭ [unsandboxed] Skill code-principles
+╰
