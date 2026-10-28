@@ -50,7 +50,7 @@ A lone `model` or `sandbox` item needs no list. Inline values let one profile ho
 
 `profiles/default.jsonc` is selected when `--profile` is absent and it exists, and `-p REF` selects another. Without either, options alone select everything. Profiles do not inherit from each other, since a profile is short enough to copy. Only components named in the selected profile are active, and unused files are inert.
 
-Each field has an option that appends to the selected profile's list for one session. List options repeat, and any that accept inline values take a JSON object in place of a reference. Repeated references within a list collapse to the first.
+Each field has an option that appends to the selected profile's list for one session. List options repeat, and any that accept inline values take a JSON object in place of a reference. Repeated `system`, `tools`, and `hooks` references collapse to the first. `model` and `sandbox` lists merge in order, so a repeated reference applies again.
 
 | Field | Option |
 | --- | --- |
@@ -228,7 +228,7 @@ For ordinary prompts, `$skill-name` loads each matching skill into the model's c
 
 The `agent` tool lets you delegate a separate task to another agent, so work can proceed independently of your current conversation. You can wait for its result, let it run in the background, check its progress, or give it a follow-up task once it finishes. It is opt-in: the `plus` profile enables it, or add `"agent"` to a profile's `tools`.
 
-Background work returns control after launch; the default limit is four active child agents per parent, set by `SHELLFISH_MAX_ACTIVE_AGENTS`. Inspection distinguishes a child that is still running from one that has stopped without a final transcript outcome. A stopped child releases its active slot and can be continued; Shellfish recovers unfinished work on that next turn.
+Background work returns control after launch; the default limit is four active child agents per parent, set by `SHELLFISH_MAX_ACTIVE_AGENTS`. Inspection distinguishes a child that is still running from one that has stopped without a final transcript outcome. A stopped child releases its active slot and can be continued; Shellfish recovers unfinished work on that next turn. A child killed outright during its stop hooks can appear settled, and those hooks do not run again.
 
 ### Review hook
 

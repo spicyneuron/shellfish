@@ -45,6 +45,7 @@ sf_profile_manifest() {
 
 # The parsed manifest of a component folder.
 sf_profile_read_manifest() {
+  local file
   sf_profile_manifest "$1" || return
   file=$REPLY
   [[ -n $file ]] || { REPLY='{}'; return 0; }

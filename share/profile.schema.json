@@ -8,10 +8,16 @@
       "type": "string"
     },
     "model": {
-      "$ref": "#/$defs/items"
+      "anyOf": [
+        {"$ref": "#/$defs/model"},
+        {"type": "array", "items": {"$ref": "#/$defs/model"}}
+      ]
     },
     "sandbox": {
-      "$ref": "#/$defs/items"
+      "anyOf": [
+        {"$ref": "#/$defs/sandbox"},
+        {"type": "array", "items": {"$ref": "#/$defs/sandbox"}}
+      ]
     },
     "system": {
       "type": "array",
@@ -42,14 +48,11 @@
       "minLength": 1,
       "pattern": "^[^\u0000-\u001f\u007f-\u009f]+$"
     },
-    "item": {
-      "anyOf": [{"$ref": "#/$defs/reference"}, {"type": "object"}]
+    "model": {
+      "anyOf": [{"$ref": "#/$defs/reference"}, {"$ref": "model.schema.json"}]
     },
-    "items": {
-      "anyOf": [
-        {"$ref": "#/$defs/item"},
-        {"type": "array", "items": {"$ref": "#/$defs/item"}}
-      ]
+    "sandbox": {
+      "anyOf": [{"$ref": "#/$defs/reference"}, {"$ref": "sandbox.schema.json"}]
     }
   }
 }
