@@ -3,15 +3,13 @@ setopt no_aliases no_bg_nice no_multios pipe_fail
 
 # Span offsets are characters; cells only determine row breaks.
 
-typeset -ga SF_WRAP_ROWS=() SF_WRAP_SPANS=() SF_WRAP_CONSUMED=()
+typeset -ga SF_WRAP_ROWS=() SF_WRAP_SPANS=()
 
 # Spans are ordered, zero-based, half-open ranges over TEXT.
-# SF_WRAP_CONSUMED records the source consumed by each row.
 sf_tui_wrap() {
   # Rejecting a call never exposes prior output.
   SF_WRAP_ROWS=()
   SF_WRAP_SPANS=()
-  SF_WRAP_CONSUMED=()
   integer limit=0
   if [[ ${1-} == -L ]]; then
     (( $# >= 5 )) || return 1
@@ -46,7 +44,7 @@ sf_tui_wrap() {
   for (( index = 1; index <= total; index++ )); do
     character=$characters[index]
     if [[ $character == $'\n' ]]; then
-      sf_tui_wrap_emit $(( index - row_start + 1 ))
+      sf_tui_wrap_emit
       (( ! limit || ${#SF_WRAP_ROWS} < limit )) || return 0
       row_start=$(( index + 1 ))
       sf_tui_wrap_start
@@ -60,16 +58,16 @@ sf_tui_wrap() {
     fi
     if (( column + width > columns && ${#display} > prefix_length )); then
       if [[ $character == ' ' ]]; then
-        sf_tui_wrap_emit $(( index - row_start + 1 ))
+        sf_tui_wrap_emit
         row_start=$(( index + 1 ))
       elif (( break_display > prefix_length )); then
         display=( "${(@)display[1,break_display - 1]}" )
         source=( "${(@)source[1,break_display - 1]}" )
-        sf_tui_wrap_emit $(( break_source - row_start + 1 ))
+        sf_tui_wrap_emit
         row_start=$(( break_source + 1 ))
         index=$break_source
       else
-        sf_tui_wrap_emit $(( index - row_start ))
+        sf_tui_wrap_emit
         row_start=$index
         index=$(( index - 1 ))
       fi
@@ -93,7 +91,7 @@ sf_tui_wrap() {
     fi
     column=$(( column + width ))
   done
-  (( row_start > total )) || sf_tui_wrap_emit $(( total - row_start + 1 ))
+  (( row_start > total )) || sf_tui_wrap_emit
 }
 
 sf_tui_wrap_start() {
@@ -106,10 +104,9 @@ sf_tui_wrap_start() {
 }
 
 sf_tui_wrap_emit() {
-  integer consumed=$1 span first last position first_source last_source
+  integer span first last position first_source last_source
   local -a projected=()
   SF_WRAP_ROWS+=( "${(j::)display}" )
-  SF_WRAP_CONSUMED+=( $consumed )
   first_source=${source[prefix_length + 1]:-0}
   last_source=${source[-1]:-0}
   while (( span_head <= ${#spans} && spans[span_head + 1] < first_source )); do

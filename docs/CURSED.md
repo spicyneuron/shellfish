@@ -4,7 +4,7 @@
 
 ZLE gives us _almost_ everything we want from an editor. It preserves familiar shell editing, history, key bindings, and cursor movement. `PREDISPLAY` even looks like a convenient place to put the transcript, but it has a major limit. Content taller than the terminal is permanently truncated and cannot be recovered into terminal scrollback.
 
-The natural solution is to render the conversation as wrapped visual lines, divided between a settled, immutable transcript and a live, editable tail. As lines accumulate, the tail periodically commits its settled prefix to scrollback, well before reaching the `PREDISPLAY` limit. That part worked. The missing piece was a reliable wake-up trigger. Watching the provider transport was not enough to keep commits and animation moving on macOS, and ZLE provides no timer callback of its own.
+The natural solution is to render the conversation as wrapped visual lines. Each complete line of text is formatted once and queued, and the queue periodically commits to scrollback, well before reaching the `PREDISPLAY` limit. Only a short status and any running tool stay live below it. That part worked. The missing piece was a reliable wake-up trigger. Watching the provider transport was not enough to keep commits and animation moving on macOS, and ZLE provides no timer callback of its own.
 
 The first proof of concept used `zle -U` to inject a synthetic Ctrl-X and dispatch a heartbeat widget. It worked well, but every so often, a heartbeat would land inside a real arrow or function-key sequence, and the entire thing would blow up. Synthetic and terminal input share one queue, so no injected key can be collision-free, and handling every possible collision wasn't practical.
 

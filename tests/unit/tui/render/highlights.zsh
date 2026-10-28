@@ -105,10 +105,10 @@ span_texts "$markdown"
 assert_equal $'```js,const,\t```' "$REPLY"
 
 SF_PRESENT_HIGHLIGHT_SPANS=()
-sf_tui_markdown_highlight 'const x = 3;' 0 $'```\tjs' 1
+sf_tui_markdown_highlight 'const x = 3;' $'```\tjs'
 span_texts 'const x = 3;'
 assert_equal 'const,3' "$REPLY"
-sf_tui_markdown_highlight $'```\n' 0 $'```\tjs\t0' 0
+sf_tui_markdown_highlight $'```\n' $'```\tjs\t0'
 assert_equal '' "$REPLY"
 
 sf_tui_markdown_highlight $'```js\nconst x = 3;'
@@ -124,10 +124,10 @@ sf_tui_code_highlight 'still inside */ const x = 3;' js 0 1
 span_texts 'still inside */ const x = 3;'
 assert_equal 'still inside */,const,3' "$REPLY"
 
-# Open blocks do not wait.
+# Fence and block comment state carries from one line to the next.
 sf_tui_markdown_highlight $'```js\n/* opened\n'
 assert_equal $'```\tjs\t1' "$REPLY"
-sf_tui_markdown_highlight $'closed */\n' 0 $'```\tjs\t1' 0
+sf_tui_markdown_highlight $'closed */\n' $'```\tjs\t1'
 assert_equal $'```\tjs\t0' "$REPLY"
 
 typeset diff=$'@@ -1 +1 @@\n-old\n+new\n--- a/file\n+++ b/file'

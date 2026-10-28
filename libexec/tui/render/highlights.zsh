@@ -3,8 +3,8 @@ setopt no_aliases no_bg_nice no_multios pipe_fail
 
 typeset -ga SF_PRESENT_HIGHLIGHT_SPANS=()
 typeset -g SF_PRESENT_HIGHLIGHT_ERROR=''
-# An open inline construct withholds its final row.
-typeset -gi SF_PRESENT_HIGHLIGHT_INLINE_OPEN=0 SF_PRESENT_HIGHLIGHT_BLOCK_OPEN=0
+# A code line ends inside a block comment.
+typeset -gi SF_PRESENT_HIGHLIGHT_BLOCK_OPEN=0
 typeset -gA SF_PRESENT_STYLE=()
 typeset -g SF_PRESENT_BACKGROUND=''
 # Keyed "$language/$token", plus "$language" once its words are loaded.
@@ -310,37 +310,28 @@ sf_tui_code_highlight() {
   done
 }
 
-# $3 carries scan state; $4 prevents line-leading matches on fragments.
+# SOURCE is whole lines. $2 and REPLY carry an open fence across calls.
 sf_tui_markdown_highlight() {
-  local source=$1 state=${3-} line fence='' delimiter='' language='' close
-  local character suffix rest kind boundary=$state trimmed pipes
-  integer base_offset=${2:-0} continuation=${4:-0}
-  integer length=${#source} index=1 end base close_start
-  integer cursor inline_end count content match_end next_open inline complete_line starts_line
-  integer comment=0 heading=0 table_line table_continuation=0
+  local source=$1 state=${2-} line fence='' delimiter='' language='' close
+  local character suffix rest kind trimmed pipes
+  integer index=1 end base close_start
+  integer cursor inline_end count content match_end next_open inline
+  integer comment=0 table_line
   local -a fields lines
-  if [[ $state == heading ]]; then
-    heading=1
-  elif [[ $state == table ]]; then
-    table_continuation=1
-  elif [[ -n $state ]]; then
+  if [[ -n $state ]]; then
     fields=( "${(@ps:\t:)state}" )
     fence=${fields[1]-}
     language=${fields[2]-}
     comment=${fields[3]:-0}
   fi
-  SF_PRESENT_HIGHLIGHT_INLINE_OPEN=0
   # A trailing newline's empty field is not another line.
   lines=( "${(@ps:\n:)source}" )
   [[ -n $lines[-1] ]] || lines[-1]=()
   for line in "${lines[@]}"; do
     end=$(( index + ${#line} ))
-    base=$(( base_offset + index - 1 ))
-    complete_line=$(( end <= length ))
+    base=$(( index - 1 ))
     inline=1
-    table_line=$(( index == 1 && continuation && table_continuation ))
-    # Fences open and close only on whole lines.
-    starts_line=$(( index > 1 || ! continuation ))
+    table_line=0
     if [[ -n $fence ]]; then
       inline=0
       close=$line
@@ -349,7 +340,7 @@ sf_tui_markdown_highlight() {
           [[ ${close[close_start]} == (' '|$'\t') ]]; do
         (( ++close_start ))
       done
-      if (( starts_line )) && [[ ${close[close_start,-1]} == "$fence"* ]]; then
+      if [[ ${close[close_start,-1]} == "$fence"* ]]; then
         sf_tui_highlight_span $base $(( base + ${#line} )) fence
         fence=''
         language=''
@@ -358,38 +349,28 @@ sf_tui_markdown_highlight() {
         sf_tui_code_highlight "$line" "$language" $base $comment
         comment=$SF_PRESENT_HIGHLIGHT_BLOCK_OPEN
       fi
-    elif (( starts_line )) && [[ $line =~ '^ {0,3}(```+|~~~+)[[:space:]]*([^[:space:]]*)' ]]; then
+    elif [[ $line =~ '^ {0,3}(```+|~~~+)[[:space:]]*([^[:space:]]*)' ]]; then
       fence=$match[1]
       language=$match[2]
       sf_tui_highlight_span $base $(( base + ${#line} )) fence
       inline=0
     fi
     if (( inline )); then
-      if (( starts_line )); then
-        trimmed=${line#${line%%[![:space:]]*}}
-        trimmed=${trimmed%${trimmed##*[![:space:]]}}
-        pipes=${trimmed//[^\|]/}
-        if [[ $trimmed =~ '^\|?[[:space:]]*:?-{3,}:?[[:space:]]*(\|[[:space:]]*:?-{3,}:?[[:space:]]*)+\|?$' ]]; then
-          sf_tui_highlight_span $base $(( base + ${#line} )) table
-        elif [[ $trimmed == \|* || $trimmed == *\| ]] || (( ${#pipes} >= 2 )); then
-          table_line=1
-          boundary=table
-        fi
+      trimmed=${line#${line%%[![:space:]]*}}
+      trimmed=${trimmed%${trimmed##*[![:space:]]}}
+      pipes=${trimmed//[^\|]/}
+      if [[ $trimmed =~ '^\|?[[:space:]]*:?-{3,}:?[[:space:]]*(\|[[:space:]]*:?-{3,}:?[[:space:]]*)+\|?$' ]]; then
+        sf_tui_highlight_span $base $(( base + ${#line} )) table
+      elif [[ $trimmed == \|* || $trimmed == *\| ]] || (( ${#pipes} >= 2 )); then
+        table_line=1
       fi
-      if (( heading )); then
-        sf_tui_highlight_span $base $(( base + ${#line} )) heading
-      elif (( starts_line )) &&
-          [[ $line =~ '^( {0,3})(#{1,6}|>|[-*+]|[0-9]{1,9}[.)])([[:space:]]+)' ]]; then
+      if [[ $line =~ '^( {0,3})(#{1,6}|>|[-*+]|[0-9]{1,9}[.)])([[:space:]]+)' ]]; then
         match_end=$MEND
-        if [[ $match[2] == \#* ]]; then
-          heading=1
-          boundary=heading
+        [[ $match[2] != \#* ]] ||
           sf_tui_highlight_span $(( base + ${#match[1]} )) $(( base + ${#line} )) heading
-        fi
         line=${line[match_end + 1,-1]}
         (( base += match_end ))
       fi
-      SF_PRESENT_HIGHLIGHT_INLINE_OPEN=0
       cursor=1
       [[ $line == *[\`\*_\[]* || ( $table_line == 1 && $line == *\|* ) ]] ||
         cursor=$(( ${#line} + 1 ))
@@ -410,7 +391,6 @@ sf_tui_markdown_highlight() {
             cursor=$(( content + ${#delimiter} ))
             continue
           fi
-          [[ -n $suffix && $suffix[1] == ' ' ]] || SF_PRESENT_HIGHLIGHT_INLINE_OPEN=1
         fi
         if [[ $character == '[' && ${line[cursor,-1]} =~ '^\[[^]]+\]\([^[:space:])]+\)' ]]; then
           match_end=${#MATCH}
@@ -440,7 +420,6 @@ sf_tui_markdown_highlight() {
             (( cursor += count ))
             continue
           fi
-          suffix=${line[cursor + count,-1]}
           content=0
           next_open=0
           match_end=$(( cursor + count ))
@@ -470,24 +449,14 @@ sf_tui_markdown_highlight() {
             cursor=$next_open
             continue
           fi
-          [[ -n $suffix && $suffix[1] == ' ' ]] || SF_PRESENT_HIGHLIGHT_INLINE_OPEN=1
         fi
         (( ++cursor ))
       done
     fi
-    # Only the last complete line contributes resumable state.
-    if (( complete_line )); then
-      if [[ -n $fence ]] && (( ! inline )); then
-        boundary="$fence"$'\t'"$language"$'\t'"$comment"
-      else
-        boundary=''
-      fi
-      heading=0
-      SF_PRESENT_HIGHLIGHT_INLINE_OPEN=0
-    fi
     index=$(( end + 1 ))
   done
-  REPLY=$boundary
+  REPLY=''
+  [[ -z $fence ]] || REPLY="$fence"$'\t'"$language"$'\t'"$comment"
 }
 
 sf_tui_diff_highlight() {

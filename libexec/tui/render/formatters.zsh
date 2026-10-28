@@ -1,22 +1,22 @@
 emulate -R zsh
 setopt no_aliases no_bg_nice no_multios pipe_fail
 
-# At most one formatter is live. Its source stays here until the rows it
-# produces are safe: wrapping, Markdown, and styling can no longer change them.
-# Safe rows join the immutable ready queue and the source advances past them.
-# Everything already settled is rows, never state.
+# At most one block is open. Message and reasoning text commits to the ready
+# queue one complete line at a time, formatted once at the width the
+# transcript last drew. Running executions and the status below an open block
+# render fresh on every draw and commit only when they settle.
 
 typeset -g SF_LIVE_KIND='' SF_LIVE_TEXT=''
 typeset -g SF_LIVE_ROLE='' SF_LIVE_PRIOR='' SF_LIVE_SECTION=''
 typeset -g SF_LIVE_ID='' SF_LIVE_CLASS=''
 typeset -g SF_LIVE_PREVIEW=''
-typeset -gi SF_LIVE_CHROME=0 SF_LIVE_HELD=0 SF_LIVE_WORK=0
+# SHOWN: the block has committed rows. HIDDEN: its preview budget ran out.
+typeset -gi SF_LIVE_SHOWN=0 SF_LIVE_HIDDEN=0 SF_LIVE_HELD=0 SF_LIVE_WORK=0
 # Reasoning keeps its own estimate because previews hide most of the source.
 typeset -gi SF_LIVE_TOTAL=0 SF_LIVE_SPENT=0
 typeset -g SF_LIVE_TOKENS='' SF_LIVE_EXPANDED=1
-# Markdown continues from the state the settled prefix reached.
-typeset -gi SF_LIVE_FRONTIER=0 SF_LIVE_CONTINUATION=0 SF_LIVE_BASE_CONTINUATION=0
-typeset -g SF_LIVE_STATE='' SF_LIVE_SPANS='' SF_LIVE_BASE_STATE='' SF_LIVE_WIDTH=''
+# The open code fence, if any, after the last committed line.
+typeset -g SF_LIVE_STATE=''
 # The block index of the provider response being streamed.
 typeset -g SF_LIVE_BLOCK=''
 
@@ -33,19 +33,14 @@ sf_tui_live_clear() {
   SF_LIVE_ID=''
   SF_LIVE_CLASS=''
   SF_LIVE_PREVIEW=''
-  SF_LIVE_CHROME=0
+  SF_LIVE_SHOWN=0
+  SF_LIVE_HIDDEN=0
   SF_LIVE_HELD=0
   SF_LIVE_TOTAL=0
   SF_LIVE_SPENT=0
   SF_LIVE_TOKENS=''
   SF_LIVE_EXPANDED=1
-  SF_LIVE_FRONTIER=0
-  SF_LIVE_CONTINUATION=0
-  SF_LIVE_BASE_CONTINUATION=0
   SF_LIVE_STATE=''
-  SF_LIVE_SPANS=''
-  SF_LIVE_BASE_STATE=''
-  SF_LIVE_WIDTH=''
 }
 
 sf_tui_formatters_reset() {
@@ -56,9 +51,8 @@ sf_tui_formatters_reset() {
   SF_PRESENT_SECTION_ID=0
 }
 
-# Settled rows are built at the width the transcript last drew, so closing a
-# live formatter continues the rows the reader is already looking at. Once
-# ready, a row never reflows.
+# Committed rows are built at the width the transcript last drew, so they
+# continue the rows the reader is already looking at. They never reflow.
 sf_tui_row_width() {
   integer columns=${COLUMNS:-0}
   REPLY=$SF_PRESENT_WIDTH
@@ -71,11 +65,9 @@ sf_tui_row_width() {
 sf_tui_claim_role() {
   local role=$1
   [[ -n $role && $SF_PRESENT_LAST_ROLE != $role ]] || return 0
-  SF_LIVE_ROLE=''
-  SF_LIVE_PRIOR=''
-  SF_LIVE_SECTION=''
   SF_LIVE_ROLE=$role
   SF_LIVE_PRIOR=$SF_PRESENT_LAST_ROLE
+  SF_LIVE_SECTION=''
   if [[ $role == (user|agent) ]]; then
     (( ++SF_PRESENT_SECTION_ID ))
     SF_LIVE_SECTION=$SF_PRESENT_SECTION_ID
@@ -85,7 +77,7 @@ sf_tui_claim_role() {
 
 # A formatter that never showed anything releases the role it claimed.
 sf_tui_retract() {
-  if [[ -n $SF_LIVE_ROLE ]] && (( ! SF_LIVE_CHROME )); then
+  if [[ -n $SF_LIVE_ROLE ]] && (( ! SF_LIVE_SHOWN )); then
     [[ -z $SF_LIVE_SECTION ]] ||
       SF_PRESENT_SECTION_ID=$(( SF_PRESENT_SECTION_ID - 1 ))
     SF_PRESENT_LAST_ROLE=$SF_LIVE_PRIOR
@@ -93,7 +85,7 @@ sf_tui_retract() {
   sf_tui_live_clear
 }
 
-# Render the live formatter one last time and keep every row it produces.
+# Commit the open block's remaining rows, followed by its separator.
 sf_tui_settle() {
   integer columns
   [[ -n $SF_LIVE_KIND ]] || return 0
@@ -103,8 +95,12 @@ sf_tui_settle() {
   fi
   sf_tui_row_width
   columns=$REPLY
-  sf_tui_format_live $columns 1 || return 1
-  sf_tui_rows_settle ${#SF_FORMAT_ROWS} $SF_FORMAT_LEADING
+  if [[ $SF_LIVE_KIND == execution ]]; then
+    sf_tui_format_execution $columns 1 || return 1
+  else
+    sf_tui_format_lines $columns 1 || return 1
+  fi
+  sf_tui_rows_settle
   sf_tui_live_clear
 }
 
@@ -112,7 +108,7 @@ sf_tui_settle() {
 sf_tui_live_empty() {
   case $SF_LIVE_KIND in
     ''|activity) return 0 ;;
-    message|reasoning) (( ! SF_LIVE_CHROME )) && [[ $SF_LIVE_TEXT != *[!$'\n']* ]] ;;
+    message|reasoning) (( ! SF_LIVE_SHOWN )) && [[ $SF_LIVE_TEXT != *[!$'\n']* ]] ;;
     *) return 1 ;;
   esac
 }
@@ -159,9 +155,10 @@ sf_tui_message_stream() {
   if [[ -n $text ]]; then
     sf_tui_safe "$text"
     SF_LIVE_TEXT+=$REPLY
-    [[ $kind != reasoning ]] || (( SF_LIVE_TOTAL += ${#REPLY} ))
+    (( SF_LIVE_TOTAL += ${#REPLY} ))
   fi
   [[ -z $tokens ]] || sf_tui_reasoning_tokens "$tokens"
+  sf_tui_rows_commit
 }
 
 # The response is complete; the next event decides what runs now.
@@ -221,7 +218,7 @@ sf_tui_error_append() {
   sf_tui_row_width
   columns=$REPLY
   sf_tui_format_notice $columns "✕ $heading" ${#heading} "$detail" || return 1
-  sf_tui_rows_settle ${#SF_FORMAT_ROWS} $SF_FORMAT_LEADING
+  sf_tui_rows_settle
   SF_PRESENT_LAST_ROLE=error
 }
 
@@ -252,63 +249,28 @@ sf_tui_activity_resume() {
 
 # Row flow ------------------------------------------------------------------
 
-# Build the mutable tail and move every newly safe row into the ready queue.
+# Commit the open block's complete lines.
+sf_tui_rows_commit() {
+  sf_tui_row_width
+  sf_tui_format_lines $REPLY 0 || return 1
+  sf_tui_rows_append
+}
+
+# Render the open block's uncommitted view below the ready queue.
 sf_tui_rows_prepare() {
-  integer columns=$1 row safe source leading body_rows
+  integer columns=$1
   SF_PRESENT_LIVE_ROW_TEXT=()
   SF_PRESENT_LIVE_ROW_SPANS=()
-  [[ -n $SF_LIVE_KIND ]] || return 0
-
-  sf_tui_format_live $columns 0 || return 1
-  safe=$SF_FORMAT_SAFE
-  (( safe >= SF_FORMAT_LEADING )) || safe=0
-  if (( safe )); then
-    sf_tui_rows_append $safe $SF_FORMAT_LEADING
-    source=0
-    for (( row = 1; row <= safe; row++ )); do
-      source=$(( source + ${SF_FORMAT_CONSUMED[row]:-0} ))
-    done
-    leading=$(( SF_FORMAT_LEADING > 0 ))
-    body_rows=$(( safe > SF_FORMAT_LEADING ? safe - SF_FORMAT_LEADING : 0 ))
-    (( body_rows <= SF_FORMAT_BODY_ROWS )) || body_rows=$SF_FORMAT_BODY_ROWS
-    sf_tui_advance $source $leading $body_rows
-  fi
-  for (( row = safe + 1; row <= ${#SF_FORMAT_ROWS}; row++ )); do
-    SF_PRESENT_LIVE_ROW_TEXT+=( "$SF_FORMAT_ROWS[row]" )
-    SF_PRESENT_LIVE_ROW_SPANS+=( "$SF_FORMAT_SPANS[row]" )
-  done
-}
-
-# Drop the source the safe rows consumed and restart Markdown from the state
-# they reached, so a later width change rescans only what is left.
-sf_tui_advance() {
-  integer source=$1 leading=$2 body_rows=$3
-  SF_LIVE_CHROME=1
-  (( ! source )) || SF_LIVE_TEXT=${SF_LIVE_TEXT[source + 1,-1]}
-  (( ! leading )) || {
-    SF_LIVE_ROLE=''
-    SF_LIVE_SECTION=''
-    SF_LIVE_PRIOR=''
-  }
-  SF_LIVE_BASE_STATE=$SF_LIVE_STATE
-  SF_LIVE_BASE_CONTINUATION=$SF_LIVE_CONTINUATION
-  SF_LIVE_FRONTIER=0
-  SF_LIVE_SPANS=''
-  (( SF_LIVE_SPENT += body_rows ))
-}
-
-sf_tui_format_live() {
-  integer columns=$1 final=$2
+  sf_tui_format_start
   case $SF_LIVE_KIND in
-    message) sf_tui_format_message $columns $final ;;
-    reasoning) sf_tui_format_reasoning $columns $final ;;
-    execution) sf_tui_format_execution $columns $final ;;
-    activity)
-      sf_tui_format_start
-      sf_tui_format_styled $columns "$SF_PRESENT_ACTIVITY" activity
-      ;;
+    '') return 0 ;;
+    message|reasoning) sf_tui_format_status $columns ;;
+    execution) sf_tui_format_execution $columns 0 ;;
+    activity) sf_tui_format_styled $columns "$SF_PRESENT_ACTIVITY" activity ;;
     *) return 1 ;;
-  esac
+  esac || return 1
+  SF_PRESENT_LIVE_ROW_TEXT=( "${(@)SF_FORMAT_ROWS}" )
+  SF_PRESENT_LIVE_ROW_SPANS=( "${(@)SF_FORMAT_SPANS}" )
 }
 
 # A live formatter animates unless a decision is pending.

@@ -28,18 +28,19 @@ sf_tui_reset() {
   sf_tui_formatters_reset
 }
 
-# READY prevents committing role chrome without its content.
+# A commit ends on a READY row: never role chrome without its content, and
+# never a blank row, which ZLE would collapse at the edge of its display.
 sf_tui_rows_append() {
-  integer count=$1 leading=$2 row
-  for (( row = 1; row <= count; row++ )); do
+  integer row
+  for (( row = 1; row <= ${#SF_FORMAT_ROWS}; row++ )); do
     SF_PRESENT_ROW_TEXT+=( "$SF_FORMAT_ROWS[row]" )
     SF_PRESENT_ROW_SPANS+=( "$SF_FORMAT_SPANS[row]" )
-    SF_PRESENT_ROW_READY+=( $(( ! leading || row >= leading )) )
+    SF_PRESENT_ROW_READY+=( $(( row > SF_FORMAT_LEADING && ${#SF_FORMAT_ROWS[row]} )) )
   done
 }
 
 sf_tui_rows_settle() {
-  sf_tui_rows_append "$1" "$2"
+  sf_tui_rows_append
   # A separator waits for the next entry or prompt commit.
   SF_PRESENT_ROW_TEXT+=( '' )
   SF_PRESENT_ROW_SPANS+=( '' )

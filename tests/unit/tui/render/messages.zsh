@@ -19,7 +19,7 @@ view() {
   sf_tui_transcript "$@" || fail 'rendering the transcript failed'
   REPLY=${SF_PRESENT_VIEWPORT_TEXT%$'\n'}
 }
-# Content settles at the terminal width, so a narrow case sets it up front.
+# Content commits at the terminal width, so a narrow case sets it up front.
 width() { COLUMNS=$(( $1 + 1 )) }
 message() {
   sf_tui_action message_start "$1" &&
@@ -86,25 +86,40 @@ message user $'one\ntwo\nthree\nfour'
 view 79 3
 assert_equal $'three\nfour' "$REPLY"
 
-# Live messages expose only complete wrapped rows.
+# Live text commits whole lines; the line still arriving stays hidden.
 sf_tui_reset
+sf_tui_terminal_reset
+width 8
 sf_tui_action message_start agent
 stream 0 text 'hello world'
 view 8 20
-assert_equal $'─ agent \n\nhello\n⠃' "$REPLY"
-assert_equal 3 "$SF_PRESENT_SAFE_ROWS"
+assert_equal $'─ agent \n\n⠃' "$REPLY"
+assert_equal 0 "$SF_PRESENT_SAFE_ROWS"
+stream 0 text $' again\nnext'
+view 8 20
+assert_equal $'─ agent \n\nhello\nworld\nagain\n⠃' "$REPLY"
+assert_equal 5 "$SF_PRESENT_SAFE_ROWS"
 sf_tui_action message_end
 view 8 20
-assert_equal $'─ agent \n\nhello\nworld' "$REPLY"
-assert_equal 4 "$SF_PRESENT_SAFE_ROWS"
+assert_equal $'─ agent \n\nhello\nworld\nagain\nnext' "$REPLY"
 
-# A newline shows the current row, and closing settles it with the role.
+# Blank lines wait for the text after them, so a commit never ends on one.
+sf_tui_reset
+sf_tui_terminal_reset
+width 20
+sf_tui_action message_start agent
+stream 0 text $'one\n\n'
+view 20 20
+assert_equal one "${SF_PRESENT_SAFE_TEXT##*$'\n'}"
+stream 0 text $'two\n'
+view 20 20
+[[ $REPLY == *$'\n\none\n\ntwo\n⠃' ]] || fail "blank line between commits: $REPLY"
+sf_tui_action message_end
+
+# A newline-closed line settles with its role.
 sf_tui_reset
 sf_tui_action message_start agent
 stream 0 text $'answer\n'
-view 20 20
-[[ $REPLY == *$'\n\nanswer\n⠃' ]] || fail "newline-closed assistant row: $REPLY"
-assert_equal 0 "$SF_PRESENT_SAFE_ROWS"
 sf_tui_action message_end
 message user next
 view 20 20
@@ -113,6 +128,7 @@ view 20 20
 
 # An empty response retracts its chrome and releases its section.
 sf_tui_reset
+width 12
 sf_tui_action message_start agent
 view 12 20
 assert_equal $'─ agent  1 ─\n\n⠃' "$REPLY"
@@ -122,6 +138,7 @@ message user next
 view 12 20
 [[ $REPLY == $'─ user '*$' 1 ─\n\nnext' ]] || fail "empty response retraction: $REPLY"
 sf_tui_reset
+width 79
 sf_tui_action message_start agent
 stream 0 text $'\n'
 stream 1 reasoning $'\n\n'
@@ -133,6 +150,7 @@ view 79 20
 # Only committed rows leave the queue, and each row commits once.
 sf_tui_reset
 sf_tui_terminal_reset
+width 8
 sf_tui_action message_start agent
 stream 0 text $'one\ntail\n'
 sf_tui_transcript 8 20
@@ -156,9 +174,10 @@ sf_tui_terminal_restore
 sf_tui_transcript 8 20
 assert_equal '' "$SF_PRESENT_VIEWPORT_TEXT"
 
-# Fence separators remain live until they can commit inside visible rows.
+# A blank line between fences commits at the start of the next one.
 sf_tui_reset
 sf_tui_terminal_reset
+width 20
 sf_tui_action message_start agent
 stream 0 text $'```json\n{}\n```\n'
 sf_tui_transcript 20 20
@@ -170,59 +189,44 @@ sf_tui_transcript 20 20
 assert_equal 0 "$SF_PRESENT_SAFE_ROWS"
 stream 0 text $'```jsonc\n'
 sf_tui_transcript 20 20
-assert_equal 0 "$SF_PRESENT_SAFE_ROWS"
-stream 0 text $'{}\n'
-sf_tui_transcript 20 20
-assert_equal $'```\n\n```jsonc' "$SF_PRESENT_SAFE_TEXT"
+assert_equal $'\n```jsonc' "$SF_PRESENT_SAFE_TEXT"
 
-# A width change reflows only uncommitted source.
+# Committed rows keep their width; the rest formats at the width drawn last.
 sf_tui_reset
 sf_tui_terminal_reset
+width 8
 sf_tui_action message_start agent
-stream 0 text 'alpha beta gamma'
+stream 0 text $'alpha beta\ngamma delta'
 sf_tui_transcript 8 20
-assert_equal 4 "$SF_PRESENT_SAFE_ROWS"
 sf_tui_terminal_stage
-assert_equal 1 "$SF_PRESENT_ROW_HEAD"
-sf_tui_transcript 5 20
 sf_tui_terminal_finish
-assert_equal 1 "$SF_PRESENT_ROW_HEAD"
 sf_tui_terminal_restore
 SF_PRESENT_STYLE[activity]='fg=#2a2a2a'
 sf_tui_transcript 5 20
 assert_equal '⠃' "$SF_PRESENT_VIEWPORT_TEXT"
 (( ${SF_PRESENT_VIEWPORT_HIGHLIGHTS[(Ie)fg=#2a2a2a]} )) ||
-  fail 'the live tail lost its activity style'
+  fail 'the status row lost its activity style'
 unset 'SF_PRESENT_STYLE[activity]'
 sf_tui_action message_end
 view 5 20
-assert_equal gamma "$REPLY"
+assert_equal $'gamma\ndelta' "$REPLY"
 
-# Logical source consumption survives cell-width changes.
+# Tabs, wide characters, and Markdown styles commit intact.
 SF_PRESENT_STYLE=( message 'fg=1' syntax.strong bold )
 sf_tui_reset
 sf_tui_terminal_reset
 sf_tui_action message_start agent
-stream 0 text $'界\t**bold** tail'
+stream 0 text $'界\t**bold** tail\n'
 sf_tui_transcript 10 20
 [[ $SF_PRESENT_SAFE_TEXT == *'界      '* ]] ||
   fail "tab or wide character was not staged: $SF_PRESENT_SAFE_TEXT"
 [[ ${(j: :)SF_PRESENT_SAFE_HIGHLIGHTS} == *bold* ]] ||
   fail 'staged Markdown lost its style span'
-typeset committed=$SF_PRESENT_SAFE_TEXT
-sf_tui_terminal_stage
-sf_tui_terminal_finish
-sf_tui_terminal_restore
-sf_tui_action message_end
-sf_tui_transcript 6 20
-[[ $SF_PRESENT_VIEWPORT_TEXT != *界* && $SF_PRESENT_VIEWPORT_TEXT != *bold* ]] ||
-  fail 'committed wide or styled source reappeared after resize'
-[[ $committed == *界* && $committed == *bold* ]] ||
-  fail 'the temporary commit lost staged source'
 SF_PRESENT_STYLE=()
 
 # Blocks settle in index order; inert blocks only close the one before them.
 sf_tui_reset
+width 79
 sf_tui_action message_start agent
 stream 0 text first
 stream 1 text second
@@ -234,7 +238,6 @@ view 79 20
 [[ $REPLY == *$'\n\nfirst\n\nsecond' ]] || fail "inert block boundary: $REPLY"
 stream 3 reasoning thought 9
 view 79 20
-# Reasoning withholds its incomplete line, exactly as message text does.
 [[ $REPLY == *$'  ⠃' ]] || fail "reasoning transition: $REPLY"
 stream 4 inert ''
 view 79 20
@@ -249,13 +252,13 @@ sf_tui_action message_start agent
 stream 0 reasoning $'first\nsecond\nthird'
 sf_tui_transcript 20 20
 [[ $SF_PRESENT_SAFE_TEXT == *'✎ first'* ]] ||
-  fail 'reasoning preview lost its safe leading rows'
+  fail 'reasoning preview lost its leading rows'
 sf_tui_terminal_stage
 sf_tui_terminal_finish
 sf_tui_terminal_restore
 sf_tui_transcript 10 20
 [[ $SF_PRESENT_VIEWPORT_TEXT != *second* ]] ||
-  fail 'resize restored consumed chrome or drained hidden rows'
+  fail 'resize restored committed chrome or showed hidden rows'
 [[ $SF_PRESENT_VIEWPORT_TEXT == *'~5'* ]] ||
   fail 'partial reasoning lost its whole-content estimate'
 sf_tui_action message_end
@@ -267,7 +270,7 @@ sf_tui_terminal_finish
 [[ $PREDISPLAY != *second* ]] || fail 'a clamp committed the rows it hid'
 sf_tui_terminal_reset
 
-# Live reasoning tails remain unsafe, and usage refines the estimate.
+# A spent preview shows its estimate, and usage refines it.
 sf_tui_reset
 sf_tui_action message_start agent
 stream 0 reasoning $'first\nsecond'
@@ -284,9 +287,10 @@ assert_equal 4 "$SF_PRESENT_SAFE_ROWS"
 
 # Wrapped reasoning keeps the icon on its first line only.
 sf_tui_reset
+SF_PRESENT_PREVIEW_REASONING=full
 width 13
 sf_tui_action message_start agent
-stream 0 reasoning 'a reasoning block long enough to wrap'
+stream 0 reasoning $'a reasoning block long enough to wrap\nand a second line'
 sf_tui_action message_end
 view 14 20
 typeset icon_tail=${REPLY#*✎}
@@ -298,13 +302,14 @@ width 79
 sf_tui_reset
 SF_PRESENT_PREVIEW_REASONING=0
 sf_tui_action message_start agent
-stream 0 reasoning thought
+stream 0 reasoning $'thought\nmore'
 view 79 20
-[[ $REPLY == *$'✎ Thinking… ⠃' ]] || fail "live collapsed reasoning: $REPLY"
+[[ $REPLY == *$'✎ Thinking… ⠃' && $REPLY != *thought* ]] ||
+  fail "live collapsed reasoning: $REPLY"
 assert_equal 0 "$SF_PRESENT_SAFE_ROWS"
 sf_tui_action message_end
 view 79 20
-[[ $REPLY == *$'✎ Thought for ~2 tokens.' ]] || fail "settled collapsed reasoning: $REPLY"
+[[ $REPLY == *$'─\n\n✎ Thought for ~3 tokens.' ]] || fail "settled collapsed reasoning: $REPLY"
 SF_PRESENT_PREVIEW_REASONING=full
 
 # System text is clamped to the configured context budget.
@@ -330,42 +335,37 @@ view 79 20
 assert_equal 4 "$SF_PRESENT_SAFE_ROWS"
 SF_PRESENT_PREVIEW=full
 
-# Incomplete inline syntax withholds only a bounded suffix.
-sf_tui_reset
-sf_tui_action message_start agent
-stream 0 text '**open word word tail'
-view 10 20
-assert_equal 0 "$SF_PRESENT_SAFE_ROWS"
-sf_tui_reset
-sf_tui_action message_start agent
-stream 0 text \
-  '**open word word word word word word word word word word word word word word word word word word word word tail'
-view 10 40
-(( SF_PRESENT_SAFE_ROWS > 0 )) || fail 'a tall inline stream did not drain'
+# Lines inside an open fence commit as they complete.
 sf_tui_reset
 sf_tui_action message_start agent
 stream 0 text $'```js\nconst x = 1;\ntail'
 view 20 20
-(( SF_PRESENT_SAFE_ROWS > 0 )) || fail 'an open fence withheld stable rows'
+[[ $SF_PRESENT_SAFE_TEXT == *$'```js\nconst x = 1;' ]] ||
+  fail "an open fence withheld complete lines: $SF_PRESENT_SAFE_TEXT"
 
-# Markdown styling is independent of chunk boundaries.
-SF_PRESENT_STYLE=( message m syntax.heading h syntax.strong s )
+# Streamed and replayed text produce the same rows and styles.
+SF_PRESENT_STYLE=( message m syntax.heading h syntax.strong s syntax.code c
+  syntax.fence f syntax.keyword k syntax.comment o )
+typeset source=$'# A **bold heading** that wraps\n\n```js\nconst x = 1; /* open\nstill */ let y\n```\n\n- item `code`\n'
+integer cut
 sf_tui_reset
+width 12
 sf_tui_action message_start agent
-stream 0 text '# A **bold '
-view 12 40
-stream 0 text 'heading that wraps** '
-view 12 40
-stream 0 text 'and keeps growing'
+for (( cut = 1; cut <= ${#source}; cut += 7 )); do
+  stream 0 text "${source[cut,cut + 6]}"
+  view 12 40
+done
+sf_tui_action message_end
 view 12 40
 typeset chunked_text=$SF_PRESENT_VIEWPORT_TEXT
 typeset chunked_spans="${(j:|:)SF_PRESENT_VIEWPORT_HIGHLIGHTS}"
 sf_tui_reset
-sf_tui_action message_start agent
-stream 0 text '# A **bold heading that wraps** and keeps growing'
+message agent "$source"
 view 12 40
 assert_equal "$chunked_text" "$SF_PRESENT_VIEWPORT_TEXT"
 assert_equal "$chunked_spans" "${(j:|:)SF_PRESENT_VIEWPORT_HIGHLIGHTS}"
+[[ $chunked_spans == *'|k'* && $chunked_spans == *'|o'* ]] ||
+  fail "streamed code lost its fence state: $chunked_spans"
 SF_PRESENT_STYLE=()
 
 print -r -- ok
