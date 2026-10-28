@@ -67,6 +67,22 @@ jq -e '.tools[0].description | startswith("edited after creation")' \
   "$tmp/live-request.json" >/dev/null || fail 'tool manifest was not read live'
 sf_test_shell_tool '.environment=["TMPPREFIX"]'
 
+# A tool that opts out runs normally even when session sandboxing is enabled.
+SF_TEST_PROFILE=$(jq -c '.sandbox.enabled=true' <<<"$SF_TEST_PROFILE")
+sf_test_shell_tool '.sandbox=false | .allow_sandbox_bypass=false'
+typeset opted_out_session="$tmp/opted-out.jsonl" opted_out_stream="$tmp/opted-out.stream"
+sf_test_session "$opted_out_session"
+SF_TEST_BACKEND_TOOL_CALL=1 sf_test_run opted-out "$opted_out_session" >"$opted_out_stream" ||
+  fail 'opted-out tool turn failed'
+jq -eRn '[inputs | fromjson] as $events |
+  all($events[]; has("sandbox_bypassed") | not) and
+  ($events | any(.type == "tool_result" and .exit_code == 0)) and
+  ($events | any(.type == "_tool_permission_request") | not)
+' <"$opted_out_stream" >/dev/null || fail 'opted-out tool was treated as a bypass'
+assert_canonical_session "$opted_out_session"
+SF_TEST_PROFILE=$base_profile
+sf_test_shell_tool '.environment=["TMPPREFIX"]'
+
 # Tool temp cannot redirect the next call's core-owned input write.
 typeset input_target="$tmp/tool-input-target" input_session="$tmp/tool-input.jsonl"
 typeset input_stream="$tmp/tool-input.stream"
@@ -188,9 +204,9 @@ jq -eRn '
   ([$events[] | select(.type | IN("hook_result","_draft")) | .type] ==
     ["hook_result","_draft"]) and
   ($events | map(select(.type == "_draft"))[0] |
-    .user_text == "Shell print -rn -- approved\n" and .sandboxed == false) and
+    .user_text == "Shell print -rn -- approved\n" and .sandbox_bypassed == true) and
   ($events | map(select(.type == "tool_result"))[0] |
-    .exit_code == 0 and .sandboxed == false and
+    .exit_code == 0 and .sandbox_bypassed == true and
     .user_text == "Shell print -rn -- approved\napproved\nexit 0")
 ' <"$stream" >/dev/null || fail 'permission allow produced the wrong records'
 
@@ -215,6 +231,7 @@ for gate in sandbox-disabled unsupported no-reason; do
     sf_test_run permission "$session" >"$stream" 2>"$tmp/gate.err" || gate_status=$?
   [[ ! -e $permission_input ]] || fail "permission hook ran for $gate"
   jq -eRn 'all(inputs | fromjson; .type != "_tool_permission_request" and
+    (has("sandbox_bypassed") | not) and
     (.type != "hook_result" or .lifecycle != "permission_request"))' <"$stream" >/dev/null ||
     fail "permission was requested for $gate"
   case $gate in
@@ -253,7 +270,7 @@ jq -eRn '
   ($events | map(select(.type == "hook_result"))[0] ==
     {type:"hook_result",lifecycle:"permission_request",id:"1",action:"deny",reason:"review denied"}) and
   ($events | map(select(.type == "tool_result"))[0] |
-    .exit_code == 126 and .model_text == "review denied" and (has("sandboxed") | not) and
+    .exit_code == 126 and .model_text == "review denied" and (has("sandbox_bypassed") | not) and
     .user_text == "Shell true\nreview denied")
 ' <"$stream" >/dev/null || fail 'permission denial did not settle the call'
 
@@ -283,7 +300,8 @@ jq -eRn '
   ($events | map(select(.type == "_tool_permission_request"))[0].tool.input.command) ==
     "print -rn -- approved" and
   ($events | map(select(.type == "hook_result")) | any(.user_text == "reviewed")) and
-  ($events | map(select(.type == "tool_result"))[0].exit_code) == 0
+  ($events | map(select(.type == "tool_result"))[0] |
+    .exit_code == 0 and .sandbox_bypassed == true)
 ' <"$stream" >/dev/null || fail 'client permission was not requested explicitly'
 jq -e -s 'all(.[]; .type != "_tool_permission_request" and
   .type != "_tool_permission_response")' "$session" >/dev/null ||

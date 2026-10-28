@@ -54,7 +54,7 @@ def tool_plan($profile; $tools; $call; $turn; $max_capture):
      draft:({type:"_draft",id:$id,name:$name,
        user_text:render_template($manifest.user_text; {input:$input})} +
        ($manifest | with_entries(select(.key == "user_preview_lines"))) +
-       if $sandboxed then {} else {sandboxed:false} end)},
+       if $permission.decision == "request" then {sandbox_bypassed:true} else {} end)},
    decision:$permission.decision,
    permission_reason:($permission.reason // ""),
    executable:($tool.command // ""),
@@ -74,7 +74,7 @@ def tool_result($component; $outcome):
     exit_code:$outcome.output.exit_code,
     user_text:render_template($component.template; $component + $outcome),
     model_text:$outcome.output.stdout} |
-  if $outcome.ran then . else del(.sandboxed) end |
+  if $outcome.ran then . else del(.sandbox_bypassed) end |
   with_entries(select(.value != "")) |
   if canonical_tool_result then . else error("invalid tool result") end;
 

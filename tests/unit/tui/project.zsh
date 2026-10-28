@@ -66,10 +66,22 @@ assert_equal 'execution_update | call_1 | tool | shell · make test | 2
 execution_end | call_1 | tool | shell · make test
 ok | full' "$REPLY"
 
-# No template can hide an unsandboxed call.
+# No template can hide an approved sandbox bypass.
 project live \
-  '{"type":"tool_result","id":"call_2","name":"shell","input":{},"exit_code":0,"sandboxed":false}'
+  '{"type":"_draft","id":"call_2","name":"shell","sandbox_bypassed":true}' \
+  '{"type":"tool_result","id":"call_2","name":"shell","input":{},"exit_code":0,"sandbox_bypassed":true}'
+assert_equal 'execution_update | call_2 | tool | [unsandboxed] shell | default
+execution_end | call_2 | tool | [unsandboxed] shell | default' "$REPLY"
+project load \
+  '{"type":"tool_result","id":"call_2","name":"shell","input":{},"exit_code":0,"sandbox_bypassed":true}'
 assert_equal 'execution_end | call_2 | tool | [unsandboxed] shell | default' "$REPLY"
+
+# Normal tool execution carries no bypass badge.
+project live \
+  '{"type":"_draft","id":"call_3","name":"skill","user_text":"Skill code-principles"}' \
+  '{"type":"tool_result","id":"call_3","name":"skill","input":{"name":"code-principles"},"exit_code":0,"user_text":"Skill code-principles"}'
+assert_equal 'execution_update | call_3 | tool | Skill code-principles | default
+execution_end | call_3 | tool | Skill code-principles | default' "$REPLY"
 
 # Hook context is reference material; a hook notice speaks only to the reader.
 # Drafts and results carry their own preview hints.

@@ -466,10 +466,10 @@ function applyModel(frame) {
   model.textContent = backend ? backend + "/" + name : name;
 }
 
-// The core marks an unsandboxed call so that no template can hide it.
+// The core marks an approved bypass so that no template can hide it.
 function resultText(frame) {
   const text = trimBoundaryNewlines(frame.user_text);
-  return frame.sandboxed === false ? "[unsandboxed] " + (text || frame.name) : text;
+  return frame.sandbox_bypassed === true ? "[unsandboxed] " + (text || frame.name) : text;
 }
 
 function renderDraft(frame) {
