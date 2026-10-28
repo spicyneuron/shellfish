@@ -1,10 +1,18 @@
-- Driver and passenger, actor and coach, user advocate, adversarial review
-- Modes: stop hook handoff, inline steering, sequential context, explicit tool
-- Targets: shallow solutions, forgotten instructions, review-and-commit workflows
+# Decision models
 
-- Parallel prompt to several models, one summarizes
+Determine if tool call is appropriate?
 
-- Reason required per change, across shell, write, and edit
+Determine sandbox bypass decision dimensions
+
+Determine if agent is diverging from user intent
+
+# Fancy Subagents
+
+- Council: Parallel prompt to several models, one summarizes
+
+# Safeguards
+
+- Reason required for every change, across shell, write, and edit
 - Reports diff and LOC change
 - UIs render the reason as a prominent part of the diff
 
