@@ -1,3 +1,0 @@
-// Empty until shadowed: bundled profiles select sandbox/default.jsonc from the
-// Shellfish directory, which keeps sandboxing enabled with no extra grants.
-{}

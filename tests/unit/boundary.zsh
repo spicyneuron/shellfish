@@ -59,7 +59,7 @@ for token in $matches; do routes+=( ${(s:|:)${${token//[[:space:]]/}%\)}} ); don
 
 # Named routes are the whole public command surface; the rest are chat flags.
 typeset -a surface=( ${(o)${(M)routes:#[a-z]*}} )
-[[ ${(j: :)surface} == 'backend-request run' ]] ||
+[[ ${(j: :)surface} == 'backend-request init run' ]] ||
   fail "unexpected public command surface: $surface"
 
 # Programs the dispatcher reaches by path instead of by route name.
@@ -101,7 +101,7 @@ for dir in $ROOT/libexec/*(/N); do
   collect '\$SF_SHARE/[^"'\'' ]+' $shell_files $jq_files
   for token in $matches; do
     module=${token#\$SF_SHARE/}
-    [[ $module == (hooks/*|profiles/*|template/*|tui.jsonc) ]] ||
+    [[ $module == (hooks/*|template|tui.jsonc) ]] ||
       fail "$component uses unknown shared data: $module"
   done
 

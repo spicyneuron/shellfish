@@ -1,7 +1,8 @@
 // Shellfish sandbox: https://github.com/spicyneuron/shellfish
 //
-// Bundled profiles select this file. Paths are absolute, "~/" for HOME, or
-// "@" for the bundled root, and need not exist on every machine.
+// The profiles beside this one select this file as "default". Paths are
+// absolute, "~/" for HOME, "./" or "../" relative to this file, or "@" for the
+// bundled root, and need not exist on every machine.
 {
   "$schema": "https://raw.githubusercontent.com/spicyneuron/shellfish/refs/heads/main/share/sandbox.schema.json",
 

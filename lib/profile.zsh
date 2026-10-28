@@ -149,20 +149,26 @@ sf_profile_resolve() {
   REPLY=''
   sf_environment_dir || sf_profile_fail "$SF_ENVIRONMENT_ERROR" || return
   config_dir=$REPLY
-  sf_profile_lookup "$config_dir" profiles "$name" .jsonc ||
-    sf_profile_fail "unknown profile: $name" || return
-  file=$REPLY
-  profile=$(sf_jsonc_read "$file" 2>&1) ||
-    sf_profile_validation_error "$profile" "invalid profile: $file" || return
+  # Without -p, profiles/default.jsonc is the base when it exists.
+  if sf_profile_lookup "$config_dir" profiles "$name" .jsonc; then
+    file=$REPLY
+    profile=$(sf_jsonc_read "$file" 2>&1) ||
+      sf_profile_validation_error "$profile" "invalid profile: $file" || return
+  else
+    [[ -z $1 ]] || sf_profile_fail "unknown profile: $name" || return
+    file='' profile='{}'
+  fi
   sf_jq_fields -rn --argjson profile "$profile" --argjson extra "$extra" \
-    --arg name "$name" --arg dir "${file:h}" --arg cwd "${PWD:A}" '
+    --arg name "$name" --arg dir "${file:+${file:h}}" --arg cwd "${PWD:A}" '
     include "lib/fields";
     include "lib/profile";
     ($extra | config_profile(["options"]) | config_relative("profile"; $cwd)) as $extra |
     $profile | config_profile(["profile " + $name]) | config_relative("profile"; $dir) |
     reduce ("model", "sandbox", "system", "tools", "hooks") as $field (.;
       .[$field] += $extra[$field]) |
-    if .model == [] then error("profile selects no model: " + $name) else . end |
+    if .model != [] then .
+    elif $dir == "" then error("no model selected: run shellfish init, or pass -m")
+    else error("profile selects no model: " + $name) end |
     reduce ("system", "tools", "hooks") as $field (.;
       .[$field] |= reduce .[] as $item ([]; if index([$item]) then . else . + [$item] end)) |
     entry("profile"; tojson),

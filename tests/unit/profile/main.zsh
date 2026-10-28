@@ -56,7 +56,7 @@ jq -e --arg root "${SF_TEST_CONFIG:A}" '
 
 # A path is taken as written, and "@" is the bundled root.
 sf_profile_resolve_args -p "$SF_TEST_CONFIG/profiles/openai/sol.jsonc" \
-  -m @models/openrouter.jsonc
+  -m '{"adapter": "@backends/openrouter"}'
 jq -e '.model.request.model == "sol" and (.model.adapter | endswith("/share/backends/openrouter"))' \
   <<<"$REPLY" >/dev/null || fail 'path references did not select their files'
 
@@ -141,18 +141,20 @@ if sf_profile_resolve_args -p hooked; then
 fi
 [[ $SF_PROFILE_ERROR == *'hook manifest must be valid and declare "on"'* ]]
 
-# The bundled default profile layers your default model over the bundled one
-# and resolves its components under share/.
-sf_test_model default '{"adapter": "'"$fixture_backend"'", "request": {"model": "mine"}}'
-sf_profile_resolve_args
-profile=$REPLY
-jq -e --arg share "$ROOT/share/" '
-  .model.request == {max_tokens:16384,reasoning:{effort:"medium"},model:"mine"} and
-  ([.hooks[], .tools[], .system[]] | length > 0 and all(.[]; startswith($share)))
-' <<<"$profile" >/dev/null || fail 'bundled default profile did not resolve'
-sf_profile_resolve_args -p coding
-jq -e '.hooks | map(split("/")[-2:] | join("/")) | index("hooks/review") != null' \
-  <<<"$REPLY" >/dev/null || fail 'bundled coding profile lost review'
+# Template profiles resolve their components under share/ once the template
+# model names a model. Only plus opts into child agents and review.
+cp "$ROOT/share/template/models/default.jsonc" "$SF_TEST_CONFIG/models/default.jsonc"
+sf_test_sandbox default "$(<"$ROOT/share/template/sandbox/default.jsonc")"
+for name in default basic readonly plus; do
+  sf_profile_resolve_args -p "@template/profiles/$name.jsonc" -m '{"request":{"model":"mine"}}'
+  profile=$REPLY
+  jq -e --arg share "$ROOT/share/" --arg name "$name" '
+    .model.request == {max_tokens:16384,reasoning:{effort:"medium"},model:"mine"} and
+    ([.hooks[], .tools[], .system[]] | length > 0 and all(.[]; startswith($share))) and
+    ((.tools | any(endswith("/agent"))) == ($name == "plus")) and
+    ((.hooks | any(endswith("/review"))) == ($name == "plus"))
+  ' <<<"$profile" >/dev/null || fail "template profile did not resolve: $name"
+done
 
 # Tool manifests are read live from the resolved folders.
 sf_profile_components tools "$profile"
@@ -161,15 +163,11 @@ jq -e '
     (.command | endswith("/" + $name + "/run")) and .manifest.description != null)
 ' <<<"$REPLY" >/dev/null
 
-# The bundled model names no model ID.
-rm "$SF_TEST_CONFIG/models/default.jsonc"
-if sf_profile_resolve_args; then
-  fail 'the bundled model resolved without a model ID'
-fi
-[[ $SF_PROFILE_ERROR == *'a model is required: set request.model'* ]]
-sf_profile_resolve_args -m '{"request":{"model":"one-off"}}'
-jq -e '.model.request.model == "one-off" and (.model.adapter | endswith("/backends/openrouter"))' \
-  <<<"$REPLY" >/dev/null || fail 'a request override did not complete the bundled model'
+# The template model names a placeholder until edited.
+sf_profile_resolve_args -p "@template/profiles/default.jsonc"
+jq -e '.model.request.model == "MODEL"' <<<"$REPLY" >/dev/null ||
+  fail 'the template model lost its placeholder'
+rm "$SF_TEST_CONFIG/models/default.jsonc" "$SF_TEST_CONFIG/sandbox/default.jsonc"
 
 # A profile selects; values belong to model files, the environment, or tui.jsonc.
 for field in backend request env extend max_capture_bytes theme_light; do
@@ -209,22 +207,15 @@ fi
 [[ $SF_PROFILE_ERROR == 'invalid configuration: profile selects no model: modelless' ]]
 sf_profile_resolve_args -p modelless -m fixture || fail 'a CLI model did not complete a profile'
 
-# A configured file shadows the bundled one, and "@" still reaches the bundled one.
-sf_test_profile coding '{"model": ["fixture"]}'
-sf_profile_resolve_args -p coding
-jq -e '.hooks == []' <<<"$REPLY" >/dev/null || fail 'configured profile did not shadow bundled'
-sf_test_model default '{"adapter": "'"$fixture_backend"'", "request": {"model": "mine"}}'
-sf_profile_resolve_args -p @profiles/coding.jsonc
-jq -e '.hooks | map(select(endswith("/hooks/review"))) | length == 1' <<<"$REPLY" >/dev/null ||
-  fail '@profiles/coding.jsonc did not select the bundled profile'
-sf_test_model openrouter '{"adapter": "'"$fixture_backend"'"}'
-sf_profile_resolve_args -p work -m openrouter
-jq -e '.model.adapter | endswith("/tests/fixtures/backend")' <<<"$REPLY" >/dev/null ||
-  fail 'configured model did not shadow bundled'
-sf_profile_resolve_args -p work -m @models/openrouter.jsonc
-jq -e '.model.adapter | endswith("/share/backends/openrouter")' <<<"$REPLY" >/dev/null ||
-  fail '@models/openrouter.jsonc did not select the bundled model'
-rm "$SF_TEST_CONFIG/models/openrouter.jsonc"
+# A configured component shadows the bundled one, and "@" still reaches it.
+mkdir -p "$SF_TEST_CONFIG/system"
+print -r -- 'mine' >"$SF_TEST_CONFIG/system/general.md"
+sf_test_profile shadow '{"model": ["fixture"], "system": ["general.md", "@system/general.md"]}'
+sf_profile_resolve_args -p shadow
+jq -e --arg root "${SF_TEST_CONFIG:A}" --arg share "$ROOT/share" '
+  .system == [$root + "/system/general.md", $share + "/system/general.md"]
+' <<<"$REPLY" >/dev/null || fail 'configured component did not shadow bundled'
+rm "$SF_TEST_CONFIG/system/general.md"
 
 # Unknown names fail.
 if sf_profile_resolve_args -p absent; then
@@ -321,11 +312,32 @@ sf_test_profile boxed '{"model": ["work"], "sandbox": ["base"]}'
   [[ $SF_PROFILE_ERROR == *'cannot expand ~ without HOME'* ]]
 )
 
-# A missing Shellfish directory uses bundled files.
+# init writes the template, keeping existing files, and its profiles resolve
+# by name once a model is named.
+(
+  export SHELLFISH_DIR="$tmp/initialized"
+  mkdir -p "$SHELLFISH_DIR"
+  print -r -- 'mine' >"$SHELLFISH_DIR/.env"
+  "$ROOT/bin/shellfish" init >"$tmp/init.out"
+  grep -qx "kept  ${SHELLFISH_DIR:A}/.env" "$tmp/init.out"
+  [[ $(<"$SHELLFISH_DIR/.env") == mine ]]
+  for name in default basic readonly plus; do
+    sf_profile_resolve_args -p $name -m '{"request":{"model":"mine"}}' >/dev/null
+  done
+  sf_profile_resolve_args
+  jq -e '.model.request.model == "MODEL"' <<<"$REPLY" >/dev/null
+) || fail 'init did not write a resolvable configuration'
+
+# Without a profile, options select everything, and no model is an error.
 (
   export SHELLFISH_DIR="$tmp/empty-config"
-  sf_profile_resolve_args -m '{"request":{"model":"test-model"}}'
-  jq -e '.model.request.model == "test-model"' <<<"$REPLY" >/dev/null
+  if sf_profile_resolve_args; then
+    fail 'an empty selection was accepted'
+  fi
+  [[ $SF_PROFILE_ERROR == *'no model selected: run shellfish init, or pass -m'* ]]
+  sf_profile_resolve_args -m '{"adapter":"openrouter","request":{"model":"test-model"}}' -t shell
+  jq -e '.model.request.model == "test-model" and (.tools | length) == 1 and .system == []' \
+    <<<"$REPLY" >/dev/null
 )
 
 # Manifests reject unknown fields, malformed templates, and bad preview hints.

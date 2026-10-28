@@ -1,0 +1,27 @@
+// Shellfish profile: https://github.com/spicyneuron/shellfish
+//
+// Selected when --profile is absent. A profile only selects: model and sandbox
+// files, system prompt files, tools, and hooks. A name resolves in this
+// Shellfish directory first, then the bundled one. A path starts with "/",
+// "~/", "./", "../", or "@" for the bundled root.
+{
+  "$schema": "https://raw.githubusercontent.com/spicyneuron/shellfish/refs/heads/main/share/profile.schema.json",
+
+  // Files under models/ and sandbox/. Lists merge left to right.
+  "model": "default",
+  "sandbox": "default",
+
+  // Files under system/ concatenated into the system prompt.
+  "system": ["general.md", "tools.md"],
+
+  // Tools available to the model. Add the agent tool to delegate to child agents.
+  "tools": ["read_file", "edit_file", "write_file", "skill", "search_web", "fetch_url", "shell"],
+
+  // Hooks run in this order within the lifecycle their manifest names. Add
+  // "review" to have a model review sandbox bypass requests.
+  "hooks": [
+    "project/environment", "git/environment", "project/instructions",
+    "help", "verbose", "new", "resume", "server", "copy", "sandbox", "user_shell",
+    "fork", "compact", "git/change", "skills"
+  ]
+}

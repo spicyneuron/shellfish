@@ -11,7 +11,7 @@ Configuration has three homes, each with one job:
 
 Rendering lives separately in `tui.jsonc`, which merges over [`share/tui.jsonc`](../share/tui.jsonc) and is read fresh on every run.
 
-Copy [`share/template/`](../share/template/) into the Shellfish directory for a working starting point. The bundled [`profile.schema.json`](../share/profile.schema.json), [`model.schema.json`](../share/model.schema.json), [`sandbox.schema.json`](../share/sandbox.schema.json), and [`tui.schema.json`](../share/tui.schema.json) are the exact field references.
+Configuration is yours: Shellfish bundles components, not profiles, models, or sandbox files. `shellfish init` copies [`share/template/`](../share/template/) into the Shellfish directory as a working starting point, keeping any file that already exists. The bundled [`profile.schema.json`](../share/profile.schema.json), [`model.schema.json`](../share/model.schema.json), [`sandbox.schema.json`](../share/sandbox.schema.json), and [`tui.schema.json`](../share/tui.schema.json) are the exact field references.
 
 ## Directories
 
@@ -21,17 +21,17 @@ One Shellfish directory holds everything: profiles, models, sandbox files, compo
 
 Every reference in a profile, model, or sandbox file, and every option that takes one, follows one rule. A reference starting with `/`, `~/`, `./`, `../`, or `@` is a path, where `@` is the bundled root just as `~` is home. A relative path resolves against the file that contains it, or against the working directory on the command line. Anything else is a name, which resolves in its kind's directory, yours first, then bundled. Profile, model, and sandbox names gain `.jsonc`, and a name may be nested, such as `openai/sol`.
 
-Your file therefore shadows the bundled file of the same name, and a path still reaches the bundled one: `@tools/shell`, or `-p @profiles/coding.jsonc`. Session headers store bundled paths the same way, so a session survives upgrades.
+Your component therefore shadows the bundled one of the same name, and a path still reaches the bundled one, such as `@tools/shell`. A template profile works in place as `-p @template/profiles/plus.jsonc`, though it names your `models/default.jsonc`. Session headers store bundled paths the same way, so a session survives upgrades.
 
 ## Profiles
 
-A profile only selects. It holds no values of its own.
+A profile selects an agent's parts, usually by reference.
 
 ```jsonc
 // profiles/default.jsonc
 {
-  "model": ["openrouter", "default"],
-  "sandbox": ["default"],
+  "model": "default",
+  "sandbox": "default",
   "system": ["general.md", "tools.md"],
   "tools": ["read_file", "edit_file", "write_file", "shell"],
   "hooks": ["project/environment", "project/instructions", "help", "compact", "review"]
@@ -48,7 +48,7 @@ A profile only selects. It holds no values of its own.
 
 A lone `model` or `sandbox` item needs no list. Inline values let one profile hold everything, though separate files are easier to share.
 
-`profiles/default.jsonc` is selected when `--profile` is absent, and `-p REF` selects another. Profiles do not inherit from each other, since a profile is short enough to copy. Only components named in the selected profile are active, and unused files are inert.
+`profiles/default.jsonc` is selected when `--profile` is absent and it exists, and `-p REF` selects another. Without either, options alone select everything. Profiles do not inherit from each other, since a profile is short enough to copy. Only components named in the selected profile are active, and unused files are inert.
 
 Each field has an option that appends to the selected profile's list for one session. List options repeat, and any that accept inline values take a JSON object in place of a reference. Repeated references within a list collapse to the first.
 
@@ -85,7 +85,7 @@ A model file configures where a request goes and what it carries.
 | `context_window` | Positive capacity override. `null` disables discovery, and absent permits adapter discovery |
 | `request` | Provider request parameters, which must include `model` after merging |
 
-A profile's `model` list merges left to right: objects merge recursively and anything else is replaced. That lets small model files share settings without repeating them, including bundled ones:
+A profile's `model` list merges left to right: objects merge recursively and anything else is replaced. That lets small model files share settings without repeating them:
 
 ```jsonc
 // models/local.jsonc
@@ -95,7 +95,7 @@ A profile's `model` list merges left to right: objects merge recursively and any
 {"request": {"reasoning": {"effort": "high"}}}
 
 // profiles/local.jsonc
-{"model": ["openrouter", "local", "high"], "system": ["general.md"], "tools": ["shell"]}
+{"model": ["default", "local", "high"], "system": ["general.md"], "tools": ["shell"]}
 ```
 
 `-m` merges another model over the profile's list for one session.
@@ -171,16 +171,16 @@ Grants are paths and need not exist, so one file can serve several machines. A p
 
 `--verbose` temporarily makes both preview limits `"full"`. A hook or tool manifest's `user_preview_lines` overrides the global limit for Running and settled text.
 
-## Bundled agent
+## Starter agent
 
-The bundled [`default`](../share/profiles/default.jsonc) profile selects `general.md` and `tools.md`, the tools below, and the bundled hooks. Its model list is the bundled [`openrouter`](../share/models/openrouter.jsonc) model, with up to 16,384 output tokens and medium reasoning effort, followed by your `models/default.jsonc`, which must name a model. Its sandbox list is your `sandbox/default.jsonc`, which is empty until you write one:
+`shellfish init` writes four profiles. Each selects `models/default.jsonc`, the OpenRouter adapter with up to 16,384 output tokens and medium reasoning effort, whose `MODEL` placeholder you replace, and `sandbox/default.jsonc`, which grants nothing until you edit it.
 
-```jsonc
-// models/default.jsonc
-{"request": {"model": "anthropic/claude-opus-4.1"}}
-```
-
-[`coding`](../share/profiles/coding.jsonc) adds permission review.
+| Profile | Selects |
+| --- | --- |
+| [`default`](../share/template/profiles/default.jsonc) | `general.md` and `tools.md`, the tools below, and the bundled hooks |
+| [`basic`](../share/template/profiles/basic.jsonc) | `default` without web tools or skills |
+| [`readonly`](../share/template/profiles/readonly.jsonc) | Read-only file and shell tools |
+| [`plus`](../share/template/profiles/plus.jsonc) | `default` with the agent tool and permission review |
 
 | Tool | Role |
 | --- | --- |
@@ -226,10 +226,10 @@ For ordinary prompts, `$skill-name` loads each matching skill into the model's c
 
 ### Agent tool
 
-The `agent` tool lets you delegate a separate task to another agent, so work can proceed independently of your current conversation. You can wait for its result, let it run in the background, check its progress, or give it a follow-up task once it finishes. It is opt-in; add `"agent"` to a profile's `tools`.
+The `agent` tool lets you delegate a separate task to another agent, so work can proceed independently of your current conversation. You can wait for its result, let it run in the background, check its progress, or give it a follow-up task once it finishes. It is opt-in: the `plus` profile enables it, or add `"agent"` to a profile's `tools`.
 
 Background work returns control after launch; the default limit is four active child agents per parent, set by `SHELLFISH_MAX_ACTIVE_AGENTS`. Inspection distinguishes a child that is still running from one that has stopped without a final transcript outcome. A stopped child releases its active slot and can be continued; Shellfish recovers unfinished work on that next turn.
 
 ### Review hook
 
-The `review` hook helps decide whether a requested sandbox bypass is justified by the user's instructions. If it cannot approve the request, the bypass is denied and the tool is not run. The bundled `coding` profile enables it, but the default profile does not. To enable it in another profile, add `"review"` to its `hooks`.
+The `review` hook helps decide whether a requested sandbox bypass is justified by the user's instructions. If it cannot approve the request, the bypass is denied and the tool is not run. The `plus` profile enables it, but the default profile does not. To enable it in another profile, add `"review"` to its `hooks`.

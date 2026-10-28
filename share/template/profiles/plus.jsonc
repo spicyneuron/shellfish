@@ -1,11 +1,12 @@
-// The bundled agent with agentic permission review. Select it with --profile coding.
+// The default agent with child agents and a model reviewing sandbox bypass
+// requests. Select with --profile plus.
 {
   "$schema": "https://raw.githubusercontent.com/spicyneuron/shellfish/refs/heads/main/share/profile.schema.json",
 
-  "model": ["openrouter", "default"],
-  "sandbox": ["default"],
+  "model": "default",
+  "sandbox": "default",
   "system": ["general.md", "tools.md"],
-  "tools": ["read_file", "edit_file", "write_file", "skill", "search_web", "fetch_url", "shell"],
+  "tools": ["read_file", "edit_file", "write_file", "skill", "search_web", "fetch_url", "shell", "agent"],
   "hooks": [
     "project/environment", "git/environment", "project/instructions",
     "help", "verbose", "new", "resume", "server", "copy", "sandbox", "user_shell",

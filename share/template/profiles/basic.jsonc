@@ -1,0 +1,14 @@
+// The default agent without web access or skills. Select with --profile basic.
+{
+  "$schema": "https://raw.githubusercontent.com/spicyneuron/shellfish/refs/heads/main/share/profile.schema.json",
+
+  "model": "default",
+  "sandbox": "default",
+  "system": ["general.md", "tools.md"],
+  "tools": ["read_file", "edit_file", "write_file", "shell"],
+  "hooks": [
+    "project/environment", "git/environment", "project/instructions",
+    "help", "verbose", "new", "resume", "server", "copy", "sandbox", "user_shell",
+    "fork", "compact", "git/change"
+  ]
+}

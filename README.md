@@ -42,9 +42,8 @@ ln -s "$HOME/.local/share/shellfish/bin/shellfish" "$HOME/.local/bin/shellfish"
 ## Getting started
 
 ```sh
-export OPENROUTER_API_KEY=...     # Or use .env in the Shellfish directory
-mkdir -p ~/.shellfish/models      # Name the default model
-echo '{"request": {"model": "MODEL"}}' >~/.shellfish/models/default.jsonc
+shellfish init                    # Write starter config into ~/.shellfish
+# Name a model in ~/.shellfish/models/default.jsonc and its key in ~/.shellfish/.env
 
 shellfish                         # Start a new session
 shellfish --continue              # Reopen the most recent session
@@ -52,7 +51,9 @@ shellfish --resume                # Pick a session from this directory
 shellfish --session PATH          # Open one session directly
 
 shellfish --model MODEL           # Merge models/MODEL.jsonc over the default
-shellfish --profile PROFILE       # Use another profile
+shellfish --profile PROFILE       # Use another profile, such as basic, readonly, or plus
+shellfish -m '{"adapter": "openrouter", "request": {"model": "MODEL"}}' -t shell
+                                  # Select everything with options, no config needed
 
 shellfish run "PROMPT"            # Run one non-interactive turn
 ```
@@ -84,20 +85,20 @@ The Shellfish directory (typically `~/.shellfish/`, see [Directories](docs/CONFI
 // ~/.shellfish/profiles/review.jsonc — shellfish -p review
 {
   "$schema": "https://raw.githubusercontent.com/spicyneuron/shellfish/refs/heads/main/share/profile.schema.json",
-  "model": ["openrouter", "default"],
-  "sandbox": ["default"],
+  "model": "default",
+  "sandbox": "default",
   "system": ["general.md", "review.md"],  // ~/.shellfish/system/review.md
   "tools": ["read_file", "shell_readonly"],
   "hooks": ["project/instructions"]
 }
 ```
 
-`default.jsonc` is selected when `--profile` is absent, and your file shadows the [bundled profile](share/profiles/default.jsonc) of the same name. Reusable components live in top-level `system/`, `tools/`, `hooks/`, and `backends/` directories beside `profiles/`, and resolve from the Shellfish directory first, then the bundled `share/` directory. A reference starting with `/`, `~/`, or `@` is a path instead, where `@` is the bundled root. A new session freezes the resolved selection in its header. Themes and preview limits live in [`tui.jsonc`](share/tui.jsonc).
+`default.jsonc` is selected when `--profile` is absent. Reusable components live in top-level `system/`, `tools/`, `hooks/`, and `backends/` directories beside `profiles/`, and resolve from the Shellfish directory first, then the bundled `share/` directory. A reference starting with `/`, `~/`, `./`, `../`, or `@` is a path instead, where `@` is the bundled root. Every profile field also has a command-line option. A new session freezes the resolved selection in its header. Themes and preview limits live in [`tui.jsonc`](share/tui.jsonc).
 
 ## Documentation
 
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md): Design intent and opinionated boundaries.
-- [`docs/CONFIG.md`](docs/CONFIG.md): Configure profiles, models, settings, presentation, and the bundled agent.
+- [`docs/CONFIG.md`](docs/CONFIG.md): Configure profiles, models, settings, presentation, and the starter agent.
 - [`docs/HARNESS.md`](docs/HARNESS.md): Write custom hooks, tools, and backend adapters.
 - [`docs/CURSED.md`](docs/CURSED.md): Hard-won lessons and ~~hacks~~ clever workarounds.
 

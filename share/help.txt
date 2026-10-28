@@ -5,6 +5,7 @@ A tiny coding agent written in zsh, awk, curl, and jq.
 Usage:
   shellfish [OPTIONS] [PROMPT]       Start an interactive chat
   shellfish run [OPTIONS] [PROMPT]   Run exactly one agent turn
+  shellfish init                     Write starter config into the Shellfish directory
 
 Run output:
   --json               Print the final result, usage, and session path as JSON

@@ -6,7 +6,7 @@ sf_test_config
 
 typeset agent="$ROOT/share/tools/agent"
 typeset backend="$tmp/backend" session="$tmp/parent.jsonl" stream="$tmp/stream"
-if grep -q '"agent"' "$ROOT/share/profiles/default.jsonc"; then
+if grep -q '"agent"' "$ROOT/share/template/profiles/default.jsonc"; then
   fail 'agent must be opt-in'
 fi
 mkdir -p "$backend"
