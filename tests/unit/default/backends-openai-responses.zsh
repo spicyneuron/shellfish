@@ -168,6 +168,17 @@ assert_usage
 jq -e 'has("max_output_tokens") | not' "$BACKEND_TEST_BODY" >/dev/null ||
   fail 'Codex sent an unsupported output limit'
 
+# Keep the streamed text, in the completed message's place.
+cat >"$BACKEND_TEST_RESPONSE" <<'EOF'
+data: {"type":"response.output_text.delta","delta":"ok"}
+data: {"type":"response.completed","response":{"status":"completed","output":[{"type":"reasoning","id":"rs_1","summary":[]},{"type":"message","content":[{"type":"output_text","text":"ok, unstreamed"}]},{"type":"function_call","call_id":"call_1","name":"shell","arguments":"{}"}]}}
+
+EOF
+OPENAI_API_KEY=test zsh -f "$run" <"$req" >"$res"
+sf_test_backend_response "$res" || fail 'responses emitted an invalid stream'
+jq -e '.content | map(.type) == ["reasoning","text","tool_call"] and .[1].text == "ok"' \
+  <<<"$REPLY" >/dev/null || fail 'responses did not keep the streamed text'
+
 # Preserve partial output on provider failure.
 print -rl -- 'data: {"type":"response.output_text.delta","delta":"partial"}' \
   'data: {"type":"response.failed","response":{"error":{"code":"server_error","message":"Please retry"}}}' \

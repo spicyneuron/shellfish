@@ -89,39 +89,36 @@ sf_backend_stream '(.error.message? // .detail?)' '
     delta(if .type == "text" then "_assistant_message_delta" else "_assistant_reasoning_delta" end;
       .text)] + [.];
 
-  # Rebuilds the output a completed response should carry. Most backends send it
-  # whole, in which case nothing here applies; one that sends a thin completed
-  # event leaves the stream as the only record, so what passed by on the way fills
-  # what is missing. Reasoning leads and calls trail, the way the API emits them,
-  # so a rebuilt output keeps each reasoning item ahead of its call.
+  # The output a completed response should carry. Its text is always the
+  # streamed text, in place of the first message item. Most backends
+  # send reasoning and calls whole; one that sends a thin completed event leaves
+  # the stream as the only record, so what passed by on the way fills what is
+  # missing. Reasoning leads and calls trail, the way the API emits them, so a
+  # rebuilt output keeps each reasoning item ahead of its call.
   def merged($response; $items; $text; $added):
-    # The parts of a message item that actually say something, so an item left
-    # empty by the stream is not mistaken for text that arrived.
-    def texts: [.content[]? |
-      select(.type == "output_text" and (.text | type) == "string" and .text != "")];
+    def message: {type:"message",role:"assistant",content:[{type:"output_text",text:$text}]};
     ($response.output // []) as $existing |
-    ([$existing[] | select(.type == "message") | texts[]] | length > 0) as $has_text |
+    ($existing | map(.type == "message") | index(true)) as $first |
     ([$existing[] | select(.type == "function_call") | .call_id]) as $call_ids |
     ([$existing[] | select(.type == "reasoning") | .id]) as $reasoning_ids |
-    ([$items[] | select(.type == "message") | select(texts | length > 0)]) as $messages |
     ([$items[] | select(.type == "function_call")]) as $calls |
     ([$calls[] | .call_id]) as $completed_ids |
     ([$items[] | select(.type == "reasoning")] +
-     (if ($messages | length) > 0 then $messages
-      elif $text != "" then
-        [{type:"message",role:"assistant",content:[{type:"output_text",text:$text}]}]
-      else [] end) +
+     (if $first == null and $text != "" then [message] else [] end) +
      $calls +
      # A backend that never completes a call as an item still opens one and closes
      # its arguments, which is enough to recover it.
      [$added | to_entries | sort_by(.key | tonumber)[] | .value |
        select(.call_id as $id | ($completed_ids | index($id)) == null)]) as $rebuilt |
-    $response + {output: ($existing + [$rebuilt[] |
-      if .type == "message" then select($has_text | not)
-      elif .type == "function_call" then
+    $response + {output: ([$existing | to_entries[] |
+      if .value.type != "message" then .value
+      elif .key == $first and $text != "" then message
+      else empty end] + [$rebuilt[] |
+      if .type == "function_call" then
         select(.call_id as $id | ($call_ids | index($id)) == null)
-      else select(.id as $id | ($reasoning_ids | index($id)) == null)
-      end])};
+      elif .type == "reasoning" then
+        select(.id as $id | ($reasoning_ids | index($id)) == null)
+      else . end])};
 
   def normalized:
     # A body carrying an error is not a response, however much of one it looks
@@ -232,7 +229,7 @@ sf_backend_stream '(.error.message? // .detail?)' '
         .out += [delta("_assistant_reasoning_delta"; $gap + ($event.delta // ""))]
       elif $event.type == "response.output_item.done" then
         ($event.item // {}) as $item |
-        if ($item.type | IN("message", "function_call", "reasoning")) then
+        if ($item.type | IN("function_call", "reasoning")) then
           .items += [$item]
         else . end
       elif $event.type == "response.output_item.added" and
