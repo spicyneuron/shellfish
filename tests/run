@@ -12,7 +12,7 @@ typeset -a suites tests
 typeset -a pids names logs results
 typeset test_path test_file log_dir
 integer jobs=${TEST_JOBS:-4} timeout=${TEST_TIMEOUT:-30}
-integer passed=0 failed=0
+integer passed=0 failed=0 skipped=0
 typeset start_all=$EPOCHREALTIME
 
 (( jobs > 0 && timeout > 0 )) || {
@@ -172,6 +172,12 @@ report() {
     print -r -- "PASS $names[slot] (${elapsed}s)"
     return
   fi
+  # Status 77 means a prerequisite is missing; the output names it.
+  if (( code == 77 )); then
+    (( ++skipped ))
+    print -r -- "SKIP $names[slot]: ${$(<$logs[slot])//$'\n'/ }"
+    return
+  fi
   (( ++failed ))
   print -u2 -r -- "FAIL $names[slot] (${elapsed}s)"
   [[ ! -s $logs[slot] ]] || {
@@ -193,6 +199,7 @@ done
 
 while (( index < ${#pids} )); do report $(( ++index )); done
 
-printf '%d passed, %d failed in %.1fs\n' \
-  $passed $failed $(( EPOCHREALTIME - start_all ))
+typeset tally="$passed passed, $failed failed"
+(( ! skipped )) || tally+=", $skipped skipped"
+printf '%s in %.1fs\n' "$tally" $(( EPOCHREALTIME - start_all ))
 (( ! failed ))

@@ -11,9 +11,9 @@ from pathlib import Path
 try:
     import pyte
 except ImportError:
-    # pyte is optional outside this suite.
-    print("SKIP scrollback: pyte is not installed (pip install pyte)")
-    sys.exit(0)
+    # pyte is optional; tests/run reports status 77 as a skip.
+    print("pyte is not installed")
+    sys.exit(77)
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _session import ROWS, COLUMNS, Session, run  # noqa: E402
