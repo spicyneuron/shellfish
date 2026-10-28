@@ -72,6 +72,22 @@ jq -sc . "$records" | messages | jq -e '
   .[6] == {type:"assistant",stop:"end",content:[{type:"text",text:"done"}]}
 ' >/dev/null || fail 'provider messages do not match the transcript'
 
+# Post-tool context follows its result but annotates that result, not the next.
+print -r -- '[
+  {"type":"user","content":[{"type":"text","text":"a"}]},
+  {"type":"assistant","stop":"tool_calls","content":[
+    {"type":"tool_call","id":"c1","name":"shell","input":{}},
+    {"type":"tool_call","id":"c2","name":"shell","input":{}}]},
+  {"type":"hook_result","lifecycle":"pre_tool_use","id":"1","model_text":"PRE"},
+  {"type":"tool_result","id":"c1","name":"shell","input":{},"exit_code":0,"model_text":"one"},
+  {"type":"hook_result","lifecycle":"post_tool_use","id":"2","model_text":"POST"},
+  {"type":"tool_result","id":"c2","name":"shell","input":{},"exit_code":0,"model_text":"two"}
+]' | messages | jq -e '
+  .[3].content ==
+    "<hook name=\"pre_tool_use\">\nPRE\n</hook>\n\n<hook name=\"post_tool_use\">\nPOST\n</hook>\n\none" and
+  .[5].content == "two"
+' >/dev/null || fail 'post-tool context did not annotate its own result'
+
 # Results from one lifecycle share one hook block, each text inserted verbatim.
 print -r -- '[
   {"type":"hook_result","lifecycle":"session_start","id":"1","model_text":"<context script=\"env\">\nfirst\n</context>"},

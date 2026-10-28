@@ -71,28 +71,29 @@ jq -ce '
 
 sf_backend_curl_args
 sf_backend_stream '.error.message?' '
-  def transient($type;$index;$text): {type:$type,index:$index,text:$text};
+  def preview($type;$text): {type:$type,text:$text};
   def usage:
-    {type:"_turn_usage",input_tokens:(.prompt_tokens // 0),output_tokens:(.completion_tokens // 0)} +
+    {input_tokens:(.prompt_tokens // 0),output_tokens:(.completion_tokens // 0)} +
     (if (.prompt_tokens_details.cached_tokens // null) == null then {}
      else {cached_tokens:.prompt_tokens_details.cached_tokens} end) +
     (if (.completion_tokens_details.reasoning_tokens // null) == null then {}
      else {reasoning_tokens:.completion_tokens_details.reasoning_tokens} end);
-  def tool_delta($index;$call):
-    {type:"_assistant_tool_call_delta",index:($index + 2)} +
-    (if ($call.id // "") == "" then {} else {id:$call.id} end) +
-    (if ($call.function.name // "") == "" then {} else {name:$call.function.name} end) +
-    (if ($call.function.arguments // "") == "" then {} else {input:$call.function.arguments} end) |
-    select(keys | length > 2);
+  # The complete response: reasoning, then text, then calls in index order. A
+  # response cut short by the output limit drops its calls.
   def response_end:
-    [.calls | to_entries | sort_by(.key | tonumber)[] |
-      {type:"_assistant_tool_call_delta",index:((.key | tonumber) + 2),
-       id:(.value.id // ("call_" + .key))} +
-      (if (.value.name // "") == "" then {} else {name:.value.name} end)] +
-    [{type:"_assistant_end",
-      stop:(if .finish_reason == "length" or .finish_reason == "max_tokens" then "length"
-            elif (.calls | length) > 0 then "tool_calls"
-            else "end" end)}];
+    (if .finish_reason == "length" or .finish_reason == "max_tokens" then "length"
+     elif (.calls | length) > 0 then "tool_calls"
+     else "end" end) as $stop |
+    [{type:"assistant", stop:$stop,
+      content:((if .reasoning == "" then [] else [{type:"reasoning",text:.reasoning}] end) +
+        (if .text == "" then [] else [{type:"text",text:.text}] end) +
+        (if $stop != "tool_calls" then [] else
+          [.calls | to_entries | sort_by(.key | tonumber)[] |
+            {type:"tool_call", id:(.value.id // ("call_" + .key)),
+             name:(.value.name // error("tool call has no name")),
+             input:(.value.arguments // "" |
+               if . == "" then {} else fromjson end)}] end))} +
+     (if .usage == null then {} else {usage:(.usage | usage)} end)];
   def accept_body($body):
     if $body.error? != null then error($body.error.message // "API error")
     elif ($body.choices[0]? // null) == null then error("response has no choice")
@@ -106,11 +107,7 @@ sf_backend_stream '.error.message?' '
         ((length)|tostring) as $key |
         .[$key]={type:($call.type // "function"),id:$call.id,name:$call.function.name,
           arguments:$call.function.arguments}) |
-      .out +=
-        (if $reasoning=="" then [] else [transient("_assistant_reasoning_delta";0;$reasoning)] end) +
-        (if $text=="" then [] else [transient("_assistant_message_delta";1;$text)] end) +
-        [($message.tool_calls // []) | to_entries[] | tool_delta(.key;.value)] +
-        (if .usage==null then [] else [(.usage|usage)] end) + response_end |
+      .out += response_end |
       .done=true
     end;
   foreach (inputs, null) as $line
@@ -139,12 +136,11 @@ sf_backend_stream '.error.message?' '
                if type=="string" then . else "" end) as $reasoning |
              ($delta.content // "") as $text |
              (if $reasoning=="" then . else .reasoning += $reasoning |
-                .out += [transient("_assistant_reasoning_delta";0;$reasoning)] end) |
+                .out += [preview("_assistant_reasoning_delta";$reasoning)] end) |
              (if $text=="" then . else .text += $text |
-                .out += [transient("_assistant_message_delta";1;$text)] end) |
+                .out += [preview("_assistant_message_delta";$text)] end) |
              reduce ($delta.tool_calls // [])[] as $call (.;
                (($call.index // 0)|tostring) as $key |
-               .out += [tool_delta(($call.index // 0);$call)] |
                if .calls[$key]==null then
                  .calls[$key]={type:"function",id:null,name:null,arguments:""} else . end |
                (if $call.type != null and $call.type != "" then .calls[$key].type=$call.type else . end) |
@@ -152,10 +148,8 @@ sf_backend_stream '.error.message?' '
                (if $call.function.name != null and $call.function.name != "" then .calls[$key].name=$call.function.name else . end) |
                .calls[$key].arguments += ($call.function.arguments // "")) |
              .finish_reason=($choice.finish_reason // .finish_reason) |
-             if ($event.usage // null)==null then . else .usage=$event.usage |
-               .out += [($event.usage|usage)] end
-           elif ($event.usage // null) != null then .usage=$event.usage |
-             .out += [($event.usage|usage)]
+             if ($event.usage // null)==null then . else .usage=$event.usage end
+           elif ($event.usage // null) != null then .usage=$event.usage
            else . end
          end
        else . end

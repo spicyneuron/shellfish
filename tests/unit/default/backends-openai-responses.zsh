@@ -50,19 +50,11 @@ cat >"$req" <<'EOF'
 EOF
 
 assert_usage() {
-  jq -e -s -L "$ROOT" '
-    include "lib/profile";
-    include "lib/session";
-    include "lib/backend";
-    map(select(.type == "_turn_usage"))[0] as $event |
-    assemble_backend_response(canonical_backend_response_events; canonical_response) as $message |
-    ($event | del(.type)) == {
-      input_tokens:100, output_tokens:7, cached_tokens:85, reasoning_tokens:3
-    } and
-    $message.usage == ($event | del(.type)) and
-    ($message | canonical_response) and
-    $message.content[0] == {type:"text",text:"ok"}
-  ' "$res" >/dev/null
+  sf_test_backend_response "$res" || fail 'responses emitted an invalid stream'
+  jq -e '
+    .usage == {input_tokens:100, output_tokens:7, cached_tokens:85, reasoning_tokens:3} and
+    .content == [{type:"text",text:"ok"}]
+  ' <<<"$REPLY" >/dev/null || fail 'responses lost text or usage'
 }
 
 # Parse buffered responses.
@@ -94,7 +86,7 @@ if BACKEND_TEST_STATUS=000 BACKEND_TEST_CURL_STATUS=92 OPENAI_API_KEY=test \
   fail 'partial HTTP/2 reset was accepted'
 fi
 assert_equal 1 "$(<"$BACKEND_TEST_ATTEMPTS")"
-jq -e -s '. == [{type:"_assistant_message_delta",index:0,text:"partial"}]' \
+jq -e -s '. == [{type:"_assistant_message_delta",text:"partial"}]' \
   "$res" >/dev/null || fail 'partial HTTP/2 reset lost streamed output'
 unset BACKEND_TEST_ATTEMPTS
 
@@ -121,12 +113,9 @@ cat >"$BACKEND_TEST_RESPONSE" <<'EOF'
 {"status":"incomplete","output":[{"type":"function_call","call_id":"call_cut","name":"shell","arguments":"{\"command\":"}],"usage":{"input_tokens":10,"output_tokens":5}}
 EOF
 OPENAI_API_KEY=test zsh -f "$run" <"$req" >"$res"
-jq -e -s -L "$ROOT" '
-  include "lib/profile";
-  include "lib/session";
-  include "lib/backend";
-  assemble_backend_response(canonical_backend_response_events; canonical_response) == {type:"assistant",stop:"length",content:[],usage:{input_tokens:10,output_tokens:5}}
-' "$res" >/dev/null
+sf_test_backend_response "$res" || fail 'responses emitted an invalid incomplete stream'
+jq -e '. == {type:"assistant",stop:"length",content:[],usage:{input_tokens:10,output_tokens:5}}' \
+  <<<"$REPLY" >/dev/null || fail 'responses kept incomplete call arguments'
 
 # Read Codex model limits.
 cat >"$tmp/codex" <<'EOF'
@@ -186,7 +175,7 @@ if OPENAI_API_KEY=test zsh -f "$run" <"$req" >"$res" 2>"$tmp/error"; then
 fi
 grep -Fq -- 'response.failed: server_error: Please retry' "$tmp/error" ||
   fail 'provider failure details were lost'
-jq -e -s '. == [{type:"_assistant_message_delta",index:0,text:"partial"}]' "$res" >/dev/null
+jq -e -s '. == [{type:"_assistant_message_delta",text:"partial"}]' "$res" >/dev/null
 
 # Preserve streamed reasoning and calls.
 cat >"$BACKEND_TEST_RESPONSE" <<'EOF'
@@ -200,16 +189,13 @@ data: {"type":"response.completed","response":{"status":"completed","output":[],
 
 EOF
 OPENAI_API_KEY=test zsh -f "$run" <"$req" >"$res"
-jq -e -s -L "$ROOT" '
-  include "lib/profile";
-  include "lib/session";
-  include "lib/backend";
-  assemble_backend_response(canonical_backend_response_events; canonical_response) as $message |
-  ($message.stop == "tool_calls") and
-  ($message.content == [
+sf_test_backend_response "$res" || fail 'responses emitted an invalid call stream'
+jq -e '
+  .stop == "tool_calls" and
+  .content == [
     {type:"reasoning",text:"why",opaque:{type:"reasoning",id:"rs_1",summary:[{type:"summary_text",text:"why"}],encrypted_content:"secret"}},
-    {type:"tool_call",id:"call_1",name:"shell",input:{command:"pwd"}}])
-' "$res" >/dev/null
+    {type:"tool_call",id:"call_1",name:"shell",input:{command:"pwd"}}]
+' <<<"$REPLY" >/dev/null || fail 'responses lost streamed reasoning or calls'
 
 # Map flat call batches.
 typeset batch_request="$tmp/batch-request.json"

@@ -10,7 +10,7 @@ This project is pre-release. Remove obsolete behavior rather than adding depreca
 - One `shellfish run` process owns a complete turn, including hooks, provider requests, tools, persistence, recovery, and cleanup. A per-session lock prevents overlapping turns. Clients invoke that boundary and replay the transcript. They do not embed the turn loop or maintain another copy of session state.
 - The session header freezes the resolved profile and model. A session update may atomically replace them. Credentials and current presentation settings remain external. Do not add lifecycle or presentation records to the transcript.
 - The core owns event ordering, canonical validation, persistence, recovery, and cleanup. Harnesses supply tools and workflow policy through configuration and lifecycle scripts. Keep bundled coding behavior out of the generic turn machinery.
-- Backend adapters translate provider protocols into the normalized response stream. Keep provider-specific parsing, correlation, and protocol validation in the adapter. Tool calls remain inert until the core has assembled, validated, and persisted the complete assistant response.
+- Backend adapters translate provider protocols into the normalized response stream. Keep provider-specific parsing, correlation, and protocol validation in the adapter. Tool calls remain inert until the core has validated and persisted the complete assistant response.
 
 ## Code boundaries
 
@@ -19,6 +19,7 @@ This project is pre-release. Remove obsolete behavior rather than adding depreca
 - `share/{hooks,system,tools,backends,lib,skills}/` contains bundled harness resources, and `share/template/` is the starter configuration `shellfish init` copies. These are product behavior, not fixtures. `shellfish-server/` is a separate Go proxy and browser client over the same single-turn interface.
 - jq module paths are repository-rooted. Load them with `sf_jq` from `lib/jq.zsh`, which runs jq from the installation root. jq resolves a module name against the working directory, so it would otherwise load the caller's copy. Only core components use jq modules. Bundled scripts validate their own input with plain jq, so nothing outside the core depends on the repository layout.
 - Keep jq modules flat and have each program include every module it uses. A definition reached through an intermediate module compiles only when it is a leaf; otherwise jq can abort with `Assertion failed: (0 && "Unknown function type")` rather than report a diagnostic.
+- When shared definitions must call other modules' non-leaf definitions, keep them in a program prelude instead of a module, as `libexec/run/turn.jq` does. Callers append a short body to its text, so the definitions compile at program level, and jq compiles only what that body reaches.
 - Tools may be sandboxed. Hook scripts and backend adapters are trusted programs running with user permissions. Backends and hooks receive every `.env` value; tools receive only the names they declare.
 
 ## Working here

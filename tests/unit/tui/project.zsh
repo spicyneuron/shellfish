@@ -21,16 +21,15 @@ project() {
   REPLY=$(actions)
 }
 
-# Live deltas render once, and the durable record that follows repeats nothing.
+# Live previews render once, and the durable record that follows closes them.
 project live \
   '{"type":"_assistant_start"}' \
-  '{"type":"_assistant_message_delta","index":0,"text":"I will look."}' \
-  '{"type":"_assistant_reasoning_delta","index":1,"text":"weighing"}' \
-  '{"type":"_assistant_end","stop":"end"}' \
+  '{"type":"_assistant_message_delta","text":"I will look."}' \
+  '{"type":"_assistant_reasoning_delta","text":"weighing"}' \
   '{"type":"assistant","stop":"end","content":[{"type":"text","text":"I will look."},{"type":"reasoning","text":"weighing"}],"usage":{"input_tokens":2,"output_tokens":1}}'
 assert_equal 'message_start | agent
 message_delta | 0 | text | I will look. |
-message_delta | 1 | reasoning | weighing |
+message_delta | 0 | reasoning | weighing |
 message_end
 usage | 2 ↑ 1 ↓ |' "$REPLY"
 
@@ -113,7 +112,8 @@ project live "$update"
 assert_equal 'profile | test/fake-model | 200' "$REPLY"
 project live \
   '{"type":"assistant","stop":"end","content":[],"usage":{"input_tokens":75,"cached_tokens":15,"output_tokens":5}}'
-assert_equal 'usage | 75 ↑ 20% ⦿ 5 ↓ 38% of 200 ◔ |' "$REPLY"
+assert_equal 'message_end
+usage | 75 ↑ 20% ⦿ 5 ↓ 38% of 200 ◔ |' "$REPLY"
 
 # The loaded path event names the session the client now owns.
 project load '{"type":"_session_load","path":"/sessions/live.jsonl"}'
@@ -123,13 +123,8 @@ assert_equal 'session | /sessions/live.jsonl' "$REPLY"
 project live '{"type":"_handoff","argv":["shellfish","--clear"]}'
 assert_equal 'handoff | shellfish | --clear' "$REPLY"
 
-# Tool-call and opaque blocks carry ordering only, live or loaded, so the
-# renderer can close the block before them.
-project live \
-  '{"type":"_assistant_tool_call_delta","index":2}' \
-  '{"type":"_assistant_reasoning_opaque","index":3}'
-assert_equal 'message_delta | 2 | inert |  |
-message_delta | 3 | inert |  |' "$REPLY"
+# A loaded tool call carries ordering only, so the renderer can close the
+# block before it.
 project load \
   '{"type":"assistant","stop":"tool_calls","content":[{"type":"text","text":"running"},{"type":"tool_call","id":"call_1","name":"shell","input":{"command":"pwd"}}]}'
 assert_equal 'message_start | agent
@@ -137,15 +132,13 @@ message_delta | 0 | text | running |
 message_delta | 1 | inert |  |
 message_end' "$REPLY"
 
-# Model-only events present nothing.
-project live \
-  '{"type":"_turn_usage","usage":{"input_tokens":1,"output_tokens":1}}' \
-  '{"type":"state_update","name":"probe","value":true}'
+# Model-only records present nothing.
+project live '{"type":"state_update","name":"probe","value":true}'
 assert_equal '' "$REPLY"
 
 # An unsupported or malformed line rejects the whole batch.
 integer project_status=0
-sf_tui_project live '{"type":"_assistant_message_delta","index":0,"text":"partial"}' \
+sf_tui_project live '{"type":"_assistant_message_delta","text":"partial"}' \
   '{"type":"_unknown"}' || project_status=$?
 assert_equal 1 "$project_status"
 assert_equal 0 "${#SF_PRESENT_ACTIONS}"

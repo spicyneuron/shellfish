@@ -62,9 +62,8 @@ SF_PRESENT_STATE=working
 sf_tui_reset
 sf_tui_terminal_reset
 pump '{"type":"_assistant_start"}' \
-  '{"type":"_assistant_message_delta","index":0,"text":"part "}' \
-  '{"type":"_assistant_reasoning_delta","index":1,"text":"thought"}' \
-  '{"type":"_assistant_end","stop":"end"}' \
+  '{"type":"_assistant_message_delta","text":"part "}' \
+  '{"type":"_assistant_reasoning_delta","text":"thought"}' \
   '{"type":"assistant","stop":"end","content":[{"type":"text","text":"part "},{"type":"reasoning","text":"thought"}],"usage":{"input_tokens":14,"output_tokens":2}}'
 assert_equal "${SF_PRESENT_IDENTITY} · 14 ↑ 2 ↓" "$SF_PRESENT_FOOTER"
 sf_tui_transcript 79 20

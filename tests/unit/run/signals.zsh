@@ -79,7 +79,7 @@ jq -eRn '
   and $events[-1] == {type:"error",user_text:"Cancelled."}
 ' <"$cancel_output" >/dev/null || fail 'cancelled exec did not persist partial content'
 
-# Cancellation preserves reasoning metadata.
+# Cancellation preserves previewed reasoning.
 typeset cancel_backend="$tmp/cancel-backend" cancel_backend_marker="$tmp/tool-input"
 typeset cancel_backend_pid_file="$tmp/tool-input-child"
 mkdir "$cancel_backend"
@@ -92,10 +92,8 @@ if [[ -n ${CANCEL_BACKEND_PID_FILE-} ]]; then
   (sleep 30 & print -r -- $! >"$CANCEL_BACKEND_PID_FILE"; wait) &
 fi
 if [[ $prompt == reasoning ]]; then
-  print -r -- '{"type":"_assistant_reasoning_opaque","index":0,"opaque":{"id":"reasoning_1","encrypted_content":"secret"}}'
-  print -r -- '{"type":"_assistant_reasoning_delta","index":0,"text":"partial thought"}'
+  print -r -- '{"type":"_assistant_reasoning_delta","text":"partial thought"}'
 else
-  print -r -- '{"type":"_assistant_tool_call_delta","index":0,"id":"call_1","name":"shell","input":"{}"}'
   print -r -- ready >"$CANCEL_BACKEND_MARKER"
 fi
 trap 'exit 143' TERM
@@ -122,12 +120,11 @@ wait "$reasoning_pid" || reasoning_status=$?
 (( reasoning_status == 143 )) || fail 'cancelled reasoning turn did not report the signal'
 jq -e -s '
   .[-2] == {type:"assistant",stop:"cancelled",content:[{
-    type:"reasoning",text:"partial thought",
-    opaque:{id:"reasoning_1",encrypted_content:"secret"}
+    type:"reasoning",text:"partial thought"
   }]} and .[-1] == {type:"error",user_text:"Turn interrupted."}
 ' "$reasoning_session" >/dev/null || fail 'cancelled reasoning was not recovered'
 
-# Partial tool input remains transient.
+# A request cancelled before any preview records nothing of the response.
 typeset tool_input_session="$tmp/tool-input-cancel.jsonl" tool_input_output="$tmp/tool-input-cancel.out"
 CANCEL_BACKEND_MARKER="$cancel_backend_marker" CANCEL_BACKEND_PID_FILE="$cancel_backend_pid_file" \
   zsh -f "$entry" run --jsonl \
@@ -157,7 +154,7 @@ jq -e -s '
   .[-2] == {type:"user",content:[{type:"text",text:"tool input"}]} and
   .[-1] == {type:"error",user_text:"Turn interrupted."} and
   ([.[] | .content[]? | select(.type == "tool_call")] | length) == 0
-' "$tool_input_session" >/dev/null || fail 'cancelled tool input became durable intent'
+' "$tool_input_session" >/dev/null || fail 'a request cancelled before any preview recorded a response'
 
 # Interrupted sessions accept another turn.
 typeset recovered_session="$tmp/recovered.jsonl"

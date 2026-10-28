@@ -18,8 +18,7 @@ jq -eRn -L "$ROOT" '
   $durable[0] == {type:"user",content:[{type:"text",text:"two\nwords"}]} and
   ($durable[1] | .type == "assistant" and .stop == "end" and
     (.usage | token_usage)) and
-  ($events | any(.type == "_assistant_message_delta")) and
-  ($events | any(.type == "_turn_usage"))
+  ($events | any(.type == "_assistant_message_delta"))
 ' <"$stream" >/dev/null || fail 'simple turn emitted the wrong objects'
 jq -c 'select(.type | startswith("_") | not)' "$stream" >"$tmp/emitted"
 tail -n +$(( prefix + 1 )) "$session" | jq -c . >"$tmp/appended"
@@ -42,14 +41,9 @@ if jq -e '.messages | any(.type == "tool_result")' <<<"$request" >/dev/null; the
     ]
   ' <<<"$request" >/dev/null || exit 9
   [[ $(<$TOOL_ORDER) == $'first\nsecond' ]] || exit 8
-  print -r -- '{"type":"_assistant_message_delta","index":0,"text":"done"}'
-  print -r -- '{"type":"_turn_usage","input_tokens":2,"output_tokens":1}'
-  print -r -- '{"type":"_assistant_end","stop":"end"}'
+  print -r -- '{"type":"assistant","stop":"end","content":[{"type":"text","text":"done"}],"usage":{"input_tokens":2,"output_tokens":1}}'
 else
-  print -r -- '{"type":"_assistant_tool_call_delta","index":0,"id":"call_1","name":"ordered","input":"{\"value\":\"first\"}"}'
-  print -r -- '{"type":"_assistant_tool_call_delta","index":1,"id":"call_2","name":"ordered","input":"{\"value\":\"second\"}"}'
-  print -r -- '{"type":"_turn_usage","input_tokens":1,"output_tokens":1}'
-  print -r -- '{"type":"_assistant_end","stop":"tool_calls"}'
+  print -r -- '{"type":"assistant","stop":"tool_calls","content":[{"type":"tool_call","id":"call_1","name":"ordered","input":{"value":"first"}},{"type":"tool_call","id":"call_2","name":"ordered","input":{"value":"second"}}],"usage":{"input_tokens":1,"output_tokens":1}}'
 fi
 ZSH
 cat >"$tool" <<'ZSH'
@@ -103,14 +97,9 @@ cat >"$limited_backend" <<'ZSH'
 #!/usr/bin/env zsh
 request=$(cat)
 if jq -e '.messages | any(.type == "tool_result")' <<<"$request" >/dev/null; then
-  print -r -- '{"type":"_assistant_message_delta","index":0,"text":"done"}'
-  print -r -- '{"type":"_turn_usage","input_tokens":2,"output_tokens":1}'
-  print -r -- '{"type":"_assistant_end","stop":"end"}'
+  print -r -- '{"type":"assistant","stop":"end","content":[{"type":"text","text":"done"}],"usage":{"input_tokens":2,"output_tokens":1}}'
 else
-  print -r -- '{"type":"_assistant_tool_call_delta","index":0,"id":"call_1","name":"missing","input":"{}"}'
-  print -r -- '{"type":"_assistant_tool_call_delta","index":1,"id":"call_2","name":"missing","input":"{}"}'
-  print -r -- '{"type":"_turn_usage","input_tokens":1,"output_tokens":1}'
-  print -r -- '{"type":"_assistant_end","stop":"tool_calls"}'
+  print -r -- '{"type":"assistant","stop":"tool_calls","content":[{"type":"tool_call","id":"call_1","name":"missing","input":{}},{"type":"tool_call","id":"call_2","name":"missing","input":{}}],"usage":{"input_tokens":1,"output_tokens":1}}'
 fi
 ZSH
 chmod +x "$limited_backend"
@@ -157,9 +146,7 @@ cat >"$env_backend" <<'ZSH'
 #!/usr/bin/env zsh
 cat >/dev/null
 jq -cn --arg text "${FILE_SECRET-unset} ${EXPORTED_SECRET-unset}" \
-  '{type:"_assistant_message_delta",index:0,text:$text}'
-print -r -- '{"type":"_turn_usage","input_tokens":1,"output_tokens":1}'
-print -r -- '{"type":"_assistant_end","stop":"end"}'
+  '{type:"assistant",stop:"end",content:[{type:"text",text:$text}]}'
 ZSH
 chmod +x "$env_backend"
 SF_TEST_MODEL=$(jq -c --arg backend "${env_backend:h}" '.adapter=$backend' <<<"$SF_TEST_MODEL")

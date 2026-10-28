@@ -79,6 +79,18 @@ fail() {
 }
 
 # The optional stop reason must match the final record.
+# The response an adapter's output ends with, when every line before it is a
+# preview. REPLY is the response; fails on any other stream.
+sf_test_backend_response() {
+  REPLY=$(jq -L "$ROOT" -ec -s '
+    include "lib/profile";
+    include "lib/session";
+    include "lib/backend";
+    select(length > 0 and all(.[:-1][]; backend_preview) and
+      (.[-1] | canonical_response and .stop != "cancelled")) | .[-1]
+  ' "$1") || { sf_test_detail=( "not a valid adapter stream: $1" ); return 1; }
+}
+
 assert_canonical_session() {
   local session=$1 stop=${2-}
   jq -L "$ROOT" -e -s --arg stop "$stop" '

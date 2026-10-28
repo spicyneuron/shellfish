@@ -10,84 +10,58 @@ request_eval() {
   jq -L "$ROOT" -e 'include "lib/session"; include "lib/backend"; '"$1"
 }
 
-# Backend streams require canonical ordering.
-jq -cn '[
-  {type:"_assistant_reasoning_opaque",index:0,opaque:{type:"redacted_thinking",data:"secret"}},
-  {type:"_assistant_reasoning_delta",index:0,text:"summary"},
-  {type:"_assistant_message_delta",index:1,text:"checking"},
-  {type:"_assistant_tool_call_delta",index:2,id:"call_1",name:"shell",input:"{\"command\":"},
-  {type:"_assistant_tool_call_delta",index:2,input:"\"pwd\"}"},
-  {type:"_turn_usage",input_tokens:10,cached_tokens:4,output_tokens:3},
-  {type:"_assistant_end",stop:"tool_calls"}
-]' | request_eval 'canonical_backend_response_events' >/dev/null
+# The decoder's NUL-separated fields, one per line.
+decode() {
+  jq -L "$ROOT" -jn 'include "lib/session"; include "lib/backend";
+    decode_backend_response(canonical_response)' | tr '\0' '\n'
+}
 
-# Opaque reasoning needs no display text.
-print -r -- '{"type":"_assistant_reasoning_opaque","index":0,"opaque":{}}' |
-  request_eval 'canonical_backend_event' >/dev/null
+# Previews pass through, then one complete response ends the stream.
+typeset decoded
+decoded=$(print -rl -- \
+  '{"type":"_assistant_reasoning_delta","text":"think"}' \
+  '{"type":"_assistant_message_delta","text":"run"}' \
+  '{"type":"assistant","stop":"tool_calls","content":[{"type":"reasoning","text":"think","opaque":{"signature":"signed"}},{"type":"text","text":"run"},{"type":"tool_call","id":"call_1","name":"shell","input":{"command":"pwd"}}],"usage":{"input_tokens":5,"output_tokens":1}}' |
+  decode) || fail 'a valid adapter stream was rejected'
+assert_equal 'event
+{"type":"_assistant_reasoning_delta","text":"think"}
+event
+{"type":"_assistant_message_delta","text":"run"}
+end
+{"type":"assistant","stop":"tool_calls","content":[{"type":"reasoning","text":"think","opaque":{"signature":"signed"}},{"type":"text","text":"run"},{"type":"tool_call","id":"call_1","name":"shell","input":{"command":"pwd"}}],"usage":{"input_tokens":5,"output_tokens":1}}' "$decoded"
 
-for event in \
-    '{"type":"_assistant_message_delta","text":"missing index"}' \
-    '{"type":"_assistant_end","stop":"cancelled"}'; do
-  if print -r -- "$event" | request_eval 'canonical_backend_event' >/dev/null 2>&1; then
-    fail "invalid backend event was accepted: $event"
+# A response nothing previewed previews its own text.
+decoded=$(print -r -- '{"type":"assistant","stop":"end","content":[{"type":"reasoning","text":"","opaque":{}},{"type":"text","text":"done"}]}' |
+  decode) || fail 'an unpreviewed response was rejected'
+assert_equal 'event
+{"type":"_assistant_message_delta","text":"done"}
+end
+{"type":"assistant","stop":"end","content":[{"type":"reasoning","text":"","opaque":{}},{"type":"text","text":"done"}]}' "$decoded"
+
+for stream in \
+    '{"type":"_assistant_message_delta","index":0,"text":"indexed"}' \
+    '{"type":"_turn_usage","input_tokens":1,"output_tokens":1}' \
+    '{"type":"assistant","stop":"cancelled","content":[{"type":"text","text":"a"}]}' \
+    '{"type":"assistant","stop":"end","content":[{"type":"tool_call","id":"c1","name":"shell","input":{}}]}' \
+    '{"type":"assistant","stop":"tool_calls","content":[{"type":"text","text":"a"}]}' \
+    $'{"type":"assistant","stop":"end","content":[]}\n{"type":"_assistant_message_delta","text":"late"}'; do
+  if print -r -- "$stream" | decode >/dev/null 2>&1; then
+    fail "invalid adapter stream was accepted: $stream"
   fi
 done
 
-if jq -cn '[
-    {type:"_assistant_end",stop:"end"},
-    {type:"_assistant_message_delta",index:0,text:"late"}
-  ]' | request_eval 'canonical_backend_response_events' >/dev/null 2>&1; then
-  fail 'backend events after response end were accepted'
-fi
-
-if jq -cn '[{type:"_assistant_message_delta",index:0,text:"unfinished"}]' |
-    request_eval 'canonical_backend_response_events' >/dev/null 2>&1; then
-  fail 'backend response without response end was accepted'
-fi
-
-# Response assembly orders and joins blocks, keeping calls inert in content.
+# A cancelled request keeps the text and reasoning its previews showed.
 jq -cn '[
-  {type:"_assistant_tool_call_delta",index:2,id:"call_1",name:"shell",input:"{\"command\":"},
-  {type:"_assistant_reasoning_delta",index:0,text:"think "},
-  {type:"_turn_usage",input_tokens:5,output_tokens:1},
-  {type:"_assistant_message_delta",index:1,text:"run "},
-  {type:"_assistant_reasoning_opaque",index:0,opaque:{signature:"signed"}},
-  {type:"_assistant_tool_call_delta",index:2,input:"\"pwd\"}"},
-  {type:"_assistant_reasoning_delta",index:0,text:"first"},
-  {type:"_assistant_message_delta",index:1,text:"this"},
-  {type:"_turn_usage",input_tokens:5,cached_tokens:2,output_tokens:4},
-  {type:"_assistant_end",stop:"tool_calls"}
-]' | request_eval 'assemble_backend_response(canonical_backend_response_events; canonical_response) == {
-  type:"assistant",stop:"tool_calls",
-  content:[
-    {type:"reasoning",text:"think first",opaque:{signature:"signed"}},
-    {type:"text",text:"run this"},
-    {type:"tool_call",id:"call_1",name:"shell",input:{command:"pwd"}}
-  ],
-  usage:{input_tokens:5,cached_tokens:2,output_tokens:4}
-}' >/dev/null
-
-# Length stops discard partial calls.
-jq -cn '[
-  {type:"_assistant_message_delta",index:0,text:"visible"},
-  {type:"_assistant_tool_call_delta",index:1,id:"call_1",name:"shell",input:"{\"command\":"},
-  {type:"_assistant_end",stop:"length"}
-]' | request_eval 'assemble_backend_response(canonical_backend_response_events; canonical_response) == {
-  type:"assistant",stop:"length",content:[{type:"text",text:"visible"}]
-}' >/dev/null
-
-for events in \
-    '[{"type":"_assistant_message_delta","index":0,"text":"text"},{"type":"_assistant_reasoning_delta","index":0,"text":"reason"},{"type":"_assistant_end","stop":"end"}]' \
-    '[{"type":"_assistant_reasoning_opaque","index":0,"opaque":{"a":1}},{"type":"_assistant_reasoning_opaque","index":0,"opaque":{"a":2}},{"type":"_assistant_end","stop":"end"}]' \
-    '[{"type":"_assistant_tool_call_delta","index":0,"id":"call_1","name":"shell","input":"{}"},{"type":"_assistant_end","stop":"end"}]' \
-    '[{"type":"_assistant_tool_call_delta","index":0,"id":"call_1","name":"shell","input":"{"},{"type":"_assistant_end","stop":"tool_calls"}]' \
-    '[{"type":"_assistant_tool_call_delta","index":0,"id":"call_1","name":"shell","input":"{}"},{"type":"_assistant_tool_call_delta","index":1,"id":"call_1","name":"shell","input":"{}"},{"type":"_assistant_end","stop":"tool_calls"}]'; do
-  if print -r -- "$events" | request_eval \
-      'assemble_backend_response(canonical_backend_response_events; canonical_response)' \
-      >/dev/null 2>&1; then
-    fail "invalid backend response was assembled: $events"
-  fi
-done
+  {type:"_assistant_reasoning_delta",text:"think "},
+  {type:"_assistant_reasoning_delta",text:"first"},
+  {type:"_assistant_message_delta",text:"run "},
+  {type:"_assistant_message_delta",text:"this"}
+]' | request_eval 'backend_preview_response == {type:"assistant",stop:"cancelled",
+  content:[{type:"reasoning",text:"think first"},{type:"text",text:"run this"}]}' >/dev/null ||
+  fail 'previews did not join into a cancelled response'
+jq -cn '[{type:"_assistant_message_delta",text:""}]' |
+  request_eval '[backend_preview_response] == []' >/dev/null ||
+  fail 'empty previews became a cancelled response'
 
 # A session header holds a complete profile and model with stored references.
 typeset valid_header

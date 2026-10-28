@@ -100,10 +100,9 @@ jq -ce '
 sf_backend_curl_args
 SF_BACKEND_CURL_ARGS+=(--header 'anthropic-version: 2023-06-01')
 sf_backend_stream '.error.message?' --arg control "$SF_BACKEND_CONTROL_PATTERN" '
-  def transient($type;$index;$text): {type:$type,index:$index,text:$text};
-  def usage_event:
-    {type:"_turn_usage",
-     input_tokens:((.input_tokens // 0) + (.cache_read_input_tokens // 0) +
+  def preview($type;$text): {type:$type,text:$text};
+  def usage:
+    {input_tokens:((.input_tokens // 0) + (.cache_read_input_tokens // 0) +
        (.cache_creation_input_tokens // 0)),
      output_tokens:(.output_tokens // 0)} +
     (if (.cache_read_input_tokens // null) == null then {}
@@ -124,33 +123,23 @@ sf_backend_stream '.error.message?' --arg control "$SF_BACKEND_CONTROL_PATTERN" 
       elif .type == "redacted_thinking" then {type:"redacted_thinking", data:.data}
       else {type:"text", text:.text}
       end];
-  def stop_event:
-    {type:"_assistant_end",
-     stop:(if .stop_reason == "tool_use" then "tool_calls"
-           elif .stop_reason == "max_tokens" then "length"
-           elif .stop_reason == "end_turn" or .stop_reason == "stop_sequence" then "end"
-           else error("unsupported stop reason") end)};
-  def opaque_events($content):
-    [$content | to_entries[] |
-      select(.value.type == "thinking" or .value.type == "redacted_thinking") |
-      {type:"_assistant_reasoning_opaque",index:.key,opaque:.value}];
-  def stream_end_events($content):
-    opaque_events($content) +
-    (if .usage == null then [] else [(.usage | usage_event)] end) + [stop_event];
-  # A buffered body expands into the same events a provider stream would emit.
-  def buffered_response_events($content):
-    [$content | to_entries[] |
-      .key as $index | .value |
-      if .type == "text" then transient("_assistant_message_delta";$index;.text)
-      elif .type == "thinking" then
-        transient("_assistant_reasoning_delta";$index;.thinking),
-        {type:"_assistant_reasoning_opaque",index:$index,opaque:.}
-      elif .type == "redacted_thinking" then
-        {type:"_assistant_reasoning_opaque",index:$index,opaque:.}
-      elif .type == "tool_use" then
-        {type:"_assistant_tool_call_delta",index:$index,id:.id,name:.name,input:(.input | tojson)}
-      else error("unsupported content block") end] +
-    (if .usage == null then [] else [(.usage | usage_event)] end) + [stop_event];
+  # The complete response, with thinking kept whole so it can be replayed. A
+  # response cut short by the output limit drops its calls.
+  def response($content):
+    (if .stop_reason == "tool_use" then "tool_calls"
+     elif .stop_reason == "max_tokens" then "length"
+     elif .stop_reason == "end_turn" or .stop_reason == "stop_sequence" then "end"
+     else error("unsupported stop reason") end) as $stop |
+    {type:"assistant", stop:$stop,
+     content:[$content[] |
+       if .type == "text" then {type:"text",text:.text}
+       elif .type == "thinking" then {type:"reasoning",text:.thinking,opaque:.}
+       elif .type == "redacted_thinking" then {type:"reasoning",text:"",opaque:.}
+       elif .type == "tool_use" then
+         if $stop == "length" then empty
+         else {type:"tool_call",id:.id,name:.name,input:.input} end
+       else error("unsupported content block") end]} +
+    (if .usage == null then {} else {usage:(.usage | usage)} end);
 
   # A null line ends the stream. A body that never announced itself as a stream
   # is taken whole there, so a provider that ignores the requested streaming mode
@@ -164,7 +153,7 @@ sf_backend_stream '.error.message?' --arg control "$SF_BACKEND_CONTROL_PATTERN" 
       elif .mode != "json" then error("no completed response")
       else (.body | try fromjson catch null) as $body |
         if $body == null then error("no completed response")
-        else .done = true | .out += ($body | buffered_response_events(.content // []))
+        else .done = true | .out += [$body | response(.content // [])]
         end
       end
     else
@@ -186,27 +175,19 @@ sf_backend_stream '.error.message?' --arg control "$SF_BACKEND_CONTROL_PATTERN" 
       elif $event.type == "content_block_start" then
         .order += [$key] |
         .blocks[$key] = ($event.content_block +
-          (if $event.content_block.type == "tool_use" then {partial:""} else {} end)) |
-        if $event.content_block.type == "tool_use" then
-          .out += [{type:"_assistant_tool_call_delta",index:$event.index,
-                    id:$event.content_block.id,name:$event.content_block.name}]
-        else . end
+          (if $event.content_block.type == "tool_use" then {partial:""} else {} end))
       elif $event.type == "content_block_delta" then
         $event.delta as $delta |
         if $delta.type == "text_delta" then
           .blocks[$key].text += $delta.text |
-          .out += [transient("_assistant_message_delta";$event.index;$delta.text)]
+          .out += [preview("_assistant_message_delta";$delta.text)]
         elif $delta.type == "thinking_delta" then
           .blocks[$key].thinking += $delta.thinking |
-          .out += [transient("_assistant_reasoning_delta";$event.index;$delta.thinking)]
+          .out += [preview("_assistant_reasoning_delta";$delta.thinking)]
         elif $delta.type == "signature_delta" then
           .blocks[$key].signature += $delta.signature
         elif $delta.type == "input_json_delta" then
-          .blocks[$key].partial += $delta.partial_json |
-          if $delta.partial_json == "" then . else
-            .out += [{type:"_assistant_tool_call_delta",index:$event.index,
-                      input:$delta.partial_json}]
-          end
+          .blocks[$key].partial += $delta.partial_json
         else .
         end
       elif $event.type == "message_delta" then
@@ -218,7 +199,7 @@ sf_backend_stream '.error.message?' --arg control "$SF_BACKEND_CONTROL_PATTERN" 
          else .usage = ((.usage // {}) + $event.usage) end)
       elif $event.type == "message_stop" then
         .done = true |
-        .out += stream_end_events(rebuilt)
+        .out += [response(rebuilt)]
       else .
       end
     end;

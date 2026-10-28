@@ -13,12 +13,16 @@ mkdir -p "$backend"
 print -r -- '{"endpoint":"https://example.invalid/test"}' >"$backend/manifest.json"
 cat >"$backend/run" <<'ZSH'
 #!/usr/bin/env zsh
+say() { jq -cn --arg text "$1" '{type:"assistant",stop:"end",content:[{type:"text",text:$text}]}'; }
+call() {
+  jq -cn --argjson input "$1" \
+    '{type:"assistant",stop:"tool_calls",content:[{type:"tool_call",id:"call_1",name:"agent",input:$input}]}'
+}
 request=$(cat)
 task=$(jq -r '[.messages[] | select(.type == "user") | .content[0].text] | last' <<<"$request")
 if [[ $task == 'delegated task' ]]; then
   print -r -- "$request" >"$SF_AGENT_REQUEST"
-  print -r -- '{"type":"_assistant_message_delta","index":0,"text":"fork answer"}'
-  print -r -- '{"type":"_assistant_end","stop":"end"}'
+  say 'fork answer'
   exit 0
 fi
 if jq -e '.tools | any(.name == "agent")' <<<"$request" >/dev/null; then
@@ -38,26 +42,19 @@ if jq -e '.tools | any(.name == "agent")' <<<"$request" >/dev/null; then
         --argjson background "$([[ $task == 'continue background' ]] && print true || print false)" \
         '{operation:"continue",agent_id:$id,task:$task,background:$background}')
     fi
-    jq -cn --arg input "$input" '{type:"_assistant_tool_call_delta",index:0,
-      id:"call_1",name:"agent",input:$input}'
-    print -r -- '{"type":"_assistant_end","stop":"tool_calls"}'
+    call "$input"
   elif jq -e '.messages | any(.type == "tool_result")' <<<"$request" >/dev/null; then
-    print -r -- '{"type":"_assistant_message_delta","index":0,"text":"parent done"}'
-    print -r -- '{"type":"_assistant_end","stop":"end"}'
+    say 'parent done'
+  elif [[ $task == 'background parent' ]]; then
+    call '{"operation":"start","profile":"child","task":"slow child","background":true}'
+  elif [[ $task == 'stop-hook parent' ]]; then
+    call '{"operation":"start","profile":"child-stop","task":"child task"}'
+  elif [[ $task == 'fork parent' || $task == 'fork header' ]]; then
+    call '{"operation":"start","fork":true,"task":"delegated task"}'
   else
-    if [[ $task == 'background parent' ]]; then
-      print -r -- '{"type":"_assistant_tool_call_delta","index":0,"id":"call_1","name":"agent","input":"{\"operation\":\"start\",\"profile\":\"child\",\"task\":\"slow child\",\"background\":true}"}'
-    elif [[ $task == 'stop-hook parent' ]]; then
-      print -r -- '{"type":"_assistant_tool_call_delta","index":0,"id":"call_1","name":"agent","input":"{\"operation\":\"start\",\"profile\":\"child-stop\",\"task\":\"child task\"}"}'
-    elif [[ $task == 'fork parent' || $task == 'fork header' ]]; then
-      print -r -- '{"type":"_assistant_tool_call_delta","index":0,"id":"call_1","name":"agent","input":"{\"operation\":\"start\",\"fork\":true,\"task\":\"delegated task\"}"}'
-    else
-      [[ $task != 'parent failure' ]] || task='child error'
-      [[ $task == 'child error' ]] || task='child task'
-      jq -cn --arg task "$task" '{type:"_assistant_tool_call_delta",index:0,
-        id:"call_1",name:"agent",input:({operation:"start",profile:"child",task:$task} | tojson)}'
-    fi
-    print -r -- '{"type":"_assistant_end","stop":"tool_calls"}'
+    [[ $task != 'parent failure' ]] || task='child error'
+    [[ $task == 'child error' ]] || task='child task'
+    call "$(jq -cn --arg task "$task" '{operation:"start",profile:"child",task:$task}')"
   fi
 else
   if [[ $task == 'slow child' ]]; then sleep 3; fi
@@ -65,8 +62,7 @@ else
       last == "child error"' <<<"$request" >/dev/null; then
     exit 7
   fi
-  print -r -- '{"type":"_assistant_message_delta","index":0,"text":"child answer"}'
-  print -r -- '{"type":"_assistant_end","stop":"end"}'
+  say 'child answer'
 fi
 ZSH
 chmod +x "$backend/run"

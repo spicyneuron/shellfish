@@ -130,12 +130,12 @@ jq -eRn '
     else [.type,.id,.exit_code] end] == [
       ["state_update","pre/call_1"],
       ["hook_result","pre_tool_use"],
+      ["tool_result","call_1",126],
       ["state_update","post/call_1"],
       ["hook_result","post_tool_use"],
-      ["tool_result","call_1",126],
+      ["tool_result","call_2",0],
       ["state_update","post/call_2"],
-      ["hook_result","post_tool_use"],
-      ["tool_result","call_2",0]
+      ["hook_result","post_tool_use"]
     ] and
   ($events | map(select(.type == "hook_result"))[0] |
     .model_text == "pre context" and .user_text == "pre display") and
@@ -244,7 +244,33 @@ jq -e -s 'all(.[]; .type != "_tool_permission_request" and
   .type != "_tool_permission_response")' "$session" >/dev/null ||
   fail 'permission exchange became durable'
 
-# A failing post hook keeps accepted state before the known outcome and error.
+# A failing pre hook settles every pending call before the error.
+typeset pre_fail="$tmp/pre-fail"
+sf_test_hook "$pre_fail" <<'ZSH'
+#!/usr/bin/env zsh
+cat >/dev/null
+exit 4
+ZSH
+typeset pre_profile=$SF_TEST_PROFILE
+SF_TEST_PROFILE=$(jq -c '.hooks=[] | .sandbox.enabled=false' <<<"$SF_TEST_PROFILE")
+sf_test_bind_hooks pre_tool_use "$pre_fail"
+session="$tmp/pre-failure.jsonl"
+sf_test_session "$session"
+integer pre_status=0
+SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_COUNT=2 \
+  sf_test_run pre "$session" >"$stream" 2>/dev/null || pre_status=$?
+(( pre_status == 1 )) || fail 'failing pre hook did not fail the turn'
+jq -eRn '
+  [inputs | fromjson | select(.type | IN("tool_result","error"))] as $events |
+  ($events | map(select(.type == "tool_result") | [.id,.exit_code,.model_text])) == [
+    ["call_1",126,"tool call interrupted"],
+    ["call_2",126,"tool call cancelled"]] and
+  ($events[-1] | .type == "error" and (.user_text | contains("pre_tool_use")))
+' <"$stream" >/dev/null || fail 'turn failure did not settle pending calls before its error'
+assert_canonical_session "$session"
+SF_TEST_PROFILE=$pre_profile
+
+# A failing post hook keeps the settled outcome and its accepted state before the error.
 typeset post_fail="$tmp/post-fail"
 sf_test_hook "$post_fail" '{"user_text_done":"must not settle"}' <<'ZSH'
 #!/usr/bin/env zsh
@@ -262,8 +288,8 @@ SF_TEST_BACKEND_TOOL_CALL=1 sf_test_run post "$session" >"$stream" || post_statu
 jq -eRn '
   [inputs | fromjson | select(.type | IN("state_update","hook_result","tool_result","error"))] as $events |
   ($events | any(.type == "hook_result") | not) and
-  ($events[-3] | .type == "state_update" and .name == "post/failure" and .value == true) and
-  ($events[-2] | .type == "tool_result" and .id == "call_1" and .exit_code == 0) and
+  ($events[-3] | .type == "tool_result" and .id == "call_1" and .exit_code == 0) and
+  ($events[-2] | .type == "state_update" and .name == "post/failure" and .value == true) and
   ($events[-1] | .type == "error" and (.user_text | contains("post_tool_use")))
 ' <"$stream" >/dev/null || fail 'post failure lost or reordered the known outcome'
 assert_canonical_session "$session"

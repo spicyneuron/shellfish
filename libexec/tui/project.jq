@@ -68,9 +68,11 @@ def response_actions:
     end] +
   [["message_end"]];
 
+# A live response closes the message its previews drew.
 def record_actions($mode; $window):
   if .type == "assistant" then
-    (if $mode == "load" then response_actions else [] end) + usage_actions($window)
+    (if $mode == "load" then response_actions else [["message_end"]] end) +
+      usage_actions($window)
   elif .type == "user" then
     message_actions("user"; .content[0].text)
   elif .type == "error" then
@@ -90,15 +92,10 @@ def record_actions($mode; $window):
 
 def event_actions($window):
   if .type == "_assistant_start" then [["message_start", "agent"]]
-  elif .type == "_assistant_message_delta" then
-    [["message_delta", (.index | tostring), "text", .text, ""]]
+  # Previews carry no index; a change of kind starts the next block.
+  elif .type == "_assistant_message_delta" then [["message_delta", "0", "text", .text, ""]]
   elif .type == "_assistant_reasoning_delta" then
-    [["message_delta", (.index | tostring), "reasoning", .text, ""]]
-  elif .type == "_assistant_tool_call_delta" or
-      .type == "_assistant_reasoning_opaque" then
-    [["message_delta", (.index | tostring), "inert", "", ""]]
-  elif .type == "_assistant_end" then [["message_end"]]
-  elif .type == "_turn_usage" then []
+    [["message_delta", "0", "reasoning", .text, ""]]
   # A tool draft names its tool; an empty draft clears its section.
   elif .type == "_draft" then
     (if has("name") then "tool" else "notice" end) as $class |

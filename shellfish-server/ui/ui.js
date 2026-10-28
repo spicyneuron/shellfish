@@ -523,10 +523,6 @@ function apply(frame) {
       return showIndicator();
     case "_assistant_message_delta":
     case "_assistant_reasoning_delta":
-    case "_assistant_tool_call_delta":
-    case "_assistant_reasoning_opaque":
-    case "_turn_usage":
-    case "_assistant_end":
       // Provisional. Content is drawn only from the record that commits it,
       // which arrives on this same stream.
       return;

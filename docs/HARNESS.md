@@ -130,6 +130,7 @@ repeat:
             pre_tool_use
             permission_request when execution needs approval
             execute or deny tool
+            append tool result
             post_tool_use
         continue
     stop
@@ -154,7 +155,7 @@ A hook changes the lifecycle's outcome by writing an `action` line to fd 3. The 
 | `user_prompt_submit` | — | Exact prompt | `block`, `handoff`, `session_update` | Submit the prompt |
 | `permission_request` | `NAME ID` | Tool request | `allow`, `deny` | Defer to a capable client, otherwise deny |
 | `pre_tool_use` | `NAME ID` | Tool request | `deny` | Execute the tool |
-| `post_tool_use` | `NAME ID` | Tool response | None | Accept the result |
+| `post_tool_use` | `NAME ID` | Tool response | None | Continue |
 | `stop` | `ATTEMPT` | Final assistant text | `continue` | Finish the turn |
 
 Tool hooks receive canonical envelopes:
@@ -180,11 +181,11 @@ Actions take these shapes:
 {"action":"continue"}
 ```
 
-A block ends the turn without submitting the prompt. A handoff asks a capable client to run the complete `argv` after a clean turn exit. A session update's `PROFILE` is one complete session profile, as stored in the header; Shellfish atomically replaces it. A `pre_tool_use` deny reason becomes the refused tool result. A `stop` continue requires settled model text, then continues inference with it. `pre_tool_use` and `post_tool_use` cannot rewrite tool input or results. `permission_request` may only allow or deny a supported sandbox bypass.
+A block ends the turn without submitting the prompt. A handoff asks a capable client to run the complete `argv` after a clean turn exit. A session update's `PROFILE` is one complete session profile, as stored in the header; Shellfish atomically replaces it. A `pre_tool_use` deny reason becomes the refused tool result. A `stop` continue requires settled model text, then continues inference with it. `pre_tool_use` and `post_tool_use` cannot rewrite tool input or results. A result is already durable when `post_tool_use` runs, and its context still reaches the model with that result. `permission_request` may only allow or deny a supported sandbox bypass.
 
 ## Backend adapters
 
-A backend adapter translates between Shellfish's provider-neutral protocol and one inference provider. It owns request projection, transport, stream parsing, and provider-specific validation. The core assembles, persists, and recovers complete assistant responses.
+A backend adapter translates between Shellfish's provider-neutral protocol and one inference provider. It owns request projection, transport, stream parsing, response assembly, and provider-specific validation. The core validates, persists, and recovers complete assistant responses.
 
 An adapter manifest declares its default endpoint:
 
@@ -211,24 +212,19 @@ Bundled adapters normalize token limits in this order: `max_output_tokens`, `max
 
 ### Response stream
 
-The adapter writes one normalized JSON event per line:
+The adapter writes JSON lines: optional previews while the provider streams, then exactly one complete assistant response.
 
-| Event | Required payload |
-| --- | --- |
-| `_assistant_message_delta` | `index`, append-only `text` |
-| `_assistant_reasoning_delta` | `index`, append-only `text` |
-| `_assistant_reasoning_opaque` | `index`, complete `opaque` object |
-| `_assistant_tool_call_delta` | `index` and at least one of `id`, `name`, append-only raw JSON `input` |
-| `_turn_usage` | Non-negative `input_tokens`, `output_tokens`; optional cached/reasoning counts |
-| `_assistant_end` | `stop`: `end`, `tool_calls`, or `length` |
+```json
+{"type":"_assistant_reasoning_delta","text":"Checking "}
+{"type":"_assistant_message_delta","text":"Let me look."}
+{"type":"assistant","stop":"tool_calls","content":[...],"usage":{"input_tokens":10,"output_tokens":4}}
+```
 
-Indexes are non-negative and define final content order. One index cannot change content type. Tool IDs and names cannot change once set; complete tool input must decode to an object, and IDs must be unique within the response. Opaque reasoning preserves provider data needed by later requests and must repeat identically for one index.
+Previews are display-only text, in arrival order. The response is the record Shellfish will append, in the transcript's own shape: ordered text, reasoning, and tool-call content, a `stop` of `end`, `tool_calls`, or `length`, and optional usage. Only `tool_calls` carries calls, so a response cut short by the output limit drops them. Tool-call fragments, opaque reasoning payloads, and provider correlation stay inside the adapter until they belong to that response.
 
-Event objects use these exact normalized fields; provider-native correlation needed only during parsing remains adapter-local.
+Nothing may follow the response, and the adapter must then exit 0. Stderr is failure diagnostics, never stream data. A nonzero exit or invalid stream fails the request.
 
-The latest usage event wins; cached tokens cannot exceed input tokens. Exactly one `_assistant_end` must be final: `tool_calls` requires complete calls, `end` forbids calls, and `length` discards calls. The adapter must then exit 0. Stderr is failure diagnostics, never stream data.
-
-The core validates and assembles the complete response before persisting it or permitting tool execution. A nonzero exit or invalid stream fails the request.
+The core validates the response before persisting it or permitting tool execution. If the request is cancelled first, the text and reasoning its previews showed are kept as a cancelled response.
 
 ### Context-window discovery
 

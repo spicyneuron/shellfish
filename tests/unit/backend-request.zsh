@@ -88,16 +88,15 @@ mkdir -p "${invalid_backend:h}"
 cat >"$invalid_backend" <<'ZSH'
 #!/usr/bin/env zsh
 cat >/dev/null
-print -r -- '{"type":"_assistant_message_delta","index":0,"text":"partial"}'
+print -r -- '{"type":"_assistant_message_delta","text":"partial"}'
 case $SF_TEST_INVALID_STREAM in
   malformed) print -r -- '{' ;;
   late)
-    print -r -- '{"type":"_assistant_end","stop":"end"}'
-    print -r -- '{"type":"_assistant_message_delta","index":0,"text":"late"}'
+    print -r -- '{"type":"assistant","stop":"end","content":[{"type":"text","text":"partial"}]}'
+    print -r -- '{"type":"_assistant_message_delta","text":"late"}'
     ;;
-  assembly)
-    print -r -- '{"type":"_assistant_tool_call_delta","index":1,"id":"bad","name":"shell","input":"{"}'
-    print -r -- '{"type":"_assistant_end","stop":"tool_calls"}'
+  response)
+    print -r -- '{"type":"assistant","stop":"tool_calls","content":[{"type":"text","text":"partial"}]}'
     ;;
 esac
 ZSH
@@ -108,7 +107,7 @@ chmod +x "$invalid_backend"
   cat
 } <"$session" >"$invalid_session"
 typeset invalid_mode
-for invalid_mode in malformed late assembly; do
+for invalid_mode in malformed late response; do
   if SF_TEST_INVALID_STREAM=$invalid_mode zsh -f "$entry" backend-request \
       <"$invalid_session" >"$tmp/invalid-$invalid_mode.out" \
       2>"$tmp/invalid-$invalid_mode.err"; then

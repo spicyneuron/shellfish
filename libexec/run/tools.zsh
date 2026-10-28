@@ -8,63 +8,8 @@ setopt no_aliases no_bg_nice no_multios pipe_fail
 
 typeset -g SF_RUN_TOOL_ERROR=''
 
-# Everything execution and settlement need for one call.
+# The call being executed, as the turn's step planned it.
 typeset -gA SF_TOOL_PLAN=()
-
-sf_run_tool_plan() {
-  local call=$1
-  sf_jq_fields -rn --argjson profile "$SF_RUN[profile]" --argjson tools "$SF_RUN[tools]" \
-    --argjson call "$call" --argjson turn "$SF_RUN[turn_id]" \
-    --argjson max_capture "$SF_RUN[max_capture]" '
-      include "lib/fields";
-      include "lib/profile";
-      include "lib/session";
-      include "libexec/run/component";
-      $call.id as $id | $call.name as $name | $call.input as $input |
-      [$tools[] | select(.name == $name)][0] as $tool |
-      ($tool.manifest // {}) as $manifest |
-      (if $tool == null or ($profile.sandbox.enabled | not) then {decision:"none"}
-       elif (($input.request_sandbox_bypass // false) | type) != "boolean" then
-         {decision:"deny",reason:"sandbox bypass is not allowed"}
-       elif ($input.request_sandbox_bypass // false) == false then {decision:"none"}
-       elif ($tool.manifest.allow_sandbox_bypass // false) != true then
-         {decision:"deny",reason:"sandbox bypass is not allowed"}
-       elif ($input.sandbox_bypass_reason? | type) != "string" or
-           $input.sandbox_bypass_reason == "" then
-         {decision:"failure",reason:"sandbox bypass reason is required"}
-       else {decision:"request",reason:$input.sandbox_bypass_reason} end) as $permission |
-      ($profile.sandbox.enabled and ($manifest.sandbox // false) and
-        (($input.request_sandbox_bypass // false) | not)) as $sandboxed |
-      entry("id"; $id), entry("name"; $name), entry("input"; $input | tojson),
-      entry("request";
-        {turn_id:$turn,tool_name:$name,tool_use_id:$id,tool_input:$input} | tojson),
-      entry("component"; component_plan(
-        (if $sandboxed then $manifest else
-          $manifest |
-          .user_text=(.user_text_unsandboxed // .user_text) |
-          .user_text_done=(.user_text_done_unsandboxed // .user_text_done)
-        end);
-        {user_text:"${name} ${input}",
-         user_text_done:"${name} ${input}\n${output.stdout}${output.stderr}",
-         user_text_skipped:"${name} ${input}\n${output.stderr}",
-         model_text:"${output.stdout}${output.stderr}"}; ($manifest | tool_inputs); $name; $input;
-        {type:"_draft",id:$id,name:$name}) | tojson),
-      entry("decision"; $permission.decision),
-      entry("permission_reason"; $permission.reason // ""),
-      entry("permission_preview";
-        render_template($manifest.user_permission // "${input}"; $name; $input; {}; {})),
-      entry("executable"; $tool.command // ""),
-      entry("environment"; ($tool.manifest.environment // []) | join(" ")),
-      entry("max_capture"; $manifest.max_capture_bytes // $max_capture | tostring),
-      entry("execution_input";
-        $input | del(.request_sandbox_bypass,.sandbox_bypass_reason) | tojson),
-      entry("sandbox"; $sandboxed | tostring),
-      entry("read_paths"; $profile.sandbox.read | join("\n")),
-      entry("write_paths"; $profile.sandbox.write | join("\n")),
-      ("ok" | field)
-    ' || { SF_RUN_TOOL_ERROR='cannot inspect tool'; return 1; }
-  SF_TOOL_PLAN=( "${reply[@]}" )
-}
 
 sf_run_tool_refused() {
   local reason=$1 ran=${3:-false}
@@ -169,17 +114,9 @@ sf_run_tool_execute() {
 }
 
 sf_run_tool_complete() {
-  sf_jq_fields -cn --argjson component "$1" --argjson outcome "$2" \
-    --argjson request "$SF_TOOL_PLAN[request]" '
-    include "lib/fields";
-    include "lib/session";
-    include "lib/profile";
-    include "libexec/run/component";
-    {type:"tool_result",id:$request.tool_use_id,name:$request.tool_name,
-     input:$request.tool_input,exit_code:$outcome.output.exit_code} +
-      component_texts($component; $outcome) |
-    if canonical_tool_result then entry("result"; tojson),
-      entry("post_request"; $request + {tool_response:$outcome.output} | tojson), ("ok" | field)
-    else error("invalid tool result") end
-  ' || { SF_RUN_TOOL_ERROR="cannot finish tool result: $SF_TOOL_PLAN[name]"; return 1; }
+  sf_run_reduce '
+    entry("result"; tool_result($component; $outcome; $request) | tojson),
+    entry("post_request"; $request + {tool_response:$outcome.output} | tojson)
+  ' --argjson component "$1" --argjson outcome "$2" --argjson request "$SF_TOOL_PLAN[request]" ||
+    { SF_RUN_TOOL_ERROR="cannot finish tool result: $SF_TOOL_PLAN[name]"; return 1; }
 }

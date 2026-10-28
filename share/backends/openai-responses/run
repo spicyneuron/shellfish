@@ -83,9 +83,7 @@ jq -ce '
 
 sf_backend_curl_args
 sf_backend_stream '(.error.message? // .detail?)' '
-  def transient($type;$index;$text): {type:$type,index:$index,text:$text};
-  def usage_event:
-    {type:"_turn_usage"} + .;
+  def preview($type;$text): {type:$type,text:$text};
 
   # Rebuilds the output a completed response should carry. Most backends send it
   # whole, in which case nothing here applies; one that sends a thin completed
@@ -158,13 +156,12 @@ sf_backend_stream '(.error.message? // .detail?)' '
       error("empty completed response")
     else . end |
     ({
-      type: "message",
-        role: "assistant",
-        content: $content,
-        stop:
-          (if $status == "incomplete" then "length"
-           elif $calls > 0 then "tool_calls"
-           else "end" end)
+      type: "assistant",
+      stop:
+        (if $status == "incomplete" then "length"
+         elif $calls > 0 then "tool_calls"
+         else "end" end),
+      content: $content
     } + if $usage == null then {} else {
       usage: {
         input_tokens: $usage.input_tokens,
@@ -175,22 +172,6 @@ sf_backend_stream '(.error.message? // .detail?)' '
           else {reasoning_tokens: $usage.output_tokens_details.reasoning_tokens}
           end
     } end);
-
-  def buffered_response_events:
-    . as $message |
-    [.content | to_entries[] | .key as $index | .value |
-      if .type == "text" then transient("_assistant_message_delta";$index;.text)
-      elif .type == "reasoning" then
-        (if .text == "" then empty else transient("_assistant_reasoning_delta";$index;.text) end),
-        {type:"_assistant_reasoning_opaque",index:$index,opaque:.opaque}
-      elif .type == "tool_call" then
-        {type:"_assistant_tool_call_delta",index:$index,id:.id,name:.name,input:(.input | tojson)}
-      else error("unsupported assistant content") end] +
-    (if .usage == null then [] else [{type:"_turn_usage"} + .usage] end) +
-    [{type:"_assistant_end",stop:.stop}];
-  def stream_end_events:
-    (if .usage == null then [] else [{type:"_turn_usage"} + .usage] end) +
-    [{type:"_assistant_end",stop:.stop}];
 
   # A null line ends the stream. A body that never announced itself as a stream
   # is taken whole there, so a provider that ignores the requested streaming mode
@@ -206,7 +187,7 @@ sf_backend_stream '(.error.message? // .detail?)' '
       elif .mode != "json" then error("no completed response")
       else (.body | try fromjson catch null) as $body |
         if $body == null then error("no completed response")
-        else .done = true | .out += ($body | normalized | buffered_response_events)
+        else .done = true | .out += [$body | normalized]
         end
       end
     else
@@ -231,7 +212,7 @@ sf_backend_stream '(.error.message? // .detail?)' '
       elif $event.type == "response.output_text.delta" then
         ($event.delta // "") as $delta |
         .text += $delta |
-        .out += [transient("_assistant_message_delta";($event.output_index // 0);$delta)]
+        .out += [preview("_assistant_message_delta";$delta)]
       # Only the summary is streamed, since only the summary is what normalization
       # keeps; raw reasoning deltas would show text the saved message never carries.
       # Parts join the way that normalization joins them, and a part index only
@@ -244,48 +225,30 @@ sf_backend_stream '(.error.message? // .detail?)' '
          else "" end) as $gap |
         .summary_item_id = $item_id |
         .summary_index = $index |
-        .out += [transient("_assistant_reasoning_delta";($event.output_index // 0);
-                           $gap + ($event.delta // ""))]
+        .out += [preview("_assistant_reasoning_delta"; $gap + ($event.delta // ""))]
       elif $event.type == "response.output_item.done" then
         ($event.item // {}) as $item |
         if ($item.type | IN("message", "function_call", "reasoning")) then
-          .items += [$item] |
-          if $item.type == "reasoning" then
-            .out += [{type:"_assistant_reasoning_opaque",index:($event.output_index // 0),
-                      opaque:$item}]
-          else . end
+          .items += [$item]
         else . end
       elif $event.type == "response.output_item.added" and
            ($event.item.type // "") == "function_call" then
         (($event.output_index // 0) | tostring) as $key |
         .added[$key] = {type:"function_call", call_id:$event.item.call_id,
-                        name:$event.item.name, arguments:""} |
-        .out += [{type:"_assistant_tool_call_delta",index:($event.output_index // 0),
-                  id:$event.item.call_id,name:$event.item.name}]
+                        name:$event.item.name, arguments:""}
       # Ignored unless a call was opened at that index, so arguments cannot
       # conjure a call the stream never announced.
       elif $event.type == "response.function_call_arguments.delta" then
         (($event.output_index // 0) | tostring) as $key |
         if .added[$key] == null or ($event.delta // "") == "" then .
-        else
-          .added[$key].arguments += $event.delta |
-          .out += [{type:"_assistant_tool_call_delta",index:($event.output_index // 0),
-                    input:$event.delta}]
-        end
+        else .added[$key].arguments += $event.delta end
       elif $event.type == "response.function_call_arguments.done" then
         (($event.output_index // 0) | tostring) as $key |
         if .added[$key] == null then .
         else
           (.added[$key].arguments // "") as $seen |
           ($event.arguments // "{}") as $full |
-          if ($full | startswith($seen)) then
-            ($seen | length) as $length |
-            ($full[$length:]) as $suffix |
-            .added[$key].arguments = $full |
-            if $suffix == "" then . else
-              .out += [{type:"_assistant_tool_call_delta",index:($event.output_index // 0),
-                        input:$suffix}]
-            end
+          if ($full | startswith($seen)) then .added[$key].arguments = $full
           else error("function call arguments changed") end
         end
       # A response cut short by the output limit ends the stream just as a
@@ -294,9 +257,8 @@ sf_backend_stream '(.error.message? // .detail?)' '
       # lost to "no completed response" rather than saved as far as it got.
       elif $event.type == "response.completed" or
            $event.type == "response.incomplete" then
-        (merged($event.response; .items; .text; .added) | normalized) as $response |
         .done = true |
-        .out += ($response | stream_end_events)
+        .out += [merged($event.response; .items; .text; .added) | normalized]
       else .
       end
     end;

@@ -113,7 +113,8 @@ def context_message($context; $request):
 
 def session_state:
   reduce .[] as $record
-    ({next:"user", calls:[], context:[], hooks:[], messages:[], response:null};
+    ({next:"user", calls:[], context:[], hooks:[], messages:[], response:null,
+      requests:0, call_total:0};
       if ($record | canonical_state_update) then .
       elif ($record | canonical_hook_result) then
         if (.hooks | index($record.id)) != null then
@@ -121,6 +122,10 @@ def session_state:
         else
           .hooks += [$record.id] |
           if ($record.model_text // "") == "" then .
+          # Post-tool context annotates the result it follows.
+          elif $record.lifecycle == "post_tool_use" and (.context | length) == 0 and
+              .messages[-1].type? == "tool_result" then
+            .messages[-1].parts |= add_hook_context($record)
           else .context |= add_hook_context($record) end
         end
       elif ($record | canonical_error) then
@@ -128,7 +133,7 @@ def session_state:
       elif ($record | canonical_user_message) then
         if .next != "user" then error("user request inside a turn") else . end |
         .messages += [context_message(.context; $record.content[0].text)] |
-        .context = [] | .next = "assistant"
+        .context = [] | .next = "assistant" | .requests = 0
       elif ($record | canonical_response) then
         # Stop feedback may continue the turn with another request.
         if .next == "assistant" or any(.context[]; .lifecycle? == "stop") then .
@@ -136,6 +141,7 @@ def session_state:
         (if (.context | length) == 0 then .
          else .messages += [context_message(.context; "")] | .context = [] end) |
         ($record | response_calls) as $calls |
+        .requests += 1 | .call_total = ($calls | length) |
         if ($calls | length) == 0 then
           .messages += [$record | del(.usage)] | .next = "user"
         else .calls = $calls | .response = $record | .next = "tool_result" end
@@ -154,20 +160,24 @@ def session_state:
          end) |
         .messages += [{type:"tool_call", id:$call.id, name:$call.name, input:$call.input},
           {type:"tool_result", call_id:$call.id, name:$call.name,
-           exit_code:$record.exit_code,
-           content:join_context([.context[], ($record.model_text // "")])}] |
+           exit_code:$record.exit_code, parts:.context,
+           result:($record.model_text // "")}] |
         .context = [] |
         .calls = .calls[1:] |
         .next = (if (.calls | length) == 0 then "assistant" else "tool_result" end)
       else error("unrecognized session record") end);
 
-def session_run:
-  session_state |
+def state_run:
   {next, calls:[.calls[] | {id, name, input}], context:[.context[] | render_context]};
 
 # A response awaiting results reaches no request, and trailing context waits
 # here for the request that carries it.
-def session_messages:
-  session_state |
-  if (.context | length) == 0 then .messages
-  else .messages + [context_message(.context; "")] end;
+def state_messages:
+  [.messages[] |
+    if .type == "tool_result" then
+      .content = join_context([.parts[], .result]) | del(.parts, .result)
+    else . end] +
+  if (.context | length) == 0 then [] else [context_message(.context; "")] end;
+
+def session_run: session_state | state_run;
+def session_messages: session_state | state_messages;

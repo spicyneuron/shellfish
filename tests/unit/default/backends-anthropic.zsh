@@ -43,19 +43,11 @@ cat >"$req" <<'EOF'
 EOF
 
 assert_usage() {
-  jq -e -s -L "$ROOT" '
-    include "lib/profile";
-    include "lib/session";
-    include "lib/backend";
-    map(select(.type == "_turn_usage"))[0] as $event |
-    assemble_backend_response(canonical_backend_response_events; canonical_response) as $message |
-    ($event | del(.type)) == {
-      input_tokens:100, output_tokens:7, cached_tokens:85, reasoning_tokens:3
-    } and
-    $message.usage == ($event | del(.type)) and
-    ($message | canonical_response) and
-    $message.content[0] == {type:"text",text:"ok"}
-  ' "$res" >/dev/null
+  sf_test_backend_response "$res" || fail 'anthropic emitted an invalid stream'
+  jq -e '
+    .usage == {input_tokens:100, output_tokens:7, cached_tokens:85, reasoning_tokens:3} and
+    .content == [{type:"text",text:"ok"}]
+  ' <<<"$REPLY" >/dev/null || fail 'anthropic lost text or usage'
 }
 
 # Parse buffered responses.
@@ -98,16 +90,15 @@ data: {"type":"message_stop"}
 
 EOF
 ANTHROPIC_API_KEY=test zsh -f "$run" <"$req" >"$res"
-jq -e -s -L "$ROOT" '
-  include "lib/profile";
-  include "lib/session";
-  include "lib/backend";
-  assemble_backend_response(canonical_backend_response_events; canonical_response) as $message |
-  ($message.stop == "tool_calls") and
-  ($message.content == [
+sf_test_backend_response "$res" || fail 'anthropic emitted an invalid call stream'
+jq -e '
+  .stop == "tool_calls" and
+  .content == [
     {type:"reasoning",text:"why",opaque:{type:"thinking",thinking:"why",signature:"signed"}},
-    {type:"tool_call",id:"call_1",name:"shell",input:{command:"pwd"}}])
-' "$res" >/dev/null
+    {type:"tool_call",id:"call_1",name:"shell",input:{command:"pwd"}}]
+' <<<"$REPLY" >/dev/null || fail 'anthropic lost streamed reasoning or calls'
+jq -e -s 'map(select(.type == "_assistant_reasoning_delta") | .text) == ["why"]' \
+  "$res" >/dev/null || fail 'anthropic did not preview its reasoning'
 
 # Read Anthropic model limits.
 cat >"$BACKEND_TEST_RESPONSE" <<'EOF'

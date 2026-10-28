@@ -31,9 +31,9 @@ cat >"$tmp/shellfish/backends/perf/run" <<'EOF'
 #!/usr/bin/env zsh
 request=$(cat)
 if "$SHELLFISH_PERF_JQ" -e '.messages[-1].type == "tool_result"' <<<"$request" >/dev/null; then
-  response=$'{"type":"_assistant_message_delta","index":0,"text":"ok"}\n{"type":"_assistant_end","stop":"end"}'
+  response=$'{"type":"_assistant_message_delta","text":"ok"}\n{"type":"assistant","stop":"end","content":[{"type":"text","text":"ok"}]}'
 else
-  response=$'{"type":"_assistant_tool_call_delta","index":0,"id":"perf_call","name":"perf","input":"{}"}\n{"type":"_assistant_end","stop":"tool_calls"}'
+  response='{"type":"assistant","stop":"tool_calls","content":[{"type":"tool_call","id":"perf_call","name":"perf","input":{}}]}'
 fi
 print -r -- "$response"
 EOF

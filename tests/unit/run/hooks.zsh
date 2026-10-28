@@ -72,9 +72,7 @@ integer n=0
 [[ ! -s $REQUEST_COUNT ]] || n=$(<$REQUEST_COUNT)
 (( n++ ))
 print -r -- $n >"$REQUEST_COUNT"
-print -r -- "{\"type\":\"_assistant_message_delta\",\"index\":0,\"text\":\"answer $n\"}"
-print -r -- '{"type":"_turn_usage","input_tokens":1,"output_tokens":1}'
-print -r -- '{"type":"_assistant_end","stop":"end"}'
+print -r -- "{\"type\":\"assistant\",\"stop\":\"end\",\"content\":[{\"type\":\"text\",\"text\":\"answer $n\"}],\"usage\":{\"input_tokens\":1,\"output_tokens\":1}}"
 ZSH
 sf_test_hook "$stop" '{"user_text_done":"${output.stdout}","model_text":"${output.stdout}"}' <<'ZSH'
 #!/usr/bin/env zsh

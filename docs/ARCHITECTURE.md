@@ -37,7 +37,7 @@ Header paths use `@` for the bundled root, `~/` for HOME, or `/` for fixed absol
 | `state_update` | Model-invisible named state update; the latest exact name wins and `null` clears it |
 | `error` | Durable user-facing failure or cancellation, omitted from provider requests |
 
-Provider deltas, hook activity, permission requests, usage previews, and presentation state are transient. Clients may display them but never write them to the transcript.
+Provider previews, hook activity, permission requests, and presentation state are transient. Clients may display them but never write them to the transcript.
 
 One session reader defines record validity and ordering, then derives pending work and provider messages from that transcript. Recovery and request construction do not maintain competing session models.
 
@@ -57,9 +57,9 @@ open and recover session
   -> clean up
 ```
 
-The process reads the transcript again at each consuming boundary instead of retaining a second session representation. It appends each canonical record before emitting it to a client. A backend's partial tool-call fragments remain inert until the complete assistant response has been assembled, validated, and persisted.
+The process reduces the transcript to its next step before each one instead of tracking its own position. It appends each canonical record before emitting it to a client. Tool calls stay inert until the backend's complete response has been validated and persisted.
 
-Cancellation preserves any valid partial text or reasoning, settles calls whose outcomes are known, marks active or later calls interrupted or cancelled, and appends an error. A write failure stops further mutation.
+Cancellation keeps any previewed text or reasoning, settles calls whose outcomes are known, marks active or later calls interrupted or cancelled, and appends an error. A write failure stops further mutation.
 
 ## The harness is just shell scripts
 

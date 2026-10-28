@@ -9,9 +9,12 @@ source "$SF_ROOT/libexec/run/hooks.zsh"
 source "$SF_ROOT/libexec/run/tools.zsh"
 
 typeset -gA SF_RUN=(
-  active_call '' answer '' assistant '' jsonl 0 known_result '' permission_count 0 signal_status 0
-  hook_id 1 hooks '[]' lifecycles '' write_failed 0
+  answer '' assistant '' jsonl 0 permission_count 0 signal_status 0
+  hook_id 1 hooks '[]' lifecycles '' tools '[]' write_failed 0
 )
+
+# The log's next effect and what that effect needs, from one reduction.
+typeset -gA SF_RUN_STEP=()
 
 # Turn limits come from the environment on every run, not the frozen profile.
 sf_run_limits() {
@@ -48,47 +51,41 @@ sf_run_append() {
   sf_run_emit "$record" || { REPLY='cannot emit session record'; return 1; }
 }
 
-# Settle every still-pending call through the tool owner. The reason describes
-# calls the turn never reached.
+typeset -gr SF_RUN_REDUCTIONS=$(<"$SF_ROOT/libexec/run/turn.jq")
+
+# Run BODY after the turn's reduction definitions, into reply.
+sf_run_reduce() {
+  local body=$1
+  shift
+  # The program leads, since a trailing --jsonargs takes every later argument.
+  sf_jq_fields -n "$SF_RUN_REDUCTIONS"$'\n'"$body"$'\n, ("ok" | field)' \
+    --arg share "$SF_SHARE" --arg home "${HOME:+${HOME:A}}" \
+    --argjson tools "$SF_RUN[tools]" --argjson max_capture "$SF_RUN[max_capture]" "$@"
+}
+
+# Reduce the log to its next effect. Before the turn, BODY reads what opening needs.
+sf_run_step() {
+  local session=$1
+  local body=${2:-'($log | session_records) as $r | step($r; $share; $home; $tools; $max_capture)'}
+  sf_run_reduce "$body" --rawfile log "$session" ||
+    { REPLY="cannot read session: $session"; return 1; }
+  SF_RUN_STEP=( "${reply[@]}" )
+}
+
+# End a turn early: keep any partial response, settle every pending call from
+# the log with REASON, then record MESSAGE. The call a tool was running for
+# keeps what its component already sent.
 sf_run_settle() {
-  local session=$1 reason=$2 call component
-  local active=$SF_RUN[active_call] known=$SF_RUN[known_result]
-  local -a calls
-  local -A completed
-  sf_jq_fields -Rs '
-    include "lib/fields";
-    include "lib/session";
-    [split("\n")[1:][] | select(length > 0) | fromjson] |
-    session_run |
-    (.calls[] | {id,name,input} | tojson | field),
-    ("ok" | field)
-  ' "$session" || {
-    REPLY='cannot inspect pending tool calls'
-    return 1
-  }
-  calls=( "${reply[@]}" )
-  for call in "${calls[@]}"; do
-    sf_run_tool_plan "$call" || {
-      REPLY=${SF_RUN_TOOL_ERROR:-cannot inspect pending tool call}
-      return 1
-    }
-    component=$SF_TOOL_PLAN[component]
-    if [[ $SF_TOOL_PLAN[id] != $active ]]; then
-      sf_run_tool_refused "$reason" 126
-    elif [[ -n $known ]]; then
-      sf_run_append "$session" "$known" || return 1
-      continue
-    else
-      # The active call keeps what it already sent on fd 3.
-      component=$SF_COMPONENT[values]
-      sf_run_tool_refused 'tool call interrupted' 126
-    fi
-    sf_run_tool_complete "$component" "$REPLY" || {
-      REPLY=${SF_RUN_TOOL_ERROR:-cannot finish pending tool call}
-      return 1
-    }
-    completed=( "${reply[@]}" )
-    sf_run_append "$session" "$completed[result]" || return 1
+  local session=$1 message=$2 reason=$3 record
+  sf_run_reduce '
+    settle($log; $share; $home; $tools; $max_capture; $active; $ARGS.positional;
+      $reason; $message)
+  ' --rawfile log "$session" --argjson active "${SF_COMPONENT[values]:-null}" \
+    --arg reason "$reason" --arg message "$message" \
+    --jsonargs "${SF_BACKEND_PARTIAL_EVENTS[@]}" ||
+    { REPLY='cannot settle the turn'; return 1; }
+  for record in "${reply[@]}"; do
+    sf_run_append "$session" "$record" || return
   done
 }
 
@@ -105,88 +102,25 @@ sf_run_components() {
 
 sf_run_open() {
   local session=$1
-  local -A opened
   [[ $session == /* && -f $session && ! -L $session && -r $session ]] || {
     REPLY="invalid session path: $session"
     return 1
   }
-  sf_jq_fields -Rs --arg share "$SF_SHARE" --arg home "${HOME:+${HOME:A}}" '
-    include "lib/fields";
-    include "lib/profile";
-    include "lib/session";
-    select(endswith("\n")) |
-    split("\n") as $lines |
-    select($lines[-1] == "" and ($lines[0:-1] | length > 0) and
-      all($lines[0:-1][]; length > 0)) |
-    ($lines[0:-1] | map(fromjson)) as $records |
-    select($records[0] | canonical_session_header) |
-    ($records[0] | header_expand($share; $home)) as $header |
-    ($records[1:] | session_run) as $run |
-    entry("profile"; $header.profile | tojson),
-    entry("model"; $header.model | tojson),
-    entry("cwd"; $header.cwd),
-    entry("turn_id";
-      [$records[1:][] | select(.type == "user")] | length + 1 | tostring),
-    entry("pending"; ($run.next != "user") | tostring),
-    entry("hook_id";
-      [$records[1:][] | select(.type == "hook_result") | .id | tonumber] |
-      ((max // 0) + 1) | tostring),
-    ("ok" | field)
-  ' "$session" || {
-    REPLY="cannot read session: $session"
-    return 1
-  }
-  opened=( "${reply[@]}" )
-  SF_RUN[profile]=$opened[profile]
-  SF_RUN[model]=$opened[model]
-  SF_RUN[cwd]=$opened[cwd]
-  SF_RUN[turn_id]=$opened[turn_id]
-  SF_RUN[hook_id]=$opened[hook_id]
+  sf_run_step "$session" '($log | session_records) as $r | opened($r; $share; $home)' || return
+  SF_RUN[profile]=$SF_RUN_STEP[profile]
+  SF_RUN[model]=$SF_RUN_STEP[model]
+  SF_RUN[cwd]=$SF_RUN_STEP[cwd]
+  SF_RUN[turn_id]=$SF_RUN_STEP[turn_id]
+  SF_RUN[hook_id]=$SF_RUN_STEP[hook_id]
   sf_run_components "$SF_RUN[profile]" || return
-  [[ $opened[pending] == true ]] || return 0
-  sf_run_settle "$session" 'tool call outcome unknown' || return 1
-  sf_run_error "$session" 'Turn interrupted.'
+  [[ $SF_RUN_STEP[pending] == true ]] || return 0
+  sf_run_settle "$session" 'Turn interrupted.' 'tool call outcome unknown'
 }
 
 sf_run_interrupt() {
   integer code=$1
   SF_RUN[signal_status]=$code
   [[ -z $SF_BACKEND[pid] ]] || sf_process_stop "$SF_BACKEND[pid]" "$SF_BACKEND[group_file]"
-}
-
-sf_run_error() {
-  local session=$1 message=$2 record
-  record=$(jq -cn --arg message "$message" '{type:"error",user_text:$message}') || return 1
-  sf_run_append "$session" "$record"
-}
-
-sf_run_partial_assistant() {
-  REPLY=''
-  (( ${#SF_BACKEND_PARTIAL_EVENTS} )) || return 0
-  REPLY=$({
-    printf '%s\n' "${SF_BACKEND_PARTIAL_EVENTS[@]}"
-    print -r -- '{"type":"_assistant_end","stop":"length"}'
-  } | sf_jq -cse '
-    include "lib/session";
-    include "lib/backend";
-    assemble_backend_response(canonical_backend_response_events; canonical_response) |
-    select(any(.content[]; (.type == "text" or .type == "reasoning") and .text != "")) |
-    .stop="cancelled"
-  ' 2>/dev/null) || REPLY=''
-}
-
-# Record any partial response, settle pending calls, then close the turn.
-sf_run_cancel() {
-  local session=$1 message partial
-  message='Turn interrupted.'
-  (( SF_RUN[signal_status] != 130 )) || message='Cancelled.'
-  sf_run_partial_assistant
-  partial=$REPLY
-  if [[ -n $partial ]]; then
-    sf_run_append "$session" "$partial" || return
-  fi
-  sf_run_settle "$session" 'tool call cancelled' || return
-  sf_run_error "$session" "$message" || true
 }
 
 sf_run_permission_client() {
@@ -205,67 +139,32 @@ sf_run_permission_client() {
   [[ -n $REPLY ]] || { REPLY='invalid permission response'; return 2; }
 }
 
-sf_run_project() {
-  sf_jq_fields -rn --argjson profile "$SF_RUN[profile]" --argjson model "$SF_RUN[model]" \
-      --argjson tools "$SF_RUN[tools]" '
-    include "lib/fields";
-    [$tools[] |
-      .manifest as $manifest |
-      (($profile.sandbox.enabled and $manifest.sandbox and
-        ($manifest.allow_sandbox_bypass // false))) as $bypass |
-      {name,description:($manifest.description +
-        if $profile.sandbox.enabled and $manifest.sandbox
-        then "\n\nThis tool runs under its package sandbox policy."
-        else "\n\nSandboxing is disabled; this tool runs with the current user permissions." end +
-        if .name == "shell" and $bypass
-        then "\n\nWhen requesting an unsandboxed command, keep it to one logical operation. Split multi-step or compound commands across calls so each approval is easy to review."
-        else "" end),
-       input_schema:($manifest.input_schema |
-         if $bypass then
-           .properties.request_sandbox_bypass={type:"boolean",description:"Request approval to run without the sandbox"} |
-           .properties.sandbox_bypass_reason={type:"string",minLength:1,
-             description:"Explain why this tool call must run outside the sandbox"} |
-           .allOf=((.allOf // []) + [{
-             if:{properties:{request_sandbox_bypass:{const:true}},required:["request_sandbox_bypass"]},
-             then:{required:["sandbox_bypass_reason"]}}])
-         else . end)}] as $tools |
-    entry("adapter"; $model.adapter),
-    entry("context_window"; $model | has("context_window") | tostring),
-    entry("tools"; $tools | tojson),
-    ("ok" | field)
-  ' || return 1
+# A signal status, or a failure message for anything else.
+sf_run_status() {
+  integer code=$1
+  if (( code == 129 || code == 130 || code == 143 )); then
+    SF_RUN[signal_status]=$code
+  else
+    failure=$2
+  fi
 }
 
 sf_run_turn() {
-  local user_record=$1 session=$2 prompt=$3 config tools context_command
-  local assistant stop_text id name decision post_request
-  local reason outcome result post_error='' failure='' turn_state call
-  local -a calls
-  local -A projected response hook_result completed
-  integer begun=0 request_count=0 call_count=0 request_limit tool_limit max_capture run_status
+  local user_record=$1 session=$2 prompt=$3 config context_command
+  local id name decision reason outcome message failure='' turn_state
+  local -A hook_result completed
+  integer begun=0 run_status
 
   {
     SF_RUN[answer]=''
     SF_RUN[assistant]=''
-    SF_RUN[active_call]=''
-    SF_RUN[known_result]=''
     SF_RUN[permission_count]=0
     SF_RUN[signal_status]=0
     SF_RUN[write_failed]=0
     sf_run_limits && sf_run_open "$session" || { print -r -u2 -- "$REPLY"; return 1; }
     begun=1
-    if sf_run_project; then
-      projected=( "${reply[@]}" )
-      tools=$projected[tools]
-      request_limit=$SF_RUN[max_requests]
-      tool_limit=$SF_RUN[max_tool_calls]
-      max_capture=$SF_RUN[max_capture]
-      context_command=$projected[adapter]/context_window
-    else
-      failure='cannot inspect session header'
-    fi
-    [[ -z $failure && -d $SF_RUN[cwd] && -x $SF_RUN[cwd] ]] ||
-      failure=${failure:-session working directory is unavailable: $SF_RUN[cwd]}
+    [[ -d $SF_RUN[cwd] && -x $SF_RUN[cwd] ]] ||
+      failure="session working directory is unavailable: $SF_RUN[cwd]"
     sf_scratch_directory turn || failure='cannot prepare hook turn state'
     turn_state=$REPLY
     if [[ -z $failure ]]; then
@@ -292,178 +191,139 @@ sf_run_turn() {
             failure='cannot emit session update'
           fi
           ;;
+        block) return 0 ;;
       esac
-      if [[ -z $failure && $hook_result[action] == block ]]; then
-        return 0
-      fi
     fi
     if [[ -z $failure ]]; then
       sf_run_append "$session" "$user_record" || failure=$REPLY
     fi
-    while [[ -z $failure ]]; do
-      (( request_count += 1 ))
-      if (( request_count > request_limit )); then
-        failure="provider request limit reached: $request_limit"
-        break
-      fi
-      if (( request_count == 1 )) && [[ -f $context_command && -x $context_command ]] &&
-          [[ $projected[context_window] != true ]]; then
-        sf_backend_context_window "$context_command" "$tools" "$max_capture" <"$session"
-        run_status=$?
-        if (( run_status )); then
-          if (( run_status == 129 || run_status == 130 || run_status == 143 )); then
-            SF_RUN[signal_status]=$run_status
-          else
-            failure=$SF_BACKEND[error]
+    while [[ -z $failure ]] && (( ! SF_RUN[signal_status] )); do
+      sf_run_step "$session" || { failure=$REPLY; break; }
+      case $SF_RUN_STEP[next] in
+        request)
+          if (( SF_RUN_STEP[requests] >= SF_RUN[max_requests] )); then
+            failure="provider request limit reached: $SF_RUN[max_requests]"
+            break
           fi
-          break
-        fi
-        SF_RUN[model]=$(jq -c --argjson window "$REPLY" \
-          '.context_window=$window' <<<"$SF_RUN[model]") &&
-          config=$(jq -cn --argjson profile "$SF_RUN[profile]" --argjson model "$SF_RUN[model]" \
-            '{profile:$profile,model:$model}') || {
-          failure='cannot update model context window'
-          break
-        }
-        sf_session_update "$session" "$config" || { failure=$SF_SESSION_ERROR; break; }
-        sf_run_emit "$(jq -c '{type:"_session_update"} + .' <<<"$config")" || {
-          failure='cannot emit session update'
-          break
-        }
-      fi
-      sf_backend_request "$tools" sf_run_emit <"$session"
-      run_status=$?
-      if (( run_status )); then
-        if (( SF_RUN[signal_status] )); then
-          run_status=$SF_RUN[signal_status]
-        fi
-        if (( run_status == 129 || run_status == 130 || run_status == 143 )); then
-          SF_RUN[signal_status]=$run_status
-        else
-          failure=$SF_BACKEND[error]
-        fi
-        break
-      fi
-      assistant=$REPLY
-      sf_run_append "$session" "$assistant" || { failure=$REPLY; break; }
-      sf_jq_fields '
-        include "lib/fields";
-        entry("calls"; [.content[] | select(.type == "tool_call") | tojson] | join("\n")),
-        entry("text"; [.content[] | select(.type == "text") | .text] | join("") | sub("\n+$"; "")),
-        ("ok" | field)
-      ' <<<"$assistant" || { failure='cannot inspect provider response'; break; }
-      response=( "${reply[@]}" )
-      calls=()
-      [[ -z $response[calls] ]] || calls=( "${(@f)response[calls]}" )
-      if (( ! ${#calls} )); then
-        stop_text=$response[text]
-        sf_run_hooks "$session" stop "$stop_text" "$turn_state" "$request_count" || {
-          failure=$SF_RUN_HOOK_ERROR
-          break
-        }
-        hook_result=( "${reply[@]}" )
-        if [[ $hook_result[action] != continue ]]; then
-          SF_RUN[answer]=$stop_text
-          SF_RUN[assistant]=$assistant
-          break
-        fi
-        continue
-      fi
-      call_count=0
-      for call in "${calls[@]}"; do
-        (( call_count += 1 ))
-        sf_run_tool_plan "$call" || { failure=$SF_RUN_TOOL_ERROR; break; }
-        id=$SF_TOOL_PLAN[id]
-        name=$SF_TOOL_PLAN[name]
-        decision=$SF_TOOL_PLAN[decision]
-        sf_run_component_prepare "$session" "$SF_TOOL_PLAN[component]"
-        SF_RUN[active_call]=$id
-        SF_RUN[known_result]=''
-        if (( call_count > tool_limit )); then
-          sf_run_tool_refused "tool call denied: per-response limit is $tool_limit" 126
-          outcome=$REPLY
-        else
-          sf_run_hooks "$session" pre_tool_use "$SF_TOOL_PLAN[request]" \
-            "$turn_state" "$name" "$id" || { failure=$SF_RUN_HOOK_ERROR; break; }
-          hook_result=( "${reply[@]}" )
-          if [[ $hook_result[action] == deny ]]; then
-            sf_run_tool_refused "${hook_result[reason]:-tool call denied by pre_tool_use hook}" 126
-            outcome=$REPLY
-          elif [[ -z $SF_TOOL_PLAN[executable] ]]; then
-            sf_run_tool_refused "tool is not allowed: $name" 127
+          SF_BACKEND_PLAN=( request "$SF_RUN_STEP[request]"
+            command "$SF_RUN_STEP[adapter]/run" cwd "$SF_RUN[cwd]" )
+          context_command=$SF_RUN_STEP[adapter]/context_window
+          if (( SF_RUN_STEP[requests] == 0 )) && [[ $SF_RUN_STEP[context_window] != true &&
+              -f $context_command && -x $context_command ]]; then
+            sf_backend_context_window "$context_command" "$SF_RUN[max_capture]" ||
+              { sf_run_status $? "$SF_BACKEND[error]"; break; }
+            SF_RUN[model]=$(jq -c --argjson window "$REPLY" \
+              '.context_window=$window' <<<"$SF_RUN[model]") &&
+              config=$(jq -cn --argjson profile "$SF_RUN[profile]" --argjson model "$SF_RUN[model]" \
+                '{profile:$profile,model:$model}') || {
+              failure='cannot update model context window'
+              break
+            }
+            sf_session_update "$session" "$config" || { failure=$SF_SESSION_ERROR; break; }
+            sf_run_emit "$(jq -c '{type:"_session_update"} + .' <<<"$config")" || {
+              failure='cannot emit session update'
+              break
+            }
+          fi
+          sf_backend_run sf_run_emit || {
+            run_status=$?
+            (( ! SF_RUN[signal_status] )) || run_status=$SF_RUN[signal_status]
+            sf_run_status $run_status "$SF_BACKEND[error]"
+            break
+          }
+          sf_run_append "$session" "$REPLY" || { failure=$REPLY; break; }
+          ;;
+        tool)
+          SF_TOOL_PLAN=( "${(@kv)SF_RUN_STEP}" )
+          id=$SF_TOOL_PLAN[id] name=$SF_TOOL_PLAN[name] decision=$SF_TOOL_PLAN[decision]
+          outcome=''
+          sf_run_component_prepare "$session" "$SF_TOOL_PLAN[component]"
+          if (( SF_TOOL_PLAN[call_index] > SF_RUN[max_tool_calls] )); then
+            sf_run_tool_refused "tool call denied: per-response limit is $SF_RUN[max_tool_calls]" 126
             outcome=$REPLY
           else
-            if [[ $decision == failure ]]; then
-              failure=$SF_TOOL_PLAN[permission_reason]
-              break
-            elif [[ $decision == deny ]]; then
-              sf_run_tool_refused "$SF_TOOL_PLAN[permission_reason]" 126
+            sf_run_hooks "$session" pre_tool_use "$SF_TOOL_PLAN[request]" \
+              "$turn_state" "$name" "$id" || { failure=$SF_RUN_HOOK_ERROR; break; }
+            hook_result=( "${reply[@]}" )
+            if [[ $hook_result[action] == deny ]]; then
+              sf_run_tool_refused "${hook_result[reason]:-tool call denied by pre_tool_use hook}" 126
               outcome=$REPLY
-            elif [[ $decision == request ]]; then
-              sf_run_hooks "$session" permission_request "$SF_TOOL_PLAN[request]" \
-                "$turn_state" "$name" "$id" || { failure=$SF_RUN_HOOK_ERROR; break; }
-              hook_result=( "${reply[@]}" )
-              decision=$hook_result[action]
-              reason=${hook_result[reason]:-sandbox bypass denied}
-              if [[ -z $decision ]]; then
-                sf_run_permission_client "$name" "$SF_TOOL_PLAN[input]" \
-                  "$SF_TOOL_PLAN[permission_reason]" "$SF_TOOL_PLAN[permission_preview]"
-                run_status=$?
-                if (( run_status == 2 )); then failure=$REPLY; break; fi
-                decision=$REPLY
+            elif [[ -z $SF_TOOL_PLAN[executable] ]]; then
+              sf_run_tool_refused "tool is not allowed: $name" 127
+              outcome=$REPLY
+            else
+              if [[ $decision == failure ]]; then
+                failure=$SF_TOOL_PLAN[permission_reason]
+                break
+              elif [[ $decision == deny ]]; then
+                sf_run_tool_refused "$SF_TOOL_PLAN[permission_reason]" 126
+                outcome=$REPLY
+              elif [[ $decision == request ]]; then
+                sf_run_hooks "$session" permission_request "$SF_TOOL_PLAN[request]" \
+                  "$turn_state" "$name" "$id" || { failure=$SF_RUN_HOOK_ERROR; break; }
+                hook_result=( "${reply[@]}" )
+                decision=$hook_result[action]
+                reason=${hook_result[reason]:-sandbox bypass denied}
+                if [[ -z $decision ]]; then
+                  sf_run_permission_client "$name" "$SF_TOOL_PLAN[input]" \
+                    "$SF_TOOL_PLAN[permission_reason]" "$SF_TOOL_PLAN[permission_preview]"
+                  run_status=$?
+                  if (( run_status == 2 )); then failure=$REPLY; break; fi
+                  decision=$REPLY
+                fi
+                if [[ $decision == deny ]]; then
+                  sf_run_tool_refused "$reason" 126
+                  outcome=$REPLY
+                fi
               fi
-              if [[ $decision == deny ]]; then
-                sf_run_tool_refused "$reason" 126
+              if [[ -z $outcome && $SF_TOOL_PLAN[sandbox] == true && -z ${commands[fence]-} ]]; then
+                sf_run_tool_refused 'sandboxing requires fence' 126
+                outcome=$REPLY
+              fi
+              if [[ -z $outcome ]]; then
+                sf_run_tool_execute "$session" ||
+                  { sf_run_status $? "${SF_RUN_TOOL_ERROR:-cannot execute tool}"; break; }
                 outcome=$REPLY
               fi
             fi
-            if [[ -z $outcome && $SF_TOOL_PLAN[sandbox] == true && -z ${commands[fence]-} ]]; then
-              sf_run_tool_refused 'sandboxing requires fence' 126
-              outcome=$REPLY
-            fi
-            if [[ -z $outcome ]]; then
-              sf_run_tool_execute "$session"
-              run_status=$?
-              if (( run_status )); then
-                if (( run_status == 129 || run_status == 130 || run_status == 143 )); then
-                  SF_RUN[signal_status]=$run_status
-                else
-                  failure=${SF_RUN_TOOL_ERROR:-cannot execute tool}
-                fi
-                break
-              fi
-              outcome=$REPLY
-            fi
           fi
-        fi
-        [[ -n $outcome ]] || break
-        sf_run_tool_complete "$SF_COMPONENT[values]" "$outcome" || { failure=$SF_RUN_TOOL_ERROR; break; }
-        completed=( "${reply[@]}" )
-        result=$completed[result]
-        post_request=$completed[post_request]
-        SF_RUN[known_result]=$result
-        sf_run_component_clear || { failure='cannot clear tool draft'; break; }
-        sf_run_hooks "$session" post_tool_use "$post_request" \
-          "$turn_state" "$name" "$id" || post_error=$SF_RUN_HOOK_ERROR
-        sf_run_append "$session" "$result" || { failure=$REPLY; break; }
-        SF_RUN[active_call]=''
-        SF_RUN[known_result]=''
-        outcome=''
-        if [[ -n $post_error ]]; then failure=$post_error; break; fi
-      done
-      (( ! SF_RUN[signal_status] )) || break
+          sf_run_tool_complete "$SF_COMPONENT[values]" "$outcome" || { failure=$SF_RUN_TOOL_ERROR; break; }
+          completed=( "${reply[@]}" )
+          sf_run_component_clear || { failure='cannot clear tool draft'; break; }
+          sf_run_append "$session" "$completed[result]" || { failure=$REPLY; break; }
+          # The call is settled, so an interruption from here on cancels the next one.
+          SF_COMPONENT=()
+          sf_run_hooks "$session" post_tool_use "$completed[post_request]" \
+            "$turn_state" "$name" "$id" || { failure=$SF_RUN_HOOK_ERROR; break; }
+          ;;
+        user)
+          # The latest response called no tools, so stop hooks may continue it.
+          sf_run_hooks "$session" stop "$SF_RUN_STEP[text]" "$turn_state" \
+            "$SF_RUN_STEP[requests]" || { failure=$SF_RUN_HOOK_ERROR; break; }
+          hook_result=( "${reply[@]}" )
+          [[ $hook_result[action] != continue ]] || continue
+          SF_RUN[answer]=$SF_RUN_STEP[text]
+          SF_RUN[assistant]=$SF_RUN_STEP[response]
+          break
+          ;;
+      esac
     done
     if (( SF_RUN[signal_status] )); then
       return $SF_RUN[signal_status]
     fi
     if [[ -n $failure ]]; then
-      sf_run_error "$session" "$failure" || true
+      # After a failed write, nothing more can be recorded.
+      (( SF_RUN[write_failed] )) || sf_run_settle "$session" "$failure" 'tool call cancelled' || true
       print -r -u2 -- "$failure"
       return 1
     fi
   } always {
     trap - TERM
     rm -rf -- "$turn_state" 2>/dev/null
-    (( ! begun || ! SF_RUN[signal_status] )) || sf_run_cancel "$session"
+    if (( begun && SF_RUN[signal_status] )); then
+      message='Turn interrupted.'
+      (( SF_RUN[signal_status] != 130 )) || message='Cancelled.'
+      sf_run_settle "$session" "$message" 'tool call cancelled' || true
+    fi
   }
 }

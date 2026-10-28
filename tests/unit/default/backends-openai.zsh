@@ -79,22 +79,15 @@ jq -e '
       properties:{answer:{type:"string"}}}}}
 ' "$BACKEND_TEST_BODY" >/dev/null || fail 'openai did not normalize common request parameters'
 
-jq -n -e -L "$ROOT" '
-  include "lib/profile";
-  include "lib/session";
-  include "lib/backend";
-  [inputs] |
-  assemble_backend_response(canonical_backend_response_events; canonical_response) as $message |
-  ($message | canonical_response) and
-  ($message.type == "assistant") and
-  ($message.stop == "tool_calls") and
-  ($message.content == [{type:"text",text:"Let me check."},
-    {type:"tool_call",id:"call_123",name:"shell",input:{command:"pwd"}}]) and
-  ($message.usage.input_tokens == 10) and
-  ($message.usage.cached_tokens == 8) and
-  ($message.usage.output_tokens == 5) and
-  ($message.usage.reasoning_tokens == 2)
-' "$res" >/dev/null
+sf_test_backend_response "$res" || fail 'openai emitted an invalid call stream'
+jq -e '
+  .stop == "tool_calls" and
+  .content == [{type:"text",text:"Let me check."},
+    {type:"tool_call",id:"call_123",name:"shell",input:{command:"pwd"}}] and
+  .usage == {input_tokens:10,cached_tokens:8,output_tokens:5,reasoning_tokens:2}
+' <<<"$REPLY" >/dev/null || fail 'openai did not assemble fragmented calls'
+jq -e -s 'map(select(.type == "_assistant_message_delta") | .text) == ["Let me ","check."]' \
+  "$res" >/dev/null || fail 'openai did not preview streamed text'
 
 # Normalize model catalog limits.
 cat >"$BACKEND_TEST_RESPONSE" <<'EOF'
@@ -124,13 +117,9 @@ printf "%s\n" \
   'data: [DONE]' \
   "" >"$BACKEND_TEST_RESPONSE"
 OPENAI_API_KEY=test-key zsh -f "$run" <"$req" >"$res"
-jq -n -e -L "$ROOT" '
-  include "lib/profile";
-  include "lib/session";
-  include "lib/backend";
-  [inputs] | assemble_backend_response(canonical_backend_response_events; canonical_response) ==
-    {type:"assistant",stop:"length",content:[]}
-' "$res" >/dev/null
+sf_test_backend_response "$res" || fail 'openai emitted an invalid length stream'
+jq -e '. == {type:"assistant",stop:"length",content:[]}' <<<"$REPLY" >/dev/null ||
+  fail 'openai kept calls stopped by length'
 
 # Supply missing call identifiers.
 printf "%s\n" \
@@ -140,16 +129,9 @@ printf "%s\n" \
 
 OPENAI_API_KEY=test-key zsh -f "$run" <"$req" >"$res"
 
-jq -n -e -L "$ROOT" '
-  include "lib/profile";
-  include "lib/session";
-  include "lib/backend";
-  [inputs] |
-  assemble_backend_response(canonical_backend_response_events; canonical_response) as $message |
-  ($message | canonical_response) and
-  ($message.stop == "tool_calls") and
-  ($message.content == [{type:"tool_call",id:"call_0",name:"shell",input:{}}])
-' "$res" >/dev/null
+sf_test_backend_response "$res" || fail 'openai emitted an invalid unnamed-call stream'
+jq -e '.stop == "tool_calls" and .content == [{type:"tool_call",id:"call_0",name:"shell",input:{}}]' \
+  <<<"$REPLY" >/dev/null || fail 'openai did not supply a missing call identifier'
 
 # Parse buffered JSON responses.
 cat >"$BACKEND_TEST_RESPONSE" <<'EOF'
@@ -185,18 +167,12 @@ EOF
 
 OPENAI_API_KEY=test-key zsh -f "$run" <"$req" >"$res"
 
-jq -n -e -L "$ROOT" '
-  include "lib/profile";
-  include "lib/session";
-  include "lib/backend";
-  [inputs] |
-  assemble_backend_response(canonical_backend_response_events; canonical_response) as $message |
-  ($message | canonical_response) and
-  ($message.stop == "tool_calls") and
-  ($message.content == [{type:"tool_call",id:"call_abc",name:"shell",input:{command:"ls"}}]) and
-  ($message.usage.input_tokens == 12) and
-  ($message.usage.output_tokens == 8)
-' "$res" >/dev/null
+sf_test_backend_response "$res" || fail 'openai emitted an invalid buffered stream'
+jq -e '
+  .stop == "tool_calls" and
+  .content == [{type:"tool_call",id:"call_abc",name:"shell",input:{command:"ls"}}] and
+  .usage == {input_tokens:12,output_tokens:8}
+' <<<"$REPLY" >/dev/null || fail 'openai did not parse a buffered response'
 
 # Regroup flat call batches.
 typeset batch_request="$tmp/batch-request.json"

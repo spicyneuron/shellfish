@@ -161,14 +161,13 @@ build_deltas() {
   done
 }
 
-# Stream every assistant result with the configured delay.
+# Stream every assistant preview with the configured delay.
 stream_deltas() {
   typeset delta_type=$1
-  integer content_index=$2 index
+  integer index
   for (( index = 1; index <= ${#deltas}; index++ )); do
     sleep "$delay"
-    jq -cn --arg text "$deltas[index]" --arg type "$delta_type" \
-      --argjson index "$content_index" '{type:$type,index:$index,text:$text}'
+    jq -cn --arg text "$deltas[index]" --arg type "$delta_type" '{type:$type,text:$text}'
   done
 }
 
@@ -206,11 +205,11 @@ if [[ ${SF_TEST_BACKEND_TOOL_CALL:-0} == 1 || -n $tool_mode ]] || (( keyword_cou
     build_deltas $'Tool complete.\n'
     text="${(j::)deltas}"
     text_tokens=$(( (${#text} + 3) / 4 ))
-    stream_deltas _assistant_message_delta 0
-    jq -cn --argjson input "$input_tokens" \
+    stream_deltas _assistant_message_delta
+    jq -cn --arg text "$text" --argjson input "$input_tokens" \
       --argjson cached "$cached_tokens" --argjson output "$text_tokens" '
-      {type:"_turn_usage",input_tokens:$input,cached_tokens:$cached,output_tokens:$output},
-      {type:"_assistant_end",stop:"end"}
+      {type:"assistant",stop:"end",content:[{type:"text",text:$text}],
+       usage:{input_tokens:$input,cached_tokens:$cached,output_tokens:$output}}
     '
   else
     tool_command=${SF_TEST_BACKEND_TOOL_COMMAND:-true}
@@ -254,9 +253,9 @@ if [[ ${SF_TEST_BACKEND_TOOL_CALL:-0} == 1 || -n $tool_mode ]] || (( keyword_cou
       keyword_mode=true
     fi
     if (( think )); then
-      stream_deltas _assistant_reasoning_delta 0
+      stream_deltas _assistant_reasoning_delta
     fi
-    stream_deltas _assistant_message_delta $think
+    stream_deltas _assistant_message_delta
     text_tokens=$(( (${#text} + 3) / 4 ))
     reasoning_tokens=$(( think ? text_tokens : 0 ))
     output_tokens=$(( text_tokens + reasoning_tokens ))
@@ -294,29 +293,32 @@ if [[ ${SF_TEST_BACKEND_TOOL_CALL:-0} == 1 || -n $tool_mode ]] || (( keyword_cou
         [$prompt | scan("\\b(?:tool|TOOL)\\b")]
       else [range(1; $count + 1) | if . == 1 and $bypass then "TOOL" else "tool" end]
       end) as $calls |
-      {type:"_turn_usage",input_tokens:$input,cached_tokens:$cached,output_tokens:$output} +
-        (if $reasoning > 0 then {reasoning_tokens:$reasoning} else {} end),
-      ($calls | to_entries[] | . as $call |
-        {type:"_assistant_tool_call_delta",index:($call.key + $think + 1),
-         id:("call_" + (($call.key + 1) | tostring)),name:$name,
-         input:(call_input($call) | tojson)}),
-      {type:"_assistant_end",stop:"tool_calls"}
+      {type:"assistant",stop:"tool_calls",
+       content:((if $think == 1 then [{type:"reasoning",text:$text}] else [] end) +
+         [{type:"text",text:$text}] +
+         [$calls | to_entries[] | . as $call |
+           {type:"tool_call",id:("call_" + (($call.key + 1) | tostring)),name:$name,
+            input:call_input($call)}]),
+       usage:({input_tokens:$input,cached_tokens:$cached,output_tokens:$output} +
+         (if $reasoning > 0 then {reasoning_tokens:$reasoning} else {} end))}
     ' --arg bypass_reason "$tool_bypass_reason"
   fi
   exit
 fi
 
 if (( think )); then
-  stream_deltas _assistant_reasoning_delta 0
+  stream_deltas _assistant_reasoning_delta
 fi
-stream_deltas _assistant_message_delta $think
+stream_deltas _assistant_message_delta
 text_tokens=$(( (${#text} + 3) / 4 ))
 reasoning_tokens=$(( think ? text_tokens : 0 ))
 output_tokens=$(( text_tokens + reasoning_tokens ))
-jq -cn --argjson input "$input_tokens" \
+jq -cn --arg text "$text" --argjson think "$think" --argjson input "$input_tokens" \
   --argjson cached "$cached_tokens" --argjson output "$output_tokens" \
   --argjson reasoning "$reasoning_tokens" '
-  {type:"_turn_usage",input_tokens:$input,cached_tokens:$cached,output_tokens:$output} +
-    (if $reasoning > 0 then {reasoning_tokens:$reasoning} else {} end),
-  {type:"_assistant_end",stop:"end"}
+  {type:"assistant",stop:"end",
+   content:((if $think == 1 then [{type:"reasoning",text:$text}] else [] end) +
+     [{type:"text",text:$text}]),
+   usage:({input_tokens:$input,cached_tokens:$cached,output_tokens:$output} +
+     (if $reasoning > 0 then {reasoning_tokens:$reasoning} else {} end))}
 '
