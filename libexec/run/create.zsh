@@ -49,6 +49,7 @@ sf_run_create() {
     }
     profile=$REPLY
   fi
+  sf_run_components "$profile" || { sf_die "$REPLY"; return 1; }
   # Each item becomes "f" and a file path, or "t" and inline text.
   projection=$(jq -jr '.system[] | if type == "string" then "f" + . else "t" + (.text | sub("\n+$"; "")) end,
     "\u0000"' <<<"$profile") || sf_die 'cannot resolve system prompt' || return
@@ -98,7 +99,6 @@ sf_run_create() {
   SF_RUN[cwd]=$cwd
   SF_RUN[turn_id]=1
   SF_RUN[hook_id]=1
-  sf_run_components "$profile" || { sf_die "$REPLY"; return 1; }
   if (( SF_RUN[jsonl] )); then
     sf_run_emit "$(jq -cn --arg path "$session" '{type:"_session_load",path:$path}')" || return 1
     for record in "${records[@]}"; do

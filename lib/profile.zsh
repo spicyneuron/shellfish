@@ -74,18 +74,17 @@ sf_profile_lookup() {
 # validated, and made relative to its own directory. NAMES are the references
 # in ITEMS, which already holds any inline values validated.
 sf_profile_configs() {
-  local kind=$1 dir=$2 config_dir=$3 items=$4 name contents='{}' detail
+  local kind=$1 dir=$2 config_dir=$3 items=$4 name contents detail
   shift 4
   local -a names=( "$@" ) files=()
+  (( ${#names} )) || { REPLY=$items; return 0; }
   for name in "${names[@]}"; do
     sf_profile_lookup "$config_dir" "$dir" "$name" .jsonc ||
       sf_profile_fail "unknown $kind: $name" || return
     files+=( "$REPLY" )
   done
-  if (( ${#files} )); then
-    sf_profile_read_files "invalid $kind" "${(u)files[@]}" || return
-    contents=$REPLY
-  fi
+  sf_profile_read_files "invalid $kind" "${(u)files[@]}" || return
+  contents=$REPLY
   detail=$(sf_jq -cn --argjson items "$items" --argjson contents "$contents" \
     --arg kind "$kind" '
     include "lib/profile";
@@ -242,7 +241,6 @@ sf_profile_resolve() {
     sf_profile_validation_error "$final" 'cannot resolve profile'
     return
   }
-  sf_profile_components tools "$final" && sf_profile_components hooks "$final" || return
   REPLY=$final
 }
 
@@ -281,6 +279,7 @@ sf_profile_resolve_args() {
     esac
   done
 
+  (( ${#items} )) || [[ $detected != null ]] || { sf_profile_resolve "$name"; return; }
   extra=$(jq -cn --argjson detected "$detected" '
     reduce ($ARGS.positional | range(0; length; 3) as $at | .[$at:$at + 3]) as
       [$flag, $field, $value] ({}; .[$field] += [

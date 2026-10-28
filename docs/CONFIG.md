@@ -134,7 +134,7 @@ hooks/HOOK/
 backends/ADAPTER/
 ```
 
-Executable components require `run`. An optional `manifest.json` or `manifest.jsonc` supplies configuration, with an absent manifest treated as `{}`. A hook's manifest names its lifecycle with `on`. Tools need model-facing descriptions, input schemas, and execution policies. Backends need an endpoint from either their manifest or a model file. See [`HARNESS.md`](HARNESS.md) for the contracts. References are frozen in the session, while manifest edits affect later invocations only. Missing or invalid active components fail resolution.
+Executable components require `run`. An optional `manifest.json` or `manifest.jsonc` supplies configuration, with an absent manifest treated as `{}`. A hook's manifest names its lifecycle with `on`. Tools need model-facing descriptions, input schemas, and execution policies. Backends need an endpoint from either their manifest or a model file. See [`HARNESS.md`](HARNESS.md) for the contracts. References are frozen in the session, while manifest edits affect later invocations only. Missing or invalid active components fail session creation, and an invalid manifest edited later fails the next run.
 
 ## Sandbox
 

@@ -122,7 +122,8 @@ jq -e --arg hooks "${hooks:A}" '
   .hooks == [$hooks + "/second", $hooks + "/gate", $hooks + "/first"]
 ' <<<"$REPLY" >/dev/null || fail 'hooks did not keep listed order'
 
-# A referenced hook must be runnable and name a lifecycle.
+# A referenced hook must be runnable, and its manifest, read when a run loads
+# components, must name a lifecycle.
 mkdir -p "$hooks/dir"
 sf_test_profile hooked '{"model": ["fixture"], "hooks": ["dir"]}'
 if sf_profile_resolve_args -p hooked; then
@@ -131,12 +132,14 @@ fi
 [[ $SF_PROFILE_ERROR == 'invalid hooks reference: dir' ]]
 print -r -- '#!/bin/sh' | sf_test_hook "$hooks/unbound"
 sf_test_profile hooked '{"model": ["fixture"], "hooks": ["unbound"]}'
-if sf_profile_resolve_args -p hooked; then
+sf_profile_resolve_args -p hooked
+profile=$REPLY
+if sf_profile_components hooks "$profile"; then
   fail 'a hook without a lifecycle was accepted'
 fi
 [[ $SF_PROFILE_ERROR == *'hook manifest must be valid and declare "on"'* ]]
 rm "$hooks/unbound/manifest.json"
-if sf_profile_resolve_args -p hooked; then
+if sf_profile_components hooks "$profile"; then
   fail 'a hook without a manifest was accepted'
 fi
 [[ $SF_PROFILE_ERROR == *'hook manifest must be valid and declare "on"'* ]]
@@ -412,14 +415,16 @@ jq -e --arg base "${tools:A}" '
     manifest:{description:"beta tool",input_schema:{type:"object"},sandbox:false}}
 ' <<<"$REPLY" >/dev/null
 cp "$tools/beta/manifest.jsonc" "$tools/beta/manifest.json"
-if sf_profile_resolve_args -p tooled; then
+sf_profile_resolve_args -p tooled
+profile=$REPLY
+if sf_profile_components tools "$profile"; then
   fail 'component with ambiguous manifests was accepted'
 fi
 [[ $SF_PROFILE_ERROR == "multiple component manifests: ${tools:A}/beta" ]]
 rm "$tools/beta/manifest.json"
 
 mv "$tools/gamma/manifest.json" "$tmp/gamma.json"
-sf_profile_resolve_args -p tooled && fail 'tool without a manifest was accepted'
+sf_profile_components tools "$profile" && fail 'tool without a manifest was accepted'
 mv "$tmp/gamma.json" "$tools/gamma/manifest.json"
 
 # Environment values load from the config directory's .env: selected names, or
