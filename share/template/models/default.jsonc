@@ -1,6 +1,6 @@
 // Shellfish model: https://github.com/spicyneuron/shellfish
 //
-// The profiles beside this one select this model as "default".
+// Selected when --model is absent.
 {
   "$schema": "https://raw.githubusercontent.com/spicyneuron/shellfish/refs/heads/main/share/model.schema.json",
 

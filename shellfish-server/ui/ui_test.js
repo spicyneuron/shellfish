@@ -15,12 +15,12 @@ const HEADER = {
   type: "session",
   format_version: 1,
   cwd: "/project",
+  model: {
+    adapter: "@backends/test",
+    request: { model: "test-model" },
+    context_window: null,
+  },
   profile: {
-    model: {
-      adapter: "@backends/test",
-      request: { model: "test-model" },
-      context_window: null,
-    },
     system: [],
     tools: ["@tools/shell"],
     sandbox: true,
@@ -432,7 +432,7 @@ test("replays the durable session before live work", async () => {
   await page.authenticate();
   assert.deepEqual(page.opens, ["Bearer 123456"]);
   const header = structuredClone(HEADER);
-  header.profile.model.context_window = 200;
+  header.model.context_window = 200;
   header.profile.system = [{ text: "\nYou are an agent.\n# instructions\n" }];
   await page.send(
     header,
@@ -522,9 +522,7 @@ test("applies a session update without replaying the transcript", async () => {
   const records = page.output.children.slice();
   await page.send({
     type: "_session_update",
-    profile: {
-      model: { adapter: "/backends/updated", request: { model: "new-model" } },
-    },
+    model: { adapter: "/backends/updated", request: { model: "new-model" } },
   });
   assert.equal(page.model.textContent, "updated/new-model");
   assert.deepEqual(page.output.children, records);
@@ -535,11 +533,9 @@ test("shows context usage and preserves cache usage", async () => {
   const page = await idle();
   await page.send({
     type: "_session_update",
-    profile: {
-      model: {
-        adapter: "/backends/test",
-        request: { model: "test-model" }, context_window: 264000,
-      },
+    model: {
+      adapter: "/backends/test",
+      request: { model: "test-model" }, context_window: 264000,
     },
   });
   await page.send({
@@ -552,11 +548,9 @@ test("shows context usage and preserves cache usage", async () => {
 
   await page.send({
     type: "_session_update",
-    profile: {
-      model: {
-        adapter: "/backends/test",
-        request: { model: "test-model" }, context_window: null,
-      },
+    model: {
+      adapter: "/backends/test",
+      request: { model: "test-model" }, context_window: null,
     },
   });
   await page.send({

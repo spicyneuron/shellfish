@@ -74,7 +74,6 @@ class Session:
         }))
         self.config_file = profile_dir / "default.jsonc"
         config = {
-            "model": ["default"],
             "tools": [f"@tools/{tool}"
                       for tool in ("read_file", "write_file", "edit_file", "shell")],
             "hooks": list(session_start or []),

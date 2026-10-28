@@ -3,7 +3,7 @@
 emulate -R zsh
 setopt extended_glob no_aliases no_bg_nice no_multios pipe_fail
 
-typeset input operation profile task agent_id child parent_dir association value output fork transcript background working lock_fd
+typeset input operation profile model task agent_id child parent_dir association value output fork transcript background working lock_fd
 typeset limit=${SHELLFISH_MAX_ACTIVE_AGENTS-4}
 integer count=0 result=0
 
@@ -139,8 +139,11 @@ if [[ $operation == start ]]; then
     fi
     rm -f -- "$transcript"
   else
+    # A fresh child keeps the parent's model.
+    model=$(head -n 1 -- "$SHELLFISH_SESSION" | jq -ce '.model | objects') ||
+      fail 'cannot read parent model'
     "$SHELLFISH_EXECUTABLE" run --session-create --session-out "$child" \
-      --profile "$profile" >/dev/null || fail 'cannot create agent session'
+      --profile "$profile" --model "$model" >/dev/null || fail 'cannot create agent session'
   fi
   print -r -- '{"type":"state_update","name":"agents/child","value":true}' >>"$child" ||
     fail 'cannot mark child session'

@@ -5,7 +5,7 @@ sf_test_source lib/session.zsh
 sf_test_tmp session-mutation
 sf_test_frozen_profile
 
-typeset session="$tmp/session.jsonl" before profile
+typeset session="$tmp/session.jsonl" before profile model
 sf_test_session "$session"
 
 # Project-scoped sessions and scratch are private within the Shellfish directory.
@@ -49,21 +49,26 @@ mv "$session.saved" "$session"
 before=$(tail -n +2 "$session")
 profile=$(jq -c '.sandbox.read=["/tmp/reference"] | .sandbox.write=["/tmp/reference"]' \
   <<<"$SF_TEST_PROFILE")
-sf_session_replace_profile "$session" "$profile" || fail "$SF_SESSION_ERROR"
+model=$(jq -c '.context_window=1234' <<<"$SF_TEST_MODEL")
+sf_session_update "$session" "$(jq -cn --argjson profile "$profile" --argjson model "$model" \
+  '{profile:$profile,model:$model}')" || fail "$SF_SESSION_ERROR"
 head -n 1 "$session" | jq -e '
   .profile.sandbox.read == ["/tmp/reference"] and
-  .profile.sandbox.write == ["/tmp/reference"]
+  .profile.sandbox.write == ["/tmp/reference"] and .model.context_window == 1234
 ' >/dev/null
 assert_equal "$before" "$(tail -n +2 "$session")"
 [[ $(stat -f '%Lp' "$session") == 600 ]]
 
 typeset unchanged=$(cat "$session")
-if sf_session_replace_profile "$session" '{}'; then
-  fail 'invalid profile replacement succeeded'
-fi
+for update in '{}' "{\"profile\":{},\"model\":$model}"; do
+  if sf_session_update "$session" "$update"; then
+    fail "invalid session update succeeded: $update"
+  fi
+done
 assert_equal "$unchanged" "$(cat "$session")"
 
-sf_session_read_profile "$session" || fail "$SF_SESSION_ERROR"
-jq -e '.sandbox.read == ["/tmp/reference"]' <<<"$REPLY" >/dev/null
+sf_session_read_config "$session" || fail "$SF_SESSION_ERROR"
+jq -e '.profile.sandbox.read == ["/tmp/reference"] and .model.context_window == 1234' \
+  <<<"$REPLY" >/dev/null
 
 print -r -- ok

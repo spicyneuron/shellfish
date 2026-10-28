@@ -4,11 +4,11 @@ source "${0:A:h:h:h}/_helpers.zsh"
 sf_test_tmp exec-command-signals
 
 sf_test_config
-sf_test_model test "{
+sf_test_model default "{
   \"adapter\": \"$ROOT/tests/fixtures/backend\",
   \"request\": {\"model\": \"test-model\"}
 }"
-sf_test_profile default '{"model": ["test"]}'
+sf_test_profile default '{}'
 typeset entry="$ROOT/bin/shellfish"
 
 # Cancellation stops context discovery.
@@ -37,7 +37,7 @@ chmod +x "$model_backend/run" "$model_backend/context_window"
 sf_test_model model "{\"adapter\": \"$model_backend\"}"
 typeset model_session="$tmp/model-cancel.jsonl" model_output="$tmp/model-cancel.out"
 MODEL_READY="$model_ready" MODEL_STOPPED="$model_stopped" \
-  zsh -f "$entry" run -m model --session-out "$model_session" prompt \
+  zsh -f "$entry" run -m default -m model --session-out "$model_session" prompt \
   >"$model_output" 2>&1 &
 typeset model_pid=$!
 integer model_waited=0
@@ -105,7 +105,7 @@ chmod +x "$cancel_backend/run"
 sf_test_model cancel-backend "{\"adapter\": \"$cancel_backend\"}"
 
 typeset reasoning_session="$tmp/reasoning-cancel.jsonl" reasoning_output="$tmp/reasoning-cancel.out"
-zsh -f "$entry" run --jsonl -m cancel-backend \
+zsh -f "$entry" run --jsonl -m default -m cancel-backend \
   --session-out "$reasoning_session" \
   < <(print -r -- '{"type":"user","content":[{"type":"text","text":"reasoning"}]}') \
   >"$reasoning_output" 2>&1 &
@@ -131,7 +131,7 @@ jq -e -s '
 typeset tool_input_session="$tmp/tool-input-cancel.jsonl" tool_input_output="$tmp/tool-input-cancel.out"
 CANCEL_BACKEND_MARKER="$cancel_backend_marker" CANCEL_BACKEND_PID_FILE="$cancel_backend_pid_file" \
   zsh -f "$entry" run --jsonl \
-  -m cancel-backend --session-out "$tool_input_session" \
+  -m default -m cancel-backend --session-out "$tool_input_session" \
   < <(print -r -- '{"type":"user","content":[{"type":"text","text":"tool input"}]}') \
   >"$tool_input_output" 2>&1 &
 typeset tool_input_pid=$!

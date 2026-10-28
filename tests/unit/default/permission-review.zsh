@@ -24,9 +24,10 @@ ZSH
 chmod +x "$wrapper"
 
 sf_test_frozen_profile
+SF_TEST_MODEL=$(jq -c '
+  .context_window=20000 | .request += {max_tokens:5000,temperature:0.2}
+' <<<"$SF_TEST_MODEL")
 SF_TEST_PROFILE=$(jq -c --arg hook "$hook" '
-  .model.context_window=20000 |
-  .model.request += {max_tokens:5000,temperature:0.2} |
   .hooks=[$hook] | .system=[{text:"fixed system"}]
 ' <<<"$SF_TEST_PROFILE")
 sf_test_session "$session"
@@ -76,10 +77,10 @@ jq -en -L "$ROOT" --slurpfile manifest "$hook/manifest.json" \
 jq -e -s --arg tool_input "$(jq -c '.tool_input' <<<"$request")" \
     --rawfile policy "$ROOT/share/hooks/review.md" '
   (.[1].content[0].text | fromjson) as $context |
-  .[0].profile.model.request.model == "test-model" and
-  .[0].profile.model.request.max_tokens == 4096 and
-  .[0].profile.model.request.temperature == 0.2 and
-  .[0].profile.model.request.response_schema.additionalProperties == false and
+  .[0].model.request.model == "test-model" and
+  .[0].model.request.max_tokens == 4096 and
+  .[0].model.request.temperature == 0.2 and
+  .[0].model.request.response_schema.additionalProperties == false and
   .[0].profile.tools == [] and
   .[0].profile.hooks == [] and
   .[0].profile.system == [{text:($policy | rtrimstr("\n"))}] and

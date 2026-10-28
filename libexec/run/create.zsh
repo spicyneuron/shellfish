@@ -5,7 +5,7 @@ source "$SF_ROOT/lib/profile.zsh"
 source "$SF_ROOT/lib/session.zsh"
 
 sf_run_create() {
-  local requested_out='' source_session='' profile session header cwd created
+  local requested_out='' source_session='' config session header cwd created
   local -a forwarded=()
   integer resolve_status=0 take=0
 
@@ -39,17 +39,19 @@ sf_run_create() {
       return 2
     }
     sf_session_select_path "$source_session" || { sf_die "$SF_SESSION_ERROR"; return 1; }
-    sf_session_read_profile "$REPLY" || { sf_die "$SF_SESSION_ERROR"; return 1; }
-    profile=$REPLY
+    sf_session_read_config "$REPLY" || { sf_die "$SF_SESSION_ERROR"; return 1; }
+    config=$REPLY
   else
     sf_profile_resolve_args "${forwarded[@]}" || {
       resolve_status=$?
       sf_die "$SF_PROFILE_ERROR"
       return $resolve_status
     }
-    profile=$REPLY
+    config=$REPLY
   fi
-  sf_run_components "$profile" || { sf_die "$REPLY"; return 1; }
+  SF_RUN[profile]=$(jq -c '.profile' <<<"$config") &&
+    SF_RUN[model]=$(jq -c '.model' <<<"$config") || { sf_die 'cannot read configuration'; return 1; }
+  sf_run_components "$SF_RUN[profile]" || { sf_die "$REPLY"; return 1; }
   sf_session_select_path "$requested_out" || { sf_die "$SF_SESSION_ERROR"; return 1; }
   session=$REPLY
   cwd=$(pwd -P) && created=$(date -u '+%Y-%m-%dT%H:%M:%SZ') || {
@@ -57,10 +59,10 @@ sf_run_create() {
     return 1
   }
   header=$(sf_jq -cn --arg cwd "$cwd" --arg created "$created" --arg share "$SF_SHARE" \
-    --arg home "${HOME:+${HOME:A}}" --argjson profile "$profile" '
+    --arg home "${HOME:+${HOME:A}}" --argjson config "$config" '
     include "lib/profile";
-    {type:"session",format_version:1,cwd:($cwd | store_path(""; $home)),created:$created,
-     profile:($profile | profile_store($share; $home))} | select(canonical_session_header)
+    {type:"session",format_version:1,cwd:($cwd | store_path(""; $home)),created:$created} +
+      ($config | header_store($share; $home)) | select(canonical_session_header)
   ') || { sf_die 'cannot prepare session header'; return 1; }
   (
     umask 077
@@ -72,7 +74,6 @@ sf_run_create() {
     return 1
   }
 
-  SF_RUN[profile]=$profile
   SF_RUN[cwd]=$cwd
   SF_RUN[turn_id]=1
   SF_RUN[hook_id]=1

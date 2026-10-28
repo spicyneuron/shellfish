@@ -14,7 +14,7 @@ Run output:
 
 New sessions:
   -p, --profile REF     Select a profile by name or path
-  -m, --model REF|JSON  Merge a model file or object over the profile's
+  -m, --model REF|JSON  Select a model file or object; repeats merge
   --sandbox REF|JSON    Merge a sandbox file or object over the profile's
   --system REF|JSON     Append a system file or {"text": "..."}
   -t, --tool REF        Append a tool

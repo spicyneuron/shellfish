@@ -6,7 +6,7 @@ sf_test_tmp backend-request
 typeset entry="$ROOT/bin/shellfish" session="$tmp/session.jsonl"
 typeset response digest
 jq -c --arg adapter "${SF_TEST_BACKEND:h}" --arg cwd "$tmp" \
-  '.profile.model.adapter = $adapter | .cwd = $cwd' \
+  '.model.adapter = $adapter | .cwd = $cwd' \
   "$SF_TEST_SESSIONS/header-only.jsonl" >"$session"
 print -r -- '{"type":"user","content":[{"type":"text","text":"old"}]}' >>"$session"
 print -r -- '{"type":"assistant","stop":"end","content":[{"type":"text","text":"answer"}]}' \
@@ -40,7 +40,7 @@ exec "$SF_TEST_BACKEND"
 EOF
 chmod +x "$cwd_backend"
 jq -c --arg adapter "${cwd_backend:h}" '
-  if .type == "session" then .cwd="~/project" | .profile.model.adapter=$adapter else . end
+  if .type == "session" then .cwd="~/project" | .model.adapter=$adapter else . end
 ' \
   "$session" >"$cwd_session"
 HOME="$tmp" SF_TEST_BACKEND_DELAY=0 zsh -f "$entry" backend-request \
@@ -104,7 +104,7 @@ ZSH
 chmod +x "$invalid_backend"
 {
   IFS= read -r header
-  jq -c --arg adapter "${invalid_backend:h}" '.profile.model.adapter = $adapter' <<<"$header"
+  jq -c --arg adapter "${invalid_backend:h}" '.model.adapter = $adapter' <<<"$header"
   cat
 } <"$session" >"$invalid_session"
 typeset invalid_mode

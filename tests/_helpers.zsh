@@ -93,18 +93,15 @@ assert_canonical_session() {
   }
 }
 
-# Frozen profile used by tool and exec tests.
+# Frozen profile and model used by tool and exec tests.
 sf_test_frozen_profile() {
-  typeset -g SF_TEST_PROFILE
-  SF_TEST_PROFILE=$(jq -cn --arg adapter "${SF_TEST_BACKEND:h}" \
-    --arg tool "$ROOT/share/tools/shell" '
-      {
-        model:{adapter:$adapter,endpoint:"https://example.invalid/test",
-          request:{model:"test-model"}},
-        system:[], tools:[$tool], hooks:[],
-        sandbox:{enabled:false, read:[], write:[]}
-      }
-    ')
+  typeset -g SF_TEST_PROFILE SF_TEST_MODEL
+  SF_TEST_PROFILE=$(jq -cn --arg tool "$ROOT/share/tools/shell" '
+    {system:[], tools:[$tool], hooks:[], sandbox:{enabled:false, read:[], write:[]}}
+  ')
+  SF_TEST_MODEL=$(jq -cn --arg adapter "${SF_TEST_BACKEND:h}" '
+    {adapter:$adapter,endpoint:"https://example.invalid/test",request:{model:"test-model"}}
+  ')
   export SHELLFISH_MAX_REQUESTS_PER_TURN=8 SHELLFISH_MAX_TOOL_CALLS_PER_REQUEST=16
   export SHELLFISH_MAX_CAPTURE_BYTES=65536
 }
@@ -147,8 +144,8 @@ sf_test_session() {
   cwd=$(pwd -P)
   created=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
   header=$(jq -cn --arg cwd "$cwd" --arg created "$created" \
-    --argjson profile "$SF_TEST_PROFILE" \
-    '{type:"session",format_version:1,cwd:$cwd,created:$created,profile:$profile}')
+    --argjson profile "$SF_TEST_PROFILE" --argjson model "$SF_TEST_MODEL" \
+    '{type:"session",format_version:1,cwd:$cwd,created:$created,profile:$profile,model:$model}')
   (umask 077; print -r -- "$header" >"$session")
 }
 

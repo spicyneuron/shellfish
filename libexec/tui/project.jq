@@ -33,7 +33,7 @@ def usage_actions($window):
 def identity:
   ((.model.adapter // "?" | split("/") | last) + "/" + (.model.request.model // "?"));
 
-def profile_actions:
+def model_actions:
   [["profile", identity, (.model.context_window // "" | tostring)]];
 
 # A result or draft carries its own preview hint.
@@ -82,7 +82,7 @@ def record_actions($mode; $window):
     [["execution_end", .id, hook_class, result_text, preview,
       ({session_start:"system", user_prompt_submit:"user"}[.lifecycle] // "agent")]]
   elif .type == "session" then
-    (.profile | profile_actions) +
+    model_actions +
     if $mode == "load" then message_actions("system"; .profile.system[0].text // "") else [] end
   elif .type == "state_update" then []
   else error("unsupported record: " + (.type | tostring))
@@ -110,7 +110,7 @@ def event_actions($window):
       (if ($preview | length) > 1000 then $preview[0:1000] + "…" else $preview end),
       (.reason // "")]]
   elif .type == "_handoff" then [["handoff"] + .argv]
-  elif .type == "_session_update" then (.profile | profile_actions)
+  elif .type == "_session_update" then model_actions
   elif .type == "_session_load" then [["session", .path]]
   else error("unsupported event: " + (.type | tostring))
   end;
@@ -128,7 +128,7 @@ reduce .[] as $line (
   .actions += $emitted |
   if $line.type == "_session_load" then .mode = "load"
   elif $line.type | IN("session", "_session_update") then
-    .window = ($line.profile.model.context_window // null)
+    .window = ($line.model.context_window // null)
   else . end
 ) |
 # Fields are NUL-joined and each action ends with a record separator.

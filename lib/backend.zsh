@@ -25,16 +25,15 @@ sf_backend_project() {
     select(.[0] | canonical_session_header) |
     . as $records |
     ($records[0] | header_expand($share; $home)) as $header |
-    $header.profile as $profile |
     backend_adapter_request(
-      $profile;
-      ($profile.system[0].text // "");
+      $header.model;
+      ($header.profile.system[0].text // "");
       ($records[1:] | session_messages);
       $tools
     ) as $request |
     entry("request"; $request | tojson),
     entry("cwd"; $header.cwd),
-    entry("command"; $profile.model.adapter + "/run"),
+    entry("command"; $header.model.adapter + "/run"),
     ("ok" | field)
   ' || return 1
   SF_BACKEND_PLAN=( "${reply[@]}" )

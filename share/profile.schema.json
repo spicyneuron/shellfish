@@ -7,12 +7,6 @@
     "$schema": {
       "type": "string"
     },
-    "model": {
-      "anyOf": [
-        {"$ref": "#/$defs/model"},
-        {"type": "array", "items": {"$ref": "#/$defs/model"}}
-      ]
-    },
     "sandbox": {
       "anyOf": [
         {"$ref": "#/$defs/sandbox"},
@@ -47,9 +41,6 @@
       "type": "string",
       "minLength": 1,
       "pattern": "^[^\u0000-\u001f\u007f-\u009f]+$"
-    },
-    "model": {
-      "anyOf": [{"$ref": "#/$defs/reference"}, {"$ref": "model.schema.json"}]
     },
     "sandbox": {
       "anyOf": [{"$ref": "#/$defs/reference"}, {"$ref": "sandbox.schema.json"}]

@@ -8,7 +8,8 @@ source "${0:A:h:h:h}/_helpers.zsh"
 sf_test_source libexec/tui/render/view.zsh libexec/tui/project.zsh
 
 typeset header=$(head -n 1 "$SF_TEST_SESSIONS/complete.jsonl")
-typeset profile=$(jq -c '.profile | .model.context_window = 200' <<<"$header")
+typeset update=$(jq -c '{type:"_session_update",profile,model:(.model | .context_window = 200)}' \
+  <<<"$header")
 
 # Join one action per line for comparison; a trailing empty field shows as "|".
 actions() { print -rl -- ${(@)${(@)SF_PRESENT_ACTIONS//$'\0'/ | }% } }
@@ -105,11 +106,10 @@ assert_equal \
 project live '{"type":"error","user_text":"Cancelled.\nstopped by the user"}'
 assert_equal 'error | Cancelled. | stopped by the user' "$REPLY"
 
-# The header and later updates carry profile identity; usage reads its window.
+# The header and later updates carry model identity; usage reads its window.
 project load "$header"
 assert_equal 'profile | test/fake-model |' "$REPLY"
-project live "$(jq -cn --argjson profile "$profile" \
-  '{type:"_session_update",profile:$profile}')"
+project live "$update"
 assert_equal 'profile | test/fake-model | 200' "$REPLY"
 project live \
   '{"type":"assistant","stop":"end","content":[],"usage":{"input_tokens":75,"cached_tokens":15,"output_tokens":5}}'

@@ -19,12 +19,12 @@ client ─ user prompt ─▶ │  read session  │
 A session JSONL file is the agent's only durable state. Its first line is a header and every later line is one record:
 
 ```text
-{"type":"session","format_version":1,"cwd":"~/project","created":"...","profile":{...}}
+{"type":"session","format_version":1,"cwd":"~/project","created":"...","profile":{...},"model":{...}}
 {"type":"user","content":[{"type":"text","text":"Fix the bug"}]}
 {"type":"assistant","stop":"end","content":[{"type":"text","text":"Done."}]}
 ```
 
-The header freezes the resolved profile, which is itself a valid profile that resolves to the same header. It holds the merged model with its adapter, endpoint, and request settings, the system prompt text, the tool and hook lists, and the merged sandbox setting and grants. System prompt files are frozen as their text, like model and sandbox files; executable components, manifests, and policies remain live. Credentials, environment settings such as turn limits, and presentation settings remain external.
+The header freezes the resolved profile and model, each in its config file's shape, so together they resolve to the same header. The profile holds the system prompt text, the tool and hook lists, and the merged sandbox setting and grants. The model holds the merged adapter, endpoint, and request settings. System prompt files are frozen as their text, like model and sandbox files; executable components, manifests, and policies remain live. Credentials, environment settings such as turn limits, and presentation settings remain external.
 
 Header paths use `@` for the bundled root, `~/` for HOME, or `/` for fixed absolute locations, so a session survives upgrades and moves with its home. If the project moves independently of HOME, update the header cwd.
 
@@ -84,6 +84,6 @@ Hooks and tools share execution, presentation, and durable state updates. Their 
 
 ## Clients invoke turns
 
-Clients submit prompts and render what they receive. They own interaction and presentation, but rely on `shellfish run` for the agent loop and state. A client replays the durable transcript for history and reads live events from the turn it invoked; both use one presentation vocabulary. Clients never append to a session, recover one, or reinterpret its profile.
+Clients submit prompts and render what they receive. They own interaction and presentation, but rely on `shellfish run` for the agent loop and state. A client replays the durable transcript for history and reads live events from the turn it invoked; both use one presentation vocabulary. Clients never append to a session, recover one, or reinterpret its profile or model.
 
 Types without a leading underscore are durable records already appended by the turn owner. Types beginning with `_` are transient. If a live outcome becomes uncertain, the client discards its transient view and replays the file instead of guessing.

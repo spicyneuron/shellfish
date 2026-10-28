@@ -1,6 +1,6 @@
 # Harnesses
 
-A harness defines how Shellfish behaves as an agent. It combines tools and lifecycle hooks around the shared execution loop. A profile selects one harness together with model files and system prompts.
+A harness defines how Shellfish behaves as an agent. It combines tools and lifecycle hooks around the shared execution loop. A profile selects one harness together with system prompts and sandbox files. The model is selected separately.
 
 The core owns event ordering, persistence, recovery, and cleanup. The harness supplies tools and workflow policy. A session freezes its component lists and settings when it is created; the component files themselves are read on each run.
 

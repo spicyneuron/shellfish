@@ -12,15 +12,15 @@ profile_eval() {
 # Profiles only select; model files only configure.
 for profile in \
     '{"backend":{}}' '{"request":{}}' '{"env":{}}' '{"extend":["default"]}' \
-    '{"model":1}' '{"model":[""]}' '{"sandbox":{"read":["relative"]}}' '{"hooks":{"stop":[]}}' \
+    '{"model":"m"}' '{"sandbox":{"read":["relative"]}}' '{"hooks":{"stop":[]}}' \
     '{"tools":"read_file"}' '{"tools":[{}]}' '{"system":[{"text":1}]}' '{"themes":{}}'; do
   if print -r -- "$profile" | profile_eval 'config_profile(["p"])' >/dev/null 2>&1; then
     fail "invalid profile was accepted: $profile"
   fi
 done
-print -r -- '{"model":["a","@b/c.jsonc"],"sandbox":["~/s.jsonc"],"system":["x.md"],"tools":[],"hooks":["h"]}' |
+print -r -- '{"sandbox":["~/s.jsonc"],"system":["x.md"],"tools":[],"hooks":["h"]}' |
   profile_eval 'config_profile(["p"])' >/dev/null
-print -r -- '{"model":{"request":{}},"sandbox":[{"read":["./x"]}],"system":[{"text":"t"}]}' |
+print -r -- '{"sandbox":{"read":["./x"]},"system":[{"text":"t"}]}' |
   profile_eval 'config_profile(["p"])' >/dev/null
 for model in \
     '{"backend":"openai"}' '{"context_window":0}' '{"endpoint":"ftp://example.invalid"}' \
@@ -66,23 +66,23 @@ sf_test_profile unused '{invalid json'
 
 # "@path" selects under the bundled root despite user shadowing; "~/" and
 # absolute paths are taken as written. Bare names fall back to bundled.
-sf_test_profile default '{"model": ["probe"], "tools": ["probe"], "system": ["shared.md",
+sf_test_profile default '{"tools": ["probe"], "system": ["shared.md",
   "@system/general.md", "general.md", "~/prompts/home.md", "'"$HOME"'/prompts/home.md"]}'
-sf_profile_resolve_args
+sf_profile_resolve_args -m probe
 jq -e --arg base "$config" --rawfile general "$ROOT/share/system/general.md" '
-  ($general | sub("\n+$"; "")) as $general |
+  ($general | sub("\n+$"; "")) as $general | .profile |
   .tools == [$base + "/tools/probe"] and
   .system == [{text:(["configured", $general, $general, "home", "home"] | join("\n\n"))}]
 ' <<<"$REPLY" >/dev/null
 
 # Missing and invalid components fail by kind.
-sf_test_profile bad '{"model":["probe"],"tools":["missing"]}'
-if sf_profile_resolve_args -p bad; then
+sf_test_profile bad '{"tools":["missing"]}'
+if sf_profile_resolve_args -p bad -m probe; then
   fail 'missing component was accepted'
 fi
 [[ $SF_PROFILE_ERROR == 'cannot resolve tools reference: missing' ]]
-sf_test_profile bad '{"model":["probe"],"hooks":["general.md"]}'
-if sf_profile_resolve_args -p bad; then
+sf_test_profile bad '{"hooks":["general.md"]}'
+if sf_profile_resolve_args -p bad -m probe; then
   fail 'a system file was accepted as a hook'
 fi
 [[ $SF_PROFILE_ERROR == 'cannot resolve hooks reference: general.md' ]]
@@ -90,8 +90,8 @@ fi
   SF_SHARE="$tmp/flat-share"
   mkdir -p "$SF_SHARE/hooks"
   print -r -- 'not executable' >"$SF_SHARE/hooks/disabled"
-  sf_test_profile bad '{"model":["probe"],"hooks":["@hooks/disabled"]}'
-  if sf_profile_resolve_args -p bad; then
+  sf_test_profile bad '{"hooks":["@hooks/disabled"]}'
+  if sf_profile_resolve_args -p bad -m probe; then
     fail 'non-executable hook was accepted'
   fi
   [[ $SF_PROFILE_ERROR == 'invalid hooks reference: @hooks/disabled' ]]

@@ -272,7 +272,7 @@ def test_prompt_hook_hands_off_to_new_session():
         path, records = session.wait_session_records(1)
         assert path != session.explicit_session, (path, session.explicit_session)
         assert len(records) >= 1, records
-        assert records[0]["profile"]["model"]["request"]["model"] == "fake-model", records[0]
+        assert records[0]["model"]["request"]["model"] == "fake-model", records[0]
     finally:
         session.close()
 

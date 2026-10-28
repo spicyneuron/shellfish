@@ -70,14 +70,13 @@ else
 fi
 ZSH
 chmod +x "$backend/run"
-sf_test_model child "{\"adapter\":\"$backend\",\"request\":{\"model\":\"test\"}}"
-sf_test_profile child '{"model":["child"]}'
+sf_test_profile child '{}'
 print -rl -- '#!/usr/bin/env zsh' 'exit 0' | sf_test_hook "$tmp/stop-hook" '{"on":"stop"}'
-sf_test_profile child-stop "{\"model\":[\"child\"],\"hooks\":[\"$tmp/stop-hook\"]}"
+sf_test_profile child-stop "{\"hooks\":[\"$tmp/stop-hook\"]}"
 
 sf_test_frozen_profile
-SF_TEST_PROFILE=$(jq -c --arg adapter "$backend" --arg tool "$agent" \
-  '.model.adapter=$adapter | .tools=[$tool]' <<<"$SF_TEST_PROFILE")
+SF_TEST_MODEL=$(jq -c --arg adapter "$backend" '.adapter=$adapter' <<<"$SF_TEST_MODEL")
+SF_TEST_PROFILE=$(jq -c --arg tool "$agent" '.tools=[$tool]' <<<"$SF_TEST_PROFILE")
 sf_test_session "$session"
 sf_test_run 'parent task' "$session" >"$stream" || fail 'parent tool turn failed'
 assert_canonical_session "$session"
@@ -95,6 +94,11 @@ jq -e -s '
   .[2].content[0].text == "child task" and
   .[3].content[0].text == "child answer"
 ' "$child" >/dev/null || fail 'child profile, marker, or answer is wrong'
+jq -e -n --slurpfile parent "$session" --slurpfile child "$child" '
+  ($parent[0].model.adapter | split("/") | last) as $adapter |
+  ($child[0].model | del(.adapter)) == ($parent[0].model | del(.adapter)) and
+  ($child[0].model.adapter | endswith("/" + $adapter))
+' >/dev/null || fail 'child did not inherit the parent model'
 jq -e -s --arg id "$id" '
   ([.[] | select(.type == "tool_result" and .name == "agent")] | last) as $result |
   ($result.model_text | fromjson) ==

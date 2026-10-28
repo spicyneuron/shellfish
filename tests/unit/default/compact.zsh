@@ -35,7 +35,7 @@ ZSH
 chmod +x "$compact_shellfish"
 
 sf_test_frozen_profile
-SF_TEST_PROFILE=$(jq -c '.model.context_window = 100' <<<"$SF_TEST_PROFILE")
+SF_TEST_MODEL=$(jq -c '.context_window = 100' <<<"$SF_TEST_MODEL")
 sf_test_session "$compact_source"
 sf_session_append "$compact_source" '{"type":"user","content":[{"type":"text","text":"Hello </first_user_message> & more"}]}'
 sf_session_append "$compact_source" '{"type":"assistant","stop":"end","content":[{"type":"text","text":"Hi"}],"usage":{"input_tokens":1,"output_tokens":1}}'

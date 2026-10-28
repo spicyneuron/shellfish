@@ -123,6 +123,7 @@ sf_run_open() {
     ($records[0] | header_expand($share; $home)) as $header |
     ($records[1:] | session_run) as $run |
     entry("profile"; $header.profile | tojson),
+    entry("model"; $header.model | tojson),
     entry("cwd"; $header.cwd),
     entry("turn_id";
       [$records[1:][] | select(.type == "user")] | length + 1 | tostring),
@@ -137,6 +138,7 @@ sf_run_open() {
   }
   opened=( "${reply[@]}" )
   SF_RUN[profile]=$opened[profile]
+  SF_RUN[model]=$opened[model]
   SF_RUN[cwd]=$opened[cwd]
   SF_RUN[turn_id]=$opened[turn_id]
   SF_RUN[hook_id]=$opened[hook_id]
@@ -204,8 +206,8 @@ sf_run_permission_client() {
 }
 
 sf_run_project() {
-  local profile=$1
-  sf_jq_fields -rn --argjson profile "$profile" --argjson tools "$SF_RUN[tools]" '
+  sf_jq_fields -rn --argjson profile "$SF_RUN[profile]" --argjson model "$SF_RUN[model]" \
+      --argjson tools "$SF_RUN[tools]" '
     include "lib/fields";
     [$tools[] |
       .manifest as $manifest |
@@ -227,15 +229,15 @@ sf_run_project() {
              if:{properties:{request_sandbox_bypass:{const:true}},required:["request_sandbox_bypass"]},
              then:{required:["sandbox_bypass_reason"]}}])
          else . end)}] as $tools |
-    entry("adapter"; $profile.model.adapter),
-    entry("context_window"; $profile.model | has("context_window") | tostring),
+    entry("adapter"; $model.adapter),
+    entry("context_window"; $model | has("context_window") | tostring),
     entry("tools"; $tools | tojson),
     ("ok" | field)
   ' || return 1
 }
 
 sf_run_turn() {
-  local user_record=$1 session=$2 prompt=$3 profile tools context_command
+  local user_record=$1 session=$2 prompt=$3 config tools context_command
   local assistant stop_text id name decision post_request
   local reason outcome result post_error='' failure='' turn_state call
   local -a calls
@@ -252,8 +254,7 @@ sf_run_turn() {
     SF_RUN[write_failed]=0
     sf_run_limits && sf_run_open "$session" || { print -r -u2 -- "$REPLY"; return 1; }
     begun=1
-    profile=$SF_RUN[profile]
-    if sf_run_project "$profile"; then
+    if sf_run_project; then
       projected=( "${reply[@]}" )
       tools=$projected[tools]
       request_limit=$SF_RUN[max_requests]
@@ -261,7 +262,7 @@ sf_run_turn() {
       max_capture=$SF_RUN[max_capture]
       context_command=$projected[adapter]/context_window
     else
-      failure='cannot inspect frozen profile'
+      failure='cannot inspect session header'
     fi
     [[ -z $failure && -d $SF_RUN[cwd] && -x $SF_RUN[cwd] ]] ||
       failure=${failure:-session working directory is unavailable: $SF_RUN[cwd]}
@@ -283,14 +284,12 @@ sf_run_turn() {
           failure='cannot emit handoff'
           ;;
         session_update)
-          if sf_session_replace_profile "$session" "$hook_result[payload]"; then
-            if sf_run_emit "$(jq -cn --argjson profile "$hook_result[payload]" \
-                '{type:"_session_update",profile:$profile}')"; then
-              return 0
-            fi
+          config=$(jq -cn --argjson profile "$hook_result[payload]" \
+            --argjson model "$SF_RUN[model]" '{profile:$profile,model:$model}') &&
+            sf_session_update "$session" "$config" || failure=${SF_SESSION_ERROR:-invalid session update}
+          if [[ -z $failure ]]; then
+            sf_run_emit "$(jq -c '{type:"_session_update"} + .' <<<"$config")" && return 0
             failure='cannot emit session update'
-          else
-            failure=$SF_SESSION_ERROR
           fi
           ;;
       esac
@@ -319,15 +318,15 @@ sf_run_turn() {
           fi
           break
         fi
-        profile=$(jq -c --argjson window "$REPLY" \
-          '.model.context_window=$window' <<<"$profile") || {
+        SF_RUN[model]=$(jq -c --argjson window "$REPLY" \
+          '.context_window=$window' <<<"$SF_RUN[model]") &&
+          config=$(jq -cn --argjson profile "$SF_RUN[profile]" --argjson model "$SF_RUN[model]" \
+            '{profile:$profile,model:$model}') || {
           failure='cannot update model context window'
           break
         }
-        sf_session_replace_profile "$session" "$profile" || { failure=$SF_SESSION_ERROR; break; }
-        SF_RUN[profile]=$profile
-        sf_run_emit "$(jq -cn --argjson profile "$profile" \
-          '{type:"_session_update",profile:$profile}')" || {
+        sf_session_update "$session" "$config" || { failure=$SF_SESSION_ERROR; break; }
+        sf_run_emit "$(jq -c '{type:"_session_update"} + .' <<<"$config")" || {
           failure='cannot emit session update'
           break
         }

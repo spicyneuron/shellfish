@@ -43,7 +43,7 @@ print -r -- 'branch:main' >"$git_state"
 sf_test_config
 sf_test_model default "{\"adapter\":\"$ROOT/tests/fixtures/backend\",\"request\":{\"model\":\"test\"}}"
 sf_test_profile default '{
-  "model": ["default"], "system": ["general.md", "tools.md"],
+  "system": ["general.md", "tools.md"],
   "tools": ["read_file", "edit_file", "write_file", "skill", "search_web", "fetch_url", "shell"],
   "hooks": ["project/environment", "git/environment", "project/instructions", "git/change"]
 }'

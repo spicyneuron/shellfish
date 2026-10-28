@@ -2,7 +2,6 @@
 {
   "$schema": "https://raw.githubusercontent.com/spicyneuron/shellfish/refs/heads/main/share/profile.schema.json",
 
-  "model": "default",
   "sandbox": "default",
   "system": ["readonly.md", "tools.md"],
   "tools": ["read_file", "shell_readonly"],

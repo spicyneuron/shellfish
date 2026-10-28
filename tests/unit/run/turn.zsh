@@ -67,9 +67,8 @@ print -r -- '{
   "environment": ["TOOL_ORDER"],
   "sandbox": false
 }' >"${tool:h}/manifest.json"
-SF_TEST_PROFILE=$(jq -c --arg backend "${backend:h}" --arg tool "${tool:h}" '
-  .model.adapter=$backend | .tools=[$tool]
-' <<<"$SF_TEST_PROFILE")
+SF_TEST_MODEL=$(jq -c --arg backend "${backend:h}" '.adapter=$backend' <<<"$SF_TEST_MODEL")
+SF_TEST_PROFILE=$(jq -c --arg tool "${tool:h}" '.tools=[$tool]' <<<"$SF_TEST_PROFILE")
 export TOOL_ORDER=$order
 session="$tmp/ordered.jsonl"
 sf_test_session "$session"
@@ -115,9 +114,8 @@ else
 fi
 ZSH
 chmod +x "$limited_backend"
-SF_TEST_PROFILE=$(jq -c --arg backend "${limited_backend:h}" '
-  .model.adapter=$backend | .tools=[]
-' <<<"$SF_TEST_PROFILE")
+SF_TEST_MODEL=$(jq -c --arg backend "${limited_backend:h}" '.adapter=$backend' <<<"$SF_TEST_MODEL")
+SF_TEST_PROFILE=$(jq -c '.tools=[]' <<<"$SF_TEST_PROFILE")
 session="$tmp/limited.jsonl"
 sf_test_session "$session"
 SHELLFISH_MAX_TOOL_CALLS_PER_REQUEST=1 sf_test_run limited "$session" >"$stream" ||
@@ -164,8 +162,7 @@ print -r -- '{"type":"_turn_usage","input_tokens":1,"output_tokens":1}'
 print -r -- '{"type":"_assistant_end","stop":"end"}'
 ZSH
 chmod +x "$env_backend"
-SF_TEST_PROFILE=$(jq -c --arg backend "${env_backend:h}" '.model.adapter=$backend' \
-  <<<"$SF_TEST_PROFILE")
+SF_TEST_MODEL=$(jq -c --arg backend "${env_backend:h}" '.adapter=$backend' <<<"$SF_TEST_MODEL")
 export EXPORTED_SECRET=exported-value
 sf_test_session "$env_session"
 sf_test_run env "$env_session" >"$stream" || fail 'adapter environment turn failed'

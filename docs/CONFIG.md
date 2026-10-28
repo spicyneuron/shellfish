@@ -4,7 +4,7 @@ Configuration has three homes, each with one job:
 
 | Home | Job | Frozen in a session |
 | --- | --- | --- |
-| `profiles/NAME.jsonc` | Selects an agent's parts: model and sandbox files, system prompts, tools, and hooks | Yes |
+| `profiles/NAME.jsonc` | Selects an agent's parts: sandbox files, system prompts, tools, and hooks | Yes |
 | `models/NAME.jsonc` | Configures the request: adapter, endpoint, and provider parameters | Yes |
 | `sandbox/NAME.jsonc` | Enables sandboxing and grants extra paths | Yes |
 | `.env` and the environment | Credentials and settings for Shellfish and its components | No |
@@ -21,16 +21,15 @@ One Shellfish directory holds everything: profiles, models, sandbox files, compo
 
 Every reference in a profile, model, or sandbox file, and every option that takes one, follows one rule. A reference starting with `/`, `~/`, `./`, `../`, or `@` is a path, where `@` is the bundled root just as `~` is home. A relative path resolves against the file that contains it, or against the working directory on the command line. Anything else is a name, which resolves in its kind's directory, yours first, then bundled. Profile, model, and sandbox names gain `.jsonc`, and a name may be nested, such as `openai/sol`.
 
-Your component therefore shadows the bundled one of the same name, and a path still reaches the bundled one, such as `@tools/shell`. A template profile works in place as `-p @template/profiles/plus.jsonc`, though it names your `models/default.jsonc`. Session headers store bundled paths the same way, so a session survives upgrades.
+Your component therefore shadows the bundled one of the same name, and a path still reaches the bundled one, such as `@tools/shell`. A template profile works in place as `-p @template/profiles/plus.jsonc`, though it names your `sandbox/default.jsonc`. Session headers store bundled paths the same way, so a session survives upgrades.
 
 ## Profiles
 
-A profile selects an agent's parts, usually by reference.
+A profile selects an agent's parts, usually by reference. The model is chosen separately.
 
 ```jsonc
 // profiles/default.jsonc
 {
-  "model": "default",
   "sandbox": "default",
   "system": ["general.md", "tools.md"],
   "tools": ["read_file", "edit_file", "write_file", "shell"],
@@ -40,35 +39,33 @@ A profile selects an agent's parts, usually by reference.
 
 | Field | Meaning |
 | --- | --- |
-| `model` | Model files or inline model objects, merged left to right |
 | `sandbox` | Sandbox files or inline sandbox objects, merged left to right |
 | `system` | System prompt files or inline `{"text": "..."}`, concatenated in order |
 | `tools` | Tools exposed to the model |
 | `hooks` | Hooks, each run by the lifecycle its manifest names, in listed order |
 
-A lone `model` or `sandbox` item needs no list. Inline values let one profile hold everything, though separate files are easier to share.
+A lone `sandbox` item needs no list. Inline values let one profile hold everything, though separate files are easier to share.
 
-`profiles/default.jsonc` is selected when `--profile` is absent and it exists, and `-p REF` selects another. Without either, options alone select everything. Profiles do not inherit from each other, since a profile is short enough to copy. Only components named in the selected profile are active, and unused files are inert.
+`profiles/default.jsonc` is selected when `--profile` is absent and it exists, and `-p REF` selects another. Without either, options alone select the agent's parts. Profiles do not inherit from each other, since a profile is short enough to copy. Only components named in the selected profile are active, and unused files are inert.
 
-Each field has an option that appends to the selected profile's list for one session. List options repeat, and any that accept inline values take a JSON object in place of a reference. Repeated `system`, `tools`, and `hooks` references collapse to the first. `model` and `sandbox` lists merge in order, so a repeated reference applies again.
+Each field has an option that appends to the selected profile's list for one session. List options repeat, and any that accept inline values take a JSON object in place of a reference. Repeated `system`, `tools`, and `hooks` references collapse to the first. `sandbox` lists merge in order, so a repeated reference applies again.
 
 | Field | Option |
 | --- | --- |
-| `model` | `-m, --model REF\|JSON` |
 | `sandbox` | `--sandbox REF\|JSON` |
 | `system` | `--system REF\|JSON` |
 | `tools` | `-t, --tool REF` |
 | `hooks` | `--hook REF` |
 
 ```sh
-shellfish -m '{"request": {"model": "MODEL"}}'         # Try a model without a file
+shellfish -m default -m '{"request": {"model": "MODEL"}}'  # Try another model name
 shellfish --sandbox '{"write": ["./build"]}'           # Grant a directory for one session
 shellfish --system ./review.md -t shell_readonly       # Add a prompt and a tool
 ```
 
 ## Models
 
-A model file configures where a request goes and what it carries.
+A model file configures where a request goes and what it carries. `-m REF|JSON` selects one, and `models/default.jsonc` is the model when `-m` is absent.
 
 ```jsonc
 // models/work.jsonc
@@ -85,24 +82,24 @@ A model file configures where a request goes and what it carries.
 | `context_window` | Positive capacity override. `null` disables discovery, and absent permits adapter discovery |
 | `request` | Provider request parameters, which must include `model` after merging |
 
-A profile's `model` list merges left to right: objects merge recursively and anything else is replaced. That lets small model files share settings without repeating them:
+`-m` repeats, and its items merge left to right: objects merge recursively and anything else is replaced. A file that names its adapter and model stands alone, and small files can adjust it:
 
 ```jsonc
 // models/local.jsonc
-{"adapter": "openai", "endpoint": "http://127.0.0.1:8080/v1/chat/completions"}
+{"adapter": "openai", "endpoint": "http://127.0.0.1:8080/v1/chat/completions",
+ "request": {"model": "local-model"}}
 
 // models/high.jsonc
 {"request": {"reasoning": {"effort": "high"}}}
-
-// profiles/local.jsonc
-{"model": ["default", "local", "high"], "system": ["general.md"], "tools": ["shell"]}
 ```
 
-`-m` merges another model over the profile's list for one session.
+```sh
+shellfish -m local -m high
+```
 
 Bundled adapters: `anthropic`, `codex`, `openai`, `openai-responses`, and `openrouter`. The `openai` adapter works with any OpenAI-compatible endpoint. See [`HARNESS.md`](HARNESS.md#backend-adapters) for the adapter protocol.
 
-A new session freezes the selected profile with its model and sandbox merged, its system prompts joined into one text, and every other reference resolved. The frozen profile in a session header is itself a profile and selects the same session again.
+A new session freezes the selected profile and model in its header: sandbox and model items merged, system prompts joined into one text, and every other reference resolved. The header's `profile` is itself a profile and its `model` a model file, so together they select the same session again. A child agent started by the `agent` tool keeps its parent's model.
 
 ## Environment
 
@@ -173,7 +170,7 @@ Grants are paths and need not exist, so one file can serve several machines. A p
 
 ## Starter agent
 
-`shellfish init` writes four profiles. Each selects `models/default.jsonc`, the OpenRouter adapter with up to 16,384 output tokens and medium reasoning effort, whose `MODEL` placeholder you replace, and `sandbox/default.jsonc`, which grants nothing until you edit it.
+`shellfish init` writes four profiles and the default model, `models/default.jsonc`: the OpenRouter adapter with up to 16,384 output tokens and medium reasoning effort, whose `MODEL` placeholder you replace. Each profile selects `sandbox/default.jsonc`, which grants nothing until you edit it.
 
 | Profile | Selects |
 | --- | --- |

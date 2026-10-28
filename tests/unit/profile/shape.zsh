@@ -89,7 +89,7 @@ for events in \
   fi
 done
 
-# A session header holds a complete profile with stored references.
+# A session header holds a complete profile and model with stored references.
 typeset valid_header
 valid_header=$(jq -cn '
   {
@@ -97,13 +97,13 @@ valid_header=$(jq -cn '
     format_version: 1,
     cwd: "~/project",
     created: "2026-08-18T00:00:00Z",
+    model: {
+      adapter: "@backends/openai",
+      endpoint: "https://api.openai.com/v1/chat/completions",
+      request: {model: "gpt-4o"},
+      context_window: 128000
+    },
     profile: {
-      model: {
-        adapter: "@backends/openai",
-        endpoint: "https://api.openai.com/v1/chat/completions",
-        request: {model: "gpt-4o"},
-        context_window: 128000
-      },
       system: [{text: "inline"}],
       tools: ["@tools/shell", "~/tools/jira"],
       hooks: ["/bin/hook", "@hooks/stop"],
@@ -112,18 +112,18 @@ valid_header=$(jq -cn '
   }
 ')
 print -r -- "$valid_header" | schema_eval 'canonical_session_header' >/dev/null
-print -r -- "$valid_header" | jq -c '.profile.model.context_window = null' |
+print -r -- "$valid_header" | jq -c '.model.context_window = null' |
   schema_eval 'canonical_session_header' >/dev/null
-print -r -- "$valid_header" | jq -c 'del(.profile.model.context_window)' |
+print -r -- "$valid_header" | jq -c 'del(.model.context_window)' |
   schema_eval 'canonical_session_header' >/dev/null
 for patch in '.extra=true' '.profile.extra=true' '.profile.env={}' \
     '.profile."$schema"="x"' 'del(.profile.hooks)' 'del(.profile.sandbox)' \
-    '.profile.model.extra=true' 'del(.profile.model.endpoint)' 'del(.profile.model.request.model)' \
-    '.profile.model.context_window=0' '.profile.hooks={}' \
+    '.model.extra=true' 'del(.model.endpoint)' 'del(.model.request.model)' \
+    '.model.context_window=0' 'del(.model)' '.profile.model=.model' '.profile.hooks={}' \
     '.profile.hooks=[{command:"/bin/hook"}]' '.profile.system=["@system/general.md"]' \
     '.profile.system=[{text:1}]' '.profile.sandbox=true' '.profile.sandbox.extra=1' \
     '.profile.tools=["shell"]' '.profile.tools=["/a/shell","/b/shell"]' \
-    '.profile.model.adapter="./openai"' '.profile.system=[{text:""}]' '.profile.system+=[{text:"two"}]' \
+    '.model.adapter="./openai"' '.profile.system=[{text:""}]' '.profile.system+=[{text:"two"}]' \
     '.profile.sandbox.read=["relative"]' \
     '.cwd="./project"'; do
   if jq -c "$patch" <<<"$valid_header" |
@@ -135,22 +135,23 @@ done
 # Stored forms round-trip through expansion.
 jq -L "$ROOT" -e --arg share /opt/sf/share --arg home /home/me '
   include "lib/profile";
-  .profile as $stored |
-  ($stored | profile_expand($share; $home)) as $expanded |
-  $expanded.tools == ["/opt/sf/share/tools/shell", "/home/me/tools/jira"] and
-  $expanded.sandbox.read == ["/home/me/cache"] and
-  ($expanded | profile_store($share; $home)) == $stored
+  {profile, model} as $stored |
+  ($stored | header_expand($share; $home)) as $expanded |
+  $expanded.profile.tools == ["/opt/sf/share/tools/shell", "/home/me/tools/jira"] and
+  $expanded.profile.sandbox.read == ["/home/me/cache"] and
+  $expanded.model.adapter == "/opt/sf/share/backends/openai" and
+  ($expanded | header_store($share; $home)) == $stored
 ' <<<"$valid_header" >/dev/null || fail 'stored profile paths did not round-trip'
 
 # Any path under the bundled root stores with "@", including sandbox grants.
 jq -L "$ROOT" -e --arg share /opt/sf/share --arg home /home/me '
   include "lib/profile";
-  .profile | profile_expand($share; $home) |
-  .tools = ["/opt/sf/share/profiles/default/tools/shell", "/opt/other/jira"] |
-  .sandbox.write = ["/opt/sf/share/skills"] |
-  profile_store($share; $home) |
-  .tools == ["@profiles/default/tools/shell", "/opt/other/jira"] and
-  .sandbox.write == ["@skills"]
+  header_expand($share; $home) |
+  .profile.tools = ["/opt/sf/share/profiles/default/tools/shell", "/opt/other/jira"] |
+  .profile.sandbox.write = ["/opt/sf/share/skills"] |
+  header_store($share; $home) |
+  .profile.tools == ["@profiles/default/tools/shell", "/opt/other/jira"] and
+  .profile.sandbox.write == ["@skills"]
 ' <<<"$valid_header" >/dev/null || fail 'bundled paths did not store with "@"'
 
 # Tool manifests validate sandboxing.

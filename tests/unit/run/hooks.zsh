@@ -37,7 +37,7 @@ jq -e -s 'map(.type) == ["session","hook_result"] and .[0].profile.sandbox.write
   jq -eRn '[inputs | fromjson][-1].type == "_session_update"' <"$stream" >/dev/null || fail 'session update did not replace header'
 new_session bad-update; sf_test_run bad-update "$session" >"$stream" 2>"$tmp/update.err" && fail 'invalid update succeeded'
 jq -e -s '.[-2].model_text == "update context" and
-  .[-1] == {type:"error",user_text:"invalid session profile replacement"}' "$session" >/dev/null ||
+  .[-1] == {type:"error",user_text:"invalid session update"}' "$session" >/dev/null ||
   fail 'invalid update lost settled result'
 new_session fail; sf_test_run fail "$session" >"$stream" 2>"$tmp/fail.err" && fail 'nonzero hook succeeded'
 [[ $(<"$tmp/fail.err") == *'failed with status 3'*'hook broke'* ]] || fail 'nonzero diagnostic lost'
@@ -87,8 +87,8 @@ fi
 ZSH
 chmod +x "$backend"
 export REQUEST_COUNT=$count STOP_INPUT=$stop_input STOP_SILENT="$tmp/silent"
-SF_TEST_PROFILE=$(jq -c --arg backend "${backend:h}" '.model.adapter=$backend | .hooks=[]' \
-  <<<"$SF_TEST_PROFILE")
+SF_TEST_MODEL=$(jq -c --arg backend "${backend:h}" '.adapter=$backend' <<<"$SF_TEST_MODEL")
+SF_TEST_PROFILE=$(jq -c '.hooks=[]' <<<"$SF_TEST_PROFILE")
 sf_test_bind_hooks stop "$stop"
 new_session stop; sf_test_run stop "$session" >"$stream" || fail 'stop continuation failed'
 assert_equal 'answer 2' "$(<$stop_input)" 'stop input was not final assistant text'
@@ -127,8 +127,8 @@ for name in two three; do
   sf_test_hook "$hooks/$name" '{"user_text_done":"${output.stdout}"}' <"$hooks/one/run"
 done
 export BLOCK_TWO="$tmp/block-two" FAIL_TWO="$tmp/fail-two"
-SF_TEST_PROFILE=$(jq -c --arg adapter "${SF_TEST_BACKEND:h}" '.model.adapter=$adapter | .hooks=[]' \
-  <<<"$SF_TEST_PROFILE")
+SF_TEST_MODEL=$(jq -c --arg adapter "${SF_TEST_BACKEND:h}" '.adapter=$adapter' <<<"$SF_TEST_MODEL")
+SF_TEST_PROFILE=$(jq -c '.hooks=[]' <<<"$SF_TEST_PROFILE")
 sf_test_bind_hooks user_prompt_submit "$hooks"/{one,two,three}
 new_session ordered; sf_test_run ordered "$session" >"$stream" || fail 'ordered hooks failed'
 jq -e -s 'map(select(.type == "hook_result") | .user_text) ==

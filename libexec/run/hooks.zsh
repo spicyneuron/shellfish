@@ -12,10 +12,10 @@ typeset -gA SF_HOOK_PLAN=()
 
 sf_run_hook_project() {
   local lifecycle=$1
-  sf_jq_fields -rn --argjson profile "$SF_RUN[profile]" --argjson hooks "$SF_RUN[hooks]" \
+  sf_jq_fields -rn --argjson model "$SF_RUN[model]" --argjson hooks "$SF_RUN[hooks]" \
     --arg lifecycle "$lifecycle" '
       include "lib/fields";
-      entry("model"; $profile.model.request.model),
+      entry("model"; $model.request.model),
       entry("hooks"; [$hooks[] | select(.manifest.on == $lifecycle) | .command[:-4]] |
         join("\n")),
       ("ok" | field)

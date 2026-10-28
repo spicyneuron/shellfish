@@ -46,14 +46,14 @@ def canonical_backend_response_events:
   .[-1].type == "_assistant_end" and
   ([.[] | select(.type == "_assistant_end")] | length) == 1;
 
-def backend_adapter_request($profile; $system; $messages; $tools):
+def backend_adapter_request($model; $system; $messages; $tools):
   {
     format_version:1,
     system:$system,
     messages:$messages,
     tools:$tools,
-    request:$profile.model.request,
-    endpoint:$profile.model.endpoint
+    request:$model.request,
+    endpoint:$model.endpoint
   } | select(all(.messages[] | select(.type == "user");
     .content[0].text | index("\u0000") | not));
 

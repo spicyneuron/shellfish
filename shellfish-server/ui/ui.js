@@ -459,10 +459,10 @@ function highlight(parent, code, language) {
 
 // ------------------------------------------------------------------- the frames
 
-function applyProfile(profile) {
-  const name = safe(profile.model.request.model);
-  const backend = safe(profile.model.adapter.split("/").at(-1));
-  contextWindow = profile.model.context_window ?? null;
+function applyModel(frame) {
+  const name = safe(frame.model.request.model);
+  const backend = safe(frame.model.adapter.split("/").at(-1));
+  contextWindow = frame.model.context_window ?? null;
   model.textContent = backend ? backend + "/" + name : name;
 }
 
@@ -486,7 +486,7 @@ function renderDraft(frame) {
 function apply(frame) {
   switch (frame.type) {
     case "session":
-      applyProfile(frame.profile);
+      applyModel(frame);
       document.title = "shellfish " + safe(frame.cwd);
       return renderSystem(frame.profile.system[0]?.text);
     case "hook_result":
@@ -554,7 +554,7 @@ function apply(frame) {
       );
     }
     case "_session_update":
-      return applyProfile(frame.profile);
+      return applyModel(frame);
     default:
       throw new Error("unexpected frame: " + frame.type);
   }

@@ -8,8 +8,8 @@ typeset project="$tmp/project" session="$tmp/session.jsonl" stream="$tmp/stream"
 mkdir -p "$hook" "$project"
 cp "$ROOT/share/hooks/project/instructions/"{manifest.json,run} "$hook/"
 print -r -- 'Follow this project rule.' >"$project/AGENTS.md"
-sf_test_model test "{\"adapter\":\"$ROOT/tests/fixtures/backend\",\"request\":{\"model\":\"test\"}}"
-sf_test_profile default '{"model":["test"],"hooks":["project/instructions"]}'
+sf_test_model default "{\"adapter\":\"$ROOT/tests/fixtures/backend\",\"request\":{\"model\":\"test\"}}"
+sf_test_profile default '{"hooks":["project/instructions"]}'
 export SHELLFISH_MAX_CAPTURE_BYTES=1024
 (cd "$project" && zsh -f "$entry" run --jsonl --session-create --session-out "$session") \
   >"$stream" || fail 'manifested session_start hook failed'
@@ -141,7 +141,7 @@ print -r -- '#!/usr/bin/env zsh' |
 print -r -- '{"on":"session_start","user_text_done":"${name}"}' >"$hook/manifest.json"
 print -r -- '#!/usr/bin/env zsh' >"$hook/run"
 for reference name in "$hook" project/instructions "$external" "${external:A}"; do
-  sf_test_profile absolute "{\"model\":[\"test\"],\"hooks\":[\"$reference\"]}"
+  sf_test_profile absolute "{\"hooks\":[\"$reference\"]}"
   create "$tmp/absolute-${reference:t}.jsonl" -p absolute || fail "absolute hook failed: $reference"
   jq -eRn --arg name "$name" '
     [inputs | fromjson | select(.type == "hook_result")][0].user_text == $name

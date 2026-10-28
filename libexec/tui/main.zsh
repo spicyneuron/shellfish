@@ -129,7 +129,7 @@ sf_tui_main() {
   source "$SF_ROOT/lib/profile.zsh"
   source "$SF_ROOT/libexec/tui/presentation.zsh"
   if [[ -n $profile_session ]]; then
-    sf_session_read_profile "$profile_session" || {
+    sf_session_read_config "$profile_session" || {
       sf_die "$SF_SESSION_ERROR"
       return 1
     }
@@ -142,6 +142,7 @@ sf_tui_main() {
     }
     profile=$REPLY
   fi
+  profile=$(jq -c '.profile' <<<"$profile") || { sf_die 'cannot read profile'; return 1; }
   SF_PRESENTATION_VERBOSE=$verbose_requested
   sf_presentation_resolve || {
     resolve_status=$?

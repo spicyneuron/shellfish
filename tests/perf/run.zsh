@@ -59,7 +59,6 @@ done
 print -r -- '{"adapter":"perf","request":{"model":"perf"}}' >"$tmp/shellfish/models/default.jsonc"
 cat >"$tmp/shellfish/profiles/default.jsonc" <<'EOF'
 {
-  "model":["default"],
   "tools":["perf"],
   "hooks":["session_start","user_prompt_submit","pre_tool_use","post_tool_use","stop"]
 }

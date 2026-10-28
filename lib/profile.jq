@@ -1,6 +1,6 @@
 # Profiles and model files, the session header that freezes their resolution,
 # and component manifests and their templates. The header lives here rather
-# than in lib/session.jq because it validates the profile nested inside it.
+# than in lib/session.jq because it validates the profile and model inside it.
 #
 # Repeated primitives are deliberate; see AGENTS.md.
 
@@ -136,15 +136,16 @@ def config_sandbox($path):
       config_assert(.[$field][$at] | path_reference; $path + [$field, $at];
         "must be a /, ~/, ./, ../, or @ path")));
 
-# A profile only selects. Each list holds references, and model, sandbox, and
-# system lists may also hold inline values. A lone model or sandbox item needs
-# no list. Absent lists are empty.
-def config_profile($path):
-  config_object($path; ["$schema", "hooks", "model", "sandbox", "system", "tools"]) |
+# A profile only selects. Each list holds references, and sandbox and system
+# lists may also hold inline values. A lone sandbox item needs no list. Absent
+# lists are empty. Options add a model list, which no profile file holds.
+def profile_fields: ["sandbox", "system", "tools", "hooks"];
+def config_profile($path; $fields):
+  config_object($path; ["$schema"] + $fields) |
   del(."$schema") |
   reduce ("model", "sandbox") as $field (.;
     if has($field) and (.[$field] | type != "array") then .[$field] |= [.] else . end) |
-  reduce ("model", "sandbox", "system", "tools", "hooks") as $field (.;
+  reduce $fields[] as $field (.;
     .[$field] //= [] |
     config_assert(.[$field] | type == "array"; $path + [$field]; "must be a list") |
     reduce range(0; .[$field] | length) as $at (.; ($path + [$field, $at]) as $item |
@@ -158,6 +159,7 @@ def config_profile($path):
           if $field == "system" then " or {\"text\": ...}"
           elif $field == "model" or $field == "sandbox" then " or object" else "" end)
         end)));
+def config_profile($path): config_profile($path; profile_fields);
 
 # A "./" or "../" reference in a config file is relative to the file's $dir.
 def relative_to($dir):
@@ -190,9 +192,9 @@ def sandbox_merge($files):
     .read += ($file.read // []) | .write += ($file.write // []));
 
 # Every path in a frozen profile through f.
-def profile_paths(f):
-  .model.adapter |= f | .tools |= map(f) | .hooks |= map(f) |
-  .sandbox.read |= map(f) | .sandbox.write |= map(f);
+def header_paths(f):
+  .model.adapter |= f | .profile |= (.tools |= map(f) | .hooks |= map(f) |
+    .sandbox.read |= map(f) | .sandbox.write |= map(f));
 
 # Stored paths name bundled files "@...", files under HOME "~/...", and
 # anything else absolutely. An empty $share stores nothing as bundled.
@@ -209,39 +211,45 @@ def expand_path($share; $home):
     else $home + ltrimstr("~") end
   else . end;
 
-def profile_store($share; $home): profile_paths(store_path($share; $home));
-def profile_expand($share; $home): profile_paths(expand_path($share; $home));
+# A frozen model is a resolved model file: every field merged and the adapter
+# a stored path.
+def canonical_model:
+  type == "object" and
+  (keys - ["context_window"]) == ["adapter", "endpoint", "request"] and
+  (.adapter | stored_reference) and
+  (.endpoint | endpoint) and (.request | type == "object") and
+  (.request.model | model_name) and
+  ((has("context_window") | not) or .context_window == null or
+    (.context_window | positive_integer));
 
-# The frozen profile is a resolved profile: one merged model and sandbox item,
-# the system prompt as at most one text, and every reference a stored path.
-# Resolving it again changes nothing.
+# A frozen profile is a resolved profile: one merged sandbox item, the system
+# prompt as at most one text, and every reference a stored path. Resolving it
+# again changes nothing.
 def canonical_profile:
   type == "object" and
-  keys == ["hooks", "model", "sandbox", "system", "tools"] and
-  (.model | type == "object" and
-    (keys - ["context_window"]) == ["adapter", "endpoint", "request"] and
-    (.endpoint | endpoint) and (.request | type == "object") and
-    (.request.model | model_name) and
-    ((has("context_window") | not) or .context_window == null or
-      (.context_window | positive_integer))) and
+  keys == ["hooks", "sandbox", "system", "tools"] and
   (.sandbox | type == "object" and keys == ["enabled", "read", "write"] and
     (.enabled | type == "boolean") and (.read | type == "array") and
     (.write | type == "array")) and
   (.system | type == "array" and length <= 1 and all(.[]; type == "object" and
     keys == ["text"] and (.text | nul_free_string) and .text != "")) and
   (.tools | type == "array") and (.hooks | type == "array") and
-  all(.model.adapter, .tools[], .hooks[], .sandbox.read[], .sandbox.write[];
-    stored_reference) and
+  all(.tools[], .hooks[], .sandbox.read[], .sandbox.write[]; stored_reference) and
   (.tools | map(split("/") | last) | all(.[]; tool_name) and length == (unique | length));
 
-# The session header freezes one profile. lib/session.jq owns the records that
-# follow it, but cannot call canonical_profile across a module boundary.
+# The session header freezes one profile and one model. lib/session.jq owns the
+# records that follow it, but cannot call canonical_profile across a module
+# boundary.
 def canonical_session_header:
   type == "object" and
-  keys == ["created", "cwd", "format_version", "profile", "type"] and
+  keys == ["created", "cwd", "format_version", "model", "profile", "type"] and
   .type == "session" and .format_version == 1 and
   (.cwd | stored_cwd) and (.created | type == "string") and
-  (.profile | canonical_profile);
+  (.profile | canonical_profile) and (.model | canonical_model);
 
+# Store or expand the paths of an object holding profile and model. Expansion
+# also covers a full header's cwd, which creation stores itself.
+def header_store($share; $home): header_paths(store_path($share; $home));
 def header_expand($share; $home):
-  .cwd |= expand_path(""; $home) | .profile |= profile_expand($share; $home);
+  if has("cwd") then .cwd |= expand_path(""; $home) else . end |
+  header_paths(expand_path($share; $home));

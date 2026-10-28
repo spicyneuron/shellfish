@@ -8,11 +8,11 @@ mkdir -p "$tmp/home/work" "$system"
 print -r -- 'initial system' >"$system/source.md"
 export HOME="${tmp:A}/home"
 
-sf_test_model test "{
+sf_test_model default "{
   \"adapter\": \"$ROOT/tests/fixtures/backend\",
   \"request\": {\"model\": \"test-model\"}
 }"
-sf_test_profile default '{"model": ["test"], "system": ["source.md"]}'
+sf_test_profile default '{"system": ["source.md"]}'
 
 typeset entry="$ROOT/bin/shellfish"
 typeset created reused explicit
@@ -76,7 +76,7 @@ print -u2 -r -- 'startup detail'
 exit 9
 ZSH
 sf_test_profile hook \
-  "{\"model\": [\"test\"], \"system\": [\"source.md\"], \"hooks\": [\"$hook\"]}"
+  "{\"system\": [\"source.md\"], \"hooks\": [\"$hook\"]}"
 typeset failed="$tmp/failed.jsonl" hook_error="$tmp/hook-error"
 zsh -f "$entry" run --session-create --session-out "$failed" \
   -p hook >/dev/null 2>"$hook_error" &&
@@ -91,7 +91,7 @@ jq -se 'map(.type) == ["session"]' \
 typeset joined="$tmp/joined.jsonl"
 printf 'first prompt\n\n\n' >"$system/first.md"
 printf 'second prompt\n' >"$system/second.md"
-sf_test_profile joined '{"model": ["test"], "system": ["first.md", "second.md"]}'
+sf_test_profile joined '{"system": ["first.md", "second.md"]}'
 zsh -f "$entry" run --session-create --session-out "$joined" -p joined >/dev/null ||
   fail 'multi-component create failed'
 jq -se '.[0].profile.system == [{text:"first prompt\n\nsecond prompt"}]' \
@@ -120,7 +120,7 @@ zsh -f "$entry" run --session-create --session-from "$override" \
 # Empty prompts leave no system text.
 typeset empty_file="$tmp/empty.md" empty_session="$tmp/empty.jsonl"
 printf '\n\n' >"$empty_file"
-sf_test_profile empty "{\"model\": [\"test\"], \"system\": [{\"text\": \"\"}, \"$empty_file\"]}"
+sf_test_profile empty "{\"system\": [{\"text\": \"\"}, \"$empty_file\"]}"
 zsh -f "$entry" run --session-create --session-out "$empty_session" -p empty ||
   fail 'empty system prompts failed'
 jq -se '.[0].profile.system == []' "$empty_session" >/dev/null ||
@@ -128,7 +128,7 @@ jq -se '.[0].profile.system == []' "$empty_session" >/dev/null ||
 
 # Reject unreadable system components.
 typeset missing="$tmp/missing.jsonl"
-sf_test_profile missing-system "{\"model\": [\"test\"], \"system\": [\"$tmp/absent.md\"]}"
+sf_test_profile missing-system "{\"system\": [\"$tmp/absent.md\"]}"
 zsh -f "$entry" run --session-create --session-out "$missing" -p missing-system >/dev/null 2>&1 &&
   fail 'a missing system component created a session'
 [[ ! -e $missing ]] || fail 'create left a transcript for a missing component'
@@ -156,7 +156,7 @@ jq -se 'map(.type) == ["_session_load","session"]' \
 print -r -u3 -- '{"state_update":[{"name":"startup/stream","value":true}]}'
 ZSH
 sf_test_profile stream \
-  "{\"model\": [\"test\"], \"system\": [\"source.md\"], \"hooks\": [\"$first\", \"$hook\"]}"
+  "{\"system\": [\"source.md\"], \"hooks\": [\"$first\", \"$hook\"]}"
 failed="$tmp/later-failed.jsonl"
 SF_TEST_EVENTS="$events" zsh -f "$entry" run --jsonl --session-create \
   --session-out "$failed" -p stream >"$events" 2>"$hook_error" &&
@@ -184,7 +184,7 @@ done
 : >"$SLOW_EXIT_MARKER"
 ZSH
 sf_test_profile slow \
-  "{\"model\": [\"test\"], \"system\": [\"source.md\"], \"hooks\": [\"$slow\"]}"
+  "{\"system\": [\"source.md\"], \"hooks\": [\"$slow\"]}"
 zsh -f "$entry" run --jsonl --session-create -p slow --session-out "$cancelled" \
   >"$events" 2>"$hook_error" &
 integer create_pid=$! cancel_status=0 waited=0
@@ -214,10 +214,9 @@ sf_test_hook "$old_project/hook" '{"on":"user_prompt_submit"}' <<'ZSH'
 #!/usr/bin/env zsh
 pwd -P >"$PWD/hook-cwd"
 ZSH
-cp "$SF_TEST_CONFIG/models/test.jsonc" "$old_home/.shellfish/models/default.jsonc"
+cp "$SF_TEST_CONFIG/models/default.jsonc" "$old_home/.shellfish/models/default.jsonc"
 cat >"$old_home/.shellfish/profiles/default.jsonc" <<EOF
 {
-  "model": ["default"],
   "system": ["$old_project/prompt.md"],
   "hooks": ["$old_project/hook"]
 }

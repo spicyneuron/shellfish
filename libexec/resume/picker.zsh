@@ -77,8 +77,8 @@ sf_resume_load() {
         if test("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}") then
           .[0:16] | sub("T"; " ")
         else . end), "\u0000",
-      (((.header.profile.model.adapter // "?" | split("/") | last) | one_line) + "/" +
-       ((.header.profile.model.request.model // "?") | one_line)), "\u0000",
+      (((.header.model.adapter // "?" | split("/") | last) | one_line) + "/" +
+       ((.header.model.request.model // "?") | one_line)), "\u0000",
       (.last | summary | one_line), "\u0000"),
     "ok", "\u0000"
   ' 2>/dev/null)

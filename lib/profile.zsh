@@ -135,12 +135,13 @@ sf_profile_components() {
   REPLY=$projection
 }
 
-# Resolve profile REFERENCE with the lists of profile EXTRA appended to its own,
-# EXTRA's relative paths resolving against PWD. REPLY is the frozen profile with
+# Resolve profile REFERENCE with the lists of options EXTRA appended to its own,
+# EXTRA's relative paths resolving against PWD. EXTRA's model list selects the
+# model, or models/default without one. REPLY is {profile, model}, frozen with
 # absolute paths.
 sf_profile_resolve() {
   local name=${1:-default} extra=${2:-'{}'}
-  local config_dir file profile models sandbox reference kind resolved final
+  local config_dir file profile config models sandbox reference kind resolved final
   local backend_manifest='{}'
   local -a references resolutions=() system_files=()
   local -A decoded
@@ -162,13 +163,11 @@ sf_profile_resolve() {
     --arg name "$name" --arg dir "${file:+${file:h}}" --arg cwd "${PWD:A}" '
     include "lib/fields";
     include "lib/profile";
-    ($extra | config_profile(["options"]) | config_relative("profile"; $cwd)) as $extra |
+    ($extra | config_profile(["options"]; profile_fields + ["model"]) |
+      config_relative("profile"; $cwd)) as $extra |
     $profile | config_profile(["profile " + $name]) | config_relative("profile"; $dir) |
-    reduce ("model", "sandbox", "system", "tools", "hooks") as $field (.;
-      .[$field] += $extra[$field]) |
-    if .model != [] then .
-    elif $dir == "" then error("no model selected: run shellfish init, or pass -m")
-    else error("profile selects no model: " + $name) end |
+    reduce profile_fields[] as $field (.; .[$field] += $extra[$field]) |
+    .model = (if $extra.model == [] then ["default"] else $extra.model end) |
     reduce ("system", "tools", "hooks") as $field (.;
       .[$field] |= reduce .[] as $item ([]; if index([$item]) then . else . + [$item] end)) |
     entry("profile"; tojson),
@@ -180,6 +179,11 @@ sf_profile_resolve() {
   ' || { sf_profile_validation_error "$REPLY" 'invalid configuration'; return; }
   decoded=( "${reply[@]}" )
   profile=$decoded[profile]
+  if [[ $decoded[models] == '["default"]' ]] &&
+      ! sf_profile_lookup "$config_dir" models default .jsonc; then
+    sf_profile_fail 'no model selected: run shellfish init, or pass -m'
+    return
+  fi
   sf_profile_configs model models "$config_dir" "$decoded[models]" \
     ${(f)decoded[model]} || return
   models=$REPLY
@@ -191,10 +195,12 @@ sf_profile_resolve() {
     --argjson sandbox "$sandbox" '
       include "lib/fields";
       include "lib/profile";
-      $profile | .model = model_merge($models) | .sandbox = sandbox_merge($sandbox) |
-      entry("profile"; tojson),
-      entry("references"; [["backends", .model.adapter], (.system[] | strings | ["system", .]),
-        (.tools[] | ["tools", .]), (.hooks[] | ["hooks", .])] | unique |
+      {profile:($profile | del(.model) | .sandbox = sandbox_merge($sandbox)),
+       model:model_merge($models)} |
+      entry("config"; tojson),
+      entry("references"; [["backends", .model.adapter],
+        (.profile | (.system[] | strings | ["system", .]), (.tools[] | ["tools", .]),
+          (.hooks[] | ["hooks", .]))] | unique |
         map(join(" ")) | join("\n")),
       ("ok" | field)
   ' || {
@@ -202,7 +208,7 @@ sf_profile_resolve() {
     return
   }
   decoded=( "${reply[@]}" )
-  profile=$decoded[profile]
+  config=$decoded[config]
   references=( ${(f)decoded[references]} )
 
   for reference in "${references[@]}"; do
@@ -223,7 +229,7 @@ sf_profile_resolve() {
   done
 
   # System files are read into one text, like model and sandbox files.
-  final=$(sf_jq -nce --argjson profile "$profile" --argjson manifest "$backend_manifest" \
+  final=$(sf_jq -nce --argjson config "$config" --argjson manifest "$backend_manifest" \
     --arg share "$SF_SHARE" --arg home "${HOME:+${HOME:A}}" "${system_files[@]}" '
       include "lib/profile";
       ($ARGS.positional | [range(0; length; 2) as $at | {key:.[$at], value:.[$at + 1]}] |
@@ -231,20 +237,21 @@ sf_profile_resolve() {
       ($manifest | select(type == "object" and (keys - ["endpoint"]) == [] and
         ((has("endpoint") | not) or (.endpoint | endpoint))) //
         error("invalid backend manifest")) as $manifest |
-      $profile |
+      $config |
       .model.adapter = $paths["backends " + .model.adapter] |
       .model.endpoint //= $manifest.endpoint |
       if .model.endpoint == null then error("backend endpoint is required") else . end |
-      .system |= ([.[] | if type == "string" then
+      .profile.system |= ([.[] | if type == "string" then
           $ARGS.named["system " + .] as $text |
           if $text | index("\u0000") then error("system file contains NUL bytes: " + .)
           else $text end
         else .text end | sub("\n+$"; "") | select(. != "")] | join("\n\n") |
         if . == "" then [] else [{text:.}] end) |
-      .tools |= map($paths["tools " + .]) |
-      .hooks |= map($paths["hooks " + .]) |
-      profile_expand($share; $home) |
-      if canonical_profile then . else error("invalid resolved profile") end
+      .profile.tools |= map($paths["tools " + .]) |
+      .profile.hooks |= map($paths["hooks " + .]) |
+      header_expand($share; $home) |
+      if (.profile | canonical_profile) and (.model | canonical_model) then .
+      else error("invalid resolved profile") end
     ' --args "${resolutions[@]}" 2>&1) || {
     sf_profile_validation_error "$final" 'cannot resolve profile'
     return
@@ -252,8 +259,9 @@ sf_profile_resolve() {
   REPLY=$final
 }
 
-# Parse the options that select a profile, then resolve it. Each list option
-# takes a reference or an inline JSON object and appends to the profile's list.
+# Parse the options that select a profile and model, then resolve them. Each
+# list option takes a reference or an inline JSON object and appends to its
+# list: the profile's, or for -m the model list.
 # Callers that own their own flags pass only the ones listed in lib/options.zsh.
 sf_profile_resolve_args() {
   local name='' extra detected='null'
