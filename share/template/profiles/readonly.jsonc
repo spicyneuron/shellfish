@@ -4,7 +4,7 @@
 
   "model": "default",
   "sandbox": "default",
-  "system": ["general.md", "tools.md"],
+  "system": ["readonly.md", "tools.md"],
   "tools": ["read_file", "shell_readonly"],
   "hooks": [
     "project/instructions",

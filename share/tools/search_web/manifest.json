@@ -1,5 +1,5 @@
 {
-  "description": "Search the web through Exa and return text from the top results. The query is sent to Exa AI. Use semantically rich descriptions of the desired pages rather than short keyword lists.",
+  "description": "Search the web through Exa and return text from the top results. The query is sent to Exa AI. Use semantically rich descriptions of the desired pages rather than short keyword lists. Prefer this over shell commands for finding current or external information.",
   "input_schema": {
     "type": "object",
     "additionalProperties": false,
