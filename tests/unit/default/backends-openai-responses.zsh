@@ -63,6 +63,8 @@ cat >"$BACKEND_TEST_RESPONSE" <<'EOF'
 EOF
 (builtin cd -- "$tmp" && OPENAI_API_KEY=test zsh -f "$run" <"$req" >"$res")
 assert_usage
+jq -e -s 'map(select(.type == "_assistant_message_delta") | .text) == ["ok"]' \
+  "$res" >/dev/null || fail 'responses did not stream a buffered response as deltas'
 jq -e '
   (.response_schema | not) and .max_output_tokens == 99 and
   .reasoning.effort == "low" and .text.verbosity == "low" and

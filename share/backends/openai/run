@@ -71,7 +71,11 @@ jq -ce '
 
 sf_backend_curl_args
 sf_backend_stream '.error.message?' '
-  def preview($type;$text): {type:$type,text:$text};
+  def delta($type;$text): {type:$type,text:$text};
+  # A whole body streams as one delta per readable block, then its response.
+  def whole: [.content[] | select((.type == "text" or .type == "reasoning") and .text != "") |
+    delta(if .type == "text" then "_assistant_message_delta" else "_assistant_reasoning_delta" end;
+      .text)] + [.];
   def usage:
     {input_tokens:(.prompt_tokens // 0),output_tokens:(.completion_tokens // 0)} +
     (if (.prompt_tokens_details.cached_tokens // null) == null then {}
@@ -84,7 +88,7 @@ sf_backend_stream '.error.message?' '
     (if .finish_reason == "length" or .finish_reason == "max_tokens" then "length"
      elif (.calls | length) > 0 then "tool_calls"
      else "end" end) as $stop |
-    [{type:"assistant", stop:$stop,
+    {type:"assistant", stop:$stop,
       content:((if .reasoning == "" then [] else [{type:"reasoning",text:.reasoning}] end) +
         (if .text == "" then [] else [{type:"text",text:.text}] end) +
         (if $stop != "tool_calls" then [] else
@@ -93,7 +97,7 @@ sf_backend_stream '.error.message?' '
              name:(.value.name // error("tool call has no name")),
              input:(.value.arguments // "" |
                if . == "" then {} else fromjson end)}] end))} +
-     (if .usage == null then {} else {usage:(.usage | usage)} end)];
+     (if .usage == null then {} else {usage:(.usage | usage)} end);
   def accept_body($body):
     if $body.error? != null then error($body.error.message // "API error")
     elif ($body.choices[0]? // null) == null then error("response has no choice")
@@ -107,7 +111,7 @@ sf_backend_stream '.error.message?' '
         ((length)|tostring) as $key |
         .[$key]={type:($call.type // "function"),id:$call.id,name:$call.function.name,
           arguments:$call.function.arguments}) |
-      .out += response_end |
+      .out += (response_end | whole) |
       .done=true
     end;
   foreach (inputs, null) as $line
@@ -127,7 +131,7 @@ sf_backend_stream '.error.message?' '
          ($clean|sub("^data:[ ]?";"")) as $data |
          if $data=="[DONE]" then
            .finish_reason = (.finish_reason // "stop") |
-           .done=true | .out += response_end
+           .done=true | .out += [response_end]
          else ($data|fromjson) as $event |
            if $event.error? != null then error($event.error.message // "API error")
            elif ($event.choices[0]? // null) != null then
@@ -136,9 +140,9 @@ sf_backend_stream '.error.message?' '
                if type=="string" then . else "" end) as $reasoning |
              ($delta.content // "") as $text |
              (if $reasoning=="" then . else .reasoning += $reasoning |
-                .out += [preview("_assistant_reasoning_delta";$reasoning)] end) |
+                .out += [delta("_assistant_reasoning_delta";$reasoning)] end) |
              (if $text=="" then . else .text += $text |
-                .out += [preview("_assistant_message_delta";$text)] end) |
+                .out += [delta("_assistant_message_delta";$text)] end) |
              reduce ($delta.tool_calls // [])[] as $call (.;
                (($call.index // 0)|tostring) as $key |
                if .calls[$key]==null then

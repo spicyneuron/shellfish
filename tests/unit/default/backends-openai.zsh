@@ -87,7 +87,7 @@ jq -e '
   .usage == {input_tokens:10,cached_tokens:8,output_tokens:5,reasoning_tokens:2}
 ' <<<"$REPLY" >/dev/null || fail 'openai did not assemble fragmented calls'
 jq -e -s 'map(select(.type == "_assistant_message_delta") | .text) == ["Let me ","check."]' \
-  "$res" >/dev/null || fail 'openai did not preview streamed text'
+  "$res" >/dev/null || fail 'openai did not stream text deltas'
 
 # Normalize model catalog limits.
 cat >"$BACKEND_TEST_RESPONSE" <<'EOF'
@@ -142,7 +142,7 @@ cat >"$BACKEND_TEST_RESPONSE" <<'EOF'
       "index": 0,
       "message": {
         "role": "assistant",
-        "content": null,
+        "content": "ok",
         "tool_calls": [
           {
             "id": "call_abc",
@@ -170,9 +170,12 @@ OPENAI_API_KEY=test-key zsh -f "$run" <"$req" >"$res"
 sf_test_backend_response "$res" || fail 'openai emitted an invalid buffered stream'
 jq -e '
   .stop == "tool_calls" and
-  .content == [{type:"tool_call",id:"call_abc",name:"shell",input:{command:"ls"}}] and
+  .content == [{type:"text",text:"ok"},
+    {type:"tool_call",id:"call_abc",name:"shell",input:{command:"ls"}}] and
   .usage == {input_tokens:12,output_tokens:8}
 ' <<<"$REPLY" >/dev/null || fail 'openai did not parse a buffered response'
+jq -e -s 'map(select(.type == "_assistant_message_delta") | .text) == ["ok"]' \
+  "$res" >/dev/null || fail 'openai did not stream a buffered response as deltas'
 
 # Regroup flat call batches.
 typeset batch_request="$tmp/batch-request.json"

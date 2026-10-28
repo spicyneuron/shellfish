@@ -83,7 +83,11 @@ jq -ce '
 
 sf_backend_curl_args
 sf_backend_stream '(.error.message? // .detail?)' '
-  def preview($type;$text): {type:$type,text:$text};
+  def delta($type;$text): {type:$type,text:$text};
+  # A whole body streams as one delta per readable block, then its response.
+  def whole: [.content[] | select((.type == "text" or .type == "reasoning") and .text != "") |
+    delta(if .type == "text" then "_assistant_message_delta" else "_assistant_reasoning_delta" end;
+      .text)] + [.];
 
   # Rebuilds the output a completed response should carry. Most backends send it
   # whole, in which case nothing here applies; one that sends a thin completed
@@ -187,7 +191,7 @@ sf_backend_stream '(.error.message? // .detail?)' '
       elif .mode != "json" then error("no completed response")
       else (.body | try fromjson catch null) as $body |
         if $body == null then error("no completed response")
-        else .done = true | .out += [$body | normalized]
+        else .done = true | .out += ($body | normalized | whole)
         end
       end
     else
@@ -212,7 +216,7 @@ sf_backend_stream '(.error.message? // .detail?)' '
       elif $event.type == "response.output_text.delta" then
         ($event.delta // "") as $delta |
         .text += $delta |
-        .out += [preview("_assistant_message_delta";$delta)]
+        .out += [delta("_assistant_message_delta";$delta)]
       # Only the summary is streamed, since only the summary is what normalization
       # keeps; raw reasoning deltas would show text the saved message never carries.
       # Parts join the way that normalization joins them, and a part index only
@@ -225,7 +229,7 @@ sf_backend_stream '(.error.message? // .detail?)' '
          else "" end) as $gap |
         .summary_item_id = $item_id |
         .summary_index = $index |
-        .out += [preview("_assistant_reasoning_delta"; $gap + ($event.delta // ""))]
+        .out += [delta("_assistant_reasoning_delta"; $gap + ($event.delta // ""))]
       elif $event.type == "response.output_item.done" then
         ($event.item // {}) as $item |
         if ($item.type | IN("message", "function_call", "reasoning")) then

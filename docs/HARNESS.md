@@ -212,7 +212,7 @@ Bundled adapters normalize token limits in this order: `max_output_tokens`, `max
 
 ### Response stream
 
-The adapter writes JSON lines: optional previews while the provider streams, then exactly one complete assistant response.
+The adapter writes JSON lines: text and reasoning deltas as the provider streams, then exactly one complete assistant response.
 
 ```json
 {"type":"_assistant_reasoning_delta","text":"Checking "}
@@ -220,11 +220,11 @@ The adapter writes JSON lines: optional previews while the provider streams, the
 {"type":"assistant","stop":"tool_calls","content":[...],"usage":{"input_tokens":10,"output_tokens":4}}
 ```
 
-Previews are display-only text, in arrival order. The response is the record Shellfish will append, in the transcript's own shape: ordered text, reasoning, and tool-call content, a `stop` of `end`, `tool_calls`, or `length`, and optional usage. Only `tool_calls` carries calls, so a response cut short by the output limit drops them. Tool-call fragments, opaque reasoning payloads, and provider correlation stay inside the adapter until they belong to that response.
+Deltas arrive in order and concatenate to the response's text and reasoning. An adapter that receives a whole body at once emits it as one delta per block. The response is the record Shellfish will append, in the transcript's own shape: ordered text, reasoning, and tool-call content, a `stop` of `end`, `tool_calls`, or `length`, and optional usage. Only `tool_calls` carries calls, so a response cut short by the output limit drops them. Tool-call fragments, opaque reasoning payloads, and provider correlation stay inside the adapter until they belong to that response.
 
 Nothing may follow the response, and the adapter must then exit 0. Stderr is failure diagnostics, never stream data. A nonzero exit or invalid stream fails the request.
 
-The core validates the response before persisting it or permitting tool execution. If the request is cancelled first, the text and reasoning its previews showed are kept as a cancelled response.
+The core validates the response before persisting it or permitting tool execution. If the request is cancelled first, the text and reasoning its deltas streamed are kept as a cancelled response.
 
 ### Context-window discovery
 

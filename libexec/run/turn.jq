@@ -144,7 +144,7 @@ def step($records; $share; $home; $tools; $max_capture):
 
 # Any partial response and a result for every pending call, then the error.
 def settle($log; $share; $home; $tools; $max_capture; $active; $partial; $reason; $message):
-  (($partial | backend_preview_response),
+  (($partial | backend_delta_response),
    (($log | session_records) as $records |
      settled_calls($records[1:] | session_state;
        $records[0] | header_expand($share; $home) | .profile; $tools;

@@ -79,7 +79,7 @@ jq -eRn '
   and $events[-1] == {type:"error",user_text:"Cancelled."}
 ' <"$cancel_output" >/dev/null || fail 'cancelled exec did not persist partial content'
 
-# Cancellation preserves previewed reasoning.
+# Cancellation preserves streamed reasoning.
 typeset cancel_backend="$tmp/cancel-backend" cancel_backend_marker="$tmp/tool-input"
 typeset cancel_backend_pid_file="$tmp/tool-input-child"
 mkdir "$cancel_backend"
@@ -124,7 +124,7 @@ jq -e -s '
   }]} and .[-1] == {type:"error",user_text:"Turn interrupted."}
 ' "$reasoning_session" >/dev/null || fail 'cancelled reasoning was not recovered'
 
-# A request cancelled before any preview records nothing of the response.
+# A request cancelled before any delta records nothing of the response.
 typeset tool_input_session="$tmp/tool-input-cancel.jsonl" tool_input_output="$tmp/tool-input-cancel.out"
 CANCEL_BACKEND_MARKER="$cancel_backend_marker" CANCEL_BACKEND_PID_FILE="$cancel_backend_pid_file" \
   zsh -f "$entry" run --jsonl \
@@ -154,7 +154,7 @@ jq -e -s '
   .[-2] == {type:"user",content:[{type:"text",text:"tool input"}]} and
   .[-1] == {type:"error",user_text:"Turn interrupted."} and
   ([.[] | .content[]? | select(.type == "tool_call")] | length) == 0
-' "$tool_input_session" >/dev/null || fail 'a request cancelled before any preview recorded a response'
+' "$tool_input_session" >/dev/null || fail 'a request cancelled before any delta recorded a response'
 
 # Interrupted sessions accept another turn.
 typeset recovered_session="$tmp/recovered.jsonl"

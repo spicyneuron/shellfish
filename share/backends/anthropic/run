@@ -100,7 +100,11 @@ jq -ce '
 sf_backend_curl_args
 SF_BACKEND_CURL_ARGS+=(--header 'anthropic-version: 2023-06-01')
 sf_backend_stream '.error.message?' --arg control "$SF_BACKEND_CONTROL_PATTERN" '
-  def preview($type;$text): {type:$type,text:$text};
+  def delta($type;$text): {type:$type,text:$text};
+  # A whole body streams as one delta per readable block, then its response.
+  def whole: [.content[] | select((.type == "text" or .type == "reasoning") and .text != "") |
+    delta(if .type == "text" then "_assistant_message_delta" else "_assistant_reasoning_delta" end;
+      .text)] + [.];
   def usage:
     {input_tokens:((.input_tokens // 0) + (.cache_read_input_tokens // 0) +
        (.cache_creation_input_tokens // 0)),
@@ -153,7 +157,7 @@ sf_backend_stream '.error.message?' --arg control "$SF_BACKEND_CONTROL_PATTERN" 
       elif .mode != "json" then error("no completed response")
       else (.body | try fromjson catch null) as $body |
         if $body == null then error("no completed response")
-        else .done = true | .out += [$body | response(.content // [])]
+        else .done = true | .out += ($body | response(.content // []) | whole)
         end
       end
     else
@@ -180,10 +184,10 @@ sf_backend_stream '.error.message?' --arg control "$SF_BACKEND_CONTROL_PATTERN" 
         $event.delta as $delta |
         if $delta.type == "text_delta" then
           .blocks[$key].text += $delta.text |
-          .out += [preview("_assistant_message_delta";$delta.text)]
+          .out += [delta("_assistant_message_delta";$delta.text)]
         elif $delta.type == "thinking_delta" then
           .blocks[$key].thinking += $delta.thinking |
-          .out += [preview("_assistant_reasoning_delta";$delta.thinking)]
+          .out += [delta("_assistant_reasoning_delta";$delta.thinking)]
         elif $delta.type == "signature_delta" then
           .blocks[$key].signature += $delta.signature
         elif $delta.type == "input_json_delta" then

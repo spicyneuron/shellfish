@@ -68,7 +68,7 @@ def response_actions:
     end] +
   [["message_end"]];
 
-# A live response closes the message its previews drew.
+# A live response closes the message its deltas drew.
 def record_actions($mode; $window):
   if .type == "assistant" then
     (if $mode == "load" then response_actions else [["message_end"]] end) +
@@ -92,7 +92,7 @@ def record_actions($mode; $window):
 
 def event_actions($window):
   if .type == "_assistant_start" then [["message_start", "agent"]]
-  # Previews carry no index; a change of kind starts the next block.
+  # Deltas carry no index; a change of kind starts the next block.
   elif .type == "_assistant_message_delta" then [["message_delta", "0", "text", .text, ""]]
   elif .type == "_assistant_reasoning_delta" then
     [["message_delta", "0", "reasoning", .text, ""]]

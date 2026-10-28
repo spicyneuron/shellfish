@@ -16,7 +16,7 @@ decode() {
     decode_backend_response(canonical_response)' | tr '\0' '\n'
 }
 
-# Previews pass through, then one complete response ends the stream.
+# Deltas pass through, then one complete response ends the stream.
 typeset decoded
 decoded=$(print -rl -- \
   '{"type":"_assistant_reasoning_delta","text":"think"}' \
@@ -30,12 +30,10 @@ event
 end
 {"type":"assistant","stop":"tool_calls","content":[{"type":"reasoning","text":"think","opaque":{"signature":"signed"}},{"type":"text","text":"run"},{"type":"tool_call","id":"call_1","name":"shell","input":{"command":"pwd"}}],"usage":{"input_tokens":5,"output_tokens":1}}' "$decoded"
 
-# A response nothing previewed previews its own text.
+# The decoder adds no deltas the adapter did not stream.
 decoded=$(print -r -- '{"type":"assistant","stop":"end","content":[{"type":"reasoning","text":"","opaque":{}},{"type":"text","text":"done"}]}' |
-  decode) || fail 'an unpreviewed response was rejected'
-assert_equal 'event
-{"type":"_assistant_message_delta","text":"done"}
-end
+  decode) || fail 'a response without deltas was rejected'
+assert_equal 'end
 {"type":"assistant","stop":"end","content":[{"type":"reasoning","text":"","opaque":{}},{"type":"text","text":"done"}]}' "$decoded"
 
 for stream in \
@@ -50,18 +48,18 @@ for stream in \
   fi
 done
 
-# A cancelled request keeps the text and reasoning its previews showed.
+# A cancelled request keeps the text and reasoning its deltas streamed.
 jq -cn '[
   {type:"_assistant_reasoning_delta",text:"think "},
   {type:"_assistant_reasoning_delta",text:"first"},
   {type:"_assistant_message_delta",text:"run "},
   {type:"_assistant_message_delta",text:"this"}
-]' | request_eval 'backend_preview_response == {type:"assistant",stop:"cancelled",
+]' | request_eval 'backend_delta_response == {type:"assistant",stop:"cancelled",
   content:[{type:"reasoning",text:"think first"},{type:"text",text:"run this"}]}' >/dev/null ||
-  fail 'previews did not join into a cancelled response'
+  fail 'deltas did not join into a cancelled response'
 jq -cn '[{type:"_assistant_message_delta",text:""}]' |
-  request_eval '[backend_preview_response] == []' >/dev/null ||
-  fail 'empty previews became a cancelled response'
+  request_eval '[backend_delta_response] == []' >/dev/null ||
+  fail 'empty deltas became a cancelled response'
 
 # A session header holds a complete profile and model with stored references.
 typeset valid_header
