@@ -1,23 +1,7 @@
-# Decision models
+# Useful context / safeguards
 
-Determine if tool call is appropriate?
-
-Determine sandbox bypass decision dimensions
-
-Determine if agent is diverging from user intent
-
-# Fancy Subagents
-
-- Council: Parallel prompt to several models, one summarizes
-
-# Safeguards
-
+- Report diff/LOC change after every edit tool call
 - Reason required for every change, across shell, write, and edit
-- Reports diff and LOC change
-- UIs render the reason as a prominent part of the diff
-
-- Edit tools dispatch a separate model to review the proposed change
-- Pass or fail with reason
 
 - Agent cannot write until it passes entry gates, cannot finish until it passes exit gates
 - Which gates apply and when is an open question
@@ -25,15 +9,25 @@ Determine if agent is diverging from user intent
 - Per-tool-call gate: reviewer catches mistakes early, expensive
 - Plan-before-write gate: exit tools locked each turn until a proposal tool call unlocks them
 - Could combine with the stop gate
-- Candidate use for Jev / decision models
+- Edit tools dispatch a separate model to review the proposed change
+- Pass or fail with reason
 
-- Opens shellfish in the config dir with a dedicated harness and system message
+# Decision models
 
-- Possibly a session hook
+- Determine if tool call is appropriate?
+- Determine sandbox bypass decision dimensions
+- Determine if agent is diverging from user intent
 
-- Opt-in reminders at .agents/ritalin/*, concatenated
+# Fancy subagents
 
-- Session in a tmpdir, cleaned up on exit
+- Council: Parallel prompt to several models, one summarizes
+
+# Convenience
+
+- Open shellfish in the config dir with a dedicated harness and system message
+- Incognito mode. Session in a tmpdir, cleaned up on exit.
+
+# Research
 
 - https://github.com/PrimeIntellect-ai/prime-agent
 - Self-modifying skills, memory, and scripts with rewind
