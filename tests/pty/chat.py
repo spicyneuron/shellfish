@@ -47,10 +47,10 @@ def test_sandbox_updates_without_reload():
             end = time.monotonic() + 3
             while time.monotonic() < end:
                 records = [json.loads(line) for line in path.read_text().splitlines()]
-                if grant_path in records[0]["profile"]["sandbox_write_paths"]:
+                if grant_path in records[0]["profile"]["sandbox"]["write"]:
                     break
                 session.pump()
-            assert grant_path in records[0]["profile"]["sandbox_write_paths"]
+            assert grant_path in records[0]["profile"]["sandbox"]["write"]
             granted = f"Session sandbox write grant added: {grant_path}"
             assert len(records) == 2
             result = records[1]

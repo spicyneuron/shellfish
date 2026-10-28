@@ -23,7 +23,7 @@ sf_run_tool_plan() {
       $call.id as $id | $call.name as $name | $call.input as $input |
       [$tools[] | select(.name == $name)][0] as $tool |
       ($tool.manifest // {}) as $manifest |
-      (if $tool == null or ($profile.sandbox | not) then {decision:"none"}
+      (if $tool == null or ($profile.sandbox.enabled | not) then {decision:"none"}
        elif (($input.request_sandbox_bypass // false) | type) != "boolean" then
          {decision:"deny",reason:"sandbox bypass is not allowed"}
        elif ($input.request_sandbox_bypass // false) == false then {decision:"none"}
@@ -33,7 +33,7 @@ sf_run_tool_plan() {
            $input.sandbox_bypass_reason == "" then
          {decision:"failure",reason:"sandbox bypass reason is required"}
        else {decision:"request",reason:$input.sandbox_bypass_reason} end) as $permission |
-      ($profile.sandbox and ($manifest.sandbox // false) and
+      ($profile.sandbox.enabled and ($manifest.sandbox // false) and
         (($input.request_sandbox_bypass // false) | not)) as $sandboxed |
       entry("id"; $id), entry("name"; $name), entry("input"; $input | tojson),
       entry("request";
@@ -59,8 +59,8 @@ sf_run_tool_plan() {
       entry("execution_input";
         $input | del(.request_sandbox_bypass,.sandbox_bypass_reason) | tojson),
       entry("sandbox"; $sandboxed | tostring),
-      entry("read_paths"; $profile.sandbox_read_paths | join("\n")),
-      entry("write_paths"; $profile.sandbox_write_paths | join("\n")),
+      entry("read_paths"; $profile.sandbox.read | join("\n")),
+      entry("write_paths"; $profile.sandbox.write | join("\n")),
       ("ok" | field)
     ' || { SF_RUN_TOOL_ERROR='cannot inspect tool'; return 1; }
   SF_TOOL_PLAN=( "${reply[@]}" )

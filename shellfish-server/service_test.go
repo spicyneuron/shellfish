@@ -43,7 +43,7 @@ func headerLine(t *testing.T) string {
 	t.Helper()
 	record, err := json.Marshal(map[string]any{
 		"type": "session", "format_version": 1, "cwd": workDir(t),
-		"profile": map[string]any{"sandbox": false, "tools": []string{}},
+		"profile": map[string]any{"sandbox": map[string]any{"enabled": false}, "tools": []string{}},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -239,7 +239,7 @@ func TestPublicAssets(t *testing.T) {
 func TestNewChecksSessionHeader(t *testing.T) {
 	record, err := json.Marshal(map[string]any{
 		"type": "session", "format_version": 1, "cwd": "~/project",
-		"profile": map[string]any{"sandbox": false, "tools": []string{}},
+		"profile": map[string]any{"sandbox": map[string]any{"enabled": false}, "tools": []string{}},
 	})
 	if err != nil {
 		t.Fatal(err)

@@ -139,9 +139,9 @@ GIT_MARKER="$tmp/git-called" PATH="$git_bin:$PATH" SHELLFISH_SESSION="$tmp/empty
 
 # Ordered command hooks leave ordinary and multiline prompts untouched.
 typeset command_session="$tmp/command.jsonl" command_stream="$tmp/command.stream"
-jq -c --arg root "$ROOT/share/hooks/" '.profile.hooks = {user_prompt_submit:
+jq -c --arg root "$ROOT/share/hooks/" '.profile.hooks =
   (["help","verbose","new","resume","server","copy","sandbox","user_shell","fork","compact"] |
-    map($root + .))}' < <(head -n 1 "$tmp/startup.jsonl") >"$tmp/command-header"
+    map($root + .))' < <(head -n 1 "$tmp/startup.jsonl") >"$tmp/command-header"
 submit() {
   cp "$tmp/command-header" "$command_session"
   sf_test_run "$1" "$command_session" >"$command_stream"
@@ -158,9 +158,8 @@ jq -e -s 'map(.type) == ["session","hook_result"] and
 # Bundled sandbox policy distinguishes absolute and home-relative grants.
 typeset sandbox="$ROOT/share/hooks/sandbox/run" sandbox_session="$tmp/sandbox.jsonl"
 mkdir -p "$tmp/project/dir" "$tmp/home/share"
-jq -c --arg cwd "${tmp:A}/project" '.cwd=$cwd | .profile.sandbox=true |
-  .profile.sandbox_write_paths=[$cwd + "/dir","~/share"] |
-  .profile.sandbox_read_paths=["@system"]' \
+jq -c --arg cwd "${tmp:A}/project" '.cwd=$cwd |
+  .profile.sandbox={enabled:true, read:["@system"], write:[$cwd + "/dir","~/share"]}' \
   "$SF_TEST_SESSIONS/header-only.jsonl" >"$sandbox_session"
 (
   builtin cd -- "$tmp/project"; export HOME="$tmp/home"
@@ -173,14 +172,14 @@ jq -c --arg cwd "${tmp:A}/project" '.cwd=$cwd | .profile.sandbox=true |
   [[ $(call "/sandbox +r $ROOT/share/system" | jq -r .action) == block ]] ||
     fail 'bundled grant duplicated'
   call "/sandbox -r $ROOT/share/system" | jq -e '.action == "session_update" and
-    .profile.sandbox_read_paths == []' >/dev/null || fail 'bundled grant removal by path failed'
+    .profile.sandbox.read == []' >/dev/null || fail 'bundled grant removal by path failed'
   call '/sandbox -r @system' | jq -e '.action == "session_update" and
-    .profile.sandbox_read_paths == []' >/dev/null || fail 'bundled grant removal by @ failed'
+    .profile.sandbox.read == []' >/dev/null || fail 'bundled grant removal by @ failed'
   [[ $(call '/sandbox +w dir' | jq -r .action) == block ]] || fail 'absolute grant duplicated'
   [[ $(call '/sandbox +w ~/share' | jq -r .action) == block ]] || fail 'home grant duplicated'
   call '/sandbox -w dir' | jq -e '.action == "session_update" and
-    .profile.sandbox_write_paths == ["~/share"]' >/dev/null || fail 'absolute grant removal failed'
+    .profile.sandbox.write == ["~/share"]' >/dev/null || fail 'absolute grant removal failed'
   call '/sandbox -w ~/share' | jq -e --arg path "${tmp:A}/project/dir" '
-    .action == "session_update" and .profile.sandbox_write_paths == [$path]' >/dev/null ||
+    .action == "session_update" and .profile.sandbox.write == [$path]' >/dev/null ||
     fail 'home grant removal failed'
 )

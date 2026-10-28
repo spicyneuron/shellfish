@@ -1,4 +1,4 @@
-{"type":"session","format_version":1,"cwd":"/fixture","created":"2025-01-01T00:00:00Z","profile":{"model":{"adapter":"/test","endpoint":"https://example.invalid","request":{"model":"fake-model"}},"system":[],"tools":[],"hooks":{},"sandbox":false,"sandbox_read_paths":[],"sandbox_write_paths":[]}}
+{"type":"session","format_version":1,"cwd":"/fixture","created":"2025-01-01T00:00:00Z","profile":{"model":{"adapter":"/test","endpoint":"https://example.invalid","request":{"model":"fake-model"}},"system":[],"tools":[],"hooks":[],"sandbox":{"enabled":false,"read":[],"write":[]}}}
 {"type":"user","content":[{"type":"text","text":"Run it"}]}
 {"type":"assistant","stop":"tool_calls","content":[],"usage":{"input_tokens":1,"output_tokens":1}}
 {"type":"tool_result","id":"call_1","name":"shell","input":{"command":"true"},"exit_code":0,"user_text":"shell\n\nexit 0","model_text":"\nexit 0"}

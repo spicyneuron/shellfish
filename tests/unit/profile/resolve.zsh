@@ -12,13 +12,15 @@ profile_eval() {
 # Profiles only select; model files only configure.
 for profile in \
     '{"backend":{}}' '{"request":{}}' '{"env":{}}' '{"extend":["default"]}' \
-    '{"model":"default"}' '{"model":[""]}' '{"sandbox":{"read":[]}}' '{"hooks":{"stop":[]}}' \
-    '{"tools":"read_file"}' '{"themes":{}}'; do
+    '{"model":1}' '{"model":[""]}' '{"sandbox":{"read":["relative"]}}' '{"hooks":{"stop":[]}}' \
+    '{"tools":"read_file"}' '{"tools":[{}]}' '{"system":[{"text":1}]}' '{"themes":{}}'; do
   if print -r -- "$profile" | profile_eval 'config_profile(["p"])' >/dev/null 2>&1; then
     fail "invalid profile was accepted: $profile"
   fi
 done
 print -r -- '{"model":["a","@b/c.jsonc"],"sandbox":["~/s.jsonc"],"system":["x.md"],"tools":[],"hooks":["h"]}' |
+  profile_eval 'config_profile(["p"])' >/dev/null
+print -r -- '{"model":{"request":{}},"sandbox":[{"read":["./x"]}],"system":[{"text":"t"}]}' |
   profile_eval 'config_profile(["p"])' >/dev/null
 for model in \
     '{"backend":"openai"}' '{"context_window":0}' '{"endpoint":"ftp://example.invalid"}' \
@@ -29,19 +31,19 @@ for model in \
 done
 print -r -- '{"context_window":null}' | profile_eval 'config_model(["m"])' >/dev/null
 
-# Model files merge left to right: objects recursively, anything else replaced.
-# The request override applies last, and the result needs a model and adapter.
+# Model items merge left to right: objects recursively, anything else replaced.
+# The result needs a model and adapter.
 profile_eval '
   model_merge([
     {"$schema":"x",adapter:"openai",request:{model:"base",reasoning:{effort:"low",budget:1},stop:["a"]}},
     {request:{reasoning:{effort:"high"},stop:["b"]},context_window:null},
-    {adapter:"anthropic"}
-  ]; {seed:1}) == {
+    {adapter:"anthropic"}, {request:{seed:1}}
+  ]) == {
     adapter:"anthropic",context_window:null,
     request:{model:"base",reasoning:{effort:"high",budget:1},stop:["b"],seed:1}
   }' -n >/dev/null || fail 'model files did not merge in order'
 for models in '[{"adapter":"openai"}]' '[{"request":{"model":"m"}}]'; do
-  if profile_eval 'model_merge($models; {})' -n --argjson models "$models" >/dev/null 2>&1; then
+  if profile_eval 'model_merge($models)' -n --argjson models "$models" >/dev/null 2>&1; then
     fail "incomplete model was accepted: $models"
   fi
 done

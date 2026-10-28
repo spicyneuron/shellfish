@@ -39,8 +39,8 @@ zsh -f "$entry" run --session-create --session-out "$granted" \
   fail 'create rejected forwarded sandbox grants'
 jq -e --arg read "${system:A}" '
   select(.type == "session") |
-  (.profile.sandbox_read_paths | index($read)) != null and
-  (.profile.sandbox_write_paths | index("~/work")) != null
+  (.profile.sandbox.read | index($read)) != null and
+  (.profile.sandbox.write | index("~/work")) != null
 ' "$granted" >/dev/null || fail 'create did not store forwarded sandbox grants'
 
 # Derived sessions reuse profile and reread system paths.
@@ -240,7 +240,7 @@ EOF
 ) || fail 'portable session creation failed'
 jq -e 'select(.type == "session") |
   .cwd == "~/project" and .profile.system == ["~/project/prompt.md"] and
-  .profile.hooks.user_prompt_submit[0] == "~/project/hook"
+  .profile.hooks == ["~/project/hook"]
 ' "$old_project/session.jsonl" >/dev/null || fail 'session did not store portable paths'
 mv -- "$old_home" "$new_home"
 (

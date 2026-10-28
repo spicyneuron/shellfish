@@ -26,8 +26,7 @@ jq -e --arg adapter "$ROOT/share/backends/openai" '
   .model == {adapter:$adapter, endpoint:"https://api.openai.com/v1/chat/completions",
     context_window:128000,
     request:{model:"configured",temperature:0.2,reasoning:{effort:"high"}}} and
-  del(.model) == {system:[],tools:[],hooks:{},sandbox:true,
-    sandbox_read_paths:[],sandbox_write_paths:[]}
+  del(.model) == {system:[],tools:[],hooks:[],sandbox:{enabled:true,read:[],write:[]}}
 ' <<<"$REPLY" >/dev/null || fail 'model files did not merge in order'
 sf_profile_resolve_args -p work -m high --request '{"temperature":0.7}' --request '{"seed":4}'
 jq -e '.model.request == {model:"configured",temperature:0.7,seed:4,reasoning:{effort:"high"}}' \
@@ -52,7 +51,7 @@ sf_profile_resolve_args -p openai/sol
 jq -e --arg root "${SF_TEST_CONFIG:A}" '
   .model.request.model == "sol" and .tools == [] and
   .system == [$root + "/system/prompt.md"] and
-  .hooks == {stop: [$root + "/hooks/stop"]}' <<<"$REPLY" >/dev/null
+  .hooks == [$root + "/hooks/stop"]' <<<"$REPLY" >/dev/null
 
 # A path is taken as written, and "@" is the bundled root.
 sf_profile_resolve_args -p "$SF_TEST_CONFIG/profiles/openai/sol.jsonc" \
@@ -74,13 +73,27 @@ print -r -- '{"model": ["../models/kit.jsonc"], "sandbox": ["../sandbox/kit.json
 sf_profile_resolve_args -p "$kit/profiles/kit.jsonc"
 jq -e --arg kit "${kit:A}" --arg backend "${tmp:A}/tests-backend" '
   .model.adapter == $backend and .system == [$kit + "/system/kit.md"] and
-  .sandbox_read_paths == [$kit + "/sandbox/data", $kit + "/system"]
+  .sandbox.read == [$kit + "/sandbox/data", $kit + "/system"]
 ' <<<"$REPLY" >/dev/null || fail 'config-relative references did not resolve from their files'
 (
   cd "$kit"
   sf_profile_resolve_args -p ./profiles/kit.jsonc -m ./models/kit.jsonc
   jq -e '.model.request.model == "kit"' <<<"$REPLY" >/dev/null
 ) || fail 'flag-relative references did not resolve from the working directory'
+
+# Model, sandbox, and system lists take inline values, a lone model or sandbox
+# item needs no list, and a frozen profile resolves to itself.
+sf_test_profile inline '{"model": {"adapter": "'"$fixture_backend"'", "request": {"model": "inline"}},
+  "sandbox": {"read": ["./data"]}, "system": [{"text": "hello"}, "prompt.md"]}'
+sf_profile_resolve_args -p inline
+profile=$REPLY
+jq -e --arg root "${SF_TEST_CONFIG:A}" '
+  .model.request.model == "inline" and .sandbox.read == [$root + "/profiles/data"] and
+  .system == [{text:"hello"}, $root + "/system/prompt.md"]
+' <<<"$profile" >/dev/null || fail 'inline profile items did not resolve'
+print -r -- "$profile" >"$tmp/frozen.jsonc"
+sf_profile_resolve_args -p "$tmp/frozen.jsonc"
+[[ $REPLY == "$profile" ]] || fail 'a frozen profile did not resolve to itself'
 
 for name in '' $'open\nai'; do
   if sf_profile_resolve_args -p "$name"; then
@@ -97,7 +110,7 @@ if sf_profile_resolve_args -p work -p work; then
 fi
 [[ $SF_PROFILE_ERROR == '--profile may only be specified once' ]]
 
-# Hooks group by their declared lifecycle, keeping listed order.
+# Hooks keep their listed order; a run groups them by declared lifecycle.
 typeset hooks="$SF_TEST_CONFIG/hooks"
 print -r -- '#!/bin/sh' | sf_test_hook "$hooks/first" '{"on":"stop"}'
 print -r -- '#!/bin/sh' | sf_test_hook "$hooks/gate" '{"on":"pre_tool_use"}'
@@ -105,8 +118,8 @@ print -r -- '#!/bin/sh' | sf_test_hook "$hooks/second" '{"on":"stop"}'
 sf_test_profile hooked '{"model": ["fixture"], "hooks": ["second", "gate", "first"]}'
 sf_profile_resolve_args -p hooked
 jq -e --arg hooks "${hooks:A}" '
-  .hooks == {pre_tool_use: [$hooks + "/gate"], stop: [$hooks + "/second", $hooks + "/first"]}
-' <<<"$REPLY" >/dev/null || fail 'hooks did not group by lifecycle in listed order'
+  .hooks == [$hooks + "/second", $hooks + "/gate", $hooks + "/first"]
+' <<<"$REPLY" >/dev/null || fail 'hooks did not keep listed order'
 
 # A referenced hook must be runnable and name a lifecycle.
 mkdir -p "$hooks/dir"
@@ -125,7 +138,7 @@ rm "$hooks/unbound/manifest.json"
 if sf_profile_resolve_args -p hooked; then
   fail 'a hook without a manifest was accepted'
 fi
-[[ $SF_PROFILE_ERROR == 'hook manifest must declare "on": unbound' ]]
+[[ $SF_PROFILE_ERROR == *'hook manifest must be valid and declare "on"'* ]]
 
 # The bundled default profile layers your default model over the bundled one
 # and resolves its components under share/.
@@ -134,14 +147,14 @@ sf_profile_resolve_args
 profile=$REPLY
 jq -e --arg share "$ROOT/share/" '
   .model.request == {max_tokens:16384,reasoning:{effort:"medium"},model:"mine"} and
-  ([.hooks[][], .tools[], .system[]] | length > 0 and all(.[]; startswith($share)))
+  ([.hooks[], .tools[], .system[]] | length > 0 and all(.[]; startswith($share)))
 ' <<<"$profile" >/dev/null || fail 'bundled default profile did not resolve'
 sf_profile_resolve_args -p coding
-jq -e '(.hooks.permission_request | map(split("/")[-2:] | join("/"))) == ["hooks/review"]' \
+jq -e '.hooks | map(split("/")[-2:] | join("/")) | index("hooks/review") != null' \
   <<<"$REPLY" >/dev/null || fail 'bundled coding profile lost review'
 
 # Tool manifests are read live from the resolved folders.
-sf_profile_tools "$profile"
+sf_profile_components tools "$profile"
 jq -e '
   length > 0 and all(.[]; .name as $name |
     (.command | endswith("/" + $name + "/run")) and .manifest.description != null)
@@ -165,7 +178,7 @@ for field in backend request env extend max_capture_bytes theme_light; do
   fi
   [[ $SF_PROFILE_ERROR == "invalid configuration: profile bad \$[\"$field\"]: unknown field" ]]
 done
-for value in '"fixture"' '[1]' '[""]'; do
+for value in '1' '[1]' '[""]'; do
   sf_test_profile bad "{\"model\": $value}"
   if sf_profile_resolve_args -p bad; then
     fail "profile accepted model $value"
@@ -192,16 +205,16 @@ sf_test_profile modelless '{}'
 if sf_profile_resolve_args -p modelless; then
   fail 'a profile without a model was accepted'
 fi
-[[ $SF_PROFILE_ERROR == 'profile selects no model: modelless' ]]
+[[ $SF_PROFILE_ERROR == 'invalid configuration: profile selects no model: modelless' ]]
 sf_profile_resolve_args -p modelless -m fixture || fail 'a CLI model did not complete a profile'
 
 # A configured file shadows the bundled one, and "@" still reaches the bundled one.
 sf_test_profile coding '{"model": ["fixture"]}'
 sf_profile_resolve_args -p coding
-jq -e '.hooks == {}' <<<"$REPLY" >/dev/null || fail 'configured profile did not shadow bundled'
+jq -e '.hooks == []' <<<"$REPLY" >/dev/null || fail 'configured profile did not shadow bundled'
 sf_test_model default '{"adapter": "'"$fixture_backend"'", "request": {"model": "mine"}}'
 sf_profile_resolve_args -p @profiles/coding.jsonc
-jq -e '.hooks.permission_request | length == 1' <<<"$REPLY" >/dev/null ||
+jq -e '.hooks | map(select(endswith("/hooks/review"))) | length == 1' <<<"$REPLY" >/dev/null ||
   fail '@profiles/coding.jsonc did not select the bundled profile'
 sf_test_model openrouter '{"adapter": "'"$fixture_backend"'"}'
 sf_profile_resolve_args -p work -m openrouter
@@ -264,19 +277,18 @@ sf_test_sandbox on '{"enabled": true}'
 sf_test_profile boxed '{"model": ["work"], "sandbox": ["base", "off"]}'
 sf_profile_resolve_args -p boxed --sandbox-write "$tmp/flag"
 jq -e --arg home "${tmp:A}/home" --arg flag "${tmp:A}/flag" --arg share "$ROOT/share" '
-  .sandbox == false and
-  .sandbox_read_paths == [$home + "/my reference", "/opt/ref", $share + "/system"] and
-  .sandbox_write_paths == [$home + "/output", $flag]
+  .sandbox == {enabled:false, read:[$home + "/my reference", "/opt/ref", $share + "/system"],
+    write:[$home + "/output", $flag]}
 ' <<<"$REPLY" >/dev/null || fail 'sandbox files did not merge in order'
 sf_test_profile boxed '{"model": ["work"], "sandbox": ["off", "on"]}'
 sf_profile_resolve_args -p boxed
-jq -e '.sandbox == true' <<<"$REPLY" >/dev/null || fail 'a later sandbox file did not re-enable'
+jq -e '.sandbox.enabled' <<<"$REPLY" >/dev/null || fail 'a later sandbox file did not re-enable'
 
 # Invalid sandbox files name the file and entry.
 sf_test_sandbox bad '{"read": ["/ok", "relative"]}'
 sf_test_profile boxed '{"model": ["work"], "sandbox": ["bad"]}'
 if sf_profile_resolve_args -p boxed; then
-  fail 'a relative sandbox path was accepted'
+  fail 'a bare sandbox name was accepted'
 fi
 [[ $SF_PROFILE_ERROR == 'invalid configuration: sandbox bad $["read"][1]: must be a /, ~/, ./, ../, or @ path' ]]
 for value in '{"enabled": "yes"}' '{"write": "/x"}' '{"paths": []}'; do
@@ -371,7 +383,7 @@ jq -e --arg base "${tools:A}" '
   .tools == [($base + "/beta"), ($base + "/alpha"), ($base + "/gamma"), ($base + "/delta"),
     ($base + "/epsilon")]
 ' <<<"$REPLY" >/dev/null
-sf_profile_tools "$REPLY"
+sf_profile_components tools "$REPLY"
 jq -e --arg base "${tools:A}" '
   map(.name) == ["beta", "alpha", "gamma", "delta", "epsilon"] and
   .[0] == {name:"beta",command:($base + "/beta/run"),

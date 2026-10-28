@@ -47,12 +47,12 @@ mv "$session.saved" "$session"
 
 # Runtime replacement is atomic and leaves every durable record unchanged.
 before=$(tail -n +2 "$session")
-profile=$(jq -c '.sandbox_read_paths=["/tmp/reference"] |
-  .sandbox_write_paths=["/tmp/reference"]' <<<"$SF_TEST_PROFILE")
+profile=$(jq -c '.sandbox.read=["/tmp/reference"] | .sandbox.write=["/tmp/reference"]' \
+  <<<"$SF_TEST_PROFILE")
 sf_session_replace_profile "$session" "$profile" || fail "$SF_SESSION_ERROR"
 head -n 1 "$session" | jq -e '
-  .profile.sandbox_read_paths == ["/tmp/reference"] and
-  .profile.sandbox_write_paths == ["/tmp/reference"]
+  .profile.sandbox.read == ["/tmp/reference"] and
+  .profile.sandbox.write == ["/tmp/reference"]
 ' >/dev/null
 assert_equal "$before" "$(tail -n +2 "$session")"
 [[ $(stat -f '%Lp' "$session") == 600 ]]
@@ -64,6 +64,6 @@ fi
 assert_equal "$unchanged" "$(cat "$session")"
 
 sf_session_read_profile "$session" || fail "$SF_SESSION_ERROR"
-jq -e '.sandbox_read_paths == ["/tmp/reference"]' <<<"$REPLY" >/dev/null
+jq -e '.sandbox.read == ["/tmp/reference"]' <<<"$REPLY" >/dev/null
 
 print -r -- ok

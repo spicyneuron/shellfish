@@ -182,8 +182,8 @@ if ! jq -cn --argjson header "$header" --arg system "$system" --argjson context 
           reason:{type:"string",minLength:1,maxLength:1000}
         }
       }) |
-    .profile |= (.system=[] | .tools=[] | .hooks={} | .sandbox=false |
-      .sandbox_read_paths=[] | .sandbox_write_paths=[])),
+    .profile |= (.system=[] | .tools=[] | .hooks=[] |
+      .sandbox={enabled:false, read:[], write:[]})),
   {type:"system",content:$system},
   {type:"user",content:[{type:"text",text:($context | tojson)}]}
 ' >"$transcript"; then

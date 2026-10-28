@@ -103,8 +103,8 @@ sf_test_frozen_profile() {
       {
         model:{adapter:$adapter,endpoint:"https://example.invalid/test",
           request:{model:"test-model"}},
-        system:[], tools:[$tool], hooks:{},
-        sandbox:false, sandbox_read_paths:[], sandbox_write_paths:[]
+        system:[], tools:[$tool], hooks:[],
+        sandbox:{enabled:false, read:[], write:[]}
       }
     ')
   export SHELLFISH_MAX_REQUESTS_PER_TURN=8 SHELLFISH_MAX_TOOL_CALLS_PER_REQUEST=16
@@ -121,6 +121,18 @@ sf_test_shell_tool() {
   cp -f "$bundled/fence.jsonc" "$tool/fence.jsonc"
   jq "$filter" "$bundled/manifest.json" >"$tool/manifest.json"
   SF_TEST_PROFILE=$(jq -c --arg tool "$tool" '.tools=[$tool]' <<<"$SF_TEST_PROFILE")
+}
+
+# Declare LIFECYCLE in each hook folder's manifest and append them to the
+# frozen profile's hooks.
+sf_test_bind_hooks() {
+  local lifecycle=$1 dir manifest
+  shift
+  for dir; do
+    manifest=$(jq -c --arg on "$lifecycle" '. + {on:$on}' "$dir/manifest.json") &&
+      print -r -- "$manifest" >|"$dir/manifest.json" || return
+  done
+  SF_TEST_PROFILE=$(jq -c '.hooks += $ARGS.positional' --args -- "$@" <<<"$SF_TEST_PROFILE")
 }
 
 # A hook folder with MANIFEST (default {}) and a run script read from stdin.

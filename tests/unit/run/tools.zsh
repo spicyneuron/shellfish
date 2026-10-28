@@ -46,8 +46,7 @@ print -rn -- "${UNDECLARED-unset} ${SHELLFISH_SHARE_DIR-unset}" >"$ENV_SEEN"
 ZSH
 export ENV_SEEN=$env_seen EXPORTED=exported
 sf_test_shell_tool '.environment=["DECLARED"]'
-SF_TEST_PROFILE=$(jq -c --arg hook "$env_hook" '.hooks.post_tool_use=[$hook]' \
-  <<<"$SF_TEST_PROFILE")
+sf_test_bind_hooks post_tool_use "$env_hook"
 sf_test_session "$env_session"
 SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_COMMAND=$env_command \
   sf_test_run env "$env_session" >"$env_stream" || fail 'tool environment turn failed'
@@ -106,10 +105,8 @@ print -rn -- "$input" >"$HOOK_DIR/post-$id"
 print -rn -u3 -- "{\"user_text_done\":\"post $id\",\"state_update\":[{\"name\":\"post/$id\",\"value\":true}]}"
 ZSH
 export HOOK_DIR=$hook_dir TOOL_MARKER=$tool_marker
-SF_TEST_PROFILE=$(jq -c --arg pre "$pre" --arg later "$later" --arg post "$post" '
-  .hooks.pre_tool_use=[$pre, $later] |
-  .hooks.post_tool_use=[$post]
-' <<<"$SF_TEST_PROFILE")
+sf_test_bind_hooks pre_tool_use "$pre" "$later"
+sf_test_bind_hooks post_tool_use "$post"
 typeset session="$tmp/denied.jsonl" stream="$tmp/denied.stream"
 sf_test_session "$session"
 SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_COUNT=2 \
@@ -169,11 +166,8 @@ print -rn -- "$input" >"$PERMISSION_INPUT"
 print -rn -u3 -- '{"state_update":[{"name":"permission/state","value":true}],"action":"allow","user_text_done":"review display","model_text":"review context"}'
 ZSH
 export PERMISSION_INPUT=$permission_input
-SF_TEST_PROFILE=$(jq -c --arg hook "$permission" '
-  .hooks.pre_tool_use=[] | .hooks.post_tool_use=[] |
-  .sandbox=true |
-  .hooks.permission_request=[$hook]
-' <<<"$SF_TEST_PROFILE")
+SF_TEST_PROFILE=$(jq -c '.hooks=[] | .sandbox.enabled=true' <<<"$SF_TEST_PROFILE")
+sf_test_bind_hooks permission_request "$permission"
 session="$tmp/permission-allow.jsonl"
 sf_test_session "$session"
 SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_BYPASS=true \
@@ -200,7 +194,7 @@ jq -eRn '
     .user_text == "Ran shell command outside the sandbox:\nprint -rn -- approved\napproved\nexit 0")
 ' <"$stream" >/dev/null || fail 'permission allow produced the wrong records'
 
-sf_test_hook "$permission" <<'ZSH'
+sf_test_hook "$permission" '{"on":"permission_request"}' <<'ZSH'
 #!/usr/bin/env zsh
 cat >"$PERMISSION_INPUT"
 print -rn -u3 -- '{"action":"deny","reason":"review denied"}'
@@ -229,8 +223,8 @@ sf_test_hook "$defer_two" <<'ZSH'
 [[ -s $PERMISSION_INPUT ]] || exit 2
 cat >/dev/null
 ZSH
-SF_TEST_PROFILE=$(jq -c --arg one "$defer_one" --arg two "$defer_two" \
-  '.hooks.permission_request=[$one,$two]' <<<"$SF_TEST_PROFILE")
+SF_TEST_PROFILE=$(jq -c '.hooks=[]' <<<"$SF_TEST_PROFILE")
+sf_test_bind_hooks permission_request "$defer_one" "$defer_two"
 session="$tmp/permission-client.jsonl"
 sf_test_session "$session"
 SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_BYPASS=true \
@@ -258,11 +252,8 @@ cat >/dev/null
 print -r -u3 -- '{"state_update":[{"name":"post/failure","value":true}]}'
 exit 3
 ZSH
-SF_TEST_PROFILE=$(jq -c --arg hook "$post_fail" '
-  .hooks.permission_request=[] |
-  .hooks.post_tool_use=[$hook] |
-  .sandbox=false
-' <<<"$SF_TEST_PROFILE")
+SF_TEST_PROFILE=$(jq -c '.hooks=[] | .sandbox.enabled=false' <<<"$SF_TEST_PROFILE")
+sf_test_bind_hooks post_tool_use "$post_fail"
 session="$tmp/post-failure.jsonl"
 sf_test_session "$session"
 integer post_status=0
@@ -279,7 +270,7 @@ assert_canonical_session "$session"
 
 # A sandboxed tool needs fence on PATH when it runs. ZDOTDIR keeps a user's
 # .zshenv from restoring PATH.
-SF_TEST_PROFILE=$(jq -c '.hooks.post_tool_use=[] | .sandbox=true' <<<"$SF_TEST_PROFILE")
+SF_TEST_PROFILE=$(jq -c '.hooks=[] | .sandbox.enabled=true' <<<"$SF_TEST_PROFILE")
 typeset no_fence="$tmp/no-fence"
 mkdir "$no_fence"
 ln -s "$commands[jq]" "$commands[zsh]" "$no_fence/"
@@ -319,8 +310,7 @@ sf_test_hook "$sandbox_post" <<'ZSH'
 jq -c .tool_response >"$SANDBOX_OUTPUT"
 ZSH
 export SANDBOX_OUTPUT=$sandbox_output
-SF_TEST_PROFILE=$(jq -c --arg hook "$sandbox_post" '.hooks.post_tool_use=[$hook]' \
-  <<<"$SF_TEST_PROFILE")
+sf_test_bind_hooks post_tool_use "$sandbox_post"
 session="$tmp/sandbox-denied.jsonl"
 sf_test_session "$session"
 SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_COMMAND='print -rn -- output; exit 3' \
@@ -338,7 +328,7 @@ jq -e --slurpfile output "$sandbox_output" '
   ($output[0].stderr | contains("<sandbox_notice>"))
 ' < <(jq -c 'select(.type == "tool_result")' "$stream") >/dev/null ||
   fail 'post_tool_use did not receive the rendered sandbox output'
-SF_TEST_PROFILE=$(jq -c '.hooks.post_tool_use=[]' <<<"$SF_TEST_PROFILE")
+SF_TEST_PROFILE=$(jq -c '.hooks=[]' <<<"$SF_TEST_PROFILE")
 jq -eRn --arg temp "${TMPDIR:A}" '
   [inputs] as $args |
   [range(0; $args | length) as $i |
@@ -395,7 +385,7 @@ esac
 ZSH
 chmod +x "$protocol"
 sf_test_shell_tool '.user_preview_lines=3' "$protocol"
-SF_TEST_PROFILE=$(jq -c '.sandbox=false' <<<"$SF_TEST_PROFILE")
+SF_TEST_PROFILE=$(jq -c '.sandbox.enabled=false' <<<"$SF_TEST_PROFILE")
 session="$tmp/protocol-action.jsonl"
 sf_test_session "$session"
 if SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_COMMAND=action \

@@ -27,7 +27,7 @@ sf_test_frozen_profile
 SF_TEST_PROFILE=$(jq -c --arg hook "$hook" '
   .model.context_window=20000 |
   .model.request += {max_tokens:5000,temperature:0.2} |
-  .hooks.permission_request=[$hook]
+  .hooks=[$hook]
 ' <<<"$SF_TEST_PROFILE")
 SF_TEST_SYSTEM='fixed system'
 sf_test_session "$session"
@@ -82,7 +82,7 @@ jq -e -s --arg tool_input "$(jq -c '.tool_input' <<<"$request")" \
   .[0].profile.model.request.temperature == 0.2 and
   .[0].profile.model.request.response_schema.additionalProperties == false and
   .[0].profile.tools == [] and
-  .[0].profile.hooks == {} and .[0].profile.system == [] and
+  .[0].profile.hooks == [] and .[0].profile.system == [] and
   [.[].type] == ["session","system","user"] and
   .[1].content == ($policy | rtrimstr("\n")) and
   $context.system_message == "fixed system" and

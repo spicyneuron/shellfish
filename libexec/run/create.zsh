@@ -19,7 +19,7 @@ sf_run_read_system() {
 
 sf_run_create() {
   local requested_out='' source_session='' profile session system system_text projection header record cwd created
-  local -a forwarded=() system_parts=() system_paths=()
+  local -a forwarded=() system_parts=()
   integer resolve_status=0 take=0 system_explicit=0 profile_override=0
 
   while (( $# )); do
@@ -77,11 +77,15 @@ sf_run_create() {
     profile=$REPLY
   fi
   if (( ! system_explicit )); then
-    projection=$(jq -jr '.system[] | ., "\u0000"' <<<"$profile") ||
-      sf_die 'cannot resolve system paths' || return
-    system_paths=( ${(@0)projection} )
-    for system_text in "${system_paths[@]}"; do
-      sf_run_read_system "$system_text" || return
+    # Each item becomes "f" and a file path, or "t" and inline text.
+    projection=$(jq -jr '.system[] | if type == "string" then "f" + . else "t" + .text end,
+      "\u0000"' <<<"$profile") || sf_die 'cannot resolve system prompt' || return
+    for system_text in "${(@0)projection}"; do
+      if [[ $system_text == f* ]]; then
+        sf_run_read_system "${system_text#f}" || return
+      else
+        REPLY=${system_text#t}
+      fi
       [[ -z $REPLY ]] || system_parts+=( "$REPLY" )
     done
   fi
@@ -121,6 +125,7 @@ sf_run_create() {
   SF_RUN[cwd]=$cwd
   SF_RUN[turn_id]=1
   SF_RUN[hook_id]=1
+  sf_run_components "$profile" || { sf_die "$REPLY"; return 1; }
   if (( SF_RUN[jsonl] )); then
     sf_run_emit "$(jq -cn --arg path "$session" '{type:"_session_load",path:$path}')" || return 1
     for record in "${records[@]}"; do

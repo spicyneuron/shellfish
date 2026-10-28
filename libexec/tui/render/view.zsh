@@ -135,7 +135,7 @@ sf_tui_chat_start() {
   local -a details logo shrimp
   details=( "${(@f)$(jq -r '
     ([.tools[] | split("/") | last] | if length == 0 then "none" else join(", ") end),
-    (if .sandbox then "enabled" else "disabled" end)
+    (if .sandbox.enabled then "enabled" else "disabled" end)
   ' <<<"$SF_PRESENT_PROFILE")}" ) || return 1
   tools=$details[1]
   sandbox=$details[2]

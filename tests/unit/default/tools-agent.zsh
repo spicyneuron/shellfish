@@ -89,7 +89,7 @@ child="$tmp/.agent-$id.jsonl"
 [[ -f $child ]] || fail 'hidden child was not created'
 assert_canonical_session "$child"
 jq -e -s '
-  .[0].profile.sandbox == true and .[0].profile.tools == [] and
+  .[0].profile.sandbox.enabled and .[0].profile.tools == [] and
   (.[1:] | map(.type)) == ["state_update","user","assistant"] and
   .[1] == {type:"state_update",name:"agents/child",value:true} and
   .[2].content[0].text == "child task" and
@@ -141,7 +141,7 @@ assert_canonical_session "$child"
 jq -e -s '
   [.[] | select(.type == "user") | .content[0].text] ==
     ["child task","next child task","next child task"] and
-  [.[0].profile.sandbox, .[0].profile.tools] == [true,[]] and
+  [.[0].profile.sandbox.enabled, .[0].profile.tools] == [true,[]] and
   ([.[] | select(.type == "assistant" and .stop == "end") |
     .content[0].text] | length) == 3
 ' "$child" >/dev/null || fail 'continuation did not reuse the frozen child profile'
@@ -240,7 +240,7 @@ jq -e -s --arg id "$id" '
     length) == 4
 ' "$copied_parent" >/dev/null || fail 'copied parent lost its agent association'
 
-# A synchronous release proves process exit even with a stop hook.
+# A stopped child is settled even with a stop hook, which ran before it exited.
 typeset stop_parent="$tmp/stop-parent.jsonl" stop_id stop_child stop_inspection
 sf_test_session "$stop_parent"
 sf_test_run 'stop-hook parent' "$stop_parent" >"$stream" ||
@@ -251,7 +251,7 @@ stop_child="$tmp/.agent-$stop_id.jsonl"
 stop_inspection=$(print -r -- "{\"operation\":\"inspect\",\"agent_id\":\"$stop_id\"}" |
   SHELLFISH_SESSION="$stop_parent" SHELLFISH_EXECUTABLE="$ROOT/bin/shellfish" \
   "$agent/run" 3>"$tmp/refused-state") || fail 'stop-hook inspection failed'
-jq -e '.active == false and .working == false and .settled == false and
+jq -e '.active == false and .working == false and .settled == true and
   .answer == "child answer"' \
   <<<$stop_inspection >/dev/null || fail 'stop-hook inspection was misreported'
 print -r -- "$stop_id" >"$SF_AGENT_ID_FILE"
@@ -458,9 +458,6 @@ if [[ $OSTYPE == darwin* || $OSTYPE == linux* && $+commands[setsid] -ne 0 ]]; th
 typeset uncertain_id=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb uncertain
 uncertain="$tmp/.agent-$uncertain_id.jsonl"
 cp "$background_child" "$uncertain"
-jq -c '.profile.hooks.stop=["/tmp/stop-hook"]' "$uncertain" >"$tmp/uncertain-header"
-{ cat "$tmp/uncertain-header"; tail -n +2 "$uncertain"; } >"$tmp/uncertain-copy"
-mv "$tmp/uncertain-copy" "$uncertain"
 : >"$uncertain.lock"
 zmodload zsh/system || fail 'cannot load session locking'
 typeset uncertain_fd=''
@@ -473,7 +470,7 @@ uncertain_result=$(print -r -- "{\"operation\":\"inspect\",\"agent_id\":\"$uncer
   "$agent/run" 3>"$tmp/uncertain-state") || fail 'uncertain inspection failed'
 jq -e '.active == true and .working == true and .settled == false and
   .answer == "child answer"' \
-  <<<$uncertain_result >/dev/null || fail 'stop-hook answer was misreported as settled'
+  <<<$uncertain_result >/dev/null || fail 'a locked child was reported settled'
 [[ ! -s "$tmp/uncertain-state" ]] || fail 'uncertain inspection released a slot'
 if print -r -- "{\"operation\":\"continue\",\"agent_id\":\"$uncertain_id\",\"task\":\"bad\"}" |
     SHELLFISH_SESSION="$background_parent" SHELLFISH_EXECUTABLE="$ROOT/bin/shellfish" \
@@ -485,7 +482,7 @@ zsystem flock -u "$uncertain_fd"
 uncertain_result=$(print -r -- "{\"operation\":\"inspect\",\"agent_id\":\"$uncertain_id\"}" |
   SHELLFISH_SESSION="$background_parent" SHELLFISH_EXECUTABLE="$ROOT/bin/shellfish" \
   "$agent/run" 3>"$tmp/uncertain-state") || fail 'finished child inspection failed'
-jq -e '.active == false and .working == false and .settled == false' \
+jq -e '.active == false and .working == false and .settled == true' \
   <<<"$uncertain_result" >/dev/null || fail 'finished child kept its slot'
 
 typeset cancel_parent="$tmp/cancel-parent.jsonl" cancel_id cancel_child

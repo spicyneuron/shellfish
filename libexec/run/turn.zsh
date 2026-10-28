@@ -10,7 +10,7 @@ source "$SF_ROOT/libexec/run/tools.zsh"
 
 typeset -gA SF_RUN=(
   active_call '' answer '' assistant '' jsonl 0 known_result '' permission_count 0 signal_status 0
-  hook_id 1 hooks '' hooks_known 0 write_failed 0
+  hook_id 1 hooks '[]' lifecycles '' write_failed 0
 )
 
 # Turn limits come from the environment on every run, not the frozen profile.
@@ -92,6 +92,17 @@ sf_run_settle() {
   done
 }
 
+# Tool and hook manifests are read once per run, so edits apply to the next.
+sf_run_components() {
+  local profile=$1
+  sf_profile_components tools "$profile" || { REPLY=$SF_PROFILE_ERROR; return 1; }
+  SF_RUN[tools]=$REPLY
+  sf_profile_components hooks "$profile" || { REPLY=$SF_PROFILE_ERROR; return 1; }
+  SF_RUN[hooks]=$REPLY
+  SF_RUN[lifecycles]=$(jq -r '[.[].manifest.on] | unique | join(" ")' <<<"$REPLY") ||
+    { REPLY='cannot group hooks'; return 1; }
+}
+
 sf_run_open() {
   local session=$1
   local -A opened
@@ -119,10 +130,6 @@ sf_run_open() {
     entry("hook_id";
       [$records[1:][] | select(.type == "hook_result") | .id | tonumber] |
       ((max // 0) + 1) | tostring),
-    entry("hooks";
-      [hook_names[] as $hook |
-        select(($header.profile.hooks[$hook] // []) | length > 0) | $hook] |
-      join(" ")),
     ("ok" | field)
   ' "$session" || {
     REPLY="cannot read session: $session"
@@ -133,10 +140,7 @@ sf_run_open() {
   SF_RUN[cwd]=$opened[cwd]
   SF_RUN[turn_id]=$opened[turn_id]
   SF_RUN[hook_id]=$opened[hook_id]
-  SF_RUN[hooks]=$opened[hooks]
-  SF_RUN[hooks_known]=1
-  sf_profile_tools "$SF_RUN[profile]" || { REPLY=$SF_PROFILE_ERROR; return 1; }
-  SF_RUN[tools]=$REPLY
+  sf_run_components "$SF_RUN[profile]" || return
   [[ $opened[pending] == true ]] || return 0
   sf_run_settle "$session" 'tool call outcome unknown' || return 1
   sf_run_error "$session" 'Turn interrupted.'
@@ -205,10 +209,10 @@ sf_run_project() {
     include "lib/fields";
     [$tools[] |
       .manifest as $manifest |
-      (($profile.sandbox and $manifest.sandbox and
+      (($profile.sandbox.enabled and $manifest.sandbox and
         ($manifest.allow_sandbox_bypass // false))) as $bypass |
       {name,description:($manifest.description +
-        if $profile.sandbox and $manifest.sandbox
+        if $profile.sandbox.enabled and $manifest.sandbox
         then "\n\nThis tool runs under its package sandbox policy."
         else "\n\nSandboxing is disabled; this tool runs with the current user permissions." end +
         if .name == "shell" and $bypass
@@ -245,7 +249,6 @@ sf_run_turn() {
     SF_RUN[known_result]=''
     SF_RUN[permission_count]=0
     SF_RUN[signal_status]=0
-    SF_RUN[hooks_known]=0
     SF_RUN[write_failed]=0
     sf_run_limits && sf_run_open "$session" || { print -r -u2 -- "$REPLY"; return 1; }
     begun=1

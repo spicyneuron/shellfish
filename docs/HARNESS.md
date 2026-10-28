@@ -115,7 +115,7 @@ A detected sandbox denial on a nonzero tool exit adds an advisory `<sandbox_noti
 
 ## Hooks
 
-Hooks are components bound to lifecycle points. A hook's manifest names its lifecycle with `on`, such as `{"on":"stop"}`, and a session freezes that binding when it is created. Manifests also accept the shared presentation fields and an optional `match.pattern` jq regular expression. A nonmatching hook is skipped without running its script or producing a result. Without `match`, the hook runs for every invocation. Each script still decides what to do with matching input.
+Hooks are components bound to lifecycle points. A hook's manifest names its lifecycle with `on`, such as `{"on":"stop"}`, read like the rest of the manifest on each run. Manifests also accept the shared presentation fields and an optional `match.pattern` jq regular expression. A nonmatching hook is skipped without running its script or producing a result. Without `match`, the hook runs for every invocation. Each script still decides what to do with matching input.
 
 ```text
 create session

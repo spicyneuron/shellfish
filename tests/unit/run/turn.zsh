@@ -138,9 +138,7 @@ cat >/dev/null
 mv "$SHELLFISH_SESSION" "$SHELLFISH_SESSION.saved" || exit
 mkdir "$SHELLFISH_SESSION"
 ZSH
-SF_TEST_PROFILE=$(jq -c --arg hook "$break_hook" '
-  .hooks.user_prompt_submit=[$hook]
-' <<<"$SF_TEST_PROFILE")
+sf_test_bind_hooks user_prompt_submit "$break_hook"
 sf_test_session "$broken"
 integer broken_status=0
 sf_test_run broken "$broken" >"$stream" 2>"$tmp/broken.stderr" || broken_status=$?

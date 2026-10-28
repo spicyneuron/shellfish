@@ -96,8 +96,8 @@ fi
 
 # Prompt references load each valid skill once, including user-only skills.
 sf_test_frozen_profile
-SF_TEST_PROFILE=$(jq -c --arg hook "$ROOT/share/hooks/skills" \
-  '.hooks.user_prompt_submit=[$hook]' <<<"$SF_TEST_PROFILE")
+SF_TEST_PROFILE=$(jq -c --arg hook "$ROOT/share/hooks/skills" '.hooks=[$hook]' \
+  <<<"$SF_TEST_PROFILE")
 session="$tmp/skills.jsonl"
 (cd "$project" && sf_test_session "$session")
 control="$tmp/prompt-skills.json"

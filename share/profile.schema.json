@@ -8,29 +8,48 @@
       "type": "string"
     },
     "model": {
-      "$ref": "#/$defs/references"
+      "$ref": "#/$defs/items"
     },
     "sandbox": {
-      "$ref": "#/$defs/references"
+      "$ref": "#/$defs/items"
     },
     "system": {
-      "$ref": "#/$defs/references"
+      "type": "array",
+      "items": {
+        "anyOf": [
+          {"$ref": "#/$defs/reference"},
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["text"],
+            "properties": {"text": {"type": "string"}}
+          }
+        ]
+      }
     },
     "tools": {
-      "$ref": "#/$defs/references"
+      "type": "array",
+      "items": {"$ref": "#/$defs/reference"}
     },
     "hooks": {
-      "$ref": "#/$defs/references"
+      "type": "array",
+      "items": {"$ref": "#/$defs/reference"}
     }
   },
   "$defs": {
-    "references": {
-      "type": "array",
-      "items": {
-        "type": "string",
-        "minLength": 1,
-        "pattern": "^[^\u0000-\u001f\u007f-\u009f]+$"
-      }
+    "reference": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[^\u0000-\u001f\u007f-\u009f]+$"
+    },
+    "item": {
+      "anyOf": [{"$ref": "#/$defs/reference"}, {"type": "object"}]
+    },
+    "items": {
+      "anyOf": [
+        {"$ref": "#/$defs/item"},
+        {"type": "array", "items": {"$ref": "#/$defs/item"}}
+      ]
     }
   }
 }

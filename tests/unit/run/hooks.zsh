@@ -14,7 +14,7 @@ case $input in
     print -r -u3 -- '{"state_update":[{"name":"prompt/handoff","value":true}]}'
     print -rn -- 'handoff context' ;;
   update|bad-update)
-    profile=$(head -n 1 "$SHELLFISH_SESSION" | jq -c '.profile.sandbox_write_paths=["/tmp/reference"] | .profile') || exit 2
+    profile=$(head -n 1 "$SHELLFISH_SESSION" | jq -c '.profile.sandbox.write=["/tmp/reference"] | .profile') || exit 2
     [[ $input != bad-update ]] || profile='{}'
     jq -cn --argjson profile "$profile" '{action:"session_update",profile:$profile}' >&3
     print -rn -- 'update context' ;;
@@ -25,7 +25,7 @@ case $input in
     : >"$INTERRUPT_MARKER"; sleep 30 ;;
 esac
 ZSH
-SF_TEST_PROFILE=$(jq -c --arg hook "$hook" '.hooks.user_prompt_submit=[$hook]' <<<"$SF_TEST_PROFILE")
+sf_test_bind_hooks user_prompt_submit "$hook"
 new_session() { session="$tmp/$1.jsonl"; sf_test_session "$session"; }
 new_session handoff; sf_test_run handoff "$session" >"$stream" || fail 'handoff failed'
 jq -eRn '[inputs | fromjson] as $e | $e[-1] == {type:"_handoff",argv:["/usr/bin/printf","next.jsonl"]} and
@@ -33,7 +33,7 @@ jq -eRn '[inputs | fromjson] as $e | $e[-1] == {type:"_handoff",argv:["/usr/bin/
   $e[-2].model_text == "handoff context" and ([ $e[] | select(.type == "user") ] | length) == 0' \
   <"$stream" >/dev/null || fail 'last action or handoff durability failed'
 new_session update; sf_test_run update "$session" >"$stream" || fail 'session update failed'
-jq -e -s 'map(.type) == ["session","hook_result"] and .[0].profile.sandbox_write_paths == ["/tmp/reference"]' "$session" >/dev/null &&
+jq -e -s 'map(.type) == ["session","hook_result"] and .[0].profile.sandbox.write == ["/tmp/reference"]' "$session" >/dev/null &&
   jq -eRn '[inputs | fromjson][-1].type == "_session_update"' <"$stream" >/dev/null || fail 'session update did not replace header'
 new_session bad-update; sf_test_run bad-update "$session" >"$stream" 2>"$tmp/update.err" && fail 'invalid update succeeded'
 jq -e -s '.[-2].model_text == "update context" and
@@ -87,8 +87,9 @@ fi
 ZSH
 chmod +x "$backend"
 export REQUEST_COUNT=$count STOP_INPUT=$stop_input STOP_SILENT="$tmp/silent"
-SF_TEST_PROFILE=$(jq -c --arg backend "${backend:h}" --arg hook "$stop" '
-  .model.adapter=$backend | .hooks.user_prompt_submit=[] | .hooks.stop=[$hook]' <<<"$SF_TEST_PROFILE")
+SF_TEST_PROFILE=$(jq -c --arg backend "${backend:h}" '.model.adapter=$backend | .hooks=[]' \
+  <<<"$SF_TEST_PROFILE")
+sf_test_bind_hooks stop "$stop"
 new_session stop; sf_test_run stop "$session" >"$stream" || fail 'stop continuation failed'
 assert_equal 'answer 2' "$(<$stop_input)" 'stop input was not final assistant text'
 assert_equal 2 "$(<$count)" 'stop did not continue provider'
@@ -126,9 +127,9 @@ for name in two three; do
   sf_test_hook "$hooks/$name" '{"user_text_done":"${output.stdout}"}' <"$hooks/one/run"
 done
 export BLOCK_TWO="$tmp/block-two" FAIL_TWO="$tmp/fail-two"
-SF_TEST_PROFILE=$(jq -c --arg dir "$hooks" --arg adapter "${SF_TEST_BACKEND:h}" '
-  .model.adapter=$adapter | .hooks.stop=[] |
-  .hooks.user_prompt_submit=[$dir + "/one",$dir + "/two",$dir + "/three"]' <<<"$SF_TEST_PROFILE")
+SF_TEST_PROFILE=$(jq -c --arg adapter "${SF_TEST_BACKEND:h}" '.model.adapter=$adapter | .hooks=[]' \
+  <<<"$SF_TEST_PROFILE")
+sf_test_bind_hooks user_prompt_submit "$hooks"/{one,two,three}
 new_session ordered; sf_test_run ordered "$session" >"$stream" || fail 'ordered hooks failed'
 jq -e -s 'map(select(.type == "hook_result") | .user_text) ==
   ["one: ordered","two: ordered","three: ordered"]' "$session" >/dev/null ||
@@ -142,7 +143,7 @@ jq -e -s 'map(select(.type == "hook_result") | .user_text) == ["one: ordered"] a
   .[-1].type == "error"' "$session" >/dev/null || fail 'later failure lost durable prefix'
 rm "$FAIL_TWO"
 for name in one two three; do
-  print -r -- '{"match":{"pattern":"^ordered\\z"},"user_text_done":"${output.stdout}"}' \
+  print -r -- '{"on":"user_prompt_submit","match":{"pattern":"^ordered\\z"},"user_text_done":"${output.stdout}"}' \
     >"$hooks/$name/manifest.json"
 done
 new_session matched; sf_test_run ordered "$session" >"$stream" || fail 'matched hooks failed'
@@ -157,10 +158,10 @@ new_session multiline; sf_test_run $'ordered\n' "$session" >"$stream" ||
 jq -e -s 'all(.[]; .type != "hook_result") and
   any(.[]; .type == "user" and .content[0].text == "ordered\n")' \
   "$session" >/dev/null || fail 'multiline prompt was not submitted intact'
-print -r -- '{"match":{"pattern":"["}}' >"$hooks/one/manifest.json"
+print -r -- '{"on":"user_prompt_submit","match":{"pattern":"["}}' >"$hooks/one/manifest.json"
 new_session invalid-match
 sf_test_run other "$session" >"$stream" 2>"$tmp/match.err" &&
   fail 'invalid unmatched manifest succeeded'
-[[ $(<"$tmp/match.err") == *'invalid hook manifest'* ]] ||
+[[ $(<"$tmp/match.err") == *'hook manifest must be valid'* ]] ||
   fail 'invalid match diagnostic was lost'
 print -r -- ok

@@ -10,7 +10,6 @@ sf_sandbox_detect_path() {
 
 sf_sandbox_detect() {
   local output candidate cargo_home config_home home=${HOME-} origin record
-  local read_json write_json
   local -a git_candidates=() read_paths=() write_paths=()
   integer git_attributes=0 git_global=0 git_ignore=0
 
@@ -106,8 +105,7 @@ sf_sandbox_detect() {
     fi
   fi
 
-  read_json=$(jq -cn '$ARGS.positional | unique' --args -- "${read_paths[@]}") || return
-  write_json=$(jq -cn '$ARGS.positional | unique' --args -- "${write_paths[@]}") || return
-  jq -n --argjson read "$read_json" --argjson write "$write_json" \
-    '{sandbox_read_paths:$read,sandbox_write_paths:$write}'
+  jq -cn --argjson reads "${#read_paths}" \
+    '{read:($ARGS.positional[:$reads] | unique), write:($ARGS.positional[$reads:] | unique)}' \
+    --args -- "${read_paths[@]}" "${write_paths[@]}"
 }

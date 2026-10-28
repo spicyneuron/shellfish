@@ -86,8 +86,7 @@ if [[ $operation == inspect || $operation == continue ]]; then
       ($records[-1].type // null) as $last |
       {agent_id:$id, active:$association.active, working:$working,
        settled:(($working | not) and ($last == "error" or
-         ($last == "assistant" and $records[-1].stop == "end" and
-          ((.[0].profile.hooks.stop // []) | length == 0)))),
+         ($last == "assistant" and $records[-1].stop == "end"))),
        answer:([$records[] | select(.type == "assistant" and .stop == "end") |
          [.content[] | select(.type == "text") | .text] | join("\n")] | last // null),
        last_record:$last}

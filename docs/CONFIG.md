@@ -42,11 +42,13 @@ A profile only selects. It holds no values of its own.
 
 | Field | Meaning |
 | --- | --- |
-| `model` | Model files, merged left to right |
-| `sandbox` | Sandbox files, merged left to right |
-| `system` | System prompt files, concatenated in order |
+| `model` | Model files or inline model objects, merged left to right |
+| `sandbox` | Sandbox files or inline sandbox objects, merged left to right |
+| `system` | System prompt files or inline `{"text": "..."}`, concatenated in order |
 | `tools` | Tools exposed to the model |
 | `hooks` | Hooks, each run by the lifecycle its manifest names, in listed order |
+
+A lone `model` or `sandbox` item needs no list. Inline values let one profile hold everything, though separate files are easier to share.
 
 `profiles/default.jsonc` is selected when `--profile` is absent, and `-p REF` selects another. Profiles do not inherit from each other, since a profile is short enough to copy. Only components named in the selected profile are active, and unused files are inert.
 
@@ -86,7 +88,7 @@ A profile's `model` list merges left to right: objects merge recursively and any
 
 Bundled adapters: `anthropic`, `codex`, `openai`, `openai-responses`, and `openrouter`. The `openai` adapter works with any OpenAI-compatible endpoint. See [`HARNESS.md`](HARNESS.md#backend-adapters) for the adapter protocol.
 
-A new session freezes the selected profile with its merged model and every reference resolved.
+A new session freezes the selected profile with its model and sandbox merged and every reference resolved. The frozen profile in a session header is itself a profile and selects the same session again.
 
 ## Environment
 

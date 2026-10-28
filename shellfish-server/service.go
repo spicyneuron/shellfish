@@ -75,8 +75,10 @@ type sessionHeader struct {
 }
 
 type sessionProfile struct {
-	Sandbox *bool    `json:"sandbox"`
-	Tools   []string `json:"tools"`
+	Sandbox *struct {
+		Enabled bool `json:"enabled"`
+	} `json:"sandbox"`
+	Tools []string `json:"tools"`
 }
 
 func New(accessCode string, exec *Exec) (*Service, error) {

@@ -17,7 +17,7 @@ jq -eRn --arg session "$session" --arg hook "${hook:A}" '
   [inputs | fromjson] as $events |
   [$events[].type] == ["_session_load","session","_draft","hook_result"] and
   $events[0] == {type:"_session_load",path:$session} and
-  $events[1].profile.hooks.session_start == [$hook] and
+  $events[1].profile.hooks == [$hook] and
   ($events[2] | .lifecycle == "session_start" and
     .user_text == "Loading AGENTS.md…") and
   ($events[3] | .lifecycle == "session_start" and
@@ -168,7 +168,7 @@ sf_jq -e -s '
   contains("<context script=\"project/instructions\">") and
   contains("Follow this project rule.")
 ' "$session" >/dev/null || fail 'replay needed the live manifest'
-reject 'hook manifest must declare "on"'
+reject 'hook manifest must be valid and declare "on"'
 typeset invalid
 for invalid in field template capture lifecycle unbound; do
   case $invalid in

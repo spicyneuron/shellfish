@@ -11,11 +11,13 @@ typeset -g SF_RUN_HOOK_ERROR=''
 typeset -gA SF_HOOK_PLAN=()
 
 sf_run_hook_project() {
-  local profile=$1 lifecycle=$2
-  sf_jq_fields -rn --argjson profile "$profile" --arg lifecycle "$lifecycle" '
+  local lifecycle=$1
+  sf_jq_fields -rn --argjson profile "$SF_RUN[profile]" --argjson hooks "$SF_RUN[hooks]" \
+    --arg lifecycle "$lifecycle" '
       include "lib/fields";
       entry("model"; $profile.model.request.model),
-      entry("hooks"; $profile.hooks[$lifecycle] // [] | join("\n")),
+      entry("hooks"; [$hooks[] | select(.manifest.on == $lifecycle) | .command[:-4]] |
+        join("\n")),
       ("ok" | field)
     ' || return 1
   SF_HOOK_PLAN=( "${reply[@]}" )
@@ -23,19 +25,17 @@ sf_run_hook_project() {
 
 sf_run_hook_manifest() {
   local command=$1 name=$2 lifecycle=$3 input=$4 id=$5 max_capture=$6
-  sf_profile_read_manifest "$command" || { REPLY=$SF_PROFILE_ERROR; return 1; }
-  REPLY=$(sf_jq -cn --argjson manifest "$REPLY" --arg name "$name" \
-    --arg lifecycle "$lifecycle" --arg input "$input" --arg id "$id" \
+  REPLY=$(sf_jq -cn --argjson hooks "$SF_RUN[hooks]" --arg command "$command/run" \
+    --arg name "$name" --arg lifecycle "$lifecycle" --arg input "$input" --arg id "$id" \
     --argjson max_capture "$max_capture" '
     include "lib/profile";
     include "lib/session";
     include "libexec/run/component";
-    if $manifest | hook_manifest then
-      if $manifest.match == null or ($input | test($manifest.match.pattern)) then
-        component_plan($manifest; {}; []; $name; $input; {type:"_draft",lifecycle:$lifecycle,id:$id}) +
-          {max_capture:($manifest.max_capture_bytes // $max_capture)}
-      else null end
-    else error("invalid hook manifest") end
+    first($hooks[] | select(.command == $command) | .manifest) as $manifest |
+    if $manifest.match == null or ($input | test($manifest.match.pattern)) then
+      component_plan($manifest; {}; []; $name; $input; {type:"_draft",lifecycle:$lifecycle,id:$id}) +
+        {max_capture:($manifest.max_capture_bytes // $max_capture)}
+    else null end
   ' 2>/dev/null) || { REPLY="invalid hook manifest: $command"; return 1; }
 }
 
@@ -97,11 +97,8 @@ sf_run_hooks() {
 
   SF_RUN_HOOK_ERROR=''
   reply=( action '' reason '' payload '' )
-  if (( SF_RUN[hooks_known] )) &&
-      [[ " $SF_RUN[hooks] " != *" $lifecycle "* ]]; then
-    return 0
-  fi
-  sf_run_hook_project "$SF_RUN[profile]" "$lifecycle" || {
+  [[ " $SF_RUN[lifecycles] " == *" $lifecycle "* ]] || return 0
+  sf_run_hook_project "$lifecycle" || {
     SF_RUN_HOOK_ERROR="cannot inspect $lifecycle hooks"
     return 1
   }

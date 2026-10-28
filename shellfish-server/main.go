@@ -184,7 +184,7 @@ func serve(session, bind, binary string) error {
 		tools[i] = filepath.Base(tool)
 	}
 	printStartupBanner(os.Stderr, "http://"+listener.Addr().String(), accessCode,
-		service.header.Cwd, tools, *service.header.Profile.Sandbox)
+		service.header.Cwd, tools, service.header.Profile.Sandbox.Enabled)
 	log.Printf("serving session %s", sessionPath)
 	return serveHTTP(listener, service, killTurn, signals)
 }

@@ -107,14 +107,9 @@ def config_object($path; $fields):
     else . end end;
 def config_assert($valid; $path; $message):
   if $valid then . else config_error($path; $message) end;
-def reference_list: type == "array" and all(.[]; nonempty_control_free_string);
-
-# A profile only selects.
-def config_profile($path):
-  config_object($path; ["$schema", "hooks", "model", "sandbox", "system", "tools"]) |
-  reduce ["hooks", "model", "sandbox", "system", "tools"][] as $field (.;
-    config_assert((has($field) | not) or (.[$field] | reference_list);
-      $path + [$field]; "must be references"));
+# A path: "/", "~/", "./", "../", or "@" for the bundled root.
+def path_reference:
+  nonempty_control_free_string and test("^(/|~/|\\./|\\.\\./|@)");
 
 # A model file configures one request: where it goes and what it carries.
 def config_model($path):
@@ -129,16 +124,6 @@ def config_model($path):
   config_assert((has("request") | not) or (.request | type == "object");
     $path + ["request"]; "must be an object");
 
-# Model files merge left to right: objects recursively, anything else replaced.
-# The request override applies last.
-def model_merge($models; $request):
-  reduce $models[] as $model ({}; . * ($model | del(."$schema"))) |
-  .request = ((.request // {}) * $request) |
-  if .request.model | model_name then . else
-    error("a model is required: set request.model in models/default.jsonc or with --request")
-  end |
-  if (.adapter // "") == "" then error("a model adapter is required") else . end;
-
 # A sandbox file enables or disables sandboxing and grants extra paths.
 def config_sandbox($path):
   config_object($path; ["$schema", "enabled", "read", "write"]) |
@@ -148,8 +133,31 @@ def config_sandbox($path):
     config_assert((has($field) | not) or (.[$field] | type == "array");
       $path + [$field]; "must be an array") |
     reduce range(0; .[$field] // [] | length) as $at (.;
-      config_assert(.[$field][$at] | stored_reference; $path + [$field, $at];
+      config_assert(.[$field][$at] | path_reference; $path + [$field, $at];
         "must be a /, ~/, ./, ../, or @ path")));
+
+# A profile only selects. Each list holds references, and model, sandbox, and
+# system lists may also hold inline values. A lone model or sandbox item needs
+# no list. Absent lists are empty.
+def config_profile($path):
+  config_object($path; ["$schema", "hooks", "model", "sandbox", "system", "tools"]) |
+  del(."$schema") |
+  reduce ("model", "sandbox") as $field (.;
+    if has($field) and (.[$field] | type != "array") then .[$field] |= [.] else . end) |
+  reduce ("model", "sandbox", "system", "tools", "hooks") as $field (.;
+    .[$field] //= [] |
+    config_assert(.[$field] | type == "array"; $path + [$field]; "must be a list") |
+    reduce range(0; .[$field] | length) as $at (.; ($path + [$field, $at]) as $item |
+      .[$field][$at] |= (
+        if nonempty_control_free_string then .
+        elif $field == "model" then config_model($item)
+        elif $field == "sandbox" then config_sandbox($item)
+        elif $field == "system" and type == "object" and keys == ["text"] and
+          (.text | nul_free_string) then .
+        else config_error($item; "must be a reference" +
+          if $field == "system" then " or {\"text\": ...}"
+          elif $field == "model" or $field == "sandbox" then " or object" else "" end)
+        end)));
 
 # A "./" or "../" reference in a config file is relative to the file's $dir.
 def relative_to($dir):
@@ -159,15 +167,23 @@ def relative_to($dir):
       else . + [$part] end) | "/" + join("/")
   else . end;
 def config_relative($kind; $dir):
-  def each($field): if has($field) and (.[$field] | type == "array") then
-    .[$field] |= map(relative_to($dir)) else . end;
-  if type != "object" then .
-  elif $kind == "profile" then each("model") | each("sandbox") | each("system") |
-    each("tools") | each("hooks")
-  elif $kind == "model" then if has("adapter") then .adapter |= relative_to($dir) else . end
-  else each("read") | each("write") end;
+  def each($field; f): if has($field) then .[$field] |= f else . end;
+  if $kind == "model" then each("adapter"; relative_to($dir))
+  elif $kind == "sandbox" then each("read"; map(relative_to($dir))) |
+    each("write"; map(relative_to($dir)))
+  else reduce ("model", "sandbox", "system", "tools", "hooks") as $field (.;
+    each($field; map(if type == "object" and $field != "system"
+      then config_relative($field; $dir) else relative_to($dir) end))) end;
 
-# Sandbox files merge left to right: grants accumulate and "enabled" replaces.
+# Model items merge left to right: objects recursively, anything else replaced.
+def model_merge($models):
+  reduce $models[] as $model ({}; . * ($model | del(."$schema"))) |
+  if .request.model | model_name then . else
+    error("a model is required: set request.model")
+  end |
+  if (.adapter // "") == "" then error("a model adapter is required") else . end;
+
+# Sandbox items merge left to right: grants accumulate and "enabled" replaces.
 def sandbox_merge($files):
   reduce $files[] as $file ({enabled:true, read:[], write:[]};
     (if $file | has("enabled") then .enabled = $file.enabled else . end) |
@@ -175,9 +191,9 @@ def sandbox_merge($files):
 
 # Every path in a frozen profile through f.
 def profile_paths(f):
-  .model.adapter |= f | .system |= map(f) | .tools |= map(f) |
-  .hooks |= map_values(map(f)) |
-  .sandbox_read_paths |= map(f) | .sandbox_write_paths |= map(f);
+  .model.adapter |= f | .system |= map(if type == "string" then f else . end) |
+  .tools |= map(f) | .hooks |= map(f) |
+  .sandbox.read |= map(f) | .sandbox.write |= map(f);
 
 # Stored paths name bundled files "@...", files under HOME "~/...", and
 # anything else absolutely. An empty $share stores nothing as bundled.
@@ -197,26 +213,26 @@ def expand_path($share; $home):
 def profile_store($share; $home): profile_paths(store_path($share; $home));
 def profile_expand($share; $home): profile_paths(expand_path($share; $home));
 
-# The frozen profile: the merged model, resolved references with hooks grouped
-# by lifecycle, and the session's sandbox grants.
+# The frozen profile is a resolved profile: one merged model and sandbox item,
+# and every reference a stored path. Resolving it again changes nothing.
 def canonical_profile:
   type == "object" and
-  keys == ["hooks", "model", "sandbox", "sandbox_read_paths", "sandbox_write_paths",
-    "system", "tools"] and
+  keys == ["hooks", "model", "sandbox", "system", "tools"] and
   (.model | type == "object" and
     (keys - ["context_window"]) == ["adapter", "endpoint", "request"] and
     (.endpoint | endpoint) and (.request | type == "object") and
     (.request.model | model_name) and
     ((has("context_window") | not) or .context_window == null or
       (.context_window | positive_integer))) and
-  (.system | type == "array") and (.tools | type == "array") and
-  (.hooks | type == "object" and ((keys - hook_names) | length == 0) and
-    all(.[]; type == "array")) and
-  (.sandbox_read_paths | type == "array") and (.sandbox_write_paths | type == "array") and
-  all(.model.adapter, .system[], .tools[], .hooks[][], .sandbox_read_paths[],
-    .sandbox_write_paths[]; stored_reference) and
-  (.tools | map(split("/") | last) | all(.[]; tool_name) and length == (unique | length)) and
-  (.sandbox | type == "boolean");
+  (.sandbox | type == "object" and keys == ["enabled", "read", "write"] and
+    (.enabled | type == "boolean") and (.read | type == "array") and
+    (.write | type == "array")) and
+  (.system | type == "array" and all(.[]; stored_reference or
+    (type == "object" and keys == ["text"] and (.text | nul_free_string)))) and
+  (.tools | type == "array") and (.hooks | type == "array") and
+  all(.model.adapter, .tools[], .hooks[], .sandbox.read[], .sandbox.write[];
+    stored_reference) and
+  (.tools | map(split("/") | last) | all(.[]; tool_name) and length == (unique | length));
 
 # The session header freezes one profile. lib/session.jq owns the records that
 # follow it, but cannot call canonical_profile across a module boundary.
