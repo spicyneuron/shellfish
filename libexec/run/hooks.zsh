@@ -24,17 +24,18 @@ sf_run_hook_project() {
 }
 
 sf_run_hook_manifest() {
-  local command=$1 name=$2 lifecycle=$3 input=$4 id=$5 max_capture=$6
+  local command=$1 lifecycle=$2 input=$3 id=$4 max_capture=$5
   REPLY=$(sf_jq -cn --argjson hooks "$SF_RUN[hooks]" --arg command "$command/run" \
-    --arg name "$name" --arg lifecycle "$lifecycle" --arg input "$input" --arg id "$id" \
+    --arg lifecycle "$lifecycle" --arg input "$input" --arg id "$id" \
     --argjson max_capture "$max_capture" '
     include "lib/profile";
-    include "lib/session";
-    include "libexec/run/component";
     first($hooks[] | select(.command == $command) | .manifest) as $manifest |
     if $manifest.match == null or ($input | test($manifest.match.pattern)) then
-      component_plan($manifest; {}; []; $name; $input; {type:"_draft",lifecycle:$lifecycle,id:$id}) +
-        {max_capture:($manifest.max_capture_bytes // $max_capture)}
+      {template:$manifest.user_text, input:$input,
+       draft:({type:"_draft",lifecycle:$lifecycle,id:$id,
+         user_text:render_template($manifest.user_text; {input:$input})} +
+         ($manifest | with_entries(select(.key == "user_preview_lines")))),
+       max_capture:($manifest.max_capture_bytes // $max_capture)}
     else null end
   ' 2>/dev/null) || { REPLY="invalid hook manifest: $command"; return 1; }
 }
@@ -49,11 +50,10 @@ sf_run_hook_complete() {
   local lifecycle=$1 outcome=$2 command=$3
   local -A settled
   sf_jq_fields -cn --argjson component "$SF_COMPONENT[values]" --argjson outcome "$outcome" \
-    --argjson control "$control" --arg lifecycle "$lifecycle" --arg id "$SF_RUN[hook_id]" '
+    --argjson control "$control" --arg lifecycle "$lifecycle" '
     include "lib/fields";
     include "lib/session";
     include "lib/profile";
-    include "libexec/run/component";
     ({user_prompt_submit:["block","handoff","session_update"],
       permission_request:["allow","deny"],pre_tool_use:["deny"],
       stop:["continue"]}[$lifecycle] // []) as $actions |
@@ -65,7 +65,9 @@ sf_run_hook_complete() {
       elif .action == "deny" then keys == ["action"] or
         (keys == ["action","reason"] and (.reason | type == "string"))
       else keys == ["action"] end) then . else error("invalid control") end |
-    ({type:"hook_result",lifecycle:$lifecycle,id:$id} + component_texts($component; $outcome) |
+    ($component.draft + {type:"hook_result",
+      user_text:render_template($component.template; $component + $outcome),
+      model_text:$outcome.output.stdout} | with_entries(select(.value != "")) |
       if (has("user_text") or has("model_text")) | not then entry("result"; "")
       elif canonical_hook_result then entry("result"; tojson)
       else error("invalid hook result") end,
@@ -79,7 +81,6 @@ sf_run_hook_complete() {
   if [[ -n $settled[result] ]]; then
     sf_run_append "$SF_COMPONENT[session]" "$settled[result]" || return
     (( SF_RUN[hook_id] += 1 ))
-    SF_COMPONENT[live]=0
     [[ $settled[model_feedback] != true ]] || model_feedback=1
   fi
 }
@@ -90,7 +91,7 @@ sf_run_hooks() {
   setopt local_options no_err_exit
   local session=$1 lifecycle=$2 content=$3 turn_state=$4
   shift 4
-  local command input config_dir directory error='' name component control action='' reason='' payload=''
+  local command input config_dir directory error='' component control action='' reason='' payload=''
   local -a hooks environment
   local -A SF_COMPONENT=()
   integer max_capture model_feedback=0
@@ -135,14 +136,7 @@ sf_run_hooks() {
         error="hook command is not executable: $command"
         break
       }
-      if [[ $command == "$SF_SHARE/hooks/"* ]]; then
-        name=${command#"$SF_SHARE/hooks/"}
-      elif [[ $command == "$config_dir/hooks/"* ]]; then
-        name=${command#"$config_dir/hooks/"}
-      else
-        name=$command
-      fi
-      sf_run_hook_manifest "$command" "$name" "$lifecycle" "$content" \
+      sf_run_hook_manifest "$command" "$lifecycle" "$content" \
         "$SF_RUN[hook_id]" "$SF_RUN[max_capture]" || { error=$REPLY; break; }
       component=$REPLY
       [[ $component != null ]] || continue
@@ -173,8 +167,6 @@ sf_run_hooks() {
         esac
       fi
       rm -rf -- "$directory"
-      # A draft that nothing settled leaves no trace.
-      sf_run_component_clear || error=${error:-cannot emit hook draft}
       [[ -z $error && -z $action ]] || break
     done
   fi

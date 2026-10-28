@@ -8,12 +8,9 @@ for name in AGENTS.md CLAUDE.md; do
   [[ -f $name && -r $name ]] || continue
   text=$(cat -- "$name" && print x) || exit 1
   text=${text%x}
-  jq -cn --arg name "$name" '
-    {data:{file:$name},
-     user_text:"Loading ${data.file}…",
-     user_text_done:"Project instructions (${data.file}):\n${output.stdout}",
-     model_text:"<context script=\"${name}\">\n${data.file}: Follow the instructions below for this directory tree. Do not reread this file. A nested ${data.file} takes precedence.\n\n${output.stdout}\n</context>"}
-  ' >&3 || exit 1
-  print -rn -- "$text"
+  print -rn -- "Project instructions ($name):"$'\n'"$text" >&2
+  print -r -- "<context script=\"project/instructions\">"
+  print -r -- "$name: Follow the instructions below for this directory tree. Do not reread this file. A nested $name takes precedence."
+  print -rn -- $'\n'"$text"$'\n'"</context>"
   exit
 done

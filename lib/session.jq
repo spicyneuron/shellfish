@@ -67,8 +67,10 @@ def result_fields($required):
   (if has("model_text") then .model_text | type == "string" and length > 0 else true end) and
   ((has("user_preview_lines") | not) or (.user_preview_lines | preview_hint));
 
+# An unsandboxed run marks sandboxed false.
 def canonical_tool_result:
-  result_fields(["exit_code", "id", "input", "name"]) and .type == "tool_result" and
+  (del(.sandboxed) | result_fields(["exit_code", "id", "input", "name"])) and
+  ((has("sandboxed") | not) or .sandboxed == false) and .type == "tool_result" and
   (.id | identifier) and (.name | tool_name) and (.input | type == "object") and
   (.exit_code | type == "number" and floor == . and . >= 0 and . <= 255);
 

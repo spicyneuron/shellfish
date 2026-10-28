@@ -10,25 +10,25 @@ decoded=$(jq -ejr '
     (keys - ["file_path", "limit", "offset"] | length == 0)) |
   (.file_path | field), ((.offset // 1) | tostring | field),
   ((.limit // 500) | tostring | field), ("ok" | field)
-') || { printf 'read_file: invalid input\n' >&2; exit 2; }
+') || { printf 'read_file: invalid input\n'; exit 2; }
 fields=( "${(@0)${decoded%$'\0'}}" )
 (( ${#fields} == 4 )) && [[ $fields[4] == ok ]] || {
-  printf 'read_file: invalid input\n' >&2
+  printf 'read_file: invalid input\n'
   exit 2
 }
 file_path=$fields[1]
 offset=$fields[2]
 limit=$fields[3]
 
-[[ -e $file_path ]] || { printf 'read_file: no such file: %s\n' "$file_path" >&2; exit 2; }
-[[ ! -d $file_path ]] || { printf 'read_file: %s is a directory\n' "$file_path" >&2; exit 2; }
-[[ -f $file_path ]] || { printf 'read_file: not a regular file: %s\n' "$file_path" >&2; exit 2; }
-[[ -r $file_path ]] || { printf 'read_file: cannot read %s\n' "$file_path" >&2; exit 2; }
+[[ -e $file_path ]] || { printf 'read_file: no such file: %s\n' "$file_path"; exit 2; }
+[[ ! -d $file_path ]] || { printf 'read_file: %s is a directory\n' "$file_path"; exit 2; }
+[[ -f $file_path ]] || { printf 'read_file: not a regular file: %s\n' "$file_path"; exit 2; }
+[[ -r $file_path ]] || { printf 'read_file: cannot read %s\n' "$file_path"; exit 2; }
 budget=$((${SHELLFISH_MAX_CAPTURE_BYTES:-32768} - 512 - ${#file_path}))
-((budget > 0)) || { printf 'read_file: read budget is too small\n' >&2; exit 2; }
+((budget > 0)) || { printf 'read_file: read budget is too small\n'; exit 2; }
 probe_bytes=$(head -c 8000 -- "$file_path" | wc -c)
 text_bytes=$(head -c 8000 -- "$file_path" | tr -d '\0' | wc -c)
-((probe_bytes == text_bytes)) || { printf 'read_file: %s appears to be binary\n' "$file_path" >&2; exit 2; }
+((probe_bytes == text_bytes)) || { printf 'read_file: %s appears to be binary\n' "$file_path"; exit 2; }
 
 READ_FILE_PATH=$file_path awk -v start="$offset" -v max="$limit" -v budget="$budget" '
   BEGIN { path = ENVIRON["READ_FILE_PATH"] }
@@ -44,12 +44,12 @@ READ_FILE_PATH=$file_path awk -v start="$offset" -v max="$limit" -v budget="$bud
   }
   END {
     if (over_line) {
-      printf "read_file: line %d of %s is %d bytes and does not fit the %d byte read budget; use shell to slice it\n", over_line, path, over_size, budget > "/dev/stderr"
+      printf "read_file: line %d of %s is %d bytes and does not fit the %d byte read budget; use shell to slice it\n", over_line, path, over_size, budget
       exit 2
     }
     if (NR == 0) { print "(empty)"; exit }
     if (start > NR) {
-      printf "read_file: %s has %d lines; offset %d is past the end\n", path, NR, start > "/dev/stderr"
+      printf "read_file: %s has %d lines; offset %d is past the end\n", path, NR, start
       exit 2
     }
     suffix = reason == "the byte budget" ? ", byte-limited" : ""

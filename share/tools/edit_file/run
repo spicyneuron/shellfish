@@ -9,10 +9,10 @@ decoded=$(jq -ejr '
     (keys - ["file_path", "new_string", "old_string", "replace_all"] | length == 0)) |
   (.file_path | field), (.old_string | field), (.new_string | field),
   ((.replace_all // false) | tostring | field), ("ok" | field)
-') || { printf 'edit_file: invalid input\n' >&2; exit 2; }
+') || { printf 'edit_file: invalid input\n'; exit 2; }
 fields=( "${(@0)${decoded%$'\0'}}" )
 (( ${#fields} == 5 )) && [[ $fields[5] == ok ]] || {
-  printf 'edit_file: invalid input\n' >&2
+  printf 'edit_file: invalid input\n'
   exit 2
 }
 file_path=$fields[1]
@@ -20,13 +20,13 @@ old_string=$fields[2]
 new_string=$fields[3]
 replace_all=$fields[4]
 
-[[ -e $file_path || -L $file_path ]] || { printf 'edit_file: no such file: %s\n' "$file_path" >&2; exit 2; }
-[[ ! -d $file_path ]] || { printf 'edit_file: %s is a directory\n' "$file_path" >&2; exit 2; }
-[[ -f $file_path ]] || { printf 'edit_file: not a regular file: %s\n' "$file_path" >&2; exit 2; }
-[[ -r $file_path && -w $file_path ]] || { printf 'edit_file: cannot write %s\n' "$file_path" >&2; exit 2; }
+[[ -e $file_path || -L $file_path ]] || { printf 'edit_file: no such file: %s\n' "$file_path"; exit 2; }
+[[ ! -d $file_path ]] || { printf 'edit_file: %s is a directory\n' "$file_path"; exit 2; }
+[[ -f $file_path ]] || { printf 'edit_file: not a regular file: %s\n' "$file_path"; exit 2; }
+[[ -r $file_path && -w $file_path ]] || { printf 'edit_file: cannot write %s\n' "$file_path"; exit 2; }
 probe_bytes=$(wc -c <"$file_path")
 text_bytes=$(tr -d '\0' <"$file_path" | wc -c)
-((probe_bytes == text_bytes)) || { printf 'edit_file: %s is not a text file\n' "$file_path" >&2; exit 2; }
+((probe_bytes == text_bytes)) || { printf 'edit_file: %s is not a text file\n' "$file_path"; exit 2; }
 original=$(cat -- "$file_path"; printf X); original=${original%X}
 
 matches=0
@@ -36,14 +36,14 @@ while [[ $remainder == *"$old_string"* ]]; do
   ((matches += 1))
 done
 case $matches in
-  0) printf 'edit_file: old_string does not appear in %s\n' "$file_path" >&2; exit 2 ;;
+  0) printf 'edit_file: old_string does not appear in %s\n' "$file_path"; exit 2 ;;
   1) updated=${original%%"$old_string"*}$new_string${original#*"$old_string"} ;;
   *)
     if [[ $replace_all == true ]]; then
       updated=${original//"$old_string"/"$new_string"}
     else
       printf 'edit_file: old_string appears %d times in %s; include more surrounding context or set replace_all\n' \
-        "$matches" "$file_path" >&2
+        "$matches" "$file_path"
       exit 2
     fi
     ;;
@@ -53,21 +53,21 @@ if [[ $updated == "$original" ]]; then
   exit 0
 fi
 snapshot=$(mktemp "${TMPDIR:-/tmp}/shellfish-edit-original.XXXXXX") || {
-  printf 'edit_file: cannot prepare diff for %s\n' "$file_path" >&2
+  printf 'edit_file: cannot prepare diff for %s\n' "$file_path"
   exit 2
 }
 diff_file=$(mktemp "${TMPDIR:-/tmp}/shellfish-edit-diff.XXXXXX") || {
   rm -f -- "$snapshot"
-  printf 'edit_file: cannot prepare diff for %s\n' "$file_path" >&2
+  printf 'edit_file: cannot prepare diff for %s\n' "$file_path"
   exit 2
 }
 trap 'rm -f -- "$snapshot" "$diff_file"' EXIT
 cp -- "$file_path" "$snapshot" || {
-  printf 'edit_file: cannot prepare diff for %s\n' "$file_path" >&2
+  printf 'edit_file: cannot prepare diff for %s\n' "$file_path"
   exit 2
 }
 printf '%s' "$updated" >"$file_path" || {
-  printf 'edit_file: cannot write %s\n' "$file_path" >&2
+  printf 'edit_file: cannot write %s\n' "$file_path"
   exit 2
 }
 if diff -U1 -L '' -L '' -- "$snapshot" "$file_path" >"$diff_file"; then
@@ -76,7 +76,7 @@ else
   diff_status=$?
 fi
 ((diff_status == 1)) || {
-  printf 'edit_file: cannot render diff for %s\n' "$file_path" >&2
+  printf 'edit_file: cannot render diff for %s\n' "$file_path"
   exit 2
 }
 awk '

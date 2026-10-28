@@ -7,7 +7,7 @@ typeset input operation profile model task agent_id child parent_dir association
 typeset limit=${SHELLFISH_MAX_ACTIVE_AGENTS-4}
 integer count=0 result=0
 
-fail() { print -u2 -r -- "agent: $1"; exit ${2:-1}; }
+fail() { print -r -- "agent: $1"; exit ${2:-1}; }
 
 input=$(cat) || fail 'cannot read input'
 # Only a profile name: a path, or a name leaving profiles/, could select a

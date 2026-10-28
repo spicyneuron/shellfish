@@ -15,15 +15,13 @@ export SHELLFISH_MAX_CAPTURE_BYTES=1024
   >"$stream" || fail 'manifested session_start hook failed'
 jq -eRn --arg session "$session" --arg hook "${hook:A}" '
   [inputs | fromjson] as $events |
-  [$events[].type] == ["_session_load","session","_draft","hook_result"] and
+  [$events[].type] == ["_session_load","session","hook_result"] and
   $events[0] == {type:"_session_load",path:$session} and
   $events[1].profile.hooks == [$hook] and
   ($events[2] | .lifecycle == "session_start" and
-    .user_text == "Loading AGENTS.md…") and
-  ($events[3] | .lifecycle == "session_start" and
     .user_text == "Project instructions (AGENTS.md):\nFollow this project rule.\n" and
     (.model_text | contains("<context script=\"project/instructions\">")))
-' <"$stream" >/dev/null || fail 'hook draft, name, or settlement was wrong'
+' <"$stream" >/dev/null || fail 'hook settlement was wrong'
 assert_canonical_session "$session"
 create() {
   local destination=$1
@@ -44,14 +42,14 @@ reject() {
 # Run one presentation contract through both public compositions.
 sf_test_frozen_profile
 export SHELLFISH_MAX_CAPTURE_BYTES=1024
-typeset kind scenario manifest result_type component_name
+typeset kind scenario manifest result_type
 cat >"$hook/run" <<'ZSH'
 #!/usr/bin/env zsh
 cat >/dev/null
 case $COMPONENT_CASE in
   protocol)
-    print -r -u3 -- '{"state_update":[{"name":"component/a","value":1}],"data":{"tag":"old"},"user_text":"Working ${data.tag}"}'
-    print -r -u3 -- '{"state_update":[{"name":"component/b","value":2}],"data":{"tag":"${literal}"},"user_text":"Shown ${data.tag}","user_text_done":"${data.tag}: ${output.stdout}|${output.stderr}/${output.exit_code}","model_text":"${output.stdout}"}'
+    print -r -u3 -- '{"state_update":[{"name":"component/a","value":1}]}'
+    print -r -u3 -- '{"state_update":[{"name":"component/b","value":2}]}'
     print -rn -- 'literal ${input}'
     print -rn -u2 -- 'stderr'
     [[ $COMPONENT_KIND != tool ]] || exit 4
@@ -65,93 +63,65 @@ case $COMPONENT_CASE in
     print -rn -- 'head'${(l:1200::o:)}'stdout-tail'
     print -rn -u2 -- 'head'${(l:1200::e:)}'stderr-tail'
     ;;
-  silent)
-    print -r -u3 -- '{"user_text":"Working","user_text_done":"","model_text":""}'
-    print -rn -- 'unrendered output'
-    ;;
+  silent) print -rn -u2 -- 'unrendered output' ;;
 esac
 ZSH
-for scenario in protocol capture capture_override silent manifest_silent null; do
+for scenario in protocol capture capture_override silent; do
   case $scenario in
-    protocol) manifest='{"user_text":"Running ${name}","user_text_done":"Finished","user_preview_lines":"full","model_text":""}' ;;
-    capture) manifest='{"user_text":"","user_text_done":"${output.stdout}|${output.stderr}","model_text":"${output.stdout}${output.stderr}"}' ;;
-    capture_override) manifest='{"user_text":"","user_text_done":"${output.stdout}|${output.stderr}","model_text":"${output.stdout}${output.stderr}","max_capture_bytes":2048}' ;;
-    silent) manifest='{"user_text":"","user_text_done":"","model_text":""}' ;;
-    manifest_silent) manifest='{"user_text":"Working","user_text_done":"","model_text":""}' ;;
-    null) manifest='{"user_text":null,"user_text_done":null,"user_text_skipped":null,"model_text":null}' ;;
+    protocol) manifest='{"user_text":"Running\n${output.stdout}|${output.stderr}","user_preview_lines":"full"}' ;;
+    capture) manifest='{"user_text":"${output.stdout}|${output.stderr}"}' ;;
+    capture_override) manifest='{"user_text":"${output.stdout}|${output.stderr}","max_capture_bytes":2048}' ;;
+    silent) manifest='{}' ;;
   esac
   jq -c '{on:"session_start"} + .' <<<"$manifest" >"$hook/manifest.json"
-  sf_test_shell_tool 'del(.user_text_unsandboxed, .user_text_done_unsandboxed) + '"$manifest" "$hook/run"
+  sf_test_shell_tool 'del(.user_text) + '"$manifest" "$hook/run"
   for kind in hook tool; do
     session="$tmp/$kind-$scenario.jsonl"
     export COMPONENT_CASE=$scenario COMPONENT_KIND=$kind
     if [[ $kind == hook ]]; then
-      result_type=hook_result component_name=project/instructions
+      result_type=hook_result
       create "$session" || fail "$kind $scenario failed"
     else
-      result_type=tool_result component_name=shell
+      result_type=tool_result
       sf_test_session "$session"
       SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_COMMAND=$scenario \
         sf_test_run component "$session" >"$stream" || fail "$kind $scenario failed"
     fi
-    jq -eRn --arg scenario "$scenario" --arg kind "$kind" \
-      --arg result_type "$result_type" --arg name "$component_name" '
+    jq -eRn --arg scenario "$scenario" --arg kind "$kind" --arg result_type "$result_type" '
       [inputs | fromjson | select(.type | IN("_draft","state_update","hook_result","tool_result"))] as $e |
       [$e[] | select(.type == $result_type)] as $results |
-      (if $kind == "tool" or ($scenario | IN("protocol","capture","capture_override")) then
+      (if $kind == "tool" or $scenario != "silent" then
         ($results | length) == 1 else ($results | length) == 0 end) and
       if $scenario == "protocol" then
-        [$e[].type] == (["_draft","state_update","_draft","state_update","_draft"] +
-          if $kind == "tool" then ["_draft"] else [] end + [$result_type]) and
-        [$e[1],$e[3]] == [{type:"state_update",name:"component/a",value:1},{type:"state_update",name:"component/b",value:2}] and
-        [$e[0].user_text,$e[2].user_text,$e[4].user_text] == ["Running " + $name,"Working old","Shown ${literal}"] and
-        $results[0].user_text == ("${literal}: literal ${input}|stderr/" +
-          if $kind == "tool" then "4" else "0" end) and
+        [$e[].type] == ["_draft","state_update","state_update",$result_type] and
+        [$e[1],$e[2]] == [{type:"state_update",name:"component/a",value:1},{type:"state_update",name:"component/b",value:2}] and
+        $e[0].user_text == "Running\n|" and
+        $results[0].user_text == "Running\nliteral ${input}|stderr" and
         (if $kind == "tool" then $results[0].exit_code == 4 else true end) and
         $results[0].model_text == "literal ${input}" and
         all($e[] | select(.type != "state_update"); .user_preview_lines == "full")
       elif $scenario == "capture" then
         ($results[0].user_text | length == 2049 and contains("stdout-tail") and
           contains("stderr-tail") and (contains("head") | not)) and
-        ($results[0].model_text | length == 2048) and
+        ($results[0].model_text | length == 1024) and
         ([$results[0].user_text | scan("\\[output truncated\\]")] | length) == 2
       elif $scenario == "capture_override" then
         ($results[0].user_text | contains("head") and contains("stdout-tail") and
           contains("stderr-tail") and (contains("[output truncated]") | not)) and
-        ($results[0].model_text | length > 2048)
-      elif $scenario == "silent" or $scenario == "manifest_silent" then
-        $e[0].user_text == "Working" and
-        if $kind == "hook" then ($results | length) == 0 and $e[-1].user_text == ""
-        else ($results | length) == 1 and ($results[0] | has("user_text") or has("model_text") | not) end
+        ($results[0].model_text | length > 1024)
       else
         if $kind == "hook" then $e == []
-        else $e[0].user_text == "shell {\"command\":\"null\"}" and
-          $results[0].user_text == "shell {\"command\":\"null\"}\n" and
-          ($results[0] | has("model_text") | not) end
+        else [$e[].type] == ["tool_result"] and
+          ($results[0] | has("user_text") or has("model_text") | not) end
       end
     ' <"$stream" >/dev/null || fail "$kind $scenario presentation was wrong"
     assert_canonical_session "$session"
   done
 done
-# Absolute references keep the relative name under the configured root and the
-# absolute name elsewhere, even under another /hooks/ directory.
-typeset external="$tmp/external/hooks/probe" reference name
-print -r -- '#!/usr/bin/env zsh' |
-  sf_test_hook "$external" '{"on":"session_start","user_text_done":"${name}"}'
-print -r -- '{"on":"session_start","user_text_done":"${name}"}' >"$hook/manifest.json"
-print -r -- '#!/usr/bin/env zsh' >"$hook/run"
-for reference name in "$hook" project/instructions "$external" "${external:A}"; do
-  sf_test_profile absolute "{\"hooks\":[\"$reference\"]}"
-  create "$tmp/absolute-${reference:t}.jsonl" -p absolute || fail "absolute hook failed: $reference"
-  jq -eRn --arg name "$name" '
-    [inputs | fromjson | select(.type == "hook_result")][0].user_text == $name
-  ' <"$stream" >/dev/null || fail "absolute hook rendered the wrong name: $reference"
-done
 # Invalid fd3 lines fail without leaving a result.
 typeset field
 for field in '"unknown":true' '"state_update":[{"name":"invalid state","value":1}]' \
-  '"state_update":[{"name":"valid/state","value":1}],"data":{"note":1}' \
-  '"data":{"bad-key":"value"}' '"user_text_done":"${output.unknown}"'; do
+  '"state_update":[{"name":"valid/state","value":1}],"user_text":"override"'; do
   print -r -- '#!/usr/bin/env zsh' >"$hook/run"
   print -r -- "print -r -u3 -- '{$field}'" >>"$hook/run"
   reject 'returned invalid control'
@@ -173,7 +143,7 @@ typeset invalid
 for invalid in field template capture lifecycle unbound; do
   case $invalid in
     field) print -r -- '{"on":"session_start","description":"not a hook field"}' >"$hook/manifest.json" ;;
-    template) print -r -- '{"on":"session_start","user_text_done":"${input.undeclared}"}' >"$hook/manifest.json" ;;
+    template) print -r -- '{"on":"session_start","user_text":"${input.undeclared}"}' >"$hook/manifest.json" ;;
     capture) print -r -- '{"on":"session_start","max_capture_bytes":63}' >"$hook/manifest.json" ;;
     lifecycle) print -r -- '{"on":"session_end"}' >"$hook/manifest.json" ;;
     unbound) print -r -- '{}' >"$hook/manifest.json" ;;

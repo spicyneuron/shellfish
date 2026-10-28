@@ -81,15 +81,15 @@ SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_COUNT=2 \
 typeset pre="$tmp/pre" later="$tmp/pre-later" post="$tmp/post"
 typeset hook_dir="$tmp/hook-inputs" tool_marker="$tmp/tool-ran"
 mkdir "$hook_dir"
-sf_test_hook "$pre" <<'ZSH'
+sf_test_hook "$pre" '{"user_text":"${output.stderr}"}' <<'ZSH'
 #!/usr/bin/env zsh
 input=$(cat)
 id=$(jq -r '.tool_use_id' <<<"$input")
 print -rn -- "$input" >"$HOOK_DIR/pre-$id"
 if [[ $id == call_1 ]]; then
-  print -r -u3 -- '{"user_text_done":"pre display","model_text":"pre context","state_update":[{"name":"pre/call_1","value":true}],"action":"deny","reason":"pre denied"}'
-else
-  :
+  print -r -u3 -- '{"state_update":[{"name":"pre/call_1","value":true}],"action":"deny","reason":"pre denied"}'
+  print -rn -- 'pre context'
+  print -rn -u2 -- 'pre display'
 fi
 ZSH
 sf_test_hook "$later" <<'ZSH'
@@ -97,12 +97,13 @@ sf_test_hook "$later" <<'ZSH'
 id=$(jq -r '.tool_use_id')
 print -r -- "$id" >>"$HOOK_DIR/later"
 ZSH
-sf_test_hook "$post" <<'ZSH'
+sf_test_hook "$post" '{"user_text":"${output.stderr}"}' <<'ZSH'
 #!/usr/bin/env zsh
 input=$(cat)
 id=$(jq -r '.tool_use_id' <<<"$input")
 print -rn -- "$input" >"$HOOK_DIR/post-$id"
-print -rn -u3 -- "{\"user_text_done\":\"post $id\",\"state_update\":[{\"name\":\"post/$id\",\"value\":true}]}"
+print -rn -u3 -- "{\"state_update\":[{\"name\":\"post/$id\",\"value\":true}]}"
+print -rn -u2 -- "post $id"
 ZSH
 export HOOK_DIR=$hook_dir TOOL_MARKER=$tool_marker
 sf_test_bind_hooks pre_tool_use "$pre" "$later"
@@ -117,7 +118,7 @@ jq -e '. == {turn_id:1,tool_name:"shell",tool_use_id:"call_1",
   "print -r -- ran >>${(q)tool_marker}; print -rn -- output" \
   "$hook_dir/pre-call_1" >/dev/null || fail 'pre hook received the wrong request'
 jq -e '. == {turn_id:1,tool_name:"shell",tool_use_id:"call_1",
-  tool_input:{command:$command},tool_response:{stdout:"",stderr:"pre denied",exit_code:126}}' \
+  tool_input:{command:$command},tool_response:{stdout:"pre denied",stderr:"pre denied",exit_code:126}}' \
   --arg command "print -r -- ran >>${(q)tool_marker}; print -rn -- output" \
   "$hook_dir/post-call_1" >/dev/null || fail 'post hook did not receive the denial outcome'
 assert_equal call_2 "$(<$hook_dir/later)" 'deny reached the later hook'
@@ -142,15 +143,12 @@ jq -eRn '
   ($events | map(select(.type == "tool_result"))[0].model_text | contains("pre denied")) and
   ([$events[] | select((.type == "_draft" and .name == "shell") or
       (.type == "hook_result" and .lifecycle == "post_tool_use")) |
-    if .type == "hook_result" then "post"
-    elif .user_text == "" then "clear" else "running" end] ==
-    ["post","running","clear","post"]) and
-  ($events | map(select(.type == "_draft" and .name == "shell" and .user_text != "")) |
-    length == 1 and
-    .[0].user_text == "Running shell command outside the sandbox:\n" + $command) and
+    if .type == "hook_result" then "post" else "running" end] ==
+    ["post","running","post"]) and
+  ($events | map(select(.type == "_draft" and .name == "shell"))[0].user_text ==
+    "Shell " + $command + "\n") and
   ($events | map(select(.type == "tool_result"))[1] |
-    .user_text == "Ran shell command outside the sandbox:\n" + $command +
-      "\noutput\nexit 0" and
+    .user_text == "Shell " + $command + "\noutput\nexit 0" and
     .model_text == "output\nexit 0")
 ' --arg command "print -r -- ran >>${(q)tool_marker}; print -rn -- output" \
   <"$stream" >/dev/null || fail 'tool lifecycle ordering or rendering was wrong'
@@ -158,12 +156,14 @@ assert_canonical_session "$session"
 
 # Permission hooks receive the request and may allow or deny.
 typeset permission="$tmp/permission" permission_input="$tmp/permission-input"
-sf_test_hook "$permission" <<'ZSH'
+sf_test_hook "$permission" '{"user_text":"${output.stderr}"}' <<'ZSH'
 #!/usr/bin/env zsh
 [[ $# == 2 && $1 == shell && $2 == call_1 ]] || exit 2
 input=$(cat)
 print -rn -- "$input" >"$PERMISSION_INPUT"
-print -rn -u3 -- '{"state_update":[{"name":"permission/state","value":true}],"action":"allow","user_text_done":"review display","model_text":"review context"}'
+print -rn -u3 -- '{"state_update":[{"name":"permission/state","value":true}],"action":"allow"}'
+print -rn -- 'review context'
+print -rn -u2 -- 'review display'
 ZSH
 export PERMISSION_INPUT=$permission_input
 SF_TEST_PROFILE=$(jq -c '.hooks=[] | .sandbox.enabled=true' <<<"$SF_TEST_PROFILE")
@@ -186,12 +186,12 @@ jq -eRn '
     .lifecycle == "permission_request" and
     .model_text == "review context" and .user_text == "review display") and
   ([$events[] | select(.type | IN("hook_result","_draft")) | .type] ==
-    ["hook_result","_draft","_draft"]) and
-  ($events | map(select(.type == "_draft" and .name == "shell" and .user_text != ""))[0].user_text) ==
-    "Running shell command outside the sandbox:\nprint -rn -- approved" and
+    ["hook_result","_draft"]) and
+  ($events | map(select(.type == "_draft"))[0] |
+    .user_text == "Shell print -rn -- approved\n" and .sandboxed == false) and
   ($events | map(select(.type == "tool_result"))[0] |
-    .exit_code == 0 and
-    .user_text == "Ran shell command outside the sandbox:\nprint -rn -- approved\napproved\nexit 0")
+    .exit_code == 0 and .sandboxed == false and
+    .user_text == "Shell print -rn -- approved\napproved\nexit 0")
 ' <"$stream" >/dev/null || fail 'permission allow produced the wrong records'
 
 sf_test_hook "$permission" '{"on":"permission_request"}' <<'ZSH'
@@ -207,14 +207,13 @@ jq -eRn '
   [inputs | fromjson] as $events |
   ($events | any(.type == "_draft" and .name == "shell") | not) and
   ($events | map(select(.type == "tool_result"))[0] |
-    .exit_code == 126 and (.model_text | contains("review denied")) and
-    (.user_text | startswith("Did not run shell command:\n")) and
-    (.user_text | endswith("\nreview denied")))
+    .exit_code == 126 and .model_text == "review denied" and (has("sandboxed") | not) and
+    .user_text == "Shell true\nreview denied")
 ' <"$stream" >/dev/null || fail 'permission denial did not settle the call'
 
 # If every hook defers, approval falls back to the client.
 typeset defer_one="$tmp/defer-one" defer_two="$tmp/defer-two"
-sf_test_hook "$defer_one" '{"user_text_done":"reviewed"}' <<'ZSH'
+sf_test_hook "$defer_one" '{"user_text":"reviewed"}' <<'ZSH'
 #!/usr/bin/env zsh
 cat >"$PERMISSION_INPUT"
 ZSH
@@ -235,7 +234,7 @@ SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_BYPASS=true \
 jq -eRn '
   [inputs | fromjson] as $events |
   ($events | map(select(.type == "_tool_permission_request")) | length) == 1 and
-  ($events | map(select(.type == "_tool_permission_request"))[0].preview) ==
+  ($events | map(select(.type == "_tool_permission_request"))[0].tool.input.command) ==
     "print -rn -- approved" and
   ($events | map(select(.type == "hook_result")) | any(.user_text == "reviewed")) and
   ($events | map(select(.type == "tool_result"))[0].exit_code) == 0
@@ -263,7 +262,7 @@ SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_COUNT=2 \
 jq -eRn '
   [inputs | fromjson | select(.type | IN("tool_result","error"))] as $events |
   ($events | map(select(.type == "tool_result") | [.id,.exit_code,.model_text])) == [
-    ["call_1",126,"tool call interrupted"],
+    ["call_1",126,"tool call cancelled"],
     ["call_2",126,"tool call cancelled"]] and
   ($events[-1] | .type == "error" and (.user_text | contains("pre_tool_use")))
 ' <"$stream" >/dev/null || fail 'turn failure did not settle pending calls before its error'
@@ -272,7 +271,7 @@ SF_TEST_PROFILE=$pre_profile
 
 # A failing post hook keeps the settled outcome and its accepted state before the error.
 typeset post_fail="$tmp/post-fail"
-sf_test_hook "$post_fail" '{"user_text_done":"must not settle"}' <<'ZSH'
+sf_test_hook "$post_fail" '{"user_text":"must not settle"}' <<'ZSH'
 #!/usr/bin/env zsh
 cat >/dev/null
 print -r -u3 -- '{"state_update":[{"name":"post/failure","value":true}]}'
@@ -344,14 +343,14 @@ SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_COMMAND='print -rn -- output; e
 jq -eRn '
   [inputs | fromjson | select(.type == "tool_result")][0] |
   .exit_code == 3 and
-  (.user_text | contains("Ran shell command:\nprint -rn -- output; exit 3\noutput\nexit 3\n<sandbox_notice>")) and
+  (.user_text | contains("Shell print -rn -- output; exit 3\noutput\nexit 3\n<sandbox_notice>")) and
   (.model_text | contains("output\nexit 3\n<sandbox_notice>"))
 ' <"$stream" >/dev/null || fail 'sandbox denial did not annotate the model text'
 jq -e --slurpfile output "$sandbox_output" '
   . as $result |
   $output[0].exit_code == $result.exit_code and
-  ($output[0].stdout + $output[0].stderr) == $result.model_text and
-  ($output[0].stderr | contains("<sandbox_notice>"))
+  $output[0].stdout == $result.model_text and
+  ($output[0].stdout | contains("<sandbox_notice>"))
 ' < <(jq -c 'select(.type == "tool_result")' "$stream") >/dev/null ||
   fail 'post_tool_use did not receive the rendered sandbox output'
 SF_TEST_PROFILE=$(jq -c '.hooks=[]' <<<"$SF_TEST_PROFILE")
@@ -406,7 +405,7 @@ case $(jq -r .command) in
     : >"$TOOL_MARKER"
     sleep 30
     ;;
-  huge) jq -cn '{user_text:("x" * 70000)}' >&3 ;;
+  huge) jq -cn '{reason:("x" * 70000)}' >&3 ;;
 esac
 ZSH
 chmod +x "$protocol"

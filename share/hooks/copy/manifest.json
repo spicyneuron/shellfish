@@ -1,1 +1,1 @@
-{"on":"user_prompt_submit","match":{"pattern":"^/copy( [^\\n]*)?\\z"},"user_text_done":"${output.stderr}"}
+{"on":"user_prompt_submit","match":{"pattern":"^/copy( [^\\n]*)?\\z"},"user_text":"${output.stderr}"}

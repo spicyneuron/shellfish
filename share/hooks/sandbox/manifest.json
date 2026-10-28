@@ -1,1 +1,1 @@
-{"on":"user_prompt_submit","match":{"pattern":"^/sandbox( [^\\n]*)?\\z"},"user_text_done":"${output.stderr}"}
+{"on":"user_prompt_submit","match":{"pattern":"^/sandbox( [^\\n]*)?\\z"},"user_text":"${output.stderr}"}

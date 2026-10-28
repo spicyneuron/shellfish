@@ -42,22 +42,16 @@ jq -eRn --arg command "$command" '
 ' <"$stream" >/dev/null || fail 'tool interruption did not settle pending calls'
 assert_canonical_session "$session"
 
-# An interrupted tool settles with the data and templates it already sent.
-typeset profile=$SF_TEST_PROFILE partial="$tmp/partial-active"
-cat >"$tmp/partial-run" <<EOF
-#!/usr/bin/env zsh
-print -ru3 -- '{"data":{"step":"halfway"},"user_text_skipped":"Stopped \${data.step}"}'
-: >${(q)partial}
-sleep 30
-EOF
-chmod +x "$tmp/partial-run"
-sf_test_shell_tool . "$tmp/partial-run"
+# An interrupted tool renders its template with the reason as stderr.
+typeset profile=$SF_TEST_PROFILE
+sf_test_shell_tool '.user_text = "Stopped\n${output.stderr}"'
 session="$tmp/partial-cancel.jsonl" stream="$tmp/partial-cancel.stream"
-interrupt "$session" "$stream" "$partial" true
+rm -f "$marker"
+interrupt "$session" "$stream" "$marker" "$command"
 jq -eRn '
-  [inputs | fromjson | select(.type == "tool_result" and .id == "call_1")][0].user_text ==
-    "Stopped halfway"
-' <"$stream" >/dev/null || fail 'interrupted tool lost its fd 3 presentation'
+  [inputs | fromjson | select(.type == "tool_result") | .user_text] ==
+    ["Stopped\ntool call interrupted", "Stopped\ntool call cancelled"]
+' <"$stream" >/dev/null || fail 'interrupted tool did not render its reason'
 assert_canonical_session "$session"
 SF_TEST_PROFILE=$profile
 

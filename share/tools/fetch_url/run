@@ -9,7 +9,7 @@ url=$(jq -ejr '
       test("^https?://[^/?#[:space:]]+")) and
     (keys == ["url"])) |
   .url
-') || { printf 'fetch_url: invalid input\n' >&2; exit 2; }
+') || { printf 'fetch_url: invalid input\n'; exit 2; }
 
 exec curl \
   --disable \
@@ -20,4 +20,4 @@ exec curl \
   --max-time 60 \
   --header 'X-Return-Format: markdown' \
   -- \
-  "https://r.jina.ai/$url"
+  "https://r.jina.ai/$url" 2>&1

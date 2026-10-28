@@ -8,8 +8,6 @@
       "url": {"type": "string", "minLength": 1, "description": "HTTP(S) URL to fetch"}
     }
   },
-  "user_text": "Fetching page:\n${input.url}",
-  "user_text_done": "Fetched page:\n${input.url}\n${output.stdout}${output.stderr}",
-  "user_text_skipped": "Did not fetch page:\n${input.url}\n${output.stderr}",
+  "user_text": "Fetch ${input.url}\n${output.stdout}",
   "sandbox": true
 }

@@ -46,19 +46,20 @@ print -r -u3 -- '{"action":"block"}'
 
 START_HOOK = r"""#!/usr/bin/env zsh
 typeset directory=${SHELLFISH_SESSION:h} name=${0:A:h:t}
-print -r -u3 -- "{\"user_text\":\"Inspecting $name\"}"
 : >"$directory/$name-started"
 while [[ ! -e $directory/$name-release ]]; do
   sleep 0.05
 done
-print -r -u3 -- "{\"user_text_done\":\"$name context\",\"model_text\":\"$name context\"}"
+print -r -- "$name context"
+print -r -u2 -- "$name context"
 """
 
 
 def start_hook(directory, name):
     component = Path(directory) / name
     component.mkdir()
-    (component / "manifest.json").write_text('{"on":"session_start"}')
+    (component / "manifest.json").write_text(json.dumps(
+        {"on": "session_start", "user_text": f"Inspecting {name}\n${{output.stderr}}"}))
     script = component / "run"
     script.write_text(START_HOOK)
     script.chmod(0o755)

@@ -166,7 +166,7 @@ Grants are paths and need not exist, so one file can serve several machines. A p
 | `preview_lines_reasoning` | Collapsed reasoning lines or `"full"` |
 | `preview_lines` | Collapsed component-output lines or `"full"` |
 
-`--verbose` temporarily makes both preview limits `"full"`. A hook or tool manifest's `user_preview_lines` overrides the global limit for Running and settled text.
+`--verbose` temporarily makes both preview limits `"full"`. A hook or tool manifest's `user_preview_lines` overrides the global limit.
 
 ## Starter agent
 

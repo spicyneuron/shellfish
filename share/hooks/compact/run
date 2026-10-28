@@ -50,8 +50,6 @@ request=$(jq -cn --arg text "$instruction" \
   '{type:"user",content:[{type:"text",text:$text}]}') || {
   fail_compaction 'Could not prepare summary request. Original session kept.'
 }
-print -ru3 -- '{"user_text":"Compacting conversation…"}' ||
-  fail_compaction 'Could not report compaction progress. Original session kept.'
 summary=$({ cat -- "$SHELLFISH_SESSION"; print -r -- "$request"; } |
   "$SHELLFISH_EXECUTABLE" backend-request |
   jq -er '[.content[] | select(.type == "text") | .text] | join("") |

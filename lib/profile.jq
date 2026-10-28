@@ -32,35 +32,26 @@ def hook_names:
   ["session_start", "user_prompt_submit", "permission_request", "pre_tool_use",
    "post_tool_use", "stop"];
 
-# A template may name component values and declared input properties.
+# A template names the input, its declared properties, and the output streams.
 def component_template($fields):
-  type == "string" and (index("\u0000") | not) and
-  (gsub("\\$\\{[^{}]+\\}"; "") | index("${") | not) and
-  ([scan("\\$\\{([^{}]+)\\}")[0]] |
-    all(.[]; IN("name", "input", "output.stdout", "output.stderr", "output.exit_code") or
-      test("^data\\.[A-Za-z_][A-Za-z0-9_]*$") or
-      (. as $field | $fields | index($field) != null)));
+  nul_free_string and
+  ([scan("\\$\\{([^{}]*)\\}")[0]] - ["input", "output.stdout", "output.stderr"] - $fields |
+    length == 0);
 
-# Component input is text or an object; strings substitute as-is, null as
-# nothing, and other values as JSON. An absent template renders empty.
-def render_template($template; $name; $input; $output; $data):
-  def text: if type == "string" then . elif . == null then "" else tojson end;
-  ({name:$name, input:($input | text)} +
-    ($input | if type == "object" then
-      with_entries(.key = "input." + .key | .value |= text)
-    else {} end) +
-    ($output | with_entries(.key = "output." + .key | .value |= text)) +
-    ($data | with_entries(.key = "data." + .key | .value |= text))) as $variables |
-  $template // "" | gsub("\\$\\{(?<name>[^{}]+)\\}"; $variables[.name] // "");
-
-def component_templates: ["user_text", "user_text_done", "user_text_skipped", "model_text"];
-def tool_inputs: .input_schema.properties // {} | keys | map("input." + .);
+# $values holds input and output. A placeholder names one key below input or
+# output, taken literally even when it contains dots. Strings substitute as-is,
+# null as nothing, and other values as JSON. An absent template renders empty.
+def render_template($template; $values):
+  $template // "" | gsub("\\$\\{(?<path>[^{}]+)\\}"; .path as $path | $values |
+    getpath($path | index(".") as $dot |
+      if $dot == null then [$path] else [$path[:$dot], $path[$dot + 1:]] end) |
+    if type == "string" then . elif . == null then "" else tojson end);
 
 # Shared presentation with caller-supplied keys and template fields.
 def component_manifest($attrs; $fields):
   type == "object" and
-  ((keys - component_templates - ["user_preview_lines", "max_capture_bytes"] - $attrs) | length == 0) and
-  all(.[component_templates[]]; . == null or component_template($fields)) and
+  ((keys - ["user_text", "user_preview_lines", "max_capture_bytes"] - $attrs) | length == 0) and
+  (.user_text == null or (.user_text | component_template($fields))) and
   ((has("user_preview_lines") | not) or (.user_preview_lines | component_preview_hint)) and
   ((has("max_capture_bytes") | not) or (.max_capture_bytes | capture_bytes));
 
@@ -74,12 +65,8 @@ def hook_manifest:
         (try ("" | test($pattern) | type == "boolean") catch false))));
 
 def tool_manifest:
-  tool_inputs as $inputs |
-  component_manifest(["allow_sandbox_bypass", "description", "environment",
-    "input_schema", "sandbox", "user_permission", "user_text_unsandboxed",
-    "user_text_done_unsandboxed"]; $inputs) and
-  all([.user_text_unsandboxed, .user_text_done_unsandboxed][];
-    . == null or component_template($inputs)) and
+  component_manifest(["allow_sandbox_bypass", "description", "environment", "input_schema",
+    "sandbox"]; .input_schema.properties // {} | keys | map("input." + .)) and
   (.description | nul_free_string and length > 0) and
   (.input_schema | type == "object" and .type == "object" and
     ((.properties // {}) | type == "object") and
@@ -89,7 +76,6 @@ def tool_manifest:
       has("request_sandbox_bypass") or has("sandbox_bypass_reason") | not) and
     ((.required // []) |
       index("request_sandbox_bypass") == null and index("sandbox_bypass_reason") == null)) and
-  (.user_permission == null or (.user_permission | component_template($inputs))) and
   ((.environment // []) | type == "array" and length == (unique | length) and
     all(.[]; type == "string" and test("^[A-Za-z_][A-Za-z0-9_]*$"))) and
   (.sandbox | type == "boolean") and

@@ -6,33 +6,33 @@ decoded=$(jq -ejr '
   select(type == "object" and (.file_path | string and length > 0) and
     (.content | string) and (keys - ["content", "file_path"] | length == 0)) |
   (.file_path | field), (.content | field), ("ok" | field)
-') || { printf 'write_file: invalid input\n' >&2; exit 2; }
+') || { printf 'write_file: invalid input\n'; exit 2; }
 fields=( "${(@0)${decoded%$'\0'}}" )
 (( ${#fields} == 3 )) && [[ $fields[3] == ok ]] || {
-  printf 'write_file: invalid input\n' >&2
+  printf 'write_file: invalid input\n'
   exit 2
 }
 file_path=$fields[1]
 content=$fields[2]
 [[ ! -e $file_path && ! -L $file_path ]] || {
-  printf 'write_file: file already exists: %s\n' "$file_path" >&2
+  printf 'write_file: file already exists: %s\n' "$file_path"
   exit 2
 }
 mkdir -p -- "$(dirname -- "$file_path")" || {
-  printf 'write_file: cannot create the parent directory of %s\n' "$file_path" >&2
+  printf 'write_file: cannot create the parent directory of %s\n' "$file_path"
   exit 2
 }
 if ! (set -C; printf '%s' "$content" >"$file_path"); then
-  printf 'write_file: cannot create %s\n' "$file_path" >&2
+  printf 'write_file: cannot create %s\n' "$file_path"
   exit 2
 fi
 empty_file=$(mktemp "${TMPDIR:-/tmp}/shellfish-write-empty.XXXXXX") || {
-  printf 'write_file: cannot prepare diff for %s\n' "$file_path" >&2
+  printf 'write_file: cannot prepare diff for %s\n' "$file_path"
   exit 2
 }
 diff_file=$(mktemp "${TMPDIR:-/tmp}/shellfish-write-diff.XXXXXX") || {
   rm -f -- "$empty_file"
-  printf 'write_file: cannot prepare diff for %s\n' "$file_path" >&2
+  printf 'write_file: cannot prepare diff for %s\n' "$file_path"
   exit 2
 }
 trap 'rm -f -- "$empty_file" "$diff_file"' EXIT
@@ -51,7 +51,7 @@ case $diff_status in
     ' "$diff_file"
     ;;
   *)
-    printf 'write_file: cannot render diff for %s\n' "$file_path" >&2
+    printf 'write_file: cannot render diff for %s\n' "$file_path"
     exit 2
     ;;
 esac

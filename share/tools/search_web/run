@@ -17,8 +17,10 @@ payload=$(jq -ec '
         if has("num_results") then {numResults: .num_results} else {} end)
     }
   }
-') || { printf 'search_web: invalid input\n' >&2; exit 2; }
+') || { printf 'search_web: invalid input\n'; exit 2; }
 
+# Errors go to the model.
+exec 2>&1
 curl \
   --disable \
   --silent \

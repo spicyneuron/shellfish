@@ -21,7 +21,6 @@ case "$read_status:$submitted" in
 esac
 
 print -ru3 -- '{"action":"block"}'
-print -ru3 -- '{"user_text":"Forking session…"}' || exit 1
 
 if [[ $target != <-> || ${#target} -gt 9 ]] || (( explicit && target == 0 )); then
   print -ru2 -- 'Usage: /fork [N]'

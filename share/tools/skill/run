@@ -3,7 +3,7 @@ set -euo pipefail
 
 name=$(jq -ejr 'select(type == "object" and keys == ["name"] and
   (.name | type == "string" and test("^[a-z0-9]+(-[a-z0-9]+)*$") and length <= 64)) | .name') || {
-  print -u2 -r -- 'skill: invalid input'
+  print -r -- 'skill: invalid input'
   exit 2
 }
 bundled_root=${0:A:h:h:h}
@@ -16,5 +16,5 @@ for (( index = 1; index <= ${#reply}; index += 3 )); do
   sf_skills_wrap "$name" "${reply[index+2]:h}" "$REPLY"
   exit $?
 done
-print -u2 -r -- "skill is not available: $name"
+print -r -- "skill is not available: $name"
 exit 2

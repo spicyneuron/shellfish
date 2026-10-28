@@ -111,7 +111,7 @@ def test_help_notice_keeps_one_separator():
     with tempfile.TemporaryDirectory() as directory:
         hook = Path(directory) / "instructions"
         hook.mkdir()
-        (hook / "manifest.json").write_text('{"user_text_done":"${output.stdout}"}')
+        (hook / "manifest.json").write_text('{"on":"session_start","user_text":"${output.stdout}"}')
         script = hook / "run"
         script.write_text(
             '#!/usr/bin/env zsh\n'

@@ -1,6 +1,5 @@
 {
   "on": "permission_request",
-  "user_text": "Reviewing sandbox bypass…",
-  "user_text_done": "Sandbox bypass ${data.decision}: ${data.reason}",
+  "user_text": "Sandbox bypass review\n${output.stderr}",
   "user_preview_lines": "full"
 }

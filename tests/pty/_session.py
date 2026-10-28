@@ -91,7 +91,7 @@ class Session:
                 component.mkdir()
                 (component / "manifest.json").write_text(json.dumps({
                     "on": "user_prompt_submit",
-                    "user_text_done": "${output.stderr}",
+                    "user_text": "${output.stderr}",
                 }))
                 script = component / "run"
                 script.write_text(body)

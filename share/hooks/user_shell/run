@@ -3,7 +3,7 @@
 emulate -R zsh
 setopt extended_glob no_aliases no_multios pipe_fail
 
-typeset submitted='' command
+typeset submitted='' command output
 integer read_status command_status
 IFS= read -r submitted
 read_status=$?
@@ -22,12 +22,14 @@ if [[ -z $command ]]; then
   exit 0
 fi
 
-print -ru3 -- '{"user_text":"Running shell command…","user_text_done":"Shell command:\n${output.stdout}","model_text":"<context script=\"${name}\">\n${output.stdout}</context>"}'
-print -r -- '$ '"$command"
-unset SHELLFISH_SESSION SHELLFISH_TURN_STATE
-unset SHELLFISH_MAX_CAPTURE_BYTES SHELLFISH_MODE SHELLFISH_MODEL SHELLFISH_TURN_ID SHELLFISH_VERBOSE
-unset SHELLFISH_DIR
-command zsh -f -c "$command" </dev/null 2>&1 3>&-
-command_status=$?
-(( ! command_status )) || print -r -- $'\n(exit '"$command_status"')'
-exit 0
+output=$(
+  print -r -- '$ '"$command"
+  unset SHELLFISH_SESSION SHELLFISH_TURN_STATE
+  unset SHELLFISH_MAX_CAPTURE_BYTES SHELLFISH_MODE SHELLFISH_MODEL SHELLFISH_TURN_ID SHELLFISH_VERBOSE
+  unset SHELLFISH_DIR
+  command zsh -f -c "$command" </dev/null 2>&1 3>&-
+  command_status=$?
+  (( ! command_status )) || print -r -- $'\n(exit '"$command_status"')'
+)
+print -r -- "$output" >&2
+print -rn -- "<context script=\"user_shell\">"$'\n'"$output"$'\n'"</context>"

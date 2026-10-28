@@ -466,9 +466,14 @@ function applyModel(frame) {
   model.textContent = backend ? backend + "/" + name : name;
 }
 
-function renderDraft(frame) {
+// The core marks an unsandboxed call so that no template can hide it.
+function resultText(frame) {
   const text = trimBoundaryNewlines(frame.user_text);
-  if (!text) return clearDraft(frame);
+  return frame.sandboxed === false ? "[unsandboxed] " + (text || frame.name) : text;
+}
+
+function renderDraft(frame) {
+  const text = resultText(frame);
   hideIndicator();
   const key = draftKey(frame);
   const previous = drafts.get(key);
@@ -615,7 +620,7 @@ function renderMessage(frame) {
 
 function renderResult(frame) {
   clearDraft(frame);
-  const text = trimBoundaryNewlines(frame.user_text);
+  const text = resultText(frame);
   if (!text) return;
   hideIndicator();
   section("agent");
@@ -700,7 +705,7 @@ function askPermission(frame) {
     "permission",
     "Run " + safe(tool.name) + " outside of sandbox?",
   );
-  el(article, "pre", "input", safe(frame.preview));
+  el(article, "pre", "input", safe(JSON.stringify(tool.input)));
   if (frame.reason) el(article, "pre", "reason", "Reason: " + safe(frame.reason));
   const actions = el(article, "div", "actions");
   for (const decision of ["approve", "deny"]) {

@@ -16,12 +16,12 @@ projection=$(jq -jre '
     (keys - ["command", "timeout"] | length == 0)) |
   .command, "\u0000", (.timeout // 120 | tostring), "\u0000", "ok", "\u0000"
 ') || {
-  print -u2 -r -- 'shell: invalid input'
+  print -r -- 'shell: invalid input'
   exit 2
 }
 fields=( "${(@0)${projection%$'\0'}}" )
 (( ${#fields} == 3 )) && [[ $fields[3] == ok ]] || {
-  print -u2 -r -- 'shell: invalid input'
+  print -r -- 'shell: invalid input'
   exit 2
 }
 command=$fields[1]

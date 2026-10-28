@@ -66,16 +66,19 @@ assert_equal 'execution_update | call_1 | tool | shell · make test | 2
 execution_end | call_1 | tool | shell · make test
 ok | full' "$REPLY"
 
+# No template can hide an unsandboxed call.
+project live \
+  '{"type":"tool_result","id":"call_2","name":"shell","input":{},"exit_code":0,"sandboxed":false}'
+assert_equal 'execution_end | call_2 | tool | [unsandboxed] shell | default' "$REPLY"
+
 # Hook context is reference material; a hook notice speaks only to the reader.
 # Drafts and results carry their own preview hints.
 project live \
   '{"type":"_draft","lifecycle":"pre_tool_use","id":"1","user_text":"guard · checking","user_preview_lines":1}' \
-  '{"type":"_draft","lifecycle":"pre_tool_use","id":"1","user_text":""}' \
   '{"type":"hook_result","lifecycle":"pre_tool_use","id":"1","user_text":"guard · ok","user_preview_lines":"full"}' \
   '{"type":"hook_result","lifecycle":"session_start","id":"2","user_text":"project · read","model_text":"context"}' \
   '{"type":"hook_result","lifecycle":"session_start","id":"3","model_text":"Git branch: main"}'
 assert_equal 'execution_update | 1 | notice | guard · checking | 1
-execution_end | 1 | notice |  | default
 execution_end | 1 | notice | guard · ok | full | agent
 execution_end | 2 | context | project · read | default | system
 execution_end | 3 | context |  | default | system' "$REPLY"
@@ -94,11 +97,11 @@ project load \
   '{"type":"hook_result","lifecycle":"session_start","id":"5","user_text":"startup notice"}'
 assert_equal 'execution_end | 5 | notice | startup notice | default | system' "$REPLY"
 
-# Permissions carry the preview the client displays.
+# Permissions show the tool name and its raw input.
 project live \
-  '{"type":"_tool_permission_request","id":"permission_1","tool":{"name":"shell","input":{"command":"git status"}},"reason":"writes outside the sandbox","preview":"git status"}'
+  '{"type":"_tool_permission_request","id":"permission_1","tool":{"name":"shell","input":{"command":"git status"}},"reason":"writes outside the sandbox"}'
 assert_equal \
-  'permission | permission_1 | shell | git status | writes outside the sandbox' \
+  'permission | permission_1 | shell | {"command":"git status"} | writes outside the sandbox' \
   "$REPLY"
 
 # Errors split their heading from the detail below it.

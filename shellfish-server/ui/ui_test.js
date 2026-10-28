@@ -907,15 +907,6 @@ test("tool and hook drafts with the same ID settle independently", async () => {
   );
 });
 
-test("clears an unsettled draft when the core retracts it", async () => {
-  const page = await idle();
-  await page.send(
-    { type: "_draft", lifecycle: "stop", id: "1", user_text: "Checking" },
-    { type: "_draft", lifecycle: "stop", id: "1", user_text: "" },
-  );
-  assert.equal(find(page.output, "note").length, 0);
-});
-
 test("removes drafts on process failure", async () => {
   const page = await idle();
   await page.send(
@@ -1009,22 +1000,19 @@ test("retries a refused connection", async () => {
   assert.equal(page.opens.length, 3);
 });
 
+test("marks unsandboxed calls that no template can hide", async () => {
+  const page = await idle();
+  await page.send({
+    type: "tool_result", id: "call_1", name: "shell", input: {}, exit_code: 0,
+    sandboxed: false,
+  });
+  assert.match(page.output.textContent, /\[unsandboxed\] shell/);
+});
+
 test("answers and removes permission prompts", async () => {
-  for (const [decision, button, name, input, preview] of [
-    [
-      "approve",
-      0,
-      "shell",
-      { command: "ls", request_sandbox_bypass: true },
-      "ls",
-    ],
-    [
-      "deny",
-      1,
-      "read_file",
-      { file_path: "outside.txt", request_sandbox_bypass: true },
-      "outside.txt",
-    ],
+  for (const [decision, button, name, input] of [
+    ["approve", 0, "shell", { command: "ls", request_sandbox_bypass: true }],
+    ["deny", 1, "read_file", { file_path: "outside.txt", request_sandbox_bypass: true }],
   ]) {
     const page = await idle();
     await page.send(
@@ -1039,7 +1027,6 @@ test("answers and removes permission prompts", async () => {
         id: "permission_1",
         tool: { name, input },
         reason: "not allowed by policy",
-        preview,
       },
     );
     const request = find(page.output, "permission")[0];
@@ -1047,7 +1034,7 @@ test("answers and removes permission prompts", async () => {
       request.textContent,
       new RegExp("Run " + name + " outside of sandbox\\?"),
     );
-    assert.equal(find(request, "input")[0].textContent, preview);
+    assert.equal(find(request, "input")[0].textContent, JSON.stringify(input));
     assert.match(request.textContent, /Reason: not allowed by policy/);
     assert.equal(find(request, "input")[0].tagName, "pre");
     assert.equal(find(page.output, "call").length, 0);

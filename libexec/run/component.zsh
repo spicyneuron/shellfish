@@ -5,49 +5,41 @@ setopt no_aliases no_multios pipe_fail
 
 typeset -gA SF_COMPONENT=()
 
-sf_run_component_prepare() {
-  SF_COMPONENT=( session "$1" values "$2" error '' live 0 )
-}
-
+# COMPONENT holds the template, the input, and the draft a client shows while the
+# component runs. A draft with no text claims no row.
 sf_run_component_begin() {
-  sf_run_component_prepare "$@"
+  SF_COMPONENT=( session "$1" values "$2" error '' )
   local draft
   draft=$(jq -c '.draft | select(.user_text != "")' <<<"$2") || return 1
-  [[ -n $draft ]] || return 0
-  sf_run_emit "$draft" && SF_COMPONENT[live]=1
+  [[ -z $draft ]] || sf_run_emit "$draft"
 }
 
-# State is durable per valid line, while all presentation values stay transient.
-# Any trailing KEYs pass through unvalidated, as JSON in REPLY when present.
+# One fd 3 line. Its state updates are durable at once. Any trailing KEYs pass
+# through unvalidated, as JSON in REPLY when present.
 sf_run_component_line() {
   local record
   local -A line
   [[ -z $SF_COMPONENT[error] ]] || return 1
-  sf_jq_fields -cn --arg raw "$1" --argjson component "$SF_COMPONENT[values]" '
+  sf_jq_fields -cn --arg raw "$1" '
       include "lib/fields";
-      include "lib/profile";
       include "lib/session";
-      include "libexec/run/component";
-      ($raw | try fromjson catch null | component_update($component; $ARGS.positional) //
-        error("invalid component line")) as $update |
-      entry("state_updates"; [$update.state_updates[] | tojson] | join("\n")),
-      entry("component"; $update.component | tojson),
-      entry("draft"; $update.component.draft |
-        if .user_text == $component.draft.user_text then "" else tojson end),
-      entry("rest"; $update.rest | if . == {} then "" else tojson end),
-      ("ok" | field)
+      ($raw | try fromjson catch null) as $line |
+      if $line | type == "object" and
+        ((keys - ["state_update"] - $ARGS.positional) | length == 0) and
+        ((has("state_update") | not) or (.state_update | type == "array" and
+          all(.[]; type == "object" and ({type:"state_update"} + . | canonical_state_update))))
+      then
+        entry("state_updates"; [$line.state_update[]? | {type:"state_update"} + . | tojson] |
+          join("\n")),
+        entry("rest"; $line | del(.state_update) | if . == {} then "" else tojson end),
+        ("ok" | field)
+      else error("invalid component line") end
     ' --args "${@:2}" || { SF_COMPONENT[error]=invalid; return 1; }
   line=( "${reply[@]}" )
   for record in ${(f)line[state_updates]}; do
     sf_run_append "$SF_COMPONENT[session]" "$record" ||
       { SF_COMPONENT[error]=$REPLY; return 1; }
   done
-  SF_COMPONENT[values]=$line[component]
-  if [[ -n $line[draft] ]]; then
-    sf_run_emit "$line[draft]" ||
-      { SF_COMPONENT[error]='cannot emit component draft'; return 1; }
-    SF_COMPONENT[live]=1
-  fi
   REPLY=$line[rest]
 }
 
@@ -78,13 +70,6 @@ sf_run_component_execute() {
       { REPLY='cannot capture component output'; return 1; }
   fi
   reply=( $state $process[exit_code] )
-}
-
-sf_run_component_clear() {
-  (( SF_COMPONENT[live] )) || return 0
-  local draft
-  draft=$(jq -c '.draft + {user_text:""}' <<<"$SF_COMPONENT[values]") || return 1
-  sf_run_emit "$draft" && SF_COMPONENT[live]=0
 }
 
 sf_run_component_bound() {

@@ -7,7 +7,7 @@ source "${0:A:h:h:h:h}/lib/capped.zsh" || exit 1
 
 typeset -F deadline=$(( EPOCHREALTIME + SF_PROBE_BUDGET ))
 
-typeset branch hash identity commits git_status
+typeset branch hash identity commits git_status report
 integer probe_status
 branch=$(sf_capped "$deadline" git symbolic-ref --quiet --short HEAD 2>/dev/null)
 case $? in
@@ -27,15 +27,16 @@ probe_status=$?
 (( probe_status != 124 )) || exit 0
 (( probe_status == 0 )) || git_status=''
 
-jq -cn --arg identity "$identity" '
-  {state_update:[{name:"git/identity",value:$identity}],
-   user_text_done:"Git environment:\n${output.stdout}",
-   model_text:"<context script=\"${name}\">\n${output.stdout}</context>"}
-' >&3 || exit 1
+jq -cn --arg identity "$identity" '{state_update:[{name:"git/identity",value:$identity}]}' >&3 ||
+  exit 1
 
-case $identity in
-  branch:*) print -r -- "Git branch: ${identity#branch:}" ;;
-  commit:*) print -r -- "Git commit: ${identity#commit:} (detached HEAD)" ;;
-esac
-print -r -- $'Recent commits:\n'"$commits"
-print -r -- $'Git status:\n'"$(print -r -- "$git_status" | head -10)"
+report=$(
+  case $identity in
+    branch:*) print -r -- "Git branch: ${identity#branch:}" ;;
+    commit:*) print -r -- "Git commit: ${identity#commit:} (detached HEAD)" ;;
+  esac
+  print -r -- $'Recent commits:\n'"$commits"
+  print -r -- $'Git status:\n'"$(print -r -- "$git_status" | head -10)"
+)
+print -r -- "Git environment:"$'\n'"$report" >&2
+print -rn -- "<context script=\"git/environment\">"$'\n'"$report"$'\n'"</context>"

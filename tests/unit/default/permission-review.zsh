@@ -44,7 +44,7 @@ sf_session_append "$session" '{"type":"hook_result","lifecycle":"permission_requ
 assert_canonical_session "$session"
 request='{"tool_input":{"command":"setup","request_sandbox_bypass":true,"sandbox_bypass_reason":"needed"}}'
 
-# Progress comes from the manifest, while the decision carries no result text.
+# The decision goes to fd 3 and its reason to the user on stderr.
 run_review() {
   print -r -- "$1" >"$mode"
   hook_status=0
@@ -52,7 +52,7 @@ run_review() {
     SHELLFISH_EXECUTABLE="$wrapper" SHELLFISH_SESSION="$session" \
     SHELLFISH_TURN_STATE="$tmp" SHELLFISH_TURN_ID=6 \
     zsh -f "$hook/run" shell call_7 \
-    3>"$tmp/lines" <<<"$request" || hook_status=$?
+    3>"$tmp/lines" 2>|"$tmp/user" <<<"$request" || hook_status=$?
   jq -c -s last "$tmp/lines" >|"$control"
 }
 
@@ -61,19 +61,14 @@ run_review valid
 jq -e . "$control" >/dev/null || { cat "$control" >&2; fail 'permission review returned invalid control'; }
 jq -e '
   .action == "allow" and (has("reason") | not) and
-  .data == {decision:"approved",reason:"Explicitly authorized."} and
   .state_update[0].name == "permissions/6/call_7" and
   .state_update[0].value.reason == "Explicitly authorized." and
   (.state_update[0].value.content | fromjson) ==
     {risk:"medium",authorization:"high",reason:"Explicitly authorized."}
 ' "$control" >/dev/null || fail 'permission review returned the wrong decision'
-jq -en -L "$ROOT" --slurpfile manifest "$hook/manifest.json" \
-    --slurpfile result "$control" '
-  include "lib/profile";
-  $manifest[0].user_preview_lines == "full" and
-  render_template($manifest[0].user_text_done; "review"; ""; {}; $result[0].data) ==
-    "Sandbox bypass approved: Explicitly authorized."
-' >/dev/null || fail 'permission review hid its decision reason'
+jq -e '.user_preview_lines == "full"' "$hook/manifest.json" >/dev/null &&
+  assert_equal 'Approved: Explicitly authorized.' "$(<"$tmp/user")" ||
+  fail 'permission review hid its decision reason'
 jq -e -s --arg tool_input "$(jq -c '.tool_input' <<<"$request")" \
     --rawfile policy "$ROOT/share/hooks/review.md" '
   (.[1].content[0].text | fromjson) as $context |
@@ -103,7 +98,6 @@ run_review failure
 (( hook_status == 0 )) || fail 'provider failure did not fail closed'
 jq -e '.action == "deny" and
   .reason == "Permission review provider request failed." and
-  .data == {decision:"denied",reason:"Permission review provider request failed."} and
   .state_update[0].value == {content:null,reason:"Permission review provider request failed."}
 ' "$control" >/dev/null || fail 'provider failure returned the wrong denial'
 

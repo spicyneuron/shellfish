@@ -149,9 +149,8 @@ def test_tool_uses_manifest_display():
     try:
         mark = len(session.output)
         session.send(b"tool\r")
-        session.wait_after(mark, "│ for")
+        session.wait_after(mark, "⛭ Shell for")
         visible = session.visible(mark)
-        assert "⛭ Running shell command:" in visible and "│ for" in visible, visible
         assert 'shell {"command":' not in visible, visible
     finally:
         session.close()
@@ -167,7 +166,7 @@ def test_file_changes_use_full_preview():
         _, records = session.wait_session_records(4, path=session.explicit_session)
         result = next(record for record in records if record.get("type") == "tool_result")
         assert result["user_preview_lines"] == "full", result
-        assert result["user_text"].startswith("Created file:\n"), result
+        assert result["user_text"].startswith("Write "), result
         session.wait_after(mark, "+   1. Definitions.", timeout=5)
     finally:
         session.close()

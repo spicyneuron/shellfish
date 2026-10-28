@@ -4,7 +4,7 @@ sf_test_tmp run-hook-contract
 export SF_TEST_BACKEND_DELAY=0
 sf_test_frozen_profile
 typeset hook="$tmp/prompt" session stream="$tmp/stream"
-sf_test_hook "$hook" '{"user_text_done":"${output.stdout}","model_text":"${output.stdout}"}' <<'ZSH'
+sf_test_hook "$hook" '{"user_text":"${output.stdout}"}' <<'ZSH'
 #!/usr/bin/env zsh
 [[ $# == 0 && $SHELLFISH_TURN_ID == <1-> && -d $SHELLFISH_TURN_STATE ]] || exit 2
 input=$(cat)
@@ -21,7 +21,7 @@ case $input in
   fail) print -r -u3 -- '{"state_update":[{"name":"prompt/failed","value":true}],"action":"block"}'; print -rn -u2 -- 'hook broke'; exit 3 ;;
   invalid) print -r -u3 -- '{"action":"deny"}' ;;
   state) print -r -u3 -- '{"state_update":[{"name":"prompt/state","value":2}]}' ;;
-  interrupt) print -r -u3 -- '{"state_update":[{"name":"prompt/started","value":true}],"user_text":"Working"}'
+  interrupt) print -r -u3 -- '{"state_update":[{"name":"prompt/started","value":true}]}'
     : >"$INTERRUPT_MARKER"; sleep 30 ;;
 esac
 ZSH
@@ -74,13 +74,13 @@ integer n=0
 print -r -- $n >"$REQUEST_COUNT"
 print -r -- "{\"type\":\"assistant\",\"stop\":\"end\",\"content\":[{\"type\":\"text\",\"text\":\"answer $n\"}],\"usage\":{\"input_tokens\":1,\"output_tokens\":1}}"
 ZSH
-sf_test_hook "$stop" '{"user_text_done":"${output.stdout}","model_text":"${output.stdout}"}' <<'ZSH'
+sf_test_hook "$stop" '{"user_text":"${output.stdout}${output.stderr}"}' <<'ZSH'
 #!/usr/bin/env zsh
 cat >"$STOP_INPUT"
 if [[ $1 == 1 ]]; then
-  [[ ! -e $STOP_SILENT ]] || print -r -u3 -- '{"model_text":""}'
   print -r -u3 -- '{"action":"continue"}'
-  print -rn -- 'checking again'
+  # A silent hook shows its text to the user only.
+  [[ -e $STOP_SILENT ]] && print -rn -u2 -- 'checking again' || print -rn -- 'checking again'
 fi
 ZSH
 chmod +x "$backend"
@@ -108,7 +108,7 @@ jq -e -s '.[-2].user_text == "checking again" and (.[-2] | has("model_text") | n
   >/dev/null || fail 'missing stop feedback was accepted'
 # Ordered hooks see original input and preceding results. An action stops the list.
 typeset hooks="$tmp/hooks" name
-sf_test_hook "$hooks/one" '{"user_text_done":"${output.stdout}"}' <<'ZSH'
+sf_test_hook "$hooks/one" '{"user_text":"${output.stdout}"}' <<'ZSH'
 #!/usr/bin/env zsh
 name=${0:h:t}; input=$(cat)
 [[ $input == ordered ]] || exit 2
@@ -122,7 +122,7 @@ fi
 print -rn -- "$name: $input"
 ZSH
 for name in two three; do
-  sf_test_hook "$hooks/$name" '{"user_text_done":"${output.stdout}"}' <"$hooks/one/run"
+  sf_test_hook "$hooks/$name" '{"user_text":"${output.stdout}"}' <"$hooks/one/run"
 done
 export BLOCK_TWO="$tmp/block-two" FAIL_TWO="$tmp/fail-two"
 SF_TEST_MODEL=$(jq -c --arg adapter "${SF_TEST_BACKEND:h}" '.adapter=$adapter' <<<"$SF_TEST_MODEL")
@@ -141,7 +141,7 @@ jq -e -s 'map(select(.type == "hook_result") | .user_text) == ["one: ordered"] a
   .[-1].type == "error"' "$session" >/dev/null || fail 'later failure lost durable prefix'
 rm "$FAIL_TWO"
 for name in one two three; do
-  print -r -- '{"on":"user_prompt_submit","match":{"pattern":"^ordered\\z"},"user_text_done":"${output.stdout}"}' \
+  print -r -- '{"on":"user_prompt_submit","match":{"pattern":"^ordered\\z"},"user_text":"${output.stdout}"}' \
     >"$hooks/$name/manifest.json"
 done
 new_session matched; sf_test_run ordered "$session" >"$stream" || fail 'matched hooks failed'

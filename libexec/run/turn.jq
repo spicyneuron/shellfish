@@ -7,7 +7,6 @@ include "lib/fields";
 include "lib/profile";
 include "lib/session";
 include "lib/backend";
-include "libexec/run/component";
 
 # Model-facing tool definitions, with the sandbox-bypass fields a call may use.
 def model_tools($profile; $tools):
@@ -51,20 +50,13 @@ def tool_plan($profile; $tools; $call; $turn; $max_capture):
     (($input.request_sandbox_bypass // false) | not)) as $sandboxed |
   {id:$id, name:$name, input:$input,
    request:{turn_id:$turn,tool_name:$name,tool_use_id:$id,tool_input:$input},
-   component:component_plan(
-     (if $sandboxed then $manifest else
-       $manifest |
-       .user_text=(.user_text_unsandboxed // .user_text) |
-       .user_text_done=(.user_text_done_unsandboxed // .user_text_done)
-     end);
-     {user_text:"${name} ${input}",
-      user_text_done:"${name} ${input}\n${output.stdout}${output.stderr}",
-      user_text_skipped:"${name} ${input}\n${output.stderr}",
-      model_text:"${output.stdout}${output.stderr}"}; ($manifest | tool_inputs); $name; $input;
-     {type:"_draft",id:$id,name:$name}),
+   component:{template:$manifest.user_text, input:$input,
+     draft:({type:"_draft",id:$id,name:$name,
+       user_text:render_template($manifest.user_text; {input:$input})} +
+       ($manifest | with_entries(select(.key == "user_preview_lines"))) +
+       if $sandboxed then {} else {sandboxed:false} end)},
    decision:$permission.decision,
    permission_reason:($permission.reason // ""),
-   permission_preview:render_template($manifest.user_permission // "${input}"; $name; $input; {}; {}),
    executable:($tool.command // ""),
    environment:(($tool.manifest.environment // []) | join(" ")),
    max_capture:($manifest.max_capture_bytes // $max_capture),
@@ -74,22 +66,26 @@ def tool_plan($profile; $tools; $call; $turn; $max_capture):
    write_paths:($profile.sandbox.write | join("\n"))};
 
 def tool_refusal($reason; $exit_code):
-  {output:{stdout:"",stderr:$reason,exit_code:$exit_code},ran:false};
+  {output:{stdout:$reason,stderr:$reason,exit_code:$exit_code},ran:false};
 
-def tool_result($component; $outcome; $request):
-  {type:"tool_result",id:$request.tool_use_id,name:$request.tool_name,
-   input:$request.tool_input,exit_code:$outcome.output.exit_code} +
-    component_texts($component; $outcome) |
+# Model text is stdout. A call that never ran keeps no sandbox badge.
+def tool_result($component; $outcome):
+  ($component.draft | del(.user_text)) + {type:"tool_result",input:$component.input,
+    exit_code:$outcome.output.exit_code,
+    user_text:render_template($component.template; $component + $outcome),
+    model_text:$outcome.output.stdout} |
+  if $outcome.ran then . else del(.sandboxed) end |
+  with_entries(select(.value != "")) |
   if canonical_tool_result then . else error("invalid tool result") end;
 
-# Results for every pending call. The ACTIVE call settles with what it already
-# sent; later calls settle with REASON.
+# Results for every pending call. The call that was running when the turn
+# ended, if ACTIVE, settles as interrupted; later calls settle with REASON.
 def settled_calls($state; $profile; $tools; $turn; $max_capture; $active; $reason):
   $state.calls | to_entries[] |
   tool_plan($profile; $tools; .value; $turn; $max_capture) as $plan |
-  if .key == 0 and $active != null then
-    tool_result($active; tool_refusal("tool call interrupted"; 126); $plan.request)
-  else tool_result($plan.component; tool_refusal($reason; 126); $plan.request) end;
+  if .key == 0 and $active then
+    tool_result($plan.component; tool_refusal("tool call interrupted"; 126) | .ran = true)
+  else tool_result($plan.component; tool_refusal($reason; 126)) end;
 
 # The parsed records of a complete session file read as one raw string.
 def session_records:

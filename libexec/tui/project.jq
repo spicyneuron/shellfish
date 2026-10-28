@@ -41,7 +41,9 @@ def preview: .user_preview_lines // "default" | tostring;
 
 # Context and notice select presentation styling.
 def hook_class: if (.model_text // "") == "" then "notice" else "context" end;
-def result_text: .user_text // "";
+# The core marks an unsandboxed call so that no template can hide it.
+def result_text:
+  if .sandboxed == false then "[unsandboxed] " + (.user_text // .name) else .user_text // "" end;
 
 def message_actions($role; $text):
   if ($text | test("[^\n]")) then
@@ -96,15 +98,16 @@ def event_actions($window):
   elif .type == "_assistant_message_delta" then [["message_delta", "0", "text", .text, ""]]
   elif .type == "_assistant_reasoning_delta" then
     [["message_delta", "0", "reasoning", .text, ""]]
-  # A tool draft names its tool; an empty draft clears its section.
+  # A tool draft names its tool.
   elif .type == "_draft" then
-    (if has("name") then "tool" else "notice" end) as $class |
-    if .user_text == "" then [["execution_end", .id, $class, "", preview]]
-    else [["execution_update", .id, $class, .user_text, preview]] end
+    [["execution_update", .id, (if has("name") then "tool" else "notice" end), result_text,
+      preview]]
+  # The preview is deliberately truncated. Deny when it is not enough to decide;
+  # review hooks receive the full input.
   elif .type == "_tool_permission_request" then
-    (.preview // "") as $preview |
+    (.tool.input | tojson) as $preview |
     [["permission", .id, .tool.name,
-      (if ($preview | length) > 1000 then $preview[0:1000] + "…" else $preview end),
+      (if ($preview | length) > 300 then $preview[0:300] + "…" else $preview end),
       (.reason // "")]]
   elif .type == "_handoff" then [["handoff"] + .argv]
   elif .type == "_session_update" then model_actions

@@ -16,7 +16,7 @@ sf_run_tool_refused() {
   integer exit_code=$2
   REPLY=$(jq -cn --arg reason "$reason" --argjson ran "$ran" \
     --argjson exit_code "$exit_code" '
-    {output:{stdout:"",stderr:$reason,exit_code:$exit_code},ran:$ran}
+    {output:{stdout:$reason,stderr:$reason,exit_code:$exit_code},ran:$ran}
   ')
 }
 
@@ -104,7 +104,7 @@ sf_run_tool_execute() {
     (overflow) sf_run_tool_refused 'tool result exceeds capture limit' 1 true; return ;;
   esac
   if (( reply[2] )) && grep -qs $'✗' "$capture/sandbox.log"; then
-    REPLY=$(jq -c '.output.stderr += "\n<sandbox_notice>A denial was detected during this tool call. This does not necessarily mean the tool failed.</sandbox_notice>"' <<<"$REPLY") ||
+    REPLY=$(jq -c '.output.stdout += "\n<sandbox_notice>A denial was detected during this tool call. This does not necessarily mean the tool failed.</sandbox_notice>"' <<<"$REPLY") ||
       { SF_RUN_TOOL_ERROR='cannot decode tool result'; return 1; }
   fi
   } always {
@@ -115,8 +115,9 @@ sf_run_tool_execute() {
 
 sf_run_tool_complete() {
   sf_run_reduce '
-    entry("result"; tool_result($component; $outcome; $request) | tojson),
+    entry("result"; tool_result($component; $outcome) | tojson),
     entry("post_request"; $request + {tool_response:$outcome.output} | tojson)
-  ' --argjson component "$1" --argjson outcome "$2" --argjson request "$SF_TOOL_PLAN[request]" ||
+  ' --argjson component "$SF_TOOL_PLAN[component]" --argjson outcome "$1" \
+    --argjson request "$SF_TOOL_PLAN[request]" ||
     { SF_RUN_TOOL_ERROR="cannot finish tool result: $SF_TOOL_PLAN[name]"; return 1; }
 }

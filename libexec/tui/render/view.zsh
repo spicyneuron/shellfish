@@ -237,7 +237,7 @@ sf_tui_repaint() {
   integer columns=${COLUMNS:-0} rows=${LINES:-0} budget reserve=6
   integer index queue_shown queue_limit start queue_head=0 history_item=0 history_label=0
   local prompt_divider_top prompt_divider_bottom label
-  local queue_item queue_line queue_text=''
+  local queue_item queue_line queue_text='' line
   local prompt_style=prompt
   local choices='[a]pprove  [d]eny (default)'
   if [[ $SF_PRESENT_STATE == idle && ${SF_PRESENT_ACTION-} != submit ]]; then
@@ -248,6 +248,10 @@ sf_tui_repaint() {
   columns=$(( columns > 1 ? columns - 1 : 1 ))
   if [[ $SF_PRESENT_STATE == permission ]]; then
     reserve=$(( 11 + ${#${SF_PRESENT_PERMISSION_TEXT//[^$'\n']}} ))
+    # Raw input is often one long line, so its wrapped rows count too.
+    for line in "${(@f)SF_PRESENT_PERMISSION_TEXT}"; do
+      reserve+=$(( ${#line} / columns ))
+    done
   fi
   queue_shown=0
   if [[ $SF_PRESENT_STATE != permission ]]; then

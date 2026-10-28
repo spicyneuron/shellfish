@@ -1,1 +1,1 @@
-{"on":"session_start","max_capture_bytes":65536}
+{"on":"session_start","user_text":"${output.stderr}","max_capture_bytes":65536}

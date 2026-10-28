@@ -154,7 +154,7 @@ done
 submit '!printf '\''${output.stderr}'\''; exit 7'
 jq -e -s 'map(.type) == ["session","hook_result"] and
   (.[1].model_text | contains("${output.stderr}") and contains("(exit 7)")) and
-  (.[1].user_text | startswith("Shell command:\n$ "))' "$command_session" >/dev/null
+  (.[1].user_text | startswith("$ printf"))' "$command_session" >/dev/null
 # Bundled sandbox policy distinguishes absolute and home-relative grants.
 typeset sandbox="$ROOT/share/hooks/sandbox/run" sandbox_session="$tmp/sandbox.jsonl"
 mkdir -p "$tmp/project/dir" "$tmp/home/share"

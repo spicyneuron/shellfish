@@ -59,6 +59,7 @@ print -r -- '{
   "input_schema": {"type": "object", "additionalProperties": false, "required": ["value"],
     "properties": {"value": {"type": "string"}}},
   "environment": ["TOOL_ORDER"],
+  "user_text": "Ordered ${input.value}",
   "sandbox": false
 }' >"${tool:h}/manifest.json"
 SF_TEST_MODEL=$(jq -c --arg backend "${backend:h}" '.adapter=$backend' <<<"$SF_TEST_MODEL")
@@ -70,7 +71,6 @@ sf_test_run ordered "$session" >"$stream" || fail 'ordered tool turn failed'
 jq -eRn '
   [inputs | fromjson] as $events |
   [$events[] | select(.type | IN("assistant","_draft","state_update","tool_result")) |
-    select(.type != "_draft" or .user_text != "") |
     if .type == "assistant" then [.type,.stop]
     elif .type == "state_update" then [.type,.name]
     else [.type,.id,.name,.exit_code?] end] == [
@@ -85,8 +85,8 @@ jq -eRn '
     ] and
   ($events | map(select(.type == "tool_result") | .input)) ==
     [{value:"first"},{value:"second"}] and
-  ($events | map(select(.type == "tool_result") | .model_text)) ==
-    ["first","second"]
+  ($events | map(select(.type == "tool_result") | [.user_text,.model_text])) ==
+    [["Ordered first","first"],["Ordered second","second"]]
 ' <"$stream" >/dev/null || fail 'tool calls did not settle in order'
 assert_canonical_session "$session"
 

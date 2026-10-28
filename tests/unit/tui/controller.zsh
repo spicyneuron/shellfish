@@ -33,22 +33,14 @@ print -n -r -- '{"type":"user"' >"$torn"
 sf_tui_load "$torn" && fail 'incomplete session replay succeeded'
 assert_equal "cannot read incomplete session: $torn" "$SF_PRESENT_ERROR"
 
-# A cleared hook draft retracts its transient activity.
+# Model context settles under its lifecycle without exposing model text.
 SF_PRESENT_SESSION="$tmp/session.jsonl"
 SF_PRESENT_STATE=working
 sf_tui_reset
-pump '{"type":"_draft","lifecycle":"session_start","id":"1","user_text":"Loading git environment…"}'
+pump '{"type":"_draft","lifecycle":"session_start","id":"2","user_text":"Loading git environment…"}'
 sf_tui_transcript 79 20
 [[ $SF_PRESENT_VIEWPORT_TEXT == *'Loading git environment'* ]] ||
   fail 'hook activity did not reach the viewport'
-pump '{"type":"_draft","lifecycle":"session_start","id":"1","user_text":""}'
-sf_tui_transcript 79 20
-[[ $SF_PRESENT_VIEWPORT_TEXT != *'Loading git environment'* ]] ||
-  fail 'silent hook activity did not leave the viewport'
-
-# Model context settles under its lifecycle without exposing model text.
-sf_tui_reset
-pump '{"type":"_draft","lifecycle":"session_start","id":"2","user_text":"Loading git environment…"}'
 pump '{"type":"hook_result","lifecycle":"session_start","id":"2","model_text":"Git branch: secret"}'
 sf_tui_transcript 79 20
 [[ $SF_PRESENT_VIEWPORT_TEXT != *'↪ session_start'* &&
@@ -72,11 +64,11 @@ sf_tui_transcript 79 20
   fail 'the durable record repeated the streamed text'
 
 # Hold the turn for a permission decision.
-pump '{"type":"_tool_permission_request","id":"permission_1","tool":{"name":"shell","input":{"command":"pwd"}},"reason":"host access","preview":"pwd"}'
+pump '{"type":"_tool_permission_request","id":"permission_1","tool":{"name":"shell","input":{"command":"pwd"}},"reason":"host access"}'
 assert_equal permission "$SF_PRESENT_STATE"
 assert_equal permission_1 "$SF_PRESENT_PERMISSION_ID"
 assert_equal shell "$SF_PRESENT_PERMISSION_TOOL"
-assert_equal $'pwd\n\nReason: host access' "$SF_PRESENT_PERMISSION_TEXT"
+assert_equal $'{"command":"pwd"}\n\nReason: host access' "$SF_PRESENT_PERMISSION_TEXT"
 
 # Capture a handoff request.
 SF_PRESENT_STATE=working

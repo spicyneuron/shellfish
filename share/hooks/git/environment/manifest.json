@@ -1,4 +1,1 @@
-{
-  "on": "session_start",
-  "user_text": "Loading git environment…"
-}
+{"on":"session_start","user_text":"${output.stderr}"}

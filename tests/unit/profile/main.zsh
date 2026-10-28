@@ -360,7 +360,7 @@ sf_jq -en '
   include "lib/profile";
   {description:"test",input_schema:{type:"object"},sandbox:false} as $manifest |
   ($manifest | tool_manifest) and ($manifest + {unknown:""} | tool_manifest | not) and
-  (["${data.bad-key}","${unclosed","${name}\u0000"] | all(.[]; component_template([]) | not)) and
+  (["${name}","${output.exit_code}","${input}\u0000"] | all(.[]; component_template([]) | not)) and
   (["full",0,12] | all(.[]; component_preview_hint)) and
   ([null,-1,1.5,"3"] | all(.[]; component_preview_hint | not))
 ' >/dev/null || fail 'manifest validation accepted an invalid value'
@@ -370,6 +370,11 @@ sf_jq -en '
   ({input_schema:{properties:{custom:{}}},user_text:"${input.custom}"} |
     component_manifest(["input_schema"]; []) | not)
 ' >/dev/null || fail 'shared manifest validation inferred caller template fields'
+sf_jq -en '
+  include "lib/profile";
+  render_template("${input.a.b}|${input.a}|${output.stdout}";
+    {input:{"a.b":"dotted",a:"text"},output:{stdout:"out"}}) == "dotted|text|out"
+' >/dev/null || fail 'template placeholders did not resolve literal keys'
 sf_jq -en '
   include "lib/profile";
   ({match:{pattern:"^/help\\z"}} | hook_manifest) and

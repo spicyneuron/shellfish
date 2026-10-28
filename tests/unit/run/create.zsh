@@ -148,12 +148,14 @@ zsh -f "$entry" run --session-create --session-out "$binary" \
 # A failed later startup retains and streams the completed prefix.
 typeset events="$tmp/events.jsonl" first="$tmp/first-hook"
 sf_test_hook "$first" \
-  '{"on":"session_start","user_text_done":"startup display","model_text":"startup context"}' <<'ZSH'
+  '{"on":"session_start","user_text":"${output.stderr}"}' <<'ZSH'
 #!/usr/bin/env zsh
 [[ -f $SHELLFISH_SESSION ]] || exit 2
 jq -se 'map(.type) == ["_session_load","session"]' \
   "$SF_TEST_EVENTS" >/dev/null || exit 3
 print -r -u3 -- '{"state_update":[{"name":"startup/stream","value":true}]}'
+print -rn -- 'startup context'
+print -rn -u2 -- 'startup display'
 ZSH
 sf_test_profile stream \
   "{\"system\": [\"source.md\"], \"hooks\": [\"$first\", \"$hook\"]}"

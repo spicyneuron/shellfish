@@ -73,14 +73,14 @@ sf_run_step() {
 }
 
 # End a turn early: keep any partial response, settle every pending call from
-# the log with REASON, then record MESSAGE. The call a tool was running for
-# keeps what its component already sent.
+# the log with REASON, then record MESSAGE. A call whose tool had started
+# settles as interrupted.
 sf_run_settle() {
   local session=$1 message=$2 reason=$3 record
   sf_run_reduce '
     settle($log; $share; $home; $tools; $max_capture; $active; $ARGS.positional;
       $reason; $message)
-  ' --rawfile log "$session" --argjson active "${SF_COMPONENT[values]:-null}" \
+  ' --rawfile log "$session" --argjson active "${${SF_COMPONENT[values]:+true}:-false}" \
     --arg reason "$reason" --arg message "$message" \
     --jsonargs "${SF_BACKEND_PARTIAL_EVENTS[@]}" ||
     { REPLY='cannot settle the turn'; return 1; }
@@ -124,13 +124,12 @@ sf_run_interrupt() {
 }
 
 sf_run_permission_client() {
-  local name=$1 input=$2 reason=$3 rendered=$4 response id
+  local name=$1 input=$2 reason=$3 response id
   (( SF_RUN[permission_count] += 1 ))
   id="permission_$SF_RUN[permission_count]"
   sf_run_emit "$(jq -cn --arg id "$id" --arg name "$name" --argjson input "$input" \
-    --arg reason "$reason" --arg preview "$rendered" '
-      {type:"_tool_permission_request",id:$id,tool:{name:$name,input:$input},
-       reason:$reason,preview:$preview}')" || return 2
+    --arg reason "$reason" '
+      {type:"_tool_permission_request",id:$id,tool:{name:$name,input:$input},reason:$reason}')" || return 2
   IFS= read -r response || { REPLY='permission response is unavailable'; return 2; }
   REPLY=$(jq -r --arg id "$id" '
     select(type == "object" and .type == "_tool_permission_response" and .id == $id and
@@ -237,7 +236,6 @@ sf_run_turn() {
           SF_TOOL_PLAN=( "${(@kv)SF_RUN_STEP}" )
           id=$SF_TOOL_PLAN[id] name=$SF_TOOL_PLAN[name] decision=$SF_TOOL_PLAN[decision]
           outcome=''
-          sf_run_component_prepare "$session" "$SF_TOOL_PLAN[component]"
           if (( SF_TOOL_PLAN[call_index] > SF_RUN[max_tool_calls] )); then
             sf_run_tool_refused "tool call denied: per-response limit is $SF_RUN[max_tool_calls]" 126
             outcome=$REPLY
@@ -266,7 +264,7 @@ sf_run_turn() {
                 reason=${hook_result[reason]:-sandbox bypass denied}
                 if [[ -z $decision ]]; then
                   sf_run_permission_client "$name" "$SF_TOOL_PLAN[input]" \
-                    "$SF_TOOL_PLAN[permission_reason]" "$SF_TOOL_PLAN[permission_preview]"
+                    "$SF_TOOL_PLAN[permission_reason]"
                   run_status=$?
                   if (( run_status == 2 )); then failure=$REPLY; break; fi
                   decision=$REPLY
@@ -287,9 +285,8 @@ sf_run_turn() {
               fi
             fi
           fi
-          sf_run_tool_complete "$SF_COMPONENT[values]" "$outcome" || { failure=$SF_RUN_TOOL_ERROR; break; }
+          sf_run_tool_complete "$outcome" || { failure=$SF_RUN_TOOL_ERROR; break; }
           completed=( "${reply[@]}" )
-          sf_run_component_clear || { failure='cannot clear tool draft'; break; }
           sf_run_append "$session" "$completed[result]" || { failure=$REPLY; break; }
           # The call is settled, so an interruption from here on cancels the next one.
           SF_COMPONENT=()
