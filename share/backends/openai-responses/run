@@ -15,7 +15,7 @@ trap 'rm -rf -- "$SF_BACKEND_TEMP_DIR"' EXIT
 cat >"$SF_BACKEND_REQUEST_FILE"
 
 sf_backend_request '.request |
-  all(keys[]; IN("include", "input", "instructions", "store") | not)' ||
+  all(keys[]; IN("include", "input", "instructions", "store", "stream") | not)' ||
   sf_backend_die 'invalid request'
 
 sf_backend_credential 'Authorization' "${api_key:+Bearer $api_key}"

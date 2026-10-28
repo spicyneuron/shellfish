@@ -150,3 +150,10 @@ jq -e '
   (.messages[2].content | map(.tool_use_id)) == ["call_1","call_2"] and
   (.messages[2].content | map(.is_error)) == [false,true]
 ' "$BACKEND_TEST_BODY" >/dev/null || fail 'anthropic did not regroup a call batch'
+
+# The adapter always streams, so a stream option is refused.
+jq -c '.request.stream = false' "$req" >"$tmp/no-stream.json"
+if ANTHROPIC_API_KEY=test zsh -f "$run" <"$tmp/no-stream.json" >"$res" 2>"$tmp/error"; then
+  fail 'anthropic accepted a stream option'
+fi
+grep -Fq -- 'invalid request' "$tmp/error" || fail 'anthropic did not explain the refused stream option'

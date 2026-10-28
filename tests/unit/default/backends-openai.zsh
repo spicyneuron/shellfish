@@ -211,3 +211,10 @@ jq -e '
 jq -c '.messages[1].content = []' "$batch_request" >"$tmp/calls-only.json"
 OPENAI_API_KEY=test-key zsh -f "$run" <"$tmp/calls-only.json" >"$res"
 jq -e '.messages[2].content == null and (.messages[2].tool_calls | length) == 2'   "$BACKEND_TEST_BODY" >/dev/null || fail 'a call-only message did not send null content'
+
+# The adapter always streams, so a stream option is refused.
+jq -c '.request.stream = false' "$req" >"$tmp/no-stream.json"
+if OPENAI_API_KEY=test zsh -f "$run" <"$tmp/no-stream.json" >"$res" 2>"$tmp/error"; then
+  fail 'openai accepted a stream option'
+fi
+grep -Fq -- 'invalid request' "$tmp/error" || fail 'openai did not explain the refused stream option'

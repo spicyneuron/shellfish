@@ -208,7 +208,7 @@ Shellfish starts `run` once per provider request with one object on stdin:
 
 `messages` contains provider-neutral conversation records in transcript order. `tools` contains model-facing tool definitions. `request` contains the merged model's common and provider-specific settings, and unrelated fields pass through. `endpoint` is authoritative for the exchange. Bundled adapters read `SHELLFISH_HTTP_TIMEOUT`, `SHELLFISH_HTTP_STALL`, and `SHELLFISH_INSECURE_TLS` from the environment.
 
-Bundled adapters normalize token limits in this order: `max_output_tokens`, `max_completion_tokens`, `max_tokens`. `reasoning_effort` overrides `reasoning.effort`, and `response_schema` replaces the provider-native structured-output setting. The Codex adapter omits output limits because its endpoint rejects them.
+Bundled adapters normalize token limits in this order: `max_output_tokens`, `max_completion_tokens`, `max_tokens`. `reasoning_effort` overrides `reasoning.effort`, and `response_schema` replaces the provider-native structured-output setting. The Codex adapter omits output limits because its endpoint rejects them. Bundled adapters always stream and reject a `stream` option.
 
 ### Response stream
 

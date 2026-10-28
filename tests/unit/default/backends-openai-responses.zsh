@@ -240,3 +240,10 @@ jq -e '
     ["call_1","call_1","call_2","call_2"] and
   .input[2].arguments == "{\"command\":\"pwd\"}"
 ' "$BACKEND_TEST_BODY" >/dev/null || fail 'responses did not map a flat call batch'
+
+# The adapter always streams, so a stream option is refused.
+jq -c '.request.stream = false' "$req" >"$tmp/no-stream.json"
+if OPENAI_API_KEY=test zsh -f "$run" <"$tmp/no-stream.json" >"$res" 2>"$tmp/error"; then
+  fail 'responses accepted a stream option'
+fi
+grep -Fq -- 'invalid request' "$tmp/error" || fail 'responses did not explain the refused stream option'

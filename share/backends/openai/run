@@ -13,7 +13,7 @@ sf_backend_setup openai
 trap 'rm -rf -- "$SF_BACKEND_TEMP_DIR"' EXIT
 cat >"$SF_BACKEND_REQUEST_FILE"
 
-sf_backend_request '.request | has("stream_options") | not' ||
+sf_backend_request '.request | has("stream") or has("stream_options") | not' ||
   sf_backend_die 'invalid request'
 
 sf_backend_credential 'Authorization' "${api_key:+Bearer $api_key}"
@@ -42,7 +42,6 @@ jq -ce '
     (if has("reasoning_effort") then .reasoning_effort else .reasoning.effort end) as $effort |
     del(.reasoning,.reasoning_effort) |
     if $effort != null then .reasoning_effort=$effort else . end) as $options |
-  ($options | if has("stream") then .stream else true end) as $stream |
   # Calls arrive as their own records and rejoin the assistant message they
   # belong to. A call-only message carries null content, as the API expects.
   (reduce .messages[] as $message ({out:[],assistant:null};
@@ -61,8 +60,7 @@ jq -ce '
     end) | .out) as $messages |
   $options * {model:$options.model,
     messages:(if .system=="" then $messages else [{role:"system",content:.system}]+$messages end),
-    stream:$stream} +
-  (if $stream then {stream_options:{include_usage:true}} else {} end) +
+    stream:true,stream_options:{include_usage:true}} +
   (if (.tools|length)==0 then {} else {
     tools:[.tools[] | {type:"function",function:{name:.name,
       description:.description,parameters:.input_schema}}]
