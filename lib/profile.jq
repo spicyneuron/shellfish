@@ -149,7 +149,23 @@ def config_sandbox($path):
       $path + [$field]; "must be an array") |
     reduce range(0; .[$field] // [] | length) as $at (.;
       config_assert(.[$field][$at] | stored_reference; $path + [$field, $at];
-        "must be an absolute, ~/, or @ path")));
+        "must be a /, ~/, ./, ../, or @ path")));
+
+# A "./" or "../" reference in a config file is relative to the file's $dir.
+def relative_to($dir):
+  if type == "string" and (startswith("./") or startswith("../")) then
+    reduce (($dir + "/" + .) | split("/")[]) as $part ([];
+      if $part == "" or $part == "." then . elif $part == ".." then .[:-1]
+      else . + [$part] end) | "/" + join("/")
+  else . end;
+def config_relative($kind; $dir):
+  def each($field): if has($field) and (.[$field] | type == "array") then
+    .[$field] |= map(relative_to($dir)) else . end;
+  if type != "object" then .
+  elif $kind == "profile" then each("model") | each("sandbox") | each("system") |
+    each("tools") | each("hooks")
+  elif $kind == "model" then if has("adapter") then .adapter |= relative_to($dir) else . end
+  else each("read") | each("write") end;
 
 # Sandbox files merge left to right: grants accumulate and "enabled" replaces.
 def sandbox_merge($files):

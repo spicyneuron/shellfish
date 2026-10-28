@@ -19,11 +19,11 @@ One Shellfish directory holds everything: profiles, models, sandbox files, compo
 
 ## References
 
-Every reference in a profile or model file, and the `-p` and `-m` options, follow one rule. A reference starting with `/`, `~/`, or `@` is a path, where `@` is the bundled root just as `~` is home. Anything else is a name, which resolves in its kind's directory, yours first, then bundled. Profile, model, and sandbox names gain `.jsonc`, and a name may be nested, such as `openai/sol`.
+Every reference in a profile, model, or sandbox file, and every option that takes one, follows one rule. A reference starting with `/`, `~/`, `./`, `../`, or `@` is a path, where `@` is the bundled root just as `~` is home. A relative path resolves against the file that contains it, or against the working directory on the command line. Anything else is a name, which resolves in its kind's directory, yours first, then bundled. Profile, model, and sandbox names gain `.jsonc`, and a name may be nested, such as `openai/sol`.
 
 Your file therefore shadows the bundled file of the same name, and a path still reaches the bundled one: `@tools/shell`, or `-p @profiles/coding.jsonc`. Session headers store bundled paths the same way, so a session survives upgrades.
 
-Path options such as `--system-file` and `--sandbox-read` accept the same prefixes and resolve any other path against the working directory.
+Path options such as `--system-file` and `--sandbox-read` resolve any other path against the working directory.
 
 ## Profiles
 
@@ -137,7 +137,7 @@ Sandbox files hold standing settings:
 | `read` | Extra read grants |
 | `write` | Extra read-write grants |
 
-Grants are `/`, `~/`, or `@` paths and need not exist, so one file can serve several machines. A profile's `sandbox` list merges left to right: grants accumulate, and a later `enabled` replaces an earlier one. A profile without a `sandbox` list is sandboxed with no extra grants.
+Grants are paths and need not exist, so one file can serve several machines. A profile's `sandbox` list merges left to right: grants accumulate, and a later `enabled` replaces an earlier one. A profile without a `sandbox` list is sandboxed with no extra grants.
 
 `--sandbox-read` and `--sandbox-write` add one-off grants, and `--sandbox-auto` adds detected development-tool paths. A new session freezes the merged grants, and `/sandbox` changes them for one session.
 

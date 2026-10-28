@@ -59,6 +59,29 @@ sf_profile_resolve_args -p "$SF_TEST_CONFIG/profiles/openai/sol.jsonc" \
   -m @models/openrouter.jsonc
 jq -e '.model.request.model == "sol" and (.model.adapter | endswith("/share/backends/openrouter"))' \
   <<<"$REPLY" >/dev/null || fail 'path references did not select their files'
+
+# "./" and "../" are relative to the file that wrote them, or to the working
+# directory for a flag.
+typeset kit="$tmp/kit"
+mkdir -p "$kit/profiles" "$kit/models" "$kit/sandbox" "$kit/system"
+print -r -- 'kit' >"$kit/system/kit.md"
+cp -R "$ROOT/tests/fixtures/backend" "$tmp/tests-backend"
+print -r -- '{"adapter": "./../../tests-backend", "request": {"model": "kit"}}' \
+  >"$kit/models/kit.jsonc"
+print -r -- '{"read": ["./data", "../system"]}' >"$kit/sandbox/kit.jsonc"
+print -r -- '{"model": ["../models/kit.jsonc"], "sandbox": ["../sandbox/kit.jsonc"],
+  "system": ["../system/kit.md"]}' >"$kit/profiles/kit.jsonc"
+sf_profile_resolve_args -p "$kit/profiles/kit.jsonc"
+jq -e --arg kit "${kit:A}" --arg backend "${tmp:A}/tests-backend" '
+  .model.adapter == $backend and .system == [$kit + "/system/kit.md"] and
+  .sandbox_read_paths == [$kit + "/sandbox/data", $kit + "/system"]
+' <<<"$REPLY" >/dev/null || fail 'config-relative references did not resolve from their files'
+(
+  cd "$kit"
+  sf_profile_resolve_args -p ./profiles/kit.jsonc -m ./models/kit.jsonc
+  jq -e '.model.request.model == "kit"' <<<"$REPLY" >/dev/null
+) || fail 'flag-relative references did not resolve from the working directory'
+
 for name in '' $'open\nai'; do
   if sf_profile_resolve_args -p "$name"; then
     fail "invalid profile reference was accepted: $name"
@@ -255,7 +278,7 @@ sf_test_profile boxed '{"model": ["work"], "sandbox": ["bad"]}'
 if sf_profile_resolve_args -p boxed; then
   fail 'a relative sandbox path was accepted'
 fi
-[[ $SF_PROFILE_ERROR == 'invalid configuration: sandbox bad $["read"][1]: must be an absolute, ~/, or @ path' ]]
+[[ $SF_PROFILE_ERROR == 'invalid configuration: sandbox bad $["read"][1]: must be a /, ~/, ./, ../, or @ path' ]]
 for value in '{"enabled": "yes"}' '{"write": "/x"}' '{"paths": []}'; do
   sf_test_sandbox bad "$value"
   if sf_profile_resolve_args -p boxed; then

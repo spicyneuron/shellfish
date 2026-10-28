@@ -46,18 +46,20 @@ sf_profile_manifest() {
 # The parsed manifest of a component folder.
 sf_profile_read_manifest() {
   sf_profile_manifest "$1" || return
-  local file=$REPLY
+  file=$REPLY
   [[ -n $file ]] || { REPLY='{}'; return 0; }
   REPLY=$(sf_jsonc_read "$file" 2>&1) ||
     sf_profile_validation_error "$REPLY" "invalid component manifest: $file"
 }
 
-# A reference starting with "/", "~/", or "@" is a path, and anything else is
-# a name under DIR in the Shellfish directory, then the bundled one. SUFFIX
-# completes a name, not a path. REPLY is the canonical path of what exists.
+# A reference starting with "/", "~/", "./", "../", or "@" is a path, and
+# anything else is a name under DIR in the Shellfish directory, then the bundled
+# one. Config files make their relative paths absolute when read, so a relative
+# path here is from a flag and resolves against PWD. SUFFIX completes a name,
+# not a path. REPLY is the canonical path of what exists.
 sf_profile_lookup() {
   local config_dir=$1 dir=$2 reference=$3 suffix=${4-} candidate
-  if [[ $reference == /* || $reference == '~/'* || $reference == @* ]]; then
+  if [[ $reference == (/|'~/'|./|../|@)* ]]; then
     sf_cli_path "$reference" || return
     candidate=$REPLY
   else
@@ -85,6 +87,7 @@ sf_profile_configs() {
     include "lib/profile";
     [$ARGS.positional | range(0; length; 2) as $at | .[$at:$at + 2] as [$file, $name] |
       $files[$file] | ["\($kind) \($name)"] as $path |
+      config_relative($kind; $file | sub("/[^/]*$"; "")) |
       if $kind == "model" then config_model($path) else config_sandbox($path) end]
   ' --args "${files[@]:^names}" 2>&1) ||
     sf_profile_validation_error "$detail" 'invalid configuration' || return
@@ -126,7 +129,7 @@ sf_profile_tools() {
 # sandbox files. REPLY is the profile with absolute paths.
 sf_profile_resolve() {
   local name=${1:-default} extra_models=$2 request=${3:-'{}'} grants=${4:-'{}'}
-  local config_dir profile models sandbox reference kind resolved selected final
+  local config_dir file profile models sandbox reference kind resolved selected final
   local backend_manifest='{}' hook_manifests='{}'
   local -a references resolutions=() hook_files=()
   local -A decoded
@@ -137,17 +140,20 @@ sf_profile_resolve() {
   config_dir=$REPLY
   sf_profile_lookup "$config_dir" profiles "$name" .jsonc ||
     sf_profile_fail "unknown profile: $name" || return
-  profile=$(sf_jsonc_read "$REPLY" 2>&1) ||
-    sf_profile_validation_error "$profile" "invalid profile: $REPLY" || return
-  sf_jq_fields -rn --argjson profile "$profile" --arg name "$name" '
+  file=$REPLY
+  profile=$(sf_jsonc_read "$file" 2>&1) ||
+    sf_profile_validation_error "$profile" "invalid profile: $file" || return
+  sf_jq_fields -rn --argjson profile "$profile" --arg name "$name" --arg dir "${file:h}" '
     include "lib/fields";
     include "lib/profile";
-    $profile | config_profile(["profile " + $name]) |
+    $profile | config_relative("profile"; $dir) | config_profile(["profile " + $name]) |
+    entry("profile"; tojson),
     entry("model"; .model // [] | join("\n")),
     entry("sandbox"; .sandbox // [] | join("\n")),
     ("ok" | field)
   ' || { sf_profile_validation_error "$REPLY" 'invalid configuration'; return; }
   decoded=( "${reply[@]}" )
+  profile=$decoded[profile]
   [[ -n $decoded[model]$extra_models ]] ||
     sf_profile_fail "profile selects no model: $name" || return
   # A reference carries no control characters, so newlines delimit each list.
