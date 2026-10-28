@@ -75,8 +75,13 @@ def canonical_tool_result:
   (.exit_code | type == "number" and floor == . and . >= 0 and . <= 255);
 
 def canonical_hook_result:
-  result_fields(["id", "lifecycle"]) and .type == "hook_result" and
-  (.lifecycle | record_lifecycle) and (.id | test("^[1-9][0-9]*$"));
+  (del(.action, .reason) | result_fields(["id", "lifecycle"])) and
+  .type == "hook_result" and (.lifecycle | record_lifecycle) and
+  (.id | test("^[1-9][0-9]*$")) and
+  (if has("action") then .action == "deny" and
+    (.lifecycle | IN("user_prompt_submit", "permission_request", "pre_tool_use", "stop")) and
+    ((has("reason") | not) or (.reason | type == "string"))
+   else has("reason") | not end);
 
 def response_calls: [.content[] | select(.type == "tool_call")];
 
@@ -123,6 +128,9 @@ def session_state:
           error("repeated hook id: " + $record.id)
         else
           .hooks += [$record.id] |
+          (if $record.lifecycle == "stop" and $record.action? == "deny" then
+             .next = "assistant"
+           else . end) |
           if ($record.model_text // "") == "" then .
           # Post-tool context annotates the result it follows.
           elif $record.lifecycle == "post_tool_use" and (.context | length) == 0 and
@@ -137,8 +145,7 @@ def session_state:
         .messages += [context_message(.context; $record.content[0].text)] |
         .context = [] | .next = "assistant" | .requests = 0
       elif ($record | canonical_response) then
-        # Stop feedback may continue the turn with another request.
-        if .next == "assistant" or any(.context[]; .lifecycle? == "stop") then .
+        if .next == "assistant" then .
         else error("response outside a turn") end |
         (if (.context | length) == 0 then .
          else .messages += [context_message(.context; "")] | .context = [] end) |

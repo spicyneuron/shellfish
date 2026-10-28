@@ -19,14 +19,14 @@ case "$read_status:$submitted" in
       ("Read", "Write") as $label | (.[$label | ascii_downcase]) as $grants |
       "\($label) grants:", if $grants == [] then "  (none)" else $grants[] | "  " + . end
     ' <<<"$header" >&2 || exit 1
-    print -ru3 -- '{"action":"block"}'
+    print -ru3 -- '{"action":"deny"}'
     exit 0
     ;;
   1:'/sandbox '*) body=${submitted#'/sandbox '} ;;
   *) exit 0 ;;
 esac
 
-print -ru3 -- '{"action":"block"}'
+print -ru3 -- '{"action":"deny"}'
 
 body=${body##[[:space:]]#}
 body=${body%%[[:space:]]#}

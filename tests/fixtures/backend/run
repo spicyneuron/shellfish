@@ -216,7 +216,7 @@ if [[ ${SF_TEST_BACKEND_TOOL_CALL:-0} == 1 || -n $tool_mode ]] || (( keyword_cou
     tool_name=${SF_TEST_BACKEND_TOOL_NAME:-shell}
     tool_input='{}'
     tool_bypass=${SF_TEST_BACKEND_TOOL_BYPASS:-false}
-    tool_bypass_reason=${SF_TEST_BACKEND_TOOL_BYPASS_REASON:-Required by the test fixture}
+    tool_bypass_reason=${SF_TEST_BACKEND_TOOL_BYPASS_REASON-Required by the test fixture}
     if [[ -n $tool_mode ]]; then
       tool_bypass=${SF_TEST_BACKEND_TOOL_BYPASS:-true}
       temp_root=${${TMPDIR:-/tmp}%/}

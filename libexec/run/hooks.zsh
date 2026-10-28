@@ -54,9 +54,9 @@ sf_run_hook_complete() {
     include "lib/fields";
     include "lib/session";
     include "lib/profile";
-    ({user_prompt_submit:["block","handoff","session_update"],
+    ({user_prompt_submit:["deny","handoff","session_update"],
       permission_request:["allow","deny"],pre_tool_use:["deny"],
-      stop:["continue"]}[$lifecycle] // []) as $actions |
+      stop:["deny"]}[$lifecycle] // []) as $actions |
     if $control == {} or ($control | (.action | IN($actions[])) and
       if .action == "handoff" then keys == ["action","argv"] and
         (.argv | type == "array" and length > 0 and all(.[]; type == "string"))
@@ -67,8 +67,10 @@ sf_run_hook_complete() {
       else keys == ["action"] end) then . else error("invalid control") end |
     ($component.draft + {type:"hook_result",
       user_text:render_template($component.template; $component + $outcome),
-      model_text:$outcome.output.stdout} | with_entries(select(.value != "")) |
-      if (has("user_text") or has("model_text")) | not then entry("result"; "")
+      model_text:$outcome.output.stdout} +
+      (if $control.action == "deny" then $control else {} end) |
+      with_entries(select(.value != "")) |
+      if (has("user_text") or has("model_text") or has("action")) | not then entry("result"; "")
       elif canonical_hook_result then entry("result"; tojson)
       else error("invalid hook result") end,
       entry("model_feedback"; has("model_text") | tostring)),
@@ -171,9 +173,9 @@ sf_run_hooks() {
     done
   fi
   rm -f -- "$input"
-  if [[ -z $error && $lifecycle == stop && $action == continue ]] &&
+  if [[ -z $error && $lifecycle == stop && $action == deny ]] &&
       (( ! model_feedback )); then
-    error='stop hook continued without model feedback'
+    error='stop hook denied without model feedback'
   fi
   [[ -z $error ]] || { SF_RUN_HOOK_ERROR=$error; return 1; }
   reply=( action "$action" reason "$reason" payload "$payload" )

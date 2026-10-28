@@ -6,7 +6,7 @@ setopt no_aliases no_multios pipe_fail
 typeset submitted
 IFS= read -r submitted
 [[ "$?:$submitted" == (1:/help|1:/h) ]] || exit 0
-print -ru3 -- '{"action":"block"}'
+print -ru3 -- '{"action":"deny"}'
 cat >&2 <<'HELP'
 Help:
 shift+enter        Add a line instead of sending the message

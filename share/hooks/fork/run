@@ -20,7 +20,7 @@ case "$read_status:$submitted" in
   *) exit 0 ;;
 esac
 
-print -ru3 -- '{"action":"block"}'
+print -ru3 -- '{"action":"deny"}'
 
 if [[ $target != <-> || ${#target} -gt 9 ]] || (( explicit && target == 0 )); then
   print -ru2 -- 'Usage: /fork [N]'

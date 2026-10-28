@@ -169,14 +169,14 @@ jq -c --arg cwd "${tmp:A}/project" '.cwd=$cwd |
     jq -rs 'last' "$tmp/control"
   }
   # A bundled grant matches by "@" or by its absolute path.
-  [[ $(call "/sandbox +r $ROOT/share/system" | jq -r .action) == block ]] ||
+  [[ $(call "/sandbox +r $ROOT/share/system" | jq -r .action) == deny ]] ||
     fail 'bundled grant duplicated'
   call "/sandbox -r $ROOT/share/system" | jq -e '.action == "session_update" and
     .profile.sandbox.read == []' >/dev/null || fail 'bundled grant removal by path failed'
   call '/sandbox -r @system' | jq -e '.action == "session_update" and
     .profile.sandbox.read == []' >/dev/null || fail 'bundled grant removal by @ failed'
-  [[ $(call '/sandbox +w dir' | jq -r .action) == block ]] || fail 'absolute grant duplicated'
-  [[ $(call '/sandbox +w ~/share' | jq -r .action) == block ]] || fail 'home grant duplicated'
+  [[ $(call '/sandbox +w dir' | jq -r .action) == deny ]] || fail 'absolute grant duplicated'
+  [[ $(call '/sandbox +w ~/share' | jq -r .action) == deny ]] || fail 'home grant duplicated'
   call '/sandbox -w dir' | jq -e '.action == "session_update" and
     .profile.sandbox.write == ["~/share"]' >/dev/null || fail 'absolute grant removal failed'
   call '/sandbox -w ~/share' | jq -e --arg path "${tmp:A}/project/dir" '

@@ -10,7 +10,7 @@ integer explicit=0 suffix=1
 
 fail_compaction() {
   print -ru2 -- "$1"
-  (( ! explicit )) || print -ru3 -- '{"action":"block"}'
+  (( ! explicit )) || print -ru3 -- '{"action":"deny"}'
   exit 0
 }
 

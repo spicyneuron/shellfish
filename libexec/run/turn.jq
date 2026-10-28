@@ -121,8 +121,7 @@ def step($records; $share; $home; $tools; $max_capture):
     entry("call_index"; $state.call_total - ($state.calls | length) + 1 | tostring),
     (tool_plan($header.profile; $tools; $state.calls[0]; $turn; $max_capture) |
       to_entries[] | entry(.key; .value | value))
-  # Stop feedback continues the turn with another request.
-  elif $state.next == "assistant" or any($state.context[]; .lifecycle? == "stop") then
+  elif $state.next == "assistant" then
     (backend_adapter_request($header.model; ($header.profile.system[0].text // "");
       ($state | state_messages); model_tools($header.profile; $tools)) //
       error("cannot prepare provider request")) as $request |

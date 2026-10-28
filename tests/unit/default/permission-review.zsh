@@ -34,7 +34,7 @@ sf_test_session "$session"
 sf_session_append "$session" '{"type":"hook_result","lifecycle":"session_start","id":"1","model_text":"<context script=\"project/instructions\">\nstartup constraint\n</context>"}'
 sf_session_append "$session" '{"type":"user","content":[{"type":"text","text":"opening request"}]}'
 sf_session_append "$session" '{"type":"assistant","stop":"end","content":[{"type":"text","text":"opening answer"}]}'
-sf_session_append "$session" '{"type":"hook_result","lifecycle":"stop","id":"2","model_text":"retry constraint"}'
+sf_session_append "$session" '{"type":"hook_result","lifecycle":"stop","id":"2","model_text":"retry constraint","action":"deny"}'
 sf_session_append "$session" '{"type":"assistant","stop":"end","content":[{"type":"text","text":"revised answer"}]}'
 sf_session_append "$session" '{"type":"user","content":[{"type":"text","text":"run the local setup"}]}'
 sf_session_append "$session" '{"type":"assistant","stop":"tool_calls","content":[{"type":"text","text":"I will inspect it."},{"type":"tool_call","id":"call_6","name":"shell","input":{"command":"inspect"}}]}'
@@ -66,7 +66,8 @@ jq -e '
   (.state_update[0].value.content | fromjson) ==
     {risk:"medium",authorization:"high",reason:"Explicitly authorized."}
 ' "$control" >/dev/null || fail 'permission review returned the wrong decision'
-jq -e '.user_preview_lines == "full"' "$hook/manifest.json" >/dev/null &&
+jq -e '.on == "permission_request" and .user_preview_lines == "full"' \
+  "$hook/manifest.json" >/dev/null &&
   assert_equal 'Approved: Explicitly authorized.' "$(<"$tmp/user")" ||
   fail 'permission review hid its decision reason'
 jq -e -s --arg tool_input "$(jq -c '.tool_input' <<<"$request")" \

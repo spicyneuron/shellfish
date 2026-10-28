@@ -23,7 +23,7 @@ ECHO_HOOK = r"""#!/usr/bin/env zsh
 (( $# == 0 )) || exit 1
 cat >"${SHELLFISH_SESSION:h}/submitted"
 print -u2 accepted
-print -r -u3 -- '{"action":"block"}'
+print -r -u3 -- '{"action":"deny"}'
 """
 
 HOLD_PERMISSION_HOOK = r"""#!/usr/bin/env zsh

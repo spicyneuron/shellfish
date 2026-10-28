@@ -9,7 +9,7 @@ sf_test_hook "$hook" '{"user_text":"${output.stdout}"}' <<'ZSH'
 [[ $# == 0 && $SHELLFISH_TURN_ID == <1-> && -d $SHELLFISH_TURN_STATE ]] || exit 2
 input=$(cat)
 case $input in
-  handoff) print -r -u3 -- '{"action":"block"}'
+  handoff) print -r -u3 -- '{"action":"deny"}'
     print -r -u3 -- '{"action":"handoff","argv":["/usr/bin/printf","next.jsonl"]}'
     print -r -u3 -- '{"state_update":[{"name":"prompt/handoff","value":true}]}'
     print -rn -- 'handoff context' ;;
@@ -18,8 +18,10 @@ case $input in
     [[ $input != bad-update ]] || profile='{}'
     jq -cn --argjson profile "$profile" '{action:"session_update",profile:$profile}' >&3
     print -rn -- 'update context' ;;
-  fail) print -r -u3 -- '{"state_update":[{"name":"prompt/failed","value":true}],"action":"block"}'; print -rn -u2 -- 'hook broke'; exit 3 ;;
-  invalid) print -r -u3 -- '{"action":"deny"}' ;;
+  fail) print -r -u3 -- '{"state_update":[{"name":"prompt/failed","value":true}],"action":"deny"}'; print -rn -u2 -- 'hook broke'; exit 3 ;;
+  deny) print -r -u3 -- '{"action":"deny"}' ;;
+  reason) print -r -u3 -- '{"action":"deny","reason":"prompt refused"}' ;;
+  invalid) print -r -u3 -- '{"action":"allow"}' ;;
   state) print -r -u3 -- '{"state_update":[{"name":"prompt/state","value":2}]}' ;;
   interrupt) print -r -u3 -- '{"state_update":[{"name":"prompt/started","value":true}]}'
     : >"$INTERRUPT_MARKER"; sleep 30 ;;
@@ -27,6 +29,16 @@ esac
 ZSH
 sf_test_bind_hooks user_prompt_submit "$hook"
 new_session() { session="$tmp/$1.jsonl"; sf_test_session "$session"; }
+new_session deny; sf_test_run deny "$session" >"$stream" || fail 'prompt denial failed'
+jq -e -s 'map(.type) == ["session","hook_result"] and
+  .[1] == {type:"hook_result",lifecycle:"user_prompt_submit",id:"1",action:"deny"}' \
+  "$session" >/dev/null || fail 'silent prompt denial was not durable'
+sf_test_run state "$session" >"$stream" || fail 'turn after prompt denial failed'
+assert_canonical_session "$session"
+new_session reason; sf_test_run reason "$session" >"$stream" || fail 'prompt denial with reason failed'
+jq -e -s 'map(.type) == ["session","hook_result"] and
+  .[1].action == "deny" and .[1].reason == "prompt refused"' "$session" >/dev/null ||
+  fail 'prompt denial reason was lost'
 new_session handoff; sf_test_run handoff "$session" >"$stream" || fail 'handoff failed'
 jq -eRn '[inputs | fromjson] as $e | $e[-1] == {type:"_handoff",argv:["/usr/bin/printf","next.jsonl"]} and
   any($e[]; .type == "state_update" and .name == "prompt/handoff" and .value == true) and
@@ -78,7 +90,7 @@ sf_test_hook "$stop" '{"user_text":"${output.stdout}${output.stderr}"}' <<'ZSH'
 #!/usr/bin/env zsh
 cat >"$STOP_INPUT"
 if [[ $1 == 1 ]]; then
-  print -r -u3 -- '{"action":"continue"}'
+  print -r -u3 -- '{"action":"deny","reason":"not finished"}'
   # A silent hook shows its text to the user only.
   [[ -e $STOP_SILENT ]] && print -rn -u2 -- 'checking again' || print -rn -- 'checking again'
 fi
@@ -91,7 +103,8 @@ sf_test_bind_hooks stop "$stop"
 new_session stop; sf_test_run stop "$session" >"$stream" || fail 'stop continuation failed'
 assert_equal 'answer 2' "$(<$stop_input)" 'stop input was not final assistant text'
 assert_equal 2 "$(<$count)" 'stop did not continue provider'
-jq -e -s 'map(select(.type == "hook_result") | .model_text) == ["checking again"]' "$session" \
+jq -e -s 'map(select(.type == "hook_result") | {model_text,action,reason}) ==
+  [{model_text:"checking again",action:"deny",reason:"not finished"}]' "$session" \
   >/dev/null || fail 'stop feedback did not settle'
 new_session limit
 SHELLFISH_MAX_REQUESTS_PER_TURN=1 sf_test_run stop "$session" >"$stream" 2>"$tmp/limit.err" &&
@@ -104,7 +117,7 @@ rm -f "$count"
 new_session no-feedback; sf_test_run stop "$session" >"$stream" 2>"$tmp/feedback.err" && fail 'missing feedback succeeded'
 assert_equal 1 "$(<$count)" 'stop without feedback requested again'
 jq -e -s '.[-2].user_text == "checking again" and (.[-2] | has("model_text") | not) and
-  .[-1] == {type:"error",user_text:"stop hook continued without model feedback"}' "$session" \
+  .[-1] == {type:"error",user_text:"stop hook denied without model feedback"}' "$session" \
   >/dev/null || fail 'missing stop feedback was accepted'
 # Ordered hooks see original input and preceding results. An action stops the list.
 typeset hooks="$tmp/hooks" name
@@ -118,13 +131,13 @@ if [[ $name != one ]]; then
     "$SHELLFISH_SESSION" >/dev/null || exit 3
 fi
 [[ $name != two || ! -e $FAIL_TWO ]] || exit 7
-[[ $name != two || ! -e $BLOCK_TWO ]] || print -r -u3 -- '{"action":"block"}'
+[[ $name != two || ! -e $DENY_TWO ]] || print -r -u3 -- '{"action":"deny"}'
 print -rn -- "$name: $input"
 ZSH
 for name in two three; do
   sf_test_hook "$hooks/$name" '{"user_text":"${output.stdout}"}' <"$hooks/one/run"
 done
-export BLOCK_TWO="$tmp/block-two" FAIL_TWO="$tmp/fail-two"
+export DENY_TWO="$tmp/deny-two" FAIL_TWO="$tmp/fail-two"
 SF_TEST_MODEL=$(jq -c --arg adapter "${SF_TEST_BACKEND:h}" '.adapter=$adapter' <<<"$SF_TEST_MODEL")
 SF_TEST_PROFILE=$(jq -c '.hooks=[]' <<<"$SF_TEST_PROFILE")
 sf_test_bind_hooks user_prompt_submit "$hooks"/{one,two,three}
@@ -132,10 +145,10 @@ new_session ordered; sf_test_run ordered "$session" >"$stream" || fail 'ordered 
 jq -e -s 'map(select(.type == "hook_result") | .user_text) ==
   ["one: ordered","two: ordered","three: ordered"]' "$session" >/dev/null ||
   fail 'hook order or input was wrong'
-: >"$BLOCK_TWO"; new_session blocked; sf_test_run ordered "$session" >"$stream" || fail 'block failed'
+: >"$DENY_TWO"; new_session denied; sf_test_run ordered "$session" >"$stream" || fail 'denial failed'
 jq -e -s 'map(select(.type == "hook_result") | .user_text) == ["one: ordered","two: ordered"] and
-  (map(.type) | index("user") == null)' "$session" >/dev/null || fail 'block did not stop list'
-rm "$BLOCK_TWO"; : >"$FAIL_TWO"; new_session later-error
+  (map(.type) | index("user") == null)' "$session" >/dev/null || fail 'denial did not stop list'
+rm "$DENY_TWO"; : >"$FAIL_TWO"; new_session later-error
 sf_test_run ordered "$session" >"$stream" 2>"$tmp/later.err" && fail 'later hook succeeded'
 jq -e -s 'map(select(.type == "hook_result") | .user_text) == ["one: ordered"] and
   .[-1].type == "error"' "$session" >/dev/null || fail 'later failure lost durable prefix'

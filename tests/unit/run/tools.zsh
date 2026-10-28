@@ -154,7 +154,7 @@ jq -eRn '
   <"$stream" >/dev/null || fail 'tool lifecycle ordering or rendering was wrong'
 assert_canonical_session "$session"
 
-# Permission hooks receive the request and may allow or deny.
+# Permission hooks receive supported bypass requests and may allow or deny.
 typeset permission="$tmp/permission" permission_input="$tmp/permission-input"
 sf_test_hook "$permission" '{"user_text":"${output.stderr}"}' <<'ZSH'
 #!/usr/bin/env zsh
@@ -194,6 +194,50 @@ jq -eRn '
     .user_text == "Shell print -rn -- approved\napproved\nexit 0")
 ' <"$stream" >/dev/null || fail 'permission allow produced the wrong records'
 
+# The core handles ineligible requests without consulting permission hooks.
+typeset permission_profile=$SF_TEST_PROFILE gate reason
+integer gate_status
+for gate in sandbox-disabled unsupported no-reason; do
+  SF_TEST_PROFILE=$permission_profile
+  sf_test_shell_tool '.environment=["TMPPREFIX"]'
+  reason='Required by the test fixture'
+  case $gate in
+    sandbox-disabled) SF_TEST_PROFILE=$(jq -c '.sandbox.enabled=false' <<<"$SF_TEST_PROFILE") ;;
+    unsupported) sf_test_shell_tool '.allow_sandbox_bypass=false' ;;
+    no-reason) reason='' ;;
+  esac
+  rm -f "$permission_input"
+  session="$tmp/permission-$gate.jsonl"
+  sf_test_session "$session"
+  gate_status=0
+  SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_BYPASS=true \
+    SF_TEST_BACKEND_TOOL_BYPASS_REASON=$reason SF_TEST_BACKEND_TOOL_COMMAND='print -rn -- unreviewed' \
+    sf_test_run permission "$session" >"$stream" 2>"$tmp/gate.err" || gate_status=$?
+  [[ ! -e $permission_input ]] || fail "permission hook ran for $gate"
+  jq -eRn 'all(inputs | fromjson; .type != "_tool_permission_request" and
+    (.type != "hook_result" or .lifecycle != "permission_request"))' <"$stream" >/dev/null ||
+    fail "permission was requested for $gate"
+  case $gate in
+    sandbox-disabled)
+      (( gate_status == 0 )) || fail 'disabled sandbox bypass failed the turn'
+      jq -e -s 'map(select(.type == "tool_result") | [.exit_code,.model_text]) ==
+        [[0,"unreviewed\nexit 0"]]' "$session" >/dev/null ||
+        fail 'disabled sandbox did not execute normally' ;;
+    unsupported)
+      (( gate_status == 0 )) || fail 'unsupported bypass failed the turn'
+      jq -e -s 'map(select(.type == "tool_result") | [.exit_code,.model_text]) ==
+        [[126,"sandbox bypass is not allowed"]]' "$session" >/dev/null ||
+        fail 'unsupported bypass lost the core refusal' ;;
+    no-reason)
+      (( gate_status == 1 )) || fail 'bypass without a reason did not fail the turn'
+      jq -e -s '.[-1] == {type:"error",user_text:"sandbox bypass reason is required"}' \
+        "$session" >/dev/null || fail 'missing bypass reason lost the core diagnostic' ;;
+  esac
+  assert_canonical_session "$session"
+done
+SF_TEST_PROFILE=$permission_profile
+sf_test_shell_tool '.environment=["TMPPREFIX"]'
+
 sf_test_hook "$permission" '{"on":"permission_request"}' <<'ZSH'
 #!/usr/bin/env zsh
 cat >"$PERMISSION_INPUT"
@@ -206,6 +250,8 @@ SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_BYPASS=true \
 jq -eRn '
   [inputs | fromjson] as $events |
   ($events | any(.type == "_draft" and .name == "shell") | not) and
+  ($events | map(select(.type == "hook_result"))[0] ==
+    {type:"hook_result",lifecycle:"permission_request",id:"1",action:"deny",reason:"review denied"}) and
   ($events | map(select(.type == "tool_result"))[0] |
     .exit_code == 126 and .model_text == "review denied" and (has("sandboxed") | not) and
     .user_text == "Shell true\nreview denied")

@@ -62,7 +62,7 @@ Control lines accept `state_update`, such as `{"state_update":[{"name":"example/
 
 A manifest's optional `user_text` is the component's one display template. It may use `${input}`, `${input.FIELD}` for a declared tool input property, `${output.stdout}`, and `${output.stderr}`. Strings insert literally, other values insert as JSON, and missing values insert empty. A component without `user_text`, or whose template renders empty, shows nothing.
 
-The template renders while the component runs with empty output, and once more when it settles. Only the settled text is stored. A call that is refused, skipped, or interrupted renders its reason as `${output.stderr}`, and Shellfish gives the model that reason as the result. Every tool call receives a result. A hook result is stored only when it has text.
+The template renders while the component runs with empty output, and once more when it settles. Only the settled text is stored. A call that is refused, skipped, or interrupted renders its reason as `${output.stderr}`, and Shellfish gives the model that reason as the result. Every tool call receives a result. A hook result is stored when it has text or denies the lifecycle's default step.
 
 The first line of the rendered text is its header, and `user_preview_lines`, a line count or `"full"`, collapses the rest. Otherwise the client's preview limit applies. A tool that ran outside its sandbox is marked `[unsandboxed]` whatever its template says.
 
@@ -105,7 +105,7 @@ The result repeats the exact call ID, name, and input and records an exit code. 
 
 A tool is sandboxed only when both its manifest and the session enable sandboxing. Shellfish runs it under [`fence`](https://github.com/fencesandbox/fence), found on `PATH` when the tool runs, with its `fence.jsonc`; platform temp access and session grants extend that policy, but deny rules win. Otherwise it runs with user permissions.
 
-For a sandboxed tool with `allow_sandbox_bypass: true`, Shellfish adds `request_sandbox_bypass` and `sandbox_bypass_reason` to the schema shown to the model. A requested bypass proceeds unsandboxed only when a `permission_request` hook or interactive client approves it. Otherwise the tool is not invoked. The prompt shows the tool name and its raw input, never the template.
+For a sandboxed tool with `allow_sandbox_bypass: true`, Shellfish adds `request_sandbox_bypass` and `sandbox_bypass_reason` to the schema shown to the model. A requested bypass proceeds unsandboxed only when a `permission_request` hook or interactive client approves it. Permission hooks run only after the core validates that a supported bypass needs approval. If every permission hook defers, Shellfish asks the client. Without approval, the tool is not invoked. The prompt shows the tool name and its raw input, never the template.
 
 A detected sandbox denial on a nonzero tool exit adds an advisory `<sandbox_notice>` to captured stdout. It does not assert that the denial caused the failure.
 
@@ -148,11 +148,11 @@ A hook changes the lifecycle's outcome by writing an `action` line to fd 3. The 
 | Hook | argv | stdin | Actions | No action |
 | --- | --- | --- | --- | --- |
 | `session_start` | — | Empty | None | Finish creation |
-| `user_prompt_submit` | — | Exact prompt | `block`, `handoff`, `session_update` | Submit the prompt |
-| `permission_request` | `NAME ID` | Tool request | `allow`, `deny` | Defer to a capable client, otherwise deny |
+| `user_prompt_submit` | — | Exact prompt | `deny`, `handoff`, `session_update` | Submit the prompt |
 | `pre_tool_use` | `NAME ID` | Tool request | `deny` | Execute the tool |
+| `permission_request` | `NAME ID` | Tool request | `allow`, `deny` | Ask a capable client, otherwise deny |
 | `post_tool_use` | `NAME ID` | Tool response | None | Continue |
-| `stop` | `ATTEMPT` | Final assistant text | `continue` | Finish the turn |
+| `stop` | `ATTEMPT` | Final assistant text | `deny` | Finish the turn |
 
 Tool hooks receive canonical envelopes:
 
@@ -169,15 +169,15 @@ Tool hooks receive canonical envelopes:
 Actions take these shapes:
 
 ```json
-{"action":"block"}
+{"action":"deny","reason":"optional feedback"}
+{"action":"allow"}
 {"action":"handoff","argv":["command","arg"]}
 {"action":"session_update","profile":PROFILE}
-{"action":"allow"}
-{"action":"deny","reason":"optional feedback"}
-{"action":"continue"}
 ```
 
-A block ends the turn without submitting the prompt. A handoff asks a capable client to run the complete `argv` after a clean turn exit. A session update's `PROFILE` is one complete session profile, as stored in the header; Shellfish atomically replaces it. A `pre_tool_use` deny reason becomes the refused tool result. A `stop` continue requires settled model text, then continues inference with it. `pre_tool_use` and `post_tool_use` cannot rewrite tool input or results. A result is already durable when `post_tool_use` runs, and its context still reaches the model with that result. `permission_request` may only allow or deny a supported sandbox bypass.
+Each lifecycle is a checkpoint before its default step, and `deny` prevents that step. At `user_prompt_submit`, the prompt is not submitted. At `pre_tool_use` or `permission_request`, the reason becomes the refused tool result. At `stop`, denying means denying the end of the turn. It requires settled model text, then continues inference with that text. Denials and their optional reasons are durable even without display or model text.
+
+An `allow` approves only a supported sandbox bypass. A handoff asks a capable client to run the complete `argv` after a clean turn exit. A session update's `PROFILE` is one complete session profile, as stored in the header. Shellfish atomically replaces it. `pre_tool_use` and `post_tool_use` cannot rewrite tool input or results. A result is already durable when `post_tool_use` runs, and its context still reaches the model with that result.
 
 ## Backend adapters
 

@@ -13,7 +13,7 @@ case "$read_status:$submitted" in
   *) exit 0 ;;
 esac
 
-print -ru3 -- '{"action":"block"}'
+print -ru3 -- '{"action":"deny"}'
 
 command=${submitted#\!}
 command=${command##[[:space:]]#}

@@ -150,7 +150,7 @@ sf_run_status() {
 
 sf_run_turn() {
   local user_record=$1 session=$2 prompt=$3 config context_command
-  local id name decision reason outcome message failure='' turn_state
+  local id name decision outcome message failure='' turn_state
   local -A hook_result completed
   integer begun=0 run_status
 
@@ -190,7 +190,7 @@ sf_run_turn() {
             failure='cannot emit session update'
           fi
           ;;
-        block) return 0 ;;
+        deny) return 0 ;;
       esac
     fi
     if [[ -z $failure ]]; then
@@ -261,16 +261,13 @@ sf_run_turn() {
                   "$turn_state" "$name" "$id" || { failure=$SF_RUN_HOOK_ERROR; break; }
                 hook_result=( "${reply[@]}" )
                 decision=$hook_result[action]
-                reason=${hook_result[reason]:-sandbox bypass denied}
                 if [[ -z $decision ]]; then
                   sf_run_permission_client "$name" "$SF_TOOL_PLAN[input]" \
-                    "$SF_TOOL_PLAN[permission_reason]"
-                  run_status=$?
-                  if (( run_status == 2 )); then failure=$REPLY; break; fi
+                    "$SF_TOOL_PLAN[permission_reason]" || { failure=$REPLY; break; }
                   decision=$REPLY
                 fi
                 if [[ $decision == deny ]]; then
-                  sf_run_tool_refused "$reason" 126
+                  sf_run_tool_refused "${hook_result[reason]:-sandbox bypass denied}" 126
                   outcome=$REPLY
                 fi
               fi
@@ -298,7 +295,7 @@ sf_run_turn() {
           sf_run_hooks "$session" stop "$SF_RUN_STEP[text]" "$turn_state" \
             "$SF_RUN_STEP[requests]" || { failure=$SF_RUN_HOOK_ERROR; break; }
           hook_result=( "${reply[@]}" )
-          [[ $hook_result[action] != continue ]] || continue
+          [[ $hook_result[action] != deny ]] || continue
           SF_RUN[answer]=$SF_RUN_STEP[text]
           SF_RUN[assistant]=$SF_RUN_STEP[response]
           break

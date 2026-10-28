@@ -41,7 +41,7 @@ integer line
 for (( line = 1; line <= 24; line++ )); do
   print -u2 -- "display line $line"
 done
-print -r -u3 -- '{"action":"block"}'
+print -r -u3 -- '{"action":"deny"}'
 """
 
 START_HOOK = r"""#!/usr/bin/env zsh

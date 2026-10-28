@@ -135,17 +135,30 @@ print -r -- '[
     "<hook name=\"stop\">\n<context script=\"observe\">\nNOTE\n</context>\n</hook>"
 ' >/dev/null || fail 'unconsumed context did not reach the request'
 
-# A response may follow stop feedback, which reaches it as context.
 print -r -- '[
   {"type":"user","content":[{"type":"text","text":"go"}]},
   {"type":"assistant","stop":"end","content":[]},
-  {"type":"hook_result","lifecycle":"stop","id":"1","model_text":"<context script=\"observe\">\nKEEP GOING\n</context>"},
+  {"type":"hook_result","lifecycle":"stop","id":"1","model_text":"NOTE"}
+]' | run | jq -e '.next == "user"' >/dev/null ||
+  fail 'stop text without denial continued the turn'
+print -r -- '[
+  {"type":"user","content":[{"type":"text","text":"go"}]},
+  {"type":"assistant","stop":"end","content":[]},
+  {"type":"hook_result","lifecycle":"stop","id":"1","model_text":"KEEP GOING","action":"deny"}
+]' | run | jq -e '.next == "assistant"' >/dev/null ||
+  fail 'stop denial did not leave a pending request'
+
+# A response may follow stop denial, which reaches it as context.
+print -r -- '[
+  {"type":"user","content":[{"type":"text","text":"go"}]},
+  {"type":"assistant","stop":"end","content":[]},
+  {"type":"hook_result","lifecycle":"stop","id":"1","model_text":"<context script=\"observe\">\nKEEP GOING\n</context>","action":"deny"},
   {"type":"assistant","stop":"end","content":[]}
 ]' | messages | jq -e '
   [.[].type] == ["user","assistant","user","assistant"] and
   .[2].content[0].text ==
     "<hook name=\"stop\">\n<context script=\"observe\">\nKEEP GOING\n</context>\n</hook>"
-' >/dev/null || fail 'stop feedback did not continue the turn'
+' >/dev/null || fail 'stop denial did not continue the turn'
 
 # Invalid input fails instead of returning partial state.
 typeset -a invalid=(
@@ -180,6 +193,9 @@ typeset -a invalid=(
   'a hook name' '[{"type":"hook_result","lifecycle":"stop","id":"1","name":"observe"}]'
   'a hook exit code' '[{"type":"hook_result","lifecycle":"stop","id":"1","exit_code":0}]'
   'a hook without a lifecycle' '[{"type":"hook_result","id":"1"}]'
+  'a denial at a non-denying lifecycle' '[{"type":"hook_result","lifecycle":"session_start","id":"1","action":"deny"}]'
+  'a reason without denial' '[{"type":"hook_result","lifecycle":"stop","id":"1","reason":"why"}]'
+  'a nonstring denial reason' '[{"type":"hook_result","lifecycle":"stop","id":"1","action":"deny","reason":1}]'
   'an unknown hook lifecycle' '[{"type":"hook_result","lifecycle":"other","id":"1"}]'
   'a nondecimal hook identifier' '[{"type":"hook_result","lifecycle":"stop","id":"first"}]'
   'a zero hook identifier' '[{"type":"hook_result","lifecycle":"stop","id":"0"}]'

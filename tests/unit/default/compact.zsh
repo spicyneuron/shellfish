@@ -130,7 +130,7 @@ for incomplete in empty user-only assistant-only; do
     SHELLFISH_TURN_STATE="$tmp" zsh -f "$compact_hook" user_prompt_submit \
     3>"$compact_control" < <(print -n -- /compact) 2>/dev/null || compact_status=$?
   (( compact_status == 0 )) &&
-    [[ $(actions) == '{"action":"block"}' ]] ||
+    [[ $(actions) == '{"action":"deny"}' ]] ||
     fail "compaction accepted $incomplete session"
 done
 
@@ -169,7 +169,7 @@ SF_TEST_COMPACT_FAIL=1 SHELLFISH_EXECUTABLE="$compact_shellfish" \
   SHELLFISH_SESSION="$compact_source" \
   SHELLFISH_TURN_STATE="$tmp" zsh -f "$compact_hook" user_prompt_submit \
   3>"$compact_control" < <(print -n -- /compact) 2>/dev/null || compact_status=$?
-(( compact_status == 0 )) && [[ $(actions) == '{"action":"block"}' ]] ||
+(( compact_status == 0 )) && [[ $(actions) == '{"action":"deny"}' ]] ||
   fail 'explicit summary failure was not handled'
 # Preserve ordered state history.
 typeset state_source="$tmp/state-source.jsonl"
