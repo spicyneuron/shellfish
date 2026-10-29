@@ -1,19 +1,31 @@
+# Sandbox Auto Mode
+
 Auto review could fallback to user request if failed. User request could timeout to deny.
 
-Drop token estimates
+Maybe consider how flag render badges like [unsandboxed]. For example, would this be better as [manually approved] [manually denied] or [auto-approved] [auto-denied]?
+
+# Cleanup
 
 Feels like prompt submit should get split so that prompt command is a separate hook?
 
-Maybe consider how flag render badges like [unsandboxed]. For example, would this be better as [approved] [denied] or [auto-approved] [auto-denied]?
+Drop token estimates
 
 Option arrow up/down prints chars instead of navigating. Any other common navigation shortcuts? Should generally try to support them if not too hard.
+
+Rename HARNESS.md to PROFILE.md
+
+In header, list sandbox and sandbox type
+In header, also list resolved shellfish directory
+
+# Major
+
+.shellfish directories should merge unless there's a .shellfish-root
+
+Add local sandbox exceptions to allow tests to run
+- tests cannot create .env and .shellfish
+- probably python
 
 Worktree support
 
 Image and file support
 
-Rename HARNESS.md to PROFILE.md
-
-In header, list sandbox and sandbox type
-
-In header, also list resolved shellfish directory
