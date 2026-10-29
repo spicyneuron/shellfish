@@ -108,13 +108,10 @@ review_decide() {
   jq -e 'all(.answers[]; .type != "refusal")' <<<"$result" >/dev/null 2>&1 ||
     permission_defer 'Permission review decision model refused to answer.' "$result"
 
-  REPLY=$(jq -c --slurpfile policy "$policy" --argjson allow "$allow_threshold" \
-      --argjson injected "$injected_threshold" '
+  REPLY=$(jq -c --argjson allow "$allow_threshold" --argjson injected "$injected_threshold" '
     def dist: .probabilities | add as $sum | map(. / $sum);
-    def mostly($levels): . as $dist |
-      $levels[[range(length)] | max_by($dist[.])] | split(":")[0];
     def percent: . * 100 | round | tostring + "%";
-    tojson as $content | $policy[0] as $policy |
+    tojson as $content |
     (.answers.risk | dist) as $risk | (.answers.authorization | dist) as $auth |
     ([range(4) as $a | range(3) as $r | select($a > $r) | $auth[$a] * $risk[$r]] | add) as $p |
     if .answers.injected.probability >= $injected then
@@ -122,7 +119,7 @@ review_decide() {
         .answers.injected.probability | percent))."}
     else
       {action:(if $p >= $allow then "allow" else "deny" end),
-        reason:"\($p | percent) likely authorized (risk mostly \($risk | mostly($policy.risk.levels)), authorization mostly \($auth | mostly($policy.authorization.levels)))."}
+        reason:"\($p | percent) likely authorized."}
     end + {content:$content}
   ' <<<"$result" 2>/dev/null) ||
     permission_defer 'Permission review returned an invalid decision.' "$result"

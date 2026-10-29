@@ -240,7 +240,7 @@ run_review "$(decision '[1,0,0]' '[0,1,0,0]' 0)"
 (( hook_status == 0 )) || fail 'decision review did not resolve'
 jq -e '.action == "allow" and
   .state_update[0].value.reason ==
-    "100% likely authorized (risk mostly low, authorization mostly low)." and
+    "100% likely authorized." and
   (.state_update[0].value.content | fromjson | .model) == "d"
 ' "$control" >/dev/null || fail 'decision review did not allow a covered call'
 jq -e --slurpfile policy "$hook/policy.json" '
@@ -260,7 +260,7 @@ jq -e --slurpfile policy "$hook/policy.json" '
 # Every pairing where authorization covers risk adds up to 57%.
 run_review "$(decision '[0.1,0.6,0.3]' '[0.1,0.2,0.5,0.2]' 0.1)"
 jq -e '.action == "deny" and
-  .reason == "57% likely authorized (risk mostly medium, authorization mostly medium)."
+  .reason == "57% likely authorized."
 ' "$control" >/dev/null || fail 'decision review allowed an uncertain call'
 
 # A configured threshold lowers the bar for less decisive models.
