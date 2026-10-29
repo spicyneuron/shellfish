@@ -1,3 +1,5 @@
+Auto review could fallback to user request if failed. User request could timeout to deny.
+
 Drop token estimates
 
 Feels like prompt submit should get split so that prompt command is a separate hook?
