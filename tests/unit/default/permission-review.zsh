@@ -209,3 +209,79 @@ run_review '{"risk":"high","authorization":"unknown","reason":"Not authorized."}
 jq -e '.action == "deny" and .reason == "Not authorized." and
   (.state_update[0].value.content | fromjson).authorization == "unknown"
 ' "$control" >/dev/null || fail 'unknown authorization was not denied'
+
+# A decision model answers the same policy as scores and a predicate.
+mkdir -p "$SHELLFISH_DIR/models/decider"
+print -r -- '{}' >"$SHELLFISH_DIR/models/decider/manifest.json"
+cat >"$SHELLFISH_DIR/models/decider/decide" <<'ADAPTER'
+#!/usr/bin/env zsh
+cat >"$SF_TEST_REQUEST" || exit
+[[ $(<"$SF_TEST_MODE") != failure ]] || exit 1
+print -r -- "$(<"$SF_TEST_MODE")"
+ADAPTER
+chmod +x "$SHELLFISH_DIR/models/decider/decide"
+print -r -- '{"adapter":"./decider","endpoint":"https://decide.invalid","request":{"model":"d"}}' \
+  >"$SHELLFISH_DIR/models/decider.jsonc"
+session="$tmp/decision-review.jsonl"
+jq -c 'if .type == "session" then .profile.config["sandbox-approver"].decision_model="decider"
+  else . end' "$parent_session" >"$session"
+decision() {
+  jq -cn --argjson risk "$1" --argjson auth "$2" --argjson injected "$3" '
+    def score($p): {type:"score",score:1,confidence:0.5,probabilities:$p};
+    {model:"d",answers:{risk:score($risk),authorization:score($auth),
+      injected:{type:"predicate",probability:$injected}}}'
+}
+
+run_review "$(decision '[1,0,0]' '[0,1,0,0]' 0)"
+(( hook_status == 0 )) || fail 'decision review did not resolve'
+jq -e '.action == "allow" and
+  .state_update[0].value.reason ==
+    "100% likely authorized (risk mostly low, authorization mostly low)." and
+  (.state_update[0].value.content | fromjson | .model) == "d"
+' "$control" >/dev/null || fail 'decision review did not allow a covered call'
+jq -e --slurpfile policy "$hook/policy.json" '
+  $policy[0] as $policy |
+  .system == $policy.preamble and .endpoint == "https://decide.invalid" and
+  (.input | length) == 1 and .input[0].type == "json" and
+  .input[0].data.target_tool_call.id == "call_7" and
+  .input[0].data.system_message == "fixed system" and
+  .questions == {
+    risk:{type:"score",instructions:$policy.risk.instructions,levels:$policy.risk.levels},
+    authorization:{type:"score",instructions:$policy.authorization.instructions,
+      levels:$policy.authorization.levels},
+    injected:{type:"predicate",instructions:$policy.injected}}
+' "$provider" >/dev/null || fail 'decision review sent the wrong request'
+[[ ! -e $captured ]] || fail 'decision review built a chat session'
+
+# Every pairing where authorization covers risk adds up to 57%.
+run_review "$(decision '[0.1,0.6,0.3]' '[0.1,0.2,0.5,0.2]' 0.1)"
+jq -e '.action == "deny" and
+  .reason == "57% likely authorized (risk mostly medium, authorization mostly medium)."
+' "$control" >/dev/null || fail 'decision review allowed an uncertain call'
+
+run_review "$(decision '[1,0,0]' '[0,0,0,1]' 0.62)"
+jq -e '.action == "deny" and
+  .reason == "Appears driven by instructions in untrusted data (62%)."
+' "$control" >/dev/null || fail 'decision review allowed an injected call'
+
+typeset refused
+refused=$(decision '[1,0,0]' '[0,1,0,0]' 0 | jq -c '.answers.injected = {type:"refusal"}')
+run_review "$refused"
+jq -e --argjson refused "$refused" '(has("action") | not) and
+  .state_update[0].value.reason == "Permission review decision model refused to answer." and
+  (.state_update[0].value.content | fromjson) == $refused
+' "$control" >/dev/null || fail 'decision refusal did not defer'
+
+run_review failure
+jq -e '(has("action") | not) and .state_update[0].value ==
+  {content:null,reason:"Permission review decision request failed."}
+' "$control" >/dev/null || fail 'decision failure did not defer'
+
+jq -c 'if .type == "session" then .profile.config["sandbox-approver"] =
+  {model:"review/fast.v1",decision_model:"decider"} else . end' "$parent_session" >"$session"
+run_review "$(decision '[1,0,0]' '[0,1,0,0]' 0)"
+jq -e '(has("action") | not) and
+  .state_update[0].value.reason == "Permission review has invalid configuration."' \
+  "$control" >/dev/null || fail 'review accepted both model kinds'
+[[ ! -e $provider ]] || fail 'conflicting review configuration called a provider'
+session=$parent_session

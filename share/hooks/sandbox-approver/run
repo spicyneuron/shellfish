@@ -5,8 +5,11 @@ setopt extended_glob no_aliases no_multios pipe_fail
 
 # Input bytes: 32768 tokens at about four bytes each.
 integer budget=$(( 32768 * 4 ))
+# A decision review allows a call at this probability of sufficient
+# authorization, and denies one this likely driven by untrusted instructions.
+local allow_threshold=0.8 injected_threshold=0.5
 local request header system base records context candidate state_name=''
-local model
+local model decision_model selection policy=${0:A:h}/policy.json
 local settings='{"request":{"max_output_tokens":4096,"response_schema":{
   "type":"object","additionalProperties":false,
   "required":["risk","authorization","reason"],
@@ -90,6 +93,40 @@ review_chat() {
   ' <<<"$result") || exit 1
 }
 
+# Classifies with a decision model and sets REPLY to the outcome. Allowing
+# requires authorization at or above risk; unknown authorization covers nothing.
+review_decide() {
+  local result
+  result=$(jq -c --argjson context "$base" '
+    {system:.preamble, input:[{type:"json",data:$context}], questions:{
+      risk:(.risk | {type:"score",instructions,levels}),
+      authorization:(.authorization | {type:"score",instructions,levels}),
+      injected:{type:"predicate",instructions:.injected}}}
+  ' "$policy" | "$SHELLFISH_EXECUTABLE" decide -m "$decision_model" 2>/dev/null) ||
+    permission_defer 'Permission review decision request failed.'
+  jq -e 'all(.answers[]; .type != "refusal")' <<<"$result" >/dev/null 2>&1 ||
+    permission_defer 'Permission review decision model refused to answer.' "$result"
+
+  REPLY=$(jq -c --slurpfile policy "$policy" --argjson allow "$allow_threshold" \
+      --argjson injected "$injected_threshold" '
+    def dist: .probabilities | add as $sum | map(. / $sum);
+    def mostly($levels): . as $dist |
+      $levels[[range(length)] | max_by($dist[.])] | split(":")[0];
+    def percent: . * 100 | round | tostring + "%";
+    tojson as $content | $policy[0] as $policy |
+    (.answers.risk | dist) as $risk | (.answers.authorization | dist) as $auth |
+    ([range(4) as $a | range(3) as $r | select($a > $r) | $auth[$a] * $risk[$r]] | add) as $p |
+    if .answers.injected.probability >= $injected then
+      {action:"deny", reason:"Appears driven by instructions in untrusted data (\(
+        .answers.injected.probability | percent))."}
+    else
+      {action:(if $p >= $allow then "allow" else "deny" end),
+        reason:"\($p | percent) likely authorized (risk mostly \($risk | mostly($policy.risk.levels)), authorization mostly \($auth | mostly($policy.authorization.levels)))."}
+    end + {content:$content}
+  ' <<<"$result" 2>/dev/null) ||
+    permission_defer 'Permission review returned an invalid decision.' "$result"
+}
+
 [[ -r $SHELLFISH_SESSION && -d $SHELLFISH_TURN_STATE ]] ||
   permission_defer 'Permission review could not read the active turn.'
 
@@ -111,22 +148,25 @@ system=$(jq -r '
     "Return only one JSON object with exactly these fields:\n" +
       "{\"risk\":\"low|medium|high\",\"authorization\":\"unknown|low|medium|high\",\"reason\":\"...\"}",
     .reason] | join("\n\n")
-' "${0:A:h}/policy.json" 2>/dev/null) ||
+' "$policy" 2>/dev/null) ||
   permission_defer 'Permission review could not load its policy.'
 
 header=$(head -n 1 -- "$SHELLFISH_SESSION") ||
   permission_defer 'Permission review could not inspect the session header.'
-model=$(jq -r '
+selection=$(jq -r '
   (.profile.config // {}) |
   if has("sandbox-approver") then .["sandbox-approver"] else {} end |
-  if type == "object" and (keys - ["model"]) == [] then .
-  else error("config.sandbox-approver must be an object containing only model") end |
-  if has("model") then .model |
-    if type == "string" and
-      test("^[A-Za-z0-9][A-Za-z0-9_.-]*(/[A-Za-z0-9][A-Za-z0-9_.-]*)*$") then .
-    else error("config.sandbox-approver.model must be a model name") end
-  else empty end
+  if type == "object" and (keys - ["decision_model", "model"]) == [] and length <= 1 then .
+  else error("config.sandbox-approver must contain at most one of model or decision_model") end |
+  to_entries[] |
+  if .value | type == "string" and
+    test("^[A-Za-z0-9][A-Za-z0-9_.-]*(/[A-Za-z0-9][A-Za-z0-9_.-]*)*$") then "\(.key) \(.value)"
+  else error("config.sandbox-approver.\(.key) must be a model name") end
 ' <<<"$header" 2>/dev/null) || permission_defer 'Permission review has invalid configuration.'
+case ${selection%% *} in
+  model) model=${selection#* } ;;
+  decision_model) decision_model=${selection#* } ;;
+esac
 # Dropping the model's own schema keeps the merge from adding its properties.
 [[ -z $model ]] || overrides=( --model "$model"
   --model '{"request":{"response_schema":null}}' --model "$settings" )
@@ -221,5 +261,5 @@ for candidate in $candidates; do
   base=$context
 done
 
-review_chat
+if [[ -n $decision_model ]]; then review_decide; else review_chat; fi
 permission_resolve "$REPLY"
