@@ -20,6 +20,9 @@ typeset start_all=$EPOCHREALTIME
   exit 2
 }
 
+# Decision calibration uses the developer's own models and credentials.
+[[ ${1-} != decisions ]] || exec "$test_dir/decisions/run.zsh" "${@:2}"
+
 # Tests inherit one namespaced root for their scratch, so whatever a killed
 # test leaks collects in a single place instead of the bare temp directory.
 export TMPDIR=${${TMPDIR:-/tmp}%/}/shellfish-tests
@@ -57,7 +60,7 @@ done
 for test_file in $tests; do
   [[ -d $test_file || ( -f $test_file && $test_file == *.(zsh|py|js) ) ]] || {
     print -u2 -r -- "Invalid test path: $test_file"
-    print -u2 -r -- "Usage: $0 [unit|pty|server|perf|loc|TEST_PATH ...]"
+    print -u2 -r -- "Usage: $0 [unit|pty|server|perf|loc|TEST_PATH ...] or $0 decisions [--chat] MODEL..."
     exit 2
   }
 done
