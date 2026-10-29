@@ -1,13 +1,19 @@
 # Cleanup
 
-Thinking about renaming the backend-request command to just request. Any reason not to?
-
-Feels like prompt submit should get split so that prompt command is a separate hook? Then potentially some of the always included hooks could get combined?
+Feels like profile hook config is too much a grab bag right now.
+- Maybe some hooks should get named according to where they actually apply?
+- Maybe prompt "command" hooks get pulled out as a top level concept?
+- Maybe combine some of the always included, essential hooks?
 
 Rename HARNESS.md to PROFILE.md and split out MODELS.md
 
 In header, list sandbox and sandbox type
 In header, also list resolved shellfish directory
+
+For consistency, .shellfish dir and component resolution could be linked. Currently, skills are discovered from ~/.agents/skills no matter what. I'm thinking there might just be two tiers:
+- In PWD .agents/
+- shellfish dir anywhere in the ancestor path, and any sibling .agents/
+Thoughts?
 
 # Major
 
