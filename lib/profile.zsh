@@ -101,9 +101,10 @@ sf_profile_configs() {
   REPLY=$detail
 }
 
-# Resolve validated model items independently of a profile.
+# Resolve validated model items independently of a profile, for an adapter with
+# executable ENTRY.
 sf_profile_model() {
-  local config_dir=$1 items=$2 names model adapter resolved final
+  local config_dir=$1 items=$2 entry=$3 names model adapter resolved final
   names=$(jq -r '.[] | strings' <<<"$items") ||
     sf_profile_fail 'cannot read model references' || return
   sf_profile_configs model models "$config_dir" "$items" ${(f)names} || return
@@ -116,8 +117,10 @@ sf_profile_model() {
   sf_profile_lookup "$config_dir" backends "$adapter" ||
     sf_profile_fail "cannot resolve backends reference: $adapter" || return
   resolved=$REPLY
-  [[ -d $resolved && -x $resolved/run ]] ||
+  [[ -d $resolved ]] ||
     sf_profile_fail "invalid backends reference: $adapter" || return
+  [[ -f $resolved/$entry && -x $resolved/$entry ]] ||
+    sf_profile_fail "backend has no $entry entrypoint: $adapter" || return
   sf_profile_read_manifest "$resolved" || return
   final=$(sf_jq -nce --argjson model "$model" --arg adapter "$resolved" \
       --argjson manifest "$REPLY" '
@@ -130,6 +133,27 @@ sf_profile_model() {
     if canonical_model then . else error("invalid resolved model") end
   ' 2>&1) || sf_profile_validation_error "$final" 'cannot resolve model' || return
   REPLY=$final
+}
+
+# Resolve model references or inline JSON objects, merged left to right, for an
+# adapter with executable ENTRY. Relative paths resolve against PWD. Returns 2
+# for malformed items.
+sf_profile_model_refs() {
+  local entry=$1 config_dir items
+  shift
+  SF_PROFILE_ERROR=''
+  sf_environment_dir || sf_profile_fail "$SF_ENVIRONMENT_ERROR" || return
+  config_dir=$REPLY
+  items=$(sf_jq -cn --arg cwd "${PWD:A}" '
+    include "lib/profile";
+    {model:[$ARGS.positional[] | if startswith("{") then fromjson else . end]} |
+    config_profile(["options"]; ["model"]) | config_relative("profile"; $cwd) | .model
+  ' --args -- "$@" 2>&1) || {
+    sf_cli_diagnostic "$items"
+    sf_profile_fail "$REPLY"
+    return 2
+  }
+  sf_profile_model "$config_dir" "$items" "$entry"
 }
 
 # The tools or hooks of an expanded profile, read live from their manifests.
@@ -213,7 +237,7 @@ sf_profile_resolve() {
     sf_profile_fail 'no model selected: run shellfish init, or pass -m'
     return
   fi
-  sf_profile_model "$config_dir" "$decoded[models]" || return
+  sf_profile_model "$config_dir" "$decoded[models]" run || return
   model=$REPLY
   sf_profile_configs sandbox sandbox "$config_dir" "$decoded[sandboxes]" \
     ${(f)decoded[sandbox]} || return

@@ -40,49 +40,58 @@ sf_backend_project() {
   SF_BACKEND_PLAN=( "${reply[@]}" )
 }
 
-# Discover capacity for the request already in SF_BACKEND_PLAN.
-sf_backend_context_window() {
-  local command=$1
+# Run COMMAND once on the request in SF_BACKEND_PLAN. reply holds exit_code,
+# interrupted, stdout, stderr, and their byte counts; output past MAX_CAPTURE
+# keeps only its tail.
+sf_backend_capture() {
+  local command=$1 directory input
   integer max_capture=$2
-  local directory input output
   local -A process
   sf_environment_load || {
     SF_BACKEND[error]=$SF_ENVIRONMENT_ERROR
     return 1
   }
-  sf_scratch_directory backend-context || {
-    SF_BACKEND[error]='cannot prepare context window capture'
+  sf_scratch_directory backend-capture || {
+    SF_BACKEND[error]='cannot prepare adapter capture'
     return 1
   }
   directory=$REPLY
   input="$directory.input"
   print -r -- "$SF_BACKEND_PLAN[request]" >"$input" || {
     rm -rf -- "$directory" "$input"
-    SF_BACKEND[error]='cannot prepare context window request'
+    SF_BACKEND[error]='cannot prepare adapter request'
     return 1
   }
   if ! sf_process_run "$directory" "$SF_BACKEND_PLAN[cwd]" "${input:A}" "$max_capture" : \
       /usr/bin/env "${SF_ENVIRONMENT_VALUES[@]}" "$command"; then
     rm -rf -- "$directory" "$input"
-    SF_BACKEND[error]=${SF_PROCESS_ERROR:-cannot discover model context window}
+    SF_BACKEND[error]=${SF_PROCESS_ERROR:-cannot run adapter}
     return 1
   fi
   process=( "${reply[@]}" )
-  if (( process[interrupted] )); then
-    rm -rf -- "$directory" "$input"
-    return $process[exit_code]
-  fi
+  process[stdout]=$(<"$directory/stdout")
+  process[stderr]=$(<"$directory/stderr")
+  rm -rf -- "$directory" "$input"
+  reply=( "${(@kv)process}" )
+}
+
+# Discover capacity for the request already in SF_BACKEND_PLAN.
+sf_backend_context_window() {
+  local command=$1
+  integer max_capture=$2
+  local -A process
+  sf_backend_capture "$command" "$max_capture" || return
+  process=( "${reply[@]}" )
+  (( ! process[interrupted] )) || return $process[exit_code]
   REPLY=null
   if (( process[exit_code] == 0 && process[stdout_bytes] <= max_capture &&
       process[stderr_bytes] <= max_capture )); then
-    output=$(<"$directory/stdout")
     REPLY=$(sf_jq -ser '
       include "lib/profile";
       select(length == 1 and (.[0] | type == "object" and keys == ["context_window"] and
         (.context_window | positive_integer))) | .[0].context_window
-    ' <<<"$output" 2>/dev/null) || REPLY=null
+    ' <<<"$process[stdout]" 2>/dev/null) || REPLY=null
   fi
-  rm -rf -- "$directory" "$input"
 }
 
 sf_backend_run() {

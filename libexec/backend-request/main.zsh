@@ -14,7 +14,7 @@ sf_backend_request_abort() {
 }
 
 sf_backend_request_main() {
-  local model=null items config_dir
+  local model=null
   local -a models=()
   while (( $# )); do
     case $1 in
@@ -34,18 +34,11 @@ sf_backend_request_main() {
   source "$SF_ROOT/lib/backend.zsh"
   if (( ${#models} )); then
     source "$SF_ROOT/lib/profile.zsh"
-    sf_environment_dir || { sf_die "$SF_ENVIRONMENT_ERROR"; return 1; }
-    config_dir=$REPLY
-    items=$(sf_jq -cn --arg cwd "${PWD:A}" '
-      include "lib/profile";
-      {model:[$ARGS.positional[] | if startswith("{") then fromjson else . end]} |
-      config_profile(["options"]; ["model"]) | config_relative("profile"; $cwd) | .model
-    ' --args -- "${models[@]}" 2>&1) || {
-      sf_cli_diagnostic "$items"
-      sf_die "$REPLY"
-      return 2
+    sf_profile_model_refs run "${models[@]}" || {
+      local resolve_status=$?
+      sf_die "$SF_PROFILE_ERROR"
+      return $resolve_status
     }
-    sf_profile_model "$config_dir" "$items" || { sf_die "$SF_PROFILE_ERROR"; return 1; }
     model=$REPLY
   fi
   sf_backend_project '[]' "$model" || { sf_die 'cannot prepare provider request'; return 1; }
