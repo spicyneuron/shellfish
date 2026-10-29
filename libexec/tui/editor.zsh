@@ -240,11 +240,9 @@ sf_tui_editor_permission() {
     CURSOR=0
     return
   fi
-  [[ $mode == (restore|discard) ]] || return 1
-  if [[ $mode == restore ]]; then
-    BUFFER=$SF_PRESENT_PERMISSION_DRAFT
-    CURSOR=$SF_PRESENT_PERMISSION_CURSOR
-  fi
+  [[ $mode == restore ]] || return 1
+  BUFFER=$SF_PRESENT_PERMISSION_DRAFT
+  CURSOR=$SF_PRESENT_PERMISSION_CURSOR
   SF_PRESENT_PERMISSION_DRAFT=''
   SF_PRESENT_PERMISSION_CURSOR=0
 }
@@ -506,6 +504,12 @@ sf_tui_bind() {
     '^[[200~' bracketed-paste
     '^A' beginning-of-line
     '^E' end-of-line
+    '^[[H' beginning-of-line
+    '^[[F' end-of-line
+    '^[OH' beginning-of-line
+    '^[OF' end-of-line
+    '^[[1~' beginning-of-line
+    '^[[4~' end-of-line
     '^B' backward-char
     '^F' forward-char
     '^[[D' backward-char
@@ -514,9 +518,14 @@ sf_tui_bind() {
     '^[OC' forward-char
     '^[b' backward-word
     '^[f' forward-word
+    '^[[1;3D' backward-word
+    '^[[1;3C' forward-word
+    '^[[1;5D' backward-word
+    '^[[1;5C' forward-word
     '^H' backward-delete-char
     '^?' backward-delete-char
     '^D' delete-char
+    '^[[3~' delete-char
     '^W' backward-kill-word
     '^[^H' backward-kill-word
     '^[^?' backward-kill-word

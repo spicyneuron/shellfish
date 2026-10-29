@@ -211,6 +211,22 @@ sf_tui_exec_finish
 assert_equal 0 "${#SF_PRESENT_QUEUE}"
 assert_equal idle "$SF_PRESENT_STATE"
 
+# Keep the draft hidden by a permission prompt when the exec fails.
+sf_tui_reset
+sf_tui_terminal_reset
+SF_PRESENT_SESSION="$tmp/recover.jsonl"
+SF_PRESENT_STATE=permission
+SF_PRESENT_PERMISSION_DRAFT=draft
+SF_PRESENT_PERMISSION_CURSOR=2
+BUFFER=''
+SF_TUI_TRANSPORT_EOF=1
+SF_TUI_TRANSPORT_EXIT_STATUS=1
+SF_TUI_TRANSPORT_EXIT_DETAIL='backend failed'
+sf_tui_exec_finish
+assert_equal idle "$SF_PRESENT_STATE"
+assert_equal draft "$BUFFER"
+assert_equal 2 "$CURSOR"
+
 # A durable failure is reported by the core, so the client adds no heading of
 # its own. Rows committed during the tick have already left the queue.
 sf_tui_reset

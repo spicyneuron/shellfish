@@ -194,6 +194,11 @@ sf_tui_bind
 [[ $(bindkey -M sf-present x) == *self-insert ]]
 [[ $(bindkey -M sf-present $'\xe9') == *self-insert ]]
 [[ $(bindkey -M sf-present '^D') == *' delete-char' ]]
+[[ $(bindkey -M sf-present $'\e[3~') == *' delete-char' ]]
+[[ $(bindkey -M sf-present $'\e[H') == *beginning-of-line ]]
+[[ $(bindkey -M sf-present $'\e[F') == *end-of-line ]]
+[[ $(bindkey -M sf-present $'\e[1;5D') == *backward-word ]]
+[[ $(bindkey -M sf-present $'\e[1;3C') == *forward-word ]]
 
 # Inherit no editor commands beyond the explicit bindings.
 for key in '^[x' '^[z' '^R' '^I' '^_' '^O'; do

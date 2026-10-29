@@ -191,6 +191,7 @@ sf_tui_exec_finish() {
     exit_detail='Create exited without loading a session.'
   fi
   [[ $SF_PRESENT_STATE != cancelling ]] || cancelled=1
+  [[ $SF_PRESENT_STATE != permission ]] || sf_tui_editor_permission restore
   sf_tui_activity_stop || return 1
   if (( exit_status || cancelled )); then
     if (( settled_error )); then
@@ -228,7 +229,6 @@ sf_tui_exec_finish() {
     fi
     sf_tui_transport_reset
     sf_tui_permission_reset
-    sf_tui_editor_permission discard
     SF_PRESENT_STATE=idle
     [[ -z $heading ]] || sf_tui_action error "$heading" "$detail" || return 1
   else
