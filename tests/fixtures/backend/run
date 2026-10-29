@@ -5,7 +5,7 @@ setopt err_exit no_aliases no_multios pipe_fail
 
 typeset request decoded user_text prompt_text text tool_command tool_bypass keyword_mode=false
 typeset tool_mode tool_name tool_input fixture_dir fixture_path old_string new_string
-typeset cleanup_path cleanup_dir temp_root tool_bypass_reason
+typeset cleanup_path cleanup_dir temp_root tool_bypass_reason tool_bypass_flag
 typeset -a parts deltas
 integer keyword_count delay_match think error_count lorem delta_index input_tokens cached_tokens
 integer text_tokens output_tokens reasoning_tokens
@@ -217,6 +217,7 @@ if [[ ${SF_TEST_BACKEND_TOOL_CALL:-0} == 1 || -n $tool_mode ]] || (( keyword_cou
     tool_input='{}'
     tool_bypass=${SF_TEST_BACKEND_TOOL_BYPASS:-false}
     tool_bypass_reason=${SF_TEST_BACKEND_TOOL_BYPASS_REASON-Required by the test fixture}
+    tool_bypass_flag=${SF_TEST_BACKEND_TOOL_BYPASS_FLAG:-true}
     if [[ -n $tool_mode ]]; then
       tool_bypass=${SF_TEST_BACKEND_TOOL_BYPASS:-true}
       temp_root=${${TMPDIR:-/tmp}%/}
@@ -245,8 +246,8 @@ if [[ ${SF_TEST_BACKEND_TOOL_CALL:-0} == 1 || -n $tool_mode ]] || (( keyword_cou
         ;;
     esac
     if [[ -n $tool_mode && $tool_bypass == true ]]; then
-      tool_input=$(jq -c --arg reason "$tool_bypass_reason" '
-        . + {sandbox_bypass_request:{reason:$reason}}
+      tool_input=$(jq -c --arg reason "$tool_bypass_reason" --argjson flag "$tool_bypass_flag" '
+        . + {request_sandbox_bypass:$flag,sandbox_bypass_reason:$reason}
       ' <<<"$tool_input")
     fi
     if [[ ${SF_TEST_BACKEND_TOOL_CALL:-0} != 1 && -z $tool_mode ]]; then
@@ -286,7 +287,7 @@ if [[ ${SF_TEST_BACKEND_TOOL_CALL:-0} == 1 || -n $tool_mode ]] || (( keyword_cou
                "; i++)); do print -r -- \"Test tool $i completed.\"; done"
              else $command end))} +
           (if $call.value == "TOOL" then {
-             sandbox_bypass_request:{reason:$bypass_reason}
+             request_sandbox_bypass:$bypass_flag,sandbox_bypass_reason:$bypass_reason
            } else {} end)
         end;
       (if $native then ["tool"] elif $keyword_mode then
@@ -301,7 +302,7 @@ if [[ ${SF_TEST_BACKEND_TOOL_CALL:-0} == 1 || -n $tool_mode ]] || (( keyword_cou
             input:call_input($call)}]),
        usage:({input_tokens:$input,cached_tokens:$cached,output_tokens:$output} +
          (if $reasoning > 0 then {reasoning_tokens:$reasoning} else {} end))}
-    ' --arg bypass_reason "$tool_bypass_reason"
+    ' --arg bypass_reason "$tool_bypass_reason" --argjson bypass_flag "$tool_bypass_flag"
   fi
   exit
 fi

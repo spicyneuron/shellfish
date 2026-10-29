@@ -202,12 +202,14 @@ SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_BYPASS=true \
   SF_TEST_BACKEND_REQUEST="$tmp/bypass-request.json" \
   sf_test_run permission "$session" >"$stream" || fail 'permission hook allow failed'
 jq -e '.tools[] | select(.name == "shell").input_schema |
-  .properties.sandbox_bypass_request.required == ["reason"] and
-  (.required | index("sandbox_bypass_request") == null)' \
-  "$tmp/bypass-request.json" >/dev/null || fail 'model schema lacks the bypass request field'
+  .properties.request_sandbox_bypass.type == "boolean" and
+  .properties.sandbox_bypass_reason.type == "string" and
+  (.required | index("request_sandbox_bypass") == null and
+    index("sandbox_bypass_reason") == null)' \
+  "$tmp/bypass-request.json" >/dev/null || fail 'model schema lacks the bypass fields'
 jq -e '. == {turn_id:1,tool_name:"shell",tool_use_id:"call_1",tool_input:{
-  command:"print -rn -- approved",
-  sandbox_bypass_request:{reason:"Required by the test fixture"}}}' \
+  command:"print -rn -- approved",request_sandbox_bypass:true,
+  sandbox_bypass_reason:"Required by the test fixture"}}' \
   "$permission_input" >/dev/null || fail 'permission hook received the wrong request'
 jq -eRn '
   [inputs | fromjson] as $events |
@@ -226,23 +228,26 @@ jq -eRn '
 ' <"$stream" >/dev/null || fail 'permission allow produced the wrong records'
 
 # The core handles ineligible requests without consulting permission hooks.
-typeset permission_profile=$SF_TEST_PROFILE gate reason
+typeset permission_profile=$SF_TEST_PROFILE gate reason flag
 integer gate_status
-for gate in sandbox-disabled unsupported no-reason; do
+for gate in sandbox-disabled unsupported no-reason reason-only blank-unrequested; do
   SF_TEST_PROFILE=$permission_profile
   sf_test_shell_tool '.environment=["TMPPREFIX"]'
-  reason='Required by the test fixture'
+  reason='Required by the test fixture' flag=true
   case $gate in
     sandbox-disabled) SF_TEST_PROFILE=$(jq -c '.sandbox.enabled=false' <<<"$SF_TEST_PROFILE") ;;
     unsupported) sf_test_shell_tool '.allow_sandbox_bypass=false' ;;
     no-reason) reason='' ;;
+    reason-only) flag=false ;;
+    blank-unrequested) flag=false reason=' ' ;;
   esac
   rm -f "$permission_input"
   session="$tmp/permission-$gate.jsonl"
   sf_test_session "$session"
   gate_status=0
   SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_BYPASS=true \
-    SF_TEST_BACKEND_TOOL_BYPASS_REASON=$reason SF_TEST_BACKEND_TOOL_COMMAND='print -rn -- unreviewed' \
+    SF_TEST_BACKEND_TOOL_BYPASS_REASON=$reason SF_TEST_BACKEND_TOOL_BYPASS_FLAG=$flag \
+    SF_TEST_BACKEND_TOOL_COMMAND='print -rn -- unreviewed' \
     sf_test_run permission "$session" >"$stream" 2>"$tmp/gate.err" || gate_status=$?
   [[ ! -e $permission_input ]] || fail "permission hook ran for $gate"
   jq -eRn 'all(inputs | fromjson; .type != "_tool_permission_request" and
@@ -263,8 +268,18 @@ for gate in sandbox-disabled unsupported no-reason; do
     no-reason)
       (( gate_status == 0 )) || fail 'bypass without a reason failed the turn'
       jq -e -s 'map(select(.type == "tool_result") | [.exit_code,.model_text]) ==
-        [[126,"sandbox_bypass_request requires a reason"]]' "$session" >/dev/null ||
+        [[126,"request_sandbox_bypass requires a sandbox_bypass_reason"]]' "$session" >/dev/null ||
         fail 'missing bypass reason was not refused' ;;
+    reason-only)
+      (( gate_status == 0 )) || fail 'bypass reason without a request failed the turn'
+      jq -e -s 'map(select(.type == "tool_result") | [.exit_code,.model_text]) ==
+        [[126,"sandbox_bypass_reason requires request_sandbox_bypass: true. Omit it to run in the sandbox."]]' \
+        "$session" >/dev/null || fail 'bypass reason without a request was not refused' ;;
+    blank-unrequested)
+      (( gate_status == 0 )) || fail 'unrequested bypass with a blank reason failed the turn'
+      jq -e -s 'map(select(.type == "tool_result") | [.exit_code,.model_text]) ==
+        [[0,"unreviewed\nexit 0"]]' "$session" >/dev/null ||
+        fail 'unrequested bypass with a blank reason did not execute normally' ;;
   esac
   assert_canonical_session "$session"
 done

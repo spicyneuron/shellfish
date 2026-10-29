@@ -53,7 +53,7 @@ for ref; do
   matched=0 total=0
   while IFS= read -r case; do
     session=$tmp/session.jsonl control=$tmp/control.jsonl
-    input=$(jq -c '{command, sandbox_bypass_request:{reason:"The command needs access outside the sandbox."}}' <<<"$case")
+    input=$(jq -c '{command, request_sandbox_bypass:true, sandbox_bypass_reason:"The command needs access outside the sandbox."}' <<<"$case")
     jq -cn --argjson case "$case" --argjson input "$input" --arg key "$key" \
         --argjson threshold "$threshold" \
         --arg model "m$index" --arg cwd "$tmp" --arg backend "$root/tests/fixtures/backend" '

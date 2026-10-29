@@ -1030,8 +1030,8 @@ test("does not mark normal tool execution as a sandbox bypass", async () => {
 
 test("answers and removes permission prompts", async () => {
   for (const [decision, button, name, input] of [
-    ["approve", 0, "shell", { command: "ls", sandbox_bypass_request: { reason: "needed" } }],
-    ["deny", 1, "read_file", { file_path: "outside.txt", sandbox_bypass_request: { reason: "needed" } }],
+    ["approve", 0, "shell", { command: "ls", request_sandbox_bypass: true, sandbox_bypass_reason: "needed" }],
+    ["deny", 1, "read_file", { file_path: "outside.txt", request_sandbox_bypass: true, sandbox_bypass_reason: "needed" }],
   ]) {
     const page = await idle();
     await page.send(

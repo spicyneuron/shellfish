@@ -72,8 +72,10 @@ def tool_manifest:
     ((.properties // {}) | type == "object") and
     ((.required // []) | type == "array" and all(.[]; type == "string") and
       length == (unique | length)) and
-    ((.properties // {}) | has("sandbox_bypass_request") | not) and
-    ((.required // []) | index("sandbox_bypass_request") == null)) and
+    ((.properties // {}) |
+      has("request_sandbox_bypass") or has("sandbox_bypass_reason") | not) and
+    ((.required // []) |
+      index("request_sandbox_bypass") == null and index("sandbox_bypass_reason") == null)) and
   ((.environment // []) | type == "array" and length == (unique | length) and
     all(.[]; type == "string" and test("^[A-Za-z_][A-Za-z0-9_]*$"))) and
   (.sandbox | type == "boolean") and

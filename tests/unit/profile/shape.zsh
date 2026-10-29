@@ -172,10 +172,12 @@ for manifest in '.render = {}' '.user_text = "${output.unknown}"' \
     fail "tool manifest was accepted: $manifest"
   fi
 done
-if jq -c '.input_schema.properties.sandbox_bypass_request = {type:"string"}' \
-    <<<"$valid_manifest" | schema_eval 'tool_manifest' >/dev/null 2>&1; then
-  fail 'tool manifest with reserved sandbox_bypass_request field was accepted'
-fi
+for field in request_sandbox_bypass sandbox_bypass_reason; do
+  if jq -c --arg field "$field" '.input_schema.properties[$field] = {type:"string"}' \
+      <<<"$valid_manifest" | schema_eval 'tool_manifest' >/dev/null 2>&1; then
+    fail "tool manifest with reserved $field field was accepted"
+  fi
+done
 
 # Sandbox bypass requires sandboxing.
 if jq -c '.sandbox = false' <<<"$valid_manifest" |
