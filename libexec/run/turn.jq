@@ -8,7 +8,7 @@ include "lib/profile";
 include "lib/session";
 include "lib/backend";
 
-# Model-facing tool definitions, with the sandbox-bypass fields a call may use.
+# Model-facing tool definitions, with the sandbox-bypass field a call may use.
 def model_tools($profile; $tools):
   [$tools[] |
     .manifest as $manifest |
@@ -23,12 +23,11 @@ def model_tools($profile; $tools):
       else "" end),
      input_schema:($manifest.input_schema |
        if $bypass then
-         .properties.request_sandbox_bypass={type:"boolean",description:"Request approval to run without the sandbox"} |
-         .properties.sandbox_bypass_reason={type:"string",minLength:1,
-           description:"Explain why this tool call must run outside the sandbox"} |
-         .allOf=((.allOf // []) + [{
-           if:{properties:{request_sandbox_bypass:{const:true}},required:["request_sandbox_bypass"]},
-           then:{required:["sandbox_bypass_reason"]}}])
+         .properties.sandbox_bypass_request={type:"object",additionalProperties:false,
+           required:["reason"],
+           description:"Include only to request approval to run this call outside the sandbox",
+           properties:{reason:{type:"string",minLength:1,
+             description:"Why this call must run outside the sandbox"}}}
        else . end)}];
 
 # Everything execution and settlement need for one call.
@@ -36,18 +35,16 @@ def tool_plan($profile; $tools; $call; $turn; $max_capture):
   $call.id as $id | $call.name as $name | $call.input as $input |
   [$tools[] | select(.name == $name)][0] as $tool |
   ($tool.manifest // {}) as $manifest |
-  (if $tool == null or ($profile.sandbox.enabled | not) then {decision:"none"}
-   elif (($input.request_sandbox_bypass // false) | type) != "boolean" then
+  ($input | has("sandbox_bypass_request")) as $requested |
+  ($input.sandbox_bypass_request | if type == "object" then .reason else null end) as $reason |
+  (if $tool == null or ($profile.sandbox.enabled | not) or ($requested | not) then
+     {decision:"none"}
+   elif ($manifest.allow_sandbox_bypass // false) != true then
      {decision:"deny",reason:"sandbox bypass is not allowed"}
-   elif ($input.request_sandbox_bypass // false) == false then {decision:"none"}
-   elif ($tool.manifest.allow_sandbox_bypass // false) != true then
-     {decision:"deny",reason:"sandbox bypass is not allowed"}
-   elif ($input.sandbox_bypass_reason? | type) != "string" or
-       $input.sandbox_bypass_reason == "" then
-     {decision:"failure",reason:"sandbox bypass reason is required"}
-   else {decision:"request",reason:$input.sandbox_bypass_reason} end) as $permission |
-  ($profile.sandbox.enabled and ($manifest.sandbox // false) and
-    (($input.request_sandbox_bypass // false) | not)) as $sandboxed |
+   elif ($reason | type) != "string" or $reason == "" then
+     {decision:"deny",reason:"sandbox_bypass_request requires a reason"}
+   else {decision:"request",reason:$reason} end) as $permission |
+  ($profile.sandbox.enabled and ($manifest.sandbox // false) and ($requested | not)) as $sandboxed |
   {id:$id, name:$name, input:$input,
    request:{turn_id:$turn,tool_name:$name,tool_use_id:$id,tool_input:$input},
    component:{template:$manifest.user_text, input:$input,
@@ -60,7 +57,7 @@ def tool_plan($profile; $tools; $call; $turn; $max_capture):
    executable:($tool.command // ""),
    environment:(($tool.manifest.environment // []) | join(" ")),
    max_capture:($manifest.max_capture_bytes // $max_capture),
-   execution_input:($input | del(.request_sandbox_bypass,.sandbox_bypass_reason)),
+   execution_input:($input | del(.sandbox_bypass_request)),
    sandbox:$sandboxed,
    read_paths:($profile.sandbox.read | join("\n")),
    write_paths:($profile.sandbox.write | join("\n"))};

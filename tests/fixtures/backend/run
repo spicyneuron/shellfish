@@ -246,7 +246,7 @@ if [[ ${SF_TEST_BACKEND_TOOL_CALL:-0} == 1 || -n $tool_mode ]] || (( keyword_cou
     esac
     if [[ -n $tool_mode && $tool_bypass == true ]]; then
       tool_input=$(jq -c --arg reason "$tool_bypass_reason" '
-        . + {request_sandbox_bypass:true,sandbox_bypass_reason:$reason}
+        . + {sandbox_bypass_request:{reason:$reason}}
       ' <<<"$tool_input")
     fi
     if [[ ${SF_TEST_BACKEND_TOOL_CALL:-0} != 1 && -z $tool_mode ]]; then
@@ -286,7 +286,7 @@ if [[ ${SF_TEST_BACKEND_TOOL_CALL:-0} == 1 || -n $tool_mode ]] || (( keyword_cou
                "; i++)); do print -r -- \"Test tool $i completed.\"; done"
              else $command end))} +
           (if $call.value == "TOOL" then {
-             request_sandbox_bypass:true,sandbox_bypass_reason:$bypass_reason
+             sandbox_bypass_request:{reason:$bypass_reason}
            } else {} end)
         end;
       (if $native then ["tool"] elif $keyword_mode then

@@ -184,7 +184,7 @@ typeset -a invalid=(
      {"type":"tool_result","id":"c2","name":"shell","input":{},"exit_code":0}]'
   'a result restating its input' '[{"type":"user","content":[{"type":"text","text":"a"}]},
      {"type":"assistant","stop":"tool_calls","content":[
-       {"type":"tool_call","id":"c1","name":"shell","input":{"command":"ls","request_sandbox_bypass":true}}]},
+       {"type":"tool_call","id":"c1","name":"shell","input":{"command":"ls","sandbox_bypass_request":{"reason":"needed"}}}]},
      {"type":"tool_result","id":"c1","name":"shell","input":{"command":"ls"},"exit_code":0}]'
   'a result without an exit code' '[{"type":"user","content":[{"type":"text","text":"a"}]},
      {"type":"assistant","stop":"tool_calls","content":[

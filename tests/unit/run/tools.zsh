@@ -199,10 +199,15 @@ session="$tmp/permission-allow.jsonl"
 sf_test_session "$session"
 SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_BYPASS=true \
   SF_TEST_BACKEND_TOOL_COMMAND='print -rn -- approved' \
+  SF_TEST_BACKEND_REQUEST="$tmp/bypass-request.json" \
   sf_test_run permission "$session" >"$stream" || fail 'permission hook allow failed'
+jq -e '.tools[] | select(.name == "shell").input_schema |
+  .properties.sandbox_bypass_request.required == ["reason"] and
+  (.required | index("sandbox_bypass_request") == null)' \
+  "$tmp/bypass-request.json" >/dev/null || fail 'model schema lacks the bypass request field'
 jq -e '. == {turn_id:1,tool_name:"shell",tool_use_id:"call_1",tool_input:{
-  command:"print -rn -- approved",request_sandbox_bypass:true,
-  sandbox_bypass_reason:"Required by the test fixture"}}' \
+  command:"print -rn -- approved",
+  sandbox_bypass_request:{reason:"Required by the test fixture"}}}' \
   "$permission_input" >/dev/null || fail 'permission hook received the wrong request'
 jq -eRn '
   [inputs | fromjson] as $events |
@@ -256,9 +261,10 @@ for gate in sandbox-disabled unsupported no-reason; do
         [[126,"sandbox bypass is not allowed"]]' "$session" >/dev/null ||
         fail 'unsupported bypass lost the core refusal' ;;
     no-reason)
-      (( gate_status == 1 )) || fail 'bypass without a reason did not fail the turn'
-      jq -e -s '.[-1] == {type:"error",user_text:"sandbox bypass reason is required"}' \
-        "$session" >/dev/null || fail 'missing bypass reason lost the core diagnostic' ;;
+      (( gate_status == 0 )) || fail 'bypass without a reason failed the turn'
+      jq -e -s 'map(select(.type == "tool_result") | [.exit_code,.model_text]) ==
+        [[126,"sandbox_bypass_request requires a reason"]]' "$session" >/dev/null ||
+        fail 'missing bypass reason was not refused' ;;
   esac
   assert_canonical_session "$session"
 done

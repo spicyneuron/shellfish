@@ -266,10 +266,7 @@ sf_run_turn() {
               sf_run_tool_refused "tool is not allowed: $name" 127
               outcome=$REPLY
             else
-              if [[ $decision == failure ]]; then
-                failure=$SF_TOOL_PLAN[permission_reason]
-                break
-              elif [[ $decision == deny ]]; then
+              if [[ $decision == deny ]]; then
                 sf_run_tool_refused "$SF_TOOL_PLAN[permission_reason]" 126
                 outcome=$REPLY
               elif [[ $decision == request ]]; then
