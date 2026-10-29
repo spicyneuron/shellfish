@@ -20,20 +20,20 @@ local review_content=''
 integer review_content_set=0
 local -a candidates overrides
 
-permission_deny() {
+# A failed review takes no action, so the request falls back to the user.
+permission_defer() {
   local reason=${1//$'\n'/ } control
   reason=${reason//$'\r'/ }
   reason=${reason[1,1000]}
-  control=$(jq -cn --arg name "$state_name" --arg reason "$reason" \
-      --arg content "$review_content" --argjson content_set "$review_content_set" '
-    {action:"deny",reason:$reason} +
-    (if $name == "" then {} else
+  if [[ -n $state_name ]]; then
+    control=$(jq -cn --arg name "$state_name" --arg reason "$reason" \
+        --arg content "$review_content" --argjson content_set "$review_content_set" '
       {state_update:[{name:$name,value:{
         content:(if $content_set == 1 then $content else null end),reason:$reason}}]}
-    end)
-  ') || exit 1
-  print -r -u3 -- "$control" || exit 1
-  print -r -u2 -- "Denied: $reason"
+    ') || exit 1
+    print -r -u3 -- "$control" || exit 1
+  fi
+  print -r -u2 -- "Review failed, asking the user: $reason"
   exit 0
 }
 
@@ -57,25 +57,25 @@ permission_resolve() {
 }
 
 [[ -r $SHELLFISH_SESSION && -d $SHELLFISH_TURN_STATE ]] ||
-  permission_deny 'Permission review could not read the active turn.'
+  permission_defer 'Permission review could not read the active turn.'
 
 request=$(jq -ce --argjson turn "$SHELLFISH_TURN_ID" --arg name "$1" --arg id "$2" '
   select(type == "object" and (.tool_input | type == "object")) |
   {turn_id:$turn,tool:{name:$name,id:$id,input:.tool_input}}
-' 2>/dev/null) || permission_deny 'Permission review received an invalid tool request.'
+' 2>/dev/null) || permission_defer 'Permission review received an invalid tool request.'
 state_name=$(jq -r --argjson turn "$SHELLFISH_TURN_ID" '
   "permissions/\($turn)/\(.tool.id)"
-' <<<"$request") || permission_deny 'Permission review could not prepare state.'
+' <<<"$request") || permission_defer 'Permission review could not prepare state.'
 if (( ${#state_name} > 128 )); then
   state_name=''
-  permission_deny 'Permission review cannot store this tool request identifier.'
+  permission_defer 'Permission review cannot store this tool request identifier.'
 fi
 
 [[ -r ${0:A:h}/review.md ]] && system=$(<"${0:A:h}/review.md") ||
-  permission_deny 'Permission review could not load its policy.'
+  permission_defer 'Permission review could not load its policy.'
 
 header=$(head -n 1 -- "$SHELLFISH_SESSION") ||
-  permission_deny 'Permission review could not inspect the session header.'
+  permission_defer 'Permission review could not inspect the session header.'
 model=$(jq -r '
   (.profile.config // {}) |
   if has("sandbox-approver") then .["sandbox-approver"] else {} end |
@@ -86,7 +86,7 @@ model=$(jq -r '
       test("^[A-Za-z0-9][A-Za-z0-9_.-]*(/[A-Za-z0-9][A-Za-z0-9_.-]*)*$") then .
     else error("config.sandbox-approver.model must be a model name") end
   else empty end
-' <<<"$header" 2>/dev/null) || permission_deny 'Permission review has invalid configuration.'
+' <<<"$header" 2>/dev/null) || permission_defer 'Permission review has invalid configuration.'
 # Dropping the model's own schema keeps the merge from adding its properties.
 [[ -z $model ]] || overrides=( --model "$model"
   --model '{"request":{"response_schema":null}}' --model "$settings" )
@@ -151,32 +151,32 @@ records=$(jq -cs --argjson request "$request" '
     ] | reverse)
   }
 ' "$SHELLFISH_SESSION" 2>/dev/null) ||
-  permission_deny 'Permission review could not project the active context.'
+  permission_defer 'Permission review could not project the active context.'
 
 base=$(jq -cn --argjson records "$records" '
   {startup_context:$records.startup_context,recent_timeline:[],
    target_tool_call:$records.target_tool_call} +
   (if $records.system_message == null then {} else
     {system_message:$records.system_message} end)
-') || permission_deny 'Permission review could not prepare context.'
+') || permission_defer 'Permission review could not prepare context.'
 
 integer base_bytes
 base_bytes=$(jq -cn --arg system "$system" --argjson context "$base" \
   '($system | utf8bytelength) + ($context | tojson | utf8bytelength)') ||
-  permission_deny 'Permission review could not measure required context.'
+  permission_defer 'Permission review could not measure required context.'
 (( base_bytes <= budget )) ||
-  permission_deny 'Required permission review context exceeds the review context limit.'
+  permission_defer 'Required permission review context exceeds the review context limit.'
 
 candidates=( "${(@f)$(jq -c '.candidates[]' <<<"$records")}" ) ||
-  permission_deny 'Permission review could not inspect optional context.'
+  permission_defer 'Permission review could not inspect optional context.'
 integer candidate_bytes
 for candidate in $candidates; do
   context=$(jq -cn --argjson context "$base" --argjson candidate "$candidate" '
     $context | .recent_timeline = ([$candidate] + .recent_timeline)
-  ') || permission_deny 'Permission review could not assemble context.'
+  ') || permission_defer 'Permission review could not assemble context.'
   candidate_bytes=$(jq -cn --arg system "$system" --argjson context "$context" \
     '($system | utf8bytelength) + ($context | tojson | utf8bytelength)') ||
-    permission_deny 'Permission review could not measure optional context.'
+    permission_defer 'Permission review could not measure optional context.'
   (( candidate_bytes <= budget )) || break
   base=$context
 done
@@ -189,18 +189,18 @@ if ! jq -cn --argjson header "$header" --arg system "$system" --argjson context 
       .sandbox={enabled:false, read:[], write:[]})),
   {type:"user",content:[{type:"text",text:($context | tojson)}]}
 ' >"$transcript"; then
-  permission_deny 'Permission review could not construct its temporary session.'
+  permission_defer 'Permission review could not construct its temporary session.'
 fi
 
 response=$("$SHELLFISH_EXECUTABLE" backend-request "${overrides[@]}" \
   <"$transcript" 2>/dev/null) ||
-  permission_deny 'Permission review provider request failed.'
+  permission_defer 'Permission review provider request failed.'
 
 review_content=$(jq -er '
   select(type == "object" and .type == "assistant" and .stop == "end" and
     ([.content[] | select(.type == "text")] | length) == 1) |
   [.content[] | select(.type == "text")][0].text
-' <<<"$response" 2>/dev/null) || permission_deny 'Permission review returned an invalid classification.'
+' <<<"$response" 2>/dev/null) || permission_defer 'Permission review returned an invalid classification.'
 review_content_set=1
 result=$(jq -ncer --arg content "$review_content" '
   $content | gsub("^\\s+|\\s+$"; "") | fromjson |
@@ -209,6 +209,6 @@ result=$(jq -ncer --arg content "$review_content" '
     (.authorization | IN("low","medium","high","unknown")) and
     (.reason | type == "string" and length > 0 and length <= 1000 and
       (test("[[:cntrl:]]") | not)))
-' 2>/dev/null) || permission_deny 'Permission review returned an invalid classification.'
+' 2>/dev/null) || permission_defer 'Permission review returned an invalid classification.'
 
 permission_resolve "$result"

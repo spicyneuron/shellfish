@@ -169,29 +169,33 @@ for review_config in 'null' 'false' '[]' '{"unknown":true}' \
     if .type == "session" then .profile.config["sandbox-approver"]=$config else . end
   ' "$parent_session" >"$session"
   run_review valid
-  jq -e '.action == "deny" and .reason == "Permission review has invalid configuration."' \
+  jq -e '(has("action") | not) and
+    .state_update[0].value.reason == "Permission review has invalid configuration."' \
     "$control" >/dev/null || fail "review accepted invalid configuration: $review_config"
   [[ ! -e $captured ]] || fail 'invalid review configuration called the provider'
 done
 jq -c 'if .type == "session" then .profile.config["sandbox-approver"].model="missing" else . end' \
   "$parent_session" >"$session"
 run_review valid
-jq -e '.action == "deny" and .reason == "Permission review provider request failed."' \
-  "$control" >/dev/null || fail 'missing review model did not fail closed'
+jq -e '(has("action") | not) and
+  .state_update[0].value.reason == "Permission review provider request failed."' \
+  "$control" >/dev/null || fail 'missing review model did not defer'
 [[ ! -e $provider ]] || fail 'missing review model fell back to the parent model'
 print -r -- '{"adapter":' >"$SHELLFISH_DIR/models/missing.jsonc"
 run_review valid
-jq -e '.action == "deny" and .reason == "Permission review provider request failed."' \
-  "$control" >/dev/null || fail 'malformed review model did not fail closed'
+jq -e '(has("action") | not) and
+  .state_update[0].value.reason == "Permission review provider request failed."' \
+  "$control" >/dev/null || fail 'malformed review model did not defer'
 [[ ! -e $provider ]] || fail 'malformed review model called the provider'
 session=$parent_session
 
 run_review failure
-(( hook_status == 0 )) || fail 'provider failure did not fail closed'
-jq -e '.action == "deny" and
-  .reason == "Permission review provider request failed." and
+(( hook_status == 0 )) || fail 'provider failure failed the hook'
+jq -e '(has("action") | not) and
   .state_update[0].value == {content:null,reason:"Permission review provider request failed."}
-' "$control" >/dev/null || fail 'provider failure returned the wrong denial'
+' "$control" >/dev/null || fail 'provider failure did not defer to the user'
+assert_equal 'Review failed, asking the user: Permission review provider request failed.' \
+  "$(<"$tmp/user")"
 
 run_review '{"risk":"high","authorization":"unknown","reason":"Not authorized."}'
 (( hook_status == 0 )) || fail 'unknown authorization did not resolve'
