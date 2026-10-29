@@ -418,7 +418,9 @@ sf_tui_input() {
     return 0
   fi
   case $widget in
-    sf_tui_*) "$widget" "$@" ;;
+    sf_tui_accept|sf_tui_insert_newline|sf_tui_up|sf_tui_down|sf_tui_interrupt|sf_tui_escape)
+      "$widget" "$@"
+      ;;
     *)
       # Consecutive kills append to the cutbuffer only when the wrapper is flagged.
       [[ $widget != *kill* ]] || zle -f kill
