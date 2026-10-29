@@ -4,11 +4,9 @@ Thinking about renaming the backend-request command to just request. Easy?
 
 Feels like prompt submit should get split so that prompt command is a separate hook?
 
-Drop token estimates
-
 Option arrow up/down prints chars instead of navigating. Any other common navigation shortcuts? Should generally try to support them if not too hard.
 
-Rename HARNESS.md to PROFILE.md
+Rename HARNESS.md to PROFILE.md and split out MODELS.md
 
 In header, list sandbox and sandbox type
 In header, also list resolved shellfish directory
@@ -27,3 +25,6 @@ Image and file support
 
 Worktree support
 
+# Minor / Polish
+
+Drop token estimates in tui collapsed blocks? Feels like clutter.
