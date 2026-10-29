@@ -76,7 +76,8 @@ typeset -a permission_decisions=()
 sf_tui_answer_permission() { permission_decisions+=( "$1" ); SF_PRESENT_STATE=working; }
 for KEYS in a d x 1 2; do
   SF_PRESENT_STATE=permission
-  sf_tui_insert
+  WIDGET=self-insert
+  sf_tui_input
 done
 assert_equal 'approve,deny,approve,deny' "${(j:,:)permission_decisions}"
 assert_equal -R "$ZLE_CALL"
@@ -87,7 +88,8 @@ for KEYS in s 3; do
   SF_PRESENT_PERMISSION_DRAFT=draft
   SF_PRESENT_PERMISSION_CURSOR=3
   BUFFER=''
-  sf_tui_insert
+  WIDGET=self-insert
+  sf_tui_input
   assert_equal cancelling "$SF_PRESENT_STATE"
   assert_equal draft "$BUFFER"
 done
@@ -151,19 +153,58 @@ COLUMNS=50
 sf_tui_up
 assert_equal 20 "$CURSOR"
 
+# Permission state gates editing even when ZLE decoded the key beforehand.
+SF_PRESENT_STATE=permission
+BUFFER=''
+ZLE_CALLS=()
+for WIDGET in sf_tui_up sf_tui_down sf_tui_accept sf_tui_insert_newline \
+    kill-word yank history-incremental-search-backward send-break; do
+  sf_tui_input
+done
+assert_equal '' "$BUFFER"
+assert_equal 0 "${#ZLE_CALLS}"
+WIDGET=bracketed-paste
+sf_tui_input
+assert_equal '.bracketed-paste paste' "$ZLE_CALL"
+
+# Idle and working states share normal editing.
+WIDGET=self-insert
+for SF_PRESENT_STATE in idle working; do
+  sf_tui_input
+  assert_equal '.self-insert --' "$ZLE_CALL"
+done
+
+# Wrapped kills keep appending to the cutbuffer.
+SF_PRESENT_STATE=idle
+ZLE_CALLS=()
+WIDGET=backward-kill-word
+sf_tui_input
+assert_equal '-f kill,.backward-kill-word --' "${(j:,:)ZLE_CALLS}"
+
 # Bind documented editor keys.
 bindkey -e
+ZLE_CALLS=()
 sf_tui_bind
-[[ $(bindkey -M emacs '^M') == *sf_tui_accept ]]
-[[ $(bindkey -M emacs $'\e[13;2u') == *sf_tui_insert_newline ]]
+[[ $(bindkey -M sf-present '^M') == *sf_tui_accept ]]
+[[ $(bindkey -M sf-present $'\e[13;2u') == *sf_tui_insert_newline ]]
 [[ $(bindkey -M sf-present $'\e[A') == *sf_tui_up ]]
 [[ $(bindkey -M sf-present $'\e[B') == *sf_tui_down ]]
 [[ $(bindkey -M sf-present '^C') == *sf_tui_interrupt ]]
 [[ $(bindkey -M sf-present $'\e') == *sf_tui_escape ]]
-for key in a d s 1 2 3; do
-  [[ $(bindkey -M sf-permission $key) == *sf_tui_insert ]]
+[[ $(bindkey -M sf-present x) == *self-insert ]]
+[[ $(bindkey -M sf-present $'\xe9') == *self-insert ]]
+[[ $(bindkey -M sf-present '^D') == *' delete-char' ]]
+
+# Inherit no editor commands beyond the explicit bindings.
+for key in '^[x' '^[z' '^R' '^I' '^_' '^O'; do
+  [[ $(bindkey -M sf-present $key) == *undefined-key ]] ||
+    fail "$key is bound"
 done
-[[ $(bindkey -M sf-permission '^M') == *undefined-key ]]
+for binding in "${(@f)$(bindkey -M sf-present)}"; do
+  widget=${binding##* }
+  (( ${ZLE_CALLS[(Ie)-N $widget sf_tui_input]} )) ||
+    fail "$widget bypassed input dispatch"
+done
 
 # Stop when pending chat rows cannot be staged on submission.
 typeset saved_stage=$functions[sf_tui_terminal_stage]

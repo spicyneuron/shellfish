@@ -238,7 +238,6 @@ sf_tui_editor_permission() {
     SF_PRESENT_PERMISSION_CURSOR=${CURSOR:-0}
     BUFFER=''
     CURSOR=0
-    zle -K sf-permission 2>/dev/null || true
     return
   fi
   [[ $mode == (restore|discard) ]] || return 1
@@ -248,7 +247,6 @@ sf_tui_editor_permission() {
   fi
   SF_PRESENT_PERMISSION_DRAFT=''
   SF_PRESENT_PERMISSION_CURSOR=0
-  zle -K sf-present 2>/dev/null || true
 }
 
 TRAPWINCH() {
@@ -408,20 +406,37 @@ sf_tui_down() {
   sf_tui_move_vertical 1
 }
 
-sf_tui_insert() {
-  local decision
+# A key may finish decoding after an asynchronous permission request arrives.
+sf_tui_input() {
+  local widget=$WIDGET paste
   if [[ $SF_PRESENT_STATE == permission ]]; then
-    case $KEYS in
-      (a|1) decision=approve ;;
-      (d|2) decision=deny ;;
-      (s|3) sf_tui_interrupt; return ;;
-      *) zle -R; return 0 ;;
+    case $widget in
+      self-insert) sf_tui_permission_choice ;;
+      sf_tui_interrupt|sf_tui_escape) "$widget" "$@" ;;
+      bracketed-paste) zle .bracketed-paste paste ;;
     esac
-    sf_tui_answer_permission "$decision" || zle reset-prompt
-    zle -R
     return 0
   fi
-  zle .self-insert
+  case $widget in
+    sf_tui_*) "$widget" "$@" ;;
+    *)
+      # Consecutive kills append to the cutbuffer only when the wrapper is flagged.
+      [[ $widget != *kill* ]] || zle -f kill
+      zle ".$widget" -- "$@"
+      ;;
+  esac
+}
+
+sf_tui_permission_choice() {
+  local decision
+  case $KEYS in
+    (a|1) decision=approve ;;
+    (d|2) decision=deny ;;
+    (s|3) sf_tui_interrupt; return ;;
+    *) zle -R; return 0 ;;
+  esac
+  sf_tui_answer_permission "$decision" || zle reset-prompt
+  zle -R
 }
 
 sf_tui_interrupt() {
@@ -466,40 +481,58 @@ sf_tui_bind() {
   sf_tui_history_reset
   zle -N sf_tui_exec_ready
   zle -N sf_tui_heartbeat_ready
-  zle -N sf_tui_accept
-  zle -N sf_tui_insert
-  zle -N sf_tui_insert_newline
-  zle -N sf_tui_up
-  zle -N sf_tui_down
-  zle -N sf_tui_interrupt
-  zle -N sf_tui_escape
   zle -N zle-line-init sf_tui_line_init
   zle -N zle-line-finish sf_tui_line_finish
   zle -N zle-line-pre-redraw sf_tui_pre_redraw
-  bindkey '^M' sf_tui_accept
-  bindkey '^J' sf_tui_accept
-  bindkey '^[^M' sf_tui_insert_newline
-  bindkey $'\e[13;2u' sf_tui_insert_newline
-  bindkey '^C' sf_tui_interrupt
+  # Every binding is explicit so each widget passes through sf_tui_input.
+  local key widget
+  local -a keys=(
+    '^M' sf_tui_accept
+    '^J' sf_tui_accept
+    '^[^M' sf_tui_insert_newline
+    '^[[13;2u' sf_tui_insert_newline
+    '^P' sf_tui_up
+    '^N' sf_tui_down
+    '^[[A' sf_tui_up
+    '^[[B' sf_tui_down
+    '^[[1;1A' sf_tui_up
+    '^[[1;1B' sf_tui_down
+    '^[OA' sf_tui_up
+    '^[OB' sf_tui_down
+    '^C' sf_tui_interrupt
+    '^[' sf_tui_escape
+    '^[[200~' bracketed-paste
+    '^A' beginning-of-line
+    '^E' end-of-line
+    '^B' backward-char
+    '^F' forward-char
+    '^[[D' backward-char
+    '^[[C' forward-char
+    '^[OD' backward-char
+    '^[OC' forward-char
+    '^[b' backward-word
+    '^[f' forward-word
+    '^H' backward-delete-char
+    '^?' backward-delete-char
+    '^D' delete-char
+    '^W' backward-kill-word
+    '^[^H' backward-kill-word
+    '^[^?' backward-kill-word
+    '^[d' kill-word
+    '^[[3;5~' kill-word
+    '^K' kill-line
+    '^U' kill-whole-line
+    '^Y' yank
+    '^[y' yank-pop
+    '^L' clear-screen
+  )
   bindkey -D sf-present 2>/dev/null || true
-  bindkey -N sf-present emacs
-  bindkey -M sf-present '^P' sf_tui_up
-  bindkey -M sf-present '^N' sf_tui_down
-  bindkey -M sf-present $'\e[A' sf_tui_up
-  bindkey -M sf-present $'\e[B' sf_tui_down
-  bindkey -M sf-present $'\e[1;1A' sf_tui_up
-  bindkey -M sf-present $'\e[1;1B' sf_tui_down
-  bindkey -M sf-present $'\eOA' sf_tui_up
-  bindkey -M sf-present $'\eOB' sf_tui_down
-  bindkey -M sf-present $'\e[3;5~' kill-word
-  bindkey -M sf-present '^C' sf_tui_interrupt
-  bindkey -M sf-present $'\e' sf_tui_escape
-  bindkey -M sf-present ' ' sf_tui_insert
-  bindkey -M sf-present -R $'!-~' sf_tui_insert
-  bindkey -D sf-permission 2>/dev/null || true
-  bindkey -N sf-permission
-  bindkey -M sf-permission '^C' sf_tui_interrupt
-  bindkey -M sf-permission $'\e' sf_tui_escape
-  local key
-  for key in a d s 1 2 3; do bindkey -M sf-permission $key sf_tui_insert; done
+  bindkey -N sf-present
+  bindkey -M sf-present -R ' -~' self-insert
+  bindkey -M sf-present -R '\M-^@-\M-^?' self-insert
+  zle -N self-insert sf_tui_input
+  for key widget in "${keys[@]}"; do
+    bindkey -M sf-present "$key" "$widget"
+    zle -N "$widget" sf_tui_input
+  done
 }

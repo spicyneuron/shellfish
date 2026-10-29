@@ -355,6 +355,46 @@ def test_permission_countdown():
         session.close()
 
 
+def test_permission_keys_do_not_edit():
+    session = Session(env={
+        "SF_TEST_BACKEND_TOOL_CALL": "1",
+        "SF_TEST_BACKEND_TOOL_BYPASS": "true",
+    })
+    terminal = Terminal(session)
+    try:
+        session.send(b"permission history probe\r")
+        terminal.wait_for(
+            "permission prompt",
+            lambda: "2. [d]eny and continue (119s)" in terminal.frame(),
+        )
+        for key in (b"xyz", b"\x1b[A", b"\x1bOA", b"\x10", b"\x0e",
+                    b"\x1b[1;1A", b"\x1b[1;1B", b"\x1b[13;2u",
+                    b"\x1b[3;5~", b"\x12", b"\x19", b"\x04", b"\x1bx",
+                    b"\x1b[200~a1s3\x1b[201~", b"\r"):
+            session.send(key)
+            end = time.monotonic() + 0.15
+            while time.monotonic() < end:
+                terminal.pump()
+            frame = terminal.frame()
+            assert "3. [s]top and discuss" in frame, terminal.dump()
+            tail = frame.split("3. [s]top and discuss", 1)[1]
+            assert not tail.split("─", 1)[0].strip(), terminal.dump()
+        session.send(b"d")
+        terminal.wait_for(
+            "tool completion",
+            lambda: "Tool complete." in terminal.everything(),
+        )
+        session.send(b"xyz")
+        terminal.wait_for("editing restored", lambda: "❯ xyz" in terminal.frame())
+        session.send(b"\x1b[A")
+        terminal.wait_for(
+            "history restored",
+            lambda: "❯ permission history probe" in terminal.frame(),
+        )
+    finally:
+        session.close()
+
+
 if __name__ == "__main__":
     run("scrollback PTY scenarios", [
         test_help_notice_keeps_one_separator,
@@ -363,4 +403,5 @@ if __name__ == "__main__":
         test_tall_turn_loses_neither_text_nor_draft,
         test_queued_submits_keep_committed_history,
         test_permission_countdown,
+        test_permission_keys_do_not_edit,
     ])
