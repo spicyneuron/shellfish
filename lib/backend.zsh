@@ -14,8 +14,8 @@ typeset -gA SF_BACKEND_PLAN=()
 
 # One projection of the transcript on stdin: the adapter request and command.
 sf_backend_project() {
-  local tools=$1
-  sf_jq_fields -sc --argjson tools "$tools" --arg share "$SF_SHARE" \
+  local tools=$1 model=${2:-null}
+  sf_jq_fields -sc --argjson tools "$tools" --argjson model "$model" --arg share "$SF_SHARE" \
       --arg home "${HOME:+${HOME:A}}" '
     include "lib/fields";
     include "lib/profile";
@@ -24,7 +24,8 @@ sf_backend_project() {
     select(length >= 1) |
     select(.[0] | canonical_session_header) |
     . as $records |
-    ($records[0] | header_expand($share; $home)) as $header |
+    ($records[0] | header_expand($share; $home) |
+      if $model == null then . else .model = $model end) as $header |
     backend_adapter_request(
       $header.model;
       ($header.profile.system[0].text // "");
@@ -201,13 +202,4 @@ sf_backend_run() {
   fi
   rm -rf -- "$directory"
   SF_BACKEND[directory]=''
-}
-
-sf_backend_request() {
-  local tools=$1 emit=${2:-:}
-  sf_backend_project "$tools" || {
-    SF_BACKEND[error]='cannot prepare provider request'
-    return 1
-  }
-  sf_backend_run "$emit"
 }

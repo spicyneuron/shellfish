@@ -101,6 +101,37 @@ sf_profile_configs() {
   REPLY=$detail
 }
 
+# Resolve validated model items independently of a profile.
+sf_profile_model() {
+  local config_dir=$1 items=$2 names model adapter resolved final
+  names=$(jq -r '.[] | strings' <<<"$items") ||
+    sf_profile_fail 'cannot read model references' || return
+  sf_profile_configs model models "$config_dir" "$items" ${(f)names} || return
+  model=$(sf_jq -cn --argjson models "$REPLY" '
+    include "lib/profile";
+    model_merge($models)
+  ' 2>&1) || sf_profile_validation_error "$model" 'invalid model' || return
+  adapter=$(jq -r '.adapter' <<<"$model") ||
+    sf_profile_fail 'cannot read model adapter' || return
+  sf_profile_lookup "$config_dir" backends "$adapter" ||
+    sf_profile_fail "cannot resolve backends reference: $adapter" || return
+  resolved=$REPLY
+  [[ -d $resolved && -x $resolved/run ]] ||
+    sf_profile_fail "invalid backends reference: $adapter" || return
+  sf_profile_read_manifest "$resolved" || return
+  final=$(sf_jq -nce --argjson model "$model" --arg adapter "$resolved" \
+      --argjson manifest "$REPLY" '
+    include "lib/profile";
+    ($manifest | select(type == "object" and (keys - ["endpoint"]) == [] and
+      ((has("endpoint") | not) or (.endpoint | endpoint))) //
+      error("invalid backend manifest")) as $manifest |
+    $model | .adapter = $adapter | .endpoint //= $manifest.endpoint |
+    if .endpoint == null then error("backend endpoint is required") else . end |
+    if canonical_model then . else error("invalid resolved model") end
+  ' 2>&1) || sf_profile_validation_error "$final" 'cannot resolve model' || return
+  REPLY=$final
+}
+
 # The tools or hooks of an expanded profile, read live from their manifests.
 sf_profile_components() {
   local kind=$1 profile=$2 directory projection
@@ -141,8 +172,7 @@ sf_profile_components() {
 # absolute paths.
 sf_profile_resolve() {
   local name=${1:-default} extra=${2:-'{}'}
-  local config_dir file profile config models sandbox reference kind resolved final
-  local backend_manifest='{}'
+  local config_dir file profile config model sandbox reference kind resolved final
   local -a references resolutions=() system_files=()
   local -A decoded
 
@@ -172,8 +202,7 @@ sf_profile_resolve() {
       .[$field] |= reduce .[] as $item ([]; if index([$item]) then . else . + [$item] end)) |
     entry("profile"; tojson),
     entry("models"; .model | tojson), entry("sandboxes"; .sandbox | tojson),
-    # A reference carries no control characters, so newlines delimit each list.
-    entry("model"; [.model[] | strings] | join("\n")),
+    # A reference carries no control characters, so newlines delimit the list.
     entry("sandbox"; [.sandbox[] | strings] | join("\n")),
     ("ok" | field)
   ' || { sf_profile_validation_error "$REPLY" 'invalid configuration'; return; }
@@ -184,23 +213,21 @@ sf_profile_resolve() {
     sf_profile_fail 'no model selected: run shellfish init, or pass -m'
     return
   fi
-  sf_profile_configs model models "$config_dir" "$decoded[models]" \
-    ${(f)decoded[model]} || return
-  models=$REPLY
+  sf_profile_model "$config_dir" "$decoded[models]" || return
+  model=$REPLY
   sf_profile_configs sandbox sandbox "$config_dir" "$decoded[sandboxes]" \
     ${(f)decoded[sandbox]} || return
   sandbox=$REPLY
 
-  sf_jq_fields -rn --argjson profile "$profile" --argjson models "$models" \
+  sf_jq_fields -rn --argjson profile "$profile" --argjson model "$model" \
     --argjson sandbox "$sandbox" '
       include "lib/fields";
       include "lib/profile";
       {profile:($profile | del(.model) | .sandbox = sandbox_merge($sandbox)),
-       model:model_merge($models)} |
+       model:$model} |
       entry("config"; tojson),
-      entry("references"; [["backends", .model.adapter],
-        (.profile | (.system[] | strings | ["system", .]), (.tools[] | ["tools", .]),
-          (.hooks[] | ["hooks", .]))] | unique |
+      entry("references"; [.profile | (.system[] | strings | ["system", .]),
+        (.tools[] | ["tools", .]), (.hooks[] | ["hooks", .])] | unique |
         map(join(" ")) | join("\n")),
       ("ok" | field)
   ' || {
@@ -221,26 +248,16 @@ sf_profile_resolve() {
       *) [[ -d $resolved && -x $resolved/run ]] ;;
     esac || sf_profile_fail "invalid $kind reference: ${reference#* }" || return
     [[ $kind != system ]] || system_files+=( --rawfile "$reference" "$resolved" )
-    if [[ $kind == backends ]]; then
-      sf_profile_read_manifest "$resolved" || return
-      backend_manifest=$REPLY
-    fi
     resolutions+=( "$reference" "$resolved" )
   done
 
   # System files are read into one text, like model and sandbox files.
-  final=$(sf_jq -nce --argjson config "$config" --argjson manifest "$backend_manifest" \
+  final=$(sf_jq -nce --argjson config "$config" \
     --arg share "$SF_SHARE" --arg home "${HOME:+${HOME:A}}" "${system_files[@]}" '
       include "lib/profile";
       ($ARGS.positional | [range(0; length; 2) as $at | {key:.[$at], value:.[$at + 1]}] |
         from_entries) as $paths |
-      ($manifest | select(type == "object" and (keys - ["endpoint"]) == [] and
-        ((has("endpoint") | not) or (.endpoint | endpoint))) //
-        error("invalid backend manifest")) as $manifest |
       $config |
-      .model.adapter = $paths["backends " + .model.adapter] |
-      .model.endpoint //= $manifest.endpoint |
-      if .model.endpoint == null then error("backend endpoint is required") else . end |
       .profile.system |= ([.[] | if type == "string" then
           $ARGS.named["system " + .] as $text |
           if $text | index("\u0000") then error("system file contains NUL bytes: " + .)

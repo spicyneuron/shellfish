@@ -6,25 +6,27 @@ sf_test_tmp permission-review
 
 typeset hook="$ROOT/share/hooks/review"
 typeset session="$tmp/review.jsonl" control="$tmp/control.json"
-typeset wrapper="$tmp/shellfish" captured="$tmp/transcript.jsonl" mode="$tmp/mode"
+typeset backend="$tmp/backend" captured="$tmp/permission-review.jsonl" mode="$tmp/mode"
+typeset provider="$tmp/request.json"
 typeset request before
 integer hook_status=0
 
-cat >"$wrapper" <<'ZSH'
+mkdir -p "$backend"
+cat >"$backend/run" <<'ZSH'
 #!/usr/bin/env zsh
-[[ $1 == backend-request ]] || exit 2
-cat >"$SF_TEST_CAPTURE" || exit
+cat >"$SF_TEST_REQUEST" || exit
 [[ $(<"$SF_TEST_MODE") != failure ]] || exit 1
 text=$(<"$SF_TEST_MODE")
 [[ $text != valid ]] || text=$' \n{"risk":"medium","authorization":"high","reason":"Explicitly authorized."}\n'
 jq -cn --arg text "$text" \
   '{type:"assistant",stop:"end",content:[{type:"reasoning",text:"review"},{type:"text",text:$text}]}'
 ZSH
-chmod +x "$wrapper"
+chmod +x "$backend/run"
 
 sf_test_frozen_profile
-SF_TEST_MODEL=$(jq -c '
-  .context_window=20000 | .request += {max_tokens:5000,temperature:0.2} |
+SF_TEST_MODEL=$(jq -c --arg adapter "$backend" '
+  .adapter=$adapter | .context_window=20000 | .request += {max_tokens:5000,temperature:0.2,
+    response_schema:{type:"object",properties:{unexpected:{type:"string"}}}} |
   .config={http_timeout:120,http_stall:30,insecure_tls:false}
 ' <<<"$SF_TEST_MODEL")
 SF_TEST_PROFILE=$(jq -c --arg hook "$hook" '
@@ -47,9 +49,10 @@ request='{"tool_input":{"command":"setup","request_sandbox_bypass":true,"sandbox
 # The decision goes to fd 3 and its reason to the user on stderr.
 run_review() {
   print -r -- "$1" >"$mode"
+  rm -f -- "$captured" "$provider"
   hook_status=0
-  SF_TEST_CAPTURE="$captured" SF_TEST_MODE="$mode" \
-    SHELLFISH_EXECUTABLE="$wrapper" SHELLFISH_SESSION="$session" \
+  SF_TEST_REQUEST="$provider" SF_TEST_MODE="$mode" \
+    SHELLFISH_EXECUTABLE="$ROOT/bin/shellfish" SHELLFISH_SESSION="$session" \
     SHELLFISH_TURN_STATE="$tmp" SHELLFISH_TURN_ID=6 \
     zsh -f "$hook/run" shell call_7 \
     3>"$tmp/lines" 2>|"$tmp/user" <<<"$request" || hook_status=$?
@@ -76,9 +79,8 @@ jq -e -s --arg tool_input "$(jq -c '.tool_input' <<<"$request")" \
   (.[1].content[0].text | fromjson) as $context |
   .[0].model.request.model == "test-model" and
   .[0].model.config == {http_timeout:120,http_stall:30,insecure_tls:false} and
-  .[0].model.request.max_tokens == 4096 and
+  .[0].model.request.max_tokens == 5000 and
   .[0].model.request.temperature == 0.2 and
-  .[0].model.request.response_schema.additionalProperties == false and
   .[0].profile.tools == [] and
   .[0].profile.hooks == [] and
   .[0].profile.system == [{text:($policy | rtrimstr("\n"))}] and
@@ -94,6 +96,11 @@ jq -e -s --arg tool_input "$(jq -c '.tool_input' <<<"$request")" \
   ($context | tostring | contains("private") | not) and
   ($context | tostring | contains("secret") | not)
 ' "$captured" >/dev/null || fail 'permission review projected the wrong transcript'
+jq -e '.request.model == "test-model" and .request.max_output_tokens == 4096 and
+  .request.response_schema.additionalProperties == false and .request.temperature == 0.2 and
+  (.request.response_schema.properties | keys) == ["authorization","reason","risk"] and
+  .config == {http_timeout:120,http_stall:30,insecure_tls:false} and .tools == []
+' "$provider" >/dev/null || fail 'review settings did not reach the adapter'
 assert_canonical_session "$captured"
 assert_equal "$before" "$(shasum <"$session")" 'review changed the parent session'
 
@@ -103,8 +110,80 @@ jq -c 'if .type == "session" then del(.model.config) else . end' \
   "$parent_session" >"$session"
 run_review valid
 jq -e '.action == "allow"' "$control" >/dev/null
-jq -e -s '.[0].model | has("config") | not' "$captured" >/dev/null ||
+jq -e 'has("config") | not' "$provider" >/dev/null ||
   fail 'review injected adapter configuration'
+session=$parent_session
+
+# An empty review configuration keeps the inherited model.
+session="$tmp/empty-review.jsonl"
+jq -c 'if .type == "session" then .profile.config.review={} else . end' \
+  "$parent_session" >"$session"
+run_review valid
+jq -e '.action == "allow"' "$control" >/dev/null
+jq -e '.request.model == "test-model"' "$provider" >/dev/null
+
+# A named review model replaces the complete model without touching the parent.
+mkdir -p "$SHELLFISH_DIR/models/review/adapter" "$SHELLFISH_DIR/profiles"
+ln -s "$backend/run" "$SHELLFISH_DIR/models/review/adapter/run"
+print -r -- '{"hooks":["missing"]}' >"$SHELLFISH_DIR/profiles/default.jsonc"
+cat >"$SHELLFISH_DIR/models/review/fast.v1.jsonc" <<'JSON'
+{
+  "adapter": "./adapter",
+  "endpoint": "https://review.invalid/api",
+  "context_window": 12000,
+  "config": {"http_timeout": 60},
+  "request": {"model": "review-model", "max_completion_tokens": 2048,
+    "response_schema": {"properties": {"unexpected": {"type": "string"}}}}
+}
+JSON
+session="$tmp/configured-review.jsonl"
+jq -c 'if .type == "session" then .profile.config.review.model="review/fast.v1" else . end' \
+  "$parent_session" >"$session"
+before=$(shasum <"$session")
+run_review valid
+jq -e '.action == "allow"' "$control" >/dev/null
+jq -e '.endpoint == "https://review.invalid/api" and .config == {http_timeout:60} and
+  .request.model == "review-model" and .request.max_output_tokens == 4096 and
+  .request.response_schema.additionalProperties == false and
+  (.request.response_schema.properties | keys) == ["authorization","reason","risk"] and
+  (.request | has("temperature") | not)
+' "$provider" >/dev/null || fail 'review did not use the complete configured model'
+assert_canonical_session "$captured"
+assert_equal "$before" "$(shasum <"$session")" 'configured review changed the parent session'
+run_review valid
+jq -e '.action == "allow"' "$control" >/dev/null || fail 'repeated model resolution failed'
+
+# Reviews use a fixed input budget and read model files on every request.
+sed -e 's/12000/4097/' -e 's/review-model/updated-model/' \
+  "$SHELLFISH_DIR/models/review/fast.v1.jsonc" >"$tmp/small-model.jsonc"
+mv "$tmp/small-model.jsonc" "$SHELLFISH_DIR/models/review/fast.v1.jsonc"
+run_review valid
+jq -e '.action == "allow"' "$control" >/dev/null || fail 'review used model-sized input budgeting'
+jq -e '.request.model == "updated-model"' "$provider" >/dev/null ||
+  fail 'review did not reread its model file'
+
+typeset review_config
+for review_config in 'null' 'false' '[]' '{"unknown":true}' \
+    '{"model":null}' '{"model":4}' '{"model":""}' '{"model":"../fast"}'; do
+  jq -c --argjson config "$review_config" '
+    if .type == "session" then .profile.config.review=$config else . end
+  ' "$parent_session" >"$session"
+  run_review valid
+  jq -e '.action == "deny" and .reason == "Permission review has invalid configuration."' \
+    "$control" >/dev/null || fail "review accepted invalid configuration: $review_config"
+  [[ ! -e $captured ]] || fail 'invalid review configuration called the provider'
+done
+jq -c 'if .type == "session" then .profile.config.review.model="missing" else . end' \
+  "$parent_session" >"$session"
+run_review valid
+jq -e '.action == "deny" and .reason == "Permission review provider request failed."' \
+  "$control" >/dev/null || fail 'missing review model did not fail closed'
+[[ ! -e $provider ]] || fail 'missing review model fell back to the parent model'
+print -r -- '{"adapter":' >"$SHELLFISH_DIR/models/missing.jsonc"
+run_review valid
+jq -e '.action == "deny" and .reason == "Permission review provider request failed."' \
+  "$control" >/dev/null || fail 'malformed review model did not fail closed'
+[[ ! -e $provider ]] || fail 'malformed review model called the provider'
 session=$parent_session
 
 run_review failure

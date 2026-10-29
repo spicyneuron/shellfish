@@ -14,20 +14,45 @@ sf_backend_request_abort() {
 }
 
 sf_backend_request_main() {
-  (( ! $# )) || {
-    sf_die 'backend-request does not accept arguments'
-    return 2
-  }
+  local model=null items config_dir
+  local -a models=()
+  while (( $# )); do
+    case $1 in
+      -m|--model)
+        [[ -n $2 ]] || { sf_die "$1 requires a reference or JSON object"; return 2; }
+        models+=( "$2" )
+        shift 2
+        ;;
+      *) sf_die "unknown argument: $1"; return 2 ;;
+    esac
+  done
   (( $+commands[jq] )) || {
     sf_die 'shellfish requires jq'
     return 2
   }
 
   source "$SF_ROOT/lib/backend.zsh"
+  if (( ${#models} )); then
+    source "$SF_ROOT/lib/profile.zsh"
+    sf_environment_dir || { sf_die "$SF_ENVIRONMENT_ERROR"; return 1; }
+    config_dir=$REPLY
+    items=$(sf_jq -cn --arg cwd "${PWD:A}" '
+      include "lib/profile";
+      {model:[$ARGS.positional[] | if startswith("{") then fromjson else . end]} |
+      config_profile(["options"]; ["model"]) | config_relative("profile"; $cwd) | .model
+    ' --args -- "${models[@]}" 2>&1) || {
+      sf_cli_diagnostic "$items"
+      sf_die "$REPLY"
+      return 2
+    }
+    sf_profile_model "$config_dir" "$items" || { sf_die "$SF_PROFILE_ERROR"; return 1; }
+    model=$REPLY
+  fi
+  sf_backend_project '[]' "$model" || { sf_die 'cannot prepare provider request'; return 1; }
   trap 'sf_backend_request_abort 130' INT
   trap 'sf_backend_request_abort 129' HUP
   trap 'sf_backend_request_abort 143' TERM
-  sf_backend_request '[]'
+  sf_backend_run
   local request_status=$?
   if (( request_status )); then
     trap - INT HUP TERM

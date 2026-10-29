@@ -185,6 +185,8 @@ An `allow` approves only a supported sandbox bypass. A handoff asks a capable cl
 
 A backend adapter translates between Shellfish's provider-neutral protocol and one inference provider. It owns request projection, transport, stream parsing, response assembly, and provider-specific validation. The core validates, persists, and recovers complete assistant responses.
 
+Hooks can call `shellfish backend-request` with a composed transcript on stdin to obtain one assistant response without tools, hooks, or session mutation. It uses the transcript's model unless `-m REF|JSON` or `--model REF|JSON` selects another. Repeated model items merge left to right and replace the complete header model for that request only. Model references follow the same lookup rules as session creation.
+
 An adapter manifest declares its default endpoint:
 
 ```json

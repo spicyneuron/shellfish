@@ -16,7 +16,9 @@ print -r -- '{"type":"state_update","name":"stored/value","value":{"revision":1}
 print -r -- '{"type":"user","content":[{"type":"text","text":"composed request"}]}' >>"$session"
 
 zsh -f "$entry" backend-request extra </dev/null >/dev/null 2>&1 &&
-  fail 'backend-request accepted arguments'
+  fail 'backend-request accepted a positional argument'
+zsh -f "$entry" backend-request --model </dev/null >/dev/null 2>&1 &&
+  fail 'backend-request accepted a missing model value'
 zsh -f "$entry" backend-request </dev/null >/dev/null 2>&1 &&
   fail 'backend-request accepted an empty transcript'
 digest=$(shasum <"$session")
@@ -33,6 +35,54 @@ jq -e '.config == {example:{paths:["./data","~/data","@data"],values:[null,false
   .request == {model:"fake-model"}' "$tmp/request.json" >/dev/null ||
   fail 'adapter configuration was changed or mixed with provider parameters'
 assert_equal "$digest" "$(shasum <"$session")"
+
+# Model overrides replace the header model and merge only with each other.
+mkdir -p "$SHELLFISH_DIR/models/review/adapter" "$SHELLFISH_DIR/profiles"
+ln -s "$SF_TEST_BACKEND" "$SHELLFISH_DIR/models/review/adapter/run"
+print -r -- '{"endpoint":"https://review.invalid/api"}' \
+  >"$SHELLFISH_DIR/models/review/adapter/manifest.json"
+print -r -- '{"hooks":["missing"]}' >"$SHELLFISH_DIR/profiles/default.jsonc"
+cat >"$SHELLFISH_DIR/models/review/fast.jsonc" <<'JSON'
+{
+  "adapter": "./adapter",
+  "config": {"http_timeout": 60},
+  "request": {"model": "review-model", "max_tokens": 2048}
+}
+JSON
+response=$(SF_TEST_BACKEND_DELAY=0 SF_TEST_BACKEND_REQUEST="$tmp/override-request.json" \
+  zsh -f "$entry" backend-request --model review/fast \
+    -m '{"request":{"temperature":0.3}}' <"$session") || fail 'named model override failed'
+jq -e '.content == [{type:"text",text:"composed request\n"}]' <<<"$response" >/dev/null
+jq -e '.endpoint == "https://review.invalid/api" and .config == {http_timeout:60} and
+  .request == {model:"review-model",max_tokens:2048,temperature:0.3} and .tools == [] and
+  .messages[-1].content[0].text == "composed request"
+' "$tmp/override-request.json" >/dev/null || fail 'model override merged with the header model'
+assert_equal "$digest" "$(shasum <"$session")" 'model override changed the transcript'
+
+# Explicit paths and inline model objects use the same resolution rules.
+SF_TEST_BACKEND_DELAY=0 SF_TEST_BACKEND_REQUEST="$tmp/path-request.json" \
+  zsh -f "$entry" backend-request -m "$SHELLFISH_DIR/models/review/fast.jsonc" \
+    <"$session" >/dev/null
+jq -e '.request.model == "review-model"' "$tmp/path-request.json" >/dev/null
+typeset inline_model
+inline_model=$(jq -cn --arg adapter "${SF_TEST_BACKEND:h}" '
+  {adapter:$adapter,endpoint:"https://inline.invalid/api",request:{model:"inline-model"}}')
+SF_TEST_BACKEND_DELAY=0 SF_TEST_BACKEND_REQUEST="$tmp/inline-request.json" \
+  zsh -f "$entry" backend-request -m "$inline_model" <"$session" >/dev/null
+jq -e '.request == {model:"inline-model"} and .endpoint == "https://inline.invalid/api" and
+  (has("config") | not)' "$tmp/inline-request.json" >/dev/null
+
+# Invalid overrides fail without invoking an adapter or falling back.
+typeset invalid_model
+for invalid_model in missing '{"request":{"model":"incomplete"}}' '{' \
+    '{"adapter":4}' $'bad\nname'; do
+  if SF_TEST_BACKEND_REQUEST="$tmp/rejected-request.json" \
+      zsh -f "$entry" backend-request --model "$invalid_model" \
+      <"$session" >/dev/null 2>&1; then
+    fail "backend-request accepted invalid model: $invalid_model"
+  fi
+  [[ ! -e $tmp/rejected-request.json ]] || fail 'invalid model invoked an adapter'
+done
 
 # Omitted adapter configuration stays absent from the request.
 jq -c 'if .type == "session" then del(.model.config) else . end' \

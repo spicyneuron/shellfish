@@ -246,3 +246,5 @@ Inspection distinguishes a child that is still running from one that has stopped
 ### Review hook
 
 The `review` hook helps decide whether a requested sandbox bypass is justified by the user's instructions. If it cannot approve the request, the bypass is denied and the tool is not run. The `plus` profile enables it, but the default profile does not. To enable it in another profile, add `"review"` to its `hooks`.
+
+The reviewer uses the session's model by default. Set `"config": {"review": {"model": "review"}}` in the profile to select another model by name, such as `models/review.jsonc`. The name freezes with the session, but its model file is read on each review. The selection replaces the complete model configuration, so it can use a different backend. Review requests impose their own structured output and output limit, and use a fixed input budget rather than adapting to the model's capacity. An invalid setting, unavailable model, or provider failure denies the bypass.

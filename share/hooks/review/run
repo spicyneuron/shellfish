@@ -3,12 +3,22 @@
 emulate -R zsh
 setopt extended_glob no_aliases no_multios pipe_fail
 
-integer input_tokens=32768
-integer output_tokens=4096
-local request header budget system base records transcript response result context candidate state_name=''
+# Input bytes: 32768 tokens at about four bytes each.
+integer budget=$(( 32768 * 4 ))
+local request header system base records transcript response result context candidate state_name=''
+local model
+local settings='{"request":{"max_output_tokens":4096,"response_schema":{
+  "type":"object","additionalProperties":false,
+  "required":["risk","authorization","reason"],
+  "properties":{
+    "risk":{"enum":["low","medium","high"]},
+    "authorization":{"enum":["low","medium","high","unknown"]},
+    "reason":{"type":"string","minLength":1,"maxLength":1000}
+  }
+}}}'
 local review_content=''
 integer review_content_set=0
-local -a candidates
+local -a candidates overrides
 
 permission_deny() {
   local reason=${1//$'\n'/ } control
@@ -66,11 +76,20 @@ fi
 
 header=$(head -n 1 -- "$SHELLFISH_SESSION") ||
   permission_deny 'Permission review could not inspect the session header.'
-# A known context limit clamps the fixed input budget; an unknown one leaves it intact.
-budget=$(jq --argjson input_tokens "$input_tokens" --argjson output_tokens "$output_tokens" '
-  [(.model.context_window | numbers | select(floor == .) | . - $output_tokens),
-    $input_tokens] | min * 4
-' <<<"$header")
+model=$(jq -r '
+  (.profile.config // {}) |
+  if has("review") then .review else {} end |
+  if type == "object" and (keys - ["model"]) == [] then .
+  else error("config.review must be an object containing only model") end |
+  if has("model") then .model |
+    if type == "string" and
+      test("^[A-Za-z0-9][A-Za-z0-9_.-]*(/[A-Za-z0-9][A-Za-z0-9_.-]*)*$") then .
+    else error("config.review.model must be a model name") end
+  else empty end
+' <<<"$header" 2>/dev/null) || permission_deny 'Permission review has invalid configuration.'
+# Dropping the model's own schema keeps the merge from adding its properties.
+[[ -z $model ]] || overrides=( --model "$model"
+  --model '{"request":{"response_schema":null}}' --model "$settings" )
 
 # The first user message retains startup context. Later messages are admitted
 # backward without gaps, then emitted chronologically.
@@ -164,21 +183,8 @@ done
 
 transcript="$SHELLFISH_TURN_STATE/permission-review.jsonl"
 if ! jq -cn --argjson header "$header" --arg system "$system" --argjson context "$base" \
-    --argjson output_tokens "$output_tokens" '
-  ($header |
-    .model.request |= (
-      .max_tokens = ([.max_output_tokens // .max_completion_tokens //
-        .max_tokens // $output_tokens,$output_tokens] | min) |
-      del(.max_output_tokens,.max_completion_tokens) |
-      .response_schema = {
-        type:"object",additionalProperties:false,
-        required:["risk","authorization","reason"],
-        properties:{
-          risk:{enum:["low","medium","high"]},
-          authorization:{enum:["low","medium","high","unknown"]},
-          reason:{type:"string",minLength:1,maxLength:1000}
-        }
-      }) |
+    --argjson settings "$settings" '
+  ($header | del(.model.request.response_schema) | .model *= $settings |
     .profile |= (.system=[{text:$system}] | .tools=[] | .hooks=[] |
       .sandbox={enabled:false, read:[], write:[]})),
   {type:"user",content:[{type:"text",text:($context | tojson)}]}
@@ -186,7 +192,7 @@ if ! jq -cn --argjson header "$header" --arg system "$system" --argjson context 
   permission_deny 'Permission review could not construct its temporary session.'
 fi
 
-response=$("$SHELLFISH_EXECUTABLE" backend-request \
+response=$("$SHELLFISH_EXECUTABLE" backend-request "${overrides[@]}" \
   <"$transcript" 2>/dev/null) ||
   permission_deny 'Permission review provider request failed.'
 
