@@ -8,7 +8,8 @@ def backend_adapter_request($model; $system; $messages; $tools):
     tools:$tools,
     request:$model.request,
     endpoint:$model.endpoint
-  } | select(all(.messages[] | select(.type == "user");
+  } + (if $model | has("config") then {config:$model.config} else {} end) |
+  select(all(.messages[] | select(.type == "user");
     .content[0].text | index("\u0000") | not));
 
 # Streamed text or reasoning. Deltas concatenate to the response's own text.

@@ -99,7 +99,9 @@ def path_reference:
 
 # A model file configures one request: where it goes and what it carries.
 def config_model($path):
-  config_object($path; ["$schema", "adapter", "context_window", "endpoint", "request"]) |
+  config_object($path; ["$schema", "adapter", "config", "context_window", "endpoint", "request"]) |
+  config_assert((has("config") | not) or (.config | type == "object");
+    $path + ["config"]; "must be an object") |
   config_assert((has("adapter") | not) or (.adapter | nonempty_control_free_string);
     $path + ["adapter"]; "invalid reference") |
   config_assert((has("endpoint") | not) or (.endpoint | endpoint);
@@ -203,7 +205,8 @@ def expand_path($share; $home):
 # a stored path.
 def canonical_model:
   type == "object" and
-  (keys - ["context_window"]) == ["adapter", "endpoint", "request"] and
+  (keys - ["config", "context_window"]) == ["adapter", "endpoint", "request"] and
+  ((has("config") | not) or (.config | type == "object")) and
   (.adapter | stored_reference) and
   (.endpoint | endpoint) and (.request | type == "object") and
   (.request.model | model_name) and

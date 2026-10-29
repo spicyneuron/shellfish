@@ -5,7 +5,6 @@ setopt extended_glob no_aliases no_multios pipe_fail
 
 integer input_tokens=32768
 integer output_tokens=4096
-integer request_seconds=60
 local request header budget system base records transcript response result context candidate state_name=''
 local review_content=''
 integer review_content_set=0
@@ -187,10 +186,7 @@ if ! jq -cn --argjson header "$header" --arg system "$system" --argjson context 
   permission_deny 'Permission review could not construct its temporary session.'
 fi
 
-# The review runs under a shorter request timeout than the session's.
-typeset timeout=${SHELLFISH_HTTP_TIMEOUT-}
-[[ $timeout == <1-> ]] && (( timeout < request_seconds )) || timeout=$request_seconds
-response=$(SHELLFISH_HTTP_TIMEOUT=$timeout "$SHELLFISH_EXECUTABLE" backend-request \
+response=$("$SHELLFISH_EXECUTABLE" backend-request \
   <"$transcript" 2>/dev/null) ||
   permission_deny 'Permission review provider request failed.'
 

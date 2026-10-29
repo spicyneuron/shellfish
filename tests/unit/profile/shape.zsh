@@ -73,6 +73,7 @@ valid_header=$(jq -cn '
       adapter: "@backends/openai",
       endpoint: "https://api.openai.com/v1/chat/completions",
       request: {model: "gpt-4o"},
+      config: {example:["./literal", null, false]},
       context_window: 128000
     },
     profile: {
@@ -87,12 +88,15 @@ valid_header=$(jq -cn '
 print -r -- "$valid_header" | schema_eval 'canonical_session_header' >/dev/null
 print -r -- "$valid_header" | jq -c 'del(.profile.config)' |
   schema_eval 'canonical_session_header' >/dev/null
+print -r -- "$valid_header" | jq -c 'del(.model.config)' |
+  schema_eval 'canonical_session_header' >/dev/null
 print -r -- "$valid_header" | jq -c '.model.context_window = null' |
   schema_eval 'canonical_session_header' >/dev/null
 print -r -- "$valid_header" | jq -c 'del(.model.context_window)' |
   schema_eval 'canonical_session_header' >/dev/null
 for patch in '.extra=true' '.profile.extra=true' '.profile.env={}' \
     '.profile.config=null' '.profile.config=[]' '.profile.config=false' \
+    '.model.config=null' '.model.config=[]' '.model.config=false' \
     '.profile."$schema"="x"' 'del(.profile.hooks)' 'del(.profile.sandbox)' \
     '.model.extra=true' 'del(.model.endpoint)' 'del(.model.request.model)' \
     '.model.context_window=0' 'del(.model)' '.profile.model=.model' '.profile.hooks={}' \

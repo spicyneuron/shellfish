@@ -49,6 +49,7 @@ printf "%s\n" \
 cat >"$req" <<'EOF'
 {
   "format_version": 1,
+  "config": {"http_timeout":60,"http_stall":10,"insecure_tls":true},
   "system": "test system",
   "messages": [
     {"type":"user","content":[{"type":"text","text":"where are we?"}]}
@@ -66,6 +67,11 @@ cat >"$req" <<'EOF'
 EOF
 
 (builtin cd -- "$tmp" && OPENAI_API_KEY=test-key zsh -f "$run" <"$req" >"$res")
+assert_equal 60 "$(awk '/^--max-time$/{getline; print; exit}' "$BACKEND_TEST_ARGS")"
+assert_equal 10 "$(awk '/^--speed-time$/{getline; print; exit}' "$BACKEND_TEST_ARGS")"
+grep -Fx -- '--insecure' "$BACKEND_TEST_ARGS" >/dev/null
+jq -e 'has("config") or has("http_timeout") or has("http_stall") or has("insecure_tls") | not' \
+  "$BACKEND_TEST_BODY" >/dev/null || fail 'adapter config reached the provider API'
 
 # Use OpenRouter credentials.
 (builtin cd -- "$tmp" && OPENROUTER_API_KEY=router-key zsh -f "$openrouter_run" \
@@ -97,6 +103,16 @@ EOF
 jq -e '. == {context_window:128000}' "$res" >/dev/null
 grep -qx 'https://api.openai.com/v1/models' "$BACKEND_TEST_ARGS"
 grep -qx '10' "$BACKEND_TEST_ARGS"
+assert_equal 5 "$(awk '/^--speed-time$/{getline; print; exit}' "$BACKEND_TEST_ARGS")"
+grep -Fx -- '--insecure' "$BACKEND_TEST_ARGS" >/dev/null
+jq '.config={http_timeout:2,http_stall:1,insecure_tls:false}' "$req" >"$tmp/short-request.json"
+(builtin cd -- "$tmp" && OPENAI_API_KEY=test-key zsh -f "$context_window" \
+  <"$tmp/short-request.json" >"$res")
+assert_equal 2 "$(awk '/^--max-time$/{getline; print; exit}' "$BACKEND_TEST_ARGS")"
+assert_equal 1 "$(awk '/^--speed-time$/{getline; print; exit}' "$BACKEND_TEST_ARGS")"
+if grep -Fx -- '--insecure' "$BACKEND_TEST_ARGS" >/dev/null; then
+  fail 'explicit false disabled TLS verification'
+fi
 
 jq '.endpoint = "https://api.openai.com/v1/responses"' "$req" >"$tmp/responses-request.json"
 (builtin cd -- "$tmp" && OPENAI_API_KEY=test-key zsh -f "$responses_context_window" \

@@ -32,27 +32,39 @@ sf_backend_setup() {
 }
 
 # Reads the request fields an adapter consumes, plus the jq predicate an adapter
-# passes for request options it cannot translate. Transport settings come from
-# SHELLFISH_HTTP_TIMEOUT, SHELLFISH_HTTP_STALL, and SHELLFISH_INSECURE_TLS.
+# passes for request options it cannot translate. Config holds transport settings.
 # The model check leads because jq's and short-circuits, so the predicate never
 # runs against a missing request.
 sf_backend_request() {
-  local accepts=${1:-true}
+  local accepts=${1:-true} output error_file=$SF_BACKEND_TEMP_DIR/request-error
   local -a fields
-  fields=( "${(@f)$(jq -er "def accepted: $accepts;"'
+  output=$(jq -er "def accepted: $accepts;"'
     select((.request.model | type == "string" and . != "") and accepted and
       (.endpoint | type == "string" and . != "")) |
-    .request.model, .endpoint
-  ' "$SF_BACKEND_REQUEST_FILE")}" ) || return 1
-  (( ${#fields} == 2 )) || return 1
+    (if has("config") then .config else {} end) as $config |
+    if $config | type == "object" and
+      (keys - ["http_timeout", "http_stall", "insecure_tls"]) == [] then .
+    else error("config must contain only http_timeout, http_stall, and insecure_tls") end |
+    ({http_timeout:3600,http_stall:300,insecure_tls:false} + $config |
+      reduce ("http_timeout", "http_stall") as $key (.;
+        if .[$key] | type == "number" and floor == . and . > 0 then .
+        else error("config.\($key) must be a positive integer") end) |
+      if .insecure_tls | type == "boolean" then .
+      else error("config.insecure_tls must be a boolean") end) as $config |
+    .request.model, .endpoint, $config.http_timeout, $config.http_stall,
+    (if $config.insecure_tls then 1 else 0 end)
+  ' "$SF_BACKEND_REQUEST_FILE" 2>"$error_file") || {
+    output=$(<"$error_file")
+    [[ -z $output ]] || print -ru2 -- "$SF_BACKEND_NAME: ${output#jq: error \(at *\): }"
+    return 1
+  }
+  fields=( "${(@f)output}" )
+  (( ${#fields} == 5 )) || return 1
   SF_BACKEND_MODEL=$fields[1]
   SF_BACKEND_ENDPOINT=$fields[2]
-  SF_BACKEND_HTTP_TIMEOUT=${SHELLFISH_HTTP_TIMEOUT:-3600}
-  SF_BACKEND_HTTP_STALL=${SHELLFISH_HTTP_STALL:-300}
-  SF_BACKEND_INSECURE_TLS=${SHELLFISH_INSECURE_TLS:-0}
-  [[ $SF_BACKEND_HTTP_TIMEOUT == <1-> && $SF_BACKEND_HTTP_STALL == <1-> ]] ||
-    sf_backend_die 'SHELLFISH_HTTP_TIMEOUT and SHELLFISH_HTTP_STALL must be positive integers'
-  [[ $SF_BACKEND_INSECURE_TLS == [01] ]] || sf_backend_die 'SHELLFISH_INSECURE_TLS must be 0 or 1'
+  SF_BACKEND_HTTP_TIMEOUT=$fields[3]
+  SF_BACKEND_HTTP_STALL=$fields[4]
+  SF_BACKEND_INSECURE_TLS=$fields[5]
 }
 
 sf_backend_credential() {

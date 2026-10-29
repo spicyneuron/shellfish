@@ -6,7 +6,8 @@ sf_test_tmp backend-request
 typeset entry="$ROOT/bin/shellfish" session="$tmp/session.jsonl"
 typeset response digest
 jq -c --arg adapter "${SF_TEST_BACKEND:h}" --arg cwd "$tmp" \
-  '.model.adapter = $adapter | .cwd = $cwd' \
+  '.model.adapter = $adapter | .cwd = $cwd |
+    .model.config = {example:{paths:["./data","~/data","@data"],values:[null,false,2]}}' \
   "$SF_TEST_SESSIONS/header-only.jsonl" >"$session"
 print -r -- '{"type":"user","content":[{"type":"text","text":"old"}]}' >>"$session"
 print -r -- '{"type":"assistant","stop":"end","content":[{"type":"text","text":"answer"}]}' \
@@ -28,7 +29,17 @@ jq -e '
 ' <<<"$response" >/dev/null || fail 'backend-request produced the wrong response'
 jq -e '.tools == [] and .messages[-1].content[0].text == "composed request"' \
   "$tmp/request.json" >/dev/null || fail 'backend-request exposed unavailable tools'
+jq -e '.config == {example:{paths:["./data","~/data","@data"],values:[null,false,2]}} and
+  .request == {model:"fake-model"}' "$tmp/request.json" >/dev/null ||
+  fail 'adapter configuration was changed or mixed with provider parameters'
 assert_equal "$digest" "$(shasum <"$session")"
+
+# Omitted adapter configuration stays absent from the request.
+jq -c 'if .type == "session" then del(.model.config) else . end' \
+  "$session" >"$tmp/no-config.jsonl"
+SF_TEST_BACKEND_DELAY=0 SF_TEST_BACKEND_REQUEST="$tmp/no-config-request.json" \
+  zsh -f "$entry" backend-request <"$tmp/no-config.jsonl" >/dev/null
+jq -e 'has("config") | not' "$tmp/no-config-request.json" >/dev/null
 
 # Backend execution follows the session cwd, not the command's cwd.
 typeset cwd_backend="$tmp/cwd-backend/run" cwd_session="$tmp/cwd-session.jsonl"

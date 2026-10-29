@@ -7,14 +7,13 @@ sf_test_tmp permission-review
 typeset hook="$ROOT/share/hooks/review"
 typeset session="$tmp/review.jsonl" control="$tmp/control.json"
 typeset wrapper="$tmp/shellfish" captured="$tmp/transcript.jsonl" mode="$tmp/mode"
-typeset request
+typeset request before
 integer hook_status=0
 
 cat >"$wrapper" <<'ZSH'
 #!/usr/bin/env zsh
 [[ $1 == backend-request ]] || exit 2
 cat >"$SF_TEST_CAPTURE" || exit
-print -r -- "${SHELLFISH_HTTP_TIMEOUT-}" >"$SF_TEST_CAPTURE.timeout" || exit
 [[ $(<"$SF_TEST_MODE") != failure ]] || exit 1
 text=$(<"$SF_TEST_MODE")
 [[ $text != valid ]] || text=$' \n{"risk":"medium","authorization":"high","reason":"Explicitly authorized."}\n'
@@ -25,7 +24,8 @@ chmod +x "$wrapper"
 
 sf_test_frozen_profile
 SF_TEST_MODEL=$(jq -c '
-  .context_window=20000 | .request += {max_tokens:5000,temperature:0.2}
+  .context_window=20000 | .request += {max_tokens:5000,temperature:0.2} |
+  .config={http_timeout:120,http_stall:30,insecure_tls:false}
 ' <<<"$SF_TEST_MODEL")
 SF_TEST_PROFILE=$(jq -c --arg hook "$hook" '
   .hooks=[$hook] | .system=[{text:"fixed system"}]
@@ -48,7 +48,7 @@ request='{"tool_input":{"command":"setup","request_sandbox_bypass":true,"sandbox
 run_review() {
   print -r -- "$1" >"$mode"
   hook_status=0
-  SF_TEST_CAPTURE="$captured" SF_TEST_MODE="$mode" SHELLFISH_HTTP_TIMEOUT=120 \
+  SF_TEST_CAPTURE="$captured" SF_TEST_MODE="$mode" \
     SHELLFISH_EXECUTABLE="$wrapper" SHELLFISH_SESSION="$session" \
     SHELLFISH_TURN_STATE="$tmp" SHELLFISH_TURN_ID=6 \
     zsh -f "$hook/run" shell call_7 \
@@ -56,6 +56,7 @@ run_review() {
   jq -c -s last "$tmp/lines" >|"$control"
 }
 
+before=$(shasum <"$session")
 run_review valid
 (( hook_status == 0 )) || fail 'permission review did not resolve the request'
 jq -e . "$control" >/dev/null || { cat "$control" >&2; fail 'permission review returned invalid control'; }
@@ -74,6 +75,7 @@ jq -e -s --arg tool_input "$(jq -c '.tool_input' <<<"$request")" \
     --rawfile policy "$ROOT/share/hooks/review.md" '
   (.[1].content[0].text | fromjson) as $context |
   .[0].model.request.model == "test-model" and
+  .[0].model.config == {http_timeout:120,http_stall:30,insecure_tls:false} and
   .[0].model.request.max_tokens == 4096 and
   .[0].model.request.temperature == 0.2 and
   .[0].model.request.response_schema.additionalProperties == false and
@@ -92,8 +94,18 @@ jq -e -s --arg tool_input "$(jq -c '.tool_input' <<<"$request")" \
   ($context | tostring | contains("private") | not) and
   ($context | tostring | contains("secret") | not)
 ' "$captured" >/dev/null || fail 'permission review projected the wrong transcript'
-assert_equal 60 "$(<"$captured.timeout")" 'permission review kept the session request timeout'
 assert_canonical_session "$captured"
+assert_equal "$before" "$(shasum <"$session")" 'review changed the parent session'
+
+typeset parent_session=$session
+session="$tmp/default-review.jsonl"
+jq -c 'if .type == "session" then del(.model.config) else . end' \
+  "$parent_session" >"$session"
+run_review valid
+jq -e '.action == "allow"' "$control" >/dev/null
+jq -e -s '.[0].model | has("config") | not' "$captured" >/dev/null ||
+  fail 'review injected adapter configuration'
+session=$parent_session
 
 run_review failure
 (( hook_status == 0 )) || fail 'provider failure did not fail closed'

@@ -7,7 +7,7 @@ Configuration has three homes, each with one job:
 | `profiles/NAME.jsonc` | Selects an agent's parts: sandbox files, system prompts, tools, and hooks | Yes |
 | `models/NAME.jsonc` | Configures the request: adapter, endpoint, and provider parameters | Yes |
 | `sandbox/NAME.jsonc` | Enables sandboxing and grants extra paths | Yes |
-| `.env` and the environment | Credentials and settings for Shellfish and its components | No |
+| `.env` and the environment | Credentials and core runtime settings | No |
 
 Rendering lives separately in `tui.jsonc`, which merges over [`share/tui.jsonc`](../share/tui.jsonc) and is read fresh on every run.
 
@@ -81,6 +81,7 @@ A model file configures where a request goes and what it carries. `-m REF|JSON` 
 | Field | Meaning |
 | --- | --- |
 | `adapter` | Backend adapter reference |
+| `config` | Optional object controlling the adapter's exchange, separate from provider request parameters |
 | `endpoint` | Overrides the adapter's endpoint |
 | `context_window` | Positive capacity override. `null` disables discovery, and absent permits adapter discovery |
 | `request` | Provider request parameters, which must include `model` after merging |
@@ -100,22 +101,29 @@ A model file configures where a request goes and what it carries. `-m REF|JSON` 
 shellfish -m local -m high
 ```
 
+HTTP adapters share these `model.config` settings, with the following defaults in bundled adapters:
+
+| Setting | Default | Meaning |
+| --- | --- | --- |
+| `http_timeout` | `3600` | Positive integer seconds per provider request |
+| `http_stall` | `300` | Positive integer seconds without response bytes |
+| `insecure_tls` | `false` | Boolean that disables TLS certificate verification when true |
+
+For example, `"config": {"http_timeout": 120, "http_stall": 30}` sets shorter limits for a model. The Codex adapter always requires TLS verification.
+
 Bundled adapters: `anthropic`, `codex`, `openai`, `openai-responses`, and `openrouter`. The `openai` adapter works with any OpenAI-compatible endpoint. See [`HARNESS.md`](HARNESS.md#backend-adapters) for the adapter protocol.
 
 A new session freezes the selected profile and model in its header: sandbox and model items merged, system prompts joined into one text, and every other reference resolved. The header's `profile` is itself a profile and its `model` a model file, so together they select the same session again. A child agent started by the `agent` tool keeps its parent's model.
 
 ## Environment
 
-Credentials and settings live in exported variables or `.env` in the Shellfish directory. Exported values win. Both stay external and are read for each invocation, so a change applies to existing sessions too.
+Credentials and core runtime settings live in exported variables or `.env` in the Shellfish directory. Exported values win. Both stay external and are read for each invocation, so a change applies to existing sessions too.
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
 | `SHELLFISH_MAX_REQUESTS_PER_TURN` | `100` | Provider requests per turn |
 | `SHELLFISH_MAX_TOOL_CALLS_PER_REQUEST` | `25` | Tool calls per response |
 | `SHELLFISH_MAX_CAPTURE_BYTES` | `32768` | Bytes kept from each component stream, at least `64`, overridable by a manifest |
-| `SHELLFISH_HTTP_TIMEOUT` | `3600` | Seconds per provider request |
-| `SHELLFISH_HTTP_STALL` | `300` | Seconds without response bytes |
-| `SHELLFISH_INSECURE_TLS` | `0` | `1` skips TLS verification |
 
 Hooks and adapters are trusted: they inherit the process environment and receive every `.env` value. Tools receive only the names their manifest declares. Unsandboxed tools also inherit the process environment; sandboxed tools start clean. A key kept only in `.env` is therefore invisible to tools that do not declare it. See [`HARNESS.md`](HARNESS.md#shared-contract) for the process context.
 

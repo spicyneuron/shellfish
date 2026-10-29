@@ -168,6 +168,17 @@ assert_usage
 jq -e 'has("max_output_tokens") | not' "$BACKEND_TEST_BODY" >/dev/null ||
   fail 'Codex sent an unsupported output limit'
 
+# Codex never permits disabling certificate verification.
+jq '.config={insecure_tls:true}' "$tmp/codex-request.json" >"$tmp/insecure-codex.json"
+if CODEX_HOME="$tmp" zsh -f "$codex_run" <"$tmp/insecure-codex.json" \
+    >"$res" 2>"$tmp/insecure-codex.err"; then
+  fail 'Codex accepted insecure TLS'
+fi
+grep -q 'Codex transport must use the built-in secure endpoint' "$tmp/insecure-codex.err"
+if zsh -f "$codex_context_window" <"$tmp/insecure-codex.json" >"$res"; then
+  fail 'Codex metadata accepted insecure TLS'
+fi
+
 # Keep the streamed text, in the completed message's place.
 cat >"$BACKEND_TEST_RESPONSE" <<'EOF'
 data: {"type":"response.output_text.delta","delta":"ok"}

@@ -26,11 +26,22 @@ integer operation_status=0
 (( operation_status != 0 )) || fail 'invalid authentication value was accepted'
 [[ "$(<"$tmp/cred-err")" == *"invalid authentication value"* ]]
 
-# Read the model and endpoint, with transport settings from the environment.
+# Omitted transport settings use secure defaults.
 cat >"$SF_BACKEND_REQUEST_FILE" <<'JSON'
 {"request":{"model":"test-model"},"endpoint":"https://api.example.com/v1"}
 JSON
-SHELLFISH_INSECURE_TLS=1 SHELLFISH_HTTP_TIMEOUT=60 SHELLFISH_HTTP_STALL=10 sf_backend_request
+sf_backend_request
+assert_equal 3600 "$SF_BACKEND_HTTP_TIMEOUT"
+assert_equal 300 "$SF_BACKEND_HTTP_STALL"
+assert_equal 0 "$SF_BACKEND_INSECURE_TLS"
+sf_backend_curl_args
+[[ ${SF_BACKEND_CURL_ARGS[(Ie)--insecure]} == 0 ]]
+
+# Supplied transport settings remain separate from provider parameters.
+jq '.config={http_timeout:60,http_stall:10,insecure_tls:true}' \
+  "$SF_BACKEND_REQUEST_FILE" >"$tmp/configured.json"
+cp "$tmp/configured.json" "$SF_BACKEND_REQUEST_FILE"
+sf_backend_request
 assert_equal test-model "$SF_BACKEND_MODEL"
 assert_equal https://api.example.com/v1 "$SF_BACKEND_ENDPOINT"
 
@@ -51,6 +62,18 @@ sf_backend_curl_args
 [[ "${SF_BACKEND_CURL_ARGS[*]}" == *'--max-time 60'* ]]
 [[ "${SF_BACKEND_CURL_ARGS[*]}" == *'--speed-time 10'* ]]
 [[ "${SF_BACKEND_CURL_ARGS[*]}" == *'--insecure'* ]]
+
+for config in null false 1 '[]' '"text"' '{"unknown":1}' '{"http_timeout":null}' \
+    '{"http_timeout":0}' '{"http_timeout":-1}' '{"http_timeout":1.5}' \
+    '{"http_timeout":"60"}' '{"http_stall":false}' '{"http_stall":0}' \
+    '{"insecure_tls":null}' '{"insecure_tls":1}' '{"insecure_tls":"false"}'; do
+  jq --argjson config "$config" '.config=$config' "$tmp/configured.json" \
+    >"$SF_BACKEND_REQUEST_FILE"
+  if (sf_backend_request) 2>"$tmp/config-err"; then
+    fail "invalid adapter config was accepted: $config"
+  fi
+  grep -q '^test_backend: config' "$tmp/config-err"
+done
 
 # Report curl transport failures.
 print -rn -- 000 >"$SF_BACKEND_STATUS_FILE"

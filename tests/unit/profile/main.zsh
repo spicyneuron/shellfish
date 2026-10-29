@@ -99,25 +99,29 @@ jq -e --arg kit "${kit:A}" --arg backend "${tmp:A}/tests-backend" '
 sf_test_profile inline '{"sandbox": {"read": ["./data"]},
   "system": [{"text": "hello"}, "prompt.md"],
   "config": {"example": {"paths": ["./data", "~/data", "@data"], "values": [null, false, 2]}}}'
-sf_profile_resolve_args -p inline -m '{"adapter": "'"$fixture_backend"'", "request": {"model": "inline"}}'
+sf_profile_resolve_args -p inline -m '{"adapter": "'"$fixture_backend"'", "request": {"model": "inline"},
+  "config": {"example": {"paths": ["./data", "~/data", "@data"], "values": [null, false, 2]}}}'
 profile=$REPLY
 jq -e --arg root "${SF_TEST_CONFIG:A}" '
   .model.request.model == "inline" and .profile.sandbox.read == [$root + "/profiles/data"] and
   .profile.system == [{text:"hello\n\nnested"}] and
-  .profile.config == {example:{paths:["./data", "~/data", "@data"], values:[null,false,2]}}
+  .profile.config == {example:{paths:["./data", "~/data", "@data"], values:[null,false,2]}} and
+  .model.config == .profile.config
 ' <<<"$profile" >/dev/null || fail 'inline profile items did not resolve'
 jq '.profile' <<<"$profile" >"$tmp/frozen.jsonc"
 jq '.model' <<<"$profile" >"$tmp/frozen-model.jsonc"
 sf_profile_resolve_args -p "$tmp/frozen.jsonc" -m "$tmp/frozen-model.jsonc"
 [[ $REPLY == "$profile" ]] || fail 'a frozen profile and model did not resolve to themselves'
 
-# Only supplied configuration freezes, without rereading the source profile.
+# Supplied configuration freezes without rereading the source profile or model.
 "$ROOT/bin/shellfish" run --session-create --session-out "$tmp/config.jsonl" \
-  -p inline -m fixture >/dev/null
+  -p inline -m "$tmp/frozen-model.jsonc" >/dev/null
 sf_test_profile inline '{"config":{"example":"changed"}}'
+print -r -- '{"config":{"example":"changed"}}' >"$tmp/frozen-model.jsonc"
 sf_session_read_config "$tmp/config.jsonl"
-jq -e '.profile.config == {example:{paths:["./data", "~/data", "@data"], values:[null,false,2]}}' \
-  <<<"$REPLY" >/dev/null || fail 'session configuration changed with its source profile'
+jq -e '.profile.config == {example:{paths:["./data", "~/data", "@data"], values:[null,false,2]}} and
+  .model.config == .profile.config' <<<"$REPLY" >/dev/null ||
+  fail 'session configuration changed with its source files'
 for value in null false 1 '"text"' '[]'; do
   sf_test_profile bad "{\"config\":$value}"
   if sf_profile_resolve_args -p bad -m fixture; then
@@ -223,7 +227,8 @@ if sf_profile_resolve_args -p work -m bad; then
   fail 'model file accepted a profile field'
 fi
 [[ $SF_PROFILE_ERROR == 'invalid configuration: model bad $["tools"]: unknown field' ]]
-for value in '{"endpoint":"ftp://example.invalid"}' '{"context_window":0}' '{"request":[]}'; do
+for value in '{"endpoint":"ftp://example.invalid"}' '{"context_window":0}' '{"request":[]}' \
+    '{"config":null}' '{"config":[]}' '{"config":false}' '{"config":1}' '{"config":"text"}'; do
   sf_test_model bad "$value"
   if sf_profile_resolve_args -p work -m bad; then
     fail "model file accepted $value"
