@@ -15,7 +15,7 @@ In header, also list resolved shellfish directory
 
 # Major
 
-Replace fence with nono
+Replace fence with nono or srt
 
 Add local sandbox exceptions to allow tests to run
 - tests cannot create .env and .shellfish
