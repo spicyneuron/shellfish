@@ -135,6 +135,7 @@ sf_tui_apply() {
       SF_PRESENT_STATE=permission
       sf_tui_activity_hold
       ;;
+    prompt) sf_tui_record_prompt "$2" ;;
     handoff)
       (( ! ${#SF_PRESENT_HANDOFF} )) || return 1
       SF_PRESENT_HANDOFF=( "${@:2}" )

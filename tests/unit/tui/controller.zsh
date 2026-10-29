@@ -24,8 +24,11 @@ typeset replay="$tmp/replay.jsonl" malformed="$tmp/malformed.jsonl" torn="$tmp/t
 cp "$SF_TEST_SESSIONS/complete.jsonl" "$replay"
 SF_PRESENT_SESSION=$replay
 SF_PRESENT_STATE=idle
+SF_PRESENT_HISTORY=()
 sf_tui_load "$replay" || fail 'direct session replay failed'
 assert_equal test/fake-model "$SF_PRESENT_IDENTITY"
+# Replayed prompts are recallable.
+assert_equal Hello "${(j:,:)SF_PRESENT_HISTORY}"
 print -r -- 'not json' >"$malformed"
 sf_tui_load "$malformed" && fail 'malformed session replay succeeded'
 assert_equal "cannot present session: $malformed" "$SF_PRESENT_ERROR"

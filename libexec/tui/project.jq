@@ -77,7 +77,10 @@ def record_actions($mode; $window):
     (if $mode == "load" then response_actions else [["message_end"]] end) +
       usage_actions($window)
   elif .type == "user" then
-    message_actions("user"; .content[0].text)
+    .content[0].text as $text |
+    message_actions("user"; $text) +
+    # Live prompts enter history when submitted.
+    if $mode == "load" and ($text | test("[^\n]")) then [["prompt", $text]] else [] end
   elif .type == "error" then
     (.user_text | split("\n")) as $lines |
     [["error", $lines[0], ($lines[1:] | join("\n"))]]
