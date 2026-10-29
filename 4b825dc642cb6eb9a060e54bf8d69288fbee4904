@@ -1,7 +1,3 @@
-# Sandbox Auto Mode
-
-How does tool call sandbox bypass validation work? Are reason and the flag both required? Will the model get feedback if it excludes one or the other? Are the descriptions clear both are required if one is provided?
-
 # Cleanup
 
 Feels like prompt submit should get split so that prompt command is a separate hook?
