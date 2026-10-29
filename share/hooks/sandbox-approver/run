@@ -71,20 +71,20 @@ if (( ${#state_name} > 128 )); then
   permission_deny 'Permission review cannot store this tool request identifier.'
 fi
 
-[[ -r ${0:A:h:h}/review.md ]] && system=$(<"${0:A:h:h}/review.md") ||
+[[ -r ${0:A:h}/review.md ]] && system=$(<"${0:A:h}/review.md") ||
   permission_deny 'Permission review could not load its policy.'
 
 header=$(head -n 1 -- "$SHELLFISH_SESSION") ||
   permission_deny 'Permission review could not inspect the session header.'
 model=$(jq -r '
   (.profile.config // {}) |
-  if has("review") then .review else {} end |
+  if has("sandbox-approver") then .["sandbox-approver"] else {} end |
   if type == "object" and (keys - ["model"]) == [] then .
-  else error("config.review must be an object containing only model") end |
+  else error("config.sandbox-approver must be an object containing only model") end |
   if has("model") then .model |
     if type == "string" and
       test("^[A-Za-z0-9][A-Za-z0-9_.-]*(/[A-Za-z0-9][A-Za-z0-9_.-]*)*$") then .
-    else error("config.review.model must be a model name") end
+    else error("config.sandbox-approver.model must be a model name") end
   else empty end
 ' <<<"$header" 2>/dev/null) || permission_deny 'Permission review has invalid configuration.'
 # Dropping the model's own schema keeps the merge from adding its properties.

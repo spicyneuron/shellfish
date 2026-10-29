@@ -4,7 +4,7 @@ source "${0:A:h:h:h}/_helpers.zsh"
 sf_test_source lib/session.zsh
 sf_test_tmp permission-review
 
-typeset hook="$ROOT/share/hooks/review"
+typeset hook="$ROOT/share/hooks/sandbox-approver"
 typeset session="$tmp/review.jsonl" control="$tmp/control.json"
 typeset backend="$tmp/backend" captured="$tmp/permission-review.jsonl" mode="$tmp/mode"
 typeset provider="$tmp/request.json"
@@ -75,7 +75,7 @@ jq -e '.on == "permission_request" and .user_preview_lines == "full"' \
   assert_equal 'Approved: Explicitly authorized.' "$(<"$tmp/user")" ||
   fail 'permission review hid its decision reason'
 jq -e -s --arg tool_input "$(jq -c '.tool_input' <<<"$request")" \
-    --rawfile policy "$ROOT/share/hooks/review.md" '
+    --rawfile policy "$hook/review.md" '
   (.[1].content[0].text | fromjson) as $context |
   .[0].model.request.model == "test-model" and
   .[0].model.config == {http_timeout:120,http_stall:30,insecure_tls:false} and
@@ -116,7 +116,7 @@ session=$parent_session
 
 # An empty review configuration keeps the inherited model.
 session="$tmp/empty-review.jsonl"
-jq -c 'if .type == "session" then .profile.config.review={} else . end' \
+jq -c 'if .type == "session" then .profile.config["sandbox-approver"]={} else . end' \
   "$parent_session" >"$session"
 run_review valid
 jq -e '.action == "allow"' "$control" >/dev/null
@@ -137,7 +137,7 @@ cat >"$SHELLFISH_DIR/models/review/fast.v1.jsonc" <<'JSON'
 }
 JSON
 session="$tmp/configured-review.jsonl"
-jq -c 'if .type == "session" then .profile.config.review.model="review/fast.v1" else . end' \
+jq -c 'if .type == "session" then .profile.config["sandbox-approver"].model="review/fast.v1" else . end' \
   "$parent_session" >"$session"
 before=$(shasum <"$session")
 run_review valid
@@ -166,14 +166,14 @@ typeset review_config
 for review_config in 'null' 'false' '[]' '{"unknown":true}' \
     '{"model":null}' '{"model":4}' '{"model":""}' '{"model":"../fast"}'; do
   jq -c --argjson config "$review_config" '
-    if .type == "session" then .profile.config.review=$config else . end
+    if .type == "session" then .profile.config["sandbox-approver"]=$config else . end
   ' "$parent_session" >"$session"
   run_review valid
   jq -e '.action == "deny" and .reason == "Permission review has invalid configuration."' \
     "$control" >/dev/null || fail "review accepted invalid configuration: $review_config"
   [[ ! -e $captured ]] || fail 'invalid review configuration called the provider'
 done
-jq -c 'if .type == "session" then .profile.config.review.model="missing" else . end' \
+jq -c 'if .type == "session" then .profile.config["sandbox-approver"].model="missing" else . end' \
   "$parent_session" >"$session"
 run_review valid
 jq -e '.action == "deny" and .reason == "Permission review provider request failed."' \

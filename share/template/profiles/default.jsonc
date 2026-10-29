@@ -17,7 +17,7 @@
   "tools": ["read_file", "edit_file", "write_file", "skill", "search_web", "fetch_url", "shell"],
 
   // Hooks run in this order within the lifecycle their manifest names. Add
-  // "review" to have a model review sandbox bypass requests.
+  // "sandbox-approver" to have a model review sandbox bypass requests.
   "hooks": [
     "project/environment", "git/environment", "project/instructions",
     "help", "verbose", "new", "resume", "server", "copy", "sandbox", "user_shell",

@@ -9,6 +9,6 @@
   "hooks": [
     "project/environment", "git/environment", "project/instructions",
     "help", "verbose", "new", "resume", "server", "copy", "sandbox", "user_shell",
-    "fork", "compact", "git/change", "skills", "review"
+    "fork", "compact", "git/change", "skills", "sandbox-approver"
   ]
 }

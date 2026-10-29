@@ -191,7 +191,7 @@ for name in default basic readonly plus; do
       ([.hooks[], .tools[]] | length > 0 and all(.[]; startswith($share))) and
       (.system[0].text | length > 0) and
       ((.tools | any(endswith("/agent"))) == ($name == "plus")) and
-      ((.hooks | any(endswith("/review"))) == ($name == "plus")))
+      ((.hooks | any(endswith("/sandbox-approver"))) == ($name == "plus")))
   ' <<<"$REPLY" >/dev/null || fail "template profile did not resolve: $name"
   profile=$(jq -c '.profile' <<<"$REPLY")
 done
