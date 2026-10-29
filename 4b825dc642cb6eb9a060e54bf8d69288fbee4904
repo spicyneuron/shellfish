@@ -12,3 +12,4 @@ Image and file support
 
 Rename HARNESS.md to PROFILE.md
 In header, list sandbox and sandbox type
+In header, also list resolved shellfish directory
