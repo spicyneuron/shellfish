@@ -116,7 +116,6 @@ Credentials and settings live in exported variables or `.env` in the Shellfish d
 | `SHELLFISH_HTTP_TIMEOUT` | `3600` | Seconds per provider request |
 | `SHELLFISH_HTTP_STALL` | `300` | Seconds without response bytes |
 | `SHELLFISH_INSECURE_TLS` | `0` | `1` skips TLS verification |
-| `SHELLFISH_MAX_ACTIVE_AGENTS` | `4` | Active child agents per parent |
 
 Hooks and adapters are trusted: they inherit the process environment and receive every `.env` value. Tools receive only the names their manifest declares. Unsandboxed tools also inherit the process environment; sandboxed tools start clean. A key kept only in `.env` is therefore invisible to tools that do not declare it. See [`HARNESS.md`](HARNESS.md#shared-contract) for the process context.
 
@@ -232,7 +231,9 @@ For ordinary prompts, `$skill-name` loads each matching allowed skill into the m
 
 The `agent` tool lets you delegate a separate task to another agent, so work can proceed independently of your current conversation. You can wait for its result, let it run in the background, check its progress, or give it a follow-up task once it finishes. It is opt-in: the `plus` profile enables it, or add `"agent"` to a profile's `tools`.
 
-Background work returns control after launch; the default limit is four active child agents per parent, set by `SHELLFISH_MAX_ACTIVE_AGENTS`. Inspection distinguishes a child that is still running from one that has stopped without a final transcript outcome. A stopped child releases its active slot and can be continued; Shellfish recovers unfinished work on that next turn. A child killed outright during its stop hooks can appear settled, and those hooks do not run again.
+Background work returns control after launch. The default limit is four active child agents per parent. Set `"config": {"agent": {"max_active": 2}}` in the parent's profile to choose another positive integer. Supplied limits freeze with the session, and inspection remains available when all slots are occupied.
+
+Inspection distinguishes a child that is still running from one that has stopped without a final transcript outcome. A stopped child releases its active slot and can be continued. Shellfish recovers unfinished work on that next turn. A child killed outright during its stop hooks can appear settled, and those hooks do not run again.
 
 ### Review hook
 

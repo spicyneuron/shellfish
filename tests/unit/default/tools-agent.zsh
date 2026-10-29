@@ -163,29 +163,53 @@ if print -r -- '{"operation":"start","profile":"child","task":"recurse"}' |
     "$agent/run" 3>/dev/null >/dev/null 2>&1; then
   fail 'child recursion was accepted'
 fi
-if print -r -- '{"operation":"start","profile":"child","task":"bad limit"}' |
-    SHELLFISH_MAX_ACTIVE_AGENTS=0 SHELLFISH_SESSION="$session" \
-    SHELLFISH_EXECUTABLE="$ROOT/bin/shellfish" \
-    "$agent/run" 3>/dev/null >/dev/null 2>&1; then
-  fail 'invalid active-agent limit was accepted'
+typeset limited_session="$tmp/limited-parent.jsonl"
+for value in null false 1 '[]' '"text"' '{"unknown":1}' '{"max_active":null}' \
+    '{"max_active":0}' '{"max_active":-1}' '{"max_active":1.5}' \
+    '{"max_active":"2"}' '{"max_active":true}'; do
+  jq -c --argjson value "$value" '
+    if .type == "session" then .profile.config.agent=$value else . end
+  ' "$session" >"$limited_session"
+  if print -r -- '{"operation":"start","profile":"child","task":"bad limit"}' |
+      SHELLFISH_SESSION="$limited_session" SHELLFISH_EXECUTABLE="$ROOT/bin/shellfish" \
+      "$agent/run" 3>"$tmp/refused-state" >"$tmp/limit.out" 2>"$tmp/limit.err"; then
+    fail "invalid agent configuration was accepted: $value"
+  fi
+  grep -q 'config.agent' "$tmp/limit.err"
+  [[ ! -s "$tmp/refused-state" ]] || fail 'invalid configuration reserved a slot'
+done
+jq -c 'if .type == "session" then .profile.config.agent={} else . end' \
+  "$session" >"$limited_session"
+for slot in 1 2 3 4; do
+  jq -cn --arg name "agents/occupied-$slot" \
+    '{type:"state_update",name:$name,value:{active:true}}' >>"$limited_session"
+done
+if print -r -- '{"operation":"start","profile":"child","task":"default cap"}' |
+    SHELLFISH_SESSION="$limited_session" SHELLFISH_EXECUTABLE="$ROOT/bin/shellfish" \
+    "$agent/run" 3>"$tmp/refused-state" >"$tmp/limit.out"; then
+  fail 'default active-agent limit was ignored'
 fi
+grep -q 'active agent limit reached (4)' "$tmp/limit.out"
+[[ ! -s "$tmp/refused-state" ]] || fail 'default cap reserved a slot'
+jq -c 'if .type == "session" then .profile.config.agent.max_active=1 else . end' \
+  "$session" >"$limited_session"
 print -r -- '{"type":"state_update","name":"agents/occupied","value":{"session":".agent-occupied.jsonl","active":true}}' \
-  >>"$session"
+  >>"$limited_session"
 if print -r -- '{"operation":"start","profile":"child","task":"at cap"}' |
-    SHELLFISH_MAX_ACTIVE_AGENTS=1 SHELLFISH_SESSION="$session" \
+    SHELLFISH_SESSION="$limited_session" \
     SHELLFISH_EXECUTABLE="$ROOT/bin/shellfish" \
     "$agent/run" 3>/dev/null >/dev/null 2>&1; then
   fail 'full active-agent limit was ignored'
 fi
 if print -r -- "{\"operation\":\"continue\",\"agent_id\":\"$id\",\"task\":\"at cap\"}" |
-    SHELLFISH_MAX_ACTIVE_AGENTS=1 SHELLFISH_SESSION="$session" \
+    SHELLFISH_SESSION="$limited_session" \
     SHELLFISH_EXECUTABLE="$ROOT/bin/shellfish" \
     "$agent/run" 3>"$tmp/refused-state" >/dev/null 2>&1; then
   fail 'continuation ignored full active-agent limit'
 fi
 [[ ! -s "$tmp/refused-state" ]] || fail 'capped continuation reserved a slot'
 print -r -- "{\"operation\":\"inspect\",\"agent_id\":\"$id\"}" |
-  SHELLFISH_MAX_ACTIVE_AGENTS=1 SHELLFISH_SESSION="$session" \
+  SHELLFISH_SESSION="$limited_session" \
   SHELLFISH_EXECUTABLE="$ROOT/bin/shellfish" \
   "$agent/run" 3>/dev/null >/dev/null || fail 'inspect was blocked at the cap'
 if print -r -- '{"operation":"inspect","agent_id":"00000000000000000000000000000000"}' |
@@ -378,6 +402,7 @@ fi
 # slot remains occupied until inspection sees the turn stop.
 typeset background_parent="$tmp/background-parent.jsonl" background_id background_child
 export SF_AGENT_ID_FILE="$tmp/agent-id"
+SF_TEST_PROFILE=$(jq -c '.config.agent.max_active=1' <<<"$SF_TEST_PROFILE")
 sf_test_session "$background_parent"
 if [[ $OSTYPE == darwin* || $OSTYPE == linux* && $+commands[setsid] -ne 0 ]]; then
 sf_test_run 'background parent' "$background_parent" >"$stream" ||
@@ -396,14 +421,14 @@ jq -e -s --arg id "$background_id" '
     fail 'background start waited for child answer'
   print -r -- "$background_id" >"$SF_AGENT_ID_FILE"
   if print -r -- '{"operation":"start","profile":"child","task":"at cap"}' |
-      SHELLFISH_MAX_ACTIVE_AGENTS=1 SHELLFISH_SESSION="$background_parent" \
+      SHELLFISH_SESSION="$background_parent" \
       SHELLFISH_EXECUTABLE="$ROOT/bin/shellfish" \
       "$agent/run" 3>/dev/null >/dev/null 2>&1; then
     fail 'background reservation did not enforce cap'
   fi
   typeset pending
   pending=$(print -r -- "{\"operation\":\"inspect\",\"agent_id\":\"$background_id\"}" |
-    SHELLFISH_MAX_ACTIVE_AGENTS=1 SHELLFISH_SESSION="$background_parent" \
+    SHELLFISH_SESSION="$background_parent" \
     SHELLFISH_EXECUTABLE="$ROOT/bin/shellfish" "$agent/run" 3>/dev/null) ||
     fail 'inspect at background cap failed'
   jq -e '.active == true and .working == true and .settled == false and

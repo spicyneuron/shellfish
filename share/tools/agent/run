@@ -4,7 +4,7 @@ emulate -R zsh
 setopt extended_glob no_aliases no_bg_nice no_multios pipe_fail
 
 typeset input operation profile model task agent_id child parent_dir association value output fork transcript background working lock_fd
-typeset limit=${SHELLFISH_MAX_ACTIVE_AGENTS-4}
+typeset header limit
 integer count=0 result=0
 
 fail() { print -r -- "agent: $1"; exit ${2:-1}; }
@@ -35,7 +35,16 @@ operation=$(jq -er '
 
 [[ -n ${SHELLFISH_SESSION-} && -n ${SHELLFISH_EXECUTABLE-} ]] ||
   fail 'session environment is unavailable'
-[[ $limit == <1-> ]] || fail 'SHELLFISH_MAX_ACTIVE_AGENTS must be a positive integer' 2
+IFS= read -r header <"$SHELLFISH_SESSION" || fail 'cannot read parent header'
+limit=$(jq -er '
+  (.profile.config // {}) |
+  if has("agent") then .agent else {} end |
+  if type == "object" and (keys - ["max_active"]) == [] then .
+  else error("config.agent must be an object containing only max_active") end |
+  if has("max_active") then .max_active else 4 end |
+  if type == "number" and floor == . and . > 0 then .
+  else error("config.agent.max_active must be a positive integer") end
+' <<<"$header") || fail 'invalid agent configuration' 2
 parent_dir=${SHELLFISH_SESSION:A:h}
 
 # The marker is feature-owned state, appended only after session_start settles.
@@ -140,7 +149,7 @@ if [[ $operation == start ]]; then
     rm -f -- "$transcript"
   else
     # A fresh child keeps the parent's model.
-    model=$(head -n 1 -- "$SHELLFISH_SESSION" | jq -ce '.model | objects') ||
+    model=$(jq -ce '.model | objects' <<<"$header") ||
       fail 'cannot read parent model'
     "$SHELLFISH_EXECUTABLE" run --session-create --session-out "$child" \
       --profile "$profile" --model "$model" >/dev/null || fail 'cannot create agent session'

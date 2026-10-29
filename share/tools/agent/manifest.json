@@ -14,6 +14,5 @@
     }
   },
   "user_text": "Agent ${input.operation}\n${output.stderr}",
-  "environment": ["SHELLFISH_MAX_ACTIVE_AGENTS"],
   "sandbox": false
 }
