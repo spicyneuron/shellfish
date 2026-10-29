@@ -161,7 +161,8 @@ def test_file_changes_use_full_preview():
     try:
         mark = len(session.output)
         session.send(b"write\r")
-        session.wait_after(mark, "Allow write_file outside of sandbox?")
+        # The long preview overflows this short terminal, clipping the title.
+        session.wait_after(mark, "[s]top and discuss")
         session.send(b"a")
         _, records = session.wait_session_records(4, path=session.explicit_session)
         result = next(record for record in records if record.get("type") == "tool_result")
@@ -257,7 +258,8 @@ def test_permission_decision_restores_draft():
         results = [record for record in records if record.get("type") == "tool_result"]
         assert len(results) == 1
         assert results[0]["exit_code"] == 126
-        assert results[0]["model_text"] == "sandbox bypass denied"
+        assert results[0]["model_text"] == "sandbox bypass denied by user"
+        assert results[0]["sandbox_bypass"] == "denied"
         users = [record for record in records if record.get("type") == "user"]
         assert len(users) == 1
         assert users[0]["content"] == [{"type": "text", "text": prompt}]
@@ -293,6 +295,7 @@ def test_permission_stop_cancels_pending_tools():
                 ("call_2", 126),
                 ("call_3", 126),
             ]
+            assert not any("sandbox_bypass" in record for record in results)
             assert records[-1] == {"type": "error", "user_text": "Cancelled."}
             session.wait_after(mark, "Cancelled.")
         finally:

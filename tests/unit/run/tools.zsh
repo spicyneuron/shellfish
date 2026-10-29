@@ -86,7 +86,7 @@ sf_test_session "$opted_out_session"
 SF_TEST_BACKEND_TOOL_CALL=1 sf_test_run opted-out "$opted_out_session" >"$opted_out_stream" ||
   fail 'opted-out tool turn failed'
 jq -eRn '[inputs | fromjson] as $events |
-  all($events[]; has("sandbox_bypassed") | not) and
+  all($events[]; has("sandbox_bypass") | not) and
   ($events | any(.type == "tool_result" and .exit_code == 0)) and
   ($events | any(.type == "_tool_permission_request") | not)
 ' <"$opted_out_stream" >/dev/null || fail 'opted-out tool was treated as a bypass'
@@ -212,12 +212,11 @@ jq -eRn '
   ($events | map(select(.type == "hook_result"))[0] |
     .lifecycle == "permission_request" and
     .model_text == "review context" and .user_text == "review display") and
-  ([$events[] | select(.type | IN("hook_result","_draft")) | .type] ==
-    ["hook_result","_draft"]) and
-  ($events | map(select(.type == "_draft"))[0] |
-    .user_text == "Shell print -rn -- approved\n" and .sandbox_bypassed == true) and
+  ([$events[] | select(.type | IN("hook_result","_draft")) | [.type, .sandbox_bypass]] ==
+    [["_draft","requested"],["hook_result",null],["_draft","approved"]]) and
+  ($events | map(select(.type == "_draft"))[1].user_text == "Shell print -rn -- approved\n") and
   ($events | map(select(.type == "tool_result"))[0] |
-    .exit_code == 0 and .sandbox_bypassed == true and
+    .exit_code == 0 and .sandbox_bypass == "approved" and
     .user_text == "Shell print -rn -- approved\napproved\nexit 0")
 ' <"$stream" >/dev/null || fail 'permission allow produced the wrong records'
 
@@ -242,7 +241,7 @@ for gate in sandbox-disabled unsupported no-reason; do
     sf_test_run permission "$session" >"$stream" 2>"$tmp/gate.err" || gate_status=$?
   [[ ! -e $permission_input ]] || fail "permission hook ran for $gate"
   jq -eRn 'all(inputs | fromjson; .type != "_tool_permission_request" and
-    (has("sandbox_bypassed") | not) and
+    (has("sandbox_bypass") | not) and
     (.type != "hook_result" or .lifecycle != "permission_request"))' <"$stream" >/dev/null ||
     fail "permission was requested for $gate"
   case $gate in
@@ -277,11 +276,11 @@ SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_BYPASS=true \
   sf_test_run permission "$session" >"$stream" || fail 'permission hook deny failed'
 jq -eRn '
   [inputs | fromjson] as $events |
-  ($events | any(.type == "_draft" and .name == "shell") | not) and
+  ([$events[] | select(.type == "_draft") | .sandbox_bypass] == ["requested"]) and
   ($events | map(select(.type == "hook_result"))[0] ==
     {type:"hook_result",lifecycle:"permission_request",id:"1",action:"deny",reason:"review denied"}) and
   ($events | map(select(.type == "tool_result"))[0] |
-    .exit_code == 126 and .model_text == "review denied" and (has("sandbox_bypassed") | not) and
+    .exit_code == 126 and .model_text == "review denied" and .sandbox_bypass == "denied" and
     .user_text == "Shell true\nreview denied")
 ' <"$stream" >/dev/null || fail 'permission denial did not settle the call'
 
@@ -312,7 +311,7 @@ jq -eRn '
     "print -rn -- approved" and
   ($events | map(select(.type == "hook_result")) | any(.user_text == "reviewed")) and
   ($events | map(select(.type == "tool_result"))[0] |
-    .exit_code == 0 and .sandbox_bypassed == true)
+    .exit_code == 0 and .sandbox_bypass == "approved")
 ' <"$stream" >/dev/null || fail 'client permission was not requested explicitly'
 jq -e -s 'all(.[]; .type != "_tool_permission_request" and
   .type != "_tool_permission_response")' "$session" >/dev/null ||
@@ -324,7 +323,8 @@ sf_test_session "$session"
 SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_BYPASS=true \
   sf_test_run permission "$session" >"$stream" || fail 'closed client failed the turn'
 jq -e -s 'map(select(.type == "tool_result"))[0] |
-  .exit_code == 126 and .model_text == "no client to approve sandbox bypass"' \
+  .exit_code == 126 and .model_text == "no client to approve sandbox bypass" and
+  .sandbox_bypass == "denied"' \
   "$session" >/dev/null || fail 'closed client did not deny the request'
 
 session="$tmp/permission-timeout.jsonl"
@@ -339,7 +339,7 @@ SF_TEST_PROFILE=$(jq -c '.sandbox.user_approval_timeout=1' <<<"$SF_TEST_PROFILE"
   fail 'permission timeout failed the turn'
 jq -e -s 'map(select(.type == "tool_result"))[0] |
   .exit_code == 126 and .model_text == "sandbox bypass approval timed out" and
-  (has("sandbox_bypassed") | not)' \
+  .sandbox_bypass == "denied"' \
   "$session" >/dev/null || fail 'stale answer or timeout did not deny the request'
 
 # A failing pre hook settles every pending call before the error.

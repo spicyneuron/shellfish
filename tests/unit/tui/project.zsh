@@ -66,15 +66,17 @@ assert_equal 'execution_update | call_1 | tool | shell · make test | 2
 execution_end | call_1 | tool | shell · make test
 ok | full' "$REPLY"
 
-# No template can hide an approved sandbox bypass.
+# No template can hide a sandbox bypass request or its outcome.
 project live \
-  '{"type":"_draft","id":"call_2","name":"shell","sandbox_bypassed":true}' \
-  '{"type":"tool_result","id":"call_2","name":"shell","input":{},"exit_code":0,"sandbox_bypassed":true}'
-assert_equal 'execution_update | call_2 | tool | [unsandboxed] shell | default
-execution_end | call_2 | tool | [unsandboxed] shell | default' "$REPLY"
+  '{"type":"_draft","id":"call_2","name":"shell","sandbox_bypass":"requested"}' \
+  '{"type":"_draft","id":"call_2","name":"shell","sandbox_bypass":"approved"}' \
+  '{"type":"tool_result","id":"call_2","name":"shell","input":{},"exit_code":0,"sandbox_bypass":"approved"}'
+assert_equal 'execution_update | call_2 | tool | [sandbox bypass requested] shell | default
+execution_update | call_2 | tool | [sandbox bypass approved] shell | default
+execution_end | call_2 | tool | [sandbox bypass approved] shell | default' "$REPLY"
 project load \
-  '{"type":"tool_result","id":"call_2","name":"shell","input":{},"exit_code":0,"sandbox_bypassed":true}'
-assert_equal 'execution_end | call_2 | tool | [unsandboxed] shell | default' "$REPLY"
+  '{"type":"tool_result","id":"call_2","name":"shell","input":{},"exit_code":126,"sandbox_bypass":"denied"}'
+assert_equal 'execution_end | call_2 | tool | [sandbox bypass denied] shell | default' "$REPLY"
 
 # Normal tool execution carries no bypass badge.
 project live \

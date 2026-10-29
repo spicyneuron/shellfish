@@ -147,7 +147,10 @@ sf_run_permission_client() {
       then if .id == $id then .decision else "" end
       else error end
     ' <<<"$response" 2>/dev/null) || { REPLY='invalid permission response'; return 2; }
-    [[ -z $REPLY ]] || { reply=( $REPLY '' ); return 0; }
+    case $REPLY in
+      (approve) reply=( approve '' ); return 0 ;;
+      (deny) reply=( deny 'sandbox bypass denied by user' ); return 0 ;;
+    esac
   done
 }
 
@@ -270,6 +273,8 @@ sf_run_turn() {
                 sf_run_tool_refused "$SF_TOOL_PLAN[permission_reason]" 126
                 outcome=$REPLY
               elif [[ $decision == request ]]; then
+                sf_run_component_draft "$SF_TOOL_PLAN[component]" ||
+                  { failure='cannot emit tool draft'; break; }
                 sf_run_hooks "$session" permission_request "$SF_TOOL_PLAN[request]" \
                   "$turn_state" "$name" "$id" || { failure=$SF_RUN_HOOK_ERROR; break; }
                 hook_result=( "${reply[@]}" )
@@ -281,9 +286,16 @@ sf_run_turn() {
                   hook_result[reason]=$reply[2]
                 fi
                 if [[ $decision == deny ]]; then
-                  sf_run_tool_refused "${hook_result[reason]:-sandbox bypass denied}" 126
+                  sf_run_tool_refused \
+                    "${hook_result[reason]:-sandbox bypass denied by permission_request hook}" 126
                   outcome=$REPLY
+                  decision=denied
+                else
+                  decision=approved
                 fi
+                SF_TOOL_PLAN[component]=$(jq -c --arg bypass "$decision" \
+                  '.draft.sandbox_bypass = $bypass' <<<"$SF_TOOL_PLAN[component]") ||
+                  { failure='cannot settle sandbox bypass request'; break; }
               fi
               if [[ -z $outcome && $SF_TOOL_PLAN[sandbox] == true && -z ${commands[fence]-} ]]; then
                 sf_run_tool_refused 'sandboxing requires fence' 126

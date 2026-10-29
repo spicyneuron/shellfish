@@ -9,8 +9,12 @@ typeset -gA SF_COMPONENT=()
 # component runs. A draft with no text claims no row.
 sf_run_component_begin() {
   SF_COMPONENT=( session "$1" values "$2" error '' )
+  sf_run_component_draft "$2"
+}
+
+sf_run_component_draft() {
   local draft
-  draft=$(jq -c '.draft | select(.user_text != "")' <<<"$2") || return 1
+  draft=$(jq -c '.draft | select(.user_text != "")' <<<"$1") || return 1
   [[ -z $draft ]] || sf_run_emit "$draft"
 }
 

@@ -1000,17 +1000,18 @@ test("retries a refused connection", async () => {
   assert.equal(page.opens.length, 3);
 });
 
-test("marks approved sandbox bypasses that no template can hide", async () => {
+test("marks sandbox bypass requests that no template can hide", async () => {
   const page = await idle();
   await page.send({
-    type: "_draft", id: "call_1", name: "shell", sandbox_bypassed: true,
+    type: "_draft", id: "call_1", name: "shell", sandbox_bypass: "requested",
   });
-  assert.match(page.output.textContent, /\[unsandboxed\] shell/);
+  assert.match(page.output.textContent, /\[sandbox bypass requested\] shell/);
   await page.send({
     type: "tool_result", id: "call_1", name: "shell", input: {}, exit_code: 0,
-    sandbox_bypassed: true,
+    sandbox_bypass: "approved",
   });
-  assert.match(page.output.textContent, /\[unsandboxed\] shell/);
+  assert.match(page.output.textContent, /\[sandbox bypass approved\] shell/);
+  assert.doesNotMatch(page.output.textContent, /requested/);
 });
 
 test("does not mark normal tool execution as a sandbox bypass", async () => {
@@ -1018,13 +1019,13 @@ test("does not mark normal tool execution as a sandbox bypass", async () => {
   await page.send({
     type: "_draft", id: "call_1", name: "skill", user_text: "Skill code-principles",
   });
-  assert.doesNotMatch(page.output.textContent, /\[unsandboxed\]/);
+  assert.doesNotMatch(page.output.textContent, /\[sandbox bypass/);
   await page.send({
     type: "tool_result", id: "call_1", name: "skill", input: { name: "code-principles" },
     exit_code: 0, user_text: "Skill code-principles",
   });
   assert.match(page.output.textContent, /Skill code-principles/);
-  assert.doesNotMatch(page.output.textContent, /\[unsandboxed\]/);
+  assert.doesNotMatch(page.output.textContent, /\[sandbox bypass/);
 });
 
 test("answers and removes permission prompts", async () => {

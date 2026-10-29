@@ -41,9 +41,10 @@ def preview: .user_preview_lines // "default" | tostring;
 
 # Context and notice select presentation styling.
 def hook_class: if (.model_text // "") == "" then "notice" else "context" end;
-# The core marks an approved bypass so that no template can hide it.
+# The core marks sandbox bypass requests so that no template can hide them.
 def result_text:
-  if .sandbox_bypassed == true then "[unsandboxed] " + (.user_text // .name) else .user_text // "" end;
+  if has("sandbox_bypass") then "[sandbox bypass \(.sandbox_bypass)] " + (.user_text // .name)
+  else .user_text // "" end;
 
 def message_actions($role; $text):
   if ($text | test("[^\n]")) then

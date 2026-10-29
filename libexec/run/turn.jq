@@ -54,7 +54,7 @@ def tool_plan($profile; $tools; $call; $turn; $max_capture):
      draft:({type:"_draft",id:$id,name:$name,
        user_text:render_template($manifest.user_text; {input:$input})} +
        ($manifest | with_entries(select(.key == "user_preview_lines"))) +
-       if $permission.decision == "request" then {sandbox_bypassed:true} else {} end)},
+       if $permission.decision == "request" then {sandbox_bypass:"requested"} else {} end)},
    decision:$permission.decision,
    permission_reason:($permission.reason // ""),
    executable:($tool.command // ""),
@@ -68,13 +68,16 @@ def tool_plan($profile; $tools; $call; $turn; $max_capture):
 def tool_refusal($reason; $exit_code):
   {output:{stdout:$reason,stderr:$reason,exit_code:$exit_code},ran:false};
 
-# Model text is stdout. A call that never ran keeps no sandbox badge.
+# Model text is stdout. A bypass request that never settled keeps no badge,
+# unless the tool ran, which implies approval.
 def tool_result($component; $outcome):
   ($component.draft | del(.user_text)) + {type:"tool_result",input:$component.input,
     exit_code:$outcome.output.exit_code,
     user_text:render_template($component.template; $component + $outcome),
     model_text:$outcome.output.stdout} |
-  if $outcome.ran then . else del(.sandbox_bypassed) end |
+  if .sandbox_bypass != "requested" then .
+  elif $outcome.ran then .sandbox_bypass = "approved"
+  else del(.sandbox_bypass) end |
   with_entries(select(.value != "")) |
   if canonical_tool_result then . else error("invalid tool result") end;
 
