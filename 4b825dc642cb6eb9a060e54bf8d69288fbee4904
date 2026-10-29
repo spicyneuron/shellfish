@@ -1,6 +1,6 @@
 # Sandbox Auto Mode
 
-Feels like the [unsandboxed] badge is a bit awkward. Would this be better as [user-approved] [user-denied] or [auto-approved] [auto-denied]? Would be nice to still keep sandbox as a noun.
+How does tool call sandbox bypass validation work? Are reason and the flag both required? Will the model get feedback if it excludes one or the other? Are the descriptions clear both are required if one is provided?
 
 # Cleanup
 
