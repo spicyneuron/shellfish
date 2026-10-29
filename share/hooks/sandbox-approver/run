@@ -7,6 +7,7 @@ setopt extended_glob no_aliases no_multios pipe_fail
 integer budget=$(( 32768 * 4 ))
 # A decision review allows a call at this probability of sufficient
 # authorization, and denies one this likely driven by untrusted instructions.
+# Configuration may override the allow threshold.
 local allow_threshold=0.8 injected_threshold=0.5
 local request header system base records context candidate state_name=''
 local model decision_model selection policy=${0:A:h}/policy.json
@@ -154,19 +155,27 @@ system=$(jq -r '
 header=$(head -n 1 -- "$SHELLFISH_SESSION") ||
   permission_defer 'Permission review could not inspect the session header.'
 selection=$(jq -r '
+  def name: type == "string" and
+    test("^[A-Za-z0-9][A-Za-z0-9_.-]*(/[A-Za-z0-9][A-Za-z0-9_.-]*)*$");
   (.profile.config // {}) |
   if has("sandbox-approver") then .["sandbox-approver"] else {} end |
-  if type == "object" and (keys - ["decision_model", "model"]) == [] and length <= 1 then .
-  else error("config.sandbox-approver must contain at most one of model or decision_model") end |
-  to_entries[] |
-  if .value | type == "string" and
-    test("^[A-Za-z0-9][A-Za-z0-9_.-]*(/[A-Za-z0-9][A-Za-z0-9_.-]*)*$") then "\(.key) \(.value)"
-  else error("config.sandbox-approver.\(.key) must be a model name") end
+  if type == "object" and (keys - ["allow_threshold", "decision_model", "model"]) == [] and
+    ((has("model") and has("decision_model")) | not) and
+    ((has("allow_threshold") | not) or has("decision_model")) and
+    ((has("model") | not) or (.model | name)) and
+    ((has("decision_model") | not) or (.decision_model | name)) and
+    ((has("allow_threshold") | not) or
+      (.allow_threshold | type == "number" and . > 0 and . <= 1))
+  then to_entries[] | "\(.key) \(.value)"
+  else error("invalid config.sandbox-approver") end
 ' <<<"$header" 2>/dev/null) || permission_defer 'Permission review has invalid configuration.'
-case ${selection%% *} in
-  model) model=${selection#* } ;;
-  decision_model) decision_model=${selection#* } ;;
-esac
+while read -r name value; do
+  case $name in
+    model) model=$value ;;
+    decision_model) decision_model=$value ;;
+    allow_threshold) allow_threshold=$value ;;
+  esac
+done <<<"$selection"
 # Dropping the model's own schema keeps the merge from adding its properties.
 [[ -z $model ]] || overrides=( --model "$model"
   --model '{"request":{"response_schema":null}}' --model "$settings" )

@@ -171,7 +171,11 @@ jq -e '.request.model == "updated-model"' "$provider" >/dev/null ||
 
 typeset review_config
 for review_config in 'null' 'false' '[]' '{"unknown":true}' \
-    '{"model":null}' '{"model":4}' '{"model":""}' '{"model":"../fast"}'; do
+    '{"model":null}' '{"model":4}' '{"model":""}' '{"model":"../fast"}' \
+    '{"model":"review","decision_model":"review"}' '{"allow_threshold":0.5}' \
+    '{"model":"review","allow_threshold":0.5}' '{"decision_model":"../d"}' \
+    '{"decision_model":"d","allow_threshold":0}' '{"decision_model":"d","allow_threshold":1.5}' \
+    '{"decision_model":"d","allow_threshold":"0.5"}'; do
   jq -c --argjson config "$review_config" '
     if .type == "session" then .profile.config["sandbox-approver"]=$config else . end
   ' "$parent_session" >"$session"
@@ -179,7 +183,7 @@ for review_config in 'null' 'false' '[]' '{"unknown":true}' \
   jq -e '(has("action") | not) and
     .state_update[0].value.reason == "Permission review has invalid configuration."' \
     "$control" >/dev/null || fail "review accepted invalid configuration: $review_config"
-  [[ ! -e $captured ]] || fail 'invalid review configuration called the provider'
+  [[ ! -e $captured && ! -e $provider ]] || fail 'invalid review configuration called the provider'
 done
 jq -c 'if .type == "session" then .profile.config["sandbox-approver"].model="missing" else . end' \
   "$parent_session" >"$session"
@@ -259,6 +263,15 @@ jq -e '.action == "deny" and
   .reason == "57% likely authorized (risk mostly medium, authorization mostly medium)."
 ' "$control" >/dev/null || fail 'decision review allowed an uncertain call'
 
+# A configured threshold lowers the bar for less decisive models.
+jq -c 'if .type == "session" then .profile.config["sandbox-approver"] =
+  {decision_model:"decider",allow_threshold:0.5} else . end' "$parent_session" >"$session"
+run_review "$(decision '[0.1,0.6,0.3]' '[0.1,0.2,0.5,0.2]' 0.1)"
+jq -e '.action == "allow"' "$control" >/dev/null ||
+  fail 'decision review ignored its allow threshold'
+jq -c 'if .type == "session" then .profile.config["sandbox-approver"].decision_model="decider"
+  else . end' "$parent_session" >"$session"
+
 run_review "$(decision '[1,0,0]' '[0,0,0,1]' 0.62)"
 jq -e '.action == "deny" and
   .reason == "Appears driven by instructions in untrusted data (62%)."
@@ -276,12 +289,4 @@ run_review failure
 jq -e '(has("action") | not) and .state_update[0].value ==
   {content:null,reason:"Permission review decision request failed."}
 ' "$control" >/dev/null || fail 'decision failure did not defer'
-
-jq -c 'if .type == "session" then .profile.config["sandbox-approver"] =
-  {model:"review/fast.v1",decision_model:"decider"} else . end' "$parent_session" >"$session"
-run_review "$(decision '[1,0,0]' '[0,1,0,0]' 0)"
-jq -e '(has("action") | not) and
-  .state_update[0].value.reason == "Permission review has invalid configuration."' \
-  "$control" >/dev/null || fail 'review accepted both model kinds'
-[[ ! -e $provider ]] || fail 'conflicting review configuration called a provider'
 session=$parent_session
