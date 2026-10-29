@@ -1,16 +1,7 @@
 # Cleanup
 
-Feels like profile hook config is too much a grab bag right now.
-- Maybe some hooks should get named according to where they actually apply?
-- Maybe prompt "command" hooks get pulled out as a top level concept?
-- Maybe combine some of the always included, essential hooks?
-
-Rename HARNESS.md to PROFILE.md and split out MODELS.md
-
 In header, list sandbox and sandbox type
 In header, also list resolved shellfish directory
-
-
 
 # Major
 
