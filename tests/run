@@ -60,7 +60,7 @@ done
 for test_file in $tests; do
   [[ -d $test_file || ( -f $test_file && $test_file == *.(zsh|py|js) ) ]] || {
     print -u2 -r -- "Invalid test path: $test_file"
-    print -u2 -r -- "Usage: $0 [unit|pty|server|perf|loc|TEST_PATH ...] or $0 decisions [--chat] MODEL..."
+    print -u2 -r -- "Usage: $0 [unit|pty|server|perf|loc|TEST_PATH ...] or $0 decisions [--chat | --threshold N] MODEL..."
     exit 2
   }
 done

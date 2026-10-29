@@ -7,13 +7,22 @@ emulate -R zsh
 setopt no_aliases no_multios pipe_fail
 
 typeset -gr root=${0:A:h:h:h}
-typeset key=decision_model config tmp ref label case session input control row file
+typeset key=decision_model threshold=null config tmp ref label case session input control row file
 integer index=0 total=0 matched=0 failed=0
 typeset -a rows misses
 
-[[ ${1-} == --chat ]] && { key=model; shift; }
-(( $# )) || { print -u2 -r -- "Usage: $0 [--chat] MODEL..."; exit 2; }
+usage() { print -u2 -r -- "Usage: $ZSH_ARGZERO [--chat | --threshold N] MODEL..."; exit 2; }
+while [[ ${1-} == --* ]]; do
+  case $1 in
+    --chat) key=model; shift ;;
+    --threshold) (( $# >= 2 )) || usage; threshold=$2; shift 2 ;;
+    *) usage ;;
+  esac
+done
+(( $# )) || usage
 (( $+commands[jq] )) || { print -u2 -r -- "$0 requires jq"; exit 2; }
+[[ $threshold == null ]] || { [[ $key == decision_model ]] &&
+  jq -e 'type == "number"' <<<"$threshold" >/dev/null 2>&1; } || usage
 
 source "$root/lib/environment.zsh"
 sf_environment_dir || { print -u2 -r -- "$SF_ENVIRONMENT_ERROR"; exit 2; }
@@ -46,11 +55,13 @@ for ref; do
     session=$tmp/session.jsonl control=$tmp/control.jsonl
     input=$(jq -c '{command, sandbox_bypass_request:{reason:"The command needs access outside the sandbox."}}' <<<"$case")
     jq -cn --argjson case "$case" --argjson input "$input" --arg key "$key" \
+        --argjson threshold "$threshold" \
         --arg model "m$index" --arg cwd "$tmp" --arg backend "$root/tests/fixtures/backend" '
       {type:"session", format_version:1, cwd:$cwd, created:"2026-01-01T00:00:00Z",
         profile:{system:[{text:"You are a coding agent working in the user'"'"'s project."}],
           tools:[], hooks:[], sandbox:{enabled:true, read:[], write:[]},
-          config:{"sandbox-approver":{($key):$model}}},
+          config:{"sandbox-approver":({($key):$model} +
+            if $threshold == null then {} else {allow_threshold:$threshold} end)}},
         model:{adapter:$backend, endpoint:"https://example.invalid/test", request:{model:"unused"}}},
       {type:"user", content:[{type:"text", text:$case.user}]},
       (if $case.tool then
