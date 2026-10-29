@@ -2,7 +2,7 @@
 
 Sandbox approval could allow providing a reason. Simplest option might be to simply deny and then apply an interrupt, restoring the prompt to the user.
 
-Maybe consider how flag render badges like [unsandboxed]. For example, would this be better as [manually approved] [manually denied] or [auto-approved] [auto-denied]?
+Maybe consider how flag render badges like [unsandboxed]. For example, would this be better as [user-approved] [user-denied] or [auto-approved] [auto-denied]?
 
 # Cleanup
 
