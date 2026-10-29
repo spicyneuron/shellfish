@@ -127,6 +127,12 @@ if BACKEND_TEST_STATUS=400 zsh -f "$decide" <"$req" >"$res" 2>"$tmp/error"; then
   fail 'systemone HTTP error was accepted'
 fi
 grep -Fq -- 'HTTP 400: Unknown model' "$tmp/error" || fail 'systemone 400 detail was lost'
+print -r -- '{"error":{"message":"Model not found","type":"not_found_error"}}' \
+  >"$BACKEND_TEST_RESPONSE"
+if BACKEND_TEST_STATUS=404 zsh -f "$decide" <"$req" >"$res" 2>"$tmp/error"; then
+  fail 'systemone HTTP error was accepted'
+fi
+grep -Fq -- 'HTTP 404: Model not found' "$tmp/error" || fail 'oMLX error message was lost'
 cp "$BACKEND_TEST_RESPONSE.ok" "$BACKEND_TEST_RESPONSE"
 
 # oMLX takes media as top-level lists instead of placed assets.

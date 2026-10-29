@@ -53,7 +53,8 @@ sf_backend_curl_args
 ! jq -e 'has("assets")' "$SF_BACKEND_BODY_FILE" >/dev/null ||
   SF_BACKEND_CURL_ARGS+=(--header 'TypeSafe-Danger-Zone-Images: true')
 sf_backend_stream \
-  '.detail? | if type == "string" then . elif type == "array" then .[0].msg? else null end' '
+  '.error.message? // (.detail? |
+    if type == "string" then . elif type == "array" then .[0].msg? else null end)' '
   [inputs] | join("\n") | fromjson |
   if (.answers | type == "object") and (.model | type == "string") then .
   else error("unsupported response") end |
