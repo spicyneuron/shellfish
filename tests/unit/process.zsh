@@ -112,7 +112,7 @@ while (( waited++ < 100 )) && [[ ! -s $child_file ]]; do sleep 0.02; done
 [[ -s $child_file ]] || fail 'runner command did not start'
 kill -TERM "$runner"
 wait "$runner" || fail 'runner did not settle an interrupted command'
-[[ $(<"$interrupt_result") == '143 1 streamed' ]] ||
+[[ $(<"$interrupt_result") == '143 143 streamed' ]] ||
   fail 'runner did not report interruption'
 child=$(<"$child_file")
 ! kill -0 "$child" 2>/dev/null || fail 'runner left an interrupted descendant alive'

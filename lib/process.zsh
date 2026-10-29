@@ -135,7 +135,8 @@ sf_process_bytes() {
 
 # Stream fd 3 to HANDLER one nonempty line at a time while the command runs. A
 # final line without a newline arrives at exit. control_bytes is the longest
-# line; lines stop once one exceeds MAX_CAPTURE bytes.
+# line; lines stop once one exceeds MAX_CAPTURE bytes. interrupted is the
+# signal exit status, or 0.
 sf_process_run() {
   setopt local_options local_traps no_err_exit no_monitor
   local capture=${1:A} working=$2 input=$3
@@ -233,7 +234,7 @@ sf_process_run() {
       sf_process_fail 'cannot inspect process capture'
       return
     }
-    reply=( exit_code $process_status interrupted $(( signal_status != 0 ))
+    reply=( exit_code $process_status interrupted $signal_status
       stdout_bytes $stdout_bytes stderr_bytes $stderr_bytes control_bytes $control_bytes )
     REPLY=''
     complete=1

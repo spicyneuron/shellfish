@@ -6,6 +6,7 @@ Usage:
   shellfish [OPTIONS] [PROMPT]       Start an interactive chat
   shellfish run [OPTIONS] [PROMPT]   Run exactly one agent turn
   shellfish init                     Write starter config into the Shellfish directory
+  shellfish decide -m REF|JSON       Answer the decision request on stdin as JSON
 
 Run output:
   --json               Print the final result, usage, and session path as JSON
