@@ -20,7 +20,7 @@ cat >"$compact_shellfish" <<'ZSH'
 #!/usr/bin/env zsh
 typeset request reply
 case $1 in
-  backend-request)
+  request)
     request=$(cat)
     if [[ -n ${SF_TEST_BACKEND_REQUEST-} ]]; then
       print -r -- "$request" >>"$SF_TEST_BACKEND_REQUEST"

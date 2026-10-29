@@ -109,7 +109,7 @@ sf_backend_run() {
     SF_BACKEND[error]=$SF_ENVIRONMENT_ERROR
     return 1
   }
-  sf_scratch_directory backend-request || {
+  sf_scratch_directory backend || {
     SF_BACKEND[error]='cannot prepare provider capture'
     return 1
   }

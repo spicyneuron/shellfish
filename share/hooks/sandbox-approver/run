@@ -67,7 +67,7 @@ review_chat() {
     permission_defer 'Permission review could not construct its temporary session.'
   fi
 
-  response=$("$SHELLFISH_EXECUTABLE" backend-request "${overrides[@]}" \
+  response=$("$SHELLFISH_EXECUTABLE" request "${overrides[@]}" \
     <"$transcript" 2>/dev/null) ||
     permission_defer 'Permission review provider request failed.'
 

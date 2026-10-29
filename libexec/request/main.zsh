@@ -7,13 +7,13 @@ typeset -gr SF_ROOT=${0:A:h:h:h}
 
 source "$SF_ROOT/lib/cli.zsh"
 
-sf_backend_request_abort() {
+sf_request_abort() {
   sf_process_stop "$SF_BACKEND[pid]" "$SF_BACKEND[group_file]"
   [[ -z $SF_BACKEND[directory] ]] || rm -rf -- "$SF_BACKEND[directory]"
   exit $1
 }
 
-sf_backend_request_main() {
+sf_request_main() {
   local model=null
   local -a models=()
   while (( $# )); do
@@ -42,9 +42,9 @@ sf_backend_request_main() {
     model=$REPLY
   fi
   sf_backend_project '[]' "$model" || { sf_die 'cannot prepare provider request'; return 1; }
-  trap 'sf_backend_request_abort 130' INT
-  trap 'sf_backend_request_abort 129' HUP
-  trap 'sf_backend_request_abort 143' TERM
+  trap 'sf_request_abort 130' INT
+  trap 'sf_request_abort 129' HUP
+  trap 'sf_request_abort 143' TERM
   sf_backend_run
   local request_status=$?
   if (( request_status )); then
@@ -58,6 +58,6 @@ sf_backend_request_main() {
   print -r -- "$REPLY"
 }
 
-sf_backend_request_main "$@"
+sf_request_main "$@"
 typeset exit_status=$?
 exit $exit_status

@@ -11,7 +11,7 @@ source "$SF_ROOT/lib/environment.zsh"
 ! sf_environment_dir || export SHELLFISH_DIR=$REPLY
 
 case ${1-} in
-  run|backend-request|decide|init)
+  run|request|decide|init)
     exec -- "$SF_ROOT/libexec/$1/main.zsh" "${@:2}"
     ;;
   -c|--continue|-r|--resume)

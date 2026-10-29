@@ -124,28 +124,28 @@ for (( iteration = 1; iteration <= iterations; iteration++ )); do
   ) || { cat "$stderr" >&2; exit 1; }
   printf 'create\t%.9f\n' "$(( (EPOCHREALTIME - start) * 1000 ))" >>"$component_metrics"
 
-  typeset -gx SHELLFISH_PERF_RUN="backend-request-$iteration"
+  typeset -gx SHELLFISH_PERF_RUN="request-$iteration"
   start=$EPOCHREALTIME
   (
     cd "$tmp/project"
     SHELLFISH_DIR="$tmp/shellfish" PATH="$tmp/bin:$PATH" \
-      zsh -f "$root/bin/shellfish" backend-request \
+      zsh -f "$root/bin/shellfish" request \
       <"$tmp/session-$iteration.jsonl" >/dev/null 2>"$stderr"
   ) || { cat "$stderr" >&2; exit 1; }
-  printf 'backend_request\t%.9f\n' "$(( (EPOCHREALTIME - start) * 1000 ))" >>"$component_metrics"
+  printf 'request\t%.9f\n' "$(( (EPOCHREALTIME - start) * 1000 ))" >>"$component_metrics"
 done
 
-integer fresh_count=0 existing_count=0 create_count=0 backend_count=0
+integer fresh_count=0 existing_count=0 create_count=0 request_count=0
 fresh_count=$(grep -c '^fresh-' "$jq_log") || fresh_count=0
 existing_count=$(grep -c '^existing-' "$jq_log") || existing_count=0
 create_count=$(grep -c '^create-' "$jq_log") || create_count=0
-backend_count=$(grep -c '^backend-request-' "$jq_log") || backend_count=0
+request_count=$(grep -c '^request-' "$jq_log") || request_count=0
 float fresh_per_run=$fresh_count existing_per_run=$existing_count
-float create_per_run=$create_count backend_per_run=$backend_count
+float create_per_run=$create_count request_per_run=$request_count
 fresh_per_run=$(( fresh_per_run / iterations ))
 existing_per_run=$(( existing_per_run / iterations ))
 create_per_run=$(( create_per_run / iterations ))
-backend_per_run=$(( backend_per_run / iterations ))
+request_per_run=$(( request_per_run / iterations ))
 
 print_metrics() {
   local heading=$1 samples=$2
@@ -176,4 +176,4 @@ print_metrics 'Run performance (2 requests, 1 tool, 1 script/hook)' "$turn_metri
   existing_session 'Existing session' $existing_per_run
 print_metrics 'Public commands' "$component_metrics" \
   create 'Create session' $create_per_run \
-  backend_request 'Backend request' $backend_per_run
+  request 'Request' $request_per_run

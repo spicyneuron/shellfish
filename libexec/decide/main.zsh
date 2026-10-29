@@ -36,7 +36,7 @@ sf_decide_main() {
     if length == 1 then .[0] | decision_request else error("expected one JSON object") end
   ' 2>&1) || {
     sf_cli_diagnostic "$decision"
-    sf_die "invalid decision request: $REPLY"
+    sf_die "invalid decision: $REPLY"
     return 2
   }
   sf_profile_model_refs decide "${models[@]}" || {

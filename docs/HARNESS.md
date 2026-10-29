@@ -185,7 +185,7 @@ An `allow` approves only a supported sandbox bypass. A handoff asks a capable cl
 
 A backend adapter translates between Shellfish's provider-neutral protocol and one inference provider. It owns request projection, transport, stream parsing, response assembly, and provider-specific validation. The core validates, persists, and recovers complete assistant responses.
 
-Hooks can call `shellfish backend-request` with a composed transcript on stdin to obtain one assistant response without tools, hooks, or session mutation. It uses the transcript's model unless `-m REF|JSON` or `--model REF|JSON` selects another. Repeated model items merge left to right and replace the complete header model for that request only. Model references follow the same lookup rules as session creation.
+Hooks can call `shellfish request` with a composed transcript on stdin to obtain one assistant response without tools, hooks, or session mutation. It uses the transcript's model unless `-m REF|JSON` or `--model REF|JSON` selects another. Repeated model items merge left to right and replace the complete header model for that request only. Model references follow the same lookup rules as session creation.
 
 An adapter manifest declares its default endpoint:
 
@@ -240,7 +240,7 @@ The value must be positive. Failure or any other output means metadata is unavai
 
 ### Decisions
 
-A decision asks typed questions about one input and returns a calibrated answer to each, without a conversation or tool calls. Hooks and scripts call `shellfish decide -m REF|JSON` with a decision on stdin. The model is required, resolves like `backend-request`'s, and its adapter must provide `decide`.
+A decision asks typed questions about one input and returns a calibrated answer to each, without a conversation or tool calls. Hooks and scripts call `shellfish decide -m REF|JSON` with a decision on stdin. The model is required and resolves as it does for `request`. Its adapter must provide `decide`.
 
 ```json
 {

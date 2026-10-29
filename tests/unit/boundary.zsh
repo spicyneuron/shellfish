@@ -59,7 +59,7 @@ for token in $matches; do routes+=( ${(s:|:)${${token//[[:space:]]/}%\)}} ); don
 
 # Named routes are the whole public command surface; the rest are chat flags.
 typeset -a surface=( ${(o)${(M)routes:#[a-z]*}} )
-[[ ${(j: :)surface} == 'backend-request decide init run' ]] ||
+[[ ${(j: :)surface} == 'decide init request run' ]] ||
   fail "unexpected public command surface: $surface"
 
 # Programs the dispatcher reaches by path instead of by route name.

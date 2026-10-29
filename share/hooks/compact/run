@@ -51,7 +51,7 @@ request=$(jq -cn --arg text "$instruction" \
   fail_compaction 'Could not prepare summary request. Original session kept.'
 }
 summary=$({ cat -- "$SHELLFISH_SESSION"; print -r -- "$request"; } |
-  "$SHELLFISH_EXECUTABLE" backend-request |
+  "$SHELLFISH_EXECUTABLE" request |
   jq -er '[.content[] | select(.type == "text") | .text] | join("") |
     select(test("[^[:space:]]"))') || {
   fail_compaction 'Could not summarize session. Original session kept.'
