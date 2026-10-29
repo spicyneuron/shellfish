@@ -267,33 +267,36 @@ def test_permission_decision_restores_draft():
         session.close()
 
 
-def test_permission_ctrl_c_cancels_pending_tools():
-    session = Session(
-        explicit_session=True,
-        env={
-            "SF_TEST_BACKEND_TOOL_CALL": "1",
-            "SF_TEST_BACKEND_TOOL_BYPASS": "true",
-            "SF_TEST_BACKEND_TOOL_COUNT": "3",
-        },
-    )
-    try:
-        mark = len(session.output)
-        session.send(b"cancel tools\r")
-        session.wait_after(mark, "Allow shell outside of sandbox?")
-        session.send(b"\x03")
-        _, records = session.wait_session_records(7, path=session.explicit_session)
-        results = [
-            record for record in records if record.get("type") == "tool_result"
-        ]
-        assert [(record["id"], record["exit_code"]) for record in results] == [
-            ("call_1", 126),
-            ("call_2", 126),
-            ("call_3", 126),
-        ]
-        assert records[-1] == {"type": "error", "user_text": "Cancelled."}
-        session.wait_after(mark, "Cancelled.")
-    finally:
-        session.close()
+def test_permission_stop_cancels_pending_tools():
+    for key in (b"\x03", b"s"):
+        session = Session(
+            explicit_session=True,
+            env={
+                "SF_TEST_BACKEND_TOOL_CALL": "1",
+                "SF_TEST_BACKEND_TOOL_BYPASS": "true",
+                "SF_TEST_BACKEND_TOOL_COUNT": "3",
+            },
+        )
+        try:
+            mark = len(session.output)
+            session.send(b"cancel tools\r")
+            session.wait_after(mark, "Allow shell outside of sandbox?")
+            session.send(key)
+            _, records = session.wait_session_records(
+                7, path=session.explicit_session
+            )
+            results = [
+                record for record in records if record.get("type") == "tool_result"
+            ]
+            assert [(record["id"], record["exit_code"]) for record in results] == [
+                ("call_1", 126),
+                ("call_2", 126),
+                ("call_3", 126),
+            ]
+            assert records[-1] == {"type": "error", "user_text": "Cancelled."}
+            session.wait_after(mark, "Cancelled.")
+        finally:
+            session.close()
 
 
 def test_chat_end():
@@ -434,7 +437,7 @@ if __name__ == "__main__":
         test_activity_input_does_not_delay_interrupt,
         test_interrupt_drains_partial_recovery,
         test_permission_decision_restores_draft,
-        test_permission_ctrl_c_cancels_pending_tools,
+        test_permission_stop_cancels_pending_tools,
         test_chat_end,
         test_actionless_editor_return_is_not_a_clean_exit,
         test_zle_multiline_editing,

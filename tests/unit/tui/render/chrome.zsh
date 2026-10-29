@@ -36,7 +36,7 @@ SF_PRESENT_PERMISSION_TEXT=$'pwd\n\nReason: host access'
 COLUMNS=80
 LINES=10
 sf_tui_repaint
-typeset permission_prompt=$'─ Allow shell outside of sandbox? ─────────────────────────────────────────────\n\npwd\n\nReason: host access\n\n[a]pprove  [d]eny (default)\n'
+typeset permission_prompt=$'─ Allow shell outside of sandbox? ─────────────────────────────────────────────\n\npwd\n\nReason: host access\n\n1. [a]pprove\n2. [d]eny and continue\n3. [s]top and discuss\n'
 [[ $PREDISPLAY == *$permission_prompt ]] || fail 'permission prompt was not rendered'
 [[ $POSTDISPLAY == $'\n─'* ]] || fail 'permission prompt omitted its trailing blank line'
 SF_PRESENT_STATE=idle

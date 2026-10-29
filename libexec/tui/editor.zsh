@@ -257,17 +257,7 @@ TRAPWINCH() {
 }
 
 sf_tui_accept() {
-  local decision=deny intent submitted=$BUFFER
-  if [[ $SF_PRESENT_STATE == permission ]]; then
-    [[ $BUFFER != a ]] || decision=approve
-    if ! sf_tui_answer_permission "$decision"; then
-      zle reset-prompt
-      zle -R
-      return 0
-    fi
-    zle -R
-    return
-  fi
+  local intent submitted=$BUFFER
   sf_tui_submit "$submitted" || return 1
   intent=$REPLY
   case $intent in
@@ -422,8 +412,9 @@ sf_tui_insert() {
   local decision
   if [[ $SF_PRESENT_STATE == permission ]]; then
     case $KEYS in
-      a) decision=approve ;;
-      d) decision=deny ;;
+      (a|1) decision=approve ;;
+      (d|2) decision=deny ;;
+      (s|3) sf_tui_interrupt; return ;;
       *) zle -R; return 0 ;;
     esac
     sf_tui_answer_permission "$decision" || zle reset-prompt
@@ -507,10 +498,8 @@ sf_tui_bind() {
   bindkey -M sf-present -R $'!-~' sf_tui_insert
   bindkey -D sf-permission 2>/dev/null || true
   bindkey -N sf-permission
-  bindkey -M sf-permission '^M' sf_tui_accept
-  bindkey -M sf-permission '^J' sf_tui_accept
   bindkey -M sf-permission '^C' sf_tui_interrupt
   bindkey -M sf-permission $'\e' sf_tui_escape
-  bindkey -M sf-permission 'a' sf_tui_insert
-  bindkey -M sf-permission 'd' sf_tui_insert
+  local key
+  for key in a d s 1 2 3; do bindkey -M sf-permission $key sf_tui_insert; done
 }

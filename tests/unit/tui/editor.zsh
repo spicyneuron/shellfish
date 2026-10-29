@@ -17,12 +17,6 @@ zle() {
   ZLE_CALL="$*"
   ZLE_CALLS+=( "$*" )
 }
-sf_tui_answer_permission() {
-  assert_equal approve "$1"
-  BUFFER=draft
-  CURSOR=3
-}
-
 # Submit prompts.
 BUFFER=prompt
 SF_PRESENT_DRAFT=prompt
@@ -77,31 +71,26 @@ assert_equal quit "$SF_PRESENT_ACTION"
 assert_equal 130 "$SF_PRESENT_EXIT_STATUS"
 assert_equal accept-line "$ZLE_CALLS[-1]"
 
-# Approve permissions on accept.
-SF_PRESENT_STATE=permission
-SF_PRESENT_PERMISSION_TOOL=shell
-SF_PRESENT_PERMISSION_TEXT=$'pwd\n\nReason: host access'
-BUFFER=a
-CURSOR=1
-sf_tui_accept
-assert_equal draft "$BUFFER"
-assert_equal 3 "$CURSOR"
-assert_equal -R "$ZLE_CALL"
-
-# Map permission keys.
+# Map permission keys and their numbers.
 typeset -a permission_decisions=()
 sf_tui_answer_permission() { permission_decisions+=( "$1" ); SF_PRESENT_STATE=working; }
-SF_PRESENT_STATE=permission
-KEYS=a
-sf_tui_insert
-SF_PRESENT_STATE=permission
-KEYS=d
-sf_tui_insert
-SF_PRESENT_STATE=permission
-KEYS=x
-sf_tui_insert
-assert_equal 'approve,deny' "${(j:,:)permission_decisions}"
+for KEYS in a d x 1 2; do
+  SF_PRESENT_STATE=permission
+  sf_tui_insert
+done
+assert_equal 'approve,deny,approve,deny' "${(j:,:)permission_decisions}"
 assert_equal -R "$ZLE_CALL"
+
+# Stop cancels the turn and restores the draft.
+for KEYS in s 3; do
+  SF_PRESENT_STATE=permission
+  SF_PRESENT_PERMISSION_DRAFT=draft
+  SF_PRESENT_PERMISSION_CURSOR=3
+  BUFFER=''
+  sf_tui_insert
+  assert_equal cancelling "$SF_PRESENT_STATE"
+  assert_equal draft "$BUFFER"
+done
 
 # Accept client commands.
 SF_PRESENT_ACTION=''
@@ -171,8 +160,10 @@ sf_tui_bind
 [[ $(bindkey -M sf-present $'\e[B') == *sf_tui_down ]]
 [[ $(bindkey -M sf-present '^C') == *sf_tui_interrupt ]]
 [[ $(bindkey -M sf-present $'\e') == *sf_tui_escape ]]
-[[ $(bindkey -M sf-permission a) == *sf_tui_insert ]]
-[[ $(bindkey -M sf-permission d) == *sf_tui_insert ]]
+for key in a d s 1 2 3; do
+  [[ $(bindkey -M sf-permission $key) == *sf_tui_insert ]]
+done
+[[ $(bindkey -M sf-permission '^M') == *undefined-key ]]
 
 # Stop when pending chat rows cannot be staged on submission.
 typeset saved_stage=$functions[sf_tui_terminal_stage]
