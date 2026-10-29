@@ -1,5 +1,7 @@
 # Cleanup
 
+Thinking about renaming the backend-request command to just request. Easy?
+
 Feels like prompt submit should get split so that prompt command is a separate hook?
 
 Drop token estimates
