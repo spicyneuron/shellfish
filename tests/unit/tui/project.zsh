@@ -111,11 +111,11 @@ project load \
   '{"type":"hook_result","lifecycle":"session_start","id":"5","user_text":"startup notice"}'
 assert_equal 'execution_end | 5 | notice | startup notice | default | system' "$REPLY"
 
-# Permissions show the tool name and its raw input.
+# Permissions show the tool name, raw input, and configured timeout.
 project live \
-  '{"type":"_tool_permission_request","id":"permission_1","tool":{"name":"shell","input":{"command":"git status"}},"reason":"writes outside the sandbox"}'
+  '{"type":"_tool_permission_request","id":"permission_1","tool":{"name":"shell","input":{"command":"git status"}},"reason":"writes outside the sandbox","timeout":30}'
 assert_equal \
-  'permission | permission_1 | shell | {"command":"git status"} | writes outside the sandbox' \
+  'permission | permission_1 | shell | {"command":"git status"} | writes outside the sandbox | 30' \
   "$REPLY"
 
 # Errors split their heading from the detail below it.

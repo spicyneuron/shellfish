@@ -328,8 +328,8 @@ SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_BYPASS=true \
 jq -eRn '
   [inputs | fromjson] as $events |
   ($events | map(select(.type == "_tool_permission_request")) | length) == 1 and
-  ($events | map(select(.type == "_tool_permission_request"))[0].tool.input.command) ==
-    "print -rn -- approved" and
+  ($events | map(select(.type == "_tool_permission_request"))[0] |
+    .timeout == 120 and .tool.input.command == "print -rn -- approved") and
   ($events | map(select(.type == "hook_result")) | any(.user_text == "reviewed")) and
   ($events | map(select(.type == "tool_result"))[0] |
     .exit_code == 0 and .sandbox_bypass == "approved")
@@ -358,6 +358,8 @@ SF_TEST_PROFILE=$(jq -c '.sandbox.user_approval_timeout=1' <<<"$SF_TEST_PROFILE"
 } | SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_BYPASS=true \
   "$ROOT/bin/shellfish" run --jsonl --session "$session" >"$stream" ||
   fail 'permission timeout failed the turn'
+jq -e -s 'map(select(.type == "_tool_permission_request"))[0].timeout == 1' \
+  "$stream" >/dev/null || fail 'permission request omitted the configured timeout'
 jq -e -s 'map(select(.type == "tool_result"))[0] |
   .exit_code == 126 and .model_text == "sandbox bypass approval timed out" and
   .sandbox_bypass == "denied"' \

@@ -64,7 +64,8 @@ sf_tui_transcript 79 20
   fail 'the durable record repeated the streamed text'
 
 # Hold the turn for a permission decision.
-pump '{"type":"_tool_permission_request","id":"permission_1","tool":{"name":"shell","input":{"command":"pwd"}},"reason":"host access"}'
+pump '{"type":"_tool_permission_request","id":"permission_1","tool":{"name":"shell","input":{"command":"pwd"}},"reason":"host access","timeout":30}'
+assert_equal $(( SECONDS + 30 )) "$SF_PRESENT_PERMISSION_DEADLINE"
 assert_equal permission "$SF_PRESENT_STATE"
 assert_equal permission_1 "$SF_PRESENT_PERMISSION_ID"
 assert_equal shell "$SF_PRESENT_PERMISSION_TOOL"
@@ -74,6 +75,7 @@ assert_equal $'{"command":"pwd"}\n\nReason: host access' "$SF_PRESENT_PERMISSION
 pump '{"type":"tool_result","id":"call_1","name":"shell","input":{"command":"pwd"},"exit_code":126,"model_text":"sandbox bypass approval timed out","user_text":"Shell pwd\nsandbox bypass approval timed out"}'
 assert_equal working "$SF_PRESENT_STATE"
 assert_equal '' "$SF_PRESENT_PERMISSION_ID"
+assert_equal 0 "$SF_PRESENT_PERMISSION_DEADLINE"
 
 # Capture a handoff request.
 SF_PRESENT_STATE=working

@@ -33,12 +33,21 @@ banner=$(sf_tui_chat_end /tmp/session.jsonl)
 SF_PRESENT_STATE=permission
 SF_PRESENT_PERMISSION_TOOL=shell
 SF_PRESENT_PERMISSION_TEXT=$'pwd\n\nReason: host access'
+typeset -gi SF_PRESENT_PERMISSION_DEADLINE=$(( SECONDS + 120 ))
 COLUMNS=80
 LINES=10
 sf_tui_repaint
-typeset permission_prompt=$'─ Allow shell outside of sandbox? ─────────────────────────────────────────────\n\npwd\n\nReason: host access\n\n1. [a]pprove\n2. [d]eny and continue\n3. [s]top and discuss\n'
+typeset permission_prompt=$'─ Allow shell outside of sandbox? ─────────────────────────────────────────────\n\npwd\n\nReason: host access\n\n1. [a]pprove\n2. [d]eny and continue (120s)\n3. [s]top and discuss\n'
 [[ $PREDISPLAY == *$permission_prompt ]] || fail 'permission prompt was not rendered'
 [[ $POSTDISPLAY == $'\n─'* ]] || fail 'permission prompt omitted its trailing blank line'
+SF_PRESENT_PERMISSION_DEADLINE=$(( SECONDS + 119 ))
+sf_tui_repaint
+[[ $PREDISPLAY == *'2. [d]eny and continue (119s)'* ]] ||
+  fail 'permission countdown did not decrease'
+SF_PRESENT_PERMISSION_DEADLINE=$(( SECONDS - 1 ))
+sf_tui_repaint
+[[ $PREDISPLAY == *'2. [d]eny and continue (0s)'* ]] ||
+  fail 'expired permission countdown was not clamped to zero'
 SF_PRESENT_STATE=idle
 
 SF_PRESENT_QUEUE=( $'first queued\ncontinued' )

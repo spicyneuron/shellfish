@@ -240,7 +240,8 @@ sf_tui_repaint() {
   local prompt_divider_top prompt_divider_bottom label
   local queue_item queue_line queue_text='' line
   local prompt_style=prompt
-  local choices=$'1. [a]pprove\n2. [d]eny and continue\n3. [s]top and discuss'
+  local choices
+  integer remaining
   if [[ $SF_PRESENT_STATE == idle && ${SF_PRESENT_ACTION-} != submit ]]; then
     prompt_style=prompt_waiting
   fi
@@ -291,6 +292,9 @@ sf_tui_repaint() {
     sf_tui_chrome $start ${#prompt_divider_top} $prompt_style
     PREDISPLAY+=$'\n\n'
     PREDISPLAY+="$SF_PRESENT_PERMISSION_TEXT"$'\n\n'
+    remaining=$(( SF_PRESENT_PERMISSION_DEADLINE - SECONDS ))
+    (( remaining >= 0 )) || remaining=0
+    choices=$'1. [a]pprove\n2. [d]eny and continue ('"${remaining}s)"$'\n3. [s]top and discuss'
     start=${#PREDISPLAY}
     PREDISPLAY+="$choices"$'\n'
     sf_tui_chrome $start ${#choices} permission

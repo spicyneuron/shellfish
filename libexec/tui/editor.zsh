@@ -60,7 +60,7 @@ sf_tui_heartbeat_worker() {
 
 sf_tui_heartbeat_arm() {
   local mode=${1-} fd
-  [[ $SF_PRESENT_STATE == (working|cancelling) || $mode == drain ]] || return 0
+  [[ $SF_PRESENT_STATE == (working|permission|cancelling) || $mode == drain ]] || return 0
   [[ -z $SF_PRESENT_HEARTBEAT_FD ]] || return 0
   zpty -b "$SF_PRESENT_HEARTBEAT_WORKER" sf_tui_heartbeat_worker \
     "$SF_PRESENT_HEARTBEAT_TIMEOUT" || return 1
@@ -100,7 +100,7 @@ sf_tui_heartbeat_ready() {
   (( ! tick_status )) && return 0
   (( tick_status != 2 )) || sf_tui_handoff_exec
   # Only an active turn can keep draining after a tick failure.
-  [[ $SF_PRESENT_STATE == (working|cancelling) ]] || sf_tui_heartbeat_stop
+  [[ $SF_PRESENT_STATE == (working|permission|cancelling) ]] || sf_tui_heartbeat_stop
   return $tick_status
 }
 
@@ -160,7 +160,7 @@ sf_tui_heartbeat_tick() {
     else
       sf_tui_heartbeat_arm
     fi
-    [[ $SF_PRESENT_STATE == (working|cancelling) ]] || sf_tui_heartbeat_stop
+    [[ $SF_PRESENT_STATE == (working|permission|cancelling) ]] || sf_tui_heartbeat_stop
     return
   done
 }

@@ -332,6 +332,29 @@ def test_queued_submits_keep_committed_history():
         session.close()
 
 
+def test_permission_countdown():
+    session = Session(env={
+        "SF_TEST_BACKEND_TOOL_CALL": "1",
+        "SF_TEST_BACKEND_TOOL_BYPASS": "true",
+    })
+    terminal = Terminal(session)
+    try:
+        session.send(b"request permission\r")
+        for seconds in (120, 119, 118):
+            terminal.wait_for(
+                f"permission countdown at {seconds}s",
+                lambda: f"2. [d]eny and continue ({seconds}s)" in terminal.frame(),
+                timeout=3,
+            )
+        session.send(b"d")
+        terminal.wait_for(
+            "permission prompt to close",
+            lambda: "Allow shell outside of sandbox?" not in terminal.frame(),
+        )
+    finally:
+        session.close()
+
+
 if __name__ == "__main__":
     run("scrollback PTY scenarios", [
         test_help_notice_keeps_one_separator,
@@ -339,4 +362,5 @@ if __name__ == "__main__":
         test_tall_resume_drains_bounded_backlog,
         test_tall_turn_loses_neither_text_nor_draft,
         test_queued_submits_keep_committed_history,
+        test_permission_countdown,
     ])

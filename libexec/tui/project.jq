@@ -109,7 +109,7 @@ def event_actions($window):
     (.tool.input | tojson) as $preview |
     [["permission", .id, .tool.name,
       (if ($preview | length) > 300 then $preview[0:300] + "…" else $preview end),
-      (.reason // "")]]
+      (.reason // ""), (.timeout | tostring)]]
   elif .type == "_handoff" then [["handoff"] + .argv]
   elif .type == "_session_update" then model_actions
   elif .type == "_session_load" then [["session", .path]]

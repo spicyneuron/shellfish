@@ -133,8 +133,9 @@ sf_run_permission_client() {
   (( SF_RUN[permission_count] += 1 ))
   id="permission_$SF_RUN[permission_count]"
   sf_run_emit "$(jq -cn --arg id "$id" --arg name "$name" --argjson input "$input" \
-    --arg reason "$reason" '
-      {type:"_tool_permission_request",id:$id,tool:{name:$name,input:$input},reason:$reason}')" || return 2
+    --arg reason "$reason" --argjson timeout "$SF_RUN[user_approval_timeout]" '
+      {type:"_tool_permission_request",id:$id,tool:{name:$name,input:$input},
+       reason:$reason,timeout:$timeout}')" || return 2
   reply=( deny 'sandbox bypass approval timed out' )
   while (( (wait = deadline - SECONDS) > 0 )); do
     IFS= read -r -t $wait response || {

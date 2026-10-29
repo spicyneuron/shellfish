@@ -246,6 +246,7 @@ def test_permission_decision_restores_draft():
         session.wait_after(draft_mark, draft, view=session.typed)
         release.touch()
         session.wait_after(mark, "Allow shell outside of sandbox?")
+        session.wait_after(mark, "2. [d]eny and continue (120s)")
         session.send(b"d")
 
         # The silent prompt hook records nothing before the turn.
