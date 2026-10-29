@@ -75,7 +75,7 @@ sf_skills_discover() {
   setopt extended_glob
   local session=$1 config_dir=${2-} project_dir=${3:-$PWD}
   local include_disabled=${4:-false} header selection
-  local home=${HOME-} root canonical directory file name description disabled
+  local root canonical directory file name description disabled
   local -a roots discovered allowed
   local -A seen_roots seen_names
   IFS= read -r header <"$session" || {
@@ -91,13 +91,12 @@ sf_skills_discover() {
     else "*" end
   ' <<<"$header") || return 1
   allowed=( ${(f)selection} )
-  if [[ -d $project_dir/.agents/skills ]]; then
-    roots=( "$project_dir/.agents/skills" )
-  else
-    roots=( "$project_dir/.claude/skills" )
+  roots=( "$project_dir/.agents/skills" )
+  if [[ -n $config_dir ]]; then
+    roots+=( "$config_dir/skills" )
+    # A .shellfish directory shares skills with its sibling .agents directory.
+    [[ ${config_dir:t} != .shellfish ]] || roots+=( "${config_dir:h}/.agents/skills" )
   fi
-  [[ -z $config_dir ]] || roots+=( "$config_dir/skills" )
-  [[ -z $home ]] || roots+=( "$home/.agents/skills" )
   for root in "${roots[@]}"; do
     canonical=${root:A}
     [[ -z ${seen_roots[$canonical]-} ]] || continue

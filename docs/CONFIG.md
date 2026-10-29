@@ -193,7 +193,7 @@ Grants are paths and need not exist, so one file can serve several machines. A p
 
 `shellfish init` writes four profiles and the default model, `models/default.jsonc`: the OpenRouter adapter with up to 16,384 output tokens and medium reasoning effort, whose `MODEL` placeholder you replace. Each profile selects `sandbox/default.jsonc`, which grants nothing until you edit it.
 
-It also copies the starter `skill-creator` into `skills/`, where you can edit it. Skills come from the current project's `.agents/skills/` (falling back to `.claude/skills/`), the selected Shellfish directory's `skills/`, and `~/.agents/skills/`, in that precedence order. There is no bundled skill fallback.
+It also copies the starter `skill-creator` into `skills/`, where you can edit it. Skills come from `.agents/skills/` in the working directory, the selected Shellfish directory's `skills/`, and, when that directory is named `.shellfish`, the `.agents/skills/` beside it, in that precedence order. With `~/.shellfish` the last source is `~/.agents/skills/`. A project's own `.shellfish` replaces it with the project's `.agents/skills/`. There is no bundled skill fallback.
 
 Set `"config": {"skills": ["skill-creator", "code-review"]}` in a profile to allow only those skill names. Omit `config.skills` to allow every discovered skill, or use `[]` to allow none. Names are literal, and names not found in the discovery sources are ignored. The filter applies to advertising, the `skill` tool, and explicit `$skill-name` requests. It controls harness availability, not filesystem permissions.
 

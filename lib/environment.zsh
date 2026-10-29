@@ -11,14 +11,15 @@ sf_environment_fail() {
 
 # The Shellfish directory holds configuration, credentials, and sessions. It is
 # SHELLFISH_DIR, else the nearest .shellfish above the working directory, else
-# ~/.shellfish.
+# ~/.shellfish. Symlinks stay unresolved so siblings such as .agents sit beside
+# the path the user named.
 sf_environment_dir() {
-  [[ -z ${SHELLFISH_DIR-} ]] || { REPLY=${SHELLFISH_DIR:A}; return; }
-  local dir=${PWD:A}
+  [[ -z ${SHELLFISH_DIR-} ]] || { REPLY=${SHELLFISH_DIR:a}; return; }
+  local dir=${PWD:a}
   while [[ ! -d $dir/.shellfish && $dir != / ]]; do dir=${dir:h}; done
-  [[ ! -d $dir/.shellfish ]] || { REPLY=$dir/.shellfish; REPLY=${REPLY:A}; return; }
+  [[ ! -d $dir/.shellfish ]] || { REPLY=$dir/.shellfish; return; }
   [[ -n ${HOME-} ]] || sf_environment_fail 'HOME or SHELLFISH_DIR is required' || return
-  REPLY=${HOME:A}/.shellfish
+  REPLY=${HOME:a}/.shellfish
 }
 
 # Exported values win over .env. No arguments load all entries. An explicit

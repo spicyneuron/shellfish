@@ -476,11 +476,11 @@ export OPENAI_API_KEY = "from-file"
 ANTHROPIC_API_KEY=other-file
 ENV
 sf_environment_load OPENAI_API_KEY
-[[ ${(j: :)SF_ENVIRONMENT_VALUES} == 'OPENAI_API_KEY=from-file' && $REPLY == ${SF_TEST_CONFIG:A} ]]
+[[ ${(j: :)SF_ENVIRONMENT_VALUES} == 'OPENAI_API_KEY=from-file' && $REPLY == ${SF_TEST_CONFIG:a} ]]
 sf_environment_load
 [[ ${(oj: :)SF_ENVIRONMENT_VALUES} == 'ANTHROPIC_API_KEY=other-file OPENAI_API_KEY=from-file' ]]
 sf_environment_load ''
-[[ ${#SF_ENVIRONMENT_VALUES} == 0 && $REPLY == ${SF_TEST_CONFIG:A} ]] ||
+[[ ${#SF_ENVIRONMENT_VALUES} == 0 && $REPLY == ${SF_TEST_CONFIG:a} ]] ||
   fail 'an empty environment selection loaded credentials'
 sf_environment_settings 'OPENAI_API_KEY MISSING'
 [[ ${(kj: :)SF_ENVIRONMENT_SETTINGS} == OPENAI_API_KEY &&

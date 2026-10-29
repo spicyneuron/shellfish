@@ -10,11 +10,11 @@ sf_test_session "$session"
 
 # Project-scoped sessions and scratch are private within the Shellfish directory.
 sf_session_select_path
-[[ $REPLY == "${tmp:A}/shellfish/sessions/"*.jsonl ]]
+[[ $REPLY == "${tmp:a}/shellfish/sessions/"*.jsonl ]]
 [[ $(stat -f %Lp "$REPLY:h") == 700 ]]
 sf_test_source lib/scratch.zsh
 sf_scratch_root
-[[ $REPLY == "${tmp:A}/shellfish/scratch" && $(stat -f %Lp "$REPLY") == 700 ]]
+[[ $REPLY == "${tmp:a}/shellfish/scratch" && $(stat -f %Lp "$REPLY") == 700 ]]
 
 # Without SHELLFISH_DIR, the nearest .shellfish above the working directory
 # wins, then ~/.shellfish.
@@ -24,12 +24,18 @@ sf_scratch_root
   mkdir -p "$tmp/flavor/.shellfish" "$tmp/flavor/project/nested" "$tmp/elsewhere"
   builtin cd -- "$tmp/flavor/project/nested"
   sf_environment_dir
-  [[ $REPLY == "${tmp:A}/flavor/.shellfish" ]]
+  [[ $REPLY == "${tmp:a}/flavor/.shellfish" ]]
   builtin cd -- "$tmp/elsewhere"
   sf_environment_dir
-  [[ $REPLY == "${tmp:A}/home/.shellfish" ]]
+  [[ $REPLY == "${tmp:a}/home/.shellfish" ]]
+  # A symlinked .shellfish keeps its link path, so siblings stay beside it.
+  mkdir -p "$tmp/linked/project"
+  ln -s "$tmp/flavor/.shellfish" "$tmp/linked/.shellfish"
+  builtin cd -- "$tmp/linked/project"
+  sf_environment_dir
+  [[ $REPLY == "${tmp:a}/linked/.shellfish" ]]
   SHELLFISH_DIR="$tmp/explicit" sf_environment_dir
-  [[ $REPLY == "${tmp:A}/explicit" ]]
+  [[ $REPLY == "${tmp:a}/explicit" ]]
 )
 
 # Appends write one complete record and report the failing path plainly.

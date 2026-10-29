@@ -7,8 +7,8 @@ source "$ROOT/share/lib/skills.zsh"
 
 tool="$ROOT/share/tools/skill/run"
 project="$tmp/project"
-config="$tmp/shellfish"
 home="$tmp/home"
+config="$home/.shellfish"
 mkdir -p "$project/.agents/skills" "$config/skills" "$home/.agents/skills"
 
 make_skill() {
@@ -61,26 +61,23 @@ done
 HOME="$home" sf_skills_discover "$session" "$config" "$project" true
 [[ ${reply[(Ie)hidden]} -gt 0 ]]
 
-# Fall back to Claude skills when the project has no Agent Skills directory.
-claude_project="$tmp/claude-project"
-make_skill "$claude_project/.claude/skills" shared 'claude project description'
-HOME="$home" sf_skills_discover "$session" "$config" "$claude_project"
-typeset -A claude_descriptions claude_paths
-for (( index = 1; index <= ${#reply}; index += 3 )); do
-  claude_descriptions[$reply[index]]=$reply[index+1]
-  claude_paths[$reply[index]]=$reply[index+2]
-done
-[[ $claude_descriptions[shared] == 'claude project description' ]]
-[[ $claude_paths[shared] == "${claude_project:A}/.claude/skills/shared/SKILL.md" ]]
+# Another .shellfish directory uses its own sibling .agents, not the home one.
+flavor="$tmp/flavor"
+make_skill "$flavor/.agents/skills" flavored 'flavor skill'
+mkdir -p "$flavor/.shellfish"
+HOME="$home" sf_skills_discover "$session" "$flavor/.shellfish" "$tmp/elsewhere"
+(( ${#reply} == 3 ))
+[[ $reply[3] == "${flavor:A}/.agents/skills/flavored/SKILL.md" ]]
+# A Shellfish directory with another name has no sibling source.
+mkdir -p "$flavor/custom"
+HOME="$home" sf_skills_discover "$session" "$flavor/custom" "$tmp/elsewhere"
+(( ${#reply} == 0 ))
 
 # Load only valid advertised skills.
 loaded=$(cd "$project" && print -rn -- '{"name":"shared"}' | HOME="$home" \
   SHELLFISH_DIR="$config" zsh -f "$tool")
 [[ $loaded == "<skill name=\"shared\" directory=\"${project:A}/.agents/skills/shared\">"*$'# shared instructions'*'</skill>' ]]
 [[ $loaded != *$'\nname: shared\n'* ]]
-loaded=$(cd "$claude_project" && print -rn -- '{"name":"shared"}' | HOME="$home" \
-  SHELLFISH_DIR="$config" zsh -f "$tool")
-[[ $loaded == "<skill name=\"shared\" directory=\"${claude_project:A}/.claude/skills/shared\">"*$'# shared instructions'*'</skill>' ]]
 HOME="$home" SHELLFISH_DIR="$config" "$ROOT/bin/shellfish" init >/dev/null
 loaded=$(cd "$project" && print -rn -- '{"name":"skill-creator"}' | HOME="$home" \
   SHELLFISH_DIR="$config" zsh -f "$tool")
