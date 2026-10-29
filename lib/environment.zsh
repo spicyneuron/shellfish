@@ -21,12 +21,12 @@ sf_environment_dir() {
   REPLY=${HOME:A}/.shellfish
 }
 
-# Exported values win over .env in the Shellfish directory. Without selected
-# names every entry loads; otherwise only the named entries.
+# Exported values win over .env. No arguments load all entries. An explicit
+# selection loads only named entries, even when empty.
 sf_environment_load() {
   local env_file line key value name
   local -a selected_names=( ${=1-} )
-  integer all=$(( ${#selected_names} == 0 ))
+  integer all=$(( $# == 0 ))
   local -A values
 
   SF_ENVIRONMENT_ERROR=''

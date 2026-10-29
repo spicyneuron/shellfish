@@ -55,6 +55,17 @@ jq -eRn --arg share "$SF_SHARE" '[inputs | fromjson | select(.type == "tool_resu
   fail 'unsandboxed tool did not receive .env with declared-name filtering'
 assert_equal "undeclared-file $SF_SHARE" "$(<$env_seen)" \
   'hook did not receive .env values'
+for manifest in '.environment=[]' 'del(.environment)'; do
+  sf_test_shell_tool "$manifest"
+  sf_test_session "$env_session"
+  SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_COMMAND=$env_command \
+    sf_test_run env "$env_session" >"$env_stream" || fail 'empty tool environment turn failed'
+  jq -eRn --arg share "$SF_SHARE" '[inputs | fromjson | select(.type == "tool_result")][0].model_text ==
+    ("unset unset exported " + $share + "\nexit 0")' <"$env_stream" >/dev/null ||
+    fail 'an unsandboxed tool without declarations received .env credentials'
+  assert_equal "undeclared-file $SF_SHARE" "$(<$env_seen)" \
+    'an empty tool environment changed hook inheritance'
+done
 SF_TEST_PROFILE=$base_profile
 
 # Tool manifests are read on each run, so an edit after creation takes effect.
@@ -454,6 +465,15 @@ SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_COMMAND=$env_command \
 jq -eRn --arg share "$SF_SHARE" '[inputs | fromjson | select(.type == "tool_result")][0].model_text ==
   ("declared-file unset unset " + $share + "\nexit 0")' <"$stream" >/dev/null ||
   fail 'sandboxed tool saw values beyond its declared names'
+for manifest in '.environment=[]' 'del(.environment)'; do
+  sf_test_shell_tool "$manifest"
+  sf_test_session "$session"
+  SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_COMMAND=$env_command \
+    sf_test_run sandbox "$session" >"$stream" || fail 'empty sandbox environment turn failed'
+  jq -eRn --arg share "$SF_SHARE" '[inputs | fromjson | select(.type == "tool_result")][0].model_text ==
+    ("unset unset unset " + $share + "\nexit 0")' <"$stream" >/dev/null ||
+    fail 'a sandboxed tool without declarations received .env credentials'
+done
 
 # Tool-only protocol failures and interrupted state remain composition checks.
 typeset protocol="$tmp/protocol"
