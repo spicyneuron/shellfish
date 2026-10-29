@@ -122,13 +122,15 @@ def config_sandbox($path):
       config_assert(.[$field][$at] | path_reference; $path + [$field, $at];
         "must be a /, ~/, ./, ../, or @ path")));
 
-# A profile only selects. Each list holds references, and sandbox and system
-# lists may also hold inline values. A lone sandbox item needs no list. Absent
-# lists are empty. Options add a model list, which no profile file holds.
+# A profile selects components and holds opaque configuration. Its lists contain
+# references, with inline values also allowed for sandbox and system. Absent
+# lists are empty, and a lone sandbox item needs no list. Options add a model list.
 def profile_fields: ["sandbox", "system", "tools", "hooks"];
 def config_profile($path; $fields):
-  config_object($path; ["$schema"] + $fields) |
+  config_object($path; ["$schema", "config"] + $fields) |
   del(."$schema") |
+  config_assert((has("config") | not) or (.config | type == "object");
+    $path + ["config"]; "must be an object") |
   reduce ("model", "sandbox") as $field (.;
     if has($field) and (.[$field] | type != "array") then .[$field] |= [.] else . end) |
   reduce $fields[] as $field (.;
@@ -213,7 +215,8 @@ def canonical_model:
 # again changes nothing.
 def canonical_profile:
   type == "object" and
-  keys == ["hooks", "sandbox", "system", "tools"] and
+  (keys - ["config"]) == ["hooks", "sandbox", "system", "tools"] and
+  ((has("config") | not) or (.config | type == "object")) and
   (.sandbox | type == "object" and keys == ["enabled", "read", "write"] and
     (.enabled | type == "boolean") and (.read | type == "array") and
     (.write | type == "array")) and

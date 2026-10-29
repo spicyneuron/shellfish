@@ -9,7 +9,7 @@ profile_eval() {
   jq -L "$ROOT" -e "$@" 'include "lib/profile"; '"$filter"
 }
 
-# Profiles only select; model files only configure.
+# Provider settings belong to model files, not profile fields.
 for profile in \
     '{"backend":{}}' '{"request":{}}' '{"env":{}}' '{"extend":["default"]}' \
     '{"model":"m"}' '{"sandbox":{"read":["relative"]}}' '{"hooks":{"stop":[]}}' \

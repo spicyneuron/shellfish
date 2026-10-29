@@ -1,9 +1,9 @@
 // Shellfish profile: https://github.com/spicyneuron/shellfish
 //
-// Selected when --profile is absent. A profile only selects: sandbox files,
-// system prompt files, tools, and hooks. The model is chosen separately. A name
-// resolves in this Shellfish directory first, then the bundled one. A path
-// starts with "/", "~/", "./", "../", or "@" for the bundled root.
+// Selected when --profile is absent. A profile selects sandbox files, system
+// prompts, tools, and hooks, with optional config. The model is chosen separately.
+// A name resolves in this Shellfish directory first, then the bundled one.
+// A path starts with "/", "~/", "./", "../", or "@" for the bundled root.
 {
   "$schema": "https://raw.githubusercontent.com/spicyneuron/shellfish/refs/heads/main/share/profile.schema.json",
 

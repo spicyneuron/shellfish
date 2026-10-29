@@ -73,11 +73,24 @@ sf_skills_metadata() {
 sf_skills_discover() {
   emulate -L zsh
   setopt extended_glob
-  local config_dir=${1-} project_dir=${2:-$PWD}
-  local include_disabled=${3:-false}
+  local session=$1 config_dir=${2-} project_dir=${3:-$PWD}
+  local include_disabled=${4:-false} header selection
   local home=${HOME-} root canonical directory file name description disabled
-  local -a roots discovered
+  local -a roots discovered allowed
   local -A seen_roots seen_names
+  IFS= read -r header <"$session" || {
+    print -ru2 -- 'skills: cannot read session header'
+    return 1
+  }
+  selection=$(jq -r '
+    if (.profile.config // {} | has("skills")) then
+      .profile.config.skills |
+      if type == "array" and all(.[];
+        type == "string" and length <= 64 and test("^[a-z0-9]+(-[a-z0-9]+)*\\z"))
+      then .[] else error("config.skills must be an array of skill names") end
+    else "*" end
+  ' <<<"$header") || return 1
+  allowed=( ${(f)selection} )
   if [[ -d $project_dir/.agents/skills ]]; then
     roots=( "$project_dir/.agents/skills" )
   else
@@ -100,6 +113,7 @@ sf_skills_discover() {
       [[ -z ${seen_names[$name]-} ]] || continue
       seen_names[$name]=1
       [[ $disabled == false || $include_disabled == true ]] || continue
+      [[ $selection == '*' || ${allowed[(Ie)$name]} -gt 0 ]] || continue
       discovered+=( "$name" "$description" "${file:A}" )
     done
   done

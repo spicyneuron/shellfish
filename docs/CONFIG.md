@@ -25,7 +25,7 @@ Your component therefore shadows the bundled one of the same name, and a path st
 
 ## Profiles
 
-A profile selects an agent's parts, usually by reference. The model is chosen separately.
+A profile selects an agent's parts, usually by reference, and supplies their configuration. The model is chosen separately.
 
 ```jsonc
 // profiles/default.jsonc
@@ -43,12 +43,15 @@ A profile selects an agent's parts, usually by reference. The model is chosen se
 | `system` | System prompt files or inline `{"text": "..."}`, concatenated in order |
 | `tools` | Tools exposed to the model |
 | `hooks` | Hooks, each run by the lifecycle its manifest names, in listed order |
+| `config` | Optional object of component-owned settings, grouped by feature |
 
 A lone `sandbox` item needs no list. Inline values let one profile hold everything, though separate files are easier to share.
 
+Only supplied `config` values freeze with the session. Components define their own defaults and validate the settings they consume. Configuration values remain unchanged, including strings that look like paths. Credentials and presentation settings stay external.
+
 `profiles/default.jsonc` is selected when `--profile` is absent and it exists, and `-p REF` selects another. Without either, options alone select the agent's parts. Profiles do not inherit from each other, since a profile is short enough to copy. Only components named in the selected profile are active, and unused files are inert.
 
-Each field has an option that appends to the selected profile's list for one session. List options repeat, and any that accept inline values take a JSON object in place of a reference. Repeated `system`, `tools`, and `hooks` references collapse to the first. `sandbox` lists merge in order, so a repeated reference applies again.
+Each selection list has an option that appends to the selected profile's list for one session. List options repeat, and any that accept inline values take a JSON object in place of a reference. Repeated `system`, `tools`, and `hooks` references collapse to the first. `sandbox` lists merge in order, so a repeated reference applies again.
 
 | Field | Option |
 | --- | --- |
@@ -174,6 +177,8 @@ Grants are paths and need not exist, so one file can serve several machines. A p
 
 It also copies the starter `skill-creator` into `skills/`, where you can edit it. Skills come from the current project's `.agents/skills/` (falling back to `.claude/skills/`), the selected Shellfish directory's `skills/`, and `~/.agents/skills/`, in that precedence order. There is no bundled skill fallback.
 
+Set `"config": {"skills": ["skill-creator", "code-review"]}` in a profile to allow only those skill names. Omit `config.skills` to allow every discovered skill, or use `[]` to allow none. Names are literal, and names not found in the discovery sources are ignored. The filter applies to advertising, the `skill` tool, and explicit `$skill-name` requests. It controls harness availability, not filesystem permissions.
+
 | Profile | Selects |
 | --- | --- |
 | [`default`](../share/template/profiles/default.jsonc) | `general.md` and `tools.md`, the tools below, and the bundled hooks |
@@ -217,7 +222,7 @@ The bundled `user_prompt_submit` hooks handle interactive commands:
 
 It also compacts automatically near a known context-window limit and reports Git identity changes before ordinary prompts. Client-owned `/refresh`, `/quit`, and `/queue` commands do not run a turn.
 
-For ordinary prompts, `$skill-name` loads each matching skill into the model's context before the request, even when `disable-model-invocation` is true. The submitted prompt stays unchanged. Unknown skill names are ignored.
+For ordinary prompts, `$skill-name` loads each matching allowed skill into the model's context before the request, even when `disable-model-invocation` is true. The submitted prompt stays unchanged. Unknown and excluded skill names are ignored.
 
 `/compact` leaves the source unchanged and asks the client to open a summarized child. Automatic compaction preserves the interrupted prompt as an editable draft.
 

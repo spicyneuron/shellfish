@@ -89,7 +89,7 @@ report() {
   report_group VCS git
   report_group GitHub gh
 
-  sf_skills_discover "${SHELLFISH_DIR-}" "$PWD"
+  sf_skills_discover "$SHELLFISH_SESSION" "${SHELLFISH_DIR-}" "$PWD" || return 1
   if (( ${#reply} )); then
     print -r -- $'\nAvailable agent skills. Invoke the `skill` tool when one applies:'
     integer index
@@ -100,6 +100,6 @@ report() {
 }
 
 typeset text
-text=$(report)
+text=$(report) || exit 1
 print -r -- "Project environment:"$'\n'"$text" >&2
 print -rn -- "<context script=\"project/environment\">"$'\n'"$text"$'\n'"</context>"

@@ -24,7 +24,9 @@ Raw captures and live progress are transient. Only settled text and accepted sta
 
 ### Environment
 
-Hooks and adapters inherit the process environment and receive every value in `.env`. Tools receive only the names listed under `environment` in their manifest. Exported values take precedence over `.env`, and both remain external. A component reads its own settings from these variables.
+Hooks and adapters inherit the process environment and receive every value in `.env`. Tools receive only the names listed under `environment` in their manifest. Exported values take precedence over `.env`, and both remain external.
+
+Components can also read the frozen profile's `config` from the session header. Features own their configuration keys, validation, and defaults. Only supplied values freeze, while omitted defaults remain component-defined. Runtime state stays separate from configuration.
 
 | Variable | Tool | Hook |
 | --- | :---: | :---: |

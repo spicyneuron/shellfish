@@ -79,16 +79,20 @@ valid_header=$(jq -cn '
       system: [{text: "inline"}],
       tools: ["@tools/shell", "~/tools/jira"],
       hooks: ["/bin/hook", "@hooks/stop"],
+      config: {example:["./literal", null, false]},
       sandbox: {enabled: true, read: ["~/cache"], write: []}
     }
   }
 ')
 print -r -- "$valid_header" | schema_eval 'canonical_session_header' >/dev/null
+print -r -- "$valid_header" | jq -c 'del(.profile.config)' |
+  schema_eval 'canonical_session_header' >/dev/null
 print -r -- "$valid_header" | jq -c '.model.context_window = null' |
   schema_eval 'canonical_session_header' >/dev/null
 print -r -- "$valid_header" | jq -c 'del(.model.context_window)' |
   schema_eval 'canonical_session_header' >/dev/null
 for patch in '.extra=true' '.profile.extra=true' '.profile.env={}' \
+    '.profile.config=null' '.profile.config=[]' '.profile.config=false' \
     '.profile."$schema"="x"' 'del(.profile.hooks)' 'del(.profile.sandbox)' \
     '.model.extra=true' 'del(.model.endpoint)' 'del(.model.request.model)' \
     '.model.context_window=0' 'del(.model)' '.profile.model=.model' '.profile.hooks={}' \

@@ -97,17 +97,34 @@ jq -e --arg kit "${kit:A}" --arg backend "${tmp:A}/tests-backend" '
 # list, system files freeze into one text, and a frozen profile and model
 # resolve to themselves.
 sf_test_profile inline '{"sandbox": {"read": ["./data"]},
-  "system": [{"text": "hello"}, "prompt.md"]}'
+  "system": [{"text": "hello"}, "prompt.md"],
+  "config": {"example": {"paths": ["./data", "~/data", "@data"], "values": [null, false, 2]}}}'
 sf_profile_resolve_args -p inline -m '{"adapter": "'"$fixture_backend"'", "request": {"model": "inline"}}'
 profile=$REPLY
 jq -e --arg root "${SF_TEST_CONFIG:A}" '
   .model.request.model == "inline" and .profile.sandbox.read == [$root + "/profiles/data"] and
-  .profile.system == [{text:"hello\n\nnested"}]
+  .profile.system == [{text:"hello\n\nnested"}] and
+  .profile.config == {example:{paths:["./data", "~/data", "@data"], values:[null,false,2]}}
 ' <<<"$profile" >/dev/null || fail 'inline profile items did not resolve'
 jq '.profile' <<<"$profile" >"$tmp/frozen.jsonc"
 jq '.model' <<<"$profile" >"$tmp/frozen-model.jsonc"
 sf_profile_resolve_args -p "$tmp/frozen.jsonc" -m "$tmp/frozen-model.jsonc"
 [[ $REPLY == "$profile" ]] || fail 'a frozen profile and model did not resolve to themselves'
+
+# Only supplied configuration freezes, without rereading the source profile.
+"$ROOT/bin/shellfish" run --session-create --session-out "$tmp/config.jsonl" \
+  -p inline -m fixture >/dev/null
+sf_test_profile inline '{"config":{"example":"changed"}}'
+sf_session_read_config "$tmp/config.jsonl"
+jq -e '.profile.config == {example:{paths:["./data", "~/data", "@data"], values:[null,false,2]}}' \
+  <<<"$REPLY" >/dev/null || fail 'session configuration changed with its source profile'
+for value in null false 1 '"text"' '[]'; do
+  sf_test_profile bad "{\"config\":$value}"
+  if sf_profile_resolve_args -p bad -m fixture; then
+    fail "profile accepted non-object config: $value"
+  fi
+  [[ $SF_PROFILE_ERROR == 'invalid configuration: profile bad $["config"]: must be an object' ]]
+done
 
 for name in '' $'open\nai'; do
   if sf_profile_resolve_args -p "$name"; then
@@ -188,7 +205,7 @@ jq -e '.model.request.model == "MODEL"' <<<"$REPLY" >/dev/null ||
   fail 'the template model lost its placeholder'
 rm "$SF_TEST_CONFIG/models/default.jsonc" "$SF_TEST_CONFIG/sandbox/default.jsonc"
 
-# A profile selects; values belong to model files, the environment, or tui.jsonc.
+# Provider and presentation settings stay outside the profile's own fields.
 for field in model backend request env extend max_capture_bytes theme_light; do
   sf_test_profile bad "{\"$field\": {}}"
   if sf_profile_resolve_args -p bad -m fixture; then

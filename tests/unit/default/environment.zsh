@@ -52,7 +52,7 @@ startup() {
   rm -f "$tmp/startup.jsonl"
   PATH="$environment_bin:$git_bin:$PATH" GIT_STATE="$git_state" \
     "$ROOT/bin/shellfish" run --jsonl --session-create --session-out "$tmp/startup.jsonl" \
-    >"$tmp/startup.stream"
+    --profile "${1:-default}" >"$tmp/startup.stream" || return
   assert_canonical_session "$tmp/startup.jsonl"
 }
 startup
@@ -184,3 +184,23 @@ jq -c --arg cwd "${tmp:A}/project" '.cwd=$cwd |
     .action == "session_update" and .profile.sandbox.write == [$path]' >/dev/null ||
     fail 'home grant removal failed'
 )
+
+# Startup advertises only allowlisted names and rejects invalid skill settings.
+mkdir -p "$SF_TEST_CONFIG/skills/other"
+print -r -- $'---\nname: other\ndescription: Other skill\n---\nOther instructions' \
+  >"$SF_TEST_CONFIG/skills/other/SKILL.md"
+sf_test_profile filtered '{"hooks":["project/environment"],
+  "config":{"skills":["skill-creator","missing"]}}'
+startup filtered
+jq -e -s 'any(.[]; .type == "hook_result" and (.model_text |
+  contains("- skill-creator:") and (contains("- other:") | not)))' \
+  "$tmp/startup.jsonl" >/dev/null
+sf_test_profile filtered '{"hooks":["project/environment"],"config":{"skills":[]}}'
+startup filtered
+jq -e -s 'all(.[]; (.model_text // "" | contains("Available agent skills.") | not))' \
+  "$tmp/startup.jsonl" >/dev/null
+sf_test_profile filtered '{"hooks":["project/environment"],"config":{"skills":null}}'
+if startup filtered 2>"$tmp/skills.err"; then
+  fail 'startup accepted invalid config.skills'
+fi
+grep -q 'config.skills must be an array of skill names' "$tmp/skills.err"
