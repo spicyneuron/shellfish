@@ -1,14 +1,11 @@
 # Adapter request and response protocol.
 
+def adapter_envelope($model):
+  {format_version:1, request:$model.request, endpoint:$model.endpoint} +
+  (if $model | has("config") then {config:$model.config} else {} end);
+
 def backend_adapter_request($model; $system; $messages; $tools):
-  {
-    format_version:1,
-    system:$system,
-    messages:$messages,
-    tools:$tools,
-    request:$model.request,
-    endpoint:$model.endpoint
-  } + (if $model | has("config") then {config:$model.config} else {} end) |
+  adapter_envelope($model) + {system:$system, messages:$messages, tools:$tools} |
   select(all(.messages[] | select(.type == "user");
     .content[0].text | index("\u0000") | not));
 
@@ -78,14 +75,8 @@ def decision_request:
     check($entry.value | decision_question; "invalid question: \($entry.key)"));
 
 def decision_adapter_request($model; $decision):
-  {
-    format_version:1,
-    system:($decision.system // ""),
-    input:$decision.input,
-    questions:$decision.questions,
-    request:$model.request,
-    endpoint:$model.endpoint
-  } + (if $model | has("config") then {config:$model.config} else {} end);
+  adapter_envelope($model) + {system:($decision.system // ""), input:$decision.input,
+    questions:$decision.questions};
 
 def decision_unit: type == "number" and . >= 0 and . <= 1;
 
