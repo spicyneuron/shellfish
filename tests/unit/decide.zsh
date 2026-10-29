@@ -32,6 +32,16 @@ jq -e --argjson decision "$request" '
   .endpoint == "https://example.invalid/test" and .config == {http_timeout:60}
 ' "$tmp/request.json" >/dev/null || fail 'decide sent the wrong adapter request'
 
+# Inline media larger than the argument limit reaches the adapter intact.
+head -c 1572864 /dev/zero | base64 | tr -d '\n' | jq -Rc --argjson request "$request" '
+  . as $data | $request | .input = [{type:"video",url:("data:video/mp4;base64," + $data)}]
+' >"$tmp/large.json"
+SF_TEST_BACKEND_REQUEST="$tmp/large-request.json" \
+  zsh -f "$entry" decide -m "$model" <"$tmp/large.json" >/dev/null 2>"$tmp/large.err" ||
+  fail 'decide failed on large media' "$(<"$tmp/large.err")"
+jq -e --slurpfile sent "$tmp/large.json" '.input == $sent[0].input' "$tmp/large-request.json" \
+  >/dev/null || fail 'decide altered large media'
+
 # An omitted system arrives empty.
 SF_TEST_BACKEND_REQUEST="$tmp/no-system.json" zsh -f "$entry" decide -m "$model" \
   <<<"$(jq -c 'del(.system)' <<<"$request")" >/dev/null

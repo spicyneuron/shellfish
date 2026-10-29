@@ -44,13 +44,14 @@ sf_decide_main() {
     sf_die "$SF_PROFILE_ERROR"
     return $resolve_status
   }
-  sf_jq_fields -nc --argjson model "$REPLY" --argjson decision "$decision" '
+  # Inline media can exceed argument limits, so the decision travels on stdin.
+  sf_jq_fields -c --argjson model "$REPLY" '
     include "lib/fields";
     include "lib/backend";
-    entry("request"; decision_adapter_request($model; $decision) | tojson),
+    entry("request"; decision_adapter_request($model; .) | tojson),
     entry("command"; $model.adapter + "/decide"),
     ("ok" | field)
-  ' || { sf_die 'cannot prepare decision request'; return 1; }
+  ' <<<"$decision" || { sf_die 'cannot prepare decision request'; return 1; }
   SF_BACKEND_PLAN=( "${reply[@]}" cwd "${PWD:A}" )
 
   sf_backend_capture "$SF_BACKEND_PLAN[command]" $SF_DECIDE_CAPTURE || {
@@ -65,13 +66,14 @@ sf_decide_main() {
     return 1
   fi
   (( process[stdout_bytes] <= SF_DECIDE_CAPTURE )) &&
-    result=$(sf_jq -sce --argjson decision "$decision" '
+    result=$(print -rl -- "$decision" "$process[stdout]" | sf_jq -sce '
       include "lib/session";
       include "lib/backend";
+      .[0].questions as $questions | .[1:] |
       select(length == 1) | .[0] |
-      select(decision_result($decision.questions) and
+      select(decision_result($questions) and
         ((has("usage") | not) or (.usage | token_usage)))
-    ' <<<"$process[stdout]" 2>/dev/null) || {
+    ' 2>/dev/null) || {
     sf_die 'backend returned an invalid decision'
     return 1
   }
