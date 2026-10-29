@@ -10,10 +10,7 @@ Rename HARNESS.md to PROFILE.md and split out MODELS.md
 In header, list sandbox and sandbox type
 In header, also list resolved shellfish directory
 
-For consistency, .shellfish dir and component resolution could be linked. Currently, skills are discovered from ~/.agents/skills no matter what. I'm thinking there might just be two tiers:
-- In PWD .agents/
-- shellfish dir anywhere in the ancestor path, and any sibling .agents/
-Thoughts?
+
 
 # Major
 
@@ -24,8 +21,6 @@ Add local sandbox exceptions to allow tests to run
 - probably python
 
 Image and file support
-
-.shellfish directories should merge unless there's a .shellfish-root
 
 Worktree support
 
