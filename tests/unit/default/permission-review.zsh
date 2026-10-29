@@ -249,7 +249,7 @@ jq -e --slurpfile policy "$hook/policy.json" '
     risk:{type:"score",instructions:$policy.risk.instructions,levels:$policy.risk.levels},
     authorization:{type:"score",instructions:$policy.authorization.instructions,
       levels:$policy.authorization.levels},
-    injected:{type:"predicate",instructions:$policy.injected}}
+    injected:({type:"predicate"} + $policy.injected)}
 ' "$provider" >/dev/null || fail 'decision review sent the wrong request'
 [[ ! -e $captured ]] || fail 'decision review built a chat session'
 

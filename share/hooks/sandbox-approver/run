@@ -101,7 +101,7 @@ review_decide() {
     {system:.preamble, input:[{type:"json",data:$context}], questions:{
       risk:(.risk | {type:"score",instructions,levels}),
       authorization:(.authorization | {type:"score",instructions,levels}),
-      injected:{type:"predicate",instructions:.injected}}}
+      injected:({type:"predicate"} + .injected)}}
   ' "$policy" | "$SHELLFISH_EXECUTABLE" decide -m "$decision_model" 2>/dev/null) ||
     permission_defer 'Permission review decision request failed.'
   jq -e 'all(.answers[]; .type != "refusal")' <<<"$result" >/dev/null 2>&1 ||
