@@ -1,8 +1,8 @@
 # Cleanup
 
-Thinking about renaming the backend-request command to just request. Easy?
+Thinking about renaming the backend-request command to just request. Any reason not to?
 
-Feels like prompt submit should get split so that prompt command is a separate hook?
+Feels like prompt submit should get split so that prompt command is a separate hook? Then potentially some of the always included hooks could get combined?
 
 Option arrow up/down prints chars instead of navigating. Any other common navigation shortcuts? Should generally try to support them if not too hard.
 
@@ -28,3 +28,5 @@ Worktree support
 # Minor / Polish
 
 Drop token estimates in tui collapsed blocks? Feels like clutter.
+
+One line / no preview version: Read <file> (tokens)
