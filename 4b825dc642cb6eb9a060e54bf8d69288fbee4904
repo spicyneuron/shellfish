@@ -4,8 +4,6 @@ Thinking about renaming the backend-request command to just request. Any reason 
 
 Feels like prompt submit should get split so that prompt command is a separate hook? Then potentially some of the always included hooks could get combined?
 
-Option arrow up/down prints chars instead of navigating. Any other common navigation shortcuts? Should generally try to support them if not too hard.
-
 Rename HARNESS.md to PROFILE.md and split out MODELS.md
 
 In header, list sandbox and sandbox type
