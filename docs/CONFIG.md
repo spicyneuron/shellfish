@@ -157,12 +157,13 @@ Sandbox files hold standing settings:
 | Field | Meaning |
 | --- | --- |
 | `enabled` | `false` runs every tool with user permissions. Defaults to `true` |
+| `user_approval_timeout` | Seconds to wait for the user to approve a sandbox bypass before denying it. Defaults to `120` |
 | `read` | Extra read grants |
 | `write` | Extra read-write grants |
 
-Grants are paths and need not exist, so one file can serve several machines. A profile's `sandbox` list merges left to right: grants accumulate, and a later `enabled` replaces an earlier one. A profile without a `sandbox` list is sandboxed with no extra grants.
+Grants are paths and need not exist, so one file can serve several machines. A profile's `sandbox` list merges left to right: grants accumulate, and a later `enabled` or `user_approval_timeout` replaces an earlier one. A profile without a `sandbox` list is sandboxed with no extra grants.
 
-`--sandbox` adds a sandbox file or object for one session, and `--sandbox-auto` adds detected development-tool paths. A new session freezes the merged grants, and `/sandbox` changes them for one session.
+`--sandbox` adds a sandbox file or object for one session, and `--sandbox-auto` adds detected development-tool paths. A new session freezes the merged sandbox, and `/sandbox` changes its grants for one session.
 
 ## Rendering
 

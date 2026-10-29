@@ -401,6 +401,24 @@ printf '%s\n' "$response" >'`+recorded+`'
 	}
 }
 
+// A request the child moved past without an answer is no longer pending.
+func TestPermissionExpires(t *testing.T) {
+	const permissionRequest = `{"type":"_tool_permission_request","id":"permission_1","tool":{"name":"shell","input":{}}}`
+	const draft = `{"type":"_draft","lifecycle":"stop","id":"1","user_text":"next"}`
+	const decision = `{"type":"_tool_permission_response","id":"permission_1","decision":"approve"}`
+	base := newTestServer(t, newSession(t, ""), `
+IFS= read -r input
+printf '%s\n' '`+permissionRequest+`' '`+draft+`'
+IFS= read -r response
+`)
+	session := openStream(t, base, http.StatusOK)
+	session.expectRaw(t, strings.TrimSuffix(headerLine(t), "\n"))
+	session.expectJSON(t, `{"type":"_session_status","working":false}`)
+	post(t, base+"/turn", userRecord, http.StatusAccepted)
+	session.expectJSON(t, `{"type":"_session_status","working":true}`, permissionRequest, draft)
+	post(t, base+"/permission", decision, http.StatusConflict)
+}
+
 func TestDrainCancelsPendingPermission(t *testing.T) {
 	const permissionRequest = `{"type":"_tool_permission_request","id":"permission_1","tool":{"name":"shell","input":{}}}`
 	turns, cancelTurns := context.WithCancel(context.Background())

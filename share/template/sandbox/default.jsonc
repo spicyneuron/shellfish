@@ -9,6 +9,9 @@
   // Setting false runs every tool with user permissions
   "enabled": true,
 
+  // Seconds to wait for the user to approve a sandbox bypass before denying it
+  "user_approval_timeout": 120,
+
   "read": [
     // Paths outside the project that sandboxed tools may read
   ],

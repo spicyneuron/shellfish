@@ -327,6 +327,8 @@ func (s *Service) forward(active *turn, event json.RawMessage) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	active.endedWithError = kind == "error"
+	// Later activity means the request expired unanswered.
+	s.pending = nil
 	switch {
 	case kind == "_tool_permission_request":
 		s.pending = frame

@@ -489,6 +489,9 @@ function renderDraft(frame) {
 }
 
 function apply(frame) {
+  // Later activity means the request expired unanswered.
+  if (pending !== null && frame.type !== "_tool_permission_request")
+    clearPermission();
   switch (frame.type) {
     case "session":
       applyModel(frame);

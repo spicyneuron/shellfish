@@ -110,6 +110,7 @@ sf_run_open() {
   SF_RUN[profile]=$SF_RUN_STEP[profile]
   SF_RUN[model]=$SF_RUN_STEP[model]
   SF_RUN[cwd]=$SF_RUN_STEP[cwd]
+  SF_RUN[user_approval_timeout]=$SF_RUN_STEP[user_approval_timeout]
   SF_RUN[turn_id]=$SF_RUN_STEP[turn_id]
   SF_RUN[hook_id]=$SF_RUN_STEP[hook_id]
   sf_run_components "$SF_RUN[profile]" || return
@@ -123,19 +124,31 @@ sf_run_interrupt() {
   [[ -z $SF_BACKEND[pid] ]] || sf_process_stop "$SF_BACKEND[pid]" "$SF_BACKEND[group_file]"
 }
 
+# Ask the client, into reply as (DECISION REASON). Without a client or a timely
+# answer, the request is denied. Answers to earlier, expired requests are skipped.
 sf_run_permission_client() {
   local name=$1 input=$2 reason=$3 response id
+  integer deadline=$(( SECONDS + SF_RUN[user_approval_timeout] )) wait
+  (( SF_RUN[jsonl] )) || { reply=( deny 'no client to approve sandbox bypass' ); return 0; }
   (( SF_RUN[permission_count] += 1 ))
   id="permission_$SF_RUN[permission_count]"
   sf_run_emit "$(jq -cn --arg id "$id" --arg name "$name" --argjson input "$input" \
     --arg reason "$reason" '
       {type:"_tool_permission_request",id:$id,tool:{name:$name,input:$input},reason:$reason}')" || return 2
-  IFS= read -r response || { REPLY='permission response is unavailable'; return 2; }
-  REPLY=$(jq -r --arg id "$id" '
-    select(type == "object" and .type == "_tool_permission_response" and .id == $id and
-      (.decision == "approve" or .decision == "deny")) | .decision
-  ' <<<"$response" 2>/dev/null) || { REPLY='invalid permission response'; return 2; }
-  [[ -n $REPLY ]] || { REPLY='invalid permission response'; return 2; }
+  reply=( deny 'sandbox bypass approval timed out' )
+  while (( (wait = deadline - SECONDS) > 0 )); do
+    IFS= read -r -t $wait response || {
+      (( SECONDS >= deadline )) || reply=( deny 'no client to approve sandbox bypass' )
+      return 0
+    }
+    REPLY=$(jq -r --arg id "$id" '
+      if type == "object" and .type == "_tool_permission_response" and
+        (.id | type == "string") and (.decision == "approve" or .decision == "deny")
+      then if .id == $id then .decision else "" end
+      else error end
+    ' <<<"$response" 2>/dev/null) || { REPLY='invalid permission response'; return 2; }
+    [[ -z $REPLY ]] || { reply=( $REPLY '' ); return 0; }
+  done
 }
 
 # A signal status, or a failure message for anything else.
@@ -264,7 +277,8 @@ sf_run_turn() {
                 if [[ -z $decision ]]; then
                   sf_run_permission_client "$name" "$SF_TOOL_PLAN[input]" \
                     "$SF_TOOL_PLAN[permission_reason]" || { failure=$REPLY; break; }
-                  decision=$REPLY
+                  decision=$reply[1]
+                  hook_result[reason]=$reply[2]
                 fi
                 if [[ $decision == deny ]]; then
                   sf_run_tool_refused "${hook_result[reason]:-sandbox bypass denied}" 126

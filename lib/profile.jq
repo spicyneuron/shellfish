@@ -112,11 +112,14 @@ def config_model($path):
   config_assert((has("request") | not) or (.request | type == "object");
     $path + ["request"]; "must be an object");
 
-# A sandbox file enables or disables sandboxing and grants extra paths.
+# A sandbox file enables or disables sandboxing, grants extra paths, and limits
+# how long a bypass waits for the user.
 def config_sandbox($path):
-  config_object($path; ["$schema", "enabled", "read", "write"]) |
+  config_object($path; ["$schema", "enabled", "read", "write", "user_approval_timeout"]) |
   config_assert((has("enabled") | not) or (.enabled | type == "boolean");
     $path + ["enabled"]; "must be a boolean") |
+  config_assert((has("user_approval_timeout") | not) or (.user_approval_timeout | positive_integer);
+    $path + ["user_approval_timeout"]; "must be a positive integer") |
   reduce ["read", "write"][] as $field (.;
     config_assert((has($field) | not) or (.[$field] | type == "array");
       $path + [$field]; "must be an array") |
@@ -175,10 +178,10 @@ def model_merge($models):
   end |
   if (.adapter // "") == "" then error("a model adapter is required") else . end;
 
-# Sandbox items merge left to right: grants accumulate and "enabled" replaces.
+# Sandbox items merge left to right: grants accumulate and settings replace.
 def sandbox_merge($files):
   reduce $files[] as $file ({enabled:true, read:[], write:[]};
-    (if $file | has("enabled") then .enabled = $file.enabled else . end) |
+    . + ($file | with_entries(select(.key | IN("enabled", "user_approval_timeout")))) |
     .read += ($file.read // []) | .write += ($file.write // []));
 
 # Every path in a frozen profile through f.
@@ -220,9 +223,11 @@ def canonical_profile:
   type == "object" and
   (keys - ["config"]) == ["hooks", "sandbox", "system", "tools"] and
   ((has("config") | not) or (.config | type == "object")) and
-  (.sandbox | type == "object" and keys == ["enabled", "read", "write"] and
+  (.sandbox | type == "object" and
+    (keys - ["user_approval_timeout"]) == ["enabled", "read", "write"] and
     (.enabled | type == "boolean") and (.read | type == "array") and
-    (.write | type == "array")) and
+    (.write | type == "array") and
+    ((has("user_approval_timeout") | not) or (.user_approval_timeout | positive_integer))) and
   (.system | type == "array" and length <= 1 and all(.[]; type == "object" and
     keys == ["text"] and (.text | nul_free_string) and .text != "")) and
   (.tools | type == "array") and (.hooks | type == "array") and

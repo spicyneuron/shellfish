@@ -70,6 +70,11 @@ assert_equal permission_1 "$SF_PRESENT_PERMISSION_ID"
 assert_equal shell "$SF_PRESENT_PERMISSION_TOOL"
 assert_equal $'{"command":"pwd"}\n\nReason: host access' "$SF_PRESENT_PERMISSION_TEXT"
 
+# Later activity closes an expired request.
+pump '{"type":"tool_result","id":"call_1","name":"shell","input":{"command":"pwd"},"exit_code":126,"model_text":"sandbox bypass approval timed out","user_text":"Shell pwd\nsandbox bypass approval timed out"}'
+assert_equal working "$SF_PRESENT_STATE"
+assert_equal '' "$SF_PRESENT_PERMISSION_ID"
+
 # Capture a handoff request.
 SF_PRESENT_STATE=working
 SF_PRESENT_PERMISSION_ID=''

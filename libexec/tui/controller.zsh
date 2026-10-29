@@ -110,6 +110,8 @@ sf_tui_cancel() {
 sf_tui_apply() {
   local type=$1 preview reason
   [[ $type == error ]] || SF_PRESENT_ERROR_SETTLED=0
+  # Later activity means the request expired unanswered.
+  [[ $SF_PRESENT_STATE != permission || $type == permission ]] || sf_tui_permission_close
   case $type in
     session)
       [[ -n $SF_PRESENT_SESSION ]] || SF_TUI_TRANSPORT_COMMAND=(
@@ -278,6 +280,10 @@ sf_tui_answer_permission() {
     sf_tui_stop 'cannot answer permission'
     return 1
   fi
+  sf_tui_permission_close
+}
+
+sf_tui_permission_close() {
   sf_tui_permission_reset
   sf_tui_activity_start
   sf_tui_editor_permission restore

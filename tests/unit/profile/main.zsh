@@ -304,17 +304,17 @@ if sf_profile_resolve_args -p work -m bare; then
   fail 'invalid backend path was accepted'
 fi
 
-# Sandbox files merge left to right: grants accumulate, "enabled" replaces, and
+# Sandbox files merge left to right: grants accumulate, settings replace, and
 # flags add grants last. Grants need not exist.
 mkdir -p "$tmp/flag"
 sf_test_sandbox base '{"read": ["~/my reference", "/opt/ref"], "write": ["~/output"]}'
-sf_test_sandbox off '{"enabled": false, "read": ["@system"]}'
+sf_test_sandbox off '{"enabled": false, "user_approval_timeout": 30, "read": ["@system"]}'
 sf_test_sandbox on '{"enabled": true}'
 sf_test_profile boxed '{"sandbox": ["base", "off"]}'
 (cd "$tmp" && sf_profile_resolve_args -p boxed -m work --sandbox '{"write":["./flag"]}' &&
   print -r -- "$REPLY") | read -r REPLY
 jq -e --arg home "${tmp:A}/home" --arg flag "${tmp:A}/flag" --arg share "$ROOT/share" '
-  .profile.sandbox == {enabled:false, read:[$home + "/my reference", "/opt/ref", $share + "/system"],
+  .profile.sandbox == {enabled:false, user_approval_timeout:30, read:[$home + "/my reference", "/opt/ref", $share + "/system"],
     write:[$home + "/output", $flag]}
 ' <<<"$REPLY" >/dev/null || fail 'sandbox files did not merge in order'
 sf_test_profile boxed '{"sandbox": ["off", "on"]}'
@@ -328,7 +328,8 @@ if sf_profile_resolve_args -p boxed -m work; then
   fail 'a bare sandbox name was accepted'
 fi
 [[ $SF_PROFILE_ERROR == 'invalid configuration: sandbox bad $["read"][1]: must be a /, ~/, ./, ../, or @ path' ]]
-for value in '{"enabled": "yes"}' '{"write": "/x"}' '{"paths": []}'; do
+for value in '{"enabled": "yes"}' '{"write": "/x"}' '{"paths": []}' \
+    '{"user_approval_timeout": 0}' '{"user_approval_timeout": 1.5}'; do
   sf_test_sandbox bad "$value"
   if sf_profile_resolve_args -p boxed -m work; then
     fail "sandbox file accepted $value"

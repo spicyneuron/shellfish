@@ -10,6 +10,11 @@
     "enabled": {
       "type": "boolean"
     },
+    "user_approval_timeout": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 2147483647
+    },
     "read": {
       "$ref": "#/$defs/paths"
     },

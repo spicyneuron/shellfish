@@ -318,6 +318,30 @@ jq -e -s 'all(.[]; .type != "_tool_permission_request" and
   .type != "_tool_permission_response")' "$session" >/dev/null ||
   fail 'permission exchange became durable'
 
+# Without an answer, the client request is denied and the turn continues.
+session="$tmp/permission-no-client.jsonl"
+sf_test_session "$session"
+SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_BYPASS=true \
+  sf_test_run permission "$session" >"$stream" || fail 'closed client failed the turn'
+jq -e -s 'map(select(.type == "tool_result"))[0] |
+  .exit_code == 126 and .model_text == "no client to approve sandbox bypass"' \
+  "$session" >/dev/null || fail 'closed client did not deny the request'
+
+session="$tmp/permission-timeout.jsonl"
+SF_TEST_PROFILE=$(jq -c '.sandbox.user_approval_timeout=1' <<<"$SF_TEST_PROFILE") \
+  sf_test_session "$session"
+{
+  jq -cn '{type:"user",content:[{type:"text",text:"permission"}]}'
+  print -r -- '{"type":"_tool_permission_response","id":"permission_0","decision":"approve"}'
+  sleep 3
+} | SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_BYPASS=true \
+  "$ROOT/bin/shellfish" run --jsonl --session "$session" >"$stream" ||
+  fail 'permission timeout failed the turn'
+jq -e -s 'map(select(.type == "tool_result"))[0] |
+  .exit_code == 126 and .model_text == "sandbox bypass approval timed out" and
+  (has("sandbox_bypassed") | not)' \
+  "$session" >/dev/null || fail 'stale answer or timeout did not deny the request'
+
 # A failing pre hook settles every pending call before the error.
 typeset pre_fail="$tmp/pre-fail"
 sf_test_hook "$pre_fail" <<'ZSH'

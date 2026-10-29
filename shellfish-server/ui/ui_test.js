@@ -1076,6 +1076,30 @@ test("answers and removes permission prompts", async () => {
   }
 });
 
+test("removes an expired permission prompt", async () => {
+  const page = await idle();
+  await page.send(
+    { type: "_session_status", working: true },
+    { type: "assistant", stop: "tool_calls", content: [] },
+    {
+      type: "_tool_permission_request",
+      id: "permission_1",
+      tool: { name: "shell", input: { command: "ls" } },
+    },
+  );
+  assert.equal(find(page.output, "permission").length, 1);
+  await page.send({
+    type: "tool_result",
+    id: "call_1",
+    name: "shell",
+    input: { command: "ls" },
+    exit_code: 126,
+    model_text: "sandbox bypass approval timed out",
+    user_text: "Shell ls\nsandbox bypass approval timed out",
+  });
+  assert.equal(find(page.output, "permission").length, 0);
+});
+
 test("replaces a tool draft with its completed text", async () => {
   const page = await idle();
   await page.send(

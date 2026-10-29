@@ -103,6 +103,7 @@ def opened($records; $share; $home):
   entry("profile"; $header.profile | tojson),
   entry("model"; $header.model | tojson),
   entry("cwd"; $header.cwd),
+  entry("user_approval_timeout"; $header.profile.sandbox.user_approval_timeout // 120 | tostring),
   entry("turn_id"; [$records[1:][] | select(.type == "user")] | length + 1 | tostring),
   entry("hook_id";
     [$records[1:][] | select(.type == "hook_result") | .id | tonumber] |
