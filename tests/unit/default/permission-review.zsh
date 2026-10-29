@@ -75,7 +75,9 @@ jq -e '.on == "permission_request" and .user_preview_lines == "full"' \
   assert_equal 'Approved: Explicitly authorized.' "$(<"$tmp/user")" ||
   fail 'permission review hid its decision reason'
 jq -e -s --arg tool_input "$(jq -c '.tool_input' <<<"$request")" \
-    --rawfile policy "$hook/review.md" '
+    --slurpfile policy "$hook/policy.json" '
+  $policy[0] as $policy |
+  .[0].profile.system[0].text as $prompt |
   (.[1].content[0].text | fromjson) as $context |
   .[0].model.request.model == "test-model" and
   .[0].model.config == {http_timeout:120,http_stall:30,insecure_tls:false} and
@@ -83,7 +85,12 @@ jq -e -s --arg tool_input "$(jq -c '.tool_input' <<<"$request")" \
   .[0].model.request.temperature == 0.2 and
   .[0].profile.tools == [] and
   .[0].profile.hooks == [] and
-  .[0].profile.system == [{text:($policy | rtrimstr("\n"))}] and
+  (.[0].profile.system | length) == 1 and ($prompt | startswith($policy.preamble + "\n\n")) and
+  all($policy.risk.levels[], $policy.authorization.levels[]; . as $level |
+    $prompt | contains("\n- " + $level)) and
+  ($policy.authorization.levels[0] | startswith("unknown: ")) and
+  ($prompt | contains("Return only one JSON object")) and
+  ($prompt | endswith("\n\n" + $policy.reason)) and
   [.[].type] == ["session","user"] and
   $context.system_message == "fixed system" and
   $context.startup_context.content[0].text ==
