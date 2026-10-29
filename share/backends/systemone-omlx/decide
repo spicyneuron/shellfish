@@ -17,4 +17,4 @@ request=$(jq -ce '
   .input |= map(select(.type != "image" and .type != "video"))
 ') || sf_backend_die 'cannot translate request'
 
-"${0:A:h:h}/systemone/decide" <<<"$request"
+TYPESAFE_API_KEY=${OMLX_API_KEY-} "${0:A:h:h}/systemone/decide" <<<"$request"

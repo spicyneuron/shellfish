@@ -113,7 +113,7 @@ For example, `"config": {"http_timeout": 120, "http_stall": 30}` sets shorter li
 
 Bundled adapters: `anthropic`, `codex`, `openai`, `openai-responses`, and `openrouter`. The `openai` adapter works with any OpenAI-compatible endpoint. See [`HARNESS.md`](HARNESS.md#backend-adapters) for the adapter protocol.
 
-Decision models serve `shellfish decide` instead of conversations. Bundled decision adapters: `openai-decisions` for OpenAI's Decisions API, `systemone` for TypeSafe's System One API with `TYPESAFE_API_KEY`, and `systemone-omlx` for locally hosted System One servers, which accept video but need an endpoint:
+Decision models serve `shellfish decide` instead of conversations. Bundled decision adapters: `openai-decisions` for OpenAI's Decisions API, and `systemone` for TypeSafe's System One API with `TYPESAFE_API_KEY`. For oMLX servers, `systemone-omlx` and `openai-decisions-omlx` speak the same formats. They need an endpoint, and they send `OMLX_API_KEY` when set rather than the provider's key. `systemone-omlx` also accepts video:
 
 ```jsonc
 // models/d3.jsonc

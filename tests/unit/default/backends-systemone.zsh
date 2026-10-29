@@ -137,7 +137,9 @@ cp "$BACKEND_TEST_RESPONSE.ok" "$BACKEND_TEST_RESPONSE"
 
 # oMLX takes media as top-level lists instead of placed assets.
 jq '.input += [{type:"video",url:"data:video/mp4;base64,CCCC"}]' "$req" >"$tmp/omlx.json"
-zsh -f "$omlx" <"$tmp/omlx.json" >"$res"
+TYPESAFE_API_KEY=leaked OMLX_API_KEY=local zsh -f "$omlx" <"$tmp/omlx.json" >"$res"
+grep -Fxq 'Authorization: Bearer local' "$BACKEND_TEST_HEADERS" && ! grep -Fq leaked "$BACKEND_TEST_HEADERS" ||
+  fail 'omlx did not send only its own key'
 jq -e '
   .images == ["data:image/png;base64,AAAA","data:image/jpeg;base64,BBBB"] and
   .videos == ["data:video/mp4;base64,CCCC"] and

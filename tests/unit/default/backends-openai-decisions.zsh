@@ -132,3 +132,20 @@ result=$(OPENAI_API_KEY=test zsh -f "$ROOT/bin/shellfish" decide \
 jq -e '. == {model:"gpt-6-luna",answers:{moved:{type:"predicate",probability:0.9}},
   usage:{input_tokens:5,output_tokens:0}}' <<<"$result" >/dev/null ||
   fail 'shellfish decide returned the wrong result' "$result"
+
+# oMLX receives system and JSON as user text, authorized by its own key.
+typeset omlx="$ROOT/share/backends/openai-decisions-omlx/decide"
+rm -f -- "$BACKEND_TEST_HEADERS"
+OPENAI_API_KEY=leaked OMLX_API_KEY=local zsh -f "$omlx" <"$req" >"$res"
+jq -e '.input == [{type:"message",role:"user",content:[
+    {type:"input_text",text:"Judge carefully."},{type:"input_text",text:"A clip."},
+    {type:"input_text",text:"{\"frames\":2}"},
+    {type:"input_image",image_url:"data:image/png;base64,AAAA"}]}]
+' "$BACKEND_TEST_BODY" >/dev/null || fail 'omlx sent the wrong body' "$(<"$BACKEND_TEST_BODY")"
+grep -Fxq 'Authorization: Bearer local' "$BACKEND_TEST_HEADERS" ||
+  fail 'omlx did not send its own key'
+rm -f -- "$BACKEND_TEST_HEADERS"
+OPENAI_API_KEY=leaked zsh -f "$omlx" <"$req" >/dev/null
+! grep -Fq leaked "$BACKEND_TEST_HEADERS" 2>/dev/null || fail 'omlx sent the OpenAI key'
+jq -e '.answers.moved == {type:"predicate",probability:0.9}' "$res" >/dev/null ||
+  fail 'omlx normalized the wrong result' "$(<"$res")"
