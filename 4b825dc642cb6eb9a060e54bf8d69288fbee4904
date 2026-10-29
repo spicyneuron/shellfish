@@ -15,13 +15,15 @@ In header, also list resolved shellfish directory
 
 # Major
 
-.shellfish directories should merge unless there's a .shellfish-root
+Replace fence with nono
 
 Add local sandbox exceptions to allow tests to run
 - tests cannot create .env and .shellfish
 - probably python
 
-Worktree support
-
 Image and file support
+
+.shellfish directories should merge unless there's a .shellfish-root
+
+Worktree support
 
