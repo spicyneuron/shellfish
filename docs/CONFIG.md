@@ -113,6 +113,16 @@ For example, `"config": {"http_timeout": 120, "http_stall": 30}` sets shorter li
 
 Bundled adapters: `anthropic`, `codex`, `openai`, `openai-responses`, and `openrouter`. The `openai` adapter works with any OpenAI-compatible endpoint. See [`HARNESS.md`](HARNESS.md#backend-adapters) for the adapter protocol.
 
+Decision models serve `shellfish decide` instead of conversations. Bundled decision adapters: `openai-decisions` for OpenAI's Decisions API, `systemone` for TypeSafe's System One API with `TYPESAFE_API_KEY`, and `systemone-omlx` for locally hosted System One servers, which accept video but need an endpoint:
+
+```jsonc
+// models/d3.jsonc
+{"adapter": "systemone-omlx", "endpoint": "http://127.0.0.1:8000/v1/systemone",
+ "request": {"model": "d3-flash"}}
+```
+
+See [`HARNESS.md`](HARNESS.md#decisions) for the decision format.
+
 A new session freezes the selected profile and model in its header: sandbox and model items merged, system prompts joined into one text, and every other reference resolved. The header's `profile` is itself a profile and its `model` a model file, so together they select the same session again. A child agent started by the `agent` tool keeps its parent's model.
 
 ## Environment
@@ -141,7 +151,7 @@ hooks/HOOK/
 backends/ADAPTER/
 ```
 
-Executable components require `run`. An optional `manifest.json` or `manifest.jsonc` supplies configuration, with an absent manifest treated as `{}`. A hook's manifest names its lifecycle with `on`. Tools need model-facing descriptions, input schemas, and execution policies. Backends need an endpoint from either their manifest or a model file. See [`HARNESS.md`](HARNESS.md) for the contracts. References are frozen in the session, while manifest edits affect later invocations only. Missing or invalid active components fail session creation, and an invalid manifest edited later fails the next run.
+Tools and hooks require `run`, and backends require `run`, `decide`, or both. An optional `manifest.json` or `manifest.jsonc` supplies configuration, with an absent manifest treated as `{}`. A hook's manifest names its lifecycle with `on`. Tools need model-facing descriptions, input schemas, and execution policies. Backends need an endpoint from either their manifest or a model file. See [`HARNESS.md`](HARNESS.md) for the contracts. References are frozen in the session, while manifest edits affect later invocations only. Missing or invalid active components fail session creation, and an invalid manifest edited later fails the next run.
 
 ## Sandbox
 

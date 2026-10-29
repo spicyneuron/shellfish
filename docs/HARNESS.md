@@ -10,13 +10,13 @@ See [`CONFIG.md`](CONFIG.md) for selection, lookup, settings, and the bundled ha
 
 Tools, hooks, and backend adapters are executable component directories. References resolve before session creation and are frozen in its header. Manifests and scripts are read on each invocation.
 
-Every component requires an executable `run`. Configuration lives in an optional `manifest.json` or `manifest.jsonc`, with an absent manifest treated as `{}`. Each role validates the settings it needs.
+Tools and hooks require an executable `run`. A backend adapter provides `run` for conversations, `decide` for [decisions](#decisions), or both. Configuration lives in an optional `manifest.json` or `manifest.jsonc`, with an absent manifest treated as `{}`. Each role validates the settings it needs.
 
 | Component | Additional requirements | Trust |
 | --- | --- | --- |
 | Tool | Model-facing metadata and execution policy, `fence.jsonc` when sandboxed | Model-facing, optionally sandboxed |
 | Hook | None | Trusted, user permissions |
-| Backend adapter | Endpoint from a model file or manifest, optional `context_window` executable | Trusted, user permissions |
+| Backend adapter | `run`, `decide`, or both, an endpoint from a model file or manifest, optional `context_window` executable | Trusted, user permissions |
 
 Scripts run from the session working directory. Shellfish starts each in an isolated process group, terminates ordinary descendants on completion or cancellation, and escalates from `TERM` to `KILL`. Components must finish their own subprocesses; daemonizing is unsupported.
 
@@ -237,3 +237,47 @@ An optional executable `context_window` receives the same request and environmen
 ```
 
 The value must be positive. Failure or any other output means metadata is unavailable and does not fail inference. Discovery must not make a generation request.
+
+### Decisions
+
+A decision asks typed questions about one input and returns a calibrated answer to each, without a conversation or tool calls. Hooks and scripts call `shellfish decide -m REF|JSON` with a decision on stdin. The model is required, resolves like `backend-request`'s, and its adapter must provide `decide`.
+
+```json
+{
+  "system": "Optional standing policy",
+  "input": [
+    {"type": "text", "text": "A short clip from a test camera."},
+    {"type": "json", "data": {"frames": 2}},
+    {"type": "image", "url": "data:image/png;base64,..."},
+    {"type": "video", "url": "data:video/mp4;base64,..."}
+  ],
+  "questions": {
+    "moved": {"type": "predicate", "instructions": "Does the square move?",
+              "criteria": {"true": "Any motion.", "false": "No motion."}},
+    "direction": {"type": "choice", "instructions": "Which way?",
+                  "choices": {"left": null, "right": "Toward the edge."}},
+    "risk": {"type": "score", "instructions": "How risky?", "levels": ["low", "medium", "high"]}
+  }
+}
+```
+
+Questions are keyed by name and answered independently. A `predicate` estimates whether a statement is true, with optional definitions of each outcome. A `choice` picks one of 2 to 255 values, each with an optional description. A `score` rates against 2 to 10 ordered levels. Media URLs are data URIs or HTTP(S) URLs.
+
+The result answers every question:
+
+```json
+{
+  "model": "provider-model",
+  "answers": {
+    "moved": {"type": "predicate", "probability": 0.98},
+    "direction": {"type": "choice", "choice": "left", "confidence": 0.91,
+                  "probabilities": {"left": 0.91, "right": 0.09}},
+    "risk": {"type": "score", "score": 0.4, "confidence": 0.7, "probabilities": [0.65, 0.3, 0.05]}
+  },
+  "usage": {"input_tokens": 1234, "output_tokens": 0}
+}
+```
+
+Probabilities and confidences range from 0 to 1. A `score` is the probability-weighted level index, and its probabilities follow level order. A question the provider declines is answered `{"type":"refusal"}`.
+
+Shellfish starts `decide` once per decision. Its stdin holds the decision plus `format_version`, `request`, `endpoint`, and optional `config`, as for `run`, with `system` always present. The adapter writes the result as one JSON object and exits 0. The core validates the decision and the result, and prints only a valid result. Adapters emulate features their provider lacks where they can, such as a system prompt, and otherwise fail rather than drop input.
