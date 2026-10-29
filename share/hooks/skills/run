@@ -12,7 +12,7 @@ submitted=${submitted%x}
 [[ $submitted == *\$* ]] || exit 0
 
 source "$bundled_root/lib/skills.zsh" || exit 1
-sf_skills_discover "$bundled_root" "${SHELLFISH_DIR-}" "$PWD" true
+sf_skills_discover "${SHELLFISH_DIR-}" "$PWD" true
 for (( index = 1; index <= ${#reply}; index += 3 )); do
   paths[$reply[index]]=$reply[index+2]
 done

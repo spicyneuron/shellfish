@@ -73,8 +73,8 @@ sf_skills_metadata() {
 sf_skills_discover() {
   emulate -L zsh
   setopt extended_glob
-  local bundled_root=$1 config_dir=${2-} project_dir=${3:-$PWD}
-  local include_disabled=${4:-false}
+  local config_dir=${1-} project_dir=${2:-$PWD}
+  local include_disabled=${3:-false}
   local home=${HOME-} root canonical directory file name description disabled
   local -a roots discovered
   local -A seen_roots seen_names
@@ -85,7 +85,6 @@ sf_skills_discover() {
   fi
   [[ -z $config_dir ]] || roots+=( "$config_dir/skills" )
   [[ -z $home ]] || roots+=( "$home/.agents/skills" )
-  roots+=( "$bundled_root/skills" )
   for root in "${roots[@]}"; do
     canonical=${root:A}
     [[ -z ${seen_roots[$canonical]-} ]] || continue

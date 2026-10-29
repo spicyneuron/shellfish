@@ -38,7 +38,7 @@ make_skill "$project/.agents/skills" bad_name 'invalid skill'
 make_skill "$project/.claude/skills" claude-only 'must be ignored'
 
 # Discover valid skills by precedence.
-HOME="$home" sf_skills_discover "$ROOT/share" "$config" "$project"
+HOME="$home" sf_skills_discover "$config" "$project"
 typeset -A descriptions skill_paths
 integer index
 for (( index = 1; index <= ${#reply}; index += 3 )); do
@@ -51,16 +51,15 @@ done
 [[ $descriptions[personal] == 'personal skill' ]]
 [[ $descriptions[linked] == 'linked skill' ]]
 [[ $skill_paths[linked] == "${tmp:A}/linked-skills/linked/SKILL.md" ]]
-[[ -n ${descriptions[skill-creator]-} ]]
 [[ -z ${descriptions[hidden]-} && -z ${descriptions[bad_name]-} ]]
 [[ -z ${descriptions[claude-only]-} ]]
-HOME="$home" sf_skills_discover "$ROOT/share" "$config" "$project" true
+HOME="$home" sf_skills_discover "$config" "$project" true
 [[ ${reply[(Ie)hidden]} -gt 0 ]]
 
 # Fall back to Claude skills when the project has no Agent Skills directory.
 claude_project="$tmp/claude-project"
 make_skill "$claude_project/.claude/skills" shared 'claude project description'
-HOME="$home" sf_skills_discover "$ROOT/share" "$config" "$claude_project"
+HOME="$home" sf_skills_discover "$config" "$claude_project"
 typeset -A claude_descriptions claude_paths
 for (( index = 1; index <= ${#reply}; index += 3 )); do
   claude_descriptions[$reply[index]]=$reply[index+1]
@@ -77,9 +76,10 @@ loaded=$(cd "$project" && print -rn -- '{"name":"shared"}' | HOME="$home" \
 loaded=$(cd "$claude_project" && print -rn -- '{"name":"shared"}' | HOME="$home" \
   SHELLFISH_DIR="$config" zsh -f "$tool")
 [[ $loaded == "<skill name=\"shared\" directory=\"${claude_project:A}/.claude/skills/shared\">"*$'# shared instructions'*'</skill>' ]]
+HOME="$home" SHELLFISH_DIR="$config" "$ROOT/bin/shellfish" init >/dev/null
 loaded=$(cd "$project" && print -rn -- '{"name":"skill-creator"}' | HOME="$home" \
   SHELLFISH_DIR="$config" zsh -f "$tool")
-[[ $loaded == "<skill name=\"skill-creator\" directory=\"$ROOT/share/skills/skill-creator\">"*'</skill>' ]]
+[[ $loaded == "<skill name=\"skill-creator\" directory=\"${config:A}/skills/skill-creator\">"*'</skill>' ]]
 [[ $loaded != *$'\ndescription: Use when creating or editing project-local skills.\n'* ]]
 loaded=$(cd "$project" && print -rn -- '{"name":"linked"}' | HOME="$home" \
   SHELLFISH_DIR="$config" zsh -f "$tool")

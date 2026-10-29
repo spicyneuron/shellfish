@@ -120,10 +120,10 @@ jq -L "$ROOT" -e --arg share /opt/sf/share --arg home /home/me '
   include "lib/profile";
   header_expand($share; $home) |
   .profile.tools = ["/opt/sf/share/profiles/default/tools/shell", "/opt/other/jira"] |
-  .profile.sandbox.write = ["/opt/sf/share/skills"] |
+  .profile.sandbox.write = ["/opt/sf/share/tools"] |
   header_store($share; $home) |
   .profile.tools == ["@profiles/default/tools/shell", "/opt/other/jira"] and
-  .profile.sandbox.write == ["@skills"]
+  .profile.sandbox.write == ["@tools"]
 ' <<<"$valid_header" >/dev/null || fail 'bundled paths did not store with "@"'
 
 # Tool manifests validate sandboxing.

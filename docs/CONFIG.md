@@ -172,6 +172,8 @@ Grants are paths and need not exist, so one file can serve several machines. A p
 
 `shellfish init` writes four profiles and the default model, `models/default.jsonc`: the OpenRouter adapter with up to 16,384 output tokens and medium reasoning effort, whose `MODEL` placeholder you replace. Each profile selects `sandbox/default.jsonc`, which grants nothing until you edit it.
 
+It also copies the starter `skill-creator` into `skills/`, where you can edit it. Skills come from the current project's `.agents/skills/` (falling back to `.claude/skills/`), the selected Shellfish directory's `skills/`, and `~/.agents/skills/`, in that precedence order. There is no bundled skill fallback.
+
 | Profile | Selects |
 | --- | --- |
 | [`default`](../share/template/profiles/default.jsonc) | `general.md` and `tools.md`, the tools below, and the bundled hooks |
