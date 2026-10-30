@@ -10,7 +10,7 @@ integer max_input_kb=24
 # authorization, and denies one this likely driven by untrusted instructions.
 # Configuration may override the allow threshold.
 local allow_threshold=0.8 injected_threshold=0.5
-local request header system base records context candidate state_name=''
+local request header system context state_name=''
 local model decision_model selection policy=${0:A:h}/policy.json
 local settings='{"request":{"max_output_tokens":4096,"response_schema":{
   "type":"object","additionalProperties":false,
@@ -21,7 +21,7 @@ local settings='{"request":{"max_output_tokens":4096,"response_schema":{
     "reason":{"type":"string","minLength":1,"maxLength":1000}
   }
 }}}'
-local -a candidates overrides
+local -a overrides
 
 # A failed review takes no action, so the request falls back to the user. The
 # optional second argument is the review's raw content.
@@ -58,7 +58,7 @@ permission_resolve() {
 # the outcome.
 review_chat() {
   local transcript="$SHELLFISH_TURN_STATE/permission-review.jsonl" response content result
-  if ! jq -cn --argjson header "$header" --arg system "$system" --argjson context "$base" \
+  if ! jq -cn --argjson header "$header" --arg system "$system" --argjson context "$context" \
       --argjson settings "$settings" '
     ($header | del(.model.request.response_schema) | .model *= $settings |
       .profile |= (.system=[{text:$system}] | .tools=[] | .hooks=[] |
@@ -99,7 +99,7 @@ review_chat() {
 # requires authorization at or above risk; unknown authorization covers nothing.
 review_decide() {
   local result
-  result=$(jq -c --argjson context "$base" '
+  result=$(jq -c --argjson context "$context" '
     {system:.preamble, input:[{type:"json",data:$context}], questions:{
       risk:(.risk | {type:"score",instructions,levels}),
       authorization:(.authorization | {type:"score",instructions,levels}),
@@ -183,9 +183,11 @@ done <<<"$selection"
   --model '{"request":{"response_schema":null}}' --model "$settings" )
 
 # Records through the first user message and the latest user message stay
-# pinned. Records after the latest user message are admitted backward without
-# gaps, then emitted chronologically. Tool results are clipped harder with age.
-records=$(jq -ces --argjson request "$request" '
+# pinned and must fit the budget. Records after the latest user message are
+# admitted backward without gaps, then emitted chronologically. Tool results are
+# clipped harder with age. An oversized pinned context exits 3.
+context=$(jq -ces --argjson request "$request" --arg system "$system" \
+    --argjson budget $(( max_input_kb * 1024 )) '
   def clip($cap):
     if length > $cap then .[:$cap] + "\n[\(length - $cap) characters truncated]" else . end;
   def clip_results:
@@ -199,6 +201,7 @@ records=$(jq -ces --argjson request "$request" '
           else . end] |
         .age += 1
       else .out += [$record] end) | .out;
+  def bytes: tojson | utf8bytelength;
   .[0] as $header |
   [.[1:][] |
     select(.type != "state_update") |
@@ -214,43 +217,32 @@ records=$(jq -ces --argjson request "$request" '
   ($timeline | map(.type) | index("user")) as $first_user |
   ($timeline | map(.type) | rindex("user")) as $last_user |
   select($first_user != null) |
-  {
+  ({
     system_message:$header.profile.system[0].text,
     startup_context:$timeline[:$first_user + 1],
-    latest_user_message:(if $last_user > $first_user then $timeline[$last_user] else null end),
+    latest_user_message:(if $last_user > $first_user then $timeline[$last_user] else null end)
+  } | with_entries(select(.value != null)) + {
+    recent_timeline:[],
     target_tool_call:{type:"tool_call",id:$request.tool.id,
-      name:$request.tool.name,input:$request.tool.input},
-    candidates:($timeline[$last_user + 1:] | reverse | clip_results)
-  }
-' "$SHELLFISH_SESSION" 2>/dev/null) ||
-  permission_defer 'Permission review could not filter the active context.'
-
-base=$(jq -cn --argjson records "$records" '
-  $records | {system_message,startup_context,latest_user_message} |
-  with_entries(select(.value != null)) +
-  {recent_timeline:[],target_tool_call:$records.target_tool_call}
-') || permission_defer 'Permission review could not prepare context.'
-
-integer base_bytes
-base_bytes=$(jq -cn --arg system "$system" --argjson context "$base" \
-  '($system | utf8bytelength) + ($context | tojson | utf8bytelength)') ||
-  permission_defer 'Permission review could not measure required context.'
-(( base_bytes <= max_input_kb * 1024 )) ||
-  permission_defer 'Required permission review context exceeds the review context limit.'
-
-candidates=( "${(@f)$(jq -c '.candidates[]' <<<"$records")}" ) ||
-  permission_defer 'Permission review could not inspect optional context.'
-integer candidate_bytes
-for candidate in $candidates; do
-  context=$(jq -cn --argjson context "$base" --argjson candidate "$candidate" '
-    $context | .recent_timeline = ([$candidate] + .recent_timeline)
-  ') || permission_defer 'Permission review could not assemble context.'
-  candidate_bytes=$(jq -cn --arg system "$system" --argjson context "$context" \
-    '($system | utf8bytelength) + ($context | tojson | utf8bytelength)') ||
-    permission_defer 'Permission review could not measure optional context.'
-  (( candidate_bytes <= max_input_kb * 1024 )) || break
-  base=$context
-done
+      name:$request.tool.name,input:$request.tool.input}
+  }) as $pinned |
+  (($system | utf8bytelength) + ($pinned | bytes)) as $size |
+  if $size > $budget then "" | halt_error(3) else . end |
+  # Each admitted record adds its bytes and, after the first, a comma.
+  (reduce ($timeline[$last_user + 1:] | reverse | clip_results)[] as $record
+    ({size:$size,timeline:[],full:false};
+      if .full then . else
+        (.size + ($record | bytes) + (if .timeline == [] then 0 else 1 end)) as $next |
+        if $next > $budget then .full = true
+        else .size = $next | .timeline = [$record] + .timeline end
+      end)) as $admitted |
+  $pinned | .recent_timeline = $admitted.timeline
+' "$SHELLFISH_SESSION" 2>/dev/null)
+case $? in
+  0) ;;
+  3) permission_defer 'Required permission review context exceeds the review context limit.' ;;
+  *) permission_defer 'Permission review could not filter the active context.' ;;
+esac
 
 if [[ -n $decision_model ]]; then review_decide; else review_chat; fi
 permission_resolve "$REPLY"
