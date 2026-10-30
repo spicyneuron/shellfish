@@ -55,18 +55,19 @@ image_size() {
 }
 
 if image_format "$file_path"; then
-  source_format=$REPLY image=$file_path max_edge=1568 note=''
+  source_format=$REPLY image=$file_path note=''
   settings=$(jq -r '
     .read_file // {} |
-    if type == "object" and (keys - ["image_format", "image_quality"]) == [] then
-      "\(.image_format // "webp") \(.image_quality // 75)"
+    if type == "object" and
+      (keys - ["image_format", "image_max_edge", "image_quality"]) == [] then
+      "\(.image_format // "webp") \(.image_quality // 75) \(.image_max_edge // 1568)"
     else error end
   ' <<<"${SHELLFISH_CONFIG:-{\}}" 2>/dev/null) || settings=''
-  read -r format quality <<<"$settings"
+  read -r format quality max_edge <<<"$settings"
   integer width=0 height=0 bytes limit=${SHELLFISH_MAX_CONTENT_BYTES:-5242880}
   typeset -a flags=()
-  [[ $format == (webp|jpeg|png) && $quality == <1-100> ]] || {
-    printf 'read_file: config.read_file allows image_format webp, jpeg, or png and image_quality from 1 to 100\n'
+  [[ $format == (webp|jpeg|png) && $quality == <1-100> && $max_edge == <1-8000> ]] || {
+    printf 'read_file: config.read_file allows image_format (webp, jpeg, png), image_quality (1-100), and image_max_edge (1-8000)\n'
     exit 2
   }
   # Neither resizer takes --, so a leading dash must not read as an option.

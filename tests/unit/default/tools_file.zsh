@@ -41,6 +41,10 @@ if (( $+commands[sips] || $+commands[magick] || ($+commands[identify] && $+comma
   assert_equal '[image 1568x8 png, downscaled from 2000x10]' \
     "$(SHELLFISH_CONFIG=$png run_tool read_file '{"file_path":"wide.png"}')"
   : >|"$tmp/fd3"
+  assert_equal '[image 1000x5 png, downscaled from 2000x10]' \
+    "$(SHELLFISH_CONFIG='{"read_file":{"image_format":"png","image_max_edge":1000}}' \
+      run_tool read_file '{"file_path":"wide.png"}')"
+  : >|"$tmp/fd3"
   print -r -- 'GIF89a is not an image' >"$tmp/fake.gif"
   assert_equal 'read_file: cannot decode image fake.gif' \
     "$(run_tool read_file '{"file_path":"fake.gif"}' || true)"
@@ -48,8 +52,9 @@ if (( $+commands[sips] || $+commands[magick] || ($+commands[identify] && $+comma
     "$(SHELLFISH_MAX_CONTENT_BYTES=200 SHELLFISH_CONFIG=$png \
       run_tool read_file '{"file_path":"small.png"}' || true)"
   for config in '{"read_file":{"image_format":"avif"}}' '{"read_file":{"image_quality":0}}' \
-      '{"read_file":{"quality":40}}' '{"read_file":5}'; do
-    assert_equal 'read_file: config.read_file allows image_format webp, jpeg, or png and image_quality from 1 to 100' \
+      '{"read_file":{"quality":40}}' '{"read_file":5}' '{"read_file":{"image_max_edge":0}}' \
+      '{"read_file":{"image_max_edge":8001}}'; do
+    assert_equal 'read_file: config.read_file allows image_format (webp, jpeg, png), image_quality (1-100), and image_max_edge (1-8000)' \
       "$(SHELLFISH_CONFIG=$config run_tool read_file '{"file_path":"small.png"}' || true)"
   done
 fi

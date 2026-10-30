@@ -218,7 +218,7 @@ Set `"config": {"skills": ["skill-creator", "code-review"]}` in a profile to all
 | `fetch_url` | Fetch a page as Markdown through Jina Reader |
 | `skill` | Load an advertised Agent Skill |
 
-`read_file` re-encodes images as WebP at quality 75 by default. Set `"config": {"read_file": {"image_format": "jpeg", "image_quality": 60}}` to choose `webp`, `jpeg`, or `png` and a quality from 1 to 100. `sips` cannot write WebP, so without ImageMagick an image that must be re-encoded becomes JPEG. One already in the chosen format and within 1568 pixels is sent unchanged.
+`read_file` re-encodes images as WebP at quality 75 and downscales them to at most 1568 pixels on the long edge by default. Set `"config": {"read_file": {"image_format": "jpeg", "image_quality": 60, "image_max_edge": 1024}}` to choose `webp`, `jpeg`, or `png`, a quality from 1 to 100, and a long edge from 1 to 8000 pixels. Providers bill images by their dimensions, so a smaller edge costs fewer tokens. `sips` cannot write WebP, so without ImageMagick an image that must be re-encoded becomes JPEG. One already in the chosen format and within the long edge is sent unchanged.
 
 The bundled `session_start` hooks record context once, one block per part:
 
