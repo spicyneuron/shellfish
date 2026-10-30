@@ -30,7 +30,7 @@ resolved=$(jq -j -s --argjson target "$target" --argjson rewind "$rewind" '
   elif $target == 0 and $rewind == 1 then
     ([$sections[] | select(.type == "user")] | last | [.index, .draft, 1])
   elif $target == 0 then [($records | length), "", 0]
-  elif $target >($sections | length) then error("missing")
+  elif $target > ($sections | length) then error("missing")
   elif $sections[$target - 1].type == "user" then
     ($sections[$target - 1] | [.index, .draft, 1])
   else ([$sections[$target:][] | select(.type == "user")] | first) as $next |
@@ -61,34 +61,32 @@ if (( rewind )); then
     print -ru2 -- 'Could not rewind session.'
     exit 0
   fi
-  argv=( "$SHELLFISH_EXECUTABLE" --session "$SHELLFISH_SESSION" --draft "$draft" )
-  jq -cn '$ARGS.positional | {action:"handoff",argv:.}' --args -- "${argv[@]}" >&3 || exit 1
-  exit 0
-fi
-
-created=$(date -u '+%Y-%m-%dT%H:%M:%SZ') || exit 1
-transcript="$SHELLFISH_TURN_STATE/fork.jsonl"
-if ! jq -ce -s --argjson cutoff "$cutoff" --arg created "$created" '
-  .[0:$cutoff] | .[0].created = $created | .[]
-' "$SHELLFISH_SESSION" >"$transcript"; then
-  print -ru2 -- 'Could not fork session.'
-  exit 0
-fi
-
-base=${SHELLFISH_SESSION%.jsonl}
-base=${base%_fork(|_<->)}
-base="${base}_fork"
-while true; do
-  candidate="${base}_${suffix}.jsonl"
-  if (umask 077; setopt no_clobber; cat -- "$transcript" >"$candidate") 2>/dev/null; then
-    break
-  fi
-  if [[ ! -e $candidate && ! -L $candidate ]]; then
-    print -ru2 -- "Could not create fork:"$'\n'"$candidate"
+  candidate=$SHELLFISH_SESSION
+else
+  created=$(date -u '+%Y-%m-%dT%H:%M:%SZ') || exit 1
+  transcript="$SHELLFISH_TURN_STATE/fork.jsonl"
+  if ! jq -ce -s --argjson cutoff "$cutoff" --arg created "$created" '
+    .[0:$cutoff] | .[0].created = $created | .[]
+  ' "$SHELLFISH_SESSION" >"$transcript"; then
+    print -ru2 -- 'Could not fork session.'
     exit 0
   fi
-  (( suffix++ ))
-done
+
+  base=${SHELLFISH_SESSION%.jsonl}
+  base=${base%_fork(|_<->)}
+  base="${base}_fork"
+  while true; do
+    candidate="${base}_${suffix}.jsonl"
+    if (umask 077; setopt no_clobber; cat -- "$transcript" >"$candidate") 2>/dev/null; then
+      break
+    fi
+    if [[ ! -e $candidate && ! -L $candidate ]]; then
+      print -ru2 -- "Could not create fork:"$'\n'"$candidate"
+      exit 0
+    fi
+    (( suffix++ ))
+  done
+fi
 
 argv=( "$SHELLFISH_EXECUTABLE" --session "$candidate" )
 (( ! has_draft )) || argv+=( --draft "$draft" )
