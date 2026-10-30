@@ -1,0 +1,1 @@
+{"description":"List or update session sandbox grants","arguments":"[OP DIR]","user_text":"${output.stderr}"}

@@ -5,9 +5,9 @@
   "sandbox": "default",
   "system": ["readonly.md", "tools.md"],
   "tools": ["read_file", "shell_readonly"],
+  "commands": ["help", "verbose", "new", "resume", "server", "copy", "fork", "sandbox", "shell", "compact"],
   "hooks": [
     "project/instructions",
-    "help", "verbose", "new", "resume", "server", "copy", "sandbox", "user_shell",
-    "fork", "compact", "git/change", "skills"
+    "compact", "git/change", "skills/mention"
   ]
 }

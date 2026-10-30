@@ -24,7 +24,7 @@ A session JSONL file is the agent's only durable state. Its first line is a head
 {"type":"assistant","stop":"end","content":[{"type":"text","text":"Done."}]}
 ```
 
-The header freezes the resolved profile and model, each in its config file's shape, so together they resolve to the same header. The profile holds the system prompt text, the tool and hook lists, and the merged sandbox setting and grants. The model holds the merged adapter, endpoint, and request settings. System prompt files are frozen as their text, like model and sandbox files; executable components, manifests, and policies remain live. Credentials, environment settings such as turn limits, and presentation settings remain external.
+The header freezes the resolved profile and model, each in its config file's shape, so together they resolve to the same header. The profile holds the system prompt text, the tool, command, and hook lists, and the merged sandbox setting and grants. The model holds the merged adapter, endpoint, and request settings. System prompt files are frozen as their text, like model and sandbox files; executable components, manifests, and policies remain live. Credentials, environment settings such as turn limits, and presentation settings remain external.
 
 Header paths use `@` for the bundled root, `~/` for HOME, or `/` for fixed absolute locations, so a session survives upgrades and moves with its home. If the project moves independently of HOME, update the header cwd.
 
@@ -49,7 +49,7 @@ On macOS and Linux, `shellfish run --background` starts an isolated one-turn pro
 
 ```text
 open and recover session
-  -> run submission hooks
+  -> run a command or submission hooks
   -> append user
   -> request and append assistant
   -> execute and append tool results while requested
@@ -67,14 +67,16 @@ The core guarantees ordering, validation, persistence, recovery, and cleanup. Ev
 
 - **Backends** make API requests to inference providers.
 - **Tools** let the model act.
+- **Commands** handle `/NAME` prompts instead of submitting them.
 - **Hooks** add context and workflow policy at lifecycle boundaries.
 
-Hooks and backends are trusted, run with your permissions, and receive every value in `.env`; tools can be sandboxed and receive only the `.env` names their manifest declares. Tools and backends describe other settings in a JSON manifest.
+Commands, hooks, and backends are trusted, run with your permissions, and receive every value in `.env`; tools can be sandboxed and receive only the `.env` names their manifest declares. Tools and backends describe other settings in a JSON manifest.
 
 | Owner | Responsibility |
 | --- | --- |
 | Core | Canonical records, event order, session mutation, recovery, permissions, and cleanup |
 | Backend adapter | Provider request translation, transport, stream parsing, and provider-specific validation |
+| Command | One user-requested action in place of a prompt |
 | Hook | Context or policy before and after core operations |
 | Tool | One model-requested action and optional durable state request |
 

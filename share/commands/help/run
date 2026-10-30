@@ -1,0 +1,24 @@
+#!/usr/bin/env zsh
+
+emulate -R zsh
+setopt no_aliases no_multios pipe_fail
+
+typeset listed
+listed=$(jq -nr --argjson commands "$SHELLFISH_COMMANDS" '
+  $commands[] |
+  (([.name] + (.aliases // []) | map("/" + .) | join(", ")) +
+    (if .arguments then " " + .arguments else "" end)) as $label |
+  $label + " " * ([19 - ($label | length), 2] | max) + .description
+') || exit 1
+
+cat >&2 <<HELP
+Help:
+shift+enter        Add a line instead of sending the message
+ctrl+c             Cancel an active request; otherwise exit
+↑, ↓               Navigate prompt history
+/queue drop <N>    Discard queued prompt
+/queue clear       Discard all queued prompts
+$listed
+/refresh, /r       Rerender current session; fix layout
+/quit, /q          Exit
+HELP

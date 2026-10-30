@@ -1,0 +1,1 @@
+{"description":"Copy the latest or selected user/agent section","arguments":"[N]","user_text":"${output.stderr}"}

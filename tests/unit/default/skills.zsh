@@ -98,7 +98,7 @@ fi
 
 # Prompt references load each valid skill once, including user-only skills.
 sf_test_frozen_profile
-SF_TEST_PROFILE=$(jq -c --arg hook "$ROOT/share/hooks/skills" '.hooks=[$hook]' \
+SF_TEST_PROFILE=$(jq -c --arg hook "$ROOT/share/hooks/skills/mention" '.hooks=[$hook]' \
   <<<"$SF_TEST_PROFILE")
 session="$tmp/skills.jsonl"
 (cd "$project" && sf_test_session "$session")
@@ -116,7 +116,7 @@ jq -e -s '
   (.[0].model_text | contains("description: project description") | not) and
   (.[0].user_text | contains("Loaded $config-only:\n# config-only instructions")) and
   (.[0].user_text | contains("Loaded $hidden:\n# hidden instructions")) and
-  (.[0].model_text | startswith("<context script=\"skills\">\n<skill name=") and
+  (.[0].model_text | startswith("<context script=\"skills/mention\">\n<skill name=") and
     endswith("</skill>\n</context>")) and
   (.[0].model_text | [scan("<skill name=")] | length == 3) and
   (.[0].model_text | [scan("# shared instructions")] | length == 1) and

@@ -25,7 +25,7 @@ jq -e --arg adapter "$ROOT/share/backends/openai" '
   .model == {adapter:$adapter, endpoint:"https://api.openai.com/v1/chat/completions",
     context_window:128000,
     request:{model:"configured",temperature:0.2,reasoning:{effort:"high"}}} and
-  .profile == {system:[],tools:[],hooks:[],sandbox:{enabled:true,read:[],write:[]}} and
+  .profile == {system:[],tools:[],commands:[],hooks:[],sandbox:{enabled:true,read:[],write:[]}} and
   keys == ["model", "profile"]
 ' <<<"$REPLY" >/dev/null || fail 'model files did not merge in order'
 sf_profile_resolve_args -p work -m work -m high -m '{"request":{"temperature":0.7}}' \
@@ -188,7 +188,8 @@ for name in default basic readonly plus; do
   jq -e --arg share "$ROOT/share/" --arg name "$name" '
     .model.request == {max_tokens:16384,reasoning:{effort:"medium"},model:"mine"} and
     (.profile |
-      ([.hooks[], .tools[]] | length > 0 and all(.[]; startswith($share))) and
+      ([.commands[], .hooks[], .tools[]] | length > 0 and all(.[]; startswith($share))) and
+      (.commands | any(endswith("/help"))) and
       (.system[0].text | length > 0) and
       ((.tools | any(endswith("/agent"))) == ($name == "plus")) and
       ((.hooks | any(endswith("/sandbox-approver"))) == ($name == "plus")))
@@ -407,29 +408,29 @@ sf_jq -en '
   ({match:{pattern:"x"},description:"tool",input_schema:{type:"object"},sandbox:false} |
     tool_manifest | not)
 ' >/dev/null || fail 'hook match validation failed'
-typeset item hook_name example
-for item in 'help:/help' 'verbose:/v' 'new:/new' 'resume:/resume' \
-    'server:/server' 'copy:/copy 2' 'sandbox:/sandbox read .' \
-    'user_shell:!echo hi' 'fork:/fork 2' 'skills:$sample'; do
-  hook_name=${item%%:*}
-  example=${item#*:}
-  sf_jq -en --arg prompt "$example" --slurpfile manifest \
-      "$ROOT/share/hooks/$hook_name/manifest.json" '
+sf_jq -en '
+  include "lib/profile";
+  ({description:"Copy",arguments:"[N]",aliases:["c"],user_text:"${output.stderr}"} |
+    command_manifest) and
+  ([{}, {description:""}, {description:"x",arguments:""}, {description:"x",aliases:["c","c"]},
+    {description:"x",aliases:["/c"]}, {description:"x",on:"stop"}] |
+    all(.[]; command_manifest | not))
+' >/dev/null || fail 'command manifest validation failed'
+typeset hook_name
+for hook_name in "$ROOT"/share/commands/*(/); do
+  sf_jq -en --slurpfile manifest "$hook_name/manifest.json" '
     include "lib/profile";
-    $manifest[0] as $hook |
-    ($hook | hook_manifest) and $hook.on == "user_prompt_submit" and
-    ($prompt | test($hook.match.pattern)) and
-    ("ordinary prompt" | test($hook.match.pattern) | not)
-  ' >/dev/null || fail "bundled hook match failed: $hook_name"
+    $manifest[0] | command_manifest
+  ' >/dev/null || fail "bundled command manifest is invalid: ${hook_name:t}"
 done
-sf_jq -en --slurpfile manifest "$ROOT/share/hooks/skills/manifest.json" '
+sf_jq -en --slurpfile manifest "$ROOT/share/hooks/skills/mention/manifest.json" '
+  include "lib/profile";
   $manifest[0].match.pattern as $pattern |
-  (["$", "$-", "$Name", "abc$name", "$$name"] | all(.[]; test($pattern) | not)) and
+  ($manifest[0] | hook_manifest and .on == "user_prompt_submit") and
+  (["$", "$-", "$Name", "abc$name", "$$name", "ordinary prompt"] |
+    all(.[]; test($pattern) | not)) and
   (["$name", "$0", "use $name"] | all(.[]; test($pattern)))
 ' >/dev/null || fail 'skills match accepted a non-name dollar sign'
-sf_jq -en --slurpfile manifest "$ROOT/share/hooks/user_shell/manifest.json" '
-  "!" | test($manifest[0].match.pattern)
-' >/dev/null || fail 'bare shell command lost its usage hook'
 
 # Tool references preserve configured order.
 typeset tools="$SF_TEST_CONFIG/tools"

@@ -6,7 +6,6 @@ set -u
 zmodload zsh/datetime
 bundled_root=${0:A:h:h:h:h}
 source "$bundled_root/lib/capped.zsh" || exit 1
-source "$bundled_root/lib/skills.zsh" || exit 1
 
 report() {
   printf 'Date: %s\n' "$(date '+%Y-%m-%d')"
@@ -88,15 +87,6 @@ report() {
   report_group Python uv python3 python
   report_group VCS git
   report_group GitHub gh
-
-  sf_skills_discover "$SHELLFISH_SESSION" "${SHELLFISH_DIR-}" "$PWD" || return 1
-  if (( ${#reply} )); then
-    print -r -- $'\nAvailable agent skills. Invoke the `skill` tool when one applies:'
-    integer index
-    for (( index = 1; index <= ${#reply}; index += 3 )); do
-      printf -- '- %s: %s\n' "$reply[index]" "$reply[index+1]"
-    done
-  fi
 }
 
 typeset text

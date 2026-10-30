@@ -1,1 +1,1 @@
-{"type":"session","format_version":1,"cwd":"/fixture","created":"2025-01-01T00:00:00Z","profile":{"system":[],"tools":[],"hooks":[],"sandbox":{"enabled":false,"read":[],"write":[]}},"model":{"adapter":"/test","endpoint":"https://example.invalid","request":{"model":"fake-model"}}}
+{"type":"session","format_version":1,"cwd":"/fixture","created":"2025-01-01T00:00:00Z","profile":{"system":[],"tools":[],"commands":[],"hooks":[],"sandbox":{"enabled":false,"read":[],"write":[]}},"model":{"adapter":"/test","endpoint":"https://example.invalid","request":{"model":"fake-model"}}}

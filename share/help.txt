@@ -20,6 +20,7 @@ New sessions:
   --sandbox REF|JSON    Merge a sandbox file or object over the profile's
   --system REF|JSON     Append a system file or {"text": "..."}
   -t, --tool REF        Append a tool
+  --command REF         Append a command
   --hook REF            Append a hook
   --sandbox-auto        Grant detected development-tool paths
 

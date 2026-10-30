@@ -79,6 +79,7 @@ valid_header=$(jq -cn '
     profile: {
       system: [{text: "inline"}],
       tools: ["@tools/shell", "~/tools/jira"],
+      commands: ["@commands/help"],
       hooks: ["/bin/hook", "@hooks/stop"],
       config: {example:["./literal", null, false]},
       sandbox: {enabled: true, read: ["~/cache"], write: []}
@@ -97,7 +98,8 @@ print -r -- "$valid_header" | jq -c 'del(.model.context_window)' |
 for patch in '.extra=true' '.profile.extra=true' '.profile.env={}' \
     '.profile.config=null' '.profile.config=[]' '.profile.config=false' \
     '.model.config=null' '.model.config=[]' '.model.config=false' \
-    '.profile."$schema"="x"' 'del(.profile.hooks)' 'del(.profile.sandbox)' \
+    '.profile."$schema"="x"' 'del(.profile.hooks)' 'del(.profile.commands)' \
+    '.profile.commands=["relative"]' '.profile.commands=["/a/bad name"]' 'del(.profile.sandbox)' \
     '.model.extra=true' 'del(.model.endpoint)' 'del(.model.request.model)' \
     '.model.context_window=0' 'del(.model)' '.profile.model=.model' '.profile.hooks={}' \
     '.profile.hooks=[{command:"/bin/hook"}]' '.profile.system=["@system/general.md"]' \

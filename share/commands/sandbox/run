@@ -1,0 +1,103 @@
+#!/usr/bin/env zsh
+
+emulate -R zsh
+setopt extended_glob no_aliases no_multios pipe_fail
+
+typeset body operation candidate grant_path header grants updated profile
+typeset grant resolved matched=''
+typeset action access message user
+typeset usage='usage: /sandbox {read|write|+read|+write|+r|+w|-read|-write|-r|-w} DIR'
+body=$(cat)
+
+if [[ -z $body ]]; then
+  IFS= read -r header <"$SHELLFISH_SESSION" || exit 1
+  jq -r '.profile.sandbox |
+    "Sandbox: " + (if .enabled then "enabled" else "disabled" end),
+    ("Read", "Write") as $label | (.[$label | ascii_downcase]) as $grants |
+    "\($label) grants:", if $grants == [] then "  (none)" else $grants[] | "  " + . end
+  ' <<<"$header" >&2
+  exit
+fi
+
+body=${body##[[:space:]]#}
+body=${body%%[[:space:]]#}
+operation=${body%%[[:space:]]*}
+candidate=${body#"$operation"}
+candidate=${candidate##[[:space:]]#}
+candidate=${candidate%%[[:space:]]#}
+case $operation in
+  read|+read|+r) action=add; access=read ;;
+  write|+write|+w) action=add; access=write ;;
+  -read|-r) action=remove; access=read ;;
+  -write|-w) action=remove; access=write ;;
+  *)
+    print -u2 -r -- "$usage"
+    exit 0
+    ;;
+esac
+[[ -n $candidate ]] || {
+  print -u2 -r -- "$usage"
+  exit 0
+}
+
+IFS= read -r header <"$SHELLFISH_SESSION" || exit 1
+jq -e '.profile.sandbox.enabled' <<<"$header" >/dev/null || {
+  print -u2 -r -- 'session sandbox is disabled'
+  exit 0
+}
+grants=$(jq -ce --arg access "$access" '.profile.sandbox[$access] | select(type == "array")' \
+  <<<"$header") || exit 1
+
+if [[ $candidate == '~' || $candidate == '~/'* ]]; then
+  [[ -n ${HOME-} ]] || {
+    print -u2 -r -- 'cannot expand ~ without HOME'
+    exit 0
+  }
+  candidate=${candidate/#\~/${HOME:A}}
+elif [[ $candidate == @* ]]; then
+  candidate=$SHELLFISH_SHARE_DIR/${candidate#@}
+elif [[ $candidate != /* ]]; then
+  candidate="$PWD/$candidate"
+fi
+
+grant_path=${candidate:A}
+if [[ $action == add && ! -d $grant_path ]]; then
+  print -u2 -r -- "sandbox directory does not exist: $candidate"
+  exit 0
+fi
+
+# Stored grants name HOME as "~/" and the bundled root as "@".
+while IFS= read -r -d '' grant; do
+  case $grant in
+    '~/'*) resolved="${HOME:A}/${grant#\~/}" ;;
+    @*) resolved=$SHELLFISH_SHARE_DIR/${grant#@} ;;
+    *) resolved=$grant ;;
+  esac
+  [[ ${resolved:A} != $grant_path ]] || { matched=$grant; break; }
+done < <(jq -jr '.[] | ., "\u0000"' <<<"$grants")
+
+if [[ -n $matched ]]; then
+  if [[ $action == add ]]; then
+    print -u2 -r -- "sandbox $access grant already exists: $grant_path"
+    exit 0
+  fi
+elif [[ $action == remove ]]; then
+  print -u2 -r -- "sandbox $access grant is not set: $grant_path"
+  exit 0
+fi
+
+updated=$(jq -c --arg action "$action" --arg path "$grant_path" --arg matched "$matched" '
+  if $action == "add" then . + [$path] else map(select(. != $matched)) end
+' <<<"$grants") || exit 1
+profile=$(jq -c --arg access "$access" --argjson paths "$updated" \
+  '.profile | .sandbox[$access]=$paths' <<<"$header") || exit 1
+if [[ $action == add ]]; then
+  message="Session sandbox $access grant added: $grant_path"
+  user="Sandbox $access grant added:"
+else
+  message="Session sandbox $access grant removed: $grant_path"
+  user="Sandbox $access grant removed:"
+fi
+jq -cn --argjson profile "$profile" '{action:"session_update",profile:$profile}' >&3 || exit 1
+print -rn -- "<context script=\"sandbox\">"$'\n'"$message"$'\n'"</context>"
+print -rnu2 -- "$user"$'\n'"$grant_path"

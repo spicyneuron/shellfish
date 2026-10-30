@@ -6,9 +6,9 @@
   "sandbox": "default",
   "system": ["general.md", "tools.md"],
   "tools": ["read_file", "edit_file", "write_file", "skill", "search_web", "fetch_url", "shell", "agent"],
+  "commands": ["help", "verbose", "new", "resume", "server", "copy", "fork", "sandbox", "shell", "compact"],
   "hooks": [
-    "project/environment", "git/environment", "project/instructions",
-    "help", "verbose", "new", "resume", "server", "copy", "sandbox", "user_shell",
-    "fork", "compact", "git/change", "skills", "sandbox-approver"
+    "project/environment", "git/environment", "project/instructions", "skills/list",
+    "compact", "git/change", "skills/mention", "sandbox-approver"
   ]
 }

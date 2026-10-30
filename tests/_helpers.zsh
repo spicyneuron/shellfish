@@ -109,7 +109,7 @@ assert_canonical_session() {
 sf_test_frozen_profile() {
   typeset -g SF_TEST_PROFILE SF_TEST_MODEL
   SF_TEST_PROFILE=$(jq -cn --arg tool "$ROOT/share/tools/shell" '
-    {system:[], tools:[$tool], hooks:[], sandbox:{enabled:false, read:[], write:[]}}
+    {system:[], tools:[$tool], commands:[], hooks:[], sandbox:{enabled:false, read:[], write:[]}}
   ')
   SF_TEST_MODEL=$(jq -cn --arg adapter "${SF_TEST_BACKEND:h}" '
     {adapter:$adapter,endpoint:"https://example.invalid/test",request:{model:"test-model"}}

@@ -34,6 +34,10 @@
       "type": "array",
       "items": {"$ref": "#/$defs/reference"}
     },
+    "commands": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/reference"}
+    },
     "hooks": {
       "type": "array",
       "items": {"$ref": "#/$defs/reference"}

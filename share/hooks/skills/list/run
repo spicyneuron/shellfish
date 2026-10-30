@@ -1,0 +1,16 @@
+#!/usr/bin/env zsh
+
+emulate -R zsh
+setopt no_aliases no_multios pipe_fail
+
+typeset text
+integer index
+source "${0:A:h:h:h:h}/lib/skills.zsh" || exit 1
+sf_skills_discover "$SHELLFISH_SESSION" "${SHELLFISH_DIR-}" "$PWD" || exit 1
+(( ${#reply} )) || exit 0
+text='Available agent skills. Invoke the `skill` tool when one applies:'
+for (( index = 1; index <= ${#reply}; index += 3 )); do
+  text+=$'\n'"- $reply[index]: $reply[index+1]"
+done
+print -r -- "$text" >&2
+print -rn -- "<context script=\"skills/list\">"$'\n'"$text"$'\n'"</context>"

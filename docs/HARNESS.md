@@ -1,6 +1,6 @@
 # Harnesses
 
-A harness defines how Shellfish behaves as an agent. It combines tools and lifecycle hooks around the shared execution loop. A profile selects one harness together with system prompts and sandbox files. The model is selected separately.
+A harness defines how Shellfish behaves as an agent. It combines tools, commands, and lifecycle hooks around the shared execution loop. A profile selects one harness together with system prompts and sandbox files. The model is selected separately.
 
 The core owns event ordering, persistence, recovery, and cleanup. The harness supplies tools and workflow policy. A session freezes its component lists and settings when it is created; the component files themselves are read on each run.
 
@@ -8,13 +8,14 @@ See [`CONFIG.md`](CONFIG.md) for selection, lookup, settings, and the bundled ha
 
 ## Shared contract
 
-Tools, hooks, and backend adapters are executable component directories. References resolve before session creation and are frozen in its header. Manifests and scripts are read on each invocation.
+Tools, commands, hooks, and backend adapters are executable component directories. References resolve before session creation and are frozen in its header. Manifests and scripts are read on each invocation.
 
-Tools and hooks require an executable `run`. A backend adapter provides `run` for conversations, `decide` for [decisions](#decisions), or both. Configuration lives in an optional `manifest.json` or `manifest.jsonc`, with an absent manifest treated as `{}`. Each role validates the settings it needs.
+Tools, commands, and hooks require an executable `run`. A backend adapter provides `run` for conversations, `decide` for [decisions](#decisions), or both. Configuration lives in an optional `manifest.json` or `manifest.jsonc`, with an absent manifest treated as `{}`. Each role validates the settings it needs.
 
 | Component | Additional requirements | Trust |
 | --- | --- | --- |
 | Tool | Model-facing metadata and execution policy, `fence.jsonc` when sandboxed | Model-facing, optionally sandboxed |
+| Command | User-facing `description` | Trusted, user permissions |
 | Hook | None | Trusted, user permissions |
 | Backend adapter | `run`, `decide`, or both, an endpoint from a model file or manifest, optional `context_window` executable | Trusted, user permissions |
 
@@ -24,7 +25,7 @@ Raw captures and live progress are transient. Only settled text and accepted sta
 
 ### Environment
 
-Hooks and adapters inherit the process environment and receive every value in `.env`. Tools receive only the names listed under `environment` in their manifest. Exported values take precedence over `.env`, and both remain external.
+Commands, hooks, and adapters inherit the process environment and receive every value in `.env`. Tools receive only the names listed under `environment` in their manifest. Exported values take precedence over `.env`, and both remain external.
 
 Components can also read the frozen profile's `config` from the session header. Features own their configuration keys, validation, and defaults. Only supplied values freeze, while omitted defaults remain component-defined. Runtime state stays separate from configuration.
 
@@ -40,6 +41,7 @@ Components can also read the frozen profile's `config` from the session header. 
 | `SHELLFISH_VERBOSE` |  | ✓ (`0` or `1`) |
 | `SHELLFISH_TURN_ID` |  | Turn hooks only |
 | `SHELLFISH_TURN_STATE` |  | Turn hooks only |
+| `SHELLFISH_COMMANDS` |  | [Commands](#commands) only |
 | `TMPDIR`, `TMPPREFIX` | ✓ |  |
 
 `SHELLFISH_SHARE_DIR` is the installed bundled `share/` root, so scripts can call its parts, such as `$SHELLFISH_SHARE_DIR/hooks/sandbox-approver/run`.
@@ -119,7 +121,7 @@ Hooks are components bound to lifecycle points. A hook's manifest names its life
 create session
     session_start
 begin turn
-    user_prompt_submit
+    command or user_prompt_submit
 append user
 repeat:
     append assistant
@@ -180,6 +182,26 @@ Actions take these shapes:
 Each lifecycle is a checkpoint before its default step, and `deny` prevents that step. At `user_prompt_submit`, the prompt is not submitted. At `pre_tool_use` or `permission_request`, the reason becomes the refused tool result. At `stop`, denying means denying the end of the turn. It requires settled model text, then continues inference with that text. Denials and their optional reasons are durable even without display or model text.
 
 An `allow` approves only a supported sandbox bypass. A handoff asks a capable client to run the complete `argv` after a clean turn exit. A session update's `PROFILE` is one complete session profile, as stored in the header. Shellfish atomically replaces it. `pre_tool_use` and `post_tool_use` cannot rewrite tool input or results. A result is already durable when `post_tool_use` runs, and its context still reaches the model with that result.
+
+## Commands
+
+A command runs in place of a prompt. The profile's `commands` list names them, and the user types one as `/NAME`, where `NAME` is its folder name, or as one of its manifest's `aliases`. When a single-line prompt names a command, Shellfish runs that command alone, before any `user_prompt_submit` hook, and never submits the prompt.
+
+```json
+{"description": "Copy a conversation section", "arguments": "[N]", "aliases": ["c"],
+ "user_text": "${output.stderr}"}
+```
+
+| Field | Requirement |
+| --- | --- |
+| `description` | Required nonempty user-facing description |
+| `arguments` | Optional usage hint, such as `[N]`, that also allows `/NAME ARGUMENTS` |
+| `aliases` | Optional unique alternate names |
+| `user_text`, `user_preview_lines`, `max_capture_bytes` | As for [hooks](#hooks) |
+
+Without `arguments`, only the exact `/NAME` matches, so `/NAME text` stays an ordinary prompt. Names and aliases must be unique within a profile.
+
+Shellfish calls `run` with no arguments and the argument text, without leading whitespace, on stdin and as `${input}`. A command receives the `user_prompt_submit` environment plus `SHELLFISH_COMMANDS`, a JSON array of the profile's commands with each `name` and its manifest's `description`, `arguments`, and `aliases`, so a help command can list them. Its result is stored as a `user_prompt_submit` hook result. A command may write a `handoff` or `session_update` [action](#hook-output); otherwise the prompt is denied. A nonzero exit fails the turn.
 
 ## Backend adapters
 

@@ -64,6 +64,15 @@ def hook_manifest:
       (.pattern as $pattern | $pattern | type == "string" and
         (try ("" | test($pattern) | type == "boolean") catch false))));
 
+# A command is named by its folder and matched as "/NAME" or an alias. Declared
+# arguments, shown in help, let "/NAME ARGUMENTS" match too.
+def command_manifest:
+  component_manifest(["aliases", "arguments", "description"]; []) and
+  (.description | nonempty_control_free_string) and
+  ((has("arguments") | not) or (.arguments | nonempty_control_free_string)) and
+  ((.aliases // []) | type == "array" and length == (unique | length) and
+    all(.[]; tool_name));
+
 def tool_manifest:
   component_manifest(["allow_sandbox_bypass", "description", "environment", "input_schema",
     "sandbox"]; .input_schema.properties // {} | keys | map("input." + .)) and
@@ -130,7 +139,7 @@ def config_sandbox($path):
 # A profile selects components and holds opaque configuration. Its lists contain
 # references, with inline values also allowed for sandbox and system. Absent
 # lists are empty, and a lone sandbox item needs no list. Options add a model list.
-def profile_fields: ["sandbox", "system", "tools", "hooks"];
+def profile_fields: ["sandbox", "system", "tools", "commands", "hooks"];
 def config_profile($path; $fields):
   config_object($path; ["$schema", "config"] + $fields) |
   del(."$schema") |
@@ -166,7 +175,7 @@ def config_relative($kind; $dir):
   if $kind == "model" then each("adapter"; relative_to($dir))
   elif $kind == "sandbox" then each("read"; map(relative_to($dir))) |
     each("write"; map(relative_to($dir)))
-  else reduce ("model", "sandbox", "system", "tools", "hooks") as $field (.;
+  else reduce ("model", "sandbox", "system", "tools", "commands", "hooks") as $field (.;
     each($field; map(if type == "object" and $field != "system"
       then config_relative($field; $dir) else relative_to($dir) end))) end;
 
@@ -186,7 +195,7 @@ def sandbox_merge($files):
 
 # Every path in a frozen profile through f.
 def header_paths(f):
-  .model.adapter |= f | .profile |= (.tools |= map(f) | .hooks |= map(f) |
+  .model.adapter |= f | .profile |= (.tools |= map(f) | .commands |= map(f) | .hooks |= map(f) |
     .sandbox.read |= map(f) | .sandbox.write |= map(f));
 
 # Stored paths name bundled files "@...", files under HOME "~/...", and
@@ -221,7 +230,7 @@ def canonical_model:
 # again changes nothing.
 def canonical_profile:
   type == "object" and
-  (keys - ["config"]) == ["hooks", "sandbox", "system", "tools"] and
+  (keys - ["config"]) == ["commands", "hooks", "sandbox", "system", "tools"] and
   ((has("config") | not) or (.config | type == "object")) and
   (.sandbox | type == "object" and
     (keys - ["user_approval_timeout"]) == ["enabled", "read", "write"] and
@@ -230,9 +239,10 @@ def canonical_profile:
     ((has("user_approval_timeout") | not) or (.user_approval_timeout | positive_integer))) and
   (.system | type == "array" and length <= 1 and all(.[]; type == "object" and
     keys == ["text"] and (.text | nul_free_string) and .text != "")) and
-  (.tools | type == "array") and (.hooks | type == "array") and
-  all(.tools[], .hooks[], .sandbox.read[], .sandbox.write[]; stored_reference) and
-  (.tools | map(split("/") | last) | all(.[]; tool_name) and length == (unique | length));
+  (.tools | type == "array") and (.commands | type == "array") and (.hooks | type == "array") and
+  all(.tools[], .commands[], .hooks[], .sandbox.read[], .sandbox.write[]; stored_reference) and
+  (.tools | map(split("/") | last) | all(.[]; tool_name) and length == (unique | length)) and
+  (.commands | map(split("/") | last) | all(.[]; tool_name));
 
 # The session header freezes one profile and one model. lib/session.jq owns the
 # records that follow it, but cannot call canonical_profile across a module

@@ -10,7 +10,7 @@ source "$SF_ROOT/libexec/run/tools.zsh"
 
 typeset -gA SF_RUN=(
   answer '' assistant '' jsonl 0 permission_count 0 signal_status 0
-  hook_id 1 hooks '[]' lifecycles '' tools '[]' write_failed 0
+  commands '[]' hook_id 1 hooks '[]' lifecycles '' tools '[]' write_failed 0
 )
 
 # The log's next effect and what that effect needs, from one reduction.
@@ -89,15 +89,18 @@ sf_run_settle() {
   done
 }
 
-# Tool and hook manifests are read once per run, so edits apply to the next.
+# Component manifests are read once per run, so edits apply to the next.
+# Commands run at user_prompt_submit.
 sf_run_components() {
-  local profile=$1
-  sf_profile_components tools "$profile" || { REPLY=$SF_PROFILE_ERROR; return 1; }
-  SF_RUN[tools]=$REPLY
-  sf_profile_components hooks "$profile" || { REPLY=$SF_PROFILE_ERROR; return 1; }
-  SF_RUN[hooks]=$REPLY
-  SF_RUN[lifecycles]=$(jq -r '[.[].manifest.on] | unique | join(" ")' <<<"$REPLY") ||
-    { REPLY='cannot group hooks'; return 1; }
+  local profile=$1 kind
+  for kind in tools commands hooks; do
+    sf_profile_components $kind "$profile" || { REPLY=$SF_PROFILE_ERROR; return 1; }
+    SF_RUN[$kind]=$REPLY
+  done
+  SF_RUN[lifecycles]=$(jq -r --argjson commands "$SF_RUN[commands]" '
+    [.[].manifest.on] + if $commands == [] then [] else ["user_prompt_submit"] end |
+    unique | join(" ")
+  ' <<<"$SF_RUN[hooks]") || { REPLY='cannot group hooks'; return 1; }
 }
 
 sf_run_open() {

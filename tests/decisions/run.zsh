@@ -59,7 +59,7 @@ for ref; do
         --arg model "m$index" --arg cwd "$tmp" --arg backend "$root/tests/fixtures/backend" '
       {type:"session", format_version:1, cwd:$cwd, created:"2026-01-01T00:00:00Z",
         profile:{system:[{text:"You are a coding agent working in the user'"'"'s project."}],
-          tools:[], hooks:[], sandbox:{enabled:true, read:[], write:[]},
+          tools:[], commands:[], hooks:[], sandbox:{enabled:true, read:[], write:[]},
           config:{"sandbox-approver":({($key):$model} +
             if $threshold == null then {} else {allow_threshold:$threshold} end)}},
         model:{adapter:$backend, endpoint:"https://example.invalid/test", request:{model:"unused"}}},

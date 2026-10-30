@@ -4,7 +4,7 @@ Configuration has three homes, each with one job:
 
 | Home | Job | Frozen in a session |
 | --- | --- | --- |
-| `profiles/NAME.jsonc` | Selects an agent's parts: sandbox files, system prompts, tools, and hooks | Yes |
+| `profiles/NAME.jsonc` | Selects an agent's parts: sandbox files, system prompts, tools, commands, and hooks | Yes |
 | `models/NAME.jsonc` | Configures the request: adapter, endpoint, and provider parameters | Yes |
 | `sandbox/NAME.jsonc` | Enables sandboxing and grants extra paths | Yes |
 | `.env` and the environment | Credentials and core runtime settings | No |
@@ -33,7 +33,8 @@ A profile selects an agent's parts, usually by reference, and supplies their con
   "sandbox": "default",
   "system": ["general.md", "tools.md"],
   "tools": ["read_file", "edit_file", "write_file", "shell"],
-  "hooks": ["project/environment", "project/instructions", "help", "compact", "sandbox-approver"]
+  "commands": ["help", "compact"],
+  "hooks": ["project/environment", "project/instructions", "sandbox-approver"]
 }
 ```
 
@@ -42,6 +43,7 @@ A profile selects an agent's parts, usually by reference, and supplies their con
 | `sandbox` | Sandbox files or inline sandbox objects, merged left to right |
 | `system` | System prompt files or inline `{"text": "..."}`, concatenated in order |
 | `tools` | Tools exposed to the model |
+| `commands` | Commands the user runs as `/NAME` instead of submitting a prompt |
 | `hooks` | Hooks, each run by the lifecycle its manifest names, in listed order |
 | `config` | Optional object of component-owned settings, grouped by feature |
 
@@ -51,13 +53,14 @@ Only supplied `config` values freeze with the session. Components define their o
 
 `profiles/default.jsonc` is selected when `--profile` is absent and it exists, and `-p REF` selects another. Without either, options alone select the agent's parts. Profiles do not inherit from each other, since a profile is short enough to copy. Only components named in the selected profile are active, and unused files are inert.
 
-Each selection list has an option that appends to the selected profile's list for one session. List options repeat, and any that accept inline values take a JSON object in place of a reference. Repeated `system`, `tools`, and `hooks` references collapse to the first. `sandbox` lists merge in order, so a repeated reference applies again.
+Each selection list has an option that appends to the selected profile's list for one session. List options repeat, and any that accept inline values take a JSON object in place of a reference. Repeated `system`, `tools`, `commands`, and `hooks` references collapse to the first. `sandbox` lists merge in order, so a repeated reference applies again.
 
 | Field | Option |
 | --- | --- |
 | `sandbox` | `--sandbox REF\|JSON` |
 | `system` | `--system REF\|JSON` |
 | `tools` | `-t, --tool REF` |
+| `commands` | `--command REF` |
 | `hooks` | `--hook REF` |
 
 ```sh
@@ -199,7 +202,7 @@ Set `"config": {"skills": ["skill-creator", "code-review"]}` in a profile to all
 
 | Profile | Selects |
 | --- | --- |
-| [`default`](../share/template/profiles/default.jsonc) | `general.md` and `tools.md`, the tools below, and the bundled hooks |
+| [`default`](../share/template/profiles/default.jsonc) | `general.md` and `tools.md`, the tools below, and the bundled commands and hooks |
 | [`basic`](../share/template/profiles/basic.jsonc) | `default` without web tools or skills |
 | [`readonly`](../share/template/profiles/readonly.jsonc) | Read-only file and shell tools |
 | [`plus`](../share/template/profiles/plus.jsonc) | `default` with the agent tool and permission review |
@@ -218,29 +221,29 @@ The bundled `session_start` hooks record context once, one block per part:
 
 | Hook | Context |
 | --- | --- |
-| `project/environment` | Date, platform, project tree, available commands, and skills |
+| `project/environment` | Date, platform, project tree, and available commands |
 | `git/environment` | Branch or commit, recent commits, and working-tree summary |
 | `project/instructions` | `AGENTS.md`, falling back to `CLAUDE.md` |
+| `skills/list` | Skills the `skill` tool can load |
 
-The bundled `user_prompt_submit` hooks handle interactive commands:
+The bundled commands:
 
 | Input | Action |
 | --- | --- |
-| `/help`, `/h` | Show harness commands and editor keys |
+| `/help`, `/h` | Show the profile's commands and editor keys |
 | `/verbose`, `/v` | Toggle full previews |
 | `/new` | Start a session with the active profile |
+| `/resume` | Choose another session for this directory |
+| `/server` | Hand the session to the experimental browser client |
 | `/copy [N]` | Copy a conversation section |
 | `/fork [N]` | Derive a session from a transcript prefix |
 | `/sandbox [OP DIR]` | Inspect or update frozen sandbox grants |
-| `!COMMAND` | Run a user-authored command and stage its output as context |
-| `$SKILL` | Load a matching skill into model context, including user-only skills |
-| `/resume` | Choose another session for this directory |
+| `/shell COMMAND` | Run a user-authored command and stage its output as context |
 | `/compact` | Summarize into a child session |
-| `/server` | Hand the session to the experimental browser client |
 
-It also compacts automatically near a known context-window limit and reports Git identity changes before ordinary prompts. Client-owned `/refresh`, `/quit`, and `/queue` commands do not run a turn.
+Client-owned `/refresh`, `/quit`, and `/queue` commands do not run a turn. The bundled `user_prompt_submit` hooks compact automatically near a known context-window limit, report Git identity changes, and load skills before ordinary prompts.
 
-For ordinary prompts, `$skill-name` loads each matching allowed skill into the model's context before the request, even when `disable-model-invocation` is true. The submitted prompt stays unchanged. Unknown and excluded skill names are ignored.
+With `skills/mention`, `$skill-name` in an ordinary prompt loads each matching allowed skill into the model's context before the request, including user-only skills with `disable-model-invocation: true`. The submitted prompt stays unchanged. Unknown and excluded skill names are ignored.
 
 `/compact` leaves the source unchanged and asks the client to open a summarized child. Automatic compaction preserves the interrupted prompt as an editable draft.
 

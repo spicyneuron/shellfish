@@ -1,1 +1,0 @@
-{"on":"user_prompt_submit","match":{"pattern":"^/fork( [^\\n]*)?\\z"},"user_text":"${output.stderr}"}

@@ -1,0 +1,24 @@
+#!/usr/bin/env zsh
+
+emulate -R zsh
+setopt no_aliases no_multios pipe_fail
+
+typeset command output
+integer command_status
+command=$(cat)
+if [[ -z $command ]]; then
+  print -u2 -r -- 'usage: /shell COMMAND'
+  exit 0
+fi
+
+output=$(
+  print -r -- '$ '"$command"
+  unset SHELLFISH_SESSION SHELLFISH_TURN_STATE
+  unset SHELLFISH_MAX_CAPTURE_BYTES SHELLFISH_MODE SHELLFISH_MODEL SHELLFISH_TURN_ID SHELLFISH_VERBOSE
+  unset SHELLFISH_DIR
+  command zsh -f -c "$command" </dev/null 2>&1 3>&-
+  command_status=$?
+  (( ! command_status )) || print -r -- $'\n(exit '"$command_status"')'
+)
+print -r -- "$output" >&2
+print -rn -- "<context script=\"shell\">"$'\n'"$output"$'\n'"</context>"

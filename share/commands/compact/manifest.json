@@ -1,0 +1,1 @@
+{"description":"Summarize this session into a new one","user_text":"${output.stderr}"}

@@ -175,4 +175,30 @@ sf_test_run other "$session" >"$stream" 2>"$tmp/match.err" &&
   fail 'invalid unmatched manifest succeeded'
 [[ $(<"$tmp/match.err") == *'hook manifest must be valid'* ]] ||
   fail 'invalid match diagnostic was lost'
+# A command runs alone, before prompt hooks, with its arguments as input.
+print -r -- '{"on":"user_prompt_submit","user_text":"${output.stdout}"}' >"$hooks/one/manifest.json"
+SF_TEST_PROFILE=$(jq -c '.hooks=[]' <<<"$SF_TEST_PROFILE")
+sf_test_bind_hooks user_prompt_submit "$hooks/one"
+sf_test_hook "$tmp/commands/go" '{"description":"Go","arguments":"[TO]","aliases":["g"],"user_text":"${input}"}' <<'ZSH'
+#!/usr/bin/env zsh
+input=$(cat)
+[[ $# == 0 && $SHELLFISH_TURN_ID == <1-> ]] || exit 2
+jq -e '.[0] == {name:"go",aliases:["g"],arguments:"[TO]",description:"Go"}' \
+  <<<"$SHELLFISH_COMMANDS" >/dev/null || exit 3
+[[ $input != away ]] || jq -cn '{action:"handoff",argv:["next"]}' >&3
+ZSH
+SF_TEST_PROFILE=$(jq -c --arg go "$tmp/commands/go" '.commands=[$go]' <<<"$SF_TEST_PROFILE")
+new_session command; sf_test_run '/g  away' "$session" >"$stream" || fail 'command failed'
+jq -eRn '[inputs | fromjson][-1] == {type:"_handoff",argv:["next"]}' <"$stream" >/dev/null &&
+  jq -e -s 'map(.type) == ["session","hook_result"] and .[1].user_text == "away" and
+    (.[1] | has("action") | not)' "$session" >/dev/null || fail 'command handoff or input was wrong'
+new_session command-deny; sf_test_run /go "$session" >"$stream" || fail 'bare command failed'
+jq -e -s 'map(.type) == ["session","hook_result"] and .[1].action == "deny"' \
+  "$session" >/dev/null || fail 'command prompt was submitted'
+cp -R "$tmp/commands/go" "$tmp/commands/g"
+SF_TEST_PROFILE=$(jq -c --arg g "$tmp/commands/g" '.commands+=[$g]' <<<"$SF_TEST_PROFILE")
+new_session command-duplicate
+sf_test_run /go "$session" >"$stream" 2>"$tmp/duplicate.err" && fail 'duplicate command succeeded'
+[[ $(<"$tmp/duplicate.err") == *'duplicate command name: /g'* ]] ||
+  fail 'duplicate command diagnostic was lost'
 print -r -- ok

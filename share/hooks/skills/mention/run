@@ -1,0 +1,33 @@
+#!/usr/bin/env zsh
+
+emulate -R zsh
+setopt extended_glob no_aliases no_multios pipe_fail
+
+typeset bundled_root=${0:A:h:h:h:h} submitted token name file text body context=''
+typeset -A paths loaded
+integer index
+
+submitted=$(cat; printf x)
+submitted=${submitted%x}
+[[ $submitted == *\$* ]] || exit 0
+
+source "$bundled_root/lib/skills.zsh" || exit 1
+sf_skills_discover "$SHELLFISH_SESSION" "${SHELLFISH_DIR-}" "$PWD" true || exit 1
+for (( index = 1; index <= ${#reply}; index += 3 )); do
+  paths[$reply[index]]=$reply[index+2]
+done
+
+while IFS= read -r token; do
+  name=${token##*\$}
+  [[ -n ${paths[$name]-} && -z ${loaded[$name]-} ]] || continue
+  loaded[$name]=1
+  file=$paths[$name]
+  sf_skills_body "$file" || exit 1
+  text=$(sf_skills_wrap "$name" "${file:h}" "$REPLY") || exit 1
+  body=${${REPLY##$'\n'##}%%$'\n'##}
+  (( ${#loaded} == 1 )) || print -rnu2 -- $'\n\n'
+  print -rnu2 -- "Loaded \$$name:"$'\n'"$body"
+  context+=$text$'\n'
+done < <(print -rn -- "$submitted" | grep -oE '(^|[^[:alnum:]_$])\$[a-z0-9]+(-[a-z0-9]+)*')
+(( ${#loaded} )) || exit 0
+print -rn -- "<context script=\"skills/mention\">"$'\n'"$context</context>"

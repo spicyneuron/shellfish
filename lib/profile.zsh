@@ -156,7 +156,7 @@ sf_profile_model_refs() {
   sf_profile_model "$config_dir" "$items" "$entry"
 }
 
-# The tools or hooks of an expanded profile, read live from their manifests.
+# The tools, commands, or hooks of an expanded profile, read live from their manifests.
 sf_profile_components() {
   local kind=$1 profile=$2 directory projection
   local -a directories files=()
@@ -178,11 +178,17 @@ sf_profile_components() {
       (($manifests[$directory] // {}) |
         if $kind == "tools" then select(tool_manifest) //
           error("invalid tool manifest: " + $directory)
+        elif $kind == "commands" then select(command_manifest) //
+          error("invalid command manifest: " + $directory)
         else select(hook_manifest and has("on")) //
           error("hook manifest must be valid and declare \"on\": " + $directory) end
       ) as $manifest |
       {name:($directory | split("/") | last), command:($directory + "/run"),
-       manifest:$manifest}]
+       manifest:$manifest}] |
+    if $kind == "commands" then
+      ([.[] | .name, .manifest.aliases[]?] | group_by(.) | map(select(length > 1))[0][0]) as $name |
+      if $name == null then . else error("duplicate command name: /" + $name) end
+    else . end
   ' --args "${directories[@]}" 2>&1) || {
     sf_profile_validation_error "$projection" "cannot read $kind"
     return
@@ -222,7 +228,7 @@ sf_profile_resolve() {
     $profile | config_profile(["profile " + $name]) | config_relative("profile"; $dir) |
     reduce profile_fields[] as $field (.; .[$field] += $extra[$field]) |
     .model = (if $extra.model == [] then ["default"] else $extra.model end) |
-    reduce ("system", "tools", "hooks") as $field (.;
+    reduce ("system", "tools", "commands", "hooks") as $field (.;
       .[$field] |= reduce .[] as $item ([]; if index([$item]) then . else . + [$item] end)) |
     entry("profile"; tojson),
     entry("models"; .model | tojson), entry("sandboxes"; .sandbox | tojson),
@@ -251,7 +257,8 @@ sf_profile_resolve() {
        model:$model} |
       entry("config"; tojson),
       entry("references"; [.profile | (.system[] | strings | ["system", .]),
-        (.tools[] | ["tools", .]), (.hooks[] | ["hooks", .])] | unique |
+        (.tools[] | ["tools", .]), (.commands[] | ["commands", .]),
+        (.hooks[] | ["hooks", .])] | unique |
         map(join(" ")) | join("\n")),
       ("ok" | field)
   ' || {
@@ -289,6 +296,7 @@ sf_profile_resolve() {
         else .text end | sub("\n+$"; "") | select(. != "")] | join("\n\n") |
         if . == "" then [] else [{text:.}] end) |
       .profile.tools |= map($paths["tools " + .]) |
+      .profile.commands |= map($paths["commands " + .]) |
       .profile.hooks |= map($paths["hooks " + .]) |
       header_expand($share; $home) |
       if (.profile | canonical_profile) and (.model | canonical_model) then .
@@ -308,12 +316,12 @@ sf_profile_resolve_args() {
   local name='' extra detected='null'
   local -a items=()
   local -A fields=( -m model --model model --sandbox sandbox --system system
-    -t tools --tool tools --hook hooks )
+    -t tools --tool tools --command commands --hook hooks )
 
   SF_PROFILE_ERROR=''
   while (( $# )); do
     case $1 in
-      -p|--profile|-m|--model|--sandbox|--system|-t|--tool|--hook)
+      -p|--profile|-m|--model|--sandbox|--system|-t|--tool|--command|--hook)
         [[ -n $2 && ( $2 == '{'* || $2 != *[[:cntrl:]]* ) ]] ||
           sf_profile_fail "$1 requires a reference or JSON object" || return 2
         if [[ $1 == (-p|--profile) ]]; then

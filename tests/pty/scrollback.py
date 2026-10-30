@@ -120,7 +120,7 @@ def test_help_notice_keeps_one_separator():
             'repeat 100 print -r -- "some instructions"\n'
         )
         script.chmod(0o755)
-        session = Session(hooks={"help": None}, session_start=[str(hook)])
+        session = Session(commands=["help"], session_start=[str(hook)])
         terminal = Terminal(session)
         try:
             session.wait_session_records(2)

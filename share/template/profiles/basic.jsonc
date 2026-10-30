@@ -5,9 +5,9 @@
   "sandbox": "default",
   "system": ["general.md", "tools.md"],
   "tools": ["read_file", "edit_file", "write_file", "shell"],
+  "commands": ["help", "verbose", "new", "resume", "server", "copy", "fork", "sandbox", "shell", "compact"],
   "hooks": [
     "project/environment", "git/environment", "project/instructions",
-    "help", "verbose", "new", "resume", "server", "copy", "sandbox", "user_shell",
-    "fork", "compact", "git/change"
+    "compact", "git/change"
   ]
 }

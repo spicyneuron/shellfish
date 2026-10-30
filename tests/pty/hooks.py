@@ -183,7 +183,7 @@ def test_blocked_prompt_notice_uses_user_heading():
 
 
 def test_help_shows_its_full_listing():
-    session = Session(hooks={"help": None})
+    session = Session(commands=["help"])
     try:
         mark = len(session.output)
         session.send(b"/help\r")
@@ -260,7 +260,7 @@ printf '%s\\n' '{"action":"handoff","argv":["sf-missing-handoff-command"]}' >&3
 
 def test_prompt_hook_hands_off_to_new_session():
     # Freeze the source profile before changing ambient config.
-    session = Session(explicit_session=True, hooks={"new": None})
+    session = Session(explicit_session=True, commands=["new"])
     try:
         session.wait_session_records(1, path=session.explicit_session)
         model = json.loads(session.model_file.read_text())
@@ -279,7 +279,7 @@ def test_prompt_hook_hands_off_to_new_session():
 
 
 def test_fork_restores_removed_user_prompt_as_draft():
-    session = Session(explicit_session=True, hooks={"fork": None})
+    session = Session(explicit_session=True, commands=["fork"])
     fork = session.explicit_session.with_name("explicit_fork_1.jsonl")
     try:
         session.send(b"original prompt\r")

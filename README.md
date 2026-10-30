@@ -76,7 +76,7 @@ Run `shellfish --help` for creation and sandbox options, or `/help` inside chat 
 
 The Shellfish directory (typically `~/.shellfish/`, see [Directories](docs/CONFIG.md#directories)) holds three kinds of configuration:
 
-- **Profiles** in `profiles/` select an agent's parts: sandbox files, system prompts, tools, and hooks.
+- **Profiles** in `profiles/` select an agent's parts: sandbox files, system prompts, tools, commands, and hooks.
 - **Models** in `models/` configure the request: adapter, endpoint, and provider parameters. A model is chosen separately from the profile, and repeated `-m` options merge left to right.
 - **Sandbox files** in `sandbox/` enable sandboxing and grant extra paths.
 - **Settings** in `.env` or the environment hold credentials and limits.
@@ -92,13 +92,13 @@ The Shellfish directory (typically `~/.shellfish/`, see [Directories](docs/CONFI
 }
 ```
 
-`profiles/default.jsonc` is selected when `--profile` is absent, and `models/default.jsonc` when `--model` is. Reusable components live in top-level `system/`, `tools/`, `hooks/`, and `backends/` directories beside `profiles/`, and resolve from the Shellfish directory first, then the bundled `share/` directory. A reference starting with `/`, `~/`, `./`, `../`, or `@` is a path instead, where `@` is the bundled root. Every profile field also has a command-line option. A new session freezes the resolved profile and model in its header. Themes and preview limits live in [`tui.jsonc`](share/tui.jsonc).
+`profiles/default.jsonc` is selected when `--profile` is absent, and `models/default.jsonc` when `--model` is. Reusable components live in top-level `system/`, `tools/`, `commands/`, `hooks/`, and `backends/` directories beside `profiles/`, and resolve from the Shellfish directory first, then the bundled `share/` directory. A reference starting with `/`, `~/`, `./`, `../`, or `@` is a path instead, where `@` is the bundled root. Every profile field also has a command-line option. A new session freezes the resolved profile and model in its header. Themes and preview limits live in [`tui.jsonc`](share/tui.jsonc).
 
 ## Documentation
 
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md): Design intent and opinionated boundaries.
 - [`docs/CONFIG.md`](docs/CONFIG.md): Configure profiles, models, settings, presentation, and the starter agent.
-- [`docs/HARNESS.md`](docs/HARNESS.md): Write custom hooks, tools, and backend adapters.
+- [`docs/HARNESS.md`](docs/HARNESS.md): Write custom commands, hooks, tools, and backend adapters.
 - [`docs/CURSED.md`](docs/CURSED.md): Hard-won lessons and ~~hacks~~ clever workarounds.
 
 ## Develop

@@ -35,7 +35,7 @@ while [[ ! -e ${SHELLFISH_SESSION:h}/permission-release ]]; do sleep 0.02; done
 
 def test_sandbox_updates_without_reload():
     with tempfile.TemporaryDirectory() as grant:
-        session = Session(hooks={"sandbox": None})
+        session = Session(commands=["sandbox"])
         try:
             path, _ = session.wait_session_records(1)
             mark = len(session.output)

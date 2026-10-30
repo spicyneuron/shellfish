@@ -55,7 +55,7 @@ def run(label, tests):
 
 class Session:
     def __init__(self, explicit_session=False, hooks=None, env=None, args=None,
-                 session_start=None, session_records=None):
+                 session_start=None, session_records=None, commands=None):
         env_overrides = env or {}
         self.state_home = tempfile.TemporaryDirectory()
         self.project_home = tempfile.TemporaryDirectory(prefix="shellfish-pty.")
@@ -76,6 +76,7 @@ class Session:
         config = {
             "tools": [f"@tools/{tool}"
                       for tool in ("read_file", "write_file", "edit_file", "shell")],
+            "commands": [f"@commands/{name}" for name in commands or []],
             "hooks": list(session_start or []),
         }
         if hooks:
