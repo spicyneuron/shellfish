@@ -151,6 +151,9 @@ sf_test_hook() {
   chmod +x "$directory/run"
 }
 
+# The profile config the core passes a session's components.
+sf_test_session_config() { head -n 1 -- "$1" | jq -c '.profile.config // {}'; }
+
 sf_test_session() {
   local session=$1 cwd created header
   cwd=$(pwd -P)

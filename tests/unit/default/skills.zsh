@@ -43,7 +43,7 @@ session="$tmp/discovery.jsonl"
 export SHELLFISH_SESSION="$session"
 
 # Discover valid skills by precedence.
-HOME="$home" sf_skills_discover "$session" "$config" "$project"
+HOME="$home" sf_skills_discover "$config" "$project"
 typeset -A descriptions skill_paths
 integer index
 for (( index = 1; index <= ${#reply}; index += 3 )); do
@@ -58,33 +58,33 @@ done
 [[ $skill_paths[linked] == "${tmp:A}/linked-skills/linked/SKILL.md" ]]
 [[ -z ${descriptions[hidden]-} && -z ${descriptions[bad_name]-} ]]
 [[ -z ${descriptions[claude-only]-} ]]
-HOME="$home" sf_skills_discover "$session" "$config" "$project" true
+HOME="$home" sf_skills_discover "$config" "$project" true
 [[ ${reply[(Ie)hidden]} -gt 0 ]]
 
 # Another .shellfish directory uses its own sibling .agents, not the home one.
 flavor="$tmp/flavor"
 make_skill "$flavor/.agents/skills" flavored 'flavor skill'
 mkdir -p "$flavor/.shellfish"
-HOME="$home" sf_skills_discover "$session" "$flavor/.shellfish" "$tmp/elsewhere"
+HOME="$home" sf_skills_discover "$flavor/.shellfish" "$tmp/elsewhere"
 (( ${#reply} == 3 ))
 [[ $reply[3] == "${flavor:A}/.agents/skills/flavored/SKILL.md" ]]
 # A Shellfish directory with another name has no sibling source.
 mkdir -p "$flavor/custom"
-HOME="$home" sf_skills_discover "$session" "$flavor/custom" "$tmp/elsewhere"
+HOME="$home" sf_skills_discover "$flavor/custom" "$tmp/elsewhere"
 (( ${#reply} == 0 ))
 
 # Load only valid advertised skills.
 loaded=$(cd "$project" && print -rn -- '{"name":"shared"}' | HOME="$home" \
-  SHELLFISH_DIR="$config" zsh -f "$tool")
+  SHELLFISH_DIR="$config" SHELLFISH_CONFIG="$(sf_test_session_config "$session")" zsh -f "$tool")
 [[ $loaded == "<skill name=\"shared\" directory=\"${project:A}/.agents/skills/shared\">"*$'# shared instructions'*'</skill>' ]]
 [[ $loaded != *$'\nname: shared\n'* ]]
 HOME="$home" SHELLFISH_DIR="$config" "$ROOT/bin/shellfish" init >/dev/null
 loaded=$(cd "$project" && print -rn -- '{"name":"skill-creator"}' | HOME="$home" \
-  SHELLFISH_DIR="$config" zsh -f "$tool")
+  SHELLFISH_DIR="$config" SHELLFISH_CONFIG="$(sf_test_session_config "$session")" zsh -f "$tool")
 [[ $loaded == "<skill name=\"skill-creator\" directory=\"${config:A}/skills/skill-creator\">"*'</skill>' ]]
 [[ $loaded != *$'\ndescription: Use when creating or editing project-local skills.\n'* ]]
 loaded=$(cd "$project" && print -rn -- '{"name":"linked"}' | HOME="$home" \
-  SHELLFISH_DIR="$config" zsh -f "$tool")
+  SHELLFISH_DIR="$config" SHELLFISH_CONFIG="$(sf_test_session_config "$session")" zsh -f "$tool")
 [[ $loaded == "<skill name=\"linked\" directory=\"${tmp:A}/linked-skills/linked\">"*$'# linked instructions'*'</skill>' ]]
 make_skill "$tmp/odd & \"root\"" odd 'odd description'
 sf_skills_body "$tmp/odd & \"root\"/odd/SKILL.md"
@@ -92,7 +92,7 @@ loaded=$(sf_skills_wrap odd "$tmp/odd & \"root\"/odd" "$REPLY")
 [[ $loaded == *'directory="'*'odd &amp; &quot;root&quot;/odd">'* ]]
 [[ $loaded != *'description: odd description'* ]]
 if (cd "$project" && print -rn -- '{"name":"hidden"}' | HOME="$home" \
-    SHELLFISH_DIR="$config" zsh -f "$tool" >/dev/null 2>&1); then
+    SHELLFISH_DIR="$config" SHELLFISH_CONFIG="$(sf_test_session_config "$session")" zsh -f "$tool" >/dev/null 2>&1); then
   fail 'skill tool loaded a model-disabled skill'
 fi
 
@@ -135,13 +135,13 @@ session="$tmp/filtered.jsonl"
 export SHELLFISH_SESSION="$session"
 for name in shared personal; do
   loaded=$(cd "$project" && print -rn -- "{\"name\":\"$name\"}" | HOME="$home" \
-    SHELLFISH_DIR="$config" zsh -f "$tool")
+    SHELLFISH_DIR="$config" SHELLFISH_CONFIG="$(sf_test_session_config "$session")" zsh -f "$tool")
   [[ $loaded == *"# $name instructions"* ]]
 done
 [[ $loaded == *"directory=\"${home:A}/.agents/skills/personal\""* ]]
 for name in config-only hidden skill-creator missing; do
   if (cd "$project" && print -rn -- "{\"name\":\"$name\"}" | HOME="$home" \
-      SHELLFISH_DIR="$config" zsh -f "$tool" >/dev/null); then
+      SHELLFISH_DIR="$config" SHELLFISH_CONFIG="$(sf_test_session_config "$session")" zsh -f "$tool" >/dev/null); then
     fail "skill tool loaded an unavailable skill: $name"
   fi
 done
@@ -158,7 +158,7 @@ session="$tmp/no-skills.jsonl"
 (cd "$project" && sf_test_session "$session")
 export SHELLFISH_SESSION="$session"
 if (cd "$project" && print -rn -- '{"name":"shared"}' | HOME="$home" \
-    SHELLFISH_DIR="$config" zsh -f "$tool" >/dev/null); then
+    SHELLFISH_DIR="$config" SHELLFISH_CONFIG="$(sf_test_session_config "$session")" zsh -f "$tool" >/dev/null); then
   fail 'an empty allowlist allowed tool loading'
 fi
 HOME="$home" SHELLFISH_DIR="$config" sf_test_run '$shared $hidden' "$session" >"$control"
@@ -171,7 +171,7 @@ for value in null false 1 '"shared"' '{}' '[null]' '[1]' '["bad_name"]' '["*"]' 
   (cd "$project" && sf_test_session "$session")
   export SHELLFISH_SESSION="$session"
   if (cd "$project" && print -rn -- '{"name":"shared"}' | HOME="$home" \
-      SHELLFISH_DIR="$config" zsh -f "$tool" >"$tmp/invalid.out" 2>"$tmp/invalid.err"); then
+      SHELLFISH_DIR="$config" SHELLFISH_CONFIG="$(sf_test_session_config "$session")" zsh -f "$tool" >"$tmp/invalid.out" 2>"$tmp/invalid.err"); then
     fail "skill tool accepted invalid config.skills: $value"
   fi
   grep -q 'config.skills must be an array of skill names' "$tmp/invalid.err"

@@ -142,6 +142,7 @@ sf_run_hooks() {
   environment=(
     "${SF_ENVIRONMENT_VALUES[@]}"
     "SHELLFISH_SESSION=${session:A}"
+    "SHELLFISH_CONFIG=$SF_RUN[config]"
     "SHELLFISH_MODEL=$SF_HOOK_PLAN[model]"
     "SHELLFISH_EXECUTABLE=$SF_ENTRY"
     "SHELLFISH_MODE=${SHELLFISH_MODE-}"

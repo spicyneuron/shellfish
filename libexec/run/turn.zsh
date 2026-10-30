@@ -92,9 +92,10 @@ sf_run_settle() {
 }
 
 # Component manifests are read once per run, so edits apply to the next.
-# Commands run at user_prompt_submit.
+# Commands run at user_prompt_submit. Every component reads the profile config.
 sf_run_components() {
   local profile=$1 kind
+  SF_RUN[config]=$(jq -c '.config // {}' <<<"$profile") || { REPLY='cannot read profile config'; return 1; }
   for kind in tools commands hooks; do
     sf_profile_components $kind "$profile" || { REPLY=$SF_PROFILE_ERROR; return 1; }
     SF_RUN[$kind]=$REPLY

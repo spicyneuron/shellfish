@@ -37,14 +37,13 @@ operation=$(jq -er '
   fail 'session environment is unavailable'
 IFS= read -r header <"$SHELLFISH_SESSION" || fail 'cannot read parent header'
 limit=$(jq -er '
-  (.profile.config // {}) |
   if has("agent") then .agent else {} end |
   if type == "object" and (keys - ["max_active"]) == [] then .
   else error("config.agent must be an object containing only max_active") end |
   if has("max_active") then .max_active else 4 end |
   if type == "number" and floor == . and . > 0 then .
   else error("config.agent.max_active must be a positive integer") end
-' <<<"$header") || fail 'invalid agent configuration' 2
+' <<<"${SHELLFISH_CONFIG:-{\}}") || fail 'invalid agent configuration' 2
 parent_dir=${SHELLFISH_SESSION:A:h}
 
 # The marker is feature-owned state, appended only after session_start settles.

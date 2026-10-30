@@ -73,23 +73,18 @@ sf_skills_metadata() {
 sf_skills_discover() {
   emulate -L zsh
   setopt extended_glob
-  local session=$1 config_dir=${2-} project_dir=${3:-$PWD}
-  local include_disabled=${4:-false} header selection
+  local config_dir=${1-} project_dir=${2:-$PWD} include_disabled=${3:-false} selection
   local root canonical directory file name description disabled
   local -a roots discovered allowed
   local -A seen_roots seen_names
-  IFS= read -r header <"$session" || {
-    print -ru2 -- 'skills: cannot read session header'
-    return 1
-  }
   selection=$(jq -r '
-    if (.profile.config // {} | has("skills")) then
-      .profile.config.skills |
+    if has("skills") then
+      .skills |
       if type == "array" and all(.[];
         type == "string" and length <= 64 and test("^[a-z0-9]+(-[a-z0-9]+)*\\z"))
       then .[] else error("config.skills must be an array of skill names") end
     else "*" end
-  ' <<<"$header") || return 1
+  ' <<<"${SHELLFISH_CONFIG:-{\}}") || return 1
   allowed=( ${(f)selection} )
   roots=( "$project_dir/.agents/skills" )
   if [[ -n $config_dir ]]; then

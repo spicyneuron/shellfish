@@ -154,7 +154,6 @@ header=$(head -n 1 -- "$SHELLFISH_SESSION") ||
 selection=$(jq -r '
   def name: type == "string" and
     test("^[A-Za-z0-9][A-Za-z0-9_.-]*(/[A-Za-z0-9][A-Za-z0-9_.-]*)*$");
-  (.profile.config // {}) |
   (.sandbox // {}) | if has("approver") then .approver else {} end |
   if type == "object" and (keys - ["allow_threshold", "decision_model", "model"]) == [] and
     ((has("model") and has("decision_model")) | not) and
@@ -165,7 +164,8 @@ selection=$(jq -r '
       (.allow_threshold | type == "number" and . > 0 and . <= 1))
   then to_entries[] | "\(.key) \(.value)"
   else error("invalid config.sandbox.approver") end
-' <<<"$header" 2>/dev/null) || permission_defer 'Permission review has invalid configuration.'
+' <<<"${SHELLFISH_CONFIG:-{\}}" 2>/dev/null) ||
+  permission_defer 'Permission review has invalid configuration.'
 while read -r name value; do
   case $name in
     model) model=$value ;;

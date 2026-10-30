@@ -53,6 +53,7 @@ run_review() {
   hook_status=0
   SF_TEST_REQUEST="$sent" SF_TEST_MODE="$mode" \
     SHELLFISH_EXECUTABLE="$ROOT/bin/shellfish" SHELLFISH_SESSION="$session" \
+    SHELLFISH_CONFIG="$(sf_test_session_config "$session")" \
     SHELLFISH_TURN_STATE="$tmp" SHELLFISH_TURN_ID=6 \
     zsh -f "$hook/run" shell call_7 \
     3>"$tmp/lines" 2>|"$tmp/user" <<<"$request" || hook_status=$?
