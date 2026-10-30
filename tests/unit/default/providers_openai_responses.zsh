@@ -252,6 +252,18 @@ jq -e '
   .input[2].arguments == "{\"command\":\"pwd\"}"
 ' "$PROVIDER_TEST_BODY" >/dev/null || fail 'responses did not map a flat call batch'
 
+# Tool result images.
+jq -c '.messages[3].content = [{type:"text",text:"shot"},
+  {type:"image",url:"data:image/png;base64,iVBORw0KGgo="}] |
+  .messages[5].content = [{type:"image",url:"data:image/png;base64,iVBORw0KGgo="}]' \
+  "$batch_request" >"$tmp/images.json"
+OPENAI_API_KEY=test zsh -f "$run" <"$tmp/images.json" >"$res"
+jq -e '
+  [.input[] | select(.type == "function_call_output") | .output] == [
+    [{type:"input_text",text:"shot"},{type:"input_image",image_url:"data:image/png;base64,iVBORw0KGgo="}],
+    [{type:"input_image",image_url:"data:image/png;base64,iVBORw0KGgo="}]]
+' "$PROVIDER_TEST_BODY" >/dev/null || fail 'responses did not send tool result images'
+
 # The provider always streams, so a stream option is refused.
 jq -c '.request.stream = false' "$req" >"$tmp/no-stream.json"
 if OPENAI_API_KEY=test zsh -f "$run" <"$tmp/no-stream.json" >"$res" 2>"$tmp/error"; then

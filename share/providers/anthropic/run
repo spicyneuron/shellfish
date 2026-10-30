@@ -33,6 +33,15 @@ jq -ce '
   def blocks:
     map(if (.content | length) == 0
         then .content = [{type:"text",text:"[no content]"}] else . end);
+  # Images are inline data URIs, which the API takes as base64 sources.
+  def result_content:
+    if type == "string" then .
+    else [.[] |
+      if .type == "image" then
+        {type:"image",source:{type:"base64",media_type:.url[5:(.url | index(";"))],
+          data:.url[(.url | index(",")) + 1:]}}
+      else select(.text != "") | {type:"text",text:.text} end]
+    end;
   def regular_message:
     if .type == "user" then
       {role:"user",content:[.content[] |
@@ -78,7 +87,7 @@ jq -ce '
       .pending += [{
         type:"tool_result",
         tool_use_id:$message.call_id,
-        content:$message.content,
+        content:($message.content | result_content),
         is_error:(($message.exit_code // 0) != 0)
       }]
     # A call rejoins the assistant message that requested it. Results stay

@@ -231,7 +231,7 @@ Shellfish starts `run` once per provider request with one object on stdin:
 }
 ```
 
-`messages` contains provider-neutral conversation records in transcript order. `tools` contains model-facing tool definitions. `request` contains the merged model's common and provider-specific settings, and unrelated fields pass through. `endpoint` is authoritative for the exchange.
+`messages` contains provider-neutral conversation records in transcript order. A tool result's content is text, or a part array when the tool returned [content](#tools) such as images. An API that cannot carry images in tool results receives them in a user message after the batch. `tools` contains model-facing tool definitions. `request` contains the merged model's common and provider-specific settings, and unrelated fields pass through. `endpoint` is authoritative for the exchange.
 
 When supplied, the model's `config` object is passed separately from `request`. It configures the exchange, not the API parameters. HTTP providers share the `http_timeout` and `http_stall` positive-integer settings, measured in seconds, and the boolean `insecure_tls` setting. Providers validate these settings, supply defaults when omitted, and may enforce stricter security requirements.
 

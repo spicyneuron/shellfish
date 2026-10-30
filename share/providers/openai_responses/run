@@ -25,6 +25,12 @@ unset api_key account_id
 jq -ce '
   def text_content:
     [.content[] | select(.type == "text") | .text] | join("");
+  # Images omit detail, which some compatible gateways reject in tool output.
+  def output:
+    if type == "string" then .
+    else [.[] | if .type == "image" then {type:"input_image",image_url:.url}
+      else {type:"input_text",text:.text} end]
+    end;
   def items:
     if .type == "user" then
       [{type:"message",role:"user",content:[{type:"input_text",text:text_content}]}]
@@ -42,7 +48,7 @@ jq -ce '
     elif .type == "tool_call" then
       [{type:"function_call",call_id:.id,name:.name,arguments:(.input | tojson)}]
     elif .type == "tool_result" then
-      [{type:"function_call_output",call_id:.call_id,output:.content}]
+      [{type:"function_call_output",call_id:.call_id,output:(.content | output)}]
     else
       error("unsupported canonical type")
     end;

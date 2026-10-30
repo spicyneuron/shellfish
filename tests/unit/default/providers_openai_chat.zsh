@@ -223,6 +223,26 @@ jq -e '
   (.messages | map(.tool_call_id) | map(select(. != null))) == ["call_1","call_2"]
 ' "$PROVIDER_TEST_BODY" >/dev/null || fail 'openai_chat did not regroup a call batch'
 
+# Tool result images.
+jq -c '.messages[3].content = [{type:"text",text:"shot"},
+  {type:"image",url:"data:image/png;base64,iVBORw0KGgo="}] |
+  .messages[5].content = [{type:"image",url:"data:image/png;base64,iVBORw0KGgo="}]' \
+  "$batch_request" >"$tmp/images.json"
+# Tool messages keep their text, and one user message after the batch carries the images.
+jq -c '.messages += [{type:"user",content:[{type:"text",text:"next"}]}]' \
+  "$tmp/images.json" >"$tmp/images-next.json"
+OPENAI_API_KEY=test-key zsh -f "$run" <"$tmp/images-next.json" >"$res"
+jq -e '
+  (.messages | map(.role)) == ["system","user","assistant","tool","tool","user","user"] and
+  (.messages[3:5] | map(.content)) == ["shot","[images follow in the next user message]"] and
+  .messages[5].content == [
+    {type:"text",text:"Images from the shell call call_1:"},
+    {type:"image_url",image_url:{url:"data:image/png;base64,iVBORw0KGgo="}},
+    {type:"text",text:"Images from the shell call call_2:"},
+    {type:"image_url",image_url:{url:"data:image/png;base64,iVBORw0KGgo="}}] and
+  .messages[6].content == "next"
+' "$PROVIDER_TEST_BODY" >/dev/null || fail 'openai_chat did not lift tool result images'
+
 # Encode call-only messages as null.
 jq -c '.messages[1].content = []' "$batch_request" >"$tmp/calls-only.json"
 OPENAI_API_KEY=test-key zsh -f "$run" <"$tmp/calls-only.json" >"$res"

@@ -21,11 +21,23 @@ unset api_key
 
 jq -ce '
   def text_content: [.content[] | select(.type == "text") | .text] | join("");
+  # Tool messages hold only text and must directly follow their calls, so
+  # result images are lifted into one user message after the batch.
+  def result_text:
+    if type == "string" then .
+    else [.[] | select(.type == "text") | .text] | join("\n\n") |
+      if . == "" then "[images follow in the next user message]" else . end
+    end;
+  def result_images:
+    if type == "string" then []
+    else [.[] | select(.type == "image") | {type:"image_url",image_url:{url}}] end;
+  def flush_images:
+    if .images == [] then . else .out += [{role:"user",content:.images}] | .images = [] end;
   def message:
     if .type == "user" then {role:"user",content:text_content}
     elif .type == "assistant" then {role:"assistant",content:text_content}
     elif .type == "tool_result" then
-      {role:"tool",tool_call_id:.call_id,content:.content}
+      {role:"tool",tool_call_id:.call_id,content:(.content | result_text)}
     else error("unsupported canonical type") end;
   (.request |
     if has("response_schema") then
@@ -44,7 +56,7 @@ jq -ce '
     if $effort != null then .reasoning_effort=$effort else . end) as $options |
   # Calls arrive as their own records and rejoin the assistant message they
   # belong to. A call-only message carries null content, as the API expects.
-  (reduce .messages[] as $message ({out:[],assistant:null};
+  (reduce .messages[] as $message ({out:[],assistant:null,images:[]};
     if $message.type == "tool_call" then
       # Results sit between the calls of a batch, so the assistant message a
       # call belongs to is remembered rather than assumed to be the last one.
@@ -53,11 +65,18 @@ jq -ce '
         [{type:"function",id:$message.id,
           function:{name:$message.name,arguments:($message.input | tojson)}}]) |
       (if .out[$index].content == "" then .out[$index].content = null else . end)
+    elif $message.type == "tool_result" then
+      .out += [$message | message] |
+      ($message.content | result_images) as $images |
+      if $images == [] then .
+      else .images += [{type:"text",
+        text:"Images from the \($message.name) call \($message.call_id):"}] + $images end
     else
+      flush_images |
       .out += [$message | message] |
       (if $message.type == "assistant" then .assistant = (.out | length) - 1
        else . end)
-    end) | .out) as $messages |
+    end) | flush_images | .out) as $messages |
   $options * {model:$options.model,
     messages:(if .system=="" then $messages else [{role:"system",content:.system}]+$messages end),
     stream:true,stream_options:{include_usage:true}} +
