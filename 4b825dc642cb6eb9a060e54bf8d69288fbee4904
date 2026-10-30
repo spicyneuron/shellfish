@@ -1,23 +1,5 @@
-2. **A02: The sandbox reviewer duplicates transcript interpretation and has already drifted.**  
-   [`approver/run:182`](share/hooks/sandbox/approver/run:182) reconstructs messages, pending calls, and hook context independently of [`session.jq:135`](lib/session.jq:135). A probe confirmed it attaches post-tool context to the following tool instead of the tool it describes. Keep review policy and budgeting local, but consume raw chronological records or a core-owned projection rather than maintaining another conversation reducer.
-
-3. **A03: Subagent completion has competing definitions.**  
-   [`subagent/run:122`](share/tools/subagent/run:122) assumes the last record determines completion. A successfully finished child with visible stop-hook output reports `settled:false`. Separately, [`subagent/run:204`](share/tools/subagent/run:204) searches the entire history for an answer, so a failed continuation returns the previous answer. Use one latest-turn outcome interpretation for synchronous results and inspection, without introducing lifecycle records.
-
-4. **A04: The TUI resolves configuration that creation resolves again.**  
-   [`tui/main.zsh:138`](libexec/tui/main.zsh:138) resolves profile and model options, then forwards the original options for creation at [`main.zsh:160`](libexec/tui/main.zsh:160). This duplicates work, argument bookkeeping, and ownership. It also permits the banner and frozen session to describe different snapshots. Let creation’s emitted header supply the client’s configuration display.
-
-5. **A05: Accepted provider output does not consistently render live and on replay.**  
-   Final-only responses are explicitly accepted by [`shape.zsh:33`](tests/unit/profile/shape.zsh:33), but [`project.jq:80`](libexec/tui/project.jq:80) discards live assistant content and only closes the streamed message. I reproduced an invisible live answer that appears on replay. Bundled providers synthesize deltas, limiting current exposure. Settle one streaming contract and enforce it consistently.
-
-6. **A06: Displayed section numbers and command targets disagree.**  
-   [`formatters.zsh:66`](libexec/tui/render/formatters.zsh:66) numbers visible role changes, including command notices. [`copy/run:15`](share/commands/copy/run:15) and [`fork/run:20`](share/commands/fork/run:20) count only user and assistant records. After a help notice, the renderer showed section 3 while `/copy 3` reported that it did not exist. Choose one durable addressing rule rather than independently counting presentation sections.
-
 7. **A07: Shell behavior is both copied and partly owned by the core.**  
    [`shell/run`](share/tools/shell/run) and [`shell_readonly/run`](share/tools/shell_readonly/run) are byte-identical 76-line implementations. Meanwhile, [`turn.jq:21`](libexec/run/turn.jq:21) injects shell-specific workflow instructions by tool name. Reuse one runner, retain distinct sandbox policies, and move shell-specific guidance into its manifest. This offers roughly 70 lines of straightforward deletion.
-
-**Validation:** 46 unit files and all 3 PTY files pass outside the harness sandbox. Initial sandbox-related failures were environmental. Worktree remains clean.
-
 
 # Sandbox
 
