@@ -192,7 +192,7 @@ for name in default basic readonly plus; do
       (.commands | any(endswith("/help"))) and
       (.system[0].text | length > 0) and
       ((.tools | any(endswith("/agent"))) == ($name == "plus")) and
-      ((.hooks | any(endswith("/sandbox-approver"))) == ($name == "plus")))
+      ((.hooks | any(endswith("/sandbox_approver"))) == ($name == "plus")))
   ' <<<"$REPLY" >/dev/null || fail "template profile did not resolve: $name"
   profile=$(jq -c '.profile' <<<"$REPLY")
 done

@@ -70,5 +70,5 @@ done <<<"$credentials"
   sf_backend_die "Codex ChatGPT credentials are unavailable; authenticate using Codex and retry"
 
 OPENAI_API_KEY=$access_token SHELLFISH_RESPONSES_ACCOUNT_ID=$account_id \
-  "${0:A:h:h}/openai-responses/run" <"$prepared_file"
+  "${0:A:h:h}/openai_responses/run" <"$prepared_file"
 unset access_token account_id credentials

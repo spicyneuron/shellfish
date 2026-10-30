@@ -65,7 +65,7 @@ Built-in backends and credentials:
 | `anthropic` | `ANTHROPIC_API_KEY` |
 | `codex` | Existing Codex CLI login |
 | `openai` | `OPENAI_API_KEY` |
-| `openai-responses` | `OPENAI_API_KEY` |
+| `openai_responses` | `OPENAI_API_KEY` |
 | `openrouter` | `OPENROUTER_API_KEY` |
 
 The `openai` adapter also supports compatible services by setting `endpoint` in a model file.

@@ -3,7 +3,7 @@
 source "${0:A:h:h:h}/_helpers.zsh"
 
 sf_test_tmp backends-openai-decisions
-typeset decide="$ROOT/share/backends/openai-decisions/decide"
+typeset decide="$ROOT/share/backends/openai_decisions/decide"
 typeset req="$tmp/request.json"
 typeset res="$tmp/output.json"
 
@@ -125,16 +125,16 @@ cat >"$BACKEND_TEST_RESPONSE" <<'EOF'
 EOF
 typeset result
 result=$(OPENAI_API_KEY=test zsh -f "$ROOT/bin/shellfish" decide \
-  -m '{"adapter":"openai-decisions","request":{"model":"gpt-6-luna"}}' \
+  -m '{"adapter":"openai_decisions","request":{"model":"gpt-6-luna"}}' \
   <<<'{"input":[{"type":"text","text":"x"}],
     "questions":{"moved":{"type":"predicate","instructions":"Did it move?"}}}') ||
-  fail 'shellfish decide failed through openai-decisions'
+  fail 'shellfish decide failed through openai_decisions'
 jq -e '. == {model:"gpt-6-luna",answers:{moved:{type:"predicate",probability:0.9}},
   usage:{input_tokens:5,output_tokens:0}}' <<<"$result" >/dev/null ||
   fail 'shellfish decide returned the wrong result' "$result"
 
 # oMLX receives system and JSON as user text, authorized by its own key.
-typeset omlx="$ROOT/share/backends/openai-decisions-omlx/decide"
+typeset omlx="$ROOT/share/backends/openai_decisions_omlx/decide"
 rm -f -- "$BACKEND_TEST_HEADERS"
 OPENAI_API_KEY=leaked OMLX_API_KEY=local zsh -f "$omlx" <"$req" >"$res"
 jq -e '.input == [{type:"message",role:"user",content:[

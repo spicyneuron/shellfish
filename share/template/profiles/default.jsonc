@@ -21,7 +21,7 @@
   "commands": ["help", "verbose", "new", "resume", "server", "copy", "fork", "sandbox", "shell", "compact"],
 
   // Hooks run in this order within the lifecycle their manifest names. Add
-  // "sandbox-approver" to have a model review sandbox bypass requests.
+  // "sandbox_approver" to have a model review sandbox bypass requests.
   "hooks": [
     "project/environment", "git/environment", "project/instructions", "skills/list",
     "compact", "git/change", "skills/mention"

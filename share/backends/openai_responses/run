@@ -10,7 +10,7 @@ api_key=${OPENAI_API_KEY-}
 account_id=${SHELLFISH_RESPONSES_ACCOUNT_ID-}
 unset OPENAI_API_KEY SHELLFISH_RESPONSES_ACCOUNT_ID
 
-sf_backend_setup openai-responses
+sf_backend_setup openai_responses
 trap 'rm -rf -- "$SF_BACKEND_TEMP_DIR"' EXIT
 cat >"$SF_BACKEND_REQUEST_FILE"
 

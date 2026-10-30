@@ -4,7 +4,7 @@ source "${0:A:h:h:h}/_helpers.zsh"
 
 sf_test_tmp backends-systemone
 typeset decide="$ROOT/share/backends/systemone/decide"
-typeset omlx="$ROOT/share/backends/systemone-omlx/decide"
+typeset omlx="$ROOT/share/backends/systemone_omlx/decide"
 typeset req="$tmp/request.json"
 typeset res="$tmp/output.json"
 
@@ -163,8 +163,8 @@ result=$(TYPESAFE_API_KEY=test zsh -f "$ROOT/bin/shellfish" decide \
 jq -e '. == {model:"jev-1.14.0",answers:{moved:{type:"predicate",probability:0.9}},
   usage:{input_tokens:5,output_tokens:0}}' <<<"$result" >/dev/null ||
   fail 'shellfish decide returned the wrong systemone result' "$result"
-result=$(zsh -f "$ROOT/bin/shellfish" decide -m '{"adapter":"systemone-omlx",
+result=$(zsh -f "$ROOT/bin/shellfish" decide -m '{"adapter":"systemone_omlx",
   "endpoint":"http://127.0.0.1:8000/v1/systemone","request":{"model":"d3-flash"}}' \
-  <<<"$question") || fail 'shellfish decide failed through systemone-omlx'
+  <<<"$question") || fail 'shellfish decide failed through systemone_omlx'
 jq -e '.answers.moved == {type:"predicate",probability:0.9}' <<<"$result" >/dev/null ||
   fail 'shellfish decide returned the wrong omlx result' "$result"

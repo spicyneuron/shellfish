@@ -34,7 +34,7 @@ A profile selects an agent's parts, usually by reference, and supplies their con
   "system": ["general.md", "tools.md"],
   "tools": ["read_file", "edit_file", "write_file", "shell"],
   "commands": ["help", "compact"],
-  "hooks": ["project/environment", "project/instructions", "sandbox-approver"]
+  "hooks": ["project/environment", "project/instructions", "sandbox_approver"]
 }
 ```
 
@@ -114,13 +114,13 @@ HTTP adapters share these `model.config` settings, with the following defaults i
 
 For example, `"config": {"http_timeout": 120, "http_stall": 30}` sets shorter limits for a model. The Codex adapter always requires TLS verification.
 
-Bundled adapters: `anthropic`, `codex`, `openai`, `openai-responses`, and `openrouter`. The `openai` adapter works with any OpenAI-compatible endpoint. See [`HARNESS.md`](HARNESS.md#backend-adapters) for the adapter protocol.
+Bundled adapters: `anthropic`, `codex`, `openai`, `openai_responses`, and `openrouter`. The `openai` adapter works with any OpenAI-compatible endpoint. See [`HARNESS.md`](HARNESS.md#backend-adapters) for the adapter protocol.
 
-Decision models serve `shellfish decide` instead of conversations. Bundled decision adapters: `openai-decisions` for OpenAI's Decisions API, and `systemone` for TypeSafe's System One API with `TYPESAFE_API_KEY`. For oMLX servers, `systemone-omlx` and `openai-decisions-omlx` speak the same formats. They need an endpoint, and they send `OMLX_API_KEY` when set rather than the provider's key. `systemone-omlx` also accepts video:
+Decision models serve `shellfish decide` instead of conversations. Bundled decision adapters: `openai_decisions` for OpenAI's Decisions API, and `systemone` for TypeSafe's System One API with `TYPESAFE_API_KEY`. For oMLX servers, `systemone_omlx` and `openai_decisions_omlx` speak the same formats. They need an endpoint, and they send `OMLX_API_KEY` when set rather than the provider's key. `systemone_omlx` also accepts video:
 
 ```jsonc
 // models/d3.jsonc
-{"adapter": "systemone-omlx", "endpoint": "http://127.0.0.1:8000/v1/systemone",
+{"adapter": "systemone_omlx", "endpoint": "http://127.0.0.1:8000/v1/systemone",
  "request": {"model": "d3-flash"}}
 ```
 
@@ -259,8 +259,8 @@ Inspection distinguishes a child that is still running from one that has stopped
 
 ### Sandbox approver hook
 
-The `sandbox-approver` hook helps decide whether a requested sandbox bypass is justified by the user's instructions. It approves or denies each request. If the review itself fails, the request falls back to asking the user. The `plus` profile enables it, but the default profile does not. To enable it in another profile, add `"sandbox-approver"` to its `hooks`.
+The `sandbox_approver` hook helps decide whether a requested sandbox bypass is justified by the user's instructions. It approves or denies each request. If the review itself fails, the request falls back to asking the user. The `plus` profile enables it, but the default profile does not. To enable it in another profile, add `"sandbox_approver"` to its `hooks`.
 
-The reviewer uses the session's model by default. Set `"config": {"sandbox-approver": {"model": "review"}}` in the profile to select another model by name, such as `models/review.jsonc`. The name freezes with the session, but its model file is read on each review. The selection replaces the complete model configuration, so it can use a different backend. Review requests impose their own structured output and output limit, and use a fixed input budget rather than adapting to the model's capacity. An invalid setting, unavailable model, or provider failure asks the user instead.
+The reviewer uses the session's model by default. Set `"config": {"sandbox_approver": {"model": "review"}}` in the profile to select another model by name, such as `models/review.jsonc`. The name freezes with the session, but its model file is read on each review. The selection replaces the complete model configuration, so it can use a different backend. Review requests impose their own structured output and output limit, and use a fixed input budget rather than adapting to the model's capacity. An invalid setting, unavailable model, or provider failure asks the user instead.
 
 Set `decision_model` instead of `model` to review with a [decision adapter](HARNESS.md#decisions), such as `{"decision_model": "d3"}`. The decision model rates how likely each risk and authorization level is. The hook allows a request only when it is at least 80% likely that authorization covers the risk, and denies it otherwise. Less decisive models may need a lower bar, such as `"allow_threshold": 0.5`. Run `./tests/run decisions MODEL` to check a model against sample requests. It also denies requests that appear at least 50% likely to be driven by instructions in untrusted data. Denial reasons state these likelihoods. A refusal asks the user, like other review failures.

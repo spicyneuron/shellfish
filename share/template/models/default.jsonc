@@ -4,7 +4,7 @@
 {
   "$schema": "https://raw.githubusercontent.com/spicyneuron/shellfish/refs/heads/main/share/model.schema.json",
 
-  // anthropic, codex, openai, openai-responses, or openrouter.
+  // anthropic, codex, openai, openai_responses, or openrouter.
   // "openai" works with any OpenAI-compatible endpoint.
   // Credentials come from the environment or .env.
   "adapter": "openrouter",

@@ -5,7 +5,7 @@ setopt err_exit no_aliases no_multios pipe_fail
 umask 077
 
 source "${0:A:h:h}/_backend.zsh"
-SF_BACKEND_NAME=openai-decisions-omlx
+SF_BACKEND_NAME=openai_decisions_omlx
 
 # oMLX accepts only user text and images, so system and JSON become text.
 request=$(jq -ce '
@@ -14,4 +14,4 @@ request=$(jq -ce '
   .system = ""
 ') || sf_backend_die 'cannot translate request'
 
-OPENAI_API_KEY=${OMLX_API_KEY-} "${0:A:h:h}/openai-decisions/decide" <<<"$request"
+OPENAI_API_KEY=${OMLX_API_KEY-} "${0:A:h:h}/openai_decisions/decide" <<<"$request"

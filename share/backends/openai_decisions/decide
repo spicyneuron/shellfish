@@ -9,7 +9,7 @@ source "${0:A:h:h}/_backend.zsh"
 api_key=${OPENAI_API_KEY-}
 unset OPENAI_API_KEY
 
-sf_backend_setup openai-decisions
+sf_backend_setup openai_decisions
 trap 'rm -rf -- "$SF_BACKEND_TEMP_DIR"' EXIT
 cat >"$SF_BACKEND_REQUEST_FILE"
 

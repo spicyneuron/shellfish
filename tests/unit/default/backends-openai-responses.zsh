@@ -3,7 +3,7 @@
 source "${0:A:h:h:h}/_helpers.zsh"
 
 sf_test_tmp backends-openai-responses
-typeset run="$ROOT/share/backends/openai-responses/run"
+typeset run="$ROOT/share/backends/openai_responses/run"
 typeset codex_run="$ROOT/share/backends/codex/run"
 typeset codex_context_window="$ROOT/share/backends/codex/context_window"
 typeset req="$tmp/request.json"

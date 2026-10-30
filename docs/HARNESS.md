@@ -44,7 +44,7 @@ Components can also read the frozen profile's `config` from the session header. 
 | `SHELLFISH_COMMANDS` |  | [Commands](#commands) only |
 | `TMPDIR`, `TMPPREFIX` | ✓ |  |
 
-`SHELLFISH_SHARE_DIR` is the installed bundled `share/` root, so scripts can call its parts, such as `$SHELLFISH_SHARE_DIR/hooks/sandbox-approver/run`.
+`SHELLFISH_SHARE_DIR` is the installed bundled `share/` root, so scripts can call its parts, such as `$SHELLFISH_SHARE_DIR/hooks/sandbox_approver/run`.
 
 Tools use the host's `TMPDIR`, or `/tmp` when it is unset, and receive a `TMPPREFIX` beneath it. Sandboxed tools may read and write the platform temp directories as baseline temporary storage; tools own their cleanup. Sandboxed tools otherwise start with a clean environment plus their declared names. Unsandboxed tools inherit the process environment plus their declared names.
 

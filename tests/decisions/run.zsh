@@ -60,7 +60,7 @@ for ref; do
       {type:"session", format_version:1, cwd:$cwd, created:"2026-01-01T00:00:00Z",
         profile:{system:[{text:"You are a coding agent working in the user'"'"'s project."}],
           tools:[], commands:[], hooks:[], sandbox:{enabled:true, read:[], write:[]},
-          config:{"sandbox-approver":({($key):$model} +
+          config:{sandbox_approver:({($key):$model} +
             if $threshold == null then {} else {allow_threshold:$threshold} end)}},
         model:{adapter:$backend, endpoint:"https://example.invalid/test", request:{model:"unused"}}},
       {type:"user", content:[{type:"text", text:$case.user}]},
@@ -75,7 +75,7 @@ for ref; do
     ' >"$session" || exit 1
     SHELLFISH_EXECUTABLE=$root/bin/shellfish SHELLFISH_SESSION=$session \
       SHELLFISH_TURN_STATE=$tmp/state SHELLFISH_TURN_ID=1 \
-      zsh -f "$root/share/hooks/sandbox-approver/run" shell call_2 \
+      zsh -f "$root/share/hooks/sandbox_approver/run" shell call_2 \
       <<<"{\"tool_input\":$input}" 3>"$control" 2>/dev/null
     # Columns: match, model, case, authorized, injected, action, expected.
     row=$(jq -rs --argjson case "$case" --arg label "$label" '

@@ -5,7 +5,7 @@ setopt err_exit no_aliases no_multios pipe_fail
 umask 077
 
 source "${0:A:h:h}/_backend.zsh"
-SF_BACKEND_NAME=systemone-omlx
+SF_BACKEND_NAME=systemone_omlx
 
 # oMLX takes media as unplaced top-level lists, which the System One adapter
 # passes through from the request.
