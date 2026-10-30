@@ -58,31 +58,29 @@ shellfish -m '{"provider": "openrouter", "request": {"model": "MODEL"}}' -t shel
 shellfish run "PROMPT"            # Run one non-interactive turn
 ```
 
-Built-in providers and credentials:
-
-| Provider | Credential |
-| --- | --- |
-| `anthropic` | `ANTHROPIC_API_KEY` |
-| `codex` | Existing Codex CLI login |
-| `openai_chat` | `OPENAI_API_KEY` |
-| `openai_responses` | `OPENAI_API_KEY` |
-| `openrouter` | `OPENROUTER_API_KEY` |
-
-The `openai_chat` provider also supports compatible services by setting `endpoint` in a model file.
+See [providers and credentials](docs/MODELS.md#providers-and-credentials) for supported APIs, Codex login, and OpenAI-compatible services.
 
 Run `shellfish --help` for creation and sandbox options, or `/help` inside chat for commands supplied by the active harness.
 
+For scripts, `--json` returns the final answer, usage, and session path. Reuse the `session` path with `--session` to continue the conversation:
+
+```sh
+result=$(shellfish run --json "Summarize this project")
+session=$(printf '%s\n' "$result" | jq -r '.session')
+shellfish run --json --session "$session" "Inspect the tests next"
+```
+
 ## Configuration
 
-The Shellfish directory (typically `~/.shellfish/`, see [Directories](docs/CONFIG.md#directories)) holds three kinds of configuration:
+The Shellfish directory (typically `~/.shellfish/`) holds your editable configuration:
 
-- **Profiles** in `profiles/` select an agent's parts: sandbox files, system prompts, tools, commands, and hooks.
-- **Models** in `models/` configure the request: provider, endpoint, and request parameters. A model is chosen separately from the profile, and repeated `-m` options merge left to right.
-- **Sandbox files** in `sandbox/` enable sandboxing and grant extra paths.
-- **Settings** in `.env` or the environment hold credentials and limits.
+- [Profiles](docs/PROFILE.md) in `profiles/` select system prompts, tools, commands, hooks, and sandbox settings.
+- [Models](docs/MODELS.md) in `models/` select the provider, endpoint, and request parameters independently of the profile.
+- [Sandbox files](docs/PROFILE.md#sandbox) in `sandbox/` enable sandboxing and grant extra paths.
+- [Settings](docs/CONFIG.md) keep credentials and limits in `.env` or the environment, and presentation preferences in `tui.jsonc`.
 
 ```jsonc
-// ~/.shellfish/profiles/review.jsonc — shellfish -p review
+// ~/.shellfish/profiles/review.jsonc
 {
   "$schema": "https://raw.githubusercontent.com/spicyneuron/shellfish/refs/heads/main/share/profile.schema.json",
   "sandbox": "default",
@@ -92,13 +90,15 @@ The Shellfish directory (typically `~/.shellfish/`, see [Directories](docs/CONFI
 }
 ```
 
-`profiles/default.jsonc` is selected when `--profile` is absent, and `models/default.jsonc` when `--model` is. `init` copies editable system prompts into `system/`. Reusable executable components live in top-level `tools/`, `commands/`, `hooks/`, and `providers/` directories beside `profiles/`, and resolve from the Shellfish directory first, then the bundled `share/` directory. A reference starting with `/`, `~/`, `./`, `../`, or `@` is a path instead, where `@` is the bundled root. Every profile field also has a command-line option. A new session freezes the resolved profile and model in its header. Themes and preview limits live in [`tui.jsonc`](share/tui.jsonc).
+Add your instructions in `system/review.md`, then select this profile with `shellfish -p review`. New sessions freeze the resolved profile and model. See [Configuration](docs/CONFIG.md) for setup and lookup rules.
 
 ## Documentation
 
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md): Design intent and opinionated boundaries.
-- [`docs/CONFIG.md`](docs/CONFIG.md): Configure profiles, models, settings, presentation, and the starter agent.
-- [`docs/HARNESS.md`](docs/HARNESS.md): Write custom commands, hooks, tools, and providers.
+- [`docs/CONFIG.md`](docs/CONFIG.md): Setup, directories, reference lookup, environment, and presentation.
+- [`docs/PROFILE.md`](docs/PROFILE.md): Compose agents, configure sandboxing, and choose bundled behavior.
+- [`docs/MODELS.md`](docs/MODELS.md): Select models, configure providers, and make standalone requests and decisions.
+- [`docs/COMPONENTS.md`](docs/COMPONENTS.md): Write tools, commands, hooks, and providers.
 - [`docs/CURSED.md`](docs/CURSED.md): Hard-won lessons and ~~hacks~~ clever workarounds.
 
 ## Develop

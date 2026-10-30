@@ -70,7 +70,7 @@ The core guarantees ordering, validation, persistence, recovery, and cleanup. Ev
 - **Commands** handle `/NAME` prompts instead of submitting them.
 - **Hooks** add context and workflow policy at lifecycle boundaries.
 
-Commands, hooks, and providers are trusted, run with your permissions, and receive every value in `.env`; tools can be sandboxed and receive only the `.env` names their manifest declares. Tools and providers describe other settings in a JSON manifest.
+Commands, hooks, and providers are trusted and run with your permissions. Tools can be sandboxed. See [Component trust](COMPONENTS.md#environment-and-trust) for credential access and trust rules.
 
 | Owner | Responsibility |
 | --- | --- |
@@ -80,9 +80,7 @@ Commands, hooks, and providers are trusted, run with your permissions, and recei
 | Hook | Context or policy before and after core operations |
 | Tool | One model-requested action and optional durable state request |
 
-Hooks and tools communicate through JSON, stdout, stderr, and a small control channel; providers emit normalized JSON events. Components do not receive a mutable session object. See [`HARNESS.md`](HARNESS.md) for their contracts.
-
-Hooks and tools share execution, presentation, and durable state updates. Their callers compose model interfaces, execution policies, lifecycle actions, and result records around that shared contract. The shared component layer does not distinguish hooks from tools.
+Hooks and tools communicate through JSON, stdout, stderr, and a small control channel. Providers emit normalized JSON events. Components do not receive a mutable session object. See [`COMPONENTS.md`](COMPONENTS.md) for writing tools, commands, hooks, and providers.
 
 ## Clients invoke turns
 
