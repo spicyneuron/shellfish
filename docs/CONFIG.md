@@ -259,9 +259,9 @@ With `skills/mention`, `$skill-name` in an ordinary prompt loads each matching a
 
 The `subagent` tool lets you delegate a separate task to a subagent, so work can proceed independently of your current conversation. You can wait for its result, let it run in the background, check its progress, or give it a follow-up task once it finishes. It is opt-in: the `plus` profile enables it, or add `"subagent"` to a profile's `tools`.
 
-Background work returns control after launch. The default limit is four active subagents per parent. Set `"config": {"subagent": {"max_active": 2}}` in the parent's profile to choose another positive integer. Supplied limits freeze with the session, and inspection remains available when all slots are occupied.
+Background work returns control after launch. The default limit is four running subagents per parent, and a subagent holds its slot only while its turn runs. Set `"config": {"subagent": {"max_active": 2}}` in the parent's profile to choose another positive integer. Supplied limits freeze with the session.
 
-Inspection distinguishes a subagent that is still running from one that has stopped without a final transcript outcome. A stopped subagent releases its active slot and can be continued. Shellfish recovers unfinished work on that next turn. A subagent killed outright during its stop hooks can appear settled, and those hooks do not run again.
+Inspection distinguishes a subagent that is still running from one that has stopped without a final transcript outcome. A stopped subagent can be continued, and Shellfish recovers unfinished work on that next turn. A subagent killed outright during its stop hooks can appear settled, and those hooks do not run again.
 
 ### Sandbox approver hook
 

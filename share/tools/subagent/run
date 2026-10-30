@@ -3,13 +3,23 @@
 emulate -R zsh
 setopt extended_glob no_aliases no_bg_nice no_multios pipe_fail
 
-typeset input operation profile model task agent_id child parent_dir association value output fork transcript background working lock_fd
+typeset input operation profile model task agent_id child parent_dir output owned fork transcript background working id
 typeset header limit
 integer count=0 result=0
 
 fail() { print -r -- "subagent: $1"; exit ${2:-1}; }
 
+# Succeeds while a process holds the session's turn lock.
+running() {
+  local fd
+  [[ -f $1.lock ]] || return 1
+  zsystem flock -t 0 -f fd "$1.lock" 2>/dev/null || return 0
+  zsystem flock -u "$fd"
+  return 1
+}
+
 input=$(cat) || fail 'cannot read input'
+zmodload zsh/system || fail 'cannot load session locking'
 # Only a profile name: a path, or a name leaving profiles/, could select a
 # profile the model wrote, with unsandboxed tools or its own hooks.
 operation=$(jq -er '
@@ -65,24 +75,15 @@ fi
 
 child="$parent_dir/.subagent-$agent_id.jsonl"
 if [[ $operation == inspect || $operation == continue ]]; then
-  association=$(jq -c -s --arg name "subagents/$agent_id" \
-    '[.[] | select(.type == "state_update" and .name == $name) | .value] | last // empty' \
-    "$SHELLFISH_SESSION") || fail 'cannot read subagent association'
-  [[ -n $association ]] || fail 'unknown agent_id' 2
-  jq -e --arg session ".subagent-$agent_id.jsonl" \
-    '.session == $session and (.active | type == "boolean")' \
-    <<<"$association" >/dev/null || fail 'invalid subagent association'
+  jq -e -s --arg name "subagents/$agent_id" \
+    '[.[] | select(.type == "state_update" and .name == $name) | .value] | last == true' \
+    "$SHELLFISH_SESSION" >/dev/null || fail 'unknown agent_id' 2
   [[ -f $child && ! -L $child ]] || fail 'subagent session is unavailable'
   [[ -f $child.lock && ! -L $child.lock && -w $child.lock ]] ||
     fail 'subagent session lock is unavailable'
-  zmodload zsh/system || fail 'cannot load session locking'
-  working=true
-  if zsystem flock -t 0 -f lock_fd "$child.lock" 2>/dev/null; then
-    zsystem flock -u "$lock_fd"
-    working=false
-  fi
-  output=$(jq -c -s --arg id "$agent_id" --argjson association "$association" \
-    --argjson working "$working" '
+  working=false
+  running "$child" && working=true
+  output=$(jq -c -s --arg id "$agent_id" --argjson working "$working" '
     if length < 2 or .[0].type != "session" or
        (any(.[1:][]; . == {type:"state_update",name:"subagent",value:true}) | not) or
        (all(.[]; .type | IN("session","state_update","hook_result","user",
@@ -92,7 +93,7 @@ if [[ $operation == inspect || $operation == continue ]]; then
       ([to_entries[] | select(.value.type == "user") | .key] | last) as $turn |
       (if $turn == null then [] else .[$turn:] end) as $records |
       ($records[-1].type // null) as $last |
-      {agent_id:$id, active:$association.active, working:$working,
+      {agent_id:$id, working:$working,
        settled:(($working | not) and ($last == "error" or
          ($last == "assistant" and $records[-1].stop == "end"))),
        answer:([$records[] | select(.type == "assistant" and .stop == "end") |
@@ -101,26 +102,23 @@ if [[ $operation == inspect || $operation == continue ]]; then
     end
   ' "$child") || fail 'cannot inspect subagent session'
   if [[ $operation == inspect ]]; then
-    if [[ $working == false ]] && jq -e '.active == true' <<<"$output" >/dev/null; then
-      print -r -u3 -- "$(jq -cn --arg name "subagents/$agent_id" \
-        --arg session ".subagent-$agent_id.jsonl" \
-        '{state_update:[{name:$name,value:{session:$session,active:false}}]}')" ||
-        fail 'cannot release subagent slot'
-      output=$(jq -c '.active=false' <<<"$output") || fail 'cannot format inspection'
-    fi
     print -r -- "$output"
     exit 0
   fi
-  jq -e '.active == false and .working == false' <<<"$output" >/dev/null ||
-    fail 'subagent prior turn is active' 2
+  [[ $working == false ]] || fail 'subagent prior turn is still running' 2
   background=$(jq -r '.background // false' <<<"$input")
   task=$(jq -r '.task' <<<"$input")
 fi
 
-# A later state update supersedes an earlier reservation.
-count=$(jq -s '[.[] | select(.type == "state_update" and (.name | startswith("subagents/"))) |
-  {key:.name,value:.value}] | from_entries | [.[] | select(.active? == true)] | length' \
-  "$SHELLFISH_SESSION") || fail 'cannot read parent state'
+# The limit counts owned subagents whose turn is running now.
+owned=$(jq -r -s '
+  [.[] | select(.type == "state_update" and (.name | startswith("subagents/"))) |
+    {key:.name,value:.value}] | from_entries | to_entries[] |
+  select(.value == true) | .key | ltrimstr("subagents/")
+' "$SHELLFISH_SESSION") || fail 'cannot read parent state'
+for id in ${(f)owned}; do
+  running "$parent_dir/.subagent-$id.jsonl" && (( ++count ))
+done
 (( count < limit )) || fail "active subagent limit reached ($limit)"
 
 if [[ $operation == start ]]; then
@@ -155,31 +153,20 @@ if [[ $operation == start ]]; then
   fi
   print -r -- '{"type":"state_update","name":"subagent","value":true}' >>"$child" ||
     fail 'cannot mark child session'
+  print -r -u3 -- "$(jq -cn --arg name "subagents/$agent_id" \
+    '{state_update:[{name:$name,value:true}]}')" || fail 'cannot record subagent'
 fi
-value=$(jq -cn --arg session ".subagent-$agent_id.jsonl" \
-  '{session:$session,active:true}') || fail 'cannot reserve subagent'
-print -r -u3 -- "$(jq -cn --arg name "subagents/$agent_id" --argjson value "$value" \
-  '{state_update:[{name:$name,value:$value}]}')" || fail 'cannot reserve subagent'
 
 if [[ $background == true ]]; then
   output=$("$SHELLFISH_EXECUTABLE" run --background --session "$child" -- "$task")
   result=$?
-  if (( result )) || [[ $output != "$child" ]]; then
-    print -r -u3 -- "$(jq -cn --arg name "subagents/$agent_id" \
-      --arg session ".subagent-$agent_id.jsonl" \
-      '{state_update:[{name:$name,value:{session:$session,active:false}}]}')" ||
-      fail 'cannot release subagent slot'
-    fail 'cannot launch background subagent'
-  fi
-  print -r -- "$(jq -cn --arg id "$agent_id" '{agent_id:$id,active:true,settled:false}')"
+  (( ! result )) && [[ $output == "$child" ]] || fail 'cannot launch background subagent'
+  print -r -- "$(jq -cn --arg id "$agent_id" '{agent_id:$id,working:true,settled:false}')"
   exit 0
 fi
 
 "$SHELLFISH_EXECUTABLE" run --session "$child" -- "$task" >/dev/null 2>&1
 result=$?
-print -r -u3 -- "$(jq -cn --arg name "subagents/$agent_id" --arg session ".subagent-$agent_id.jsonl" \
-  '{state_update:[{name:$name,value:{session:$session,active:false}}]}')" ||
-  fail 'cannot release subagent slot'
 output=$(jq -c -s --arg id "$agent_id" --argjson exit_code "$result" '
   {agent_id:$id,exit_code:$exit_code,
    answer:([.[] | select(.type == "assistant" and .stop == "end") |

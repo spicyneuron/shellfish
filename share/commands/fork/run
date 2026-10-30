@@ -56,8 +56,8 @@ else
   transcript="$SHELLFISH_TURN_STATE/fork.jsonl"
 fi
 
-# Later updates refresh only state that exists at the cutoff, so earlier
-# subagents stay current and later ones are left out.
+# Later updates refresh only state that exists at the cutoff, and state first
+# set after it is left out.
 if ! jq -ce -s --argjson cutoff "$cutoff" --arg created "$created" '
   ([.[0:$cutoff][] | select(.type == "state_update") | .name] | unique) as $names |
   (.[0:$cutoff] | if $created == "" then . else .[0].created = $created end | .[]),
