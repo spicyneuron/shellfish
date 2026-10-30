@@ -3,18 +3,20 @@
 emulate -R zsh
 setopt extended_glob no_aliases no_multios pipe_fail
 
-typeset target base candidate created draft='' resolved
+typeset target base candidate created draft='' resolved name=fork
 typeset transcript
 typeset -a argv fields
-integer suffix=1 cutoff=0 has_draft=0
+integer suffix=1 cutoff=0 has_draft=0 rewind=0
+# /rewind truncates this session in place, defaulting to its last user section.
+[[ ${1-} != --rewind ]] || { rewind=1; name=rewind }
 target=$(cat)
 if [[ -n $target && ( $target != <1-> || ${#target} -gt 9 ) ]]; then
-  print -ru2 -- 'Usage: /fork [N]'
+  print -ru2 -- "Usage: /$name [N]"
   exit 0
 fi
 target=${target:-0}
 
-resolved=$(jq -j -s --argjson target "$target" '
+resolved=$(jq -j -s --argjson target "$target" --argjson rewind "$rewind" '
   . as $records |
   (reduce ($records | to_entries[] |
       select(.value.type == "user" or .value.type == "assistant")) as $entry
@@ -25,8 +27,10 @@ resolved=$(jq -j -s --argjson target "$target" '
         . + [{type:"assistant"}]
       else . end)) as $sections |
   if ($sections | any(.type == "user") | not) then error("empty")
+  elif $target == 0 and $rewind == 1 then
+    ([$sections[] | select(.type == "user")] | last | [.index, .draft, 1])
   elif $target == 0 then [($records | length), "", 0]
-  elif $target > ($sections | length) then error("missing")
+  elif $target >($sections | length) then error("missing")
   elif $sections[$target - 1].type == "user" then
     ($sections[$target - 1] | [.index, .draft, 1])
   else ([$sections[$target:][] | select(.type == "user")] | first) as $next |
@@ -34,7 +38,7 @@ resolved=$(jq -j -s --argjson target "$target" '
     else [$next.index, $next.draft, 1] end
   end | "\(.[0])\u0000\(.[1])\u0000\(.[2])\u0000"
 ' "$SHELLFISH_SESSION" 2>/dev/null) || {
-  print -ru2 -- 'Fork target does not exist.'
+  print -ru2 -- "${(C)name} target does not exist."
   exit 0
 }
 fields=( "${(@0)${resolved%$'\0'}}" )
@@ -42,6 +46,25 @@ fields=( "${(@0)${resolved%$'\0'}}" )
 cutoff=$fields[1]
 draft=$fields[2]
 has_draft=$fields[3]
+
+if (( rewind )); then
+  # Later state updates stay, so running subagents remain attached. The turn
+  # holds the session lock, so no writer races the replacement.
+  (( has_draft )) || { print -ru2 -- 'Nothing to rewind.'; exit 0 }
+  transcript=$(mktemp "${SHELLFISH_SESSION:h}/.${SHELLFISH_SESSION:t}.XXXXXX") || exit 1
+  if ! { chmod 600 "$transcript" &&
+      jq -ce -s --argjson cutoff "$cutoff" '
+        .[0:$cutoff][], (.[$cutoff:][] | select(.type == "state_update"))
+      ' "$SHELLFISH_SESSION" >"$transcript" &&
+      mv -f -- "$transcript" "$SHELLFISH_SESSION"; }; then
+    rm -f -- "$transcript"
+    print -ru2 -- 'Could not rewind session.'
+    exit 0
+  fi
+  argv=( "$SHELLFISH_EXECUTABLE" --session "$SHELLFISH_SESSION" --draft "$draft" )
+  jq -cn '$ARGS.positional | {action:"handoff",argv:.}' --args -- "${argv[@]}" >&3 || exit 1
+  exit 0
+fi
 
 created=$(date -u '+%Y-%m-%dT%H:%M:%SZ') || exit 1
 transcript="$SHELLFISH_TURN_STATE/fork.jsonl"

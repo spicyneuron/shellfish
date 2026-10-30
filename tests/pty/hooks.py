@@ -295,6 +295,26 @@ def test_fork_restores_removed_user_prompt_as_draft():
         session.close()
 
 
+def test_rewind_truncates_session_and_restores_prompt_as_draft():
+    session = Session(explicit_session=True, commands=["rewind"])
+    path = session.explicit_session
+    try:
+        session.send(b"original prompt\r")
+        session.wait_session_records(3, path=path)
+        mark = len(session.output)
+        session.send(b"/rewind\r")
+        session.wait_after(mark, "❯ original prompt", view=session.typed)
+        _, records = session.wait_session_records(1, path=path)
+        assert [r["type"] for r in records] == ["session"], records
+        session.send(b" edited\r")
+        _, records = session.wait_session_records(3, path=path)
+        assert path.stat().st_mode & 0o777 == 0o600
+        assert [r["type"] for r in records] == ["session", "user", "assistant"], records
+        assert records[1]["content"][0]["text"] == "original prompt edited", records
+    finally:
+        session.close()
+
+
 if __name__ == "__main__":
     run("hook script PTY scenarios", [
         test_startup_streams_hooks_and_runs_the_queued_prompt,
@@ -307,4 +327,5 @@ if __name__ == "__main__":
         test_failed_handoff_restores_interrupt,
         test_prompt_hook_hands_off_to_new_session,
         test_fork_restores_removed_user_prompt_as_draft,
+        test_rewind_truncates_session_and_restores_prompt_as_draft,
     ])

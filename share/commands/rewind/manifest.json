@@ -1,0 +1,1 @@
+{"description":"Rewind this session to the following user section (default: last)","arguments":"[N]","user_text":"${output.stderr}"}
