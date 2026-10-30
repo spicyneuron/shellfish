@@ -1,6 +1,3 @@
-7. **A07: Shell behavior is both copied and partly owned by the core.**  
-   [`shell/run`](share/tools/shell/run) and [`shell_readonly/run`](share/tools/shell_readonly/run) are byte-identical 76-line implementations. Meanwhile, [`turn.jq:21`](libexec/run/turn.jq:21) injects shell-specific workflow instructions by tool name. Reuse one runner, retain distinct sandbox policies, and move shell-specific guidance into its manifest. This offers roughly 70 lines of straightforward deletion.
-
 # Sandbox
 
 Considering replacing fence with nono or srt:
