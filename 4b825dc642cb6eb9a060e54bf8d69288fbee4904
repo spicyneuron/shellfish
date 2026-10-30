@@ -1,11 +1,17 @@
 # Cleanup
 
+We have some inconsistency in use of underscores vs hyphens. Any good reason to standardize one way vs the other?
+
 In header, list sandbox and sandbox type
 In header, also list resolved shellfish directory
 
-# Major
+# Sandbox
 
-Replace fence with nono or srt
+Considering replacing fence with nono or srt:
+- https://github.com/nolabs-ai/nono
+- https://github.com/anthropics/sandbox-runtime
+Both checked out in ../<repo>.
+The goal is to keep the existing deny then whitelist approach, but give the user some better way to detect what was blocked and unblock them easily.
 
 Add local sandbox exceptions to allow tests to run
 - tests cannot create .env and .shellfish
