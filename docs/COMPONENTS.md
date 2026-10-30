@@ -119,7 +119,7 @@ Commands also receive `SHELLFISH_COMMANDS`, a JSON array of the profile's comman
 
 Put a provider directory under `providers/` and select it through the model's `provider` field. It supplies an executable `run` for conversations, `decide` for decisions, or both. An optional `manifest.json` or `manifest.jsonc` supplies a default `endpoint`, which a model can override.
 
-Shellfish invokes the provider once per request with JSON on stdin. The provider translates the request to its API and returns normalized output, keeping API-specific parsing and validation inside the provider. Conversation providers stream text and reasoning deltas followed by one complete assistant response. Decision providers return one result object. Diagnostics go to stderr, and success requires exit 0.
+Shellfish invokes the provider once per request with JSON on stdin. The provider translates the request to its API and returns normalized output, keeping API-specific parsing and validation inside the provider. Conversation providers may stream text and reasoning deltas, then return one complete assistant response. Decision providers return one result object. Diagnostics go to stderr, and success requires exit 0.
 
 An optional `context_window` executable discovers capacity without generating a response. Failed discovery leaves capacity unknown rather than failing inference.
 

@@ -56,8 +56,6 @@ cat >"$PROVIDER_TEST_RESPONSE" <<'EOF'
 EOF
 (builtin cd -- "$tmp" && ANTHROPIC_API_KEY=test zsh -f "$run" <"$req" >"$res")
 assert_usage
-jq -e -s 'map(select(.type == "_assistant_message_delta") | .text) == ["ok"]' \
-  "$res" >/dev/null || fail 'anthropic did not stream a buffered response as deltas'
 jq -e '
   (.response_schema | not) and .max_tokens == 99 and
   .thinking == {type:"adaptive"} and

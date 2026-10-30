@@ -190,8 +190,6 @@ jq -e '
     {type:"tool_call",id:"call_abc",name:"shell",input:{command:"ls"}}] and
   .usage == {input_tokens:12,output_tokens:8}
 ' <<<"$REPLY" >/dev/null || fail 'openai_chat did not parse a buffered response'
-jq -e -s 'map(select(.type == "_assistant_message_delta") | .text) == ["ok"]' \
-  "$res" >/dev/null || fail 'openai_chat did not stream a buffered response as deltas'
 
 # Regroup flat call batches.
 typeset batch_request="$tmp/batch-request.json"

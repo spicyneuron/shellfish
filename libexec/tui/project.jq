@@ -1,6 +1,7 @@
 # Live core events and loaded durable records become one presentation action
 # vocabulary. Actions are arrays of strings; the first element is the type.
-# $mode is the starting record policy and $window the known context window.
+# $mode is the starting record policy, $window the known context window, and
+# $drawn the readable blocks of the open live message.
 
 def compact_tokens:
   if . < 1000 then tostring
@@ -64,30 +65,40 @@ def message_actions($role; $text):
      ["message_end"]]
   else [] end;
 
-# A response replays as the ordered blocks the live stream already showed.
-def response_actions:
+# Deltas join into readable blocks the way the core joins a cancelled response:
+# a delta of another kind starts the next block.
+def delta_kind: if .type == "_assistant_reasoning_delta" then "reasoning" else "text" end;
+def draw($delta):
+  ($delta | delta_kind) as $kind |
+  if .[-1].type? == $kind then .[-1].text += $delta.text
+  else . + [{type:$kind, text:$delta.text}] end;
+
+# A response draws its blocks after whatever its deltas already drew. $drawn is
+# null when no live message is open.
+def response_actions($drawn):
   . as $response |
-  (.content | to_entries) as $blocks |
-  ([$blocks[] | select(.value.type == "reasoning" and
-    (.value.text | test("[^\n]"))) | .key]) as $reasoning |
-  [["message_start", "agent"]] +
-  [$blocks[] |
-    if .value.type == "text" then
-      ["message_delta", (.key | tostring), "text", .value.text, ""]
-    elif .value.type == "reasoning" then
-      ["message_delta", (.key | tostring), "reasoning", .value.text,
-       (if ($reasoning | length) == 1 and .key == $reasoning[0] and
-           ($response.usage.reasoning_tokens? != null)
-        then ($response.usage.reasoning_tokens | tostring) else "" end)]
+  [.content | to_entries[] | select(.value.type | IN("text", "reasoning")) | .key] as $readable |
+  ([.content[] | select(.type == "reasoning" and (.text | test("[^\n]")))] | length) as $thoughts |
+  (if $drawn == null then [["message_start", "agent"]] else [] end) +
+  [.content | to_entries[] | . as $block |
+    if (.value.type | IN("text", "reasoning")) then
+      ($readable | index($block.key)) as $n |
+      (($drawn // [])[$n].text // "") as $shown |
+      (if .value.text | startswith($shown) then .value.text[($shown | length):] else "" end) as $rest |
+      # A block its deltas drew completely is already on screen.
+      if $n < ($drawn // [] | length) and $rest == "" then empty else
+        ["message_delta", ($n | tostring), .value.type, $rest,
+         (if .value.type == "reasoning" and $thoughts == 1 and (.value.text | test("[^\n]")) and
+             ($response.usage.reasoning_tokens? != null)
+          then ($response.usage.reasoning_tokens | tostring) else "" end)]
+      end
     else ["message_delta", (.key | tostring), "inert", "", ""]
     end] +
   [["message_end"]];
 
-# A live response closes the message its deltas drew.
-def record_actions($mode; $window):
+def record_actions($mode; $window; $drawn):
   if .type == "assistant" then
-    (if $mode == "load" then response_actions else [["message_end"]] end) +
-      usage_actions($window)
+    response_actions($drawn) + usage_actions($window)
   elif .type == "user" then
     .content[0].text as $text |
     message_actions("user"; $text) +
@@ -108,12 +119,11 @@ def record_actions($mode; $window):
   else error("unsupported record: " + (.type | tostring))
   end;
 
-def event_actions($window):
+# $drawn already includes this event.
+def event_actions($window; $drawn):
   if .type == "_assistant_start" then [["message_start", "agent"]]
-  # Deltas carry no index; a change of kind starts the next block.
-  elif .type == "_assistant_message_delta" then [["message_delta", "0", "text", .text, ""]]
-  elif .type == "_assistant_reasoning_delta" then
-    [["message_delta", "0", "reasoning", .text, ""]]
+  elif .type | IN("_assistant_message_delta", "_assistant_reasoning_delta") then
+    [["message_delta", ($drawn | length - 1 | tostring), delta_kind, .text, ""]]
   # A tool draft names its tool.
   elif .type == "_draft" then
     [["execution_update", .id, (if has("name") then "tool" else "notice" end), result_text,
@@ -136,18 +146,28 @@ def nul_safe: gsub("\u0000"; "�");
 [inputs | fromjson] |
 reduce .[] as $line (
   {mode: $mode, window: (if $window == "" then null else ($window | tonumber) end),
-   actions: []};
+   drawn: $drawn, actions: []};
   . as $state |
+  # A live message stays open from its start until a record or a load.
   ($line |
-    if (.type // "" | startswith("_")) then event_actions($state.window)
-    else record_actions($state.mode; $state.window) end) as $emitted |
+    if .type == "_assistant_start" then []
+    elif .type | IN("_assistant_message_delta", "_assistant_reasoning_delta") then
+      $state.drawn // [] | draw($line)
+    elif (.type // "" | startswith("_")) and .type != "_session_load" then $state.drawn
+    else null end) as $drawn |
+  ($line |
+    if (.type // "" | startswith("_")) then event_actions($state.window; $drawn)
+    else record_actions($state.mode; $state.window; $state.drawn) end) as $emitted |
   .actions += $emitted |
+  .drawn = $drawn |
   if $line.type == "_session_load" then .mode = "load"
   elif $line.type | IN("session", "_session_update") then
     .window = ($line.model.context_window // null)
   else . end
 ) |
-# Fields are NUL-joined and each action ends with a record separator.
-.actions[] |
-if any(.[]; type != "string") then error("invalid action field")
-else ([.[] | nul_safe] | join("\u0000")), "\u001e" end
+# The state for the next batch leads, then fields are NUL-joined and each
+# action ends with a record separator.
+([.mode, (.window // "" | tostring), (.drawn | tojson)] | join("\u0000")), "\u001e",
+(.actions[] |
+  if any(.[]; type != "string") then error("invalid action field")
+  else ([.[] | nul_safe] | join("\u0000")), "\u001e" end)

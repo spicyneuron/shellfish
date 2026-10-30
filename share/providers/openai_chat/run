@@ -89,10 +89,6 @@ jq -ce '
 sf_provider_curl_args
 sf_provider_stream '.error.message?' '
   def delta($type;$text): {type:$type,text:$text};
-  # A whole body streams as one delta per readable block, then its response.
-  def whole: [.content[] | select((.type == "text" or .type == "reasoning") and .text != "") |
-    delta(if .type == "text" then "_assistant_message_delta" else "_assistant_reasoning_delta" end;
-      .text)] + [.];
   def usage:
     {input_tokens:(.prompt_tokens // 0),output_tokens:(.completion_tokens // 0)} +
     (if (.prompt_tokens_details.cached_tokens // null) == null then {}
@@ -128,7 +124,7 @@ sf_provider_stream '.error.message?' '
         ((length)|tostring) as $key |
         .[$key]={type:($call.type // "function"),id:$call.id,name:$call.function.name,
           arguments:$call.function.arguments}) |
-      .out += (response_end | whole) |
+      .out += [response_end] |
       .done=true
     end;
   foreach (inputs, null) as $line

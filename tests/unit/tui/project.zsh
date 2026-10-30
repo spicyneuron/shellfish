@@ -29,9 +29,33 @@ project live \
   '{"type":"assistant","stop":"end","content":[{"type":"text","text":"I will look."},{"type":"reasoning","text":"weighing"}],"usage":{"input_tokens":2,"output_tokens":1}}'
 assert_equal 'message_start | agent
 message_delta | 0 | text | I will look. |
-message_delta | 0 | reasoning | weighing |
+message_delta | 1 | reasoning | weighing |
 message_end
 usage | 2 ↑ 1 ↓ |' "$REPLY"
+
+# A response draws what its deltas have not, even across batches.
+project live '{"type":"_assistant_start"}' '{"type":"_assistant_message_delta","text":"I will"}'
+project live \
+  '{"type":"assistant","stop":"end","content":[{"type":"text","text":"I will look."},{"type":"reasoning","text":"weighing"}]}'
+assert_equal 'message_delta | 0 | text |  look. |
+message_delta | 1 | reasoning | weighing |
+message_end' "$REPLY"
+# Deltas join the way a cancelled response saves them, so it draws nothing more.
+project live '{"type":"_assistant_start"}' \
+  '{"type":"_assistant_message_delta","text":"a"}' \
+  '{"type":"_assistant_reasoning_delta","text":""}' \
+  '{"type":"_assistant_message_delta","text":"b"}' \
+  '{"type":"assistant","stop":"cancelled","content":[{"type":"text","text":"a"},{"type":"reasoning","text":""},{"type":"text","text":"b"}]}'
+assert_equal 'message_start | agent
+message_delta | 0 | text | a |
+message_delta | 1 | reasoning |  |
+message_delta | 2 | text | b |
+message_end' "$REPLY"
+project live '{"type":"_assistant_start"}' \
+  '{"type":"assistant","stop":"end","content":[{"type":"text","text":"whole"}]}'
+assert_equal 'message_start | agent
+message_delta | 0 | text | whole |
+message_end' "$REPLY"
 
 # A loaded durable response produces the same ordered message actions.
 project load \
@@ -137,9 +161,10 @@ assert_equal 'details |  |  |  |  |
 profile | test/fake-model |' "$REPLY"
 project live "$update"
 assert_equal 'profile | test/fake-model | 200' "$REPLY"
-project live \
+project live '{"type":"_assistant_start"}' \
   '{"type":"assistant","stop":"end","content":[],"usage":{"input_tokens":75,"cached_tokens":15,"output_tokens":5}}'
-assert_equal 'message_end
+assert_equal 'message_start | agent
+message_end
 usage | 75 ↑ 20% ⦿ 5 ↓ 38% of 200 ◔ |' "$REPLY"
 
 # The header also describes its components and sandbox by name.

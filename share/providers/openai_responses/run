@@ -90,10 +90,6 @@ jq -ce '
 sf_provider_curl_args
 sf_provider_stream '(.error.message? // .detail?)' '
   def delta($type;$text): {type:$type,text:$text};
-  # A whole body streams as one delta per readable block, then its response.
-  def whole: [.content[] | select((.type == "text" or .type == "reasoning") and .text != "") |
-    delta(if .type == "text" then "_assistant_message_delta" else "_assistant_reasoning_delta" end;
-      .text)] + [.];
 
   # The output a completed response should carry. Its text is always the
   # streamed text, in place of the first message item. Most providers
@@ -194,7 +190,7 @@ sf_provider_stream '(.error.message? // .detail?)' '
       elif .mode != "json" then error("no completed response")
       else (.body | try fromjson catch null) as $body |
         if $body == null then error("no completed response")
-        else .done = true | .out += ($body | normalized | whole)
+        else .done = true | .out += [$body | normalized]
         end
       end
     else
