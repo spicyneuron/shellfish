@@ -70,13 +70,16 @@ def tool_plan($profile; $tools; $call; $turn; $max_capture):
 def tool_refusal($reason; $exit_code):
   {output:{stdout:$reason,stderr:$reason,exit_code:$exit_code},ran:false};
 
-# Model text is stdout. A bypass request that was never answered keeps no
-# badge unless the tool ran, which implies approval.
+# Model text is stdout, which leads any content parts as model content. A
+# bypass request that was never answered keeps no badge unless the tool ran,
+# which implies approval.
 def tool_result($component; $outcome):
   ($component.draft | del(.user_text)) + {type:"tool_result",input:$component.input,
     exit_code:$outcome.output.exit_code,
-    user_text:render_template($component.template; $component + $outcome),
-    model_text:$outcome.output.stdout} |
+    user_text:render_template($component.template; $component + $outcome)} +
+  (if ($outcome.content // []) == [] then {model_text:$outcome.output.stdout}
+   else {model_content:([$outcome.output.stdout | select(. != "") |
+     {type:"text",text:.}] + $outcome.content)} end) |
   if .sandbox_bypass != "requested" then .
   elif $outcome.ran then .sandbox_bypass = "approved"
   else del(.sandbox_bypass) end |

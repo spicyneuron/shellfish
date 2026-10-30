@@ -24,10 +24,10 @@ sf_run_component_line() {
   local record
   local -A line
   [[ -z $SF_COMPONENT[error] ]] || return 1
-  sf_jq_fields -cn --arg raw "$1" '
+  sf_jq_fields -cR '
       include "lib/fields";
       include "lib/session";
-      ($raw | try fromjson catch null) as $line |
+      (try fromjson catch null) as $line |
       if $line | type == "object" and
         ((keys - ["state_update"] - $ARGS.positional) | length == 0) and
         ((has("state_update") | not) or (.state_update | type == "array" and
@@ -38,7 +38,7 @@ sf_run_component_line() {
         entry("rest"; $line | del(.state_update) | if . == {} then "" else tojson end),
         ("ok" | field)
       else error("invalid component line") end
-    ' --args "${@:2}" || { SF_COMPONENT[error]=invalid; return 1; }
+    ' --args "${@:2}" <<<"$1" || { SF_COMPONENT[error]=invalid; return 1; }
   line=( "${reply[@]}" )
   for record in ${(f)line[state_updates]}; do
     sf_run_append "$SF_COMPONENT[session]" "$record" ||
@@ -47,11 +47,12 @@ sf_run_component_line() {
   REPLY=$line[rest]
 }
 
-# Run a prepared command into CAPTURE, streaming fd 3 to the supplied handler. reply
-# is (status exit_code) with status ok, interrupted, invalid, or overflow; ok
-# leaves the bounded outcome in REPLY. Failure leaves a message in REPLY.
+# Run a prepared command into CAPTURE, streaming fd 3 lines of at most
+# MAX_CONTROL bytes to the supplied handler. reply is (status exit_code) with
+# status ok, interrupted, invalid, or overflow; ok leaves the bounded outcome in
+# REPLY. Failure leaves a message in REPLY.
 sf_run_component_execute() {
-  local capture=$1 limit=$4 state=ok
+  local capture=$1 limit=$4 max_control=$5 state=ok
   local -A process
   sf_process_run "$@" ||
     { REPLY=$SF_PROCESS_ERROR; return 1; }
@@ -63,7 +64,7 @@ sf_run_component_execute() {
   elif [[ -n $SF_COMPONENT[error] ]]; then
     REPLY=$SF_COMPONENT[error]
     return 1
-  elif (( process[control_bytes] > limit )); then
+  elif (( process[control_bytes] > max_control )); then
     state=overflow
   else
     sf_run_component_bound "$capture/stdout" "$capture/stdout.bounded" "$limit" &&

@@ -25,7 +25,7 @@ typeset -A result
 collect() { lines+=( "$1" ); }
 mkdir "$capture"
 capture=${capture:A}
-sf_process_run "$capture" "$tmp" "$input_file" 512 collect \
+sf_process_run "$capture" "$tmp" "$input_file" 512 512 collect \
   /usr/bin/env RUNNER_VALUE=ambient "$command" argument || { fail "$SF_PROCESS_ERROR"; exit 1; }
 result=( "${reply[@]}" )
 (( result[exit_code] == 7 && result[interrupted] == 0 && result[stdout_bytes] > 0 &&
@@ -58,7 +58,7 @@ chmod +x "$stream"
 mkdir "$stream_capture"
 lines=()
 collect() { lines+=( "$1" ); : >"$seen"; }
-sf_process_run "$stream_capture" "$tmp" "$input_file" 512 collect \
+sf_process_run "$stream_capture" "$tmp" "$input_file" 512 512 collect \
   /usr/bin/env SEEN="$seen" "$stream" || fail "$SF_PROCESS_ERROR"
 result=( "${reply[@]}" )
 (( result[exit_code] == 0 )) || fail 'runner delivered no line before exit'
@@ -76,7 +76,7 @@ ZSH
 chmod +x "$overflow"
 mkdir "$overflow_capture"
 lines=()
-sf_process_run "$overflow_capture" "$tmp" "$input_file" 16 collect "$overflow" ||
+sf_process_run "$overflow_capture" "$tmp" "$input_file" 16 16 collect "$overflow" ||
   fail "$SF_PROCESS_ERROR"
 result=( "${reply[@]}" )
 (( result[exit_code] == 0 && result[interrupted] == 0 && result[stdout_bytes] == 17 &&
@@ -102,7 +102,7 @@ chmod +x "$interrupt"
 mkdir "$interrupt_capture"
 (
   lines=()
-  sf_process_run "$interrupt_capture" "$tmp" "$input_file" 16 collect \
+  sf_process_run "$interrupt_capture" "$tmp" "$input_file" 16 16 collect \
     /usr/bin/env STARTED="$marker" CHILD_FILE="$child_file" "$interrupt" || exit
   result=( "${reply[@]}" )
   print -r -- "$result[exit_code] $result[interrupted] $lines" >"$interrupt_result"
@@ -119,7 +119,7 @@ child=$(<"$child_file")
 
 # Invalid setup is a machinery failure, not a command result.
 mkdir "$tmp/failure"
-if sf_process_run "$tmp/failure" "$tmp/missing" "$input_file" 16 collect "$command"; then
+if sf_process_run "$tmp/failure" "$tmp/missing" "$input_file" 16 16 collect "$command"; then
   fail 'runner returned a command result for a machinery failure'
 fi
 [[ -n $SF_PROCESS_ERROR ]] || fail 'runner omitted its machinery error'
@@ -128,7 +128,7 @@ fi
 
 # Commands must name executable regular files.
 mkdir "$tmp/failure-command"
-if sf_process_run "$tmp/failure-command" "$tmp" "$input_file" 16 collect "$tmp"; then
+if sf_process_run "$tmp/failure-command" "$tmp" "$input_file" 16 16 collect "$tmp"; then
   fail 'runner accepted a directory as its command'
 fi
 
@@ -145,7 +145,7 @@ sf_process_isolated_command() {
   reply=( "$no_status" "$5" "$6" "$7" )
 }
 mkdir "$no_status_capture"
-if sf_process_run "$no_status_capture" "$tmp" "$input_file" 16 collect "$command"; then
+if sf_process_run "$no_status_capture" "$tmp" "$input_file" 16 16 collect "$command"; then
   fail 'runner returned a command result without an isolation status'
 fi
 [[ $SF_PROCESS_ERROR == 'cannot read process status' ]] ||

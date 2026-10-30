@@ -137,6 +137,7 @@ Credentials and core runtime settings live in exported variables or `.env` in th
 | `SHELLFISH_MAX_REQUESTS_PER_TURN` | `100` | Provider requests per turn |
 | `SHELLFISH_MAX_TOOL_CALLS_PER_REQUEST` | `25` | Tool calls per response |
 | `SHELLFISH_MAX_CAPTURE_BYTES` | `32768` | Bytes kept from each component stream, at least `64`, overridable by a manifest |
+| `SHELLFISH_MAX_CONTENT_BYTES` | `5242880` | Bytes of tool control lines and of one call's model content, such as images |
 
 Hooks and providers are trusted: they inherit the process environment and receive every `.env` value. Tools receive only the names their manifest declares. Unsandboxed tools also inherit the process environment; sandboxed tools start clean. A key kept only in `.env` is therefore invisible to tools that do not declare it. See [`HARNESS.md`](HARNESS.md#shared-contract) for the process context.
 

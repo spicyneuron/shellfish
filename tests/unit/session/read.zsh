@@ -233,11 +233,27 @@ settling() {
 settling '{"type":"tool_result","id":"c1","name":"shell","input":{},"user_text":"shown","model_text":"out","exit_code":0}' |
   accepts >/dev/null || fail 'the reader rejected a fully described tool result'
 
+# Model content reaches the request as parts, led by context from the call.
+print -r -- '[{"type":"user","content":[{"type":"text","text":"a"}]},
+  {"type":"assistant","stop":"tool_calls","content":[
+    {"type":"tool_call","id":"c1","name":"shell","input":{}}]},
+  {"type":"hook_result","lifecycle":"pre_tool_use","id":"1","model_text":"note"},
+  {"type":"tool_result","id":"c1","name":"shell","input":{},"exit_code":0,
+   "model_content":[{"type":"text","text":"shot"},
+     {"type":"image","url":"data:image/png;base64,iVBORw0KGgo="}]}]' | messages | jq -e '
+  .[-1].content == [{type:"text",text:"<hook name=\"pre_tool_use\">\nnote\n</hook>"},
+    {type:"text",text:"shot"},{type:"image",url:"data:image/png;base64,iVBORw0KGgo="}]
+' >/dev/null || fail 'model content did not become request parts'
+
 typeset -a malformed_results=(
   'an out-of-range exit code' '{"type":"tool_result","id":"c1","name":"shell","input":{},"exit_code":256}'
   'raw capture fields' '{"type":"tool_result","id":"c1","name":"shell","input":{},"stdout":"out","stderr":"","exit_code":0}'
   'a result without input' '{"type":"tool_result","id":"c1","name":"shell","content":"out","exit_code":0}'
   'a hook lifecycle on a tool result' '{"type":"tool_result","id":"c1","name":"shell","input":{},"exit_code":0,"lifecycle":"stop"}'
+  'model text beside model content' '{"type":"tool_result","id":"c1","name":"shell","input":{},"exit_code":0,"model_text":"out","model_content":[{"type":"text","text":"out"}]}'
+  'empty model content' '{"type":"tool_result","id":"c1","name":"shell","input":{},"exit_code":0,"model_content":[]}'
+  'a remote image' '{"type":"tool_result","id":"c1","name":"shell","input":{},"exit_code":0,"model_content":[{"type":"image","url":"https://example.com/a.png"}]}'
+  'an unsupported image format' '{"type":"tool_result","id":"c1","name":"shell","input":{},"exit_code":0,"model_content":[{"type":"image","url":"data:image/svg+xml;base64,PHN2Zz4="}]}'
 )
 for (( index = 1; index <= ${#malformed_results}; index += 2 )); do
   if settling "$malformed_results[index + 1]" | accepts >/dev/null 2>&1; then

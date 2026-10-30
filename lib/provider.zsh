@@ -62,7 +62,7 @@ sf_provider_capture() {
     SF_PROVIDER[error]='cannot prepare provider request'
     return 1
   }
-  if ! sf_process_run "$directory" "$SF_PROVIDER_PLAN[cwd]" "${input:A}" "$max_capture" : \
+  if ! sf_process_run "$directory" "$SF_PROVIDER_PLAN[cwd]" "${input:A}" "$max_capture" "$max_capture" : \
       /usr/bin/env "${SF_ENVIRONMENT_VALUES[@]}" "$command"; then
     rm -rf -- "$directory" "$input"
     SF_PROVIDER[error]=${SF_PROCESS_ERROR:-cannot run provider}

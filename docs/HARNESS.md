@@ -35,6 +35,7 @@ Components can also read the frozen profile's `config` from the session header. 
 | `SHELLFISH_EXECUTABLE` | ✓ | ✓ |
 | `SHELLFISH_DIR` | ✓ | ✓ |
 | `SHELLFISH_MAX_CAPTURE_BYTES` | ✓ | ✓ |
+| `SHELLFISH_MAX_CONTENT_BYTES` | ✓ |  |
 | `SHELLFISH_SHARE_DIR` | ✓ | ✓ |
 | `SHELLFISH_MODEL` |  | ✓ |
 | `SHELLFISH_MODE` |  | ✓ (`run`) |
@@ -100,6 +101,8 @@ A tool manifest defines its model-facing schema and execution policy:
 | `user_text` | Optional [presentation](#presentation) template |
 
 Shellfish calls `run` with no arguments and one input object on stdin. Sandbox-bypass control fields are removed first. The tool must validate input before using it. A nonzero exit is a normal tool result and does not fail the turn.
+
+A tool gives the model images with `content` control lines, such as `{"content":[{"type":"image","url":"data:image/png;base64,..."}]}`. Parts are `text` or `image`, and an image is a base64 data URI in PNG, JPEG, GIF, or WebP. Parts follow stdout in the order written and are stored inline in the result. A tool's control lines, and all content from one call, are limited to `SHELLFISH_MAX_CONTENT_BYTES` instead of the capture limit; beyond it, the call fails.
 
 Tools take no lifecycle action. Interruption settles a rejected result instead of the tool's output.
 

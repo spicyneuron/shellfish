@@ -28,6 +28,14 @@ def canonical_text:
   type == "object" and keys == ["text", "type"] and
   .type == "text" and (.text | type == "string");
 
+# Transcript images are inline data URIs, never references.
+def canonical_image:
+  type == "object" and keys == ["type", "url"] and .type == "image" and
+  (.url | type == "string" and
+    test("^data:image/(png|jpeg|gif|webp);base64,[A-Za-z0-9+/]+={0,2}$"));
+
+def canonical_content_part: canonical_text or canonical_image;
+
 def canonical_reasoning:
   type == "object" and
   (keys == ["text", "type"] or keys == ["opaque", "text", "type"]) and
@@ -67,10 +75,15 @@ def result_fields($required):
   (if has("model_text") then .model_text | type == "string" and length > 0 else true end) and
   ((has("user_preview_lines") | not) or (.user_preview_lines | preview_hint));
 
-# A settled sandbox bypass request records whether it was approved.
+# A settled sandbox bypass request records whether it was approved. Model
+# content replaces model text.
 def canonical_tool_result:
-  (del(.sandbox_bypass) | result_fields(["exit_code", "id", "input", "name"])) and
+  (del(.sandbox_bypass, .model_content) |
+    result_fields(["exit_code", "id", "input", "name"])) and
   ((has("sandbox_bypass") | not) or (.sandbox_bypass | IN("approved", "denied", "cancelled"))) and
+  ((has("model_content") | not) or ((has("model_text") | not) and
+    (.model_content | type == "array" and length > 0 and
+      all(.[]; canonical_content_part)))) and
   .type == "tool_result" and
   (.id | identifier) and (.name | tool_name) and (.input | type == "object") and
   (.exit_code | type == "number" and floor == . and . >= 0 and . <= 255);
@@ -171,7 +184,7 @@ def session_state:
         .messages += [{type:"tool_call", id:$call.id, name:$call.name, input:$call.input},
           {type:"tool_result", call_id:$call.id, name:$call.name,
            exit_code:$record.exit_code, parts:.context,
-           result:($record.model_text // "")}] |
+           result:($record.model_content // $record.model_text // "")}] |
         .context = [] |
         .calls = .calls[1:] |
         .next = (if (.calls | length) == 0 then "assistant" else "tool_result" end)
@@ -181,11 +194,15 @@ def state_run:
   {next, calls:[.calls[] | {id, name, input}], context:[.context[] | render_context]};
 
 # A response awaiting results reaches no request, and trailing context waits
-# here for the request that carries it.
+# here for the request that carries it. A result with model content is a part
+# array, led by any context.
 def state_messages:
   [.messages[] |
     if .type == "tool_result" then
-      .content = join_context([.parts[], .result]) | del(.parts, .result)
+      .content = (if .result | type == "array" then
+          [join_context(.parts) | select(. != "") | {type:"text", text:.}] + .result
+        else join_context([.parts[], .result]) end) |
+      del(.parts, .result)
     else . end] +
   if (.context | length) == 0 then [] else [context_message(.context; "")] end;
 

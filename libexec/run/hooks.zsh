@@ -175,7 +175,7 @@ sf_run_hooks() {
       if ! sf_run_component_begin "$session" "$component"; then
         error='cannot emit hook draft'
       elif ! sf_run_component_execute "$directory" "${SF_RUN[cwd]:A}" "$input" "$max_capture" \
-          sf_run_hook_line /usr/bin/env "${environment[@]}" "SHELLFISH_MAX_CAPTURE_BYTES=$max_capture" \
+          "$max_capture" sf_run_hook_line /usr/bin/env "${environment[@]}" "SHELLFISH_MAX_CAPTURE_BYTES=$max_capture" \
           "$command/run" "$@"; then
         error=$REPLY
       else

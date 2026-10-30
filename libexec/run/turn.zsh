@@ -23,6 +23,7 @@ sf_run_limits() {
     SHELLFISH_MAX_REQUESTS_PER_TURN 100
     SHELLFISH_MAX_TOOL_CALLS_PER_REQUEST 25
     SHELLFISH_MAX_CAPTURE_BYTES 32768
+    SHELLFISH_MAX_CONTENT_BYTES 5242880
   )
   sf_environment_settings "${(k)limits}" || { REPLY=$SF_ENVIRONMENT_ERROR; return 1; }
   for name in ${(k)limits}; do
@@ -34,6 +35,7 @@ sf_run_limits() {
   SF_RUN[max_requests]=$(( limits[SHELLFISH_MAX_REQUESTS_PER_TURN] ))
   SF_RUN[max_tool_calls]=$(( limits[SHELLFISH_MAX_TOOL_CALLS_PER_REQUEST] ))
   SF_RUN[max_capture]=$(( limits[SHELLFISH_MAX_CAPTURE_BYTES] ))
+  SF_RUN[max_content]=$(( limits[SHELLFISH_MAX_CONTENT_BYTES] ))
 }
 
 sf_run_emit() {

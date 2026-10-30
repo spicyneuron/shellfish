@@ -537,6 +537,17 @@ case $(jq -r .command) in
     sleep 30
     ;;
   huge) jq -cn '{reason:("x" * 70000)}' >&3 ;;
+  image)
+    print -r -- caption
+    # Larger than one Linux argument, so no step may pass it through argv.
+    printf '{"content":[{"type":"image","url":"data:image/png;base64,%s"}]}\n' \
+      "$(head -c 240000 /dev/zero | base64 | tr -d '\n')" >&3
+    ;;
+  twice)
+    repeat 2 printf '{"content":[{"type":"image","url":"data:image/png;base64,%s"}]}\n' \
+      "$(head -c 30000 /dev/zero | base64 | tr -d '\n')" >&3
+    ;;
+  remote) print -r -u3 -- '{"content":[{"type":"image","url":"https://example.com/a.png"}]}' ;;
 esac
 ZSH
 chmod +x "$protocol"
@@ -578,13 +589,44 @@ jq -e -s 'any(.[]; .type == "state_update" and .name == "tool/live")' \
   "$session" >/dev/null || fail 'interruption lost committed tool state'
 assert_canonical_session "$session"
 
-# A line beyond the capture limit fails the call, not the turn.
-session="$tmp/protocol-huge.jsonl"
+# A line or a call's content beyond the content limit fails the call, not the turn.
+for mode in huge twice; do
+  session="$tmp/protocol-$mode.jsonl"
+  sf_test_session "$session"
+  SHELLFISH_MAX_CONTENT_BYTES=65536 SF_TEST_PROVIDER_TOOL_CALL=1 \
+    SF_TEST_PROVIDER_TOOL_COMMAND=$mode \
+    sf_test_run protocol "$session" >"$stream" || fail "oversized $mode content failed the turn"
+  jq -eRn '[inputs | fromjson | select(.type == "tool_result")][0] |
+    .exit_code == 1 and .model_text == "tool result exceeds content limit"' \
+    <"$stream" >/dev/null || fail "oversized $mode content did not fail the call"
+done
+
+# Content parts follow stdout as model content and reach the provider as parts.
+session="$tmp/protocol-image.jsonl"
 sf_test_session "$session"
-SF_TEST_PROVIDER_TOOL_CALL=1 SF_TEST_PROVIDER_TOOL_COMMAND=huge \
-  sf_test_run protocol "$session" >"$stream" || fail 'oversized line failed the turn'
-jq -eRn '[inputs | fromjson | select(.type == "tool_result")][0] |
-  .exit_code == 1 and .model_text == "tool result exceeds capture limit"' \
-  <"$stream" >/dev/null || fail 'oversized line did not fail the call'
+SF_TEST_PROVIDER_REQUEST="$tmp/image-request.json" SF_TEST_PROVIDER_TOOL_CALL=1 \
+  SF_TEST_PROVIDER_TOOL_COMMAND=image \
+  sf_test_run protocol "$session" >"$stream" || fail 'image content turn failed'
+assert_canonical_session "$session"
+jq -e -s '[.[] | select(.type == "tool_result")][0] |
+  (has("model_text") | not) and (.model_content | length == 2) and
+  .model_content[0] == {type:"text",text:"caption\n"} and
+  (.model_content[1] | .type == "image" and (.url | startswith("data:image/png;base64,")) and
+    (.url | length) > 131072)' "$session" >/dev/null ||
+  fail 'image content did not settle as model content'
+jq -e '[.messages[] | select(.type == "tool_result")][0].content |
+  type == "array" and .[0] == {type:"text",text:"caption\n"} and .[1].type == "image"' \
+  "$tmp/image-request.json" >/dev/null || fail 'image content did not reach the provider'
+
+# Transcript images are inline data URIs only.
+session="$tmp/protocol-remote.jsonl"
+sf_test_session "$session"
+if SF_TEST_PROVIDER_TOOL_CALL=1 SF_TEST_PROVIDER_TOOL_COMMAND=remote \
+    sf_test_run protocol "$session" >"$stream" 2>/dev/null; then
+  fail 'a remote image was accepted'
+fi
+jq -eRn '[inputs | fromjson][-1] | .type == "error" and
+  (.user_text | contains("invalid control"))' <"$stream" >/dev/null ||
+  fail 'a remote image was not reported'
 
 print -r -- ok

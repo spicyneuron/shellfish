@@ -135,20 +135,20 @@ sf_process_bytes() {
 
 # Stream fd 3 to HANDLER one nonempty line at a time while the command runs. A
 # final line without a newline arrives at exit. control_bytes is the longest
-# line; lines stop once one exceeds MAX_CAPTURE bytes. interrupted is the
+# line; lines stop once one exceeds MAX_CONTROL bytes. interrupted is the
 # signal exit status, or 0.
 sf_process_run() {
   setopt local_options local_traps no_err_exit no_monitor
   local capture=${1:A} working=$2 input=$3
-  integer max_capture=$4
-  local handler=$5
-  shift 5
+  integer max_capture=$4 max_control=$5
+  local handler=$6
+  shift 6
   local stdout="$capture/stdout" stderr="$capture/stderr"
   local stdout_pipe="$stdout.pipe" stderr_pipe="$stderr.pipe" control_pipe="$capture/control.pipe"
   local group_file="$capture/process.group" status_file="$capture/process.status"
   local chunk buffer='' line
   local -a command=( "$@" ) process_command readers
-  integer limit stdout_bytes stderr_bytes control_bytes=0 control_fd=-1 guard_fd
+  integer limit stdout_bytes stderr_bytes control_bytes=0 pending=0 control_fd=-1 guard_fd
   integer process_pid=0 process_status=1 reader reader_status=0 signal_status=0 complete=0
 
   SF_PROCESS_ERROR=''
@@ -164,7 +164,7 @@ sf_process_run() {
   }
   [[ -f $input && -r $input && -d $working && -x $working &&
       ${#command} -gt 0 && $command[1] == /* && -f $command[1] && -x $command[1] &&
-      $max_capture -gt 0 ]] || {
+      $max_capture -gt 0 && $max_control -gt 0 ]] || {
     sf_process_fail 'process invocation is unavailable'
     return
   }
@@ -200,21 +200,27 @@ sf_process_run() {
     trap 'signal_status=130; sf_process_stop "$process_pid" "$group_file"' INT USR1
     trap 'signal_status=129; sf_process_stop "$process_pid" "$group_file"' HUP
     trap 'signal_status=143; sf_process_stop "$process_pid" "$group_file"' TERM
-    while sysread -i $control_fd -s 4096 chunk; do
-      (( control_bytes > max_capture )) && continue
+    # Only a chunk with a newline rescans the buffer, so long lines stay linear.
+    while sysread -i $control_fd -s 65536 chunk; do
+      (( control_bytes > max_control )) && continue
       buffer+=$chunk
-      while [[ $buffer == *$'\n'* ]]; do
-        line=${buffer%%$'\n'*}
-        buffer=${buffer:${#line}+1}
-        sf_process_bytes "$line"
-        (( REPLY <= max_capture )) || { control_bytes=$REPLY; continue 2; }
-        (( control_bytes = REPLY > control_bytes ? REPLY : control_bytes ))
-        [[ -z $line ]] || "$handler" "$line"
-      done
-      sf_process_bytes "$buffer"
-      (( control_bytes = REPLY > control_bytes ? REPLY : control_bytes ))
+      sf_process_bytes "$chunk"
+      (( pending += REPLY ))
+      if [[ $chunk == *$'\n'* ]]; then
+        while [[ $buffer == *$'\n'* ]]; do
+          line=${buffer%%$'\n'*}
+          buffer=${buffer:${#line}+1}
+          sf_process_bytes "$line"
+          (( REPLY <= max_control )) || { control_bytes=$REPLY; continue 2; }
+          (( control_bytes = REPLY > control_bytes ? REPLY : control_bytes ))
+          [[ -z $line ]] || "$handler" "$line"
+        done
+        sf_process_bytes "$buffer"
+        pending=$REPLY
+      fi
+      (( control_bytes = pending > control_bytes ? pending : control_bytes ))
     done
-    (( control_bytes > max_capture )) || [[ -z $buffer ]] || "$handler" "$buffer"
+    (( control_bytes > max_control )) || [[ -z $buffer ]] || "$handler" "$buffer"
     if sf_process_wait "$process_pid" "$group_file" "$status_file"; then
       process_status=$REPLY
     elif (( signal_status )); then
