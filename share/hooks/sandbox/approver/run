@@ -3,9 +3,9 @@
 emulate -R zsh
 setopt extended_glob no_aliases no_multios pipe_fail
 
-# Input bytes. Escaped transcript JSON runs near 1.25 bytes per token, so this
-# is about 20k tokens.
-integer budget=$(( 24 * 1024 ))
+# Input kilobytes. Escaped transcript JSON runs near 1.25 bytes per token, so
+# this is about 20k tokens. Configuration may override it.
+integer budget_kb=24
 # A decision review allows a call at this probability of sufficient
 # authorization, and denies one this likely driven by untrusted instructions.
 # Configuration may override the allow threshold.
@@ -156,13 +156,16 @@ selection=$(jq -r '
   def name: type == "string" and
     test("^[A-Za-z0-9][A-Za-z0-9_.-]*(/[A-Za-z0-9][A-Za-z0-9_.-]*)*$");
   (.sandbox // {}) | if has("approver") then .approver else {} end |
-  if type == "object" and (keys - ["allow_threshold", "decision_model", "model"]) == [] and
+  if type == "object" and
+    (keys - ["allow_threshold", "decision_model", "input_kb", "model"]) == [] and
     ((has("model") and has("decision_model")) | not) and
     ((has("allow_threshold") | not) or has("decision_model")) and
     ((has("model") | not) or (.model | name)) and
     ((has("decision_model") | not) or (.decision_model | name)) and
     ((has("allow_threshold") | not) or
-      (.allow_threshold | type == "number" and . > 0 and . <= 1))
+      (.allow_threshold | type == "number" and . > 0 and . <= 1)) and
+    ((has("input_kb") | not) or
+      (.input_kb | type == "number" and . == floor and . > 0))
   then to_entries[] | "\(.key) \(.value)"
   else error("invalid config.sandbox.approver") end
 ' <<<"${SHELLFISH_CONFIG:-{\}}" 2>/dev/null) ||
@@ -172,6 +175,7 @@ while read -r name value; do
     model) model=$value ;;
     decision_model) decision_model=$value ;;
     allow_threshold) allow_threshold=$value ;;
+    input_kb) budget_kb=$value ;;
   esac
 done <<<"$selection"
 # Dropping the model's own schema keeps the merge from adding its properties.
@@ -231,7 +235,7 @@ integer base_bytes
 base_bytes=$(jq -cn --arg system "$system" --argjson context "$base" \
   '($system | utf8bytelength) + ($context | tojson | utf8bytelength)') ||
   permission_defer 'Permission review could not measure required context.'
-(( base_bytes <= budget )) ||
+(( base_bytes <= budget_kb * 1024 )) ||
   permission_defer 'Required permission review context exceeds the review context limit.'
 
 candidates=( "${(@f)$(jq -c '.candidates[]' <<<"$records")}" ) ||
@@ -244,7 +248,7 @@ for candidate in $candidates; do
   candidate_bytes=$(jq -cn --arg system "$system" --argjson context "$context" \
     '($system | utf8bytelength) + ($context | tojson | utf8bytelength)') ||
     permission_defer 'Permission review could not measure optional context.'
-  (( candidate_bytes <= budget )) || break
+  (( candidate_bytes <= budget_kb * 1024 )) || break
   base=$context
 done
 
