@@ -198,7 +198,7 @@ print -r -- \
   '{"type":"state_update","name":"git/identity","value":"branch:main"}' \
   '{"type":"hook_result","lifecycle":"session_start","id":"1","model_text":"env"}' \
   '{"type":"user","content":[{"type":"text","text":"Hello"}]}' \
-  '{"type":"state_update","name":"agents/a1b2c3","value":{"session":".agent-a1b2c3.jsonl"}}' \
+  '{"type":"state_update","name":"subagents/a1b2c3","value":{"session":".subagent-a1b2c3.jsonl"}}' \
   '{"type":"assistant","stop":"end","content":[{"type":"text","text":"Hi"}],"usage":{"input_tokens":1,"output_tokens":1}}' \
   '{"type":"state_update","name":"git/identity","value":null}' \
   >>"$state_source"
@@ -213,10 +213,10 @@ jq -e -s '
   [.[].type] == ["session","hook_result","state_update","state_update","state_update","hook_result"] and
   [.[] | select(.type == "state_update") | [.name, .value]] ==
     [["git/identity","branch:main"],
-     ["agents/a1b2c3",{session:".agent-a1b2c3.jsonl"}],
+     ["subagents/a1b2c3",{session:".subagent-a1b2c3.jsonl"}],
      ["git/identity",null]] and
   (.[-1].model_text | startswith("<context script=\"compact\">"))
 ' "$tmp/state-source_compact.jsonl" >/dev/null ||
   fail 'compaction did not carry state history in source order'
 assert_equal "$state_before" "$(shasum <"$state_source")"
-[[ ! -e $tmp/.agent-a1b2c3.jsonl ]] || fail 'compaction copied a referenced internal session'
+[[ ! -e $tmp/.subagent-a1b2c3.jsonl ]] || fail 'compaction copied a referenced internal session'

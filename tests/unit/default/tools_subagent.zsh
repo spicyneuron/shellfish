@@ -1,13 +1,13 @@
 #!/usr/bin/env zsh
 
 source "${0:A:h:h:h}/_helpers.zsh"
-sf_test_tmp default-tools-agent
+sf_test_tmp default-tools-subagent
 sf_test_config
 
-typeset agent="$ROOT/share/tools/agent"
+typeset agent="$ROOT/share/tools/subagent"
 typeset provider="$tmp/provider" session="$tmp/parent.jsonl" stream="$tmp/stream"
-if grep -q '"agent"' "$ROOT/share/template/profiles/default.jsonc"; then
-  fail 'agent must be opt-in'
+if grep -q '"subagent"' "$ROOT/share/template/profiles/default.jsonc"; then
+  fail 'subagent must be opt-in'
 fi
 mkdir -p "$provider"
 print -r -- '{"endpoint":"https://example.invalid/test"}' >"$provider/manifest.json"
@@ -16,7 +16,7 @@ cat >"$provider/run" <<'ZSH'
 say() { jq -cn --arg text "$1" '{type:"assistant",stop:"end",content:[{type:"text",text:$text}]}'; }
 call() {
   jq -cn --argjson input "$1" \
-    '{type:"assistant",stop:"tool_calls",content:[{type:"tool_call",id:"call_1",name:"agent",input:$input}]}'
+    '{type:"assistant",stop:"tool_calls",content:[{type:"tool_call",id:"call_1",name:"subagent",input:$input}]}'
 }
 request=$(cat)
 task=$(jq -r '[.messages[] | select(.type == "user") | .content[0].text] | last' <<<"$request")
@@ -25,7 +25,7 @@ if [[ $task == 'delegated task' ]]; then
   say 'fork answer'
   exit 0
 fi
-if jq -e '.tools | any(.name == "agent")' <<<"$request" >/dev/null; then
+if jq -e '.tools | any(.name == "subagent")' <<<"$request" >/dev/null; then
   if [[ $task == 'inspect child' || $task == 'continue child' ||
         $task == 'continue background' ]] && jq -e '
       ([.messages | to_entries[] | select(.value.type == "user" and
@@ -77,16 +77,16 @@ sf_test_session "$session"
 sf_test_run 'parent task' "$session" >"$stream" || fail 'parent tool turn failed'
 assert_canonical_session "$session"
 typeset id child
-id=$(jq -r -s '[.[] | select(.type == "state_update" and (.name | startswith("agents/")) and
-  .value.active == false) | .name] | last | sub("^agents/"; "")' "$session")
-[[ $id =~ '^[a-f0-9]{32}$' ]] || fail 'agent association was not persisted'
-child="$tmp/.agent-$id.jsonl"
+id=$(jq -r -s '[.[] | select(.type == "state_update" and (.name | startswith("subagents/")) and
+  .value.active == false) | .name] | last | sub("^subagents/"; "")' "$session")
+[[ $id =~ '^[a-f0-9]{32}$' ]] || fail 'subagent association was not persisted'
+child="$tmp/.subagent-$id.jsonl"
 [[ -f $child ]] || fail 'hidden child was not created'
 assert_canonical_session "$child"
 jq -e -s '
   .[0].profile.sandbox.enabled and .[0].profile.tools == [] and
   (.[1:] | map(.type)) == ["state_update","user","assistant"] and
-  .[1] == {type:"state_update",name:"agents/child",value:true} and
+  .[1] == {type:"state_update",name:"subagents/child",value:true} and
   .[2].content[0].text == "child task" and
   .[3].content[0].text == "child answer"
 ' "$child" >/dev/null || fail 'child profile, marker, or answer is wrong'
@@ -96,10 +96,10 @@ jq -e -n --slurpfile parent "$session" --slurpfile child "$child" '
   ($child[0].model.provider | endswith("/" + $provider))
 ' >/dev/null || fail 'child did not inherit the parent model'
 jq -e -s --arg id "$id" '
-  ([.[] | select(.type == "tool_result" and .name == "agent")] | last) as $result |
+  ([.[] | select(.type == "tool_result" and .name == "subagent")] | last) as $result |
   ($result.model_text | fromjson) ==
     {agent_id:$id,exit_code:0,answer:"child answer"} and
-  ([.[] | select(.type == "state_update" and .name == ("agents/" + $id)) | .value.active]) ==
+  ([.[] | select(.type == "state_update" and .name == ("subagents/" + $id)) | .value.active]) ==
     [true,false]
 ' "$session" >/dev/null || fail 'parent result or slot transitions are wrong'
 
@@ -109,7 +109,7 @@ sf_session_directory || fail 'cannot locate resume directory'
 typeset resume_dir=$REPLY
 mkdir -p "$resume_dir"
 cp "$session" "$resume_dir/parent.jsonl"
-cp "$child" "$resume_dir/.agent-$id.jsonl"
+cp "$child" "$resume_dir/.subagent-$id.jsonl"
 sf_resume_find 0 || fail 'resume discovery failed'
 [[ ${#SF_RESUME_MATCHES} == 1 && $SF_RESUME_MATCHES[1] == "$resume_dir/parent.jsonl" ]] ||
   fail 'hidden child appeared in resume discovery'
@@ -120,9 +120,9 @@ sf_test_session "$failed"
 sf_test_run 'parent failure' "$failed" >"$stream" || fail 'failure turn failed'
 assert_canonical_session "$failed"
 jq -e -s '
-  ([.[] | select(.type == "state_update" and (.name | startswith("agents/"))) |
+  ([.[] | select(.type == "state_update" and (.name | startswith("subagents/"))) |
     .value.active]) == [true,false] and
-  ([.[] | select(.type == "tool_result" and .name == "agent")] | last | .exit_code) != 0
+  ([.[] | select(.type == "tool_result" and .name == "subagent")] | last | .exit_code) != 0
 ' "$failed" >/dev/null || fail 'failed child retained its reservation'
 
 typeset inspected
@@ -146,9 +146,9 @@ jq -e -s '
     .content[0].text] | length) == 3
 ' "$child" >/dev/null || fail 'continuation did not reuse the frozen child profile'
 jq -e -s --arg id "$id" '
-  ([.[] | select(.type == "state_update" and .name == ("agents/" + $id)) |
+  ([.[] | select(.type == "state_update" and .name == ("subagents/" + $id)) |
     .value.active]) == [true,false,true,false,true,false] and
-  ([.[] | select(.type == "tool_result" and .name == "agent") |
+  ([.[] | select(.type == "tool_result" and .name == "subagent") |
     .model_text | fromjson | select(.agent_id == $id and .answer == "child answer")] |
     length) == 3
 ' "$session" >/dev/null || fail 'continuation results or slots were not durable'
@@ -168,44 +168,44 @@ for value in null false 1 '[]' '"text"' '{"unknown":1}' '{"max_active":null}' \
     '{"max_active":0}' '{"max_active":-1}' '{"max_active":1.5}' \
     '{"max_active":"2"}' '{"max_active":true}'; do
   jq -c --argjson value "$value" '
-    if .type == "session" then .profile.config.agent=$value else . end
+    if .type == "session" then .profile.config.subagent=$value else . end
   ' "$session" >"$limited_session"
   if print -r -- '{"operation":"start","profile":"child","task":"bad limit"}' |
       SHELLFISH_SESSION="$limited_session" SHELLFISH_CONFIG="$(sf_test_session_config "$limited_session")" SHELLFISH_EXECUTABLE="$ROOT/bin/shellfish" \
       "$agent/run" 3>"$tmp/refused-state" >"$tmp/limit.out" 2>"$tmp/limit.err"; then
-    fail "invalid agent configuration was accepted: $value"
+    fail "invalid subagent configuration was accepted: $value"
   fi
-  grep -q 'config.agent' "$tmp/limit.err"
+  grep -q 'config.subagent' "$tmp/limit.err"
   [[ ! -s "$tmp/refused-state" ]] || fail 'invalid configuration reserved a slot'
 done
-jq -c 'if .type == "session" then .profile.config.agent={} else . end' \
+jq -c 'if .type == "session" then .profile.config.subagent={} else . end' \
   "$session" >"$limited_session"
 for slot in 1 2 3 4; do
-  jq -cn --arg name "agents/occupied-$slot" \
+  jq -cn --arg name "subagents/occupied-$slot" \
     '{type:"state_update",name:$name,value:{active:true}}' >>"$limited_session"
 done
 if print -r -- '{"operation":"start","profile":"child","task":"default cap"}' |
     SHELLFISH_SESSION="$limited_session" SHELLFISH_CONFIG="$(sf_test_session_config "$limited_session")" SHELLFISH_EXECUTABLE="$ROOT/bin/shellfish" \
     "$agent/run" 3>"$tmp/refused-state" >"$tmp/limit.out"; then
-  fail 'default active-agent limit was ignored'
+  fail 'default active-subagent limit was ignored'
 fi
-grep -q 'active agent limit reached (4)' "$tmp/limit.out"
+grep -q 'active subagent limit reached (4)' "$tmp/limit.out"
 [[ ! -s "$tmp/refused-state" ]] || fail 'default cap reserved a slot'
-jq -c 'if .type == "session" then .profile.config.agent.max_active=1 else . end' \
+jq -c 'if .type == "session" then .profile.config.subagent.max_active=1 else . end' \
   "$session" >"$limited_session"
-print -r -- '{"type":"state_update","name":"agents/occupied","value":{"session":".agent-occupied.jsonl","active":true}}' \
+print -r -- '{"type":"state_update","name":"subagents/occupied","value":{"session":".subagent-occupied.jsonl","active":true}}' \
   >>"$limited_session"
 if print -r -- '{"operation":"start","profile":"child","task":"at cap"}' |
     SHELLFISH_SESSION="$limited_session" SHELLFISH_CONFIG="$(sf_test_session_config "$limited_session")" \
     SHELLFISH_EXECUTABLE="$ROOT/bin/shellfish" \
     "$agent/run" 3>/dev/null >/dev/null 2>&1; then
-  fail 'full active-agent limit was ignored'
+  fail 'full active-subagent limit was ignored'
 fi
 if print -r -- "{\"operation\":\"continue\",\"agent_id\":\"$id\",\"task\":\"at cap\"}" |
     SHELLFISH_SESSION="$limited_session" SHELLFISH_CONFIG="$(sf_test_session_config "$limited_session")" \
     SHELLFISH_EXECUTABLE="$ROOT/bin/shellfish" \
     "$agent/run" 3>"$tmp/refused-state" >/dev/null 2>&1; then
-  fail 'continuation ignored full active-agent limit'
+  fail 'continuation ignored full active-subagent limit'
 fi
 [[ ! -s "$tmp/refused-state" ]] || fail 'capped continuation reserved a slot'
 print -r -- "{\"operation\":\"inspect\",\"agent_id\":\"$id\"}" |
@@ -215,11 +215,11 @@ print -r -- "{\"operation\":\"inspect\",\"agent_id\":\"$id\"}" |
 if print -r -- '{"operation":"inspect","agent_id":"00000000000000000000000000000000"}' |
     SHELLFISH_SESSION="$session" SHELLFISH_EXECUTABLE="$ROOT/bin/shellfish" \
     "$agent/run" 3>/dev/null >/dev/null 2>&1; then
-  fail 'unknown agent ID was accepted'
+  fail 'unknown subagent ID was accepted'
 fi
 typeset bad_id=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-print -r -- "{\"type\":\"state_update\",\"name\":\"agents/$bad_id\",\"value\":{\"session\":\".agent-$bad_id.jsonl\",\"active\":false}}" >>"$session"
-print -r -- '{}' >"$tmp/.agent-$bad_id.jsonl"
+print -r -- "{\"type\":\"state_update\",\"name\":\"subagents/$bad_id\",\"value\":{\"session\":\".subagent-$bad_id.jsonl\",\"active\":false}}" >>"$session"
+print -r -- '{}' >"$tmp/.subagent-$bad_id.jsonl"
 if print -r -- "{\"operation\":\"inspect\",\"agent_id\":\"$bad_id\"}" |
     SHELLFISH_SESSION="$session" SHELLFISH_EXECUTABLE="$ROOT/bin/shellfish" \
     "$agent/run" 3>/dev/null >/dev/null 2>&1; then
@@ -232,7 +232,7 @@ if print -r -- "{\"operation\":\"continue\",\"agent_id\":\"$bad_id\",\"task\":\"
 fi
 [[ ! -s "$tmp/refused-state" ]] || fail 'invalid child reserved a slot'
 typeset missing_id=cccccccccccccccccccccccccccccccc
-print -r -- "{\"type\":\"state_update\",\"name\":\"agents/$missing_id\",\"value\":{\"session\":\".agent-$missing_id.jsonl\",\"active\":false}}" >>"$session"
+print -r -- "{\"type\":\"state_update\",\"name\":\"subagents/$missing_id\",\"value\":{\"session\":\".subagent-$missing_id.jsonl\",\"active\":false}}" >>"$session"
 if print -r -- "{\"operation\":\"continue\",\"agent_id\":\"$missing_id\",\"task\":\"bad\"}" |
     SHELLFISH_SESSION="$session" SHELLFISH_EXECUTABLE="$ROOT/bin/shellfish" \
     "$agent/run" 3>"$tmp/refused-state" >/dev/null 2>&1; then
@@ -259,21 +259,21 @@ sf_test_run 'continue child' "$copied_parent" >"$stream" ||
   fail 'copied parent could not continue its associated child'
 assert_canonical_session "$copied_parent"
 jq -e -s --arg id "$id" '
-  ([.[] | select(.type == "tool_result" and .name == "agent") |
+  ([.[] | select(.type == "tool_result" and .name == "subagent") |
     .model_text | fromjson | select(.agent_id == $id and .answer == "child answer")] |
     length) == 4
-' "$copied_parent" >/dev/null || fail 'copied parent lost its agent association'
+' "$copied_parent" >/dev/null || fail 'copied parent lost its subagent association'
 
-# Fork and rewind keep an earlier agent's latest state and leave out later agents.
+# Fork and rewind keep an earlier subagent's latest state and leave out later subagents.
 typeset cut_parent="$tmp/cut-parent.jsonl" cut_actions="$tmp/cut-actions" cut_copy mode
 for mode in fork rewind; do
   sf_test_session "$cut_parent"
   print -r -- '{"type":"user","content":[{"type":"text","text":"one"}]}' >>"$cut_parent"
-  print -r -- '{"type":"state_update","name":"agents/a","value":{"session":".agent-a.jsonl","active":true}}' >>"$cut_parent"
+  print -r -- '{"type":"state_update","name":"subagents/a","value":{"session":".subagent-a.jsonl","active":true}}' >>"$cut_parent"
   print -r -- '{"type":"assistant","content":[{"type":"text","text":"started"}],"stop":"end"}' >>"$cut_parent"
   print -r -- '{"type":"user","content":[{"type":"text","text":"two"}]}' >>"$cut_parent"
-  print -r -- '{"type":"state_update","name":"agents/a","value":{"session":".agent-a.jsonl","active":false}}' >>"$cut_parent"
-  print -r -- '{"type":"state_update","name":"agents/b","value":{"session":".agent-b.jsonl","active":true}}' >>"$cut_parent"
+  print -r -- '{"type":"state_update","name":"subagents/a","value":{"session":".subagent-a.jsonl","active":false}}' >>"$cut_parent"
+  print -r -- '{"type":"state_update","name":"subagents/b","value":{"session":".subagent-b.jsonl","active":true}}' >>"$cut_parent"
   print -r -- '{"type":"assistant","content":[{"type":"text","text":"later"}],"stop":"end"}' >>"$cut_parent"
   print -rn -- 3 | SHELLFISH_SESSION="$cut_parent" SHELLFISH_EXECUTABLE="$ROOT/bin/shellfish" \
     SHELLFISH_TURN_STATE="$tmp" "$ROOT/share/commands/$mode/run" 3>|"$cut_actions" >/dev/null ||
@@ -285,8 +285,8 @@ for mode in fork rewind; do
   jq -e -s '
     [.[] | select(.type == "user") | .content[0].text] == ["one"] and
     [.[] | select(.type == "state_update") | [.name, .value.active]] ==
-      [["agents/a", true], ["agents/a", false]]
-  ' "$cut_copy" >/dev/null || fail "$mode kept the wrong agent state"
+      [["subagents/a", true], ["subagents/a", false]]
+  ' "$cut_copy" >/dev/null || fail "$mode kept the wrong subagent state"
   jq -e '.action == "handoff" and .argv[-2:] == ["--draft", "two"]' "$cut_actions" >/dev/null ||
     fail "$mode did not restore the removed prompt"
 done
@@ -297,8 +297,8 @@ sf_test_session "$stop_parent"
 sf_test_run 'stop-hook parent' "$stop_parent" >"$stream" ||
   fail 'stop-hook child start failed'
 stop_id=$(jq -r -s '[.[] | select(.type == "state_update" and
-  (.name | startswith("agents/"))) | .name] | last | sub("^agents/"; "")' "$stop_parent")
-stop_child="$tmp/.agent-$stop_id.jsonl"
+  (.name | startswith("subagents/"))) | .name] | last | sub("^subagents/"; "")' "$stop_parent")
+stop_child="$tmp/.subagent-$stop_id.jsonl"
 stop_inspection=$(print -r -- "{\"operation\":\"inspect\",\"agent_id\":\"$stop_id\"}" |
   SHELLFISH_SESSION="$stop_parent" SHELLFISH_EXECUTABLE="$ROOT/bin/shellfish" \
   "$agent/run" 3>"$tmp/refused-state") || fail 'stop-hook inspection failed'
@@ -325,18 +325,18 @@ export SF_AGENT_REQUEST="$fork_request"
 sf_test_session "$fork_parent"
 print -r -- '{"type":"user","content":[{"type":"text","text":"earlier user"}]}' >>"$fork_parent"
 print -r -- '{"type":"assistant","content":[{"type":"text","text":"earlier answer"}],"stop":"end"}' >>"$fork_parent"
-print -r -- '{"type":"state_update","name":"agents/old","value":{"session":".agent-old.jsonl","active":false}}' >>"$fork_parent"
+print -r -- '{"type":"state_update","name":"subagents/old","value":{"session":".subagent-old.jsonl","active":false}}' >>"$fork_parent"
 sf_test_run 'fork parent' "$fork_parent" >"$stream" || fail 'fork parent turn failed'
 assert_canonical_session "$fork_parent"
 typeset fork_id fork_child
-fork_id=$(jq -r -s '[.[] | select(.type == "state_update" and (.name | startswith("agents/")) and
-  .value.active == false) | .name] | last | sub("^agents/"; "")' "$fork_parent")
-fork_child="$tmp/.agent-$fork_id.jsonl"
+fork_id=$(jq -r -s '[.[] | select(.type == "state_update" and (.name | startswith("subagents/")) and
+  .value.active == false) | .name] | last | sub("^subagents/"; "")' "$fork_parent")
+fork_child="$tmp/.subagent-$fork_id.jsonl"
 assert_canonical_session "$fork_child"
 jq -e -s --slurpfile parent "$fork_parent" '
   .[0] == $parent[0] and
   (.[1:4] == $parent[1:4]) and
-  .[4] == {type:"state_update",name:"agents/child",value:true} and
+  .[4] == {type:"state_update",name:"subagents/child",value:true} and
   (.[5:] | map(.type)) == ["user","assistant"] and
   .[5].content[0].text == "delegated task" and
   .[6].content[0].text == "fork answer"
@@ -349,9 +349,9 @@ jq -e '
 typeset header_parent="$tmp/header-parent.jsonl" header_id header_child
 sf_test_session "$header_parent"
 sf_test_run 'fork header' "$header_parent" >"$stream" || fail 'header-only fork failed'
-header_id=$(jq -r -s '[.[] | select(.type == "state_update" and (.name | startswith("agents/")) and
-  .value.active == false) | .name] | last | sub("^agents/"; "")' "$header_parent")
-header_child="$tmp/.agent-$header_id.jsonl"
+header_id=$(jq -r -s '[.[] | select(.type == "state_update" and (.name | startswith("subagents/")) and
+  .value.active == false) | .name] | last | sub("^subagents/"; "")' "$header_parent")
+header_child="$tmp/.subagent-$header_id.jsonl"
 assert_canonical_session "$header_child"
 jq -e -s 'map(.type) == ["session","state_update","user","assistant"] and
   .[2].content[0].text == "delegated task"' "$header_child" >/dev/null ||
@@ -362,11 +362,11 @@ sf_test_session "$recovered_parent"
 print -r -- '{"type":"user","content":[{"type":"text","text":"interrupted"}]}' >>"$recovered_parent"
 print -r -- '{"type":"error","user_text":"Turn interrupted."}' >>"$recovered_parent"
 sf_test_run 'fork parent' "$recovered_parent" >"$stream" || fail 'recovered fork failed'
-recovered_id=$(jq -r -s '[.[] | select(.type == "state_update" and (.name | startswith("agents/")) and
-  .value.active == false) | .name] | last | sub("^agents/"; "")' "$recovered_parent")
-assert_canonical_session "$tmp/.agent-$recovered_id.jsonl"
+recovered_id=$(jq -r -s '[.[] | select(.type == "state_update" and (.name | startswith("subagents/")) and
+  .value.active == false) | .name] | last | sub("^subagents/"; "")' "$recovered_parent")
+assert_canonical_session "$tmp/.subagent-$recovered_id.jsonl"
 jq -e -s 'map(.type) == ["session","user","error","state_update","user","assistant"]' \
-  "$tmp/.agent-$recovered_id.jsonl" >/dev/null || fail 'recovered prefix was not inherited'
+  "$tmp/.subagent-$recovered_id.jsonl" >/dev/null || fail 'recovered prefix was not inherited'
 if print -r -- '{"operation":"start","profile":"child","fork":true,"task":"bad"}' |
     SHELLFISH_SESSION="$fork_parent" SHELLFISH_EXECUTABLE="$ROOT/bin/shellfish" \
     "$agent/run" 3>/dev/null >/dev/null 2>&1; then
@@ -377,7 +377,7 @@ for profile in "$tmp/evil.jsonc" '~/evil.jsonc' '@profiles/coding.jsonc' '../evi
   if jq -cn --arg profile "$profile" '{operation:"start",profile:$profile,task:"bad"}' |
       SHELLFISH_SESSION="$fork_parent" SHELLFISH_EXECUTABLE="$ROOT/bin/shellfish" \
       "$agent/run" 3>/dev/null >/dev/null 2>&1; then
-    fail "agent accepted profile reference: $profile"
+    fail "subagent accepted profile reference: $profile"
   fi
 done
 if print -r -- '{"operation":"start","fork":false,"task":"bad"}' |
@@ -412,8 +412,8 @@ if print -r -- '{"operation":"start","fork":true,"task":"delegated task"}' |
 fi
 wait "$watcher" || fail 'reservation watcher failed'
 typeset bad_child_id
-bad_child_id=$(jq -r '.state_update[0].name | sub("^agents/"; "")' <"$bad_events" | head -1)
-jq -e -s 'map(.type) == ["session",null,"state_update"]' "$tmp/.agent-$bad_child_id.jsonl" \
+bad_child_id=$(jq -r '.state_update[0].name | sub("^subagents/"; "")' <"$bad_events" | head -1)
+jq -e -s 'map(.type) == ["session",null,"state_update"]' "$tmp/.subagent-$bad_child_id.jsonl" \
   >/dev/null || fail 'invalid source was not copied for public validation'
 
 typeset malformed_parent="$tmp/malformed-parent.jsonl"
@@ -429,19 +429,19 @@ fi
 # slot remains occupied until inspection sees the turn stop.
 typeset background_parent="$tmp/background-parent.jsonl" background_id background_child
 export SF_AGENT_ID_FILE="$tmp/agent-id"
-SF_TEST_PROFILE=$(jq -c '.config.agent.max_active=1' <<<"$SF_TEST_PROFILE")
+SF_TEST_PROFILE=$(jq -c '.config.subagent.max_active=1' <<<"$SF_TEST_PROFILE")
 sf_test_session "$background_parent"
 if [[ $OSTYPE == darwin* || $OSTYPE == linux* && $+commands[setsid] -ne 0 ]]; then
 sf_test_run 'background parent' "$background_parent" >"$stream" ||
   fail 'background parent turn failed'
 background_id=$(jq -r -s '[.[] | select(.type == "state_update" and
-  (.name | startswith("agents/"))) | .name] | last | sub("^agents/"; "")' "$background_parent")
+  (.name | startswith("subagents/"))) | .name] | last | sub("^subagents/"; "")' "$background_parent")
 [[ $background_id =~ '^[a-f0-9]{32}$' ]] || fail 'background ID was not persisted'
-background_child="$tmp/.agent-$background_id.jsonl"
+background_child="$tmp/.subagent-$background_id.jsonl"
 jq -e -s --arg id "$background_id" '
-  ([.[] | select(.type == "state_update" and .name == ("agents/" + $id)) |
+  ([.[] | select(.type == "state_update" and .name == ("subagents/" + $id)) |
     .value.active]) == [true] and
-  ([.[] | select(.type == "tool_result" and .name == "agent")] | last |
+  ([.[] | select(.type == "tool_result" and .name == "subagent")] | last |
     .model_text | fromjson) == {agent_id:$id,active:true,settled:false}
 ' "$background_parent" >/dev/null || fail 'background start did not retain slot'
   jq -e -s 'any(.[]; .type == "assistant") | not' "$background_child" >/dev/null ||
@@ -470,9 +470,9 @@ jq -e -s --arg id "$background_id" '
   sf_test_run 'inspect child' "$background_parent" >"$stream" ||
     fail 'settled background inspection failed'
   jq -e -s --arg id "$background_id" '
-    ([.[] | select(.type == "state_update" and .name == ("agents/" + $id)) |
+    ([.[] | select(.type == "state_update" and .name == ("subagents/" + $id)) |
       .value.active]) == [true,false] and
-    (([.[] | select(.type == "tool_result" and .name == "agent")] | last |
+    (([.[] | select(.type == "tool_result" and .name == "subagent")] | last |
       .model_text | fromjson) |
       .active == false and .working == false and .settled == true and
       .answer == "child answer")
@@ -480,9 +480,9 @@ jq -e -s --arg id "$background_id" '
   sf_test_run 'continue background' "$background_parent" >"$stream" ||
     fail 'background continuation failed'
   jq -e -s --arg id "$background_id" '
-    ([.[] | select(.type == "state_update" and .name == ("agents/" + $id)) |
+    ([.[] | select(.type == "state_update" and .name == ("subagents/" + $id)) |
       .value.active]) == [true,false,true] and
-    ([.[] | select(.type == "tool_result" and .name == "agent")] | last |
+    ([.[] | select(.type == "tool_result" and .name == "subagent")] | last |
       .model_text | fromjson) == {agent_id:$id,active:true,settled:false}
   ' "$background_parent" >/dev/null || fail 'background continuation did not retain slot'
   if print -r -- "{\"operation\":\"continue\",\"agent_id\":\"$background_id\",\"task\":\"overlap\"}" |
@@ -500,7 +500,7 @@ jq -e -s --arg id "$background_id" '
   sf_test_run 'inspect child' "$background_parent" >"$stream" ||
     fail 'background continuation inspection failed'
   jq -e -s --arg id "$background_id" '
-    ([.[] | select(.type == "state_update" and .name == ("agents/" + $id)) |
+    ([.[] | select(.type == "state_update" and .name == ("subagents/" + $id)) |
       .value.active]) == [true,false,true,false]
   ' "$background_parent" >/dev/null || fail 'background continuation slot was not released'
 fi
@@ -508,14 +508,14 @@ fi
 # A final-looking assistant does not release a slot while the turn lock is held.
 if [[ $OSTYPE == darwin* || $OSTYPE == linux* && $+commands[setsid] -ne 0 ]]; then
 typeset uncertain_id=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb uncertain
-uncertain="$tmp/.agent-$uncertain_id.jsonl"
+uncertain="$tmp/.subagent-$uncertain_id.jsonl"
 cp "$background_child" "$uncertain"
 : >"$uncertain.lock"
 zmodload zsh/system || fail 'cannot load session locking'
 typeset uncertain_fd=''
 zsystem flock -t 0 -f uncertain_fd "$uncertain.lock" ||
   fail 'cannot hold uncertain child lock'
-print -r -- "{\"type\":\"state_update\",\"name\":\"agents/$uncertain_id\",\"value\":{\"session\":\".agent-$uncertain_id.jsonl\",\"active\":true}}" >>"$background_parent"
+print -r -- "{\"type\":\"state_update\",\"name\":\"subagents/$uncertain_id\",\"value\":{\"session\":\".subagent-$uncertain_id.jsonl\",\"active\":true}}" >>"$background_parent"
 typeset uncertain_result
 uncertain_result=$(print -r -- "{\"operation\":\"inspect\",\"agent_id\":\"$uncertain_id\"}" |
   SHELLFISH_SESSION="$background_parent" SHELLFISH_EXECUTABLE="$ROOT/bin/shellfish" \
@@ -579,7 +579,7 @@ assert process.wait(timeout=10) != 0, "initiating group ignored cancellation"
 print(id)
 PY
 ) || fail 'cancelled parent did not launch background child'
-cancel_child="$tmp/.agent-$cancel_id.jsonl"
+cancel_child="$tmp/.subagent-$cancel_id.jsonl"
 integer cancel_waited=0
 until jq -e -s '.[-1].type == "assistant" and .[-1].stop == "end"' \
     "$cancel_child" >/dev/null 2>&1; do
@@ -627,6 +627,6 @@ fi
 wait "$fail_watcher" || fail 'failed-launch reservation was not released'
 grep -q 'background launch failed' "$tmp/fail-error" ||
   fail 'launch error was not reported'
-jq -e -s '[.[] | select(.type == "state_update" and (.name | startswith("agents/"))) |
+jq -e -s '[.[] | select(.type == "state_update" and (.name | startswith("subagents/"))) |
   .value.active] == [true,false]' "$fail_parent" >/dev/null ||
   fail 'failed launch retained slot'

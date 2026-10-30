@@ -15,7 +15,7 @@ Configuration is yours: Shellfish bundles components, not profiles, models, or s
 
 ## Directories
 
-One Shellfish directory holds everything: profiles, models, sandbox files, components, `tui.jsonc`, `.env`, `sessions/` grouped by project directory, and `scratch/` for private temporary files. Shellfish uses `SHELLFISH_DIR` when set, otherwise the nearest `.shellfish` directory above the working directory, otherwise `~/.shellfish`. A `.shellfish` directory therefore selects a separately configured Shellfish, such as one for work and one for personal projects, for everything beneath it. `--continue` and `--resume` search its sessions. Child agents, hooks, and tools inherit the selection.
+One Shellfish directory holds everything: profiles, models, sandbox files, components, `tui.jsonc`, `.env`, `sessions/` grouped by project directory, and `scratch/` for private temporary files. Shellfish uses `SHELLFISH_DIR` when set, otherwise the nearest `.shellfish` directory above the working directory, otherwise `~/.shellfish`. A `.shellfish` directory therefore selects a separately configured Shellfish, such as one for work and one for personal projects, for everything beneath it. `--continue` and `--resume` search its sessions. Subagents, hooks, and tools inherit the selection.
 
 ## References
 
@@ -126,7 +126,7 @@ Decision models serve `shellfish decide` instead of conversations. Bundled decis
 
 See [`HARNESS.md`](HARNESS.md#decisions) for the decision format.
 
-A new session freezes the selected profile and model in its header: sandbox and model items merged, system prompts joined into one text, and every other reference resolved. The header's `profile` is itself a profile and its `model` a model file, so together they select the same session again. A child agent started by the `agent` tool keeps its parent's model.
+A new session freezes the selected profile and model in its header: sandbox and model items merged, system prompts joined into one text, and every other reference resolved. The header's `profile` is itself a profile and its `model` a model file, so together they select the same session again. A subagent keeps its parent's model.
 
 ## Environment
 
@@ -206,7 +206,7 @@ Set `"config": {"skills": ["skill-creator", "code-review"]}` in a profile to all
 | [`default`](../share/template/profiles/default.jsonc) | `general.md` and `tools.md`, the tools below, and the bundled commands and hooks |
 | [`basic`](../share/template/profiles/basic.jsonc) | `default` without web tools or skills |
 | [`readonly`](../share/template/profiles/readonly.jsonc) | Read-only file and shell tools |
-| [`plus`](../share/template/profiles/plus.jsonc) | `default` with the agent tool and permission review |
+| [`plus`](../share/template/profiles/plus.jsonc) | `default` with subagents and permission review |
 
 | Tool | Role |
 | --- | --- |
@@ -253,13 +253,13 @@ With `skills/mention`, `$skill-name` in an ordinary prompt loads each matching a
 
 ## Optional bundled components
 
-### Agent tool
+### Subagent tool
 
-The `agent` tool lets you delegate a separate task to another agent, so work can proceed independently of your current conversation. You can wait for its result, let it run in the background, check its progress, or give it a follow-up task once it finishes. It is opt-in: the `plus` profile enables it, or add `"agent"` to a profile's `tools`.
+The `subagent` tool lets you delegate a separate task to a subagent, so work can proceed independently of your current conversation. You can wait for its result, let it run in the background, check its progress, or give it a follow-up task once it finishes. It is opt-in: the `plus` profile enables it, or add `"subagent"` to a profile's `tools`.
 
-Background work returns control after launch. The default limit is four active child agents per parent. Set `"config": {"agent": {"max_active": 2}}` in the parent's profile to choose another positive integer. Supplied limits freeze with the session, and inspection remains available when all slots are occupied.
+Background work returns control after launch. The default limit is four active subagents per parent. Set `"config": {"subagent": {"max_active": 2}}` in the parent's profile to choose another positive integer. Supplied limits freeze with the session, and inspection remains available when all slots are occupied.
 
-Inspection distinguishes a child that is still running from one that has stopped without a final transcript outcome. A stopped child releases its active slot and can be continued. Shellfish recovers unfinished work on that next turn. A child killed outright during its stop hooks can appear settled, and those hooks do not run again.
+Inspection distinguishes a subagent that is still running from one that has stopped without a final transcript outcome. A stopped subagent releases its active slot and can be continued. Shellfish recovers unfinished work on that next turn. A subagent killed outright during its stop hooks can appear settled, and those hooks do not run again.
 
 ### Sandbox approver hook
 

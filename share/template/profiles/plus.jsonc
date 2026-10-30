@@ -1,11 +1,11 @@
-// The default agent with child agents and a model reviewing sandbox bypass
+// The default agent with subagents and a model reviewing sandbox bypass
 // requests. Select with --profile plus.
 {
   "$schema": "https://raw.githubusercontent.com/spicyneuron/shellfish/refs/heads/main/share/profile.schema.json",
 
   "sandbox": "default",
   "system": ["general.md", "tools.md"],
-  "tools": ["read_file", "edit_file", "write_file", "shell", "search_web", "fetch_url", "skill", "agent"],
+  "tools": ["read_file", "edit_file", "write_file", "shell", "search_web", "fetch_url", "skill", "subagent"],
   "commands": ["help", "verbose", "new", "resume", "fork", "rewind", "compact", "copy", "user_shell", "sandbox", "server"],
   "hooks": [
     "project/environment", "git/environment", "project/instructions", "skills/list",

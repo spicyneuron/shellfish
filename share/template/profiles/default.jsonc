@@ -14,7 +14,7 @@
   // Files under system/ concatenated into the system prompt.
   "system": ["general.md", "tools.md"],
 
-  // Tools available to the model. Add the agent tool to delegate to child agents.
+  // Tools available to the model. Add the subagent tool to delegate tasks.
   "tools": ["read_file", "edit_file", "write_file", "shell", "search_web", "fetch_url", "skill"],
 
   // Commands typed as /NAME, which run instead of submitting the prompt.

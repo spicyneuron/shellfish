@@ -464,8 +464,8 @@ test("replays the durable session before live work", async () => {
     },
     {
       type: "state_update",
-      name: "agents/a1b2c3",
-      value: { session: ".agent-a1b2c3.jsonl" },
+      name: "subagents/a1b2c3",
+      value: { session: ".subagent-a1b2c3.jsonl" },
     },
     { type: "_session_status", working: false },
   );

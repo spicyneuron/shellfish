@@ -179,7 +179,7 @@ fi
 [[ $SF_PROFILE_ERROR == *'hook manifest must be valid and declare "on"'* ]]
 
 # Template profiles resolve their components under share/ with the template
-# model. Only plus opts into child agents and review.
+# model. Only plus opts into subagents and review.
 cp "$ROOT/share/template/models/default.jsonc" "$SF_TEST_CONFIG/models/default.jsonc"
 sf_test_sandbox default "$(<"$ROOT/share/template/sandbox/default.jsonc")"
 for name in default basic readonly plus; do
@@ -191,7 +191,7 @@ for name in default basic readonly plus; do
       ([.commands[], .hooks[], .tools[]] | length > 0 and all(.[]; startswith($share))) and
       (.commands | any(endswith("/help"))) and
       (.system[0].text | length > 0) and
-      ((.tools | any(endswith("/agent"))) == ($name == "plus")) and
+      ((.tools | any(endswith("/subagent"))) == ($name == "plus")) and
       ((.hooks | any(endswith("/sandbox/approver"))) == ($name == "plus")))
   ' <<<"$REPLY" >/dev/null || fail "template profile did not resolve: $name"
   profile=$(jq -c '.profile' <<<"$REPLY")

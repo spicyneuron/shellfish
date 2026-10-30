@@ -1,0 +1,18 @@
+{
+  "description": "Delegate a task to a subagent and return its final answer. start needs task and either profile (a fresh subagent using that profile) or fork=true (a subagent that inherits this conversation up to the current user message). continue sends a new task to an idle subagent by agent_id. inspect reports a subagent's working, settled (finished), and answer. With background=true, start and continue return the agent_id at once. Inspect a finished background subagent before continuing it, which also frees its slot. Subagents cannot start subagents.",
+  "input_schema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["operation"],
+    "properties": {
+      "operation": {"type": "string", "enum": ["start", "inspect", "continue"]},
+      "profile": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*(/[A-Za-z0-9][A-Za-z0-9_-]*)*$", "description": "Profile name for a fresh subagent; start only, excludes fork"},
+      "fork": {"type": "boolean", "description": "Inherit this conversation; start only, excludes profile"},
+      "background": {"type": "boolean", "default": false, "description": "Return without waiting for the answer; start or continue only"},
+      "task": {"type": "string", "minLength": 1, "description": "Instructions for the subagent; required for start and continue"},
+      "agent_id": {"type": "string", "description": "Subagent from an earlier start; required for inspect and continue"}
+    }
+  },
+  "user_text": "**Subagent** ${input.operation}\n${output.stderr}",
+  "sandbox": false
+}

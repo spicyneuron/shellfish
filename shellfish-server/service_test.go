@@ -23,7 +23,7 @@ const assistantRecord = `{"type":"assistant","stop":"end","content":[{"type":"te
 const toolAssistantRecord = `{"type":"assistant","stop":"tool_calls","content":[]}`
 const errorRecord = `{"type":"error","user_text":"provider failed"}`
 const hookDraft = `{"type":"_draft","lifecycle":"user_prompt_submit","id":"1","user_text":"Checking"}`
-const stateUpdateRecord = `{"type":"state_update","name":"agents/a1b2c3","value":{"session":".agent-a1b2c3.jsonl"}}`
+const stateUpdateRecord = `{"type":"state_update","name":"subagents/a1b2c3","value":{"session":".subagent-a1b2c3.jsonl"}}`
 
 func workDir(t *testing.T) string {
 	t.Helper()
