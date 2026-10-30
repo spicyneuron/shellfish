@@ -107,6 +107,54 @@ jq -es --slurpfile source "$forwarded_session" '
   [.[] | select(.type == "user") | .content[0].text] == ["copied answer"]
 ' "$copied_session" >/dev/null || fail 'run did not reuse the stored profile'
 
+# Startup hooks cannot change the current process's component snapshot.
+typeset catalog_tool="$SF_TEST_CONFIG/tools/catalog" catalog_hook="$SF_TEST_CONFIG/hooks/catalog"
+typeset catalog_source="$tmp/catalog-source.jsonl" catalog_session catalog_request catalog_mode expected
+typeset -a catalog_args
+mkdir -p "$catalog_tool"
+cat >"$catalog_tool/run" <<'ZSH'
+#!/usr/bin/env zsh
+cat >/dev/null
+ZSH
+chmod +x "$catalog_tool/run"
+sf_test_hook "$catalog_hook" '{"on":"session_start"}' <<'ZSH'
+#!/usr/bin/env zsh
+manifest="$SHELLFISH_DIR/tools/catalog/manifest.json"
+jq '.description += " changed"' "$manifest" >"$manifest.next" &&
+  mv "$manifest.next" "$manifest"
+ZSH
+sf_test_profile catalog '{"tools":["catalog"],"hooks":["catalog"]}'
+for catalog_mode in fresh derived background; do
+  print -r -- '{"description":"original","input_schema":{"type":"object"},"sandbox":false}' \
+    >"$catalog_tool/manifest.json"
+  catalog_session="$tmp/catalog-$catalog_mode.jsonl"
+  catalog_request="$tmp/catalog-$catalog_mode.request"
+  catalog_args=( -p catalog )
+  expected=original
+  case $catalog_mode in
+    derived) catalog_args=( --session-from "$catalog_source" ) ;;
+    background) catalog_args+=( --background ); expected='original changed' ;;
+  esac
+  SF_TEST_PROVIDER_DELAY=0 SF_TEST_PROVIDER_REQUEST=$catalog_request \
+    zsh -f "$entry" run "${catalog_args[@]}" --session-out "$catalog_session" catalog \
+    >/dev/null || fail "$catalog_mode catalog run failed"
+  integer catalog_wait=0
+  until zsystem flock -t 0 -f lock_fd "$catalog_session.lock" 2>/dev/null; do
+    (( catalog_wait++ < 100 )) || fail "$catalog_mode catalog turn did not finish"
+    sleep 0.1
+  done
+  zsystem flock -u "$lock_fd"
+  assert_canonical_session "$catalog_session" end
+  jq -e --arg expected "$expected" '.tools[0].description | startswith($expected + "\n")' \
+    "$catalog_request" >/dev/null || fail "$catalog_mode run used the wrong component snapshot"
+  [[ $catalog_mode != fresh ]] || cp "$catalog_session" "$catalog_source"
+  SF_TEST_PROVIDER_DELAY=0 SF_TEST_PROVIDER_REQUEST=$catalog_request \
+    zsh -f "$entry" run --session "$catalog_session" catalog >/dev/null ||
+    fail 'existing session did not reload its catalog'
+  jq -e '.tools[0].description | startswith("original changed\n")' \
+    "$catalog_request" >/dev/null || fail 'existing session used a stale component snapshot'
+done
+
 # Session source options are exclusive.
 integer conflict_status=0
 zsh -f "$entry" run --session "$forwarded_session" \

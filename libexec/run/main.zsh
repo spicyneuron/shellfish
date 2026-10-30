@@ -33,7 +33,7 @@ sf_run_main() {
   local -a positional=() create_args=()
   local -a background_launcher=()
   local -A message
-  integer create_only=0 json=0 jsonl=0 background=0 override=0 take=0
+  integer create_only=0 json=0 jsonl=0 background=0 override=0 take=0 catalog_ready=0
 
   while (( $# )); do
     case $1 in
@@ -208,6 +208,7 @@ sf_run_main() {
       return $create_status
     fi
     session=$REPLY
+    catalog_ready=1
   fi
   if (( create_only )); then
     trap - INT USR1 HUP TERM
@@ -268,7 +269,7 @@ sf_run_main() {
     exec 4>&-
     unset SHELLFISH_BACKGROUND_WORKER
   fi
-  sf_run_turn "$input" "$session" "$prompt"
+  sf_run_turn "$input" "$session" "$prompt" $catalog_ready
   local run_status=$?
   zsystem flock -u "$SF_RUN_LOCK_FD"
   trap - INT USR1 HUP TERM

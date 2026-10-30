@@ -108,6 +108,7 @@ sf_run_components() {
 
 sf_run_open() {
   local session=$1
+  integer catalog_ready=${2:-0}
   [[ $session == /* && -f $session && ! -L $session && -r $session ]] || {
     REPLY="invalid session path: $session"
     return 1
@@ -119,7 +120,9 @@ sf_run_open() {
   SF_RUN[user_approval_timeout]=$SF_RUN_STEP[user_approval_timeout]
   SF_RUN[turn_id]=$SF_RUN_STEP[turn_id]
   SF_RUN[hook_id]=$SF_RUN_STEP[hook_id]
-  sf_run_components "$SF_RUN[profile]" || return
+  if (( ! catalog_ready )); then
+    sf_run_components "$SF_RUN[profile]" || return
+  fi
   [[ $SF_RUN_STEP[pending] == true ]] || return 0
   sf_run_settle "$session" 'Turn interrupted.' 'tool call outcome unknown'
 }
@@ -175,7 +178,7 @@ sf_run_turn() {
   local user_record=$1 session=$2 prompt=$3 config context_command
   local id name decision outcome message failure='' turn_state
   local -A hook_result completed
-  integer begun=0 run_status
+  integer begun=0 run_status catalog_ready=${4:-0}
 
   {
     SF_RUN[answer]=''
@@ -183,7 +186,7 @@ sf_run_turn() {
     SF_RUN[permission_count]=0
     SF_RUN[signal_status]=0
     SF_RUN[write_failed]=0
-    sf_run_limits && sf_run_open "$session" || { print -r -u2 -- "$REPLY"; return 1; }
+    sf_run_limits && sf_run_open "$session" $catalog_ready || { print -r -u2 -- "$REPLY"; return 1; }
     begun=1
     [[ -d $SF_RUN[cwd] && -x $SF_RUN[cwd] ]] ||
       failure="session working directory is unavailable: $SF_RUN[cwd]"
