@@ -10,11 +10,6 @@ Add local sandbox exceptions to allow tests to run
 - tests cannot create .env and .shellfish
 - probably python
 
+# Feature
+
 Goal is to add multimodal image support to read_file. Eventually will want the user to be able to copy and paste and image too, but that doesn't have to ship together. Let's discuss options.
-
-# Minor / Polish
-
-Goal is to improve overall polish of the TUI. For example:
-- Move tokens to the first line, not the last line: Read <file> (tokens)
-- Add color to [sandbox] badges
-- Refine colors of diffs
