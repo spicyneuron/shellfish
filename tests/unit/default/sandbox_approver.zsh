@@ -216,7 +216,7 @@ jq -e '(has("action") | not) and .state_update[0].value ==
   {content:null,reason:"Required permission review context exceeds the review context limit."}
 ' "$control" >/dev/null || fail 'permission review dropped required startup records'
 [[ ! -e $captured && ! -e $sent ]] || fail 'oversized startup context called the provider'
-jq -c 'if .type == "session" then .profile.config.sandbox.approver.input_kb=200 else . end' \
+jq -c 'if .type == "session" then .profile.config.sandbox.approver.max_input_kb=200 else . end' \
   "$tmp/startup-budget.jsonl" >"$tmp/large-budget.jsonl"
 session="$tmp/large-budget.jsonl"
 run_review valid
@@ -285,8 +285,8 @@ for review_config in 'null' 'false' '[]' '{"unknown":true}' \
     '{"model":"review","decision_model":"review"}' '{"allow_threshold":0.5}' \
     '{"model":"review","allow_threshold":0.5}' '{"decision_model":"../d"}' \
     '{"decision_model":"d","allow_threshold":0}' '{"decision_model":"d","allow_threshold":1.5}' \
-    '{"decision_model":"d","allow_threshold":"0.5"}' '{"input_kb":0}' \
-    '{"input_kb":1.5}' '{"input_kb":"4"}'; do
+    '{"decision_model":"d","allow_threshold":"0.5"}' '{"max_input_kb":0}' \
+    '{"max_input_kb":1.5}' '{"max_input_kb":"4"}'; do
   jq -c --argjson config "$review_config" '
     if .type == "session" then .profile.config.sandbox.approver=$config else . end
   ' "$parent_session" >"$session"
