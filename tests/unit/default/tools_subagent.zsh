@@ -6,9 +6,6 @@ sf_test_config
 
 typeset agent="$ROOT/share/tools/subagent"
 typeset provider="$tmp/provider" session="$tmp/parent.jsonl" stream="$tmp/stream"
-if grep -q '"subagent"' "$ROOT/share/template/profiles/default.jsonc"; then
-  fail 'subagent must be opt-in'
-fi
 mkdir -p "$provider"
 print -r -- '{"endpoint":"https://example.invalid/test"}' >"$provider/manifest.json"
 cat >"$provider/run" <<'ZSH'

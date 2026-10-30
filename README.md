@@ -51,7 +51,7 @@ shellfish --resume                # Pick a session from this directory
 shellfish --session PATH          # Open one session directly
 
 shellfish --model MODEL           # Use models/MODEL.jsonc instead of the default
-shellfish --profile PROFILE       # Use another profile, such as basic, readonly, or plus
+shellfish --profile PROFILE       # Use another profile, such as readonly
 shellfish -m '{"provider": "openrouter", "request": {"model": "MODEL"}}' -t shell
                                   # Select everything with options, no config needed
 
@@ -92,7 +92,7 @@ The Shellfish directory (typically `~/.shellfish/`, see [Directories](docs/CONFI
 }
 ```
 
-`profiles/default.jsonc` is selected when `--profile` is absent, and `models/default.jsonc` when `--model` is. Reusable components live in top-level `system/`, `tools/`, `commands/`, `hooks/`, and `providers/` directories beside `profiles/`, and resolve from the Shellfish directory first, then the bundled `share/` directory. A reference starting with `/`, `~/`, `./`, `../`, or `@` is a path instead, where `@` is the bundled root. Every profile field also has a command-line option. A new session freezes the resolved profile and model in its header. Themes and preview limits live in [`tui.jsonc`](share/tui.jsonc).
+`profiles/default.jsonc` is selected when `--profile` is absent, and `models/default.jsonc` when `--model` is. `init` copies editable system prompts into `system/`. Reusable executable components live in top-level `tools/`, `commands/`, `hooks/`, and `providers/` directories beside `profiles/`, and resolve from the Shellfish directory first, then the bundled `share/` directory. A reference starting with `/`, `~/`, `./`, `../`, or `@` is a path instead, where `@` is the bundled root. Every profile field also has a command-line option. A new session freezes the resolved profile and model in its header. Themes and preview limits live in [`tui.jsonc`](share/tui.jsonc).
 
 ## Documentation
 

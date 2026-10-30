@@ -102,7 +102,7 @@ for patch in '.extra=true' '.profile.extra=true' '.profile.env={}' \
     '.profile.commands=["relative"]' '.profile.commands=["/a/bad name"]' 'del(.profile.sandbox)' \
     '.model.extra=true' 'del(.model.endpoint)' 'del(.model.request.model)' \
     '.model.context_window=0' 'del(.model)' '.profile.model=.model' '.profile.hooks={}' \
-    '.profile.hooks=[{command:"/bin/hook"}]' '.profile.system=["@system/general.md"]' \
+    '.profile.hooks=[{command:"/bin/hook"}]' '.profile.system=["@template/system/general.md"]' \
     '.profile.system=[{text:1}]' '.profile.sandbox=true' '.profile.sandbox.extra=1' \
     '.profile.tools=["shell"]' '.profile.tools=["/a/shell","/b/shell"]' \
     '.model.provider="./openai_chat"' '.profile.system=[{text:""}]' '.profile.system+=[{text:"two"}]' \

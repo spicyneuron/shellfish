@@ -11,7 +11,7 @@ Configuration has three homes, each with one job:
 
 Rendering lives separately in `tui.jsonc`, which merges over [`share/tui.jsonc`](../share/tui.jsonc) and is read fresh on every run.
 
-Configuration is yours: Shellfish bundles components, not profiles, models, or sandbox files. `shellfish init` copies [`share/template/`](../share/template/) into the Shellfish directory as a working starting point, keeping any file that already exists. The bundled [`profile.schema.json`](../share/profile.schema.json), [`model.schema.json`](../share/model.schema.json), [`sandbox.schema.json`](../share/sandbox.schema.json), and [`tui.schema.json`](../share/tui.schema.json) are the exact field references.
+Configuration is yours: Shellfish bundles executable components, not profiles, models, sandbox files, or system prompts. `shellfish init` copies [`share/template/`](../share/template/) into the Shellfish directory as a working starting point, keeping any file that already exists. The bundled [`profile.schema.json`](../share/profile.schema.json), [`model.schema.json`](../share/model.schema.json), [`sandbox.schema.json`](../share/sandbox.schema.json), and [`tui.schema.json`](../share/tui.schema.json) are the exact field references.
 
 ## Directories
 
@@ -21,7 +21,7 @@ One Shellfish directory holds everything: profiles, models, sandbox files, compo
 
 Every reference in a profile, model, or sandbox file, and every option that takes one, follows one rule. A reference starting with `/`, `~/`, `./`, `../`, or `@` is a path, where `@` is the bundled root just as `~` is home. A relative path resolves against the file that contains it, or against the working directory on the command line. Anything else is a name, which resolves in its kind's directory, yours first, then bundled. Profile, model, and sandbox names gain `.jsonc`, and a name may be nested, such as `openai/sol`.
 
-Your component therefore shadows the bundled one of the same name, and a path still reaches the bundled one, such as `@tools/shell`. A template profile works in place as `-p @template/profiles/plus.jsonc`, though it names your `sandbox/default.jsonc`. Session headers store bundled paths the same way, so a session survives upgrades.
+Your component therefore shadows the bundled one of the same name, and a path still reaches the bundled one, such as `@tools/shell`. A template profile works in place as `-p @template/profiles/readonly.jsonc`, though it names your system prompts and `sandbox/default.jsonc`. Session headers store bundled paths the same way, so a session survives upgrades.
 
 ## Profiles
 
@@ -197,18 +197,16 @@ Grants are paths and need not exist, so one file can serve several machines. A p
 
 ## Starter agent
 
-`shellfish init` writes four profiles and the default model, `models/default.jsonc`: the OpenRouter provider with up to 16,384 output tokens and medium reasoning effort, whose `MODEL` placeholder you replace. Each profile selects `sandbox/default.jsonc`, which grants nothing until you edit it.
+`shellfish init` writes two example profiles, `default` and `readonly`, and the default model, `models/default.jsonc`: the OpenRouter provider with up to 16,384 output tokens and medium reasoning effort, whose `MODEL` placeholder you replace. Each profile selects `sandbox/default.jsonc`, which grants nothing until you edit it. The default profile includes commented examples for enabling subagents and model-reviewed sandbox bypasses.
 
-It also copies the starter `skill-creator` into `skills/`, where you can edit it. Skills come from `.agents/skills/` in the working directory, the selected Shellfish directory's `skills/`, and, when that directory is named `.shellfish`, the `.agents/skills/` beside it, in that precedence order. With `~/.shellfish` the last source is `~/.agents/skills/`. A project's own `.shellfish` replaces it with the project's `.agents/skills/`. There is no bundled skill fallback.
+It also copies system prompts into `system/` and the starter `skill-creator` into `skills/`, where you can edit them. Skills come from `.agents/skills/` in the working directory, the selected Shellfish directory's `skills/`, and, when that directory is named `.shellfish`, the `.agents/skills/` beside it, in that precedence order. With `~/.shellfish` the last source is `~/.agents/skills/`. A project's own `.shellfish` replaces it with the project's `.agents/skills/`. There is no bundled skill fallback.
 
 Set `"config": {"skills": ["skill-creator", "code-review"]}` in a profile to allow only those skill names. Omit `config.skills` to allow every discovered skill, or use `[]` to allow none. Names are literal, and names not found in the discovery sources are ignored. The filter applies to advertising, the `skill` tool, and explicit `$skill-name` requests. It controls harness availability, not filesystem permissions.
 
 | Profile | Selects |
 | --- | --- |
 | [`default`](../share/template/profiles/default.jsonc) | `general.md` and `tools.md`, the tools below, and the bundled commands and hooks |
-| [`basic`](../share/template/profiles/basic.jsonc) | `default` without web tools or skills |
 | [`readonly`](../share/template/profiles/readonly.jsonc) | Read-only file and shell tools |
-| [`plus`](../share/template/profiles/plus.jsonc) | `default` with subagents and permission review |
 
 | Tool | Role |
 | --- | --- |
@@ -257,7 +255,7 @@ With `skills/mention`, `$skill-name` in an ordinary prompt loads each matching a
 
 ### Subagent tool
 
-The `subagent` tool lets you delegate a separate task to a subagent, so work can proceed independently of your current conversation. You can wait for its result, let it run in the background, check its progress, or give it a follow-up task once it finishes. It is opt-in: the `plus` profile enables it, or add `"subagent"` to a profile's `tools`.
+The `subagent` tool lets you delegate a separate task to a subagent, so work can proceed independently of your current conversation. You can wait for its result, let it run in the background, check its progress, or give it a follow-up task once it finishes. It is opt-in: add `"subagent"` to a profile's `tools`.
 
 A subagent either forks the current conversation, keeping its profile and model, or starts fresh with a profile you offer. The model sees only the profiles and models named in the parent profile's config, along with your descriptions of when to use each:
 
@@ -276,7 +274,7 @@ Inspection distinguishes a subagent that is still running from one that has stop
 
 ### Sandbox approver hook
 
-The `sandbox/approver` hook helps decide whether a requested sandbox bypass is justified by the user's instructions. It approves or denies each request. If the review itself fails, the request falls back to asking the user. The `plus` profile enables it, but the default profile does not. To enable it in another profile, add `"sandbox/approver"` to its `hooks`.
+The `sandbox/approver` hook helps decide whether a requested sandbox bypass is justified by the user's instructions. It approves or denies each request. If the review itself fails, the request falls back to asking the user. It is opt-in: add `"sandbox/approver"` to a profile's `hooks`.
 
 The reviewer uses the session's model by default. Set `"config": {"sandbox": {"approver": {"model": "review"}}}` in the profile to select another model by name, such as `models/review.jsonc`. The name freezes with the session, but its model file is read on each review. The selection replaces the complete model configuration, so it can use a different provider. Review requests impose their own structured output and output limit, and use a fixed input budget rather than adapting to the model's capacity. An invalid setting, unavailable model, or provider failure asks the user instead.
 

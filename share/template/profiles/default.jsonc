@@ -14,16 +14,32 @@
   // Files under system/ concatenated into the system prompt.
   "system": ["general.md", "tools.md"],
 
-  // Tools available to the model. Add the subagent tool to delegate tasks.
-  "tools": ["read_file", "edit_file", "write_file", "shell", "search_web", "fetch_url", "skill"],
+  // Tools available to the model.
+  "tools": [
+    "read_file", "edit_file", "write_file", "shell", "search_web", "fetch_url", "skill",
+    // Delegate tasks to subagents.
+    // "subagent",
+  ],
 
   // Commands typed as /NAME, which run instead of submitting the prompt.
   "commands": ["help", "verbose", "new", "resume", "fork", "rewind", "compact", "copy", "user_shell", "sandbox", "server"],
 
-  // Hooks run in this order within the lifecycle their manifest names. Add
-  // "sandbox/approver" to have a model review sandbox bypass requests.
+  // Hooks run in this order within the lifecycle their manifest names.
   "hooks": [
     "project/environment", "git/environment", "project/instructions", "skills/list",
-    "autocompact", "git/identity", "skills/mention"
-  ]
+    "autocompact", "git/identity", "skills/mention",
+    // Have a model review sandbox bypass requests.
+    // "sandbox/approver",
+  ],
+
+  // Optional settings for the components above.
+  // "config": {
+  //   "subagent": {
+  //     "profiles": {"readonly": "Investigate and answer questions without changing files"},
+  //     "max_active": 4
+  //   },
+  //   "sandbox": {
+  //     "approver": {"model": "default"}
+  //   }
+  // }
 }

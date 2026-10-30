@@ -60,19 +60,21 @@ chmod +x "$config/tools/probe/run"
 print -r -- '{"description":"probe","input_schema":{"type":"object"},"sandbox":false}' \
   >"$config/tools/probe/manifest.json"
 print -r -- 'configured' >"$config/system/shared.md"
+print -r -- 'configured general' >"$config/system/general.md"
 print -r -- 'home' >"$HOME/prompts/home.md"
 sf_test_model probe '{"provider": "'"$SF_TEST_PROVIDER:h"'", "request": {"model": "m"}}'
 sf_test_profile unused '{invalid json'
 
-# "@path" selects under the bundled root despite user shadowing; "~/" and
-# absolute paths are taken as written. Bare names fall back to bundled.
-sf_test_profile default '{"tools": ["probe"], "system": ["shared.md",
-  "@system/general.md", "general.md", "~/prompts/home.md", "'"$HOME"'/prompts/home.md"]}'
+# "@path" selects under the bundled root. "~/" and absolute paths are taken
+# as written. Bare tool names fall back to bundled.
+sf_test_profile default '{"tools": ["probe", "read_file"], "system": ["shared.md",
+  "@template/system/general.md", "general.md", "~/prompts/home.md", "'"$HOME"'/prompts/home.md"]}'
 sf_profile_resolve_args -m probe
-jq -e --arg base "$config" --rawfile general "$ROOT/share/system/general.md" '
+jq -e --arg base "$config" --arg share "$ROOT/share" \
+    --rawfile general "$ROOT/share/template/system/general.md" '
   ($general | sub("\n+$"; "")) as $general | .profile |
-  .tools == [$base + "/tools/probe"] and
-  .system == [{text:(["configured", $general, $general, "home", "home"] | join("\n\n"))}]
+  .tools == [$base + "/tools/probe", $share + "/tools/read_file"] and
+  .system == [{text:(["configured", $general, "configured general", "home", "home"] | join("\n\n"))}]
 ' <<<"$REPLY" >/dev/null
 
 # Missing and invalid components fail by kind.

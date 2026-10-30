@@ -178,21 +178,22 @@ if sf_profile_components hooks "$profile"; then
 fi
 [[ $SF_PROFILE_ERROR == *'hook manifest must be valid and declare "on"'* ]]
 
-# Template profiles resolve their components under share/ with the template
-# model. Only plus opts into subagents and review.
+# Template profiles use configured prompts and model with bundled components.
+# Subagents and review remain opt-in.
 cp "$ROOT/share/template/models/default.jsonc" "$SF_TEST_CONFIG/models/default.jsonc"
+cp "$ROOT/share/template/system/"*.md "$SF_TEST_CONFIG/system/"
 sf_test_sandbox default "$(<"$ROOT/share/template/sandbox/default.jsonc")"
-for name in default basic readonly plus; do
+for name in default readonly; do
   sf_profile_resolve_args -p "@template/profiles/$name.jsonc" -m default \
     -m '{"request":{"model":"mine"}}'
-  jq -e --arg share "$ROOT/share/" --arg name "$name" '
+  jq -e --arg share "$ROOT/share/" '
     .model.request == {max_tokens:16384,reasoning:{effort:"medium"},model:"mine"} and
     (.profile |
       ([.commands[], .hooks[], .tools[]] | length > 0 and all(.[]; startswith($share))) and
       (.commands | any(endswith("/help"))) and
       (.system[0].text | length > 0) and
-      ((.tools | any(endswith("/subagent"))) == ($name == "plus")) and
-      ((.hooks | any(endswith("/sandbox/approver"))) == ($name == "plus")))
+      (.tools | any(endswith("/subagent")) | not) and
+      (.hooks | any(endswith("/sandbox/approver")) | not))
   ' <<<"$REPLY" >/dev/null || fail "template profile did not resolve: $name"
   profile=$(jq -c '.profile' <<<"$REPLY")
 done
@@ -245,14 +246,14 @@ if sf_profile_resolve_args -p work; then
 fi
 [[ $SF_PROFILE_ERROR == 'no model selected: run shellfish init, or pass -m' ]]
 
-# A configured component shadows the bundled one, and "@" still reaches it.
+# Named prompts use configuration, and "@" can reach the template directly.
 mkdir -p "$SF_TEST_CONFIG/system"
 print -r -- 'mine' >"$SF_TEST_CONFIG/system/general.md"
-sf_test_profile shadow '{"system": ["general.md", "@system/general.md"]}'
+sf_test_profile shadow '{"system": ["general.md", "@template/system/general.md"]}'
 sf_profile_resolve_args -p shadow -m fixture
-jq -e --rawfile general "$ROOT/share/system/general.md" '
+jq -e --rawfile general "$ROOT/share/template/system/general.md" '
   .profile.system == [{text:("mine\n\n" + ($general | sub("\n+$"; "")))}]
-' <<<"$REPLY" >/dev/null || fail 'configured component did not shadow bundled'
+' <<<"$REPLY" >/dev/null || fail 'configured and template prompts did not resolve independently'
 rm "$SF_TEST_CONFIG/system/general.md"
 
 # Unknown names fail.
@@ -359,7 +360,7 @@ sf_test_profile boxed '{"sandbox": ["base"]}'
   "$ROOT/bin/shellfish" init >"$tmp/init.out"
   grep -qx "kept  ${SHELLFISH_DIR:A}/.env" "$tmp/init.out"
   [[ $(<"$SHELLFISH_DIR/.env") == mine ]]
-  for name in default basic readonly plus; do
+  for name in default readonly; do
     sf_profile_resolve_args -p $name -m default -m '{"request":{"model":"mine"}}' >/dev/null
   done
   sf_profile_resolve_args
