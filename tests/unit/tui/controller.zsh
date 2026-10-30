@@ -90,7 +90,7 @@ assert_equal '/tmp/custom command,,arg' "${(j:,:)SF_PRESENT_HANDOFF}"
 pump "$(jq -c '
   {type:"_session_update",profile,model:(.model | .provider = "/updated" |
     .request.model = "new-model" | .context_window = null)}
-' "$SF_TEST_SESSIONS/header-only.jsonl")"
+' "$SF_TEST_SESSIONS/header_only.jsonl")"
 assert_equal updated/new-model "$SF_PRESENT_IDENTITY"
 assert_equal updated/new-model "$SF_PRESENT_FOOTER"
 

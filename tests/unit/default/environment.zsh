@@ -175,7 +175,7 @@ typeset sandbox="$ROOT/share/commands/sandbox/run" sandbox_session="$tmp/sandbox
 mkdir -p "$tmp/project/dir" "$tmp/home/share"
 jq -c --arg cwd "${tmp:A}/project" '.cwd=$cwd |
   .profile.sandbox={enabled:true, read:["@system"], write:[$cwd + "/dir","~/share"]}' \
-  "$SF_TEST_SESSIONS/header-only.jsonl" >"$sandbox_session"
+  "$SF_TEST_SESSIONS/header_only.jsonl" >"$sandbox_session"
 (
   builtin cd -- "$tmp/project"; export HOME="$tmp/home"
   call() {

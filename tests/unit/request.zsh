@@ -8,7 +8,7 @@ typeset response digest
 jq -c --arg provider "${SF_TEST_PROVIDER:h}" --arg cwd "$tmp" \
   '.model.provider = $provider | .cwd = $cwd |
     .model.config = {example:{paths:["./data","~/data","@data"],values:[null,false,2]}}' \
-  "$SF_TEST_SESSIONS/header-only.jsonl" >"$session"
+  "$SF_TEST_SESSIONS/header_only.jsonl" >"$session"
 print -r -- '{"type":"user","content":[{"type":"text","text":"old"}]}' >>"$session"
 print -r -- '{"type":"assistant","stop":"end","content":[{"type":"text","text":"answer"}]}' \
   >>"$session"
