@@ -80,14 +80,14 @@ If every permission hook defers, Shellfish asks the client. Without a client, or
 
 ## Starter agent
 
-The bundled default profile supplies a complete agent without `init`, once you select a model. `shellfish init` copies that profile and its sandbox settings for customization, plus an editable read-only profile and its paired prompt. The general and tools prompts stay bundled unless you override them with your own files.
+The bundled default profile supplies a complete agent without `init`, once you select a model. `shellfish init` copies that profile and its sandbox settings for customization, plus an editable read-only profile and its paired prompt. The general, tools, and sandbox prompts stay bundled unless you override them with your own files.
 
 Both starter profiles select `sandbox/default.jsonc`, whose bundled default grants nothing extra. The default profile includes commented examples for enabling subagents and model-reviewed sandbox bypasses.
 
 | Profile | Selects |
 | --- | --- |
-| [`default`](../share/profiles/default.jsonc) | Bundled `general.md` and `tools.md`, the tools below, and the bundled commands and hooks |
-| [`readonly`](../share/template/profiles/readonly.jsonc) | Its editable `readonly.md` and bundled `tools.md`, read-only file and shell tools, and a smaller hook list |
+| [`default`](../share/profiles/default.jsonc) | Bundled `general.md`, `tools.md`, and `sandbox.md`, the tools below, and the bundled commands and hooks |
+| [`readonly`](../share/template/profiles/readonly.jsonc) | Its editable `readonly.md` and bundled `tools.md` and `sandbox.md`, read-only file and shell tools, and a smaller hook list |
 
 | Tool | Role |
 | --- | --- |

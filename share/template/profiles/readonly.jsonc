@@ -3,7 +3,7 @@
   "$schema": "https://raw.githubusercontent.com/spicyneuron/shellfish/refs/heads/main/share/profile.schema.json",
 
   "sandbox": "default",
-  "system": ["readonly.md", "tools.md"],
+  "system": ["readonly.md", "tools.md", "sandbox.md"],
   "tools": ["read_file", "shell_readonly"],
   "commands": ["help", "verbose", "new", "resume", "fork", "rewind", "compact", "copy", "user_shell", "sandbox"],
   "hooks": [

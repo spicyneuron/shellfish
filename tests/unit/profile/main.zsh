@@ -196,12 +196,12 @@ cp "$ROOT/share/template/system/readonly.md" "$SF_TEST_CONFIG/system/readonly.md
 for name in @profiles/default.jsonc @template/profiles/readonly.jsonc; do
   sf_profile_resolve_args -p "$name" -m default \
     -m '{"request":{"model":"mine"}}'
-  jq -e --arg share "$ROOT/share/" '
+  jq -e --arg share "$ROOT/share/" --rawfile sandbox "$ROOT/share/system/sandbox.md" '
     .model.request == {max_tokens:16384,reasoning:{effort:"medium"},model:"mine"} and
     (.profile |
       ([.commands[], .hooks[], .tools[]] | length > 0 and all(.[]; startswith($share))) and
       (.commands | any(endswith("/help"))) and
-      (.system[0].text | length > 0) and
+      (.system[0].text | contains($sandbox | sub("\n+$"; ""))) and
       (.tools | any(endswith("/subagent")) | not) and
       (.hooks | any(endswith("/sandbox/approver")) | not))
   ' <<<"$REPLY" >/dev/null || fail "starter profile did not resolve: $name"
@@ -372,7 +372,8 @@ sf_test_profile boxed '{"sandbox": ["base"]}'
   cmp "$ROOT/share/profiles/default.jsonc" "$SHELLFISH_DIR/profiles/default.jsonc"
   cmp "$ROOT/share/sandbox/default.jsonc" "$SHELLFISH_DIR/sandbox/default.jsonc"
   cmp "$ROOT/share/template/system/readonly.md" "$SHELLFISH_DIR/system/readonly.md"
-  [[ ! -e $SHELLFISH_DIR/system/general.md && ! -e $SHELLFISH_DIR/system/tools.md ]]
+  [[ ! -e $SHELLFISH_DIR/system/general.md && ! -e $SHELLFISH_DIR/system/tools.md &&
+    ! -e $SHELLFISH_DIR/system/sandbox.md ]]
   for name in default readonly; do
     sf_profile_resolve_args -p $name -m default -m '{"request":{"model":"mine"}}' >/dev/null
   done

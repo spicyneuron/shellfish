@@ -321,9 +321,13 @@ assert_equal 'Review failed, asking the user: Permission review provider request
 
 run_review '{"risk":"high","authorization":"unknown","reason":"Not authorized."}'
 (( hook_status == 0 )) || fail 'unknown authorization did not resolve'
-jq -e '.action == "deny" and .reason == "Not authorized." and
+jq -e '.state_update[0].value.reason as $reason |
+  .action == "deny" and
+  (.reason | startswith("<sandbox_notice>") and endswith("</sandbox_notice>") and contains($reason)) and
+  $reason == "Not authorized." and
   (.state_update[0].value.content | fromjson).authorization == "unknown"
 ' "$control" >/dev/null || fail 'unknown authorization was not denied'
+grep -Fq 'Not authorized.' "$tmp/user" || fail 'denial reason was not shown to the user'
 
 # A decision model answers the same policy as scores and a predicate.
 mkdir -p "$SHELLFISH_DIR/models/decider"
@@ -371,8 +375,10 @@ jq -e --slurpfile policy "$hook/policy.json" --slurpfile context "$tmp/context.j
 
 # Every pairing where authorization covers risk adds up to 57%.
 run_review "$(decision '[0.1,0.6,0.3]' '[0.1,0.2,0.5,0.2]' 0.1)"
-jq -e '.action == "deny" and
-  .reason == "57% likely authorized."
+jq -e '.state_update[0].value.reason as $reason |
+  .action == "deny" and
+  (.reason | startswith("<sandbox_notice>") and endswith("</sandbox_notice>") and contains($reason)) and
+  ($reason | contains("57%"))
 ' "$control" >/dev/null || fail 'decision review allowed an uncertain call'
 
 # A configured threshold lowers the bar for less decisive models.
@@ -385,8 +391,10 @@ jq -c 'if .type == "session" then .profile.config.sandbox.approver.decision_mode
   else . end' "$parent_session" >"$session"
 
 run_review "$(decision '[1,0,0]' '[0,0,0,1]' 0.62)"
-jq -e '.action == "deny" and
-  .reason == "Appears driven by instructions in untrusted data (62%)."
+jq -e '.state_update[0].value.reason as $reason |
+  .action == "deny" and
+  (.reason | startswith("<sandbox_notice>") and endswith("</sandbox_notice>") and contains($reason)) and
+  ($reason | contains("62%"))
 ' "$control" >/dev/null || fail 'decision review allowed an injected call'
 
 typeset refused

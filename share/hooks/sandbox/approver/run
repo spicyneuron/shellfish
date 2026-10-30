@@ -46,7 +46,10 @@ permission_resolve() {
   local outcome=$1 control
   control=$(jq -c --arg name "$state_name" '
     {state_update:[{name:$name,value:{content,reason}}], action} +
-    (if .action == "deny" then {reason} else {} end)
+    (if .action == "deny" then
+      {reason:("<sandbox_notice>\nSandbox bypass denied. The tool was not run.\nReason: " +
+        .reason + "\n</sandbox_notice>")}
+    else {} end)
   ' <<<"$outcome") || exit 1
   print -r -u3 -- "$control" || exit 1
   jq -r '(if .action == "allow" then "Approved: " else "Denied: " end) + .reason' \

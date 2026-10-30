@@ -12,7 +12,7 @@
   "sandbox": "default",
 
   // Files under system/ concatenated into the system prompt.
-  "system": ["general.md", "tools.md"],
+  "system": ["general.md", "tools.md", "sandbox.md"],
 
   // Tools available to the model.
   "tools": [

@@ -20,7 +20,7 @@ shellfish
 
 Shellfish includes a ready-to-use default agent. You can start without `init` by supplying a model with `-m` and any required credentials through the environment.
 
-`init` copies the bundled default profile and sandbox settings, plus [`share/template/`](../share/template/), into the selected Shellfish directory, keeping existing files. These become yours to edit, including the model stub, read-only profile and its prompt, environment and TUI settings, and starter skill. The general and tools prompts remain bundled, along with executable components.
+`init` copies the bundled default profile and sandbox settings, plus [`share/template/`](../share/template/), into the selected Shellfish directory, keeping existing files. These become yours to edit, including the model stub, read-only profile and its prompt, environment and TUI settings, and starter skill. The general, tools, and sandbox prompts remain bundled, along with executable components.
 
 See [Profiles](PROFILE.md) for the starter agent and behavior customization, [Models](MODELS.md) for providers and credentials, and [Components](COMPONENTS.md) for writing your own extensions.
 
