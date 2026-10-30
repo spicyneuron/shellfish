@@ -15,10 +15,10 @@
   "system": ["general.md", "tools.md"],
 
   // Tools available to the model. Add the agent tool to delegate to child agents.
-  "tools": ["read_file", "edit_file", "write_file", "skill", "search_web", "fetch_url", "shell"],
+  "tools": ["read_file", "edit_file", "write_file", "shell", "search_web", "fetch_url", "skill"],
 
   // Commands typed as /NAME, which run instead of submitting the prompt.
-  "commands": ["help", "verbose", "new", "resume", "server", "copy", "fork", "sandbox", "shell", "compact"],
+  "commands": ["help", "verbose", "new", "resume", "fork", "compact", "copy", "shell", "sandbox", "server"],
 
   // Hooks run in this order within the lifecycle their manifest names. Add
   // "sandbox/approver" to have a model review sandbox bypass requests.

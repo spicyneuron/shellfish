@@ -213,9 +213,9 @@ Set `"config": {"skills": ["skill-creator", "code-review"]}` in a profile to all
 | `edit_file` | Replace exact text and return a diff |
 | `write_file` | Create a new text file and return a diff |
 | `shell` | Run one zsh command with a timeout |
-| `skill` | Load an advertised Agent Skill |
 | `search_web` | Search through Exa |
 | `fetch_url` | Fetch a page as Markdown through Jina Reader |
+| `skill` | Load an advertised Agent Skill |
 
 The bundled `session_start` hooks record context once, one block per part:
 
@@ -234,12 +234,12 @@ The bundled commands:
 | `/verbose`, `/v` | Toggle full previews |
 | `/new` | Start a session with the active profile |
 | `/resume` | Choose another session for this directory |
-| `/server` | Hand the session to the experimental browser client |
-| `/copy [N]` | Copy a conversation section |
 | `/fork [N]` | Derive a session from a transcript prefix |
-| `/sandbox [OP DIR]` | Inspect or update frozen sandbox grants |
-| `/shell COMMAND` | Run a user-authored command and stage its output as context |
 | `/compact` | Summarize into a child session |
+| `/copy [N]` | Copy a conversation section |
+| `/shell COMMAND` | Run a user-authored command and stage its output as context |
+| `/sandbox [OP DIR]` | Inspect or update frozen sandbox grants |
+| `/server` | Hand the session to the experimental browser client |
 
 Client-owned `/refresh`, `/quit`, and `/queue` commands do not run a turn. The bundled `user_prompt_submit` hooks compact automatically near a known context-window limit, report Git identity changes, and load skills before ordinary prompts.
 
