@@ -179,12 +179,12 @@ print -r -- '#!/bin/sh' | sf_test_hook "$hooks/unbound"
 sf_test_profile hooked '{"hooks": ["unbound"]}'
 sf_profile_resolve_args -p hooked -m fixture
 profile=$(jq -c '.profile' <<<"$REPLY")
-if sf_profile_components hooks "$profile"; then
+if sf_profile_components "$profile"; then
   fail 'a hook without a lifecycle was accepted'
 fi
 [[ $SF_PROFILE_ERROR == *'hook manifest must be valid and declare "on"'* ]]
 rm "$hooks/unbound/manifest.json"
-if sf_profile_components hooks "$profile"; then
+if sf_profile_components "$profile"; then
   fail 'a hook without a manifest was accepted'
 fi
 [[ $SF_PROFILE_ERROR == *'hook manifest must be valid and declare "on"'* ]]
@@ -209,9 +209,9 @@ for name in @profiles/default.jsonc @template/profiles/readonly.jsonc; do
 done
 
 # Tool manifests are read live from the resolved folders.
-sf_profile_components tools "$profile"
+sf_profile_components "$profile"
 jq -e '
-  length > 0 and all(.[]; .name as $name |
+  .tools | length > 0 and all(.[]; .name as $name |
     (.command | endswith("/" + $name + "/run")) and .manifest.description != null)
 ' <<<"$REPLY" >/dev/null
 
@@ -499,24 +499,75 @@ jq -e --arg base "${tools:A}" '
   .tools == [($base + "/beta"), ($base + "/alpha"), ($base + "/gamma"), ($base + "/delta"),
     ($base + "/epsilon")]
 ' <<<"$REPLY" >/dev/null
-sf_profile_components tools "$REPLY"
+sf_profile_components "$REPLY"
 jq -e --arg base "${tools:A}" '
-  map(.name) == ["beta", "alpha", "gamma", "delta", "epsilon"] and
+  .tools | map(.name) == ["beta", "alpha", "gamma", "delta", "epsilon"] and
   .[0] == {name:"beta",command:($base + "/beta/run"),
     manifest:{description:"beta tool",input_schema:{type:"object"},sandbox:false}}
 ' <<<"$REPLY" >/dev/null
 cp "$tools/beta/manifest.jsonc" "$tools/beta/manifest.json"
 sf_profile_resolve_args -p tooled -m fixture
 profile=$(jq -c '.profile' <<<"$REPLY")
-if sf_profile_components tools "$profile"; then
+if sf_profile_components "$profile"; then
   fail 'component with ambiguous manifests was accepted'
 fi
 [[ $SF_PROFILE_ERROR == "multiple component manifests: ${tools:A}/beta" ]]
 rm "$tools/beta/manifest.json"
 
 mv "$tools/gamma/manifest.json" "$tmp/gamma.json"
-sf_profile_components tools "$profile" && fail 'tool without a manifest was accepted'
+sf_profile_components "$profile" && fail 'tool without a manifest was accepted'
 mv "$tmp/gamma.json" "$tools/gamma/manifest.json"
+
+# A catalog batches all kinds without changing order, values, or path spelling.
+typeset catalog="$tmp/catalog \"quoted\" \\root" kind name manifest saved
+for name in tools/alpha tools/beta commands/go commands/back hooks/start hooks/stop; do
+  mkdir -p "$catalog/$name"
+  print -r -- '#!/bin/sh' >"$catalog/$name/run"
+  chmod +x "$catalog/$name/run"
+done
+for name in alpha beta; do
+  print -r -- '{/* tool */ "description":"literal \"text\"\nnext",
+    "input_schema":{"type":"object"},"sandbox":false,"allow_sandbox_bypass":false,}' \
+    >"$catalog/tools/$name/manifest.jsonc"
+done
+print -r -- '{"description":"Go","aliases":["g"]}' >"$catalog/commands/go/manifest.json"
+print -r -- '{"description":"Back"}' >"$catalog/commands/back/manifest.json"
+print -r -- '{"on":"session_start"}' >"$catalog/hooks/start/manifest.json"
+print -r -- '{"on":"stop"}' >"$catalog/hooks/stop/manifest.json"
+profile=$(jq -cn --arg root "$catalog" '
+  {tools:["beta","alpha"],commands:["back","go"],hooks:["stop","start"]} |
+  with_entries(.key as $kind | .value |= map($root + "/" + $kind + "/" + .))
+')
+sf_profile_components "$profile"
+jq -e --arg root "$catalog" '
+  keys == ["commands","hooks","tools"] and
+  (.tools | map(.name)) == ["beta","alpha"] and
+  (.commands | map(.name)) == ["back","go"] and
+  (.hooks | map(.name)) == ["stop","start"] and
+  .tools[0].command == $root + "/tools/beta/run" and
+  .tools[0].manifest == {description:"literal \"text\"\nnext",
+    input_schema:{type:"object"},sandbox:false,allow_sandbox_bypass:false}
+' <<<"$REPLY" >/dev/null || fail 'mixed catalog changed a manifest or its order'
+for kind name in tools alpha commands go hooks start; do
+  manifest="$catalog/$kind/$name/manifest.json"
+  [[ $kind != tools ]] || manifest+=c
+  saved=$(<"$manifest")
+  print -r -- '{}' >"$manifest"
+  sf_profile_components "$profile" && fail "invalid $kind manifest was accepted"
+  [[ $SF_PROFILE_ERROR == *"$catalog/$kind/$name"* ]] ||
+    fail "invalid $kind manifest lost its path"
+  print -r -- '{"broken":}' >"$manifest"
+  sf_profile_components "$profile" && fail "malformed $kind manifest was accepted"
+  [[ $SF_PROFILE_ERROR == *"$manifest"*'parse error:'* ]] ||
+    fail "malformed $kind manifest lost its file or diagnostic"
+  print -r -- "$saved" >"$manifest"
+done
+chmod -x "$catalog/commands/go/run"
+sf_profile_components "$profile" && fail 'catalog accepted a nonexecutable command'
+[[ $SF_PROFILE_ERROR == "invalid commands reference: $catalog/commands/go" ]]
+sf_profile_components '{"tools":[],"commands":[],"hooks":[]}'
+jq -e '. == {tools:[],commands:[],hooks:[]}' <<<"$REPLY" >/dev/null ||
+  fail 'empty component lists left catalog entries'
 
 # Environment values load from the config directory's .env: selected names, or
 # every entry.

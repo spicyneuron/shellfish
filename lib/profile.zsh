@@ -156,41 +156,42 @@ sf_profile_model_refs() {
   sf_profile_model "$config_dir" "$items" "$entry"
 }
 
-# The tools, commands, or hooks of an expanded profile, read live from their manifests.
+# The tools, commands, and hooks of an expanded profile, read in one manifest batch.
 sf_profile_components() {
-  local kind=$1 profile=$2 directory projection
-  local -a directories files=()
-  projection=$(jq -r --arg kind "$kind" '.[$kind][]' <<<"$profile") ||
-    sf_profile_fail "cannot read profile $kind" || return
-  directories=( ${(f)projection} )
-  for directory in "${directories[@]}"; do
+  local profile=$1 kind directory projection
+  local -a entries files=()
+  projection=$(jq -r '
+    ("tools", "commands", "hooks") as $kind | .[$kind][] | $kind, .
+  ' <<<"$profile") || sf_profile_fail 'cannot read profile components' || return
+  entries=( ${(f)projection} )
+  for kind directory in "${entries[@]}"; do
     [[ -d $directory && -x $directory/run ]] ||
       sf_profile_fail "invalid $kind reference: $directory" || return
     sf_profile_manifest "$directory" || return
     [[ -z $REPLY ]] || files+=( "$REPLY" )
   done
   REPLY='{}'
-  (( ! ${#files} )) || sf_profile_read_files 'invalid component manifest' "${files[@]}" || return
-  projection=$(sf_jq -cn --argjson manifests "$REPLY" --arg kind "$kind" '
+  (( ! ${#files} )) || sf_profile_read_files 'invalid component manifest' "${(u)files[@]}" || return
+  projection=$(sf_jq -cn --argjson manifests "$REPLY" --argjson profile "$profile" '
     include "lib/profile";
     ($manifests | with_entries(.key |= sub("/[^/]*$"; ""))) as $manifests |
-    [$ARGS.positional[] as $directory |
-      (($manifests[$directory] // {}) |
-        if $kind == "tools" then select(tool_manifest) //
-          error("invalid tool manifest: " + $directory)
-        elif $kind == "commands" then select(command_manifest) //
-          error("invalid command manifest: " + $directory)
-        else select(hook_manifest and has("on")) //
-          error("hook manifest must be valid and declare \"on\": " + $directory) end
-      ) as $manifest |
-      {name:($directory | split("/") | last), command:($directory + "/run"),
-       manifest:$manifest}] |
-    if $kind == "commands" then
-      ([.[] | .name, .manifest.aliases[]?] | group_by(.) | map(select(length > 1))[0][0]) as $name |
-      if $name == null then . else error("duplicate command name: /" + $name) end
-    else . end
-  ' --args "${directories[@]}" 2>&1) || {
-    sf_profile_validation_error "$projection" "cannot read $kind"
+    reduce ("tools", "commands", "hooks") as $kind ({};
+      .[$kind] = [$profile[$kind][] as $directory |
+        (($manifests[$directory] // {}) |
+          if $kind == "tools" then select(tool_manifest) //
+            error("invalid tool manifest: " + $directory)
+          elif $kind == "commands" then select(command_manifest) //
+            error("invalid command manifest: " + $directory)
+          else select(hook_manifest and has("on")) //
+            error("hook manifest must be valid and declare \"on\": " + $directory) end
+        ) as $manifest |
+        {name:($directory | split("/") | last), command:($directory + "/run"),
+         manifest:$manifest}]) |
+    ([.commands[] | .name, .manifest.aliases[]?] |
+      group_by(.) | map(select(length > 1))[0][0]) as $name |
+    if $name == null then . else error("duplicate command name: /" + $name) end
+  ' 2>&1) || {
+    sf_profile_validation_error "$projection" 'cannot read components'
     return
   }
   REPLY=$projection

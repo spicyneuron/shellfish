@@ -94,16 +94,18 @@ sf_run_settle() {
 # Component manifests are read once per run, so edits apply to the next.
 # Commands run at user_prompt_submit. Every component reads the profile config.
 sf_run_components() {
-  local profile=$1 kind
-  SF_RUN[config]=$(jq -c '.config // {}' <<<"$profile") || { REPLY='cannot read profile config'; return 1; }
-  for kind in tools commands hooks; do
-    sf_profile_components $kind "$profile" || { REPLY=$SF_PROFILE_ERROR; return 1; }
-    SF_RUN[$kind]=$REPLY
-  done
-  SF_RUN[lifecycles]=$(jq -r --argjson commands "$SF_RUN[commands]" '
-    [.[].manifest.on] + if $commands == [] then [] else ["user_prompt_submit"] end |
-    unique | join(" ")
-  ' <<<"$SF_RUN[hooks]") || { REPLY='cannot group hooks'; return 1; }
+  local profile=$1
+  sf_profile_components "$profile" || { REPLY=$SF_PROFILE_ERROR; return 1; }
+  sf_jq_fields -cn --argjson components "$REPLY" --argjson profile "$profile" '
+    include "lib/fields";
+    ($components | to_entries[] | entry(.key; .value | tojson)),
+    entry("config"; $profile.config // {} | tojson),
+    entry("lifecycles"; $components |
+      [.hooks[].manifest.on] + if .commands == [] then [] else ["user_prompt_submit"] end |
+      unique | join(" ")),
+    ("ok" | field)
+  ' || { REPLY='cannot prepare components'; return 1; }
+  SF_RUN+=( "${reply[@]}" )
 }
 
 sf_run_open() {
