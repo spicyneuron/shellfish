@@ -56,8 +56,8 @@ Credentials and core runtime settings live in exported variables or `.env` in th
 | --- | --- | --- |
 | `SHELLFISH_MAX_REQUESTS_PER_TURN` | `100` | Provider requests per turn |
 | `SHELLFISH_MAX_TOOL_CALLS_PER_REQUEST` | `25` | Tool calls per response |
-| `SHELLFISH_MAX_CAPTURE_BYTES` | `32768` | Bytes kept from each component stream, at least `64`, overridable by a manifest |
-| `SHELLFISH_MAX_CONTENT_BYTES` | `5242880` | Bytes of tool control lines and of one call's model content, such as images |
+| `SHELLFISH_MAX_CAPTURE_KB` | `32` | Kilobytes kept from each component stream, overridable by a manifest |
+| `SHELLFISH_MAX_CONTENT_KB` | `5120` | Kilobytes of tool control lines and of one call's model content, such as images |
 
 Keep credentials in `.env` or the environment, not in profile `config`. See [Component trust](COMPONENTS.md#environment-and-trust) for which programs receive these values.
 

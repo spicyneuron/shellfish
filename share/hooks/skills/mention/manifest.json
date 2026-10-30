@@ -1,1 +1,1 @@
-{"on":"user_prompt_submit","match":{"pattern":"(^|[^[:alnum:]_$])\\$[a-z0-9]"},"user_text":"${output.stderr}","max_capture_bytes":65536}
+{"on":"user_prompt_submit","match":{"pattern":"(^|[^[:alnum:]_$])\\$[a-z0-9]"},"user_text":"${output.stderr}","max_capture_kb":64}

@@ -22,20 +22,18 @@ sf_run_limits() {
   local -A limits=(
     SHELLFISH_MAX_REQUESTS_PER_TURN 100
     SHELLFISH_MAX_TOOL_CALLS_PER_REQUEST 25
-    SHELLFISH_MAX_CAPTURE_BYTES 32768
-    SHELLFISH_MAX_CONTENT_BYTES 5242880
+    SHELLFISH_MAX_CAPTURE_KB 32
+    SHELLFISH_MAX_CONTENT_KB 5120
   )
   sf_environment_settings "${(k)limits}" || { REPLY=$SF_ENVIRONMENT_ERROR; return 1; }
   for name in ${(k)limits}; do
     limits[$name]=${SF_ENVIRONMENT_SETTINGS[$name]:-$limits[$name]}
     [[ $limits[$name] == <1-2147483647> ]] || { REPLY="$name must be a positive integer"; return 1; }
   done
-  (( limits[SHELLFISH_MAX_CAPTURE_BYTES] >= 64 )) ||
-    { REPLY='SHELLFISH_MAX_CAPTURE_BYTES must be at least 64'; return 1; }
   SF_RUN[max_requests]=$(( limits[SHELLFISH_MAX_REQUESTS_PER_TURN] ))
   SF_RUN[max_tool_calls]=$(( limits[SHELLFISH_MAX_TOOL_CALLS_PER_REQUEST] ))
-  SF_RUN[max_capture]=$(( limits[SHELLFISH_MAX_CAPTURE_BYTES] ))
-  SF_RUN[max_content]=$(( limits[SHELLFISH_MAX_CONTENT_BYTES] ))
+  SF_RUN[max_capture]=$(( limits[SHELLFISH_MAX_CAPTURE_KB] * 1024 ))
+  SF_RUN[max_content]=$(( limits[SHELLFISH_MAX_CONTENT_KB] * 1024 ))
 }
 
 sf_run_emit() {

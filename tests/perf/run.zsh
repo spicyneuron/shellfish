@@ -64,7 +64,7 @@ cat >"$tmp/shellfish/profiles/default.jsonc" <<'EOF'
 }
 EOF
 print -rl -- SHELLFISH_MAX_REQUESTS_PER_TURN=8 \
-  SHELLFISH_MAX_TOOL_CALLS_PER_REQUEST=16 SHELLFISH_MAX_CAPTURE_BYTES=65536 \
+  SHELLFISH_MAX_TOOL_CALLS_PER_REQUEST=16 SHELLFISH_MAX_CAPTURE_KB=64 \
   >"$tmp/shellfish/.env"
 
 typeset metrics="$tmp/metrics.tsv" counts="$tmp/counts.tsv"
@@ -81,7 +81,7 @@ typeset -gx SHELLFISH_PERF_JQ=$commands[jq]
 typeset -gx SHELLFISH_PERF_JQ_LOG=$jq_log
 # Use the fixture's limits rather than exported overrides.
 unset SHELLFISH_MAX_REQUESTS_PER_TURN SHELLFISH_MAX_TOOL_CALLS_PER_REQUEST \
-  SHELLFISH_MAX_CAPTURE_BYTES SHELLFISH_MAX_CONTENT_BYTES
+  SHELLFISH_MAX_CAPTURE_KB SHELLFISH_MAX_CONTENT_KB
 
 prepare_case() {
   case $1 in

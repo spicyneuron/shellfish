@@ -54,7 +54,8 @@ sf_run_hook_manifest() {
        draft:({type:"_draft",lifecycle:$lifecycle,id:$id,
          user_text:render_template($manifest.user_text; {input:$input})} +
          ($manifest | with_entries(select(.key == "user_preview_lines")))),
-       max_capture:($manifest.max_capture_bytes // $max_capture)} as $component |
+       max_capture:(if $manifest.max_capture_kb then $manifest.max_capture_kb * 1024
+         else $max_capture end)} as $component |
       entry("component"; $component | tojson),
       entry("draft"; $component.draft | if .user_text == "" then "" else tojson end),
       entry("max_capture"; $component.max_capture | tostring)
@@ -182,7 +183,7 @@ sf_run_hooks() {
       if [[ -n $prepared[draft] ]] && ! sf_run_emit "$prepared[draft]"; then
         error='cannot emit hook draft'
       elif ! sf_run_component_execute "$directory" "${SF_RUN[cwd]:A}" "$input" "$max_capture" \
-          "$max_capture" sf_run_hook_line /usr/bin/env "${environment[@]}" "SHELLFISH_MAX_CAPTURE_BYTES=$max_capture" \
+          "$max_capture" sf_run_hook_line /usr/bin/env "${environment[@]}" "SHELLFISH_MAX_CAPTURE_KB=$(( max_capture / 1024 ))" \
           "$command/run" "$@"; then
         error=$REPLY
       else

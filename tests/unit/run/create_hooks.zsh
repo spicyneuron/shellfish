@@ -10,7 +10,7 @@ cp "$ROOT/share/hooks/project/instructions/"{manifest.json,run} "$hook/"
 print -r -- 'Follow this project rule.' >"$project/AGENTS.md"
 sf_test_model default "{\"provider\":\"$ROOT/tests/fixtures/provider\",\"request\":{\"model\":\"test\"}}"
 sf_test_profile default '{"hooks":["project/instructions"]}'
-export SHELLFISH_MAX_CAPTURE_BYTES=1024
+export SHELLFISH_MAX_CAPTURE_KB=1
 (cd "$project" && zsh -f "$entry" run --jsonl --session-create --session-out "$session") \
   >"$stream" || fail 'manifested session_start hook failed'
 jq -eRn --arg session "$session" --arg hook "${hook:A}" '
@@ -41,7 +41,7 @@ reject() {
 }
 # Run one presentation contract through both public compositions.
 sf_test_frozen_profile
-export SHELLFISH_MAX_CAPTURE_BYTES=1024
+export SHELLFISH_MAX_CAPTURE_KB=1
 typeset kind scenario manifest result_type
 cat >"$hook/run" <<'ZSH'
 #!/usr/bin/env zsh
@@ -56,9 +56,9 @@ case $COMPONENT_CASE in
     ;;
   capture|capture_override)
     if [[ $COMPONENT_CASE == capture_override ]]; then
-      [[ $SHELLFISH_MAX_CAPTURE_BYTES == 2048 ]] || exit 3
+      [[ $SHELLFISH_MAX_CAPTURE_KB == 2 ]] || exit 3
     else
-      [[ $SHELLFISH_MAX_CAPTURE_BYTES == 1024 ]] || exit 3
+      [[ $SHELLFISH_MAX_CAPTURE_KB == 1 ]] || exit 3
     fi
     print -rn -- 'head'${(l:1200::o:)}'stdout-tail'
     print -rn -u2 -- 'head'${(l:1200::e:)}'stderr-tail'
@@ -71,7 +71,7 @@ for scenario in protocol capture capture_override encoded silent; do
   case $scenario in
     protocol) manifest='{"user_text":"Running\n${output.stdout}|${output.stderr}","user_preview_lines":"full"}' ;;
     capture) manifest='{"user_text":"${output.stdout}|${output.stderr}"}' ;;
-    capture_override) manifest='{"user_text":"${output.stdout}|${output.stderr}","max_capture_bytes":2048}' ;;
+    capture_override) manifest='{"user_text":"${output.stdout}|${output.stderr}","max_capture_kb":2}' ;;
     encoded) manifest='{"user_text":"Quoted \"value\" \\ \u001e\t${output.stderr}\n","user_preview_lines":0}' ;;
     silent) manifest='{}' ;;
   esac
@@ -154,7 +154,7 @@ for invalid in field template capture lifecycle unbound; do
   case $invalid in
     field) print -r -- '{"on":"session_start","description":"not a hook field"}' >"$hook/manifest.json" ;;
     template) print -r -- '{"on":"session_start","user_text":"${input.undeclared}"}' >"$hook/manifest.json" ;;
-    capture) print -r -- '{"on":"session_start","max_capture_bytes":63}' >"$hook/manifest.json" ;;
+    capture) print -r -- '{"on":"session_start","max_capture_kb":0}' >"$hook/manifest.json" ;;
     lifecycle) print -r -- '{"on":"session_end"}' >"$hook/manifest.json" ;;
     unbound) print -r -- '{}' >"$hook/manifest.json" ;;
   esac

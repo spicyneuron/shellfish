@@ -222,7 +222,7 @@ jq -e '.model.request.model == "MODEL"' <<<"$REPLY" >/dev/null ||
 rm "$SF_TEST_CONFIG/models/default.jsonc"
 
 # Provider and presentation settings stay outside the profile's own fields.
-for field in model provider request env extend max_capture_bytes theme_light; do
+for field in model provider request env extend max_capture_kb theme_light; do
   sf_test_profile bad "{\"$field\": {}}"
   if sf_profile_resolve_args -p bad -m fixture; then
     fail "profile accepted $field"

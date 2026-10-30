@@ -64,7 +64,7 @@ if image_format "$file_path"; then
     else error end
   ' <<<"${SHELLFISH_CONFIG:-{\}}" 2>/dev/null) || settings=''
   read -r format quality max_edge <<<"$settings"
-  integer width=0 height=0 bytes limit=${SHELLFISH_MAX_CONTENT_BYTES:-5242880}
+  integer width=0 height=0 bytes limit=$(( ${SHELLFISH_MAX_CONTENT_KB:-5120} * 1024 ))
   typeset -a flags=()
   [[ $format == (webp|jpeg|png) && $quality == <1-100> && $max_edge == <1-8000> ]] || {
     printf 'read_file: config.read_file allows image_format (webp, jpeg, png), image_quality (1-100), and image_max_edge (1-8000)\n'
@@ -114,7 +114,7 @@ if image_format "$file_path"; then
   exit
 fi
 
-budget=$((${SHELLFISH_MAX_CAPTURE_BYTES:-32768} - 512 - ${#file_path}))
+budget=$((${SHELLFISH_MAX_CAPTURE_KB:-32} * 1024 - 512 - ${#file_path}))
 ((budget > 0)) || { printf 'read_file: read budget is too small\n'; exit 2; }
 probe_bytes=$(head -c 8000 -- "$file_path" | wc -c)
 text_bytes=$(head -c 8000 -- "$file_path" | tr -d '\0' | wc -c)

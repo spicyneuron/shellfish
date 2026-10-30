@@ -24,7 +24,6 @@ def endpoint: type == "string" and test("^https?://[^[:space:][:cntrl:]]+$");
 
 def positive_integer:
   type == "number" and floor == . and . >= 1 and . <= 2147483647;
-def capture_bytes: positive_integer and . >= 64;
 def component_preview_hint:
   . == "full" or (type == "number" and floor == . and . >= 0 and . <= 2147483647);
 
@@ -50,10 +49,10 @@ def render_template($template; $values):
 # Shared presentation with caller-supplied keys and template fields.
 def component_manifest($attrs; $fields):
   type == "object" and
-  ((keys - ["user_text", "user_preview_lines", "max_capture_bytes"] - $attrs) | length == 0) and
+  ((keys - ["user_text", "user_preview_lines", "max_capture_kb"] - $attrs) | length == 0) and
   (.user_text == null or (.user_text | component_template($fields))) and
   ((has("user_preview_lines") | not) or (.user_preview_lines | component_preview_hint)) and
-  ((has("max_capture_bytes") | not) or (.max_capture_bytes | capture_bytes));
+  ((has("max_capture_kb") | not) or (.max_capture_kb | positive_integer));
 
 # "on" names the lifecycle a profile binds the hook to.
 def hook_manifest:

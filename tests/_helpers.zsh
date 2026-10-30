@@ -115,7 +115,7 @@ sf_test_frozen_profile() {
     {provider:$provider,endpoint:"https://example.invalid/test",request:{model:"test-model"}}
   ')
   export SHELLFISH_MAX_REQUESTS_PER_TURN=8 SHELLFISH_MAX_TOOL_CALLS_PER_REQUEST=16
-  export SHELLFISH_MAX_CAPTURE_BYTES=65536
+  export SHELLFISH_MAX_CAPTURE_KB=64
 }
 
 # Point the frozen profile at a copy of the bundled shell tool whose manifest

@@ -58,7 +58,7 @@ def tool_plan($profile; $tools; $call; $turn; $max_capture):
    permission_reason:($permission.reason // ""),
    executable:($tool.command // ""),
    environment:(($tool.manifest.environment // []) | join(" ")),
-   max_capture:($manifest.max_capture_bytes // $max_capture),
+   max_capture:(if $manifest.max_capture_kb then $manifest.max_capture_kb * 1024 else $max_capture end),
    execution_input:($input | del(.request_sandbox_bypass,.sandbox_bypass_reason)),
    sandbox:$sandboxed,
    read_paths:($profile.sandbox.read | join("\n")),

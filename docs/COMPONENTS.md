@@ -43,7 +43,7 @@ Tools, commands, and hooks use these channels. Providers use their own [response
 | stderr | User | Text shown through the `user_text` template |
 | fd 3 | Shellfish | Newline-delimited JSON control lines |
 
-Nothing on stdout means no model text. Tools should report errors there so the model sees them. A manifest's `max_capture_bytes` overrides the shared capture limit, with a minimum of `64` bytes. Oversized stdout and stderr retain their tails behind an `[output truncated]` marker.
+Nothing on stdout means no model text. Tools should report errors there so the model sees them. A manifest's `max_capture_kb` overrides the shared capture limit in kilobytes. Oversized stdout and stderr retain their tails behind an `[output truncated]` marker.
 
 Tools and hooks can request durable named state with control lines such as `{"state_update":[{"name":"example/status","value":{"ready":true}}]}`. The latest exact name wins, and `null` clears it. Accepted state updates survive later component failure. Hooks also use fd 3 for lifecycle actions. Close fd 3 before starting an untrusted child so it cannot send control lines.
 
@@ -79,7 +79,7 @@ A tool manifest describes its model-facing interface and execution policy:
 
 Shellfish calls `run` without arguments, passing one input object on stdin with bypass fields removed. The tool validates input before using it. A nonzero exit is a normal tool result, not a failed turn. Tools cannot take lifecycle actions.
 
-Tools can return images through `content` control lines, such as `{"content":[{"type":"image","url":"data:image/png;base64,..."}]}`. Parts can be text or base64 PNG, JPEG, GIF, or WebP images. Content follows stdout and is subject to `SHELLFISH_MAX_CONTENT_BYTES` rather than the capture limit.
+Tools can return images through `content` control lines, such as `{"content":[{"type":"image","url":"data:image/png;base64,..."}]}`. Parts can be text or base64 PNG, JPEG, GIF, or WebP images. Content follows stdout and is subject to `SHELLFISH_MAX_CONTENT_KB` rather than the capture limit.
 
 ## Hooks
 

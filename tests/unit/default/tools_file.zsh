@@ -48,9 +48,10 @@ if (( $+commands[sips] || $+commands[magick] || ($+commands[identify] && $+comma
   print -r -- 'GIF89a is not an image' >"$tmp/fake.gif"
   assert_equal 'read_file: cannot decode image fake.gif' \
     "$(run_tool read_file '{"file_path":"fake.gif"}' || true)"
-  assert_equal 'read_file: small.png is too large to view (84 bytes)' \
-    "$(SHELLFISH_MAX_CONTENT_BYTES=200 SHELLFISH_CONFIG=$png \
-      run_tool read_file '{"file_path":"small.png"}' || true)"
+  { cat "$tmp/small.png"; head -c 1024 /dev/zero; } >"$tmp/padded.png"
+  assert_equal 'read_file: padded.png is too large to view (1108 bytes)' \
+    "$(SHELLFISH_MAX_CONTENT_KB=1 SHELLFISH_CONFIG=$png \
+      run_tool read_file '{"file_path":"padded.png"}' || true)"
   for config in '{"read_file":{"image_format":"avif"}}' '{"read_file":{"image_quality":0}}' \
       '{"read_file":{"quality":40}}' '{"read_file":5}' '{"read_file":{"image_max_edge":0}}' \
       '{"read_file":{"image_max_edge":8001}}'; do

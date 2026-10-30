@@ -599,7 +599,7 @@ assert_canonical_session "$session"
 for mode in huge twice; do
   session="$tmp/protocol-$mode.jsonl"
   sf_test_session "$session"
-  SHELLFISH_MAX_CONTENT_BYTES=65536 SF_TEST_PROVIDER_TOOL_CALL=1 \
+  SHELLFISH_MAX_CONTENT_KB=64 SF_TEST_PROVIDER_TOOL_CALL=1 \
     SF_TEST_PROVIDER_TOOL_COMMAND=$mode \
     sf_test_run protocol "$session" >"$stream" || fail "oversized $mode content failed the turn"
   jq -eRn '[inputs | fromjson | select(.type == "tool_result")][0] |
@@ -612,7 +612,7 @@ typeset flood_marker="$tmp/tool-flood"
 session="$tmp/protocol-flood.jsonl"
 sf_test_session "$session"
 jq -cn '{type:"user",content:[{type:"text",text:"protocol"}]}' |
-  SHELLFISH_MAX_CONTENT_BYTES=65536 SF_TEST_PROVIDER_TOOL_CALL=1 \
+  SHELLFISH_MAX_CONTENT_KB=64 SF_TEST_PROVIDER_TOOL_CALL=1 \
   SF_TEST_PROVIDER_TOOL_COMMAND=flood TOOL_MARKER=$flood_marker \
   "$ROOT/bin/shellfish" run --jsonl --session "$session" >"$stream" &
 integer flood_pid=$! flood_waited=0 flood_status=0
