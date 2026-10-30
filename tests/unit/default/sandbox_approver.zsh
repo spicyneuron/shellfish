@@ -103,21 +103,21 @@ jq -e -s --arg tool_input "$(jq -c '.tool_input' <<<"$request")" \
     {type:"user",content:[{type:"text",text:"opening request"}]}
   ] and
   $context.target_tool_call == {type:"tool_call",id:"call_7",name:"shell",input:($tool_input | fromjson)} and
+  $context.latest_user_message == {type:"user",content:[{type:"text",text:"run the local setup"}]} and
   ($context.recent_timeline | map(.type)) ==
-    ["assistant","hook_result","assistant","user","assistant","tool_result","hook_result","assistant","hook_result"] and
-  $context.recent_timeline[1] == {type:"hook_result",lifecycle:"stop",id:"2",
-    model_text:"retry constraint",action:"deny",reason:"Check the constraint."} and
-  $context.recent_timeline[4].content[1] ==
+    ["assistant","tool_result","hook_result","assistant","hook_result"] and
+  $context.recent_timeline[0].content[1] ==
     {type:"tool_call",id:"call_6",name:"shell",input:{command:"inspect"}} and
-  $context.recent_timeline[5] == {type:"tool_result",id:"call_6",name:"shell",
+  $context.recent_timeline[1] == {type:"tool_result",id:"call_6",name:"shell",
     input:{command:"inspect"},exit_code:0,model_content:[
       {type:"text",text:"inspection"},{type:"text",text:"[image omitted]"}]} and
-  $context.recent_timeline[6] == {type:"hook_result",lifecycle:"post_tool_use",id:"3",
+  $context.recent_timeline[2] == {type:"hook_result",lifecycle:"post_tool_use",id:"3",
     model_text:"inspection constraint"} and
-  $context.recent_timeline[7].content == [
+  $context.recent_timeline[3].content == [
     {type:"text",text:"I will run it."},$context.target_tool_call] and
-  $context.recent_timeline[8] == {type:"hook_result",lifecycle:"permission_request",id:"5",
+  $context.recent_timeline[4] == {type:"hook_result",lifecycle:"permission_request",id:"5",
     model_text:"permission context"} and
+  ($context | tostring | contains("retry constraint") | not) and
   all($context.recent_timeline[]; has("usage") | not) and
   ($context | tostring | contains("base64") | not) and
   ($context | tostring | contains("private") | not) and
@@ -136,7 +136,8 @@ assert_equal "$before" "$(shasum <"$session")" 'review changed the parent sessio
 
 typeset parent_session=$session
 
-# Post-tool notes stay separate across settled and interrupted tool batches.
+# Post-tool notes stay in order within a settled batch, and a user message after
+# an interruption starts a new timeline.
 typeset batch
 for batch in settled interrupted; do
   session="$tmp/$batch.jsonl"
@@ -157,38 +158,51 @@ for batch in settled interrupted; do
   assert_canonical_session "$session"
   run_review valid
   jq -es --arg batch "$batch" '
-    (.[1].content[0].text | fromjson | .recent_timeline) as $timeline |
-    $timeline[4].content[-1] ==
-      {type:"tool_call",id:"call_6b",name:"shell",input:{command:"inspect more"}} and
-    $timeline[5].id == "call_6" and
-    $timeline[6] == {type:"hook_result",lifecycle:"post_tool_use",id:"3",
-      model_text:"inspection constraint"} and
+    (.[1].content[0].text | fromjson) as $context | $context.recent_timeline as $timeline |
     if $batch == "settled" then
-      $timeline[7] == {type:"tool_result",id:"call_6b",name:"shell",
+      $timeline[0].content[-1] ==
+        {type:"tool_call",id:"call_6b",name:"shell",input:{command:"inspect more"}} and
+      $timeline[1].id == "call_6" and
+      $timeline[2] == {type:"hook_result",lifecycle:"post_tool_use",id:"3",
+        model_text:"inspection constraint"} and
+      $timeline[3] == {type:"tool_result",id:"call_6b",name:"shell",
         input:{command:"inspect more"},exit_code:0,model_text:"second inspection"} and
-      ([$timeline[] | select(.type == "user")] | length) == 1
+      all($timeline[]; .type != "user")
     else
-      $timeline[7] == {type:"error",user_text:"Inspection interrupted."} and
-      $timeline[8] == {type:"user",content:[{type:"text",text:"continue setup"}]} and
-      ([$timeline[] | select(.type == "tool_result") | .id] == ["call_6"])
+      $context.latest_user_message == {type:"user",content:[{type:"text",text:"continue setup"}]} and
+      ($timeline | map(.type)) == ["assistant","hook_result"]
     end
   ' "$captured" >/dev/null || fail "permission review changed $batch batch records"
 done
 
-# Optional history is a chronological suffix, never skipping a record to fit.
+# Older tool results are clipped harder, and history is a chronological suffix
+# that never skips a record to fit.
 session="$tmp/budget.jsonl"
 jq -c '
-  if .type == "assistant" and .content[0].text? == "revised answer" then
-    .content[0].text = ("é" * 64000)
-  else . end
+  ., if .type == "user" and .content[0].text == "run the local setup" then
+    range(1; 41) as $i | "s\($i)" as $id |
+    {type:"assistant",stop:"tool_calls",content:[
+      {type:"tool_call",id:$id,name:"shell",input:{command:"step"}}]},
+    {type:"tool_result",id:$id,name:"shell",input:{command:"step"},exit_code:0,
+      model_text:("x" * 3000)}
+  else empty end
 ' "$parent_session" >"$session"
+assert_canonical_session "$session"
 run_review valid
-jq -es --slurpfile context "$tmp/context.json" '
+jq -es '
   .[0].profile.system[0].text as $prompt |
   (.[1].content[0].text | fromjson) as $actual |
-  $actual == ($context[0] | .recent_timeline = .recent_timeline[3:]) and
-  (($prompt | utf8bytelength) + ($actual | tojson | utf8bytelength)) <= 131072
-' "$captured" >/dev/null || fail 'permission review did not budget whole records chronologically'
+  [$actual.recent_timeline[] | select(.type == "tool_result")] as $results |
+  ([range(1; 41) | "s\(.)"] + ["call_6"]) as $all |
+  ($results | reverse | .[1:] | map(.model_text)) as $texts |
+  ($results | map(.id)) == $all[($all | length) - ($results | length):] and
+  ($results | length) < 41 and
+  $texts[0] == "x" * 3000 and
+  $texts[1] == ("x" * 2048) + "\n[952 characters truncated]" and
+  $texts[2] == ("x" * 1024) + "\n[1976 characters truncated]" and
+  all($texts[3:][]; . == ("x" * 512) + "\n[2488 characters truncated]") and
+  (($prompt | utf8bytelength) + ($actual | tojson | utf8bytelength)) <= 24576
+' "$captured" >/dev/null || fail 'permission review did not clip and budget history by recency'
 
 # Startup records cannot be dropped to fit the input budget.
 session="$tmp/startup-budget.jsonl"

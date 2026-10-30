@@ -3,8 +3,9 @@
 emulate -R zsh
 setopt extended_glob no_aliases no_multios pipe_fail
 
-# Input bytes: 32768 tokens at about four bytes each.
-integer budget=$(( 32768 * 4 ))
+# Input bytes. Escaped transcript JSON runs near 1.25 bytes per token, so this
+# is about 20k tokens.
+integer budget=$(( 24 * 1024 ))
 # A decision review allows a call at this probability of sufficient
 # authorization, and denies one this likely driven by untrusted instructions.
 # Configuration may override the allow threshold.
@@ -177,9 +178,23 @@ done <<<"$selection"
 [[ -z $model ]] || overrides=( --model "$model"
   --model '{"request":{"response_schema":null}}' --model "$settings" )
 
-# Records through the first user message stay pinned. Later records are admitted
-# backward without gaps, then emitted chronologically.
+# Records through the first user message and the latest user message stay
+# pinned. Records after the latest user message are admitted backward without
+# gaps, then emitted chronologically. Tool results are clipped harder with age.
 records=$(jq -ces --argjson request "$request" '
+  def clip($cap):
+    if length > $cap then .[:$cap] + "\n[\(length - $cap) characters truncated]" else . end;
+  def clip_results:
+    reduce .[] as $record ({age:0,out:[]};
+      if $record.type == "tool_result" then
+        ([512, 8192 / pow(2; .age)] | max | floor) as $cap |
+        .out += [$record |
+          if has("model_text") then .model_text |= clip($cap) else . end |
+          if has("model_content") then
+            .model_content |= map(if .type == "text" then .text |= clip($cap) else . end)
+          else . end] |
+        .age += 1
+      else .out += [$record] end) | .out;
   .[0] as $header |
   [.[1:][] |
     select(.type != "state_update") |
@@ -193,22 +208,23 @@ records=$(jq -ces --argjson request "$request" '
     else . end
   ] as $timeline |
   ($timeline | map(.type) | index("user")) as $first_user |
+  ($timeline | map(.type) | rindex("user")) as $last_user |
   select($first_user != null) |
   {
     system_message:$header.profile.system[0].text,
     startup_context:$timeline[:$first_user + 1],
+    latest_user_message:(if $last_user > $first_user then $timeline[$last_user] else null end),
     target_tool_call:{type:"tool_call",id:$request.tool.id,
       name:$request.tool.name,input:$request.tool.input},
-    candidates:($timeline[$first_user + 1:] | reverse)
+    candidates:($timeline[$last_user + 1:] | reverse | clip_results)
   }
 ' "$SHELLFISH_SESSION" 2>/dev/null) ||
   permission_defer 'Permission review could not filter the active context.'
 
 base=$(jq -cn --argjson records "$records" '
-  {startup_context:$records.startup_context,recent_timeline:[],
-   target_tool_call:$records.target_tool_call} +
-  (if $records.system_message == null then {} else
-    {system_message:$records.system_message} end)
+  $records | {system_message,startup_context,latest_user_message} |
+  with_entries(select(.value != null)) +
+  {recent_timeline:[],target_tool_call:$records.target_tool_call}
 ') || permission_defer 'Permission review could not prepare context.'
 
 integer base_bytes
