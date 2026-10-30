@@ -111,6 +111,24 @@ SHELLFISH_EXECUTABLE="$compact_shellfish" SHELLFISH_SESSION="$cancelled_source" 
 [[ ! -s $compact_display ]] || fail 'compacting a cancelled turn wrote display output'
 assert_canonical_session "$tmp/cancelled-source_compact.jsonl"
 
+# The summary request sees images, as every request does.
+typeset image_source="$tmp/image-source.jsonl" image_request="$tmp/image-request.jsonl"
+head -n 1 "$compact_source" >"$image_source"
+print -r -- \
+  '{"type":"user","content":[{"type":"text","text":"Look"}]}' \
+  '{"type":"assistant","stop":"tool_calls","content":[{"type":"tool_call","id":"call_1","name":"read_file","input":{"file_path":"a.png"}}]}' \
+  '{"type":"tool_result","id":"call_1","name":"read_file","input":{"file_path":"a.png"},"exit_code":0,"model_content":[{"type":"text","text":"[image 1x1 png]"},{"type":"image","url":"data:image/png;base64,iVBORw0KGgo="}]}' \
+  '{"type":"assistant","stop":"end","content":[{"type":"text","text":"Seen"}]}' \
+  >>"$image_source"
+assert_canonical_session "$image_source"
+SHELLFISH_EXECUTABLE="$compact_shellfish" SHELLFISH_SESSION="$image_source" \
+  SHELLFISH_TURN_STATE="$tmp" SF_TEST_PROVIDER_REQUEST="$image_request" \
+  zsh -f "$compact_command" 3>"$compact_control" 2>"$compact_display" </dev/null ||
+  fail 'a session with an image did not compact'
+jq -e -s 'map(select(.type == "tool_result"))[0].model_content[1] ==
+  {type:"image",url:"data:image/png;base64,iVBORw0KGgo="}' "$image_request" >/dev/null ||
+  fail 'compaction withheld an image from the summary request'
+
 # Require a session past its first turn before asking the model for a summary.
 for incomplete in empty user-only assistant-only; do
   typeset incomplete_source="$tmp/$incomplete.jsonl"

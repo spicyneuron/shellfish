@@ -40,7 +40,7 @@ sf_session_append "$session" '{"type":"hook_result","lifecycle":"stop","id":"2",
 sf_session_append "$session" '{"type":"assistant","stop":"end","content":[{"type":"text","text":"revised answer"}]}'
 sf_session_append "$session" '{"type":"user","content":[{"type":"text","text":"run the local setup"}]}'
 sf_session_append "$session" '{"type":"assistant","stop":"tool_calls","content":[{"type":"text","text":"I will inspect it."},{"type":"tool_call","id":"call_6","name":"shell","input":{"command":"inspect"}}]}'
-sf_session_append "$session" '{"type":"tool_result","id":"call_6","name":"shell","input":{"command":"inspect"},"exit_code":0,"model_text":"inspection"}'
+sf_session_append "$session" '{"type":"tool_result","id":"call_6","name":"shell","input":{"command":"inspect"},"exit_code":0,"model_content":[{"type":"text","text":"inspection"},{"type":"image","url":"data:image/png;base64,iVBORw0KGgo="}]}'
 sf_session_append "$session" '{"type":"assistant","stop":"tool_calls","content":[{"type":"reasoning","text":"private","opaque":{"secret":"value"}},{"type":"text","text":"I will run it."},{"type":"tool_call","id":"call_7","name":"shell","input":{"command":"setup","request_sandbox_bypass":true,"sandbox_bypass_reason":"needed"}}]}'
 sf_session_append "$session" '{"type":"hook_result","lifecycle":"permission_request","id":"3","model_text":"permission context"}'
 assert_canonical_session "$session"
@@ -100,6 +100,8 @@ jq -e -s --arg tool_input "$(jq -c '.tool_input' <<<"$request")" \
     ["assistant","user","assistant","user","assistant","tool_call","tool_result","user","assistant"] and
   ($context.recent_timeline[1].content[0].text | contains("retry constraint")) and
   ($context.recent_timeline[-2].content[0].text | contains("permission context")) and
+  $context.recent_timeline[6].content == "inspection\n\n[image omitted]" and
+  ($context | tostring | contains("base64") | not) and
   ($context | tostring | contains("private") | not) and
   ($context | tostring | contains("secret") | not)
 ' "$captured" >/dev/null || fail 'permission review projected the wrong transcript'

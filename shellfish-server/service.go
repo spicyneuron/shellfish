@@ -16,7 +16,10 @@ import (
 )
 
 const maxActionBytes = 1 << 20
-const maxEventBytes = 1 << 20
+
+// A tool result carries its images inline, so an event can far exceed a text
+// record. This leaves room above Shellfish's default 5 MiB content limit.
+const maxEventBytes = 32 << 20
 
 // The client's frame queue. A client that cannot keep up is dropped and recovers
 // by reopening the stream.
@@ -221,7 +224,11 @@ func (s *Service) attach() (chan json.RawMessage, []json.RawMessage, error) {
 	// The _session_status frame closes the replay: everything before it is durable
 	// history, everything after it is happening now. A pending permission request
 	// follows, so a client that reopened mid-turn can still answer it.
-	replay := append(records, sessionStatusFrame(s.turn != nil, ""))
+	replay := make([]json.RawMessage, 0, len(records)+2)
+	for _, record := range records {
+		replay = append(replay, clientFrame(record))
+	}
+	replay = append(replay, sessionStatusFrame(s.turn != nil, ""))
 	if s.pending != nil {
 		replay = append(replay, s.pending)
 	}
@@ -335,7 +342,25 @@ func (s *Service) forward(active *turn, event json.RawMessage) {
 	case !strings.HasPrefix(kind, "_"):
 		s.recordCount++
 	}
-	s.publishLocked(frame)
+	s.publishLocked(clientFrame(frame))
+}
+
+// clientFrame drops a tool result's model content, which clients never render,
+// so its images stay out of the browser.
+func clientFrame(record json.RawMessage) json.RawMessage {
+	if !bytes.Contains(record, []byte(`"model_content"`)) {
+		return record
+	}
+	var fields map[string]json.RawMessage
+	if json.Unmarshal(record, &fields) != nil {
+		return record
+	}
+	delete(fields, "model_content")
+	stripped, err := json.Marshal(fields)
+	if err != nil {
+		return record
+	}
+	return stripped
 }
 
 // postCancel stops the active turn and waits for the child to finish cleanup.

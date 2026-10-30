@@ -327,6 +327,31 @@ printf '%s\n' '`+assistantRecord+`'
 	}
 }
 
+// Clients never render model content, so images stay out of replay and live
+// frames, even ones beyond the default scanner limit.
+func TestImageContentStaysOutOfFrames(t *testing.T) {
+	image := `{"type":"tool_result","id":"c1","name":"read_file","input":{},"exit_code":0,` +
+		`"user_text":"shot","model_content":[{"type":"image","url":"data:image/png;base64,` +
+		strings.Repeat("A", 2<<20) + `"}]}`
+	shown := `{"type":"tool_result","id":"c1","name":"read_file","input":{},"exit_code":0,"user_text":"shot"}`
+	live := filepath.Join(t.TempDir(), "live.jsonl")
+	if err := os.WriteFile(live, []byte(image+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	sessionPath := newSession(t, image+"\n")
+	base := newTestServer(t, sessionPath, `
+IFS= read -r input
+cat '`+live+`' >>'`+sessionPath+`'
+cat '`+live+`'
+`)
+	session := openStream(t, base, http.StatusOK)
+	session.expectRaw(t, strings.TrimSuffix(headerLine(t), "\n"))
+	session.expectJSON(t, shown, `{"type":"_session_status","working":false}`)
+	post(t, base+"/turn", userRecord, http.StatusAccepted)
+	session.expectJSON(t, `{"type":"_session_status","working":true}`, shown,
+		`{"type":"_session_status","working":false}`)
+}
+
 func TestOneClient(t *testing.T) {
 	base := newTestServer(t, newSession(t, ""), "")
 	openStream(t, base, http.StatusOK)

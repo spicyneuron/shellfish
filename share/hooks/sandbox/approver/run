@@ -189,6 +189,10 @@ records=$(jq -cs --argjson request "$request" '
   def join_context($parts): [$parts[] | select(. != "") | render_context] | join("\n\n");
   def context_message($context; $text):
     {type:"user",content:[{type:"text",text:join_context([$context[], $text])}]};
+  # A review reads text, so images are named rather than sent.
+  def result_text:
+    .model_text // ([.model_content[]? |
+      if .type == "image" then "[image omitted]" else .text end] | join("\n\n"));
   def add_context($record):
     ([to_entries[] | select(.value.lifecycle? == $record.lifecycle) | .key] | first) as $index |
     if $index == null then . + [{lifecycle:$record.lifecycle,texts:[$record.model_text]}]
@@ -216,7 +220,7 @@ records=$(jq -cs --argjson request "$request" '
         .messages += [
           {type:"tool_call",id:$call.id,name:$call.name,input:$call.input},
           {type:"tool_result",call_id:$call.id,name:$call.name,
-            exit_code:$record.exit_code,content:join_context([.context[],($record.model_text // "")])}
+            exit_code:$record.exit_code,content:join_context([.context[],($record | result_text)])}
         ] | .context=[] | .calls=.calls[1:]
       else . end)) as $state |
   ($state.messages + if ($state.context | length) == 0 then []
