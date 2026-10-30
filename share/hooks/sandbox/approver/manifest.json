@@ -1,5 +1,5 @@
 {
   "on": "permission_request",
-  "user_text": "Sandbox bypass review\n${output.stderr}",
+  "user_text": "**Sandbox bypass review**\n${output.stderr}",
   "user_preview_lines": "full"
 }

@@ -227,6 +227,36 @@ at=${SF_PRESENT_VIEWPORT_HIGHLIGHTS[(Ie)$badge]}
 assert_equal 23 $(( SF_PRESENT_VIEWPORT_HIGHLIGHTS[at - 1] - SF_PRESENT_VIEWPORT_HIGHLIGHTS[at - 2] ))
 SF_PRESENT_STYLE=()
 
+# A leading **label** in the header is bold; later asterisks are literal.
+styled() {
+  integer at=${SF_PRESENT_VIEWPORT_HIGHLIGHTS[(Ie)$1]}
+  (( at )) || fail "missing style: $1"
+  REPLY=${SF_PRESENT_VIEWPORT_TEXT[SF_PRESENT_VIEWPORT_HIGHLIGHTS[at - 2] + 1,
+    SF_PRESENT_VIEWPORT_HIGHLIGHTS[at - 1]]}
+}
+sf_tui_reset
+width 79
+SF_PRESENT_STYLE=( execution fg=gray divider rail syntax.strong bold error fg=red )
+sf_tui_action execution_end call_1 tool $'**Read-only shell** ls **/*.zsh\nok'
+view
+assert_tail $'⛭ Read-only shell ls **/*.zsh\n╰ ok'
+styled fg=gray,bold
+assert_equal 'Read-only shell' "$REPLY"
+! has_style fg=red,bold || fail 'a successful result marked its glyph as failed'
+sf_tui_reset
+sf_tui_action execution_end call_1 tool $'**unclosed header\nok'
+view
+assert_tail $'⛭ **unclosed header\n╰ ok'
+! has_style fg=gray,bold || fail 'an unclosed label was bolded'
+
+# A failed result marks its glyph.
+sf_tui_reset
+sf_tui_action execution_end call_1 tool $'Shell false\nexit 1' '' '' '' 1
+view
+styled fg=red,bold
+assert_equal ⛭ "$REPLY"
+SF_PRESENT_STYLE=()
+
 # Errors settle a pending execution and close the turn.
 sf_tui_reset
 sf_tui_action execution_update abandoned tool 'shell · run'

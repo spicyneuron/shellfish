@@ -9,7 +9,7 @@
       "content": {"type": "string", "description": "Complete contents for the new file"}
     }
   },
-  "user_text": "Write ${input.file_path}\n${output.stdout}",
+  "user_text": "**Write** ${input.file_path}\n${output.stdout}",
   "user_preview_lines": "full",
   "sandbox": true,
   "allow_sandbox_bypass": true

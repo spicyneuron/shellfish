@@ -13,6 +13,6 @@
       "agent_id": {"type": "string"}
     }
   },
-  "user_text": "Agent ${input.operation}\n${output.stderr}",
+  "user_text": "**Agent** ${input.operation}\n${output.stderr}",
   "sandbox": false
 }

@@ -167,7 +167,7 @@ def test_file_changes_use_full_preview():
         _, records = session.wait_session_records(4, path=session.explicit_session)
         result = next(record for record in records if record.get("type") == "tool_result")
         assert result["user_preview_lines"] == "full", result
-        assert result["user_text"].startswith("Write "), result
+        assert result["user_text"].startswith("**Write** "), result
         session.wait_after(mark, "+   1. Definitions.", timeout=5)
     finally:
         session.close()

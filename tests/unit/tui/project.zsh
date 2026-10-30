@@ -66,7 +66,7 @@ project live \
   '{"type":"tool_result","id":"call_1","name":"shell","input":{"command":"make test"},"exit_code":0,"user_text":"shell · make test\nok","model_text":"ok","user_preview_lines":"full"}'
 assert_equal 'execution_update | call_1 | tool | shell · make test | 2 |
 execution_end | call_1 | tool | shell · make test
-ok | full |  |' "$REPLY"
+ok | full |  |  |' "$REPLY"
 
 # No template can hide a sandbox bypass request or its outcome.
 project live \
@@ -75,17 +75,17 @@ project live \
   '{"type":"tool_result","id":"call_2","name":"shell","input":{},"exit_code":0,"sandbox_bypass":"approved"}'
 assert_equal 'execution_update | call_2 | tool | shell | default | requested
 execution_update | call_2 | tool | shell | default | approved
-execution_end | call_2 | tool | shell | default |  | approved' "$REPLY"
+execution_end | call_2 | tool | shell | default |  | approved |' "$REPLY"
 project load \
   '{"type":"tool_result","id":"call_2","name":"shell","input":{},"exit_code":126,"sandbox_bypass":"denied"}'
-assert_equal 'execution_end | call_2 | tool | shell | default |  | denied' "$REPLY"
+assert_equal 'execution_end | call_2 | tool | shell | default |  | denied | 1' "$REPLY"
 
 # Normal tool execution carries no bypass badge.
 project live \
   '{"type":"_draft","id":"call_3","name":"skill","user_text":"Skill code-principles"}' \
   '{"type":"tool_result","id":"call_3","name":"skill","input":{"name":"code-principles"},"exit_code":0,"user_text":"Skill code-principles"}'
 assert_equal 'execution_update | call_3 | tool | Skill code-principles | default |
-execution_end | call_3 | tool | Skill code-principles | default |  |' "$REPLY"
+execution_end | call_3 | tool | Skill code-principles | default |  |  |' "$REPLY"
 
 # Hook context is reference material; a hook notice speaks only to the reader.
 # Drafts and results carry their own preview hints.
@@ -112,6 +112,11 @@ execution_end | 4 | context |  | default | agent' "$REPLY"
 project load \
   '{"type":"hook_result","lifecycle":"session_start","id":"5","user_text":"startup notice"}'
 assert_equal 'execution_end | 5 | notice | startup notice | default | system' "$REPLY"
+
+# A command denies the prompt it handles; that is not a failure.
+project load \
+  '{"type":"hook_result","lifecycle":"user_prompt_submit","id":"6","user_text":"**Shell** pwd","action":"deny"}'
+assert_equal 'execution_end | 6 | notice | **Shell** pwd | default | user' "$REPLY"
 
 # Permissions show the tool name, raw input, and configured timeout.
 project live \

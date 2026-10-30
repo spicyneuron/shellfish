@@ -54,10 +54,12 @@ sf_resume_load() {
     esac
   done < <(printf '%s\n' "${lines[@]}" | jq -jRn '
     def one_line: gsub("[[:cntrl:]]"; " ");
+    # A header may start with a **label** that clients show in bold.
+    def plain: sub("^\\*\\*(?<label>.+?)\\*\\*"; "\(.label)");
     def summary:
       if . == null then "(unreadable)"
       elif .type == "session" then "(empty session)"
-      elif .type == "hook_result" then (.user_text // .lifecycle)
+      elif .type == "hook_result" then (.user_text // .lifecycle | plain)
       elif .type == "state_update" then ("STATE UPDATE " + (.name | tostring))
       elif .type == "user" then
         ([.content[]? | select(.type == "text") | .text] | join(""))
@@ -65,7 +67,7 @@ sf_resume_load() {
         (([.content[]? |
           if .type == "text" then .text
           else empty end] | last) // "AGENT")
-      elif .type == "tool_result" then (.user_text // .name)
+      elif .type == "tool_result" then (.user_text // .name | plain)
       elif .type == "error" then .user_text
       else "(no summary)" end;
     [inputs] as $lines |

@@ -15,6 +15,6 @@
       }
     }
   },
-  "user_text": "Read-only shell ${input.command}\n${output.stdout}",
+  "user_text": "**Read-only shell** ${input.command}\n${output.stdout}",
   "sandbox": true
 }

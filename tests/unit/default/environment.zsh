@@ -61,13 +61,13 @@ jq -e -s '
   [ .[] | select(.type == "state_update" or .type == "hook_result") ] as $results |
   ($results | map(.type)) ==
     ["hook_result","state_update","hook_result","hook_result","hook_result"] and
-  ($results[0].user_text | startswith("Project environment:\n")) and
+  ($results[0].user_text | startswith("**Project environment**\n")) and
   ($results[0].model_text | startswith("<context script=\"project/environment\">\n")) and
   ($results[0].model_text | contains("PWD: ") and contains("\n.") and
     contains("Available commands:") and (contains("Available agent skills.") | not) and
     (contains("Git ") | not)) and
   $results[1].name == "git/identity" and $results[1].value == "branch:main" and
-  ($results[2].user_text | startswith("Git environment:\nGit branch: main")) and
+  ($results[2].user_text | startswith("**Git environment**\nGit branch: main")) and
   ($results[2].model_text | startswith("<context script=\"git/environment\">\n") and
     contains("abc123 Test commit") and contains("status-file") and
     (contains("Recent files:") | not)) and
@@ -87,7 +87,7 @@ jq -e -s 'any(.[]; .type == "state_update" and .value == "commit:0123456789abcde
 print -r -- 'none' >"$git_state"
 startup
 jq -e -s 'all(.[]; .type != "state_update" and
-  (.user_text // "" | startswith("Git environment:") | not))' \
+  (.user_text // "" | startswith("**Git environment**") | not))' \
   "$tmp/startup.jsonl" >/dev/null || fail 'no-repository startup was not silent'
 print -r -- 'branch:main' >"$git_state"
 
@@ -103,7 +103,7 @@ print -r -- 'branch:feature' >"$git_state"
 git_change
 [[ $git_output == *main* && $git_output == *feature* ]]
 [[ $git_output == '<context script="git/identity">'$'\n'*$'\n</context>' ]]
-jq -e -s 'map(select(.type == "hook_result")) | last.user_text == "Git checkout changed:\nmain → feature"' \
+jq -e -s 'map(select(.type == "hook_result")) | last.user_text == "**Git checkout changed**\nmain → feature"' \
   "$git_control" >/dev/null
 jq -e -s 'map(select(.type == "state_update")) | last.value == "branch:feature"' \
   "$git_control" >/dev/null
@@ -114,7 +114,7 @@ jq -e -s 'all(.[]; .type != "hook_result")' "$git_control" >/dev/null
 print -r -- 'commit:0123456789abcdef' >"$git_state"
 git_change
 [[ $git_output == *feature* && $git_output == *0123456789abcdef* ]]
-jq -e -s 'map(select(.type == "hook_result")) | last.user_text == "Git checkout changed:\nfeature → detached commit 0123456789abcdef"' \
+jq -e -s 'map(select(.type == "hook_result")) | last.user_text == "**Git checkout changed**\nfeature → detached commit 0123456789abcdef"' \
   "$git_control" >/dev/null
 jq -e -s 'map(select(.type == "state_update")) | last.value == "commit:0123456789abcdef"' \
   "$git_control" >/dev/null

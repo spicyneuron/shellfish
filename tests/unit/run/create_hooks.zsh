@@ -19,7 +19,7 @@ jq -eRn --arg session "$session" --arg hook "${hook:A}" '
   $events[0] == {type:"_session_load",path:$session} and
   $events[1].profile.hooks == [$hook] and
   ($events[2] | .lifecycle == "session_start" and
-    .user_text == "Project instructions (AGENTS.md):\nFollow this project rule.\n" and
+    .user_text == "**Project instructions** (AGENTS.md)\nFollow this project rule.\n" and
     (.model_text | contains("<context script=\"project/instructions\">")))
 ' <"$stream" >/dev/null || fail 'hook settlement was wrong'
 assert_canonical_session "$session"

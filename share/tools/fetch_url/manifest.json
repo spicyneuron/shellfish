@@ -8,6 +8,6 @@
       "url": {"type": "string", "minLength": 1, "description": "HTTP(S) URL to fetch"}
     }
   },
-  "user_text": "Fetch ${input.url}\n${output.stdout}",
+  "user_text": "**Fetch** ${input.url}\n${output.stdout}",
   "sandbox": true
 }

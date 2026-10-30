@@ -25,8 +25,12 @@ while IFS= read -r token; do
   sf_skills_body "$file" || exit 1
   text=$(sf_skills_wrap "$name" "${file:h}" "$REPLY") || exit 1
   body=${${REPLY##$'\n'##}%%$'\n'##}
-  (( ${#loaded} == 1 )) || print -rnu2 -- $'\n\n'
-  print -rnu2 -- "Loaded \$$name:"$'\n'"$body"
+  # Only the first line is the header; later skills start plain sections.
+  if (( ${#loaded} == 1 )); then
+    print -rnu2 -- "**Loaded \$$name**"$'\n'"$body"
+  else
+    print -rnu2 -- $'\n\n'"Loaded \$$name"$'\n'"$body"
+  fi
   context+=$text$'\n'
 done < <(print -rn -- "$submitted" | grep -oE '(^|[^[:alnum:]_$])\$[a-z0-9]+(-[a-z0-9]+)*')
 (( ${#loaded} )) || exit 0

@@ -232,10 +232,11 @@ sf_tui_format_status() {
 
 sf_tui_format_execution() {
   integer columns=$1 live=$(( ! $2 )) spinner=0 fold=0 diff=0
-  integer row limit total hidden=0 more span background cursor start end pass
-  local body full head rest badge='' suffix='' glyph preview text style kind=execution
+  integer row limit total hidden=0 more span background cursor start end pass lead
+  local body full head rest label badge='' suffix='' glyph preview text style kind=execution
   local base_style=${SF_PRESENT_STYLE[execution]-} rail_style=${SF_PRESENT_STYLE[divider]-}
-  local clamp=${SF_PRESENT_STYLE[clamp]-} badge_style=''
+  local clamp=${SF_PRESENT_STYLE[clamp]-} badge_style='' glyph_style=''
+  local strong=${SF_PRESENT_STYLE[syntax.strong]-}
   local -a projected=() spans=()
 
   sf_tui_format_start
@@ -259,6 +260,18 @@ sf_tui_format_execution() {
   [[ $body != (|*$'\n')'@@ -'*' @@'* ]] || diff=1
   head=${body%%$'\n'*}
   rest=${body:${#head}}
+  # A leading **label** is the header's only markup. Later asterisks may come
+  # from inserted input, such as a glob in a command.
+  if [[ $head == '**'* ]]; then
+    label=${${head#'**'}%%'**'*}
+    if [[ -n $label && $head == "**$label**"* ]]; then
+      head=$label${head#"**$label**"}
+    else
+      label=''
+    fi
+  fi
+  [[ -z $SF_LIVE_FAILED || -z ${SF_PRESENT_STYLE[error]-} ]] ||
+    glyph_style=${SF_PRESENT_STYLE[error]},bold
   if [[ -n $SF_LIVE_BYPASS ]]; then
     badge="[sandbox bypass $SF_LIVE_BYPASS]"
     case $SF_LIVE_BYPASS in
@@ -277,6 +290,9 @@ sf_tui_format_execution() {
     SF_PRESENT_HIGHLIGHT_SPANS=()
     [[ -z $badge || -z $badge_style ]] ||
       SF_PRESENT_HIGHLIGHT_SPANS+=( 0 ${#badge} "$badge_style" )
+    lead=$(( ${#badge} ? ${#badge} + 1 : 0 ))
+    [[ -z $label || -z $strong ]] ||
+      SF_PRESENT_HIGHLIGHT_SPANS+=( $lead $(( lead + ${#label} )) "$strong" )
     [[ -z $suffix || -z $clamp ]] ||
       SF_PRESENT_HIGHLIGHT_SPANS+=( $(( ${#full} - ${#rest} - ${#suffix} )) \
         $(( ${#full} - ${#rest} )) "$clamp" )
@@ -316,6 +332,9 @@ sf_tui_format_execution() {
     cursor=0
     if [[ -n $rail_style && $text == (│|╰)* ]]; then
       spans+=( 0 1 "$rail_style" )
+      cursor=1
+    elif (( row == 1 )) && [[ -n $glyph_style ]]; then
+      spans+=( 0 1 "$glyph_style" )
       cursor=1
     fi
     for (( span = 1; span <= ${#projected}; span += 3 )); do

@@ -15,7 +15,7 @@
       }
     }
   },
-  "user_text": "Shell ${input.command}\n${output.stdout}",
+  "user_text": "**Shell** ${input.command}\n${output.stdout}",
   "sandbox": true,
   "allow_sandbox_bypass": true
 }

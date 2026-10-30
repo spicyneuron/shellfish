@@ -91,5 +91,5 @@ report() {
 
 typeset text
 text=$(report) || exit 1
-print -r -- "Project environment:"$'\n'"$text" >&2
+print -r -- "**Project environment**"$'\n'"$text" >&2
 print -rn -- "<context script=\"project/environment\">"$'\n'"$text"$'\n'"</context>"

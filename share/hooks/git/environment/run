@@ -38,5 +38,5 @@ report=$(
   print -r -- $'Recent commits:\n'"$commits"
   print -r -- $'Git status:\n'"$(print -r -- "$git_status" | head -10)"
 )
-print -r -- "Git environment:"$'\n'"$report" >&2
+print -r -- "**Git environment**"$'\n'"$report" >&2
 print -rn -- "<context script=\"git/environment\">"$'\n'"$report"$'\n'"</context>"

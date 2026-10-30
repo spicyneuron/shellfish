@@ -173,9 +173,9 @@ jq -eRn '
     if .type == "hook_result" then "post" else "running" end] ==
     ["post","running","post"]) and
   ($events | map(select(.type == "_draft" and .name == "shell"))[0].user_text ==
-    "Shell " + $command + "\n") and
+    "**Shell** " + $command + "\n") and
   ($events | map(select(.type == "tool_result"))[1] |
-    .user_text == "Shell " + $command + "\noutput\nexit 0" and
+    .user_text == "**Shell** " + $command + "\noutput\nexit 0" and
     .model_text == "output\nexit 0")
 ' --arg command "print -r -- ran >>${(q)tool_marker}; print -rn -- output" \
   <"$stream" >/dev/null || fail 'tool lifecycle ordering or rendering was wrong'
@@ -221,10 +221,10 @@ jq -eRn '
     .model_text == "review context" and .user_text == "review display") and
   ([$events[] | select(.type | IN("hook_result","_draft")) | [.type, .sandbox_bypass]] ==
     [["_draft","requested"],["hook_result",null],["_draft","approved"]]) and
-  ($events | map(select(.type == "_draft"))[1].user_text == "Shell print -rn -- approved\n") and
+  ($events | map(select(.type == "_draft"))[1].user_text == "**Shell** print -rn -- approved\n") and
   ($events | map(select(.type == "tool_result"))[0] |
     .exit_code == 0 and .sandbox_bypass == "approved" and
-    .user_text == "Shell print -rn -- approved\napproved\nexit 0")
+    .user_text == "**Shell** print -rn -- approved\napproved\nexit 0")
 ' <"$stream" >/dev/null || fail 'permission allow produced the wrong records'
 
 # The core handles ineligible requests without consulting permission hooks.
@@ -302,7 +302,7 @@ jq -eRn '
     {type:"hook_result",lifecycle:"permission_request",id:"1",action:"deny",reason:"review denied"}) and
   ($events | map(select(.type == "tool_result"))[0] |
     .exit_code == 126 and .model_text == "review denied" and .sandbox_bypass == "denied" and
-    .user_text == "Shell true\nreview denied")
+    .user_text == "**Shell** true\nreview denied")
 ' <"$stream" >/dev/null || fail 'permission denial did not settle the call'
 
 # If every hook defers, approval falls back to the client.
@@ -465,7 +465,7 @@ SF_TEST_PROVIDER_TOOL_CALL=1 SF_TEST_PROVIDER_TOOL_COMMAND='print -rn -- output;
 jq -eRn '
   [inputs | fromjson | select(.type == "tool_result")][0] |
   .exit_code == 3 and
-  (.user_text | contains("Shell print -rn -- output; exit 3\noutput\nexit 3\n<sandbox_notice>")) and
+  (.user_text | contains("**Shell** print -rn -- output; exit 3\noutput\nexit 3\n<sandbox_notice>")) and
   (.model_text | contains("output\nexit 3\n<sandbox_notice>"))
 ' <"$stream" >/dev/null || fail 'sandbox denial did not annotate the model text'
 jq -e --slurpfile output "$sandbox_output" '

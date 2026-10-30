@@ -108,14 +108,14 @@ HOME="$home" SHELLFISH_DIR="$config" sf_test_run \
   "$session" >"$control"
 jq -e -s '
   map(select(.type == "hook_result")) | length == 1 and
-  (.[0].user_text | startswith("Loaded $shared:\n# shared instructions")) and
+  (.[0].user_text | startswith("**Loaded $shared**\n# shared instructions")) and
   (.[0].user_text | contains("# shared instructions")) and
   (.[0].user_text | contains("<skill") | not) and
   (.[0].model_text | contains("<skill name=\"shared\" directory=\"")) and
   (.[0].model_text | contains("# shared instructions")) and
   (.[0].model_text | contains("description: project description") | not) and
-  (.[0].user_text | contains("Loaded $config-only:\n# config-only instructions")) and
-  (.[0].user_text | contains("Loaded $hidden:\n# hidden instructions")) and
+  (.[0].user_text | contains("Loaded $config-only\n# config-only instructions")) and
+  (.[0].user_text | contains("Loaded $hidden\n# hidden instructions")) and
   (.[0].model_text | startswith("<context script=\"skills/mention\">\n<skill name=") and
     endswith("</skill>\n</context>")) and
   (.[0].model_text | [scan("<skill name=")] | length == 3) and

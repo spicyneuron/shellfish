@@ -8,6 +8,6 @@
       "name": {"type": "string", "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$", "maxLength": 64, "description": "Skill name from the available agent skills context"}
     }
   },
-  "user_text": "Skill ${input.name}\n${output.stderr}",
+  "user_text": "**Skill** ${input.name}\n${output.stderr}",
   "sandbox": false
 }

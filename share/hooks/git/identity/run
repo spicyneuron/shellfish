@@ -36,5 +36,5 @@ to=${identity#*:}
 [[ $identity != commit:* ]] || to="detached commit $to"
 jq -cn --arg identity "$identity" '{state_update:[{name:"git/identity",value:$identity}]}' >&3 ||
   exit 1
-print -rn -- "Git checkout changed:"$'\n'"$from → $to" >&2
+print -rn -- "**Git checkout changed**"$'\n'"$from → $to" >&2
 print -rn -- "<context script=\"git/identity\">"$'\n'"$text"$'\n'"</context>"

@@ -46,6 +46,8 @@ def hook_class: if (.model_text // "") == "" then "notice" else "context" end;
 def result_text:
   if has("sandbox_bypass") then .user_text // .name else .user_text // "" end;
 def bypass: .sandbox_bypass // "";
+# A hook's deny is policy, not failure; commands deny every prompt they handle.
+def failed: if .exit_code != 0 then "1" else "" end;
 
 def message_actions($role; $text):
   if ($text | test("[^\n]")) then
@@ -86,7 +88,7 @@ def record_actions($mode; $window):
     (.user_text | split("\n")) as $lines |
     [["error", $lines[0], ($lines[1:] | join("\n"))]]
   elif .type == "tool_result" then
-    [["execution_end", .id, "tool", result_text, preview, "", bypass]]
+    [["execution_end", .id, "tool", result_text, preview, "", bypass, failed]]
   elif .type == "hook_result" then
     [["execution_end", .id, hook_class, result_text, preview,
       ({session_start:"system", user_prompt_submit:"user"}[.lifecycle] // "agent")]]

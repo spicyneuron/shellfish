@@ -9,7 +9,7 @@ setopt no_aliases no_bg_nice no_multios pipe_fail
 typeset -g SF_LIVE_KIND='' SF_LIVE_TEXT=''
 typeset -g SF_LIVE_ROLE='' SF_LIVE_PRIOR='' SF_LIVE_SECTION=''
 typeset -g SF_LIVE_ID='' SF_LIVE_CLASS=''
-typeset -g SF_LIVE_PREVIEW='' SF_LIVE_BYPASS=''
+typeset -g SF_LIVE_PREVIEW='' SF_LIVE_BYPASS='' SF_LIVE_FAILED=''
 # SHOWN: the block has committed rows. HIDDEN: its preview budget ran out.
 typeset -gi SF_LIVE_SHOWN=0 SF_LIVE_HIDDEN=0 SF_LIVE_HELD=0 SF_LIVE_WORK=0
 # Reasoning keeps its own estimate because previews hide most of the source.
@@ -34,6 +34,7 @@ sf_tui_live_clear() {
   SF_LIVE_CLASS=''
   SF_LIVE_PREVIEW=''
   SF_LIVE_BYPASS=''
+  SF_LIVE_FAILED=''
   SF_LIVE_SHOWN=0
   SF_LIVE_HIDDEN=0
   SF_LIVE_HELD=0
@@ -193,6 +194,7 @@ sf_tui_execution_update() {
 
 sf_tui_execution_end() {
   local id=$1 class=${2:-tool} text=${3-} preview=${4-} role=${5-} bypass=${6-}
+  local failed=${7-}
   # A result with nothing to show leaves no trace, live or settled.
   if [[ -z $text ]]; then
     [[ $SF_LIVE_KIND != execution || $SF_LIVE_ID != $id ]] || sf_tui_retract
@@ -204,6 +206,7 @@ sf_tui_execution_end() {
   # A result owns the identity and class of the block it settles.
   SF_LIVE_ID=$id
   SF_LIVE_CLASS=$class
+  SF_LIVE_FAILED=$failed
   sf_tui_settle || return 1
   sf_tui_activity_resume
 }
