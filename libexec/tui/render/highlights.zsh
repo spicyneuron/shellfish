@@ -67,7 +67,7 @@ sf_tui_theme_config() {
        prompt:("fg=" + .prompt),
        prompt_waiting:("fg=" + .prompt_waiting),
        permission:("fg=" + .permission),
-       muted:("fg=" + .muted),
+       muted:("fg=" + .muted), label:"bold",
        "syntax.comment":("fg=" + .syntax_comment),
        "syntax.string":("fg=" + .syntax_string),
        "syntax.number":("fg=" + .syntax_number),

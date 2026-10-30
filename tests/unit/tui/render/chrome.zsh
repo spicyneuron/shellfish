@@ -9,24 +9,30 @@ typeset -g SF_PRESENT_PERMISSION_TOOL='' SF_PRESENT_PERMISSION_TEXT=''
 typeset -ga SF_PRESENT_QUEUE=()
 typeset -gi COLUMNS=80 LINES=10
 
-SF_PRESENT_PROFILE='{"tools":["@tools/read_file","/tools/shell"],"commands":[],
-  "hooks":["@hooks/project/environment"],
-  "sandbox":{"enabled":true,"read":["~/a","~/b"],"write":["~/c"]}}'
 typeset banner
 COLUMNS=41
 SHELLFISH_DIR=/tmp/config
 banner=$(sf_tui_chat_start startup /tmp/session.jsonl)
 [[ $banner == $'\n\e[1m'*$'\n\n\e[1mProject:'* ]] || fail 'wide startup banner was not rendered'
-[[ $banner == *$'\e[1mConfig:\e[0m /tmp/config'* ]] || fail 'startup config dir was not rendered'
-[[ $banner == *$'\e[1mTools:\e[0m read_file, shell'* ]] || fail 'startup tools were not rendered'
-[[ $banner == *$'\e[1mCommands:\e[0m none'* ]] || fail 'startup commands were not rendered'
-[[ $banner == *$'\e[1mHooks:\e[0m project/environment'* ]] || fail 'startup hooks were not rendered'
-[[ $banner == *$'\e[1mSandbox:\e[0m fence'*', 2 read and 1 write grants'* ]] ||
-  fail 'startup sandbox was not rendered'
+[[ $banner == *$'\e[1mConfig:\e[0m /tmp/config' ]] || fail 'startup config dir was not rendered'
 [[ $banner != *'Session:'* ]] || fail 'new-session banner included its session path'
-SF_PRESENT_PROFILE='{"tools":[],"sandbox":{"enabled":false}}'
-banner=$(sf_tui_chat_start startup /tmp/session.jsonl)
-[[ $banner == *$'\e[1mSandbox:\e[0m disabled'* ]] || fail 'disabled sandbox was not rendered'
+
+# The session header's details commit as transcript rows, before the first role.
+COLUMNS=80
+sf_tui_reset
+sf_tui_action details 'read_file, shell' '' project/environment 2 1 ||
+  fail 'cannot present session details'
+sf_tui_action message_start system && sf_tui_action message_delta 0 text prompt '' &&
+  sf_tui_action message_end || fail 'cannot present a system message'
+sf_tui_transcript 79 20 || fail 'rendering the transcript failed'
+[[ $SF_PRESENT_VIEWPORT_TEXT == $'Tools: read_file, shell\nCommands: none\nHooks: project/environment\nSandbox: fence'*$', 2 read and 1 write grants\n\n─ system '* ]] ||
+  fail "session details were not rendered: $SF_PRESENT_VIEWPORT_TEXT"
+sf_tui_reset
+sf_tui_action details '' '' '' '' '' || fail 'cannot present empty session details'
+sf_tui_transcript 79 20 || fail 'rendering the transcript failed'
+[[ $SF_PRESENT_VIEWPORT_TEXT == *'Sandbox: disabled'* ]] ||
+  fail "disabled sandbox was not rendered: $SF_PRESENT_VIEWPORT_TEXT"
+sf_tui_reset
 COLUMNS=40
 banner=$(sf_tui_chat_start resume /tmp/session.jsonl)
 [[ $banner == *$'\n╭───────'* ]] || fail 'narrow startup banner did not stack its art'

@@ -12,10 +12,9 @@ source "$SF_ROOT/lib/options.zsh"
 
 sf_tui_main() {
   local requested_session=''
-  local input='' draft='' presentation profile profile_session='' session='' session_mode=startup
-  local source_session=''
+  local input='' draft='' presentation session='' session_mode=startup
   local arity=''
-  local -a positional=() profile_args=() resolve_args=()
+  local -a positional=() profile_args=()
   local -a original_args=("$@")
   integer out_explicit=0 override=0 take=0
   integer clear_requested=0
@@ -63,13 +62,6 @@ sf_tui_main() {
         take=$(( arity + 1 ))
         (( $# >= take )) || { sf_die "$1 requires a value"; return 2; }
         profile_args+=( "${@:1:$take}" )
-        # The banner and footer describe the profile creation will freeze, so
-        # the client resolves the same options.
-        if [[ $1 == --session-from ]]; then
-          source_session=$2
-        else
-          resolve_args+=( "${@:1:$take}" )
-        fi
         override=1
         shift $take
         ;;
@@ -108,41 +100,15 @@ sf_tui_main() {
       sf_die 'options that configure a new session cannot be used with an existing one'
       return 2
     }
-    profile_session=$requested_session
-    session_mode=resume
-  elif [[ -n $source_session ]]; then
-    (( ! ${#resolve_args} )) || {
-      sf_die 'profile overrides cannot be used with --session-from'
-      return 2
-    }
-    profile_session=$source_session
-  fi
-  if [[ -n $profile_session ]]; then
     source "$SF_ROOT/lib/session.zsh"
-    sf_session_select_path "$profile_session" || {
+    sf_session_select_path "$requested_session" || {
       sf_die "$SF_SESSION_ERROR"
       return 1
     }
-    profile_session=$REPLY
-    [[ $session_mode != resume ]] || session=$profile_session
+    session=$REPLY
+    session_mode=resume
   fi
-  source "$SF_ROOT/lib/profile.zsh"
   source "$SF_ROOT/libexec/tui/presentation.zsh"
-  if [[ -n $profile_session ]]; then
-    sf_session_read_config "$profile_session" || {
-      sf_die "$SF_SESSION_ERROR"
-      return 1
-    }
-    profile=$REPLY
-  else
-    sf_profile_resolve_args "${resolve_args[@]}" || {
-      resolve_status=$?
-      sf_die "$SF_PROFILE_ERROR"
-      return $resolve_status
-    }
-    profile=$REPLY
-  fi
-  profile=$(jq -c '.profile' <<<"$profile") || { sf_die 'cannot read profile'; return 1; }
   SF_PRESENTATION_VERBOSE=$verbose_requested
   sf_presentation_resolve || {
     resolve_status=$?
@@ -165,7 +131,7 @@ sf_tui_main() {
     zmodload zsh/terminfo && echoti clear || { sf_die 'cannot clear terminal'; return 1; }
   fi
   {
-    sf_tui_controller "$session" "$profile" "$presentation" "$input" \
+    sf_tui_controller "$session" "$presentation" "$input" \
       "$session_mode" "$draft" || controller_status=$?
   } always {
     [[ -z $SF_TUI_TRANSPORT_PID ]] || sf_tui_transport_stop

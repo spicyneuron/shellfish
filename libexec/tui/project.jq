@@ -36,6 +36,15 @@ def identity:
 def model_actions:
   [["profile", identity, (.model.context_window // "" | tostring)]];
 
+# Component names drop their directory prefix. A disabled sandbox has no
+# grant counts.
+def details_actions:
+  def names(kind):
+    [.profile[kind][]? | sub("^.*" + kind + "/"; "")] | join(", ");
+  [["details", names("tools"), names("commands"), names("hooks")] +
+    (.profile.sandbox |
+      if .enabled then [.read, .write | length | tostring] else ["", ""] end)];
+
 # A result or draft carries its own preview hint.
 def preview: .user_preview_lines // "default" | tostring;
 
@@ -93,7 +102,7 @@ def record_actions($mode; $window):
     [["execution_end", .id, hook_class, result_text, preview,
       ({session_start:"system", user_prompt_submit:"user"}[.lifecycle] // "agent")]]
   elif .type == "session" then
-    model_actions +
+    details_actions + model_actions +
     if $mode == "load" then message_actions("system"; .profile.system[0].text // "") else [] end
   elif .type == "state_update" then []
   else error("unsupported record: " + (.type | tostring))

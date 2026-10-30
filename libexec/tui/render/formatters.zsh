@@ -225,6 +225,30 @@ sf_tui_error_append() {
   SF_PRESENT_LAST_ROLE=error
 }
 
+# The session's frozen profile, labeled one setting per line.
+sf_tui_details() {
+  local sandbox=disabled label value text bold=${SF_PRESENT_STYLE[label]-}
+  integer columns
+  local -a spans
+  if [[ -n $4 ]]; then
+    sandbox=fence
+    (( $+commands[fence] )) || sandbox+=' (not installed)'
+    sandbox+=", $4 read and $5 write grants"
+  fi
+  sf_tui_live_close || return 1
+  sf_tui_row_width
+  columns=$REPLY
+  sf_tui_format_start
+  for label value in Tools "$1" Commands "$2" Hooks "$3" Sandbox "$sandbox"; do
+    sf_tui_safe "${value:-none}"
+    text="$label: $REPLY"
+    spans=()
+    [[ -z $bold ]] || spans=( 0 $(( ${#label} + 1 )) "$bold" )
+    sf_tui_format_chrome $columns "$text" message "${(@)spans}" || return 1
+  done
+  sf_tui_rows_settle
+}
+
 # Activity ------------------------------------------------------------------
 
 sf_tui_activity_start() {

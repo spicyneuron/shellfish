@@ -14,6 +14,7 @@ sf_tui_action() {
     execution_end)
       sf_tui_execution_end "${1-}" "${2-}" "${3-}" "${4-}" "${5-}" "${6-}" "${7-}" ;;
     error) sf_tui_error_append "${1-}" "${2-}" ;;
+    details) sf_tui_details "${1-}" "${2-}" "${3-}" "${4-}" "${5-}" ;;
     profile) sf_tui_identity "${1-}" ;;
     usage) sf_tui_usage "${1-}" "${2-}" ;;
     *) return 1 ;;

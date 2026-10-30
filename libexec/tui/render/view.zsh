@@ -2,7 +2,6 @@ emulate -R zsh
 setopt no_aliases no_bg_nice no_multios pipe_fail
 
 typeset -g SF_PRESENT_ERROR=''
-typeset -g SF_PRESENT_PROFILE='null'
 typeset -g SF_PRESENT_IDENTITY='' SF_PRESENT_FOOTER=''
 
 # Chrome spans cover the full display; viewport spans start at PREDISPLAY.
@@ -133,18 +132,7 @@ sf_tui_shift_spans() {
 
 sf_tui_chat_start() {
   local session_mode=$1 session=$2 line
-  local -a details logo shrimp
-  details=( "${(@f)$(jq -r --arg fence "${commands[fence]-}" '
-    def names(kind):
-      [.[kind][]? | sub("^.*" + kind + "/"; "")]
-      | if length == 0 then "none" else join(", ") end;
-    names("tools"), names("commands"), names("hooks"),
-    if .sandbox.enabled then
-      "fence"
-      + (if $fence == "" then " (not installed)" else "" end)
-      + ", \(.sandbox.read | length) read and \(.sandbox.write | length) write grants"
-    else "disabled" end
-  ' <<<"$SF_PRESENT_PROFILE")}" ) || return 1
+  local -a logo shrimp
   logo=(
     '╭─╮╷ ╷╭─╴╷  ╷  ╭─╴╷╭─╮╷ ╷'
     '╰─╮├─┤├╴ │  │  ├╴ │╰─╮├─┤'
@@ -173,10 +161,6 @@ sf_tui_chat_start() {
   print -r -- $'\e[1mProject:\e[0m' "$(pwd -P)"
   print -r -- $'\e[1mConfig:\e[0m' "${SHELLFISH_DIR-}"
   [[ $session_mode != resume ]] || print -r -- $'\e[1mSession:\e[0m' "$session"
-  print -r -- $'\e[1mTools:\e[0m' "$details[1]"
-  print -r -- $'\e[1mCommands:\e[0m' "$details[2]"
-  print -r -- $'\e[1mHooks:\e[0m' "$details[3]"
-  print -r -- $'\e[1mSandbox:\e[0m' "$details[4]"
   print
 }
 
