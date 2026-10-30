@@ -52,8 +52,8 @@ shellfish --session PATH          # Open one session directly
 
 shellfish --model MODEL           # Use models/MODEL.jsonc instead of the default
 shellfish --profile PROFILE       # Use another profile, such as readonly
-shellfish -m '{"provider": "openrouter", "request": {"model": "MODEL"}}' -t shell
-                                  # Select everything with options, no config needed
+shellfish -m '{"provider": "openrouter", "request": {"model": "MODEL"}}'
+                                  # Use the bundled agent without init, with credentials exported
 
 shellfish run "PROMPT"            # Run one non-interactive turn
 ```
@@ -71,6 +71,8 @@ shellfish run --json --session "$session" "Inspect the tests next"
 ```
 
 ## Configuration
+
+Shellfish includes a default agent with bundled prompts, tools, commands, and hooks. `init` copies its profile and sandbox settings for customization, plus a read-only example and configuration stubs. General and tool-use prompts remain bundled.
 
 The Shellfish directory (typically `~/.shellfish/`) holds your editable configuration:
 

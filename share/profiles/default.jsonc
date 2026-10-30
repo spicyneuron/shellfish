@@ -1,8 +1,8 @@
 // Shellfish profile: https://github.com/spicyneuron/shellfish
 //
-// Selected when --profile is absent. A profile selects sandbox files, system
-// prompts, tools, commands, and hooks, with optional config. The model is chosen
-// separately.
+// Selected when --profile is absent. init copies this profile for customization.
+// A profile selects sandbox files, system prompts, tools, commands, and hooks,
+// with optional config. The model is chosen separately.
 // A name resolves in this Shellfish directory first, then the bundled one.
 // A path starts with "/", "~/", "./", "../", or "@" for the bundled root.
 {

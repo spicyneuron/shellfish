@@ -18,7 +18,9 @@ shellfish init
 shellfish
 ```
 
-`init` copies [`share/template/`](../share/template/) into the selected Shellfish directory, keeping any file that already exists. The profiles, model, sandbox file, system prompts, and starter skill are yours to edit. Bundled executable components remain available without copying them.
+Shellfish includes a ready-to-use default agent. You can start without `init` by supplying a model with `-m` and any required credentials through the environment.
+
+`init` copies the bundled default profile and sandbox settings, plus [`share/template/`](../share/template/), into the selected Shellfish directory, keeping existing files. These become yours to edit, including the model stub, read-only profile and its prompt, environment and TUI settings, and starter skill. The general and tools prompts remain bundled, along with executable components.
 
 See [Profiles](PROFILE.md) for the starter agent and behavior customization, [Models](MODELS.md) for providers and credentials, and [Components](COMPONENTS.md) for writing your own extensions.
 
@@ -42,7 +44,7 @@ Only use configuration directories you trust. A project's `.shellfish` can selec
 
 Every reference in a profile, model, or sandbox file, and every option that takes one, follows one rule. A reference starting with `/`, `~/`, `./`, `../`, or `@` is a path, where `@` is the bundled root just as `~` is home. A relative path resolves against the file that contains it, or against the working directory on the command line. Anything else is a name, which resolves in its kind's directory, yours first, then bundled. Profile, model, and sandbox names gain `.jsonc`, and a name may be nested, such as `openai/sol`.
 
-Your component shadows the bundled one of the same name. A path still reaches the bundled one, such as `@tools/shell`. A template profile works in place as `-p @template/profiles/readonly.jsonc`, though it names your system prompts and `sandbox/default.jsonc`.
+Your file or component shadows the bundled one of the same name. A path still reaches the bundled one, such as `@profiles/default.jsonc` or `@tools/shell`.
 
 See [Session configuration](ARCHITECTURE.md#the-transcript-is-the-state) for what freezes with a session and what stays live.
 

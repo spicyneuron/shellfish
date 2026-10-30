@@ -6,7 +6,7 @@ See [`CONFIG.md`](CONFIG.md) for setup, directory selection, and reference looku
 
 ## Selection
 
-`-p REF` or `--profile REF` selects a profile file, and `-p JSON` supplies one inline. Without the option, Shellfish uses `profiles/default.jsonc` when it exists. Without either, command-line options alone select the agent's parts.
+`-p REF` or `--profile REF` selects a profile file, and `-p JSON` supplies one inline. Without the option, Shellfish uses your `profiles/default.jsonc`, falling back to the bundled default. Use `-p '{}'` to start with an empty profile and select the agent's parts through command-line options alone.
 
 ```jsonc
 // profiles/review.jsonc
@@ -80,12 +80,14 @@ If every permission hook defers, Shellfish asks the client. Without a client, or
 
 ## Starter agent
 
-`shellfish init` copies editable profiles, sandbox settings, and system prompts into the selected Shellfish directory. Each starter profile selects `sandbox/default.jsonc`, which grants nothing until you edit it. The default profile includes commented examples for enabling subagents and model-reviewed sandbox bypasses.
+The bundled default profile supplies a complete agent without `init`, once you select a model. `shellfish init` copies that profile and its sandbox settings for customization, plus an editable read-only profile and its paired prompt. The general and tools prompts stay bundled unless you override them with your own files.
+
+Both starter profiles select `sandbox/default.jsonc`, whose bundled default grants nothing extra. The default profile includes commented examples for enabling subagents and model-reviewed sandbox bypasses.
 
 | Profile | Selects |
 | --- | --- |
-| [`default`](../share/template/profiles/default.jsonc) | `general.md` and `tools.md`, the tools below, and the bundled commands and hooks |
-| [`readonly`](../share/template/profiles/readonly.jsonc) | `readonly.md` and `tools.md`, read-only file and shell tools, and a smaller hook list |
+| [`default`](../share/profiles/default.jsonc) | Bundled `general.md` and `tools.md`, the tools below, and the bundled commands and hooks |
+| [`readonly`](../share/template/profiles/readonly.jsonc) | Its editable `readonly.md` and bundled `tools.md`, read-only file and shell tools, and a smaller hook list |
 
 | Tool | Role |
 | --- | --- |

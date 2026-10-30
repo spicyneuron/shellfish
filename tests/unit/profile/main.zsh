@@ -189,13 +189,12 @@ if sf_profile_components hooks "$profile"; then
 fi
 [[ $SF_PROFILE_ERROR == *'hook manifest must be valid and declare "on"'* ]]
 
-# Template profiles use configured prompts and model with bundled components.
+# Starter profiles use bundled components with a configured model.
 # Subagents and review remain opt-in.
 cp "$ROOT/share/template/models/default.jsonc" "$SF_TEST_CONFIG/models/default.jsonc"
-cp "$ROOT/share/template/system/"*.md "$SF_TEST_CONFIG/system/"
-sf_test_sandbox default "$(<"$ROOT/share/template/sandbox/default.jsonc")"
-for name in default readonly; do
-  sf_profile_resolve_args -p "@template/profiles/$name.jsonc" -m default \
+cp "$ROOT/share/template/system/readonly.md" "$SF_TEST_CONFIG/system/readonly.md"
+for name in @profiles/default.jsonc @template/profiles/readonly.jsonc; do
+  sf_profile_resolve_args -p "$name" -m default \
     -m '{"request":{"model":"mine"}}'
   jq -e --arg share "$ROOT/share/" '
     .model.request == {max_tokens:16384,reasoning:{effort:"medium"},model:"mine"} and
@@ -205,7 +204,7 @@ for name in default readonly; do
       (.system[0].text | length > 0) and
       (.tools | any(endswith("/subagent")) | not) and
       (.hooks | any(endswith("/sandbox/approver")) | not))
-  ' <<<"$REPLY" >/dev/null || fail "template profile did not resolve: $name"
+  ' <<<"$REPLY" >/dev/null || fail "starter profile did not resolve: $name"
   profile=$(jq -c '.profile' <<<"$REPLY")
 done
 
@@ -217,10 +216,10 @@ jq -e '
 ' <<<"$REPLY" >/dev/null
 
 # The template model names a placeholder until edited.
-sf_profile_resolve_args -p "@template/profiles/default.jsonc"
+sf_profile_resolve_args -p @profiles/default.jsonc
 jq -e '.model.request.model == "MODEL"' <<<"$REPLY" >/dev/null ||
   fail 'the template model lost its placeholder'
-rm "$SF_TEST_CONFIG/models/default.jsonc" "$SF_TEST_CONFIG/sandbox/default.jsonc"
+rm "$SF_TEST_CONFIG/models/default.jsonc"
 
 # Provider and presentation settings stay outside the profile's own fields.
 for field in model provider request env extend max_capture_bytes theme_light; do
@@ -257,14 +256,14 @@ if sf_profile_resolve_args -p work; then
 fi
 [[ $SF_PROFILE_ERROR == 'no model selected: run shellfish init, or pass -m' ]]
 
-# Named prompts use configuration, and "@" can reach the template directly.
+# Named prompts use configuration, and "@" can reach the bundle directly.
 mkdir -p "$SF_TEST_CONFIG/system"
 print -r -- 'mine' >"$SF_TEST_CONFIG/system/general.md"
-sf_test_profile shadow '{"system": ["general.md", "@template/system/general.md"]}'
+sf_test_profile shadow '{"system": ["general.md", "@system/general.md"]}'
 sf_profile_resolve_args -p shadow -m fixture
-jq -e --rawfile general "$ROOT/share/template/system/general.md" '
+jq -e --rawfile general "$ROOT/share/system/general.md" '
   .profile.system == [{text:("mine\n\n" + ($general | sub("\n+$"; "")))}]
-' <<<"$REPLY" >/dev/null || fail 'configured and template prompts did not resolve independently'
+' <<<"$REPLY" >/dev/null || fail 'configured and bundled prompts did not resolve independently'
 rm "$SF_TEST_CONFIG/system/general.md"
 
 # Unknown names fail.
@@ -362,33 +361,71 @@ sf_test_profile boxed '{"sandbox": ["base"]}'
   [[ $SF_PROFILE_ERROR == *'cannot expand ~ without HOME'* ]]
 )
 
-# init writes the template, keeping existing files, and its profiles resolve
-# by name with its default model.
+# init copies the bundled defaults and template, keeping existing files.
 (
   export SHELLFISH_DIR="$tmp/initialized"
   mkdir -p "$SHELLFISH_DIR"
   print -r -- 'mine' >"$SHELLFISH_DIR/.env"
   "$ROOT/bin/shellfish" init >"$tmp/init.out"
-  grep -qx "kept  ${SHELLFISH_DIR:A}/.env" "$tmp/init.out"
+  grep -Fqx "kept  ${SHELLFISH_DIR:a}/.env" "$tmp/init.out"
   [[ $(<"$SHELLFISH_DIR/.env") == mine ]]
+  cmp "$ROOT/share/profiles/default.jsonc" "$SHELLFISH_DIR/profiles/default.jsonc"
+  cmp "$ROOT/share/sandbox/default.jsonc" "$SHELLFISH_DIR/sandbox/default.jsonc"
+  cmp "$ROOT/share/template/system/readonly.md" "$SHELLFISH_DIR/system/readonly.md"
+  [[ ! -e $SHELLFISH_DIR/system/general.md && ! -e $SHELLFISH_DIR/system/tools.md ]]
   for name in default readonly; do
     sf_profile_resolve_args -p $name -m default -m '{"request":{"model":"mine"}}' >/dev/null
   done
   sf_profile_resolve_args
   jq -e '.model.request.model == "MODEL"' <<<"$REPLY" >/dev/null
-) || fail 'init did not write a resolvable configuration'
+  print -r -- '{"system":[{"text":"mine"}],"tools":["read_file"],"sandbox":"default"}' \
+    >"$SHELLFISH_DIR/profiles/default.jsonc"
+  print -r -- '{"read":["~/reference"]}' >"$SHELLFISH_DIR/sandbox/default.jsonc"
+  print -r -- 'My read-only policy.' >"$SHELLFISH_DIR/system/readonly.md"
+  "$ROOT/bin/shellfish" init >"$tmp/init.out"
+  grep -Fqx "kept  ${SHELLFISH_DIR:a}/profiles/default.jsonc" "$tmp/init.out"
+  grep -Fqx "kept  ${SHELLFISH_DIR:a}/sandbox/default.jsonc" "$tmp/init.out"
+  grep -Fqx "kept  ${SHELLFISH_DIR:a}/system/readonly.md" "$tmp/init.out"
+  sf_profile_resolve_args -p readonly
+  jq -e '.profile.system[0].text |
+    startswith("My read-only policy.\n\n# Tools\n")' <<<"$REPLY" >/dev/null
+  sf_profile_resolve_args
+  jq -e --arg home "${HOME:A}" '.profile.system == [{text:"mine"}] and
+    (.profile.tools | map(split("/") | last)) == ["read_file"] and
+    .profile.sandbox.read == [$home + "/reference"]' <<<"$REPLY" >/dev/null
+  sf_profile_resolve_args -p @profiles/default.jsonc
+  jq -e '.profile.system[0].text | startswith("You are a CLI agent.")' <<<"$REPLY" >/dev/null
+)
 
-# Without a profile, options select everything, and no model is an error.
+# Without init, a model is required and the bundled default supplies the agent.
 (
   export SHELLFISH_DIR="$tmp/empty-config"
   if sf_profile_resolve_args; then
     fail 'an empty selection was accepted'
   fi
   [[ $SF_PROFILE_ERROR == *'no model selected: run shellfish init, or pass -m'* ]]
-  sf_profile_resolve_args -m '{"provider":"openrouter","request":{"model":"test-model"}}' -t shell
-  jq -e '.model.request.model == "test-model" and (.profile.tools | length) == 1 and
-    .profile.system == []' \
-    <<<"$REPLY" >/dev/null
+  sf_profile_resolve_args -m '{"provider":"openrouter","request":{"model":"test-model"}}'
+  jq -e '.model.request.model == "test-model" and
+    (.profile.tools | map(split("/") | last)) ==
+      ["read_file","edit_file","write_file","shell","search_web","fetch_url","skill"] and
+    (.profile.system[0].text | startswith("You are a CLI agent.") and contains("# Tools")) and
+    (.profile.commands | any(endswith("/help"))) and
+    (.profile.hooks | any(endswith("/project/instructions"))) and
+    .profile.sandbox == {enabled:true,user_approval_timeout:120,read:[],write:[]}' \
+    <<<"$REPLY" >/dev/null || fail 'uninitialized configuration did not use the bundled default'
+  sf_profile_resolve_args -p '{}' \
+    -m '{"provider":"openrouter","request":{"model":"test-model"}}' -t shell
+  jq -e '(.profile.tools | length) == 1 and .profile.system == []' <<<"$REPLY" >/dev/null ||
+    fail 'inline profile did not replace the bundled default'
+  "$ROOT/bin/shellfish" run --json --session-out "$tmp/uninitialized.jsonl" \
+    -m '{"provider":"'"$fixture_provider"'","request":{"model":"test-model"}}' hello \
+    >"$tmp/uninitialized.stream"
+  assert_canonical_session "$tmp/uninitialized.jsonl" end
+  jq -e -s '.[0].profile.system[0].text | startswith("You are a CLI agent.")' \
+    "$tmp/uninitialized.jsonl" >/dev/null
+  jq -e -s '.[-1].content == [{type:"text",text:"hello\n"}]' \
+    "$tmp/uninitialized.jsonl" >/dev/null
+  [[ ! -e $SHELLFISH_DIR/profiles && ! -e $SHELLFISH_DIR/sandbox && ! -e $SHELLFISH_DIR/system ]]
 )
 
 # Manifests reject unknown fields, malformed templates, and bad preview hints.

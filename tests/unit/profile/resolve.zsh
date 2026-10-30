@@ -68,10 +68,10 @@ sf_test_profile unused '{invalid json'
 # "@path" selects under the bundled root. "~/" and absolute paths are taken
 # as written. Bare tool names fall back to bundled.
 sf_test_profile default '{"tools": ["probe", "read_file"], "system": ["shared.md",
-  "@template/system/general.md", "general.md", "~/prompts/home.md", "'"$HOME"'/prompts/home.md"]}'
+  "@system/general.md", "general.md", "~/prompts/home.md", "'"$HOME"'/prompts/home.md"]}'
 sf_profile_resolve_args -m probe
 jq -e --arg base "$config" --arg share "$ROOT/share" \
-    --rawfile general "$ROOT/share/template/system/general.md" '
+    --rawfile general "$ROOT/share/system/general.md" '
   ($general | sub("\n+$"; "")) as $general | .profile |
   .tools == [$base + "/tools/probe", $share + "/tools/read_file"] and
   .system == [{text:(["configured", $general, "configured general", "home", "home"] | join("\n\n"))}]

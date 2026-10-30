@@ -174,7 +174,7 @@ jq -e -s 'map(.type) == ["session","hook_result"] and
 typeset sandbox="$ROOT/share/commands/sandbox/run" sandbox_session="$tmp/sandbox.jsonl"
 mkdir -p "$tmp/project/dir" "$tmp/home/share"
 jq -c --arg cwd "${tmp:A}/project" '.cwd=$cwd |
-  .profile.sandbox={enabled:true, read:["@template/system"], write:[$cwd + "/dir","~/share"]}' \
+  .profile.sandbox={enabled:true, read:["@system"], write:[$cwd + "/dir","~/share"]}' \
   "$SF_TEST_SESSIONS/header_only.jsonl" >"$sandbox_session"
 (
   builtin cd -- "$tmp/project"; export HOME="$tmp/home"
@@ -184,11 +184,11 @@ jq -c --arg cwd "${tmp:A}/project" '.cwd=$cwd |
     jq -rs 'last' "$tmp/control"
   }
   # A bundled grant matches by "@" or by its absolute path.
-  [[ $(call "/sandbox +r $ROOT/share/template/system" | jq -r .action) == null ]] ||
+  [[ $(call "/sandbox +r $ROOT/share/system" | jq -r .action) == null ]] ||
     fail 'bundled grant duplicated'
-  call "/sandbox -r $ROOT/share/template/system" | jq -e '.action == "session_update" and
+  call "/sandbox -r $ROOT/share/system" | jq -e '.action == "session_update" and
     .profile.sandbox.read == []' >/dev/null || fail 'bundled grant removal by path failed'
-  call '/sandbox -r @template/system' | jq -e '.action == "session_update" and
+  call '/sandbox -r @system' | jq -e '.action == "session_update" and
     .profile.sandbox.read == []' >/dev/null || fail 'bundled grant removal by @ failed'
   [[ $(call '/sandbox +w dir' | jq -r .action) == null ]] || fail 'absolute grant duplicated'
   [[ $(call '/sandbox +w ~/share' | jq -r .action) == null ]] || fail 'home grant duplicated'
