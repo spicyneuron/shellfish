@@ -1,5 +1,5 @@
 {
-  "description": "Read a text file from the project and return its contents with line numbers, or view a PNG, JPEG, GIF, or WebP image, downscaled to fit and returned whole. Output starts with a header describing the line range shown. Each content line carries its line number followed by a tab; that prefix is display only and is not part of the file. A read stops early when it reaches the line limit or output byte budget. Prefer this over shell commands such as cat, sed, head, or tail for reading files.",
+  "description": "Read a text file from the project and return its contents with line numbers, or view a PNG, JPEG, GIF, or WebP image, downscaled to fit and returned whole. Output starts with a header showing the line range and total line count. A read stops early at the line limit or output byte budget; continue with offset. Prefer this over shell commands such as cat, sed, head, or tail for reading files.",
   "input_schema": {
     "type": "object",
     "additionalProperties": false,

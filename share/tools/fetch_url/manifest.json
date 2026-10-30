@@ -1,5 +1,5 @@
 {
-  "description": "Fetch an HTTP(S) website through Jina Reader and return its content as Markdown. The requested URL is sent to Jina AI. Use this for website content that is not already available in the project. Prefer this over shell commands such as curl or wget for reading web pages.",
+  "description": "Fetch an HTTP(S) website through Jina Reader and return its content as Markdown. Use this for website content that is not already available in the project. Do not fetch private or authenticated URLs, because the URL is sent to Jina AI. Prefer this over shell commands such as curl or wget for reading web pages.",
   "input_schema": {
     "type": "object",
     "additionalProperties": false,

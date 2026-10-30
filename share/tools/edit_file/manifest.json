@@ -1,5 +1,5 @@
 {
-  "description": "Edit a text file in the project and return a unified diff of what changed. old_string must match the file byte for byte; it is matched against the raw file, never against the line-number column that read_file displays. By default it must appear exactly once, so include enough surrounding context to be unambiguous. Set replace_all only to replace every occurrence deliberately. Use write_file to create a new file. Prefer this over shell commands such as sed, tee, or output redirection for changing files.",
+  "description": "Edit a text file in the project and return a unified diff of what changed. old_string must match the raw file exactly, without read_file's line-number prefix, and appear exactly once unless replace_all is set. Include enough surrounding context to make it unique. Use write_file to create a new file. Prefer this over shell commands such as sed, tee, or output redirection for changing files.",
   "input_schema": {
     "type": "object",
     "additionalProperties": false,
