@@ -203,7 +203,7 @@ def test_interrupt_drains_partial_recovery():
         mark = len(session.output)
         session.send((prompt + "\r").encode())
         path, _ = session.wait_session_records(2, path=session.explicit_session)
-        session.wait_after(mark, "Thinking…")
+        session.wait_after(mark, "✎ Reasoning")
 
         mark = len(session.output)
         session.send(b"\x03")

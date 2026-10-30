@@ -294,7 +294,7 @@ sf_tui_action error Failed detail
 view
 [[ $REPLY == *$'system\n\n─ user '* ]] || fail "system boundary: $REPLY"
 [[ $REPLY == *$'user\n\n─ agent '* ]] || fail "user boundary: $REPLY"
-[[ $REPLY == *$'✎ thought\n\nℹ hook\n╰ ok\n\n✕ Failed\n  detail' ]] ||
+[[ $REPLY == *$'✎ Reasoning\n╰ thought\n\nℹ hook\n╰ ok\n\n✕ Failed\n  detail' ]] ||
   fail "reasoning, notice, or error boundary: $REPLY"
 
 # Settled rows taller than the terminal budget drain in source order.

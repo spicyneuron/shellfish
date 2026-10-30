@@ -238,79 +238,64 @@ view 79 20
 [[ $REPLY == *$'\n\nfirst\n\nsecond' ]] || fail "inert block boundary: $REPLY"
 stream 3 reasoning thought 9
 view 79 20
-[[ $REPLY == *$'  ⠃' ]] || fail "reasoning transition: $REPLY"
+[[ $REPLY == *$'✎ Reasoning\n╰ ⠃' ]] || fail "reasoning transition: $REPLY"
 stream 4 inert ''
 view 79 20
-[[ $REPLY == *$'✎ thought' ]] ||
+[[ $REPLY == *$'✎ Reasoning\n╰ thought' ]] ||
   fail "reasoning settled by an inert block: $REPLY"
 
-# Reasoning previews spend rows and keep the whole-content estimate.
+# Full reasoning streams on the rail, holding its last line to close it.
+sf_tui_reset
+sf_tui_terminal_reset
+SF_PRESENT_PREVIEW_REASONING=full
+width 13
+sf_tui_action message_start agent
+stream 0 reasoning $'a reasoning block long enough to wrap\nand a second line\n'
+sf_tui_transcript 14 20
+[[ $SF_PRESENT_SAFE_TEXT == *$'✎ Reasoning\n│ a reasoning\n│ '* &&
+  $SF_PRESENT_SAFE_TEXT != *second* ]] ||
+  fail "streamed reasoning committed its last line: $SF_PRESENT_SAFE_TEXT"
+sf_tui_action message_end
+view 14 20
+typeset icon_tail=${REPLY#*✎}
+[[ $REPLY == *$'│ and a second\n╰ line' && $icon_tail != *✎* ]] ||
+  fail "settled streamed reasoning: $REPLY"
+width 79
+
+# Clamped reasoning holds its rows until it settles; usage refines the
+# settled estimate.
 sf_tui_reset
 sf_tui_terminal_reset
 SF_PRESENT_PREVIEW_REASONING=1
 sf_tui_action message_start agent
 stream 0 reasoning $'first\nsecond\nthird'
-sf_tui_transcript 20 20
-[[ $SF_PRESENT_SAFE_TEXT == *'✎ first'* ]] ||
-  fail 'reasoning preview lost its leading rows'
-sf_tui_terminal_stage
-sf_tui_terminal_finish
-sf_tui_terminal_restore
-sf_tui_transcript 10 20
-[[ $SF_PRESENT_VIEWPORT_TEXT != *second* ]] ||
-  fail 'resize restored committed chrome or showed hidden rows'
-[[ $SF_PRESENT_VIEWPORT_TEXT != *'~5'* ]] ||
-  fail 'live reasoning showed its estimate before settling'
+view 79 20
+[[ $REPLY == $'─ agent '*$' 1 ─\n\n✎ Reasoning\n┆ first\n╰ ⠃' ]] ||
+  fail "live clamped reasoning: $REPLY"
+assert_equal 0 "$SF_PRESENT_SAFE_ROWS"
+sf_tui_action usage '3 ↑ 1 ↓' 4
 sf_tui_action message_end
-sf_tui_transcript 10 20
-[[ $SF_PRESENT_VIEWPORT_TEXT == *'~5'* ]] ||
-  fail 'settled reasoning lost its estimate'
+view 79 20
+[[ $REPLY == $'─ agent '*$' 1 ─\n\n✎ Reasoning · ~4 tokens\n┆ first' ]] ||
+  fail "settled clamped reasoning: $REPLY"
+sf_tui_transcript 79 20
 sf_tui_terminal_stage
 sf_tui_terminal_finish
 [[ $PREDISPLAY != *second* ]] || fail 'a clamp committed the rows it hid'
 sf_tui_terminal_reset
 
-# A spent preview shows only activity until it settles; usage refines the
-# settled estimate.
-sf_tui_reset
-sf_tui_action message_start agent
-stream 0 reasoning $'first\nsecond'
-view 79 20
-[[ $REPLY == $'─ agent '*$' 1 ─\n\n✎ first\n  ⠃' ]] ||
-  fail "live reasoning preview: $REPLY"
-assert_equal 3 "$SF_PRESENT_SAFE_ROWS"
-sf_tui_action usage '3 ↑ 1 ↓' 4
-sf_tui_action message_end
-view 79 20
-[[ $REPLY == $'─ agent '*$' 1 ─\n\n✎ first\n  … ~4 tokens' ]] ||
-  fail "settled reasoning preview: $REPLY"
-assert_equal 4 "$SF_PRESENT_SAFE_ROWS"
-
-# Wrapped reasoning keeps the icon on its first line only.
-sf_tui_reset
-SF_PRESENT_PREVIEW_REASONING=full
-width 13
-sf_tui_action message_start agent
-stream 0 reasoning $'a reasoning block long enough to wrap\nand a second line'
-sf_tui_action message_end
-view 14 20
-typeset icon_tail=${REPLY#*✎}
-[[ $REPLY == *'✎ a'* && $icon_tail != *✎* ]] ||
-  fail "wrapped reasoning repeated its icon: $REPLY"
-width 79
-
-# Collapsed reasoning settles as one summary.
+# Collapsed reasoning settles as one row.
 sf_tui_reset
 SF_PRESENT_PREVIEW_REASONING=0
 sf_tui_action message_start agent
 stream 0 reasoning $'thought\nmore'
 view 79 20
-[[ $REPLY == *$'✎ Thinking… ⠃' && $REPLY != *thought* ]] ||
+[[ $REPLY == *$'✎ Reasoning\n╰ ⠃' && $REPLY != *thought* ]] ||
   fail "live collapsed reasoning: $REPLY"
 assert_equal 0 "$SF_PRESENT_SAFE_ROWS"
 sf_tui_action message_end
 view 79 20
-[[ $REPLY == *$'─\n\n✎ Thought for ~3 tokens.' ]] || fail "settled collapsed reasoning: $REPLY"
+[[ $REPLY == *$'─\n\n✎ Reasoning · ~4 tokens' ]] || fail "settled collapsed reasoning: $REPLY"
 SF_PRESENT_PREVIEW_REASONING=full
 
 # System text is clamped to the configured context budget.

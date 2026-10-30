@@ -12,9 +12,9 @@ typeset -g SF_LIVE_ID='' SF_LIVE_CLASS=''
 typeset -g SF_LIVE_PREVIEW='' SF_LIVE_BYPASS='' SF_LIVE_FAILED=''
 # SHOWN: the block has committed rows. HIDDEN: its preview budget ran out.
 typeset -gi SF_LIVE_SHOWN=0 SF_LIVE_HIDDEN=0 SF_LIVE_HELD=0 SF_LIVE_WORK=0
-# Reasoning keeps its own estimate because previews hide most of the source.
+# Streamed text keeps its own estimate because commits consume the source.
 typeset -gi SF_LIVE_TOTAL=0 SF_LIVE_SPENT=0
-typeset -g SF_LIVE_TOKENS='' SF_LIVE_EXPANDED=1
+typeset -g SF_LIVE_TOKENS=''
 # The open code fence, if any, after the last committed line.
 typeset -g SF_LIVE_STATE=''
 # The block index of the provider response being streamed.
@@ -41,7 +41,6 @@ sf_tui_live_clear() {
   SF_LIVE_TOTAL=0
   SF_LIVE_SPENT=0
   SF_LIVE_TOKENS=''
-  SF_LIVE_EXPANDED=1
   SF_LIVE_STATE=''
 }
 
@@ -97,7 +96,7 @@ sf_tui_settle() {
   fi
   sf_tui_row_width
   columns=$REPLY
-  if [[ $SF_LIVE_KIND == execution ]]; then
+  if [[ $SF_LIVE_KIND == execution ]] || sf_tui_live_deferred; then
     sf_tui_format_execution $columns 1 || return 1
   else
     sf_tui_format_lines $columns 1 || return 1
@@ -152,7 +151,6 @@ sf_tui_message_stream() {
       sf_tui_claim_role agent
     fi
     SF_LIVE_KIND=$kind
-    [[ $kind != reasoning || $SF_PRESENT_PREVIEW_REASONING != 0 ]] || SF_LIVE_EXPANDED=0
   fi
   if [[ -n $text ]]; then
     sf_tui_safe "$text"
@@ -254,8 +252,15 @@ sf_tui_activity_resume() {
 
 # Row flow ------------------------------------------------------------------
 
+# Clamped reasoning defers its rows until it settles, so its header can report
+# what the preview hides.
+sf_tui_live_deferred() {
+  [[ $SF_LIVE_KIND == reasoning && $SF_PRESENT_PREVIEW_REASONING != full ]]
+}
+
 # Commit the open block's complete lines.
 sf_tui_rows_commit() {
+  ! sf_tui_live_deferred || return 0
   sf_tui_row_width
   sf_tui_format_lines $REPLY 0 || return 1
   sf_tui_rows_append
@@ -269,7 +274,10 @@ sf_tui_rows_prepare() {
   sf_tui_format_start
   case $SF_LIVE_KIND in
     '') return 0 ;;
-    message|reasoning) sf_tui_format_status $columns ;;
+    message) sf_tui_format_status $columns ;;
+    reasoning)
+      if sf_tui_live_deferred; then sf_tui_format_execution $columns 0
+      else sf_tui_format_status $columns; fi ;;
     execution) sf_tui_format_execution $columns 0 ;;
     activity) sf_tui_format_styled $columns "$SF_PRESENT_ACTIVITY" activity ;;
     *) return 1 ;;
