@@ -1,4 +1,4 @@
-Audit tool descriptions for clarity.
+Not sure the basic template profile is earning its keep. readonly already seems like a more useful framing. And plus naming makes less sense without basic.
 
 Let's update the docs. Should probably split HARNESS into PROFILE and MODELS. Anything else to consider?
 
@@ -15,3 +15,9 @@ Could the model get a preview of sandbox grants in the project env?
 Add local sandbox exceptions to allow tests to run
 - tests cannot create .env and .shellfish
 - probably python
+
+# Features
+
+Support images in decision models and sandbox-approver.
+
+Let's design a way to paste images into chat TUI.
