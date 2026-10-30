@@ -51,7 +51,7 @@ A lone `sandbox` item needs no list. Inline values let one profile hold everythi
 
 Only supplied `config` values freeze with the session. Components define their own defaults and validate the settings they consume. Configuration values remain unchanged, including strings that look like paths. Credentials and presentation settings stay external.
 
-`profiles/default.jsonc` is selected when `--profile` is absent and it exists, and `-p REF` selects another. Without either, options alone select the agent's parts. Profiles do not inherit from each other, since a profile is short enough to copy. Only components named in the selected profile are active, and unused files are inert.
+`profiles/default.jsonc` is selected when `--profile` is absent and it exists, and `-p REF` selects another, or `-p JSON` supplies one inline. Without either, options alone select the agent's parts. Profiles do not inherit from each other, since a profile is short enough to copy. Only components named in the selected profile are active, and unused files are inert.
 
 Each selection list has an option that appends to the selected profile's list for one session. List options repeat, and any that accept inline values take a JSON object in place of a reference. Repeated `system`, `tools`, `commands`, and `hooks` references collapse to the first. `sandbox` lists merge in order, so a repeated reference applies again.
 

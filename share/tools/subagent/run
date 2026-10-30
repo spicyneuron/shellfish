@@ -171,14 +171,11 @@ if [[ $operation == start ]]; then
     rm -f -- "$transcript"
   else
     # A fresh child keeps the parent's profile and model unless the call names
-    # others. A frozen header profile resolves again as a profile file.
+    # others. A frozen header profile resolves again as a profile.
     [[ -n $model ]] || model=$(jq -ce '.model | objects' <<<"$header") ||
       fail 'cannot read parent model'
-    if [[ -z $profile ]]; then
-      profile=$(mktemp "$parent_dir/.subagent-profile.XXXXXX") || fail 'cannot prepare subagent profile'
-      trap 'rm -f -- "$profile"' EXIT
-      jq -ce '.profile | objects' <<<"$header" >"$profile" || fail 'cannot read parent profile'
-    fi
+    [[ -n $profile ]] || profile=$(jq -ce '.profile | objects' <<<"$header") ||
+      fail 'cannot read parent profile'
     "$SHELLFISH_EXECUTABLE" run --session-create --session-out "$child" \
       --profile "$profile" --model "$model" >/dev/null || fail 'cannot create subagent session'
     transcript=$(mktemp "$parent_dir/.subagent-header.XXXXXX") || fail 'cannot prepare subagent session'

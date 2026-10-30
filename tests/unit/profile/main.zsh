@@ -112,6 +112,17 @@ jq '.profile' <<<"$profile" >"$tmp/frozen.jsonc"
 jq '.model' <<<"$profile" >"$tmp/frozen-model.jsonc"
 sf_profile_resolve_args -p "$tmp/frozen.jsonc" -m "$tmp/frozen-model.jsonc"
 [[ $REPLY == "$profile" ]] || fail 'a frozen profile and model did not resolve to themselves'
+sf_profile_resolve_args -p "$(jq -c '.profile' <<<"$profile")" -m "$tmp/frozen-model.jsonc"
+[[ $REPLY == "$profile" ]] || fail 'an inline frozen profile did not resolve to itself'
+
+# An inline profile resolves relative paths against the working directory.
+sf_profile_resolve_args -p '{"sandbox": {"read": ["./data"]}}' -m fixture
+jq -e --arg cwd "${PWD:A}" '.profile.sandbox.read == [$cwd + "/data"]' <<<"$REPLY" >/dev/null ||
+  fail 'inline profile paths did not resolve against the working directory'
+if sf_profile_resolve_args -p '{broken' -m fixture; then
+  fail 'malformed inline profile was accepted'
+fi
+[[ $SF_PROFILE_ERROR == '--profile requires a reference or JSON object' ]]
 
 # Supplied configuration freezes without rereading the source profile or model.
 "$ROOT/bin/shellfish" run --session-create --session-out "$tmp/config.jsonl" \

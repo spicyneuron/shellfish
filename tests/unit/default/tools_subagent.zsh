@@ -334,8 +334,6 @@ jq -e -n --slurpfile parent "$session" --slurpfile child "$tmp/.subagent-$own_id
   ($child[0].model.provider | endswith("/" + ($parent[0].model.provider | split("/") | last))) and
   ($child[1:] | map(.type)) == ["state_update","user","assistant"]
 ' >/dev/null || fail 'parent-profile child did not copy the parent profile'
-typeset -a leftover=( $tmp/.subagent-profile.*(N) )
-(( ! ${#leftover} )) || fail 'temporary parent profile was left behind'
 
 # A fork inherits only the settled parent prefix, including its effective state.
 typeset fork_parent="$tmp/fork-parent.jsonl" fork_request="$tmp/fork-request.json"

@@ -202,7 +202,7 @@ sf_profile_components() {
 # absolute paths.
 sf_profile_resolve() {
   local name=${1:-default} extra=${2:-'{}'}
-  local config_dir file profile config model sandbox reference kind resolved final
+  local config_dir file base='' profile config model sandbox reference kind resolved final
   local -a references resolutions=() system_files=()
   local -A decoded
 
@@ -210,17 +210,22 @@ sf_profile_resolve() {
   REPLY=''
   sf_environment_dir || sf_profile_fail "$SF_ENVIRONMENT_ERROR" || return
   config_dir=$REPLY
-  # Without -p, profiles/default.jsonc is the base when it exists.
-  if sf_profile_lookup "$config_dir" profiles "$name" .jsonc; then
-    file=$REPLY
+  # Without -p, profiles/default.jsonc is the base when it exists. An inline
+  # profile resolves relative paths against PWD, like other inline items.
+  if [[ $name == '{'* ]]; then
+    profile=$(jq -ce 'objects' <<<"$name" 2>/dev/null) ||
+      sf_profile_fail '--profile requires a reference or JSON object' || return
+    name=inline base=${PWD:A}
+  elif sf_profile_lookup "$config_dir" profiles "$name" .jsonc; then
+    file=$REPLY base=${file:h}
     profile=$(sf_jsonc_read "$file" 2>&1) ||
       sf_profile_validation_error "$profile" "invalid profile: $file" || return
   else
     [[ -z $1 ]] || sf_profile_fail "unknown profile: $name" || return
-    file='' profile='{}'
+    profile='{}'
   fi
   sf_jq_fields -rn --argjson profile "$profile" --argjson extra "$extra" \
-    --arg name "$name" --arg dir "${file:+${file:h}}" --arg cwd "${PWD:A}" '
+    --arg name "$name" --arg dir "$base" --arg cwd "${PWD:A}" '
     include "lib/fields";
     include "lib/profile";
     ($extra | config_profile(["options"]; profile_fields + ["model"]) |
