@@ -145,7 +145,7 @@ GIT_MARKER="$tmp/git-called" PATH="$git_bin:$PATH" SHELLFISH_SESSION="$tmp/empty
 # Commands leave ordinary, multiline, and undeclared-argument prompts untouched.
 typeset command_session="$tmp/command.jsonl" command_stream="$tmp/command.stream"
 jq -c --arg root "$ROOT/share/" '
-  .profile.commands = (["help","verbose","new","resume","server","copy","fork","sandbox","user_shell",
+  .profile.commands = (["help","verbose","new","resume","copy","fork","sandbox","user_shell",
     "compact"] | map($root + "commands/" + .)) |
   .profile.hooks = [$root + "hooks/autocompact"]
 ' < <(head -n 1 "$tmp/startup.jsonl") >"$tmp/command-header"

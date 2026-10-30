@@ -5,7 +5,7 @@
   "sandbox": "default",
   "system": ["readonly.md", "tools.md"],
   "tools": ["read_file", "shell_readonly"],
-  "commands": ["help", "verbose", "new", "resume", "fork", "rewind", "compact", "copy", "user_shell", "sandbox", "server"],
+  "commands": ["help", "verbose", "new", "resume", "fork", "rewind", "compact", "copy", "user_shell", "sandbox"],
   "hooks": [
     "project/instructions",
     "autocompact", "git/identity", "skills/mention"

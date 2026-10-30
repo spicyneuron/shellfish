@@ -106,7 +106,6 @@ The Shellfish directory (typically `~/.shellfish/`, see [Directories](docs/CONFI
 ```sh
 ./tests/run          # shell tests
 ./tests/run pty      # terminal integration tests
-./tests/run server   # browser and Go server tests
 ./tests/run perf     # performance reports
 ./tests/run loc      # source size report
 ./tests/run unit/session/main.zsh unit/profile/main.zsh

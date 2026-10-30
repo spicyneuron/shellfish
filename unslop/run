@@ -34,10 +34,6 @@ while IFS= read -r -d $'\0' file; do
     share/providers/*/context_window | \
     share/providers/*.zsh | \
     share/lib/*.zsh | \
-    shellfish-server/*.go | \
-    shellfish-server/ui/*.js | \
-    shellfish-server/ui/*.css | \
-    shellfish-server/ui/*.html | \
     tests/run | \
     tests/*.zsh | \
     tests/*.py)

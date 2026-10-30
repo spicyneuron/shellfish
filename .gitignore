@@ -4,5 +4,4 @@ __pycache__
 .worktrees
 
 _REFERENCE/
-/bin/shellfish-server
 /unslop/logs/

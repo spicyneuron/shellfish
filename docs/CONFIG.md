@@ -243,7 +243,6 @@ The bundled commands:
 | `/copy [N]` | Copy a conversation section |
 | `/user_shell COMMAND`, `/shell` | Run a user-authored command and stage its output as context |
 | `/sandbox [OP DIR]` | Inspect or update frozen sandbox grants |
-| `/server` | Hand the session to the experimental browser client |
 
 Client-owned `/refresh`, `/quit`, and `/queue` commands do not run a turn. The bundled `user_prompt_submit` hooks compact automatically near a known context-window limit, report Git identity changes, and load skills before ordinary prompts.
 

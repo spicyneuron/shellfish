@@ -32,7 +32,7 @@ unset SHELLFISH_DIR
 
 if (( $# == 0 )); then
   suites=( unit )
-elif (( $# == 1 )) && [[ $1 == (unit|pty|server|perf|loc) ]]; then
+elif (( $# == 1 )) && [[ $1 == (unit|pty|perf|loc) ]]; then
   suites=( $1 )
 else
   for test_path in "$@"; do
@@ -45,7 +45,6 @@ for suite in $suites; do
   case $suite in
     unit) tests+=( $test_dir/unit/**/*.zsh(N.) ) ;;
     pty)  tests+=( $test_dir/pty/**/*.py(N.) ) ;;
-    server) tests+=( "$project_dir/shellfish-server/ui/ui_test.js" "$project_dir/shellfish-server" ) ;;
     perf)
       "$test_dir/perf/run.zsh" || exit
       exit
@@ -58,9 +57,9 @@ for suite in $suites; do
 done
 
 for test_file in $tests; do
-  [[ -d $test_file || ( -f $test_file && $test_file == *.(zsh|py|js) ) ]] || {
+  [[ -f $test_file && $test_file == *.(zsh|py) ]] || {
     print -u2 -r -- "Invalid test path: $test_file"
-    print -u2 -r -- "Usage: $0 [unit|pty|server|perf|loc|TEST_PATH ...] or $0 decisions [--chat | --threshold N] MODEL..."
+    print -u2 -r -- "Usage: $0 [unit|pty|perf|loc|TEST_PATH ...] or $0 decisions [--chat | --threshold N] MODEL..."
     exit 2
   }
 done
@@ -111,7 +110,7 @@ cleanup_worker() {
 # rather than sleeping out the full timeout so it cannot outlive its test and
 # kill an unrelated process that later reuses the pid.
 run_test() {
-  local file=$1 log=$2 result=$3 start=$EPOCHREALTIME directory=''
+  local file=$1 log=$2 result=$3 start=$EPOCHREALTIME
   local -a runner
   integer code=0 polls=0
   # Each worker is a separate process; these outlive the function for EXIT cleanup.
@@ -119,21 +118,11 @@ run_test() {
   trap cleanup_worker EXIT
   trap 'exit 130' INT
   trap 'exit 143' TERM
-  if [[ -d $file ]]; then
-    directory=$file
-    runner=( go test ./... )
-  else
-    case $file in
-      *.zsh) runner=( zsh -f "$file" ) ;;
-      *.py)  runner=( python3 "$file" ) ;;
-      *.js)  runner=( node --test "$file" ) ;;
-    esac
-  fi
+  case $file in
+    *.zsh) runner=( zsh -f "$file" ) ;;
+    *.py)  runner=( python3 "$file" ) ;;
+  esac
   (
-    [[ -z $directory ]] || cd -- "$directory"
-    if [[ -n $directory ]]; then
-      export GOCACHE="$TMPDIR/gocache" GOMODCACHE="$TMPDIR/gomod"
-    fi
     # Non-interactive shells cannot use job control to isolate background jobs,
     # so create a process group whose id is the target pid.
     exec python3 -c 'import os, sys; os.setsid(); os.execvp(sys.argv[1], sys.argv[1:])' $runner
