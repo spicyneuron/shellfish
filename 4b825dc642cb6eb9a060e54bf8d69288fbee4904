@@ -1,3 +1,5 @@
+Could the model get a preview of sandbox grants in the project env?
+
 Add a /rewind variant of /fork that simply modifies the current session.
 
 Let's update the docs. Should probably split HARNESS into PROFILE and MODELS. Anything else to consider?
