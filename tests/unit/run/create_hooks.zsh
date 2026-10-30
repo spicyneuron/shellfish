@@ -90,6 +90,8 @@ for scenario in protocol capture capture_override silent; do
     jq -eRn --arg scenario "$scenario" --arg kind "$kind" --arg result_type "$result_type" '
       [inputs | fromjson | select(.type | IN("_draft","state_update","hook_result","tool_result"))] as $e |
       [$e[] | select(.type == $result_type)] as $results |
+      def model($text): if $kind == "hook" then
+        "<context script=\"project/instructions\">\n" + $text + "\n</context>" else $text end;
       (if $kind == "tool" or $scenario != "silent" then
         ($results | length) == 1 else ($results | length) == 0 end) and
       if $scenario == "protocol" then
@@ -98,12 +100,12 @@ for scenario in protocol capture capture_override silent; do
         $e[0].user_text == "Running\n|" and
         $results[0].user_text == "Running\nliteral ${input}|stderr" and
         (if $kind == "tool" then $results[0].exit_code == 4 else true end) and
-        $results[0].model_text == "literal ${input}" and
+        $results[0].model_text == model("literal ${input}") and
         all($e[] | select(.type != "state_update"); .user_preview_lines == "full")
       elif $scenario == "capture" then
         ($results[0].user_text | length == 2049 and contains("stdout-tail") and
           contains("stderr-tail") and (contains("head") | not)) and
-        ($results[0].model_text | length == 1024) and
+        ($results[0].model_text | length == (model("") | length) + 1024) and
         ([$results[0].user_text | scan("\\[output truncated\\]")] | length) == 2
       elif $scenario == "capture_override" then
         ($results[0].user_text | contains("head") and contains("stdout-tail") and

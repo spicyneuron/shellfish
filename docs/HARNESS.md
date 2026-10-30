@@ -58,7 +58,7 @@ Hooks and tools have one channel per audience:
 | stderr | User | Text shown only through the `user_text` template |
 | fd 3 | Shellfish | Newline-delimited JSON control lines |
 
-A component that writes nothing on stdout gives the model nothing. Hooks that add context wrap their own model text, as the bundled `<context script="NAME">` blocks do. Tools report errors on stdout so the model sees them. Stdout and stderr each keep their tail behind an `[output truncated]` marker when they exceed `SHELLFISH_MAX_CAPTURE_BYTES`. A manifest's `max_capture_bytes` overrides that limit, with a minimum of `64` bytes.
+A component that writes nothing on stdout gives the model nothing. Tools report errors on stdout so the model sees them. Stdout and stderr each keep their tail behind an `[output truncated]` marker when they exceed `SHELLFISH_MAX_CAPTURE_BYTES`. A manifest's `max_capture_bytes` overrides that limit, with a minimum of `64` bytes.
 
 Control lines accept `state_update`, such as `{"state_update":[{"name":"example/status","value":{"ready":true}}]}`. Each valid line's updates are durable immediately, even if the process later fails or is interrupted. Names are at most 128 characters and match `^[A-Za-z0-9][A-Za-z0-9_.:/-]*$`. The latest exact name is effective, and `null` clears it. Hooks also write lifecycle [actions](#hooks) here. Invalid or oversized control lines fail execution. A component starting an untrusted child must close fd 3.
 
@@ -143,7 +143,7 @@ Each lifecycle runs its hooks in the profile's order, each as a separate process
 
 A hook follows the shared [channels](#channels) and [presentation](#presentation). It settles after exit 0. A nonzero exit fails the operation and retains accepted state, with stderr in the diagnostic.
 
-Model text from one lifecycle reaches the model grouped in `<hook name="LIFECYCLE">`, each result inserted verbatim. Bundled hooks wrap theirs in `<context script="NAME">`.
+Shellfish wraps a hook's or command's model text in `<context script="NAME">`, where `NAME` is its path below `hooks/` or `commands/`, such as `git/environment`. Results from one lifecycle reach the model grouped in `<hook name="LIFECYCLE">`.
 
 A hook changes the lifecycle's outcome by writing an `action` line to fd 3. The last action from that hook wins and applies only after exit 0. Without an action, the next hook runs.
 

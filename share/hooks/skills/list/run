@@ -13,4 +13,4 @@ for (( index = 1; index <= ${#reply}; index += 3 )); do
   text+=$'\n'"- $reply[index]: $reply[index+1]"
 done
 print -r -- "**Available skills**"$'\n'"${text#*$'\n'}" >&2
-print -rn -- "<context script=\"skills/list\">"$'\n'"$text"$'\n'"</context>"
+print -rn -- "$text"

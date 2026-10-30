@@ -46,7 +46,10 @@ sf_run_hook_manifest() {
     include "lib/profile";
     first($components[] | select(.command == $command) | .manifest) as $manifest |
     if $manifest.match == null or ($input | test($manifest.match.pattern)) then
+      # The script name is the path below hooks/ or commands/, as profiles write it.
       {template:$manifest.user_text, input:$input,
+       script:($command | rtrimstr("/run") |
+         if test("/(hooks|commands)/") then sub(".*/(hooks|commands)/"; "") else split("/") | last end),
        draft:({type:"_draft",lifecycle:$lifecycle,id:$id,
          user_text:render_template($manifest.user_text; {input:$input})} +
          ($manifest | with_entries(select(.key == "user_preview_lines")))),
@@ -82,7 +85,9 @@ sf_run_hook_complete() {
       else keys == ["action"] end) then . else error("invalid control") end |
     ($component.draft + {type:"hook_result",
       user_text:render_template($component.template; $component + $outcome),
-      model_text:$outcome.output.stdout} +
+      model_text:($outcome.output.stdout | if . == "" then . else
+        "<context script=\"\($component.script | @html)\">\n" + . +
+        (if endswith("\n") then "" else "\n" end) + "</context>" end)} +
       (if $control.action == "deny" then $control else {} end) |
       with_entries(select(.value != "")) |
       if (has("user_text") or has("model_text") or has("action")) | not then entry("result"; "")

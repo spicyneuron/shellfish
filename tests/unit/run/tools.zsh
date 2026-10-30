@@ -166,7 +166,7 @@ jq -eRn '
       ["hook_result","post_tool_use"]
     ] and
   ($events | map(select(.type == "hook_result"))[0] |
-    .model_text == "pre context" and .user_text == "pre display") and
+    .model_text == "<context script=\"pre\">\npre context\n</context>" and .user_text == "pre display") and
   ($events | map(select(.type == "tool_result"))[0].model_text | contains("pre denied")) and
   ([$events[] | select((.type == "_draft" and .name == "shell") or
       (.type == "hook_result" and .lifecycle == "post_tool_use")) |
@@ -218,7 +218,7 @@ jq -eRn '
     ["state_update","hook_result","tool_result"] and
   ($events | map(select(.type == "hook_result"))[0] |
     .lifecycle == "permission_request" and
-    .model_text == "review context" and .user_text == "review display") and
+    .model_text == "<context script=\"permission\">\nreview context\n</context>" and .user_text == "review display") and
   ([$events[] | select(.type | IN("hook_result","_draft")) | [.type, .sandbox_bypass]] ==
     [["_draft","requested"],["hook_result",null],["_draft","approved"]]) and
   ($events | map(select(.type == "_draft"))[1].user_text == "**Shell** print -rn -- approved\n") and

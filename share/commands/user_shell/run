@@ -20,4 +20,4 @@ output=$(
   (( ! command_status )) || print -r -- $'\n(exit '"$command_status"')'
 )
 print -r -- "$output" >&2
-print -rn -- "<context script=\"user_shell\">"$'\n'"The user ran this shell command:"$'\n'"\$ $command"$'\n'"$output"$'\n'"</context>"
+print -rn -- "The user ran this shell command:"$'\n'"\$ $command"$'\n'"$output"

@@ -42,13 +42,13 @@ jq -e -s 'map(.type) == ["session","hook_result"] and
 new_session handoff; sf_test_run handoff "$session" >"$stream" || fail 'handoff failed'
 jq -eRn '[inputs | fromjson] as $e | $e[-1] == {type:"_handoff",argv:["/usr/bin/printf","next.jsonl"]} and
   any($e[]; .type == "state_update" and .name == "prompt/handoff" and .value == true) and
-  $e[-2].model_text == "handoff context" and ([ $e[] | select(.type == "user") ] | length) == 0' \
+  $e[-2].model_text == "<context script=\"prompt\">\nhandoff context\n</context>" and ([ $e[] | select(.type == "user") ] | length) == 0' \
   <"$stream" >/dev/null || fail 'last action or handoff durability failed'
 new_session update; sf_test_run update "$session" >"$stream" || fail 'session update failed'
 jq -e -s 'map(.type) == ["session","hook_result"] and .[0].profile.sandbox.write == ["/tmp/reference"]' "$session" >/dev/null &&
   jq -eRn '[inputs | fromjson][-1].type == "_session_update"' <"$stream" >/dev/null || fail 'session update did not replace header'
 new_session bad-update; sf_test_run bad-update "$session" >"$stream" 2>"$tmp/update.err" && fail 'invalid update succeeded'
-jq -e -s '.[-2].model_text == "update context" and
+jq -e -s '.[-2].model_text == "<context script=\"prompt\">\nupdate context\n</context>" and
   .[-1] == {type:"error",user_text:"invalid session update"}' "$session" >/dev/null ||
   fail 'invalid update lost settled result'
 new_session fail; sf_test_run fail "$session" >"$stream" 2>"$tmp/fail.err" && fail 'nonzero hook succeeded'
@@ -104,12 +104,12 @@ new_session stop; sf_test_run stop "$session" >"$stream" || fail 'stop continuat
 assert_equal 'answer 2' "$(<$stop_input)" 'stop input was not final assistant text'
 assert_equal 2 "$(<$count)" 'stop did not continue provider'
 jq -e -s 'map(select(.type == "hook_result") | {model_text,action,reason}) ==
-  [{model_text:"checking again",action:"deny",reason:"not finished"}]' "$session" \
+  [{model_text:"<context script=\"stop\">\nchecking again\n</context>",action:"deny",reason:"not finished"}]' "$session" \
   >/dev/null || fail 'stop feedback did not settle'
 new_session limit
 SHELLFISH_MAX_REQUESTS_PER_TURN=1 sf_test_run stop "$session" >"$stream" 2>"$tmp/limit.err" &&
   fail 'request limit succeeded'
-jq -e -s '.[-2].model_text == "checking again" and
+jq -e -s '.[-2].model_text == "<context script=\"stop\">\nchecking again\n</context>" and
   .[-1] == {type:"error",user_text:"provider request limit reached: 1"}' "$session" >/dev/null ||
   fail 'request limit lost feedback'
 : >"$STOP_SILENT"

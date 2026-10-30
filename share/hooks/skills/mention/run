@@ -34,4 +34,4 @@ while IFS= read -r token; do
   context+=$text$'\n'
 done < <(print -rn -- "$submitted" | grep -oE '(^|[^[:alnum:]_$])\$[a-z0-9]+(-[a-z0-9]+)*')
 (( ${#loaded} )) || exit 0
-print -rn -- "<context script=\"skills/mention\">"$'\n'"$context</context>"
+print -rn -- "$context"

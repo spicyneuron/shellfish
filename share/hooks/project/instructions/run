@@ -9,8 +9,7 @@ for name in AGENTS.md CLAUDE.md; do
   text=$(cat -- "$name" && print x) || exit 1
   text=${text%x}
   print -rn -- "**Project instructions** ($name)"$'\n'"$text" >&2
-  print -r -- "<context script=\"project/instructions\">"
   print -r -- "$name: Follow the instructions below for this directory tree. Do not reread this file. A nested $name takes precedence."
-  print -rn -- $'\n'"$text"$'\n'"</context>"
+  print -rn -- $'\n'"$text"
   exit
 done
