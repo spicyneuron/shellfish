@@ -161,6 +161,8 @@ Tools and hooks require `run`, and providers require `run`, `decide`, or both. A
 
 The default harness runs opted-in tools under [`fence`](https://github.com/fencesandbox/fence). Tool policies and platform temp access set the baseline; grants extend filesystem access, while policy deny rules still take precedence. Bundled policies never let a tool create or change a `.shellfish` directory, since its contents run outside the sandbox. A `SHELLFISH_DIR` with another name inside a writable path is not protected.
 
+A tool's `fence.jsonc` can `extend` another tool's policy. For example, the bundled `shell_readonly` tool runs `shell`'s script under `shell`'s policy, plus a rule that denies all writes.
+
 Sandbox files hold standing settings:
 
 ```jsonc

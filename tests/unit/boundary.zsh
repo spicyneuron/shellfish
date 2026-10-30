@@ -75,10 +75,13 @@ collect 'include "lib/[a-z]+"' $ROOT/share/**/*(.N)
 # A script-relative path stays inside the installed share root.
 for file in $ROOT/share/{commands,hooks,tools,providers,lib}/**/*(.N); do
   rel=${file#$ROOT/share/}
-  collect ':A(:h)+|\.\./' $file
+  collect ':A(:h)+|(\.\./)+' $file
   for token in $matches; do
-    [[ $token != ../ ]] && (( ${#${token//[^h]/}} <= ${#${(s:/:)rel}} )) ||
-      fail "bundled resource leaves share: ${file#$ROOT/}: $token"
+    if [[ $token == ../* ]]; then
+      (( ${#token} / 3 < ${#${(s:/:)rel}} ))
+    else
+      (( ${#${token//[^h]/}} <= ${#${(s:/:)rel}} ))
+    fi || fail "bundled resource leaves share: ${file#$ROOT/}: $token"
   done
 done
 

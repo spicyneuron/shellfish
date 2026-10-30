@@ -97,8 +97,6 @@ for tool in "$tools"/*(/); do
   ! jq -e '.sandbox == true' "$tool/manifest.json" >/dev/null ||
     [[ -f $tool/fence.jsonc ]] || fail "${tool:t} is sandboxed without a policy"
 done
-cmp -s "$tools/shell/run" "$tools/shell_readonly/run" ||
-  fail 'shell_readonly diverged from shell'
 
 # Sandboxed tools that may write cannot create or change a Shellfish directory.
 for policy in "$tools"/*/fence.jsonc; do
