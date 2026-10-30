@@ -13,7 +13,7 @@ fail_compaction() {
   exit 0
 }
 
-# The compact hook passes --auto with the submitted prompt, kept as the draft.
+# The autocompact hook passes --auto with the submitted prompt, kept as the draft.
 if [[ ${1-} == --auto ]]; then
   jq -es '
     .[0].model.context_window as $window |

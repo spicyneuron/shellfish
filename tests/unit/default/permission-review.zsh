@@ -4,7 +4,7 @@ source "${0:A:h:h:h}/_helpers.zsh"
 sf_test_source lib/session.zsh
 sf_test_tmp permission-review
 
-typeset hook="$ROOT/share/hooks/sandbox_approver"
+typeset hook="$ROOT/share/hooks/sandbox/approver"
 typeset session="$tmp/review.jsonl" control="$tmp/control.json"
 typeset backend="$tmp/backend" captured="$tmp/permission-review.jsonl" mode="$tmp/mode"
 typeset provider="$tmp/request.json"
@@ -123,7 +123,7 @@ session=$parent_session
 
 # An empty review configuration keeps the inherited model.
 session="$tmp/empty-review.jsonl"
-jq -c 'if .type == "session" then .profile.config.sandbox_approver={} else . end' \
+jq -c 'if .type == "session" then .profile.config.sandbox.approver={} else . end' \
   "$parent_session" >"$session"
 run_review valid
 jq -e '.action == "allow"' "$control" >/dev/null
@@ -144,7 +144,7 @@ cat >"$SHELLFISH_DIR/models/review/fast.v1.jsonc" <<'JSON'
 }
 JSON
 session="$tmp/configured-review.jsonl"
-jq -c 'if .type == "session" then .profile.config.sandbox_approver.model="review/fast.v1" else . end' \
+jq -c 'if .type == "session" then .profile.config.sandbox.approver.model="review/fast.v1" else . end' \
   "$parent_session" >"$session"
 before=$(shasum <"$session")
 run_review valid
@@ -177,7 +177,7 @@ for review_config in 'null' 'false' '[]' '{"unknown":true}' \
     '{"decision_model":"d","allow_threshold":0}' '{"decision_model":"d","allow_threshold":1.5}' \
     '{"decision_model":"d","allow_threshold":"0.5"}'; do
   jq -c --argjson config "$review_config" '
-    if .type == "session" then .profile.config.sandbox_approver=$config else . end
+    if .type == "session" then .profile.config.sandbox.approver=$config else . end
   ' "$parent_session" >"$session"
   run_review valid
   jq -e '(has("action") | not) and
@@ -185,7 +185,7 @@ for review_config in 'null' 'false' '[]' '{"unknown":true}' \
     "$control" >/dev/null || fail "review accepted invalid configuration: $review_config"
   [[ ! -e $captured && ! -e $provider ]] || fail 'invalid review configuration called the provider'
 done
-jq -c 'if .type == "session" then .profile.config.sandbox_approver.model="missing" else . end' \
+jq -c 'if .type == "session" then .profile.config.sandbox.approver.model="missing" else . end' \
   "$parent_session" >"$session"
 run_review valid
 jq -e '(has("action") | not) and
@@ -227,7 +227,7 @@ chmod +x "$SHELLFISH_DIR/models/decider/decide"
 print -r -- '{"adapter":"./decider","endpoint":"https://decide.invalid","request":{"model":"d"}}' \
   >"$SHELLFISH_DIR/models/decider.jsonc"
 session="$tmp/decision-review.jsonl"
-jq -c 'if .type == "session" then .profile.config.sandbox_approver.decision_model="decider"
+jq -c 'if .type == "session" then .profile.config.sandbox.approver.decision_model="decider"
   else . end' "$parent_session" >"$session"
 decision() {
   jq -cn --argjson risk "$1" --argjson auth "$2" --argjson injected "$3" '
@@ -264,12 +264,12 @@ jq -e '.action == "deny" and
 ' "$control" >/dev/null || fail 'decision review allowed an uncertain call'
 
 # A configured threshold lowers the bar for less decisive models.
-jq -c 'if .type == "session" then .profile.config.sandbox_approver =
+jq -c 'if .type == "session" then .profile.config.sandbox.approver =
   {decision_model:"decider",allow_threshold:0.5} else . end' "$parent_session" >"$session"
 run_review "$(decision '[0.1,0.6,0.3]' '[0.1,0.2,0.5,0.2]' 0.1)"
 jq -e '.action == "allow"' "$control" >/dev/null ||
   fail 'decision review ignored its allow threshold'
-jq -c 'if .type == "session" then .profile.config.sandbox_approver.decision_model="decider"
+jq -c 'if .type == "session" then .profile.config.sandbox.approver.decision_model="decider"
   else . end' "$parent_session" >"$session"
 
 run_review "$(decision '[1,0,0]' '[0,0,0,1]' 0.62)"

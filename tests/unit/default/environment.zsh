@@ -147,7 +147,7 @@ typeset command_session="$tmp/command.jsonl" command_stream="$tmp/command.stream
 jq -c --arg root "$ROOT/share/" '
   .profile.commands = (["help","verbose","new","resume","server","copy","fork","sandbox","shell",
     "compact"] | map($root + "commands/" + .)) |
-  .profile.hooks = [$root + "hooks/compact"]
+  .profile.hooks = [$root + "hooks/autocompact"]
 ' < <(head -n 1 "$tmp/startup.jsonl") >"$tmp/command-header"
 submit() {
   cp "$tmp/command-header" "$command_session"

@@ -5,11 +5,11 @@ sf_test_source lib/session.zsh
 sf_test_tmp compact
 
 # Compact into a canonical child.
-typeset compact_hook="$ROOT/share/hooks/compact/run"
+typeset compact_hook="$ROOT/share/hooks/autocompact/run"
 typeset compact_command="$ROOT/share/commands/compact/run"
 typeset compact_source="$tmp/compact-source.jsonl"
 typeset compact_control="$tmp/compact-control.json"
-# The action lines among the compact hook's fd 3 output.
+# The action lines among the autocompact hook's fd 3 output.
 actions() { jq -c 'select(has("action"))' "$compact_control"; }
 typeset compact_shellfish="$tmp/compact-shellfish"
 typeset compact_request="$tmp/compact-request.json"

@@ -9,6 +9,6 @@
   "commands": ["help", "verbose", "new", "resume", "server", "copy", "fork", "sandbox", "shell", "compact"],
   "hooks": [
     "project/environment", "git/environment", "project/instructions", "skills/list",
-    "compact", "git/change", "skills/mention", "sandbox_approver"
+    "autocompact", "git/change", "skills/mention", "sandbox/approver"
   ]
 }
