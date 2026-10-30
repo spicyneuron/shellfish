@@ -67,7 +67,14 @@ chmod +x "$provider/run"
 sf_test_profile child "{\"tools\":[\"$agent\"]}"
 sf_test_model alt "$(jq -cn --arg provider "$provider" \
   '{provider:$provider,endpoint:"https://example.invalid/test",request:{model:"alt-model"}}')"
-print -rl -- '#!/usr/bin/env zsh' 'exit 0' | sf_test_hook "$tmp/stop-hook" '{"on":"stop"}'
+sf_test_hook "$tmp/stop-hook" '{"on":"stop","user_text":"${output.stderr}"}' <<'ZSH'
+#!/usr/bin/env zsh
+if [[ ${SF_AGENT_STOP_DENY-} == 1 && $1 == 1 ]]; then
+  print -r -- 'Try again'
+  print -r -u3 -- '{"action":"deny"}'
+fi
+print -r -u2 -- 'Checks passed'
+ZSH
 sf_test_profile child-stop "{\"hooks\":[\"$tmp/stop-hook\"]}"
 
 sf_test_frozen_profile
@@ -309,7 +316,7 @@ stop_inspection=$(print -r -- "{\"operation\":\"inspect\",\"agent_id\":\"$stop_i
   SHELLFISH_SESSION="$stop_parent" SHELLFISH_EXECUTABLE="$ROOT/bin/shellfish" \
   "$agent/run" 3>"$tmp/refused-state") || fail 'stop-hook inspection failed'
 jq -e '.working == false and .settled == true and
-  .answer == "child answer"' \
+  .answer == "child answer" and .last_record == "hook_result"' \
   <<<$stop_inspection >/dev/null || fail 'stop-hook inspection was misreported'
 print -r -- "$stop_id" >"$SF_AGENT_ID_FILE"
 sf_test_run 'continue child' "$stop_parent" >"$stream" ||
@@ -318,6 +325,65 @@ assert_canonical_session "$stop_child"
 jq -e -s '[.[] | select(.type == "user") | .content[0].text] ==
   ["child task","next child task"]' "$stop_child" >/dev/null ||
   fail 'stop-hook continuation did not add a child turn'
+
+# A failed follow-up must not return an earlier turn's answer.
+typeset failed_result
+integer failed_code=0
+failed_result=$(jq -cn --arg id "$stop_id" \
+  '{operation:"continue",agent_id:$id,task:"child error"}' |
+  SHELLFISH_SESSION="$stop_parent" SHELLFISH_EXECUTABLE="$ROOT/bin/shellfish" \
+  "$agent/run" 3>"$tmp/refused-state") || failed_code=$?
+(( failed_code != 0 )) || fail 'failed continuation succeeded'
+jq -e --argjson code "$failed_code" '.exit_code == $code and .answer == null' \
+  <<<$failed_result >/dev/null || fail 'failed continuation returned an old answer'
+stop_inspection=$(jq -cn --arg id "$stop_id" '{operation:"inspect",agent_id:$id}' |
+  SHELLFISH_SESSION="$stop_parent" SHELLFISH_EXECUTABLE="$ROOT/bin/shellfish" \
+  "$agent/run" 3>"$tmp/refused-state") || fail 'failed continuation inspection failed'
+jq -en --argjson result "$failed_result" --argjson inspection "$stop_inspection" \
+  '$inspection.working == false and $inspection.settled == true and
+   $inspection.answer == $result.answer' >/dev/null || fail 'failed outcomes disagree'
+
+# A denied stop can finish with a later response in the same turn.
+typeset retry_result
+retry_result=$(jq -cn --arg id "$stop_id" \
+  '{operation:"continue",agent_id:$id,task:"retry child task"}' |
+  SF_AGENT_STOP_DENY=1 SHELLFISH_SESSION="$stop_parent" \
+  SHELLFISH_EXECUTABLE="$ROOT/bin/shellfish" "$agent/run" 3>"$tmp/refused-state") ||
+  fail 'stop-hook retry failed'
+jq -e '.exit_code == 0 and .answer == "child answer"' <<<$retry_result >/dev/null ||
+  fail 'stop-hook retry lost its answer'
+assert_canonical_session "$stop_child"
+jq -e -s '
+  ([to_entries[] | select(.value.type == "user") | .key] | last) as $turn |
+  [.[$turn:][] | select(.type == "assistant")] | length == 2
+' "$stop_child" >/dev/null || fail 'stop denial did not continue inference'
+
+# Inspect durable prefixes as if the child had stopped at each boundary.
+typeset outcome_id=cccccccccccccccccccccccccccccccc outcome_child outcome_result phase
+outcome_child="$tmp/.subagent-$outcome_id.jsonl"
+: >"$outcome_child.lock"
+print -r -- "{\"type\":\"state_update\",\"name\":\"subagents/$outcome_id\",\"value\":true}" >>"$stop_parent"
+for phase in pending denied finished failed; do
+  jq -c -s --arg phase "$phase" '
+    ([to_entries[] | select(.value.type == "user") | .key] | last) as $turn |
+    ([to_entries[] | select(.value.type == "hook_result" and
+      .value.lifecycle == "stop" and .value.action == "deny") | .key] | last) as $deny |
+    if $phase == "pending" then .[:$turn + 1][]
+    elif $phase == "denied" then .[:$deny + 1][]
+    elif $phase == "failed" then .[], {type:"error",user_text:"Stop failed"}
+    else .[] end
+  ' "$stop_child" >"$outcome_child"
+  print -r -- '{"type":"state_update","name":"check","value":true}' >>"$outcome_child"
+  assert_canonical_session "$outcome_child"
+  outcome_result=$(jq -cn --arg id "$outcome_id" '{operation:"inspect",agent_id:$id}' |
+    SHELLFISH_SESSION="$stop_parent" SHELLFISH_EXECUTABLE="$ROOT/bin/shellfish" \
+    "$agent/run" 3>"$tmp/refused-state") || fail "$phase inspection failed"
+  jq -e --arg phase "$phase" --argjson result "$retry_result" '
+    .working == false and .last_record == "state_update" and
+    .settled == ($phase == "finished" or $phase == "failed") and
+    .answer == (if $phase == "finished" then $result.answer else null end)
+  ' <<<$outcome_result >/dev/null || fail "$phase outcome was misreported"
+done
 print -r -- "$id" >"$SF_AGENT_ID_FILE"
 
 # Without a profile, a fresh child uses the parent's, minus this tool.

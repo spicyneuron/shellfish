@@ -18,6 +18,37 @@ running() {
   return 1
 }
 
+# Read the latest turn's outcome, then apply the caller's output shape.
+read_outcome() {
+  local body=$1
+  shift
+  jq -c -s --arg id "$agent_id" "$@" '
+    if length < 2 or .[0].type != "session" or
+       (any(.[1:][]; . == {type:"state_update",name:"subagent",value:true}) | not) or
+       (all(.[]; .type | IN("session","state_update","hook_result","user",
+         "assistant","tool_result","error")) | not) then
+      error("invalid subagent session")
+    else
+      ([to_entries[] | select(.value.type == "user" or
+        .value == {type:"state_update",name:"subagent",value:true}) | .key] | last) as $turn |
+      .[$turn:] as $records |
+      reduce $records[] as $record
+        ({settled:false,answer:null};
+         if $record.type == "error" then {settled:true,answer:null}
+         elif $record.type == "assistant" then
+           {settled:($record.stop == "end"),
+            answer:(if $record.stop == "end" then
+              [$record.content[] | select(.type == "text") | .text] | join("\n")
+              else null end)}
+         elif $record.type == "hook_result" and
+              $record.lifecycle == "stop" and $record.action == "deny" then
+           {settled:false,answer:null}
+         else . end) |
+      . + {agent_id:$id,last_record:$records[-1].type}
+    end |
+  '"$body" "$child"
+}
+
 # Removes this tool from a session header, since subagents cannot delegate.
 typeset detach='if .type == "session" then
   .profile.tools |= map(select(split("/") | last != $self)) else . end'
@@ -108,24 +139,9 @@ if [[ $operation == inspect || $operation == continue ]]; then
     fail 'subagent session lock is unavailable'
   working=false
   running "$child" && working=true
-  output=$(jq -c -s --arg id "$agent_id" --argjson working "$working" '
-    if length < 2 or .[0].type != "session" or
-       (any(.[1:][]; . == {type:"state_update",name:"subagent",value:true}) | not) or
-       (all(.[]; .type | IN("session","state_update","hook_result","user",
-         "assistant","tool_result","error")) | not) then
-      error("invalid subagent session")
-    else
-      ([to_entries[] | select(.value.type == "user") | .key] | last) as $turn |
-      (if $turn == null then [] else .[$turn:] end) as $records |
-      ($records[-1].type // null) as $last |
-      {agent_id:$id, working:$working,
-       settled:(($working | not) and ($last == "error" or
-         ($last == "assistant" and $records[-1].stop == "end"))),
-       answer:([$records[] | select(.type == "assistant" and .stop == "end") |
-         [.content[] | select(.type == "text") | .text] | join("\n")] | last // null),
-       last_record:$last}
-    end
-  ' "$child") || fail 'cannot inspect subagent session'
+  output=$(read_outcome '
+    . + {working:$working,settled:(.settled and ($working | not))}
+  ' --argjson working "$working") || fail 'cannot inspect subagent session'
   if [[ $operation == inspect ]]; then
     print -r -- "$output"
     exit 0
@@ -201,10 +217,7 @@ fi
 
 "$SHELLFISH_EXECUTABLE" run --session "$child" -- "$task" >/dev/null 2>&1
 result=$?
-output=$(jq -c -s --arg id "$agent_id" --argjson exit_code "$result" '
-  {agent_id:$id,exit_code:$exit_code,
-   answer:([.[] | select(.type == "assistant" and .stop == "end") |
-     [.content[] | select(.type == "text") | .text] | join("\n")] | last // null)}
-' "$child") || fail 'cannot read subagent result'
+output=$(read_outcome '{agent_id,exit_code:$exit_code,answer}' \
+  --argjson exit_code "$result") || fail 'cannot read subagent result'
 print -r -- "$output"
 exit "$result"
