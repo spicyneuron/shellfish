@@ -9,7 +9,7 @@ source "${0:A:h:h}/_provider.zsh"
 api_key=${OPENAI_API_KEY-}
 unset OPENAI_API_KEY
 
-sf_provider_setup openai
+sf_provider_setup openai_chat
 trap 'rm -rf -- "$SF_PROVIDER_TEMP_DIR"' EXIT
 cat >"$SF_PROVIDER_REQUEST_FILE"
 sf_provider_request || exit 10

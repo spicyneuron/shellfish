@@ -2,7 +2,7 @@
 
 source "${0:A:h:h:h}/_helpers.zsh"
 sf_test_source lib/session.zsh
-sf_test_tmp permission-review
+sf_test_tmp sandbox-approver
 
 typeset hook="$ROOT/share/hooks/sandbox/approver"
 typeset session="$tmp/review.jsonl" control="$tmp/control.json"

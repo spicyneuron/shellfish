@@ -23,7 +23,7 @@ print -r -- '{"sandbox":["~/s.jsonc"],"system":["x.md"],"tools":[],"hooks":["h"]
 print -r -- '{"sandbox":{"read":["./x"]},"system":[{"text":"t"}]}' |
   profile_eval 'config_profile(["p"])' >/dev/null
 for model in \
-    '{"driver":"openai"}' '{"context_window":0}' '{"endpoint":"ftp://example.invalid"}' \
+    '{"driver":"openai_chat"}' '{"context_window":0}' '{"endpoint":"ftp://example.invalid"}' \
     '{"request":"x"}' '{"tools":[]}'; do
   if print -r -- "$model" | profile_eval 'config_model(["m"])' >/dev/null 2>&1; then
     fail "invalid model was accepted: $model"
@@ -35,14 +35,14 @@ print -r -- '{"context_window":null}' | profile_eval 'config_model(["m"])' >/dev
 # The result needs a model and provider.
 profile_eval '
   model_merge([
-    {"$schema":"x",provider:"openai",request:{model:"base",reasoning:{effort:"low",budget:1},stop:["a"]}},
+    {"$schema":"x",provider:"openai_chat",request:{model:"base",reasoning:{effort:"low",budget:1},stop:["a"]}},
     {request:{reasoning:{effort:"high"},stop:["b"]},context_window:null},
     {provider:"anthropic"}, {request:{seed:1}}
   ]) == {
     provider:"anthropic",context_window:null,
     request:{model:"base",reasoning:{effort:"high",budget:1},stop:["b"],seed:1}
   }' -n >/dev/null || fail 'model files did not merge in order'
-for models in '[{"provider":"openai"}]' '[{"request":{"model":"m"}}]'; do
+for models in '[{"provider":"openai_chat"}]' '[{"request":{"model":"m"}}]'; do
   if profile_eval 'model_merge($models)' -n --argjson models "$models" >/dev/null 2>&1; then
     fail "incomplete model was accepted: $models"
   fi

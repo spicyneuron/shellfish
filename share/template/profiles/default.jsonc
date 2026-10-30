@@ -24,6 +24,6 @@
   // "sandbox/approver" to have a model review sandbox bypass requests.
   "hooks": [
     "project/environment", "git/environment", "project/instructions", "skills/list",
-    "autocompact", "git/change", "skills/mention"
+    "autocompact", "git/identity", "skills/mention"
   ]
 }

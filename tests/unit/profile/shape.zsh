@@ -70,7 +70,7 @@ valid_header=$(jq -cn '
     cwd: "~/project",
     created: "2026-08-18T00:00:00Z",
     model: {
-      provider: "@providers/openai",
+      provider: "@providers/openai_chat",
       endpoint: "https://api.openai.com/v1/chat/completions",
       request: {model: "gpt-4o"},
       config: {example:["./literal", null, false]},
@@ -105,7 +105,7 @@ for patch in '.extra=true' '.profile.extra=true' '.profile.env={}' \
     '.profile.hooks=[{command:"/bin/hook"}]' '.profile.system=["@system/general.md"]' \
     '.profile.system=[{text:1}]' '.profile.sandbox=true' '.profile.sandbox.extra=1' \
     '.profile.tools=["shell"]' '.profile.tools=["/a/shell","/b/shell"]' \
-    '.model.provider="./openai"' '.profile.system=[{text:""}]' '.profile.system+=[{text:"two"}]' \
+    '.model.provider="./openai_chat"' '.profile.system=[{text:""}]' '.profile.system+=[{text:"two"}]' \
     '.profile.sandbox.read=["relative"]' \
     '.cwd="./project"'; do
   if jq -c "$patch" <<<"$valid_header" |
@@ -121,7 +121,7 @@ jq -L "$ROOT" -e --arg share /opt/sf/share --arg home /home/me '
   ($stored | header_expand($share; $home)) as $expanded |
   $expanded.profile.tools == ["/opt/sf/share/tools/shell", "/home/me/tools/jira"] and
   $expanded.profile.sandbox.read == ["/home/me/cache"] and
-  $expanded.model.provider == "/opt/sf/share/providers/openai" and
+  $expanded.model.provider == "/opt/sf/share/providers/openai_chat" and
   ($expanded | header_store($share; $home)) == $stored
 ' <<<"$valid_header" >/dev/null || fail 'stored profile paths did not round-trip'
 

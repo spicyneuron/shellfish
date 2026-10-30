@@ -64,11 +64,11 @@ Built-in providers and credentials:
 | --- | --- |
 | `anthropic` | `ANTHROPIC_API_KEY` |
 | `codex` | Existing Codex CLI login |
-| `openai` | `OPENAI_API_KEY` |
+| `openai_chat` | `OPENAI_API_KEY` |
 | `openai_responses` | `OPENAI_API_KEY` |
 | `openrouter` | `OPENROUTER_API_KEY` |
 
-The `openai` provider also supports compatible services by setting `endpoint` in a model file.
+The `openai_chat` provider also supports compatible services by setting `endpoint` in a model file.
 
 Run `shellfish --help` for creation and sandbox options, or `/help` inside chat for commands supplied by the active harness.
 

@@ -93,7 +93,7 @@ A model file configures where a request goes and what it carries. `-m REF|JSON` 
 
 ```jsonc
 // models/local.jsonc
-{"provider": "openai", "endpoint": "http://127.0.0.1:8080/v1/chat/completions",
+{"provider": "openai_chat", "endpoint": "http://127.0.0.1:8080/v1/chat/completions",
  "request": {"model": "local-model"}}
 
 // models/high.jsonc
@@ -114,7 +114,7 @@ HTTP providers share these `model.config` settings, with the following defaults 
 
 For example, `"config": {"http_timeout": 120, "http_stall": 30}` sets shorter limits for a model. The Codex provider always requires TLS verification.
 
-Bundled providers: `anthropic`, `codex`, `openai`, `openai_responses`, and `openrouter`. The `openai` provider works with any OpenAI-compatible endpoint. See [`HARNESS.md`](HARNESS.md#providers) for the provider protocol.
+Bundled providers: `anthropic`, `codex`, `openai_chat`, `openai_responses`, and `openrouter`. The `openai_chat` provider works with any OpenAI-compatible endpoint. See [`HARNESS.md`](HARNESS.md#providers) for the provider protocol.
 
 Decision models serve `shellfish decide` instead of conversations. Bundled decision providers: `openai_decisions` for OpenAI's Decisions API, and `systemone` for TypeSafe's System One API with `TYPESAFE_API_KEY`. For oMLX servers, `systemone_omlx` and `openai_decisions_omlx` speak the same formats. They need an endpoint, and they send `OMLX_API_KEY` when set rather than `OPENAI_API_KEY` or `TYPESAFE_API_KEY`. `systemone_omlx` also accepts video:
 

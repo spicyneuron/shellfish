@@ -3,4 +3,4 @@
 emulate -R zsh
 setopt err_exit no_aliases no_multios pipe_fail
 
-exec "${0:A:h:h}/openai/context_window"
+exec "${0:A:h:h}/openai_chat/context_window"

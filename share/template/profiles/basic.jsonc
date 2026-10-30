@@ -8,6 +8,6 @@
   "commands": ["help", "verbose", "new", "resume", "server", "copy", "fork", "sandbox", "shell", "compact"],
   "hooks": [
     "project/environment", "git/environment", "project/instructions",
-    "autocompact", "git/change"
+    "autocompact", "git/identity"
   ]
 }

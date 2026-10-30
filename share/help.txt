@@ -44,7 +44,7 @@ Authentication:
   Set environment variable or include in the Shellfish directory's .env
 
   anthropic         ANTHROPIC_API_KEY
-  openai            OPENAI_API_KEY
+  openai_chat       OPENAI_API_KEY
   openai_responses  OPENAI_API_KEY
   openrouter        OPENROUTER_API_KEY
   codex             Uses existing $CODEX_HOME/auth.json

@@ -16,7 +16,7 @@ EOF
 chmod +x "$environment_bin/tree"
 # Record Git identity transitions.
 typeset git_environment="$ROOT/share/hooks/git/environment/run"
-typeset git_prompt="$ROOT/share/hooks/git/change/run"
+typeset git_prompt="$ROOT/share/hooks/git/identity/run"
 typeset git_bin="$tmp/git-environment-bin" git_state="$tmp/git-state"
 typeset git_session="$tmp/git-session.jsonl" git_control="$tmp/git-control.json" git_output
 mkdir "$git_bin"
@@ -47,7 +47,7 @@ sf_test_profile default '{
   "system": ["general.md", "tools.md"],
   "tools": ["read_file", "edit_file", "write_file", "skill", "search_web", "fetch_url", "shell"],
   "hooks": ["project/environment", "git/environment", "project/instructions", "skills/list",
-    "git/change"]
+    "git/identity"]
 }'
 startup() {
   rm -f "$tmp/startup.jsonl"
@@ -102,7 +102,7 @@ jq -e -s 'all(.[]; .type != "hook_result")' "$git_control" >/dev/null
 print -r -- 'branch:feature' >"$git_state"
 git_change
 [[ $git_output == *main* && $git_output == *feature* ]]
-[[ $git_output == '<context script="git/change">'$'\n'*$'\n</context>' ]]
+[[ $git_output == '<context script="git/identity">'$'\n'*$'\n</context>' ]]
 jq -e -s 'map(select(.type == "hook_result")) | last.user_text == "Git checkout changed:\nmain → feature"' \
   "$git_control" >/dev/null
 jq -e -s 'map(select(.type == "state_update")) | last.value == "branch:feature"' \

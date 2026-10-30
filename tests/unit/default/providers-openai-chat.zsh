@@ -2,10 +2,10 @@
 
 source "${0:A:h:h:h}/_helpers.zsh"
 
-sf_test_tmp providers-openai
-typeset run="$ROOT/share/providers/openai/run"
+sf_test_tmp providers-openai-chat
+typeset run="$ROOT/share/providers/openai_chat/run"
 typeset openrouter_run="$ROOT/share/providers/openrouter/run"
-typeset context_window="$ROOT/share/providers/openai/context_window"
+typeset context_window="$ROOT/share/providers/openai_chat/context_window"
 typeset responses_context_window="$ROOT/share/providers/openai_responses/context_window"
 typeset req="$tmp/request.json"
 typeset res="$tmp/response.json"
@@ -83,17 +83,17 @@ jq -e '
   .response_format == {type:"json_schema",json_schema:{name:"shellfish_response",
     strict:true,schema:{type:"object",required:["answer"],
       properties:{answer:{type:"string"}}}}}
-' "$PROVIDER_TEST_BODY" >/dev/null || fail 'openai did not normalize common request parameters'
+' "$PROVIDER_TEST_BODY" >/dev/null || fail 'openai_chat did not normalize common request parameters'
 
-sf_test_provider_response "$res" || fail 'openai emitted an invalid call stream'
+sf_test_provider_response "$res" || fail 'openai_chat emitted an invalid call stream'
 jq -e '
   .stop == "tool_calls" and
   .content == [{type:"text",text:"Let me check."},
     {type:"tool_call",id:"call_123",name:"shell",input:{command:"pwd"}}] and
   .usage == {input_tokens:10,cached_tokens:8,output_tokens:5,reasoning_tokens:2}
-' <<<"$REPLY" >/dev/null || fail 'openai did not assemble fragmented calls'
+' <<<"$REPLY" >/dev/null || fail 'openai_chat did not assemble fragmented calls'
 jq -e -s 'map(select(.type == "_assistant_message_delta") | .text) == ["Let me ","check."]' \
-  "$res" >/dev/null || fail 'openai did not stream text deltas'
+  "$res" >/dev/null || fail 'openai_chat did not stream text deltas'
 
 # Normalize model catalog limits.
 cat >"$PROVIDER_TEST_RESPONSE" <<'EOF'
@@ -133,9 +133,9 @@ printf "%s\n" \
   'data: [DONE]' \
   "" >"$PROVIDER_TEST_RESPONSE"
 OPENAI_API_KEY=test-key zsh -f "$run" <"$req" >"$res"
-sf_test_provider_response "$res" || fail 'openai emitted an invalid length stream'
+sf_test_provider_response "$res" || fail 'openai_chat emitted an invalid length stream'
 jq -e '. == {type:"assistant",stop:"length",content:[]}' <<<"$REPLY" >/dev/null ||
-  fail 'openai kept calls stopped by length'
+  fail 'openai_chat kept calls stopped by length'
 
 # Supply missing call identifiers.
 printf "%s\n" \
@@ -145,9 +145,9 @@ printf "%s\n" \
 
 OPENAI_API_KEY=test-key zsh -f "$run" <"$req" >"$res"
 
-sf_test_provider_response "$res" || fail 'openai emitted an invalid unnamed-call stream'
+sf_test_provider_response "$res" || fail 'openai_chat emitted an invalid unnamed-call stream'
 jq -e '.stop == "tool_calls" and .content == [{type:"tool_call",id:"call_0",name:"shell",input:{}}]' \
-  <<<"$REPLY" >/dev/null || fail 'openai did not supply a missing call identifier'
+  <<<"$REPLY" >/dev/null || fail 'openai_chat did not supply a missing call identifier'
 
 # Parse buffered JSON responses.
 cat >"$PROVIDER_TEST_RESPONSE" <<'EOF'
@@ -183,15 +183,15 @@ EOF
 
 OPENAI_API_KEY=test-key zsh -f "$run" <"$req" >"$res"
 
-sf_test_provider_response "$res" || fail 'openai emitted an invalid buffered stream'
+sf_test_provider_response "$res" || fail 'openai_chat emitted an invalid buffered stream'
 jq -e '
   .stop == "tool_calls" and
   .content == [{type:"text",text:"ok"},
     {type:"tool_call",id:"call_abc",name:"shell",input:{command:"ls"}}] and
   .usage == {input_tokens:12,output_tokens:8}
-' <<<"$REPLY" >/dev/null || fail 'openai did not parse a buffered response'
+' <<<"$REPLY" >/dev/null || fail 'openai_chat did not parse a buffered response'
 jq -e -s 'map(select(.type == "_assistant_message_delta") | .text) == ["ok"]' \
-  "$res" >/dev/null || fail 'openai did not stream a buffered response as deltas'
+  "$res" >/dev/null || fail 'openai_chat did not stream a buffered response as deltas'
 
 # Regroup flat call batches.
 typeset batch_request="$tmp/batch-request.json"
@@ -221,7 +221,7 @@ jq -e '
   (.messages[2].tool_calls | map(.id)) == ["call_1","call_2"] and
   .messages[2].tool_calls[0].function == {name:"shell",arguments:"{\"command\":\"pwd\"}"} and
   (.messages | map(.tool_call_id) | map(select(. != null))) == ["call_1","call_2"]
-' "$PROVIDER_TEST_BODY" >/dev/null || fail 'openai did not regroup a call batch'
+' "$PROVIDER_TEST_BODY" >/dev/null || fail 'openai_chat did not regroup a call batch'
 
 # Encode call-only messages as null.
 jq -c '.messages[1].content = []' "$batch_request" >"$tmp/calls-only.json"
@@ -231,6 +231,6 @@ jq -e '.messages[2].content == null and (.messages[2].tool_calls | length) == 2'
 # The provider always streams, so a stream option is refused.
 jq -c '.request.stream = false' "$req" >"$tmp/no-stream.json"
 if OPENAI_API_KEY=test zsh -f "$run" <"$tmp/no-stream.json" >"$res" 2>"$tmp/error"; then
-  fail 'openai accepted a stream option'
+  fail 'openai_chat accepted a stream option'
 fi
-grep -Fq -- 'invalid request' "$tmp/error" || fail 'openai did not explain the refused stream option'
+grep -Fq -- 'invalid request' "$tmp/error" || fail 'openai_chat did not explain the refused stream option'

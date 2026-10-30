@@ -12,7 +12,7 @@ export HOME="${tmp:A}/home"
 
 sf_test_model fixture '{"provider": "'"$fixture_provider"'", "request": {"model": "m"}}'
 sf_test_model work '{
-  "provider": "@providers/openai",
+  "provider": "@providers/openai_chat",
   "context_window": 128000,
   "request": {"model": "configured", "temperature": 0.2, "reasoning": {"effort": "low"}}
 }'
@@ -21,7 +21,7 @@ sf_test_profile work '{}'
 
 # -m selects the model, and repeated -m items merge left to right.
 sf_profile_resolve_args -p work -m work -m high
-jq -e --arg provider "$ROOT/share/providers/openai" '
+jq -e --arg provider "$ROOT/share/providers/openai_chat" '
   .model == {provider:$provider, endpoint:"https://api.openai.com/v1/chat/completions",
     context_window:128000,
     request:{model:"configured",temperature:0.2,reasoning:{effort:"high"}}} and
@@ -38,7 +38,7 @@ jq -e '.model.request == {model:"m"} and (.model.provider | endswith("/tests/fix
   fail 'a selected model did not stand alone'
 
 # Without -m, models/default is the model.
-sf_test_model default '{"provider": "@providers/openai", "request": {"model": "fallback"}}'
+sf_test_model default '{"provider": "@providers/openai_chat", "request": {"model": "fallback"}}'
 sf_profile_resolve_args -p work
 jq -e '.model.request.model == "fallback"' <<<"$REPLY" >/dev/null ||
   fail 'models/default was not the default model'
@@ -57,7 +57,7 @@ jq -e '.model.endpoint == "http://127.0.0.1:8080/v1/chat/completions" and
 mkdir -p "$SF_TEST_CONFIG/system"
 print -r -- 'nested' >"$SF_TEST_CONFIG/system/prompt.md"
 print -r -- '#!/bin/sh' | sf_test_hook "$SF_TEST_CONFIG/hooks/stop" '{"on":"stop"}'
-sf_test_model openai/sol '{"provider": "openai", "request": {"model": "sol"}}'
+sf_test_model openai/sol '{"provider": "openai_chat", "request": {"model": "sol"}}'
 sf_test_profile openai/sol '{"system": ["prompt.md"], "hooks": ["stop"]}'
 sf_profile_resolve_args -p openai/sol -m openai/sol
 jq -e --arg root "${SF_TEST_CONFIG:A}" '
