@@ -92,10 +92,10 @@ updated=$(jq -c --arg action "$action" --arg path "$grant_path" --arg matched "$
 profile=$(jq -c --arg access "$access" --argjson paths "$updated" \
   '.profile | .sandbox[$access]=$paths' <<<"$header") || exit 1
 if [[ $action == add ]]; then
-  message="Session sandbox $access grant added: $grant_path"
+  message="The user added a session sandbox $access grant: $grant_path"
   user="Sandbox $access grant added:"
 else
-  message="Session sandbox $access grant removed: $grant_path"
+  message="The user removed a session sandbox $access grant: $grant_path"
   user="Sandbox $access grant removed:"
 fi
 jq -cn --argjson profile "$profile" '{action:"session_update",profile:$profile}' >&3 || exit 1

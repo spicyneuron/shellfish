@@ -5,7 +5,7 @@
   "sandbox": "default",
   "system": ["general.md", "tools.md"],
   "tools": ["read_file", "edit_file", "write_file", "shell"],
-  "commands": ["help", "verbose", "new", "resume", "fork", "compact", "copy", "shell", "sandbox", "server"],
+  "commands": ["help", "verbose", "new", "resume", "fork", "compact", "copy", "user_shell", "sandbox", "server"],
   "hooks": [
     "project/environment", "git/environment", "project/instructions",
     "autocompact", "git/identity"

@@ -1,1 +1,0 @@
-{"description":"Run COMMAND and stage its output as context","arguments":"COMMAND","user_text":"${output.stderr}"}

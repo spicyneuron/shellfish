@@ -237,7 +237,7 @@ The bundled commands:
 | `/fork [N]` | Derive a session from a transcript prefix |
 | `/compact` | Summarize into a child session |
 | `/copy [N]` | Copy a conversation section |
-| `/shell COMMAND` | Run a user-authored command and stage its output as context |
+| `/user_shell COMMAND`, `/shell` | Run a user-authored command and stage its output as context |
 | `/sandbox [OP DIR]` | Inspect or update frozen sandbox grants |
 | `/server` | Hand the session to the experimental browser client |
 

@@ -145,7 +145,7 @@ GIT_MARKER="$tmp/git-called" PATH="$git_bin:$PATH" SHELLFISH_SESSION="$tmp/empty
 # Commands leave ordinary, multiline, and undeclared-argument prompts untouched.
 typeset command_session="$tmp/command.jsonl" command_stream="$tmp/command.stream"
 jq -c --arg root "$ROOT/share/" '
-  .profile.commands = (["help","verbose","new","resume","server","copy","fork","sandbox","shell",
+  .profile.commands = (["help","verbose","new","resume","server","copy","fork","sandbox","user_shell",
     "compact"] | map($root + "commands/" + .)) |
   .profile.hooks = [$root + "hooks/autocompact"]
 ' < <(head -n 1 "$tmp/startup.jsonl") >"$tmp/command-header"
@@ -168,8 +168,8 @@ for prompt in ordinary $'/help\nordinary' '/new please'; do
 done
 submit '/shell printf '\''${output.stderr}'\''; exit 7'
 jq -e -s 'map(.type) == ["session","hook_result"] and
-  (.[1].model_text | contains("${output.stderr}") and contains("(exit 7)")) and
-  (.[1].user_text | startswith("$ printf"))' "$command_session" >/dev/null
+  (.[1].model_text | contains("The user ran this shell command:\n$ printf") and contains("${output.stderr}") and contains("(exit 7)")) and
+  (.[1].user_text | startswith("**Shell** printf"))' "$command_session" >/dev/null
 # Bundled sandbox policy distinguishes absolute and home-relative grants.
 typeset sandbox="$ROOT/share/commands/sandbox/run" sandbox_session="$tmp/sandbox.jsonl"
 mkdir -p "$tmp/project/dir" "$tmp/home/share"

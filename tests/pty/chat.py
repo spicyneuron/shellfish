@@ -51,7 +51,7 @@ def test_sandbox_updates_without_reload():
                     break
                 session.pump()
             assert grant_path in records[0]["profile"]["sandbox"]["write"]
-            granted = f"Session sandbox write grant added: {grant_path}"
+            granted = f"The user added a session sandbox write grant: {grant_path}"
             assert len(records) == 2
             result = records[1]
             assert result.pop("id")
