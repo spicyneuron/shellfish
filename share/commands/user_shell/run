@@ -19,5 +19,5 @@ output=$(
   command_status=$?
   (( ! command_status )) || print -r -- $'\n(exit '"$command_status"')'
 )
-print -r -- "**Shell** $command"$'\n'"$output" >&2
+print -r -- "$output" >&2
 print -rn -- "<context script=\"user_shell\">"$'\n'"The user ran this shell command:"$'\n'"\$ $command"$'\n'"$output"$'\n'"</context>"
