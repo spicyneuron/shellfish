@@ -47,7 +47,7 @@ limit=$(jq -er '
 parent_dir=${SHELLFISH_SESSION:A:h}
 
 # The marker is feature-owned state, appended only after session_start settles.
-if jq -e 'select(.type == "state_update" and .name == "subagents/child")' \
+if jq -e 'select(.type == "state_update" and .name == "subagent")' \
     "$SHELLFISH_SESSION" >/dev/null 2>&1; then
   fail 'a subagent cannot delegate'
 fi
@@ -84,7 +84,7 @@ if [[ $operation == inspect || $operation == continue ]]; then
   output=$(jq -c -s --arg id "$agent_id" --argjson association "$association" \
     --argjson working "$working" '
     if length < 2 or .[0].type != "session" or
-       (any(.[1:][]; . == {type:"state_update",name:"subagents/child",value:true}) | not) or
+       (any(.[1:][]; . == {type:"state_update",name:"subagent",value:true}) | not) or
        (all(.[]; .type | IN("session","state_update","hook_result","user",
          "assistant","tool_result","error")) | not) then
       error("invalid subagent session")
@@ -153,7 +153,7 @@ if [[ $operation == start ]]; then
     "$SHELLFISH_EXECUTABLE" run --session-create --session-out "$child" \
       --profile "$profile" --model "$model" >/dev/null || fail 'cannot create subagent session'
   fi
-  print -r -- '{"type":"state_update","name":"subagents/child","value":true}' >>"$child" ||
+  print -r -- '{"type":"state_update","name":"subagent","value":true}' >>"$child" ||
     fail 'cannot mark child session'
 fi
 value=$(jq -cn --arg session ".subagent-$agent_id.jsonl" \

@@ -84,6 +84,9 @@ for file in $ROOT/share/{commands,hooks,tools,providers,lib}/**/*(.N); do
     fi || fail "bundled resource leaves share: ${file#$ROOT/}: $token"
   done
 done
+for link in $ROOT/share/**/*(@N); do
+  [[ ${link:A} == ${ROOT:A}/share/* ]] || fail "bundled link leaves share: ${link#$ROOT/}"
+done
 
 for dir in $ROOT/libexec/*(/N); do
   component=${dir:t}

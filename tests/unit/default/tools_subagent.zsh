@@ -86,7 +86,7 @@ assert_canonical_session "$child"
 jq -e -s '
   .[0].profile.sandbox.enabled and .[0].profile.tools == [] and
   (.[1:] | map(.type)) == ["state_update","user","assistant"] and
-  .[1] == {type:"state_update",name:"subagents/child",value:true} and
+  .[1] == {type:"state_update",name:"subagent",value:true} and
   .[2].content[0].text == "child task" and
   .[3].content[0].text == "child answer"
 ' "$child" >/dev/null || fail 'child profile, marker, or answer is wrong'
@@ -336,7 +336,7 @@ assert_canonical_session "$fork_child"
 jq -e -s --slurpfile parent "$fork_parent" '
   .[0] == $parent[0] and
   (.[1:4] == $parent[1:4]) and
-  .[4] == {type:"state_update",name:"subagents/child",value:true} and
+  .[4] == {type:"state_update",name:"subagent",value:true} and
   (.[5:] | map(.type)) == ["user","assistant"] and
   .[5].content[0].text == "delegated task" and
   .[6].content[0].text == "fork answer"
