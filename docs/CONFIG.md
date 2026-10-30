@@ -210,7 +210,7 @@ Set `"config": {"skills": ["skill-creator", "code-review"]}` in a profile to all
 
 | Tool | Role |
 | --- | --- |
-| `read_file` | Read project text with line numbers |
+| `read_file` | Read project text with line numbers, or view an image, which needs `sips` or ImageMagick |
 | `edit_file` | Replace exact text and return a diff |
 | `write_file` | Create a new text file and return a diff |
 | `shell` | Run one zsh command with a timeout |

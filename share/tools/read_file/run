@@ -24,6 +24,75 @@ limit=$fields[3]
 [[ ! -d $file_path ]] || { printf 'read_file: %s is a directory\n' "$file_path"; exit 2; }
 [[ -f $file_path ]] || { printf 'read_file: not a regular file: %s\n' "$file_path"; exit 2; }
 [[ -r $file_path ]] || { printf 'read_file: cannot read %s\n' "$file_path"; exit 2; }
+
+# An image returns as content for the model to view, its long edge downscaled
+# to fit vision limits.
+image_format() {
+  case $(head -c 12 -- "$1" | od -An -tx1 | tr -d ' \n') in
+    (89504e470d0a1a0a*) REPLY=png ;;
+    (ffd8ff*) REPLY=jpeg ;;
+    (47494638*) REPLY=gif ;;
+    (52494646????????57454250) REPLY=webp ;;
+    (*) return 1 ;;
+  esac
+}
+
+if (( $+commands[sips] )); then resizer=sips
+elif (( $+commands[magick] )); then resizer=magick
+elif (( $+commands[identify] && $+commands[convert] )); then resizer=convert
+else resizer=''
+fi
+
+# WIDTH HEIGHT of an image's first frame, or nothing when it cannot be decoded.
+image_size() {
+  case $resizer in
+    (sips) sips -g pixelWidth -g pixelHeight "$1" 2>/dev/null |
+      awk '/pixelWidth/ { w = $2 } /pixelHeight/ { h = $2 } END { if (w && h) print w, h }' ;;
+    (magick) magick identify -format '%w %h' "${1}[0]" 2>/dev/null ;;
+    (convert) identify -format '%w %h' "${1}[0]" 2>/dev/null ;;
+  esac
+}
+
+if image_format "$file_path"; then
+  format=$REPLY image=$file_path max_edge=1568 note='' size=''
+  integer width=0 height=0 bytes limit=${SHELLFISH_MAX_CONTENT_BYTES:-5242880}
+  # Neither resizer takes --, so a leading dash must not read as an option.
+  [[ $image != -* ]] || image=./$image
+  # A stored image the API rejects would fail every later request, so one that
+  # cannot be decoded, or checked at all, is refused.
+  [[ -n $resizer ]] || {
+    printf 'read_file: viewing %s needs sips or ImageMagick to check it\n' "$file_path"
+    exit 2
+  }
+  size=$(image_size "$image") || true
+  [[ $size == <->' '<-> ]] || { printf 'read_file: cannot decode image %s\n' "$file_path"; exit 2; }
+  read -r width height <<<"$size"
+  if (( width > max_edge || height > max_edge )); then
+    note=", downscaled from ${width}x$height"
+    # JPEG stays JPEG; other formats become PNG, keeping a GIF's first frame.
+    [[ $format == jpeg ]] || format=png
+    scratch=$(mktemp -d "${TMPDIR:-/tmp}/read_file.XXXXXX")
+    trap 'rm -rf -- "$scratch"' EXIT
+    case $resizer in
+      (sips) sips -Z $max_edge -s format $format "$image" --out "$scratch/image" >/dev/null 2>&1 ;;
+      (magick) magick "${image}[0]" -resize ${max_edge}x$max_edge "$format:$scratch/image" 2>/dev/null ;;
+      (convert) convert "${image}[0]" -resize ${max_edge}x$max_edge "$format:$scratch/image" 2>/dev/null ;;
+    esac || { printf 'read_file: cannot downscale %s\n' "$file_path"; exit 2; }
+    image=$scratch/image
+    read -r width height <<<"$(image_size "$image")" || true
+  fi
+  bytes=$(wc -c <"$image")
+  # Base64 grows by a third, plus the control line around it.
+  (( (bytes + 2) / 3 * 4 + 128 <= limit )) || {
+    printf 'read_file: %s is too large to view (%d bytes)\n' "$file_path" "$bytes"
+    exit 2
+  }
+  printf '[image %dx%d %s%s]\n' $width $height "$format" "$note"
+  printf '{"content":[{"type":"image","url":"data:image/%s;base64,%s"}]}\n' \
+    "$format" "$(base64 <"$image" | tr -d '\n')" >&3
+  exit
+fi
+
 budget=$((${SHELLFISH_MAX_CAPTURE_BYTES:-32768} - 512 - ${#file_path}))
 ((budget > 0)) || { printf 'read_file: read budget is too small\n'; exit 2; }
 probe_bytes=$(head -c 8000 -- "$file_path" | wc -c)
