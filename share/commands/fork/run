@@ -3,7 +3,7 @@
 emulate -R zsh
 setopt extended_glob no_aliases no_multios pipe_fail
 
-typeset target base candidate created draft='' resolved name=fork
+typeset target base candidate created='' draft='' resolved name=fork
 typeset transcript
 typeset -a argv fields
 integer suffix=1 cutoff=0 has_draft=0 rewind=0
@@ -48,30 +48,35 @@ draft=$fields[2]
 has_draft=$fields[3]
 
 if (( rewind )); then
-  # Later state updates stay, so running subagents remain attached. The turn
-  # holds the session lock, so no writer races the replacement.
   (( has_draft )) || { print -ru2 -- 'Nothing to rewind.'; exit 0 }
   transcript=$(mktemp "${SHELLFISH_SESSION:h}/.${SHELLFISH_SESSION:t}.XXXXXX") || exit 1
-  if ! { chmod 600 "$transcript" &&
-      jq -ce -s --argjson cutoff "$cutoff" '
-        .[0:$cutoff][], (.[$cutoff:][] | select(.type == "state_update"))
-      ' "$SHELLFISH_SESSION" >"$transcript" &&
-      mv -f -- "$transcript" "$SHELLFISH_SESSION"; }; then
-    rm -f -- "$transcript"
-    print -ru2 -- 'Could not rewind session.'
-    exit 0
-  fi
-  candidate=$SHELLFISH_SESSION
+  chmod 600 "$transcript" || { rm -f -- "$transcript"; exit 1 }
 else
   created=$(date -u '+%Y-%m-%dT%H:%M:%SZ') || exit 1
   transcript="$SHELLFISH_TURN_STATE/fork.jsonl"
-  if ! jq -ce -s --argjson cutoff "$cutoff" --arg created "$created" '
-    .[0:$cutoff] | .[0].created = $created | .[]
-  ' "$SHELLFISH_SESSION" >"$transcript"; then
-    print -ru2 -- 'Could not fork session.'
-    exit 0
-  fi
+fi
 
+# Later updates refresh only state that exists at the cutoff, so earlier
+# subagents stay current and later ones are left out.
+if ! jq -ce -s --argjson cutoff "$cutoff" --arg created "$created" '
+  ([.[0:$cutoff][] | select(.type == "state_update") | .name] | unique) as $names |
+  (.[0:$cutoff] | if $created == "" then . else .[0].created = $created end | .[]),
+  (.[$cutoff:][] | select(.type == "state_update" and IN(.name; $names[])))
+' "$SHELLFISH_SESSION" >"$transcript"; then
+  rm -f -- "$transcript"
+  print -ru2 -- "Could not $name session."
+  exit 0
+fi
+
+if (( rewind )); then
+  # The turn holds the session lock, so no writer races the replacement.
+  mv -f -- "$transcript" "$SHELLFISH_SESSION" || {
+    rm -f -- "$transcript"
+    print -ru2 -- 'Could not rewind session.'
+    exit 0
+  }
+  candidate=$SHELLFISH_SESSION
+else
   base=${SHELLFISH_SESSION%.jsonl}
   base=${base%_fork(|_<->)}
   base="${base}_fork"

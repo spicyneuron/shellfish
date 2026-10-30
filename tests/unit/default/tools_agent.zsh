@@ -264,6 +264,33 @@ jq -e -s --arg id "$id" '
     length) == 4
 ' "$copied_parent" >/dev/null || fail 'copied parent lost its agent association'
 
+# Fork and rewind keep an earlier agent's latest state and leave out later agents.
+typeset cut_parent="$tmp/cut-parent.jsonl" cut_actions="$tmp/cut-actions" cut_copy mode
+for mode in fork rewind; do
+  sf_test_session "$cut_parent"
+  print -r -- '{"type":"user","content":[{"type":"text","text":"one"}]}' >>"$cut_parent"
+  print -r -- '{"type":"state_update","name":"agents/a","value":{"session":".agent-a.jsonl","active":true}}' >>"$cut_parent"
+  print -r -- '{"type":"assistant","content":[{"type":"text","text":"started"}],"stop":"end"}' >>"$cut_parent"
+  print -r -- '{"type":"user","content":[{"type":"text","text":"two"}]}' >>"$cut_parent"
+  print -r -- '{"type":"state_update","name":"agents/a","value":{"session":".agent-a.jsonl","active":false}}' >>"$cut_parent"
+  print -r -- '{"type":"state_update","name":"agents/b","value":{"session":".agent-b.jsonl","active":true}}' >>"$cut_parent"
+  print -r -- '{"type":"assistant","content":[{"type":"text","text":"later"}],"stop":"end"}' >>"$cut_parent"
+  print -rn -- 3 | SHELLFISH_SESSION="$cut_parent" SHELLFISH_EXECUTABLE="$ROOT/bin/shellfish" \
+    SHELLFISH_TURN_STATE="$tmp" "$ROOT/share/commands/$mode/run" 3>|"$cut_actions" >/dev/null ||
+    fail "$mode at a later turn failed"
+  cut_copy=$(jq -r 'select(.action == "handoff") | .argv[2]' "$cut_actions")
+  [[ $mode == fork && $cut_copy != $cut_parent || $mode == rewind && $cut_copy == $cut_parent ]] ||
+    fail "$mode handed off to the wrong session"
+  assert_canonical_session "$cut_copy"
+  jq -e -s '
+    [.[] | select(.type == "user") | .content[0].text] == ["one"] and
+    [.[] | select(.type == "state_update") | [.name, .value.active]] ==
+      [["agents/a", true], ["agents/a", false]]
+  ' "$cut_copy" >/dev/null || fail "$mode kept the wrong agent state"
+  jq -e '.action == "handoff" and .argv[-2:] == ["--draft", "two"]' "$cut_actions" >/dev/null ||
+    fail "$mode did not restore the removed prompt"
+done
+
 # A stopped child is settled even with a stop hook, which ran before it exited.
 typeset stop_parent="$tmp/stop-parent.jsonl" stop_id stop_child stop_inspection
 sf_test_session "$stop_parent"

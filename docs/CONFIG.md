@@ -235,7 +235,7 @@ The bundled commands:
 | `/new` | Start a session with the active profile |
 | `/resume` | Choose another session for this directory |
 | `/fork [N]` | Derive a session from a transcript prefix |
-| `/rewind [N]` | Truncate this session to a transcript prefix, keeping subagents |
+| `/rewind [N]` | Truncate this session to a transcript prefix |
 | `/compact` | Summarize into a child session |
 | `/copy [N]` | Copy a conversation section |
 | `/user_shell COMMAND`, `/shell` | Run a user-authored command and stage its output as context |
