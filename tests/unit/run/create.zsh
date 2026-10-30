@@ -15,7 +15,8 @@ sf_test_model default "{
 sf_test_profile default '{"system": ["source.md"]}'
 
 typeset entry="$ROOT/bin/shellfish"
-typeset created reused explicit
+typeset created reused explicit lock_fd=''
+zmodload zsh/system || fail 'cannot load session locking'
 
 # Create a complete idle session.
 created="$tmp/created.jsonl"
@@ -63,6 +64,17 @@ zsh -f "$entry" run --session-create --session-from "$tmp/absent.jsonl" >/dev/nu
 zsh -f "$entry" run --session-create --session-out "$explicit" >/dev/null 2>&1 &&
   fail 'create overwrote an existing session'
 
+# Creation must own the lock before publishing its header.
+typeset locked="$tmp/locked.jsonl" lock_error="$tmp/lock-error"
+: >"$locked.lock"
+zsystem flock -t 0 -f lock_fd "$locked.lock" || fail 'cannot hold creation lock'
+if zsh -f "$entry" run --session-create --session-out "$locked" >/dev/null 2>"$lock_error"; then
+  fail 'creation ignored an active session lock'
+fi
+grep -q 'session turn already active' "$lock_error" || fail 'creation reported the wrong lock failure'
+[[ ! -e $locked ]] || fail 'creation published a header without owning the lock'
+zsystem flock -u "$lock_fd"
+
 # Reject overrides for stored sessions.
 zsh -f "$entry" run --session-create --session-from "$created" --model test >/dev/null 2>&1 &&
   fail 'create accepted a profile override with --session-from'
@@ -86,6 +98,8 @@ zsh -f "$entry" run --session-create --session-out "$failed" \
 [[ -f $failed ]] || fail 'create removed the failed startup transcript'
 jq -se 'map(.type) == ["session"]' \
   "$failed" >/dev/null || fail 'create did not retain the failed startup prefix'
+zsystem flock -t 0 -f lock_fd "$failed.lock" || fail 'failed startup kept its lock'
+zsystem flock -u "$lock_fd"
 
 # Join system components in order.
 typeset joined="$tmp/joined.jsonl"
@@ -184,6 +198,7 @@ while [[ ! -e $SLOW_RELEASE ]]; do
   sleep 0.05
 done
 : >"$SLOW_EXIT_MARKER"
+print -rn -- 'startup context'
 ZSH
 sf_test_profile slow \
   "{\"system\": [\"source.md\"], \"hooks\": [\"$slow\"]}"
@@ -206,6 +221,56 @@ jq -se 'map(.type) == ["_session_load","session"]' \
 jq -se 'map(.type) == ["session"]' "$cancelled" >/dev/null ||
   fail 'cancelled creation lost its transcript prefix'
 [[ -s $hook_error ]] || fail 'cancelled creation omitted stderr diagnostic'
+zsystem flock -t 0 -f lock_fd "$cancelled.lock" || fail 'cancelled startup kept its lock'
+zsystem flock -u "$lock_fd"
+
+# No creation mode admits another turn until startup has completed.
+typeset startup_mode startup_session startup_request
+typeset -a startup_args
+for startup_mode in create foreground background; do
+  rm -f -- "$SLOW_MARKER" "$SLOW_RELEASE" "$SLOW_EXIT_MARKER"
+  startup_session="$tmp/startup-$startup_mode.jsonl"
+  startup_request="$tmp/startup-$startup_mode.request"
+  case $startup_mode in
+    create) startup_args=( --session-create ) ;;
+    foreground) startup_args=( 'startup answer' ) ;;
+    background) startup_args=( --background 'startup answer' ) ;;
+  esac
+  SF_TEST_PROVIDER_DELAY=0 SF_TEST_PROVIDER_REQUEST="$startup_request" \
+    zsh -f "$entry" run --session-out "$startup_session" -p slow "${startup_args[@]}" \
+    </dev/null >"$events" 2>"$hook_error" &
+  create_pid=$!
+  waited=0
+  while (( waited++ < 50 )) && [[ ! -e $SLOW_MARKER ]]; do
+    sleep 0.1
+  done
+  (( waited <= 50 )) || fail "$startup_mode startup did not start"
+  if zsh -f "$entry" run --session "$startup_session" competing \
+      </dev/null >/dev/null 2>"$lock_error"; then
+    fail "$startup_mode startup admitted a competing turn"
+  fi
+  grep -q 'session turn already active' "$lock_error" ||
+    fail "$startup_mode startup reported the wrong lock failure"
+  jq -se 'map(.type) == ["session"]' "$startup_session" >/dev/null ||
+    fail "$startup_mode startup allowed another turn to append"
+  : >"$SLOW_RELEASE"
+  wait "$create_pid" || fail "$startup_mode startup failed"
+  if [[ $startup_mode == create ]]; then
+    SF_TEST_PROVIDER_DELAY=0 SF_TEST_PROVIDER_REQUEST="$startup_request" \
+      zsh -f "$entry" run --session "$startup_session" 'startup answer' \
+      </dev/null >/dev/null || fail 'turn after creation failed'
+  fi
+  waited=0
+  until zsystem flock -t 0 -f lock_fd "$startup_session.lock" 2>/dev/null; do
+    (( waited++ < 100 )) || fail "$startup_mode turn kept its lock"
+    sleep 0.1
+  done
+  zsystem flock -u "$lock_fd"
+  jq -se 'map(.type) == ["session","hook_result","user","assistant"]' \
+    "$startup_session" >/dev/null || fail "$startup_mode startup records were out of order"
+  jq -e '.messages[0].content[0].text | contains("startup context")' \
+    "$startup_request" >/dev/null || fail "$startup_mode inference missed startup context"
+done
 
 # Moving a home preserves its frozen home-relative references.
 typeset old_home="$tmp/original-home" new_home="$tmp/moved-home"

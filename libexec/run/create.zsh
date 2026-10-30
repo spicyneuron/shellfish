@@ -64,6 +64,7 @@ sf_run_create() {
     {type:"session",format_version:1,cwd:($cwd | store_path(""; $home)),created:$created} +
       ($config | header_store($share; $home)) | select(canonical_session_header)
   ') || { sf_die 'cannot prepare session header'; return 1; }
+  sf_run_lock "$session" || return 1
   (
     umask 077
     setopt no_clobber

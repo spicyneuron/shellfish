@@ -215,6 +215,11 @@ sf_run_main() {
     return 0
   fi
   if (( background )); then
+    # Startup is complete. The worker acquires its own lock.
+    if [[ -n $SF_RUN_LOCK_FD ]]; then
+      zsystem flock -u "$SF_RUN_LOCK_FD" || return 1
+      SF_RUN_LOCK_FD=''
+    fi
     trap - INT USR1 HUP TERM
     local input_file ack_dir ack_file
     input_file=$(mktemp "${TMPDIR:-/tmp}/shellfish-background-input.XXXXXX") || return 1
@@ -260,7 +265,7 @@ sf_run_main() {
     fi
     return 1
   fi
-  sf_run_lock "$session" || {
+  [[ -n $SF_RUN_LOCK_FD ]] || sf_run_lock "$session" || {
     [[ -z ${SHELLFISH_BACKGROUND_WORKER-} ]] || print -r -u 4 -- lock_failed
     return 1
   }
