@@ -1,7 +1,3 @@
-Could the model get a preview of sandbox grants in the project env?
-
-Add a /rewind variant of /fork that simply modifies the current session.
-
 Let's update the docs. Should probably split HARNESS into PROFILE and MODELS. Anything else to consider?
 
 # Sandbox
@@ -11,6 +7,8 @@ Considering replacing fence with nono or srt:
 - https://github.com/anthropics/sandbox-runtime
 Both checked out in ../<repo>.
 The goal is to keep the existing deny then whitelist approach, but give the user some better way to detect what was blocked and unblock them easily.
+
+Could the model get a preview of sandbox grants in the project env?
 
 Add local sandbox exceptions to allow tests to run
 - tests cannot create .env and .shellfish
