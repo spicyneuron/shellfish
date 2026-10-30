@@ -1,6 +1,5 @@
 Let's update the docs. Should probably split HARNESS into PROFILE and MODELS. Anything else to consider?
 
-Add a /rewind variant of /fork that simply modifies the current session.
 
 # Sandbox
 
