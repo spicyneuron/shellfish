@@ -9,7 +9,7 @@ print -r -- 'initial system' >"$system/source.md"
 export HOME="${tmp:A}/home"
 
 sf_test_model default "{
-  \"adapter\": \"$ROOT/tests/fixtures/backend\",
+  \"provider\": \"$ROOT/tests/fixtures/provider\",
   \"request\": {\"model\": \"test-model\"}
 }"
 sf_test_profile default '{"system": ["source.md"]}'
@@ -235,7 +235,7 @@ jq -e 'select(.type == "session") |
 mv -- "$old_home" "$new_home"
 (
   builtin cd -- "$new_project"
-  HOME="$new_home" SHELLFISH_DIR="$new_home/.shellfish" SF_TEST_BACKEND_DELAY=0 zsh -f "$entry" run \
+  HOME="$new_home" SHELLFISH_DIR="$new_home/.shellfish" SF_TEST_PROVIDER_DELAY=0 zsh -f "$entry" run \
     --session "$PWD/session.jsonl" 'plain answer' >"$tmp/relocated-answer"
 ) || fail 'relocated session turn failed'
 assert_equal 'plain answer' "$(<"$tmp/relocated-answer")"

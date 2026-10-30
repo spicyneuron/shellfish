@@ -4,15 +4,15 @@ source "${0:A:h:h:h}/_helpers.zsh"
 sf_test_source lib/profile.zsh lib/environment.zsh lib/session.zsh
 
 typeset profile tool_name
-typeset -r fixture_backend="$ROOT/tests/fixtures/backend"
+typeset -r fixture_provider="$ROOT/tests/fixtures/provider"
 sf_test_tmp profile
 sf_test_config
 mkdir -p "$tmp/home"
 export HOME="${tmp:A}/home"
 
-sf_test_model fixture '{"adapter": "'"$fixture_backend"'", "request": {"model": "m"}}'
+sf_test_model fixture '{"provider": "'"$fixture_provider"'", "request": {"model": "m"}}'
 sf_test_model work '{
-  "adapter": "@backends/openai",
+  "provider": "@providers/openai",
   "context_window": 128000,
   "request": {"model": "configured", "temperature": 0.2, "reasoning": {"effort": "low"}}
 }'
@@ -21,8 +21,8 @@ sf_test_profile work '{}'
 
 # -m selects the model, and repeated -m items merge left to right.
 sf_profile_resolve_args -p work -m work -m high
-jq -e --arg adapter "$ROOT/share/backends/openai" '
-  .model == {adapter:$adapter, endpoint:"https://api.openai.com/v1/chat/completions",
+jq -e --arg provider "$ROOT/share/providers/openai" '
+  .model == {provider:$provider, endpoint:"https://api.openai.com/v1/chat/completions",
     context_window:128000,
     request:{model:"configured",temperature:0.2,reasoning:{effort:"high"}}} and
   .profile == {system:[],tools:[],commands:[],hooks:[],sandbox:{enabled:true,read:[],write:[]}} and
@@ -33,12 +33,12 @@ sf_profile_resolve_args -p work -m work -m high -m '{"request":{"temperature":0.
 jq -e '.model.request == {model:"configured",temperature:0.7,seed:4,reasoning:{effort:"high"}}' \
   <<<"$REPLY" >/dev/null || fail 'model overrides applied in the wrong order'
 sf_profile_resolve_args -p work -m fixture
-jq -e '.model.request == {model:"m"} and (.model.adapter | endswith("/tests/fixtures/backend")) and
+jq -e '.model.request == {model:"m"} and (.model.provider | endswith("/tests/fixtures/provider")) and
   (.model | has("context_window") | not)' <<<"$REPLY" >/dev/null ||
   fail 'a selected model did not stand alone'
 
 # Without -m, models/default is the model.
-sf_test_model default '{"adapter": "@backends/openai", "request": {"model": "fallback"}}'
+sf_test_model default '{"provider": "@providers/openai", "request": {"model": "fallback"}}'
 sf_profile_resolve_args -p work
 jq -e '.model.request.model == "fallback"' <<<"$REPLY" >/dev/null ||
   fail 'models/default was not the default model'
@@ -47,7 +47,7 @@ jq -e '.model.request.model == "m"' <<<"$REPLY" >/dev/null ||
   fail 'models/default merged under a selected model'
 rm "$SF_TEST_CONFIG/models/default.jsonc"
 
-# A model file endpoint overrides the adapter manifest; null disables discovery.
+# A model file endpoint overrides the provider manifest; null disables discovery.
 sf_test_model local '{"endpoint": "http://127.0.0.1:8080/v1/chat/completions", "context_window": null}'
 sf_profile_resolve_args -p work -m work -m local
 jq -e '.model.endpoint == "http://127.0.0.1:8080/v1/chat/completions" and
@@ -57,7 +57,7 @@ jq -e '.model.endpoint == "http://127.0.0.1:8080/v1/chat/completions" and
 mkdir -p "$SF_TEST_CONFIG/system"
 print -r -- 'nested' >"$SF_TEST_CONFIG/system/prompt.md"
 print -r -- '#!/bin/sh' | sf_test_hook "$SF_TEST_CONFIG/hooks/stop" '{"on":"stop"}'
-sf_test_model openai/sol '{"adapter": "openai", "request": {"model": "sol"}}'
+sf_test_model openai/sol '{"provider": "openai", "request": {"model": "sol"}}'
 sf_test_profile openai/sol '{"system": ["prompt.md"], "hooks": ["stop"]}'
 sf_profile_resolve_args -p openai/sol -m openai/sol
 jq -e --arg root "${SF_TEST_CONFIG:A}" '
@@ -67,8 +67,8 @@ jq -e --arg root "${SF_TEST_CONFIG:A}" '
 
 # A path is taken as written, and "@" is the bundled root.
 sf_profile_resolve_args -p "$SF_TEST_CONFIG/profiles/openai/sol.jsonc" \
-  -m "$SF_TEST_CONFIG/models/openai/sol.jsonc" -m '{"adapter": "@backends/openrouter"}'
-jq -e '.model.request.model == "sol" and (.model.adapter | endswith("/share/backends/openrouter"))' \
+  -m "$SF_TEST_CONFIG/models/openai/sol.jsonc" -m '{"provider": "@providers/openrouter"}'
+jq -e '.model.request.model == "sol" and (.model.provider | endswith("/share/providers/openrouter"))' \
   <<<"$REPLY" >/dev/null || fail 'path references did not select their files'
 
 # "./" and "../" are relative to the file that wrote them, or to the working
@@ -76,15 +76,15 @@ jq -e '.model.request.model == "sol" and (.model.adapter | endswith("/share/back
 typeset kit="$tmp/kit"
 mkdir -p "$kit/profiles" "$kit/models" "$kit/sandbox" "$kit/system"
 print -r -- 'kit' >"$kit/system/kit.md"
-cp -R "$ROOT/tests/fixtures/backend" "$tmp/tests-backend"
-print -r -- '{"adapter": "./../../tests-backend", "request": {"model": "kit"}}' \
+cp -R "$ROOT/tests/fixtures/provider" "$tmp/tests-provider"
+print -r -- '{"provider": "./../../tests-provider", "request": {"model": "kit"}}' \
   >"$kit/models/kit.jsonc"
 print -r -- '{"read": ["./data", "../system"]}' >"$kit/sandbox/kit.jsonc"
 print -r -- '{"sandbox": ["../sandbox/kit.jsonc"], "system": ["../system/kit.md"]}' \
   >"$kit/profiles/kit.jsonc"
 sf_profile_resolve_args -p "$kit/profiles/kit.jsonc" -m "$kit/models/kit.jsonc"
-jq -e --arg kit "${kit:A}" --arg backend "${tmp:A}/tests-backend" '
-  .model.adapter == $backend and .profile.system == [{text:"kit"}] and
+jq -e --arg kit "${kit:A}" --arg provider "${tmp:A}/tests-provider" '
+  .model.provider == $provider and .profile.system == [{text:"kit"}] and
   .profile.sandbox.read == [$kit + "/sandbox/data", $kit + "/system"]
 ' <<<"$REPLY" >/dev/null || fail 'config-relative references did not resolve from their files'
 (
@@ -99,7 +99,7 @@ jq -e --arg kit "${kit:A}" --arg backend "${tmp:A}/tests-backend" '
 sf_test_profile inline '{"sandbox": {"read": ["./data"]},
   "system": [{"text": "hello"}, "prompt.md"],
   "config": {"example": {"paths": ["./data", "~/data", "@data"], "values": [null, false, 2]}}}'
-sf_profile_resolve_args -p inline -m '{"adapter": "'"$fixture_backend"'", "request": {"model": "inline"},
+sf_profile_resolve_args -p inline -m '{"provider": "'"$fixture_provider"'", "request": {"model": "inline"},
   "config": {"example": {"paths": ["./data", "~/data", "@data"], "values": [null, false, 2]}}}'
 profile=$REPLY
 jq -e --arg root "${SF_TEST_CONFIG:A}" '
@@ -211,7 +211,7 @@ jq -e '.model.request.model == "MODEL"' <<<"$REPLY" >/dev/null ||
 rm "$SF_TEST_CONFIG/models/default.jsonc" "$SF_TEST_CONFIG/sandbox/default.jsonc"
 
 # Provider and presentation settings stay outside the profile's own fields.
-for field in model backend request env extend max_capture_bytes theme_light; do
+for field in model provider request env extend max_capture_bytes theme_light; do
   sf_test_profile bad "{\"$field\": {}}"
   if sf_profile_resolve_args -p bad -m fixture; then
     fail "profile accepted $field"
@@ -235,11 +235,11 @@ for value in '{"endpoint":"ftp://example.invalid"}' '{"context_window":0}' '{"re
     fail "model file accepted $value"
   fi
 done
-sf_test_model adapterless '{"request": {"model": "m"}}'
-if sf_profile_resolve_args -p work -m adapterless; then
-  fail 'a model without an adapter was accepted'
+sf_test_model providerless '{"request": {"model": "m"}}'
+if sf_profile_resolve_args -p work -m providerless; then
+  fail 'a model without a provider was accepted'
 fi
-[[ $SF_PROFILE_ERROR == *'a model adapter is required'* ]]
+[[ $SF_PROFILE_ERROR == *'a model provider is required'* ]]
 if sf_profile_resolve_args -p work; then
   fail 'a missing default model was accepted'
 fi
@@ -292,17 +292,17 @@ if sf_profile_resolve_args -p work -m malformed; then
 fi
 [[ $SF_PROFILE_ERROR == *'invalid model: '*'malformed.jsonc:'*'parse error:'* ]]
 
-# A backend without a manifest needs an endpoint from a model file.
-mkdir -p "$SF_TEST_CONFIG/backends/bare"
-print -r -- '#!/bin/sh' >"$SF_TEST_CONFIG/backends/bare/run"
-chmod +x "$SF_TEST_CONFIG/backends/bare/run"
-sf_test_model bare '{"adapter": "bare", "request": {"model": "m"}}'
-sf_profile_resolve_args -p work -m bare && fail 'backend without an endpoint was accepted'
-sf_test_model bare '{"adapter": "bare", "endpoint": "https://example.invalid", "request": {"model": "m"}}'
-sf_profile_resolve_args -p work -m bare || fail 'backend without a manifest was rejected'
-sf_test_model bare "{\"adapter\": \"$tmp/not-a-backend\", \"request\": {\"model\": \"m\"}}"
+# A provider without a manifest needs an endpoint from a model file.
+mkdir -p "$SF_TEST_CONFIG/providers/bare"
+print -r -- '#!/bin/sh' >"$SF_TEST_CONFIG/providers/bare/run"
+chmod +x "$SF_TEST_CONFIG/providers/bare/run"
+sf_test_model bare '{"provider": "bare", "request": {"model": "m"}}'
+sf_profile_resolve_args -p work -m bare && fail 'provider without an endpoint was accepted'
+sf_test_model bare '{"provider": "bare", "endpoint": "https://example.invalid", "request": {"model": "m"}}'
+sf_profile_resolve_args -p work -m bare || fail 'provider without a manifest was rejected'
+sf_test_model bare "{\"provider\": \"$tmp/not-a-provider\", \"request\": {\"model\": \"m\"}}"
 if sf_profile_resolve_args -p work -m bare; then
-  fail 'invalid backend path was accepted'
+  fail 'invalid provider path was accepted'
 fi
 
 # Sandbox files merge left to right: grants accumulate, settings replace, and
@@ -373,7 +373,7 @@ sf_test_profile boxed '{"sandbox": ["base"]}'
     fail 'an empty selection was accepted'
   fi
   [[ $SF_PROFILE_ERROR == *'no model selected: run shellfish init, or pass -m'* ]]
-  sf_profile_resolve_args -m '{"adapter":"openrouter","request":{"model":"test-model"}}' -t shell
+  sf_profile_resolve_args -m '{"provider":"openrouter","request":{"model":"test-model"}}' -t shell
   jq -e '.model.request.model == "test-model" and (.profile.tools | length) == 1 and
     .profile.system == []' \
     <<<"$REPLY" >/dev/null

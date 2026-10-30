@@ -88,7 +88,7 @@ assert_equal '/tmp/custom command,,arg' "${(j:,:)SF_PRESENT_HANDOFF}"
 
 # Apply session updates.
 pump "$(jq -c '
-  {type:"_session_update",profile,model:(.model | .adapter = "/updated" |
+  {type:"_session_update",profile,model:(.model | .provider = "/updated" |
     .request.model = "new-model" | .context_window = null)}
 ' "$SF_TEST_SESSIONS/header-only.jsonl")"
 assert_equal updated/new-model "$SF_PRESENT_IDENTITY"
@@ -209,7 +209,7 @@ SF_PRESENT_STATE=working
 SF_PRESENT_QUEUE=( speculative )
 SF_TUI_TRANSPORT_EOF=1
 SF_TUI_TRANSPORT_EXIT_STATUS=1
-SF_TUI_TRANSPORT_EXIT_DETAIL='backend failed'
+SF_TUI_TRANSPORT_EXIT_DETAIL='provider failed'
 sf_tui_exec_finish
 assert_equal 0 "${#SF_PRESENT_QUEUE}"
 assert_equal idle "$SF_PRESENT_STATE"
@@ -224,7 +224,7 @@ SF_PRESENT_PERMISSION_CURSOR=2
 BUFFER=''
 SF_TUI_TRANSPORT_EOF=1
 SF_TUI_TRANSPORT_EXIT_STATUS=1
-SF_TUI_TRANSPORT_EXIT_DETAIL='backend failed'
+SF_TUI_TRANSPORT_EXIT_DETAIL='provider failed'
 sf_tui_exec_finish
 assert_equal idle "$SF_PRESENT_STATE"
 assert_equal draft "$BUFFER"
@@ -237,10 +237,10 @@ sf_tui_terminal_reset
 SF_PRESENT_SESSION="$tmp/recover.jsonl"
 SF_PRESENT_STATE=working
 sf_tui_transport_reset
-SF_TUI_TRANSPORT_LINES=( '{"type":"error","user_text":"test backend failure"}' )
+SF_TUI_TRANSPORT_LINES=( '{"type":"error","user_text":"test provider failure"}' )
 SF_TUI_TRANSPORT_EOF=1
 SF_TUI_TRANSPORT_EXIT_STATUS=1
-SF_TUI_TRANSPORT_EXIT_DETAIL='test backend failure'
+SF_TUI_TRANSPORT_EXIT_DETAIL='test provider failure'
 sf_tui_heartbeat_tick
 assert_equal idle "$SF_PRESENT_STATE"
 sf_tui_transcript 79 20
@@ -332,7 +332,7 @@ sf_tui_submit early
 assert_equal repaint "$REPLY"
 assert_equal early "${(j:,:)SF_PRESENT_QUEUE}"
 pump "$(jq -cn --arg path "$tmp/new.jsonl" '{type:"_session_load",path:$path}')" \
-  '{"type":"session","profile":{"system":[{"text":"instructions"}]},"model":{"adapter":"/test","request":{"model":"model"}}}' \
+  '{"type":"session","profile":{"system":[{"text":"instructions"}]},"model":{"provider":"/test","request":{"model":"model"}}}' \
   '{"type":"_draft","lifecycle":"session_start","id":"1","user_text":"setup · working"}'
 assert_equal working "$SF_PRESENT_STATE"
 assert_equal "$tmp/new.jsonl" "$SF_PRESENT_SESSION"

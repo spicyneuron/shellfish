@@ -19,7 +19,7 @@ typeset s_tool_model="$tmp/tool_model.jsonl"
 
 make_header() {
   jq -cn '{type:"session",format_version:1,cwd:"/tmp",created:"2026-08-18T10:00:00Z",
-    profile:{},model:{adapter:"/custom",endpoint:"https://example.invalid",
+    profile:{},model:{provider:"/custom",endpoint:"https://example.invalid",
       request:{model:"claude-3"}}}'
 }
 

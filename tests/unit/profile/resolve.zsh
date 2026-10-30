@@ -11,7 +11,7 @@ profile_eval() {
 
 # Provider settings belong to model files, not profile fields.
 for profile in \
-    '{"backend":{}}' '{"request":{}}' '{"env":{}}' '{"extend":["default"]}' \
+    '{"driver":{}}' '{"request":{}}' '{"env":{}}' '{"extend":["default"]}' \
     '{"model":"m"}' '{"sandbox":{"read":["relative"]}}' '{"hooks":{"stop":[]}}' \
     '{"tools":"read_file"}' '{"tools":[{}]}' '{"system":[{"text":1}]}' '{"themes":{}}'; do
   if print -r -- "$profile" | profile_eval 'config_profile(["p"])' >/dev/null 2>&1; then
@@ -23,7 +23,7 @@ print -r -- '{"sandbox":["~/s.jsonc"],"system":["x.md"],"tools":[],"hooks":["h"]
 print -r -- '{"sandbox":{"read":["./x"]},"system":[{"text":"t"}]}' |
   profile_eval 'config_profile(["p"])' >/dev/null
 for model in \
-    '{"backend":"openai"}' '{"context_window":0}' '{"endpoint":"ftp://example.invalid"}' \
+    '{"driver":"openai"}' '{"context_window":0}' '{"endpoint":"ftp://example.invalid"}' \
     '{"request":"x"}' '{"tools":[]}'; do
   if print -r -- "$model" | profile_eval 'config_model(["m"])' >/dev/null 2>&1; then
     fail "invalid model was accepted: $model"
@@ -32,17 +32,17 @@ done
 print -r -- '{"context_window":null}' | profile_eval 'config_model(["m"])' >/dev/null
 
 # Model items merge left to right: objects recursively, anything else replaced.
-# The result needs a model and adapter.
+# The result needs a model and provider.
 profile_eval '
   model_merge([
-    {"$schema":"x",adapter:"openai",request:{model:"base",reasoning:{effort:"low",budget:1},stop:["a"]}},
+    {"$schema":"x",provider:"openai",request:{model:"base",reasoning:{effort:"low",budget:1},stop:["a"]}},
     {request:{reasoning:{effort:"high"},stop:["b"]},context_window:null},
-    {adapter:"anthropic"}, {request:{seed:1}}
+    {provider:"anthropic"}, {request:{seed:1}}
   ]) == {
-    adapter:"anthropic",context_window:null,
+    provider:"anthropic",context_window:null,
     request:{model:"base",reasoning:{effort:"high",budget:1},stop:["b"],seed:1}
   }' -n >/dev/null || fail 'model files did not merge in order'
-for models in '[{"adapter":"openai"}]' '[{"request":{"model":"m"}}]'; do
+for models in '[{"provider":"openai"}]' '[{"request":{"model":"m"}}]'; do
   if profile_eval 'model_merge($models)' -n --argjson models "$models" >/dev/null 2>&1; then
     fail "incomplete model was accepted: $models"
   fi
@@ -61,7 +61,7 @@ print -r -- '{"description":"probe","input_schema":{"type":"object"},"sandbox":f
   >"$config/tools/probe/manifest.json"
 print -r -- 'configured' >"$config/system/shared.md"
 print -r -- 'home' >"$HOME/prompts/home.md"
-sf_test_model probe '{"adapter": "'"$SF_TEST_BACKEND:h"'", "request": {"model": "m"}}'
+sf_test_model probe '{"provider": "'"$SF_TEST_PROVIDER:h"'", "request": {"model": "m"}}'
 sf_test_profile unused '{invalid json'
 
 # "@path" selects under the bundled root despite user shadowing; "~/" and

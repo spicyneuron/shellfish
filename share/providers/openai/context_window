@@ -1,0 +1,34 @@
+#!/usr/bin/env zsh
+
+emulate -R zsh
+setopt err_exit no_aliases no_multios pipe_fail
+umask 077
+
+source "${0:A:h:h}/_provider.zsh"
+
+api_key=${OPENAI_API_KEY-}
+unset OPENAI_API_KEY
+
+sf_provider_setup openai
+trap 'rm -rf -- "$SF_PROVIDER_TEMP_DIR"' EXIT
+cat >"$SF_PROVIDER_REQUEST_FILE"
+sf_provider_request || exit 10
+
+sf_provider_credential 'Authorization' "${api_key:+Bearer $api_key}"
+unset api_key
+
+typeset endpoint=${SF_PROVIDER_ENDPOINT%/}
+typeset models_endpoint context
+case $endpoint in
+  */chat/completions) models_endpoint="${endpoint%/chat/completions}/models" ;;
+  */responses) models_endpoint="${endpoint%/responses}/models" ;;
+  *) models_endpoint="${endpoint:h:h}/models" ;;
+esac
+sf_provider_context_curl_args "$models_endpoint"
+context=$(curl "${SF_PROVIDER_CURL_ARGS[@]}" 2>/dev/null | \
+  jq -ce --arg model "$SF_PROVIDER_MODEL" '
+    first(.data[]? | select(.id == $model) | .context_length) |
+    select(type == "number" and floor == . and . >= 1 and . <= 2147483647) |
+    {context_window:.}
+  ' 2>/dev/null) || exit 10
+print -r -- "$context"

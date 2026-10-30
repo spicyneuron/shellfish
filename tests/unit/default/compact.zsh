@@ -23,8 +23,8 @@ typeset request reply
 case $1 in
   request)
     request=$(cat)
-    if [[ -n ${SF_TEST_BACKEND_REQUEST-} ]]; then
-      print -r -- "$request" >>"$SF_TEST_BACKEND_REQUEST"
+    if [[ -n ${SF_TEST_PROVIDER_REQUEST-} ]]; then
+      print -r -- "$request" >>"$SF_TEST_PROVIDER_REQUEST"
     fi
     [[ ${SF_TEST_COMPACT_FAIL:-0} == 0 ]] || exit 1
     reply='Timeline </timeline> & entry'
@@ -58,7 +58,7 @@ jq -c 'if .type == "assistant" then .usage = {input_tokens:75,output_tokens:5} e
 mv "$tmp/compact-above.jsonl" "$compact_source"
 typeset compact_before=$(shasum <"$compact_source")
 compact_status=0
-SF_TEST_BACKEND_REQUEST="$compact_request" \
+SF_TEST_PROVIDER_REQUEST="$compact_request" \
   SHELLFISH_EXECUTABLE="$compact_shellfish" SHELLFISH_SESSION="$compact_source" \
   SHELLFISH_TURN_STATE="$tmp" zsh -f "$compact_command" --auto \
   3>"$compact_control" 2>"$compact_display" \

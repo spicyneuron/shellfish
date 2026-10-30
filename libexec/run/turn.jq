@@ -6,7 +6,7 @@
 include "lib/fields";
 include "lib/profile";
 include "lib/session";
-include "lib/backend";
+include "lib/provider";
 
 # Model-facing tool definitions, with the sandbox-bypass fields a call may use.
 def model_tools($profile; $tools):
@@ -128,12 +128,12 @@ def step($records; $share; $home; $tools; $max_capture):
     (tool_plan($header.profile; $tools; $state.calls[0]; $turn; $max_capture) |
       to_entries[] | entry(.key; .value | value))
   elif $state.next == "assistant" then
-    (backend_adapter_request($header.model; ($header.profile.system[0].text // "");
+    (provider_request($header.model; ($header.profile.system[0].text // "");
       ($state | state_messages); model_tools($header.profile; $tools)) //
       error("cannot prepare provider request")) as $request |
     entry("next"; "request"),
     entry("request"; $request | tojson),
-    entry("adapter"; $header.model.adapter),
+    entry("provider"; $header.model.provider),
     entry("context_window"; $header.model | has("context_window") | tostring)
   else
     ([$records[] | select(.type == "assistant")] | last) as $response |
@@ -145,7 +145,7 @@ def step($records; $share; $home; $tools; $max_capture):
 
 # Any partial response and a result for every pending call, then the error.
 def settle($log; $share; $home; $tools; $max_capture; $active; $partial; $reason; $message):
-  (($partial | backend_delta_response),
+  (($partial | provider_delta_response),
    (($log | session_records) as $records |
      settled_calls($records[1:] | session_state;
        $records[0] | header_expand($share; $home) | .profile; $tools;

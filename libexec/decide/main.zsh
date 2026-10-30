@@ -29,10 +29,10 @@ sf_decide_main() {
     return 2
   }
 
-  source "$SF_ROOT/lib/backend.zsh"
+  source "$SF_ROOT/lib/provider.zsh"
   source "$SF_ROOT/lib/profile.zsh"
   decision=$(sf_jq -sc '
-    include "lib/backend";
+    include "lib/provider";
     if length == 1 then .[0] | decision_request else error("expected one JSON object") end
   ' 2>&1) || {
     sf_cli_diagnostic "$decision"
@@ -47,34 +47,34 @@ sf_decide_main() {
   # Inline media can exceed argument limits, so the decision travels on stdin.
   sf_jq_fields -c --argjson model "$REPLY" '
     include "lib/fields";
-    include "lib/backend";
-    entry("request"; decision_adapter_request($model; .) | tojson),
-    entry("command"; $model.adapter + "/decide"),
+    include "lib/provider";
+    entry("request"; decision_provider_request($model; .) | tojson),
+    entry("command"; $model.provider + "/decide"),
     ("ok" | field)
   ' <<<"$decision" || { sf_die 'cannot prepare decision request'; return 1; }
-  SF_BACKEND_PLAN=( "${reply[@]}" cwd "${PWD:A}" )
+  SF_PROVIDER_PLAN=( "${reply[@]}" cwd "${PWD:A}" )
 
-  sf_backend_capture "$SF_BACKEND_PLAN[command]" $SF_DECIDE_CAPTURE || {
-    sf_die "$SF_BACKEND[error]"
+  sf_provider_capture "$SF_PROVIDER_PLAN[command]" $SF_DECIDE_CAPTURE || {
+    sf_die "$SF_PROVIDER[error]"
     return 1
   }
   process=( "${reply[@]}" )
   (( ! process[interrupted] )) || return $process[interrupted]
   if (( process[exit_code] )); then
     error=$(print -rn -- "$process[stderr]" | LC_ALL=C tr -s '[:cntrl:]' ' ' | cut -c 1-1000)
-    sf_die "${error:-backend exited before completing a decision}"
+    sf_die "${error:-provider exited before completing a decision}"
     return 1
   fi
   (( process[stdout_bytes] <= SF_DECIDE_CAPTURE )) &&
     result=$(print -rl -- "$decision" "$process[stdout]" | sf_jq -sce '
       include "lib/session";
-      include "lib/backend";
+      include "lib/provider";
       .[0].questions as $questions | .[1:] |
       select(length == 1) | .[0] |
       select(decision_result($questions) and
         ((has("usage") | not) or (.usage | token_usage)))
     ' 2>/dev/null) || {
-    sf_die 'backend returned an invalid decision'
+    sf_die 'provider returned an invalid decision'
     return 1
   }
   print -r -- "$result"

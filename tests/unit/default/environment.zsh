@@ -42,7 +42,7 @@ print -r -- 'branch:main' >"$git_state"
 # The default startup list renders captured context and persists state first.
 sf_test_config
 "$ROOT/bin/shellfish" init >/dev/null
-sf_test_model default "{\"adapter\":\"$ROOT/tests/fixtures/backend\",\"request\":{\"model\":\"test\"}}"
+sf_test_model default "{\"provider\":\"$ROOT/tests/fixtures/provider\",\"request\":{\"model\":\"test\"}}"
 sf_test_profile default '{
   "system": ["general.md", "tools.md"],
   "tools": ["read_file", "edit_file", "write_file", "skill", "search_web", "fetch_url", "shell"],

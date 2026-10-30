@@ -108,11 +108,11 @@ def path_reference:
 
 # A model file configures one request: where it goes and what it carries.
 def config_model($path):
-  config_object($path; ["$schema", "adapter", "config", "context_window", "endpoint", "request"]) |
+  config_object($path; ["$schema", "provider", "config", "context_window", "endpoint", "request"]) |
   config_assert((has("config") | not) or (.config | type == "object");
     $path + ["config"]; "must be an object") |
-  config_assert((has("adapter") | not) or (.adapter | nonempty_control_free_string);
-    $path + ["adapter"]; "invalid reference") |
+  config_assert((has("provider") | not) or (.provider | nonempty_control_free_string);
+    $path + ["provider"]; "invalid reference") |
   config_assert((has("endpoint") | not) or (.endpoint | endpoint);
     $path + ["endpoint"]; "must be an HTTP(S) URL") |
   config_assert((has("context_window") | not) or
@@ -172,7 +172,7 @@ def relative_to($dir):
   else . end;
 def config_relative($kind; $dir):
   def each($field; f): if has($field) then .[$field] |= f else . end;
-  if $kind == "model" then each("adapter"; relative_to($dir))
+  if $kind == "model" then each("provider"; relative_to($dir))
   elif $kind == "sandbox" then each("read"; map(relative_to($dir))) |
     each("write"; map(relative_to($dir)))
   else reduce ("model", "sandbox", "system", "tools", "commands", "hooks") as $field (.;
@@ -185,7 +185,7 @@ def model_merge($models):
   if .request.model | model_name then . else
     error("a model is required: set request.model")
   end |
-  if (.adapter // "") == "" then error("a model adapter is required") else . end;
+  if (.provider // "") == "" then error("a model provider is required") else . end;
 
 # Sandbox items merge left to right: grants accumulate and settings replace.
 def sandbox_merge($files):
@@ -195,7 +195,7 @@ def sandbox_merge($files):
 
 # Every path in a frozen profile through f.
 def header_paths(f):
-  .model.adapter |= f | .profile |= (.tools |= map(f) | .commands |= map(f) | .hooks |= map(f) |
+  .model.provider |= f | .profile |= (.tools |= map(f) | .commands |= map(f) | .hooks |= map(f) |
     .sandbox.read |= map(f) | .sandbox.write |= map(f));
 
 # Stored paths name bundled files "@...", files under HOME "~/...", and
@@ -213,13 +213,13 @@ def expand_path($share; $home):
     else $home + ltrimstr("~") end
   else . end;
 
-# A frozen model is a resolved model file: every field merged and the adapter
+# A frozen model is a resolved model file: every field merged and the provider
 # a stored path.
 def canonical_model:
   type == "object" and
-  (keys - ["config", "context_window"]) == ["adapter", "endpoint", "request"] and
+  (keys - ["config", "context_window"]) == ["endpoint", "provider", "request"] and
   ((has("config") | not) or (.config | type == "object")) and
-  (.adapter | stored_reference) and
+  (.provider | stored_reference) and
   (.endpoint | endpoint) and (.request | type == "object") and
   (.request.model | model_name) and
   ((has("context_window") | not) or .context_window == null or

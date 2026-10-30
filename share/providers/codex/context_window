@@ -1,0 +1,25 @@
+#!/usr/bin/env zsh
+
+emulate -R zsh
+setopt err_exit no_aliases no_multios pipe_fail
+umask 077
+
+source "${0:A:h:h}/_provider.zsh"
+typeset -gr ENDPOINT=https://chatgpt.com/backend-api/codex/responses
+unset OPENAI_API_KEY
+
+sf_provider_setup codex
+trap 'rm -rf -- "$SF_PROVIDER_TEMP_DIR"' EXIT
+cat >"$SF_PROVIDER_REQUEST_FILE"
+sf_provider_request || exit 10
+[[ $SF_PROVIDER_ENDPOINT == $ENDPOINT && $SF_PROVIDER_INSECURE_TLS == 0 ]] || exit 10
+
+typeset catalog context
+command -v codex >/dev/null 2>&1 || exit 10
+catalog=$(codex debug models --bundled 2>/dev/null) || exit 10
+context=$(jq -ce --arg model "$SF_PROVIDER_MODEL" '
+  first(.models[]? | select(.slug == $model) | .context_window) |
+  select(type == "number" and floor == . and . >= 1 and . <= 2147483647) |
+  {context_window:.}
+' <<<"$catalog" 2>/dev/null) || exit 10
+print -r -- "$context"

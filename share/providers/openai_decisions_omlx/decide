@@ -1,0 +1,17 @@
+#!/usr/bin/env zsh
+
+emulate -R zsh
+setopt err_exit no_aliases no_multios pipe_fail
+umask 077
+
+source "${0:A:h:h}/_provider.zsh"
+SF_PROVIDER_NAME=openai_decisions_omlx
+
+# oMLX accepts only user text and images, so system and JSON become text.
+request=$(jq -ce '
+  .input = (if .system == "" then [] else [{type:"text",text:.system}] end) +
+    [.input[] | if .type == "json" then {type:"text",text:(.data | tojson)} else . end] |
+  .system = ""
+') || sf_provider_die 'cannot translate request'
+
+OPENAI_API_KEY=${OMLX_API_KEY-} "${0:A:h:h}/openai_decisions/decide" <<<"$request"

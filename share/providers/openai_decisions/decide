@@ -1,0 +1,73 @@
+#!/usr/bin/env zsh
+
+emulate -R zsh
+setopt err_exit no_aliases no_multios pipe_fail
+umask 077
+
+source "${0:A:h:h}/_provider.zsh"
+
+api_key=${OPENAI_API_KEY-}
+unset OPENAI_API_KEY
+
+sf_provider_setup openai_decisions
+trap 'rm -rf -- "$SF_PROVIDER_TEMP_DIR"' EXIT
+cat >"$SF_PROVIDER_REQUEST_FILE"
+
+sf_provider_request '.request | all(keys[]; IN("input", "questions", "stream") | not)' ||
+  sf_provider_die 'invalid request'
+jq -e 'all(.input[]; .type != "video")' "$SF_PROVIDER_REQUEST_FILE" >/dev/null ||
+  sf_provider_die 'video input is not supported'
+
+sf_provider_credential 'Authorization' "${api_key:+Bearer $api_key}"
+unset api_key
+
+jq -ce '
+  def part:
+    if .type == "text" then {type:"input_text",text:.text}
+    elif .type == "json" then {type:"input_json",data:.data}
+    elif .type == "image" then {type:"input_image",image_url:.url}
+    else error("unsupported input block") end;
+  def criteria:
+    [(.["true"] // empty | "Answer true when: " + .),
+     (.["false"] // empty | "Answer false when: " + .)] |
+    if length == 0 then "" else "\n\n" + join("\n") end;
+  def question($name):
+    {type, name:$name} +
+    if .type == "predicate" then {instructions:(.instructions + (.criteria // {} | criteria))}
+    elif .type == "choice" then {instructions, choices:[.choices | to_entries[] |
+      {value:.key} + if .value == null then {} else {description:.value} end]}
+    else {instructions, levels:[.levels | to_entries[] |
+      {label:(.key | tostring), description:.value}]} end;
+  .request + {
+    input:((if .system == "" then [] else
+      [{type:"message",role:"developer",content:.system}] end) +
+      [{type:"message",role:"user",content:[.input[] | part]}]),
+    questions:[.questions | to_entries[] | .key as $name | .value | question($name)]
+  }
+' "$SF_PROVIDER_REQUEST_FILE" >"$SF_PROVIDER_BODY_FILE" || sf_provider_die 'cannot translate request'
+
+sf_provider_curl_args
+sf_provider_stream '.error.message?' '
+  [inputs] | join("\n") | fromjson |
+  if .error? != null then error("API error")
+  elif (.answers | type == "array") and (.model | type == "string") then .
+  else error("unsupported response") end |
+  {
+    model,
+    answers:(reduce .answers[] as $answer ({};
+      .[$answer.name] = ($answer |
+        if .type == "predicate" then {type, probability}
+        elif .type == "choice" then {type, choice:(.choice | tostring), confidence,
+          probabilities:(reduce .probabilities[] as $p ({};
+            .[$p.value | tostring] = $p.probability))}
+        elif .type == "score" then {type, score, confidence,
+          probabilities:[.probabilities | sort_by(.value)[] | .probability]}
+        elif .type == "refusal" then {type}
+        else error("unsupported answer type") end)))
+  } + if .usage == null then {} else {
+    usage:{input_tokens:.usage.input_tokens, output_tokens:.usage.output_tokens} +
+      if (.usage.input_tokens_details.cached_tokens // null) == null then {}
+      else {cached_tokens:.usage.input_tokens_details.cached_tokens} end +
+      if (.usage.output_tokens_details.reasoning_tokens // null) == null then {}
+      else {reasoning_tokens:.usage.output_tokens_details.reasoning_tokens} end
+  } end'

@@ -26,7 +26,7 @@ fi
 assert_equal "$session" "$(cat "$ack")"
 [[ ! -s $err ]] || fail 'background launch wrote stderr'
 jq -e -s 'all(.[]; .type != "assistant")' "$session" >/dev/null ||
-  fail 'launch did not return before delayed backend finished'
+  fail 'launch did not return before delayed provider finished'
 
 integer waited=0
 until jq -e -s 'any(.[]; .type == "assistant" and .stop == "end")' "$session" >/dev/null; do

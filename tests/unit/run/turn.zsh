@@ -3,7 +3,7 @@
 source "${0:A:h:h:h}/_helpers.zsh"
 sf_test_source lib/session.zsh
 sf_test_tmp run-turn-contract
-export SF_TEST_BACKEND_DELAY=0
+export SF_TEST_PROVIDER_DELAY=0
 
 # A successful turn appends each durable object before emitting it.
 sf_test_frozen_profile
@@ -26,9 +26,9 @@ cmp -s "$tmp/emitted" "$tmp/appended" ||
   fail 'durable events differ from appended records'
 
 # Complete calls execute in assistant order and all settle before continuation.
-typeset backend="$tmp/backend/run" tool="$tmp/ordered/run" order="$tmp/order"
-mkdir -p "${backend:h}" "${tool:h}"
-cat >"$backend" <<'ZSH'
+typeset provider="$tmp/provider/run" tool="$tmp/ordered/run" order="$tmp/order"
+mkdir -p "${provider:h}" "${tool:h}"
+cat >"$provider" <<'ZSH'
 #!/usr/bin/env zsh
 request=$(cat)
 if jq -e '.messages | any(.type == "tool_result")' <<<"$request" >/dev/null; then
@@ -53,7 +53,7 @@ print -r -- "$value" >>"$TOOL_ORDER"
 print -rn -u3 -- "{\"state_update\":[{\"name\":\"tool/$value\",\"value\":true}]}"
 print -rn -- "$value"
 ZSH
-chmod +x "$backend" "$tool"
+chmod +x "$provider" "$tool"
 print -r -- '{
   "description": "Record ordered calls",
   "input_schema": {"type": "object", "additionalProperties": false, "required": ["value"],
@@ -62,7 +62,7 @@ print -r -- '{
   "user_text": "Ordered ${input.value}",
   "sandbox": false
 }' >"${tool:h}/manifest.json"
-SF_TEST_MODEL=$(jq -c --arg backend "${backend:h}" '.adapter=$backend' <<<"$SF_TEST_MODEL")
+SF_TEST_MODEL=$(jq -c --arg provider "${provider:h}" '.provider=$provider' <<<"$SF_TEST_MODEL")
 SF_TEST_PROFILE=$(jq -c --arg tool "${tool:h}" '.tools=[$tool]' <<<"$SF_TEST_PROFILE")
 export TOOL_ORDER=$order
 session="$tmp/ordered.jsonl"
@@ -91,9 +91,9 @@ jq -eRn '
 assert_canonical_session "$session"
 
 # Unknown tools and calls beyond the per-request limit settle as denials.
-typeset limited_backend="$tmp/limited-backend/run"
-mkdir -p "${limited_backend:h}"
-cat >"$limited_backend" <<'ZSH'
+typeset limited_provider="$tmp/limited-provider/run"
+mkdir -p "${limited_provider:h}"
+cat >"$limited_provider" <<'ZSH'
 #!/usr/bin/env zsh
 request=$(cat)
 if jq -e '.messages | any(.type == "tool_result")' <<<"$request" >/dev/null; then
@@ -102,8 +102,8 @@ else
   print -r -- '{"type":"assistant","stop":"tool_calls","content":[{"type":"tool_call","id":"call_1","name":"missing","input":{}},{"type":"tool_call","id":"call_2","name":"missing","input":{}}],"usage":{"input_tokens":1,"output_tokens":1}}'
 fi
 ZSH
-chmod +x "$limited_backend"
-SF_TEST_MODEL=$(jq -c --arg backend "${limited_backend:h}" '.adapter=$backend' <<<"$SF_TEST_MODEL")
+chmod +x "$limited_provider"
+SF_TEST_MODEL=$(jq -c --arg provider "${limited_provider:h}" '.provider=$provider' <<<"$SF_TEST_MODEL")
 SF_TEST_PROFILE=$(jq -c '.tools=[]' <<<"$SF_TEST_PROFILE")
 session="$tmp/limited.jsonl"
 sf_test_session "$session"
@@ -135,27 +135,27 @@ sf_test_run broken "$broken" >"$stream" 2>"$tmp/broken.stderr" || broken_status=
 jq -es 'length == 1 and .[0].type == "session"' "$broken.saved" >/dev/null ||
   fail 'write failure changed the previously durable prefix'
 
-# An adapter receives every .env value; exported values win.
+# A provider receives every .env value; exported values win.
 sf_test_frozen_profile
-typeset env_backend="$tmp/env-backend/run" env_session="$tmp/env.jsonl"
-mkdir -p "${env_backend:h}"
+typeset env_provider="$tmp/env-provider/run" env_session="$tmp/env.jsonl"
+mkdir -p "${env_provider:h}"
 typeset env_config="$SHELLFISH_DIR"
 mkdir -p "$env_config"
 print -rl -- FILE_SECRET=file-value EXPORTED_SECRET=file-value >"$env_config/.env"
-cat >"$env_backend" <<'ZSH'
+cat >"$env_provider" <<'ZSH'
 #!/usr/bin/env zsh
 cat >/dev/null
 jq -cn --arg text "${FILE_SECRET-unset} ${EXPORTED_SECRET-unset}" \
   '{type:"assistant",stop:"end",content:[{type:"text",text:$text}]}'
 ZSH
-chmod +x "$env_backend"
-SF_TEST_MODEL=$(jq -c --arg backend "${env_backend:h}" '.adapter=$backend' <<<"$SF_TEST_MODEL")
+chmod +x "$env_provider"
+SF_TEST_MODEL=$(jq -c --arg provider "${env_provider:h}" '.provider=$provider' <<<"$SF_TEST_MODEL")
 export EXPORTED_SECRET=exported-value
 sf_test_session "$env_session"
-sf_test_run env "$env_session" >"$stream" || fail 'adapter environment turn failed'
+sf_test_run env "$env_session" >"$stream" || fail 'provider environment turn failed'
 jq -eRn '[inputs | fromjson | select(.type == "assistant") | .content[0].text] ==
   ["file-value exported-value"]' <"$stream" >/dev/null ||
-  fail 'adapter did not receive layered environment values'
+  fail 'provider did not receive layered environment values'
 unset EXPORTED_SECRET
 
 print -r -- ok

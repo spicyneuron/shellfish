@@ -101,10 +101,10 @@ sf_profile_configs() {
   REPLY=$detail
 }
 
-# Resolve validated model items independently of a profile, for an adapter with
+# Resolve validated model items independently of a profile, for a provider with
 # executable ENTRY.
 sf_profile_model() {
-  local config_dir=$1 items=$2 entry=$3 names model adapter resolved final
+  local config_dir=$1 items=$2 entry=$3 names model provider resolved final
   names=$(jq -r '.[] | strings' <<<"$items") ||
     sf_profile_fail 'cannot read model references' || return
   sf_profile_configs model models "$config_dir" "$items" ${(f)names} || return
@@ -112,31 +112,31 @@ sf_profile_model() {
     include "lib/profile";
     model_merge($models)
   ' 2>&1) || sf_profile_validation_error "$model" 'invalid model' || return
-  adapter=$(jq -r '.adapter' <<<"$model") ||
-    sf_profile_fail 'cannot read model adapter' || return
-  sf_profile_lookup "$config_dir" backends "$adapter" ||
-    sf_profile_fail "cannot resolve backends reference: $adapter" || return
+  provider=$(jq -r '.provider' <<<"$model") ||
+    sf_profile_fail 'cannot read model provider' || return
+  sf_profile_lookup "$config_dir" providers "$provider" ||
+    sf_profile_fail "cannot resolve providers reference: $provider" || return
   resolved=$REPLY
   [[ -d $resolved ]] ||
-    sf_profile_fail "invalid backends reference: $adapter" || return
+    sf_profile_fail "invalid providers reference: $provider" || return
   [[ -f $resolved/$entry && -x $resolved/$entry ]] ||
-    sf_profile_fail "backend has no $entry entrypoint: $adapter" || return
+    sf_profile_fail "provider has no $entry entrypoint: $provider" || return
   sf_profile_read_manifest "$resolved" || return
-  final=$(sf_jq -nce --argjson model "$model" --arg adapter "$resolved" \
+  final=$(sf_jq -nce --argjson model "$model" --arg provider "$resolved" \
       --argjson manifest "$REPLY" '
     include "lib/profile";
     ($manifest | select(type == "object" and (keys - ["endpoint"]) == [] and
       ((has("endpoint") | not) or (.endpoint | endpoint))) //
-      error("invalid backend manifest")) as $manifest |
-    $model | .adapter = $adapter | .endpoint //= $manifest.endpoint |
-    if .endpoint == null then error("backend endpoint is required") else . end |
+      error("invalid provider manifest")) as $manifest |
+    $model | .provider = $provider | .endpoint //= $manifest.endpoint |
+    if .endpoint == null then error("provider endpoint is required") else . end |
     if canonical_model then . else error("invalid resolved model") end
   ' 2>&1) || sf_profile_validation_error "$final" 'cannot resolve model' || return
   REPLY=$final
 }
 
 # Resolve model references or inline JSON objects, merged left to right, for an
-# adapter with executable ENTRY. Relative paths resolve against PWD. Returns 2
+# provider with executable ENTRY. Relative paths resolve against PWD. Returns 2
 # for malformed items.
 sf_profile_model_refs() {
   local entry=$1 config_dir items

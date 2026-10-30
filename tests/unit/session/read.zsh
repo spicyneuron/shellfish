@@ -105,7 +105,7 @@ print -r -- '[
 typeset failed_turn='[
   {"type":"user","content":[{"type":"text","text":"first"}]},
   {"type":"assistant","stop":"tool_calls","content":[{"type":"tool_call","id":"c1","name":"shell","input":{}}]},
-  {"type":"error","user_text":"Backend exited before completing a response."},
+  {"type":"error","user_text":"Provider exited before completing a response."},
   {"type":"user","content":[{"type":"text","text":"second"}]}
 ]'
 print -r -- "$failed_turn" | accepts >/dev/null || fail 'an error did not close the open turn'

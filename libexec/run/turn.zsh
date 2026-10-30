@@ -3,7 +3,7 @@ setopt no_aliases no_bg_nice no_multios pipe_fail
 
 source "$SF_ROOT/lib/session.zsh"
 source "$SF_ROOT/lib/profile.zsh"
-source "$SF_ROOT/lib/backend.zsh"
+source "$SF_ROOT/lib/provider.zsh"
 source "$SF_ROOT/lib/scratch.zsh"
 source "$SF_ROOT/libexec/run/hooks.zsh"
 source "$SF_ROOT/libexec/run/tools.zsh"
@@ -82,7 +82,7 @@ sf_run_settle() {
       $reason; $message)
   ' --rawfile log "$session" --argjson active "${${SF_COMPONENT[values]:+true}:-false}" \
     --arg reason "$reason" --arg message "$message" \
-    --jsonargs "${SF_BACKEND_PARTIAL_EVENTS[@]}" ||
+    --jsonargs "${SF_PROVIDER_PARTIAL_EVENTS[@]}" ||
     { REPLY='cannot settle the turn'; return 1; }
   for record in "${reply[@]}"; do
     sf_run_append "$session" "$record" || return
@@ -124,7 +124,7 @@ sf_run_open() {
 sf_run_interrupt() {
   integer code=$1
   SF_RUN[signal_status]=$code
-  [[ -z $SF_BACKEND[pid] ]] || sf_process_stop "$SF_BACKEND[pid]" "$SF_BACKEND[group_file]"
+  [[ -z $SF_PROVIDER[pid] ]] || sf_process_stop "$SF_PROVIDER[pid]" "$SF_PROVIDER[group_file]"
 }
 
 # Ask the client, into reply as (DECISION REASON). Without a client or a timely
@@ -224,13 +224,13 @@ sf_run_turn() {
             failure="provider request limit reached: $SF_RUN[max_requests]"
             break
           fi
-          SF_BACKEND_PLAN=( request "$SF_RUN_STEP[request]"
-            command "$SF_RUN_STEP[adapter]/run" cwd "$SF_RUN[cwd]" )
-          context_command=$SF_RUN_STEP[adapter]/context_window
+          SF_PROVIDER_PLAN=( request "$SF_RUN_STEP[request]"
+            command "$SF_RUN_STEP[provider]/run" cwd "$SF_RUN[cwd]" )
+          context_command=$SF_RUN_STEP[provider]/context_window
           if (( SF_RUN_STEP[requests] == 0 )) && [[ $SF_RUN_STEP[context_window] != true &&
               -f $context_command && -x $context_command ]]; then
-            sf_backend_context_window "$context_command" "$SF_RUN[max_capture]" ||
-              { sf_run_status $? "$SF_BACKEND[error]"; break; }
+            sf_provider_context_window "$context_command" "$SF_RUN[max_capture]" ||
+              { sf_run_status $? "$SF_PROVIDER[error]"; break; }
             SF_RUN[model]=$(jq -c --argjson window "$REPLY" \
               '.context_window=$window' <<<"$SF_RUN[model]") &&
               config=$(jq -cn --argjson profile "$SF_RUN[profile]" --argjson model "$SF_RUN[model]" \
@@ -244,10 +244,10 @@ sf_run_turn() {
               break
             }
           fi
-          sf_backend_run sf_run_emit || {
+          sf_provider_run sf_run_emit || {
             run_status=$?
             (( ! SF_RUN[signal_status] )) || run_status=$SF_RUN[signal_status]
-            sf_run_status $run_status "$SF_BACKEND[error]"
+            sf_run_status $run_status "$SF_PROVIDER[error]"
             break
           }
           sf_run_append "$session" "$REPLY" || { failure=$REPLY; break; }

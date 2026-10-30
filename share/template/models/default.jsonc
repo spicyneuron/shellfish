@@ -7,16 +7,16 @@
   // anthropic, codex, openai, openai_responses, or openrouter.
   // "openai" works with any OpenAI-compatible endpoint.
   // Credentials come from the environment or .env.
-  "adapter": "openrouter",
+  "provider": "openrouter",
 
-  // Overrides the adapter's endpoint.
+  // Overrides the provider's endpoint.
   // "endpoint": "http://127.0.0.1:8080/v1/chat/completions",
 
   // Overrides metadata discovery; null disables it.
   // "context_window": 200000,
 
-  // Passed through to the adapter. "max_tokens" and "reasoning.effort" are
-  // normalized in the bundled adapters.
+  // Passed through to the provider. "max_tokens" and "reasoning.effort" are
+  // normalized in the bundled providers.
   "request": {
     "model": "MODEL",
     "max_tokens": 16384,

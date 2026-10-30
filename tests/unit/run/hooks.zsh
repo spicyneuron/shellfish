@@ -1,7 +1,7 @@
 #!/usr/bin/env zsh
 source "${0:A:h:h:h}/_helpers.zsh"
 sf_test_tmp run-hook-contract
-export SF_TEST_BACKEND_DELAY=0
+export SF_TEST_PROVIDER_DELAY=0
 sf_test_frozen_profile
 typeset hook="$tmp/prompt" session stream="$tmp/stream"
 sf_test_hook "$hook" '{"user_text":"${output.stdout}"}' <<'ZSH'
@@ -75,9 +75,9 @@ jq -e -s '.[1] == {type:"state_update",name:"prompt/started",value:true} and
   (map(.type) | index("hook_result") == null)' "$session" >/dev/null ||
   fail 'interruption lost state or settled unfinished output'
 # Stop receives final assistant text and can continue only with model feedback.
-typeset backend="$tmp/backend/run" stop="$tmp/stop" count="$tmp/count" stop_input="$tmp/stop-input"
-mkdir -p "${backend:h}"
-cat >"$backend" <<'ZSH'
+typeset provider="$tmp/provider/run" stop="$tmp/stop" count="$tmp/count" stop_input="$tmp/stop-input"
+mkdir -p "${provider:h}"
+cat >"$provider" <<'ZSH'
 #!/usr/bin/env zsh
 cat >/dev/null
 integer n=0
@@ -95,9 +95,9 @@ if [[ $1 == 1 ]]; then
   [[ -e $STOP_SILENT ]] && print -rn -u2 -- 'checking again' || print -rn -- 'checking again'
 fi
 ZSH
-chmod +x "$backend"
+chmod +x "$provider"
 export REQUEST_COUNT=$count STOP_INPUT=$stop_input STOP_SILENT="$tmp/silent"
-SF_TEST_MODEL=$(jq -c --arg backend "${backend:h}" '.adapter=$backend' <<<"$SF_TEST_MODEL")
+SF_TEST_MODEL=$(jq -c --arg provider "${provider:h}" '.provider=$provider' <<<"$SF_TEST_MODEL")
 SF_TEST_PROFILE=$(jq -c '.hooks=[]' <<<"$SF_TEST_PROFILE")
 sf_test_bind_hooks stop "$stop"
 new_session stop; sf_test_run stop "$session" >"$stream" || fail 'stop continuation failed'
@@ -138,7 +138,7 @@ for name in two three; do
   sf_test_hook "$hooks/$name" '{"user_text":"${output.stdout}"}' <"$hooks/one/run"
 done
 export DENY_TWO="$tmp/deny-two" FAIL_TWO="$tmp/fail-two"
-SF_TEST_MODEL=$(jq -c --arg adapter "${SF_TEST_BACKEND:h}" '.adapter=$adapter' <<<"$SF_TEST_MODEL")
+SF_TEST_MODEL=$(jq -c --arg provider "${SF_TEST_PROVIDER:h}" '.provider=$provider' <<<"$SF_TEST_MODEL")
 SF_TEST_PROFILE=$(jq -c '.hooks=[]' <<<"$SF_TEST_PROFILE")
 sf_test_bind_hooks user_prompt_submit "$hooks"/{one,two,three}
 new_session ordered; sf_test_run ordered "$session" >"$stream" || fail 'ordered hooks failed'

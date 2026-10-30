@@ -21,7 +21,7 @@ const testAccessCode = "123456"
 const userRecord = `{"type":"user","content":[{"type":"text","text":"go"}]}`
 const assistantRecord = `{"type":"assistant","stop":"end","content":[{"type":"text","text":"done"}]}`
 const toolAssistantRecord = `{"type":"assistant","stop":"tool_calls","content":[]}`
-const errorRecord = `{"type":"error","user_text":"backend failed"}`
+const errorRecord = `{"type":"error","user_text":"provider failed"}`
 const hookDraft = `{"type":"_draft","lifecycle":"user_prompt_submit","id":"1","user_text":"Checking"}`
 const stateUpdateRecord = `{"type":"state_update","name":"agents/a1b2c3","value":{"session":".agent-a1b2c3.jsonl"}}`
 

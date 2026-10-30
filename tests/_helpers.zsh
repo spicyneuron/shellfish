@@ -7,7 +7,7 @@ typeset -gr ROOT=${${(%):-%x}:A:h:h}
 typeset -g SF_ROOT=$ROOT
 typeset -g SF_SHARE=$ROOT/share
 typeset -gr SF_TEST_SESSIONS=$ROOT/tests/fixtures/session
-typeset -gr SF_TEST_BACKEND=$ROOT/tests/fixtures/backend/run
+typeset -gr SF_TEST_PROVIDER=$ROOT/tests/fixtures/provider/run
 typeset -g tmp=''
 # EXIT traps inside functions fire on return; keep cleanup at source scope.
 trap '[[ -z $tmp ]] || rm -rf -- "$tmp"' EXIT
@@ -79,16 +79,16 @@ fail() {
 }
 
 # The optional stop reason must match the final record.
-# The response an adapter's output ends with, when every line before it is a
+# The response a provider's output ends with, when every line before it is a
 # delta. REPLY is the response; fails on any other stream.
-sf_test_backend_response() {
+sf_test_provider_response() {
   REPLY=$(jq -L "$ROOT" -ec -s '
     include "lib/profile";
     include "lib/session";
-    include "lib/backend";
-    select(length > 0 and all(.[:-1][]; backend_delta) and
+    include "lib/provider";
+    select(length > 0 and all(.[:-1][]; provider_delta) and
       (.[-1] | canonical_response and .stop != "cancelled")) | .[-1]
-  ' "$1") || { sf_test_detail=( "not a valid adapter stream: $1" ); return 1; }
+  ' "$1") || { sf_test_detail=( "not a valid provider stream: $1" ); return 1; }
 }
 
 assert_canonical_session() {
@@ -111,8 +111,8 @@ sf_test_frozen_profile() {
   SF_TEST_PROFILE=$(jq -cn --arg tool "$ROOT/share/tools/shell" '
     {system:[], tools:[$tool], commands:[], hooks:[], sandbox:{enabled:false, read:[], write:[]}}
   ')
-  SF_TEST_MODEL=$(jq -cn --arg adapter "${SF_TEST_BACKEND:h}" '
-    {adapter:$adapter,endpoint:"https://example.invalid/test",request:{model:"test-model"}}
+  SF_TEST_MODEL=$(jq -cn --arg provider "${SF_TEST_PROVIDER:h}" '
+    {provider:$provider,endpoint:"https://example.invalid/test",request:{model:"test-model"}}
   ')
   export SHELLFISH_MAX_REQUESTS_PER_TURN=8 SHELLFISH_MAX_TOOL_CALLS_PER_REQUEST=16
   export SHELLFISH_MAX_CAPTURE_BYTES=65536

@@ -17,17 +17,17 @@ typeset tmp
 tmp=$(mktemp -d "${TMPDIR:-/tmp}/shellfish-perf.XXXXXX")
 trap 'if [[ -n ${SHELLFISH_PERF_KEEP-} ]]; then print -u2 -r -- "kept: $tmp"; else rm -rf -- "$tmp"; fi' EXIT
 mkdir -p "$tmp/project" "$tmp/bin" "$tmp/shellfish/profiles" "$tmp/shellfish/models" \
-  "$tmp/shellfish/backends/perf" "$tmp/shellfish/tools/perf"
+  "$tmp/shellfish/providers/perf" "$tmp/shellfish/tools/perf"
 
 cat >"$tmp/bin/jq" <<'EOF'
 #!/usr/bin/env zsh
 print -r -- "$SHELLFISH_PERF_RUN" >>"$SHELLFISH_PERF_JQ_LOG"
 exec "$SHELLFISH_PERF_JQ" "$@"
 EOF
-cat >"$tmp/shellfish/backends/perf/manifest.json" <<'EOF'
+cat >"$tmp/shellfish/providers/perf/manifest.json" <<'EOF'
 {"endpoint":"https://example.invalid/perf"}
 EOF
-cat >"$tmp/shellfish/backends/perf/run" <<'EOF'
+cat >"$tmp/shellfish/providers/perf/run" <<'EOF'
 #!/usr/bin/env zsh
 request=$(cat)
 if "$SHELLFISH_PERF_JQ" -e '.messages[-1].type == "tool_result"' <<<"$request" >/dev/null; then
@@ -45,7 +45,7 @@ cat >"$tmp/shellfish/tools/perf/run" <<'EOF'
 cat >/dev/null
 print -rn -- 'tool result'
 EOF
-chmod +x "$tmp/bin/jq" "$tmp/shellfish/backends/perf/run" "$tmp/shellfish/tools/perf/run"
+chmod +x "$tmp/bin/jq" "$tmp/shellfish/providers/perf/run" "$tmp/shellfish/tools/perf/run"
 
 # One hook per lifecycle. The unsandboxed tool skips permission_request.
 typeset lifecycle
@@ -56,7 +56,7 @@ for lifecycle in session_start user_prompt_submit pre_tool_use post_tool_use sto
   chmod +x "$tmp/shellfish/hooks/$lifecycle/run"
 done
 
-print -r -- '{"adapter":"perf","request":{"model":"perf"}}' >"$tmp/shellfish/models/default.jsonc"
+print -r -- '{"provider":"perf","request":{"model":"perf"}}' >"$tmp/shellfish/models/default.jsonc"
 cat >"$tmp/shellfish/profiles/default.jsonc" <<'EOF'
 {
   "tools":["perf"],

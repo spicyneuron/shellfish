@@ -5,13 +5,13 @@ sf_test_tmp default-tools-agent
 sf_test_config
 
 typeset agent="$ROOT/share/tools/agent"
-typeset backend="$tmp/backend" session="$tmp/parent.jsonl" stream="$tmp/stream"
+typeset provider="$tmp/provider" session="$tmp/parent.jsonl" stream="$tmp/stream"
 if grep -q '"agent"' "$ROOT/share/template/profiles/default.jsonc"; then
   fail 'agent must be opt-in'
 fi
-mkdir -p "$backend"
-print -r -- '{"endpoint":"https://example.invalid/test"}' >"$backend/manifest.json"
-cat >"$backend/run" <<'ZSH'
+mkdir -p "$provider"
+print -r -- '{"endpoint":"https://example.invalid/test"}' >"$provider/manifest.json"
+cat >"$provider/run" <<'ZSH'
 #!/usr/bin/env zsh
 say() { jq -cn --arg text "$1" '{type:"assistant",stop:"end",content:[{type:"text",text:$text}]}'; }
 call() {
@@ -65,13 +65,13 @@ else
   say 'child answer'
 fi
 ZSH
-chmod +x "$backend/run"
+chmod +x "$provider/run"
 sf_test_profile child '{}'
 print -rl -- '#!/usr/bin/env zsh' 'exit 0' | sf_test_hook "$tmp/stop-hook" '{"on":"stop"}'
 sf_test_profile child-stop "{\"hooks\":[\"$tmp/stop-hook\"]}"
 
 sf_test_frozen_profile
-SF_TEST_MODEL=$(jq -c --arg adapter "$backend" '.adapter=$adapter' <<<"$SF_TEST_MODEL")
+SF_TEST_MODEL=$(jq -c --arg provider "$provider" '.provider=$provider' <<<"$SF_TEST_MODEL")
 SF_TEST_PROFILE=$(jq -c --arg tool "$agent" '.tools=[$tool]' <<<"$SF_TEST_PROFILE")
 sf_test_session "$session"
 sf_test_run 'parent task' "$session" >"$stream" || fail 'parent tool turn failed'
@@ -91,9 +91,9 @@ jq -e -s '
   .[3].content[0].text == "child answer"
 ' "$child" >/dev/null || fail 'child profile, marker, or answer is wrong'
 jq -e -n --slurpfile parent "$session" --slurpfile child "$child" '
-  ($parent[0].model.adapter | split("/") | last) as $adapter |
-  ($child[0].model | del(.adapter)) == ($parent[0].model | del(.adapter)) and
-  ($child[0].model.adapter | endswith("/" + $adapter))
+  ($parent[0].model.provider | split("/") | last) as $provider |
+  ($child[0].model | del(.provider)) == ($parent[0].model | del(.provider)) and
+  ($child[0].model.provider | endswith("/" + $provider))
 ' >/dev/null || fail 'child did not inherit the parent model'
 jq -e -s --arg id "$id" '
   ([.[] | select(.type == "tool_result" and .name == "agent")] | last) as $result |
@@ -317,7 +317,7 @@ jq -e -s --slurpfile parent "$fork_parent" '
 jq -e '
   [.messages[] | select(.type == "user" or .type == "assistant") |
     .content[0].text] == ["earlier user","earlier answer","delegated task"]
-' "$fork_request" >/dev/null || fail 'fork backend context is wrong'
+' "$fork_request" >/dev/null || fail 'fork provider context is wrong'
 
 typeset header_parent="$tmp/header-parent.jsonl" header_id header_child
 sf_test_session "$header_parent"

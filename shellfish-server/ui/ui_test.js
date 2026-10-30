@@ -16,7 +16,7 @@ const HEADER = {
   format_version: 1,
   cwd: "/project",
   model: {
-    adapter: "@backends/test",
+    provider: "@providers/test",
     request: { model: "test-model" },
     context_window: null,
   },
@@ -522,7 +522,7 @@ test("applies a session update without replaying the transcript", async () => {
   const records = page.output.children.slice();
   await page.send({
     type: "_session_update",
-    model: { adapter: "/backends/updated", request: { model: "new-model" } },
+    model: { provider: "/providers/updated", request: { model: "new-model" } },
   });
   assert.equal(page.model.textContent, "updated/new-model");
   assert.deepEqual(page.output.children, records);
@@ -534,7 +534,7 @@ test("shows context usage and preserves cache usage", async () => {
   await page.send({
     type: "_session_update",
     model: {
-      adapter: "/backends/test",
+      provider: "/providers/test",
       request: { model: "test-model" }, context_window: 264000,
     },
   });
@@ -549,7 +549,7 @@ test("shows context usage and preserves cache usage", async () => {
   await page.send({
     type: "_session_update",
     model: {
-      adapter: "/backends/test",
+      provider: "/providers/test",
       request: { model: "test-model" }, context_window: null,
     },
   });

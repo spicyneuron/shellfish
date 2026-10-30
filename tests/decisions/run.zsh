@@ -56,13 +56,13 @@ for ref; do
     input=$(jq -c '{command, request_sandbox_bypass:true, sandbox_bypass_reason:"The command needs access outside the sandbox."}' <<<"$case")
     jq -cn --argjson case "$case" --argjson input "$input" --arg key "$key" \
         --argjson threshold "$threshold" \
-        --arg model "m$index" --arg cwd "$tmp" --arg backend "$root/tests/fixtures/backend" '
+        --arg model "m$index" --arg cwd "$tmp" --arg provider "$root/tests/fixtures/provider" '
       {type:"session", format_version:1, cwd:$cwd, created:"2026-01-01T00:00:00Z",
         profile:{system:[{text:"You are a coding agent working in the user'"'"'s project."}],
           tools:[], commands:[], hooks:[], sandbox:{enabled:true, read:[], write:[]},
           config:{sandbox:{approver:({($key):$model} +
             if $threshold == null then {} else {allow_threshold:$threshold} end)}}},
-        model:{adapter:$backend, endpoint:"https://example.invalid/test", request:{model:"unused"}}},
+        model:{provider:$provider, endpoint:"https://example.invalid/test", request:{model:"unused"}}},
       {type:"user", content:[{type:"text", text:$case.user}]},
       (if $case.tool then
         {type:"assistant", stop:"tool_calls", content:[{type:"tool_call", id:"call_1",

@@ -4,9 +4,9 @@ source "${0:A:h:h}/_helpers.zsh"
 sf_test_tmp decide
 
 typeset entry="$ROOT/bin/shellfish" result decision invalid model
-typeset adapter=${SF_TEST_BACKEND:h}
-model=$(jq -cn --arg adapter "$adapter" \
-  '{adapter:$adapter,config:{http_timeout:60},request:{model:"fake-decider"}}')
+typeset provider=${SF_TEST_PROVIDER:h}
+model=$(jq -cn --arg provider "$provider" \
+  '{provider:$provider,config:{http_timeout:60},request:{model:"fake-decider"}}')
 decision=$(jq -cn '{
   system:"Judge carefully.",
   input:[{type:"text",text:"A clip."},{type:"json",data:{frames:2}},
@@ -17,7 +17,7 @@ decision=$(jq -cn '{
     risk:{type:"score",instructions:"How risky?",levels:["low","medium","high"]},
     secret:{type:"predicate",instructions:"refuse"}}}')
 
-result=$(SF_TEST_BACKEND_REQUEST="$tmp/request.json" \
+result=$(SF_TEST_PROVIDER_REQUEST="$tmp/request.json" \
   zsh -f "$entry" decide -m "$model" <<<"$decision") || fail 'decide failed'
 jq -e '
   .model == "fake-decider" and (.usage.output_tokens == 0) and .answers == {
@@ -30,20 +30,20 @@ jq -e --argjson decision "$decision" '
   .format_version == 1 and .system == $decision.system and .input == $decision.input and
   .questions == $decision.questions and .request == {model:"fake-decider"} and
   .endpoint == "https://example.invalid/test" and .config == {http_timeout:60}
-' "$tmp/request.json" >/dev/null || fail 'decide sent the wrong adapter request'
+' "$tmp/request.json" >/dev/null || fail 'decide sent the wrong provider request'
 
-# Inline media larger than the argument limit reaches the adapter intact.
+# Inline media larger than the argument limit reaches the provider intact.
 head -c 1572864 /dev/zero | base64 | tr -d '\n' | jq -Rc --argjson decision "$decision" '
   . as $data | $decision | .input = [{type:"video",url:("data:video/mp4;base64," + $data)}]
 ' >"$tmp/large.json"
-SF_TEST_BACKEND_REQUEST="$tmp/large-request.json" \
+SF_TEST_PROVIDER_REQUEST="$tmp/large-request.json" \
   zsh -f "$entry" decide -m "$model" <"$tmp/large.json" >/dev/null 2>"$tmp/large.err" ||
   fail 'decide failed on large media' "$(<"$tmp/large.err")"
 jq -e --slurpfile sent "$tmp/large.json" '.input == $sent[0].input' "$tmp/large-request.json" \
   >/dev/null || fail 'decide altered large media'
 
 # An omitted system arrives empty.
-SF_TEST_BACKEND_REQUEST="$tmp/no-system.json" zsh -f "$entry" decide -m "$model" \
+SF_TEST_PROVIDER_REQUEST="$tmp/no-system.json" zsh -f "$entry" decide -m "$model" \
   <<<"$(jq -c 'del(.system)' <<<"$decision")" >/dev/null
 jq -e '.system == ""' "$tmp/no-system.json" >/dev/null
 
@@ -53,7 +53,7 @@ zsh -f "$entry" decide <<<"$decision" >/dev/null 2>"$tmp/no-model.err" &&
 zsh -f "$entry" decide -m "$model" extra <<<"$decision" >/dev/null 2>&1 &&
   fail 'decide accepted a positional argument'
 
-# Invalid decisions fail before any adapter runs.
+# Invalid decisions fail before any provider runs.
 for invalid in '' '{' '[]' "$decision $decision" \
     "$(jq -c '.extra = 1' <<<"$decision")" \
     "$(jq -c '.system = 1' <<<"$decision")" \
@@ -68,35 +68,35 @@ for invalid in '' '{' '[]' "$decision $decision" \
     "$(jq -c '.questions.risk.levels = ["one"]' <<<"$decision")" \
     "$(jq -c 'del(.questions.risk.instructions)' <<<"$decision")"; do
   rm -f -- "$tmp/rejected.json"
-  if SF_TEST_BACKEND_REQUEST="$tmp/rejected.json" \
+  if SF_TEST_PROVIDER_REQUEST="$tmp/rejected.json" \
       zsh -f "$entry" decide -m "$model" <<<"$invalid" >/dev/null 2>"$tmp/invalid.err"; then
     fail "decide accepted an invalid decision: $invalid"
   fi
   [[ $(<"$tmp/invalid.err") == *'invalid decision'* ]] ||
     fail 'decide misreported an invalid decision' "$(<"$tmp/invalid.err")"
-  [[ ! -e $tmp/rejected.json ]] || fail 'an invalid decision invoked an adapter'
+  [[ ! -e $tmp/rejected.json ]] || fail 'an invalid decision invoked a provider'
 done
 
 SF_TEST_DECIDE=error zsh -f "$entry" decide -m "$model" <<<"$decision" \
-  >/dev/null 2>"$tmp/error.err" && fail 'decide accepted an adapter failure'
-[[ $(<"$tmp/error.err") == *'test decision failure'* ]] || fail 'decide hid the adapter error'
+  >/dev/null 2>"$tmp/error.err" && fail 'decide accepted a provider failure'
+[[ $(<"$tmp/error.err") == *'test decision failure'* ]] || fail 'decide hid the provider error'
 
 SF_TEST_DECIDE=invalid zsh -f "$entry" decide -m "$model" <<<"$decision" \
   >"$tmp/invalid.out" 2>"$tmp/invalid.err" && fail 'decide accepted an invalid result'
 [[ ! -s $tmp/invalid.out ]]
-[[ $(<"$tmp/invalid.err") == *'backend returned an invalid decision'* ]]
+[[ $(<"$tmp/invalid.err") == *'provider returned an invalid decision'* ]]
 
 # Answers must match their questions.
-typeset bad_adapter="$tmp/bad-adapter"
-mkdir -p "$bad_adapter"
-cp "$adapter/manifest.json" "$bad_adapter/"
-cat >"$bad_adapter/decide" <<'ZSH'
+typeset bad_provider="$tmp/bad-provider"
+mkdir -p "$bad_provider"
+cp "$provider/manifest.json" "$bad_provider/"
+cat >"$bad_provider/decide" <<'ZSH'
 #!/usr/bin/env zsh
 cat >/dev/null
 print -r -- "$SF_TEST_RESULT"
 ZSH
-chmod +x "$bad_adapter/decide"
-model=$(jq -cn --arg adapter "$bad_adapter" '{adapter:$adapter,request:{model:"bad"}}')
+chmod +x "$bad_provider/decide"
+model=$(jq -cn --arg provider "$bad_provider" '{provider:$provider,request:{model:"bad"}}')
 decision='{"input":[{"type":"text","text":"x"}],"questions":{
   "p":{"type":"predicate","instructions":"x"},
   "c":{"type":"choice","instructions":"x","choices":{"a":null,"b":null}},
@@ -116,22 +116,22 @@ for invalid in \
     <<<"$decision" >/dev/null 2>&1 && fail "decide accepted an invalid result: $invalid"
 done
 
-# A backend without a decide entrypoint cannot answer decisions.
+# A provider without a decide entrypoint cannot answer decisions.
 mkdir -p "$tmp/chat-only"
-ln -s "$SF_TEST_BACKEND" "$tmp/chat-only/run"
-cp "$adapter/manifest.json" "$tmp/chat-only/"
-model=$(jq -cn --arg adapter "$tmp/chat-only" '{adapter:$adapter,request:{model:"chat"}}')
+ln -s "$SF_TEST_PROVIDER" "$tmp/chat-only/run"
+cp "$provider/manifest.json" "$tmp/chat-only/"
+model=$(jq -cn --arg provider "$tmp/chat-only" '{provider:$provider,request:{model:"chat"}}')
 zsh -f "$entry" decide -m "$model" <<<"$decision" >/dev/null 2>"$tmp/entry.err" &&
-  fail 'decide ran a backend without a decide entrypoint'
-[[ $(<"$tmp/entry.err") == *'backend has no decide entrypoint'* ]]
+  fail 'decide ran a provider without a decide entrypoint'
+[[ $(<"$tmp/entry.err") == *'provider has no decide entrypoint'* ]]
 
-# An interrupted decision exits with the signal status and stops its adapter.
+# An interrupted decision exits with the signal status and stops its provider.
 mkdir -p "$tmp/slow"
-cp "$adapter/manifest.json" "$tmp/slow/"
+cp "$provider/manifest.json" "$tmp/slow/"
 print -r -- $'#!/usr/bin/env zsh\ncat >/dev/null\nprint -r -- $$ >"$SF_TEST_PID"\nsleep 30' \
   >"$tmp/slow/decide"
 chmod +x "$tmp/slow/decide"
-model=$(jq -cn --arg adapter "$tmp/slow" '{adapter:$adapter,request:{model:"slow"}}')
+model=$(jq -cn --arg provider "$tmp/slow" '{provider:$provider,request:{model:"slow"}}')
 SF_TEST_PID="$tmp/slow.pid" zsh -f "$entry" decide -m "$model" <<<"$decision" >/dev/null 2>&1 &
 typeset decide_pid=$! interrupt_status=0
 integer polls=0
@@ -139,4 +139,4 @@ until [[ -s $tmp/slow.pid ]] || (( polls++ > 100 )); do sleep 0.05; done
 kill -INT $decide_pid
 wait $decide_pid || interrupt_status=$?
 assert_equal 130 "$interrupt_status"
-! kill -0 "$(<"$tmp/slow.pid")" 2>/dev/null || fail 'interrupted decision left its adapter running'
+! kill -0 "$(<"$tmp/slow.pid")" 2>/dev/null || fail 'interrupted decision left its provider running'

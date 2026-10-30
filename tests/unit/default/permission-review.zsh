@@ -6,13 +6,13 @@ sf_test_tmp permission-review
 
 typeset hook="$ROOT/share/hooks/sandbox/approver"
 typeset session="$tmp/review.jsonl" control="$tmp/control.json"
-typeset backend="$tmp/backend" captured="$tmp/permission-review.jsonl" mode="$tmp/mode"
-typeset provider="$tmp/request.json"
+typeset provider="$tmp/provider" captured="$tmp/permission-review.jsonl" mode="$tmp/mode"
+typeset sent="$tmp/request.json"
 typeset request before
 integer hook_status=0
 
-mkdir -p "$backend"
-cat >"$backend/run" <<'ZSH'
+mkdir -p "$provider"
+cat >"$provider/run" <<'ZSH'
 #!/usr/bin/env zsh
 cat >"$SF_TEST_REQUEST" || exit
 [[ $(<"$SF_TEST_MODE") != failure ]] || exit 1
@@ -21,11 +21,11 @@ text=$(<"$SF_TEST_MODE")
 jq -cn --arg text "$text" \
   '{type:"assistant",stop:"end",content:[{type:"reasoning",text:"review"},{type:"text",text:$text}]}'
 ZSH
-chmod +x "$backend/run"
+chmod +x "$provider/run"
 
 sf_test_frozen_profile
-SF_TEST_MODEL=$(jq -c --arg adapter "$backend" '
-  .adapter=$adapter | .context_window=20000 | .request += {max_tokens:5000,temperature:0.2,
+SF_TEST_MODEL=$(jq -c --arg provider "$provider" '
+  .provider=$provider | .context_window=20000 | .request += {max_tokens:5000,temperature:0.2,
     response_schema:{type:"object",properties:{unexpected:{type:"string"}}}} |
   .config={http_timeout:120,http_stall:30,insecure_tls:false}
 ' <<<"$SF_TEST_MODEL")
@@ -49,9 +49,9 @@ request='{"tool_input":{"command":"setup","request_sandbox_bypass":true,"sandbox
 # The decision goes to fd 3 and its reason to the user on stderr.
 run_review() {
   print -r -- "$1" >"$mode"
-  rm -f -- "$captured" "$provider"
+  rm -f -- "$captured" "$sent"
   hook_status=0
-  SF_TEST_REQUEST="$provider" SF_TEST_MODE="$mode" \
+  SF_TEST_REQUEST="$sent" SF_TEST_MODE="$mode" \
     SHELLFISH_EXECUTABLE="$ROOT/bin/shellfish" SHELLFISH_SESSION="$session" \
     SHELLFISH_TURN_STATE="$tmp" SHELLFISH_TURN_ID=6 \
     zsh -f "$hook/run" shell call_7 \
@@ -107,7 +107,7 @@ jq -e '.request.model == "test-model" and .request.max_output_tokens == 4096 and
   .request.response_schema.additionalProperties == false and .request.temperature == 0.2 and
   (.request.response_schema.properties | keys) == ["authorization","reason","risk"] and
   .config == {http_timeout:120,http_stall:30,insecure_tls:false} and .tools == []
-' "$provider" >/dev/null || fail 'review settings did not reach the adapter'
+' "$sent" >/dev/null || fail 'review settings did not reach the provider'
 assert_canonical_session "$captured"
 assert_equal "$before" "$(shasum <"$session")" 'review changed the parent session'
 
@@ -117,8 +117,8 @@ jq -c 'if .type == "session" then del(.model.config) else . end' \
   "$parent_session" >"$session"
 run_review valid
 jq -e '.action == "allow"' "$control" >/dev/null
-jq -e 'has("config") | not' "$provider" >/dev/null ||
-  fail 'review injected adapter configuration'
+jq -e 'has("config") | not' "$sent" >/dev/null ||
+  fail 'review injected provider configuration'
 session=$parent_session
 
 # An empty review configuration keeps the inherited model.
@@ -127,15 +127,15 @@ jq -c 'if .type == "session" then .profile.config.sandbox.approver={} else . end
   "$parent_session" >"$session"
 run_review valid
 jq -e '.action == "allow"' "$control" >/dev/null
-jq -e '.request.model == "test-model"' "$provider" >/dev/null
+jq -e '.request.model == "test-model"' "$sent" >/dev/null
 
 # A named review model replaces the complete model without touching the parent.
-mkdir -p "$SHELLFISH_DIR/models/review/adapter" "$SHELLFISH_DIR/profiles"
-ln -s "$backend/run" "$SHELLFISH_DIR/models/review/adapter/run"
+mkdir -p "$SHELLFISH_DIR/models/review/provider" "$SHELLFISH_DIR/profiles"
+ln -s "$provider/run" "$SHELLFISH_DIR/models/review/provider/run"
 print -r -- '{"hooks":["missing"]}' >"$SHELLFISH_DIR/profiles/default.jsonc"
 cat >"$SHELLFISH_DIR/models/review/fast.v1.jsonc" <<'JSON'
 {
-  "adapter": "./adapter",
+  "provider": "./provider",
   "endpoint": "https://review.invalid/api",
   "context_window": 12000,
   "config": {"http_timeout": 60},
@@ -154,7 +154,7 @@ jq -e '.endpoint == "https://review.invalid/api" and .config == {http_timeout:60
   .request.response_schema.additionalProperties == false and
   (.request.response_schema.properties | keys) == ["authorization","reason","risk"] and
   (.request | has("temperature") | not)
-' "$provider" >/dev/null || fail 'review did not use the complete configured model'
+' "$sent" >/dev/null || fail 'review did not use the complete configured model'
 assert_canonical_session "$captured"
 assert_equal "$before" "$(shasum <"$session")" 'configured review changed the parent session'
 run_review valid
@@ -166,7 +166,7 @@ sed -e 's/12000/4097/' -e 's/review-model/updated-model/' \
 mv "$tmp/small-model.jsonc" "$SHELLFISH_DIR/models/review/fast.v1.jsonc"
 run_review valid
 jq -e '.action == "allow"' "$control" >/dev/null || fail 'review used model-sized input budgeting'
-jq -e '.request.model == "updated-model"' "$provider" >/dev/null ||
+jq -e '.request.model == "updated-model"' "$sent" >/dev/null ||
   fail 'review did not reread its model file'
 
 typeset review_config
@@ -183,7 +183,7 @@ for review_config in 'null' 'false' '[]' '{"unknown":true}' \
   jq -e '(has("action") | not) and
     .state_update[0].value.reason == "Permission review has invalid configuration."' \
     "$control" >/dev/null || fail "review accepted invalid configuration: $review_config"
-  [[ ! -e $captured && ! -e $provider ]] || fail 'invalid review configuration called the provider'
+  [[ ! -e $captured && ! -e $sent ]] || fail 'invalid review configuration called the provider'
 done
 jq -c 'if .type == "session" then .profile.config.sandbox.approver.model="missing" else . end' \
   "$parent_session" >"$session"
@@ -191,13 +191,13 @@ run_review valid
 jq -e '(has("action") | not) and
   .state_update[0].value.reason == "Permission review provider request failed."' \
   "$control" >/dev/null || fail 'missing review model did not defer'
-[[ ! -e $provider ]] || fail 'missing review model fell back to the parent model'
-print -r -- '{"adapter":' >"$SHELLFISH_DIR/models/missing.jsonc"
+[[ ! -e $sent ]] || fail 'missing review model fell back to the parent model'
+print -r -- '{"provider":' >"$SHELLFISH_DIR/models/missing.jsonc"
 run_review valid
 jq -e '(has("action") | not) and
   .state_update[0].value.reason == "Permission review provider request failed."' \
   "$control" >/dev/null || fail 'malformed review model did not defer'
-[[ ! -e $provider ]] || fail 'malformed review model called the provider'
+[[ ! -e $sent ]] || fail 'malformed review model called the provider'
 session=$parent_session
 
 run_review failure
@@ -217,14 +217,14 @@ jq -e '.action == "deny" and .reason == "Not authorized." and
 # A decision model answers the same policy as scores and a predicate.
 mkdir -p "$SHELLFISH_DIR/models/decider"
 print -r -- '{}' >"$SHELLFISH_DIR/models/decider/manifest.json"
-cat >"$SHELLFISH_DIR/models/decider/decide" <<'ADAPTER'
+cat >"$SHELLFISH_DIR/models/decider/decide" <<'PROVIDER'
 #!/usr/bin/env zsh
 cat >"$SF_TEST_REQUEST" || exit
 [[ $(<"$SF_TEST_MODE") != failure ]] || exit 1
 print -r -- "$(<"$SF_TEST_MODE")"
-ADAPTER
+PROVIDER
 chmod +x "$SHELLFISH_DIR/models/decider/decide"
-print -r -- '{"adapter":"./decider","endpoint":"https://decide.invalid","request":{"model":"d"}}' \
+print -r -- '{"provider":"./decider","endpoint":"https://decide.invalid","request":{"model":"d"}}' \
   >"$SHELLFISH_DIR/models/decider.jsonc"
 session="$tmp/decision-review.jsonl"
 jq -c 'if .type == "session" then .profile.config.sandbox.approver.decision_model="decider"
@@ -254,7 +254,7 @@ jq -e --slurpfile policy "$hook/policy.json" '
     authorization:{type:"score",instructions:$policy.authorization.instructions,
       levels:$policy.authorization.levels},
     injected:({type:"predicate"} + $policy.injected)}
-' "$provider" >/dev/null || fail 'decision review sent the wrong request'
+' "$sent" >/dev/null || fail 'decision review sent the wrong request'
 [[ ! -e $captured ]] || fail 'decision review built a chat session'
 
 # Every pairing where authorization covers risk adds up to 57%.

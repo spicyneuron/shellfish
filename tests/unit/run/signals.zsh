@@ -5,24 +5,24 @@ sf_test_tmp exec-command-signals
 
 sf_test_config
 sf_test_model default "{
-  \"adapter\": \"$ROOT/tests/fixtures/backend\",
+  \"provider\": \"$ROOT/tests/fixtures/provider\",
   \"request\": {\"model\": \"test-model\"}
 }"
 sf_test_profile default '{}'
 typeset entry="$ROOT/bin/shellfish"
 
 # Cancellation stops context discovery.
-typeset model_backend="$tmp/model-backend" model_ready="$tmp/model-ready"
+typeset model_provider="$tmp/model-provider" model_ready="$tmp/model-ready"
 typeset model_stopped="$tmp/model-stopped"
-mkdir "$model_backend"
-cat >"$model_backend/manifest.json" <<'JSON'
+mkdir "$model_provider"
+cat >"$model_provider/manifest.json" <<'JSON'
 {"endpoint":"https://example.invalid/v1/messages"}
 JSON
-cat >"$model_backend/run" <<'ZSH'
+cat >"$model_provider/run" <<'ZSH'
 #!/usr/bin/env zsh
 exit 1
 ZSH
-cat >"$model_backend/context_window" <<'ZSH'
+cat >"$model_provider/context_window" <<'ZSH'
 #!/usr/bin/env zsh
 cat >/dev/null
 print -r -- ready >"$MODEL_READY"
@@ -33,8 +33,8 @@ trap 'print -r -- stopped >"$MODEL_STOPPED"; exit 143' TERM
 zmodload zsh/zselect
 while true; do zselect -t 10; done
 ZSH
-chmod +x "$model_backend/run" "$model_backend/context_window"
-sf_test_model model "{\"adapter\": \"$model_backend\"}"
+chmod +x "$model_provider/run" "$model_provider/context_window"
+sf_test_model model "{\"provider\": \"$model_provider\"}"
 typeset model_session="$tmp/model-cancel.jsonl" model_output="$tmp/model-cancel.out"
 MODEL_READY="$model_ready" MODEL_STOPPED="$model_stopped" \
   zsh -f "$entry" run -m default -m model --session-out "$model_session" prompt \
@@ -50,13 +50,13 @@ kill -USR1 "$model_pid" || fail 'model metadata lookup ended before cancellation
 integer model_status=0
 wait "$model_pid" || model_status=$?
 (( model_status == 130 )) || fail 'cancelled model metadata lookup reported the wrong status'
-[[ -s $model_stopped ]] || fail 'cancelled model metadata adapter was not stopped cleanly'
+[[ -s $model_stopped ]] || fail 'cancelled model metadata provider was not stopped cleanly'
 jq -e -s '.[-1] == {type:"error",user_text:"Cancelled."}' "$model_session" >/dev/null ||
   fail 'cancelled model metadata lookup did not persist its outcome'
 
 # SIGINT persists partial assistant content.
 typeset cancel_session="$tmp/cancel.jsonl" cancel_output="$tmp/cancel.out"
-SF_TEST_BACKEND_DELAY=0.3 zsh -f "$entry" run --jsonl \
+SF_TEST_PROVIDER_DELAY=0.3 zsh -f "$entry" run --jsonl \
   --session-out "$cancel_session" \
   < <(print -r -- '{"type":"user","content":[{"type":"text","text":"alpha beta gamma delta epsilon zeta eta theta"}]}') \
   >"$cancel_output" 2>&1 &
@@ -80,30 +80,30 @@ jq -eRn '
 ' <"$cancel_output" >/dev/null || fail 'cancelled exec did not persist partial content'
 
 # Cancellation preserves streamed reasoning.
-typeset cancel_backend="$tmp/cancel-backend" cancel_backend_marker="$tmp/tool-input"
-typeset cancel_backend_pid_file="$tmp/tool-input-child"
-mkdir "$cancel_backend"
-cp "$ROOT/tests/fixtures/backend/manifest.json" "$cancel_backend/manifest.json"
-cat >"$cancel_backend/run" <<'ZSH'
+typeset cancel_provider="$tmp/cancel-provider" cancel_provider_marker="$tmp/tool-input"
+typeset cancel_provider_pid_file="$tmp/tool-input-child"
+mkdir "$cancel_provider"
+cp "$ROOT/tests/fixtures/provider/manifest.json" "$cancel_provider/manifest.json"
+cat >"$cancel_provider/run" <<'ZSH'
 #!/usr/bin/env zsh
 request=$(cat)
 prompt=$(jq -r '.messages[-1].content[0].text' <<<"$request")
-if [[ -n ${CANCEL_BACKEND_PID_FILE-} ]]; then
-  (sleep 30 & print -r -- $! >"$CANCEL_BACKEND_PID_FILE"; wait) &
+if [[ -n ${CANCEL_PROVIDER_PID_FILE-} ]]; then
+  (sleep 30 & print -r -- $! >"$CANCEL_PROVIDER_PID_FILE"; wait) &
 fi
 if [[ $prompt == reasoning ]]; then
   print -r -- '{"type":"_assistant_reasoning_delta","text":"partial thought"}'
 else
-  print -r -- ready >"$CANCEL_BACKEND_MARKER"
+  print -r -- ready >"$CANCEL_PROVIDER_MARKER"
 fi
 trap 'exit 143' TERM
 while true; do sleep 1; done
 ZSH
-chmod +x "$cancel_backend/run"
-sf_test_model cancel-backend "{\"adapter\": \"$cancel_backend\"}"
+chmod +x "$cancel_provider/run"
+sf_test_model cancel-provider "{\"provider\": \"$cancel_provider\"}"
 
 typeset reasoning_session="$tmp/reasoning-cancel.jsonl" reasoning_output="$tmp/reasoning-cancel.out"
-zsh -f "$entry" run --jsonl -m default -m cancel-backend \
+zsh -f "$entry" run --jsonl -m default -m cancel-provider \
   --session-out "$reasoning_session" \
   < <(print -r -- '{"type":"user","content":[{"type":"text","text":"reasoning"}]}') \
   >"$reasoning_output" 2>&1 &
@@ -126,30 +126,30 @@ jq -e -s '
 
 # A request cancelled before any delta records nothing of the response.
 typeset tool_input_session="$tmp/tool-input-cancel.jsonl" tool_input_output="$tmp/tool-input-cancel.out"
-CANCEL_BACKEND_MARKER="$cancel_backend_marker" CANCEL_BACKEND_PID_FILE="$cancel_backend_pid_file" \
+CANCEL_PROVIDER_MARKER="$cancel_provider_marker" CANCEL_PROVIDER_PID_FILE="$cancel_provider_pid_file" \
   zsh -f "$entry" run --jsonl \
-  -m default -m cancel-backend --session-out "$tool_input_session" \
+  -m default -m cancel-provider --session-out "$tool_input_session" \
   < <(print -r -- '{"type":"user","content":[{"type":"text","text":"tool input"}]}') \
   >"$tool_input_output" 2>&1 &
 typeset tool_input_pid=$!
 waited=0
 while (( waited < 50 )) &&
-    [[ ! -s $cancel_backend_marker || ! -s $cancel_backend_pid_file ]]; do
+    [[ ! -s $cancel_provider_marker || ! -s $cancel_provider_pid_file ]]; do
   sleep 0.1
   (( waited += 1 ))
 done
-(( waited < 50 )) || fail 'backend never started tool input to cancel'
+(( waited < 50 )) || fail 'provider never started tool input to cancel'
 sleep 0.1
 kill -TERM "$tool_input_pid" || fail 'tool-input turn ended before cancellation'
 integer tool_input_status=0
 wait "$tool_input_pid" || tool_input_status=$?
 (( tool_input_status == 143 )) || fail 'cancelled tool-input turn did not report the signal'
 integer cancel_child_pid cancel_child_polls=0
-cancel_child_pid=$(<"$cancel_backend_pid_file")
+cancel_child_pid=$(<"$cancel_provider_pid_file")
 while (( cancel_child_polls++ < 50 )) && kill -0 "$cancel_child_pid" 2>/dev/null; do
   sleep 0.01
 done
-! kill -0 "$cancel_child_pid" 2>/dev/null || fail 'cancelled backend grandchild survived'
+! kill -0 "$cancel_child_pid" 2>/dev/null || fail 'cancelled provider grandchild survived'
 jq -e -s '
   .[-2] == {type:"user",content:[{type:"text",text:"tool input"}]} and
   .[-1] == {type:"error",user_text:"Turn interrupted."} and
@@ -158,7 +158,7 @@ jq -e -s '
 
 # Interrupted sessions accept another turn.
 typeset recovered_session="$tmp/recovered.jsonl"
-SF_TEST_BACKEND_DELAY=0 zsh -f "$entry" run \
+SF_TEST_PROVIDER_DELAY=0 zsh -f "$entry" run \
   --session-out "$recovered_session" seed >/dev/null || fail 'recovery seed failed'
 print -r -- \
   '{"type":"user","content":[{"type":"text","text":"interrupted"}]}' \
@@ -166,7 +166,7 @@ print -r -- \
 typeset jsonl
 jsonl=$(print -r -- \
   '{"type":"user","content":[{"type":"text","text":"next"}]}' |
-  SF_TEST_BACKEND_DELAY=0 zsh -f "$entry" run --jsonl \
+  SF_TEST_PROVIDER_DELAY=0 zsh -f "$entry" run --jsonl \
     --session "$recovered_session") || fail 'recovery run failed'
 print -r -- "$jsonl" | jq -eRn '
   [inputs | fromjson] as $events |

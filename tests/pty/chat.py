@@ -117,7 +117,7 @@ def test_streaming_input_sequences_remain_atomic():
     prompt = " ".join(f"stream{i}" for i in range(12))
     session = Session(
         explicit_session=True,
-        env={"SF_TEST_BACKEND_DELAY": "0.04"},
+        env={"SF_TEST_PROVIDER_DELAY": "0.04"},
     )
     try:
         mark = len(session.output)
@@ -176,7 +176,7 @@ def test_file_changes_use_full_preview():
 def test_activity_input_does_not_delay_interrupt():
     session = Session(
         explicit_session=True,
-        env={"SF_TEST_BACKEND_DELAY_MATCH_SECONDS": "2"},
+        env={"SF_TEST_PROVIDER_DELAY_MATCH_SECONDS": "2"},
     )
     try:
         mark = len(session.output)
@@ -196,7 +196,7 @@ def test_activity_input_does_not_delay_interrupt():
 def test_interrupt_drains_partial_recovery():
     session = Session(
         explicit_session=True,
-        env={"SF_TEST_BACKEND_DELAY": "0.04"},
+        env={"SF_TEST_PROVIDER_DELAY": "0.04"},
     )
     try:
         prompt = "think " + " ".join(f"stream{i:02}" for i in range(40))
@@ -225,8 +225,8 @@ def test_permission_decision_restores_draft():
         explicit_session=True,
         hooks={"hold_permission": HOLD_PERMISSION_HOOK},
         env={
-            "SF_TEST_BACKEND_TOOL_CALL": "1",
-            "SF_TEST_BACKEND_TOOL_BYPASS": "true",
+            "SF_TEST_PROVIDER_TOOL_CALL": "1",
+            "SF_TEST_PROVIDER_TOOL_BYPASS": "true",
         },
     )
     directory = session.explicit_session.parent
@@ -275,9 +275,9 @@ def test_permission_stop_cancels_pending_tools():
         session = Session(
             explicit_session=True,
             env={
-                "SF_TEST_BACKEND_TOOL_CALL": "1",
-                "SF_TEST_BACKEND_TOOL_BYPASS": "true",
-                "SF_TEST_BACKEND_TOOL_COUNT": "3",
+                "SF_TEST_PROVIDER_TOOL_CALL": "1",
+                "SF_TEST_PROVIDER_TOOL_BYPASS": "true",
+                "SF_TEST_PROVIDER_TOOL_COUNT": "3",
             },
         )
         try:

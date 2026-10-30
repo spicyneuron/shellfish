@@ -175,8 +175,8 @@ def test_user_and_agent_keep_one_separator():
 
 def test_tall_turn_loses_neither_text_nor_draft():
     # Stream one word per line across multiple commit epochs.
-    session = Session(env={"SF_TEST_BACKEND_LINE_WORDS": "1",
-                           "SF_TEST_BACKEND_DELAY": "0.005"})
+    session = Session(env={"SF_TEST_PROVIDER_LINE_WORDS": "1",
+                           "SF_TEST_PROVIDER_DELAY": "0.005"})
     terminal = Terminal(session)
     try:
         # Let the draft echo before Enter changes frames.
@@ -334,8 +334,8 @@ def test_queued_submits_keep_committed_history():
 
 def test_permission_countdown():
     session = Session(env={
-        "SF_TEST_BACKEND_TOOL_CALL": "1",
-        "SF_TEST_BACKEND_TOOL_BYPASS": "true",
+        "SF_TEST_PROVIDER_TOOL_CALL": "1",
+        "SF_TEST_PROVIDER_TOOL_BYPASS": "true",
     })
     terminal = Terminal(session)
     try:
@@ -357,8 +357,8 @@ def test_permission_countdown():
 
 def test_permission_keys_do_not_edit():
     session = Session(env={
-        "SF_TEST_BACKEND_TOOL_CALL": "1",
-        "SF_TEST_BACKEND_TOOL_BYPASS": "true",
+        "SF_TEST_PROVIDER_TOOL_CALL": "1",
+        "SF_TEST_PROVIDER_TOOL_BYPASS": "true",
     })
     terminal = Terminal(session)
     try:

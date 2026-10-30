@@ -8,7 +8,7 @@ typeset project="$tmp/project" session="$tmp/session.jsonl" stream="$tmp/stream"
 mkdir -p "$hook" "$project"
 cp "$ROOT/share/hooks/project/instructions/"{manifest.json,run} "$hook/"
 print -r -- 'Follow this project rule.' >"$project/AGENTS.md"
-sf_test_model default "{\"adapter\":\"$ROOT/tests/fixtures/backend\",\"request\":{\"model\":\"test\"}}"
+sf_test_model default "{\"provider\":\"$ROOT/tests/fixtures/provider\",\"request\":{\"model\":\"test\"}}"
 sf_test_profile default '{"hooks":["project/instructions"]}'
 export SHELLFISH_MAX_CAPTURE_BYTES=1024
 (cd "$project" && zsh -f "$entry" run --jsonl --session-create --session-out "$session") \
@@ -84,7 +84,7 @@ for scenario in protocol capture capture_override silent; do
     else
       result_type=tool_result
       sf_test_session "$session"
-      SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_COMMAND=$scenario \
+      SF_TEST_PROVIDER_TOOL_CALL=1 SF_TEST_PROVIDER_TOOL_COMMAND=$scenario \
         sf_test_run component "$session" >"$stream" || fail "$kind $scenario failed"
     fi
     jq -eRn --arg scenario "$scenario" --arg kind "$kind" --arg result_type "$result_type" '

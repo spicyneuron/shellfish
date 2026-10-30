@@ -1,0 +1,30 @@
+#!/usr/bin/env zsh
+
+emulate -R zsh
+setopt err_exit no_aliases no_multios pipe_fail
+umask 077
+
+source "${0:A:h:h}/_provider.zsh"
+
+api_key=${ANTHROPIC_API_KEY-}
+unset ANTHROPIC_API_KEY
+
+sf_provider_setup anthropic
+trap 'rm -rf -- "$SF_PROVIDER_TEMP_DIR"' EXIT
+cat >"$SF_PROVIDER_REQUEST_FILE"
+sf_provider_request || exit 10
+
+sf_provider_credential 'x-api-key' "$api_key"
+unset api_key
+
+typeset endpoint=${SF_PROVIDER_ENDPOINT%/}
+typeset context
+sf_provider_context_curl_args "${endpoint:h}/models?limit=1000"
+SF_PROVIDER_CURL_ARGS+=(--header 'anthropic-version: 2023-06-01')
+context=$(curl "${SF_PROVIDER_CURL_ARGS[@]}" 2>/dev/null | \
+  jq -ce --arg model "$SF_PROVIDER_MODEL" '
+    first(.data[]? | select(.id == $model) | .max_input_tokens) |
+    select(type == "number" and floor == . and . >= 1 and . <= 2147483647) |
+    {context_window:.}
+  ' 2>/dev/null) || exit 10
+print -r -- "$context"

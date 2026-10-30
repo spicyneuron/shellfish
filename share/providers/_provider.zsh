@@ -1,0 +1,180 @@
+typeset -g SF_PROVIDER_NAME SF_PROVIDER_TEMP_DIR SF_PROVIDER_REQUEST_FILE
+typeset -g SF_PROVIDER_BODY_FILE SF_PROVIDER_RESPONSE_FILE SF_PROVIDER_STATUS_FILE
+typeset -g SF_PROVIDER_HEADERS_FILE SF_PROVIDER_NORMALIZER_ERROR_FILE
+# The request fields every provider consumes, from sf_provider_request.
+typeset -g SF_PROVIDER_MODEL SF_PROVIDER_ENDPOINT SF_PROVIDER_INSECURE_TLS
+typeset -g SF_PROVIDER_HTTP_TIMEOUT SF_PROVIDER_HTTP_STALL
+typeset -ga SF_PROVIDER_CURL_ARGS
+typeset -gr SF_PROVIDER_CONTROL_PATTERN='[\x{0000}-\x{001f}\x{007f}-\x{009f}]'
+
+sf_provider_die() {
+  print -u2 -r -- "$SF_PROVIDER_NAME: $*"
+  exit 1
+}
+
+sf_provider_setup() {
+  SF_PROVIDER_NAME=$1
+  SF_PROVIDER_TEMP_DIR=$(mktemp -d "${TMPDIR:-/tmp}/shellfish-provider-$1.XXXXXX") ||
+    sf_provider_die 'cannot create temporary directory'
+  SF_PROVIDER_TEMP_DIR=${SF_PROVIDER_TEMP_DIR:A}
+  SF_PROVIDER_REQUEST_FILE=$SF_PROVIDER_TEMP_DIR/request.json
+  SF_PROVIDER_BODY_FILE=$SF_PROVIDER_TEMP_DIR/body.json
+  SF_PROVIDER_RESPONSE_FILE=$SF_PROVIDER_TEMP_DIR/response
+  SF_PROVIDER_STATUS_FILE=$SF_PROVIDER_TEMP_DIR/status
+  SF_PROVIDER_HEADERS_FILE=$SF_PROVIDER_TEMP_DIR/headers
+  SF_PROVIDER_NORMALIZER_ERROR_FILE=$SF_PROVIDER_TEMP_DIR/normalizer-error
+  { : >$SF_PROVIDER_HEADERS_FILE &&
+    : >$SF_PROVIDER_NORMALIZER_ERROR_FILE &&
+    chmod 600 $SF_PROVIDER_HEADERS_FILE } || {
+    rm -rf -- $SF_PROVIDER_TEMP_DIR
+    sf_provider_die 'cannot prepare temporary files'
+  }
+}
+
+# Reads the request fields a provider consumes, plus the jq predicate a provider
+# passes for request options it cannot translate. Config holds transport settings.
+# The model check leads because jq's and short-circuits, so the predicate never
+# runs against a missing request.
+sf_provider_request() {
+  local accepts=${1:-true} output error_file=$SF_PROVIDER_TEMP_DIR/request-error
+  local -a fields
+  output=$(jq -er "def accepted: $accepts;"'
+    select((.request.model | type == "string" and . != "") and accepted and
+      (.endpoint | type == "string" and . != "")) |
+    (if has("config") then .config else {} end) as $config |
+    if $config | type == "object" and
+      (keys - ["http_timeout", "http_stall", "insecure_tls"]) == [] then .
+    else error("config must contain only http_timeout, http_stall, and insecure_tls") end |
+    ({http_timeout:3600,http_stall:300,insecure_tls:false} + $config |
+      reduce ("http_timeout", "http_stall") as $key (.;
+        if .[$key] | type == "number" and floor == . and . > 0 then .
+        else error("config.\($key) must be a positive integer") end) |
+      if .insecure_tls | type == "boolean" then .
+      else error("config.insecure_tls must be a boolean") end) as $config |
+    .request.model, .endpoint, $config.http_timeout, $config.http_stall,
+    (if $config.insecure_tls then 1 else 0 end)
+  ' "$SF_PROVIDER_REQUEST_FILE" 2>"$error_file") || {
+    output=$(<"$error_file")
+    [[ -z $output ]] || print -ru2 -- "$SF_PROVIDER_NAME: ${output#jq: error \(at *\): }"
+    return 1
+  }
+  fields=( "${(@f)output}" )
+  (( ${#fields} == 5 )) || return 1
+  SF_PROVIDER_MODEL=$fields[1]
+  SF_PROVIDER_ENDPOINT=$fields[2]
+  SF_PROVIDER_HTTP_TIMEOUT=$fields[3]
+  SF_PROVIDER_HTTP_STALL=$fields[4]
+  SF_PROVIDER_INSECURE_TLS=$fields[5]
+}
+
+sf_provider_credential() {
+  local name=$1 value=$2
+  [[ -n $value ]] || return 0
+  [[ $value != *[[:cntrl:]]* ]] || sf_provider_die 'invalid authentication value'
+  print -r -- "$name: $value" >>$SF_PROVIDER_HEADERS_FILE
+}
+
+sf_provider_curl_args() {
+  SF_PROVIDER_CURL_ARGS=(--disable --silent --show-error --no-buffer --connect-timeout 15
+    --max-time "$SF_PROVIDER_HTTP_TIMEOUT" --speed-limit 1 --speed-time "$SF_PROVIDER_HTTP_STALL"
+    --write-out '%{stderr}%{http_code}' --request POST --url "$SF_PROVIDER_ENDPOINT"
+    --header 'Content-Type: application/json' --data-binary "@$SF_PROVIDER_BODY_FILE")
+  [[ ! -s $SF_PROVIDER_HEADERS_FILE ]] ||
+    SF_PROVIDER_CURL_ARGS+=(--header "@$SF_PROVIDER_HEADERS_FILE")
+  [[ $SF_PROVIDER_INSECURE_TLS != 1 ]] || SF_PROVIDER_CURL_ARGS+=(--insecure)
+}
+
+# Model metadata is a side lookup, so it uses the request's TLS setting but its
+# own endpoint and tighter bounds.
+sf_provider_context_curl_args() {
+  local endpoint=$1 insecure=$SF_PROVIDER_INSECURE_TLS
+  integer timeout=$SF_PROVIDER_HTTP_TIMEOUT stall=$SF_PROVIDER_HTTP_STALL
+  (( timeout <= 10 )) || timeout=10
+  (( stall <= 5 )) || stall=5
+  SF_PROVIDER_CURL_ARGS=(--disable --silent --show-error --fail-with-body
+    --connect-timeout 5 --max-time "$timeout" --speed-limit 1 --speed-time "$stall"
+    --request GET --url "$endpoint")
+  [[ ! -s $SF_PROVIDER_HEADERS_FILE ]] ||
+    SF_PROVIDER_CURL_ARGS+=(--header "@$SF_PROVIDER_HEADERS_FILE")
+  [[ $insecure != 1 ]] || SF_PROVIDER_CURL_ARGS+=(--insecure)
+}
+
+# Sends the prepared body and normalizes the response with the provider's jq
+# program, given last as jq takes it. The body streams to the normalizer rather
+# than landing in a file first, so a response is normalized while it is still
+# arriving. It is copied aside on the way past so a failure has something to
+# quote and an empty HTTP/2 reset can be retried before output begins. With the
+# body on stdout the status travels on stderr, written last, so the three
+# characters it ends with are the code. The normalizer's stderr is captured so
+# sf_provider_finish can report a concise protocol or normalization reason. The
+# first argument is the provider's jq filter for extracting an HTTP error message.
+sf_provider_stream() {
+  local error_filter=$1
+  local -a statuses
+  integer retries=0
+  shift
+  while true; do
+    set +e
+    curl "${SF_PROVIDER_CURL_ARGS[@]}" 2>"$SF_PROVIDER_STATUS_FILE" |
+      tee "$SF_PROVIDER_RESPONSE_FILE" |
+      jq -nRrc --unbuffered "$@" 2>"$SF_PROVIDER_NORMALIZER_ERROR_FILE"
+    statuses=( $pipestatus )
+    set -e
+    if (( statuses[1] == 92 && retries == 0 )) && [[ ! -s $SF_PROVIDER_RESPONSE_FILE ]]; then
+      (( retries += 1 ))
+      sleep 1
+      continue
+    fi
+    break
+  done
+  sf_provider_finish "$error_filter" "${statuses[@]}"
+}
+
+sf_provider_finish() {
+  local error_filter=$1
+  local -a statuses
+  local stage http_status message diagnostic
+  shift
+  statuses=( "$@" )
+  for stage in $statuses; do
+    (( stage < 128 )) || exit $stage
+  done
+  if (( statuses[1] != 0 )); then
+    case $statuses[1] in
+      6) message='could not resolve the provider host' ;;
+      7) message='could not connect to the provider' ;;
+      28) message='request timed out' ;;
+      35|51|52|56|60) message='TLS connection failed' ;;
+      *) message='request failed' ;;
+    esac
+    diagnostic=$(<$SF_PROVIDER_STATUS_FILE)
+    diagnostic=${diagnostic[1,-4]}
+    diagnostic=$(print -rn -- "$diagnostic" | LC_ALL=C tr -s '[:cntrl:]' ' ')
+    diagnostic=${diagnostic% }
+    sf_provider_die "$message (curl status $statuses[1])${diagnostic:+: ${diagnostic[1,1000]}}"
+  fi
+  http_status=$(<$SF_PROVIDER_STATUS_FILE)
+  http_status=${http_status[-3,-1]}
+  [[ $http_status == <-> && ${#http_status} == 3 ]] ||
+    sf_provider_die 'cannot read the response status'
+  if [[ $http_status != 2* ]]; then
+    message=$(jq -Rrsc '
+      def safe: gsub("[\\x{0000}-\\x{001f}\\x{007f}-\\x{009f}]"; "�");
+      def error_message: '"$error_filter"';
+      . as $raw | ([splits("\\n") | sub("\\r$"; "") | select(startswith("data:")) |
+        sub("^data:[ ]?"; "") | fromjson? | error_message] | first) as $stream |
+      (($raw | fromjson? | error_message) // $stream // "") |
+      if type == "string" then safe else "" end
+    ' <$SF_PROVIDER_RESPONSE_FILE 2>/dev/null) || message=''
+    if [[ $http_status == 401 || $http_status == 403 ]]; then
+      if [[ -s $SF_PROVIDER_HEADERS_FILE ]]; then
+        sf_provider_die "credentials rejected (HTTP $http_status)${message:+: $message}"
+      fi
+      sf_provider_die "credentials rejected (HTTP $http_status); no API key was supplied${message:+: $message}"
+    fi
+    sf_provider_die "HTTP $http_status${message:+: $message}"
+  elif (( statuses[3] != 0 )); then
+    message=$(LC_ALL=C tr -s '[:cntrl:]' ' ' <$SF_PROVIDER_NORMALIZER_ERROR_FILE)
+    sf_provider_die "cannot normalize API response${message:+: ${message[1,1000]}}"
+  fi
+}

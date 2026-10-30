@@ -6,7 +6,7 @@ description: Use when the user requests an architecture, maintainability, or cru
 
 Audit whether the code has drifted Shellfish's goal: a minimalist coding agent whose behavior and state can be understood in one sitting. Treat architecture as responsibilities, boundaries, sources of truth, and the amount of code required to express them, not merely code that works. Incremental changes can be locally plausible while introducing competing patterns, duplicate state, blurred ownership, unnecessary branches, or policy in the wrong layer.
 
-The central design is an append-only session with each turn operated by one process. Clients present and replay it. The core preserves lifecycle guarantees. Profiles and harnesses assemble agent behavior. Backend adapters isolate provider protocols. Treat deviations from those boundaries as questions to investigate, not automatic defects.
+The central design is an append-only session with each turn operated by one process. Clients present and replay it. The core preserves lifecycle guarantees. Profiles and harnesses assemble agent behavior. Providers isolate API protocols. Treat deviations from those boundaries as questions to investigate, not automatic defects.
 
 ## Scope
 
@@ -19,7 +19,7 @@ Inventory the scope before reading and maintain a coverage checklist. Run `./tes
 Work from the highest useful level downward:
 
 1. Sources of truth, lifecycle, execution flow, and failure recovery.
-2. Ownership between the core, harness, adapters, clients, and shared code.
+2. Ownership between the core, harness, providers, clients, and shared code.
 3. Dependency direction, public boundaries, and configuration-driven composition.
 4. Accidental concepts, duplicate state or policy, unnecessary layers, and hard-to-audit control flow.
 5. Dead code, redundant validation or recovery, speculative handling, and dependencies that do not earn their cost.

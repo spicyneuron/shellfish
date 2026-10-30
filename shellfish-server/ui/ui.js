@@ -461,9 +461,9 @@ function highlight(parent, code, language) {
 
 function applyModel(frame) {
   const name = safe(frame.model.request.model);
-  const backend = safe(frame.model.adapter.split("/").at(-1));
+  const provider = safe(frame.model.provider.split("/").at(-1));
   contextWindow = frame.model.context_window ?? null;
-  model.textContent = backend ? backend + "/" + name : name;
+  model.textContent = provider ? provider + "/" + name : name;
 }
 
 // The core marks sandbox bypass requests so that no template can hide them.

@@ -8,7 +8,7 @@ print -r -- 'initial system' >"$SF_TEST_CONFIG/system/source.md"
 export HOME="${tmp:A}/home"
 
 sf_test_model default "{
-  \"adapter\": \"$ROOT/tests/fixtures/backend\",
+  \"provider\": \"$ROOT/tests/fixtures/provider\",
   \"request\": {\"model\": \"test-model\"}
 }"
 sf_test_profile default '{"system": ["source.md"]}'
@@ -16,18 +16,18 @@ typeset entry="$ROOT/bin/shellfish"
 typeset output
 
 # Plain mode prints only the answer.
-output=$(SF_TEST_BACKEND_DELAY=0 zsh -f "$entry" run 'plain answer') || \
+output=$(SF_TEST_PROVIDER_DELAY=0 zsh -f "$entry" run 'plain answer') || \
   fail 'plain run failed'
 assert_equal 'plain answer' "$output" 'plain run prints only the answer'
 
 # Multi-request turns print only the final assistant message.
-output=$(SF_TEST_BACKEND_DELAY=0 zsh -f "$entry" run 'use a tool') || \
+output=$(SF_TEST_PROVIDER_DELAY=0 zsh -f "$entry" run 'use a tool') || \
   fail 'plain tool run failed'
 assert_equal 'Tool complete.' "$output" 'plain run included an intermediate assistant message'
 
 # JSON mode returns a flattened final result, not a protocol record or turn stream.
 typeset json_session="$tmp/json.jsonl"
-output=$(SF_TEST_BACKEND_DELAY=0 zsh -f "$entry" run --json \
+output=$(SF_TEST_PROVIDER_DELAY=0 zsh -f "$entry" run --json \
   --session-out "$json_session" 'use a tool') || fail 'JSON run failed'
 print -r -- "$output" | jq -e --arg session "${json_session:a}" '
   keys == ["message","session","stop","usage"] and
@@ -64,26 +64,26 @@ jq -e -s '.[-1].type == "assistant" and .[-1].stop == "end"' "$json_session" >/d
 
 # Standard input supplies the prompt.
 output=$(print -rn -- 'piped answer' |
-  SF_TEST_BACKEND_DELAY=0 zsh -f "$entry" run) || \
+  SF_TEST_PROVIDER_DELAY=0 zsh -f "$entry" run) || \
   fail 'piped run failed'
 assert_equal 'piped answer' "$output" 'run accepts standard input'
 
 # A message argument does not wait for an inherited pipe to close.
 integer pipe_started=$SECONDS
-output=$(SF_TEST_BACKEND_DELAY=0 zsh -f "$entry" run 'plain answer' \
+output=$(SF_TEST_PROVIDER_DELAY=0 zsh -f "$entry" run 'plain answer' \
   < <(sleep 5)) || fail 'run with an open pipe failed'
 assert_equal 'plain answer' "$output" 'run ignores an unread pipe'
 (( SECONDS - pipe_started < 3 )) || fail 'run waited for an inherited pipe to close'
 
 # Positional prompt words are joined.
-output=$(SF_TEST_BACKEND_DELAY=0 zsh -f "$entry" run \
+output=$(SF_TEST_PROVIDER_DELAY=0 zsh -f "$entry" run \
   several prompt words) || fail 'multi-argument run failed'
 assert_equal 'several prompt words' "$output" 'run joins positional prompt words'
 
 # Create options preserve their values.
 typeset forwarded_session="$tmp/forwarded.jsonl"
 sf_test_model forwarded '{"request": {"model": "forwarded-model"}}'
-output=$(SF_TEST_BACKEND_DELAY=0 zsh -f "$entry" run --session-out "$forwarded_session" \
+output=$(SF_TEST_PROVIDER_DELAY=0 zsh -f "$entry" run --session-out "$forwarded_session" \
   --model default --model forwarded --system '{"text":"forwarded system"}' \
   'plain answer') || fail 'forwarded run failed'
 assert_equal 'plain answer' "$output" 'run keeps the prompt after a forwarded value'
@@ -97,7 +97,7 @@ head -n 1 "$forwarded_session" | jq -e '
 typeset copied_session="$tmp/copied.jsonl"
 print -r -- 'changed system' >"$SF_TEST_CONFIG/system/source.md"
 cp "$forwarded_session" "$tmp/source-before"
-output=$(SF_TEST_BACKEND_DELAY=0 zsh -f "$entry" run \
+output=$(SF_TEST_PROVIDER_DELAY=0 zsh -f "$entry" run \
   --session-from "$forwarded_session" --session-out "$copied_session" \
   'copied answer') || fail 'run from a session failed'
 assert_equal 'copied answer' "$output"
@@ -126,7 +126,7 @@ zsh -f "$entry" run --session-create --session-out "$stream_session" >/dev/null 
 typeset -i prefix=$(jq -es 'length' "$stream_session")
 jsonl=$(print -r -- \
   '{"type":"user","content":[{"type":"text","text":"stream answer"}]}' |
-  SF_TEST_BACKEND_DELAY=0 zsh -f "$entry" run --jsonl \
+  SF_TEST_PROVIDER_DELAY=0 zsh -f "$entry" run --jsonl \
     --session "$stream_session") || fail 'JSONL run failed'
 print -r -- "$jsonl" | jq -eRn -L "$ROOT" '
   include "lib/session";
@@ -144,23 +144,23 @@ cmp -s "$tmp/stream-durable" "$tmp/session-durable" ||
   fail 'JSONL durable events differ from the appended session records'
 
 # Context discovery replaces the complete frozen profile before inference.
-typeset context_backend="$tmp/context-backend"
+typeset context_provider="$tmp/context-provider"
 typeset context_session="$tmp/context.jsonl" context_stream="$tmp/context.stream"
-mkdir "$context_backend"
-cp "$ROOT/tests/fixtures/backend/manifest.json" "$context_backend/manifest.json"
-cp "$ROOT/tests/fixtures/backend/run" "$context_backend/run"
-cat >"$context_backend/context_window" <<'ZSH'
+mkdir "$context_provider"
+cp "$ROOT/tests/fixtures/provider/manifest.json" "$context_provider/manifest.json"
+cp "$ROOT/tests/fixtures/provider/run" "$context_provider/run"
+cat >"$context_provider/context_window" <<'ZSH'
 #!/usr/bin/env zsh
 cat >/dev/null
 [[ $CONTEXT_SETTING == context-env ]] || exit 8
 print -r -- '{"context_window":4321}'
 ZSH
-chmod +x "$context_backend/context_window"
-sf_test_model context "{\"adapter\": \"$context_backend\"}"
+chmod +x "$context_provider/context_window"
+sf_test_model context "{\"provider\": \"$context_provider\"}"
 sf_test_profile context '{"system": ["source.md"]}'
 print -r -- CONTEXT_SETTING=context-env >"$SF_TEST_CONFIG/.env"
 print -r -- '{"type":"user","content":[{"type":"text","text":"context"}]}' |
-  SF_TEST_BACKEND_DELAY=0 zsh -f "$entry" run --jsonl -p context -m default -m context \
+  SF_TEST_PROVIDER_DELAY=0 zsh -f "$entry" run --jsonl -p context -m default -m context \
     --session-out "$context_session" >"$context_stream" ||
   fail 'context discovery run failed'
 jq -eRn '
@@ -172,7 +172,7 @@ jq -eRn '
 head -n 1 "$context_session" | jq -e \
   '.model.context_window == 4321' >/dev/null ||
   fail 'context discovery did not freeze the updated model'
-cat >"$context_backend/context_window" <<'ZSH'
+cat >"$context_provider/context_window" <<'ZSH'
 #!/usr/bin/env zsh
 cat >/dev/null
 printf '%70000s' ''
@@ -180,20 +180,20 @@ print -r -- '{"context_window":4321}'
 ZSH
 context_session="$tmp/context-overflow.jsonl"
 print -r -- '{"type":"user","content":[{"type":"text","text":"overflow"}]}' |
-  SF_TEST_BACKEND_DELAY=0 zsh -f "$entry" run --jsonl -p context -m default -m context \
+  SF_TEST_PROVIDER_DELAY=0 zsh -f "$entry" run --jsonl -p context -m default -m context \
     --session-out "$context_session" >/dev/null ||
   fail 'overlong context discovery blocked inference'
 head -n 1 "$context_session" | jq -e \
   '.model.context_window == null' >/dev/null ||
   fail 'overlong context discovery accepted a truncated JSON tail'
-cat >"$context_backend/context_window" <<'ZSH'
+cat >"$context_provider/context_window" <<'ZSH'
 #!/usr/bin/env zsh
 cat >/dev/null
 exit 7
 ZSH
 context_session="$tmp/context-unavailable.jsonl"
 print -r -- '{"type":"user","content":[{"type":"text","text":"fallback"}]}' |
-  SF_TEST_BACKEND_DELAY=0 zsh -f "$entry" run --jsonl -p context -m default -m context \
+  SF_TEST_PROVIDER_DELAY=0 zsh -f "$entry" run --jsonl -p context -m default -m context \
     --session-out "$context_session" >/dev/null ||
   fail 'unavailable context discovery blocked inference'
 head -n 1 "$context_session" | jq -e \

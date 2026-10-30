@@ -1,0 +1,159 @@
+#!/usr/bin/env zsh
+
+emulate -R zsh
+setopt err_exit no_aliases no_multios pipe_fail
+umask 077
+
+source "${0:A:h:h}/_provider.zsh"
+
+api_key=${OPENAI_API_KEY-}
+unset OPENAI_API_KEY
+
+sf_provider_setup openai
+trap 'rm -rf -- "$SF_PROVIDER_TEMP_DIR"' EXIT
+cat >"$SF_PROVIDER_REQUEST_FILE"
+
+sf_provider_request '.request | has("stream") or has("stream_options") | not' ||
+  sf_provider_die 'invalid request'
+
+sf_provider_credential 'Authorization' "${api_key:+Bearer $api_key}"
+unset api_key
+
+jq -ce '
+  def text_content: [.content[] | select(.type == "text") | .text] | join("");
+  def message:
+    if .type == "user" then {role:"user",content:text_content}
+    elif .type == "assistant" then {role:"assistant",content:text_content}
+    elif .type == "tool_result" then
+      {role:"tool",tool_call_id:.call_id,content:.content}
+    else error("unsupported canonical type") end;
+  (.request |
+    if has("response_schema") then
+      .response_schema as $schema |
+      del(.response_schema,.response_format) |
+      .response_format={type:"json_schema",json_schema:{
+        name:"shellfish_response",strict:true,schema:$schema}}
+    else . end |
+    (if has("max_output_tokens") then .max_output_tokens
+     elif has("max_completion_tokens") then .max_completion_tokens
+     else .max_tokens end) as $max_tokens |
+    del(.max_tokens,.max_output_tokens,.max_completion_tokens) |
+    if $max_tokens != null then .max_completion_tokens=$max_tokens else . end |
+    (if has("reasoning_effort") then .reasoning_effort else .reasoning.effort end) as $effort |
+    del(.reasoning,.reasoning_effort) |
+    if $effort != null then .reasoning_effort=$effort else . end) as $options |
+  # Calls arrive as their own records and rejoin the assistant message they
+  # belong to. A call-only message carries null content, as the API expects.
+  (reduce .messages[] as $message ({out:[],assistant:null};
+    if $message.type == "tool_call" then
+      # Results sit between the calls of a batch, so the assistant message a
+      # call belongs to is remembered rather than assumed to be the last one.
+      .assistant as $index |
+      .out[$index].tool_calls = ((.out[$index].tool_calls // []) +
+        [{type:"function",id:$message.id,
+          function:{name:$message.name,arguments:($message.input | tojson)}}]) |
+      (if .out[$index].content == "" then .out[$index].content = null else . end)
+    else
+      .out += [$message | message] |
+      (if $message.type == "assistant" then .assistant = (.out | length) - 1
+       else . end)
+    end) | .out) as $messages |
+  $options * {model:$options.model,
+    messages:(if .system=="" then $messages else [{role:"system",content:.system}]+$messages end),
+    stream:true,stream_options:{include_usage:true}} +
+  (if (.tools|length)==0 then {} else {
+    tools:[.tools[] | {type:"function",function:{name:.name,
+      description:.description,parameters:.input_schema}}]
+  } end)
+' "$SF_PROVIDER_REQUEST_FILE" >"$SF_PROVIDER_BODY_FILE" || sf_provider_die 'cannot translate canonical request'
+
+sf_provider_curl_args
+sf_provider_stream '.error.message?' '
+  def delta($type;$text): {type:$type,text:$text};
+  # A whole body streams as one delta per readable block, then its response.
+  def whole: [.content[] | select((.type == "text" or .type == "reasoning") and .text != "") |
+    delta(if .type == "text" then "_assistant_message_delta" else "_assistant_reasoning_delta" end;
+      .text)] + [.];
+  def usage:
+    {input_tokens:(.prompt_tokens // 0),output_tokens:(.completion_tokens // 0)} +
+    (if (.prompt_tokens_details.cached_tokens // null) == null then {}
+     else {cached_tokens:.prompt_tokens_details.cached_tokens} end) +
+    (if (.completion_tokens_details.reasoning_tokens // null) == null then {}
+     else {reasoning_tokens:.completion_tokens_details.reasoning_tokens} end);
+  # The complete response: reasoning, then text, then calls in index order. A
+  # response cut short by the output limit drops its calls.
+  def response_end:
+    (if .finish_reason == "length" or .finish_reason == "max_tokens" then "length"
+     elif (.calls | length) > 0 then "tool_calls"
+     else "end" end) as $stop |
+    {type:"assistant", stop:$stop,
+      content:((if .reasoning == "" then [] else [{type:"reasoning",text:.reasoning}] end) +
+        (if .text == "" then [] else [{type:"text",text:.text}] end) +
+        (if $stop != "tool_calls" then [] else
+          [.calls | to_entries | sort_by(.key | tonumber)[] |
+            {type:"tool_call", id:(.value.id // ("call_" + .key)),
+             name:(.value.name // error("tool call has no name")),
+             input:(.value.arguments // "" |
+               if . == "" then {} else fromjson end)}] end))} +
+     (if .usage == null then {} else {usage:(.usage | usage)} end);
+  def accept_body($body):
+    if $body.error? != null then error($body.error.message // "API error")
+    elif ($body.choices[0]? // null) == null then error("response has no choice")
+    else $body.choices[0] as $choice | ($choice.message // {}) as $message |
+      ($message.content // "") as $text |
+      (($message.reasoning_content // $message.reasoning // "") |
+        if type=="string" then . else "" end) as $reasoning |
+      .text=$text | .reasoning=$reasoning | .finish_reason=$choice.finish_reason |
+      .usage=($body.usage // null) |
+      .calls=reduce ($message.tool_calls // [])[] as $call ({};
+        ((length)|tostring) as $key |
+        .[$key]={type:($call.type // "function"),id:$call.id,name:$call.function.name,
+          arguments:$call.function.arguments}) |
+      .out += (response_end | whole) |
+      .done=true
+    end;
+  foreach (inputs, null) as $line
+    ({text:"",reasoning:"",calls:{},finish_reason:null,usage:null,
+      mode:null,body:"",done:false,out:[]};
+     .out=[] |
+     if $line==null then
+       if .done then .
+       elif .mode=="json" then (.body|fromjson) as $body | accept_body($body)
+       else error("no completed response") end
+     else ($line|sub("\\r$";"")) as $clean |
+       if .mode==null and ($clean|test("\\S")) then
+         .mode=(if ($clean|test("^(data|event|id|retry):|^:")) then "sse" else "json" end)
+       else . end |
+       if .mode=="json" then .body += ($line+"\n")
+       elif ($clean|startswith("data:")) then
+         ($clean|sub("^data:[ ]?";"")) as $data |
+         if $data=="[DONE]" then
+           .finish_reason = (.finish_reason // "stop") |
+           .done=true | .out += [response_end]
+         else ($data|fromjson) as $event |
+           if $event.error? != null then error($event.error.message // "API error")
+           elif ($event.choices[0]? // null) != null then
+             $event.choices[0] as $choice | ($choice.delta // {}) as $delta |
+             (($delta.reasoning_content // $delta.reasoning // "") |
+               if type=="string" then . else "" end) as $reasoning |
+             ($delta.content // "") as $text |
+             (if $reasoning=="" then . else .reasoning += $reasoning |
+                .out += [delta("_assistant_reasoning_delta";$reasoning)] end) |
+             (if $text=="" then . else .text += $text |
+                .out += [delta("_assistant_message_delta";$text)] end) |
+             reduce ($delta.tool_calls // [])[] as $call (.;
+               (($call.index // 0)|tostring) as $key |
+               if .calls[$key]==null then
+                 .calls[$key]={type:"function",id:null,name:null,arguments:""} else . end |
+               (if $call.type != null and $call.type != "" then .calls[$key].type=$call.type else . end) |
+               (if $call.id != null and $call.id != "" then .calls[$key].id=$call.id else . end) |
+               (if $call.function.name != null and $call.function.name != "" then .calls[$key].name=$call.function.name else . end) |
+               .calls[$key].arguments += ($call.function.arguments // "")) |
+             .finish_reason=($choice.finish_reason // .finish_reason) |
+             if ($event.usage // null)==null then . else .usage=$event.usage end
+           elif ($event.usage // null) != null then .usage=$event.usage
+           else . end
+         end
+       else . end
+     end; .out[])
+'

@@ -73,7 +73,7 @@ collect '\$SF_(ROOT|SHARE)\b' $ROOT/share/**/*(.N)
 collect 'include "lib/[a-z]+"' $ROOT/share/**/*(.N)
 (( ! ${#matches} )) || fail "bundled resource uses core jq: $matches[1]"
 # A script-relative path stays inside the installed share root.
-for file in $ROOT/share/{commands,hooks,tools,backends,lib}/**/*(.N); do
+for file in $ROOT/share/{commands,hooks,tools,providers,lib}/**/*(.N); do
   rel=${file#$ROOT/share/}
   collect ':A(:h)+|\.\./' $file
   for token in $matches; do

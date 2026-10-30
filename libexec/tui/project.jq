@@ -29,9 +29,9 @@ def usage_actions($window):
       (.usage.reasoning_tokens? // "" | tostring)]]
   else [] end;
 
-# The backend name is its adapter directory.
+# The provider name is its directory name.
 def identity:
-  ((.model.adapter // "?" | split("/") | last) + "/" + (.model.request.model // "?"));
+  ((.model.provider // "?" | split("/") | last) + "/" + (.model.request.model // "?"));
 
 def model_actions:
   [["profile", identity, (.model.context_window // "" | tostring)]];

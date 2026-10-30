@@ -6,7 +6,7 @@ Shellfish starts from the heretical premise that AI agents are actually simple: 
                         ┌────────────────┐
 client ─ user prompt ─▶ │  read session  │
    ▲                    │        │       │
-   │                    │        ▼       │───▶ backend adapter
+   │                    │        ▼       │───▶ provider
    └────── events ──────│   agent loop   │───▶ hook scripts
                         │        │       │───▶ tool scripts
                         │        ▼       │
@@ -24,7 +24,7 @@ A session JSONL file is the agent's only durable state. Its first line is a head
 {"type":"assistant","stop":"end","content":[{"type":"text","text":"Done."}]}
 ```
 
-The header freezes the resolved profile and model, each in its config file's shape, so together they resolve to the same header. The profile holds the system prompt text, the tool, command, and hook lists, and the merged sandbox setting and grants. The model holds the merged adapter, endpoint, and request settings. System prompt files are frozen as their text, like model and sandbox files; executable components, manifests, and policies remain live. Credentials, environment settings such as turn limits, and presentation settings remain external.
+The header freezes the resolved profile and model, each in its config file's shape, so together they resolve to the same header. The profile holds the system prompt text, the tool, command, and hook lists, and the merged sandbox setting and grants. The model holds the merged provider, endpoint, and request settings. System prompt files are frozen as their text, like model and sandbox files; executable components, manifests, and policies remain live. Credentials, environment settings such as turn limits, and presentation settings remain external.
 
 Header paths use `@` for the bundled root, `~/` for HOME, or `/` for fixed absolute locations, so a session survives upgrades and moves with its home. If the project moves independently of HOME, update the header cwd.
 
@@ -57,7 +57,7 @@ open and recover session
   -> clean up
 ```
 
-The process reduces the transcript to its next step before each one instead of tracking its own position. It appends each canonical record before emitting it to a client. Tool calls stay inert until the backend's complete response has been validated and persisted.
+The process reduces the transcript to its next step before each one instead of tracking its own position. It appends each canonical record before emitting it to a client. Tool calls stay inert until the provider's complete response has been validated and persisted.
 
 Cancellation keeps any streamed text or reasoning, settles calls whose outcomes are known, marks active or later calls interrupted or cancelled, and appends an error. A write failure stops further mutation.
 
@@ -65,22 +65,22 @@ Cancellation keeps any streamed text or reasoning, settles calls whose outcomes 
 
 The core guarantees ordering, validation, persistence, recovery, and cleanup. Everything around it is configurable shell scripts:
 
-- **Backends** make API requests to inference providers.
+- **Providers** make inference API requests.
 - **Tools** let the model act.
 - **Commands** handle `/NAME` prompts instead of submitting them.
 - **Hooks** add context and workflow policy at lifecycle boundaries.
 
-Commands, hooks, and backends are trusted, run with your permissions, and receive every value in `.env`; tools can be sandboxed and receive only the `.env` names their manifest declares. Tools and backends describe other settings in a JSON manifest.
+Commands, hooks, and providers are trusted, run with your permissions, and receive every value in `.env`; tools can be sandboxed and receive only the `.env` names their manifest declares. Tools and providers describe other settings in a JSON manifest.
 
 | Owner | Responsibility |
 | --- | --- |
 | Core | Canonical records, event order, session mutation, recovery, permissions, and cleanup |
-| Backend adapter | Provider request translation, transport, stream parsing, and provider-specific validation |
+| Provider | Request translation, transport, stream parsing, and API-specific validation |
 | Command | One user-requested action in place of a prompt |
 | Hook | Context or policy before and after core operations |
 | Tool | One model-requested action and optional durable state request |
 
-Hooks and tools communicate through JSON, stdout, stderr, and a small control channel; backend adapters emit normalized JSON events. Components do not receive a mutable session object. See [`HARNESS.md`](HARNESS.md) for their contracts.
+Hooks and tools communicate through JSON, stdout, stderr, and a small control channel; providers emit normalized JSON events. Components do not receive a mutable session object. See [`HARNESS.md`](HARNESS.md) for their contracts.
 
 Hooks and tools share execution, presentation, and durable state updates. Their callers compose model interfaces, execution policies, lifecycle actions, and result records around that shared contract. The shared component layer does not distinguish hooks from tools.
 

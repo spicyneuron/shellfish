@@ -18,7 +18,7 @@ ROWS, COLUMNS = 18, 50
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 APP = str(ROOT / "bin" / "shellfish")
-TEST_BACKEND = str(ROOT / "tests" / "fixtures" / "backend")
+TEST_PROVIDER = str(ROOT / "tests" / "fixtures" / "provider")
 CSI = re.compile(rb"\x1b\[[0-?]*[ -/]*[@-~]")
 OSC = re.compile(rb"\x1b\].*?(?:\x07|\x1b\\)", re.S)
 
@@ -69,7 +69,7 @@ class Session:
         model_dir.mkdir(parents=True)
         self.model_file = model_dir / "default.jsonc"
         self.model_file.write_text(json.dumps({
-            "adapter": TEST_BACKEND,
+            "provider": TEST_PROVIDER,
             "request": {"model": "fake-model"},
         }))
         self.config_file = profile_dir / "default.jsonc"
@@ -124,7 +124,7 @@ class Session:
                 TERM="xterm-256color",
                 COLUMNS=str(COLUMNS),
                 LINES=str(ROWS),
-                SF_TEST_BACKEND_DELAY="0.02",
+                SF_TEST_PROVIDER_DELAY="0.02",
                 SHELLFISH_DIR=str(self.shellfish_dir),
                 # A test must not read the developer's home, and zsh sources
                 # ~/.zshenv on startup.

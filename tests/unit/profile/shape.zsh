@@ -7,13 +7,13 @@ schema_eval() {
 }
 
 request_eval() {
-  jq -L "$ROOT" -e 'include "lib/session"; include "lib/backend"; '"$1"
+  jq -L "$ROOT" -e 'include "lib/session"; include "lib/provider"; '"$1"
 }
 
 # The decoder's NUL-separated fields, one per line.
 decode() {
-  jq -L "$ROOT" -jn 'include "lib/session"; include "lib/backend";
-    decode_backend_response(canonical_response)' | tr '\0' '\n'
+  jq -L "$ROOT" -jn 'include "lib/session"; include "lib/provider";
+    decode_provider_response(canonical_response)' | tr '\0' '\n'
 }
 
 # Deltas pass through, then one complete response ends the stream.
@@ -22,7 +22,7 @@ decoded=$(print -rl -- \
   '{"type":"_assistant_reasoning_delta","text":"think"}' \
   '{"type":"_assistant_message_delta","text":"run"}' \
   '{"type":"assistant","stop":"tool_calls","content":[{"type":"reasoning","text":"think","opaque":{"signature":"signed"}},{"type":"text","text":"run"},{"type":"tool_call","id":"call_1","name":"shell","input":{"command":"pwd"}}],"usage":{"input_tokens":5,"output_tokens":1}}' |
-  decode) || fail 'a valid adapter stream was rejected'
+  decode) || fail 'a valid provider stream was rejected'
 assert_equal 'event
 {"type":"_assistant_reasoning_delta","text":"think"}
 event
@@ -30,7 +30,7 @@ event
 end
 {"type":"assistant","stop":"tool_calls","content":[{"type":"reasoning","text":"think","opaque":{"signature":"signed"}},{"type":"text","text":"run"},{"type":"tool_call","id":"call_1","name":"shell","input":{"command":"pwd"}}],"usage":{"input_tokens":5,"output_tokens":1}}' "$decoded"
 
-# The decoder adds no deltas the adapter did not stream.
+# The decoder adds no deltas the provider did not stream.
 decoded=$(print -r -- '{"type":"assistant","stop":"end","content":[{"type":"reasoning","text":"","opaque":{}},{"type":"text","text":"done"}]}' |
   decode) || fail 'a response without deltas was rejected'
 assert_equal 'end
@@ -44,7 +44,7 @@ for stream in \
     '{"type":"assistant","stop":"tool_calls","content":[{"type":"text","text":"a"}]}' \
     $'{"type":"assistant","stop":"end","content":[]}\n{"type":"_assistant_message_delta","text":"late"}'; do
   if print -r -- "$stream" | decode >/dev/null 2>&1; then
-    fail "invalid adapter stream was accepted: $stream"
+    fail "invalid provider stream was accepted: $stream"
   fi
 done
 
@@ -54,11 +54,11 @@ jq -cn '[
   {type:"_assistant_reasoning_delta",text:"first"},
   {type:"_assistant_message_delta",text:"run "},
   {type:"_assistant_message_delta",text:"this"}
-]' | request_eval 'backend_delta_response == {type:"assistant",stop:"cancelled",
+]' | request_eval 'provider_delta_response == {type:"assistant",stop:"cancelled",
   content:[{type:"reasoning",text:"think first"},{type:"text",text:"run this"}]}' >/dev/null ||
   fail 'deltas did not join into a cancelled response'
 jq -cn '[{type:"_assistant_message_delta",text:""}]' |
-  request_eval '[backend_delta_response] == []' >/dev/null ||
+  request_eval '[provider_delta_response] == []' >/dev/null ||
   fail 'empty deltas became a cancelled response'
 
 # A session header holds a complete profile and model with stored references.
@@ -70,7 +70,7 @@ valid_header=$(jq -cn '
     cwd: "~/project",
     created: "2026-08-18T00:00:00Z",
     model: {
-      adapter: "@backends/openai",
+      provider: "@providers/openai",
       endpoint: "https://api.openai.com/v1/chat/completions",
       request: {model: "gpt-4o"},
       config: {example:["./literal", null, false]},
@@ -105,7 +105,7 @@ for patch in '.extra=true' '.profile.extra=true' '.profile.env={}' \
     '.profile.hooks=[{command:"/bin/hook"}]' '.profile.system=["@system/general.md"]' \
     '.profile.system=[{text:1}]' '.profile.sandbox=true' '.profile.sandbox.extra=1' \
     '.profile.tools=["shell"]' '.profile.tools=["/a/shell","/b/shell"]' \
-    '.model.adapter="./openai"' '.profile.system=[{text:""}]' '.profile.system+=[{text:"two"}]' \
+    '.model.provider="./openai"' '.profile.system=[{text:""}]' '.profile.system+=[{text:"two"}]' \
     '.profile.sandbox.read=["relative"]' \
     '.cwd="./project"'; do
   if jq -c "$patch" <<<"$valid_header" |
@@ -121,7 +121,7 @@ jq -L "$ROOT" -e --arg share /opt/sf/share --arg home /home/me '
   ($stored | header_expand($share; $home)) as $expanded |
   $expanded.profile.tools == ["/opt/sf/share/tools/shell", "/home/me/tools/jira"] and
   $expanded.profile.sandbox.read == ["/home/me/cache"] and
-  $expanded.model.adapter == "/opt/sf/share/backends/openai" and
+  $expanded.model.provider == "/opt/sf/share/providers/openai" and
   ($expanded | header_store($share; $home)) == $stored
 ' <<<"$valid_header" >/dev/null || fail 'stored profile paths did not round-trip'
 

@@ -8,16 +8,16 @@ See [`CONFIG.md`](CONFIG.md) for selection, lookup, settings, and the bundled ha
 
 ## Shared contract
 
-Tools, commands, hooks, and backend adapters are executable component directories. References resolve before session creation and are frozen in its header. Manifests and scripts are read on each invocation.
+Tools, commands, hooks, and providers are executable component directories. References resolve before session creation and are frozen in its header. Manifests and scripts are read on each invocation.
 
-Tools, commands, and hooks require an executable `run`. A backend adapter provides `run` for conversations, `decide` for [decisions](#decisions), or both. Configuration lives in an optional `manifest.json` or `manifest.jsonc`, with an absent manifest treated as `{}`. Each role validates the settings it needs.
+Tools, commands, and hooks require an executable `run`. A provider supplies `run` for conversations, `decide` for [decisions](#decisions), or both. Configuration lives in an optional `manifest.json` or `manifest.jsonc`, with an absent manifest treated as `{}`. Each role validates the settings it needs.
 
 | Component | Additional requirements | Trust |
 | --- | --- | --- |
 | Tool | Model-facing metadata and execution policy, `fence.jsonc` when sandboxed | Model-facing, optionally sandboxed |
 | Command | User-facing `description` | Trusted, user permissions |
 | Hook | None | Trusted, user permissions |
-| Backend adapter | `run`, `decide`, or both, an endpoint from a model file or manifest, optional `context_window` executable | Trusted, user permissions |
+| Provider | `run`, `decide`, or both, an endpoint from a model file or manifest, optional `context_window` executable | Trusted, user permissions |
 
 Scripts run from the session working directory. Shellfish starts each in an isolated process group, terminates ordinary descendants on completion or cancellation, and escalates from `TERM` to `KILL`. Components must finish their own subprocesses; daemonizing is unsupported.
 
@@ -25,7 +25,7 @@ Raw captures and live progress are transient. Only settled text and accepted sta
 
 ### Environment
 
-Commands, hooks, and adapters inherit the process environment and receive every value in `.env`. Tools receive only the names listed under `environment` in their manifest. Exported values take precedence over `.env`, and both remain external.
+Commands, hooks, and providers inherit the process environment and receive every value in `.env`. Tools receive only the names listed under `environment` in their manifest. Exported values take precedence over `.env`, and both remain external.
 
 Components can also read the frozen profile's `config` from the session header. Features own their configuration keys, validation, and defaults. Only supplied values freeze, while omitted defaults remain component-defined. Runtime state stays separate from configuration.
 
@@ -203,13 +203,13 @@ Without `arguments`, only the exact `/NAME` matches, so `/NAME text` stays an or
 
 Shellfish calls `run` with no arguments and the argument text, without leading whitespace, on stdin and as `${input}`. A command receives the `user_prompt_submit` environment plus `SHELLFISH_COMMANDS`, a JSON array of the profile's commands with each `name` and its manifest's `description`, `arguments`, and `aliases`, so a help command can list them. Its result is stored as a `user_prompt_submit` hook result. A command may write a `handoff` or `session_update` [action](#hook-output); otherwise the prompt is denied. A nonzero exit fails the turn.
 
-## Backend adapters
+## Providers
 
-A backend adapter translates between Shellfish's provider-neutral protocol and one inference provider. It owns request projection, transport, stream parsing, response assembly, and provider-specific validation. The core validates, persists, and recovers complete assistant responses.
+A provider translates between Shellfish's provider-neutral protocol and one inference API. It owns request projection, transport, stream parsing, response assembly, and API-specific validation. The core validates, persists, and recovers complete assistant responses.
 
 Hooks can call `shellfish request` with a composed transcript on stdin to obtain one assistant response without tools, hooks, or session mutation. It uses the transcript's model unless `-m REF|JSON` or `--model REF|JSON` selects another. Repeated model items merge left to right and replace the complete header model for that request only. Model references follow the same lookup rules as session creation.
 
-An adapter manifest declares its default endpoint:
+A provider manifest declares its default endpoint:
 
 ```json
 {"endpoint":"https://api.example.com/v1/messages"}
@@ -230,13 +230,13 @@ Shellfish starts `run` once per provider request with one object on stdin:
 
 `messages` contains provider-neutral conversation records in transcript order. `tools` contains model-facing tool definitions. `request` contains the merged model's common and provider-specific settings, and unrelated fields pass through. `endpoint` is authoritative for the exchange.
 
-When supplied, the model's `config` object is passed separately from `request`. It configures the exchange, not the provider API parameters. HTTP adapters share the `http_timeout` and `http_stall` positive-integer settings, measured in seconds, and the boolean `insecure_tls` setting. Adapters validate these settings, supply defaults when omitted, and may enforce stricter security requirements.
+When supplied, the model's `config` object is passed separately from `request`. It configures the exchange, not the API parameters. HTTP providers share the `http_timeout` and `http_stall` positive-integer settings, measured in seconds, and the boolean `insecure_tls` setting. Providers validate these settings, supply defaults when omitted, and may enforce stricter security requirements.
 
-Bundled adapters normalize token limits in this order: `max_output_tokens`, `max_completion_tokens`, `max_tokens`. `reasoning_effort` overrides `reasoning.effort`, and `response_schema` replaces the provider-native structured-output setting. The Codex adapter omits output limits because its endpoint rejects them. Bundled adapters always stream and reject a `stream` option.
+Bundled providers normalize token limits in this order: `max_output_tokens`, `max_completion_tokens`, `max_tokens`. `reasoning_effort` overrides `reasoning.effort`, and `response_schema` replaces the provider-native structured-output setting. The Codex provider omits output limits because its endpoint rejects them. Bundled providers always stream and reject a `stream` option.
 
 ### Response stream
 
-The adapter writes JSON lines: text and reasoning deltas as the provider streams, then exactly one complete assistant response.
+The provider writes JSON lines: text and reasoning deltas as the API streams, then exactly one complete assistant response.
 
 ```json
 {"type":"_assistant_reasoning_delta","text":"Checking "}
@@ -244,9 +244,9 @@ The adapter writes JSON lines: text and reasoning deltas as the provider streams
 {"type":"assistant","stop":"tool_calls","content":[...],"usage":{"input_tokens":10,"output_tokens":4}}
 ```
 
-Deltas arrive in order and concatenate to the response's text and reasoning. An adapter that receives a whole body at once emits it as one delta per block. The response is the record Shellfish will append, in the transcript's own shape: ordered text, reasoning, and tool-call content, a `stop` of `end`, `tool_calls`, or `length`, and optional usage. Only `tool_calls` carries calls, so a response cut short by the output limit drops them. Tool-call fragments, opaque reasoning payloads, and provider correlation stay inside the adapter until they belong to that response.
+Deltas arrive in order and concatenate to the response's text and reasoning. A provider that receives a whole body at once emits it as one delta per block. The response is the record Shellfish will append, in the transcript's own shape: ordered text, reasoning, and tool-call content, a `stop` of `end`, `tool_calls`, or `length`, and optional usage. Only `tool_calls` carries calls, so a response cut short by the output limit drops them. Tool-call fragments, opaque reasoning payloads, and API correlation stay inside the provider until they belong to that response.
 
-Nothing may follow the response, and the adapter must then exit 0. Stderr is failure diagnostics, never stream data. A nonzero exit or invalid stream fails the request.
+Nothing may follow the response, and the provider must then exit 0. Stderr is failure diagnostics, never stream data. A nonzero exit or invalid stream fails the request.
 
 The core validates the response before persisting it or permitting tool execution. If the request is cancelled first, the text and reasoning its deltas streamed are kept as a cancelled response.
 
@@ -262,7 +262,7 @@ The value must be positive. Failure or any other output means metadata is unavai
 
 ### Decisions
 
-A decision asks typed questions about one input and returns a calibrated answer to each, without a conversation or tool calls. Hooks and scripts call `shellfish decide -m REF|JSON` with a decision on stdin. The model is required and resolves as it does for `request`. Its adapter must provide `decide`.
+A decision asks typed questions about one input and returns a calibrated answer to each, without a conversation or tool calls. Hooks and scripts call `shellfish decide -m REF|JSON` with a decision on stdin. The model is required and resolves as it does for `request`. Its provider must supply `decide`.
 
 ```json
 {
@@ -300,6 +300,6 @@ The result answers every question:
 }
 ```
 
-Probabilities and confidences range from 0 to 1. A `score` is the probability-weighted level index, and its probabilities follow level order. A question the provider declines is answered `{"type":"refusal"}`.
+Probabilities and confidences range from 0 to 1. A `score` is the probability-weighted level index, and its probabilities follow level order. A question the model declines is answered `{"type":"refusal"}`.
 
-Shellfish starts `decide` once per decision. Its stdin holds the decision plus `format_version`, `request`, `endpoint`, and optional `config`, as for `run`, with `system` always present. The adapter writes the result as one JSON object and exits 0. The core validates the decision and the result, and prints only a valid result. Adapters emulate features their provider lacks where they can, such as a system prompt, and otherwise fail rather than drop input.
+Shellfish starts `decide` once per decision. Its stdin holds the decision plus `format_version`, `request`, `endpoint`, and optional `config`, as for `run`, with `system` always present. The provider writes the result as one JSON object and exits 0. The core validates the decision and the result, and prints only a valid result. Providers emulate features their API lacks where they can, such as a system prompt, and otherwise fail rather than drop input.

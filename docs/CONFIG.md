@@ -5,7 +5,7 @@ Configuration has three homes, each with one job:
 | Home | Job | Frozen in a session |
 | --- | --- | --- |
 | `profiles/NAME.jsonc` | Selects an agent's parts: sandbox files, system prompts, tools, commands, and hooks | Yes |
-| `models/NAME.jsonc` | Configures the request: adapter, endpoint, and provider parameters | Yes |
+| `models/NAME.jsonc` | Configures the request: provider, endpoint, and request parameters | Yes |
 | `sandbox/NAME.jsonc` | Enables sandboxing and grants extra paths | Yes |
 | `.env` and the environment | Credentials and core runtime settings | No |
 
@@ -76,24 +76,24 @@ A model file configures where a request goes and what it carries. `-m REF|JSON` 
 ```jsonc
 // models/work.jsonc
 {
-  "adapter": "anthropic",
+  "provider": "anthropic",
   "request": {"model": "claude-opus-4-1", "max_tokens": 16384}
 }
 ```
 
 | Field | Meaning |
 | --- | --- |
-| `adapter` | Backend adapter reference |
-| `config` | Optional object controlling the adapter's exchange, separate from provider request parameters |
-| `endpoint` | Overrides the adapter's endpoint |
-| `context_window` | Positive capacity override. `null` disables discovery, and absent permits adapter discovery |
-| `request` | Provider request parameters, which must include `model` after merging |
+| `provider` | Provider reference |
+| `config` | Optional object controlling the provider's exchange, separate from `request` parameters |
+| `endpoint` | Overrides the provider's endpoint |
+| `context_window` | Positive capacity override. `null` disables discovery, and absent permits provider discovery |
+| `request` | API request parameters, which must include `model` after merging |
 
-`-m` repeats, and its items merge left to right: objects merge recursively and anything else is replaced. A file that names its adapter and model stands alone, and small files can adjust it:
+`-m` repeats, and its items merge left to right: objects merge recursively and anything else is replaced. A file that names its provider and model stands alone, and small files can adjust it:
 
 ```jsonc
 // models/local.jsonc
-{"adapter": "openai", "endpoint": "http://127.0.0.1:8080/v1/chat/completions",
+{"provider": "openai", "endpoint": "http://127.0.0.1:8080/v1/chat/completions",
  "request": {"model": "local-model"}}
 
 // models/high.jsonc
@@ -104,7 +104,7 @@ A model file configures where a request goes and what it carries. `-m REF|JSON` 
 shellfish -m local -m high
 ```
 
-HTTP adapters share these `model.config` settings, with the following defaults in bundled adapters:
+HTTP providers share these `model.config` settings, with the following defaults in bundled providers:
 
 | Setting | Default | Meaning |
 | --- | --- | --- |
@@ -112,15 +112,15 @@ HTTP adapters share these `model.config` settings, with the following defaults i
 | `http_stall` | `300` | Positive integer seconds without response bytes |
 | `insecure_tls` | `false` | Boolean that disables TLS certificate verification when true |
 
-For example, `"config": {"http_timeout": 120, "http_stall": 30}` sets shorter limits for a model. The Codex adapter always requires TLS verification.
+For example, `"config": {"http_timeout": 120, "http_stall": 30}` sets shorter limits for a model. The Codex provider always requires TLS verification.
 
-Bundled adapters: `anthropic`, `codex`, `openai`, `openai_responses`, and `openrouter`. The `openai` adapter works with any OpenAI-compatible endpoint. See [`HARNESS.md`](HARNESS.md#backend-adapters) for the adapter protocol.
+Bundled providers: `anthropic`, `codex`, `openai`, `openai_responses`, and `openrouter`. The `openai` provider works with any OpenAI-compatible endpoint. See [`HARNESS.md`](HARNESS.md#providers) for the provider protocol.
 
-Decision models serve `shellfish decide` instead of conversations. Bundled decision adapters: `openai_decisions` for OpenAI's Decisions API, and `systemone` for TypeSafe's System One API with `TYPESAFE_API_KEY`. For oMLX servers, `systemone_omlx` and `openai_decisions_omlx` speak the same formats. They need an endpoint, and they send `OMLX_API_KEY` when set rather than the provider's key. `systemone_omlx` also accepts video:
+Decision models serve `shellfish decide` instead of conversations. Bundled decision providers: `openai_decisions` for OpenAI's Decisions API, and `systemone` for TypeSafe's System One API with `TYPESAFE_API_KEY`. For oMLX servers, `systemone_omlx` and `openai_decisions_omlx` speak the same formats. They need an endpoint, and they send `OMLX_API_KEY` when set rather than `OPENAI_API_KEY` or `TYPESAFE_API_KEY`. `systemone_omlx` also accepts video:
 
 ```jsonc
 // models/d3.jsonc
-{"adapter": "systemone_omlx", "endpoint": "http://127.0.0.1:8000/v1/systemone",
+{"provider": "systemone_omlx", "endpoint": "http://127.0.0.1:8000/v1/systemone",
  "request": {"model": "d3-flash"}}
 ```
 
@@ -138,7 +138,7 @@ Credentials and core runtime settings live in exported variables or `.env` in th
 | `SHELLFISH_MAX_TOOL_CALLS_PER_REQUEST` | `25` | Tool calls per response |
 | `SHELLFISH_MAX_CAPTURE_BYTES` | `32768` | Bytes kept from each component stream, at least `64`, overridable by a manifest |
 
-Hooks and adapters are trusted: they inherit the process environment and receive every `.env` value. Tools receive only the names their manifest declares. Unsandboxed tools also inherit the process environment; sandboxed tools start clean. A key kept only in `.env` is therefore invisible to tools that do not declare it. See [`HARNESS.md`](HARNESS.md#shared-contract) for the process context.
+Hooks and providers are trusted: they inherit the process environment and receive every `.env` value. Tools receive only the names their manifest declares. Unsandboxed tools also inherit the process environment; sandboxed tools start clean. A key kept only in `.env` is therefore invisible to tools that do not declare it. See [`HARNESS.md`](HARNESS.md#shared-contract) for the process context.
 
 ## Components
 
@@ -151,10 +151,10 @@ sandbox/NAME.jsonc
 system/FILE.md
 tools/TOOL/
 hooks/HOOK/
-backends/ADAPTER/
+providers/PROVIDER/
 ```
 
-Tools and hooks require `run`, and backends require `run`, `decide`, or both. An optional `manifest.json` or `manifest.jsonc` supplies configuration, with an absent manifest treated as `{}`. A hook's manifest names its lifecycle with `on`. Tools need model-facing descriptions, input schemas, and execution policies. Backends need an endpoint from either their manifest or a model file. See [`HARNESS.md`](HARNESS.md) for the contracts. References are frozen in the session, while manifest edits affect later invocations only. Missing or invalid active components fail session creation, and an invalid manifest edited later fails the next run.
+Tools and hooks require `run`, and providers require `run`, `decide`, or both. An optional `manifest.json` or `manifest.jsonc` supplies configuration, with an absent manifest treated as `{}`. A hook's manifest names its lifecycle with `on`. Tools need model-facing descriptions, input schemas, and execution policies. Providers need an endpoint from either their manifest or a model file. See [`HARNESS.md`](HARNESS.md) for the contracts. References are frozen in the session, while manifest edits affect later invocations only. Missing or invalid active components fail session creation, and an invalid manifest edited later fails the next run.
 
 ## Sandbox
 
@@ -194,7 +194,7 @@ Grants are paths and need not exist, so one file can serve several machines. A p
 
 ## Starter agent
 
-`shellfish init` writes four profiles and the default model, `models/default.jsonc`: the OpenRouter adapter with up to 16,384 output tokens and medium reasoning effort, whose `MODEL` placeholder you replace. Each profile selects `sandbox/default.jsonc`, which grants nothing until you edit it.
+`shellfish init` writes four profiles and the default model, `models/default.jsonc`: the OpenRouter provider with up to 16,384 output tokens and medium reasoning effort, whose `MODEL` placeholder you replace. Each profile selects `sandbox/default.jsonc`, which grants nothing until you edit it.
 
 It also copies the starter `skill-creator` into `skills/`, where you can edit it. Skills come from `.agents/skills/` in the working directory, the selected Shellfish directory's `skills/`, and, when that directory is named `.shellfish`, the `.agents/skills/` beside it, in that precedence order. With `~/.shellfish` the last source is `~/.agents/skills/`. A project's own `.shellfish` replaces it with the project's `.agents/skills/`. There is no bundled skill fallback.
 
@@ -261,6 +261,6 @@ Inspection distinguishes a child that is still running from one that has stopped
 
 The `sandbox/approver` hook helps decide whether a requested sandbox bypass is justified by the user's instructions. It approves or denies each request. If the review itself fails, the request falls back to asking the user. The `plus` profile enables it, but the default profile does not. To enable it in another profile, add `"sandbox/approver"` to its `hooks`.
 
-The reviewer uses the session's model by default. Set `"config": {"sandbox": {"approver": {"model": "review"}}}` in the profile to select another model by name, such as `models/review.jsonc`. The name freezes with the session, but its model file is read on each review. The selection replaces the complete model configuration, so it can use a different backend. Review requests impose their own structured output and output limit, and use a fixed input budget rather than adapting to the model's capacity. An invalid setting, unavailable model, or provider failure asks the user instead.
+The reviewer uses the session's model by default. Set `"config": {"sandbox": {"approver": {"model": "review"}}}` in the profile to select another model by name, such as `models/review.jsonc`. The name freezes with the session, but its model file is read on each review. The selection replaces the complete model configuration, so it can use a different provider. Review requests impose their own structured output and output limit, and use a fixed input budget rather than adapting to the model's capacity. An invalid setting, unavailable model, or provider failure asks the user instead.
 
-Set `decision_model` instead of `model` to review with a [decision adapter](HARNESS.md#decisions), such as `{"decision_model": "d3"}`. The decision model rates how likely each risk and authorization level is. The hook allows a request only when it is at least 80% likely that authorization covers the risk, and denies it otherwise. Less decisive models may need a lower bar, such as `"allow_threshold": 0.5`. Run `./tests/run decisions MODEL` to check a model against sample requests. It also denies requests that appear at least 50% likely to be driven by instructions in untrusted data. Denial reasons state these likelihoods. A refusal asks the user, like other review failures.
+Set `decision_model` instead of `model` to review with a [decision provider](HARNESS.md#decisions), such as `{"decision_model": "d3"}`. The decision model rates how likely each risk and authorization level is. The hook allows a request only when it is at least 80% likely that authorization covers the risk, and denies it otherwise. Less decisive models may need a lower bar, such as `"allow_threshold": 0.5`. Run `./tests/run decisions MODEL` to check a model against sample requests. It also denies requests that appear at least 50% likely to be driven by instructions in untrusted data. Denial reasons state these likelihoods. A refusal asks the user, like other review failures.

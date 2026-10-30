@@ -5,7 +5,7 @@ sf_test_source lib/session.zsh
 sf_test_tmp run-tool-contract
 mkdir "$tmp/host-temp"
 export TMPDIR="$tmp/host-temp" TMPPREFIX="$tmp/manifest-prefix"
-export SF_TEST_BACKEND_DELAY=0
+export SF_TEST_PROVIDER_DELAY=0
 sf_test_frozen_profile
 
 # The bundled shell decodes multiline commands once, preserves exit status, and
@@ -25,8 +25,8 @@ sf_test_shell_tool '.environment=["TMPPREFIX"]'
 # Tools use the host temp directory rather than a Shellfish-owned turn directory.
 typeset temp_session="$tmp/tool-temp.jsonl" temp_stream="$tmp/tool-temp.stream"
 sf_test_session "$temp_session"
-SF_TEST_BACKEND_TOOL_CALL=1 \
-  SF_TEST_BACKEND_TOOL_COMMAND='print -rn -- "$TMPDIR|$TMPPREFIX"' \
+SF_TEST_PROVIDER_TOOL_CALL=1 \
+  SF_TEST_PROVIDER_TOOL_COMMAND='print -rn -- "$TMPDIR|$TMPPREFIX"' \
   sf_test_run temp "$temp_session" >"$temp_stream" || fail 'tool temp environment turn failed'
 jq -eRn --arg expected "${TMPDIR:A}|${TMPDIR:A}/zsh" '
   [inputs | fromjson | select(.type == "tool_result")][0].model_text ==
@@ -48,7 +48,7 @@ export ENV_SEEN=$env_seen EXPORTED=exported
 sf_test_shell_tool '.environment=["DECLARED"]'
 sf_test_bind_hooks post_tool_use "$env_hook"
 sf_test_session "$env_session"
-SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_COMMAND=$env_command \
+SF_TEST_PROVIDER_TOOL_CALL=1 SF_TEST_PROVIDER_TOOL_COMMAND=$env_command \
   sf_test_run env "$env_session" >"$env_stream" || fail 'tool environment turn failed'
 jq -eRn --arg share "$SF_SHARE" '[inputs | fromjson | select(.type == "tool_result")][0].model_text ==
   ("declared-file unset exported " + $share + "\nexit 0")' <"$env_stream" >/dev/null ||
@@ -58,7 +58,7 @@ assert_equal "undeclared-file $SF_SHARE" "$(<$env_seen)" \
 for manifest in '.environment=[]' 'del(.environment)'; do
   sf_test_shell_tool "$manifest"
   sf_test_session "$env_session"
-  SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_COMMAND=$env_command \
+  SF_TEST_PROVIDER_TOOL_CALL=1 SF_TEST_PROVIDER_TOOL_COMMAND=$env_command \
     sf_test_run env "$env_session" >"$env_stream" || fail 'empty tool environment turn failed'
   jq -eRn --arg share "$SF_SHARE" '[inputs | fromjson | select(.type == "tool_result")][0].model_text ==
     ("unset unset exported " + $share + "\nexit 0")' <"$env_stream" >/dev/null ||
@@ -72,7 +72,7 @@ SF_TEST_PROFILE=$base_profile
 typeset live_session="$tmp/live-manifest.jsonl"
 sf_test_session "$live_session"
 sf_test_shell_tool '.environment=["TMPPREFIX"] | .description="edited after creation"'
-SF_TEST_BACKEND_REQUEST="$tmp/live-request.json" sf_test_run live "$live_session" >/dev/null ||
+SF_TEST_PROVIDER_REQUEST="$tmp/live-request.json" sf_test_run live "$live_session" >/dev/null ||
   fail 'live manifest turn failed'
 jq -e '.tools[0].description | startswith("edited after creation")' \
   "$tmp/live-request.json" >/dev/null || fail 'tool manifest was not read live'
@@ -83,7 +83,7 @@ SF_TEST_PROFILE=$(jq -c '.sandbox.enabled=true' <<<"$SF_TEST_PROFILE")
 sf_test_shell_tool '.sandbox=false | .allow_sandbox_bypass=false'
 typeset opted_out_session="$tmp/opted-out.jsonl" opted_out_stream="$tmp/opted-out.stream"
 sf_test_session "$opted_out_session"
-SF_TEST_BACKEND_TOOL_CALL=1 sf_test_run opted-out "$opted_out_session" >"$opted_out_stream" ||
+SF_TEST_PROVIDER_TOOL_CALL=1 sf_test_run opted-out "$opted_out_session" >"$opted_out_stream" ||
   fail 'opted-out tool turn failed'
 jq -eRn '[inputs | fromjson] as $events |
   all($events[]; has("sandbox_bypass") | not) and
@@ -98,8 +98,8 @@ sf_test_shell_tool '.environment=["TMPPREFIX"]'
 typeset input_target="$tmp/tool-input-target" input_session="$tmp/tool-input.jsonl"
 typeset input_stream="$tmp/tool-input.stream"
 sf_test_session "$input_session"
-SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_COUNT=2 \
-  SF_TEST_BACKEND_TOOL_COMMAND="ln -sf ${(q)input_target} \"\$TMPDIR/input\"" \
+SF_TEST_PROVIDER_TOOL_CALL=1 SF_TEST_PROVIDER_TOOL_COUNT=2 \
+  SF_TEST_PROVIDER_TOOL_COMMAND="ln -sf ${(q)input_target} \"\$TMPDIR/input\"" \
   sf_test_run input "$input_session" >"$input_stream" || fail 'tool input isolation turn failed'
 [[ ! -e $input_target ]] || fail 'tool temp redirected a later input write'
 
@@ -137,8 +137,8 @@ sf_test_bind_hooks pre_tool_use "$pre" "$later"
 sf_test_bind_hooks post_tool_use "$post"
 typeset session="$tmp/denied.jsonl" stream="$tmp/denied.stream"
 sf_test_session "$session"
-SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_COUNT=2 \
-  SF_TEST_BACKEND_TOOL_COMMAND="print -r -- ran >>${(q)tool_marker}; print -rn -- output" \
+SF_TEST_PROVIDER_TOOL_CALL=1 SF_TEST_PROVIDER_TOOL_COUNT=2 \
+  SF_TEST_PROVIDER_TOOL_COMMAND="print -r -- ran >>${(q)tool_marker}; print -rn -- output" \
   sf_test_run tools "$session" >"$stream" || fail 'pre-tool denial turn failed'
 jq -e '. == {turn_id:1,tool_name:"shell",tool_use_id:"call_1",
   tool_input:{command:$command}}' --arg command \
@@ -197,9 +197,9 @@ SF_TEST_PROFILE=$(jq -c '.hooks=[] | .sandbox.enabled=true' <<<"$SF_TEST_PROFILE
 sf_test_bind_hooks permission_request "$permission"
 session="$tmp/permission-allow.jsonl"
 sf_test_session "$session"
-SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_BYPASS=true \
-  SF_TEST_BACKEND_TOOL_COMMAND='print -rn -- approved' \
-  SF_TEST_BACKEND_REQUEST="$tmp/bypass-request.json" \
+SF_TEST_PROVIDER_TOOL_CALL=1 SF_TEST_PROVIDER_TOOL_BYPASS=true \
+  SF_TEST_PROVIDER_TOOL_COMMAND='print -rn -- approved' \
+  SF_TEST_PROVIDER_REQUEST="$tmp/bypass-request.json" \
   sf_test_run permission "$session" >"$stream" || fail 'permission hook allow failed'
 jq -e '.tools[] | select(.name == "shell").input_schema |
   .properties.request_sandbox_bypass.type == "boolean" and
@@ -245,9 +245,9 @@ for gate in sandbox-disabled unsupported no-reason reason-only blank-unrequested
   session="$tmp/permission-$gate.jsonl"
   sf_test_session "$session"
   gate_status=0
-  SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_BYPASS=true \
-    SF_TEST_BACKEND_TOOL_BYPASS_REASON=$reason SF_TEST_BACKEND_TOOL_BYPASS_FLAG=$flag \
-    SF_TEST_BACKEND_TOOL_COMMAND='print -rn -- unreviewed' \
+  SF_TEST_PROVIDER_TOOL_CALL=1 SF_TEST_PROVIDER_TOOL_BYPASS=true \
+    SF_TEST_PROVIDER_TOOL_BYPASS_REASON=$reason SF_TEST_PROVIDER_TOOL_BYPASS_FLAG=$flag \
+    SF_TEST_PROVIDER_TOOL_COMMAND='print -rn -- unreviewed' \
     sf_test_run permission "$session" >"$stream" 2>"$tmp/gate.err" || gate_status=$?
   [[ ! -e $permission_input ]] || fail "permission hook ran for $gate"
   jq -eRn 'all(inputs | fromjson; .type != "_tool_permission_request" and
@@ -293,7 +293,7 @@ print -rn -u3 -- '{"action":"deny","reason":"review denied"}'
 ZSH
 session="$tmp/permission-deny.jsonl"
 sf_test_session "$session"
-SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_BYPASS=true \
+SF_TEST_PROVIDER_TOOL_CALL=1 SF_TEST_PROVIDER_TOOL_BYPASS=true \
   sf_test_run permission "$session" >"$stream" || fail 'permission hook deny failed'
 jq -eRn '
   [inputs | fromjson] as $events |
@@ -320,8 +320,8 @@ SF_TEST_PROFILE=$(jq -c '.hooks=[]' <<<"$SF_TEST_PROFILE")
 sf_test_bind_hooks permission_request "$defer_one" "$defer_two"
 session="$tmp/permission-client.jsonl"
 sf_test_session "$session"
-SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_BYPASS=true \
-  SF_TEST_BACKEND_TOOL_COMMAND='print -rn -- approved' \
+SF_TEST_PROVIDER_TOOL_CALL=1 SF_TEST_PROVIDER_TOOL_BYPASS=true \
+  SF_TEST_PROVIDER_TOOL_COMMAND='print -rn -- approved' \
   sf_test_run permission "$session" \
     '{"type":"_tool_permission_response","id":"permission_1","decision":"approve"}' \
     >"$stream" || fail 'client permission approval failed'
@@ -341,7 +341,7 @@ jq -e -s 'all(.[]; .type != "_tool_permission_request" and
 # Without an answer, the client request is denied and the turn continues.
 session="$tmp/permission-no-client.jsonl"
 sf_test_session "$session"
-SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_BYPASS=true \
+SF_TEST_PROVIDER_TOOL_CALL=1 SF_TEST_PROVIDER_TOOL_BYPASS=true \
   sf_test_run permission "$session" >"$stream" || fail 'closed client failed the turn'
 jq -e -s 'map(select(.type == "tool_result"))[0] |
   .exit_code == 126 and .model_text == "no client to approve sandbox bypass" and
@@ -355,7 +355,7 @@ SF_TEST_PROFILE=$(jq -c '.sandbox.user_approval_timeout=1' <<<"$SF_TEST_PROFILE"
   jq -cn '{type:"user",content:[{type:"text",text:"permission"}]}'
   print -r -- '{"type":"_tool_permission_response","id":"permission_0","decision":"approve"}'
   sleep 3
-} | SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_BYPASS=true \
+} | SF_TEST_PROVIDER_TOOL_CALL=1 SF_TEST_PROVIDER_TOOL_BYPASS=true \
   "$ROOT/bin/shellfish" run --jsonl --session "$session" >"$stream" ||
   fail 'permission timeout failed the turn'
 jq -e -s 'map(select(.type == "_tool_permission_request"))[0].timeout == 1' \
@@ -378,7 +378,7 @@ sf_test_bind_hooks pre_tool_use "$pre_fail"
 session="$tmp/pre-failure.jsonl"
 sf_test_session "$session"
 integer pre_status=0
-SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_COUNT=2 \
+SF_TEST_PROVIDER_TOOL_CALL=1 SF_TEST_PROVIDER_TOOL_COUNT=2 \
   sf_test_run pre "$session" >"$stream" 2>/dev/null || pre_status=$?
 (( pre_status == 1 )) || fail 'failing pre hook did not fail the turn'
 jq -eRn '
@@ -404,7 +404,7 @@ sf_test_bind_hooks post_tool_use "$post_fail"
 session="$tmp/post-failure.jsonl"
 sf_test_session "$session"
 integer post_status=0
-SF_TEST_BACKEND_TOOL_CALL=1 sf_test_run post "$session" >"$stream" || post_status=$?
+SF_TEST_PROVIDER_TOOL_CALL=1 sf_test_run post "$session" >"$stream" || post_status=$?
 (( post_status == 1 )) || fail 'failing post hook did not fail the turn'
 jq -eRn '
   [inputs | fromjson | select(.type | IN("state_update","hook_result","tool_result","error"))] as $events |
@@ -423,7 +423,7 @@ mkdir "$no_fence"
 ln -s "$commands[jq]" "$commands[zsh]" "$no_fence/"
 session="$tmp/sandbox-missing.jsonl"
 sf_test_session "$session"
-ZDOTDIR=$no_fence PATH="$no_fence:/usr/bin:/bin" SF_TEST_BACKEND_TOOL_CALL=1 \
+ZDOTDIR=$no_fence PATH="$no_fence:/usr/bin:/bin" SF_TEST_PROVIDER_TOOL_CALL=1 \
   sf_test_run sandbox "$session" >"$stream" 2>/dev/null ||
   fail 'missing sandbox runner failed the turn'
 jq -eRn '[inputs | fromjson | select(.type == "tool_result")][0] |
@@ -460,7 +460,7 @@ export SANDBOX_OUTPUT=$sandbox_output
 sf_test_bind_hooks post_tool_use "$sandbox_post"
 session="$tmp/sandbox-denied.jsonl"
 sf_test_session "$session"
-SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_COMMAND='print -rn -- output; exit 3' \
+SF_TEST_PROVIDER_TOOL_CALL=1 SF_TEST_PROVIDER_TOOL_COMMAND='print -rn -- output; exit 3' \
   sf_test_run sandbox "$session" >"$stream" || fail 'sandbox denial turn failed'
 jq -eRn '
   [inputs | fromjson | select(.type == "tool_result")][0] |
@@ -496,7 +496,7 @@ assert_canonical_session "$session"
 
 session="$tmp/sandbox-tolerated.jsonl"
 sf_test_session "$session"
-SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_COMMAND='print -rn -- output' \
+SF_TEST_PROVIDER_TOOL_CALL=1 SF_TEST_PROVIDER_TOOL_COMMAND='print -rn -- output' \
   sf_test_run sandbox "$session" >"$stream" || fail 'tolerated denial turn failed'
 jq -eRn '
   [inputs | fromjson | select(.type == "tool_result")][0] |
@@ -507,7 +507,7 @@ jq -eRn '
 sf_test_shell_tool '.environment=["DECLARED"]'
 session="$tmp/sandbox-env.jsonl"
 sf_test_session "$session"
-SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_COMMAND=$env_command \
+SF_TEST_PROVIDER_TOOL_CALL=1 SF_TEST_PROVIDER_TOOL_COMMAND=$env_command \
   sf_test_run sandbox "$session" >"$stream" || fail 'sandboxed environment turn failed'
 jq -eRn --arg share "$SF_SHARE" '[inputs | fromjson | select(.type == "tool_result")][0].model_text ==
   ("declared-file unset unset " + $share + "\nexit 0")' <"$stream" >/dev/null ||
@@ -515,7 +515,7 @@ jq -eRn --arg share "$SF_SHARE" '[inputs | fromjson | select(.type == "tool_resu
 for manifest in '.environment=[]' 'del(.environment)'; do
   sf_test_shell_tool "$manifest"
   sf_test_session "$session"
-  SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_COMMAND=$env_command \
+  SF_TEST_PROVIDER_TOOL_CALL=1 SF_TEST_PROVIDER_TOOL_COMMAND=$env_command \
     sf_test_run sandbox "$session" >"$stream" || fail 'empty sandbox environment turn failed'
   jq -eRn --arg share "$SF_SHARE" '[inputs | fromjson | select(.type == "tool_result")][0].model_text ==
     ("unset unset unset " + $share + "\nexit 0")' <"$stream" >/dev/null ||
@@ -544,7 +544,7 @@ sf_test_shell_tool '.user_preview_lines=3' "$protocol"
 SF_TEST_PROFILE=$(jq -c '.sandbox.enabled=false' <<<"$SF_TEST_PROFILE")
 session="$tmp/protocol-action.jsonl"
 sf_test_session "$session"
-if SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_COMMAND=action \
+if SF_TEST_PROVIDER_TOOL_CALL=1 SF_TEST_PROVIDER_TOOL_COMMAND=action \
     sf_test_run protocol "$session" >"$stream" 2>/dev/null; then
   fail 'a tool action was accepted'
 fi
@@ -560,7 +560,7 @@ typeset live_marker="$tmp/tool-live"
 session="$tmp/protocol-stream.jsonl"
 sf_test_session "$session"
 jq -cn '{type:"user",content:[{type:"text",text:"protocol"}]}' |
-  SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_COMMAND=stream \
+  SF_TEST_PROVIDER_TOOL_CALL=1 SF_TEST_PROVIDER_TOOL_COMMAND=stream \
   TOOL_MARKER=$live_marker "$ROOT/bin/shellfish" run --jsonl --session "$session" \
   >"$stream" &
 integer live_pid=$! live_waited=0 live_status=0
@@ -581,7 +581,7 @@ assert_canonical_session "$session"
 # A line beyond the capture limit fails the call, not the turn.
 session="$tmp/protocol-huge.jsonl"
 sf_test_session "$session"
-SF_TEST_BACKEND_TOOL_CALL=1 SF_TEST_BACKEND_TOOL_COMMAND=huge \
+SF_TEST_PROVIDER_TOOL_CALL=1 SF_TEST_PROVIDER_TOOL_COMMAND=huge \
   sf_test_run protocol "$session" >"$stream" || fail 'oversized line failed the turn'
 jq -eRn '[inputs | fromjson | select(.type == "tool_result")][0] |
   .exit_code == 1 and .model_text == "tool result exceeds capture limit"' \
