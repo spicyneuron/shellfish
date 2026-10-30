@@ -296,7 +296,11 @@ def test_permission_stop_cancels_pending_tools():
                 ("call_2", 126),
                 ("call_3", 126),
             ]
-            assert not any("sandbox_bypass" in record for record in results)
+            assert [record.get("sandbox_bypass") for record in results] == [
+                "cancelled",
+                None,
+                None,
+            ]
             assert records[-1] == {"type": "error", "user_text": "Cancelled."}
             session.wait_after(mark, "Cancelled.")
         finally:

@@ -70,8 +70,8 @@ def tool_plan($profile; $tools; $call; $turn; $max_capture):
 def tool_refusal($reason; $exit_code):
   {output:{stdout:$reason,stderr:$reason,exit_code:$exit_code},ran:false};
 
-# Model text is stdout. A bypass request that never settled keeps no badge,
-# unless the tool ran, which implies approval.
+# Model text is stdout. A bypass request that was never answered keeps no
+# badge unless the tool ran, which implies approval.
 def tool_result($component; $outcome):
   ($component.draft | del(.user_text)) + {type:"tool_result",input:$component.input,
     exit_code:$outcome.output.exit_code,
@@ -84,13 +84,18 @@ def tool_result($component; $outcome):
   if canonical_tool_result then . else error("invalid tool result") end;
 
 # Results for every pending call. The call that was running when the turn
-# ended, if ACTIVE, settles as interrupted; later calls settle with REASON.
+# ended, if ACTIVE, settles as interrupted; later calls settle with REASON,
+# and their bypass requests as cancelled.
 def settled_calls($state; $profile; $tools; $turn; $max_capture; $active; $reason):
   $state.calls | to_entries[] |
   tool_plan($profile; $tools; .value; $turn; $max_capture) as $plan |
   if .key == 0 and $active then
     tool_result($plan.component; tool_refusal("tool call interrupted"; 126) | .ran = true)
-  else tool_result($plan.component; tool_refusal($reason; 126)) end;
+  else
+    tool_result($plan.component |
+      if .draft.sandbox_bypass == "requested" then .draft.sandbox_bypass = "cancelled"
+      else . end; tool_refusal($reason; 126))
+  end;
 
 # The parsed records of a complete session file read as one raw string.
 def session_records:

@@ -70,7 +70,7 @@ def result_fields($required):
 # A settled sandbox bypass request records whether it was approved.
 def canonical_tool_result:
   (del(.sandbox_bypass) | result_fields(["exit_code", "id", "input", "name"])) and
-  ((has("sandbox_bypass") | not) or (.sandbox_bypass | IN("approved", "denied"))) and
+  ((has("sandbox_bypass") | not) or (.sandbox_bypass | IN("approved", "denied", "cancelled"))) and
   .type == "tool_result" and
   (.id | identifier) and (.name | tool_name) and (.input | type == "object") and
   (.exit_code | type == "number" and floor == . and . >= 0 and . <= 255);

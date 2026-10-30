@@ -68,7 +68,7 @@ A manifest's optional `user_text` is the component's one display template. It ma
 
 The template renders while the component runs with empty output, and once more when it settles. Only the settled text is stored. A call that is refused, skipped, or interrupted renders its reason as `${output.stderr}`, and Shellfish gives the model that reason as the result. Every tool call receives a result. A hook result is stored when it has text or denies the lifecycle's default step.
 
-The first line of the rendered text is its header, and `user_preview_lines`, a line count or `"full"`, collapses the rest. Otherwise the client's preview limit applies. A call that requests a sandbox bypass is marked `[sandbox bypass requested]` while it waits, then `[sandbox bypass approved]` or `[sandbox bypass denied]`, whatever its template says. Tools that do not opt into sandboxing, or run with session sandboxing disabled, receive no bypass badge.
+The first line of the rendered text is its header, and `user_preview_lines`, a line count or `"full"`, collapses the rest. Otherwise the client's preview limit applies. A call that requests a sandbox bypass is marked `[sandbox bypass requested]` while it waits, then `[sandbox bypass approved]` or `[sandbox bypass denied]`, whatever its template says. A request still pending when the turn is cancelled settles as `[sandbox bypass cancelled]`. Tools that do not opt into sandboxing, or run with session sandboxing disabled, receive no bypass badge.
 
 ## Tools
 
