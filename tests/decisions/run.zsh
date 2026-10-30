@@ -73,7 +73,8 @@ for ref; do
       {type:"assistant", stop:"tool_calls", content:[{type:"tool_call", id:"call_2",
         name:"shell", input:$input}]}
     ' >"$session" || exit 1
-    SHELLFISH_EXECUTABLE=$root/bin/shellfish SHELLFISH_SESSION=$session \
+    SHELLFISH_CONFIG=$(head -n 1 "$session" | jq -c '.profile.config') \
+      SHELLFISH_EXECUTABLE=$root/bin/shellfish SHELLFISH_SESSION=$session \
       SHELLFISH_TURN_STATE=$tmp/state SHELLFISH_TURN_ID=1 \
       zsh -f "$root/share/hooks/sandbox/approver/run" shell call_2 \
       <<<"{\"tool_input\":$input}" 3>"$control" 2>/dev/null
