@@ -42,9 +42,10 @@ def preview: .user_preview_lines // "default" | tostring;
 # Context and notice select presentation styling.
 def hook_class: if (.model_text // "") == "" then "notice" else "context" end;
 # The core marks sandbox bypass requests so that no template can hide them.
+# The client draws the badge; an empty template still shows the tool name.
 def result_text:
-  if has("sandbox_bypass") then "[sandbox bypass \(.sandbox_bypass)] " + (.user_text // .name)
-  else .user_text // "" end;
+  if has("sandbox_bypass") then .user_text // .name else .user_text // "" end;
+def bypass: .sandbox_bypass // "";
 
 def message_actions($role; $text):
   if ($text | test("[^\n]")) then
@@ -85,7 +86,7 @@ def record_actions($mode; $window):
     (.user_text | split("\n")) as $lines |
     [["error", $lines[0], ($lines[1:] | join("\n"))]]
   elif .type == "tool_result" then
-    [["execution_end", .id, "tool", result_text, preview]]
+    [["execution_end", .id, "tool", result_text, preview, "", bypass]]
   elif .type == "hook_result" then
     [["execution_end", .id, hook_class, result_text, preview,
       ({session_start:"system", user_prompt_submit:"user"}[.lifecycle] // "agent")]]
@@ -105,7 +106,7 @@ def event_actions($window):
   # A tool draft names its tool.
   elif .type == "_draft" then
     [["execution_update", .id, (if has("name") then "tool" else "notice" end), result_text,
-      preview]]
+      preview, bypass]]
   # The preview is deliberately truncated. Deny when it is not enough to decide;
   # review hooks receive the full input.
   elif .type == "_tool_permission_request" then

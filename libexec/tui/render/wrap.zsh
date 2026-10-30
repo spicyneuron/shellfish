@@ -4,12 +4,15 @@ setopt no_aliases no_bg_nice no_multios pipe_fail
 # Span offsets are characters; cells only determine row breaks.
 
 typeset -ga SF_WRAP_ROWS=() SF_WRAP_SPANS=()
+# The one-based TEXT index where each row's content starts.
+typeset -ga SF_WRAP_STARTS=()
 
 # Spans are ordered, zero-based, half-open ranges over TEXT.
 sf_tui_wrap() {
   # Rejecting a call never exposes prior output.
   SF_WRAP_ROWS=()
   SF_WRAP_SPANS=()
+  SF_WRAP_STARTS=()
   integer limit=0
   if [[ ${1-} == -L ]]; then
     (( $# >= 5 )) || return 1
@@ -107,6 +110,7 @@ sf_tui_wrap_emit() {
   integer span first last position first_source last_source
   local -a projected=()
   SF_WRAP_ROWS+=( "${(j::)display}" )
+  SF_WRAP_STARTS+=( $row_start )
   first_source=${source[prefix_length + 1]:-0}
   last_source=${source[-1]:-0}
   while (( span_head <= ${#spans} && spans[span_head + 1] < first_source )); do

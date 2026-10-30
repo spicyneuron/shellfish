@@ -231,10 +231,11 @@ sf_tui_format_status() {
 # Executions and notices ----------------------------------------------------
 
 sf_tui_format_execution() {
-  integer columns=$1 live=$(( ! $2 )) spinner=0
-  integer row limit chrome total hidden=0 span background cursor start end
-  local body glyph preview text style kind=execution
+  integer columns=$1 live=$(( ! $2 )) spinner=0 fold=0 diff=0
+  integer row limit total hidden=0 more span background cursor start end pass
+  local body full head rest badge='' suffix='' glyph preview text style kind=execution
   local base_style=${SF_PRESENT_STYLE[execution]-} rail_style=${SF_PRESENT_STYLE[divider]-}
+  local clamp=${SF_PRESENT_STYLE[clamp]-} badge_style=''
   local -a projected=() spans=()
 
   sf_tui_format_start
@@ -253,24 +254,48 @@ sf_tui_format_execution() {
   fi
   (( ! live )) || sf_tui_spinner && spinner=$live
 
-  sf_tui_format_rule $columns "$SF_LIVE_ROLE" "$SF_LIVE_SECTION"
-  chrome=${#SF_FORMAT_ROWS}
-  SF_PRESENT_HIGHLIGHT_SPANS=()
+  (( live )) || [[ $preview == full ]] || fold=1
   # A hunk header is the only reliable signal that output is a unified diff.
-  [[ $body != (|*$'\n')'@@ -'*' @@'* ]] || sf_tui_diff_highlight "$body"
-  if (( ! live )) && [[ $preview != full ]]; then
-    sf_tui_wrap -L $(( preview + 2 )) $columns "$body" '│ ' \
-      "${(@)SF_PRESENT_HIGHLIGHT_SPANS}" || return 1
-  else
-    sf_tui_wrap $columns "$body" '│ ' "${(@)SF_PRESENT_HIGHLIGHT_SPANS}" || return 1
+  [[ $body != (|*$'\n')'@@ -'*' @@'* ]] || diff=1
+  head=${body%%$'\n'*}
+  rest=${body:${#head}}
+  if [[ -n $SF_LIVE_BYPASS ]]; then
+    badge="[sandbox bypass $SF_LIVE_BYPASS]"
+    case $SF_LIVE_BYPASS in
+      requested) badge_style=${SF_PRESENT_STYLE[permission]-} ;;
+      approved) badge_style=${SF_PRESENT_STYLE[muted]-} ;;
+      *) badge_style=${SF_PRESENT_STYLE[error]-} ;;
+    esac
+    [[ -z $badge_style ]] || badge_style+=,bold
   fi
-  total=${#SF_WRAP_ROWS}
-  limit=$total
-  # The identity row always shows; the preview budget covers the output below it.
-  if (( ! live )) && [[ $preview != full ]] && (( total > preview + 1 )); then
-    limit=$(( preview + 1 ))
+
+  sf_tui_format_rule $columns "$SF_LIVE_ROLE" "$SF_LIVE_SECTION"
+  # The identity row always shows; the preview budget covers the output below
+  # it. Clamped output adds its size to the identity row and wraps again.
+  for pass in 1 2; do
+    full=${badge:+$badge }$head$suffix$rest
+    SF_PRESENT_HIGHLIGHT_SPANS=()
+    [[ -z $badge || -z $badge_style ]] ||
+      SF_PRESENT_HIGHLIGHT_SPANS+=( 0 ${#badge} "$badge_style" )
+    [[ -z $suffix || -z $clamp ]] ||
+      SF_PRESENT_HIGHLIGHT_SPANS+=( $(( ${#full} - ${#rest} - ${#suffix} )) \
+        $(( ${#full} - ${#rest} )) "$clamp" )
+    (( ! diff )) || sf_tui_diff_highlight "$rest" $(( ${#full} - ${#rest} ))
+    if (( fold )); then
+      sf_tui_wrap -L $(( preview + 2 )) $columns "$full" '│ ' \
+        "${(@)SF_PRESENT_HIGHLIGHT_SPANS}" || return 1
+    else
+      sf_tui_wrap $columns "$full" '│ ' "${(@)SF_PRESENT_HIGHLIGHT_SPANS}" || return 1
+    fi
+    total=${#SF_WRAP_ROWS}
+    (( fold && total > preview + 1 )) || break
     hidden=1
-  fi
+    [[ -z $suffix ]] || break
+    sf_tui_token_count ${#rest}
+    suffix=" · ~$REPLY tokens"
+  done
+  limit=$total
+  (( ! hidden )) || limit=$(( preview + 1 ))
   for (( row = 1; row <= limit; row++ )); do
     text=$SF_WRAP_ROWS[row]
     if (( row == 1 )); then
@@ -295,20 +320,18 @@ sf_tui_format_execution() {
     fi
     for (( span = 1; span <= ${#projected}; span += 3 )); do
       style=${projected[span + 2]}
-      if [[ $style == *bg=* ]]; then
-        spans=( 0 ${#text} "$style" )
-        cursor=${#text}
-        break
-      fi
       start=${projected[span]}
       end=${projected[span + 1]}
+      # A background runs through the padding to the right margin.
+      [[ $style != *bg=* ]] || end=${#text}
       (( start >= cursor )) || start=$cursor
       (( end <= ${#text} )) || end=${#text}
       (( start >= end )) && continue
       if [[ -n $base_style ]] && (( cursor < start )); then
         spans+=( $cursor $start "$base_style" )
       fi
-      [[ -z $base_style ]] || style="$base_style,$style"
+      # zsh keeps the first fg, so a span with its own color stands alone.
+      [[ -z $base_style || $style == *fg=* ]] || style="$base_style,$style"
       spans+=( $start $end "$style" )
       cursor=$end
     done
@@ -321,8 +344,11 @@ sf_tui_format_execution() {
   if (( spinner )); then
     sf_tui_format_styled $columns "╰ $SF_PRESENT_ACTIVITY" "$kind" '' activity || return 1
   elif (( hidden )); then
-    sf_tui_token_count ${#body}
-    sf_tui_format_styled $columns "╰ … ~$REPLY tokens" "$kind" clamp || return 1
+    text=${full[SF_WRAP_STARTS[limit + 1],-1]}
+    more=$(( ${#text//[^$'\n']} + 1 ))
+    text="╰ … $more more line"
+    (( more == 1 )) || text+=s
+    sf_tui_format_styled $columns "$text" "$kind" clamp || return 1
   elif (( ! live && limit <= 1 )); then
     sf_tui_format_styled $columns '╰' "$kind" || return 1
   fi

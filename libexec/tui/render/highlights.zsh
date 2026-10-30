@@ -79,6 +79,8 @@ sf_tui_theme_config() {
        "syntax.code":("fg=" + .code),
        "syntax.heading":"bold,underline",
        "syntax.strong":"bold", "syntax.em":"underline",
+       "syntax.hunk":("fg=" + .muted),
+       "syntax.file":"bold",
        "syntax.added":("fg=" + .diff_added + ",bg=" + .diff_added_background),
        "syntax.removed":("fg=" + .diff_removed + ",bg=" + .diff_removed_background)};
     def record($key; $value): $key, "\u0000", $value, "\u0000";
@@ -462,12 +464,14 @@ sf_tui_markdown_highlight() {
 sf_tui_diff_highlight() {
   local source=$1 line kind
   local -a lines=( "${(@ps:\n:)source}" )
-  integer base=${2:-0} start=$base
+  integer start=${2:-0}
   [[ -n $lines[-1] ]] || lines[-1]=()
   for line in "${lines[@]}"; do
     kind=''
-    if [[ $line == '+'* && $line != '+++'* ]]; then kind=added
-    elif [[ $line == '-'* && $line != '---'* ]]; then kind=removed
+    if [[ $line == '@@ '* ]]; then kind=hunk
+    elif [[ $line == ('+++'|'---')(| *) ]]; then kind=file
+    elif [[ $line == '+'* ]]; then kind=added
+    elif [[ $line == '-'* ]]; then kind=removed
     fi
     [[ -z $kind ]] || sf_tui_highlight_span $start $(( start + ${#line} )) $kind
     (( start += ${#line} + 1 ))

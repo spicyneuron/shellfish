@@ -130,8 +130,12 @@ assert_equal $'```\tjs\t1' "$REPLY"
 sf_tui_markdown_highlight $'closed */\n' $'```\tjs\t1'
 assert_equal $'```\tjs\t0' "$REPLY"
 
-typeset diff=$'@@ -1 +1 @@\n-old\n+new\n--- a/file\n+++ b/file'
+# Hunk and file headers are styled apart from the changed lines.
+typeset diff=$'@@ -1 +1 @@\n-old\n+new\n--- a/file\n+++ b/file\n---- rule'
 SF_PRESENT_HIGHLIGHT_SPANS=()
 sf_tui_diff_highlight "$diff"
 span_texts "$diff"
-assert_equal '-old,+new' "$REPLY"
+assert_equal '@@ -1 +1 @@,-old,+new,--- a/file,+++ b/file,---- rule' "$REPLY"
+assert_equal "$SF_PRESENT_STYLE[clamp]" "$SF_PRESENT_HIGHLIGHT_SPANS[3]"
+assert_equal bold "$SF_PRESENT_HIGHLIGHT_SPANS[12]"
+assert_equal "$SF_PRESENT_STYLE[syntax.removed]" "$SF_PRESENT_HIGHLIGHT_SPANS[18]"

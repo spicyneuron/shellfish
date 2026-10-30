@@ -152,12 +152,12 @@ sf_tui_reset
 SF_PRESENT_PREVIEW=1
 sf_tui_action execution_end h1 context $'probe\nfirst\nsecond\nthird'
 view
-assert_equal $'↪ probe\n│ first\n╰ … ~6 tokens' "$REPLY"
+assert_equal $'↪ probe · ~5 tokens\n│ first\n╰ … 2 more lines' "$REPLY"
 sf_tui_reset
 SF_PRESENT_PREVIEW=0
 sf_tui_action execution_end h1 context $'prompt\nfirst\nsecond'
 view
-assert_equal $'↪ prompt\n╰ … ~5 tokens' "$REPLY"
+assert_equal $'↪ prompt · ~4 tokens\n╰ … 2 more lines' "$REPLY"
 SF_PRESENT_PREVIEW=full
 
 # Every class takes that same budget; only a component override lifts it.
@@ -165,7 +165,7 @@ sf_tui_reset
 SF_PRESENT_PREVIEW=1
 sf_tui_action execution_end h1 notice $'prompt\nfirst\nsecond'
 view
-assert_equal $'ℹ prompt\n│ first\n╰ … ~5 tokens' "$REPLY"
+assert_equal $'ℹ prompt · ~4 tokens\n│ first\n╰ … 1 more line' "$REPLY"
 SF_PRESENT_PREVIEW=full
 
 # Components may select a fixed limit or bypass the context default.
@@ -173,7 +173,7 @@ sf_tui_reset
 SF_PRESENT_PREVIEW=2
 sf_tui_action execution_end h1 tool $'probe\nfirst\nsecond\nthird' 1
 view
-assert_tail $'⛭ probe\n│ first\n╰ … ~6 tokens'
+assert_tail $'⛭ probe · ~5 tokens\n│ first\n╰ … 2 more lines'
 sf_tui_reset
 SF_PRESENT_PREVIEW=0
 sf_tui_action execution_end h1 tool $'probe\nfirst\nsecond' full
@@ -183,7 +183,7 @@ SF_PRESENT_PREVIEW=full
 
 # A hunk header marks output as a diff; its rows fill the width so backgrounds span it.
 sf_tui_reset
-SF_PRESENT_STYLE=( tool tool divider rail
+SF_PRESENT_STYLE=( execution fg=gray divider rail
   'syntax.added' 'fg=green,bg=darkgreen'
   'syntax.removed' 'fg=red,bg=darkred' )
 width 20
@@ -194,6 +194,13 @@ typeset pad=${(l:14:)""}
 assert_tail $'⛭ edit_file path\n│ @@ -1 +1 @@\n│ -old'"$pad"$'\n╰ +new'"$pad"
 has_style 'fg=red,bg=darkred' || fail 'diff removal was not highlighted'
 has_style 'fg=green,bg=darkgreen' || fail 'diff addition was not highlighted'
+has_style 'fg=gray' || fail 'execution text lost its base style'
+# The rail keeps its own style; the background starts at the line itself.
+typeset removed='fg=red,bg=darkred'
+integer at
+at=${SF_PRESENT_VIEWPORT_HIGHLIGHTS[(Ie)$removed]}
+assert_equal '-' "${SF_PRESENT_VIEWPORT_TEXT[SF_PRESENT_VIEWPORT_HIGHLIGHTS[at - 2] + 1]}"
+assert_equal rail "$SF_PRESENT_VIEWPORT_HIGHLIGHTS[at - 6]"
 
 # Output that merely resembles a diff stays plain.
 sf_tui_reset
@@ -202,6 +209,22 @@ sf_tui_action execution_end plain tool $'shell · run\n-old\n+new'
 view 20
 assert_tail $'⛭ shell · run\n│ -old\n╰ +new'
 ! has_style 'fg=red,bg=darkred' || fail 'plain execution received diff highlighting'
+SF_PRESENT_STYLE=()
+
+# A sandbox bypass badge leads the identity row in its outcome's style.
+sf_tui_reset
+SF_PRESENT_STYLE=( permission fg=blue error fg=red )
+sf_tui_action execution_update call_1 tool 'shell · pwd' '' requested
+view
+assert_tail $'⛭ [sandbox bypass requested] shell · pwd\n╰ ⠃'
+has_style 'fg=blue,bold' || fail 'requested bypass badge was not styled'
+sf_tui_action execution_end call_1 tool 'shell · pwd' '' '' denied
+view
+assert_tail $'⛭ [sandbox bypass denied] shell · pwd\n╰'
+typeset badge='fg=red,bold'
+at=${SF_PRESENT_VIEWPORT_HIGHLIGHTS[(Ie)$badge]}
+(( at )) || fail 'denied bypass badge was not styled'
+assert_equal 23 $(( SF_PRESENT_VIEWPORT_HIGHLIGHTS[at - 1] - SF_PRESENT_VIEWPORT_HIGHLIGHTS[at - 2] ))
 SF_PRESENT_STYLE=()
 
 # Errors settle a pending execution and close the turn.

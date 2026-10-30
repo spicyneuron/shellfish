@@ -64,28 +64,28 @@ message_end' "$REPLY"
 project live \
   '{"type":"_draft","id":"call_1","name":"shell","user_text":"shell · make test","user_preview_lines":2}' \
   '{"type":"tool_result","id":"call_1","name":"shell","input":{"command":"make test"},"exit_code":0,"user_text":"shell · make test\nok","model_text":"ok","user_preview_lines":"full"}'
-assert_equal 'execution_update | call_1 | tool | shell · make test | 2
+assert_equal 'execution_update | call_1 | tool | shell · make test | 2 |
 execution_end | call_1 | tool | shell · make test
-ok | full' "$REPLY"
+ok | full |  |' "$REPLY"
 
 # No template can hide a sandbox bypass request or its outcome.
 project live \
   '{"type":"_draft","id":"call_2","name":"shell","sandbox_bypass":"requested"}' \
   '{"type":"_draft","id":"call_2","name":"shell","sandbox_bypass":"approved"}' \
   '{"type":"tool_result","id":"call_2","name":"shell","input":{},"exit_code":0,"sandbox_bypass":"approved"}'
-assert_equal 'execution_update | call_2 | tool | [sandbox bypass requested] shell | default
-execution_update | call_2 | tool | [sandbox bypass approved] shell | default
-execution_end | call_2 | tool | [sandbox bypass approved] shell | default' "$REPLY"
+assert_equal 'execution_update | call_2 | tool | shell | default | requested
+execution_update | call_2 | tool | shell | default | approved
+execution_end | call_2 | tool | shell | default |  | approved' "$REPLY"
 project load \
   '{"type":"tool_result","id":"call_2","name":"shell","input":{},"exit_code":126,"sandbox_bypass":"denied"}'
-assert_equal 'execution_end | call_2 | tool | [sandbox bypass denied] shell | default' "$REPLY"
+assert_equal 'execution_end | call_2 | tool | shell | default |  | denied' "$REPLY"
 
 # Normal tool execution carries no bypass badge.
 project live \
   '{"type":"_draft","id":"call_3","name":"skill","user_text":"Skill code-principles"}' \
   '{"type":"tool_result","id":"call_3","name":"skill","input":{"name":"code-principles"},"exit_code":0,"user_text":"Skill code-principles"}'
-assert_equal 'execution_update | call_3 | tool | Skill code-principles | default
-execution_end | call_3 | tool | Skill code-principles | default' "$REPLY"
+assert_equal 'execution_update | call_3 | tool | Skill code-principles | default |
+execution_end | call_3 | tool | Skill code-principles | default |  |' "$REPLY"
 
 # Hook context is reference material; a hook notice speaks only to the reader.
 # Drafts and results carry their own preview hints.
@@ -94,7 +94,7 @@ project live \
   '{"type":"hook_result","lifecycle":"pre_tool_use","id":"1","user_text":"guard · ok","user_preview_lines":"full"}' \
   '{"type":"hook_result","lifecycle":"session_start","id":"2","user_text":"project · read","model_text":"context"}' \
   '{"type":"hook_result","lifecycle":"session_start","id":"3","model_text":"Git branch: main"}'
-assert_equal 'execution_update | 1 | notice | guard · checking | 1
+assert_equal 'execution_update | 1 | notice | guard · checking | 1 |
 execution_end | 1 | notice | guard · ok | full | agent
 execution_end | 2 | context | project · read | default | system
 execution_end | 3 | context |  | default | system' "$REPLY"
