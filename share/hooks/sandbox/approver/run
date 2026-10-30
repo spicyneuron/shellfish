@@ -177,71 +177,32 @@ done <<<"$selection"
 [[ -z $model ]] || overrides=( --model "$model"
   --model '{"request":{"response_schema":null}}' --model "$settings" )
 
-# The first user message retains startup context. Later messages are admitted
+# Records through the first user message stay pinned. Later records are admitted
 # backward without gaps, then emitted chronologically.
-records=$(jq -cs --argjson request "$request" '
-  def render_context:
-    if type == "string" then .
-    else
-      "<hook name=\"" + (.lifecycle | @html) + "\">\n" +
-      ([.texts[] | if endswith("\n") then . else . + "\n" end] | add) + "</hook>"
-    end;
-  def join_context($parts): [$parts[] | select(. != "") | render_context] | join("\n\n");
-  def context_message($context; $text):
-    {type:"user",content:[{type:"text",text:join_context([$context[], $text])}]};
-  # A review reads text, so images are named rather than sent.
-  def result_text:
-    .model_text // ([.model_content[]? |
-      if .type == "image" then "[image omitted]" else .text end] | join("\n\n"));
-  def add_context($record):
-    ([to_entries[] | select(.value.lifecycle? == $record.lifecycle) | .key] | first) as $index |
-    if $index == null then . + [{lifecycle:$record.lifecycle,texts:[$record.model_text]}]
-    else .[$index].texts += [$record.model_text] end;
-  . as $records |
-  (reduce $records[1:][] as $record
-    ({messages:[],context:[],calls:[],response:null};
-      if $record.type == "state_update" then .
-      elif $record.type == "hook_result" then
-        if ($record.model_text // "") == "" then . else .context |= add_context($record) end
-      elif $record.type == "error" then .calls=[] | .response=null
-      elif $record.type == "user" then
-        .messages += [context_message(.context;$record.content[0].text)] | .context=[]
-      elif $record.type == "assistant" then
-        (if (.context | length) == 0 then .
-         else .messages += [context_message(.context;"")] | .context=[] end) |
-        ([$record.content[] | select(.type == "tool_call")]) as $calls |
-        if ($calls | length) == 0 then .messages += [$record | del(.usage)]
-        else .calls=$calls | .response=$record end
-      elif $record.type == "tool_result" then
-        .calls[0] as $call |
-        (if .response == null then . else
-          .messages += [.response | del(.usage) |
-            .content=[.content[] | select(.type != "tool_call")]] | .response=null end) |
-        .messages += [
-          {type:"tool_call",id:$call.id,name:$call.name,input:$call.input},
-          {type:"tool_result",call_id:$call.id,name:$call.name,
-            exit_code:$record.exit_code,content:join_context([.context[],($record | result_text)])}
-        ] | .context=[] | .calls=.calls[1:]
-      else . end)) as $state |
-  ($state.messages + if ($state.context | length) == 0 then []
-    else [context_message($state.context;"")] end | to_entries) as $entries |
-  ([ $entries[] | select(.value.type == "user") | .key ] | first) as $first_user |
+records=$(jq -ces --argjson request "$request" '
+  .[0] as $header |
+  [.[1:][] |
+    select(.type != "state_update") |
+    select(.type != "hook_result" or has("model_text") or has("action")) |
+    (if .type == "error" then . else del(.user_text, .user_preview_lines) end) |
+    if .type == "assistant" then
+      del(.usage) | .content |= map(select(.type != "reasoning"))
+    elif .type == "tool_result" and has("model_content") then
+      .model_content |= map(
+        if .type == "image" then {type:"text",text:"[image omitted]"} else . end)
+    else . end
+  ] as $timeline |
+  ($timeline | map(.type) | index("user")) as $first_user |
   select($first_user != null) |
   {
-    system_message:$records[0].profile.system[0].text,
-    startup_context:$entries[$first_user].value,
+    system_message:$header.profile.system[0].text,
+    startup_context:$timeline[:$first_user + 1],
     target_tool_call:{type:"tool_call",id:$request.tool.id,
       name:$request.tool.name,input:$request.tool.input},
-    candidates:([
-      ($entries[] | select(.key > $first_user) | .value),
-      ($state.response | select(. != null)) |
-      if .type == "assistant" then
-        {type,stop,content:[.content[] | select(.type == "text")]}
-      else . end
-    ] | reverse)
+    candidates:($timeline[$first_user + 1:] | reverse)
   }
 ' "$SHELLFISH_SESSION" 2>/dev/null) ||
-  permission_defer 'Permission review could not project the active context.'
+  permission_defer 'Permission review could not filter the active context.'
 
 base=$(jq -cn --argjson records "$records" '
   {startup_context:$records.startup_context,recent_timeline:[],

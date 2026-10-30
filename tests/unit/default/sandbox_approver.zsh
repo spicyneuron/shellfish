@@ -36,13 +36,16 @@ sf_test_session "$session"
 sf_session_append "$session" '{"type":"hook_result","lifecycle":"session_start","id":"1","model_text":"<context script=\"project/instructions\">\nstartup constraint\n</context>"}'
 sf_session_append "$session" '{"type":"user","content":[{"type":"text","text":"opening request"}]}'
 sf_session_append "$session" '{"type":"assistant","stop":"end","content":[{"type":"text","text":"opening answer"}]}'
-sf_session_append "$session" '{"type":"hook_result","lifecycle":"stop","id":"2","model_text":"retry constraint","action":"deny"}'
+sf_session_append "$session" '{"type":"hook_result","lifecycle":"stop","id":"2","model_text":"retry constraint","action":"deny","reason":"Check the constraint."}'
 sf_session_append "$session" '{"type":"assistant","stop":"end","content":[{"type":"text","text":"revised answer"}]}'
 sf_session_append "$session" '{"type":"user","content":[{"type":"text","text":"run the local setup"}]}'
-sf_session_append "$session" '{"type":"assistant","stop":"tool_calls","content":[{"type":"text","text":"I will inspect it."},{"type":"tool_call","id":"call_6","name":"shell","input":{"command":"inspect"}}]}'
-sf_session_append "$session" '{"type":"tool_result","id":"call_6","name":"shell","input":{"command":"inspect"},"exit_code":0,"model_content":[{"type":"text","text":"inspection"},{"type":"image","url":"data:image/png;base64,iVBORw0KGgo="}]}'
+sf_session_append "$session" '{"type":"assistant","stop":"tool_calls","content":[{"type":"text","text":"I will inspect it."},{"type":"tool_call","id":"call_6","name":"shell","input":{"command":"inspect"}}],"usage":{"input_tokens":100,"output_tokens":20}}'
+sf_session_append "$session" '{"type":"tool_result","id":"call_6","name":"shell","input":{"command":"inspect"},"exit_code":0,"user_text":"display only","user_preview_lines":2,"model_content":[{"type":"text","text":"inspection"},{"type":"image","url":"data:image/png;base64,iVBORw0KGgo="}]}'
+sf_session_append "$session" '{"type":"hook_result","lifecycle":"post_tool_use","id":"3","model_text":"inspection constraint","user_text":"display only"}'
+sf_session_append "$session" '{"type":"state_update","name":"inspection","value":"hidden state"}'
+sf_session_append "$session" '{"type":"hook_result","lifecycle":"post_tool_use","id":"4","user_text":"display only"}'
 sf_session_append "$session" '{"type":"assistant","stop":"tool_calls","content":[{"type":"reasoning","text":"private","opaque":{"secret":"value"}},{"type":"text","text":"I will run it."},{"type":"tool_call","id":"call_7","name":"shell","input":{"command":"setup","request_sandbox_bypass":true,"sandbox_bypass_reason":"needed"}}]}'
-sf_session_append "$session" '{"type":"hook_result","lifecycle":"permission_request","id":"3","model_text":"permission context"}'
+sf_session_append "$session" '{"type":"hook_result","lifecycle":"permission_request","id":"5","model_text":"permission context"}'
 assert_canonical_session "$session"
 request='{"tool_input":{"command":"setup","request_sandbox_bypass":true,"sandbox_bypass_reason":"needed"}}'
 
@@ -94,18 +97,35 @@ jq -e -s --arg tool_input "$(jq -c '.tool_input' <<<"$request")" \
   ($prompt | endswith("\n\n" + $policy.reason)) and
   [.[].type] == ["session","user"] and
   $context.system_message == "fixed system" and
-  $context.startup_context.content[0].text ==
-    "<hook name=\"session_start\">\n<context script=\"project/instructions\">\nstartup constraint\n</context>\n</hook>\n\nopening request" and
+  $context.startup_context == [
+    {type:"hook_result",lifecycle:"session_start",id:"1",
+      model_text:"<context script=\"project/instructions\">\nstartup constraint\n</context>"},
+    {type:"user",content:[{type:"text",text:"opening request"}]}
+  ] and
   $context.target_tool_call == {type:"tool_call",id:"call_7",name:"shell",input:($tool_input | fromjson)} and
   ($context.recent_timeline | map(.type)) ==
-    ["assistant","user","assistant","user","assistant","tool_call","tool_result","user","assistant"] and
-  ($context.recent_timeline[1].content[0].text | contains("retry constraint")) and
-  ($context.recent_timeline[-2].content[0].text | contains("permission context")) and
-  $context.recent_timeline[6].content == "inspection\n\n[image omitted]" and
+    ["assistant","hook_result","assistant","user","assistant","tool_result","hook_result","assistant","hook_result"] and
+  $context.recent_timeline[1] == {type:"hook_result",lifecycle:"stop",id:"2",
+    model_text:"retry constraint",action:"deny",reason:"Check the constraint."} and
+  $context.recent_timeline[4].content[1] ==
+    {type:"tool_call",id:"call_6",name:"shell",input:{command:"inspect"}} and
+  $context.recent_timeline[5] == {type:"tool_result",id:"call_6",name:"shell",
+    input:{command:"inspect"},exit_code:0,model_content:[
+      {type:"text",text:"inspection"},{type:"text",text:"[image omitted]"}]} and
+  $context.recent_timeline[6] == {type:"hook_result",lifecycle:"post_tool_use",id:"3",
+    model_text:"inspection constraint"} and
+  $context.recent_timeline[7].content == [
+    {type:"text",text:"I will run it."},$context.target_tool_call] and
+  $context.recent_timeline[8] == {type:"hook_result",lifecycle:"permission_request",id:"5",
+    model_text:"permission context"} and
+  all($context.recent_timeline[]; has("usage") | not) and
   ($context | tostring | contains("base64") | not) and
   ($context | tostring | contains("private") | not) and
-  ($context | tostring | contains("secret") | not)
-' "$captured" >/dev/null || fail 'permission review projected the wrong transcript'
+  ($context | tostring | contains("secret") | not) and
+  ($context | tostring | contains("display only") | not) and
+  ($context | tostring | contains("hidden state") | not)
+' "$captured" >/dev/null || fail 'permission review filtered the wrong transcript'
+jq -rs '.[1].content[0].text' "$captured" >"$tmp/context.json"
 jq -e '.request.model == "test-model" and .request.max_output_tokens == 4096 and
   .request.response_schema.additionalProperties == false and .request.temperature == 0.2 and
   (.request.response_schema.properties | keys) == ["authorization","reason","risk"] and
@@ -115,6 +135,74 @@ assert_canonical_session "$captured"
 assert_equal "$before" "$(shasum <"$session")" 'review changed the parent session'
 
 typeset parent_session=$session
+
+# Post-tool notes stay separate across settled and interrupted tool batches.
+typeset batch
+for batch in settled interrupted; do
+  session="$tmp/$batch.jsonl"
+  jq -c --arg batch "$batch" '
+    if .type == "assistant" and any(.content[]; .id? == "call_6") then
+      .content += [{type:"tool_call",id:"call_6b",name:"shell",input:{command:"inspect more"}}]
+    elif .type == "hook_result" and .id == "4" then
+      .,
+      (if $batch == "settled" then
+        {type:"tool_result",id:"call_6b",name:"shell",input:{command:"inspect more"},
+          exit_code:0,model_text:"second inspection"}
+      else
+        {type:"error",user_text:"Inspection interrupted."},
+        {type:"user",content:[{type:"text",text:"continue setup"}]}
+      end)
+    else . end
+  ' "$parent_session" >"$session"
+  assert_canonical_session "$session"
+  run_review valid
+  jq -es --arg batch "$batch" '
+    (.[1].content[0].text | fromjson | .recent_timeline) as $timeline |
+    $timeline[4].content[-1] ==
+      {type:"tool_call",id:"call_6b",name:"shell",input:{command:"inspect more"}} and
+    $timeline[5].id == "call_6" and
+    $timeline[6] == {type:"hook_result",lifecycle:"post_tool_use",id:"3",
+      model_text:"inspection constraint"} and
+    if $batch == "settled" then
+      $timeline[7] == {type:"tool_result",id:"call_6b",name:"shell",
+        input:{command:"inspect more"},exit_code:0,model_text:"second inspection"} and
+      ([$timeline[] | select(.type == "user")] | length) == 1
+    else
+      $timeline[7] == {type:"error",user_text:"Inspection interrupted."} and
+      $timeline[8] == {type:"user",content:[{type:"text",text:"continue setup"}]} and
+      ([$timeline[] | select(.type == "tool_result") | .id] == ["call_6"])
+    end
+  ' "$captured" >/dev/null || fail "permission review changed $batch batch records"
+done
+
+# Optional history is a chronological suffix, never skipping a record to fit.
+session="$tmp/budget.jsonl"
+jq -c '
+  if .type == "assistant" and .content[0].text? == "revised answer" then
+    .content[0].text = ("é" * 64000)
+  else . end
+' "$parent_session" >"$session"
+run_review valid
+jq -es --slurpfile context "$tmp/context.json" '
+  .[0].profile.system[0].text as $prompt |
+  (.[1].content[0].text | fromjson) as $actual |
+  $actual == ($context[0] | .recent_timeline = .recent_timeline[3:]) and
+  (($prompt | utf8bytelength) + ($actual | tojson | utf8bytelength)) <= 131072
+' "$captured" >/dev/null || fail 'permission review did not budget whole records chronologically'
+
+# Startup records cannot be dropped to fit the input budget.
+session="$tmp/startup-budget.jsonl"
+jq -c '
+  if .type == "hook_result" and .lifecycle == "session_start" then
+    .model_text = ("é" * 64000)
+  else . end
+' "$parent_session" >"$session"
+run_review valid
+jq -e '(has("action") | not) and .state_update[0].value ==
+  {content:null,reason:"Required permission review context exceeds the review context limit."}
+' "$control" >/dev/null || fail 'permission review dropped required startup records'
+[[ ! -e $captured && ! -e $sent ]] || fail 'oversized startup context called the provider'
+
 session="$tmp/default-review.jsonl"
 jq -c 'if .type == "session" then del(.model.config) else . end' \
   "$parent_session" >"$session"
@@ -246,12 +334,13 @@ jq -e '.action == "allow" and
     "100% likely authorized." and
   (.state_update[0].value.content | fromjson | .model) == "d"
 ' "$control" >/dev/null || fail 'decision review did not allow a covered call'
-jq -e --slurpfile policy "$hook/policy.json" '
+jq -e --slurpfile policy "$hook/policy.json" --slurpfile context "$tmp/context.json" '
   $policy[0] as $policy |
   .system == $policy.preamble and .endpoint == "https://decide.invalid" and
   (.input | length) == 1 and .input[0].type == "json" and
   .input[0].data.target_tool_call.id == "call_7" and
   .input[0].data.system_message == "fixed system" and
+  .input[0].data == $context[0] and
   .questions == {
     risk:{type:"score",instructions:$policy.risk.instructions,levels:$policy.risk.levels},
     authorization:{type:"score",instructions:$policy.authorization.instructions,
