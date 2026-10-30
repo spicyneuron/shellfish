@@ -1,3 +1,5 @@
+Let's update the docs. Should probably split HARNESS into PROFILE and MODELS. Anything else to consider?
+
 # Sandbox
 
 Considering replacing fence with nono or srt:
@@ -9,7 +11,3 @@ The goal is to keep the existing deny then whitelist approach, but give the user
 Add local sandbox exceptions to allow tests to run
 - tests cannot create .env and .shellfish
 - probably python
-
-# Feature
-
-Goal is to add multimodal image support to read_file. Eventually will want the user to be able to copy and paste and image too, but that doesn't have to ship together. Let's discuss options.
