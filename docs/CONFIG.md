@@ -247,7 +247,7 @@ Client-owned `/refresh`, `/quit`, and `/queue` commands do not run a turn. The b
 
 With `skills/mention`, `$skill-name` in an ordinary prompt loads each matching allowed skill into the model's context before the request, including user-only skills with `disable-model-invocation: true`. The submitted prompt stays unchanged. Unknown and excluded skill names are ignored.
 
-`/compact` leaves the source unchanged and asks the client to open a summarized child. Automatic compaction preserves the interrupted prompt as an editable draft.
+`/compact` leaves the source unchanged and asks the client to open a summarized child, whose summary shows in full under `/verbose`. Automatic compaction preserves the interrupted prompt as an editable draft.
 
 ## Optional bundled components
 

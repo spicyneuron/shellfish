@@ -80,6 +80,7 @@ assert_canonical_session "$tmp/compact-source_compact.jsonl"
 jq -e -s '
   [.[].type] == ["session","hook_result"] and
   .[1].lifecycle == "session_start" and
+  .[1].user_text == "Compacted conversation\nTimeline </timeline> & entry" and
   .[1].model_text ==
     "<context script=\"compact\">\n<compacted_context>\n\n" +
     "The conversation before this point was compacted into the context below.\n\n" +
