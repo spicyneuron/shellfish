@@ -16,26 +16,27 @@ if [[ -n $target && ( $target != <1-> || ${#target} -gt 9 ) ]]; then
 fi
 target=${target:-0}
 
-resolved=$(jq -j -s --argjson target "$target" --argjson rewind "$rewind" '
+# The cut restores the moment before the prompt was sent: notices that awaited
+# it stay, and output from hooks that ran on its submission goes.
+resolved=$(jq -j -s -L "${0:A:h:h:h}/lib" --argjson target "$target" --argjson rewind "$rewind" '
+  include "sections";
   . as $records |
-  (reduce ($records | to_entries[] |
-      select(.value.type == "user" or .value.type == "assistant")) as $entry
-    ([];
-      if $entry.value.type == "user" then
-        . + [{type:"user",index:$entry.key,draft:$entry.value.content[0].text}]
-      elif length == 0 or .[-1].type != "assistant" then
-        . + [{type:"assistant"}]
-      else . end)) as $sections |
-  if ($sections | any(.type == "user") | not) then error("empty")
+  def cut:
+    if .prompt == null then [($records | length), "", 0]
+    else .prompt as $prompt |
+      [($prompt | until(. <= 1 or ($records[. - 1] |
+          .type != "hook_result" or .lifecycle != "user_prompt_submit" or
+          .action == "deny"); . - 1)),
+       $records[$prompt].content[0].text, 1]
+    end;
+  sections as $sections |
+  ([$sections[] | select(.role == "user")]) as $users |
+  if $users == [] then error("empty")
   elif $target == 0 and $rewind == 1 then
-    ([$sections[] | select(.type == "user")] | last | [.index, .draft, 1])
+    ([$users[] | select(.prompt != null)] | last // {prompt:null}) | cut
   elif $target == 0 then [($records | length), "", 0]
   elif $target > ($sections | length) then error("missing")
-  elif $sections[$target - 1].type == "user" then
-    ($sections[$target - 1] | [.index, .draft, 1])
-  else ([$sections[$target:][] | select(.type == "user")] | first) as $next |
-    if $next == null then [($records | length), "", 0]
-    else [$next.index, $next.draft, 1] end
+  else (first($sections[$target - 1:][] | select(.role == "user")) // {prompt:null}) | cut
   end | "\(.[0])\u0000\(.[1])\u0000\(.[2])\u0000"
 ' "$SHELLFISH_SESSION" 2>/dev/null) || {
   print -ru2 -- "${(C)name} target does not exist."

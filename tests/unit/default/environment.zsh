@@ -170,6 +170,53 @@ submit '/shell printf '\''${output.stderr}'\''; exit 7'
 jq -e -s 'map(.type) == ["session","hook_result"] and
   (.[1].model_text | contains("The user ran this shell command:\n$ printf") and contains("${output.stderr}") and contains("(exit 7)")) and
   (.[1].user_text | startswith("**Shell** printf"))' "$command_session" >/dev/null
+
+# Copy and fork address the sections the transcript shows. Command notices
+# ride with the next prompt; output from hooks that ran on a submission is
+# dropped by a cut so that resending runs them again.
+typeset turns="$tmp/turns.jsonl" clip="$tmp/clip" cut_actions="$tmp/turn-actions" cut
+mkdir -p "$tmp/clip-bin"
+print -r -- "#!/bin/sh
+cat >'$clip'" >"$tmp/clip-bin/pbcopy"
+chmod +x "$tmp/clip-bin/pbcopy"
+{
+  cat "$tmp/command-header"
+  print -r -- '{"type":"user","content":[{"type":"text","text":"one"}]}'
+  print -r -- '{"type":"assistant","content":[{"type":"text","text":"reply one"}],"stop":"end"}'
+  print -r -- '{"type":"hook_result","lifecycle":"user_prompt_submit","id":"h1","user_text":"help","action":"deny"}'
+  print -r -- '{"type":"hook_result","lifecycle":"user_prompt_submit","id":"h2","model_text":"context"}'
+  print -r -- '{"type":"user","content":[{"type":"text","text":"two"}]}'
+  print -r -- '{"type":"assistant","content":[{"type":"text","text":"reply two"}],"stop":"end"}'
+  print -r -- '{"type":"hook_result","lifecycle":"user_prompt_submit","id":"h3","user_text":"Copied.","action":"deny"}'
+} >"$turns"
+copy_section() {
+  print -rn -- "$1" | PATH="$tmp/clip-bin:$PATH" SHELLFISH_SESSION="$turns" \
+    "$ROOT/share/commands/copy/run" 2>&1
+}
+: >"$clip"
+[[ $(copy_section 3) == Copied. && $(<$clip) == two ]] || fail 'copy missed the prompt after a notice'
+[[ $(copy_section '') == Copied. && $(<$clip) == 'reply two' ]] ||
+  fail 'copy without a target did not skip a trailing notice'
+[[ $(copy_section 5) == 'Nothing to copy.' ]] || fail 'copy of a pending notice copied text'
+[[ $(copy_section 6) == 'copy target does not exist' ]] || fail 'copy invented a section'
+cut_at() {
+  print -rn -- "$2" | SHELLFISH_SESSION="$turns" SHELLFISH_EXECUTABLE=shellfish \
+    SHELLFISH_TURN_STATE="$tmp" "$ROOT/share/commands/fork/run" $1 3>|"$cut_actions" >/dev/null
+  cut=$(jq -r '.argv[2]' "$cut_actions")
+}
+cut_at '' 3
+jq -e -s '[.[1:][] | .user_text // .content[0].text] == ["one","reply one","help"]' "$cut" >/dev/null &&
+  jq -e '.argv[3:] == ["--draft","two"]' "$cut_actions" >/dev/null ||
+  fail 'fork did not restore the moment before the prompt'
+rm -f -- "$cut"
+cut_at '' 4
+[[ $(jq -s length "$cut") == 8 ]] && jq -e '.argv | length == 3' "$cut_actions" >/dev/null ||
+  fail 'fork before a pending notice did not keep the whole session'
+rm -f -- "$cut"
+cut_at --rewind ''
+jq -e -s 'length == 4 and .[-1].user_text == "help"' "$turns" >/dev/null &&
+  jq -e '.argv[3:] == ["--draft","two"]' "$cut_actions" >/dev/null ||
+  fail 'rewind did not restore the last prompt'
 # Bundled sandbox policy distinguishes absolute and home-relative grants.
 typeset sandbox="$ROOT/share/commands/sandbox/run" sandbox_session="$tmp/sandbox.jsonl"
 mkdir -p "$tmp/project/dir" "$tmp/home/share"

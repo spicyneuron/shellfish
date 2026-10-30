@@ -11,29 +11,22 @@ if [[ -n $target && ( $target != <1-> || ${#target} -gt 9 ) ]]; then
 fi
 target=${target:-0}
 
-text=$(jq -j -s --argjson target "$target" '
-  reduce .[] as $record
-    ({sections:[], current:null};
-     if $record.type == "user" then
-       .sections += [{chunks:[([$record.content[] | select(.type == "text") | .text] | join(""))]}] |
-       .current = "user"
-     elif $record.type == "assistant" then
-       [$record.content[] | select(.type == "text") | .text] as $chunks |
-       if .current == "agent" then
-         .sections[-1].chunks += $chunks
-       else
-         .sections += [{chunks:$chunks}] | .current = "agent"
-       end
-     else . end) |
-  . as $state |
-  (if $target == 0 then ($state.sections | length) else $target end) as $id |
-  if $id < 1 or $id > ($state.sections | length) then error("section does not exist")
-  else ($state.sections[$id - 1].chunks | join("\n\n")) + "\u0000" end
+text=$(jq -j -s -L "${0:A:h:h:h}/lib" --argjson target "$target" '
+  include "sections";
+  sections as $sections |
+  # Without a target, skip trailing notices such as an earlier copy confirmation.
+  (if $target == 0 then
+     ([$sections | to_entries[] | select(.value.texts | any(. != "")) | .key + 1] | last // 0)
+   else $target end) as $id |
+  if $id < 1 or $id > ($sections | length) then error("section does not exist")
+  else ($sections[$id - 1].texts | join("\n\n")) + "\u0000" end
 ' "$SHELLFISH_SESSION" 2>/dev/null) || {
   print -u2 -r -- 'copy target does not exist'
   exit 0
 }
 text=${text%$'\0'}
+# A section holding only notices that await the next prompt has no text.
+[[ -n $text ]] || { print -u2 -r -- 'Nothing to copy.'; exit 0 }
 
 if (( $+commands[pbcopy] )); then
   copier=( pbcopy )
