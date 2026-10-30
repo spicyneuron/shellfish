@@ -548,6 +548,12 @@ case $(jq -r .command) in
       "$(head -c 30000 /dev/zero | base64 | tr -d '\n')" >&3
     ;;
   remote) print -r -u3 -- '{"content":[{"type":"image","url":"https://example.com/a.png"}]}' ;;
+  flood)
+    repeat 2 printf '{"content":[{"type":"image","url":"data:image/png;base64,%s"}]}\n' \
+      "$(head -c 30000 /dev/zero | base64 | tr -d '\n')" >&3
+    : >"$TOOL_MARKER"
+    sleep 30
+    ;;
 esac
 ZSH
 chmod +x "$protocol"
@@ -600,6 +606,26 @@ for mode in huge twice; do
     .exit_code == 1 and .model_text == "tool result exceeds content limit"' \
     <"$stream" >/dev/null || fail "oversized $mode content did not fail the call"
 done
+
+# Cancelling a call already past the content limit still cancels the turn.
+typeset flood_marker="$tmp/tool-flood"
+session="$tmp/protocol-flood.jsonl"
+sf_test_session "$session"
+jq -cn '{type:"user",content:[{type:"text",text:"protocol"}]}' |
+  SHELLFISH_MAX_CONTENT_BYTES=65536 SF_TEST_PROVIDER_TOOL_CALL=1 \
+  SF_TEST_PROVIDER_TOOL_COMMAND=flood TOOL_MARKER=$flood_marker \
+  "$ROOT/bin/shellfish" run --jsonl --session "$session" >"$stream" &
+integer flood_pid=$! flood_waited=0 flood_status=0
+while (( flood_waited++ < 100 )) && [[ ! -e $flood_marker ]]; do sleep 0.02; done
+(( flood_waited <= 100 )) || fail 'flooding tool did not reach its wait'
+kill -USR1 "$flood_pid" 2>/dev/null
+wait "$flood_pid" || flood_status=$?
+(( flood_status == 130 )) || fail "cancelled overflow returned status $flood_status"
+jq -e -s '[.[] | select(.type == "tool_result") | .model_text] == ["tool call interrupted"] and
+  .[-1] == {type:"error",user_text:"Cancelled."} and
+  ([.[] | select(.type == "assistant")] | length) == 1' "$session" >/dev/null ||
+  fail 'cancelled overflow did not settle as a cancellation'
+assert_canonical_session "$session"
 
 # Content parts follow stdout as model content and reach the provider as parts.
 session="$tmp/protocol-image.jsonl"

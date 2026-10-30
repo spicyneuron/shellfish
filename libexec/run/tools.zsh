@@ -117,7 +117,8 @@ sf_run_tool_execute() {
   }
   sf_run_component_execute "$capture" "${cwd:A}" "${stdin:A}" "$max_capture" "$max_content" \
     sf_run_tool_line "${process_command[@]}" || { SF_RUN_TOOL_ERROR=$REPLY; return 1; }
-  (( content_bytes <= max_content )) || reply[1]=overflow
+  # Only a completed call can overflow, so interruption and invalid data win.
+  [[ $reply[1] != ok ]] || (( content_bytes <= max_content )) || reply[1]=overflow
   case $reply[1] in
     (interrupted) return $reply[2] ;;
     (invalid) SF_RUN_TOOL_ERROR='tool returned invalid control data'; return 1 ;;
