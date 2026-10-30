@@ -66,13 +66,18 @@ else
 fi
 ZSH
 chmod +x "$provider/run"
-sf_test_profile child '{}'
+# The child profile names this tool, which a subagent must not receive.
+sf_test_profile child "{\"tools\":[\"$agent\"]}"
+sf_test_model alt "$(jq -cn --arg provider "$provider" \
+  '{provider:$provider,endpoint:"https://example.invalid/test",request:{model:"alt-model"}}')"
 print -rl -- '#!/usr/bin/env zsh' 'exit 0' | sf_test_hook "$tmp/stop-hook" '{"on":"stop"}'
 sf_test_profile child-stop "{\"hooks\":[\"$tmp/stop-hook\"]}"
 
 sf_test_frozen_profile
 SF_TEST_MODEL=$(jq -c --arg provider "$provider" '.provider=$provider' <<<"$SF_TEST_MODEL")
-SF_TEST_PROFILE=$(jq -c --arg tool "$agent" '.tools=[$tool]' <<<"$SF_TEST_PROFILE")
+SF_TEST_PROFILE=$(jq -c --arg tool "$agent" '.tools=[$tool] |
+  .config.subagent={profiles:{child:"Test child","child-stop":"Test child with a stop hook"},
+    models:{alt:"Alternate test model"}}' <<<"$SF_TEST_PROFILE")
 sf_test_session "$session"
 sf_test_run 'parent task' "$session" >"$stream" || fail 'parent tool turn failed'
 assert_canonical_session "$session"
@@ -177,7 +182,7 @@ for value in null false 1 '[]' '"text"' '{"unknown":1}' '{"max_active":null}' \
   grep -q 'config.subagent' "$tmp/limit.err"
   [[ ! -s "$tmp/refused-state" ]] || fail 'invalid configuration wrote state'
 done
-jq -c 'if .type == "session" then .profile.config.subagent={} else . end' \
+jq -c 'if .type == "session" then .profile.config.subagent |= del(.max_active) else . end' \
   "$session" >"$limited_session"
 # Held locks stand in for running subagents.
 zmodload zsh/system || fail 'cannot load session locking'
@@ -338,7 +343,7 @@ fork_id=$(jq -r -s '[.[] | select(.type == "state_update" and (.name | startswit
 fork_child="$tmp/.subagent-$fork_id.jsonl"
 assert_canonical_session "$fork_child"
 jq -e -s --slurpfile parent "$fork_parent" '
-  .[0] == $parent[0] and
+  .[0] == ($parent[0] | .profile.tools = []) and
   (.[1:4] == $parent[1:4]) and
   .[4] == {type:"state_update",name:"subagent",value:true} and
   (.[5:] | map(.type)) == ["user","assistant"] and
@@ -379,8 +384,8 @@ fi
 # A model-chosen profile cannot be a path or leave profiles/.
 for profile in "$tmp/evil.jsonc" '~/evil.jsonc' '@profiles/coding.jsonc' '../evil'; do
   if jq -cn --arg profile "$profile" '{operation:"start",profile:$profile,task:"bad"}' |
-      SHELLFISH_SESSION="$fork_parent" SHELLFISH_EXECUTABLE="$ROOT/bin/shellfish" \
-      "$agent/run" 3>/dev/null >/dev/null 2>&1; then
+      SHELLFISH_SESSION="$fork_parent" SHELLFISH_CONFIG="$(sf_test_session_config "$fork_parent")" \
+      SHELLFISH_EXECUTABLE="$ROOT/bin/shellfish" "$agent/run" 3>/dev/null >/dev/null 2>&1; then
     fail "subagent accepted profile reference: $profile"
   fi
 done
@@ -389,6 +394,34 @@ if print -r -- '{"operation":"start","fork":false,"task":"bad"}' |
     "$agent/run" 3>/dev/null >/dev/null 2>&1; then
   fail 'false fork origin was accepted'
 fi
+
+# list reports the configured choices, and only those can start.
+typeset choices model_result model_id
+choices=$(print -r -- '{"operation":"list"}' |
+  SHELLFISH_SESSION="$fork_parent" SHELLFISH_CONFIG="$(sf_test_session_config "$fork_parent")" \
+  SHELLFISH_EXECUTABLE="$ROOT/bin/shellfish" "$agent/run" 3>/dev/null) || fail 'list failed'
+jq -e '. == {profiles:{child:"Test child","child-stop":"Test child with a stop hook"},
+  models:{alt:"Alternate test model"}}' <<<"$choices" >/dev/null ||
+  fail 'list did not report the configured choices'
+for input in '{"operation":"start","profile":"unlisted","task":"bad"}' \
+    '{"operation":"start","profile":"child","model":"unlisted","task":"bad"}' \
+    '{"operation":"start","fork":true,"model":"alt","task":"bad"}' \
+    '{"operation":"list","task":"bad"}'; do
+  if print -r -- "$input" |
+      SHELLFISH_SESSION="$fork_parent" SHELLFISH_CONFIG="$(sf_test_session_config "$fork_parent")" \
+      SHELLFISH_EXECUTABLE="$ROOT/bin/shellfish" "$agent/run" 3>"$tmp/refused-state" >/dev/null 2>&1; then
+    fail "unavailable choice was accepted: $input"
+  fi
+  [[ ! -s "$tmp/refused-state" ]] || fail "unavailable choice wrote state: $input"
+done
+model_result=$(print -r -- '{"operation":"start","profile":"child","model":"alt","task":"child task"}' |
+  SHELLFISH_SESSION="$fork_parent" SHELLFISH_CONFIG="$(sf_test_session_config "$fork_parent")" \
+  SHELLFISH_EXECUTABLE="$ROOT/bin/shellfish" "$agent/run" 3>/dev/null) ||
+  fail 'start with a listed model failed'
+jq -e '.answer == "child answer"' <<<"$model_result" >/dev/null || fail 'chosen-model child did not answer'
+model_id=$(jq -r '.agent_id' <<<"$model_result")
+head -n 1 "$tmp/.subagent-$model_id.jsonl" | jq -e '.model.request.model == "alt-model"' >/dev/null ||
+  fail 'subagent did not use the chosen model'
 
 # The public run boundary rejects a structurally invalid copied prefix.
 typeset bad_parent="$tmp/bad-parent.jsonl" bad_events="$tmp/bad-events"
@@ -550,7 +583,7 @@ jq -e '.working == false and .settled == true' \
 
 typeset cancel_parent="$tmp/cancel-parent.jsonl" cancel_id cancel_child
 sf_test_session "$cancel_parent"
-cancel_id=$(python3 - "$agent/run" "$ROOT/bin/shellfish" "$cancel_parent" \
+cancel_id=$(SHELLFISH_CONFIG="$(sf_test_session_config "$cancel_parent")" python3 - "$agent/run" "$ROOT/bin/shellfish" "$cancel_parent" \
   "$tmp/cancel-events" <<'PY'
 import json
 import os
@@ -631,7 +664,8 @@ typeset fail_events="$tmp/fail-events"
 ) &
 typeset fail_watcher=$!
 if print -r -- '{"operation":"start","profile":"child","task":"never","background":true}' |
-    SHELLFISH_SESSION="$fail_parent" SHELLFISH_EXECUTABLE="$fail_launcher" \
+    SHELLFISH_SESSION="$fail_parent" SHELLFISH_CONFIG="$(sf_test_session_config "$fail_parent")" \
+    SHELLFISH_EXECUTABLE="$fail_launcher" \
     "$agent/run" 3>"$fail_events" >/dev/null 2>"$tmp/fail-error"; then
   fail 'failed launch succeeded'
 fi

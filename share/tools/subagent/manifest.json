@@ -1,12 +1,13 @@
 {
-  "description": "Delegate a task to a subagent and return its final answer. start needs task and either profile (a fresh subagent using that profile) or fork=true (a subagent that inherits this conversation up to the current user message). continue sends a new task to an idle subagent by agent_id. inspect reports a subagent's working, settled (finished), and answer. With background=true, start and continue return the agent_id at once. Subagents cannot start subagents.",
+  "description": "Delegate a task to a subagent and return its final answer. list returns the profiles and models available to start, with when to use each. start needs task and either profile (a fresh subagent using a listed profile, optionally with a listed model) or fork=true (a subagent that inherits this conversation up to the current user message). continue sends a new task to an idle subagent by agent_id. inspect reports a subagent's working, settled (finished), and answer. With background=true, start and continue return the agent_id at once.",
   "input_schema": {
     "type": "object",
     "additionalProperties": false,
     "required": ["operation"],
     "properties": {
-      "operation": {"type": "string", "enum": ["start", "inspect", "continue"]},
-      "profile": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*(/[A-Za-z0-9][A-Za-z0-9_-]*)*$", "description": "Profile name for a fresh subagent; start only, excludes fork"},
+      "operation": {"type": "string", "enum": ["list", "start", "inspect", "continue"]},
+      "profile": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*(/[A-Za-z0-9][A-Za-z0-9_-]*)*$", "description": "Profile name from list for a fresh subagent; start only, excludes fork"},
+      "model": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*(/[A-Za-z0-9][A-Za-z0-9_-]*)*$", "description": "Model name from list; defaults to this conversation's model; start with profile only"},
       "fork": {"type": "boolean", "description": "Inherit this conversation; start only, excludes profile"},
       "background": {"type": "boolean", "default": false, "description": "Return without waiting for the answer; start or continue only"},
       "task": {"type": "string", "minLength": 1, "description": "Instructions for the subagent; required for start and continue"},

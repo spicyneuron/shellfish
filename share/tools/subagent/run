@@ -4,7 +4,7 @@ emulate -R zsh
 setopt extended_glob no_aliases no_bg_nice no_multios pipe_fail
 
 typeset input operation profile model task agent_id child parent_dir output owned fork transcript background working id
-typeset header limit
+typeset header settings limit self=${0:h:t}
 integer count=0 result=0
 
 fail() { print -r -- "subagent: $1"; exit ${2:-1}; }
@@ -18,24 +18,29 @@ running() {
   return 1
 }
 
+# Removes this tool from a session header, since subagents cannot delegate.
+typeset detach='if .type == "session" then
+  .profile.tools |= map(select(split("/") | last != $self)) else . end'
+
 input=$(cat) || fail 'cannot read input'
 zmodload zsh/system || fail 'cannot load session locking'
-# Only a profile name: a path, or a name leaving profiles/, could select a
-# profile the model wrote, with unsandboxed tools or its own hooks.
+# Profile and model names must be configured names, so neither can be a path
+# to a file the model wrote.
 operation=$(jq -er '
+  def name: type == "string" and length > 0;
   select(type == "object" and
-    ((keys - ["operation", "profile", "fork", "task", "agent_id", "background"]) | length == 0)) |
-  if .operation == "start" and
-     ((has("profile") and (has("fork") | not) and
-       (.profile | type == "string" and
-         test("^[A-Za-z0-9][A-Za-z0-9_-]*(/[A-Za-z0-9][A-Za-z0-9_-]*)*$"))) or
-      (has("fork") and (has("profile") | not) and .fork == true)) and
+    ((keys - ["operation", "profile", "model", "fork", "task", "agent_id", "background"]) | length == 0)) |
+  if .operation == "list" and keys == ["operation"] then "list"
+  elif .operation == "start" and
+     ((has("profile") and (has("fork") | not) and (.profile | name) and
+       (if has("model") then .model | name else true end)) or
+      (has("fork") and (has("profile") | not) and (has("model") | not) and .fork == true)) and
      (.task | type == "string" and length > 0) and
      (if has("background") then .background | type == "boolean" else true end) and
      (has("agent_id") | not) then "start"
   elif (.operation == "inspect" or .operation == "continue") and
        (.agent_id | type == "string" and test("^[a-f0-9]{32}$")) and
-       (has("profile") | not) and (has("fork") | not) and
+       (has("profile") | not) and (has("model") | not) and (has("fork") | not) and
        (if .operation == "continue" then
          (.task | type == "string" and length > 0) and
          (if has("background") then .background | type == "boolean" else true end)
@@ -46,15 +51,27 @@ operation=$(jq -er '
 [[ -n ${SHELLFISH_SESSION-} && -n ${SHELLFISH_EXECUTABLE-} ]] ||
   fail 'session environment is unavailable'
 IFS= read -r header <"$SHELLFISH_SESSION" || fail 'cannot read parent header'
-limit=$(jq -er '
+settings=$(jq -ce '
+  def choices: type == "object" and all(to_entries[];
+    (.key | test("^[A-Za-z0-9][A-Za-z0-9_-]*(/[A-Za-z0-9][A-Za-z0-9_-]*)*$")) and
+    (.value | type == "string" and length > 0));
   if has("subagent") then .subagent else {} end |
-  if type == "object" and (keys - ["max_active"]) == [] then .
-  else error("config.subagent must be an object containing only max_active") end |
-  if has("max_active") then .max_active else 4 end |
-  if type == "number" and floor == . and . > 0 then .
-  else error("config.subagent.max_active must be a positive integer") end
+  if type == "object" and (keys - ["max_active", "models", "profiles"]) == [] then .
+  else error("config.subagent must be an object containing only max_active, profiles, and models") end |
+  {max_active:(if has("max_active") then .max_active else 4 end),
+   profiles:(.profiles // {}), models:(.models // {})} |
+  if .max_active | type == "number" and floor == . and . > 0 then .
+  else error("config.subagent.max_active must be a positive integer") end |
+  if (.profiles | choices) and (.models | choices) then .
+  else error("config.subagent.profiles and config.subagent.models must map names to descriptions") end
 ' <<<"${SHELLFISH_CONFIG:-{\}}") || fail 'invalid subagent configuration' 2
+limit=$(jq -r '.max_active' <<<"$settings")
 parent_dir=${SHELLFISH_SESSION:A:h}
+
+if [[ $operation == list ]]; then
+  jq -c '{profiles, models}' <<<"$settings"
+  exit 0
+fi
 
 # The marker is feature-owned state, appended only after session_start settles.
 if jq -e 'select(.type == "state_update" and .name == "subagent")' \
@@ -67,7 +84,14 @@ if [[ $operation == inspect || $operation == continue ]]; then
 else
   fork=$(jq -r '.fork // false' <<<"$input")
   background=$(jq -r '.background // false' <<<"$input")
-  [[ $fork == true ]] || profile=$(jq -r '.profile' <<<"$input")
+  if [[ $fork != true ]]; then
+    profile=$(jq -r '.profile' <<<"$input")
+    jq -e --arg name "$profile" '.profiles | has($name)' <<<"$settings" >/dev/null ||
+      fail "profile is not available: $profile" 2
+    model=$(jq -r '.model // empty' <<<"$input")
+    [[ -z $model ]] || jq -e --arg name "$model" '.models | has($name)' <<<"$settings" >/dev/null ||
+      fail "model is not available: $model" 2
+  fi
   task=$(jq -r '.task' <<<"$input")
   agent_id=$(uuidgen | tr -d '-' | tr '[:upper:]' '[:lower:]') || fail 'cannot create subagent ID'
   [[ $agent_id == [a-f0-9]## ]] || fail 'cannot create subagent ID'
@@ -127,13 +151,13 @@ if [[ $operation == start ]]; then
   if [[ $fork == true ]]; then
     # The last user starts the invoking turn. Nothing from that turn is inherited.
     transcript=$(mktemp "$parent_dir/.subagent-fork.XXXXXX") || fail 'cannot prepare fork'
-    if ! jq -ce -s '
+    if ! jq -ce -s --arg self "$self" '
           if length == 0 or .[0].type != "session" then
             error("invalid parent session")
           else
             . as $records |
             ([$records | to_entries[] | select(.value.type == "user") | .key] | last) as $turn |
-            $records[0:($turn // length)][]
+            $records[0:($turn // length)][] | '"$detach"'
           end
         ' "$SHELLFISH_SESSION" >"$transcript" 2>/dev/null; then
       rm -f -- "$transcript"
@@ -145,11 +169,17 @@ if [[ $operation == start ]]; then
     fi
     rm -f -- "$transcript"
   else
-    # A fresh child keeps the parent's model.
-    model=$(jq -ce '.model | objects' <<<"$header") ||
+    # A fresh child keeps the parent's model unless the call names another.
+    [[ -n $model ]] || model=$(jq -ce '.model | objects' <<<"$header") ||
       fail 'cannot read parent model'
     "$SHELLFISH_EXECUTABLE" run --session-create --session-out "$child" \
       --profile "$profile" --model "$model" >/dev/null || fail 'cannot create subagent session'
+    transcript=$(mktemp "$parent_dir/.subagent-header.XXXXXX") || fail 'cannot prepare subagent session'
+    if ! jq -c --arg self "$self" "$detach" "$child" >"$transcript" ||
+        ! mv -f -- "$transcript" "$child"; then
+      rm -f -- "$transcript"
+      fail 'cannot prepare subagent session'
+    fi
   fi
   print -r -- '{"type":"state_update","name":"subagent","value":true}' >>"$child" ||
     fail 'cannot mark child session'

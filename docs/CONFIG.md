@@ -126,7 +126,7 @@ Decision models serve `shellfish decide` instead of conversations. Bundled decis
 
 See [`HARNESS.md`](HARNESS.md#decisions) for the decision format.
 
-A new session freezes the selected profile and model in its header: sandbox and model items merged, system prompts joined into one text, and every other reference resolved. The header's `profile` is itself a profile and its `model` a model file, so together they select the same session again. A subagent keeps its parent's model.
+A new session freezes the selected profile and model in its header: sandbox and model items merged, system prompts joined into one text, and every other reference resolved. The header's `profile` is itself a profile and its `model` a model file, so together they select the same session again. A forked subagent keeps its parent's model.
 
 ## Environment
 
@@ -258,6 +258,17 @@ With `skills/mention`, `$skill-name` in an ordinary prompt loads each matching a
 ### Subagent tool
 
 The `subagent` tool lets you delegate a separate task to a subagent, so work can proceed independently of your current conversation. You can wait for its result, let it run in the background, check its progress, or give it a follow-up task once it finishes. It is opt-in: the `plus` profile enables it, or add `"subagent"` to a profile's `tools`.
+
+A subagent either forks the current conversation, keeping its profile and model, or starts fresh with a profile you offer. The model sees only the profiles and models named in the parent profile's config, along with your descriptions of when to use each:
+
+```jsonc
+"config": {"subagent": {
+  "profiles": {"readonly": "Investigate and answer questions without changing files"},
+  "models": {"fast": "A cheaper model for simple lookups"}
+}}
+```
+
+Without `profiles`, subagents can only fork. A fresh subagent uses the parent's model unless the model picks one from `models`. Subagents cannot start their own subagents, so the tool is removed from every subagent's profile.
 
 Background work returns control after launch. The default limit is four running subagents per parent, and a subagent holds its slot only while its turn runs. Set `"config": {"subagent": {"max_active": 2}}` in the parent's profile to choose another positive integer. Supplied limits freeze with the session.
 
