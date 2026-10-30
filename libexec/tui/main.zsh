@@ -4,6 +4,7 @@ emulate -R zsh
 setopt no_aliases no_bg_nice no_multios pipe_fail
 
 typeset -gr SF_ROOT=${0:A:h:h:h}
+typeset -gr SF_SHARE=$SF_ROOT/share
 typeset -gr SF_ENTRY=$SF_ROOT/bin/shellfish
 typeset -gr SF_TUI_ENTRY=${0:A}
 
