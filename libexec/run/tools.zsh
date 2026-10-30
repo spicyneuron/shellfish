@@ -111,7 +111,8 @@ sf_run_tool_execute() {
   else
     process_command=( /usr/bin/env "${arguments[@]}" )
   fi
-  sf_run_component_begin "$session" "$SF_TOOL_PLAN[component]" || {
+  sf_run_component_begin "$session" "$SF_TOOL_PLAN[component]"
+  sf_run_component_draft "$SF_TOOL_PLAN[component]" || {
     SF_RUN_TOOL_ERROR='cannot emit tool draft'
     return 1
   }

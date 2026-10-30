@@ -63,14 +63,16 @@ case $COMPONENT_CASE in
     print -rn -- 'head'${(l:1200::o:)}'stdout-tail'
     print -rn -u2 -- 'head'${(l:1200::e:)}'stderr-tail'
     ;;
+  encoded) print -rn -- 'encoded'; print -rn -u2 -- 'stderr' ;;
   silent) print -rn -u2 -- 'unrendered output' ;;
 esac
 ZSH
-for scenario in protocol capture capture_override silent; do
+for scenario in protocol capture capture_override encoded silent; do
   case $scenario in
     protocol) manifest='{"user_text":"Running\n${output.stdout}|${output.stderr}","user_preview_lines":"full"}' ;;
     capture) manifest='{"user_text":"${output.stdout}|${output.stderr}"}' ;;
     capture_override) manifest='{"user_text":"${output.stdout}|${output.stderr}","max_capture_bytes":2048}' ;;
+    encoded) manifest='{"user_text":"Quoted \"value\" \\ \u001e\t${output.stderr}\n","user_preview_lines":0}' ;;
     silent) manifest='{}' ;;
   esac
   jq -c '{on:"session_start"} + .' <<<"$manifest" >"$hook/manifest.json"
@@ -111,6 +113,12 @@ for scenario in protocol capture capture_override silent; do
         ($results[0].user_text | contains("head") and contains("stdout-tail") and
           contains("stderr-tail") and (contains("[output truncated]") | not)) and
         ($results[0].model_text | length > 1024)
+      elif $scenario == "encoded" then
+        [$e[].type] == ["_draft",$result_type] and
+        $e[0].user_text == "Quoted \"value\" \\ \u001e\t\n" and
+        $results[0].user_text == "Quoted \"value\" \\ \u001e\tstderr\n" and
+        $results[0].model_text == model("encoded") and
+        all($e[]; .user_preview_lines == 0)
       else
         if $kind == "hook" then $e == []
         else [$e[].type] == ["tool_result"] and

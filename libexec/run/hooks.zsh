@@ -40,9 +40,10 @@ sf_run_hook_project() {
 
 sf_run_hook_manifest() {
   local command=$1 lifecycle=$2 input=$3 id=$4 max_capture=$5 components=$6
-  REPLY=$(sf_jq -cn --argjson components "$components" --arg command "$command/run" \
+  sf_jq_fields -cn --argjson components "$components" --arg command "$command/run" \
     --arg lifecycle "$lifecycle" --arg input "$input" --arg id "$id" \
     --argjson max_capture "$max_capture" '
+    include "lib/fields";
     include "lib/profile";
     first($components[] | select(.command == $command) | .manifest) as $manifest |
     if $manifest.match == null or ($input | test($manifest.match.pattern)) then
@@ -53,9 +54,13 @@ sf_run_hook_manifest() {
        draft:({type:"_draft",lifecycle:$lifecycle,id:$id,
          user_text:render_template($manifest.user_text; {input:$input})} +
          ($manifest | with_entries(select(.key == "user_preview_lines")))),
-       max_capture:($manifest.max_capture_bytes // $max_capture)}
-    else null end
-  ' 2>/dev/null) || { REPLY="invalid hook manifest: $command"; return 1; }
+       max_capture:($manifest.max_capture_bytes // $max_capture)} as $component |
+      entry("component"; $component | tojson),
+      entry("draft"; $component.draft | if .user_text == "" then "" else tojson end),
+      entry("max_capture"; $component.max_capture | tostring)
+    else entry("component"; "") end,
+    ("ok" | field)
+  ' || { REPLY="invalid hook manifest: $command"; return 1; }
 }
 
 # The last control line wins. It is validated when the hook settles.
@@ -113,10 +118,10 @@ sf_run_hooks() {
   setopt local_options no_err_exit
   local session=$1 lifecycle=$2 content=$3 turn_state=$4
   shift 4
-  local command input config_dir directory error='' component control action='' reason='' payload=''
+  local command input config_dir directory error='' control action='' reason='' payload=''
   local kind=hooks
   local -a hooks environment
-  local -A SF_COMPONENT=()
+  local -A SF_COMPONENT=() prepared
   integer max_capture model_feedback=0
 
   SF_RUN_HOOK_ERROR=''
@@ -166,14 +171,15 @@ sf_run_hooks() {
       }
       sf_run_hook_manifest "$command" "$lifecycle" "$content" \
         "$SF_RUN[hook_id]" "$SF_RUN[max_capture]" "$SF_RUN[$kind]" || { error=$REPLY; break; }
-      component=$REPLY
-      [[ $component != null ]] || continue
-      max_capture=$(jq -r '.max_capture' <<<"$component") || { error='cannot inspect hook capture limit'; break; }
+      prepared=( "${reply[@]}" )
+      [[ -n $prepared[component] ]] || continue
+      max_capture=$prepared[max_capture]
       sf_scratch_directory hook || { error='cannot prepare hook capture'; break; }
       directory=$REPLY
       # A command's prompt is never submitted.
       [[ $kind == commands ]] && control='{"action":"deny"}' || control='{}'
-      if ! sf_run_component_begin "$session" "$component"; then
+      sf_run_component_begin "$session" "$prepared[component]"
+      if [[ -n $prepared[draft] ]] && ! sf_run_emit "$prepared[draft]"; then
         error='cannot emit hook draft'
       elif ! sf_run_component_execute "$directory" "${SF_RUN[cwd]:A}" "$input" "$max_capture" \
           "$max_capture" sf_run_hook_line /usr/bin/env "${environment[@]}" "SHELLFISH_MAX_CAPTURE_BYTES=$max_capture" \
