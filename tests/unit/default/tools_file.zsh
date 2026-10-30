@@ -24,18 +24,34 @@ typeset wide_png=iVBORw0KGgoAAAANSUhEUgAAB9AAAAAKAQMAAADW9Ff9AAAAA1BMVEUAgACc+aW
 print -rn -- $small_png | base64 -d >"$tmp/small.png"
 print -rn -- $wide_png | base64 -d >"$tmp/wide.png"
 if (( $+commands[sips] || $+commands[magick] || ($+commands[identify] && $+commands[convert]) )); then
-  assert_equal '[image 4x2 png]' "$(run_tool read_file '{"file_path":"small.png"}')"
+  # Images default to WebP, or JPEG where only sips, which cannot write WebP, is present.
+  typeset encoded=webp png='{"read_file":{"image_format":"png"}}'
+  (( $+commands[magick] || ($+commands[identify] && $+commands[convert]) )) || encoded=jpeg
+  assert_equal "[image 4x2 $encoded]" "$(run_tool read_file '{"file_path":"small.png"}')"
+  jq -e --arg prefix "data:image/$encoded;base64," '.content | length == 1 and
+    .[0].type == "image" and (.[0].url | startswith($prefix))' \
+    "$tmp/fd3" >/dev/null || fail 'read_file did not return an encoded image as content'
+  : >|"$tmp/fd3"
+  # An image already in the configured format and size is sent unchanged.
+  assert_equal '[image 4x2 png]' \
+    "$(SHELLFISH_CONFIG=$png run_tool read_file '{"file_path":"small.png"}')"
   jq -e --arg url "data:image/png;base64,$small_png" '.content == [{type:"image",url:$url}]' \
-    "$tmp/fd3" >/dev/null || fail 'read_file did not return an image as content'
+    "$tmp/fd3" >/dev/null || fail 'read_file re-encoded an image it could send unchanged'
   : >|"$tmp/fd3"
   assert_equal '[image 1568x8 png, downscaled from 2000x10]' \
-    "$(run_tool read_file '{"file_path":"wide.png"}')"
+    "$(SHELLFISH_CONFIG=$png run_tool read_file '{"file_path":"wide.png"}')"
   : >|"$tmp/fd3"
   print -r -- 'GIF89a is not an image' >"$tmp/fake.gif"
   assert_equal 'read_file: cannot decode image fake.gif' \
     "$(run_tool read_file '{"file_path":"fake.gif"}' || true)"
   assert_equal 'read_file: small.png is too large to view (84 bytes)' \
-    "$(SHELLFISH_MAX_CONTENT_BYTES=200 run_tool read_file '{"file_path":"small.png"}' || true)"
+    "$(SHELLFISH_MAX_CONTENT_BYTES=200 SHELLFISH_CONFIG=$png \
+      run_tool read_file '{"file_path":"small.png"}' || true)"
+  for config in '{"read_file":{"image_format":"avif"}}' '{"read_file":{"image_quality":0}}' \
+      '{"read_file":{"quality":40}}' '{"read_file":5}'; do
+    assert_equal 'read_file: config.read_file allows image_format webp, jpeg, or png and image_quality from 1 to 100' \
+      "$(SHELLFISH_CONFIG=$config run_tool read_file '{"file_path":"small.png"}' || true)"
+  done
 fi
 # Without a way to check an image, it is refused rather than stored unchecked.
 # zsh -f keeps startup files from restoring a resizer to PATH.

@@ -25,8 +25,8 @@ limit=$fields[3]
 [[ -f $file_path ]] || { printf 'read_file: not a regular file: %s\n' "$file_path"; exit 2; }
 [[ -r $file_path ]] || { printf 'read_file: cannot read %s\n' "$file_path"; exit 2; }
 
-# An image returns as content for the model to view, its long edge downscaled
-# to fit vision limits.
+# An image returns as content for the model to view, re-encoded in the
+# configured format and its long edge downscaled to fit vision limits.
 image_format() {
   case $(head -c 12 -- "$1" | od -An -tx1 | tr -d ' \n') in
     (89504e470d0a1a0a*) REPLY=png ;;
@@ -37,9 +37,10 @@ image_format() {
   esac
 }
 
-if (( $+commands[sips] )); then resizer=sips
-elif (( $+commands[magick] )); then resizer=magick
+# ImageMagick leads because sips cannot write WebP.
+if (( $+commands[magick] )); then resizer=magick
 elif (( $+commands[identify] && $+commands[convert] )); then resizer=convert
+elif (( $+commands[sips] )); then resizer=sips
 else resizer=''
 fi
 
@@ -54,8 +55,20 @@ image_size() {
 }
 
 if image_format "$file_path"; then
-  format=$REPLY image=$file_path max_edge=1568 note='' size=''
+  source_format=$REPLY image=$file_path max_edge=1568 note=''
+  settings=$(jq -r '
+    .read_file // {} |
+    if type == "object" and (keys - ["image_format", "image_quality"]) == [] then
+      "\(.image_format // "webp") \(.image_quality // 75)"
+    else error end
+  ' <<<"${SHELLFISH_CONFIG:-{\}}" 2>/dev/null) || settings=''
+  read -r format quality <<<"$settings"
   integer width=0 height=0 bytes limit=${SHELLFISH_MAX_CONTENT_BYTES:-5242880}
+  typeset -a flags=()
+  [[ $format == (webp|jpeg|png) && $quality == <1-100> ]] || {
+    printf 'read_file: config.read_file allows image_format webp, jpeg, or png and image_quality from 1 to 100\n'
+    exit 2
+  }
   # Neither resizer takes --, so a leading dash must not read as an option.
   [[ $image != -* ]] || image=./$image
   # A stored image the API rejects would fail every later request, so one that
@@ -69,15 +82,22 @@ if image_format "$file_path"; then
   read -r width height <<<"$size"
   if (( width > max_edge || height > max_edge )); then
     note=", downscaled from ${width}x$height"
-    # JPEG stays JPEG; other formats become PNG, keeping a GIF's first frame.
-    [[ $format == jpeg ]] || format=png
+    [[ $resizer == sips ]] && flags=( -Z $max_edge ) || flags=( -resize ${max_edge}x$max_edge )
+  fi
+  # An image already in the format and size it needs is sent as is. Otherwise
+  # it is re-encoded, keeping a GIF's first frame.
+  if [[ $source_format != $format || -n $note ]]; then
+    [[ $resizer != sips || $format != webp ]] || format=jpeg
+    if [[ $format != png ]]; then
+      [[ $resizer == sips ]] && flags+=( -s formatOptions $quality ) || flags+=( -quality $quality )
+    fi
     scratch=$(mktemp -d "${TMPDIR:-/tmp}/read_file.XXXXXX")
     trap 'rm -rf -- "$scratch"' EXIT
     case $resizer in
-      (sips) sips -Z $max_edge -s format $format "$image" --out "$scratch/image" >/dev/null 2>&1 ;;
-      (magick) magick "${image}[0]" -resize ${max_edge}x$max_edge "$format:$scratch/image" 2>/dev/null ;;
-      (convert) convert "${image}[0]" -resize ${max_edge}x$max_edge "$format:$scratch/image" 2>/dev/null ;;
-    esac || { printf 'read_file: cannot downscale %s\n' "$file_path"; exit 2; }
+      (sips) sips "${flags[@]}" -s format $format "$image" --out "$scratch/image" >/dev/null 2>&1 ;;
+      (magick) magick "${image}[0]" "${flags[@]}" "$format:$scratch/image" 2>/dev/null ;;
+      (convert) convert "${image}[0]" "${flags[@]}" "$format:$scratch/image" 2>/dev/null ;;
+    esac || { printf 'read_file: cannot encode %s as %s\n' "$file_path" "$format"; exit 2; }
     image=$scratch/image
     read -r width height <<<"$(image_size "$image")" || true
   fi

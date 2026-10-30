@@ -210,13 +210,15 @@ Set `"config": {"skills": ["skill-creator", "code-review"]}` in a profile to all
 
 | Tool | Role |
 | --- | --- |
-| `read_file` | Read project text with line numbers, or view an image, which needs `sips` or ImageMagick |
+| `read_file` | Read project text with line numbers, or view an image, which needs ImageMagick or `sips` |
 | `edit_file` | Replace exact text and return a diff |
 | `write_file` | Create a new text file and return a diff |
 | `shell` | Run one zsh command with a timeout |
 | `search_web` | Search through Exa |
 | `fetch_url` | Fetch a page as Markdown through Jina Reader |
 | `skill` | Load an advertised Agent Skill |
+
+`read_file` re-encodes images as WebP at quality 75 by default. Set `"config": {"read_file": {"image_format": "jpeg", "image_quality": 60}}` to choose `webp`, `jpeg`, or `png` and a quality from 1 to 100. `sips` cannot write WebP, so without ImageMagick an image that must be re-encoded becomes JPEG. One already in the chosen format and within 1568 pixels is sent unchanged.
 
 The bundled `session_start` hooks record context once, one block per part:
 
