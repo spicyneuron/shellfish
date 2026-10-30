@@ -125,12 +125,12 @@ def test_help_notice_keeps_one_separator():
         try:
             session.wait_session_records(2)
             session.wait_ready()
-            terminal.wait_for("project notice", lambda: "╰ …" in terminal.everything())
+            terminal.wait_for("project notice", lambda: "┆" in terminal.everything())
             for _ in range(5):
                 terminal.pump()
             idle = [line.rstrip() for line in
                     terminal.screen.scrolled + terminal.screen.display]
-            end = next(i for i, line in enumerate(idle) if "╰ …" in line)
+            end = next(i for i, line in enumerate(idle) if "┆" in line)
             divider = next(i for i in range(end + 1, len(idle))
                            if idle[i].startswith("─"))
             assert idle[end + 1:divider] == [""], terminal.dump()
@@ -143,7 +143,7 @@ def test_help_notice_keeps_one_separator():
                 terminal.pump()
             lines = [line.rstrip() for line in
                      terminal.screen.scrolled + terminal.screen.display]
-            end = next(i for i, line in enumerate(lines) if "╰ …" in line)
+            end = next(i for i, line in enumerate(lines) if "┆" in line)
             help_row = lines.index("ℹ Help:")
             user_row = next(i for i in range(end + 1, help_row)
                             if lines[i].startswith("─ user "))

@@ -241,7 +241,7 @@ view 79 20
 [[ $REPLY == *$'  ⠃' ]] || fail "reasoning transition: $REPLY"
 stream 4 inert ''
 view 79 20
-[[ $REPLY == *$'✎ thought\n  Thought for ~9 tokens.' ]] ||
+[[ $REPLY == *$'✎ thought' ]] ||
   fail "reasoning settled by an inert block: $REPLY"
 
 # Reasoning previews spend rows and keep the whole-content estimate.
@@ -259,8 +259,8 @@ sf_tui_terminal_restore
 sf_tui_transcript 10 20
 [[ $SF_PRESENT_VIEWPORT_TEXT != *second* ]] ||
   fail 'resize restored committed chrome or showed hidden rows'
-[[ $SF_PRESENT_VIEWPORT_TEXT == *'~5'* ]] ||
-  fail 'partial reasoning lost its whole-content estimate'
+[[ $SF_PRESENT_VIEWPORT_TEXT != *'~5'* ]] ||
+  fail 'live reasoning showed its estimate before settling'
 sf_tui_action message_end
 sf_tui_transcript 10 20
 [[ $SF_PRESENT_VIEWPORT_TEXT == *'~5'* ]] ||
@@ -270,18 +270,19 @@ sf_tui_terminal_finish
 [[ $PREDISPLAY != *second* ]] || fail 'a clamp committed the rows it hid'
 sf_tui_terminal_reset
 
-# A spent preview shows its estimate, and usage refines it.
+# A spent preview shows only activity until it settles; usage refines the
+# settled estimate.
 sf_tui_reset
 sf_tui_action message_start agent
 stream 0 reasoning $'first\nsecond'
 view 79 20
-[[ $REPLY == $'─ agent '*$' 1 ─\n\n✎ first\n  … ~3 tokens ⠃' ]] ||
+[[ $REPLY == $'─ agent '*$' 1 ─\n\n✎ first\n  ⠃' ]] ||
   fail "live reasoning preview: $REPLY"
 assert_equal 3 "$SF_PRESENT_SAFE_ROWS"
 sf_tui_action usage '3 ↑ 1 ↓' 4
 sf_tui_action message_end
 view 79 20
-[[ $REPLY == $'─ agent '*$' 1 ─\n\n✎ first\n  … Thought for ~4 tokens.' ]] ||
+[[ $REPLY == $'─ agent '*$' 1 ─\n\n✎ first\n  … ~4 tokens' ]] ||
   fail "settled reasoning preview: $REPLY"
 assert_equal 4 "$SF_PRESENT_SAFE_ROWS"
 

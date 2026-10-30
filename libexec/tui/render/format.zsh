@@ -188,23 +188,23 @@ sf_tui_format_prose() {
   fi
 }
 
+# Only a block that hides text reports its size.
 sf_tui_format_summary() {
   integer columns=$1
-  local text
-  if [[ $SF_LIVE_KIND == reasoning ]]; then
-    sf_tui_token_count $SF_LIVE_TOTAL "$SF_LIVE_TOKENS"
-    if (( ! SF_LIVE_EXPANDED )); then text="✎ Thought for ~$REPLY tokens."
-    elif (( SF_LIVE_HIDDEN )); then text="  … Thought for ~$REPLY tokens."
-    else text="  Thought for ~$REPLY tokens."; fi
-    sf_tui_format_styled $columns "$text" reasoning clamp
-  elif (( SF_LIVE_HIDDEN )); then
-    sf_tui_token_count $SF_LIVE_TOTAL
+  sf_tui_token_count $SF_LIVE_TOTAL "$SF_LIVE_TOKENS"
+  if (( ! SF_LIVE_EXPANDED )); then
+    sf_tui_format_styled $columns "✎ Thought for ~$REPLY tokens." reasoning clamp
+  elif (( ! SF_LIVE_HIDDEN )); then
+    return 0
+  elif [[ $SF_LIVE_KIND == reasoning ]]; then
+    sf_tui_format_styled $columns "  … ~$REPLY tokens" reasoning clamp
+  else
     sf_tui_format_styled $columns "… ~$REPLY tokens" message clamp
   fi
 }
 
 # The status below an open block: its rule until text commits, then the
-# spinner, and for reasoning what the preview hides.
+# spinner.
 sf_tui_format_status() {
   integer columns=$1
   local text spinner=''
@@ -216,13 +216,7 @@ sf_tui_format_status() {
   fi
   # Under the reasoning indent, the spinner alone needs no text before it.
   text=' '
-  if (( ! SF_LIVE_EXPANDED )); then
-    text="✎ Thinking…"
-  elif [[ $SF_PRESENT_PREVIEW_REASONING != full ]] &&
-      (( SF_LIVE_SPENT >= SF_PRESENT_PREVIEW_REASONING )); then
-    sf_tui_token_count $SF_LIVE_TOTAL "$SF_LIVE_TOKENS"
-    text="  … ~$REPLY tokens"
-  fi
+  (( SF_LIVE_EXPANDED )) || text="✎ Thinking…"
   [[ -z $spinner ]] || text+=" $spinner"
   [[ $text != ' ' ]] || return 0
   sf_tui_format_styled $columns "$text" reasoning clamp activity
@@ -232,7 +226,7 @@ sf_tui_format_status() {
 
 sf_tui_format_execution() {
   integer columns=$1 live=$(( ! $2 )) spinner=0 fold=0 diff=0
-  integer row limit total hidden=0 more span background cursor start end pass lead
+  integer row limit total heading hidden=0 span background cursor start end pass lead
   local body full head rest label badge='' suffix='' glyph preview text style kind=execution
   local base_style=${SF_PRESENT_STYLE[execution]-} rail_style=${SF_PRESENT_STYLE[divider]-}
   local clamp=${SF_PRESENT_STYLE[clamp]-} badge_style='' glyph_style=''
@@ -283,8 +277,9 @@ sf_tui_format_execution() {
   fi
 
   sf_tui_format_rule $columns "$SF_LIVE_ROLE" "$SF_LIVE_SECTION"
-  # The identity row always shows; the preview budget covers the output below
-  # it. Clamped output adds its size to the identity row and wraps again.
+  # The identity line always shows, however many rows it wraps to; the preview
+  # budget covers the output below it. Clamped output adds its size to the
+  # identity line and wraps again.
   for pass in 1 2; do
     full=${badge:+$badge }$head$suffix$rest
     SF_PRESENT_HIGHLIGHT_SPANS=()
@@ -298,24 +293,29 @@ sf_tui_format_execution() {
         $(( ${#full} - ${#rest} )) "$clamp" )
     (( ! diff )) || sf_tui_diff_highlight "$rest" $(( ${#full} - ${#rest} ))
     if (( fold )); then
-      sf_tui_wrap -L $(( preview + 2 )) $columns "$full" '│ ' \
+      sf_tui_wrap $columns "${full[1,${#full}-${#rest}]}" '│ ' || return 1
+      heading=${#SF_WRAP_ROWS}
+      sf_tui_wrap -L $(( heading + preview + 1 )) $columns "$full" '│ ' \
         "${(@)SF_PRESENT_HIGHLIGHT_SPANS}" || return 1
     else
       sf_tui_wrap $columns "$full" '│ ' "${(@)SF_PRESENT_HIGHLIGHT_SPANS}" || return 1
     fi
     total=${#SF_WRAP_ROWS}
-    (( fold && total > preview + 1 )) || break
+    (( fold && total > heading + preview )) || break
     hidden=1
     [[ -z $suffix ]] || break
     sf_tui_token_count ${#rest}
     suffix=" · ~$REPLY tokens"
   done
   limit=$total
-  (( ! hidden )) || limit=$(( preview + 1 ))
+  (( ! hidden )) || limit=$(( heading + preview ))
   for (( row = 1; row <= limit; row++ )); do
     text=$SF_WRAP_ROWS[row]
+    # The last output row closes the rail, or fades it when output is hidden.
     if (( row == 1 )); then
       text="$glyph${text[2,-1]}"
+    elif (( hidden && row > heading && row == limit )); then
+      text="┆${text[2,-1]}"
     elif (( ! live && ! hidden && row == limit )); then
       text="╰${text[2,-1]}"
     fi
@@ -330,7 +330,7 @@ sf_tui_format_execution() {
     fi
     spans=()
     cursor=0
-    if [[ -n $rail_style && $text == (│|╰)* ]]; then
+    if [[ -n $rail_style && $text == (│|╰|┆)* ]]; then
       spans+=( 0 1 "$rail_style" )
       cursor=1
     elif (( row == 1 )) && [[ -n $glyph_style ]]; then
@@ -360,17 +360,8 @@ sf_tui_format_execution() {
     SF_FORMAT_ROWS+=( "$text" )
     SF_FORMAT_SPANS+=( "${(j: :)spans}" )
   done
-  if (( spinner )); then
-    sf_tui_format_styled $columns "╰ $SF_PRESENT_ACTIVITY" "$kind" '' activity || return 1
-  elif (( hidden )); then
-    text=${full[SF_WRAP_STARTS[limit + 1],-1]}
-    more=$(( ${#text//[^$'\n']} + 1 ))
-    text="╰ … $more more line"
-    (( more == 1 )) || text+=s
-    sf_tui_format_styled $columns "$text" "$kind" clamp || return 1
-  elif (( ! live && limit <= 1 )); then
-    sf_tui_format_styled $columns '╰' "$kind" || return 1
-  fi
+  (( ! spinner )) ||
+    sf_tui_format_styled $columns "╰ $SF_PRESENT_ACTIVITY" "$kind" '' activity
 }
 
 # Notices settle immediately: a heading row followed by indented detail.
