@@ -257,7 +257,7 @@ With `skills/mention`, `$skill-name` in an ordinary prompt loads each matching a
 
 The `subagent` tool lets you delegate a separate task to a subagent, so work can proceed independently of your current conversation. You can wait for its result, let it run in the background, check its progress, or give it a follow-up task once it finishes. It is opt-in: add `"subagent"` to a profile's `tools`.
 
-A subagent either forks the current conversation, keeping its profile and model, or starts fresh with a profile you offer. The model sees only the profiles and models named in the parent profile's config, along with your descriptions of when to use each:
+A subagent either forks the current conversation or starts fresh. Both use the parent's profile and model unless a fresh start picks others you offer. The model sees only the profiles and models named in the parent profile's config, along with your descriptions of when to use each:
 
 ```jsonc
 "config": {"subagent": {
@@ -266,7 +266,7 @@ A subagent either forks the current conversation, keeping its profile and model,
 }}
 ```
 
-Without `profiles`, subagents can only fork. A fresh subagent uses the parent's model unless the model picks one from `models`. Subagents cannot start their own subagents, so the tool is removed from every subagent's profile.
+Without either list, every subagent uses the parent's profile and model. Subagents cannot start their own subagents, so the tool is removed from every subagent's profile.
 
 Background work returns control after launch. The default limit is four running subagents per parent, and a subagent holds its slot only while its turn runs. Set `"config": {"subagent": {"max_active": 2}}` in the parent's profile to choose another positive integer. Supplied limits freeze with the session.
 

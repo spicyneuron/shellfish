@@ -319,11 +319,23 @@ jq -e -s '[.[] | select(.type == "user") | .content[0].text] ==
   ["child task","next child task"]' "$stop_child" >/dev/null ||
   fail 'stop-hook continuation did not add a child turn'
 print -r -- "$id" >"$SF_AGENT_ID_FILE"
-if print -r -- '{"operation":"start","task":"missing profile"}' |
-    SHELLFISH_SESSION="$session" SHELLFISH_EXECUTABLE="$ROOT/bin/shellfish" \
-    "$agent/run" 3>/dev/null >/dev/null 2>&1; then
-  fail 'missing profile was accepted'
-fi
+
+# Without a profile, a fresh child uses the parent's, minus this tool.
+typeset own_result own_id
+own_result=$(print -r -- '{"operation":"start","task":"child task"}' |
+  SHELLFISH_SESSION="$session" SHELLFISH_EXECUTABLE="$ROOT/bin/shellfish" \
+  "$agent/run" 3>/dev/null) || fail 'start with the parent profile failed'
+jq -e '.answer == "child answer"' <<<"$own_result" >/dev/null || fail 'parent-profile child did not answer'
+own_id=$(jq -r '.agent_id' <<<"$own_result")
+jq -e -n --slurpfile parent "$session" --slurpfile child "$tmp/.subagent-$own_id.jsonl" '
+  ($child[0].profile | del(.tools)) == ($parent[0].profile | del(.tools)) and
+  $child[0].profile.tools == [] and
+  ($child[0].model | del(.provider)) == ($parent[0].model | del(.provider)) and
+  ($child[0].model.provider | endswith("/" + ($parent[0].model.provider | split("/") | last))) and
+  ($child[1:] | map(.type)) == ["state_update","user","assistant"]
+' >/dev/null || fail 'parent-profile child did not copy the parent profile'
+typeset -a leftover=( $tmp/.subagent-profile.*(N) )
+(( ! ${#leftover} )) || fail 'temporary parent profile was left behind'
 
 # A fork inherits only the settled parent prefix, including its effective state.
 typeset fork_parent="$tmp/fork-parent.jsonl" fork_request="$tmp/fork-request.json"

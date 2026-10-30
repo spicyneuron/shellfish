@@ -32,7 +32,8 @@ operation=$(jq -er '
     ((keys - ["operation", "profile", "model", "fork", "task", "agent_id", "background"]) | length == 0)) |
   if .operation == "list" and keys == ["operation"] then "list"
   elif .operation == "start" and
-     ((has("profile") and (has("fork") | not) and (.profile | name) and
+     (((has("fork") | not) and
+       (if has("profile") then .profile | name else true end) and
        (if has("model") then .model | name else true end)) or
       (has("fork") and (has("profile") | not) and (has("model") | not) and .fork == true)) and
      (.task | type == "string" and length > 0) and
@@ -85,8 +86,8 @@ else
   fork=$(jq -r '.fork // false' <<<"$input")
   background=$(jq -r '.background // false' <<<"$input")
   if [[ $fork != true ]]; then
-    profile=$(jq -r '.profile' <<<"$input")
-    jq -e --arg name "$profile" '.profiles | has($name)' <<<"$settings" >/dev/null ||
+    profile=$(jq -r '.profile // empty' <<<"$input")
+    [[ -z $profile ]] || jq -e --arg name "$profile" '.profiles | has($name)' <<<"$settings" >/dev/null ||
       fail "profile is not available: $profile" 2
     model=$(jq -r '.model // empty' <<<"$input")
     [[ -z $model ]] || jq -e --arg name "$model" '.models | has($name)' <<<"$settings" >/dev/null ||
@@ -169,9 +170,15 @@ if [[ $operation == start ]]; then
     fi
     rm -f -- "$transcript"
   else
-    # A fresh child keeps the parent's model unless the call names another.
+    # A fresh child keeps the parent's profile and model unless the call names
+    # others. A frozen header profile resolves again as a profile file.
     [[ -n $model ]] || model=$(jq -ce '.model | objects' <<<"$header") ||
       fail 'cannot read parent model'
+    if [[ -z $profile ]]; then
+      profile=$(mktemp "$parent_dir/.subagent-profile.XXXXXX") || fail 'cannot prepare subagent profile'
+      trap 'rm -f -- "$profile"' EXIT
+      jq -ce '.profile | objects' <<<"$header" >"$profile" || fail 'cannot read parent profile'
+    fi
     "$SHELLFISH_EXECUTABLE" run --session-create --session-out "$child" \
       --profile "$profile" --model "$model" >/dev/null || fail 'cannot create subagent session'
     transcript=$(mktemp "$parent_dir/.subagent-header.XXXXXX") || fail 'cannot prepare subagent session'
