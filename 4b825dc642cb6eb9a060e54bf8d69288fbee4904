@@ -4,7 +4,12 @@ Considering replacing fence with nono or srt:
 - https://github.com/nolabs-ai/nono
 - https://github.com/anthropics/sandbox-runtime
 Both checked out in ../<repo>.
+
 The goal is to keep the existing deny then whitelist approach, but give the user some better way to detect what was blocked and unblock them easily.
+
+Add support for dynamic system message scripts. Make executable, then concat with the static ones.
+
+Add a dynamic system message listing sandbox grants.
 
 Could the model get a preview of sandbox grants in the project env?
 
