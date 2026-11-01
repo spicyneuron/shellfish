@@ -19,7 +19,7 @@ Add local sandbox exceptions to allow tests to run
 
 # Features
 
-Add docker container for linux testing.
+Tab completion for commands in TUI.
 
 Support images in decision models and sandbox-approver.
 
