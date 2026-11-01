@@ -7,8 +7,8 @@ sf_test_tmp providers
 # Create private provider files.
 sf_provider_setup test_provider
 [[ $SF_PROVIDER_TEMP_DIR == */shellfish-provider-test_provider.* ]]
-assert_equal 700 "$(stat -f %Lp "$SF_PROVIDER_TEMP_DIR")"
-assert_equal 600 "$(stat -f %Lp "$SF_PROVIDER_HEADERS_FILE")"
+assert_mode 700 "$SF_PROVIDER_TEMP_DIR"
+assert_mode 600 "$SF_PROVIDER_HEADERS_FILE"
 
 # Ignore empty credentials.
 sf_provider_credential Authorization ''

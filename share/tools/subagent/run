@@ -125,8 +125,8 @@ else
       fail "model is not available: $model" 2
   fi
   task=$(jq -r '.task' <<<"$input")
-  agent_id=$(uuidgen | tr -d '-' | tr '[:upper:]' '[:lower:]') || fail 'cannot create subagent ID'
-  [[ $agent_id == [a-f0-9]## ]] || fail 'cannot create subagent ID'
+  agent_id=$(od -An -N16 -tx1 /dev/urandom | tr -d '[:space:]') || fail 'cannot create subagent ID'
+  [[ ${#agent_id} == 32 && $agent_id == [a-f0-9]## ]] || fail 'cannot create subagent ID'
 fi
 
 child="$parent_dir/.subagent-$agent_id.jsonl"

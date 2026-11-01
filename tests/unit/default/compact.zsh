@@ -75,7 +75,7 @@ jq -e -s --rawfile prompt "$ROOT/share/commands/compact/prompt.md" '
   .[-1].content == [{type:"text",text:$prompt}]
 ' "$compact_request" >/dev/null || fail 'compaction did not send its prompt unchanged'
 assert_canonical_session "$tmp/compact-source_compact.jsonl"
-[[ $(stat -f %Lp "$tmp/compact-source_compact.jsonl") == 600 ]] ||
+assert_mode 600 "$tmp/compact-source_compact.jsonl" ||
   fail 'compaction created a readable child session'
 jq -e -s '
   [.[].type] == ["session","hook_result"] and

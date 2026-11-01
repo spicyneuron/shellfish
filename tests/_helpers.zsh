@@ -73,6 +73,13 @@ assert_equal() {
   }
 }
 
+assert_mode() {
+  local -A info
+  zmodload -F zsh/stat b:zstat || return
+  zstat -H info -- "$2" || return
+  assert_equal "$1" "$(printf '%o' $(( info[mode] & 8#7777 )))"
+}
+
 fail() {
   sf_test_detail=( "$@" )
   return 1

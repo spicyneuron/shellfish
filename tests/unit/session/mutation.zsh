@@ -11,10 +11,11 @@ sf_test_session "$session"
 # Project-scoped sessions and scratch are private within the Shellfish directory.
 sf_session_select_path
 [[ $REPLY == "${tmp:a}/shellfish/sessions/"*.jsonl ]]
-[[ $(stat -f %Lp "$REPLY:h") == 700 ]]
+assert_mode 700 "$REPLY:h"
 sf_test_source lib/scratch.zsh
 sf_scratch_root
-[[ $REPLY == "${tmp:a}/shellfish/scratch" && $(stat -f %Lp "$REPLY") == 700 ]]
+[[ $REPLY == "${tmp:a}/shellfish/scratch" ]]
+assert_mode 700 "$REPLY"
 
 # Without SHELLFISH_DIR, the nearest .shellfish above the working directory
 # wins, then ~/.shellfish.
@@ -63,7 +64,7 @@ head -n 1 "$session" | jq -e '
   .profile.sandbox.write == ["/tmp/reference"] and .model.context_window == 1234
 ' >/dev/null
 assert_equal "$before" "$(tail -n +2 "$session")"
-[[ $(stat -f '%Lp' "$session") == 600 ]]
+assert_mode 600 "$session"
 
 typeset unchanged=$(cat "$session")
 for update in '{}' "{\"profile\":{},\"model\":$model}"; do
