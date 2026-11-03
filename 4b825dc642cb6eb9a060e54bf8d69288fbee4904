@@ -1,0 +1,19 @@
+---
+status: new
+---
+
+# Survey agent projects for concrete Shellfish improvements
+
+Consider reviewing the projects saved in the original research note and recording only ideas that fit Shellfish's small, auditable design.
+
+Original references:
+- https://github.com/PrimeIntellect-ai/prime-agent
+- https://github.com/h4ckf0r0day/obscura
+- https://github.com/vshulcz/deja-vu/
+
+Suggestions:
+- Check each project's current purpose rather than assuming the old reference is still relevant.
+- A short adopt, investigate, or skip recommendation with concrete reasoning may be enough.
+- Create implementation follow-ups only for promising ideas, rather than treating this survey as a commitment to copy features.
+
+Migrated from: `harness`.
