@@ -1,0 +1,17 @@
+---
+status: new
+---
+
+# Report per-edit diff and line-count summaries
+
+Consider concise change summaries after edit tool calls so users can see the scale of each change.
+
+Suggestions:
+- Check what edit_file and write_file already return before adding another diff computation.
+- Clarify whether the summary is per call or cumulative, especially when the working tree already contains unrelated edits.
+- Explore existing tool presentation or post_tool_use hooks rather than making the core understand source edits.
+- Include no-op and failed edits in the design discussion.
+
+Related: tui/word-diff.
+
+Migrated from: `harness`.
