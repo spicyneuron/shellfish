@@ -1,0 +1,20 @@
+---
+status: new
+---
+
+# Evaluate sandbox backends
+
+Consider whether to keep fence or replace it with nono or Anthropic sandbox-runtime.
+
+Suggestions:
+- Compare the current deny-and-grant approach, denial visibility, platform support, and a protected bypass mode using representative Shellfish tools.
+- Check whether the sibling checkouts mentioned in the original note are still available.
+- A short recommendation with concrete trade-offs may be enough. Keeping fence is a valid outcome.
+
+Original references:
+- https://github.com/nolabs-ai/nono
+- https://github.com/anthropics/sandbox-runtime
+
+Related: sandbox/bypass-baseline, sandbox/fence-api-requests.
+
+Migrated from: `default`.
