@@ -1,0 +1,15 @@
+---
+status: new
+---
+
+# Explore required reasons for code mutations
+
+Consider requiring a short explanation before changes made through shell, write_file, or edit_file.
+
+Suggestions:
+- Clarify whether the goal is user visibility, review input, or an enforceable permission gate.
+- Compare tool schemas, prompt guidance, and pre_tool_use hooks. Shell commands may make comprehensive mutation detection impractical.
+- Explore a consistent reason format without treating the agent's explanation as proof that a change is safe.
+- Coordinate with harness/review-gates to avoid two overlapping proposal mechanisms.
+
+Migrated from: `harness`.
