@@ -15,3 +15,13 @@
 - Stop hook blocks until complete
 - Covers /loop [time], /wait <N>, /watch todo.md
 - Stop guard variant: same cached prefix plus a review checklist
+
+## Migration
+
+Replaced by:
+
+- `tui/images-and-files`: Design image paste and file attachments for chat
+- `tui/interrupt-and-steer`: Interrupt a running turn and immediately steer it
+- `harness/goal-workflows`: Explore goal completion and bounded loop workflows
+
+Attachment work is merged with image paste from default. Existing image reading is treated as a starting point to investigate, not a new feature request.
