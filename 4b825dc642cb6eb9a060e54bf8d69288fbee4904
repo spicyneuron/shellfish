@@ -1,0 +1,18 @@
+---
+status: new
+---
+
+# Evaluate and request missing fence configuration options
+
+If fence remains the backend, consider checking whether the original requested options are still missing and useful before preparing upstream issues or patches.
+
+Original requests:
+- --config-json
+- --deny-host-path and --deny-host-path-rw
+
+Suggestions:
+- Verify current behavior locally and identify concrete Shellfish use cases.
+- Separate the requests upstream if they have independent implementation or review paths.
+- Treat this as conditional on sandbox/backend-evaluation, not a requirement to extend a backend that may be replaced.
+
+Migrated from: `sandbox`.
