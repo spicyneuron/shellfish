@@ -1,0 +1,21 @@
+---
+status: new
+---
+
+# Explore goal completion and bounded loop workflows
+
+Consider a /goal command taking text or a file, with a stop check that can continue work until the goal is complete.
+
+Original related ideas:
+- /loop with a time bound.
+- /wait N.
+- /watch todo.md.
+- A stop-guard reviewer using a shared cached prefix and a review checklist.
+
+Suggestions:
+- Start with one goal and a stop hook before general scheduling or watching.
+- Explore named state and public commands while keeping workflow policy outside the core.
+- Consider explicit stop conditions, cancellation, budgets, and how an unsatisfiable goal returns control to the user.
+- Split later scheduling features only if the initial experiment supports them.
+
+Migrated from: `harness/parity`.
