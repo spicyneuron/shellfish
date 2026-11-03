@@ -1,0 +1,17 @@
+---
+status: new
+---
+
+# Explore review for drift from user intent
+
+Consider whether a harness review can detect when the agent is diverging from the user's request.
+
+Suggestions:
+- Start with concrete examples that distinguish useful initiative from unwanted scope expansion.
+- Compare checking at tool boundaries with checking before completion, including context cost and false positives.
+- Explore whether decision providers or the existing reviewer pattern offer a small first experiment.
+- Prefer an evaluation and a clear feedback path before committing to an always-on gate.
+
+Related: harness/tool-call-review, harness/review-gates.
+
+Migrated from: `harness`.
