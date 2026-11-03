@@ -1,0 +1,15 @@
+---
+status: new
+---
+
+# Open verbose output in a pager without reloading chat
+
+Consider changing /verbose, optionally with an argument, to inspect expanded output in a pager rather than restarting the TUI with full previews.
+
+Suggestions:
+- Clarify what an optional N selects and how it relates to displayed turns.
+- Inspect the existing command handoff and presentation paths for a small implementation.
+- Consider returning to the same session and draft after the pager exits, including terminal restoration.
+- Decide whether a preview toggle is still useful rather than retaining old behavior automatically.
+
+Migrated from: `tui`.
