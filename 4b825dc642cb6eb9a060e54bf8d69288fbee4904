@@ -1,0 +1,15 @@
+---
+status: new
+---
+
+# Interrupt a running turn and immediately steer it
+
+Consider an explicit way to send the current draft, or the next queued prompt, without waiting for the active turn to finish.
+
+Suggestions:
+- Evaluate the original Cmd+Return proposal against key sequences terminals can actually deliver.
+- Start by exploring interrupt, settle or recover, then submit a normal user turn through shellfish run.
+- Compare injection after tool results only if it offers a compelling benefit without weakening turn ownership or transcript ordering.
+- Inspect current queue-discard behavior so interruption does not accidentally lose the selected prompt or duplicate another queued item.
+
+Migrated from: `harness/parity`.
