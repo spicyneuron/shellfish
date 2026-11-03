@@ -1,5 +1,5 @@
 ---
-status: new
+status: ready
 ---
 
 # Interrupt a running turn and immediately steer it
