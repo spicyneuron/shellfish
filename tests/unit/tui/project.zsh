@@ -70,7 +70,8 @@ usage | 2 ↑ 1 ↓ | 40' "$REPLY"
 # history only on replay.
 typeset briefed=$(jq -c '.profile.system = [{text:"be brief"}]' <<<"$header")
 project load "$briefed" '{"type":"user","content":[{"type":"text","text":"Hello"}]}'
-assert_equal 'details |  |  |  |  |
+assert_equal 'commands
+details |  |  |  |  |
 profile | test/fake-model |
 message_start | system
 message_delta | 0 | text | be brief |
@@ -80,7 +81,8 @@ message_delta | 0 | text | Hello |
 message_end
 prompt | Hello' "$REPLY"
 project live "$briefed" '{"type":"user","content":[{"type":"text","text":"Hello"}]}'
-assert_equal 'details |  |  |  |  |
+assert_equal 'commands
+details |  |  |  |  |
 profile | test/fake-model |
 message_start | user
 message_delta | 0 | text | Hello |
@@ -157,10 +159,12 @@ assert_equal 'error | Cancelled. | stopped by the user' "$REPLY"
 
 # The header and later updates carry model identity; usage reads its window.
 project load "$header"
-assert_equal 'details |  |  |  |  |
+assert_equal 'commands
+details |  |  |  |  |
 profile | test/fake-model |' "$REPLY"
 project live "$update"
-assert_equal 'profile | test/fake-model | 200' "$REPLY"
+assert_equal 'commands
+profile | test/fake-model | 200' "$REPLY"
 project live '{"type":"_assistant_start"}' \
   '{"type":"assistant","stop":"end","content":[],"usage":{"input_tokens":75,"cached_tokens":15,"output_tokens":5}}'
 assert_equal 'message_start | agent
@@ -172,7 +176,8 @@ typeset equipped=$(jq -c '.profile += {tools:["@tools/read_file","/x/tools/shell
   hooks:["@hooks/project/environment"],sandbox:{enabled:true,read:["~/a","~/b"],write:["~/c"]}}' \
   <<<"$header")
 project live "$equipped"
-assert_equal 'details | read_file, shell |  | project/environment | 2 | 1
+assert_equal 'commands
+details | read_file, shell |  | project/environment | 2 | 1
 profile | test/fake-model |' "$REPLY"
 
 # The loaded path event names the session the client now owns.

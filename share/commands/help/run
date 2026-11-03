@@ -14,6 +14,7 @@ listed=$(jq -nr --argjson commands "$SHELLFISH_COMMANDS" '
 cat >&2 <<HELP
 Help:
 shift+enter        Add a line instead of sending the message
+tab                Complete a slash command or its shared prefix
 ctrl+c             Cancel an active request; otherwise exit
 ↑, ↓               Navigate prompt history
 /queue drop <N>    Discard queued prompt

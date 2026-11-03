@@ -186,6 +186,7 @@ bindkey -e
 ZLE_CALLS=()
 sf_tui_bind
 [[ $(bindkey -M sf-present '^M') == *sf_tui_accept ]]
+[[ $(bindkey -M sf-present '^I') == *sf_tui_complete ]]
 [[ $(bindkey -M sf-present $'\e[13;2u') == *sf_tui_insert_newline ]]
 [[ $(bindkey -M sf-present $'\e[A') == *sf_tui_up ]]
 [[ $(bindkey -M sf-present $'\e[B') == *sf_tui_down ]]
@@ -201,7 +202,7 @@ sf_tui_bind
 [[ $(bindkey -M sf-present $'\e[1;3C') == *forward-word ]]
 
 # Inherit no editor commands beyond the explicit bindings.
-for key in '^[x' '^[z' '^R' '^I' '^_' '^O'; do
+for key in '^[x' '^[z' '^R' '^_' '^O'; do
   [[ $(bindkey -M sf-present $key) == *undefined-key ]] ||
     fail "$key is bound"
 done
