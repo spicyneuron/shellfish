@@ -30,3 +30,19 @@ Tab completion for commands in TUI.
 Support images in decision models and sandbox-approver.
 
 Design a way to paste images into chat TUI.
+
+## Migration
+
+Replaced by:
+
+- `sandbox/backend-evaluation`: Evaluate sandbox backends
+- `sandbox/bypass-baseline`: Explore a protected baseline for sandbox bypass
+- `sandbox/blocked-access`: Explain sandbox denials and suggest safe resolutions
+- `sandbox/grants-context`: Expose effective sandbox grants to the agent
+- `sandbox/test-exceptions`: Allow sandboxed tests to create protected-name fixtures
+- `sandbox/approver-images`: Include relevant images in sandbox approval reviews
+- `harness/dynamic-prompts`: Explore executable system prompt sources
+- `tui/command-completion`: Complete TUI commands with Tab
+- `tui/images-and-files`: Design image paste and file attachments for chat
+
+Classifier prompt discussion deferred. Original wording: "Add prompt to steer classifier." No replacement issue was created. The general decision input API already accepts media, so remaining image-review work is tracked in sandbox/approver-images.
