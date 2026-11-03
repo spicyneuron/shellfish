@@ -22,3 +22,17 @@
 
 ## Tokei comparison
 - Codex, Pi, OpenCode
+
+## Migration
+
+Replaced by:
+
+- `harness/prompt-editor`: Edit a draft prompt in an external editor
+- `harness/stop-notification`: Notify the user when a turn finishes
+- `publish/install-methods`: Choose and support practical installation methods
+- `publish/zip-bundle`: Provide a release zip bundle and extraction command
+- `publish/openrouter-app-id`: Identify Shellfish in OpenRouter requests
+- `publish/launch-screenshot`: Capture a representative launch screenshot
+- `publish/size-comparison`: Compare Shellfish code size with other coding agents
+
+Prompt editing and stop notifications moved under harness. Distribution and launch work remains under publish.
