@@ -14,3 +14,16 @@ Suggestions:
 - Use terminal tests to explore the behavior the user actually sees.
 
 Migrated from: `tui`.
+
+Blocked: Word wrap in the prompt needs a decision on the editing model, which this todo leaves open.
+
+Findings: the prompt is ZLE's own BUFFER, drawn between PREDISPLAY and POSTDISPLAY (libexec/tui/render/view.zsh). ZLE in zsh 5.9 always wraps BUFFER at the terminal column, and it has no soft-wrap option and no way to show display-only text in the middle of BUFFER. region_highlight can only style text, not move it. sf_tui_move_vertical (libexec/tui/editor.zsh) copies ZLE's character wrap so Up/Down line up with what is on screen.
+
+Options:
+A) Draw the prompt text ourselves in PREDISPLAY using sf_tui_wrap word wrapping, and keep BUFFER as the editing state but hide it. Cursor placement then needs our own escape sequences after each zle -R, which conflicts with ZLE's cursor handling and the commit/stage flow in render/terminal.zsh. This amounts to a separate editing model that is only partly built.
+B) Insert real line breaks while typing. This changes the submitted text, so the todo rules it out.
+C) Won't do: keep ZLE's character wrap. This is simple and right in every case that matters (newlines, Unicode width, resize, cursor).
+
+Recommendation: C, unless word wrap is worth owning cursor rendering. If A is chosen, it should get its own todo that covers cursor placement and the PTY tests in tests/pty/chat.py.
+
+No code changes. No commits on the branch.
