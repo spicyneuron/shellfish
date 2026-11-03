@@ -1,0 +1,15 @@
+---
+status: new
+---
+
+# Identify Shellfish in OpenRouter requests
+
+Consider sending OpenRouter's application identification metadata for Shellfish.
+
+Suggestions:
+- Verify the provider's current supported attribution fields before choosing headers or values.
+- Inspect the OpenRouter wrapper around openai_chat and look for a narrow integration that does not affect other OpenAI-compatible providers.
+- Check conversation and decision request paths to determine the intended scope.
+- Consider what identity should be fixed to the application and what, if anything, should be configurable.
+
+Migrated from: `publish`.
