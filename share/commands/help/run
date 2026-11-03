@@ -14,7 +14,10 @@ listed=$(jq -nr --argjson commands "$SHELLFISH_COMMANDS" '
 cat >&2 <<HELP
 Help:
 shift+enter        Add a line instead of sending the message
-ctrl+c             Cancel an active request; otherwise exit
+ctrl+x             Send draft or first queued prompt now, interrupting an active request
+ctrl+enter, cmd+enter
+                   Send now, if supported by the terminal
+ctrl+c             Cancel an active request, keeping the queue pending; otherwise exit
 ↑, ↓               Navigate prompt history
 /queue drop <N>    Discard queued prompt
 /queue clear       Discard all queued prompts

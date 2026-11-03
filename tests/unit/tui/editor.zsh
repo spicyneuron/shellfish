@@ -136,6 +136,39 @@ CURSOR=${#BUFFER}
 sf_tui_accept
 assert_equal 0 "${#SF_PRESENT_QUEUE}"
 
+# Send now resumes the oldest pending prompt without recording it twice.
+SF_PRESENT_STATE=idle
+SF_PRESENT_ACTION=''
+SF_PRESENT_QUEUE=( first second )
+SF_PRESENT_HISTORY=( first second )
+BUFFER=''
+ZLE_CALL=''
+sf_tui_send
+assert_equal submit "$SF_PRESENT_ACTION"
+assert_equal first "$SF_PRESENT_SUBMITTED"
+assert_equal second "${(j:,:)SF_PRESENT_QUEUE}"
+assert_equal first,second "${(j:,:)SF_PRESENT_HISTORY}"
+assert_equal accept-line "$ZLE_CALL"
+
+# A draft takes priority over the paused queue.
+SF_PRESENT_STATE=idle
+SF_PRESENT_ACTION=''
+BUFFER=now
+sf_tui_send
+assert_equal submit "$SF_PRESENT_ACTION"
+assert_equal now "$SF_PRESENT_SUBMITTED"
+assert_equal second "${(j:,:)SF_PRESENT_QUEUE}"
+assert_equal '' "$BUFFER"
+
+# Queued client commands still dispatch through their normal boundary.
+SF_PRESENT_STATE=idle
+SF_PRESENT_ACTION=''
+SF_PRESENT_QUEUE=( /quit )
+sf_tui_send
+assert_equal quit "$SF_PRESENT_ACTION"
+assert_equal 0 "${#SF_PRESENT_QUEUE}"
+assert_equal accept-line "$ZLE_CALL"
+
 # Navigate history and multiline display rows.
 SF_PRESENT_HISTORY=()
 sf_tui_record_prompt first
@@ -193,6 +226,9 @@ sf_tui_bind
 [[ $(bindkey -M sf-present $'\e[A') == *sf_tui_up ]]
 [[ $(bindkey -M sf-present $'\e[B') == *sf_tui_down ]]
 [[ $(bindkey -M sf-present '^C') == *sf_tui_interrupt ]]
+[[ $(bindkey -M sf-present '^X') == *sf_tui_send ]]
+[[ $(bindkey -M sf-present $'\e[13;5u') == *sf_tui_send ]]
+[[ $(bindkey -M sf-present $'\e[13;9u') == *sf_tui_send ]]
 [[ $(bindkey -M sf-present $'\e') == *sf_tui_escape ]]
 [[ $(bindkey -M sf-present x) == *self-insert ]]
 [[ $(bindkey -M sf-present $'\xe9') == *self-insert ]]

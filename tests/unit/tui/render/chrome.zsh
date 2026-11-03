@@ -82,6 +82,18 @@ SF_PRESENT_QUEUE=( $'first queued\ncontinued' )
 sf_tui_repaint
 [[ $PREDISPLAY == *$'─ queue '*$'\n1. first queued continued\n'* ]] ||
   fail 'queued prompt was not rendered'
+[[ $PREDISPLAY == *'─ queue (ctrl+x to send now) '* ]] ||
+  fail 'queue omitted the send-now hint'
+SF_PRESENT_STATE=working
+sf_tui_repaint
+[[ $PREDISPLAY == *'─ queue (ctrl+x to send now) '* ]] ||
+  fail 'active turn omitted the queue hint'
+COLUMNS=20
+sf_tui_repaint
+[[ $PREDISPLAY == *$'─ queue ───────────\n'* && $PREDISPLAY != *'ctrl+x'* ]] ||
+  fail 'narrow queue header did not omit the hint'
+COLUMNS=80
+SF_PRESENT_STATE=idle
 SF_PRESENT_QUEUE=()
 sf_tui_repaint
 [[ $PREDISPLAY != *'─ queue '* ]] || fail 'cleared queue remained visible'

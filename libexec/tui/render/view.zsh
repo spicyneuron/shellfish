@@ -316,7 +316,9 @@ sf_tui_repaint() {
     sf_tui_chrome $start ${#choices} permission
   else
     if (( queue_shown )); then
-      queue_text='─ queue '
+      label='queue (ctrl+x to send now)'
+      (( columns >= ${#label} + 3 )) || label=queue
+      queue_text="─ $label "
       (( ${#queue_text} >= columns )) ||
         queue_text+=${(l:$(( columns - ${#queue_text} ))::─:)""}
       queue_text=${queue_text[1,columns]}
@@ -339,7 +341,8 @@ sf_tui_repaint() {
       start=${#PREDISPLAY}
       PREDISPLAY+="$queue_text"$'\n\n'
       sf_tui_chrome $start $queue_head divider
-      sf_tui_chrome $(( start + 2 )) $(( queue_head - 2 < 5 ? queue_head - 2 : 5 )) muted
+      sf_tui_chrome $(( start + 2 )) \
+        $(( queue_head - 2 < ${#label} ? queue_head - 2 : ${#label} )) muted
       sf_tui_chrome $(( start + queue_head + 1 )) \
         $(( ${#queue_text} - queue_head - 1 )) muted
     fi

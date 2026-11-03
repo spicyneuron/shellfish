@@ -189,6 +189,63 @@ def test_activity_input_does_not_delay_interrupt():
         session.close()
 
 
+def test_steer_cancels_and_sends_draft():
+    for key in (b"\x18", b"\x1b[13;5u", b"\x1b[13;9u"):
+        session = Session(
+            explicit_session=True,
+            env={"SF_TEST_PROVIDER_DELAY_MATCH_SECONDS": "2"},
+        )
+        try:
+            session.send(b"delay response\r")
+            path, _ = session.wait_session_records(2, path=session.explicit_session)
+            session.send(b"later\rsteer now" + key)
+            _, records = session.wait_session_records(7, path=path)
+            prompts = [
+                record["content"][0]["text"]
+                for record in records if record["type"] == "user"
+            ]
+            assert prompts == ["delay response", "steer now", "later"], prompts
+            assert records[-1]["type"] == "assistant", records
+            assert records[2] in (
+                {"type": "error", "user_text": "Cancelled."},
+                {"type": "error", "user_text": "Turn interrupted."},
+            ), (key, records)
+        finally:
+            session.close()
+
+
+def test_interrupt_preserves_queue_until_send_now():
+    session = Session(
+        explicit_session=True,
+        env={"SF_TEST_PROVIDER_DELAY_MATCH_SECONDS": "2"},
+    )
+    try:
+        session.send(b"delay response\r")
+        path, _ = session.wait_session_records(2, path=session.explicit_session)
+        mark = len(session.output)
+        session.send(b"first\rsecond\r\x03")
+        session.wait_after(mark, "Cancelled.", timeout=1.5)
+        session.pump(0.2)
+        _, records = session.wait_session_records(3, path=path)
+        prompts = [
+            record["content"][0]["text"]
+            for record in records if record["type"] == "user"
+        ]
+        assert prompts == ["delay response"], prompts
+        assert records[-1] == {"type": "error", "user_text": "Cancelled."}, records
+
+        session.send(b"\x1b[13;5u")
+        _, records = session.wait_session_records(7, path=path)
+        prompts = [
+            record["content"][0]["text"]
+            for record in records if record["type"] == "user"
+        ]
+        assert prompts == ["delay response", "first", "second"], prompts
+        assert records[-1]["type"] == "assistant", records
+    finally:
+        session.close()
+
+
 def test_interrupt_drains_partial_recovery():
     session = Session(
         explicit_session=True,
@@ -491,6 +548,8 @@ if __name__ == "__main__":
         test_tool_uses_manifest_display,
         test_activity_input_does_not_delay_interrupt,
         test_interrupt_drains_partial_recovery,
+        test_steer_cancels_and_sends_draft,
+        test_interrupt_preserves_queue_until_send_now,
         test_permission_decision_restores_draft,
         test_permission_review_runs_with_prompt,
         test_permission_grant_for_session,
