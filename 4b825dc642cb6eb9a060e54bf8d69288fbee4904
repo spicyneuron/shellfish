@@ -1,0 +1,15 @@
+---
+status: new
+---
+
+# Explore executable system prompt sources
+
+Consider allowing executable prompt sources whose output can be combined with static system text.
+
+Suggestions:
+- Compare this with existing session_start and submission hooks before adding another executable component concept.
+- Investigate when execution should happen and how the result fits the frozen session profile and explicit session updates.
+- Consider ordering, failure behavior, and the trust implications of executing a configured prompt file.
+- sandbox/grants-context is one motivating use case, but may not need this feature. A recommendation to use hooks instead could be a valid outcome.
+
+Migrated from: `default`.
