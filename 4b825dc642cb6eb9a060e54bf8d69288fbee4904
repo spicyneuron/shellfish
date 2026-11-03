@@ -1,0 +1,17 @@
+---
+status: new
+---
+
+# Allow sandboxed tests to create protected-name fixtures
+
+Investigate a narrow way to run tests that create .env and .shellfish fixtures without exposing real credentials or writable trusted configuration. The original note also mentions Python access.
+
+Suggestions:
+- Reproduce the actual failures before choosing an exception mechanism.
+- Check how policy denies interact with session grants and existing development-tool path detection.
+- Consider fixture-only temporary locations or a dedicated test policy if they avoid weakening normal tool protections.
+- Treat Python runtime and cache access separately if it turns out to be a different failure.
+
+Related: sandbox/blocked-access.
+
+Migrated from: `default`.
