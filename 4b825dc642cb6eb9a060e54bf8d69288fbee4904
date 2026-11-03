@@ -1,0 +1,20 @@
+---
+status: new
+---
+
+# Choose a minimal workflow for entry and exit review gates
+
+Consider which review boundaries provide enough value to justify their cost, then identify a small implementable first slice. The original notes leave the applicable gates open.
+
+Options to evaluate:
+- A stop reviewer returning pass or fail with a reason.
+- Entry checks that block writing until prerequisites pass.
+- A plan-before-write proposal that unlocks mutation tools.
+- Per-tool review, including a separate model reviewing proposed edits.
+- A combination of planning and stop review.
+
+Suggestions:
+- Explore existing pre_tool_use, stop hooks, and named state before adding mechanisms.
+- Consider recovery, override behavior, and cost. Treat the options as alternatives, not a commitment to implement every gate.
+
+Migrated from: `harness`.
