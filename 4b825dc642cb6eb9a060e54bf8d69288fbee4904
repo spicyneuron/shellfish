@@ -1,0 +1,17 @@
+---
+status: new
+---
+
+# Explore decision-based tool appropriateness review
+
+Consider a harness component that checks whether a proposed tool call is appropriate, beyond the existing sandbox-bypass decision.
+
+Suggestions:
+- Define the useful review question and a few examples before selecting a decision model.
+- Investigate the pre_tool_use hook and existing approver patterns rather than putting coding policy in the core.
+- Compare benefit, latency, cost, and false denials with the gate options in harness/review-gates.
+- Explore what feedback would help the agent recover from a refusal.
+
+The original request to determine bypass dimensions may already be covered by the current risk, authorization, and untrusted-instruction review.
+
+Migrated from: `harness`.
