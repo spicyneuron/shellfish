@@ -1,0 +1,15 @@
+---
+status: new
+---
+
+# Explore temporary sessions for incognito use
+
+Consider an incognito mode whose session lives in temporary storage and is cleaned up when its owner exits.
+
+Suggestions:
+- Clarify the privacy promise, including what remains outside the transcript such as provider requests or tool-created files.
+- Inspect explicit session paths and scratch cleanup before adding a separate session lifecycle.
+- Explore ownership when background turns, subagents, handoffs, or cancellation outlive the client.
+- Keep the ordinary append-only transcript as the session state even when its storage is temporary.
+
+Migrated from: `harness`.
