@@ -1,0 +1,15 @@
+---
+status: new
+---
+
+# Consult several models and synthesize their responses
+
+Consider a council-style harness component that asks several models the same question in parallel and has one summarize the results.
+
+Suggestions:
+- Compare a small script using public request commands with extending the existing subagent tool.
+- Explore a bounded first version with explicit model selection and a clear treatment of failed or disagreeing responses.
+- Consider cost, cancellation, and whether a council needs tools or only independent opinions.
+- Avoid introducing a second turn loop or a separate authoritative session model.
+
+Migrated from: `harness`.
