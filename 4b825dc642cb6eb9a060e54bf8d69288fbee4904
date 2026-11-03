@@ -1,0 +1,17 @@
+---
+status: new
+---
+
+# Choose and support practical installation methods
+
+Consider a minimal supported installation path, including whether Homebrew is worthwhile.
+
+Suggestions:
+- Compare the current source-install instructions with the needs of a new user on supported platforms.
+- Account for runtime dependencies, the default harness's sandbox dependency, and resolving bundled resources after installation.
+- Include a fresh-install smoke check and an understandable upgrade or removal path in any proposed solution.
+- Avoid committing to several package ecosystems without evidence of demand.
+
+Related: publish/zip-bundle.
+
+Migrated from: `publish`.
