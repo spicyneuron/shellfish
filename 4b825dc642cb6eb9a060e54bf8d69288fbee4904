@@ -1,0 +1,15 @@
+---
+status: new
+---
+
+# Evaluate selective context editing
+
+Consider whether selectively reducing or replacing context could improve long sessions beyond existing compaction and rewind.
+
+Suggestions:
+- Start with concrete cases where current compaction loses useful information or retains too much.
+- Explore a context projection or an explicit summarized child rather than creating a second authoritative history.
+- Consider tool-call and result ordering, provider constraints, and how users understand what the model can still see.
+- A comparative experiment and recommendation may be enough before designing a user-facing editing feature.
+
+Migrated from: `harness`.
