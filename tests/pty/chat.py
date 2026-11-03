@@ -193,6 +193,32 @@ def test_activity_input_does_not_delay_interrupt():
         session.close()
 
 
+def test_steer_cancels_and_sends_draft():
+    session = Session(
+        explicit_session=True,
+        env={"SF_TEST_PROVIDER_DELAY_MATCH_SECONDS": "2"},
+    )
+    try:
+        session.send(b"delay response\r")
+        path, _ = session.wait_session_records(2, path=session.explicit_session)
+        session.send(b"steer now\x07")
+        deadline = time.monotonic() + 5
+        while True:
+            _, records = session.wait_session_records(1, path=path)
+            if records[-1]["type"] == "assistant" and len(records) > 3:
+                break
+            assert time.monotonic() < deadline, records
+            session.pump(0.05)
+        prompts = [
+            record["content"][0]["text"]
+            for record in records if record["type"] == "user"
+        ]
+        assert prompts == ["delay response", "steer now"], prompts
+        assert {"type": "error", "user_text": "Cancelled."} in records
+    finally:
+        session.close()
+
+
 def test_interrupt_drains_partial_recovery():
     session = Session(
         explicit_session=True,
@@ -420,6 +446,7 @@ if __name__ == "__main__":
         test_file_changes_use_full_preview,
         test_activity_input_does_not_delay_interrupt,
         test_interrupt_drains_partial_recovery,
+        test_steer_cancels_and_sends_draft,
         test_permission_decision_restores_draft,
         test_permission_stop_cancels_pending_tools,
         test_chat_end,

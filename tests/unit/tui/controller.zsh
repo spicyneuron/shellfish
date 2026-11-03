@@ -115,6 +115,49 @@ assert_equal cancelling "$SF_PRESENT_STATE"
 assert_equal 1 "$cancel_signals"
 assert_equal 0 "$cancel_stops"
 assert_equal queued "${(j:,:)SF_PRESENT_QUEUE}"
+
+# Steering cancels once and sends the draft ahead of the queue.
+SF_PRESENT_HISTORY=()
+cancel_signals=0
+SF_PRESENT_STATE=working
+SF_PRESENT_STEER=0
+SF_PRESENT_QUEUE=( later )
+BUFFER=now
+CURSOR=3
+sf_tui_steer
+assert_equal cancelling "$SF_PRESENT_STATE"
+assert_equal 1 "$cancel_signals"
+assert_equal 1 "$SF_PRESENT_STEER"
+assert_equal now,later "${(j:,:)SF_PRESENT_QUEUE}"
+assert_equal '' "$BUFFER"
+assert_equal 0 "$CURSOR"
+assert_equal now "$SF_PRESENT_HISTORY[-1]"
+# Steering after Ctrl-C keeps the existing cancellation.
+BUFFER=again
+sf_tui_steer
+assert_equal cancelling "$SF_PRESENT_STATE"
+assert_equal 1 "$cancel_signals"
+assert_equal again,now,later "${(j:,:)SF_PRESENT_QUEUE}"
+# Nothing to send leaves the turn running.
+SF_PRESENT_STATE=working
+SF_PRESENT_STEER=0
+SF_PRESENT_QUEUE=()
+BUFFER=''
+sf_tui_steer
+assert_equal working "$SF_PRESENT_STATE"
+assert_equal 0 "$SF_PRESENT_STEER"
+assert_equal 1 "$cancel_signals"
+# A permission prompt hides the draft, which is sent rather than restored.
+SF_PRESENT_STATE=permission
+SF_PRESENT_PERMISSION_DRAFT=hidden
+SF_PRESENT_PERMISSION_CURSOR=6
+sf_tui_steer
+assert_equal cancelling "$SF_PRESENT_STATE"
+assert_equal hidden "${(j:,:)SF_PRESENT_QUEUE}"
+assert_equal '' "$BUFFER"
+SF_PRESENT_QUEUE=()
+SF_PRESENT_STEER=0
+
 functions[sf_tui_transport_signal]=$functions[sf_tui_transport_signal_saved]
 functions[sf_tui_transport_stop]=$functions[sf_tui_transport_stop_saved]
 unfunction sf_tui_transport_signal_saved sf_tui_transport_stop_saved
@@ -200,6 +243,39 @@ assert_equal 0 "${#SF_PRESENT_QUEUE}"
 sf_tui_transcript 79 20
 [[ $SF_PRESENT_VIEWPORT_TEXT == *'✕ Discarded 1 queued prompt'* ]] ||
   fail "discarded queue was not reported: $SF_PRESENT_VIEWPORT_TEXT"
+
+# A steered cancellation sends the next prompt and keeps the rest queued.
+for code in 0 130; do
+  sf_tui_reset
+  sf_tui_terminal_reset
+  sf_tui_activity_start
+  SF_PRESENT_SESSION="$tmp/recover.jsonl"
+  SF_PRESENT_STATE=cancelling
+  SF_PRESENT_STEER=1
+  SF_PRESENT_QUEUE=( now later )
+  SF_TUI_TRANSPORT_EOF=1
+  SF_TUI_TRANSPORT_EXIT_STATUS=$code
+  SF_TUI_TRANSPORT_EXIT_DETAIL=''
+  sf_tui_exec_finish
+  assert_equal queued "$SF_PRESENT_STATE"
+  assert_equal now "$SF_PRESENT_SUBMITTED"
+  assert_equal later "${(j:,:)SF_PRESENT_QUEUE}"
+  assert_equal 0 "$SF_PRESENT_STEER"
+done
+# An uncertain exit discards a steered queue like any other.
+sf_tui_reset
+sf_tui_terminal_reset
+SF_PRESENT_SESSION="$tmp/recover.jsonl"
+SF_PRESENT_STATE=cancelling
+SF_PRESENT_STEER=1
+SF_PRESENT_QUEUE=( now )
+SF_TUI_TRANSPORT_EOF=1
+SF_TUI_TRANSPORT_EXIT_STATUS=1
+SF_TUI_TRANSPORT_EXIT_DETAIL='provider failed'
+sf_tui_exec_finish
+assert_equal idle "$SF_PRESENT_STATE"
+assert_equal 0 "${#SF_PRESENT_QUEUE}"
+assert_equal 0 "$SF_PRESENT_STEER"
 
 # Discard queues after uncertain exits.
 sf_tui_reset

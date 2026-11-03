@@ -410,13 +410,13 @@ sf_tui_input() {
   if [[ $SF_PRESENT_STATE == permission ]]; then
     case $widget in
       self-insert) sf_tui_permission_choice ;;
-      sf_tui_interrupt|sf_tui_escape) "$widget" "$@" ;;
+      sf_tui_interrupt|sf_tui_escape|sf_tui_send) "$widget" "$@" ;;
       bracketed-paste) zle .bracketed-paste paste ;;
     esac
     return 0
   fi
   case $widget in
-    sf_tui_accept|sf_tui_insert_newline|sf_tui_up|sf_tui_down|sf_tui_interrupt|sf_tui_escape)
+    sf_tui_accept|sf_tui_send|sf_tui_insert_newline|sf_tui_up|sf_tui_down|sf_tui_interrupt|sf_tui_escape)
       "$widget" "$@"
       ;;
     *)
@@ -452,6 +452,16 @@ sf_tui_interrupt() {
   else
     zle -R
   fi
+}
+
+# Send now: steer an active turn, or submit as usual.
+sf_tui_send() {
+  if [[ $SF_PRESENT_STATE == (idle|stopped) ]]; then
+    sf_tui_accept
+    return
+  fi
+  sf_tui_steer || return 1
+  zle -R
 }
 
 # Bind Escape exactly so ZLE does not wait for a longer sequence.
@@ -491,6 +501,9 @@ sf_tui_bind() {
     '^J' sf_tui_accept
     '^[^M' sf_tui_insert_newline
     '^[[13;2u' sf_tui_insert_newline
+    '^G' sf_tui_send
+    '^[[13;5u' sf_tui_send
+    '^[[13;9u' sf_tui_send
     '^P' sf_tui_up
     '^N' sf_tui_down
     '^[[A' sf_tui_up

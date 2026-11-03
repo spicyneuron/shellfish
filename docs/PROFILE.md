@@ -125,7 +125,7 @@ The bundled commands are selected by the profile:
 | `/user_shell COMMAND`, `/shell` | Run a user-authored command and stage its output as context |
 | `/sandbox [OP DIR]` | Inspect or update frozen sandbox grants |
 
-Client-owned `/refresh`, `/quit`, and `/queue` commands do not run a turn. Bundled submission hooks compact automatically near a known context-window limit, report Git identity changes, and load skills before ordinary prompts. `/compact` leaves the source unchanged and opens a summarized child through the client. Its summary shows in full under `/verbose`. Automatic compaction preserves the interrupted prompt as an editable draft.
+Client-owned `/refresh`, `/quit`, and `/queue` commands do not run a turn. Prompts submitted during a turn queue behind it. Ctrl-G cancels the turn and sends the draft, or else the next queued prompt, as soon as the cancellation settles. Terminals configured to send Ctrl-Return or Cmd-Return as CSI-u sequences can use those instead. Bundled submission hooks compact automatically near a known context-window limit, report Git identity changes, and load skills before ordinary prompts. `/compact` leaves the source unchanged and opens a summarized child through the client. Its summary shows in full under `/verbose`. Automatic compaction preserves the interrupted prompt as an editable draft.
 
 ### Skills
 

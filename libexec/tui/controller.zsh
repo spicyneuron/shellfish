@@ -9,7 +9,7 @@ typeset -g SF_PRESENT_PERMISSION_TOOL='' SF_PRESENT_PERMISSION_TEXT=''
 typeset -gi SF_PRESENT_PERMISSION_DEADLINE=0
 typeset -gi SF_PRESENT_EXIT_STATUS=0
 typeset -gi SF_PRESENT_ERROR_SETTLED=0
-typeset -gi SF_PRESENT_CREATING=0
+typeset -gi SF_PRESENT_CREATING=0 SF_PRESENT_STEER=0
 typeset -g SF_PRESENT_TTY=''
 
 sf_tui_permission_reset() {
@@ -81,6 +81,23 @@ sf_tui_submit() {
   SF_PRESENT_SUBMITTED=$submitted
   sf_tui_record_prompt "$submitted"
   REPLY=submit
+}
+
+# Cancel the turn, then send the draft or the next queued prompt.
+sf_tui_steer() {
+  local draft=$BUFFER
+  REPLY=redraw
+  [[ $SF_PRESENT_STATE == (working|permission|cancelling) ]] || return 0
+  [[ $SF_PRESENT_STATE != permission ]] || draft=$SF_PRESENT_PERMISSION_DRAFT
+  [[ -n $draft ]] || (( ${#SF_PRESENT_QUEUE} )) || return 0
+  [[ $SF_PRESENT_STATE == cancelling ]] || sf_tui_cancel
+  if [[ -n $draft ]]; then
+    SF_PRESENT_QUEUE[1,0]=( "$draft" )
+    sf_tui_record_prompt "$draft"
+    BUFFER=''
+    CURSOR=0
+  fi
+  SF_PRESENT_STEER=1
 }
 
 sf_tui_cancel() {
@@ -181,17 +198,20 @@ sf_tui_pending_next() {
 sf_tui_exec_finish() {
   local heading detail exit_detail
   integer exit_status cancelled=0 settled_error=$SF_PRESENT_ERROR_SETTLED
-  integer creating=$SF_PRESENT_CREATING
+  integer creating=$SF_PRESENT_CREATING steer=$SF_PRESENT_STEER
   sf_tui_transport_result || return 1
   exit_status=$reply[1]
   exit_detail=$reply[2]
   SF_PRESENT_ERROR_SETTLED=0
   SF_PRESENT_CREATING=0
+  SF_PRESENT_STEER=0
   if (( creating && ! exit_status )) && [[ -z $SF_PRESENT_SESSION ]]; then
     exit_status=1
     exit_detail='Create exited without loading a session.'
   fi
   [[ $SF_PRESENT_STATE != cancelling ]] || cancelled=1
+  # Steering continues only after the core settled its own cancellation.
+  (( cancelled && ! creating && (exit_status == 0 || exit_status == 130) )) || steer=0
   [[ $SF_PRESENT_STATE != permission ]] || sf_tui_editor_permission restore
   sf_tui_activity_stop || return 1
   if (( exit_status || cancelled )); then
@@ -213,7 +233,8 @@ sf_tui_exec_finish() {
       fi
       detail=${exit_detail:-"Exited with status $exit_status."}
     fi
-    sf_tui_discard_queue
+    REPLY=''
+    (( steer )) || sf_tui_discard_queue
     if [[ -n $REPLY ]]; then
       if [[ -z $heading ]]; then
         heading=$REPLY
@@ -232,20 +253,24 @@ sf_tui_exec_finish() {
     sf_tui_permission_reset
     SF_PRESENT_STATE=idle
     [[ -z $heading ]] || sf_tui_action error "$heading" "$detail" || return 1
+    (( ! steer )) || sf_tui_dequeue
   else
     SF_PRESENT_STATE=idle
     sf_tui_permission_reset
     if (( ${#SF_PRESENT_HANDOFF} )); then
       sf_tui_discard_queue
       SF_PRESENT_ACTION=handoff
-    elif (( ${#SF_PRESENT_QUEUE} )); then
-      SF_PRESENT_SUBMITTED=$SF_PRESENT_QUEUE[1]
-      SF_PRESENT_QUEUE=( "${(@)SF_PRESENT_QUEUE[2,-1]}" )
-      if ! sf_tui_client_command "$SF_PRESENT_SUBMITTED"; then
-        SF_PRESENT_STATE=queued
-      fi
+    else
+      sf_tui_dequeue
     fi
   fi
+}
+
+sf_tui_dequeue() {
+  (( ${#SF_PRESENT_QUEUE} )) || return 0
+  SF_PRESENT_SUBMITTED=$SF_PRESENT_QUEUE[1]
+  SF_PRESENT_QUEUE=( "${(@)SF_PRESENT_QUEUE[2,-1]}" )
+  sf_tui_client_command "$SF_PRESENT_SUBMITTED" || SF_PRESENT_STATE=queued
 }
 
 sf_tui_exec_ready() {
@@ -262,6 +287,7 @@ sf_tui_turn() {
   SF_PRESENT_HANDOFF=()
   SF_PRESENT_ERROR_SETTLED=0
   SF_PRESENT_CREATING=0
+  SF_PRESENT_STEER=0
   SF_PRESENT_ACTIVITY_FRAME=0
   SF_PRESENT_ACTIVITY=${SF_PRESENT_ACTIVITY_FRAMES[1]}
   SF_PRESENT_STATE=working
@@ -329,6 +355,7 @@ sf_tui_controller() {
   SF_PRESENT_QUEUE=()
   SF_PRESENT_EXIT_STATUS=0
   SF_PRESENT_CREATING=0
+  SF_PRESENT_STEER=0
   [[ $session_mode != startup ]] || SF_PRESENT_CREATING=1
   sf_tui_terminal_reset
   zmodload zsh/zle || { SF_PRESENT_ERROR='cannot load ZLE'; return 1; }
