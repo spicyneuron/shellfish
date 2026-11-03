@@ -1,0 +1,17 @@
+---
+status: new
+---
+
+# Design image paste and file attachments for chat
+
+Consider an end-to-end way to submit images, PDFs, and other supported files from the TUI, including pasted images.
+
+Suggestions:
+- Separate a small image-input slice from broader document support if that makes review easier.
+- Trace input through prompt submission, canonical messages, and each provider. Existing image tool results may not imply that user-image messages already work everywhere.
+- Inspect read_file image handling and decide whether document extraction or provider-native file support is more appropriate for each backend.
+- Consider content limits, unsupported formats, and clear failures before persistence.
+
+Related: tui/file-picker, sandbox/approver-images.
+
+Migrated from: `default`, `harness/parity`.
