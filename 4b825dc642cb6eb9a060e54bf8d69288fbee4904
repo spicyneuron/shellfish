@@ -1,3 +1,7 @@
+---
+status: closed
+---
+
 # Useful context / safeguards
 
 - Report diff/LOC change after every edit tool call
