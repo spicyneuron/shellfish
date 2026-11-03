@@ -11,3 +11,14 @@
 
 ## /verbose [n] opens a pager
 - Instead of a full reload
+
+## Migration
+
+Replaced by:
+
+- `tui/file-picker`: Add @ fuzzy file selection in the prompt
+- `tui/prompt-word-wrap`: Soft-wrap prompt text at word boundaries
+- `tui/word-diff`: Show word-level differences for edits
+- `tui/verbose-pager`: Open verbose output in a pager without reloading chat
+
+Input and output improvements are split into focused TUI tasks.
