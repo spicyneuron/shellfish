@@ -1,0 +1,14 @@
+---
+status: new
+---
+
+# Soft-wrap prompt text at word boundaries
+
+Consider word-aware visual wrapping in the prompt editor without changing the submitted text.
+
+Suggestions:
+- Investigate what ZLE and the current editor can support before introducing a separate editing model.
+- Check cursor movement, explicit newlines, long unbroken tokens, Unicode width, and terminal resize.
+- Use terminal tests to explore the behavior the user actually sees.
+
+Migrated from: `tui`.
