@@ -15,3 +15,11 @@ Suggestions:
 - Inspect current queue-discard behavior so interruption does not accidentally lose the selected prompt or duplicate another queued item.
 
 Migrated from: `harness/parity`.
+
+Work: Added Ctrl-G "send now" (commit 87252e5). While a turn runs, it cancels through the existing USR1 path, puts the draft at the front of the queue (or uses the next queued prompt if the draft is empty), and sends it as a normal `shellfish run` turn once the core settles the cancellation. The rest of the queue is kept. Ctrl-G after Ctrl-C also works without quitting. In a permission prompt, the hidden draft is sent instead of restored. When idle, it behaves like Enter.
+
+Key choice: Cmd-Return can't reach the app without an extended keyboard protocol, which the TUI doesn't enable. Ctrl-G works in every terminal and has no tty meaning. The CSI-u forms `\e[13;5u` (Ctrl-Return) and `\e[13;9u` (Cmd-Return) are also bound for terminals configured to send them, like the existing Shift-Return binding. Reviewer may prefer a different fallback key.
+
+Safety: steering continues only if run exited 0 or 130 after the cancel and the turn wasn't session creation. Otherwise the queue is discarded as before (prompts stay recoverable with ↑). Injecting after tool results was rejected because it would split turn ownership. Added one sentence to docs/PROFILE.md. Refactored queue popping into sf_tui_dequeue.
+
+Verification: unit tui/controller and tui/editor pass with new steer and exec_finish cases. A new PTY test, test_steer_cancels_and_sends_draft, passes and checks the transcript order (user, Cancelled error, steered user, assistant). Full `./tests/run`: 45 passed, 1 failed. The failure is unit/run/tools.zsh:282 ("unrequested bypass with a blank reason"), and it fails the same way on base 224a2a2, so it's unrelated. pty/scrollback was skipped because uv/pyte aren't available.
