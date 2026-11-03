@@ -1,0 +1,15 @@
+---
+status: new
+---
+
+# Explore self-modifying skills, memory, and scripts with rewind
+
+Consider whether bounded agent-managed skills, memory, or scripts would be useful and understandable in Shellfish.
+
+Suggestions:
+- Clarify what can change, who authorizes it, and which changes a rewind could actually undo.
+- Compare existing skills and transcript rewind with filesystem rollback before promising reversibility.
+- Pay particular attention to trusted scripts and configuration, since editing them can change execution outside the tool sandbox.
+- A small experiment or a recommendation not to proceed may be preferable to building a general self-modification framework.
+
+Migrated from: `harness`.
