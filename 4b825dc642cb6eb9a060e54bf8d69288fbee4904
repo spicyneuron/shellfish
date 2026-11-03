@@ -1,0 +1,17 @@
+---
+status: new
+---
+
+# Explain sandbox denials and suggest safe resolutions
+
+Consider making it easier to discover what the sandbox blocked and resolve legitimate access needs without abandoning deny-then-grant policy.
+
+Suggestions:
+- Try representative filesystem and process failures to learn what the current backend can actually report.
+- Distinguish a missing grant from an explicit deny, since adding a grant may not overcome a policy deny.
+- Look for opportunities to reuse /sandbox and --sandbox-auto rather than inventing another grant mechanism.
+- A useful outcome might be an understandable denial with a narrow next step, not automatic access expansion.
+
+Related: sandbox/denial-reasons, sandbox/test-exceptions.
+
+Migrated from: `default`.
