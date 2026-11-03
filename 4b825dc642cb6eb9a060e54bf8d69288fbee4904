@@ -1,0 +1,15 @@
+---
+status: new
+---
+
+# Notify the user when a turn finishes
+
+Consider a bundled optional stop-notification hook.
+
+Suggestions:
+- On macOS, evaluate terminal-notifier first with AppleScript as a fallback, as proposed in the source note.
+- Include a HOME-relative project directory so simultaneous sessions are distinguishable.
+- Check hook ordering and denied-stop behavior so a notification means the turn really finished.
+- Consider nonfatal behavior when notification tools are unavailable, plus quoting of project names and assistant text.
+
+Migrated from: `publish`.
