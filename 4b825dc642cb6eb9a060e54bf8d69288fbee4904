@@ -36,3 +36,21 @@
 - https://github.com/h4ckf0r0day/obscura
 
 - https://github.com/vshulcz/deja-vu/
+
+## Migration
+
+Replaced by:
+
+- `harness/tool-call-review`: Explore decision-based tool appropriateness review
+- `harness/intent-drift`: Explore review for drift from user intent
+- `harness/edit-summaries`: Report per-edit diff and line-count summaries
+- `harness/change-reasons`: Explore required reasons for code mutations
+- `harness/review-gates`: Choose a minimal workflow for entry and exit review gates
+- `harness/model-council`: Consult several models and synthesize their responses
+- `harness/config-assistant`: Open a dedicated assistant for Shellfish configuration
+- `harness/temporary-sessions`: Explore temporary sessions for incognito use
+- `research/agent-survey`: Survey agent projects for concrete Shellfish improvements
+- `research/self-improvement`: Explore self-modifying skills, memory, and scripts with rewind
+- `research/context-editing`: Evaluate selective context editing
+
+Alternative gate designs are retained as options in harness/review-gates rather than independent implementation commitments. The existing sandbox approver already has risk, authorization, and untrusted-instruction dimensions. Any further policy changes can be investigated separately if needed.
