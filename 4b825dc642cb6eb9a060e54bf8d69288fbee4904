@@ -11,3 +11,13 @@
 ## Request --config-json
 
 ## Request --deny-host-path and --deny-host-path-rw
+
+## Migration
+
+Replaced by:
+
+- `sandbox/bypass-baseline`: Explore a protected baseline for sandbox bypass
+- `sandbox/denial-reasons`: Let users deny sandbox permission with a typed reason
+- `sandbox/fence-api-requests`: Evaluate and request missing fence configuration options
+
+The permissive-sandbox proposal is merged with the inner/outer sandbox idea from default. Fence API requests remain conditional on the backend evaluation.
