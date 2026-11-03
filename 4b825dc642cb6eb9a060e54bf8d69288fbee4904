@@ -1,0 +1,17 @@
+---
+status: new
+---
+
+# Add @ fuzzy file selection in the prompt
+
+Consider an @ file picker for inserting or referencing project files while composing a prompt.
+
+Suggestions:
+- Explore the original idea of replacing the postdisplay footer with a three-to-five-line result area.
+- Clarify whether selection inserts a path, attaches content, or offers both before coupling it to submission.
+- Consider spaces in paths, cancellation, cursor placement, and behavior in a small terminal.
+- Check file discovery and ignored-file behavior rather than assuming every project path belongs in results.
+
+Related: tui/images-and-files.
+
+Migrated from: `tui`.
