@@ -1,0 +1,16 @@
+---
+status: new
+---
+
+# Show word-level differences for edits
+
+Consider word-level highlighting to make small edits easier to review.
+
+Suggestions:
+- Inspect the existing edit tool's unified diff and TUI diff formatting before choosing where the additional detail belongs.
+- Explore a modest first version for changed lines, with a readable fallback for large or unusual changes.
+- Keep presentation separate from the durable tool result unless there is a clear reason to change that contract.
+
+Related: harness/edit-summaries.
+
+Migrated from: `tui`.
