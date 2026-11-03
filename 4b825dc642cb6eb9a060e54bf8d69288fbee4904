@@ -1,0 +1,15 @@
+---
+status: new
+---
+
+# Let users deny sandbox permission with a typed reason
+
+Consider extending interactive permission denial so the user can tell the agent why access was refused.
+
+Suggestions:
+- Start with the TUI permission choice and inspect the existing reason flow for hook denials.
+- Look for a way to preserve a quick deny while optionally collecting explanatory text.
+- Consider restoring the user's draft and cursor after the permission interaction.
+- Check that the explanation reaches the agent through the normal settled outcome, including after transcript replay, rather than introducing presentation records.
+
+Migrated from: `sandbox`.
