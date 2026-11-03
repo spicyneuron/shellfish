@@ -1,0 +1,17 @@
+---
+status: new
+---
+
+# Explore a protected baseline for sandbox bypass
+
+Consider replacing fully unsandboxed tool execution with a more permissive sandbox that retains essential protections.
+
+Suggestions:
+- Reconcile the original inner/outer sandbox proposal with the later idea of replacing unsandboxed execution and automatic bypass review.
+- Identify which protections should remain, which home, cache, and environment access common tasks need, and whether destructive-action restrictions are practical.
+- Explore whether this could simplify approval rather than adding another policy layer.
+- Keep this focused on tools. Hooks and providers have a separate trusted role.
+
+Related: sandbox/backend-evaluation, sandbox/blocked-access.
+
+Migrated from: `default`, `sandbox`.
