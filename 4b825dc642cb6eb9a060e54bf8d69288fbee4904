@@ -1,0 +1,15 @@
+---
+status: new
+---
+
+# Provide a release zip bundle and extraction command
+
+Consider a downloadable release bundle with a straightforward extraction and launch command.
+
+Suggestions:
+- Check which runtime files and executable permissions an extracted installation needs.
+- Compare a generated bundle with ordinary repository archives before adding packaging machinery.
+- Explore a repeatable fresh-directory smoke check and a clear dependency story.
+- Coordinate with publish/install-methods so the bundle does not become a separate product layout.
+
+Migrated from: `publish`.
