@@ -1,0 +1,17 @@
+---
+status: new
+---
+
+# Expose effective sandbox grants to the agent
+
+Consider giving the agent an accurate preview of its sandbox access so it can plan around restrictions. This combines the dynamic grant-message and project-environment suggestions.
+
+Suggestions:
+- Check whether project/environment or another existing hook can supply enough context without dynamic system prompts.
+- Consider baseline policy, session grants, and explicit denies rather than implying grants describe all effective access.
+- Investigate how context stays accurate after /sandbox updates and session resume.
+- Reuse the resolved session profile where possible rather than creating a second policy representation.
+
+Related: harness/dynamic-prompts.
+
+Migrated from: `default`.
