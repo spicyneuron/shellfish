@@ -1,0 +1,15 @@
+---
+status: new
+---
+
+# Capture a representative launch screenshot
+
+Consider a clear screenshot demonstrating Shellfish's normal coding workflow for launch materials.
+
+Suggestions:
+- Choose a small, understandable task that shows useful interaction without a contrived wall of output.
+- Check terminal dimensions, theme, and readability at likely display sizes.
+- Use safe sample content and inspect the capture for credentials, personal paths, and unrelated session material.
+- Decide where the image will be used before producing several variants.
+
+Migrated from: `publish`.
