@@ -1,0 +1,15 @@
+---
+status: new
+---
+
+# Complete TUI commands with Tab
+
+Consider adding Tab completion for available slash commands.
+
+Suggestions:
+- Look for a way to use the active profile's command catalog, including aliases, alongside client-owned commands.
+- Decide what Tab should do for an exact match, several matches, and ordinary prompt text.
+- Consider preserving the draft, cursor position, and existing multiline editing behavior.
+- Terminal interaction tests may be more useful than testing only candidate generation.
+
+Migrated from: `default`.
