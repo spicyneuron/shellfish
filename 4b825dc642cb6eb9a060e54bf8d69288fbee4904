@@ -1,0 +1,15 @@
+---
+status: new
+---
+
+# Include relevant images in sandbox approval reviews
+
+Consider letting approval reviewers use relevant image context. Standalone decision inputs already support media, so this may be integration work rather than a new decision API feature.
+
+Suggestions:
+- Inspect the approver's current image-omission step and its conversation-model and decision-model paths.
+- Explore provider support, review budgets, and how to handle unavailable or oversized images without silently changing the meaning of a review.
+- Keep authorization tied to user instructions, since images and other tool outputs may contain untrusted instructions.
+- A narrow supported path may be preferable to universal media support.
+
+Migrated from: `default`.
