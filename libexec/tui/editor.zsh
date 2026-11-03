@@ -404,6 +404,23 @@ sf_tui_down() {
   sf_tui_move_vertical 1
 }
 
+sf_tui_complete() {
+  local token candidate prefix=''
+  local -a matches=()
+  [[ $BUFFER == /* ]] || return 0
+  token=${BUFFER%%[[:space:]]*}
+  (( CURSOR == ${#token} )) || return 0
+  for candidate in "${SF_PRESENT_COMMANDS[@]}"; do
+    [[ $candidate == "$token"* ]] && matches+=( "$candidate" )
+  done
+  (( ${#matches} )) || return 0
+  prefix=$matches[1]
+  for candidate in "${matches[@]}"; do
+    while [[ $candidate != "$prefix"* ]]; do prefix=${prefix%?}; done
+  done
+  LBUFFER=$prefix
+}
+
 # A key may finish decoding after an asynchronous permission request arrives.
 sf_tui_input() {
   local widget=$WIDGET paste
@@ -418,7 +435,7 @@ sf_tui_input() {
     return 0
   fi
   case $widget in
-    sf_tui_accept|sf_tui_send|sf_tui_insert_newline|sf_tui_up|sf_tui_down|sf_tui_interrupt|sf_tui_escape)
+    sf_tui_accept|sf_tui_send|sf_tui_insert_newline|sf_tui_up|sf_tui_down|sf_tui_interrupt|sf_tui_escape|sf_tui_complete)
       "$widget" "$@"
       ;;
     *)
@@ -517,6 +534,7 @@ sf_tui_bind() {
   local -a keys=(
     '^M' sf_tui_accept
     '^J' sf_tui_accept
+    '^I' sf_tui_complete
     '^[^M' sf_tui_insert_newline
     '^[[13;2u' sf_tui_insert_newline
     '^X' sf_tui_send

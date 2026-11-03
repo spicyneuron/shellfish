@@ -1,6 +1,8 @@
 emulate -R zsh
 setopt no_aliases no_bg_nice no_multios pipe_fail
 
+source "$SF_ROOT/lib/profile.zsh"
+
 typeset -ga SF_PRESENT_HANDOFF=() SF_PRESENT_QUEUE=()
 typeset -g SF_PRESENT_SESSION=''
 typeset -g SF_PRESENT_ACTION='' SF_PRESENT_SUBMITTED=''
@@ -16,6 +18,23 @@ typeset -gi SF_PRESENT_EXIT_STATUS=0
 typeset -gi SF_PRESENT_ERROR_SETTLED=0
 typeset -gi SF_PRESENT_CREATING=0 SF_PRESENT_STEER=0
 typeset -g SF_PRESENT_TTY=''
+typeset -ga SF_PRESENT_COMMANDS=( /quit /q /refresh /r /queue )
+
+sf_tui_commands() {
+  local reference profile names
+  local -a directories=()
+  SF_PRESENT_COMMANDS=( /quit /q /refresh /r /queue )
+  for reference in "$@"; do
+    sf_profile_lookup '' commands "$reference" || return 0
+    directories+=( "$REPLY" )
+  done
+  profile=$(jq -cn --args '{tools:[],hooks:[],commands:$ARGS.positional}' \
+    "${directories[@]}") || return 0
+  sf_profile_components "$profile" || return 0
+  names=$(jq -r '.commands[] | .name, .manifest.aliases[]?' <<<"$REPLY") || return 0
+  SF_PRESENT_COMMANDS+=( ${${(f)names}/#//} )
+  SF_PRESENT_COMMANDS=( ${(ou)SF_PRESENT_COMMANDS} )
+}
 
 sf_tui_permission_reset() {
   SF_PRESENT_PERMISSION_ID=''
@@ -143,6 +162,7 @@ sf_tui_apply() {
     sf_tui_permission_close
   fi
   case $type in
+    commands) sf_tui_commands "${@:2}" ;;
     session)
       [[ -n $SF_PRESENT_SESSION ]] || SF_TUI_TRANSPORT_COMMAND=(
         "$SF_ENTRY" run --jsonl --session "$2" )

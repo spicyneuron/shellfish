@@ -78,6 +78,43 @@ def test_sandbox_updates_without_reload():
             session.close()
 
 
+def test_slash_command_completion():
+    session = Session(commands=["help", "fork", "rewind"], hooks={"echo": ECHO_HOOK})
+    try:
+        path, _ = session.wait_session_records(1)
+        submitted = path.parent / "submitted"
+        session.settle()
+        cases = [
+            (b"/hel\tX", "/helpX"),
+            (b"/help\tX", "/helpX"),
+            (b"/h\tX", "/hX"),
+            (b"/qu\tX", "/quX"),
+            (b"/qui\tX", "/quitX"),
+            (b"/ref\tX", "/refreshX"),
+            (b"/for\tX", "/forkX"),
+            (b"/missing\tX", "/missingX"),
+            (b"ordinary\tX", "ordinaryX"),
+            (b"/for arg\tX", "/for argX"),
+            (b"/hel arg\x01\x06\x06\x06\x06\tX", "/helpX arg"),
+            (b"/hel\x02\tX", "/heXl"),
+            (b"/hel\x1b[13;2u/for\tX", "/hel\n/forX"),
+            (b"/hel\x1b[13;2utail\x10\x05\tX", "/helpX\ntail"),
+        ]
+        for keys, expected in cases:
+            mark = len(session.output)
+            submitted.unlink(missing_ok=True)
+            session.send(keys + b"\r")
+            session.wait_after(mark, "accepted")
+            assert submitted.read_text() == expected
+            session.wait_ready(mark)
+        session.send(b"/hel\t\r")
+        session.wait("Help:")
+        _, records = session.wait_session_records(2)
+        assert not any(record["type"] == "user" for record in records), records
+    finally:
+        session.close()
+
+
 def test_zle_multiline_editing():
     session = Session(hooks={"echo": ECHO_HOOK})
     try:
@@ -555,6 +592,7 @@ if __name__ == "__main__":
         test_permission_grant_for_session,
         test_permission_stop_cancels_pending_tools,
         test_chat_end,
+        test_slash_command_completion,
         test_zle_multiline_editing,
         test_zle_wrapped_line_navigation,
         test_streaming_input_sequences_remain_atomic,
