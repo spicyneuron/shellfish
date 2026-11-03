@@ -1,0 +1,15 @@
+---
+status: new
+---
+
+# Open a dedicated assistant for Shellfish configuration
+
+Consider a convenient way to start Shellfish in its selected configuration directory with a configuration-focused harness and system guidance.
+
+Suggestions:
+- Reuse profile selection and normal public commands where possible.
+- Investigate the interaction between trusted configuration editing and sandbox policies that deliberately protect .shellfish paths.
+- Consider how to make the elevated trust clear without quietly weakening the default coding harness.
+- The smallest useful outcome may be a dedicated profile plus an explicit entry point.
+
+Migrated from: `harness`.
