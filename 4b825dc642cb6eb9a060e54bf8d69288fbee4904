@@ -1,0 +1,15 @@
+---
+status: new
+---
+
+# Compare Shellfish code size with other coding agents
+
+Consider a reproducible tokei comparison with Codex, Pi, and OpenCode for launch context.
+
+Suggestions:
+- Inspect the existing LOC tooling before creating another counting workflow.
+- Record revisions, tool version, and inclusion rules so the results can be interpreted and repeated.
+- Consider reporting runtime code separately from tests, documentation, generated files, and vendored dependencies.
+- Present the comparison as evidence about implementation size, not an unsupported claim about capability or quality.
+
+Migrated from: `publish`.
