@@ -49,4 +49,4 @@ Replaced by:
 - `tui/command-completion`: Complete TUI commands with Tab
 - `tui/images-and-files`: Design image paste and file attachments for chat
 
-Classifier prompt discussion deferred. Original wording: "Add prompt to steer classifier." No replacement issue was created. The general decision input API already accepts media, so remaining image-review work is tracked in sandbox/approver-images.
+Classifier prompt follow-up skipped after discussion. Existing session instructions and the configurable decision-model approval threshold are sufficient for now. No replacement issue was created. The general decision input API already accepts media, so remaining image-review work is tracked in sandbox/approver-images.
