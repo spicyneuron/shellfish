@@ -1,0 +1,15 @@
+---
+status: new
+---
+
+# Edit a draft prompt in an external editor
+
+Consider a bundled /edit workflow for composing a prompt in the user's editor. The original note also proposes recognizing /edit at the end of a message.
+
+Suggestions:
+- Compare a command, a submission hook, and direct editor integration against current command matching and handoff behavior.
+- Investigate how to return edited text as a draft without accidentally submitting the editor request itself.
+- Consider cancellation, empty results, multiline text, and terminal restoration.
+- Prefer the smallest interaction that works reliably before supporting multiple invocation forms.
+
+Migrated from: `publish`.
