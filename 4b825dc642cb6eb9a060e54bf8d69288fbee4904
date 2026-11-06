@@ -27,3 +27,5 @@ C) Won't do: keep ZLE's character wrap. This is simple and right in every case t
 Recommendation: C, unless word wrap is worth owning cursor rendering. If A is chosen, it should get its own todo that covers cursor placement and the PTY tests in tests/pty/chat.py.
 
 No code changes. No commits on the branch.
+
+Closed: ZLE can't soft-wrap and owning cursor rendering isn't worth it.
