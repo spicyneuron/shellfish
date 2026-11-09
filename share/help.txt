@@ -17,7 +17,7 @@ Run output:
 New sessions:
   -p, --profile REF|JSON  Select a profile by name, path, or object
   -m, --model REF|JSON    Select a model file or object; repeats merge
-  --sandbox REF|JSON      Merge a sandbox file or object over the profile's
+  --sandbox JSON          Extend sandbox grants or replace settings
   --system REF|JSON       Append a system file or {"text": "..."}
   -t, --tool REF          Append a tool
   --command REF           Append a command
@@ -34,7 +34,6 @@ Shellfish directory:
   SHELLFISH_DIR      Default: nearest .shellfish, else $HOME/.shellfish
   Profiles:          DIR/profiles/NAME.jsonc
   Models:            DIR/models/NAME.jsonc
-  Sandbox files:     DIR/sandbox/NAME.jsonc
   Settings:          DIR/.env
   TUI file:          DIR/tui.jsonc
   Sessions:          DIR/sessions/

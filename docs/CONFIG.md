@@ -6,7 +6,6 @@ Shellfish keeps configuration in one selected directory, typically `~/.shellfish
 | --- | --- | --- |
 | [`models/NAME.jsonc`](MODELS.md) | Configures the provider, endpoint, and request parameters | Yes |
 | [`profiles/NAME.jsonc`](PROFILE.md) | Selects system prompts, tools, commands, hooks, and sandbox settings | Yes |
-| [`sandbox/NAME.jsonc`](PROFILE.md#sandbox) | Enables sandboxing and grants extra paths | Yes |
 | `.env` and the environment | Credentials and core runtime settings | No |
 | `tui.jsonc` | Themes and preview limits | No |
 
@@ -20,13 +19,13 @@ shellfish
 
 Shellfish includes a ready-to-use default agent. You can start without `init` by supplying a model with `-m` and any required credentials through the environment.
 
-`init` copies the bundled default profile and sandbox settings, plus [`share/template/`](../share/template/), into the selected Shellfish directory, keeping existing files. These become yours to edit, including the model stub, read-only profile and its prompt, environment and TUI settings, and starter skill. The general, tools, and sandbox prompts remain bundled, along with executable components.
+`init` copies the bundled default profile, plus [`share/template/`](../share/template/), into the selected Shellfish directory, keeping existing files. These become yours to edit, including sandbox settings in the profile, the model stub, read-only profile and its prompt, environment and TUI settings, and starter skill. The general, tools, and sandbox prompts remain bundled, along with executable components.
 
 See [Profiles](PROFILE.md) for the starter agent and behavior customization, [Models](MODELS.md) for providers and credentials, and [Components](COMPONENTS.md) for writing your own extensions.
 
 ## Directories
 
-One Shellfish directory holds profiles, models, sandbox files, system prompts, skills, components, `tui.jsonc`, `.env`, `sessions/` grouped by project directory, and `scratch/` for private temporary files.
+One Shellfish directory holds profiles, models, system prompts, skills, components, `tui.jsonc`, `.env`, `sessions/` grouped by project directory, and `scratch/` for private temporary files.
 
 Shellfish selects it in this order:
 
@@ -42,7 +41,7 @@ Only use configuration directories you trust. A project's `.shellfish` can selec
 
 ## References
 
-Every reference in a profile, model, or sandbox file, and every option that takes one, follows one rule. A reference starting with `/`, `~/`, `./`, `../`, or `@` is a path, where `@` is the bundled root just as `~` is home. A relative path resolves against the file that contains it, or against the working directory on the command line. Anything else is a name, which resolves in its kind's directory, yours first, then bundled. Profile, model, and sandbox names gain `.jsonc`, and a name may be nested, such as `openai/sol`.
+Every reference in a profile or model file, and every option that takes one, follows one rule. A reference starting with `/`, `~/`, `./`, `../`, or `@` is a path, where `@` is the bundled root just as `~` is home. A relative path resolves against the file that contains it, or against the working directory on the command line. Anything else is a name, which resolves in its kind's directory, yours first, then bundled. Profile and model names gain `.jsonc`, and a name may be nested, such as `openai/sol`.
 
 Your file or component shadows the bundled one of the same name. A path still reaches the bundled one, such as `@profiles/default.jsonc` or `@tools/shell`.
 

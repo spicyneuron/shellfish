@@ -72,20 +72,19 @@ shellfish run --json --session "$session" "Inspect the tests next"
 
 ## Configuration
 
-Shellfish includes a default agent with bundled prompts, tools, commands, and hooks. `init` copies its profile and sandbox settings for customization, plus a read-only example and configuration stubs. General and tool-use prompts remain bundled.
+Shellfish includes a default agent with bundled prompts, tools, commands, and hooks. `init` copies its profile for customization, plus a read-only example and configuration stubs. General and tool-use prompts remain bundled.
 
 The Shellfish directory (typically `~/.shellfish/`) holds your editable configuration:
 
 - [Profiles](docs/PROFILE.md) in `profiles/` select system prompts, tools, commands, hooks, and sandbox settings.
 - [Models](docs/MODELS.md) in `models/` select the provider, endpoint, and request parameters independently of the profile.
-- [Sandbox files](docs/PROFILE.md#sandbox) in `sandbox/` enable sandboxing and grant extra paths.
 - [Settings](docs/CONFIG.md) keep credentials and limits in `.env` or the environment, and presentation preferences in `tui.jsonc`.
 
 ```jsonc
 // ~/.shellfish/profiles/review.jsonc
 {
   "$schema": "https://raw.githubusercontent.com/spicyneuron/shellfish/refs/heads/main/share/profile.schema.json",
-  "sandbox": "default",
+  "sandbox": {},
   "system": ["general.md", "review.md"],  // ~/.shellfish/system/review.md
   "tools": ["read_file", "shell_readonly"],
   "hooks": ["project/instructions"]

@@ -24,7 +24,7 @@ A session JSONL file is the agent's only durable state. Its first line is a head
 {"type":"assistant","stop":"end","content":[{"type":"text","text":"Done."}]}
 ```
 
-The header freezes the resolved profile and model, each in its config file's shape, so together they resolve to the same header. The profile holds the system prompt text, the tool, command, and hook lists, and the merged sandbox setting and grants. The model holds the merged provider, endpoint, and request settings. System prompt files are frozen as their text, like model and sandbox files; executable components, manifests, and policies remain live. Credentials, environment settings such as turn limits, and presentation settings remain external.
+The header freezes the resolved profile and model, each in its config file's shape, so together they resolve to the same header. The profile holds the system prompt text, the tool, command, and hook lists, and sandbox settings and grants. The model holds the merged provider, endpoint, and request settings. System prompt files are frozen as their text, while executable components, manifests, and policies remain live. Credentials, environment settings such as turn limits, and presentation settings remain external.
 
 Header paths use `@` for the bundled root, `~/` for HOME, or `/` for fixed absolute locations, so a session survives upgrades and moves with its home. If the project moves independently of HOME, update the header cwd.
 

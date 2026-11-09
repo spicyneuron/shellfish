@@ -71,30 +71,28 @@ sf_profile_lookup() {
   REPLY=${candidate:A}
 }
 
-# A model or sandbox list with each reference replaced by its file, read,
+# A model list with each reference replaced by its file, read,
 # validated, and made relative to its own directory. NAMES are the references
 # in ITEMS, which already holds any inline values validated.
-sf_profile_configs() {
-  local kind=$1 dir=$2 config_dir=$3 items=$4 name contents detail
-  shift 4
+sf_profile_model_files() {
+  local config_dir=$1 items=$2 name contents detail
+  shift 2
   local -a names=( "$@" ) files=()
   (( ${#names} )) || { REPLY=$items; return 0; }
   for name in "${names[@]}"; do
-    sf_profile_lookup "$config_dir" "$dir" "$name" .jsonc ||
-      sf_profile_fail "unknown $kind: $name" || return
+    sf_profile_lookup "$config_dir" models "$name" .jsonc ||
+      sf_profile_fail "unknown model: $name" || return
     files+=( "$REPLY" )
   done
-  sf_profile_read_files "invalid $kind" "${(u)files[@]}" || return
+  sf_profile_read_files 'invalid model' "${(u)files[@]}" || return
   contents=$REPLY
-  detail=$(sf_jq -cn --argjson items "$items" --argjson contents "$contents" \
-    --arg kind "$kind" '
+  detail=$(sf_jq -cn --argjson items "$items" --argjson contents "$contents" '
     include "lib/profile";
     ($ARGS.positional | [range(0; length; 2) as $at | {key:.[$at + 1], value:.[$at]}] |
       from_entries) as $files |
     [$items[] | if type == "string" then
-      $files[.] as $file | ["\($kind) \(.)"] as $path | $contents[$file] |
-      if $kind == "model" then config_model($path) else config_sandbox($path) end |
-      config_relative($kind; $file | sub("/[^/]*$"; ""))
+      $files[.] as $file | ["model \(.)"] as $path | $contents[$file] |
+      config_model($path) | config_relative("model"; $file | sub("/[^/]*$"; ""))
     else . end]
   ' --args "${files[@]:^names}" 2>&1) ||
     sf_profile_validation_error "$detail" 'invalid configuration' || return
@@ -107,7 +105,7 @@ sf_profile_model() {
   local config_dir=$1 items=$2 entry=$3 names model provider resolved final
   names=$(jq -r '.[] | strings' <<<"$items") ||
     sf_profile_fail 'cannot read model references' || return
-  sf_profile_configs model models "$config_dir" "$items" ${(f)names} || return
+  sf_profile_model_files "$config_dir" "$items" ${(f)names} || return
   model=$(sf_jq -cn --argjson models "$REPLY" '
     include "lib/profile";
     model_merge($models)
@@ -203,7 +201,7 @@ sf_profile_components() {
 # absolute paths.
 sf_profile_resolve() {
   local name=${1:-default} extra=${2:-'{}'}
-  local config_dir file base='' profile config model sandbox reference kind resolved final
+  local config_dir file base='' profile config model reference kind resolved final
   local -a references resolutions=() system_files=()
   local -A decoded
 
@@ -232,14 +230,13 @@ sf_profile_resolve() {
     ($extra | config_profile(["options"]; profile_fields + ["model"]) |
       config_relative("profile"; $cwd)) as $extra |
     $profile | config_profile(["profile " + $name]) | config_relative("profile"; $dir) |
-    reduce profile_fields[] as $field (.; .[$field] += $extra[$field]) |
+    reduce ("system", "tools", "commands", "hooks") as $field (.; .[$field] += $extra[$field]) |
+    .sandbox = ({enabled:true} + sandbox_merge([.sandbox, $extra.sandbox])) |
     .model = (if $extra.model == [] then ["default"] else $extra.model end) |
     reduce ("system", "tools", "commands", "hooks") as $field (.;
       .[$field] |= reduce .[] as $item ([]; if index([$item]) then . else . + [$item] end)) |
     entry("profile"; tojson),
-    entry("models"; .model | tojson), entry("sandboxes"; .sandbox | tojson),
-    # A reference carries no control characters, so newlines delimit the list.
-    entry("sandbox"; [.sandbox[] | strings] | join("\n")),
+    entry("models"; .model | tojson),
     ("ok" | field)
   ' || { sf_profile_validation_error "$REPLY" 'invalid configuration'; return; }
   decoded=( "${reply[@]}" )
@@ -251,16 +248,10 @@ sf_profile_resolve() {
   fi
   sf_profile_model "$config_dir" "$decoded[models]" run || return
   model=$REPLY
-  sf_profile_configs sandbox sandbox "$config_dir" "$decoded[sandboxes]" \
-    ${(f)decoded[sandbox]} || return
-  sandbox=$REPLY
-
-  sf_jq_fields -rn --argjson profile "$profile" --argjson model "$model" \
-    --argjson sandbox "$sandbox" '
+  sf_jq_fields -rn --argjson profile "$profile" --argjson model "$model" '
       include "lib/fields";
       include "lib/profile";
-      {profile:($profile | del(.model) | .sandbox = sandbox_merge($sandbox)),
-       model:$model} |
+      {profile:($profile | del(.model)), model:$model} |
       entry("config"; tojson),
       entry("references"; [.profile | (.system[] | strings | ["system", .]),
         (.tools[] | ["tools", .]), (.commands[] | ["commands", .]),
@@ -288,7 +279,7 @@ sf_profile_resolve() {
     resolutions+=( "$reference" "$resolved" )
   done
 
-  # System files are read into one text, like model and sandbox files.
+  # System files are frozen as one text.
   final=$(sf_jq -nce --argjson config "$config" \
     --arg share "$SF_SHARE" --arg home "${HOME:+${HOME:A}}" "${system_files[@]}" '
       include "lib/profile";
@@ -314,20 +305,25 @@ sf_profile_resolve() {
   REPLY=$final
 }
 
-# Parse the options that select a profile and model, then resolve them. Each
-# list option takes a reference or an inline JSON object and appends to its
-# list: the profile's, or for -m the model list.
+# Parse profile and model options, then resolve them. List options append,
+# and sandbox objects merge.
 # Callers that own their own flags pass only the ones listed in lib/options.zsh.
 sf_profile_resolve_args() {
   local name='' extra
   local -a items=()
-  local -A fields=( -m model --model model --sandbox sandbox --system system
+  local -A fields=( -m model --model model --system system
     -t tools --tool tools --command commands --hook hooks )
 
   SF_PROFILE_ERROR=''
   while (( $# )); do
     case $1 in
-      -p|--profile|-m|--model|--sandbox|--system|-t|--tool|--command|--hook)
+      --sandbox)
+        [[ -n $2 && $2 == '{'* ]] ||
+          sf_profile_fail '--sandbox requires a JSON object' || return 2
+        items+=( "$1" sandbox "$2" )
+        shift 2
+        ;;
+      -p|--profile|-m|--model|--system|-t|--tool|--command|--hook)
         [[ -n $2 && ( $2 == '{'* || $2 != *[[:cntrl:]]* ) ]] ||
           sf_profile_fail "$1 requires a reference or JSON object" || return 2
         if [[ $1 == (-p|--profile) ]]; then
@@ -346,12 +342,18 @@ sf_profile_resolve_args() {
   done
 
   (( ${#items} )) || { sf_profile_resolve "$name"; return; }
-  extra=$(jq -cn '
+  extra=$(sf_jq -cn '
+    include "lib/profile";
     reduce ($ARGS.positional | range(0; length; 3) as $at | .[$at:$at + 3]) as
-      [$flag, $field, $value] ({}; .[$field] += [
-        if $value | startswith("{") then ($value | try fromjson catch null | objects) //
-          error($flag + " requires a reference or JSON object")
-        else $value end])
+      [$flag, $field, $value] ({};
+        (if $value | startswith("{") then ($value | try fromjson catch null | objects) //
+          error($flag + " requires " +
+            if $field == "sandbox" then "a JSON object" else "a reference or JSON object" end)
+        else $value end) as $item |
+        if $field == "sandbox" then
+          ($item | config_sandbox(["options", "sandbox"])) as $sandbox |
+          .sandbox = sandbox_merge([.sandbox // {}, $sandbox])
+        else .[$field] += [$item] end)
   ' --args -- "${items[@]}" 2>&1) || {
     sf_cli_diagnostic "$extra"
     sf_profile_fail "$REPLY"

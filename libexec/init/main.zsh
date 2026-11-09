@@ -16,8 +16,7 @@ sf_init_main() {
   sf_environment_dir || { sf_die "$SF_ENVIRONMENT_ERROR"; return 1; }
   dir=$REPLY
   umask 077
-  for file in $template/**/*(.DN) \
-      "$SF_SHARE/profiles/default.jsonc" "$SF_SHARE/sandbox/default.jsonc"; do
+  for file in $template/**/*(.DN) "$SF_SHARE/profiles/default.jsonc"; do
     target=${file#"$SF_SHARE/"}
     target=$dir/${${target#template/}/#example.env/.env}
     if [[ -e $target || -L $target ]]; then

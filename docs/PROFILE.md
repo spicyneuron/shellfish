@@ -11,7 +11,7 @@ See [`CONFIG.md`](CONFIG.md) for setup, directory selection, and reference looku
 ```jsonc
 // profiles/review.jsonc
 {
-  "sandbox": "default",
+  "sandbox": {},
   "system": ["general.md", "review.md"],
   "tools": ["read_file", "shell_readonly"],
   "commands": ["help", "compact"],
@@ -26,16 +26,16 @@ shellfish -p '{"tools": ["read_file"], "system": [{"text": "Review without editi
 
 | Field | Meaning | Append from the command line |
 | --- | --- | --- |
-| `sandbox` | Sandbox files or inline objects, merged left to right | `--sandbox REF\|JSON` |
+| `sandbox` | Sandbox settings and extra grants | `--sandbox JSON` |
 | `system` | Prompt files or inline `{"text": "..."}`, concatenated in order | `--system REF\|JSON` |
 | `tools` | Tools exposed to the model | `-t, --tool REF` |
 | `commands` | Commands the user runs as `/NAME` instead of submitting a prompt | `--command REF` |
 | `hooks` | Hooks run in listed order within their declared lifecycle | `--hook REF` |
 | `config` | Component-owned settings, grouped by feature | Supplied in the profile |
 
-A lone `sandbox` item needs no list. Inline values let one profile hold everything, though separate files are easier to share. Profiles do not inherit from each other, since a profile is short enough to copy. Only named components are active, and unused files are inert.
+Sandbox settings live directly in the profile. Profiles do not inherit from each other, since a profile is short enough to copy. Only named components are active, and unused files are inert.
 
-List options repeat and append to the selected profile for one session. Repeated `system`, `tools`, `commands`, and `hooks` references collapse to the first. Sandbox lists merge in order, so a repeated reference applies again.
+List options repeat and append to the selected profile for one session. Repeated `system`, `tools`, `commands`, and `hooks` references collapse to the first.
 
 ```sh
 shellfish --sandbox '{"write": ["./build"]}'       # Grant a directory for one session
@@ -52,11 +52,13 @@ Keep credentials out of `config`. Settings live under a component's name, such a
 
 A tool is sandboxed only when both its manifest and the session enable sandboxing. Shellfish uses [`fence`](https://github.com/fencesandbox/fence), found on `PATH`, with the tool's `fence.jsonc` policy. Otherwise the tool runs with user permissions.
 
-Sandbox files hold standing settings:
+The profile's `sandbox` object holds standing settings:
 
 ```jsonc
-// sandbox/default.jsonc
-{"read": ["~/.cargo", "~/go/pkg"], "write": ["~/.cache/uv"]}
+"sandbox": {
+  "read": ["~/.cargo", "~/go/pkg"],
+  "write": ["~/.cache/uv"]
+}
 ```
 
 | Field | Meaning |
@@ -66,11 +68,11 @@ Sandbox files hold standing settings:
 | `read` | Extra read grants |
 | `write` | Extra read-write grants |
 
-Grants are paths and need not exist, so one file can serve several machines. Sandbox lists merge left to right. Grants accumulate, and later `enabled` or `user_approval_timeout` values replace earlier ones. A profile without a sandbox list is sandboxed with no extra grants. See [`sandbox.schema.json`](../share/sandbox.schema.json) for the exact fields.
+Grants are paths and need not exist, so one profile can serve several machines. A profile without sandbox settings is sandboxed with no extra grants. See [`profile.schema.json`](../share/profile.schema.json) for the exact fields.
 
 Tool policies and platform temp access set the baseline. Grants extend access, but policy deny rules still win. A tool policy can `extend` another policy, as `shell_readonly` extends `shell` while denying writes. Bundled policies prevent tools from creating or changing `.shellfish` directories because their contents run outside the sandbox. A `SHELLFISH_DIR` with another name inside a writable path is not protected.
 
-`--sandbox` adds a file or object for one session. `/sandbox` updates the current session's frozen grants.
+`--sandbox JSON` adds grants or changes settings for one session. Repeated options accumulate grants, while later `enabled` or `user_approval_timeout` values replace earlier ones. `/sandbox` updates the current session's frozen grants.
 
 ### Bypass approval
 
@@ -80,9 +82,9 @@ If every permission hook defers, Shellfish asks the client. Without a client, or
 
 ## Starter agent
 
-The bundled default profile supplies a complete agent without `init`, once you select a model. `shellfish init` copies that profile and its sandbox settings for customization, plus an editable read-only profile and its paired prompt. The general, tools, and sandbox prompts stay bundled unless you override them with your own files.
+The bundled default profile supplies a complete agent without `init`, once you select a model. `shellfish init` copies that profile for customization, plus an editable read-only profile and its paired prompt. The general, tools, and sandbox prompts stay bundled unless you override them with your own files.
 
-Both starter profiles select `sandbox/default.jsonc`, whose bundled default grants nothing extra. The default profile includes commented examples for enabling subagents and model-reviewed sandbox bypasses.
+Both starter profiles enable sandboxing with no extra grants. The default profile includes commented examples for enabling subagents and model-reviewed sandbox bypasses.
 
 | Profile | Selects |
 | --- | --- |

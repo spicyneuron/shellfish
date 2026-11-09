@@ -18,7 +18,7 @@ for profile in \
     fail "invalid profile was accepted: $profile"
   fi
 done
-print -r -- '{"sandbox":["~/s.jsonc"],"system":["x.md"],"tools":[],"hooks":["h"]}' |
+print -r -- '{"sandbox":{},"system":["x.md"],"tools":[],"hooks":["h"]}' |
   profile_eval 'config_profile(["p"])' >/dev/null
 print -r -- '{"sandbox":{"read":["./x"]},"system":[{"text":"t"}]}' |
   profile_eval 'config_profile(["p"])' >/dev/null

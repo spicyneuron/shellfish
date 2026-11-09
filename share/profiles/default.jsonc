@@ -1,15 +1,22 @@
 // Shellfish profile: https://github.com/spicyneuron/shellfish
 //
 // Selected when --profile is absent. init copies this profile for customization.
-// A profile selects sandbox files, system prompts, tools, commands, and hooks,
+// A profile selects sandbox settings, system prompts, tools, commands, and hooks,
 // with optional config. The model is chosen separately.
 // A name resolves in this Shellfish directory first, then the bundled one.
 // A path starts with "/", "~/", "./", "../", or "@" for the bundled root.
 {
   "$schema": "https://raw.githubusercontent.com/spicyneuron/shellfish/refs/heads/main/share/profile.schema.json",
 
-  // Files under sandbox/. Lists merge left to right.
-  "sandbox": "default",
+  "sandbox": {
+    // Setting false runs every tool with user permissions.
+    "enabled": true,
+    // Seconds to wait for user approval of a sandbox bypass.
+    "user_approval_timeout": 120,
+    // Extra paths outside the project. Paths need not exist on every machine.
+    "read": [],
+    "write": []
+  },
 
   // Files under system/ concatenated into the system prompt.
   "system": ["general.md", "tools.md", "sandbox.md"],

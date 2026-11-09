@@ -120,10 +120,10 @@ def config_model($path):
   config_assert((has("request") | not) or (.request | type == "object");
     $path + ["request"]; "must be an object");
 
-# A sandbox file enables or disables sandboxing, grants extra paths, and limits
+# Sandbox settings enable or disable sandboxing, grant extra paths, and limit
 # how long a bypass waits for the user.
 def config_sandbox($path):
-  config_object($path; ["$schema", "enabled", "read", "write", "user_approval_timeout"]) |
+  config_object($path; ["enabled", "read", "write", "user_approval_timeout"]) |
   config_assert((has("enabled") | not) or (.enabled | type == "boolean");
     $path + ["enabled"]; "must be a boolean") |
   config_assert((has("user_approval_timeout") | not) or (.user_approval_timeout | positive_integer);
@@ -135,31 +135,32 @@ def config_sandbox($path):
       config_assert(.[$field][$at] | path_reference; $path + [$field, $at];
         "must be a /, ~/, ./, ../, or @ path")));
 
-# A profile selects components and holds opaque configuration. Its lists contain
-# references, with inline values also allowed for sandbox and system. Absent
-# lists are empty, and a lone sandbox item needs no list. Options add a model list.
+# A profile selects components, holds sandbox settings and opaque configuration.
+# Absent lists are empty. Options add a model list.
 def profile_fields: ["sandbox", "system", "tools", "commands", "hooks"];
 def config_profile($path; $fields):
   config_object($path; ["$schema", "config"] + $fields) |
   del(."$schema") |
   config_assert((has("config") | not) or (.config | type == "object");
     $path + ["config"]; "must be an object") |
-  reduce ("model", "sandbox") as $field (.;
-    if has($field) and (.[$field] | type != "array") then .[$field] |= [.] else . end) |
+  (if has("model") and (.model | type != "array") then .model |= [.] else . end) |
   reduce $fields[] as $field (.;
-    .[$field] //= [] |
-    config_assert(.[$field] | type == "array"; $path + [$field]; "must be a list") |
-    reduce range(0; .[$field] | length) as $at (.; ($path + [$field, $at]) as $item |
-      .[$field][$at] |= (
-        if nonempty_control_free_string then .
-        elif $field == "model" then config_model($item)
-        elif $field == "sandbox" then config_sandbox($item)
-        elif $field == "system" and type == "object" and keys == ["text"] and
-          (.text | nul_free_string) then .
-        else config_error($item; "must be a reference" +
-          if $field == "system" then " or {\"text\": ...}"
-          elif $field == "model" or $field == "sandbox" then " or object" else "" end)
-        end)));
+    if $field == "sandbox" then
+      if has("sandbox") then .sandbox |= config_sandbox($path + ["sandbox"])
+      else .sandbox = {} end
+    else
+      .[$field] //= [] |
+      config_assert(.[$field] | type == "array"; $path + [$field]; "must be a list") |
+      reduce range(0; .[$field] | length) as $at (.; ($path + [$field, $at]) as $item |
+        .[$field][$at] |= (
+          if nonempty_control_free_string then .
+          elif $field == "model" then config_model($item)
+          elif $field == "system" and type == "object" and keys == ["text"] and
+            (.text | nul_free_string) then .
+          else config_error($item; "must be a reference" +
+            if $field == "system" then " or {\"text\": ...}"
+            elif $field == "model" then " or object" else "" end)
+          end)) end);
 def config_profile($path): config_profile($path; profile_fields);
 
 # A "./" or "../" reference in a config file is relative to the file's $dir.
@@ -174,7 +175,8 @@ def config_relative($kind; $dir):
   if $kind == "model" then each("provider"; relative_to($dir))
   elif $kind == "sandbox" then each("read"; map(relative_to($dir))) |
     each("write"; map(relative_to($dir)))
-  else reduce ("model", "sandbox", "system", "tools", "commands", "hooks") as $field (.;
+  else each("sandbox"; config_relative("sandbox"; $dir)) |
+    reduce ("model", "system", "tools", "commands", "hooks") as $field (.;
     each($field; map(if type == "object" and $field != "system"
       then config_relative($field; $dir) else relative_to($dir) end))) end;
 
@@ -186,11 +188,11 @@ def model_merge($models):
   end |
   if (.provider // "") == "" then error("a model provider is required") else . end;
 
-# Sandbox items merge left to right: grants accumulate and settings replace.
-def sandbox_merge($files):
-  reduce $files[] as $file ({enabled:true, read:[], write:[]};
-    . + ($file | with_entries(select(.key | IN("enabled", "user_approval_timeout")))) |
-    .read += ($file.read // []) | .write += ($file.write // []));
+# Sandbox grants accumulate and settings replace. Defaults apply after merging.
+def sandbox_merge($items):
+  reduce $items[] as $item ({read:[], write:[]};
+    . + ($item | with_entries(select(.key | IN("enabled", "user_approval_timeout")))) |
+    .read += ($item.read // []) | .write += ($item.write // []));
 
 # Every path in a frozen profile through f.
 def header_paths(f):
@@ -224,7 +226,7 @@ def canonical_model:
   ((has("context_window") | not) or .context_window == null or
     (.context_window | positive_integer));
 
-# A frozen profile is a resolved profile: one merged sandbox item, the system
+# A frozen profile is a resolved profile: sandbox settings, the system
 # prompt as at most one text, and every reference a stored path. Resolving it
 # again changes nothing.
 def canonical_profile:

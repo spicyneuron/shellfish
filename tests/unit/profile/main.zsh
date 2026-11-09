@@ -74,18 +74,17 @@ jq -e '.model.request.model == "sol" and (.model.provider | endswith("/share/pro
 # "./" and "../" are relative to the file that wrote them, or to the working
 # directory for a flag.
 typeset kit="$tmp/kit"
-mkdir -p "$kit/profiles" "$kit/models" "$kit/sandbox" "$kit/system"
+mkdir -p "$kit/profiles" "$kit/models" "$kit/system"
 print -r -- 'kit' >"$kit/system/kit.md"
 cp -R "$ROOT/tests/fixtures/provider" "$tmp/tests-provider"
 print -r -- '{"provider": "./../../tests-provider", "request": {"model": "kit"}}' \
   >"$kit/models/kit.jsonc"
-print -r -- '{"read": ["./data", "../system"]}' >"$kit/sandbox/kit.jsonc"
-print -r -- '{"sandbox": ["../sandbox/kit.jsonc"], "system": ["../system/kit.md"]}' \
+print -r -- '{"sandbox": {"read": ["./data", "../system"]}, "system": ["../system/kit.md"]}' \
   >"$kit/profiles/kit.jsonc"
 sf_profile_resolve_args -p "$kit/profiles/kit.jsonc" -m "$kit/models/kit.jsonc"
 jq -e --arg kit "${kit:A}" --arg provider "${tmp:A}/tests-provider" '
   .model.provider == $provider and .profile.system == [{text:"kit"}] and
-  .profile.sandbox.read == [$kit + "/sandbox/data", $kit + "/system"]
+  .profile.sandbox.read == [$kit + "/profiles/data", $kit + "/system"]
 ' <<<"$REPLY" >/dev/null || fail 'config-relative references did not resolve from their files'
 (
   cd "$kit"
@@ -93,9 +92,8 @@ jq -e --arg kit "${kit:A}" --arg provider "${tmp:A}/tests-provider" '
   jq -e '.model.request.model == "kit"' <<<"$REPLY" >/dev/null
 ) || fail 'flag-relative references did not resolve from the working directory'
 
-# Sandbox and system lists take inline values, a lone sandbox item needs no
-# list, system files freeze into one text, and a frozen profile and model
-# resolve to themselves.
+# Sandbox settings live in the profile, system files freeze into one text,
+# and a frozen profile and model resolve to themselves.
 sf_test_profile inline '{"sandbox": {"read": ["./data"]},
   "system": [{"text": "hello"}, "prompt.md"],
   "config": {"example": {"paths": ["./data", "~/data", "@data"], "values": [null, false, 2]}}}'
@@ -316,43 +314,40 @@ if sf_profile_resolve_args -p work -m bare; then
   fail 'invalid provider path was accepted'
 fi
 
-# Sandbox files merge left to right: grants accumulate, settings replace, and
-# flags add grants last. Grants need not exist.
+# Sandbox flags extend profile grants and replace settings in order.
+# Grants need not exist.
 mkdir -p "$tmp/flag"
-sf_test_sandbox base '{"read": ["~/my reference", "/opt/ref"], "write": ["~/output"]}'
-sf_test_sandbox off '{"enabled": false, "user_approval_timeout": 30, "read": ["@system"]}'
-sf_test_sandbox on '{"enabled": true}'
-sf_test_profile boxed '{"sandbox": ["base", "off"]}'
-(cd "$tmp" && sf_profile_resolve_args -p boxed -m work --sandbox '{"write":["./flag"]}' &&
+sf_test_profile boxed '{"sandbox": {"enabled":false, "user_approval_timeout":30,
+  "read":["~/my reference", "/opt/ref"], "write":["~/output"]}}'
+(cd "$tmp" && sf_profile_resolve_args -p boxed -m work \
+  --sandbox '{"read":["@system"]}' --sandbox '{"write":["./flag"]}' &&
   print -r -- "$REPLY") | read -r REPLY
 jq -e --arg home "${tmp:A}/home" --arg flag "${tmp:A}/flag" --arg share "$ROOT/share" '
   .profile.sandbox == {enabled:false, user_approval_timeout:30, read:[$home + "/my reference", "/opt/ref", $share + "/system"],
     write:[$home + "/output", $flag]}
-' <<<"$REPLY" >/dev/null || fail 'sandbox files did not merge in order'
-sf_test_profile boxed '{"sandbox": ["off", "on"]}'
-sf_profile_resolve_args -p boxed -m work
-jq -e '.profile.sandbox.enabled' <<<"$REPLY" >/dev/null || fail 'a later sandbox file did not re-enable'
+' <<<"$REPLY" >/dev/null || fail 'sandbox options did not extend profile grants'
+sf_profile_resolve_args -p boxed -m work \
+  --sandbox '{"enabled":false,"user_approval_timeout":15}' --sandbox '{"enabled":true}'
+jq -e '.profile.sandbox.enabled and .profile.sandbox.user_approval_timeout == 15' \
+  <<<"$REPLY" >/dev/null || fail 'later sandbox options did not replace settings'
 
-# Invalid sandbox files name the file and entry.
-sf_test_sandbox bad '{"read": ["/ok", "relative"]}'
-sf_test_profile boxed '{"sandbox": ["bad"]}'
+# Invalid sandbox settings name the profile and entry.
+sf_test_profile boxed '{"sandbox": {"read": ["/ok", "relative"]}}'
 if sf_profile_resolve_args -p boxed -m work; then
-  fail 'a bare sandbox name was accepted'
+  fail 'an invalid sandbox path was accepted'
 fi
-[[ $SF_PROFILE_ERROR == 'invalid configuration: sandbox bad $["read"][1]: must be a /, ~/, ./, ../, or @ path' ]]
+[[ $SF_PROFILE_ERROR == 'invalid configuration: profile boxed $["sandbox"]["read"][1]: must be a /, ~/, ./, ../, or @ path' ]]
 for value in '{"enabled": "yes"}' '{"write": "/x"}' '{"paths": []}' \
-    '{"user_approval_timeout": 0}' '{"user_approval_timeout": 1.5}'; do
-  sf_test_sandbox bad "$value"
+    '{"user_approval_timeout": 0}' '{"user_approval_timeout": 1.5}' null false 1; do
+  sf_test_profile boxed "{\"sandbox\":$value}"
   if sf_profile_resolve_args -p boxed -m work; then
-    fail "sandbox file accepted $value"
+    fail "profile sandbox accepted $value"
+  fi
+  if sf_profile_resolve_args -p work -m work --sandbox "$value"; then
+    fail "sandbox option accepted $value"
   fi
 done
-sf_test_profile boxed '{"sandbox": ["absent"]}'
-if sf_profile_resolve_args -p boxed -m work; then
-  fail 'unknown sandbox file was accepted'
-fi
-[[ $SF_PROFILE_ERROR == 'unknown sandbox: absent' ]]
-sf_test_profile boxed '{"sandbox": ["base"]}'
+sf_test_profile boxed '{"sandbox": {"read": ["~/reference"]}}'
 (
   unset HOME
   if sf_profile_resolve_args -p boxed -m work; then
@@ -370,7 +365,6 @@ sf_test_profile boxed '{"sandbox": ["base"]}'
   grep -Fqx "kept  ${SHELLFISH_DIR:a}/.env" "$tmp/init.out"
   [[ $(<"$SHELLFISH_DIR/.env") == mine ]]
   cmp "$ROOT/share/profiles/default.jsonc" "$SHELLFISH_DIR/profiles/default.jsonc"
-  cmp "$ROOT/share/sandbox/default.jsonc" "$SHELLFISH_DIR/sandbox/default.jsonc"
   cmp "$ROOT/share/template/system/readonly.md" "$SHELLFISH_DIR/system/readonly.md"
   [[ ! -e $SHELLFISH_DIR/system/general.md && ! -e $SHELLFISH_DIR/system/tools.md &&
     ! -e $SHELLFISH_DIR/system/sandbox.md ]]
@@ -379,13 +373,11 @@ sf_test_profile boxed '{"sandbox": ["base"]}'
   done
   sf_profile_resolve_args
   jq -e '.model.request.model == "MODEL"' <<<"$REPLY" >/dev/null
-  print -r -- '{"system":[{"text":"mine"}],"tools":["read_file"],"sandbox":"default"}' \
+  print -r -- '{"system":[{"text":"mine"}],"tools":["read_file"],"sandbox":{"read":["~/reference"]}}' \
     >"$SHELLFISH_DIR/profiles/default.jsonc"
-  print -r -- '{"read":["~/reference"]}' >"$SHELLFISH_DIR/sandbox/default.jsonc"
   print -r -- 'My read-only policy.' >"$SHELLFISH_DIR/system/readonly.md"
   "$ROOT/bin/shellfish" init >"$tmp/init.out"
   grep -Fqx "kept  ${SHELLFISH_DIR:a}/profiles/default.jsonc" "$tmp/init.out"
-  grep -Fqx "kept  ${SHELLFISH_DIR:a}/sandbox/default.jsonc" "$tmp/init.out"
   grep -Fqx "kept  ${SHELLFISH_DIR:a}/system/readonly.md" "$tmp/init.out"
   sf_profile_resolve_args -p readonly
   jq -e '.profile.system[0].text |

@@ -108,7 +108,7 @@ for dir in $ROOT/libexec/*(/N); do
   for token in $matches; do
     module=${token#\$SF_SHARE/}
     [[ $module == (hooks/*|template|tui.jsonc) ||
-       ( $component == init && $module == (profiles|sandbox)/default.jsonc ) ]] ||
+       ( $component == init && $module == profiles/default.jsonc ) ]] ||
       fail "$component uses unknown shared data: $module"
   done
 
