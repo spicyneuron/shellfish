@@ -22,7 +22,6 @@ New sessions:
   -t, --tool REF          Append a tool
   --command REF           Append a command
   --hook REF              Append a hook
-  --sandbox-auto          Grant detected development-tool paths
 
   List options repeat. A REF starting with /, ~/, ./, ../, or @ is a path.
 

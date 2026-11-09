@@ -319,7 +319,7 @@ sf_profile_resolve() {
 # list: the profile's, or for -m the model list.
 # Callers that own their own flags pass only the ones listed in lib/options.zsh.
 sf_profile_resolve_args() {
-  local name='' extra detected='null'
+  local name='' extra
   local -a items=()
   local -A fields=( -m model --model model --sandbox sandbox --system system
     -t tools --tool tools --command commands --hook hooks )
@@ -338,11 +338,6 @@ sf_profile_resolve_args() {
         fi
         shift 2
         ;;
-      --sandbox-auto)
-        (( $+functions[sf_sandbox_detect] )) || source "$SF_ROOT/lib/sandbox.zsh"
-        detected=$(sf_sandbox_detect) || sf_profile_fail 'cannot detect sandbox paths' || return
-        shift
-        ;;
       *)
         sf_profile_fail "unknown argument: $1"
         return 2
@@ -350,14 +345,13 @@ sf_profile_resolve_args() {
     esac
   done
 
-  (( ${#items} )) || [[ $detected != null ]] || { sf_profile_resolve "$name"; return; }
-  extra=$(jq -cn --argjson detected "$detected" '
+  (( ${#items} )) || { sf_profile_resolve "$name"; return; }
+  extra=$(jq -cn '
     reduce ($ARGS.positional | range(0; length; 3) as $at | .[$at:$at + 3]) as
       [$flag, $field, $value] ({}; .[$field] += [
         if $value | startswith("{") then ($value | try fromjson catch null | objects) //
           error($flag + " requires a reference or JSON object")
-        else $value end]) |
-    if $detected then .sandbox += [$detected] else . end
+        else $value end])
   ' --args -- "${items[@]}" 2>&1) || {
     sf_cli_diagnostic "$extra"
     sf_profile_fail "$REPLY"

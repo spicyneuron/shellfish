@@ -70,7 +70,7 @@ Grants are paths and need not exist, so one file can serve several machines. San
 
 Tool policies and platform temp access set the baseline. Grants extend access, but policy deny rules still win. A tool policy can `extend` another policy, as `shell_readonly` extends `shell` while denying writes. Bundled policies prevent tools from creating or changing `.shellfish` directories because their contents run outside the sandbox. A `SHELLFISH_DIR` with another name inside a writable path is not protected.
 
-`--sandbox` adds a file or object for one session, and `--sandbox-auto` adds detected development-tool paths. `/sandbox` updates the current session's frozen grants.
+`--sandbox` adds a file or object for one session. `/sandbox` updates the current session's frozen grants.
 
 ### Bypass approval
 
