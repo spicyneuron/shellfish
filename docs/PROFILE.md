@@ -11,7 +11,6 @@ See [`CONFIG.md`](CONFIG.md) for setup, directory selection, and reference looku
 ```jsonc
 // profiles/review.jsonc
 {
-  "sandbox": {},
   "system": ["general.md", "review.md"],
   "tools": ["read_file", "shell_readonly"],
   "commands": ["help", "compact"],
@@ -75,7 +74,7 @@ The profile's `sandbox` object holds standing settings:
 | `tools.NAME.write` | Extra read-write grants for that tool |
 | `tools.NAME.domains` | Extra allowed hostnames or `*.hostname` patterns for that tool |
 
-Each tool receives only its own grants, keyed by its selected name, such as `shell` or `read_file`. Grants cannot target unselected tools or `*`. Paths need not exist, so one profile can serve several machines. A profile without sandbox settings is sandboxed with no extra grants. See [`profile.schema.json`](../share/profile.schema.json) for the exact fields.
+Each tool receives only its own grants, keyed by its selected name, such as `shell` or `read_file`. Grants cannot target unselected tools, tools whose manifest disables sandboxing, or `*`. Domains are case-insensitive. Paths need not exist, so one profile can serve several machines. A profile without sandbox settings is sandboxed with no extra grants. See [`profile.schema.json`](../share/profile.schema.json) for the exact fields.
 
 Tool policies and platform temp access set the baseline. Grants extend access, but policy deny rules still win. A tool policy can `extend` another policy, as `shell_readonly` extends `shell` while denying writes. Bundled policies prevent tools from creating or changing `.shellfish` directories because their contents run outside the sandbox. A `SHELLFISH_DIR` with another name inside a writable path is not protected.
 

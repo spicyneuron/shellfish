@@ -52,6 +52,12 @@ sf_run_create() {
   SF_RUN[profile]=$(jq -c '.profile' <<<"$config") &&
     SF_RUN[model]=$(jq -c '.model' <<<"$config") || { sf_die 'cannot read configuration'; return 1; }
   sf_run_components "$SF_RUN[profile]" || { sf_die "$REPLY"; return 1; }
+  # Grants are inert for tools whose manifest disables sandboxing.
+  REPLY=$(jq -rn --argjson profile "$SF_RUN[profile]" --argjson tools "$SF_RUN[tools]" '
+    [$tools[] | select(.manifest.sandbox | not) | .name] as $open |
+    first($profile.sandbox.tools | keys[] | select(IN($open[])))
+  ') || { sf_die 'cannot read configuration'; return 1; }
+  [[ -z $REPLY ]] || { sf_die "sandbox grants name an unsandboxed tool: $REPLY"; return 1; }
   sf_session_select_path "$requested_out" || { sf_die "$SF_SESSION_ERROR"; return 1; }
   session=$REPLY
   cwd=$(pwd -P) && created=$(date -u '+%Y-%m-%dT%H:%M:%SZ') || {

@@ -84,7 +84,6 @@ The Shellfish directory (typically `~/.shellfish/`) holds your editable configur
 // ~/.shellfish/profiles/review.jsonc
 {
   "$schema": "https://raw.githubusercontent.com/spicyneuron/shellfish/refs/heads/main/share/profile.schema.json",
-  "sandbox": {},
   "system": ["general.md", "review.md"],  // ~/.shellfish/system/review.md
   "tools": ["read_file", "shell_readonly"],
   "hooks": ["project/instructions"]

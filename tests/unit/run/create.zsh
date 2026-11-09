@@ -44,6 +44,16 @@ jq -e --arg read "${system:A}" '
   (.profile.sandbox.tools.shell.write | index("~/work")) != null
 ' "$granted" >/dev/null || fail 'create did not store forwarded sandbox grants'
 
+# Grants for a tool that never runs sandboxed fail creation.
+typeset unsandboxed="$tmp/unsandboxed.jsonl" unsandboxed_error="$tmp/unsandboxed.err"
+if zsh -f "$entry" run --session-create --session-out "$unsandboxed" \
+    -t subagent --sandbox '{"tools":{"subagent":{"read":["/x"]}}}' 2>"$unsandboxed_error"; then
+  fail 'create accepted grants for an unsandboxed tool'
+fi
+grep -q 'sandbox grants name an unsandboxed tool: subagent' "$unsandboxed_error" ||
+  fail 'create did not name the unsandboxed tool'
+[[ ! -e $unsandboxed ]] || fail 'unsandboxed grants left a transcript'
+
 # Derived sessions reuse the frozen profile, system text included.
 print -r -- 'changed configured system' >"$system/source.md"
 print -r -- '{"type":"user","content":[{"type":"text","text":"old"}]}' \

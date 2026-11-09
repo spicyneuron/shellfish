@@ -325,7 +325,7 @@ sf_test_profile boxed '{"tools":["shell","read_file"],
       "read_file":{"read":["~/reference"]}}}}'
 (cd "$tmp" && sf_profile_resolve_args -p boxed -m work \
   --sandbox '{"tools":{"shell":{"read":["@system"]}}}' \
-  --sandbox '{"tools":{"shell":{"write":["./flag"],"domains":["*.npmjs.org"]}}}' &&
+  --sandbox '{"tools":{"shell":{"write":["./flag"],"domains":["*.NPMjs.org"]}}}' &&
   print -r -- "$REPLY") | read -r REPLY
 jq -e --arg home "${tmp:A}/home" --arg flag "${tmp:A}/flag" --arg share "$ROOT/share" '
   .profile.sandbox == {enabled:false, user_approval_timeout:30, tools:{

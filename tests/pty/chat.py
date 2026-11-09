@@ -39,7 +39,7 @@ def test_sandbox_updates_without_reload():
         try:
             path, _ = session.wait_session_records(1)
             mark = len(session.output)
-            session.send(f"/sandbox shell +w {grant}\r".encode())
+            session.send(f"/sandbox shell +write {grant}\r".encode())
             session.wait_after(mark, "Sandbox shell write grant added", timeout=5)
             session.wait_ready(mark, timeout=5)
             assert "Project:" not in session.visible(mark)

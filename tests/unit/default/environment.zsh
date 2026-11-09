@@ -233,20 +233,20 @@ jq -c --arg cwd "${tmp:A}/project" '.cwd=$cwd |
     jq -rs 'last' "$tmp/control"
   }
   # A bundled grant matches by "@" or by its absolute path.
-  [[ $(call "/sandbox shell +r $ROOT/share/system" | jq -r .action) == null ]] ||
+  [[ $(call "/sandbox shell +read $ROOT/share/system" | jq -r .action) == null ]] ||
     fail 'bundled grant duplicated'
-  call "/sandbox shell -r $ROOT/share/system" | jq -e '.action == "session_update" and
+  call "/sandbox shell -read $ROOT/share/system" | jq -e '.action == "session_update" and
     .profile.sandbox.tools.shell.read == []' >/dev/null || fail 'bundled grant removal by path failed'
-  call '/sandbox shell -r @system' | jq -e '.action == "session_update" and
+  call '/sandbox shell -read @system' | jq -e '.action == "session_update" and
     .profile.sandbox.tools.shell.read == []' >/dev/null || fail 'bundled grant removal by @ failed'
-  [[ $(call '/sandbox shell +w dir' | jq -r .action) == null ]] || fail 'absolute grant duplicated'
-  [[ $(call '/sandbox shell +w ~/share' | jq -r .action) == null ]] || fail 'home grant duplicated'
-  call '/sandbox shell -w dir' | jq -e '.action == "session_update" and
+  [[ $(call '/sandbox shell +write dir' | jq -r .action) == null ]] || fail 'absolute grant duplicated'
+  [[ $(call '/sandbox shell +write ~/share' | jq -r .action) == null ]] || fail 'home grant duplicated'
+  call '/sandbox shell -write dir' | jq -e '.action == "session_update" and
     .profile.sandbox.tools.shell.write == ["~/share"]' >/dev/null || fail 'absolute grant removal failed'
-  call '/sandbox shell -w ~/share' | jq -e --arg path "${tmp:A}/project/dir" '
+  call '/sandbox shell -write ~/share' | jq -e --arg path "${tmp:A}/project/dir" '
     .action == "session_update" and .profile.sandbox.tools.shell.write == [$path]' >/dev/null ||
     fail 'home grant removal failed'
-  call '/sandbox read_file +r dir' | jq -e --arg path "${tmp:A}/project/dir" '
+  call '/sandbox read_file +read dir' | jq -e --arg path "${tmp:A}/project/dir" '
     .profile.sandbox.tools.read_file == {read:[$path],write:[],domains:[]} and
     .profile.sandbox.tools.shell.read == ["@system"] and
     .profile.sandbox.tools.shell.write == [$path,"~/share"]
@@ -257,13 +257,17 @@ jq -c --arg cwd "${tmp:A}/project" '.cwd=$cwd |
   call '/sandbox ' >/dev/null
   grep -q '^shell:$' "$tmp/sandbox.err" && grep -q '^read_file:$' "$tmp/sandbox.err" ||
     fail 'sandbox inspection omitted a selected tool'
-  [[ $(call '/sandbox missing +r dir' | jq -r .action) == null ]] ||
+  [[ $(call '/sandbox missing +read dir' | jq -r .action) == null ]] ||
     fail 'sandbox command granted access to an unselected tool'
-  call '/sandbox read_file +domain github.com' | jq -e '
+  [[ $(call '/sandbox +read dir' | jq -r .action) == null ]] &&
+    grep -q '^usage: /sandbox' "$tmp/sandbox.err" || fail 'a grant without a tool did not show usage'
+  [[ $(call '/sandbox shell +r dir' | jq -r .action) == null ]] &&
+    grep -q '^usage: /sandbox' "$tmp/sandbox.err" || fail 'an operation alias was accepted'
+  call '/sandbox read_file +domain GitHub.COM' | jq -e '
     .profile.sandbox.tools.read_file == {read:[],write:[],domains:["github.com"]} and
     .profile.sandbox.tools.shell.domains == ["*.example.com"]
-  ' >/dev/null || fail 'domain grant changed another tool'
-  [[ $(call '/sandbox shell +domain *.example.com' | jq -r .action) == null ]] ||
+  ' >/dev/null || fail 'domain grant changed another tool or kept its case'
+  [[ $(call '/sandbox shell +domain *.Example.com' | jq -r .action) == null ]] ||
     fail 'wildcard domain grant duplicated'
   call '/sandbox shell -domain *.example.com' | jq -e '
     .profile.sandbox.tools.shell.domains == [] and

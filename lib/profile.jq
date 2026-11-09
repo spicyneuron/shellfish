@@ -146,7 +146,8 @@ def config_sandbox($path):
             if $field == "domains" then sandbox_domain else path_reference end;
             $path + ["tools", $name, $field, $at];
             if $field == "domains" then "must be a hostname or *.hostname"
-            else "must be a /, ~/, ./, ../, or @ path" end)))));
+            else "must be a /, ~/, ./, ../, or @ path" end))) |
+      if has("domains") then .domains |= map(ascii_downcase) else . end));
 
 # A profile selects components, holds sandbox settings and opaque configuration.
 # Absent lists are empty. Options add a model list.

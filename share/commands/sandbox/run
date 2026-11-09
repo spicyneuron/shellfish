@@ -13,7 +13,10 @@ body=${body%%[[:space:]]#}
 IFS= read -r header <"$SHELLFISH_SESSION" || exit 1
 tool=${body%%[[:space:]]*}
 
-if [[ -n $tool ]] && ! jq -e --arg tool "$tool" '
+if [[ $tool == [+-]* ]]; then
+  print -u2 -r -- "$usage"
+  exit 0
+elif [[ -n $tool ]] && ! jq -e --arg tool "$tool" '
     any(.profile.tools[]; split("/") | last == $tool)' <<<"$header" >/dev/null; then
   print -u2 -r -- "sandbox tool is not selected: $tool"
   exit 0
@@ -38,11 +41,11 @@ candidate=${body#"$operation"}
 candidate=${candidate##[[:space:]]#}
 candidate=${candidate%%[[:space:]]#}
 case $operation in
-  read|+read|+r) action=add; access=read ;;
-  write|+write|+w) action=add; access=write ;;
-  -read|-r) action=remove; access=read ;;
-  -write|-w) action=remove; access=write ;;
-  domain|+domain) action=add; access=domains ;;
+  +read) action=add; access=read ;;
+  +write) action=add; access=write ;;
+  +domain) action=add; access=domains ;;
+  -read) action=remove; access=read ;;
+  -write) action=remove; access=write ;;
   -domain) action=remove; access=domains ;;
   *)
     print -u2 -r -- "$usage"
@@ -71,7 +74,7 @@ if [[ $access == domains ]]; then
     print -u2 -r -- "sandbox domain must be a hostname or *.hostname: $candidate"
     exit 0
   }
-  value=$candidate
+  value=${candidate:l}
 else
   if [[ $candidate == '~' || $candidate == '~/'* ]]; then
     [[ -n ${HOME-} ]] || {
