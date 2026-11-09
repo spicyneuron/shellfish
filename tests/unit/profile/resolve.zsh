@@ -12,7 +12,7 @@ profile_eval() {
 # Provider settings belong to model files, not profile fields.
 for profile in \
     '{"driver":{}}' '{"request":{}}' '{"env":{}}' '{"extend":["default"]}' \
-    '{"model":"m"}' '{"sandbox":{"read":["relative"]}}' '{"hooks":{"stop":[]}}' \
+    '{"model":"m"}' '{"sandbox":{"tools":{"shell":{"read":["relative"]}}}}' '{"hooks":{"stop":[]}}' \
     '{"tools":"read_file"}' '{"tools":[{}]}' '{"system":[{"text":1}]}' '{"themes":{}}'; do
   if print -r -- "$profile" | profile_eval 'config_profile(["p"])' >/dev/null 2>&1; then
     fail "invalid profile was accepted: $profile"
@@ -20,7 +20,7 @@ for profile in \
 done
 print -r -- '{"sandbox":{},"system":["x.md"],"tools":[],"hooks":["h"]}' |
   profile_eval 'config_profile(["p"])' >/dev/null
-print -r -- '{"sandbox":{"read":["./x"]},"system":[{"text":"t"}]}' |
+print -r -- '{"sandbox":{"tools":{"shell":{"read":["./x"]}}},"system":[{"text":"t"}]}' |
   profile_eval 'config_profile(["p"])' >/dev/null
 for model in \
     '{"driver":"openai_chat"}' '{"context_window":0}' '{"endpoint":"ftp://example.invalid"}' \

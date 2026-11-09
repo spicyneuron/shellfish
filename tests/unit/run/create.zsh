@@ -36,12 +36,12 @@ jq -es 'length == 1' "$explicit" >/dev/null || fail 'create did not populate --s
 # Freeze forwarded sandbox grants.
 typeset granted="$tmp/granted.jsonl"
 zsh -f "$entry" run --session-create --session-out "$granted" \
-  --sandbox "{\"read\": [\"${system:A}\"], \"write\": [\"~/work\"]}" >/dev/null || \
+  -t shell --sandbox "{\"tools\":{\"shell\":{\"read\":[\"${system:A}\"],\"write\":[\"~/work\"]}}}" >/dev/null || \
   fail 'create rejected forwarded sandbox grants'
 jq -e --arg read "${system:A}" '
   select(.type == "session") |
-  (.profile.sandbox.read | index($read)) != null and
-  (.profile.sandbox.write | index("~/work")) != null
+  (.profile.sandbox.tools.shell.read | index($read)) != null and
+  (.profile.sandbox.tools.shell.write | index("~/work")) != null
 ' "$granted" >/dev/null || fail 'create did not store forwarded sandbox grants'
 
 # Derived sessions reuse the frozen profile, system text included.

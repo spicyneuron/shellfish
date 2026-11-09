@@ -458,6 +458,11 @@ jq -c .tool_response >"$SANDBOX_OUTPUT"
 ZSH
 export SANDBOX_OUTPUT=$sandbox_output
 sf_test_bind_hooks post_tool_use "$sandbox_post"
+SF_TEST_PROFILE=$(jq -c --arg reader "$ROOT/share/tools/read_file" '
+  .tools += [$reader] | .sandbox.tools={
+    shell:{read:["/shell/read"],write:["/shell/write"]},
+    read_file:{read:["/reader/read"],write:["/reader/write"]}}
+' <<<"$SF_TEST_PROFILE")
 session="$tmp/sandbox-denied.jsonl"
 sf_test_session "$session"
 SF_TEST_PROVIDER_TOOL_CALL=1 SF_TEST_PROVIDER_TOOL_COMMAND='print -rn -- output; exit 3' \
@@ -476,6 +481,13 @@ jq -e --slurpfile output "$sandbox_output" '
 ' < <(jq -c 'select(.type == "tool_result")' "$stream") >/dev/null ||
   fail 'post_tool_use did not receive the rendered sandbox output'
 SF_TEST_PROFILE=$(jq -c '.hooks=[]' <<<"$SF_TEST_PROFILE")
+jq -eRn '
+  [inputs] as $args |
+  ($args | index("/shell/read") != null and index("/shell/write") != null and
+    index("/reader/read") == null and index("/reader/write") == null)
+' <"$fence_arguments" >/dev/null || fail 'tool execution mixed sandbox grants between tools'
+SF_TEST_PROFILE=$(jq -c '.tools |= map(select(endswith("/read_file") | not)) |
+  .sandbox.tools={}' <<<"$SF_TEST_PROFILE")
 jq -eRn --arg temp "${TMPDIR:A}" '
   [inputs] as $args |
   [range(0; $args | length) as $i |

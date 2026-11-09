@@ -123,17 +123,24 @@ def config_model($path):
 # Sandbox settings enable or disable sandboxing, grant extra paths, and limit
 # how long a bypass waits for the user.
 def config_sandbox($path):
-  config_object($path; ["enabled", "read", "write", "user_approval_timeout"]) |
+  config_object($path; ["enabled", "tools", "user_approval_timeout"]) |
   config_assert((has("enabled") | not) or (.enabled | type == "boolean");
     $path + ["enabled"]; "must be a boolean") |
   config_assert((has("user_approval_timeout") | not) or (.user_approval_timeout | positive_integer);
     $path + ["user_approval_timeout"]; "must be a positive integer") |
-  reduce ["read", "write"][] as $field (.;
-    config_assert((has($field) | not) or (.[$field] | type == "array");
-      $path + [$field]; "must be an array") |
-    reduce range(0; .[$field] // [] | length) as $at (.;
-      config_assert(.[$field][$at] | path_reference; $path + [$field, $at];
-        "must be a /, ~/, ./, ../, or @ path")));
+  config_assert((has("tools") | not) or (.tools | type == "object");
+    $path + ["tools"]; "must be an object") |
+  reduce ((.tools // {}) | keys[]) as $name (.;
+    config_assert($name | tool_name; $path + ["tools", $name]; "invalid tool name") |
+    .tools[$name] |= (
+      config_object($path + ["tools", $name]; ["read", "write"]) |
+      reduce ["read", "write"][] as $field (.;
+        config_assert((has($field) | not) or (.[$field] | type == "array");
+          $path + ["tools", $name, $field]; "must be an array") |
+        reduce range(0; .[$field] // [] | length) as $at (.;
+          config_assert(.[$field][$at] | path_reference;
+            $path + ["tools", $name, $field, $at];
+            "must be a /, ~/, ./, ../, or @ path")))));
 
 # A profile selects components, holds sandbox settings and opaque configuration.
 # Absent lists are empty. Options add a model list.
@@ -173,8 +180,8 @@ def relative_to($dir):
 def config_relative($kind; $dir):
   def each($field; f): if has($field) then .[$field] |= f else . end;
   if $kind == "model" then each("provider"; relative_to($dir))
-  elif $kind == "sandbox" then each("read"; map(relative_to($dir))) |
-    each("write"; map(relative_to($dir)))
+  elif $kind == "sandbox" then each("tools"; with_entries(.value |= (
+    each("read"; map(relative_to($dir))) | each("write"; map(relative_to($dir))))))
   else each("sandbox"; config_relative("sandbox"; $dir)) |
     reduce ("model", "system", "tools", "commands", "hooks") as $field (.;
     each($field; map(if type == "object" and $field != "system"
@@ -190,14 +197,17 @@ def model_merge($models):
 
 # Sandbox grants accumulate and settings replace. Defaults apply after merging.
 def sandbox_merge($items):
-  reduce $items[] as $item ({read:[], write:[]};
+  reduce $items[] as $item ({tools:{}};
     . + ($item | with_entries(select(.key | IN("enabled", "user_approval_timeout")))) |
-    .read += ($item.read // []) | .write += ($item.write // []));
+    reduce (($item.tools // {}) | keys[]) as $name (.;
+      .tools[$name] //= {read:[], write:[]} |
+      .tools[$name].read += ($item.tools[$name].read // []) |
+      .tools[$name].write += ($item.tools[$name].write // [])));
 
 # Every path in a frozen profile through f.
 def header_paths(f):
   .model.provider |= f | .profile |= (.tools |= map(f) | .commands |= map(f) | .hooks |= map(f) |
-    .sandbox.read |= map(f) | .sandbox.write |= map(f));
+    .sandbox.tools |= with_entries(.value |= (.read |= map(f) | .write |= map(f))));
 
 # Stored paths name bundled files "@...", files under HOME "~/...", and
 # anything else absolutely. An empty $share stores nothing as bundled.
@@ -234,14 +244,18 @@ def canonical_profile:
   (keys - ["config"]) == ["commands", "hooks", "sandbox", "system", "tools"] and
   ((has("config") | not) or (.config | type == "object")) and
   (.sandbox | type == "object" and
-    (keys - ["user_approval_timeout"]) == ["enabled", "read", "write"] and
-    (.enabled | type == "boolean") and (.read | type == "array") and
-    (.write | type == "array") and
+    (keys - ["user_approval_timeout"]) == ["enabled", "tools"] and
+    (.enabled | type == "boolean") and
+    (.tools | type == "object" and all(.[];
+      type == "object" and keys == ["read", "write"] and
+      (.read | type == "array") and (.write | type == "array") and
+      all(.read[], .write[]; stored_reference))) and
     ((has("user_approval_timeout") | not) or (.user_approval_timeout | positive_integer))) and
   (.system | type == "array" and length <= 1 and all(.[]; type == "object" and
     keys == ["text"] and (.text | nul_free_string) and .text != "")) and
   (.tools | type == "array") and (.commands | type == "array") and (.hooks | type == "array") and
-  all(.tools[], .commands[], .hooks[], .sandbox.read[], .sandbox.write[]; stored_reference) and
+  all(.tools[], .commands[], .hooks[]; stored_reference) and
+  ((.sandbox.tools | keys) - [.tools[] | split("/") | last] | length == 0) and
   (.tools | map(split("/") | last) | all(.[]; tool_name) and length == (unique | length)) and
   (.commands | map(split("/") | last) | all(.[]; tool_name));
 

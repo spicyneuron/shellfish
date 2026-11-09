@@ -25,7 +25,7 @@ jq -e --arg provider "$ROOT/share/providers/openai_chat" '
   .model == {provider:$provider, endpoint:"https://api.openai.com/v1/chat/completions",
     context_window:128000,
     request:{model:"configured",temperature:0.2,reasoning:{effort:"high"}}} and
-  .profile == {system:[],tools:[],commands:[],hooks:[],sandbox:{enabled:true,read:[],write:[]}} and
+  .profile == {system:[],tools:[],commands:[],hooks:[],sandbox:{enabled:true,tools:{}}} and
   keys == ["model", "profile"]
 ' <<<"$REPLY" >/dev/null || fail 'model files did not merge in order'
 sf_profile_resolve_args -p work -m work -m high -m '{"request":{"temperature":0.7}}' \
@@ -79,12 +79,13 @@ print -r -- 'kit' >"$kit/system/kit.md"
 cp -R "$ROOT/tests/fixtures/provider" "$tmp/tests-provider"
 print -r -- '{"provider": "./../../tests-provider", "request": {"model": "kit"}}' \
   >"$kit/models/kit.jsonc"
-print -r -- '{"sandbox": {"read": ["./data", "../system"]}, "system": ["../system/kit.md"]}' \
+print -r -- '{"tools":["shell"], "sandbox":{"tools":{"shell":{"read":["./data", "../system"]}}},
+  "system":["../system/kit.md"]}' \
   >"$kit/profiles/kit.jsonc"
 sf_profile_resolve_args -p "$kit/profiles/kit.jsonc" -m "$kit/models/kit.jsonc"
 jq -e --arg kit "${kit:A}" --arg provider "${tmp:A}/tests-provider" '
   .model.provider == $provider and .profile.system == [{text:"kit"}] and
-  .profile.sandbox.read == [$kit + "/profiles/data", $kit + "/system"]
+  .profile.sandbox.tools.shell.read == [$kit + "/profiles/data", $kit + "/system"]
 ' <<<"$REPLY" >/dev/null || fail 'config-relative references did not resolve from their files'
 (
   cd "$kit"
@@ -94,14 +95,14 @@ jq -e --arg kit "${kit:A}" --arg provider "${tmp:A}/tests-provider" '
 
 # Sandbox settings live in the profile, system files freeze into one text,
 # and a frozen profile and model resolve to themselves.
-sf_test_profile inline '{"sandbox": {"read": ["./data"]},
+sf_test_profile inline '{"tools":["shell"], "sandbox":{"tools":{"shell":{"read":["./data"]}}},
   "system": [{"text": "hello"}, "prompt.md"],
   "config": {"example": {"paths": ["./data", "~/data", "@data"], "values": [null, false, 2]}}}'
 sf_profile_resolve_args -p inline -m '{"provider": "'"$fixture_provider"'", "request": {"model": "inline"},
   "config": {"example": {"paths": ["./data", "~/data", "@data"], "values": [null, false, 2]}}}'
 profile=$REPLY
 jq -e --arg root "${SF_TEST_CONFIG:A}" '
-  .model.request.model == "inline" and .profile.sandbox.read == [$root + "/profiles/data"] and
+  .model.request.model == "inline" and .profile.sandbox.tools.shell.read == [$root + "/profiles/data"] and
   .profile.system == [{text:"hello\n\nnested"}] and
   .profile.config == {example:{paths:["./data", "~/data", "@data"], values:[null,false,2]}} and
   .model.config == .profile.config
@@ -114,8 +115,8 @@ sf_profile_resolve_args -p "$(jq -c '.profile' <<<"$profile")" -m "$tmp/frozen-m
 [[ $REPLY == "$profile" ]] || fail 'an inline frozen profile did not resolve to itself'
 
 # An inline profile resolves relative paths against the working directory.
-sf_profile_resolve_args -p '{"sandbox": {"read": ["./data"]}}' -m fixture
-jq -e --arg cwd "${PWD:A}" '.profile.sandbox.read == [$cwd + "/data"]' <<<"$REPLY" >/dev/null ||
+sf_profile_resolve_args -p '{"sandbox":{"tools":{"shell":{"read":["./data"]}}}}' -t shell -m fixture
+jq -e --arg cwd "${PWD:A}" '.profile.sandbox.tools.shell.read == [$cwd + "/data"]' <<<"$REPLY" >/dev/null ||
   fail 'inline profile paths did not resolve against the working directory'
 if sf_profile_resolve_args -p '{broken' -m fixture; then
   fail 'malformed inline profile was accepted'
@@ -317,14 +318,19 @@ fi
 # Sandbox flags extend profile grants and replace settings in order.
 # Grants need not exist.
 mkdir -p "$tmp/flag"
-sf_test_profile boxed '{"sandbox": {"enabled":false, "user_approval_timeout":30,
-  "read":["~/my reference", "/opt/ref"], "write":["~/output"]}}'
+sf_test_profile boxed '{"tools":["shell","read_file"],
+  "sandbox":{"enabled":false, "user_approval_timeout":30,
+    "tools":{"shell":{"read":["~/my reference", "/opt/ref"], "write":["~/output"]},
+      "read_file":{"read":["~/reference"]}}}}'
 (cd "$tmp" && sf_profile_resolve_args -p boxed -m work \
-  --sandbox '{"read":["@system"]}' --sandbox '{"write":["./flag"]}' &&
+  --sandbox '{"tools":{"shell":{"read":["@system"]}}}' \
+  --sandbox '{"tools":{"shell":{"write":["./flag"]}}}' &&
   print -r -- "$REPLY") | read -r REPLY
 jq -e --arg home "${tmp:A}/home" --arg flag "${tmp:A}/flag" --arg share "$ROOT/share" '
-  .profile.sandbox == {enabled:false, user_approval_timeout:30, read:[$home + "/my reference", "/opt/ref", $share + "/system"],
-    write:[$home + "/output", $flag]}
+  .profile.sandbox == {enabled:false, user_approval_timeout:30, tools:{
+    shell:{read:[$home + "/my reference", "/opt/ref", $share + "/system"],
+      write:[$home + "/output", $flag]},
+    read_file:{read:[$home + "/reference"],write:[]}}}
 ' <<<"$REPLY" >/dev/null || fail 'sandbox options did not extend profile grants'
 sf_profile_resolve_args -p boxed -m work \
   --sandbox '{"enabled":false,"user_approval_timeout":15}' --sandbox '{"enabled":true}'
@@ -332,12 +338,14 @@ jq -e '.profile.sandbox.enabled and .profile.sandbox.user_approval_timeout == 15
   <<<"$REPLY" >/dev/null || fail 'later sandbox options did not replace settings'
 
 # Invalid sandbox settings name the profile and entry.
-sf_test_profile boxed '{"sandbox": {"read": ["/ok", "relative"]}}'
+sf_test_profile boxed '{"tools":["shell"], "sandbox":{"tools":{"shell":{"read":["/ok", "relative"]}}}}'
 if sf_profile_resolve_args -p boxed -m work; then
   fail 'an invalid sandbox path was accepted'
 fi
-[[ $SF_PROFILE_ERROR == 'invalid configuration: profile boxed $["sandbox"]["read"][1]: must be a /, ~/, ./, ../, or @ path' ]]
-for value in '{"enabled": "yes"}' '{"write": "/x"}' '{"paths": []}' \
+[[ $SF_PROFILE_ERROR == 'invalid configuration: profile boxed $["sandbox"]["tools"]["shell"]["read"][1]: must be a /, ~/, ./, ../, or @ path' ]]
+for value in '{"enabled": "yes"}' '{"tools":{"shell":{"write":"/x"}}}' '{"paths": []}' \
+    '{"tools":null}' '{"tools":[]}' '{"tools":{"*":{}}}' '{"tools":{"shell":null}}' \
+    '{"tools":{"shell":{"read":null}}}' '{"tools":{"shell":{"extra":[]}}}' \
     '{"user_approval_timeout": 0}' '{"user_approval_timeout": 1.5}' null false 1; do
   sf_test_profile boxed "{\"sandbox\":$value}"
   if sf_profile_resolve_args -p boxed -m work; then
@@ -347,7 +355,12 @@ for value in '{"enabled": "yes"}' '{"write": "/x"}' '{"paths": []}' \
     fail "sandbox option accepted $value"
   fi
 done
-sf_test_profile boxed '{"sandbox": {"read": ["~/reference"]}}'
+sf_test_profile boxed '{"sandbox":{"tools":{"missing":{"read":["/reference"]}}}}'
+if sf_profile_resolve_args -p boxed -m work; then
+  fail 'sandbox grants for an unselected tool were accepted'
+fi
+[[ $SF_PROFILE_ERROR == *'sandbox grants name an unselected tool: missing'* ]]
+sf_test_profile boxed '{"tools":["shell"], "sandbox":{"tools":{"shell":{"read":["~/reference"]}}}}'
 (
   unset HOME
   if sf_profile_resolve_args -p boxed -m work; then
@@ -373,7 +386,8 @@ sf_test_profile boxed '{"sandbox": {"read": ["~/reference"]}}'
   done
   sf_profile_resolve_args
   jq -e '.model.request.model == "MODEL"' <<<"$REPLY" >/dev/null
-  print -r -- '{"system":[{"text":"mine"}],"tools":["read_file"],"sandbox":{"read":["~/reference"]}}' \
+  print -r -- '{"system":[{"text":"mine"}],"tools":["read_file"],
+    "sandbox":{"tools":{"read_file":{"read":["~/reference"]}}}}' \
     >"$SHELLFISH_DIR/profiles/default.jsonc"
   print -r -- 'My read-only policy.' >"$SHELLFISH_DIR/system/readonly.md"
   "$ROOT/bin/shellfish" init >"$tmp/init.out"
@@ -385,7 +399,7 @@ sf_test_profile boxed '{"sandbox": {"read": ["~/reference"]}}'
   sf_profile_resolve_args
   jq -e --arg home "${HOME:A}" '.profile.system == [{text:"mine"}] and
     (.profile.tools | map(split("/") | last)) == ["read_file"] and
-    .profile.sandbox.read == [$home + "/reference"]' <<<"$REPLY" >/dev/null
+    .profile.sandbox.tools.read_file.read == [$home + "/reference"]' <<<"$REPLY" >/dev/null
   sf_profile_resolve_args -p @profiles/default.jsonc
   jq -e '.profile.system[0].text | startswith("You are a CLI agent.")' <<<"$REPLY" >/dev/null
 )
@@ -404,7 +418,7 @@ sf_test_profile boxed '{"sandbox": {"read": ["~/reference"]}}'
     (.profile.system[0].text | startswith("You are a CLI agent.") and contains("# Tools")) and
     (.profile.commands | any(endswith("/help"))) and
     (.profile.hooks | any(endswith("/project/instructions"))) and
-    .profile.sandbox == {enabled:true,user_approval_timeout:120,read:[],write:[]}' \
+    .profile.sandbox == {enabled:true,user_approval_timeout:120,tools:{}}' \
     <<<"$REPLY" >/dev/null || fail 'uninitialized configuration did not use the bundled default'
   sf_profile_resolve_args -p '{}' \
     -m '{"provider":"openrouter","request":{"model":"test-model"}}' -t shell

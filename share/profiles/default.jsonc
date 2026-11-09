@@ -13,9 +13,10 @@
     "enabled": true,
     // Seconds to wait for user approval of a sandbox bypass.
     "user_approval_timeout": 120,
-    // Extra paths outside the project. Paths need not exist on every machine.
-    "read": [],
-    "write": []
+    // Extra grants keyed by selected tool name.
+    "tools": {
+      // "shell": {"read": ["~/.cargo"], "write": ["~/.cache/uv"]}
+    }
   },
 
   // Files under system/ concatenated into the system prompt.

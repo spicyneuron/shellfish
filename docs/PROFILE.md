@@ -38,8 +38,8 @@ Sandbox settings live directly in the profile. Profiles do not inherit from each
 List options repeat and append to the selected profile for one session. Repeated `system`, `tools`, `commands`, and `hooks` references collapse to the first.
 
 ```sh
-shellfish --sandbox '{"write": ["./build"]}'       # Grant a directory for one session
-shellfish --system ./review.md -t shell_readonly   # Add a prompt and a tool
+shellfish --sandbox '{"tools":{"shell":{"write":["./build"]}}}'  # Grant shell access
+shellfish --system ./review.md -t shell_readonly                   # Add a prompt and a tool
 ```
 
 ### Settings and session lifetime
@@ -56,8 +56,13 @@ The profile's `sandbox` object holds standing settings:
 
 ```jsonc
 "sandbox": {
-  "read": ["~/.cargo", "~/go/pkg"],
-  "write": ["~/.cache/uv"]
+  "tools": {
+    "shell": {
+      "read": ["~/.cargo", "~/go/pkg"],
+      "write": ["~/.cache/uv"]
+    },
+    "read_file": {"read": ["~/reference"]}
+  }
 }
 ```
 
@@ -65,14 +70,16 @@ The profile's `sandbox` object holds standing settings:
 | --- | --- |
 | `enabled` | Defaults to `true`. `false` runs every tool with user permissions |
 | `user_approval_timeout` | Seconds to wait for user approval of a sandbox bypass, default `120` |
-| `read` | Extra read grants |
-| `write` | Extra read-write grants |
+| `tools.NAME.read` | Extra read grants for the selected tool `NAME` |
+| `tools.NAME.write` | Extra read-write grants for that tool |
 
-Grants are paths and need not exist, so one profile can serve several machines. A profile without sandbox settings is sandboxed with no extra grants. See [`profile.schema.json`](../share/profile.schema.json) for the exact fields.
+Each tool receives only its own grants, keyed by its selected name, such as `shell` or `read_file`. Grants cannot target unselected tools or `*`. Paths need not exist, so one profile can serve several machines. A profile without sandbox settings is sandboxed with no extra grants. See [`profile.schema.json`](../share/profile.schema.json) for the exact fields.
 
 Tool policies and platform temp access set the baseline. Grants extend access, but policy deny rules still win. A tool policy can `extend` another policy, as `shell_readonly` extends `shell` while denying writes. Bundled policies prevent tools from creating or changing `.shellfish` directories because their contents run outside the sandbox. A `SHELLFISH_DIR` with another name inside a writable path is not protected.
 
-`--sandbox JSON` adds grants or changes settings for one session. Repeated options accumulate grants, while later `enabled` or `user_approval_timeout` values replace earlier ones. `/sandbox` updates the current session's frozen grants.
+`--sandbox JSON` takes the contents of the profile's `sandbox` object and adds grants or changes settings for one session. Repeated options accumulate grants per tool, while later `enabled` or `user_approval_timeout` values replace earlier ones.
+
+`/sandbox` lists additional grants grouped by selected tool, and `/sandbox shell` inspects one tool. `/sandbox shell +read ~/reference` adds a directory grant, and `/sandbox shell -read ~/reference` removes that session addition. These commands update the frozen profile, not the source configuration or the tool's baseline policy.
 
 ### Bypass approval
 
@@ -125,7 +132,7 @@ The bundled commands are selected by the profile:
 | `/compact` | Summarize into a child session |
 | `/copy [N]` | Copy a conversation section |
 | `/user_shell COMMAND`, `/shell` | Run a user-authored command and stage its output as context |
-| `/sandbox [OP DIR]` | Inspect or update frozen sandbox grants |
+| `/sandbox [TOOL [OP DIR]]` | Inspect or update a tool's frozen sandbox grants |
 
 Client-owned `/refresh`, `/quit`, and `/queue` commands do not run a turn. Bundled submission hooks compact automatically near a known context-window limit, report Git identity changes, and load skills before ordinary prompts. `/compact` leaves the source unchanged and opens a summarized child through the client. Its summary shows in full under `/verbose`. Automatic compaction preserves the interrupted prompt as an editable draft.
 

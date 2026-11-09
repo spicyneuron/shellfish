@@ -39,26 +39,26 @@ def test_sandbox_updates_without_reload():
         try:
             path, _ = session.wait_session_records(1)
             mark = len(session.output)
-            session.send(f"/sandbox +w {grant}\r".encode())
-            session.wait_after(mark, "Sandbox write grant added", timeout=5)
+            session.send(f"/sandbox shell +w {grant}\r".encode())
+            session.wait_after(mark, "Sandbox shell write grant added", timeout=5)
             session.wait_ready(mark, timeout=5)
             assert "Project:" not in session.visible(mark)
             grant_path = str(Path(grant).resolve())
             end = time.monotonic() + 3
             while time.monotonic() < end:
                 records = [json.loads(line) for line in path.read_text().splitlines()]
-                if grant_path in records[0]["profile"]["sandbox"]["write"]:
+                if grant_path in records[0]["profile"]["sandbox"]["tools"].get("shell", {}).get("write", []):
                     break
                 session.pump()
-            assert grant_path in records[0]["profile"]["sandbox"]["write"]
-            granted = f"The user added a session sandbox write grant: {grant_path}"
+            assert grant_path in records[0]["profile"]["sandbox"]["tools"]["shell"]["write"]
+            granted = f"The user added a session sandbox write grant for shell: {grant_path}"
             assert len(records) == 2
             result = records[1]
             assert result.pop("id")
             assert result == {
                 "type": "hook_result",
                 "lifecycle": "user_prompt_submit",
-                "user_text": f"**Sandbox** write grant added\n{grant_path}",
+                "user_text": f"**Sandbox** shell write grant added\n{grant_path}",
                 "model_text": f'<context script="sandbox">\n{granted}\n</context>',
             }
         finally:

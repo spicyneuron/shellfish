@@ -3,24 +3,36 @@
 emulate -R zsh
 setopt extended_glob no_aliases no_multios pipe_fail
 
-typeset body operation candidate grant_path header grants updated profile
+typeset body tool operation candidate grant_path header grants updated profile
 typeset grant resolved matched=''
 typeset action access message user
-typeset usage='usage: /sandbox {read|write|+read|+write|+r|+w|-read|-write|-r|-w} DIR'
+typeset usage='usage: /sandbox [TOOL [{+read|+write|-read|-write} DIR]]'
 body=$(cat)
+body=${body##[[:space:]]#}
+body=${body%%[[:space:]]#}
+IFS= read -r header <"$SHELLFISH_SESSION" || exit 1
+tool=${body%%[[:space:]]*}
 
-if [[ -z $body ]]; then
-  IFS= read -r header <"$SHELLFISH_SESSION" || exit 1
-  jq -r '.profile.sandbox |
-    "Sandbox: " + (if .enabled then "enabled" else "disabled" end),
-    ("Read", "Write") as $label | (.[$label | ascii_downcase]) as $grants |
-    "\($label) grants:", if $grants == [] then "  (none)" else $grants[] | "  " + . end
+if [[ -n $tool ]] && ! jq -e --arg tool "$tool" '
+    any(.profile.tools[]; split("/") | last == $tool)' <<<"$header" >/dev/null; then
+  print -u2 -r -- "sandbox tool is not selected: $tool"
+  exit 0
+fi
+
+if [[ $body == "$tool" ]]; then
+  jq -r --arg tool "$tool" '.profile as $profile | $profile.sandbox as $sandbox |
+    "Sandbox: " + (if $sandbox.enabled then "enabled" else "disabled" end),
+    "Additional grants (tool policy still applies):",
+    ($profile.tools[] | split("/") | last | select($tool == "" or . == $tool)) as $name |
+      $name + ":",
+      (("read", "write") as $access | ($sandbox.tools[$name][$access] // []) as $grants |
+        "  \($access):", if $grants == [] then "    (none)" else $grants[] | "    " + . end)
   ' <<<"$header" >&2
   exit
 fi
 
+body=${body#"$tool"}
 body=${body##[[:space:]]#}
-body=${body%%[[:space:]]#}
 operation=${body%%[[:space:]]*}
 candidate=${body#"$operation"}
 candidate=${candidate##[[:space:]]#}
@@ -40,12 +52,12 @@ esac
   exit 0
 }
 
-IFS= read -r header <"$SHELLFISH_SESSION" || exit 1
 jq -e '.profile.sandbox.enabled' <<<"$header" >/dev/null || {
   print -u2 -r -- 'session sandbox is disabled'
   exit 0
 }
-grants=$(jq -ce --arg access "$access" '.profile.sandbox[$access] | select(type == "array")' \
+grants=$(jq -ce --arg tool "$tool" --arg access "$access" \
+  '.profile.sandbox.tools[$tool][$access] // [] | select(type == "array")' \
   <<<"$header") || exit 1
 
 if [[ $candidate == '~' || $candidate == '~/'* ]]; then
@@ -89,14 +101,16 @@ fi
 updated=$(jq -c --arg action "$action" --arg path "$grant_path" --arg matched "$matched" '
   if $action == "add" then . + [$path] else map(select(. != $matched)) end
 ' <<<"$grants") || exit 1
-profile=$(jq -c --arg access "$access" --argjson paths "$updated" \
-  '.profile | .sandbox[$access]=$paths' <<<"$header") || exit 1
+profile=$(jq -c --arg tool "$tool" --arg access "$access" --argjson paths "$updated" '
+  .profile | .sandbox.tools[$tool] //= {read:[], write:[]} |
+  .sandbox.tools[$tool][$access]=$paths
+' <<<"$header") || exit 1
 if [[ $action == add ]]; then
-  message="The user added a session sandbox $access grant: $grant_path"
-  user="**Sandbox** $access grant added"
+  message="The user added a session sandbox $access grant for $tool: $grant_path"
+  user="**Sandbox** $tool $access grant added"
 else
-  message="The user removed a session sandbox $access grant: $grant_path"
-  user="**Sandbox** $access grant removed"
+  message="The user removed a session sandbox $access grant for $tool: $grant_path"
+  user="**Sandbox** $tool $access grant removed"
 fi
 jq -cn --argjson profile "$profile" '{action:"session_update",profile:$profile}' >&3 || exit 1
 print -rn -- "$message"

@@ -221,29 +221,44 @@ jq -e -s 'length == 4 and .[-1].user_text == "help"' "$turns" >/dev/null &&
 typeset sandbox="$ROOT/share/commands/sandbox/run" sandbox_session="$tmp/sandbox.jsonl"
 mkdir -p "$tmp/project/dir" "$tmp/home/share"
 jq -c --arg cwd "${tmp:A}/project" '.cwd=$cwd |
-  .profile.sandbox={enabled:true, read:["@system"], write:[$cwd + "/dir","~/share"]}' \
+  .profile.tools=["@tools/shell","@tools/read_file"] |
+  .profile.sandbox={enabled:true, tools:{
+    shell:{read:["@system"], write:[$cwd + "/dir","~/share"]}}}' \
   "$SF_TEST_SESSIONS/header_only.jsonl" >"$sandbox_session"
 (
   builtin cd -- "$tmp/project"; export HOME="$tmp/home"
   call() {
     print -rn -- "${1#/sandbox }" | SHELLFISH_SESSION="$sandbox_session" SHELLFISH_SHARE_DIR="$ROOT/share" \
-      zsh -f "$sandbox" 3>"$tmp/control" >/dev/null 2>&1 || fail 'sandbox hook failed'
+      zsh -f "$sandbox" 3>"$tmp/control" >/dev/null 2>"$tmp/sandbox.err" || fail 'sandbox command failed'
     jq -rs 'last' "$tmp/control"
   }
   # A bundled grant matches by "@" or by its absolute path.
-  [[ $(call "/sandbox +r $ROOT/share/system" | jq -r .action) == null ]] ||
+  [[ $(call "/sandbox shell +r $ROOT/share/system" | jq -r .action) == null ]] ||
     fail 'bundled grant duplicated'
-  call "/sandbox -r $ROOT/share/system" | jq -e '.action == "session_update" and
-    .profile.sandbox.read == []' >/dev/null || fail 'bundled grant removal by path failed'
-  call '/sandbox -r @system' | jq -e '.action == "session_update" and
-    .profile.sandbox.read == []' >/dev/null || fail 'bundled grant removal by @ failed'
-  [[ $(call '/sandbox +w dir' | jq -r .action) == null ]] || fail 'absolute grant duplicated'
-  [[ $(call '/sandbox +w ~/share' | jq -r .action) == null ]] || fail 'home grant duplicated'
-  call '/sandbox -w dir' | jq -e '.action == "session_update" and
-    .profile.sandbox.write == ["~/share"]' >/dev/null || fail 'absolute grant removal failed'
-  call '/sandbox -w ~/share' | jq -e --arg path "${tmp:A}/project/dir" '
-    .action == "session_update" and .profile.sandbox.write == [$path]' >/dev/null ||
+  call "/sandbox shell -r $ROOT/share/system" | jq -e '.action == "session_update" and
+    .profile.sandbox.tools.shell.read == []' >/dev/null || fail 'bundled grant removal by path failed'
+  call '/sandbox shell -r @system' | jq -e '.action == "session_update" and
+    .profile.sandbox.tools.shell.read == []' >/dev/null || fail 'bundled grant removal by @ failed'
+  [[ $(call '/sandbox shell +w dir' | jq -r .action) == null ]] || fail 'absolute grant duplicated'
+  [[ $(call '/sandbox shell +w ~/share' | jq -r .action) == null ]] || fail 'home grant duplicated'
+  call '/sandbox shell -w dir' | jq -e '.action == "session_update" and
+    .profile.sandbox.tools.shell.write == ["~/share"]' >/dev/null || fail 'absolute grant removal failed'
+  call '/sandbox shell -w ~/share' | jq -e --arg path "${tmp:A}/project/dir" '
+    .action == "session_update" and .profile.sandbox.tools.shell.write == [$path]' >/dev/null ||
     fail 'home grant removal failed'
+  call '/sandbox read_file +r dir' | jq -e --arg path "${tmp:A}/project/dir" '
+    .profile.sandbox.tools.read_file == {read:[$path],write:[]} and
+    .profile.sandbox.tools.shell.read == ["@system"] and
+    .profile.sandbox.tools.shell.write == [$path,"~/share"]
+  ' >/dev/null || fail 'tool-specific grant changed another tool'
+  [[ $(call '/sandbox shell' | jq -r .action) == null ]] || fail 'tool inspection mutated grants'
+  grep -q '^shell:$' "$tmp/sandbox.err" && ! grep -q '^read_file:$' "$tmp/sandbox.err" ||
+    fail 'tool inspection included another tool'
+  call '/sandbox ' >/dev/null
+  grep -q '^shell:$' "$tmp/sandbox.err" && grep -q '^read_file:$' "$tmp/sandbox.err" ||
+    fail 'sandbox inspection omitted a selected tool'
+  [[ $(call '/sandbox missing +r dir' | jq -r .action) == null ]] ||
+    fail 'sandbox command granted access to an unselected tool'
 )
 
 # Startup advertises only allowlisted names and rejects invalid skill settings.

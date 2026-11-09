@@ -65,7 +65,7 @@ review_chat() {
       --argjson settings "$settings" '
     ($header | del(.model.request.response_schema) | .model *= $settings |
       .profile |= (.system=[{text:$system}] | .tools=[] | .hooks=[] |
-        .sandbox={enabled:false, read:[], write:[]})),
+        .sandbox={enabled:false, tools:{}})),
     {type:"user",content:[{type:"text",text:($context | tojson)}]}
   ' >"$transcript"; then
     permission_defer 'Permission review could not construct its temporary session.'

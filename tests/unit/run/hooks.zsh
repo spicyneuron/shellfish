@@ -14,7 +14,7 @@ case $input in
     print -r -u3 -- '{"state_update":[{"name":"prompt/handoff","value":true}]}'
     print -rn -- 'handoff context' ;;
   update|bad-update)
-    profile=$(head -n 1 "$SHELLFISH_SESSION" | jq -c '.profile.sandbox.write=["/tmp/reference"] | .profile') || exit 2
+    profile=$(head -n 1 "$SHELLFISH_SESSION" | jq -c '.profile.sandbox.tools.shell={read:[],write:["/tmp/reference"]} | .profile') || exit 2
     [[ $input != bad-update ]] || profile='{}'
     jq -cn --argjson profile "$profile" '{action:"session_update",profile:$profile}' >&3
     print -rn -- 'update context' ;;
@@ -45,7 +45,7 @@ jq -eRn '[inputs | fromjson] as $e | $e[-1] == {type:"_handoff",argv:["/usr/bin/
   $e[-2].model_text == "<context script=\"prompt\">\nhandoff context\n</context>" and ([ $e[] | select(.type == "user") ] | length) == 0' \
   <"$stream" >/dev/null || fail 'last action or handoff durability failed'
 new_session update; sf_test_run update "$session" >"$stream" || fail 'session update failed'
-jq -e -s 'map(.type) == ["session","hook_result"] and .[0].profile.sandbox.write == ["/tmp/reference"]' "$session" >/dev/null &&
+jq -e -s 'map(.type) == ["session","hook_result"] and .[0].profile.sandbox.tools.shell.write == ["/tmp/reference"]' "$session" >/dev/null &&
   jq -eRn '[inputs | fromjson][-1].type == "_session_update"' <"$stream" >/dev/null || fail 'session update did not replace header'
 new_session bad-update; sf_test_run bad-update "$session" >"$stream" 2>"$tmp/update.err" && fail 'invalid update succeeded'
 jq -e -s '.[-2].model_text == "<context script=\"prompt\">\nupdate context\n</context>" and

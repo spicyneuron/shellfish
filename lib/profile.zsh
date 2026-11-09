@@ -295,6 +295,9 @@ sf_profile_resolve() {
       .profile.tools |= map($paths["tools " + .]) |
       .profile.commands |= map($paths["commands " + .]) |
       .profile.hooks |= map($paths["hooks " + .]) |
+      ((.profile.sandbox.tools | keys) - [.profile.tools[] | split("/") | last]) as $unknown |
+      if $unknown != [] then error("sandbox grants name an unselected tool: " + $unknown[0])
+      else . end |
       header_expand($share; $home) |
       if (.profile | canonical_profile) and (.model | canonical_model) then .
       else error("invalid resolved profile") end

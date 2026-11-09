@@ -169,7 +169,8 @@ usage | 75 ↑ 20% ⦿ 5 ↓ 38% of 200 ◔ |' "$REPLY"
 
 # The header also describes its components and sandbox by name.
 typeset equipped=$(jq -c '.profile += {tools:["@tools/read_file","/x/tools/shell"],
-  hooks:["@hooks/project/environment"],sandbox:{enabled:true,read:["~/a","~/b"],write:["~/c"]}}' \
+  hooks:["@hooks/project/environment"],sandbox:{enabled:true,tools:{
+    read_file:{read:["~/a"],write:[]}, shell:{read:["~/b"],write:["~/c"]}}}}' \
   <<<"$header")
 project live "$equipped"
 assert_equal 'details | read_file, shell |  | project/environment | 2 | 1
