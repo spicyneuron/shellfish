@@ -59,7 +59,8 @@ The profile's `sandbox` object holds standing settings:
   "tools": {
     "shell": {
       "read": ["~/.cargo", "~/go/pkg"],
-      "write": ["~/.cache/uv"]
+      "write": ["~/.cache/uv"],
+      "domains": ["github.com", "*.npmjs.org"]
     },
     "read_file": {"read": ["~/reference"]}
   }
@@ -72,14 +73,17 @@ The profile's `sandbox` object holds standing settings:
 | `user_approval_timeout` | Seconds to wait for user approval of a sandbox bypass, default `120` |
 | `tools.NAME.read` | Extra read grants for the selected tool `NAME` |
 | `tools.NAME.write` | Extra read-write grants for that tool |
+| `tools.NAME.domains` | Extra allowed hostnames or `*.hostname` patterns for that tool |
 
 Each tool receives only its own grants, keyed by its selected name, such as `shell` or `read_file`. Grants cannot target unselected tools or `*`. Paths need not exist, so one profile can serve several machines. A profile without sandbox settings is sandboxed with no extra grants. See [`profile.schema.json`](../share/profile.schema.json) for the exact fields.
 
 Tool policies and platform temp access set the baseline. Grants extend access, but policy deny rules still win. A tool policy can `extend` another policy, as `shell_readonly` extends `shell` while denying writes. Bundled policies prevent tools from creating or changing `.shellfish` directories because their contents run outside the sandbox. A `SHELLFISH_DIR` with another name inside a writable path is not protected.
 
+Domain grants extend the tool's network allowlist, not other tools' access. Supply hostnames, not URLs or ports. A bare `*` is not supported. Domain grants do not enable local binding or local outbound access restricted by the tool policy.
+
 `--sandbox JSON` takes the contents of the profile's `sandbox` object and adds grants or changes settings for one session. Repeated options accumulate grants per tool, while later `enabled` or `user_approval_timeout` values replace earlier ones.
 
-`/sandbox` lists additional grants grouped by selected tool, and `/sandbox shell` inspects one tool. `/sandbox shell +read ~/reference` adds a directory grant, and `/sandbox shell -read ~/reference` removes that session addition. These commands update the frozen profile, not the source configuration or the tool's baseline policy.
+`/sandbox` lists additional grants grouped by selected tool, and `/sandbox shell` inspects one tool. `/sandbox shell +read ~/reference` adds a directory grant, and `/sandbox shell +domain github.com` adds a domain grant. Use `-read` or `-domain` to remove a session addition. These commands update the frozen profile, not the source configuration or the tool's baseline policy.
 
 ### Bypass approval
 
@@ -132,7 +136,7 @@ The bundled commands are selected by the profile:
 | `/compact` | Summarize into a child session |
 | `/copy [N]` | Copy a conversation section |
 | `/user_shell COMMAND`, `/shell` | Run a user-authored command and stage its output as context |
-| `/sandbox [TOOL [OP DIR]]` | Inspect or update a tool's frozen sandbox grants |
+| `/sandbox [TOOL [OP VALUE]]` | Inspect or update a tool's frozen sandbox grants |
 
 Client-owned `/refresh`, `/quit`, and `/queue` commands do not run a turn. Bundled submission hooks compact automatically near a known context-window limit, report Git identity changes, and load skills before ordinary prompts. `/compact` leaves the source unchanged and opens a summarized child through the client. Its summary shows in full under `/verbose`. Automatic compaction preserves the interrupted prompt as an editable draft.
 

@@ -44,6 +44,7 @@ sf_run_tool_execute() {
   local config_dir
   local execution_input=$SF_TOOL_PLAN[execution_input] sandbox=$SF_TOOL_PLAN[sandbox]
   local read_paths=$SF_TOOL_PLAN[read_paths] write_paths=$SF_TOOL_PLAN[write_paths]
+  local domains=$SF_TOOL_PLAN[domains] policy=${command:h}/fence.jsonc
   local cwd=$SF_RUN[cwd] capture stdin
   local expose darwin_temp='' temp_dir=${TMPDIR:-/tmp}
   local -a arguments content process_command sandbox_arguments temp_paths
@@ -91,11 +92,16 @@ sf_run_tool_execute() {
   [[ -z ${LC_ALL-} ]] || arguments+=( "LC_ALL=$LC_ALL" )
   [[ -z ${LC_CTYPE-} ]] || arguments+=( "LC_CTYPE=$LC_CTYPE" )
   [[ -z ${XDG_CONFIG_HOME-} ]] || arguments+=( "XDG_CONFIG_HOME=$XDG_CONFIG_HOME" )
-  arguments+=( "TMPDIR=$temp_dir" "TMPPREFIX=$temp_dir/zsh" "$command" )
+  arguments+=( "TMPDIR=$temp_dir" "TMPPREFIX=$temp_dir/zsh" )
   if [[ $sandbox == true ]]; then
-    arguments=( -i "${arguments[@]}" )
+    if [[ $domains != '[]' ]]; then
+      jq -n --arg base "$policy" --argjson domains "$domains" '
+        {extends:$base, network:{allowedDomains:$domains}}
+      ' >"$capture.fence.json" || { SF_RUN_TOOL_ERROR='cannot prepare sandbox policy'; return 1; }
+      policy=$capture.fence.json
+    fi
     sandbox_arguments=( --monitor --fence-log-file "$capture/sandbox.log"
-      --settings "${command:h}/fence.jsonc" --expose-host-path "$command" )
+      --settings "$policy" --expose-host-path "$command" )
     temp_paths=( /tmp "$temp_dir" )
     [[ -z $darwin_temp ]] || temp_paths+=( "$darwin_temp" )
     for expose in ${(u)temp_paths}; do
@@ -107,9 +113,10 @@ sf_run_tool_execute() {
     for expose in ${(f)write_paths}; do
       sandbox_arguments+=( --expose-host-path-rw "$expose" )
     done
-    process_command=( "$commands[fence]" "${sandbox_arguments[@]}" -- /usr/bin/env "${arguments[@]}" )
+    # Fence adds proxy variables after host environment filtering.
+    process_command=( /usr/bin/env -i "${arguments[@]}" "$commands[fence]" "${sandbox_arguments[@]}" -- "$command" )
   else
-    process_command=( /usr/bin/env "${arguments[@]}" )
+    process_command=( /usr/bin/env "${arguments[@]}" "$command" )
   fi
   sf_run_component_begin "$session" "$SF_TOOL_PLAN[component]"
   sf_run_component_draft "$SF_TOOL_PLAN[component]" || {
@@ -135,7 +142,7 @@ sf_run_tool_execute() {
   fi
   } always {
     rm -rf -- "$capture"
-    rm -f -- "$stdin"
+    rm -f -- "$stdin" "$capture.fence.json"
   }
 }
 

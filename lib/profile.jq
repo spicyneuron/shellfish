@@ -105,6 +105,10 @@ def config_assert($valid; $path; $message):
 def path_reference:
   nonempty_control_free_string and test("^(/|~/|\\./|\\.\\./|@)");
 
+def sandbox_domain:
+  nonempty_control_free_string and
+  test("^(\\*\\.)?([A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?\\.)*[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?$");
+
 # A model file configures one request: where it goes and what it carries.
 def config_model($path):
   config_object($path; ["$schema", "provider", "config", "context_window", "endpoint", "request"]) |
@@ -133,14 +137,16 @@ def config_sandbox($path):
   reduce ((.tools // {}) | keys[]) as $name (.;
     config_assert($name | tool_name; $path + ["tools", $name]; "invalid tool name") |
     .tools[$name] |= (
-      config_object($path + ["tools", $name]; ["read", "write"]) |
-      reduce ["read", "write"][] as $field (.;
+      config_object($path + ["tools", $name]; ["read", "write", "domains"]) |
+      reduce ["read", "write", "domains"][] as $field (.;
         config_assert((has($field) | not) or (.[$field] | type == "array");
           $path + ["tools", $name, $field]; "must be an array") |
         reduce range(0; .[$field] // [] | length) as $at (.;
-          config_assert(.[$field][$at] | path_reference;
+          config_assert(.[$field][$at] |
+            if $field == "domains" then sandbox_domain else path_reference end;
             $path + ["tools", $name, $field, $at];
-            "must be a /, ~/, ./, ../, or @ path")))));
+            if $field == "domains" then "must be a hostname or *.hostname"
+            else "must be a /, ~/, ./, ../, or @ path" end)))));
 
 # A profile selects components, holds sandbox settings and opaque configuration.
 # Absent lists are empty. Options add a model list.
@@ -200,9 +206,10 @@ def sandbox_merge($items):
   reduce $items[] as $item ({tools:{}};
     . + ($item | with_entries(select(.key | IN("enabled", "user_approval_timeout")))) |
     reduce (($item.tools // {}) | keys[]) as $name (.;
-      .tools[$name] //= {read:[], write:[]} |
+      .tools[$name] //= {read:[], write:[], domains:[]} |
       .tools[$name].read += ($item.tools[$name].read // []) |
-      .tools[$name].write += ($item.tools[$name].write // [])));
+      .tools[$name].write += ($item.tools[$name].write // []) |
+      .tools[$name].domains += ($item.tools[$name].domains // [])));
 
 # Every path in a frozen profile through f.
 def header_paths(f):
@@ -247,8 +254,9 @@ def canonical_profile:
     (keys - ["user_approval_timeout"]) == ["enabled", "tools"] and
     (.enabled | type == "boolean") and
     (.tools | type == "object" and all(.[];
-      type == "object" and keys == ["read", "write"] and
+      type == "object" and keys == ["domains", "read", "write"] and
       (.read | type == "array") and (.write | type == "array") and
+      (.domains | type == "array" and all(.[]; sandbox_domain)) and
       all(.read[], .write[]; stored_reference))) and
     ((has("user_approval_timeout") | not) or (.user_approval_timeout | positive_integer))) and
   (.system | type == "array" and length <= 1 and all(.[]; type == "object" and

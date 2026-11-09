@@ -44,8 +44,8 @@ def details_actions:
     [.profile[kind][]? | sub("^.*" + kind + "/"; "")] | join(", ");
   [["details", names("tools"), names("commands"), names("hooks")] +
     (.profile.sandbox |
-      if .enabled then [[.tools[].read[]], [.tools[].write[]] | length | tostring]
-      else ["", ""] end)];
+      if .enabled then [[.tools[].read[]], [.tools[].write[]], [.tools[].domains[]] | length | tostring]
+      else ["", "", ""] end)];
 
 # A result or draft carries its own preview hint.
 def preview: .user_preview_lines // "default" | tostring;

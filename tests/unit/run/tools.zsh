@@ -431,26 +431,47 @@ jq -eRn '[inputs | fromjson | select(.type == "tool_result")][0] |
   (.model_text | contains("sandboxing requires fence"))
 ' <"$stream" >/dev/null || fail 'missing sandbox runner was not skipped'
 
+# The clean environment preserves Fence's proxy and inherited domain denies.
+sf_test_shell_tool '.environment=["TMPPREFIX"]'
+jq '.network.allowedDomains=["baseline.example.com"] |
+  .network.deniedDomains=["blocked.invalid"]' "$tmp/tools/shell/fence.jsonc" >"$tmp/policy.json"
+mv "$tmp/policy.json" "$tmp/tools/shell/fence.jsonc"
+SF_TEST_PROFILE=$(jq -c '.sandbox.tools.shell={read:[],write:[],domains:["blocked.invalid"]}' \
+  <<<"$SF_TEST_PROFILE")
+session="$tmp/sandbox-network.jsonl"
+sf_test_session "$session"
+SF_TEST_PROVIDER_TOOL_CALL=1 SF_TEST_PROVIDER_TOOL_COMMAND="curl --silent --show-error --max-time 3 --output /dev/null --write-out '%{http_code}' http://blocked.invalid" \
+  sf_test_run sandbox "$session" >"$stream" || fail 'sandbox network turn failed'
+jq -eRn '[inputs | fromjson | select(.type == "tool_result")][0] |
+  .exit_code == 0 and .model_text == "403\nexit 0"
+' <"$stream" >/dev/null || fail 'sandbox proxy was unavailable or a domain deny was lost'
+assert_canonical_session "$session"
+
 # A sandbox violation enters the same captured output seen by templates and hooks.
 mkdir "$tmp/bin"
+ln -s "$commands[fence]" "$tmp/real-fence"
 typeset fence="$tmp/bin/fence"
 typeset fence_arguments="$tmp/fence-arguments"
 cat >"$fence" <<'ZSH'
 #!/usr/bin/env zsh
-log=''
-print -rl -- "$@" >"$FENCE_ARGUMENTS"
+log='' settings=''
+base=${0:A:h:h}
+print -rl -- "$@" >"$base/fence-arguments"
 while (( $# )); do
   case $1 in
     --fence-log-file) log=$2; shift 2 ;;
+    --settings) settings=$2; shift 2 ;;
     --) shift; break ;;
     *) shift ;;
   esac
 done
+cp "$settings" "$base/fence-policy.json" || exit 1
+"$base/real-fence" config show --settings "$settings" >"$base/fence-resolved.json" 2>/dev/null || exit 1
 [[ -z $log ]] || print -r -- '[fence:logstream] ✗ file-write-create /etc/denied' >"$log"
 exec "$@"
 ZSH
 chmod +x "$fence"
-export FENCE_ARGUMENTS=$fence_arguments PATH="$tmp/bin:$PATH"
+export PATH="$tmp/bin:$PATH"
 typeset sandbox_post="$tmp/sandbox-post" sandbox_output="$tmp/sandbox-output.json"
 sf_test_hook "$sandbox_post" <<'ZSH'
 #!/usr/bin/env zsh
@@ -460,8 +481,8 @@ export SANDBOX_OUTPUT=$sandbox_output
 sf_test_bind_hooks post_tool_use "$sandbox_post"
 SF_TEST_PROFILE=$(jq -c --arg reader "$ROOT/share/tools/read_file" '
   .tools += [$reader] | .sandbox.tools={
-    shell:{read:["/shell/read"],write:["/shell/write"]},
-    read_file:{read:["/reader/read"],write:["/reader/write"]}}
+    shell:{read:["/shell/read"],write:["/shell/write"],domains:["github.com","*.npmjs.org","blocked.invalid"]},
+    read_file:{read:["/reader/read"],write:["/reader/write"],domains:["reader.example.com"]}}
 ' <<<"$SF_TEST_PROFILE")
 session="$tmp/sandbox-denied.jsonl"
 sf_test_session "$session"
@@ -486,6 +507,21 @@ jq -eRn '
   ($args | index("/shell/read") != null and index("/shell/write") != null and
     index("/reader/read") == null and index("/reader/write") == null)
 ' <"$fence_arguments" >/dev/null || fail 'tool execution mixed sandbox grants between tools'
+jq -e --arg base "$tmp/tools/shell/fence.jsonc" '
+  .extends == $base and
+  .network.allowedDomains == ["github.com","*.npmjs.org","blocked.invalid"]
+' "$tmp/fence-policy.json" >/dev/null || fail 'domain policy did not extend the selected tool'
+jq -e '
+  .network.allowedDomains == ["baseline.example.com","github.com","*.npmjs.org","blocked.invalid"] and
+  .network.deniedDomains == ["blocked.invalid"] and
+  .network.allowLocalOutbound == false and
+  .filesystem.defaultDenyRead == true and
+  (.filesystem.denyWrite | index("**/.shellfish/**") != null)
+' "$tmp/fence-resolved.json" >/dev/null || fail 'domain grants replaced baseline sandbox policy'
+typeset policy_path
+policy_path=$(jq -rRn '[inputs] | .[index("--settings") + 1]' <"$fence_arguments") ||
+  fail 'cannot read temporary sandbox policy path'
+[[ ! -e $policy_path ]] || fail 'temporary sandbox policy survived tool cleanup'
 SF_TEST_PROFILE=$(jq -c '.tools |= map(select(endswith("/read_file") | not)) |
   .sandbox.tools={}' <<<"$SF_TEST_PROFILE")
 jq -eRn --arg temp "${TMPDIR:A}" '
@@ -514,6 +550,8 @@ jq -eRn '
   [inputs | fromjson | select(.type == "tool_result")][0] |
   .exit_code == 0 and .model_text == "output\nexit 0"
 ' <"$stream" >/dev/null || fail 'a succeeding tool was annotated'
+jq -e 'has("extends") | not' "$tmp/fence-policy.json" >/dev/null ||
+  fail 'a tool without domain grants received a temporary policy'
 
 # A sandboxed tool starts clean apart from its declared names.
 sf_test_shell_tool '.environment=["DECLARED"]'

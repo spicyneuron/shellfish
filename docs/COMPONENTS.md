@@ -25,7 +25,7 @@ Missing or invalid active components fail session creation. Manifests are read o
 
 Credentials follow the [environment rules](CONFIG.md#environment), including exported-variable precedence over `.env`.
 
-Commands, hooks, and providers are trusted programs running with user permissions. They inherit the process environment and receive every `.env` value. Tools receive only the `.env` names their manifest's `environment` list declares. Unsandboxed tools also inherit the process environment. Sandboxed tools start clean apart from declared and Shellfish-provided values.
+Commands, hooks, and providers are trusted programs running with user permissions. They inherit the process environment and receive every `.env` value. Tools receive only the `.env` names their manifest's `environment` list declares. Unsandboxed tools also inherit the process environment. Sandboxed tools start clean apart from declared and Shellfish-provided values, plus sandbox-provided settings such as network proxies.
 
 A key kept only in `.env` is invisible to tools that do not declare it. Choosing a custom hook, command, or provider gives that program access to your credentials.
 
@@ -75,7 +75,7 @@ A tool manifest describes its model-facing interface and execution policy:
 }
 ```
 
-`description`, an object `input_schema`, and the boolean `sandbox` are required. `allow_sandbox_bypass` defaults to `false` and is valid only for sandboxed tools. `environment` lists the variable names the tool needs. Sandboxed tools receive clean environments plus declared and Shellfish-provided values, and access to platform temporary storage. Tools own their temporary-file cleanup. See [Sandbox](PROFILE.md#sandbox) for session grants and bypass approval.
+`description`, an object `input_schema`, and the boolean `sandbox` are required. `allow_sandbox_bypass` defaults to `false` and is valid only for sandboxed tools. `environment` lists the variable names the tool needs. Sandboxed tools receive the filtered environment described above and access to platform temporary storage. Tools own their temporary-file cleanup. See [Sandbox](PROFILE.md#sandbox) for session grants and bypass approval.
 
 Shellfish calls `run` without arguments, passing one input object on stdin with bypass fields removed. The tool validates input before using it. A nonzero exit is a normal tool result, not a failed turn. Tools cannot take lifecycle actions.
 

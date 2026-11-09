@@ -82,7 +82,7 @@ valid_header=$(jq -cn '
       commands: ["@commands/help"],
       hooks: ["/bin/hook", "@hooks/stop"],
       config: {example:["./literal", null, false]},
-      sandbox: {enabled: true, tools: {shell:{read:["~/cache"], write:[]}}}
+      sandbox: {enabled: true, tools: {shell:{read:["~/cache"], write:[],domains:["*.example.com"]}}}
     }
   }
 ')
@@ -107,9 +107,11 @@ for patch in '.extra=true' '.profile.extra=true' '.profile.env={}' \
     '.profile.tools=["shell"]' '.profile.tools=["/a/shell","/b/shell"]' \
     '.model.provider="./openai_chat"' '.profile.system=[{text:""}]' '.profile.system+=[{text:"two"}]' \
     '.profile.sandbox.tools.shell.read=["relative"]' \
-    '.profile.sandbox.tools.missing={read:[],write:[]}' \
+    '.profile.sandbox.tools.missing={read:[],write:[],domains:[]}' \
     '.profile.sandbox.tools.shell.read=null' '.profile.sandbox.tools=[]' \
     'del(.profile.sandbox.tools.shell.write)' \
+    '.profile.sandbox.tools.shell.domains=null' \
+    '.profile.sandbox.tools.shell.domains=["example.com/path"]' \
     '.cwd="./project"'; do
   if jq -c "$patch" <<<"$valid_header" |
       schema_eval 'canonical_session_header' >/dev/null 2>&1; then
@@ -124,6 +126,7 @@ jq -L "$ROOT" -e --arg share /opt/sf/share --arg home /home/me '
   ($stored | header_expand($share; $home)) as $expanded |
   $expanded.profile.tools == ["/opt/sf/share/tools/shell", "/home/me/tools/jira"] and
   $expanded.profile.sandbox.tools.shell.read == ["/home/me/cache"] and
+  $expanded.profile.sandbox.tools.shell.domains == ["*.example.com"] and
   $expanded.model.provider == "/opt/sf/share/providers/openai_chat" and
   ($expanded | header_store($share; $home)) == $stored
 ' <<<"$valid_header" >/dev/null || fail 'stored profile paths did not round-trip'

@@ -61,6 +61,14 @@ def test_sandbox_updates_without_reload():
                 "user_text": f"**Sandbox** shell write grant added\n{grant_path}",
                 "model_text": f'<context script="sandbox">\n{granted}\n</context>',
             }
+            mark = len(session.output)
+            session.send(b"/sandbox shell +domain github.com\r")
+            session.wait_after(mark, "Sandbox shell domain grant added", timeout=5)
+            session.wait_ready(mark, timeout=5)
+            _, records = session.wait_session_records(3)
+            grants = records[0]["profile"]["sandbox"]["tools"]["shell"]
+            assert grants["domains"] == ["github.com"]
+            assert grants["write"] == [grant_path]
         finally:
             session.close()
 

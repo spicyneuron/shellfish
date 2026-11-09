@@ -233,7 +233,7 @@ sf_tui_details() {
   if [[ -n $4 ]]; then
     sandbox=fence
     (( $+commands[fence] )) || sandbox+=' (not installed)'
-    sandbox+=", $4 read and $5 write grants"
+    sandbox+=", $4 read, $5 write, $6 domain grants"
   fi
   sf_tui_live_close || return 1
   sf_tui_row_width

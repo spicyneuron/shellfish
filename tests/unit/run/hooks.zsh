@@ -14,7 +14,7 @@ case $input in
     print -r -u3 -- '{"state_update":[{"name":"prompt/handoff","value":true}]}'
     print -rn -- 'handoff context' ;;
   update|bad-update)
-    profile=$(head -n 1 "$SHELLFISH_SESSION" | jq -c '.profile.sandbox.tools.shell={read:[],write:["/tmp/reference"]} | .profile') || exit 2
+    profile=$(head -n 1 "$SHELLFISH_SESSION" | jq -c '.profile.sandbox.tools.shell={read:[],write:["/tmp/reference"],domains:[]} | .profile') || exit 2
     [[ $input != bad-update ]] || profile='{}'
     jq -cn --argjson profile "$profile" '{action:"session_update",profile:$profile}' >&3
     print -rn -- 'update context' ;;

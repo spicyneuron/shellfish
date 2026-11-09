@@ -320,17 +320,18 @@ fi
 mkdir -p "$tmp/flag"
 sf_test_profile boxed '{"tools":["shell","read_file"],
   "sandbox":{"enabled":false, "user_approval_timeout":30,
-    "tools":{"shell":{"read":["~/my reference", "/opt/ref"], "write":["~/output"]},
+    "tools":{"shell":{"read":["~/my reference", "/opt/ref"], "write":["~/output"],
+      "domains":["github.com"]},
       "read_file":{"read":["~/reference"]}}}}'
 (cd "$tmp" && sf_profile_resolve_args -p boxed -m work \
   --sandbox '{"tools":{"shell":{"read":["@system"]}}}' \
-  --sandbox '{"tools":{"shell":{"write":["./flag"]}}}' &&
+  --sandbox '{"tools":{"shell":{"write":["./flag"],"domains":["*.npmjs.org"]}}}' &&
   print -r -- "$REPLY") | read -r REPLY
 jq -e --arg home "${tmp:A}/home" --arg flag "${tmp:A}/flag" --arg share "$ROOT/share" '
   .profile.sandbox == {enabled:false, user_approval_timeout:30, tools:{
     shell:{read:[$home + "/my reference", "/opt/ref", $share + "/system"],
-      write:[$home + "/output", $flag]},
-    read_file:{read:[$home + "/reference"],write:[]}}}
+      write:[$home + "/output", $flag],domains:["github.com","*.npmjs.org"]},
+    read_file:{read:[$home + "/reference"],write:[],domains:[]}}}
 ' <<<"$REPLY" >/dev/null || fail 'sandbox options did not extend profile grants'
 sf_profile_resolve_args -p boxed -m work \
   --sandbox '{"enabled":false,"user_approval_timeout":15}' --sandbox '{"enabled":true}'
@@ -346,6 +347,12 @@ fi
 for value in '{"enabled": "yes"}' '{"tools":{"shell":{"write":"/x"}}}' '{"paths": []}' \
     '{"tools":null}' '{"tools":[]}' '{"tools":{"*":{}}}' '{"tools":{"shell":null}}' \
     '{"tools":{"shell":{"read":null}}}' '{"tools":{"shell":{"extra":[]}}}' \
+    '{"tools":{"shell":{"domains":null}}}' '{"tools":{"shell":{"domains":"github.com"}}}' \
+    '{"tools":{"shell":{"domains":["https://github.com"]}}}' \
+    '{"tools":{"shell":{"domains":["github.com:443"]}}}' \
+    '{"tools":{"shell":{"domains":["*"]}}}' '{"tools":{"shell":{"domains":[3]}}}' \
+    '{"tools":{"shell":{"domains":["example.com\n"]}}}' \
+    '{"tools":{"shell":{"domains":["a..com"]}}}' \
     '{"user_approval_timeout": 0}' '{"user_approval_timeout": 1.5}' null false 1; do
   sf_test_profile boxed "{\"sandbox\":$value}"
   if sf_profile_resolve_args -p boxed -m work; then

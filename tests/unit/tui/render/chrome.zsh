@@ -20,15 +20,15 @@ banner=$(sf_tui_chat_start startup /tmp/session.jsonl)
 # The session header's details commit as transcript rows, before the first role.
 COLUMNS=80
 sf_tui_reset
-sf_tui_action details 'read_file, shell' '' project/environment 2 1 ||
+sf_tui_action details 'read_file, shell' '' project/environment 2 1 3 ||
   fail 'cannot present session details'
 sf_tui_action message_start system && sf_tui_action message_delta 0 text prompt '' &&
   sf_tui_action message_end || fail 'cannot present a system message'
 sf_tui_transcript 79 20 || fail 'rendering the transcript failed'
-[[ $SF_PRESENT_VIEWPORT_TEXT == $'Tools: read_file, shell\nCommands: none\nHooks: project/environment\nSandbox: fence'*$', 2 read and 1 write grants\n\n─ system '* ]] ||
+[[ $SF_PRESENT_VIEWPORT_TEXT == $'Tools: read_file, shell\nCommands: none\nHooks: project/environment\nSandbox: fence'*$', 2 read, 1 write, 3 domain grants\n\n─ system '* ]] ||
   fail "session details were not rendered: $SF_PRESENT_VIEWPORT_TEXT"
 sf_tui_reset
-sf_tui_action details '' '' '' '' '' || fail 'cannot present empty session details'
+sf_tui_action details '' '' '' '' '' '' || fail 'cannot present empty session details'
 sf_tui_transcript 79 20 || fail 'rendering the transcript failed'
 [[ $SF_PRESENT_VIEWPORT_TEXT == *'Sandbox: disabled'* ]] ||
   fail "disabled sandbox was not rendered: $SF_PRESENT_VIEWPORT_TEXT"

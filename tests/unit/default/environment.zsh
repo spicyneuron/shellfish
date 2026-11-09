@@ -223,7 +223,7 @@ mkdir -p "$tmp/project/dir" "$tmp/home/share"
 jq -c --arg cwd "${tmp:A}/project" '.cwd=$cwd |
   .profile.tools=["@tools/shell","@tools/read_file"] |
   .profile.sandbox={enabled:true, tools:{
-    shell:{read:["@system"], write:[$cwd + "/dir","~/share"]}}}' \
+    shell:{read:["@system"], write:[$cwd + "/dir","~/share"],domains:["*.example.com"]}}}' \
   "$SF_TEST_SESSIONS/header_only.jsonl" >"$sandbox_session"
 (
   builtin cd -- "$tmp/project"; export HOME="$tmp/home"
@@ -247,7 +247,7 @@ jq -c --arg cwd "${tmp:A}/project" '.cwd=$cwd |
     .action == "session_update" and .profile.sandbox.tools.shell.write == [$path]' >/dev/null ||
     fail 'home grant removal failed'
   call '/sandbox read_file +r dir' | jq -e --arg path "${tmp:A}/project/dir" '
-    .profile.sandbox.tools.read_file == {read:[$path],write:[]} and
+    .profile.sandbox.tools.read_file == {read:[$path],write:[],domains:[]} and
     .profile.sandbox.tools.shell.read == ["@system"] and
     .profile.sandbox.tools.shell.write == [$path,"~/share"]
   ' >/dev/null || fail 'tool-specific grant changed another tool'
@@ -259,6 +259,20 @@ jq -c --arg cwd "${tmp:A}/project" '.cwd=$cwd |
     fail 'sandbox inspection omitted a selected tool'
   [[ $(call '/sandbox missing +r dir' | jq -r .action) == null ]] ||
     fail 'sandbox command granted access to an unselected tool'
+  call '/sandbox read_file +domain github.com' | jq -e '
+    .profile.sandbox.tools.read_file == {read:[],write:[],domains:["github.com"]} and
+    .profile.sandbox.tools.shell.domains == ["*.example.com"]
+  ' >/dev/null || fail 'domain grant changed another tool'
+  [[ $(call '/sandbox shell +domain *.example.com' | jq -r .action) == null ]] ||
+    fail 'wildcard domain grant duplicated'
+  call '/sandbox shell -domain *.example.com' | jq -e '
+    .profile.sandbox.tools.shell.domains == [] and
+    .profile.sandbox.tools.shell.read == ["@system"]
+  ' >/dev/null || fail 'domain removal changed a path grant'
+  for domain in 'https://github.com' 'github.com:443' '*' 'a..com' $'example.\ncom'; do
+    [[ $(call "/sandbox shell +domain $domain" | jq -r .action) == null ]] ||
+      fail "invalid domain grant was accepted: $domain"
+  done
 )
 
 # Startup advertises only allowlisted names and rejects invalid skill settings.

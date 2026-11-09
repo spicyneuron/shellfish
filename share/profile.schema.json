@@ -64,7 +64,15 @@
             "additionalProperties": false,
             "properties": {
               "read": {"$ref": "#/$defs/paths"},
-              "write": {"$ref": "#/$defs/paths"}
+              "write": {"$ref": "#/$defs/paths"},
+              "domains": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "pattern": "^(\\*\\.)?([A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?\\.)*[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?$",
+                  "not": {"pattern": "[\u0000-\u001f\u007f-\u009f]"}
+                }
+              }
             }
           }
         }

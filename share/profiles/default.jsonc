@@ -15,7 +15,7 @@
     "user_approval_timeout": 120,
     // Extra grants keyed by selected tool name.
     "tools": {
-      // "shell": {"read": ["~/.cargo"], "write": ["~/.cache/uv"]}
+      // "shell": {"read": ["~/.cargo"], "write": ["~/.cache/uv"], "domains": ["github.com"]}
     }
   },
 

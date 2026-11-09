@@ -3,10 +3,10 @@
 emulate -R zsh
 setopt extended_glob no_aliases no_multios pipe_fail
 
-typeset body tool operation candidate grant_path header grants updated profile
+typeset body tool operation candidate value header grants updated profile
 typeset grant resolved matched=''
-typeset action access message user
-typeset usage='usage: /sandbox [TOOL [{+read|+write|-read|-write} DIR]]'
+typeset action access label message user
+typeset usage='usage: /sandbox [TOOL [{+read|+write|+domain|-read|-write|-domain} VALUE]]'
 body=$(cat)
 body=${body##[[:space:]]#}
 body=${body%%[[:space:]]#}
@@ -25,7 +25,7 @@ if [[ $body == "$tool" ]]; then
     "Additional grants (tool policy still applies):",
     ($profile.tools[] | split("/") | last | select($tool == "" or . == $tool)) as $name |
       $name + ":",
-      (("read", "write") as $access | ($sandbox.tools[$name][$access] // []) as $grants |
+      (("read", "write", "domains") as $access | ($sandbox.tools[$name][$access] // []) as $grants |
         "  \($access):", if $grants == [] then "    (none)" else $grants[] | "    " + . end)
   ' <<<"$header" >&2
   exit
@@ -42,11 +42,14 @@ case $operation in
   write|+write|+w) action=add; access=write ;;
   -read|-r) action=remove; access=read ;;
   -write|-w) action=remove; access=write ;;
+  domain|+domain) action=add; access=domains ;;
+  -domain) action=remove; access=domains ;;
   *)
     print -u2 -r -- "$usage"
     exit 0
     ;;
 esac
+label=${access%s}
 [[ -n $candidate ]] || {
   print -u2 -r -- "$usage"
   exit 0
@@ -60,58 +63,74 @@ grants=$(jq -ce --arg tool "$tool" --arg access "$access" \
   '.profile.sandbox.tools[$tool][$access] // [] | select(type == "array")' \
   <<<"$header") || exit 1
 
-if [[ $candidate == '~' || $candidate == '~/'* ]]; then
-  [[ -n ${HOME-} ]] || {
-    print -u2 -r -- 'cannot expand ~ without HOME'
+if [[ $access == domains ]]; then
+  jq -en --arg domain "$candidate" '
+    $domain | (test("[[:cntrl:]]") | not) and
+      test("^(\\*\\.)?([A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?\\.)*[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?$")
+  ' >/dev/null || {
+    print -u2 -r -- "sandbox domain must be a hostname or *.hostname: $candidate"
     exit 0
   }
-  candidate=${candidate/#\~/${HOME:A}}
-elif [[ $candidate == @* ]]; then
-  candidate=$SHELLFISH_SHARE_DIR/${candidate#@}
-elif [[ $candidate != /* ]]; then
-  candidate="$PWD/$candidate"
-fi
+  value=$candidate
+else
+  if [[ $candidate == '~' || $candidate == '~/'* ]]; then
+    [[ -n ${HOME-} ]] || {
+      print -u2 -r -- 'cannot expand ~ without HOME'
+      exit 0
+    }
+    candidate=${candidate/#\~/${HOME:A}}
+  elif [[ $candidate == @* ]]; then
+    candidate=$SHELLFISH_SHARE_DIR/${candidate#@}
+  elif [[ $candidate != /* ]]; then
+    candidate="$PWD/$candidate"
+  fi
 
-grant_path=${candidate:A}
-if [[ $action == add && ! -d $grant_path ]]; then
-  print -u2 -r -- "sandbox directory does not exist: $candidate"
-  exit 0
+  value=${candidate:A}
+  if [[ $action == add && ! -d $value ]]; then
+    print -u2 -r -- "sandbox directory does not exist: $candidate"
+    exit 0
+  fi
 fi
 
 # Stored grants name HOME as "~/" and the bundled root as "@".
 while IFS= read -r -d '' grant; do
-  case $grant in
-    '~/'*) resolved="${HOME:A}/${grant#\~/}" ;;
-    @*) resolved=$SHELLFISH_SHARE_DIR/${grant#@} ;;
-    *) resolved=$grant ;;
-  esac
-  [[ ${resolved:A} != $grant_path ]] || { matched=$grant; break; }
+  if [[ $access == domains ]]; then
+    resolved=$grant
+  else
+    case $grant in
+      '~/'*) resolved="${HOME:A}/${grant#\~/}" ;;
+      @*) resolved=$SHELLFISH_SHARE_DIR/${grant#@} ;;
+      *) resolved=$grant ;;
+    esac
+    resolved=${resolved:A}
+  fi
+  [[ $resolved != "$value" ]] || { matched=$grant; break; }
 done < <(jq -jr '.[] | ., "\u0000"' <<<"$grants")
 
 if [[ -n $matched ]]; then
   if [[ $action == add ]]; then
-    print -u2 -r -- "sandbox $access grant already exists: $grant_path"
+    print -u2 -r -- "sandbox $label grant already exists: $value"
     exit 0
   fi
 elif [[ $action == remove ]]; then
-  print -u2 -r -- "sandbox $access grant is not set: $grant_path"
+  print -u2 -r -- "sandbox $label grant is not set: $value"
   exit 0
 fi
 
-updated=$(jq -c --arg action "$action" --arg path "$grant_path" --arg matched "$matched" '
-  if $action == "add" then . + [$path] else map(select(. != $matched)) end
+updated=$(jq -c --arg action "$action" --arg value "$value" --arg matched "$matched" '
+  if $action == "add" then . + [$value] else map(select(. != $matched)) end
 ' <<<"$grants") || exit 1
-profile=$(jq -c --arg tool "$tool" --arg access "$access" --argjson paths "$updated" '
-  .profile | .sandbox.tools[$tool] //= {read:[], write:[]} |
-  .sandbox.tools[$tool][$access]=$paths
+profile=$(jq -c --arg tool "$tool" --arg access "$access" --argjson grants "$updated" '
+  .profile | .sandbox.tools[$tool] //= {read:[], write:[], domains:[]} |
+  .sandbox.tools[$tool][$access]=$grants
 ' <<<"$header") || exit 1
 if [[ $action == add ]]; then
-  message="The user added a session sandbox $access grant for $tool: $grant_path"
-  user="**Sandbox** $tool $access grant added"
+  message="The user added a session sandbox $label grant for $tool: $value"
+  user="**Sandbox** $tool $label grant added"
 else
-  message="The user removed a session sandbox $access grant for $tool: $grant_path"
-  user="**Sandbox** $tool $access grant removed"
+  message="The user removed a session sandbox $label grant for $tool: $value"
+  user="**Sandbox** $tool $label grant removed"
 fi
 jq -cn --argjson profile "$profile" '{action:"session_update",profile:$profile}' >&3 || exit 1
 print -rn -- "$message"
-print -rnu2 -- "$user"$'\n'"$grant_path"
+print -rnu2 -- "$user"$'\n'"$value"

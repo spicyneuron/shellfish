@@ -1,1 +1,1 @@
-{"description":"List or update tool-specific session sandbox grants","arguments":"[TOOL [OP DIR]]","user_text":"${output.stderr}"}
+{"description":"List or update tool-specific session sandbox grants","arguments":"[TOOL [OP VALUE]]","user_text":"${output.stderr}"}

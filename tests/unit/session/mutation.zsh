@@ -54,7 +54,7 @@ mv "$session.saved" "$session"
 
 # Runtime replacement is atomic and leaves every durable record unchanged.
 before=$(tail -n +2 "$session")
-profile=$(jq -c '.sandbox.tools.shell.read=["/tmp/reference"] | .sandbox.tools.shell.write=["/tmp/reference"]' \
+profile=$(jq -c '.sandbox.tools.shell={read:["/tmp/reference"],write:["/tmp/reference"],domains:[]}' \
   <<<"$SF_TEST_PROFILE")
 model=$(jq -c '.context_window=1234' <<<"$SF_TEST_MODEL")
 sf_session_update "$session" "$(jq -cn --argjson profile "$profile" --argjson model "$model" \
