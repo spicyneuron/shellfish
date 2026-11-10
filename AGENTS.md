@@ -30,6 +30,4 @@ This project is pre-release. Remove obsolete behavior rather than adding depreca
 - For code changes, run the nearest focused test first, then bare `./tests/run`. Use `./tests/run pty` only for behavior requiring a terminal; its scrollback test skips without `pyte`, so prefer `uv run --with pyte ./tests/run pty`. Do not run tests for documentation- or comment-only changes.
 - In zsh, avoid names that collide with special parameters such as `status` and `commands`. When a command substitution's exit status matters, declare the variable first and assign it separately.
 - Treat the worktree as shared. Only `git checkout`, `restore`, `reset`, or `stash` with user permission. Never discard or hide another agent's changes.
-- Git commits need to run outside your harness sandbox and require explicit user authorization.
-- Commit messages should start with a short, capitalized, imperative title without punctuation. For large or nuanced changes, add a message body with details to assist future debugging. This is reserved for anything not apparent from the diff's code or comments: motivation, constraints, counterintuitive decisions, alternatives considered, etc.
 - Never include gitignored files in audits or code reviews.
