@@ -164,23 +164,6 @@ def test_tool_uses_manifest_display():
         session.close()
 
 
-def test_file_changes_use_full_preview():
-    session = Session(explicit_session=True)
-    try:
-        mark = len(session.output)
-        session.send(b"write\r")
-        # The long preview overflows this short terminal, clipping the title.
-        session.wait_after(mark, "[s]top and discuss")
-        session.send(b"a")
-        _, records = session.wait_session_records(4, path=session.explicit_session)
-        result = next(record for record in records if record.get("type") == "tool_result")
-        assert result["user_preview_lines"] == "full", result
-        assert result["user_text"].startswith("**Write** "), result
-        session.wait_after(mark, "+   1. Definitions.", timeout=5)
-    finally:
-        session.close()
-
-
 def test_activity_input_does_not_delay_interrupt():
     session = Session(
         explicit_session=True,
@@ -425,7 +408,6 @@ if __name__ == "__main__":
     run("terminal PTY scenarios", [
         test_sandbox_updates_without_reload,
         test_tool_uses_manifest_display,
-        test_file_changes_use_full_preview,
         test_activity_input_does_not_delay_interrupt,
         test_interrupt_drains_partial_recovery,
         test_permission_decision_restores_draft,

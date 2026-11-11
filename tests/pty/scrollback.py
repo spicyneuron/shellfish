@@ -339,6 +339,24 @@ def test_queued_submits_keep_committed_history():
         session.close()
 
 
+def test_file_changes_use_full_preview():
+    session = Session(explicit_session=True)
+    terminal = Terminal(session)
+    try:
+        session.send(b"write\r")
+        terminal.wait_for("permission prompt",
+                          lambda: "[s]top and discuss" in terminal.frame())
+        session.send(b"a")
+        _, records = session.wait_session_records(4, path=session.explicit_session)
+        result = next(record for record in records if record.get("type") == "tool_result")
+        assert result["user_preview_lines"] == "full", result
+        assert result["user_text"].startswith("**Write** "), result
+        terminal.wait_for("the full file preview",
+                          lambda: "+   1. Definitions." in terminal.everything())
+    finally:
+        session.close()
+
+
 def test_permission_countdown():
     session = Session(env={
         "SF_TEST_PROVIDER_TOOL_CALL": "1",
@@ -409,6 +427,7 @@ if __name__ == "__main__":
         test_tall_resume_drains_bounded_backlog,
         test_tall_turn_loses_neither_text_nor_draft,
         test_queued_submits_keep_committed_history,
+        test_file_changes_use_full_preview,
         test_permission_countdown,
         test_permission_keys_do_not_edit,
     ])
