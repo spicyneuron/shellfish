@@ -224,6 +224,9 @@ def test_tall_turn_loses_neither_text_nor_draft():
         terminal.wait_for("the turn to finish", terminal.turn_finished)
         terminal.wait_for("the draft to come back",
                           lambda: "❯ done" in terminal.frame())
+        _, records = session.wait_session_records(3, path=session_path)
+        reply = next(record for record in records if record["type"] == "assistant")
+        assert reply["content"][0]["text"].split() == WORDS, reply
         assert not terminal.deleted_during_turn, (
             "active stream deleted terminal rows" + terminal.dump()
         )
@@ -245,6 +248,10 @@ def test_tall_turn_loses_neither_text_nor_draft():
             and terminal.everything().lower().count("─ agent ─") == 2,
         )
 
+        # Completed turns can still have rows queued behind the live viewport.
+        terminal.wait_for("all queued rows to reach the terminal",
+                          lambda: all(terminal.everything().count(word) >= 2
+                                      for word in WORDS))
         # Each word appears in both the user block and agent echo.
         text = terminal.everything()
         lost = [word for word in WORDS if text.count(word) < 2]
