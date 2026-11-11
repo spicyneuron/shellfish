@@ -91,6 +91,24 @@ jq -e -s 'all(.[]; .type != "state_update" and
   "$tmp/startup.jsonl" >/dev/null || fail 'no-repository startup was not silent'
 print -r -- 'branch:main' >"$git_state"
 
+# A version-manager shim must not stall startup under an isolated HOME.
+cat >"$environment_bin/uv" <<'EOF'
+#!/bin/sh
+: >"$SHELLFISH_DIR/uv-probed"
+exec sleep 60
+EOF
+cat >"$environment_bin/gh" <<'EOF'
+#!/bin/sh
+printf 'gh version 1.2.3\n'
+EOF
+chmod +x "$environment_bin/uv" "$environment_bin/gh"
+startup
+[[ -e $SF_TEST_CONFIG/uv-probed ]] || fail 'slow version probe did not run'
+jq -e -s 'any(.[]; .type == "hook_result" and
+  (.model_text // "" | contains("Available commands:") and
+    (contains("Python: uv") | not) and contains("GitHub: gh (1.2.3)")))' \
+  "$tmp/startup.jsonl" >/dev/null || fail 'a slow version probe blocked later context'
+
 git_change() {
   PATH="$git_bin:$PATH" GIT_STATE="$git_state" \
     sf_test_run ordinary "$git_session" >"$git_control"

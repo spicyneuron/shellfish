@@ -42,19 +42,20 @@ report() {
 
   command_version() {
     local name=$1 output command_path
+    local -F version_deadline=$(( EPOCHREALTIME + SF_PROBE_BUDGET ))
     local semver='(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-((0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(\.(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*))?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?'
 
     if [[ $name == find ]]; then
-      output=$(find --version 2>&1) || {
+      output=$(sf_capped "$version_deadline" find --version 2>&1) || {
         command -v what >/dev/null 2>&1 || return
         command_path=$(command -v find) || return
-        output=$(what "$command_path" 2>/dev/null) || return
+        output=$(sf_capped "$version_deadline" what "$command_path" 2>/dev/null) || return
         [[ $output == *'PROGRAM:find  PROJECT:'* ]] || return
         output=${output#*'PROGRAM:find  PROJECT:'}
         output=${output%%[[:space:]]*}
       }
     else
-      output=$("$name" --version 2>&1) || return
+      output=$(sf_capped "$version_deadline" "$name" --version 2>&1) || return
     fi
 
     output=${output%%$'\n'*}
