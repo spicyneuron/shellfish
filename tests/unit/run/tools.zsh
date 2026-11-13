@@ -509,6 +509,7 @@ jq -eRn '
 ' <"$fence_arguments" >/dev/null || fail 'tool execution mixed sandbox grants between tools'
 jq -e --arg base "$tmp/tools/shell/fence.jsonc" '
   .extends == $base and
+  .filesystem == {allowRead:["/shell/read","/shell/write"],allowWrite:["/shell/write"]} and
   .network.allowedDomains == ["github.com","*.npmjs.org","blocked.invalid"]
 ' "$tmp/fence-policy.json" >/dev/null || fail 'domain policy did not extend the selected tool'
 jq -e '
@@ -522,6 +523,17 @@ typeset policy_path
 policy_path=$(jq -rRn '[inputs] | .[index("--settings") + 1]' <"$fence_arguments") ||
   fail 'cannot read temporary sandbox policy path'
 [[ ! -e $policy_path ]] || fail 'temporary sandbox policy survived tool cleanup'
+
+# Path grants need policy permissions even without any domain grants.
+SF_TEST_PROFILE=$(jq -c '.sandbox.tools.shell.domains=[]' <<<"$SF_TEST_PROFILE")
+session="$tmp/sandbox-path-grants.jsonl"
+sf_test_session "$session"
+SF_TEST_PROVIDER_TOOL_CALL=1 sf_test_run paths "$session" >"$stream" ||
+  fail 'path-only sandbox grants failed the turn'
+jq -e '.filesystem == {allowRead:["/shell/read","/shell/write"],allowWrite:["/shell/write"]} and
+  (has("network") | not)' "$tmp/fence-policy.json" >/dev/null ||
+  fail 'path-only grants did not reach the sandbox policy'
+
 SF_TEST_PROFILE=$(jq -c '.tools |= map(select(endswith("/read_file") | not)) |
   .sandbox.tools={}' <<<"$SF_TEST_PROFILE")
 jq -eRn --arg temp "${TMPDIR:A}" '
