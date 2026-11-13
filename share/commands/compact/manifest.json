@@ -1,1 +1,1 @@
-{"description":"Summarize this session into a new one","user_text":"${output.stderr}"}
+{"description":"Summarize older conversation and keep recent turns","arguments":"[instructions]","user_text":"${output.stderr}"}

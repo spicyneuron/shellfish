@@ -1,17 +1,29 @@
 <compaction_request>
-Create a standalone, chronological summary of the conversation so another agent can seamlessly continue the work.
+Create a continuation handoff for the older conversation prefix identified below. The recent suffix is preserved verbatim. Use it to resolve corrections and what remains relevant, but do not recap it. Summarize, do not continue the task or answer its questions.
 
-Capture every major milestone: user intent, requirements, constraints, decisions and rationale, actions and results, and other material changes in state. Preserve exact paths, symbols, commands, values, artifacts, and references when they matter for continuation.
+The boundary data appended below gives the number of retained user-authored turns and a JSON-quoted excerpt of the first retained prompt. Exclude this compaction request from the count, and do not count hook-only or image-only messages as user-authored prompts. If the excerpt repeats, use the occurrence that begins those last retained turns. Their associated hook context is also preserved. Summarize only the earlier conversation. The original user request is separately retained as historical context.
 
-Guidelines:
+Audit every user request and assistant commitment, including earlier compacted context. Retain older open work until evidence shows it was completed, cancelled, or superseded. Distinguish user-approved decisions from proposals, attempted actions from completed results, and verified facts from assumptions. Never invent missing facts.
 
-- Audit every user request and assistant commitment so older open work is not lost. Carry unfinished work and current status through the chronology.
-- Consolidate repetitive activity, but retain the causal order needed to explain the outcome.
-- Include injected context when it materially affected a request, decision, action, result, constraint, or current state.
-- Do not summarize the system prompt, `session_start` context, or this `<compaction_request>`.
-- The complete first user message and final assistant response will be preserved separately. Do not repeat them, but include their material facts when the timeline needs them.
-- Never omit continuation-critical information just to make the result shorter.
-- Ensure final entries are unambiguous about remaining tasks, unanswered questions, blockers, pending decisions, next steps, ordering, and ownership when known.
+Use these sections with terse bullets:
 
-Return only the concise chronological summary, without a section heading or preface.
+## Goal and constraints
+User intent, acceptance criteria, scope, permissions, and material corrections.
+
+## Current state
+Completed, in-progress, blocked, and outstanding work from the prefix that still matters. Include verification limits, especially whether tests cover the latest changes. Record working directory, branch, artifacts, and uncommitted changes only when known and useful.
+
+## Decisions and open questions
+Pivotal choices and their reasons, rejected approaches that should not be retried, unanswered questions, and pending approvals.
+
+## Relevant files and references
+Exact paths with a short reason to reread them. Distinguish modified files, read-only references, and planned edits. Preserve continuation-critical symbols, values, tool calls or commands, exact errors, and external references. Prefer reread pointers over copying recoverable code. Omit incidental search hits.
+
+## Causal timeline
+Only the milestones needed to explain the current state, in chronological order. Consolidate repetitive investigation and avoid repeating the other sections.
+
+## Next steps
+Immediate next action and ordered remaining work, including blockers, prerequisites, and ownership when known. Do not add scope or assume permission.
+
+Keep the handoff concise without dropping continuation-critical facts. On repeated compaction, update older handoffs rather than nesting stale summaries. Do not summarize the system prompt, preserved session_start context, or this request. Return only the structured handoff, without a preface.
 </compaction_request>

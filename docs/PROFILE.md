@@ -132,15 +132,15 @@ The bundled commands are selected by the profile:
 | `/resume` | Choose another session for this directory |
 | `/fork [N]` | Derive a session from a transcript prefix |
 | `/rewind [N]` | Truncate this session to a transcript prefix |
-| `/compact` | Summarize into a child session |
+| `/compact [INSTRUCTIONS]` | Summarize older conversation into a child session, optionally steering the summary |
 | `/compact_tools` | Clear older tool results into a child session without summarizing |
 | `/copy [N]` | Copy a conversation section |
 | `/user_shell COMMAND`, `/shell` | Run a user-authored command and stage its output as context |
 | `/sandbox [TOOL [OP VALUE]]` | Inspect or update a tool's frozen sandbox grants |
 
-Client-owned `/refresh`, `/quit`, and `/queue` commands do not run a turn. Bundled submission hooks compact automatically near a known context-window limit, report Git identity changes, and load skills before ordinary prompts. `/compact` leaves the source unchanged and opens a summarized child through the client. Its summary shows in full under `/verbose`. Automatic compaction preserves the interrupted prompt as an editable draft.
+Client-owned `/refresh`, `/quit`, and `/queue` commands do not run a turn. Bundled submission hooks compact automatically near a known context-window limit, report Git identity changes, and load skills before ordinary prompts.
 
-`/compact_tools` leaves the source unchanged and opens a child without requesting a summary. It replaces older tool results, including images, with omission markers while preserving conversation, tool calls, and exit status. Recent complete turns remain intact, targeting 80 KiB of text and always keeping the latest turn. If no older results can be cleared, it creates no child.
+Both compaction commands leave the source unchanged and open a child through the client. They preserve recent turns' model-visible content in full, targeting 80 KiB of text and always keeping the latest turn. `/compact` summarizes the older conversation, with its summary shown in full under `/verbose`. It also preserves the original user request verbatim as labelled historical context, outside the recent-history allowance, including through repeated compaction. `/compact_tools` instead replaces older tool results, including images, with omission markers while preserving the conversation, tool calls, and exit status. Neither command creates a child when there is nothing to reduce. Automatic compaction preserves the interrupted prompt as an editable draft.
 
 ### Skills
 

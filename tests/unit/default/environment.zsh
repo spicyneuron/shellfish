@@ -174,7 +174,7 @@ submit() {
 submit /h
 jq -e -s 'map(.type) == ["session","hook_result"] and .[1].action == "deny" and
   (.[1].user_text | contains("/verbose, /v") and contains("/copy [N]") and
-    contains("Summarize this session"))' "$command_session" >/dev/null ||
+    contains("/compact [instructions]"))' "$command_session" >/dev/null ||
   fail 'help did not list profile commands'
 submit '/copy x'
 jq -e -s '(.[1].user_text | rtrimstr("\n")) == "usage: /copy [N]" and .[1].action == "deny"' \

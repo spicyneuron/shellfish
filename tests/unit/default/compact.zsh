@@ -4,31 +4,28 @@ source "${0:A:h:h:h}/_helpers.zsh"
 sf_test_source lib/session.zsh
 sf_test_tmp compact
 
-# Compact into a canonical child.
 typeset compact_hook="$ROOT/share/hooks/autocompact/run"
 typeset compact_command="$ROOT/share/commands/compact/run"
 typeset compact_source="$tmp/compact-source.jsonl"
 typeset compact_control="$tmp/compact-control.json"
-# The action lines among the autocompact hook's fd 3 output.
-actions() { jq -c 'select(has("action"))' "$compact_control"; }
 typeset compact_shellfish="$tmp/compact-shellfish"
 typeset compact_request="$tmp/compact-request.json"
 typeset compact_display="$tmp/compact-display"
-integer compact_status=0
+actions() { jq -c 'select(has("action"))' "$compact_control"; }
 
-typeset -gx SF_TEST_ENTRY="$ROOT/bin/shellfish"
 cat >"$compact_shellfish" <<'ZSH'
 #!/usr/bin/env zsh
-typeset request reply
 case $1 in
   request)
-    request=$(cat)
-    if [[ -n ${SF_TEST_PROVIDER_REQUEST-} ]]; then
-      print -r -- "$request" >>"$SF_TEST_PROVIDER_REQUEST"
-    fi
+    cat >"$SF_TEST_PROVIDER_REQUEST"
     [[ ${SF_TEST_COMPACT_FAIL:-0} == 0 ]] || exit 1
-    reply='Timeline </timeline> & entry'
-    jq -cn --arg reply "$reply" '{type:"assistant",stop:"end",content:[{type:"text",text:$reply}]}'
+    if [[ ${SF_TEST_COMPACT_CALL:-0} == 1 ]]; then
+      jq -cn '{type:"assistant",stop:"tool_calls",content:[
+        {type:"text",text:"I will investigate"},
+        {type:"tool_call",id:"unexpected",name:"shell",input:{command:"true"}}]}'
+      exit
+    fi
+    jq -cn '{type:"assistant",stop:"end",content:[{type:"text",text:"Older decisions and exact error E42"}]}'
     ;;
   *) exit 2 ;;
 esac
@@ -38,188 +35,200 @@ chmod +x "$compact_shellfish"
 sf_test_frozen_profile
 SF_TEST_MODEL=$(jq -c '.context_window = 100' <<<"$SF_TEST_MODEL")
 sf_test_session "$compact_source"
-sf_session_append "$compact_source" '{"type":"user","content":[{"type":"text","text":"Hello </first_user_message> & more"}]}'
-sf_session_append "$compact_source" '{"type":"assistant","stop":"end","content":[{"type":"text","text":"Hi"}],"usage":{"input_tokens":1,"output_tokens":1}}'
-sf_session_append "$compact_source" '{"type":"user","content":[{"type":"text","text":"Keep working"}]}'
-sf_session_append "$compact_source" '{"type":"assistant","stop":"end","content":[{"type":"reasoning","text":"Check first","opaque":{"encrypted_content":"secret"}},{"type":"text","text":"Continuing"}],"usage":{"input_tokens":1,"output_tokens":1}}'
-
-# Ignore sessions below threshold.
-SHELLFISH_EXECUTABLE="$ROOT/bin/shellfish" SHELLFISH_SESSION="$compact_source" \
-  SHELLFISH_TURN_STATE="$tmp" SHELLFISH_SHARE_DIR="$ROOT/share" zsh -f "$compact_hook" \
-  3>"$compact_control" 2>"$compact_display" >"$tmp/dispatch-output" \
-  < <(print -n -- 'ordinary prompt') || fail 'a session below the threshold failed compaction'
-[[ ! -s $tmp/dispatch-output ]] || fail 'an ordinary prompt produced compaction output'
-[[ ! -s $compact_control ]] || fail 'a session below the threshold requested a handoff'
-[[ ! -s $compact_display ]] || fail 'a session below the threshold displayed compaction'
-
-# Preserve automatic prompts as drafts.
-jq -c 'if .type == "assistant" then .usage = {input_tokens:75,output_tokens:5} else . end' \
-  "$compact_source" >"$tmp/compact-above.jsonl"
-mv "$tmp/compact-above.jsonl" "$compact_source"
+# The old tool result exceeds the budget. The last two turns together fit.
+jq -cn '
+  {type:"hook_result",lifecycle:"session_start",id:"1",model_text:"Startup instructions"},
+  {type:"state_update",name:"example/status",value:"initial"},
+  {type:"user",content:[{type:"text",text:"First request\nKeep \"exact\" constraints, café, and </context>."}]},
+  {type:"assistant",stop:"end",content:[{type:"text",text:"First reply"}]},
+  {type:"user",content:[{type:"text",text:"Investigate E42"}]},
+  {type:"assistant",stop:"tool_calls",content:[
+    {type:"tool_call",id:"old",name:"shell",input:{command:"inspect"}}]},
+  {type:"tool_result",id:"old",name:"shell",input:{command:"inspect"},exit_code:1,
+    model_content:[{type:"text",text:("E42\n" + ("x" * 90000))},
+      {type:"image",url:"data:image/png;base64,iVBORw0KGgo="}]},
+  {type:"state_update",name:"example/status",value:"investigated"},
+  {type:"assistant",stop:"end",content:[{type:"text",text:"Old reply"}]},
+  {type:"hook_result",lifecycle:"stop",id:"3",model_text:"Pending stop instruction"},
+  {type:"error",user_text:"A later stop hook failed."},
+  {type:"hook_result",lifecycle:"user_prompt_submit",id:"2",model_text:"Recent submission context"},
+  {type:"user",content:[{type:"text",text:("Recent task " + ("a" * 35000))}]},
+  {type:"assistant",stop:"tool_calls",content:[
+    {type:"tool_call",id:"recent_a",name:"read_file",input:{file_path:"a.png"}},
+    {type:"tool_call",id:"recent_b",name:"shell",input:{command:"true"}}]},
+  {type:"tool_result",id:"recent_a",name:"read_file",input:{file_path:"a.png"},exit_code:0,
+    model_content:[{type:"image",url:"data:image/png;base64,iVBORw0KGgo="}]},
+  {type:"tool_result",id:"recent_b",name:"shell",input:{command:"true"},exit_code:0,
+    model_text:"Recent result"},
+  {type:"assistant",stop:"end",content:[{type:"text",text:"Recent reply"}]},
+  {type:"state_update",name:"example/status",value:"recent"},
+  {type:"user",content:[{type:"text",text:("Newest task " + ("b" * 45000))}]},
+  {type:"assistant",stop:"tool_calls",content:[
+    {type:"reasoning",text:"Check first",opaque:{encrypted_content:"secret"}},
+    {type:"tool_call",id:"cancelled",name:"shell",input:{command:"true"}}],
+    usage:{input_tokens:1,output_tokens:1}},
+  {type:"tool_result",id:"cancelled",name:"shell",input:{command:"true"},exit_code:126,
+    model_text:"tool call cancelled"},
+  {type:"error",user_text:"Cancelled."},
+  {type:"state_update",name:"example/status",value:null}
+' >>"$compact_source"
+assert_canonical_session "$compact_source"
 typeset compact_before=$(shasum <"$compact_source")
-compact_status=0
-SF_TEST_PROVIDER_REQUEST="$compact_request" \
-  SHELLFISH_EXECUTABLE="$compact_shellfish" SHELLFISH_SESSION="$compact_source" \
-  SHELLFISH_TURN_STATE="$tmp" zsh -f "$compact_command" --auto \
-  3>"$compact_control" 2>"$compact_display" \
-  < <(print -n -- 'my next prompt') || compact_status=$?
-(( compact_status == 0 ))
-[[ ! -s $compact_display ]] || fail 'compaction wrote unexpected display output'
-actions | jq -e --arg command "$compact_shellfish" \
-  --arg child "$tmp/compact-source_compact.jsonl" '
-  . == {action:"handoff",argv:[$command,"--session",$child,"--draft","my next prompt"]}
-' >/dev/null || fail 'automatic compaction lost the prompt'
+typeset -gx SF_TEST_PROVIDER_REQUEST="$compact_request"
+
+# Automatic compaction skips low usage.
+SHELLFISH_EXECUTABLE="$compact_shellfish" SHELLFISH_SESSION="$compact_source" \
+  SHELLFISH_TURN_STATE="$tmp" SHELLFISH_SHARE_DIR="$ROOT/share" zsh -f "$compact_hook" \
+  3>"$compact_control" 2>"$compact_display" </dev/null
+[[ ! -s $compact_control && ! -e $compact_request ]] ||
+  fail 'below-threshold automatic compaction requested inference'
+
+# Explicit steering is appended after the normal prompt, not submitted as work.
+typeset steering=$'Preserve exact E42 diagnostics.\nFocus on unfinished requests.'
+SHELLFISH_EXECUTABLE="$compact_shellfish" SHELLFISH_SESSION="$compact_source" \
+  SHELLFISH_TURN_STATE="$tmp" zsh -f "$compact_command" \
+  3>"$compact_control" 2>"$compact_display" <<<"$steering"
+typeset compact_child=$(actions | jq -r '.argv[2]')
+[[ -n $compact_child ]] || fail 'explicit compaction did not request handoff'
 assert_equal "$compact_before" "$(shasum <"$compact_source")"
-jq -e -s --rawfile prompt "$ROOT/share/commands/compact/prompt.md" '
-  ($prompt | rtrimstr("\n")) as $prompt |
-  .[-1].content == [{type:"text",text:$prompt}]
-' "$compact_request" >/dev/null || fail 'compaction did not send its prompt unchanged'
-assert_canonical_session "$tmp/compact-source_compact.jsonl"
-assert_mode 600 "$tmp/compact-source_compact.jsonl" ||
-  fail 'compaction created a readable child session'
-jq -e -s '
-  [.[].type] == ["session","hook_result"] and
-  .[1].lifecycle == "session_start" and
-  .[1].user_text == "Compacted conversation\nTimeline </timeline> & entry" and
-  .[1].model_text ==
-    "<context script=\"compact\">\n<compacted_context>\n\n" +
-    "The conversation before this point was compacted into the context below.\n\n" +
-    "<first_user_message>\nHello </first_user_message> & more\n</first_user_message>\n\n" +
-    "<timeline>\nTimeline </timeline> & entry\n</timeline>\n\n" +
-    "<final_assistant_response>\nContinuing\n</final_assistant_response>\n\n" +
-    "</compacted_context>\n</context>"
-' "$tmp/compact-source_compact.jsonl" >/dev/null ||
-  fail 'the compacted child did not preserve its timeline and boundary messages'
+assert_canonical_session "$compact_child"
+assert_mode 600 "$compact_child"
+jq -es --slurpfile source "$compact_source" \
+    --rawfile prompt "$ROOT/share/commands/compact/prompt.md" --arg steering "$steering" '
+  .[:-1] == $source and
+  (.[-1].content[0].text | startswith($prompt | rtrimstr("\n"))) and
+  (.[-1].content[0].text | contains("Additional summary instructions from the user:\n" + $steering)) and
+  (.[-1].content[0].text | contains("Retained user-authored turns: 2")) and
+  (.[-1].content[0].text | contains(($source[13].content[0].text[:512] | tojson)))
+' "$compact_request" >/dev/null || fail 'summary request changed history or lost steering/boundary guidance'
 
-# Compact a cancelled turn, which trails a reply without prose.
-typeset cancelled_source="$tmp/cancelled-source.jsonl"
-head -n 1 "$compact_source" >"$cancelled_source"
-print -r -- \
-  '{"type":"user","content":[{"type":"text","text":"Read the docs"}]}' \
-  '{"type":"assistant","stop":"end","content":[{"type":"text","text":"Done reading"}],"usage":{"input_tokens":1,"output_tokens":1}}' \
-  '{"type":"user","content":[{"type":"text","text":"Keep going"}]}' \
-  '{"type":"assistant","stop":"tool_calls","content":[{"type":"text","text":"\n\n"},{"type":"tool_call","id":"call_1","name":"shell","input":{"command":"true"}}],"usage":{"input_tokens":75,"output_tokens":5}}' \
-  '{"type":"tool_result","id":"call_1","name":"shell","input":{"command":"true"},"exit_code":126,"user_text":"shell\ntool call cancelled\nexit 126","model_text":"tool call cancelled\nexit 126"}' \
-  '{"type":"error","user_text":"Cancelled."}' \
-  >>"$cancelled_source"
-assert_canonical_session "$cancelled_source"
-compact_status=0
-SHELLFISH_EXECUTABLE="$compact_shellfish" SHELLFISH_SESSION="$cancelled_source" \
+# Model-visible suffix and ordered state updates survive, without stale usage.
+jq -es --slurpfile source "$compact_source" '
+  ([to_entries[] | select(.value.type == "user") | .key][0]) as $first |
+  (.[($first - 1)].model_text == "Recent submission context") and
+  (.[($first - 2)].type == "error") and
+  (.[($first - 3)].model_text == "Pending stop instruction") and
+  (.[($first - 4)].lifecycle == "user_prompt_submit") and
+  (.[($first - 4)].model_text | contains("Older decisions and exact error E42")) and
+  ([.[] | select(.lifecycle? == "session_start")] ==
+    [$source[] | select(.lifecycle? == "session_start")]) and
+  ([.[] | select(.type == "state_update" and .name != "compact/first_user")] ==
+    [$source[] | select(.type == "state_update")]) and
+  ([.[] | select(.type == "state_update" and .name == "compact/first_user")] |
+    length == 1 and .[0].value == $source[3].content[0].text) and
+  (.[($first - 4)].model_text | contains(
+    "Original user request (historical context, JSON-quoted):\n" +
+    ($source[3].content[0].text | tojson))) and
+  (.[($first - 3):] ==
+    ($source[10:] | map(if .type == "assistant" then del(.usage) else . end))) and
+  all(.[] | select(.type == "assistant"); has("usage") | not)
+' "$compact_child" >/dev/null || fail 'child changed recent content or lost startup/state records'
+
+# A stop continuation interrupted before inference leaves the same pending context.
+jq -c 'if .type == "hook_result" and .id == "3" then .action="deny" else . end' \
+  "$compact_source" >"$tmp/denied-stop.jsonl"
+assert_canonical_session "$tmp/denied-stop.jsonl"
+SHELLFISH_EXECUTABLE="$compact_shellfish" SHELLFISH_SESSION="$tmp/denied-stop.jsonl" \
   SHELLFISH_TURN_STATE="$tmp" zsh -f "$compact_command" \
-  3>"$compact_control" 2>"$compact_display" \
-  </dev/null || compact_status=$?
-(( compact_status == 0 )) || fail 'a cancelled turn did not compact explicitly'
-[[ ! -s $compact_display ]] || fail 'compacting a cancelled turn wrote display output'
-assert_canonical_session "$tmp/cancelled-source_compact.jsonl"
+  3>"$compact_control" 2>"$compact_display" </dev/null
+typeset denied_child=$(actions | jq -r '.argv[2]')
+assert_canonical_session "$denied_child"
+jq -es 'any(.[]; .type == "hook_result" and .id == "3" and .action == "deny" and
+  .model_text == "Pending stop instruction")' "$denied_child" >/dev/null ||
+  fail 'interrupted stop continuation lost pending context'
 
-# The summary request sees images, as every request does.
-typeset image_source="$tmp/image-source.jsonl" image_request="$tmp/image-request.jsonl"
-head -n 1 "$compact_source" >"$image_source"
-print -r -- \
-  '{"type":"user","content":[{"type":"text","text":"Look"}]}' \
-  '{"type":"assistant","stop":"tool_calls","content":[{"type":"tool_call","id":"call_1","name":"read_file","input":{"file_path":"a.png"}}]}' \
-  '{"type":"tool_result","id":"call_1","name":"read_file","input":{"file_path":"a.png"},"exit_code":0,"model_content":[{"type":"text","text":"[image 1x1 png]"},{"type":"image","url":"data:image/png;base64,iVBORw0KGgo="}]}' \
-  '{"type":"assistant","stop":"end","content":[{"type":"text","text":"Seen"}]}' \
-  >>"$image_source"
-assert_canonical_session "$image_source"
-SHELLFISH_EXECUTABLE="$compact_shellfish" SHELLFISH_SESSION="$image_source" \
-  SHELLFISH_TURN_STATE="$tmp" SF_TEST_PROVIDER_REQUEST="$image_request" \
-  zsh -f "$compact_command" 3>"$compact_control" 2>"$compact_display" </dev/null ||
-  fail 'a session with an image did not compact'
-jq -e -s 'map(select(.type == "tool_result"))[0].model_content[1] ==
-  {type:"image",url:"data:image/png;base64,iVBORw0KGgo="}' "$image_request" >/dev/null ||
-  fail 'compaction withheld an image from the summary request'
+# No source usage measurement should immediately compact the child again.
+SHELLFISH_EXECUTABLE="$compact_shellfish" SHELLFISH_SESSION="$compact_child" \
+  SHELLFISH_TURN_STATE="$tmp" SHELLFISH_SHARE_DIR="$ROOT/share" zsh -f "$compact_hook" \
+  3>"$compact_control" 2>"$compact_display" </dev/null
+[[ ! -s $compact_control ]] || fail 'child reused stale token usage'
 
-# Require a session past its first turn before asking the model for a summary.
-for incomplete in empty user-only assistant-only; do
-  typeset incomplete_source="$tmp/$incomplete.jsonl"
-  head -n 1 "$compact_source" >"$incomplete_source"
-  case $incomplete in
-    user-only)
-      print -r -- '{"type":"user","content":[{"type":"text","text":"Hello"}]}' \
-        >>"$incomplete_source"
-      ;;
-    assistant-only)
-      print -r -- '{"type":"assistant","stop":"end","content":[{"type":"text","text":"Hi"}]}' \
-        >>"$incomplete_source"
-      ;;
-  esac
+# Repeating the command on an already-small child is a no-op without inference.
+rm "$compact_request"
+SHELLFISH_EXECUTABLE="$compact_shellfish" SHELLFISH_SESSION="$compact_child" \
+  SHELLFISH_TURN_STATE="$tmp" zsh -f "$compact_command" \
+  3>"$compact_control" 2>"$compact_display" </dev/null
+[[ ! -s $compact_control && ! -e $compact_request ]] ||
+  fail 'already-small child requested another summary'
 
-  compact_status=0
-  SHELLFISH_EXECUTABLE="$compact_shellfish" SHELLFISH_SESSION="$incomplete_source" \
+# A new oversized turn keeps that whole turn and resummarizes the earlier handoff.
+jq -cn '
+  {type:"hook_result",lifecycle:"user_prompt_submit",id:"9",model_text:"Oversized task context"},
+  {type:"user",content:[{type:"text",text:("z" * 90000)}]},
+  {type:"assistant",stop:"end",content:[{type:"text",text:"Latest reply"}]}
+' >>"$compact_child"
+assert_canonical_session "$compact_child"
+SHELLFISH_EXECUTABLE="$compact_shellfish" SHELLFISH_SESSION="$compact_child" \
+  SHELLFISH_TURN_STATE="$tmp" zsh -f "$compact_command" \
+  3>"$compact_control" 2>"$compact_display" </dev/null
+typeset repeated_child=$(actions | jq -r '.argv[2]')
+assert_canonical_session "$repeated_child"
+jq -es --slurpfile source "$compact_source" '
+  ([.[] | select(.type == "user")] | length) == 1 and
+  ([.[] | select(.type == "user")][0].content[0].text | length) == 90000 and
+  ([.[] | select(.model_text? | strings | contains("Earlier conversation was summarized"))] |
+    length) == 1 and
+  ([.[] | select(.type == "state_update" and .name == "compact/first_user")] |
+    length == 1 and .[0].value == $source[3].content[0].text) and
+  any(.[]; .model_text? | strings | contains(
+    "Original user request (historical context, JSON-quoted):\n" +
+    ($source[3].content[0].text | tojson))) and
+  any(.[]; .model_text? == "Oversized task context")
+' "$repeated_child" >/dev/null || fail 'repeated compaction accumulated handoffs or split the latest turn'
+
+# Empty original prompts are preserved rather than replaced by a later request.
+jq -c 'if .type == "user" and (.content[0].text | startswith("First request"))
+  then .content[0].text="" else . end' "$compact_source" >"$tmp/empty-first.jsonl"
+SHELLFISH_EXECUTABLE="$compact_shellfish" SHELLFISH_SESSION="$tmp/empty-first.jsonl" \
+  SHELLFISH_TURN_STATE="$tmp" zsh -f "$compact_command" \
+  3>"$compact_control" 2>"$compact_display" </dev/null
+typeset empty_first_child=$(actions | jq -r '.argv[2]')
+assert_canonical_session "$empty_first_child"
+jq -es '
+  any(.[]; .type == "state_update" and .name == "compact/first_user" and .value == "") and
+  any(.[]; .model_text? | strings | contains(
+    "Original user request (historical context, JSON-quoted):\n\"\""))
+' "$empty_first_child" >/dev/null || fail 'compaction replaced the empty original request'
+
+# Automatic compaction preserves the pending prompt as a draft, never steering.
+jq -c 'if .type == "assistant" then .usage={input_tokens:75,output_tokens:5} else . end' \
+  "$compact_source" >"$tmp/high-usage.jsonl"
+SHELLFISH_EXECUTABLE="$compact_shellfish" SHELLFISH_SESSION="$tmp/high-usage.jsonl" \
+  SHELLFISH_TURN_STATE="$tmp" zsh -f "$compact_command" --auto \
+  3>"$compact_control" 2>"$compact_display" < <(print -n -- 'my next prompt')
+actions | jq -e '.argv[-2:] == ["--draft","my next prompt"]' >/dev/null ||
+  fail 'automatic compaction lost draft'
+jq -es '.[-1].content[0].text | contains("my next prompt") | not' \
+  "$compact_request" >/dev/null || fail 'automatic draft became summary steering'
+
+# Summary failure leaves the original session and no handoff.
+SF_TEST_COMPACT_FAIL=1 SHELLFISH_EXECUTABLE="$compact_shellfish" \
+  SHELLFISH_SESSION="$compact_source" SHELLFISH_TURN_STATE="$tmp" zsh -f "$compact_command" \
+  3>"$compact_control" 2>"$compact_display" </dev/null
+[[ ! -s $compact_control ]] || fail 'failed summary requested handoff'
+assert_equal "$compact_before" "$(shasum <"$compact_source")"
+
+# Advertised tools remain inert, and a call is not accepted as a summary.
+SF_TEST_COMPACT_CALL=1 SHELLFISH_EXECUTABLE="$compact_shellfish" \
+  SHELLFISH_SESSION="$compact_source" SHELLFISH_TURN_STATE="$tmp" zsh -f "$compact_command" \
+  3>"$compact_control" 2>"$compact_display" </dev/null
+[[ ! -s $compact_control ]] || fail 'tool-calling summary requested handoff'
+assert_equal "$compact_before" "$(shasum <"$compact_source")"
+
+# Empty and single-turn sessions have no older prefix.
+for short in empty single; do
+  head -n 1 "$compact_source" >"$tmp/$short.jsonl"
+  if [[ $short == single ]]; then
+    print -r -- '{"type":"user","content":[{"type":"text","text":"Only task"}]}' \
+      '{"type":"assistant","stop":"end","content":[{"type":"text","text":"Done"}]}' >>"$tmp/$short.jsonl"
+  fi
+  rm -f "$compact_request"
+  SHELLFISH_EXECUTABLE="$compact_shellfish" SHELLFISH_SESSION="$tmp/$short.jsonl" \
     SHELLFISH_TURN_STATE="$tmp" zsh -f "$compact_command" \
-    3>"$compact_control" </dev/null 2>/dev/null || compact_status=$?
-  (( compact_status == 0 )) &&
-    [[ -z $(actions) ]] ||
-    fail "compaction accepted $incomplete session"
+    3>"$compact_control" 2>"$compact_display" </dev/null
+  [[ ! -s $compact_control && ! -e $compact_request ]] ||
+    fail "$short session requested inference"
 done
-
-: >"$compact_control"
-compact_status=0
-SHELLFISH_EXECUTABLE="$compact_shellfish" SHELLFISH_SESSION="$tmp/empty.jsonl" \
-  SHELLFISH_TURN_STATE="$tmp" zsh -f "$compact_command" --auto \
-  3>"$compact_control" < <(print -n -- 'ordinary prompt') 2>/dev/null || compact_status=$?
-(( compact_status == 0 )) || fail 'automatic compaction did not skip an empty session'
-[[ -z $(actions) ]] || fail 'empty automatic compaction requested a handoff'
-
-# Compact explicitly without a draft.
-compact_status=0
-SHELLFISH_EXECUTABLE="$compact_shellfish" \
-  SHELLFISH_SESSION="$compact_source" \
-  SHELLFISH_TURN_STATE="$tmp" zsh -f "$compact_command" \
-  3>"$compact_control" </dev/null || compact_status=$?
-(( compact_status == 0 ))
-assert_equal \
-  "$(jq -cn --arg command "$compact_shellfish" \
-    --arg child "$tmp/compact-source_compact_1.jsonl" \
-    '{action:"handoff",argv:[$command,"--session",$child]}')" \
-  "$(actions)"
-
-# Fail open on summary errors.
-: >"$compact_control"
-compact_status=0
-SF_TEST_COMPACT_FAIL=1 SHELLFISH_EXECUTABLE="$compact_shellfish" \
-  SHELLFISH_SESSION="$compact_source" \
-  SHELLFISH_TURN_STATE="$tmp" zsh -f "$compact_command" --auto \
-  3>"$compact_control" < <(print -n -- 'my next prompt') 2>/dev/null || compact_status=$?
-(( compact_status == 0 )) || fail 'automatic summary failure blocked the prompt'
-[[ -z $(actions) ]] || fail 'automatic summary failure requested a handoff'
-compact_status=0
-SF_TEST_COMPACT_FAIL=1 SHELLFISH_EXECUTABLE="$compact_shellfish" \
-  SHELLFISH_SESSION="$compact_source" \
-  SHELLFISH_TURN_STATE="$tmp" zsh -f "$compact_command" \
-  3>"$compact_control" </dev/null 2>/dev/null || compact_status=$?
-(( compact_status == 0 )) && [[ -z $(actions) ]] ||
-  fail 'explicit summary failure was not handled'
-# Preserve ordered state history.
-typeset state_source="$tmp/state-source.jsonl"
-head -n 1 "$compact_source" >"$state_source"
-print -r -- \
-  '{"type":"state_update","name":"git/identity","value":"branch:main"}' \
-  '{"type":"hook_result","lifecycle":"session_start","id":"1","model_text":"env"}' \
-  '{"type":"user","content":[{"type":"text","text":"Hello"}]}' \
-  '{"type":"state_update","name":"subagents/a1b2c3","value":{"session":".subagent-a1b2c3.jsonl"}}' \
-  '{"type":"assistant","stop":"end","content":[{"type":"text","text":"Hi"}],"usage":{"input_tokens":1,"output_tokens":1}}' \
-  '{"type":"state_update","name":"git/identity","value":null}' \
-  >>"$state_source"
-typeset state_before=$(shasum <"$state_source")
-compact_status=0
-SHELLFISH_EXECUTABLE="$compact_shellfish" SHELLFISH_SESSION="$state_source" \
-  SHELLFISH_TURN_STATE="$tmp" zsh -f "$compact_command" \
-  3>"$compact_control" </dev/null 2>/dev/null || compact_status=$?
-(( compact_status == 0 ))
-assert_canonical_session "$tmp/state-source_compact.jsonl"
-jq -e -s '
-  [.[].type] == ["session","hook_result","state_update","state_update","state_update","hook_result"] and
-  [.[] | select(.type == "state_update") | [.name, .value]] ==
-    [["git/identity","branch:main"],
-     ["subagents/a1b2c3",{session:".subagent-a1b2c3.jsonl"}],
-     ["git/identity",null]] and
-  (.[-1].model_text | startswith("<context script=\"compact\">"))
-' "$tmp/state-source_compact.jsonl" >/dev/null ||
-  fail 'compaction did not carry state history in source order'
-assert_equal "$state_before" "$(shasum <"$state_source")"
-[[ ! -e $tmp/.subagent-a1b2c3.jsonl ]] || fail 'compaction copied a referenced internal session'
 
 # Clearing old results preserves call identity, state, and recent model context.
 typeset tools_source="$tmp/tools-source.jsonl" tools_child="$tmp/tools-source_compact_tools.jsonl"
@@ -275,26 +284,68 @@ jq -e -s --slurpfile original "$tools_source" '
 ' "$tools_child" >/dev/null || fail 'tool compaction changed protected content or state'
 
 # Already-cleared results and sessions without older results are no-ops.
-for unchanged in "$tools_child" "$compact_source"; do
+for unchanged in "$tools_child" "$tmp/single.jsonl"; do
   SHELLFISH_EXECUTABLE="$compact_shellfish" SHELLFISH_SESSION="$unchanged" \
     SHELLFISH_TURN_STATE="$tmp" zsh -f "$tools_command" \
     3>"$compact_control" 2>"$compact_display" </dev/null || fail 'tool compaction no-op failed'
   [[ -z $(actions) ]] || fail 'tool compaction created an unchanged child'
 done
 
-
-# The public command hands off without inference, then its child can continue.
+# Exercise command routing, request projection, handoff, and continuation together.
 typeset integration_source="$tmp/integration.jsonl" integration_child
-typeset integration_stream="$tmp/integration.stream"
-jq -c --arg share "$ROOT/share" '
-  if .type == "session" then .profile.commands=[$share + "/commands/compact_tools"]
-  else . end
-' "$tools_source" >"$integration_source"
-rm -f "$tools_request"
-SF_TEST_PROVIDER_REQUEST="$tools_request" sf_test_run '/compact_tools' "$integration_source" >"$integration_stream"
-integration_child=$(jq -r 'select(.type == "_handoff") | .argv[2]' "$integration_stream")
-[[ -n $integration_child ]] || fail 'public tool compaction did not hand off'
-[[ ! -e $tools_request ]] || fail 'public tool compaction requested inference'
-assert_canonical_session "$integration_child"
-sf_test_run 'Continue' "$integration_child" >"$integration_stream"
-assert_canonical_session "$integration_child" end
+typeset integration_stream="$tmp/integration.stream" integration_provider="$tmp/provider"
+mkdir -p "$integration_provider" "$tmp/http-bin"
+cat >"$integration_provider/run" <<'ZSH'
+#!/usr/bin/env zsh
+setopt pipe_fail
+tee "$SF_TEST_PROVIDER_REQUEST" | "$SF_TEST_TRANSLATOR"
+ZSH
+cat >"$tmp/http-bin/curl" <<'ZSH'
+#!/usr/bin/env zsh
+while (( $# )); do
+  if [[ $1 == --data-binary ]]; then cp "${2#@}" "$SF_TEST_BODY"; shift; fi
+  shift
+done
+print -r -- '{"choices":[{"message":{"content":"Continuation handoff"},"finish_reason":"stop"}]}'
+print -n -u2 -- 200
+ZSH
+chmod +x "$integration_provider/run" "$tmp/http-bin/curl"
+typeset -gx SF_TEST_TRANSLATOR="$ROOT/share/providers/openai_chat/run"
+typeset -gx SF_TEST_BODY="$tmp/summary-body.json"
+for command in compact compact_tools; do
+  jq -c --arg provider "$integration_provider" --arg share "$ROOT/share" '
+    if .type == "session" then
+      .model.provider=$provider |
+      .profile.commands=[$share + "/commands/compact", $share + "/commands/compact_tools"]
+    else . end
+  ' "$tools_source" >"$integration_source"
+  if [[ $command == compact ]]; then
+    cp "$integration_source" "$tmp/baseline.jsonl"
+    PATH="$tmp/http-bin:$PATH" SF_TEST_PROVIDER_REQUEST="$tmp/normal-request.json" \
+      SF_TEST_BODY="$tmp/normal-body.json" \
+      sf_test_run Continue "$tmp/baseline.jsonl" >"$integration_stream"
+  fi
+  rm -f "$compact_request"
+  typeset prompt="/$command"
+  [[ $command != compact ]] || prompt+=' Preserve E42 exactly'
+  PATH="$tmp/http-bin:$PATH" sf_test_run "$prompt" "$integration_source" >"$integration_stream"
+  integration_child=$(jq -r 'select(.type == "_handoff") | .argv[2]' "$integration_stream")
+  [[ -n $integration_child ]] || fail "$command did not hand off through the public command"
+  assert_canonical_session "$integration_child"
+  if [[ $command == compact ]]; then
+    jq -e --slurpfile normal "$tmp/normal-request.json" '
+      del(.messages) == ($normal[0] | del(.messages)) and
+      .messages[:-1] == $normal[0].messages[:-1] and
+      (.messages[-1].content[0].text | contains("Preserve E42 exactly"))
+    ' "$compact_request" >/dev/null || fail 'summary changed the normalized request prefix'
+    jq -e --slurpfile normal "$tmp/normal-body.json" '
+      del(.messages) == ($normal[0] | del(.messages)) and
+      .messages[:-1] == $normal[0].messages[:-1] and
+      (.messages[-1].content | contains("Preserve E42 exactly"))
+    ' "$SF_TEST_BODY" >/dev/null || fail 'summary changed the provider-visible request prefix'
+  else
+    [[ ! -e $compact_request ]] || fail 'public tool compaction requested inference'
+  fi
+  PATH="$tmp/http-bin:$PATH" sf_test_run 'Continue' "$integration_child" >"$integration_stream"
+  assert_canonical_session "$integration_child" end
+done
