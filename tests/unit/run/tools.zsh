@@ -300,8 +300,9 @@ jq -eRn '
   ($events | map(select(.type == "hook_result"))[0] ==
     {type:"hook_result",lifecycle:"permission_request",id:"1",action:"deny",reason:"review denied"}) and
   ($events | map(select(.type == "tool_result"))[0] |
-    .exit_code == 126 and .model_text == "review denied" and .sandbox_access == "denied" and
-    .user_text == "**Shell** true\nreview denied")
+    .exit_code == 126 and .sandbox_access == "denied" and
+    .model_text == "<sandbox_notice>\nSandbox access denied. The tool was not run.\nReason: review denied\n</sandbox_notice>" and
+    .user_text == "**Shell** true\n" + .model_text)
 ' <"$stream" >/dev/null || fail 'permission denial did not settle the call'
 
 # The client may answer before the review hooks finish.
@@ -359,7 +360,7 @@ sf_test_session "$session"
 SF_TEST_PROVIDER_TOOL_CALL=1 SF_TEST_PROVIDER_TOOL_BYPASS=true \
   sf_test_run permission "$session" >"$stream" || fail 'closed client failed the turn'
 jq -e -s 'map(select(.type == "tool_result"))[0] |
-  .exit_code == 126 and .model_text == "no client to approve sandbox access" and
+  .exit_code == 126 and (.model_text | endswith("Reason: no client to approve sandbox access\n</sandbox_notice>")) and
   .sandbox_access == "denied"' \
   "$session" >/dev/null || fail 'closed client did not deny the request'
 
@@ -376,7 +377,7 @@ SF_TEST_PROFILE=$(jq -c '.sandbox.user_approval_timeout=1' <<<"$SF_TEST_PROFILE"
 jq -e -s 'map(select(.type == "_tool_permission_request"))[0].timeout == 1' \
   "$stream" >/dev/null || fail 'permission request omitted the configured timeout'
 jq -e -s 'map(select(.type == "tool_result"))[0] |
-  .exit_code == 126 and .model_text == "sandbox access approval timed out" and
+  .exit_code == 126 and (.model_text | endswith("Reason: sandbox access approval timed out\n</sandbox_notice>")) and
   .sandbox_access == "denied"' \
   "$session" >/dev/null || fail 'stale answer or timeout did not deny the request'
 

@@ -133,12 +133,11 @@ sf_process_bytes() {
   REPLY=${#1}
 }
 
-# With --poll CALLBACK, poll between control reads and stop when it returns
-# nonzero. The callback runs in the owner, never in a background writer.
 # Stream fd 3 to HANDLER one nonempty line at a time while the command runs. A
 # final line without a newline arrives at exit. control_bytes is the longest
 # line; lines stop once one exceeds MAX_CONTROL bytes. interrupted is the
-# signal exit status, or 0.
+# signal exit status, or 0. With --poll CALLBACK, the owner calls CALLBACK at
+# least every 100 ms and stops the command, setting cancelled, once it fails.
 sf_process_run() {
   setopt local_options local_traps no_err_exit no_monitor
   local poll=''

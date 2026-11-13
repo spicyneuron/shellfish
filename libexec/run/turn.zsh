@@ -202,7 +202,7 @@ sf_run_permission() {
         permission_auto=$review[action]
         [[ $permission_auto != allow ]] || permission_auto=approve
         permission_auto_reason=$review[reason]
-        [[ -z $permission_auto || $permission_auto != deny || -n $permission_auto_reason ]] ||
+        [[ $permission_auto != deny || -n $permission_auto_reason ]] ||
           permission_auto_reason='sandbox access denied by permission_request hook'
         (( permission_auto_deadline = EPOCHREALTIME + 10 ))
         [[ -z $permission_auto ]] || (( permission_deadline =
@@ -419,11 +419,10 @@ sf_run_turn() {
                   { failure='cannot emit tool draft'; break; }
                 sf_run_permission "$session" "$turn_state" || { failure=$REPLY; break; }
                 decision=$reply[1]
-                hook_result[reason]=$reply[2]
                 if [[ $decision == deny ]]; then
-                  sf_run_tool_refused \
-                    "${hook_result[reason]:-sandbox access denied by permission_request hook}" 126
-                  outcome=$REPLY
+                  sf_run_tool_refused "$reply[2]" 126
+                  outcome=$(jq -c '.output.stdout |= "<sandbox_notice>\nSandbox access denied. The tool was not run.\nReason: \(.)\n</sandbox_notice>"' <<<"$REPLY") ||
+                    { failure='cannot decode tool result'; break; }
                   decision=denied
                 # A requested bypass leaves the call unsandboxed and is never kept.
                 elif [[ $SF_TOOL_PLAN[sandbox] == false ]]; then
@@ -448,7 +447,7 @@ sf_run_turn() {
                   { sf_run_status $? "${SF_RUN_TOOL_ERROR:-cannot execute tool}"; break; }
                 outcome=$REPLY
                 if [[ $decision == session ]]; then
-                  outcome=$(jq -c '.output.stdout += "\n<sandbox_notice>This access is granted for the rest of this session. Later calls of this tool have it without asking. Omit request_sandbox_access for it.</sandbox_notice>"' <<<"$outcome") ||
+                  outcome=$(jq -c '.output.stdout += "\n<sandbox_notice>This access is granted for the rest of this session. Later calls of this tool have it without asking. Do not request it again.</sandbox_notice>"' <<<"$outcome") ||
                     { failure='cannot decode tool result'; break; }
                 fi
               fi

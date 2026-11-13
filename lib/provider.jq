@@ -24,7 +24,7 @@ def model_tools($profile; $tools):
                {unrestricted:{type:"boolean",description:"Run this call outside the sandbox. Only when listing access cannot help, with every list empty."}}
              else {} end +
              {reason:{type:"string",description:"Why this call needs the access."}}),
-           description:"Only to request approval for access the sandbox blocks. Name exactly what this call needs. The user may keep listed access for the rest of the session. Use {} or empty lists for normal sandboxed execution. Null, false, and an empty string also mean no request."}
+           description:"Only to request approval for access the sandbox blocks. Name exactly what this call needs. The user may keep listed access for the rest of the session. Omit for normal sandboxed execution."}
        else . end)}];
 
 def provider_request($model; $system; $messages; $tools):

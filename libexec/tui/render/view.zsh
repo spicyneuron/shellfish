@@ -225,6 +225,13 @@ sf_tui_update_highlights() {
   done
 }
 
+# Permission decisions in prompt order. Listed access may also be approved for
+# the session.
+sf_tui_permission_choices() {
+  reply=( approve deny stop )
+  [[ $SF_PRESENT_PERMISSION_KIND != listed ]] || reply[2,1]=( approve_session )
+}
+
 sf_tui_repaint() {
   local mode=${1-}
   integer columns=${COLUMNS:-0} rows=${LINES:-0} budget reserve=6
@@ -233,6 +240,8 @@ sf_tui_repaint() {
   local queue_item queue_line queue_text='' line
   local prompt_style=prompt
   local choices
+  local -a reply
+  local -A labels
   integer remaining
   if [[ $SF_PRESENT_STATE == idle && ${SF_PRESENT_ACTION-} != submit ]]; then
     prompt_style=prompt_waiting
@@ -302,11 +311,13 @@ sf_tui_repaint() {
     fi
     remaining=$(( SF_PRESENT_PERMISSION_DEADLINE - SECONDS ))
     (( remaining >= 0 )) || remaining=0
-    if [[ $SF_PRESENT_PERMISSION_KIND == listed ]]; then
-      choices=$'1. [a]pprove\n2. approve for [t]his session\n3. [d]eny and continue ('"${remaining}s)"$'\n4. [s]top and discuss'
-    else
-      choices=$'1. [a]pprove\n2. [d]eny and continue ('"${remaining}s)"$'\n3. [s]top and discuss'
-    fi
+    labels=( approve '[a]pprove' approve_session 'approve for [t]his session'
+      deny "[d]eny and continue (${remaining}s)" stop '[s]top and discuss' )
+    sf_tui_permission_choices
+    for index in {1..${#reply}}; do
+      reply[index]="$index. $labels[$reply[index]]"
+    done
+    choices=${(F)reply}
     start=${#PREDISPLAY}
     PREDISPLAY+="$choices"$'\n'
     sf_tui_chrome $start ${#choices} permission

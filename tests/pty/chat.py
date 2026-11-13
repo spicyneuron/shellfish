@@ -250,7 +250,7 @@ def test_permission_decision_restores_draft():
         results = [record for record in records if record.get("type") == "tool_result"]
         assert len(results) == 1
         assert results[0]["exit_code"] == 126
-        assert results[0]["model_text"] == "sandbox access denied by user"
+        assert results[0]["model_text"].endswith("Reason: sandbox access denied by user\n</sandbox_notice>")
         assert results[0]["sandbox_access"] == "denied"
         users = [record for record in records if record.get("type") == "user"]
         assert len(users) == 1

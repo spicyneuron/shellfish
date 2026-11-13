@@ -429,26 +429,25 @@ sf_tui_input() {
   esac
 }
 
-# Choices match the prompt's numbering, which adds a session choice for listed access.
+# Digits follow the prompt's numbering; letters follow its brackets.
 sf_tui_permission_choice() {
-  local decision
-  if [[ $SF_PRESENT_PERMISSION_KIND == listed ]]; then
-    case $KEYS in
-      (a|1) decision=approve ;;
-      (t|2) decision=approve_session ;;
-      (d|3) decision=deny ;;
-      (s|4) sf_tui_interrupt; return ;;
-      *) sf_tui_hold_permission || zle reset-prompt; zle -R; return 0 ;;
-    esac
+  local decision=''
+  sf_tui_permission_choices
+  case $KEYS in
+    ([1-9]) decision=${reply[KEYS]-} ;;
+    (a) decision=approve ;;
+    (t) decision=approve_session ;;
+    (d) decision=deny ;;
+    (s) decision=stop ;;
+  esac
+  if [[ -z $decision ]] || (( ! ${reply[(Ie)$decision]} )); then
+    sf_tui_hold_permission || zle reset-prompt
+  elif [[ $decision == stop ]]; then
+    sf_tui_interrupt
+    return
   else
-    case $KEYS in
-      (a|1) decision=approve ;;
-      (d|2) decision=deny ;;
-      (s|3) sf_tui_interrupt; return ;;
-      *) sf_tui_hold_permission || zle reset-prompt; zle -R; return 0 ;;
-    esac
+    sf_tui_answer_permission "$decision" || zle reset-prompt
   fi
-  sf_tui_answer_permission "$decision" || zle reset-prompt
   zle -R
 }
 

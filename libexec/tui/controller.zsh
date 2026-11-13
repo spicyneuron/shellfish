@@ -142,7 +142,7 @@ sf_tui_apply() {
       sf_tui_safe "$5"
       reason=$REPLY
       SF_PRESENT_PERMISSION_TEXT="$preview"$'\nReason: '"$reason"
-      SF_PRESENT_PERMISSION_KIND=${7:-bypass}
+      SF_PRESENT_PERMISSION_KIND=$7
       [[ ${8-} != checking ]] || SF_PRESENT_PERMISSION_REVIEW='checking…'
       sf_tui_editor_permission open
       SF_PRESENT_STATE=permission
@@ -300,29 +300,28 @@ sf_tui_turn() {
   fi
 }
 
+# Send DECISION for the open request, stopping the turn if the reply fails.
+sf_tui_permission_reply() {
+  sf_tui_transport_reply "$SF_PRESENT_PERMISSION_ID" "$1" && return 0
+  sf_tui_transport_stop
+  sf_tui_editor_permission restore
+  sf_tui_permission_reset
+  sf_tui_stop 'cannot answer permission'
+  return 1
+}
+
 sf_tui_answer_permission() {
   local decision=$1
-  [[ $SF_PRESENT_STATE == permission && ( $decision == (approve|deny) ||
-    $decision == approve_session && $SF_PRESENT_PERMISSION_KIND == listed ) ]] || return 1
-  if ! sf_tui_transport_reply "$SF_PRESENT_PERMISSION_ID" "$decision"; then
-    sf_tui_transport_stop
-    sf_tui_editor_permission restore
-    sf_tui_permission_reset
-    sf_tui_stop 'cannot answer permission'
-    return 1
-  fi
+  sf_tui_permission_choices
+  [[ $SF_PRESENT_STATE == permission && $decision != stop ]] &&
+    (( ${reply[(Ie)$decision]} )) || return 1
+  sf_tui_permission_reply "$decision" || return 1
   sf_tui_permission_close
 }
 
 sf_tui_hold_permission() {
   (( ! SF_PRESENT_PERMISSION_HELD )) || return 0
-  if ! sf_tui_transport_reply "$SF_PRESENT_PERMISSION_ID" hold; then
-    sf_tui_transport_stop
-    sf_tui_editor_permission restore
-    sf_tui_permission_reset
-    sf_tui_stop 'cannot answer permission'
-    return 1
-  fi
+  sf_tui_permission_reply hold || return 1
   SF_PRESENT_PERMISSION_HELD=1
   SF_PRESENT_PERMISSION_AUTO=0
 }
