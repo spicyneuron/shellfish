@@ -111,7 +111,7 @@ assert_equal 'execution_end | call_2 | tool | shell | default |  | approved for 
 
 # A request shows its operation separately from the requested access.
 project live \
-  '{"type":"_tool_permission_request","id":"permission_1","tool":{"name":"shell","input":{"command":"ls","request_sandbox_access":{"read":["/a"],"reason":"look"}}},"reason":"look","timeout":120,"access":{"read":["/a"],"write":[],"domains":["example.com"]}}'
+  '{"type":"_tool_permission_request","id":"permission_1","tool":{"name":"shell","input":{"command":"ls"}},"reason":"look","timeout":120,"access":{"read":["/a"],"write":[],"domains":["example.com"]}}'
 assert_equal 'permission | permission_1 | shell | Operation:
 {"command":"ls"}
 Access:

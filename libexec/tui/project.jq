@@ -133,7 +133,7 @@ def event_actions($window; $drawn):
   # Bound operation and access separately so neither hides the other.
   elif .type == "_tool_permission_request" then
     (.access.unrestricted // false) as $bypass |
-    (.tool.input | del(.request_sandbox_access) | tojson |
+    (.tool.input | tojson |
       if length > 300 then .[0:300] + "…" else . end) as $operation |
     (if $bypass then "Unrestricted (this call only)"
      else [.access | to_entries[] | .key as $kind | .value[] | $kind + " " + .] |

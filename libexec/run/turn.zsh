@@ -179,12 +179,14 @@ sf_run_permission() {
   float permission_deadline=0 permission_auto_deadline=0
   (( permission_deadline = EPOCHREALTIME + SF_RUN[user_approval_timeout] ))
   integer permission_closed=$(( ! SF_RUN[jsonl] )) permission_hold=0 reviewing=0
+  # Seconds an untouched reviewer verdict waits; the client counts down the same.
+  integer grace=10
   local -A review
   (( SF_RUN[permission_count] += 1 ))
   permission_id="permission_$SF_RUN[permission_count]"
   [[ " $SF_RUN[lifecycles] " != *' permission_request '* ]] || reviewing=1
   sf_run_emit "$(jq -cn --arg id "$permission_id" --arg name "$SF_TOOL_PLAN[name]" \
-    --argjson input "$SF_TOOL_PLAN[input]" --arg reason "$SF_TOOL_PLAN[permission_reason]" \
+    --argjson input "$SF_TOOL_PLAN[execution_input]" --arg reason "$SF_TOOL_PLAN[permission_reason]" \
     --argjson access "$SF_TOOL_PLAN[access]" --argjson reviewing $reviewing \
     --argjson timeout "$SF_RUN[user_approval_timeout]" '
       {type:"_tool_permission_request",id:$id,tool:{name:$name,input:$input},
@@ -204,15 +206,15 @@ sf_run_permission() {
         permission_auto_reason=$review[reason]
         [[ $permission_auto != deny || -n $permission_auto_reason ]] ||
           permission_auto_reason='sandbox access denied by permission_request hook'
-        (( permission_auto_deadline = EPOCHREALTIME + 10 ))
+        (( permission_auto_deadline = EPOCHREALTIME + grace ))
         [[ -z $permission_auto ]] || (( permission_deadline =
           permission_deadline > permission_auto_deadline ? permission_deadline : permission_auto_deadline ))
         sf_run_permission_poll || true
         if (( reviewing )) && [[ -z $permission_decision && -z $permission_error ]]; then
           sf_run_emit "$(jq -cn --arg id "$permission_id" --arg decision "$permission_auto" \
-            --arg reason "$permission_auto_reason" --argjson held $permission_hold '
+            --arg reason "$permission_auto_reason" --argjson held $permission_hold --argjson grace $grace '
               {type:"_tool_permission_review",id:$id,decision:$decision,reason:$reason,
-               timeout:(if $decision == "" or $held == 1 then 0 else 10 end)}')" ||
+               timeout:(if $decision == "" or $held == 1 then 0 else $grace end)}')" ||
             permission_error='cannot emit permission review'
         fi
       fi
