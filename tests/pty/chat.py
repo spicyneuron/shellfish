@@ -36,6 +36,18 @@ while [[ ! -e ${SHELLFISH_SESSION:h}/permission-release ]]; do sleep 0.02; done
 def test_sandbox_updates_without_reload():
     with tempfile.TemporaryDirectory() as grant:
         session = Session(commands=["sandbox"])
+
+        # The header update can land after the rendered result.
+        def wait_grant(kind, value):
+            end = time.monotonic() + 3
+            while time.monotonic() < end:
+                records = [json.loads(line) for line in path.read_text().splitlines()]
+                grants = records[0]["profile"]["sandbox"]["tools"].get("shell", {})
+                if value in grants.get(kind, []):
+                    return records, grants
+                session.pump()
+            raise AssertionError(f"session header did not gain {kind} grant {value}")
+
         try:
             path, _ = session.wait_session_records(1)
             mark = len(session.output)
@@ -44,13 +56,7 @@ def test_sandbox_updates_without_reload():
             session.wait_ready(mark, timeout=5)
             assert "Project:" not in session.visible(mark)
             grant_path = str(Path(grant).resolve())
-            end = time.monotonic() + 3
-            while time.monotonic() < end:
-                records = [json.loads(line) for line in path.read_text().splitlines()]
-                if grant_path in records[0]["profile"]["sandbox"]["tools"].get("shell", {}).get("write", []):
-                    break
-                session.pump()
-            assert grant_path in records[0]["profile"]["sandbox"]["tools"]["shell"]["write"]
+            records, _ = wait_grant("write", grant_path)
             granted = f"The user added a session sandbox write grant for shell: {grant_path}"
             assert len(records) == 2
             result = records[1]
@@ -65,8 +71,7 @@ def test_sandbox_updates_without_reload():
             session.send(b"/sandbox shell +domain github.com\r")
             session.wait_after(mark, "Sandbox shell domain grant added", timeout=5)
             session.wait_ready(mark, timeout=5)
-            _, records = session.wait_session_records(3)
-            grants = records[0]["profile"]["sandbox"]["tools"]["shell"]
+            _, grants = wait_grant("domains", "github.com")
             assert grants["domains"] == ["github.com"]
             assert grants["write"] == [grant_path]
         finally:
