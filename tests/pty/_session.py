@@ -183,6 +183,30 @@ class Session:
         if token not in view(start):
             raise AssertionError(f"did not render new {token!r}\n{view(start)[-1500:]}")
 
+    def screen(self):
+        """Return the rendered screen text, or None without pyte."""
+        try:
+            import pyte
+        except ImportError:
+            return None
+        screen = pyte.Screen(COLUMNS, ROWS)
+        pyte.ByteStream(screen).feed(bytes(self.output))
+        return "\n".join(screen.display)
+
+    def wait_screen(self, start, token, timeout=3):
+        """Wait for TOKEN on the rendered screen.
+
+        zle rewrites only the changed part of a line, so a line's full text may
+        never appear in the output. Without pyte, search the output after START.
+        """
+        if self.screen() is None:
+            return self.wait_after(start, token, timeout)
+        end = time.monotonic() + timeout
+        while token not in self.screen() and time.monotonic() < end:
+            self.pump()
+        if token not in self.screen():
+            raise AssertionError(f"did not show {token!r}\n{self.screen()}")
+
     def wait_ready(self, start=0, timeout=3):
         end = time.monotonic() + timeout
         while time.monotonic() < end:

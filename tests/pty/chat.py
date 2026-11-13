@@ -301,7 +301,7 @@ print -r -u3 -- '{"action":"allow","reason":"ok"}'
                 assert pid_file.exists(), "review did not start while the prompt was open"
                 session.send(b"a")
             else:
-                session.wait_after(mark, "Reviewer: approve: ok")
+                session.wait_screen(mark, "Reviewer: approve: ok")
                 session.wait_after(mark, "applying in")
                 takeover = len(session.output)
                 session.send(b"x")
