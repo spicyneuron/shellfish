@@ -5,6 +5,7 @@ setopt no_aliases no_bg_nice no_multios pipe_fail
 (( $+functions[sf_scratch_directory] )) || source "$SF_ROOT/lib/scratch.zsh"
 (( $+functions[sf_process_isolated_command] )) || source "$SF_ROOT/lib/process.zsh"
 (( $+functions[sf_environment_load] )) || source "$SF_ROOT/lib/environment.zsh"
+(( $+functions[sf_profile_components] )) || source "$SF_ROOT/lib/profile.zsh"
 
 typeset -gA SF_PROVIDER=(directory '' error '' group_file '' pid '')
 typeset -ga SF_PROVIDER_PARTIAL_EVENTS=()
@@ -14,33 +15,29 @@ typeset -gA SF_PROVIDER_PLAN=()
 
 # One projection of the transcript on stdin: the provider request and command.
 sf_provider_project() {
-  local model=${1:-null} header profile tools
+  local model=${1:-null} header
+  SF_PROVIDER[error]='cannot prepare provider request'
   IFS= read -r header || return 1
-  profile=$(sf_jq -ce --arg share "$SF_SHARE" --arg home "${HOME:+${HOME:A}}" '
+  header=$(sf_jq -ce --arg share "$SF_SHARE" --arg home "${HOME:+${HOME:A}}" '
     include "lib/profile";
-    select(canonical_session_header) | header_expand($share; $home) |
-    .profile | .commands=[] | .hooks=[]
+    select(canonical_session_header) | header_expand($share; $home)
   ' <<<"$header") || return 1
-  (( $+functions[sf_profile_components] )) || source "$SF_ROOT/lib/profile.zsh"
-  sf_profile_components "$profile" || { REPLY=$SF_PROFILE_ERROR; return 1; }
-  tools=$(jq -c '.tools' <<<"$REPLY") || return 1
-  { print -r -- "$header"; cat; } |
-    sf_jq_fields -sc --argjson tools "$tools" --argjson model "$model" --arg share "$SF_SHARE" \
-      --arg home "${HOME:+${HOME:A}}" '
+  # Only tools reach the request, so commands and hooks are not loaded.
+  sf_profile_components "$(jq -c '.profile | .commands=[] | .hooks=[]' <<<"$header")" || {
+    SF_PROVIDER[error]=$SF_PROFILE_ERROR
+    return 1
+  }
+  sf_jq_fields -sc --argjson header "$header" --argjson components "$REPLY" \
+      --argjson model "$model" '
     include "lib/fields";
-    include "lib/profile";
     include "lib/session";
     include "lib/provider";
-    select(length >= 1) |
-    select(.[0] | canonical_session_header) |
-    . as $records |
-    ($records[0] | header_expand($share; $home) |
-      if $model == null then . else .model = $model end) as $header |
+    ($header | if $model == null then . else .model = $model end) as $header |
     provider_request(
       $header.model;
       ($header.profile.system[0].text // "");
-      ($records[1:] | session_messages);
-      model_tools($header.profile; $tools)
+      session_messages;
+      model_tools($header.profile; $components.tools)
     ) as $request |
     entry("request"; $request | tojson),
     entry("cwd"; $header.cwd),

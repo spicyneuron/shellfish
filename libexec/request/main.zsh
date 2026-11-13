@@ -33,7 +33,6 @@ sf_request_main() {
 
   source "$SF_ROOT/lib/provider.zsh"
   if (( ${#models} )); then
-    source "$SF_ROOT/lib/profile.zsh"
     sf_profile_model_refs run "${models[@]}" || {
       local resolve_status=$?
       sf_die "$SF_PROFILE_ERROR"
@@ -41,7 +40,7 @@ sf_request_main() {
     }
     model=$REPLY
   fi
-  sf_provider_project "$model" || { sf_die 'cannot prepare provider request'; return 1; }
+  sf_provider_project "$model" || { sf_die "$SF_PROVIDER[error]"; return 1; }
   trap 'sf_request_abort 130' INT
   trap 'sf_request_abort 129' HUP
   trap 'sf_request_abort 143' TERM

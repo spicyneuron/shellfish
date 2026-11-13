@@ -284,12 +284,14 @@ jq -e -s --slurpfile original "$tools_source" '
 ' "$tools_child" >/dev/null || fail 'tool compaction changed protected content or state'
 
 # Already-cleared results and sessions without older results are no-ops.
-for unchanged in "$tools_child" "$tmp/single.jsonl"; do
+for unchanged in "$tools_child" "$tmp/single.jsonl" "$tmp/empty.jsonl"; do
   SHELLFISH_EXECUTABLE="$compact_shellfish" SHELLFISH_SESSION="$unchanged" \
     SHELLFISH_TURN_STATE="$tmp" zsh -f "$tools_command" \
     3>"$compact_control" 2>"$compact_display" </dev/null || fail 'tool compaction no-op failed'
   [[ -z $(actions) ]] || fail 'tool compaction created an unchanged child'
 done
+[[ $(<"$compact_display") == 'Nothing to compact yet.' ]] ||
+  fail 'tool compaction reported an empty session as a failure'
 
 # Exercise command routing, request projection, handoff, and continuation together.
 typeset integration_source="$tmp/integration.jsonl" integration_child

@@ -1,5 +1,12 @@
 # Shared boundaries and child-session handoff for bundled compaction commands.
 
+# Report MESSAGE and finish without a handoff, keeping the source session.
+sf_compact_fail() {
+  print -ru2 -- "$1"
+  exit 0
+}
+
+# {start, cut}: the first turn's index and the first recent turn's index.
 sf_compact_split() {
   jq -ces '
     . as $records |
@@ -20,15 +27,12 @@ sf_compact_split() {
        else [] end) | map(utf8bytelength) | add // 0;
     [to_entries[] | select(.value.type == "user") | .key | turn_start(.)] as $turns |
     select(($turns | length) > 0 and any(.[]; .type == "assistant")) |
-    (reduce range(($turns | length) - 1; -1; -1) as $index
-      ({keep:(($turns | length) - 1),bytes:0,full:false};
-      if .full then . else
-        ($records[$turns[$index]:$turns[$index + 1]] | map(text_bytes) | add // 0) as $size |
-        if .bytes + $size <= 81920 or $index == ($turns | length) - 1 then
-          .keep=$index | .bytes += $size
-        else .full=true end
-      end)) as $suffix |
-    {start:$turns[0],cut:$turns[$suffix.keep],older_turns:$suffix.keep}
+    [range($turns | length) as $index |
+      $records[$turns[$index]:$turns[$index + 1]] | map(text_bytes) | add // 0] as $sizes |
+    # Keep the newest turns that fit the budget, and always the latest turn.
+    (first(range(($sizes | length) - 1; 0; -1) as $index |
+      select(($sizes[$index - 1:] | add) > 81920) | $index) // 0) as $keep |
+    {start:$turns[0],cut:$turns[$keep]}
   ' "$SHELLFISH_SESSION"
 }
 

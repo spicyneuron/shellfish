@@ -150,9 +150,11 @@ for broken in missing invalid; do
     print -r -- '{}' >"$tmp/tools/alpha/manifest.json"
   fi
   if SF_TEST_PROVIDER_REQUEST="$tmp/broken-request.json" zsh -f "$entry" request \
-      <"$tmp/broken-tools.jsonl" >/dev/null 2>&1; then
+      <"$tmp/broken-tools.jsonl" >/dev/null 2>"$tmp/broken.err"; then
     fail "request accepted $broken tool definitions"
   fi
+  [[ $broken == invalid ]] || grep -q '/missing/tool' "$tmp/broken.err" ||
+    fail 'request hid the broken tool reference'
   [[ ! -e $tmp/broken-request.json ]] || fail 'broken tools invoked the provider'
 done
 
