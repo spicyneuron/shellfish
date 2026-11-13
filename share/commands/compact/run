@@ -69,7 +69,7 @@ if ! jq -ce -s --argjson split "$split" --arg summary "$summary" '
     (if $saved == null then
       {type:"state_update",name:"compact/first_user",value:$first} else empty end),
     {type:"hook_result",lifecycle:"user_prompt_submit",id:$id,
-      user_text:("Compacted conversation\n" + $context),
+      user_text:("**Compacted conversation**\n" + $summary),
       model_text:("<context script=\"compact\">\n" + $context + "\n</context>")},
     $records[$split.cut:][]
   ' "$SHELLFISH_SESSION" >"$transcript"; then

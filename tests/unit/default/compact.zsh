@@ -116,6 +116,8 @@ jq -es --slurpfile source "$compact_source" '
   ([.[] | select(.type == "state_update" and .name == "compact/first_user")] |
     length == 1 and .[0].value == $source[3].content[0].text) and
   (.[($first - 4)].model_text | contains($source[3].content[0].text)) and
+  (.[($first - 4)].user_text | contains("Older decisions") and
+    (contains($source[3].content[0].text) | not)) and
   (.[($first - 3):] ==
     ($source[10:] | map(if .type == "assistant" then del(.usage) else . end))) and
   all(.[] | select(.type == "assistant"); has("usage") | not)
