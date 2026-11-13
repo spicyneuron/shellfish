@@ -42,6 +42,8 @@ def tool_plan($profile; $tools; $call; $turn; $max_capture):
   $call.id as $id | $call.name as $name | $call.input as $input |
   [$tools[] | select(.name == $name)][0] as $tool |
   ($tool.manifest // {}) as $manifest |
+  # Hooks and the tool see the operation without the model's access request.
+  ($input | del(.request_sandbox_access)) as $operation |
   ($profile.sandbox.enabled and ($manifest.sandbox // false)) as $sandboxable |
   (if $tool == null or ($sandboxable | not) then {decision:"none"}
    else $input.request_sandbox_access |
@@ -51,7 +53,7 @@ def tool_plan($profile; $tools; $call; $turn; $max_capture):
      else {decision:"request",reason,access} end
    end) as $permission |
   {id:$id, name:$name, input:$input,
-   request:{turn_id:$turn,tool_name:$name,tool_use_id:$id,tool_input:$input},
+   request:{turn_id:$turn,tool_name:$name,tool_use_id:$id,tool_input:$operation},
    component:{template:$manifest.user_text, input:$input,
      draft:({type:"_draft",id:$id,name:$name,
        user_text:render_template($manifest.user_text; {input:$input})} +
@@ -63,7 +65,7 @@ def tool_plan($profile; $tools; $call; $turn; $max_capture):
    executable:($tool.command // ""),
    environment:(($tool.manifest.environment // []) | join(" ")),
    max_capture:(if $manifest.max_capture_kb then $manifest.max_capture_kb * 1024 else $max_capture end),
-   execution_input:($input | del(.request_sandbox_access)),
+   execution_input:$operation,
    sandbox:($sandboxable and ($permission.access.unrestricted // false | not)),
    read_paths:($profile.sandbox.tools[$name].read // [] | join("\n")),
    write_paths:($profile.sandbox.tools[$name].write // [] | join("\n")),

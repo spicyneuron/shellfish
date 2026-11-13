@@ -77,7 +77,8 @@ for ref; do
       SHELLFISH_EXECUTABLE=$root/bin/shellfish SHELLFISH_SESSION=$session \
       SHELLFISH_TURN_STATE=$tmp/state SHELLFISH_TURN_ID=1 \
       zsh -f "$root/share/hooks/sandbox/approver/run" shell call_2 \
-      <<<"{\"tool_input\":$input}" 3>"$control" 2>/dev/null
+      <<<"$(jq -c '{tool_input:{command}, sandbox_access:.request_sandbox_access}' <<<"$input")" \
+      3>"$control" 2>/dev/null
     # Columns: match, model, case, authorized, injected, action, expected.
     row=$(jq -rs --argjson case "$case" --arg label "$label" '
       def percent: if . == null then "-" else . * 100 | round | tostring + "%" end;

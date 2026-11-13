@@ -94,7 +94,7 @@ A hook manifest declares its lifecycle with `on`, such as `{"on":"stop"}`. An op
 | `post_tool_use` | Add context after a durable tool result | `NAME ID` | Tool response JSON | None |
 | `stop` | Check whether a turn may finish | `REQUEST_COUNT` | Final assistant text | `deny` |
 
-`NAME` and `ID` are the tool name and call ID. A tool request contains `turn_id`, `tool_name`, `tool_use_id`, and `tool_input`. A tool response adds `tool_response` with `stdout`, `stderr`, and `exit_code`. `REQUEST_COUNT` is the number of provider requests made in the turn.
+`NAME` and `ID` are the tool name and call ID. A tool request contains `turn_id`, `tool_name`, `tool_use_id`, and `tool_input`, the input the tool receives. A permission request adds `sandbox_access` with the agent's `reason` and either `unrestricted: true` or the `read`, `write`, and `domains` it needs beyond existing grants, with paths resolved. A tool response adds `tool_response` with `stdout`, `stderr`, and `exit_code`. `REQUEST_COUNT` is the number of provider requests made in the turn.
 
 Hooks run in profile order. Without an action, the next hook runs. A successful action ends the list. Hook output settles on exit 0, and a nonzero exit fails the operation, except that permission review failures defer to the user. Context reaches the model grouped by lifecycle and script name.
 

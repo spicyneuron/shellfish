@@ -129,8 +129,9 @@ review_decide() {
   permission_defer 'Permission review could not read the active turn.'
 
 request=$(jq -ce --argjson turn "$SHELLFISH_TURN_ID" --arg name "$1" --arg id "$2" '
-  select(type == "object" and (.tool_input | type == "object")) |
-  {turn_id:$turn,tool:{name:$name,id:$id,input:.tool_input}}
+  select(type == "object" and (.tool_input | type == "object") and
+    (.sandbox_access | type == "object")) |
+  {turn_id:$turn,tool:{name:$name,id:$id,input:.tool_input,access:.sandbox_access}}
 ' 2>/dev/null) || permission_defer 'Permission review received an invalid tool request.'
 state_name=$(jq -r --argjson turn "$SHELLFISH_TURN_ID" '
   "permissions/\($turn)/\(.tool.id)"
@@ -223,7 +224,7 @@ context=$(jq -ces --argjson request "$request" --arg system "$system" \
   } | with_entries(select(.value != null)) + {
     recent_timeline:[],
     target_tool_call:{type:"tool_call",id:$request.tool.id,
-      name:$request.tool.name,input:$request.tool.input}
+      name:$request.tool.name,input:$request.tool.input,sandbox_access:$request.tool.access}
   }) as $pinned |
   (($system | utf8bytelength) + ($pinned | bytes)) as $size |
   if $size > $budget then "" | halt_error(3) else . end |

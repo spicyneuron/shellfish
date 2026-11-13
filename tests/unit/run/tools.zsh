@@ -206,9 +206,9 @@ jq -e '.tools[] | select(.name == "shell").input_schema |
   .properties.request_sandbox_access.properties.unrestricted.type == "boolean" and
   (.required | index("request_sandbox_access") == null)' \
   "$tmp/bypass-request.json" >/dev/null || fail 'model schema lacks the access field'
-jq -e '. == {turn_id:1,tool_name:"shell",tool_use_id:"call_1",tool_input:{
-  command:"print -rn -- approved",request_sandbox_access:{unrestricted:true,
-  reason:"Required by the test fixture"}}}' \
+jq -e '. == {turn_id:1,tool_name:"shell",tool_use_id:"call_1",
+  tool_input:{command:"print -rn -- approved"},
+  sandbox_access:{unrestricted:true,reason:"Required by the test fixture"}}' \
   "$permission_input" >/dev/null || fail 'permission hook received the wrong request'
 jq -eRn '
   [inputs | fromjson] as $events |
@@ -663,6 +663,20 @@ jq -eRn '[inputs | fromjson] as $events |
 jq -e '.messages | any(.type == "tool_result" and
   (.content | contains("This access is granted for the rest of this session")))' \
   "$tmp/kept-request.json" >/dev/null || fail 'the model did not receive the session access notice'
+
+# Review hooks receive the resolved access still needed and the operation alone.
+rm -f -- "$permission_input"
+typeset review_session="$tmp/grant-review.jsonl"
+SF_TEST_PROFILE=$(jq -c --arg dir "$granted" --arg hook "$permission" '
+  .hooks=[$hook] | .sandbox.tools.shell={read:[],write:[$dir],domains:[]}
+' <<<"$SF_TEST_PROFILE") sf_test_session "$review_session"
+SF_TEST_PROVIDER_TOOL_CALL=1 SF_TEST_PROVIDER_TOOL_EXTRA=$(jq -cn --arg dir "$granted" \
+  '{request_sandbox_access:{read:["notes",$dir],reason:"Read the notes"}}') \
+  sf_test_run review "$review_session" >"$stream" || fail 'reviewed access turn failed'
+jq -e --arg notes "$(pwd -P)/notes" '
+  .tool_input == {command:"true"} and
+  .sandbox_access == {read:[$notes],write:[],domains:[],reason:"Read the notes"}
+' "$permission_input" >/dev/null || fail 'review hook received unresolved access'
 
 # A partially covered request asks only for new access, not path-prefix lookalikes.
 grant_input=$(jq -cn --arg dir "$granted" '{request_sandbox_access:{

@@ -47,7 +47,7 @@ sf_session_append "$session" '{"type":"hook_result","lifecycle":"post_tool_use",
 sf_session_append "$session" '{"type":"assistant","stop":"tool_calls","content":[{"type":"reasoning","text":"private","opaque":{"secret":"value"}},{"type":"text","text":"I will run it."},{"type":"tool_call","id":"call_7","name":"shell","input":{"command":"setup","request_sandbox_access":{"unrestricted":true,"reason":"needed"}}}]}'
 sf_session_append "$session" '{"type":"hook_result","lifecycle":"permission_request","id":"5","model_text":"permission context"}'
 assert_canonical_session "$session"
-request='{"tool_input":{"command":"setup","request_sandbox_access":{"unrestricted":true,"reason":"needed"}}}'
+request='{"tool_input":{"command":"setup"},"sandbox_access":{"unrestricted":true,"reason":"needed"}}'
 
 # The decision goes to fd 3 and its reason to the user on stderr.
 run_review() {
@@ -78,7 +78,7 @@ jq -e '.on == "permission_request" and .user_preview_lines == "full"' \
   "$hook/manifest.json" >/dev/null &&
   assert_equal 'Approved: Explicitly authorized.' "$(<"$tmp/user")" ||
   fail 'permission review hid its decision reason'
-jq -e -s --arg tool_input "$(jq -c '.tool_input' <<<"$request")" \
+jq -e -s --argjson request "$request" \
     --slurpfile policy "$hook/policy.json" '
   $policy[0] as $policy |
   .[0].profile.system[0].text as $prompt |
@@ -102,7 +102,8 @@ jq -e -s --arg tool_input "$(jq -c '.tool_input' <<<"$request")" \
       model_text:"<context script=\"project/instructions\">\nstartup constraint\n</context>"},
     {type:"user",content:[{type:"text",text:"opening request"}]}
   ] and
-  $context.target_tool_call == {type:"tool_call",id:"call_7",name:"shell",input:($tool_input | fromjson)} and
+  $context.target_tool_call == {type:"tool_call",id:"call_7",name:"shell",
+    input:$request.tool_input,sandbox_access:$request.sandbox_access} and
   $context.latest_user_message == {type:"user",content:[{type:"text",text:"run the local setup"}]} and
   ($context.recent_timeline | map(.type)) ==
     ["assistant","tool_result","hook_result","assistant","hook_result"] and
@@ -114,7 +115,8 @@ jq -e -s --arg tool_input "$(jq -c '.tool_input' <<<"$request")" \
   $context.recent_timeline[2] == {type:"hook_result",lifecycle:"post_tool_use",id:"3",
     model_text:"inspection constraint"} and
   $context.recent_timeline[3].content == [
-    {type:"text",text:"I will run it."},$context.target_tool_call] and
+    {type:"text",text:"I will run it."},{type:"tool_call",id:"call_7",name:"shell",
+      input:{command:"setup",request_sandbox_access:{unrestricted:true,reason:"needed"}}}] and
   $context.recent_timeline[4] == {type:"hook_result",lifecycle:"permission_request",id:"5",
     model_text:"permission context"} and
   ($context | tostring | contains("retry constraint") | not) and

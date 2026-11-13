@@ -181,10 +181,16 @@ sf_run_permission() {
   integer permission_closed=$(( ! SF_RUN[jsonl] )) permission_hold=0 reviewing=0
   # Seconds an untouched reviewer verdict waits; the client counts down the same.
   integer grace=10
+  local request
   local -A review
   (( SF_RUN[permission_count] += 1 ))
   permission_id="permission_$SF_RUN[permission_count]"
   [[ " $SF_RUN[lifecycles] " != *' permission_request '* ]] || reviewing=1
+  # Reviewers judge the same resolved access the client shows.
+  request=$(jq -c --argjson access "$SF_TOOL_PLAN[access]" \
+    --arg reason "$SF_TOOL_PLAN[permission_reason]" \
+    '.sandbox_access = $access + {reason:$reason}' <<<"$SF_TOOL_PLAN[request]") ||
+    { REPLY='cannot prepare permission request'; return 1; }
   sf_run_emit "$(jq -cn --arg id "$permission_id" --arg name "$SF_TOOL_PLAN[name]" \
     --argjson input "$SF_TOOL_PLAN[execution_input]" --arg reason "$SF_TOOL_PLAN[permission_reason]" \
     --argjson access "$SF_TOOL_PLAN[access]" --argjson reviewing $reviewing \
@@ -194,7 +200,7 @@ sf_run_permission() {
   {
     if sf_run_permission_poll; then
       if sf_run_hooks --poll sf_run_permission_poll "$session" permission_request \
-          "$SF_TOOL_PLAN[request]" "$turn_state" "$SF_TOOL_PLAN[name]" "$SF_TOOL_PLAN[id]"; then
+          "$request" "$turn_state" "$SF_TOOL_PLAN[name]" "$SF_TOOL_PLAN[id]"; then
         review=( "${reply[@]}" )
       elif [[ -z $permission_decision && -z $permission_error ]]; then
         (( ! SF_RUN[signal_status] && ! SF_RUN[write_failed] )) || permission_error=$SF_RUN_HOOK_ERROR
