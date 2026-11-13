@@ -41,7 +41,7 @@ sf_request_main() {
     }
     model=$REPLY
   fi
-  sf_provider_project '[]' "$model" || { sf_die 'cannot prepare provider request'; return 1; }
+  sf_provider_project "$model" || { sf_die 'cannot prepare provider request'; return 1; }
   trap 'sf_request_abort 130' INT
   trap 'sf_request_abort 129' HUP
   trap 'sf_request_abort 143' TERM

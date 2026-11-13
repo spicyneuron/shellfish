@@ -96,6 +96,8 @@ shellfish request -m work -m high < session.jsonl
 
 Without `-m`, the request uses the transcript's frozen model. Explicit model items merge with each other and replace the complete model for that request only, rather than merging into the transcript's model. References follow the same lookup rules as session creation.
 
+Requests include the tool definitions selected by the transcript's header, using current manifests just like normal turns. Returned tool calls are data only and are never executed. For tool-free inference, supply a tool-free header. Commands and hooks are not loaded or run.
+
 ## Decisions
 
 A decision asks typed questions about one input and returns a calibrated answer to each, without a conversation or tool calls. Hooks and scripts use `shellfish decide -m REF|JSON` with a decision on stdin. A model is required, and its provider must support decisions.

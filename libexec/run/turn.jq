@@ -8,24 +8,6 @@ include "lib/profile";
 include "lib/session";
 include "lib/provider";
 
-# Model-facing tool definitions, with the sandbox-bypass fields a call may use.
-def model_tools($profile; $tools):
-  [$tools[] |
-    .manifest as $manifest |
-    (($profile.sandbox.enabled and $manifest.sandbox and
-      ($manifest.allow_sandbox_bypass // false))) as $bypass |
-    {name,description:($manifest.description +
-      if $profile.sandbox.enabled and $manifest.sandbox
-      then "\n\nThis tool runs under its package sandbox policy."
-      else "\n\nSandboxing is disabled; this tool runs with the current user permissions." end),
-     input_schema:($manifest.input_schema |
-       if $bypass then
-         .properties.request_sandbox_bypass={type:"boolean",
-           description:"Set true only to request approval to run this call outside the sandbox. Requires sandbox_bypass_reason. Keep each bypassed call to one logical operation so each approval is easy to review."} |
-         .properties.sandbox_bypass_reason={type:"string",
-           description:"Why this call must run outside the sandbox. Only valid with request_sandbox_bypass: true."}
-       else . end)}];
-
 # Everything execution and settlement need for one call.
 def tool_plan($profile; $tools; $call; $turn; $max_capture):
   $call.id as $id | $call.name as $name | $call.input as $input |

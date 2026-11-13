@@ -30,7 +30,7 @@ jq -e '
   .content == [{type:"text",text:"composed request\n"}]
 ' <<<"$response" >/dev/null || fail 'request produced the wrong response'
 jq -e '.tools == [] and .messages[-1].content[0].text == "composed request"' \
-  "$tmp/request.json" >/dev/null || fail 'request exposed unavailable tools'
+  "$tmp/request.json" >/dev/null || fail 'tool-free request included tools'
 jq -e '.config == {example:{paths:["./data","~/data","@data"],values:[null,false,2]}} and
   .request == {model:"fake-model"}' "$tmp/request.json" >/dev/null ||
   fail 'provider configuration was changed or mixed with provider parameters'
@@ -82,6 +82,78 @@ for invalid_model in missing '{"request":{"model":"incomplete"}}' '{' \
     fail "request accepted invalid model: $invalid_model"
   fi
   [[ ! -e $tmp/rejected-request.json ]] || fail 'invalid model invoked a provider'
+done
+
+# Standalone and turn requests construct the same tools from frozen references.
+typeset tool_session="$tmp/tool-session.jsonl" tool_request="$tmp/tool-request.jsonl"
+mkdir -p "$tmp/tools/alpha" "$tmp/tools/beta"
+for name in alpha beta; do
+  cat >"$tmp/tools/$name/run" <<'ZSH'
+#!/usr/bin/env zsh
+print -r -- ran >"$SF_TEST_TOOL_MARKER"
+ZSH
+  chmod +x "$tmp/tools/$name/run"
+  jq -cn --arg name "$name" '
+    {description:("Describe " + $name),
+     input_schema:{type:"object",properties:{path:{type:"string"}}},
+     sandbox:($name == "alpha"),allow_sandbox_bypass:($name == "alpha")}
+  ' >"$tmp/tools/$name/manifest.json"
+done
+head -n 1 "$session" | jq -c --arg root "$tmp/tools/" '
+  .profile.tools=[$root + "beta", $root + "alpha"] |
+  .profile.system=[{text:"Frozen system instructions"}] | .profile.sandbox.enabled=true
+' >"$tool_session"
+SF_TEST_PROVIDER_DELAY=0 SF_TEST_PROVIDER_REQUEST="$tmp/turn-request.json" \
+  sf_test_run hello "$tool_session" >"$tmp/turn.stream"
+sed '$d' "$tool_session" | jq -c '
+  if .type == "session" then
+    .profile.commands=["/missing/command"] | .profile.hooks=["/missing/hook"]
+  else . end
+' >"$tool_request"
+typeset tool_digest=$(shasum <"$tool_request")
+SF_TEST_PROVIDER_DELAY=0 SF_TEST_PROVIDER_REQUEST="$tmp/standalone-request.json" \
+  zsh -f "$entry" request <"$tool_request" >/dev/null
+assert_equal "$(jq -Sc . "$tmp/turn-request.json")" \
+  "$(jq -Sc . "$tmp/standalone-request.json")"
+jq -e '
+  [.tools[].name] == ["beta","alpha"] and
+  (.tools[0].input_schema.properties | has("request_sandbox_bypass") | not) and
+  .tools[1].input_schema.properties.request_sandbox_bypass.type == "boolean" and
+  .tools[1].input_schema.properties.sandbox_bypass_reason.type == "string"
+' "$tmp/standalone-request.json" >/dev/null || fail 'request changed tool order or bypass fields'
+assert_equal "$tool_digest" "$(shasum <"$tool_request")"
+
+# Manifests remain live, without loading the current profile or its system files.
+jq '.description="Updated alpha"' "$tmp/tools/alpha/manifest.json" >"$tmp/updated.json"
+mv "$tmp/updated.json" "$tmp/tools/alpha/manifest.json"
+SF_TEST_PROVIDER_DELAY=0 SF_TEST_PROVIDER_REQUEST="$tmp/live-request.json" \
+  zsh -f "$entry" request <"$tool_request" >/dev/null
+jq -e '.system == "Frozen system instructions" and
+  (.tools[1].description | startswith("Updated alpha\n"))' \
+  "$tmp/live-request.json" >/dev/null || fail 'request did not use the frozen profile and live manifests'
+
+# A returned call remains data: no execution, follow-up inference, or persistence.
+response=$(SF_TEST_PROVIDER_DELAY=0 SF_TEST_PROVIDER_TOOL_CALL=1 SF_TEST_PROVIDER_TOOL_NAME=alpha \
+  SF_TEST_TOOL_MARKER="$tmp/tool-ran" zsh -f "$entry" request <"$tool_request")
+jq -e '.stop == "tool_calls" and any(.content[]; .type == "tool_call")' \
+  <<<"$response" >/dev/null || fail 'request did not return inert tool calls'
+[[ ! -e $tmp/tool-ran ]] || fail 'request executed a tool'
+assert_equal "$tool_digest" "$(shasum <"$tool_request")"
+
+# Unavailable or invalid selected tools fail before invoking the provider.
+for broken in missing invalid; do
+  if [[ $broken == missing ]]; then
+    jq -c 'if .type == "session" then .profile.tools=["/missing/tool"] else . end' \
+      "$tool_request" >"$tmp/broken-tools.jsonl"
+  else
+    cp "$tool_request" "$tmp/broken-tools.jsonl"
+    print -r -- '{}' >"$tmp/tools/alpha/manifest.json"
+  fi
+  if SF_TEST_PROVIDER_REQUEST="$tmp/broken-request.json" zsh -f "$entry" request \
+      <"$tmp/broken-tools.jsonl" >/dev/null 2>&1; then
+    fail "request accepted $broken tool definitions"
+  fi
+  [[ ! -e $tmp/broken-request.json ]] || fail 'broken tools invoked the provider'
 done
 
 # Omitted provider configuration stays absent from the request.

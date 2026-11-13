@@ -14,8 +14,18 @@ typeset -gA SF_PROVIDER_PLAN=()
 
 # One projection of the transcript on stdin: the provider request and command.
 sf_provider_project() {
-  local tools=$1 model=${2:-null}
-  sf_jq_fields -sc --argjson tools "$tools" --argjson model "$model" --arg share "$SF_SHARE" \
+  local model=${1:-null} header profile tools
+  IFS= read -r header || return 1
+  profile=$(sf_jq -ce --arg share "$SF_SHARE" --arg home "${HOME:+${HOME:A}}" '
+    include "lib/profile";
+    select(canonical_session_header) | header_expand($share; $home) |
+    .profile | .commands=[] | .hooks=[]
+  ' <<<"$header") || return 1
+  (( $+functions[sf_profile_components] )) || source "$SF_ROOT/lib/profile.zsh"
+  sf_profile_components "$profile" || { REPLY=$SF_PROFILE_ERROR; return 1; }
+  tools=$(jq -c '.tools' <<<"$REPLY") || return 1
+  { print -r -- "$header"; cat; } |
+    sf_jq_fields -sc --argjson tools "$tools" --argjson model "$model" --arg share "$SF_SHARE" \
       --arg home "${HOME:+${HOME:A}}" '
     include "lib/fields";
     include "lib/profile";
@@ -30,7 +40,7 @@ sf_provider_project() {
       $header.model;
       ($header.profile.system[0].text // "");
       ($records[1:] | session_messages);
-      $tools
+      model_tools($header.profile; $tools)
     ) as $request |
     entry("request"; $request | tojson),
     entry("cwd"; $header.cwd),
