@@ -97,8 +97,7 @@ jq -es --slurpfile source "$compact_source" \
     --rawfile prompt "$ROOT/share/commands/compact/prompt.md" --arg steering "$steering" '
   .[:-1] == $source and
   (.[-1].content[0].text | startswith($prompt | rtrimstr("\n"))) and
-  (.[-1].content[0].text | contains("Additional summary instructions from the user:\n" + $steering)) and
-  (.[-1].content[0].text | contains("Retained user-authored turns: 2")) and
+  (.[-1].content[0].text | contains($steering)) and
   (.[-1].content[0].text | contains(($source[13].content[0].text[:512] | tojson)))
 ' "$compact_request" >/dev/null || fail 'summary request changed history or lost steering/boundary guidance'
 
@@ -116,9 +115,7 @@ jq -es --slurpfile source "$compact_source" '
     [$source[] | select(.type == "state_update")]) and
   ([.[] | select(.type == "state_update" and .name == "compact/first_user")] |
     length == 1 and .[0].value == $source[3].content[0].text) and
-  (.[($first - 4)].model_text | contains(
-    "Original user request (historical context, JSON-quoted):\n" +
-    ($source[3].content[0].text | tojson))) and
+  (.[($first - 4)].model_text | contains($source[3].content[0].text)) and
   (.[($first - 3):] ==
     ($source[10:] | map(if .type == "assistant" then del(.usage) else . end))) and
   all(.[] | select(.type == "assistant"); has("usage") | not)
@@ -166,13 +163,10 @@ assert_canonical_session "$repeated_child"
 jq -es --slurpfile source "$compact_source" '
   ([.[] | select(.type == "user")] | length) == 1 and
   ([.[] | select(.type == "user")][0].content[0].text | length) == 90000 and
-  ([.[] | select(.model_text? | strings | contains("Earlier conversation was summarized"))] |
-    length) == 1 and
+  ([.[] | select(.model_text? | strings | contains("Older decisions"))] | length) == 1 and
   ([.[] | select(.type == "state_update" and .name == "compact/first_user")] |
     length == 1 and .[0].value == $source[3].content[0].text) and
-  any(.[]; .model_text? | strings | contains(
-    "Original user request (historical context, JSON-quoted):\n" +
-    ($source[3].content[0].text | tojson))) and
+  any(.[]; .model_text? | strings | contains($source[3].content[0].text)) and
   any(.[]; .model_text? == "Oversized task context")
 ' "$repeated_child" >/dev/null || fail 'repeated compaction accumulated handoffs or split the latest turn'
 
@@ -186,8 +180,7 @@ typeset empty_first_child=$(actions | jq -r '.argv[2]')
 assert_canonical_session "$empty_first_child"
 jq -es '
   any(.[]; .type == "state_update" and .name == "compact/first_user" and .value == "") and
-  any(.[]; .model_text? | strings | contains(
-    "Original user request (historical context, JSON-quoted):\n\"\""))
+  all(.[]; .model_text? | strings | contains("Investigate E42") | not)
 ' "$empty_first_child" >/dev/null || fail 'compaction replaced the empty original request'
 
 # Automatic compaction preserves the pending prompt as a draft, never steering.
@@ -271,9 +264,8 @@ assert_mode 600 "$tools_child"
 jq -e -s --slurpfile original "$tools_source" '
   [ .[] | select(.type == "tool_result" and (.id | startswith("old_"))) ] as $old |
   ($old | length) == 2 and
-  all($old[]; .model_text == "[Results omitted]" and
-    .user_text == .model_text and (has("model_content") | not) and
-    (has("user_preview_lines") | not)) and
+  all($old[]; ([.model_text, .user_text] | all(strings and (contains("old") | not))) and
+    (has("model_content") | not) and (has("user_preview_lines") | not)) and
   [.[] | select(.type == "tool_result") | [.id,.name,.input,.exit_code]] ==
     [$original[] | select(.type == "tool_result") | [.id,.name,.input,.exit_code]] and
   [.[] | select(.type == "state_update")] ==

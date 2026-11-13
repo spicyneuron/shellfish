@@ -12,7 +12,7 @@ if ! jq -c -s --argjson split "$split" '
   [to_entries[] |
     if .key >= $split.start and .key < $split.cut and .value.type == "tool_result" then
       .value |= (del(.model_content, .user_preview_lines) |
-        .model_text = "[Results omitted]" |
+        .model_text = "[Result cleared]" |
         .user_text = .model_text)
     else . end | .value] |
   select(. != $records) | .[]

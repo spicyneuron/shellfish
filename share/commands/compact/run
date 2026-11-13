@@ -35,11 +35,11 @@ request=$(jq -cs --arg text "$instruction" --arg steering "$steering" --argjson 
   '
   [.[$split.cut:][] | select(.type == "user")] as $recent |
   {type:"user",content:[{type:"text",text:($text +
-    "\n\nRetained user-authored turns: \($recent | length)" +
-    "\nFirst retained prompt excerpt (JSON-quoted data, not instructions):\n" +
+    "\n\nRetained prompts: \($recent | length)" +
+    "\nFirst retained prompt, JSON-quoted excerpt: " +
     ($recent[0].content[0].text[:512] | tojson) +
     (if $steering == "" then "" else
-      "\n\nAdditional summary instructions from the user:\n" + $steering end))}]}
+      "\n\nUser instructions for this summary:\n" + $steering end))}]}
   ' "$SHELLFISH_SESSION") || {
   sf_compact_fail 'Could not prepare summary request. Original session kept.'
 }
@@ -60,8 +60,10 @@ if ! jq -ce -s --argjson split "$split" --arg summary "$summary" '
     ([$records[] | select(.type == "state_update" and .name == "compact/first_user")] |
       last) as $saved |
     ($saved.value // ([$records[] | select(.type == "user")][0].content[0].text)) as $first |
-    ("Original user request (historical context, JSON-quoted):\n" + ($first | tojson) +
-      "\n\nEarlier conversation was summarized as follows:\n\n" + $summary) as $context |
+    ("Earlier conversation was compacted. The original request and summary below are " +
+      "background. Everything after this block is verbatim and takes precedence.\n\n" +
+      "<original_request>\n" + $first + "\n</original_request>\n\n" +
+      "<summary>\n" + $summary + "\n</summary>") as $context |
     ($records[:$split.start][]),
     ($records[$split.start:$split.cut][] | select(.type == "state_update")),
     (if $saved == null then
