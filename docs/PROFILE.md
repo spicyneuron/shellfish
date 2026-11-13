@@ -105,7 +105,7 @@ Both starter profiles enable sandboxing with no extra grants. The default profil
 | --- | --- |
 | `read_file` | Read text with line numbers or view an image, which needs ImageMagick or `sips` |
 | `edit_file` | Replace exact text and return a diff |
-| `write_file` | Create a text file and return a diff |
+| `write_file` | Create or overwrite a text file and return a diff |
 | `shell` | Run one zsh command with a timeout |
 | `search_web` | Search through Exa |
 | `fetch_url` | Fetch a page as Markdown through Jina Reader |

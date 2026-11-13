@@ -29,18 +29,34 @@ text_bytes=$(tr -d '\0' <"$file_path" | wc -c)
 ((probe_bytes == text_bytes)) || { printf 'edit_file: %s is not a text file\n' "$file_path"; exit 2; }
 original=$(cat -- "$file_path"; printf X); original=${original%X}
 
-matches=0
-remainder=$original
-while [[ $remainder == *"$old_string"* ]]; do
-  remainder=${remainder#*"$old_string"}
-  ((matches += 1))
-done
+count_matches() {
+  local remainder=$original
+  matches=0
+  while [[ $remainder == *${~pattern}* ]]; do
+    remainder=${remainder#*${~pattern}}
+    ((matches += 1))
+  done
+}
+pattern=${(b)old_string}
+count_matches
+if ((matches == 0)); then
+  # Retry with the file's CRLF line endings and either quote style.
+  if [[ $original == *$'\r\n'* && $old_string != *$'\r'* ]]; then
+    old_string=${old_string//$'\n'/$'\r\n'}
+    new_string=${new_string//$'\n'/$'\r\n'}
+  fi
+  pattern=${(b)old_string}
+  for quote in ‘ ’; do pattern=${pattern//$quote/\'}; done
+  for quote in “ ”; do pattern=${pattern//$quote/\"}; done
+  pattern=${${pattern//\'/(\'|‘|’)}//\"/(\"|“|”)}
+  count_matches
+fi
 case $matches in
   0) printf 'edit_file: old_string does not appear in %s\n' "$file_path"; exit 2 ;;
-  1) updated=${original%%"$old_string"*}$new_string${original#*"$old_string"} ;;
+  1) updated=${original/${~pattern}/$new_string} ;;
   *)
     if [[ $replace_all == true ]]; then
-      updated=${original//"$old_string"/"$new_string"}
+      updated=${original//${~pattern}/$new_string}
     else
       printf 'edit_file: old_string appears %d times in %s; include more surrounding context or set replace_all\n' \
         "$matches" "$file_path"

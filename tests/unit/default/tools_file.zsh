@@ -82,9 +82,36 @@ assert_equal 'edit_file: file-tool.txt is already up to date' \
   "$(run_tool edit_file \
     '{"file_path":"file-tool.txt","old_string":"beta","new_string":"beta"}')"
 
+# Pattern characters in old_string match literally.
+print -r -- 'a [x] * b' >"$tmp/literal.txt"
+run_tool edit_file '{"file_path":"literal.txt","old_string":"[x] *","new_string":"y"}' >/dev/null
+assert_equal 'a y b' "$(<$tmp/literal.txt)"
+
+# Without an exact match, edits follow the file's CRLF line endings and quote style.
+printf 'one\r\ntwo\r\n' >"$tmp/crlf.txt"
+run_tool edit_file '{"file_path":"crlf.txt","old_string":"one\ntwo","new_string":"1\n2"}' >/dev/null
+[[ "$(cat -v -- $tmp/crlf.txt)" == $'1^M\n2^M' ]] || fail 'edit_file lost CRLF line endings'
+print -r -- 'say “hi” and it’s' >"$tmp/quotes.txt"
+run_tool edit_file \
+  '{"file_path":"quotes.txt","old_string":"say \"hi\" and it\u0027s","new_string":"done"}' >/dev/null
+assert_equal 'done' "$(<$tmp/quotes.txt)"
+print -r -- '‘a’ and ‘a’' >"$tmp/twice.txt"
+assert_equal 'edit_file: old_string appears 2 times in twice.txt; include more surrounding context or set replace_all' \
+  "$(run_tool edit_file '{"file_path":"twice.txt","old_string":"\u0027a\u0027","new_string":"b"}' || true)"
+
 # Write new files and report the change.
 output=$(run_tool write_file '{"file_path":"created.txt","content":"created\n"}')
 [[ -f "$tmp/created.txt" && $output == *+created* ]]
+
+# Overwrite existing files and report the change against their old contents.
+output=$(run_tool write_file '{"file_path":"created.txt","content":"replaced\n"}')
+[[ $(<$tmp/created.txt) == replaced && $output == *-created* && $output == *+replaced* ]] ||
+  fail 'write_file did not overwrite an existing file'
+assert_equal 'write_file: created.txt is already up to date' \
+  "$(run_tool write_file '{"file_path":"created.txt","content":"replaced\n"}')"
+mkdir -p "$tmp/folder"
+assert_equal 'write_file: folder is a directory' \
+  "$(run_tool write_file '{"file_path":"folder","content":"x"}' || true)"
 
 # File changes show their complete diff.
 for tool in edit_file write_file; do

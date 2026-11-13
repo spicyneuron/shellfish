@@ -14,35 +14,46 @@ fields=( "${(@0)${decoded%$'\0'}}" )
 }
 file_path=$fields[1]
 content=$fields[2]
-[[ ! -e $file_path && ! -L $file_path ]] || {
-  printf 'write_file: file already exists: %s\n' "$file_path"
-  exit 2
-}
-mkdir -p -- "$(dirname -- "$file_path")" || {
-  printf 'write_file: cannot create the parent directory of %s\n' "$file_path"
-  exit 2
-}
-if ! (set -C; printf '%s' "$content" >"$file_path"); then
-  printf 'write_file: cannot create %s\n' "$file_path"
-  exit 2
-fi
-empty_file=$(mktemp "${TMPDIR:-/tmp}/shellfish-write-empty.XXXXXX") || {
+snapshot=$(mktemp "${TMPDIR:-/tmp}/shellfish-write-original.XXXXXX") || {
   printf 'write_file: cannot prepare diff for %s\n' "$file_path"
   exit 2
 }
 diff_file=$(mktemp "${TMPDIR:-/tmp}/shellfish-write-diff.XXXXXX") || {
-  rm -f -- "$empty_file"
+  rm -f -- "$snapshot"
   printf 'write_file: cannot prepare diff for %s\n' "$file_path"
   exit 2
 }
-trap 'rm -f -- "$empty_file" "$diff_file"' EXIT
-if diff -U1 -L '' -L '' -- "$empty_file" "$file_path" >"$diff_file"; then
+trap 'rm -f -- "$snapshot" "$diff_file"' EXIT
+if [[ -e $file_path || -L $file_path ]]; then
+  [[ ! -d $file_path ]] || { printf 'write_file: %s is a directory\n' "$file_path"; exit 2; }
+  [[ -f $file_path ]] || { printf 'write_file: not a regular file: %s\n' "$file_path"; exit 2; }
+  [[ -r $file_path && -w $file_path ]] || { printf 'write_file: cannot write %s\n' "$file_path"; exit 2; }
+  probe_bytes=$(wc -c <"$file_path")
+  text_bytes=$(tr -d '\0' <"$file_path" | wc -c)
+  ((probe_bytes == text_bytes)) || { printf 'write_file: %s is not a text file\n' "$file_path"; exit 2; }
+  cp -- "$file_path" "$snapshot" || {
+    printf 'write_file: cannot prepare diff for %s\n' "$file_path"
+    exit 2
+  }
+  existed=true
+else
+  mkdir -p -- "$(dirname -- "$file_path")" || {
+    printf 'write_file: cannot create the parent directory of %s\n' "$file_path"
+    exit 2
+  }
+  existed=false
+fi
+printf '%s' "$content" >"$file_path" || {
+  printf 'write_file: cannot write %s\n' "$file_path"
+  exit 2
+}
+if diff -U1 -L '' -L '' -- "$snapshot" "$file_path" >"$diff_file"; then
   diff_status=0
 else
   diff_status=$?
 fi
 case $diff_status in
-  0) ;;
+  0) [[ $existed == false ]] || printf 'write_file: %s is already up to date\n' "$file_path" ;;
   1)
     awk '
       NR == 1 && /^--- / { next }
