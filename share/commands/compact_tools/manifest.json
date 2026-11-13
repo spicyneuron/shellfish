@@ -1,0 +1,1 @@
+{"description":"Clear older tool results into a new session without summarizing","user_text":"${output.stderr}"}

@@ -220,3 +220,81 @@ jq -e -s '
   fail 'compaction did not carry state history in source order'
 assert_equal "$state_before" "$(shasum <"$state_source")"
 [[ ! -e $tmp/.subagent-a1b2c3.jsonl ]] || fail 'compaction copied a referenced internal session'
+
+# Clearing old results preserves call identity, state, and recent model context.
+typeset tools_source="$tmp/tools-source.jsonl" tools_child="$tmp/tools-source_compact_tools.jsonl"
+typeset tools_command="$ROOT/share/commands/compact_tools/run"
+head -n 1 "$compact_source" >"$tools_source"
+jq -cn '
+  {type:"hook_result",lifecycle:"session_start",id:"1",model_text:"Startup"},
+  {type:"user",content:[{type:"text",text:"Investigate"}]},
+  {type:"assistant",stop:"tool_calls",content:[
+    {type:"tool_call",id:"old_text",name:"shell",input:{command:"false"}},
+    {type:"tool_call",id:"old_image",name:"read_file",input:{file_path:"old.png"}}]},
+  {type:"tool_result",id:"old_text",name:"shell",input:{command:"false"},exit_code:1,
+    model_text:"old diagnostic",user_text:"old displayed diagnostic",user_preview_lines:3},
+  {type:"state_update",name:"example/state",value:"old"},
+  {type:"tool_result",id:"old_image",name:"read_file",input:{file_path:"old.png"},exit_code:0,
+    model_content:[{type:"text",text:"old image"},{type:"image",url:"data:image/png;base64,iVBORw0KGgo="}]},
+  {type:"assistant",stop:"end",content:[{type:"text",text:"Investigated"}],usage:{input_tokens:100000,output_tokens:1}},
+  {type:"hook_result",lifecycle:"user_prompt_submit",id:"2",model_text:"Retained notice"},
+  {type:"user",content:[{type:"text",text:([range(90000) | "x"] | join(""))}]},
+  {type:"state_update",name:"example/state",value:null},
+  {type:"assistant",stop:"tool_calls",content:[
+    {type:"tool_call",id:"recent_image",name:"read_file",input:{file_path:"new.png"}}]},
+  {type:"tool_result",id:"recent_image",name:"read_file",input:{file_path:"new.png"},exit_code:0,
+    model_content:[{type:"text",text:"new image"},{type:"image",url:"data:image/png;base64,iVBORw0KGgo="}]},
+  {type:"assistant",stop:"end",content:[{type:"text",text:"Finished"}],usage:{input_tokens:100000,output_tokens:1}}
+' >>"$tools_source"
+assert_canonical_session "$tools_source"
+typeset tools_before=$(shasum <"$tools_source") tools_request="$tmp/tools-request"
+SF_TEST_COMPACT_FAIL=1 SF_TEST_PROVIDER_REQUEST="$tools_request" \
+  SHELLFISH_EXECUTABLE="$compact_shellfish" SHELLFISH_SESSION="$tools_source" \
+  SHELLFISH_TURN_STATE="$tmp" zsh -f "$tools_command" \
+  3>"$compact_control" 2>"$compact_display" </dev/null || fail 'tool compaction failed'
+[[ ! -e $tools_request ]] || fail 'tool compaction requested inference'
+assert_equal "$tools_before" "$(shasum <"$tools_source")"
+actions | jq -e --arg command "$compact_shellfish" --arg child "$tools_child" '
+  . == {action:"handoff",argv:[$command,"--session",$child]}
+' >/dev/null || fail 'tool compaction did not hand off to its child'
+assert_canonical_session "$tools_child"
+assert_mode 600 "$tools_child"
+jq -e -s --slurpfile original "$tools_source" '
+  [ .[] | select(.type == "tool_result" and (.id | startswith("old_"))) ] as $old |
+  ($old | length) == 2 and
+  all($old[]; .model_text == "[Results omitted]" and
+    .user_text == .model_text and (has("model_content") | not) and
+    (has("user_preview_lines") | not)) and
+  [.[] | select(.type == "tool_result") | [.id,.name,.input,.exit_code]] ==
+    [$original[] | select(.type == "tool_result") | [.id,.name,.input,.exit_code]] and
+  [.[] | select(.type == "state_update")] ==
+    [$original[] | select(.type == "state_update")] and
+  [.[8:][] | del(.usage)] == [$original[8:][] | del(.usage)] and
+  .[1] == $original[1] and
+  all(.[] | select(.type == "assistant"); has("usage") | not)
+' "$tools_child" >/dev/null || fail 'tool compaction changed protected content or state'
+
+# Already-cleared results and sessions without older results are no-ops.
+for unchanged in "$tools_child" "$compact_source"; do
+  SHELLFISH_EXECUTABLE="$compact_shellfish" SHELLFISH_SESSION="$unchanged" \
+    SHELLFISH_TURN_STATE="$tmp" zsh -f "$tools_command" \
+    3>"$compact_control" 2>"$compact_display" </dev/null || fail 'tool compaction no-op failed'
+  [[ -z $(actions) ]] || fail 'tool compaction created an unchanged child'
+done
+
+
+# The public command hands off without inference, then its child can continue.
+typeset integration_source="$tmp/integration.jsonl" integration_child
+typeset integration_stream="$tmp/integration.stream"
+jq -c --arg share "$ROOT/share" '
+  if .type == "session" then .profile.commands=[$share + "/commands/compact_tools"]
+  else . end
+' "$tools_source" >"$integration_source"
+rm -f "$tools_request"
+SF_TEST_PROVIDER_REQUEST="$tools_request" sf_test_run '/compact_tools' "$integration_source" >"$integration_stream"
+integration_child=$(jq -r 'select(.type == "_handoff") | .argv[2]' "$integration_stream")
+[[ -n $integration_child ]] || fail 'public tool compaction did not hand off'
+[[ ! -e $tools_request ]] || fail 'public tool compaction requested inference'
+assert_canonical_session "$integration_child"
+sf_test_run 'Continue' "$integration_child" >"$integration_stream"
+assert_canonical_session "$integration_child" end

@@ -1,0 +1,33 @@
+#!/usr/bin/env zsh
+
+emulate -R zsh
+setopt extended_glob no_aliases no_multios pipe_fail
+source "${0:A:h:h:h}/lib/compact.zsh"
+
+typeset split transcript
+split=$(sf_compact_split) || {
+  print -ru2 -- 'Could not select recent turns. Original session kept.'
+  exit 0
+}
+transcript="$SHELLFISH_TURN_STATE/compact-tools.jsonl"
+if ! jq -c -s --argjson split "$split" '
+  . as $records |
+  [to_entries[] |
+    if .key >= $split.start and .key < $split.cut and .value.type == "tool_result" then
+      .value |= (del(.model_content, .user_preview_lines) |
+        .model_text = "[Results omitted]" |
+        .user_text = .model_text)
+    else . end | .value] |
+  select(. != $records) | .[]
+' "$SHELLFISH_SESSION" >"$transcript"; then
+  print -ru2 -- 'Could not clear tool results. Original session kept.'
+  exit 0
+fi
+[[ -s $transcript ]] || {
+  print -ru2 -- 'No older tool results to clear.'
+  exit 0
+}
+sf_compact_handoff "$transcript" compact_tools || {
+  print -ru2 -- 'Could not create compacted session. Original session kept.'
+  exit 0
+}

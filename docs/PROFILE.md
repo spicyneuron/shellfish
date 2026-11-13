@@ -133,11 +133,14 @@ The bundled commands are selected by the profile:
 | `/fork [N]` | Derive a session from a transcript prefix |
 | `/rewind [N]` | Truncate this session to a transcript prefix |
 | `/compact` | Summarize into a child session |
+| `/compact_tools` | Clear older tool results into a child session without summarizing |
 | `/copy [N]` | Copy a conversation section |
 | `/user_shell COMMAND`, `/shell` | Run a user-authored command and stage its output as context |
 | `/sandbox [TOOL [OP VALUE]]` | Inspect or update a tool's frozen sandbox grants |
 
 Client-owned `/refresh`, `/quit`, and `/queue` commands do not run a turn. Bundled submission hooks compact automatically near a known context-window limit, report Git identity changes, and load skills before ordinary prompts. `/compact` leaves the source unchanged and opens a summarized child through the client. Its summary shows in full under `/verbose`. Automatic compaction preserves the interrupted prompt as an editable draft.
+
+`/compact_tools` leaves the source unchanged and opens a child without requesting a summary. It replaces older tool results, including images, with omission markers while preserving conversation, tool calls, and exit status. Recent complete turns remain intact, targeting 80 KiB of text and always keeping the latest turn. If no older results can be cleared, it creates no child.
 
 ### Skills
 
